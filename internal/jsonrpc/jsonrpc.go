@@ -31,4 +31,3 @@ func Success(id any, result any) Response {
 func Failure(id any, code int, message string, data any) Response {
 	return Response{JSONRPC: Version, ID: id, Error: &Error{Code: code, Message: message, Data: data}}
 }
-

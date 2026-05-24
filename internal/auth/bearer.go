@@ -19,4 +19,3 @@ func (b Bearer) Authorized(r *http.Request) bool {
 	}
 	return strings.TrimSpace(r.Header.Get("Authorization")) == "Bearer "+b.Token
 }
-

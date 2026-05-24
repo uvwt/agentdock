@@ -189,4 +189,3 @@ func shellCommandString(args []string) string {
 	}
 	return ""
 }
-

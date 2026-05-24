@@ -12,9 +12,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/local/coding-tools-mcp-go/internal/config"
-	"github.com/local/coding-tools-mcp-go/internal/sandbox"
-	"github.com/local/coding-tools-mcp-go/internal/workspace"
+	"github.com/uvwt/coding-tools-mcp-go/internal/config"
+	"github.com/uvwt/coding-tools-mcp-go/internal/sandbox"
+	"github.com/uvwt/coding-tools-mcp-go/internal/workspace"
 )
 
 type Result map[string]any

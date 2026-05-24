@@ -1,8 +1,9 @@
 package tools
 
 import (
-	pathpkg "path"
 	"strings"
+
+	"github.com/bmatcuk/doublestar/v4"
 )
 
 type textMeta struct {
@@ -94,47 +95,10 @@ func matchesAny(path string, patterns []string) bool {
 }
 
 func globMatch(pattern, path string) bool {
-	// 工作空间路径统一使用 slash。这里不用 filepath.Match，是为了避免不同 OS
-	// 的路径分隔符差异，也让 **/*.go 这类代码检索常用写法能稳定命中。
+	// 工作空间路径统一使用 slash。这里使用 doublestar 是为了避免继续维护
+	// 自写 glob 逻辑；**/*.go、internal/**/*.go 这类常见代码检索模式由成熟库处理。
 	path = strings.TrimPrefix(path, "./")
 	pattern = strings.TrimPrefix(pattern, "./")
-	if ok, _ := pathpkg.Match(pattern, path); ok {
-		return true
-	}
-	if strings.HasPrefix(pattern, "**/") {
-		inner := strings.TrimPrefix(pattern, "**/")
-		if ok, _ := pathpkg.Match(inner, path); ok {
-			return true
-		}
-		if strings.HasSuffix(path, "/"+inner) {
-			return true
-		}
-	}
-	if strings.Contains(pattern, "**") {
-		parts := strings.Split(pattern, "**")
-		return strings.HasPrefix(path, parts[0]) && strings.HasSuffix(path, parts[len(parts)-1])
-	}
-	return simpleWildcard(pattern, path)
-}
-
-func simpleWildcard(pattern, value string) bool {
-	if pattern == value {
-		return true
-	}
-	parts := strings.Split(pattern, "*")
-	if len(parts) == 1 {
-		return false
-	}
-	if !strings.HasPrefix(value, parts[0]) {
-		return false
-	}
-	pos := len(parts[0])
-	for _, part := range parts[1 : len(parts)-1] {
-		idx := strings.Index(value[pos:], part)
-		if idx < 0 {
-			return false
-		}
-		pos += idx + len(part)
-	}
-	return strings.HasSuffix(value, parts[len(parts)-1])
+	ok, _ := doublestar.Match(pattern, path)
+	return ok
 }

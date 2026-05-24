@@ -110,7 +110,8 @@ func mixChannel(c00, c10, c01, c11 uint32, wx, wy float64) uint32 {
 }
 
 func minInt(a, b int) int {
-	if a < b { return a }
+	if a < b {
+		return a
+	}
 	return b
 }
-

@@ -9,10 +9,10 @@ import (
 	"io"
 	"time"
 
-	"github.com/local/coding-tools-mcp-go/internal/config"
-	"github.com/local/coding-tools-mcp-go/internal/jsonrpc"
-	"github.com/local/coding-tools-mcp-go/internal/logx"
-	"github.com/local/coding-tools-mcp-go/internal/tools"
+	"github.com/uvwt/coding-tools-mcp-go/internal/config"
+	"github.com/uvwt/coding-tools-mcp-go/internal/jsonrpc"
+	"github.com/uvwt/coding-tools-mcp-go/internal/logx"
+	"github.com/uvwt/coding-tools-mcp-go/internal/tools"
 )
 
 type Server struct {

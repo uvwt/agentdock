@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/local/coding-tools-mcp-go/internal/config"
-	"github.com/local/coding-tools-mcp-go/internal/httpx"
-	"github.com/local/coding-tools-mcp-go/internal/logx"
-	"github.com/local/coding-tools-mcp-go/internal/mcp"
-	"github.com/local/coding-tools-mcp-go/internal/sandbox"
-	"github.com/local/coding-tools-mcp-go/internal/tools"
+	"github.com/uvwt/coding-tools-mcp-go/internal/config"
+	"github.com/uvwt/coding-tools-mcp-go/internal/httpx"
+	"github.com/uvwt/coding-tools-mcp-go/internal/logx"
+	"github.com/uvwt/coding-tools-mcp-go/internal/mcp"
+	"github.com/uvwt/coding-tools-mcp-go/internal/sandbox"
+	"github.com/uvwt/coding-tools-mcp-go/internal/tools"
 )
 
 func main() {

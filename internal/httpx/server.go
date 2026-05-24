@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/local/coding-tools-mcp-go/internal/auth"
-	"github.com/local/coding-tools-mcp-go/internal/config"
-	"github.com/local/coding-tools-mcp-go/internal/jsonrpc"
-	"github.com/local/coding-tools-mcp-go/internal/logx"
-	"github.com/local/coding-tools-mcp-go/internal/mcp"
+	"github.com/uvwt/coding-tools-mcp-go/internal/auth"
+	"github.com/uvwt/coding-tools-mcp-go/internal/config"
+	"github.com/uvwt/coding-tools-mcp-go/internal/jsonrpc"
+	"github.com/uvwt/coding-tools-mcp-go/internal/logx"
+	"github.com/uvwt/coding-tools-mcp-go/internal/mcp"
 )
 
 func Serve(server *mcp.Server, cfg config.Config) error {

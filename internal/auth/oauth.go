@@ -1,10 +1,10 @@
 package auth
 
 import (
-	"crypto/subtle"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"net/url"
@@ -20,11 +20,11 @@ type OAuthStore struct {
 }
 
 type OAuthCode struct {
-	ClientID      string
-	RedirectURI   string
-	Challenge     string
-	State         string
-	ExpiresAt     time.Time
+	ClientID    string
+	RedirectURI string
+	Challenge   string
+	State       string
+	ExpiresAt   time.Time
 }
 
 func NewOAuthStore() *OAuthStore {
@@ -132,4 +132,3 @@ func AppendQuery(raw string, values url.Values) string {
 	u.RawQuery = q.Encode()
 	return u.String()
 }
-

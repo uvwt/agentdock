@@ -78,4 +78,3 @@ func mapArg(args map[string]any, key string) map[string]any {
 	}
 	return nil
 }
-

@@ -70,18 +70,17 @@ func (m ignoreMatcher) Ignored(rel string, isDir bool) bool {
 func matchIgnoreRule(rule ignoreRule, rel string) bool {
 	pattern := rule.pattern
 	if rule.rooted {
-		return simpleWildcard(pattern, rel)
+		return globMatch(pattern, rel)
 	}
-	if simpleWildcard(pattern, rel) || simpleWildcard(pattern, filepath.Base(rel)) {
+	if globMatch(pattern, rel) || globMatch(pattern, filepath.Base(rel)) {
 		return true
 	}
 	parts := strings.Split(rel, "/")
 	for i := range parts {
 		suffix := strings.Join(parts[i:], "/")
-		if simpleWildcard(pattern, suffix) {
+		if globMatch(pattern, suffix) {
 			return true
 		}
 	}
 	return false
 }
-

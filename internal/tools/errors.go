@@ -17,4 +17,3 @@ func toolError(code, message, category string) *ToolError {
 func toolErrorDetails(code, message, category string, details map[string]any) *ToolError {
 	return &ToolError{Code: code, Message: message, Category: category, Details: details}
 }
-

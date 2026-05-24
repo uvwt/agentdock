@@ -22,4 +22,3 @@ func PrepareCommand(cmd *exec.Cmd, _ string) (func(), Status) {
 func ExecRestricted(_ string) error {
 	return nil
 }
-
