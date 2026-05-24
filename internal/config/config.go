@@ -13,6 +13,9 @@ const (
 	ProfileFull              = "full"
 	ProfileReadOnly          = "read-only"
 	ProfileCompatReadOnlyAll = "compat-readonly-all"
+
+	SandboxModeLandlock = "landlock"
+	SandboxModeNone     = "none"
 )
 
 type Config struct {
@@ -24,6 +27,7 @@ type Config struct {
 	OAuthServerURL                string
 	ToolProfile                   string
 	LogLevel                      string
+	SandboxMode                   string
 	EnableViewImage               bool
 	Stdio                         bool
 	DangerouslySkipAllPermissions bool
@@ -39,6 +43,7 @@ func FromEnv() Config {
 		OAuthServerURL:                os.Getenv("CODING_TOOLS_MCP_SERVER_URL"),
 		ToolProfile:                   getenv("CODING_TOOLS_MCP_TOOL_PROFILE", ProfileFull),
 		LogLevel:                      getenv("CODING_TOOLS_MCP_LOG_LEVEL", "info"),
+		SandboxMode:                   getenv("CODING_TOOLS_MCP_SANDBOX_MODE", SandboxModeLandlock),
 		EnableViewImage:               getenvBool("CODING_TOOLS_MCP_ENABLE_VIEW_IMAGE", true),
 		Stdio:                         getenvBool("CODING_TOOLS_MCP_STDIO", false),
 		DangerouslySkipAllPermissions: getenvBool("CODING_TOOLS_MCP_SKIP_PERMISSION_PROMPTS", false),
@@ -59,6 +64,11 @@ func (c *Config) Normalize() {
 	}
 	if c.LogLevel == "" {
 		c.LogLevel = "info"
+	}
+	switch c.SandboxMode {
+	case SandboxModeLandlock, SandboxModeNone:
+	default:
+		c.SandboxMode = SandboxModeLandlock
 	}
 }
 

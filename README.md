@@ -197,6 +197,187 @@ docker compose logs -f
 docker build --no-cache -t coding-tools-mcp-go:local .
 ```
 
+## 裸机 VPS 部署
+
+裸机部署会让 MCP 服务直接运行在 VPS 上，`exec_command` 执行的命令也会在 VPS 上运行。和 Docker 部署不同，裸机部署不再有容器隔离，所以建议使用普通 Linux 用户运行服务，并把 workspace 限制在单独目录里。
+
+推荐目录结构：
+
+```text
+/opt/coding-tools-mcp-go/        # 项目源码
+/usr/local/bin/coding-tools-mcp  # 编译后的可执行文件
+/srv/coding-workspace/           # MCP 可操作的项目工作区
+/etc/coding-tools-mcp/env        # 环境变量和密钥
+/etc/systemd/system/coding-tools-mcp.service
+```
+
+构建并安装二进制：
+
+```bash
+cd /opt
+sudo git clone https://github.com/uvwt/coding-tools-mcp-go.git
+sudo chown -R $USER:$USER /opt/coding-tools-mcp-go
+
+cd /opt/coding-tools-mcp-go
+go test ./...
+go build -trimpath -o coding-tools-mcp ./cmd/coding-tools-mcp
+sudo install -m 0755 coding-tools-mcp /usr/local/bin/coding-tools-mcp
+```
+
+创建 workspace：
+
+```bash
+sudo mkdir -p /srv/coding-workspace
+sudo chown -R $USER:$USER /srv/coding-workspace
+```
+
+创建环境变量文件：
+
+```bash
+sudo mkdir -p /etc/coding-tools-mcp
+sudo nano /etc/coding-tools-mcp/env
+```
+
+示例内容：
+
+```bash
+CODING_TOOLS_MCP_OAUTH_CLIENT_ID=coding-tools-client
+CODING_TOOLS_MCP_OAUTH_CLIENT_SECRET=replace-with-random-secret
+CODING_TOOLS_MCP_OAUTH_PASSWORD=replace-with-login-password
+CODING_TOOLS_MCP_OAUTH_TOKEN_SECRET=replace-with-random-secret
+CODING_TOOLS_MCP_SERVER_URL=https://codingvps.example.com
+CODING_TOOLS_MCP_TOOL_PROFILE=full
+CODING_TOOLS_MCP_LOG_LEVEL=info
+
+# 默认 landlock。裸机 VPS 如需在 exec_command 内使用 sudo，改成 none。
+CODING_TOOLS_MCP_SANDBOX_MODE=none
+```
+
+收紧权限：
+
+```bash
+sudo chmod 600 /etc/coding-tools-mcp/env
+```
+
+创建 systemd 服务：
+
+```bash
+sudo nano /etc/systemd/system/coding-tools-mcp.service
+```
+
+示例内容，其中 `User` / `Group` 替换成你的 Linux 用户名：
+
+```ini
+[Unit]
+Description=Coding Tools MCP Go
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/coding-tools-mcp/env
+WorkingDirectory=/srv/coding-workspace
+ExecStart=/usr/local/bin/coding-tools-mcp \
+  --workspace /srv/coding-workspace \
+  --host 127.0.0.1 \
+  --port 8765 \
+  --oauth-mode \
+  --tool-profile full \
+  --sandbox-mode none \
+  --dangerously-skip-all-permissions
+
+Restart=always
+RestartSec=3
+User=your-linux-user
+Group=your-linux-user
+
+# 如果 sandbox-mode=none 且需要 sudo，这里不要设成 true。
+NoNewPrivileges=false
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启动服务：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now coding-tools-mcp
+sudo systemctl status coding-tools-mcp
+```
+
+查看日志：
+
+```bash
+journalctl -u coding-tools-mcp -f
+```
+
+本机健康检查：
+
+```bash
+curl http://127.0.0.1:8765/healthz
+```
+
+如果需要通过公网域名访问，建议用 Caddy / Nginx 反向代理到 `127.0.0.1:8765`，并只暴露 HTTPS。
+
+### sandbox-mode 说明
+
+`sandbox-mode` 控制 `exec_command` 子进程是否启用内部 Landlock 沙箱。
+
+| 模式 | 说明 |
+| --- | --- |
+| `landlock` | 默认模式。启用 Linux Landlock，并设置 `no_new_privs`。更安全，但 `sudo` 无法提权。适合 Docker 或不需要 sudo 的场景。 |
+| `none` | 不启用内部 Landlock。裸机 VPS 可信部署时可用，允许 `sudo` 按系统 sudoers 规则提权。风险更高，需要配合最小权限用户和 sudoers 白名单。 |
+
+如果你在 MCP 里执行 `sudo` 看到：
+
+```text
+sudo: The "no new privileges" flag is set, which prevents sudo from running as root.
+```
+
+说明当前命令仍处于 `landlock` 模式，或 systemd 服务还没有重启到新配置。裸机可信部署需要设置：
+
+```bash
+CODING_TOOLS_MCP_SANDBOX_MODE=none
+```
+
+或者启动参数：
+
+```bash
+--sandbox-mode none
+```
+
+然后重新加载并重启服务：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart coding-tools-mcp
+```
+
+### 裸机更新流程
+
+以后更新 VPS 上的服务，执行：
+
+```bash
+cd /opt/coding-tools-mcp-go
+git pull
+
+go test ./...
+go build -trimpath -o coding-tools-mcp ./cmd/coding-tools-mcp
+
+sudo install -m 0755 coding-tools-mcp /usr/local/bin/coding-tools-mcp
+sudo systemctl restart coding-tools-mcp
+sudo systemctl status coding-tools-mcp
+```
+
+确认新版本启动参数和日志：
+
+```bash
+journalctl -u coding-tools-mcp -n 100 --no-pager
+curl http://127.0.0.1:8765/healthz
+```
+
 ## 配置项
 
 配置可以通过环境变量或命令行参数传入。
@@ -212,6 +393,7 @@ docker build --no-cache -t coding-tools-mcp-go:local .
 | `CODING_TOOLS_MCP_STDIO` | `false` | 是否使用 stdio 模式。 |
 | `CODING_TOOLS_MCP_SKIP_PERMISSION_PROMPTS` | `false` | 是否跳过命令策略确认。仅建议在受信容器中使用。 |
 | `CODING_TOOLS_MCP_LOG_LEVEL` | `info` | 日志级别：`debug`、`info`、`warn`、`error`。 |
+| `CODING_TOOLS_MCP_SANDBOX_MODE` | `landlock` | 命令沙箱模式，支持 `landlock`、`none`。裸机需要 sudo 时设为 `none`。 |
 
 常用命令行参数：
 
@@ -220,6 +402,7 @@ docker build --no-cache -t coding-tools-mcp-go:local .
   --workspace /workspace \
   --host 0.0.0.0 \
   --port 8765 \
+  --sandbox-mode landlock \
   --log-level info
 ```
 
@@ -275,6 +458,8 @@ Fine-grained PAT 常见要求：
 5. **容器隔离**：生产或不可信代码场景建议配合 Docker、gVisor、Firecracker 等外部隔离层。
 
 注意：MCP 工具可以读写 workspace，并可执行命令。不要把不可信用户直接接入有敏感凭据的 workspace。
+
+裸机 VPS 如设置 `sandbox-mode=none`，内部 Landlock 和 `no_new_privs` 会被跳过，`sudo` 可以按系统 sudoers 规则提权。该模式只建议在可信私有环境使用，并建议给运行用户配置有限 sudo 权限，而不是 `NOPASSWD: ALL`。
 
 ## 开发说明
 

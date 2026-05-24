@@ -51,8 +51,13 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 	// 如果子进程绑定到单次 MCP 请求 ctx，请求结束时 git push / npm install 等长任务会被杀掉。
 	// 因此长任务只受 timeout_ms 和 kill_session / kill_all_sessions 控制。
 	s, sandboxStatus, err := session.Start(context.Background(), cmd, workdir.Abs, r.commandEnv(mapArg(args, "env")), timeout, func(command *exec.Cmd) (func(), map[string]any) {
+		if r.cfg.SandboxMode == "none" {
+			// 裸机可信部署需要 sudo 时，不能启用 Landlock；Landlock 必须设置 no_new_privs，
+			// 会导致 sudo 无法提权。默认仍是 landlock，只有显式 sandbox-mode=none 才跳过。
+			return func() {}, map[string]any{"enabled": false, "mode": "none", "warnings": []string{"command sandbox disabled by configuration; rely on OS user permissions and sudoers policy"}}
+		}
 		cleanup, status := sandbox.PrepareCommand(command, r.ws.Root())
-		return cleanup, map[string]any{"enabled": status.Enabled, "warnings": status.Warnings}
+		return cleanup, map[string]any{"enabled": status.Enabled, "mode": "landlock", "warnings": status.Warnings}
 	})
 	if err != nil {
 		return nil, err
