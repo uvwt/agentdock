@@ -70,6 +70,15 @@ func inputSchema(name string) map[string]any {
 		props["repository"] = stringProp("Alias for repo.")
 		props["timeout_ms"] = intProp("HTTP timeout in milliseconds.")
 		required = []string{"repo"}
+	case "github_create_repo":
+		props["name"] = stringProp("Repository name to create.")
+		props["owner"] = stringProp("Optional owner or organization. Defaults to the authenticated user.")
+		props["repo"] = stringProp("Optional owner/name shorthand.")
+		props["description"] = stringProp("Repository description.")
+		props["private"] = boolProp("Create a private repository. Defaults to true.")
+		props["auto_init"] = boolProp("Create the repository with an initial commit.")
+		props["timeout_ms"] = intProp("HTTP timeout in milliseconds.")
+		required = []string{"name"}
 	case "workspace_repos":
 		props["max_depth"] = intProp("Maximum directory depth to scan for repositories.")
 	case "git_repo_status", "git_status":

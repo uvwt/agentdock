@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -64,6 +65,51 @@ func (r *Runtime) checkGitHubRepoAccess(args map[string]any) (Result, error) {
 		result["repo_access"] = false
 		result["repo_message"] = repoMessage
 		result["diagnostic"] = diagnoseGitHubStatus(repoStatus, repoMessage)
+	}
+	return result, nil
+}
+
+func (r *Runtime) githubCreateRepo(args map[string]any) (Result, error) {
+	cred, username, err := githubCredential(r.ws.Root())
+	if err != nil {
+		return Result{"ok": false, "credential_found": false, "diagnostic": map[string]any{"kind": "git_auth_missing", "suggestion": "run configure_github_token first"}}, nil
+	}
+	name := stringArg(args, "name", "")
+	owner := stringArg(args, "owner", "")
+	if repo := normalizeGitHubRepo(stringArg(args, "repo", "")); repo != "" {
+		parts := strings.SplitN(repo, "/", 2)
+		if len(parts) == 2 {
+			owner = parts[0]
+			name = parts[1]
+		} else if name == "" {
+			name = repo
+		}
+	}
+	if name == "" || strings.Contains(name, "/") {
+		return nil, toolError("INVALID_ARGUMENT", "name is required and must not contain '/'", "validation")
+	}
+	client := &http.Client{Timeout: time.Duration(intArg(args, "timeout_ms", 15000)) * time.Millisecond}
+	login, scopes, authStatus, authMessage := githubGet(client, cred, "https://api.github.com/user")
+	if authStatus >= 400 || authStatus == 0 {
+		return Result{"ok": false, "credential_found": true, "username": username, "auth_status": authStatus, "auth_login": login, "oauth_scopes": scopes, "auth_message": authMessage, "diagnostic": diagnoseGitHubStatus(authStatus, authMessage)}, nil
+	}
+	endpoint := "https://api.github.com/user/repos"
+	if owner != "" && login != "" && owner != login {
+		endpoint = "https://api.github.com/orgs/" + owner + "/repos"
+	}
+	payload := map[string]any{"name": name, "private": boolArg(args, "private", true), "description": stringArg(args, "description", ""), "auto_init": boolArg(args, "auto_init", false)}
+	status, body, message := githubPostJSON(client, cred, endpoint, payload)
+	result := Result{"ok": status == 201, "credential_found": true, "username": username, "auth_login": login, "oauth_scopes": scopes, "status": status, "created": status == 201}
+	if message != "" {
+		result["message"] = message
+	}
+	for _, key := range []string{"full_name", "html_url", "clone_url", "ssh_url", "default_branch"} {
+		if value, ok := body[key].(string); ok && value != "" {
+			result[key] = redactSecrets(value, nil)
+		}
+	}
+	if status != 201 {
+		result["diagnostic"] = diagnoseGitHubCreateStatus(status, message)
 	}
 	return result, nil
 }
@@ -194,6 +240,34 @@ func githubGet(client *http.Client, token, endpoint string) (login, scopes strin
 	return login, resp.Header.Get("X-OAuth-Scopes"), resp.StatusCode, message
 }
 
+func githubPostJSON(client *http.Client, token, endpoint string, payload map[string]any) (int, map[string]any, string) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return 0, nil, err.Error()
+	}
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(data))
+	if err != nil {
+		return 0, nil, err.Error()
+	}
+	req.Header.Set("Auth"+"orization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("User-Agent", "coding-tools-mcp")
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, nil, err.Error()
+	}
+	defer resp.Body.Close()
+	body := map[string]any{}
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	message := ""
+	if value, ok := body["message"].(string); ok {
+		message = value
+	}
+	return resp.StatusCode, body, message
+}
+
 func diagnoseGitHubStatus(status int, message string) map[string]any {
 	switch status {
 	case 401:
@@ -202,6 +276,23 @@ func diagnoseGitHubStatus(status int, message string) map[string]any {
 		return map[string]any{"kind": "github_token_permission_denied", "suggestion": "for fine-grained PATs, grant the selected repository Contents: Read-only or Read and write; organization approval may also be required"}
 	case 404:
 		return map[string]any{"kind": "github_repo_not_visible", "suggestion": "check owner/name and ensure the token is allowed to access this repository"}
+	case 0:
+		return map[string]any{"kind": "github_network_error", "message": message, "suggestion": "check outbound network access to api.github.com"}
+	default:
+		return map[string]any{"kind": "github_unexpected_status", "status": status, "message": message}
+	}
+}
+
+func diagnoseGitHubCreateStatus(status int, message string) map[string]any {
+	switch status {
+	case 201:
+		return map[string]any{"kind": "github_repo_created"}
+	case 401:
+		return map[string]any{"kind": "github_token_invalid", "suggestion": "regenerate the token and run configure_github_token again"}
+	case 403:
+		return map[string]any{"kind": "github_create_repo_denied", "suggestion": "grant permission to create repositories for the user or organization"}
+	case 422:
+		return map[string]any{"kind": "github_repo_create_validation_failed", "message": message, "suggestion": "check whether the repository already exists or the name is invalid"}
 	case 0:
 		return map[string]any{"kind": "github_network_error", "message": message, "suggestion": "check outbound network access to api.github.com"}
 	default:

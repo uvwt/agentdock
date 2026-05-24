@@ -79,6 +79,17 @@ func outputSchema(name string) map[string]any {
 		props["repo_status"] = intProp("GitHub API repo HTTP status.")
 		props["repo_access"] = boolProp("Whether the repository is visible to the token.")
 		props["diagnostic"] = objectProp("Structured access diagnostic.")
+	case "github_create_repo":
+		props["credential_found"] = boolProp("Whether a stored GitHub credential was found.")
+		props["username"] = stringProp("Stored GitHub username.")
+		props["auth_login"] = stringProp("Authenticated GitHub login.")
+		props["status"] = intProp("GitHub API HTTP status.")
+		props["created"] = boolProp("Whether the repository was created.")
+		props["full_name"] = stringProp("Created repository full name.")
+		props["html_url"] = stringProp("Repository web URL.")
+		props["clone_url"] = stringProp("Repository HTTPS clone URL.")
+		props["ssh_url"] = stringProp("Repository SSH clone URL.")
+		props["diagnostic"] = objectProp("Structured create diagnostic.")
 	case "workspace_repos":
 		props["repos"] = arrayProp("Git repositories found under the workspace.")
 		props["count"] = intProp("Repository count.")

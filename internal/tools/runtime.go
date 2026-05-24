@@ -37,7 +37,7 @@ func (r *Runtime) Config() config.Config           { return r.cfg }
 func (r *Runtime) Workspace() *workspace.Workspace { return r.ws }
 
 func (r *Runtime) ToolNames() []string {
-	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "exec_command", "write_stdin", "session_status", "list_sessions", "kill_session", "kill_all_sessions", "configure_github_token", "check_github_repo_access", "workspace_repos", "git_repo_status", "git_status", "git_diff", "git_log", "git_show", "git_blame", "git_fetch", "git_pull", "git_push", "git_clone", "git_commit", "request_permissions", "view_image"}
+	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "exec_command", "write_stdin", "session_status", "list_sessions", "kill_session", "kill_all_sessions", "configure_github_token", "check_github_repo_access", "github_create_repo", "workspace_repos", "git_repo_status", "git_status", "git_diff", "git_log", "git_show", "git_blame", "git_fetch", "git_pull", "git_push", "git_clone", "git_commit", "request_permissions", "view_image"}
 	if !r.cfg.EnableViewImage {
 		all = removeTool(all, "view_image")
 	}
@@ -104,6 +104,8 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.configureGitHubToken(args)
 	case "check_github_repo_access":
 		return r.checkGitHubRepoAccess(args)
+	case "github_create_repo":
+		return r.githubCreateRepo(args)
 	case "workspace_repos":
 		return r.workspaceRepos(ctx, args)
 	case "git_repo_status":

@@ -27,6 +27,7 @@ var toolRegistry = []ToolDefinition{
 	{Name: "kill_all_sessions", Title: "Stop all sessions", Description: "Stop all currently running command sessions.", Destructive: false},
 	{Name: "configure_github_token", Title: "Configure GitHub token", Description: "Load a GitHub token from a workspace .env file and store a redacted HTTPS credential for git.", Destructive: false},
 	{Name: "check_github_repo_access", Title: "Check GitHub repo access", Description: "Check stored GitHub credential authentication and repository visibility without exposing secrets.", ReadOnly: true, OpenWorld: true},
+	{Name: "github_create_repo", Title: "Create GitHub repository", Description: "Create a GitHub repository using the stored credential without exposing secrets.", Destructive: false, OpenWorld: true},
 	{Name: "workspace_repos", Title: "Workspace repositories", Description: "List Git repositories found under the workspace.", ReadOnly: true},
 	{Name: "git_repo_status", Title: "Git repository status", Description: "Return Git status for a selected repository path.", ReadOnly: true},
 	{Name: "git_status", Title: "Git status", Description: "Return git working tree status for the workspace.", ReadOnly: true},
