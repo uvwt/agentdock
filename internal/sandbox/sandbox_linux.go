@@ -20,6 +20,7 @@ const (
 	sysLandlockCreateRuleset = 444
 	sysLandlockAddRule       = 445
 	sysLandlockRestrictSelf  = 446
+	linuxOpenPath            = 0x200000
 
 	accessExecute    = 1 << 0
 	accessWriteFile  = 1 << 1
@@ -162,7 +163,9 @@ func handledAccess(version int) uint64 {
 }
 
 func addPath(rulesetFD int, path string, access uint64, required bool) bool {
-	fd, err := syscall.Open(path, syscall.O_PATH|syscall.O_CLOEXEC, 0)
+	// syscall.O_PATH 在部分 Go 版本/发行版组合里没有暴露，但 Linux ABI 数值固定。
+	// 这里本地定义常量，避免裸机部署时因为标准库常量缺失导致编译失败。
+	fd, err := syscall.Open(path, linuxOpenPath|syscall.O_CLOEXEC, 0)
 	if err != nil {
 		return !required
 	}
