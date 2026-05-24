@@ -1,0 +1,22 @@
+services:
+  coding-tools-mcp-go:
+    image: coding-tools-mcp-go:local
+    build: .
+    container_name: coding-tools-mcp-go
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18766:8765"
+    volumes:
+      - ./Project:/workspace
+    environment:
+      CODING_TOOLS_MCP_TOOL_PROFILE: "full"
+    command:
+      - coding-tools-mcp
+      - --workspace
+      - /workspace
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8765"
+      - --dangerously-skip-all-permissions
+
