@@ -35,8 +35,8 @@ func (s *Server) Dispatch(ctx context.Context, req jsonrpc.Request) jsonrpc.Resp
 	case "initialize":
 		return jsonrpc.Success(req.ID, map[string]any{
 			"protocolVersion": config.ProtocolVersion,
-			"serverInfo": map[string]any{"name": config.ServerName, "version": config.Version},
-			"capabilities": map[string]any{"tools": map[string]any{}},
+			"serverInfo":      map[string]any{"name": config.ServerName, "version": config.Version},
+			"capabilities":    map[string]any{"tools": map[string]any{}},
 		})
 	case "notifications/initialized":
 		return jsonrpc.Success(req.ID, map[string]any{})
@@ -90,11 +90,12 @@ func (s *Server) toolDescriptors() []map[string]any {
 	for _, name := range names {
 		def, _ := toolDefinition(name)
 		descriptors = append(descriptors, map[string]any{
-			"name":        name,
-			"title":       def.Title,
-			"description": def.Description,
-			"inputSchema": inputSchema(name),
-			"annotations": map[string]any{"readOnlyHint": def.ReadOnly || s.cfg.ToolProfile == config.ProfileCompatReadOnlyAll, "destructiveHint": false, "openWorldHint": false},
+			"name":         name,
+			"title":        def.Title,
+			"description":  def.Description,
+			"inputSchema":  inputSchema(name),
+			"outputSchema": outputSchema(name),
+			"annotations":  map[string]any{"readOnlyHint": def.ReadOnly || s.cfg.ToolProfile == config.ProfileCompatReadOnlyAll, "destructiveHint": false, "openWorldHint": false},
 		})
 	}
 	return descriptors
@@ -148,6 +149,8 @@ func pretty(value any) string {
 }
 
 func toolDescription(name string) string {
-	if def, ok := toolDefinition(name); ok { return def.Description }
+	if def, ok := toolDefinition(name); ok {
+		return def.Description
+	}
 	return "Coding Tools MCP tool."
 }
