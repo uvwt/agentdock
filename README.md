@@ -55,6 +55,43 @@ Stdio:
 
 ## Docker
 
+本地构建镜像：
+
+```bash
+docker build -t coding-tools-mcp-go:local .
+```
+
+如果更新了代码，建议按下面顺序重新构建并启动：
+
+```bash
+# 1. 进入项目目录
+cd coding-tools-mcp-go
+
+# 2. 可选：先跑测试，确认代码可以通过编译与基础检查
+go test ./...
+
+# 3. 重新构建本地镜像
+docker build -t coding-tools-mcp-go:local .
+
+# 4. 停掉旧容器
+docker compose down
+
+# 5. 用新镜像重新启动服务
+docker compose up -d
+
+# 6. 查看容器状态和日志
+docker compose ps
+docker compose logs -f
+```
+
+如果怀疑 Docker 缓存导致旧代码没有被打进镜像，可以使用无缓存构建：
+
+```bash
+docker build --no-cache -t coding-tools-mcp-go:local .
+```
+
+如果使用 Docker Compose 统一构建和启动：
+
 ```bash
 docker compose build --no-cache
 docker compose up -d
