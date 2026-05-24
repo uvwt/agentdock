@@ -1,4 +1,11 @@
-.PHONY: fmt test build docker
+.PHONY: fmt test vet build check run docker-build docker-up docker-down logs clean
+
+APP := coding-tools-mcp
+IMAGE := coding-tools-mcp-go:local
+WORKSPACE ?= /workspace
+HOST ?= 127.0.0.1
+PORT ?= 8765
+LOG_LEVEL ?= info
 
 fmt:
 	gofmt -w ./cmd ./internal
@@ -6,9 +13,28 @@ fmt:
 test:
 	go test ./...
 
+vet:
+	go vet ./...
+
 build:
-	go build -trimpath ./cmd/coding-tools-mcp
+	go build -trimpath -o ./bin/$(APP) ./cmd/coding-tools-mcp
 
-docker:
-	docker compose build --no-cache
+check: fmt test vet build
 
+run:
+	go run ./cmd/coding-tools-mcp --workspace $(WORKSPACE) --host $(HOST) --port $(PORT) --log-level $(LOG_LEVEL)
+
+docker-build:
+	docker build -t $(IMAGE) .
+
+docker-up:
+	docker compose up -d
+
+docker-down:
+	docker compose down
+
+logs:
+	docker compose logs -f
+
+clean:
+	rm -rf ./bin
