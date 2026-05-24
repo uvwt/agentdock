@@ -20,7 +20,11 @@ var toolRegistry = []ToolDefinition{
 	{Name: "apply_patch", Title: "Apply patch", Description: "Apply a patch envelope transactionally inside the workspace.", Destructive: true},
 	{Name: "exec_command", Title: "Execute command", Description: "Run a bounded command in the workspace with policy and sandbox controls.", Destructive: true, OpenWorld: true},
 	{Name: "write_stdin", Title: "Write stdin", Description: "Write characters to a running command session.", Destructive: true},
+	{Name: "session_status", Title: "Session status", Description: "Return output and status for a running command session.", ReadOnly: true},
+	{Name: "list_sessions", Title: "List sessions", Description: "List currently running command sessions.", ReadOnly: true},
 	{Name: "kill_session", Title: "Kill session", Description: "Terminate a running command session.", Destructive: true},
+	{Name: "configure_github_token", Title: "Configure GitHub token", Description: "Load a GitHub token from a workspace .env file and store a redacted HTTPS credential for git.", Destructive: true},
+	{Name: "check_github_repo_access", Title: "Check GitHub repo access", Description: "Check stored GitHub credential authentication and repository visibility without exposing secrets.", ReadOnly: true, OpenWorld: true},
 	{Name: "git_status", Title: "Git status", Description: "Return git working tree status for the workspace.", ReadOnly: true},
 	{Name: "git_diff", Title: "Git diff", Description: "Return unified git diff for workspace changes.", ReadOnly: true},
 	{Name: "git_log", Title: "Git log", Description: "Return recent git commits with bounded structured metadata.", ReadOnly: true},
@@ -38,4 +42,3 @@ func toolDefinition(name string) (ToolDefinition, bool) {
 	}
 	return ToolDefinition{}, false
 }
-

@@ -49,15 +49,24 @@ func inputSchema(name string) map[string]any {
 		props["workdir"] = stringProp("Workspace-relative working directory.")
 		props["timeout_ms"] = intProp("Timeout in milliseconds.")
 		props["yield_time_ms"] = intProp("Initial wait before returning running session.")
+		props["wait_until_exit"] = boolProp("Wait until the command exits instead of returning a running session after yield_time_ms.")
 		props["max_output_bytes"] = intProp("Maximum output bytes.")
 		props["stdin"] = stringProp("Initial stdin.")
 		props["tty"] = boolProp("Keep stdin open.")
 		required = []string{"cmd"}
-	case "write_stdin", "kill_session":
+	case "write_stdin", "session_status", "kill_session":
 		props["session_id"] = stringProp("Session id returned by exec_command.")
 		props["chars"] = stringProp("Characters to write to stdin.")
 		props["max_output_bytes"] = intProp("Maximum output bytes.")
 		required = []string{"session_id"}
+	case "configure_github_token":
+		props["env_file"] = stringProp("Workspace-relative .env file containing GITHUB_TOKEN, GH_TOKEN, GITHUB_PAT, or TOKEN.")
+		props["username"] = stringProp("GitHub username to store with the HTTPS credential. Defaults to GITHUB_USERNAME, GITHUB_USER, or x-access-token.")
+	case "check_github_repo_access":
+		props["repo"] = stringProp("GitHub repository as owner/name or https://github.com/owner/name.git.")
+		props["repository"] = stringProp("Alias for repo.")
+		props["timeout_ms"] = intProp("HTTP timeout in milliseconds.")
+		required = []string{"repo"}
 	case "git_diff":
 		props["paths"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 		props["max_bytes"] = intProp("Maximum output bytes.")
@@ -91,4 +100,3 @@ func inputSchema(name string) map[string]any {
 	}
 	return schema
 }
-

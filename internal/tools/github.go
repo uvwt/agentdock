@@ -1,0 +1,206 @@
+package tools
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+func (r *Runtime) configureGitHubToken(args map[string]any) (Result, error) {
+	p, err := r.ws.ResolveExisting(stringArg(args, "env_file", ".env"))
+	if err != nil {
+		return nil, err
+	}
+	values, err := parseEnvFile(p.Abs)
+	if err != nil {
+		return nil, err
+	}
+	token := firstNonEmpty(values, "GITHUB_TOKEN", "GH_TOKEN", "GITHUB_PAT", "TOKEN")
+	if token == "" {
+		return Result{"ok": false, "token_found": false, "expected_one_of": []string{"GITHUB_TOKEN", "GH_TOKEN", "GITHUB_PAT", "TOKEN"}}, nil
+	}
+	username := stringArg(args, "username", "")
+	if username == "" {
+		username = firstNonEmpty(values, "GITHUB_USERNAME", "GITHUB_USER")
+	}
+	if username == "" {
+		username = "x-access-token"
+	}
+	if err := writeGitCredential(r.ws.Root(), username, token); err != nil {
+		return nil, err
+	}
+	return Result{"ok": true, "token_found": true, "username": username, "credential_helper": "store", "password_stored": true, "home": r.ws.Root()}, nil
+}
+
+func (r *Runtime) checkGitHubRepoAccess(args map[string]any) (Result, error) {
+	repo := normalizeGitHubRepo(stringArg(args, "repo", stringArg(args, "repository", "")))
+	if repo == "" || !strings.Contains(repo, "/") {
+		return nil, toolError("INVALID_ARGUMENT", "repo is required as owner/name or GitHub URL", "validation")
+	}
+	token, username, err := githubCredential(r.ws.Root())
+	if err != nil {
+		return Result{"ok": false, "credential_found": false, "diagnostic": map[string]any{"kind": "git_auth_missing", "suggestion": "run configure_github_token first"}}, nil
+	}
+	client := &http.Client{Timeout: time.Duration(intArg(args, "timeout_ms", 15000)) * time.Millisecond}
+	result := Result{"ok": true, "credential_found": true, "username": username, "repo": repo}
+	login, scopes, authStatus, authMessage := githubGet(client, token, "https://api.github.com/user")
+	result["auth_status"] = authStatus
+	result["auth_login"] = login
+	result["oauth_scopes"] = scopes
+	if authMessage != "" {
+		result["auth_message"] = authMessage
+	}
+	_, _, repoStatus, repoMessage := githubGet(client, token, "https://api.github.com/repos/"+repo)
+	result["repo_status"] = repoStatus
+	if repoStatus == 200 {
+		result["repo_access"] = true
+		result["diagnostic"] = map[string]any{"kind": "github_repo_access_ok", "suggestion": "git clone should be permitted if network access is available"}
+	} else {
+		result["repo_access"] = false
+		result["repo_message"] = repoMessage
+		result["diagnostic"] = diagnoseGitHubStatus(repoStatus, repoMessage)
+	}
+	return result, nil
+}
+
+func normalizeGitHubRepo(raw string) string {
+	repo := strings.TrimSpace(raw)
+	repo = strings.TrimPrefix(repo, "https://github.com/")
+	repo = strings.TrimPrefix(repo, "http://github.com/")
+	repo = strings.TrimSuffix(repo, ".git")
+	return strings.Trim(repo, "/")
+}
+
+func parseEnvFile(path string) (map[string]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	values := map[string]string{}
+	for _, line := range strings.Split(string(data), "\n") {
+		s := strings.TrimSpace(line)
+		if s == "" || strings.HasPrefix(s, "#") {
+			continue
+		}
+		s = strings.TrimPrefix(s, "export ")
+		parts := strings.SplitN(s, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		values[strings.TrimSpace(parts[0])] = strings.Trim(strings.TrimSpace(parts[1]), "'\"")
+	}
+	return values, nil
+}
+
+func firstNonEmpty(values map[string]string, keys ...string) string {
+	for _, key := range keys {
+		if value := values[key]; value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func writeGitCredential(home, username, token string) error {
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(home, ".gitconfig"), []byte("[credential]\n\thelper = store\n"), 0o644); err != nil {
+		return err
+	}
+	credPath := filepath.Join(home, ".git-credentials")
+	lines := []string{}
+	if data, err := os.ReadFile(credPath); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.TrimSpace(line) == "" || strings.Contains(line, "github.com") {
+				continue
+			}
+			lines = append(lines, line)
+		}
+	}
+	u := &url.URL{Scheme: "https", Host: "github.com", User: url.UserPassword(username, token)}
+	lines = append(lines, u.String())
+	if err := os.WriteFile(credPath, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(credPath, 0o600)
+}
+
+func githubCredential(home string) (token, username string, err error) {
+	data, err := os.ReadFile(filepath.Join(home, ".git-credentials"))
+	if err != nil {
+		return "", "", err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if !strings.Contains(line, "github.com") {
+			continue
+		}
+		u, parseErr := url.Parse(strings.TrimSpace(line))
+		if parseErr != nil || u.User == nil {
+			continue
+		}
+		pass, _ := u.User.Password()
+		return pass, u.User.Username(), nil
+	}
+	return "", "", fmt.Errorf("github credential not found")
+}
+
+func githubGet(client *http.Client, token, endpoint string) (login, scopes string, status int, message string) {
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		return "", "", 0, err.Error()
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("User-Agent", "coding-tools-mcp")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", 0, err.Error()
+	}
+	defer resp.Body.Close()
+	var body map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	if value, ok := body["login"].(string); ok {
+		login = value
+	}
+	if value, ok := body["message"].(string); ok {
+		message = value
+	}
+	return login, resp.Header.Get("X-OAuth-Scopes"), resp.StatusCode, message
+}
+
+func diagnoseGitHubStatus(status int, message string) map[string]any {
+	switch status {
+	case 401:
+		return map[string]any{"kind": "github_token_invalid", "suggestion": "regenerate the token and run configure_github_token again"}
+	case 403:
+		return map[string]any{"kind": "github_token_permission_denied", "suggestion": "for fine-grained PATs, grant the selected repository Contents: Read-only or Read and write; organization approval may also be required"}
+	case 404:
+		return map[string]any{"kind": "github_repo_not_visible", "suggestion": "check owner/name and ensure the token is allowed to access this repository"}
+	case 0:
+		return map[string]any{"kind": "github_network_error", "message": message, "suggestion": "check outbound network access to api.github.com"}
+	default:
+		return map[string]any{"kind": "github_unexpected_status", "status": status, "message": message}
+	}
+}
+
+func diagnoseGitOutput(output string) map[string]any {
+	lower := strings.ToLower(output)
+	switch {
+	case strings.Contains(lower, "could not read username") && strings.Contains(lower, "terminal prompts disabled"):
+		return map[string]any{"kind": "git_auth_missing", "suggestion": "configure a GitHub credential or run configure_github_token"}
+	case strings.Contains(lower, "write access to repository not granted") || strings.Contains(lower, "the requested url returned error: 403"):
+		return map[string]any{"kind": "github_token_permission_denied", "suggestion": "for fine-grained PATs, grant repository Contents permission and ensure the repository is selected"}
+	case strings.Contains(lower, "authentication failed"):
+		return map[string]any{"kind": "github_authentication_failed", "suggestion": "verify the token value and rerun configure_github_token"}
+	case strings.Contains(lower, "repository not found"):
+		return map[string]any{"kind": "github_repo_not_visible", "suggestion": "check repository URL and token repository access"}
+	}
+	return nil
+}

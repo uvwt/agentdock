@@ -24,9 +24,9 @@ type Session struct {
 	Done      chan error
 	TimedOut  bool
 
-	mu     sync.Mutex
-	stdout bytes.Buffer
-	stderr bytes.Buffer
+	mu                 sync.Mutex
+	stdout             bytes.Buffer
+	stderr             bytes.Buffer
 	stdoutTotalBytes   int
 	stderrTotalBytes   int
 	stdoutDroppedBytes int
@@ -38,6 +38,13 @@ type Session struct {
 type Store struct {
 	mu       sync.Mutex
 	sessions map[string]*Session
+}
+
+type Summary struct {
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	ElapsedMS int64  `json:"elapsed_ms"`
+	TimedOut  bool   `json:"timed_out"`
 }
 
 func NewStore() *Store {
@@ -61,6 +68,22 @@ func (s *Store) Delete(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.sessions, id)
+}
+
+func (s *Store) List() []*Session {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*Session, 0, len(s.sessions))
+	for _, session := range s.sessions {
+		out = append(out, session)
+	}
+	return out
+}
+
+func (s *Session) Summary(status string) Summary {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return Summary{ID: s.ID, Status: status, ElapsedMS: time.Since(s.StartedAt).Milliseconds(), TimedOut: s.TimedOut}
 }
 
 func Start(ctx context.Context, command, workdir string, env []string, timeout time.Duration, prepare PrepareFunc) (*Session, map[string]any, error) {
@@ -155,25 +178,25 @@ func (s *Session) Snapshot(status string, maxBytes int) map[string]any {
 	stdout := trim(stdoutSegment, maxBytes)
 	stderr := trim(stderrSegment, maxBytes)
 	result := map[string]any{
-		"ok":         true,
-		"session_id": s.ID,
-		"status":     status,
-		"stdout":     stdout,
-		"stderr":     stderr,
-		"elapsed_ms": time.Since(s.StartedAt).Milliseconds(),
-		"timed_out":  s.TimedOut,
-		"stdout_output_bytes": len([]byte(stdout)),
-		"stderr_output_bytes": len([]byte(stderr)),
-		"stdout_total_bytes": s.stdoutTotalBytes,
-		"stderr_total_bytes": s.stderrTotalBytes,
+		"ok":                   true,
+		"session_id":           s.ID,
+		"status":               status,
+		"stdout":               stdout,
+		"stderr":               stderr,
+		"elapsed_ms":           time.Since(s.StartedAt).Milliseconds(),
+		"timed_out":            s.TimedOut,
+		"stdout_output_bytes":  len([]byte(stdout)),
+		"stderr_output_bytes":  len([]byte(stderr)),
+		"stdout_total_bytes":   s.stdoutTotalBytes,
+		"stderr_total_bytes":   s.stderrTotalBytes,
 		"stdout_dropped_bytes": s.stdoutDroppedBytes,
 		"stderr_dropped_bytes": s.stderrDroppedBytes,
 		"stdout_omitted_bytes": omittedBytes(stdoutSegment, maxBytes),
 		"stderr_omitted_bytes": omittedBytes(stderrSegment, maxBytes),
-		"stdout_output_lines": countLines(stdout),
-		"stderr_output_lines": countLines(stderr),
-		"stdout_truncated": maxBytes > 0 && len([]byte(stdoutSegment)) > maxBytes,
-		"stderr_truncated": maxBytes > 0 && len([]byte(stderrSegment)) > maxBytes,
+		"stdout_output_lines":  countLines(stdout),
+		"stderr_output_lines":  countLines(stderr),
+		"stdout_truncated":     maxBytes > 0 && len([]byte(stdoutSegment)) > maxBytes,
+		"stderr_truncated":     maxBytes > 0 && len([]byte(stderrSegment)) > maxBytes,
 	}
 	if s.Command.ProcessState != nil {
 		result["exit_code"] = s.Command.ProcessState.ExitCode()
@@ -274,4 +297,3 @@ func adjustCursorAfterDrop(cursor, dropped int) int {
 func newID() string {
 	return strings.ReplaceAll(time.Now().UTC().Format("20060102150405.000000000"), ".", "")
 }
-

@@ -33,18 +33,18 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	return &Runtime{cfg: cfg, ws: ws, sessions: NewSessionStore()}, nil
 }
 
-func (r *Runtime) Config() config.Config { return r.cfg }
+func (r *Runtime) Config() config.Config           { return r.cfg }
 func (r *Runtime) Workspace() *workspace.Workspace { return r.ws }
 
 func (r *Runtime) ToolNames() []string {
-	all := []string{"server_info", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "exec_command", "write_stdin", "kill_session", "git_status", "git_diff", "git_log", "git_show", "git_blame", "request_permissions", "view_image"}
+	all := []string{"server_info", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "exec_command", "write_stdin", "session_status", "list_sessions", "kill_session", "configure_github_token", "check_github_repo_access", "git_status", "git_diff", "git_log", "git_show", "git_blame", "request_permissions", "view_image"}
 	if !r.cfg.EnableViewImage {
 		all = removeTool(all, "view_image")
 	}
 	if r.cfg.ToolProfile != config.ProfileReadOnly {
 		return all
 	}
-	readOnly := []string{"server_info", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "git_status", "git_diff", "git_log", "git_show", "git_blame", "request_permissions", "view_image"}
+	readOnly := []string{"server_info", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "session_status", "list_sessions", "check_github_repo_access", "git_status", "git_diff", "git_log", "git_show", "git_blame", "request_permissions", "view_image"}
 	if !r.cfg.EnableViewImage {
 		readOnly = removeTool(readOnly, "view_image")
 	}
@@ -90,8 +90,16 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.execCommand(ctx, args)
 	case "write_stdin":
 		return r.writeStdin(args)
+	case "session_status":
+		return r.sessionStatus(args)
+	case "list_sessions":
+		return r.listSessions()
 	case "kill_session":
 		return r.killSession(args)
+	case "configure_github_token":
+		return r.configureGitHubToken(args)
+	case "check_github_repo_access":
+		return r.checkGitHubRepoAccess(args)
 	case "git_status":
 		return r.gitStatus(ctx, args)
 	case "git_diff":
@@ -117,7 +125,9 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 
 func (r *Runtime) available(name string) bool {
 	for _, candidate := range r.ToolNames() {
-		if candidate == name { return true }
+		if candidate == name {
+			return true
+		}
 	}
 	return false
 }
@@ -128,19 +138,40 @@ func (r *Runtime) serverInfo() Result {
 }
 
 func (r *Runtime) readFile(args map[string]any) (Result, error) {
-	p, err := r.ws.ResolveExisting(stringArg(args, "path", ".")); if err != nil { return nil, err }
-	info, err := os.Stat(p.Abs); if err != nil { return nil, err }
-	if info.IsDir() { return nil, toolError("IS_DIRECTORY", "cannot read directory", "validation") }
-	data, err := os.ReadFile(p.Abs); if err != nil { return nil, err }
-	if looksBinary(data) { return nil, toolError("BINARY_FILE", "binary file read blocked for text tool", "validation") }
-	if !utf8.Valid(data) { return nil, toolError("UNSUPPORTED_ENCODING", "file is not valid utf-8", "validation") }
+	p, err := r.ws.ResolveExisting(stringArg(args, "path", "."))
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(p.Abs)
+	if err != nil {
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, toolError("IS_DIRECTORY", "cannot read directory", "validation")
+	}
+	data, err := os.ReadFile(p.Abs)
+	if err != nil {
+		return nil, err
+	}
+	if looksBinary(data) {
+		return nil, toolError("BINARY_FILE", "binary file read blocked for text tool", "validation")
+	}
+	if !utf8.Valid(data) {
+		return nil, toolError("UNSUPPORTED_ENCODING", "file is not valid utf-8", "validation")
+	}
 	content, meta := sliceText(string(data), intArg(args, "start_line", 1), intArg(args, "end_line", 0), intArg(args, "max_bytes", 262144))
 	return Result{"ok": true, "path": p.Display, "content": content, "encoding": "utf-8", "size_bytes": len(data), "truncated": meta.Truncated, "start_line": meta.Start, "end_line": meta.End, "total_lines": meta.Total}, nil
 }
 
 func (r *Runtime) listDir(args map[string]any) (Result, error) {
-	p, err := r.ws.ResolveExisting(stringArg(args, "path", ".")); if err != nil { return nil, err }
-	entries, err := os.ReadDir(p.Abs); if err != nil { return nil, err }
+	p, err := r.ws.ResolveExisting(stringArg(args, "path", "."))
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(p.Abs)
+	if err != nil {
+		return nil, err
+	}
 	includeHidden := boolArg(args, "include_hidden", false)
 	recursive := boolArg(args, "recursive", false)
 	maxDepth := intArg(args, "max_depth", 1)
@@ -152,13 +183,26 @@ func (r *Runtime) listDir(args map[string]any) (Result, error) {
 	ignore := loadIgnoreMatcher(r.ws.Root())
 	items := make([]map[string]any, 0, len(entries))
 	for _, entry := range entries {
-		if !includeHidden && workspace.Hidden(entry.Name()) { continue }
-		info, err := entry.Info(); if err != nil { continue }
-		abs := filepath.Join(p.Abs, entry.Name()); rel, _ := r.ws.Relative(abs)
-		if !includeIgnored && (shouldSkipDir(entry.Name()) || ignore.Ignored(rel, info.IsDir())) { continue }
-		kind := "file"; if info.IsDir() { kind = "directory" }
+		if !includeHidden && workspace.Hidden(entry.Name()) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		abs := filepath.Join(p.Abs, entry.Name())
+		rel, _ := r.ws.Relative(abs)
+		if !includeIgnored && (shouldSkipDir(entry.Name()) || ignore.Ignored(rel, info.IsDir())) {
+			continue
+		}
+		kind := "file"
+		if info.IsDir() {
+			kind = "directory"
+		}
 		items = append(items, map[string]any{"name": entry.Name(), "path": rel, "type": kind, "size_bytes": info.Size(), "modified": info.ModTime().UTC().Format(time.RFC3339Nano), "is_hidden": workspace.Hidden(entry.Name())})
-		if maxEntries > 0 && len(items) >= maxEntries { break }
+		if maxEntries > 0 && len(items) >= maxEntries {
+			break
+		}
 	}
 	sort.Slice(items, func(i, j int) bool { return fmt.Sprint(items[i]["path"]) < fmt.Sprint(items[j]["path"]) })
 	return Result{"ok": true, "path": p.Display, "entries": items, "truncated": maxEntries > 0 && len(items) >= maxEntries}, nil
@@ -169,26 +213,44 @@ func (r *Runtime) listDirRecursive(root workspace.Path, includeHidden, includeIg
 	ignore := loadIgnoreMatcher(r.ws.Root())
 	rootDepth := len(strings.Split(filepath.Clean(root.Abs), string(os.PathSeparator)))
 	err := filepath.WalkDir(root.Abs, func(abs string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil { return nil }
-		if abs == root.Abs { return nil }
+		if walkErr != nil {
+			return nil
+		}
+		if abs == root.Abs {
+			return nil
+		}
 		depth := len(strings.Split(filepath.Clean(abs), string(os.PathSeparator))) - rootDepth
 		if maxDepth > 0 && depth > maxDepth {
-			if entry.IsDir() { return filepath.SkipDir }
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if !includeHidden && workspace.Hidden(entry.Name()) {
-			if entry.IsDir() { return filepath.SkipDir }
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		rel, _ := r.ws.Relative(abs)
 		if !includeIgnored && (shouldSkipDir(entry.Name()) || ignore.Ignored(rel, entry.IsDir())) {
-			if entry.IsDir() { return filepath.SkipDir }
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
-		info, err := entry.Info(); if err != nil { return nil }
-		kind := "file"; if info.IsDir() { kind = "directory" }
+		info, err := entry.Info()
+		if err != nil {
+			return nil
+		}
+		kind := "file"
+		if info.IsDir() {
+			kind = "directory"
+		}
 		items = append(items, map[string]any{"name": entry.Name(), "path": rel, "type": kind, "size_bytes": info.Size(), "modified": info.ModTime().UTC().Format(time.RFC3339Nano), "is_hidden": workspace.Hidden(entry.Name())})
-		if maxEntries > 0 && len(items) >= maxEntries { return filepath.SkipAll }
+		if maxEntries > 0 && len(items) >= maxEntries {
+			return filepath.SkipAll
+		}
 		return nil
 	})
 	sort.Slice(items, func(i, j int) bool { return fmt.Sprint(items[i]["path"]) < fmt.Sprint(items[j]["path"]) })
@@ -196,9 +258,17 @@ func (r *Runtime) listDirRecursive(root workspace.Path, includeHidden, includeIg
 }
 
 func (r *Runtime) listFiles(args map[string]any) (Result, error) {
-	p, err := r.ws.ResolveExisting(stringArg(args, "path", ".")); if err != nil { return nil, err }
-	patterns := stringSliceArg(args, "patterns"); if len(patterns) == 0 { patterns = []string{"**/*"} }
-	if glob := stringArg(args, "glob", ""); glob != "" { patterns = []string{glob} }
+	p, err := r.ws.ResolveExisting(stringArg(args, "path", "."))
+	if err != nil {
+		return nil, err
+	}
+	patterns := stringSliceArg(args, "patterns")
+	if len(patterns) == 0 {
+		patterns = []string{"**/*"}
+	}
+	if glob := stringArg(args, "glob", ""); glob != "" {
+		patterns = []string{glob}
+	}
 	excludePatterns := stringSliceArg(args, "exclude_patterns")
 	maxResults := intArg(args, "max_results", 500)
 	includeHidden := boolArg(args, "include_hidden", false)
@@ -206,46 +276,90 @@ func (r *Runtime) listFiles(args map[string]any) (Result, error) {
 	ignore := loadIgnoreMatcher(r.ws.Root())
 	files := make([]map[string]any, 0)
 	err = filepath.WalkDir(p.Abs, func(abs string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil { return nil }
+		if walkErr != nil {
+			return nil
+		}
 		rel, relErr := r.ws.Relative(abs)
 		if relErr == nil && !includeIgnored && ignore.Ignored(rel, d.IsDir()) {
-			if d.IsDir() { return filepath.SkipDir }
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if d.IsDir() {
-			if !includeIgnored && abs != p.Abs && shouldSkipDir(d.Name()) { return filepath.SkipDir }
-			if !includeHidden && abs != p.Abs && workspace.Hidden(d.Name()) { return filepath.SkipDir }
+			if !includeIgnored && abs != p.Abs && shouldSkipDir(d.Name()) {
+				return filepath.SkipDir
+			}
+			if !includeHidden && abs != p.Abs && workspace.Hidden(d.Name()) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
-		if !includeHidden && workspace.Hidden(d.Name()) { return nil }
-		rel, err := r.ws.Relative(abs); if err != nil || !matchesAny(rel, patterns) || matchesAny(rel, excludePatterns) { return nil }
-		info, err := d.Info(); if err != nil { return nil }
+		if !includeHidden && workspace.Hidden(d.Name()) {
+			return nil
+		}
+		rel, err := r.ws.Relative(abs)
+		if err != nil || !matchesAny(rel, patterns) || matchesAny(rel, excludePatterns) {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
 		files = append(files, map[string]any{"path": rel, "type": "file", "size_bytes": info.Size(), "modified": info.ModTime().UTC().Format(time.RFC3339Nano)})
-		if maxResults > 0 && len(files) >= maxResults { return filepath.SkipAll }
+		if maxResults > 0 && len(files) >= maxResults {
+			return filepath.SkipAll
+		}
 		return nil
 	})
 	return Result{"ok": err == nil, "path": p.Display, "files": files, "truncated": maxResults > 0 && len(files) >= maxResults}, err
 }
 
 func (r *Runtime) searchText(args map[string]any) (Result, error) {
-	query := stringArg(args, "query", ""); if query == "" { return nil, toolError("INVALID_ARGUMENT", "query is required", "validation") }
-	p, err := r.ws.ResolveExisting(stringArg(args, "path", ".")); if err != nil { return nil, err }
-	caseSensitive := boolArg(args, "case_sensitive", false); useRegex := boolArg(args, "regex", false)
+	query := stringArg(args, "query", "")
+	if query == "" {
+		return nil, toolError("INVALID_ARGUMENT", "query is required", "validation")
+	}
+	p, err := r.ws.ResolveExisting(stringArg(args, "path", "."))
+	if err != nil {
+		return nil, err
+	}
+	caseSensitive := boolArg(args, "case_sensitive", false)
+	useRegex := boolArg(args, "regex", false)
 	includeIgnored := boolArg(args, "include_ignored", false)
 	includeGlobs := stringSliceArg(args, "include_globs")
-	if glob := stringArg(args, "glob", ""); glob != "" { includeGlobs = append(includeGlobs, glob) }
+	if glob := stringArg(args, "glob", ""); glob != "" {
+		includeGlobs = append(includeGlobs, glob)
+	}
 	excludeGlobs := stringSliceArg(args, "exclude_globs")
-	maxResults := intArg(args, "max_results", 100); contextLines := intArg(args, "context_lines", 0)
-	needle := query; if !caseSensitive { needle = strings.ToLower(needle) }
+	maxResults := intArg(args, "max_results", 100)
+	contextLines := intArg(args, "context_lines", 0)
+	needle := query
+	if !caseSensitive {
+		needle = strings.ToLower(needle)
+	}
 	var re *regexp.Regexp
-	if useRegex { pattern := query; if !caseSensitive { pattern = "(?i)" + pattern }; re, err = regexp.Compile(pattern); if err != nil { return nil, err } }
+	if useRegex {
+		pattern := query
+		if !caseSensitive {
+			pattern = "(?i)" + pattern
+		}
+		re, err = regexp.Compile(pattern)
+		if err != nil {
+			return nil, err
+		}
+	}
 	matches := make([]map[string]any, 0)
 	ignore := loadIgnoreMatcher(r.ws.Root())
 	_ = filepath.WalkDir(p.Abs, func(abs string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil { return nil }
+		if walkErr != nil {
+			return nil
+		}
 		rel, _ := r.ws.Relative(abs)
 		if !includeIgnored && ignore.Ignored(rel, d.IsDir()) {
-			if d.IsDir() { return filepath.SkipDir }
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if d.IsDir() {
@@ -254,17 +368,34 @@ func (r *Runtime) searchText(args map[string]any) (Result, error) {
 			}
 			return nil
 		}
-		if len(includeGlobs) > 0 && !matchesAny(rel, includeGlobs) { return nil }
-		if matchesAny(rel, excludeGlobs) { return nil }
-		data, err := os.ReadFile(abs); if err != nil || looksBinary(data) { return nil }
+		if len(includeGlobs) > 0 && !matchesAny(rel, includeGlobs) {
+			return nil
+		}
+		if matchesAny(rel, excludeGlobs) {
+			return nil
+		}
+		data, err := os.ReadFile(abs)
+		if err != nil || looksBinary(data) {
+			return nil
+		}
 		lines := strings.Split(string(data), "\n")
 		for i, line := range lines {
-			probe := line; if !caseSensitive { probe = strings.ToLower(probe) }
-			ok := strings.Contains(probe, needle); if re != nil { ok = re.MatchString(line) }
-			if !ok { continue }
+			probe := line
+			if !caseSensitive {
+				probe = strings.ToLower(probe)
+			}
+			ok := strings.Contains(probe, needle)
+			if re != nil {
+				ok = re.MatchString(line)
+			}
+			if !ok {
+				continue
+			}
 			before, after := contextAround(lines, i, contextLines)
 			matches = append(matches, map[string]any{"path": rel, "line": i + 1, "preview": truncateString(line, 500), "before": before, "after": after})
-			if maxResults > 0 && len(matches) >= maxResults { return filepath.SkipAll }
+			if maxResults > 0 && len(matches) >= maxResults {
+				return filepath.SkipAll
+			}
 		}
 		return nil
 	})
@@ -272,8 +403,14 @@ func (r *Runtime) searchText(args map[string]any) (Result, error) {
 }
 
 func (r *Runtime) viewImage(args map[string]any) (Result, error) {
-	p, err := r.ws.ResolveExisting(stringArg(args, "path", ".")); if err != nil { return nil, err }
-	data, err := os.ReadFile(p.Abs); if err != nil { return nil, err }
+	p, err := r.ws.ResolveExisting(stringArg(args, "path", "."))
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(p.Abs)
+	if err != nil {
+		return nil, err
+	}
 	info, err := identifyImage(data)
 	if err != nil {
 		return nil, toolError("BINARY_FILE", "file is not a supported image", "validation")
@@ -307,7 +444,8 @@ func (r *Runtime) viewImage(args map[string]any) (Result, error) {
 }
 
 func (r *Runtime) requestPermissions(args map[string]any) Result {
-	if r.cfg.DangerouslySkipAllPermissions { return Result{"ok": true, "status": "granted", "grant_id": "dangerously-skip-all-permissions", "requested": args} }
+	if r.cfg.DangerouslySkipAllPermissions {
+		return Result{"ok": true, "status": "granted", "grant_id": "dangerously-skip-all-permissions", "requested": args}
+	}
 	return Result{"ok": false, "status": "required", "requested": args}
 }
-

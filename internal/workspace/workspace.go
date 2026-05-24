@@ -157,7 +157,7 @@ func Clean(raw string) (string, error) {
 		return "", errors.New("path contains invalid byte")
 	}
 	if filepath.IsAbs(raw) || strings.HasPrefix(raw, "~") {
-		return "", errors.New("absolute paths are denied")
+		return "", errors.New("absolute paths are denied; use workspace-relative paths such as '.' instead of '/workspace'")
 	}
 	clean := filepath.ToSlash(filepath.Clean(raw))
 	for _, part := range strings.Split(clean, "/") {
@@ -169,4 +169,3 @@ func Clean(raw string) (string, error) {
 }
 
 func Hidden(name string) bool { return strings.HasPrefix(name, ".") }
-

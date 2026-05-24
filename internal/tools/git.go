@@ -17,11 +17,19 @@ func (r *Runtime) gitStatus(ctx context.Context, args map[string]any) (Result, e
 	branch := ""
 	files := make([]map[string]any, 0)
 	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
-		if line == "" { continue }
-		if strings.HasPrefix(line, "## ") { branch = strings.TrimPrefix(line, "## "); continue }
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "## ") {
+			branch = strings.TrimPrefix(line, "## ")
+			continue
+		}
 		status := ""
 		path := line
-		if len(line) >= 3 { status = strings.TrimSpace(line[:2]); path = strings.TrimSpace(line[3:]) }
+		if len(line) >= 3 {
+			status = strings.TrimSpace(line[:2])
+			path = strings.TrimSpace(line[3:])
+		}
 		files = append(files, map[string]any{"path": path, "status": status})
 	}
 	result["branch"] = branch
@@ -33,7 +41,9 @@ func (r *Runtime) gitStatus(ctx context.Context, args map[string]any) (Result, e
 func (r *Runtime) gitDiff(ctx context.Context, args map[string]any) (Result, error) {
 	gitArgs := append([]string{"diff", "--"}, stringSliceArg(args, "paths")...)
 	result, err := r.git(ctx, intArg(args, "max_bytes", 262144), gitArgs...)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	output, _ := result["output"].(string)
 	result["files"] = parseDiffFiles(output)
 	return result, nil
@@ -41,20 +51,36 @@ func (r *Runtime) gitDiff(ctx context.Context, args map[string]any) (Result, err
 
 func (r *Runtime) gitLog(ctx context.Context, args map[string]any) (Result, error) {
 	limit := intArg(args, "limit", 20)
-	if limit < 1 { limit = 1 }
-	if limit > 200 { limit = 200 }
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 200 {
+		limit = 200
+	}
 	result, err := r.git(ctx, intArg(args, "max_bytes", 65536), "log", "--date=iso-strict", "--pretty=format:%H%x09%an%x09%ad%x09%s", "-n", strconv.Itoa(limit))
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	output, _ := result["output"].(string)
 	commits := make([]map[string]any, 0)
 	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
-		if line == "" { continue }
+		if line == "" {
+			continue
+		}
 		parts := strings.SplitN(line, "\t", 4)
 		commit := map[string]any{"raw": line}
-		if len(parts) > 0 { commit["hash"] = parts[0] }
-		if len(parts) > 1 { commit["author"] = parts[1] }
-		if len(parts) > 2 { commit["date"] = parts[2] }
-		if len(parts) > 3 { commit["subject"] = parts[3] }
+		if len(parts) > 0 {
+			commit["hash"] = parts[0]
+		}
+		if len(parts) > 1 {
+			commit["author"] = parts[1]
+		}
+		if len(parts) > 2 {
+			commit["date"] = parts[2]
+		}
+		if len(parts) > 3 {
+			commit["subject"] = parts[3]
+		}
 		commits = append(commits, commit)
 	}
 	result["commits"] = commits
@@ -75,10 +101,18 @@ func parseDiffFiles(diffText string) []map[string]any {
 			files = append(files, current)
 			continue
 		}
-		if current == nil { continue }
-		if strings.HasPrefix(line, "new file mode") { current["status"] = "added" }
-		if strings.HasPrefix(line, "deleted file mode") { current["status"] = "deleted" }
-		if strings.HasPrefix(line, "Binary files") { current["binary"] = true }
+		if current == nil {
+			continue
+		}
+		if strings.HasPrefix(line, "new file mode") {
+			current["status"] = "added"
+		}
+		if strings.HasPrefix(line, "deleted file mode") {
+			current["status"] = "deleted"
+		}
+		if strings.HasPrefix(line, "Binary files") {
+			current["binary"] = true
+		}
 	}
 	return files
 }
@@ -119,6 +153,9 @@ func (r *Runtime) git(ctx context.Context, maxBytes int, args ...string) (Result
 	result := Result{"ok": err == nil, "command": "git " + strings.Join(args, " "), "output": text, "truncated": truncated}
 	if err != nil {
 		result["error"] = err.Error()
+		if diag := diagnoseGitOutput(text); diag != nil {
+			result["diagnostic"] = diag
+		}
 	}
 	return result, nil
 }
@@ -129,4 +166,3 @@ func truncateBytes(data []byte, maxBytes int) (string, bool) {
 	}
 	return string(data[:maxBytes]), true
 }
-

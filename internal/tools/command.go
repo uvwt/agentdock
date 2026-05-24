@@ -65,10 +65,36 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 		s.Cancel()
 		result := s.Snapshot("exited", maxBytes)
 		result["sandbox"] = sandboxStatus
-		if s.TimedOut { result["status"] = "timeout" }
-		if err != nil && !s.TimedOut { result["error"] = err.Error() }
+		if s.TimedOut {
+			result["status"] = "timeout"
+		}
+		if err != nil && !s.TimedOut {
+			result["error"] = err.Error()
+		}
+		addCommandDiagnostics(result)
 		return result, nil
 	case <-time.After(yield):
+		if boolArg(args, "wait_until_exit", false) {
+			select {
+			case err := <-s.Done:
+				s.Cancel()
+				result := s.Snapshot("exited", maxBytes)
+				result["sandbox"] = sandboxStatus
+				if s.TimedOut {
+					result["status"] = "timeout"
+				}
+				if err != nil && !s.TimedOut {
+					result["error"] = err.Error()
+				}
+				addCommandDiagnostics(result)
+				return result, nil
+			case <-ctx.Done():
+				r.sessions.Add(s)
+				result := s.Snapshot("running", maxBytes)
+				result["sandbox"] = sandboxStatus
+				return result, nil
+			}
+		}
 		r.sessions.Add(s)
 		result := s.Snapshot("running", maxBytes)
 		result["sandbox"] = sandboxStatus
@@ -78,7 +104,9 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 
 func (r *Runtime) writeStdin(args map[string]any) (Result, error) {
 	s, ok := r.sessions.Get(stringArg(args, "session_id", ""))
-	if !ok { return nil, toolError("SESSION_NOT_FOUND", "session not found", "not_found") }
+	if !ok {
+		return nil, toolError("SESSION_NOT_FOUND", "session not found", "not_found")
+	}
 	if chars := stringArg(args, "chars", ""); chars != "" {
 		if err := s.Write(chars); err != nil && err != io.ErrClosedPipe {
 			return nil, err
@@ -86,9 +114,12 @@ func (r *Runtime) writeStdin(args map[string]any) (Result, error) {
 	}
 	select {
 	case err := <-s.Done:
-		s.Cancel(); r.sessions.Delete(s.ID)
+		s.Cancel()
+		r.sessions.Delete(s.ID)
 		result := s.Snapshot("exited", intArg(args, "max_output_bytes", 65536))
-		if err != nil && !s.TimedOut { result["error"] = err.Error() }
+		if err != nil && !s.TimedOut {
+			result["error"] = err.Error()
+		}
 		return result, nil
 	default:
 		return s.Snapshot("running", intArg(args, "max_output_bytes", 65536)), nil
@@ -96,25 +127,81 @@ func (r *Runtime) writeStdin(args map[string]any) (Result, error) {
 }
 
 func (r *Runtime) killSession(args map[string]any) (Result, error) {
+	started := time.Now()
 	s, ok := r.sessions.Get(stringArg(args, "session_id", ""))
-	if !ok { return nil, toolError("SESSION_NOT_FOUND", "session not found", "not_found") }
-	s.Kill(); r.sessions.Delete(s.ID)
-	return s.Snapshot("killed", intArg(args, "max_output_bytes", 65536)), nil
+	if !ok {
+		return nil, toolError("SESSION_NOT_FOUND", "session not found", "not_found")
+	}
+	s.Kill()
+	r.sessions.Delete(s.ID)
+	result := s.Snapshot("killed", intArg(args, "max_output_bytes", 65536))
+	result["kill_operation_ms"] = time.Since(started).Milliseconds()
+	return result, nil
+}
+
+func (r *Runtime) sessionStatus(args map[string]any) (Result, error) {
+	s, ok := r.sessions.Get(stringArg(args, "session_id", ""))
+	if !ok {
+		return nil, toolError("SESSION_NOT_FOUND", "session not found", "not_found")
+	}
+	select {
+	case err := <-s.Done:
+		s.Cancel()
+		r.sessions.Delete(s.ID)
+		result := s.Snapshot("exited", intArg(args, "max_output_bytes", 65536))
+		if s.TimedOut {
+			result["status"] = "timeout"
+		}
+		if err != nil && !s.TimedOut {
+			result["error"] = err.Error()
+		}
+		addCommandDiagnostics(result)
+		return result, nil
+	default:
+		return s.Snapshot("running", intArg(args, "max_output_bytes", 65536)), nil
+	}
+}
+
+func (r *Runtime) listSessions() (Result, error) {
+	items := make([]map[string]any, 0)
+	for _, s := range r.sessions.List() {
+		select {
+		case <-s.Done:
+			r.sessions.Delete(s.ID)
+			continue
+		default:
+		}
+		summary := s.Summary("running")
+		items = append(items, map[string]any{"session_id": summary.ID, "status": summary.Status, "elapsed_ms": summary.ElapsedMS, "timed_out": summary.TimedOut})
+	}
+	return Result{"ok": true, "sessions": items, "count": len(items)}, nil
+}
+
+func addCommandDiagnostics(result Result) {
+	combined := fmt.Sprint(result["stdout"]) + "\n" + fmt.Sprint(result["stderr"])
+	if diag := diagnoseGitOutput(combined); diag != nil {
+		result["diagnostic"] = diag
+	}
 }
 
 func (r *Runtime) commandEnv(extra map[string]any) []string {
 	env := map[string]string{}
 	for _, key := range []string{"PATH", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR"} {
-		if value := os.Getenv(key); value != "" { env[key] = value }
+		if value := os.Getenv(key); value != "" {
+			env[key] = value
+		}
 	}
 	env["HOME"] = r.ws.Root()
 	env["TMPDIR"] = filepath.Join(r.ws.Root(), ".tmp")
 	_ = os.MkdirAll(env["TMPDIR"], 0o755)
 	if r.cfg.DangerouslySkipAllPermissions {
-		for key, value := range extra { env[key] = fmt.Sprint(value) }
+		for key, value := range extra {
+			env[key] = fmt.Sprint(value)
+		}
 	}
 	out := make([]string, 0, len(env))
-	for key, value := range env { out = append(out, key+"="+value) }
+	for key, value := range env {
+		out = append(out, key+"="+value)
+	}
 	return out
 }
-
