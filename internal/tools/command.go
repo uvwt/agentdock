@@ -46,7 +46,11 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 	maxBytes := intArg(args, "max_output_bytes", 65536)
 	tty := boolArg(args, "tty", false)
 
-	s, sandboxStatus, err := session.Start(ctx, cmd, workdir.Abs, r.commandEnv(mapArg(args, "env")), timeout, func(command *exec.Cmd) (func(), map[string]any) {
+	// Commands may outlive the request that started them when exec_command returns a
+	// running session. Do not bind the child process lifetime to the request
+	// context; use the explicit command timeout and kill_session for lifecycle
+	// control instead.
+	s, sandboxStatus, err := session.Start(context.Background(), cmd, workdir.Abs, r.commandEnv(mapArg(args, "env")), timeout, func(command *exec.Cmd) (func(), map[string]any) {
 		cleanup, status := sandbox.PrepareCommand(command, r.ws.Root())
 		return cleanup, map[string]any{"enabled": status.Enabled, "warnings": status.Warnings}
 	})
