@@ -7,6 +7,7 @@ import (
 
 	"github.com/local/coding-tools-mcp-go/internal/config"
 	"github.com/local/coding-tools-mcp-go/internal/httpx"
+	"github.com/local/coding-tools-mcp-go/internal/logx"
 	"github.com/local/coding-tools-mcp-go/internal/mcp"
 	"github.com/local/coding-tools-mcp-go/internal/sandbox"
 	"github.com/local/coding-tools-mcp-go/internal/tools"
@@ -30,12 +31,15 @@ func run() error {
 	flag.IntVar(&cfg.Port, "port", cfg.Port, "HTTP bind port")
 	flag.StringVar(&cfg.AuthToken, "auth-token", cfg.AuthToken, "optional bearer token")
 	flag.StringVar(&cfg.ToolProfile, "tool-profile", cfg.ToolProfile, "tool profile")
+	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "log level: debug, info, warn, error")
 	flag.BoolVar(&cfg.EnableViewImage, "enable-view-image", cfg.EnableViewImage, "expose view_image tool")
 	flag.BoolVar(&cfg.Stdio, "stdio", cfg.Stdio, "serve JSON-RPC over stdio")
 	flag.BoolVar(&cfg.DangerouslySkipAllPermissions, "dangerously-skip-all-permissions", cfg.DangerouslySkipAllPermissions, "auto-grant permission-gated operations")
 	_ = flag.Bool("oauth-mode", false, "compatibility placeholder")
 	flag.Parse()
 	cfg.Normalize()
+	logx.Setup(cfg.LogLevel)
+	logx.Info("server starting", "workspace", cfg.Workspace, "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "tool_profile", cfg.ToolProfile, "log_level", cfg.LogLevel)
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
 		return err
@@ -46,4 +50,3 @@ func run() error {
 	}
 	return httpx.Serve(server, cfg)
 }
-

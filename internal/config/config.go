@@ -23,6 +23,7 @@ type Config struct {
 	OAuthClientID                 string
 	OAuthServerURL                string
 	ToolProfile                   string
+	LogLevel                      string
 	EnableViewImage               bool
 	Stdio                         bool
 	DangerouslySkipAllPermissions bool
@@ -37,6 +38,7 @@ func FromEnv() Config {
 		OAuthClientID:                 os.Getenv("CODING_TOOLS_MCP_OAUTH_CLIENT_ID"),
 		OAuthServerURL:                os.Getenv("CODING_TOOLS_MCP_SERVER_URL"),
 		ToolProfile:                   getenv("CODING_TOOLS_MCP_TOOL_PROFILE", ProfileFull),
+		LogLevel:                      getenv("CODING_TOOLS_MCP_LOG_LEVEL", "info"),
 		EnableViewImage:               getenvBool("CODING_TOOLS_MCP_ENABLE_VIEW_IMAGE", true),
 		Stdio:                         getenvBool("CODING_TOOLS_MCP_STDIO", false),
 		DangerouslySkipAllPermissions: getenvBool("CODING_TOOLS_MCP_SKIP_PERMISSION_PROMPTS", false),
@@ -54,6 +56,9 @@ func (c *Config) Normalize() {
 	}
 	if c.Port == 0 {
 		c.Port = 8765
+	}
+	if c.LogLevel == "" {
+		c.LogLevel = "info"
 	}
 }
 
@@ -87,4 +92,3 @@ func getenvBool(key string, fallback bool) bool {
 	}
 	return parsed
 }
-

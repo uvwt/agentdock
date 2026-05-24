@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/local/coding-tools-mcp-go/internal/config"
 	"github.com/local/coding-tools-mcp-go/internal/jsonrpc"
+	"github.com/local/coding-tools-mcp-go/internal/logx"
 	"github.com/local/coding-tools-mcp-go/internal/tools"
 )
 
@@ -74,18 +76,24 @@ func (s *Server) ServeStdio(in io.Reader, out io.Writer) error {
 }
 
 func (s *Server) callTool(ctx context.Context, req jsonrpc.Request) jsonrpc.Response {
+	started := time.Now()
 	var params callToolParams
 	if len(req.Params) > 0 {
 		if err := json.Unmarshal(req.Params, &params); err != nil {
+			logx.Warn("tool params invalid", "duration_ms", time.Since(started).Milliseconds())
 			return jsonrpc.Failure(req.ID, -32602, "Invalid params", err.Error())
 		}
 	}
+	logx.Info("tool started", "tool", params.Name)
 	if params.Name == "tool_descriptors" {
 		// 这个工具用于排查“源码已更新但 ChatGPT 侧工具描述缓存没刷新”的情况。
 		// 直接从 MCP server 返回当前实际暴露的完整 descriptor，避免只看到 runtime 工具名。
-		return jsonrpc.Success(req.ID, toolEnvelope(params.Name, map[string]any{"ok": true, "tools": s.toolDescriptors(), "count": len(s.toolDescriptors())}, nil))
+		resp := jsonrpc.Success(req.ID, toolEnvelope(params.Name, map[string]any{"ok": true, "tools": s.toolDescriptors(), "count": len(s.toolDescriptors())}, nil))
+		logx.Info("tool finished", "tool", params.Name, "duration_ms", time.Since(started).Milliseconds(), "ok", true)
+		return resp
 	}
 	result, err := s.runtime.Call(ctx, params.Name, params.Arguments)
+	logx.Info("tool finished", "tool", params.Name, "duration_ms", time.Since(started).Milliseconds(), "ok", err == nil)
 	return jsonrpc.Success(req.ID, toolEnvelope(params.Name, result, err))
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/local/coding-tools-mcp-go/internal/auth"
 	"github.com/local/coding-tools-mcp-go/internal/config"
 	"github.com/local/coding-tools-mcp-go/internal/jsonrpc"
+	"github.com/local/coding-tools-mcp-go/internal/logx"
 	"github.com/local/coding-tools-mcp-go/internal/mcp"
 )
 
@@ -22,6 +23,7 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	authRequired := cfg.AuthToken != "" || cfg.OAuthClientID != "" || cfg.OAuthServerURL != ""
 	oauthCodes := auth.NewOAuthStore()
 	mux := http.NewServeMux()
+	logx.Info("http server configured", "host", cfg.Host, "port", cfg.Port, "auth_required", authRequired, "endpoint", "/mcp")
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "application/json")
 		_, _ = io.WriteString(w, "{\"ok\":true}")
@@ -82,8 +84,43 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	})
 
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	httpServer := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	httpServer := &http.Server{Addr: addr, Handler: loggingMiddleware(mux), ReadHeaderTimeout: 10 * time.Second}
+	logx.Info("http server listening", "addr", addr)
 	return httpServer.ListenAndServe()
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func (r *statusRecorder) Write(data []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	n, err := r.ResponseWriter.Write(data)
+	r.bytes += n
+	return n, err
+}
+
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started := time.Now()
+		recorder := &statusRecorder{ResponseWriter: w}
+		next.ServeHTTP(recorder, r)
+		status := recorder.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		// 只记录元数据，不记录 header/body，避免把 bearer token、OAuth code、工具参数写进日志。
+		logx.Info("http request", "method", r.Method, "path", r.URL.Path, "status", status, "bytes", recorder.bytes, "duration_ms", time.Since(started).Milliseconds(), "remote", r.RemoteAddr)
+	})
 }
 
 func oauthMetadata(cfg config.Config, r *http.Request) map[string]any {
@@ -248,4 +285,3 @@ func writeJSON(w http.ResponseWriter, value any) {
 	w.Header().Set("content-type", "application/json")
 	_ = json.NewEncoder(w).Encode(value)
 }
-
