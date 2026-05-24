@@ -1,6 +1,9 @@
 package tools
 
-import "strings"
+import (
+	pathpkg "path"
+	"strings"
+)
 
 type textMeta struct {
 	Start     int  `json:"start_line"`
@@ -76,10 +79,11 @@ func shouldSkipDir(name string) bool {
 
 func matchesAny(path string, patterns []string) bool {
 	for _, pattern := range patterns {
-		if pattern == "**/*" || pattern == "*" {
-			return true
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
 		}
-		if strings.HasPrefix(pattern, "**/") && strings.HasSuffix(path, strings.TrimPrefix(pattern, "**/")) {
+		if pattern == "**/*" || pattern == "*" {
 			return true
 		}
 		if ok := globMatch(pattern, path); ok {
@@ -90,8 +94,22 @@ func matchesAny(path string, patterns []string) bool {
 }
 
 func globMatch(pattern, path string) bool {
-	// Tiny matcher for common MCP use. filepath.Match is OS-separator-sensitive,
-	// so keep slash paths here and support suffix-style double-star patterns.
+	// 工作空间路径统一使用 slash。这里不用 filepath.Match，是为了避免不同 OS
+	// 的路径分隔符差异，也让 **/*.go 这类代码检索常用写法能稳定命中。
+	path = strings.TrimPrefix(path, "./")
+	pattern = strings.TrimPrefix(pattern, "./")
+	if ok, _ := pathpkg.Match(pattern, path); ok {
+		return true
+	}
+	if strings.HasPrefix(pattern, "**/") {
+		inner := strings.TrimPrefix(pattern, "**/")
+		if ok, _ := pathpkg.Match(inner, path); ok {
+			return true
+		}
+		if strings.HasSuffix(path, "/"+inner) {
+			return true
+		}
+	}
 	if strings.Contains(pattern, "**") {
 		parts := strings.Split(pattern, "**")
 		return strings.HasPrefix(path, parts[0]) && strings.HasSuffix(path, parts[len(parts)-1])
@@ -120,4 +138,3 @@ func simpleWildcard(pattern, value string) bool {
 	}
 	return strings.HasSuffix(value, parts[len(parts)-1])
 }
-

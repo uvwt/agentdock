@@ -80,6 +80,11 @@ func (s *Server) callTool(ctx context.Context, req jsonrpc.Request) jsonrpc.Resp
 			return jsonrpc.Failure(req.ID, -32602, "Invalid params", err.Error())
 		}
 	}
+	if params.Name == "tool_descriptors" {
+		// 这个工具用于排查“源码已更新但 ChatGPT 侧工具描述缓存没刷新”的情况。
+		// 直接从 MCP server 返回当前实际暴露的完整 descriptor，避免只看到 runtime 工具名。
+		return jsonrpc.Success(req.ID, toolEnvelope(params.Name, map[string]any{"ok": true, "tools": s.toolDescriptors(), "count": len(s.toolDescriptors())}, nil))
+	}
 	result, err := s.runtime.Call(ctx, params.Name, params.Arguments)
 	return jsonrpc.Success(req.ID, toolEnvelope(params.Name, result, err))
 }

@@ -110,7 +110,10 @@ func writeGitCredential(home, username, token string) error {
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(home, ".gitconfig"), []byte("[credential]\n\thelper = store\n"), 0o644); err != nil {
+	// 只确保 credential.helper=store 存在，不覆盖已有 .gitconfig。
+	// 背景：这个工作区可能同时保存 user、core、url rewrite 等项目配置；
+	// 如果每次配置 token 都重写整份 .gitconfig，会把用户已有 Git 配置清掉。
+	if err := ensureGitCredentialHelper(filepath.Join(home, ".gitconfig")); err != nil {
 		return err
 	}
 	credPath := filepath.Join(home, ".git-credentials")
@@ -129,6 +132,22 @@ func writeGitCredential(home, username, token string) error {
 		return err
 	}
 	return os.Chmod(credPath, 0o600)
+}
+
+func ensureGitCredentialHelper(configPath string) error {
+	data, err := os.ReadFile(configPath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	text := string(data)
+	if strings.Contains(text, "helper = store") || strings.Contains(text, "helper=store") {
+		return nil
+	}
+	if text != "" && !strings.HasSuffix(text, "\n") {
+		text += "\n"
+	}
+	text += "[credential]\n\thelper = store\n"
+	return os.WriteFile(configPath, []byte(text), 0o644)
 }
 
 func githubCredential(home string) (token, username string, err error) {

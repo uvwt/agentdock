@@ -2,54 +2,69 @@ package tools
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 )
 
+type gitRepo struct {
+	Path string
+	Abs  string
+}
+
 func (r *Runtime) gitStatus(ctx context.Context, args map[string]any) (Result, error) {
-	result, err := r.git(ctx, intArg(args, "max_output_bytes", 65536), "status", "--short", "--branch")
+	return r.gitRepoStatus(ctx, args)
+}
+
+func (r *Runtime) gitRepoStatus(ctx context.Context, args map[string]any) (Result, error) {
+	repo, err := r.resolveGitRepo(args)
+	if err != nil {
+		return nil, err
+	}
+	result, err := r.gitInRepo(ctx, repo, intArg(args, "max_output_bytes", 65536), "status", "--short", "--branch")
 	if err != nil {
 		return nil, err
 	}
 	output, _ := result["output"].(string)
-	branch := ""
-	files := make([]map[string]any, 0)
-	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(line, "## ") {
-			branch = strings.TrimPrefix(line, "## ")
-			continue
-		}
-		status := ""
-		path := line
-		if len(line) >= 3 {
-			status = strings.TrimSpace(line[:2])
-			path = strings.TrimSpace(line[3:])
-		}
-		files = append(files, map[string]any{"path": path, "status": status})
-	}
+	branch, upstream, ahead, behind, files := parseGitStatus(output)
+	result["repo_path"] = repo.Path
 	result["branch"] = branch
+	result["upstream"] = upstream
+	result["ahead"] = ahead
+	result["behind"] = behind
 	result["files"] = files
 	result["clean"] = len(files) == 0
+	if remote := r.gitRemoteURL(ctx, repo, "origin"); remote != "" {
+		result["remote"] = redactSecrets(remote, nil)
+	}
 	return result, nil
 }
 
 func (r *Runtime) gitDiff(ctx context.Context, args map[string]any) (Result, error) {
+	repo, err := r.resolveGitRepo(args)
+	if err != nil {
+		return nil, err
+	}
 	gitArgs := append([]string{"diff", "--"}, stringSliceArg(args, "paths")...)
-	result, err := r.git(ctx, intArg(args, "max_bytes", 262144), gitArgs...)
+	result, err := r.gitInRepo(ctx, repo, intArg(args, "max_bytes", 262144), gitArgs...)
 	if err != nil {
 		return nil, err
 	}
 	output, _ := result["output"].(string)
+	result["repo_path"] = repo.Path
 	result["files"] = parseDiffFiles(output)
 	return result, nil
 }
 
 func (r *Runtime) gitLog(ctx context.Context, args map[string]any) (Result, error) {
+	repo, err := r.resolveGitRepo(args)
+	if err != nil {
+		return nil, err
+	}
 	limit := intArg(args, "limit", 20)
 	if limit < 1 {
 		limit = 1
@@ -57,7 +72,7 @@ func (r *Runtime) gitLog(ctx context.Context, args map[string]any) (Result, erro
 	if limit > 200 {
 		limit = 200
 	}
-	result, err := r.git(ctx, intArg(args, "max_bytes", 65536), "log", "--date=iso-strict", "--pretty=format:%H%x09%an%x09%ad%x09%s", "-n", strconv.Itoa(limit))
+	result, err := r.gitInRepo(ctx, repo, intArg(args, "max_bytes", 65536), "log", "--date=iso-strict", "--pretty=format:%H%x09%an%x09%ad%x09%s", "-n", strconv.Itoa(limit))
 	if err != nil {
 		return nil, err
 	}
@@ -83,8 +98,232 @@ func (r *Runtime) gitLog(ctx context.Context, args map[string]any) (Result, erro
 		}
 		commits = append(commits, commit)
 	}
+	result["repo_path"] = repo.Path
 	result["commits"] = commits
 	return result, nil
+}
+
+func (r *Runtime) gitShow(ctx context.Context, args map[string]any) (Result, error) {
+	repo, err := r.resolveGitRepo(args)
+	if err != nil {
+		return nil, err
+	}
+	result, err := r.gitInRepo(ctx, repo, intArg(args, "max_bytes", 262144), "show", "--stat", "--patch", stringArg(args, "rev", "HEAD"))
+	if result != nil {
+		result["repo_path"] = repo.Path
+	}
+	return result, err
+}
+
+func (r *Runtime) gitBlame(ctx context.Context, args map[string]any) (Result, error) {
+	repo, err := r.resolveGitRepo(args)
+	if err != nil {
+		return nil, err
+	}
+	p, err := r.ws.ResolveExisting(stringArg(args, "path", ""))
+	if err != nil {
+		return nil, err
+	}
+	result, err := r.gitInRepo(ctx, repo, intArg(args, "max_bytes", 262144), "blame", "--line-porcelain", "--", p.Display)
+	if result != nil {
+		result["repo_path"] = repo.Path
+	}
+	return result, err
+}
+
+func (r *Runtime) gitFetch(ctx context.Context, args map[string]any) (Result, error) {
+	repo, err := r.resolveGitRepo(args)
+	if err != nil {
+		return nil, err
+	}
+	remote := stringArg(args, "remote", "origin")
+	return r.gitInRepo(ctx, repo, intArg(args, "max_bytes", 65536), "fetch", remote)
+}
+
+func (r *Runtime) gitPull(ctx context.Context, args map[string]any) (Result, error) {
+	repo, err := r.resolveGitRepo(args)
+	if err != nil {
+		return nil, err
+	}
+	remote := stringArg(args, "remote", "origin")
+	branch := stringArg(args, "branch", "")
+	gitArgs := []string{"pull", remote}
+	if branch != "" {
+		gitArgs = append(gitArgs, branch)
+	}
+	return r.gitInRepo(ctx, repo, intArg(args, "max_bytes", 65536), gitArgs...)
+}
+
+func (r *Runtime) gitPush(ctx context.Context, args map[string]any) (Result, error) {
+	repo, err := r.resolveGitRepo(args)
+	if err != nil {
+		return nil, err
+	}
+	remote := stringArg(args, "remote", "origin")
+	branch := stringArg(args, "branch", "")
+	if branch == "" {
+		branch = r.currentBranch(ctx, repo)
+	}
+	if branch == "" {
+		branch = "HEAD"
+	}
+	gitArgs := []string{"push", remote, branch}
+	result, err := r.gitInRepo(ctx, repo, intArg(args, "max_bytes", 65536), gitArgs...)
+	if result != nil {
+		result["repo_path"] = repo.Path
+		result["remote"] = remote
+		result["branch"] = branch
+	}
+	return result, err
+}
+
+func (r *Runtime) gitCommit(ctx context.Context, args map[string]any) (Result, error) {
+	repo, err := r.resolveGitRepo(args)
+	if err != nil {
+		return nil, err
+	}
+	message := stringArg(args, "message", "")
+	if message == "" {
+		return nil, toolError("INVALID_ARGUMENT", "message is required", "validation")
+	}
+	paths := stringSliceArg(args, "paths")
+	if boolArg(args, "all", false) {
+		if result, err := r.gitInRepo(ctx, repo, intArg(args, "max_bytes", 65536), "add", "-A"); err != nil || !boolValue(result["ok"]) {
+			return result, err
+		}
+	} else if len(paths) > 0 {
+		gitArgs := append([]string{"add", "--"}, paths...)
+		if result, err := r.gitInRepo(ctx, repo, intArg(args, "max_bytes", 65536), gitArgs...); err != nil || !boolValue(result["ok"]) {
+			return result, err
+		}
+	}
+	result, err := r.gitInRepo(ctx, repo, intArg(args, "max_bytes", 65536), "commit", "-m", message)
+	if result != nil {
+		result["repo_path"] = repo.Path
+	}
+	return result, err
+}
+
+func (r *Runtime) gitClone(ctx context.Context, args map[string]any) (Result, error) {
+	urlValue := stringArg(args, "url", "")
+	if urlValue == "" {
+		urlValue = stringArg(args, "repo", "")
+	}
+	if urlValue == "" {
+		return nil, toolError("INVALID_ARGUMENT", "url is required", "validation")
+	}
+	dest := stringArg(args, "dest", "")
+	if dest == "" {
+		dest = strings.TrimSuffix(filepath.Base(urlValue), ".git")
+	}
+	p, err := r.ws.ResolveForWrite(dest)
+	if err != nil {
+		return nil, err
+	}
+	gitArgs := []string{"clone"}
+	if depth := intArg(args, "depth", 0); depth > 0 {
+		gitArgs = append(gitArgs, "--depth", strconv.Itoa(depth))
+	}
+	if branch := stringArg(args, "branch", ""); branch != "" {
+		gitArgs = append(gitArgs, "--branch", branch)
+	}
+	gitArgs = append(gitArgs, urlValue, p.Display)
+	result, err := r.gitInDir(ctx, r.ws.Root(), intArg(args, "max_bytes", 65536), gitArgs...)
+	if result != nil {
+		result["dest"] = p.Display
+	}
+	return result, err
+}
+
+func (r *Runtime) workspaceRepos(ctx context.Context, args map[string]any) (Result, error) {
+	// 给模型一个轻量的“仓库地图”。这样处理多项目工作区时，模型可以先
+	// 发现有哪些 repo、各自分支和 clean/ahead 状态，再对指定 repo_path 操作，
+	// 减少反复 ls + git status 的探测步骤，也避免误操作到错误项目。
+	maxDepth := intArg(args, "max_depth", 3)
+	if maxDepth < 1 {
+		maxDepth = 1
+	}
+	repos := make([]map[string]any, 0)
+	rootDepth := len(strings.Split(filepath.Clean(r.ws.Root()), string(os.PathSeparator)))
+	_ = filepath.WalkDir(r.ws.Root(), func(abs string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if abs == r.ws.Root() {
+			return nil
+		}
+		if entry.IsDir() && shouldSkipDir(entry.Name()) && entry.Name() != ".git" {
+			return filepath.SkipDir
+		}
+		depth := len(strings.Split(filepath.Clean(abs), string(os.PathSeparator))) - rootDepth
+		if depth > maxDepth {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !entry.IsDir() {
+			return nil
+		}
+		if _, err := os.Stat(filepath.Join(abs, ".git")); err != nil {
+			return nil
+		}
+		rel, _ := r.ws.Relative(abs)
+		repo := gitRepo{Path: rel, Abs: abs}
+		branch := r.currentBranch(ctx, repo)
+		status, _ := r.gitInRepo(ctx, repo, 65536, "status", "--short", "--branch")
+		_, upstream, ahead, behind, files := parseGitStatus(fmt.Sprint(status["output"]))
+		repos = append(repos, map[string]any{"path": rel, "branch": branch, "upstream": upstream, "ahead": ahead, "behind": behind, "clean": len(files) == 0, "remote": redactSecrets(r.gitRemoteURL(ctx, repo, "origin"), nil)})
+		return filepath.SkipDir
+	})
+	return Result{"ok": true, "repos": repos, "count": len(repos)}, nil
+}
+
+func parseGitStatus(output string) (branch, upstream string, ahead, behind int, files []map[string]any) {
+	files = make([]map[string]any, 0)
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "## ") {
+			header := strings.TrimPrefix(line, "## ")
+			branch = header
+			if parts := strings.SplitN(header, "...", 2); len(parts) == 2 {
+				branch = parts[0]
+				rest := parts[1]
+				upstream = strings.Fields(rest)[0]
+				if strings.Contains(rest, "ahead ") {
+					ahead = parseCountAfter(rest, "ahead ")
+				}
+				if strings.Contains(rest, "behind ") {
+					behind = parseCountAfter(rest, "behind ")
+				}
+			}
+			continue
+		}
+		status := ""
+		path := line
+		if len(line) >= 3 {
+			status = strings.TrimSpace(line[:2])
+			path = strings.TrimSpace(line[3:])
+		}
+		files = append(files, map[string]any{"path": path, "status": status})
+	}
+	return branch, upstream, ahead, behind, files
+}
+
+func parseCountAfter(value, marker string) int {
+	idx := strings.Index(value, marker)
+	if idx < 0 {
+		return 0
+	}
+	start := idx + len(marker)
+	end := start
+	for end < len(value) && value[end] >= '0' && value[end] <= '9' {
+		end++
+	}
+	count, _ := strconv.Atoi(value[start:end])
+	return count
 }
 
 func parseDiffFiles(diffText string) []map[string]any {
@@ -135,7 +374,7 @@ func (r *Runtime) applyPatch(ctx context.Context, args map[string]any) (Result, 
 	cmd.Stdin = strings.NewReader(patch)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, toolErrorDetails("PATCH_FAILED", "git apply failed", "runtime", map[string]any{"output": string(output), "reason": err.Error()})
+		return nil, toolErrorDetails("PATCH_FAILED", "git apply failed", "runtime", map[string]any{"output": redactSecrets(string(output), nil), "reason": err.Error()})
 	}
 	if boolArg(args, "dry_run", false) {
 		return Result{"ok": true, "summary": "patch validated", "dry_run": true}, nil
@@ -143,13 +382,51 @@ func (r *Runtime) applyPatch(ctx context.Context, args map[string]any) (Result, 
 	return Result{"ok": true, "summary": "patch applied", "dry_run": false}, nil
 }
 
-func (r *Runtime) git(ctx context.Context, maxBytes int, args ...string) (Result, error) {
-	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+func (r *Runtime) resolveGitRepo(args map[string]any) (gitRepo, error) {
+	// 设计背景：/workspace 是多项目工作区，里面可能同时有多个 Git 仓库。
+	// Git 工具不能假设 /workspace 本身就是仓库，所以统一通过 repo_path
+	// 选择具体项目；未传 repo_path 时才退回默认 cwd，保持兼容旧调用方式。
+	raw := stringArg(args, "repo_path", "")
+	if raw == "" {
+		raw = stringArg(args, "workdir", "")
+	}
+	if raw == "" {
+		raw = "."
+	}
+	p, err := r.ws.ResolveExisting(raw)
+	if err != nil {
+		return gitRepo{}, err
+	}
+	info, err := os.Stat(p.Abs)
+	if err != nil {
+		return gitRepo{}, err
+	}
+	if !info.IsDir() {
+		return gitRepo{}, toolError("NOT_A_DIRECTORY", "repo_path is not a directory", "validation")
+	}
+	if _, err := os.Stat(filepath.Join(p.Abs, ".git")); err != nil {
+		return gitRepo{}, toolErrorDetails("NOT_A_GIT_REPOSITORY", "repo_path is not a git repository", "validation", map[string]any{"repo_path": p.Display, "suggestion": "pass repo_path for one project under the workspace, or call workspace_repos"})
+	}
+	return gitRepo{Path: p.Display, Abs: p.Abs}, nil
+}
+
+func (r *Runtime) gitInRepo(ctx context.Context, repo gitRepo, maxBytes int, args ...string) (Result, error) {
+	result, err := r.gitInDir(ctx, repo.Abs, maxBytes, args...)
+	if result != nil {
+		result["repo_path"] = repo.Path
+	}
+	return result, err
+}
+
+func (r *Runtime) gitInDir(ctx context.Context, dir string, maxBytes int, args ...string) (Result, error) {
+	cmdCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, "git", args...)
-	cmd.Dir = r.ws.Root()
+	cmd.Dir = dir
+	cmd.Env = r.commandEnv(nil)
 	output, err := cmd.CombinedOutput()
 	text, truncated := truncateBytes(output, maxBytes)
+	text = redactSecrets(text, nil)
 	result := Result{"ok": err == nil, "command": "git " + strings.Join(args, " "), "output": text, "truncated": truncated}
 	if err != nil {
 		result["error"] = err.Error()
@@ -158,6 +435,27 @@ func (r *Runtime) git(ctx context.Context, maxBytes int, args ...string) (Result
 		}
 	}
 	return result, nil
+}
+
+func (r *Runtime) currentBranch(ctx context.Context, repo gitRepo) string {
+	result, _ := r.gitInRepo(ctx, repo, 4096, "branch", "--show-current")
+	return strings.TrimSpace(fmt.Sprint(result["output"]))
+}
+
+func (r *Runtime) gitRemoteURL(ctx context.Context, repo gitRepo, remote string) string {
+	if remote == "" {
+		remote = "origin"
+	}
+	result, _ := r.gitInRepo(ctx, repo, 4096, "remote", "get-url", remote)
+	if !boolValue(result["ok"]) {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(result["output"]))
+}
+
+func boolValue(value any) bool {
+	b, _ := value.(bool)
+	return b
 }
 
 func truncateBytes(data []byte, maxBytes int) (string, bool) {

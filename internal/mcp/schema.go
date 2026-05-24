@@ -8,6 +8,7 @@ func inputSchema(name string) map[string]any {
 	boolProp := func(desc string) map[string]any { return map[string]any{"type": "boolean", "description": desc} }
 
 	switch name {
+	case "tool_descriptors":
 	case "read_file":
 		props["path"] = stringProp("Workspace-relative file path.")
 		props["start_line"] = intProp("1-based start line.")
@@ -53,12 +54,14 @@ func inputSchema(name string) map[string]any {
 		props["max_output_bytes"] = intProp("Maximum output bytes.")
 		props["stdin"] = stringProp("Initial stdin.")
 		props["tty"] = boolProp("Keep stdin open.")
+		props["redact_patterns"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Additional regex patterns to redact from stdout/stderr/error."}
 		required = []string{"cmd"}
 	case "write_stdin", "session_status", "kill_session":
 		props["session_id"] = stringProp("Session id returned by exec_command.")
 		props["chars"] = stringProp("Characters to write to stdin.")
 		props["max_output_bytes"] = intProp("Maximum output bytes.")
 		required = []string{"session_id"}
+	case "kill_all_sessions":
 	case "configure_github_token":
 		props["env_file"] = stringProp("Workspace-relative .env file containing GITHUB_TOKEN, GH_TOKEN, GITHUB_PAT, or TOKEN.")
 		props["username"] = stringProp("GitHub username to store with the HTTPS credential. Defaults to GITHUB_USERNAME, GITHUB_USER, or x-access-token.")
@@ -67,19 +70,48 @@ func inputSchema(name string) map[string]any {
 		props["repository"] = stringProp("Alias for repo.")
 		props["timeout_ms"] = intProp("HTTP timeout in milliseconds.")
 		required = []string{"repo"}
+	case "workspace_repos":
+		props["max_depth"] = intProp("Maximum directory depth to scan for repositories.")
+	case "git_repo_status", "git_status":
+		props["repo_path"] = stringProp("Workspace-relative repository path. Defaults to current workspace/default cwd.")
+		props["max_output_bytes"] = intProp("Maximum output bytes.")
 	case "git_diff":
+		props["repo_path"] = stringProp("Workspace-relative repository path.")
 		props["paths"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 		props["max_bytes"] = intProp("Maximum output bytes.")
 	case "git_log":
+		props["repo_path"] = stringProp("Workspace-relative repository path.")
 		props["limit"] = intProp("Maximum commits.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
 	case "git_show":
+		props["repo_path"] = stringProp("Workspace-relative repository path.")
 		props["rev"] = stringProp("Revision to show.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
 	case "git_blame":
+		props["repo_path"] = stringProp("Workspace-relative repository path.")
 		props["path"] = stringProp("Workspace-relative file path.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
 		required = []string{"path"}
+	case "git_fetch", "git_pull", "git_push":
+		props["repo_path"] = stringProp("Workspace-relative repository path.")
+		props["remote"] = stringProp("Remote name. Defaults to origin.")
+		props["branch"] = stringProp("Branch name. Defaults to current branch where applicable.")
+		props["max_bytes"] = intProp("Maximum output bytes.")
+	case "git_clone":
+		props["url"] = stringProp("Git repository URL to clone.")
+		props["repo"] = stringProp("Alias for url.")
+		props["dest"] = stringProp("Workspace-relative destination directory.")
+		props["branch"] = stringProp("Branch to clone.")
+		props["depth"] = intProp("Optional shallow clone depth.")
+		props["max_bytes"] = intProp("Maximum output bytes.")
+		required = []string{"url"}
+	case "git_commit":
+		props["repo_path"] = stringProp("Workspace-relative repository path.")
+		props["message"] = stringProp("Commit message.")
+		props["paths"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
+		props["all"] = boolProp("Stage all changes before committing.")
+		props["max_bytes"] = intProp("Maximum output bytes.")
+		required = []string{"message"}
 	case "set_default_cwd", "view_image":
 		props["path"] = stringProp("Workspace-relative path.")
 		if name == "view_image" {
@@ -117,6 +149,9 @@ func outputSchema(name string) map[string]any {
 	props["ok"] = boolProp("Whether the tool call completed successfully.")
 
 	switch name {
+	case "tool_descriptors":
+		props["tools"] = arrayProp("Runtime-visible tool descriptors.")
+		props["count"] = intProp("Tool count.")
 	case "server_info":
 		props["server"] = stringProp("Server identifier.")
 		props["title"] = stringProp("Human-readable server title.")
@@ -160,7 +195,7 @@ func outputSchema(name string) map[string]any {
 		props["elapsed_ms"] = intProp("Session elapsed milliseconds.")
 		props["timed_out"] = boolProp("Whether the command timed out.")
 		props["diagnostic"] = objectProp("Structured diagnostic for common failures.")
-	case "list_sessions":
+	case "list_sessions", "kill_all_sessions":
 		props["sessions"] = arrayProp("Running command sessions.")
 		props["count"] = intProp("Number of running sessions.")
 	case "configure_github_token":
@@ -177,15 +212,23 @@ func outputSchema(name string) map[string]any {
 		props["repo_status"] = intProp("GitHub API repo HTTP status.")
 		props["repo_access"] = boolProp("Whether the repository is visible to the token.")
 		props["diagnostic"] = objectProp("Structured access diagnostic.")
-	case "git_status":
+	case "workspace_repos":
+		props["repos"] = arrayProp("Git repositories found under the workspace.")
+		props["count"] = intProp("Repository count.")
+	case "git_status", "git_repo_status":
 		props["command"] = stringProp("Executed git command.")
 		props["output"] = stringProp("Raw git output.")
+		props["repo_path"] = stringProp("Workspace-relative repository path.")
 		props["branch"] = stringProp("Branch status line.")
+		props["upstream"] = stringProp("Upstream branch, when configured.")
+		props["ahead"] = intProp("Commits ahead of upstream.")
+		props["behind"] = intProp("Commits behind upstream.")
 		props["files"] = arrayProp("Changed files.")
 		props["clean"] = boolProp("Whether the worktree is clean.")
-	case "git_diff", "git_log", "git_show", "git_blame":
+	case "git_diff", "git_log", "git_show", "git_blame", "git_fetch", "git_pull", "git_push", "git_clone", "git_commit":
 		props["command"] = stringProp("Executed git command.")
 		props["output"] = stringProp("Raw git output.")
+		props["repo_path"] = stringProp("Workspace-relative repository path, when applicable.")
 		props["truncated"] = boolProp("Whether output was truncated.")
 		props["diagnostic"] = objectProp("Structured diagnostic for common failures.")
 		if name == "git_diff" {

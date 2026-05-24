@@ -37,14 +37,14 @@ func (r *Runtime) Config() config.Config           { return r.cfg }
 func (r *Runtime) Workspace() *workspace.Workspace { return r.ws }
 
 func (r *Runtime) ToolNames() []string {
-	all := []string{"server_info", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "exec_command", "write_stdin", "session_status", "list_sessions", "kill_session", "configure_github_token", "check_github_repo_access", "git_status", "git_diff", "git_log", "git_show", "git_blame", "request_permissions", "view_image"}
+	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "exec_command", "write_stdin", "session_status", "list_sessions", "kill_session", "kill_all_sessions", "configure_github_token", "check_github_repo_access", "workspace_repos", "git_repo_status", "git_status", "git_diff", "git_log", "git_show", "git_blame", "git_fetch", "git_pull", "git_push", "git_clone", "git_commit", "request_permissions", "view_image"}
 	if !r.cfg.EnableViewImage {
 		all = removeTool(all, "view_image")
 	}
 	if r.cfg.ToolProfile != config.ProfileReadOnly {
 		return all
 	}
-	readOnly := []string{"server_info", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "session_status", "list_sessions", "check_github_repo_access", "git_status", "git_diff", "git_log", "git_show", "git_blame", "request_permissions", "view_image"}
+	readOnly := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "session_status", "list_sessions", "check_github_repo_access", "workspace_repos", "git_repo_status", "git_status", "git_diff", "git_log", "git_show", "git_blame", "request_permissions", "view_image"}
 	if !r.cfg.EnableViewImage {
 		readOnly = removeTool(readOnly, "view_image")
 	}
@@ -71,6 +71,8 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 	switch name {
 	case "server_info":
 		return r.serverInfo(), nil
+	case "tool_descriptors":
+		return r.toolDescriptors(), nil
 	case "get_default_cwd":
 		return Result{"ok": true, "path": r.ws.DefaultDisplay()}, nil
 	case "set_default_cwd":
@@ -96,10 +98,16 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.listSessions()
 	case "kill_session":
 		return r.killSession(args)
+	case "kill_all_sessions":
+		return r.killAllSessions(args)
 	case "configure_github_token":
 		return r.configureGitHubToken(args)
 	case "check_github_repo_access":
 		return r.checkGitHubRepoAccess(args)
+	case "workspace_repos":
+		return r.workspaceRepos(ctx, args)
+	case "git_repo_status":
+		return r.gitRepoStatus(ctx, args)
 	case "git_status":
 		return r.gitStatus(ctx, args)
 	case "git_diff":
@@ -107,13 +115,19 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 	case "git_log":
 		return r.gitLog(ctx, args)
 	case "git_show":
-		return r.git(ctx, intArg(args, "max_bytes", 262144), "show", "--stat", "--patch", stringArg(args, "rev", "HEAD"))
+		return r.gitShow(ctx, args)
 	case "git_blame":
-		p, err := r.ws.ResolveExisting(stringArg(args, "path", ""))
-		if err != nil {
-			return nil, err
-		}
-		return r.git(ctx, intArg(args, "max_bytes", 262144), "blame", "--line-porcelain", "--", p.Display)
+		return r.gitBlame(ctx, args)
+	case "git_fetch":
+		return r.gitFetch(ctx, args)
+	case "git_pull":
+		return r.gitPull(ctx, args)
+	case "git_push":
+		return r.gitPush(ctx, args)
+	case "git_clone":
+		return r.gitClone(ctx, args)
+	case "git_commit":
+		return r.gitCommit(ctx, args)
 	case "request_permissions":
 		return r.requestPermissions(args), nil
 	case "view_image":
@@ -135,6 +149,14 @@ func (r *Runtime) available(name string) bool {
 func (r *Runtime) serverInfo() Result {
 	names := r.ToolNames()
 	return Result{"ok": true, "server": config.ServerName, "title": "Coding Tools MCP", "version": config.Version, "protocol_version": config.ProtocolVersion, "workspace": r.ws.Root(), "default_cwd": r.ws.DefaultDisplay(), "tool_profile": r.cfg.ToolProfile, "auth_enabled": r.cfg.AuthToken != "", "endpoint_path": "/mcp", "tools": names, "tool_count": len(names), "sandbox": sandbox.StatusForWorkspace(r.ws.Root())}
+}
+
+func (r *Runtime) toolDescriptors() Result {
+	descriptors := make([]map[string]any, 0)
+	for _, name := range r.ToolNames() {
+		descriptors = append(descriptors, map[string]any{"name": name})
+	}
+	return Result{"ok": true, "tools": descriptors, "count": len(descriptors)}
 }
 
 func (r *Runtime) readFile(args map[string]any) (Result, error) {

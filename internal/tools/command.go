@@ -46,10 +46,10 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 	maxBytes := intArg(args, "max_output_bytes", 65536)
 	tty := boolArg(args, "tty", false)
 
-	// Commands may outlive the request that started them when exec_command returns a
-	// running session. Do not bind the child process lifetime to the request
-	// context; use the explicit command timeout and kill_session for lifecycle
-	// control instead.
+	// 这里故意不用请求 ctx 派生子进程生命周期。
+	// 背景：exec_command 可能先返回 running，让模型后续通过 session_status 继续取结果；
+	// 如果子进程绑定到单次 MCP 请求 ctx，请求结束时 git push / npm install 等长任务会被杀掉。
+	// 因此长任务只受 timeout_ms 和 kill_session / kill_all_sessions 控制。
 	s, sandboxStatus, err := session.Start(context.Background(), cmd, workdir.Abs, r.commandEnv(mapArg(args, "env")), timeout, func(command *exec.Cmd) (func(), map[string]any) {
 		cleanup, status := sandbox.PrepareCommand(command, r.ws.Root())
 		return cleanup, map[string]any{"enabled": status.Enabled, "warnings": status.Warnings}
@@ -143,6 +143,16 @@ func (r *Runtime) killSession(args map[string]any) (Result, error) {
 	return result, nil
 }
 
+func (r *Runtime) killAllSessions(args map[string]any) (Result, error) {
+	items := make([]map[string]any, 0)
+	for _, s := range r.sessions.List() {
+		s.Kill()
+		r.sessions.Delete(s.ID)
+		items = append(items, map[string]any{"session_id": s.ID, "status": "killed"})
+	}
+	return Result{"ok": true, "sessions": items, "count": len(items)}, nil
+}
+
 func (r *Runtime) sessionStatus(args map[string]any) (Result, error) {
 	s, ok := r.sessions.Get(stringArg(args, "session_id", ""))
 	if !ok {
@@ -185,6 +195,14 @@ func addCommandDiagnostics(result Result) {
 	combined := fmt.Sprint(result["stdout"]) + "\n" + fmt.Sprint(result["stderr"])
 	if diag := diagnoseGitOutput(combined); diag != nil {
 		result["diagnostic"] = diag
+	}
+}
+
+func redactCommandResult(result Result, patterns []string) {
+	for _, key := range []string{"stdout", "stderr", "error"} {
+		if value, ok := result[key].(string); ok {
+			result[key] = redactSecrets(value, patterns)
+		}
 	}
 }
 
