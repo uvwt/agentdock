@@ -24,15 +24,14 @@ func CheckCommand(command string, skipPermissions bool) Decision {
 		return Decision{Allowed: true, Command: compact}
 	}
 	if expansionPattern.MatchString(command) {
-		return Decision{Allowed: false, Permission: "shell_expansion", Reason: "shell expansion requires permission", Command: compact}
+		return Decision{Allowed: false, Permission: "shell_expansion", Reason: "expanded shell syntax requires approval", Command: compact}
 	}
 	if destructivePattern.MatchString(command) {
-		return Decision{Allowed: false, Permission: "destructive_command", Reason: "destructive commands require permission", Command: compact}
+		return Decision{Allowed: false, Permission: "destructive_command", Reason: "this command requires approval", Command: compact}
 	}
 	trimmed := strings.TrimSpace(command)
 	if networkPattern.MatchString(command) && !strings.HasPrefix(trimmed, "git ") {
-		return Decision{Allowed: false, Permission: "network", Reason: "network-looking commands require permission", Command: compact}
+		return Decision{Allowed: false, Permission: "network", Reason: "network access requires approval", Command: compact}
 	}
 	return Decision{Allowed: true, Command: compact}
 }
-
