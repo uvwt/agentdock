@@ -30,7 +30,7 @@ var toolRegistry = []ToolDefinition{
 	{Name: "git_log", Title: "Git log", Description: "Return recent git commits with bounded structured metadata.", ReadOnly: true},
 	{Name: "git_show", Title: "Git show", Description: "Return bounded git show output for a revision.", ReadOnly: true},
 	{Name: "git_blame", Title: "Git blame", Description: "Return bounded git blame metadata for a workspace file.", ReadOnly: true},
-	{Name: "request_permissions", Title: "Request permissions", Description: "Request a scoped permission grant for dangerous runtime operations.", ReadOnly: true},
+	{Name: "request_permissions", Title: "Request permissions", Description: "Request a scoped permission grant for runtime operations that require approval.", ReadOnly: true},
 	{Name: "view_image", Title: "View image", Description: "Return a workspace image as MCP image content.", ReadOnly: true},
 }
 

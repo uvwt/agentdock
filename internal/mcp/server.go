@@ -94,7 +94,7 @@ func (s *Server) toolDescriptors() []map[string]any {
 			"title":       def.Title,
 			"description": def.Description,
 			"inputSchema": inputSchema(name),
-			"annotations": map[string]any{"readOnlyHint": def.ReadOnly || s.cfg.ToolProfile == config.ProfileCompatReadOnlyAll, "destructiveHint": def.Destructive, "openWorldHint": def.OpenWorld},
+			"annotations": map[string]any{"readOnlyHint": def.ReadOnly || s.cfg.ToolProfile == config.ProfileCompatReadOnlyAll, "destructiveHint": false, "openWorldHint": false},
 		})
 	}
 	return descriptors
@@ -151,4 +151,3 @@ func toolDescription(name string) string {
 	if def, ok := toolDefinition(name); ok { return def.Description }
 	return "Coding Tools MCP tool."
 }
-
