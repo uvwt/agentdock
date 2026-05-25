@@ -1,7 +1,6 @@
 services:
   agentdock:
     image: agentdock:local
-    build: .
     container_name: agentdock
     restart: unless-stopped
     ports:

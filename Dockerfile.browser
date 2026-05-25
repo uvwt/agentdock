@@ -1,6 +1,31 @@
-FROM agentdock:local
+FROM golang:1.22-bookworm AS build
+
+WORKDIR /src
+COPY go.mod go.sum ./
+COPY cmd ./cmd
+COPY internal ./internal
+
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/agentdock ./cmd/agentdock
+
+FROM golang:1.22-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    fd-find \
+    git \
+    jq \
+    make \
+    nodejs \
+    npm \
+    openssh-client \
+    python3 \
+    python3-pip \
+    ripgrep \
+    tar \
+    unzip \
+    wget \
     libasound2 \
     libatk-bridge2.0-0 \
     libatk1.0-0 \
@@ -23,12 +48,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
+RUN npm install -g corepack \
+    && corepack enable \
+    && corepack prepare pnpm@latest --activate
+
 ENV AGENTDOCK_BROWSER_ENABLED=true \
     AGENTDOCK_BROWSER_RUNNER_DIR=browser-runner \
     AGENTDOCK_BROWSER_ARTIFACT_DIR=browser-artifacts \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
+COPY --from=build /out/agentdock /usr/local/bin/agentdock
+COPY docker-entrypoint.sh /usr/local/bin/agentdock-entrypoint
 COPY examples/browser-runner /opt/agentdock/browser-runner
+
 RUN cd /opt/agentdock/browser-runner \
     && npm install \
     && npx playwright install chromium
+
+WORKDIR /workspace
+EXPOSE 8765
+ENTRYPOINT ["agentdock-entrypoint"]
+
+CMD ["agentdock", "--workspace", "/workspace", "--host", "0.0.0.0", "--port", "8765"]

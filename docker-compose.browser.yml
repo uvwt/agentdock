@@ -1,8 +1,5 @@
 services:
   agentdock:
     image: agentdock:browser
-    build:
-      context: .
-      dockerfile: Dockerfile.browser
     environment:
       AGENTDOCK_BROWSER_ENABLED: "true"

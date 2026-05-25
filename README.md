@@ -178,22 +178,93 @@ stdio 模式：
 
 ## Docker 使用
 
-本地构建镜像：
+推荐把“源码构建目录”和“运行数据目录”分开：
+
+```text
+/opt/agentdock/   # 源码目录，只负责 git pull 和 docker build
+/srv/agentdock/   # 运行目录，放 compose、workspace、AgentDock 数据
+```
+
+这样 `workspace` 和 `AgentDock` 不会混进源码仓库。
+
+### 第一步：在源码目录构建镜像
+
+基础镜像：
 
 ```bash
+cd /opt/agentdock
 docker build -t agentdock:local .
 ```
 
-使用 Docker Compose 构建并启动基础模式：
+浏览器增强镜像：
 
 ```bash
-docker compose up -d --build
+cd /opt/agentdock
+docker build -f Dockerfile.browser -t agentdock:browser .
 ```
 
-如果需要浏览器自动化能力，使用浏览器增强模式：
+`Dockerfile.browser` 是自包含的，会自己从源码构建 AgentDock，并安装 Playwright runner 和 Chromium，不依赖 `agentdock:local`。
+
+### 第二步：在运行目录启动容器
+
+创建运行目录：
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.browser.yml up -d --build
+sudo mkdir -p /srv/agentdock
+sudo chown -R $USER:$USER /srv/agentdock
+cd /srv/agentdock
+```
+
+基础模式 `docker-compose.yml`：
+
+```yaml
+services:
+  agentdock:
+    image: agentdock:local
+    container_name: agentdock
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18765:8765"
+    volumes:
+      - ./workspace:/workspace
+      - ./AgentDock:/agent-dock
+    environment:
+      AGENTDOCK_TOOL_PROFILE: "full"
+      AGENTDOCK_DIR: "/agent-dock"
+      AGENTDOCK_SKIP_PERMISSION_PROMPTS: "true"
+    command:
+      - agentdock
+      - --workspace
+      - /workspace
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8765"
+      - --dangerously-skip-all-permissions
+```
+
+如果需要 OAuth，把环境变量补进去：
+
+```yaml
+      AGENTDOCK_OAUTH_CLIENT_ID: "coding-tools-client"
+      AGENTDOCK_OAUTH_CLIENT_SECRET: "replace-with-secret"
+      AGENTDOCK_OAUTH_PASSWORD: "replace-with-password"
+      AGENTDOCK_OAUTH_TOKEN_SECRET: "replace-with-token-secret"
+      AGENTDOCK_SERVER_URL: "https://codingmini.example.com"
+```
+
+浏览器增强模式只需要把镜像改成 `agentdock:browser`，并启用浏览器工具：
+
+```yaml
+    image: agentdock:browser
+    environment:
+      AGENTDOCK_BROWSER_ENABLED: "true"
+```
+
+启动：
+
+```bash
+docker compose up -d
 ```
 
 查看状态和日志：
@@ -203,59 +274,45 @@ docker compose ps
 docker compose logs -f
 ```
 
-默认 Compose 会把宿主机项目目录和 AgentDock 控制层目录分别挂载：
-
-```yaml
-volumes:
-  - ./workspace:/workspace
-  - ./AgentDock:/agent-dock
-```
-
-其中：
+运行目录结构会是：
 
 ```text
-./workspace    -> 容器内 /workspace，放用户项目代码
-./AgentDock  -> 容器内 /agent-dock，放 MCP 控制层数据
+/srv/agentdock/
+  docker-compose.yml
+  workspace/              # 用户项目工作区
+  AgentDock/              # AgentDock 控制层
+    connectors/           # 动态 connector
+    browser-runner/       # 浏览器 runner，浏览器镜像会自动初始化
+    browser-artifacts/    # 截图、状态、trace 等产物
 ```
 
-`docker-compose.yml` 默认配置了：
-
-```yaml
-environment:
-  AGENTDOCK_DIR: "/agent-dock"
-```
-
-配置 AgentDock 后，connector 默认放在宿主机：
+新增或修改 connector 时，只要编辑：
 
 ```text
-./AgentDock/connectors/
+/srv/agentdock/AgentDock/connectors/
 ```
 
-容器内对应路径是：
+不需要重新构建镜像，也不需要重启容器。只有修改 Go 核心代码、安装新的系统依赖，或更换镜像时才需要重新构建/重启。
 
-```text
-/agent-dock/connectors/
-```
+### 更新流程
 
-所以新增或修改 connector 时，只要编辑 `./AgentDock/connectors` 下的文件即可；不需要重新构建镜像，也不需要重启容器。只有修改 Go 核心代码、安装新的系统依赖，或更改 Compose 配置时才需要重新构建/重启。
-
-代码更新后的推荐流程：
+源码目录更新并重新构建镜像：
 
 ```bash
-cd agentdock
-
+cd /opt/agentdock
+git pull
 go test ./...
-
-docker compose down
-docker compose up -d --build
-
-docker compose logs -f
+docker build -t agentdock:local .
+# 如果使用浏览器增强镜像：
+docker build -f Dockerfile.browser -t agentdock:browser .
 ```
 
-如果只想手动构建镜像：
+运行目录重启容器：
 
 ```bash
-docker build --no-cache -t agentdock:local .
+cd /srv/agentdock
+docker compose up -d
+docker compose logs -f
 ```
 
 ## 裸机 VPS 部署
