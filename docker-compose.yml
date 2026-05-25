@@ -7,7 +7,7 @@ services:
     ports:
       - "127.0.0.1:18766:8765"
     volumes:
-      - ./Project:/workspace
+      - ./workspace:/workspace
       - ./AgentDock:/agent-dock
     environment:
       AGENTDOCK_TOOL_PROFILE: "full"

@@ -187,7 +187,7 @@ docker build -t agentdock:local .
 使用 Docker Compose 构建并启动：
 
 ```bash
-mkdir -p Project AgentDock/connectors AgentDock/browser-artifacts
+mkdir -p workspace AgentDock/connectors AgentDock/browser-artifacts
 docker compose build --no-cache
 docker compose up -d
 ```
@@ -203,14 +203,14 @@ docker compose logs -f
 
 ```yaml
 volumes:
-  - ./Project:/workspace
+  - ./workspace:/workspace
   - ./AgentDock:/agent-dock
 ```
 
 其中：
 
 ```text
-./Project    -> 容器内 /workspace，放用户项目代码
+./workspace    -> 容器内 /workspace，放用户项目代码
 ./AgentDock  -> 容器内 /agent-dock，放 MCP 控制层数据
 ```
 
