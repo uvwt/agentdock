@@ -6,8 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
+
+const defaultPlaywrightBrowsersPath = "/ms-playwright"
 
 func (r *Runtime) browserSessionStart(ctx context.Context, args map[string]any) (Result, error) {
 	return r.browserRunnerCall(ctx, "session_start", args)
@@ -59,6 +62,9 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 		"BROWSER_RUNNER_PAYLOAD": string(data),
 		"BROWSER_ARTIFACT_DIR":   artifactDir.Abs,
 		"WORKSPACE":              r.ws.Root(),
+		// 官方浏览器增强镜像把 Chromium 固定安装在 /ms-playwright。
+		// 这里显式传给 Node runner，避免子进程回退到 /workspace/.cache/ms-playwright 后找不到浏览器。
+		"PLAYWRIGHT_BROWSERS_PATH": playwrightBrowsersPath(),
 	})
 	output, err := cmd.CombinedOutput()
 	text, truncated := truncateBytes(output, intArg(args, "max_bytes", 262144))
@@ -89,4 +95,11 @@ func (r *Runtime) browserRunnerScript() (controlPath, error) {
 		return controlPath{}, toolErrorDetails("BROWSER_RUNNER_NOT_FOUND", "browser-runner.js not found", "validation", map[string]any{"runner_dir": runnerDir.Display})
 	}
 	return runner, nil
+}
+
+func playwrightBrowsersPath() string {
+	if value := strings.TrimSpace(os.Getenv("PLAYWRIGHT_BROWSERS_PATH")); value != "" {
+		return value
+	}
+	return defaultPlaywrightBrowsersPath
 }
