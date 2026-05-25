@@ -6,5 +6,5 @@ services:
       dockerfile: Dockerfile.browser
     environment:
       CODING_TOOLS_MCP_BROWSER_ENABLED: "true"
-      CODING_TOOLS_MCP_BROWSER_RUNNER_DIR: ".mcp/browser-runner"
-      CODING_TOOLS_MCP_BROWSER_ARTIFACT_DIR: ".mcp/browser-artifacts"
+      CODING_TOOLS_MCP_BROWSER_RUNNER_DIR: "browser-runner"
+      CODING_TOOLS_MCP_BROWSER_ARTIFACT_DIR: "browser-artifacts"

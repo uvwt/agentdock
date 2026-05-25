@@ -8,10 +8,11 @@ services:
       - "127.0.0.1:18766:8765"
     volumes:
       - ./Project:/workspace
+      - ./AgentDock:/agent-dock
     environment:
       CODING_TOOLS_MCP_TOOL_PROFILE: "full"
-      # Connector 配置放在 workspace 内，新增/修改 connector 不需要重建镜像。
-      CODING_TOOLS_MCP_CONNECTOR_DIR: ".mcp/connectors"
+      # AgentDock 是 MCP 自身控制层目录，和用户项目 workspace 分离。
+      CODING_TOOLS_MCP_AGENT_DOCK_DIR: "/agent-dock"
     command:
       - coding-tools-mcp
       - --workspace

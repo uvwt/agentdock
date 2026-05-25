@@ -28,6 +28,7 @@ type Config struct {
 	ToolProfile                   string
 	LogLevel                      string
 	SandboxMode                   string
+	AgentDockDir                  string
 	ConnectorDir                  string
 	BrowserEnabled                bool
 	BrowserRunnerDir              string
@@ -48,10 +49,11 @@ func FromEnv() Config {
 		ToolProfile:                   getenv("CODING_TOOLS_MCP_TOOL_PROFILE", ProfileFull),
 		LogLevel:                      getenv("CODING_TOOLS_MCP_LOG_LEVEL", "info"),
 		SandboxMode:                   getenv("CODING_TOOLS_MCP_SANDBOX_MODE", SandboxModeLandlock),
-		ConnectorDir:                  getenv("CODING_TOOLS_MCP_CONNECTOR_DIR", ".mcp/connectors"),
+		AgentDockDir:                  getenv("CODING_TOOLS_MCP_AGENT_DOCK_DIR", "AgentDock"),
+		ConnectorDir:                  getenv("CODING_TOOLS_MCP_CONNECTOR_DIR", "connectors"),
 		BrowserEnabled:                getenvBool("CODING_TOOLS_MCP_BROWSER_ENABLED", false),
-		BrowserRunnerDir:              getenv("CODING_TOOLS_MCP_BROWSER_RUNNER_DIR", ".mcp/browser-runner"),
-		BrowserArtifactDir:            getenv("CODING_TOOLS_MCP_BROWSER_ARTIFACT_DIR", ".mcp/browser-artifacts"),
+		BrowserRunnerDir:              getenv("CODING_TOOLS_MCP_BROWSER_RUNNER_DIR", "browser-runner"),
+		BrowserArtifactDir:            getenv("CODING_TOOLS_MCP_BROWSER_ARTIFACT_DIR", "browser-artifacts"),
 		EnableViewImage:               getenvBool("CODING_TOOLS_MCP_ENABLE_VIEW_IMAGE", true),
 		Stdio:                         getenvBool("CODING_TOOLS_MCP_STDIO", false),
 		DangerouslySkipAllPermissions: getenvBool("CODING_TOOLS_MCP_SKIP_PERMISSION_PROMPTS", false),
@@ -73,14 +75,17 @@ func (c *Config) Normalize() {
 	if c.LogLevel == "" {
 		c.LogLevel = "info"
 	}
+	if c.AgentDockDir == "" {
+		c.AgentDockDir = "AgentDock"
+	}
 	if c.ConnectorDir == "" {
-		c.ConnectorDir = ".mcp/connectors"
+		c.ConnectorDir = "connectors"
 	}
 	if c.BrowserRunnerDir == "" {
-		c.BrowserRunnerDir = ".mcp/browser-runner"
+		c.BrowserRunnerDir = "browser-runner"
 	}
 	if c.BrowserArtifactDir == "" {
-		c.BrowserArtifactDir = ".mcp/browser-artifacts"
+		c.BrowserArtifactDir = "browser-artifacts"
 	}
 	switch c.SandboxMode {
 	case SandboxModeLandlock, SandboxModeNone:

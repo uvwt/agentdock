@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
-: "${WORKSPACE:=$(pwd)}"
-RUNNER_DIR="${1:-$WORKSPACE/.mcp/browser-runner}"
+: "${AGENT_DOCK:=$(pwd)/AgentDock}"
+RUNNER_DIR="${1:-$AGENT_DOCK/browser-runner}"
 mkdir -p "$RUNNER_DIR"
 cp -R examples/browser-runner/. "$RUNNER_DIR/"
 cd "$RUNNER_DIR"

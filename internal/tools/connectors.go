@@ -9,8 +9,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/uvwt/coding-tools-mcp-go/internal/workspace"
 )
 
 type connectorDefinition struct {
@@ -155,28 +153,28 @@ func (r *Runtime) connectorCall(ctx context.Context, args map[string]any) (Resul
 	return result, nil
 }
 
-func (r *Runtime) connectorRoot() (workspace.Path, error) {
-	return r.ws.ResolveForWrite(r.cfg.ConnectorDir)
+func (r *Runtime) connectorRoot() (controlPath, error) {
+	return r.resolveControlForWrite(r.cfg.ConnectorDir)
 }
 
-func (r *Runtime) connectorDir(name string) (workspace.Path, workspace.Path, error) {
+func (r *Runtime) connectorDir(name string) (controlPath, controlPath, error) {
 	if !validConnectorName(name) {
-		return workspace.Path{}, workspace.Path{}, toolError("INVALID_ARGUMENT", "connector name may contain only letters, numbers, dot, underscore, and dash", "validation")
+		return controlPath{}, controlPath{}, toolError("INVALID_ARGUMENT", "connector name may contain only letters, numbers, dot, underscore, and dash", "validation")
 	}
 	root, err := r.connectorRoot()
 	if err != nil {
-		return workspace.Path{}, workspace.Path{}, err
+		return controlPath{}, controlPath{}, err
 	}
-	p, err := r.ws.ResolveExisting(filepath.Join(root.Display, name))
+	p, err := r.resolveControlExisting(filepath.Join(r.cfg.ConnectorDir, name))
 	if err != nil {
-		return root, workspace.Path{}, err
+		return root, controlPath{}, err
 	}
 	info, err := os.Stat(p.Abs)
 	if err != nil {
-		return root, workspace.Path{}, err
+		return root, controlPath{}, err
 	}
 	if !info.IsDir() {
-		return root, workspace.Path{}, toolError("NOT_A_DIRECTORY", "connector path is not a directory", "validation")
+		return root, controlPath{}, toolError("NOT_A_DIRECTORY", "connector path is not a directory", "validation")
 	}
 	return root, p, nil
 }

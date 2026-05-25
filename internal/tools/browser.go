@@ -7,8 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
-
-	"github.com/uvwt/coding-tools-mcp-go/internal/workspace"
 )
 
 func (r *Runtime) browserSessionStart(ctx context.Context, args map[string]any) (Result, error) {
@@ -32,7 +30,7 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 	if err != nil {
 		return nil, err
 	}
-	artifactDir, err := r.ws.ResolveForWrite(r.cfg.BrowserArtifactDir)
+	artifactDir, err := r.resolveControlForWrite(r.cfg.BrowserArtifactDir)
 	if err != nil {
 		return nil, err
 	}
@@ -80,15 +78,15 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 	return result, nil
 }
 
-func (r *Runtime) browserRunnerScript() (workspace.Path, error) {
-	runnerDir, err := r.ws.ResolveExisting(r.cfg.BrowserRunnerDir)
+func (r *Runtime) browserRunnerScript() (controlPath, error) {
+	runnerDir, err := r.resolveControlExisting(r.cfg.BrowserRunnerDir)
 	if err != nil {
-		return workspace.Path{}, toolErrorDetails("BROWSER_RUNNER_NOT_FOUND", "browser runner directory not found", "validation", map[string]any{"runner_dir": r.cfg.BrowserRunnerDir, "suggestion": "copy examples/browser-runner to the configured runner directory and run npm install && npx playwright install chromium"})
+		return controlPath{}, toolErrorDetails("BROWSER_RUNNER_NOT_FOUND", "browser runner directory not found", "validation", map[string]any{"runner_dir": r.cfg.BrowserRunnerDir, "suggestion": "copy examples/browser-runner to the configured runner directory and run npm install && npx playwright install chromium"})
 	}
-	candidate := filepath.Join(runnerDir.Display, "browser-runner.js")
-	runner, err := r.ws.ResolveExisting(candidate)
+	candidate := filepath.Join(r.cfg.BrowserRunnerDir, "browser-runner.js")
+	runner, err := r.resolveControlExisting(candidate)
 	if err != nil {
-		return workspace.Path{}, toolErrorDetails("BROWSER_RUNNER_NOT_FOUND", "browser-runner.js not found", "validation", map[string]any{"runner_dir": runnerDir.Display})
+		return controlPath{}, toolErrorDetails("BROWSER_RUNNER_NOT_FOUND", "browser-runner.js not found", "validation", map[string]any{"runner_dir": runnerDir.Display})
 	}
 	return runner, nil
 }

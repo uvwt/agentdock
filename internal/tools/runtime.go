@@ -170,7 +170,7 @@ func (r *Runtime) available(name string) bool {
 
 func (r *Runtime) serverInfo() Result {
 	names := r.ToolNames()
-	return Result{"ok": true, "server": config.ServerName, "title": "Coding Tools MCP", "version": config.Version, "protocol_version": config.ProtocolVersion, "workspace": r.ws.Root(), "default_cwd": r.ws.DefaultDisplay(), "tool_profile": r.cfg.ToolProfile, "sandbox_mode": r.cfg.SandboxMode, "connector_dir": r.cfg.ConnectorDir, "browser_enabled": r.cfg.BrowserEnabled, "browser_runner_dir": r.cfg.BrowserRunnerDir, "auth_enabled": r.cfg.AuthToken != "", "endpoint_path": "/mcp", "tools": names, "tool_count": len(names), "sandbox": sandbox.StatusForWorkspace(r.ws.Root())}
+	return Result{"ok": true, "server": config.ServerName, "title": "Coding Tools MCP", "version": config.Version, "protocol_version": config.ProtocolVersion, "workspace": r.ws.Root(), "default_cwd": r.ws.DefaultDisplay(), "tool_profile": r.cfg.ToolProfile, "sandbox_mode": r.cfg.SandboxMode, "agent_dock_dir": r.cfg.AgentDockDir, "connector_dir": r.cfg.ConnectorDir, "browser_enabled": r.cfg.BrowserEnabled, "browser_runner_dir": r.cfg.BrowserRunnerDir, "browser_artifact_dir": r.cfg.BrowserArtifactDir, "auth_enabled": r.cfg.AuthToken != "", "endpoint_path": "/mcp", "tools": names, "tool_count": len(names), "sandbox": sandbox.StatusForWorkspace(r.ws.Root())}
 }
 
 func (r *Runtime) toolDescriptors() Result {
