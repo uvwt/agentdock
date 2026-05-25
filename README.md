@@ -14,6 +14,7 @@ Coding Tools MCP Go 是一个用 Go 编写的 Model Context Protocol（MCP）工
 - **命令会话工具**：支持受控执行命令、长任务会话、增量读取 stdout/stderr、停止单个或全部会话。
 - **Git 专用工具**：支持仓库发现、状态、diff、log、show、blame、fetch、pull、push、clone、commit。
 - **GitHub token 辅助**：支持从 `.env` 读取 GitHub token 并配置 HTTPS credential，输出始终脱敏。
+- **动态 Connector**：支持从 workspace 加载 `.mcp/connectors` 动态能力，新增应用脚本不需要重新编译 MCP。
 - **结构化输出**：工具返回 `structuredContent`，并提供 `outputSchema`，方便 MCP 客户端理解结果。
 - **日志与排障**：默认输出 JSON 日志到 stderr，可通过 `docker logs` 或 `docker compose logs` 查看。
 - **Linux 沙箱增强**：在 Linux 下 best-effort 使用 Landlock 限制命令文件系统访问；不支持时会返回 warning。
@@ -86,6 +87,14 @@ Coding Tools MCP Go 是一个用 Go 编写的 Model Context Protocol（MCP）工
 | `git_commit` | 暂存并创建提交。 |
 | `configure_github_token` | 从 `.env` 读取 GitHub token 并配置 Git HTTPS credential。 |
 | `check_github_repo_access` | 检查 GitHub token 是否能认证并访问指定仓库。 |
+
+### 动态 Connector
+
+| 工具 | 说明 |
+| --- | --- |
+| `connector_list` | 列出 workspace 中已安装的动态 connector。 |
+| `connector_describe` | 查看指定 connector 的说明、动作和输入 schema。 |
+| `connector_call` | 调用指定 connector action，并传入结构化参数。 |
 
 ## 多项目 workspace 模型
 
@@ -176,6 +185,34 @@ docker compose up -d
 docker compose ps
 docker compose logs -f
 ```
+
+默认 Compose 会把宿主机目录挂载到容器 workspace：
+
+```yaml
+volumes:
+  - ./Project:/workspace
+```
+
+因此动态 connector 应放在宿主机：
+
+```text
+./Project/.mcp/connectors/
+```
+
+容器内对应路径是：
+
+```text
+/workspace/.mcp/connectors/
+```
+
+`docker-compose.yml` 默认配置了：
+
+```yaml
+environment:
+  CODING_TOOLS_MCP_CONNECTOR_DIR: ".mcp/connectors"
+```
+
+所以新增或修改 connector 时，只要编辑 `./Project/.mcp/connectors` 下的文件即可；不需要重新构建镜像，也不需要重启容器。只有修改 Go 核心代码、安装新的系统依赖，或更改 Compose 配置时才需要重新构建/重启。
 
 代码更新后的推荐流程：
 
@@ -394,6 +431,7 @@ curl http://127.0.0.1:8765/healthz
 | `CODING_TOOLS_MCP_SKIP_PERMISSION_PROMPTS` | `false` | 是否跳过命令策略确认。仅建议在受信容器中使用。 |
 | `CODING_TOOLS_MCP_LOG_LEVEL` | `info` | 日志级别：`debug`、`info`、`warn`、`error`。 |
 | `CODING_TOOLS_MCP_SANDBOX_MODE` | `landlock` | 命令沙箱模式，支持 `landlock`、`none`。裸机需要 sudo 时设为 `none`。 |
+| `CODING_TOOLS_MCP_CONNECTOR_DIR` | `.mcp/connectors` | workspace-relative 动态 connector 目录。 |
 
 常用命令行参数：
 
@@ -402,9 +440,86 @@ curl http://127.0.0.1:8765/healthz
   --workspace /workspace \
   --host 0.0.0.0 \
   --port 8765 \
+  --connector-dir .mcp/connectors \
   --sandbox-mode landlock \
   --log-level info
 ```
+
+## 动态 Connector
+
+Connector 用于把具体应用能力做成热插拔脚本，避免每新增一个场景都改 Go 代码、重建镜像和刷新 MCP 工具列表。
+
+默认目录：
+
+```text
+<workspace>/.mcp/connectors/
+```
+
+每个 connector 是一个子目录：
+
+```text
+.mcp/connectors/
+  hello/
+    connector.json
+    scripts/
+      echo.sh
+```
+
+最小 `connector.json` 示例：
+
+```json
+{
+  "name": "hello",
+  "description": "Example connector that echoes structured input.",
+  "version": "0.1.0",
+  "actions": {
+    "echo": {
+      "description": "Echo CONNECTOR_ARGS_JSON as JSON output.",
+      "command": "./scripts/echo.sh",
+      "timeout_ms": 10000,
+      "output": "json",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  }
+}
+```
+
+脚本可以从环境变量读取结构化参数：
+
+```sh
+#!/usr/bin/env sh
+set -eu
+printf '{"ok":true,"args":%s}\n' "${CONNECTOR_ARGS_JSON:-{}}"
+```
+
+调用流程：
+
+```text
+connector_list
+connector_describe(connector="hello")
+connector_call(connector="hello", action="echo", args={"message":"hi"})
+```
+
+Connector 运行时会收到这些环境变量：
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `CONNECTOR_NAME` | connector 名称。 |
+| `CONNECTOR_ACTION` | action 名称。 |
+| `CONNECTOR_ARGS_JSON` | 调用方传入的结构化参数 JSON。 |
+| `WORKSPACE` | workspace 根目录。 |
+
+注意事项：
+
+- 当前 MVP 使用 `connector.json`，暂不解析 YAML。
+- connector 目录必须在 workspace 内。
+- `command` 在 connector 目录下执行，建议使用相对路径调用 `scripts/` 下脚本。
+- `output=json` 时，MCP 会尝试把 stdout 解析成 JSON 并放入返回的 `json` 字段。
+- 如果 connector 需要密钥，建议从服务环境变量读取，并在 `connector.json` 的 `secrets` 中声明变量名，MCP 会在描述时只返回是否配置，不返回密钥内容。
+- 新增/修改 connector 文件不需要重启 MCP；修改 Go 核心代码或安装系统依赖才需要重新部署。
 
 ## 日志
 

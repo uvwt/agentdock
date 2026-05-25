@@ -37,14 +37,14 @@ func (r *Runtime) Config() config.Config           { return r.cfg }
 func (r *Runtime) Workspace() *workspace.Workspace { return r.ws }
 
 func (r *Runtime) ToolNames() []string {
-	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "exec_command", "write_stdin", "session_status", "list_sessions", "kill_session", "kill_all_sessions", "configure_github_token", "check_github_repo_access", "github_create_repo", "workspace_repos", "git_repo_status", "git_status", "git_diff", "git_log", "git_show", "git_blame", "git_fetch", "git_pull", "git_push", "git_clone", "git_commit", "request_permissions", "view_image"}
+	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "exec_command", "write_stdin", "session_status", "list_sessions", "kill_session", "kill_all_sessions", "configure_github_token", "check_github_repo_access", "github_create_repo", "connector_list", "connector_describe", "connector_call", "workspace_repos", "git_repo_status", "git_status", "git_diff", "git_log", "git_show", "git_blame", "git_fetch", "git_pull", "git_push", "git_clone", "git_commit", "request_permissions", "view_image"}
 	if !r.cfg.EnableViewImage {
 		all = removeTool(all, "view_image")
 	}
 	if r.cfg.ToolProfile != config.ProfileReadOnly {
 		return all
 	}
-	readOnly := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "session_status", "list_sessions", "check_github_repo_access", "workspace_repos", "git_repo_status", "git_status", "git_diff", "git_log", "git_show", "git_blame", "request_permissions", "view_image"}
+	readOnly := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "session_status", "list_sessions", "check_github_repo_access", "connector_list", "connector_describe", "workspace_repos", "git_repo_status", "git_status", "git_diff", "git_log", "git_show", "git_blame", "request_permissions", "view_image"}
 	if !r.cfg.EnableViewImage {
 		readOnly = removeTool(readOnly, "view_image")
 	}
@@ -106,6 +106,12 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.checkGitHubRepoAccess(args)
 	case "github_create_repo":
 		return r.githubCreateRepo(args)
+	case "connector_list":
+		return r.connectorList(args)
+	case "connector_describe":
+		return r.connectorDescribe(args)
+	case "connector_call":
+		return r.connectorCall(ctx, args)
 	case "workspace_repos":
 		return r.workspaceRepos(ctx, args)
 	case "git_repo_status":

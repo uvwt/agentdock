@@ -10,6 +10,8 @@ services:
       - ./Project:/workspace
     environment:
       CODING_TOOLS_MCP_TOOL_PROFILE: "full"
+      # Connector 配置放在 workspace 内，新增/修改 connector 不需要重建镜像。
+      CODING_TOOLS_MCP_CONNECTOR_DIR: ".mcp/connectors"
     command:
       - coding-tools-mcp
       - --workspace

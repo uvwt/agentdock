@@ -90,6 +90,24 @@ func outputSchema(name string) map[string]any {
 		props["clone_url"] = stringProp("Repository HTTPS clone URL.")
 		props["ssh_url"] = stringProp("Repository SSH clone URL.")
 		props["diagnostic"] = objectProp("Structured create diagnostic.")
+	case "connector_list":
+		props["connector_dir"] = stringProp("Workspace-relative connector directory.")
+		props["connectors"] = arrayProp("Available connectors.")
+		props["count"] = intProp("Connector count.")
+	case "connector_describe":
+		props["connector"] = stringProp("Connector name.")
+		props["path"] = stringProp("Workspace-relative connector path.")
+		props["description"] = stringProp("Connector description.")
+		props["version"] = stringProp("Connector version.")
+		props["actions"] = objectProp("Available connector actions.")
+		props["secrets"] = objectProp("Declared secret environment variable presence.")
+	case "connector_call":
+		props["connector"] = stringProp("Connector name.")
+		props["action"] = stringProp("Connector action name.")
+		props["stdout"] = stringProp("Connector action output.")
+		props["json"] = objectProp("Parsed JSON output when output=json.")
+		props["duration_ms"] = intProp("Execution duration in milliseconds.")
+		props["truncated"] = boolProp("Whether output was truncated.")
 	case "workspace_repos":
 		props["repos"] = arrayProp("Git repositories found under the workspace.")
 		props["count"] = intProp("Repository count.")

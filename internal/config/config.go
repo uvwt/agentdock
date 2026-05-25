@@ -28,6 +28,7 @@ type Config struct {
 	ToolProfile                   string
 	LogLevel                      string
 	SandboxMode                   string
+	ConnectorDir                  string
 	EnableViewImage               bool
 	Stdio                         bool
 	DangerouslySkipAllPermissions bool
@@ -44,6 +45,7 @@ func FromEnv() Config {
 		ToolProfile:                   getenv("CODING_TOOLS_MCP_TOOL_PROFILE", ProfileFull),
 		LogLevel:                      getenv("CODING_TOOLS_MCP_LOG_LEVEL", "info"),
 		SandboxMode:                   getenv("CODING_TOOLS_MCP_SANDBOX_MODE", SandboxModeLandlock),
+		ConnectorDir:                  getenv("CODING_TOOLS_MCP_CONNECTOR_DIR", ".mcp/connectors"),
 		EnableViewImage:               getenvBool("CODING_TOOLS_MCP_ENABLE_VIEW_IMAGE", true),
 		Stdio:                         getenvBool("CODING_TOOLS_MCP_STDIO", false),
 		DangerouslySkipAllPermissions: getenvBool("CODING_TOOLS_MCP_SKIP_PERMISSION_PROMPTS", false),
@@ -64,6 +66,9 @@ func (c *Config) Normalize() {
 	}
 	if c.LogLevel == "" {
 		c.LogLevel = "info"
+	}
+	if c.ConnectorDir == "" {
+		c.ConnectorDir = ".mcp/connectors"
 	}
 	switch c.SandboxMode {
 	case SandboxModeLandlock, SandboxModeNone:

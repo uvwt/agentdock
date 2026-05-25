@@ -1,0 +1,17 @@
+{
+  "name": "hello",
+  "description": "Example connector that echoes structured input.",
+  "version": "0.1.0",
+  "actions": {
+    "echo": {
+      "description": "Echo CONNECTOR_ARGS_JSON as JSON output.",
+      "command": "./scripts/echo.sh",
+      "timeout_ms": 10000,
+      "output": "json",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  }
+}

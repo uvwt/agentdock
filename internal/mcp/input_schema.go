@@ -6,6 +6,9 @@ func inputSchema(name string) map[string]any {
 	stringProp := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
 	intProp := func(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
 	boolProp := func(desc string) map[string]any { return map[string]any{"type": "boolean", "description": desc} }
+	objectProp := func(desc string) map[string]any {
+		return map[string]any{"type": "object", "description": desc, "additionalProperties": true}
+	}
 
 	switch name {
 	case "tool_descriptors":
@@ -79,6 +82,17 @@ func inputSchema(name string) map[string]any {
 		props["auto_init"] = boolProp("Create the repository with an initial commit.")
 		props["timeout_ms"] = intProp("HTTP timeout in milliseconds.")
 		required = []string{"name"}
+	case "connector_list":
+	case "connector_describe":
+		props["connector"] = stringProp("Connector name under the configured connector directory.")
+		props["name"] = stringProp("Alias for connector.")
+		required = []string{"connector"}
+	case "connector_call":
+		props["connector"] = stringProp("Connector name under the configured connector directory.")
+		props["action"] = stringProp("Connector action name.")
+		props["args"] = objectProp("Structured connector action arguments passed as CONNECTOR_ARGS_JSON.")
+		props["max_bytes"] = intProp("Maximum output bytes.")
+		required = []string{"connector", "action"}
 	case "workspace_repos":
 		props["max_depth"] = intProp("Maximum directory depth to scan for repositories.")
 	case "git_repo_status", "git_status":
