@@ -187,7 +187,6 @@ docker build -t agentdock:local .
 使用 Docker Compose 构建并启动：
 
 ```bash
-mkdir -p workspace AgentDock/connectors AgentDock/browser-artifacts
 docker compose build --no-cache
 docker compose up -d
 ```
@@ -623,20 +622,13 @@ browser_session_close
 
 ### Docker 浏览器增强镜像
 
-默认 `Dockerfile` 不安装 Chromium。需要浏览器增强镜像时，可以使用：
-
-```bash
-docker build -t agentdock:local .
-docker build -f Dockerfile.browser -t agentdock:browser .
-```
-
-或用 browser compose 覆盖文件：
+默认 `Dockerfile` 不安装 Chromium。需要浏览器增强能力时，用 browser compose 覆盖文件即可：
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.browser.yml up -d --build
 ```
 
-注意：`Dockerfile.browser` 只安装运行 Chromium 所需系统依赖并启用浏览器工具；Playwright runner 仍建议放在 AgentDock 的 `browser-runner` 中，这样 runner 可以独立更新，不需要重建 Go 服务。
+`Dockerfile.browser` 会安装 Chromium 系统依赖、复制 `examples/browser-runner`、执行 `npm install` 和 `npx playwright install chromium`。容器启动时会自动创建 AgentDock 子目录，并在缺少 runner 时自动初始化。
 
 ### 资源影响
 

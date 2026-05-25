@@ -8,3 +8,4 @@ services:
       AGENTDOCK_BROWSER_ENABLED: "true"
       AGENTDOCK_BROWSER_RUNNER_DIR: "browser-runner"
       AGENTDOCK_BROWSER_ARTIFACT_DIR: "browser-artifacts"
+      PLAYWRIGHT_BROWSERS_PATH: "/ms-playwright"

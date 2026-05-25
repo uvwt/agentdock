@@ -33,8 +33,10 @@ RUN npm install -g corepack \
     && corepack prepare pnpm@latest --activate
 
 COPY --from=build /out/agentdock /usr/local/bin/agentdock
+COPY docker-entrypoint.sh /usr/local/bin/agentdock-entrypoint
 
 WORKDIR /workspace
 EXPOSE 8765
+ENTRYPOINT ["agentdock-entrypoint"]
 
 CMD ["agentdock", "--workspace", "/workspace", "--host", "0.0.0.0", "--port", "8765"]

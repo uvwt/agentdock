@@ -23,4 +23,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
-ENV AGENTDOCK_BROWSER_ENABLED=true
+ENV AGENTDOCK_BROWSER_ENABLED=true \
+    AGENTDOCK_BROWSER_RUNNER_DIR=browser-runner \
+    AGENTDOCK_BROWSER_ARTIFACT_DIR=browser-artifacts \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+COPY examples/browser-runner /opt/agentdock/browser-runner
+RUN cd /opt/agentdock/browser-runner \
+    && npm install \
+    && npx playwright install chromium
