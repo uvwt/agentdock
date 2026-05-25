@@ -1,0 +1,8 @@
+{
+  "name": "coding-tools-browser-runner",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}

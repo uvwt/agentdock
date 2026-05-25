@@ -1,0 +1,10 @@
+services:
+  coding-tools-mcp-go:
+    image: coding-tools-mcp-go:browser
+    build:
+      context: .
+      dockerfile: Dockerfile.browser
+    environment:
+      CODING_TOOLS_MCP_BROWSER_ENABLED: "true"
+      CODING_TOOLS_MCP_BROWSER_RUNNER_DIR: ".mcp/browser-runner"
+      CODING_TOOLS_MCP_BROWSER_ARTIFACT_DIR: ".mcp/browser-artifacts"

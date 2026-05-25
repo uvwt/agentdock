@@ -34,6 +34,9 @@ func run() error {
 	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "log level: debug, info, warn, error")
 	flag.StringVar(&cfg.SandboxMode, "sandbox-mode", cfg.SandboxMode, "command sandbox mode: landlock or none")
 	flag.StringVar(&cfg.ConnectorDir, "connector-dir", cfg.ConnectorDir, "workspace-relative connector directory")
+	flag.BoolVar(&cfg.BrowserEnabled, "browser-enabled", cfg.BrowserEnabled, "expose optional browser automation tools")
+	flag.StringVar(&cfg.BrowserRunnerDir, "browser-runner-dir", cfg.BrowserRunnerDir, "workspace-relative browser runner directory")
+	flag.StringVar(&cfg.BrowserArtifactDir, "browser-artifact-dir", cfg.BrowserArtifactDir, "workspace-relative browser artifact directory")
 	flag.BoolVar(&cfg.EnableViewImage, "enable-view-image", cfg.EnableViewImage, "expose view_image tool")
 	flag.BoolVar(&cfg.Stdio, "stdio", cfg.Stdio, "serve JSON-RPC over stdio")
 	flag.BoolVar(&cfg.DangerouslySkipAllPermissions, "dangerously-skip-all-permissions", cfg.DangerouslySkipAllPermissions, "auto-grant permission-gated operations")
@@ -41,7 +44,7 @@ func run() error {
 	flag.Parse()
 	cfg.Normalize()
 	logx.Setup(cfg.LogLevel)
-	logx.Info("server starting", "workspace", cfg.Workspace, "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "tool_profile", cfg.ToolProfile, "log_level", cfg.LogLevel, "sandbox_mode", cfg.SandboxMode, "connector_dir", cfg.ConnectorDir)
+	logx.Info("server starting", "workspace", cfg.Workspace, "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "tool_profile", cfg.ToolProfile, "log_level", cfg.LogLevel, "sandbox_mode", cfg.SandboxMode, "connector_dir", cfg.ConnectorDir, "browser_enabled", cfg.BrowserEnabled, "browser_runner_dir", cfg.BrowserRunnerDir)
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
 		return err

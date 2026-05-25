@@ -108,6 +108,22 @@ func outputSchema(name string) map[string]any {
 		props["json"] = objectProp("Parsed JSON output when output=json.")
 		props["duration_ms"] = intProp("Execution duration in milliseconds.")
 		props["truncated"] = boolProp("Whether output was truncated.")
+	case "browser_session_start", "browser_session_close":
+		props["operation"] = stringProp("Browser operation name.")
+		props["session_id"] = stringProp("Browser session id.")
+		props["status"] = stringProp("Browser session status.")
+		props["stdout"] = stringProp("Raw browser runner output.")
+	case "browser_action", "browser_snapshot":
+		props["operation"] = stringProp("Browser operation name.")
+		props["session_id"] = stringProp("Browser session id.")
+		props["url"] = stringProp("Current page URL.")
+		props["title"] = stringProp("Current page title.")
+		props["text"] = stringProp("Current page body text excerpt.")
+		props["screenshot_path"] = stringProp("Workspace-relative screenshot path.")
+		props["console_errors"] = arrayProp("Browser console errors captured during the operation.")
+		props["network_errors"] = arrayProp("Network request failures captured during the operation.")
+		props["stdout"] = stringProp("Raw browser runner output.")
+		props["truncated"] = boolProp("Whether output was truncated.")
 	case "workspace_repos":
 		props["repos"] = arrayProp("Git repositories found under the workspace.")
 		props["count"] = intProp("Repository count.")

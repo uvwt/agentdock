@@ -9,6 +9,9 @@ func inputSchema(name string) map[string]any {
 	objectProp := func(desc string) map[string]any {
 		return map[string]any{"type": "object", "description": desc, "additionalProperties": true}
 	}
+	arrayProp := func(desc string) map[string]any {
+		return map[string]any{"type": "array", "description": desc, "items": map[string]any{"type": "object"}}
+	}
 
 	switch name {
 	case "tool_descriptors":
@@ -93,6 +96,25 @@ func inputSchema(name string) map[string]any {
 		props["args"] = objectProp("Structured connector action arguments passed as CONNECTOR_ARGS_JSON.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
 		required = []string{"connector", "action"}
+	case "browser_session_start":
+		props["url"] = stringProp("Initial URL. Defaults to about:blank.")
+		props["headless"] = boolProp("Run browser headless. Defaults to true.")
+		props["viewport"] = objectProp("Viewport object, for example {width:1280,height:800}.")
+		props["session_id"] = stringProp("Optional caller-provided session id.")
+		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
+	case "browser_action":
+		props["session_id"] = stringProp("Browser session id.")
+		props["actions"] = arrayProp("Actions to run: goto, click, fill, press, wait, wait_for_selector, select, scroll, reload, back, forward, evaluate.")
+		props["full_page"] = boolProp("Capture full-page screenshot in the final snapshot.")
+		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
+		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
+		required = []string{"session_id", "actions"}
+	case "browser_snapshot", "browser_session_close":
+		props["session_id"] = stringProp("Browser session id.")
+		props["full_page"] = boolProp("Capture full-page screenshot for snapshot.")
+		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
+		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
+		required = []string{"session_id"}
 	case "workspace_repos":
 		props["max_depth"] = intProp("Maximum directory depth to scan for repositories.")
 	case "git_repo_status", "git_status":

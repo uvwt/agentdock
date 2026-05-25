@@ -15,6 +15,7 @@ Coding Tools MCP Go 是一个用 Go 编写的 Model Context Protocol（MCP）工
 - **Git 专用工具**：支持仓库发现、状态、diff、log、show、blame、fetch、pull、push、clone、commit。
 - **GitHub token 辅助**：支持从 `.env` 读取 GitHub token 并配置 HTTPS credential，输出始终脱敏。
 - **动态 Connector**：支持从 workspace 加载 `.mcp/connectors` 动态能力，新增应用脚本不需要重新编译 MCP。
+- **可选浏览器自动化**：可启用浏览器自动化工具，通过 workspace 内 Node runner 调用 Playwright；默认不开启、不安装 Chromium。
 - **结构化输出**：工具返回 `structuredContent`，并提供 `outputSchema`，方便 MCP 客户端理解结果。
 - **日志与排障**：默认输出 JSON 日志到 stderr，可通过 `docker logs` 或 `docker compose logs` 查看。
 - **Linux 沙箱增强**：在 Linux 下 best-effort 使用 Landlock 限制命令文件系统访问；不支持时会返回 warning。
@@ -95,6 +96,17 @@ Coding Tools MCP Go 是一个用 Go 编写的 Model Context Protocol（MCP）工
 | `connector_list` | 列出 workspace 中已安装的动态 connector。 |
 | `connector_describe` | 查看指定 connector 的说明、动作和输入 schema。 |
 | `connector_call` | 调用指定 connector action，并传入结构化参数。 |
+
+### 可选浏览器自动化
+
+浏览器工具默认不暴露。只有启用 `CODING_TOOLS_MCP_BROWSER_ENABLED=true`，并准备好 workspace 内的 Node runner 后，工具列表才会出现以下工具。
+
+| 工具 | 说明 |
+| --- | --- |
+| `browser_session_start` | 创建浏览器自动化会话。 |
+| `browser_action` | 执行 goto、click、fill、wait、scroll 等动作，并返回页面快照。 |
+| `browser_snapshot` | 获取当前页面 URL、标题、文本摘要、截图路径、console/network 错误。 |
+| `browser_session_close` | 关闭浏览器会话。 |
 
 ## 多项目 workspace 模型
 
@@ -432,6 +444,9 @@ curl http://127.0.0.1:8765/healthz
 | `CODING_TOOLS_MCP_LOG_LEVEL` | `info` | 日志级别：`debug`、`info`、`warn`、`error`。 |
 | `CODING_TOOLS_MCP_SANDBOX_MODE` | `landlock` | 命令沙箱模式，支持 `landlock`、`none`。裸机需要 sudo 时设为 `none`。 |
 | `CODING_TOOLS_MCP_CONNECTOR_DIR` | `.mcp/connectors` | workspace-relative 动态 connector 目录。 |
+| `CODING_TOOLS_MCP_BROWSER_ENABLED` | `false` | 是否暴露可选浏览器自动化工具。 |
+| `CODING_TOOLS_MCP_BROWSER_RUNNER_DIR` | `.mcp/browser-runner` | workspace-relative Node browser runner 目录。 |
+| `CODING_TOOLS_MCP_BROWSER_ARTIFACT_DIR` | `.mcp/browser-artifacts` | workspace-relative 截图、状态和 trace 等浏览器产物目录。 |
 
 常用命令行参数：
 
@@ -520,6 +535,109 @@ Connector 运行时会收到这些环境变量：
 - `output=json` 时，MCP 会尝试把 stdout 解析成 JSON 并放入返回的 `json` 字段。
 - 如果 connector 需要密钥，建议从服务环境变量读取，并在 `connector.json` 的 `secrets` 中声明变量名，MCP 会在描述时只返回是否配置，不返回密钥内容。
 - 新增/修改 connector 文件不需要重启 MCP；修改 Go 核心代码或安装系统依赖才需要重新部署。
+
+## 可选浏览器自动化
+
+浏览器自动化是增强能力，不属于默认最小部署。默认 Docker 镜像不会安装 Chromium，也不会暴露 `browser_*` 工具。需要时再启用。
+
+### 安装 runner
+
+浏览器 runner 放在 workspace 内，推荐路径：
+
+```text
+<workspace>/.mcp/browser-runner/
+```
+
+可以把示例 runner 复制进去并安装依赖：
+
+```bash
+cd /opt/coding-tools-mcp-go
+WORKSPACE=/srv/coding-workspace ./scripts/install-browser-runner.sh
+```
+
+脚本会复制：
+
+```text
+examples/browser-runner/
+```
+
+到：
+
+```text
+/srv/coding-workspace/.mcp/browser-runner/
+```
+
+并执行：
+
+```bash
+npm install
+npx playwright install chromium
+```
+
+如果裸机缺少 Chromium 系统依赖，可以在 runner 目录执行：
+
+```bash
+npx playwright install --with-deps chromium
+```
+
+### 启用工具
+
+环境变量：
+
+```bash
+CODING_TOOLS_MCP_BROWSER_ENABLED=true
+CODING_TOOLS_MCP_BROWSER_RUNNER_DIR=.mcp/browser-runner
+CODING_TOOLS_MCP_BROWSER_ARTIFACT_DIR=.mcp/browser-artifacts
+```
+
+或启动参数：
+
+```bash
+--browser-enabled \
+--browser-runner-dir .mcp/browser-runner \
+--browser-artifact-dir .mcp/browser-artifacts
+```
+
+重启服务后，工具列表会新增：
+
+```text
+browser_session_start
+browser_action
+browser_snapshot
+browser_session_close
+```
+
+### Docker 浏览器增强镜像
+
+默认 `Dockerfile` 不安装 Chromium。需要浏览器增强镜像时，可以使用：
+
+```bash
+docker build -t coding-tools-mcp-go:local .
+docker build -f Dockerfile.browser -t coding-tools-mcp-go:browser .
+```
+
+或用 browser compose 覆盖文件：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.browser.yml up -d --build
+```
+
+注意：`Dockerfile.browser` 只安装运行 Chromium 所需系统依赖并启用浏览器工具；Playwright runner 仍建议放在 workspace 的 `.mcp/browser-runner` 中，这样 runner 可以独立更新，不需要重建 Go 服务。
+
+### 资源影响
+
+浏览器自动化会明显增加资源占用：
+
+```text
+存储：通常增加 300MB ~ 800MB，取决于 Chromium、Playwright 和系统依赖。
+内存：单个 headless Chromium 会话通常 200MB ~ 500MB，复杂网页可能更高。
+```
+
+建议限制并发浏览器会话，并定期清理：
+
+```text
+<workspace>/.mcp/browser-artifacts/
+```
 
 ## 日志
 
