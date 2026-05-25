@@ -9,10 +9,10 @@ import (
 	"io"
 	"time"
 
-	"github.com/uvwt/coding-tools-mcp-go/internal/config"
-	"github.com/uvwt/coding-tools-mcp-go/internal/jsonrpc"
-	"github.com/uvwt/coding-tools-mcp-go/internal/logx"
-	"github.com/uvwt/coding-tools-mcp-go/internal/tools"
+	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/jsonrpc"
+	"github.com/uvwt/agentdock/internal/logx"
+	"github.com/uvwt/agentdock/internal/tools"
 )
 
 type Server struct {
@@ -165,5 +165,5 @@ func toolDescription(name string) string {
 	if def, ok := toolDefinition(name); ok {
 		return def.Description
 	}
-	return "Coding Tools MCP tool."
+	return "AgentDock tool."
 }

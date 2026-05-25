@@ -1,7 +1,7 @@
 .PHONY: fmt test vet build check run docker-build docker-up docker-down logs clean
 
-APP := coding-tools-mcp
-IMAGE := coding-tools-mcp-go:local
+APP := agentdock
+IMAGE := agentdock:local
 WORKSPACE ?= /workspace
 HOST ?= 127.0.0.1
 PORT ?= 8765
@@ -17,12 +17,12 @@ vet:
 	go vet ./...
 
 build:
-	go build -trimpath -o ./bin/$(APP) ./cmd/coding-tools-mcp
+	go build -trimpath -o ./bin/$(APP) ./cmd/agentdock
 
 check: fmt test vet build
 
 run:
-	go run ./cmd/coding-tools-mcp --workspace $(WORKSPACE) --host $(HOST) --port $(PORT) --log-level $(LOG_LEVEL)
+	go run ./cmd/agentdock --workspace $(WORKSPACE) --host $(HOST) --port $(PORT) --log-level $(LOG_LEVEL)
 
 docker-build:
 	docker build -t $(IMAGE) .

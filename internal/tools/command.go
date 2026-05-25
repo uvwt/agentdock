@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/uvwt/coding-tools-mcp-go/internal/policy"
-	"github.com/uvwt/coding-tools-mcp-go/internal/sandbox"
-	"github.com/uvwt/coding-tools-mcp-go/internal/session"
+	"github.com/uvwt/agentdock/internal/policy"
+	"github.com/uvwt/agentdock/internal/sandbox"
+	"github.com/uvwt/agentdock/internal/session"
 )
 
 type SessionStore = session.Store

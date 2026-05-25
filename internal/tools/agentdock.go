@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/uvwt/coding-tools-mcp-go/internal/workspace"
+	"github.com/uvwt/agentdock/internal/workspace"
 )
 
 type controlPath struct {

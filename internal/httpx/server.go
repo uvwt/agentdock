@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/uvwt/coding-tools-mcp-go/internal/auth"
-	"github.com/uvwt/coding-tools-mcp-go/internal/config"
-	"github.com/uvwt/coding-tools-mcp-go/internal/jsonrpc"
-	"github.com/uvwt/coding-tools-mcp-go/internal/logx"
-	"github.com/uvwt/coding-tools-mcp-go/internal/mcp"
+	"github.com/uvwt/agentdock/internal/auth"
+	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/jsonrpc"
+	"github.com/uvwt/agentdock/internal/logx"
+	"github.com/uvwt/agentdock/internal/mcp"
 )
 
 func Serve(server *mcp.Server, cfg config.Config) error {
@@ -202,7 +202,7 @@ func authorizedOAuth(r *http.Request, cfg config.Config) bool {
 	return auth.ValidateToken(strings.TrimPrefix(header, "Bearer "), issuer, oauthSigningKey())
 }
 
-func oauthSigningKey() string { return os.Getenv("CODING_TOOLS_MCP_OAUTH_TOKEN_SECRET") }
+func oauthSigningKey() string { return os.Getenv("AGENTDOCK_OAUTH_TOKEN_SECRET") }
 
 func validClientAuthentication(r *http.Request) bool {
 	configured := auth.ConfiguredClientSecret()
@@ -223,7 +223,7 @@ func writeAuthorizeForm(w http.ResponseWriter, values url.Values, errorText stri
 	if errorText != "" {
 		errBlock = "<p style='color:red'>" + html.EscapeString(errorText) + "</p>"
 	}
-	_, _ = io.WriteString(w, "<html><body><h1>Authorize Coding Tools MCP</h1>"+errBlock+"<form method='POST'><input type='hidden' name='client_id' value='"+html.EscapeString(values.Get("client_id"))+"'><input type='hidden' name='redirect_uri' value='"+html.EscapeString(values.Get("redirect_uri"))+"'><input type='hidden' name='code_challenge' value='"+html.EscapeString(values.Get("code_challenge"))+"'><input type='hidden' name='code_challenge_method' value='"+html.EscapeString(values.Get("code_challenge_method"))+"'><input type='hidden' name='state' value='"+html.EscapeString(values.Get("state"))+"'><label>Password <input type='password' name='password'></label><button type='submit'>Authorize</button></form></body></html>")
+	_, _ = io.WriteString(w, "<html><body><h1>Authorize AgentDock</h1>"+errBlock+"<form method='POST'><input type='hidden' name='client_id' value='"+html.EscapeString(values.Get("client_id"))+"'><input type='hidden' name='redirect_uri' value='"+html.EscapeString(values.Get("redirect_uri"))+"'><input type='hidden' name='code_challenge' value='"+html.EscapeString(values.Get("code_challenge"))+"'><input type='hidden' name='code_challenge_method' value='"+html.EscapeString(values.Get("code_challenge_method"))+"'><input type='hidden' name='state' value='"+html.EscapeString(values.Get("state"))+"'><label>Password <input type='password' name='password'></label><button type='submit'>Authorize</button></form></body></html>")
 }
 
 func firstNonEmpty(values ...string) string {
@@ -244,7 +244,7 @@ func serverCard(cfg config.Config, r *http.Request) map[string]any {
 	if cfg.OAuthClientID != "" || cfg.OAuthServerURL != "" {
 		authInfo = map[string]any{"type": "oauth2", "scheme": "Bearer", "header": "Authorization", "authorizationUrl": issuer + "/oauth/authorize", "tokenUrl": issuer + "/oauth/token"}
 	}
-	return map[string]any{"name": config.ServerName, "title": "Coding Tools MCP", "version": config.Version, "description": "Local coding tools MCP server", "transport": map[string]any{"type": "streamable-http", "url": issuer + "/mcp"}, "auth": authInfo}
+	return map[string]any{"name": config.ServerName, "title": "AgentDock", "version": config.Version, "description": "Local coding tools MCP server", "transport": map[string]any{"type": "streamable-http", "url": issuer + "/mcp"}, "auth": authInfo}
 }
 
 func writeJSON(w http.ResponseWriter, value any) {

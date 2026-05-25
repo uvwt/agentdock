@@ -1,4 +1,4 @@
-FROM coding-tools-mcp-go:local
+FROM agentdock:local
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
@@ -23,4 +23,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
-ENV CODING_TOOLS_MCP_BROWSER_ENABLED=true
+ENV AGENTDOCK_BROWSER_ENABLED=true

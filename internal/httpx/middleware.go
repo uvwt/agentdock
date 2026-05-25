@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/uvwt/coding-tools-mcp-go/internal/logx"
+	"github.com/uvwt/agentdock/internal/logx"
 )
 
 type statusRecorder struct {

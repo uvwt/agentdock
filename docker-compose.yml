@@ -1,8 +1,8 @@
 services:
-  coding-tools-mcp-go:
-    image: coding-tools-mcp-go:local
+  agentdock:
+    image: agentdock:local
     build: .
-    container_name: coding-tools-mcp-go
+    container_name: agentdock
     restart: unless-stopped
     ports:
       - "127.0.0.1:18766:8765"
@@ -10,11 +10,11 @@ services:
       - ./Project:/workspace
       - ./AgentDock:/agent-dock
     environment:
-      CODING_TOOLS_MCP_TOOL_PROFILE: "full"
+      AGENTDOCK_TOOL_PROFILE: "full"
       # AgentDock 是 MCP 自身控制层目录，和用户项目 workspace 分离。
-      CODING_TOOLS_MCP_AGENT_DOCK_DIR: "/agent-dock"
+      AGENTDOCK_DIR: "/agent-dock"
     command:
-      - coding-tools-mcp
+      - agentdock
       - --workspace
       - /workspace
       - --host

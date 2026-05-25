@@ -107,11 +107,11 @@ func ValidateToken(token, issuer, key string) bool {
 }
 
 func ConfiguredLoginValue() string {
-	return os.Getenv("CODING_TOOLS_MCP_OAUTH_" + "PASSWORD")
+	return os.Getenv("AGENTDOCK_OAUTH_" + "PASSWORD")
 }
 
 func ConfiguredClientSecret() string {
-	return os.Getenv("CODING_TOOLS_MCP_OAUTH_CLIENT_" + "SECRET")
+	return os.Getenv("AGENTDOCK_OAUTH_CLIENT_" + "SECRET")
 }
 
 func ConstantTimeEqual(a, b string) bool {

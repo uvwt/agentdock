@@ -1,4 +1,4 @@
-module github.com/uvwt/coding-tools-mcp-go
+module github.com/uvwt/agentdock
 
 go 1.22
 

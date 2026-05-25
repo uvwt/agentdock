@@ -1,6 +1,6 @@
-# Coding Tools MCP Go
+# AgentDock
 
-Coding Tools MCP Go 是一个用 Go 编写的 Model Context Protocol（MCP）工具服务。它把一个本地或容器内的工作空间暴露给支持 MCP 的客户端，让模型可以安全地读取文件、搜索代码、编辑文件、执行受控命令、管理长任务会话、处理 Git 仓库，并查看图片资源。
+AgentDock 是一个用 Go 编写的 Model Context Protocol（MCP）工具服务。它把一个本地或容器内的工作空间暴露给支持 MCP 的客户端，让模型可以安全地读取文件、搜索代码、编辑文件、执行受控命令、管理长任务会话、处理 Git 仓库，并查看图片资源。
 
 这个项目适合用作 ChatGPT / MCP 客户端的代码工作区后端，也适合放进 Docker 容器里作为轻量级代码代理工具服务。
 
@@ -99,7 +99,7 @@ Coding Tools MCP Go 是一个用 Go 编写的 Model Context Protocol（MCP）工
 
 ### 可选浏览器自动化
 
-浏览器工具默认不暴露。只有启用 `CODING_TOOLS_MCP_BROWSER_ENABLED=true`，并准备好 workspace 内的 Node runner 后，工具列表才会出现以下工具。
+浏览器工具默认不暴露。只有启用 `AGENTDOCK_BROWSER_ENABLED=true`，并准备好 workspace 内的 Node runner 后，工具列表才会出现以下工具。
 
 | 工具 | 说明 |
 | --- | --- |
@@ -116,7 +116,7 @@ Coding Tools MCP Go 是一个用 Go 编写的 Model Context Protocol（MCP）工
 
 ```text
 /workspace/
-  coding-tools-mcp-go/
+  agentdock/
     .git/
   another-project/
     .git/
@@ -126,7 +126,7 @@ Git 工具建议显式传入：
 
 ```json
 {
-  "repo_path": "coding-tools-mcp-go"
+  "repo_path": "agentdock"
 }
 ```
 
@@ -136,7 +136,7 @@ Git 工具建议显式传入：
 
 ```json
 {
-  "repo_path": "coding-tools-mcp-go",
+  "repo_path": "agentdock",
   "remote": "origin",
   "branch": "main"
 }
@@ -155,13 +155,13 @@ Git 工具建议显式传入：
 ```bash
 go test ./...
 go vet ./...
-go build ./cmd/coding-tools-mcp
+go build ./cmd/agentdock
 ```
 
 运行二进制：
 
 ```bash
-./coding-tools-mcp --workspace /path/to/workspace --host 127.0.0.1 --port 8765
+./agentdock --workspace /path/to/workspace --host 127.0.0.1 --port 8765
 ```
 
 HTTP MCP endpoint：
@@ -173,7 +173,7 @@ http://127.0.0.1:8765/mcp
 stdio 模式：
 
 ```bash
-./coding-tools-mcp --stdio --workspace /path/to/workspace
+./agentdock --stdio --workspace /path/to/workspace
 ```
 
 ## Docker 使用
@@ -181,7 +181,7 @@ stdio 模式：
 本地构建镜像：
 
 ```bash
-docker build -t coding-tools-mcp-go:local .
+docker build -t agentdock:local .
 ```
 
 使用 Docker Compose 构建并启动：
@@ -218,7 +218,7 @@ volumes:
 
 ```yaml
 environment:
-  CODING_TOOLS_MCP_AGENT_DOCK_DIR: "/agent-dock"
+  AGENTDOCK_DIR: "/agent-dock"
 ```
 
 配置 AgentDock 后，connector 默认放在宿主机：
@@ -238,7 +238,7 @@ environment:
 代码更新后的推荐流程：
 
 ```bash
-cd coding-tools-mcp-go
+cd agentdock
 
 go test ./...
 
@@ -252,7 +252,7 @@ docker compose logs -f
 如果只想手动构建镜像：
 
 ```bash
-docker build --no-cache -t coding-tools-mcp-go:local .
+docker build --no-cache -t agentdock:local .
 ```
 
 ## 裸机 VPS 部署
@@ -262,24 +262,24 @@ docker build --no-cache -t coding-tools-mcp-go:local .
 推荐目录结构：
 
 ```text
-/opt/coding-tools-mcp-go/        # 项目源码
-/usr/local/bin/coding-tools-mcp  # 编译后的可执行文件
+/opt/agentdock/        # 项目源码
+/usr/local/bin/agentdock  # 编译后的可执行文件
 /srv/coding-workspace/           # MCP 可操作的项目工作区
-/etc/coding-tools-mcp/env        # 环境变量和密钥
-/etc/systemd/system/coding-tools-mcp.service
+/etc/agentdock/env        # 环境变量和密钥
+/etc/systemd/system/agentdock.service
 ```
 
 构建并安装二进制：
 
 ```bash
 cd /opt
-sudo git clone https://github.com/uvwt/coding-tools-mcp-go.git
-sudo chown -R $USER:$USER /opt/coding-tools-mcp-go
+sudo git clone https://github.com/uvwt/agentdock.git
+sudo chown -R $USER:$USER /opt/agentdock
 
-cd /opt/coding-tools-mcp-go
+cd /opt/agentdock
 go test ./...
-go build -trimpath -o coding-tools-mcp ./cmd/coding-tools-mcp
-sudo install -m 0755 coding-tools-mcp /usr/local/bin/coding-tools-mcp
+go build -trimpath -o agentdock ./cmd/agentdock
+sudo install -m 0755 agentdock /usr/local/bin/agentdock
 ```
 
 创建 workspace：
@@ -292,50 +292,50 @@ sudo chown -R $USER:$USER /srv/coding-workspace
 创建环境变量文件：
 
 ```bash
-sudo mkdir -p /etc/coding-tools-mcp
-sudo nano /etc/coding-tools-mcp/env
+sudo mkdir -p /etc/agentdock
+sudo nano /etc/agentdock/env
 ```
 
 示例内容：
 
 ```bash
-CODING_TOOLS_MCP_OAUTH_CLIENT_ID=coding-tools-client
-CODING_TOOLS_MCP_OAUTH_CLIENT_SECRET=replace-with-random-secret
-CODING_TOOLS_MCP_OAUTH_PASSWORD=replace-with-login-password
-CODING_TOOLS_MCP_OAUTH_TOKEN_SECRET=replace-with-random-secret
-CODING_TOOLS_MCP_SERVER_URL=https://codingvps.example.com
-CODING_TOOLS_MCP_TOOL_PROFILE=full
-CODING_TOOLS_MCP_LOG_LEVEL=info
+AGENTDOCK_OAUTH_CLIENT_ID=coding-tools-client
+AGENTDOCK_OAUTH_CLIENT_SECRET=replace-with-random-secret
+AGENTDOCK_OAUTH_PASSWORD=replace-with-login-password
+AGENTDOCK_OAUTH_TOKEN_SECRET=replace-with-random-secret
+AGENTDOCK_SERVER_URL=https://codingvps.example.com
+AGENTDOCK_TOOL_PROFILE=full
+AGENTDOCK_LOG_LEVEL=info
 
 # 默认 landlock。裸机 VPS 如需在 exec_command 内使用 sudo，改成 none。
-CODING_TOOLS_MCP_SANDBOX_MODE=none
+AGENTDOCK_SANDBOX_MODE=none
 ```
 
 收紧权限：
 
 ```bash
-sudo chmod 600 /etc/coding-tools-mcp/env
+sudo chmod 600 /etc/agentdock/env
 ```
 
 创建 systemd 服务：
 
 ```bash
-sudo nano /etc/systemd/system/coding-tools-mcp.service
+sudo nano /etc/systemd/system/agentdock.service
 ```
 
 示例内容，其中 `User` / `Group` 替换成你的 Linux 用户名：
 
 ```ini
 [Unit]
-Description=Coding Tools MCP Go
+Description=AgentDock
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-EnvironmentFile=/etc/coding-tools-mcp/env
+EnvironmentFile=/etc/agentdock/env
 WorkingDirectory=/srv/coding-workspace
-ExecStart=/usr/local/bin/coding-tools-mcp \
+ExecStart=/usr/local/bin/agentdock \
   --workspace /srv/coding-workspace \
   --host 127.0.0.1 \
   --port 8765 \
@@ -361,14 +361,14 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now coding-tools-mcp
-sudo systemctl status coding-tools-mcp
+sudo systemctl enable --now agentdock
+sudo systemctl status agentdock
 ```
 
 查看日志：
 
 ```bash
-journalctl -u coding-tools-mcp -f
+journalctl -u agentdock -f
 ```
 
 本机健康检查：
@@ -397,7 +397,7 @@ sudo: The "no new privileges" flag is set, which prevents sudo from running as r
 说明当前命令仍处于 `landlock` 模式，或 systemd 服务还没有重启到新配置。裸机可信部署需要设置：
 
 ```bash
-CODING_TOOLS_MCP_SANDBOX_MODE=none
+AGENTDOCK_SANDBOX_MODE=none
 ```
 
 或者启动参数：
@@ -410,7 +410,7 @@ CODING_TOOLS_MCP_SANDBOX_MODE=none
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl restart coding-tools-mcp
+sudo systemctl restart agentdock
 ```
 
 ### 裸机更新流程
@@ -418,21 +418,21 @@ sudo systemctl restart coding-tools-mcp
 以后更新 VPS 上的服务，执行：
 
 ```bash
-cd /opt/coding-tools-mcp-go
+cd /opt/agentdock
 git pull
 
 go test ./...
-go build -trimpath -o coding-tools-mcp ./cmd/coding-tools-mcp
+go build -trimpath -o agentdock ./cmd/agentdock
 
-sudo install -m 0755 coding-tools-mcp /usr/local/bin/coding-tools-mcp
-sudo systemctl restart coding-tools-mcp
-sudo systemctl status coding-tools-mcp
+sudo install -m 0755 agentdock /usr/local/bin/agentdock
+sudo systemctl restart agentdock
+sudo systemctl status agentdock
 ```
 
 确认新版本启动参数和日志：
 
 ```bash
-journalctl -u coding-tools-mcp -n 100 --no-pager
+journalctl -u agentdock -n 100 --no-pager
 curl http://127.0.0.1:8765/healthz
 ```
 
@@ -442,30 +442,30 @@ curl http://127.0.0.1:8765/healthz
 
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `CODING_TOOLS_MCP_WORKSPACE` | `.` | workspace 根目录。 |
-| `CODING_TOOLS_MCP_HOST` | `127.0.0.1` | HTTP 监听地址。 |
-| `CODING_TOOLS_MCP_PORT` | `8765` | HTTP 监听端口。 |
-| `CODING_TOOLS_MCP_AUTH_TOKEN` | 空 | 可选 Bearer token。 |
-| `CODING_TOOLS_MCP_TOOL_PROFILE` | `full` | 工具集配置，支持 `full`、`read-only`、`compat-readonly-all`。 |
-| `CODING_TOOLS_MCP_ENABLE_VIEW_IMAGE` | `true` | 是否暴露 `view_image` 工具。 |
-| `CODING_TOOLS_MCP_STDIO` | `false` | 是否使用 stdio 模式。 |
-| `CODING_TOOLS_MCP_SKIP_PERMISSION_PROMPTS` | `false` | 是否跳过命令策略确认。仅建议在受信容器中使用。 |
-| `CODING_TOOLS_MCP_LOG_LEVEL` | `info` | 日志级别：`debug`、`info`、`warn`、`error`。 |
-| `CODING_TOOLS_MCP_SANDBOX_MODE` | `landlock` | 命令沙箱模式，支持 `landlock`、`none`。裸机需要 sudo 时设为 `none`。 |
-| `CODING_TOOLS_MCP_AGENT_DOCK_DIR` | `AgentDock` | AgentDock 控制层目录。connector、browser runner、artifacts 默认相对该目录解析。 |
-| `CODING_TOOLS_MCP_CONNECTOR_DIR` | `connectors` | AgentDock-relative 动态 connector 目录。 |
-| `CODING_TOOLS_MCP_BROWSER_ENABLED` | `false` | 是否暴露可选浏览器自动化工具。 |
-| `CODING_TOOLS_MCP_BROWSER_RUNNER_DIR` | `browser-runner` | AgentDock-relative Node browser runner 目录。 |
-| `CODING_TOOLS_MCP_BROWSER_ARTIFACT_DIR` | `browser-artifacts` | AgentDock-relative 截图、状态和 trace 等浏览器产物目录。 |
+| `AGENTDOCK_WORKSPACE` | `.` | workspace 根目录。 |
+| `AGENTDOCK_HOST` | `127.0.0.1` | HTTP 监听地址。 |
+| `AGENTDOCK_PORT` | `8765` | HTTP 监听端口。 |
+| `AGENTDOCK_AUTH_TOKEN` | 空 | 可选 Bearer token。 |
+| `AGENTDOCK_TOOL_PROFILE` | `full` | 工具集配置，支持 `full`、`read-only`、`compat-readonly-all`。 |
+| `AGENTDOCK_ENABLE_VIEW_IMAGE` | `true` | 是否暴露 `view_image` 工具。 |
+| `AGENTDOCK_STDIO` | `false` | 是否使用 stdio 模式。 |
+| `AGENTDOCK_SKIP_PERMISSION_PROMPTS` | `false` | 是否跳过命令策略确认。仅建议在受信容器中使用。 |
+| `AGENTDOCK_LOG_LEVEL` | `info` | 日志级别：`debug`、`info`、`warn`、`error`。 |
+| `AGENTDOCK_SANDBOX_MODE` | `landlock` | 命令沙箱模式，支持 `landlock`、`none`。裸机需要 sudo 时设为 `none`。 |
+| `AGENTDOCK_DIR` | `AgentDock` | AgentDock 控制层目录。connector、browser runner、artifacts 默认相对该目录解析。 |
+| `AGENTDOCK_CONNECTOR_DIR` | `connectors` | AgentDock-relative 动态 connector 目录。 |
+| `AGENTDOCK_BROWSER_ENABLED` | `false` | 是否暴露可选浏览器自动化工具。 |
+| `AGENTDOCK_BROWSER_RUNNER_DIR` | `browser-runner` | AgentDock-relative Node browser runner 目录。 |
+| `AGENTDOCK_BROWSER_ARTIFACT_DIR` | `browser-artifacts` | AgentDock-relative 截图、状态和 trace 等浏览器产物目录。 |
 
 常用命令行参数：
 
 ```bash
-./coding-tools-mcp \
+./agentdock \
   --workspace /workspace \
   --host 0.0.0.0 \
   --port 8765 \
-  --agent-dock-dir /agent-dock \
+  --agentdock-dir /agent-dock \
   --sandbox-mode landlock \
   --log-level info
 ```
@@ -563,7 +563,7 @@ Connector 运行时会收到这些环境变量：
 可以把示例 runner 复制进去并安装依赖：
 
 ```bash
-cd /opt/coding-tools-mcp-go
+cd /opt/agentdock
 AGENT_DOCK=/srv/coding-agent-dock ./scripts/install-browser-runner.sh
 ```
 
@@ -597,17 +597,17 @@ npx playwright install --with-deps chromium
 环境变量：
 
 ```bash
-CODING_TOOLS_MCP_BROWSER_ENABLED=true
-CODING_TOOLS_MCP_AGENT_DOCK_DIR=/srv/coding-agent-dock
-CODING_TOOLS_MCP_BROWSER_RUNNER_DIR=browser-runner
-CODING_TOOLS_MCP_BROWSER_ARTIFACT_DIR=browser-artifacts
+AGENTDOCK_BROWSER_ENABLED=true
+AGENTDOCK_DIR=/srv/coding-agent-dock
+AGENTDOCK_BROWSER_RUNNER_DIR=browser-runner
+AGENTDOCK_BROWSER_ARTIFACT_DIR=browser-artifacts
 ```
 
 或启动参数：
 
 ```bash
 --browser-enabled \
---agent-dock-dir /srv/coding-agent-dock \
+--agentdock-dir /srv/coding-agent-dock \
 --browser-runner-dir browser-runner \
 --browser-artifact-dir browser-artifacts
 ```
@@ -626,8 +626,8 @@ browser_session_close
 默认 `Dockerfile` 不安装 Chromium。需要浏览器增强镜像时，可以使用：
 
 ```bash
-docker build -t coding-tools-mcp-go:local .
-docker build -f Dockerfile.browser -t coding-tools-mcp-go:browser .
+docker build -t agentdock:local .
+docker build -f Dockerfile.browser -t agentdock:browser .
 ```
 
 或用 browser compose 覆盖文件：
@@ -713,7 +713,7 @@ Fine-grained PAT 常见要求：
 目录结构：
 
 ```text
-cmd/coding-tools-mcp/     CLI 入口
+cmd/agentdock/     CLI 入口
 internal/config/          配置与环境变量
 internal/auth/            Bearer token 与 OAuth 辅助逻辑
 internal/jsonrpc/         JSON-RPC 2.0 类型与响应
@@ -770,7 +770,7 @@ tool_descriptors
 
 ```json
 {
-  "repo_path": "coding-tools-mcp-go"
+  "repo_path": "agentdock"
 }
 ```
 

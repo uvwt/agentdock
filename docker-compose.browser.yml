@@ -1,10 +1,10 @@
 services:
-  coding-tools-mcp-go:
-    image: coding-tools-mcp-go:browser
+  agentdock:
+    image: agentdock:browser
     build:
       context: .
       dockerfile: Dockerfile.browser
     environment:
-      CODING_TOOLS_MCP_BROWSER_ENABLED: "true"
-      CODING_TOOLS_MCP_BROWSER_RUNNER_DIR: "browser-runner"
-      CODING_TOOLS_MCP_BROWSER_ARTIFACT_DIR: "browser-artifacts"
+      AGENTDOCK_BROWSER_ENABLED: "true"
+      AGENTDOCK_BROWSER_RUNNER_DIR: "browser-runner"
+      AGENTDOCK_BROWSER_ARTIFACT_DIR: "browser-artifacts"

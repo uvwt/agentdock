@@ -223,7 +223,7 @@ func githubGet(client *http.Client, token, endpoint string) (login, scopes strin
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	req.Header.Set("User-Agent", "coding-tools-mcp")
+	req.Header.Set("User-Agent", "agentdock")
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", "", 0, err.Error()
@@ -253,7 +253,7 @@ func githubPostJSON(client *http.Client, token, endpoint string, payload map[str
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	req.Header.Set("User-Agent", "coding-tools-mcp")
+	req.Header.Set("User-Agent", "agentdock")
 	resp, err := client.Do(req)
 	if err != nil {
 		return 0, nil, err.Error()

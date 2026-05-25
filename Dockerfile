@@ -5,7 +5,7 @@ COPY go.mod go.sum ./
 COPY cmd ./cmd
 COPY internal ./internal
 
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/coding-tools-mcp ./cmd/coding-tools-mcp
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/agentdock ./cmd/agentdock
 
 FROM golang:1.22-bookworm
 
@@ -32,9 +32,9 @@ RUN npm install -g corepack \
     && corepack enable \
     && corepack prepare pnpm@latest --activate
 
-COPY --from=build /out/coding-tools-mcp /usr/local/bin/coding-tools-mcp
+COPY --from=build /out/agentdock /usr/local/bin/agentdock
 
 WORKDIR /workspace
 EXPOSE 8765
 
-CMD ["coding-tools-mcp", "--workspace", "/workspace", "--host", "0.0.0.0", "--port", "8765"]
+CMD ["agentdock", "--workspace", "/workspace", "--host", "0.0.0.0", "--port", "8765"]

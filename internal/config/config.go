@@ -7,7 +7,7 @@ import (
 
 const (
 	ProtocolVersion = "2025-06-18"
-	ServerName      = "coding-tools-mcp"
+	ServerName      = "agentdock"
 	Version         = "0.3.0-go"
 
 	ProfileFull              = "full"
@@ -40,23 +40,23 @@ type Config struct {
 
 func FromEnv() Config {
 	return Config{
-		Workspace:                     getenv("CODING_TOOLS_MCP_WORKSPACE", "."),
-		Host:                          getenv("CODING_TOOLS_MCP_HOST", "127.0.0.1"),
-		Port:                          getenvInt("CODING_TOOLS_MCP_PORT", 8765),
-		AuthToken:                     os.Getenv("CODING_TOOLS_MCP_AUTH_TOKEN"),
-		OAuthClientID:                 os.Getenv("CODING_TOOLS_MCP_OAUTH_CLIENT_ID"),
-		OAuthServerURL:                os.Getenv("CODING_TOOLS_MCP_SERVER_URL"),
-		ToolProfile:                   getenv("CODING_TOOLS_MCP_TOOL_PROFILE", ProfileFull),
-		LogLevel:                      getenv("CODING_TOOLS_MCP_LOG_LEVEL", "info"),
-		SandboxMode:                   getenv("CODING_TOOLS_MCP_SANDBOX_MODE", SandboxModeLandlock),
-		AgentDockDir:                  getenv("CODING_TOOLS_MCP_AGENT_DOCK_DIR", "AgentDock"),
-		ConnectorDir:                  getenv("CODING_TOOLS_MCP_CONNECTOR_DIR", "connectors"),
-		BrowserEnabled:                getenvBool("CODING_TOOLS_MCP_BROWSER_ENABLED", false),
-		BrowserRunnerDir:              getenv("CODING_TOOLS_MCP_BROWSER_RUNNER_DIR", "browser-runner"),
-		BrowserArtifactDir:            getenv("CODING_TOOLS_MCP_BROWSER_ARTIFACT_DIR", "browser-artifacts"),
-		EnableViewImage:               getenvBool("CODING_TOOLS_MCP_ENABLE_VIEW_IMAGE", true),
-		Stdio:                         getenvBool("CODING_TOOLS_MCP_STDIO", false),
-		DangerouslySkipAllPermissions: getenvBool("CODING_TOOLS_MCP_SKIP_PERMISSION_PROMPTS", false),
+		Workspace:                     getenv("AGENTDOCK_WORKSPACE", "."),
+		Host:                          getenv("AGENTDOCK_HOST", "127.0.0.1"),
+		Port:                          getenvInt("AGENTDOCK_PORT", 8765),
+		AuthToken:                     os.Getenv("AGENTDOCK_AUTH_TOKEN"),
+		OAuthClientID:                 os.Getenv("AGENTDOCK_OAUTH_CLIENT_ID"),
+		OAuthServerURL:                os.Getenv("AGENTDOCK_SERVER_URL"),
+		ToolProfile:                   getenv("AGENTDOCK_TOOL_PROFILE", ProfileFull),
+		LogLevel:                      getenv("AGENTDOCK_LOG_LEVEL", "info"),
+		SandboxMode:                   getenv("AGENTDOCK_SANDBOX_MODE", SandboxModeLandlock),
+		AgentDockDir:                  getenv("AGENTDOCK_DIR", "AgentDock"),
+		ConnectorDir:                  getenv("AGENTDOCK_CONNECTOR_DIR", "connectors"),
+		BrowserEnabled:                getenvBool("AGENTDOCK_BROWSER_ENABLED", false),
+		BrowserRunnerDir:              getenv("AGENTDOCK_BROWSER_RUNNER_DIR", "browser-runner"),
+		BrowserArtifactDir:            getenv("AGENTDOCK_BROWSER_ARTIFACT_DIR", "browser-artifacts"),
+		EnableViewImage:               getenvBool("AGENTDOCK_ENABLE_VIEW_IMAGE", true),
+		Stdio:                         getenvBool("AGENTDOCK_STDIO", false),
+		DangerouslySkipAllPermissions: getenvBool("AGENTDOCK_SKIP_PERMISSION_PROMPTS", false),
 	}
 }
 
