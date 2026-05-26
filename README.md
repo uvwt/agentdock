@@ -414,6 +414,74 @@ docker compose up -d
 docker compose logs -f
 ```
 
+
+## macOS 裸机部署
+
+AgentDock 可以在 macOS 上裸机运行，适合本地项目管理、Git 自动化、文件处理、动态 Connector 和浏览器自动化测试。macOS 没有 Linux Landlock，也没有 systemd，所以它更适合本地开发/自动化，不建议当作生产部署服务器。
+
+推荐目录：
+
+```text
+~/agentdock-workspace/   # 用户项目工作区
+~/AgentDock/             # AgentDock 控制层
+```
+
+构建：
+
+```bash
+git clone https://github.com/uvwt/agentdock.git
+cd agentdock
+
+go test ./...
+go build -trimpath -o agentdock ./cmd/agentdock
+```
+
+运行：
+
+```bash
+mkdir -p ~/agentdock-workspace ~/AgentDock
+
+AGENTDOCK_BROWSER_ENABLED=false ./agentdock \
+  --workspace ~/agentdock-workspace \
+  --agentdock-dir ~/AgentDock \
+  --host 127.0.0.1 \
+  --port 8765 \
+  --oauth-mode \
+  --tool-profile full \
+  --sandbox-mode none
+```
+
+macOS 下 `sandbox-mode=landlock` 不会启用 Linux Landlock，`server_info.sandbox.enabled` 会显示为 `false`。这是平台限制，不是配置错误。
+
+### macOS 浏览器自动化
+
+macOS 裸机需要自己安装 Node 和 Playwright：
+
+```bash
+brew install node
+mkdir -p ~/AgentDock/browser-runner ~/AgentDock/browser-artifacts
+cp -R examples/browser-runner/. ~/AgentDock/browser-runner/
+
+cd ~/AgentDock/browser-runner
+npm install
+npx playwright install chromium
+```
+
+然后启用浏览器工具：
+
+```bash
+AGENTDOCK_BROWSER_ENABLED=true ./agentdock \
+  --workspace ~/agentdock-workspace \
+  --agentdock-dir ~/AgentDock \
+  --host 127.0.0.1 \
+  --port 8765 \
+  --oauth-mode \
+  --tool-profile full \
+  --sandbox-mode none
+```
+
+Docker 浏览器增强镜像会固定 `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`。macOS 裸机不会强行使用这个路径；如果你没有设置该环境变量，Playwright 会使用自己的默认缓存目录。
+
 ## 裸机 VPS 部署
 
 裸机部署会让 MCP 服务直接运行在 VPS 上，`exec_command` 执行的命令也会在 VPS 上运行。和 Docker 部署不同，裸机部署不再有容器隔离，所以建议使用普通 Linux 用户运行服务，并把 workspace 限制在单独目录里。
@@ -933,3 +1001,68 @@ docker compose logs -f
 ## License
 
 暂未指定许可证。公开分发前建议补充 `LICENSE` 文件。
+
+### macOS launchd 常驻运行
+
+如果希望 AgentDock 在 macOS 登录后自动启动，可以使用 `launchd`。创建：
+
+```bash
+nano ~/Library/LaunchAgents/com.uvwt.agentdock.plist
+```
+
+示例内容，注意把 `YOUR_USER` 和二进制路径换成自己的：
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.uvwt.agentdock</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/YOUR_USER/agentdock/agentdock</string>
+    <string>--workspace</string>
+    <string>/Users/YOUR_USER/agentdock-workspace</string>
+    <string>--agentdock-dir</string>
+    <string>/Users/YOUR_USER/AgentDock</string>
+    <string>--host</string>
+    <string>127.0.0.1</string>
+    <string>--port</string>
+    <string>8765</string>
+    <string>--oauth-mode</string>
+    <string>--tool-profile</string>
+    <string>full</string>
+    <string>--sandbox-mode</string>
+    <string>none</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AGENTDOCK_BROWSER_ENABLED</key>
+    <string>false</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/agentdock.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/agentdock.err.log</string>
+</dict>
+</plist>
+```
+
+加载和启动：
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.uvwt.agentdock.plist
+launchctl start com.uvwt.agentdock
+```
+
+停止和卸载：
+
+```bash
+launchctl stop com.uvwt.agentdock
+launchctl unload ~/Library/LaunchAgents/com.uvwt.agentdock.plist
+```

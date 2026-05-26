@@ -10,8 +10,6 @@ import (
 	"time"
 )
 
-const defaultPlaywrightBrowsersPath = "/ms-playwright"
-
 func (r *Runtime) browserSessionStart(ctx context.Context, args map[string]any) (Result, error) {
 	return r.browserRunnerCall(ctx, "session_start", args)
 }
@@ -58,15 +56,18 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, "node", runner.Abs)
 	cmd.Dir = filepath.Dir(runner.Abs)
-	cmd.Env = r.commandEnv(map[string]any{
+	env := map[string]any{
 		"BROWSER_RUNNER_PAYLOAD": string(data),
 		"BROWSER_ARTIFACT_DIR":   artifactDir.Abs,
 		"WORKSPACE":              r.ws.Root(),
-		// 官方浏览器增强镜像把 Chromium 固定安装在 /ms-playwright。
-		// 这里显式传给 Node runner，避免子进程回退到 /workspace/.cache/ms-playwright 后找不到浏览器。
-		"PLAYWRIGHT_BROWSERS_PATH": playwrightBrowsersPath(),
-		"AGENTDOCK_SERVER_URL":     strings.TrimRight(r.cfg.OAuthServerURL, "/"),
-	})
+		"AGENTDOCK_SERVER_URL":   strings.TrimRight(r.cfg.OAuthServerURL, "/"),
+	}
+	// 浏览器增强 Docker 镜像会通过 ENV 固定浏览器安装目录。这里只在父进程存在该变量时转交给 Node runner；
+	// macOS/裸机部署不强行写死路径，让 Playwright 使用本机默认缓存目录。
+	if value := playwrightBrowsersPath(); value != "" {
+		env["PLAYWRIGHT_BROWSERS_PATH"] = value
+	}
+	cmd.Env = r.commandEnv(env)
 	output, err := cmd.CombinedOutput()
 	text, truncated := truncateBytes(output, intArg(args, "max_bytes", 262144))
 	text = redactSecrets(text, nil)
@@ -102,5 +103,5 @@ func playwrightBrowsersPath() string {
 	if value := strings.TrimSpace(os.Getenv("PLAYWRIGHT_BROWSERS_PATH")); value != "" {
 		return value
 	}
-	return defaultPlaywrightBrowsersPath
+	return ""
 }
