@@ -1066,3 +1066,41 @@ launchctl start com.uvwt.agentdock
 launchctl stop com.uvwt.agentdock
 launchctl unload ~/Library/LaunchAgents/com.uvwt.agentdock.plist
 ```
+
+## 实验性 macOS 桌面自动化
+
+`desktop_*` 是实验性 macOS-only 能力，用来模拟人类操作桌面：截图、聚焦 App、点击坐标、输入文本和发送快捷键。默认关闭，需要显式启用：
+
+```bash
+AGENTDOCK_DESKTOP_ENABLED=true
+```
+
+当前 MVP 工具：
+
+| 工具 | 说明 |
+| --- | --- |
+| `desktop_snapshot` | 调用 `screencapture` 截取当前桌面，保存到 `AgentDock/desktop-artifacts/screenshots`。 |
+| `desktop_focus_app` | 使用 AppleScript 激活指定 App。 |
+| `desktop_click` | 使用 `cliclick` 点击屏幕坐标。 |
+| `desktop_type` | 使用 `cliclick` 向当前焦点输入文本。 |
+| `desktop_hotkey` | 使用 `cliclick` 发送快捷键，例如 `cmd+space`、`cmd+v`、`enter`。 |
+
+依赖：
+
+```bash
+brew install cliclick
+```
+
+macOS 需要给运行 AgentDock 的终端或 launchd 进程授权：
+
+```text
+System Settings → Privacy & Security → Accessibility
+System Settings → Privacy & Security → Screen Recording
+System Settings → Privacy & Security → Automation
+```
+
+安全建议：
+
+- `desktop_snapshot` 相对安全，可以用于观察当前状态。
+- `desktop_click`、`desktop_type`、`desktop_hotkey` 会真实操作桌面，可能发送消息、提交表单或改动应用状态。
+- 微信、邮件、支付、删除文件等高风险操作建议先填草稿或截图确认，再执行真正发送/提交。

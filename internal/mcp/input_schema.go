@@ -119,6 +119,21 @@ func inputSchema(name string) map[string]any {
 		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 and screenshot_mime_type in the response. Disabled by default because screenshots can be large.")
 		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
 		required = []string{"session_id"}
+	case "desktop_snapshot":
+		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 and screenshot_mime_type in the response. Disabled by default because screenshots can be large.")
+	case "desktop_focus_app":
+		props["app"] = stringProp("macOS application name to activate, for example WeChat or Safari.")
+		required = []string{"app"}
+	case "desktop_click":
+		props["x"] = intProp("Screen X coordinate.")
+		props["y"] = intProp("Screen Y coordinate.")
+		required = []string{"x", "y"}
+	case "desktop_type":
+		props["text"] = stringProp("Text to type into the focused macOS app.")
+		required = []string{"text"}
+	case "desktop_hotkey":
+		props["keys"] = stringProp("Shortcut, for example cmd+space, cmd+v, enter.")
+		required = []string{"keys"}
 	case "workspace_repos":
 		props["max_depth"] = intProp("Maximum directory depth to scan for repositories.")
 	case "git_repo_status", "git_status":
