@@ -49,6 +49,8 @@ func inputSchema(name string) map[string]any {
 		required = []string{"query"}
 	case "apply_patch":
 		props["patch"] = stringProp("Unified diff or git-apply compatible patch.")
+		props["workdir"] = stringProp("Workspace-relative directory to apply the patch from. Defaults to current workspace/default cwd.")
+		props["repo_path"] = stringProp("Alias for workdir when applying a patch inside a specific repository.")
 		props["dry_run"] = boolProp("Validate patch without writing.")
 		required = []string{"patch"}
 	case "exec_command":

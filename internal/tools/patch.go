@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	workspacepkg "github.com/uvwt/agentdock/internal/workspace"
 )
 
 type patchOperation struct {
@@ -14,7 +16,22 @@ type patchOperation struct {
 	MoveTo     string
 }
 
-func (r *Runtime) applyEnvelopePatch(patch string, dryRun bool) (Result, error) {
+func patchPathInBase(basePath, rawPath string) (string, error) {
+	cleanRaw, err := workspacepkg.Clean(rawPath)
+	if err != nil {
+		return "", err
+	}
+	cleanBase, err := workspacepkg.Clean(basePath)
+	if err != nil {
+		return "", err
+	}
+	if cleanBase == "." {
+		return cleanRaw, nil
+	}
+	return filepath.ToSlash(filepath.Join(filepath.FromSlash(cleanBase), filepath.FromSlash(cleanRaw))), nil
+}
+
+func (r *Runtime) applyEnvelopePatch(patch string, dryRun bool, basePath string) (Result, error) {
 	operations, err := parseEnvelopePatch(patch)
 	if err != nil {
 		return nil, err
@@ -26,7 +43,11 @@ func (r *Runtime) applyEnvelopePatch(patch string, dryRun bool) (Result, error) 
 	for _, op := range operations {
 		switch op.Kind {
 		case "add":
-			target, err := r.ws.ResolveForWrite(op.Path)
+			targetPath, err := patchPathInBase(basePath, op.Path)
+			if err != nil {
+				return nil, err
+			}
+			target, err := r.ws.ResolveForWrite(targetPath)
 			if err != nil {
 				return nil, err
 			}
@@ -38,7 +59,11 @@ func (r *Runtime) applyEnvelopePatch(patch string, dryRun bool) (Result, error) 
 			affected = append(affected, map[string]any{"path": target.Display, "operation": "add"})
 			summaries = append(summaries, "A "+target.Display)
 		case "delete":
-			target, err := r.ws.ResolveExisting(op.Path)
+			targetPath, err := patchPathInBase(basePath, op.Path)
+			if err != nil {
+				return nil, err
+			}
+			target, err := r.ws.ResolveExisting(targetPath)
 			if err != nil {
 				return nil, err
 			}
@@ -53,7 +78,11 @@ func (r *Runtime) applyEnvelopePatch(patch string, dryRun bool) (Result, error) 
 			affected = append(affected, map[string]any{"path": target.Display, "operation": "delete"})
 			summaries = append(summaries, "D "+target.Display)
 		case "update":
-			source, err := r.ws.ResolveExisting(op.Path)
+			sourcePath, err := patchPathInBase(basePath, op.Path)
+			if err != nil {
+				return nil, err
+			}
+			source, err := r.ws.ResolveExisting(sourcePath)
 			if err != nil {
 				return nil, err
 			}
@@ -78,12 +107,16 @@ func (r *Runtime) applyEnvelopePatch(patch string, dryRun bool) (Result, error) 
 				}
 				content = string(data)
 			}
-			updated, err := applyUpdateHunks(content, op.Hunks, op.Path)
+			updated, err := applyUpdateHunks(content, op.Hunks, source.Display)
 			if err != nil {
 				return nil, err
 			}
 			if op.MoveTo != "" {
-				dest, err := r.ws.ResolveForWrite(op.MoveTo)
+				destPath, err := patchPathInBase(basePath, op.MoveTo)
+				if err != nil {
+					return nil, err
+				}
+				dest, err := r.ws.ResolveForWrite(destPath)
 				if err != nil {
 					return nil, err
 				}
@@ -109,7 +142,7 @@ func (r *Runtime) applyEnvelopePatch(patch string, dryRun bool) (Result, error) 
 			return nil, err
 		}
 	}
-	return Result{"ok": true, "dry_run": dryRun, "affected_files": affected, "summary": strings.Join(summaries, "\n")}, nil
+	return Result{"ok": true, "dry_run": dryRun, "workdir": basePath, "affected_files": affected, "summary": strings.Join(summaries, "\n")}, nil
 }
 
 func parseEnvelopePatch(patch string) ([]patchOperation, error) {
