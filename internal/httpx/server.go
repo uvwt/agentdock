@@ -49,6 +49,9 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	mux.HandleFunc("/artifacts/browser/screenshots/", func(w http.ResponseWriter, r *http.Request) {
 		handleBrowserScreenshotArtifact(w, r, cfg)
 	})
+	mux.HandleFunc("/artifacts/desktop/screenshots/", func(w http.ResponseWriter, r *http.Request) {
+		handleDesktopScreenshotArtifact(w, r, cfg)
+	})
 	mux.HandleFunc("/register", func(w http.ResponseWriter, _ *http.Request) {
 		method := "none"
 		if auth.ConfiguredClientSecret() != "" {
@@ -94,12 +97,20 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	return httpServer.ListenAndServe()
 }
 
+func handleDesktopScreenshotArtifact(w http.ResponseWriter, r *http.Request, cfg config.Config) {
+	handleScreenshotArtifact(w, r, cfg, "/artifacts/desktop/screenshots/", cfg.DesktopArtifactDir)
+}
+
 func handleBrowserScreenshotArtifact(w http.ResponseWriter, r *http.Request, cfg config.Config) {
+	handleScreenshotArtifact(w, r, cfg, "/artifacts/browser/screenshots/", cfg.BrowserArtifactDir)
+}
+
+func handleScreenshotArtifact(w http.ResponseWriter, r *http.Request, cfg config.Config, prefix string, artifactDir string) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	name := strings.TrimPrefix(r.URL.Path, "/artifacts/browser/screenshots/")
+	name := strings.TrimPrefix(r.URL.Path, prefix)
 	name, err := url.PathUnescape(name)
 	if err != nil || name == "" || name != filepath.Base(name) || filepath.Ext(name) != ".png" {
 		http.NotFound(w, r)
@@ -109,7 +120,6 @@ func handleBrowserScreenshotArtifact(w http.ResponseWriter, r *http.Request, cfg
 	if root == "" {
 		root = "AgentDock"
 	}
-	artifactDir := cfg.BrowserArtifactDir
 	if artifactDir == "" {
 		artifactDir = "browser-artifacts"
 	}

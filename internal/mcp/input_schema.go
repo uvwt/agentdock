@@ -119,21 +119,42 @@ func inputSchema(name string) map[string]any {
 		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 and screenshot_mime_type in the response. Disabled by default because screenshots can be large.")
 		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
 		required = []string{"session_id"}
+	case "desktop_preflight":
+		props["check_screenshot"] = boolProp("Try a real screencapture check. Defaults to true.")
+		props["check_applescript"] = boolProp("Try a real AppleScript/System Events check. Defaults to true.")
+	case "desktop_window_list":
 	case "desktop_snapshot":
 		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 and screenshot_mime_type in the response. Disabled by default because screenshots can be large.")
+	case "desktop_clipboard_set":
+		props["text"] = stringProp("Text to place into the macOS clipboard.")
+		required = []string{"text"}
+	case "desktop_clipboard_get":
 	case "desktop_focus_app":
 		props["app"] = stringProp("macOS application name to activate, for example WeChat or Safari.")
 		required = []string{"app"}
-	case "desktop_click":
+	case "desktop_move", "desktop_click", "desktop_double_click":
 		props["x"] = intProp("Screen X coordinate.")
 		props["y"] = intProp("Screen Y coordinate.")
 		required = []string{"x", "y"}
+	case "desktop_scroll":
+		props["dx"] = intProp("Horizontal scroll amount.")
+		props["dy"] = intProp("Vertical scroll amount.")
+		props["amount"] = intProp("Alias for dy.")
+	case "desktop_drag":
+		props["from_x"] = intProp("Start screen X coordinate.")
+		props["from_y"] = intProp("Start screen Y coordinate.")
+		props["to_x"] = intProp("End screen X coordinate.")
+		props["to_y"] = intProp("End screen Y coordinate.")
+		required = []string{"from_x", "from_y", "to_x", "to_y"}
 	case "desktop_type":
 		props["text"] = stringProp("Text to type into the focused macOS app.")
 		required = []string{"text"}
 	case "desktop_hotkey":
 		props["keys"] = stringProp("Shortcut, for example cmd+space, cmd+v, enter.")
 		required = []string{"keys"}
+	case "desktop_wait":
+		props["ms"] = intProp("Milliseconds to wait.")
+		props["timeout_ms"] = intProp("Alias for ms; capped at 60000.")
 	case "workspace_repos":
 		props["max_depth"] = intProp("Maximum directory depth to scan for repositories.")
 	case "git_repo_status", "git_status":

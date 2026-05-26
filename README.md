@@ -1104,3 +1104,21 @@ System Settings → Privacy & Security → Automation
 - `desktop_snapshot` 相对安全，可以用于观察当前状态。
 - `desktop_click`、`desktop_type`、`desktop_hotkey` 会真实操作桌面，可能发送消息、提交表单或改动应用状态。
 - 微信、邮件、支付、删除文件等高风险操作建议先填草稿或截图确认，再执行真正发送/提交。
+
+### desktop_* 操作原语补充
+
+桌面自动化底层工具会持续保持通用，不绑定具体 App。当前实验分支额外提供：
+
+| 工具 | 说明 |
+| --- | --- |
+| `desktop_preflight` | 检查 macOS、依赖命令和可能的权限问题。 |
+| `desktop_window_list` | 列出可见 App、窗口标题、窗口位置和尺寸。 |
+| `desktop_clipboard_set` | 设置 macOS 剪贴板文本。 |
+| `desktop_clipboard_get` | 读取 macOS 剪贴板文本。 |
+| `desktop_move` | 移动鼠标到指定坐标。 |
+| `desktop_double_click` | 双击指定坐标。 |
+| `desktop_scroll` | 滚动桌面或当前焦点区域。 |
+| `desktop_drag` | 从一个坐标拖拽到另一个坐标。 |
+| `desktop_wait` | 在多步桌面自动化之间等待。 |
+
+建议用法：先 `desktop_snapshot` 或 `desktop_window_list` 观察，再执行点击/输入/快捷键，最后再截图确认。长文本输入优先使用 `desktop_clipboard_set` + `desktop_hotkey {"keys":"cmd+v"}`，比逐字模拟输入更稳定。
