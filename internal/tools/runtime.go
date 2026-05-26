@@ -56,7 +56,7 @@ func (r *Runtime) ToolNames() []string {
 		readOnly = append(readOnly, "browser_snapshot")
 	}
 	if r.cfg.DesktopEnabled {
-		readOnly = append(readOnly, "desktop_snapshot")
+		readOnly = append(readOnly, "desktop_preflight", "desktop_window_list", "desktop_snapshot", "desktop_clipboard_get", "desktop_wait")
 	}
 	if !r.cfg.EnableViewImage {
 		readOnly = removeTool(readOnly, "view_image")
