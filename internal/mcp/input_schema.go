@@ -107,12 +107,14 @@ func inputSchema(name string) map[string]any {
 		props["actions"] = arrayProp("Actions to run: goto, click, fill, press, wait, wait_for_selector, select, scroll, reload, back, forward, evaluate.")
 		props["full_page"] = boolProp("Capture full-page screenshot in the final snapshot.")
 		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
+		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 and screenshot_mime_type in the response. Disabled by default because screenshots can be large.")
 		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
 		required = []string{"session_id", "actions"}
 	case "browser_snapshot", "browser_session_close":
 		props["session_id"] = stringProp("Browser session id.")
 		props["full_page"] = boolProp("Capture full-page screenshot for snapshot.")
 		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
+		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 and screenshot_mime_type in the response. Disabled by default because screenshots can be large.")
 		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
 		required = []string{"session_id"}
 	case "workspace_repos":

@@ -65,6 +65,7 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 		// 官方浏览器增强镜像把 Chromium 固定安装在 /ms-playwright。
 		// 这里显式传给 Node runner，避免子进程回退到 /workspace/.cache/ms-playwright 后找不到浏览器。
 		"PLAYWRIGHT_BROWSERS_PATH": playwrightBrowsersPath(),
+		"AGENTDOCK_SERVER_URL":     strings.TrimRight(r.cfg.OAuthServerURL, "/"),
 	})
 	output, err := cmd.CombinedOutput()
 	text, truncated := truncateBytes(output, intArg(args, "max_bytes", 262144))

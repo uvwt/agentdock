@@ -1,12 +1,14 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 const payload = JSON.parse(process.env.BROWSER_RUNNER_PAYLOAD || '{}');
 const operation = payload.operation;
 const args = payload.args || {};
 const artifactDir = payload.artifact_dir || process.env.BROWSER_ARTIFACT_DIR || '.';
 const stateFile = path.join(artifactDir, 'browser-state.json');
+const serverUrl = (process.env.AGENTDOCK_SERVER_URL || '').replace(/\/+$/, '');
 
 async function readState() {
   try {
@@ -43,17 +45,29 @@ async function launchPage(session) {
 }
 
 async function snapshot(page, extra = {}) {
-  await fs.mkdir(path.join(artifactDir, 'screenshots'), { recursive: true });
-  const screenshotPath = path.join(artifactDir, 'screenshots', `snapshot-${Date.now()}.png`);
+  const screenshotDir = path.join(artifactDir, 'screenshots');
+  await fs.mkdir(screenshotDir, { recursive: true });
+  const screenshotFile = `snapshot-${Date.now()}.png`;
+  const screenshotPath = path.join(screenshotDir, screenshotFile);
   await page.screenshot({ path: screenshotPath, fullPage: args.full_page === true });
   const text = (await page.locator('body').innerText({ timeout: 3000 }).catch(() => '')).slice(0, args.max_text_chars || 12000);
-  return {
+  const screenshotArtifactId = `browser-screenshot-${crypto.createHash('sha256').update(screenshotPath).digest('hex').slice(0, 16)}`;
+  const result = {
     url: page.url(),
     title: await page.title(),
     text,
     screenshot_path: screenshotPath,
+    screenshot_artifact_id: screenshotArtifactId,
     ...extra
   };
+  if (serverUrl) {
+    result.screenshot_url = `${serverUrl}/artifacts/browser/screenshots/${encodeURIComponent(screenshotFile)}`;
+  }
+  if (args.include_screenshot_base64 === true) {
+    result.screenshot_mime_type = 'image/png';
+    result.screenshot_base64 = await fs.readFile(screenshotPath, 'base64');
+  }
+  return result;
 }
 
 async function runActions(page, actions = []) {
