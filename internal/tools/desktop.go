@@ -158,10 +158,27 @@ func (r *Runtime) desktopClipboardSet(ctx context.Context, args map[string]any) 
 		return nil, err
 	}
 	text := stringArg(args, "text", "")
-	cmd := exec.CommandContext(ctx, "pbcopy")
+	cmd := exec.CommandContext(ctx, "sh", "-c", "cat | pbcopy")
 	cmd.Env = r.commandEnv(nil)
 	cmd.Stdin = strings.NewReader(text)
-	return commandResult("desktop_clipboard_set", cmd)
+	output, err := cmd.CombinedOutput()
+	res := Result{"ok": err == nil, "operation": "desktop_clipboard_set", "stdout": redactSecrets(string(output), nil), "bytes": len([]byte(text))}
+	if err != nil {
+		res["error"] = err.Error()
+		return res, nil
+	}
+	if boolArg(args, "verify", true) {
+		verify := exec.CommandContext(ctx, "pbpaste")
+		verify.Env = r.commandEnv(nil)
+		got, verifyErr := verify.CombinedOutput()
+		if verifyErr != nil {
+			res["verified"] = false
+			res["verify_error"] = verifyErr.Error()
+		} else {
+			res["verified"] = string(got) == text
+		}
+	}
+	return res, nil
 }
 
 func (r *Runtime) desktopClipboardGet(ctx context.Context, args map[string]any) (Result, error) {

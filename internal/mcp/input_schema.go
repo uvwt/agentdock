@@ -127,6 +127,7 @@ func inputSchema(name string) map[string]any {
 		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 and screenshot_mime_type in the response. Disabled by default because screenshots can be large.")
 	case "desktop_clipboard_set":
 		props["text"] = stringProp("Text to place into the macOS clipboard.")
+		props["verify"] = boolProp("Read back pbpaste after writing and report verified. Defaults to true.")
 		required = []string{"text"}
 	case "desktop_clipboard_get":
 	case "desktop_focus_app":

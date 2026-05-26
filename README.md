@@ -700,6 +700,32 @@ System Settings → Privacy & Security → Automation
 
 授权后重启 AgentDock，再用 `desktop_preflight` 检查。
 
+#### 8. 关于 `HOME` 和真实用户目录
+
+AgentDock 执行命令时，会把子进程的 `HOME` 设置为 workspace 根目录。这是有意的安全隔离策略，避免命令默认读写真实用户目录下的私密配置、密钥或缓存。
+
+因此在工具命令里：
+
+```text
+~                  # 指向 workspace，不是 macOS 真实用户目录
+$AGENTDOCK_WORKSPACE
+                   # workspace 根目录
+$AGENTDOCK_HOST_HOME
+                   # macOS 真实用户目录，例如 /Users/alice
+```
+
+需要引用源码或用户目录时，推荐使用 workspace-relative 路径，例如：
+
+```text
+Project/agentdock
+```
+
+如果确实需要真实用户目录，使用：
+
+```bash
+$AGENTDOCK_HOST_HOME/agentdock
+```
+
 ## 实验性 macOS 桌面自动化
 
 `desktop_*` 是实验性 macOS-only 能力，用来模拟人类操作桌面：截图、聚焦 App、点击坐标、输入文本和发送快捷键。默认关闭，需要显式启用：
@@ -746,7 +772,7 @@ System Settings → Privacy & Security → Automation
 | --- | --- |
 | `desktop_preflight` | 检查 macOS、依赖命令和可能的权限问题。 |
 | `desktop_window_list` | 列出可见 App、窗口标题、窗口位置和尺寸。 |
-| `desktop_clipboard_set` | 设置 macOS 剪贴板文本。 |
+| `desktop_clipboard_set` | 设置 macOS 剪贴板文本，默认会用 `pbpaste` 回读校验。 |
 | `desktop_clipboard_get` | 读取 macOS 剪贴板文本。 |
 | `desktop_move` | 移动鼠标到指定坐标。 |
 | `desktop_double_click` | 双击指定坐标。 |
