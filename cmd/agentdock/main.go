@@ -39,6 +39,8 @@ func run() error {
 	flag.BoolVar(&cfg.BrowserEnabled, "browser-enabled", cfg.BrowserEnabled, "expose optional browser automation tools")
 	flag.StringVar(&cfg.BrowserRunnerDir, "browser-runner-dir", cfg.BrowserRunnerDir, "workspace-relative browser runner directory")
 	flag.StringVar(&cfg.BrowserArtifactDir, "browser-artifact-dir", cfg.BrowserArtifactDir, "workspace-relative browser artifact directory")
+	flag.BoolVar(&cfg.DesktopEnabled, "desktop-enabled", cfg.DesktopEnabled, "expose experimental macOS desktop automation tools")
+	flag.StringVar(&cfg.DesktopArtifactDir, "desktop-artifact-dir", cfg.DesktopArtifactDir, "AgentDock-relative desktop artifact directory")
 	flag.BoolVar(&cfg.EnableViewImage, "enable-view-image", cfg.EnableViewImage, "expose view_image tool")
 	flag.BoolVar(&cfg.Stdio, "stdio", cfg.Stdio, "serve JSON-RPC over stdio")
 	flag.BoolVar(&cfg.DangerouslySkipAllPermissions, "dangerously-skip-all-permissions", cfg.DangerouslySkipAllPermissions, "auto-grant permission-gated operations")
@@ -46,7 +48,7 @@ func run() error {
 	flag.Parse()
 	cfg.Normalize()
 	logx.Setup(cfg.LogLevel)
-	logx.Info("server starting", "workspace", cfg.Workspace, "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "tool_profile", cfg.ToolProfile, "log_level", cfg.LogLevel, "sandbox_mode", cfg.SandboxMode, "agent_dock_dir", cfg.AgentDockDir, "connector_dir", cfg.ConnectorDir, "context_dir", cfg.ContextDir, "browser_enabled", cfg.BrowserEnabled, "browser_runner_dir", cfg.BrowserRunnerDir)
+	logx.Info("server starting", "workspace", cfg.Workspace, "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "tool_profile", cfg.ToolProfile, "log_level", cfg.LogLevel, "sandbox_mode", cfg.SandboxMode, "agent_dock_dir", cfg.AgentDockDir, "connector_dir", cfg.ConnectorDir, "context_dir", cfg.ContextDir, "browser_enabled", cfg.BrowserEnabled, "browser_runner_dir", cfg.BrowserRunnerDir, "desktop_enabled", cfg.DesktopEnabled)
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
 		return err

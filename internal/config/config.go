@@ -34,6 +34,8 @@ type Config struct {
 	BrowserEnabled                bool
 	BrowserRunnerDir              string
 	BrowserArtifactDir            string
+	DesktopEnabled                bool
+	DesktopArtifactDir            string
 	EnableViewImage               bool
 	Stdio                         bool
 	DangerouslySkipAllPermissions bool
@@ -56,6 +58,8 @@ func FromEnv() Config {
 		BrowserEnabled:                getenvBool("AGENTDOCK_BROWSER_ENABLED", false),
 		BrowserRunnerDir:              getenv("AGENTDOCK_BROWSER_RUNNER_DIR", "browser-runner"),
 		BrowserArtifactDir:            getenv("AGENTDOCK_BROWSER_ARTIFACT_DIR", "browser-artifacts"),
+		DesktopEnabled:                getenvBool("AGENTDOCK_DESKTOP_ENABLED", false),
+		DesktopArtifactDir:            getenv("AGENTDOCK_DESKTOP_ARTIFACT_DIR", "desktop-artifacts"),
 		EnableViewImage:               getenvBool("AGENTDOCK_ENABLE_VIEW_IMAGE", true),
 		Stdio:                         getenvBool("AGENTDOCK_STDIO", false),
 		DangerouslySkipAllPermissions: getenvBool("AGENTDOCK_SKIP_PERMISSION_PROMPTS", false),
@@ -91,6 +95,9 @@ func (c *Config) Normalize() {
 	}
 	if c.BrowserArtifactDir == "" {
 		c.BrowserArtifactDir = "browser-artifacts"
+	}
+	if c.DesktopArtifactDir == "" {
+		c.DesktopArtifactDir = "desktop-artifacts"
 	}
 	switch c.SandboxMode {
 	case SandboxModeLandlock, SandboxModeNone:

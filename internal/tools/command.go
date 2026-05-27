@@ -218,6 +218,14 @@ func (r *Runtime) commandEnv(extra map[string]any) []string {
 			env[key] = value
 		}
 	}
+	env["AGENTDOCK_WORKSPACE"] = r.ws.Root()
+	if hostHome := os.Getenv("AGENTDOCK_HOST_HOME"); hostHome != "" {
+		env["AGENTDOCK_HOST_HOME"] = hostHome
+	} else if hostHome, err := os.UserHomeDir(); err == nil && hostHome != "" {
+		env["AGENTDOCK_HOST_HOME"] = hostHome
+	}
+	// Keep HOME inside the workspace so arbitrary commands do not accidentally read or write
+	// the user's real ~/.ssh, ~/.config, package caches, or other private state.
 	env["HOME"] = r.ws.Root()
 	env["TMPDIR"] = filepath.Join(r.ws.Root(), ".tmp")
 	_ = os.MkdirAll(env["TMPDIR"], 0o755)

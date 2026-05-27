@@ -42,6 +42,9 @@ func (r *Runtime) ToolNames() []string {
 	if r.cfg.BrowserEnabled {
 		all = append(all, "browser_session_start", "browser_action", "browser_snapshot", "browser_session_close")
 	}
+	if r.cfg.DesktopEnabled {
+		all = append(all, "desktop_preflight", "desktop_window_list", "desktop_snapshot", "desktop_clipboard_set", "desktop_clipboard_get", "desktop_focus_app", "desktop_move", "desktop_click", "desktop_double_click", "desktop_scroll", "desktop_drag", "desktop_type", "desktop_hotkey", "desktop_wait")
+	}
 	if !r.cfg.EnableViewImage {
 		all = removeTool(all, "view_image")
 	}
@@ -51,6 +54,9 @@ func (r *Runtime) ToolNames() []string {
 	readOnly := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "session_status", "list_sessions", "check_github_repo_access", "connector_list", "connector_describe", "context_list", "context_read", "context_search", "context_pack", "workspace_repos", "git_repo_status", "git_status", "git_diff", "git_log", "git_show", "git_blame", "request_permissions", "view_image"}
 	if r.cfg.BrowserEnabled {
 		readOnly = append(readOnly, "browser_snapshot")
+	}
+	if r.cfg.DesktopEnabled {
+		readOnly = append(readOnly, "desktop_preflight", "desktop_window_list", "desktop_snapshot", "desktop_clipboard_get", "desktop_wait")
 	}
 	if !r.cfg.EnableViewImage {
 		readOnly = removeTool(readOnly, "view_image")
@@ -139,6 +145,34 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.browserSnapshot(ctx, args)
 	case "browser_session_close":
 		return r.browserSessionClose(ctx, args)
+	case "desktop_preflight":
+		return r.desktopPreflight(ctx, args)
+	case "desktop_window_list":
+		return r.desktopWindowList(ctx, args)
+	case "desktop_snapshot":
+		return r.desktopSnapshot(ctx, args)
+	case "desktop_clipboard_set":
+		return r.desktopClipboardSet(ctx, args)
+	case "desktop_clipboard_get":
+		return r.desktopClipboardGet(ctx, args)
+	case "desktop_focus_app":
+		return r.desktopFocusApp(ctx, args)
+	case "desktop_move":
+		return r.desktopMove(ctx, args)
+	case "desktop_click":
+		return r.desktopClick(ctx, args)
+	case "desktop_double_click":
+		return r.desktopDoubleClick(ctx, args)
+	case "desktop_scroll":
+		return r.desktopScroll(ctx, args)
+	case "desktop_drag":
+		return r.desktopDrag(ctx, args)
+	case "desktop_type":
+		return r.desktopType(ctx, args)
+	case "desktop_hotkey":
+		return r.desktopHotkey(ctx, args)
+	case "desktop_wait":
+		return r.desktopWait(ctx, args)
 	case "workspace_repos":
 		return r.workspaceRepos(ctx, args)
 	case "git_repo_status":
@@ -183,7 +217,7 @@ func (r *Runtime) available(name string) bool {
 
 func (r *Runtime) serverInfo() Result {
 	names := r.ToolNames()
-	return Result{"ok": true, "server": config.ServerName, "title": "AgentDock", "version": config.Version, "protocol_version": config.ProtocolVersion, "os": runtime.GOOS, "arch": runtime.GOARCH, "go_version": runtime.Version(), "workspace": r.ws.Root(), "default_cwd": r.ws.DefaultDisplay(), "tool_profile": r.cfg.ToolProfile, "sandbox_mode": r.cfg.SandboxMode, "agent_dock_dir": r.cfg.AgentDockDir, "connector_dir": r.cfg.ConnectorDir, "context_dir": r.cfg.ContextDir, "browser_enabled": r.cfg.BrowserEnabled, "browser_runner_dir": r.cfg.BrowserRunnerDir, "browser_artifact_dir": r.cfg.BrowserArtifactDir, "auth_enabled": r.cfg.AuthToken != "", "endpoint_path": "/mcp", "tools": names, "tool_count": len(names), "sandbox": sandbox.StatusForWorkspace(r.ws.Root())}
+	return Result{"ok": true, "server": config.ServerName, "title": "AgentDock", "version": config.Version, "protocol_version": config.ProtocolVersion, "os": runtime.GOOS, "arch": runtime.GOARCH, "go_version": runtime.Version(), "workspace": r.ws.Root(), "default_cwd": r.ws.DefaultDisplay(), "tool_profile": r.cfg.ToolProfile, "sandbox_mode": r.cfg.SandboxMode, "agent_dock_dir": r.cfg.AgentDockDir, "connector_dir": r.cfg.ConnectorDir, "context_dir": r.cfg.ContextDir, "browser_enabled": r.cfg.BrowserEnabled, "browser_runner_dir": r.cfg.BrowserRunnerDir, "browser_artifact_dir": r.cfg.BrowserArtifactDir, "desktop_enabled": r.cfg.DesktopEnabled, "desktop_artifact_dir": r.cfg.DesktopArtifactDir, "auth_enabled": r.cfg.AuthToken != "", "endpoint_path": "/mcp", "tools": names, "tool_count": len(names), "sandbox": sandbox.StatusForWorkspace(r.ws.Root())}
 }
 
 func (r *Runtime) toolDescriptors() Result {

@@ -414,7 +414,6 @@ docker compose up -d
 docker compose logs -f
 ```
 
-
 ## macOS 裸机部署
 
 AgentDock 可以在 macOS 上裸机运行，适合本地项目管理、Git 自动化、文件处理、动态 Connector 和浏览器自动化测试。macOS 没有 Linux Landlock，也没有 systemd，所以它更适合本地开发/自动化，不建议当作生产部署服务器。
@@ -481,6 +480,307 @@ AGENTDOCK_BROWSER_ENABLED=true ./agentdock \
 ```
 
 Docker 浏览器增强镜像会固定 `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`。macOS 裸机不会强行使用这个路径；如果你没有设置该环境变量，Playwright 会使用自己的默认缓存目录。
+
+### macOS 用户目录常驻运行（推荐）
+
+如果要在 macOS 上长期运行 AgentDock，推荐把源码和运行数据都放在用户目录下，不使用 `/opt`，避免权限问题。
+
+推荐结构：
+
+```text
+~/agentdock/                    # 源码和编译出的 agentdock 二进制
+~/agentdock-runtime/            # 运行目录
+  agentdock.env                 # 环境变量，保存 OAuth 等本机私密配置
+  start-agentdock.sh            # 启动脚本
+  workspace/                    # 用户项目工作区
+  AgentDock/                    # AgentDock 控制层
+    connectors/
+    desktop-artifacts/
+    browser-runner/
+    browser-artifacts/
+```
+
+#### 1. 拉取桌面自动化分支并构建
+
+```bash
+cd ~
+git clone https://github.com/uvwt/agentdock.git
+cd ~/agentdock
+git checkout feature/desktop-automation
+
+go test ./...
+go build -trimpath -o agentdock ./cmd/agentdock
+```
+
+如果已经克隆过：
+
+```bash
+cd ~/agentdock
+git fetch origin
+git checkout feature/desktop-automation
+git pull origin feature/desktop-automation
+
+go test ./...
+go build -trimpath -o agentdock ./cmd/agentdock
+```
+
+#### 2. 准备运行目录
+
+```bash
+mkdir -p ~/agentdock-runtime/workspace
+mkdir -p ~/agentdock-runtime/AgentDock
+```
+
+#### 3. 创建环境变量文件
+
+```bash
+nano ~/agentdock-runtime/agentdock.env
+```
+
+示例内容，按需替换占位符。不要把真实密钥提交到 Git：
+
+```bash
+export AGENTDOCK_OAUTH_CLIENT_ID="coding-tools-client"
+export AGENTDOCK_OAUTH_CLIENT_SECRET="你的 client secret"
+export AGENTDOCK_OAUTH_PASSWORD="你的登录密码或空字符串"
+export AGENTDOCK_OAUTH_TOKEN_SECRET="你的 token secret"
+export AGENTDOCK_SERVER_URL="https://codingmini.200399.xyz"
+export AGENTDOCK_TOOL_PROFILE="full"
+export AGENTDOCK_DIR="$HOME/agentdock-runtime/AgentDock"
+
+# 桌面自动化实测时开启。
+export AGENTDOCK_DESKTOP_ENABLED="true"
+
+# 第一轮只测桌面时建议先关闭浏览器，减少变量。
+export AGENTDOCK_BROWSER_ENABLED="false"
+
+# 私有可信环境下可以跳过权限提示。
+export AGENTDOCK_SKIP_PERMISSION_PROMPTS="true"
+```
+
+保护权限：
+
+```bash
+chmod 600 ~/agentdock-runtime/agentdock.env
+```
+
+#### 4. 创建启动脚本
+
+```bash
+nano ~/agentdock-runtime/start-agentdock.sh
+```
+
+写入：
+
+```bash
+#!/bin/zsh
+set -e
+
+source "$HOME/agentdock-runtime/agentdock.env"
+
+exec "$HOME/agentdock/agentdock" \
+  --workspace "$HOME/agentdock-runtime/workspace" \
+  --agentdock-dir "$HOME/agentdock-runtime/AgentDock" \
+  --host 127.0.0.1 \
+  --port 18766 \
+  --oauth-mode \
+  --tool-profile full \
+  --sandbox-mode none \
+  --dangerously-skip-all-permissions
+```
+
+授权执行：
+
+```bash
+chmod +x ~/agentdock-runtime/start-agentdock.sh
+```
+
+#### 5. 前台测试启动
+
+第一次建议先在终端前台启动，便于看日志和触发 macOS 权限弹窗：
+
+```bash
+~/agentdock-runtime/start-agentdock.sh
+```
+
+另开一个终端验证：
+
+```bash
+curl http://127.0.0.1:18766/healthz
+```
+
+正常返回：
+
+```json
+{"ok":true}
+```
+
+如果你原来的反代指向 `127.0.0.1:18765`，而这里使用 `18766`，需要把反代改到 `127.0.0.1:18766`；或者把启动脚本里的端口改成 `18765`。
+
+#### 6. 配置 launchd 开机自启动
+
+创建：
+
+```bash
+nano ~/Library/LaunchAgents/com.uvwt.agentdock.plist
+```
+
+写入下面内容。注意把 `/Users/YOUR_USER` 替换成 `echo $HOME` 输出的真实路径，例如 `/Users/alice`。
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.uvwt.agentdock</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/YOUR_USER/agentdock-runtime/start-agentdock.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/YOUR_USER/agentdock</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/YOUR_USER/agentdock-runtime/agentdock.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/YOUR_USER/agentdock-runtime/agentdock.err.log</string>
+</dict>
+</plist>
+```
+
+加载并启动：
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.uvwt.agentdock.plist 2>/dev/null || true
+launchctl load ~/Library/LaunchAgents/com.uvwt.agentdock.plist
+launchctl start com.uvwt.agentdock
+```
+
+检查：
+
+```bash
+curl http://127.0.0.1:18766/healthz
+```
+
+查看日志：
+
+```bash
+tail -f ~/agentdock-runtime/agentdock.out.log
+tail -f ~/agentdock-runtime/agentdock.err.log
+```
+
+停止和卸载：
+
+```bash
+launchctl stop com.uvwt.agentdock
+launchctl unload ~/Library/LaunchAgents/com.uvwt.agentdock.plist
+```
+
+#### 7. macOS 权限
+
+桌面自动化需要给启动 AgentDock 的进程授权。如果用终端前台启动，给 Terminal 或 iTerm 授权；如果用 launchd 常驻运行，首次测试建议先前台启动完成授权，再切到 launchd。
+
+需要关注：
+
+```text
+System Settings → Privacy & Security → Accessibility
+System Settings → Privacy & Security → Screen Recording
+System Settings → Privacy & Security → Automation
+```
+
+授权后重启 AgentDock，再用 `desktop_preflight` 检查。
+
+#### 8. 关于 `HOME` 和真实用户目录
+
+AgentDock 执行命令时，会把子进程的 `HOME` 设置为 workspace 根目录。这是有意的安全隔离策略，避免命令默认读写真实用户目录下的私密配置、密钥或缓存。
+
+因此在工具命令里：
+
+```text
+~                  # 指向 workspace，不是 macOS 真实用户目录
+$AGENTDOCK_WORKSPACE
+                   # workspace 根目录
+$AGENTDOCK_HOST_HOME
+                   # macOS 真实用户目录，例如 /Users/alice
+```
+
+需要引用源码或用户目录时，推荐使用 workspace-relative 路径，例如：
+
+```text
+Project/agentdock
+```
+
+如果确实需要真实用户目录，使用：
+
+```bash
+$AGENTDOCK_HOST_HOME/agentdock
+```
+
+## 实验性 macOS 桌面自动化
+
+`desktop_*` 是实验性 macOS-only 能力，用来模拟人类操作桌面：截图、聚焦 App、点击坐标、输入文本和发送快捷键。默认关闭，需要显式启用：
+
+```bash
+AGENTDOCK_DESKTOP_ENABLED=true
+```
+
+当前 MVP 工具：
+
+| 工具 | 说明 |
+| --- | --- |
+| `desktop_snapshot` | 调用 `screencapture` 截取当前桌面，保存到 `AgentDock/desktop-artifacts/screenshots`。 |
+| `desktop_focus_app` | 使用 AppleScript 激活指定 App。 |
+| `desktop_click` | 使用 `cliclick` 点击屏幕坐标。 |
+| `desktop_type` | 使用 `cliclick` 向当前焦点输入文本。 |
+| `desktop_hotkey` | 使用 `cliclick` 发送快捷键，例如 `cmd+space`、`cmd+v`、`enter`。 |
+
+依赖：
+
+```bash
+brew install cliclick
+```
+
+macOS 需要给运行 AgentDock 的终端或 launchd 进程授权：
+
+```text
+System Settings → Privacy & Security → Accessibility
+System Settings → Privacy & Security → Screen Recording
+System Settings → Privacy & Security → Automation
+```
+
+安全建议：
+
+- `desktop_snapshot` 相对安全，可以用于观察当前状态。
+- `desktop_click`、`desktop_type`、`desktop_hotkey` 会真实操作桌面，可能发送消息、提交表单或改动应用状态。
+- 微信、邮件、支付、删除文件等高风险操作建议先填草稿或截图确认，再执行真正发送/提交。
+
+### desktop_* 操作原语补充
+
+桌面自动化底层工具会持续保持通用，不绑定具体 App。当前实验分支额外提供：
+
+| 工具 | 说明 |
+| --- | --- |
+| `desktop_preflight` | 检查 macOS、依赖命令和可能的权限问题。 |
+| `desktop_window_list` | 列出可见 App、窗口标题、窗口位置和尺寸。 |
+| `desktop_clipboard_set` | 设置 macOS 剪贴板文本，默认会用 `pbpaste` 回读校验。 |
+| `desktop_clipboard_get` | 读取 macOS 剪贴板文本。 |
+| `desktop_move` | 移动鼠标到指定坐标。 |
+| `desktop_double_click` | 双击指定坐标。 |
+| `desktop_scroll` | 滚动桌面或当前焦点区域。 |
+| `desktop_drag` | 从一个坐标拖拽到另一个坐标。 |
+| `desktop_wait` | 在多步桌面自动化之间等待。 |
+
+建议用法：先 `desktop_snapshot` 或 `desktop_window_list` 观察，再执行点击/输入/快捷键，最后再截图确认。长文本输入优先使用 `desktop_clipboard_set` + `desktop_hotkey {"keys":"cmd+v"}`，比逐字模拟输入更稳定。
 
 ## 裸机 VPS 部署
 
