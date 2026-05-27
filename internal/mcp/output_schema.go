@@ -108,6 +108,36 @@ func outputSchema(name string) map[string]any {
 		props["json"] = objectProp("Parsed JSON output when output=json.")
 		props["duration_ms"] = intProp("Execution duration in milliseconds.")
 		props["truncated"] = boolProp("Whether output was truncated.")
+	case "memory_list":
+		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
+		props["entries"] = arrayProp("Memory entries.")
+		props["count"] = intProp("Memory entry count.")
+	case "memory_read", "memory_write", "memory_append_note":
+		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
+		props["memory"] = objectProp("Memory document returned by MemoryDock.")
+	case "memory_search":
+		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
+		props["query"] = stringProp("Search query.")
+		props["results"] = arrayProp("Search results.")
+		props["count"] = intProp("Search result count.")
+	case "memory_pack":
+		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
+		props["project"] = stringProp("Project key.")
+		props["sections"] = arrayProp("Packed memory sections.")
+		props["count"] = intProp("Section count.")
+		props["bytes"] = intProp("Combined bytes.")
+	case "memory_delete":
+		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
+		props["path"] = stringProp("Deleted memory path.")
+	case "memory_sync_status", "memory_sync_pull", "memory_sync_push", "memory_sync_now":
+		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
+		props["git_repo"] = boolProp("Whether MemoryDock store is a Git repository.")
+		props["auto_sync_enabled"] = boolProp("Whether MemoryDock auto sync is enabled.")
+		props["pending_push"] = boolProp("Whether MemoryDock has pending push work.")
+		props["last_pull_at"] = stringProp("Last pull timestamp.")
+		props["last_push_at"] = stringProp("Last push timestamp.")
+		props["last_error"] = stringProp("Last sync error.")
+		props["conflict"] = boolProp("Whether MemoryDock detected a sync conflict.")
 	case "browser_session_start", "browser_session_close":
 		props["operation"] = stringProp("Browser operation name.")
 		props["session_id"] = stringProp("Browser session id.")

@@ -122,6 +122,42 @@ func inputSchema(name string) map[string]any {
 		props["confirmed"] = boolProp("Required when writing outside inbox.")
 		props["overwrite"] = boolProp("Replace existing file.")
 		required = []string{"path", "content"}
+	case "memory_list":
+		props["prefix"] = stringProp("Optional memory-relative prefix to list, for example shared/projects/agentdock.")
+		props["max_entries"] = intProp("Maximum entries to return.")
+	case "memory_read":
+		props["path"] = stringProp("Memory-relative Markdown/text path.")
+		required = []string{"path"}
+	case "memory_search":
+		props["query"] = stringProp("Text query to search in MemoryDock files and paths.")
+		props["prefix"] = stringProp("Optional memory-relative prefix to search under.")
+		props["max_results"] = intProp("Maximum results to return.")
+		required = []string{"query"}
+	case "memory_pack":
+		props["project"] = stringProp("Project key to pack, for example agentdock.")
+		props["max_bytes"] = intProp("Maximum combined memory bytes.")
+	case "memory_append_note":
+		props["content"] = stringProp("Markdown note content to append.")
+		props["scope"] = stringProp("Memory scope directory. Defaults to inbox.")
+		props["name"] = stringProp("Optional file name. Defaults to timestamp-note.md.")
+		required = []string{"content"}
+	case "memory_write":
+		props["path"] = stringProp("Memory-relative Markdown/text path. Writing outside inbox requires confirmed=true.")
+		props["content"] = stringProp("Markdown content to write. Frontmatter is added by MemoryDock if omitted.")
+		props["type"] = stringProp("Memory type for generated frontmatter.")
+		props["scope"] = stringProp("Memory scope for generated frontmatter.")
+		props["project"] = stringProp("Project key for generated frontmatter.")
+		props["source"] = stringProp("Source for generated frontmatter.")
+		props["confidence"] = stringProp("Confidence for generated frontmatter.")
+		props["tags"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
+		props["confirmed"] = boolProp("Required when writing outside inbox.")
+		props["overwrite"] = boolProp("Replace existing memory file.")
+		required = []string{"content"}
+	case "memory_delete":
+		props["path"] = stringProp("Memory-relative Markdown/text path.")
+		props["confirmed"] = boolProp("Required to delete a memory file.")
+		required = []string{"path", "confirmed"}
+	case "memory_sync_status", "memory_sync_pull", "memory_sync_push", "memory_sync_now":
 	case "browser_session_start":
 		props["url"] = stringProp("Initial URL. Defaults to about:blank.")
 		props["headless"] = boolProp("Run browser headless. Defaults to true.")

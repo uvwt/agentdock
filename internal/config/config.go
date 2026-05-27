@@ -31,6 +31,9 @@ type Config struct {
 	AgentDockDir                  string
 	ConnectorDir                  string
 	ContextDir                    string
+	MemoryEndpoint                string
+	MemoryToken                   string
+	MemoryTimeoutMS               int
 	BrowserEnabled                bool
 	BrowserRunnerDir              string
 	BrowserArtifactDir            string
@@ -55,6 +58,9 @@ func FromEnv() Config {
 		AgentDockDir:                  getenv("AGENTDOCK_DIR", "AgentDock"),
 		ConnectorDir:                  getenv("AGENTDOCK_CONNECTOR_DIR", "connectors"),
 		ContextDir:                    getenv("AGENTDOCK_CONTEXT_DIR", "context"),
+		MemoryEndpoint:                getenv("AGENTDOCK_MEMORY_ENDPOINT", ""),
+		MemoryToken:                   os.Getenv("AGENTDOCK_MEMORY_TOKEN"),
+		MemoryTimeoutMS:               getenvInt("AGENTDOCK_MEMORY_TIMEOUT_MS", 30000),
 		BrowserEnabled:                getenvBool("AGENTDOCK_BROWSER_ENABLED", false),
 		BrowserRunnerDir:              getenv("AGENTDOCK_BROWSER_RUNNER_DIR", "browser-runner"),
 		BrowserArtifactDir:            getenv("AGENTDOCK_BROWSER_ARTIFACT_DIR", "browser-artifacts"),
@@ -89,6 +95,9 @@ func (c *Config) Normalize() {
 	}
 	if c.ContextDir == "" {
 		c.ContextDir = "context"
+	}
+	if c.MemoryTimeoutMS <= 0 {
+		c.MemoryTimeoutMS = 30000
 	}
 	if c.BrowserRunnerDir == "" {
 		c.BrowserRunnerDir = "browser-runner"
