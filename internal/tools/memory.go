@@ -13,6 +13,25 @@ import (
 	"time"
 )
 
+func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Result, error) {
+	project := strings.TrimSpace(stringArg(args, "project", ""))
+	if project == "" {
+		project = "agentdock"
+	}
+	maxBytes := intArg(args, "max_bytes", 50000)
+	if maxBytes <= 0 {
+		maxBytes = 50000
+	}
+	payload := map[string]any{"project": project, "max_bytes": maxBytes}
+	result, err := r.memoryRequest(ctx, http.MethodPost, "/v1/memories/pack", payload)
+	if err != nil {
+		return nil, err
+	}
+	result["bootstrap"] = true
+	result["recommended_use"] = "Call memory_bootstrap at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks before editing files or running destructive commands."
+	return result, nil
+}
+
 func (r *Runtime) memoryList(ctx context.Context, args map[string]any) (Result, error) {
 	query := url.Values{}
 	if prefix := strings.TrimSpace(stringArg(args, "prefix", "")); prefix != "" {

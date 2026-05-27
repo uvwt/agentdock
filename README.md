@@ -1457,6 +1457,7 @@ memory_sync_now
 
 | 工具 | 说明 |
 | --- | --- |
+| `memory_bootstrap` | 开始重要 AgentDock / 项目 / 部署 / 排障 / 偏好敏感任务前加载高优先级长期记忆。 |
 | `memory_list` | 列出 MemoryDock 中的记忆文件。 |
 | `memory_read` | 读取单个 MemoryDock Markdown/text 记忆。 |
 | `memory_search` | 搜索 MemoryDock 记忆内容和路径。 |
@@ -1469,7 +1470,7 @@ memory_sync_now
 | `memory_sync_push` | 请求 MemoryDock 立即 commit/push。 |
 | `memory_sync_now` | 请求 MemoryDock 执行 pull 后 push。 |
 
-read-only profile 只暴露 `memory_list`、`memory_read`、`memory_search`、`memory_pack`、`memory_sync_status`。
+read-only profile 只暴露 `memory_bootstrap`、`memory_list`、`memory_read`、`memory_search`、`memory_pack`、`memory_sync_status`。
 
 ### 文件格式
 

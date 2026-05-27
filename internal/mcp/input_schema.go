@@ -98,6 +98,9 @@ func inputSchema(name string) map[string]any {
 		props["args"] = objectProp("Structured connector action arguments passed as CONNECTOR_ARGS_JSON.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
 		required = []string{"connector", "action"}
+	case "memory_bootstrap":
+		props["project"] = stringProp("Project key to bootstrap. Defaults to agentdock.")
+		props["max_bytes"] = intProp("Maximum combined memory bytes. Defaults to 50000.")
 	case "memory_list":
 		props["prefix"] = stringProp("Optional memory-relative prefix to list, for example shared/projects/agentdock.")
 		props["max_entries"] = intProp("Maximum entries to return.")

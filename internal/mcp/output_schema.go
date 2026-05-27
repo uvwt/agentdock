@@ -120,7 +120,7 @@ func outputSchema(name string) map[string]any {
 		props["query"] = stringProp("Search query.")
 		props["results"] = arrayProp("Search results.")
 		props["count"] = intProp("Search result count.")
-	case "memory_pack":
+	case "memory_bootstrap", "memory_pack":
 		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
 		props["project"] = stringProp("Project key.")
 		props["sections"] = arrayProp("Packed memory sections.")

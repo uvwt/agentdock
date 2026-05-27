@@ -31,6 +31,7 @@ var toolRegistry = []ToolDefinition{
 	{Name: "connector_list", Title: "List connectors", Description: "List dynamic workspace connectors from the configured connector directory.", ReadOnly: true},
 	{Name: "connector_describe", Title: "Describe connector", Description: "Describe one dynamic connector and its available actions.", ReadOnly: true},
 	{Name: "connector_call", Title: "Call connector", Description: "Call a dynamic workspace connector action with structured arguments.", Destructive: false, OpenWorld: true},
+	{Name: "memory_bootstrap", Title: "Bootstrap MemoryDock context", Description: "Load high-priority MemoryDock context at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks.", ReadOnly: true, OpenWorld: true},
 	{Name: "memory_list", Title: "List MemoryDock memories", Description: "List memories from the configured MemoryDock service.", ReadOnly: true, OpenWorld: true},
 	{Name: "memory_read", Title: "Read MemoryDock memory", Description: "Read one Markdown memory from the configured MemoryDock service.", ReadOnly: true, OpenWorld: true},
 	{Name: "memory_search", Title: "Search MemoryDock", Description: "Search memories by text and path through MemoryDock.", ReadOnly: true, OpenWorld: true},
