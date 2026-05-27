@@ -35,7 +35,6 @@ func run() error {
 	flag.StringVar(&cfg.SandboxMode, "sandbox-mode", cfg.SandboxMode, "command sandbox mode: landlock or none")
 	flag.StringVar(&cfg.AgentDockDir, "agentdock-dir", cfg.AgentDockDir, "AgentDock control directory; absolute or workspace-relative")
 	flag.StringVar(&cfg.ConnectorDir, "connector-dir", cfg.ConnectorDir, "workspace-relative connector directory")
-	flag.StringVar(&cfg.ContextDir, "context-dir", cfg.ContextDir, "AgentDock-relative context directory")
 	flag.StringVar(&cfg.MemoryEndpoint, "memory-endpoint", cfg.MemoryEndpoint, "optional MemoryDock HTTP endpoint, for example http://127.0.0.1:18777")
 	flag.StringVar(&cfg.MemoryToken, "memory-token", cfg.MemoryToken, "optional MemoryDock bearer token")
 	flag.IntVar(&cfg.MemoryTimeoutMS, "memory-timeout-ms", cfg.MemoryTimeoutMS, "MemoryDock HTTP timeout in milliseconds")
@@ -51,7 +50,7 @@ func run() error {
 	flag.Parse()
 	cfg.Normalize()
 	logx.Setup(cfg.LogLevel)
-	logx.Info("server starting", "workspace", cfg.Workspace, "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "tool_profile", cfg.ToolProfile, "log_level", cfg.LogLevel, "sandbox_mode", cfg.SandboxMode, "agent_dock_dir", cfg.AgentDockDir, "connector_dir", cfg.ConnectorDir, "context_dir", cfg.ContextDir, "memory_enabled", cfg.MemoryEndpoint != "", "browser_enabled", cfg.BrowserEnabled, "browser_runner_dir", cfg.BrowserRunnerDir, "desktop_enabled", cfg.DesktopEnabled)
+	logx.Info("server starting", "workspace", cfg.Workspace, "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "tool_profile", cfg.ToolProfile, "log_level", cfg.LogLevel, "sandbox_mode", cfg.SandboxMode, "agent_dock_dir", cfg.AgentDockDir, "connector_dir", cfg.ConnectorDir, "memory_enabled", cfg.MemoryEndpoint != "", "browser_enabled", cfg.BrowserEnabled, "browser_runner_dir", cfg.BrowserRunnerDir, "desktop_enabled", cfg.DesktopEnabled)
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
 		return err

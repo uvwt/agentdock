@@ -30,7 +30,6 @@ type Config struct {
 	SandboxMode                   string
 	AgentDockDir                  string
 	ConnectorDir                  string
-	ContextDir                    string
 	MemoryEndpoint                string
 	MemoryToken                   string
 	MemoryTimeoutMS               int
@@ -57,7 +56,6 @@ func FromEnv() Config {
 		SandboxMode:                   getenv("AGENTDOCK_SANDBOX_MODE", SandboxModeLandlock),
 		AgentDockDir:                  getenv("AGENTDOCK_DIR", "AgentDock"),
 		ConnectorDir:                  getenv("AGENTDOCK_CONNECTOR_DIR", "connectors"),
-		ContextDir:                    getenv("AGENTDOCK_CONTEXT_DIR", "context"),
 		MemoryEndpoint:                getenv("AGENTDOCK_MEMORY_ENDPOINT", ""),
 		MemoryToken:                   os.Getenv("AGENTDOCK_MEMORY_TOKEN"),
 		MemoryTimeoutMS:               getenvInt("AGENTDOCK_MEMORY_TIMEOUT_MS", 30000),
@@ -92,9 +90,6 @@ func (c *Config) Normalize() {
 	}
 	if c.ConnectorDir == "" {
 		c.ConnectorDir = "connectors"
-	}
-	if c.ContextDir == "" {
-		c.ContextDir = "context"
 	}
 	if c.MemoryTimeoutMS <= 0 {
 		c.MemoryTimeoutMS = 30000

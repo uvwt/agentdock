@@ -1367,11 +1367,9 @@ launchctl stop com.uvwt.agentdock
 launchctl unload ~/Library/LaunchAgents/com.uvwt.agentdock.plist
 ```
 
-## AgentDock Context System
+## MemoryDock 长期记忆
 
-AgentDock Context System 是 AgentDock 的本地持久化上下文层，用来保存项目背景、规范、决策、运行手册和会话交接信息。它不是替代 Git，也不是把模型的临时对话当作长期记忆；它提供一组可读写、可搜索、可打包的 Markdown 上下文文件，让不同对话、不同设备上的 AgentDock 都能恢复项目上下文。
-
-如果需要多个 AgentDock 实例共享同一套实时长期记忆，推荐使用独立的 MemoryDock 服务。AgentDock 可以通过 `memory_*` 工具调用 MemoryDock；本地 `context_*` 仍保留为 fallback 和轻量单机方案。
+AgentDock 的长期记忆入口是 `memory_*` 工具。AgentDock 不再暴露本地 `context_*` 工具；记忆读写统一转发给独立的 MemoryDock 服务，由 MemoryDock 负责 Markdown 存储、Git 自动同步、冲突状态和多 Agent 共享。
 
 ```bash
 AGENTDOCK_MEMORY_ENDPOINT=http://127.0.0.1:18777
@@ -1385,25 +1383,18 @@ AGENTDOCK_MEMORY_TIMEOUT_MS=30000
 agentdock --memory-endpoint http://127.0.0.1:18777 --memory-token optional-token
 ```
 
-默认目录：
+MemoryDock 推荐通过 Docker Compose 部署。Mac mini 当前约定目录：
 
 ```text
-$AGENTDOCK_DIR/context
+/Volumes/KIOXIA/Docker/memorydock
+/Volumes/KIOXIA/Docker/memorydock/docker-compose.yml
+/Volumes/KIOXIA/Docker/memorydock/memory
 ```
 
-可以通过环境变量或启动参数调整：
-
-```bash
-AGENTDOCK_CONTEXT_DIR=context
-agentdock --context-dir context
-```
-
-推荐结构：
+推荐 MemoryDock 数据结构：
 
 ```text
-AgentDock/context/
-  README.md
-
+memory/
   shared/
     profile.md
     projects/
@@ -1413,50 +1404,29 @@ AgentDock/context/
         environment.md
         session-handoff.md
         decisions/
-          2026-05-27-desktop-automation.md
         runbooks/
-          macos-bare-metal-deploy.md
-          macos-update-agentdock.md
-          macos-code-signing.md
-
   devices/
-    mac-mini.md
-    coding-air.md
-    vps-main.md
-
   inbox/
-    2026-05-27-note.md
-
   session/
-    handoff.md
 ```
 
-### Context 与 README / AGENTS.md 的区别
+### MemoryDock 与 README / AGENTS.md 的区别
 
 | 文件/目录 | 用途 |
 | --- | --- |
 | `README.md` | 面向用户的公开项目文档，可以提交到项目仓库。 |
 | `AGENTS.md` / `CONTRIBUTING.md` | 面向代码代理和贡献者的项目开发规范，可以提交到项目仓库。 |
-| `AgentDock/context` | 私有或半私有的运行上下文，保存部署路径、环境、决策、runbook、交接摘要。通常不放在项目仓库里。 |
+| `MemoryDock memory/` | 私有或半私有的长期记忆，保存部署路径、环境、决策、runbook、交接摘要和跨 Agent 共享上下文。通常放在私有仓库或私有存储里。 |
 
 ### 共享与同步
 
-`context_*` 工具只负责上下文内容管理，不重复实现 Git 同步。同步、提交、推送仍然使用现有 Git 工具：
+AgentDock 只调用 `memory_*` 工具，不直接处理记忆同步。同步由 MemoryDock 负责：
 
 ```text
-git_status
-git_diff
-git_commit
-git_pull
-git_push
-```
-
-如果要多设备共享上下文，推荐把 `AgentDock/context` 做成一个私有 Git 仓库：
-
-```bash
-cd ~/agentdock-runtime/AgentDock/context
-git init
-git remote add origin git@github.com:YOUR_NAME/agentdock-context-private.git
+memory_sync_status
+memory_sync_pull
+memory_sync_push
+memory_sync_now
 ```
 
 适合共享的内容：
@@ -1483,20 +1453,7 @@ git remote add origin git@github.com:YOUR_NAME/agentdock-context-private.git
 - 临时截图路径
 ```
 
-### 工具列表
-
-| 工具 | 说明 |
-| --- | --- |
-| `context_list` | 列出 context 目录下的文件。 |
-| `context_read` | 读取单个 Markdown/text context 文件，并解析 YAML-like frontmatter。 |
-| `context_search` | 搜索 context 文件内容和路径。 |
-| `context_pack` | 按项目打包 profile、overview、conventions、environment、decisions、runbooks、handoff，用于新对话快速恢复上下文。 |
-| `context_append_note` | 追加临时上下文笔记，默认写入 `inbox/`。 |
-| `context_write` | 写入正式 context 文件；写入 `inbox/` 之外需要 `confirmed=true`。 |
-
 ### MemoryDock 工具
-
-配置 `AGENTDOCK_MEMORY_ENDPOINT` 后，AgentDock 会额外暴露 `memory_*` 工具。这些工具不会直接读写本地 `AgentDock/context`，而是把请求转发给 MemoryDock，由 MemoryDock 负责 Markdown 存储、Git 自动同步、冲突状态和多 Agent 共享。
 
 | 工具 | 说明 |
 | --- | --- |

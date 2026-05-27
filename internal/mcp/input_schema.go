@@ -98,30 +98,6 @@ func inputSchema(name string) map[string]any {
 		props["args"] = objectProp("Structured connector action arguments passed as CONNECTOR_ARGS_JSON.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
 		required = []string{"connector", "action"}
-	case "context_list":
-		props["prefix"] = stringProp("Optional context-relative prefix to list, for example shared/projects/agentdock.")
-		props["max_entries"] = intProp("Maximum entries to return.")
-	case "context_read":
-		props["path"] = stringProp("Context-relative Markdown/text path.")
-		required = []string{"path"}
-	case "context_search":
-		props["query"] = stringProp("Text query to search in context files and paths.")
-		props["max_results"] = intProp("Maximum results to return.")
-		required = []string{"query"}
-	case "context_pack":
-		props["project"] = stringProp("Project key to pack, for example agentdock.")
-		props["max_bytes"] = intProp("Maximum combined context bytes.")
-	case "context_append_note":
-		props["content"] = stringProp("Markdown note content to append.")
-		props["scope"] = stringProp("Context scope directory. Defaults to inbox.")
-		props["name"] = stringProp("Optional file name. Defaults to timestamp-note.md.")
-		required = []string{"content"}
-	case "context_write":
-		props["path"] = stringProp("Context-relative Markdown/text path. Writing outside inbox requires confirmed=true.")
-		props["content"] = stringProp("Markdown content to write. Frontmatter is added if omitted.")
-		props["confirmed"] = boolProp("Required when writing outside inbox.")
-		props["overwrite"] = boolProp("Replace existing file.")
-		required = []string{"path", "content"}
 	case "memory_list":
 		props["prefix"] = stringProp("Optional memory-relative prefix to list, for example shared/projects/agentdock.")
 		props["max_entries"] = intProp("Maximum entries to return.")
