@@ -30,6 +30,7 @@ type Config struct {
 	SandboxMode                   string
 	AgentDockDir                  string
 	ConnectorDir                  string
+	ContextDir                    string
 	BrowserEnabled                bool
 	BrowserRunnerDir              string
 	BrowserArtifactDir            string
@@ -51,6 +52,7 @@ func FromEnv() Config {
 		SandboxMode:                   getenv("AGENTDOCK_SANDBOX_MODE", SandboxModeLandlock),
 		AgentDockDir:                  getenv("AGENTDOCK_DIR", "AgentDock"),
 		ConnectorDir:                  getenv("AGENTDOCK_CONNECTOR_DIR", "connectors"),
+		ContextDir:                    getenv("AGENTDOCK_CONTEXT_DIR", "context"),
 		BrowserEnabled:                getenvBool("AGENTDOCK_BROWSER_ENABLED", false),
 		BrowserRunnerDir:              getenv("AGENTDOCK_BROWSER_RUNNER_DIR", "browser-runner"),
 		BrowserArtifactDir:            getenv("AGENTDOCK_BROWSER_ARTIFACT_DIR", "browser-artifacts"),
@@ -80,6 +82,9 @@ func (c *Config) Normalize() {
 	}
 	if c.ConnectorDir == "" {
 		c.ConnectorDir = "connectors"
+	}
+	if c.ContextDir == "" {
+		c.ContextDir = "context"
 	}
 	if c.BrowserRunnerDir == "" {
 		c.BrowserRunnerDir = "browser-runner"
