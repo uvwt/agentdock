@@ -1066,3 +1066,185 @@ launchctl start com.uvwt.agentdock
 launchctl stop com.uvwt.agentdock
 launchctl unload ~/Library/LaunchAgents/com.uvwt.agentdock.plist
 ```
+
+## AgentDock Context System
+
+AgentDock Context System 是 AgentDock 的本地持久化上下文层，用来保存项目背景、规范、决策、运行手册和会话交接信息。它不是替代 Git，也不是把模型的临时对话当作长期记忆；它提供一组可读写、可搜索、可打包的 Markdown 上下文文件，让不同对话、不同设备上的 AgentDock 都能恢复项目上下文。
+
+默认目录：
+
+```text
+$AGENTDOCK_DIR/context
+```
+
+可以通过环境变量或启动参数调整：
+
+```bash
+AGENTDOCK_CONTEXT_DIR=context
+agentdock --context-dir context
+```
+
+推荐结构：
+
+```text
+AgentDock/context/
+  README.md
+
+  shared/
+    profile.md
+    projects/
+      agentdock/
+        overview.md
+        conventions.md
+        environment.md
+        session-handoff.md
+        decisions/
+          2026-05-27-desktop-automation.md
+        runbooks/
+          macos-bare-metal-deploy.md
+          macos-update-agentdock.md
+          macos-code-signing.md
+
+  devices/
+    mac-mini.md
+    coding-air.md
+    vps-main.md
+
+  inbox/
+    2026-05-27-note.md
+
+  session/
+    handoff.md
+```
+
+### Context 与 README / AGENTS.md 的区别
+
+| 文件/目录 | 用途 |
+| --- | --- |
+| `README.md` | 面向用户的公开项目文档，可以提交到项目仓库。 |
+| `AGENTS.md` / `CONTRIBUTING.md` | 面向代码代理和贡献者的项目开发规范，可以提交到项目仓库。 |
+| `AgentDock/context` | 私有或半私有的运行上下文，保存部署路径、环境、决策、runbook、交接摘要。通常不放在项目仓库里。 |
+
+### 共享与同步
+
+`context_*` 工具只负责上下文内容管理，不重复实现 Git 同步。同步、提交、推送仍然使用现有 Git 工具：
+
+```text
+git_status
+git_diff
+git_commit
+git_pull
+git_push
+```
+
+如果要多设备共享上下文，推荐把 `AgentDock/context` 做成一个私有 Git 仓库：
+
+```bash
+cd ~/agentdock-runtime/AgentDock/context
+git init
+git remote add origin git@github.com:YOUR_NAME/agentdock-context-private.git
+```
+
+适合共享的内容：
+
+```text
+- 项目概览
+- 项目规范
+- 分支策略
+- 架构决策
+- runbook
+- 排障记录
+- 跨设备都适用的偏好
+```
+
+不适合共享或需要脱敏的内容：
+
+```text
+- token / password / secret
+- SSH 私钥路径
+- 真实用户名
+- 本机绝对路径
+- 本机端口占用
+- 本机权限状态
+- 临时截图路径
+```
+
+### 工具列表
+
+| 工具 | 说明 |
+| --- | --- |
+| `context_list` | 列出 context 目录下的文件。 |
+| `context_read` | 读取单个 Markdown/text context 文件，并解析 YAML-like frontmatter。 |
+| `context_search` | 搜索 context 文件内容和路径。 |
+| `context_pack` | 按项目打包 profile、overview、conventions、environment、decisions、runbooks、handoff，用于新对话快速恢复上下文。 |
+| `context_append_note` | 追加临时上下文笔记，默认写入 `inbox/`。 |
+| `context_write` | 写入正式 context 文件；写入 `inbox/` 之外需要 `confirmed=true`。 |
+
+### 文件格式
+
+推荐使用 Markdown + YAML frontmatter：
+
+```markdown
+---
+type: project-overview
+scope: shared
+project: agentdock
+source: user-confirmed
+confidence: high
+updated_at: 2026-05-27
+---
+
+# AgentDock 项目概览
+
+AgentDock 是一个本地/远程 Agent 工具运行层，支持文件、Git、动态 connector、浏览器和实验性桌面自动化。
+```
+
+### 新对话恢复上下文
+
+新对话开始时，可以先读取项目上下文：
+
+```json
+{
+  "project": "agentdock"
+}
+```
+
+对应工具：
+
+```text
+context_pack
+```
+
+这会返回：
+
+```text
+shared/profile.md
+shared/projects/agentdock/overview.md
+shared/projects/agentdock/conventions.md
+shared/projects/agentdock/environment.md
+shared/projects/agentdock/session-handoff.md
+shared/projects/agentdock/decisions/*
+shared/projects/agentdock/runbooks/*
+```
+
+### 写入策略
+
+默认建议：
+
+```text
+1. 未确认的信息先写 inbox/
+2. 用户确认后再写 shared/projects/<project>/...
+3. 正式写入必须带 frontmatter
+4. 不自动 commit / push context
+5. 使用 git_diff 审查后再 git_commit / git_push
+```
+
+`context_write` 写入 `inbox/` 之外时必须传：
+
+```json
+{
+  "confirmed": true
+}
+```
+
+避免 Agent 无声无息覆盖长期上下文。
