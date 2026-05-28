@@ -140,18 +140,6 @@ func (r *Runtime) memorySyncStatus(ctx context.Context, args map[string]any) (Re
 	return r.memoryRequest(ctx, http.MethodGet, "/v1/sync/status", nil)
 }
 
-func (r *Runtime) memorySyncPull(ctx context.Context, args map[string]any) (Result, error) {
-	return r.memoryRequest(ctx, http.MethodPost, "/v1/sync/pull", map[string]any{})
-}
-
-func (r *Runtime) memorySyncPush(ctx context.Context, args map[string]any) (Result, error) {
-	return r.memoryRequest(ctx, http.MethodPost, "/v1/sync/push", map[string]any{})
-}
-
-func (r *Runtime) memorySyncNow(ctx context.Context, args map[string]any) (Result, error) {
-	return r.memoryRequest(ctx, http.MethodPost, "/v1/sync/now", map[string]any{})
-}
-
 func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, payload any) (Result, error) {
 	base := strings.TrimRight(strings.TrimSpace(r.cfg.MemoryEndpoint), "/")
 	if base == "" {

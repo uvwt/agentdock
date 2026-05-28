@@ -129,7 +129,7 @@ func outputSchema(name string) map[string]any {
 	case "memory_delete":
 		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
 		props["path"] = stringProp("Deleted memory path.")
-	case "memory_sync_status", "memory_sync_pull", "memory_sync_push", "memory_sync_now":
+	case "memory_sync_status":
 		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
 		props["git_repo"] = boolProp("Whether MemoryDock store is a Git repository.")
 		props["auto_sync_enabled"] = boolProp("Whether MemoryDock auto sync is enabled.")

@@ -1424,9 +1424,6 @@ AgentDock 只调用 `memory_*` 工具，不直接处理记忆同步。同步由 
 
 ```text
 memory_sync_status
-memory_sync_pull
-memory_sync_push
-memory_sync_now
 ```
 
 适合共享的内容：
@@ -1466,9 +1463,6 @@ memory_sync_now
 | `memory_write` | 写入 MemoryDock 正式记忆；写入 `inbox/` 之外仍应传 `confirmed=true`。 |
 | `memory_delete` | 删除 MemoryDock 记忆；需要 `confirmed=true`。 |
 | `memory_sync_status` | 查看 MemoryDock Git 同步状态。 |
-| `memory_sync_pull` | 请求 MemoryDock 立即 pull。 |
-| `memory_sync_push` | 请求 MemoryDock 立即 commit/push。 |
-| `memory_sync_now` | 请求 MemoryDock 执行 pull 后 push。 |
 
 read-only profile 只暴露 `memory_bootstrap`、`memory_list`、`memory_read`、`memory_search`、`memory_pack`、`memory_sync_status`。
 

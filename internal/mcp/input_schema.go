@@ -136,7 +136,7 @@ func inputSchema(name string) map[string]any {
 		props["path"] = stringProp("Memory-relative Markdown/text path.")
 		props["confirmed"] = boolProp("Required to delete a memory file.")
 		required = []string{"path", "confirmed"}
-	case "memory_sync_status", "memory_sync_pull", "memory_sync_push", "memory_sync_now":
+	case "memory_sync_status":
 	case "browser_session_start":
 		props["url"] = stringProp("Initial URL. Defaults to about:blank.")
 		props["headless"] = boolProp("Run browser headless. Defaults to true.")
