@@ -1,3 +1,11 @@
 .DS_Store
 /workspace/
 /AgentDock/
+
+# Local build/runtime artifacts
+/agentdock
+/agentdock.new
+/agentdock.prev
+/agentdock.prev.*
+/agentdock.bak.*
+/bin/
