@@ -162,6 +162,9 @@ func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, pa
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	if user, value := strings.TrimSpace(r.cfg.MemoryLoginUser), r.cfg.MemoryLoginValue; user != "" || value != "" {
+		req.SetBasicAuth(user, value)
+	}
 	if token := strings.TrimSpace(r.cfg.MemoryToken); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

@@ -32,6 +32,8 @@ type Config struct {
 	ConnectorDir                  string
 	MemoryEndpoint                string
 	MemoryToken                   string
+	MemoryLoginUser               string
+	MemoryLoginValue              string
 	MemoryTimeoutMS               int
 	BrowserEnabled                bool
 	BrowserRunnerDir              string
@@ -57,7 +59,9 @@ func FromEnv() Config {
 		AgentDockDir:                  getenv("AGENTDOCK_DIR", "AgentDock"),
 		ConnectorDir:                  getenv("AGENTDOCK_CONNECTOR_DIR", "connectors"),
 		MemoryEndpoint:                getenv("AGENTDOCK_MEMORY_ENDPOINT", ""),
-		MemoryToken:                   os.Getenv("AGENTDOCK_MEMORY_TOKEN"),
+		MemoryToken:                   firstNonEmpty(os.Getenv("AGENTDOCK_MEMORY_TOKEN"), os.Getenv("MEMORYDOCK_AUTH_TOKEN")),
+		MemoryLoginUser:               os.Getenv("AGENTDOCK_MEMORY_LOGIN_USER"),
+		MemoryLoginValue:              os.Getenv("AGENTDOCK_MEMORY_LOGIN_VALUE"),
 		MemoryTimeoutMS:               getenvInt("AGENTDOCK_MEMORY_TIMEOUT_MS", 30000),
 		BrowserEnabled:                getenvBool("AGENTDOCK_BROWSER_ENABLED", false),
 		BrowserRunnerDir:              getenv("AGENTDOCK_BROWSER_RUNNER_DIR", "browser-runner"),
@@ -139,4 +143,13 @@ func getenvBool(key string, fallback bool) bool {
 		return fallback
 	}
 	return parsed
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
