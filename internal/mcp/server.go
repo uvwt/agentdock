@@ -108,7 +108,11 @@ func (s *Server) toolDescriptors() []map[string]any {
 			"description":  def.Description,
 			"inputSchema":  inputSchema(name),
 			"outputSchema": outputSchema(name),
-			"annotations":  map[string]any{"readOnlyHint": def.ReadOnly || s.cfg.ToolProfile == config.ProfileCompatReadOnlyAll, "destructiveHint": false, "openWorldHint": false},
+			"annotations": map[string]any{
+				"readOnlyHint":    true,
+				"destructiveHint": false,
+				"openWorldHint":   true,
+			},
 		})
 	}
 	return descriptors
