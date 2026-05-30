@@ -12,6 +12,7 @@ import (
 type Workspace struct {
 	root       string
 	defaultCWD string
+	hostPaths  bool
 	mu         sync.RWMutex
 }
 
@@ -21,7 +22,7 @@ type Path struct {
 	Exists  bool   `json:"exists"`
 }
 
-func New(root string) (*Workspace, error) {
+func New(root string, hostPaths bool) (*Workspace, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
@@ -40,10 +41,12 @@ func New(root string) (*Workspace, error) {
 	if realRoot == string(filepath.Separator) {
 		return nil, errors.New("refusing to use filesystem root as workspace")
 	}
-	return &Workspace{root: realRoot, defaultCWD: realRoot}, nil
+	return &Workspace{root: realRoot, defaultCWD: realRoot, hostPaths: hostPaths}, nil
 }
 
 func (w *Workspace) Root() string { return w.root }
+
+func (w *Workspace) HostPaths() bool { return w.hostPaths }
 
 func (w *Workspace) DefaultCWD() string {
 	w.mu.RLock()
@@ -85,7 +88,69 @@ func (w *Workspace) ResolveForWrite(raw string) (Path, error) {
 	return w.resolve(raw, false)
 }
 
+func (w *Workspace) resolveHost(raw string, mustExist bool) (Path, error) {
+	if raw == "" {
+		raw = "."
+	}
+	if strings.Contains(raw, string(rune(0))) {
+		return Path{}, errors.New("path contains invalid byte")
+	}
+	var candidate string
+	if strings.HasPrefix(raw, "~") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return Path{}, err
+		}
+		if raw == "~" {
+			candidate = home
+		} else if strings.HasPrefix(raw, "~/") {
+			candidate = filepath.Join(home, raw[2:])
+		} else {
+			return Path{}, errors.New("unsupported home path; use ~/path or an absolute path")
+		}
+	} else if filepath.IsAbs(raw) {
+		candidate = raw
+	} else {
+		candidate = filepath.Join(w.DefaultCWD(), filepath.FromSlash(raw))
+	}
+	candidate = filepath.Clean(candidate)
+	if mustExist {
+		realPath, err := filepath.EvalSymlinks(candidate)
+		if err != nil {
+			return Path{}, err
+		}
+		display, _ := w.Relative(realPath)
+		return Path{Display: display, Abs: realPath, Exists: true}, nil
+	}
+	parent := candidate
+	for {
+		if info, err := os.Lstat(parent); err == nil && info.IsDir() {
+			break
+		}
+		next := filepath.Dir(parent)
+		if next == parent {
+			return Path{}, fmt.Errorf("parent directory not found: %s", raw)
+		}
+		parent = next
+	}
+	realParent, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		return Path{}, err
+	}
+	relFromParent, err := filepath.Rel(parent, candidate)
+	if err != nil {
+		return Path{}, err
+	}
+	realPath := filepath.Join(realParent, relFromParent)
+	display, _ := w.Relative(realPath)
+	_, statErr := os.Stat(realPath)
+	return Path{Display: display, Abs: realPath, Exists: statErr == nil}, nil
+}
+
 func (w *Workspace) resolve(raw string, mustExist bool) (Path, error) {
+	if w.hostPaths {
+		return w.resolveHost(raw, mustExist)
+	}
 	clean, err := Clean(raw)
 	if err != nil {
 		return Path{}, err
@@ -137,6 +202,9 @@ func (w *Workspace) Relative(abs string) (string, error) {
 	}
 	if rel == "." {
 		return ".", nil
+	}
+	if strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return filepath.Clean(abs), nil
 	}
 	return filepath.ToSlash(rel), nil
 }

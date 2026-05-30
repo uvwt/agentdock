@@ -447,10 +447,10 @@ AGENTDOCK_BROWSER_ENABLED=false ./agentdock \
   --port 8765 \
   --oauth-mode \
   --tool-profile full \
-  --sandbox-mode none
+  --mode host
 ```
 
-macOS 下 `sandbox-mode=landlock` 不会启用 Linux Landlock，`server_info.sandbox.enabled` 会显示为 `false`。这是平台限制，不是配置错误。
+macOS 裸机推荐使用 `--mode host`。该模式会自动设置 `sandbox-mode=none` 和 `path-policy=host`：命令执行依赖当前 macOS 用户权限，文件和 Git 工具也允许使用绝对路径或 `~/...`。`server_info.sandbox.enabled` 在 macOS 下通常会显示为 `false`，这是平台限制，不是配置错误。
 
 ### macOS 浏览器自动化
 
@@ -476,7 +476,7 @@ AGENTDOCK_BROWSER_ENABLED=true ./agentdock \
   --port 8765 \
   --oauth-mode \
   --tool-profile full \
-  --sandbox-mode none
+  --mode host
 ```
 
 Docker 浏览器增强镜像会固定 `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`。macOS 裸机不会强行使用这个路径；如果你没有设置该环境变量，Playwright 会使用自己的默认缓存目录。
@@ -585,7 +585,7 @@ exec "$HOME/agentdock/agentdock" \
   --port 18766 \
   --oauth-mode \
   --tool-profile full \
-  --sandbox-mode none \
+  --mode host \
   --dangerously-skip-all-permissions
 ```
 

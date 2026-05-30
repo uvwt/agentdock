@@ -117,9 +117,14 @@ func (r *Runtime) gitBlame(ctx context.Context, args map[string]any) (Result, er
 	if err != nil {
 		return nil, err
 	}
-	result, err := r.gitInRepo(ctx, repo, intArg(args, "max_bytes", 262144), "blame", "--line-porcelain", "--", p.Display)
+	rel, err := filepath.Rel(repo.Abs, p.Abs)
+	if err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return nil, toolErrorDetails("PATH_OUTSIDE_REPOSITORY", "path is outside repo_path", "validation", map[string]any{"repo_path": repo.Path, "path": p.Display})
+	}
+	result, err := r.gitInRepo(ctx, repo, intArg(args, "max_bytes", 262144), "blame", "--line-porcelain", "--", filepath.ToSlash(rel))
 	if result != nil {
 		result["repo_path"] = repo.Path
+		result["path"] = filepath.ToSlash(rel)
 	}
 	return result, err
 }
@@ -232,17 +237,21 @@ func (r *Runtime) workspaceRepos(ctx context.Context, args map[string]any) (Resu
 	// 给模型一个轻量的“仓库地图”。这样处理多项目工作区时，模型可以先
 	// 发现有哪些 repo、各自分支和 clean/ahead 状态，再对指定 repo_path 操作，
 	// 减少反复 ls + git status 的探测步骤，也避免误操作到错误项目。
+	start, err := r.ws.ResolveExisting(stringArg(args, "path", "."))
+	if err != nil {
+		return nil, err
+	}
 	maxDepth := intArg(args, "max_depth", 3)
 	if maxDepth < 1 {
 		maxDepth = 1
 	}
 	repos := make([]map[string]any, 0)
-	rootDepth := len(strings.Split(filepath.Clean(r.ws.Root()), string(os.PathSeparator)))
-	_ = filepath.WalkDir(r.ws.Root(), func(abs string, entry os.DirEntry, walkErr error) error {
+	rootDepth := len(strings.Split(filepath.Clean(start.Abs), string(os.PathSeparator)))
+	_ = filepath.WalkDir(start.Abs, func(abs string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return nil
 		}
-		if abs == r.ws.Root() {
+		if abs == start.Abs {
 			return nil
 		}
 		if entry.IsDir() && shouldSkipDir(entry.Name()) && entry.Name() != ".git" {
@@ -269,5 +278,5 @@ func (r *Runtime) workspaceRepos(ctx context.Context, args map[string]any) (Resu
 		repos = append(repos, map[string]any{"path": rel, "branch": branch, "upstream": upstream, "ahead": ahead, "behind": behind, "clean": len(files) == 0, "remote": redactSecrets(r.gitRemoteURL(ctx, repo, "origin"), nil)})
 		return filepath.SkipDir
 	})
-	return Result{"ok": true, "repos": repos, "count": len(repos)}, nil
+	return Result{"ok": true, "path": start.Display, "repos": repos, "count": len(repos)}, nil
 }

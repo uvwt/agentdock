@@ -14,12 +14,19 @@ const (
 	ProfileReadOnly          = "read-only"
 	ProfileCompatReadOnlyAll = "compat-readonly-all"
 
+	ModeSandboxed = "sandboxed"
+	ModeHost      = "host"
+
 	SandboxModeLandlock = "landlock"
 	SandboxModeNone     = "none"
+
+	PathPolicyWorkspace = "workspace"
+	PathPolicyHost      = "host"
 )
 
 type Config struct {
 	Workspace                     string
+	Mode                          string
 	Host                          string
 	Port                          int
 	AuthToken                     string
@@ -28,6 +35,7 @@ type Config struct {
 	ToolProfile                   string
 	LogLevel                      string
 	SandboxMode                   string
+	PathPolicy                    string
 	AgentDockDir                  string
 	ConnectorDir                  string
 	MemoryEndpoint                string
@@ -48,6 +56,7 @@ type Config struct {
 func FromEnv() Config {
 	return Config{
 		Workspace:                     getenv("AGENTDOCK_WORKSPACE", "."),
+		Mode:                          os.Getenv("AGENTDOCK_MODE"),
 		Host:                          getenv("AGENTDOCK_HOST", "127.0.0.1"),
 		Port:                          getenvInt("AGENTDOCK_PORT", 8765),
 		AuthToken:                     os.Getenv("AGENTDOCK_AUTH_TOKEN"),
@@ -55,7 +64,8 @@ func FromEnv() Config {
 		OAuthServerURL:                os.Getenv("AGENTDOCK_SERVER_URL"),
 		ToolProfile:                   getenv("AGENTDOCK_TOOL_PROFILE", ProfileFull),
 		LogLevel:                      getenv("AGENTDOCK_LOG_LEVEL", "info"),
-		SandboxMode:                   getenv("AGENTDOCK_SANDBOX_MODE", SandboxModeLandlock),
+		SandboxMode:                   os.Getenv("AGENTDOCK_SANDBOX_MODE"),
+		PathPolicy:                    os.Getenv("AGENTDOCK_PATH_POLICY"),
 		AgentDockDir:                  getenv("AGENTDOCK_DIR", "AgentDock"),
 		ConnectorDir:                  getenv("AGENTDOCK_CONNECTOR_DIR", "connectors"),
 		MemoryEndpoint:                getenv("AGENTDOCK_MEMORY_ENDPOINT", ""),
@@ -75,6 +85,18 @@ func FromEnv() Config {
 }
 
 func (c *Config) Normalize() {
+	if c.Mode == "" {
+		if c.SandboxMode == SandboxModeNone || c.PathPolicy == PathPolicyHost {
+			c.Mode = ModeHost
+		} else {
+			c.Mode = ModeSandboxed
+		}
+	}
+	switch c.Mode {
+	case ModeSandboxed, ModeHost:
+	default:
+		c.Mode = ModeSandboxed
+	}
 	switch c.ToolProfile {
 	case ProfileReadOnly, ProfileCompatReadOnlyAll:
 	default:
@@ -107,10 +129,37 @@ func (c *Config) Normalize() {
 	if c.DesktopArtifactDir == "" {
 		c.DesktopArtifactDir = "desktop-artifacts"
 	}
+	if c.SandboxMode == "" {
+		if c.Mode == ModeHost {
+			c.SandboxMode = SandboxModeNone
+		} else {
+			c.SandboxMode = SandboxModeLandlock
+		}
+	}
 	switch c.SandboxMode {
 	case SandboxModeLandlock, SandboxModeNone:
 	default:
-		c.SandboxMode = SandboxModeLandlock
+		if c.Mode == ModeHost {
+			c.SandboxMode = SandboxModeNone
+		} else {
+			c.SandboxMode = SandboxModeLandlock
+		}
+	}
+	if c.PathPolicy == "" {
+		if c.Mode == ModeHost || c.SandboxMode == SandboxModeNone {
+			c.PathPolicy = PathPolicyHost
+		} else {
+			c.PathPolicy = PathPolicyWorkspace
+		}
+	}
+	switch c.PathPolicy {
+	case PathPolicyWorkspace, PathPolicyHost:
+	default:
+		if c.Mode == ModeHost || c.SandboxMode == SandboxModeNone {
+			c.PathPolicy = PathPolicyHost
+		} else {
+			c.PathPolicy = PathPolicyWorkspace
+		}
 	}
 }
 

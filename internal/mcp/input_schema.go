@@ -195,42 +195,43 @@ func inputSchema(name string) map[string]any {
 		props["ms"] = intProp("Milliseconds to wait.")
 		props["timeout_ms"] = intProp("Alias for ms; capped at 60000.")
 	case "workspace_repos":
+		props["path"] = stringProp("Directory to scan. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed. Defaults to current workspace/default cwd.")
 		props["max_depth"] = intProp("Maximum directory depth to scan for repositories.")
 	case "git_repo_status", "git_status":
-		props["repo_path"] = stringProp("Workspace-relative repository path. Defaults to current workspace/default cwd.")
+		props["repo_path"] = stringProp("Repository path. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed. Defaults to current workspace/default cwd.")
 		props["max_output_bytes"] = intProp("Maximum output bytes.")
 	case "git_diff":
-		props["repo_path"] = stringProp("Workspace-relative repository path.")
+		props["repo_path"] = stringProp("Repository path. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed.")
 		props["paths"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 		props["max_bytes"] = intProp("Maximum output bytes.")
 	case "git_log":
-		props["repo_path"] = stringProp("Workspace-relative repository path.")
+		props["repo_path"] = stringProp("Repository path. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed.")
 		props["limit"] = intProp("Maximum commits.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
 	case "git_show":
-		props["repo_path"] = stringProp("Workspace-relative repository path.")
+		props["repo_path"] = stringProp("Repository path. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed.")
 		props["rev"] = stringProp("Revision to show.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
 	case "git_blame":
-		props["repo_path"] = stringProp("Workspace-relative repository path.")
-		props["path"] = stringProp("Workspace-relative file path.")
+		props["repo_path"] = stringProp("Repository path. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed.")
+		props["path"] = stringProp("File path. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
 		required = []string{"path"}
 	case "git_fetch", "git_pull", "git_push":
-		props["repo_path"] = stringProp("Workspace-relative repository path.")
+		props["repo_path"] = stringProp("Repository path. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed.")
 		props["remote"] = stringProp("Remote name. Defaults to origin.")
 		props["branch"] = stringProp("Branch name. Defaults to current branch where applicable.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
 	case "git_clone":
 		props["url"] = stringProp("Git repository URL to clone.")
 		props["repo"] = stringProp("Alias for url.")
-		props["dest"] = stringProp("Workspace-relative destination directory.")
+		props["dest"] = stringProp("Destination directory. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed.")
 		props["branch"] = stringProp("Branch to clone.")
 		props["depth"] = intProp("Optional shallow clone depth.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
 		required = []string{"url"}
 	case "git_commit":
-		props["repo_path"] = stringProp("Workspace-relative repository path.")
+		props["repo_path"] = stringProp("Repository path. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed.")
 		props["message"] = stringProp("Commit message.")
 		props["paths"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 		props["all"] = boolProp("Stage all changes before committing.")
