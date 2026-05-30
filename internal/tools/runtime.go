@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -536,24 +537,13 @@ func (r *Runtime) viewImage(args map[string]any) (Result, error) {
 	if len(data) > maxBytes {
 		return nil, toolErrorDetails("IMAGE_TOO_LARGE", "image exceeds max_bytes", "validation", map[string]any{"bytes": len(data), "max_bytes": maxBytes, "resize_attempted": autoResize, "warnings": warnings})
 	}
-	output := stringArg(args, "output", "metadata")
-	if output == "mcp_image" || output == "data_url" {
-		warnings = append(warnings, "inline image bytes are disabled; use the returned path and metadata instead")
+	output := stringArg(args, "output", "mcp_image")
+	encoded := base64.StdEncoding.EncodeToString(data)
+	result := Result{"ok": true, "path": p.Display, "mime_type": info.MIME, "size_bytes": len(data), "width": info.Width, "height": info.Height, "original": original, "resized": resized, "warnings": warnings, "data_base64": encoded, "output": output}
+	if output == "data_url" {
+		result["data_url"] = "data:" + info.MIME + ";base64," + encoded
 	}
-	return Result{
-		"ok":             true,
-		"path":           p.Display,
-		"mime_type":      info.MIME,
-		"size_bytes":     len(data),
-		"width":          info.Width,
-		"height":         info.Height,
-		"original":       original,
-		"resized":        resized,
-		"warnings":       warnings,
-		"output":         "metadata",
-		"data_omitted":   true,
-		"omitted_reason": "image bytes are intentionally omitted to keep tool responses small",
-	}, nil
+	return result, nil
 }
 
 func (r *Runtime) requestPermissions(args map[string]any) Result {

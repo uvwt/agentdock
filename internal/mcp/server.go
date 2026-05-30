@@ -137,6 +137,12 @@ func toolEnvelope(name string, structured any, err error) map[string]any {
 		}
 		return map[string]any{"isError": true, "structuredContent": payload, "content": []map[string]any{{"type": "text", "text": pretty(payload)}}}
 	}
+	if name == "view_image" {
+		payload := asMap(structured)
+		if output, _ := payload["output"].(string); output == "mcp_image" {
+			return map[string]any{"isError": false, "structuredContent": structured, "content": []map[string]any{{"type": "image", "data": payload["data_base64"], "mimeType": payload["mime_type"]}}}
+		}
+	}
 	return map[string]any{"isError": false, "structuredContent": structured, "content": []map[string]any{{"type": "text", "text": pretty(structured)}}}
 }
 

@@ -186,13 +186,7 @@ func outputSchema(name string) map[string]any {
 		props["mime_type"] = stringProp("Image MIME type.")
 		props["width"] = intProp("Image width.")
 		props["height"] = intProp("Image height.")
-		props["size_bytes"] = intProp("Image byte size after optional resize checks.")
-		props["original"] = objectProp("Original image metadata before optional resize.")
-		props["resized"] = boolProp("Whether the image was resized for validation.")
-		props["warnings"] = arrayProp("Warnings emitted while inspecting the image.")
-		props["output"] = stringProp("Always metadata; inline image bytes are omitted.")
-		props["data_omitted"] = boolProp("Whether binary image data was omitted from the response.")
-		props["omitted_reason"] = stringProp("Why binary image data was omitted.")
+		props["data_base64"] = stringProp("Base64-encoded image data when returned.")
 	}
 
 	return map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": true}

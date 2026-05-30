@@ -71,7 +71,7 @@ var toolRegistry = []ToolDefinition{
 	{Name: "git_clone", Title: "Git clone", Description: "Clone a Git repository into the workspace.", Destructive: false, OpenWorld: true},
 	{Name: "git_commit", Title: "Git commit", Description: "Create a Git commit in a selected repository.", Destructive: false},
 	{Name: "request_permissions", Title: "Request permissions", Description: "Request a scoped permission grant for runtime operations that require approval.", ReadOnly: true},
-	{Name: "view_image", Title: "View image", Description: "Return workspace image metadata without inline image bytes.", ReadOnly: true},
+	{Name: "view_image", Title: "View image", Description: "Return a workspace image as MCP image content.", ReadOnly: true},
 }
 
 func toolDefinition(name string) (ToolDefinition, bool) {

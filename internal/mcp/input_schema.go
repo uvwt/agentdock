@@ -244,7 +244,7 @@ func inputSchema(name string) map[string]any {
 			props["max_width"] = intProp("Maximum image width.")
 			props["max_height"] = intProp("Maximum image height.")
 			props["auto_resize"] = boolProp("Resize when limits are exceeded.")
-			props["output"] = stringProp("Deprecated; image bytes are never returned inline. The tool returns metadata only.")
+			props["output"] = stringProp("mcp_image or data_url.")
 		}
 	case "request_permissions":
 		props["tool_name"] = stringProp("Tool needing permission.")
