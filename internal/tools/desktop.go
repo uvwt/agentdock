@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
@@ -141,14 +140,6 @@ func (r *Runtime) desktopSnapshot(ctx context.Context, args map[string]any) (Res
 	res := Result{"ok": true, "screenshot_path": path, "screenshot_artifact_id": strings.TrimSuffix(name, ".png")}
 	if base := strings.TrimRight(r.cfg.OAuthServerURL, "/"); base != "" {
 		res["screenshot_url"] = base + "/artifacts/desktop/screenshots/" + name
-	}
-	if boolArg(args, "include_screenshot_base64", false) {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		res["screenshot_mime_type"] = "image/png"
-		res["screenshot_base64"] = base64.StdEncoding.EncodeToString(data)
 	}
 	return res, nil
 }

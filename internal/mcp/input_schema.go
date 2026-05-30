@@ -163,7 +163,6 @@ func inputSchema(name string) map[string]any {
 		props["check_applescript"] = boolProp("Try a real AppleScript/System Events check. Defaults to true.")
 	case "desktop_window_list":
 	case "desktop_snapshot":
-		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 and screenshot_mime_type in the response. Disabled by default because screenshots can be large.")
 	case "desktop_clipboard_set":
 		props["text"] = stringProp("Text to place into the macOS clipboard.")
 		props["verify"] = boolProp("Read back pbpaste after writing and report verified. Defaults to true.")
