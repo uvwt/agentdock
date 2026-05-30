@@ -86,7 +86,7 @@ func FromEnv() Config {
 
 func (c *Config) Normalize() {
 	if c.Mode == "" {
-		if c.SandboxMode == SandboxModeNone || c.PathPolicy == PathPolicyHost {
+		if c.PathPolicy == PathPolicyHost {
 			c.Mode = ModeHost
 		} else {
 			c.Mode = ModeSandboxed
@@ -146,7 +146,7 @@ func (c *Config) Normalize() {
 		}
 	}
 	if c.PathPolicy == "" {
-		if c.Mode == ModeHost || c.SandboxMode == SandboxModeNone {
+		if c.Mode == ModeHost {
 			c.PathPolicy = PathPolicyHost
 		} else {
 			c.PathPolicy = PathPolicyWorkspace
@@ -155,7 +155,7 @@ func (c *Config) Normalize() {
 	switch c.PathPolicy {
 	case PathPolicyWorkspace, PathPolicyHost:
 	default:
-		if c.Mode == ModeHost || c.SandboxMode == SandboxModeNone {
+		if c.Mode == ModeHost {
 			c.PathPolicy = PathPolicyHost
 		} else {
 			c.PathPolicy = PathPolicyWorkspace

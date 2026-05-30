@@ -29,14 +29,14 @@ func TestNormalizeHostModeSelectsNoneAndHostPathPolicy(t *testing.T) {
 	}
 }
 
-func TestNormalizeLegacySandboxNoneInfersHostMode(t *testing.T) {
+func TestNormalizeSandboxNoneDoesNotInferHostMode(t *testing.T) {
 	cfg := Config{SandboxMode: SandboxModeNone}
 	cfg.Normalize()
 
-	if cfg.Mode != ModeHost {
-		t.Fatalf("Mode = %q, want %q", cfg.Mode, ModeHost)
+	if cfg.Mode != ModeSandboxed {
+		t.Fatalf("Mode = %q, want %q", cfg.Mode, ModeSandboxed)
 	}
-	if cfg.PathPolicy != PathPolicyHost {
-		t.Fatalf("PathPolicy = %q, want %q", cfg.PathPolicy, PathPolicyHost)
+	if cfg.PathPolicy != PathPolicyWorkspace {
+		t.Fatalf("PathPolicy = %q, want %q", cfg.PathPolicy, PathPolicyWorkspace)
 	}
 }
