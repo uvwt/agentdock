@@ -34,9 +34,9 @@ func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func
 			store[p] = content
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "memory": map[string]any{"path": p, "content": content}})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/memories":
-			entries := []map[string]any{}
+			entries := []map[string]any{{"path": "devices", "type": "directory"}}
 			for p := range store {
-				entries = append(entries, map[string]any{"path": p})
+				entries = append(entries, map[string]any{"path": p, "type": "file"})
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "entries": entries, "count": len(entries)})
 		default:
@@ -111,5 +111,10 @@ func TestMemoryUpdateFactAndLint(t *testing.T) {
 	}
 	if count, _ := res["finding_count"].(int); count == 0 {
 		t.Fatalf("expected lint finding: %#v", res)
+	}
+	for _, item := range res["findings"].([]memoryLintFinding) {
+		if item.Term == "READ_ERROR" {
+			t.Fatalf("memory_lint should skip directory entries, got: %#v", res)
+		}
 	}
 }

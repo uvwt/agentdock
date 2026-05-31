@@ -457,10 +457,15 @@ func memoryPathsFromList(result Result) []string {
 	entries, _ := result["entries"].([]any)
 	paths := []string{}
 	for _, item := range entries {
-		if m, ok := item.(map[string]any); ok {
-			if p := strings.TrimSpace(fmt.Sprint(m["path"])); p != "" && p != "<nil>" {
-				paths = append(paths, p)
-			}
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if typ := strings.TrimSpace(fmt.Sprint(m["type"])); typ != "" && typ != "<nil>" && typ != "file" {
+			continue
+		}
+		if p := strings.TrimSpace(fmt.Sprint(m["path"])); p != "" && p != "<nil>" {
+			paths = append(paths, p)
 		}
 	}
 	sort.Strings(paths)
