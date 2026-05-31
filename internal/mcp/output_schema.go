@@ -138,6 +138,23 @@ func outputSchema(name string) map[string]any {
 		props["last_push_at"] = stringProp("Last push timestamp.")
 		props["last_error"] = stringProp("Last sync error.")
 		props["conflict"] = boolProp("Whether MemoryDock detected a sync conflict.")
+	case "memory_diff", "memory_patch", "memory_update_fact":
+		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
+		props["path"] = stringProp("Memory path.")
+		props["changed"] = boolProp("Whether the proposed edit changes content.")
+		props["dry_run"] = boolProp("Whether the operation only previewed changes.")
+		props["confirmed"] = boolProp("Whether write confirmation was supplied.")
+		props["written"] = boolProp("Whether the memory was written.")
+		props["diff"] = stringProp("Unified diff preview.")
+		props["truncated"] = boolProp("Whether the diff or findings were truncated.")
+		props["updates"] = arrayProp("Fact update results.")
+	case "memory_lint":
+		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
+		props["terms"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
+		props["files_scanned"] = intProp("Files scanned.")
+		props["finding_count"] = intProp("Finding count.")
+		props["findings"] = arrayProp("Lint findings.")
+		props["truncated"] = boolProp("Whether findings were truncated.")
 	case "browser_session_start", "browser_session_close":
 		props["operation"] = stringProp("Browser operation name.")
 		props["session_id"] = stringProp("Browser session id.")

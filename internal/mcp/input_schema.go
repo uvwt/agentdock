@@ -137,6 +137,40 @@ func inputSchema(name string) map[string]any {
 		props["confirmed"] = boolProp("Required to delete a memory file.")
 		required = []string{"path", "confirmed"}
 	case "memory_sync_status":
+	case "memory_diff", "memory_patch":
+		props["path"] = stringProp("Memory-relative Markdown/text path.")
+		props["content"] = stringProp("Full proposed content for diff, or section replacement content when section is provided.")
+		props["old"] = stringProp("Literal text to replace.")
+		props["new"] = stringProp("Replacement text for old.")
+		props["pattern"] = stringProp("Regular expression pattern to replace.")
+		props["replacement"] = stringProp("Replacement for pattern.")
+		props["section"] = stringProp("Markdown heading title whose section body should be replaced.")
+		props["section_content"] = stringProp("New body for the selected Markdown section.")
+		props["append"] = stringProp("Text to append to the memory.")
+		props["prepend"] = stringProp("Text to prepend to the memory.")
+		props["operations"] = map[string]any{"type": "array", "description": "Patch operations. Each item supports type/op/kind values replace_text, replace_regex, replace_section, append, or prepend.", "items": map[string]any{"type": "object", "additionalProperties": true}}
+		props["all"] = boolProp("Replace all matches for old or pattern. Defaults to true.")
+		props["dry_run"] = boolProp("Preview without writing. memory_patch defaults to dry-run unless confirmed=true.")
+		props["confirmed"] = boolProp("Required for memory_patch to write.")
+		props["max_bytes"] = intProp("Maximum diff bytes.")
+		required = []string{"path"}
+	case "memory_update_fact":
+		props["path"] = stringProp("Memory-relative Markdown/text path.")
+		props["section"] = stringProp("Optional Markdown heading title to limit the update.")
+		props["key"] = stringProp("Fact key to update, for example plugin_dir.")
+		props["value"] = stringProp("New fact value.")
+		props["facts"] = objectProp("Multiple key/value facts to update.")
+		props["append_if_missing"] = boolProp("Append missing facts instead of failing.")
+		props["dry_run"] = boolProp("Preview without writing. Defaults to true unless confirmed=true.")
+		props["confirmed"] = boolProp("Required to write changes.")
+		props["max_bytes"] = intProp("Maximum diff bytes.")
+		required = []string{"path"}
+	case "memory_lint":
+		props["prefix"] = stringProp("Optional memory-relative prefix to scan.")
+		props["terms"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Terms or regex patterns to scan for."}
+		props["regex"] = boolProp("Treat terms as regex patterns.")
+		props["max_entries"] = intProp("Maximum memory entries to scan.")
+		props["max_findings"] = intProp("Maximum findings to return.")
 	case "browser_session_start":
 		props["url"] = stringProp("Initial URL. Defaults to about:blank.")
 		props["headless"] = boolProp("Run browser headless. Defaults to true.")
