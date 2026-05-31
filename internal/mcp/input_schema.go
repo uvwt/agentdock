@@ -197,6 +197,14 @@ func inputSchema(name string) map[string]any {
 		props["check_applescript"] = boolProp("Try a real AppleScript/System Events check. Defaults to true.")
 	case "desktop_window_list":
 	case "desktop_snapshot":
+		props["include_image"] = boolProp("Attach a compressed screenshot as MCP image content. Defaults to false.")
+		props["include_image_base64"] = boolProp("Alias for include_image. Defaults to false.")
+		props["max_bytes"] = intProp("Maximum encoded image bytes when include_image is true. Defaults to 750000.")
+		props["max_width"] = intProp("Maximum image width when include_image is true. Defaults to 1280.")
+		props["max_height"] = intProp("Maximum image height when include_image is true. Defaults to 1280.")
+		props["format"] = stringProp("Output image format when include_image is true: jpeg or png. Defaults to jpeg.")
+		props["quality"] = intProp("JPEG quality when format is jpeg. Defaults to 72.")
+		props["crop"] = map[string]any{"type": "object", "description": "Optional crop rectangle {x,y,width,height} before resizing.", "additionalProperties": true}
 	case "desktop_clipboard_set":
 		props["text"] = stringProp("Text to place into the macOS clipboard.")
 		props["verify"] = boolProp("Read back pbpaste after writing and report verified. Defaults to true.")
@@ -274,11 +282,14 @@ func inputSchema(name string) map[string]any {
 	case "set_default_cwd", "view_image":
 		props["path"] = stringProp("Workspace-relative path.")
 		if name == "view_image" {
-			props["max_bytes"] = intProp("Maximum image bytes.")
-			props["max_width"] = intProp("Maximum image width.")
-			props["max_height"] = intProp("Maximum image height.")
-			props["auto_resize"] = boolProp("Resize when limits are exceeded.")
-			props["output"] = stringProp("mcp_image or data_url.")
+			props["max_bytes"] = intProp("Maximum encoded image bytes. Defaults to 750000.")
+			props["max_width"] = intProp("Maximum image width. Defaults to 1280.")
+			props["max_height"] = intProp("Maximum image height. Defaults to 1280.")
+			props["auto_resize"] = boolProp("Resize/compress when limits are exceeded. Defaults to true.")
+			props["format"] = stringProp("Output image format: jpeg or png. Defaults to jpeg.")
+			props["quality"] = intProp("JPEG quality when format is jpeg. Defaults to 72.")
+			props["crop"] = map[string]any{"type": "object", "description": "Optional crop rectangle {x,y,width,height} before resizing.", "additionalProperties": true}
+			props["output"] = stringProp("mcp_image or data_url. Defaults to mcp_image.")
 		}
 	case "request_permissions":
 		props["tool_name"] = stringProp("Tool needing permission.")

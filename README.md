@@ -738,11 +738,11 @@ AGENTDOCK_DESKTOP_ENABLED=true
 
 | 工具 | 说明 |
 | --- | --- |
-| `desktop_snapshot` | 调用 `screencapture` 截取当前桌面，保存到 `AgentDock/desktop-artifacts/screenshots`。 |
+| `desktop_snapshot` | 调用 `screencapture` 截取当前桌面，保存到 `AgentDock/desktop-artifacts/screenshots`；默认只返回路径/URL，可显式返回压缩后的 MCP image。 |
 | `desktop_focus_app` | 使用 AppleScript 激活指定 App。 |
-| `desktop_click` | 使用 `cliclick` 点击屏幕坐标。 |
-| `desktop_type` | 使用 `cliclick` 向当前焦点输入文本。 |
-| `desktop_hotkey` | 使用 `cliclick` 发送快捷键，例如 `cmd+space`、`cmd+v`、`enter`。 |
+| `desktop_click` | 使用 `cliclick` 点击屏幕坐标；返回 `command_ok`、`permission_ok`、`effect_verified` 等分层状态。 |
+| `desktop_type` | 使用 `cliclick` 向当前焦点输入文本；支持可选截图 diff 验证。 |
+| `desktop_hotkey` | 使用 `cliclick` 发送快捷键，例如 `cmd+space`、`cmd+v`、`enter`；字母快捷键会拆成按下修饰键、输入字符、释放修饰键。 |
 
 依赖：
 
@@ -760,9 +760,28 @@ System Settings → Privacy & Security → Automation
 
 安全建议：
 
-- `desktop_snapshot` 相对安全，可以用于观察当前状态。
+- `desktop_snapshot` 相对安全，可以用于观察当前状态。默认不返回 4K Base64，只返回截图路径、URL、宽高和大小。
+- 需要让模型直接看图时，传 `include_image=true`，并用 `max_width`、`max_height`、`max_bytes`、`crop` 控制返回大小；默认压缩到 `max_width=1280`、`max_height=1280`、`max_bytes=750000`、`format=jpeg`、`quality=72`。
 - `desktop_click`、`desktop_type`、`desktop_hotkey` 会真实操作桌面，可能发送消息、提交表单或改动应用状态。
+- 桌面动作返回中的 `command_ok=true` 只表示底层命令退出成功，不表示目标 App 已完成业务状态变化；需要看 `permission_ok`、`effect_verified` 和截图/业务级验证。
+- 如果底层输出包含 macOS Accessibility/Automation 权限警告，工具会返回 `permission_ok=false` 和 `error_code=ACCESSIBILITY_NOT_TRUSTED`。
+- 高风险操作建议先截图观察，再执行点击/输入，最后用 `verify=screenshot_diff` 或应用自身状态确认。
 - 微信、邮件、支付、删除文件等高风险操作建议先填草稿或截图确认，再执行真正发送/提交。
+
+
+图片返回控制：
+
+- `view_image` 和 `desktop_snapshot` 共用同一套图片处理管线。
+- `view_image` 默认会把图片压缩/缩放后作为 MCP image 返回，默认上限为 `max_bytes=750000`、`max_width=1280`、`max_height=1280`、`format=jpeg`、`quality=72`。
+- `desktop_snapshot` 默认只返回原图路径/URL；只有传 `include_image=true` 或 `include_image_base64=true` 时才返回压缩后的 MCP image。
+- 两个工具都支持 `crop: {"x":0,"y":0,"width":800,"height":600}`，优先返回局部区域，避免 4K 整屏 Base64 撑爆上下文。
+- 如果压缩后仍超过 `max_bytes`，工具不会强行返回超大 Base64，会返回路径/URL和错误提示，调用方应缩小 crop 或降低 max_width/quality。
+
+桌面动作验证：
+
+- `desktop_click`、`desktop_double_click`、`desktop_move`、`desktop_scroll`、`desktop_drag`、`desktop_type`、`desktop_hotkey` 支持 `verify="screenshot_diff"`。
+- 启用后会在动作前后截图，返回 `diff_percent`、`diff_threshold` 和 `effect_verified`。
+- `effect_verified=true` 只表示画面差异达到阈值，不等于业务动作一定成功；复杂应用仍应结合 OCR、应用状态或业务 API 做二次验证。
 
 ### desktop_* 操作原语补充
 

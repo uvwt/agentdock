@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
@@ -137,9 +138,38 @@ func (r *Runtime) desktopSnapshot(ctx context.Context, args map[string]any) (Res
 	if err != nil {
 		return Result{"ok": false, "error": err.Error(), "stdout": redactSecrets(string(output), nil)}, nil
 	}
-	res := Result{"ok": true, "screenshot_path": path, "screenshot_artifact_id": strings.TrimSuffix(name, ".png")}
+	data, readErr := os.ReadFile(path)
+	if readErr != nil {
+		return Result{"ok": false, "error": readErr.Error(), "screenshot_path": path}, nil
+	}
+	info, infoErr := identifyImage(data)
+	if infoErr != nil {
+		return Result{"ok": false, "error": infoErr.Error(), "screenshot_path": path}, nil
+	}
+	res := Result{"ok": true, "screenshot_path": path, "screenshot_artifact_id": strings.TrimSuffix(name, ".png"), "width": info.Width, "height": info.Height, "size_bytes": len(data), "mime_type": info.MIME, "image_attached": false}
 	if base := strings.TrimRight(r.cfg.OAuthServerURL, "/"); base != "" {
 		res["screenshot_url"] = base + "/artifacts/desktop/screenshots/" + name
+	}
+	if boolArg(args, "include_image", boolArg(args, "include_image_base64", false)) {
+		crop := cropArg(args)
+		maxBytes := intArg(args, "max_bytes", 750000)
+		maxWidth := intArg(args, "max_width", 1280)
+		maxHeight := intArg(args, "max_height", 1280)
+		format := stringArg(args, "format", "jpeg")
+		quality := intArg(args, "quality", 72)
+		prepared, preparedInfo, original, warnings, ok := prepareImageBytes(data, crop, maxBytes, maxWidth, maxHeight, format, quality)
+		res["original"] = original
+		res["image_warnings"] = warnings
+		res["image_attached"] = ok
+		if ok {
+			res["image_base64"] = base64.StdEncoding.EncodeToString(prepared)
+			res["image_mime_type"] = preparedInfo.MIME
+			res["image_width"] = preparedInfo.Width
+			res["image_height"] = preparedInfo.Height
+			res["image_size_bytes"] = len(prepared)
+		} else {
+			res["image_error"] = "prepared image exceeds max_bytes or could not be encoded; use screenshot_url/path or tighter crop/max_width"
+		}
 	}
 	return res, nil
 }
@@ -210,7 +240,7 @@ func (r *Runtime) desktopClick(ctx context.Context, args map[string]any) (Result
 	}
 	cmd := exec.CommandContext(ctx, "cliclick", fmt.Sprintf("c:%d,%d", x, y))
 	cmd.Env = r.commandEnv(nil)
-	return commandResult("desktop_click", cmd)
+	return r.desktopCommandResult(ctx, "desktop_click", cmd, args)
 }
 
 func (r *Runtime) desktopMove(ctx context.Context, args map[string]any) (Result, error) {
@@ -227,7 +257,7 @@ func (r *Runtime) desktopMove(ctx context.Context, args map[string]any) (Result,
 	}
 	cmd := exec.CommandContext(ctx, "cliclick", fmt.Sprintf("m:%d,%d", x, y))
 	cmd.Env = r.commandEnv(nil)
-	return commandResult("desktop_move", cmd)
+	return r.desktopCommandResult(ctx, "desktop_move", cmd, args)
 }
 
 func (r *Runtime) desktopDoubleClick(ctx context.Context, args map[string]any) (Result, error) {
@@ -244,7 +274,7 @@ func (r *Runtime) desktopDoubleClick(ctx context.Context, args map[string]any) (
 	}
 	cmd := exec.CommandContext(ctx, "cliclick", fmt.Sprintf("dc:%d,%d", x, y))
 	cmd.Env = r.commandEnv(nil)
-	return commandResult("desktop_double_click", cmd)
+	return r.desktopCommandResult(ctx, "desktop_double_click", cmd, args)
 }
 
 func (r *Runtime) desktopScroll(ctx context.Context, args map[string]any) (Result, error) {
@@ -261,7 +291,7 @@ func (r *Runtime) desktopScroll(ctx context.Context, args map[string]any) (Resul
 	}
 	cmd := exec.CommandContext(ctx, "cliclick", fmt.Sprintf("w:%d,%d", dx, dy))
 	cmd.Env = r.commandEnv(nil)
-	return commandResult("desktop_scroll", cmd)
+	return r.desktopCommandResult(ctx, "desktop_scroll", cmd, args)
 }
 
 func (r *Runtime) desktopDrag(ctx context.Context, args map[string]any) (Result, error) {
@@ -280,7 +310,7 @@ func (r *Runtime) desktopDrag(ctx context.Context, args map[string]any) (Result,
 	}
 	cmd := exec.CommandContext(ctx, "cliclick", fmt.Sprintf("dd:%d,%d", fromX, fromY), fmt.Sprintf("m:%d,%d", toX, toY), fmt.Sprintf("du:%d,%d", toX, toY))
 	cmd.Env = r.commandEnv(nil)
-	return commandResult("desktop_drag", cmd)
+	return r.desktopCommandResult(ctx, "desktop_drag", cmd, args)
 }
 
 func (r *Runtime) desktopWait(ctx context.Context, args map[string]any) (Result, error) {
@@ -314,7 +344,7 @@ func (r *Runtime) desktopType(ctx context.Context, args map[string]any) (Result,
 	}
 	cmd := exec.CommandContext(ctx, "cliclick", "t:"+text)
 	cmd.Env = r.commandEnv(nil)
-	return commandResult("desktop_type", cmd)
+	return r.desktopCommandResult(ctx, "desktop_type", cmd, args)
 }
 
 func (r *Runtime) desktopHotkey(ctx context.Context, args map[string]any) (Result, error) {
@@ -328,9 +358,9 @@ func (r *Runtime) desktopHotkey(ctx context.Context, args map[string]any) (Resul
 	if err := requireCliclick("desktop_hotkey"); err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, "cliclick", "kp:"+normalizeCliclickKeys(keys))
+	cmd := exec.CommandContext(ctx, "cliclick", cliclickKeyArgs(keys)...)
 	cmd.Env = r.commandEnv(nil)
-	return commandResult("desktop_hotkey", cmd)
+	return r.desktopCommandResult(ctx, "desktop_hotkey", cmd, args)
 }
 
 func (r *Runtime) runAppleScript(ctx context.Context, script string, args map[string]any) (Result, error) {
@@ -342,11 +372,52 @@ func (r *Runtime) runAppleScript(ctx context.Context, script string, args map[st
 func commandResult(operation string, cmd *exec.Cmd) (Result, error) {
 	output, err := cmd.CombinedOutput()
 	text := redactSecrets(string(output), nil)
-	res := Result{"ok": err == nil, "operation": operation, "stdout": text}
+	res := Result{"ok": err == nil, "command_ok": err == nil, "operation": operation, "stdout": text}
 	if err != nil {
 		res["error"] = err.Error()
 	}
+	applyDesktopCommandWarnings(res, text)
 	return res, nil
+}
+
+func (r *Runtime) desktopCommandResult(ctx context.Context, operation string, cmd *exec.Cmd, args map[string]any) (Result, error) {
+	var before []byte
+	var beforePath string
+	verifyMode := strings.TrimSpace(stringArg(args, "verify", ""))
+	captureBefore := boolArg(args, "before_snapshot", verifyMode == "screenshot_diff")
+	captureAfter := boolArg(args, "after_snapshot", verifyMode == "screenshot_diff")
+	if captureBefore {
+		before, beforePath = r.captureDesktopTemp(ctx, operation+"-before")
+	}
+	res, err := commandResult(operation, cmd)
+	res["effect_verified"] = false
+	res["verification"] = "not_performed"
+	if beforePath != "" {
+		res["before_snapshot_path"] = beforePath
+	}
+	waitMS := intArg(args, "wait_ms", 0)
+	if waitMS > 0 {
+		if waitMS > 10000 {
+			waitMS = 10000
+		}
+		time.Sleep(time.Duration(waitMS) * time.Millisecond)
+	}
+	if captureAfter {
+		after, afterPath := r.captureDesktopTemp(ctx, operation+"-after")
+		if afterPath != "" {
+			res["after_snapshot_path"] = afterPath
+		}
+		if len(before) > 0 && len(after) > 0 {
+			if diff, ok := imageDiffPercent(before, after); ok {
+				res["verification"] = "screenshot_diff"
+				res["diff_percent"] = diff
+				threshold := float64Arg(args, "diff_threshold", 0.002)
+				res["diff_threshold"] = threshold
+				res["effect_verified"] = diff >= threshold
+			}
+		}
+	}
+	return res, err
 }
 
 func desktopSupported() error {
@@ -390,6 +461,113 @@ func normalizeCliclickKeys(keys string) string {
 		}
 	}
 	return strings.Join(parts, "+")
+}
+
+func applyDesktopCommandWarnings(res Result, text string) {
+	lower := strings.ToLower(text)
+	warnings := []string{}
+	if strings.Contains(lower, "accessibility privileges not enabled") || strings.Contains(lower, "not allowed assistive access") || strings.Contains(lower, "不允许辅助访问") || strings.Contains(lower, "不允许发送按键") {
+		warnings = append(warnings, "macOS Accessibility/Automation permission is not available; command may not affect the target app")
+		res["ok"] = false
+		res["permission_ok"] = false
+		res["error_code"] = "ACCESSIBILITY_NOT_TRUSTED"
+	} else {
+		res["permission_ok"] = true
+	}
+	if len(warnings) > 0 {
+		res["warnings"] = warnings
+	}
+}
+
+func (r *Runtime) captureDesktopTemp(ctx context.Context, prefix string) ([]byte, string) {
+	artifactDir, err := r.resolveControlForWrite(filepath.Join(r.cfg.DesktopArtifactDir, "verification"))
+	if err != nil {
+		return nil, ""
+	}
+	_ = os.MkdirAll(artifactDir.Abs, 0o755)
+	path := filepath.Join(artifactDir.Abs, fmt.Sprintf("%s-%d.png", prefix, time.Now().UnixNano()))
+	cmd := exec.CommandContext(ctx, "screencapture", "-x", path)
+	cmd.Env = r.commandEnv(nil)
+	if out, err := cmd.CombinedOutput(); err != nil || len(out) > 0 {
+		if err != nil {
+			return nil, ""
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, path
+	}
+	return data, path
+}
+
+func cropArg(args map[string]any) *imageCrop {
+	m := mapArg(args, "crop")
+	if m == nil {
+		return nil
+	}
+	return &imageCrop{X: intArg(m, "x", 0), Y: intArg(m, "y", 0), Width: intArg(m, "width", 0), Height: intArg(m, "height", 0)}
+}
+
+func float64Arg(args map[string]any, key string, fallback float64) float64 {
+	v, ok := args[key]
+	if !ok || v == nil {
+		return fallback
+	}
+	switch x := v.(type) {
+	case float64:
+		return x
+	case float32:
+		return float64(x)
+	case int:
+		return float64(x)
+	case string:
+		var f float64
+		if _, err := fmt.Sscanf(x, "%f", &f); err == nil {
+			return f
+		}
+	}
+	return fallback
+}
+
+func cliclickKeyArgs(keys string) []string {
+	parts := strings.FieldsFunc(strings.ToLower(strings.TrimSpace(keys)), func(r rune) bool { return r == '+' || r == ',' || r == ' ' })
+	replacements := map[string]string{"command": "cmd", "control": "ctrl", "option": "alt", "return": "enter"}
+	mods := []string{}
+	main := ""
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		if replacement, ok := replacements[part]; ok {
+			part = replacement
+		}
+		switch part {
+		case "cmd", "ctrl", "alt", "shift", "fn":
+			mods = append(mods, part)
+		default:
+			main = part
+		}
+	}
+	if main == "" && len(mods) > 0 {
+		main = mods[len(mods)-1]
+		mods = mods[:len(mods)-1]
+	}
+	args := []string{}
+	for _, mod := range mods {
+		args = append(args, "kd:"+mod)
+	}
+	if len([]rune(main)) == 1 {
+		args = append(args, "t:"+main)
+	} else if main != "" {
+		args = append(args, "kp:"+main)
+	}
+	for i := len(mods) - 1; i >= 0; i-- {
+		args = append(args, "ku:"+mods[i])
+	}
+	if len(args) == 0 {
+		return []string{"kp:" + normalizeCliclickKeys(keys)}
+	}
+	return args
 }
 
 func boolResult(res Result, key string) bool {

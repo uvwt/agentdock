@@ -4,17 +4,168 @@ import (
 	"bytes"
 	"image"
 	"image/color"
+	"image/draw"
 	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"io"
 	"math"
+	"strings"
 )
 
 type imageInfo struct {
 	Width  int
 	Height int
 	MIME   string
+}
+
+type imageCrop struct {
+	X      int
+	Y      int
+	Width  int
+	Height int
+}
+
+func prepareImageBytes(data []byte, crop *imageCrop, maxBytes, maxWidth, maxHeight int, format string, quality int) ([]byte, imageInfo, map[string]any, []string, bool) {
+	warnings := []string{}
+	if maxBytes <= 0 {
+		maxBytes = 750000
+	}
+	if maxWidth <= 0 {
+		maxWidth = 1280
+	}
+	if maxHeight <= 0 {
+		maxHeight = 1280
+	}
+	if quality <= 0 {
+		quality = 72
+	}
+	if quality > 95 {
+		quality = 95
+	}
+	if quality < 35 {
+		quality = 35
+	}
+
+	img, inputFormat, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, imageInfo{}, nil, append(warnings, "image decode failed"), false
+	}
+	bounds := img.Bounds()
+	original := map[string]any{"bytes": len(data), "width": bounds.Dx(), "height": bounds.Dy(), "format": inputFormat}
+
+	if crop != nil && crop.Width > 0 && crop.Height > 0 {
+		cropRect := image.Rect(bounds.Min.X+crop.X, bounds.Min.Y+crop.Y, bounds.Min.X+crop.X+crop.Width, bounds.Min.Y+crop.Y+crop.Height).Intersect(bounds)
+		if cropRect.Empty() {
+			warnings = append(warnings, "crop rectangle is outside image bounds; using full image")
+		} else {
+			dst := image.NewRGBA(image.Rect(0, 0, cropRect.Dx(), cropRect.Dy()))
+			draw.Draw(dst, dst.Bounds(), img, cropRect.Min, draw.Src)
+			img = dst
+			bounds = img.Bounds()
+			original["crop"] = map[string]any{"x": crop.X, "y": crop.Y, "width": crop.Width, "height": crop.Height}
+		}
+	}
+
+	if maxWidth > 0 && maxHeight > 0 && (bounds.Dx() > maxWidth || bounds.Dy() > maxHeight) {
+		scale := math.Min(float64(maxWidth)/float64(bounds.Dx()), float64(maxHeight)/float64(bounds.Dy()))
+		if scale > 0 && scale < 1 {
+			newW := int(math.Max(1, math.Floor(float64(bounds.Dx())*scale)))
+			newH := int(math.Max(1, math.Floor(float64(bounds.Dy())*scale)))
+			img = resizeBilinear(img, newW, newH)
+			bounds = img.Bounds()
+		}
+	}
+
+	outFormat := strings.ToLower(strings.TrimSpace(format))
+	if outFormat == "" || outFormat == "jpg" {
+		outFormat = "jpeg"
+	}
+	if outFormat != "png" && outFormat != "jpeg" {
+		warnings = append(warnings, "unsupported output format; using jpeg")
+		outFormat = "jpeg"
+	}
+
+	for attempt := 0; attempt < 8; attempt++ {
+		encoded, info, ok := encodeImageBytes(img, outFormat, quality)
+		if !ok {
+			return nil, imageInfo{}, original, append(warnings, "image encode failed"), false
+		}
+		if len(encoded) <= maxBytes || attempt == 7 {
+			if len(encoded) > maxBytes {
+				warnings = append(warnings, "encoded image still exceeds max_bytes after downscaling")
+			}
+			info.Width = img.Bounds().Dx()
+			info.Height = img.Bounds().Dy()
+			return encoded, info, original, warnings, len(encoded) <= maxBytes
+		}
+		if outFormat == "jpeg" && quality > 45 {
+			quality -= 10
+			if quality < 45 {
+				quality = 45
+			}
+			continue
+		}
+		b := img.Bounds()
+		newW := int(math.Max(1, math.Floor(float64(b.Dx())*0.82)))
+		newH := int(math.Max(1, math.Floor(float64(b.Dy())*0.82)))
+		if newW == b.Dx() && newH == b.Dy() {
+			break
+		}
+		img = resizeBilinear(img, newW, newH)
+	}
+	return nil, imageInfo{}, original, warnings, false
+}
+
+func encodeImageBytes(img image.Image, format string, quality int) ([]byte, imageInfo, bool) {
+	var out bytes.Buffer
+	bounds := img.Bounds()
+	switch format {
+	case "png":
+		if err := png.Encode(&out, img); err != nil && err != io.ErrClosedPipe {
+			return nil, imageInfo{}, false
+		}
+		return out.Bytes(), imageInfo{Width: bounds.Dx(), Height: bounds.Dy(), MIME: "image/png"}, true
+	default:
+		if err := jpeg.Encode(&out, img, &jpeg.Options{Quality: quality}); err != nil {
+			return nil, imageInfo{}, false
+		}
+		return out.Bytes(), imageInfo{Width: bounds.Dx(), Height: bounds.Dy(), MIME: "image/jpeg"}, true
+	}
+}
+
+func imageDiffPercent(a, b []byte) (float64, bool) {
+	imgA, _, errA := image.Decode(bytes.NewReader(a))
+	imgB, _, errB := image.Decode(bytes.NewReader(b))
+	if errA != nil || errB != nil {
+		return 0, false
+	}
+	ba := imgA.Bounds()
+	bb := imgB.Bounds()
+	w := minInt(ba.Dx(), bb.Dx())
+	h := minInt(ba.Dy(), bb.Dy())
+	if w <= 0 || h <= 0 {
+		return 0, false
+	}
+	stepX := int(math.Max(1, math.Floor(float64(w)/160)))
+	stepY := int(math.Max(1, math.Floor(float64(h)/90)))
+	changed := 0
+	total := 0
+	for y := 0; y < h; y += stepY {
+		for x := 0; x < w; x += stepX {
+			r1, g1, b1, _ := imgA.At(ba.Min.X+x, ba.Min.Y+y).RGBA()
+			r2, g2, b2, _ := imgB.At(bb.Min.X+x, bb.Min.Y+y).RGBA()
+			delta := absInt(int(r1>>8)-int(r2>>8)) + absInt(int(g1>>8)-int(g2>>8)) + absInt(int(b1>>8)-int(b2>>8))
+			if delta > 45 {
+				changed++
+			}
+			total++
+		}
+	}
+	if total == 0 {
+		return 0, false
+	}
+	return float64(changed) / float64(total), true
 }
 
 func identifyImage(data []byte) (imageInfo, error) {
@@ -114,4 +265,11 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func absInt(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
 }

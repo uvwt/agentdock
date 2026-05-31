@@ -526,30 +526,39 @@ func (r *Runtime) viewImage(args map[string]any) (Result, error) {
 	if err != nil {
 		return nil, toolError("BINARY_FILE", "file is not a supported image", "validation")
 	}
-	maxBytes := intArg(args, "max_bytes", 5242880)
-	maxWidth := intArg(args, "max_width", 2000)
-	maxHeight := intArg(args, "max_height", 2000)
+	maxBytes := intArg(args, "max_bytes", 750000)
+	maxWidth := intArg(args, "max_width", 1280)
+	maxHeight := intArg(args, "max_height", 1280)
+	format := stringArg(args, "format", "jpeg")
+	quality := intArg(args, "quality", 72)
+	crop := cropArg(args)
 	autoResize := boolArg(args, "auto_resize", true)
+
 	original := map[string]any{"bytes": len(data), "width": info.Width, "height": info.Height, "mime_type": info.MIME}
-	resized := false
+	prepared := data
+	preparedInfo := info
 	warnings := []string{}
-	if autoResize && shouldResizeImage(len(data), info.Width, info.Height, maxBytes, maxWidth, maxHeight) {
-		if resizedData, resizedInfo, ok := resizeImageBytes(data, maxBytes, maxWidth, maxHeight); ok {
-			data = resizedData
-			info = resizedInfo
-			resized = true
-		} else {
-			warnings = append(warnings, "auto_resize requested but image resize failed")
+	resized := false
+	if crop != nil || autoResize || strings.TrimSpace(format) != "" || quality != 72 {
+		var ok bool
+		var prepOriginal map[string]any
+		prepared, preparedInfo, prepOriginal, warnings, ok = prepareImageBytes(data, crop, maxBytes, maxWidth, maxHeight, format, quality)
+		if prepOriginal != nil {
+			original = prepOriginal
 		}
+		if !ok {
+			return nil, toolErrorDetails("IMAGE_TOO_LARGE", "image exceeds max_bytes after processing", "validation", map[string]any{"bytes": len(prepared), "max_bytes": maxBytes, "auto_resize": autoResize, "warnings": warnings})
+		}
+		resized = preparedInfo.Width != info.Width || preparedInfo.Height != info.Height || len(prepared) != len(data)
 	}
-	if len(data) > maxBytes {
-		return nil, toolErrorDetails("IMAGE_TOO_LARGE", "image exceeds max_bytes", "validation", map[string]any{"bytes": len(data), "max_bytes": maxBytes, "resize_attempted": autoResize, "warnings": warnings})
+	if len(prepared) > maxBytes {
+		return nil, toolErrorDetails("IMAGE_TOO_LARGE", "image exceeds max_bytes", "validation", map[string]any{"bytes": len(prepared), "max_bytes": maxBytes, "auto_resize": autoResize, "warnings": warnings})
 	}
 	output := stringArg(args, "output", "mcp_image")
-	encoded := base64.StdEncoding.EncodeToString(data)
-	result := Result{"ok": true, "path": p.Display, "mime_type": info.MIME, "size_bytes": len(data), "width": info.Width, "height": info.Height, "original": original, "resized": resized, "warnings": warnings, "data_base64": encoded, "output": output}
+	encoded := base64.StdEncoding.EncodeToString(prepared)
+	result := Result{"ok": true, "path": p.Display, "mime_type": preparedInfo.MIME, "size_bytes": len(prepared), "width": preparedInfo.Width, "height": preparedInfo.Height, "original": original, "resized": resized, "warnings": warnings, "data_base64": encoded, "output": output, "image_attached": output == "mcp_image"}
 	if output == "data_url" {
-		result["data_url"] = "data:" + info.MIME + ";base64," + encoded
+		result["data_url"] = "data:" + preparedInfo.MIME + ";base64," + encoded
 	}
 	return result, nil
 }

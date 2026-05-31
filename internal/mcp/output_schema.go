@@ -5,6 +5,7 @@ func outputSchema(name string) map[string]any {
 	required := []string{"ok"}
 	stringProp := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
 	intProp := func(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
+	floatProp := func(desc string) map[string]any { return map[string]any{"type": "number", "description": desc} }
 	boolProp := func(desc string) map[string]any { return map[string]any{"type": "boolean", "description": desc} }
 	arrayProp := func(desc string) map[string]any {
 		return map[string]any{"type": "array", "description": desc, "items": map[string]any{"type": "object", "additionalProperties": true}}
@@ -196,14 +197,47 @@ func outputSchema(name string) map[string]any {
 		if name == "git_log" {
 			props["commits"] = arrayProp("Parsed commits.")
 		}
+	case "desktop_snapshot":
+		props["screenshot_path"] = stringProp("Saved original screenshot path.")
+		props["screenshot_url"] = stringProp("Artifact URL for the original screenshot, when configured.")
+		props["screenshot_artifact_id"] = stringProp("Screenshot artifact id.")
+		props["mime_type"] = stringProp("Original screenshot MIME type.")
+		props["width"] = intProp("Original screenshot width.")
+		props["height"] = intProp("Original screenshot height.")
+		props["size_bytes"] = intProp("Original screenshot size in bytes.")
+		props["image_attached"] = boolProp("Whether compressed image content was attached to the MCP response.")
+		props["image_base64"] = stringProp("Compressed Base64 image data when image_attached is true.")
+		props["image_mime_type"] = stringProp("Compressed image MIME type when image_attached is true.")
+		props["image_width"] = intProp("Compressed image width when image_attached is true.")
+		props["image_height"] = intProp("Compressed image height when image_attached is true.")
+		props["image_size_bytes"] = intProp("Compressed image size in bytes when image_attached is true.")
+		props["original"] = objectProp("Original/crop metadata for attached image processing.")
+		props["image_warnings"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
+	case "desktop_click", "desktop_double_click", "desktop_move", "desktop_scroll", "desktop_drag", "desktop_type", "desktop_hotkey":
+		props["operation"] = stringProp("Desktop operation name.")
+		props["command_ok"] = boolProp("Whether the underlying command exited successfully.")
+		props["permission_ok"] = boolProp("Whether known macOS permission warnings were absent.")
+		props["effect_verified"] = boolProp("Whether optional visual verification detected enough change.")
+		props["verification"] = stringProp("Verification mode, for example not_performed or screenshot_diff.")
+		props["diff_percent"] = floatProp("Approximate screenshot difference ratio when screenshot_diff verification ran.")
+		props["before_snapshot_path"] = stringProp("Before screenshot path when captured.")
+		props["after_snapshot_path"] = stringProp("After screenshot path when captured.")
+		props["error_code"] = stringProp("Structured error code for known desktop failures.")
+		props["warnings"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 	case "request_permissions":
 		props["permission_request"] = objectProp("Permission request metadata.")
 	case "view_image":
 		props["path"] = stringProp("Workspace-relative image path.")
-		props["mime_type"] = stringProp("Image MIME type.")
-		props["width"] = intProp("Image width.")
-		props["height"] = intProp("Image height.")
+		props["mime_type"] = stringProp("Returned image MIME type.")
+		props["width"] = intProp("Returned image width.")
+		props["height"] = intProp("Returned image height.")
+		props["size_bytes"] = intProp("Returned image size in bytes after optional crop/resize/compression.")
+		props["original"] = objectProp("Original/crop metadata.")
+		props["resized"] = boolProp("Whether image bytes changed due to crop/resize/re-encode.")
+		props["warnings"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
+		props["image_attached"] = boolProp("Whether MCP image content is attached.")
 		props["data_base64"] = stringProp("Base64-encoded image data when returned.")
+		props["data_url"] = stringProp("Data URL when output=data_url.")
 	}
 
 	return map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": true}
