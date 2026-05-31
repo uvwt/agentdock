@@ -37,7 +37,7 @@ type Config struct {
 	SandboxMode                   string
 	PathPolicy                    string
 	AgentDockDir                  string
-	ConnectorDir                  string
+	PluginDir                     string
 	MemoryEndpoint                string
 	MemoryToken                   string
 	MemoryLoginUser               string
@@ -67,7 +67,7 @@ func FromEnv() Config {
 		SandboxMode:                   os.Getenv("AGENTDOCK_SANDBOX_MODE"),
 		PathPolicy:                    os.Getenv("AGENTDOCK_PATH_POLICY"),
 		AgentDockDir:                  getenv("AGENTDOCK_DIR", "AgentDock"),
-		ConnectorDir:                  getenv("AGENTDOCK_CONNECTOR_DIR", "connectors"),
+		PluginDir:                     getenv("AGENTDOCK_PLUGIN_DIR", "plugins"),
 		MemoryEndpoint:                getenv("AGENTDOCK_MEMORY_ENDPOINT", ""),
 		MemoryToken:                   firstNonEmpty(os.Getenv("AGENTDOCK_MEMORY_TOKEN"), os.Getenv("MEMORYDOCK_AUTH_TOKEN")),
 		MemoryLoginUser:               os.Getenv("AGENTDOCK_MEMORY_LOGIN_USER"),
@@ -114,8 +114,8 @@ func (c *Config) Normalize() {
 	if c.AgentDockDir == "" {
 		c.AgentDockDir = "AgentDock"
 	}
-	if c.ConnectorDir == "" {
-		c.ConnectorDir = "connectors"
+	if c.PluginDir == "" {
+		c.PluginDir = "plugins"
 	}
 	if c.MemoryTimeoutMS <= 0 {
 		c.MemoryTimeoutMS = 30000

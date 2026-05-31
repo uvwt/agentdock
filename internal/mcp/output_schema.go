@@ -90,21 +90,21 @@ func outputSchema(name string) map[string]any {
 		props["clone_url"] = stringProp("Repository HTTPS clone URL.")
 		props["ssh_url"] = stringProp("Repository SSH clone URL.")
 		props["diagnostic"] = objectProp("Structured create diagnostic.")
-	case "connector_list":
-		props["connector_dir"] = stringProp("Workspace-relative connector directory.")
-		props["connectors"] = arrayProp("Available connectors.")
-		props["count"] = intProp("Connector count.")
-	case "connector_describe":
-		props["connector"] = stringProp("Connector name.")
-		props["path"] = stringProp("Workspace-relative connector path.")
-		props["description"] = stringProp("Connector description.")
-		props["version"] = stringProp("Connector version.")
-		props["actions"] = objectProp("Available connector actions.")
+	case "plugin_list":
+		props["plugin_dir"] = stringProp("Workspace-relative plugin directory.")
+		props["plugins"] = arrayProp("Available plugins.")
+		props["count"] = intProp("Plugin count.")
+	case "plugin_describe":
+		props["plugin"] = stringProp("Plugin name.")
+		props["path"] = stringProp("Workspace-relative plugin path.")
+		props["description"] = stringProp("Plugin description.")
+		props["version"] = stringProp("Plugin version.")
+		props["actions"] = objectProp("Available plugin actions.")
 		props["secrets"] = objectProp("Declared secret environment variable presence.")
-	case "connector_call":
-		props["connector"] = stringProp("Connector name.")
-		props["action"] = stringProp("Connector action name.")
-		props["stdout"] = stringProp("Connector action output.")
+	case "plugin_call":
+		props["plugin"] = stringProp("Plugin name.")
+		props["action"] = stringProp("Plugin action name.")
+		props["stdout"] = stringProp("Plugin action output.")
 		props["json"] = objectProp("Parsed JSON output when output=json.")
 		props["duration_ms"] = intProp("Execution duration in milliseconds.")
 		props["truncated"] = boolProp("Whether output was truncated.")
