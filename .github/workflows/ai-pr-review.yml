@@ -1,0 +1,106 @@
+name: AI PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    name: Review changed diff
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_REVIEW_MODEL: ${{ vars.OPENAI_REVIEW_MODEL || 'gpt-4.1-mini' }}
+      REVIEW_MAX_DIFF_CHARS: '60000'
+      REVIEW_MARKER: '<!-- agentdock-ai-pr-review -->'
+    steps:
+      - name: Skip when OpenAI API key is not configured
+        if: ${{ env.OPENAI_API_KEY == '' }}
+        run: |
+          echo 'OPENAI_API_KEY secret is not configured. AI PR review skipped.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run AI review
+        if: ${{ env.OPENAI_API_KEY != '' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const maxChars = Number(process.env.REVIEW_MAX_DIFF_CHARS || '60000');
+            const marker = process.env.REVIEW_MARKER;
+            const pr = context.payload.pull_request;
+
+            const diffResp = await github.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              headers: { accept: 'application/vnd.github.v3.diff' }
+            });
+
+            let diff = String(diffResp.data || '');
+            const originalLength = diff.length;
+            if (diff.length > maxChars) {
+              diff = diff.slice(0, maxChars) + `\n\n[diff truncated: ${originalLength} chars total, first ${maxChars} chars reviewed]`;
+            }
+
+            const prompt = `你是 AgentDock 仓库的 PR 审查助手。请只基于下面的 PR diff 审查，不要臆测未展示代码。\n\n输出中文 Markdown，结构如下：\n\n## 结论\n- 通过 / 需要修改（二选一）\n\n## 必须处理\n- 没有就写“无”\n\n## 建议处理\n- 没有就写“无”\n\n## 测试建议\n- 给出应运行的命令或需要补充的测试\n\n审查重点：正确性、安全、路径/命令注入、权限边界、错误处理、并发/资源泄露、测试覆盖。不要纠结纯格式问题，除非会影响构建。\n\nPR 标题：${pr.title}\nPR 作者：${pr.user?.login}\nBase：${pr.base?.ref}\nHead：${pr.head?.ref}\n\nDiff:\n\n${diff}`;
+
+            const response = await fetch('https://api.openai.com/v1/responses', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                model: process.env.OPENAI_REVIEW_MODEL,
+                input: prompt
+              })
+            });
+
+            const payloadText = await response.text();
+            if (!response.ok) {
+              throw new Error(`OpenAI API error ${response.status}: ${payloadText}`);
+            }
+
+            const payload = JSON.parse(payloadText);
+            let review = payload.output_text;
+            if (!review && Array.isArray(payload.output)) {
+              review = payload.output.flatMap(item => item.content || [])
+                .map(part => part.text || '')
+                .filter(Boolean)
+                .join('\n');
+            }
+            if (!review) {
+              review = '未能从 OpenAI Responses API 解析出审查内容。';
+            }
+
+            const body = `${marker}\n${review}\n\n---\n自动审查模型：\`${process.env.OPENAI_REVIEW_MODEL}\``;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              per_page: 100
+            });
+            const previous = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: previous.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body
+              });
+            }
