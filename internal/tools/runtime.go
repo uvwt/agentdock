@@ -46,7 +46,7 @@ func (r *Runtime) ToolNames() []string {
 		all = append(all, "browser_session_start", "browser_action", "browser_snapshot", "browser_session_close")
 	}
 	if r.cfg.DesktopEnabled {
-		all = append(all, "desktop_preflight", "desktop_window_list", "desktop_snapshot", "desktop_clipboard_set", "desktop_clipboard_get", "desktop_focus_app", "desktop_move", "desktop_click", "desktop_double_click", "desktop_scroll", "desktop_drag", "desktop_type", "desktop_hotkey", "desktop_wait")
+		all = append(all, "desktop_preflight", "desktop_list_apps", "desktop_get_app_state", "desktop_window_list", "desktop_snapshot", "desktop_snapshot_app", "desktop_clipboard_set", "desktop_clipboard_get", "desktop_focus_app", "desktop_move", "desktop_click", "desktop_double_click", "desktop_scroll", "desktop_drag", "desktop_type", "desktop_set_value", "desktop_perform_secondary_action", "desktop_hotkey", "desktop_wait")
 	}
 	if !r.cfg.EnableViewImage {
 		all = removeTool(all, "view_image")
@@ -62,7 +62,7 @@ func (r *Runtime) ToolNames() []string {
 		readOnly = append(readOnly, "browser_snapshot")
 	}
 	if r.cfg.DesktopEnabled {
-		readOnly = append(readOnly, "desktop_preflight", "desktop_window_list", "desktop_snapshot", "desktop_clipboard_get", "desktop_wait")
+		readOnly = append(readOnly, "desktop_preflight", "desktop_list_apps", "desktop_get_app_state", "desktop_window_list", "desktop_snapshot", "desktop_snapshot_app", "desktop_clipboard_get", "desktop_wait")
 	}
 	if !r.cfg.EnableViewImage {
 		readOnly = removeTool(readOnly, "view_image")
@@ -167,10 +167,16 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.browserSessionClose(ctx, args)
 	case "desktop_preflight":
 		return r.desktopPreflight(ctx, args)
+	case "desktop_list_apps":
+		return r.desktopListApps(ctx, args)
+	case "desktop_get_app_state":
+		return r.desktopGetAppState(ctx, args)
 	case "desktop_window_list":
 		return r.desktopWindowList(ctx, args)
 	case "desktop_snapshot":
 		return r.desktopSnapshot(ctx, args)
+	case "desktop_snapshot_app":
+		return r.desktopSnapshotApp(ctx, args)
 	case "desktop_clipboard_set":
 		return r.desktopClipboardSet(ctx, args)
 	case "desktop_clipboard_get":
@@ -189,6 +195,10 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.desktopDrag(ctx, args)
 	case "desktop_type":
 		return r.desktopType(ctx, args)
+	case "desktop_set_value":
+		return r.desktopSetValue(ctx, args)
+	case "desktop_perform_secondary_action":
+		return r.desktopPerformSecondaryAction(ctx, args)
 	case "desktop_hotkey":
 		return r.desktopHotkey(ctx, args)
 	case "desktop_wait":

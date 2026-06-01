@@ -197,7 +197,21 @@ func outputSchema(name string) map[string]any {
 		if name == "git_log" {
 			props["commits"] = arrayProp("Parsed commits.")
 		}
-	case "desktop_snapshot":
+	case "desktop_list_apps":
+		props["running"] = arrayProp("Running visible applications.")
+		props["recent"] = arrayProp("Best-effort recently used applications from Spotlight metadata.")
+		props["count"] = intProp("Running application count.")
+	case "desktop_get_app_state":
+		props["app"] = stringProp("Requested app.")
+		props["resolved_app"] = stringProp("Resolved running app name.")
+		props["bundle_id"] = stringProp("App bundle identifier when available.")
+		props["pid"] = intProp("Process id when available.")
+		props["frontmost"] = boolProp("Whether the app is frontmost.")
+		props["window"] = objectProp("Key window metadata.")
+		props["accessibility_ok"] = boolProp("Whether accessibility tree capture succeeded.")
+		props["accessibility_tree"] = arrayProp("Accessibility tree nodes with element indexes.")
+		props["node_count"] = intProp("Accessibility tree node count.")
+		props["coordinate_space"] = objectProp("Coordinate space metadata for screenshots and actions.")
 		props["screenshot_path"] = stringProp("Saved original screenshot path.")
 		props["screenshot_url"] = stringProp("Artifact URL for the original screenshot, when configured.")
 		props["screenshot_artifact_id"] = stringProp("Screenshot artifact id.")
@@ -213,15 +227,36 @@ func outputSchema(name string) map[string]any {
 		props["image_size_bytes"] = intProp("Compressed image size in bytes when image_attached is true.")
 		props["original"] = objectProp("Original/crop metadata for attached image processing.")
 		props["image_warnings"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
-	case "desktop_click", "desktop_double_click", "desktop_move", "desktop_scroll", "desktop_drag", "desktop_type", "desktop_hotkey":
+	case "desktop_snapshot", "desktop_snapshot_app":
+		props["operation"] = stringProp("Desktop operation name.")
+		props["screenshot_path"] = stringProp("Saved screenshot path.")
+		props["screenshot_url"] = stringProp("Artifact URL for the screenshot, when configured.")
+		props["screenshot_artifact_id"] = stringProp("Screenshot artifact id.")
+		props["mime_type"] = stringProp("Screenshot MIME type.")
+		props["width"] = intProp("Screenshot width in pixels.")
+		props["height"] = intProp("Screenshot height in pixels.")
+		props["size_bytes"] = intProp("Screenshot size in bytes.")
+		props["target_window"] = objectProp("Target app window metadata in macOS points, when applicable.")
+		props["crop"] = objectProp("Window-relative crop rectangle in macOS points, when applicable.")
+		props["screen_region"] = objectProp("Absolute screen region in macOS points used for capture, when applicable.")
+		props["action_coordinate_space"] = stringProp("Coordinate space used by desktop action inputs, typically screen_points or window_points.")
+		props["screenshot_coordinate_space"] = stringProp("Coordinate space of returned image, typically image_pixels.")
+	case "desktop_click", "desktop_double_click", "desktop_move", "desktop_scroll", "desktop_drag", "desktop_type", "desktop_set_value", "desktop_perform_secondary_action", "desktop_hotkey":
 		props["operation"] = stringProp("Desktop operation name.")
 		props["command_ok"] = boolProp("Whether the underlying command exited successfully.")
 		props["permission_ok"] = boolProp("Whether known macOS permission warnings were absent.")
-		props["effect_verified"] = boolProp("Whether optional visual verification detected enough change.")
-		props["verification"] = stringProp("Verification mode, for example not_performed or screenshot_diff.")
+		props["effect_verified"] = boolProp("Whether before/after screenshot verification ran successfully.")
+		props["effect_changed"] = boolProp("Whether verification detected enough screenshot change after the command.")
+		props["verification"] = stringProp("Verification mode/status, for example not_requested, screenshot_diff, or diff_failed.")
 		props["diff_percent"] = floatProp("Approximate screenshot difference ratio when screenshot_diff verification ran.")
+		props["diff_score"] = floatProp("Alias for diff_percent; simple screenshot difference ratio between 0 and 1.")
 		props["before_snapshot_path"] = stringProp("Before screenshot path when captured.")
 		props["after_snapshot_path"] = stringProp("After screenshot path when captured.")
+		props["before_screenshot_path"] = stringProp("Alias for before_snapshot_path.")
+		props["after_screenshot_path"] = stringProp("Alias for after_snapshot_path.")
+		props["target_window"] = objectProp("Target app window metadata in macOS points, when app is provided.")
+		props["action_coordinate_space"] = stringProp("Input coordinate mode: screen or window.")
+		props["error_layer"] = stringProp("Failure layer: validation, focus, window, command, screenshot, verification, or runtime.")
 		props["error_code"] = stringProp("Structured error code for known desktop failures.")
 		props["warnings"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 	case "request_permissions":

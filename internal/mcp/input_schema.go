@@ -195,6 +195,22 @@ func inputSchema(name string) map[string]any {
 	case "desktop_preflight":
 		props["check_screenshot"] = boolProp("Try a real screencapture check. Defaults to true.")
 		props["check_applescript"] = boolProp("Try a real AppleScript/System Events check. Defaults to true.")
+	case "desktop_list_apps":
+		props["max_recent"] = intProp("Maximum recent apps to include. Defaults to 50.")
+	case "desktop_get_app_state":
+		props["app"] = stringProp("App name, full .app path, or bundle identifier.")
+		props["activate"] = boolProp("Activate the app before reading state. Defaults to true.")
+		props["include_image"] = boolProp("Attach a compressed screenshot as MCP image content. Defaults to false.")
+		props["include_image_base64"] = boolProp("Alias for include_image. Defaults to false.")
+		props["max_bytes"] = intProp("Maximum encoded image bytes when include_image is true. Defaults to 750000.")
+		props["max_width"] = intProp("Maximum image width when include_image is true. Defaults to 1280.")
+		props["max_height"] = intProp("Maximum image height when include_image is true. Defaults to 1280.")
+		props["format"] = stringProp("Output image format when include_image is true: jpeg or png. Defaults to jpeg.")
+		props["quality"] = intProp("JPEG quality when format is jpeg. Defaults to 72.")
+		props["crop"] = map[string]any{"type": "object", "description": "Optional crop rectangle {x,y,width,height} before resizing.", "additionalProperties": true}
+		props["ax_max_depth"] = intProp("Maximum accessibility tree depth. Defaults to 8.")
+		props["ax_max_nodes"] = intProp("Maximum accessibility tree nodes. Defaults to 300.")
+		required = []string{"app"}
 	case "desktop_window_list":
 	case "desktop_snapshot":
 		props["include_image"] = boolProp("Attach a compressed screenshot as MCP image content. Defaults to false.")
@@ -205,6 +221,13 @@ func inputSchema(name string) map[string]any {
 		props["format"] = stringProp("Output image format when include_image is true: jpeg or png. Defaults to jpeg.")
 		props["quality"] = intProp("JPEG quality when format is jpeg. Defaults to 72.")
 		props["crop"] = map[string]any{"type": "object", "description": "Optional crop rectangle {x,y,width,height} before resizing.", "additionalProperties": true}
+	case "desktop_snapshot_app":
+		props["app"] = stringProp("Target macOS application name, full .app path, or bundle identifier.")
+		props["crop"] = map[string]any{"type": "object", "description": "Optional window-relative crop rectangle {x,y,width,height}; defaults to the whole target window.", "additionalProperties": true}
+		props["focus_if_needed"] = boolProp("Activate the app before querying/capturing its window.")
+		props["require_frontmost"] = boolProp("Fail if the target app is not frontmost after optional focus.")
+		props["fail_if_window_not_visible"] = boolProp("Fail when the target app has no visible window.")
+		required = []string{"app"}
 	case "desktop_clipboard_set":
 		props["text"] = stringProp("Text to place into the macOS clipboard.")
 		props["verify"] = boolProp("Read back pbpaste after writing and report verified. Defaults to true.")
@@ -214,22 +237,62 @@ func inputSchema(name string) map[string]any {
 		props["app"] = stringProp("macOS application name to activate, for example WeChat or Safari.")
 		required = []string{"app"}
 	case "desktop_move", "desktop_click", "desktop_double_click":
-		props["x"] = intProp("Screen X coordinate.")
-		props["y"] = intProp("Screen Y coordinate.")
-		required = []string{"x", "y"}
+		props["app"] = stringProp("Optional app name, full .app path, or bundle identifier. Used for AX element targeting, focus/window assertions, and space=window conversion.")
+		props["element_index"] = stringProp("Accessibility element index from desktop_get_app_state. Preferred over x/y for desktop_click.")
+		props["x"] = intProp("X coordinate. Defaults to global macOS screen points; when space=window, this is relative to the target app window.")
+		props["y"] = intProp("Y coordinate. Defaults to global macOS screen points; when space=window, this is relative to the target app window.")
+		props["space"] = stringProp("Coordinate space: screen or window. window converts app-window-relative points into global macOS points.")
+		props["verify"] = boolProp("When true, capture before/after screenshots, wait wait_ms, and return effect_verified/effect_changed/diff_score.")
+		props["verify_region"] = map[string]any{"type": "object", "description": "Optional screenshot diff region {x,y,width,height,space}. space may be screen or window.", "additionalProperties": true}
+		props["wait_ms"] = intProp("Milliseconds to wait before after-screenshot; defaults to 250 when verify=true.")
+		props["focus_if_needed"] = boolProp("Activate the target app before the action.")
+		props["require_frontmost"] = boolProp("Fail if the target app is not frontmost after optional focus.")
+		props["fail_if_window_not_visible"] = boolProp("Fail when app is set but no visible app window can be found.")
+		props["fail_if_coordinate_outside_window"] = boolProp("With space=window, fail when coordinate is outside the target window bounds.")
+		props["click_count"] = intProp("Click count for desktop_click. Defaults to 1.")
+		props["mouse_button"] = stringProp("Mouse button for desktop_click: left, right, or middle. Defaults to left.")
 	case "desktop_scroll":
+		props["app"] = stringProp("Optional app name, full .app path, or bundle identifier. When element_index is provided, call desktop_get_app_state first.")
+		props["element_index"] = stringProp("Accessibility element index from desktop_get_app_state to scroll at.")
+		props["direction"] = stringProp("Scroll direction: up, down, left, or right.")
+		props["pages"] = intProp("Scroll pages/amount multiplier. Defaults to 1.")
 		props["dx"] = intProp("Horizontal scroll amount.")
 		props["dy"] = intProp("Vertical scroll amount.")
 		props["amount"] = intProp("Alias for dy.")
 	case "desktop_drag":
-		props["from_x"] = intProp("Start screen X coordinate.")
-		props["from_y"] = intProp("Start screen Y coordinate.")
-		props["to_x"] = intProp("End screen X coordinate.")
-		props["to_y"] = intProp("End screen Y coordinate.")
+		props["app"] = stringProp("Optional app name, full .app path, or bundle identifier. Used for focus/window assertions and space=window conversion.")
+		props["from_x"] = intProp("Start X coordinate. Defaults to global macOS screen points; when space=window, this is relative to the target app window.")
+		props["from_y"] = intProp("Start Y coordinate. Defaults to global macOS screen points; when space=window, this is relative to the target app window.")
+		props["to_x"] = intProp("End X coordinate. Defaults to global macOS screen points; when space=window, this is relative to the target app window.")
+		props["to_y"] = intProp("End Y coordinate. Defaults to global macOS screen points; when space=window, this is relative to the target app window.")
+		props["space"] = stringProp("Coordinate space: screen or window. window converts app-window-relative points into global macOS points.")
+		props["verify"] = boolProp("When true, capture before/after screenshots, wait wait_ms, and return effect_verified/effect_changed/diff_score.")
+		props["verify_region"] = map[string]any{"type": "object", "description": "Optional screenshot diff region {x,y,width,height,space}. space may be screen or window.", "additionalProperties": true}
+		props["wait_ms"] = intProp("Milliseconds to wait before after-screenshot; defaults to 250 when verify=true.")
+		props["focus_if_needed"] = boolProp("Activate the target app before the action.")
+		props["require_frontmost"] = boolProp("Fail if the target app is not frontmost after optional focus.")
+		props["fail_if_window_not_visible"] = boolProp("Fail when app is set but no visible app window can be found.")
+		props["fail_if_coordinate_outside_window"] = boolProp("With space=window, fail when any coordinate is outside the target window bounds.")
+		props["duration_ms"] = intProp("Total drag movement duration distributed across steps; capped at 30000.")
+		props["steps"] = intProp("Number of intermediate move steps for slower drags; capped at 200.")
+		props["hold_ms"] = intProp("Wait after mouse down before moving; capped at 10000.")
+		props["release_wait_ms"] = intProp("Wait before mouse up after movement; capped at 10000.")
 		required = []string{"from_x", "from_y", "to_x", "to_y"}
 	case "desktop_type":
-		props["text"] = stringProp("Text to type into the focused macOS app.")
+		props["app"] = stringProp("Optional app name, full .app path, or bundle identifier. When provided, call desktop_get_app_state first.")
+		props["text"] = stringProp("Text to input into the focused macOS app.")
+		props["strategy"] = stringProp("Input strategy: auto, keyboard, or clipboard. Auto uses clipboard for long, multiline, or non-ASCII text.")
 		required = []string{"text"}
+	case "desktop_set_value":
+		props["app"] = stringProp("App name, full .app path, or bundle identifier.")
+		props["element_index"] = stringProp("Accessibility element index from desktop_get_app_state.")
+		props["value"] = stringProp("Value to set on the accessibility element.")
+		required = []string{"app", "element_index", "value"}
+	case "desktop_perform_secondary_action":
+		props["app"] = stringProp("App name, full .app path, or bundle identifier.")
+		props["element_index"] = stringProp("Accessibility element index from desktop_get_app_state.")
+		props["action"] = stringProp("Accessibility action name, for example AXPress or AXShowMenu.")
+		required = []string{"app", "element_index", "action"}
 	case "desktop_hotkey":
 		props["keys"] = stringProp("Shortcut, for example cmd+space, cmd+v, enter.")
 		required = []string{"keys"}
