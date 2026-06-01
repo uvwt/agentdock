@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentdock.local/schemas/plugin.schema.json",
+  "title": "AgentDock dynamic plugin",
+  "type": "object",
+  "required": ["name", "actions"],
+  "additionalProperties": true,
+  "properties": {
+    "name": {"type": "string", "pattern": "^[A-Za-z0-9._-]+$"},
+    "description": {"type": "string"},
+    "version": {"type": "string"},
+    "secrets": {"type": "array", "items": {"type": "string"}},
+    "metadata": {"type": "object", "additionalProperties": true},
+    "actions": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["command"],
+        "additionalProperties": true,
+        "properties": {
+          "description": {"type": "string"},
+          "command": {"type": "string", "minLength": 1},
+          "workdir": {"type": "string"},
+          "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 600000},
+          "output": {"type": "string", "enum": ["", "text", "json"]},
+          "env": {"type": "object", "additionalProperties": true},
+          "input_schema": {"type": "object", "additionalProperties": true}
+        }
+      }
+    }
+  }
+}
