@@ -28,6 +28,10 @@ fi
 
 STAMP="$(date +%Y%m%d%H%M%S)"
 TMP_BIN="$TARGET.new.$STAMP"
+SIGN_IDENTITY="${AGENTDOCK_CODESIGN_IDENTITY:-9D54442D3B0C4DE872AEE926A44B1AF990B46D19}"
+SIGN_KEYCHAIN="${AGENTDOCK_CODESIGN_KEYCHAIN:-/Users/xx/Library/Keychains/login.keychain-db}"
+SIGN_IDENTIFIER="${AGENTDOCK_CODESIGN_IDENTIFIER:-com.local.agentdock}"
+SIGN_HOME="${AGENTDOCK_CODESIGN_HOME:-/Users/xx}"
 
 cd "$SRC_DIR"
 
@@ -48,8 +52,30 @@ printf '==> building %s\n' "$TMP_BIN"
 go build -trimpath -o "$TMP_BIN" ./cmd/agentdock
 
 if command -v codesign >/dev/null 2>&1; then
-  printf '==> ad-hoc codesigning\n'
-  codesign --force --sign - "$TMP_BIN" >/dev/null
+  printf '==> stable codesigning identity=%s identifier=%s\n' "$SIGN_IDENTITY" "$SIGN_IDENTIFIER"
+  export HOME="$SIGN_HOME"
+  if [[ -n "$SIGN_KEYCHAIN" ]]; then
+    security find-identity -v -p codesigning "$SIGN_KEYCHAIN" | grep -q "$SIGN_IDENTITY"
+    codesign --force \
+      --keychain "$SIGN_KEYCHAIN" \
+      --sign "$SIGN_IDENTITY" \
+      --timestamp=none \
+      --options runtime \
+      --identifier "$SIGN_IDENTIFIER" \
+      "$TMP_BIN" >/dev/null
+  else
+    security find-identity -v -p codesigning | grep -q "$SIGN_IDENTITY"
+    codesign --force \
+      --sign "$SIGN_IDENTITY" \
+      --timestamp=none \
+      --options runtime \
+      --identifier "$SIGN_IDENTIFIER" \
+      "$TMP_BIN" >/dev/null
+  fi
+  codesign --verify --verbose=4 "$TMP_BIN" >/dev/null
+else
+  printf 'ERROR: codesign not found; refusing to install unsigned AgentDock binary on macOS\n' >&2
+  exit 1
 fi
 
 mkdir -p "$BACKUP_DIR"
