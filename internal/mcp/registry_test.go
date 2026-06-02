@@ -26,7 +26,7 @@ func TestToolRegistryHasNoDuplicates(t *testing.T) {
 func TestRuntimeToolsHaveRegistryDefinitionsAndSchemas(t *testing.T) {
 	cfg := config.Config{
 		Workspace:       t.TempDir(),
-		ToolProfile:     config.ProfileFull,
+		ToolProfile:     config.ProfileUnified,
 		Mode:            config.ModeSandboxed,
 		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",
@@ -83,13 +83,13 @@ func TestReadOnlyProfileExcludesDestructiveTools(t *testing.T) {
 			t.Fatalf("read-only profile exposes destructive tool: %s", name)
 		}
 	}
-	if !seen["desktop_get_app_state"] {
-		t.Fatalf("read-only desktop profile should expose observation tool desktop_get_app_state")
+	if !seen["desktop_observe"] {
+		t.Fatalf("read-only desktop profile should expose unified observation tool desktop_observe")
 	}
-	if seen["desktop_click"] || seen["desktop_type"] || seen["desktop_set_value"] {
-		t.Fatalf("read-only desktop profile exposed mutating desktop tools: click=%v type=%v set_value=%v", seen["desktop_click"], seen["desktop_type"], seen["desktop_set_value"])
+	if seen["desktop_act"] || seen["desktop_click"] || seen["desktop_type"] || seen["desktop_set_value"] {
+		t.Fatalf("read-only desktop profile exposed mutating desktop tools")
 	}
-	if seen["memory_write"] || seen["memory_patch"] || seen["memory_delete"] {
+	if seen["memory_edit"] || seen["memory_write"] || seen["memory_patch"] || seen["memory_delete"] {
 		t.Fatalf("read-only profile exposed mutating memory tools")
 	}
 }

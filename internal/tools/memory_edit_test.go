@@ -43,7 +43,7 @@ func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func
 			http.NotFound(w, r)
 		}
 	}))
-	cfg := config.Config{Workspace: t.TempDir(), MemoryEndpoint: server.URL, MemoryTimeoutMS: 30000, ToolProfile: config.ProfileFull}
+	cfg := config.Config{Workspace: t.TempDir(), MemoryEndpoint: server.URL, MemoryTimeoutMS: 30000, ToolProfile: config.ProfileUnified}
 	cfg.Normalize()
 	rt, err := NewRuntime(cfg)
 	if err != nil {

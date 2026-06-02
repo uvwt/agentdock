@@ -38,15 +38,15 @@ func (r *Runtime) Config() config.Config           { return r.cfg }
 func (r *Runtime) Workspace() *workspace.Workspace { return r.ws }
 
 func (r *Runtime) ToolNames() []string {
-	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "exec_command", "write_stdin", "session_status", "list_sessions", "kill_session", "kill_all_sessions", "configure_github_token", "check_github_repo_access", "github_create_repo", "plugin_list", "plugin_describe", "plugin_call", "workspace_repos", "git_repo_status", "git_status", "git_diff", "git_log", "git_show", "git_blame", "git_fetch", "git_pull", "git_push", "git_clone", "git_commit", "request_permissions", "view_image"}
+	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "exec_command", "session_control", "configure_github_token", "check_github_repo_access", "github_create_repo", "plugin_list", "plugin_describe", "plugin_call", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "request_permissions", "view_image"}
 	if r.cfg.MemoryEndpoint != "" {
-		all = append(all, "memory_bootstrap", "memory_list", "memory_read", "memory_search", "memory_pack", "memory_append_note", "memory_write", "memory_delete", "memory_sync_status", "memory_diff", "memory_patch", "memory_update_fact", "memory_lint")
+		all = append(all, "memory_bootstrap", "memory_list", "memory_read", "memory_search", "memory_pack", "memory_edit", "memory_sync_status", "memory_lint")
 	}
 	if r.cfg.BrowserEnabled {
-		all = append(all, "browser_session_start", "browser_action", "browser_snapshot", "browser_session_close")
+		all = append(all, "browser_session", "browser_act", "browser_snapshot")
 	}
 	if r.cfg.DesktopEnabled {
-		all = append(all, "desktop_preflight", "desktop_list_apps", "desktop_get_app_state", "desktop_window_list", "desktop_snapshot", "desktop_snapshot_app", "desktop_clipboard_set", "desktop_clipboard_get", "desktop_focus_app", "desktop_move", "desktop_click", "desktop_double_click", "desktop_scroll", "desktop_drag", "desktop_type", "desktop_set_value", "desktop_perform_secondary_action", "desktop_hotkey", "desktop_wait")
+		all = append(all, "desktop_observe", "desktop_act", "desktop_clipboard")
 	}
 	if !r.cfg.EnableViewImage {
 		all = removeTool(all, "view_image")
@@ -54,15 +54,15 @@ func (r *Runtime) ToolNames() []string {
 	if r.cfg.ToolProfile != config.ProfileReadOnly {
 		return all
 	}
-	readOnly := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "session_status", "list_sessions", "check_github_repo_access", "plugin_list", "plugin_describe", "workspace_repos", "git_repo_status", "git_status", "git_diff", "git_log", "git_show", "git_blame", "request_permissions", "view_image"}
+	readOnly := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "session_control", "check_github_repo_access", "plugin_list", "plugin_describe", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "request_permissions", "view_image"}
 	if r.cfg.MemoryEndpoint != "" {
-		readOnly = append(readOnly, "memory_bootstrap", "memory_list", "memory_read", "memory_search", "memory_pack", "memory_sync_status", "memory_diff", "memory_lint")
+		readOnly = append(readOnly, "memory_bootstrap", "memory_list", "memory_read", "memory_search", "memory_pack", "memory_sync_status", "memory_lint")
 	}
 	if r.cfg.BrowserEnabled {
 		readOnly = append(readOnly, "browser_snapshot")
 	}
 	if r.cfg.DesktopEnabled {
-		readOnly = append(readOnly, "desktop_preflight", "desktop_list_apps", "desktop_get_app_state", "desktop_window_list", "desktop_snapshot", "desktop_snapshot_app", "desktop_clipboard_get", "desktop_wait")
+		readOnly = append(readOnly, "desktop_observe")
 	}
 	if !r.cfg.EnableViewImage {
 		readOnly = removeTool(readOnly, "view_image")
@@ -109,6 +109,8 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.applyPatch(ctx, args)
 	case "exec_command":
 		return r.execCommand(ctx, args)
+	case "session_control":
+		return r.sessionControl(args)
 	case "write_stdin":
 		return r.writeStdin(args)
 	case "session_status":
@@ -141,6 +143,8 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.memorySearch(ctx, args)
 	case "memory_pack":
 		return r.memoryPack(ctx, args)
+	case "memory_edit":
+		return r.memoryEdit(ctx, args)
 	case "memory_append_note":
 		return r.memoryAppendNote(ctx, args)
 	case "memory_write":
@@ -157,6 +161,10 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.memoryUpdateFact(ctx, args)
 	case "memory_lint":
 		return r.memoryLint(ctx, args)
+	case "browser_session":
+		return r.browserSession(ctx, args)
+	case "browser_act":
+		return r.browserAct(ctx, args)
 	case "browser_session_start":
 		return r.browserSessionStart(ctx, args)
 	case "browser_action":
@@ -165,6 +173,12 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.browserSnapshot(ctx, args)
 	case "browser_session_close":
 		return r.browserSessionClose(ctx, args)
+	case "desktop_observe":
+		return r.desktopObserve(ctx, args)
+	case "desktop_act":
+		return r.desktopAct(ctx, args)
+	case "desktop_clipboard":
+		return r.desktopClipboard(ctx, args)
 	case "desktop_preflight":
 		return r.desktopPreflight(ctx, args)
 	case "desktop_list_apps":
@@ -217,6 +231,10 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.gitShow(ctx, args)
 	case "git_blame":
 		return r.gitBlame(ctx, args)
+	case "git_inspect":
+		return r.gitInspect(ctx, args)
+	case "git_remote":
+		return r.gitRemote(ctx, args)
 	case "git_fetch":
 		return r.gitFetch(ctx, args)
 	case "git_pull":

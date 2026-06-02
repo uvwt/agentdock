@@ -54,7 +54,7 @@ func outputSchema(name string) map[string]any {
 	case "apply_patch":
 		props["summary"] = stringProp("Patch result summary.")
 		props["dry_run"] = boolProp("Whether this was a dry run.")
-	case "exec_command", "write_stdin", "session_status", "kill_session":
+	case "exec_command", "session_control", "write_stdin", "session_status", "kill_session":
 		props["session_id"] = stringProp("Command session id.")
 		props["status"] = stringProp("Session status.")
 		props["stdout"] = stringProp("Captured stdout segment.")
@@ -139,7 +139,7 @@ func outputSchema(name string) map[string]any {
 		props["last_push_at"] = stringProp("Last push timestamp.")
 		props["last_error"] = stringProp("Last sync error.")
 		props["conflict"] = boolProp("Whether MemoryDock detected a sync conflict.")
-	case "memory_diff", "memory_patch", "memory_update_fact":
+	case "memory_edit", "memory_diff", "memory_patch", "memory_update_fact":
 		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
 		props["path"] = stringProp("Memory path.")
 		props["changed"] = boolProp("Whether the proposed edit changes content.")
@@ -156,12 +156,12 @@ func outputSchema(name string) map[string]any {
 		props["finding_count"] = intProp("Finding count.")
 		props["findings"] = arrayProp("Lint findings.")
 		props["truncated"] = boolProp("Whether findings were truncated.")
-	case "browser_session_start", "browser_session_close":
+	case "browser_session", "browser_session_start", "browser_session_close":
 		props["operation"] = stringProp("Browser operation name.")
 		props["session_id"] = stringProp("Browser session id.")
 		props["status"] = stringProp("Browser session status.")
 		props["stdout"] = stringProp("Raw browser runner output.")
-	case "browser_action", "browser_snapshot":
+	case "browser_act", "browser_action", "browser_snapshot":
 		props["operation"] = stringProp("Browser operation name.")
 		props["session_id"] = stringProp("Browser session id.")
 		props["url"] = stringProp("Current page URL.")
@@ -185,7 +185,7 @@ func outputSchema(name string) map[string]any {
 		props["behind"] = intProp("Commits behind upstream.")
 		props["files"] = arrayProp("Changed files.")
 		props["clean"] = boolProp("Whether the worktree is clean.")
-	case "git_diff", "git_log", "git_show", "git_blame", "git_fetch", "git_pull", "git_push", "git_clone", "git_commit":
+	case "git_diff", "git_log", "git_inspect", "git_show", "git_blame", "git_remote", "git_fetch", "git_pull", "git_push", "git_clone", "git_commit":
 		props["command"] = stringProp("Executed git command.")
 		props["output"] = stringProp("Raw git output.")
 		props["repo_path"] = stringProp("Workspace-relative repository path, when applicable.")
@@ -197,6 +197,39 @@ func outputSchema(name string) map[string]any {
 		if name == "git_log" {
 			props["commits"] = arrayProp("Parsed commits.")
 		}
+	case "desktop_observe":
+		props["operation"] = stringProp("Underlying desktop observation operation.")
+		props["app"] = stringProp("Requested app, when applicable.")
+		props["running"] = arrayProp("Running visible applications.")
+		props["recent"] = arrayProp("Best-effort recently used applications from Spotlight metadata.")
+		props["count"] = intProp("Running application count or result count.")
+		props["resolved_app"] = stringProp("Resolved running app name.")
+		props["bundle_id"] = stringProp("App bundle identifier when available.")
+		props["pid"] = intProp("Process id when available.")
+		props["frontmost"] = boolProp("Whether the app is frontmost.")
+		props["window"] = objectProp("Key window metadata.")
+		props["windows"] = arrayProp("Visible windows.")
+		props["accessibility_ok"] = boolProp("Whether accessibility tree capture succeeded.")
+		props["accessibility_tree"] = arrayProp("Accessibility tree nodes with element indexes.")
+		props["node_count"] = intProp("Accessibility tree node count.")
+		props["coordinate_space"] = objectProp("Coordinate space metadata for screenshots and actions.")
+		props["screenshot_path"] = stringProp("Saved screenshot path.")
+		props["screenshot_url"] = stringProp("Artifact URL for the screenshot, when configured.")
+		props["screenshot_artifact_id"] = stringProp("Screenshot artifact id.")
+		props["mime_type"] = stringProp("Screenshot MIME type.")
+		props["width"] = intProp("Screenshot width.")
+		props["height"] = intProp("Screenshot height.")
+		props["size_bytes"] = intProp("Screenshot size in bytes.")
+		props["image_attached"] = boolProp("Whether an MCP image content part is attached.")
+	case "desktop_act", "desktop_clipboard":
+		props["operation"] = stringProp("Underlying desktop action operation.")
+		props["command_ok"] = boolProp("Whether the underlying command exited successfully.")
+		props["effect_verified"] = boolProp("Whether UI effect verification was attempted.")
+		props["effect_changed"] = boolProp("Whether before/after screenshots changed enough to indicate effect.")
+		props["diff_score"] = floatProp("Screenshot difference score when verify=true.")
+		props["text"] = stringProp("Clipboard text or typed text, when applicable.")
+		props["verified"] = boolProp("Whether clipboard write verification passed, when applicable.")
+		props["waited_ms"] = intProp("Wait duration for wait action.")
 	case "desktop_list_apps":
 		props["running"] = arrayProp("Running visible applications.")
 		props["recent"] = arrayProp("Best-effort recently used applications from Spotlight metadata.")
