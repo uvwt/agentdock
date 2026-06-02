@@ -98,7 +98,10 @@ func (s *Server) callTool(ctx context.Context, req jsonrpc.Request) jsonrpc.Resp
 }
 
 func (s *Server) toolDescriptors() []map[string]any {
-	names := s.runtime.ToolNames()
+	return toolDescriptorsForNames(s.runtime.ToolNames())
+}
+
+func toolDescriptorsForNames(names []string) []map[string]any {
 	descriptors := make([]map[string]any, 0, len(names))
 	for _, name := range names {
 		def, _ := toolDefinition(name)
@@ -109,9 +112,9 @@ func (s *Server) toolDescriptors() []map[string]any {
 			"inputSchema":  inputSchema(name),
 			"outputSchema": outputSchema(name),
 			"annotations": map[string]any{
-				"readOnlyHint":    true,
-				"destructiveHint": false,
-				"openWorldHint":   true,
+				"readOnlyHint":    def.ReadOnly,
+				"destructiveHint": def.Destructive,
+				"openWorldHint":   def.OpenWorld,
 			},
 		})
 	}

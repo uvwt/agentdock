@@ -277,3 +277,24 @@ func outputSchema(name string) map[string]any {
 
 	return map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": true}
 }
+
+func addDesktopActionOutputProps(props map[string]any, stringProp func(string) map[string]any, intProp func(string) map[string]any, boolProp func(string) map[string]any, objectProp func(string) map[string]any, arrayProp func(string) map[string]any) {
+	props["operation"] = stringProp("Desktop operation name.")
+	props["command_ok"] = boolProp("Whether cliclick command execution succeeded. This does not prove the UI changed.")
+	props["effect_verified"] = boolProp("Whether before/after screenshot verification ran successfully.")
+	props["effect_changed"] = boolProp("Whether verification detected a screenshot change after the command.")
+	props["verification"] = stringProp("Verification status such as not_requested, byte_diff, sha256_equal, before_screenshot_failed, after_screenshot_failed, or diff_failed.")
+	props["error_layer"] = stringProp("Failure layer: validation, focus, window, command, screenshot, verification, or runtime.")
+	props["before_screenshot_path"] = stringProp("Before screenshot path when verify=true.")
+	props["after_screenshot_path"] = stringProp("After screenshot path when verify=true.")
+	props["diff_score"] = map[string]any{"type": "number", "description": "Pixel-level screenshot difference ratio between 0 and 1."}
+	props["changed_pixels"] = intProp("Number of changed pixels detected by pixel-level screenshot diff.")
+	props["total_pixels"] = intProp("Total pixel denominator used for diff_score.")
+	props["changed_bounds"] = objectProp("Bounding box of changed pixels in image coordinates when a change is detected.")
+	props["size_mismatch"] = boolProp("Whether before/after screenshots had different pixel dimensions.")
+	props["target_window"] = objectProp("Target app window metadata in macOS points when app is provided.")
+	props["action_coordinate_space"] = stringProp("Input coordinate mode: screen or window.")
+	props["points"] = arrayProp("Actual global macOS point coordinates sent to cliclick.")
+	props["input_points"] = arrayProp("Original caller coordinates before window-relative conversion, when different from points.")
+	props["stdout"] = stringProp("Captured command stdout/stderr.")
+}
