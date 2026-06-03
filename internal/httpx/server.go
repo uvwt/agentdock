@@ -52,11 +52,8 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	mux.HandleFunc("/artifacts/desktop/screenshots/", func(w http.ResponseWriter, r *http.Request) {
 		handleDesktopScreenshotArtifact(w, r, cfg)
 	})
-	mux.HandleFunc("/register", func(w http.ResponseWriter, _ *http.Request) {
-		method := "none"
-		if auth.ConfiguredClientSecret() != "" {
-			method = "client_secret_post"
-		}
+	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
+		method := requestedTokenEndpointAuthMethod(r)
 		writeJSON(w, map[string]any{"client_id": firstNonEmpty(cfg.OAuthClientID, "coding-tools-client"), "token_endpoint_auth_method": method})
 	})
 	mux.HandleFunc("/oauth/authorize", func(w http.ResponseWriter, r *http.Request) {
@@ -264,6 +261,29 @@ func authorizedOAuth(r *http.Request, cfg config.Config) bool {
 
 func oauthSigningKey() string { return os.Getenv("AGENTDOCK_OAUTH_TOKEN_SECRET") }
 
+func requestedTokenEndpointAuthMethod(r *http.Request) string {
+	if r.Method != http.MethodPost {
+		return "none"
+	}
+	defer r.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil || len(body) == 0 {
+		return "none"
+	}
+	var payload struct {
+		TokenEndpointAuthMethod string `json:"token_endpoint_auth_method"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "none"
+	}
+	switch payload.TokenEndpointAuthMethod {
+	case "client_secret_post", "client_secret_basic":
+		return payload.TokenEndpointAuthMethod
+	default:
+		return "none"
+	}
+}
+
 func validClientAuthentication(r *http.Request) bool {
 	configured := auth.ConfiguredClientSecret()
 	if configured == "" {
@@ -273,6 +293,9 @@ func validClientAuthentication(r *http.Request) bool {
 	if user, password, ok := r.BasicAuth(); ok {
 		_ = user
 		clientSecret = password
+	}
+	if clientSecret == "" {
+		return true
 	}
 	return auth.ConstantTimeEqual(clientSecret, configured)
 }
