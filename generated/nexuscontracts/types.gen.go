@@ -117,6 +117,66 @@ type DeviceEnrollmentResponse struct {
 	ServerTime string `json:"server_time"`
 }
 
+// EnrollmentTokenCreateRequest 创建一次性设备注册 token。
+type EnrollmentTokenCreateRequest struct {
+	// CreatedBy 创建主体标识。
+	CreatedBy string `json:"created_by"`
+	// TtlSeconds 有效期秒数。
+	TtlSeconds int64 `json:"ttl_seconds"`
+	// AllowedCommandTypes 允许的命令类型。
+	AllowedCommandTypes []string `json:"allowed_command_types"`
+	// MaxRisk 最大允许风险。
+	MaxRisk string `json:"max_risk"`
+}
+
+// EnrollmentTokenCreateResponse 一次性设备注册 token。
+type EnrollmentTokenCreateResponse struct {
+	// Token 仅返回一次的明文注册 token。
+	Token string `json:"token"`
+	// ExpiresAt RFC 3339 UTC 时间。
+	ExpiresAt string `json:"expires_at"`
+}
+
+// CommandLeaseAction 命令租约动作请求。
+type CommandLeaseAction struct {
+	// LeaseId 全局唯一标识符。
+	LeaseId string `json:"lease_id"`
+}
+
+// DeviceTokenRotationResponse 设备 token 轮换结果。
+type DeviceTokenRotationResponse struct {
+	// DeviceToken 新设备 token；仅返回一次。
+	DeviceToken string `json:"device_token"`
+	// TokenExpiresAt RFC 3339 UTC 时间。
+	TokenExpiresAt string `json:"token_expires_at"`
+}
+
+// DeviceRevokeRequest 撤销设备请求。
+type DeviceRevokeRequest struct {
+	// Reason 撤销原因。
+	Reason string `json:"reason"`
+}
+
+// DeviceCommandCreateRequest 创建受控设备命令。
+type DeviceCommandCreateRequest struct {
+	// Type 命令类型。
+	Type string `json:"type"`
+	// Payload 命令结构化参数；不得包含明文 Secret。
+	Payload json.RawMessage `json:"payload"`
+	// Risk 风险等级。
+	Risk string `json:"risk"`
+	// IdempotencyKey 副作用幂等键。
+	IdempotencyKey string `json:"idempotency_key"`
+	// Priority 调度优先级。
+	Priority int64 `json:"priority"`
+	// MaxAttempts 最大尝试次数。
+	MaxAttempts int64 `json:"max_attempts"`
+	// NotBefore RFC 3339 UTC 时间。
+	NotBefore string `json:"not_before"`
+	// ExpiresAt RFC 3339 UTC 时间。
+	ExpiresAt string `json:"expires_at"`
+}
+
 // DeviceHeartbeat 设备心跳快照。
 type DeviceHeartbeat struct {
 	// DeviceId 全局唯一标识符。
