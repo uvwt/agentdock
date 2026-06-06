@@ -128,6 +128,9 @@ func (a *Agent) Run(ctx context.Context) error {
 		backoff = a.config.OfflineBackoffMin
 		a.drainOutbox(ctx)
 		if lease == nil {
+			if !sleepContext(ctx, a.config.OfflineBackoffMin) {
+				return nil
+			}
 			continue
 		}
 		if err := a.executeLease(ctx, *lease); err != nil {

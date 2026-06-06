@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"github.com/uvwt/agentdock/internal/httpx"
 	"github.com/uvwt/agentdock/internal/logx"
 	"github.com/uvwt/agentdock/internal/mcp"
+	"github.com/uvwt/agentdock/internal/nexusagent"
 	"github.com/uvwt/agentdock/internal/sandbox"
 	"github.com/uvwt/agentdock/internal/tools"
 )
@@ -40,6 +42,10 @@ func run() error {
 	flag.StringVar(&cfg.MemoryEndpoint, "memory-endpoint", cfg.MemoryEndpoint, "optional MemoryDock HTTP endpoint, for example http://127.0.0.1:18777")
 	flag.StringVar(&cfg.MemoryToken, "memory-token", cfg.MemoryToken, "optional MemoryDock bearer token")
 	flag.IntVar(&cfg.MemoryTimeoutMS, "memory-timeout-ms", cfg.MemoryTimeoutMS, "MemoryDock HTTP timeout in milliseconds")
+	flag.StringVar(&cfg.NexusEndpoint, "nexus-endpoint", cfg.NexusEndpoint, "optional AgentDock Nexus base URL")
+	flag.StringVar(&cfg.NexusDeviceName, "nexus-device-name", cfg.NexusDeviceName, "AgentDock Nexus device display name")
+	flag.StringVar(&cfg.NexusStateDir, "nexus-state-dir", cfg.NexusStateDir, "AgentDock Nexus local state directory")
+	flag.IntVar(&cfg.NexusHeartbeatSeconds, "nexus-heartbeat-seconds", cfg.NexusHeartbeatSeconds, "AgentDock Nexus heartbeat interval seconds")
 	flag.BoolVar(&cfg.BrowserEnabled, "browser-enabled", cfg.BrowserEnabled, "expose optional browser automation tools")
 	flag.StringVar(&cfg.BrowserRunnerDir, "browser-runner-dir", cfg.BrowserRunnerDir, "workspace-relative browser runner directory")
 	flag.StringVar(&cfg.BrowserArtifactDir, "browser-artifact-dir", cfg.BrowserArtifactDir, "workspace-relative browser artifact directory")
@@ -52,7 +58,7 @@ func run() error {
 	flag.Parse()
 	cfg.Normalize()
 	logx.Setup(cfg.LogLevel)
-	logx.Info("server starting", "workspace", cfg.Workspace, "mode", cfg.Mode, "path_policy", cfg.PathPolicy, "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "tool_profile", cfg.ToolProfile, "log_level", cfg.LogLevel, "sandbox_mode", cfg.SandboxMode, "agent_dock_dir", cfg.AgentDockDir, "plugin_dir", cfg.PluginDir, "memory_enabled", cfg.MemoryEndpoint != "", "browser_enabled", cfg.BrowserEnabled, "browser_runner_dir", cfg.BrowserRunnerDir, "desktop_enabled", cfg.DesktopEnabled)
+	logx.Info("server starting", "workspace", cfg.Workspace, "mode", cfg.Mode, "path_policy", cfg.PathPolicy, "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "tool_profile", cfg.ToolProfile, "log_level", cfg.LogLevel, "sandbox_mode", cfg.SandboxMode, "agent_dock_dir", cfg.AgentDockDir, "plugin_dir", cfg.PluginDir, "memory_enabled", cfg.MemoryEndpoint != "", "nexus_enabled", cfg.NexusEndpoint != "", "browser_enabled", cfg.BrowserEnabled, "browser_runner_dir", cfg.BrowserRunnerDir, "desktop_enabled", cfg.DesktopEnabled)
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
 		return err
@@ -60,6 +66,11 @@ func run() error {
 	server := mcp.NewServer(runtime, cfg)
 	if cfg.Stdio {
 		return server.ServeStdio(os.Stdin, os.Stdout)
+	}
+	if enabled, err := nexusagent.Start(context.Background(), cfg); err != nil {
+		return err
+	} else if enabled {
+		logx.Info("nexus agent enabled", "endpoint", cfg.NexusEndpoint, "device_name", cfg.NexusDeviceName)
 	}
 	return httpx.Serve(server, cfg)
 }

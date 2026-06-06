@@ -43,6 +43,10 @@ type Config struct {
 	MemoryLoginUser               string
 	MemoryLoginValue              string
 	MemoryTimeoutMS               int
+	NexusEndpoint                 string
+	NexusDeviceName               string
+	NexusStateDir                 string
+	NexusHeartbeatSeconds         int
 	BrowserEnabled                bool
 	BrowserRunnerDir              string
 	BrowserArtifactDir            string
@@ -73,6 +77,10 @@ func FromEnv() Config {
 		MemoryLoginUser:               os.Getenv("AGENTDOCK_MEMORY_LOGIN_USER"),
 		MemoryLoginValue:              os.Getenv("AGENTDOCK_MEMORY_LOGIN_VALUE"),
 		MemoryTimeoutMS:               getenvInt("AGENTDOCK_MEMORY_TIMEOUT_MS", 30000),
+		NexusEndpoint:                 getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
+		NexusDeviceName:               getenv("AGENTDOCK_NEXUS_DEVICE_NAME", ""),
+		NexusStateDir:                 getenv("AGENTDOCK_NEXUS_STATE_DIR", ""),
+		NexusHeartbeatSeconds:         getenvInt("AGENTDOCK_NEXUS_HEARTBEAT_SECONDS", 30),
 		BrowserEnabled:                getenvBool("AGENTDOCK_BROWSER_ENABLED", false),
 		BrowserRunnerDir:              getenv("AGENTDOCK_BROWSER_RUNNER_DIR", "browser-runner"),
 		BrowserArtifactDir:            getenv("AGENTDOCK_BROWSER_ARTIFACT_DIR", "browser-artifacts"),
@@ -119,6 +127,9 @@ func (c *Config) Normalize() {
 	}
 	if c.MemoryTimeoutMS <= 0 {
 		c.MemoryTimeoutMS = 30000
+	}
+	if c.NexusHeartbeatSeconds <= 0 {
+		c.NexusHeartbeatSeconds = 30
 	}
 	if c.BrowserRunnerDir == "" {
 		c.BrowserRunnerDir = "browser-runner"
