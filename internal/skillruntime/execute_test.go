@@ -169,6 +169,28 @@ func TestCompatEnvDefinitionsIncludeDida365Config(t *testing.T) {
 	}
 }
 
+func TestCompatEnvDefinitionsIncludeSpotifyConfig(t *testing.T) {
+	definitions := compatEnvDefinitions("spotify-web-api")
+	byName := map[string]EnvDefinition{}
+	for _, def := range definitions {
+		byName[def.Name] = def
+	}
+	for _, expected := range []EnvDefinition{
+		{Name: "SPOTIFY_ACCESS_TOKEN", Kind: "secret"},
+		{Name: "SPOTIFY_CLIENT_ID", Kind: "plain"},
+		{Name: "SPOTIFY_REFRESH_TOKEN", Kind: "secret"},
+		{Name: "SPOTIFY_SCOPES", Kind: "plain"},
+	} {
+		got, ok := byName[expected.Name]
+		if !ok {
+			t.Fatalf("missing compat env %s", expected.Name)
+		}
+		if got.Kind != expected.Kind {
+			t.Fatalf("%s kind = %s, want %s", expected.Name, got.Kind, expected.Kind)
+		}
+	}
+}
+
 func newTestRuntime(t *testing.T, script string) *Runtime {
 	t.Helper()
 	root := t.TempDir()

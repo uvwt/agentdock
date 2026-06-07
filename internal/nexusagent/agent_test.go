@@ -19,6 +19,8 @@ func TestEnvDefinitionsIncludeLocalCompatVariables(t *testing.T) {
 		{Skill: "dida365-open-api", Name: "DIDA365_REGION", Kind: envregistry.KindPlain},
 		{Skill: "douban-marks", Name: "DOUBAN_USER_ID", Kind: envregistry.KindPlain},
 		{Skill: "openlist", Name: "OPENLIST_SESSION_FILE", Kind: envregistry.KindPlain},
+		{Skill: "spotify-web-api", Name: "SPOTIFY_CLIENT_ID", Kind: envregistry.KindPlain},
+		{Skill: "spotify-web-api", Name: "SPOTIFY_REFRESH_TOKEN", Kind: envregistry.KindSecret},
 		{Skill: "telegram-official", Name: "TELEGRAM_CHAT_ID", Kind: envregistry.KindPlain},
 		{Skill: "telegram-official", Name: "DOCK_DEVICE", Kind: envregistry.KindPlain},
 	} {

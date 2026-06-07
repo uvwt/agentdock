@@ -329,6 +329,15 @@ func compatEnvDefinitions(skill string) []EnvDefinition {
 			{Skill: skill, Name: "DIDA365_REDIRECT_URI", Kind: "plain", Source: "compat"},
 			{Skill: skill, Name: "DIDA365_REGION", Kind: "plain", Source: "compat"},
 		}
+	case "spotify-web-api":
+		return []EnvDefinition{
+			{Skill: skill, Name: "SPOTIFY_ACCESS_TOKEN", Kind: "secret", Source: "compat"},
+			{Skill: skill, Name: "SPOTIFY_CLIENT_ID", Kind: "plain", Source: "compat"},
+			{Skill: skill, Name: "SPOTIFY_EXPIRES_AT", Kind: "plain", Source: "compat"},
+			{Skill: skill, Name: "SPOTIFY_REDIRECT_URI", Kind: "plain", Source: "compat"},
+			{Skill: skill, Name: "SPOTIFY_REFRESH_TOKEN", Kind: "secret", Source: "compat"},
+			{Skill: skill, Name: "SPOTIFY_SCOPES", Kind: "plain", Source: "compat"},
+		}
 	default:
 		return nil
 	}
