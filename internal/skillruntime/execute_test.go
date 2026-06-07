@@ -176,9 +176,8 @@ func TestCompatEnvDefinitionsIncludeSpotifyConfig(t *testing.T) {
 		byName[def.Name] = def
 	}
 	for _, expected := range []EnvDefinition{
-		{Name: "SPOTIFY_ACCESS_TOKEN", Kind: "secret"},
 		{Name: "SPOTIFY_CLIENT_ID", Kind: "plain"},
-		{Name: "SPOTIFY_REFRESH_TOKEN", Kind: "secret"},
+		{Name: "SPOTIFY_REDIRECT_URI", Kind: "plain"},
 		{Name: "SPOTIFY_SCOPES", Kind: "plain"},
 	} {
 		got, ok := byName[expected.Name]

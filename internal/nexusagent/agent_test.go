@@ -20,7 +20,7 @@ func TestEnvDefinitionsIncludeLocalCompatVariables(t *testing.T) {
 		{Skill: "douban-marks", Name: "DOUBAN_USER_ID", Kind: envregistry.KindPlain},
 		{Skill: "openlist", Name: "OPENLIST_SESSION_FILE", Kind: envregistry.KindPlain},
 		{Skill: "spotify-web-api", Name: "SPOTIFY_CLIENT_ID", Kind: envregistry.KindPlain},
-		{Skill: "spotify-web-api", Name: "SPOTIFY_REFRESH_TOKEN", Kind: envregistry.KindSecret},
+		{Skill: "spotify-web-api", Name: "SPOTIFY_SCOPES", Kind: envregistry.KindPlain},
 		{Skill: "telegram-official", Name: "TELEGRAM_CHAT_ID", Kind: envregistry.KindPlain},
 		{Skill: "telegram-official", Name: "DOCK_DEVICE", Kind: envregistry.KindPlain},
 	} {
