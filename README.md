@@ -1,13 +1,13 @@
 # AgentDock
 
-AgentDock 是本地/远程 Agent 工具运行层，提供文件、命令、Git、动态插件、浏览器自动化、macOS 桌面自动化和 MemoryDock 长期记忆能力。
+AgentDock 是本地/远程 Agent 工具运行层，提供文件、命令、Git、原生 Skill、浏览器自动化、macOS 桌面自动化和 MemoryDock 长期记忆能力。
 
 ## 核心能力
 
 - 工作区文件读取、搜索、结构化补丁。
 - 受控命令执行、会话管理、输出截断和脱敏。
 - Git / GitHub 仓库操作。
-- 动态插件 `plugin_*`，无需重新编译核心二进制。
+- 原生 Skill `skill_manage`，支持安装、检查、运行与回滚。
 - 可选浏览器自动化 `browser_*`。
 - macOS 裸机桌面自动化 `desktop_*`。
 - MemoryDock 长期记忆 `memory_*`。
@@ -44,11 +44,9 @@ make logs
 - [Docker 部署](docs/install-docker.md)
 - [VPS systemd 部署](docs/install-vps-systemd.md)
 - [macOS desktop 自动化](docs/desktop-automation.md)
-- [动态插件](docs/dynamic-plugins.md)
 - [MemoryDock](docs/memorydock.md)
 - [安全模型](docs/security.md)
 - [排障](docs/troubleshooting.md)
-- [动态插件 JSON Schema](docs/plugin.schema.json)
 
 ## 开发约定
 

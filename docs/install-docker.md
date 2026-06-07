@@ -1,6 +1,6 @@
 # Docker 部署
 
-Docker 适合文件、Git、动态插件、浏览器自动化等能力；macOS 桌面自动化必须使用裸机部署。
+Docker 适合文件、Git、原生 Skill、浏览器自动化等能力；macOS 桌面自动化必须使用裸机部署。
 
 ## 构建
 

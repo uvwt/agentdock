@@ -3,7 +3,7 @@ package mcp
 import "testing"
 
 func TestToolDescriptorsUseRegistryAnnotations(t *testing.T) {
-	descriptors := toolDescriptorsForNames([]string{"read_file", "desktop_act", "plugin_call", "skill_manage"})
+	descriptors := toolDescriptorsForNames([]string{"read_file", "desktop_act", "skill_manage"})
 	byName := map[string]map[string]any{}
 	for _, descriptor := range descriptors {
 		name, _ := descriptor["name"].(string)
@@ -27,9 +27,6 @@ func TestToolDescriptorsUseRegistryAnnotations(t *testing.T) {
 	assertAnnotation("desktop_act", "readOnlyHint", false)
 	assertAnnotation("desktop_act", "destructiveHint", true)
 	assertAnnotation("desktop_act", "openWorldHint", false)
-	assertAnnotation("plugin_call", "readOnlyHint", false)
-	assertAnnotation("plugin_call", "destructiveHint", false)
-	assertAnnotation("plugin_call", "openWorldHint", true)
 	assertAnnotation("skill_manage", "readOnlyHint", false)
 	assertAnnotation("skill_manage", "destructiveHint", true)
 	assertAnnotation("skill_manage", "openWorldHint", true)

@@ -92,17 +92,6 @@ func inputSchema(name string) map[string]any {
 		props["auto_init"] = boolProp("Create the repository with an initial commit.")
 		props["timeout_ms"] = intProp("HTTP timeout in milliseconds.")
 		required = []string{"name"}
-	case "plugin_list":
-	case "plugin_describe":
-		props["plugin"] = stringProp("Plugin name under the configured plugin directory.")
-		props["name"] = stringProp("Alias for plugin.")
-		required = []string{"plugin"}
-	case "plugin_call":
-		props["plugin"] = stringProp("Plugin name under the configured plugin directory.")
-		props["action"] = stringProp("Plugin action name.")
-		props["args"] = objectProp("Structured plugin action arguments passed as PLUGIN_ARGS_JSON.")
-		props["max_bytes"] = intProp("Maximum output bytes.")
-		required = []string{"plugin", "action"}
 	case "skill_manage":
 		props["action"] = map[string]any{"type": "string", "description": "Skill action: list, inspect, install, run, or rollback.", "enum": []string{"list", "inspect", "install", "run", "rollback"}}
 		props["skill"] = stringProp("Skill name for inspect, run, or rollback.")

@@ -56,7 +56,6 @@ spec:
 		Mode:            config.ModeSandboxed,
 		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",
-		PluginDir:       "plugins",
 		EnableViewImage: true,
 	}
 	cfg.Normalize()

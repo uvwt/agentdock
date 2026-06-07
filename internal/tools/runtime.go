@@ -43,7 +43,7 @@ func (r *Runtime) Config() config.Config           { return r.cfg }
 func (r *Runtime) Workspace() *workspace.Workspace { return r.ws }
 
 func (r *Runtime) ToolNames() []string {
-	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "exec_command", "session_control", "configure_github_token", "check_github_repo_access", "github_create_repo", "plugin_list", "plugin_describe", "plugin_call", "skill_manage", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "request_permissions", "view_image"}
+	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "exec_command", "session_control", "configure_github_token", "check_github_repo_access", "github_create_repo", "skill_manage", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "request_permissions", "view_image"}
 	if r.cfg.MemoryEndpoint != "" {
 		all = append(all, "memory_bootstrap", "memory_list", "memory_read", "memory_search", "memory_pack", "memory_edit", "memory_sync_status", "memory_lint")
 	}
@@ -59,7 +59,7 @@ func (r *Runtime) ToolNames() []string {
 	if r.cfg.ToolProfile != config.ProfileReadOnly {
 		return all
 	}
-	readOnly := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "session_control", "check_github_repo_access", "plugin_list", "plugin_describe", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "request_permissions", "view_image"}
+	readOnly := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "session_control", "check_github_repo_access", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "request_permissions", "view_image"}
 	if r.cfg.MemoryEndpoint != "" {
 		readOnly = append(readOnly, "memory_bootstrap", "memory_list", "memory_read", "memory_search", "memory_pack", "memory_sync_status", "memory_lint")
 	}
@@ -132,12 +132,6 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.checkGitHubRepoAccess(args)
 	case "github_create_repo":
 		return r.githubCreateRepo(args)
-	case "plugin_list":
-		return r.pluginList(args)
-	case "plugin_describe":
-		return r.pluginDescribe(args)
-	case "plugin_call":
-		return r.pluginCall(ctx, args)
 	case "skill_manage":
 		return r.skillManage(ctx, args)
 	case "memory_bootstrap":
@@ -272,7 +266,7 @@ func (r *Runtime) available(name string) bool {
 
 func (r *Runtime) serverInfo() Result {
 	names := r.ToolNames()
-	return Result{"ok": true, "server": config.ServerName, "title": "AgentDock", "version": config.Version, "protocol_version": config.ProtocolVersion, "os": runtime.GOOS, "arch": runtime.GOARCH, "go_version": runtime.Version(), "workspace": r.ws.Root(), "default_cwd": r.ws.DefaultDisplay(), "mode": r.cfg.Mode, "path_policy": r.cfg.PathPolicy, "tool_profile": r.cfg.ToolProfile, "sandbox_mode": r.cfg.SandboxMode, "agent_dock_dir": r.cfg.AgentDockDir, "plugin_dir": r.cfg.PluginDir, "memory_enabled": r.cfg.MemoryEndpoint != "", "memory_endpoint": r.cfg.MemoryEndpoint, "memory_bootstrap_recommended": r.cfg.MemoryEndpoint != "", "memory_bootstrap_tool": "memory_bootstrap", "memory_bootstrap_args": map[string]any{"project": "agentdock", "max_bytes": 50000}, "browser_enabled": r.cfg.BrowserEnabled, "browser_runner_dir": r.cfg.BrowserRunnerDir, "browser_artifact_dir": r.cfg.BrowserArtifactDir, "desktop_enabled": r.cfg.DesktopEnabled, "desktop_artifact_dir": r.cfg.DesktopArtifactDir, "auth_enabled": r.cfg.AuthToken != "", "endpoint_path": "/mcp", "tools": names, "tool_count": len(names), "sandbox": sandbox.StatusForWorkspace(r.ws.Root())}
+	return Result{"ok": true, "server": config.ServerName, "title": "AgentDock", "version": config.Version, "protocol_version": config.ProtocolVersion, "os": runtime.GOOS, "arch": runtime.GOARCH, "go_version": runtime.Version(), "workspace": r.ws.Root(), "default_cwd": r.ws.DefaultDisplay(), "mode": r.cfg.Mode, "path_policy": r.cfg.PathPolicy, "tool_profile": r.cfg.ToolProfile, "sandbox_mode": r.cfg.SandboxMode, "agent_dock_dir": r.cfg.AgentDockDir, "memory_enabled": r.cfg.MemoryEndpoint != "", "memory_endpoint": r.cfg.MemoryEndpoint, "memory_bootstrap_recommended": r.cfg.MemoryEndpoint != "", "memory_bootstrap_tool": "memory_bootstrap", "memory_bootstrap_args": map[string]any{"project": "agentdock", "max_bytes": 50000}, "browser_enabled": r.cfg.BrowserEnabled, "browser_runner_dir": r.cfg.BrowserRunnerDir, "browser_artifact_dir": r.cfg.BrowserArtifactDir, "desktop_enabled": r.cfg.DesktopEnabled, "desktop_artifact_dir": r.cfg.DesktopArtifactDir, "auth_enabled": r.cfg.AuthToken != "", "endpoint_path": "/mcp", "tools": names, "tool_count": len(names), "sandbox": sandbox.StatusForWorkspace(r.ws.Root())}
 }
 
 func (r *Runtime) toolDescriptors() Result {

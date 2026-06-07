@@ -38,7 +38,6 @@ func run() error {
 	flag.StringVar(&cfg.SandboxMode, "sandbox-mode", cfg.SandboxMode, "command sandbox mode: landlock or none")
 	flag.StringVar(&cfg.PathPolicy, "path-policy", cfg.PathPolicy, "path policy: workspace or host")
 	flag.StringVar(&cfg.AgentDockDir, "agentdock-dir", cfg.AgentDockDir, "AgentDock control directory; absolute or workspace-relative")
-	flag.StringVar(&cfg.PluginDir, "plugin-dir", cfg.PluginDir, "workspace-relative plugin directory")
 	flag.StringVar(&cfg.MemoryEndpoint, "memory-endpoint", cfg.MemoryEndpoint, "optional MemoryDock HTTP endpoint, for example http://127.0.0.1:18777")
 	flag.StringVar(&cfg.MemoryToken, "memory-token", cfg.MemoryToken, "optional MemoryDock bearer token")
 	flag.IntVar(&cfg.MemoryTimeoutMS, "memory-timeout-ms", cfg.MemoryTimeoutMS, "MemoryDock HTTP timeout in milliseconds")
@@ -58,7 +57,7 @@ func run() error {
 	flag.Parse()
 	cfg.Normalize()
 	logx.Setup(cfg.LogLevel)
-	logx.Info("server starting", "workspace", cfg.Workspace, "mode", cfg.Mode, "path_policy", cfg.PathPolicy, "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "tool_profile", cfg.ToolProfile, "log_level", cfg.LogLevel, "sandbox_mode", cfg.SandboxMode, "agent_dock_dir", cfg.AgentDockDir, "plugin_dir", cfg.PluginDir, "memory_enabled", cfg.MemoryEndpoint != "", "nexus_enabled", cfg.NexusEndpoint != "", "browser_enabled", cfg.BrowserEnabled, "browser_runner_dir", cfg.BrowserRunnerDir, "desktop_enabled", cfg.DesktopEnabled)
+	logx.Info("server starting", "workspace", cfg.Workspace, "mode", cfg.Mode, "path_policy", cfg.PathPolicy, "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "tool_profile", cfg.ToolProfile, "log_level", cfg.LogLevel, "sandbox_mode", cfg.SandboxMode, "agent_dock_dir", cfg.AgentDockDir, "memory_enabled", cfg.MemoryEndpoint != "", "nexus_enabled", cfg.NexusEndpoint != "", "browser_enabled", cfg.BrowserEnabled, "browser_runner_dir", cfg.BrowserRunnerDir, "desktop_enabled", cfg.DesktopEnabled)
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
 		return err

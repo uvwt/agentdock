@@ -1,6 +1,6 @@
 # macOS 裸机 launchd 部署
 
-AgentDock 在 CodingMini 上以 macOS 裸机方式运行，适合桌面自动化、动态插件和本机 Docker 服务编排。
+AgentDock 在 CodingMini 上以 macOS 裸机方式运行，适合桌面自动化、原生 Skill 和本机 Docker 服务编排。
 
 ## 固定路径
 
