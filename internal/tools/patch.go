@@ -137,12 +137,16 @@ func (r *Runtime) applyEnvelopePatch(patch string, dryRun bool, basePath string)
 	if len(affected) == 0 {
 		return nil, toolError("PATCH_FAILED", "no files were modified", "validation")
 	}
+	diffPreview, diffTruncated, stats, err := r.stagedDiffPreview(staged, 65536)
+	if err != nil {
+		return nil, err
+	}
 	if !dryRun {
 		if err := r.commitStaged(staged); err != nil {
 			return nil, err
 		}
 	}
-	return Result{"ok": true, "dry_run": dryRun, "workdir": basePath, "affected_files": affected, "summary": strings.Join(summaries, "\n")}, nil
+	return Result{"ok": true, "dry_run": dryRun, "workdir": basePath, "affected_files": affected, "summary": strings.Join(summaries, "\n"), "diff_preview": diffPreview, "truncated": diffTruncated, "files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions}, nil
 }
 
 func parseEnvelopePatch(patch string) ([]patchOperation, error) {
@@ -228,17 +232,17 @@ func applyUpdateHunks(content string, hunks [][]string, path string) (string, er
 		lines = []string{}
 	}
 	trailing := strings.HasSuffix(content, "\n")
-	for _, hunk := range hunks {
+	for hunkIndex, hunk := range hunks {
 		oldLines, newLines, err := parseUpdateHunk(hunk)
 		if err != nil {
 			return "", err
 		}
 		idxs := findAllSubsequences(lines, oldLines)
 		if len(idxs) == 0 {
-			return "", toolErrorDetails("PATCH_FAILED", "patch context did not match", "validation", map[string]any{"path": path})
+			return "", toolErrorDetails("PATCH_FAILED", "patch context did not match", "validation", map[string]any{"path": path, "diagnostic": map[string]any{"code": "CONTEXT_NOT_FOUND", "path": path, "hunk_index": hunkIndex, "message": "patch context did not match", "nearby_context": patchNearbyContext(lines, oldLines)}})
 		}
 		if len(idxs) > 1 {
-			return "", toolErrorDetails("PATCH_FAILED", "patch context matched multiple locations", "validation", map[string]any{"path": path, "matches": len(idxs)})
+			return "", toolErrorDetails("PATCH_FAILED", "patch context matched multiple locations", "validation", map[string]any{"path": path, "matches": len(idxs), "diagnostic": map[string]any{"code": "AMBIGUOUS_CONTEXT", "path": path, "hunk_index": hunkIndex, "message": "patch context matched multiple locations", "nearby_context": patchContextsForMatches(lines, idxs)}})
 		}
 		idx := idxs[0]
 		updated := make([]string, 0, len(lines)-len(oldLines)+len(newLines))
@@ -317,9 +321,95 @@ func (r *Runtime) commitStaged(staged map[string]*string) error {
 		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(abs, []byte(*content), 0o644); err != nil {
+		mode := os.FileMode(0o644)
+		if info, err := os.Stat(abs); err == nil {
+			mode = info.Mode().Perm()
+		}
+		if err := os.WriteFile(abs, []byte(*content), mode); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (r *Runtime) stagedDiffPreview(staged map[string]*string, maxBytes int) (string, bool, diffStats, error) {
+	var builder strings.Builder
+	total := diffStats{}
+	for rel, content := range staged {
+		oldContent := ""
+		if data, err := os.ReadFile(filepath.Join(r.ws.Root(), filepath.FromSlash(rel))); err == nil {
+			oldContent = string(data)
+		}
+		newContent := ""
+		if content != nil {
+			newContent = *content
+		}
+		diff, _, stats, err := unifiedDiffPreview(rel, oldContent, newContent, 0)
+		if err != nil {
+			return "", false, diffStats{}, err
+		}
+		builder.WriteString(diff)
+		if diff != "" && !strings.HasSuffix(diff, "\n") {
+			builder.WriteString("\n")
+		}
+		if stats.FilesChanged > 0 {
+			total.FilesChanged++
+		}
+		total.Insertions += stats.Insertions
+		total.Deletions += stats.Deletions
+	}
+	truncated := truncateString(builder.String(), maxBytes)
+	return truncated, maxBytes > 0 && len([]byte(builder.String())) > maxBytes, total, nil
+}
+
+func patchNearbyContext(lines, oldLines []string) []map[string]any {
+	if len(lines) == 0 {
+		return nil
+	}
+	needle := ""
+	for _, line := range oldLines {
+		if strings.TrimSpace(line) != "" {
+			needle = strings.TrimSpace(line)
+			break
+		}
+	}
+	if needle == "" {
+		return []map[string]any{{"line": 1, "context_start_line": 1, "context": firstLines(lines, 20)}}
+	}
+	for i, line := range lines {
+		if strings.Contains(line, needle) {
+			return []map[string]any{lineContext(lines, i)}
+		}
+	}
+	return []map[string]any{{"line": 1, "context_start_line": 1, "context": firstLines(lines, 20)}}
+}
+
+func patchContextsForMatches(lines []string, indexes []int) []map[string]any {
+	out := make([]map[string]any, 0)
+	for _, idx := range indexes {
+		out = append(out, lineContext(lines, idx))
+		if len(out) >= 5 {
+			break
+		}
+	}
+	return out
+}
+
+func lineContext(lines []string, idx int) map[string]any {
+	start := idx - 10
+	if start < 0 {
+		start = 0
+	}
+	end := idx + 11
+	if end > len(lines) {
+		end = len(lines)
+	}
+	return map[string]any{"line": idx + 1, "context_start_line": start + 1, "context": append([]string(nil), lines[start:end]...)}
+}
+
+func firstLines(lines []string, limit int) []string {
+	if len(lines) > limit {
+		lines = lines[:limit]
+	}
+	return append([]string(nil), lines...)
 }

@@ -11,6 +11,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/uvwt/agentdock/internal/textutil"
 )
 
 type PrepareFunc func(*exec.Cmd) (func(), map[string]any)
@@ -248,17 +250,14 @@ func setProcessGroup(cmd *exec.Cmd) {
 }
 
 func trim(value string, maxBytes int) string {
-	if maxBytes <= 0 || len([]byte(value)) <= maxBytes {
-		return value
-	}
-	return string([]byte(value)[:maxBytes])
+	return textutil.SafeTruncateString(value, maxBytes).Text
 }
 
 func omittedBytes(value string, maxBytes int) int {
 	if maxBytes <= 0 || len([]byte(value)) <= maxBytes {
 		return 0
 	}
-	return len([]byte(value)) - maxBytes
+	return len([]byte(value)) - len([]byte(trim(value, maxBytes)))
 }
 
 func countLines(value string) int {

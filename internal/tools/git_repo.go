@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/uvwt/agentdock/internal/textutil"
 )
 
 type gitRepo struct {
@@ -92,8 +94,6 @@ func boolValue(value any) bool {
 }
 
 func truncateBytes(data []byte, maxBytes int) (string, bool) {
-	if maxBytes <= 0 || len(data) <= maxBytes {
-		return string(data), false
-	}
-	return string(data[:maxBytes]), true
+	truncated := textutil.SafeTruncateBytes(data, maxBytes)
+	return truncated.Text, truncated.Truncated
 }
