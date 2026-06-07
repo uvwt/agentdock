@@ -32,6 +32,7 @@ var toolRegistry = []ToolDefinition{
 	{Name: "plugin_list", Title: "List plugins", Description: "List dynamic workspace plugins from the configured plugin directory.", ReadOnly: true},
 	{Name: "plugin_describe", Title: "Describe plugin", Description: "Describe one dynamic plugin and its available actions.", ReadOnly: true},
 	{Name: "plugin_call", Title: "Call plugin", Description: "Call a dynamic workspace plugin action with structured arguments.", Destructive: false, OpenWorld: true},
+	{Name: "skill_manage", Title: "Manage AgentDock Skills", Description: "List, inspect, install, run, or roll back AgentDock Skills through the local Skill Runtime.", Destructive: true, OpenWorld: true},
 	{Name: "memory_bootstrap", Title: "Bootstrap MemoryDock context", Description: "Load high-priority MemoryDock context at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks.", ReadOnly: true, OpenWorld: true},
 	{Name: "memory_list", Title: "List MemoryDock memories", Description: "List memories from the configured MemoryDock service.", ReadOnly: true, OpenWorld: true},
 	{Name: "memory_read", Title: "Read MemoryDock memory", Description: "Read one Markdown memory from the configured MemoryDock service.", ReadOnly: true, OpenWorld: true},

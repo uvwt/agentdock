@@ -123,6 +123,28 @@ func (s *Store) ListVersions(skill string) ([]string, error) {
 	return versions, nil
 }
 
+func (s *Store) ListSkills() ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(s.root, "installed"))
+	if os.IsNotExist(err) {
+		return []string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	skills := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if err := validateIdentifier("skill", entry.Name()); err != nil {
+			continue
+		}
+		skills = append(skills, entry.Name())
+	}
+	sort.Strings(skills)
+	return skills, nil
+}
+
 func (s *Store) ActiveVersion(skill string) (string, error) {
 	if err := validateIdentifier("skill", skill); err != nil {
 		return "", err

@@ -152,14 +152,7 @@ func Start(ctx context.Context, cfg config.Config) (bool, error) {
 }
 
 func resolveStateDir(cfg config.Config) (string, error) {
-	value := strings.TrimSpace(cfg.NexusStateDir)
-	if value == "" {
-		value = filepath.Join(cfg.AgentDockDir, "nexus")
-	}
-	if !filepath.IsAbs(value) {
-		value = filepath.Join(cfg.Workspace, value)
-	}
-	return filepath.Abs(value)
+	return config.ResolveNexusStateDir(cfg)
 }
 
 func ensureDeviceKey(dir string) (string, error) {

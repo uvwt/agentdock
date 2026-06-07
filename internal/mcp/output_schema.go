@@ -109,6 +109,17 @@ func outputSchema(name string) map[string]any {
 		props["json"] = objectProp("Parsed JSON output when output=json.")
 		props["duration_ms"] = intProp("Execution duration in milliseconds.")
 		props["truncated"] = boolProp("Whether output was truncated.")
+	case "skill_manage":
+		props["action"] = stringProp("Completed Skill action.")
+		props["skill"] = stringProp("Skill name.")
+		props["version"] = stringProp("Selected Skill version.")
+		props["skills"] = arrayProp("Installed Skill summaries.")
+		props["count"] = intProp("Installed Skill count.")
+		props["versions"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Installed versions."}
+		props["selection"] = objectProp("Active version, channels, and history.")
+		props["manifest"] = objectProp("Parsed agentdock.yaml manifest.")
+		props["binding_configured"] = boolProp("Whether a binding file exists for the Skill.")
+		props["result"] = objectProp("Install, run, or rollback result.")
 	case "memory_list":
 		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
 		props["entries"] = arrayProp("Memory entries.")

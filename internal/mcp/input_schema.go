@@ -103,6 +103,23 @@ func inputSchema(name string) map[string]any {
 		props["args"] = objectProp("Structured plugin action arguments passed as PLUGIN_ARGS_JSON.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
 		required = []string{"plugin", "action"}
+	case "skill_manage":
+		props["action"] = map[string]any{"type": "string", "description": "Skill action: list, inspect, install, run, or rollback.", "enum": []string{"list", "inspect", "install", "run", "rollback"}}
+		props["skill"] = stringProp("Skill name for inspect, run, or rollback.")
+		props["version"] = stringProp("Optional installed Skill version.")
+		props["channel"] = map[string]any{"type": "string", "description": "Skill channel: development, canary, stable, or pinned.", "enum": []string{"development", "canary", "stable", "pinned"}}
+		props["source"] = stringProp("Workspace/host path or HTTP(S) URL for install.")
+		props["digest"] = stringProp("Optional expected SHA-256 digest for install.")
+		props["activate"] = boolProp("Activate the installed version. Defaults to true.")
+		props["max_bytes"] = intProp("Maximum install package bytes.")
+		props["operation"] = stringProp("Skill operation name for run.")
+		props["input"] = map[string]any{"description": "JSON input value for the Skill operation."}
+		props["input_json"] = stringProp("Alternative raw JSON input string for the Skill operation.")
+		props["binding"] = stringProp("Optional binding name for run.")
+		props["run_id"] = stringProp("Optional run identifier.")
+		props["timeout_ms"] = intProp("Optional run timeout in milliseconds, capped by the operation timeout.")
+		props["max_output_bytes"] = intProp("Maximum stdout/stderr bytes for run.")
+		required = []string{"action"}
 	case "memory_bootstrap":
 		props["project"] = stringProp("Project key to bootstrap. Defaults to agentdock.")
 		props["max_bytes"] = intProp("Maximum combined memory bytes. Defaults to 50000.")

@@ -24,6 +24,7 @@ type Runtime struct {
 	cfg      config.Config
 	ws       *workspace.Workspace
 	sessions *SessionStore
+	skills   *skillManager
 }
 
 func NewRuntime(cfg config.Config) (*Runtime, error) {
@@ -31,14 +32,18 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Runtime{cfg: cfg, ws: ws, sessions: NewSessionStore()}, nil
+	skills, err := newSkillManager(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &Runtime{cfg: cfg, ws: ws, sessions: NewSessionStore(), skills: skills}, nil
 }
 
 func (r *Runtime) Config() config.Config           { return r.cfg }
 func (r *Runtime) Workspace() *workspace.Workspace { return r.ws }
 
 func (r *Runtime) ToolNames() []string {
-	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "exec_command", "session_control", "configure_github_token", "check_github_repo_access", "github_create_repo", "plugin_list", "plugin_describe", "plugin_call", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "request_permissions", "view_image"}
+	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "exec_command", "session_control", "configure_github_token", "check_github_repo_access", "github_create_repo", "plugin_list", "plugin_describe", "plugin_call", "skill_manage", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "request_permissions", "view_image"}
 	if r.cfg.MemoryEndpoint != "" {
 		all = append(all, "memory_bootstrap", "memory_list", "memory_read", "memory_search", "memory_pack", "memory_edit", "memory_sync_status", "memory_lint")
 	}
@@ -133,6 +138,8 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.pluginDescribe(args)
 	case "plugin_call":
 		return r.pluginCall(ctx, args)
+	case "skill_manage":
+		return r.skillManage(ctx, args)
 	case "memory_bootstrap":
 		return r.memoryBootstrap(ctx, args)
 	case "memory_list":
