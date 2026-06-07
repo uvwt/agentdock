@@ -81,7 +81,7 @@ func NewExecutor(store *Store) *Executor {
 }
 
 func DefaultAllowedCommandTypes() []string {
-	return []string{"health.check", "skill.install", "skill.run", "skill.rollback", "memory.sync", "service.inspect", "service.restart", "diagnostics.collect", "agentdock.reload"}
+	return []string{"health.check", "skill.install", "skill.run", "skill.rollback", "memory.sync", "service.inspect", "service.restart", "diagnostics.collect", "agentdock.reload", "env.manage"}
 }
 
 func (e *Executor) Register(handler CommandHandler) error {
