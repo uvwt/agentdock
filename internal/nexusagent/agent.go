@@ -318,6 +318,9 @@ func envDefinitions(state *skillstate.Store) []envregistry.Definition {
 		}
 	}
 	for _, def := range []envregistry.Definition{
+		{Skill: "baidu-netdisk", Name: "BDPAN_BIN", Kind: envregistry.KindPlain, Source: "compat"},
+		{Skill: "baidu-netdisk", Name: "BDPAN_CONFIG_FILE", Kind: envregistry.KindPlain, Source: "compat"},
+		{Skill: "baidu-netdisk", Name: "BDPAN_HOME", Kind: envregistry.KindPlain, Source: "compat"},
 		{Skill: "bark", Name: "BARK_SERVER_URL", Kind: envregistry.KindPlain, Source: "compat"},
 		{Skill: "bark", Name: "BARK_BASE_URL", Kind: envregistry.KindPlain, Source: "compat"},
 		{Skill: "bark", Name: "BARK_URL", Kind: envregistry.KindPlain, Source: "compat"},
@@ -350,6 +353,10 @@ func envDefinitions(state *skillstate.Store) []envregistry.Definition {
 		{Skill: "telegram-official", Name: "TELEGRAM_CHAT_ID", Kind: envregistry.KindPlain, Source: "compat"},
 		{Skill: "telegram-official", Name: "TELEGRAM_ENV_FILE", Kind: envregistry.KindPlain, Source: "compat"},
 		{Skill: "telegram-official", Name: "TG_CHAT_ID", Kind: envregistry.KindPlain, Source: "compat"},
+		{Skill: "xiaohongshu-mcp", Name: "XIAOHONGSHU_CHROME_BIN", Kind: envregistry.KindPlain, Source: "compat"},
+		{Skill: "xiaohongshu-mcp", Name: "XIAOHONGSHU_COOKIE_FILE", Kind: envregistry.KindPlain, Source: "compat"},
+		{Skill: "xiaohongshu-mcp", Name: "XIAOHONGSHU_LAUNCH_AGENT", Kind: envregistry.KindPlain, Source: "compat"},
+		{Skill: "xiaohongshu-mcp", Name: "XIAOHONGSHU_MCP_URL", Kind: envregistry.KindPlain, Source: "compat"},
 	} {
 		key := def.Skill + "\x00" + def.Name
 		if _, ok := result[key]; !ok {

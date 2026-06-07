@@ -312,6 +312,12 @@ func EnvDefinitionsForManifest(manifest Manifest) []EnvDefinition {
 
 func compatEnvDefinitions(skill string) []EnvDefinition {
 	switch skill {
+	case "baidu-netdisk":
+		return []EnvDefinition{
+			{Skill: skill, Name: "BDPAN_BIN", Kind: "plain", Source: "compat"},
+			{Skill: skill, Name: "BDPAN_CONFIG_FILE", Kind: "plain", Source: "compat"},
+			{Skill: skill, Name: "BDPAN_HOME", Kind: "plain", Source: "compat"},
+		}
 	case "weread-skills":
 		return []EnvDefinition{{Skill: skill, Name: "WEREAD_API_KEY", Kind: "secret", Source: "compat"}}
 	case "openlist":
@@ -334,6 +340,13 @@ func compatEnvDefinitions(skill string) []EnvDefinition {
 			{Skill: skill, Name: "SPOTIFY_CLIENT_ID", Kind: "plain", Source: "compat"},
 			{Skill: skill, Name: "SPOTIFY_REDIRECT_URI", Kind: "plain", Source: "compat"},
 			{Skill: skill, Name: "SPOTIFY_SCOPES", Kind: "plain", Source: "compat"},
+		}
+	case "xiaohongshu-mcp":
+		return []EnvDefinition{
+			{Skill: skill, Name: "XIAOHONGSHU_CHROME_BIN", Kind: "plain", Source: "compat"},
+			{Skill: skill, Name: "XIAOHONGSHU_COOKIE_FILE", Kind: "plain", Source: "compat"},
+			{Skill: skill, Name: "XIAOHONGSHU_LAUNCH_AGENT", Kind: "plain", Source: "compat"},
+			{Skill: skill, Name: "XIAOHONGSHU_MCP_URL", Kind: "plain", Source: "compat"},
 		}
 	default:
 		return nil

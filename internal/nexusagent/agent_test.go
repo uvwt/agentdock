@@ -13,6 +13,7 @@ func TestEnvDefinitionsIncludeLocalCompatVariables(t *testing.T) {
 		byKey[def.Skill+"\x00"+def.Name] = def
 	}
 	for _, expected := range []envregistry.Definition{
+		{Skill: "baidu-netdisk", Name: "BDPAN_CONFIG_FILE", Kind: envregistry.KindPlain},
 		{Skill: "cloudsaver", Name: "CLOUDSAVER_PASSWORD", Kind: envregistry.KindSecret},
 		{Skill: "cloudsaver", Name: "CLOUDSAVER_USERNAME", Kind: envregistry.KindPlain},
 		{Skill: "dida365-open-api", Name: "DIDA365_ACCESS_TOKEN", Kind: envregistry.KindSecret},
@@ -23,6 +24,7 @@ func TestEnvDefinitionsIncludeLocalCompatVariables(t *testing.T) {
 		{Skill: "spotify-web-api", Name: "SPOTIFY_SCOPES", Kind: envregistry.KindPlain},
 		{Skill: "telegram-official", Name: "TELEGRAM_CHAT_ID", Kind: envregistry.KindPlain},
 		{Skill: "telegram-official", Name: "DOCK_DEVICE", Kind: envregistry.KindPlain},
+		{Skill: "xiaohongshu-mcp", Name: "XIAOHONGSHU_MCP_URL", Kind: envregistry.KindPlain},
 	} {
 		got, ok := byKey[expected.Skill+"\x00"+expected.Name]
 		if !ok {

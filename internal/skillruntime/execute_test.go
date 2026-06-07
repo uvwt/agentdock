@@ -190,6 +190,35 @@ func TestCompatEnvDefinitionsIncludeSpotifyConfig(t *testing.T) {
 	}
 }
 
+func TestCompatEnvDefinitionsIncludeLocalToolConfig(t *testing.T) {
+	for skill, expected := range map[string][]EnvDefinition{
+		"baidu-netdisk": {
+			{Name: "BDPAN_BIN", Kind: "plain"},
+			{Name: "BDPAN_CONFIG_FILE", Kind: "plain"},
+			{Name: "BDPAN_HOME", Kind: "plain"},
+		},
+		"xiaohongshu-mcp": {
+			{Name: "XIAOHONGSHU_COOKIE_FILE", Kind: "plain"},
+			{Name: "XIAOHONGSHU_MCP_URL", Kind: "plain"},
+		},
+	} {
+		definitions := compatEnvDefinitions(skill)
+		byName := map[string]EnvDefinition{}
+		for _, def := range definitions {
+			byName[def.Name] = def
+		}
+		for _, want := range expected {
+			got, ok := byName[want.Name]
+			if !ok {
+				t.Fatalf("%s missing compat env %s", skill, want.Name)
+			}
+			if got.Kind != want.Kind {
+				t.Fatalf("%s/%s kind = %s, want %s", skill, want.Name, got.Kind, want.Kind)
+			}
+		}
+	}
+}
+
 func newTestRuntime(t *testing.T, script string) *Runtime {
 	t.Helper()
 	root := t.TempDir()
