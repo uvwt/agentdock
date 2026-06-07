@@ -21,7 +21,6 @@ import (
 )
 
 func Serve(server *mcp.Server, cfg config.Config) error {
-	authorizer := auth.Bearer{Token: cfg.AuthToken}
 	authRequired := cfg.AuthToken != "" || cfg.OAuthClientID != "" || cfg.OAuthServerURL != ""
 	oauthCodes := auth.NewOAuthStore()
 	mux := http.NewServeMux()
@@ -68,7 +67,18 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	mux.HandleFunc("/oauth/token", func(w http.ResponseWriter, r *http.Request) {
 		handleToken(w, r, cfg, oauthCodes)
 	})
-	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/mcp", mcpEndpointHandler(server, cfg))
+
+	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	httpServer := &http.Server{Addr: addr, Handler: loggingMiddleware(mux), ReadHeaderTimeout: 10 * time.Second}
+	logx.Info("http server listening", "addr", addr)
+	return httpServer.ListenAndServe()
+}
+
+func mcpEndpointHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc {
+	authorizer := auth.Bearer{Token: cfg.AuthToken}
+	authRequired := cfg.AuthToken != "" || cfg.OAuthClientID != "" || cfg.OAuthServerURL != ""
+	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -85,13 +95,13 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 			writeJSON(w, jsonrpc.Failure(nil, -32700, "Parse error", err.Error()))
 			return
 		}
-		writeJSON(w, server.Dispatch(r.Context(), req))
-	})
-
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	httpServer := &http.Server{Addr: addr, Handler: loggingMiddleware(mux), ReadHeaderTimeout: 10 * time.Second}
-	logx.Info("http server listening", "addr", addr)
-	return httpServer.ListenAndServe()
+		resp := server.Dispatch(r.Context(), req)
+		if req.ID == nil {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		writeJSON(w, resp)
+	}
 }
 
 func handleDesktopScreenshotArtifact(w http.ResponseWriter, r *http.Request, cfg config.Config) {
