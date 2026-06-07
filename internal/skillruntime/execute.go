@@ -321,6 +321,14 @@ func compatEnvDefinitions(skill string) []EnvDefinition {
 			{Skill: skill, Name: "OPENLIST_SESSION_FILE", Kind: "plain", Source: "compat"},
 			{Skill: skill, Name: "OPENLIST_INSECURE_TLS", Kind: "plain", Source: "compat"},
 		}
+	case "dida365-open-api":
+		return []EnvDefinition{
+			{Skill: skill, Name: "DIDA365_ACCESS_TOKEN", Kind: "secret", Source: "compat"},
+			{Skill: skill, Name: "DIDA365_CLIENT_ID", Kind: "plain", Source: "compat"},
+			{Skill: skill, Name: "DIDA365_CLIENT_SECRET", Kind: "secret", Source: "compat"},
+			{Skill: skill, Name: "DIDA365_REDIRECT_URI", Kind: "plain", Source: "compat"},
+			{Skill: skill, Name: "DIDA365_REGION", Kind: "plain", Source: "compat"},
+		}
 	default:
 		return nil
 	}

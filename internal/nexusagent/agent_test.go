@@ -15,6 +15,8 @@ func TestEnvDefinitionsIncludeLocalCompatVariables(t *testing.T) {
 	for _, expected := range []envregistry.Definition{
 		{Skill: "cloudsaver", Name: "CLOUDSAVER_PASSWORD", Kind: envregistry.KindSecret},
 		{Skill: "cloudsaver", Name: "CLOUDSAVER_USERNAME", Kind: envregistry.KindPlain},
+		{Skill: "dida365-open-api", Name: "DIDA365_ACCESS_TOKEN", Kind: envregistry.KindSecret},
+		{Skill: "dida365-open-api", Name: "DIDA365_REGION", Kind: envregistry.KindPlain},
 		{Skill: "douban-marks", Name: "DOUBAN_USER_ID", Kind: envregistry.KindPlain},
 		{Skill: "openlist", Name: "OPENLIST_SESSION_FILE", Kind: envregistry.KindPlain},
 		{Skill: "telegram-official", Name: "TELEGRAM_CHAT_ID", Kind: envregistry.KindPlain},
