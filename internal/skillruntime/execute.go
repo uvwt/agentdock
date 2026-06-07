@@ -14,9 +14,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
-const defaultMaxOutput = 1 << 20
+const (
+	defaultMaxOutput  = 1 << 20
+	defaultMaxCapture = 16 << 20
+)
 
 var envNamePattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 
@@ -133,8 +137,12 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	cmd.Dir = packageDir
 	cmd.Stdin = bytes.NewReader(req.Input)
 	cmd.Env = r.buildEnv(manifest, operation, binding)
-	stdout := newCappedBuffer(maxOutput)
-	stderr := newCappedBuffer(maxOutput)
+	captureLimit := maxOutput
+	if captureLimit < defaultMaxCapture {
+		captureLimit = defaultMaxCapture
+	}
+	stdout := newCappedBuffer(captureLimit)
+	stderr := newCappedBuffer(captureLimit)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
@@ -151,26 +159,40 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		waitErr = <-done
 	}
 	result.ExitCode = exitCode(waitErr)
-	result.Truncated = stdout.Truncated() || stderr.Truncated()
-	result.Stdout = redactText(stdout.String(), secrets)
-	result.Stderr = redactText(stderr.String(), secrets)
+	stdoutBytes := stdout.Bytes()
+	stderrBytes := stderr.Bytes()
+	stdoutTruncated := stdout.Truncated() || stdout.TotalBytes() > int64(maxOutput)
+	stderrTruncated := stderr.Truncated() || stderr.TotalBytes() > int64(maxOutput)
+	result.StdoutBytes = stdout.TotalBytes()
+	result.StderrBytes = stderr.TotalBytes()
+	result.StdoutTruncated = stdoutTruncated
+	result.StderrTruncated = stderrTruncated
+	result.Truncated = stdoutTruncated || stderrTruncated
+	result.Stdout = redactText(truncateText(stdoutBytes, maxOutput), secrets)
+	result.Stderr = redactText(truncateText(stderrBytes, maxOutput), secrets)
 	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 		return finish(runtimeError(ErrTimeout, "execute", fmt.Errorf("operation exceeded %s", timeout)))
-	}
-	if result.Truncated {
-		return finish(runtimeError(ErrOutputLimit, "output", fmt.Errorf("stdout or stderr exceeded %d bytes", maxOutput)))
 	}
 	if waitErr != nil {
 		return finish(runtimeError(ErrExecutionFailed, "execute", waitErr))
 	}
-	trimmedOutput := bytes.TrimSpace(stdout.Bytes())
+	trimmedOutput := bytes.TrimSpace(stdoutBytes)
 	if len(trimmedOutput) == 0 {
 		return finish(runtimeError(ErrOutputInvalid, "output", errors.New("stdout must contain final JSON")))
 	}
-	if err := ValidateJSON(operation.OutputSchema, trimmedOutput); err != nil {
-		return finish(runtimeError(ErrOutputInvalid, "output", err))
+	if stdout.Truncated() {
+		result.Output = truncatedJSONFallback(trimmedOutput, stdout.TotalBytes(), maxOutput, secrets)
+	} else {
+		if err := ValidateJSON(operation.OutputSchema, trimmedOutput); err != nil {
+			return finish(runtimeError(ErrOutputInvalid, "output", err))
+		}
+		redacted := redactJSON(trimmedOutput, secrets)
+		if len(redacted) > maxOutput {
+			result.Output = truncateJSONPreview(redacted, maxOutput)
+		} else {
+			result.Output = redacted
+		}
 	}
-	result.Output = redactJSON(trimmedOutput, secrets)
 	result.OK = true
 	r.emit(ctx, Event{Type: "run.evidence.created", RunID: req.RunID, Skill: req.Skill, Version: manifest.Metadata.Version, Operation: req.Operation, Timestamp: time.Now().UTC(), Payload: map[string]any{"kind": "operation_output", "exit_code": result.ExitCode, "truncated": result.Truncated}})
 	return finish(nil)
@@ -343,10 +365,11 @@ func redactJSONValue(value any, secrets []string) any {
 }
 
 type cappedBuffer struct {
-	mu        sync.Mutex
-	buffer    bytes.Buffer
-	limit     int
-	truncated bool
+	mu         sync.Mutex
+	buffer     bytes.Buffer
+	limit      int
+	totalBytes int64
+	truncated  bool
 }
 
 func newCappedBuffer(limit int) *cappedBuffer { return &cappedBuffer{limit: limit} }
@@ -355,6 +378,7 @@ func (b *cappedBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	written := len(p)
+	b.totalBytes += int64(written)
 	remaining := b.limit - b.buffer.Len()
 	if remaining <= 0 {
 		b.truncated = true
@@ -380,6 +404,100 @@ func (b *cappedBuffer) Truncated() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.truncated
+}
+
+func (b *cappedBuffer) TotalBytes() int64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.totalBytes
+}
+
+func truncateText(data []byte, limit int) string {
+	if limit <= 0 || len(data) <= limit {
+		return string(data)
+	}
+	end := limit
+	for end > 0 && !utf8.Valid(data[:end]) {
+		end--
+	}
+	return string(data[:end])
+}
+
+func truncateJSONPreview(data []byte, limit int) json.RawMessage {
+	if limit <= 0 || len(data) <= limit {
+		return append(json.RawMessage(nil), data...)
+	}
+	var value any
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err == nil {
+		collectionLimits := []int{64, 32, 16, 8, 4, 2, 1}
+		stringLimits := []int{2048, 1024, 512, 256, 128, 64}
+		for _, collectionLimit := range collectionLimits {
+			for _, stringLimit := range stringLimits {
+				preview := pruneJSONValue(value, collectionLimit, stringLimit)
+				encoded, err := json.Marshal(preview)
+				if err == nil && len(encoded) <= limit {
+					return encoded
+				}
+			}
+		}
+	}
+	return truncatedJSONFallback(data, int64(len(data)), limit, nil)
+}
+
+func pruneJSONValue(value any, collectionLimit, stringLimit int) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		if len(keys) > collectionLimit {
+			keys = keys[:collectionLimit]
+		}
+		result := make(map[string]any, len(keys))
+		for _, key := range keys {
+			result[key] = pruneJSONValue(typed[key], collectionLimit, stringLimit)
+		}
+		return result
+	case []any:
+		limit := len(typed)
+		if limit > collectionLimit {
+			limit = collectionLimit
+		}
+		result := make([]any, 0, limit)
+		for _, item := range typed[:limit] {
+			result = append(result, pruneJSONValue(item, collectionLimit, stringLimit))
+		}
+		return result
+	case string:
+		if len(typed) <= stringLimit {
+			return typed
+		}
+		return truncateText([]byte(typed), stringLimit)
+	default:
+		return value
+	}
+}
+
+func truncatedJSONFallback(data []byte, originalBytes int64, limit int, secrets []string) json.RawMessage {
+	previewLimit := limit / 2
+	if previewLimit < 32 {
+		previewLimit = 32
+	}
+	preview := redactText(truncateText(data, previewLimit), secrets)
+	payload := map[string]any{
+		"truncated":      true,
+		"original_bytes": originalBytes,
+		"preview":        preview,
+	}
+	encoded, _ := json.Marshal(payload)
+	if limit > 0 && len(encoded) > limit {
+		return json.RawMessage(`{"truncated":true}`)
+	}
+	return encoded
 }
 
 var _ io.Writer = (*cappedBuffer)(nil)

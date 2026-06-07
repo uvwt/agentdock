@@ -89,21 +89,25 @@ type RunRequest struct {
 }
 
 type RunResult struct {
-	RunID       string          `json:"run_id,omitempty"`
-	Skill       string          `json:"skill"`
-	Version     string          `json:"version"`
-	Operation   string          `json:"operation"`
-	OK          bool            `json:"ok"`
-	ExitCode    int             `json:"exit_code"`
-	Output      json.RawMessage `json:"output,omitempty"`
-	Stdout      string          `json:"stdout,omitempty"`
-	Stderr      string          `json:"stderr,omitempty"`
-	Truncated   bool            `json:"truncated,omitempty"`
-	ErrorCode   string          `json:"error_code,omitempty"`
-	Error       string          `json:"error,omitempty"`
-	DurationMS  int64           `json:"duration_ms"`
-	StartedAt   time.Time       `json:"started_at"`
-	CompletedAt time.Time       `json:"completed_at"`
+	RunID           string          `json:"run_id,omitempty"`
+	Skill           string          `json:"skill"`
+	Version         string          `json:"version"`
+	Operation       string          `json:"operation"`
+	OK              bool            `json:"ok"`
+	ExitCode        int             `json:"exit_code"`
+	Output          json.RawMessage `json:"output,omitempty"`
+	Stdout          string          `json:"stdout,omitempty"`
+	Stderr          string          `json:"stderr,omitempty"`
+	StdoutBytes     int64           `json:"stdout_bytes,omitempty"`
+	StderrBytes     int64           `json:"stderr_bytes,omitempty"`
+	StdoutTruncated bool            `json:"stdout_truncated,omitempty"`
+	StderrTruncated bool            `json:"stderr_truncated,omitempty"`
+	Truncated       bool            `json:"truncated,omitempty"`
+	ErrorCode       string          `json:"error_code,omitempty"`
+	Error           string          `json:"error,omitempty"`
+	DurationMS      int64           `json:"duration_ms"`
+	StartedAt       time.Time       `json:"started_at"`
+	CompletedAt     time.Time       `json:"completed_at"`
 }
 
 type VerificationResult struct {

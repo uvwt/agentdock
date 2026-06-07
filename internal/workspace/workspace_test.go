@@ -26,6 +26,10 @@ func TestResolveExistingHostPolicyAllowsAbsolutePath(t *testing.T) {
 	if err := os.WriteFile(file, []byte("ok"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
+	realFile, err := filepath.EvalSymlinks(file)
+	if err != nil {
+		t.Fatalf("EvalSymlinks() error = %v", err)
+	}
 
 	ws, err := New(root, true)
 	if err != nil {
@@ -36,11 +40,11 @@ func TestResolveExistingHostPolicyAllowsAbsolutePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveExisting() error = %v", err)
 	}
-	if p.Abs != file {
-		t.Fatalf("ResolveExisting() Abs = %q, want %q", p.Abs, file)
+	if p.Abs != realFile {
+		t.Fatalf("ResolveExisting() Abs = %q, want %q", p.Abs, realFile)
 	}
-	if p.Display != file {
-		t.Fatalf("ResolveExisting() Display = %q, want %q", p.Display, file)
+	if p.Display != realFile {
+		t.Fatalf("ResolveExisting() Display = %q, want %q", p.Display, realFile)
 	}
 }
 
@@ -52,6 +56,10 @@ func TestResolveExistingHostPolicyExpandsHomePath(t *testing.T) {
 	if err := os.WriteFile(file, []byte("ok"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
+	realFile, err := filepath.EvalSymlinks(file)
+	if err != nil {
+		t.Fatalf("EvalSymlinks() error = %v", err)
+	}
 
 	ws, err := New(root, true)
 	if err != nil {
@@ -62,7 +70,7 @@ func TestResolveExistingHostPolicyExpandsHomePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveExisting() error = %v", err)
 	}
-	if p.Abs != file {
-		t.Fatalf("ResolveExisting() Abs = %q, want %q", p.Abs, file)
+	if p.Abs != realFile {
+		t.Fatalf("ResolveExisting() Abs = %q, want %q", p.Abs, realFile)
 	}
 }
