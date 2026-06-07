@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -43,7 +42,7 @@ func (r *Runtime) Config() config.Config           { return r.cfg }
 func (r *Runtime) Workspace() *workspace.Workspace { return r.ws }
 
 func (r *Runtime) ToolNames() []string {
-	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "exec_command", "session_control", "configure_github_token", "check_github_repo_access", "github_create_repo", "skill_manage", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "request_permissions", "view_image"}
+	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "edit_file", "exec_command", "session_control", "configure_github_token", "check_github_repo_access", "github_create_repo", "skill_manage", "env_manage", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "request_permissions", "view_image"}
 	if r.cfg.MemoryEndpoint != "" {
 		all = append(all, "memory_bootstrap", "memory_list", "memory_read", "memory_search", "memory_pack", "memory_edit", "memory_sync_status", "memory_lint")
 	}
@@ -112,6 +111,8 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.searchText(args)
 	case "apply_patch":
 		return r.applyPatch(ctx, args)
+	case "edit_file":
+		return r.editFile(args)
 	case "exec_command":
 		return r.execCommand(ctx, args)
 	case "session_control":
@@ -134,6 +135,8 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.githubCreateRepo(args)
 	case "skill_manage":
 		return r.skillManage(ctx, args)
+	case "env_manage":
+		return r.envManage(ctx, args)
 	case "memory_bootstrap":
 		return r.memoryBootstrap(ctx, args)
 	case "memory_list":
@@ -300,7 +303,14 @@ func (r *Runtime) readFile(args map[string]any) (Result, error) {
 		return nil, toolError("UNSUPPORTED_ENCODING", "file is not valid utf-8", "validation")
 	}
 	content, meta := sliceText(string(data), intArg(args, "start_line", 1), intArg(args, "end_line", 0), intArg(args, "max_bytes", 262144))
-	return Result{"ok": true, "path": p.Display, "content": content, "encoding": "utf-8", "size_bytes": len(data), "truncated": meta.Truncated, "start_line": meta.Start, "end_line": meta.End, "total_lines": meta.Total}, nil
+	result := Result{"ok": true, "path": p.Display, "content": content, "encoding": "utf-8", "size_bytes": len(data), "truncated": meta.Truncated, "start_line": meta.Start, "end_line": meta.End, "total_lines": meta.Total}
+	if meta.NextStartLine > 0 {
+		result["next_start_line"] = meta.NextStartLine
+	}
+	if meta.TruncatedReason != "" {
+		result["truncated_reason"] = meta.TruncatedReason
+	}
+	return result, nil
 }
 
 func (r *Runtime) listDir(args map[string]any) (Result, error) {
@@ -453,93 +463,6 @@ func (r *Runtime) listFiles(args map[string]any) (Result, error) {
 		return nil
 	})
 	return Result{"ok": err == nil, "path": p.Display, "files": files, "truncated": maxResults > 0 && len(files) >= maxResults}, err
-}
-
-func (r *Runtime) searchText(args map[string]any) (Result, error) {
-	query := stringArg(args, "query", "")
-	if query == "" {
-		return nil, toolError("INVALID_ARGUMENT", "query is required", "validation")
-	}
-	p, err := r.ws.ResolveExisting(stringArg(args, "path", "."))
-	if err != nil {
-		return nil, err
-	}
-	caseSensitive := boolArg(args, "case_sensitive", false)
-	useRegex := boolArg(args, "regex", false)
-	includeIgnored := boolArg(args, "include_ignored", false)
-	includeGlobs := stringSliceArg(args, "include_globs")
-	if glob := stringArg(args, "glob", ""); glob != "" {
-		includeGlobs = append(includeGlobs, glob)
-	}
-	excludeGlobs := stringSliceArg(args, "exclude_globs")
-	maxResults := intArg(args, "max_results", 100)
-	contextLines := intArg(args, "context_lines", 0)
-	needle := query
-	if !caseSensitive {
-		needle = strings.ToLower(needle)
-	}
-	var re *regexp.Regexp
-	if useRegex {
-		pattern := query
-		if !caseSensitive {
-			pattern = "(?i)" + pattern
-		}
-		re, err = regexp.Compile(pattern)
-		if err != nil {
-			return nil, err
-		}
-	}
-	matches := make([]map[string]any, 0)
-	ignore := loadIgnoreMatcher(r.ws.Root())
-	_ = filepath.WalkDir(p.Abs, func(abs string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return nil
-		}
-		rel, _ := r.ws.Relative(abs)
-		if !includeIgnored && ignore.Ignored(rel, d.IsDir()) {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if d.IsDir() {
-			if !includeIgnored && abs != p.Abs && shouldSkipDir(d.Name()) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if len(includeGlobs) > 0 && !matchesAny(rel, includeGlobs) {
-			return nil
-		}
-		if matchesAny(rel, excludeGlobs) {
-			return nil
-		}
-		data, err := os.ReadFile(abs)
-		if err != nil || looksBinary(data) {
-			return nil
-		}
-		lines := strings.Split(string(data), "\n")
-		for i, line := range lines {
-			probe := line
-			if !caseSensitive {
-				probe = strings.ToLower(probe)
-			}
-			ok := strings.Contains(probe, needle)
-			if re != nil {
-				ok = re.MatchString(line)
-			}
-			if !ok {
-				continue
-			}
-			before, after := contextAround(lines, i, contextLines)
-			matches = append(matches, map[string]any{"path": rel, "line": i + 1, "preview": truncateString(line, 500), "before": before, "after": after})
-			if maxResults > 0 && len(matches) >= maxResults {
-				return filepath.SkipAll
-			}
-		}
-		return nil
-	})
-	return Result{"ok": true, "query": query, "matches": matches, "total_matches": len(matches), "truncated": maxResults > 0 && len(matches) >= maxResults}, nil
 }
 
 func (r *Runtime) viewImage(args map[string]any) (Result, error) {

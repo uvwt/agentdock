@@ -37,8 +37,10 @@ func outputSchema(name string) map[string]any {
 		props["encoding"] = stringProp("Detected text encoding.")
 		props["size_bytes"] = intProp("File size in bytes.")
 		props["truncated"] = boolProp("Whether output was truncated.")
+		props["truncated_reason"] = stringProp("Reason output was truncated.")
 		props["start_line"] = intProp("Returned start line.")
 		props["end_line"] = intProp("Returned end line.")
+		props["next_start_line"] = intProp("Next line to read when output was truncated.")
 		props["total_lines"] = intProp("Total line count.")
 	case "list_dir":
 		props["path"] = stringProp("Workspace-relative directory path.")
@@ -50,10 +52,25 @@ func outputSchema(name string) map[string]any {
 		props["truncated"] = boolProp("Whether files were truncated.")
 	case "search_text":
 		props["matches"] = arrayProp("Text search matches.")
+		props["engine"] = stringProp("Search engine used: rg or go_fallback.")
 		props["truncated"] = boolProp("Whether matches were truncated.")
 	case "apply_patch":
 		props["summary"] = stringProp("Patch result summary.")
 		props["dry_run"] = boolProp("Whether this was a dry run.")
+		props["affected_files"] = arrayProp("Files affected by the patch.")
+		props["diff_preview"] = stringProp("Unified diff preview when available.")
+		props["files_changed"] = intProp("Number of changed files.")
+		props["insertions"] = intProp("Number of inserted lines.")
+		props["deletions"] = intProp("Number of deleted lines.")
+		props["diagnostic"] = objectProp("Structured patch diagnostic.")
+	case "edit_file":
+		props["path"] = stringProp("Workspace-relative file path.")
+		props["dry_run"] = boolProp("Whether this was a dry run.")
+		props["matches"] = intProp("Number of exact old-text matches.")
+		props["changed"] = boolProp("Whether content changed.")
+		props["diff_preview"] = stringProp("Unified diff preview.")
+		props["truncated"] = boolProp("Whether diff preview was truncated.")
+		props["summary"] = stringProp("Edit result summary.")
 	case "exec_command", "session_control", "write_stdin", "session_status", "kill_session":
 		props["session_id"] = stringProp("Command session id.")
 		props["status"] = stringProp("Session status.")
@@ -102,6 +119,16 @@ func outputSchema(name string) map[string]any {
 		props["manifest"] = objectProp("Parsed agentdock.yaml manifest.")
 		props["binding_configured"] = boolProp("Whether a binding file exists for the Skill.")
 		props["result"] = objectProp("Install, run, or rollback result.")
+	case "env_manage":
+		props["action"] = stringProp("Completed Env action.")
+		props["skill"] = stringProp("Skill name.")
+		props["skills"] = arrayProp("Skill env summaries.")
+		props["vars"] = arrayProp("Redacted env entries.")
+		props["var"] = objectProp("Redacted env entry.")
+		props["count"] = intProp("Env item count.")
+		props["deleted"] = boolProp("Whether a variable was deleted.")
+		props["result"] = objectProp("Migration or verification result.")
+		props["message"] = stringProp("Verification message.")
 	case "memory_list":
 		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
 		props["entries"] = arrayProp("Memory entries.")

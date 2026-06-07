@@ -41,6 +41,7 @@ func inputSchema(name string) map[string]any {
 		props["query"] = stringProp("Text or regex query.")
 		props["regex"] = boolProp("Treat query as regex.")
 		props["case_sensitive"] = boolProp("Use case-sensitive search.")
+		props["include_hidden"] = boolProp("Include hidden files and directories.")
 		props["include_globs"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 		props["glob"] = stringProp("Single include glob.")
 		props["exclude_globs"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
@@ -53,6 +54,15 @@ func inputSchema(name string) map[string]any {
 		props["repo_path"] = stringProp("Alias for workdir when applying a patch inside a specific repository.")
 		props["dry_run"] = boolProp("Validate patch without writing.")
 		required = []string{"patch"}
+	case "edit_file":
+		props["path"] = stringProp("Workspace-relative file path.")
+		props["old"] = stringProp("Exact UTF-8 text to replace.")
+		props["new"] = stringProp("Replacement UTF-8 text.")
+		props["replace_all"] = boolProp("Replace every match instead of only the first.")
+		props["expected_matches"] = intProp("Required number of matches. Defaults to 1.")
+		props["dry_run"] = boolProp("Preview the edit without writing.")
+		props["max_diff_bytes"] = intProp("Maximum diff preview bytes.")
+		required = []string{"path", "old", "new"}
 	case "exec_command":
 		props["cmd"] = stringProp("Command to run.")
 		props["workdir"] = stringProp("Workspace-relative working directory.")
@@ -108,6 +118,21 @@ func inputSchema(name string) map[string]any {
 		props["run_id"] = stringProp("Optional run identifier.")
 		props["timeout_ms"] = intProp("Optional run timeout in milliseconds, capped by the operation timeout.")
 		props["max_output_bytes"] = intProp("Maximum stdout/stderr bytes for run.")
+		required = []string{"action"}
+	case "env_manage":
+		props["action"] = map[string]any{"type": "string", "description": "Env action: list, inspect, set, delete, verify, or migrate-from-agentdock-env.", "enum": []string{"list", "inspect", "set", "delete", "verify", "migrate-from-agentdock-env"}}
+		props["skill"] = stringProp("Skill name for inspect, set, delete, or verify.")
+		props["name"] = stringProp("Environment variable name for set/delete.")
+		props["kind"] = map[string]any{"type": "string", "description": "Variable kind.", "enum": []string{"plain", "secret"}}
+		props["value"] = stringProp("Variable value for set. Responses never echo this value.")
+		props["operation"] = stringProp("Skill operation to run for verify. Defaults to status.")
+		props["input_json"] = stringProp("Optional raw JSON input for verify operation.")
+		props["binding"] = stringProp("Optional binding name for verify.")
+		props["version"] = stringProp("Optional Skill version for verify.")
+		props["channel"] = stringProp("Optional Skill channel for verify.")
+		props["timeout_ms"] = intProp("Optional verify timeout in milliseconds.")
+		props["max_output_bytes"] = intProp("Maximum verify stdout/stderr bytes.")
+		props["env_file"] = stringProp("Path to agentdock.env for migrate-from-agentdock-env. Defaults to ~/agentdock-runtime/agentdock.env.")
 		required = []string{"action"}
 	case "memory_bootstrap":
 		props["project"] = stringProp("Project key to bootstrap. Defaults to agentdock.")

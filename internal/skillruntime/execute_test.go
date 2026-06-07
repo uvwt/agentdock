@@ -12,6 +12,12 @@ import (
 	"github.com/uvwt/agentdock/internal/skillstate"
 )
 
+type testEnvProvider struct{}
+
+func (testEnvProvider) EnvForSkill(skill string, definitions []EnvDefinition) (map[string]string, []string, error) {
+	return map[string]string{"WEREAD_API_KEY": "wrk-secret-value"}, []string{"wrk-secret-value"}, nil
+}
+
 func TestRunTruncatesLargeJSONWithoutFailing(t *testing.T) {
 	rt := newTestRuntime(t, `#!/bin/sh
 printf '{"ok":true,"items":["'
@@ -112,6 +118,33 @@ func TestRunPreservesSmallJSON(t *testing.T) {
 	}
 	if _, ok := output["truncated"]; ok {
 		t.Fatalf("small output should not use truncated fallback: %s", result.Output)
+	}
+}
+
+func TestRunInjectsRegistryEnvAndRedactsSecret(t *testing.T) {
+	rt := newTestRuntime(t, `#!/bin/sh
+printf '{"ok":true,"seen":"%s"}\n' "$WEREAD_API_KEY"
+`)
+	rt.EnvProvider = testEnvProvider{}
+
+	result, err := rt.Run(context.Background(), RunRequest{
+		Skill:     "output-test",
+		Operation: "run",
+		Input:     json.RawMessage(`{}`),
+		Timeout:   10 * time.Second,
+		MaxOutput: 1024,
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if !result.OK {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	if string(result.Output) != `{"ok":true,"seen":"[REDACTED]"}` {
+		t.Fatalf("secret was not redacted from output: %s", result.Output)
+	}
+	if result.Stdout != "{\"ok\":true,\"seen\":\"[REDACTED]\"}\n" {
+		t.Fatalf("secret was not redacted from stdout: %q", result.Stdout)
 	}
 }
 

@@ -19,6 +19,10 @@ type SkillRouter interface {
 	ExecuteSkillCommand(context.Context, string, json.RawMessage, ProgressReporter) (HandlerResult, error)
 }
 
+type EnvManager interface {
+	ExecuteEnvCommand(context.Context, json.RawMessage, ProgressReporter) (HandlerResult, error)
+}
+
 type ServiceController interface {
 	InspectService(context.Context, json.RawMessage) (any, error)
 	RestartService(context.Context, json.RawMessage) (any, error)
@@ -36,6 +40,7 @@ type AdapterDependencies struct {
 	Health      HealthChecker
 	Memory      MemorySyncer
 	Skills      SkillRouter
+	Env         EnvManager
 	Services    ServiceController
 	Diagnostics DiagnosticsCollector
 	Reloader    Reloader
@@ -88,6 +93,12 @@ func RegisterAdapters(executor *Executor, dependencies AdapterDependencies) erro
 			}
 			output, err := dependencies.Reloader.Reload(ctx, payload)
 			return HandlerResult{Output: output}, err
+		}},
+		FuncHandler{CommandType: "env.manage", Run: func(ctx context.Context, payload json.RawMessage, progress ProgressReporter) (HandlerResult, error) {
+			if dependencies.Env == nil {
+				return HandlerResult{}, missingDependency("env.manage")
+			}
+			return dependencies.Env.ExecuteEnvCommand(ctx, payload, progress)
 		}},
 	}
 	for _, commandType := range []string{"skill.install", "skill.run", "skill.rollback"} {

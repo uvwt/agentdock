@@ -1,0 +1,61 @@
+package envregistry
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestStoreSetInspectAndMigrateRedactsValues(t *testing.T) {
+	root := t.TempDir()
+	store, err := New(root, func() []Definition {
+		return []Definition{{Skill: "weread-skills", Name: "WEREAD_API_KEY", Kind: KindSecret, Source: "compat"}}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := store.Set("weread-skills", "WEREAD_API_KEY", KindSecret, "wrk-secret-value")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !entry.Configured || entry.Length != len("wrk-secret-value") || entry.SHA256Prefix == "" {
+		t.Fatalf("unexpected entry: %#v", entry)
+	}
+	if entry.SHA256Prefix == "wrk-secret-value" {
+		t.Fatal("secret value leaked into sha prefix")
+	}
+	valuesPath := filepath.Join(root, "values", "weread-skills.json")
+	info, err := os.Stat(valuesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("values mode = %o, want 600", got)
+	}
+	items, err := store.Inspect("weread-skills")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || !items[0].Configured || items[0].Length == 0 {
+		t.Fatalf("unexpected inspect result: %#v", items)
+	}
+
+	envFile := filepath.Join(root, "agentdock.env")
+	if err := os.WriteFile(envFile, []byte("export AGENTDOCK_AUTH_TOKEN=\"keep\"\nWEREAD_API_KEY=wrk-migrated\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := store.MigrateFromEnvFile(envFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !migrated.Changed || !migrated.RestartNeeded || migrated.BackupFile == "" {
+		t.Fatalf("unexpected migration result: %#v", migrated)
+	}
+	after, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != "export AGENTDOCK_AUTH_TOKEN=\"keep\"\n" {
+		t.Fatalf("unexpected migrated env file: %q", after)
+	}
+}

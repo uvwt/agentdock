@@ -17,6 +17,7 @@ import (
 	contracts "github.com/uvwt/agentdock/generated/nexuscontracts"
 	"github.com/uvwt/agentdock/internal/commandqueue"
 	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/envregistry"
 	"github.com/uvwt/agentdock/internal/logx"
 	"github.com/uvwt/agentdock/internal/nexusclient"
 	"github.com/uvwt/agentdock/internal/skillruntime"
@@ -76,10 +77,18 @@ func Start(ctx context.Context, cfg config.Config) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	envStore, err := envregistry.New(filepath.Join(stateDir, "env"), func() []envregistry.Definition {
+		return envDefinitions(skillStore)
+	})
+	if err != nil {
+		return false, err
+	}
+	skillRuntime.EnvProvider = nexusEnvProvider{store: envStore}
 
 	if err := commandqueue.RegisterAdapters(executor, commandqueue.AdapterDependencies{
 		Health: healthChecker{cfg: cfg},
 		Skills: skillRouter{runtime: skillRuntime},
+		Env:    envRouter{store: envStore, runtime: skillRuntime},
 	}); err != nil {
 		return false, err
 	}
@@ -210,6 +219,122 @@ func (h healthChecker) Health(context.Context) (any, error) {
 }
 
 type skillRouter struct{ runtime *skillruntime.Runtime }
+
+type nexusEnvProvider struct{ store *envregistry.Store }
+
+func (p nexusEnvProvider) EnvForSkill(skill string, definitions []skillruntime.EnvDefinition) (map[string]string, []string, error) {
+	items := make([]envregistry.Definition, 0, len(definitions))
+	for _, def := range definitions {
+		items = append(items, envregistry.Definition{Skill: def.Skill, Name: def.Name, Kind: def.Kind, Source: def.Source})
+	}
+	return p.store.EnvForSkill(skill, items)
+}
+
+type envRouter struct {
+	store   *envregistry.Store
+	runtime *skillruntime.Runtime
+}
+
+func (r envRouter) ExecuteEnvCommand(ctx context.Context, payload json.RawMessage, _ commandqueue.ProgressReporter) (commandqueue.HandlerResult, error) {
+	var request struct {
+		Action         string `json:"action"`
+		Skill          string `json:"skill,omitempty"`
+		Name           string `json:"name,omitempty"`
+		Kind           string `json:"kind,omitempty"`
+		Value          string `json:"value,omitempty"`
+		Operation      string `json:"operation,omitempty"`
+		EnvFile        string `json:"env_file,omitempty"`
+		TimeoutMS      int    `json:"timeout_ms,omitempty"`
+		MaxOutputBytes int    `json:"max_output_bytes,omitempty"`
+	}
+	if err := json.Unmarshal(payload, &request); err != nil {
+		return commandqueue.HandlerResult{}, err
+	}
+	action := strings.ToLower(strings.TrimSpace(request.Action))
+	switch action {
+	case "list":
+		result, err := r.store.List()
+		return commandqueue.HandlerResult{Output: map[string]any{"ok": err == nil, "action": action, "skills": result, "count": len(result)}}, err
+	case "inspect":
+		result, err := r.store.Inspect(request.Skill)
+		return commandqueue.HandlerResult{Output: map[string]any{"ok": err == nil, "action": action, "skill": request.Skill, "vars": result, "count": len(result)}}, err
+	case "set":
+		entry, err := r.store.Set(request.Skill, request.Name, request.Kind, request.Value)
+		return commandqueue.HandlerResult{Output: map[string]any{"ok": err == nil, "action": action, "skill": request.Skill, "var": entry}}, err
+	case "delete":
+		deleted, err := r.store.Delete(request.Skill, request.Name)
+		return commandqueue.HandlerResult{Output: map[string]any{"ok": err == nil, "action": action, "skill": request.Skill, "name": request.Name, "deleted": deleted}}, err
+	case "verify":
+		operation := strings.TrimSpace(request.Operation)
+		if operation == "" {
+			operation = "status"
+		}
+		run, err := r.runtime.Run(ctx, skillruntime.RunRequest{
+			Skill: request.Skill, Operation: operation, Input: json.RawMessage(`{}`),
+			Timeout: time.Duration(request.TimeoutMS) * time.Millisecond, MaxOutput: request.MaxOutputBytes,
+		})
+		ok := err == nil && run.OK
+		message := "ok"
+		if err != nil {
+			message = err.Error()
+		} else if !run.OK {
+			message = run.Error
+		}
+		_ = r.store.RecordVerification(request.Skill, ok, message)
+		return commandqueue.HandlerResult{Output: map[string]any{"ok": ok, "action": action, "skill": request.Skill, "result": run, "message": message}}, err
+	case "migrate-from-agentdock-env":
+		envFile := strings.TrimSpace(request.EnvFile)
+		if envFile == "" {
+			envFile = filepath.Join(os.Getenv("HOME"), "agentdock-runtime", "agentdock.env")
+		}
+		result, err := r.store.MigrateFromEnvFile(envFile)
+		return commandqueue.HandlerResult{Output: map[string]any{"ok": err == nil, "action": action, "result": result}}, err
+	default:
+		return commandqueue.HandlerResult{}, fmt.Errorf("unsupported env action %q", action)
+	}
+}
+
+func envDefinitions(state *skillstate.Store) []envregistry.Definition {
+	result := map[string]envregistry.Definition{}
+	if state != nil {
+		if names, err := state.ListSkills(); err == nil {
+			for _, name := range names {
+				selection, err := state.Snapshot(name)
+				if err != nil || selection.ActiveVersion == "" {
+					continue
+				}
+				packageDir, err := state.InstalledPath(name, selection.ActiveVersion)
+				if err != nil {
+					continue
+				}
+				manifest, err := skillruntime.LoadManifest(packageDir)
+				if err != nil {
+					continue
+				}
+				for _, def := range skillruntime.EnvDefinitionsForManifest(manifest) {
+					result[def.Skill+"\x00"+def.Name] = envregistry.Definition{Skill: def.Skill, Name: def.Name, Kind: def.Kind, Source: def.Source}
+				}
+			}
+		}
+	}
+	for _, def := range []envregistry.Definition{
+		{Skill: "weread-skills", Name: "WEREAD_API_KEY", Kind: envregistry.KindSecret, Source: "compat"},
+		{Skill: "openlist", Name: "OPENLIST_URL", Kind: envregistry.KindPlain, Source: "compat"},
+		{Skill: "openlist", Name: "OPENLIST_TOKEN", Kind: envregistry.KindSecret, Source: "compat"},
+		{Skill: "openlist", Name: "OPENLIST_SESSION_FILE", Kind: envregistry.KindPlain, Source: "compat"},
+		{Skill: "openlist", Name: "OPENLIST_INSECURE_TLS", Kind: envregistry.KindPlain, Source: "compat"},
+	} {
+		key := def.Skill + "\x00" + def.Name
+		if _, ok := result[key]; !ok {
+			result[key] = def
+		}
+	}
+	items := make([]envregistry.Definition, 0, len(result))
+	for _, def := range result {
+		items = append(items, def)
+	}
+	return items
+}
 
 func (r skillRouter) ExecuteSkillCommand(ctx context.Context, commandType string, payload json.RawMessage, progress commandqueue.ProgressReporter) (commandqueue.HandlerResult, error) {
 	if r.runtime == nil {

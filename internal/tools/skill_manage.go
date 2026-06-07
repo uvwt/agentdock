@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/envregistry"
 	"github.com/uvwt/agentdock/internal/skillruntime"
 	"github.com/uvwt/agentdock/internal/skillstate"
 )
@@ -19,6 +20,7 @@ type skillManager struct {
 	runtime  *skillruntime.Runtime
 	state    *skillstate.Store
 	bindings *skillruntime.BindingStore
+	env      *envregistry.Store
 }
 
 func newSkillManager(cfg config.Config) (*skillManager, error) {
@@ -34,11 +36,34 @@ func newSkillManager(cfg config.Config) (*skillManager, error) {
 	if err != nil {
 		return nil, err
 	}
+	manager := &skillManager{state: state, bindings: bindings}
+	envStore, err := envregistry.New(filepath.Join(stateDir, "env"), manager.envDefinitions)
+	if err != nil {
+		return nil, err
+	}
 	runtime, err := skillruntime.New(state, bindings)
 	if err != nil {
 		return nil, err
 	}
-	return &skillManager{runtime: runtime, state: state, bindings: bindings}, nil
+	manager.runtime = runtime
+	manager.env = envStore
+	runtime.EnvProvider = skillEnvProvider{store: envStore}
+	return manager, nil
+}
+
+type skillEnvProvider struct{ store *envregistry.Store }
+
+func (p skillEnvProvider) EnvForSkill(skill string, definitions []skillruntime.EnvDefinition) (map[string]string, []string, error) {
+	converted := make([]envregistry.Definition, 0, len(definitions))
+	for _, def := range definitions {
+		converted = append(converted, envregistry.Definition{
+			Skill:  def.Skill,
+			Name:   def.Name,
+			Kind:   def.Kind,
+			Source: def.Source,
+		})
+	}
+	return p.store.EnvForSkill(skill, converted)
 }
 
 func (r *Runtime) skillManage(ctx context.Context, args map[string]any) (Result, error) {
@@ -59,6 +84,53 @@ func (r *Runtime) skillManage(ctx context.Context, args map[string]any) (Result,
 			"action":  action,
 			"allowed": []string{"list", "inspect", "install", "run", "rollback"},
 		})
+	}
+}
+
+func (m *skillManager) envDefinitions() []envregistry.Definition {
+	names, err := m.state.ListSkills()
+	if err != nil {
+		return compatEnvDefinitions()
+	}
+	defsByKey := map[string]envregistry.Definition{}
+	for _, name := range names {
+		selection, err := m.state.Snapshot(name)
+		if err != nil || selection.ActiveVersion == "" {
+			continue
+		}
+		packageDir, err := m.state.InstalledPath(name, selection.ActiveVersion)
+		if err != nil {
+			continue
+		}
+		manifest, err := skillruntime.LoadManifest(packageDir)
+		if err != nil {
+			continue
+		}
+		for _, def := range skillruntime.EnvDefinitionsForManifest(manifest) {
+			key := def.Skill + "\x00" + def.Name
+			defsByKey[key] = envregistry.Definition{Skill: def.Skill, Name: def.Name, Kind: def.Kind, Source: def.Source}
+		}
+	}
+	for _, def := range compatEnvDefinitions() {
+		key := def.Skill + "\x00" + def.Name
+		if _, ok := defsByKey[key]; !ok {
+			defsByKey[key] = def
+		}
+	}
+	defs := make([]envregistry.Definition, 0, len(defsByKey))
+	for _, def := range defsByKey {
+		defs = append(defs, def)
+	}
+	return defs
+}
+
+func compatEnvDefinitions() []envregistry.Definition {
+	return []envregistry.Definition{
+		{Skill: "weread-skills", Name: "WEREAD_API_KEY", Kind: envregistry.KindSecret, Source: "compat"},
+		{Skill: "openlist", Name: "OPENLIST_URL", Kind: envregistry.KindPlain, Source: "compat"},
+		{Skill: "openlist", Name: "OPENLIST_TOKEN", Kind: envregistry.KindSecret, Source: "compat"},
+		{Skill: "openlist", Name: "OPENLIST_SESSION_FILE", Kind: envregistry.KindPlain, Source: "compat"},
+		{Skill: "openlist", Name: "OPENLIST_INSECURE_TLS", Kind: envregistry.KindPlain, Source: "compat"},
 	}
 }
 

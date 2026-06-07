@@ -25,12 +25,24 @@ type Reporter interface {
 type Runtime struct {
 	State       *skillstate.Store
 	Bindings    *BindingStore
+	EnvProvider EnvProvider
 	HTTPClient  *http.Client
 	Reporter    Reporter
 	Events      EventSink
 	Authorizer  PermissionAuthorizer
 	BaseEnv     []string
 	MaxDownload int64
+}
+
+type EnvProvider interface {
+	EnvForSkill(skill string, definitions []EnvDefinition) (map[string]string, []string, error)
+}
+
+type EnvDefinition struct {
+	Skill  string
+	Name   string
+	Kind   string
+	Source string
 }
 
 func New(state *skillstate.Store, bindings *BindingStore) (*Runtime, error) {

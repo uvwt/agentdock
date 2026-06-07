@@ -115,6 +115,12 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if err != nil {
 		return finish(err)
 	}
+	envRegistryValues, envRegistrySecrets, err := r.loadEnvRegistry(manifest)
+	if err != nil {
+		return finish(err)
+	}
+	secrets = append(secrets, envRegistrySecrets...)
+	sort.Slice(secrets, func(i, j int) bool { return len(secrets[i]) > len(secrets[j]) })
 	entrypoint, err := safePackageJoin(packageDir, manifest.Spec.Entrypoint)
 	if err != nil {
 		return finish(runtimeError(ErrManifestInvalid, "entrypoint", err))
@@ -136,7 +142,7 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	configureProcessGroup(cmd)
 	cmd.Dir = packageDir
 	cmd.Stdin = bytes.NewReader(req.Input)
-	cmd.Env = r.buildEnv(manifest, operation, binding)
+	cmd.Env = r.buildEnv(manifest, operation, binding, envRegistryValues)
 	captureLimit := maxOutput
 	if captureLimit < defaultMaxCapture {
 		captureLimit = defaultMaxCapture
@@ -205,6 +211,9 @@ func (r *Runtime) loadBinding(manifest Manifest, selected string) (Binding, []st
 	if r.Bindings == nil {
 		return Binding{}, nil, runtimeError(ErrBindingInvalid, "binding", errors.New("binding store is not configured"))
 	}
+	if selected == "" && len(manifest.Spec.Bindings) == 0 {
+		return Binding{Env: map[string]string{}, Secrets: map[string]string{}}, nil, nil
+	}
 	binding, err := r.Bindings.Load(manifest.Metadata.Name, selected)
 	if err != nil {
 		return Binding{}, nil, err
@@ -240,7 +249,19 @@ func (r *Runtime) loadBinding(manifest Manifest, selected string) (Binding, []st
 	return binding, secrets, nil
 }
 
-func (r *Runtime) buildEnv(manifest Manifest, operation Operation, binding Binding) []string {
+func (r *Runtime) loadEnvRegistry(manifest Manifest) (map[string]string, []string, error) {
+	if r.EnvProvider == nil {
+		return map[string]string{}, nil, nil
+	}
+	definitions := EnvDefinitionsForManifest(manifest)
+	values, secrets, err := r.EnvProvider.EnvForSkill(manifest.Metadata.Name, definitions)
+	if err != nil {
+		return nil, nil, runtimeError(ErrBindingInvalid, "env_registry", err)
+	}
+	return values, secrets, nil
+}
+
+func (r *Runtime) buildEnv(manifest Manifest, operation Operation, binding Binding, envRegistryValues map[string]string) []string {
 	values := map[string]string{}
 	for _, entry := range r.BaseEnv {
 		if key, value, ok := strings.Cut(entry, "="); ok {
@@ -251,6 +272,11 @@ func (r *Runtime) buildEnv(manifest Manifest, operation Operation, binding Bindi
 	values["AGENTDOCK_SKILL_VERSION"] = manifest.Metadata.Version
 	values["AGENTDOCK_OPERATION"] = operation.Name
 	values["AGENTDOCK_BINDING"] = binding.Name
+	for key, value := range envRegistryValues {
+		if envNamePattern.MatchString(key) {
+			values[key] = value
+		}
+	}
 	for key, value := range binding.Env {
 		if envNamePattern.MatchString(key) {
 			values[key] = value
@@ -269,6 +295,35 @@ func (r *Runtime) buildEnv(manifest Manifest, operation Operation, binding Bindi
 		result = append(result, key+"="+values[key])
 	}
 	return result
+}
+
+func EnvDefinitionsForManifest(manifest Manifest) []EnvDefinition {
+	items := make([]EnvDefinition, 0, len(manifest.Spec.Permissions.Secrets))
+	for _, name := range manifest.Spec.Permissions.Secrets {
+		if envNamePattern.MatchString(name) {
+			items = append(items, EnvDefinition{Skill: manifest.Metadata.Name, Name: name, Kind: "secret", Source: "manifest"})
+		}
+	}
+	for _, def := range compatEnvDefinitions(manifest.Metadata.Name) {
+		items = append(items, def)
+	}
+	return items
+}
+
+func compatEnvDefinitions(skill string) []EnvDefinition {
+	switch skill {
+	case "weread-skills":
+		return []EnvDefinition{{Skill: skill, Name: "WEREAD_API_KEY", Kind: "secret", Source: "compat"}}
+	case "openlist":
+		return []EnvDefinition{
+			{Skill: skill, Name: "OPENLIST_URL", Kind: "plain", Source: "compat"},
+			{Skill: skill, Name: "OPENLIST_TOKEN", Kind: "secret", Source: "compat"},
+			{Skill: skill, Name: "OPENLIST_SESSION_FILE", Kind: "plain", Source: "compat"},
+			{Skill: skill, Name: "OPENLIST_INSECURE_TLS", Kind: "plain", Source: "compat"},
+		}
+	default:
+		return nil
+	}
 }
 
 func conservativePermissionCheck(manifest Manifest) error {

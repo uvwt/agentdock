@@ -177,6 +177,24 @@ type DeviceCommandCreateRequest struct {
 	ExpiresAt string `json:"expires_at"`
 }
 
+// DeviceEnvActionRequest 创建设备 Env 管理动作；响应必须脱敏 value。
+type DeviceEnvActionRequest struct {
+	// Action Env 管理动作。
+	Action string `json:"action"`
+	// Skill Skill 名称。
+	Skill *string `json:"skill,omitempty"`
+	// Name 环境变量名。
+	Name *string `json:"name,omitempty"`
+	// Kind 变量类型。
+	Kind *string `json:"kind,omitempty"`
+	// Value 写入值；API 响应不得回显明文。
+	Value *string `json:"value,omitempty"`
+	// Operation verify 使用的 operation。
+	Operation *string `json:"operation,omitempty"`
+	// EnvFile 迁移来源 env 文件路径。
+	EnvFile *string `json:"env_file,omitempty"`
+}
+
 // DeviceHeartbeat 设备心跳快照。
 type DeviceHeartbeat struct {
 	// DeviceId 全局唯一标识符。

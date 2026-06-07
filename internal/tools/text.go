@@ -3,14 +3,18 @@ package tools
 import (
 	"strings"
 
+	"github.com/uvwt/agentdock/internal/textutil"
+
 	"github.com/bmatcuk/doublestar/v4"
 )
 
 type textMeta struct {
-	Start     int  `json:"start_line"`
-	End       int  `json:"end_line"`
-	Total     int  `json:"total_lines"`
-	Truncated bool `json:"truncated"`
+	Start           int    `json:"start_line"`
+	End             int    `json:"end_line"`
+	Total           int    `json:"total_lines"`
+	NextStartLine   int    `json:"next_start_line,omitempty"`
+	Truncated       bool   `json:"truncated"`
+	TruncatedReason string `json:"truncated_reason,omitempty"`
 }
 
 func sliceText(content string, startLine, endLine, maxBytes int) (string, textMeta) {
@@ -25,20 +29,29 @@ func sliceText(content string, startLine, endLine, maxBytes int) (string, textMe
 	if startLine > total {
 		return "", textMeta{Start: startLine, End: endLine, Total: total}
 	}
-	selected := strings.Join(lines[startLine-1:endLine], "\n")
-	truncated := false
-	if maxBytes > 0 && len([]byte(selected)) > maxBytes {
-		truncated = true
-		selected = string([]byte(selected)[:maxBytes])
+	requested := strings.Join(lines[startLine-1:endLine], "\n")
+	selected := requested
+	meta := textMeta{Start: startLine, End: endLine, Total: total}
+	if maxBytes > 0 && len([]byte(requested)) > maxBytes {
+		truncated := textutil.SafeTruncateString(requested, maxBytes)
+		selected = truncated.Text
+		returnedLines := strings.Count(selected, "\n") + 1
+		if selected == "" {
+			returnedLines = 0
+		}
+		meta.End = startLine + returnedLines - 1
+		if meta.End < startLine {
+			meta.End = startLine
+		}
+		meta.NextStartLine = meta.End + 1
+		meta.Truncated = true
+		meta.TruncatedReason = "max_bytes"
 	}
-	return selected, textMeta{Start: startLine, End: endLine, Total: total, Truncated: truncated}
+	return selected, meta
 }
 
 func truncateString(value string, maxBytes int) string {
-	if maxBytes <= 0 || len([]byte(value)) <= maxBytes {
-		return value
-	}
-	return string([]byte(value)[:maxBytes])
+	return textutil.SafeTruncateString(value, maxBytes).Text
 }
 
 func contextAround(lines []string, index, n int) ([]string, []string) {
