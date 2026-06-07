@@ -110,6 +110,7 @@ func inputSchema(name string) map[string]any {
 		props["source"] = stringProp("Workspace/host path or HTTP(S) URL for install.")
 		props["digest"] = stringProp("Optional expected SHA-256 digest for install.")
 		props["activate"] = boolProp("Activate the installed version. Defaults to true.")
+		props["confirmed_no_env"] = boolProp("Required for installing a Skill with no manifest or compat env declarations; confirms the Skill needs no Env Manager configuration.")
 		props["max_bytes"] = intProp("Maximum install package bytes.")
 		props["operation"] = stringProp("Skill operation name for run.")
 		props["input"] = map[string]any{"description": "JSON input value for the Skill operation."}

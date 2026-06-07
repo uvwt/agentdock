@@ -228,11 +228,12 @@ func (r *Runtime) skillInstall(ctx context.Context, args map[string]any) (Result
 		return nil, err
 	}
 	result, err := r.skills.runtime.Install(ctx, skillruntime.InstallRequest{
-		Source:       resolved,
-		DigestSHA256: strings.TrimSpace(stringArg(args, "digest", "")),
-		Activate:     boolArg(args, "activate", true),
-		Channel:      skillstate.Channel(strings.TrimSpace(stringArg(args, "channel", string(skillstate.ChannelStable)))),
-		MaxBytes:     int64(intArg(args, "max_bytes", 0)),
+		Source:         resolved,
+		DigestSHA256:   strings.TrimSpace(stringArg(args, "digest", "")),
+		Activate:       boolArg(args, "activate", true),
+		Channel:        skillstate.Channel(strings.TrimSpace(stringArg(args, "channel", string(skillstate.ChannelStable)))),
+		MaxBytes:       int64(intArg(args, "max_bytes", 0)),
+		ConfirmedNoEnv: boolArg(args, "confirmed_no_env", false),
 	})
 	if err != nil {
 		return nil, skillToolError(err)

@@ -59,11 +59,12 @@ type Permissions struct {
 }
 
 type InstallRequest struct {
-	Source       string
-	DigestSHA256 string
-	Activate     bool
-	Channel      skillstate.Channel
-	MaxBytes     int64
+	Source         string
+	DigestSHA256   string
+	Activate       bool
+	Channel        skillstate.Channel
+	MaxBytes       int64
+	ConfirmedNoEnv bool
 }
 
 type InstallResult struct {

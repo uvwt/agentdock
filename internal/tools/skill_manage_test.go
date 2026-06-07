@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -65,9 +66,10 @@ spec:
 	}
 
 	install, err := rt.Call(context.Background(), "skill_manage", map[string]any{
-		"action":   "install",
-		"source":   "demo-package",
-		"activate": true,
+		"action":           "install",
+		"source":           "demo-package",
+		"activate":         true,
+		"confirmed_no_env": true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -108,6 +110,72 @@ spec:
 	}
 	if listed["count"] != 1 {
 		t.Fatalf("list count = %#v", listed["count"])
+	}
+}
+
+func TestSkillManageInstallRequiresNoEnvConfirmation(t *testing.T) {
+	root := t.TempDir()
+	pkg := filepath.Join(root, "demo-package")
+	if err := os.MkdirAll(pkg, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `apiVersion: agentdock.dev/v1
+kind: Skill
+metadata:
+  name: demo-skill
+  version: 1.0.0
+  displayName: Demo Skill
+  description: MCP Skill tool test
+spec:
+  entrypoint: run.sh
+  operations:
+    - name: echo
+      description: Echo JSON input
+      inputSchema: {"type":"object","properties":{},"additionalProperties":false}
+      outputSchema: {"type":"object","properties":{},"additionalProperties":false}
+      timeoutSeconds: 5
+  compatibility:
+    platforms: [` + runtime.GOOS + `]
+    architectures: [` + runtime.GOARCH + `]
+    agentdock: ">=1.0.0"
+  permissions:
+    filesystem: []
+    network: []
+    secrets: []
+    commands: []
+`
+	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkg, "run.sh"), []byte("#!/bin/sh\ncat\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		Workspace:    root,
+		ToolProfile:  config.ProfileUnified,
+		Mode:         config.ModeSandboxed,
+		PathPolicy:   config.PathPolicyWorkspace,
+		AgentDockDir: "AgentDock",
+	}
+	cfg.Normalize()
+	rt, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = rt.Call(context.Background(), "skill_manage", map[string]any{
+		"action": "install",
+		"source": "demo-package",
+	})
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) {
+		t.Fatalf("expected ToolError, got %T: %v", err, err)
+	}
+	if toolErr.Code != skillruntime.ErrManifestInvalid {
+		t.Fatalf("error code = %s, want %s: %v", toolErr.Code, skillruntime.ErrManifestInvalid, err)
+	}
+	if toolErr.Details["stage"] != "manifest.env" {
+		t.Fatalf("error stage = %#v, want manifest.env", toolErr.Details["stage"])
 	}
 }
 

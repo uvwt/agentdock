@@ -79,6 +79,9 @@ func (r *Runtime) Install(ctx context.Context, req InstallRequest) (InstallResul
 	if err != nil {
 		return InstallResult{}, err
 	}
+	if err := validateInstallEnvDeclarations(manifest, req.ConfirmedNoEnv); err != nil {
+		return InstallResult{}, err
+	}
 	for _, command := range manifest.Spec.Permissions.Commands {
 		if _, err := exec.LookPath(command); err != nil {
 			return InstallResult{}, runtimeError(ErrDependencyMissing, "dependency", fmt.Errorf("command %s: %w", command, err))
@@ -145,6 +148,13 @@ func (r *Runtime) finishInstall(ctx context.Context, req InstallRequest, manifes
 		},
 	})
 	return result, nil
+}
+
+func validateInstallEnvDeclarations(manifest Manifest, confirmedNoEnv bool) error {
+	if len(EnvDefinitionsForManifest(manifest)) > 0 || confirmedNoEnv {
+		return nil
+	}
+	return runtimeError(ErrManifestInvalid, "manifest.env", fmt.Errorf("skill %s declares no env requirements; pass confirmed_no_env=true to confirm it does not need Env Manager configuration", manifest.Metadata.Name))
 }
 
 func installedDigest(destination string) (string, error) {

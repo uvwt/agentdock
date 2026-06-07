@@ -111,6 +111,81 @@ printf '{"message":"ok","secret":"none"}\n'
 	}
 }
 
+func TestInstallRequiresNoEnvConfirmation(t *testing.T) {
+	root := t.TempDir()
+	state, err := skillstate.New(filepath.Join(root, "skills"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindings, err := skillruntime.NewBindingStore(filepath.Join(root, "skill-bindings"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt, err := skillruntime.New(state, bindings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := createPackageWithSecrets(t, filepath.Join(root, "source"), "no-env-skill", "1.0.0", nil, `#!/bin/sh
+printf '{}\n'
+`)
+
+	_, err = rt.Install(context.Background(), skillruntime.InstallRequest{Source: source, Activate: true})
+	assertRuntimeCode(t, err, skillruntime.ErrManifestInvalid)
+	var runtimeErr *skillruntime.Error
+	if !errors.As(err, &runtimeErr) || runtimeErr.Stage != "manifest.env" {
+		t.Fatalf("error stage = %#v, want manifest.env: %v", runtimeErr, err)
+	}
+	installed, checkErr := rt.State.IsInstalled("no-env-skill", "1.0.0")
+	if checkErr != nil {
+		t.Fatal(checkErr)
+	}
+	if installed {
+		t.Fatal("no-env package installed without confirmation")
+	}
+
+	if _, err := rt.Install(context.Background(), skillruntime.InstallRequest{Source: source, Activate: true, ConfirmedNoEnv: true}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInstallAllowsCompatEnvDefinition(t *testing.T) {
+	root := t.TempDir()
+	state, err := skillstate.New(filepath.Join(root, "skills"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindings, err := skillruntime.NewBindingStore(filepath.Join(root, "skill-bindings"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt, err := skillruntime.New(state, bindings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := createPackageWithSecrets(t, filepath.Join(root, "source"), "baidu-netdisk", "1.0.0", nil, `#!/bin/sh
+printf '{}\n'
+`)
+
+	if _, err := rt.Install(context.Background(), skillruntime.InstallRequest{Source: source, Activate: true}); err != nil {
+		t.Fatal(err)
+	}
+	packageDir, err := rt.State.InstalledPath("baidu-netdisk", "1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := skillruntime.LoadManifest(packageDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definitions := skillruntime.EnvDefinitionsForManifest(manifest)
+	if len(definitions) == 0 {
+		t.Fatal("compat env definitions were not discoverable")
+	}
+	if definitions[0].Source != "compat" {
+		t.Fatalf("definition source = %s, want compat", definitions[0].Source)
+	}
+}
+
 func TestRollbackVerifiesAndRestoresOnFailure(t *testing.T) {
 	root := t.TempDir()
 	state, err := skillstate.New(filepath.Join(root, "skills"))
@@ -176,14 +251,22 @@ func newRuntimeWithPackage(t *testing.T, version, script string) (*skillruntime.
 }
 
 func createPackage(t *testing.T, dir, version, script string) string {
+	return createPackageWithSecrets(t, dir, "demo-skill", version, []string{"API_TOKEN"}, script)
+}
+
+func createPackageWithSecrets(t *testing.T, dir, name, version string, secrets []string, script string) string {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	secretList := "[]"
+	if len(secrets) > 0 {
+		secretList = "[" + strings.Join(secrets, ", ") + "]"
+	}
 	manifest := `apiVersion: agentdock.dev/v1
 kind: Skill
 metadata:
-  name: demo-skill
+  name: ` + name + `
   version: ` + version + `
   displayName: Demo Skill
   description: Runtime integration test skill
@@ -202,7 +285,7 @@ spec:
   permissions:
     filesystem: []
     network: []
-    secrets: [API_TOKEN]
+    secrets: ` + secretList + `
     commands: [sh]
   bindings: [local]
   verification: [smoke]

@@ -377,18 +377,19 @@ func (r skillRouter) ExecuteSkillCommand(ctx context.Context, commandType string
 	switch commandType {
 	case "skill.install":
 		var request struct {
-			Source   string `json:"source"`
-			Digest   string `json:"digest_sha256,omitempty"`
-			Activate bool   `json:"activate,omitempty"`
-			Channel  string `json:"channel,omitempty"`
-			MaxBytes int64  `json:"max_bytes,omitempty"`
+			Source         string `json:"source"`
+			Digest         string `json:"digest_sha256,omitempty"`
+			Activate       bool   `json:"activate,omitempty"`
+			Channel        string `json:"channel,omitempty"`
+			MaxBytes       int64  `json:"max_bytes,omitempty"`
+			ConfirmedNoEnv bool   `json:"confirmed_no_env,omitempty"`
 		}
 		if err := json.Unmarshal(payload, &request); err != nil {
 			return commandqueue.HandlerResult{}, err
 		}
 		result, err := r.runtime.Install(ctx, skillruntime.InstallRequest{
 			Source: request.Source, DigestSHA256: request.Digest, Activate: request.Activate,
-			Channel: skillstate.Channel(request.Channel), MaxBytes: request.MaxBytes,
+			Channel: skillstate.Channel(request.Channel), MaxBytes: request.MaxBytes, ConfirmedNoEnv: request.ConfirmedNoEnv,
 		})
 		return commandqueue.HandlerResult{Output: result}, err
 	case "skill.run":
