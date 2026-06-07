@@ -90,6 +90,9 @@ func TestReadOnlyProfileExcludesDestructiveTools(t *testing.T) {
 	if seen["memory_edit"] || seen["memory_write"] || seen["memory_patch"] || seen["memory_delete"] {
 		t.Fatalf("read-only profile exposed mutating memory tools")
 	}
+	if seen["edit_file"] {
+		t.Fatalf("read-only profile exposed edit_file")
+	}
 }
 
 func assertObjectSchema(t *testing.T, name, kind string, schema map[string]any) {
