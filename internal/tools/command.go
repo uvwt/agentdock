@@ -212,6 +212,24 @@ func redactCommandResult(result Result, patterns []string) {
 }
 
 func (r *Runtime) commandEnv(extra map[string]any) []string {
+	env := r.baseCommandEnv()
+	if r.cfg.DangerouslySkipAllPermissions {
+		for key, value := range extra {
+			env[key] = fmt.Sprint(value)
+		}
+	}
+	return formatCommandEnv(env)
+}
+
+func (r *Runtime) internalCommandEnv(extra map[string]string) []string {
+	env := r.baseCommandEnv()
+	for key, value := range extra {
+		env[key] = value
+	}
+	return formatCommandEnv(env)
+}
+
+func (r *Runtime) baseCommandEnv() map[string]string {
 	env := map[string]string{}
 	for _, key := range []string{"PATH", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR"} {
 		if value := os.Getenv(key); value != "" {
@@ -229,11 +247,10 @@ func (r *Runtime) commandEnv(extra map[string]any) []string {
 	env["HOME"] = r.ws.Root()
 	env["TMPDIR"] = filepath.Join(r.ws.Root(), ".tmp")
 	_ = os.MkdirAll(env["TMPDIR"], 0o755)
-	if r.cfg.DangerouslySkipAllPermissions {
-		for key, value := range extra {
-			env[key] = fmt.Sprint(value)
-		}
-	}
+	return env
+}
+
+func formatCommandEnv(env map[string]string) []string {
 	out := make([]string, 0, len(env))
 	for key, value := range env {
 		out = append(out, key+"="+value)

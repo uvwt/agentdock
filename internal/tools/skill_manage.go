@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/compatenv"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envregistry"
 	"github.com/uvwt/agentdock/internal/skillruntime"
@@ -125,13 +126,12 @@ func (m *skillManager) envDefinitions() []envregistry.Definition {
 }
 
 func compatEnvDefinitions() []envregistry.Definition {
-	return []envregistry.Definition{
-		{Skill: "weread-skills", Name: "WEREAD_API_KEY", Kind: envregistry.KindSecret, Source: "compat"},
-		{Skill: "openlist", Name: "OPENLIST_URL", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "openlist", Name: "OPENLIST_TOKEN", Kind: envregistry.KindSecret, Source: "compat"},
-		{Skill: "openlist", Name: "OPENLIST_SESSION_FILE", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "openlist", Name: "OPENLIST_INSECURE_TLS", Kind: envregistry.KindPlain, Source: "compat"},
+	defs := compatenv.All()
+	items := make([]envregistry.Definition, 0, len(defs))
+	for _, def := range defs {
+		items = append(items, envregistry.Definition{Skill: def.Skill, Name: def.Name, Kind: def.Kind, Source: def.Source})
 	}
+	return items
 }
 
 func (r *Runtime) skillList() (Result, error) {
@@ -250,18 +250,9 @@ func (r *Runtime) skillRun(ctx context.Context, args map[string]any) (Result, er
 	if operation == "" {
 		return nil, toolErrorDetails("VALIDATION_ERROR", "operation is required for skill run", "validation", map[string]any{"field": "operation"})
 	}
-	input := json.RawMessage(`{}`)
-	if inputJSON := strings.TrimSpace(stringArg(args, "input_json", "")); inputJSON != "" {
-		if !json.Valid([]byte(inputJSON)) {
-			return nil, toolErrorDetails("VALIDATION_ERROR", "input_json must contain valid JSON", "validation", map[string]any{"field": "input_json"})
-		}
-		input = json.RawMessage(inputJSON)
-	} else if value, ok := args["input"]; ok {
-		encoded, err := json.Marshal(value)
-		if err != nil {
-			return nil, toolErrorDetails("VALIDATION_ERROR", "input cannot be encoded as JSON", "validation", map[string]any{"field": "input", "reason": err.Error()})
-		}
-		input = encoded
+	input, err := skillRunInput(args)
+	if err != nil {
+		return nil, err
 	}
 	result, err := r.skills.runtime.Run(ctx, skillruntime.RunRequest{
 		RunID:     strings.TrimSpace(stringArg(args, "run_id", "")),
@@ -278,6 +269,23 @@ func (r *Runtime) skillRun(ctx context.Context, args map[string]any) (Result, er
 		return nil, skillToolError(err)
 	}
 	return Result{"ok": true, "action": "run", "result": result}, nil
+}
+
+func skillRunInput(args map[string]any) (json.RawMessage, error) {
+	if inputJSON := strings.TrimSpace(stringArg(args, "input_json", "")); inputJSON != "" {
+		if !json.Valid([]byte(inputJSON)) {
+			return nil, toolErrorDetails("VALIDATION_ERROR", "input_json must contain valid JSON", "validation", map[string]any{"field": "input_json"})
+		}
+		return json.RawMessage(inputJSON), nil
+	}
+	if value, ok := args["input"]; ok {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return nil, toolErrorDetails("VALIDATION_ERROR", "input cannot be encoded as JSON", "validation", map[string]any{"field": "input", "reason": err.Error()})
+		}
+		return encoded, nil
+	}
+	return json.RawMessage(`{}`), nil
 }
 
 func (r *Runtime) skillRollback(ctx context.Context, args map[string]any) (Result, error) {

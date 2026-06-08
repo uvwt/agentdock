@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,7 +75,11 @@ func (r *Runtime) envVerify(ctx context.Context, args map[string]any) (Result, e
 	if operation == "" {
 		operation = "status"
 	}
-	run, err := r.skills.runtime.Run(ctx, skillRunRequest(skill, operation, args))
+	request, err := skillRunRequest(skill, operation, args)
+	if err != nil {
+		return nil, err
+	}
+	run, err := r.skills.runtime.Run(ctx, request)
 	ok := err == nil && run.OK
 	message := "ok"
 	if err != nil {
@@ -91,10 +94,10 @@ func (r *Runtime) envVerify(ctx context.Context, args map[string]any) (Result, e
 	return Result{"ok": ok, "action": "verify", "skill": skill, "result": run, "message": message}, nil
 }
 
-func skillRunRequest(skill, operation string, args map[string]any) skillruntime.RunRequest {
-	input := json.RawMessage(`{}`)
-	if inputJSON := strings.TrimSpace(stringArg(args, "input_json", "")); inputJSON != "" && json.Valid([]byte(inputJSON)) {
-		input = json.RawMessage(inputJSON)
+func skillRunRequest(skill, operation string, args map[string]any) (skillruntime.RunRequest, error) {
+	input, err := skillRunInput(args)
+	if err != nil {
+		return skillruntime.RunRequest{}, err
 	}
 	return skillruntime.RunRequest{
 		Skill:     skill,
@@ -105,7 +108,7 @@ func skillRunRequest(skill, operation string, args map[string]any) skillruntime.
 		Timeout:   time.Duration(intArg(args, "timeout_ms", 0)) * time.Millisecond,
 		MaxOutput: intArg(args, "max_output_bytes", 0),
 		Input:     input,
-	}
+	}, nil
 }
 
 func (r *Runtime) envMigrateFromAgentDockEnv(args map[string]any) (Result, error) {

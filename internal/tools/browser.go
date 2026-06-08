@@ -56,7 +56,7 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, "node", runner.Abs)
 	cmd.Dir = filepath.Dir(runner.Abs)
-	env := map[string]any{
+	env := map[string]string{
 		"BROWSER_RUNNER_PAYLOAD": string(data),
 		"BROWSER_ARTIFACT_DIR":   artifactDir.Abs,
 		"WORKSPACE":              r.ws.Root(),
@@ -67,7 +67,7 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 	if value := playwrightBrowsersPath(); value != "" {
 		env["PLAYWRIGHT_BROWSERS_PATH"] = value
 	}
-	cmd.Env = r.commandEnv(env)
+	cmd.Env = r.internalCommandEnv(env)
 	output, err := cmd.CombinedOutput()
 	text, truncated := truncateBytes(output, intArg(args, "max_bytes", 262144))
 	text = redactSecrets(text, nil)

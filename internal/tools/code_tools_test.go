@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -28,6 +29,82 @@ func newCodeToolsRuntime(t *testing.T) (*Runtime, string) {
 		t.Fatal(err)
 	}
 	return rt, root
+}
+
+func TestServerInfoReportsOAuthAuthEnabled(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Config{
+		Workspace:      root,
+		ToolProfile:    config.ProfileUnified,
+		Mode:           config.ModeSandboxed,
+		PathPolicy:     config.PathPolicyWorkspace,
+		AgentDockDir:   "AgentDock",
+		OAuthServerURL: "https://auth.example.test",
+	}
+	cfg.Normalize()
+	rt, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := rt.serverInfo()
+	if info["auth_enabled"] != true {
+		t.Fatalf("auth_enabled = %#v, want true", info["auth_enabled"])
+	}
+}
+
+func TestBrowserRunnerReceivesPayloadEnvWithoutSkipPermissions(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node is required for browser runner")
+	}
+	root := t.TempDir()
+	runnerDir := filepath.Join(root, "AgentDock", "browser-runner")
+	if err := os.MkdirAll(runnerDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	script := `const payload = JSON.parse(process.env.BROWSER_RUNNER_PAYLOAD || "{}");
+process.stdout.write(JSON.stringify({
+  ok: Boolean(process.env.BROWSER_RUNNER_PAYLOAD),
+  operation: payload.operation,
+  workspace: payload.workspace,
+  artifact_dir: payload.artifact_dir,
+  env_workspace: process.env.WORKSPACE,
+  artifact_env: process.env.BROWSER_ARTIFACT_DIR
+}));`
+	if err := os.WriteFile(filepath.Join(runnerDir, "browser-runner.js"), []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		Workspace:                     root,
+		ToolProfile:                   config.ProfileUnified,
+		Mode:                          config.ModeSandboxed,
+		PathPolicy:                    config.PathPolicyWorkspace,
+		AgentDockDir:                  "AgentDock",
+		BrowserEnabled:                true,
+		BrowserRunnerDir:              "browser-runner",
+		BrowserArtifactDir:            "browser-artifacts",
+		DangerouslySkipAllPermissions: false,
+	}
+	cfg.Normalize()
+	rt, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := rt.browserSnapshot(context.Background(), map[string]any{"timeout_ms": 5000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["ok"] != true {
+		t.Fatalf("browser runner did not receive payload: %#v", result)
+	}
+	if result["operation"] != "snapshot" {
+		t.Fatalf("operation = %#v, want snapshot", result["operation"])
+	}
+	if result["workspace"] == "" || result["workspace"] != result["env_workspace"] {
+		t.Fatalf("workspace env mismatch: %#v", result)
+	}
+	if result["artifact_env"] == "" || result["artifact_env"] != result["artifact_dir"] {
+		t.Fatalf("artifact env mismatch: %#v", result)
+	}
 }
 
 func TestReadFileReturnsNextStartLineOnTruncation(t *testing.T) {

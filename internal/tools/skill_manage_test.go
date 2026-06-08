@@ -197,3 +197,122 @@ func TestSkillManageRejectsUnknownAction(t *testing.T) {
 		t.Fatal("expected invalid action error")
 	}
 }
+
+func TestEnvManageVerifyRejectsInvalidInputJSON(t *testing.T) {
+	rt := newInstalledDemoSkillRuntime(t)
+
+	_, err := rt.Call(context.Background(), "env_manage", map[string]any{
+		"action":     "verify",
+		"skill":      "demo-skill",
+		"operation":  "echo",
+		"input_json": "{",
+	})
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) {
+		t.Fatalf("expected ToolError, got %T: %v", err, err)
+	}
+	if toolErr.Code != "VALIDATION_ERROR" {
+		t.Fatalf("error code = %s, want VALIDATION_ERROR", toolErr.Code)
+	}
+}
+
+func TestEnvManageVerifyAcceptsStructuredInput(t *testing.T) {
+	rt := newInstalledDemoSkillRuntime(t)
+
+	result, err := rt.Call(context.Background(), "env_manage", map[string]any{
+		"action":    "verify",
+		"skill":     "demo-skill",
+		"operation": "echo",
+		"input":     map[string]any{"message": "hello"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["ok"] != true {
+		t.Fatalf("verify failed: %#v", result)
+	}
+	run, ok := result["result"].(skillruntime.RunResult)
+	if !ok || !run.OK || string(run.Output) != `{"message":"hello"}` {
+		t.Fatalf("unexpected verify result: %#v", result["result"])
+	}
+}
+
+func TestToolsCompatEnvDefinitionsUseSharedSet(t *testing.T) {
+	byKey := map[string]struct{}{}
+	for _, def := range compatEnvDefinitions() {
+		byKey[def.Skill+"\x00"+def.Name] = struct{}{}
+	}
+	for _, key := range []string{
+		"baidu-netdisk\x00BDPAN_CONFIG_FILE",
+		"bark\x00BARK_SERVER_URL",
+		"cloudsaver\x00CLOUDSAVER_PASSWORD",
+		"telegram-official\x00TELEGRAM_CHAT_ID",
+		"xiaohongshu-mcp\x00XIAOHONGSHU_MCP_URL",
+	} {
+		if _, ok := byKey[key]; !ok {
+			t.Fatalf("missing compat env definition %s", key)
+		}
+	}
+}
+
+func newInstalledDemoSkillRuntime(t *testing.T) *Runtime {
+	t.Helper()
+	root := t.TempDir()
+	pkg := filepath.Join(root, "demo-package")
+	if err := os.MkdirAll(pkg, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `apiVersion: agentdock.dev/v1
+kind: Skill
+metadata:
+  name: demo-skill
+  version: 1.0.0
+  displayName: Demo Skill
+  description: MCP Skill tool test
+spec:
+  entrypoint: run.sh
+  operations:
+    - name: echo
+      description: Echo JSON input
+      inputSchema: {"type":"object","required":["message"],"properties":{"message":{"type":"string"}},"additionalProperties":false}
+      outputSchema: {"type":"object","required":["message"],"properties":{"message":{"type":"string"}},"additionalProperties":false}
+      timeoutSeconds: 5
+  compatibility:
+    platforms: [` + runtime.GOOS + `]
+    architectures: [` + runtime.GOARCH + `]
+    agentdock: ">=1.0.0"
+  permissions:
+    filesystem: []
+    network: []
+    secrets: []
+    commands: []
+`
+	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkg, "run.sh"), []byte("#!/bin/sh\ncat\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		Workspace:       root,
+		ToolProfile:     config.ProfileUnified,
+		Mode:            config.ModeSandboxed,
+		PathPolicy:      config.PathPolicyWorkspace,
+		AgentDockDir:    "AgentDock",
+		EnableViewImage: true,
+	}
+	cfg.Normalize()
+	rt, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.Call(context.Background(), "skill_manage", map[string]any{
+		"action":           "install",
+		"source":           "demo-package",
+		"activate":         true,
+		"confirmed_no_env": true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return rt
+}

@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/uvwt/agentdock/internal/compatenv"
 )
 
 const (
@@ -311,46 +313,12 @@ func EnvDefinitionsForManifest(manifest Manifest) []EnvDefinition {
 }
 
 func compatEnvDefinitions(skill string) []EnvDefinition {
-	switch skill {
-	case "baidu-netdisk":
-		return []EnvDefinition{
-			{Skill: skill, Name: "BDPAN_BIN", Kind: "plain", Source: "compat"},
-			{Skill: skill, Name: "BDPAN_CONFIG_FILE", Kind: "plain", Source: "compat"},
-			{Skill: skill, Name: "BDPAN_HOME", Kind: "plain", Source: "compat"},
-		}
-	case "weread-skills":
-		return []EnvDefinition{{Skill: skill, Name: "WEREAD_API_KEY", Kind: "secret", Source: "compat"}}
-	case "openlist":
-		return []EnvDefinition{
-			{Skill: skill, Name: "OPENLIST_URL", Kind: "plain", Source: "compat"},
-			{Skill: skill, Name: "OPENLIST_TOKEN", Kind: "secret", Source: "compat"},
-			{Skill: skill, Name: "OPENLIST_SESSION_FILE", Kind: "plain", Source: "compat"},
-			{Skill: skill, Name: "OPENLIST_INSECURE_TLS", Kind: "plain", Source: "compat"},
-		}
-	case "dida365-open-api":
-		return []EnvDefinition{
-			{Skill: skill, Name: "DIDA365_ACCESS_TOKEN", Kind: "secret", Source: "compat"},
-			{Skill: skill, Name: "DIDA365_CLIENT_ID", Kind: "plain", Source: "compat"},
-			{Skill: skill, Name: "DIDA365_CLIENT_SECRET", Kind: "secret", Source: "compat"},
-			{Skill: skill, Name: "DIDA365_REDIRECT_URI", Kind: "plain", Source: "compat"},
-			{Skill: skill, Name: "DIDA365_REGION", Kind: "plain", Source: "compat"},
-		}
-	case "spotify-web-api":
-		return []EnvDefinition{
-			{Skill: skill, Name: "SPOTIFY_CLIENT_ID", Kind: "plain", Source: "compat"},
-			{Skill: skill, Name: "SPOTIFY_REDIRECT_URI", Kind: "plain", Source: "compat"},
-			{Skill: skill, Name: "SPOTIFY_SCOPES", Kind: "plain", Source: "compat"},
-		}
-	case "xiaohongshu-mcp":
-		return []EnvDefinition{
-			{Skill: skill, Name: "XIAOHONGSHU_CHROME_BIN", Kind: "plain", Source: "compat"},
-			{Skill: skill, Name: "XIAOHONGSHU_COOKIE_FILE", Kind: "plain", Source: "compat"},
-			{Skill: skill, Name: "XIAOHONGSHU_LAUNCH_AGENT", Kind: "plain", Source: "compat"},
-			{Skill: skill, Name: "XIAOHONGSHU_MCP_URL", Kind: "plain", Source: "compat"},
-		}
-	default:
-		return nil
+	defs := compatenv.ForSkill(skill)
+	items := make([]EnvDefinition, 0, len(defs))
+	for _, def := range defs {
+		items = append(items, EnvDefinition{Skill: def.Skill, Name: def.Name, Kind: def.Kind, Source: def.Source})
 	}
+	return items
 }
 
 func conservativePermissionCheck(manifest Manifest) error {

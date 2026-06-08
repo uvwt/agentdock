@@ -16,6 +16,7 @@ import (
 
 	contracts "github.com/uvwt/agentdock/generated/nexuscontracts"
 	"github.com/uvwt/agentdock/internal/commandqueue"
+	"github.com/uvwt/agentdock/internal/compatenv"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envregistry"
 	"github.com/uvwt/agentdock/internal/logx"
@@ -317,47 +318,8 @@ func envDefinitions(state *skillstate.Store) []envregistry.Definition {
 			}
 		}
 	}
-	for _, def := range []envregistry.Definition{
-		{Skill: "baidu-netdisk", Name: "BDPAN_BIN", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "baidu-netdisk", Name: "BDPAN_CONFIG_FILE", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "baidu-netdisk", Name: "BDPAN_HOME", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "bark", Name: "BARK_SERVER_URL", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "bark", Name: "BARK_BASE_URL", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "bark", Name: "BARK_URL", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "bark", Name: "BARK_ENV_FILE", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "bark", Name: "BARK_INSECURE_TLS", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "cloudsaver", Name: "CLOUDSAVER_BASE_URL", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "cloudsaver", Name: "CLOUDSAVER_ENV_FILE", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "cloudsaver", Name: "CLOUDSAVER_PASSWORD", Kind: envregistry.KindSecret, Source: "compat"},
-		{Skill: "cloudsaver", Name: "CLOUDSAVER_TOKEN", Kind: envregistry.KindSecret, Source: "compat"},
-		{Skill: "cloudsaver", Name: "CLOUDSAVER_TOKEN_FILE", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "cloudsaver", Name: "CLOUDSAVER_USERNAME", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "dida365-open-api", Name: "DIDA365_ACCESS_TOKEN", Kind: envregistry.KindSecret, Source: "compat"},
-		{Skill: "dida365-open-api", Name: "DIDA365_CLIENT_ID", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "dida365-open-api", Name: "DIDA365_CLIENT_SECRET", Kind: envregistry.KindSecret, Source: "compat"},
-		{Skill: "dida365-open-api", Name: "DIDA365_REDIRECT_URI", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "dida365-open-api", Name: "DIDA365_REGION", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "spotify-web-api", Name: "SPOTIFY_CLIENT_ID", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "spotify-web-api", Name: "SPOTIFY_REDIRECT_URI", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "spotify-web-api", Name: "SPOTIFY_SCOPES", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "douban-marks", Name: "DOUBAN_ENV_FILE", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "douban-marks", Name: "DOUBAN_UID", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "douban-marks", Name: "DOUBAN_USER_ID", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "weread-skills", Name: "WEREAD_API_KEY", Kind: envregistry.KindSecret, Source: "compat"},
-		{Skill: "openlist", Name: "OPENLIST_URL", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "openlist", Name: "OPENLIST_TOKEN", Kind: envregistry.KindSecret, Source: "compat"},
-		{Skill: "openlist", Name: "OPENLIST_SESSION_FILE", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "openlist", Name: "OPENLIST_INSECURE_TLS", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "rsshub", Name: "RSSHUB_BASE_URL", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "telegram-official", Name: "DOCK_DEVICE", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "telegram-official", Name: "TELEGRAM_CHAT_ID", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "telegram-official", Name: "TELEGRAM_ENV_FILE", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "telegram-official", Name: "TG_CHAT_ID", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "xiaohongshu-mcp", Name: "XIAOHONGSHU_CHROME_BIN", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "xiaohongshu-mcp", Name: "XIAOHONGSHU_COOKIE_FILE", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "xiaohongshu-mcp", Name: "XIAOHONGSHU_LAUNCH_AGENT", Kind: envregistry.KindPlain, Source: "compat"},
-		{Skill: "xiaohongshu-mcp", Name: "XIAOHONGSHU_MCP_URL", Kind: envregistry.KindPlain, Source: "compat"},
-	} {
+	for _, compatDef := range compatenv.All() {
+		def := envregistry.Definition{Skill: compatDef.Skill, Name: compatDef.Name, Kind: compatDef.Kind, Source: compatDef.Source}
 		key := def.Skill + "\x00" + def.Name
 		if _, ok := result[key]; !ok {
 			result[key] = def
