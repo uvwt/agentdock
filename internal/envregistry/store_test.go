@@ -59,3 +59,25 @@ func TestStoreSetInspectAndMigrateRedactsValues(t *testing.T) {
 		t.Fatalf("unexpected migrated env file: %q", after)
 	}
 }
+
+func TestEnvForSkillTreatsProcessSecretAsRedactionValue(t *testing.T) {
+	root := t.TempDir()
+	store, err := New(root, func() []Definition {
+		return []Definition{{Skill: "demo-skill", Name: "DEMO_API_TOKEN", Kind: KindSecret, Source: "manifest"}}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DEMO_API_TOKEN", "process-secret-value")
+
+	env, secrets, err := store.EnvForSkill("demo-skill", store.KnownDefinitions("demo-skill"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env["DEMO_API_TOKEN"] != "process-secret-value" {
+		t.Fatalf("env DEMO_API_TOKEN = %q", env["DEMO_API_TOKEN"])
+	}
+	if len(secrets) != 1 || secrets[0] != "process-secret-value" {
+		t.Fatalf("secrets = %#v, want process secret", secrets)
+	}
+}

@@ -54,8 +54,14 @@ type Compatibility struct {
 type Permissions struct {
 	Filesystem []string `json:"filesystem"`
 	Network    []string `json:"network"`
+	Env        []EnvVar `json:"env,omitempty"`
 	Secrets    []string `json:"secrets"`
 	Commands   []string `json:"commands"`
+}
+
+type EnvVar struct {
+	Name string `json:"name"`
+	Kind string `json:"kind"`
 }
 
 type InstallRequest struct {

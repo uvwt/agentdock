@@ -17,6 +17,7 @@ AgentDock 是一个 Go 服务，用于向本地和远程 Agent 暴露 MCP 工具
 | [错误处理](./error-handling.md) | 错误传播、工具错误和 API 响应 | 生效 |
 | [质量规范](./quality-guidelines.md) | 代码标准、质量门禁和禁止模式 | 生效 |
 | [日志规范](./logging-guidelines.md) | 结构化日志、日志级别和敏感信息规则 | 生效 |
+| [Skill Runtime 规范](./skill-runtime-guidelines.md) | 原生 Skill manifest、env 声明和运行时注入合同 | 生效 |
 
 ## 开发前检查
 

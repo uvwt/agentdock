@@ -247,6 +247,7 @@ func (s *Store) EnvForSkill(skill string, definitions []Definition) (map[string]
 		return nil, nil, err
 	}
 	env := map[string]string{}
+	secretsByValue := map[string]struct{}{}
 	for _, def := range definitions {
 		if def.Skill != "" && def.Skill != skill {
 			continue
@@ -254,8 +255,14 @@ func (s *Store) EnvForSkill(skill string, definitions []Definition) (map[string]
 		if def.Kind == KindSecret {
 			if value, ok := values.Secrets[def.Name]; ok {
 				env[def.Name] = value
+				if value != "" {
+					secretsByValue[value] = struct{}{}
+				}
 			} else if value, ok := os.LookupEnv(def.Name); ok {
 				env[def.Name] = value
+				if value != "" {
+					secretsByValue[value] = struct{}{}
+				}
 			}
 			continue
 		}
@@ -265,11 +272,14 @@ func (s *Store) EnvForSkill(skill string, definitions []Definition) (map[string]
 			env[def.Name] = value
 		}
 	}
-	secrets := make([]string, 0, len(values.Secrets))
+	secrets := make([]string, 0, len(values.Secrets)+len(secretsByValue))
 	for _, value := range values.Secrets {
 		if value != "" {
-			secrets = append(secrets, value)
+			secretsByValue[value] = struct{}{}
 		}
+	}
+	for value := range secretsByValue {
+		secrets = append(secrets, value)
 	}
 	sort.Slice(secrets, func(i, j int) bool { return len(secrets[i]) > len(secrets[j]) })
 	return env, secrets, nil

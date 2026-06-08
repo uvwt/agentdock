@@ -300,14 +300,28 @@ func (r *Runtime) buildEnv(manifest Manifest, operation Operation, binding Bindi
 }
 
 func EnvDefinitionsForManifest(manifest Manifest) []EnvDefinition {
-	items := make([]EnvDefinition, 0, len(manifest.Spec.Permissions.Secrets))
+	items := make([]EnvDefinition, 0, len(manifest.Spec.Permissions.Secrets)+len(manifest.Spec.Permissions.Env))
+	seen := map[string]struct{}{}
+	add := func(def EnvDefinition) {
+		key := def.Skill + "\x00" + def.Name
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		items = append(items, def)
+	}
 	for _, name := range manifest.Spec.Permissions.Secrets {
 		if envNamePattern.MatchString(name) {
-			items = append(items, EnvDefinition{Skill: manifest.Metadata.Name, Name: name, Kind: "secret", Source: "manifest"})
+			add(EnvDefinition{Skill: manifest.Metadata.Name, Name: name, Kind: "secret", Source: "manifest"})
+		}
+	}
+	for _, env := range manifest.Spec.Permissions.Env {
+		if envNamePattern.MatchString(env.Name) {
+			add(EnvDefinition{Skill: manifest.Metadata.Name, Name: env.Name, Kind: strings.ToLower(strings.TrimSpace(env.Kind)), Source: "manifest"})
 		}
 	}
 	for _, def := range compatEnvDefinitions(manifest.Metadata.Name) {
-		items = append(items, def)
+		add(def)
 	}
 	return items
 }

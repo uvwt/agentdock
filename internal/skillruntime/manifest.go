@@ -19,6 +19,7 @@ var (
 	operationPattern  = regexp.MustCompile(`^[a-z][a-z0-9._-]*$`)
 	semverPattern     = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$`)
 	secretNamePattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]{1,127}$`)
+	envVarNamePattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 )
 
 func LoadManifest(packageDir string) (Manifest, error) {
@@ -140,6 +141,24 @@ func ValidateManifest(m Manifest) error {
 		if !secretNamePattern.MatchString(name) {
 			add(fmt.Sprintf("spec.permissions.secrets[%d]", i), "invalid secret name")
 		}
+	}
+	seenEnv := map[string]struct{}{}
+	for _, name := range m.Spec.Permissions.Secrets {
+		seenEnv[name] = struct{}{}
+	}
+	for i, env := range m.Spec.Permissions.Env {
+		base := fmt.Sprintf("spec.permissions.env[%d]", i)
+		if !envVarNamePattern.MatchString(env.Name) {
+			add(base+".name", "invalid env name")
+		}
+		kind := strings.ToLower(strings.TrimSpace(env.Kind))
+		if kind != "plain" && kind != "secret" {
+			add(base+".kind", "must be plain or secret")
+		}
+		if _, ok := seenEnv[env.Name]; ok {
+			add(base+".name", "duplicate env name")
+		}
+		seenEnv[env.Name] = struct{}{}
 	}
 	for i, command := range m.Spec.Permissions.Commands {
 		if command == "" || filepath.Base(command) != command {

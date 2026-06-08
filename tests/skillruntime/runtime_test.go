@@ -186,6 +186,72 @@ printf '{}\n'
 	}
 }
 
+func TestInstallAndRunUsesManifestEnvDefinitions(t *testing.T) {
+	root := t.TempDir()
+	state, err := skillstate.New(filepath.Join(root, "skills"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindings, err := skillruntime.NewBindingStore(filepath.Join(root, "skill-bindings"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt, err := skillruntime.New(state, bindings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt.EnvProvider = manifestEnvProvider{}
+	source := createPackageWithEnv(t, filepath.Join(root, "source"), `#!/bin/sh
+printf '{"message":"%s","secret":"%s"}\n' "$DEMO_BASE_URL" "$DEMO_API_TOKEN"
+`)
+
+	install, err := rt.Install(context.Background(), skillruntime.InstallRequest{Source: source, Activate: true, Channel: skillstate.ChannelStable})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !install.Activated {
+		t.Fatalf("manifest env package was not activated: %#v", install)
+	}
+	packageDir, err := rt.State.InstalledPath("manifest-env-skill", "1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := skillruntime.LoadManifest(packageDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definitions := skillruntime.EnvDefinitionsForManifest(manifest)
+	byName := map[string]skillruntime.EnvDefinition{}
+	for _, def := range definitions {
+		byName[def.Name] = def
+	}
+	for name, kind := range map[string]string{"DEMO_BASE_URL": "plain", "DEMO_API_TOKEN": "secret"} {
+		def, ok := byName[name]
+		if !ok {
+			t.Fatalf("missing manifest env definition %s", name)
+		}
+		if def.Kind != kind || def.Source != "manifest" {
+			t.Fatalf("%s definition = %#v, want kind=%s source=manifest", name, def, kind)
+		}
+	}
+
+	result, err := rt.Run(context.Background(), skillruntime.RunRequest{
+		Skill:     "manifest-env-skill",
+		Operation: "echo",
+		Input:     json.RawMessage(`{"message":"hello"}`),
+	})
+	if err != nil {
+		t.Fatalf("run failed: %v; result=%#v", err, result)
+	}
+	if string(result.Output) != `{"message":"https://example.test","secret":"[REDACTED]"}` {
+		t.Fatalf("unexpected redacted output: %s", result.Output)
+	}
+	combined := result.Stdout + result.Stderr + string(result.Output)
+	if strings.Contains(combined, "manifest-secret-value") {
+		t.Fatalf("manifest env secret leaked: %s", combined)
+	}
+}
+
 func TestRollbackVerifiesAndRestoresOnFailure(t *testing.T) {
 	root := t.TempDir()
 	state, err := skillstate.New(filepath.Join(root, "skills"))
@@ -230,6 +296,26 @@ printf '{"message":"ok","secret":"none"}\n'
 	if !result.Verified || result.ToVersion != "1.0.0" {
 		t.Fatalf("unexpected rollback result: %#v", result)
 	}
+}
+
+type manifestEnvProvider struct{}
+
+func (manifestEnvProvider) EnvForSkill(skill string, definitions []skillruntime.EnvDefinition) (map[string]string, []string, error) {
+	env := map[string]string{}
+	secrets := []string{}
+	for _, def := range definitions {
+		if def.Skill != skill {
+			continue
+		}
+		switch def.Name {
+		case "DEMO_BASE_URL":
+			env[def.Name] = "https://example.test"
+		case "DEMO_API_TOKEN":
+			env[def.Name] = "manifest-secret-value"
+			secrets = append(secrets, "manifest-secret-value")
+		}
+	}
+	return env, secrets, nil
 }
 
 func newRuntimeWithPackage(t *testing.T, version, script string) (*skillruntime.Runtime, string) {
@@ -288,6 +374,51 @@ spec:
     secrets: ` + secretList + `
     commands: [sh]
   bindings: [local]
+  verification: [smoke]
+`
+	if err := os.WriteFile(filepath.Join(dir, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "run.sh"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func createPackageWithEnv(t *testing.T, dir, script string) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `apiVersion: agentdock.dev/v1
+kind: Skill
+metadata:
+  name: manifest-env-skill
+  version: 1.0.0
+  displayName: Manifest Env Skill
+  description: Runtime integration test skill
+spec:
+  entrypoint: run.sh
+  operations:
+    - name: echo
+      description: Echo validated JSON
+      inputSchema: {"type":"object","required":["message"],"properties":{"message":{"type":"string"}},"additionalProperties":false}
+      outputSchema: {"type":"object","required":["message","secret"],"properties":{"message":{"type":"string"},"secret":{"type":"string"}},"additionalProperties":false}
+      timeoutSeconds: 5
+  compatibility:
+    platforms: [` + runtime.GOOS + `]
+    architectures: [` + runtime.GOARCH + `]
+    agentdock: ">=1.0.0"
+  permissions:
+    filesystem: []
+    network: []
+    env:
+      - name: DEMO_BASE_URL
+        kind: plain
+      - name: DEMO_API_TOKEN
+        kind: secret
+    secrets: []
+    commands: [sh]
   verification: [smoke]
 `
 	if err := os.WriteFile(filepath.Join(dir, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
