@@ -39,3 +39,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: 修复并部署 AgentDock 功能缺陷
+
+**Date**: 2026-06-09
+**Task**: 修复并部署 AgentDock 功能缺陷
+**Branch**: `main`
+
+### Summary
+
+修复 browser runner 环境传递、Skill compat env 漂移、env_manage verify 入参解析和 server_info 认证状态；提交推送后完成 DockMini 稳定签名安装、重启与 smoke 验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cb45f6a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
