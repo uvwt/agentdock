@@ -1,51 +1,41 @@
-# Database Guidelines
+# Storage Guidelines
 
-> Database patterns and conventions for this project.
-
----
+> Persistent state conventions for AgentDock.
 
 ## Overview
 
-<!--
-Document your project's database conventions here.
+AgentDock does not currently use a database or ORM. Persistent local state is stored as small JSON files under the AgentDock control directory or state directories selected by configuration.
 
-Questions to answer:
-- What ORM/query library do you use?
-- How are migrations managed?
-- What are the naming conventions for tables/columns?
-- How do you handle transactions?
--->
+Use file-backed state only for bounded runtime metadata. Do not introduce a database dependency for small state that can remain a simple JSON document.
 
-(To be filled by the team)
+## Current State Stores
 
----
+- `internal/commandqueue/store.go` stores Nexus command queue state.
+- `internal/commandqueue/outbox.go` stores upload retry envelopes.
+- `internal/envregistry/store.go` stores redacted Skill environment registry metadata and values.
+- `internal/nexusclient/state.go` stores Nexus device state.
+- `internal/skillstate/store.go` stores active Skill versions.
 
-## Query Patterns
+## Write Patterns
 
-<!-- How should queries be written? Batch operations? -->
-
-(To be filled by the team)
-
----
+- Create parent directories explicitly and secure them where package helpers already do so.
+- Write to a temporary file, set permissions, then replace the target atomically when updating durable JSON state.
+- Wrap I/O errors with operation context, for example `fmt.Errorf("write device state: %w", err)`.
+- Keep on-disk JSON stable and versioned when future migrations are plausible.
+- Never store raw tokens, cookies, OAuth codes, or secret values unless the specific store is designed for local secret handling.
 
 ## Migrations
 
-<!-- How to create and run migrations -->
+There is no general migration framework. If a JSON state shape changes:
 
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- Table names, column names, index names -->
-
-(To be filled by the team)
-
----
+- Add a version field or backward-compatible decode path.
+- Add focused tests for old and new shapes.
+- Keep migration logic in the package that owns the file format.
+- Document operational impact in `docs/` if existing users need manual action.
 
 ## Common Mistakes
 
-<!-- Database-related mistakes your team has made -->
-
-(To be filled by the team)
+- Introducing a new state file without an owner package or tests.
+- Writing files directly without atomic replacement.
+- Letting workspace-relative paths escape through unvalidated joins.
+- Recording local machine secrets or private endpoints in docs, tests, or long-term memory.

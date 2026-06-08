@@ -1,38 +1,42 @@
 # Backend Development Guidelines
 
-> Best practices for backend development in this project.
-
----
+> AgentDock backend conventions for code changes, reviews, and AI-assisted development.
 
 ## Overview
 
-This directory contains guidelines for backend development. Fill in each file with your project's specific conventions.
+AgentDock is a Go service that exposes MCP tools for local and remote agent execution. The backend is a single Go module with the executable in `cmd/agentdock` and implementation packages under `internal/`.
 
----
+These guidelines document the current project conventions. Follow the existing package boundaries before adding new abstractions, and keep product-facing behavior explicit, testable, and safe by default.
 
 ## Guidelines Index
 
 | Guide | Description | Status |
 |-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
-| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
+| [Directory Structure](./directory-structure.md) | Module organization and file layout | Active |
+| [Database Guidelines](./database-guidelines.md) | Persistent state and storage policy | Active |
+| [Error Handling](./error-handling.md) | Error propagation, tool errors, and API responses | Active |
+| [Quality Guidelines](./quality-guidelines.md) | Code standards, quality gates, and forbidden patterns | Active |
+| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels, and sensitive data rules | Active |
 
----
+## Pre-Development Checklist
 
-## How to Fill These Guidelines
+- Read the relevant guide for the package you are touching.
+- Search for existing helpers and package patterns before creating new ones.
+- Keep new user-facing capabilities behind the appropriate profile, permission, runtime flag, or Skill Runtime boundary.
+- Do not print or persist secrets, tokens, cookies, OAuth codes, or raw tool payloads.
+- Run `make check` before considering the change complete, or record the exact failing command and reason.
 
-For each guideline file:
+## Quality Check
 
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
+- Run `make check`.
+- Re-read [Quality Guidelines](./quality-guidelines.md) for any change that touches tools, paths, permissions, Skill Runtime, env registry, HTTP auth, command execution, or automation.
+- Re-read [Error Handling](./error-handling.md) and [Logging Guidelines](./logging-guidelines.md) when changing returned errors, diagnostics, logs, or external-service handling.
+- Confirm local build/runtime artifacts remain ignored and are not included in commits.
+- Confirm README, `docs/`, scripts, and Makefile describe one consistent verification path.
 
-The goal is to help AI assistants and new team members understand how YOUR project works.
+## Productization Principles
 
----
-
-**Language**: All documentation should be written in **English**.
+- README stays as the product entry point; detailed operations and engineering rules belong in `docs/` and `.trellis/spec/`.
+- Local runtime artifacts, generated binaries, coverage files, and rollback copies stay out of git.
+- New application-specific automation should be packaged as native Skill Runtime work, not as a new legacy dynamic plugin path.
+- Tool descriptors, input schemas, output schemas, runtime dispatch, and tests must stay aligned whenever a tool is added or changed.

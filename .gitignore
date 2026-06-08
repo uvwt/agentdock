@@ -2,11 +2,18 @@
 /workspace/
 /AgentDock/
 
-# Local build/runtime artifacts
+# Local build/runtime artifacts.
+# The repository root may contain the currently installed macOS host binary
+# and timestamped rollback copies. Keep them local; release artifacts belong
+# under dist/ or an external release system, not in git.
 /agentdock
 /agentdock.new
+/agentdock.new.*
 /agentdock.prev
 /agentdock.prev.*
-/agentdock.bak.*
+/agentdock.bak*
 /bin/
+/dist/
+/coverage.out
+/*.test
 /agentdock.killed*
