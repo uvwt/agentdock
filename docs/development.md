@@ -1,16 +1,16 @@
-# Development
+# 开发与质量门禁
 
-This document defines the default local development and productization checks for AgentDock.
+本文档定义 AgentDock 默认本地开发和产品化检查方式。
 
-## Quality Gate
+## 质量门禁
 
-Run the full gate before considering a change complete:
+完成改动前运行完整门禁：
 
 ```bash
 make check
 ```
 
-`make check` formats, tests, vets, and builds the project:
+`make check` 会格式化、测试、vet 并构建项目：
 
 ```bash
 gofmt -w ./cmd ./internal
@@ -19,11 +19,11 @@ go vet ./...
 go build -trimpath -o ./bin/agentdock ./cmd/agentdock
 ```
 
-For faster iteration, run package-level tests first, then finish with `make check`.
+局部快速迭代时，可以先运行包级测试，最后用 `make check` 收尾。
 
-## Local Artifacts
+## 本地产物
 
-The repository root may contain local runtime artifacts on macOS deployments:
+macOS 裸机部署时，仓库根目录可能包含本地运行产物：
 
 - `agentdock`
 - `agentdock.new`
@@ -33,21 +33,21 @@ The repository root may contain local runtime artifacts on macOS deployments:
 - `bin/`
 - `coverage.out`
 
-These files are intentionally ignored by git. The root `agentdock` binary can be the active launchd-managed host binary on a Mac mini deployment, so do not delete it as part of ordinary repository cleanup.
+这些文件会被 git 忽略。根目录的 `agentdock` 二进制可能是 Mac mini 上由 launchd 管理的当前宿主机二进制，因此普通仓库清理时不要删除它。
 
-Release artifacts should be produced outside git-tracked source files, for example under `dist/` or by a release pipeline.
+发布产物应在 git 跟踪的源码之外生成，例如放在 `dist/` 或由发布流水线处理。
 
-## Documentation Boundaries
+## 文档边界
 
-- Keep `README.md` concise: product summary, quick validation, common deployment entry points, and links.
-- Put operational runbooks in `docs/`.
-- Put AI/developer coding rules in `.trellis/spec/`.
-- Never record real tokens, cookies, OAuth codes, private endpoints, or local secret values in docs.
+- `README.md` 保持简洁：产品摘要、快速验证、常用部署入口和链接。
+- 运维 runbook 放在 `docs/`。
+- AI/开发者代码规则放在 `.trellis/spec/`。
+- 不在文档中记录真实 token、cookie、OAuth code、私有端点或本地 secret 值。
 
-## Change Expectations
+## 改动要求
 
-- Keep changes scoped to the package and behavior being modified.
-- Prefer existing helpers and package patterns before adding new abstractions.
-- Preserve read-only profile boundaries and permission gating for high-risk tools.
-- New application-specific automation should use native Skill Runtime packages, not legacy dynamic plugin paths.
-- Update tests when touching tool descriptors, schemas, path policy, permissions, Skill Runtime, env registry, command execution, HTTP auth, or desktop/browser automation.
+- 改动范围限制在被修改的包和行为内。
+- 新增抽象前优先复用已有 helper 和包模式。
+- 保持 read-only profile 边界和高风险工具的权限门禁。
+- 新增具体应用自动化能力应使用原生 Skill Runtime 包，不使用旧动态 plugin 路径。
+- 修改工具描述、schema、path policy、权限、Skill Runtime、env registry、命令执行、HTTP auth 或桌面/浏览器自动化时，更新测试。

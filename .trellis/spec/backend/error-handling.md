@@ -1,37 +1,37 @@
-# Error Handling
+# 错误处理
 
-> How errors are handled in AgentDock.
+> AgentDock 错误处理方式。
 
-## Overview
+## 概览
 
-Errors should be specific enough for operators and clients to diagnose the failing layer: validation, permission, configuration, filesystem, network, runtime, or protocol. Prefer returning errors with context over logging and continuing silently.
+错误信息应足够具体，便于操作者和客户端判断失败层级：validation、permission、configuration、filesystem、network、runtime 或 protocol。优先返回带上下文的错误，不要只写日志后静默继续。
 
-## Error Types
+## 错误类型
 
-- `internal/tools.ToolError` is the client-visible error type for MCP tools. It carries `code`, `message`, `category`, `retryable`, and optional structured `details`.
-- `internal/skillruntime.Error` is the Skill Runtime error type. It carries a stable code and stage for install/run diagnostics.
-- `internal/commandqueue.HandlerError` is used by Nexus command adapters to distinguish retryable and non-retryable command failures.
-- `internal/jsonrpc.Error` is the JSON-RPC response shape used by the MCP server.
+- `internal/tools.ToolError` 是 MCP 工具的客户端可见错误类型，包含 `code`、`message`、`category`、`retryable` 和可选结构化 `details`。
+- `internal/skillruntime.Error` 是 Skill Runtime 错误类型，包含稳定 code 和 stage，用于 install/run 诊断。
+- `internal/commandqueue.HandlerError` 用于 Nexus command adapter，区分可重试和不可重试失败。
+- `internal/jsonrpc.Error` 是 MCP server 使用的 JSON-RPC 响应错误结构。
 
-## Error Handling Patterns
+## 错误处理模式
 
-- Validate input at the boundary where it enters the system.
-- Wrap internal errors with context using `%w` so callers can preserve the causal chain.
-- Return `ToolError` from tool implementations when the client can act on the error category or details.
-- Keep permission failures distinct from validation failures.
-- Keep configuration failures distinct from runtime execution failures.
-- Redact command output, environment-derived values, and tool details before returning them to clients.
+- 输入进入系统的边界处负责校验。
+- 内部错误使用 `%w` 包装上下文，让调用方保留因果链。
+- 当客户端可以根据错误类别或 details 采取行动时，工具实现返回 `ToolError`。
+- permission failure 必须和 validation failure 区分。
+- configuration failure 必须和 runtime execution failure 区分。
+- 命令输出、环境变量来源的值和工具细节返回客户端前必须脱敏。
 
-## API Error Responses
+## API 错误响应
 
-- MCP tool errors are returned through the MCP tool envelope with `isError=true` and `structuredContent`.
-- JSON-RPC parse and params errors use JSON-RPC error codes from `internal/jsonrpc`.
-- HTTP auth failures return `401 unauthorized`; method mismatches return `405 method not allowed`.
-- Skill Runtime results include both `ok` and stable error code fields so callers can inspect failures without parsing strings.
+- MCP 工具错误通过 MCP tool envelope 返回，包含 `isError=true` 和 `structuredContent`。
+- JSON-RPC parse 和 params 错误使用 `internal/jsonrpc` 中的 JSON-RPC error code。
+- HTTP 鉴权失败返回 `401 unauthorized`；方法不匹配返回 `405 method not allowed`。
+- Skill Runtime 结果同时包含 `ok` 和稳定 error code 字段，让调用方不必解析字符串即可判断失败。
 
-## Common Mistakes
+## 常见错误
 
-- Returning a plain `err.Error()` to a client when the message may contain a path, token, command output, or raw payload.
-- Collapsing permission, validation, and runtime failures into one generic error.
-- Logging an error and then returning `nil`, which makes smoke tests pass while behavior is broken.
-- Adding a new tool without tests for invalid arguments and permission/profile boundaries.
+- 直接把可能包含路径、token、命令输出或原始载荷的 `err.Error()` 返回给客户端。
+- 把 permission、validation 和 runtime failure 合并成一个泛化错误。
+- 打了错误日志却返回 `nil`，导致 smoke test 通过但行为已经坏掉。
+- 新增工具时没有覆盖非法参数和 permission/profile 边界测试。

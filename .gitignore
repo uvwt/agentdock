@@ -2,10 +2,10 @@
 /workspace/
 /AgentDock/
 
-# Local build/runtime artifacts.
-# The repository root may contain the currently installed macOS host binary
-# and timestamped rollback copies. Keep them local; release artifacts belong
-# under dist/ or an external release system, not in git.
+# 本地构建/运行产物。
+# 仓库根目录可能放着当前 macOS 裸机运行的 agentdock 二进制，
+# 以及带时间戳的回滚副本。它们只保留在本机；发布产物应放到
+# dist/ 或外部发布系统，不进入 git。
 /agentdock
 /agentdock.new
 /agentdock.new.*

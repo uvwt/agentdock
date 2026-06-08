@@ -1,42 +1,42 @@
-# Backend Development Guidelines
+# 后端开发规范
 
-> AgentDock backend conventions for code changes, reviews, and AI-assisted development.
+> AgentDock 后端代码修改、审查和 AI 辅助开发约定。
 
-## Overview
+## 概览
 
-AgentDock is a Go service that exposes MCP tools for local and remote agent execution. The backend is a single Go module with the executable in `cmd/agentdock` and implementation packages under `internal/`.
+AgentDock 是一个 Go 服务，用于向本地和远程 Agent 暴露 MCP 工具。后端是单一 Go module，可执行入口位于 `cmd/agentdock`，具体实现包位于 `internal/`。
 
-These guidelines document the current project conventions. Follow the existing package boundaries before adding new abstractions, and keep product-facing behavior explicit, testable, and safe by default.
+这些规范记录当前项目的真实约定。新增抽象前先遵循现有包边界；面向产品的行为必须明确、可测试，并默认安全。
 
-## Guidelines Index
+## 规范索引
 
-| Guide | Description | Status |
+| 规范 | 说明 | 状态 |
 |-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | Active |
-| [Database Guidelines](./database-guidelines.md) | Persistent state and storage policy | Active |
-| [Error Handling](./error-handling.md) | Error propagation, tool errors, and API responses | Active |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, quality gates, and forbidden patterns | Active |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels, and sensitive data rules | Active |
+| [目录结构](./directory-structure.md) | 模块组织和文件布局 | 生效 |
+| [存储规范](./database-guidelines.md) | 持久化状态和存储策略 | 生效 |
+| [错误处理](./error-handling.md) | 错误传播、工具错误和 API 响应 | 生效 |
+| [质量规范](./quality-guidelines.md) | 代码标准、质量门禁和禁止模式 | 生效 |
+| [日志规范](./logging-guidelines.md) | 结构化日志、日志级别和敏感信息规则 | 生效 |
 
-## Pre-Development Checklist
+## 开发前检查
 
-- Read the relevant guide for the package you are touching.
-- Search for existing helpers and package patterns before creating new ones.
-- Keep new user-facing capabilities behind the appropriate profile, permission, runtime flag, or Skill Runtime boundary.
-- Do not print or persist secrets, tokens, cookies, OAuth codes, or raw tool payloads.
-- Run `make check` before considering the change complete, or record the exact failing command and reason.
+- 阅读本次改动涉及包对应的规范。
+- 新增 helper 或包模式前，先搜索是否已有同类实现。
+- 新增面向用户的能力时，必须放在合适的 profile、权限、运行时开关或 Skill Runtime 边界后。
+- 不打印、不持久化 secret、token、cookie、OAuth code 或原始工具载荷。
+- 完成前运行 `make check`；如果无法通过，记录具体失败命令和原因。
 
-## Quality Check
+## 质量检查
 
-- Run `make check`.
-- Re-read [Quality Guidelines](./quality-guidelines.md) for any change that touches tools, paths, permissions, Skill Runtime, env registry, HTTP auth, command execution, or automation.
-- Re-read [Error Handling](./error-handling.md) and [Logging Guidelines](./logging-guidelines.md) when changing returned errors, diagnostics, logs, or external-service handling.
-- Confirm local build/runtime artifacts remain ignored and are not included in commits.
-- Confirm README, `docs/`, scripts, and Makefile describe one consistent verification path.
+- 运行 `make check`。
+- 修改工具、路径、权限、Skill Runtime、env registry、HTTP auth、命令执行或自动化能力时，重新阅读 [质量规范](./quality-guidelines.md)。
+- 修改返回错误、诊断信息、日志或外部服务处理时，重新阅读 [错误处理](./error-handling.md) 和 [日志规范](./logging-guidelines.md)。
+- 确认本地构建/运行产物仍被忽略，没有进入提交。
+- 确认 README、`docs/`、脚本和 Makefile 描述的是同一条验证路径。
 
-## Productization Principles
+## 产品化原则
 
-- README stays as the product entry point; detailed operations and engineering rules belong in `docs/` and `.trellis/spec/`.
-- Local runtime artifacts, generated binaries, coverage files, and rollback copies stay out of git.
-- New application-specific automation should be packaged as native Skill Runtime work, not as a new legacy dynamic plugin path.
-- Tool descriptors, input schemas, output schemas, runtime dispatch, and tests must stay aligned whenever a tool is added or changed.
+- README 只作为产品入口；详细运维说明和工程规则放在 `docs/` 与 `.trellis/spec/`。
+- 本地运行产物、生成的二进制、覆盖率文件和回滚副本不进入 git。
+- 新增具体应用自动化能力应打包为原生 Skill Runtime 能力，不新增旧动态 plugin 路径。
+- 新增或修改工具时，工具描述、input schema、output schema、runtime dispatch 和测试必须同步更新。
