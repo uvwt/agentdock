@@ -72,3 +72,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Skill source 预检
+
+**Date**: 2026-06-09
+**Task**: Skill source 预检
+**Branch**: `main`
+
+### Summary
+
+新增 skill_manage validate 预检能力，覆盖 Skill source 的 manifest、entrypoint、env 声明、依赖命令和 digest 诊断，并同步 MCP schema、README、Skill Runtime 规范与测试。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e1c2981` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
