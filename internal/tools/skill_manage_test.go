@@ -179,6 +179,173 @@ spec:
 	}
 }
 
+func TestSkillManageValidateSuccessDoesNotInstall(t *testing.T) {
+	root := t.TempDir()
+	pkg := filepath.Join(root, "demo-package")
+	if err := os.MkdirAll(pkg, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `apiVersion: agentdock.dev/v1
+kind: Skill
+metadata:
+  name: demo-skill
+  version: 1.0.0
+  displayName: Demo Skill
+  description: MCP Skill validate test
+spec:
+  entrypoint: run.sh
+  operations:
+    - name: echo
+      description: Echo JSON input
+      inputSchema: {"type":"object","properties":{},"additionalProperties":false}
+      outputSchema: {"type":"object","properties":{},"additionalProperties":false}
+      timeoutSeconds: 5
+  compatibility:
+    platforms: [` + runtime.GOOS + `]
+    architectures: [` + runtime.GOARCH + `]
+    agentdock: ">=1.0.0"
+  permissions:
+    filesystem: []
+    network: []
+    env:
+      - name: DEMO_BASE_URL
+        kind: plain
+      - name: DEMO_API_TOKEN
+        kind: secret
+    secrets: []
+    commands: [sh]
+`
+	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkg, "run.sh"), []byte("#!/bin/sh\ncat\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		Workspace:    root,
+		ToolProfile:  config.ProfileUnified,
+		Mode:         config.ModeSandboxed,
+		PathPolicy:   config.PathPolicyWorkspace,
+		AgentDockDir: "AgentDock",
+	}
+	cfg.Normalize()
+	rt, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := rt.Call(context.Background(), "skill_manage", map[string]any{
+		"action": "validate",
+		"source": "demo-package",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["valid"] != true {
+		t.Fatalf("validate result = %#v, want valid=true", result)
+	}
+	if result["digest"] == "" {
+		t.Fatalf("validate digest missing: %#v", result)
+	}
+	manifestResult, ok := result["manifest"].(skillruntime.Manifest)
+	if !ok || manifestResult.Metadata.Name != "demo-skill" {
+		t.Fatalf("unexpected manifest result: %#v", result["manifest"])
+	}
+	env, ok := result["env"].([]skillruntime.EnvDefinition)
+	if !ok || len(env) != 2 {
+		t.Fatalf("unexpected env result: %#v", result["env"])
+	}
+	commands, ok := result["commands"].([]skillruntime.CommandCheck)
+	if !ok || len(commands) != 1 || !commands[0].Found {
+		t.Fatalf("unexpected command checks: %#v", result["commands"])
+	}
+	listed, err := rt.Call(context.Background(), "skill_manage", map[string]any{"action": "list"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listed["count"] != 0 {
+		t.Fatalf("validate should not install skill; list result: %#v", listed)
+	}
+}
+
+func TestSkillManageValidateCollectsIssues(t *testing.T) {
+	root := t.TempDir()
+	pkg := filepath.Join(root, "demo-package")
+	if err := os.MkdirAll(pkg, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `apiVersion: agentdock.dev/v1
+kind: Skill
+metadata:
+  name: demo-skill
+  version: 1.0.0
+  displayName: Demo Skill
+  description: MCP Skill validate test
+spec:
+  entrypoint: missing.sh
+  operations:
+    - name: echo
+      description: Echo JSON input
+      inputSchema: {"type":"object","properties":{},"additionalProperties":false}
+      outputSchema: {"type":"object","properties":{},"additionalProperties":false}
+      timeoutSeconds: 5
+  compatibility:
+    platforms: [` + runtime.GOOS + `]
+    architectures: [` + runtime.GOARCH + `]
+    agentdock: ">=1.0.0"
+  permissions:
+    filesystem: []
+    network: []
+    secrets: []
+    commands: [agentdock-missing-command-for-test]
+`
+	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		Workspace:    root,
+		ToolProfile:  config.ProfileUnified,
+		Mode:         config.ModeSandboxed,
+		PathPolicy:   config.PathPolicyWorkspace,
+		AgentDockDir: "AgentDock",
+	}
+	cfg.Normalize()
+	rt, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := rt.Call(context.Background(), "skill_manage", map[string]any{
+		"action": "validate",
+		"source": "demo-package",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["valid"] != false {
+		t.Fatalf("validate result = %#v, want valid=false", result)
+	}
+	if manifestResult, ok := result["manifest"].(skillruntime.Manifest); !ok || manifestResult.Metadata.Name != "demo-skill" {
+		t.Fatalf("unexpected manifest result: %#v", result["manifest"])
+	}
+	if result["requires_no_env_confirm"] != true {
+		t.Fatalf("requires_no_env_confirm = %#v, want true", result["requires_no_env_confirm"])
+	}
+	issues, ok := result["issues"].([]skillruntime.ValidateIssue)
+	if !ok || len(issues) != 3 {
+		t.Fatalf("unexpected issues: %#v", result["issues"])
+	}
+	stages := map[string]bool{}
+	for _, issue := range issues {
+		stages[issue.Stage] = true
+	}
+	for _, stage := range []string{"manifest.entrypoint", "manifest.env", "dependency"} {
+		if !stages[stage] {
+			t.Fatalf("issues missing stage %q: %#v", stage, issues)
+		}
+	}
+}
+
 func TestSkillManageRejectsUnknownAction(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{

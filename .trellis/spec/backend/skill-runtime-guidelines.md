@@ -87,3 +87,78 @@ permissions:
 ```
 
 Use `permissions.env` for Env Manager plain/secret declarations. Use `permissions.secrets` only when the Skill explicitly requires binding-based secret configuration.
+
+## Scenario: Skill Source Validate Preflight
+
+### 1. Scope / Trigger
+
+- Trigger: `skill_manage` needs to validate a Skill source before installing it, so Skill authors can see manifest, entrypoint, dependency command and env-declaration issues without mutating installed Skill state.
+- Applies to: `internal/skillruntime`, `internal/tools`, `internal/mcp`, `README.md`.
+- Goal: validation should mirror install-time checks closely enough to be actionable, while staying read-only with respect to Skill state, Env Registry values and Skill execution.
+
+### 2. Signatures
+
+- Tool action:
+  - `skill_manage action=validate`
+- Input fields:
+  - `source string` required: workspace/host path or HTTP(S) URL.
+  - `digest string` optional: expected SHA-256 digest.
+  - `max_bytes int` optional: package download/extract byte limit.
+  - `confirmed_no_env bool` optional: confirms a Skill with no manifest/compat env declarations intentionally needs no Env Manager configuration.
+- Runtime API:
+  - `skillruntime.Runtime.Validate(ctx context.Context, req ValidateRequest) (ValidateResult, error)`
+  - `ValidateRequest{Source, DigestSHA256, MaxBytes, ConfirmedNoEnv}`
+  - `ValidateResult{Valid, Source, Digest, Manifest, Env, Commands, Issues, RequiresNoEnvConfirm}`
+
+### 3. Contracts
+
+- `validate` must not install, activate, roll back or write Skill state.
+- `validate` must not run the Skill entrypoint and must not read real Env Registry secret values.
+- `validate` reuses source preparation for local directories, zip packages and HTTP(S) downloads.
+- Returned `source` must be safe for client display: HTTP(S) userinfo, query and fragment are omitted.
+- Returned `env` contains declaration metadata only: `skill`, `name`, `kind`, `source`; it must not contain values.
+- Returned `commands` contains one item per declared command with `command`, `found`, optional `path`, optional `error`.
+- Returned `issues` contains structured `code`, `stage`, `message` entries.
+- If manifest parsing succeeds, return `manifest` even when package-level checks fail, so agents can inspect and repair it.
+
+### 4. Validation & Error Matrix
+
+- Missing `source` input -> tool-level `VALIDATION_ERROR`.
+- Source cannot be resolved at the tool boundary -> tool-level `SKILL_SOURCE_INVALID`.
+- Source download/extract/digest preparation fails after runtime validation starts -> `valid=false`, issue code from `skillruntime.Error`.
+- Digest mismatch -> `valid=false`, issue code `SKILL_DIGEST_MISMATCH`, stage `digest`.
+- Manifest read/parse/manifest-schema failure -> `valid=false`, issue code `SKILL_MANIFEST_INVALID`, stage `manifest.read` or `manifest.parse`; omit `manifest` from tool response.
+- Entrypoint missing, directory, incompatible platform/arch or package escape -> `valid=false`, issue from `ValidatePackageManifest`.
+- No manifest/compat env declarations and `confirmed_no_env=false` -> `valid=false`, issue code `SKILL_MANIFEST_INVALID`, stage `manifest.env`, and `requires_no_env_confirm=true`.
+- Declared command missing from `PATH` -> `valid=false`, issue code `SKILL_DEPENDENCY_MISSING`, stage `dependency`.
+
+### 5. Good/Base/Bad Cases
+
+- Good: local source with valid manifest, existing entrypoint, explicit env declarations and commands present returns `valid=true`, manifest, digest, env declarations, command checks and no issues.
+- Base: source with no env declarations returns `valid=false` until caller passes `confirmed_no_env=true`.
+- Bad: source with missing entrypoint and missing command returns `valid=false` with both package and dependency issues, without installing the package.
+
+### 6. Tests Required
+
+- Runtime/tool test for valid package asserting `valid=true`, digest exists, env declarations are returned and `skill_manage list` remains empty.
+- Tool test for invalid package asserting structured issues include `manifest.entrypoint`, `manifest.env` and `dependency`.
+- MCP schema test asserting `validate` is present in `skill_manage` action enum and output schema exposes `valid`, `source`, `digest`, `env`, `commands`, `issues`, `requires_no_env_confirm`.
+- Full project gate: `make check`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```text
+skill_manage action=install source=skill-sources/demo activate=false
+```
+
+Using install as a preflight still writes installed package state and can affect channel/version bookkeeping.
+
+#### Correct
+
+```text
+skill_manage action=validate source=skill-sources/demo
+```
+
+Use validate for read-only install-time diagnostics, then install only after `valid=true` or after the user intentionally accepts remaining issues such as `confirmed_no_env`.

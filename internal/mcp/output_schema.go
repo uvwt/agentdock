@@ -118,6 +118,13 @@ func outputSchema(name string) map[string]any {
 		props["selection"] = objectProp("Active version, channels, and history.")
 		props["manifest"] = objectProp("Parsed agentdock.yaml manifest.")
 		props["binding_configured"] = boolProp("Whether a binding file exists for the Skill.")
+		props["valid"] = boolProp("Whether a Skill source passed validation.")
+		props["source"] = stringProp("Resolved Skill source label.")
+		props["digest"] = stringProp("Computed Skill package digest.")
+		props["env"] = arrayProp("Manifest and compat env declarations without values.")
+		props["commands"] = arrayProp("Declared command dependency checks.")
+		props["issues"] = arrayProp("Structured validation issues.")
+		props["requires_no_env_confirm"] = boolProp("Whether confirmed_no_env is needed for a Skill with no env declarations.")
 		props["result"] = objectProp("Install, run, or rollback result.")
 	case "env_manage":
 		props["action"] = stringProp("Completed Env action.")

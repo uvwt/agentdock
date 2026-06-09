@@ -39,10 +39,10 @@ type EnvProvider interface {
 }
 
 type EnvDefinition struct {
-	Skill  string
-	Name   string
-	Kind   string
-	Source string
+	Skill  string `json:"skill"`
+	Name   string `json:"name"`
+	Kind   string `json:"kind"`
+	Source string `json:"source"`
 }
 
 func New(state *skillstate.Store, bindings *BindingStore) (*Runtime, error) {

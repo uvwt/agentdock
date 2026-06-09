@@ -74,6 +74,8 @@ func (r *Runtime) skillManage(ctx context.Context, args map[string]any) (Result,
 		return r.skillList()
 	case "inspect":
 		return r.skillInspect(args)
+	case "validate":
+		return r.skillValidate(ctx, args)
 	case "install":
 		return r.skillInstall(ctx, args)
 	case "run":
@@ -83,7 +85,7 @@ func (r *Runtime) skillManage(ctx context.Context, args map[string]any) (Result,
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported skill_manage action", "validation", map[string]any{
 			"action":  action,
-			"allowed": []string{"list", "inspect", "install", "run", "rollback"},
+			"allowed": []string{"list", "inspect", "validate", "install", "run", "rollback"},
 		})
 	}
 }
@@ -216,6 +218,41 @@ func (r *Runtime) skillInspect(args map[string]any) (Result, error) {
 	result["version"] = selected
 	result["manifest"] = manifest
 	return result, nil
+}
+
+func (r *Runtime) skillValidate(ctx context.Context, args map[string]any) (Result, error) {
+	source := strings.TrimSpace(stringArg(args, "source", ""))
+	if source == "" {
+		return nil, toolErrorDetails("VALIDATION_ERROR", "source is required for skill validate", "validation", map[string]any{"field": "source"})
+	}
+	resolved, err := r.resolveSkillSource(source)
+	if err != nil {
+		return nil, err
+	}
+	result, err := r.skills.runtime.Validate(ctx, skillruntime.ValidateRequest{
+		Source:         resolved,
+		DigestSHA256:   strings.TrimSpace(stringArg(args, "digest", "")),
+		MaxBytes:       int64(intArg(args, "max_bytes", 0)),
+		ConfirmedNoEnv: boolArg(args, "confirmed_no_env", false),
+	})
+	if err != nil {
+		return nil, skillToolError(err)
+	}
+	response := Result{
+		"ok":                      true,
+		"action":                  "validate",
+		"valid":                   result.Valid,
+		"source":                  result.Source,
+		"digest":                  result.Digest,
+		"env":                     result.Env,
+		"commands":                result.Commands,
+		"issues":                  result.Issues,
+		"requires_no_env_confirm": result.RequiresNoEnvConfirm,
+	}
+	if result.Manifest.Metadata.Name != "" {
+		response["manifest"] = result.Manifest
+	}
+	return response, nil
 }
 
 func (r *Runtime) skillInstall(ctx context.Context, args map[string]any) (Result, error) {

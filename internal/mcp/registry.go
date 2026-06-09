@@ -30,7 +30,7 @@ var toolRegistry = []ToolDefinition{
 	{Name: "configure_github_token", Title: "Configure GitHub token", Description: "Load a GitHub token from a workspace .env file and store a redacted HTTPS credential for git.", Destructive: false},
 	{Name: "check_github_repo_access", Title: "Check GitHub repo access", Description: "Check stored GitHub credential authentication and repository visibility without exposing secrets.", ReadOnly: true, OpenWorld: true},
 	{Name: "github_create_repo", Title: "Create GitHub repository", Description: "Create a GitHub repository using the stored credential without exposing secrets.", Destructive: false, OpenWorld: true},
-	{Name: "skill_manage", Title: "Manage AgentDock Skills", Description: "List, inspect, install, run, or roll back AgentDock Skills through the local Skill Runtime.", Destructive: true, OpenWorld: true},
+	{Name: "skill_manage", Title: "Manage AgentDock Skills", Description: "List, inspect, validate, install, run, or roll back AgentDock Skills through the local Skill Runtime.", Destructive: true, OpenWorld: true},
 	{Name: "env_manage", Title: "Manage Skill environment", Description: "Manage redacted Skill environment variables through the local Nexus Env Registry.", Destructive: true, OpenWorld: true},
 	{Name: "memory_bootstrap", Title: "Bootstrap MemoryDock context", Description: "Load high-priority MemoryDock context at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks.", ReadOnly: true, OpenWorld: true},
 	{Name: "memory_list", Title: "List MemoryDock memories", Description: "List memories from the configured MemoryDock service.", ReadOnly: true, OpenWorld: true},

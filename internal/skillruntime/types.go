@@ -83,6 +83,37 @@ type InstallResult struct {
 	Path        string             `json:"path"`
 }
 
+type ValidateRequest struct {
+	Source         string
+	DigestSHA256   string
+	MaxBytes       int64
+	ConfirmedNoEnv bool
+}
+
+type ValidateIssue struct {
+	Code    string `json:"code"`
+	Stage   string `json:"stage"`
+	Message string `json:"message"`
+}
+
+type CommandCheck struct {
+	Command string `json:"command"`
+	Found   bool   `json:"found"`
+	Path    string `json:"path,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+type ValidateResult struct {
+	Valid                bool            `json:"valid"`
+	Source               string          `json:"source"`
+	Digest               string          `json:"digest,omitempty"`
+	Manifest             Manifest        `json:"manifest,omitempty"`
+	Env                  []EnvDefinition `json:"env,omitempty"`
+	Commands             []CommandCheck  `json:"commands,omitempty"`
+	Issues               []ValidateIssue `json:"issues"`
+	RequiresNoEnvConfirm bool            `json:"requires_no_env_confirm,omitempty"`
+}
+
 type RunRequest struct {
 	RunID     string             `json:"run_id,omitempty"`
 	Skill     string             `json:"skill"`

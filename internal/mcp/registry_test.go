@@ -95,6 +95,40 @@ func TestReadOnlyProfileExcludesDestructiveTools(t *testing.T) {
 	}
 }
 
+func TestSkillManageSchemaIncludesValidate(t *testing.T) {
+	schema := inputSchema("skill_manage")
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("skill_manage input schema properties missing")
+	}
+	action, ok := props["action"].(map[string]any)
+	if !ok {
+		t.Fatal("skill_manage action schema missing")
+	}
+	values, ok := action["enum"].([]string)
+	if !ok {
+		t.Fatalf("skill_manage action enum has unexpected type: %#v", action["enum"])
+	}
+	seen := map[string]bool{}
+	for _, value := range values {
+		seen[value] = true
+	}
+	for _, value := range []string{"list", "inspect", "validate", "install", "run", "rollback"} {
+		if !seen[value] {
+			t.Fatalf("skill_manage action enum missing %q: %#v", value, values)
+		}
+	}
+	outputProps, ok := outputSchema("skill_manage")["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("skill_manage output schema properties missing")
+	}
+	for _, name := range []string{"valid", "source", "digest", "env", "commands", "issues", "requires_no_env_confirm"} {
+		if _, ok := outputProps[name]; !ok {
+			t.Fatalf("skill_manage output schema missing %q", name)
+		}
+	}
+}
+
 func assertObjectSchema(t *testing.T, name, kind string, schema map[string]any) {
 	t.Helper()
 	if schema == nil {
