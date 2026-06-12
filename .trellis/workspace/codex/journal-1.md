@@ -105,3 +105,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: 改善外部部署运行体验
+
+**Date**: 2026-06-12
+**Task**: 改善外部部署运行体验
+**Branch**: `main`
+
+### Summary
+
+补齐 Docker quickstart、VPS production path、Docker smoke 验证脚本，并修复 Dockerfile 构建上下文缺少 generated 目录的问题。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c9bf9dd` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
