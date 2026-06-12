@@ -77,6 +77,18 @@ func (c *Client) PollCommand(ctx context.Context, state DeviceState) (*contracts
 	return &lease, nil
 }
 
+func (c *Client) StartCommand(ctx context.Context, state DeviceState, commandID, leaseID string) error {
+	action := contracts.CommandLeaseAction{LeaseId: leaseID}
+	return c.doJSON(ctx, c.httpClient, http.MethodPost, commandPath(commandID, "start"), state.DeviceToken, action, nil)
+}
+
+func (c *Client) RenewCommand(ctx context.Context, state DeviceState, commandID, leaseID string) (contracts.CommandLease, error) {
+	var lease contracts.CommandLease
+	action := contracts.CommandLeaseAction{LeaseId: leaseID}
+	err := c.doJSON(ctx, c.httpClient, http.MethodPost, commandPath(commandID, "renew"), state.DeviceToken, action, &lease)
+	return lease, err
+}
+
 func (c *Client) ReportProgress(ctx context.Context, state DeviceState, commandID string, progress contracts.CommandProgress) error {
 	return c.doJSON(ctx, c.httpClient, http.MethodPost, commandPath(commandID, "progress"), state.DeviceToken, progress, nil)
 }

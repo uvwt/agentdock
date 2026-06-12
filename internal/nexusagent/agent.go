@@ -15,6 +15,7 @@ import (
 	"time"
 
 	contracts "github.com/uvwt/agentdock/generated/nexuscontracts"
+	"github.com/uvwt/agentdock/internal/artifactrelay"
 	"github.com/uvwt/agentdock/internal/commandqueue"
 	"github.com/uvwt/agentdock/internal/compatenv"
 	"github.com/uvwt/agentdock/internal/config"
@@ -85,11 +86,33 @@ func Start(ctx context.Context, cfg config.Config) (bool, error) {
 		return false, err
 	}
 	skillRuntime.EnvProvider = nexusEnvProvider{store: envStore}
+	artifactKeys, err := artifactrelay.EnsureKeyPair(filepath.Join(stateDir, "artifact-key"))
+	if err != nil {
+		return false, err
+	}
+	artifactTargets, err := artifactrelay.ParseTargetsJSON(cfg.ArtifactTargetsJSON)
+	if err != nil {
+		return false, err
+	}
+	artifactReceiver, err := artifactrelay.NewReceiver(artifactrelay.ReceiverConfig{
+		Client: client,
+		Credentials: func() (artifactrelay.DeviceCredentials, error) {
+			state, err := deviceState.Load()
+			return artifactrelay.DeviceCredentials{DeviceID: state.DeviceID, DeviceToken: state.DeviceToken}, err
+		},
+		PrivateKey: artifactKeys.Private,
+		InboxRoot:  filepath.Join(stateDir, "artifacts", "inbox"),
+		Targets:    artifactTargets,
+	})
+	if err != nil {
+		return false, err
+	}
 
 	if err := commandqueue.RegisterAdapters(executor, commandqueue.AdapterDependencies{
-		Health: healthChecker{cfg: cfg},
-		Skills: skillRouter{runtime: skillRuntime},
-		Env:    envRouter{store: envStore, runtime: skillRuntime},
+		Health:    healthChecker{cfg: cfg},
+		Skills:    skillRouter{runtime: skillRuntime},
+		Env:       envRouter{store: envStore, runtime: skillRuntime},
+		Artifacts: artifactReceiverAdapter{receiver: artifactReceiver},
 	}); err != nil {
 		return false, err
 	}
@@ -98,7 +121,7 @@ func Start(ctx context.Context, cfg config.Config) (bool, error) {
 		StartedAt: time.Now().UTC(),
 		Version:   config.Version,
 		Capabilities: func() []contracts.DeviceCapability {
-			return capabilities(cfg)
+			return capabilities(cfg, artifactKeys.PublicEncoded())
 		},
 		SkillSummary: func() any {
 			return map[string]any{"runtime": "enabled", "state_dir": filepath.Base(stateDir)}
@@ -193,7 +216,7 @@ func ensureDeviceKey(dir string) (string, error) {
 	return publicEncoded, nil
 }
 
-func capabilities(cfg config.Config) []contracts.DeviceCapability {
+func capabilities(cfg config.Config, artifactPublicKey string) []contracts.DeviceCapability {
 	metadata, _ := json.Marshal(map[string]string{"goos": runtime.GOOS, "goarch": runtime.GOARCH})
 	return []contracts.DeviceCapability{
 		{Name: "mcp", Version: config.ProtocolVersion, Enabled: true, Metadata: metadata},
@@ -201,7 +224,19 @@ func capabilities(cfg config.Config) []contracts.DeviceCapability {
 		{Name: "skill-runtime", Version: "v1", Enabled: true},
 		{Name: "browser", Version: "v1", Enabled: cfg.BrowserEnabled},
 		{Name: "desktop", Version: "v1", Enabled: cfg.DesktopEnabled},
+		{Name: "artifact-relay", Version: artifactrelay.FormatVersion, Enabled: true, Metadata: mustJSON(map[string]string{"x25519_public_key": artifactPublicKey, "max_cipher_bytes": fmt.Sprint(artifactrelay.MaxCipherBytes)})},
 	}
+}
+
+type artifactReceiverAdapter struct{ receiver *artifactrelay.Receiver }
+
+func (a artifactReceiverAdapter) Pull(ctx context.Context, payload json.RawMessage) (any, error) {
+	return a.receiver.Pull(ctx, payload)
+}
+
+func mustJSON(value any) json.RawMessage {
+	encoded, _ := json.Marshal(value)
+	return encoded
 }
 
 type healthChecker struct{ cfg config.Config }

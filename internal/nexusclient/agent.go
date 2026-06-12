@@ -151,6 +151,37 @@ func (a *Agent) sendHeartbeat(ctx context.Context) {
 
 func (a *Agent) executeLease(ctx context.Context, lease contracts.CommandLease) error {
 	state := a.getDeviceState()
+	if err := a.client.StartCommand(ctx, state, lease.Command.Id, lease.LeaseId); err != nil {
+		return err
+	}
+	executionCtx, stopExecution := context.WithCancel(ctx)
+	defer stopExecution()
+	renewDone := make(chan struct{})
+	renewErr := make(chan error, 1)
+	go func() {
+		defer close(renewDone)
+		interval := time.Duration(lease.RenewAfterSeconds) * time.Second
+		if interval <= 0 {
+			interval = 10 * time.Second
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-executionCtx.Done():
+				return
+			case <-ticker.C:
+				if _, err := a.client.RenewCommand(executionCtx, state, lease.Command.Id, lease.LeaseId); err != nil {
+					select {
+					case renewErr <- err:
+					default:
+					}
+					stopExecution()
+					return
+				}
+			}
+		}
+	}()
 	progress := commandqueue.ProgressFunc(func(progressCtx context.Context, update contracts.CommandProgress) error {
 		if update.CommandId == "" {
 			update.CommandId = lease.Command.Id
@@ -166,9 +197,18 @@ func (a *Agent) executeLease(ctx context.Context, lease contracts.CommandLease) 
 		}
 		return a.client.ReportProgress(progressCtx, state, lease.Command.Id, update)
 	})
-	execution, err := a.executor.Execute(ctx, lease, progress)
+	execution, err := a.executor.Execute(executionCtx, lease, progress)
+	stopExecution()
+	<-renewDone
 	if err != nil {
 		return err
+	}
+	select {
+	case err := <-renewErr:
+		if err != nil {
+			return err
+		}
+	default:
 	}
 	if execution.Duplicate && execution.Result.Status == "" {
 		return nil

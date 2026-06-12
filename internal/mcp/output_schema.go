@@ -126,6 +126,12 @@ func outputSchema(name string) map[string]any {
 		props["issues"] = arrayProp("Structured validation issues.")
 		props["requires_no_env_confirm"] = boolProp("Whether confirmed_no_env is needed for a Skill with no env declarations.")
 		props["result"] = objectProp("Install, run, or rollback result.")
+	case "artifact_send":
+		props["artifact"] = objectProp("Nexus artifact metadata without upload credentials or encryption keys.")
+		props["deliveries"] = arrayProp("Per-device delivery status without delivery tokens or wrapped keys.")
+		props["source"] = stringProp("Transferred source filename.")
+		props["archive"] = boolProp("Whether a directory was packed as tar.gz.")
+		props["encrypted"] = boolProp("Whether the uploaded payload was end-to-end encrypted.")
 	case "env_manage":
 		props["action"] = stringProp("Completed Env action.")
 		props["skill"] = stringProp("Skill name.")

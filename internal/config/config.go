@@ -46,6 +46,7 @@ type Config struct {
 	NexusDeviceName               string
 	NexusStateDir                 string
 	NexusHeartbeatSeconds         int
+	ArtifactTargetsJSON           string
 	BrowserEnabled                bool
 	BrowserRunnerDir              string
 	BrowserArtifactDir            string
@@ -79,6 +80,7 @@ func FromEnv() Config {
 		NexusDeviceName:               getenv("AGENTDOCK_NEXUS_DEVICE_NAME", ""),
 		NexusStateDir:                 getenv("AGENTDOCK_NEXUS_STATE_DIR", ""),
 		NexusHeartbeatSeconds:         getenvInt("AGENTDOCK_NEXUS_HEARTBEAT_SECONDS", 30),
+		ArtifactTargetsJSON:           getenv("AGENTDOCK_ARTIFACT_TARGETS_JSON", ""),
 		BrowserEnabled:                getenvBool("AGENTDOCK_BROWSER_ENABLED", false),
 		BrowserRunnerDir:              getenv("AGENTDOCK_BROWSER_RUNNER_DIR", "browser-runner"),
 		BrowserArtifactDir:            getenv("AGENTDOCK_BROWSER_ARTIFACT_DIR", "browser-artifacts"),

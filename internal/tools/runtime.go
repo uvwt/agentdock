@@ -52,6 +52,9 @@ func (r *Runtime) ToolNames() []string {
 	if r.cfg.DesktopEnabled {
 		all = append(all, "desktop_observe", "desktop_act", "desktop_clipboard")
 	}
+	if strings.TrimSpace(r.cfg.NexusEndpoint) != "" {
+		all = append(all, "artifact_send")
+	}
 	if !r.cfg.EnableViewImage {
 		all = removeTool(all, "view_image")
 	}
@@ -137,6 +140,8 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.skillManage(ctx, args)
 	case "env_manage":
 		return r.envManage(ctx, args)
+	case "artifact_send":
+		return r.artifactSend(ctx, args)
 	case "memory_bootstrap":
 		return r.memoryBootstrap(ctx, args)
 	case "memory_list":
