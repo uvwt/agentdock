@@ -50,6 +50,70 @@ make check
 - HTTP/auth 改动：覆盖未鉴权和已鉴权行为，并确认不会记录 secret。
 - 纯文档改动完成前也至少运行 `make check`，除非当前环境无法执行。
 
+## 场景：Docker 镜像构建上下文
+
+### 1. Scope / Trigger
+
+修改 Docker 部署、Dockerfile、生成代码目录、Go import 边界或 Docker quickstart 时，必须验证 Docker 镜像构建上下文。原因是本地 `go build` 可以访问整个仓库，但 Dockerfile 只会看到显式 `COPY` 的目录。
+
+### 2. Signatures
+
+- 普通镜像：`make docker-build` -> `docker build -t agentdock:local .`
+- 浏览器镜像：`make docker-browser-build` -> `docker build -f Dockerfile.browser -t agentdock:browser .`
+- 快速 build-stage 验证：`docker build -f Dockerfile.browser --target build -t agentdock:browser-buildcheck .`
+
+### 3. Contracts
+
+Docker build stage 必须至少复制：
+
+```dockerfile
+COPY go.mod go.sum ./
+COPY cmd ./cmd
+COPY generated ./generated
+COPY internal ./internal
+```
+
+`generated/` 是 Go module 内的编译依赖，不是可忽略产物。Dockerfile 不应复制真实 token、env 文件、workspace 运行数据或 AgentDock 控制目录。
+
+### 4. Validation & Error Matrix
+
+- 缺少 `generated/` -> Docker build 报 `no required module provides package github.com/uvwt/agentdock/generated/nexuscontracts`
+- 缺少 `cmd/` 或 `internal/` -> Docker build 找不到入口或内部包
+- compose 端口/volume 语法错误 -> `docker compose config` 失败
+- smoke 未带 token -> `/mcp` 返回 HTTP 401，应设置 `AGENTDOCK_AUTH_TOKEN`
+
+### 5. Good/Base/Bad Cases
+
+- Good: `make docker-build` 成功，并用临时容器运行 `scripts/smoke-docker.sh` 验证 `/healthz`、`initialize`、`tools/list`、`server_info`
+- Base: 修改文档或 compose 后至少运行 `docker compose config` 和 `make check`
+- Bad: 只运行本地 `go build` 或 `make check`，未验证 Dockerfile build context
+
+### 6. Tests Required
+
+- Dockerfile 或 Docker quickstart 改动：运行 `make docker-build`
+- Browser Dockerfile 改动：至少运行 browser Dockerfile build stage；能承受依赖下载时运行 `make docker-browser-build`
+- Compose 改动：运行 `docker compose config`；browser overlay 改动还要运行 `docker compose -f docker-compose.yml -f docker-compose.browser.yml config`
+- Smoke 脚本改动：运行 `sh -n scripts/smoke-docker.sh`，并对一个真实 AgentDock HTTP endpoint 运行 smoke
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```dockerfile
+COPY cmd ./cmd
+COPY internal ./internal
+```
+
+这个写法会在代码引入 `generated/nexuscontracts` 后让 Docker build 失败。
+
+#### Correct
+
+```dockerfile
+COPY cmd ./cmd
+COPY generated ./generated
+COPY internal ./internal
+```
+
 ## 代码审查检查清单
 
 - 改动是否保持工具权限边界？

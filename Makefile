@@ -1,7 +1,8 @@
-.PHONY: fmt test vet race build check run docker-build docker-up docker-down logs clean install-macos restart-macos smoke-macos
+.PHONY: fmt test vet race build check run docker-build docker-browser-build docker-up docker-down smoke-docker logs clean install-macos restart-macos smoke-macos
 
 APP := agentdock
 IMAGE := agentdock:local
+BROWSER_IMAGE := agentdock:browser
 WORKSPACE ?= /workspace
 HOST ?= 127.0.0.1
 PORT ?= 8765
@@ -39,11 +40,17 @@ smoke-macos:
 docker-build:
 	docker build -t $(IMAGE) .
 
+docker-browser-build:
+	docker build -f Dockerfile.browser -t $(BROWSER_IMAGE) .
+
 docker-up:
 	docker compose up -d
 
 docker-down:
 	docker compose down
+
+smoke-docker:
+	./scripts/smoke-docker.sh
 
 logs:
 	docker compose logs -f
