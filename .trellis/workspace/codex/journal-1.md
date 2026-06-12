@@ -138,3 +138,34 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: 签名部署更新 AgentDock
+
+**Date**: 2026-06-12
+**Task**: 签名部署更新 AgentDock
+**Branch**: `main`
+
+### Summary
+
+按照记忆中的 macOS 裸机签名部署流程完成 make check、稳定签名安装、LaunchAgent 重启、make smoke-macos、server_info 验证和真实编码工具 smoke。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
