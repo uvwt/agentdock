@@ -102,6 +102,24 @@ func inputSchema(name string) map[string]any {
 		props["auto_init"] = boolProp("Create the repository with an initial commit.")
 		props["timeout_ms"] = intProp("HTTP timeout in milliseconds.")
 		required = []string{"name"}
+	case "task_manage":
+		props["action"] = map[string]any{"type": "string", "description": "Task action.", "enum": []string{"create", "list", "get", "add_condition", "add_evidence", "advance", "record_attempt", "block", "resume", "complete"}}
+		props["task_id"] = stringProp("Persistent task id for all actions except create and list.")
+		props["title"] = stringProp("Short task title for create.")
+		props["goal"] = stringProp("Fixed task goal for create. Later actions cannot silently change it.")
+		props["completion_conditions"] = map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}, "description": "Explicit completion conditions generated from the user goal. Every condition needs evidence before completion."}
+		props["status"] = map[string]any{"type": "string", "description": "Optional list filter.", "enum": []string{"active", "blocked", "completed"}}
+		props["limit"] = intProp("Maximum tasks returned by list. Defaults to 50 and is capped at 200.")
+		props["condition"] = stringProp("Additional completion condition. Conditions can be added but not removed or weakened.")
+		props["condition_id"] = stringProp("Completion condition id receiving evidence.")
+		props["summary"] = stringProp("Evidence, resume, or completion summary, depending on action.")
+		props["source"] = stringProp("Optional concrete evidence source such as a command, endpoint, log, commit, or tool result.")
+		props["strategy"] = stringProp("Attempt strategy identifier. The same strategy is limited to two attempts.")
+		props["outcome"] = map[string]any{"type": "string", "description": "Attempt outcome.", "enum": []string{"success", "failure"}}
+		props["diagnosis"] = stringProp("Diagnosis for a failed attempt. Required together with new evidence when outcome=failure.")
+		props["evidence"] = stringProp("New evidence for a failed attempt or blocking condition.")
+		props["blocker"] = stringProp("Explicit blocker that prevents further progress.")
+		required = []string{"action"}
 	case "skill_manage":
 		props["action"] = map[string]any{"type": "string", "description": "Skill action: list, inspect, validate, install, run, or rollback.", "enum": []string{"list", "inspect", "validate", "install", "run", "rollback"}}
 		props["skill"] = stringProp("Skill name for inspect, run, or rollback.")

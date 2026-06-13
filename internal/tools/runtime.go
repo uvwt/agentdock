@@ -14,6 +14,7 @@ import (
 
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/sandbox"
+	"github.com/uvwt/agentdock/internal/taskstate"
 	"github.com/uvwt/agentdock/internal/workspace"
 )
 
@@ -24,6 +25,7 @@ type Runtime struct {
 	ws       *workspace.Workspace
 	sessions *SessionStore
 	skills   *skillManager
+	tasks    *taskstate.Store
 }
 
 func NewRuntime(cfg config.Config) (*Runtime, error) {
@@ -35,14 +37,22 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Runtime{cfg: cfg, ws: ws, sessions: NewSessionStore(), skills: skills}, nil
+	taskRoot := cfg.AgentDockDir
+	if !filepath.IsAbs(taskRoot) {
+		taskRoot = filepath.Join(cfg.Workspace, taskRoot)
+	}
+	tasks, err := taskstate.New(filepath.Join(taskRoot, "tasks"))
+	if err != nil {
+		return nil, err
+	}
+	return &Runtime{cfg: cfg, ws: ws, sessions: NewSessionStore(), skills: skills, tasks: tasks}, nil
 }
 
 func (r *Runtime) Config() config.Config           { return r.cfg }
 func (r *Runtime) Workspace() *workspace.Workspace { return r.ws }
 
 func (r *Runtime) ToolNames() []string {
-	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "edit_file", "exec_command", "session_control", "configure_github_token", "check_github_repo_access", "github_create_repo", "skill_manage", "env_manage", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "request_permissions", "view_image"}
+	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "edit_file", "exec_command", "session_control", "configure_github_token", "check_github_repo_access", "github_create_repo", "task_manage", "skill_manage", "env_manage", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "request_permissions", "view_image"}
 	if r.cfg.MemoryEndpoint != "" {
 		all = append(all, "memory_bootstrap", "memory_list", "memory_read", "memory_search", "memory_pack", "memory_edit", "memory_sync_status", "memory_lint")
 	}
@@ -139,6 +149,8 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.checkGitHubRepoAccess(args)
 	case "github_create_repo":
 		return r.githubCreateRepo(args)
+	case "task_manage":
+		return r.taskManage(args)
 	case "skill_manage":
 		return r.skillManage(ctx, args)
 	case "env_manage":
@@ -283,7 +295,7 @@ func (r *Runtime) available(name string) bool {
 
 func (r *Runtime) serverInfo() Result {
 	names := r.ToolNames()
-	return Result{"ok": true, "server": config.ServerName, "title": "AgentDock", "version": config.Version, "protocol_version": config.ProtocolVersion, "os": runtime.GOOS, "arch": runtime.GOARCH, "go_version": runtime.Version(), "workspace": r.ws.Root(), "default_cwd": r.ws.DefaultDisplay(), "mode": r.cfg.Mode, "path_policy": r.cfg.PathPolicy, "tool_profile": r.cfg.ToolProfile, "sandbox_mode": r.cfg.SandboxMode, "agent_dock_dir": r.cfg.AgentDockDir, "memory_enabled": r.cfg.MemoryEndpoint != "", "memory_endpoint": r.cfg.MemoryEndpoint, "memory_bootstrap_recommended": r.cfg.MemoryEndpoint != "", "memory_bootstrap_tool": "memory_bootstrap", "memory_bootstrap_args": map[string]any{"project": "agentdock", "max_bytes": 50000}, "browser_enabled": r.cfg.BrowserEnabled, "browser_runner_dir": r.cfg.BrowserRunnerDir, "browser_artifact_dir": r.cfg.BrowserArtifactDir, "desktop_enabled": r.cfg.DesktopEnabled, "desktop_artifact_dir": r.cfg.DesktopArtifactDir, "auth_enabled": r.authEnabled(), "endpoint_path": "/mcp", "tools": names, "tool_count": len(names), "sandbox": sandbox.StatusForWorkspace(r.ws.Root())}
+	return Result{"ok": true, "server": config.ServerName, "title": "AgentDock", "version": config.Version, "protocol_version": config.ProtocolVersion, "os": runtime.GOOS, "arch": runtime.GOARCH, "go_version": runtime.Version(), "workspace": r.ws.Root(), "default_cwd": r.ws.DefaultDisplay(), "mode": r.cfg.Mode, "path_policy": r.cfg.PathPolicy, "tool_profile": r.cfg.ToolProfile, "sandbox_mode": r.cfg.SandboxMode, "agent_dock_dir": r.cfg.AgentDockDir, "memory_enabled": r.cfg.MemoryEndpoint != "", "memory_endpoint": r.cfg.MemoryEndpoint, "memory_bootstrap_recommended": r.cfg.MemoryEndpoint != "", "memory_bootstrap_tool": "memory_bootstrap", "memory_bootstrap_args": map[string]any{"project": "agentdock", "max_bytes": 50000}, "task_state_dir": r.tasks.Root(), "browser_enabled": r.cfg.BrowserEnabled, "browser_runner_dir": r.cfg.BrowserRunnerDir, "browser_artifact_dir": r.cfg.BrowserArtifactDir, "desktop_enabled": r.cfg.DesktopEnabled, "desktop_artifact_dir": r.cfg.DesktopArtifactDir, "auth_enabled": r.authEnabled(), "endpoint_path": "/mcp", "tools": names, "tool_count": len(names), "sandbox": sandbox.StatusForWorkspace(r.ws.Root())}
 }
 
 func (r *Runtime) authEnabled() bool {

@@ -28,6 +28,7 @@ func outputSchema(name string) map[string]any {
 		props["default_cwd"] = stringProp("Default workspace-relative cwd.")
 		props["tools"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 		props["tool_count"] = intProp("Number of exposed tools.")
+		props["task_state_dir"] = stringProp("Local directory containing persistent recoverable task state.")
 		props["sandbox"] = objectProp("Sandbox status metadata.")
 	case "get_default_cwd", "set_default_cwd":
 		props["path"] = stringProp("Workspace-relative cwd path.")
@@ -108,6 +109,12 @@ func outputSchema(name string) map[string]any {
 		props["clone_url"] = stringProp("Repository HTTPS clone URL.")
 		props["ssh_url"] = stringProp("Repository SSH clone URL.")
 		props["diagnostic"] = objectProp("Structured create diagnostic.")
+	case "task_manage":
+		props["action"] = stringProp("Completed task action.")
+		props["task"] = objectProp("Full persistent task state, including conditions, evidence, attempts, and events.")
+		props["tasks"] = arrayProp("Compact task summaries ordered by most recent update.")
+		props["count"] = intProp("Returned task count.")
+		props["state_dir"] = stringProp("Local AgentDock task state directory.")
 	case "skill_manage":
 		props["action"] = stringProp("Completed Skill action.")
 		props["skill"] = stringProp("Skill name.")

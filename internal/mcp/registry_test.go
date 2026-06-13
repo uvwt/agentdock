@@ -141,3 +141,42 @@ func assertObjectSchema(t *testing.T, name, kind string, schema map[string]any) 
 		t.Fatalf("%s schema for %s missing object properties", kind, name)
 	}
 }
+
+func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
+	schema := inputSchema("task_manage")
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("task_manage input schema properties missing")
+	}
+	action, ok := props["action"].(map[string]any)
+	if !ok {
+		t.Fatal("task_manage action schema missing")
+	}
+	values, ok := action["enum"].([]string)
+	if !ok {
+		t.Fatalf("task_manage action enum has unexpected type: %#v", action["enum"])
+	}
+	seen := map[string]bool{}
+	for _, value := range values {
+		seen[value] = true
+	}
+	for _, value := range []string{"create", "list", "get", "add_condition", "add_evidence", "advance", "record_attempt", "block", "resume", "complete"} {
+		if !seen[value] {
+			t.Fatalf("task_manage action enum missing %q: %#v", value, values)
+		}
+	}
+	for _, name := range []string{"completion_conditions", "condition_id", "strategy", "outcome", "diagnosis", "evidence"} {
+		if _, ok := props[name]; !ok {
+			t.Fatalf("task_manage input schema missing %q", name)
+		}
+	}
+	outputProps, ok := outputSchema("task_manage")["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("task_manage output schema properties missing")
+	}
+	for _, name := range []string{"task", "tasks", "count", "state_dir"} {
+		if _, ok := outputProps[name]; !ok {
+			t.Fatalf("task_manage output schema missing %q", name)
+		}
+	}
+}
