@@ -103,7 +103,7 @@ func inputSchema(name string) map[string]any {
 		props["timeout_ms"] = intProp("HTTP timeout in milliseconds.")
 		required = []string{"name"}
 	case "task_manage":
-		props["action"] = map[string]any{"type": "string", "description": "Task action.", "enum": []string{"create", "list", "get", "add_condition", "add_evidence", "advance", "record_attempt", "block", "resume", "complete"}}
+		props["action"] = map[string]any{"type": "string", "description": "Task action.", "enum": []string{"create", "list", "get", "add_condition", "add_evidence", "advance", "complete_step", "skip_step", "record_attempt", "block", "resume", "complete", "template_save", "template_validate", "template_publish", "template_retire", "template_list", "template_get", "template_match"}}
 		props["task_id"] = stringProp("Persistent task id for all actions except create and list.")
 		props["title"] = stringProp("Short task title for create.")
 		props["goal"] = stringProp("Fixed task goal for create. Later actions cannot silently change it.")
@@ -119,6 +119,18 @@ func inputSchema(name string) map[string]any {
 		props["diagnosis"] = stringProp("Diagnosis for a failed attempt. Required together with new evidence when outcome=failure.")
 		props["evidence"] = stringProp("New evidence for a failed attempt or blocking condition.")
 		props["blocker"] = stringProp("Explicit blocker that prevents further progress.")
+		props["template_id"] = stringProp("Workflow template id for create or template actions.")
+		props["template_version"] = stringProp("Workflow template version for create or template actions.")
+		props["selected_reason"] = stringProp("Why the model selected this template.")
+		props["template_candidates"] = map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": true}, "description": "Candidate templates and scores considered before selection."}
+		props["template"] = map[string]any{"type": "object", "additionalProperties": true, "description": "Complete draft workflow template for template_save."}
+		props["template_status"] = map[string]any{"type": "string", "enum": []string{"draft", "validated", "active", "retired"}, "description": "Optional template_list status filter."}
+		props["device"] = stringProp("Device context for template_match.")
+		props["task_type"] = stringProp("Task type context for template_match.")
+		props["step_id"] = stringProp("Template step id for complete_step or skip_step.")
+		props["step_evidence"] = map[string]any{"type": "object", "additionalProperties": false, "required": []string{"type", "source", "result", "summary"}, "properties": map[string]any{"type": stringProp("Evidence type such as command, http, tool, file, artifact."), "source": stringProp("Command, endpoint, file, or tool source."), "result": stringProp("Structured result summary such as exit_code=0 or HTTP 200."), "summary": stringProp("Human-readable evidence summary."), "artifact_ref": stringProp("Optional external log, screenshot, report, or Artifact reference."), "sha256": stringProp("Optional external evidence SHA-256.")}, "description": "Structured evidence for a completed template step."}
+		props["substituted"] = boolProp("Whether a different implementation replaced the suggested command or method.")
+		props["substitution_reason"] = stringProp("Required reason when a step is completed through an allowed substitution.")
 		required = []string{"action"}
 	case "skill_manage":
 		props["action"] = map[string]any{"type": "string", "description": "Skill action: list, inspect, validate, install, run, or rollback.", "enum": []string{"list", "inspect", "validate", "install", "run", "rollback"}}

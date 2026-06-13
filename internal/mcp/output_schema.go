@@ -29,6 +29,7 @@ func outputSchema(name string) map[string]any {
 		props["tools"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 		props["tool_count"] = intProp("Number of exposed tools.")
 		props["task_state_dir"] = stringProp("Local directory containing persistent recoverable task state.")
+		props["workflow_dir"] = stringProp("Local directory containing workflow templates.")
 		props["sandbox"] = objectProp("Sandbox status metadata.")
 	case "get_default_cwd", "set_default_cwd":
 		props["path"] = stringProp("Workspace-relative cwd path.")
@@ -115,6 +116,11 @@ func outputSchema(name string) map[string]any {
 		props["tasks"] = arrayProp("Compact task summaries ordered by most recent update.")
 		props["count"] = intProp("Returned task count.")
 		props["state_dir"] = stringProp("Local AgentDock task state directory.")
+		props["template"] = objectProp("Workflow template or immutable task template snapshot.")
+		props["templates"] = arrayProp("Workflow templates.")
+		props["candidates"] = arrayProp("Matched workflow template candidates with scores and reasons.")
+		props["valid"] = boolProp("Whether a draft workflow template passed validation.")
+		props["workflow_dir"] = stringProp("Local AgentDock workflow template directory.")
 	case "skill_manage":
 		props["action"] = stringProp("Completed Skill action.")
 		props["skill"] = stringProp("Skill name.")

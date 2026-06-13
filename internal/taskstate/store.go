@@ -67,20 +67,22 @@ type Event struct {
 }
 
 type Task struct {
-	SchemaVersion int         `json:"schema_version"`
-	ID            string      `json:"id"`
-	Title         string      `json:"title"`
-	Goal          string      `json:"goal"`
-	Status        Status      `json:"status"`
-	Phase         Phase       `json:"phase"`
-	Conditions    []Condition `json:"conditions"`
-	Attempts      []Attempt   `json:"attempts"`
-	Events        []Event     `json:"events"`
-	Blocker       string      `json:"blocker,omitempty"`
-	Summary       string      `json:"summary,omitempty"`
-	CreatedAt     time.Time   `json:"created_at"`
-	UpdatedAt     time.Time   `json:"updated_at"`
-	CompletedAt   *time.Time  `json:"completed_at,omitempty"`
+	SchemaVersion int                `json:"schema_version"`
+	ID            string             `json:"id"`
+	Title         string             `json:"title"`
+	Goal          string             `json:"goal"`
+	Status        Status             `json:"status"`
+	Phase         Phase              `json:"phase"`
+	Conditions    []Condition        `json:"conditions"`
+	Template      *TemplateSelection `json:"template,omitempty"`
+	Steps         []TaskStep         `json:"steps,omitempty"`
+	Attempts      []Attempt          `json:"attempts"`
+	Events        []Event            `json:"events"`
+	Blocker       string             `json:"blocker,omitempty"`
+	Summary       string             `json:"summary,omitempty"`
+	CreatedAt     time.Time          `json:"created_at"`
+	UpdatedAt     time.Time          `json:"updated_at"`
+	CompletedAt   *time.Time         `json:"completed_at,omitempty"`
 }
 
 type Store struct {
@@ -108,6 +110,10 @@ func New(root string) (*Store, error) {
 func (s *Store) Root() string { return s.root }
 
 func (s *Store) Create(title, goal string, conditionTexts []string) (Task, error) {
+	return s.CreateWithTemplate(title, goal, conditionTexts, "", "", "", nil)
+}
+
+func (s *Store) CreateWithTemplate(title, goal string, conditionTexts []string, templateID, templateVersion, selectedReason string, candidates []TemplateCandidate) (Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	title = strings.TrimSpace(title)
@@ -115,32 +121,41 @@ func (s *Store) Create(title, goal string, conditionTexts []string) (Task, error
 	if title == "" || goal == "" {
 		return Task{}, errors.New("task title and goal are required")
 	}
+	now := time.Now().UTC()
+	var selection *TemplateSelection
+	var steps []TaskStep
+	if strings.TrimSpace(templateID) != "" {
+		if strings.TrimSpace(templateVersion) == "" {
+			return Task{}, errors.New("template_version is required when template_id is set")
+		}
+		template, err := s.loadTemplateLocked("published", templateID, templateVersion)
+		if err != nil {
+			return Task{}, fmt.Errorf("load active template: %w", err)
+		}
+		if template.Status != TemplateActive {
+			return Task{}, errors.New("only active templates can create tasks")
+		}
+		conditionTexts = append(append([]string{}, template.CompletionConditions...), conditionTexts...)
+		selection = &TemplateSelection{ID: template.ID, Version: template.Version, Hash: template.Hash, SelectedReason: strings.TrimSpace(selectedReason), Candidates: candidates, Snapshot: template}
+		steps = make([]TaskStep, 0, len(template.Steps))
+		for _, step := range template.Steps {
+			steps = append(steps, TaskStep{ID: step.ID, Title: step.Title, Phase: step.Phase, Required: step.Required, DependsOn: append([]string{}, step.DependsOn...), SuggestedCommands: append([]string{}, step.SuggestedCommands...), Substitution: step.Substitution, Status: "pending", Evidence: []StepEvidence{}, UpdatedAt: now})
+		}
+	}
 	conditionTexts = normalizeTexts(conditionTexts)
 	if len(conditionTexts) == 0 {
 		return Task{}, errors.New("at least one completion condition is required")
 	}
-	now := time.Now().UTC()
 	id, err := newID()
 	if err != nil {
 		return Task{}, err
 	}
-	task := Task{
-		SchemaVersion: SchemaVersion,
-		ID:            id,
-		Title:         title,
-		Goal:          goal,
-		Status:        StatusActive,
-		Phase:         PhaseCheck,
-		Conditions:    make([]Condition, 0, len(conditionTexts)),
-		Attempts:      []Attempt{},
-		Events:        []Event{{Type: "created", Summary: "task created", CreatedAt: now}},
-		CreatedAt:     now,
-		UpdatedAt:     now,
+	task := Task{SchemaVersion: SchemaVersion, ID: id, Title: title, Goal: goal, Status: StatusActive, Phase: PhaseCheck, Conditions: make([]Condition, 0, len(conditionTexts)), Template: selection, Steps: steps, Attempts: []Attempt{}, Events: []Event{{Type: "created", Summary: "task created", CreatedAt: now}}, CreatedAt: now, UpdatedAt: now}
+	if selection != nil {
+		task.Events = append(task.Events, Event{Type: "template_selected", Summary: selection.ID + "@" + selection.Version + ": " + selection.SelectedReason, CreatedAt: now})
 	}
 	for i, text := range conditionTexts {
-		task.Conditions = append(task.Conditions, Condition{
-			ID: fmt.Sprintf("cond_%02d", i+1), Text: text, CreatedAt: now, Evidence: []Evidence{},
-		})
+		task.Conditions = append(task.Conditions, Condition{ID: fmt.Sprintf("cond_%02d", i+1), Text: text, CreatedAt: now, Evidence: []Evidence{}})
 	}
 	if err := s.saveLocked(task); err != nil {
 		return Task{}, err
@@ -236,6 +251,9 @@ func (s *Store) Advance(id string) (Task, error) {
 		if err := requireActive(task); err != nil {
 			return err
 		}
+		if missing := incompleteRequiredSteps(*task, task.Phase); len(missing) > 0 {
+			return fmt.Errorf("required steps incomplete for phase %s: %s", task.Phase, strings.Join(missing, ", "))
+		}
 		for i, phase := range phaseOrder {
 			if phase != task.Phase {
 				continue
@@ -248,6 +266,85 @@ func (s *Store) Advance(id string) (Task, error) {
 			return nil
 		}
 		return fmt.Errorf("invalid task phase %q", task.Phase)
+	})
+}
+
+func (s *Store) CompleteStep(id, stepID string, evidence StepEvidence, substituted bool, substitutionReason string) (Task, error) {
+	return s.mutate(id, func(task *Task, now time.Time) error {
+		if err := requireActive(task); err != nil {
+			return err
+		}
+		for i := range task.Steps {
+			step := &task.Steps[i]
+			if step.ID != strings.TrimSpace(stepID) {
+				continue
+			}
+			if step.Status == "completed" {
+				return errors.New("step is already completed")
+			}
+			if step.Phase != task.Phase {
+				return fmt.Errorf("step %s belongs to phase %s, current phase is %s", step.ID, step.Phase, task.Phase)
+			}
+			for _, dep := range step.DependsOn {
+				if !stepCompleted(task.Steps, dep) {
+					return fmt.Errorf("step %s dependency %s is not completed", step.ID, dep)
+				}
+			}
+			evidence.Type = strings.TrimSpace(evidence.Type)
+			evidence.Source = strings.TrimSpace(evidence.Source)
+			evidence.Result = strings.TrimSpace(evidence.Result)
+			evidence.Summary = strings.TrimSpace(evidence.Summary)
+			if evidence.Type == "" || evidence.Source == "" || evidence.Result == "" || evidence.Summary == "" {
+				return errors.New("step evidence requires type, source, result, and summary")
+			}
+			if substituted {
+				if step.Substitution == "forbidden" {
+					return errors.New("step substitution is forbidden")
+				}
+				if strings.TrimSpace(substitutionReason) == "" {
+					return errors.New("substitution reason is required")
+				}
+			}
+			evidence.CreatedAt = now
+			step.Status = "completed"
+			step.Substituted = substituted
+			step.SubstitutionReason = strings.TrimSpace(substitutionReason)
+			step.Evidence = append(step.Evidence, evidence)
+			step.UpdatedAt = now
+			task.Events = append(task.Events, Event{Type: "step_completed", Summary: step.ID + ": " + evidence.Summary, CreatedAt: now})
+			return nil
+		}
+		return fmt.Errorf("task step %q not found", stepID)
+	})
+}
+
+func (s *Store) SkipStep(id, stepID, reason string) (Task, error) {
+	return s.mutate(id, func(task *Task, now time.Time) error {
+		if err := requireActive(task); err != nil {
+			return err
+		}
+		reason = strings.TrimSpace(reason)
+		if reason == "" {
+			return errors.New("skip reason is required")
+		}
+		for i := range task.Steps {
+			step := &task.Steps[i]
+			if step.ID != strings.TrimSpace(stepID) {
+				continue
+			}
+			if step.Required {
+				return errors.New("required steps cannot be skipped")
+			}
+			if step.Phase != task.Phase {
+				return fmt.Errorf("step %s belongs to phase %s, current phase is %s", step.ID, step.Phase, task.Phase)
+			}
+			step.Status = "skipped"
+			step.SkipReason = reason
+			step.UpdatedAt = now
+			task.Events = append(task.Events, Event{Type: "step_skipped", Summary: step.ID + ": " + reason, CreatedAt: now})
+			return nil
+		}
+		return fmt.Errorf("task step %q not found", stepID)
 	})
 }
 
@@ -327,6 +424,9 @@ func (s *Store) Complete(id, summary string) (Task, error) {
 		}
 		if task.Phase != PhaseCloseout {
 			return errors.New("task must reach closeout before completion")
+		}
+		if missingSteps := incompleteRequiredSteps(*task, ""); len(missingSteps) > 0 {
+			return fmt.Errorf("required template steps incomplete: %s", strings.Join(missingSteps, ", "))
 		}
 		missing := make([]string, 0)
 		for _, condition := range task.Conditions {
@@ -455,6 +555,25 @@ func requireActive(task *Task) error {
 		return fmt.Errorf("task status must be active, got %s", task.Status)
 	}
 	return nil
+}
+
+func incompleteRequiredSteps(task Task, phase Phase) []string {
+	var out []string
+	for _, step := range task.Steps {
+		if step.Required && (phase == "" || step.Phase == phase) && step.Status != "completed" {
+			out = append(out, step.ID)
+		}
+	}
+	return out
+}
+
+func stepCompleted(steps []TaskStep, id string) bool {
+	for _, step := range steps {
+		if step.ID == id {
+			return step.Status == "completed"
+		}
+	}
+	return false
 }
 
 func validateID(id string) error {

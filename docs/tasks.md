@@ -37,3 +37,27 @@ check -> execute -> verify -> closeout
 - `complete`
 
 同一策略最多记录两次尝试。失败尝试必须提供新的诊断和证据，防止机械重复。会话中断后，新会话通过 `list` 或已知 `task_id` 调用 `get`，即可继续未完成任务。
+
+
+## 固定工作流模板
+
+模板保存在 `<AGENTDOCK_DIR>/workflows`，任务运行时只读取本地模板，不依赖 Nexus。Nexus 后续可以作为可选控制面编辑和同步模板。
+
+模板生命周期：
+
+```text
+draft -> validated -> active -> retired
+```
+
+已发布版本不可覆盖；修改行为必须创建新版本。创建任务时会把模板 ID、版本、SHA-256、候选匹配分数、选择理由和完整模板快照写进任务，因此旧任务恢复时不会受模板后续变化影响。
+
+`task_manage` 的模板操作：
+
+- `template_save`：保存或更新草稿。
+- `template_validate`：校验步骤 ID、阶段、依赖、替代规则和完成条件。
+- `template_publish`：发布并冻结版本。
+- `template_retire`：停止新任务匹配该版本。
+- `template_list`、`template_get`：查看模板。
+- `template_match`：根据目标、设备、任务类型返回候选、分数和匹配理由。
+
+模板步骤支持：必做/可选、阶段、依赖、推荐命令、允许或禁止替代。模型可以补充步骤和异常处理，但不能跳过必做步骤。必做步骤只能完成或阻塞；可选步骤可用 `skip_step` 跳过并记录原因。完成步骤必须通过 `complete_step` 写入结构化证据：类型、来源、结果、摘要，以及可选的 Artifact 引用和 SHA-256。

@@ -1,0 +1,89 @@
+package taskstate
+
+import "testing"
+
+func testTemplate() Template {
+	return Template{
+		ID: "agentdock.deploy.macos", Version: "1.0.0", Title: "Deploy AgentDock on macOS",
+		Match:                MatchRule{Keywords: []string{"AgentDock", "deploy"}, Devices: []string{"DockMini"}, TaskTypes: []string{"deployment"}, Priority: 5},
+		CompletionConditions: []string{"tests pass", "health is 200"},
+		Steps: []TemplateStep{
+			{ID: "inspect", Title: "Inspect repository", Phase: PhaseCheck, Required: true, SuggestedCommands: []string{"git status"}, Substitution: "allowed", SubstitutionReasonRequired: true},
+			{ID: "install", Title: "Install signed binary", Phase: PhaseExecute, Required: true, DependsOn: []string{"inspect"}, SuggestedCommands: []string{"make install-macos"}, Substitution: "forbidden"},
+			{ID: "health", Title: "Verify health", Phase: PhaseVerify, Required: true, DependsOn: []string{"install"}, SuggestedCommands: []string{"curl healthz"}, Substitution: "allowed", SubstitutionReasonRequired: true},
+			{ID: "logs", Title: "Inspect optional logs", Phase: PhaseVerify, Required: false},
+			{ID: "record", Title: "Record deployment", Phase: PhaseCloseout, Required: true, DependsOn: []string{"health"}},
+		},
+	}
+}
+
+func TestTemplateLifecycleMatchAndTaskSnapshot(t *testing.T) {
+	store, err := New(t.TempDir() + "/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := store.SaveTemplateDraft(testTemplate())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.Status != TemplateDraft {
+		t.Fatalf("status=%s", draft.Status)
+	}
+	validated, err := store.ValidateTemplate(draft.ID, draft.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if validated.Status != TemplateValidated {
+		t.Fatalf("status=%s", validated.Status)
+	}
+	published, err := store.PublishTemplate(draft.ID, draft.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if published.Status != TemplateActive || published.Hash == "" {
+		t.Fatalf("published=%#v", published)
+	}
+	if _, err := store.PublishTemplate(draft.ID, draft.Version); err == nil {
+		t.Fatal("published version was overwritten")
+	}
+	candidates, err := store.MatchTemplates("deploy AgentDock", "DockMini", "deployment")
+	if err != nil || len(candidates) != 1 || candidates[0].Score <= 0 {
+		t.Fatalf("candidates=%#v err=%v", candidates, err)
+	}
+	task, err := store.CreateWithTemplate("Deploy", "deploy AgentDock", nil, published.ID, published.Version, "matched DockMini deployment", candidates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Template == nil || task.Template.Hash != published.Hash || len(task.Steps) != len(published.Steps) {
+		t.Fatalf("task snapshot=%#v", task)
+	}
+	if _, err := store.Advance(task.ID); err == nil {
+		t.Fatal("advanced with incomplete required check step")
+	}
+	task, err = store.CompleteStep(task.ID, "inspect", StepEvidence{Type: "command", Source: "git status", Result: "exit_code=0", Summary: "repository inspected"}, false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Steps[0].Status != "completed" {
+		t.Fatalf("step=%#v", task.Steps[0])
+	}
+	if _, err := store.Advance(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CompleteStep(task.ID, "install", StepEvidence{Type: "command", Source: "other installer", Result: "exit_code=0", Summary: "installed"}, true, "equivalent"); err == nil {
+		t.Fatal("forbidden substitution succeeded")
+	}
+}
+
+func TestOptionalStepSkipAndDependencyValidation(t *testing.T) {
+	store, err := New(t.TempDir() + "/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := testTemplate()
+	bad.Version = "1.0.1"
+	bad.Steps[0].DependsOn = []string{"missing"}
+	if _, err := store.SaveTemplateDraft(bad); err == nil {
+		t.Fatal("unknown dependency validated")
+	}
+}
