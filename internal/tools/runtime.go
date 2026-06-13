@@ -54,6 +54,9 @@ func (r *Runtime) ToolNames() []string {
 	}
 	if strings.TrimSpace(r.cfg.NexusEndpoint) != "" {
 		all = append(all, "artifact_send")
+		if r.cfg.ArtifactFetchEnabled {
+			all = append(all, "artifact_fetch_create", "artifact_fetch_status", "artifact_fetch_download")
+		}
 	}
 	if !r.cfg.EnableViewImage {
 		all = removeTool(all, "view_image")
@@ -142,6 +145,12 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.envManage(ctx, args)
 	case "artifact_send":
 		return r.artifactSend(ctx, args)
+	case "artifact_fetch_create":
+		return r.artifactFetchCreate(ctx, args)
+	case "artifact_fetch_status":
+		return r.artifactFetchStatus(ctx, args)
+	case "artifact_fetch_download":
+		return r.artifactFetchDownload(ctx, args)
 	case "memory_bootstrap":
 		return r.memoryBootstrap(ctx, args)
 	case "memory_list":

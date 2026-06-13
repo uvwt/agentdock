@@ -126,6 +126,19 @@ func outputSchema(name string) map[string]any {
 		props["issues"] = arrayProp("Structured validation issues.")
 		props["requires_no_env_confirm"] = boolProp("Whether confirmed_no_env is needed for a Skill with no env declarations.")
 		props["result"] = objectProp("Install, run, or rollback result.")
+	case "artifact_fetch_create", "artifact_fetch_status":
+		props["fetch"] = objectProp("Artifact fetch metadata without local private keys or download tokens.")
+	case "artifact_fetch_download":
+		props["fetch_id"] = stringProp("Artifact fetch id.")
+		props["status"] = stringProp("Artifact fetch status.")
+		props["file_path"] = stringProp("Local output path marked for Connector file-result rewriting.")
+		props["file_name"] = stringProp("Output filename.")
+		props["mime_type"] = stringProp("Output media type.")
+		props["size"] = intProp("Plaintext output size.")
+		props["sha256"] = stringProp("Plaintext SHA-256.")
+		props["resource_uri"] = stringProp("Short-lived HTTPS resource URI for MCP resource_link output.")
+		props["output_expires_at"] = stringProp("Resource expiry timestamp.")
+		props["mounted"] = boolProp("Whether mount confirmation and cleanup completed.")
 	case "artifact_send":
 		props["artifact"] = objectProp("Nexus artifact metadata without upload credentials or encryption keys.")
 		props["deliveries"] = arrayProp("Per-device delivery status without delivery tokens or wrapped keys.")

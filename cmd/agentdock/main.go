@@ -46,6 +46,8 @@ func run() error {
 	flag.StringVar(&cfg.NexusStateDir, "nexus-state-dir", cfg.NexusStateDir, "AgentDock Nexus local state directory")
 	flag.IntVar(&cfg.NexusHeartbeatSeconds, "nexus-heartbeat-seconds", cfg.NexusHeartbeatSeconds, "AgentDock Nexus heartbeat interval seconds")
 	flag.StringVar(&cfg.ArtifactTargetsJSON, "artifact-targets-json", cfg.ArtifactTargetsJSON, "JSON object mapping logical artifact targets to local directories")
+	flag.BoolVar(&cfg.ArtifactFetchEnabled, "artifact-fetch-enabled", cfg.ArtifactFetchEnabled, "enable high-risk controlled absolute-path artifact fetch")
+	flag.StringVar(&cfg.ArtifactFetchDenyJSON, "artifact-fetch-deny-json", cfg.ArtifactFetchDenyJSON, "JSON array of additional absolute path prefixes denied to artifact fetch")
 	flag.BoolVar(&cfg.BrowserEnabled, "browser-enabled", cfg.BrowserEnabled, "expose optional browser automation tools")
 	flag.StringVar(&cfg.BrowserRunnerDir, "browser-runner-dir", cfg.BrowserRunnerDir, "workspace-relative browser runner directory")
 	flag.StringVar(&cfg.BrowserArtifactDir, "browser-artifact-dir", cfg.BrowserArtifactDir, "workspace-relative browser artifact directory")

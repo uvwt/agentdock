@@ -105,7 +105,7 @@ func toolDescriptorsForNames(names []string) []map[string]any {
 	descriptors := make([]map[string]any, 0, len(names))
 	for _, name := range names {
 		def, _ := toolDefinition(name)
-		descriptors = append(descriptors, map[string]any{
+		descriptor := map[string]any{
 			"name":         name,
 			"title":        def.Title,
 			"description":  def.Description,
@@ -116,7 +116,20 @@ func toolDescriptorsForNames(names []string) []map[string]any {
 				"destructiveHint": def.Destructive,
 				"openWorldHint":   def.OpenWorld,
 			},
-		})
+		}
+		meta := map[string]any{}
+		if len(def.FileArgRewritePaths) > 0 {
+			descriptor["file_arg_rewrite_paths"] = append([]string(nil), def.FileArgRewritePaths...)
+			meta["file_arg_rewrite_paths"] = append([]string(nil), def.FileArgRewritePaths...)
+		}
+		if len(def.FileResultRewritePaths) > 0 {
+			descriptor["file_result_rewrite_paths"] = append([]string(nil), def.FileResultRewritePaths...)
+			meta["file_result_rewrite_paths"] = append([]string(nil), def.FileResultRewritePaths...)
+		}
+		if len(meta) > 0 {
+			descriptor["_meta"] = meta
+		}
+		descriptors = append(descriptors, descriptor)
 	}
 	return descriptors
 }
@@ -144,6 +157,17 @@ func toolEnvelope(name string, structured any, err error) map[string]any {
 		payload := asMap(structured)
 		if output, _ := payload["output"].(string); output == "mcp_image" {
 			return map[string]any{"isError": false, "structuredContent": structured, "content": []map[string]any{{"type": "image", "data": payload["data_base64"], "mimeType": payload["mime_type"]}}}
+		}
+	}
+	if name == "artifact_fetch_download" {
+		payload := asMap(structured)
+		if mounted, _ := payload["mounted"].(bool); !mounted {
+			if uri, _ := payload["resource_uri"].(string); uri != "" {
+				return map[string]any{"isError": false, "structuredContent": structured, "content": []map[string]any{{
+					"type": "resource_link", "uri": uri, "name": payload["file_name"],
+					"mimeType": payload["mime_type"], "size": payload["size"],
+				}}}
+			}
 		}
 	}
 	if name == "desktop_snapshot" || name == "desktop_get_app_state" || name == "desktop_observe" {
@@ -179,4 +203,12 @@ func toolDescription(name string) string {
 		return def.Description
 	}
 	return "AgentDock tool."
+}
+
+func (s *Server) ResolveArtifactFetchOutput(fetchID, token string) (string, string, string, error) {
+	state, err := s.runtime.ResolveArtifactFetchOutput(fetchID, token)
+	if err != nil {
+		return "", "", "", err
+	}
+	return state.OutputPath, state.OutputName, state.OutputMIME, nil
 }

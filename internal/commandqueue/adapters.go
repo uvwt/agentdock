@@ -40,15 +40,20 @@ type ArtifactReceiver interface {
 	Pull(context.Context, json.RawMessage) (any, error)
 }
 
+type ArtifactFetcher interface {
+	Fetch(context.Context, json.RawMessage) (any, error)
+}
+
 type AdapterDependencies struct {
-	Health      HealthChecker
-	Memory      MemorySyncer
-	Skills      SkillRouter
-	Env         EnvManager
-	Services    ServiceController
-	Diagnostics DiagnosticsCollector
-	Reloader    Reloader
-	Artifacts   ArtifactReceiver
+	Health        HealthChecker
+	Memory        MemorySyncer
+	Skills        SkillRouter
+	Env           EnvManager
+	Services      ServiceController
+	Diagnostics   DiagnosticsCollector
+	Reloader      Reloader
+	Artifacts     ArtifactReceiver
+	ArtifactFetch ArtifactFetcher
 }
 
 // RegisterAdapters wires the fixed V1 command set to controlled local
@@ -110,6 +115,13 @@ func RegisterAdapters(executor *Executor, dependencies AdapterDependencies) erro
 				return HandlerResult{}, missingDependency("artifact.pull")
 			}
 			output, err := dependencies.Artifacts.Pull(ctx, payload)
+			return HandlerResult{Output: output}, err
+		}},
+		FuncHandler{CommandType: "artifact.fetch", Run: func(ctx context.Context, payload json.RawMessage, _ ProgressReporter) (HandlerResult, error) {
+			if dependencies.ArtifactFetch == nil {
+				return HandlerResult{}, missingDependency("artifact.fetch")
+			}
+			output, err := dependencies.ArtifactFetch.Fetch(ctx, payload)
 			return HandlerResult{Output: output}, err
 		}},
 	}

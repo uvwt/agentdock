@@ -120,6 +120,19 @@ func inputSchema(name string) map[string]any {
 		props["timeout_ms"] = intProp("Optional run timeout in milliseconds, capped by the operation timeout.")
 		props["max_output_bytes"] = intProp("Maximum stdout/stderr bytes for run.")
 		required = []string{"action"}
+	case "artifact_fetch_create":
+		props["source_device_id"] = stringProp("Registered source device id.")
+		props["source_path"] = stringProp("Absolute path on the source device. Immutable core deny rules and configured additions always apply.")
+		props["archive"] = boolProp("For a directory, create a tar.gz. Defaults to false, which returns a bounded immediate listing.")
+		props["retention_seconds"] = intProp("Fetch retention between 3600 and 604800 seconds. Defaults to 86400.")
+		required = []string{"source_device_id", "source_path"}
+	case "artifact_fetch_status":
+		props["fetch_id"] = stringProp("Artifact fetch id returned by artifact_fetch_create.")
+		required = []string{"fetch_id"}
+	case "artifact_fetch_download":
+		props["fetch_id"] = stringProp("Ready artifact fetch id.")
+		props["mounted"] = boolProp("Set true only after the GPT sandbox has mounted the returned file; this deletes Nexus ciphertext and local transient state.")
+		required = []string{"fetch_id"}
 	case "artifact_send":
 		props["file"] = map[string]any{"type": "string", "format": "binary", "description": "Top-level file parameter. Connector runtimes must upload the file body and pass the mounted local path; do not pass a remote /mnt/data path as plain text."}
 		props["path"] = stringProp("Alternative local file or directory path visible to this AgentDock instance. Directories are packed as tar.gz before encryption.")

@@ -82,7 +82,7 @@ func NewExecutor(store *Store) *Executor {
 }
 
 func DefaultAllowedCommandTypes() []string {
-	return []string{"health.check", "skill.install", "skill.run", "skill.rollback", "memory.sync", "service.inspect", "service.restart", "diagnostics.collect", "agentdock.reload", "env.manage", "artifact.pull"}
+	return []string{"health.check", "skill.install", "skill.run", "skill.rollback", "memory.sync", "service.inspect", "service.restart", "diagnostics.collect", "agentdock.reload", "env.manage", "artifact.pull", "artifact.fetch"}
 }
 
 func (e *Executor) Register(handler CommandHandler) error {
@@ -149,7 +149,7 @@ func (e *Executor) Execute(ctx context.Context, lease contracts.CommandLease, pr
 	}
 
 	timeout := e.defaultTimeout
-	if cmd.Type == "artifact.pull" {
+	if cmd.Type == "artifact.pull" || cmd.Type == "artifact.fetch" {
 		// Artifact transfers can legitimately outlive the initial short lease.
 		// The Nexus agent renews that lease while this handler is running.
 		timeout = artifactCommandTimeout

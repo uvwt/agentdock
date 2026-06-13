@@ -107,12 +107,33 @@ func Start(ctx context.Context, cfg config.Config) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	var artifactFetcher *artifactrelay.SourceFetcher
+	if cfg.ArtifactFetchEnabled {
+		denyPaths, err := artifactrelay.ParseFetchDenyJSON(cfg.ArtifactFetchDenyJSON)
+		if err != nil {
+			return false, err
+		}
+		artifactFetcher, err = artifactrelay.NewSourceFetcher(artifactrelay.SourceFetcherConfig{
+			Client: client,
+			Credentials: func() (artifactrelay.DeviceCredentials, error) {
+				state, err := deviceState.Load()
+				return artifactrelay.DeviceCredentials{DeviceID: state.DeviceID, DeviceToken: state.DeviceToken}, err
+			},
+			TempRoot:            filepath.Join(stateDir, "artifacts", "fetch-source"),
+			AdditionalDenyPaths: denyPaths,
+			StateDir:            stateDir,
+		})
+		if err != nil {
+			return false, err
+		}
+	}
 
 	if err := commandqueue.RegisterAdapters(executor, commandqueue.AdapterDependencies{
-		Health:    healthChecker{cfg: cfg},
-		Skills:    skillRouter{runtime: skillRuntime},
-		Env:       envRouter{store: envStore, runtime: skillRuntime},
-		Artifacts: artifactReceiverAdapter{receiver: artifactReceiver},
+		Health:        healthChecker{cfg: cfg},
+		Skills:        skillRouter{runtime: skillRuntime},
+		Env:           envRouter{store: envStore, runtime: skillRuntime},
+		Artifacts:     artifactReceiverAdapter{receiver: artifactReceiver},
+		ArtifactFetch: artifactFetcherAdapter{fetcher: artifactFetcher},
 	}); err != nil {
 		return false, err
 	}
@@ -224,7 +245,7 @@ func capabilities(cfg config.Config, artifactPublicKey string) []contracts.Devic
 		{Name: "skill-runtime", Version: "v1", Enabled: true},
 		{Name: "browser", Version: "v1", Enabled: cfg.BrowserEnabled},
 		{Name: "desktop", Version: "v1", Enabled: cfg.DesktopEnabled},
-		{Name: "artifact-relay", Version: artifactrelay.FormatVersion, Enabled: true, Metadata: mustJSON(map[string]string{"x25519_public_key": artifactPublicKey, "max_cipher_bytes": fmt.Sprint(artifactrelay.MaxCipherBytes)})},
+		{Name: "artifact-relay", Version: artifactrelay.FormatVersion, Enabled: true, Metadata: mustJSON(map[string]string{"x25519_public_key": artifactPublicKey, "max_cipher_bytes": fmt.Sprint(artifactrelay.MaxCipherBytes), "fetch_enabled": fmt.Sprint(cfg.ArtifactFetchEnabled)})},
 	}
 }
 
@@ -232,6 +253,15 @@ type artifactReceiverAdapter struct{ receiver *artifactrelay.Receiver }
 
 func (a artifactReceiverAdapter) Pull(ctx context.Context, payload json.RawMessage) (any, error) {
 	return a.receiver.Pull(ctx, payload)
+}
+
+type artifactFetcherAdapter struct{ fetcher *artifactrelay.SourceFetcher }
+
+func (a artifactFetcherAdapter) Fetch(ctx context.Context, payload json.RawMessage) (any, error) {
+	if a.fetcher == nil {
+		return nil, errors.New("artifact fetch is disabled on this device")
+	}
+	return a.fetcher.Fetch(ctx, payload)
 }
 
 func mustJSON(value any) json.RawMessage {

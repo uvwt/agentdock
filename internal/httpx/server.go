@@ -51,6 +51,9 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	mux.HandleFunc("/artifacts/desktop/screenshots/", func(w http.ResponseWriter, r *http.Request) {
 		handleDesktopScreenshotArtifact(w, r, cfg)
 	})
+	mux.HandleFunc("/artifacts/fetch/", func(w http.ResponseWriter, r *http.Request) {
+		handleArtifactFetchOutput(w, r, server)
+	})
 	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
 		method := requestedTokenEndpointAuthMethod(r)
 		writeJSON(w, map[string]any{"client_id": firstNonEmpty(cfg.OAuthClientID, "coding-tools-client"), "token_endpoint_auth_method": method})
@@ -102,6 +105,43 @@ func mcpEndpointHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc 
 		}
 		writeJSON(w, resp)
 	}
+}
+
+func handleArtifactFetchOutput(w http.ResponseWriter, r *http.Request, server *mcp.Server) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	fetchID := strings.TrimPrefix(r.URL.Path, "/artifacts/fetch/")
+	fetchID, err := url.PathUnescape(fetchID)
+	if err != nil || fetchID == "" || fetchID != filepath.Base(fetchID) {
+		http.NotFound(w, r)
+		return
+	}
+	path, name, mimeType, err := server.ResolveArtifactFetchOutput(fetchID, r.URL.Query().Get("token"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		http.NotFound(w, r)
+		return
+	}
+	if mimeType == "" {
+		mimeType = firstNonEmpty(mime.TypeByExtension(filepath.Ext(name)), "application/octet-stream")
+	}
+	w.Header().Set("Content-Type", mimeType)
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	http.ServeContent(w, r, name, info.ModTime(), file)
 }
 
 func handleDesktopScreenshotArtifact(w http.ResponseWriter, r *http.Request, cfg config.Config) {

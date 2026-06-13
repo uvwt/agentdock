@@ -1,12 +1,14 @@
 package mcp
 
 type ToolDefinition struct {
-	Name        string
-	Title       string
-	Description string
-	ReadOnly    bool
-	Destructive bool
-	OpenWorld   bool
+	Name                   string
+	Title                  string
+	Description            string
+	ReadOnly               bool
+	Destructive            bool
+	OpenWorld              bool
+	FileArgRewritePaths    []string
+	FileResultRewritePaths []string
 }
 
 var toolRegistry = []ToolDefinition{
@@ -32,7 +34,10 @@ var toolRegistry = []ToolDefinition{
 	{Name: "github_create_repo", Title: "Create GitHub repository", Description: "Create a GitHub repository using the stored credential without exposing secrets.", Destructive: false, OpenWorld: true},
 	{Name: "skill_manage", Title: "Manage AgentDock Skills", Description: "List, inspect, validate, install, run, or roll back AgentDock Skills through the local Skill Runtime.", Destructive: true, OpenWorld: true},
 	{Name: "env_manage", Title: "Manage Skill environment", Description: "Manage redacted Skill environment variables through the local Nexus Env Registry.", Destructive: true, OpenWorld: true},
-	{Name: "artifact_send", Title: "Send encrypted artifact", Description: "Encrypt and send a top-level file parameter or local file/directory through AgentDock Nexus to one or more registered devices. The target only writes to its controlled inbox or configured logical target and never executes the file.", Destructive: false, OpenWorld: true},
+	{Name: "artifact_send", Title: "Send encrypted artifact", Description: "Encrypt and send a top-level file parameter or local file/directory through AgentDock Nexus to one or more registered devices. The target only writes to its controlled inbox or configured logical target and never executes the file.", Destructive: false, OpenWorld: true, FileArgRewritePaths: []string{"file"}},
+	{Name: "artifact_fetch_create", Title: "Create artifact fetch", Description: "Create an asynchronous high-risk request for a registered device to list or encrypt an absolute-path file or directory under immutable deny rules.", Destructive: true, OpenWorld: true},
+	{Name: "artifact_fetch_status", Title: "Artifact fetch status", Description: "Return status or a bounded directory listing for a local artifact fetch request.", ReadOnly: true, OpenWorld: true},
+	{Name: "artifact_fetch_download", Title: "Download artifact fetch", Description: "Download and decrypt a ready artifact fetch, return a file resource, or confirm that the GPT sandbox mounted it so ciphertext can be deleted.", Destructive: true, OpenWorld: true, FileResultRewritePaths: []string{"file_path"}},
 	{Name: "memory_bootstrap", Title: "Bootstrap MemoryDock context", Description: "Load high-priority MemoryDock context at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks.", ReadOnly: true, OpenWorld: true},
 	{Name: "memory_list", Title: "List MemoryDock memories", Description: "List memories from the configured MemoryDock service.", ReadOnly: true, OpenWorld: true},
 	{Name: "memory_read", Title: "Read MemoryDock memory", Description: "Read one Markdown memory from the configured MemoryDock service.", ReadOnly: true, OpenWorld: true},
