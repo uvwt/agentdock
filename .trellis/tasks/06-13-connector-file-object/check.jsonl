@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/index.md","reason":"后端实现规范"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"文件对象错误处理"}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"短时 URL 不进入日志"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"测试和构建"}

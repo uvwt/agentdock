@@ -13,17 +13,6 @@ import (
 )
 
 func (r *Runtime) artifactSend(ctx context.Context, args map[string]any) (Result, error) {
-	source := strings.TrimSpace(stringArg(args, "file", ""))
-	if source == "" {
-		source = strings.TrimSpace(stringArg(args, "path", ""))
-	}
-	if source == "" {
-		return nil, toolError("ARTIFACT_SOURCE_REQUIRED", "file or path is required", "validation")
-	}
-	resolved, err := r.ws.ResolveExisting(source)
-	if err != nil {
-		return nil, err
-	}
 	targets := stringSliceArg(args, "target_devices")
 	if len(targets) == 0 {
 		return nil, toolError("ARTIFACT_TARGET_REQUIRED", "target_devices must contain at least one device id", "validation")
@@ -32,6 +21,18 @@ func (r *Runtime) artifactSend(ctx context.Context, args map[string]any) (Result
 	if err != nil {
 		return nil, err
 	}
+	source, cleanup, err := resolveArtifactSendSource(
+		ctx,
+		r.ws,
+		args["file"],
+		strings.TrimSpace(stringArg(args, "path", "")),
+		filepath.Join(stateDir, "artifacts", "connector-input"),
+		newConnectorFileHTTPClient(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
 	client, err := nexusclient.New(nexusclient.Config{BaseURL: r.cfg.NexusEndpoint, RequestTimeout: 30 * time.Second, PollTimeout: 35 * time.Second, UserAgent: "agentdock/" + config.Version})
 	if err != nil {
 		return nil, err
@@ -55,7 +56,7 @@ func (r *Runtime) artifactSend(ctx context.Context, args map[string]any) (Result
 		return nil, err
 	}
 	result, err := sender.Send(ctx, artifactrelay.SendRequest{
-		SourcePath: resolved.Abs, TargetDeviceIDs: targets,
+		SourcePath: source, TargetDeviceIDs: targets,
 		Dispatch: boolArg(args, "dispatch", true), RetentionSeconds: int64(intArg(args, "retention_seconds", 86400)),
 		DeleteAfterAllDelivered: boolArg(args, "delete_after_all_delivered", false),
 		ConflictPolicy:          stringArg(args, "conflict_policy", "reject"), Extract: boolArg(args, "extract", false),
