@@ -119,12 +119,17 @@ func toolDescriptorsForNames(names []string) []map[string]any {
 		}
 		meta := map[string]any{}
 		if len(def.FileArgRewritePaths) > 0 {
-			descriptor["file_arg_rewrite_paths"] = append([]string(nil), def.FileArgRewritePaths...)
-			meta["file_arg_rewrite_paths"] = append([]string(nil), def.FileArgRewritePaths...)
+			paths := append([]string(nil), def.FileArgRewritePaths...)
+			descriptor["file_arg_rewrite_paths"] = paths
+			meta["file_arg_rewrite_paths"] = paths
+			meta["openai/fileParams"] = paths
 		}
 		if len(def.FileResultRewritePaths) > 0 {
-			descriptor["file_result_rewrite_paths"] = append([]string(nil), def.FileResultRewritePaths...)
-			meta["file_result_rewrite_paths"] = append([]string(nil), def.FileResultRewritePaths...)
+			paths := append([]string(nil), def.FileResultRewritePaths...)
+			descriptor["file_result_rewrite_paths"] = paths
+			meta["file_result_rewrite_paths"] = paths
+			meta["openai/fileResultPaths"] = paths
+			meta["openai/fileOutputs"] = paths
 		}
 		if len(meta) > 0 {
 			descriptor["_meta"] = meta
