@@ -77,10 +77,14 @@ func TestAttemptLimitAndFailureEvidence(t *testing.T) {
 	if _, err := store.RecordAttempt(task.ID, "restart", "failure", "", ""); err == nil {
 		t.Fatal("failure without diagnosis and evidence succeeded")
 	}
-	for i := 0; i < MaxStrategyAttempts; i++ {
-		if _, err := store.RecordAttempt(task.ID, "restart", "failure", "new diagnosis", "new log evidence"); err != nil {
-			t.Fatal(err)
-		}
+	if _, err := store.RecordAttempt(task.ID, "restart", "failure", "first diagnosis", "first log evidence"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecordAttempt(task.ID, "restart", "failure", "second diagnosis", "first log evidence"); err == nil {
+		t.Fatal("repeated failure evidence succeeded")
+	}
+	if _, err := store.RecordAttempt(task.ID, "restart", "failure", "second diagnosis", "second log evidence"); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := store.RecordAttempt(task.ID, "restart", "success", "", ""); err == nil {
 		t.Fatal("third attempt with same strategy succeeded")

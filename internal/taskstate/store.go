@@ -274,6 +274,9 @@ func (s *Store) RecordAttempt(id, strategy, outcome, diagnosis, evidence string)
 			if strings.EqualFold(attempt.Strategy, strategy) {
 				attempts++
 			}
+			if outcome == "failure" && attempt.Outcome == "failure" && strings.EqualFold(strings.TrimSpace(attempt.Evidence), evidence) {
+				return errors.New("failed attempt evidence must be new")
+			}
 		}
 		if attempts >= MaxStrategyAttempts {
 			return fmt.Errorf("strategy %q reached the maximum of %d attempts; choose a different strategy", strategy, MaxStrategyAttempts)
