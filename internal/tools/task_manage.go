@@ -8,7 +8,7 @@ import (
 )
 
 var taskActions = []string{
-	"create", "list", "get", "add_condition", "add_evidence", "advance", "complete_step", "skip_step",
+	"create", "list", "get", "add_condition", "add_evidence", "advance", "phase_checkpoint", "complete_step", "skip_step",
 	"record_attempt", "block", "resume", "complete", "template_save", "template_validate", "template_publish",
 	"template_retire", "template_list", "template_get", "template_match",
 }
@@ -66,6 +66,27 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 		)
 	case "advance":
 		task, err = r.tasks.Advance(stringArg(args, "task_id", ""))
+	case "phase_checkpoint":
+		input := taskstate.PhaseCheckpointInput{
+			AdvancePhase: boolArg(args, "advance_phase", false),
+			CompleteTask: boolArg(args, "complete_task", false),
+			Summary:      stringArg(args, "summary", ""),
+		}
+		if raw := args["step_completions"]; raw != nil {
+			if err := remarshal(raw, &input.StepCompletions); err != nil {
+				return nil, taskToolError(err)
+			}
+		}
+		if raw := args["condition_evidence"]; raw != nil {
+			if err := remarshal(raw, &input.ConditionEvidence); err != nil {
+				return nil, taskToolError(err)
+			}
+		}
+		task, err = r.tasks.PhaseCheckpoint(stringArg(args, "task_id", ""), input)
+		if err != nil {
+			return nil, taskToolError(err)
+		}
+		return Result{"ok": true, "action": action, "task_summary": compactTaskSummary(task), "state_dir": r.tasks.Root()}, nil
 	case "complete_step":
 		var evidence taskstate.StepEvidence
 		if err := remarshal(mapArg(args, "step_evidence"), &evidence); err != nil {
@@ -146,6 +167,31 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 		return nil, taskToolError(err)
 	}
 	return Result{"ok": true, "action": action, "task": task, "state_dir": r.tasks.Root()}, nil
+}
+
+func compactTaskSummary(task taskstate.Task) map[string]any {
+	completedSteps := 0
+	for _, step := range task.Steps {
+		if step.Status == "completed" || step.Status == "skipped" {
+			completedSteps++
+		}
+	}
+	verifiedConditions := 0
+	for _, condition := range task.Conditions {
+		if len(condition.Evidence) > 0 {
+			verifiedConditions++
+		}
+	}
+	summary := map[string]any{
+		"id": task.ID, "title": task.Title, "status": task.Status, "phase": task.Phase,
+		"completed_step_count": completedSteps, "step_count": len(task.Steps),
+		"verified_condition_count": verifiedConditions, "condition_count": len(task.Conditions),
+		"updated_at": task.UpdatedAt,
+	}
+	if task.CompletedAt != nil {
+		summary["completed_at"] = *task.CompletedAt
+	}
+	return summary
 }
 
 func taskToolError(err error) error {

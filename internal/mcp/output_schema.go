@@ -113,6 +113,7 @@ func outputSchema(name string) map[string]any {
 	case "task_manage":
 		props["action"] = stringProp("Completed task action.")
 		props["task"] = objectProp("Full persistent task state, including conditions, evidence, attempts, and events.")
+		props["task_summary"] = objectProp("Compact task milestone summary returned by phase_checkpoint.")
 		props["tasks"] = arrayProp("Compact task summaries ordered by most recent update.")
 		props["count"] = intProp("Returned task count.")
 		props["state_dir"] = stringProp("Local AgentDock task state directory.")

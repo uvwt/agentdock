@@ -103,7 +103,7 @@ func inputSchema(name string) map[string]any {
 		props["timeout_ms"] = intProp("HTTP timeout in milliseconds.")
 		required = []string{"name"}
 	case "task_manage":
-		props["action"] = map[string]any{"type": "string", "description": "Task action.", "enum": []string{"create", "list", "get", "add_condition", "add_evidence", "advance", "complete_step", "skip_step", "record_attempt", "block", "resume", "complete", "template_save", "template_validate", "template_publish", "template_retire", "template_list", "template_get", "template_match"}}
+		props["action"] = map[string]any{"type": "string", "description": "Task action.", "enum": []string{"create", "list", "get", "add_condition", "add_evidence", "advance", "phase_checkpoint", "complete_step", "skip_step", "record_attempt", "block", "resume", "complete", "template_save", "template_validate", "template_publish", "template_retire", "template_list", "template_get", "template_match"}}
 		props["task_id"] = stringProp("Persistent task id for all actions except create and list.")
 		props["title"] = stringProp("Short task title for create.")
 		props["goal"] = stringProp("Fixed task goal for create. Later actions cannot silently change it.")
@@ -127,8 +127,13 @@ func inputSchema(name string) map[string]any {
 		props["template_status"] = map[string]any{"type": "string", "enum": []string{"draft", "validated", "active", "retired"}, "description": "Optional template_list status filter."}
 		props["device"] = stringProp("Device context for template_match.")
 		props["task_type"] = stringProp("Task type context for template_match.")
+		stepEvidenceSchema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"type", "source", "result", "summary"}, "properties": map[string]any{"type": stringProp("Evidence type such as command, http, tool, file, artifact."), "source": stringProp("Command, endpoint, file, or tool source."), "result": stringProp("Structured result summary such as exit_code=0 or HTTP 200."), "summary": stringProp("Human-readable evidence summary."), "artifact_ref": stringProp("Optional external log, screenshot, report, or Artifact reference."), "sha256": stringProp("Optional external evidence SHA-256.")}}
 		props["step_id"] = stringProp("Template step id for complete_step or skip_step.")
-		props["step_evidence"] = map[string]any{"type": "object", "additionalProperties": false, "required": []string{"type", "source", "result", "summary"}, "properties": map[string]any{"type": stringProp("Evidence type such as command, http, tool, file, artifact."), "source": stringProp("Command, endpoint, file, or tool source."), "result": stringProp("Structured result summary such as exit_code=0 or HTTP 200."), "summary": stringProp("Human-readable evidence summary."), "artifact_ref": stringProp("Optional external log, screenshot, report, or Artifact reference."), "sha256": stringProp("Optional external evidence SHA-256.")}, "description": "Structured evidence for a completed template step."}
+		props["step_evidence"] = stepEvidenceSchema
+		props["step_completions"] = map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"step_id", "evidence"}, "properties": map[string]any{"step_id": stringProp("Template step id completed by this phase checkpoint."), "evidence": stepEvidenceSchema, "substituted": boolProp("Whether an allowed substitute was used."), "substitution_reason": stringProp("Required when substituted=true.")}}, "description": "Current-phase template steps to complete atomically in dependency order."}
+		props["condition_evidence"] = map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"condition_id", "summary"}, "properties": map[string]any{"condition_id": stringProp("Completion condition receiving evidence."), "summary": stringProp("Human-readable evidence summary."), "source": stringProp("Optional concrete evidence source.")}}, "description": "Completion-condition evidence to persist atomically with the phase checkpoint."}
+		props["advance_phase"] = boolProp("Advance exactly one phase after all required current-phase steps are complete.")
+		props["complete_task"] = boolProp("Complete a closeout-phase task after all required steps and conditions are satisfied. Mutually exclusive with advance_phase.")
 		props["substituted"] = boolProp("Whether a different implementation replaced the suggested command or method.")
 		props["substitution_reason"] = stringProp("Required reason when a step is completed through an allowed substitution.")
 		required = []string{"action"}

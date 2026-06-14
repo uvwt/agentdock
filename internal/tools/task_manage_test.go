@@ -90,3 +90,34 @@ func TestTaskManageListIsCompact(t *testing.T) {
 		t.Fatalf("list unexpectedly returned full task events: %#v", items[0])
 	}
 }
+
+func TestTaskManagePhaseCheckpointReturnsCompactSummary(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	created, err := rt.taskManage(map[string]any{
+		"action": "create", "title": "Repair service", "goal": "restore service",
+		"completion_conditions": []string{"service responds"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := created["task"].(taskstate.Task)
+	result, err := rt.taskManage(map[string]any{
+		"action": "phase_checkpoint", "task_id": task.ID,
+		"condition_evidence": []map[string]any{{"condition_id": "cond_01", "summary": "service observed", "source": "test"}},
+		"advance_phase":      true,
+		"summary":            "check milestone complete",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := result["task"]; exists {
+		t.Fatalf("phase_checkpoint unexpectedly returned full task: %#v", result)
+	}
+	summary, ok := result["task_summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing compact task summary: %#v", result)
+	}
+	if summary["phase"] != taskstate.PhaseExecute || summary["verified_condition_count"] != 1 {
+		t.Fatalf("unexpected compact summary: %#v", summary)
+	}
+}

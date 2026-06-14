@@ -51,6 +51,27 @@ type Evidence struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type ConditionEvidenceUpdate struct {
+	ConditionID string `json:"condition_id"`
+	Summary     string `json:"summary"`
+	Source      string `json:"source,omitempty"`
+}
+
+type StepCompletionUpdate struct {
+	StepID             string       `json:"step_id"`
+	Evidence           StepEvidence `json:"evidence"`
+	Substituted        bool         `json:"substituted,omitempty"`
+	SubstitutionReason string       `json:"substitution_reason,omitempty"`
+}
+
+type PhaseCheckpointInput struct {
+	StepCompletions   []StepCompletionUpdate    `json:"step_completions,omitempty"`
+	ConditionEvidence []ConditionEvidenceUpdate `json:"condition_evidence,omitempty"`
+	AdvancePhase      bool                      `json:"advance_phase,omitempty"`
+	CompleteTask      bool                      `json:"complete_task,omitempty"`
+	Summary           string                    `json:"summary"`
+}
+
 type Attempt struct {
 	Phase     Phase     `json:"phase"`
 	Strategy  string    `json:"strategy"`
@@ -226,95 +247,21 @@ func (s *Store) AddCondition(id, text string) (Task, error) {
 
 func (s *Store) AddEvidence(id, conditionID, summary, source string) (Task, error) {
 	return s.mutate(id, func(task *Task, now time.Time) error {
-		if err := requireMutable(task); err != nil {
-			return err
-		}
-		conditionID = strings.TrimSpace(conditionID)
-		summary = strings.TrimSpace(summary)
-		source = strings.TrimSpace(source)
-		if conditionID == "" || summary == "" {
-			return errors.New("condition_id and evidence summary are required")
-		}
-		for i := range task.Conditions {
-			if task.Conditions[i].ID == conditionID {
-				task.Conditions[i].Evidence = append(task.Conditions[i].Evidence, Evidence{Summary: summary, Source: source, CreatedAt: now})
-				task.Events = append(task.Events, Event{Type: "evidence_added", Summary: conditionID + ": " + summary, CreatedAt: now})
-				return nil
-			}
-		}
-		return fmt.Errorf("completion condition %q not found", conditionID)
+		return applyConditionEvidence(task, conditionID, summary, source, now, true)
 	})
 }
 
 func (s *Store) Advance(id string) (Task, error) {
 	return s.mutate(id, func(task *Task, now time.Time) error {
-		if err := requireActive(task); err != nil {
-			return err
-		}
-		if missing := incompleteRequiredSteps(*task, task.Phase); len(missing) > 0 {
-			return fmt.Errorf("required steps incomplete for phase %s: %s", task.Phase, strings.Join(missing, ", "))
-		}
-		for i, phase := range phaseOrder {
-			if phase != task.Phase {
-				continue
-			}
-			if i == len(phaseOrder)-1 {
-				return errors.New("task is already in closeout; use complete after all conditions have evidence")
-			}
-			task.Phase = phaseOrder[i+1]
-			task.Events = append(task.Events, Event{Type: "phase_advanced", Summary: string(task.Phase), CreatedAt: now})
-			return nil
-		}
-		return fmt.Errorf("invalid task phase %q", task.Phase)
+		return advancePhase(task, now, true)
 	})
 }
 
 func (s *Store) CompleteStep(id, stepID string, evidence StepEvidence, substituted bool, substitutionReason string) (Task, error) {
 	return s.mutate(id, func(task *Task, now time.Time) error {
-		if err := requireActive(task); err != nil {
-			return err
-		}
-		for i := range task.Steps {
-			step := &task.Steps[i]
-			if step.ID != strings.TrimSpace(stepID) {
-				continue
-			}
-			if step.Status == "completed" {
-				return errors.New("step is already completed")
-			}
-			if step.Phase != task.Phase {
-				return fmt.Errorf("step %s belongs to phase %s, current phase is %s", step.ID, step.Phase, task.Phase)
-			}
-			for _, dep := range step.DependsOn {
-				if !stepCompleted(task.Steps, dep) {
-					return fmt.Errorf("step %s dependency %s is not completed", step.ID, dep)
-				}
-			}
-			evidence.Type = strings.TrimSpace(evidence.Type)
-			evidence.Source = strings.TrimSpace(evidence.Source)
-			evidence.Result = strings.TrimSpace(evidence.Result)
-			evidence.Summary = strings.TrimSpace(evidence.Summary)
-			if evidence.Type == "" || evidence.Source == "" || evidence.Result == "" || evidence.Summary == "" {
-				return errors.New("step evidence requires type, source, result, and summary")
-			}
-			if substituted {
-				if step.Substitution == "forbidden" {
-					return errors.New("step substitution is forbidden")
-				}
-				if strings.TrimSpace(substitutionReason) == "" {
-					return errors.New("substitution reason is required")
-				}
-			}
-			evidence.CreatedAt = now
-			step.Status = "completed"
-			step.Substituted = substituted
-			step.SubstitutionReason = strings.TrimSpace(substitutionReason)
-			step.Evidence = append(step.Evidence, evidence)
-			step.UpdatedAt = now
-			task.Events = append(task.Events, Event{Type: "step_completed", Summary: step.ID + ": " + evidence.Summary, CreatedAt: now})
-			return nil
-		}
-		return fmt.Errorf("task step %q not found", stepID)
+		return applyStepCompletion(task, StepCompletionUpdate{
+			StepID: stepID, Evidence: evidence, Substituted: substituted, SubstitutionReason: substitutionReason,
+		}, now, true)
 	})
 }
 
@@ -419,34 +366,189 @@ func (s *Store) Resume(id, summary string) (Task, error) {
 
 func (s *Store) Complete(id, summary string) (Task, error) {
 	return s.mutate(id, func(task *Task, now time.Time) error {
+		return completeTask(task, summary, now, true)
+	})
+}
+
+func (s *Store) PhaseCheckpoint(id string, input PhaseCheckpointInput) (Task, error) {
+	return s.mutate(id, func(task *Task, now time.Time) error {
 		if err := requireActive(task); err != nil {
 			return err
 		}
-		if task.Phase != PhaseCloseout {
-			return errors.New("task must reach closeout before completion")
+		input.Summary = strings.TrimSpace(input.Summary)
+		if input.Summary == "" {
+			return errors.New("checkpoint summary is required")
 		}
-		if missingSteps := incompleteRequiredSteps(*task, ""); len(missingSteps) > 0 {
-			return fmt.Errorf("required template steps incomplete: %s", strings.Join(missingSteps, ", "))
+		if input.AdvancePhase && input.CompleteTask {
+			return errors.New("advance_phase and complete_task are mutually exclusive")
 		}
-		missing := make([]string, 0)
-		for _, condition := range task.Conditions {
-			if len(condition.Evidence) == 0 {
-				missing = append(missing, condition.ID)
+		if len(input.StepCompletions) == 0 && len(input.ConditionEvidence) == 0 && !input.AdvancePhase && !input.CompleteTask {
+			return errors.New("checkpoint requires at least one update, phase advance, or task completion")
+		}
+
+		phaseBefore := task.Phase
+		for _, update := range input.StepCompletions {
+			if err := applyStepCompletion(task, update, now, false); err != nil {
+				return err
 			}
 		}
-		if len(missing) > 0 {
-			return fmt.Errorf("completion conditions missing evidence: %s", strings.Join(missing, ", "))
+		for _, update := range input.ConditionEvidence {
+			if err := applyConditionEvidence(task, update.ConditionID, update.Summary, update.Source, now, false); err != nil {
+				return err
+			}
 		}
-		summary = strings.TrimSpace(summary)
-		if summary == "" {
-			return errors.New("completion summary is required")
+		if input.AdvancePhase {
+			if err := advancePhase(task, now, false); err != nil {
+				return err
+			}
 		}
-		task.Status = StatusCompleted
-		task.Summary = summary
-		task.CompletedAt = &now
-		task.Events = append(task.Events, Event{Type: "completed", Summary: summary, CreatedAt: now})
+		if input.CompleteTask {
+			if err := completeTask(task, input.Summary, now, false); err != nil {
+				return err
+			}
+		}
+
+		eventType := "phase_checkpoint"
+		eventSummary := fmt.Sprintf("%s: %s; steps=%d; conditions=%d", phaseBefore, input.Summary, len(input.StepCompletions), len(input.ConditionEvidence))
+		if input.AdvancePhase {
+			eventSummary += "; next=" + string(task.Phase)
+		}
+		if input.CompleteTask {
+			eventType = "completed"
+			eventSummary += "; status=completed"
+		}
+		task.Events = append(task.Events, Event{Type: eventType, Summary: eventSummary, CreatedAt: now})
 		return nil
 	})
+}
+
+func applyConditionEvidence(task *Task, conditionID, summary, source string, now time.Time, emitEvent bool) error {
+	if err := requireMutable(task); err != nil {
+		return err
+	}
+	conditionID = strings.TrimSpace(conditionID)
+	summary = strings.TrimSpace(summary)
+	source = strings.TrimSpace(source)
+	if conditionID == "" || summary == "" {
+		return errors.New("condition_id and evidence summary are required")
+	}
+	for i := range task.Conditions {
+		if task.Conditions[i].ID != conditionID {
+			continue
+		}
+		task.Conditions[i].Evidence = append(task.Conditions[i].Evidence, Evidence{Summary: summary, Source: source, CreatedAt: now})
+		if emitEvent {
+			task.Events = append(task.Events, Event{Type: "evidence_added", Summary: conditionID + ": " + summary, CreatedAt: now})
+		}
+		return nil
+	}
+	return fmt.Errorf("completion condition %q not found", conditionID)
+}
+
+func applyStepCompletion(task *Task, update StepCompletionUpdate, now time.Time, emitEvent bool) error {
+	if err := requireActive(task); err != nil {
+		return err
+	}
+	stepID := strings.TrimSpace(update.StepID)
+	for i := range task.Steps {
+		step := &task.Steps[i]
+		if step.ID != stepID {
+			continue
+		}
+		if step.Status == "completed" {
+			return errors.New("step is already completed")
+		}
+		if step.Phase != task.Phase {
+			return fmt.Errorf("step %s belongs to phase %s, current phase is %s", step.ID, step.Phase, task.Phase)
+		}
+		for _, dep := range step.DependsOn {
+			if !stepCompleted(task.Steps, dep) {
+				return fmt.Errorf("step %s dependency %s is not completed", step.ID, dep)
+			}
+		}
+		evidence := update.Evidence
+		evidence.Type = strings.TrimSpace(evidence.Type)
+		evidence.Source = strings.TrimSpace(evidence.Source)
+		evidence.Result = strings.TrimSpace(evidence.Result)
+		evidence.Summary = strings.TrimSpace(evidence.Summary)
+		if evidence.Type == "" || evidence.Source == "" || evidence.Result == "" || evidence.Summary == "" {
+			return errors.New("step evidence requires type, source, result, and summary")
+		}
+		if update.Substituted {
+			if step.Substitution == "forbidden" {
+				return errors.New("step substitution is forbidden")
+			}
+			if strings.TrimSpace(update.SubstitutionReason) == "" {
+				return errors.New("substitution reason is required")
+			}
+		}
+		evidence.CreatedAt = now
+		step.Status = "completed"
+		step.Substituted = update.Substituted
+		step.SubstitutionReason = strings.TrimSpace(update.SubstitutionReason)
+		step.Evidence = append(step.Evidence, evidence)
+		step.UpdatedAt = now
+		if emitEvent {
+			task.Events = append(task.Events, Event{Type: "step_completed", Summary: step.ID + ": " + evidence.Summary, CreatedAt: now})
+		}
+		return nil
+	}
+	return fmt.Errorf("task step %q not found", stepID)
+}
+
+func advancePhase(task *Task, now time.Time, emitEvent bool) error {
+	if err := requireActive(task); err != nil {
+		return err
+	}
+	if missing := incompleteRequiredSteps(*task, task.Phase); len(missing) > 0 {
+		return fmt.Errorf("required steps incomplete for phase %s: %s", task.Phase, strings.Join(missing, ", "))
+	}
+	for i, phase := range phaseOrder {
+		if phase != task.Phase {
+			continue
+		}
+		if i == len(phaseOrder)-1 {
+			return errors.New("task is already in closeout; use complete after all conditions have evidence")
+		}
+		task.Phase = phaseOrder[i+1]
+		if emitEvent {
+			task.Events = append(task.Events, Event{Type: "phase_advanced", Summary: string(task.Phase), CreatedAt: now})
+		}
+		return nil
+	}
+	return fmt.Errorf("invalid task phase %q", task.Phase)
+}
+
+func completeTask(task *Task, summary string, now time.Time, emitEvent bool) error {
+	if err := requireActive(task); err != nil {
+		return err
+	}
+	if task.Phase != PhaseCloseout {
+		return errors.New("task must reach closeout before completion")
+	}
+	if missingSteps := incompleteRequiredSteps(*task, ""); len(missingSteps) > 0 {
+		return fmt.Errorf("required template steps incomplete: %s", strings.Join(missingSteps, ", "))
+	}
+	missing := make([]string, 0)
+	for _, condition := range task.Conditions {
+		if len(condition.Evidence) == 0 {
+			missing = append(missing, condition.ID)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("completion conditions missing evidence: %s", strings.Join(missing, ", "))
+	}
+	summary = strings.TrimSpace(summary)
+	if summary == "" {
+		return errors.New("completion summary is required")
+	}
+	task.Status = StatusCompleted
+	task.Summary = summary
+	task.CompletedAt = &now
+	if emitEvent {
+		task.Events = append(task.Events, Event{Type: "completed", Summary: summary, CreatedAt: now})
+	}
+	return nil
 }
 
 func (s *Store) mutate(id string, fn func(*Task, time.Time) error) (Task, error) {

@@ -160,12 +160,12 @@ func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	for _, value := range values {
 		seen[value] = true
 	}
-	for _, value := range []string{"create", "list", "get", "add_condition", "add_evidence", "advance", "record_attempt", "block", "resume", "complete"} {
+	for _, value := range []string{"create", "list", "get", "add_condition", "add_evidence", "advance", "phase_checkpoint", "record_attempt", "block", "resume", "complete"} {
 		if !seen[value] {
 			t.Fatalf("task_manage action enum missing %q: %#v", value, values)
 		}
 	}
-	for _, name := range []string{"completion_conditions", "condition_id", "strategy", "outcome", "diagnosis", "evidence"} {
+	for _, name := range []string{"completion_conditions", "condition_id", "step_completions", "condition_evidence", "advance_phase", "complete_task", "strategy", "outcome", "diagnosis", "evidence"} {
 		if _, ok := props[name]; !ok {
 			t.Fatalf("task_manage input schema missing %q", name)
 		}
@@ -174,7 +174,7 @@ func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	if !ok {
 		t.Fatal("task_manage output schema properties missing")
 	}
-	for _, name := range []string{"task", "tasks", "count", "state_dir"} {
+	for _, name := range []string{"task", "task_summary", "tasks", "count", "state_dir"} {
 		if _, ok := outputProps[name]; !ok {
 			t.Fatalf("task_manage output schema missing %q", name)
 		}

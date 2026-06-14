@@ -118,3 +118,102 @@ func TestBlockAndResume(t *testing.T) {
 		t.Fatalf("unexpected resumed state: %#v", task)
 	}
 }
+
+func TestPhaseCheckpointBatchesPhaseUpdatesAtomically(t *testing.T) {
+	store, err := New(t.TempDir() + "/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := store.SaveTemplateDraft(testTemplate())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ValidateTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	published, err := store.PublishTemplate(draft.ID, draft.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := store.CreateWithTemplate("Deploy", "deploy AgentDock", nil, published.ID, published.Version, "test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialEvents := len(task.Events)
+	task, err = store.PhaseCheckpoint(task.ID, PhaseCheckpointInput{
+		StepCompletions: []StepCompletionUpdate{{
+			StepID:   "inspect",
+			Evidence: StepEvidence{Type: "command", Source: "git status", Result: "exit_code=0", Summary: "repository inspected"},
+		}},
+		ConditionEvidence: []ConditionEvidenceUpdate{{ConditionID: "cond_01", Summary: "tests observed", Source: "test"}},
+		AdvancePhase:      true,
+		Summary:           "inspection milestone complete",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Phase != PhaseExecute || task.Steps[0].Status != "completed" || len(task.Conditions[0].Evidence) != 1 {
+		t.Fatalf("unexpected checkpoint state: %#v", task)
+	}
+	if len(task.Events) != initialEvents+1 || task.Events[len(task.Events)-1].Type != "phase_checkpoint" {
+		t.Fatalf("checkpoint should append one aggregate event: %#v", task.Events)
+	}
+
+	if _, err := store.PhaseCheckpoint(task.ID, PhaseCheckpointInput{
+		StepCompletions: []StepCompletionUpdate{{
+			StepID:      "install",
+			Evidence:    StepEvidence{Type: "command", Source: "other installer", Result: "exit_code=0", Summary: "installed"},
+			Substituted: true, SubstitutionReason: "equivalent",
+		}},
+		ConditionEvidence: []ConditionEvidenceUpdate{{ConditionID: "cond_02", Summary: "must roll back with failed step", Source: "test"}},
+		AdvancePhase:      true,
+		Summary:           "invalid substituted install",
+	}); err == nil {
+		t.Fatal("forbidden substitution checkpoint succeeded")
+	}
+	afterFailure, err := store.Get(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterFailure.Steps[1].Status != "pending" || len(afterFailure.Conditions[1].Evidence) != 0 || afterFailure.Phase != PhaseExecute {
+		t.Fatalf("failed checkpoint was not atomic: %#v", afterFailure)
+	}
+
+	task, err = store.PhaseCheckpoint(task.ID, PhaseCheckpointInput{
+		StepCompletions: []StepCompletionUpdate{{
+			StepID:   "install",
+			Evidence: StepEvidence{Type: "command", Source: "make install-macos", Result: "exit_code=0", Summary: "installed"},
+		}},
+		AdvancePhase: true,
+		Summary:      "installation milestone complete",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err = store.PhaseCheckpoint(task.ID, PhaseCheckpointInput{
+		StepCompletions: []StepCompletionUpdate{{
+			StepID:   "health",
+			Evidence: StepEvidence{Type: "http", Source: "/healthz", Result: "HTTP 200", Summary: "service healthy"},
+		}},
+		ConditionEvidence: []ConditionEvidenceUpdate{{ConditionID: "cond_02", Summary: "health returned 200", Source: "/healthz"}},
+		AdvancePhase:      true,
+		Summary:           "verification milestone complete",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err = store.PhaseCheckpoint(task.ID, PhaseCheckpointInput{
+		StepCompletions: []StepCompletionUpdate{{
+			StepID:   "record",
+			Evidence: StepEvidence{Type: "file", Source: "deployment record", Result: "written", Summary: "deployment recorded"},
+		}},
+		CompleteTask: true,
+		Summary:      "all milestones completed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Status != StatusCompleted || task.CompletedAt == nil || task.Summary != "all milestones completed" {
+		t.Fatalf("unexpected completed checkpoint state: %#v", task)
+	}
+}

@@ -32,6 +32,7 @@ check -> execute -> verify -> closeout
 - `create`、`list`、`get`
 - `add_condition`、`add_evidence`
 - `advance`
+- `phase_checkpoint`
 - `record_attempt`
 - `block`、`resume`
 - `complete`
@@ -60,4 +61,6 @@ draft -> validated -> active -> retired
 - `template_list`、`template_get`：查看模板。
 - `template_match`：根据目标、设备、任务类型返回候选、分数和匹配理由。
 
-模板步骤支持：必做/可选、阶段、依赖、推荐命令、允许或禁止替代。模型可以补充步骤和异常处理，但不能跳过必做步骤。必做步骤只能完成或阻塞；可选步骤可用 `skip_step` 跳过并记录原因。完成步骤必须通过 `complete_step` 写入结构化证据：类型、来源、结果、摘要，以及可选的 Artifact 引用和 SHA-256。
+模板步骤支持：必做/可选、阶段、依赖、推荐命令、允许或禁止替代。模型可以补充步骤和异常处理，但不能跳过必做步骤。必做步骤只能完成或阻塞；可选步骤可用 `skip_step` 跳过并记录原因。单步兼容接口 `complete_step` 仍可写入结构化证据，但正常多步骤任务应优先按阶段调用 `phase_checkpoint`：一次原子写入当前阶段的多个步骤完成证据、多个完成条件证据，并选择推进一个阶段或在 closeout 完成任务。失败的 checkpoint 不会留下部分状态。
+
+`phase_checkpoint` 默认只返回紧凑任务摘要，不返回完整事件和模板快照。推荐粒度是每个 `check`、`execute`、`verify`、`closeout` 里程碑一次；不要在每条命令后写任务状态。逐项 `add_evidence`、`complete_step`、`advance` 仅用于交互式恢复、单项补录或兼容旧调用方。
