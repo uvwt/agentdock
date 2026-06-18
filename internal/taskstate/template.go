@@ -254,28 +254,41 @@ func (s *Store) MatchTemplates(goal, device, taskType string) ([]TemplateCandida
 	goalLower := strings.ToLower(goal)
 	var out []TemplateCandidate
 	for _, t := range templates {
-		score := t.Match.Priority
+		score := 0
+		semanticMatched := false
 		var reasons []string
 		for _, keyword := range t.Match.Keywords {
-			if strings.Contains(goalLower, strings.ToLower(strings.TrimSpace(keyword))) {
-				score += 10
+			keyword = strings.TrimSpace(keyword)
+			if keyword != "" && strings.Contains(goalLower, strings.ToLower(keyword)) {
+				score += 15
+				semanticMatched = true
 				reasons = append(reasons, "keyword:"+keyword)
 			}
 		}
-		if containsFold(t.Match.Devices, device) && device != "" {
-			score += 30
-			reasons = append(reasons, "device:"+device)
-		}
 		if containsFold(t.Match.TaskTypes, taskType) && taskType != "" {
-			score += 20
+			score += 80
+			semanticMatched = true
 			reasons = append(reasons, "task_type:"+taskType)
 		}
-		if score > 0 {
+
+		// 设备只说明模板能在哪台机器执行，不能说明任务语义是否匹配。
+		// 因此 device 只给小幅加分；模板 priority 也必须在关键词或 task_type 命中后才生效。
+		if containsFold(t.Match.Devices, device) && device != "" {
+			score += 5
+			reasons = append(reasons, "device:"+device)
+		}
+		if semanticMatched {
+			score += t.Match.Priority
+		}
+		if score > 0 && len(reasons) > 0 {
 			out = append(out, TemplateCandidate{ID: t.ID, Version: t.Version, Score: score, Reason: strings.Join(reasons, ", ")})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Score == out[j].Score {
+			if out[i].ID == out[j].ID {
+				return out[i].Version > out[j].Version
+			}
 			return out[i].ID < out[j].ID
 		}
 		return out[i].Score > out[j].Score

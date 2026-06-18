@@ -87,3 +87,47 @@ func TestOptionalStepSkipAndDependencyValidation(t *testing.T) {
 		t.Fatal("unknown dependency validated")
 	}
 }
+
+func TestTemplateMatchSemanticSignalsBeatDeviceOnly(t *testing.T) {
+	store, err := New(t.TempDir() + "/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deviceOnly := Template{
+		ID: "unrelated.device", Version: "1.0.0", Title: "Device only",
+		Match:                MatchRule{Devices: []string{"DockMini"}, Priority: 999},
+		CompletionConditions: []string{"done"},
+		Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+	}
+	semantic := Template{
+		ID: "notes.question-record", Version: "1.0.0", Title: "Question note",
+		Match:                MatchRule{Keywords: []string{"日常问题"}, Devices: []string{"DockMini"}, TaskTypes: []string{"daily-question-note"}, Priority: 57},
+		CompletionConditions: []string{"done"},
+		Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+	}
+	for _, tpl := range []Template{deviceOnly, semantic} {
+		draft, err := store.SaveTemplateDraft(tpl)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.ValidateTemplate(draft.ID, draft.Version); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.PublishTemplate(draft.ID, draft.Version); err != nil {
+			t.Fatal(err)
+		}
+	}
+	candidates, err := store.MatchTemplates("记录日常问题笔记", "DockMini", "daily-question-note")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) < 2 {
+		t.Fatalf("expected two candidates, got %#v", candidates)
+	}
+	if candidates[0].ID != "notes.question-record" {
+		t.Fatalf("semantic match should win, got %#v", candidates)
+	}
+	if candidates[1].Score >= 30 {
+		t.Fatalf("device-only score should remain tiny, got %#v", candidates)
+	}
+}

@@ -196,7 +196,7 @@ func inputSchema(name string) map[string]any {
 		required = []string{"action"}
 	case "memory_bootstrap":
 		props["project"] = stringProp("Project key to bootstrap. Defaults to agentdock.")
-		props["max_bytes"] = intProp("Maximum combined memory bytes. Defaults to 50000.")
+		props["max_bytes"] = intProp("Maximum combined memory bytes. Omit for compact bootstrap output; pass an explicit value to include section bodies up to that budget.")
 		props["include_raw"] = boolProp("Include raw Markdown as raw_content. Defaults to false to avoid duplicating body/content tokens.")
 	case "memory_list":
 		props["prefix"] = stringProp("Optional memory-relative prefix to list, for example shared/projects/agentdock.")

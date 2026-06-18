@@ -18,9 +18,10 @@ func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Res
 	if project == "" {
 		project = "agentdock"
 	}
-	maxBytes := intArg(args, "max_bytes", 50000)
+	_, explicitMaxBytes := args["max_bytes"]
+	maxBytes := intArg(args, "max_bytes", 12000)
 	if maxBytes <= 0 {
-		maxBytes = 50000
+		maxBytes = 12000
 	}
 	payload := map[string]any{"project": project, "max_bytes": maxBytes}
 	result, err := r.memoryRequest(ctx, http.MethodPost, "/v1/memories/pack", payload)
@@ -42,12 +43,19 @@ func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Res
 				compactedMemory[key] = value
 			}
 
-			// MemoryDock 为人类编辑和完整备份保留 content；Agent 默认读记忆时只需要
-			// frontmatter/body。这里直接在 bootstrap 主流程里瘦身，避免读者跳到小 helper 才知道输出形状。
+			// bootstrap 是每个重要任务的入口，默认应像索引而不是正文包。
+			// 未显式传 max_bytes 时只保留短摘，正文继续通过 memory_read 获取。
 			content, hasContent := compactedMemory["content"]
 			rawContent, hasRawContent := compactedMemory["raw_content"]
+			body, hasBody := compactedMemory["body"].(string)
 			delete(compactedMemory, "content")
 			delete(compactedMemory, "raw_content")
+			if !explicitMaxBytes && !includeRaw {
+				delete(compactedMemory, "body")
+				if hasBody && strings.TrimSpace(body) != "" {
+					compactedMemory["body_excerpt"] = firstRunes(strings.TrimSpace(body), 320)
+				}
+			}
 			if includeRaw {
 				if hasContent {
 					compactedMemory["raw_content"] = content
@@ -59,9 +67,25 @@ func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Res
 		}
 		result["sections"] = compactedSections
 	}
+	if !explicitMaxBytes {
+		result["compact"] = true
+		result["default_max_bytes"] = maxBytes
+		result["body_policy"] = "compact body excerpts by default"
+	}
 	result["bootstrap"] = true
 	result["recommended_use"] = "Call memory_bootstrap at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks before editing files or running destructive commands."
 	return result, nil
+}
+
+func firstRunes(value string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= max {
+		return value
+	}
+	return string(runes[:max]) + "…"
 }
 
 func (r *Runtime) memoryList(ctx context.Context, args map[string]any) (Result, error) {

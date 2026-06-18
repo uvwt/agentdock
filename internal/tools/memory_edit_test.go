@@ -223,3 +223,20 @@ func TestMemoryUpdateFactAndLint(t *testing.T) {
 		}
 	}
 }
+
+func TestMemoryBootstrapCompactByDefault(t *testing.T) {
+	store := map[string]string{"projects/agentdock/project.md": "# Bootstrap\n正文正文正文正文正文\n"}
+	rt, closeServer := newMemoryTestRuntime(t, store)
+	defer closeServer()
+	res, err := rt.memoryBootstrap(context.Background(), map[string]any{"project": "agentdock"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	section := res["sections"].([]any)[0].(map[string]any)
+	if _, ok := section["body"]; ok {
+		t.Fatalf("default bootstrap should not include body: %#v", section)
+	}
+	if _, ok := section["body_excerpt"]; !ok {
+		t.Fatalf("default bootstrap should include excerpt: %#v", section)
+	}
+}
