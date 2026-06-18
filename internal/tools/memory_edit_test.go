@@ -99,6 +99,15 @@ func TestMemoryReadCompactsRawMarkdownByDefault(t *testing.T) {
 		t.Fatalf("unexpected body: %#v", memory)
 	}
 
+	res, err = rt.memoryRead(context.Background(), map[string]any{"path": "devices/test.md", "include_content": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	memory = res["memory"].(map[string]any)
+	if _, ok := memory["raw_content"]; ok {
+		t.Fatalf("undocumented include_content should not expose raw_content: %#v", memory)
+	}
+
 	res, err = rt.memoryRead(context.Background(), map[string]any{"path": "devices/test.md", "include_raw": true})
 	if err != nil {
 		t.Fatal(err)

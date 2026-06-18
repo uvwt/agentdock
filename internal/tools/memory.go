@@ -27,7 +27,7 @@ func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Res
 	if err != nil {
 		return nil, err
 	}
-	memoryCompactPackResult(result, memoryIncludeRaw(args))
+	memoryCompactPackResult(result, boolArg(args, "include_raw", false))
 	result["bootstrap"] = true
 	result["recommended_use"] = "Call memory_bootstrap at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks before editing files or running destructive commands."
 	return result, nil
@@ -58,7 +58,7 @@ func (r *Runtime) memoryRead(ctx context.Context, args map[string]any) (Result, 
 		return nil, err
 	}
 	if memory, ok := result["memory"].(map[string]any); ok {
-		result["memory"] = memoryCompactRawFields(memory, memoryIncludeRaw(args))
+		result["memory"] = memoryCompactRawFields(memory, boolArg(args, "include_raw", false))
 	}
 	return result, nil
 }
@@ -90,12 +90,8 @@ func (r *Runtime) memoryPack(ctx context.Context, args map[string]any) (Result, 
 	if err != nil {
 		return nil, err
 	}
-	memoryCompactPackResult(result, memoryIncludeRaw(args))
+	memoryCompactPackResult(result, boolArg(args, "include_raw", false))
 	return result, nil
-}
-
-func memoryIncludeRaw(args map[string]any) bool {
-	return boolArg(args, "include_raw", false) || boolArg(args, "include_content", false)
 }
 
 func memoryCompactPackResult(result Result, includeRaw bool) {
