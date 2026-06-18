@@ -357,6 +357,8 @@ func inputSchema(name string) map[string]any {
 		props["to_y"] = intProp("End Y coordinate for drag.")
 		props["space"] = stringProp("Coordinate space: screen or window.")
 		props["verify"] = boolProp("When true, capture before/after screenshots and report effect verification.")
+		props["before_snapshot"] = boolProp("Capture a before screenshot for effect verification. Defaults to verify.")
+		props["after_snapshot"] = boolProp("Capture an after screenshot for effect verification. Defaults to verify.")
 		props["verify_region"] = map[string]any{"type": "object", "description": "Optional screenshot diff region.", "additionalProperties": true}
 		props["wait_ms"] = intProp("Milliseconds to wait before after-screenshot.")
 		props["focus_if_needed"] = boolProp("Activate the target app before the action.")
@@ -435,6 +437,8 @@ func inputSchema(name string) map[string]any {
 		props["y"] = intProp("Y coordinate. Defaults to global macOS screen points; when space=window, this is relative to the target app window.")
 		props["space"] = stringProp("Coordinate space: screen or window. window converts app-window-relative points into global macOS points.")
 		props["verify"] = boolProp("When true, capture before/after screenshots, wait wait_ms, and return effect_verified/effect_changed/diff_score.")
+		props["before_snapshot"] = boolProp("Capture a before screenshot for effect verification. Defaults to verify.")
+		props["after_snapshot"] = boolProp("Capture an after screenshot for effect verification. Defaults to verify.")
 		props["verify_region"] = map[string]any{"type": "object", "description": "Optional screenshot diff region {x,y,width,height,space}. space may be screen or window.", "additionalProperties": true}
 		props["wait_ms"] = intProp("Milliseconds to wait before after-screenshot; defaults to 250 when verify=true.")
 		props["focus_if_needed"] = boolProp("Activate the target app before the action.")
@@ -451,6 +455,11 @@ func inputSchema(name string) map[string]any {
 		props["dx"] = intProp("Horizontal scroll amount.")
 		props["dy"] = intProp("Vertical scroll amount.")
 		props["amount"] = intProp("Alias for dy.")
+		props["verify"] = boolProp("When true, capture before/after screenshots, wait wait_ms, and return effect_verified/effect_changed/diff_score.")
+		props["before_snapshot"] = boolProp("Capture a before screenshot for effect verification. Defaults to verify.")
+		props["after_snapshot"] = boolProp("Capture an after screenshot for effect verification. Defaults to verify.")
+		props["verify_region"] = map[string]any{"type": "object", "description": "Optional screenshot diff region {x,y,width,height,space}. space may be screen or window.", "additionalProperties": true}
+		props["wait_ms"] = intProp("Milliseconds to wait before after-screenshot; defaults to 250 when verify=true.")
 	case "desktop_drag":
 		props["app"] = stringProp("Optional app name, full .app path, or bundle identifier. Used for focus/window assertions and space=window conversion.")
 		props["from_x"] = intProp("Start X coordinate. Defaults to global macOS screen points; when space=window, this is relative to the target app window.")
@@ -459,6 +468,8 @@ func inputSchema(name string) map[string]any {
 		props["to_y"] = intProp("End Y coordinate. Defaults to global macOS screen points; when space=window, this is relative to the target app window.")
 		props["space"] = stringProp("Coordinate space: screen or window. window converts app-window-relative points into global macOS points.")
 		props["verify"] = boolProp("When true, capture before/after screenshots, wait wait_ms, and return effect_verified/effect_changed/diff_score.")
+		props["before_snapshot"] = boolProp("Capture a before screenshot for effect verification. Defaults to verify.")
+		props["after_snapshot"] = boolProp("Capture an after screenshot for effect verification. Defaults to verify.")
 		props["verify_region"] = map[string]any{"type": "object", "description": "Optional screenshot diff region {x,y,width,height,space}. space may be screen or window.", "additionalProperties": true}
 		props["wait_ms"] = intProp("Milliseconds to wait before after-screenshot; defaults to 250 when verify=true.")
 		props["focus_if_needed"] = boolProp("Activate the target app before the action.")
@@ -474,6 +485,11 @@ func inputSchema(name string) map[string]any {
 		props["app"] = stringProp("Optional app name, full .app path, or bundle identifier. When provided, call desktop_get_app_state first.")
 		props["text"] = stringProp("Text to input into the focused macOS app.")
 		props["strategy"] = stringProp("Input strategy: auto, keyboard, or clipboard. Auto uses clipboard for long, multiline, or non-ASCII text.")
+		props["verify"] = boolProp("When true, capture before/after screenshots, wait wait_ms, and return effect_verified/effect_changed/diff_score.")
+		props["before_snapshot"] = boolProp("Capture a before screenshot for effect verification. Defaults to verify.")
+		props["after_snapshot"] = boolProp("Capture an after screenshot for effect verification. Defaults to verify.")
+		props["verify_region"] = map[string]any{"type": "object", "description": "Optional screenshot diff region {x,y,width,height,space}. space may be screen or window.", "additionalProperties": true}
+		props["wait_ms"] = intProp("Milliseconds to wait before after-screenshot; defaults to 250 when verify=true.")
 		required = []string{"text"}
 	case "desktop_set_value":
 		props["app"] = stringProp("App name, full .app path, or bundle identifier.")
@@ -487,6 +503,11 @@ func inputSchema(name string) map[string]any {
 		required = []string{"app", "element_index", "action"}
 	case "desktop_hotkey":
 		props["keys"] = stringProp("Shortcut, for example cmd+space, cmd+v, enter.")
+		props["verify"] = boolProp("When true, capture before/after screenshots, wait wait_ms, and return effect_verified/effect_changed/diff_score.")
+		props["before_snapshot"] = boolProp("Capture a before screenshot for effect verification. Defaults to verify.")
+		props["after_snapshot"] = boolProp("Capture an after screenshot for effect verification. Defaults to verify.")
+		props["verify_region"] = map[string]any{"type": "object", "description": "Optional screenshot diff region {x,y,width,height,space}. space may be screen or window.", "additionalProperties": true}
+		props["wait_ms"] = intProp("Milliseconds to wait before after-screenshot; defaults to 250 when verify=true.")
 		required = []string{"keys"}
 	case "desktop_wait":
 		props["ms"] = intProp("Milliseconds to wait.")

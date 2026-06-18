@@ -180,3 +180,27 @@ func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 		}
 	}
 }
+
+func TestDesktopCommandSchemasExposeVerificationControls(t *testing.T) {
+	for _, tool := range []string{
+		"desktop_act",
+		"desktop_click",
+		"desktop_double_click",
+		"desktop_move",
+		"desktop_scroll",
+		"desktop_drag",
+		"desktop_type",
+		"desktop_hotkey",
+	} {
+		schema := inputSchema(tool)
+		props, ok := schema["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s input schema properties missing", tool)
+		}
+		for _, name := range []string{"verify", "before_snapshot", "after_snapshot", "verify_region", "wait_ms"} {
+			if _, ok := props[name]; !ok {
+				t.Fatalf("%s input schema missing %q", tool, name)
+			}
+		}
+	}
+}
