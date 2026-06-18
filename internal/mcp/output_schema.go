@@ -181,6 +181,24 @@ func outputSchema(name string) map[string]any {
 		props["query"] = stringProp("Search query.")
 		props["results"] = arrayProp("Search results.")
 		props["count"] = intProp("Search result count.")
+	case "notes_search":
+		props["scope"] = stringProp("Notes scope searched.")
+		props["prefix"] = stringProp("MemoryDock notes prefix searched.")
+		props["index_path"] = stringProp("Notes index path inspected first.")
+		props["query"] = stringProp("Search query.")
+		props["strategy"] = stringProp("Search strategy, currently index_first.")
+		props["recommended_action"] = stringProp("Recommended next action: update_existing, create_new, or put_open.")
+		props["candidate_paths"] = arrayProp("Candidate note paths.")
+		props["candidates"] = arrayProp("Scored candidate notes.")
+	case "notes_capture":
+		props["scope"] = stringProp("Notes scope searched.")
+		props["capture_plan"] = objectProp("Reviewable write plan. notes_capture does not write by itself.")
+		props["search"] = objectProp("Underlying notes_search result.")
+	case "notes_write":
+		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
+		props["memory"] = objectProp("Memory document returned by MemoryDock.")
+		props["notes_tool"] = stringProp("notes_write")
+		props["scope"] = stringProp("Notes scope written.")
 	case "memory_bootstrap", "memory_pack":
 		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
 		props["project"] = stringProp("Project key.")

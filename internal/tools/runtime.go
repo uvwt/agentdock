@@ -54,7 +54,7 @@ func (r *Runtime) Workspace() *workspace.Workspace { return r.ws }
 func (r *Runtime) ToolNames() []string {
 	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "edit_file", "exec_command", "session_control", "configure_github_token", "check_github_repo_access", "github_create_repo", "task_manage", "skill_manage", "env_manage", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "request_permissions", "view_image"}
 	if r.cfg.MemoryEndpoint != "" {
-		all = append(all, "memory_bootstrap", "memory_list", "memory_read", "memory_search", "memory_pack", "memory_edit", "memory_sync_status", "memory_lint")
+		all = append(all, "memory_bootstrap", "memory_list", "memory_read", "memory_search", "memory_pack", "memory_edit", "memory_sync_status", "memory_lint", "notes_search", "notes_capture", "notes_write")
 	}
 	if r.cfg.BrowserEnabled {
 		all = append(all, "browser_session", "browser_act", "browser_snapshot")
@@ -76,7 +76,7 @@ func (r *Runtime) ToolNames() []string {
 	}
 	readOnly := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "session_control", "check_github_repo_access", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "request_permissions", "view_image"}
 	if r.cfg.MemoryEndpoint != "" {
-		readOnly = append(readOnly, "memory_bootstrap", "memory_list", "memory_read", "memory_search", "memory_pack", "memory_sync_status", "memory_lint")
+		readOnly = append(readOnly, "memory_bootstrap", "memory_list", "memory_read", "memory_search", "memory_pack", "memory_sync_status", "memory_lint", "notes_search", "notes_capture")
 	}
 	if r.cfg.BrowserEnabled {
 		readOnly = append(readOnly, "browser_snapshot")
@@ -191,6 +191,12 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.memoryUpdateFact(ctx, args)
 	case "memory_lint":
 		return r.memoryLint(ctx, args)
+	case "notes_search":
+		return r.notesSearch(ctx, args)
+	case "notes_capture":
+		return r.notesCapture(ctx, args)
+	case "notes_write":
+		return r.notesWrite(ctx, args)
 	case "browser_session":
 		return r.browserSession(ctx, args)
 	case "browser_act", "browser_action":

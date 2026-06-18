@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,6 +31,34 @@ func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func
 				sections = append(sections, memoryTestDocument(p, content))
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "project": "agentdock", "sections": sections, "count": len(sections)})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/memories/search":
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			query := strings.ToLower(fmt.Sprint(payload["query"]))
+			prefix := strings.TrimSpace(fmt.Sprint(payload["prefix"]))
+			terms := strings.Fields(query)
+			results := []map[string]any{}
+			for p, content := range store {
+				if prefix != "" && !strings.HasPrefix(p, prefix) {
+					continue
+				}
+				haystack := strings.ToLower(p + "\n" + content)
+				matched := query == "" || strings.Contains(haystack, query)
+				if !matched {
+					for _, term := range terms {
+						if strings.Contains(haystack, term) {
+							matched = true
+							break
+						}
+					}
+				}
+				if matched {
+					results = append(results, map[string]any{"path": p, "score": 1, "snippet": memoryTestBody(content)})
+				}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "query": query, "results": results, "count": len(results)})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/memories":
 			var payload map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {

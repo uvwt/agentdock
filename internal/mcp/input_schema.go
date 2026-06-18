@@ -210,6 +210,28 @@ func inputSchema(name string) map[string]any {
 		props["prefix"] = stringProp("Optional memory-relative prefix to search under.")
 		props["max_results"] = intProp("Maximum results to return.")
 		required = []string{"query"}
+	case "notes_search":
+		props["query"] = stringProp("Text query for notes.")
+		props["scope"] = stringProp("Notes scope: questions or github-learning. Defaults to questions.")
+		props["max_results"] = intProp("Maximum candidate notes to return.")
+		required = []string{"query"}
+	case "notes_capture":
+		props["question"] = stringProp("User question or learning point to capture.")
+		props["query"] = stringProp("Alternative search query when question is omitted.")
+		props["scope"] = stringProp("Notes scope: questions or github-learning. Defaults to questions.")
+		props["summary"] = stringProp("Optional concise summary for the draft capture plan.")
+		props["conclusion"] = stringProp("Optional conclusion for the draft capture plan.")
+		props["open_questions"] = map[string]any{"type": "array", "description": "Optional unresolved questions.", "items": map[string]any{"type": "string"}}
+		props["source"] = stringProp("Optional source label, path, URL, or conversation marker.")
+		props["section"] = stringProp("Suggested section title. Defaults to 相关问题.")
+		props["max_results"] = intProp("Maximum candidate notes to inspect.")
+	case "notes_write":
+		props["path"] = stringProp("Memory-relative path under notes/questions or notes/github-learning.")
+		props["scope"] = stringProp("Notes scope: questions or github-learning. Defaults to questions.")
+		props["content"] = stringProp("Full Markdown note content to write.")
+		props["confirmed"] = boolProp("Required to write. notes_write never writes without confirmed=true.")
+		props["overwrite"] = boolProp("Whether to overwrite existing content. Defaults to false.")
+		required = []string{"path", "content", "confirmed"}
 	case "memory_pack":
 		props["project"] = stringProp("Project key to pack, for example agentdock.")
 		props["max_bytes"] = intProp("Maximum combined memory bytes.")
