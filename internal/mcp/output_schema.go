@@ -175,7 +175,7 @@ func outputSchema(name string) map[string]any {
 		props["count"] = intProp("Memory entry count.")
 	case "memory_read", "memory_write", "memory_append_note":
 		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
-		props["memory"] = objectProp("Memory document returned by MemoryDock.")
+		props["memory"] = objectProp("Memory document returned by MemoryDock. Raw Markdown is omitted by default and returned as raw_content only when include_raw=true.")
 	case "memory_search":
 		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
 		props["query"] = stringProp("Search query.")
@@ -184,7 +184,7 @@ func outputSchema(name string) map[string]any {
 	case "memory_bootstrap", "memory_pack":
 		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
 		props["project"] = stringProp("Project key.")
-		props["sections"] = arrayProp("Packed memory sections.")
+		props["sections"] = arrayProp("Packed memory sections. Raw Markdown is omitted by default and returned as raw_content only when include_raw=true.")
 		props["count"] = intProp("Section count.")
 		props["bytes"] = intProp("Combined bytes.")
 	case "memory_delete":

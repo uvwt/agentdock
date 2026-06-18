@@ -27,6 +27,7 @@ func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Res
 	if err != nil {
 		return nil, err
 	}
+	memoryCompactPackResult(result, memoryIncludeRaw(args))
 	result["bootstrap"] = true
 	result["recommended_use"] = "Call memory_bootstrap at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks before editing files or running destructive commands."
 	return result, nil
@@ -52,7 +53,14 @@ func (r *Runtime) memoryRead(ctx context.Context, args map[string]any) (Result, 
 	if p == "" {
 		return nil, toolError("MISSING_PATH", "path is required", "validation")
 	}
-	return r.memoryRequest(ctx, http.MethodGet, "/v1/memories/"+escapeMemoryPath(p), nil)
+	result, err := r.memoryRequest(ctx, http.MethodGet, "/v1/memories/"+escapeMemoryPath(p), nil)
+	if err != nil {
+		return nil, err
+	}
+	if memory, ok := result["memory"].(map[string]any); ok {
+		result["memory"] = memoryCompactRawFields(memory, memoryIncludeRaw(args))
+	}
+	return result, nil
 }
 
 func (r *Runtime) memorySearch(ctx context.Context, args map[string]any) (Result, error) {
@@ -78,7 +86,55 @@ func (r *Runtime) memoryPack(ctx context.Context, args map[string]any) (Result, 
 	if maxBytes := intArg(args, "max_bytes", 0); maxBytes > 0 {
 		payload["max_bytes"] = maxBytes
 	}
-	return r.memoryRequest(ctx, http.MethodPost, "/v1/memories/pack", payload)
+	result, err := r.memoryRequest(ctx, http.MethodPost, "/v1/memories/pack", payload)
+	if err != nil {
+		return nil, err
+	}
+	memoryCompactPackResult(result, memoryIncludeRaw(args))
+	return result, nil
+}
+
+func memoryIncludeRaw(args map[string]any) bool {
+	return boolArg(args, "include_raw", false) || boolArg(args, "include_content", false)
+}
+
+func memoryCompactPackResult(result Result, includeRaw bool) {
+	sections, ok := result["sections"].([]any)
+	if !ok {
+		return
+	}
+	compacted := make([]any, 0, len(sections))
+	for _, section := range sections {
+		if item, ok := section.(map[string]any); ok {
+			compacted = append(compacted, memoryCompactRawFields(item, includeRaw))
+			continue
+		}
+		compacted = append(compacted, section)
+	}
+	result["sections"] = compacted
+}
+
+func memoryCompactRawFields(memory map[string]any, includeRaw bool) map[string]any {
+	compacted := make(map[string]any, len(memory))
+	for key, value := range memory {
+		compacted[key] = value
+	}
+
+	// MemoryDock 为人类编辑和完整备份保留 content；Agent 默认读记忆时只需要
+	// frontmatter/body。这里在 AgentDock 代理层瘦身，避免 content 与 body 重复进入模型上下文。
+	content, hasContent := compacted["content"]
+	rawContent, hasRawContent := compacted["raw_content"]
+	delete(compacted, "content")
+	delete(compacted, "raw_content")
+	if !includeRaw {
+		return compacted
+	}
+	if hasContent {
+		compacted["raw_content"] = content
+	} else if hasRawContent {
+		compacted["raw_content"] = rawContent
+	}
+	return compacted
 }
 
 func (r *Runtime) memoryAppendNote(ctx context.Context, args map[string]any) (Result, error) {

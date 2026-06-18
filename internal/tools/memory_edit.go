@@ -199,7 +199,9 @@ func (r *Runtime) memoryLint(ctx context.Context, args map[string]any) (Result, 
 }
 
 func (r *Runtime) memoryReadContent(ctx context.Context, p string) (string, error) {
-	result, err := r.memoryRead(ctx, map[string]any{"path": p})
+	// 编辑、diff、patch 需要完整 Markdown，不能使用默认瘦身后的 body，
+	// 否则写回时可能丢失 frontmatter。
+	result, err := r.memoryRead(ctx, map[string]any{"path": p, "include_raw": true})
 	if err != nil {
 		return "", err
 	}
@@ -207,13 +209,16 @@ func (r *Runtime) memoryReadContent(ctx context.Context, p string) (string, erro
 	if !ok {
 		return "", toolErrorDetails("MEMORY_RESPONSE_MISSING_MEMORY", "MemoryDock response does not contain memory object", "network", map[string]any{"path": p})
 	}
+	if content, ok := memory["raw_content"].(string); ok {
+		return content, nil
+	}
 	if content, ok := memory["content"].(string); ok {
 		return content, nil
 	}
 	if body, ok := memory["body"].(string); ok {
 		return body, nil
 	}
-	return "", toolErrorDetails("MEMORY_RESPONSE_MISSING_CONTENT", "MemoryDock memory object does not contain content/body", "network", map[string]any{"path": p})
+	return "", toolErrorDetails("MEMORY_RESPONSE_MISSING_CONTENT", "MemoryDock memory object does not contain raw_content/content/body", "network", map[string]any{"path": p})
 }
 
 func (r *Runtime) memoryWriteContent(ctx context.Context, p, content string) (Result, error) {

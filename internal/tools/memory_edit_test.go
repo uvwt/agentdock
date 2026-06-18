@@ -23,7 +23,13 @@ func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func
 				http.Error(w, `{"error":{"message":"not found"}}`, http.StatusNotFound)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "memory": map[string]any{"path": p, "content": content}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "memory": memoryTestDocument(p, content)})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/memories/pack":
+			sections := []any{}
+			for p, content := range store {
+				sections = append(sections, memoryTestDocument(p, content))
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "project": "agentdock", "sections": sections, "count": len(sections)})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/memories":
 			var payload map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -32,7 +38,7 @@ func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func
 			p, _ := payload["path"].(string)
 			content, _ := payload["content"].(string)
 			store[p] = content
-			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "memory": map[string]any{"path": p, "content": content}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "memory": memoryTestDocument(p, content)})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/memories":
 			entries := []map[string]any{{"path": "devices", "type": "directory"}}
 			for p := range store {
@@ -50,6 +56,93 @@ func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func
 		t.Fatal(err)
 	}
 	return rt, server.Close
+}
+
+func memoryTestDocument(p, content string) map[string]any {
+	return map[string]any{
+		"path":        p,
+		"content":     content,
+		"body":        memoryTestBody(content),
+		"frontmatter": map[string]any{"type": "test"},
+		"size_bytes":  len(content),
+	}
+}
+
+func memoryTestBody(content string) string {
+	separator := "\n---\n\n"
+	if strings.HasPrefix(content, "---\n") {
+		if index := strings.Index(content, separator); index >= 0 {
+			return content[index+len(separator):]
+		}
+	}
+	return content
+}
+
+func TestMemoryReadCompactsRawMarkdownByDefault(t *testing.T) {
+	full := "---\ntype: test\n---\n\n# Test\n正文\n"
+	store := map[string]string{"devices/test.md": full}
+	rt, closeServer := newMemoryTestRuntime(t, store)
+	defer closeServer()
+
+	res, err := rt.memoryRead(context.Background(), map[string]any{"path": "devices/test.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	memory := res["memory"].(map[string]any)
+	if _, ok := memory["content"]; ok {
+		t.Fatalf("content should be hidden by default: %#v", memory)
+	}
+	if _, ok := memory["raw_content"]; ok {
+		t.Fatalf("raw_content should be hidden by default: %#v", memory)
+	}
+	if body, _ := memory["body"].(string); body != "# Test\n正文\n" {
+		t.Fatalf("unexpected body: %#v", memory)
+	}
+
+	res, err = rt.memoryRead(context.Background(), map[string]any{"path": "devices/test.md", "include_raw": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	memory = res["memory"].(map[string]any)
+	if raw, _ := memory["raw_content"].(string); raw != full {
+		t.Fatalf("raw_content should contain full Markdown: %#v", memory)
+	}
+	if _, ok := memory["content"]; ok {
+		t.Fatalf("include_raw should expose raw_content, not content: %#v", memory)
+	}
+}
+
+func TestMemoryPackCompactsSectionRawMarkdown(t *testing.T) {
+	full := "---\ntype: test\n---\n\n# Packed\n"
+	store := map[string]string{"projects/agentdock/project.md": full}
+	rt, closeServer := newMemoryTestRuntime(t, store)
+	defer closeServer()
+
+	res, err := rt.memoryPack(context.Background(), map[string]any{"project": "agentdock"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sections := res["sections"].([]any)
+	section := sections[0].(map[string]any)
+	if _, ok := section["content"]; ok {
+		t.Fatalf("section content should be hidden by default: %#v", section)
+	}
+	if _, ok := section["raw_content"]; ok {
+		t.Fatalf("section raw_content should be hidden by default: %#v", section)
+	}
+
+	res, err = rt.memoryPack(context.Background(), map[string]any{"project": "agentdock", "include_raw": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sections = res["sections"].([]any)
+	section = sections[0].(map[string]any)
+	if raw, _ := section["raw_content"].(string); raw != full {
+		t.Fatalf("section raw_content should contain full Markdown: %#v", section)
+	}
+	if _, ok := section["content"]; ok {
+		t.Fatalf("include_raw should expose raw_content, not content: %#v", section)
+	}
 }
 
 func TestMemoryDiffAndPatchDryRun(t *testing.T) {
@@ -90,7 +183,7 @@ func TestMemoryPatchConfirmedWrites(t *testing.T) {
 
 func TestMemoryUpdateFactAndLint(t *testing.T) {
 	store := map[string]string{
-		"devices/test.md": "# Device\nplugin_dir：old\n",
+		"devices/test.md": "---\ntype: test\n---\n\n# Device\nplugin_dir：old\n",
 		"ops/test.md":     "# Ops\nNo forbidden terms.\n",
 	}
 	rt, closeServer := newMemoryTestRuntime(t, store)
@@ -101,6 +194,9 @@ func TestMemoryUpdateFactAndLint(t *testing.T) {
 	}
 	if changed, _ := res["changed"].(bool); !changed {
 		t.Fatalf("expected fact update change: %#v", res)
+	}
+	if !strings.Contains(store["devices/test.md"], "---\ntype: test\n---") {
+		t.Fatalf("frontmatter was not preserved: %q", store["devices/test.md"])
 	}
 	if !strings.Contains(store["devices/test.md"], "plugin_dir：plugins") {
 		t.Fatalf("fact was not written: %q", store["devices/test.md"])

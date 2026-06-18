@@ -197,11 +197,13 @@ func inputSchema(name string) map[string]any {
 	case "memory_bootstrap":
 		props["project"] = stringProp("Project key to bootstrap. Defaults to agentdock.")
 		props["max_bytes"] = intProp("Maximum combined memory bytes. Defaults to 50000.")
+		props["include_raw"] = boolProp("Include raw Markdown as raw_content. Defaults to false to avoid duplicating body/content tokens.")
 	case "memory_list":
 		props["prefix"] = stringProp("Optional memory-relative prefix to list, for example shared/projects/agentdock.")
 		props["max_entries"] = intProp("Maximum entries to return.")
 	case "memory_read":
 		props["path"] = stringProp("Memory-relative Markdown/text path.")
+		props["include_raw"] = boolProp("Include raw Markdown as raw_content. Defaults to false to avoid duplicating body/content tokens.")
 		required = []string{"path"}
 	case "memory_search":
 		props["query"] = stringProp("Text query to search in MemoryDock files and paths.")
@@ -211,6 +213,7 @@ func inputSchema(name string) map[string]any {
 	case "memory_pack":
 		props["project"] = stringProp("Project key to pack, for example agentdock.")
 		props["max_bytes"] = intProp("Maximum combined memory bytes.")
+		props["include_raw"] = boolProp("Include raw Markdown as raw_content. Defaults to false to avoid duplicating body/content tokens.")
 	case "memory_append_note":
 		props["content"] = stringProp("Markdown note content to append.")
 		props["scope"] = stringProp("Memory scope directory. Defaults to inbox.")
