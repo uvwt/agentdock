@@ -27,7 +27,38 @@ func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Res
 	if err != nil {
 		return nil, err
 	}
-	compactMemoryPackForAgentContext(result, boolArg(args, "include_raw", false))
+	includeRaw := boolArg(args, "include_raw", false)
+	if sections, ok := result["sections"].([]any); ok {
+		compactedSections := make([]any, 0, len(sections))
+		for _, section := range sections {
+			memory, ok := section.(map[string]any)
+			if !ok {
+				compactedSections = append(compactedSections, section)
+				continue
+			}
+
+			compactedMemory := make(map[string]any, len(memory))
+			for key, value := range memory {
+				compactedMemory[key] = value
+			}
+
+			// MemoryDock 为人类编辑和完整备份保留 content；Agent 默认读记忆时只需要
+			// frontmatter/body。这里直接在 bootstrap 主流程里瘦身，避免读者跳到小 helper 才知道输出形状。
+			content, hasContent := compactedMemory["content"]
+			rawContent, hasRawContent := compactedMemory["raw_content"]
+			delete(compactedMemory, "content")
+			delete(compactedMemory, "raw_content")
+			if includeRaw {
+				if hasContent {
+					compactedMemory["raw_content"] = content
+				} else if hasRawContent {
+					compactedMemory["raw_content"] = rawContent
+				}
+			}
+			compactedSections = append(compactedSections, compactedMemory)
+		}
+		result["sections"] = compactedSections
+	}
 	result["bootstrap"] = true
 	result["recommended_use"] = "Call memory_bootstrap at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks before editing files or running destructive commands."
 	return result, nil
@@ -58,7 +89,25 @@ func (r *Runtime) memoryRead(ctx context.Context, args map[string]any) (Result, 
 		return nil, err
 	}
 	if memory, ok := result["memory"].(map[string]any); ok {
-		result["memory"] = compactMemoryDocumentForAgentContext(memory, boolArg(args, "include_raw", false))
+		compactedMemory := make(map[string]any, len(memory))
+		for key, value := range memory {
+			compactedMemory[key] = value
+		}
+
+		// MemoryDock 返回的 content 与 body 会重复占用上下文；memory_read 的主流程
+		// 直接展示这个取舍：默认只保留轻量字段，只有 include_raw=true 才暴露原文。
+		content, hasContent := compactedMemory["content"]
+		rawContent, hasRawContent := compactedMemory["raw_content"]
+		delete(compactedMemory, "content")
+		delete(compactedMemory, "raw_content")
+		if boolArg(args, "include_raw", false) {
+			if hasContent {
+				compactedMemory["raw_content"] = content
+			} else if hasRawContent {
+				compactedMemory["raw_content"] = rawContent
+			}
+		}
+		result["memory"] = compactedMemory
 	}
 	return result, nil
 }
@@ -90,51 +139,39 @@ func (r *Runtime) memoryPack(ctx context.Context, args map[string]any) (Result, 
 	if err != nil {
 		return nil, err
 	}
-	compactMemoryPackForAgentContext(result, boolArg(args, "include_raw", false))
-	return result, nil
-}
+	includeRaw := boolArg(args, "include_raw", false)
+	if sections, ok := result["sections"].([]any); ok {
+		compactedSections := make([]any, 0, len(sections))
+		for _, section := range sections {
+			memory, ok := section.(map[string]any)
+			if !ok {
+				compactedSections = append(compactedSections, section)
+				continue
+			}
 
-// compactMemoryPackForAgentContext 只处理 pack/bootstrap 返回的 sections 外壳，
-// 每个记忆文档本身继续复用单文档瘦身规则，避免两处规则漂移。
-func compactMemoryPackForAgentContext(result Result, includeRaw bool) {
-	sections, ok := result["sections"].([]any)
-	if !ok {
-		return
-	}
-	compacted := make([]any, 0, len(sections))
-	for _, section := range sections {
-		if item, ok := section.(map[string]any); ok {
-			compacted = append(compacted, compactMemoryDocumentForAgentContext(item, includeRaw))
-			continue
+			compactedMemory := make(map[string]any, len(memory))
+			for key, value := range memory {
+				compactedMemory[key] = value
+			}
+
+			// memory_pack 会一次返回多份记忆，重复 raw Markdown 的 token 成本更高；
+			// 瘦身规则放在主流程里，读者不用跳 helper 就能看到输出为什么只保留 body。
+			content, hasContent := compactedMemory["content"]
+			rawContent, hasRawContent := compactedMemory["raw_content"]
+			delete(compactedMemory, "content")
+			delete(compactedMemory, "raw_content")
+			if includeRaw {
+				if hasContent {
+					compactedMemory["raw_content"] = content
+				} else if hasRawContent {
+					compactedMemory["raw_content"] = rawContent
+				}
+			}
+			compactedSections = append(compactedSections, compactedMemory)
 		}
-		compacted = append(compacted, section)
+		result["sections"] = compactedSections
 	}
-	result["sections"] = compacted
-}
-
-// compactMemoryDocumentForAgentContext 将 MemoryDock 的完整文档转成适合模型读取的形状。
-// 默认不返回完整 Markdown，只在 includeRaw=true 时用 raw_content 明确暴露原文。
-func compactMemoryDocumentForAgentContext(memory map[string]any, includeRaw bool) map[string]any {
-	compacted := make(map[string]any, len(memory))
-	for key, value := range memory {
-		compacted[key] = value
-	}
-
-	// MemoryDock 为人类编辑和完整备份保留 content；Agent 默认读记忆时只需要
-	// frontmatter/body。这里在 AgentDock 代理层瘦身，避免 content 与 body 重复进入模型上下文。
-	content, hasContent := compacted["content"]
-	rawContent, hasRawContent := compacted["raw_content"]
-	delete(compacted, "content")
-	delete(compacted, "raw_content")
-	if !includeRaw {
-		return compacted
-	}
-	if hasContent {
-		compacted["raw_content"] = content
-	} else if hasRawContent {
-		compacted["raw_content"] = rawContent
-	}
-	return compacted
+	return result, nil
 }
 
 func (r *Runtime) memoryAppendNote(ctx context.Context, args map[string]any) (Result, error) {
