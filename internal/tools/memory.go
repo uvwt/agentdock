@@ -27,7 +27,7 @@ func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Res
 	if err != nil {
 		return nil, err
 	}
-	memoryCompactPackResult(result, boolArg(args, "include_raw", false))
+	compactMemoryPackForAgentContext(result, boolArg(args, "include_raw", false))
 	result["bootstrap"] = true
 	result["recommended_use"] = "Call memory_bootstrap at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks before editing files or running destructive commands."
 	return result, nil
@@ -58,7 +58,7 @@ func (r *Runtime) memoryRead(ctx context.Context, args map[string]any) (Result, 
 		return nil, err
 	}
 	if memory, ok := result["memory"].(map[string]any); ok {
-		result["memory"] = memoryCompactRawFields(memory, boolArg(args, "include_raw", false))
+		result["memory"] = compactMemoryDocumentForAgentContext(memory, boolArg(args, "include_raw", false))
 	}
 	return result, nil
 }
@@ -90,11 +90,13 @@ func (r *Runtime) memoryPack(ctx context.Context, args map[string]any) (Result, 
 	if err != nil {
 		return nil, err
 	}
-	memoryCompactPackResult(result, boolArg(args, "include_raw", false))
+	compactMemoryPackForAgentContext(result, boolArg(args, "include_raw", false))
 	return result, nil
 }
 
-func memoryCompactPackResult(result Result, includeRaw bool) {
+// compactMemoryPackForAgentContext 只处理 pack/bootstrap 返回的 sections 外壳，
+// 每个记忆文档本身继续复用单文档瘦身规则，避免两处规则漂移。
+func compactMemoryPackForAgentContext(result Result, includeRaw bool) {
 	sections, ok := result["sections"].([]any)
 	if !ok {
 		return
@@ -102,7 +104,7 @@ func memoryCompactPackResult(result Result, includeRaw bool) {
 	compacted := make([]any, 0, len(sections))
 	for _, section := range sections {
 		if item, ok := section.(map[string]any); ok {
-			compacted = append(compacted, memoryCompactRawFields(item, includeRaw))
+			compacted = append(compacted, compactMemoryDocumentForAgentContext(item, includeRaw))
 			continue
 		}
 		compacted = append(compacted, section)
@@ -110,7 +112,9 @@ func memoryCompactPackResult(result Result, includeRaw bool) {
 	result["sections"] = compacted
 }
 
-func memoryCompactRawFields(memory map[string]any, includeRaw bool) map[string]any {
+// compactMemoryDocumentForAgentContext 将 MemoryDock 的完整文档转成适合模型读取的形状。
+// 默认不返回完整 Markdown，只在 includeRaw=true 时用 raw_content 明确暴露原文。
+func compactMemoryDocumentForAgentContext(memory map[string]any, includeRaw bool) map[string]any {
 	compacted := make(map[string]any, len(memory))
 	for key, value := range memory {
 		compacted[key] = value

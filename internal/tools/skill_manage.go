@@ -17,14 +17,16 @@ import (
 	"github.com/uvwt/agentdock/internal/skillstate"
 )
 
-type skillManager struct {
+// skillRuntimeManager 集中保存 Skill Runtime 的运行态依赖。
+// 它不是通用 Manager，只负责 Skill 包、channel、binding 和 Env 注入这条链路。
+type skillRuntimeManager struct {
 	runtime  *skillruntime.Runtime
 	state    *skillstate.Store
 	bindings *skillruntime.BindingStore
 	env      *envregistry.Store
 }
 
-func newSkillManager(cfg config.Config) (*skillManager, error) {
+func newSkillRuntimeManager(cfg config.Config) (*skillRuntimeManager, error) {
 	stateDir, err := config.ResolveNexusStateDir(cfg)
 	if err != nil {
 		return nil, err
@@ -37,8 +39,8 @@ func newSkillManager(cfg config.Config) (*skillManager, error) {
 	if err != nil {
 		return nil, err
 	}
-	manager := &skillManager{state: state, bindings: bindings}
-	envStore, err := envregistry.New(filepath.Join(stateDir, "env"), manager.envDefinitions)
+	skills := &skillRuntimeManager{state: state, bindings: bindings}
+	envStore, err := envregistry.New(filepath.Join(stateDir, "env"), skills.envDefinitions)
 	if err != nil {
 		return nil, err
 	}
@@ -46,10 +48,10 @@ func newSkillManager(cfg config.Config) (*skillManager, error) {
 	if err != nil {
 		return nil, err
 	}
-	manager.runtime = runtime
-	manager.env = envStore
+	skills.runtime = runtime
+	skills.env = envStore
 	runtime.EnvProvider = skillEnvProvider{store: envStore}
-	return manager, nil
+	return skills, nil
 }
 
 type skillEnvProvider struct{ store *envregistry.Store }
@@ -90,7 +92,7 @@ func (r *Runtime) skillManage(ctx context.Context, args map[string]any) (Result,
 	}
 }
 
-func (m *skillManager) envDefinitions() []envregistry.Definition {
+func (m *skillRuntimeManager) envDefinitions() []envregistry.Definition {
 	names, err := m.state.ListSkills()
 	if err != nil {
 		return compatEnvDefinitions()

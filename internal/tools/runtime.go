@@ -24,7 +24,7 @@ type Runtime struct {
 	cfg      config.Config
 	ws       *workspace.Workspace
 	sessions *SessionStore
-	skills   *skillManager
+	skills   *skillRuntimeManager
 	tasks    *taskstate.Store
 }
 
@@ -33,7 +33,7 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	skills, err := newSkillManager(cfg)
+	skills, err := newSkillRuntimeManager(cfg)
 	if err != nil {
 		return nil, err
 	}

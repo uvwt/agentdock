@@ -19,7 +19,7 @@ type SkillRouter interface {
 	ExecuteSkillCommand(context.Context, string, json.RawMessage, ProgressReporter) (HandlerResult, error)
 }
 
-type EnvManager interface {
+type EnvCommandRunner interface {
 	ExecuteEnvCommand(context.Context, json.RawMessage, ProgressReporter) (HandlerResult, error)
 }
 
@@ -48,7 +48,7 @@ type AdapterDependencies struct {
 	Health        HealthChecker
 	Memory        MemorySyncer
 	Skills        SkillRouter
-	Env           EnvManager
+	Env           EnvCommandRunner
 	Services      ServiceController
 	Diagnostics   DiagnosticsCollector
 	Reloader      Reloader
@@ -56,8 +56,8 @@ type AdapterDependencies struct {
 	ArtifactFetch ArtifactFetcher
 }
 
-// RegisterAdapters wires the fixed V1 command set to controlled local
-// capabilities. It deliberately has no arbitrary shell command adapter.
+// RegisterAdapters 将 Nexus v1 固定命令集接到本机受控能力上。
+// 这里故意不注册任意 shell 命令，避免远端控制面绕过 AgentDock 的工具边界。
 func RegisterAdapters(executor *Executor, dependencies AdapterDependencies) error {
 	if executor == nil {
 		return errors.New("executor is required")
