@@ -281,7 +281,11 @@ func (s *Store) MatchTemplates(goal, device, taskType string) ([]TemplateCandida
 			reasons = append(reasons, "device:"+device)
 		}
 		if semanticMatched {
-			score += t.Match.Priority
+			priority := t.Match.Priority
+			if priority > 20 {
+				priority = 20
+			}
+			score += priority
 		}
 		if score > 0 && len(reasons) > 0 {
 			out = append(out, TemplateCandidate{ID: t.ID, Version: t.Version, Score: score, Reason: strings.Join(reasons, ", ")})
