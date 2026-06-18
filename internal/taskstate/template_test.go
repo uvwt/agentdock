@@ -131,3 +131,32 @@ func TestTemplateMatchSemanticSignalsBeatDeviceOnly(t *testing.T) {
 		t.Fatalf("device-only score should remain tiny, got %#v", candidates)
 	}
 }
+
+func TestTemplateMatchSkipsTemplatesForOtherDevices(t *testing.T) {
+	store, err := New(t.TempDir() + "/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tpl := range []Template{
+		{ID: "agentdock.deploy.vps", Version: "1.0.0", Title: "VPS deploy", Match: MatchRule{Keywords: []string{"AgentDock", "部署"}, Devices: []string{"DockVPS"}, TaskTypes: []string{"deployment"}, Priority: 35}, CompletionConditions: []string{"done"}, Steps: []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}}},
+		{ID: "agentdock.deploy.macos", Version: "1.0.0", Title: "macOS deploy", Match: MatchRule{Keywords: []string{"AgentDock", "部署"}, Devices: []string{"DockMini"}, TaskTypes: []string{"deployment"}, Priority: 15}, CompletionConditions: []string{"done"}, Steps: []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}}},
+	} {
+		draft, err := store.SaveTemplateDraft(tpl)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.ValidateTemplate(draft.ID, draft.Version); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.PublishTemplate(draft.ID, draft.Version); err != nil {
+			t.Fatal(err)
+		}
+	}
+	candidates, err := store.MatchTemplates("部署 AgentDock 到 Mac mini", "DockMini", "deployment")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].ID != "agentdock.deploy.macos" {
+		t.Fatalf("expected only macOS deployment candidate, got %#v", candidates)
+	}
+}

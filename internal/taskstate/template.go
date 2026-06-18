@@ -254,6 +254,9 @@ func (s *Store) MatchTemplates(goal, device, taskType string) ([]TemplateCandida
 	goalLower := strings.ToLower(goal)
 	var out []TemplateCandidate
 	for _, t := range templates {
+		if device != "" && len(t.Match.Devices) > 0 && !containsFold(t.Match.Devices, device) {
+			continue
+		}
 		score := 0
 		semanticMatched := false
 		var reasons []string
