@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/uvwt/agentdock/internal/config"
@@ -60,7 +61,7 @@ func run() error {
 	flag.Parse()
 	cfg.Normalize()
 	logx.Setup(cfg.LogLevel)
-	logx.Info("server starting", "workspace", cfg.Workspace, "mode", cfg.Mode, "path_policy", cfg.PathPolicy, "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "tool_profile", cfg.ToolProfile, "log_level", cfg.LogLevel, "sandbox_mode", cfg.SandboxMode, "agent_dock_dir", cfg.AgentDockDir, "memory_enabled", cfg.MemoryEndpoint != "", "nexus_enabled", cfg.NexusEndpoint != "", "browser_enabled", cfg.BrowserEnabled, "browser_runner_dir", cfg.BrowserRunnerDir, "desktop_enabled", cfg.DesktopEnabled)
+	slog.Info("server starting", "workspace", cfg.Workspace, "mode", cfg.Mode, "path_policy", cfg.PathPolicy, "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "tool_profile", cfg.ToolProfile, "log_level", cfg.LogLevel, "sandbox_mode", cfg.SandboxMode, "agent_dock_dir", cfg.AgentDockDir, "memory_enabled", cfg.MemoryEndpoint != "", "nexus_enabled", cfg.NexusEndpoint != "", "browser_enabled", cfg.BrowserEnabled, "browser_runner_dir", cfg.BrowserRunnerDir, "desktop_enabled", cfg.DesktopEnabled)
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
 		return err
@@ -72,7 +73,7 @@ func run() error {
 	if enabled, err := nexusagent.Start(context.Background(), cfg); err != nil {
 		return err
 	} else if enabled {
-		logx.Info("nexus agent enabled", "endpoint", cfg.NexusEndpoint, "device_name", cfg.NexusDeviceName)
+		slog.Info("nexus agent enabled", "endpoint", cfg.NexusEndpoint, "device_name", cfg.NexusDeviceName)
 	}
 	return httpx.Serve(server, cfg)
 }

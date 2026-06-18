@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,7 +21,6 @@ import (
 	"github.com/uvwt/agentdock/internal/compatenv"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envregistry"
-	"github.com/uvwt/agentdock/internal/logx"
 	"github.com/uvwt/agentdock/internal/nexusclient"
 	"github.com/uvwt/agentdock/internal/skillruntime"
 	"github.com/uvwt/agentdock/internal/skillstate"
@@ -199,7 +199,7 @@ func Start(ctx context.Context, cfg config.Config) (bool, error) {
 
 	go func() {
 		if err := agent.Run(ctx); err != nil && ctx.Err() == nil {
-			logx.Error("nexus agent stopped", "error", err)
+			slog.Error("nexus agent stopped", "error", err)
 		}
 	}()
 	return true, nil

@@ -68,16 +68,12 @@ func (r *Runtime) gitRemote(ctx context.Context, args map[string]any) (Result, e
 func (r *Runtime) browserSession(ctx context.Context, args map[string]any) (Result, error) {
 	switch strings.ToLower(stringArg(args, "action", "start")) {
 	case "start", "open", "new", "browser_session_start":
-		return r.browserSessionStart(ctx, args)
+		return r.browserRunnerCall(ctx, "session_start", args)
 	case "close", "stop", "browser_session_close":
-		return r.browserSessionClose(ctx, args)
+		return r.browserRunnerCall(ctx, "session_close", args)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported browser_session action", "validation", map[string]any{"action": stringArg(args, "action", "")})
 	}
-}
-
-func (r *Runtime) browserAct(ctx context.Context, args map[string]any) (Result, error) {
-	return r.browserAction(ctx, args)
 }
 
 func (r *Runtime) desktopObserve(ctx context.Context, args map[string]any) (Result, error) {

@@ -1,10 +1,9 @@
 package httpx
 
 import (
+	"log/slog"
 	"net/http"
 	"time"
-
-	"github.com/uvwt/agentdock/internal/logx"
 )
 
 type statusRecorder struct {
@@ -37,6 +36,6 @@ func loggingMiddleware(next http.Handler) http.Handler {
 			status = http.StatusOK
 		}
 		// 只记录元数据，不记录 header/body，避免把 bearer token、OAuth code、工具参数写进日志。
-		logx.Info("http request", "method", r.Method, "path", r.URL.Path, "status", status, "bytes", recorder.bytes, "duration_ms", time.Since(started).Milliseconds(), "remote", r.RemoteAddr)
+		slog.Info("http request", "method", r.Method, "path", r.URL.Path, "status", status, "bytes", recorder.bytes, "duration_ms", time.Since(started).Milliseconds(), "remote", r.RemoteAddr)
 	})
 }

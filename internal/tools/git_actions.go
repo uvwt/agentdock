@@ -9,10 +9,6 @@ import (
 	"strings"
 )
 
-func (r *Runtime) gitStatus(ctx context.Context, args map[string]any) (Result, error) {
-	return r.gitRepoStatus(ctx, args)
-}
-
 func (r *Runtime) gitRepoStatus(ctx context.Context, args map[string]any) (Result, error) {
 	repo, err := r.resolveGitRepo(args)
 	if err != nil {

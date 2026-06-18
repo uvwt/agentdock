@@ -182,7 +182,7 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 	case "memory_delete":
 		return r.memoryDelete(ctx, args)
 	case "memory_sync_status":
-		return r.memorySyncStatus(ctx, args)
+		return r.memoryRequest(ctx, "GET", "/v1/sync/status", nil)
 	case "memory_diff":
 		return r.memoryDiff(ctx, args)
 	case "memory_patch":
@@ -193,16 +193,14 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.memoryLint(ctx, args)
 	case "browser_session":
 		return r.browserSession(ctx, args)
-	case "browser_act":
-		return r.browserAct(ctx, args)
+	case "browser_act", "browser_action":
+		return r.browserRunnerCall(ctx, "action", args)
 	case "browser_session_start":
-		return r.browserSessionStart(ctx, args)
-	case "browser_action":
-		return r.browserAction(ctx, args)
+		return r.browserRunnerCall(ctx, "session_start", args)
 	case "browser_snapshot":
-		return r.browserSnapshot(ctx, args)
+		return r.browserRunnerCall(ctx, "snapshot", args)
 	case "browser_session_close":
-		return r.browserSessionClose(ctx, args)
+		return r.browserRunnerCall(ctx, "session_close", args)
 	case "desktop_observe":
 		return r.desktopObserve(ctx, args)
 	case "desktop_act":
@@ -252,7 +250,7 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 	case "git_repo_status":
 		return r.gitRepoStatus(ctx, args)
 	case "git_status":
-		return r.gitStatus(ctx, args)
+		return r.gitRepoStatus(ctx, args)
 	case "git_diff":
 		return r.gitDiff(ctx, args)
 	case "git_log":

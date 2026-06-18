@@ -10,22 +10,6 @@ import (
 	"time"
 )
 
-func (r *Runtime) browserSessionStart(ctx context.Context, args map[string]any) (Result, error) {
-	return r.browserRunnerCall(ctx, "session_start", args)
-}
-
-func (r *Runtime) browserAction(ctx context.Context, args map[string]any) (Result, error) {
-	return r.browserRunnerCall(ctx, "action", args)
-}
-
-func (r *Runtime) browserSnapshot(ctx context.Context, args map[string]any) (Result, error) {
-	return r.browserRunnerCall(ctx, "snapshot", args)
-}
-
-func (r *Runtime) browserSessionClose(ctx context.Context, args map[string]any) (Result, error) {
-	return r.browserRunnerCall(ctx, "session_close", args)
-}
-
 func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args map[string]any) (Result, error) {
 	runner, err := r.browserRunnerScript()
 	if err != nil {
@@ -64,7 +48,7 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 	}
 	// 浏览器增强 Docker 镜像会通过 ENV 固定浏览器安装目录。这里只在父进程存在该变量时转交给 Node runner；
 	// macOS/裸机部署不强行写死路径，让 Playwright 使用本机默认缓存目录。
-	if value := playwrightBrowsersPath(); value != "" {
+	if value := strings.TrimSpace(os.Getenv("PLAYWRIGHT_BROWSERS_PATH")); value != "" {
 		env["PLAYWRIGHT_BROWSERS_PATH"] = value
 	}
 	cmd.Env = r.internalCommandEnv(env)
@@ -97,11 +81,4 @@ func (r *Runtime) browserRunnerScript() (controlPath, error) {
 		return controlPath{}, toolErrorDetails("BROWSER_RUNNER_NOT_FOUND", "browser-runner.js not found", "validation", map[string]any{"runner_dir": runnerDir.Display})
 	}
 	return runner, nil
-}
-
-func playwrightBrowsersPath() string {
-	if value := strings.TrimSpace(os.Getenv("PLAYWRIGHT_BROWSERS_PATH")); value != "" {
-		return value
-	}
-	return ""
 }

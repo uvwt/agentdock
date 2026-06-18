@@ -82,16 +82,23 @@ tell application "System Events"
 end tell
 return output`
 	res, err := r.runAppleScript(ctx, script, args)
-	if err != nil || !boolResult(res, "ok") {
+	ok, _ := res["ok"].(bool)
+	if err != nil || !ok {
 		return res, err
 	}
+	stdout, _ := res["stdout"].(string)
 	windows := []map[string]any{}
-	for _, line := range strings.Split(strings.TrimSpace(stringResult(res, "stdout")), "\n") {
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		parts := strings.Split(line, "\t")
-		item := map[string]any{"app": firstPart(parts, 0), "frontmost": firstPart(parts, 1) == "true"}
+		appName := ""
+		if len(parts) > 0 {
+			appName = parts[0]
+		}
+		frontmost := len(parts) > 1 && parts[1] == "true"
+		item := map[string]any{"app": appName, "frontmost": frontmost}
 		windowItems := []map[string]any{}
 		if len(parts) > 2 {
 			for _, encoded := range strings.Split(parts[2], "||") {
@@ -99,14 +106,22 @@ return output`
 					continue
 				}
 				fields := strings.Split(encoded, "::")
-				window := map[string]any{"title": firstPart(fields, 0)}
-				if x, y, ok := parsePair(firstPart(fields, 1)); ok {
-					window["x"] = x
-					window["y"] = y
+				title := ""
+				if len(fields) > 0 {
+					title = fields[0]
 				}
-				if width, height, ok := parsePair(firstPart(fields, 2)); ok {
-					window["width"] = width
-					window["height"] = height
+				window := map[string]any{"title": title}
+				if len(fields) > 1 {
+					if x, y, ok := parsePair(fields[1]); ok {
+						window["x"] = x
+						window["y"] = y
+					}
+				}
+				if len(fields) > 2 {
+					if width, height, ok := parsePair(fields[2]); ok {
+						window["width"] = width
+						window["height"] = height
+					}
 				}
 				windowItems = append(windowItems, window)
 			}
@@ -223,8 +238,9 @@ func (r *Runtime) desktopClipboardGet(ctx context.Context, args map[string]any) 
 	cmd := exec.CommandContext(ctx, "pbpaste")
 	cmd.Env = r.commandEnv(nil)
 	res, err := commandResult("desktop_clipboard_get", cmd)
-	if err == nil && boolResult(res, "ok") {
-		res["text"] = stringResult(res, "stdout")
+	ok, _ := res["ok"].(bool)
+	if err == nil && ok {
+		res["text"], _ = res["stdout"].(string)
 	}
 	return res, err
 }
@@ -256,7 +272,8 @@ func (r *Runtime) desktopClick(ctx context.Context, args map[string]any) (Result
 			return r.desktopAXClick(ctx, app, elementIndex, clickCount)
 		}
 		x, y, w, h, bounds, err := r.desktopAXElementBounds(ctx, app, elementIndex)
-		if err != nil || !boolResult(bounds, "ok") {
+		boundsOK, _ := bounds["ok"].(bool)
+		if err != nil || !boundsOK {
 			return bounds, err
 		}
 		args["x"] = x + w/2
@@ -378,7 +395,8 @@ func (r *Runtime) desktopScroll(ctx context.Context, args map[string]any) (Resul
 			return nil, toolError("MISSING_APP", "app is required when element_index is provided", "validation")
 		}
 		x, y, w, h, bounds, err := r.desktopAXElementBounds(ctx, app, elementIndex)
-		if err != nil || !boolResult(bounds, "ok") {
+		boundsOK, _ := bounds["ok"].(bool)
+		if err != nil || !boundsOK {
 			return bounds, err
 		}
 		if err := requireCliclick("desktop_scroll"); err != nil {
@@ -475,7 +493,8 @@ func (r *Runtime) desktopType(ctx context.Context, args map[string]any) (Result,
 	useClipboard := strategy == "clipboard" || (strategy == "auto" && desktopPreferClipboardTyping(text))
 	if useClipboard {
 		clip, err := r.desktopClipboardSet(ctx, map[string]any{"text": text, "verify": true})
-		if err != nil || !boolResult(clip, "ok") {
+		clipOK, _ := clip["ok"].(bool)
+		if err != nil || !clipOK {
 			return clip, err
 		}
 		pasteArgs := map[string]any{"keys": "cmd+v"}
@@ -927,10 +946,12 @@ return ""`, lookup, lookup)
 	if err != nil {
 		return nil, err
 	}
-	if !boolResult(res, "ok") {
-		return nil, fmt.Errorf("%s", stringResult(res, "stdout"))
+	ok, _ := res["ok"].(bool)
+	stdout, _ := res["stdout"].(string)
+	if !ok {
+		return nil, fmt.Errorf("%s", stdout)
 	}
-	line := strings.TrimSpace(stringResult(res, "stdout"))
+	line := strings.TrimSpace(stdout)
 	if line == "" {
 		return nil, nil
 	}
@@ -1016,21 +1037,4 @@ func boundedDesktopMS(ms, max int) int {
 		return max
 	}
 	return ms
-}
-
-func boolResult(res Result, key string) bool {
-	value, _ := res[key].(bool)
-	return value
-}
-
-func stringResult(res Result, key string) string {
-	value, _ := res[key].(string)
-	return value
-}
-
-func firstPart(parts []string, index int) string {
-	if index >= len(parts) {
-		return ""
-	}
-	return parts[index]
 }

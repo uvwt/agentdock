@@ -89,7 +89,7 @@ process.stdout.write(JSON.stringify({
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := rt.browserSnapshot(context.Background(), map[string]any{"timeout_ms": 5000})
+	result, err := rt.Call(context.Background(), "browser_snapshot", map[string]any{"timeout_ms": 5000})
 	if err != nil {
 		t.Fatal(err)
 	}

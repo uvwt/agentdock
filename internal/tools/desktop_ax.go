@@ -48,11 +48,13 @@ on run argv
   return output
 end run`
 	res, err := runAppleScriptArgs(ctx, r, "desktop_list_apps", script)
-	if err != nil || !boolResult(res, "ok") {
+	ok, _ := res["ok"].(bool)
+	if err != nil || !ok {
 		return res, err
 	}
+	stdout, _ := res["stdout"].(string)
 	running := []map[string]any{}
-	for _, line := range strings.Split(strings.TrimSpace(stringResult(res, "stdout")), "\n") {
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
 		parts := strings.Split(line, desktopAXSep)
 		if len(parts) < 5 || parts[0] != "RUNNING" {
 			continue
@@ -210,10 +212,12 @@ func (r *Runtime) desktopAXElementBounds(ctx context.Context, app, index string)
 		return 0, 0, 0, 0, nil, err
 	}
 	res, err := runAppleScriptArgs(ctx, r, "desktop_element_bounds", desktopAXOperateScript("bounds"), lookup, index, "")
-	if err != nil || !boolResult(res, "ok") {
+	ok, _ := res["ok"].(bool)
+	if err != nil || !ok {
 		return 0, 0, 0, 0, res, err
 	}
-	parts := strings.Split(strings.TrimSpace(stringResult(res, "stdout")), desktopAXSep)
+	stdout, _ := res["stdout"].(string)
+	parts := strings.Split(strings.TrimSpace(stdout), desktopAXSep)
 	if len(parts) < 6 || parts[0] != "BOUNDS" {
 		res["ok"] = false
 		res["error"] = "invalid bounds response"
@@ -415,14 +419,16 @@ on run argv
   return output
 end run`
 	res, err := runAppleScriptArgs(ctx, r, "desktop_get_app_state_ax", script, app, strconv.Itoa(maxDepth), strconv.Itoa(maxNodes))
-	if err != nil || !boolResult(res, "ok") {
-		msg := stringResult(res, "stdout")
+	ok, _ := res["ok"].(bool)
+	stdout, _ := res["stdout"].(string)
+	if err != nil || !ok {
+		msg := stdout
 		if strings.TrimSpace(msg) == "" {
-			msg = stringResult(res, "error")
+			msg, _ = res["error"].(string)
 		}
-		return res, fmt.Errorf(msg)
+		return res, fmt.Errorf("%s", msg)
 	}
-	return parseDesktopAXState(stringResult(res, "stdout")), nil
+	return parseDesktopAXState(stdout), nil
 }
 
 func desktopAXOperateScript(mode string) string {
@@ -631,7 +637,8 @@ func (r *Runtime) desktopRecentApps(ctx context.Context, maxRecent int) []map[st
 		if meta == nil {
 			continue
 		}
-		items = append(items, recentApp{item: meta, last: stringFromAny(meta["last_used"])})
+		lastUsed, _ := meta["last_used"].(string)
+		items = append(items, recentApp{item: meta, last: lastUsed})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].last > items[j].last })
 	outItems := []map[string]any{}
@@ -679,13 +686,6 @@ func (r *Runtime) desktopAppMetadata(ctx context.Context, appPath string) map[st
 		}
 	}
 	return item
-}
-
-func stringFromAny(value any) string {
-	if s, ok := value.(string); ok {
-		return s
-	}
-	return ""
 }
 
 func desktopRememberAppState(app string) {

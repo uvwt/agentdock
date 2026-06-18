@@ -229,10 +229,6 @@ func (r *Runtime) memoryDelete(ctx context.Context, args map[string]any) (Result
 	return r.memoryRequest(ctx, http.MethodDelete, endpoint, nil)
 }
 
-func (r *Runtime) memorySyncStatus(ctx context.Context, args map[string]any) (Result, error) {
-	return r.memoryRequest(ctx, http.MethodGet, "/v1/sync/status", nil)
-}
-
 func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, payload any) (Result, error) {
 	base := strings.TrimRight(strings.TrimSpace(r.cfg.MemoryEndpoint), "/")
 	if base == "" {

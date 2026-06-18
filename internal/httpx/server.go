@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"net/url"
@@ -16,7 +17,6 @@ import (
 	"github.com/uvwt/agentdock/internal/auth"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/jsonrpc"
-	"github.com/uvwt/agentdock/internal/logx"
 	"github.com/uvwt/agentdock/internal/mcp"
 )
 
@@ -24,7 +24,7 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	authRequired := cfg.AuthToken != "" || cfg.OAuthClientID != "" || cfg.OAuthServerURL != ""
 	oauthCodes := auth.NewOAuthStore()
 	mux := http.NewServeMux()
-	logx.Info("http server configured", "host", cfg.Host, "port", cfg.Port, "auth_required", authRequired, "endpoint", "/mcp")
+	slog.Info("http server configured", "host", cfg.Host, "port", cfg.Port, "auth_required", authRequired, "endpoint", "/mcp")
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "application/json")
 		_, _ = io.WriteString(w, "{\"ok\":true}")
@@ -74,7 +74,7 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 	httpServer := &http.Server{Addr: addr, Handler: loggingMiddleware(mux), ReadHeaderTimeout: 10 * time.Second}
-	logx.Info("http server listening", "addr", addr)
+	slog.Info("http server listening", "addr", addr)
 	return httpServer.ListenAndServe()
 }
 
