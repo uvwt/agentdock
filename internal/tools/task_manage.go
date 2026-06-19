@@ -89,8 +89,13 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 		return Result{"ok": true, "action": action, "task_summary": compactTaskSummary(task), "state_dir": r.tasks.Root()}, nil
 	case "complete_step":
 		var evidence taskstate.StepEvidence
-		if err := remarshal(mapArg(args, "step_evidence"), &evidence); err != nil {
-			return nil, taskToolError(err)
+		if raw := args["step_evidence"]; raw != nil {
+			if err := remarshal(raw, &evidence); err != nil {
+				return nil, taskToolError(err)
+			}
+		}
+		if strings.TrimSpace(evidence.Summary) == "" {
+			evidence.Summary = stringArg(args, "summary", "")
 		}
 		task, err = r.tasks.CompleteStep(stringArg(args, "task_id", ""), stringArg(args, "step_id", ""), evidence, boolArg(args, "substituted", false), stringArg(args, "substitution_reason", ""))
 	case "skip_step":
@@ -109,7 +114,7 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 		return Result{
 			"ok": true, "action": action, "task_summary": compactTaskSummary(task), "state_dir": r.tasks.Root(),
 			"warning":              "record_attempt only records an attempt; it does not execute commands, change configuration, or advance the task",
-			"next_required_action": "Call a non-task tool for a real environment action, then record concrete step evidence or a phase checkpoint",
+			"next_required_action": "Call a non-task tool for a real environment action, then record a concise checkpoint or final verification summary",
 		}, nil
 	case "block":
 		task, err = r.tasks.Block(

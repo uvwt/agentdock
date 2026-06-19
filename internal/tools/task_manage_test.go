@@ -31,19 +31,11 @@ func TestTaskManageLifecycleAndRestartRecovery(t *testing.T) {
 		}
 		task = result["task"].(taskstate.Task)
 	}
-	if _, err := rt.taskManage(map[string]any{"action": "complete", "task_id": task.ID, "summary": "done"}); err == nil {
-		t.Fatal("completion without condition evidence succeeded")
-	}
-	for _, condition := range task.Conditions {
-		if _, err := rt.taskManage(map[string]any{
-			"action": "add_evidence", "task_id": task.ID, "condition_id": condition.ID,
-			"summary": "verified", "source": "test tool result",
-		}); err != nil {
-			t.Fatal(err)
-		}
+	if _, err := rt.taskManage(map[string]any{"action": "complete", "task_id": task.ID, "summary": ""}); err == nil {
+		t.Fatal("completion without final verification summary succeeded")
 	}
 	completed, err := rt.taskManage(map[string]any{
-		"action": "complete", "task_id": task.ID, "summary": "all completion conditions verified",
+		"action": "complete", "task_id": task.ID, "summary": "final verification passed",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -119,6 +111,43 @@ func TestTaskManagePhaseCheckpointReturnsCompactSummary(t *testing.T) {
 	}
 	if summary["phase"] != taskstate.PhaseExecute || summary["verified_condition_count"] != 1 {
 		t.Fatalf("unexpected compact summary: %#v", summary)
+	}
+}
+
+func TestTaskManageCompleteStepAllowsSummaryOnly(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	draft, err := rt.tasks.SaveTemplateDraft(taskstate.Template{
+		ID: "summary.step", Version: "1.0.0", Title: "Summary step", Status: taskstate.TemplateDraft,
+		CompletionConditions: []string{"done"},
+		Steps:                []taskstate.TemplateStep{{ID: "inspect", Title: "Inspect", Phase: taskstate.PhaseCheck, Required: true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.tasks.ValidateTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.tasks.PublishTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := rt.taskManage(map[string]any{
+		"action": "create", "title": "Repair service", "goal": "restore service",
+		"template_id": "summary.step", "template_version": "1.0.0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := created["task"].(taskstate.Task)
+	result, err := rt.taskManage(map[string]any{
+		"action": "complete_step", "task_id": task.ID, "step_id": "inspect", "summary": "context inspected",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := result["task"].(taskstate.Task)
+	if updated.Steps[0].Status != "completed" || len(updated.Steps[0].Evidence) != 0 {
+		t.Fatalf("summary-only complete_step should not require structured evidence: %#v", updated.Steps[0])
 	}
 }
 

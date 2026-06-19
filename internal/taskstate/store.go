@@ -61,7 +61,8 @@ type ConditionEvidenceUpdate struct {
 
 type StepCompletionUpdate struct {
 	StepID             string       `json:"step_id"`
-	Evidence           StepEvidence `json:"evidence"`
+	Evidence           StepEvidence `json:"evidence,omitempty"`
+	Summary            string       `json:"summary,omitempty"`
 	Substituted        bool         `json:"substituted,omitempty"`
 	SubstitutionReason string       `json:"substitution_reason,omitempty"`
 }
@@ -482,17 +483,32 @@ func applyStepCompletion(task *Task, update StepCompletionUpdate, now time.Time,
 				return fmt.Errorf("step %s dependency %s is not completed", step.ID, dep)
 			}
 		}
+
 		evidence := update.Evidence
 		evidence.Type = strings.TrimSpace(evidence.Type)
 		evidence.Source = strings.TrimSpace(evidence.Source)
 		evidence.Result = strings.TrimSpace(evidence.Result)
 		evidence.Summary = strings.TrimSpace(evidence.Summary)
-		if evidence.Type == "" || evidence.Source == "" || evidence.Result == "" || evidence.Summary == "" {
-			return errors.New("step evidence requires type, source, result, and summary")
+		completionSummary := strings.TrimSpace(update.Summary)
+		if completionSummary == "" {
+			completionSummary = evidence.Summary
 		}
-		if phrase := incompleteEvidencePhrase(evidence.Summary, evidence.Result); phrase != "" {
-			return fmt.Errorf("step completion evidence still describes incomplete work: %q", phrase)
+		if completionSummary == "" {
+			return errors.New("step completion summary is required")
 		}
+		if phrase := incompleteEvidencePhrase(completionSummary, evidence.Summary, evidence.Result); phrase != "" {
+			return fmt.Errorf("step completion still describes incomplete work: %q", phrase)
+		}
+
+		evidenceProvided := evidence.Type != "" || evidence.Source != "" || evidence.Result != "" || evidence.ArtifactRef != "" || evidence.SHA256 != ""
+		if evidenceProvided {
+			// 普通步骤只需要一句完成摘要；但一旦传入结构化 evidence，仍要求字段完整，避免保存半截证据误导恢复上下文。
+			if evidence.Type == "" || evidence.Source == "" || evidence.Result == "" || evidence.Summary == "" {
+				return errors.New("step evidence requires type, source, result, and summary when provided")
+			}
+			evidence.CreatedAt = now
+		}
+
 		if update.Substituted {
 			if step.Substitution == "forbidden" {
 				return errors.New("step substitution is forbidden")
@@ -501,14 +517,15 @@ func applyStepCompletion(task *Task, update StepCompletionUpdate, now time.Time,
 				return errors.New("substitution reason is required")
 			}
 		}
-		evidence.CreatedAt = now
 		step.Status = "completed"
 		step.Substituted = update.Substituted
 		step.SubstitutionReason = strings.TrimSpace(update.SubstitutionReason)
-		step.Evidence = append(step.Evidence, evidence)
+		if evidenceProvided {
+			step.Evidence = append(step.Evidence, evidence)
+		}
 		step.UpdatedAt = now
 		if emitEvent {
-			task.Events = append(task.Events, Event{Type: "step_completed", Summary: step.ID + ": " + evidence.Summary, CreatedAt: now})
+			task.Events = append(task.Events, Event{Type: "step_completed", Summary: step.ID + ": " + completionSummary, CreatedAt: now})
 		}
 		return nil
 	}
@@ -527,7 +544,7 @@ func advancePhase(task *Task, now time.Time, emitEvent bool) error {
 			continue
 		}
 		if i == len(phaseOrder)-1 {
-			return errors.New("task is already in closeout; use complete after all conditions have evidence")
+			return errors.New("task is already in closeout; use complete with final verification summary")
 		}
 		task.Phase = phaseOrder[i+1]
 		if emitEvent {
@@ -542,24 +559,15 @@ func completeTask(task *Task, summary string, now time.Time, emitEvent bool) err
 	if err := requireActive(task); err != nil {
 		return err
 	}
+	summary = strings.TrimSpace(summary)
+	if summary == "" {
+		return errors.New("final verification summary is required")
+	}
 	if task.Phase != PhaseCloseout {
 		return errors.New("task must reach closeout before completion")
 	}
 	if missingSteps := incompleteRequiredSteps(*task, ""); len(missingSteps) > 0 {
 		return fmt.Errorf("required template steps incomplete: %s", strings.Join(missingSteps, ", "))
-	}
-	missing := make([]string, 0)
-	for _, condition := range task.Conditions {
-		if len(condition.Evidence) == 0 {
-			missing = append(missing, condition.ID)
-		}
-	}
-	if len(missing) > 0 {
-		return fmt.Errorf("completion conditions missing evidence: %s", strings.Join(missing, ", "))
-	}
-	summary = strings.TrimSpace(summary)
-	if summary == "" {
-		return errors.New("completion summary is required")
 	}
 	task.Status = StatusCompleted
 	task.Summary = summary

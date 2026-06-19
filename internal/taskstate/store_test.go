@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestTaskLifecyclePersistsAndRequiresEvidence(t *testing.T) {
+func TestTaskLifecyclePersistsAndRequiresFinalVerification(t *testing.T) {
 	root := t.TempDir()
 	store, err := New(root)
 	if err != nil {
@@ -37,13 +37,8 @@ func TestTaskLifecyclePersistsAndRequiresEvidence(t *testing.T) {
 	if task.Phase != PhaseCloseout {
 		t.Fatalf("phase = %s", task.Phase)
 	}
-	if _, err := store.Complete(task.ID, "done"); err == nil {
-		t.Fatal("completion without evidence succeeded")
-	}
-	for _, condition := range task.Conditions {
-		if _, err := store.AddEvidence(task.ID, condition.ID, "verified", "test"); err != nil {
-			t.Fatal(err)
-		}
+	if _, err := store.Complete(task.ID, ""); err == nil {
+		t.Fatal("completion without final verification summary succeeded")
 	}
 	task, err = store.Complete(task.ID, "all checks passed")
 	if err != nil {
@@ -148,6 +143,36 @@ func TestBlockAndResume(t *testing.T) {
 	}
 }
 
+func TestStepCompletionAllowsSummaryOnly(t *testing.T) {
+	store, err := New(t.TempDir() + "/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := store.SaveTemplateDraft(testTemplate())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ValidateTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	published, err := store.PublishTemplate(draft.ID, draft.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := store.CreateWithTemplate("Deploy", "deploy AgentDock", nil, published.ID, published.Version, "test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	task, err = store.CompleteStep(task.ID, "inspect", StepEvidence{Summary: "repository inspected"}, false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Steps[0].Status != "completed" || len(task.Steps[0].Evidence) != 0 {
+		t.Fatalf("summary-only step should complete without structured evidence: %#v", task.Steps[0])
+	}
+}
+
 func TestStepCompletionRejectsIncompleteEvidence(t *testing.T) {
 	store, err := New(t.TempDir() + "/tasks")
 	if err != nil {
@@ -243,12 +268,9 @@ func TestPhaseCheckpointBatchesPhaseUpdatesAtomically(t *testing.T) {
 	}
 
 	task, err = store.PhaseCheckpoint(task.ID, PhaseCheckpointInput{
-		StepCompletions: []StepCompletionUpdate{{
-			StepID:   "install",
-			Evidence: StepEvidence{Type: "command", Source: "make install-macos", Result: "exit_code=0", Summary: "installed"},
-		}},
-		AdvancePhase: true,
-		Summary:      "installation milestone complete",
+		StepCompletions: []StepCompletionUpdate{{StepID: "install", Summary: "installed"}},
+		AdvancePhase:    true,
+		Summary:         "installation milestone complete",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -266,12 +288,9 @@ func TestPhaseCheckpointBatchesPhaseUpdatesAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	task, err = store.PhaseCheckpoint(task.ID, PhaseCheckpointInput{
-		StepCompletions: []StepCompletionUpdate{{
-			StepID:   "record",
-			Evidence: StepEvidence{Type: "file", Source: "deployment record", Result: "written", Summary: "deployment recorded"},
-		}},
-		CompleteTask: true,
-		Summary:      "all milestones completed",
+		StepCompletions: []StepCompletionUpdate{{StepID: "record", Summary: "deployment recorded"}},
+		CompleteTask:    true,
+		Summary:         "all milestones completed",
 	})
 	if err != nil {
 		t.Fatal(err)
