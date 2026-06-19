@@ -15,8 +15,10 @@ import (
 )
 
 const (
-	SchemaVersion       = 1
-	MaxStrategyAttempts = 2
+	SchemaVersion                = 1
+	MaxStrategyAttempts          = 2
+	MaxConsecutiveAttemptRecords = 2
+	AttemptRecordedEventType     = "attempt_recorded"
 )
 
 type Phase string
@@ -325,8 +327,22 @@ func (s *Store) RecordAttempt(id, strategy, outcome, diagnosis, evidence string)
 		if attempts >= MaxStrategyAttempts {
 			return fmt.Errorf("strategy %q reached the maximum of %d attempts; choose a different strategy", strategy, MaxStrategyAttempts)
 		}
+
+		// record_attempt 只是失败/尝试记录，不是真实执行动作。
+		// 如果连续记录多次，说明 Agent 正在把“写日志”误当成“推进任务”，这里直接打断。
+		consecutiveAttempts := 0
+		for i := len(task.Events) - 1; i >= 0; i-- {
+			if task.Events[i].Type != AttemptRecordedEventType {
+				break
+			}
+			consecutiveAttempts++
+		}
+		if consecutiveAttempts >= MaxConsecutiveAttemptRecords {
+			return errors.New("Stop recording attempts. Execute a real environment action next, then record concrete step evidence or a phase checkpoint")
+		}
+
 		task.Attempts = append(task.Attempts, Attempt{Phase: task.Phase, Strategy: strategy, Outcome: outcome, Diagnosis: diagnosis, Evidence: evidence, CreatedAt: now})
-		task.Events = append(task.Events, Event{Type: "attempt_recorded", Summary: strategy + ": " + outcome, CreatedAt: now})
+		task.Events = append(task.Events, Event{Type: AttemptRecordedEventType, Summary: strategy + ": " + outcome, CreatedAt: now})
 		return nil
 	})
 }
@@ -473,6 +489,9 @@ func applyStepCompletion(task *Task, update StepCompletionUpdate, now time.Time,
 		evidence.Summary = strings.TrimSpace(evidence.Summary)
 		if evidence.Type == "" || evidence.Source == "" || evidence.Result == "" || evidence.Summary == "" {
 			return errors.New("step evidence requires type, source, result, and summary")
+		}
+		if phrase := incompleteEvidencePhrase(evidence.Summary, evidence.Result); phrase != "" {
+			return fmt.Errorf("step completion evidence still describes incomplete work: %q", phrase)
 		}
 		if update.Substituted {
 			if step.Substitution == "forbidden" {
@@ -657,6 +676,29 @@ func requireActive(task *Task) error {
 		return fmt.Errorf("task status must be active, got %s", task.Status)
 	}
 	return nil
+}
+
+func incompleteEvidencePhrase(values ...string) string {
+	// step completion 代表“这一步完成了”，证据里如果还写着待检查/未验证，
+	// 大概率是把部分检查误标为完成，必须拒绝。
+	markers := []string{
+		"pending", "still required", "still needed", "not yet", "not checked", "not verified", "not executed", "remaining",
+		"待检查", "待验证", "待确认", "待处理", "待执行", "待完成",
+		"仍待", "仍需", "还需", "还没", "还未",
+		"尚未", "未完成", "未验证", "未检查", "未执行", "未确认",
+	}
+	for _, value := range values {
+		lower := strings.ToLower(strings.TrimSpace(value))
+		if lower == "" {
+			continue
+		}
+		for _, marker := range markers {
+			if strings.Contains(lower, marker) {
+				return marker
+			}
+		}
+	}
+	return ""
 }
 
 func incompleteRequiredSteps(task Task, phase Phase) []string {

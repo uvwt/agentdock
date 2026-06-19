@@ -103,6 +103,14 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 			stringArg(args, "diagnosis", ""),
 			stringArg(args, "evidence", ""),
 		)
+		if err != nil {
+			return nil, taskToolError(err)
+		}
+		return Result{
+			"ok": true, "action": action, "task_summary": compactTaskSummary(task), "state_dir": r.tasks.Root(),
+			"warning":              "record_attempt only records an attempt; it does not execute commands, change configuration, or advance the task",
+			"next_required_action": "Call a non-task tool for a real environment action, then record concrete step evidence or a phase checkpoint",
+		}, nil
 	case "block":
 		task, err = r.tasks.Block(
 			stringArg(args, "task_id", ""),

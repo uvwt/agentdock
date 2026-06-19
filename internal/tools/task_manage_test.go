@@ -121,3 +121,28 @@ func TestTaskManagePhaseCheckpointReturnsCompactSummary(t *testing.T) {
 		t.Fatalf("unexpected compact summary: %#v", summary)
 	}
 }
+
+func TestTaskManageRecordAttemptReturnsActionGuard(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	created, err := rt.taskManage(map[string]any{
+		"action": "create", "title": "Repair service", "goal": "restore service",
+		"completion_conditions": []string{"service responds"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := created["task"].(taskstate.Task)
+	result, err := rt.taskManage(map[string]any{
+		"action": "record_attempt", "task_id": task.ID, "strategy": "restart",
+		"outcome": "failure", "diagnosis": "restart failed", "evidence": "systemctl output A",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := result["task"]; exists {
+		t.Fatalf("record_attempt should return compact guidance, got full task: %#v", result)
+	}
+	if result["warning"] == "" || result["next_required_action"] == "" {
+		t.Fatalf("record_attempt missing guard guidance: %#v", result)
+	}
+}

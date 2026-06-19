@@ -3,6 +3,7 @@ package taskstate
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -91,6 +92,34 @@ func TestAttemptLimitAndFailureEvidence(t *testing.T) {
 	}
 }
 
+func TestRecordAttemptStopsConsecutiveLoggingLoop(t *testing.T) {
+	store, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := store.Create("Repair", "repair service", []string{"service works"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecordAttempt(task.ID, "inspect logs", "failure", "log did not identify cause", "log sample A"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecordAttempt(task.ID, "restart service", "failure", "restart did not help", "restart output B"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecordAttempt(task.ID, "rewrite config", "failure", "config unchanged", "config output C"); err == nil || !strings.Contains(err.Error(), "Stop recording attempts") {
+		t.Fatalf("third consecutive attempt should stop logging loop, err=%v", err)
+	}
+
+	// 真实证据事件会打断连续 attempt 链；之后才允许继续记录新的尝试。
+	if _, err := store.AddEvidence(task.ID, "cond_01", "real command evidence recorded", "exec_command curl /healthz"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecordAttempt(task.ID, "rewrite config", "failure", "config still invalid", "config output D"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBlockAndResume(t *testing.T) {
 	store, err := New(t.TempDir())
 	if err != nil {
@@ -116,6 +145,40 @@ func TestBlockAndResume(t *testing.T) {
 	}
 	if task.Status != StatusActive || task.Blocker != "" {
 		t.Fatalf("unexpected resumed state: %#v", task)
+	}
+}
+
+func TestStepCompletionRejectsIncompleteEvidence(t *testing.T) {
+	store, err := New(t.TempDir() + "/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := store.SaveTemplateDraft(testTemplate())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ValidateTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	published, err := store.PublishTemplate(draft.ID, draft.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := store.CreateWithTemplate("Deploy", "deploy AgentDock", nil, published.ID, published.Version, "test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CompleteStep(task.ID, "inspect", StepEvidence{
+		Type: "tool", Source: "cloudflare skill", Result: "HTTP 200", Summary: "Cloudflare 已检查，但 VPS/Caddy 仍待检查",
+	}, false, ""); err == nil || !strings.Contains(err.Error(), "incomplete work") {
+		t.Fatalf("incomplete evidence should be rejected, err=%v", err)
+	}
+	loaded, err := store.Get(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Steps[0].Status != "pending" {
+		t.Fatalf("rejected evidence completed step: %#v", loaded.Steps[0])
 	}
 }
 
