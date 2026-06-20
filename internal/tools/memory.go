@@ -152,49 +152,16 @@ func (r *Runtime) memorySearch(ctx context.Context, args map[string]any) (Result
 }
 
 func (r *Runtime) memoryPack(ctx context.Context, args map[string]any) (Result, error) {
-	payload := map[string]any{}
-	if project := strings.TrimSpace(stringArg(args, "project", "")); project != "" {
-		payload["project"] = project
-	}
-	if maxBytes := intArg(args, "max_bytes", 0); maxBytes > 0 {
-		payload["max_bytes"] = maxBytes
-	}
-	result, err := r.memoryRequest(ctx, http.MethodPost, "/v1/memories/pack", payload)
+	// memory_pack 曾经和 memory_bootstrap 都会打包项目上下文，模型容易把两个入口
+	// 当成并列默认入口反复调用。现在保留 memory_pack 只是为了兼容旧会话；实际
+	// 输出和默认瘦身策略统一走 memory_bootstrap，避免重复正文和重复工具选择。
+	result, err := r.memoryBootstrap(ctx, args)
 	if err != nil {
 		return nil, err
 	}
-	includeRaw := boolArg(args, "include_raw", false)
-	if sections, ok := result["sections"].([]any); ok {
-		compactedSections := make([]any, 0, len(sections))
-		for _, section := range sections {
-			memory, ok := section.(map[string]any)
-			if !ok {
-				compactedSections = append(compactedSections, section)
-				continue
-			}
-
-			compactedMemory := make(map[string]any, len(memory))
-			for key, value := range memory {
-				compactedMemory[key] = value
-			}
-
-			// memory_pack 会一次返回多份记忆，重复 raw Markdown 的 token 成本更高；
-			// 瘦身规则放在主流程里，读者不用跳 helper 就能看到输出为什么只保留 body。
-			content, hasContent := compactedMemory["content"]
-			rawContent, hasRawContent := compactedMemory["raw_content"]
-			delete(compactedMemory, "content")
-			delete(compactedMemory, "raw_content")
-			if includeRaw {
-				if hasContent {
-					compactedMemory["raw_content"] = content
-				} else if hasRawContent {
-					compactedMemory["raw_content"] = rawContent
-				}
-			}
-			compactedSections = append(compactedSections, compactedMemory)
-		}
-		result["sections"] = compactedSections
-	}
+	result["pack_compat"] = true
+	result["preferred_tool"] = "memory_bootstrap"
+	result["recommended_use"] = "Prefer memory_bootstrap for substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks. memory_pack is a compatibility alias and should not be the default context entry."
 	return result, nil
 }
 

@@ -43,7 +43,7 @@ var toolRegistry = []ToolDefinition{
 	{Name: "memory_list", Title: "List MemoryDock memories", Description: "List memories from the configured MemoryDock service.", ReadOnly: true, OpenWorld: true},
 	{Name: "memory_read", Title: "Read MemoryDock memory", Description: "Read one Markdown memory from the configured MemoryDock service.", ReadOnly: true, OpenWorld: true},
 	{Name: "memory_search", Title: "Search MemoryDock", Description: "Search memories by text and path through MemoryDock.", ReadOnly: true, OpenWorld: true},
-	{Name: "memory_pack", Title: "Pack MemoryDock project context", Description: "Return a compact project context bundle from MemoryDock.", ReadOnly: true, OpenWorld: true},
+	{Name: "memory_pack", Title: "Pack MemoryDock project context", Description: "Compatibility alias for memory_bootstrap. Prefer memory_bootstrap as the default context entry; memory_pack is only for older workflows that still ask for a packed project bundle.", ReadOnly: true, OpenWorld: true},
 	{Name: "memory_edit", Title: "Edit MemoryDock memory", Description: "Unified MemoryDock edit tool for append, write, delete, diff, patch, and structured fact updates. Destructive actions still require confirmation.", Destructive: false, OpenWorld: true},
 	{Name: "memory_append_note", Title: "Append MemoryDock note", Description: "Append a note to MemoryDock inbox or scoped memory area.", Destructive: false, OpenWorld: true},
 	{Name: "memory_write", Title: "Write MemoryDock memory", Description: "Write a Markdown memory through MemoryDock; writing outside inbox requires confirmed=true.", Destructive: false, OpenWorld: true},

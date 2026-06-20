@@ -233,8 +233,8 @@ func inputSchema(name string) map[string]any {
 		props["overwrite"] = boolProp("Whether to overwrite existing content. Defaults to false.")
 		required = []string{"path", "content", "confirmed"}
 	case "memory_pack":
-		props["project"] = stringProp("Project key to pack, for example agentdock.")
-		props["max_bytes"] = intProp("Maximum combined memory bytes.")
+		props["project"] = stringProp("Project key to pack, for example agentdock. Prefer memory_bootstrap for new tasks; memory_pack is a compatibility alias.")
+		props["max_bytes"] = intProp("Maximum combined memory bytes. Omit for compact bootstrap-style output.")
 		props["include_raw"] = boolProp("Include raw Markdown as raw_content. Defaults to false to avoid duplicating body/content tokens.")
 	case "memory_append_note":
 		props["content"] = stringProp("Markdown note content to append.")
