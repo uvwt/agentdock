@@ -240,6 +240,39 @@ func inputSchema(name string) map[string]any {
 		props["project"] = stringProp("Project key to pack, for example agentdock. Prefer memory_bootstrap for new tasks; memory_pack is a compatibility alias.")
 		props["max_bytes"] = intProp("Maximum combined memory bytes. Omit for compact bootstrap-style output.")
 		props["include_raw"] = boolProp("Include raw Markdown as raw_content. Defaults to false to avoid duplicating body/content tokens.")
+	case "memory_card_capture":
+		props["title"] = stringProp("Short card title. One card should describe one reusable experience.")
+		props["content"] = stringProp("Atomic reusable action experience. Prefer 100-500 Chinese characters/runes.")
+		props["summary"] = stringProp("Alternative card content when content is omitted.")
+		props["type"] = map[string]any{"type": "string", "enum": []string{"preference", "runbook", "bug_pattern", "deploy_note", "project_trap", "architecture", "decision", "anti_pattern"}, "description": "Experience card type. Defaults to runbook."}
+		props["scope"] = map[string]any{"type": "string", "enum": []string{"global", "project", "device", "domain"}, "description": "Memory card scope. Defaults to project."}
+		props["project"] = stringProp("Project key. Defaults to global.")
+		props["status"] = map[string]any{"type": "string", "enum": []string{"inbox", "active", "verified", "stale", "archived", "rejected"}, "description": "Card status. Defaults to inbox."}
+		props["confidence"] = map[string]any{"type": "string", "enum": []string{"low", "medium", "high"}, "description": "Confidence level. Defaults to medium."}
+		props["tags"] = map[string]any{"type": "array", "description": "Optional tags.", "items": map[string]any{"type": "string"}}
+		props["source"] = stringProp("Source label, path, URL, or conversation marker.")
+		props["evidence"] = stringProp("Verification evidence for active/verified cards.")
+		props["boundary"] = stringProp("Optional usage boundary or non-applicable cases.")
+		props["max_results"] = intProp("Maximum similar cards to inspect.")
+		required = []string{"title"}
+	case "memory_card_write":
+		props["title"] = stringProp("Short card title. One card should describe one reusable experience.")
+		props["content"] = stringProp("Atomic reusable action experience. Prefer 100-500 Chinese characters/runes.")
+		props["summary"] = stringProp("Alternative card content when content is omitted.")
+		props["type"] = map[string]any{"type": "string", "enum": []string{"preference", "runbook", "bug_pattern", "deploy_note", "project_trap", "architecture", "decision", "anti_pattern"}, "description": "Experience card type. Defaults to runbook."}
+		props["scope"] = map[string]any{"type": "string", "enum": []string{"global", "project", "device", "domain"}, "description": "Memory card scope. Defaults to project."}
+		props["project"] = stringProp("Project key. Defaults to global.")
+		props["status"] = map[string]any{"type": "string", "enum": []string{"inbox", "active", "verified", "stale", "archived", "rejected"}, "description": "Card status. Defaults to inbox."}
+		props["confidence"] = map[string]any{"type": "string", "enum": []string{"low", "medium", "high"}, "description": "Confidence level. Defaults to medium."}
+		props["tags"] = map[string]any{"type": "array", "description": "Optional tags.", "items": map[string]any{"type": "string"}}
+		props["source"] = stringProp("Source label, path, URL, or conversation marker.")
+		props["evidence"] = stringProp("Verification evidence for active/verified cards.")
+		props["boundary"] = stringProp("Optional usage boundary or non-applicable cases.")
+		props["path"] = stringProp("Optional cards/... path. Defaults to cards/<project>/<status>/<type>/<slug>.md.")
+		props["confirmed"] = boolProp("Required to write.")
+		props["overwrite"] = boolProp("Whether to overwrite an existing card. Defaults to false.")
+		props["allow_warnings"] = boolProp("Allow writing after reviewing warnings. Defaults to false.")
+		required = []string{"title", "confirmed"}
 	case "memory_append_note":
 		props["content"] = stringProp("Markdown note content to append.")
 		props["scope"] = stringProp("Memory scope directory. Defaults to inbox.")

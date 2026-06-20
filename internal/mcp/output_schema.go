@@ -185,6 +185,20 @@ func outputSchema(name string) map[string]any {
 		props["query"] = stringProp("Search query.")
 		props["results"] = arrayProp("Search results.")
 		props["count"] = intProp("Search result count.")
+	case "memory_card_capture":
+		props["card"] = objectProp("Normalized Memory experience-card candidate.")
+		props["warnings"] = arrayProp("Review warnings before writing.")
+		props["capture_plan"] = objectProp("Reviewable card write plan. memory_card_capture does not write by itself.")
+		props["similar_results"] = arrayProp("Similar existing Memory card search results.")
+		props["similar_count"] = intProp("Similar result count.")
+	case "memory_card_write":
+		props["memory_endpoint"] = stringProp("Configured MemoryDock endpoint.")
+		props["memory"] = objectProp("Memory document returned by MemoryDock.")
+		props["memory_card_tool"] = stringProp("memory_card_write")
+		props["card"] = objectProp("Normalized Memory experience card written.")
+		props["path"] = stringProp("Memory card path under cards/.")
+		props["status"] = stringProp("Memory card status.")
+		props["index_policy"] = stringProp("Index rebuild policy hint.")
 	case "notes_search":
 		props["scope"] = stringProp("Notes scope searched.")
 		props["prefix"] = stringProp("MemoryDock notes prefix searched.")

@@ -88,8 +88,11 @@ func TestReadOnlyProfileExcludesDestructiveTools(t *testing.T) {
 	if seen["desktop_act"] || seen["desktop_click"] || seen["desktop_type"] || seen["desktop_set_value"] {
 		t.Fatalf("read-only desktop profile exposed mutating desktop tools")
 	}
-	if seen["memory_edit"] || seen["memory_write"] || seen["memory_patch"] || seen["memory_delete"] {
+	if seen["memory_edit"] || seen["memory_write"] || seen["memory_patch"] || seen["memory_delete"] || seen["memory_card_write"] {
 		t.Fatalf("read-only profile exposed mutating memory tools")
+	}
+	if !seen["memory_card_capture"] {
+		t.Fatalf("read-only profile should expose review-only memory_card_capture")
 	}
 	if seen["edit_file"] {
 		t.Fatalf("read-only profile exposed edit_file")
@@ -197,6 +200,36 @@ func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	for _, name := range []string{"task_id", "task", "task_summary", "next_required_action", "tasks", "count", "state_dir"} {
 		if _, ok := outputProps[name]; !ok {
 			t.Fatalf("task_manage output schema missing %q", name)
+		}
+	}
+}
+
+func TestMemoryCardSchemasExposeCaptureAndWriteFields(t *testing.T) {
+	inputProps, ok := inputSchema("memory_card_capture")["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("memory_card_capture input schema properties missing")
+	}
+	for _, name := range []string{"title", "content", "type", "scope", "status", "confidence", "max_results"} {
+		if _, ok := inputProps[name]; !ok {
+			t.Fatalf("memory_card_capture input schema missing %q", name)
+		}
+	}
+	writeProps, ok := inputSchema("memory_card_write")["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("memory_card_write input schema properties missing")
+	}
+	for _, name := range []string{"confirmed", "allow_warnings", "path", "overwrite"} {
+		if _, ok := writeProps[name]; !ok {
+			t.Fatalf("memory_card_write input schema missing %q", name)
+		}
+	}
+	outputProps, ok := outputSchema("memory_card_capture")["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("memory_card_capture output schema properties missing")
+	}
+	for _, name := range []string{"card", "warnings", "capture_plan", "similar_results", "similar_count"} {
+		if _, ok := outputProps[name]; !ok {
+			t.Fatalf("memory_card_capture output schema missing %q", name)
 		}
 	}
 }
