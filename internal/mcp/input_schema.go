@@ -112,7 +112,7 @@ func inputSchema(name string) map[string]any {
 		props["limit"] = intProp("Maximum tasks returned by list. Defaults to 50 and is capped at 200.")
 		props["condition"] = stringProp("Additional completion condition. Conditions can be added but not removed or weakened.")
 		props["condition_id"] = stringProp("Completion condition id receiving evidence.")
-		props["summary"] = stringProp("Evidence, resume, or completion summary, depending on action.")
+		props["summary"] = stringProp("Concise summary. Required for phase_checkpoint, resume, complete, skip_step, and add_evidence; also used as fallback evidence for complete_step.")
 		props["source"] = stringProp("Optional concrete evidence source such as a command, endpoint, log, commit, or tool result.")
 		props["strategy"] = stringProp("Attempt strategy identifier. The same strategy is limited to two attempts.")
 		props["outcome"] = map[string]any{"type": "string", "description": "Attempt outcome.", "enum": []string{"success", "failure"}}
@@ -198,8 +198,9 @@ func inputSchema(name string) map[string]any {
 		required = []string{"action"}
 	case "memory_bootstrap":
 		props["project"] = stringProp("Project key to bootstrap. Defaults to agentdock.")
-		props["max_bytes"] = intProp("Maximum combined memory bytes. Omit for compact bootstrap output; pass an explicit value to include section bodies up to that budget.")
+		props["max_bytes"] = intProp("Maximum combined MemoryDock pack bytes. Does not expose section bodies by itself; use include_body or memory_read when body text is needed.")
 		props["include_raw"] = boolProp("Include raw Markdown as raw_content. Defaults to false to avoid duplicating body/content tokens.")
+		props["include_body"] = boolProp("Include section body text in memory_bootstrap. Defaults to false; prefer memory_read for targeted full text.")
 	case "memory_list":
 		props["prefix"] = stringProp("Optional memory-relative prefix to list, for example shared/projects/agentdock.")
 		props["max_entries"] = intProp("Maximum entries to return.")

@@ -257,15 +257,24 @@ func TestMemoryBootstrapCompactByDefault(t *testing.T) {
 	store := map[string]string{"projects/agentdock/project.md": "# Bootstrap\n正文正文正文正文正文\n"}
 	rt, closeServer := newMemoryTestRuntime(t, store)
 	defer closeServer()
-	res, err := rt.memoryBootstrap(context.Background(), map[string]any{"project": "agentdock"})
+	res, err := rt.memoryBootstrap(context.Background(), map[string]any{"project": "agentdock", "max_bytes": 12000})
 	if err != nil {
 		t.Fatal(err)
 	}
 	section := res["sections"].([]any)[0].(map[string]any)
 	if _, ok := section["body"]; ok {
-		t.Fatalf("default bootstrap should not include body: %#v", section)
+		t.Fatalf("bootstrap should not include body unless include_body=true, even when max_bytes is explicit: %#v", section)
 	}
 	if _, ok := section["body_excerpt"]; !ok {
 		t.Fatalf("default bootstrap should include excerpt: %#v", section)
+	}
+
+	res, err = rt.memoryBootstrap(context.Background(), map[string]any{"project": "agentdock", "include_body": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	section = res["sections"].([]any)[0].(map[string]any)
+	if body, _ := section["body"].(string); body == "" {
+		t.Fatalf("include_body should expose section body: %#v", section)
 	}
 }

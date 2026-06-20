@@ -106,8 +106,17 @@ func TestTaskManageCreateReturnsCompactSummary(t *testing.T) {
 	if result["task_id"] == "" || result["next_required_action"] == "" {
 		t.Fatalf("create missing compact guidance: %#v", result)
 	}
-	if _, ok := result["task_summary"].(map[string]any); !ok {
+	summary, ok := result["task_summary"].(map[string]any)
+	if !ok {
 		t.Fatalf("create missing compact summary: %#v", result)
+	}
+	refs, ok := summary["condition_refs"].([]map[string]any)
+	if !ok || len(refs) != 1 || refs[0]["id"] != "cond_01" {
+		t.Fatalf("create summary missing condition refs for checkpoint evidence: %#v", summary)
+	}
+	steps, ok := summary["current_phase_steps"].([]map[string]any)
+	if !ok || len(steps) != 0 {
+		t.Fatalf("non-templated create should expose an empty current_phase_steps list: %#v", summary)
 	}
 }
 
@@ -136,6 +145,11 @@ func TestTaskManageCreateWithTemplateDoesNotReturnSnapshot(t *testing.T) {
 	}
 	if _, exists := result["task"]; exists {
 		t.Fatalf("templated create should not return full snapshot: %#v", result)
+	}
+	summary := result["task_summary"].(map[string]any)
+	steps, ok := summary["current_phase_steps"].([]map[string]any)
+	if !ok || len(steps) != 1 || steps[0]["id"] != "inspect" {
+		t.Fatalf("templated create summary should expose current phase step ids: %#v", summary)
 	}
 	loaded, err := rt.taskManage(map[string]any{"action": "get", "task_id": result["task_id"]})
 	if err != nil {
@@ -179,6 +193,10 @@ func TestTaskManagePhaseCheckpointReturnsCompactSummary(t *testing.T) {
 	}
 	if summary["phase"] != taskstate.PhaseExecute || summary["verified_condition_count"] != 1 {
 		t.Fatalf("unexpected compact summary: %#v", summary)
+	}
+	refs, ok := summary["condition_refs"].([]map[string]any)
+	if !ok || len(refs) != 1 || refs[0]["evidence_count"] != 1 {
+		t.Fatalf("phase checkpoint summary missing condition evidence refs: %#v", summary)
 	}
 }
 

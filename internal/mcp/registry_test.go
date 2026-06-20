@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/uvwt/agentdock/internal/config"
@@ -92,6 +93,25 @@ func TestReadOnlyProfileExcludesDestructiveTools(t *testing.T) {
 	}
 	if seen["edit_file"] {
 		t.Fatalf("read-only profile exposed edit_file")
+	}
+}
+
+func TestMemoryBootstrapSchemaSeparatesPackBudgetFromBody(t *testing.T) {
+	schema := inputSchema("memory_bootstrap")
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("memory_bootstrap input schema properties missing")
+	}
+	if _, ok := props["include_body"]; !ok {
+		t.Fatalf("memory_bootstrap schema missing include_body: %#v", props)
+	}
+	maxBytes, ok := props["max_bytes"].(map[string]any)
+	if !ok {
+		t.Fatalf("memory_bootstrap max_bytes schema missing: %#v", props["max_bytes"])
+	}
+	desc, _ := maxBytes["description"].(string)
+	if !strings.Contains(desc, "Does not expose section bodies") {
+		t.Fatalf("max_bytes description should not imply body exposure: %q", desc)
 	}
 }
 

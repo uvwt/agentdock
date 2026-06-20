@@ -66,4 +66,4 @@ draft -> validated -> active -> retired
 
 模板步骤支持：必做/可选、阶段、依赖、推荐命令、允许或禁止替代。模型可以补充步骤和异常处理，但不能跳过必做步骤。必做步骤只能完成或阻塞；可选步骤可用 `skip_step` 跳过并记录原因。单步兼容接口 `complete_step` 仍可写入结构化证据，但正常多步骤任务应优先按阶段调用 `phase_checkpoint`：一次原子写入当前阶段的多个步骤完成证据、多个完成条件证据，并选择推进一个阶段或在 closeout 完成任务。失败的 checkpoint 不会留下部分状态。
 
-`phase_checkpoint` 默认只返回紧凑任务摘要，不返回完整事件和模板快照。推荐粒度是每个 `check`、`execute`、`verify`、`closeout` 里程碑一次；不要在每条命令后写任务状态。逐项 `add_evidence`、`complete_step`、`advance` 仅用于交互式恢复、单项补录或兼容旧调用方。
+`phase_checkpoint` 必须提供 `summary`，默认只返回紧凑任务摘要，不返回完整事件和模板快照。紧凑摘要会保留 `condition_refs` 和 `current_phase_steps`，用于后续 checkpoint 直接引用 `cond_01`、步骤 id 等必要索引，避免为了查 ID 再读取完整任务快照。推荐粒度是每个 `check`、`execute`、`verify`、`closeout` 里程碑一次；不要在每条命令后写任务状态。逐项 `add_evidence`、`complete_step`、`advance` 仅用于交互式恢复、单项补录或兼容旧调用方。

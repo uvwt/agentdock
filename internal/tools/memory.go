@@ -18,7 +18,6 @@ func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Res
 	if project == "" {
 		project = "agentdock"
 	}
-	_, explicitMaxBytes := args["max_bytes"]
 	maxBytes := intArg(args, "max_bytes", 12000)
 	if maxBytes <= 0 {
 		maxBytes = 12000
@@ -29,6 +28,7 @@ func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Res
 		return nil, err
 	}
 	includeRaw := boolArg(args, "include_raw", false)
+	includeBody := boolArg(args, "include_body", false)
 	if sections, ok := result["sections"].([]any); ok {
 		compactedSections := make([]any, 0, len(sections))
 		for _, section := range sections {
@@ -44,13 +44,14 @@ func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Res
 			}
 
 			// bootstrap 是每个重要任务的入口，默认应像索引而不是正文包。
-			// 未显式传 max_bytes 时只保留短摘，正文继续通过 memory_read 获取。
+			// max_bytes 只控制 MemoryDock 打包预算，不应因为模型显式传了默认值就返回长正文；
+			// 需要正文时用 memory_read，或明确传 include_body/include_raw。
 			content, hasContent := compactedMemory["content"]
 			rawContent, hasRawContent := compactedMemory["raw_content"]
 			body, hasBody := compactedMemory["body"].(string)
 			delete(compactedMemory, "content")
 			delete(compactedMemory, "raw_content")
-			if !explicitMaxBytes && !includeRaw {
+			if !includeBody {
 				delete(compactedMemory, "body")
 				if hasBody && strings.TrimSpace(body) != "" {
 					compactedMemory["body_excerpt"] = firstRunes(strings.TrimSpace(body), 320)
@@ -67,11 +68,11 @@ func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Res
 		}
 		result["sections"] = compactedSections
 	}
-	if !explicitMaxBytes {
+	if !includeBody {
 		result["compact"] = true
-		result["default_max_bytes"] = maxBytes
-		result["body_policy"] = "compact body excerpts by default"
+		result["body_policy"] = "body hidden by default; use include_body=true or memory_read for full body"
 	}
+	result["max_bytes"] = maxBytes
 	result["bootstrap"] = true
 	result["recommended_use"] = "Call memory_bootstrap at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks before editing files or running destructive commands."
 	return result, nil

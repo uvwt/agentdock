@@ -192,21 +192,37 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 
 func compactTaskSummary(task taskstate.Task) map[string]any {
 	completedSteps := 0
+	currentPhaseSteps := []map[string]any{}
 	for _, step := range task.Steps {
 		if step.Status == "completed" || step.Status == "skipped" {
 			completedSteps++
 		}
+		if step.Phase == task.Phase && step.Status == "pending" {
+			currentPhaseSteps = append(currentPhaseSteps, map[string]any{
+				"id":       step.ID,
+				"title":    truncateString(step.Title, 120),
+				"required": step.Required,
+			})
+		}
 	}
 	verifiedConditions := 0
+	conditionRefs := make([]map[string]any, 0, len(task.Conditions))
 	for _, condition := range task.Conditions {
-		if len(condition.Evidence) > 0 {
+		evidenceCount := len(condition.Evidence)
+		if evidenceCount > 0 {
 			verifiedConditions++
 		}
+		conditionRefs = append(conditionRefs, map[string]any{
+			"id":             condition.ID,
+			"text":           truncateString(condition.Text, 160),
+			"evidence_count": evidenceCount,
+		})
 	}
 	summary := map[string]any{
 		"id": task.ID, "title": task.Title, "status": task.Status, "phase": task.Phase,
 		"completed_step_count": completedSteps, "step_count": len(task.Steps),
 		"verified_condition_count": verifiedConditions, "condition_count": len(task.Conditions),
+		"condition_refs": conditionRefs, "current_phase_steps": currentPhaseSteps,
 		"updated_at": task.UpdatedAt,
 	}
 	if task.CompletedAt != nil {
