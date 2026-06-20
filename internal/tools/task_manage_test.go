@@ -19,10 +19,18 @@ func TestTaskManageLifecycleAndRestartRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, ok := created["task"].(taskstate.Task)
-	if !ok || task.ID == "" {
+	taskID, ok := created["task_id"].(string)
+	if !ok || taskID == "" {
 		t.Fatalf("unexpected create result: %#v", created)
 	}
+	if _, exists := created["task"]; exists {
+		t.Fatalf("create should return compact summary instead of full task: %#v", created)
+	}
+	loadedTask, err := rt.taskManage(map[string]any{"action": "get", "task_id": taskID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := loadedTask["task"].(taskstate.Task)
 
 	for range 3 {
 		result, advanceErr := rt.taskManage(map[string]any{"action": "advance", "task_id": task.ID})
@@ -83,6 +91,61 @@ func TestTaskManageListIsCompact(t *testing.T) {
 	}
 }
 
+func TestTaskManageCreateReturnsCompactSummary(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	result, err := rt.taskManage(map[string]any{
+		"action": "create", "title": "Repair service", "goal": "restore service",
+		"completion_conditions": []string{"service responds"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := result["task"]; exists {
+		t.Fatalf("create unexpectedly returned full task: %#v", result)
+	}
+	if result["task_id"] == "" || result["next_required_action"] == "" {
+		t.Fatalf("create missing compact guidance: %#v", result)
+	}
+	if _, ok := result["task_summary"].(map[string]any); !ok {
+		t.Fatalf("create missing compact summary: %#v", result)
+	}
+}
+
+func TestTaskManageCreateWithTemplateDoesNotReturnSnapshot(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	draft, err := rt.tasks.SaveTemplateDraft(taskstate.Template{
+		ID: "compact.template", Version: "1.0.0", Title: "Compact template", Status: taskstate.TemplateDraft,
+		CompletionConditions: []string{"done"},
+		Steps:                []taskstate.TemplateStep{{ID: "inspect", Title: "Inspect", Phase: taskstate.PhaseCheck, Required: true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.tasks.ValidateTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.tasks.PublishTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	result, err := rt.taskManage(map[string]any{
+		"action": "create", "title": "Template task", "goal": "run templated task",
+		"template_id": "compact.template", "template_version": "1.0.0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := result["task"]; exists {
+		t.Fatalf("templated create should not return full snapshot: %#v", result)
+	}
+	loaded, err := rt.taskManage(map[string]any{"action": "get", "task_id": result["task_id"]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded["task"].(taskstate.Task).Template == nil {
+		t.Fatalf("full snapshot should still be available through get: %#v", loaded)
+	}
+}
+
 func TestTaskManagePhaseCheckpointReturnsCompactSummary(t *testing.T) {
 	rt, _ := newCodeToolsRuntime(t)
 	created, err := rt.taskManage(map[string]any{
@@ -92,7 +155,12 @@ func TestTaskManagePhaseCheckpointReturnsCompactSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task := created["task"].(taskstate.Task)
+	taskID := created["task_id"].(string)
+	loadedTask, err := rt.taskManage(map[string]any{"action": "get", "task_id": taskID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := loadedTask["task"].(taskstate.Task)
 	result, err := rt.taskManage(map[string]any{
 		"action": "phase_checkpoint", "task_id": task.ID,
 		"condition_evidence": []map[string]any{{"condition_id": "cond_01", "summary": "service observed", "source": "test"}},
@@ -138,9 +206,9 @@ func TestTaskManageCompleteStepAllowsSummaryOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task := created["task"].(taskstate.Task)
+	taskID := created["task_id"].(string)
 	result, err := rt.taskManage(map[string]any{
-		"action": "complete_step", "task_id": task.ID, "step_id": "inspect", "summary": "context inspected",
+		"action": "complete_step", "task_id": taskID, "step_id": "inspect", "summary": "context inspected",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -160,9 +228,9 @@ func TestTaskManageRecordAttemptReturnsActionGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task := created["task"].(taskstate.Task)
+	taskID := created["task_id"].(string)
 	result, err := rt.taskManage(map[string]any{
-		"action": "record_attempt", "task_id": task.ID, "strategy": "restart",
+		"action": "record_attempt", "task_id": taskID, "strategy": "restart",
 		"outcome": "failure", "diagnosis": "restart failed", "evidence": "systemctl output A",
 	})
 	if err != nil {

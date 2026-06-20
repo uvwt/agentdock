@@ -92,21 +92,25 @@ func (r *Runtime) notesSearch(ctx context.Context, args map[string]any) (Result,
 	for _, candidate := range ordered {
 		candidatePaths = append(candidatePaths, candidate.Path)
 	}
-	return Result{
-		"ok":                 true,
-		"scope":              scope.Name,
-		"prefix":             scope.Prefix,
-		"index_path":         scope.IndexPath,
-		"index_found":        indexFound,
-		"query":              query,
-		"strategy":           "index_first",
-		"recommended_action": recommendedAction,
-		"reason":             reason,
-		"candidate_paths":    candidatePaths,
-		"candidates":         ordered,
-		"search_results":     searchResults,
-		"auto_write":         false,
-	}, nil
+	result := Result{
+		"ok":                  true,
+		"scope":               scope.Name,
+		"prefix":              scope.Prefix,
+		"index_path":          scope.IndexPath,
+		"index_found":         indexFound,
+		"query":               query,
+		"strategy":            "index_first",
+		"recommended_action":  recommendedAction,
+		"reason":              reason,
+		"candidate_paths":     candidatePaths,
+		"candidates":          ordered,
+		"search_result_count": len(searchResults),
+		"auto_write":          false,
+	}
+	if boolArg(args, "include_search_results", false) {
+		result["search_results"] = searchResults
+	}
+	return result, nil
 }
 
 func (r *Runtime) notesCapture(ctx context.Context, args map[string]any) (Result, error) {

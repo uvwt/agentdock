@@ -26,6 +26,13 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 			_ = remarshal(raw, &candidates)
 		}
 		task, err = r.tasks.CreateWithTemplate(stringArg(args, "title", ""), stringArg(args, "goal", ""), stringSliceArg(args, "completion_conditions"), stringArg(args, "template_id", ""), stringArg(args, "template_version", ""), stringArg(args, "selected_reason", ""), candidates)
+		if err != nil {
+			return nil, taskToolError(err)
+		}
+		return Result{
+			"ok": true, "action": action, "task_id": task.ID, "task_summary": compactTaskSummary(task), "state_dir": r.tasks.Root(),
+			"next_required_action": "Use phase_checkpoint after real work, or call get only when the full task snapshot is needed",
+		}, nil
 	case "list":
 		status := taskstate.Status(strings.ToLower(strings.TrimSpace(stringArg(args, "status", ""))))
 		if status != "" && status != taskstate.StatusActive && status != taskstate.StatusBlocked && status != taskstate.StatusCompleted {

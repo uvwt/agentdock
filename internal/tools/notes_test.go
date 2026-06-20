@@ -25,6 +25,19 @@ func TestNotesSearchAndCapturePlan(t *testing.T) {
 	if len(paths) == 0 || paths[0] != "notes/questions/topics/memory-organization.md" {
 		t.Fatalf("unexpected candidate paths: %#v", res)
 	}
+	if _, ok := res["search_results"]; ok {
+		t.Fatalf("notes_search should hide raw search results by default: %#v", res)
+	}
+	if count, _ := res["search_result_count"].(int); count == 0 {
+		t.Fatalf("notes_search should retain search result count: %#v", res)
+	}
+	res, err = rt.notesSearch(context.Background(), map[string]any{"scope": "questions", "query": "记忆 笔记 检索", "include_search_results": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if results, ok := res["search_results"].([]any); !ok || len(results) == 0 {
+		t.Fatalf("include_search_results should expose raw search results: %#v", res)
+	}
 
 	before := store["notes/questions/topics/memory-organization.md"]
 	capture, err := rt.notesCapture(context.Background(), map[string]any{"scope": "questions", "question": "文件变多后检索方式要不要改？", "conclusion": "使用 index-first notes_search。"})

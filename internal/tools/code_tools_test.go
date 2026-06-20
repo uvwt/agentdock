@@ -31,6 +31,32 @@ func newCodeToolsRuntime(t *testing.T) (*Runtime, string) {
 	return rt, root
 }
 
+func TestServerInfoRecommendsCompactMemoryBootstrap(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Config{
+		Workspace:       root,
+		ToolProfile:     config.ProfileUnified,
+		Mode:            config.ModeSandboxed,
+		PathPolicy:      config.PathPolicyWorkspace,
+		AgentDockDir:    "AgentDock",
+		MemoryEndpoint:  "http://127.0.0.1:18777",
+		MemoryTimeoutMS: 30000,
+	}
+	cfg.Normalize()
+	rt, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := rt.serverInfo()
+	args := info["memory_bootstrap_args"].(map[string]any)
+	if _, ok := args["max_bytes"]; ok {
+		t.Fatalf("server_info should not recommend explicit max_bytes because that disables compact bootstrap defaults: %#v", args)
+	}
+	if args["project"] != "agentdock" {
+		t.Fatalf("unexpected memory bootstrap args: %#v", args)
+	}
+}
+
 func TestServerInfoReportsOAuthAuthEnabled(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{

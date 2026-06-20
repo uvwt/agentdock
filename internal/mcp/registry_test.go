@@ -174,9 +174,28 @@ func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	if !ok {
 		t.Fatal("task_manage output schema properties missing")
 	}
-	for _, name := range []string{"task", "task_summary", "tasks", "count", "state_dir"} {
+	for _, name := range []string{"task_id", "task", "task_summary", "next_required_action", "tasks", "count", "state_dir"} {
 		if _, ok := outputProps[name]; !ok {
 			t.Fatalf("task_manage output schema missing %q", name)
+		}
+	}
+}
+
+func TestNotesSearchSchemasExposeCompactionControls(t *testing.T) {
+	inputProps, ok := inputSchema("notes_search")["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("notes_search input schema properties missing")
+	}
+	if _, ok := inputProps["include_search_results"]; !ok {
+		t.Fatal("notes_search input schema missing include_search_results")
+	}
+	outputProps, ok := outputSchema("notes_search")["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("notes_search output schema properties missing")
+	}
+	for _, name := range []string{"candidate_paths", "candidates", "search_result_count", "search_results"} {
+		if _, ok := outputProps[name]; !ok {
+			t.Fatalf("notes_search output schema missing %q", name)
 		}
 	}
 }

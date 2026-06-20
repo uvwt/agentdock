@@ -4,10 +4,11 @@ MemoryDock 是 AgentDock 的长期记忆服务，AgentDock 只暴露 `memory_*` 
 
 ## 常用工具
 
-- `memory_bootstrap`：重要任务开始时加载项目上下文。
+- `memory_bootstrap`：重要任务开始时加载项目上下文。默认不要显式传 `max_bytes`，这样会使用紧凑输出，只保留索引和短摘；需要正文时再读具体文件。
 - `memory_pack`：旧兼容入口；新任务不要默认调用，等价走 `memory_bootstrap` 的紧凑策略。
 - `memory_search`：补充搜索细节。
-- `memory_read`：读取单个记忆文件。
+- `memory_read`：读取单个记忆文件。默认不返回原始 Markdown；需要原文时显式传 `include_raw=true`。
+- `notes_search`：先查索引再查全文，默认只返回候选路径和评分；只有排查检索质量时才传 `include_search_results=true` 返回原始搜索结果。
 - `memory_write` / `memory_patch`：写入或更新长期记忆。
 - `memory_sync_status`：查看 Git 同步状态。
 

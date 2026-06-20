@@ -253,8 +253,11 @@ func (s *Store) MatchTemplates(goal, device, taskType string) ([]TemplateCandida
 	if err != nil {
 		return nil, err
 	}
+	templates = latestTemplateVersions(templates)
 	goalLower := strings.ToLower(goal)
+	goalMatchText := templateMatchText(goalLower)
 	var out []TemplateCandidate
+	var fallback []TemplateCandidate
 	for _, t := range templates {
 		if device != "" && len(t.Match.Devices) > 0 && !containsFold(t.Match.Devices, device) {
 			continue
@@ -264,7 +267,12 @@ func (s *Store) MatchTemplates(goal, device, taskType string) ([]TemplateCandida
 		var reasons []string
 		for _, keyword := range t.Match.Keywords {
 			keyword = strings.TrimSpace(keyword)
-			if keyword != "" && strings.Contains(goalLower, strings.ToLower(keyword)) {
+			if keyword != "" && strings.Contains(goalMatchText, templateMatchText(keyword)) {
+				if weakTemplateKeyword(keyword) {
+					score += 15
+					reasons = append(reasons, "context_keyword:"+keyword)
+					continue
+				}
 				score += 15
 				semanticMatched = true
 				reasons = append(reasons, "keyword:"+keyword)
@@ -290,8 +298,16 @@ func (s *Store) MatchTemplates(goal, device, taskType string) ([]TemplateCandida
 			score += priority
 		}
 		if score > 0 && len(reasons) > 0 {
-			out = append(out, TemplateCandidate{ID: t.ID, Version: t.Version, Score: score, Reason: strings.Join(reasons, ", ")})
+			candidate := TemplateCandidate{ID: t.ID, Version: t.Version, Score: score, Reason: strings.Join(reasons, ", ")}
+			if semanticMatched {
+				out = append(out, candidate)
+			} else {
+				fallback = append(fallback, candidate)
+			}
 		}
+	}
+	if len(out) == 0 {
+		out = fallback
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Score == out[j].Score {
@@ -303,6 +319,85 @@ func (s *Store) MatchTemplates(goal, device, taskType string) ([]TemplateCandida
 		return out[i].Score > out[j].Score
 	})
 	return out, nil
+}
+
+func latestTemplateVersions(templates []Template) []Template {
+	byID := map[string]Template{}
+	for _, template := range templates {
+		current, exists := byID[template.ID]
+		if !exists || compareTemplateVersion(template.Version, current.Version) > 0 {
+			byID[template.ID] = template
+		}
+	}
+	out := make([]Template, 0, len(byID))
+	for _, template := range byID {
+		out = append(out, template)
+	}
+	return out
+}
+
+func compareTemplateVersion(a, b string) int {
+	aParts := strings.Split(a, ".")
+	bParts := strings.Split(b, ".")
+	maxParts := len(aParts)
+	if len(bParts) > maxParts {
+		maxParts = len(bParts)
+	}
+	for i := 0; i < maxParts; i++ {
+		aValue, aOK := templateVersionPart(aParts, i)
+		bValue, bOK := templateVersionPart(bParts, i)
+		if aOK && bOK {
+			if aValue > bValue {
+				return 1
+			}
+			if aValue < bValue {
+				return -1
+			}
+			continue
+		}
+		break
+	}
+	if a > b {
+		return 1
+	}
+	if a < b {
+		return -1
+	}
+	return 0
+}
+
+func templateVersionPart(parts []string, index int) (int, bool) {
+	if index >= len(parts) || parts[index] == "" {
+		return 0, true
+	}
+	value := 0
+	for _, r := range parts[index] {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+		value = value*10 + int(r-'0')
+	}
+	return value, true
+}
+
+func weakTemplateKeyword(keyword string) bool {
+	switch templateMatchText(keyword) {
+	case "agentdock", "nexus", "vitapulse":
+		return true
+	default:
+		return false
+	}
+}
+
+func templateMatchText(value string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(value) {
+		if r <= ' ' || r == '个' {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 const (

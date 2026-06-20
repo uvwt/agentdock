@@ -112,8 +112,10 @@ func outputSchema(name string) map[string]any {
 		props["diagnostic"] = objectProp("Structured create diagnostic.")
 	case "task_manage":
 		props["action"] = stringProp("Completed task action.")
-		props["task"] = objectProp("Full persistent task state, including conditions, evidence, attempts, and events.")
-		props["task_summary"] = objectProp("Compact task milestone summary returned by phase_checkpoint.")
+		props["task_id"] = stringProp("Persistent task id returned by create and usable with get, phase_checkpoint, or complete.")
+		props["task"] = objectProp("Full persistent task state, including conditions, evidence, attempts, and events. Returned by get and legacy full-state actions.")
+		props["task_summary"] = objectProp("Compact task summary returned by create, phase_checkpoint, record_attempt, and other compact actions.")
+		props["next_required_action"] = stringProp("Concise guidance for the next non-task action when the tool intentionally returns a compact result.")
 		props["tasks"] = arrayProp("Compact task summaries ordered by most recent update.")
 		props["count"] = intProp("Returned task count.")
 		props["state_dir"] = stringProp("Local AgentDock task state directory.")
@@ -190,6 +192,8 @@ func outputSchema(name string) map[string]any {
 		props["recommended_action"] = stringProp("Recommended next action: update_existing, create_new, or put_open.")
 		props["candidate_paths"] = arrayProp("Candidate note paths.")
 		props["candidates"] = arrayProp("Scored candidate notes.")
+		props["search_result_count"] = intProp("Number of raw MemoryDock search results observed before compaction.")
+		props["search_results"] = arrayProp("Raw MemoryDock search results, returned only when include_search_results=true.")
 	case "notes_capture":
 		props["scope"] = stringProp("Notes scope searched.")
 		props["capture_plan"] = objectProp("Reviewable write plan. notes_capture does not write by itself.")

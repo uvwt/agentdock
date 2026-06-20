@@ -666,8 +666,78 @@ func normalizeTexts(values []string) []string {
 		if _, ok := seen[key]; ok {
 			continue
 		}
+		duplicate := false
+		for _, existing := range out {
+			if similarConditionText(existing, value) {
+				duplicate = true
+				break
+			}
+		}
+		if duplicate {
+			continue
+		}
 		seen[key] = struct{}{}
 		out = append(out, value)
+	}
+	return out
+}
+
+func similarConditionText(a, b string) bool {
+	a = conditionCompareText(a)
+	b = conditionCompareText(b)
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	aRuneLen := len([]rune(a))
+	bRuneLen := len([]rune(b))
+	if aRuneLen >= 8 && bRuneLen >= 8 && (strings.Contains(a, b) || strings.Contains(b, a)) {
+		return true
+	}
+	if aRuneLen < 8 || bRuneLen < 8 {
+		return false
+	}
+	aPairs := conditionBigramSet(a)
+	bPairs := conditionBigramSet(b)
+	if len(aPairs) == 0 || len(bPairs) == 0 {
+		return false
+	}
+	shared := 0
+	for pair := range aPairs {
+		if _, ok := bPairs[pair]; ok {
+			shared++
+		}
+	}
+	return float64(shared*2)/float64(len(aPairs)+len(bPairs)) >= 0.62
+}
+
+func conditionCompareText(value string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(value) {
+		switch r {
+		case '，', '。', '！', '？', '、', '；', '：', '（', '）', '(', ')', '[', ']', '【', '】', '{', '}', '《', '》', '“', '”', '‘', '’', '"', '\'', '`':
+			continue
+		}
+		if r > ' ' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func conditionBigramSet(value string) map[string]struct{} {
+	runes := []rune(value)
+	out := map[string]struct{}{}
+	if len(runes) < 2 {
+		if value != "" {
+			out[value] = struct{}{}
+		}
+		return out
+	}
+	for i := 0; i < len(runes)-1; i++ {
+		out[string(runes[i:i+2])] = struct{}{}
 	}
 	return out
 }

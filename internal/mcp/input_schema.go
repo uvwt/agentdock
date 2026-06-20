@@ -216,6 +216,7 @@ func inputSchema(name string) map[string]any {
 		props["query"] = stringProp("Text query for notes.")
 		props["scope"] = stringProp("Notes scope: questions or github-learning. Defaults to questions.")
 		props["max_results"] = intProp("Maximum candidate notes to return.")
+		props["include_search_results"] = boolProp("Include raw MemoryDock search_results. Defaults to false because candidates and candidate_paths are usually enough.")
 		required = []string{"query"}
 	case "notes_capture":
 		props["question"] = stringProp("User question or learning point to capture.")

@@ -326,8 +326,7 @@ func (r *Runtime) serverInfo() Result {
 		"memory_bootstrap_recommended": r.cfg.MemoryEndpoint != "",
 		"memory_bootstrap_tool":        "memory_bootstrap",
 		"memory_bootstrap_args": map[string]any{
-			"project":   "agentdock",
-			"max_bytes": 50000,
+			"project": "agentdock",
 		},
 
 		"task_state_dir": r.tasks.Root(),

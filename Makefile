@@ -18,7 +18,7 @@ vet:
 	go vet ./...
 
 race:
-	go test -race ./internal/session ./internal/tools
+	go test -race ./internal/session ./internal/tools ./internal/taskstate ./internal/mcp
 
 build:
 	go build -trimpath -o ./bin/$(APP) ./cmd/agentdock

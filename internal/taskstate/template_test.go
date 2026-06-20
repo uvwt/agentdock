@@ -88,6 +88,114 @@ func TestOptionalStepSkipAndDependencyValidation(t *testing.T) {
 	}
 }
 
+func TestTemplateMatchTreatsProjectNameKeywordAsWeakContext(t *testing.T) {
+	store, err := New(t.TempDir() + "/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tpl := range []Template{
+		{
+			ID: "agentdock.deploy.macos", Version: "1.0.0", Title: "Deploy AgentDock",
+			Match:                MatchRule{Keywords: []string{"AgentDock", "部署"}, Devices: []string{"DockMini"}, Priority: 10},
+			CompletionConditions: []string{"done"},
+			Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+		},
+		{
+			ID: "development.project-timeboxed-optimization", Version: "1.0.0", Title: "Timeboxed work",
+			Match:                MatchRule{Keywords: []string{"一小时", "完善项目"}, Devices: []string{"DockMini"}, Priority: 10},
+			CompletionConditions: []string{"done"},
+			Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+		},
+	} {
+		draft, err := store.SaveTemplateDraft(tpl)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.ValidateTemplate(draft.ID, draft.Version); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.PublishTemplate(draft.ID, draft.Version); err != nil {
+			t.Fatal(err)
+		}
+	}
+	candidates, err := store.MatchTemplates("针对 AgentDock 进行一个小时功能完善", "DockMini", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].ID != "development.project-timeboxed-optimization" {
+		t.Fatalf("weak project-name keyword should not make deploy template a semantic candidate: %#v", candidates)
+	}
+	candidates, err = store.MatchTemplates("AgentDock 部署", "DockMini", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) == 0 || candidates[0].ID != "agentdock.deploy.macos" {
+		t.Fatalf("strong deploy keyword should still match deploy template: %#v", candidates)
+	}
+}
+
+func TestTemplateMatchReturnsLatestActiveVersionPerTemplateID(t *testing.T) {
+	store, err := New(t.TempDir() + "/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, version := range []string{"1.9.0", "1.10.0"} {
+		tpl := Template{
+			ID: "development.example", Version: version, Title: "Example " + version,
+			Match:                MatchRule{Keywords: []string{"开发"}, Devices: []string{"DockMini"}, Priority: 5},
+			CompletionConditions: []string{"done"},
+			Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+		}
+		draft, err := store.SaveTemplateDraft(tpl)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.ValidateTemplate(draft.ID, draft.Version); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.PublishTemplate(draft.ID, draft.Version); err != nil {
+			t.Fatal(err)
+		}
+	}
+	candidates, err := store.MatchTemplates("开发 AgentDock 功能", "DockMini", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].ID != "development.example" || candidates[0].Version != "1.10.0" {
+		t.Fatalf("expected only latest active version, got %#v", candidates)
+	}
+}
+
+func TestTemplateMatchNormalizesTimeboxKeywords(t *testing.T) {
+	store, err := New(t.TempDir() + "/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tpl := Template{
+		ID: "development.project-timeboxed-optimization", Version: "1.0.0", Title: "Timeboxed work",
+		Match:                MatchRule{Keywords: []string{"一小时", "半小时"}, Devices: []string{"DockMini"}, Priority: 20},
+		CompletionConditions: []string{"done"},
+		Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+	}
+	draft, err := store.SaveTemplateDraft(tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ValidateTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PublishTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	candidates, err := store.MatchTemplates("针对 agentdock 进行一个小时的功能完善", "DockMini", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].ID != tpl.ID {
+		t.Fatalf("expected timeboxed template to match 一个小时, got %#v", candidates)
+	}
+}
+
 func TestTemplateMatchSemanticSignalsBeatDeviceOnly(t *testing.T) {
 	store, err := New(t.TempDir() + "/tasks")
 	if err != nil {
@@ -121,14 +229,38 @@ func TestTemplateMatchSemanticSignalsBeatDeviceOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(candidates) < 2 {
-		t.Fatalf("expected two candidates, got %#v", candidates)
+	if len(candidates) != 1 || candidates[0].ID != "notes.question-record" {
+		t.Fatalf("semantic match should suppress device-only fallback candidates, got %#v", candidates)
 	}
-	if candidates[0].ID != "notes.question-record" {
-		t.Fatalf("semantic match should win, got %#v", candidates)
+}
+
+func TestTemplateMatchFallsBackToDeviceOnlyWhenNoSemanticMatch(t *testing.T) {
+	store, err := New(t.TempDir() + "/tasks")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if candidates[1].Score >= 30 {
-		t.Fatalf("device-only score should remain tiny, got %#v", candidates)
+	tpl := Template{
+		ID: "fallback.device", Version: "1.0.0", Title: "Device fallback",
+		Match:                MatchRule{Devices: []string{"DockMini"}, Priority: 999},
+		CompletionConditions: []string{"done"},
+		Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+	}
+	draft, err := store.SaveTemplateDraft(tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ValidateTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PublishTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	candidates, err := store.MatchTemplates("完全没有语义关键词", "DockMini", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].ID != tpl.ID {
+		t.Fatalf("expected device fallback when there is no semantic match, got %#v", candidates)
 	}
 }
 
