@@ -1,4 +1,4 @@
-.PHONY: fmt test vet race build check run docker-build docker-browser-build docker-up docker-down smoke-docker logs clean install-macos restart-macos smoke-macos
+.PHONY: fmt test vet race build check run docker-build docker-browser-build docker-up docker-down smoke-docker logs clean clean-local-artifacts install-macos restart-macos smoke-macos
 
 APP := agentdock
 IMAGE := agentdock:local
@@ -57,3 +57,8 @@ logs:
 
 clean:
 	rm -rf ./bin
+
+clean-local-artifacts:
+	@printf 'cleaning ignored local AgentDock artifacts\n'
+	@rm -f ./agentdock.new ./agentdock.new.* ./agentdock.prev ./agentdock.prev.* ./agentdock.bak* ./agentdock.killed*
+	@rm -rf ./bin ./coverage.out

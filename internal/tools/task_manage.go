@@ -62,6 +62,10 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 		return Result{"ok": true, "action": action, "tasks": items, "count": len(items), "state_dir": r.tasks.Root()}, nil
 	case "get":
 		task, err = r.tasks.Get(stringArg(args, "task_id", ""))
+		if err != nil {
+			return nil, taskToolError(err)
+		}
+		return Result{"ok": true, "action": action, "task": task, "state_dir": r.tasks.Root()}, nil
 	case "add_condition":
 		task, err = r.tasks.AddCondition(stringArg(args, "task_id", ""), stringArg(args, "condition", ""))
 	case "add_evidence":
@@ -141,26 +145,26 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 		applyTemplateGuardrailArgs(args, &template)
 		template, err = r.tasks.SaveTemplateDraft(template)
 		if err == nil {
-			return Result{"ok": true, "action": action, "template": template, "workflow_dir": r.tasks.WorkflowRoot()}, nil
+			return Result{"ok": true, "action": action, "template_id": template.ID, "template_summary": compactTemplateSummary(template), "workflow_dir": r.tasks.WorkflowRoot()}, nil
 		}
 	case "template_validate":
 		template, validateErr := r.tasks.ValidateTemplate(stringArg(args, "template_id", ""), stringArg(args, "template_version", ""))
 		if validateErr != nil {
 			return nil, taskToolError(validateErr)
 		}
-		return Result{"ok": true, "action": action, "template": template, "valid": true, "workflow_dir": r.tasks.WorkflowRoot()}, nil
+		return Result{"ok": true, "action": action, "template_id": template.ID, "template_summary": compactTemplateSummary(template), "valid": true, "workflow_dir": r.tasks.WorkflowRoot()}, nil
 	case "template_publish":
 		template, publishErr := r.tasks.PublishTemplate(stringArg(args, "template_id", ""), stringArg(args, "template_version", ""))
 		if publishErr != nil {
 			return nil, taskToolError(publishErr)
 		}
-		return Result{"ok": true, "action": action, "template": template, "workflow_dir": r.tasks.WorkflowRoot()}, nil
+		return Result{"ok": true, "action": action, "template_id": template.ID, "template_summary": compactTemplateSummary(template), "workflow_dir": r.tasks.WorkflowRoot()}, nil
 	case "template_retire":
 		template, retireErr := r.tasks.RetireTemplate(stringArg(args, "template_id", ""), stringArg(args, "template_version", ""))
 		if retireErr != nil {
 			return nil, taskToolError(retireErr)
 		}
-		return Result{"ok": true, "action": action, "template": template, "workflow_dir": r.tasks.WorkflowRoot()}, nil
+		return Result{"ok": true, "action": action, "template_id": template.ID, "template_summary": compactTemplateSummary(template), "workflow_dir": r.tasks.WorkflowRoot()}, nil
 	case "template_get":
 		template, getErr := r.tasks.GetTemplate(stringArg(args, "template_id", ""), stringArg(args, "template_version", ""))
 		if getErr != nil {
@@ -172,7 +176,11 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 		if listErr != nil {
 			return nil, taskToolError(listErr)
 		}
-		return Result{"ok": true, "action": action, "templates": templates, "count": len(templates), "workflow_dir": r.tasks.WorkflowRoot()}, nil
+		items := make([]map[string]any, 0, len(templates))
+		for _, template := range templates {
+			items = append(items, compactTemplateSummary(template))
+		}
+		return Result{"ok": true, "action": action, "templates": items, "count": len(items), "workflow_dir": r.tasks.WorkflowRoot()}, nil
 	case "template_match":
 		candidates, matchErr := r.tasks.MatchTemplates(stringArg(args, "goal", ""), stringArg(args, "device", ""), stringArg(args, "task_type", ""))
 		if matchErr != nil {
@@ -187,7 +195,7 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 	if err != nil {
 		return nil, taskToolError(err)
 	}
-	return Result{"ok": true, "action": action, "task": task, "state_dir": r.tasks.Root()}, nil
+	return Result{"ok": true, "action": action, "task_id": task.ID, "task_summary": compactTaskSummary(task), "state_dir": r.tasks.Root()}, nil
 }
 
 func compactTaskSummary(task taskstate.Task) map[string]any {
@@ -229,6 +237,26 @@ func compactTaskSummary(task taskstate.Task) map[string]any {
 		summary["completed_at"] = *task.CompletedAt
 	}
 	return summary
+}
+
+func compactTemplateSummary(template taskstate.Template) map[string]any {
+	return map[string]any{
+		"id":                   template.ID,
+		"version":              template.Version,
+		"title":                truncateString(template.Title, 120),
+		"status":               template.Status,
+		"keyword_count":        len(template.Match.Keywords),
+		"device_count":         len(template.Match.Devices),
+		"task_type_count":      len(template.Match.TaskTypes),
+		"priority":             template.Match.Priority,
+		"condition_count":      len(template.CompletionConditions),
+		"step_count":           len(template.Steps),
+		"allow_long_template":  template.AllowLongTemplate,
+		"long_template_reason": truncateString(template.LongTemplateReason, 160),
+		"hash":                 template.Hash,
+		"published_at":         template.PublishedAt,
+		"retired_at":           template.RetiredAt,
+	}
 }
 
 func taskToolError(err error) error {

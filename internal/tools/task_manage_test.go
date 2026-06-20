@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/uvwt/agentdock/internal/config"
@@ -37,7 +38,14 @@ func TestTaskManageLifecycleAndRestartRecovery(t *testing.T) {
 		if advanceErr != nil {
 			t.Fatal(advanceErr)
 		}
-		task = result["task"].(taskstate.Task)
+		if _, exists := result["task"]; exists {
+			t.Fatalf("advance should return compact summary instead of full task: %#v", result)
+		}
+		loadedTask, err = rt.taskManage(map[string]any{"action": "get", "task_id": task.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		task = loadedTask["task"].(taskstate.Task)
 	}
 	if _, err := rt.taskManage(map[string]any{"action": "complete", "task_id": task.ID, "summary": ""}); err == nil {
 		t.Fatal("completion without final verification summary succeeded")
@@ -48,8 +56,12 @@ func TestTaskManageLifecycleAndRestartRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if completed["task"].(taskstate.Task).Status != taskstate.StatusCompleted {
-		t.Fatalf("unexpected completion result: %#v", completed)
+	if _, exists := completed["task"]; exists {
+		t.Fatalf("complete should return compact summary instead of full task: %#v", completed)
+	}
+	summary := completed["task_summary"].(map[string]any)
+	if summary["status"] != taskstate.StatusCompleted {
+		t.Fatalf("unexpected completion summary: %#v", summary)
 	}
 
 	cfg := config.Config{
@@ -231,9 +243,135 @@ func TestTaskManageCompleteStepAllowsSummaryOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated := result["task"].(taskstate.Task)
+	if _, exists := result["task"]; exists {
+		t.Fatalf("complete_step should return compact summary instead of full task: %#v", result)
+	}
+	loaded, err := rt.taskManage(map[string]any{"action": "get", "task_id": taskID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := loaded["task"].(taskstate.Task)
 	if updated.Steps[0].Status != "completed" || len(updated.Steps[0].Evidence) != 0 {
 		t.Fatalf("summary-only complete_step should not require structured evidence: %#v", updated.Steps[0])
+	}
+}
+
+func TestTaskManageStateMutationActionsReturnCompactSummary(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	created, err := rt.taskManage(map[string]any{
+		"action": "create", "title": "Compact mutation", "goal": "avoid large task payloads",
+		"completion_conditions": []string{"done"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskID := created["task_id"].(string)
+
+	result, err := rt.taskManage(map[string]any{"action": "block", "task_id": taskID, "blocker": "waiting", "evidence": "test evidence"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := result["task"]; exists {
+		t.Fatalf("block should not return full task: %#v", result)
+	}
+	if result["task_id"] != taskID {
+		t.Fatalf("compact mutation result should keep task id: %#v", result)
+	}
+	summary := result["task_summary"].(map[string]any)
+	if summary["status"] != taskstate.StatusBlocked {
+		t.Fatalf("unexpected block summary: %#v", summary)
+	}
+
+	result, err = rt.taskManage(map[string]any{"action": "resume", "task_id": taskID, "summary": "continue"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := result["task"]; exists {
+		t.Fatalf("resume should not return full task: %#v", result)
+	}
+	summary = result["task_summary"].(map[string]any)
+	if summary["status"] != taskstate.StatusActive {
+		t.Fatalf("unexpected resume summary: %#v", summary)
+	}
+}
+
+func TestTaskManageTemplateListReturnsCompactSummaries(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	draft, err := rt.tasks.SaveTemplateDraft(taskstate.Template{
+		ID: "large.template", Version: "1.0.0", Title: "Large template", Description: strings.Repeat("description ", 80), Status: taskstate.TemplateDraft,
+		Match:                taskstate.MatchRule{Keywords: []string{"deploy", "agentdock"}, Devices: []string{"DockMini"}, TaskTypes: []string{"deployment"}, Priority: 10},
+		CompletionConditions: []string{"done"},
+		Steps: []taskstate.TemplateStep{
+			{ID: "inspect", Title: "Inspect", Phase: taskstate.PhaseCheck, Required: true, SuggestedCommands: []string{strings.Repeat("command ", 100)}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.tasks.ValidateTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.tasks.PublishTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := rt.taskManage(map[string]any{"action": "template_list", "template_status": "active"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := result["templates"].([]map[string]any)
+	if len(items) != 1 {
+		t.Fatalf("unexpected template list: %#v", result)
+	}
+	if _, exists := items[0]["steps"]; exists {
+		t.Fatalf("template_list should not return full steps: %#v", items[0])
+	}
+	if items[0]["step_count"] != 1 || items[0]["condition_count"] != 1 || items[0]["keyword_count"] != 2 {
+		t.Fatalf("compact template summary missing counts: %#v", items[0])
+	}
+	loaded, err := rt.taskManage(map[string]any{"action": "template_get", "template_id": "large.template", "template_version": "1.0.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded["template"].(taskstate.Template).Steps) != 1 {
+		t.Fatalf("template_get should still return full template: %#v", loaded)
+	}
+}
+
+func TestTaskManageTemplateMutationActionsReturnCompactSummaries(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	templateID := "template-mutation"
+	templateVersion := "1.0.0"
+	templateInput := map[string]any{
+		"id": templateID, "version": templateVersion, "title": "Template mutation", "description": strings.Repeat("description ", 80),
+		"completion_conditions": []string{"done"},
+		"steps":                 []map[string]any{{"id": "inspect", "title": "Inspect", "phase": taskstate.PhaseCheck, "required": true, "suggested_commands": []string{strings.Repeat("command ", 100)}}},
+	}
+
+	for _, action := range []string{"template_save", "template_validate", "template_publish", "template_retire"} {
+		args := map[string]any{"action": action, "template_id": templateID, "template_version": templateVersion}
+		if action == "template_save" {
+			args = map[string]any{"action": action, "template": templateInput}
+		}
+		result, err := rt.taskManage(args)
+		if err != nil {
+			t.Fatalf("%s failed: %v", action, err)
+		}
+		if _, exists := result["template"]; exists {
+			t.Fatalf("%s should not return full template: %#v", action, result)
+		}
+		summary := result["template_summary"].(map[string]any)
+		if summary["id"] != templateID || summary["step_count"] != 1 || summary["condition_count"] != 1 {
+			t.Fatalf("%s compact summary missing key fields: %#v", action, summary)
+		}
+	}
+
+	loaded, err := rt.taskManage(map[string]any{"action": "template_get", "template_id": templateID, "template_version": templateVersion})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded["template"].(taskstate.Template).Steps) != 1 {
+		t.Fatalf("template_get should still return full template: %#v", loaded)
 	}
 }
 

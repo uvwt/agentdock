@@ -39,7 +39,7 @@ check -> execute -> verify -> closeout
 
 同一策略最多记录两次尝试。失败尝试必须提供新的诊断和证据，防止机械重复。会话中断后，新会话通过 `list` 或已知 `task_id` 调用 `get`，即可继续未完成任务。
 
-`create` 默认返回 `task_id` 和紧凑摘要，不返回完整任务对象，避免带模板任务把完整快照刷进上下文；需要恢复全部步骤、条件和模板快照时，再显式调用 `get`。
+`create`、`advance`、`complete_step`、`block`、`resume`、`complete` 等状态变更动作默认返回 `task_id` 和紧凑摘要，不返回完整任务对象，避免带模板任务把完整快照刷进上下文；需要恢复全部步骤、条件、事件和模板快照时，再显式调用 `get`。
 
 ## 固定工作流模板
 
@@ -55,11 +55,11 @@ draft -> validated -> active -> retired
 
 `task_manage` 的模板操作：
 
-- `template_save`：保存或更新草稿。
-- `template_validate`：校验步骤 ID、阶段、依赖、替代规则和完成条件。
-- `template_publish`：发布并冻结版本。
-- `template_retire`：停止新任务匹配该版本。
-- `template_list`、`template_get`：查看模板。
+- `template_save`：保存或更新草稿，默认返回模板摘要。
+- `template_validate`：校验步骤 ID、阶段、依赖、替代规则和完成条件，默认返回模板摘要。
+- `template_publish`：发布并冻结版本，默认返回模板摘要。
+- `template_retire`：停止新任务匹配该版本，默认返回模板摘要。
+- `template_list`：查看模板摘要列表；`template_get`：查看单个完整模板。
 - `template_match`：根据目标、设备、任务类型返回候选、分数和匹配理由。
 
 模板匹配会做轻量文本归一化：例如用户说“一个小时”也能命中包含“一小时”关键词的时间盒模板。匹配前会把同一模板 ID 的多个 active 版本收敛为最新版本，避免旧版本和新版本同时出现在候选里。项目名类关键词（如 AgentDock、Nexus、VitaPulse）只作为上下文打分，不会单独构成语义命中，避免“任何 AgentDock 任务都匹配部署模板”。有关键词或任务类型命中时，结果只返回语义候选，避免把同设备但无关的模板都列出来；只有完全没有语义候选时，才回退到设备候选。创建带模板的任务时，模板完成条件会先进入任务；调用方额外传入的完成条件只作为补充，和模板条件高度相似的内容会被跳过，避免同一个完成要求被重复编号、重复要求录入证据。
