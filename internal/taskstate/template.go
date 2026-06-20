@@ -49,6 +49,8 @@ type Template struct {
 	Match                MatchRule      `json:"match,omitempty"`
 	CompletionConditions []string       `json:"completion_conditions"`
 	Steps                []TemplateStep `json:"steps"`
+	AllowLongTemplate    bool           `json:"allow_long_template,omitempty"`
+	LongTemplateReason   string         `json:"long_template_reason,omitempty"`
 	Hash                 string         `json:"hash,omitempty"`
 	PublishedAt          *time.Time     `json:"published_at,omitempty"`
 	RetiredAt            *time.Time     `json:"retired_at,omitempty"`
@@ -303,6 +305,17 @@ func (s *Store) MatchTemplates(goal, device, taskType string) ([]TemplateCandida
 	return out, nil
 }
 
+const (
+	maxTemplateSteps      = 8
+	maxTemplateConditions = 10
+)
+
+var sopTemplateTerms = []string{
+	"每条命令", "每个命令", "逐命令", "逐条命令",
+	"记录证据", "补充证据", "再次记录", "逐项记录", "证据账本", "详细证据",
+	"每一步", "每个步骤", "逐来源", "逐条", "分别记录",
+}
+
 func validateTemplate(t Template) error {
 	if !validTemplateToken(t.ID) || !validTemplateToken(t.Version) {
 		return errors.New("template id and version must contain only letters, numbers, dot, dash, or underscore")
@@ -315,6 +328,9 @@ func validateTemplate(t Template) error {
 	}
 	if len(t.Steps) == 0 {
 		return errors.New("template requires at least one step")
+	}
+	if err := validateTemplateGuardrails(t); err != nil {
+		return err
 	}
 	ids := map[string]TemplateStep{}
 	for _, step := range t.Steps {
@@ -344,6 +360,41 @@ func validateTemplate(t Template) error {
 		}
 	}
 	return nil
+}
+
+func validateTemplateGuardrails(t Template) error {
+	allowLong := t.AllowLongTemplate
+	longReason := strings.TrimSpace(t.LongTemplateReason)
+	if allowLong && len([]rune(longReason)) < 12 {
+		return errors.New("long_template_reason is required when allow_long_template=true")
+	}
+	if !allowLong && len(t.Steps) > maxTemplateSteps {
+		return fmt.Errorf("template has %d steps; max %d unless allow_long_template=true with long_template_reason", len(t.Steps), maxTemplateSteps)
+	}
+	if !allowLong && len(normalizeTexts(t.CompletionConditions)) > maxTemplateConditions {
+		return fmt.Errorf("template has %d completion conditions; max %d unless allow_long_template=true with long_template_reason", len(normalizeTexts(t.CompletionConditions)), maxTemplateConditions)
+	}
+
+	// 模板只描述阶段；逐命令、逐来源、证据账本式 SOP 应进入脚本、Skill 或 runbook。
+	// 这些词组命中时即使 allow_long_template=true 也不放行，避免例外开关被用来恢复冗余模板。
+	for _, text := range templateGuardrailTexts(t) {
+		for _, term := range sopTemplateTerms {
+			if strings.Contains(text, term) {
+				return fmt.Errorf("template text looks like verbose SOP or evidence ledger; move details to script/Skill/runbook instead of using term %q", term)
+			}
+		}
+	}
+	return nil
+}
+
+func templateGuardrailTexts(t Template) []string {
+	texts := []string{t.Title, t.Description, t.LongTemplateReason}
+	texts = append(texts, t.CompletionConditions...)
+	for _, step := range t.Steps {
+		texts = append(texts, step.ID, step.Title)
+		texts = append(texts, step.SuggestedCommands...)
+	}
+	return texts
 }
 
 func (s *Store) templatePath(area, id, version string) string {

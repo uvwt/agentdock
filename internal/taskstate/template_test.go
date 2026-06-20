@@ -189,3 +189,84 @@ func TestTemplateMatchSpecificKeywordsBeatGenericPriority(t *testing.T) {
 		t.Fatalf("specific AgentDock template should win, got %#v", candidates)
 	}
 }
+
+func TestTemplateGuardrailsRejectVerboseTemplates(t *testing.T) {
+	store, err := New(t.TempDir() + "/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	longSteps := testTemplate()
+	longSteps.ID = "guard.long.steps"
+	longSteps.Version = "1.0.0"
+	for i := len(longSteps.Steps); i < 9; i++ {
+		longSteps.Steps = append(longSteps.Steps, TemplateStep{ID: "step_" + string(rune('a'+i)), Title: "Stage", Phase: PhaseVerify, Required: true})
+	}
+	if _, err := store.SaveTemplateDraft(longSteps); err == nil {
+		t.Fatal("expected template with more than eight steps to be rejected")
+	}
+
+	manyConditions := testTemplate()
+	manyConditions.ID = "guard.many.conditions"
+	manyConditions.Version = "1.0.0"
+	manyConditions.CompletionConditions = []string{"c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10", "c11"}
+	if _, err := store.SaveTemplateDraft(manyConditions); err == nil {
+		t.Fatal("expected template with too many completion conditions to be rejected")
+	}
+
+	sop := testTemplate()
+	sop.ID = "guard.sop"
+	sop.Version = "1.0.0"
+	sop.Steps[0].Title = "每条命令都记录证据"
+	if _, err := store.SaveTemplateDraft(sop); err == nil {
+		t.Fatal("expected verbose SOP template text to be rejected")
+	}
+}
+
+func TestTemplateGuardrailsAllowExplicitLongException(t *testing.T) {
+	store, err := New(t.TempDir() + "/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	longTemplate := testTemplate()
+	longTemplate.ID = "guard.long.allowed"
+	longTemplate.Version = "1.0.0"
+	longTemplate.AllowLongTemplate = true
+	longTemplate.LongTemplateReason = "签名安装类流程需要保留额外平台阶段"
+	for i := len(longTemplate.Steps); i < 9; i++ {
+		longTemplate.Steps = append(longTemplate.Steps, TemplateStep{ID: "extra_" + string(rune('a'+i)), Title: "Extra platform stage", Phase: PhaseVerify, Required: true})
+	}
+
+	draft, err := store.SaveTemplateDraft(longTemplate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !draft.AllowLongTemplate || draft.LongTemplateReason == "" {
+		t.Fatalf("long template exception was not persisted: %#v", draft)
+	}
+	if _, err := store.ValidateTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PublishTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTemplateGuardrailsRequireReasonForLongException(t *testing.T) {
+	store, err := New(t.TempDir() + "/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	longTemplate := testTemplate()
+	longTemplate.ID = "guard.long.no.reason"
+	longTemplate.Version = "1.0.0"
+	longTemplate.AllowLongTemplate = true
+	for i := len(longTemplate.Steps); i < 9; i++ {
+		longTemplate.Steps = append(longTemplate.Steps, TemplateStep{ID: "extra_" + string(rune('a'+i)), Title: "Extra platform stage", Phase: PhaseVerify, Required: true})
+	}
+	if _, err := store.SaveTemplateDraft(longTemplate); err == nil {
+		t.Fatal("expected long template exception without reason to be rejected")
+	}
+}

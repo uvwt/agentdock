@@ -124,6 +124,8 @@ func inputSchema(name string) map[string]any {
 		props["selected_reason"] = stringProp("Why the model selected this template.")
 		props["template_candidates"] = map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": true}, "description": "Candidate templates and scores considered before selection."}
 		props["template"] = map[string]any{"type": "object", "additionalProperties": true, "description": "Complete draft workflow template for template_save."}
+		props["allow_long_template"] = boolProp("Allow a workflow template to exceed the default guardrails. Only use for exceptional templates and always provide long_template_reason.")
+		props["long_template_reason"] = stringProp("Required reason when allow_long_template=true. The reason is saved into the template for review.")
 		props["template_status"] = map[string]any{"type": "string", "enum": []string{"draft", "validated", "active", "retired"}, "description": "Optional template_list status filter."}
 		props["device"] = stringProp("Device context for template_match.")
 		props["task_type"] = stringProp("Task type context for template_match.")

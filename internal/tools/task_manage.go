@@ -131,6 +131,7 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 		if err := remarshal(mapArg(args, "template"), &template); err != nil {
 			return nil, taskToolError(err)
 		}
+		applyTemplateGuardrailArgs(args, &template)
 		template, err = r.tasks.SaveTemplateDraft(template)
 		if err == nil {
 			return Result{"ok": true, "action": action, "template": template, "workflow_dir": r.tasks.WorkflowRoot()}, nil
@@ -217,4 +218,13 @@ func remarshal(input any, out any) error {
 		return err
 	}
 	return json.Unmarshal(data, out)
+}
+
+func applyTemplateGuardrailArgs(args map[string]any, template *taskstate.Template) {
+	if _, ok := args["allow_long_template"]; ok {
+		template.AllowLongTemplate = boolArg(args, "allow_long_template", false)
+	}
+	if reason := strings.TrimSpace(stringArg(args, "long_template_reason", "")); reason != "" {
+		template.LongTemplateReason = reason
+	}
 }
