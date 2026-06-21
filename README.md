@@ -46,6 +46,16 @@ Docker quickstart 使用 localhost demo 配置。公网或长期运行请阅读 
 
 需要浏览器自动化时，先运行 `make docker-browser-build`，再按 [Docker 部署](docs/install-docker.md) 使用 browser overlay。
 
+## Linux 一键部署
+
+Linux 服务器推荐使用问答式 systemd 安装脚本：
+
+```bash
+bash scripts/install-linux.sh
+```
+
+脚本会按提示填写源码目录、运行目录、监听端口、Bearer token、RecallDock/Nexus 可选配置，并自动构建、写入 systemd unit、启动和 smoke 验证。单文件远程安装见 [Linux 问答式一键部署](docs/install-linux-interactive.md)。
+
 ## macOS 裸机更新
 
 ```bash
@@ -61,6 +71,7 @@ make smoke-macos
 - [macOS 裸机 launchd 部署](docs/install-macos-launchd.md)
 - [Docker 部署](docs/install-docker.md)
 - [VPS systemd 部署](docs/install-vps-systemd.md)
+- [Linux 问答式一键部署](docs/install-linux-interactive.md)
 - [macOS desktop 自动化](docs/desktop-automation.md)
 - [MemoryDock](docs/memorydock.md)
 - [可恢复任务状态](docs/tasks.md)

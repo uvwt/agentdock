@@ -1,4 +1,4 @@
-.PHONY: fmt test vet race build check run docker-build docker-browser-build docker-up docker-down smoke-docker logs clean clean-local-artifacts install-macos restart-macos smoke-macos
+.PHONY: fmt test vet race build check run docker-build docker-browser-build docker-up docker-down smoke-docker logs clean clean-local-artifacts install-linux install-macos restart-macos smoke-macos
 
 APP := agentdock
 IMAGE := agentdock:local
@@ -27,6 +27,9 @@ check: fmt test vet build
 
 run:
 	go run ./cmd/agentdock --workspace $(WORKSPACE) --host $(HOST) --port $(PORT) --log-level $(LOG_LEVEL)
+
+install-linux:
+	./scripts/install-linux.sh
 
 install-macos:
 	./scripts/install-macos.sh
