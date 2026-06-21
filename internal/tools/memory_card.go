@@ -47,7 +47,7 @@ func (r *Runtime) memoryCardCapture(ctx context.Context, args map[string]any) (R
 	reason := "no similar card found"
 	if len(similar) > 0 {
 		action = "review_similar_then_merge_or_supersede"
-		reason = "similar Memory cards were found; avoid duplicate active cards"
+		reason = "similar Recall cards were found; avoid duplicate active cards"
 	}
 	if len(warnings) > 0 {
 		action = "review_before_write"
@@ -85,7 +85,7 @@ func (r *Runtime) memoryCardWrite(ctx context.Context, args map[string]any) (Res
 		return nil, err
 	}
 	if len(warnings) > 0 && !boolArg(args, "allow_warnings", false) {
-		return nil, toolErrorDetails("CARD_REVIEW_REQUIRED", "memory card has warnings; fix it or pass allow_warnings=true after review", "validation", map[string]any{"warnings": warnings})
+		return nil, toolErrorDetails("CARD_REVIEW_REQUIRED", "recall card has warnings; fix it or pass allow_warnings=true after review", "validation", map[string]any{"warnings": warnings})
 	}
 
 	p := strings.TrimSpace(stringArg(args, "path", ""))
@@ -94,7 +94,7 @@ func (r *Runtime) memoryCardWrite(ctx context.Context, args map[string]any) (Res
 	}
 	p = path.Clean(p)
 	if !strings.HasPrefix(p, "cards/") || hasUnsafeNotesPathSegment(p) {
-		return nil, toolErrorDetails("INVALID_MEMORY_CARD_PATH", "recall_write only writes under cards/ with safe path segments", "validation", map[string]any{"path": p})
+		return nil, toolErrorDetails("INVALID_RECALL_CARD_PATH", "recall_write only writes under cards/ with safe path segments", "validation", map[string]any{"path": p})
 	}
 
 	content := memoryCardMarkdown(card)
@@ -103,7 +103,7 @@ func (r *Runtime) memoryCardWrite(ctx context.Context, args map[string]any) (Res
 		"content":    content,
 		"confirmed":  true,
 		"overwrite":  boolArg(args, "overwrite", false),
-		"type":       "memory-card",
+		"type":       "recall-card",
 		"scope":      card.Scope,
 		"project":    card.Project,
 		"source":     card.Source,
@@ -118,7 +118,7 @@ func (r *Runtime) memoryCardWrite(ctx context.Context, args map[string]any) (Res
 	result["card"] = memoryCardResult(card)
 	result["path"] = p
 	result["status"] = card.Status
-	result["index_policy"] = "memory service should rebuild search and embedding indexes after card writes when supported"
+	result["index_policy"] = "recall service should rebuild search and embedding indexes after card writes when supported"
 	return result, nil
 }
 
@@ -197,7 +197,7 @@ func validateMemoryCardEnum(name, value string, allowed []string) error {
 			return nil
 		}
 	}
-	return toolErrorDetails("INVALID_MEMORY_CARD_"+strings.ToUpper(name), "unsupported memory card field value", "validation", map[string]any{"field": name, "value": value, "allowed": allowed})
+	return toolErrorDetails("INVALID_RECALL_CARD_"+strings.ToUpper(name), "unsupported recall card field value", "validation", map[string]any{"field": name, "value": value, "allowed": allowed})
 }
 
 func normalizedMemoryCardTags(tags []string) []string {
@@ -230,7 +230,7 @@ func memoryCardPath(card memoryCardSpec) string {
 func memoryCardMarkdown(card memoryCardSpec) string {
 	var builder strings.Builder
 	builder.WriteString("---\n")
-	builder.WriteString("type: memory-card\n")
+	builder.WriteString("type: recall-card\n")
 	builder.WriteString("card_type: " + card.CardType + "\n")
 	builder.WriteString("scope: " + card.Scope + "\n")
 	builder.WriteString("project: " + card.Project + "\n")

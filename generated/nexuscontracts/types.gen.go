@@ -211,8 +211,8 @@ type DeviceHeartbeat struct {
 	Capabilities []DeviceCapability `json:"capabilities"`
 	// SkillSummary Skill 安装摘要。
 	SkillSummary json.RawMessage `json:"skill_summary,omitempty"`
-	// MemorySyncSummary Memory 同步摘要。
-	MemorySyncSummary json.RawMessage `json:"memory_sync_summary,omitempty"`
+	// RecallSyncSummary Recall 同步摘要。
+	RecallSyncSummary json.RawMessage `json:"recall_sync_summary,omitempty"`
 }
 
 // DeviceStatus 设备控制面状态。
@@ -531,11 +531,11 @@ type SkillRunResult struct {
 	Verification *VerificationResult `json:"verification,omitempty"`
 }
 
-// MemoryEntry 长期记忆条目。
-type MemoryEntry struct {
+// RecallEntry 长期召回条目。
+type RecallEntry struct {
 	// Id 全局唯一标识符。
 	Id string `json:"id"`
-	// Path Memory Repository 相对路径。
+	// Path Recall Repository 相对路径。
 	Path string `json:"path"`
 	// Title 标题。
 	Title string `json:"title"`
@@ -561,20 +561,20 @@ type MemoryEntry struct {
 	Version int64 `json:"version"`
 }
 
-// MemoryConflict 记忆与事实冲突。
-type MemoryConflict struct {
+// RecallConflict 召回与事实冲突。
+type RecallConflict struct {
 	// Id 全局唯一标识符。
 	Id string `json:"id"`
-	// MemoryId 全局唯一标识符。
-	MemoryId string `json:"memory_id"`
+	// RecallId 全局唯一标识符。
+	RecallId string `json:"recall_id"`
 	// Status 冲突状态。
 	Status string `json:"status"`
 	// SourceType 冲突来源。
 	SourceType string `json:"source_type"`
 	// ObservedValue 设备或运行观察到的结构化值。
 	ObservedValue json.RawMessage `json:"observed_value"`
-	// MemoryValue Memory 当前结构化值。
-	MemoryValue json.RawMessage `json:"memory_value"`
+	// RecallValue Recall 当前结构化值。
+	RecallValue json.RawMessage `json:"recall_value"`
 	// Summary 冲突摘要。
 	Summary string `json:"summary"`
 	// DetectedAt RFC 3339 UTC 时间。
@@ -585,12 +585,12 @@ type MemoryConflict struct {
 	ResolutionRunId *string `json:"resolution_run_id,omitempty"`
 }
 
-// MemoryContextPack 任务所需记忆上下文。
-type MemoryContextPack struct {
-	// Entries 选中的记忆。
-	Entries []MemoryEntry `json:"entries"`
+// RecallContextPack 任务所需召回上下文。
+type RecallContextPack struct {
+	// Entries 选中的召回条目。
+	Entries []RecallEntry `json:"entries"`
 	// Conflicts 相关冲突。
-	Conflicts []MemoryConflict `json:"conflicts"`
+	Conflicts []RecallConflict `json:"conflicts"`
 	// Truncated 是否因 max_bytes 截断。
 	Truncated bool `json:"truncated"`
 	// TotalBytes 实际包字节数。
@@ -747,8 +747,8 @@ type Task struct {
 type TaskContextPack struct {
 	// Task 契约字段。
 	Task Task `json:"task"`
-	// Memory 契约字段。
-	Memory MemoryContextPack `json:"memory"`
+	// Recall 契约字段。
+	Recall RecallContextPack `json:"recall"`
 	// Device 设备快照。
 	Device *DeviceStatus `json:"device,omitempty"`
 	// Skill Skill 详情。

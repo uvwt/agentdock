@@ -42,8 +42,8 @@ func (r *Runtime) notesSearch(ctx context.Context, args map[string]any) (Result,
 	indexFound := false
 	if index, err := r.memoryRead(ctx, map[string]any{"path": scope.IndexPath}); err == nil {
 		indexFound = true
-		if memory, ok := index["memory"].(map[string]any); ok {
-			for _, candidatePath := range extractNotesCandidatePaths(scope, memoryText(memory)) {
+		if recallDoc, ok := index["recall"].(map[string]any); ok {
+			for _, candidatePath := range extractNotesCandidatePaths(scope, memoryText(recallDoc)) {
 				addNotesCandidate(candidates, candidatePath, scoreNotesText(candidatePath, terms), "index")
 			}
 		}

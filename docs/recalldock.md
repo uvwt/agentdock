@@ -14,7 +14,7 @@ recall_write
 recall_maintain
 ```
 
-RecallDock 不保留旧 `memory_*`、`memory_card_*`、`notes_*` 公开工具名或旧 API 默认入口；所有模型入口统一使用 `recall_*`。
+RecallDock 只暴露 `recall_*` 公开工具；旧记忆/笔记工具名和旧 API 默认入口都不再保留。
 
 ## 工具分工
 
@@ -107,4 +107,4 @@ BGE-M3 embedding：http://127.0.0.1:18788/v1/embeddings
 
 ## 备份仓库命名
 
-RecallDock 数据备份仓库目标名为 `agentdock-recall`；GitHub 远端应使用 `agentdock-recall`，不再使用历史 `agentdock-recall` 作为默认仓库名。
+RecallDock 数据备份仓库目标名为 `agentdock-recall`；GitHub 远端应使用 `agentdock-recall`，不再使用历史 `agentdock-memory` 作为默认仓库名。

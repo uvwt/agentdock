@@ -24,7 +24,7 @@ func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func
 				http.Error(w, `{"error":{"message":"not found"}}`, http.StatusNotFound)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "memory": memoryTestDocument(p, content)})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "recall": memoryTestDocument(p, content)})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/recall/pack":
 			sections := []any{}
 			for p, content := range store {
@@ -67,7 +67,7 @@ func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func
 			p, _ := payload["path"].(string)
 			content, _ := payload["content"].(string)
 			store[p] = content
-			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "memory": memoryTestDocument(p, content)})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "recall": memoryTestDocument(p, content)})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/recall":
 			entries := []map[string]any{{"path": "devices", "type": "directory"}}
 			for p := range store {
@@ -117,46 +117,46 @@ func TestMemoryReadCompactsRawMarkdownByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	memory := res["memory"].(map[string]any)
-	if _, ok := memory["content"]; ok {
-		t.Fatalf("content should be hidden by default: %#v", memory)
+	recallDoc := res["recall"].(map[string]any)
+	if _, ok := recallDoc["content"]; ok {
+		t.Fatalf("content should be hidden by default: %#v", recallDoc)
 	}
-	if _, ok := memory["raw_content"]; ok {
-		t.Fatalf("raw_content should be hidden by default: %#v", memory)
+	if _, ok := recallDoc["raw_content"]; ok {
+		t.Fatalf("raw_content should be hidden by default: %#v", recallDoc)
 	}
-	if body, _ := memory["body"].(string); body != "# Test\n正文\n" {
-		t.Fatalf("unexpected body: %#v", memory)
+	if body, _ := recallDoc["body"].(string); body != "# Test\n正文\n" {
+		t.Fatalf("unexpected body: %#v", recallDoc)
 	}
 
 	res, err = rt.memoryRead(context.Background(), map[string]any{"path": "devices/test.md", "include_content": true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	memory = res["memory"].(map[string]any)
-	if _, ok := memory["raw_content"]; ok {
-		t.Fatalf("undocumented include_content should not expose raw_content: %#v", memory)
+	recallDoc = res["recall"].(map[string]any)
+	if _, ok := recallDoc["raw_content"]; ok {
+		t.Fatalf("undocumented include_content should not expose raw_content: %#v", recallDoc)
 	}
 
 	res, err = rt.memoryRead(context.Background(), map[string]any{"path": "devices/test.md", "include_raw": true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	memory = res["memory"].(map[string]any)
-	if raw, _ := memory["raw_content"].(string); raw != full {
-		t.Fatalf("raw_content should contain full Markdown: %#v", memory)
+	recallDoc = res["recall"].(map[string]any)
+	if raw, _ := recallDoc["raw_content"].(string); raw != full {
+		t.Fatalf("raw_content should contain full Markdown: %#v", recallDoc)
 	}
-	if _, ok := memory["content"]; ok {
-		t.Fatalf("include_raw should expose raw_content, not content: %#v", memory)
+	if _, ok := recallDoc["content"]; ok {
+		t.Fatalf("include_raw should expose raw_content, not content: %#v", recallDoc)
 	}
 }
 
-func TestMemoryPackCompactsSectionRawMarkdown(t *testing.T) {
+func TestRecallBootstrapCompactsSectionRawMarkdown(t *testing.T) {
 	full := "---\ntype: test\n---\n\n# Packed\n"
 	store := map[string]string{"projects/agentdock/project.md": full}
 	rt, closeServer := newMemoryTestRuntime(t, store)
 	defer closeServer()
 
-	res, err := rt.memoryPack(context.Background(), map[string]any{"project": "agentdock"})
+	res, err := rt.memoryBootstrap(context.Background(), map[string]any{"project": "agentdock"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestMemoryPackCompactsSectionRawMarkdown(t *testing.T) {
 		t.Fatalf("section raw_content should be hidden by default: %#v", section)
 	}
 
-	res, err = rt.memoryPack(context.Background(), map[string]any{"project": "agentdock", "include_raw": true})
+	res, err = rt.memoryBootstrap(context.Background(), map[string]any{"project": "agentdock", "include_raw": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +248,7 @@ func TestMemoryUpdateFactAndLint(t *testing.T) {
 	}
 	for _, item := range res["findings"].([]memoryLintFinding) {
 		if item.Term == "READ_ERROR" {
-			t.Fatalf("memory_lint should skip directory entries, got: %#v", res)
+			t.Fatalf("recall lint should skip directory entries, got: %#v", res)
 		}
 	}
 }

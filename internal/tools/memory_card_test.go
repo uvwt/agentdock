@@ -8,7 +8,7 @@ import (
 
 func TestMemoryCardCapturePlansWithoutWriting(t *testing.T) {
 	store := map[string]string{
-		"cards/chatdock/active/project_trap/deploy-check.md": "---\ntype: memory-card\nproject: chatdock\n---\n\n# Deploy Check\nChatDock deploy verification needs public smoke check.\n",
+		"cards/chatdock/active/project_trap/deploy-check.md": "---\ntype: recall-card\nproject: chatdock\n---\n\n# Deploy Check\nChatDock deploy verification needs public smoke check.\n",
 	}
 	rt, closeServer := newMemoryTestRuntime(t, store)
 	defer closeServer()
@@ -49,7 +49,7 @@ func TestMemoryCardWriteRequiresConfirmationAndUsesCardsPath(t *testing.T) {
 		"project":    "rss-monitor",
 		"status":     "inbox",
 		"confidence": "high",
-		"tags":       []any{"debugging", "memory"},
+		"tags":       []any{"debugging", "recall"},
 	}
 	_, err := rt.memoryCardWrite(context.Background(), args)
 	if err == nil {
@@ -65,7 +65,7 @@ func TestMemoryCardWriteRequiresConfirmationAndUsesCardsPath(t *testing.T) {
 		t.Fatalf("unexpected card path %q", p)
 	}
 	content := store[p]
-	for _, want := range []string{"type: memory-card", "card_type: runbook", "project: rss-monitor", "status: inbox", "# RSS Monitor 事实层现场检查"} {
+	for _, want := range []string{"type: recall-card", "card_type: runbook", "project: rss-monitor", "status: inbox", "# RSS Monitor 事实层现场检查"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("written card missing %q: %s", want, content)
 		}

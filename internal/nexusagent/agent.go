@@ -147,7 +147,7 @@ func Start(ctx context.Context, cfg config.Config) (bool, error) {
 		SkillSummary: func() any {
 			return map[string]any{"runtime": "enabled", "state_dir": filepath.Base(stateDir)}
 		},
-		MemorySummary: func() any {
+		RecallSummary: func() any {
 			return map[string]any{"enabled": strings.TrimSpace(cfg.RecallEndpoint) != ""}
 		},
 	}

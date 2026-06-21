@@ -11,7 +11,7 @@ type HealthChecker interface {
 	Health(context.Context) (any, error)
 }
 
-type MemorySyncer interface {
+type RecallSyncer interface {
 	Sync(context.Context, json.RawMessage) (any, error)
 }
 
@@ -46,7 +46,7 @@ type ArtifactFetcher interface {
 
 type AdapterDependencies struct {
 	Health        HealthChecker
-	Memory        MemorySyncer
+	Recall        RecallSyncer
 	Skills        SkillRouter
 	Env           EnvCommandRunner
 	Services      ServiceController
@@ -71,10 +71,10 @@ func RegisterAdapters(executor *Executor, dependencies AdapterDependencies) erro
 			return HandlerResult{Output: output}, err
 		}},
 		FuncHandler{CommandType: "recall.sync", Run: func(ctx context.Context, payload json.RawMessage, _ ProgressReporter) (HandlerResult, error) {
-			if dependencies.Memory == nil {
+			if dependencies.Recall == nil {
 				return HandlerResult{}, missingDependency("recall.sync")
 			}
-			output, err := dependencies.Memory.Sync(ctx, payload)
+			output, err := dependencies.Recall.Sync(ctx, payload)
 			return HandlerResult{Output: output}, err
 		}},
 		FuncHandler{CommandType: "service.inspect", Run: func(ctx context.Context, payload json.RawMessage, _ ProgressReporter) (HandlerResult, error) {

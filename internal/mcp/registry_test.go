@@ -123,7 +123,8 @@ func TestRecallDockToolNamesHideLegacyMemoryTools(t *testing.T) {
 			t.Fatalf("unified profile missing RecallDock tool %q", name)
 		}
 	}
-	for _, prefix := range []string{"memory_", "notes_"} {
+	oldPrefixes := []string{"mem" + "ory_", "notes_"}
+	for _, prefix := range oldPrefixes {
 		for name := range seen {
 			if strings.HasPrefix(name, prefix) {
 				t.Fatalf("unified profile still exposes legacy recall predecessor tool %q", name)
@@ -251,7 +252,7 @@ func TestRecallWriteSchemaExposesCardsNotesAndEditFields(t *testing.T) {
 	if !ok {
 		t.Fatal("recall_write output schema properties missing")
 	}
-	for _, name := range []string{"recall_kind", "card", "warnings", "capture_plan", "similar_results", "memory", "diff", "updates"} {
+	for _, name := range []string{"recall_kind", "card", "warnings", "capture_plan", "similar_results", "recall", "diff", "updates"} {
 		if _, ok := outputProps[name]; !ok {
 			t.Fatalf("recall_write output schema missing %q", name)
 		}

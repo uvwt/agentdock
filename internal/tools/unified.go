@@ -24,20 +24,20 @@ func (r *Runtime) sessionControl(args map[string]any) (Result, error) {
 
 func (r *Runtime) memoryEdit(ctx context.Context, args map[string]any) (Result, error) {
 	switch strings.ToLower(stringArg(args, "action", "patch")) {
-	case "append", "append_note", "note", "memory_append_note":
+	case "append", "append_note", "note":
 		return r.memoryAppendNote(ctx, args)
-	case "write", "create", "replace", "memory_write":
+	case "write", "create", "replace":
 		return r.memoryWrite(ctx, args)
-	case "delete", "remove", "memory_delete":
+	case "delete", "remove":
 		return r.memoryDelete(ctx, args)
-	case "diff", "preview", "memory_diff":
+	case "diff", "preview":
 		return r.memoryDiff(ctx, args)
-	case "patch", "edit", "memory_patch":
+	case "patch", "edit":
 		return r.memoryPatch(ctx, args)
-	case "update_fact", "fact", "memory_update_fact":
+	case "update_fact", "fact":
 		return r.memoryUpdateFact(ctx, args)
 	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported memory_edit action", "validation", map[string]any{"action": stringArg(args, "action", "")})
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported recall_write action", "validation", map[string]any{"action": stringArg(args, "action", "")})
 	}
 }
 

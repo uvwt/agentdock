@@ -23,7 +23,7 @@ type SystemHeartbeatProvider struct {
 	Version       string
 	Capabilities  func() []contracts.DeviceCapability
 	SkillSummary  func() any
-	MemorySummary func() any
+	RecallSummary func() any
 	Now           func() time.Time
 }
 
@@ -57,8 +57,8 @@ func (p SystemHeartbeatProvider) Heartbeat(deviceID string) contracts.DeviceHear
 	if p.SkillSummary != nil {
 		heartbeat.SkillSummary, _ = json.Marshal(p.SkillSummary())
 	}
-	if p.MemorySummary != nil {
-		heartbeat.MemorySyncSummary, _ = json.Marshal(p.MemorySummary())
+	if p.RecallSummary != nil {
+		heartbeat.RecallSyncSummary, _ = json.Marshal(p.RecallSummary())
 	}
 	return heartbeat
 }

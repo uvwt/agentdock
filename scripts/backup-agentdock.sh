@@ -3,11 +3,10 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: backup-agentdock.sh state|recall|memory|all [commit message]
+Usage: backup-agentdock.sh state|recall|all [commit message]
 
 state  : sync AgentDock publishable workflow state to agentdock-state-backup and push.
 recall : commit/push RecallDock data. Uses RecallDock API + temporary clone when the external worktree is not accessible.
-memory : deprecated alias for recall.
 all    : run state then recall.
 
 Paths can be overridden with:
@@ -163,8 +162,8 @@ for rel, content in preserved.items():
 
 for index, path in enumerate(paths, 1):
     data = call('recall_read', {'path': path, 'include_raw': True}, 1000 + index)
-    memory = data.get('memory') or {}
-    content = memory.get('raw_content') or memory.get('content') or memory.get('body') or ''
+    recall = data.get('recall') or {}
+    content = recall.get('raw_content') or recall.get('content') or recall.get('body') or ''
     target = repo / path
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding='utf-8')
@@ -193,7 +192,7 @@ backup_recall() {
 
 case "$MODE" in
   state) backup_state ;;
-  memory|recall) backup_recall ;;
+  recall) backup_recall ;;
   all) backup_state; backup_recall ;;
   *) usage; exit 2 ;;
 esac

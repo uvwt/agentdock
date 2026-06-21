@@ -241,8 +241,8 @@ func inputSchema(name string) map[string]any {
 		props["new"] = stringProp("Replacement text for old.")
 		props["pattern"] = stringProp("Regular expression pattern to replace.")
 		props["replacement"] = stringProp("Replacement for pattern.")
-		props["append"] = stringProp("Text to append to the memory.")
-		props["prepend"] = stringProp("Text to prepend to the memory.")
+		props["append"] = stringProp("Text to append to the recall document.")
+		props["prepend"] = stringProp("Text to prepend to the recall document.")
 		props["operations"] = map[string]any{"type": "array", "description": "Patch operations.", "items": map[string]any{"type": "object", "additionalProperties": true}}
 		props["facts"] = objectProp("Multiple key/value facts to update.")
 		props["key"] = stringProp("Fact key to update.")

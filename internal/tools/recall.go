@@ -41,7 +41,7 @@ func (r *Runtime) recallSearch(ctx context.Context, args map[string]any) (Result
 		relabelRecallWriteResult(result)
 		result["recall_kind"] = "card"
 		return result, nil
-	case "", "all", "markdown", "memory", "memories":
+	case "", "all", "markdown":
 		result, err := r.memorySearch(ctx, args)
 		if err != nil {
 			return nil, err
@@ -99,7 +99,7 @@ func (r *Runtime) recallWrite(ctx context.Context, args map[string]any) (Result,
 		relabelRecallWriteResult(result)
 		result["recall_kind"] = "note"
 		return result, nil
-	case "markdown", "memory", "write", "create", "replace":
+	case "markdown", "write", "create", "replace":
 		result, err := r.memoryWrite(ctx, args)
 		if err != nil {
 			return nil, err
@@ -226,9 +226,6 @@ func decorateRecallResult(result Result) {
 		return
 	}
 	result["recall_store"] = "RecallDock"
-	if endpoint, ok := result["memory_endpoint"]; ok {
-		result["recall_endpoint"] = endpoint
-	}
 }
 
 func copyArgs(args map[string]any) map[string]any {

@@ -70,7 +70,7 @@ func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Res
 	}
 	if !includeBody {
 		result["compact"] = true
-		result["body_policy"] = "body hidden by default; use include_body=true or memory_read for full body"
+		result["body_policy"] = "body hidden by default; use include_body=true or recall_read for full body"
 	}
 	result["max_bytes"] = maxBytes
 	result["bootstrap"] = true
@@ -113,13 +113,13 @@ func (r *Runtime) memoryRead(ctx context.Context, args map[string]any) (Result, 
 	if err != nil {
 		return nil, err
 	}
-	if memory, ok := result["memory"].(map[string]any); ok {
+	if memory, ok := result["recall"].(map[string]any); ok {
 		compactedMemory := make(map[string]any, len(memory))
 		for key, value := range memory {
 			compactedMemory[key] = value
 		}
 
-		// MemoryDock 返回的 content 与 body 会重复占用上下文；memory_read 的主流程
+		// RecallDock 返回的 content 与 body 会重复占用上下文；recall_read 的主流程
 		// 直接展示这个取舍：默认只保留轻量字段，只有 include_raw=true 才暴露原文。
 		content, hasContent := compactedMemory["content"]
 		rawContent, hasRawContent := compactedMemory["raw_content"]
@@ -132,7 +132,7 @@ func (r *Runtime) memoryRead(ctx context.Context, args map[string]any) (Result, 
 				compactedMemory["raw_content"] = rawContent
 			}
 		}
-		result["memory"] = compactedMemory
+		result["recall"] = compactedMemory
 	}
 	return result, nil
 }
@@ -150,20 +150,6 @@ func (r *Runtime) memorySearch(ctx context.Context, args map[string]any) (Result
 		payload["max_results"] = maxResults
 	}
 	return r.memoryRequest(ctx, http.MethodPost, "/v1/recall/search", payload)
-}
-
-func (r *Runtime) memoryPack(ctx context.Context, args map[string]any) (Result, error) {
-	// memory_pack 曾经和 memory_bootstrap 都会打包项目上下文，模型容易把两个入口
-	// 当成并列默认入口反复调用。现在保留 memory_pack 只是为了兼容旧会话；实际
-	// 输出和默认瘦身策略统一走 memory_bootstrap，避免重复正文和重复工具选择。
-	result, err := r.memoryBootstrap(ctx, args)
-	if err != nil {
-		return nil, err
-	}
-	result["pack_compat"] = true
-	result["preferred_tool"] = "memory_bootstrap"
-	result["recommended_use"] = "Prefer recall_bootstrap for substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks. memory_pack is a legacy compatibility alias and should not be the default context entry."
-	return result, nil
 }
 
 func (r *Runtime) memoryAppendNote(ctx context.Context, args map[string]any) (Result, error) {
@@ -224,7 +210,7 @@ func (r *Runtime) memoryDelete(ctx context.Context, args map[string]any) (Result
 func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, payload any) (Result, error) {
 	base := strings.TrimRight(strings.TrimSpace(r.cfg.RecallEndpoint), "/")
 	if base == "" {
-		return nil, toolError("MEMORY_NOT_CONFIGURED", "AGENTDOCK_RECALL_ENDPOINT is not configured", "configuration")
+		return nil, toolError("RECALL_NOT_CONFIGURED", "AGENTDOCK_RECALL_ENDPOINT is not configured", "configuration")
 	}
 	var body io.Reader
 	if payload != nil {
@@ -251,7 +237,7 @@ func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, pa
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, toolErrorDetails("MEMORY_REQUEST_FAILED", err.Error(), "network", map[string]any{"endpoint": endpoint})
+		return nil, toolErrorDetails("RECALL_REQUEST_FAILED", err.Error(), "network", map[string]any{"endpoint": endpoint})
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
@@ -261,7 +247,7 @@ func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, pa
 	var parsed map[string]any
 	if len(data) > 0 {
 		if err := json.Unmarshal(data, &parsed); err != nil {
-			return nil, toolErrorDetails("MEMORY_INVALID_RESPONSE", err.Error(), "network", map[string]any{"status": resp.StatusCode, "body": string(data)})
+			return nil, toolErrorDetails("RECALL_INVALID_RESPONSE", err.Error(), "network", map[string]any{"status": resp.StatusCode, "body": string(data)})
 		}
 	} else {
 		parsed = map[string]any{}
@@ -273,12 +259,12 @@ func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, pa
 				message = msg
 			}
 		}
-		return nil, toolErrorDetails("MEMORY_HTTP_ERROR", message, "network", map[string]any{"status": resp.StatusCode, "response": parsed})
+		return nil, toolErrorDetails("RECALL_HTTP_ERROR", message, "network", map[string]any{"status": resp.StatusCode, "response": parsed})
 	}
 	if _, ok := parsed["ok"]; !ok {
 		parsed["ok"] = true
 	}
-	parsed["memory_endpoint"] = base
+	parsed["recall_endpoint"] = base
 	return Result(parsed), nil
 }
 

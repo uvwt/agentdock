@@ -191,11 +191,11 @@ func outputSchema(name string) map[string]any {
 		props["count"] = intProp("Search result count.")
 	case "recall_read":
 		props["recall_endpoint"] = stringProp("Configured RecallDock endpoint.")
-		props["memory"] = objectProp("RecallDock document returned by the backing service. Raw Markdown is omitted by default and returned as raw_content only when include_raw=true.")
+		props["recall"] = objectProp("RecallDock document returned by the backing service. Raw Markdown is omitted by default and returned as raw_content only when include_raw=true.")
 	case "recall_write":
 		props["recall_endpoint"] = stringProp("Configured RecallDock endpoint.")
 		props["recall_kind"] = stringProp("Write mechanism used.")
-		props["memory"] = objectProp("RecallDock document returned by the backing service when a write occurs.")
+		props["recall"] = objectProp("RecallDock document returned by the backing service when a write occurs.")
 		props["card"] = objectProp("Normalized card candidate or written card when kind=card.")
 		props["warnings"] = arrayProp("Review warnings before writing.")
 		props["capture_plan"] = objectProp("Reviewable write plan for card or note captures.")

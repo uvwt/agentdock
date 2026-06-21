@@ -1,6 +1,6 @@
 # AgentDock Codex / AI Review Instructions
 
-本仓库是 AgentDock：一个 Go 编写的本地/远程 Agent 工具运行层，支持命令、文件、Git、原生 Skill、浏览器自动化、实验性 macOS 桌面能力和 MemoryDock 长期记忆。
+本仓库是 AgentDock：一个 Go 编写的本地/远程 Agent 工具运行层，支持命令、文件、Git、原生 Skill、浏览器自动化、实验性 macOS 桌面能力和 RecallDock 长期召回。
 
 ## 默认工作方式
 
@@ -38,7 +38,7 @@ make check
 
 - 工具权限边界是否清晰，是否错误暴露高风险动作。
 - 命令执行、文件写入、Git 操作、原生 Skill、桌面自动化相关代码是否存在越权、路径穿越、命令注入、敏感信息泄露问题。
-- MemoryDock / `memory_*` 调用是否遵循：重要任务先 bootstrap，长期记忆只写稳定事实，写入前先查已有记忆。
+- RecallDock / `recall_*` 调用是否遵循：重要任务先 bootstrap，长期召回只写稳定事实，写入前先查已有内容。
 - 错误处理是否可诊断，是否明确区分配置、权限、网络、构建、运行时和插件逻辑问题。
 - 修改后是否包含必要测试，或至少说明无法自动测试的原因。
 - README / runbook 是否只记录配置原则，不记录真实私密值。

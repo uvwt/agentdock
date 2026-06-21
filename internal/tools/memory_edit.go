@@ -75,14 +75,14 @@ func (r *Runtime) memoryPatch(ctx context.Context, args map[string]any) (Result,
 		return result, nil
 	}
 	if !confirmed {
-		return nil, toolError("CONFIRMATION_REQUIRED", "memory_patch writes require confirmed=true unless dry_run=true", "validation")
+		return nil, toolError("CONFIRMATION_REQUIRED", "recall patch writes require confirmed=true unless dry_run=true", "validation")
 	}
 	writeResult, err := r.memoryWriteContent(ctx, p, out.Content)
 	if err != nil {
 		return nil, err
 	}
 	result["written"] = true
-	result["memory"] = writeResult["memory"]
+	result["recall"] = writeResult["recall"]
 	return result, nil
 }
 
@@ -147,14 +147,14 @@ func (r *Runtime) memoryUpdateFact(ctx context.Context, args map[string]any) (Re
 		return result, nil
 	}
 	if !confirmed {
-		return nil, toolError("CONFIRMATION_REQUIRED", "memory_update_fact writes require confirmed=true unless dry_run=true", "validation")
+		return nil, toolError("CONFIRMATION_REQUIRED", "recall fact writes require confirmed=true unless dry_run=true", "validation")
 	}
 	writeResult, err := r.memoryWriteContent(ctx, p, updated)
 	if err != nil {
 		return nil, err
 	}
 	result["written"] = true
-	result["memory"] = writeResult["memory"]
+	result["recall"] = writeResult["recall"]
 	return result, nil
 }
 
@@ -205,9 +205,9 @@ func (r *Runtime) memoryReadContent(ctx context.Context, p string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	memory, ok := result["memory"].(map[string]any)
+	memory, ok := result["recall"].(map[string]any)
 	if !ok {
-		return "", toolErrorDetails("MEMORY_RESPONSE_MISSING_MEMORY", "MemoryDock response does not contain memory object", "network", map[string]any{"path": p})
+		return "", toolErrorDetails("RECALL_RESPONSE_MISSING_RECALL", "RecallDock response does not contain recall object", "network", map[string]any{"path": p})
 	}
 	if content, ok := memory["raw_content"].(string); ok {
 		return content, nil
@@ -218,7 +218,7 @@ func (r *Runtime) memoryReadContent(ctx context.Context, p string) (string, erro
 	if body, ok := memory["body"].(string); ok {
 		return body, nil
 	}
-	return "", toolErrorDetails("MEMORY_RESPONSE_MISSING_CONTENT", "MemoryDock memory object does not contain raw_content/content/body", "network", map[string]any{"path": p})
+	return "", toolErrorDetails("RECALL_RESPONSE_MISSING_CONTENT", "RecallDock recall object does not contain raw_content/content/body", "network", map[string]any{"path": p})
 }
 
 func (r *Runtime) memoryWriteContent(ctx context.Context, p, content string) (Result, error) {
@@ -268,7 +268,7 @@ func applyMemoryPatchOperations(content string, args map[string]any) (memoryPatc
 				n = 1
 			}
 		default:
-			err = toolErrorDetails("UNKNOWN_OPERATION", "unknown memory patch operation", "validation", map[string]any{"operation": kind})
+			err = toolErrorDetails("UNKNOWN_OPERATION", "unknown recall patch operation", "validation", map[string]any{"operation": kind})
 		}
 		if err != nil {
 			return memoryPatchOutcome{}, err
