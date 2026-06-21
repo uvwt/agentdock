@@ -12,6 +12,22 @@ import (
 	"github.com/uvwt/agentdock/internal/skillruntime"
 )
 
+func writeDemoSkillDoc(t *testing.T, pkg string) {
+	t.Helper()
+	doc := `---
+name: demo-skill
+description: Use this demo skill in tests.
+---
+
+# Demo Skill
+
+This test skill is intentionally small and echoes JSON input.
+`
+	if err := os.WriteFile(filepath.Join(pkg, "SKILL.md"), []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSkillManageInstallInspectRunAndList(t *testing.T) {
 	root := t.TempDir()
 	pkg := filepath.Join(root, "demo-package")
@@ -47,6 +63,7 @@ spec:
 	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	writeDemoSkillDoc(t, pkg)
 	if err := os.WriteFile(filepath.Join(pkg, "run.sh"), []byte("#!/bin/sh\ncat\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -147,6 +164,7 @@ spec:
 	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	writeDemoSkillDoc(t, pkg)
 	if err := os.WriteFile(filepath.Join(pkg, "run.sh"), []byte("#!/bin/sh\ncat\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -218,6 +236,7 @@ spec:
 	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	writeDemoSkillDoc(t, pkg)
 	if err := os.WriteFile(filepath.Join(pkg, "run.sh"), []byte("#!/bin/sh\ncat\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -302,6 +321,7 @@ spec:
 	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	writeDemoSkillDoc(t, pkg)
 	cfg := config.Config{
 		Workspace:    root,
 		ToolProfile:  config.ProfileUnified,
@@ -457,6 +477,7 @@ spec:
 	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	writeDemoSkillDoc(t, pkg)
 	if err := os.WriteFile(filepath.Join(pkg, "run.sh"), []byte("#!/bin/sh\ncat\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}

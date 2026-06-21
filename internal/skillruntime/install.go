@@ -79,6 +79,9 @@ func (r *Runtime) Install(ctx context.Context, req InstallRequest) (InstallResul
 	if err != nil {
 		return InstallResult{}, err
 	}
+	if err := ValidateSkillDocument(packageDir, manifest); err != nil {
+		return InstallResult{}, err
+	}
 	if err := validateInstallEnvDeclarations(manifest, req.ConfirmedNoEnv); err != nil {
 		return InstallResult{}, err
 	}

@@ -47,6 +47,9 @@ func (r *Runtime) Validate(ctx context.Context, req ValidateRequest) (ValidateRe
 		return result, nil
 	}
 	result.Manifest = manifest
+	if err := ValidateSkillDocument(packageDir, manifest); err != nil {
+		result.addIssue(err)
+	}
 	result.Env = EnvDefinitionsForManifest(manifest)
 	result.Commands = checkManifestCommands(manifest)
 	if err := ValidatePackageManifest(packageDir, manifest); err != nil {

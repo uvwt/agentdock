@@ -340,6 +340,22 @@ func createPackage(t *testing.T, dir, version, script string) string {
 	return createPackageWithSecrets(t, dir, "demo-skill", version, []string{"API_TOKEN"}, script)
 }
 
+func writeSkillDoc(t *testing.T, dir, name string) {
+	t.Helper()
+	doc := `---
+name: ` + name + `
+description: Use this test skill in runtime integration tests.
+---
+
+# Test Skill
+
+This package exists to verify Skill Runtime install, run, validation, and rollback behavior.
+`
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func createPackageWithSecrets(t *testing.T, dir, name, version string, secrets []string, script string) string {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -379,6 +395,7 @@ spec:
 	if err := os.WriteFile(filepath.Join(dir, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	writeSkillDoc(t, dir, name)
 	if err := os.WriteFile(filepath.Join(dir, "run.sh"), []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -424,6 +441,7 @@ spec:
 	if err := os.WriteFile(filepath.Join(dir, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	writeSkillDoc(t, dir, "manifest-env-skill")
 	if err := os.WriteFile(filepath.Join(dir, "run.sh"), []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
