@@ -51,6 +51,7 @@ var toolRegistry = []ToolDefinition{
 	{Name: "memory_write", Title: "Write MemoryDock memory", Description: "Write a Markdown memory through MemoryDock; writing outside inbox requires confirmed=true.", Destructive: false, OpenWorld: true},
 	{Name: "memory_delete", Title: "Delete MemoryDock memory", Description: "Delete a MemoryDock memory; requires confirmed=true.", Destructive: true, OpenWorld: true},
 	{Name: "memory_sync_status", Title: "MemoryDock sync status", Description: "Return MemoryDock Git sync status.", ReadOnly: true, OpenWorld: true},
+	{Name: "memory_maintain", Title: "Maintain MemoryDock", Description: "Run MemoryDock maintenance actions such as sync status, listing, linting, embedding status, or card reindexing.", Destructive: false, OpenWorld: true},
 	{Name: "memory_diff", Title: "Preview MemoryDock diff", Description: "Preview a diff for a proposed MemoryDock memory edit without writing.", ReadOnly: true, OpenWorld: true},
 	{Name: "memory_patch", Title: "Patch MemoryDock memory", Description: "Patch a MemoryDock memory by text, regex, section, append, or prepend. Defaults to dry-run unless confirmed=true.", Destructive: false, OpenWorld: true},
 	{Name: "memory_update_fact", Title: "Update MemoryDock fact", Description: "Update structured key/value facts inside a MemoryDock memory. Defaults to dry-run unless confirmed=true.", Destructive: false, OpenWorld: true},
