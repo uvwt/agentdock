@@ -3,29 +3,59 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: backup-agentdock.sh state|recall|all [commit message]
+Usage: backup-agentdock.sh state|recall|memory|all [commit message]
 
 state  : sync AgentDock publishable workflow state to agentdock-state-backup and push.
-recall : commit and push RecallDock repository changes.
+recall : commit/push RecallDock data. Uses RecallDock API + temporary clone when the external worktree is not accessible.
+memory : deprecated alias for recall.
 all    : run state then recall.
 
 Paths can be overridden with:
   AGENTDOCK_RUNTIME_DIR
   AGENTDOCK_STATE_BACKUP_DIR
   RECALLDOCK_RECALL_DIR
+  AGENTDOCK_BACKUP_TMP_DIR
+  AGENTDOCK_STATE_BACKUP_REMOTE
+  AGENTDOCK_RECALL_BACKUP_REMOTE
 USAGE
 }
 
 MODE="${1:-}"
 MESSAGE="${2:-}"
 RUNTIME_DIR="${AGENTDOCK_RUNTIME_DIR:-/Users/xx/agentdock-runtime/AgentDock}"
+RUNTIME_ROOT="$(cd "${RUNTIME_DIR%/AgentDock}" 2>/dev/null && pwd -P || printf '/Users/xx/agentdock-runtime')"
 STATE_REPO="${AGENTDOCK_STATE_BACKUP_DIR:-/Volumes/KIOXIA/Docker/agentdock-state-backup}"
 RECALL_REPO="${RECALLDOCK_RECALL_DIR:-${MEMORYDOCK_MEMORY_DIR:-/Volumes/KIOXIA/Docker/memorydock/memory}}"
+TMP_ROOT="${AGENTDOCK_BACKUP_TMP_DIR:-$RUNTIME_ROOT/tmp-recovery}"
+STATE_REMOTE="${AGENTDOCK_STATE_BACKUP_REMOTE:-https://github.com/uvwt/agentdock-state-backup.git}"
+RECALL_REMOTE="${AGENTDOCK_RECALL_BACKUP_REMOTE:-https://github.com/uvwt/agentdock-memory.git}"
+AGENTDOCK_MCP_ENDPOINT="${AGENTDOCK_MCP_ENDPOINT:-http://127.0.0.1:18766/mcp}"
+
+if [[ -f "$RUNTIME_ROOT/agentdock.env" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$RUNTIME_ROOT/agentdock.env"
+  set +a
+fi
 
 if [[ -z "$MODE" || "$MODE" == "-h" || "$MODE" == "--help" ]]; then
   usage
   exit 0
 fi
+
+quick_git_ok() {
+  local repo="$1"
+  [[ -d "$repo/.git" ]] || return 1
+  python3 - "$repo" <<'PY'
+import subprocess, sys
+repo = sys.argv[1]
+try:
+    subprocess.run(['git', '-C', repo, 'rev-parse', '--is-inside-work-tree'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8, check=True)
+    subprocess.run(['git', '-C', repo, 'status', '--short', '--branch', '-uno'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8, check=True)
+except Exception:
+    raise SystemExit(1)
+PY
+}
 
 run_git_backup() {
   local repo="$1"
@@ -50,18 +80,115 @@ run_git_backup() {
   git -C "$repo" ls-remote origin refs/heads/main | awk '{print substr($1,1,7)}'
 }
 
-backup_state() {
+with_temp_clone() {
+  local remote="$1"
+  local name="$2"
+  local target="$TMP_ROOT/$name"
+  rm -rf "$target"
+  mkdir -p "$TMP_ROOT"
+  git clone --depth 1 "$remote" "$target" >/dev/null
+  printf '%s\n' "$target"
+}
+
+backup_state_worktree() {
+  local repo="$1"
   [[ -d "$RUNTIME_DIR/workflows" ]] || { echo "missing workflows: $RUNTIME_DIR/workflows" >&2; exit 2; }
-  [[ -d "$STATE_REPO/.git" ]] || { echo "missing state repo: $STATE_REPO" >&2; exit 2; }
-  rsync -a --delete "$RUNTIME_DIR/workflows/" "$STATE_REPO/workflows/"
-  git -C "$STATE_REPO" add workflows
-  run_git_backup "$STATE_REPO" "${MESSAGE:-backup(state): 同步 AgentDock workflow 状态}"
+  rsync -a --delete "$RUNTIME_DIR/workflows/" "$repo/workflows/"
+  git -C "$repo" add workflows
+  run_git_backup "$repo" "${MESSAGE:-backup(state): 同步 AgentDock workflow 状态}"
+}
+
+backup_state() {
+  if quick_git_ok "$STATE_REPO"; then
+    backup_state_worktree "$STATE_REPO"
+  else
+    echo "state backup worktree unavailable, using temporary clone: $STATE_REPO" >&2
+    local repo
+    repo="$(with_temp_clone "$STATE_REMOTE" agentdock-state-backup)"
+    backup_state_worktree "$repo"
+    rm -rf "$repo"
+  fi
+}
+
+export_recall_to_repo() {
+  local repo="$1"
+  python3 - "$repo" "$AGENTDOCK_MCP_ENDPOINT" <<'PY'
+import json, os, pathlib, shutil, sys, urllib.request
+repo = pathlib.Path(sys.argv[1])
+endpoint = sys.argv[2]
+token = os.environ.get('AGENTDOCK_AUTH_TOKEN', '')
+
+def call(name, args, req_id=1):
+    payload = {'jsonrpc': '2.0', 'id': req_id, 'method': 'tools/call', 'params': {'name': name, 'arguments': args}}
+    request = urllib.request.Request(endpoint, data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json'})
+    if token:
+        request.add_header('Authorization', 'Bearer ' + token)
+    with urllib.request.urlopen(request, timeout=60) as response:
+        outer = json.loads(response.read())
+    if 'error' in outer:
+        raise RuntimeError(outer['error'])
+    text = outer['result']['content'][0]['text']
+    return json.loads(text)
+
+listed = call('recall_maintain', {'action': 'list', 'max_entries': 20000}, 1)
+entries = listed.get('entries') or []
+paths = []
+for entry in entries:
+    path = entry.get('path') if isinstance(entry, dict) else str(entry)
+    if path and path.endswith('.md'):
+        paths.append(path)
+paths = sorted(set(paths))
+
+preserved = {}
+for file_path in repo.rglob('*'):
+    if not file_path.is_file():
+        continue
+    if '.git' in file_path.parts:
+        continue
+    if file_path.name in {'.gitignore', '.gitkeep'}:
+        preserved[file_path.relative_to(repo).as_posix()] = file_path.read_bytes()
+
+for child in list(repo.iterdir()):
+    if child.name == '.git':
+        continue
+    if child.is_dir():
+        shutil.rmtree(child)
+    else:
+        child.unlink()
+
+for rel, content in preserved.items():
+    target = repo / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(content)
+
+for index, path in enumerate(paths, 1):
+    data = call('recall_read', {'path': path, 'include_raw': True}, 1000 + index)
+    memory = data.get('memory') or {}
+    content = memory.get('raw_content') or memory.get('content') or memory.get('body') or ''
+    target = repo / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding='utf-8')
+print(f'exported RecallDock markdown files: {len(paths)}')
+PY
+}
+
+backup_recall_worktree() {
+  local repo="$1"
+  export_recall_to_repo "$repo"
+  git -C "$repo" add -A
+  run_git_backup "$repo" "${MESSAGE:-备份 RecallDock 数据}"
 }
 
 backup_recall() {
-  [[ -d "$RECALL_REPO/.git" ]] || { echo "missing recall repo: $RECALL_REPO" >&2; exit 2; }
-  git -C "$RECALL_REPO" add -A
-  run_git_backup "$RECALL_REPO" "${MESSAGE:-备份 RecallDock 数据}"
+  if quick_git_ok "$RECALL_REPO"; then
+    backup_recall_worktree "$RECALL_REPO"
+  else
+    echo "recall backup worktree unavailable, using RecallDock API + temporary clone: $RECALL_REPO" >&2
+    local repo
+    repo="$(with_temp_clone "$RECALL_REMOTE" agentdock-memory)"
+    backup_recall_worktree "$repo"
+    rm -rf "$repo"
+  fi
 }
 
 case "$MODE" in
