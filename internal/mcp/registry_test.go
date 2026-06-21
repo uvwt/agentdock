@@ -31,7 +31,7 @@ func TestRuntimeToolsHaveRegistryDefinitionsAndSchemas(t *testing.T) {
 		Mode:            config.ModeSandboxed,
 		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",
-		MemoryEndpoint:  "http://127.0.0.1:18777",
+		RecallEndpoint:  "http://127.0.0.1:18777",
 		BrowserEnabled:  true,
 		DesktopEnabled:  true,
 		EnableViewImage: true,
@@ -61,7 +61,7 @@ func TestReadOnlyProfileExcludesDestructiveTools(t *testing.T) {
 		Mode:            config.ModeSandboxed,
 		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",
-		MemoryEndpoint:  "http://127.0.0.1:18777",
+		RecallEndpoint:  "http://127.0.0.1:18777",
 		BrowserEnabled:  true,
 		DesktopEnabled:  true,
 		EnableViewImage: true,
@@ -106,7 +106,7 @@ func TestRecallDockToolNamesHideLegacyMemoryTools(t *testing.T) {
 		Mode:            config.ModeSandboxed,
 		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",
-		MemoryEndpoint:  "http://127.0.0.1:18777",
+		RecallEndpoint:  "http://127.0.0.1:18777",
 		EnableViewImage: true,
 	}
 	cfg.Normalize()

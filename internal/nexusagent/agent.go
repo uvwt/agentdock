@@ -148,7 +148,7 @@ func Start(ctx context.Context, cfg config.Config) (bool, error) {
 			return map[string]any{"runtime": "enabled", "state_dir": filepath.Base(stateDir)}
 		},
 		MemorySummary: func() any {
-			return map[string]any{"enabled": strings.TrimSpace(cfg.MemoryEndpoint) != ""}
+			return map[string]any{"enabled": strings.TrimSpace(cfg.RecallEndpoint) != ""}
 		},
 	}
 	agent, err := nexusclient.NewAgent(client, deviceState, outbox, executor, heartbeat, nexusclient.AgentConfig{
@@ -241,7 +241,7 @@ func capabilities(cfg config.Config, artifactPublicKey string) []contracts.Devic
 	metadata, _ := json.Marshal(map[string]string{"goos": runtime.GOOS, "goarch": runtime.GOARCH})
 	return []contracts.DeviceCapability{
 		{Name: "mcp", Version: config.ProtocolVersion, Enabled: true, Metadata: metadata},
-		{Name: "memory", Version: "v1", Enabled: strings.TrimSpace(cfg.MemoryEndpoint) != ""},
+		{Name: "recall", Version: "v1", Enabled: strings.TrimSpace(cfg.RecallEndpoint) != ""},
 		{Name: "skill-runtime", Version: "v1", Enabled: true},
 		{Name: "browser", Version: "v1", Enabled: cfg.BrowserEnabled},
 		{Name: "desktop", Version: "v1", Enabled: cfg.DesktopEnabled},
@@ -278,7 +278,7 @@ func (h healthChecker) Health(context.Context) (any, error) {
 		"platform":        runtime.GOOS,
 		"arch":            runtime.GOARCH,
 		"tool_profile":    h.cfg.ToolProfile,
-		"memory_enabled":  strings.TrimSpace(h.cfg.MemoryEndpoint) != "",
+		"recall_enabled":  strings.TrimSpace(h.cfg.RecallEndpoint) != "",
 		"browser_enabled": h.cfg.BrowserEnabled,
 		"desktop_enabled": h.cfg.DesktopEnabled,
 	}, nil

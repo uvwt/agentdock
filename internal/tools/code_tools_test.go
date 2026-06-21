@@ -39,8 +39,8 @@ func TestServerInfoRecommendsCompactRecallBootstrap(t *testing.T) {
 		Mode:            config.ModeSandboxed,
 		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",
-		MemoryEndpoint:  "http://127.0.0.1:18777",
-		MemoryTimeoutMS: 30000,
+		RecallEndpoint:  "http://127.0.0.1:18777",
+		RecallTimeoutMS: 30000,
 	}
 	cfg.Normalize()
 	rt, err := NewRuntime(cfg)

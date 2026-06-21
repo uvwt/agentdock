@@ -37,11 +37,11 @@ type Config struct {
 	SandboxMode                   string
 	PathPolicy                    string
 	AgentDockDir                  string
-	MemoryEndpoint                string
-	MemoryToken                   string
-	MemoryLoginUser               string
-	MemoryLoginValue              string
-	MemoryTimeoutMS               int
+	RecallEndpoint                string
+	RecallToken                   string
+	RecallLoginUser               string
+	RecallLoginValue              string
+	RecallTimeoutMS               int
 	NexusEndpoint                 string
 	NexusDeviceName               string
 	NexusStateDir                 string
@@ -73,11 +73,11 @@ func FromEnv() Config {
 		SandboxMode:                   os.Getenv("AGENTDOCK_SANDBOX_MODE"),
 		PathPolicy:                    os.Getenv("AGENTDOCK_PATH_POLICY"),
 		AgentDockDir:                  getenv("AGENTDOCK_DIR", "AgentDock"),
-		MemoryEndpoint:                firstNonEmpty(os.Getenv("AGENTDOCK_RECALL_ENDPOINT"), os.Getenv("AGENTDOCK_MEMORY_ENDPOINT")),
-		MemoryToken:                   firstNonEmpty(os.Getenv("AGENTDOCK_RECALL_TOKEN"), os.Getenv("RECALLDOCK_AUTH_TOKEN"), os.Getenv("AGENTDOCK_MEMORY_TOKEN"), os.Getenv("MEMORYDOCK_AUTH_TOKEN")),
-		MemoryLoginUser:               firstNonEmpty(os.Getenv("AGENTDOCK_RECALL_LOGIN_USER"), os.Getenv("AGENTDOCK_MEMORY_LOGIN_USER")),
-		MemoryLoginValue:              firstNonEmpty(os.Getenv("AGENTDOCK_RECALL_LOGIN_VALUE"), os.Getenv("AGENTDOCK_MEMORY_LOGIN_VALUE")),
-		MemoryTimeoutMS:               firstNonZeroInt(getenvInt("AGENTDOCK_RECALL_TIMEOUT_MS", 0), getenvInt("AGENTDOCK_MEMORY_TIMEOUT_MS", 30000)),
+		RecallEndpoint:                firstNonEmpty(os.Getenv("AGENTDOCK_RECALL_ENDPOINT"), os.Getenv("AGENTDOCK_MEMORY_ENDPOINT")),
+		RecallToken:                   firstNonEmpty(os.Getenv("AGENTDOCK_RECALL_TOKEN"), os.Getenv("RECALLDOCK_AUTH_TOKEN"), os.Getenv("AGENTDOCK_MEMORY_TOKEN"), os.Getenv("MEMORYDOCK_AUTH_TOKEN")),
+		RecallLoginUser:               firstNonEmpty(os.Getenv("AGENTDOCK_RECALL_LOGIN_USER"), os.Getenv("AGENTDOCK_MEMORY_LOGIN_USER")),
+		RecallLoginValue:              firstNonEmpty(os.Getenv("AGENTDOCK_RECALL_LOGIN_VALUE"), os.Getenv("AGENTDOCK_MEMORY_LOGIN_VALUE")),
+		RecallTimeoutMS:               firstNonZeroInt(getenvInt("AGENTDOCK_RECALL_TIMEOUT_MS", 0), getenvInt("AGENTDOCK_MEMORY_TIMEOUT_MS", 30000)),
 		NexusEndpoint:                 getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
 		NexusDeviceName:               getenv("AGENTDOCK_NEXUS_DEVICE_NAME", ""),
 		NexusStateDir:                 getenv("AGENTDOCK_NEXUS_STATE_DIR", ""),
@@ -126,8 +126,8 @@ func (c *Config) Normalize() {
 	if c.AgentDockDir == "" {
 		c.AgentDockDir = "AgentDock"
 	}
-	if c.MemoryTimeoutMS <= 0 {
-		c.MemoryTimeoutMS = 30000
+	if c.RecallTimeoutMS <= 0 {
+		c.RecallTimeoutMS = 30000
 	}
 	if c.NexusHeartbeatSeconds <= 0 {
 		c.NexusHeartbeatSeconds = 30

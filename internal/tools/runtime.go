@@ -53,7 +53,7 @@ func (r *Runtime) Workspace() *workspace.Workspace { return r.ws }
 
 func (r *Runtime) ToolNames() []string {
 	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "edit_file", "exec_command", "session_control", "configure_github_token", "check_github_repo_access", "github_create_repo", "task_manage", "skill_manage", "env_manage", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "request_permissions", "view_image"}
-	if r.cfg.MemoryEndpoint != "" {
+	if r.cfg.RecallEndpoint != "" {
 		all = append(all, "recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain")
 	}
 	if r.cfg.BrowserEnabled {
@@ -75,7 +75,7 @@ func (r *Runtime) ToolNames() []string {
 		return all
 	}
 	readOnly := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "session_control", "check_github_repo_access", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "request_permissions", "view_image"}
-	if r.cfg.MemoryEndpoint != "" {
+	if r.cfg.RecallEndpoint != "" {
 		readOnly = append(readOnly, "recall_bootstrap", "recall_search", "recall_read", "recall_maintain")
 	}
 	if r.cfg.BrowserEnabled {
@@ -335,15 +335,13 @@ func (r *Runtime) serverInfo() Result {
 		"sandbox_mode":   r.cfg.SandboxMode,
 		"agent_dock_dir": r.cfg.AgentDockDir,
 
-		"recall_enabled":               r.cfg.MemoryEndpoint != "",
-		"recall_endpoint":              r.cfg.MemoryEndpoint,
-		"recall_bootstrap_recommended": r.cfg.MemoryEndpoint != "",
+		"recall_enabled":               r.cfg.RecallEndpoint != "",
+		"recall_endpoint":              r.cfg.RecallEndpoint,
+		"recall_bootstrap_recommended": r.cfg.RecallEndpoint != "",
 		"recall_bootstrap_tool":        "recall_bootstrap",
 		"recall_bootstrap_args": map[string]any{
 			"project": "agentdock",
 		},
-		"memory_enabled":  r.cfg.MemoryEndpoint != "",
-		"memory_endpoint": r.cfg.MemoryEndpoint,
 
 		"task_state_dir": r.tasks.Root(),
 		"workflow_dir":   r.tasks.WorkflowRoot(),

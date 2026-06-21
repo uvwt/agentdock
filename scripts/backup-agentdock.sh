@@ -185,7 +185,7 @@ backup_recall() {
   else
     echo "recall backup worktree unavailable, using RecallDock API + temporary clone: $RECALL_REPO" >&2
     local repo
-    repo="$(with_temp_clone "$RECALL_REMOTE" agentdock-memory)"
+    repo="$(with_temp_clone "$RECALL_REMOTE" agentdock-recall)"
     backup_recall_worktree "$repo"
     rm -rf "$repo"
   fi

@@ -101,7 +101,7 @@ AGENTDOCK_MEMORY_TIMEOUT_MS
 当前迁移不改变实际服务端口和 embedding 模型：
 
 ```text
-RecallDock / 原 MemoryDock 服务入口：http://127.0.0.1:18777
+RecallDock 服务入口：http://127.0.0.1:18777
 BGE-M3 embedding：http://127.0.0.1:18788/v1/embeddings
 容器内 embedding endpoint：http://host.docker.internal:18788/v1/embeddings
 ```
@@ -115,3 +115,7 @@ BGE-M3 embedding：http://127.0.0.1:18788/v1/embeddings
 - 写入长期内容前先搜索/读取已有内容，优先更新现有文件。
 - cards 保持原子经验；notes 保留讨论脉络；Markdown 保留长期事实和 runbook。
 - 临时测试文件必须在任务结束前清理，且不要混入源码提交。
+
+## 备份仓库命名
+
+RecallDock 数据备份仓库目标名为 `agentdock-recall`；当前 GitHub 远端仍是历史仓库 `agentdock-memory`，脚本通过 `AGENTDOCK_RECALL_BACKUP_REMOTE` 支持切换。仓库真实重命名后，再把默认远端改为 `agentdock-recall`。

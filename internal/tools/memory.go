@@ -44,8 +44,8 @@ func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Res
 			}
 
 			// bootstrap 是每个重要任务的入口，默认应像索引而不是正文包。
-			// max_bytes 只控制 MemoryDock 打包预算，不应因为模型显式传了默认值就返回长正文；
-			// 需要正文时用 memory_read，或明确传 include_body/include_raw。
+			// max_bytes 只控制 RecallDock 打包预算，不应因为模型显式传了默认值就返回长正文；
+			// 需要正文时用 recall_read，或明确传 include_body/include_raw。
 			content, hasContent := compactedMemory["content"]
 			rawContent, hasRawContent := compactedMemory["raw_content"]
 			body, hasBody := compactedMemory["body"].(string)
@@ -74,7 +74,7 @@ func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Res
 	}
 	result["max_bytes"] = maxBytes
 	result["bootstrap"] = true
-	result["recommended_use"] = "Call memory_bootstrap at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks before editing files or running destructive commands."
+	result["recommended_use"] = "Call recall_bootstrap at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks before editing files or running destructive commands."
 	return result, nil
 }
 
@@ -162,7 +162,7 @@ func (r *Runtime) memoryPack(ctx context.Context, args map[string]any) (Result, 
 	}
 	result["pack_compat"] = true
 	result["preferred_tool"] = "memory_bootstrap"
-	result["recommended_use"] = "Prefer memory_bootstrap for substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks. memory_pack is a compatibility alias and should not be the default context entry."
+	result["recommended_use"] = "Prefer recall_bootstrap for substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks. memory_pack is a legacy compatibility alias and should not be the default context entry."
 	return result, nil
 }
 
@@ -222,9 +222,9 @@ func (r *Runtime) memoryDelete(ctx context.Context, args map[string]any) (Result
 }
 
 func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, payload any) (Result, error) {
-	base := strings.TrimRight(strings.TrimSpace(r.cfg.MemoryEndpoint), "/")
+	base := strings.TrimRight(strings.TrimSpace(r.cfg.RecallEndpoint), "/")
 	if base == "" {
-		return nil, toolError("MEMORY_NOT_CONFIGURED", "AGENTDOCK_MEMORY_ENDPOINT is not configured", "configuration")
+		return nil, toolError("MEMORY_NOT_CONFIGURED", "AGENTDOCK_RECALL_ENDPOINT is not configured", "configuration")
 	}
 	var body io.Reader
 	if payload != nil {
@@ -234,7 +234,7 @@ func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, pa
 		}
 		body = bytes.NewReader(data)
 	}
-	requestCtx, cancel := context.WithTimeout(ctx, time.Duration(r.cfg.MemoryTimeoutMS)*time.Millisecond)
+	requestCtx, cancel := context.WithTimeout(ctx, time.Duration(r.cfg.RecallTimeoutMS)*time.Millisecond)
 	defer cancel()
 	req, err := http.NewRequestWithContext(requestCtx, method, base+endpoint, body)
 	if err != nil {
@@ -243,10 +243,10 @@ func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, pa
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if user, value := strings.TrimSpace(r.cfg.MemoryLoginUser), r.cfg.MemoryLoginValue; user != "" || value != "" {
+	if user, value := strings.TrimSpace(r.cfg.RecallLoginUser), r.cfg.RecallLoginValue; user != "" || value != "" {
 		req.SetBasicAuth(user, value)
 	}
-	if token := strings.TrimSpace(r.cfg.MemoryToken); token != "" {
+	if token := strings.TrimSpace(r.cfg.RecallToken); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	resp, err := http.DefaultClient.Do(req)
