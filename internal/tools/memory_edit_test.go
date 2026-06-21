@@ -17,21 +17,21 @@ func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/memories/"):
-			p := strings.TrimPrefix(r.URL.Path, "/v1/memories/")
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/recall/"):
+			p := strings.TrimPrefix(r.URL.Path, "/v1/recall/")
 			content, ok := store[p]
 			if !ok {
 				http.Error(w, `{"error":{"message":"not found"}}`, http.StatusNotFound)
 				return
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "memory": memoryTestDocument(p, content)})
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/memories/pack":
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/recall/pack":
 			sections := []any{}
 			for p, content := range store {
 				sections = append(sections, memoryTestDocument(p, content))
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "project": "agentdock", "sections": sections, "count": len(sections)})
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/memories/search":
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/recall/search":
 			var payload map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				t.Fatal(err)
@@ -59,7 +59,7 @@ func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func
 				}
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "query": query, "results": results, "count": len(results)})
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/memories":
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/recall":
 			var payload map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				t.Fatal(err)
@@ -68,7 +68,7 @@ func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func
 			content, _ := payload["content"].(string)
 			store[p] = content
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "memory": memoryTestDocument(p, content)})
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/memories":
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/recall":
 			entries := []map[string]any{{"path": "devices", "type": "directory"}}
 			for p := range store {
 				entries = append(entries, map[string]any{"path": p, "type": "file"})

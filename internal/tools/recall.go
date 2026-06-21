@@ -69,7 +69,7 @@ func (r *Runtime) recallWrite(ctx context.Context, args map[string]any) (Result,
 		kind = "markdown"
 	}
 	switch kind {
-	case "card", "memory_card", "memory-card":
+	case "card":
 		var result Result
 		var err error
 		if boolArg(args, "confirmed", false) {
@@ -217,8 +217,8 @@ func relabelRecallWriteResult(result Result) {
 			plan["write_args"] = map[string]any{"confirmed": true}
 		}
 	}
-	delete(result, "memory_card_tool")
-	delete(result, "notes_tool")
+	delete(result, "recall_card_tool")
+	delete(result, "recall_note_tool")
 }
 
 func decorateRecallResult(result Result) {

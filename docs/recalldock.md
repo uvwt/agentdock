@@ -14,7 +14,7 @@ recall_write
 recall_maintain
 ```
 
-旧的 `memory_*`、`memory_card_*`、`notes_*` 工具名不再作为默认公开入口。底层实现可以继续复用原有 MemoryDock API 和 helper，但模型不应再看到多套入口。
+RecallDock 不保留旧 `memory_*`、`memory_card_*`、`notes_*` 公开工具名或旧 API 默认入口；所有模型入口统一使用 `recall_*`。
 
 ## 工具分工
 
@@ -85,17 +85,6 @@ AGENTDOCK_RECALL_LOGIN_VALUE
 AGENTDOCK_RECALL_TIMEOUT_MS
 ```
 
-为避免生产失联，当前 AgentDock 仍会读取旧变量作为 fallback：
-
-```text
-AGENTDOCK_MEMORY_ENDPOINT
-AGENTDOCK_MEMORY_TOKEN
-MEMORYDOCK_AUTH_TOKEN
-AGENTDOCK_MEMORY_LOGIN_USER
-AGENTDOCK_MEMORY_LOGIN_VALUE
-AGENTDOCK_MEMORY_TIMEOUT_MS
-```
-
 ## 部署边界
 
 当前迁移不改变实际服务端口和 embedding 模型：
@@ -118,4 +107,4 @@ BGE-M3 embedding：http://127.0.0.1:18788/v1/embeddings
 
 ## 备份仓库命名
 
-RecallDock 数据备份仓库目标名为 `agentdock-recall`；当前 GitHub 远端仍是历史仓库 `agentdock-memory`，脚本通过 `AGENTDOCK_RECALL_BACKUP_REMOTE` 支持切换。仓库真实重命名后，再把默认远端改为 `agentdock-recall`。
+RecallDock 数据备份仓库目标名为 `agentdock-recall`；GitHub 远端应使用 `agentdock-recall`，不再使用历史 `agentdock-recall` 作为默认仓库名。

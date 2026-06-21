@@ -23,7 +23,7 @@ func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Res
 		maxBytes = 12000
 	}
 	payload := map[string]any{"project": project, "max_bytes": maxBytes}
-	result, err := r.memoryRequest(ctx, http.MethodPost, "/v1/memories/pack", payload)
+	result, err := r.memoryRequest(ctx, http.MethodPost, "/v1/recall/pack", payload)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func (r *Runtime) memoryList(ctx context.Context, args map[string]any) (Result, 
 	if maxEntries := intArg(args, "max_entries", 0); maxEntries > 0 {
 		query.Set("max_entries", fmt.Sprint(maxEntries))
 	}
-	endpoint := "/v1/memories"
+	endpoint := "/v1/recall"
 	if encoded := query.Encode(); encoded != "" {
 		endpoint += "?" + encoded
 	}
@@ -109,7 +109,7 @@ func (r *Runtime) memoryRead(ctx context.Context, args map[string]any) (Result, 
 	if p == "" {
 		return nil, toolError("MISSING_PATH", "path is required", "validation")
 	}
-	result, err := r.memoryRequest(ctx, http.MethodGet, "/v1/memories/"+escapeMemoryPath(p), nil)
+	result, err := r.memoryRequest(ctx, http.MethodGet, "/v1/recall/"+escapeMemoryPath(p), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +149,7 @@ func (r *Runtime) memorySearch(ctx context.Context, args map[string]any) (Result
 	if maxResults := intArg(args, "max_results", 0); maxResults > 0 {
 		payload["max_results"] = maxResults
 	}
-	return r.memoryRequest(ctx, http.MethodPost, "/v1/memories/search", payload)
+	return r.memoryRequest(ctx, http.MethodPost, "/v1/recall/search", payload)
 }
 
 func (r *Runtime) memoryPack(ctx context.Context, args map[string]any) (Result, error) {
@@ -178,7 +178,7 @@ func (r *Runtime) memoryAppendNote(ctx context.Context, args map[string]any) (Re
 	if name := strings.TrimSpace(stringArg(args, "name", "")); name != "" {
 		payload["name"] = name
 	}
-	return r.memoryRequest(ctx, http.MethodPost, "/v1/notes/append", payload)
+	return r.memoryRequest(ctx, http.MethodPost, "/v1/recall/notes/append", payload)
 }
 
 func (r *Runtime) memoryWrite(ctx context.Context, args map[string]any) (Result, error) {
@@ -202,7 +202,7 @@ func (r *Runtime) memoryWrite(ctx context.Context, args map[string]any) (Result,
 	if _, ok := args["overwrite"]; ok {
 		payload["overwrite"] = boolArg(args, "overwrite", false)
 	}
-	return r.memoryRequest(ctx, http.MethodPost, "/v1/memories", payload)
+	return r.memoryRequest(ctx, http.MethodPost, "/v1/recall", payload)
 }
 
 func (r *Runtime) memoryDelete(ctx context.Context, args map[string]any) (Result, error) {
@@ -214,7 +214,7 @@ func (r *Runtime) memoryDelete(ctx context.Context, args map[string]any) (Result
 	if boolArg(args, "confirmed", false) {
 		query.Set("confirmed", "true")
 	}
-	endpoint := "/v1/memories/" + escapeMemoryPath(p)
+	endpoint := "/v1/recall/" + escapeMemoryPath(p)
 	if encoded := query.Encode(); encoded != "" {
 		endpoint += "?" + encoded
 	}

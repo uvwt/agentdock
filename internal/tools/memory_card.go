@@ -60,7 +60,7 @@ func (r *Runtime) memoryCardCapture(ctx context.Context, args map[string]any) (R
 		"auto_write":         false,
 		"needs_review":       true,
 		"target_path":        memoryCardPath(card),
-		"write_tool":         "memory_card_write",
+		"write_tool":         "recall_write",
 		"write_status":       card.Status,
 	}
 	if searchError != "" {
@@ -78,7 +78,7 @@ func (r *Runtime) memoryCardCapture(ctx context.Context, args map[string]any) (R
 
 func (r *Runtime) memoryCardWrite(ctx context.Context, args map[string]any) (Result, error) {
 	if !boolArg(args, "confirmed", false) {
-		return nil, toolError("CONFIRMATION_REQUIRED", "memory_card_write requires confirmed=true", "validation")
+		return nil, toolError("CONFIRMATION_REQUIRED", "recall_write requires confirmed=true", "validation")
 	}
 	card, warnings, err := memoryCardFromArgs(args, true)
 	if err != nil {
@@ -94,7 +94,7 @@ func (r *Runtime) memoryCardWrite(ctx context.Context, args map[string]any) (Res
 	}
 	p = path.Clean(p)
 	if !strings.HasPrefix(p, "cards/") || hasUnsafeNotesPathSegment(p) {
-		return nil, toolErrorDetails("INVALID_MEMORY_CARD_PATH", "memory_card_write only writes under cards/ with safe path segments", "validation", map[string]any{"path": p})
+		return nil, toolErrorDetails("INVALID_MEMORY_CARD_PATH", "recall_write only writes under cards/ with safe path segments", "validation", map[string]any{"path": p})
 	}
 
 	content := memoryCardMarkdown(card)
@@ -114,7 +114,7 @@ func (r *Runtime) memoryCardWrite(ctx context.Context, args map[string]any) (Res
 	if err != nil {
 		return nil, err
 	}
-	result["memory_card_tool"] = "memory_card_write"
+	result["recall_card_tool"] = "recall_write"
 	result["card"] = memoryCardResult(card)
 	result["path"] = p
 	result["status"] = card.Status

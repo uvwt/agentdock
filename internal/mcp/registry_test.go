@@ -88,8 +88,8 @@ func TestReadOnlyProfileExcludesDestructiveTools(t *testing.T) {
 	if seen["desktop_act"] || seen["desktop_click"] || seen["desktop_type"] || seen["desktop_set_value"] {
 		t.Fatalf("read-only desktop profile exposed mutating desktop tools")
 	}
-	if seen["recall_write"] || seen["memory_edit"] || seen["memory_write"] || seen["memory_patch"] || seen["memory_delete"] || seen["memory_card_write"] {
-		t.Fatalf("read-only profile exposed mutating recall/memory tools")
+	if seen["recall_write"] {
+		t.Fatalf("read-only profile exposed mutating recall tool")
 	}
 	if !seen["recall_bootstrap"] || !seen["recall_search"] || !seen["recall_read"] || !seen["recall_maintain"] {
 		t.Fatalf("read-only profile should expose read-only RecallDock tools")
@@ -123,9 +123,11 @@ func TestRecallDockToolNamesHideLegacyMemoryTools(t *testing.T) {
 			t.Fatalf("unified profile missing RecallDock tool %q", name)
 		}
 	}
-	for _, name := range []string{"memory_bootstrap", "memory_search", "memory_read", "memory_write", "memory_edit", "memory_card_capture", "memory_card_write", "notes_capture", "notes_write", "notes_search", "memory_pack", "memory_sync_status", "memory_lint", "memory_list"} {
-		if seen[name] {
-			t.Fatalf("unified profile still exposes legacy memory/notes tool %q", name)
+	for _, prefix := range []string{"memory_", "notes_"} {
+		for name := range seen {
+			if strings.HasPrefix(name, prefix) {
+				t.Fatalf("unified profile still exposes legacy recall predecessor tool %q", name)
+			}
 		}
 	}
 }
@@ -141,7 +143,7 @@ func TestRecallBootstrapSchemaSeparatesPackBudgetFromBody(t *testing.T) {
 	}
 	maxBytes, ok := props["max_bytes"].(map[string]any)
 	if !ok {
-		t.Fatalf("memory_bootstrap max_bytes schema missing: %#v", props["max_bytes"])
+		t.Fatalf("recall_bootstrap max_bytes schema missing: %#v", props["max_bytes"])
 	}
 	desc, _ := maxBytes["description"].(string)
 	if !strings.Contains(desc, "Does not expose section bodies") {

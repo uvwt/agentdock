@@ -165,8 +165,6 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.artifactFetchDownload(ctx, args)
 	case "recall_bootstrap":
 		return r.recallBootstrap(ctx, args)
-	case "memory_bootstrap":
-		return r.memoryBootstrap(ctx, args)
 	case "recall_search":
 		return r.recallSearch(ctx, args)
 	case "recall_read":
@@ -175,42 +173,6 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.recallWrite(ctx, args)
 	case "recall_maintain":
 		return r.recallMaintain(ctx, args)
-	case "memory_list":
-		return r.memoryList(ctx, args)
-	case "memory_read":
-		return r.memoryRead(ctx, args)
-	case "memory_search":
-		return r.memorySearch(ctx, args)
-	case "memory_pack":
-		return r.memoryPack(ctx, args)
-	case "memory_card_capture":
-		return r.memoryCardCapture(ctx, args)
-	case "memory_card_write":
-		return r.memoryCardWrite(ctx, args)
-	case "memory_edit":
-		return r.memoryEdit(ctx, args)
-	case "memory_append_note":
-		return r.memoryAppendNote(ctx, args)
-	case "memory_write":
-		return r.memoryWrite(ctx, args)
-	case "memory_delete":
-		return r.memoryDelete(ctx, args)
-	case "memory_sync_status":
-		return r.memoryRequest(ctx, "GET", "/v1/sync/status", nil)
-	case "memory_diff":
-		return r.memoryDiff(ctx, args)
-	case "memory_patch":
-		return r.memoryPatch(ctx, args)
-	case "memory_update_fact":
-		return r.memoryUpdateFact(ctx, args)
-	case "memory_lint":
-		return r.memoryLint(ctx, args)
-	case "notes_search":
-		return r.notesSearch(ctx, args)
-	case "notes_capture":
-		return r.notesCapture(ctx, args)
-	case "notes_write":
-		return r.notesWrite(ctx, args)
 	case "browser_session":
 		return r.browserSession(ctx, args)
 	case "browser_act", "browser_action":

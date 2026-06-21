@@ -179,24 +179,24 @@ func (r *Runtime) notesWrite(ctx context.Context, args map[string]any) (Result, 
 		return nil, toolError("MISSING_PATH", "path is required", "validation")
 	}
 	if hasUnsafeNotesPathSegment(rawPath) {
-		return nil, toolErrorDetails("INVALID_NOTES_PATH", "notes_write blocks hidden or escaping path segments", "validation", map[string]any{"path": rawPath})
+		return nil, toolErrorDetails("INVALID_NOTES_PATH", "recall_write blocks hidden or escaping path segments", "validation", map[string]any{"path": rawPath})
 	}
 	p := path.Clean(rawPath)
 	if !strings.HasPrefix(p, scope.Prefix+"/") {
-		return nil, toolErrorDetails("INVALID_NOTES_PATH", "notes_write can only write inside the selected notes scope", "validation", map[string]any{"path": p, "scope": scope.Name, "prefix": scope.Prefix})
+		return nil, toolErrorDetails("INVALID_NOTES_PATH", "recall_write can only write inside the selected notes scope", "validation", map[string]any{"path": p, "scope": scope.Name, "prefix": scope.Prefix})
 	}
 	content := stringArg(args, "content", "")
 	if strings.TrimSpace(content) == "" {
 		return nil, toolError("MISSING_CONTENT", "content is required", "validation")
 	}
 	if hasNotesSensitiveMarker(content) {
-		return nil, toolError("SENSITIVE_CONTENT", "notes_write blocked content that looks like a secret", "validation")
+		return nil, toolError("SENSITIVE_CONTENT", "recall_write blocked content that looks like a secret", "validation")
 	}
 	if strings.Contains(p, "/decisions/") && !boolArg(args, "confirmed", false) {
 		return nil, toolError("CONFIRMATION_REQUIRED", "writing decisions notes requires confirmed=true", "validation")
 	}
 	if !boolArg(args, "confirmed", false) {
-		return nil, toolError("CONFIRMATION_REQUIRED", "notes_write requires confirmed=true", "validation")
+		return nil, toolError("CONFIRMATION_REQUIRED", "recall_write requires confirmed=true", "validation")
 	}
 	writeArgs := map[string]any{
 		"path":      p,
@@ -210,7 +210,7 @@ func (r *Runtime) notesWrite(ctx context.Context, args map[string]any) (Result, 
 	if err != nil {
 		return nil, err
 	}
-	result["notes_tool"] = "notes_write"
+	result["recall_note_tool"] = "recall_write"
 	result["scope"] = scope.Name
 	return result, nil
 }

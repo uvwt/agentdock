@@ -25,7 +25,7 @@ func TestMemoryCardCapturePlansWithoutWriting(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(store) != before {
-		t.Fatalf("memory_card_capture must not write, store=%#v", store)
+		t.Fatalf("card capture must not write, store=%#v", store)
 	}
 	plan := res["capture_plan"].(Result)
 	if autoWrite, _ := plan["auto_write"].(bool); autoWrite {
@@ -53,7 +53,7 @@ func TestMemoryCardWriteRequiresConfirmationAndUsesCardsPath(t *testing.T) {
 	}
 	_, err := rt.memoryCardWrite(context.Background(), args)
 	if err == nil {
-		t.Fatal("expected memory_card_write to require confirmation")
+		t.Fatal("expected card write to require confirmation")
 	}
 	args["confirmed"] = true
 	res, err := rt.memoryCardWrite(context.Background(), args)

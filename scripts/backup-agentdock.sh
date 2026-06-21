@@ -25,10 +25,10 @@ MESSAGE="${2:-}"
 RUNTIME_DIR="${AGENTDOCK_RUNTIME_DIR:-/Users/xx/agentdock-runtime/AgentDock}"
 RUNTIME_ROOT="$(cd "${RUNTIME_DIR%/AgentDock}" 2>/dev/null && pwd -P || printf '/Users/xx/agentdock-runtime')"
 STATE_REPO="${AGENTDOCK_STATE_BACKUP_DIR:-/Volumes/KIOXIA/Docker/agentdock-state-backup}"
-RECALL_REPO="${RECALLDOCK_RECALL_DIR:-${MEMORYDOCK_MEMORY_DIR:-/Volumes/KIOXIA/Docker/memorydock/memory}}"
+RECALL_REPO="${RECALLDOCK_RECALL_DIR:-/Volumes/KIOXIA/Docker/recalldock/recall}"
 TMP_ROOT="${AGENTDOCK_BACKUP_TMP_DIR:-$RUNTIME_ROOT/tmp-recovery}"
 STATE_REMOTE="${AGENTDOCK_STATE_BACKUP_REMOTE:-https://github.com/uvwt/agentdock-state-backup.git}"
-RECALL_REMOTE="${AGENTDOCK_RECALL_BACKUP_REMOTE:-https://github.com/uvwt/agentdock-memory.git}"
+RECALL_REMOTE="${AGENTDOCK_RECALL_BACKUP_REMOTE:-https://github.com/uvwt/agentdock-recall.git}"
 AGENTDOCK_MCP_ENDPOINT="${AGENTDOCK_MCP_ENDPOINT:-http://127.0.0.1:18766/mcp}"
 
 if [[ -f "$RUNTIME_ROOT/agentdock.env" ]]; then

@@ -77,13 +77,6 @@ func RegisterAdapters(executor *Executor, dependencies AdapterDependencies) erro
 			output, err := dependencies.Memory.Sync(ctx, payload)
 			return HandlerResult{Output: output}, err
 		}},
-		FuncHandler{CommandType: "memory.sync", Run: func(ctx context.Context, payload json.RawMessage, _ ProgressReporter) (HandlerResult, error) {
-			if dependencies.Memory == nil {
-				return HandlerResult{}, missingDependency("memory.sync")
-			}
-			output, err := dependencies.Memory.Sync(ctx, payload)
-			return HandlerResult{Output: output}, err
-		}},
 		FuncHandler{CommandType: "service.inspect", Run: func(ctx context.Context, payload json.RawMessage, _ ProgressReporter) (HandlerResult, error) {
 			if dependencies.Services == nil {
 				return HandlerResult{}, missingDependency("service.inspect")

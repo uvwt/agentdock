@@ -223,7 +223,7 @@ func (r *Runtime) memoryReadContent(ctx context.Context, p string) (string, erro
 
 func (r *Runtime) memoryWriteContent(ctx context.Context, p, content string) (Result, error) {
 	payload := map[string]any{"path": p, "content": content, "overwrite": true, "confirmed": true}
-	return r.memoryRequest(ctx, http.MethodPost, "/v1/memories", payload)
+	return r.memoryRequest(ctx, http.MethodPost, "/v1/recall", payload)
 }
 
 func applyMemoryPatchOperations(content string, args map[string]any) (memoryPatchOutcome, error) {
