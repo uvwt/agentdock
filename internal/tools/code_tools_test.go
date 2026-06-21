@@ -31,7 +31,7 @@ func newCodeToolsRuntime(t *testing.T) (*Runtime, string) {
 	return rt, root
 }
 
-func TestServerInfoRecommendsCompactMemoryBootstrap(t *testing.T) {
+func TestServerInfoRecommendsCompactRecallBootstrap(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
 		Workspace:       root,
@@ -48,12 +48,12 @@ func TestServerInfoRecommendsCompactMemoryBootstrap(t *testing.T) {
 		t.Fatal(err)
 	}
 	info := rt.serverInfo()
-	args := info["memory_bootstrap_args"].(map[string]any)
+	args := info["recall_bootstrap_args"].(map[string]any)
 	if _, ok := args["max_bytes"]; ok {
 		t.Fatalf("server_info should not recommend explicit max_bytes because that disables compact bootstrap defaults: %#v", args)
 	}
 	if args["project"] != "agentdock" {
-		t.Fatalf("unexpected memory bootstrap args: %#v", args)
+		t.Fatalf("unexpected recall bootstrap args: %#v", args)
 	}
 }
 

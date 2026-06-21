@@ -73,11 +73,11 @@ func FromEnv() Config {
 		SandboxMode:                   os.Getenv("AGENTDOCK_SANDBOX_MODE"),
 		PathPolicy:                    os.Getenv("AGENTDOCK_PATH_POLICY"),
 		AgentDockDir:                  getenv("AGENTDOCK_DIR", "AgentDock"),
-		MemoryEndpoint:                getenv("AGENTDOCK_MEMORY_ENDPOINT", ""),
-		MemoryToken:                   firstNonEmpty(os.Getenv("AGENTDOCK_MEMORY_TOKEN"), os.Getenv("MEMORYDOCK_AUTH_TOKEN")),
-		MemoryLoginUser:               os.Getenv("AGENTDOCK_MEMORY_LOGIN_USER"),
-		MemoryLoginValue:              os.Getenv("AGENTDOCK_MEMORY_LOGIN_VALUE"),
-		MemoryTimeoutMS:               getenvInt("AGENTDOCK_MEMORY_TIMEOUT_MS", 30000),
+		MemoryEndpoint:                firstNonEmpty(os.Getenv("AGENTDOCK_RECALL_ENDPOINT"), os.Getenv("AGENTDOCK_MEMORY_ENDPOINT")),
+		MemoryToken:                   firstNonEmpty(os.Getenv("AGENTDOCK_RECALL_TOKEN"), os.Getenv("RECALLDOCK_AUTH_TOKEN"), os.Getenv("AGENTDOCK_MEMORY_TOKEN"), os.Getenv("MEMORYDOCK_AUTH_TOKEN")),
+		MemoryLoginUser:               firstNonEmpty(os.Getenv("AGENTDOCK_RECALL_LOGIN_USER"), os.Getenv("AGENTDOCK_MEMORY_LOGIN_USER")),
+		MemoryLoginValue:              firstNonEmpty(os.Getenv("AGENTDOCK_RECALL_LOGIN_VALUE"), os.Getenv("AGENTDOCK_MEMORY_LOGIN_VALUE")),
+		MemoryTimeoutMS:               firstNonZeroInt(getenvInt("AGENTDOCK_RECALL_TIMEOUT_MS", 0), getenvInt("AGENTDOCK_MEMORY_TIMEOUT_MS", 30000)),
 		NexusEndpoint:                 getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
 		NexusDeviceName:               getenv("AGENTDOCK_NEXUS_DEVICE_NAME", ""),
 		NexusStateDir:                 getenv("AGENTDOCK_NEXUS_STATE_DIR", ""),
@@ -192,6 +192,15 @@ func getenvInt(key string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func firstNonZeroInt(values ...int) int {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
 }
 
 func getenvBool(key string, fallback bool) bool {

@@ -54,7 +54,7 @@ func (r *Runtime) Workspace() *workspace.Workspace { return r.ws }
 func (r *Runtime) ToolNames() []string {
 	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "edit_file", "exec_command", "session_control", "configure_github_token", "check_github_repo_access", "github_create_repo", "task_manage", "skill_manage", "env_manage", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "request_permissions", "view_image"}
 	if r.cfg.MemoryEndpoint != "" {
-		all = append(all, "memory_bootstrap", "memory_list", "memory_read", "memory_search", "memory_pack", "memory_card_capture", "memory_card_write", "memory_edit", "memory_sync_status", "memory_lint", "notes_search", "notes_capture", "notes_write")
+		all = append(all, "recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain")
 	}
 	if r.cfg.BrowserEnabled {
 		all = append(all, "browser_session", "browser_act", "browser_snapshot")
@@ -76,7 +76,7 @@ func (r *Runtime) ToolNames() []string {
 	}
 	readOnly := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "session_control", "check_github_repo_access", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "request_permissions", "view_image"}
 	if r.cfg.MemoryEndpoint != "" {
-		readOnly = append(readOnly, "memory_bootstrap", "memory_list", "memory_read", "memory_search", "memory_pack", "memory_card_capture", "memory_sync_status", "memory_lint", "notes_search", "notes_capture")
+		readOnly = append(readOnly, "recall_bootstrap", "recall_search", "recall_read", "recall_maintain")
 	}
 	if r.cfg.BrowserEnabled {
 		readOnly = append(readOnly, "browser_snapshot")
@@ -163,8 +163,18 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.artifactFetchStatus(ctx, args)
 	case "artifact_fetch_download":
 		return r.artifactFetchDownload(ctx, args)
+	case "recall_bootstrap":
+		return r.recallBootstrap(ctx, args)
 	case "memory_bootstrap":
 		return r.memoryBootstrap(ctx, args)
+	case "recall_search":
+		return r.recallSearch(ctx, args)
+	case "recall_read":
+		return r.recallRead(ctx, args)
+	case "recall_write":
+		return r.recallWrite(ctx, args)
+	case "recall_maintain":
+		return r.recallMaintain(ctx, args)
 	case "memory_list":
 		return r.memoryList(ctx, args)
 	case "memory_read":
@@ -325,13 +335,15 @@ func (r *Runtime) serverInfo() Result {
 		"sandbox_mode":   r.cfg.SandboxMode,
 		"agent_dock_dir": r.cfg.AgentDockDir,
 
-		"memory_enabled":               r.cfg.MemoryEndpoint != "",
-		"memory_endpoint":              r.cfg.MemoryEndpoint,
-		"memory_bootstrap_recommended": r.cfg.MemoryEndpoint != "",
-		"memory_bootstrap_tool":        "memory_bootstrap",
-		"memory_bootstrap_args": map[string]any{
+		"recall_enabled":               r.cfg.MemoryEndpoint != "",
+		"recall_endpoint":              r.cfg.MemoryEndpoint,
+		"recall_bootstrap_recommended": r.cfg.MemoryEndpoint != "",
+		"recall_bootstrap_tool":        "recall_bootstrap",
+		"recall_bootstrap_args": map[string]any{
 			"project": "agentdock",
 		},
+		"memory_enabled":  r.cfg.MemoryEndpoint != "",
+		"memory_endpoint": r.cfg.MemoryEndpoint,
 
 		"task_state_dir": r.tasks.Root(),
 		"workflow_dir":   r.tasks.WorkflowRoot(),

@@ -3,16 +3,16 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: backup-agentdock.sh state|memory|all [commit message]
+Usage: backup-agentdock.sh state|recall|all [commit message]
 
 state  : sync AgentDock publishable workflow state to agentdock-state-backup and push.
-memory : commit and push MemoryDock memory repository changes.
-all    : run state then memory.
+recall : commit and push RecallDock repository changes.
+all    : run state then recall.
 
 Paths can be overridden with:
   AGENTDOCK_RUNTIME_DIR
   AGENTDOCK_STATE_BACKUP_DIR
-  MEMORYDOCK_MEMORY_DIR
+  RECALLDOCK_RECALL_DIR
 USAGE
 }
 
@@ -20,7 +20,7 @@ MODE="${1:-}"
 MESSAGE="${2:-}"
 RUNTIME_DIR="${AGENTDOCK_RUNTIME_DIR:-/Users/xx/agentdock-runtime/AgentDock}"
 STATE_REPO="${AGENTDOCK_STATE_BACKUP_DIR:-/Volumes/KIOXIA/Docker/agentdock-state-backup}"
-MEMORY_REPO="${MEMORYDOCK_MEMORY_DIR:-/Volumes/KIOXIA/Docker/memorydock/memory}"
+RECALL_REPO="${RECALLDOCK_RECALL_DIR:-${MEMORYDOCK_MEMORY_DIR:-/Volumes/KIOXIA/Docker/memorydock/memory}}"
 
 if [[ -z "$MODE" || "$MODE" == "-h" || "$MODE" == "--help" ]]; then
   usage
@@ -58,15 +58,15 @@ backup_state() {
   run_git_backup "$STATE_REPO" "${MESSAGE:-backup(state): 同步 AgentDock workflow 状态}"
 }
 
-backup_memory() {
-  [[ -d "$MEMORY_REPO/.git" ]] || { echo "missing memory repo: $MEMORY_REPO" >&2; exit 2; }
-  git -C "$MEMORY_REPO" add -A
-  run_git_backup "$MEMORY_REPO" "${MESSAGE:-备份 MemoryDock 记忆}"
+backup_recall() {
+  [[ -d "$RECALL_REPO/.git" ]] || { echo "missing recall repo: $RECALL_REPO" >&2; exit 2; }
+  git -C "$RECALL_REPO" add -A
+  run_git_backup "$RECALL_REPO" "${MESSAGE:-备份 RecallDock 数据}"
 }
 
 case "$MODE" in
   state) backup_state ;;
-  memory) backup_memory ;;
-  all) backup_state; backup_memory ;;
+  memory|recall) backup_recall ;;
+  all) backup_state; backup_recall ;;
   *) usage; exit 2 ;;
 esac

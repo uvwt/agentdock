@@ -88,25 +88,56 @@ func TestReadOnlyProfileExcludesDestructiveTools(t *testing.T) {
 	if seen["desktop_act"] || seen["desktop_click"] || seen["desktop_type"] || seen["desktop_set_value"] {
 		t.Fatalf("read-only desktop profile exposed mutating desktop tools")
 	}
-	if seen["memory_edit"] || seen["memory_write"] || seen["memory_patch"] || seen["memory_delete"] || seen["memory_card_write"] {
-		t.Fatalf("read-only profile exposed mutating memory tools")
+	if seen["recall_write"] || seen["memory_edit"] || seen["memory_write"] || seen["memory_patch"] || seen["memory_delete"] || seen["memory_card_write"] {
+		t.Fatalf("read-only profile exposed mutating recall/memory tools")
 	}
-	if !seen["memory_card_capture"] {
-		t.Fatalf("read-only profile should expose review-only memory_card_capture")
+	if !seen["recall_bootstrap"] || !seen["recall_search"] || !seen["recall_read"] || !seen["recall_maintain"] {
+		t.Fatalf("read-only profile should expose read-only RecallDock tools")
 	}
 	if seen["edit_file"] {
 		t.Fatalf("read-only profile exposed edit_file")
 	}
 }
 
-func TestMemoryBootstrapSchemaSeparatesPackBudgetFromBody(t *testing.T) {
-	schema := inputSchema("memory_bootstrap")
+func TestRecallDockToolNamesHideLegacyMemoryTools(t *testing.T) {
+	cfg := config.Config{
+		Workspace:       t.TempDir(),
+		ToolProfile:     config.ProfileUnified,
+		Mode:            config.ModeSandboxed,
+		PathPolicy:      config.PathPolicyWorkspace,
+		AgentDockDir:    "AgentDock",
+		MemoryEndpoint:  "http://127.0.0.1:18777",
+		EnableViewImage: true,
+	}
+	cfg.Normalize()
+	rt, err := tools.NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, name := range rt.ToolNames() {
+		seen[name] = true
+	}
+	for _, name := range []string{"recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain"} {
+		if !seen[name] {
+			t.Fatalf("unified profile missing RecallDock tool %q", name)
+		}
+	}
+	for _, name := range []string{"memory_bootstrap", "memory_search", "memory_read", "memory_write", "memory_edit", "memory_card_capture", "memory_card_write", "notes_capture", "notes_write", "notes_search", "memory_pack", "memory_sync_status", "memory_lint", "memory_list"} {
+		if seen[name] {
+			t.Fatalf("unified profile still exposes legacy memory/notes tool %q", name)
+		}
+	}
+}
+
+func TestRecallBootstrapSchemaSeparatesPackBudgetFromBody(t *testing.T) {
+	schema := inputSchema("recall_bootstrap")
 	props, ok := schema["properties"].(map[string]any)
 	if !ok {
-		t.Fatal("memory_bootstrap input schema properties missing")
+		t.Fatal("recall_bootstrap input schema properties missing")
 	}
 	if _, ok := props["include_body"]; !ok {
-		t.Fatalf("memory_bootstrap schema missing include_body: %#v", props)
+		t.Fatalf("recall_bootstrap schema missing include_body: %#v", props)
 	}
 	maxBytes, ok := props["max_bytes"].(map[string]any)
 	if !ok {
@@ -204,51 +235,42 @@ func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	}
 }
 
-func TestMemoryCardSchemasExposeCaptureAndWriteFields(t *testing.T) {
-	inputProps, ok := inputSchema("memory_card_capture")["properties"].(map[string]any)
+func TestRecallWriteSchemaExposesCardsNotesAndEditFields(t *testing.T) {
+	inputProps, ok := inputSchema("recall_write")["properties"].(map[string]any)
 	if !ok {
-		t.Fatal("memory_card_capture input schema properties missing")
+		t.Fatal("recall_write input schema properties missing")
 	}
-	for _, name := range []string{"title", "content", "type", "scope", "status", "confidence", "max_results"} {
+	for _, name := range []string{"kind", "title", "content", "type", "scope", "status", "confidence", "confirmed", "allow_warnings", "path", "overwrite", "old", "new", "facts"} {
 		if _, ok := inputProps[name]; !ok {
-			t.Fatalf("memory_card_capture input schema missing %q", name)
+			t.Fatalf("recall_write input schema missing %q", name)
 		}
 	}
-	writeProps, ok := inputSchema("memory_card_write")["properties"].(map[string]any)
+	outputProps, ok := outputSchema("recall_write")["properties"].(map[string]any)
 	if !ok {
-		t.Fatal("memory_card_write input schema properties missing")
+		t.Fatal("recall_write output schema properties missing")
 	}
-	for _, name := range []string{"confirmed", "allow_warnings", "path", "overwrite"} {
-		if _, ok := writeProps[name]; !ok {
-			t.Fatalf("memory_card_write input schema missing %q", name)
-		}
-	}
-	outputProps, ok := outputSchema("memory_card_capture")["properties"].(map[string]any)
-	if !ok {
-		t.Fatal("memory_card_capture output schema properties missing")
-	}
-	for _, name := range []string{"card", "warnings", "capture_plan", "similar_results", "similar_count"} {
+	for _, name := range []string{"recall_kind", "card", "warnings", "capture_plan", "similar_results", "memory", "diff", "updates"} {
 		if _, ok := outputProps[name]; !ok {
-			t.Fatalf("memory_card_capture output schema missing %q", name)
+			t.Fatalf("recall_write output schema missing %q", name)
 		}
 	}
 }
 
-func TestNotesSearchSchemasExposeCompactionControls(t *testing.T) {
-	inputProps, ok := inputSchema("notes_search")["properties"].(map[string]any)
+func TestRecallSearchSchemasExposeNotesCompactionControls(t *testing.T) {
+	inputProps, ok := inputSchema("recall_search")["properties"].(map[string]any)
 	if !ok {
-		t.Fatal("notes_search input schema properties missing")
+		t.Fatal("recall_search input schema properties missing")
 	}
 	if _, ok := inputProps["include_search_results"]; !ok {
-		t.Fatal("notes_search input schema missing include_search_results")
+		t.Fatal("recall_search input schema missing include_search_results")
 	}
-	outputProps, ok := outputSchema("notes_search")["properties"].(map[string]any)
+	outputProps, ok := outputSchema("recall_search")["properties"].(map[string]any)
 	if !ok {
-		t.Fatal("notes_search output schema properties missing")
+		t.Fatal("recall_search output schema properties missing")
 	}
 	for _, name := range []string{"candidate_paths", "candidates", "search_result_count", "search_results"} {
 		if _, ok := outputProps[name]; !ok {
-			t.Fatalf("notes_search output schema missing %q", name)
+			t.Fatalf("recall_search output schema missing %q", name)
 		}
 	}
 }

@@ -196,6 +196,67 @@ func inputSchema(name string) map[string]any {
 		props["max_output_bytes"] = intProp("Maximum verify stdout/stderr bytes.")
 		props["env_file"] = stringProp("Path to agentdock.env for migrate-from-agentdock-env. Defaults to ~/agentdock-runtime/agentdock.env.")
 		required = []string{"action"}
+	case "recall_bootstrap":
+		props["project"] = stringProp("Project key to bootstrap. Defaults to agentdock.")
+		props["max_bytes"] = intProp("Maximum combined RecallDock pack bytes. Does not expose section bodies by itself; use include_body or recall_read when body text is needed.")
+		props["include_raw"] = boolProp("Include raw Markdown as raw_content. Defaults to false to avoid duplicating body/content tokens.")
+		props["include_body"] = boolProp("Include section body text in recall_bootstrap. Defaults to false; prefer recall_read for targeted full text.")
+	case "recall_search":
+		props["query"] = stringProp("Text query to search in RecallDock files and paths.")
+		props["kind"] = stringProp("Search kind: all, markdown, card, or note. Defaults to all.")
+		props["scope"] = stringProp("Notes scope when kind=note: questions or github-learning.")
+		props["prefix"] = stringProp("Optional RecallDock-relative prefix to search under.")
+		props["max_results"] = intProp("Maximum results to return.")
+		props["include_search_results"] = boolProp("For kind=note, include raw underlying search results.")
+		required = []string{"query"}
+	case "recall_read":
+		props["path"] = stringProp("RecallDock-relative Markdown/card/note path.")
+		props["include_raw"] = boolProp("Include raw Markdown as raw_content. Defaults to false to avoid duplicating body/content tokens.")
+		required = []string{"path"}
+	case "recall_write":
+		props["kind"] = stringProp("Write mechanism: card, note, markdown, append_note, patch, diff, fact, or delete. Defaults to markdown.")
+		props["confirmed"] = boolProp("Required for true writes/deletes. With card or note, confirmed=false returns a review plan.")
+		props["path"] = stringProp("RecallDock-relative path for markdown, note, patch, diff, fact, or delete.")
+		props["content"] = stringProp("Markdown content, card content, note content, or proposed replacement content.")
+		props["title"] = stringProp("Card title when kind=card.")
+		props["summary"] = stringProp("Alternative card/note summary.")
+		props["scope"] = stringProp("Card scope or notes scope. Notes support questions and github-learning.")
+		props["project"] = stringProp("Project key for card or markdown frontmatter.")
+		props["type"] = stringProp("Content semantic type. For cards this remains the card type; for markdown it is a free semantic label.")
+		props["status"] = stringProp("Card status such as inbox, active, verified, stale, archived, or rejected.")
+		props["confidence"] = stringProp("Confidence label for card or markdown frontmatter.")
+		props["source"] = stringProp("Source label, path, URL, or conversation marker.")
+		props["evidence"] = stringProp("Verification evidence for active/verified cards.")
+		props["boundary"] = stringProp("Optional usage boundary for cards.")
+		props["tags"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
+		props["overwrite"] = boolProp("Replace an existing entry when supported.")
+		props["allow_warnings"] = boolProp("Allow card write after reviewing warnings.")
+		props["question"] = stringProp("Question or learning point when kind=note and confirmed=false.")
+		props["query"] = stringProp("Alternative note capture query.")
+		props["conclusion"] = stringProp("Optional note conclusion for capture plans.")
+		props["open_questions"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
+		props["section"] = stringProp("Markdown heading title whose section body should be replaced, or note section title.")
+		props["section_content"] = stringProp("New body for the selected Markdown section.")
+		props["old"] = stringProp("Literal text to replace.")
+		props["new"] = stringProp("Replacement text for old.")
+		props["pattern"] = stringProp("Regular expression pattern to replace.")
+		props["replacement"] = stringProp("Replacement for pattern.")
+		props["append"] = stringProp("Text to append to the memory.")
+		props["prepend"] = stringProp("Text to prepend to the memory.")
+		props["operations"] = map[string]any{"type": "array", "description": "Patch operations.", "items": map[string]any{"type": "object", "additionalProperties": true}}
+		props["facts"] = objectProp("Multiple key/value facts to update.")
+		props["key"] = stringProp("Fact key to update.")
+		props["value"] = stringProp("New fact value.")
+		props["dry_run"] = boolProp("Preview without writing where supported.")
+		props["max_bytes"] = intProp("Maximum diff/output bytes.")
+	case "recall_maintain":
+		props["action"] = stringProp("Maintenance action: sync_status, list, lint, embedding_status, reindex, or reindex_cards.")
+		props["prefix"] = stringProp("Optional RecallDock-relative prefix.")
+		props["terms"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Terms or regex patterns for lint."}
+		props["regex"] = boolProp("Treat terms as regex patterns for lint.")
+		props["max_entries"] = intProp("Maximum entries to list or scan.")
+		props["max_findings"] = intProp("Maximum lint findings to return.")
+		props["max_results"] = intProp("Maximum results where supported.")
 	case "memory_bootstrap":
 		props["project"] = stringProp("Project key to bootstrap. Defaults to agentdock.")
 		props["max_bytes"] = intProp("Maximum combined MemoryDock pack bytes. Does not expose section bodies by itself; use include_body or memory_read when body text is needed.")

@@ -1,0 +1,240 @@
+package tools
+
+import (
+	"context"
+	"net/http"
+	"strings"
+)
+
+func (r *Runtime) recallBootstrap(ctx context.Context, args map[string]any) (Result, error) {
+	result, err := r.memoryBootstrap(ctx, args)
+	if err != nil {
+		return nil, err
+	}
+	decorateRecallResult(result)
+	result["recommended_use"] = "Call recall_bootstrap before substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks."
+	return result, nil
+}
+
+func (r *Runtime) recallSearch(ctx context.Context, args map[string]any) (Result, error) {
+	kind := strings.ToLower(strings.TrimSpace(stringArg(args, "kind", "all")))
+	switch kind {
+	case "note", "notes":
+		result, err := r.notesSearch(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		decorateRecallResult(result)
+		relabelRecallWriteResult(result)
+		result["recall_kind"] = "note"
+		return result, nil
+	case "card", "cards":
+		searchArgs := copyArgs(args)
+		if strings.TrimSpace(stringArg(searchArgs, "prefix", "")) == "" {
+			searchArgs["prefix"] = "cards"
+		}
+		result, err := r.memorySearch(ctx, searchArgs)
+		if err != nil {
+			return nil, err
+		}
+		decorateRecallResult(result)
+		relabelRecallWriteResult(result)
+		result["recall_kind"] = "card"
+		return result, nil
+	case "", "all", "markdown", "memory", "memories":
+		result, err := r.memorySearch(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		decorateRecallResult(result)
+		result["recall_kind"] = kind
+		return result, nil
+	default:
+		return nil, toolErrorDetails("INVALID_RECALL_KIND", "unsupported recall_search kind", "validation", map[string]any{"kind": kind})
+	}
+}
+
+func (r *Runtime) recallRead(ctx context.Context, args map[string]any) (Result, error) {
+	result, err := r.memoryRead(ctx, args)
+	if err != nil {
+		return nil, err
+	}
+	decorateRecallResult(result)
+	return result, nil
+}
+
+func (r *Runtime) recallWrite(ctx context.Context, args map[string]any) (Result, error) {
+	kind := strings.ToLower(strings.TrimSpace(stringArg(args, "kind", "markdown")))
+	if kind == "" {
+		kind = "markdown"
+	}
+	switch kind {
+	case "card", "memory_card", "memory-card":
+		var result Result
+		var err error
+		if boolArg(args, "confirmed", false) {
+			result, err = r.memoryCardWrite(ctx, args)
+		} else {
+			result, err = r.memoryCardCapture(ctx, args)
+		}
+		if err != nil {
+			return nil, err
+		}
+		decorateRecallResult(result)
+		relabelRecallWriteResult(result)
+		result["recall_kind"] = "card"
+		return result, nil
+	case "note", "notes":
+		var result Result
+		var err error
+		if boolArg(args, "confirmed", false) {
+			result, err = r.notesWrite(ctx, args)
+		} else {
+			result, err = r.notesCapture(ctx, args)
+		}
+		if err != nil {
+			return nil, err
+		}
+		decorateRecallResult(result)
+		relabelRecallWriteResult(result)
+		result["recall_kind"] = "note"
+		return result, nil
+	case "markdown", "memory", "write", "create", "replace":
+		result, err := r.memoryWrite(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		decorateRecallResult(result)
+		result["recall_kind"] = "markdown"
+		return result, nil
+	case "append_note", "append":
+		result, err := r.memoryAppendNote(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		decorateRecallResult(result)
+		result["recall_kind"] = "append_note"
+		return result, nil
+	case "patch", "edit":
+		result, err := r.memoryPatch(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		decorateRecallResult(result)
+		result["recall_kind"] = "patch"
+		return result, nil
+	case "diff", "preview":
+		result, err := r.memoryDiff(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		decorateRecallResult(result)
+		result["recall_kind"] = "diff"
+		return result, nil
+	case "fact", "update_fact":
+		result, err := r.memoryUpdateFact(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		decorateRecallResult(result)
+		result["recall_kind"] = "fact"
+		return result, nil
+	case "delete", "remove":
+		result, err := r.memoryDelete(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		decorateRecallResult(result)
+		result["recall_kind"] = "delete"
+		return result, nil
+	default:
+		return nil, toolErrorDetails("INVALID_RECALL_KIND", "unsupported recall_write kind", "validation", map[string]any{"kind": kind})
+	}
+}
+
+func (r *Runtime) recallMaintain(ctx context.Context, args map[string]any) (Result, error) {
+	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "sync_status")))
+	switch action {
+	case "sync_status", "sync", "status":
+		result, err := r.memoryRequest(ctx, http.MethodGet, "/v1/sync/status", nil)
+		if err != nil {
+			return nil, err
+		}
+		decorateRecallResult(result)
+		result["recall_action"] = "sync_status"
+		return result, nil
+	case "list":
+		result, err := r.memoryList(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		decorateRecallResult(result)
+		result["recall_action"] = "list"
+		return result, nil
+	case "lint":
+		result, err := r.memoryLint(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		decorateRecallResult(result)
+		result["recall_action"] = "lint"
+		return result, nil
+	case "embedding_status", "embeddings_status":
+		result, err := r.memoryRequest(ctx, http.MethodGet, "/v1/embeddings/status", nil)
+		if err != nil {
+			return nil, err
+		}
+		decorateRecallResult(result)
+		result["recall_action"] = "embedding_status"
+		return result, nil
+	case "reindex", "reindex_cards":
+		payload := map[string]any{}
+		if prefix := strings.TrimSpace(stringArg(args, "prefix", "")); prefix != "" {
+			payload["prefix"] = prefix
+		}
+		if action == "reindex_cards" && payload["prefix"] == nil {
+			payload["prefix"] = "cards"
+		}
+		result, err := r.memoryRequest(ctx, http.MethodPost, "/v1/embeddings/reindex", payload)
+		if err != nil {
+			return nil, err
+		}
+		decorateRecallResult(result)
+		result["recall_action"] = action
+		return result, nil
+	default:
+		return nil, toolErrorDetails("INVALID_RECALL_ACTION", "unsupported recall_maintain action", "validation", map[string]any{"action": action})
+	}
+}
+
+func relabelRecallWriteResult(result Result) {
+	if result == nil {
+		return
+	}
+	if plan, ok := result["capture_plan"].(map[string]any); ok {
+		plan["write_tool"] = "recall_write"
+		if _, ok := plan["write_args"]; !ok {
+			plan["write_args"] = map[string]any{"confirmed": true}
+		}
+	}
+	delete(result, "memory_card_tool")
+	delete(result, "notes_tool")
+}
+
+func decorateRecallResult(result Result) {
+	if result == nil {
+		return
+	}
+	result["recall_store"] = "RecallDock"
+	if endpoint, ok := result["memory_endpoint"]; ok {
+		result["recall_endpoint"] = endpoint
+	}
+}
+
+func copyArgs(args map[string]any) map[string]any {
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		out[k] = v
+	}
+	return out
+}
