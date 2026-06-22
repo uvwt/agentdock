@@ -186,7 +186,14 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 		if matchErr != nil {
 			return nil, taskToolError(matchErr)
 		}
-		return Result{"ok": true, "action": action, "candidates": candidates, "count": len(candidates), "workflow_dir": r.tasks.WorkflowRoot()}, nil
+		return Result{
+			"ok":                    true,
+			"action":                action,
+			"candidates":            candidates,
+			"count":                 len(candidates),
+			"workflow_dir":          r.tasks.WorkflowRoot(),
+			"vector_search_enabled": r.tasks.VectorSearchEnabled(),
+		}, nil
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported task_manage action", "validation", map[string]any{
 			"action": action, "allowed": taskActions,

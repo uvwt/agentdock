@@ -64,6 +64,20 @@ draft -> validated -> active -> retired
 
 模板匹配会做轻量文本归一化：例如用户说“一个小时”也能命中包含“一小时”关键词的时间盒模板。匹配前会把同一模板 ID 的多个 active 版本收敛为最新版本，避免旧版本和新版本同时出现在候选里。项目名类关键词（如 AgentDock、Nexus、VitaPulse）只作为上下文打分，不会单独构成语义命中，避免“任何 AgentDock 任务都匹配部署模板”。有关键词或任务类型命中时，结果只返回语义候选，避免把同设备但无关的模板都列出来；只有完全没有语义候选时，才回退到设备候选。创建带模板的任务时，模板完成条件会先进入任务；调用方额外传入的完成条件只作为补充，和模板条件高度相似的内容会被跳过，避免同一个完成要求被重复编号、重复要求录入证据。
 
+`template_match` 支持可选的任务目标向量召回。AgentDock 不内置 embedding 模型；当运行环境配置 `AGENTDOCK_TASK_EMBEDDING_ENDPOINT` 或通用 `AGENTDOCK_EMBEDDING_ENDPOINT` 时，会调用 OpenAI-compatible `/v1/embeddings` provider，把用户目标和模板标题、描述、关键词、任务类型、完成条件、步骤标题等文本做向量相似度计算。向量命中只作为混合检索的一路语义信号，仍然保留设备过滤、任务类型、关键词、弱项目名规则、priority 和最终重排；provider 未配置、超时或返回异常时，`template_match` 会自动降级为原有关键词/结构化匹配。
+
+推荐本机复用 RecallDock 的 BGE-M3 embedding 服务，而不是在 AgentDock 内部再部署模型：
+
+```env
+AGENTDOCK_TASK_VECTOR_SEARCH=true
+AGENTDOCK_TASK_EMBEDDING_ENDPOINT=http://127.0.0.1:18788/v1/embeddings
+AGENTDOCK_TASK_EMBEDDING_MODEL=BAAI/bge-m3
+AGENTDOCK_TASK_VECTOR_TIMEOUT_MS=10000
+AGENTDOCK_TASK_VECTOR_MIN_SCORE=0.55
+```
+
+`template_match` 返回的候选 `reason` 里出现 `vector:0.xx` 时，表示该模板来自向量语义召回；输出里的 `vector_search_enabled` 表示当前 AgentDock 实例是否已经启用 embedding-backed 匹配。
+
 模板步骤支持：必做/可选、阶段、依赖、推荐命令、允许或禁止替代。模型可以补充步骤和异常处理，但不能跳过必做步骤。必做步骤只能完成或阻塞；可选步骤可用 `skip_step` 跳过并记录原因。单步兼容接口 `complete_step` 仍可写入结构化证据，但正常多步骤任务应优先按阶段调用 `phase_checkpoint`：一次原子写入当前阶段的多个步骤完成证据、多个完成条件证据，并选择推进一个阶段或在 closeout 完成任务。失败的 checkpoint 不会留下部分状态。
 
 `phase_checkpoint` 必须提供 `summary`，默认只返回紧凑任务摘要，不返回完整事件和模板快照。紧凑摘要会保留 `condition_refs` 和 `current_phase_steps`，用于后续 checkpoint 直接引用 `cond_01`、步骤 id 等必要索引，避免为了查 ID 再读取完整任务快照。推荐粒度是每个 `check`、`execute`、`verify`、`closeout` 里程碑一次；不要在每条命令后写任务状态。逐项 `add_evidence`、`complete_step`、`advance` 仅用于交互式恢复、单项补录或兼容旧调用方。

@@ -1,6 +1,10 @@
 package taskstate
 
-import "testing"
+import (
+	"context"
+	"strings"
+	"testing"
+)
 
 func testTemplate() Template {
 	return Template{
@@ -319,6 +323,82 @@ func TestTemplateMatchSpecificKeywordsBeatGenericPriority(t *testing.T) {
 	}
 	if len(candidates) < 2 || candidates[0].ID != "agentdock.deploy.macos" {
 		t.Fatalf("specific AgentDock template should win, got %#v", candidates)
+	}
+}
+
+type fakeEmbeddingProvider struct{}
+
+func (fakeEmbeddingProvider) EmbedTexts(_ context.Context, texts []string) ([][]float64, error) {
+	out := make([][]float64, 0, len(texts))
+	for _, text := range texts {
+		lower := strings.ToLower(text)
+		switch {
+		case strings.Contains(lower, "recall") || strings.Contains(text, "长期上下文"):
+			out = append(out, []float64{1, 0})
+		case strings.Contains(lower, "deploy") || strings.Contains(text, "部署"):
+			out = append(out, []float64{0, 1})
+		default:
+			out = append(out, []float64{0.1, 0.1})
+		}
+	}
+	return out, nil
+}
+
+func TestTemplateMatchUsesVectorSemanticRecall(t *testing.T) {
+	store, err := NewWithOptions(t.TempDir()+"/tasks", StoreOptions{
+		TaskVectorSearch:   true,
+		EmbeddingProvider:  fakeEmbeddingProvider{},
+		TaskVectorMinScore: 0.8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tpl := range []Template{
+		{
+			ID: "recalldock.migration", Version: "1.0.0", Title: "RecallDock migration",
+			Description:          "迁移长期上下文、memory cards、notes，并统一到 RecallDock semantic recall.",
+			Match:                MatchRule{Keywords: []string{"知识库替换"}, Devices: []string{"DockMini"}, Priority: 10},
+			CompletionConditions: []string{"done"},
+			Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+		},
+		{
+			ID: "fallback.device", Version: "1.0.0", Title: "Device fallback",
+			Match:                MatchRule{Devices: []string{"DockMini"}, Priority: 999},
+			CompletionConditions: []string{"done"},
+			Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+		},
+	} {
+		draft, err := store.SaveTemplateDraft(tpl)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.ValidateTemplate(draft.ID, draft.Version); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.PublishTemplate(draft.ID, draft.Version); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	candidates, err := store.MatchTemplates("长期上下文系统全面迁移", "DockMini", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].ID != "recalldock.migration" {
+		t.Fatalf("expected vector semantic candidate to suppress device-only fallback, got %#v", candidates)
+	}
+	if !strings.Contains(candidates[0].Reason, "vector:") {
+		t.Fatalf("expected vector reason, got %#v", candidates[0])
+	}
+}
+
+func TestTemplateMatchDisablesVectorWithoutProvider(t *testing.T) {
+	store, err := NewWithOptions(t.TempDir()+"/tasks", StoreOptions{TaskVectorSearch: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.VectorSearchEnabled() {
+		t.Fatal("vector search should stay disabled without provider or endpoint")
 	}
 }
 

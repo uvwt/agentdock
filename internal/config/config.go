@@ -42,6 +42,12 @@ type Config struct {
 	RecallLoginUser               string
 	RecallLoginValue              string
 	RecallTimeoutMS               int
+	TaskVectorSearch              bool
+	TaskEmbeddingEndpoint         string
+	TaskEmbeddingToken            string
+	TaskEmbeddingModel            string
+	TaskVectorTimeoutMS           int
+	TaskVectorMinScore            float64
 	NexusEndpoint                 string
 	NexusDeviceName               string
 	NexusStateDir                 string
@@ -78,6 +84,12 @@ func FromEnv() Config {
 		RecallLoginUser:               os.Getenv("AGENTDOCK_RECALL_LOGIN_USER"),
 		RecallLoginValue:              os.Getenv("AGENTDOCK_RECALL_LOGIN_VALUE"),
 		RecallTimeoutMS:               getenvInt("AGENTDOCK_RECALL_TIMEOUT_MS", 30000),
+		TaskVectorSearch:              getenvBool("AGENTDOCK_TASK_VECTOR_SEARCH", true),
+		TaskEmbeddingEndpoint:         firstNonEmpty(os.Getenv("AGENTDOCK_TASK_EMBEDDING_ENDPOINT"), os.Getenv("AGENTDOCK_EMBEDDING_ENDPOINT")),
+		TaskEmbeddingToken:            firstNonEmpty(os.Getenv("AGENTDOCK_TASK_EMBEDDING_TOKEN"), os.Getenv("AGENTDOCK_EMBEDDING_TOKEN")),
+		TaskEmbeddingModel:            getenv("AGENTDOCK_TASK_EMBEDDING_MODEL", getenv("AGENTDOCK_EMBEDDING_MODEL", "BAAI/bge-m3")),
+		TaskVectorTimeoutMS:           getenvInt("AGENTDOCK_TASK_VECTOR_TIMEOUT_MS", 10000),
+		TaskVectorMinScore:            getenvFloat("AGENTDOCK_TASK_VECTOR_MIN_SCORE", 0.55),
 		NexusEndpoint:                 getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
 		NexusDeviceName:               getenv("AGENTDOCK_NEXUS_DEVICE_NAME", ""),
 		NexusStateDir:                 getenv("AGENTDOCK_NEXUS_STATE_DIR", ""),
@@ -128,6 +140,15 @@ func (c *Config) Normalize() {
 	}
 	if c.RecallTimeoutMS <= 0 {
 		c.RecallTimeoutMS = 30000
+	}
+	if c.TaskVectorTimeoutMS <= 0 {
+		c.TaskVectorTimeoutMS = 10000
+	}
+	if c.TaskVectorMinScore <= 0 || c.TaskVectorMinScore > 1 {
+		c.TaskVectorMinScore = 0.55
+	}
+	if c.TaskEmbeddingModel == "" {
+		c.TaskEmbeddingModel = "BAAI/bge-m3"
 	}
 	if c.NexusHeartbeatSeconds <= 0 {
 		c.NexusHeartbeatSeconds = 30
@@ -188,6 +209,18 @@ func getenvInt(key string, fallback int) int {
 		return fallback
 	}
 	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func getenvFloat(key string, fallback float64) float64 {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
 	if err != nil {
 		return fallback
 	}

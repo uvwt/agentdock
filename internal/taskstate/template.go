@@ -254,6 +254,7 @@ func (s *Store) MatchTemplates(goal, device, taskType string) ([]TemplateCandida
 		return nil, err
 	}
 	templates = latestTemplateVersions(templates)
+	vectorScores := s.templateVectorScores(goal, taskType, templates)
 	goalLower := strings.ToLower(goal)
 	goalMatchText := templateMatchText(goalLower)
 	var out []TemplateCandidate
@@ -282,6 +283,11 @@ func (s *Store) MatchTemplates(goal, device, taskType string) ([]TemplateCandida
 			score += 80
 			semanticMatched = true
 			reasons = append(reasons, "task_type:"+taskType)
+		}
+		if vectorScore := vectorScores[templateVectorCacheKey(t)]; vectorScore >= s.vectorMinScore && vectorScore > 0 {
+			score += templateVectorScoreBonus(vectorScore, s.vectorMinScore)
+			semanticMatched = true
+			reasons = append(reasons, fmt.Sprintf("vector:%.2f", vectorScore))
 		}
 
 		// 设备只说明模板能在哪台机器执行，不能说明任务语义是否匹配。

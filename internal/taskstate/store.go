@@ -112,9 +112,18 @@ type Task struct {
 type Store struct {
 	root string
 	mu   sync.Mutex
+
+	vectorMu       sync.Mutex
+	vectorProvider EmbeddingProvider
+	vectorMinScore float64
+	vectorCache    map[string][]float64
 }
 
 func New(root string) (*Store, error) {
+	return NewWithOptions(root, StoreOptions{})
+}
+
+func NewWithOptions(root string, opts StoreOptions) (*Store, error) {
 	if strings.TrimSpace(root) == "" {
 		return nil, errors.New("task state root is required")
 	}
@@ -128,10 +137,12 @@ func New(root string) (*Store, error) {
 	if err := os.Chmod(abs, 0o700); err != nil {
 		return nil, fmt.Errorf("secure task state root: %w", err)
 	}
-	return &Store{root: abs}, nil
+	return newStore(abs, opts), nil
 }
 
 func (s *Store) Root() string { return s.root }
+
+func (s *Store) VectorSearchEnabled() bool { return s.vectorProvider != nil }
 
 func (s *Store) Create(title, goal string, conditionTexts []string) (Task, error) {
 	return s.CreateWithTemplate(title, goal, conditionTexts, "", "", "", nil)

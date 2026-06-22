@@ -122,6 +122,7 @@ func outputSchema(name string) map[string]any {
 		props["template"] = objectProp("Full workflow template. Returned by template_get.")
 		props["templates"] = arrayProp("Compact workflow template summaries returned by template_list.")
 		props["candidates"] = arrayProp("Matched workflow template candidates with scores and reasons.")
+		props["vector_search_enabled"] = boolProp("Whether optional embedding-backed task/template vector search is enabled for template_match.")
 		props["template_id"] = stringProp("Workflow template id returned by template mutation actions.")
 		props["template_summary"] = objectProp("Compact workflow template summary returned by template_save, template_validate, template_publish, template_retire, and template_list items.")
 		props["valid"] = boolProp("Whether a draft workflow template passed validation.")

@@ -41,7 +41,14 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	if !filepath.IsAbs(taskRoot) {
 		taskRoot = filepath.Join(cfg.Workspace, taskRoot)
 	}
-	tasks, err := taskstate.New(filepath.Join(taskRoot, "tasks"))
+	tasks, err := taskstate.NewWithOptions(filepath.Join(taskRoot, "tasks"), taskstate.StoreOptions{
+		TaskVectorSearch:    cfg.TaskVectorSearch,
+		EmbeddingEndpoint:   cfg.TaskEmbeddingEndpoint,
+		EmbeddingToken:      cfg.TaskEmbeddingToken,
+		EmbeddingModel:      cfg.TaskEmbeddingModel,
+		TaskVectorTimeoutMS: cfg.TaskVectorTimeoutMS,
+		TaskVectorMinScore:  cfg.TaskVectorMinScore,
+	})
 	if err != nil {
 		return nil, err
 	}
