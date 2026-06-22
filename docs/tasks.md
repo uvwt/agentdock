@@ -64,7 +64,7 @@ draft -> validated -> active -> retired
 
 模板匹配会做轻量文本归一化：例如用户说“一个小时”也能命中包含“一小时”关键词的时间盒模板。匹配前会把同一模板 ID 的多个 active 版本收敛为最新版本，避免旧版本和新版本同时出现在候选里。项目名类关键词（如 AgentDock、Nexus、VitaPulse）只作为上下文打分，不会单独构成语义命中，避免“任何 AgentDock 任务都匹配部署模板”。有关键词或任务类型命中时，结果只返回语义候选，避免把同设备但无关的模板都列出来；只有完全没有语义候选时，才回退到设备候选。创建带模板的任务时，模板完成条件会先进入任务；调用方额外传入的完成条件只作为补充，和模板条件高度相似的内容会被跳过，避免同一个完成要求被重复编号、重复要求录入证据。
 
-`template_match` 支持可选的任务目标向量召回。AgentDock 不内置 embedding 模型；当运行环境配置 `AGENTDOCK_TASK_EMBEDDING_ENDPOINT` 或通用 `AGENTDOCK_EMBEDDING_ENDPOINT` 时，会调用 OpenAI-compatible `/v1/embeddings` provider，把用户目标和模板标题、描述、关键词、任务类型、完成条件、步骤标题等文本做向量相似度计算。向量命中只作为混合检索的一路语义信号，仍然保留设备过滤、任务类型、关键词、弱项目名规则、priority 和最终重排；provider 未配置、超时或返回异常时，`template_match` 会自动降级为原有关键词/结构化匹配。
+`template_match` 支持可选的任务目标向量召回。AgentDock 不内置 embedding 模型；当运行环境配置 `AGENTDOCK_TASK_EMBEDDING_ENDPOINT` 或通用 `AGENTDOCK_EMBEDDING_ENDPOINT` 时，会调用 OpenAI-compatible `/v1/embeddings` provider，把用户目标和模板标题、描述、关键词、任务类型、完成条件、步骤标题等文本做向量相似度计算。模板向量会按 `template_id/version/hash/model` 写入 `$AGENTDOCK_DIR/tasks/search_index.sqlite`，搜索时只向量化 query，并复用 SQLite 中已经存在且 hash/model 匹配的模板向量；索引缺失时仅补建预筛后的少量候选。向量命中只作为混合检索的一路语义信号，仍然保留设备过滤、任务类型、关键词、弱项目名规则、priority 和最终重排；provider 未配置、超时或返回异常时，`template_match` 会自动降级为原有关键词/结构化匹配。
 
 推荐本机复用 RecallDock 的 BGE-M3 embedding 服务，而不是在 AgentDock 内部再部署模型：
 
@@ -76,7 +76,7 @@ AGENTDOCK_TASK_VECTOR_TIMEOUT_MS=10000
 AGENTDOCK_TASK_VECTOR_MIN_SCORE=0.55
 ```
 
-`template_match` 返回的候选 `reason` 里出现 `vector:0.xx` 时，表示该模板来自向量语义召回；输出里的 `vector_search_enabled` 表示当前 AgentDock 实例是否已经启用 embedding-backed 匹配。
+`template_match` 返回的候选 `reason` 里出现 `vector:0.xx` 时，表示该模板来自向量语义召回；输出里的 `vector_search_enabled` 表示当前 AgentDock 实例是否已经启用 embedding-backed 匹配，`vector_index_status` / `vector_index_items` / `embedding_model` 表示 SQLite 持久化索引状态、当前模型下已持久化的模板向量数量和模型名。
 
 模板步骤支持：必做/可选、阶段、依赖、推荐命令、允许或禁止替代。模型可以补充步骤和异常处理，但不能跳过必做步骤。必做步骤只能完成或阻塞；可选步骤可用 `skip_step` 跳过并记录原因。单步兼容接口 `complete_step` 仍可写入结构化证据，但正常多步骤任务应优先按阶段调用 `phase_checkpoint`：一次原子写入当前阶段的多个步骤完成证据、多个完成条件证据，并选择推进一个阶段或在 closeout 完成任务。失败的 checkpoint 不会留下部分状态。
 

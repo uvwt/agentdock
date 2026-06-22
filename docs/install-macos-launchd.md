@@ -45,7 +45,7 @@ AGENTDOCK_TASK_VECTOR_TIMEOUT_MS=10000
 AGENTDOCK_TASK_VECTOR_MIN_SCORE=0.55
 ```
 
-endpoint 未配置或调用失败时会自动降级为原有结构化/关键词匹配，不影响任务工具可用性。
+模板向量索引会持久化到 `$HOME/agentdock-runtime/AgentDock/tasks/search_index.sqlite`。endpoint 未配置或调用失败时会自动降级为原有结构化/关键词匹配，不影响任务工具可用性。
 
 ## 注意
 

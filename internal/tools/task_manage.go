@@ -186,6 +186,7 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 		if matchErr != nil {
 			return nil, taskToolError(matchErr)
 		}
+		vectorIndexStatus, vectorIndexItems, embeddingModel := r.tasks.VectorIndexInfo()
 		return Result{
 			"ok":                    true,
 			"action":                action,
@@ -193,6 +194,9 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 			"count":                 len(candidates),
 			"workflow_dir":          r.tasks.WorkflowRoot(),
 			"vector_search_enabled": r.tasks.VectorSearchEnabled(),
+			"vector_index_status":   vectorIndexStatus,
+			"vector_index_items":    vectorIndexItems,
+			"embedding_model":       embeddingModel,
 		}, nil
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported task_manage action", "validation", map[string]any{

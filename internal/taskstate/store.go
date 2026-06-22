@@ -115,8 +115,9 @@ type Store struct {
 
 	vectorMu       sync.Mutex
 	vectorProvider EmbeddingProvider
+	vectorModel    string
 	vectorMinScore float64
-	vectorCache    map[string][]float64
+	vectorIndex    *templateVectorIndex
 }
 
 func New(root string) (*Store, error) {

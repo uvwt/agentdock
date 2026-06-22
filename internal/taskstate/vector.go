@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -40,6 +41,10 @@ type StoreOptions struct {
 }
 
 func newStore(root string, opts StoreOptions) *Store {
+	model := strings.TrimSpace(opts.EmbeddingModel)
+	if model == "" {
+		model = "BAAI/bge-m3"
+	}
 	var provider EmbeddingProvider
 	if opts.TaskVectorSearch {
 		provider = opts.EmbeddingProvider
@@ -48,7 +53,7 @@ func newStore(root string, opts StoreOptions) *Store {
 		provider = &httpEmbeddingProvider{
 			endpoint: strings.TrimSpace(opts.EmbeddingEndpoint),
 			token:    strings.TrimSpace(opts.EmbeddingToken),
-			model:    strings.TrimSpace(opts.EmbeddingModel),
+			model:    model,
 			timeout:  taskVectorTimeout(opts.TaskVectorTimeoutMS),
 			client:   &http.Client{},
 		}
@@ -57,11 +62,16 @@ func newStore(root string, opts StoreOptions) *Store {
 	if minScore <= 0 || minScore > 1 {
 		minScore = defaultTaskVectorMinScore
 	}
+	var index *templateVectorIndex
+	if provider != nil {
+		index, _ = newTemplateVectorIndex(filepath.Join(root, "search_index.sqlite"), model)
+	}
 	return &Store{
 		root:           root,
 		vectorProvider: provider,
+		vectorModel:    model,
 		vectorMinScore: minScore,
-		vectorCache:    map[string][]float64{},
+		vectorIndex:    index,
 	}
 }
 
@@ -168,29 +178,28 @@ func (s *Store) templateVectorScores(goal, taskType string, templates []Template
 	}
 
 	keys := make([]string, 0, len(candidates))
-	missingKeys := []string{}
+	missingTemplates := []Template{}
 	missingTexts := []string{}
 	textByKey := map[string]string{}
+	cached := map[string][]float64{}
+	ctx := context.Background()
+
+	s.vectorMu.Lock()
 	for _, candidate := range candidates {
 		key := templateVectorCacheKey(candidate.template)
 		keys = append(keys, key)
 		textByKey[key] = candidate.text
-	}
-
-	cached := map[string][]float64{}
-	s.vectorMu.Lock()
-	for _, key := range keys {
-		if vector := s.vectorCache[key]; len(vector) > 0 {
-			cached[key] = append([]float64{}, vector...)
-		} else {
-			missingKeys = append(missingKeys, key)
-			missingTexts = append(missingTexts, textByKey[key])
+		if vector, ok, err := s.vectorIndex.getTemplateVector(ctx, candidate.template); err == nil && ok {
+			cached[key] = vector
+			continue
 		}
+		missingTemplates = append(missingTemplates, candidate.template)
+		missingTexts = append(missingTexts, candidate.text)
 	}
 	s.vectorMu.Unlock()
 
 	input := append([]string{queryText}, missingTexts...)
-	vectors, err := s.vectorProvider.EmbedTexts(context.Background(), input)
+	vectors, err := s.vectorProvider.EmbedTexts(ctx, input)
 	if err != nil || len(vectors) != len(input) {
 		return nil
 	}
@@ -198,13 +207,14 @@ func (s *Store) templateVectorScores(goal, taskType string, templates []Template
 	if len(queryVector) == 0 {
 		return nil
 	}
-	if len(missingKeys) > 0 {
+	if len(missingTemplates) > 0 {
 		s.vectorMu.Lock()
-		for i, key := range missingKeys {
+		for i, template := range missingTemplates {
 			vector := vectors[i+1]
 			if len(vector) > 0 {
-				s.vectorCache[key] = append([]float64{}, vector...)
+				key := templateVectorCacheKey(template)
 				cached[key] = append([]float64{}, vector...)
+				_ = s.vectorIndex.putTemplateVector(ctx, template, textByKey[key], vector)
 			}
 		}
 		s.vectorMu.Unlock()
@@ -313,6 +323,16 @@ func truncateTemplateVectorText(text string) string {
 		return text
 	}
 	return string(runes[:maxTemplateVectorTextRunes])
+}
+
+func (s *Store) VectorIndexInfo() (string, int, string) {
+	if s.vectorProvider == nil {
+		return "disabled", 0, ""
+	}
+	if s.vectorIndex == nil {
+		return "degraded", 0, s.vectorModel
+	}
+	return "ready", s.vectorIndex.count(context.Background()), s.vectorModel
 }
 
 func templateVectorScoreBonus(score, minScore float64) int {

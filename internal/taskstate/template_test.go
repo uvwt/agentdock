@@ -392,6 +392,79 @@ func TestTemplateMatchUsesVectorSemanticRecall(t *testing.T) {
 	}
 }
 
+type recordingEmbeddingProvider struct {
+	calls [][]string
+}
+
+func (p *recordingEmbeddingProvider) EmbedTexts(ctx context.Context, texts []string) ([][]float64, error) {
+	p.calls = append(p.calls, append([]string{}, texts...))
+	return fakeEmbeddingProvider{}.EmbedTexts(ctx, texts)
+}
+
+func TestTemplateVectorIndexPersistsAcrossStores(t *testing.T) {
+	root := t.TempDir() + "/tasks"
+	provider1 := &recordingEmbeddingProvider{}
+	store1, err := NewWithOptions(root, StoreOptions{
+		TaskVectorSearch:   true,
+		EmbeddingProvider:  provider1,
+		EmbeddingModel:     "fake-model",
+		TaskVectorMinScore: 0.8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tpl := Template{
+		ID:                   "recalldock.persisted",
+		Version:              "1.0.0",
+		Title:                "RecallDock migration",
+		Description:          "迁移长期上下文、memory cards、notes，并统一到 RecallDock semantic recall.",
+		Match:                MatchRule{Devices: []string{"DockMini"}},
+		CompletionConditions: []string{"done"},
+		Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+	}
+	draft, err := store1.SaveTemplateDraft(tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store1.ValidateTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store1.PublishTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store1.MatchTemplates("长期上下文系统全面迁移", "DockMini", ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider1.calls) != 1 || len(provider1.calls[0]) != 2 {
+		t.Fatalf("first match should embed query and missing template once, calls=%#v", provider1.calls)
+	}
+	status, items, model := store1.VectorIndexInfo()
+	if status != "ready" || items != 1 || model != "fake-model" {
+		t.Fatalf("unexpected vector index info: status=%s items=%d model=%s", status, items, model)
+	}
+
+	provider2 := &recordingEmbeddingProvider{}
+	store2, err := NewWithOptions(root, StoreOptions{
+		TaskVectorSearch:   true,
+		EmbeddingProvider:  provider2,
+		EmbeddingModel:     "fake-model",
+		TaskVectorMinScore: 0.8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates, err := store2.MatchTemplates("长期上下文系统全面迁移", "DockMini", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].ID != "recalldock.persisted" || !strings.Contains(candidates[0].Reason, "vector:") {
+		t.Fatalf("expected persisted vector candidate, got %#v", candidates)
+	}
+	if len(provider2.calls) != 1 || len(provider2.calls[0]) != 1 {
+		t.Fatalf("second store should embed query only and reuse persisted template vector, calls=%#v", provider2.calls)
+	}
+}
+
 func TestTemplateMatchDisablesVectorWithoutProvider(t *testing.T) {
 	store, err := NewWithOptions(t.TempDir()+"/tasks", StoreOptions{TaskVectorSearch: true})
 	if err != nil {
