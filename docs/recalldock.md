@@ -107,4 +107,4 @@ BGE-M3 embedding：http://127.0.0.1:18788/v1/embeddings
 
 ## 备份仓库命名
 
-RecallDock 数据备份仓库目标名为 `agentdock-recall`；GitHub 远端应使用 `agentdock-recall`，不再使用历史 `agentdock-memory` 作为默认仓库名。
+RecallDock 数据备份仓库目标名为 `agentdock-recall`；GitHub 远端应使用 `agentdock-recall`，不再使用历史长期记忆仓库名作为默认仓库名。
