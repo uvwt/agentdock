@@ -127,8 +127,8 @@ func inputSchema(name string) map[string]any {
 		props["allow_long_template"] = boolProp("Allow a workflow template to exceed the default guardrails. Only use for exceptional templates and always provide long_template_reason.")
 		props["long_template_reason"] = stringProp("Required reason when allow_long_template=true. The reason is saved into the template for review.")
 		props["template_status"] = map[string]any{"type": "string", "enum": []string{"draft", "validated", "active", "retired"}, "description": "Optional template_list status filter."}
-		props["device"] = stringProp("Device context for template_match.")
-		props["task_type"] = stringProp("Task type context for template_match.")
+		props["device"] = stringProp("Optional free-text environment/device hint for template_match. Use only when the user explicitly names a target environment; omit when no real environment is involved. This is a soft ranking hint, not an enum or hard filter.")
+		props["task_type"] = stringProp("Optional free-text task type hint for template_match. It may be natural language or a stable label; it is a soft ranking hint, not an enum or hard filter.")
 		stepEvidenceSchema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"type", "source", "result", "summary"}, "properties": map[string]any{"type": stringProp("Evidence type such as command, http, tool, file, artifact."), "source": stringProp("Command, endpoint, file, or tool source."), "result": stringProp("Structured result summary such as exit_code=0 or HTTP 200."), "summary": stringProp("Human-readable evidence summary."), "artifact_ref": stringProp("Optional external log, screenshot, report, or Artifact reference."), "sha256": stringProp("Optional external evidence SHA-256.")}}
 		props["step_id"] = stringProp("Template step id for complete_step or skip_step.")
 		props["step_evidence"] = stepEvidenceSchema

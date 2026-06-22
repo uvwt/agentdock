@@ -268,7 +268,7 @@ func TestTemplateMatchFallsBackToDeviceOnlyWhenNoSemanticMatch(t *testing.T) {
 	}
 }
 
-func TestTemplateMatchSkipsTemplatesForOtherDevices(t *testing.T) {
+func TestTemplateMatchRanksDeviceHintWithoutHardFiltering(t *testing.T) {
 	store, err := New(t.TempDir() + "/tasks")
 	if err != nil {
 		t.Fatal(err)
@@ -292,8 +292,50 @@ func TestTemplateMatchSkipsTemplatesForOtherDevices(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(candidates) != 1 || candidates[0].ID != "agentdock.deploy.macos" {
-		t.Fatalf("expected only macOS deployment candidate, got %#v", candidates)
+	if len(candidates) < 2 || candidates[0].ID != "agentdock.deploy.macos" {
+		t.Fatalf("expected matching device hint to rank first without filtering other semantic candidates, got %#v", candidates)
+	}
+}
+
+func TestTemplateMatchNaturalTaskTypeAndDeviceMismatchStillRecallSemanticTemplate(t *testing.T) {
+	store, err := New(t.TempDir() + "/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tpl := Template{
+		ID:          "github.source-evidence-analysis",
+		Version:     "1.0.0",
+		Title:       "GitHub 源码证据化分析",
+		Description: "用于分析 GitHub 仓库源码结构、核心实现、运行流程、学习价值，并要求引用真实链接和行号。",
+		Match: MatchRule{
+			Keywords:  []string{"GitHub", "github.com", "源码结构", "核心实现", "学习价值", "真实链接", "行号"},
+			Devices:   []string{"DockMini", "DockAir"},
+			TaskTypes: []string{"github_code_reading"},
+			Priority:  92,
+		},
+		CompletionConditions: []string{"done"},
+		Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+	}
+	draft, err := store.SaveTemplateDraft(tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ValidateTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PublishTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	candidates, err := store.MatchTemplates(
+		"分析 GitHub 仓库 example/repo，输出源码结构、关键实现、学习价值，并引用真实 GitHub 链接和行号。",
+		"Mac mini",
+		"GitHub 源码阅读与分析",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].ID != tpl.ID {
+		t.Fatalf("expected semantic template despite natural task_type and non-enumerated device hint, got %#v", candidates)
 	}
 }
 

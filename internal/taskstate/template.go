@@ -254,21 +254,17 @@ func (s *Store) MatchTemplates(goal, device, taskType string) ([]TemplateCandida
 		return nil, err
 	}
 	templates = latestTemplateVersions(templates)
-	vectorScores := s.templateVectorScores(goal, taskType, templates)
-	goalLower := strings.ToLower(goal)
-	goalMatchText := templateMatchText(goalLower)
+	vectorScores := s.templateVectorScores(goal, taskType, device, templates)
+	queryMatchText := templateMatchText(strings.Join([]string{goal, taskType, device}, " "))
 	var out []TemplateCandidate
 	var fallback []TemplateCandidate
 	for _, t := range templates {
-		if device != "" && len(t.Match.Devices) > 0 && !containsFold(t.Match.Devices, device) {
-			continue
-		}
 		score := 0
 		semanticMatched := false
 		var reasons []string
 		for _, keyword := range t.Match.Keywords {
 			keyword = strings.TrimSpace(keyword)
-			if keyword != "" && strings.Contains(goalMatchText, templateMatchText(keyword)) {
+			if keyword != "" && strings.Contains(queryMatchText, templateMatchText(keyword)) {
 				if weakTemplateKeyword(keyword) {
 					score += 15
 					reasons = append(reasons, "context_keyword:"+keyword)
@@ -279,7 +275,7 @@ func (s *Store) MatchTemplates(goal, device, taskType string) ([]TemplateCandida
 				reasons = append(reasons, "keyword:"+keyword)
 			}
 		}
-		if containsFold(t.Match.TaskTypes, taskType) && taskType != "" {
+		if containsTemplateHint(t.Match.TaskTypes, taskType) {
 			score += 80
 			semanticMatched = true
 			reasons = append(reasons, "task_type:"+taskType)
@@ -290,9 +286,10 @@ func (s *Store) MatchTemplates(goal, device, taskType string) ([]TemplateCandida
 			reasons = append(reasons, fmt.Sprintf("vector:%.2f", vectorScore))
 		}
 
-		// 设备只说明模板能在哪台机器执行，不能说明任务语义是否匹配。
-		// 因此 device 只给小幅加分；模板 priority 也必须在关键词或 task_type 命中后才生效。
-		if containsFold(t.Match.Devices, device) && device != "" {
+		// task_type 与 device 都是可选自由文本提示，不是枚举约束。
+		// 命中时只加分；不匹配时不能直接排除 active 模板。
+		// 模板 priority 也必须在关键词、task_type 或向量语义命中后才生效。
+		if containsTemplateHint(t.Match.Devices, device) {
 			score += 5
 			reasons = append(reasons, "device:"+device)
 		}
@@ -583,9 +580,18 @@ func phaseIndex(p Phase) int {
 	}
 	return -1
 }
-func containsFold(values []string, value string) bool {
+func containsTemplateHint(values []string, value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	normalizedValue := templateMatchText(value)
 	for _, item := range values {
-		if strings.EqualFold(strings.TrimSpace(item), strings.TrimSpace(value)) {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if strings.EqualFold(item, value) || templateMatchText(item) == normalizedValue {
 			return true
 		}
 	}

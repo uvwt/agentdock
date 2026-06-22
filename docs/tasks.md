@@ -62,9 +62,9 @@ draft -> validated -> active -> retired
 - `template_list`：查看模板摘要列表；`template_get`：查看单个完整模板。
 - `template_match`：根据目标、设备、任务类型返回候选、分数和匹配理由。
 
-模板匹配会做轻量文本归一化：例如用户说“一个小时”也能命中包含“一小时”关键词的时间盒模板。匹配前会把同一模板 ID 的多个 active 版本收敛为最新版本，避免旧版本和新版本同时出现在候选里。项目名类关键词（如 AgentDock、Nexus、VitaPulse）只作为上下文打分，不会单独构成语义命中，避免“任何 AgentDock 任务都匹配部署模板”。有关键词或任务类型命中时，结果只返回语义候选，避免把同设备但无关的模板都列出来；只有完全没有语义候选时，才回退到设备候选。创建带模板的任务时，模板完成条件会先进入任务；调用方额外传入的完成条件只作为补充，和模板条件高度相似的内容会被跳过，避免同一个完成要求被重复编号、重复要求录入证据。
+模板匹配会做轻量文本归一化：例如用户说“一个小时”也能命中包含“一小时”关键词的时间盒模板。匹配前会把同一模板 ID 的多个 active 版本收敛为最新版本，避免旧版本和新版本同时出现在候选里。`goal` 是主信号；`task_type` 和 `device` 都是可选自由文本提示，只用于加分和排序，不要求枚举值，也不能因为不匹配而直接排除 active 模板。不涉及真实环境时可以省略 `device`；模板里的 `match.devices` 也是软标签，不是硬约束。项目名类关键词（如 AgentDock、Nexus、VitaPulse）只作为上下文打分，不会单独构成语义命中，避免“任何 AgentDock 任务都匹配部署模板”。有关键词、任务类型或向量语义命中时，结果只返回语义候选，避免把同设备但无关的模板都列出来；只有完全没有语义候选时，才回退到设备候选。创建带模板的任务时，模板完成条件会先进入任务；调用方额外传入的完成条件只作为补充，和模板条件高度相似的内容会被跳过，避免同一个完成要求被重复编号、重复要求录入证据。
 
-`template_match` 支持可选的任务目标向量召回。AgentDock 不内置 embedding 模型；当运行环境配置 `AGENTDOCK_TASK_EMBEDDING_ENDPOINT` 或通用 `AGENTDOCK_EMBEDDING_ENDPOINT` 时，会调用 OpenAI-compatible `/v1/embeddings` provider，把用户目标和模板标题、描述、关键词、任务类型、完成条件、步骤标题等文本做向量相似度计算。模板向量会按 `template_id/version/hash/model` 写入 `$AGENTDOCK_DIR/tasks/search_index.sqlite`，搜索时只向量化 query，并复用 SQLite 中已经存在且 hash/model 匹配的模板向量；索引缺失时仅补建预筛后的少量候选。向量命中只作为混合检索的一路语义信号，仍然保留设备过滤、任务类型、关键词、弱项目名规则、priority 和最终重排；provider 未配置、超时或返回异常时，`template_match` 会自动降级为原有关键词/结构化匹配。
+`template_match` 支持可选的任务目标向量召回。AgentDock 不内置 embedding 模型；当运行环境配置 `AGENTDOCK_TASK_EMBEDDING_ENDPOINT` 或通用 `AGENTDOCK_EMBEDDING_ENDPOINT` 时，会调用 OpenAI-compatible `/v1/embeddings` provider，把用户目标、可选任务类型、可选设备提示与模板标题、描述、关键词、任务类型、设备软标签、完成条件、步骤标题等文本做向量相似度计算。模板向量会按 `template_id/version/hash/model` 写入 `$AGENTDOCK_DIR/tasks/search_index.sqlite`，搜索时只向量化 query，并复用 SQLite 中已经存在且 hash/model 匹配的模板向量；索引缺失时仅补建预筛后的少量候选。向量命中只作为混合检索的一路语义信号，仍然保留任务类型、关键词、设备软加分、弱项目名规则、priority 和最终重排；provider 未配置、超时或返回异常时，`template_match` 会自动降级为原有关键词/结构化匹配。
 
 推荐本机复用 RecallDock 的 BGE-M3 embedding 服务，而不是在 AgentDock 内部再部署模型：
 

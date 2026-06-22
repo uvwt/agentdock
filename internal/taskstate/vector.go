@@ -167,11 +167,11 @@ func truncateVectorError(data []byte) string {
 	return text
 }
 
-func (s *Store) templateVectorScores(goal, taskType string, templates []Template) map[string]float64 {
+func (s *Store) templateVectorScores(goal, taskType, device string, templates []Template) map[string]float64 {
 	if s.vectorProvider == nil || strings.TrimSpace(goal) == "" || len(templates) == 0 {
 		return nil
 	}
-	queryText := strings.TrimSpace(strings.Join([]string{goal, taskType}, " "))
+	queryText := strings.TrimSpace(strings.Join([]string{goal, taskType, device}, " "))
 	candidates := shortlistTemplateVectorCandidates(queryText, templates)
 	if len(candidates) == 0 {
 		return nil
@@ -240,6 +240,7 @@ func templateVectorText(t Template) string {
 	parts := []string{t.ID, t.Title, t.Description}
 	parts = append(parts, t.Match.Keywords...)
 	parts = append(parts, t.Match.TaskTypes...)
+	parts = append(parts, t.Match.Devices...)
 	parts = append(parts, t.CompletionConditions...)
 	for _, step := range t.Steps {
 		parts = append(parts, step.ID, step.Title)
