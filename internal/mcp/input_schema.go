@@ -277,7 +277,7 @@ func inputSchema(name string) map[string]any {
 		props["overwrite"] = boolProp("Replace an existing note.")
 		required = []string{"content", "confirmed"}
 	case "private_notes_maintain":
-		props["action"] = stringProp("Action: init, check, list, sync, or encrypt-all.")
+		props["action"] = stringProp("Action: init, init-encryption, check, list, sync-encrypted, encrypt-all, or migrate-enc-to-age.")
 	case "browser_session":
 		props["action"] = stringProp("Browser session action: start or close.")
 		props["url"] = stringProp("Initial URL when action=start. Defaults to about:blank.")

@@ -16,6 +16,13 @@ func TestPrivateNotesWriteReadSearchAndEncrypt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	initResult, err := rt.privateNotesMaintain(context.Background(), map[string]any{"action": "init-encryption"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if initResult["recipient"] == "" {
+		t.Fatalf("missing age recipient: %#v", initResult)
+	}
 	marker := "abc123"
 	content := "# Embedding\n\n" + "EMBEDDING_" + "TOKEN=" + marker + "\n"
 	write, err := rt.privateNotesWrite(context.Background(), map[string]any{"title": "Embedding 200399", "category": "services", "content": content, "confirmed": true})
@@ -24,11 +31,19 @@ func TestPrivateNotesWriteReadSearchAndEncrypt(t *testing.T) {
 	}
 	p := write["path"].(string)
 	enc := write["encrypted_path"].(string)
-	if !strings.HasPrefix(p, "notes/services/") || !strings.HasSuffix(enc, ".enc") {
+	if !strings.HasPrefix(p, "notes/services/") || !strings.HasSuffix(enc, ".md.age") {
 		t.Fatalf("unexpected paths: %q %q", p, enc)
 	}
-	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(enc))); err != nil {
+	encPath := filepath.Join(root, filepath.FromSlash(enc))
+	if _, err := os.Stat(encPath); err != nil {
 		t.Fatalf("encrypted backup missing: %v", err)
+	}
+	encBytes, err := os.ReadFile(encPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encBytes), marker) {
+		t.Fatalf("encrypted backup should not contain plaintext marker")
 	}
 	search, err := rt.privateNotesSearch(context.Background(), map[string]any{"query": "embedding"})
 	if err != nil {

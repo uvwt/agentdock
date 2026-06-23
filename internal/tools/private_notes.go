@@ -3,11 +3,6 @@ package tools
 import (
 	"bytes"
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -17,13 +12,16 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"filippo.io/age"
 )
 
 const (
-	privateNotesPlainDir     = "notes"
-	privateNotesEncryptedDir = "encrypted"
-	privateNotesKeyDir       = ".keys"
-	privateNotesKeyFile      = "private-notes-aes256.key"
+	privateNotesPlainDir      = "notes"
+	privateNotesEncryptedDir  = "encrypted"
+	privateNotesKeyDir        = ".keys"
+	privateNotesIdentityFile  = "private-notes-age-identity.txt"
+	privateNotesRecipientFile = "recipients.txt"
 )
 
 type privateNoteSummary struct {
@@ -159,7 +157,7 @@ func (r *Runtime) privateNotesWrite(ctx context.Context, args map[string]any) (R
 		_ = os.Remove(abs)
 		return nil, err
 	}
-	return Result{"ok": true, "root": root, "path": rel, "encrypted_path": encRel, "written": true, "encrypted": true, "algorithm": "AES-256-GCM", "policy": "encrypted backup is mandatory and cannot be skipped"}, nil
+	return Result{"ok": true, "root": root, "path": rel, "encrypted_path": encRel, "written": true, "encrypted": true, "algorithm": "age/X25519", "policy": "age encrypted backup is mandatory and cannot be skipped"}, nil
 }
 
 func (r *Runtime) privateNotesMaintain(ctx context.Context, args map[string]any) (Result, error) {
@@ -169,15 +167,16 @@ func (r *Runtime) privateNotesMaintain(ctx context.Context, args map[string]any)
 		return nil, err
 	}
 	switch action {
-	case "init":
+	case "init", "init-encryption":
 		if err := initPrivateNotesTree(root); err != nil {
 			return nil, err
 		}
-		if _, err := privateNotesKey(root); err != nil {
+		identity, created, err := privateNotesEnsureAgeIdentity(root)
+		if err != nil {
 			return nil, err
 		}
-		return Result{"ok": true, "action": "init", "root": root}, nil
-	case "sync", "encrypt", "encrypt-all":
+		return Result{"ok": true, "action": "init", "root": root, "recipient": identity.Recipient().String(), "identity_created": created, "algorithm": "age/X25519"}, nil
+	case "sync", "encrypt", "encrypt-all", "sync-encrypted", "migrate-enc-to-age":
 		if err := initPrivateNotesTree(root); err != nil {
 			return nil, err
 		}
@@ -185,7 +184,14 @@ func (r *Runtime) privateNotesMaintain(ctx context.Context, args map[string]any)
 		if err != nil {
 			return nil, err
 		}
-		return Result{"ok": true, "action": "sync", "root": root, "encrypted_count": count}, nil
+		removed := 0
+		if action == "migrate-enc-to-age" {
+			removed, err = removeLegacyPrivateNoteBackups(root)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return Result{"ok": true, "action": action, "root": root, "encrypted_count": count, "legacy_removed_count": removed, "algorithm": "age/X25519"}, nil
 	case "list":
 		items, err := listPrivateNotes(root)
 		if err != nil {
@@ -203,7 +209,7 @@ func (r *Runtime) privateNotesMaintain(ctx context.Context, args map[string]any)
 				missing = append(missing, item.EncryptedPath)
 			}
 		}
-		return Result{"ok": len(missing) == 0, "action": "check", "root": root, "notes_count": len(items), "missing_encrypted": missing, "policy": "notes/ is plaintext and ignored by git; encrypted/ stores mandatory backups"}, nil
+		return Result{"ok": len(missing) == 0, "action": "check", "root": root, "notes_count": len(items), "missing_encrypted": missing, "policy": "notes/ is plaintext and ignored by git; encrypted/ stores mandatory .md.age backups"}, nil
 	default:
 		return nil, toolErrorDetails("INVALID_PRIVATE_NOTES_ACTION", "unsupported private_notes_maintain action", "validation", map[string]any{"action": action})
 	}
@@ -243,22 +249,22 @@ func initPrivateNotesTree(root string) error {
 	files := map[string]string{
 		"README.md": `# private-notes
 
-private-notes 是用户个人私密资料库。人和工具只维护 notes/ 明文主目录，encrypted/ 由工具自动生成加密备份。
+private-notes 是用户个人私密资料库。人和工具只维护 notes/ 明文主目录，encrypted/ 由工具自动生成 age 加密备份。
 
-- notes/：本地明文，允许保存 token、密码、API key、恢复码；不提交 Git。
-- encrypted/：notes/ 的强制加密备份，可提交 Git。
+- notes/：本地明文，允许保存私密凭据、恢复码和私密 runbook；不提交 Git。
+- encrypted/：notes/ 的强制 age 加密备份，文件后缀为 .md.age，可提交 Git。
 - private_notes_search：只返回脱敏片段。
 - private_notes_read：明确读取私密笔记时返回明文。
 `,
 		"RULES.md": `# private-notes 规则
 
 1. 只把明文私密资料写入 notes/。
-2. private_notes_write 必须同步生成 encrypted/ 加密备份；不允许跳过。
+2. private_notes_write 必须同步生成 encrypted 目录下的 .md.age age 加密备份；不允许跳过。
 3. notes/ 和 .keys/ 不得提交 Git。
-4. encrypted/ 可以提交 Git，但只能存加密产物。
+4. encrypted/ 可以提交 Git，但只能存 age 加密产物。
 5. RecallDock 只记录索引和路径，不记录 secret 明文。
 `,
-		".gitignore": "notes/\n.keys/\n*.tmp\n*.bak\n.DS_Store\n",
+		".gitignore": "notes/\n.keys/\n*.tmp\n*.bak\n*.enc\n.DS_Store\n",
 	}
 	for rel, content := range files {
 		p := filepath.Join(root, rel)
@@ -349,30 +355,88 @@ func privateNoteWithFrontmatter(rel, content string, args map[string]any) string
 	return b.String()
 }
 
-func privateNotesKey(root string) ([]byte, error) {
-	keyPath := filepath.Join(root, privateNotesKeyDir, privateNotesKeyFile)
-	if data, err := os.ReadFile(keyPath); err == nil {
-		key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(data)))
-		if err != nil || len(key) != 32 {
-			return nil, toolError("PRIVATE_NOTES_KEY_INVALID", "private notes encryption key is invalid", "configuration")
+func privateNotesEnsureAgeIdentity(root string) (*age.X25519Identity, bool, error) {
+	identityPath := filepath.Join(root, privateNotesKeyDir, privateNotesIdentityFile)
+	if data, err := os.ReadFile(identityPath); err == nil {
+		identity, err := age.ParseX25519Identity(strings.TrimSpace(string(data)))
+		if err != nil {
+			return nil, false, toolError("PRIVATE_NOTES_AGE_IDENTITY_INVALID", "private notes age identity is invalid", "configuration")
 		}
-		return key, nil
+		if err := privateNotesWriteRecipientFile(root, identity.Recipient().String()); err != nil {
+			return nil, false, err
+		}
+		return identity, false, nil
 	}
-	key := make([]byte, 32)
-	if _, err := io.ReadFull(rand.Reader, key); err != nil {
-		return nil, err
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		return nil, false, err
 	}
-	if err := os.MkdirAll(filepath.Dir(keyPath), 0o700); err != nil {
-		return nil, err
+	if err := os.MkdirAll(filepath.Dir(identityPath), 0o700); err != nil {
+		return nil, false, err
 	}
-	if err := os.WriteFile(keyPath, []byte(base64.StdEncoding.EncodeToString(key)+"\n"), 0o600); err != nil {
-		return nil, err
+	if err := os.WriteFile(identityPath, []byte(identity.String()+"\n"), 0o600); err != nil {
+		return nil, false, err
 	}
-	return key, nil
+	if err := privateNotesWriteRecipientFile(root, identity.Recipient().String()); err != nil {
+		return nil, false, err
+	}
+	return identity, true, nil
+}
+
+func privateNotesWriteRecipientFile(root, recipient string) error {
+	recipientPath := filepath.Join(root, privateNotesKeyDir, privateNotesRecipientFile)
+	if err := os.MkdirAll(filepath.Dir(recipientPath), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(recipientPath, []byte(recipient+"\n"), 0o600)
+}
+
+func privateNotesAgeRecipients(root string) ([]age.Recipient, error) {
+	raw := []string{}
+	if value := strings.TrimSpace(os.Getenv("AGENTDOCK_PRIVATE_NOTES_AGE_RECIPIENT")); value != "" {
+		raw = append(raw, privateNotesRecipientLines(value)...)
+	}
+	if file := strings.TrimSpace(os.Getenv("AGENTDOCK_PRIVATE_NOTES_AGE_RECIPIENTS_FILE")); file != "" {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return nil, err
+		}
+		raw = append(raw, privateNotesRecipientLines(string(data))...)
+	}
+	if len(raw) == 0 {
+		data, err := os.ReadFile(filepath.Join(root, privateNotesKeyDir, privateNotesRecipientFile))
+		if err == nil {
+			raw = append(raw, privateNotesRecipientLines(string(data))...)
+		}
+	}
+	if len(raw) == 0 {
+		return nil, toolError("PRIVATE_NOTES_AGE_RECIPIENT_MISSING", "private notes age recipient is missing; run private_notes_maintain action=init-encryption first", "configuration")
+	}
+	recipients := make([]age.Recipient, 0, len(raw))
+	for _, value := range raw {
+		recipient, err := age.ParseX25519Recipient(value)
+		if err != nil {
+			return nil, toolErrorDetails("PRIVATE_NOTES_AGE_RECIPIENT_INVALID", err.Error(), "configuration", map[string]any{"recipient": "<redacted>"})
+		}
+		recipients = append(recipients, recipient)
+	}
+	return recipients, nil
+}
+
+func privateNotesRecipientLines(value string) []string {
+	lines := []string{}
+	for _, line := range strings.FieldsFunc(value, func(r rune) bool { return r == '\n' || r == '\r' || r == ',' || r == ';' }) {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return uniqueStrings(lines)
 }
 
 func encryptPrivateNote(root, rel string) (string, error) {
-	key, err := privateNotesKey(root)
+	recipients, err := privateNotesAgeRecipients(root)
 	if err != nil {
 		return "", err
 	}
@@ -381,22 +445,16 @@ func encryptPrivateNote(root, rel string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	block, err := aes.NewCipher(key)
+	var encrypted bytes.Buffer
+	writer, err := age.Encrypt(&encrypted, recipients...)
 	if err != nil {
 		return "", err
 	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
+	if _, err := io.Copy(writer, bytes.NewReader(plain)); err != nil {
+		_ = writer.Close()
 		return "", err
 	}
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", err
-	}
-	ciphertext := gcm.Seal(nil, nonce, plain, []byte(rel))
-	payload := map[string]any{"version": 1, "algorithm": "AES-256-GCM", "source": rel, "created_at": time.Now().Format(time.RFC3339), "nonce": base64.StdEncoding.EncodeToString(nonce), "ciphertext": base64.StdEncoding.EncodeToString(ciphertext)}
-	encoded, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
+	if err := writer.Close(); err != nil {
 		return "", err
 	}
 	encRel := privateNoteEncryptedRel(rel)
@@ -404,7 +462,7 @@ func encryptPrivateNote(root, rel string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(encPath), 0o700); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(encPath, append(encoded, '\n'), 0o600); err != nil {
+	if err := os.WriteFile(encPath, encrypted.Bytes(), 0o600); err != nil {
 		return "", err
 	}
 	return encRel, nil
@@ -412,7 +470,7 @@ func encryptPrivateNote(root, rel string) (string, error) {
 
 func privateNoteEncryptedRel(rel string) string {
 	rel = strings.TrimPrefix(filepath.ToSlash(rel), privateNotesPlainDir+"/")
-	return filepath.ToSlash(filepath.Join(privateNotesEncryptedDir, rel+".enc"))
+	return filepath.ToSlash(filepath.Join(privateNotesEncryptedDir, rel+".age"))
 }
 
 func syncPrivateNotesEncrypted(root string) (int, error) {
@@ -436,6 +494,25 @@ func syncPrivateNotesEncrypted(root string) (int, error) {
 		return nil
 	})
 	return count, err
+}
+
+func removeLegacyPrivateNoteBackups(root string) (int, error) {
+	removed := 0
+	legacyRoot := filepath.Join(root, privateNotesEncryptedDir)
+	if _, err := os.Stat(legacyRoot); os.IsNotExist(err) {
+		return 0, nil
+	}
+	err := filepath.WalkDir(legacyRoot, func(p string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil || d == nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".enc") {
+			return walkErr
+		}
+		if err := os.Remove(p); err != nil {
+			return err
+		}
+		removed++
+		return nil
+	})
+	return removed, err
 }
 
 func listPrivateNotes(root string) ([]privateNoteSummary, error) {

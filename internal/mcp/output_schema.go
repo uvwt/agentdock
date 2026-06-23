@@ -233,13 +233,13 @@ func outputSchema(name string) map[string]any {
 	case "private_notes_read":
 		props["root"] = stringProp("Private notes root path.")
 		props["path"] = stringProp("Plain note path.")
-		props["encrypted_path"] = stringProp("Encrypted backup path.")
+		props["encrypted_path"] = stringProp("Age encrypted backup path, typically encrypted/<category>/<name>.md.age.")
 		props["content"] = stringProp("Plaintext content.")
 		props["truncated"] = boolProp("Whether content was truncated.")
 	case "private_notes_write":
 		props["root"] = stringProp("Private notes root path.")
 		props["path"] = stringProp("Plain note path.")
-		props["encrypted_path"] = stringProp("Encrypted backup path.")
+		props["encrypted_path"] = stringProp("Age encrypted backup path, typically encrypted/<category>/<name>.md.age.")
 		props["written"] = boolProp("Whether plaintext was written.")
 		props["encrypted"] = boolProp("Whether encrypted backup was written.")
 		props["algorithm"] = stringProp("Encryption algorithm.")
@@ -249,6 +249,9 @@ func outputSchema(name string) map[string]any {
 		props["notes"] = arrayProp("Private note summaries.")
 		props["count"] = intProp("Note count.")
 		props["encrypted_count"] = intProp("Encrypted backup count.")
+		props["legacy_removed_count"] = intProp("Removed legacy backup count.")
+		props["recipient"] = stringProp("Age public recipient generated or used.")
+		props["algorithm"] = stringProp("Encryption algorithm.")
 		props["missing_encrypted"] = arrayProp("Missing encrypted backup paths.")
 	case "browser_session", "browser_session_start", "browser_session_close":
 		props["operation"] = stringProp("Browser operation name.")
