@@ -92,7 +92,7 @@ func firstRunes(value string, max int) string {
 func (r *Runtime) memoryList(ctx context.Context, args map[string]any) (Result, error) {
 	query := url.Values{}
 	if prefix := strings.TrimSpace(stringArg(args, "prefix", "")); prefix != "" {
-		query.Set("prefix", prefix)
+		query.Set("prefix", recallBackendPath(prefix))
 	}
 	if maxEntries := intArg(args, "max_entries", 0); maxEntries > 0 {
 		query.Set("max_entries", fmt.Sprint(maxEntries))
@@ -109,7 +109,7 @@ func (r *Runtime) memoryRead(ctx context.Context, args map[string]any) (Result, 
 	if p == "" {
 		return nil, toolError("MISSING_PATH", "path is required", "validation")
 	}
-	result, err := r.memoryRequest(ctx, http.MethodGet, "/v1/recall/"+escapeMemoryPath(p), nil)
+	result, err := r.memoryRequest(ctx, http.MethodGet, "/v1/recall/"+escapeMemoryPath(recallBackendPath(p)), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +144,7 @@ func (r *Runtime) memorySearch(ctx context.Context, args map[string]any) (Result
 	}
 	payload := map[string]any{"query": query}
 	if prefix := strings.TrimSpace(stringArg(args, "prefix", "")); prefix != "" {
-		payload["prefix"] = prefix
+		payload["prefix"] = recallBackendPath(prefix)
 	}
 	if maxResults := intArg(args, "max_results", 0); maxResults > 0 {
 		payload["max_results"] = maxResults
@@ -174,6 +174,9 @@ func (r *Runtime) memoryWrite(ctx context.Context, args map[string]any) (Result,
 	}
 	payload := map[string]any{"content": content}
 	copyMemoryString(args, payload, "path")
+	if p, ok := payload["path"].(string); ok {
+		payload["path"] = recallBackendPath(p)
+	}
 	copyMemoryString(args, payload, "type")
 	copyMemoryString(args, payload, "scope")
 	copyMemoryString(args, payload, "project")
@@ -200,7 +203,7 @@ func (r *Runtime) memoryDelete(ctx context.Context, args map[string]any) (Result
 	if boolArg(args, "confirmed", false) {
 		query.Set("confirmed", "true")
 	}
-	endpoint := "/v1/recall/" + escapeMemoryPath(p)
+	endpoint := "/v1/recall/" + escapeMemoryPath(recallBackendPath(p))
 	if encoded := query.Encode(); encoded != "" {
 		endpoint += "?" + encoded
 	}
@@ -265,6 +268,9 @@ func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, pa
 		parsed["ok"] = true
 	}
 	parsed["recall_endpoint"] = base
+	if mapped, ok := recallMapResponsePaths(parsed).(map[string]any); ok {
+		return Result(mapped), nil
+	}
 	return Result(parsed), nil
 }
 

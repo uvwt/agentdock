@@ -61,10 +61,10 @@ func TestMemoryCardWriteRequiresConfirmationAndUsesCardsPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, _ := res["path"].(string)
-	if !strings.HasPrefix(p, "cards/rss-monitor/inbox/runbook/") {
+	if !strings.HasPrefix(p, "recall/managed/cards/rss-monitor/inbox/runbook/") {
 		t.Fatalf("unexpected card path %q", p)
 	}
-	content := store[p]
+	content := store[recallBackendPath(p)]
 	for _, want := range []string{"type: recall-card", "card_type: runbook", "project: rss-monitor", "status: inbox", "# RSS Monitor 事实层现场检查"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("written card missing %q: %s", want, content)

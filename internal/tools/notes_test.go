@@ -22,7 +22,7 @@ func TestNotesSearchAndCapturePlan(t *testing.T) {
 		t.Fatalf("expected update_existing, got %#v", res)
 	}
 	paths := res["candidate_paths"].([]string)
-	if len(paths) == 0 || paths[0] != "notes/questions/topics/memory-organization.md" {
+	if len(paths) == 0 || paths[0] != "recall/managed/notes/questions/topics/memory-organization.md" {
 		t.Fatalf("unexpected candidate paths: %#v", res)
 	}
 	if _, ok := res["search_results"]; ok {
@@ -62,11 +62,11 @@ func TestNotesWriteBoundaries(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected recall_write kind=note to reject non-notes path")
 	}
-	_, err = rt.notesWrite(context.Background(), map[string]any{"scope": "questions", "path": "notes/questions/topics/test.md", "content": "# Test"})
+	_, err = rt.notesWrite(context.Background(), map[string]any{"scope": "questions", "path": "recall/managed/notes/questions/topics/test.md", "content": "# Test"})
 	if err == nil {
 		t.Fatal("expected recall_write kind=note to require confirmation")
 	}
-	_, err = rt.notesWrite(context.Background(), map[string]any{"scope": "questions", "path": "notes/questions/topics/test.md", "content": "# Test", "confirmed": true})
+	_, err = rt.notesWrite(context.Background(), map[string]any{"scope": "questions", "path": "recall/managed/notes/questions/topics/test.md", "content": "# Test", "confirmed": true})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+const recallCardsPrefix = "recall/managed/cards"
+
 type memoryCardSpec struct {
 	Title      string
 	Content    string
@@ -32,7 +34,7 @@ func (r *Runtime) memoryCardCapture(ctx context.Context, args map[string]any) (R
 	if len(card.Tags) > 0 {
 		queryParts = append(queryParts, strings.Join(card.Tags, " "))
 	}
-	searchArgs := map[string]any{"query": strings.Join(queryParts, " "), "prefix": "cards", "max_results": intArg(args, "max_results", 8)}
+	searchArgs := map[string]any{"query": strings.Join(queryParts, " "), "prefix": recallCardsPrefix, "max_results": intArg(args, "max_results", 8)}
 	similar := []any{}
 	searchError := ""
 	if result, err := r.memorySearch(ctx, searchArgs); err == nil {
@@ -93,8 +95,8 @@ func (r *Runtime) memoryCardWrite(ctx context.Context, args map[string]any) (Res
 		p = memoryCardPath(card)
 	}
 	p = path.Clean(p)
-	if !strings.HasPrefix(p, "cards/") || hasUnsafeNotesPathSegment(p) {
-		return nil, toolErrorDetails("INVALID_RECALL_CARD_PATH", "recall_write only writes under cards/ with safe path segments", "validation", map[string]any{"path": p})
+	if !strings.HasPrefix(p, recallCardsPrefix+"/") || hasUnsafeNotesPathSegment(p) {
+		return nil, toolErrorDetails("INVALID_RECALL_CARD_PATH", "recall_write only writes under recall/managed/cards/ with safe path segments", "validation", map[string]any{"path": p})
 	}
 
 	content := memoryCardMarkdown(card)
@@ -224,7 +226,7 @@ func memoryCardPath(card memoryCardSpec) string {
 	if slug == "" {
 		slug = "untitled"
 	}
-	return path.Join("cards", project, card.Status, card.CardType, slug+".md")
+	return path.Join(recallCardsPrefix, project, card.Status, card.CardType, slug+".md")
 }
 
 func memoryCardMarkdown(card memoryCardSpec) string {

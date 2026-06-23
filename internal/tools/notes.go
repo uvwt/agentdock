@@ -10,6 +10,8 @@ import (
 	"unicode"
 )
 
+const recallNotesPrefix = "recall/managed/notes"
+
 type notesScope struct {
 	Name       string
 	Prefix     string
@@ -55,7 +57,7 @@ func (r *Runtime) notesSearch(ctx context.Context, args map[string]any) (Result,
 			searchResults = results
 			for _, item := range results {
 				if resultMap, ok := item.(map[string]any); ok {
-					p := strings.TrimSpace(fmt.Sprint(resultMap["path"]))
+					p := recallPublicPath(strings.TrimSpace(fmt.Sprint(resultMap["path"])))
 					if p != "" && p != scope.IndexPath && strings.HasPrefix(p, scope.Prefix+"/") {
 						addNotesCandidate(candidates, p, 20+scoreNotesText(p, terms), "search")
 					}
@@ -218,11 +220,12 @@ func (r *Runtime) notesWrite(ctx context.Context, args map[string]any) (Result, 
 func resolveNotesScope(value string) (notesScope, error) {
 	scope := strings.TrimSpace(strings.ToLower(value))
 	scope = strings.TrimPrefix(scope, "notes/")
+	scope = strings.TrimPrefix(scope, recallNotesPrefix+"/")
 	switch scope {
 	case "", "questions", "question":
-		return notesScope{Name: "questions", Prefix: "notes/questions", IndexPath: "notes/questions/index.md", Categories: []string{"topics", "decisions", "open"}}, nil
+		return notesScope{Name: "questions", Prefix: recallNotesPrefix + "/questions", IndexPath: recallNotesPrefix + "/questions/index.md", Categories: []string{"topics", "decisions", "open"}}, nil
 	case "github-learning", "github_learning", "github":
-		return notesScope{Name: "github-learning", Prefix: "notes/github-learning", IndexPath: "notes/github-learning/index.md", Categories: []string{"projects", "topics", "patterns", "comparisons"}}, nil
+		return notesScope{Name: "github-learning", Prefix: recallNotesPrefix + "/github-learning", IndexPath: recallNotesPrefix + "/github-learning/index.md", Categories: []string{"projects", "topics", "patterns", "comparisons"}}, nil
 	default:
 		return notesScope{}, toolErrorDetails("INVALID_NOTES_SCOPE", "unsupported notes scope", "validation", map[string]any{"scope": value, "allowed": []string{"questions", "github-learning"}})
 	}
