@@ -8,7 +8,7 @@ import (
 
 func TestMemoryCardCapturePlansWithoutWriting(t *testing.T) {
 	store := map[string]string{
-		"cards/chatdock/active/project_trap/deploy-check.md": "---\ntype: recall-card\nproject: chatdock\n---\n\n# Deploy Check\nChatDock deploy verification needs public smoke check.\n",
+		"recall/managed/cards/chatdock/active/project_trap/deploy-check.md": "---\ntype: recall-card\nproject: chatdock\n---\n\n# Deploy Check\nChatDock deploy verification needs public smoke check.\n",
 	}
 	rt, closeServer := newMemoryTestRuntime(t, store)
 	defer closeServer()

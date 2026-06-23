@@ -5,29 +5,15 @@ import (
 	"strings"
 )
 
-type recallPathMapping struct {
-	Public  string
-	Backend string
-}
-
-var recallPathMappings = []recallPathMapping{
-	{Public: "recall/managed/cards", Backend: "cards"},
-	{Public: "recall/managed/notes", Backend: "notes"},
-	{Public: "recall/docs/projects", Backend: "projects"},
-	{Public: "recall/docs/ops", Backend: "ops"},
-	{Public: "recall/docs/devices", Backend: "devices"},
-	{Public: "recall/docs/inbox", Backend: "inbox"},
-}
-
 func recallBackendPath(value string) string {
-	return recallRewritePath(value, true)
+	return recallCleanPath(value)
 }
 
 func recallPublicPath(value string) string {
-	return recallRewritePath(value, false)
+	return recallCleanPath(value)
 }
 
-func recallRewritePath(value string, toBackend bool) string {
+func recallCleanPath(value string) string {
 	value = strings.TrimSpace(strings.TrimPrefix(value, "/"))
 	if value == "" {
 		return value
@@ -35,18 +21,6 @@ func recallRewritePath(value string, toBackend bool) string {
 	cleaned := path.Clean(value)
 	if cleaned == "." || strings.HasPrefix(cleaned, "../") {
 		return value
-	}
-	for _, mapping := range recallPathMappings {
-		from, to := mapping.Backend, mapping.Public
-		if toBackend {
-			from, to = mapping.Public, mapping.Backend
-		}
-		if cleaned == from {
-			return to
-		}
-		if strings.HasPrefix(cleaned, from+"/") {
-			return to + strings.TrimPrefix(cleaned, from)
-		}
 	}
 	return cleaned
 }

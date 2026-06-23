@@ -8,8 +8,8 @@ import (
 
 func TestNotesSearchAndCapturePlan(t *testing.T) {
 	store := map[string]string{
-		"notes/questions/index.md":                      "# Index\n- memory-organization.md：记忆、笔记、检索策略\n",
-		"notes/questions/topics/memory-organization.md": "# 记忆与笔记组织\n这里讨论 notes 检索、记忆和笔记边界。\n",
+		"recall/managed/notes/questions/index.md":                      "# Index\n- memory-organization.md：记忆、笔记、检索策略\n",
+		"recall/managed/notes/questions/topics/memory-organization.md": "# 记忆与笔记组织\n这里讨论 notes 检索、记忆和笔记边界。\n",
 	}
 	rt, closeServer := newMemoryTestRuntime(t, store)
 	defer closeServer()
@@ -39,7 +39,7 @@ func TestNotesSearchAndCapturePlan(t *testing.T) {
 		t.Fatalf("include_search_results should expose raw search results: %#v", res)
 	}
 
-	before := store["notes/questions/topics/memory-organization.md"]
+	before := store["recall/managed/notes/questions/topics/memory-organization.md"]
 	capture, err := rt.notesCapture(context.Background(), map[string]any{"scope": "questions", "question": "文件变多后检索方式要不要改？", "conclusion": "使用 index-first recall_search kind=note。"})
 	if err != nil {
 		t.Fatal(err)
@@ -48,17 +48,17 @@ func TestNotesSearchAndCapturePlan(t *testing.T) {
 	if autoWrite, _ := plan["auto_write"].(bool); autoWrite {
 		t.Fatalf("recall note capture must not auto-write: %#v", plan)
 	}
-	if store["notes/questions/topics/memory-organization.md"] != before {
+	if store["recall/managed/notes/questions/topics/memory-organization.md"] != before {
 		t.Fatalf("recall note capture wrote content unexpectedly")
 	}
 }
 
 func TestNotesWriteBoundaries(t *testing.T) {
-	store := map[string]string{"notes/questions/index.md": "# Index\n"}
+	store := map[string]string{"recall/managed/notes/questions/index.md": "# Index\n"}
 	rt, closeServer := newMemoryTestRuntime(t, store)
 	defer closeServer()
 
-	_, err := rt.notesWrite(context.Background(), map[string]any{"scope": "questions", "path": "projects/agentdock/project.md", "content": "# Bad", "confirmed": true})
+	_, err := rt.notesWrite(context.Background(), map[string]any{"scope": "questions", "path": "recall/docs/projects/agentdock/project.md", "content": "# Bad", "confirmed": true})
 	if err == nil {
 		t.Fatal("expected recall_write kind=note to reject non-notes path")
 	}
@@ -70,7 +70,7 @@ func TestNotesWriteBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(store["notes/questions/topics/test.md"], "# Test") {
+	if !strings.Contains(store["recall/managed/notes/questions/topics/test.md"], "# Test") {
 		t.Fatalf("expected notes content to be written, got %#v", store)
 	}
 }
