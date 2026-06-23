@@ -257,6 +257,27 @@ func inputSchema(name string) map[string]any {
 		props["max_entries"] = intProp("Maximum entries to list or scan.")
 		props["max_findings"] = intProp("Maximum lint findings to return.")
 		props["max_results"] = intProp("Maximum results where supported.")
+	case "private_notes_search":
+		props["query"] = stringProp("Text query to search in private notes.")
+		props["max_results"] = intProp("Maximum results to return.")
+		required = []string{"query"}
+	case "private_notes_read":
+		props["path"] = stringProp("Path under notes/.")
+		props["category"] = stringProp("Optional category used with title when path is omitted.")
+		props["title"] = stringProp("Optional title used to derive path when path is omitted.")
+		props["max_bytes"] = intProp("Maximum bytes to return.")
+	case "private_notes_write":
+		props["path"] = stringProp("Path under notes/. If omitted, category + title derive the path.")
+		props["category"] = stringProp("Category such as services, accounts, recovery, or networking. Defaults to services.")
+		props["title"] = stringProp("Title.")
+		props["summary"] = stringProp("Optional summary.")
+		props["tags"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
+		props["content"] = stringProp("Content to write.")
+		props["confirmed"] = boolProp("Required for true writes.")
+		props["overwrite"] = boolProp("Replace an existing note.")
+		required = []string{"content", "confirmed"}
+	case "private_notes_maintain":
+		props["action"] = stringProp("Action: init, check, list, sync, or encrypt-all.")
 	case "browser_session":
 		props["action"] = stringProp("Browser session action: start or close.")
 		props["url"] = stringProp("Initial URL when action=start. Defaults to about:blank.")

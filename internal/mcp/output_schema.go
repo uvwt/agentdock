@@ -224,6 +224,32 @@ func outputSchema(name string) map[string]any {
 		props["auto_sync_enabled"] = boolProp("Whether RecallDock auto sync is enabled.")
 		props["pending_push"] = boolProp("Whether RecallDock has remote sync work.")
 		props["conflict"] = boolProp("Whether RecallDock detected a sync conflict.")
+	case "private_notes_search":
+		props["root"] = stringProp("Private notes root path.")
+		props["query"] = stringProp("Search query.")
+		props["results"] = arrayProp("Search results with redacted snippets.")
+		props["count"] = intProp("Result count.")
+		props["redacted"] = boolProp("Whether snippets were redacted.")
+	case "private_notes_read":
+		props["root"] = stringProp("Private notes root path.")
+		props["path"] = stringProp("Plain note path.")
+		props["encrypted_path"] = stringProp("Encrypted backup path.")
+		props["content"] = stringProp("Plaintext content.")
+		props["truncated"] = boolProp("Whether content was truncated.")
+	case "private_notes_write":
+		props["root"] = stringProp("Private notes root path.")
+		props["path"] = stringProp("Plain note path.")
+		props["encrypted_path"] = stringProp("Encrypted backup path.")
+		props["written"] = boolProp("Whether plaintext was written.")
+		props["encrypted"] = boolProp("Whether encrypted backup was written.")
+		props["algorithm"] = stringProp("Encryption algorithm.")
+	case "private_notes_maintain":
+		props["root"] = stringProp("Private notes root path.")
+		props["action"] = stringProp("Action performed.")
+		props["notes"] = arrayProp("Private note summaries.")
+		props["count"] = intProp("Note count.")
+		props["encrypted_count"] = intProp("Encrypted backup count.")
+		props["missing_encrypted"] = arrayProp("Missing encrypted backup paths.")
 	case "browser_session", "browser_session_start", "browser_session_close":
 		props["operation"] = stringProp("Browser operation name.")
 		props["session_id"] = stringProp("Browser session id.")

@@ -42,7 +42,15 @@ func (r *Runtime) recallSearch(ctx context.Context, args map[string]any) (Result
 		result["recall_kind"] = "card"
 		return result, nil
 	case "", "all", "markdown":
-		result, err := r.memorySearch(ctx, args)
+		searchArgs := copyArgs(args)
+		prefix := strings.TrimSpace(stringArg(searchArgs, "prefix", ""))
+		if strings.HasPrefix(prefix, "private-notes") {
+			return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes is not searchable through recall_search; use private_notes_search", "validation")
+		}
+		if prefix == "" {
+			searchArgs["prefix"] = ""
+		}
+		result, err := r.memorySearch(ctx, searchArgs)
 		if err != nil {
 			return nil, err
 		}
@@ -55,6 +63,9 @@ func (r *Runtime) recallSearch(ctx context.Context, args map[string]any) (Result
 }
 
 func (r *Runtime) recallRead(ctx context.Context, args map[string]any) (Result, error) {
+	if strings.HasPrefix(strings.TrimSpace(stringArg(args, "path", "")), "private-notes/") {
+		return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes is not readable through recall_read; use private_notes_read", "validation")
+	}
 	result, err := r.memoryRead(ctx, args)
 	if err != nil {
 		return nil, err
@@ -64,6 +75,9 @@ func (r *Runtime) recallRead(ctx context.Context, args map[string]any) (Result, 
 }
 
 func (r *Runtime) recallWrite(ctx context.Context, args map[string]any) (Result, error) {
+	if strings.HasPrefix(strings.TrimSpace(stringArg(args, "path", "")), "private-notes/") {
+		return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes is not writable through recall_write; use private_notes_write", "validation")
+	}
 	kind := strings.ToLower(strings.TrimSpace(stringArg(args, "kind", "markdown")))
 	if kind == "" {
 		kind = "markdown"
@@ -164,7 +178,14 @@ func (r *Runtime) recallMaintain(ctx context.Context, args map[string]any) (Resu
 		result["recall_action"] = "sync_status"
 		return result, nil
 	case "list":
-		result, err := r.memoryList(ctx, args)
+		listArgs := copyArgs(args)
+		if strings.HasPrefix(strings.TrimSpace(stringArg(listArgs, "prefix", "")), "private-notes") {
+			return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes is not listable through recall_maintain; use private_notes_maintain", "validation")
+		}
+		if strings.TrimSpace(stringArg(listArgs, "prefix", "")) == "" {
+			listArgs["prefix"] = ""
+		}
+		result, err := r.memoryList(ctx, listArgs)
 		if err != nil {
 			return nil, err
 		}
@@ -172,7 +193,14 @@ func (r *Runtime) recallMaintain(ctx context.Context, args map[string]any) (Resu
 		result["recall_action"] = "list"
 		return result, nil
 	case "lint":
-		result, err := r.memoryLint(ctx, args)
+		lintArgs := copyArgs(args)
+		if strings.HasPrefix(strings.TrimSpace(stringArg(lintArgs, "prefix", "")), "private-notes") {
+			return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes is not lintable through recall_maintain; use private_notes_maintain", "validation")
+		}
+		if strings.TrimSpace(stringArg(lintArgs, "prefix", "")) == "" {
+			lintArgs["prefix"] = ""
+		}
+		result, err := r.memoryLint(ctx, lintArgs)
 		if err != nil {
 			return nil, err
 		}

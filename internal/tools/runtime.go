@@ -63,6 +63,7 @@ func (r *Runtime) ToolNames() []string {
 	if r.cfg.RecallEndpoint != "" {
 		all = append(all, "recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain")
 	}
+	all = append(all, "private_notes_search", "private_notes_read", "private_notes_write", "private_notes_maintain")
 	if r.cfg.BrowserEnabled {
 		all = append(all, "browser_session", "browser_act", "browser_snapshot")
 	}
@@ -85,6 +86,7 @@ func (r *Runtime) ToolNames() []string {
 	if r.cfg.RecallEndpoint != "" {
 		readOnly = append(readOnly, "recall_bootstrap", "recall_search", "recall_read", "recall_maintain")
 	}
+	readOnly = append(readOnly, "private_notes_search", "private_notes_read", "private_notes_maintain")
 	if r.cfg.BrowserEnabled {
 		readOnly = append(readOnly, "browser_snapshot")
 	}
@@ -180,6 +182,14 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.recallWrite(ctx, args)
 	case "recall_maintain":
 		return r.recallMaintain(ctx, args)
+	case "private_notes_search":
+		return r.privateNotesSearch(ctx, args)
+	case "private_notes_read":
+		return r.privateNotesRead(ctx, args)
+	case "private_notes_write":
+		return r.privateNotesWrite(ctx, args)
+	case "private_notes_maintain":
+		return r.privateNotesMaintain(ctx, args)
 	case "browser_session":
 		return r.browserSession(ctx, args)
 	case "browser_act", "browser_action":

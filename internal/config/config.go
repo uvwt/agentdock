@@ -42,6 +42,7 @@ type Config struct {
 	RecallLoginUser               string
 	RecallLoginValue              string
 	RecallTimeoutMS               int
+	PrivateNotesDir               string
 	TaskVectorSearch              bool
 	TaskEmbeddingEndpoint         string
 	TaskEmbeddingToken            string
@@ -84,6 +85,7 @@ func FromEnv() Config {
 		RecallLoginUser:               os.Getenv("AGENTDOCK_RECALL_LOGIN_USER"),
 		RecallLoginValue:              os.Getenv("AGENTDOCK_RECALL_LOGIN_VALUE"),
 		RecallTimeoutMS:               getenvInt("AGENTDOCK_RECALL_TIMEOUT_MS", 30000),
+		PrivateNotesDir:               firstNonEmpty(os.Getenv("AGENTDOCK_PRIVATE_NOTES_DIR"), os.Getenv("RECALLDOCK_PRIVATE_NOTES_DIR")),
 		TaskVectorSearch:              getenvBool("AGENTDOCK_TASK_VECTOR_SEARCH", true),
 		TaskEmbeddingEndpoint:         firstNonEmpty(os.Getenv("AGENTDOCK_TASK_EMBEDDING_ENDPOINT"), os.Getenv("AGENTDOCK_EMBEDDING_ENDPOINT")),
 		TaskEmbeddingToken:            firstNonEmpty(os.Getenv("AGENTDOCK_TASK_EMBEDDING_TOKEN"), os.Getenv("AGENTDOCK_EMBEDDING_TOKEN")),
