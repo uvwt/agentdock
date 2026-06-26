@@ -56,10 +56,30 @@ except Exception:
 PY
 }
 
+guard_no_zero_markdown() {
+  local repo="$1"
+  [[ -d "$repo/.git" ]] || return 0
+  local zero_file
+  zero_file="$(mktemp)"
+  git -C "$repo" ls-files '*.md' | while IFS= read -r rel; do
+    if [[ -f "$repo/$rel" && ! -s "$repo/$rel" ]]; then
+      printf '%s\n' "$rel"
+    fi
+  done >"$zero_file"
+  if [[ -s "$zero_file" ]]; then
+    echo "refusing to commit zero-byte tracked markdown files in $repo:" >&2
+    sed -n '1,120p' "$zero_file" >&2
+    rm -f "$zero_file"
+    exit 3
+  fi
+  rm -f "$zero_file"
+}
+
 run_git_backup() {
   local repo="$1"
   local msg="$2"
   git -C "$repo" diff --check
+  guard_no_zero_markdown "$repo"
   if git -C "$repo" diff --cached --quiet && git -C "$repo" diff --quiet --exit-code; then
     echo "clean: $repo"
     git -C "$repo" status --short --branch
@@ -72,6 +92,7 @@ run_git_backup() {
     echo "sensitive-looking staged diff found in $repo" >&2
     exit 2
   fi
+  guard_no_zero_markdown "$repo"
   git -C "$repo" commit -m "$msg"
   git -C "$repo" push origin main
   git -C "$repo" status --short --branch
@@ -112,7 +133,7 @@ backup_state() {
 export_recall_to_repo() {
   local repo="$1"
   python3 - "$repo" "$AGENTDOCK_MCP_ENDPOINT" <<'PY'
-import json, os, pathlib, shutil, sys, urllib.request
+import json, os, pathlib, shutil, sys, tempfile, urllib.request
 repo = pathlib.Path(sys.argv[1])
 endpoint = sys.argv[2]
 token = os.environ.get('AGENTDOCK_AUTH_TOKEN', '')
@@ -137,6 +158,8 @@ for entry in entries:
     if path and path.endswith('.md'):
         paths.append(path)
 paths = sorted(set(paths))
+if not paths:
+    raise RuntimeError('RecallDock export returned no markdown paths')
 
 preserved = {}
 for file_path in repo.rglob('*'):
@@ -147,33 +170,62 @@ for file_path in repo.rglob('*'):
     if file_path.name in {'.gitignore', '.gitkeep'}:
         preserved[file_path.relative_to(repo).as_posix()] = file_path.read_bytes()
 
-for child in list(repo.iterdir()):
-    if child.name == '.git':
-        continue
-    if child.is_dir():
-        shutil.rmtree(child)
-    else:
-        child.unlink()
+with tempfile.TemporaryDirectory(prefix='recalldock-export-') as tmp:
+    staging = pathlib.Path(tmp) / 'export'
+    staging.mkdir()
+    for rel, content in preserved.items():
+        target = staging / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
 
-for rel, content in preserved.items():
-    target = repo / rel
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(content)
+    empty_reads = []
+    for index, path in enumerate(paths, 1):
+        data = call('recall_read', {'path': path, 'include_raw': True}, 1000 + index)
+        recall = data.get('recall') or {}
+        content = recall.get('raw_content') or recall.get('content') or recall.get('body') or ''
+        size = recall.get('size_bytes')
+        if not content:
+            empty_reads.append((path, size))
+            continue
+        target = staging / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding='utf-8')
 
-for index, path in enumerate(paths, 1):
-    data = call('recall_read', {'path': path, 'include_raw': True}, 1000 + index)
-    recall = data.get('recall') or {}
-    content = recall.get('raw_content') or recall.get('content') or recall.get('body') or ''
-    target = repo / path
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding='utf-8')
+    if empty_reads:
+        preview = '\n'.join(f'{path} size_bytes={size}' for path, size in empty_reads[:80])
+        raise RuntimeError(f'RecallDock export produced empty markdown content; refusing to replace repo.\n{preview}')
+
+    for child in list(repo.iterdir()):
+        if child.name == '.git':
+            continue
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+    for child in staging.iterdir():
+        target = repo / child.name
+        if child.is_dir():
+            shutil.copytree(child, target)
+        else:
+            shutil.copy2(child, target)
 print(f'exported RecallDock markdown files: {len(paths)}')
 PY
 }
 
 backup_recall_worktree() {
   local repo="$1"
+  # 正常可访问真实 RecallDock Git worktree 时，不通过 API 重新导出覆盖仓库；
+  # 只提交当前 worktree 里的真实文件，避免 API/挂载异常时把空正文写回 Git。
+  guard_no_zero_markdown "$repo"
+  git -C "$repo" add -A
+  run_git_backup "$repo" "${MESSAGE:-备份 RecallDock 数据}"
+}
+
+backup_recall_export_clone() {
+  local repo="$1"
   export_recall_to_repo "$repo"
+  guard_no_zero_markdown "$repo"
   git -C "$repo" add -A
   run_git_backup "$repo" "${MESSAGE:-备份 RecallDock 数据}"
 }
@@ -185,7 +237,7 @@ backup_recall() {
     echo "recall backup worktree unavailable, using RecallDock API + temporary clone: $RECALL_REPO" >&2
     local repo
     repo="$(with_temp_clone "$RECALL_REMOTE" agentdock-recall)"
-    backup_recall_worktree "$repo"
+    backup_recall_export_clone "$repo"
     rm -rf "$repo"
   fi
 }
