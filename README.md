@@ -48,13 +48,13 @@ Docker quickstart 使用 localhost demo 配置。公网或长期运行请阅读 
 
 ## Linux 一键部署
 
-Linux 服务器推荐使用问答式 systemd 安装脚本：
+Linux 服务器推荐使用问答式安装脚本。默认下载 Release 预编译二进制，Alpine 不再默认安装 Go/gcc 编译链：
 
 ```bash
 bash scripts/install-linux.sh
 ```
 
-脚本会按提示填写源码目录、运行目录、监听端口、Bearer token、RecallDock/Nexus 可选配置，并自动构建、按系统写入 systemd 或 OpenRC 服务、启动和 smoke 验证。Alpine/极简系统可先用 `scripts/install-linux-bootstrap.sh` 补齐 `bash/curl`，单文件远程安装见 [Linux 问答式一键部署](docs/install-linux-interactive.md)。
+脚本会按提示填写安装目录、运行目录、监听端口、Bearer token、RecallDock/Nexus 可选配置，并按系统写入 systemd 或 OpenRC 服务、启动和验证。需要源码构建时选择 `source`；Alpine/极简系统可先用 `scripts/install-linux-bootstrap.sh` 补齐 `bash/curl`，单文件远程安装见 [Linux 问答式一键部署](docs/install-linux-interactive.md)。
 
 ## macOS 裸机更新
 

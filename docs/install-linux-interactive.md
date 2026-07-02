@@ -5,8 +5,10 @@
 默认部署方式是：
 
 ```text
-client -> HTTPS reverse proxy -> 127.0.0.1:8765 -> agentdock systemd service
+client -> HTTPS reverse proxy -> 127.0.0.1:8765 -> agentdock systemd/OpenRC service
 ```
+
+默认安装方式是 `binary`：下载 GitHub Release 预编译二进制，只安装运行依赖，不安装 Go/gcc 编译链。需要从源码构建时再选择 `source`。
 
 生产环境建议只让 AgentDock 监听 `127.0.0.1`，再用 Caddy、Nginx 或其他反代提供 HTTPS。不要把未鉴权的 `/mcp` 直接暴露到公网。
 
@@ -71,9 +73,11 @@ tail -n 100 /var/log/agentdock.log /var/log/agentdock.err
 ```text
 Git 仓库 URL
 Git 分支
-源码安装目录
+安装目录
 运行数据根目录
 环境变量文件
+安装方式：binary/source/auto
+Release 版本：latest 或 vX.Y.Z
 服务管理器：auto/systemd/openrc/none
 服务名
 运行用户
@@ -89,7 +93,7 @@ Bearer token
 常用默认值：
 
 ```text
-源码安装目录：/opt/agentdock
+安装目录：/opt/agentdock
 运行数据根目录：/srv/agentdock
 env 文件：/etc/agentdock/agentdock.env
 服务名：agentdock
@@ -102,15 +106,14 @@ env 文件：/etc/agentdock/agentdock.env
 脚本会执行这些步骤：
 
 1. 检查 Linux 和 systemd。
-2. 可选安装基础依赖：`git`、`curl`、`ca-certificates`、`make`、`gcc`、`python3` 等。
-3. 检查 Go 版本，低于 `1.22` 时可按提示安装官方 Go 到 `/usr/local/go`。
-4. clone 或更新 AgentDock 源码。
+2. 默认 `binary` 模式只安装运行依赖：`curl`、`ca-certificates`、`tar`、`gzip`、`openssl`，Alpine 额外安装 `openrc`。
+3. 下载 `agentdock_linux_amd64.tar.gz` 或 `agentdock_linux_arm64.tar.gz` 到安装目录。
+4. 只有选择 `source` 或 `auto` fallback 时才安装 `git`、Go、gcc/build-base 等编译依赖。
 5. 创建运行用户和数据目录。
-6. 构建 `bin/agentdock`。
-7. 写入 root-only 环境变量文件。
-8. 按服务管理器写入 systemd unit 或 OpenRC init 脚本。
-9. 使用 `systemctl` 或 `rc-service` 启动/重启服务。
-10. 验证 `/healthz` 和 MCP smoke。
+6. 写入 root-only 环境变量文件。
+7. 按服务管理器写入 systemd unit 或 OpenRC init 脚本。
+8. 使用 `systemctl` 或 `rc-service` 启动/重启服务。
+9. 验证 `/healthz`。安装目录存在 smoke 脚本时额外执行 MCP smoke。
 
 ## 环境变量覆盖默认值
 
@@ -128,6 +131,8 @@ bash scripts/install-linux.sh
 
 ```text
 AGENTDOCK_REPO_URL
+AGENTDOCK_INSTALL_MODE          binary/source/auto，默认 binary
+AGENTDOCK_RELEASE_VERSION       latest 或 vX.Y.Z，默认 latest
 AGENTDOCK_BRANCH
 AGENTDOCK_SOURCE_DIR
 AGENTDOCK_DATA_DIR
@@ -188,13 +193,15 @@ https://agentdock.example.com/mcp
 
 ## 升级
 
-重新运行脚本即可。源码目录存在且干净时，脚本会按提示执行：
+重新运行脚本即可。默认 `binary` 模式会重新下载 GitHub Release 的预编译二进制并重启服务。
+
+如果选择 `source` 模式，安装目录存在且干净时，脚本会按提示执行：
 
 ```bash
 git pull --ff-only origin <branch>
 ```
 
-然后重新构建、重启 systemd 服务并 smoke 验证。如果源码目录有未提交改动，脚本会跳过 `git pull`，避免覆盖本地修改。
+然后重新构建、重启服务并验证。如果安装目录有未提交改动，脚本会跳过 `git pull`，避免覆盖本地修改。
 
 ## 与手动 VPS systemd 文档的关系
 

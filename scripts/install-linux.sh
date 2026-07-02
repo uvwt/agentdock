@@ -18,6 +18,8 @@ DEFAULT_MODE="${AGENTDOCK_MODE:-sandboxed}"
 DEFAULT_PATH_POLICY="${AGENTDOCK_PATH_POLICY:-workspace}"
 DEFAULT_SANDBOX_MODE="${AGENTDOCK_SANDBOX_MODE:-landlock}"
 DEFAULT_SERVICE_MANAGER="${AGENTDOCK_SERVICE_MANAGER:-auto}"
+DEFAULT_INSTALL_MODE="${AGENTDOCK_INSTALL_MODE:-binary}"
+DEFAULT_RELEASE_VERSION="${AGENTDOCK_RELEASE_VERSION:-latest}"
 
 TTY_IN="/dev/tty"
 TTY_OUT="/dev/tty"
@@ -43,9 +45,10 @@ Alpine/极简系统如果没有 curl/bash：
   bash /tmp/agentdock-install.sh
 
 环境变量可覆盖默认值：
-  AGENTDOCK_REPO_URL、AGENTDOCK_BRANCH、AGENTDOCK_SOURCE_DIR、AGENTDOCK_DATA_DIR
-  AGENTDOCK_ENV_FILE、AGENTDOCK_SERVICE_NAME、AGENTDOCK_SERVICE_USER
-  AGENTDOCK_HOST、AGENTDOCK_PORT、AGENTDOCK_AUTH_TOKEN、AGENTDOCK_GO_VERSION
+  AGENTDOCK_INSTALL_MODE、AGENTDOCK_RELEASE_VERSION、AGENTDOCK_REPO_URL、AGENTDOCK_BRANCH
+  AGENTDOCK_SOURCE_DIR、AGENTDOCK_DATA_DIR、AGENTDOCK_ENV_FILE
+  AGENTDOCK_SERVICE_NAME、AGENTDOCK_SERVICE_USER、AGENTDOCK_HOST、AGENTDOCK_PORT
+  AGENTDOCK_AUTH_TOKEN、AGENTDOCK_GO_VERSION
 
 参数：
   -h, --help    显示帮助，不执行部署
@@ -184,22 +187,41 @@ current_go_version() {
   go version | awk '{print $3}' | sed 's/^go//' | sed 's/[^0-9.].*$//'
 }
 
-install_packages() {
+install_runtime_packages() {
   if command -v apt-get >/dev/null 2>&1; then
     run_root apt-get update
-    run_root env DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates make gcc g++ pkg-config python3 tar gzip
+    run_root env DEBIAN_FRONTEND=noninteractive apt-get install -y curl ca-certificates tar gzip openssl
   elif command -v dnf >/dev/null 2>&1; then
-    run_root dnf install -y git curl ca-certificates make gcc gcc-c++ pkgconfig python3 tar gzip
+    run_root dnf install -y curl ca-certificates tar gzip openssl
   elif command -v yum >/dev/null 2>&1; then
-    run_root yum install -y git curl ca-certificates make gcc gcc-c++ pkgconfig python3 tar gzip
+    run_root yum install -y curl ca-certificates tar gzip openssl
   elif command -v pacman >/dev/null 2>&1; then
-    run_root pacman -Sy --needed --noconfirm git curl ca-certificates make gcc pkgconf python tar gzip
+    run_root pacman -Sy --needed --noconfirm curl ca-certificates tar gzip openssl
   elif command -v zypper >/dev/null 2>&1; then
-    run_root zypper --non-interactive install git curl ca-certificates make gcc gcc-c++ pkg-config python3 tar gzip
+    run_root zypper --non-interactive install curl ca-certificates tar gzip openssl
+  elif command -v apk >/dev/null 2>&1; then
+    run_root apk add --no-cache bash curl ca-certificates tar gzip openssl openrc
+  else
+    die "未识别包管理器；请先安装 curl、ca-certificates、tar、gzip、openssl。"
+  fi
+}
+
+install_build_packages() {
+  if command -v apt-get >/dev/null 2>&1; then
+    run_root apt-get update
+    run_root env DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates make gcc g++ pkg-config python3 tar gzip openssl
+  elif command -v dnf >/dev/null 2>&1; then
+    run_root dnf install -y git curl ca-certificates make gcc gcc-c++ pkgconfig python3 tar gzip openssl
+  elif command -v yum >/dev/null 2>&1; then
+    run_root yum install -y git curl ca-certificates make gcc gcc-c++ pkgconfig python3 tar gzip openssl
+  elif command -v pacman >/dev/null 2>&1; then
+    run_root pacman -Sy --needed --noconfirm git curl ca-certificates make gcc pkgconf python tar gzip openssl
+  elif command -v zypper >/dev/null 2>&1; then
+    run_root zypper --non-interactive install git curl ca-certificates make gcc gcc-c++ pkg-config python3 tar gzip openssl
   elif command -v apk >/dev/null 2>&1; then
     run_root apk add --no-cache bash curl ca-certificates git go build-base pkgconf python3 tar gzip openssl openrc
   else
-    die "未识别包管理器；请先安装 git、curl、ca-certificates、make、gcc、python3、tar、gzip。"
+    die "未识别包管理器；请先安装 git、curl、ca-certificates、make、gcc、python3、tar、gzip、openssl。"
   fi
 }
 
@@ -261,6 +283,77 @@ ensure_service_user() {
   fi
 }
 
+
+release_repo_slug() {
+  local repo_url="$1"
+  local slug
+  slug="$repo_url"
+  slug="${slug#https://github.com/}"
+  slug="${slug#git@github.com:}"
+  slug="${slug%.git}"
+  [[ "$slug" == */* ]] || die "无法从仓库 URL 推导 GitHub repo slug：$repo_url"
+  printf '%s' "$slug"
+}
+
+release_arch() {
+  local machine
+  machine="$(uname -m)"
+  case "$machine" in
+    x86_64|amd64) printf 'amd64' ;;
+    aarch64|arm64) printf 'arm64' ;;
+    *) die "暂不支持预编译二进制架构：$machine" ;;
+  esac
+}
+
+release_download_url() {
+  local repo_url="$1"
+  local version="$2"
+  local arch repo_slug file_name base
+  arch="$(release_arch)"
+  repo_slug="$(release_repo_slug "$repo_url")"
+  file_name="agentdock_linux_${arch}.tar.gz"
+  if [[ "$version" == "latest" ]]; then
+    base="https://github.com/${repo_slug}/releases/latest/download"
+  else
+    base="https://github.com/${repo_slug}/releases/download/${version}"
+  fi
+  printf '%s/%s' "$base" "$file_name"
+}
+
+install_prebuilt_binary() {
+  local repo_url="$1"
+  local version="$2"
+  local source_dir="$3"
+  local url tmp_dir tmp_tgz
+  url="$(release_download_url "$repo_url" "$version")"
+  tmp_dir="$(mktemp -d)"
+  tmp_tgz="$tmp_dir/agentdock.tgz"
+  log "下载预编译 AgentDock：$url"
+  if ! curl -fL "$url" -o "$tmp_tgz"; then
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+  run_root mkdir -p "$source_dir/bin"
+  tar -xzf "$tmp_tgz" -C "$tmp_dir"
+  if [[ -x "$tmp_dir/bin/agentdock" ]]; then
+    run_root install -m 755 "$tmp_dir/bin/agentdock" "$source_dir/bin/agentdock"
+  elif [[ -x "$tmp_dir/agentdock" ]]; then
+    run_root install -m 755 "$tmp_dir/agentdock" "$source_dir/bin/agentdock"
+  else
+    rm -rf "$tmp_dir"
+    die "预编译包内未找到 agentdock 可执行文件：$url"
+  fi
+  rm -rf "$tmp_dir"
+}
+
+validate_install_mode() {
+  local mode="$1"
+  case "$mode" in
+    binary|source|auto) ;;
+    *) die "安装方式必须是 binary/source/auto：$mode" ;;
+  esac
+}
+
 clone_or_update_source() {
   local repo_url="$1"
   local branch="$2"
@@ -272,26 +365,26 @@ clone_or_update_source() {
   parent="$(dirname "$source_dir")"
 
   if [[ -d "$source_dir" && "${EUID:-$(id -u)}" -ne 0 && ! -w "$source_dir" ]]; then
-    log "调整源码目录所有者，确保当前安装用户可构建：$source_dir"
+    log "调整安装目录所有者，确保当前安装用户可构建：$source_dir"
     run_root chown -R "$installer_user:$installer_group" "$source_dir"
   fi
 
   if [[ -d "$source_dir/.git" ]]; then
-    log "使用已有 Git 源码目录：$source_dir"
+    log "使用已有 Git 安装目录：$source_dir"
     if [[ "$update_existing" == "yes" ]]; then
       if git -C "$source_dir" diff --quiet && git -C "$source_dir" diff --cached --quiet; then
         git -C "$source_dir" fetch --tags origin "$branch"
         git -C "$source_dir" checkout "$branch"
         git -C "$source_dir" pull --ff-only origin "$branch"
       else
-        warn "源码目录存在未提交改动，跳过 git pull：$source_dir"
+        warn "安装目录存在未提交改动，跳过 git pull：$source_dir"
       fi
     fi
     return
   fi
 
   if [[ -d "$source_dir/cmd/agentdock" ]]; then
-    log "使用已有非 Git 源码目录：$source_dir"
+    log "使用已有非 Git 安装目录：$source_dir"
     return
   fi
 
@@ -527,8 +620,8 @@ main() {
 
   local detected_root source_default repo_url branch source_dir data_dir workspace_dir control_dir env_file
   local service_name service_user service_group service_manager service_manager_prompt host port token tool_profile log_level mode path_policy sandbox_mode skip_prompts
-  local recall_endpoint recall_token nexus_endpoint nexus_device_name nexus_state_dir update_existing run_full_check install_deps install_go
-  local go_version public_domain smoke_url health_host
+  local install_mode release_version recall_endpoint recall_token nexus_endpoint nexus_device_name nexus_state_dir update_existing run_full_check install_deps
+  local go_version public_domain smoke_url health_host build_from_source binary_installed
 
   detected_root="$(repo_root_from_script || true)"
   if [[ -n "$detected_root" ]]; then
@@ -540,11 +633,10 @@ main() {
   cat >"$TTY_OUT" <<'INTRO'
 
 AgentDock Linux 一键部署将执行：
-1. 安装/检查基础依赖和 Go 版本。
-2. 克隆或更新 AgentDock 源码。
-3. 构建 bin/agentdock。
-4. 生成 /etc/agentdock/agentdock.env 和 systemd/OpenRC 服务配置。
-5. 启动 systemd/OpenRC 服务并验证 healthz / MCP smoke。
+1. 默认下载预编译二进制，避免安装 Go/gcc 编译链。
+2. 仅在选择 source 或 binary 下载失败且选择 fallback 时源码构建。
+3. 生成 /etc/agentdock/agentdock.env 和 systemd/OpenRC 服务配置。
+4. 启动 systemd/OpenRC 服务并验证 healthz。
 
 生产建议：监听 127.0.0.1，通过 Caddy/Nginx 做 HTTPS 反代；不要把 AgentDock 直接裸露到公网。
 
@@ -552,9 +644,12 @@ INTRO
 
   repo_url="$(prompt 'Git 仓库 URL' "$DEFAULT_REPO_URL")"
   branch="$(prompt 'Git 分支' "$DEFAULT_BRANCH")"
-  source_dir="$(prompt '源码安装目录' "$source_default")"
+  source_dir="$(prompt '安装目录' "$source_default")"
   data_dir="$(prompt '运行数据根目录' "$DEFAULT_DATA_DIR")"
   env_file="$(prompt '环境变量文件' "$DEFAULT_ENV_FILE")"
+  install_mode="$(prompt '安装方式：binary/source/auto' "$DEFAULT_INSTALL_MODE")"
+  validate_install_mode "$install_mode"
+  release_version="$(prompt 'Release 版本：latest 或 vX.Y.Z' "$DEFAULT_RELEASE_VERSION")"
   service_manager_prompt="$(prompt '服务管理器：auto/systemd/openrc/none' "$DEFAULT_SERVICE_MANAGER")"
   service_manager="$(detect_service_manager "$service_manager_prompt")"
   if [[ "$service_manager" == "none" ]]; then
@@ -572,7 +667,7 @@ INTRO
   path_policy="$(prompt '路径策略：workspace/host' "$DEFAULT_PATH_POLICY")"
   sandbox_mode="$(prompt '命令沙箱：landlock/none' "$DEFAULT_SANDBOX_MODE")"
 
-  validate_abs_path '源码安装目录' "$source_dir"
+  validate_abs_path '安装目录' "$source_dir"
   validate_abs_path '运行数据根目录' "$data_dir"
   validate_abs_path '环境变量文件' "$env_file"
   validate_no_space '服务名' "$service_name"
@@ -584,9 +679,13 @@ INTRO
   control_dir="$data_dir/AgentDock"
   nexus_state_dir="$data_dir/nexus"
 
-  if confirm '是否安装/更新系统基础依赖？' y; then install_deps="yes"; else install_deps="no"; fi
-  if confirm '源码目录已存在时是否尝试 git pull --ff-only？' y; then update_existing="yes"; else update_existing="no"; fi
-  if confirm '是否运行 go test ./... 和 go vet ./...？首次部署可跳过以加快安装' n; then run_full_check="yes"; else run_full_check="no"; fi
+  if confirm '是否安装/更新系统基础依赖？binary 只装运行依赖，source 才装 Go/gcc' y; then install_deps="yes"; else install_deps="no"; fi
+  update_existing="no"
+  run_full_check="no"
+  if [[ "$install_mode" != "binary" ]]; then
+    if confirm '安装目录已存在时是否尝试 git pull --ff-only？' y; then update_existing="yes"; else update_existing="no"; fi
+    if confirm '是否运行 go test ./... 和 go vet ./...？首次部署可跳过以加快安装' n; then run_full_check="yes"; else run_full_check="no"; fi
+  fi
   if confirm '是否跳过工具权限确认？仅 localhost/demo 建议开启' n; then skip_prompts="true"; else skip_prompts="false"; fi
 
   token="${AGENTDOCK_AUTH_TOKEN:-}"
@@ -620,11 +719,13 @@ INTRO
   cat >"$TTY_OUT" <<SUMMARY
 
 即将部署：
-- 源码目录：$source_dir
+- 安装目录：$source_dir
 - 运行数据：$data_dir
 - workspace：$workspace_dir
 - AgentDock 控制目录：$control_dir
 - env 文件：$env_file
+- 安装方式：$install_mode
+- Release 版本：$release_version
 - 服务管理器：$service_manager
 - 服务名：$service_name
 - 运行用户：$service_user
@@ -634,37 +735,62 @@ INTRO
 SUMMARY
   confirm '确认开始执行部署？' y || die '用户取消。'
 
+  build_from_source="no"
+  binary_installed="no"
+
   if [[ "$install_deps" == "yes" ]]; then
-    install_packages
+    if [[ "$install_mode" == "source" ]]; then
+      install_build_packages
+    else
+      install_runtime_packages
+    fi
   fi
 
-  go_version="$(current_go_version || true)"
-  if [[ -z "$go_version" ]] || ! semver_ge "$go_version" "$MIN_GO_VERSION"; then
-    warn "当前 Go 版本不足：${go_version:-未安装}，需要 >= $MIN_GO_VERSION。"
-    if confirm "是否安装官方 Go $DEFAULT_GO_VERSION 到 /usr/local/go？" y; then
-      install_go_official "$DEFAULT_GO_VERSION"
+  if [[ "$install_mode" == "binary" || "$install_mode" == "auto" ]]; then
+    if install_prebuilt_binary "$repo_url" "$release_version" "$source_dir"; then
+      binary_installed="yes"
+      log "预编译二进制安装完成：$source_dir/bin/agentdock"
+    elif [[ "$install_mode" == "auto" ]]; then
+      warn "预编译二进制下载失败，将 fallback 到源码构建。"
+      build_from_source="yes"
+      if [[ "$install_deps" == "yes" ]]; then
+        install_build_packages
+      fi
     else
-      die "Go 版本不足，无法构建 AgentDock。"
+      die "预编译二进制下载失败。可改用安装方式 source，或设置 AGENTDOCK_RELEASE_VERSION 指定已存在的 release。"
     fi
   else
-    log "Go 版本满足要求：$go_version"
+    build_from_source="yes"
   fi
 
-  clone_or_update_source "$repo_url" "$branch" "$source_dir" "$update_existing"
+  if [[ "$build_from_source" == "yes" ]]; then
+    go_version="$(current_go_version || true)"
+    if [[ -z "$go_version" ]] || ! semver_ge "$go_version" "$MIN_GO_VERSION"; then
+      warn "当前 Go 版本不足：${go_version:-未安装}，需要 >= $MIN_GO_VERSION。"
+      if confirm "是否安装官方 Go $DEFAULT_GO_VERSION 到 /usr/local/go？" y; then
+        install_go_official "$DEFAULT_GO_VERSION"
+      else
+        die "Go 版本不足，无法构建 AgentDock。"
+      fi
+    else
+      log "Go 版本满足要求：$go_version"
+    fi
+
+    clone_or_update_source "$repo_url" "$branch" "$source_dir" "$update_existing"
+
+    log "构建 AgentDock"
+    mkdir -p "$source_dir/bin"
+    if [[ "$run_full_check" == "yes" ]]; then
+      (cd "$source_dir" && go test ./... && go vet ./...)
+    fi
+    (cd "$source_dir" && go build -trimpath -o ./bin/agentdock ./cmd/agentdock)
+    chmod +x "$source_dir/bin/agentdock"
+  fi
 
   ensure_service_user "$service_user" "$data_dir"
   service_group="$(id -gn "$service_user")"
   run_root mkdir -p "$workspace_dir" "$control_dir" "$nexus_state_dir"
   run_root chown -R "$service_user:$service_group" "$data_dir"
-
-  log "构建 AgentDock"
-  mkdir -p "$source_dir/bin"
-  if [[ "$run_full_check" == "yes" ]]; then
-    (cd "$source_dir" && go test ./... && go vet ./...)
-  fi
-  (cd "$source_dir" && go build -trimpath -o ./bin/agentdock ./cmd/agentdock)
-  chmod +x "$source_dir/bin/agentdock"
-
   write_env_file "$env_file" "$workspace_dir" "$control_dir" "$host" "$port" "$token" "$tool_profile" "$log_level" "$mode" "$path_policy" "$sandbox_mode" "$skip_prompts" "$recall_endpoint" "$recall_token" "$nexus_endpoint" "$nexus_device_name" "$nexus_state_dir"
   case "$service_manager" in
     systemd) write_systemd_unit "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
