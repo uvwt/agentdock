@@ -17,6 +17,7 @@ DEFAULT_TOOL_PROFILE="${AGENTDOCK_TOOL_PROFILE:-unified}"
 DEFAULT_MODE="${AGENTDOCK_MODE:-sandboxed}"
 DEFAULT_PATH_POLICY="${AGENTDOCK_PATH_POLICY:-workspace}"
 DEFAULT_SANDBOX_MODE="${AGENTDOCK_SANDBOX_MODE:-landlock}"
+DEFAULT_SERVICE_MANAGER="${AGENTDOCK_SERVICE_MANAGER:-auto}"
 
 TTY_IN="/dev/tty"
 TTY_OUT="/dev/tty"
@@ -33,6 +34,11 @@ AgentDock Linux 问答式一键部署脚本。
 
 用法：
   bash scripts/install-linux.sh
+  curl -fsSL https://raw.githubusercontent.com/uvwt/agentdock/main/scripts/install-linux.sh -o /tmp/agentdock-install.sh
+  bash /tmp/agentdock-install.sh
+
+Alpine/极简系统如果没有 curl/bash：
+  apk add --no-cache bash curl
   curl -fsSL https://raw.githubusercontent.com/uvwt/agentdock/main/scripts/install-linux.sh -o /tmp/agentdock-install.sh
   bash /tmp/agentdock-install.sh
 
@@ -105,7 +111,28 @@ confirm() {
 
 require_linux() {
   [[ "$(uname -s)" == "Linux" ]] || die "此脚本只支持 Linux；macOS 请使用 scripts/install-macos.sh。"
-  command -v systemctl >/dev/null 2>&1 || die "未找到 systemctl；当前脚本用于 systemd Linux。"
+}
+
+detect_service_manager() {
+  local requested="${1:-auto}"
+  case "$requested" in
+    auto) ;;
+    systemd|openrc|none) printf '%s' "$requested"; return ;;
+    *) die "服务管理器必须是 auto/systemd/openrc/none：$requested" ;;
+  esac
+  if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system || -d /etc/systemd/system ]]; then
+    printf 'systemd'
+  elif [[ -f /etc/alpine-release ]]; then
+    printf 'openrc'
+  elif command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1; then
+    printf 'openrc'
+  else
+    printf 'none'
+  fi
+}
+
+is_alpine() {
+  [[ -f /etc/alpine-release ]]
 }
 
 run_root() {
@@ -169,6 +196,8 @@ install_packages() {
     run_root pacman -Sy --needed --noconfirm git curl ca-certificates make gcc pkgconf python tar gzip
   elif command -v zypper >/dev/null 2>&1; then
     run_root zypper --non-interactive install git curl ca-certificates make gcc gcc-c++ pkg-config python3 tar gzip
+  elif command -v apk >/dev/null 2>&1; then
+    run_root apk add --no-cache bash curl ca-certificates git go build-base pkgconf python3 tar gzip openssl openrc
   else
     die "未识别包管理器；请先安装 git、curl、ca-certificates、make、gcc、python3、tar、gzip。"
   fi
@@ -220,8 +249,16 @@ ensure_service_user() {
   if service_user_exists "$user"; then
     return
   fi
-  log "创建 systemd 运行用户：$user"
-  run_root useradd --system --home-dir "$home_dir" --create-home --shell /usr/sbin/nologin "$user"
+  log "创建运行用户：$user"
+  if command -v useradd >/dev/null 2>&1; then
+    run_root useradd --system --home-dir "$home_dir" --create-home --shell /usr/sbin/nologin "$user"
+  elif command -v adduser >/dev/null 2>&1; then
+    run_root addgroup -S "$user" 2>/dev/null || true
+    run_root adduser -S -D -H -h "$home_dir" -s /sbin/nologin -G "$user" "$user"
+    run_root mkdir -p "$home_dir"
+  else
+    die "未找到 useradd/adduser，无法创建运行用户：$user"
+  fi
 }
 
 clone_or_update_source() {
@@ -364,6 +401,110 @@ UNIT
   rm -f "$tmp_file"
 }
 
+write_openrc_service() {
+  local service_name="$1"
+  local service_user="$2"
+  local service_group="$3"
+  local source_dir="$4"
+  local env_file="$5"
+  local init_file="/etc/init.d/${service_name}"
+  local tmp_file
+  tmp_file="$(mktemp)"
+  cat >"$tmp_file" <<OPENRC
+#!/sbin/openrc-run
+name="AgentDock MCP server"
+description="AgentDock MCP server"
+command="$source_dir/bin/agentdock"
+command_args=""
+command_user="$service_user:$service_group"
+directory="$source_dir"
+pidfile="/run/${service_name}.pid"
+command_background="yes"
+output_log="/var/log/${service_name}.log"
+error_log="/var/log/${service_name}.err"
+
+agentdock_env_file="$env_file"
+
+start_pre() {
+  checkpath -f -m 0644 -o "$service_user:$service_group" "\$output_log"
+  checkpath -f -m 0644 -o "$service_user:$service_group" "\$error_log"
+  if [ -r "\$agentdock_env_file" ]; then
+    set -a
+    . "\$agentdock_env_file"
+    set +a
+    command_args="--workspace \${AGENTDOCK_WORKSPACE} --agentdock-dir \${AGENTDOCK_DIR} --host \${AGENTDOCK_HOST} --port \${AGENTDOCK_PORT} --log-level \${AGENTDOCK_LOG_LEVEL}"
+  else
+    eerror "env file not readable: \$agentdock_env_file"
+    return 1
+  fi
+}
+
+depend() {
+  need net
+  after firewall
+}
+OPENRC
+  run_root install -m 755 -o root -g root "$tmp_file" "$init_file"
+  rm -f "$tmp_file"
+}
+
+start_service() {
+  local service_manager="$1"
+  local service_name="$2"
+  case "$service_manager" in
+    systemd)
+      log "启动 systemd 服务：$service_name"
+      run_root systemctl daemon-reload
+      run_root systemctl enable --now "$service_name"
+      run_root systemctl restart "$service_name"
+      sleep 2
+      run_root systemctl --no-pager --full status "$service_name" || true
+      run_root systemctl is-active --quiet "$service_name"
+      ;;
+    openrc)
+      log "启动 OpenRC 服务：$service_name"
+      run_root rc-update add "$service_name" default
+      run_root rc-service "$service_name" restart
+      sleep 2
+      run_root rc-service "$service_name" status
+      ;;
+    none)
+      warn "未配置系统服务；仅完成构建和 env 写入。可手动运行：source 环境变量后执行 bin/agentdock。"
+      ;;
+    *) die "未知服务管理器：$service_manager" ;;
+  esac
+}
+
+service_status_command() {
+  local service_manager="$1"
+  local service_name="$2"
+  case "$service_manager" in
+    systemd) printf 'sudo systemctl status %s --no-pager' "$service_name" ;;
+    openrc) printf 'sudo rc-service %s status' "$service_name" ;;
+    none) printf '# 未安装系统服务' ;;
+  esac
+}
+
+service_log_command() {
+  local service_manager="$1"
+  local service_name="$2"
+  case "$service_manager" in
+    systemd) printf 'sudo journalctl -u %s -n 100 --no-pager' "$service_name" ;;
+    openrc) printf 'sudo tail -n 100 /var/log/%s.log /var/log/%s.err' "$service_name" "$service_name" ;;
+    none) printf '# 未安装系统服务' ;;
+  esac
+}
+
+service_restart_command() {
+  local service_manager="$1"
+  local service_name="$2"
+  case "$service_manager" in
+    systemd) printf 'sudo systemctl restart %s' "$service_name" ;;
+    openrc) printf 'sudo rc-service %s restart' "$service_name" ;;
+    none) printf '# 未安装系统服务' ;;
+  esac
+}
+
 local_health_host() {
   local host="$1"
   case "$host" in
@@ -385,7 +526,7 @@ main() {
   require_linux
 
   local detected_root source_default repo_url branch source_dir data_dir workspace_dir control_dir env_file
-  local service_name service_user service_group host port token tool_profile log_level mode path_policy sandbox_mode skip_prompts
+  local service_name service_user service_group service_manager service_manager_prompt host port token tool_profile log_level mode path_policy sandbox_mode skip_prompts
   local recall_endpoint recall_token nexus_endpoint nexus_device_name nexus_state_dir update_existing run_full_check install_deps install_go
   local go_version public_domain smoke_url health_host
 
@@ -402,8 +543,8 @@ AgentDock Linux 一键部署将执行：
 1. 安装/检查基础依赖和 Go 版本。
 2. 克隆或更新 AgentDock 源码。
 3. 构建 bin/agentdock。
-4. 生成 /etc/agentdock/agentdock.env 和 systemd unit。
-5. 启动服务并验证 healthz / MCP smoke。
+4. 生成 /etc/agentdock/agentdock.env 和 systemd/OpenRC 服务配置。
+5. 启动 systemd/OpenRC 服务并验证 healthz / MCP smoke。
 
 生产建议：监听 127.0.0.1，通过 Caddy/Nginx 做 HTTPS 反代；不要把 AgentDock 直接裸露到公网。
 
@@ -414,7 +555,14 @@ INTRO
   source_dir="$(prompt '源码安装目录' "$source_default")"
   data_dir="$(prompt '运行数据根目录' "$DEFAULT_DATA_DIR")"
   env_file="$(prompt '环境变量文件' "$DEFAULT_ENV_FILE")"
-  service_name="$(prompt 'systemd 服务名' "$DEFAULT_SERVICE_NAME")"
+  service_manager_prompt="$(prompt '服务管理器：auto/systemd/openrc/none' "$DEFAULT_SERVICE_MANAGER")"
+  service_manager="$(detect_service_manager "$service_manager_prompt")"
+  if [[ "$service_manager" == "none" ]]; then
+    warn "未检测到 systemd 或 OpenRC；脚本仍可构建和写入 env，但不会安装系统服务。"
+  else
+    log "服务管理器：$service_manager"
+  fi
+  service_name="$(prompt '服务名' "$DEFAULT_SERVICE_NAME")"
   service_user="$(prompt '运行用户' "$DEFAULT_SERVICE_USER")"
   host="$(prompt '监听地址' "$DEFAULT_HOST")"
   port="$(prompt '监听端口' "$DEFAULT_PORT")"
@@ -427,7 +575,7 @@ INTRO
   validate_abs_path '源码安装目录' "$source_dir"
   validate_abs_path '运行数据根目录' "$data_dir"
   validate_abs_path '环境变量文件' "$env_file"
-  validate_no_space 'systemd 服务名' "$service_name"
+  validate_no_space '服务名' "$service_name"
   validate_no_space '运行用户' "$service_user"
   validate_no_space '监听地址' "$host"
   validate_port "$port"
@@ -477,7 +625,8 @@ INTRO
 - workspace：$workspace_dir
 - AgentDock 控制目录：$control_dir
 - env 文件：$env_file
-- systemd 服务：$service_name
+- 服务管理器：$service_manager
+- 服务名：$service_name
 - 运行用户：$service_user
 - 本机监听：http://$host:$port
 - token：已隐藏，将写入 root-only env 文件
@@ -517,15 +666,13 @@ SUMMARY
   chmod +x "$source_dir/bin/agentdock"
 
   write_env_file "$env_file" "$workspace_dir" "$control_dir" "$host" "$port" "$token" "$tool_profile" "$log_level" "$mode" "$path_policy" "$sandbox_mode" "$skip_prompts" "$recall_endpoint" "$recall_token" "$nexus_endpoint" "$nexus_device_name" "$nexus_state_dir"
-  write_systemd_unit "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file"
+  case "$service_manager" in
+    systemd) write_systemd_unit "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
+    openrc) write_openrc_service "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
+    none) warn "跳过系统服务写入。" ;;
+  esac
 
-  log "启动 systemd 服务：$service_name"
-  run_root systemctl daemon-reload
-  run_root systemctl enable --now "$service_name"
-  run_root systemctl restart "$service_name"
-  sleep 2
-  run_root systemctl --no-pager --full status "$service_name" || true
-  run_root systemctl is-active --quiet "$service_name"
+  start_service "$service_manager" "$service_name"
 
   health_host="$(local_health_host "$host")"
   log "验证 healthz"
@@ -549,9 +696,9 @@ AgentDock Linux 部署完成。
   $smoke_url/healthz
 
 服务操作：
-  sudo systemctl status $service_name --no-pager
-  sudo journalctl -u $service_name -n 100 --no-pager
-  sudo systemctl restart $service_name
+  $(service_status_command "$service_manager" "$service_name")
+  $(service_log_command "$service_manager" "$service_name")
+  $(service_restart_command "$service_manager" "$service_name")
 
 Bearer token 已写入：
   $env_file

@@ -25,10 +25,43 @@ curl -fsSL https://raw.githubusercontent.com/uvwt/agentdock/main/scripts/install
 bash /tmp/agentdock-install.sh
 ```
 
+Alpine / 极简系统如果连 `curl` 和 `bash` 都没有，先用 BusyBox `wget` 跑 bootstrap：
+
+```sh
+wget -O /tmp/agentdock-bootstrap.sh https://raw.githubusercontent.com/uvwt/agentdock/main/scripts/install-linux-bootstrap.sh
+sh /tmp/agentdock-bootstrap.sh
+```
+
+或者手动补齐最小依赖后再运行主脚本：
+
+```sh
+apk add --no-cache bash curl ca-certificates
+curl -fsSL https://raw.githubusercontent.com/uvwt/agentdock/main/scripts/install-linux.sh -o /tmp/agentdock-install.sh
+bash /tmp/agentdock-install.sh
+```
+
 远程安装模式下，脚本会按提示 clone 默认仓库：
 
 ```text
 https://github.com/uvwt/agentdock.git
+```
+
+## Alpine / OpenRC 支持
+
+脚本会自动识别服务管理器：
+
+```text
+systemd：写入 /etc/systemd/system/agentdock.service，并使用 systemctl 启动
+OpenRC：写入 /etc/init.d/agentdock，并使用 rc-update / rc-service 启动
+none：只构建二进制和写入 env，不安装系统服务
+```
+
+Alpine 默认会走 OpenRC。安装完成后常用命令是：
+
+```sh
+rc-service agentdock status
+rc-service agentdock restart
+tail -n 100 /var/log/agentdock.log /var/log/agentdock.err
 ```
 
 ## 脚本会询问什么
@@ -41,7 +74,8 @@ Git 分支
 源码安装目录
 运行数据根目录
 环境变量文件
-systemd 服务名
+服务管理器：auto/systemd/openrc/none
+服务名
 运行用户
 监听地址和端口
 工具 profile
@@ -74,8 +108,8 @@ env 文件：/etc/agentdock/agentdock.env
 5. 创建运行用户和数据目录。
 6. 构建 `bin/agentdock`。
 7. 写入 root-only 环境变量文件。
-8. 写入 systemd unit。
-9. `systemctl enable --now` 并重启服务。
+8. 按服务管理器写入 systemd unit 或 OpenRC init 脚本。
+9. 使用 `systemctl` 或 `rc-service` 启动/重启服务。
 10. 验证 `/healthz` 和 MCP smoke。
 
 ## 环境变量覆盖默认值
@@ -115,7 +149,8 @@ AGENTDOCK_GO_VERSION
 /srv/agentdock/workspace                  用户项目 workspace
 /srv/agentdock/AgentDock                  AgentDock 控制目录和状态
 /etc/agentdock/agentdock.env              root-only 环境变量
-/etc/systemd/system/agentdock.service     systemd unit
+/etc/systemd/system/agentdock.service     systemd unit，systemd 系统使用
+/etc/init.d/agentdock                     OpenRC init 脚本，Alpine/OpenRC 使用
 ```
 
 ## 安装后验证

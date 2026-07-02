@@ -54,7 +54,7 @@ Linux 服务器推荐使用问答式 systemd 安装脚本：
 bash scripts/install-linux.sh
 ```
 
-脚本会按提示填写源码目录、运行目录、监听端口、Bearer token、RecallDock/Nexus 可选配置，并自动构建、写入 systemd unit、启动和 smoke 验证。单文件远程安装见 [Linux 问答式一键部署](docs/install-linux-interactive.md)。
+脚本会按提示填写源码目录、运行目录、监听端口、Bearer token、RecallDock/Nexus 可选配置，并自动构建、按系统写入 systemd 或 OpenRC 服务、启动和 smoke 验证。Alpine/极简系统可先用 `scripts/install-linux-bootstrap.sh` 补齐 `bash/curl`，单文件远程安装见 [Linux 问答式一键部署](docs/install-linux-interactive.md)。
 
 ## macOS 裸机更新
 
