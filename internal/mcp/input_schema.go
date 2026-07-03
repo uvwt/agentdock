@@ -281,13 +281,17 @@ func inputSchema(name string) map[string]any {
 	case "browser_session":
 		props["action"] = stringProp("Browser session action: start or close.")
 		props["url"] = stringProp("Initial URL when action=start. Defaults to about:blank.")
+		props["backend"] = stringProp("Browser backend: playwright or cdp. Defaults to playwright.")
+		props["browser"] = stringProp("Browser family: chromium, chrome, edge, or msedge. edge/msedge selects Microsoft Edge.")
+		props["channel"] = stringProp("Optional Playwright Chromium channel, such as msedge or chrome.")
+		props["cdp_url"] = stringProp("CDP endpoint, required when backend=cdp.")
 		props["headless"] = boolProp("Run browser headless. Defaults to true.")
 		props["viewport"] = objectProp("Viewport object, for example {width:1280,height:800}.")
 		props["session_id"] = stringProp("Browser session id.")
 		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
 	case "browser_act":
 		props["session_id"] = stringProp("Browser session id.")
-		props["actions"] = arrayProp("Actions to run: goto, click, fill, press, wait, wait_for_selector, select, scroll, reload, back, forward, evaluate.")
+		props["actions"] = arrayProp("Actions to run: goto, click, fill, press, wait, wait_for_selector, select, scroll, reload, back, or forward. Page script actions are disabled by the default runner.")
 		props["full_page"] = boolProp("Capture full-page screenshot in the final snapshot.")
 		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
 		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 and screenshot_mime_type in the response. Disabled by default because screenshots can be large.")
@@ -295,13 +299,17 @@ func inputSchema(name string) map[string]any {
 		required = []string{"session_id", "actions"}
 	case "browser_session_start":
 		props["url"] = stringProp("Initial URL. Defaults to about:blank.")
+		props["backend"] = stringProp("Browser backend: playwright or cdp. Defaults to playwright.")
+		props["browser"] = stringProp("Browser family: chromium, chrome, edge, or msedge. edge/msedge selects Microsoft Edge.")
+		props["channel"] = stringProp("Optional Playwright Chromium channel, such as msedge or chrome.")
+		props["cdp_url"] = stringProp("CDP endpoint, required when backend=cdp.")
 		props["headless"] = boolProp("Run browser headless. Defaults to true.")
 		props["viewport"] = objectProp("Viewport object, for example {width:1280,height:800}.")
 		props["session_id"] = stringProp("Optional caller-provided session id.")
 		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
 	case "browser_action":
 		props["session_id"] = stringProp("Browser session id.")
-		props["actions"] = arrayProp("Actions to run: goto, click, fill, press, wait, wait_for_selector, select, scroll, reload, back, forward, evaluate.")
+		props["actions"] = arrayProp("Actions to run: goto, click, fill, press, wait, wait_for_selector, select, scroll, reload, back, or forward. Page script actions are disabled by the default runner.")
 		props["full_page"] = boolProp("Capture full-page screenshot in the final snapshot.")
 		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
 		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 and screenshot_mime_type in the response. Disabled by default because screenshots can be large.")

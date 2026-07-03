@@ -267,6 +267,7 @@ func outputSchema(name string) map[string]any {
 		props["screenshot_path"] = stringProp("Workspace-relative screenshot path.")
 		props["console_errors"] = arrayProp("Browser console errors captured during the operation.")
 		props["network_errors"] = arrayProp("Network request failures captured during the operation.")
+		props["page_errors"] = arrayProp("Browser page runtime errors captured during the operation.")
 		props["stdout"] = stringProp("Raw browser runner output.")
 		props["truncated"] = boolProp("Whether output was truncated.")
 	case "workspace_repos":
