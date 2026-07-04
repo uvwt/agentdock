@@ -12,7 +12,7 @@ const serverUrl = (process.env.AGENTDOCK_SERVER_URL || '').replace(/\/+$/, '');
 // session_start 只写入状态，不应该因为本机尚未安装 Playwright 依赖而失败。
 // 只有真正打开页面时才延迟加载浏览器驱动。
 async function loadChromium() {
-  const playwright = await import('playwright');
+  const playwright = await import('playwright-core');
   return playwright.chromium;
 }
 

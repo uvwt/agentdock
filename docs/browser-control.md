@@ -33,6 +33,21 @@ Mac mini 裸机运行时，推荐让 Playwright 启动一个 AgentDock 专用的
 
 普通方式启动的 Edge 不能被随意接管 DOM 和网络日志。CDP 端口必须只监听 `127.0.0.1`，不要暴露到公网。
 
+## 运行依赖
+
+默认 browser runner 使用 `playwright-core`，不自动下载浏览器二进制。macOS / Mac mini 上推荐使用已安装的 Microsoft Edge：
+
+```json
+{
+  "action": "start",
+  "browser": "edge",
+  "headless": false,
+  "url": "http://localhost:5173"
+}
+```
+
+部署 runner 时只需要安装或提供 `playwright-core` 依赖；`browser=edge` 会映射到 Playwright Chromium channel `msedge`，因此要求系统中已安装 Microsoft Edge。
+
 ## 安全默认值
 
 默认 runner 禁用页面脚本执行动作。AI 做网页操作时应优先使用打开、点击、输入、滚动、等待和截图等可观察动作。
