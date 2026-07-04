@@ -53,18 +53,21 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 	}
 	cmd.Env = r.internalCommandEnv(env)
 	output, err := cmd.CombinedOutput()
+	// runner 可能按需返回 screenshot/image_base64。这里必须先解析完整 JSON，再截断 stdout 展示；
+	// 否则大图会把 JSON 截断，导致结构化结果丢失。
+	var parsed map[string]any
+	parseErr := json.Unmarshal(output, &parsed)
 	text, truncated := truncateBytes(output, intArg(args, "max_bytes", 262144))
 	text = redactSecrets(text, nil)
 	result := Result{"ok": err == nil, "operation": operation, "stdout": text, "truncated": truncated}
 	if err != nil {
 		result["error"] = err.Error()
 	}
-	var parsed map[string]any
-	if parseErr := json.Unmarshal([]byte(text), &parsed); parseErr == nil {
+	if parseErr == nil {
 		for key, value := range parsed {
 			result[key] = value
 		}
-	} else if text != "" {
+	} else if len(output) > 0 {
 		result["json_error"] = parseErr.Error()
 	}
 	return result, nil

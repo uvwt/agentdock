@@ -200,6 +200,8 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.browserRunnerCall(ctx, "snapshot", args)
 	case "browser_session_close":
 		return r.browserRunnerCall(ctx, "session_close", args)
+	case "browser_session_cleanup":
+		return r.browserRunnerCall(ctx, "session_cleanup", args)
 	case "desktop_observe":
 		return r.desktopObserve(ctx, args)
 	case "desktop_act":

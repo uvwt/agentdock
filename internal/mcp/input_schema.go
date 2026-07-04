@@ -279,7 +279,7 @@ func inputSchema(name string) map[string]any {
 	case "private_notes_maintain":
 		props["action"] = stringProp("Action: init, init-encryption, check, list, sync-encrypted, encrypt-all, or migrate-enc-to-age.")
 	case "browser_session":
-		props["action"] = stringProp("Browser session action: start or close.")
+		props["action"] = stringProp("Browser session action: start, close, or cleanup_stale.")
 		props["url"] = stringProp("Initial URL when action=start. Defaults to about:blank.")
 		props["backend"] = stringProp("Browser backend: playwright or cdp. Defaults to playwright.")
 		props["browser"] = stringProp("Browser family: chromium, chrome, edge, or msedge. edge/msedge selects Microsoft Edge.")
@@ -288,6 +288,13 @@ func inputSchema(name string) map[string]any {
 		props["headless"] = boolProp("Run browser headless. Defaults to true.")
 		props["viewport"] = objectProp("Viewport object, for example {width:1280,height:800}.")
 		props["session_id"] = stringProp("Browser session id.")
+		props["profile_id"] = stringProp("Optional persistent browser profile id stored under browser artifacts. Reuses cookies/localStorage across runs.")
+		props["cookies"] = arrayProp("Optional Playwright cookies to add to the browser context.")
+		props["local_storage"] = objectProp("Optional localStorage map by origin, for example origin to key/value object.")
+		props["storage_state"] = objectProp("Optional Playwright storageState object.")
+		props["save_storage_state"] = boolProp("Save context storage state after action/snapshot and return storage_state_path.")
+		props["reload_after_local_storage"] = boolProp("Reload the page after applying localStorage. Defaults to true.")
+		props["max_age_ms"] = intProp("When action=cleanup_stale, remove sessions older than this age. Defaults to 6 hours.")
 		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
 	case "browser_act":
 		props["session_id"] = stringProp("Browser session id.")
@@ -295,6 +302,12 @@ func inputSchema(name string) map[string]any {
 		props["full_page"] = boolProp("Capture full-page screenshot in the final snapshot.")
 		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
 		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 and screenshot_mime_type in the response. Disabled by default because screenshots can be large.")
+		props["include_image"] = boolProp("Attach screenshot as MCP image content when supported and below max_image_bytes.")
+		props["include_image_base64"] = boolProp("Alias for include_image.")
+		props["max_image_bytes"] = intProp("Maximum inline image bytes. Defaults to 750000.")
+		props["close_after"] = boolProp("Close and remove the browser session after the action/snapshot succeeds.")
+		props["save_storage_state"] = boolProp("Save context storage state and return storage_state_path.")
+		props["max_interactive_elements"] = intProp("Maximum visible interactive elements to return. Defaults to 40.")
 		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
 		required = []string{"session_id", "actions"}
 	case "browser_session_start":
@@ -306,6 +319,12 @@ func inputSchema(name string) map[string]any {
 		props["headless"] = boolProp("Run browser headless. Defaults to true.")
 		props["viewport"] = objectProp("Viewport object, for example {width:1280,height:800}.")
 		props["session_id"] = stringProp("Optional caller-provided session id.")
+		props["profile_id"] = stringProp("Optional persistent browser profile id stored under browser artifacts. Reuses cookies/localStorage across runs.")
+		props["cookies"] = arrayProp("Optional Playwright cookies to add to the browser context.")
+		props["local_storage"] = objectProp("Optional localStorage map by origin.")
+		props["storage_state"] = objectProp("Optional Playwright storageState object.")
+		props["save_storage_state"] = boolProp("Save context storage state after action/snapshot and return storage_state_path.")
+		props["reload_after_local_storage"] = boolProp("Reload the page after applying localStorage. Defaults to true.")
 		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
 	case "browser_action":
 		props["session_id"] = stringProp("Browser session id.")
@@ -313,6 +332,12 @@ func inputSchema(name string) map[string]any {
 		props["full_page"] = boolProp("Capture full-page screenshot in the final snapshot.")
 		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
 		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 and screenshot_mime_type in the response. Disabled by default because screenshots can be large.")
+		props["include_image"] = boolProp("Attach screenshot as MCP image content when supported and below max_image_bytes.")
+		props["include_image_base64"] = boolProp("Alias for include_image.")
+		props["max_image_bytes"] = intProp("Maximum inline image bytes. Defaults to 750000.")
+		props["close_after"] = boolProp("Close and remove the browser session after the action/snapshot succeeds.")
+		props["save_storage_state"] = boolProp("Save context storage state and return storage_state_path.")
+		props["max_interactive_elements"] = intProp("Maximum visible interactive elements to return. Defaults to 40.")
 		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
 		required = []string{"session_id", "actions"}
 	case "browser_snapshot", "browser_session_close":
@@ -320,6 +345,12 @@ func inputSchema(name string) map[string]any {
 		props["full_page"] = boolProp("Capture full-page screenshot for snapshot.")
 		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
 		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 and screenshot_mime_type in the response. Disabled by default because screenshots can be large.")
+		props["include_image"] = boolProp("Attach screenshot as MCP image content when supported and below max_image_bytes.")
+		props["include_image_base64"] = boolProp("Alias for include_image.")
+		props["max_image_bytes"] = intProp("Maximum inline image bytes. Defaults to 750000.")
+		props["close_after"] = boolProp("Close and remove the browser session after snapshot succeeds.")
+		props["save_storage_state"] = boolProp("Save context storage state and return storage_state_path.")
+		props["max_interactive_elements"] = intProp("Maximum visible interactive elements to return. Defaults to 40.")
 		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
 		required = []string{"session_id"}
 	case "desktop_observe":

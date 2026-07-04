@@ -71,6 +71,8 @@ func (r *Runtime) browserSession(ctx context.Context, args map[string]any) (Resu
 		return r.browserRunnerCall(ctx, "session_start", args)
 	case "close", "stop", "browser_session_close":
 		return r.browserRunnerCall(ctx, "session_close", args)
+	case "cleanup", "cleanup_stale", "browser_session_cleanup":
+		return r.browserRunnerCall(ctx, "session_cleanup", args)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported browser_session action", "validation", map[string]any{"action": stringArg(args, "action", "")})
 	}

@@ -40,6 +40,140 @@ function newSessionId() {
   return `browser-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function safeProfileId(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return raw.replace(/[^a-zA-Z0-9_.-]/g, '-').slice(0, 80);
+}
+
+function normalizeLocalStorage(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map(item => ({
+      origin: String(item?.origin || ''),
+      values: item?.values && typeof item.values === 'object' ? item.values : item
+    })).filter(item => item.origin && item.values && typeof item.values === 'object');
+  }
+  if (typeof value === 'object') {
+    return Object.entries(value).map(([origin, values]) => ({ origin, values })).filter(item => item.origin && item.values && typeof item.values === 'object');
+  }
+  return [];
+}
+
+async function applyLocalStorage(page, localStorageConfig) {
+  const entries = normalizeLocalStorage(localStorageConfig);
+  let applied = 0;
+  for (const entry of entries) {
+    if (!page.url().startsWith(entry.origin)) continue;
+    const ok = await page.evaluate(values => {
+      for (const [key, value] of Object.entries(values)) {
+        window.localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+      }
+      return true;
+    }, entry.values).catch(() => false);
+    if (ok) applied++;
+  }
+  return applied;
+}
+
+async function collectPageMetrics(page, screenshotPath, fullPage) {
+  const stat = await fs.stat(screenshotPath).catch(() => null);
+  const viewport = page.viewportSize();
+  const pageSize = await page.evaluate(() => ({
+    width: Math.max(document.documentElement?.scrollWidth || 0, document.body?.scrollWidth || 0, window.innerWidth || 0),
+    height: Math.max(document.documentElement?.scrollHeight || 0, document.body?.scrollHeight || 0, window.innerHeight || 0),
+    device_pixel_ratio: window.devicePixelRatio || 1
+  })).catch(() => ({}));
+  const focus = await page.evaluate(() => {
+    const el = document.activeElement;
+    if (!el || el === document.body) return null;
+    return {
+      tag: el.tagName?.toLowerCase() || '',
+      id: el.id || '',
+      class: typeof el.className === 'string' ? el.className.slice(0, 120) : '',
+      name: el.getAttribute?.('name') || '',
+      placeholder: el.getAttribute?.('placeholder') || '',
+      text: (el.innerText || el.textContent || '').trim().slice(0, 120)
+    };
+  }).catch(() => null);
+  return {
+    viewport,
+    page_size: pageSize,
+    focused_element: focus,
+    screenshot_size_bytes: stat?.size || 0,
+    screenshot_width: fullPage ? pageSize.width : viewport?.width,
+    screenshot_height: fullPage ? pageSize.height : viewport?.height
+  };
+}
+
+async function collectInteractiveElements(page, limit = 40) {
+  return await page.evaluate(max => {
+    const selector = 'a,button,input,textarea,select,[role="button"],[role="link"],[tabindex]';
+    return Array.from(document.querySelectorAll(selector)).filter(el => {
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    }).slice(0, max).map((el, index) => ({
+      index,
+      tag: el.tagName.toLowerCase(),
+      type: el.getAttribute('type') || '',
+      role: el.getAttribute('role') || '',
+      id: el.id || '',
+      name: el.getAttribute('name') || '',
+      placeholder: el.getAttribute('placeholder') || '',
+      text: (el.innerText || el.value || el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 120)
+    }));
+  }, limit).catch(() => []);
+}
+
+async function attachImageIfRequested(result, screenshotPath) {
+  if (args.include_image !== true && args.include_image_base64 !== true) return result;
+  const maxBytes = args.max_image_bytes || 750000;
+  const data = await fs.readFile(screenshotPath);
+  if (data.length > maxBytes) {
+    result.image_attached = false;
+    result.image_warnings = [`screenshot image exceeds max_image_bytes (${data.length} > ${maxBytes})`];
+    return result;
+  }
+  result.image_attached = true;
+  result.image_mime_type = 'image/png';
+  result.image_size_bytes = data.length;
+  result.image_base64 = data.toString('base64');
+  return result;
+}
+
+async function saveStorageStateIfNeeded(context, session, sessionId) {
+  if (args.save_storage_state !== true && session.save_storage_state !== true) return {};
+  const storageDir = path.join(artifactDir, 'storage-states');
+  await fs.mkdir(storageDir, { recursive: true });
+  const storageFile = `${safeProfileId(sessionId) || 'session'}-${Date.now()}.json`;
+  const storagePath = path.join(storageDir, storageFile);
+  await context.storageState({ path: storagePath });
+  return { storage_state_path: storagePath, storage_state_file: storageFile };
+}
+
+async function closeSessionState(state, sessionId) {
+  const existed = Boolean(state.sessions[sessionId]);
+  delete state.sessions[sessionId];
+  await writeState(state);
+  return existed;
+}
+
+async function cleanupStaleSessions(state) {
+  const maxAgeMs = args.max_age_ms || 6 * 60 * 60 * 1000;
+  const now = Date.now();
+  const removed = [];
+  for (const [id, session] of Object.entries(state.sessions || {})) {
+    const stamp = Date.parse(session.updated_at || session.created_at || 0);
+    if (!stamp || now - stamp > maxAgeMs) {
+      removed.push(id);
+      delete state.sessions[id];
+    }
+  }
+  await writeState(state);
+  return removed;
+}
+
 async function launchPage(session) {
   const chromium = await loadChromium();
   let browser;
@@ -58,12 +192,22 @@ async function launchPage(session) {
     const launchOptions = { headless: session.headless !== false };
     const channel = channelForSession(session);
     if (channel) launchOptions.channel = channel;
-    browser = await chromium.launch(launchOptions);
-    context = await browser.newContext({
-      viewport: session.viewport || { width: 1280, height: 800 },
-      storageState: session.storage_state || undefined
-    });
-    page = await context.newPage();
+    if (session.profile_id) {
+      const profileDir = path.join(artifactDir, 'profiles', safeProfileId(session.profile_id));
+      context = await chromium.launchPersistentContext(profileDir, {
+        ...launchOptions,
+        viewport: session.viewport || { width: 1280, height: 800 }
+      });
+      browser = context.browser();
+      page = context.pages()[0] || await context.newPage();
+    } else {
+      browser = await chromium.launch(launchOptions);
+      context = await browser.newContext({
+        viewport: session.viewport || { width: 1280, height: 800 },
+        storageState: session.storage_state || undefined
+      });
+      page = await context.newPage();
+    }
   }
 
   const consoleErrors = [];
@@ -74,7 +218,14 @@ async function launchPage(session) {
   });
   page.on('pageerror', err => pageErrors.push(err.message));
   page.on('requestfailed', req => networkErrors.push(`${req.method()} ${req.url()} ${req.failure()?.errorText || ''}`));
+  if (Array.isArray(session.cookies) && session.cookies.length) {
+    await context.addCookies(session.cookies);
+  }
   if (session.url && page.url() !== session.url) await page.goto(session.url, { waitUntil: 'domcontentloaded' });
+  const localStorageApplied = await applyLocalStorage(page, session.local_storage);
+  if (localStorageApplied > 0 && session.reload_after_local_storage !== false) {
+    await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+  }
   return { browser, context, page, consoleErrors, networkErrors, pageErrors };
 }
 
@@ -83,25 +234,37 @@ async function snapshot(page, extra = {}) {
   await fs.mkdir(screenshotDir, { recursive: true });
   const screenshotFile = `snapshot-${Date.now()}.png`;
   const screenshotPath = path.join(screenshotDir, screenshotFile);
-  await page.screenshot({ path: screenshotPath, fullPage: args.full_page === true });
+  const fullPage = args.full_page === true;
+  await page.screenshot({ path: screenshotPath, fullPage });
   const text = (await page.locator('body').innerText({ timeout: 3000 }).catch(() => '')).slice(0, args.max_text_chars || 12000);
   const screenshotArtifactId = `browser-screenshot-${crypto.createHash('sha256').update(screenshotPath).digest('hex').slice(0, 16)}`;
+  const metrics = await collectPageMetrics(page, screenshotPath, fullPage);
   const result = {
     url: page.url(),
     title: await page.title(),
     text,
     screenshot_path: screenshotPath,
+    screenshot_file: screenshotFile,
     screenshot_artifact_id: screenshotArtifactId,
+    artifact: {
+      kind: 'browser_screenshot',
+      path: screenshotPath,
+      file: screenshotFile,
+      artifact_id: screenshotArtifactId
+    },
+    interactive_elements: await collectInteractiveElements(page, args.max_interactive_elements || 40),
+    ...metrics,
     ...extra
   };
   if (serverUrl) {
     result.screenshot_url = `${serverUrl}/artifacts/browser/screenshots/${encodeURIComponent(screenshotFile)}`;
+    result.artifact.url = result.screenshot_url;
   }
   if (args.include_screenshot_base64 === true) {
     result.screenshot_mime_type = 'image/png';
     result.screenshot_base64 = await fs.readFile(screenshotPath, 'base64');
   }
-  return result;
+  return await attachImageIfRequested(result, screenshotPath);
 }
 
 async function runActions(page, actions = []) {
@@ -138,11 +301,23 @@ async function main() {
       headless: args.headless !== false,
       viewport: args.viewport || { width: 1280, height: 800 },
       url: args.url || 'about:blank',
+      profile_id: args.profile_id || undefined,
+      storage_state: args.storage_state || undefined,
+      local_storage: args.local_storage || undefined,
+      cookies: Array.isArray(args.cookies) ? args.cookies : undefined,
+      reload_after_local_storage: args.reload_after_local_storage !== false,
+      save_storage_state: args.save_storage_state === true,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
     await writeState(state);
     console.log(JSON.stringify({ ok: true, session_id: sessionId, status: 'created' }));
+    return;
+  }
+
+  if (operation === 'session_cleanup') {
+    const removed = await cleanupStaleSessions(state);
+    console.log(JSON.stringify({ ok: true, status: 'cleaned', removed_count: removed.length, removed_sessions: removed }));
     return;
   }
 
@@ -155,19 +330,25 @@ async function main() {
       await runActions(env.page, args.actions || []);
       session.url = env.page.url();
       session.updated_at = new Date().toISOString();
-      await writeState(state);
-      console.log(JSON.stringify({ ok: true, session_id: sessionId, ...(await snapshot(env.page, { console_errors: env.consoleErrors, network_errors: env.networkErrors, page_errors: env.pageErrors })) }));
+      const storageResult = await saveStorageStateIfNeeded(env.context, session, sessionId);
+      const closeAfter = args.close_after === true;
+      if (closeAfter) await closeSessionState(state, sessionId);
+      else await writeState(state);
+      console.log(JSON.stringify({ ok: true, session_id: sessionId, closed: closeAfter, ...storageResult, ...(await snapshot(env.page, { console_errors: env.consoleErrors, network_errors: env.networkErrors, page_errors: env.pageErrors })) }));
     } else if (operation === 'snapshot') {
-      console.log(JSON.stringify({ ok: true, session_id: sessionId, ...(await snapshot(env.page, { console_errors: env.consoleErrors, network_errors: env.networkErrors, page_errors: env.pageErrors })) }));
+      const storageResult = await saveStorageStateIfNeeded(env.context, session, sessionId);
+      const closeAfter = args.close_after === true;
+      if (closeAfter) await closeSessionState(state, sessionId);
+      console.log(JSON.stringify({ ok: true, session_id: sessionId, closed: closeAfter, ...storageResult, ...(await snapshot(env.page, { console_errors: env.consoleErrors, network_errors: env.networkErrors, page_errors: env.pageErrors })) }));
     } else if (operation === 'session_close') {
-      delete state.sessions[sessionId];
-      await writeState(state);
-      console.log(JSON.stringify({ ok: true, session_id: sessionId, status: 'closed' }));
+      const existed = await closeSessionState(state, sessionId);
+      console.log(JSON.stringify({ ok: true, session_id: sessionId, status: existed ? 'closed' : 'not_found' }));
     } else {
       throw new Error(`Unknown operation: ${operation}`);
     }
   } finally {
-    await env.browser.close();
+    if (env.context && typeof env.context.close === 'function') await env.context.close().catch(() => {});
+    else if (env.browser && typeof env.browser.close === 'function') await env.browser.close().catch(() => {});
   }
 }
 
