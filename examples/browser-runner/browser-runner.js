@@ -160,7 +160,7 @@ async function closeSessionState(state, sessionId) {
 }
 
 async function cleanupStaleSessions(state) {
-  const maxAgeMs = args.max_age_ms || 6 * 60 * 60 * 1000;
+  const maxAgeMs = args.max_age_ms ?? 6 * 60 * 60 * 1000;
   const now = Date.now();
   const removed = [];
   for (const [id, session] of Object.entries(state.sessions || {})) {
@@ -172,6 +172,18 @@ async function cleanupStaleSessions(state) {
   }
   await writeState(state);
   return removed;
+}
+
+async function closeWithTimeout(target, label, ms = 4000) {
+  if (!target || typeof target.close !== 'function') return;
+  let timer;
+  await Promise.race([
+    target.close(),
+    new Promise(resolve => {
+      timer = setTimeout(resolve, ms);
+    })
+  ]).catch(() => {});
+  if (timer) clearTimeout(timer);
 }
 
 async function launchPage(session) {
@@ -347,8 +359,11 @@ async function main() {
       throw new Error(`Unknown operation: ${operation}`);
     }
   } finally {
-    if (env.context && typeof env.context.close === 'function') await env.context.close().catch(() => {});
-    else if (env.browser && typeof env.browser.close === 'function') await env.browser.close().catch(() => {});
+    // 有些持久化 profile / 系统浏览器在关闭上下文时会卡住，导致上层工具超时后 signal killed。
+    // 这里把关闭动作限制在几秒内；状态已经在业务分支里写完，不能让资源回收阻塞结果返回。
+    if (env.context && typeof env.context.close === 'function') await closeWithTimeout(env.context, 'context');
+    else if (env.browser && typeof env.browser.close === 'function') await closeWithTimeout(env.browser, 'browser');
+    setTimeout(() => process.exit(0), 50).unref();
   }
 }
 
