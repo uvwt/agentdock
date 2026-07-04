@@ -124,7 +124,10 @@ func TestTaskManageCreateReturnsCompactSummary(t *testing.T) {
 	}
 	refs, ok := summary["condition_refs"].([]map[string]any)
 	if !ok || len(refs) != 1 || refs[0]["id"] != "cond_01" {
-		t.Fatalf("create summary missing condition refs for checkpoint evidence: %#v", summary)
+		t.Fatalf("create summary missing final review checklist refs: %#v", summary)
+	}
+	if _, exists := refs[0]["evidence_count"]; exists {
+		t.Fatalf("condition refs should not guide per-condition evidence: %#v", refs[0])
 	}
 	steps, ok := summary["current_phase_steps"].([]map[string]any)
 	if !ok || len(steps) != 0 {
@@ -172,6 +175,46 @@ func TestTaskManageCreateWithTemplateDoesNotReturnSnapshot(t *testing.T) {
 	}
 }
 
+func TestTaskManageFinalReviewFlow(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	created, err := rt.taskManage(map[string]any{
+		"action": "create", "title": "Repair service", "goal": "restore service",
+		"completion_conditions": []string{"service responds"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskID := created["task_id"].(string)
+
+	if _, err := rt.taskManage(map[string]any{"action": "complete_after_review", "task_id": taskID}); err == nil {
+		t.Fatal("complete_after_review succeeded before final_review")
+	}
+	reviewed, err := rt.taskManage(map[string]any{
+		"action": "final_review", "task_id": taskID, "summary": "all checks passed",
+		"verified_facts": []string{"health endpoint returned 200"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := reviewed["task_summary"].(map[string]any)
+	if summary["phase"] != taskstate.PhaseCloseout || summary["review_status"] != taskstate.FinalReviewPass {
+		t.Fatalf("unexpected final review summary: %#v", summary)
+	}
+	finalReview := summary["final_review"].(map[string]any)
+	if finalReview["verified_fact_count"] != 1 {
+		t.Fatalf("final review facts not summarized: %#v", finalReview)
+	}
+
+	completed, err := rt.taskManage(map[string]any{"action": "complete_after_review", "task_id": taskID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completedSummary := completed["task_summary"].(map[string]any)
+	if completedSummary["status"] != taskstate.StatusCompleted || completedSummary["review_status"] != taskstate.FinalReviewPass {
+		t.Fatalf("unexpected completed summary: %#v", completedSummary)
+	}
+}
+
 func TestTaskManagePhaseCheckpointReturnsCompactSummary(t *testing.T) {
 	rt, _ := newCodeToolsRuntime(t)
 	created, err := rt.taskManage(map[string]any{
@@ -203,12 +246,15 @@ func TestTaskManagePhaseCheckpointReturnsCompactSummary(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing compact task summary: %#v", result)
 	}
-	if summary["phase"] != taskstate.PhaseExecute || summary["verified_condition_count"] != 1 {
+	if summary["phase"] != taskstate.PhaseExecute || summary["review_status"] != "not_started" {
 		t.Fatalf("unexpected compact summary: %#v", summary)
 	}
 	refs, ok := summary["condition_refs"].([]map[string]any)
-	if !ok || len(refs) != 1 || refs[0]["evidence_count"] != 1 {
-		t.Fatalf("phase checkpoint summary missing condition evidence refs: %#v", summary)
+	if !ok || len(refs) != 1 || refs[0]["id"] != "cond_01" {
+		t.Fatalf("phase checkpoint summary missing checklist refs: %#v", summary)
+	}
+	if _, exists := refs[0]["evidence_count"]; exists {
+		t.Fatalf("phase checkpoint summary should not expose evidence counts: %#v", refs[0])
 	}
 }
 

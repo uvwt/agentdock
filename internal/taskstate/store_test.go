@@ -61,6 +61,68 @@ func TestTaskLifecyclePersistsAndRequiresFinalVerification(t *testing.T) {
 	}
 }
 
+func TestFinalReviewRequiredBeforeCompleteAfterReview(t *testing.T) {
+	store, err := New(t.TempDir() + "/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := store.SaveTemplateDraft(testTemplate())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ValidateTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	published, err := store.PublishTemplate(draft.ID, draft.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := store.CreateWithTemplate("Deploy", "deploy AgentDock", nil, published.ID, published.Version, "test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CompleteAfterReview(task.ID, ""); err == nil {
+		t.Fatal("complete_after_review succeeded before final_review")
+	}
+	if _, err := store.FinalReview(task.ID, FinalReviewInput{Status: FinalReviewPass, Summary: "checked", MissingChecks: []string{"go test"}, VerifiedFacts: []string{"build ok"}}); err == nil {
+		t.Fatal("passing final review accepted missing checks")
+	}
+	if _, err := store.FinalReview(task.ID, FinalReviewInput{Status: FinalReviewPass, Summary: "checked"}); err == nil {
+		t.Fatal("passing final review accepted no verified facts")
+	}
+	if _, err := store.FinalReview(task.ID, FinalReviewInput{Status: FinalReviewFailed, Summary: "checked"}); err == nil {
+		t.Fatal("failed final review accepted no risks or missing checks")
+	}
+
+	task, err = store.FinalReview(task.ID, FinalReviewInput{
+		Status:        FinalReviewPass,
+		Summary:       "all checks passed",
+		VerifiedFacts: []string{"health endpoint returned 200"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Phase != PhaseCloseout || task.FinalReview == nil || task.FinalReview.Status != FinalReviewPass {
+		t.Fatalf("unexpected reviewed state: %#v", task)
+	}
+	for _, step := range task.Steps {
+		if step.Required && step.Status != "completed" {
+			t.Fatalf("required step was not covered by final_review: %#v", step)
+		}
+		if len(step.Evidence) != 0 {
+			t.Fatalf("final_review should not create step evidence: %#v", step)
+		}
+	}
+
+	task, err = store.CompleteAfterReview(task.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Status != StatusCompleted || task.Summary != "all checks passed" {
+		t.Fatalf("unexpected completed state: %#v", task)
+	}
+}
+
 func TestAttemptLimitAndFailureEvidence(t *testing.T) {
 	store, err := New(t.TempDir())
 	if err != nil {

@@ -9,7 +9,7 @@ import (
 
 var taskActions = []string{
 	"create", "list", "get", "add_condition", "add_evidence", "advance", "phase_checkpoint", "complete_step", "skip_step",
-	"record_attempt", "block", "resume", "complete", "template_save", "template_validate", "template_publish",
+	"record_attempt", "block", "resume", "complete", "final_review", "complete_after_review", "template_save", "template_validate", "template_publish",
 	"template_retire", "template_list", "template_get", "template_match",
 }
 
@@ -31,7 +31,7 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 		}
 		return Result{
 			"ok": true, "action": action, "task_id": task.ID, "task_summary": compactTaskSummary(task), "state_dir": r.tasks.Root(),
-			"next_required_action": "Use phase_checkpoint after real work, or call get only when the full task snapshot is needed",
+			"next_required_action": "Do real work with non-task tools. Use block or record_attempt only for failures. When work appears complete, call final_review once, then complete_after_review if it passes.",
 		}, nil
 	case "list":
 		status := taskstate.Status(strings.ToLower(strings.TrimSpace(stringArg(args, "status", ""))))
@@ -46,16 +46,10 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 		}
 		items := make([]map[string]any, 0, len(tasks))
 		for _, item := range tasks {
-			verified := 0
-			for _, condition := range item.Conditions {
-				if len(condition.Evidence) > 0 {
-					verified++
-				}
-			}
 			items = append(items, map[string]any{
 				"id": item.ID, "title": item.Title, "goal": item.Goal,
 				"status": item.Status, "phase": item.Phase, "blocker": item.Blocker,
-				"condition_count": len(item.Conditions), "verified_condition_count": verified,
+				"condition_count": len(item.Conditions), "review_status": reviewStatus(item),
 				"attempt_count": len(item.Attempts), "updated_at": item.UpdatedAt,
 			})
 		}
@@ -124,8 +118,8 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 		}
 		return Result{
 			"ok": true, "action": action, "task_summary": compactTaskSummary(task), "state_dir": r.tasks.Root(),
-			"warning":              "record_attempt only records an attempt; it does not execute commands, change configuration, or advance the task",
-			"next_required_action": "Call a non-task tool for a real environment action, then record a concise checkpoint or final verification summary",
+			"warning":              "record_attempt is for failed attempts only; it does not execute commands, change configuration, or advance the task",
+			"next_required_action": "Call a non-task tool for a real environment action. When the work is complete, use final_review instead of step evidence.",
 		}, nil
 	case "block":
 		task, err = r.tasks.Block(
@@ -137,6 +131,17 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 		task, err = r.tasks.Resume(stringArg(args, "task_id", ""), stringArg(args, "summary", ""))
 	case "complete":
 		task, err = r.tasks.Complete(stringArg(args, "task_id", ""), stringArg(args, "summary", ""))
+	case "final_review":
+		input := taskstate.FinalReviewInput{
+			Status:        stringArg(args, "review_status", stringArg(args, "status", "pass")),
+			Summary:       stringArg(args, "summary", ""),
+			VerifiedFacts: stringSliceArg(args, "verified_facts"),
+			OpenRisks:     stringSliceArg(args, "open_risks"),
+			MissingChecks: stringSliceArg(args, "missing_checks"),
+		}
+		task, err = r.tasks.FinalReview(stringArg(args, "task_id", ""), input)
+	case "complete_after_review":
+		task, err = r.tasks.CompleteAfterReview(stringArg(args, "task_id", ""), stringArg(args, "summary", ""))
 	case "template_save":
 		var template taskstate.Template
 		if err := remarshal(mapArg(args, "template"), &template); err != nil {
@@ -224,30 +229,40 @@ func compactTaskSummary(task taskstate.Task) map[string]any {
 			})
 		}
 	}
-	verifiedConditions := 0
 	conditionRefs := make([]map[string]any, 0, len(task.Conditions))
 	for _, condition := range task.Conditions {
-		evidenceCount := len(condition.Evidence)
-		if evidenceCount > 0 {
-			verifiedConditions++
-		}
 		conditionRefs = append(conditionRefs, map[string]any{
-			"id":             condition.ID,
-			"text":           truncateString(condition.Text, 160),
-			"evidence_count": evidenceCount,
+			"id":   condition.ID,
+			"text": truncateString(condition.Text, 160),
 		})
 	}
 	summary := map[string]any{
 		"id": task.ID, "title": task.Title, "status": task.Status, "phase": task.Phase,
 		"completed_step_count": completedSteps, "step_count": len(task.Steps),
-		"verified_condition_count": verifiedConditions, "condition_count": len(task.Conditions),
-		"condition_refs": conditionRefs, "current_phase_steps": currentPhaseSteps,
-		"updated_at": task.UpdatedAt,
+		"condition_count": len(task.Conditions), "condition_refs": conditionRefs, "review_status": reviewStatus(task),
+		"current_phase_steps": currentPhaseSteps, "updated_at": task.UpdatedAt,
+	}
+	if task.FinalReview != nil {
+		summary["final_review"] = map[string]any{
+			"status":              task.FinalReview.Status,
+			"summary":             truncateString(task.FinalReview.Summary, 200),
+			"verified_fact_count": len(task.FinalReview.VerifiedFacts),
+			"open_risk_count":     len(task.FinalReview.OpenRisks),
+			"missing_check_count": len(task.FinalReview.MissingChecks),
+			"reviewed_at":         task.FinalReview.ReviewedAt,
+		}
 	}
 	if task.CompletedAt != nil {
 		summary["completed_at"] = *task.CompletedAt
 	}
 	return summary
+}
+
+func reviewStatus(task taskstate.Task) string {
+	if task.FinalReview == nil {
+		return "not_started"
+	}
+	return task.FinalReview.Status
 }
 
 func compactTemplateSummary(template taskstate.Template) map[string]any {

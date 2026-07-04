@@ -19,6 +19,8 @@ const (
 	MaxStrategyAttempts          = 2
 	MaxConsecutiveAttemptRecords = 2
 	AttemptRecordedEventType     = "attempt_recorded"
+	FinalReviewPass              = "pass"
+	FinalReviewFailed            = "failed"
 )
 
 type Phase string
@@ -75,6 +77,23 @@ type PhaseCheckpointInput struct {
 	Summary           string                    `json:"summary"`
 }
 
+type FinalReviewInput struct {
+	Status        string   `json:"status"`
+	Summary       string   `json:"summary"`
+	VerifiedFacts []string `json:"verified_facts,omitempty"`
+	OpenRisks     []string `json:"open_risks,omitempty"`
+	MissingChecks []string `json:"missing_checks,omitempty"`
+}
+
+type FinalReview struct {
+	Status        string    `json:"status"`
+	Summary       string    `json:"summary"`
+	VerifiedFacts []string  `json:"verified_facts,omitempty"`
+	OpenRisks     []string  `json:"open_risks,omitempty"`
+	MissingChecks []string  `json:"missing_checks,omitempty"`
+	ReviewedAt    time.Time `json:"reviewed_at"`
+}
+
 type Attempt struct {
 	Phase     Phase     `json:"phase"`
 	Strategy  string    `json:"strategy"`
@@ -104,6 +123,7 @@ type Task struct {
 	Events        []Event            `json:"events"`
 	Blocker       string             `json:"blocker,omitempty"`
 	Summary       string             `json:"summary,omitempty"`
+	FinalReview   *FinalReview       `json:"final_review,omitempty"`
 	CreatedAt     time.Time          `json:"created_at"`
 	UpdatedAt     time.Time          `json:"updated_at"`
 	CompletedAt   *time.Time         `json:"completed_at,omitempty"`
@@ -351,7 +371,7 @@ func (s *Store) RecordAttempt(id, strategy, outcome, diagnosis, evidence string)
 			consecutiveAttempts++
 		}
 		if consecutiveAttempts >= MaxConsecutiveAttemptRecords {
-			return errors.New("Stop recording attempts. Execute a real environment action next, then record concrete step evidence or a phase checkpoint")
+			return errors.New("Stop recording attempts. Execute a real environment action next, then use final_review when the work is actually complete")
 		}
 
 		task.Attempts = append(task.Attempts, Attempt{Phase: task.Phase, Strategy: strategy, Outcome: outcome, Diagnosis: diagnosis, Evidence: evidence, CreatedAt: now})
@@ -395,6 +415,27 @@ func (s *Store) Resume(id, summary string) (Task, error) {
 
 func (s *Store) Complete(id, summary string) (Task, error) {
 	return s.mutate(id, func(task *Task, now time.Time) error {
+		return completeTask(task, summary, now, true)
+	})
+}
+
+func (s *Store) FinalReview(id string, input FinalReviewInput) (Task, error) {
+	return s.mutate(id, func(task *Task, now time.Time) error {
+		return applyFinalReview(task, input, now)
+	})
+}
+
+func (s *Store) CompleteAfterReview(id, summary string) (Task, error) {
+	return s.mutate(id, func(task *Task, now time.Time) error {
+		if task.FinalReview == nil || task.FinalReview.Status != FinalReviewPass {
+			return errors.New("final_review must pass before complete_after_review")
+		}
+		if len(task.FinalReview.MissingChecks) > 0 {
+			return errors.New("final_review still has missing checks")
+		}
+		if strings.TrimSpace(summary) == "" {
+			summary = task.FinalReview.Summary
+		}
 		return completeTask(task, summary, now, true)
 	})
 }
@@ -556,7 +597,7 @@ func advancePhase(task *Task, now time.Time, emitEvent bool) error {
 			continue
 		}
 		if i == len(phaseOrder)-1 {
-			return errors.New("task is already in closeout; use complete with final verification summary")
+			return errors.New("task is already in closeout; use final_review then complete_after_review")
 		}
 		task.Phase = phaseOrder[i+1]
 		if emitEvent {
@@ -565,6 +606,59 @@ func advancePhase(task *Task, now time.Time, emitEvent bool) error {
 		return nil
 	}
 	return fmt.Errorf("invalid task phase %q", task.Phase)
+}
+
+func applyFinalReview(task *Task, input FinalReviewInput, now time.Time) error {
+	if err := requireActive(task); err != nil {
+		return err
+	}
+	status := strings.ToLower(strings.TrimSpace(input.Status))
+	if status == "" {
+		status = FinalReviewPass
+	}
+	if status != FinalReviewPass && status != FinalReviewFailed {
+		return errors.New("final review status must be pass or failed")
+	}
+	summary := strings.TrimSpace(input.Summary)
+	if summary == "" {
+		return errors.New("final review summary is required")
+	}
+	verifiedFacts := normalizeReviewItems(input.VerifiedFacts)
+	openRisks := normalizeReviewItems(input.OpenRisks)
+	missingChecks := normalizeReviewItems(input.MissingChecks)
+	if status == FinalReviewPass {
+		if len(missingChecks) > 0 {
+			return errors.New("passing final review cannot have missing checks")
+		}
+		if len(verifiedFacts) == 0 {
+			return errors.New("passing final review requires at least one verified fact")
+		}
+	} else if len(openRisks) == 0 && len(missingChecks) == 0 {
+		return errors.New("failed final review requires open risks or missing checks")
+	}
+
+	task.FinalReview = &FinalReview{Status: status, Summary: summary, VerifiedFacts: verifiedFacts, OpenRisks: openRisks, MissingChecks: missingChecks, ReviewedAt: now}
+	if status == FinalReviewPass {
+		// final_review 是新的常规收尾入口：模板步骤仍保留为恢复线索，
+		// 但不再要求模型逐步填 step evidence。最终复查通过后，用复查结果覆盖剩余必填步骤并进入 closeout。
+		markPendingStepsReviewed(task, now)
+		task.Phase = PhaseCloseout
+	}
+	task.Events = append(task.Events, Event{Type: "final_review", Summary: status + ": " + summary, CreatedAt: now})
+	return nil
+}
+
+func markPendingStepsReviewed(task *Task, now time.Time) {
+	for i := range task.Steps {
+		step := &task.Steps[i]
+		if step.Status != "pending" {
+			continue
+		}
+		step.Status = "completed"
+		step.Substituted = true
+		step.SubstitutionReason = "covered by final_review"
+		step.UpdatedAt = now
+	}
 }
 
 func completeTask(task *Task, summary string, now time.Time, emitEvent bool) error {
@@ -797,6 +891,24 @@ func incompleteRequiredSteps(task Task, phase Phase) []string {
 		if step.Required && (phase == "" || step.Phase == phase) && step.Status != "completed" {
 			out = append(out, step.ID)
 		}
+	}
+	return out
+}
+
+func normalizeReviewItems(values []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, value)
 	}
 	return out
 }
