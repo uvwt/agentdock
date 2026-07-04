@@ -217,21 +217,40 @@ func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	for _, value := range values {
 		seen[value] = true
 	}
-	for _, value := range []string{"create", "list", "get", "add_condition", "add_evidence", "advance", "phase_checkpoint", "record_attempt", "block", "resume", "complete"} {
+	for _, value := range []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review", "template_match"} {
 		if !seen[value] {
 			t.Fatalf("task_manage action enum missing %q: %#v", value, values)
 		}
 	}
-	for _, name := range []string{"completion_conditions", "condition_id", "step_completions", "condition_evidence", "advance_phase", "complete_task", "strategy", "outcome", "diagnosis", "evidence"} {
+	for _, value := range []string{"phase_checkpoint", "complete_step", "record_attempt", "template_save"} {
+		if seen[value] {
+			t.Fatalf("task_manage action enum should hide recovery action %q: %#v", value, values)
+		}
+	}
+	for _, name := range []string{"completion_conditions", "review_status", "verified_facts", "open_risks", "missing_checks", "evidence"} {
 		if _, ok := props[name]; !ok {
 			t.Fatalf("task_manage input schema missing %q", name)
+		}
+	}
+	for _, name := range []string{"step_completions", "condition_evidence", "advance_phase", "complete_task", "strategy", "outcome", "diagnosis"} {
+		if _, ok := props[name]; ok {
+			t.Fatalf("task_manage input schema should hide %q", name)
+		}
+	}
+	recoveryProps, ok := inputSchema("task_manage_recovery")["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("task_manage_recovery input schema properties missing")
+	}
+	for _, name := range []string{"step_completions", "condition_evidence", "advance_phase", "complete_task", "strategy", "outcome", "diagnosis"} {
+		if _, ok := recoveryProps[name]; !ok {
+			t.Fatalf("task_manage_recovery input schema missing %q", name)
 		}
 	}
 	outputProps, ok := outputSchema("task_manage")["properties"].(map[string]any)
 	if !ok {
 		t.Fatal("task_manage output schema properties missing")
 	}
-	for _, name := range []string{"task_id", "task", "task_summary", "next_required_action", "tasks", "count", "state_dir"} {
+	for _, name := range []string{"task_id", "task", "task_summary", "next_required_action", "tasks", "count", "state_dir", "recommended", "best_candidate_score"} {
 		if _, ok := outputProps[name]; !ok {
 			t.Fatalf("task_manage output schema missing %q", name)
 		}

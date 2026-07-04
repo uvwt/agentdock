@@ -102,7 +102,7 @@ func inputSchema(name string) map[string]any {
 		props["auto_init"] = boolProp("Create the repository with an initial commit.")
 		props["timeout_ms"] = intProp("HTTP timeout in milliseconds.")
 		required = []string{"name"}
-	case "task_manage":
+	case "task_manage", "task_manage_recovery":
 		props["action"] = map[string]any{"type": "string", "description": "Task action. Prefer create -> real work -> final_review -> complete_after_review. Legacy evidence actions are for recovery or compatibility only.", "enum": []string{"create", "list", "get", "add_condition", "add_evidence", "advance", "phase_checkpoint", "complete_step", "skip_step", "record_attempt", "block", "resume", "complete", "final_review", "complete_after_review", "template_save", "template_validate", "template_publish", "template_retire", "template_list", "template_get", "template_match"}}
 		props["task_id"] = stringProp("Persistent task id for all actions except create and list.")
 		props["title"] = stringProp("Short task title for create.")
@@ -142,7 +142,30 @@ func inputSchema(name string) map[string]any {
 		props["complete_task"] = boolProp("Legacy checkpoint completion flag. Prefer complete_after_review after final_review passes. Mutually exclusive with advance_phase.")
 		props["substituted"] = boolProp("Whether a different implementation replaced the suggested command or method.")
 		props["substitution_reason"] = stringProp("Required reason when a step is completed through an allowed substitution.")
+		if name == "task_manage" {
+			props["action"] = map[string]any{"type": "string", "description": "Simple task action. Use task_manage_recovery only for advanced recovery or template maintenance.", "enum": []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review", "template_match"}}
+			props["evidence"] = stringProp("Evidence required only when blocking a task; this is not step or condition evidence.")
+			delete(props, "condition")
+			delete(props, "condition_id")
+			delete(props, "source")
+			delete(props, "strategy")
+			delete(props, "outcome")
+			delete(props, "diagnosis")
+			delete(props, "template")
+			delete(props, "allow_long_template")
+			delete(props, "long_template_reason")
+			delete(props, "template_status")
+			delete(props, "step_id")
+			delete(props, "step_evidence")
+			delete(props, "step_completions")
+			delete(props, "condition_evidence")
+			delete(props, "advance_phase")
+			delete(props, "complete_task")
+			delete(props, "substituted")
+			delete(props, "substitution_reason")
+		}
 		required = []string{"action"}
+
 	case "skill_manage":
 		props["action"] = map[string]any{"type": "string", "description": "Skill action: list, inspect, validate, install, run, or rollback.", "enum": []string{"list", "inspect", "validate", "install", "run", "rollback"}}
 		props["skill"] = stringProp("Skill name for inspect, run, or rollback.")

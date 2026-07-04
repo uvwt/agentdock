@@ -192,7 +192,7 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 			return nil, taskToolError(matchErr)
 		}
 		vectorIndexStatus, vectorIndexItems, embeddingModel := r.tasks.VectorIndexInfo()
-		return Result{
+		result := Result{
 			"ok":                    true,
 			"action":                action,
 			"candidates":            candidates,
@@ -202,7 +202,11 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 			"vector_index_status":   vectorIndexStatus,
 			"vector_index_items":    vectorIndexItems,
 			"embedding_model":       embeddingModel,
-		}, nil
+		}
+		for key, value := range templateMatchRecommendation(candidates) {
+			result[key] = value
+		}
+		return result, nil
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported task_manage action", "validation", map[string]any{
 			"action": action, "allowed": taskActions,
@@ -265,6 +269,31 @@ func reviewStatus(task taskstate.Task) string {
 	return task.FinalReview.Status
 }
 
+func templateMatchRecommendation(candidates []taskstate.TemplateCandidate) map[string]any {
+	bestScore := 0
+	if len(candidates) > 0 {
+		bestScore = candidates[0].Score
+	}
+	recommended := "plain_task"
+	reason := "no active template is specific enough; create a plain recoverable task"
+	if bestScore >= 85 {
+		recommended = "use_template"
+		reason = "top candidate score is strong enough to select by default"
+	} else if bestScore >= 60 {
+		recommended = "consider_template"
+		reason = "top candidate is plausible but should be checked against the user goal"
+	}
+	return map[string]any{
+		"recommended":           recommended,
+		"recommendation_reason": reason,
+		"best_candidate_score":  bestScore,
+		"score_thresholds": map[string]any{
+			"use_template":      85,
+			"consider_template": 60,
+			"plain_task_below":  60,
+		},
+	}
+}
 func compactTemplateSummary(template taskstate.Template) map[string]any {
 	return map[string]any{
 		"id":                   template.ID,

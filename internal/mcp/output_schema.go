@@ -110,7 +110,7 @@ func outputSchema(name string) map[string]any {
 		props["clone_url"] = stringProp("Repository HTTPS clone URL.")
 		props["ssh_url"] = stringProp("Repository SSH clone URL.")
 		props["diagnostic"] = objectProp("Structured create diagnostic.")
-	case "task_manage":
+	case "task_manage", "task_manage_recovery":
 		props["action"] = stringProp("Completed task action.")
 		props["task_id"] = stringProp("Persistent task id returned by create and usable with get, final_review, or complete_after_review.")
 		props["task"] = objectProp("Full persistent task state, including review state, blockers, attempts, events, legacy evidence, and template snapshot. Returned only by get.")
@@ -128,6 +128,10 @@ func outputSchema(name string) map[string]any {
 		props["vector_index_status"] = stringProp("Task/template vector index status: disabled, ready, or degraded.")
 		props["vector_index_items"] = intProp("Number of persisted template vectors for the current embedding model.")
 		props["embedding_model"] = stringProp("Embedding model configured for task/template vector search.")
+		props["recommended"] = stringProp("Template recommendation: use_template, consider_template, or plain_task.")
+		props["recommendation_reason"] = stringProp("Reason for recommendation.")
+		props["best_candidate_score"] = intProp("Highest template match score.")
+		props["score_thresholds"] = objectProp("Template match score thresholds.")
 		props["template_id"] = stringProp("Workflow template id returned by template mutation actions.")
 		props["template_summary"] = objectProp("Compact workflow template summary returned by template_save, template_validate, template_publish, template_retire, and template_list items.")
 		props["valid"] = boolProp("Whether a draft workflow template passed validation.")
@@ -314,6 +318,13 @@ func outputSchema(name string) map[string]any {
 		if name == "git_diff" {
 			props["files"] = arrayProp("Files in the diff.")
 		}
+		props["push_succeeded"] = boolProp("Whether git push exited successfully.")
+		props["pushed"] = boolProp("Alias for push_succeeded.")
+		props["remote_updated"] = boolProp("Whether push output indicates remote refs changed.")
+		props["up_to_date"] = boolProp("Whether push reported everything up-to-date.")
+		props["warnings"] = arrayProp("Non-blocking git warning lines.")
+		props["fatal_but_non_blocking"] = boolProp("Whether output contained fatal text even though push succeeded.")
+		props["push_status"] = stringProp("Structured push status: pushed, up_to_date, succeeded, or failed.")
 		if name == "git_log" {
 			props["commits"] = arrayProp("Parsed commits.")
 		}

@@ -167,8 +167,63 @@ func (r *Runtime) gitPush(ctx context.Context, args map[string]any) (Result, err
 		result["repo_path"] = repo.Path
 		result["remote"] = remote
 		result["branch"] = branch
+		annotateGitPushResult(result)
 	}
 	return result, err
+}
+
+func annotateGitPushResult(result Result) {
+	// Git credential helper 有时会把非阻塞问题打印成 fatal，但 git push
+	// 自身仍然 exit 0 并完成远端更新。这里把“命令成功”和“输出警告”拆开，
+	// 避免调用方只看到 fatal 文本就误判推送失败。
+	output, _ := result["output"].(string)
+	ok := boolValue(result["ok"])
+	remoteUpdated := false
+	upToDate := false
+	warnings := make([]string, 0)
+	for _, line := range strings.Split(output, "\n") {
+		clean := strings.TrimSpace(line)
+		if clean == "" {
+			continue
+		}
+		lower := strings.ToLower(clean)
+		if strings.HasPrefix(lower, "warning:") || strings.HasPrefix(lower, "fatal:") {
+			warnings = append(warnings, clean)
+		}
+		if strings.Contains(lower, "everything up-to-date") || strings.Contains(lower, "everything up to date") {
+			upToDate = true
+		}
+		if strings.Contains(clean, "->") && (strings.Contains(clean, "..") || strings.Contains(clean, "[new branch]") || strings.Contains(clean, "[deleted]") || strings.Contains(clean, "+") || strings.Contains(clean, "*")) {
+			remoteUpdated = true
+		}
+	}
+
+	fatalButNonBlocking := false
+	if ok {
+		for _, warning := range warnings {
+			if strings.HasPrefix(strings.ToLower(warning), "fatal:") {
+				fatalButNonBlocking = true
+				break
+			}
+		}
+	}
+
+	status := "failed"
+	if ok && remoteUpdated {
+		status = "pushed"
+	} else if ok && upToDate {
+		status = "up_to_date"
+	} else if ok {
+		status = "succeeded"
+	}
+
+	result["push_succeeded"] = ok
+	result["pushed"] = ok
+	result["remote_updated"] = remoteUpdated
+	result["up_to_date"] = upToDate
+	result["warnings"] = warnings
+	result["fatal_but_non_blocking"] = fatalButNonBlocking
+	result["push_status"] = status
 }
 
 func (r *Runtime) gitCommit(ctx context.Context, args map[string]any) (Result, error) {
