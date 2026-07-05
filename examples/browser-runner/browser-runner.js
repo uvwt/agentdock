@@ -1,6 +1,10 @@
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
+import net from 'node:net';
+import http from 'node:http';
 
 const payload = JSON.parse(process.env.BROWSER_RUNNER_PAYLOAD || '{}');
 const operation = payload.operation;
@@ -44,6 +48,435 @@ function safeProfileId(value) {
   const raw = String(value || '').trim();
   if (!raw) return '';
   return raw.replace(/[^a-zA-Z0-9_.-]/g, '-').slice(0, 80);
+}
+
+
+async function platformBrowserPath(session) {
+  const browser = String(session.browser || '').toLowerCase();
+  const channel = String(session.channel || '').toLowerCase();
+  const candidates = [];
+  if (browser === 'chromium' || browser === 'chrome-for-testing' || channel === 'chromium') {
+    try {
+      const chromium = await loadChromium();
+      candidates.push(chromium.executablePath());
+    } catch {
+      // Fall back to platform candidates below.
+    }
+  }
+  if (process.platform === 'darwin') {
+    if (browser === 'edge' || browser === 'msedge' || channel === 'msedge') {
+      candidates.push('/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge');
+    }
+    if (browser === 'chrome' || channel === 'chrome') {
+      candidates.push('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
+    }
+    candidates.push('/Applications/Chromium.app/Contents/MacOS/Chromium');
+    if (browser === 'system') {
+      candidates.push('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
+      candidates.push('/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge');
+    }
+  } else if (process.platform === 'linux') {
+    candidates.push('/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser');
+  }
+  return candidates.find(candidate => {
+    try { return candidate && fsSync.existsSync(candidate); } catch { return false; }
+  }) || '';
+}
+
+function findFreePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = address && typeof address === 'object' ? address.port : 0;
+      server.close(() => resolve(port));
+    });
+    server.on('error', reject);
+  });
+}
+
+async function waitForCDP(port, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = '';
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/json/version`);
+      if (res.ok) return await res.json();
+      lastError = `HTTP ${res.status}`;
+    } catch (err) {
+      lastError = err.message;
+    }
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  throw new Error(`browser CDP endpoint did not become ready: ${lastError}`);
+}
+
+async function cdpJSON(cdpURL, pathPart) {
+  const base = String(cdpURL || '').replace(/\/+$/, '');
+  if (!base) throw new Error('cdp_url is required');
+  const res = await fetch(`${base}${pathPart}`);
+  if (!res.ok) throw new Error(`CDP HTTP ${res.status} for ${pathPart}`);
+  return await res.json();
+}
+
+function cdpTimeout() {
+  return Math.min(Number(args.timeout_ms || 10000), 8000);
+}
+
+function cdpCall(wsURL, method, params = {}, timeoutMs = 10000) {
+  return new Promise((resolve, reject) => {
+    const id = 1;
+    const ws = new WebSocket(wsURL);
+    const timer = setTimeout(() => {
+      try { ws.close(); } catch {}
+      reject(new Error(`CDP method timed out: ${method}`));
+    }, timeoutMs);
+    ws.onopen = () => ws.send(JSON.stringify({ id, method, params }));
+    ws.onerror = () => {
+      clearTimeout(timer);
+      reject(new Error(`CDP websocket error: ${method}`));
+    };
+    ws.onmessage = event => {
+      let msg;
+      try { msg = JSON.parse(event.data); } catch { return; }
+      if (msg.id !== id) return;
+      clearTimeout(timer);
+      try { ws.close(); } catch {}
+      if (msg.error) reject(new Error(`${method}: ${msg.error.message || JSON.stringify(msg.error)}`));
+      else resolve(msg.result || {});
+    };
+  });
+}
+
+async function cdpPageTarget(session) {
+  const targets = await cdpJSON(session.cdp_url, '/json/list');
+  const page = targets.find(item => item.type === 'page' && !String(item.url || '').startsWith('chrome://'))
+    || targets.find(item => item.type === 'page');
+  if (!page?.webSocketDebuggerUrl) throw new Error('No debuggable page target found');
+  return page;
+}
+
+function storageStateDestinationFrom(requestArgs, session, sessionId) {
+  const targetSkill = safeProfileId(requestArgs.state_target_skill || session.state_target_skill || '');
+  let storageDir;
+  let storageFile;
+  if (targetSkill) {
+    storageDir = path.join(path.dirname(artifactDir), 'skill-data', targetSkill);
+    storageFile = 'storage_state.json';
+  } else {
+    storageDir = path.join(artifactDir, 'storage-states');
+    storageFile = `${safeProfileId(sessionId) || 'session'}-${Date.now()}.json`;
+  }
+  return { targetSkill, storageDir, storageFile, storagePath: path.join(storageDir, storageFile) };
+}
+
+function storageStateDestination(session, sessionId) {
+  return storageStateDestinationFrom(args, session, sessionId);
+}
+
+async function saveContextStorageState(context, requestArgs, session, sessionId) {
+  const dest = storageStateDestinationFrom(requestArgs, session, sessionId);
+  await fs.mkdir(dest.storageDir, { recursive: true, mode: 0o700 });
+  await context.storageState({ path: dest.storagePath });
+  await fs.chmod(dest.storagePath, 0o600).catch(() => {});
+  return { storage_state_path: dest.storagePath, storage_state_file: dest.storageFile, state_target_skill: dest.targetSkill || undefined };
+}
+
+function normalizeCookieForStorageState(cookie) {
+  const result = {
+    name: String(cookie.name || ''),
+    value: String(cookie.value || ''),
+    domain: String(cookie.domain || ''),
+    path: String(cookie.path || '/'),
+    expires: typeof cookie.expires === 'number' ? cookie.expires : -1,
+    httpOnly: Boolean(cookie.httpOnly),
+    secure: Boolean(cookie.secure)
+  };
+  if (cookie.sameSite && ['Strict', 'Lax', 'None'].includes(cookie.sameSite)) result.sameSite = cookie.sameSite;
+  return result;
+}
+
+async function saveCDPStorageStateIfNeeded(session, sessionId, target) {
+  if (args.save_storage_state !== true && session.save_storage_state !== true) return {};
+  await cdpCall(target.webSocketDebuggerUrl, 'Network.enable', {}, cdpTimeout()).catch(() => {});
+  const cookiesResult = await cdpCall(target.webSocketDebuggerUrl, 'Network.getCookies', { urls: [target.url] }, cdpTimeout());
+  const localStorageResult = await cdpCall(target.webSocketDebuggerUrl, 'Runtime.evaluate', {
+    expression: `(() => { try { return Object.entries(localStorage).map(([name, value]) => ({ name, value: String(value) })); } catch { return []; } })()`,
+    returnByValue: true
+  }, cdpTimeout());
+  let origin = '';
+  try { origin = new URL(target.url).origin; } catch {}
+  const localStorage = Array.isArray(localStorageResult?.result?.value) ? localStorageResult.result.value : [];
+  const storageState = {
+    cookies: Array.isArray(cookiesResult.cookies) ? cookiesResult.cookies.map(normalizeCookieForStorageState).filter(item => item.name && item.domain) : [],
+    origins: origin ? [{ origin, localStorage }] : []
+  };
+  const dest = storageStateDestination(session, sessionId);
+  await fs.mkdir(dest.storageDir, { recursive: true, mode: 0o700 });
+  await fs.writeFile(dest.storagePath, JSON.stringify(storageState, null, 2));
+  await fs.chmod(dest.storagePath, 0o600).catch(() => {});
+  return { storage_state_path: dest.storagePath, storage_state_file: dest.storageFile, state_target_skill: dest.targetSkill || undefined };
+}
+
+async function runCDPActions(session, actions = []) {
+  if (!Array.isArray(actions) || actions.length === 0) return;
+  let target = await cdpPageTarget(session);
+  for (const action of actions) {
+    const type = action.type;
+    if (type === 'wait') {
+      await new Promise(resolve => setTimeout(resolve, action.ms || 1000));
+    } else if (type === 'goto') {
+      await cdpCall(target.webSocketDebuggerUrl, 'Page.navigate', { url: action.url }, cdpTimeout());
+      await new Promise(resolve => setTimeout(resolve, action.wait_ms || 1500));
+      target = await cdpPageTarget(session);
+    } else if (type === 'reload') {
+      await cdpCall(target.webSocketDebuggerUrl, 'Page.reload', {}, cdpTimeout());
+      await new Promise(resolve => setTimeout(resolve, action.wait_ms || 1000));
+    } else {
+      throw new Error(`Unsupported CDP browser action: ${type}`);
+    }
+  }
+}
+
+async function cdpSnapshot(session, sessionId) {
+  const target = await cdpPageTarget(session);
+  const timeout = cdpTimeout();
+  const textResult = await cdpCall(target.webSocketDebuggerUrl, 'Runtime.evaluate', {
+    expression: `(() => document.body ? document.body.innerText : '')()`,
+    returnByValue: true
+  }, timeout).catch(() => ({ result: { value: '' } }));
+  const titleResult = await cdpCall(target.webSocketDebuggerUrl, 'Runtime.evaluate', {
+    expression: `(() => document.title || '')()`,
+    returnByValue: true
+  }, timeout).catch(() => ({ result: { value: target.title || '' } }));
+  const text = String(textResult?.result?.value || '');
+  const maxText = Number(args.max_text_chars || 8000);
+  const storageResult = await saveCDPStorageStateIfNeeded(session, sessionId, target);
+  const result = {
+    ok: true,
+    session_id: sessionId,
+    closed: false,
+    url: target.url || '',
+    title: String(titleResult?.result?.value || target.title || ''),
+    text: text.slice(0, maxText),
+    text_length: text.length,
+    artifact: {},
+    console_errors: [],
+    network_errors: [],
+    page_errors: [],
+    viewport: session.viewport || null,
+    interactive_elements: []
+  };
+  if (args.include_screenshot_base64 === true || args.include_image === true || args.include_image_base64 === true) {
+    const screenshot = await cdpCall(target.webSocketDebuggerUrl, 'Page.captureScreenshot', { format: 'png' }, timeout).catch(() => null);
+    if (screenshot?.data) {
+      const screenshotDir = path.join(artifactDir, 'screenshots');
+      await fs.mkdir(screenshotDir, { recursive: true });
+      const screenshotFile = `snapshot-${Date.now()}.png`;
+      const screenshotPath = path.join(screenshotDir, screenshotFile);
+      await fs.writeFile(screenshotPath, Buffer.from(screenshot.data, 'base64'));
+      result.screenshot_path = screenshotPath;
+      result.screenshot_file = screenshotFile;
+      result.artifact = { path: screenshotPath, mime_type: 'image/png' };
+      if (args.include_screenshot_base64 === true) {
+        result.screenshot_mime_type = 'image/png';
+        result.screenshot_base64 = screenshot.data;
+      }
+    }
+  }
+  return { ...storageResult, ...result };
+}
+
+
+async function daemonRequest(controlURL, action, body = {}, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${String(controlURL || '').replace(/\/+$/, '')}/${action}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `daemon HTTP ${res.status}`);
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function waitForDaemon(controlURL, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = '';
+  while (Date.now() < deadline) {
+    try {
+      const res = await daemonRequest(controlURL, 'status', {}, 2000);
+      if (res.ok) return res;
+      lastError = res.error || 'not ready';
+    } catch (err) {
+      lastError = err.message;
+    }
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  throw new Error(`browser profile daemon did not become ready: ${lastError}`);
+}
+
+async function daemonPageState(page, maxText = 8000) {
+  const text = await page.evaluate(() => document.body ? document.body.innerText : '').catch(() => '');
+  const title = await page.title().catch(() => '');
+  return {
+    ok: true,
+    url: page.url(),
+    title,
+    text: String(text).slice(0, maxText),
+    text_length: String(text).length,
+    artifact: {},
+    console_errors: [],
+    network_errors: [],
+    page_errors: [],
+    interactive_elements: []
+  };
+}
+
+async function runProfileDaemon() {
+  const session = args.session || args;
+  const sessionId = session.session_id || args.session_id || 'profile-daemon';
+  const chromium = await loadChromium();
+  const profileId = safeProfileId(session.profile_id || sessionId) || sessionId;
+  const profileDir = path.join(artifactDir, 'visible-profiles', profileId);
+  await fs.mkdir(profileDir, { recursive: true, mode: 0o700 });
+  const context = await chromium.launchPersistentContext(profileDir, {
+    headless: false,
+    viewport: session.viewport || { width: 1280, height: 800 },
+    args: ['--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-component-extensions-with-background-pages', '--disable-features=Translate']
+  });
+  const page = context.pages()[0] || await context.newPage();
+  if (session.url && page.url() !== session.url) {
+    await page.goto(session.url, { waitUntil: 'domcontentloaded', timeout: Number(session.timeout_ms || 30000) }).catch(() => {});
+  }
+  const server = http.createServer(async (req, res) => {
+    const send = (status, data) => {
+      res.writeHead(status, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(data));
+    };
+    try {
+      let body = {};
+      if (req.method === 'POST') {
+        const chunks = [];
+        for await (const chunk of req) chunks.push(chunk);
+        if (chunks.length) body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+      }
+      const action = new URL(req.url, 'http://127.0.0.1').pathname.replace(/^\//, '') || 'status';
+      if (action === 'status') {
+        send(200, { ...(await daemonPageState(page, body.max_text_chars || 8000)), session_id: sessionId });
+      } else if (action === 'action') {
+        await runActions(page, body.actions || []);
+        send(200, { ...(await daemonPageState(page, body.max_text_chars || 8000)), session_id: sessionId });
+      } else if (action === 'save') {
+        const storageResult = await saveContextStorageState(context, { ...body, save_storage_state: true }, session, sessionId);
+        send(200, { ...(await daemonPageState(page, body.max_text_chars || 8000)), ...storageResult, session_id: sessionId });
+      } else if (action === 'close') {
+        send(200, { ok: true, session_id: sessionId, status: 'closed' });
+        setTimeout(async () => {
+          await context.close().catch(() => {});
+          server.close(() => process.exit(0));
+        }, 50).unref();
+      } else {
+        send(404, { ok: false, error: `unknown daemon action: ${action}` });
+      }
+    } catch (err) {
+      send(500, { ok: false, error: err.message, stack: err.stack });
+    }
+  });
+  await new Promise(resolve => server.listen(Number(args.control_port), '127.0.0.1', resolve));
+}
+
+async function launchProfileDaemon(session, sessionId) {
+  const port = Number(session.cdp_port || 0) || await findFreePort();
+  const controlURL = `http://127.0.0.1:${port}`;
+  const daemonPayload = {
+    operation: 'profile_daemon',
+    args: { session: { ...session, session_id: sessionId }, control_port: port },
+    artifact_dir: artifactDir
+  };
+  const child = spawn(process.execPath, [process.argv[1]], {
+    detached: true,
+    stdio: 'ignore',
+    env: { ...process.env, BROWSER_RUNNER_PAYLOAD: JSON.stringify(daemonPayload), BROWSER_ARTIFACT_DIR: artifactDir }
+  });
+  child.unref();
+  await waitForDaemon(controlURL, Number(session.timeout_ms || 25000));
+  const profileId = safeProfileId(session.profile_id || sessionId) || sessionId;
+  return {
+    backend: 'daemon',
+    control_url: controlURL,
+    visible_process: {
+      pid: child.pid,
+      port,
+      executable: 'playwright-chromium-daemon',
+      profile_dir: path.join(artifactDir, 'visible-profiles', profileId),
+      browser: 'playwright-chromium'
+    }
+  };
+}
+
+async function launchKeepOpenBrowser(session, sessionId) {
+  const browser = String(session.browser || '').toLowerCase();
+  const channel = String(session.channel || '').toLowerCase();
+  if (browser === 'chromium' || browser === 'chrome-for-testing' || channel === 'chromium') {
+    return await launchProfileDaemon(session, sessionId);
+  }
+  const executable = await platformBrowserPath(session);
+  if (!executable) throw new Error('No visible Chrome/Chromium browser executable found');
+  const port = Number(session.cdp_port || 0) || await findFreePort();
+  const profileId = safeProfileId(session.profile_id || sessionId) || sessionId;
+  const profileDir = path.join(artifactDir, 'visible-profiles', profileId);
+  await fs.mkdir(profileDir, { recursive: true });
+  const launchArgs = [
+    `--remote-debugging-port=${port}`,
+    '--remote-debugging-address=127.0.0.1',
+    `--user-data-dir=${profileDir}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-extensions',
+    '--disable-component-extensions-with-background-pages',
+    '--new-window',
+    '--disable-features=Translate',
+    session.url || 'about:blank'
+  ];
+  let child;
+  if (process.platform === 'darwin') {
+    const appName = executable.includes('Google Chrome.app') ? 'Google Chrome' : executable.includes('Microsoft Edge.app') ? 'Microsoft Edge' : executable;
+    child = spawn('/usr/bin/open', ['-na', appName, '--args', ...launchArgs], { detached: true, stdio: 'ignore' });
+  } else {
+    child = spawn(executable, launchArgs, { detached: true, stdio: 'ignore' });
+  }
+  child.unref();
+  const version = await waitForCDP(port, Number(session.timeout_ms || 25000));
+  return {
+    backend: 'cdp',
+    cdp_url: `http://127.0.0.1:${port}`,
+    visible_process: {
+      pid: child.pid,
+      port,
+      executable,
+      profile_dir: profileDir,
+      browser: version.Browser || '',
+      user_agent: version['User-Agent'] || ''
+    }
+  };
+}
+
+function stopVisibleProcess(session) {
+  const pid = Number(session?.visible_process?.pid || 0);
+  if (!pid) return false;
+  try {
+    process.kill(pid, 'SIGTERM');
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function normalizeLocalStorage(value) {
@@ -144,12 +577,7 @@ async function attachImageIfRequested(result, screenshotPath) {
 
 async function saveStorageStateIfNeeded(context, session, sessionId) {
   if (args.save_storage_state !== true && session.save_storage_state !== true) return {};
-  const storageDir = path.join(artifactDir, 'storage-states');
-  await fs.mkdir(storageDir, { recursive: true });
-  const storageFile = `${safeProfileId(sessionId) || 'session'}-${Date.now()}.json`;
-  const storagePath = path.join(storageDir, storageFile);
-  await context.storageState({ path: storagePath });
-  return { storage_state_path: storagePath, storage_state_file: storageFile };
+  return await saveContextStorageState(context, args, session, sessionId);
 }
 
 async function closeSessionState(state, sessionId) {
@@ -301,6 +729,10 @@ async function runActions(page, actions = []) {
 }
 
 async function main() {
+  if (operation === 'profile_daemon') {
+    await runProfileDaemon();
+    return;
+  }
   const state = await readState();
   if (operation === 'session_start') {
     const sessionId = args.session_id || newSessionId();
@@ -319,11 +751,20 @@ async function main() {
       cookies: Array.isArray(args.cookies) ? args.cookies : undefined,
       reload_after_local_storage: args.reload_after_local_storage !== false,
       save_storage_state: args.save_storage_state === true,
+      state_target_skill: args.state_target_skill || undefined,
+      keep_open: args.keep_open === true,
+      cdp_port: args.cdp_port || undefined,
+      timeout_ms: args.timeout_ms || undefined,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
+    let visible = {};
+    if (state.sessions[sessionId].keep_open === true && state.sessions[sessionId].headless === false) {
+      visible = await launchKeepOpenBrowser(state.sessions[sessionId], sessionId);
+      state.sessions[sessionId] = { ...state.sessions[sessionId], ...visible };
+    }
     await writeState(state);
-    console.log(JSON.stringify({ ok: true, session_id: sessionId, status: 'created' }));
+    console.log(JSON.stringify({ ok: true, session_id: sessionId, status: 'created', keep_open: state.sessions[sessionId].keep_open, visible_process: state.sessions[sessionId].visible_process, backend: state.sessions[sessionId].backend, cdp_url: state.sessions[sessionId].cdp_url }));
     return;
   }
 
@@ -336,6 +777,48 @@ async function main() {
   const sessionId = args.session_id;
   if (!sessionId || !state.sessions[sessionId]) throw new Error('Unknown or missing browser session_id');
   const session = state.sessions[sessionId];
+  if (operation === 'session_close') {
+    let daemonClosed = false;
+    if (session.backend === 'daemon' && session.control_url) {
+      daemonClosed = await daemonRequest(session.control_url, 'close', {}, 3000).then(() => true).catch(() => false);
+    }
+    const stopped = daemonClosed ? true : stopVisibleProcess(session);
+    const existed = await closeSessionState(state, sessionId);
+    console.log(JSON.stringify({ ok: true, session_id: sessionId, status: existed ? 'closed' : 'not_found', visible_process_stopped: stopped }));
+    return;
+  }
+  if (session.backend === 'daemon') {
+    if (operation === 'action') {
+      const result = await daemonRequest(session.control_url, 'action', { actions: args.actions || [], max_text_chars: args.max_text_chars || 8000 }, cdpTimeout());
+      const closeAfter = args.close_after === true;
+      if (closeAfter) await closeSessionState(state, sessionId);
+      else await writeState(state);
+      console.log(JSON.stringify({ ...result, closed: closeAfter }));
+      return;
+    }
+    if (operation === 'snapshot') {
+      const daemonAction = args.save_storage_state === true || session.save_storage_state === true ? 'save' : 'status';
+      const result = await daemonRequest(session.control_url, daemonAction, { ...args, max_text_chars: args.max_text_chars || 8000 }, cdpTimeout());
+      const closeAfter = args.close_after === true;
+      if (closeAfter) await closeSessionState(state, sessionId);
+      else await writeState(state);
+      console.log(JSON.stringify({ ...result, closed: closeAfter }));
+      return;
+    }
+    throw new Error(`Unknown operation: ${operation}`);
+  }
+  if (session.backend === 'cdp') {
+    if (operation === 'action') await runCDPActions(session, args.actions || []);
+    if (operation === 'action' || operation === 'snapshot') {
+      const closeAfter = args.close_after === true;
+      const result = await cdpSnapshot(session, sessionId);
+      if (closeAfter) await closeSessionState(state, sessionId);
+      else await writeState(state);
+      console.log(JSON.stringify({ ...result, closed: closeAfter }));
+      return;
+    }
+    throw new Error(`Unknown operation: ${operation}`);
+  }
   const env = await launchPage(session);
   try {
     if (operation === 'action') {
@@ -352,16 +835,15 @@ async function main() {
       const closeAfter = args.close_after === true;
       if (closeAfter) await closeSessionState(state, sessionId);
       console.log(JSON.stringify({ ok: true, session_id: sessionId, closed: closeAfter, ...storageResult, ...(await snapshot(env.page, { console_errors: env.consoleErrors, network_errors: env.networkErrors, page_errors: env.pageErrors })) }));
-    } else if (operation === 'session_close') {
-      const existed = await closeSessionState(state, sessionId);
-      console.log(JSON.stringify({ ok: true, session_id: sessionId, status: existed ? 'closed' : 'not_found' }));
     } else {
       throw new Error(`Unknown operation: ${operation}`);
     }
   } finally {
     // 有些持久化 profile / 系统浏览器在关闭上下文时会卡住，导致上层工具超时后 signal killed。
     // 这里把关闭动作限制在几秒内；状态已经在业务分支里写完，不能让资源回收阻塞结果返回。
-    if (env.context && typeof env.context.close === 'function') await closeWithTimeout(env.context, 'context');
+    if (session.keep_open === true && session.backend === 'cdp') {
+      // Keep user-visible browser alive for interactive login; session_close owns shutdown.
+    } else if (env.context && typeof env.context.close === 'function') await closeWithTimeout(env.context, 'context');
     else if (env.browser && typeof env.browser.close === 'function') await closeWithTimeout(env.browser, 'browser');
     setTimeout(() => process.exit(0), 50).unref();
   }

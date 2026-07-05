@@ -85,3 +85,60 @@ func (r *Runtime) browserRunnerScript() (controlPath, error) {
 	}
 	return runner, nil
 }
+
+func (r *Runtime) browserProfile(ctx context.Context, args map[string]any) (Result, error) {
+	action := strings.ToLower(stringArg(args, "action", "status"))
+	site := strings.ToLower(stringArg(args, "site", ""))
+	if site != "volcengine-ark-quota" {
+		return nil, toolErrorDetails("UNSUPPORTED_SITE", "browser_profile supports only allowlisted site profiles", "validation", map[string]any{"site": site})
+	}
+	sessionID := "profile-volcengine-ark-quota"
+	url := "https://console.volcengine.com/ark/region:cn-beijing/subscription/coding-plan"
+	timeout := intArg(args, "timeout_ms", 30000)
+	switch action {
+	case "open", "start":
+		result, err := r.browserRunnerCall(ctx, "session_start", map[string]any{
+			"session_id": sessionID,
+			"backend":    "playwright",
+			"browser":    "chromium",
+			"headless":   false,
+			"profile_id": "volcengine-ark-quota",
+			"url":        url,
+			"viewport":   map[string]any{"width": 1280, "height": 900},
+			"keep_open":  true,
+			"timeout_ms": timeout,
+		})
+		if result != nil {
+			result["profile_action"] = "open"
+			result["site"] = site
+			delete(result, "stdout")
+		}
+		return result, err
+	case "close", "stop":
+		result, err := r.browserRunnerCall(ctx, "session_close", map[string]any{"session_id": sessionID, "timeout_ms": timeout})
+		if result != nil {
+			result["profile_action"] = "close"
+			result["site"] = site
+			delete(result, "stdout")
+		}
+		return result, err
+	case "status":
+		result, err := r.browserRunnerCall(ctx, "snapshot", map[string]any{"session_id": sessionID, "max_text_chars": 2000, "timeout_ms": timeout})
+		if result != nil {
+			result["profile_action"] = "status"
+			result["site"] = site
+			delete(result, "stdout")
+		}
+		return result, err
+	case "save":
+		result, err := r.browserRunnerCall(ctx, "snapshot", map[string]any{"session_id": sessionID, "max_text_chars": 2000, "save_storage_state": true, "state_target_skill": "volcengine-ark-quota", "timeout_ms": timeout})
+		if result != nil {
+			result["profile_action"] = "save"
+			result["site"] = site
+			delete(result, "stdout")
+		}
+		return result, err
+	default:
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported browser_profile action", "validation", map[string]any{"action": action})
+	}
+}

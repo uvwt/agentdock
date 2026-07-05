@@ -65,7 +65,7 @@ func (r *Runtime) ToolNames() []string {
 	}
 	all = append(all, "private_notes_search", "private_notes_read", "private_notes_write", "private_notes_maintain")
 	if r.cfg.BrowserEnabled {
-		all = append(all, "browser_session", "browser_act", "browser_snapshot")
+		all = append(all, "browser_session", "browser_act", "browser_snapshot", "browser_profile")
 	}
 	if r.cfg.DesktopEnabled {
 		all = append(all, "desktop_observe", "desktop_act", "desktop_clipboard")
@@ -192,6 +192,8 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.privateNotesMaintain(ctx, args)
 	case "browser_session":
 		return r.browserSession(ctx, args)
+	case "browser_profile":
+		return r.browserProfile(ctx, args)
 	case "browser_act", "browser_action":
 		return r.browserRunnerCall(ctx, "action", args)
 	case "browser_session_start":
@@ -320,9 +322,7 @@ func (r *Runtime) serverInfo() Result {
 		"recall_endpoint":              r.cfg.RecallEndpoint,
 		"recall_bootstrap_recommended": r.cfg.RecallEndpoint != "",
 		"recall_bootstrap_tool":        "recall_bootstrap",
-		"recall_bootstrap_args": map[string]any{
-			"project": "agentdock",
-		},
+		"recall_bootstrap_args":        map[string]any{},
 
 		"task_state_dir": r.tasks.Root(),
 		"workflow_dir":   r.tasks.WorkflowRoot(),

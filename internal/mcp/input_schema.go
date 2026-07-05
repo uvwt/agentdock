@@ -74,6 +74,11 @@ func inputSchema(name string) map[string]any {
 		props["tty"] = boolProp("Keep stdin open.")
 		props["redact_patterns"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Additional regex patterns to redact from stdout/stderr/error."}
 		required = []string{"cmd"}
+	case "browser_profile":
+		props["action"] = stringProp("Action: open, status, save, or close.")
+		props["site"] = stringProp("Site profile name.")
+		props["timeout_ms"] = intProp("Timeout in milliseconds.")
+		required = []string{"action", "site"}
 	case "session_control":
 		props["action"] = stringProp("Session action: list, status, write, kill, or kill_all.")
 		props["session_id"] = stringProp("Session id returned by exec_command, required for status/write/kill.")
@@ -238,7 +243,7 @@ func inputSchema(name string) map[string]any {
 		required = []string{"path"}
 	case "recall_write":
 		props["kind"] = stringProp("Required write mechanism chosen by the model: card, note, markdown, patch, fact, delete, or auto when genuinely unsure. auto returns a review plan and never writes directly.")
-		props["confirmed"] = boolProp("Required for true writes/deletes. With kind=auto or confirmed=false, returns a review plan.")
+		props["confirmed"] = boolProp("Required for true writes/deletes. card/note with confirmed=false return a review plan; patch/fact preview changes unless confirmed=true; auto always returns a plan.")
 		props["path"] = stringProp("RecallDock-relative path when reading, updating, deleting, or writing a known entry.")
 		props["content"] = stringProp("Memory content, note content, Markdown content, or proposed replacement content.")
 		props["title"] = stringProp("Short title for a card or Markdown entry.")
