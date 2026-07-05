@@ -263,12 +263,12 @@ func TestRecallWriteSchemaExposesCompactCoreFields(t *testing.T) {
 	if !ok {
 		t.Fatal("recall_write input schema properties missing")
 	}
-	for _, name := range []string{"kind", "title", "content", "summary", "query", "confirmed", "path", "overwrite", "max_bytes"} {
+	for _, name := range []string{"kind", "title", "content", "summary", "query", "confirmed", "path", "overwrite", "max_bytes", "old", "new", "append", "section", "section_content", "key", "value", "facts", "append_if_missing", "allow_warnings", "conclusion", "open_questions"} {
 		if _, ok := inputProps[name]; !ok {
 			t.Fatalf("recall_write input schema missing compact core field %q", name)
 		}
 	}
-	for _, name := range []string{"project", "prefix", "scope", "status", "confidence", "source", "evidence", "boundary", "allow_warnings", "old", "new", "pattern", "replacement", "operations", "facts", "key", "value", "dry_run"} {
+	for _, name := range []string{"project", "prefix", "scope", "status", "confidence", "source", "evidence", "boundary", "pattern", "replacement", "operations", "dry_run"} {
 		if _, ok := inputProps[name]; ok {
 			t.Fatalf("recall_write input schema should hide advanced/internal field %q", name)
 		}

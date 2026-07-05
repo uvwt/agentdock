@@ -244,7 +244,19 @@ func inputSchema(name string) map[string]any {
 		props["title"] = stringProp("Short title for a card or Markdown entry.")
 		props["summary"] = stringProp("Short summary for a card or note.")
 		props["query"] = stringProp("Search question or topic used by auto/note planning.")
+		props["conclusion"] = stringProp("Note only: optional conclusion or current answer for the captured question.")
+		props["open_questions"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Note only: unresolved follow-up questions."}
 		props["overwrite"] = boolProp("Replace an existing entry when supported.")
+		props["allow_warnings"] = boolProp("Card only: after reviewing warnings, allow writing a warned card. Do not use by default.")
+		props["old"] = stringProp("Patch only: literal text to replace.")
+		props["new"] = stringProp("Patch only: replacement text for old.")
+		props["append"] = stringProp("Patch only: text to append to the recall document.")
+		props["section"] = stringProp("Patch/fact only: Markdown heading title whose section should be updated.")
+		props["section_content"] = stringProp("Patch only: new body for the selected Markdown section.")
+		props["key"] = stringProp("Fact only: fact key to update.")
+		props["value"] = stringProp("Fact only: new fact value.")
+		props["facts"] = objectProp("Fact only: multiple key/value facts to update.")
+		props["append_if_missing"] = boolProp("Fact only: append missing keys to the selected section or document instead of failing.")
 		props["max_bytes"] = intProp("Maximum diff/output bytes.")
 		required = []string{"kind"}
 	case "recall_maintain":

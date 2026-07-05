@@ -80,7 +80,7 @@ func (r *Runtime) recallWrite(ctx context.Context, args map[string]any) (Result,
 	}
 	kind := strings.ToLower(strings.TrimSpace(stringArg(args, "kind", "")))
 	if kind == "" {
-		kind = "auto"
+		return nil, toolErrorDetails("MISSING_RECALL_KIND", "recall_write requires kind; choose card, note, markdown, patch, fact, delete, or explicit auto for a safe plan", "validation", map[string]any{"allowed": []string{"card", "note", "markdown", "patch", "fact", "delete", "auto"}})
 	}
 	switch kind {
 	case "auto", "plan", "classify":
@@ -183,7 +183,7 @@ func (r *Runtime) recallWriteAutoPlan(ctx context.Context, args map[string]any) 
 		"auto_write":         false,
 		"needs_review":       true,
 		"recommended_action": "review_next_call",
-		"policy":             "model should choose card/note/markdown explicitly; auto is only a safe fallback when kind is omitted or genuinely uncertain",
+		"policy":             "model should choose card/note/markdown explicitly; auto is only a safe fallback when kind=auto is explicitly selected",
 		"next_call": Result{
 			"tool": "recall_write",
 			"args": nextArgs,

@@ -5,6 +5,23 @@ import (
 	"testing"
 )
 
+func TestRecallWriteRequiresExplicitKind(t *testing.T) {
+	store := map[string]string{}
+	rt, closeServer := newMemoryTestRuntime(t, store)
+	defer closeServer()
+
+	_, err := rt.recallWrite(context.Background(), map[string]any{
+		"title":   "缺少 kind",
+		"content": "没有显式选择记忆形态时应该返回校验错误，而不是静默走 auto。",
+	})
+	if err == nil {
+		t.Fatal("expected missing kind to fail")
+	}
+	if len(store) != 0 {
+		t.Fatalf("missing kind must not write, store=%#v", store)
+	}
+}
+
 func TestRecallWriteAutoPlanDoesNotWriteAndRecommendsCard(t *testing.T) {
 	store := map[string]string{}
 	rt, closeServer := newMemoryTestRuntime(t, store)
