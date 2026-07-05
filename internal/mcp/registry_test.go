@@ -257,6 +257,29 @@ func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	}
 }
 
+func TestRecallModelChoiceFieldsUseEnums(t *testing.T) {
+	searchProps := schemaProperties(t, "recall_search")
+	for _, want := range []string{"all", "markdown", "card", "note"} {
+		if !containsString(enumStrings(t, searchProps["kind"]), want) {
+			t.Fatalf("recall_search kind enum missing %s: %#v", want, searchProps["kind"])
+		}
+	}
+
+	writeProps := schemaProperties(t, "recall_write")
+	for _, want := range []string{"card", "note", "markdown", "patch", "fact", "delete", "auto"} {
+		if !containsString(enumStrings(t, writeProps["kind"]), want) {
+			t.Fatalf("recall_write kind enum missing %s: %#v", want, writeProps["kind"])
+		}
+	}
+
+	maintainProps := schemaProperties(t, "recall_maintain")
+	for _, want := range []string{"sync_status", "list", "lint", "embedding_status", "reindex", "reindex_cards"} {
+		if !containsString(enumStrings(t, maintainProps["action"]), want) {
+			t.Fatalf("recall_maintain action enum missing %s: %#v", want, maintainProps["action"])
+		}
+	}
+}
+
 func TestRecallPublicSchemasAreClosedForModelFacingArgs(t *testing.T) {
 	for _, name := range []string{"recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain"} {
 		schema := inputSchema(name)
