@@ -29,6 +29,10 @@ func NewServer(runtime *tools.Runtime, cfg config.Config) *Server {
 	return &Server{runtime: runtime, cfg: cfg}
 }
 
+func (s *Server) CapabilityContext(ctx context.Context, refresh bool) (tools.Result, error) {
+	return s.runtime.CapabilityContext(ctx, refresh)
+}
+
 func (s *Server) Dispatch(ctx context.Context, req jsonrpc.Request) jsonrpc.Response {
 	if req.JSONRPC != "" && req.JSONRPC != jsonrpc.Version {
 		return jsonrpc.Failure(req.ID, -32600, "Invalid Request", "jsonrpc must be 2.0")

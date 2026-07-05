@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -70,12 +71,36 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	mux.HandleFunc("/oauth/token", func(w http.ResponseWriter, r *http.Request) {
 		handleToken(w, r, cfg, oauthCodes)
 	})
+	mux.HandleFunc("/capabilities/context", capabilityContextHandler(server, cfg, false))
+	mux.HandleFunc("/capabilities/context/refresh", capabilityContextHandler(server, cfg, true))
 	mux.HandleFunc("/mcp", mcpEndpointHandler(server, cfg))
 
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 	httpServer := &http.Server{Addr: addr, Handler: loggingMiddleware(mux), ReadHeaderTimeout: 10 * time.Second}
 	slog.Info("http server listening", "addr", addr)
 	return httpServer.ListenAndServe()
+}
+
+func capabilityContextHandler(server *mcp.Server, _ config.Config, refresh bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if refresh {
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+		} else if r.Method != http.MethodGet && r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+		defer cancel()
+		result, err := server.CapabilityContext(ctx, refresh || r.Method == http.MethodPost)
+		if err != nil {
+			writeJSON(w, map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		writeJSON(w, result)
+	}
 }
 
 func mcpEndpointHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc {
