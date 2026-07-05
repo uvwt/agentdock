@@ -84,7 +84,7 @@ func (r *Runtime) ToolNames() []string {
 	}
 	readOnly := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "session_control", "check_github_repo_access", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "request_permissions", "view_image"}
 	if r.cfg.RecallEndpoint != "" {
-		readOnly = append(readOnly, "recall_bootstrap", "recall_search", "recall_read", "recall_maintain")
+		readOnly = append(readOnly, "recall_bootstrap", "recall_search", "recall_read")
 	}
 	readOnly = append(readOnly, "private_notes_search", "private_notes_read", "private_notes_maintain")
 	if r.cfg.BrowserEnabled {

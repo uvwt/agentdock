@@ -40,13 +40,20 @@ func TestNotesSearchAndCapturePlan(t *testing.T) {
 	}
 
 	before := store["recall/managed/notes/questions/topics/memory-organization.md"]
-	capture, err := rt.notesCapture(context.Background(), map[string]any{"scope": "questions", "question": "文件变多后检索方式要不要改？", "conclusion": "使用 index-first recall_search kind=note。"})
+	capture, err := rt.notesCapture(context.Background(), map[string]any{"scope": "questions", "question": "文件变多后检索方式要不要改？", "conclusion": "使用 index-first recall_search kind=note。", "open_questions": []any{"github-learning 是否也要统一搜索？"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	plan := capture["capture_plan"].(map[string]any)
 	if autoWrite, _ := plan["auto_write"].(bool); autoWrite {
 		t.Fatalf("recall note capture must not auto-write: %#v", plan)
+	}
+	draft := plan["draft"].(map[string]any)
+	if got, _ := draft["conclusion"].(string); got != "使用 index-first recall_search kind=note。" {
+		t.Fatalf("note conclusion missing from draft: %#v", draft)
+	}
+	if openQuestions, ok := draft["open_questions"].([]string); !ok || len(openQuestions) != 1 || openQuestions[0] != "github-learning 是否也要统一搜索？" {
+		t.Fatalf("note open_questions missing from draft: %#v", draft)
 	}
 	if store["recall/managed/notes/questions/topics/memory-organization.md"] != before {
 		t.Fatalf("recall note capture wrote content unexpectedly")

@@ -88,10 +88,10 @@ func TestReadOnlyProfileExcludesDestructiveTools(t *testing.T) {
 	if seen["desktop_act"] || seen["desktop_click"] || seen["desktop_type"] || seen["desktop_set_value"] {
 		t.Fatalf("read-only desktop profile exposed mutating desktop tools")
 	}
-	if seen["recall_write"] {
-		t.Fatalf("read-only profile exposed mutating recall tool")
+	if seen["recall_write"] || seen["recall_maintain"] {
+		t.Fatalf("read-only profile exposed mutating recall tools: %#v", seen)
 	}
-	if !seen["recall_bootstrap"] || !seen["recall_search"] || !seen["recall_read"] || !seen["recall_maintain"] {
+	if !seen["recall_bootstrap"] || !seen["recall_search"] || !seen["recall_read"] {
 		t.Fatalf("read-only profile should expose read-only RecallDock tools")
 	}
 	if seen["edit_file"] {
@@ -257,6 +257,51 @@ func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	}
 }
 
+func TestRecallPublicSchemasAreClosedForModelFacingArgs(t *testing.T) {
+	for _, name := range []string{"recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain"} {
+		schema := inputSchema(name)
+		if got, _ := schema["additionalProperties"].(bool); got {
+			t.Fatalf("%s input schema should be closed to keep hidden compatibility args out of model-facing schema: %#v", name, schema)
+		}
+	}
+}
+
+func TestRecallWriteAndMaintainAreMarkedDestructive(t *testing.T) {
+	for _, name := range []string{"recall_write", "recall_maintain"} {
+		def, ok := toolDefinition(name)
+		if !ok {
+			t.Fatalf("%s definition missing", name)
+		}
+		if !def.Destructive {
+			t.Fatalf("%s should be marked destructive because it can write, delete, or rebuild RecallDock state", name)
+		}
+	}
+}
+
+func TestRecallToolDescriptionsMatchCompactModelEntrypoints(t *testing.T) {
+	searchDef, ok := toolDefinition("recall_search")
+	if !ok {
+		t.Fatal("recall_search definition missing")
+	}
+	if strings.Contains(searchDef.Description, "use kind or prefix") || strings.Contains(searchDef.Description, "use prefix") {
+		t.Fatalf("recall_search description should not tell the model to choose prefix: %q", searchDef.Description)
+	}
+	writeDef, ok := toolDefinition("recall_write")
+	if !ok {
+		t.Fatal("recall_write definition missing")
+	}
+	for _, legacy := range []string{"append_note", "diff"} {
+		if strings.Contains(writeDef.Description, legacy) {
+			t.Fatalf("recall_write description should not advertise legacy alias %q: %q", legacy, writeDef.Description)
+		}
+	}
+	for _, required := range []string{"kind=card", "note", "markdown", "patch", "fact", "delete", "auto"} {
+		if !strings.Contains(writeDef.Description, required) {
+			t.Fatalf("recall_write description missing %q: %q", required, writeDef.Description)
+		}
+	}
+}
+
 func TestRecallWriteSchemaExposesCompactCoreFields(t *testing.T) {
 	schema := inputSchema("recall_write")
 	inputProps, ok := schema["properties"].(map[string]any)
@@ -300,6 +345,21 @@ func TestRecallBootstrapSchemaHidesProjectSelector(t *testing.T) {
 		if _, ok := inputProps[name]; !ok {
 			t.Fatalf("recall_bootstrap input schema missing %q", name)
 		}
+	}
+	outputProps, ok := outputSchema("recall_bootstrap")["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("recall_bootstrap output schema properties missing")
+	}
+	projectProp, ok := outputProps["project"].(map[string]any)
+	if !ok {
+		t.Fatal("recall_bootstrap output schema should include actual backend project/context field")
+	}
+	projectDesc, _ := projectProp["description"].(string)
+	if strings.Contains(projectDesc, "input selector") && !strings.Contains(projectDesc, "not an input selector") {
+		t.Fatalf("recall_bootstrap output project description is ambiguous: %q", projectDesc)
+	}
+	if projectDesc == "Project key." {
+		t.Fatal("recall_bootstrap output project description should not look like a model-selected project parameter")
 	}
 }
 

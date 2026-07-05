@@ -52,8 +52,8 @@ func TestServerInfoRecommendsCompactRecallBootstrap(t *testing.T) {
 	if _, ok := args["max_bytes"]; ok {
 		t.Fatalf("server_info should not recommend explicit max_bytes because that disables compact bootstrap defaults: %#v", args)
 	}
-	if args["project"] != "agentdock" {
-		t.Fatalf("unexpected recall bootstrap args: %#v", args)
+	if _, ok := args["project"]; ok {
+		t.Fatalf("server_info should not recommend project because recall_bootstrap hides project selection: %#v", args)
 	}
 }
 

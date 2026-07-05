@@ -185,7 +185,7 @@ func outputSchema(name string) map[string]any {
 		props["message"] = stringProp("Verification message.")
 	case "recall_bootstrap":
 		props["recall_endpoint"] = stringProp("Configured RecallDock endpoint.")
-		props["project"] = stringProp("Project key.")
+		props["project"] = stringProp("Backend-selected RecallDock context returned by the backing service; not an input selector for the model.")
 		props["sections"] = arrayProp("Packed recall sections. Raw Markdown is omitted by default and returned as raw_content only when include_raw=true.")
 		props["count"] = intProp("Section count.")
 		props["bytes"] = intProp("Combined bytes.")

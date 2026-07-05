@@ -199,10 +199,11 @@ func (r *Runtime) memoryDelete(ctx context.Context, args map[string]any) (Result
 	if p == "" {
 		return nil, toolError("MISSING_PATH", "path is required", "validation")
 	}
-	query := url.Values{}
-	if boolArg(args, "confirmed", false) {
-		query.Set("confirmed", "true")
+	if !boolArg(args, "confirmed", false) {
+		return nil, toolError("CONFIRMATION_REQUIRED", "recall delete requires confirmed=true", "validation")
 	}
+	query := url.Values{}
+	query.Set("confirmed", "true")
 	endpoint := "/v1/recall/" + escapeMemoryPath(recallBackendPath(p))
 	if encoded := query.Encode(); encoded != "" {
 		endpoint += "?" + encoded

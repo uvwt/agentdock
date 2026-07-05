@@ -5,6 +5,23 @@ import (
 	"testing"
 )
 
+func TestRecallWriteDeleteRequiresConfirmationLocally(t *testing.T) {
+	store := map[string]string{"devices/test.md": "# Test\n"}
+	rt, closeServer := newMemoryTestRuntime(t, store)
+	defer closeServer()
+
+	_, err := rt.recallWrite(context.Background(), map[string]any{
+		"kind": "delete",
+		"path": "devices/test.md",
+	})
+	if err == nil {
+		t.Fatal("expected delete to require confirmed=true before calling RecallDock")
+	}
+	if _, ok := store["devices/test.md"]; !ok {
+		t.Fatalf("unconfirmed delete must not mutate store")
+	}
+}
+
 func TestRecallWriteRequiresExplicitKind(t *testing.T) {
 	store := map[string]string{}
 	rt, closeServer := newMemoryTestRuntime(t, store)

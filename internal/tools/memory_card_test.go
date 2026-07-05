@@ -114,3 +114,27 @@ func TestMemoryCardWriteBlocksReviewedWarningsByDefault(t *testing.T) {
 		t.Fatal("expected warning content to require explicit allow_warnings")
 	}
 }
+
+func TestMemoryCardWriteAllowsWarningsAfterExplicitReview(t *testing.T) {
+	store := map[string]string{}
+	rt, closeServer := newMemoryTestRuntime(t, store)
+	defer closeServer()
+
+	res, err := rt.memoryCardWrite(context.Background(), map[string]any{
+		"title":          "临时状态",
+		"content":        "当前端口是 1234。",
+		"project":        "demo",
+		"confirmed":      true,
+		"allow_warnings": true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, _ := res["path"].(string)
+	if p == "" {
+		t.Fatalf("expected written card path: %#v", res)
+	}
+	if _, ok := store[recallBackendPath(p)]; !ok {
+		t.Fatalf("expected warned card to be written after allow_warnings, store=%#v", store)
+	}
+}

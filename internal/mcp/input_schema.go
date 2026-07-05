@@ -625,6 +625,12 @@ func inputSchema(name string) map[string]any {
 	}
 
 	schema := map[string]any{"type": "object", "properties": props, "additionalProperties": true}
+	switch name {
+	case "recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain":
+		// Recall public schemas are intentionally closed: legacy/advanced args remain
+		// accepted by the runtime for compatibility, but should not be suggested to models.
+		schema["additionalProperties"] = false
+	}
 	if len(required) > 0 {
 		schema["required"] = required
 	}

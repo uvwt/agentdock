@@ -239,6 +239,16 @@ func TestMemoryUpdateFactAndLint(t *testing.T) {
 	if !strings.Contains(store["devices/test.md"], "plugin_dir：plugins") {
 		t.Fatalf("fact was not written: %q", store["devices/test.md"])
 	}
+	res, err = rt.memoryUpdateFact(context.Background(), map[string]any{"path": "devices/test.md", "key": "missing_fact", "value": "created", "append_if_missing": true, "confirmed": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed, _ := res["changed"].(bool); !changed {
+		t.Fatalf("expected missing fact append to change content: %#v", res)
+	}
+	if !strings.Contains(store["devices/test.md"], "missing_fact：created") {
+		t.Fatalf("missing fact was not appended: %q", store["devices/test.md"])
+	}
 	res, err = rt.memoryLint(context.Background(), map[string]any{"terms": []any{"plugin_dir"}, "max_entries": 10})
 	if err != nil {
 		t.Fatal(err)
