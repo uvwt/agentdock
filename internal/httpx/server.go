@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -81,7 +82,21 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	return httpServer.ListenAndServe()
 }
 
-func capabilityContextHandler(server *mcp.Server, _ config.Config, refresh bool) http.HandlerFunc {
+func isLoopbackHost(host string) bool {
+	host = strings.TrimSpace(strings.ToLower(host))
+	if host == "" {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func capabilityContextHandler(server *mcp.Server, cfg config.Config, refresh bool) http.HandlerFunc {
+	authorizer := auth.Bearer{Token: cfg.AuthToken}
+	authRequired := !isLoopbackHost(cfg.Host) && (cfg.AuthToken != "" || cfg.OAuthClientID != "" || cfg.OAuthServerURL != "")
 	return func(w http.ResponseWriter, r *http.Request) {
 		if refresh {
 			if r.Method != http.MethodPost {
@@ -90,6 +105,12 @@ func capabilityContextHandler(server *mcp.Server, _ config.Config, refresh bool)
 			}
 		} else if r.Method != http.MethodGet && r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		staticOK := cfg.AuthToken != "" && authorizer.Authorized(r)
+		oauthOK := authorizedOAuth(r, cfg)
+		if authRequired && !staticOK && !oauthOK {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)

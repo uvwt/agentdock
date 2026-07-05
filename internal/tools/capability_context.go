@@ -114,7 +114,7 @@ func (r *Runtime) skillCapabilityIndex() ([]map[string]any, string, string) {
 		if ops := capabilityStringSlice(item["operations"]); len(ops) > 0 {
 			line += "；operations=" + strings.Join(ops, ", ")
 		}
-		lines = append(lines, truncateString(line, 260))
+		lines = append(lines, truncateString(line, 320))
 	}
 	if len(items) == 0 {
 		lines = append(lines, "- 当前没有可用 Skill；需要时先安装或刷新 Skill Runtime。")
@@ -123,23 +123,22 @@ func (r *Runtime) skillCapabilityIndex() ([]map[string]any, string, string) {
 }
 
 func mergeSkillManifestSummary(item map[string]any, inspected Result) {
-	manifest := map[string]any{}
-	if raw := inspected["manifest"]; raw != nil {
-		data, err := json.Marshal(raw)
-		if err == nil {
-			_ = json.Unmarshal(data, &manifest)
-		}
-	}
+	manifest := capabilityMap(inspected["manifest"])
 	if len(manifest) == 0 {
 		return
 	}
-	for _, key := range []string{"description", "summary", "title", "name"} {
-		if value := strings.TrimSpace(capabilityString(manifest[key])); value != "" {
-			item["summary"] = truncateString(value, 180)
+	metadata := capabilityMap(manifest["metadata"])
+	spec := capabilityMap(manifest["spec"])
+	for _, value := range []any{metadata["description"], metadata["displayName"], metadata["name"], manifest["description"], manifest["summary"], manifest["title"], manifest["name"]} {
+		if text := strings.TrimSpace(capabilityString(value)); text != "" {
+			item["summary"] = truncateString(text, 120)
 			break
 		}
 	}
-	ops := operationNames(manifest["operations"])
+	ops := operationNames(spec["operations"])
+	if len(ops) == 0 {
+		ops = operationNames(manifest["operations"])
+	}
 	if len(ops) == 0 {
 		ops = operationNames(manifest["tools"])
 	}
@@ -292,6 +291,23 @@ func asMapSlice(raw any) []map[string]any {
 			return nil
 		}
 		var out []map[string]any
+		_ = json.Unmarshal(data, &out)
+		return out
+	}
+}
+
+func capabilityMap(raw any) map[string]any {
+	switch value := raw.(type) {
+	case map[string]any:
+		return value
+	case nil:
+		return nil
+	default:
+		data, err := json.Marshal(raw)
+		if err != nil {
+			return nil
+		}
+		var out map[string]any
 		_ = json.Unmarshal(data, &out)
 		return out
 	}
