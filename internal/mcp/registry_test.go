@@ -267,6 +267,9 @@ func TestRecallWriteSchemaExposesCardsNotesAndEditFields(t *testing.T) {
 			t.Fatalf("recall_write input schema missing %q", name)
 		}
 	}
+	if _, ok := inputProps["project"]; ok {
+		t.Fatal("recall_write input schema should not expose project; project is an internal metadata/backward-compat field")
+	}
 	outputProps, ok := outputSchema("recall_write")["properties"].(map[string]any)
 	if !ok {
 		t.Fatal("recall_write output schema properties missing")
@@ -274,6 +277,21 @@ func TestRecallWriteSchemaExposesCardsNotesAndEditFields(t *testing.T) {
 	for _, name := range []string{"recall_kind", "card", "warnings", "capture_plan", "similar_results", "recall", "diff", "updates"} {
 		if _, ok := outputProps[name]; !ok {
 			t.Fatalf("recall_write output schema missing %q", name)
+		}
+	}
+}
+
+func TestRecallBootstrapSchemaHidesProjectSelector(t *testing.T) {
+	inputProps, ok := inputSchema("recall_bootstrap")["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("recall_bootstrap input schema properties missing")
+	}
+	if _, ok := inputProps["project"]; ok {
+		t.Fatal("recall_bootstrap input schema should not expose project; backend keeps the default context")
+	}
+	for _, name := range []string{"max_bytes", "include_raw", "include_body"} {
+		if _, ok := inputProps[name]; !ok {
+			t.Fatalf("recall_bootstrap input schema missing %q", name)
 		}
 	}
 }

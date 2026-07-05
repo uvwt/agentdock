@@ -18,10 +18,10 @@ RecallDock 只暴露 `recall_*` 公开工具；旧记忆/笔记工具名和旧 A
 
 ## 工具分工
 
-- `recall_bootstrap`：重要任务开始时加载项目、偏好、环境、runbook 和经验索引。默认紧凑输出；需要正文时再用 `recall_read`。
+- `recall_bootstrap`：重要任务开始时加载偏好、环境、runbook 和经验索引。模型不需要选择 project；后端保留默认上下文和兼容参数。默认紧凑输出；需要正文时再用 `recall_read`。
 - `recall_search`：搜索 RecallDock 内容。`kind=card` 搜经验卡片，`kind=note` 搜 notes 分区，`kind=markdown/all` 搜传统 Markdown。
 - `recall_read`：按 path 读取单个 Markdown、card 或 note。
-- `recall_write`：统一写入和修改入口。`kind` 表示写入机制，不表示所有内容类型。
+- `recall_write`：统一写入和修改入口。`kind` 表示写入机制，不表示所有内容类型。模型侧不要选择 project；项目归属由路径、已有文件或后端兼容字段处理。
 - `recall_maintain`：统一维护入口，包含同步状态、列表、lint、embedding 状态和重建索引。
 
 ## recall_write kind

@@ -224,7 +224,6 @@ func inputSchema(name string) map[string]any {
 		props["env_file"] = stringProp("Path to agentdock.env for migrate-from-agentdock-env. Defaults to ~/agentdock-runtime/agentdock.env.")
 		required = []string{"action"}
 	case "recall_bootstrap":
-		props["project"] = stringProp("Project key to bootstrap. Defaults to agentdock.")
 		props["max_bytes"] = intProp("Maximum combined RecallDock pack bytes. Does not expose section bodies by itself; use include_body or recall_read when body text is needed.")
 		props["include_raw"] = boolProp("Include raw Markdown as raw_content. Defaults to false to avoid duplicating body/content tokens.")
 		props["include_body"] = boolProp("Include section body text in recall_bootstrap. Defaults to false; prefer recall_read for targeted full text.")
@@ -247,8 +246,7 @@ func inputSchema(name string) map[string]any {
 		props["content"] = stringProp("Markdown content, card content, note content, or proposed replacement content.")
 		props["title"] = stringProp("Card title when kind=card.")
 		props["summary"] = stringProp("Alternative card/note summary.")
-		props["scope"] = stringProp("Card scope or notes scope. Notes support questions and github-learning.")
-		props["project"] = stringProp("Project key for card or markdown frontmatter.")
+		props["scope"] = stringProp("Advanced card or notes scope. Omit unless the user explicitly names the scope; notes support questions and github-learning.")
 		props["type"] = stringProp("Content semantic type. For cards this remains the card type; for markdown it is a free semantic label.")
 		props["status"] = stringProp("Card status such as inbox, active, verified, stale, archived, or rejected.")
 		props["confidence"] = stringProp("Confidence label for card or markdown frontmatter.")

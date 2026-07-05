@@ -125,12 +125,14 @@ func (r *Runtime) memoryCardWrite(ctx context.Context, args map[string]any) (Res
 }
 
 func memoryCardFromArgs(args map[string]any, requireEvidenceForActive bool) (memoryCardSpec, []string, error) {
+	rawScope := strings.TrimSpace(stringArg(args, "scope", ""))
+	rawProject := strings.TrimSpace(stringArg(args, "project", ""))
 	card := memoryCardSpec{
 		Title:      strings.TrimSpace(stringArg(args, "title", "")),
 		Content:    strings.TrimSpace(firstNonEmptyString(args, "content", "summary")),
 		CardType:   strings.TrimSpace(stringArg(args, "type", "")),
-		Scope:      strings.TrimSpace(stringArg(args, "scope", "project")),
-		Project:    strings.TrimSpace(stringArg(args, "project", "")),
+		Scope:      rawScope,
+		Project:    rawProject,
 		Status:     strings.TrimSpace(stringArg(args, "status", "inbox")),
 		Confidence: strings.TrimSpace(stringArg(args, "confidence", "medium")),
 		Source:     strings.TrimSpace(stringArg(args, "source", "current conversation")),
@@ -149,6 +151,13 @@ func memoryCardFromArgs(args map[string]any, requireEvidenceForActive bool) (mem
 	}
 	if card.Project == "" {
 		card.Project = "global"
+	}
+	if card.Scope == "" {
+		if rawProject == "" || strings.EqualFold(card.Project, "global") {
+			card.Scope = "global"
+		} else {
+			card.Scope = "project"
+		}
 	}
 	if err := validateMemoryCardEnum("type", card.CardType, []string{"preference", "runbook", "bug_pattern", "deploy_note", "project_trap", "architecture", "decision", "anti_pattern"}); err != nil {
 		return card, nil, err

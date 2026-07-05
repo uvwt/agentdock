@@ -72,6 +72,33 @@ func TestMemoryCardWriteRequiresConfirmationAndUsesCardsPath(t *testing.T) {
 	}
 }
 
+func TestMemoryCardDefaultsGlobalScopeWhenProjectOmitted(t *testing.T) {
+	card, _, err := memoryCardFromArgs(map[string]any{
+		"title":   "通用偏好",
+		"content": "用户偏好直接执行可自动完成的操作，不要让用户代替完成工具可执行的步骤。",
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if card.Scope != "global" || card.Project != "global" {
+		t.Fatalf("project omitted should default to global/global, got scope=%q project=%q", card.Scope, card.Project)
+	}
+}
+
+func TestMemoryCardDefaultsProjectScopeWhenProjectExplicit(t *testing.T) {
+	card, _, err := memoryCardFromArgs(map[string]any{
+		"title":   "ChatDock 部署目录",
+		"content": "ChatDock 部署时必须优先检查专用 compose 目录，不能误用默认仓库目录。",
+		"project": "chatdock",
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if card.Scope != "project" || card.Project != "chatdock" {
+		t.Fatalf("explicit project should default to project scope, got scope=%q project=%q", card.Scope, card.Project)
+	}
+}
+
 func TestMemoryCardWriteBlocksReviewedWarningsByDefault(t *testing.T) {
 	store := map[string]string{}
 	rt, closeServer := newMemoryTestRuntime(t, store)
