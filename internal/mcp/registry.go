@@ -54,7 +54,7 @@ var toolRegistry = []ToolDefinition{
 	{Name: "browser_session_start", Title: "Start browser session", Description: "Create a browser automation session using the optional workspace Node runner.", Destructive: false, OpenWorld: true},
 	{Name: "browser_action", Title: "Run browser actions", Description: "Run browser automation actions and capture a structured screenshot snapshot; supports close_after, inline image, and storage state save.", Destructive: false, OpenWorld: true},
 	{Name: "browser_snapshot", Title: "Browser snapshot", Description: "Capture page URL, title, text, screenshot, image, viewport, visible interactive elements, and browser errors.", ReadOnly: true, OpenWorld: true},
-	{Name: "browser_profile", Title: "Browser profile", Description: "Open, inspect, or close a managed browser profile for an allowlisted site.", Destructive: false, OpenWorld: true},
+	{Name: "browser_profile", Title: "Browser profile", Description: "Open, inspect, or close a managed browser profile.", Destructive: false, OpenWorld: true},
 	{Name: "browser_session_close", Title: "Close browser session", Description: "Close and remove a browser automation session.", Destructive: false, OpenWorld: true},
 	{Name: "desktop_observe", Title: "Observe desktop", Description: "Unified macOS desktop observation tool for preflight, app list, app state, windows, screen snapshots, and app snapshots.", ReadOnly: true},
 	{Name: "desktop_act", Title: "Act on desktop", Description: "Unified macOS desktop action tool for focus, move, click, double-click, scroll, drag, type, set value, accessibility actions, hotkeys, and waits.", Destructive: true},

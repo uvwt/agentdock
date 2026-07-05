@@ -77,6 +77,8 @@ func inputSchema(name string) map[string]any {
 	case "browser_profile":
 		props["action"] = stringProp("Action: open, status, snapshot, save, or close.")
 		props["site"] = stringProp("Site profile name.")
+		props["url"] = stringProp("URL to open for custom site profiles.")
+		props["state_target_skill"] = stringProp("Optional Skill name used when saving storage state.")
 		props["timeout_ms"] = intProp("Timeout in milliseconds.")
 		props["max_text_chars"] = intProp("Maximum body text characters in page state.")
 		props["max_interactive_elements"] = intProp("Maximum visible interactive elements to return.")

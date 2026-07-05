@@ -88,21 +88,36 @@ func (r *Runtime) browserRunnerScript() (controlPath, error) {
 
 func (r *Runtime) browserProfile(ctx context.Context, args map[string]any) (Result, error) {
 	action := strings.ToLower(stringArg(args, "action", "status"))
-	site := strings.ToLower(stringArg(args, "site", ""))
-	if site != "volcengine-ark-quota" {
-		return nil, toolErrorDetails("UNSUPPORTED_SITE", "browser_profile supports only allowlisted site profiles", "validation", map[string]any{"site": site})
+	site := strings.TrimSpace(stringArg(args, "site", ""))
+	if site == "" {
+		return nil, toolErrorDetails("MISSING_SITE", "browser_profile requires a site profile name", "validation", nil)
 	}
-	sessionID := "profile-volcengine-ark-quota"
-	url := "https://console.volcengine.com/ark/region:cn-beijing/subscription/coding-plan"
+	profileID := strings.Trim(strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+			return r
+		}
+		return '-'
+	}, site), "-")
+	if profileID == "" {
+		return nil, toolErrorDetails("INVALID_SITE", "browser_profile site cannot be used as a profile name", "validation", map[string]any{"site": site})
+	}
+	sessionID := "profile-" + profileID
+	url := strings.TrimSpace(stringArg(args, "url", ""))
+	if url == "" && strings.EqualFold(site, "volcengine-ark-quota") {
+		url = "https://console.volcengine.com/ark/region:cn-beijing/subscription/coding-plan"
+	}
 	timeout := intArg(args, "timeout_ms", 30000)
 	switch action {
 	case "open", "start":
+		if url == "" {
+			return nil, toolErrorDetails("MISSING_URL", "browser_profile needs url when opening custom profile", "validation", map[string]any{"site": site})
+		}
 		result, err := r.browserRunnerCall(ctx, "session_start", map[string]any{
 			"session_id": sessionID,
 			"backend":    "playwright",
 			"browser":    "chromium",
 			"headless":   false,
-			"profile_id": "volcengine-ark-quota",
+			"profile_id": profileID,
 			"url":        url,
 			"viewport":   map[string]any{"width": 1280, "height": 900},
 			"keep_open":  true,
@@ -111,6 +126,7 @@ func (r *Runtime) browserProfile(ctx context.Context, args map[string]any) (Resu
 		if result != nil {
 			result["profile_action"] = "open"
 			result["site"] = site
+			result["profile_id"] = profileID
 			delete(result, "stdout")
 		}
 		return result, err
@@ -119,6 +135,7 @@ func (r *Runtime) browserProfile(ctx context.Context, args map[string]any) (Resu
 		if result != nil {
 			result["profile_action"] = "close"
 			result["site"] = site
+			result["profile_id"] = profileID
 			delete(result, "stdout")
 		}
 		return result, err
@@ -127,6 +144,7 @@ func (r *Runtime) browserProfile(ctx context.Context, args map[string]any) (Resu
 		if result != nil {
 			result["profile_action"] = "status"
 			result["site"] = site
+			result["profile_id"] = profileID
 			delete(result, "stdout")
 		}
 		return result, err
@@ -148,14 +166,20 @@ func (r *Runtime) browserProfile(ctx context.Context, args map[string]any) (Resu
 		if result != nil {
 			result["profile_action"] = "snapshot"
 			result["site"] = site
+			result["profile_id"] = profileID
 			delete(result, "stdout")
 		}
 		return result, err
 	case "save":
-		result, err := r.browserRunnerCall(ctx, "snapshot", map[string]any{"session_id": sessionID, "max_text_chars": intArg(args, "max_text_chars", 2000), "capture_screenshot": false, "save_storage_state": true, "state_target_skill": "volcengine-ark-quota", "timeout_ms": timeout})
+		stateTargetSkill := strings.TrimSpace(stringArg(args, "state_target_skill", ""))
+		if stateTargetSkill == "" {
+			stateTargetSkill = profileID
+		}
+		result, err := r.browserRunnerCall(ctx, "snapshot", map[string]any{"session_id": sessionID, "max_text_chars": intArg(args, "max_text_chars", 2000), "capture_screenshot": false, "save_storage_state": true, "state_target_skill": stateTargetSkill, "timeout_ms": timeout})
 		if result != nil {
 			result["profile_action"] = "save"
 			result["site"] = site
+			result["profile_id"] = profileID
 			delete(result, "stdout")
 		}
 		return result, err
