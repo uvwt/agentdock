@@ -30,7 +30,7 @@ func (r *Runtime) notesSearch(ctx context.Context, args map[string]any) (Result,
 	if query == "" {
 		return nil, toolError("MISSING_QUERY", "query is required", "validation")
 	}
-	scope, err := resolveNotesScope(stringArg(args, "scope", "questions"))
+	scope, err := resolveNotesScope(noteScopeArg(args))
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func (r *Runtime) notesCapture(ctx context.Context, args map[string]any) (Result
 	if question == "" {
 		return nil, toolError("MISSING_QUESTION", "question or query is required", "validation")
 	}
-	scope, err := resolveNotesScope(stringArg(args, "scope", "questions"))
+	scope, err := resolveNotesScope(noteScopeArg(args))
 	if err != nil {
 		return nil, err
 	}
@@ -172,13 +172,13 @@ func (r *Runtime) notesCapture(ctx context.Context, args map[string]any) (Result
 }
 
 func (r *Runtime) notesWrite(ctx context.Context, args map[string]any) (Result, error) {
-	scope, err := resolveNotesScope(stringArg(args, "scope", "questions"))
-	if err != nil {
-		return nil, err
-	}
 	rawPath := strings.TrimSpace(stringArg(args, "path", ""))
 	if rawPath == "" {
 		return nil, toolError("MISSING_PATH", "path is required", "validation")
+	}
+	scope, err := resolveNotesScopeForPath(explicitNoteScopeArg(args), rawPath)
+	if err != nil {
+		return nil, err
 	}
 	if hasUnsafeNotesPathSegment(rawPath) {
 		return nil, toolErrorDetails("INVALID_NOTES_PATH", "recall_write blocks hidden or escaping path segments", "validation", map[string]any{"path": rawPath})
@@ -215,6 +215,34 @@ func (r *Runtime) notesWrite(ctx context.Context, args map[string]any) (Result, 
 	result["recall_note_tool"] = "recall_write"
 	result["scope"] = scope.Name
 	return result, nil
+}
+
+func noteScopeArg(args map[string]any) string {
+	if scope := explicitNoteScopeArg(args); scope != "" {
+		return scope
+	}
+	return "questions"
+}
+
+func explicitNoteScopeArg(args map[string]any) string {
+	if scope := strings.TrimSpace(stringArg(args, "note_scope", "")); scope != "" {
+		return scope
+	}
+	return strings.TrimSpace(stringArg(args, "scope", ""))
+}
+
+func resolveNotesScopeForPath(value string, rawPath string) (notesScope, error) {
+	if strings.TrimSpace(value) != "" {
+		return resolveNotesScope(value)
+	}
+	p := path.Clean(strings.TrimSpace(rawPath))
+	if strings.HasPrefix(p, recallNotesPrefix+"/github-learning/") {
+		return resolveNotesScope("github-learning")
+	}
+	if strings.HasPrefix(p, recallNotesPrefix+"/questions/") {
+		return resolveNotesScope("questions")
+	}
+	return resolveNotesScope("questions")
 }
 
 func resolveNotesScope(value string) (notesScope, error) {

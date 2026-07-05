@@ -290,7 +290,7 @@ func recallWriteNextArgs(args map[string]any, selectedKind string) Result {
 				next["question"] = title
 			}
 		}
-		for _, key := range []string{"scope", "conclusion", "open_questions", "section", "source"} {
+		for _, key := range []string{"note_scope", "scope", "conclusion", "open_questions", "section", "source"} {
 			copyIfPresent(key)
 		}
 	case "patch":

@@ -81,3 +81,46 @@ func TestNotesWriteBoundaries(t *testing.T) {
 		t.Fatalf("expected notes content to be written, got %#v", store)
 	}
 }
+
+func TestNotesGithubLearningScopeThroughPublicArgsAndPathInference(t *testing.T) {
+	store := map[string]string{
+		"recall/managed/notes/github-learning/index.md":                "# GitHub Learning Index\n- actions-cache.md：GitHub Actions cache patterns\n",
+		"recall/managed/notes/github-learning/topics/actions-cache.md": "# Actions cache\nGitHub Actions cache notes.\n",
+	}
+	rt, closeServer := newMemoryTestRuntime(t, store)
+	defer closeServer()
+
+	res, err := rt.recallSearch(context.Background(), map[string]any{"kind": "note", "note_scope": "github-learning", "query": "Actions cache"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scope, _ := res["scope"].(string); scope != "github-learning" {
+		t.Fatalf("expected github-learning note search scope, got %#v", res)
+	}
+	paths := res["candidate_paths"].([]string)
+	if len(paths) == 0 || paths[0] != "recall/managed/notes/github-learning/topics/actions-cache.md" {
+		t.Fatalf("unexpected github-learning candidate paths: %#v", res)
+	}
+
+	capture, err := rt.recallWrite(context.Background(), map[string]any{"kind": "note", "note_scope": "github-learning", "query": "GitHub Actions cache TTL?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := capture["capture_plan"].(map[string]any)
+	if target, _ := plan["target_path"].(string); !strings.HasPrefix(target, "recall/managed/notes/github-learning/") {
+		t.Fatalf("expected github-learning capture target, got %#v", plan)
+	}
+
+	_, err = rt.recallWrite(context.Background(), map[string]any{
+		"kind":      "note",
+		"path":      "recall/managed/notes/github-learning/topics/new-note.md",
+		"content":   "# New GitHub note\n",
+		"confirmed": true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(store["recall/managed/notes/github-learning/topics/new-note.md"], "# New GitHub note") {
+		t.Fatalf("expected github-learning note to be written by path inference, got %#v", store)
+	}
+}

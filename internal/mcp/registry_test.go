@@ -264,11 +264,21 @@ func TestRecallModelChoiceFieldsUseEnums(t *testing.T) {
 			t.Fatalf("recall_search kind enum missing %s: %#v", want, searchProps["kind"])
 		}
 	}
+	for _, want := range []string{"questions", "github-learning"} {
+		if !containsString(enumStrings(t, searchProps["note_scope"]), want) {
+			t.Fatalf("recall_search note_scope enum missing %s: %#v", want, searchProps["note_scope"])
+		}
+	}
 
 	writeProps := schemaProperties(t, "recall_write")
 	for _, want := range []string{"card", "note", "markdown", "patch", "fact", "delete", "auto"} {
 		if !containsString(enumStrings(t, writeProps["kind"]), want) {
 			t.Fatalf("recall_write kind enum missing %s: %#v", want, writeProps["kind"])
+		}
+	}
+	for _, want := range []string{"questions", "github-learning"} {
+		if !containsString(enumStrings(t, writeProps["note_scope"]), want) {
+			t.Fatalf("recall_write note_scope enum missing %s: %#v", want, writeProps["note_scope"])
 		}
 	}
 
@@ -331,7 +341,7 @@ func TestRecallWriteSchemaExposesCompactCoreFields(t *testing.T) {
 	if !ok {
 		t.Fatal("recall_write input schema properties missing")
 	}
-	for _, name := range []string{"kind", "title", "content", "summary", "query", "confirmed", "path", "overwrite", "max_bytes", "old", "new", "append", "section", "section_content", "key", "value", "facts", "append_if_missing", "allow_warnings", "conclusion", "open_questions"} {
+	for _, name := range []string{"kind", "title", "content", "summary", "query", "note_scope", "confirmed", "path", "overwrite", "max_bytes", "old", "new", "append", "section", "section_content", "key", "value", "facts", "append_if_missing", "allow_warnings", "conclusion", "open_questions"} {
 		if _, ok := inputProps[name]; !ok {
 			t.Fatalf("recall_write input schema missing compact core field %q", name)
 		}
@@ -390,6 +400,9 @@ func TestRecallSearchSchemaHidesInternalRoutingFields(t *testing.T) {
 	inputProps, ok := inputSchema("recall_search")["properties"].(map[string]any)
 	if !ok {
 		t.Fatal("recall_search input schema properties missing")
+	}
+	if _, ok := inputProps["note_scope"]; !ok {
+		t.Fatal("recall_search input schema should expose note_scope for questions/github-learning notes")
 	}
 	for _, name := range []string{"prefix", "scope", "include_search_results"} {
 		if _, ok := inputProps[name]; ok {

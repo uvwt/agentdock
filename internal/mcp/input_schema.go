@@ -241,6 +241,7 @@ func inputSchema(name string) map[string]any {
 	case "recall_search":
 		props["query"] = stringProp("Text query to search in RecallDock files and paths.")
 		props["kind"] = map[string]any{"type": "string", "description": "Search kind. Defaults to all.", "enum": []string{"all", "markdown", "card", "note"}}
+		props["note_scope"] = map[string]any{"type": "string", "description": "Note only: notes scope to search or capture.", "enum": []string{"questions", "github-learning"}}
 		props["max_results"] = intProp("Maximum results to return.")
 		required = []string{"query"}
 	case "recall_read":
@@ -255,6 +256,7 @@ func inputSchema(name string) map[string]any {
 		props["title"] = stringProp("Short title for a card or Markdown entry.")
 		props["summary"] = stringProp("Short summary for a card or note.")
 		props["query"] = stringProp("Search question or topic used by auto/note planning.")
+		props["note_scope"] = map[string]any{"type": "string", "description": "Note only: notes scope to search, capture, or write. Defaults to questions; github-learning is for GitHub learning notes.", "enum": []string{"questions", "github-learning"}}
 		props["conclusion"] = stringProp("Note only: optional conclusion or current answer for the captured question.")
 		props["open_questions"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Note only: unresolved follow-up questions."}
 		props["overwrite"] = boolProp("Replace an existing entry when supported.")
