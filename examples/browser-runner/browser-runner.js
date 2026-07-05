@@ -322,21 +322,14 @@ async function waitForDaemon(controlURL, timeoutMs = 15000) {
   throw new Error(`browser profile daemon did not become ready: ${lastError}`);
 }
 
-async function daemonPageState(page, maxText = 8000) {
-  const text = await page.evaluate(() => document.body ? document.body.innerText : '').catch(() => '');
-  const title = await page.title().catch(() => '');
-  return {
+async function daemonPageState(page, captureArgs = {}, extra = {}) {
+  return await capturePageState(page, { ...captureArgs, capture_screenshot: captureArgs.capture_screenshot === true }, {
     ok: true,
-    url: page.url(),
-    title,
-    text: String(text).slice(0, maxText),
-    text_length: String(text).length,
-    artifact: {},
     console_errors: [],
     network_errors: [],
     page_errors: [],
-    interactive_elements: []
-  };
+    ...extra
+  });
 }
 
 async function runProfileDaemon() {
@@ -369,13 +362,13 @@ async function runProfileDaemon() {
       }
       const action = new URL(req.url, 'http://127.0.0.1').pathname.replace(/^\//, '') || 'status';
       if (action === 'status') {
-        send(200, { ...(await daemonPageState(page, body.max_text_chars || 8000)), session_id: sessionId });
+        send(200, { ...(await daemonPageState(page, body)), session_id: sessionId });
       } else if (action === 'action') {
         await runActions(page, body.actions || []);
-        send(200, { ...(await daemonPageState(page, body.max_text_chars || 8000)), session_id: sessionId });
+        send(200, { ...(await daemonPageState(page, body)), session_id: sessionId });
       } else if (action === 'save') {
         const storageResult = await saveContextStorageState(context, { ...body, save_storage_state: true }, session, sessionId);
-        send(200, { ...(await daemonPageState(page, body.max_text_chars || 8000)), ...storageResult, session_id: sessionId });
+        send(200, { ...(await daemonPageState(page, body, storageResult)), session_id: sessionId });
       } else if (action === 'close') {
         send(200, { ok: true, session_id: sessionId, status: 'closed' });
         setTimeout(async () => {
@@ -510,7 +503,7 @@ async function applyLocalStorage(page, localStorageConfig) {
 }
 
 async function collectPageMetrics(page, screenshotPath, fullPage) {
-  const stat = await fs.stat(screenshotPath).catch(() => null);
+  const stat = screenshotPath ? await fs.stat(screenshotPath).catch(() => null) : null;
   const viewport = page.viewportSize();
   const pageSize = await page.evaluate(() => ({
     width: Math.max(document.documentElement?.scrollWidth || 0, document.body?.scrollWidth || 0, window.innerWidth || 0),
@@ -529,14 +522,17 @@ async function collectPageMetrics(page, screenshotPath, fullPage) {
       text: (el.innerText || el.textContent || '').trim().slice(0, 120)
     };
   }).catch(() => null);
-  return {
+  const result = {
     viewport,
     page_size: pageSize,
-    focused_element: focus,
-    screenshot_size_bytes: stat?.size || 0,
-    screenshot_width: fullPage ? pageSize.width : viewport?.width,
-    screenshot_height: fullPage ? pageSize.height : viewport?.height
+    focused_element: focus
   };
+  if (screenshotPath) {
+    result.screenshot_size_bytes = stat?.size || 0;
+    result.screenshot_width = fullPage ? pageSize.width : viewport?.width;
+    result.screenshot_height = fullPage ? pageSize.height : viewport?.height;
+  }
+  return result;
 }
 
 async function collectInteractiveElements(page, limit = 40) {
@@ -559,9 +555,14 @@ async function collectInteractiveElements(page, limit = 40) {
   }, limit).catch(() => []);
 }
 
-async function attachImageIfRequested(result, screenshotPath) {
-  if (args.include_image !== true && args.include_image_base64 !== true) return result;
-  const maxBytes = args.max_image_bytes || 750000;
+async function attachImageIfRequested(result, screenshotPath, captureArgs = args) {
+  if (captureArgs.include_image !== true && captureArgs.include_image_base64 !== true) return result;
+  if (!screenshotPath) {
+    result.image_attached = false;
+    result.image_warnings = ['screenshot was not captured'];
+    return result;
+  }
+  const maxBytes = captureArgs.max_image_bytes || 750000;
   const data = await fs.readFile(screenshotPath);
   if (data.length > maxBytes) {
     result.image_attached = false;
@@ -669,42 +670,64 @@ async function launchPage(session) {
   return { browser, context, page, consoleErrors, networkErrors, pageErrors };
 }
 
-async function snapshot(page, extra = {}) {
-  const screenshotDir = path.join(artifactDir, 'screenshots');
-  await fs.mkdir(screenshotDir, { recursive: true });
-  const screenshotFile = `snapshot-${Date.now()}.png`;
-  const screenshotPath = path.join(screenshotDir, screenshotFile);
-  const fullPage = args.full_page === true;
-  await page.screenshot({ path: screenshotPath, fullPage });
-  const text = (await page.locator('body').innerText({ timeout: 3000 }).catch(() => '')).slice(0, args.max_text_chars || 12000);
-  const screenshotArtifactId = `browser-screenshot-${crypto.createHash('sha256').update(screenshotPath).digest('hex').slice(0, 16)}`;
-  const metrics = await collectPageMetrics(page, screenshotPath, fullPage);
-  const result = {
-    url: page.url(),
-    title: await page.title(),
-    text,
-    screenshot_path: screenshotPath,
-    screenshot_file: screenshotFile,
-    screenshot_artifact_id: screenshotArtifactId,
-    artifact: {
+async function capturePageState(page, captureArgs = args, extra = {}) {
+  const maxText = captureArgs.max_text_chars || 12000;
+  const fullPage = captureArgs.full_page === true;
+  const shouldCaptureScreenshot = captureArgs.capture_screenshot === true
+    || captureArgs.include_screenshot_base64 === true
+    || captureArgs.include_image === true
+    || captureArgs.include_image_base64 === true;
+  let screenshotPath = '';
+  let screenshotFile = '';
+  let screenshotArtifactId = '';
+  let artifact = {};
+  if (shouldCaptureScreenshot) {
+    const screenshotDir = path.join(artifactDir, 'screenshots');
+    await fs.mkdir(screenshotDir, { recursive: true });
+    screenshotFile = `snapshot-${Date.now()}.png`;
+    screenshotPath = path.join(screenshotDir, screenshotFile);
+    await page.screenshot({ path: screenshotPath, fullPage });
+    screenshotArtifactId = `browser-screenshot-${crypto.createHash('sha256').update(screenshotPath).digest('hex').slice(0, 16)}`;
+    artifact = {
       kind: 'browser_screenshot',
       path: screenshotPath,
       file: screenshotFile,
       artifact_id: screenshotArtifactId
-    },
-    interactive_elements: await collectInteractiveElements(page, args.max_interactive_elements || 40),
+    };
+    if (serverUrl) {
+      artifact.url = `${serverUrl}/artifacts/browser/screenshots/${encodeURIComponent(screenshotFile)}`;
+    }
+  }
+  const rawText = await page.locator('body').innerText({ timeout: 3000 }).catch(async () => {
+    return await page.evaluate(() => document.body ? document.body.innerText : '').catch(() => '');
+  });
+  const text = String(rawText || '');
+  const metrics = await collectPageMetrics(page, screenshotPath, fullPage);
+  const result = {
+    url: page.url(),
+    title: await page.title().catch(() => ''),
+    text: text.slice(0, maxText),
+    text_length: text.length,
+    artifact,
+    interactive_elements: await collectInteractiveElements(page, captureArgs.max_interactive_elements || 40),
     ...metrics,
     ...extra
   };
-  if (serverUrl) {
-    result.screenshot_url = `${serverUrl}/artifacts/browser/screenshots/${encodeURIComponent(screenshotFile)}`;
-    result.artifact.url = result.screenshot_url;
+  if (shouldCaptureScreenshot) {
+    result.screenshot_path = screenshotPath;
+    result.screenshot_file = screenshotFile;
+    result.screenshot_artifact_id = screenshotArtifactId;
+    if (serverUrl) result.screenshot_url = artifact.url;
+    if (captureArgs.include_screenshot_base64 === true) {
+      result.screenshot_mime_type = 'image/png';
+      result.screenshot_base64 = await fs.readFile(screenshotPath, 'base64');
+    }
   }
-  if (args.include_screenshot_base64 === true) {
-    result.screenshot_mime_type = 'image/png';
-    result.screenshot_base64 = await fs.readFile(screenshotPath, 'base64');
-  }
-  return await attachImageIfRequested(result, screenshotPath);
+  return await attachImageIfRequested(result, screenshotPath, captureArgs);
+}
+
+async function snapshot(page, extra = {}) {
+  return await capturePageState(page, { ...args, capture_screenshot: true }, extra);
 }
 
 async function runActions(page, actions = []) {
@@ -789,7 +812,7 @@ async function main() {
   }
   if (session.backend === 'daemon') {
     if (operation === 'action') {
-      const result = await daemonRequest(session.control_url, 'action', { actions: args.actions || [], max_text_chars: args.max_text_chars || 8000 }, cdpTimeout());
+      const result = await daemonRequest(session.control_url, 'action', { ...args, actions: args.actions || [], max_text_chars: args.max_text_chars || 8000, capture_screenshot: args.capture_screenshot !== false }, cdpTimeout());
       const closeAfter = args.close_after === true;
       if (closeAfter) await closeSessionState(state, sessionId);
       else await writeState(state);
@@ -798,7 +821,7 @@ async function main() {
     }
     if (operation === 'snapshot') {
       const daemonAction = args.save_storage_state === true || session.save_storage_state === true ? 'save' : 'status';
-      const result = await daemonRequest(session.control_url, daemonAction, { ...args, max_text_chars: args.max_text_chars || 8000 }, cdpTimeout());
+      const result = await daemonRequest(session.control_url, daemonAction, { ...args, max_text_chars: args.max_text_chars || 8000, capture_screenshot: args.capture_screenshot !== false }, cdpTimeout());
       const closeAfter = args.close_after === true;
       if (closeAfter) await closeSessionState(state, sessionId);
       else await writeState(state);

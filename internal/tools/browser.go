@@ -123,15 +123,36 @@ func (r *Runtime) browserProfile(ctx context.Context, args map[string]any) (Resu
 		}
 		return result, err
 	case "status":
-		result, err := r.browserRunnerCall(ctx, "snapshot", map[string]any{"session_id": sessionID, "max_text_chars": 2000, "timeout_ms": timeout})
+		result, err := r.browserRunnerCall(ctx, "snapshot", map[string]any{"session_id": sessionID, "max_text_chars": intArg(args, "max_text_chars", 2000), "capture_screenshot": false, "timeout_ms": timeout})
 		if result != nil {
 			result["profile_action"] = "status"
 			result["site"] = site
 			delete(result, "stdout")
 		}
 		return result, err
+	case "snapshot":
+		snapshotArgs := map[string]any{"session_id": sessionID, "max_text_chars": intArg(args, "max_text_chars", 8000), "max_interactive_elements": intArg(args, "max_interactive_elements", 40), "capture_screenshot": true, "timeout_ms": timeout}
+		if boolArg(args, "full_page", false) {
+			snapshotArgs["full_page"] = true
+		}
+		if boolArg(args, "include_image", false) {
+			snapshotArgs["include_image"] = true
+		}
+		if boolArg(args, "include_screenshot_base64", false) {
+			snapshotArgs["include_screenshot_base64"] = true
+		}
+		if maxImageBytes := intArg(args, "max_image_bytes", 0); maxImageBytes > 0 {
+			snapshotArgs["max_image_bytes"] = maxImageBytes
+		}
+		result, err := r.browserRunnerCall(ctx, "snapshot", snapshotArgs)
+		if result != nil {
+			result["profile_action"] = "snapshot"
+			result["site"] = site
+			delete(result, "stdout")
+		}
+		return result, err
 	case "save":
-		result, err := r.browserRunnerCall(ctx, "snapshot", map[string]any{"session_id": sessionID, "max_text_chars": 2000, "save_storage_state": true, "state_target_skill": "volcengine-ark-quota", "timeout_ms": timeout})
+		result, err := r.browserRunnerCall(ctx, "snapshot", map[string]any{"session_id": sessionID, "max_text_chars": intArg(args, "max_text_chars", 2000), "capture_screenshot": false, "save_storage_state": true, "state_target_skill": "volcengine-ark-quota", "timeout_ms": timeout})
 		if result != nil {
 			result["profile_action"] = "save"
 			result["site"] = site

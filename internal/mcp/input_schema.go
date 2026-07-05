@@ -75,9 +75,15 @@ func inputSchema(name string) map[string]any {
 		props["redact_patterns"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Additional regex patterns to redact from stdout/stderr/error."}
 		required = []string{"cmd"}
 	case "browser_profile":
-		props["action"] = stringProp("Action: open, status, save, or close.")
+		props["action"] = stringProp("Action: open, status, snapshot, save, or close.")
 		props["site"] = stringProp("Site profile name.")
 		props["timeout_ms"] = intProp("Timeout in milliseconds.")
+		props["max_text_chars"] = intProp("Maximum body text characters in page state.")
+		props["max_interactive_elements"] = intProp("Maximum visible interactive elements to return.")
+		props["full_page"] = boolProp("Capture full-page screenshot when action=snapshot.")
+		props["include_image"] = boolProp("Attach screenshot as MCP image content when action=snapshot and supported.")
+		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 in the response. Disabled by default because screenshots can be large.")
+		props["max_image_bytes"] = intProp("Maximum inline image bytes.")
 		required = []string{"action", "site"}
 	case "session_control":
 		props["action"] = stringProp("Session action: list, status, write, kill, or kill_all.")
@@ -234,7 +240,7 @@ func inputSchema(name string) map[string]any {
 		props["include_body"] = boolProp("Include section body text in recall_bootstrap. Defaults to false; prefer recall_read for targeted full text.")
 	case "recall_search":
 		props["query"] = stringProp("Text query to search in RecallDock files and paths.")
-		props["kind"] = stringProp("Search kind: all, markdown, card, or note. Defaults to all.")
+		props["kind"] = map[string]any{"type": "string", "description": "Search kind. Defaults to all.", "enum": []string{"all", "markdown", "card", "note"}}
 		props["max_results"] = intProp("Maximum results to return.")
 		required = []string{"query"}
 	case "recall_read":
@@ -242,7 +248,7 @@ func inputSchema(name string) map[string]any {
 		props["include_raw"] = boolProp("Include raw Markdown as raw_content. Defaults to false to avoid duplicating body/content tokens.")
 		required = []string{"path"}
 	case "recall_write":
-		props["kind"] = stringProp("Required write mechanism chosen by the model: card, note, markdown, patch, fact, delete, or auto when genuinely unsure. auto returns a review plan and never writes directly.")
+		props["kind"] = map[string]any{"type": "string", "description": "Required write mechanism chosen by the model. auto returns a review plan and never writes directly.", "enum": []string{"card", "note", "markdown", "patch", "fact", "delete", "auto"}}
 		props["confirmed"] = boolProp("Required for true writes/deletes. card/note with confirmed=false return a review plan; patch/fact preview changes unless confirmed=true; auto always returns a plan.")
 		props["path"] = stringProp("RecallDock-relative path when reading, updating, deleting, or writing a known entry.")
 		props["content"] = stringProp("Memory content, note content, Markdown content, or proposed replacement content.")
@@ -265,7 +271,7 @@ func inputSchema(name string) map[string]any {
 		props["max_bytes"] = intProp("Maximum diff/output bytes.")
 		required = []string{"kind"}
 	case "recall_maintain":
-		props["action"] = stringProp("Maintenance action: sync_status, list, lint, embedding_status, reindex, or reindex_cards.")
+		props["action"] = map[string]any{"type": "string", "description": "Maintenance action.", "enum": []string{"sync_status", "list", "lint", "embedding_status", "reindex", "reindex_cards"}}
 		props["prefix"] = stringProp("Optional RecallDock-relative prefix.")
 		props["terms"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Terms or regex patterns for lint."}
 		props["regex"] = boolProp("Treat terms as regex patterns for lint.")
