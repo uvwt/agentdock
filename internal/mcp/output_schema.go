@@ -205,6 +205,8 @@ func outputSchema(name string) map[string]any {
 	case "recall_write":
 		props["recall_endpoint"] = stringProp("Configured RecallDock endpoint.")
 		props["recall_kind"] = stringProp("Write mechanism used.")
+		props["selected_kind"] = stringProp("Selected concrete write mechanism when recall_kind=auto.")
+		props["auto_plan"] = objectProp("Reviewable plan and next_call when kind=auto.")
 		props["recall"] = objectProp("RecallDock document returned by the backing service when a write occurs.")
 		props["card"] = objectProp("Normalized card candidate or written card when kind=card.")
 		props["warnings"] = arrayProp("Review warnings before writing.")

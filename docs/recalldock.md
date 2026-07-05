@@ -19,20 +19,20 @@ RecallDock 只暴露 `recall_*` 公开工具；旧记忆/笔记工具名和旧 A
 ## 工具分工
 
 - `recall_bootstrap`：重要任务开始时加载偏好、环境、runbook 和经验索引。模型不需要选择 project；后端保留默认上下文和兼容参数。默认紧凑输出；需要正文时再用 `recall_read`。
-- `recall_search`：搜索 RecallDock 内容。`kind=card` 搜经验卡片，`kind=note` 搜 notes 分区，`kind=markdown/all` 搜传统 Markdown。
+- `recall_search`：搜索 RecallDock 内容。模型只选择 query 和 kind；prefix/scope 等内部路由由后端处理。
 - `recall_read`：按 path 读取单个 Markdown、card 或 note。
-- `recall_write`：统一写入和修改入口。`kind` 表示写入机制，不表示所有内容类型。模型侧不要选择 project；项目归属由路径、已有文件或后端兼容字段处理。
+- `recall_write`：统一写入和修改入口。模型必须显式选择 `kind`，也就是先决定这条记忆应写成 card、note、markdown、patch、fact 还是 delete；`auto` 只作为不确定时的安全规划兜底，永不直接写入。模型侧不要选择 project；项目归属由路径、已有文件或后端兼容字段处理。
 - `recall_maintain`：统一维护入口，包含同步状态、列表、lint、embedding 状态和重建索引。
 
 ## recall_write kind
 
 ```text
-card         经验卡片；confirmed=false 生成计划，confirmed=true 写入
-note         notes/questions 或 notes/github-learning；confirmed=false 生成计划，confirmed=true 写入
-markdown     传统 Markdown 长文档；type 只是语义标签，不硬枚举
-append_note  追加 note 的兼容能力，默认不推荐
+auto         不确定时生成安全规划和 next_call，永不直接写入；正常情况下模型应避免依赖 auto
+card         原子经验卡片；适合偏好、踩坑、决策、可复用操作经验；confirmed=false 生成计划，confirmed=true 写入
+note         notes/questions 或 notes/github-learning；适合问题讨论、未定结论、学习记录；confirmed=false 生成计划，confirmed=true 写入
+markdown     传统 Markdown 长文档；适合稳定项目文档、runbook、总览和结构化长期事实
+auto/append_note/diff 等旧别名保持后端兼容，但不作为模型侧默认入口
 patch        修改已有 Markdown，默认 dry-run
-diff         只预览 diff，永不写入
 fact         更新结构化事实字段
 delete       删除条目，必须 confirmed=true
 ```
@@ -40,8 +40,8 @@ delete       删除条目，必须 confirmed=true
 设计原则：
 
 ```text
-kind = 操作机制
-type = 内容语义
+kind = 模型明确选择的写入机制 / 记忆形态
+card/note/markdown 的选择由模型负责，后端只做校验、规划和安全兜底
 path = 权威位置
 confirmed = 是否真实写入
 ```

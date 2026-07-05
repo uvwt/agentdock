@@ -78,11 +78,19 @@ func (r *Runtime) recallWrite(ctx context.Context, args map[string]any) (Result,
 	if strings.HasPrefix(strings.TrimSpace(stringArg(args, "path", "")), "private-notes/") {
 		return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes is not writable through recall_write; use private_notes_write", "validation")
 	}
-	kind := strings.ToLower(strings.TrimSpace(stringArg(args, "kind", "markdown")))
+	kind := strings.ToLower(strings.TrimSpace(stringArg(args, "kind", "")))
 	if kind == "" {
-		kind = "markdown"
+		kind = "auto"
 	}
 	switch kind {
+	case "auto", "plan", "classify":
+		result, err := r.recallWriteAutoPlan(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		decorateRecallResult(result)
+		result["recall_kind"] = "auto"
+		return result, nil
 	case "card":
 		var result Result
 		var err error
@@ -164,6 +172,144 @@ func (r *Runtime) recallWrite(ctx context.Context, args map[string]any) (Result,
 	default:
 		return nil, toolErrorDetails("INVALID_RECALL_KIND", "unsupported recall_write kind", "validation", map[string]any{"kind": kind})
 	}
+}
+
+func (r *Runtime) recallWriteAutoPlan(ctx context.Context, args map[string]any) (Result, error) {
+	selectedKind, reason := classifyRecallWriteKind(args)
+	nextArgs := recallWriteNextArgs(args, selectedKind)
+	plan := Result{
+		"selected_kind":      selectedKind,
+		"reason":             reason,
+		"auto_write":         false,
+		"needs_review":       true,
+		"recommended_action": "review_next_call",
+		"policy":             "model should choose card/note/markdown explicitly; auto is only a safe fallback when kind is omitted or genuinely uncertain",
+		"next_call": Result{
+			"tool": "recall_write",
+			"args": nextArgs,
+		},
+	}
+
+	result := Result{
+		"ok":            true,
+		"selected_kind": selectedKind,
+		"auto_plan":     plan,
+		"capture_plan":  plan,
+	}
+
+	switch selectedKind {
+	case "card":
+		if strings.TrimSpace(stringArg(nextArgs, "title", "")) != "" && strings.TrimSpace(firstNonEmptyString(nextArgs, "content", "summary")) != "" {
+			capture, err := r.memoryCardCapture(ctx, nextArgs)
+			if err != nil {
+				return nil, err
+			}
+			for k, v := range capture {
+				result[k] = v
+			}
+			result["auto_plan"] = plan
+		}
+	case "note":
+		if strings.TrimSpace(firstNonEmptyString(nextArgs, "question", "query")) != "" {
+			capture, err := r.notesCapture(ctx, nextArgs)
+			if err != nil {
+				return nil, err
+			}
+			for k, v := range capture {
+				result[k] = v
+			}
+			result["auto_plan"] = plan
+		}
+	}
+	result["selected_kind"] = selectedKind
+	return result, nil
+}
+
+func classifyRecallWriteKind(args map[string]any) (string, string) {
+	pathValue := strings.TrimSpace(stringArg(args, "path", ""))
+	content := strings.TrimSpace(firstNonEmptyString(args, "content", "summary"))
+	query := strings.TrimSpace(firstNonEmptyString(args, "query", "question"))
+	title := strings.TrimSpace(stringArg(args, "title", ""))
+	if pathValue != "" && (strings.TrimSpace(stringArg(args, "key", "")) != "" || len(mapArg(args, "facts")) > 0) {
+		return "fact", "path with key/value or facts updates an existing structured fact"
+	}
+	if pathValue != "" && hasRecallPatchArgs(args) {
+		return "patch", "path with edit fields updates an existing recall entry"
+	}
+	if pathValue != "" && content != "" {
+		return "markdown", "path with content writes or replaces a known Markdown entry"
+	}
+	if query != "" && (content == "" || strings.Contains(query, "?") || strings.Contains(query, "？")) {
+		return "note", "query/question is best captured as a reviewable note"
+	}
+	if content != "" || title != "" {
+		return "card", "title/content is best captured as an atomic experience card"
+	}
+	return "note", "insufficient write fields; start with a note planning step"
+}
+
+func hasRecallPatchArgs(args map[string]any) bool {
+	if _, ok := args["operations"]; ok {
+		return true
+	}
+	for _, key := range []string{"old", "pattern", "section", "section_content", "append", "prepend"} {
+		if strings.TrimSpace(stringArg(args, key, "")) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func recallWriteNextArgs(args map[string]any, selectedKind string) Result {
+	next := Result{"kind": selectedKind}
+	copyIfPresent := func(key string) {
+		if value, ok := args[key]; ok && value != nil {
+			next[key] = value
+		}
+	}
+	for _, key := range []string{"path", "title", "content", "summary", "query", "question", "overwrite", "max_bytes"} {
+		copyIfPresent(key)
+	}
+	switch selectedKind {
+	case "card":
+		if strings.TrimSpace(stringArg(next, "title", "")) == "" {
+			if summary := strings.TrimSpace(stringArg(next, "summary", "")); summary != "" {
+				next["title"] = firstRunes(summary, 32)
+			} else if content := strings.TrimSpace(stringArg(next, "content", "")); content != "" {
+				next["title"] = firstRunes(content, 32)
+			}
+		}
+		for _, key := range []string{"type", "tags", "boundary", "source", "confidence", "evidence", "status", "scope"} {
+			copyIfPresent(key)
+		}
+	case "note":
+		if strings.TrimSpace(stringArg(next, "question", "")) == "" {
+			if query := strings.TrimSpace(stringArg(next, "query", "")); query != "" {
+				next["question"] = query
+			} else if title := strings.TrimSpace(stringArg(next, "title", "")); title != "" {
+				next["question"] = title
+			}
+		}
+		for _, key := range []string{"scope", "conclusion", "open_questions", "section", "source"} {
+			copyIfPresent(key)
+		}
+	case "patch":
+		for _, key := range []string{"old", "new", "pattern", "replacement", "section", "section_content", "append", "prepend", "operations", "dry_run"} {
+			copyIfPresent(key)
+		}
+	case "fact":
+		for _, key := range []string{"key", "value", "facts", "section", "append_if_missing"} {
+			copyIfPresent(key)
+		}
+	case "markdown":
+		for _, key := range []string{"type", "tags", "source", "confidence", "scope"} {
+			copyIfPresent(key)
+		}
+	}
+	if selectedKind != "note" && selectedKind != "card" {
+		next["confirmed"] = false
+	}
+	return next
 }
 
 func (r *Runtime) recallMaintain(ctx context.Context, args map[string]any) (Result, error) {

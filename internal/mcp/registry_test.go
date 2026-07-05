@@ -257,24 +257,31 @@ func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	}
 }
 
-func TestRecallWriteSchemaExposesCardsNotesAndEditFields(t *testing.T) {
-	inputProps, ok := inputSchema("recall_write")["properties"].(map[string]any)
+func TestRecallWriteSchemaExposesCompactCoreFields(t *testing.T) {
+	schema := inputSchema("recall_write")
+	inputProps, ok := schema["properties"].(map[string]any)
 	if !ok {
 		t.Fatal("recall_write input schema properties missing")
 	}
-	for _, name := range []string{"kind", "title", "content", "type", "scope", "status", "confidence", "confirmed", "allow_warnings", "path", "overwrite", "old", "new", "facts"} {
+	for _, name := range []string{"kind", "title", "content", "summary", "query", "confirmed", "path", "overwrite", "max_bytes"} {
 		if _, ok := inputProps[name]; !ok {
-			t.Fatalf("recall_write input schema missing %q", name)
+			t.Fatalf("recall_write input schema missing compact core field %q", name)
 		}
 	}
-	if _, ok := inputProps["project"]; ok {
-		t.Fatal("recall_write input schema should not expose project; project is an internal metadata/backward-compat field")
+	for _, name := range []string{"project", "prefix", "scope", "status", "confidence", "source", "evidence", "boundary", "allow_warnings", "old", "new", "pattern", "replacement", "operations", "facts", "key", "value", "dry_run"} {
+		if _, ok := inputProps[name]; ok {
+			t.Fatalf("recall_write input schema should hide advanced/internal field %q", name)
+		}
+	}
+	required, _ := schema["required"].([]string)
+	if len(required) != 1 || required[0] != "kind" {
+		t.Fatalf("recall_write should require model-selected kind, got %#v", schema["required"])
 	}
 	outputProps, ok := outputSchema("recall_write")["properties"].(map[string]any)
 	if !ok {
 		t.Fatal("recall_write output schema properties missing")
 	}
-	for _, name := range []string{"recall_kind", "card", "warnings", "capture_plan", "similar_results", "recall", "diff", "updates"} {
+	for _, name := range []string{"recall_kind", "selected_kind", "auto_plan", "card", "warnings", "capture_plan", "similar_results", "recall", "diff", "updates"} {
 		if _, ok := outputProps[name]; !ok {
 			t.Fatalf("recall_write output schema missing %q", name)
 		}
@@ -296,13 +303,15 @@ func TestRecallBootstrapSchemaHidesProjectSelector(t *testing.T) {
 	}
 }
 
-func TestRecallSearchSchemasExposeNotesCompactionControls(t *testing.T) {
+func TestRecallSearchSchemaHidesInternalRoutingFields(t *testing.T) {
 	inputProps, ok := inputSchema("recall_search")["properties"].(map[string]any)
 	if !ok {
 		t.Fatal("recall_search input schema properties missing")
 	}
-	if _, ok := inputProps["include_search_results"]; !ok {
-		t.Fatal("recall_search input schema missing include_search_results")
+	for _, name := range []string{"prefix", "scope", "include_search_results"} {
+		if _, ok := inputProps[name]; ok {
+			t.Fatalf("recall_search input schema should hide internal field %q", name)
+		}
 	}
 	outputProps, ok := outputSchema("recall_search")["properties"].(map[string]any)
 	if !ok {
