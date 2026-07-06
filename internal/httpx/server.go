@@ -74,6 +74,7 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	})
 	mux.HandleFunc("/capabilities/context", capabilityContextHandler(server, cfg, false))
 	mux.HandleFunc("/capabilities/context/refresh", capabilityContextHandler(server, cfg, true))
+	registerRuntimeAPI(mux, server, cfg)
 	mux.HandleFunc("/mcp", mcpEndpointHandler(server, cfg))
 
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)

@@ -36,3 +36,75 @@ func TestMCPEndpointNotificationReturnsAcceptedWithEmptyBody(t *testing.T) {
 		t.Fatalf("body = %q, want empty", body)
 	}
 }
+
+func TestRuntimeAPIRequiresBearerWhenConfigured(t *testing.T) {
+	cfg := config.Config{
+		Workspace:    t.TempDir(),
+		AuthToken:    "secret-token",
+		AgentDockDir: "AgentDock",
+		ToolProfile:  config.ProfileReadOnly,
+	}
+	cfg.Normalize()
+	runtime, err := tools.NewRuntime(cfg)
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/runtime/status", nil)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestRuntimeAPIStatusWithBearer(t *testing.T) {
+	cfg := config.Config{
+		Workspace:    t.TempDir(),
+		AuthToken:    "secret-token",
+		AgentDockDir: "AgentDock",
+		ToolProfile:  config.ProfileReadOnly,
+	}
+	cfg.Normalize()
+	runtime, err := tools.NewRuntime(cfg)
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/runtime/status", nil)
+	req.Header.Set("Authorization", "Bearer secret-token")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, `"source":"agentdock-runtime-api"`) {
+		t.Fatalf("body missing source: %s", body)
+	}
+	if strings.Contains(body, "secret-token") || strings.Contains(body, cfg.Workspace) {
+		t.Fatalf("status response leaked token or workspace path: %s", body)
+	}
+}
+
+func TestRuntimeAPISkillsNoAuthWhenUnconfigured(t *testing.T) {
+	cfg := config.Config{Workspace: t.TempDir(), AgentDockDir: "AgentDock", ToolProfile: config.ProfileReadOnly}
+	cfg.Normalize()
+	runtime, err := tools.NewRuntime(cfg)
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/runtime/skills", nil)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"skills"`) {
+		t.Fatalf("body missing skills: %s", recorder.Body.String())
+	}
+}
