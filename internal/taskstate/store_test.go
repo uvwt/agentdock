@@ -106,8 +106,8 @@ func TestFinalReviewRequiredBeforeCompleteAfterReview(t *testing.T) {
 		t.Fatalf("unexpected reviewed state: %#v", task)
 	}
 	for _, step := range task.Steps {
-		if step.Required && step.Status != "completed" {
-			t.Fatalf("required step was not covered by final_review: %#v", step)
+		if step.Status != "completed" {
+			t.Fatalf("pending step was not covered by final_review: %#v", step)
 		}
 		if len(step.Evidence) != 0 {
 			t.Fatalf("final_review should not create step evidence: %#v", step)
@@ -226,7 +226,7 @@ func TestStepCompletionAllowsSummaryOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	task, err = store.CompleteStep(task.ID, "inspect", StepEvidence{Summary: "repository inspected"}, false, "")
+	task, err = store.CompleteStep(task.ID, "inspect", StepEvidence{Summary: "repository inspected"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestStepCompletionRejectsIncompleteEvidence(t *testing.T) {
 	}
 	if _, err := store.CompleteStep(task.ID, "inspect", StepEvidence{
 		Type: "tool", Source: "cloudflare skill", Result: "HTTP 200", Summary: "Cloudflare 已检查，但 VPS/Caddy 仍待检查",
-	}, false, ""); err == nil || !strings.Contains(err.Error(), "incomplete work") {
+	}); err == nil || !strings.Contains(err.Error(), "incomplete work") {
 		t.Fatalf("incomplete evidence should be rejected, err=%v", err)
 	}
 	loaded, err := store.Get(task.ID)
@@ -309,30 +309,14 @@ func TestPhaseCheckpointBatchesPhaseUpdatesAtomically(t *testing.T) {
 		t.Fatalf("checkpoint should append one aggregate event: %#v", task.Events)
 	}
 
-	if _, err := store.PhaseCheckpoint(task.ID, PhaseCheckpointInput{
-		StepCompletions: []StepCompletionUpdate{{
-			StepID:      "install",
-			Evidence:    StepEvidence{Type: "command", Source: "other installer", Result: "exit_code=0", Summary: "installed"},
-			Substituted: true, SubstitutionReason: "equivalent",
-		}},
-		ConditionEvidence: []ConditionEvidenceUpdate{{ConditionID: "cond_02", Summary: "must roll back with failed step", Source: "test"}},
-		AdvancePhase:      true,
-		Summary:           "invalid substituted install",
-	}); err == nil {
-		t.Fatal("forbidden substitution checkpoint succeeded")
-	}
-	afterFailure, err := store.Get(task.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if afterFailure.Steps[1].Status != "pending" || len(afterFailure.Conditions[1].Evidence) != 0 || afterFailure.Phase != PhaseExecute {
-		t.Fatalf("failed checkpoint was not atomic: %#v", afterFailure)
-	}
-
 	task, err = store.PhaseCheckpoint(task.ID, PhaseCheckpointInput{
-		StepCompletions: []StepCompletionUpdate{{StepID: "install", Summary: "installed"}},
-		AdvancePhase:    true,
-		Summary:         "installation milestone complete",
+		StepCompletions: []StepCompletionUpdate{{
+			StepID:   "install",
+			Evidence: StepEvidence{Type: "command", Source: "other installer", Result: "exit_code=0", Summary: "installed"},
+		}},
+		ConditionEvidence: []ConditionEvidenceUpdate{{ConditionID: "cond_02", Summary: "install verified", Source: "test"}},
+		AdvancePhase:      true,
+		Summary:           "installation milestone complete",
 	})
 	if err != nil {
 		t.Fatal(err)

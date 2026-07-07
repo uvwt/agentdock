@@ -149,12 +149,10 @@ func inputSchema(name string) map[string]any {
 		stepEvidenceSchema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"type", "source", "result", "summary"}, "properties": map[string]any{"type": stringProp("Legacy evidence type such as command, http, tool, file, artifact."), "source": stringProp("Legacy command, endpoint, file, or tool source."), "result": stringProp("Legacy structured result summary such as exit_code=0 or HTTP 200."), "summary": stringProp("Legacy human-readable evidence summary."), "artifact_ref": stringProp("Optional external log, screenshot, report, or Artifact reference."), "sha256": stringProp("Optional external evidence SHA-256.")}}
 		props["step_id"] = stringProp("Template step id for complete_step or skip_step.")
 		props["step_evidence"] = stepEvidenceSchema
-		props["step_completions"] = map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"step_id", "evidence"}, "properties": map[string]any{"step_id": stringProp("Legacy template step id completed by this phase checkpoint."), "evidence": stepEvidenceSchema, "substituted": boolProp("Whether an allowed substitute was used."), "substitution_reason": stringProp("Required when substituted=true.")}}, "description": "Legacy phase-step update. Avoid for normal work; prefer final_review."}
+		props["step_completions"] = map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"step_id", "evidence"}, "properties": map[string]any{"step_id": stringProp("Legacy template step id completed by this phase checkpoint."), "evidence": stepEvidenceSchema}}, "description": "Legacy phase-step update. Avoid for normal work; prefer final_review."}
 		props["condition_evidence"] = map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"condition_id", "summary"}, "properties": map[string]any{"condition_id": stringProp("Legacy completion condition receiving evidence."), "summary": stringProp("Legacy evidence summary."), "source": stringProp("Optional legacy evidence source.")}}, "description": "Legacy completion-condition evidence. Avoid for normal work; prefer final_review."}
-		props["advance_phase"] = boolProp("Advance exactly one phase after all required current-phase steps are complete.")
+		props["advance_phase"] = boolProp("Advance exactly one phase. Prefer final_review for normal completion flow.")
 		props["complete_task"] = boolProp("Legacy checkpoint completion flag. Prefer complete_after_review after final_review passes. Mutually exclusive with advance_phase.")
-		props["substituted"] = boolProp("Whether a different implementation replaced the suggested command or method.")
-		props["substitution_reason"] = stringProp("Required reason when a step is completed through an allowed substitution.")
 		if name == "task_manage" {
 			props["action"] = map[string]any{"type": "string", "description": "Simple task action. Use task_manage_recovery only for advanced recovery or template maintenance.", "enum": []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review", "template_match"}}
 			props["evidence"] = stringProp("Evidence required only when blocking a task; this is not step or condition evidence.")
@@ -174,8 +172,6 @@ func inputSchema(name string) map[string]any {
 			delete(props, "condition_evidence")
 			delete(props, "advance_phase")
 			delete(props, "complete_task")
-			delete(props, "substituted")
-			delete(props, "substitution_reason")
 		}
 		required = []string{"action"}
 

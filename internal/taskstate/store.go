@@ -62,11 +62,9 @@ type ConditionEvidenceUpdate struct {
 }
 
 type StepCompletionUpdate struct {
-	StepID             string       `json:"step_id"`
-	Evidence           StepEvidence `json:"evidence,omitempty"`
-	Summary            string       `json:"summary,omitempty"`
-	Substituted        bool         `json:"substituted,omitempty"`
-	SubstitutionReason string       `json:"substitution_reason,omitempty"`
+	StepID   string       `json:"step_id"`
+	Evidence StepEvidence `json:"evidence,omitempty"`
+	Summary  string       `json:"summary,omitempty"`
 }
 
 type PhaseCheckpointInput struct {
@@ -195,7 +193,7 @@ func (s *Store) CreateWithTemplate(title, goal string, conditionTexts []string, 
 		selection = &TemplateSelection{ID: template.ID, Version: template.Version, Hash: template.Hash, SelectedReason: strings.TrimSpace(selectedReason), Candidates: candidates, Snapshot: template}
 		steps = make([]TaskStep, 0, len(template.Steps))
 		for _, step := range template.Steps {
-			steps = append(steps, TaskStep{ID: step.ID, Title: step.Title, Phase: step.Phase, Required: step.Required, DependsOn: append([]string{}, step.DependsOn...), SuggestedCommands: append([]string{}, step.SuggestedCommands...), Substitution: step.Substitution, Status: "pending", Evidence: []StepEvidence{}, UpdatedAt: now})
+			steps = append(steps, TaskStep{ID: step.ID, Title: step.Title, Phase: step.Phase, Status: "pending", Evidence: []StepEvidence{}, UpdatedAt: now})
 		}
 	}
 	conditionTexts = normalizeTexts(conditionTexts)
@@ -292,11 +290,9 @@ func (s *Store) Advance(id string) (Task, error) {
 	})
 }
 
-func (s *Store) CompleteStep(id, stepID string, evidence StepEvidence, substituted bool, substitutionReason string) (Task, error) {
+func (s *Store) CompleteStep(id, stepID string, evidence StepEvidence) (Task, error) {
 	return s.mutate(id, func(task *Task, now time.Time) error {
-		return applyStepCompletion(task, StepCompletionUpdate{
-			StepID: stepID, Evidence: evidence, Substituted: substituted, SubstitutionReason: substitutionReason,
-		}, now, true)
+		return applyStepCompletion(task, StepCompletionUpdate{StepID: stepID, Evidence: evidence}, now, true)
 	})
 }
 
@@ -313,12 +309,6 @@ func (s *Store) SkipStep(id, stepID, reason string) (Task, error) {
 			step := &task.Steps[i]
 			if step.ID != strings.TrimSpace(stepID) {
 				continue
-			}
-			if step.Required {
-				return errors.New("required steps cannot be skipped")
-			}
-			if step.Phase != task.Phase {
-				return fmt.Errorf("step %s belongs to phase %s, current phase is %s", step.ID, step.Phase, task.Phase)
 			}
 			step.Status = "skipped"
 			step.SkipReason = reason
@@ -528,15 +518,6 @@ func applyStepCompletion(task *Task, update StepCompletionUpdate, now time.Time,
 		if step.Status == "completed" {
 			return errors.New("step is already completed")
 		}
-		if step.Phase != task.Phase {
-			return fmt.Errorf("step %s belongs to phase %s, current phase is %s", step.ID, step.Phase, task.Phase)
-		}
-		for _, dep := range step.DependsOn {
-			if !stepCompleted(task.Steps, dep) {
-				return fmt.Errorf("step %s dependency %s is not completed", step.ID, dep)
-			}
-		}
-
 		evidence := update.Evidence
 		evidence.Type = strings.TrimSpace(evidence.Type)
 		evidence.Source = strings.TrimSpace(evidence.Source)
@@ -562,17 +543,7 @@ func applyStepCompletion(task *Task, update StepCompletionUpdate, now time.Time,
 			evidence.CreatedAt = now
 		}
 
-		if update.Substituted {
-			if step.Substitution == "forbidden" {
-				return errors.New("step substitution is forbidden")
-			}
-			if strings.TrimSpace(update.SubstitutionReason) == "" {
-				return errors.New("substitution reason is required")
-			}
-		}
 		step.Status = "completed"
-		step.Substituted = update.Substituted
-		step.SubstitutionReason = strings.TrimSpace(update.SubstitutionReason)
 		if evidenceProvided {
 			step.Evidence = append(step.Evidence, evidence)
 		}
@@ -588,9 +559,6 @@ func applyStepCompletion(task *Task, update StepCompletionUpdate, now time.Time,
 func advancePhase(task *Task, now time.Time, emitEvent bool) error {
 	if err := requireActive(task); err != nil {
 		return err
-	}
-	if missing := incompleteRequiredSteps(*task, task.Phase); len(missing) > 0 {
-		return fmt.Errorf("required steps incomplete for phase %s: %s", task.Phase, strings.Join(missing, ", "))
 	}
 	for i, phase := range phaseOrder {
 		if phase != task.Phase {
@@ -639,8 +607,8 @@ func applyFinalReview(task *Task, input FinalReviewInput, now time.Time) error {
 
 	task.FinalReview = &FinalReview{Status: status, Summary: summary, VerifiedFacts: verifiedFacts, OpenRisks: openRisks, MissingChecks: missingChecks, ReviewedAt: now}
 	if status == FinalReviewPass {
-		// final_review 是新的常规收尾入口：模板步骤仍保留为恢复线索，
-		// 但不再要求模型逐步填 step evidence。最终复查通过后，用复查结果覆盖剩余必填步骤并进入 closeout。
+		// final_review 是常规收尾入口：模板步骤只作为流程锚点和恢复线索，
+		// 不再承担必填步骤、依赖或替代规则等工作流引擎职责。
 		markPendingStepsReviewed(task, now)
 		task.Phase = PhaseCloseout
 	}
@@ -655,8 +623,6 @@ func markPendingStepsReviewed(task *Task, now time.Time) {
 			continue
 		}
 		step.Status = "completed"
-		step.Substituted = true
-		step.SubstitutionReason = "covered by final_review"
 		step.UpdatedAt = now
 	}
 }
@@ -671,9 +637,6 @@ func completeTask(task *Task, summary string, now time.Time, emitEvent bool) err
 	}
 	if task.Phase != PhaseCloseout {
 		return errors.New("task must reach closeout before completion")
-	}
-	if missingSteps := incompleteRequiredSteps(*task, ""); len(missingSteps) > 0 {
-		return fmt.Errorf("required template steps incomplete: %s", strings.Join(missingSteps, ", "))
 	}
 	task.Status = StatusCompleted
 	task.Summary = summary
@@ -885,16 +848,6 @@ func incompleteEvidencePhrase(values ...string) string {
 	return ""
 }
 
-func incompleteRequiredSteps(task Task, phase Phase) []string {
-	var out []string
-	for _, step := range task.Steps {
-		if step.Required && (phase == "" || step.Phase == phase) && step.Status != "completed" {
-			out = append(out, step.ID)
-		}
-	}
-	return out
-}
-
 func normalizeReviewItems(values []string) []string {
 	seen := map[string]struct{}{}
 	out := make([]string, 0, len(values))
@@ -911,15 +864,6 @@ func normalizeReviewItems(values []string) []string {
 		out = append(out, value)
 	}
 	return out
-}
-
-func stepCompleted(steps []TaskStep, id string) bool {
-	for _, step := range steps {
-		if step.ID == id {
-			return step.Status == "completed"
-		}
-	}
-	return false
 }
 
 func validateID(id string) error {

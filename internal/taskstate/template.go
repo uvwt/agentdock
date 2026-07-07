@@ -23,21 +23,15 @@ const (
 )
 
 type MatchRule struct {
-	Keywords  []string `json:"keywords,omitempty"`
-	Devices   []string `json:"devices,omitempty"`
-	TaskTypes []string `json:"task_types,omitempty"`
-	Priority  int      `json:"priority,omitempty"`
+	Keywords []string `json:"keywords,omitempty"`
+	Devices  []string `json:"devices,omitempty"`
+	Type     string   `json:"type,omitempty"`
 }
 
 type TemplateStep struct {
-	ID                         string   `json:"id"`
-	Title                      string   `json:"title"`
-	Phase                      Phase    `json:"phase"`
-	Required                   bool     `json:"required"`
-	DependsOn                  []string `json:"depends_on,omitempty"`
-	SuggestedCommands          []string `json:"suggested_commands,omitempty"`
-	Substitution               string   `json:"substitution,omitempty"`
-	SubstitutionReasonRequired bool     `json:"substitution_reason_required,omitempty"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Phase Phase  `json:"phase"`
 }
 
 type Template struct {
@@ -52,6 +46,7 @@ type Template struct {
 	AllowLongTemplate    bool           `json:"allow_long_template,omitempty"`
 	LongTemplateReason   string         `json:"long_template_reason,omitempty"`
 	Hash                 string         `json:"hash,omitempty"`
+	ValidatedAt          *time.Time     `json:"validated_at,omitempty"`
 	PublishedAt          *time.Time     `json:"published_at,omitempty"`
 	RetiredAt            *time.Time     `json:"retired_at,omitempty"`
 }
@@ -83,19 +78,13 @@ type StepEvidence struct {
 }
 
 type TaskStep struct {
-	ID                 string         `json:"id"`
-	Title              string         `json:"title"`
-	Phase              Phase          `json:"phase"`
-	Required           bool           `json:"required"`
-	DependsOn          []string       `json:"depends_on,omitempty"`
-	SuggestedCommands  []string       `json:"suggested_commands,omitempty"`
-	Substitution       string         `json:"substitution,omitempty"`
-	Status             string         `json:"status"`
-	Substituted        bool           `json:"substituted,omitempty"`
-	SubstitutionReason string         `json:"substitution_reason,omitempty"`
-	SkipReason         string         `json:"skip_reason,omitempty"`
-	Evidence           []StepEvidence `json:"evidence"`
-	UpdatedAt          time.Time      `json:"updated_at"`
+	ID         string         `json:"id"`
+	Title      string         `json:"title"`
+	Phase      Phase          `json:"phase"`
+	Status     string         `json:"status"`
+	SkipReason string         `json:"skip_reason,omitempty"`
+	Evidence   []StepEvidence `json:"evidence"`
+	UpdatedAt  time.Time      `json:"updated_at"`
 }
 
 func (s *Store) WorkflowRoot() string { return filepath.Join(filepath.Dir(s.root), "workflows") }
@@ -145,7 +134,9 @@ func (s *Store) ValidateTemplate(id, version string) (Template, error) {
 	if err := validateTemplate(t); err != nil {
 		return Template{}, err
 	}
+	now := time.Now().UTC()
 	t.Status = TemplateValidated
+	t.ValidatedAt = &now
 	if err := writeJSONAtomic(s.templatePath("drafts", t.ID, t.Version), t); err != nil {
 		return Template{}, err
 	}
@@ -275,10 +266,10 @@ func (s *Store) MatchTemplates(goal, device, taskType string) ([]TemplateCandida
 				reasons = append(reasons, "keyword:"+keyword)
 			}
 		}
-		if containsTemplateHint(t.Match.TaskTypes, taskType) {
+		if containsTemplateHint([]string{t.Match.Type}, taskType) {
 			score += 80
 			semanticMatched = true
-			reasons = append(reasons, "task_type:"+taskType)
+			reasons = append(reasons, "type:"+taskType)
 		}
 		if vectorScore := vectorScores[templateVectorCacheKey(t)]; vectorScore >= s.vectorMinScore && vectorScore > 0 {
 			score += templateVectorScoreBonus(vectorScore, s.vectorMinScore)
@@ -286,19 +277,11 @@ func (s *Store) MatchTemplates(goal, device, taskType string) ([]TemplateCandida
 			reasons = append(reasons, fmt.Sprintf("vector:%.2f", vectorScore))
 		}
 
-		// task_type 与 device 都是可选自由文本提示，不是枚举约束。
+		// type 与 device 都是匹配提示，不是模板执行约束。
 		// 命中时只加分；不匹配时不能直接排除 active 模板。
-		// 模板 priority 也必须在关键词、task_type 或向量语义命中后才生效。
 		if containsTemplateHint(t.Match.Devices, device) {
 			score += 5
 			reasons = append(reasons, "device:"+device)
-		}
-		if semanticMatched {
-			priority := t.Match.Priority
-			if priority > 20 {
-				priority = 20
-			}
-			score += priority
 		}
 		if score > 0 && len(reasons) > 0 {
 			candidate := TemplateCandidate{ID: t.ID, Version: t.Version, Score: score, Reason: strings.Join(reasons, ", ")}
@@ -441,21 +424,7 @@ func validateTemplate(t Template) error {
 		if _, exists := ids[step.ID]; exists {
 			return fmt.Errorf("duplicate step id %q", step.ID)
 		}
-		if step.Substitution != "" && step.Substitution != "allowed" && step.Substitution != "forbidden" {
-			return fmt.Errorf("step %s substitution must be allowed or forbidden", step.ID)
-		}
 		ids[step.ID] = step
-	}
-	for _, step := range t.Steps {
-		for _, dep := range step.DependsOn {
-			depStep, ok := ids[dep]
-			if !ok {
-				return fmt.Errorf("step %s depends on unknown step %s", step.ID, dep)
-			}
-			if phaseIndex(depStep.Phase) > phaseIndex(step.Phase) {
-				return fmt.Errorf("step %s depends on later phase step %s", step.ID, dep)
-			}
-		}
 	}
 	return nil
 }
@@ -490,7 +459,6 @@ func templateGuardrailTexts(t Template) []string {
 	texts = append(texts, t.CompletionConditions...)
 	for _, step := range t.Steps {
 		texts = append(texts, step.ID, step.Title)
-		texts = append(texts, step.SuggestedCommands...)
 	}
 	return texts
 }
@@ -508,7 +476,9 @@ func (s *Store) loadTemplateLocked(area, id, version string) (Template, error) {
 		return Template{}, err
 	}
 	var t Template
-	if err := json.Unmarshal(data, &t); err != nil {
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&t); err != nil {
 		return Template{}, err
 	}
 	return t, nil

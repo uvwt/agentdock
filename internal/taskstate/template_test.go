@@ -9,14 +9,14 @@ import (
 func testTemplate() Template {
 	return Template{
 		ID: "agentdock.deploy.macos", Version: "1.0.0", Title: "Deploy AgentDock on macOS",
-		Match:                MatchRule{Keywords: []string{"AgentDock", "deploy"}, Devices: []string{"DockMini"}, TaskTypes: []string{"deployment"}, Priority: 5},
+		Match:                MatchRule{Keywords: []string{"AgentDock", "deploy"}, Devices: []string{"DockMini"}, Type: "deployment"},
 		CompletionConditions: []string{"tests pass", "health is 200"},
 		Steps: []TemplateStep{
-			{ID: "inspect", Title: "Inspect repository", Phase: PhaseCheck, Required: true, SuggestedCommands: []string{"git status"}, Substitution: "allowed", SubstitutionReasonRequired: true},
-			{ID: "install", Title: "Install signed binary", Phase: PhaseExecute, Required: true, DependsOn: []string{"inspect"}, SuggestedCommands: []string{"make install-macos"}, Substitution: "forbidden"},
-			{ID: "health", Title: "Verify health", Phase: PhaseVerify, Required: true, DependsOn: []string{"install"}, SuggestedCommands: []string{"curl healthz"}, Substitution: "allowed", SubstitutionReasonRequired: true},
-			{ID: "logs", Title: "Inspect optional logs", Phase: PhaseVerify, Required: false},
-			{ID: "record", Title: "Record deployment", Phase: PhaseCloseout, Required: true, DependsOn: []string{"health"}},
+			{ID: "inspect", Title: "Inspect repository", Phase: PhaseCheck},
+			{ID: "install", Title: "Install signed binary", Phase: PhaseExecute},
+			{ID: "health", Title: "Verify health", Phase: PhaseVerify},
+			{ID: "logs", Title: "Inspect optional logs", Phase: PhaseVerify},
+			{ID: "record", Title: "Record deployment", Phase: PhaseCloseout},
 		},
 	}
 }
@@ -61,10 +61,10 @@ func TestTemplateLifecycleMatchAndTaskSnapshot(t *testing.T) {
 	if task.Template == nil || task.Template.Hash != published.Hash || len(task.Steps) != len(published.Steps) {
 		t.Fatalf("task snapshot=%#v", task)
 	}
-	if _, err := store.Advance(task.ID); err == nil {
-		t.Fatal("advanced with incomplete required check step")
+	if _, err := store.Advance(task.ID); err != nil {
+		t.Fatal(err)
 	}
-	task, err = store.CompleteStep(task.ID, "inspect", StepEvidence{Type: "command", Source: "git status", Result: "exit_code=0", Summary: "repository inspected"}, false, "")
+	task, err = store.CompleteStep(task.ID, "inspect", StepEvidence{Type: "command", Source: "git status", Result: "exit_code=0", Summary: "repository inspected"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,21 +74,8 @@ func TestTemplateLifecycleMatchAndTaskSnapshot(t *testing.T) {
 	if _, err := store.Advance(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.CompleteStep(task.ID, "install", StepEvidence{Type: "command", Source: "other installer", Result: "exit_code=0", Summary: "installed"}, true, "equivalent"); err == nil {
-		t.Fatal("forbidden substitution succeeded")
-	}
-}
-
-func TestOptionalStepSkipAndDependencyValidation(t *testing.T) {
-	store, err := New(t.TempDir() + "/tasks")
-	if err != nil {
+	if _, err := store.CompleteStep(task.ID, "install", StepEvidence{Type: "command", Source: "other installer", Result: "exit_code=0", Summary: "installed"}); err != nil {
 		t.Fatal(err)
-	}
-	bad := testTemplate()
-	bad.Version = "1.0.1"
-	bad.Steps[0].DependsOn = []string{"missing"}
-	if _, err := store.SaveTemplateDraft(bad); err == nil {
-		t.Fatal("unknown dependency validated")
 	}
 }
 
@@ -100,15 +87,15 @@ func TestTemplateMatchTreatsProjectNameKeywordAsWeakContext(t *testing.T) {
 	for _, tpl := range []Template{
 		{
 			ID: "agentdock.deploy.macos", Version: "1.0.0", Title: "Deploy AgentDock",
-			Match:                MatchRule{Keywords: []string{"AgentDock", "部署"}, Devices: []string{"DockMini"}, Priority: 10},
+			Match:                MatchRule{Keywords: []string{"AgentDock", "部署"}, Devices: []string{"DockMini"}},
 			CompletionConditions: []string{"done"},
-			Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+			Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck}},
 		},
 		{
 			ID: "development.project-timeboxed-optimization", Version: "1.0.0", Title: "Timeboxed work",
-			Match:                MatchRule{Keywords: []string{"一小时", "完善项目"}, Devices: []string{"DockMini"}, Priority: 10},
+			Match:                MatchRule{Keywords: []string{"一小时", "完善项目"}, Devices: []string{"DockMini"}},
 			CompletionConditions: []string{"done"},
-			Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+			Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck}},
 		},
 	} {
 		draft, err := store.SaveTemplateDraft(tpl)
@@ -146,9 +133,9 @@ func TestTemplateMatchReturnsLatestActiveVersionPerTemplateID(t *testing.T) {
 	for _, version := range []string{"1.9.0", "1.10.0"} {
 		tpl := Template{
 			ID: "development.example", Version: version, Title: "Example " + version,
-			Match:                MatchRule{Keywords: []string{"开发"}, Devices: []string{"DockMini"}, Priority: 5},
+			Match:                MatchRule{Keywords: []string{"开发"}, Devices: []string{"DockMini"}},
 			CompletionConditions: []string{"done"},
-			Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+			Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck}},
 		}
 		draft, err := store.SaveTemplateDraft(tpl)
 		if err != nil {
@@ -177,9 +164,9 @@ func TestTemplateMatchNormalizesTimeboxKeywords(t *testing.T) {
 	}
 	tpl := Template{
 		ID: "development.project-timeboxed-optimization", Version: "1.0.0", Title: "Timeboxed work",
-		Match:                MatchRule{Keywords: []string{"一小时", "半小时"}, Devices: []string{"DockMini"}, Priority: 20},
+		Match:                MatchRule{Keywords: []string{"一小时", "半小时"}, Devices: []string{"DockMini"}},
 		CompletionConditions: []string{"done"},
-		Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+		Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck}},
 	}
 	draft, err := store.SaveTemplateDraft(tpl)
 	if err != nil {
@@ -207,15 +194,15 @@ func TestTemplateMatchSemanticSignalsBeatDeviceOnly(t *testing.T) {
 	}
 	deviceOnly := Template{
 		ID: "unrelated.device", Version: "1.0.0", Title: "Device only",
-		Match:                MatchRule{Devices: []string{"DockMini"}, Priority: 999},
+		Match:                MatchRule{Devices: []string{"DockMini"}},
 		CompletionConditions: []string{"done"},
-		Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+		Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck}},
 	}
 	semantic := Template{
 		ID: "notes.question-record", Version: "1.0.0", Title: "Question note",
-		Match:                MatchRule{Keywords: []string{"日常问题"}, Devices: []string{"DockMini"}, TaskTypes: []string{"daily-question-note"}, Priority: 57},
+		Match:                MatchRule{Keywords: []string{"日常问题"}, Devices: []string{"DockMini"}, Type: "daily-question-note"},
 		CompletionConditions: []string{"done"},
-		Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+		Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck}},
 	}
 	for _, tpl := range []Template{deviceOnly, semantic} {
 		draft, err := store.SaveTemplateDraft(tpl)
@@ -245,9 +232,9 @@ func TestTemplateMatchFallsBackToDeviceOnlyWhenNoSemanticMatch(t *testing.T) {
 	}
 	tpl := Template{
 		ID: "fallback.device", Version: "1.0.0", Title: "Device fallback",
-		Match:                MatchRule{Devices: []string{"DockMini"}, Priority: 999},
+		Match:                MatchRule{Devices: []string{"DockMini"}},
 		CompletionConditions: []string{"done"},
-		Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+		Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck}},
 	}
 	draft, err := store.SaveTemplateDraft(tpl)
 	if err != nil {
@@ -274,8 +261,8 @@ func TestTemplateMatchRanksDeviceHintWithoutHardFiltering(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tpl := range []Template{
-		{ID: "agentdock.deploy.vps", Version: "1.0.0", Title: "VPS deploy", Match: MatchRule{Keywords: []string{"AgentDock", "部署"}, Devices: []string{"DockVPS"}, TaskTypes: []string{"deployment"}, Priority: 35}, CompletionConditions: []string{"done"}, Steps: []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}}},
-		{ID: "agentdock.deploy.macos", Version: "1.0.0", Title: "macOS deploy", Match: MatchRule{Keywords: []string{"AgentDock", "部署"}, Devices: []string{"DockMini"}, TaskTypes: []string{"deployment"}, Priority: 15}, CompletionConditions: []string{"done"}, Steps: []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}}},
+		{ID: "agentdock.deploy.vps", Version: "1.0.0", Title: "VPS deploy", Match: MatchRule{Keywords: []string{"AgentDock", "部署"}, Devices: []string{"DockVPS"}, Type: "deployment"}, CompletionConditions: []string{"done"}, Steps: []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck}}},
+		{ID: "agentdock.deploy.macos", Version: "1.0.0", Title: "macOS deploy", Match: MatchRule{Keywords: []string{"AgentDock", "部署"}, Devices: []string{"DockMini"}, Type: "deployment"}, CompletionConditions: []string{"done"}, Steps: []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck}}},
 	} {
 		draft, err := store.SaveTemplateDraft(tpl)
 		if err != nil {
@@ -308,13 +295,12 @@ func TestTemplateMatchNaturalTaskTypeAndDeviceMismatchStillRecallSemanticTemplat
 		Title:       "GitHub 源码证据化分析",
 		Description: "用于分析 GitHub 仓库源码结构、核心实现、运行流程、学习价值，并要求引用真实链接和行号。",
 		Match: MatchRule{
-			Keywords:  []string{"GitHub", "github.com", "源码结构", "核心实现", "学习价值", "真实链接", "行号"},
-			Devices:   []string{"DockMini", "DockAir"},
-			TaskTypes: []string{"github_code_reading"},
-			Priority:  92,
+			Keywords: []string{"GitHub", "github.com", "源码结构", "核心实现", "学习价值", "真实链接", "行号"},
+			Devices:  []string{"DockMini", "DockAir"},
+			Type:     "github_code_reading",
 		},
 		CompletionConditions: []string{"done"},
-		Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+		Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck}},
 	}
 	draft, err := store.SaveTemplateDraft(tpl)
 	if err != nil {
@@ -339,14 +325,14 @@ func TestTemplateMatchNaturalTaskTypeAndDeviceMismatchStillRecallSemanticTemplat
 	}
 }
 
-func TestTemplateMatchSpecificKeywordsBeatGenericPriority(t *testing.T) {
+func TestTemplateMatchSpecificKeywordsBeatGenericTemplate(t *testing.T) {
 	store, err := New(t.TempDir() + "/tasks")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, tpl := range []Template{
-		{ID: "nexus.deploy.production", Version: "1.0.0", Title: "Nexus deploy", Match: MatchRule{Keywords: []string{"部署"}, Devices: []string{"DockMini"}, TaskTypes: []string{"deployment"}, Priority: 35}, CompletionConditions: []string{"done"}, Steps: []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}}},
-		{ID: "agentdock.deploy.macos", Version: "1.0.0", Title: "macOS deploy", Match: MatchRule{Keywords: []string{"AgentDock", "部署"}, Devices: []string{"DockMini"}, TaskTypes: []string{"deployment"}, Priority: 10}, CompletionConditions: []string{"done"}, Steps: []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}}},
+		{ID: "nexus.deploy.production", Version: "1.0.0", Title: "Nexus deploy", Match: MatchRule{Keywords: []string{"部署"}, Devices: []string{"DockMini"}, Type: "deployment"}, CompletionConditions: []string{"done"}, Steps: []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck}}},
+		{ID: "agentdock.deploy.macos", Version: "1.0.0", Title: "macOS deploy", Match: MatchRule{Keywords: []string{"AgentDock", "部署"}, Devices: []string{"DockMini"}, Type: "deployment"}, CompletionConditions: []string{"done"}, Steps: []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck}}},
 	} {
 		draft, err := store.SaveTemplateDraft(tpl)
 		if err != nil {
@@ -399,15 +385,15 @@ func TestTemplateMatchUsesVectorSemanticRecall(t *testing.T) {
 		{
 			ID: "recalldock.migration", Version: "1.0.0", Title: "RecallDock migration",
 			Description:          "迁移长期上下文、memory cards、notes，并统一到 RecallDock semantic recall.",
-			Match:                MatchRule{Keywords: []string{"知识库替换"}, Devices: []string{"DockMini"}, Priority: 10},
+			Match:                MatchRule{Keywords: []string{"知识库替换"}, Devices: []string{"DockMini"}},
 			CompletionConditions: []string{"done"},
-			Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+			Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck}},
 		},
 		{
 			ID: "fallback.device", Version: "1.0.0", Title: "Device fallback",
-			Match:                MatchRule{Devices: []string{"DockMini"}, Priority: 999},
+			Match:                MatchRule{Devices: []string{"DockMini"}},
 			CompletionConditions: []string{"done"},
-			Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+			Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck}},
 		},
 	} {
 		draft, err := store.SaveTemplateDraft(tpl)
@@ -462,7 +448,7 @@ func TestTemplateVectorIndexPersistsAcrossStores(t *testing.T) {
 		Description:          "迁移长期上下文、memory cards、notes，并统一到 RecallDock semantic recall.",
 		Match:                MatchRule{Devices: []string{"DockMini"}},
 		CompletionConditions: []string{"done"},
-		Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck, Required: true}},
+		Steps:                []TemplateStep{{ID: "check", Title: "Check", Phase: PhaseCheck}},
 	}
 	draft, err := store1.SaveTemplateDraft(tpl)
 	if err != nil {
@@ -527,7 +513,7 @@ func TestTemplateGuardrailsRejectVerboseTemplates(t *testing.T) {
 	longSteps.ID = "guard.long.steps"
 	longSteps.Version = "1.0.0"
 	for i := len(longSteps.Steps); i < 9; i++ {
-		longSteps.Steps = append(longSteps.Steps, TemplateStep{ID: "step_" + string(rune('a'+i)), Title: "Stage", Phase: PhaseVerify, Required: true})
+		longSteps.Steps = append(longSteps.Steps, TemplateStep{ID: "step_" + string(rune('a'+i)), Title: "Stage", Phase: PhaseVerify})
 	}
 	if _, err := store.SaveTemplateDraft(longSteps); err == nil {
 		t.Fatal("expected template with more than eight steps to be rejected")
@@ -562,7 +548,7 @@ func TestTemplateGuardrailsAllowExplicitLongException(t *testing.T) {
 	longTemplate.AllowLongTemplate = true
 	longTemplate.LongTemplateReason = "签名安装类流程需要保留额外平台阶段"
 	for i := len(longTemplate.Steps); i < 9; i++ {
-		longTemplate.Steps = append(longTemplate.Steps, TemplateStep{ID: "extra_" + string(rune('a'+i)), Title: "Extra platform stage", Phase: PhaseVerify, Required: true})
+		longTemplate.Steps = append(longTemplate.Steps, TemplateStep{ID: "extra_" + string(rune('a'+i)), Title: "Extra platform stage", Phase: PhaseVerify})
 	}
 
 	draft, err := store.SaveTemplateDraft(longTemplate)
@@ -591,7 +577,7 @@ func TestTemplateGuardrailsRequireReasonForLongException(t *testing.T) {
 	longTemplate.Version = "1.0.0"
 	longTemplate.AllowLongTemplate = true
 	for i := len(longTemplate.Steps); i < 9; i++ {
-		longTemplate.Steps = append(longTemplate.Steps, TemplateStep{ID: "extra_" + string(rune('a'+i)), Title: "Extra platform stage", Phase: PhaseVerify, Required: true})
+		longTemplate.Steps = append(longTemplate.Steps, TemplateStep{ID: "extra_" + string(rune('a'+i)), Title: "Extra platform stage", Phase: PhaseVerify})
 	}
 	if _, err := store.SaveTemplateDraft(longTemplate); err == nil {
 		t.Fatal("expected long template exception without reason to be rejected")

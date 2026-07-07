@@ -239,12 +239,11 @@ func templateVectorCacheKey(t Template) string {
 func templateVectorText(t Template) string {
 	parts := []string{t.ID, t.Title, t.Description}
 	parts = append(parts, t.Match.Keywords...)
-	parts = append(parts, t.Match.TaskTypes...)
+	parts = append(parts, t.Match.Type)
 	parts = append(parts, t.Match.Devices...)
 	parts = append(parts, t.CompletionConditions...)
 	for _, step := range t.Steps {
 		parts = append(parts, step.ID, step.Title)
-		parts = append(parts, step.SuggestedCommands...)
 	}
 	return truncateTemplateVectorText(strings.Join(normalizeTexts(parts), "\n"))
 }

@@ -186,9 +186,6 @@ func (r *Runtime) templateCapabilityIndex() ([]map[string]any, string, string) {
 		if version := capabilityString(item["version"]); version != "" {
 			line += "；version=" + version
 		}
-		if priority := capabilityString(item["priority"]); priority != "" && priority != "0" {
-			line += "；priority=" + priority
-		}
 		lines = append(lines, truncateString(line, 260))
 	}
 	if len(items) == 0 {

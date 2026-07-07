@@ -102,7 +102,7 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 		if strings.TrimSpace(evidence.Summary) == "" {
 			evidence.Summary = stringArg(args, "summary", "")
 		}
-		task, err = r.tasks.CompleteStep(stringArg(args, "task_id", ""), stringArg(args, "step_id", ""), evidence, boolArg(args, "substituted", false), stringArg(args, "substitution_reason", ""))
+		task, err = r.tasks.CompleteStep(stringArg(args, "task_id", ""), stringArg(args, "step_id", ""), evidence)
 	case "skip_step":
 		task, err = r.tasks.SkipStep(stringArg(args, "task_id", ""), stringArg(args, "step_id", ""), stringArg(args, "summary", ""))
 	case "record_attempt":
@@ -227,9 +227,8 @@ func compactTaskSummary(task taskstate.Task) map[string]any {
 		}
 		if step.Phase == task.Phase && step.Status == "pending" {
 			currentPhaseSteps = append(currentPhaseSteps, map[string]any{
-				"id":       step.ID,
-				"title":    truncateString(step.Title, 120),
-				"required": step.Required,
+				"id":    step.ID,
+				"title": truncateString(step.Title, 120),
 			})
 		}
 	}
@@ -302,8 +301,7 @@ func compactTemplateSummary(template taskstate.Template) map[string]any {
 		"status":               template.Status,
 		"keyword_count":        len(template.Match.Keywords),
 		"device_count":         len(template.Match.Devices),
-		"task_type_count":      len(template.Match.TaskTypes),
-		"priority":             template.Match.Priority,
+		"type":                 template.Match.Type,
 		"condition_count":      len(template.CompletionConditions),
 		"step_count":           len(template.Steps),
 		"allow_long_template":  template.AllowLongTemplate,

@@ -140,7 +140,7 @@ func TestTaskManageCreateWithTemplateDoesNotReturnSnapshot(t *testing.T) {
 	draft, err := rt.tasks.SaveTemplateDraft(taskstate.Template{
 		ID: "compact.template", Version: "1.0.0", Title: "Compact template", Status: taskstate.TemplateDraft,
 		CompletionConditions: []string{"done"},
-		Steps:                []taskstate.TemplateStep{{ID: "inspect", Title: "Inspect", Phase: taskstate.PhaseCheck, Required: true}},
+		Steps:                []taskstate.TemplateStep{{ID: "inspect", Title: "Inspect", Phase: taskstate.PhaseCheck}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -263,7 +263,7 @@ func TestTaskManageCompleteStepAllowsSummaryOnly(t *testing.T) {
 	draft, err := rt.tasks.SaveTemplateDraft(taskstate.Template{
 		ID: "summary.step", Version: "1.0.0", Title: "Summary step", Status: taskstate.TemplateDraft,
 		CompletionConditions: []string{"done"},
-		Steps:                []taskstate.TemplateStep{{ID: "inspect", Title: "Inspect", Phase: taskstate.PhaseCheck, Required: true}},
+		Steps:                []taskstate.TemplateStep{{ID: "inspect", Title: "Inspect", Phase: taskstate.PhaseCheck}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -345,10 +345,10 @@ func TestTaskManageTemplateListReturnsCompactSummaries(t *testing.T) {
 	rt, _ := newCodeToolsRuntime(t)
 	draft, err := rt.tasks.SaveTemplateDraft(taskstate.Template{
 		ID: "large.template", Version: "1.0.0", Title: "Large template", Description: strings.Repeat("description ", 80), Status: taskstate.TemplateDraft,
-		Match:                taskstate.MatchRule{Keywords: []string{"deploy", "agentdock"}, Devices: []string{"DockMini"}, TaskTypes: []string{"deployment"}, Priority: 10},
+		Match:                taskstate.MatchRule{Keywords: []string{"deploy", "agentdock"}, Devices: []string{"DockMini"}, Type: "deployment"},
 		CompletionConditions: []string{"done"},
 		Steps: []taskstate.TemplateStep{
-			{ID: "inspect", Title: "Inspect", Phase: taskstate.PhaseCheck, Required: true, SuggestedCommands: []string{strings.Repeat("command ", 100)}},
+			{ID: "inspect", Title: "Inspect", Phase: taskstate.PhaseCheck},
 		},
 	})
 	if err != nil {
@@ -391,7 +391,7 @@ func TestTaskManageTemplateMutationActionsReturnCompactSummaries(t *testing.T) {
 	templateInput := map[string]any{
 		"id": templateID, "version": templateVersion, "title": "Template mutation", "description": strings.Repeat("description ", 80),
 		"completion_conditions": []string{"done"},
-		"steps":                 []map[string]any{{"id": "inspect", "title": "Inspect", "phase": taskstate.PhaseCheck, "required": true, "suggested_commands": []string{strings.Repeat("command ", 100)}}},
+		"steps":                 []map[string]any{{"id": "inspect", "title": "Inspect", "phase": taskstate.PhaseCheck}},
 	}
 
 	for _, action := range []string{"template_save", "template_validate", "template_publish", "template_retire"} {
