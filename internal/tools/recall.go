@@ -78,100 +78,79 @@ func (r *Runtime) recallWrite(ctx context.Context, args map[string]any) (Result,
 	if strings.HasPrefix(strings.TrimSpace(stringArg(args, "path", "")), "private-notes/") {
 		return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes is not writable through recall_write; use private_notes_write", "validation")
 	}
-	kind := strings.ToLower(strings.TrimSpace(stringArg(args, "kind", "")))
-	if kind == "" {
-		return nil, toolErrorDetails("MISSING_RECALL_KIND", "recall_write requires kind; choose card, note, markdown, patch, fact, delete, or explicit auto for a safe plan", "validation", map[string]any{"allowed": []string{"card", "note", "markdown", "patch", "fact", "delete", "auto"}})
+	target := strings.ToLower(strings.TrimSpace(stringArg(args, "target", "")))
+	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
+	if target == "" || action == "" {
+		return nil, toolErrorDetails("MISSING_RECALL_TARGET_ACTION", "recall_write requires target and action", "validation", map[string]any{"targets": []string{"auto", "card", "note", "markdown"}, "actions": []string{"plan", "write", "patch", "fact", "delete"}})
 	}
-	switch kind {
-	case "auto", "plan", "classify":
+	if target == "auto" {
+		if action != "plan" {
+			return nil, toolErrorDetails("INVALID_RECALL_ACTION", "target=auto only supports action=plan", "validation", map[string]any{"target": target, "action": action})
+		}
 		result, err := r.recallWriteAutoPlan(ctx, args)
 		if err != nil {
 			return nil, err
 		}
 		decorateRecallResult(result)
-		result["recall_kind"] = "auto"
+		result["recall_target"] = "auto"
+		result["recall_action"] = "plan"
 		return result, nil
+	}
+
+	var result Result
+	var err error
+	switch target {
 	case "card":
-		var result Result
-		var err error
-		if boolArg(args, "confirmed", false) {
+		if action != "plan" && action != "write" {
+			return nil, invalidRecallTargetAction(target, action)
+		}
+		if action == "write" && boolArg(args, "confirmed", false) {
 			result, err = r.memoryCardWrite(ctx, args)
 		} else {
 			result, err = r.memoryCardCapture(ctx, args)
 		}
-		if err != nil {
-			return nil, err
-		}
-		decorateRecallResult(result)
-		relabelRecallWriteResult(result)
-		result["recall_kind"] = "card"
-		return result, nil
 	case "note", "notes":
-		var result Result
-		var err error
-		if boolArg(args, "confirmed", false) {
+		if action != "plan" && action != "write" {
+			return nil, invalidRecallTargetAction(target, action)
+		}
+		if action == "write" && boolArg(args, "confirmed", false) {
 			result, err = r.notesWrite(ctx, args)
 		} else {
 			result, err = r.notesCapture(ctx, args)
 		}
-		if err != nil {
-			return nil, err
+		target = "note"
+	case "markdown":
+		switch action {
+		case "write", "replace":
+			result, err = r.memoryWrite(ctx, args)
+			action = "write"
+		case "patch", "edit":
+			result, err = r.memoryPatch(ctx, args)
+			action = "patch"
+		case "fact", "update_fact":
+			result, err = r.memoryUpdateFact(ctx, args)
+			action = "fact"
+		case "delete", "remove":
+			result, err = r.memoryDelete(ctx, args)
+			action = "delete"
+		default:
+			return nil, invalidRecallTargetAction(target, action)
 		}
-		decorateRecallResult(result)
-		relabelRecallWriteResult(result)
-		result["recall_kind"] = "note"
-		return result, nil
-	case "markdown", "write", "create", "replace":
-		result, err := r.memoryWrite(ctx, args)
-		if err != nil {
-			return nil, err
-		}
-		decorateRecallResult(result)
-		result["recall_kind"] = "markdown"
-		return result, nil
-	case "append_note", "append":
-		result, err := r.memoryAppendNote(ctx, args)
-		if err != nil {
-			return nil, err
-		}
-		decorateRecallResult(result)
-		result["recall_kind"] = "append_note"
-		return result, nil
-	case "patch", "edit":
-		result, err := r.memoryPatch(ctx, args)
-		if err != nil {
-			return nil, err
-		}
-		decorateRecallResult(result)
-		result["recall_kind"] = "patch"
-		return result, nil
-	case "diff", "preview":
-		result, err := r.memoryDiff(ctx, args)
-		if err != nil {
-			return nil, err
-		}
-		decorateRecallResult(result)
-		result["recall_kind"] = "diff"
-		return result, nil
-	case "fact", "update_fact":
-		result, err := r.memoryUpdateFact(ctx, args)
-		if err != nil {
-			return nil, err
-		}
-		decorateRecallResult(result)
-		result["recall_kind"] = "fact"
-		return result, nil
-	case "delete", "remove":
-		result, err := r.memoryDelete(ctx, args)
-		if err != nil {
-			return nil, err
-		}
-		decorateRecallResult(result)
-		result["recall_kind"] = "delete"
-		return result, nil
 	default:
-		return nil, toolErrorDetails("INVALID_RECALL_KIND", "unsupported recall_write kind", "validation", map[string]any{"kind": kind})
+		return nil, toolErrorDetails("INVALID_RECALL_TARGET", "unsupported recall_write target", "validation", map[string]any{"target": target, "allowed": []string{"auto", "card", "note", "markdown"}})
 	}
+	if err != nil {
+		return nil, err
+	}
+	decorateRecallResult(result)
+	relabelRecallWriteResult(result)
+	result["recall_target"] = target
+	result["recall_action"] = action
+	return result, nil
+}
+
+func invalidRecallTargetAction(target, action string) error {
+	return toolErrorDetails("INVALID_RECALL_ACTION", "unsupported recall_write action for target", "validation", map[string]any{"target": target, "action": action})
 }
 
 func (r *Runtime) recallWriteAutoPlan(ctx context.Context, args map[string]any) (Result, error) {
@@ -261,7 +240,7 @@ func hasRecallPatchArgs(args map[string]any) bool {
 }
 
 func recallWriteNextArgs(args map[string]any, selectedKind string) Result {
-	next := Result{"kind": selectedKind}
+	next := Result{}
 	copyIfPresent := func(key string) {
 		if value, ok := args[key]; ok && value != nil {
 			next[key] = value
@@ -306,8 +285,28 @@ func recallWriteNextArgs(args map[string]any, selectedKind string) Result {
 			copyIfPresent(key)
 		}
 	}
-	if selectedKind != "note" && selectedKind != "card" {
+	switch selectedKind {
+	case "card":
+		next["target"] = "card"
+		next["action"] = "plan"
+	case "note":
+		next["target"] = "note"
+		next["action"] = "plan"
+	case "patch":
+		next["target"] = "markdown"
+		next["action"] = "patch"
 		next["confirmed"] = false
+	case "fact":
+		next["target"] = "markdown"
+		next["action"] = "fact"
+		next["confirmed"] = false
+	case "markdown":
+		next["target"] = "markdown"
+		next["action"] = "write"
+		next["confirmed"] = false
+	default:
+		next["target"] = "note"
+		next["action"] = "plan"
 	}
 	return next
 }

@@ -40,7 +40,7 @@ func TestNotesSearchAndCapturePlan(t *testing.T) {
 	}
 
 	before := store["recall/managed/notes/questions/topics/memory-organization.md"]
-	capture, err := rt.notesCapture(context.Background(), map[string]any{"scope": "questions", "question": "文件变多后检索方式要不要改？", "conclusion": "使用 index-first recall_search kind=note。", "open_questions": []any{"github-learning 是否也要统一搜索？"}})
+	capture, err := rt.notesCapture(context.Background(), map[string]any{"scope": "questions", "question": "文件变多后检索方式要不要改？", "conclusion": "使用 index-first recall_search target=note。", "open_questions": []any{"github-learning 是否也要统一搜索？"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestNotesSearchAndCapturePlan(t *testing.T) {
 		t.Fatalf("recall note capture must not auto-write: %#v", plan)
 	}
 	draft := plan["draft"].(map[string]any)
-	if got, _ := draft["conclusion"].(string); got != "使用 index-first recall_search kind=note。" {
+	if got, _ := draft["conclusion"].(string); got != "使用 index-first recall_search target=note。" {
 		t.Fatalf("note conclusion missing from draft: %#v", draft)
 	}
 	if openQuestions, ok := draft["open_questions"].([]string); !ok || len(openQuestions) != 1 || openQuestions[0] != "github-learning 是否也要统一搜索？" {
@@ -67,11 +67,11 @@ func TestNotesWriteBoundaries(t *testing.T) {
 
 	_, err := rt.notesWrite(context.Background(), map[string]any{"scope": "questions", "path": "recall/docs/projects/agentdock/project.md", "content": "# Bad", "confirmed": true})
 	if err == nil {
-		t.Fatal("expected recall_write kind=note to reject non-notes path")
+		t.Fatal("expected recall_write target=note to reject non-notes path")
 	}
 	_, err = rt.notesWrite(context.Background(), map[string]any{"scope": "questions", "path": "recall/managed/notes/questions/topics/test.md", "content": "# Test"})
 	if err == nil {
-		t.Fatal("expected recall_write kind=note to require confirmation")
+		t.Fatal("expected recall_write target=note to require confirmation")
 	}
 	_, err = rt.notesWrite(context.Background(), map[string]any{"scope": "questions", "path": "recall/managed/notes/questions/topics/test.md", "content": "# Test", "confirmed": true})
 	if err != nil {
@@ -102,7 +102,7 @@ func TestNotesGithubLearningScopeThroughPublicArgsAndPathInference(t *testing.T)
 		t.Fatalf("unexpected github-learning candidate paths: %#v", res)
 	}
 
-	capture, err := rt.recallWrite(context.Background(), map[string]any{"kind": "note", "note_scope": "github-learning", "query": "GitHub Actions cache TTL?"})
+	capture, err := rt.recallWrite(context.Background(), map[string]any{"target": "note", "action": "plan", "note_scope": "github-learning", "query": "GitHub Actions cache TTL?"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,8 @@ func TestNotesGithubLearningScopeThroughPublicArgsAndPathInference(t *testing.T)
 	}
 
 	_, err = rt.recallWrite(context.Background(), map[string]any{
-		"kind":      "note",
+		"target":    "note",
+		"action":    "write",
 		"path":      "recall/managed/notes/github-learning/topics/new-note.md",
 		"content":   "# New GitHub note\n",
 		"confirmed": true,

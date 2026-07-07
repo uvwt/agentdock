@@ -69,7 +69,7 @@ func baseToolCapabilityItems() []map[string]any {
 	return []map[string]any{
 		{"name": "exec_command", "summary": "执行受控命令，用于查看真实环境、运行测试、构建、部署和排障。"},
 		{"name": "skill_manage", "summary": "列出、查看、安装、运行和回滚 AgentDock Skill。需要具体参数时先 inspect，再 run。"},
-		{"name": "task_manage", "summary": "管理可恢复任务和任务模板。多步骤开发、部署、排障先 template_match。"},
+		{"name": "task_manage", "summary": "管理可恢复任务；多步骤开发、部署、排障先 template_match。"},
 		{"name": "recall_bootstrap / recall_search / recall_read", "summary": "读取记忆精简上下文、搜索记忆和精确读取 runbook。"},
 	}
 }

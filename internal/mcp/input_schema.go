@@ -48,12 +48,16 @@ func inputSchema(name string) map[string]any {
 		props["max_results"] = intProp("Maximum matches.")
 		required = []string{"query"}
 	case "workspace_edit":
-		props["action"] = map[string]any{"type": "string", "description": "Workspace edit action.", "enum": []string{"replace", "patch"}}
-		props["path"] = stringProp("Workspace-relative file path for replace.")
+		props["action"] = map[string]any{"type": "string", "description": "Workspace edit action.", "enum": []string{"replace", "patch", "add", "delete", "move"}}
+		props["path"] = stringProp("Workspace-relative path for replace, add, delete, or move.")
 		props["old"] = stringProp("Exact UTF-8 text to replace.")
-		props["new"] = stringProp("Replacement UTF-8 text.")
+		props["new"] = stringProp("Replacement UTF-8 text for replace, or content alias for add.")
 		props["replace_all"] = boolProp("Replace every match instead of only the first.")
 		props["expected_matches"] = intProp("Required number of matches. Defaults to 1.")
+		props["content"] = stringProp("Text content for action=add.")
+		props["new_path"] = stringProp("Destination path for action=move.")
+		props["overwrite"] = boolProp("Allow add or move to replace an existing destination file.")
+		props["recursive"] = boolProp("Required for deleting directories.")
 		props["patch"] = stringProp("Patch text for action=patch.")
 		props["workdir"] = stringProp("Patch working directory.")
 		props["repo_path"] = stringProp("Alias for workdir.")
@@ -86,19 +90,6 @@ func inputSchema(name string) map[string]any {
 		props["tty"] = boolProp("Keep stdin open.")
 		props["redact_patterns"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Additional regex patterns to redact from stdout/stderr/error."}
 		required = []string{"cmd"}
-	case "browser_profile":
-		props["action"] = stringProp("Action: open, status, snapshot, save, or close.")
-		props["site"] = stringProp("Site profile name.")
-		props["url"] = stringProp("URL to open for custom site profiles.")
-		props["state_target_skill"] = stringProp("Optional Skill name used when saving storage state.")
-		props["timeout_ms"] = intProp("Timeout in milliseconds.")
-		props["max_text_chars"] = intProp("Maximum body text characters in page state.")
-		props["max_interactive_elements"] = intProp("Maximum visible interactive elements to return.")
-		props["full_page"] = boolProp("Capture full-page screenshot when action=snapshot.")
-		props["include_image"] = boolProp("Attach screenshot as MCP image content when action=snapshot and supported.")
-		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 in the response. Disabled by default because screenshots can be large.")
-		props["max_image_bytes"] = intProp("Maximum inline image bytes.")
-		required = []string{"action", "site"}
 	case "session_control":
 		props["action"] = stringProp("Session action: list, status, write, kill, or kill_all.")
 		props["session_id"] = stringProp("Session id returned by exec_command, required for status/write/kill.")
@@ -133,16 +124,13 @@ func inputSchema(name string) map[string]any {
 		required = []string{"action"}
 
 	case "workflow_template_manage":
-		props["action"] = map[string]any{"type": "string", "description": "Workflow template action.", "enum": []string{"save", "validate", "publish", "retire", "list", "get", "match"}}
+		props["action"] = map[string]any{"type": "string", "description": "Workflow template action.", "enum": []string{"save", "validate", "publish", "retire", "list", "get"}}
 		props["template"] = map[string]any{"type": "object", "additionalProperties": true, "description": "Complete draft workflow template for save."}
 		props["template_id"] = stringProp("Workflow template id.")
 		props["template_version"] = stringProp("Workflow template version.")
 		props["template_status"] = map[string]any{"type": "string", "enum": []string{"draft", "active", "retired"}, "description": "Optional list status filter."}
 		props["allow_long_template"] = boolProp("Allow a workflow template to exceed default guardrails. Provide long_template_reason when true.")
 		props["long_template_reason"] = stringProp("Reason required when allow_long_template=true.")
-		props["goal"] = stringProp("Goal text for match.")
-		props["device"] = stringProp("Optional device hint for match.")
-		props["type"] = stringProp("Optional workflow type hint for match. This maps to template match.type.")
 		required = []string{"action"}
 
 	case "skill_manage":
@@ -217,8 +205,9 @@ func inputSchema(name string) map[string]any {
 		props["include_raw"] = boolProp("Include raw Markdown as raw_content. Defaults to false to avoid duplicating body/content tokens.")
 		required = []string{"path"}
 	case "recall_write":
-		props["kind"] = map[string]any{"type": "string", "description": "Required write mechanism chosen by the model. auto returns a review plan and never writes directly.", "enum": []string{"card", "note", "markdown", "patch", "fact", "delete", "auto"}}
-		props["confirmed"] = boolProp("Required for true writes/deletes. card/note with confirmed=false return a review plan; patch/fact preview changes unless confirmed=true; auto always returns a plan.")
+		props["target"] = map[string]any{"type": "string", "description": "Recall target selected by the model.", "enum": []string{"auto", "card", "note", "markdown"}}
+		props["action"] = map[string]any{"type": "string", "description": "Recall action selected by the model.", "enum": []string{"plan", "write", "patch", "fact", "delete"}}
+		props["confirmed"] = boolProp("Required for true writes/deletes. card/note with confirmed=false return a review plan; target=auto action=plan never writes.")
 		props["path"] = stringProp("RecallDock-relative path when reading, updating, deleting, or writing a known entry.")
 		props["content"] = stringProp("Memory content, note content, Markdown content, or proposed replacement content.")
 		props["title"] = stringProp("Short title for a card or Markdown entry.")
@@ -239,7 +228,7 @@ func inputSchema(name string) map[string]any {
 		props["facts"] = objectProp("Fact only: multiple key/value facts to update.")
 		props["append_if_missing"] = boolProp("Fact only: append missing keys to the selected section or document instead of failing.")
 		props["max_bytes"] = intProp("Maximum diff/output bytes.")
-		required = []string{"kind"}
+		required = []string{"target", "action"}
 	case "recall_maintain":
 		props["action"] = map[string]any{"type": "string", "description": "Maintenance action.", "enum": []string{"sync_status", "list", "lint", "embedding_status", "reindex", "reindex_cards"}}
 		props["prefix"] = stringProp("Optional RecallDock-relative prefix.")
@@ -270,7 +259,7 @@ func inputSchema(name string) map[string]any {
 	case "private_notes_maintain":
 		props["action"] = stringProp("Action: init, init-encryption, check, list, sync-encrypted, encrypt-all, or migrate-enc-to-age.")
 	case "browser_session":
-		props["action"] = stringProp("Browser session action: start, close, or cleanup_stale.")
+		props["action"] = map[string]any{"type": "string", "description": "Browser session action.", "enum": []string{"start", "close", "cleanup_stale", "profile_open", "profile_status", "profile_snapshot", "profile_save", "profile_close"}}
 		props["url"] = stringProp("Initial URL when action=start. Defaults to about:blank.")
 		props["backend"] = stringProp("Browser backend: playwright or cdp. Defaults to playwright.")
 		props["browser"] = stringProp("Browser family: chromium, chrome, edge, or msedge. edge/msedge selects Microsoft Edge.")
@@ -280,12 +269,20 @@ func inputSchema(name string) map[string]any {
 		props["viewport"] = objectProp("Viewport object, for example {width:1280,height:800}.")
 		props["session_id"] = stringProp("Browser session id.")
 		props["profile_id"] = stringProp("Optional persistent browser profile id stored under browser artifacts. Reuses cookies/localStorage across runs.")
+		props["site"] = stringProp("Named site profile for profile_* actions.")
+		props["state_target_skill"] = stringProp("Optional Skill name used when saving profile storage state.")
 		props["cookies"] = arrayProp("Optional Playwright cookies to add to the browser context.")
 		props["local_storage"] = objectProp("Optional localStorage map by origin, for example origin to key/value object.")
 		props["storage_state"] = objectProp("Optional Playwright storageState object.")
 		props["save_storage_state"] = boolProp("Save context storage state after action/snapshot and return storage_state_path.")
 		props["reload_after_local_storage"] = boolProp("Reload the page after applying localStorage. Defaults to true.")
 		props["max_age_ms"] = intProp("When action=cleanup_stale, remove sessions older than this age. Defaults to 6 hours.")
+		props["full_page"] = boolProp("Capture full-page screenshot for action=profile_snapshot.")
+		props["include_image"] = boolProp("Attach screenshot as MCP image content for action=profile_snapshot.")
+		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 for action=profile_snapshot. Disabled by default.")
+		props["max_image_bytes"] = intProp("Maximum inline image bytes for action=profile_snapshot.")
+		props["max_text_chars"] = intProp("Maximum body text characters for profile status/snapshot.")
+		props["max_interactive_elements"] = intProp("Maximum visible interactive elements for action=profile_snapshot.")
 		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
 	case "browser_act":
 		props["session_id"] = stringProp("Browser session id.")

@@ -107,3 +107,37 @@ func testRuntimeConfig(root string) config.Config {
 	cfg.Normalize()
 	return cfg
 }
+
+func TestWorkspaceEditAddMoveDelete(t *testing.T) {
+	rt, root := newCodeToolsRuntime(t)
+	result, err := rt.Call(context.Background(), "workspace_edit", map[string]any{"action": "add", "path": "draft.txt", "content": "hello\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["changed"] != true {
+		t.Fatalf("expected add to change file: %#v", result)
+	}
+	if _, err := os.Stat(filepath.Join(root, "draft.txt")); err != nil {
+		t.Fatalf("expected added file: %v", err)
+	}
+	result, err = rt.Call(context.Background(), "workspace_edit", map[string]any{"action": "move", "path": "draft.txt", "new_path": "final.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["new_path"] != "final.txt" {
+		t.Fatalf("unexpected move result: %#v", result)
+	}
+	if _, err := os.Stat(filepath.Join(root, "final.txt")); err != nil {
+		t.Fatalf("expected moved file: %v", err)
+	}
+	result, err = rt.Call(context.Background(), "workspace_edit", map[string]any{"action": "delete", "path": "final.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["changed"] != true {
+		t.Fatalf("expected delete to report changed: %#v", result)
+	}
+	if _, err := os.Stat(filepath.Join(root, "final.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected file to be deleted, err=%v", err)
+	}
+}

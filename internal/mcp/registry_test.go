@@ -244,8 +244,8 @@ func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	}
 
 	templateProps := schemaProperties(t, "workflow_template_manage")
-	assertSameStrings(t, enumStrings(t, templateProps["action"]), []string{"save", "validate", "publish", "retire", "list", "get", "match"})
-	for _, name := range []string{"template", "template_id", "template_version", "template_status", "allow_long_template", "long_template_reason", "goal", "device", "type"} {
+	assertSameStrings(t, enumStrings(t, templateProps["action"]), []string{"save", "validate", "publish", "retire", "list", "get"})
+	for _, name := range []string{"template", "template_id", "template_version", "template_status", "allow_long_template", "long_template_reason"} {
 		if _, ok := templateProps[name]; !ok {
 			t.Fatalf("workflow_template_manage input schema missing %q", name)
 		}
@@ -264,8 +264,8 @@ func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 
 func TestWorkspaceEditAndGitUnifiedSchemas(t *testing.T) {
 	workspaceProps := schemaProperties(t, "workspace_edit")
-	assertSameStrings(t, enumStrings(t, workspaceProps["action"]), []string{"replace", "patch"})
-	for _, name := range []string{"path", "old", "new", "patch", "dry_run", "expected_matches", "replace_all"} {
+	assertSameStrings(t, enumStrings(t, workspaceProps["action"]), []string{"replace", "patch", "add", "delete", "move"})
+	for _, name := range []string{"path", "old", "new", "patch", "dry_run", "expected_matches", "replace_all", "content", "new_path", "overwrite", "recursive"} {
 		if _, ok := workspaceProps[name]; !ok {
 			t.Fatalf("workspace_edit input schema missing %q", name)
 		}
@@ -314,9 +314,14 @@ func TestRecallModelChoiceFieldsUseEnums(t *testing.T) {
 	}
 
 	writeProps := schemaProperties(t, "recall_write")
-	for _, want := range []string{"card", "note", "markdown", "patch", "fact", "delete", "auto"} {
-		if !containsString(enumStrings(t, writeProps["kind"]), want) {
-			t.Fatalf("recall_write kind enum missing %s: %#v", want, writeProps["kind"])
+	for _, want := range []string{"auto", "card", "note", "markdown"} {
+		if !containsString(enumStrings(t, writeProps["target"]), want) {
+			t.Fatalf("recall_write target enum missing %s: %#v", want, writeProps["target"])
+		}
+	}
+	for _, want := range []string{"plan", "write", "patch", "fact", "delete"} {
+		if !containsString(enumStrings(t, writeProps["action"]), want) {
+			t.Fatalf("recall_write action enum missing %s: %#v", want, writeProps["action"])
 		}
 	}
 	for _, want := range []string{"questions", "github-learning"} {
@@ -371,7 +376,7 @@ func TestRecallToolDescriptionsMatchCompactModelEntrypoints(t *testing.T) {
 			t.Fatalf("recall_write description should not advertise legacy alias %q: %q", legacy, writeDef.Description)
 		}
 	}
-	for _, required := range []string{"kind=card", "note", "markdown", "patch", "fact", "delete", "auto"} {
+	for _, required := range []string{"target", "action", "target=auto", "action=plan"} {
 		if !strings.Contains(writeDef.Description, required) {
 			t.Fatalf("recall_write description missing %q: %q", required, writeDef.Description)
 		}
@@ -384,25 +389,25 @@ func TestRecallWriteSchemaExposesCompactCoreFields(t *testing.T) {
 	if !ok {
 		t.Fatal("recall_write input schema properties missing")
 	}
-	for _, name := range []string{"kind", "title", "content", "summary", "query", "note_scope", "confirmed", "path", "overwrite", "max_bytes", "old", "new", "append", "section", "section_content", "key", "value", "facts", "append_if_missing", "allow_warnings", "conclusion", "open_questions"} {
+	for _, name := range []string{"target", "action", "title", "content", "summary", "query", "note_scope", "confirmed", "path", "overwrite", "max_bytes", "old", "new", "append", "section", "section_content", "key", "value", "facts", "append_if_missing", "allow_warnings", "conclusion", "open_questions"} {
 		if _, ok := inputProps[name]; !ok {
 			t.Fatalf("recall_write input schema missing compact core field %q", name)
 		}
 	}
-	for _, name := range []string{"project", "prefix", "scope", "status", "confidence", "source", "evidence", "boundary", "pattern", "replacement", "operations", "dry_run"} {
+	for _, name := range []string{"kind", "project", "prefix", "scope", "status", "confidence", "source", "evidence", "boundary", "pattern", "replacement", "operations", "dry_run"} {
 		if _, ok := inputProps[name]; ok {
 			t.Fatalf("recall_write input schema should hide advanced/internal field %q", name)
 		}
 	}
 	required, _ := schema["required"].([]string)
-	if len(required) != 1 || required[0] != "kind" {
-		t.Fatalf("recall_write should require model-selected kind, got %#v", schema["required"])
+	if len(required) != 2 || required[0] != "target" || required[1] != "action" {
+		t.Fatalf("recall_write should require model-selected target/action, got %#v", schema["required"])
 	}
 	outputProps, ok := outputSchema("recall_write")["properties"].(map[string]any)
 	if !ok {
 		t.Fatal("recall_write output schema properties missing")
 	}
-	for _, name := range []string{"recall_kind", "selected_kind", "auto_plan", "card", "warnings", "capture_plan", "similar_results", "recall", "diff", "updates"} {
+	for _, name := range []string{"recall_target", "recall_action", "selected_kind", "auto_plan", "card", "warnings", "capture_plan", "similar_results", "recall", "diff", "updates"} {
 		if _, ok := outputProps[name]; !ok {
 			t.Fatalf("recall_write output schema missing %q", name)
 		}

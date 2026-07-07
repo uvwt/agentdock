@@ -9,7 +9,7 @@ import (
 
 var taskActions = []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review", "template_match"}
 
-var workflowTemplateActions = []string{"save", "validate", "publish", "retire", "list", "get", "match"}
+var workflowTemplateActions = []string{"save", "validate", "publish", "retire", "list", "get"}
 
 func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
@@ -77,26 +77,7 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 	case "complete_after_review":
 		task, err = r.tasks.CompleteAfterReview(stringArg(args, "task_id", ""), stringArg(args, "summary", ""))
 	case "template_match":
-		candidates, matchErr := r.tasks.MatchTemplates(stringArg(args, "goal", ""), stringArg(args, "device", ""), stringArg(args, "type", ""))
-		if matchErr != nil {
-			return nil, taskToolError(matchErr)
-		}
-		vectorIndexStatus, vectorIndexItems, embeddingModel := r.tasks.VectorIndexInfo()
-		result := Result{
-			"ok":                    true,
-			"action":                action,
-			"candidates":            candidates,
-			"count":                 len(candidates),
-			"workflow_dir":          r.tasks.WorkflowRoot(),
-			"vector_search_enabled": r.tasks.VectorSearchEnabled(),
-			"vector_index_status":   vectorIndexStatus,
-			"vector_index_items":    vectorIndexItems,
-			"embedding_model":       embeddingModel,
-		}
-		for key, value := range templateMatchRecommendation(candidates) {
-			result[key] = value
-		}
-		return result, nil
+		return r.taskTemplateMatch(args)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported task_manage action", "validation", map[string]any{
 			"action": action, "allowed": taskActions,
@@ -156,14 +137,12 @@ func (r *Runtime) workflowTemplateManage(args map[string]any) (Result, error) {
 			items = append(items, compactTemplateSummary(template))
 		}
 		return Result{"ok": true, "action": action, "templates": items, "count": len(items), "workflow_dir": r.tasks.WorkflowRoot()}, nil
-	case "match":
-		return r.matchWorkflowTemplates(args)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported workflow_template_manage action", "validation", map[string]any{"action": action, "allowed": workflowTemplateActions})
 	}
 }
 
-func (r *Runtime) matchWorkflowTemplates(args map[string]any) (Result, error) {
+func (r *Runtime) taskTemplateMatch(args map[string]any) (Result, error) {
 	candidates, err := r.tasks.MatchTemplates(stringArg(args, "goal", ""), stringArg(args, "device", ""), stringArg(args, "type", ""))
 	if err != nil {
 		return nil, taskToolError(err)
@@ -171,7 +150,7 @@ func (r *Runtime) matchWorkflowTemplates(args map[string]any) (Result, error) {
 	vectorIndexStatus, vectorIndexItems, embeddingModel := r.tasks.VectorIndexInfo()
 	result := Result{
 		"ok":                    true,
-		"action":                stringArg(args, "action", "match"),
+		"action":                "template_match",
 		"candidates":            candidates,
 		"count":                 len(candidates),
 		"workflow_dir":          r.tasks.WorkflowRoot(),

@@ -90,7 +90,7 @@ func (r *Runtime) browserProfile(ctx context.Context, args map[string]any) (Resu
 	action := strings.ToLower(stringArg(args, "action", "status"))
 	site := strings.TrimSpace(stringArg(args, "site", ""))
 	if site == "" {
-		return nil, toolErrorDetails("MISSING_SITE", "browser_profile requires a site profile name", "validation", nil)
+		return nil, toolErrorDetails("MISSING_SITE", "browser_session profile_* actions require a site profile name", "validation", nil)
 	}
 	profileID := strings.Trim(strings.Map(func(r rune) rune {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
@@ -99,7 +99,7 @@ func (r *Runtime) browserProfile(ctx context.Context, args map[string]any) (Resu
 		return '-'
 	}, site), "-")
 	if profileID == "" {
-		return nil, toolErrorDetails("INVALID_SITE", "browser_profile site cannot be used as a profile name", "validation", map[string]any{"site": site})
+		return nil, toolErrorDetails("INVALID_SITE", "browser_session profile_* site cannot be used as a profile name", "validation", map[string]any{"site": site})
 	}
 	sessionID := "profile-" + profileID
 	url := strings.TrimSpace(stringArg(args, "url", ""))
@@ -110,7 +110,7 @@ func (r *Runtime) browserProfile(ctx context.Context, args map[string]any) (Resu
 	switch action {
 	case "open", "start":
 		if url == "" {
-			return nil, toolErrorDetails("MISSING_URL", "browser_profile needs url when opening custom profile", "validation", map[string]any{"site": site})
+			return nil, toolErrorDetails("MISSING_URL", "browser_session action=profile_open needs url when opening a custom profile", "validation", map[string]any{"site": site})
 		}
 		result, err := r.browserRunnerCall(ctx, "session_start", map[string]any{
 			"session_id": sessionID,
@@ -184,6 +184,6 @@ func (r *Runtime) browserProfile(ctx context.Context, args map[string]any) (Resu
 		}
 		return result, err
 	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported browser_profile action", "validation", map[string]any{"action": action})
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported browser_session profile action", "validation", map[string]any{"action": action})
 	}
 }

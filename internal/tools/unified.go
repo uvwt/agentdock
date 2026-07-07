@@ -88,7 +88,13 @@ func (r *Runtime) gitRemote(ctx context.Context, args map[string]any) (Result, e
 }
 
 func (r *Runtime) browserSession(ctx context.Context, args map[string]any) (Result, error) {
-	switch strings.ToLower(stringArg(args, "action", "start")) {
+	action := strings.ToLower(stringArg(args, "action", "start"))
+	if strings.HasPrefix(action, "profile_") {
+		profileArgs := copyArgs(args)
+		profileArgs["action"] = strings.TrimPrefix(action, "profile_")
+		return r.browserProfile(ctx, profileArgs)
+	}
+	switch action {
 	case "start", "open", "new":
 		return r.browserRunnerCall(ctx, "session_start", args)
 	case "close", "stop":
@@ -96,7 +102,7 @@ func (r *Runtime) browserSession(ctx context.Context, args map[string]any) (Resu
 	case "cleanup", "cleanup_stale":
 		return r.browserRunnerCall(ctx, "session_cleanup", args)
 	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported browser_session action", "validation", map[string]any{"action": stringArg(args, "action", "")})
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported browser_session action", "validation", map[string]any{"action": stringArg(args, "action", ""), "allowed": []string{"start", "close", "cleanup_stale", "profile_open", "profile_status", "profile_snapshot", "profile_save", "profile_close"}})
 	}
 }
 
