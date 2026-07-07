@@ -59,7 +59,7 @@ func (r *Runtime) Config() config.Config           { return r.cfg }
 func (r *Runtime) Workspace() *workspace.Workspace { return r.ws }
 
 func (r *Runtime) ToolNames() []string {
-	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "edit_file", "exec_command", "session_control", "configure_github_token", "check_github_repo_access", "github_create_repo", "task_manage", "workflow_template_manage", "skill_manage", "env_manage", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "request_permissions", "view_image"}
+	all := []string{"server_info", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "edit_file", "exec_command", "session_control", "check_github_repo_access", "task_manage", "workflow_template_manage", "skill_manage", "env_manage", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "view_image"}
 	if r.cfg.RecallEndpoint != "" {
 		all = append(all, "recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain")
 	}
@@ -82,7 +82,7 @@ func (r *Runtime) ToolNames() []string {
 	if r.cfg.ToolProfile != config.ProfileReadOnly {
 		return all
 	}
-	readOnly := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "session_control", "check_github_repo_access", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "request_permissions", "view_image"}
+	readOnly := []string{"server_info", "read_file", "list_dir", "list_files", "search_text", "session_control", "check_github_repo_access", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "view_image"}
 	if r.cfg.RecallEndpoint != "" {
 		readOnly = append(readOnly, "recall_bootstrap", "recall_search", "recall_read")
 	}
@@ -119,13 +119,6 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 	switch name {
 	case "server_info":
 		return r.serverInfo(), nil
-	case "tool_descriptors":
-		return r.toolDescriptors(), nil
-	case "get_default_cwd":
-		return Result{"ok": true, "path": r.ws.DefaultDisplay()}, nil
-	case "set_default_cwd":
-		p, err := r.ws.SetDefaultCWD(stringArg(args, "path", "."))
-		return Result{"ok": err == nil, "path": p}, err
 	case "read_file":
 		return r.readFile(args)
 	case "list_dir":
@@ -142,22 +135,8 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.execCommand(ctx, args)
 	case "session_control":
 		return r.sessionControl(args)
-	case "write_stdin":
-		return r.writeStdin(args)
-	case "session_status":
-		return r.sessionStatus(args)
-	case "list_sessions":
-		return r.listSessions()
-	case "kill_session":
-		return r.killSession(args)
-	case "kill_all_sessions":
-		return r.killAllSessions(args)
-	case "configure_github_token":
-		return r.configureGitHubToken(args)
 	case "check_github_repo_access":
 		return r.checkGitHubRepoAccess(args)
-	case "github_create_repo":
-		return r.githubCreateRepo(args)
 	case "task_manage":
 		return r.taskManage(args)
 	case "workflow_template_manage":
@@ -196,90 +175,32 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.browserSession(ctx, args)
 	case "browser_profile":
 		return r.browserProfile(ctx, args)
-	case "browser_act", "browser_action":
+	case "browser_act":
 		return r.browserRunnerCall(ctx, "action", args)
-	case "browser_session_start":
-		return r.browserRunnerCall(ctx, "session_start", args)
 	case "browser_snapshot":
 		return r.browserRunnerCall(ctx, "snapshot", args)
-	case "browser_session_close":
-		return r.browserRunnerCall(ctx, "session_close", args)
-	case "browser_session_cleanup":
-		return r.browserRunnerCall(ctx, "session_cleanup", args)
 	case "desktop_observe":
 		return r.desktopObserve(ctx, args)
 	case "desktop_act":
 		return r.desktopAct(ctx, args)
 	case "desktop_clipboard":
 		return r.desktopClipboard(ctx, args)
-	case "desktop_preflight":
-		return r.desktopPreflight(ctx, args)
-	case "desktop_list_apps":
-		return r.desktopListApps(ctx, args)
-	case "desktop_get_app_state":
-		return r.desktopGetAppState(ctx, args)
-	case "desktop_window_list":
-		return r.desktopWindowList(ctx, args)
-	case "desktop_snapshot":
-		return r.desktopSnapshot(ctx, args)
-	case "desktop_snapshot_app":
-		return r.desktopSnapshotApp(ctx, args)
-	case "desktop_clipboard_set":
-		return r.desktopClipboardSet(ctx, args)
-	case "desktop_clipboard_get":
-		return r.desktopClipboardGet(ctx, args)
-	case "desktop_focus_app":
-		return r.desktopFocusApp(ctx, args)
-	case "desktop_move":
-		return r.desktopMove(ctx, args)
-	case "desktop_click":
-		return r.desktopClick(ctx, args)
-	case "desktop_double_click":
-		return r.desktopDoubleClick(ctx, args)
-	case "desktop_scroll":
-		return r.desktopScroll(ctx, args)
-	case "desktop_drag":
-		return r.desktopDrag(ctx, args)
-	case "desktop_type":
-		return r.desktopType(ctx, args)
-	case "desktop_set_value":
-		return r.desktopSetValue(ctx, args)
-	case "desktop_perform_secondary_action":
-		return r.desktopPerformSecondaryAction(ctx, args)
-	case "desktop_hotkey":
-		return r.desktopHotkey(ctx, args)
-	case "desktop_wait":
-		return r.desktopWait(ctx, args)
 	case "workspace_repos":
 		return r.workspaceRepos(ctx, args)
-	case "git_repo_status":
-		return r.gitRepoStatus(ctx, args)
 	case "git_status":
 		return r.gitRepoStatus(ctx, args)
 	case "git_diff":
 		return r.gitDiff(ctx, args)
 	case "git_log":
 		return r.gitLog(ctx, args)
-	case "git_show":
-		return r.gitShow(ctx, args)
-	case "git_blame":
-		return r.gitBlame(ctx, args)
 	case "git_inspect":
 		return r.gitInspect(ctx, args)
 	case "git_remote":
 		return r.gitRemote(ctx, args)
-	case "git_fetch":
-		return r.gitFetch(ctx, args)
-	case "git_pull":
-		return r.gitPull(ctx, args)
-	case "git_push":
-		return r.gitPush(ctx, args)
 	case "git_clone":
 		return r.gitClone(ctx, args)
 	case "git_commit":
 		return r.gitCommit(ctx, args)
-	case "request_permissions":
-		return r.requestPermissions(args), nil
 	case "view_image":
 		return r.viewImage(args)
 	default:
@@ -345,14 +266,6 @@ func (r *Runtime) serverInfo() Result {
 
 func (r *Runtime) authEnabled() bool {
 	return strings.TrimSpace(r.cfg.AuthToken) != "" || strings.TrimSpace(r.cfg.OAuthClientID) != "" || strings.TrimSpace(r.cfg.OAuthServerURL) != ""
-}
-
-func (r *Runtime) toolDescriptors() Result {
-	descriptors := make([]map[string]any, 0)
-	for _, name := range r.ToolNames() {
-		descriptors = append(descriptors, map[string]any{"name": name})
-	}
-	return Result{"ok": true, "tools": descriptors, "count": len(descriptors)}
 }
 
 func (r *Runtime) readFile(args map[string]any) (Result, error) {
@@ -588,11 +501,4 @@ func (r *Runtime) viewImage(args map[string]any) (Result, error) {
 		result["data_url"] = "data:" + preparedInfo.MIME + ";base64," + encoded
 	}
 	return result, nil
-}
-
-func (r *Runtime) requestPermissions(args map[string]any) Result {
-	if r.cfg.DangerouslySkipAllPermissions {
-		return Result{"ok": true, "status": "granted", "grant_id": "dangerously-skip-all-permissions", "requested": args}
-	}
-	return Result{"ok": false, "status": "required", "requested": args}
 }

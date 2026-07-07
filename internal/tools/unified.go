@@ -7,15 +7,15 @@ import (
 
 func (r *Runtime) sessionControl(args map[string]any) (Result, error) {
 	switch strings.ToLower(stringArg(args, "action", "list")) {
-	case "list", "sessions", "list_sessions":
+	case "list", "sessions":
 		return r.listSessions()
-	case "status", "get", "session_status":
+	case "status", "get":
 		return r.sessionStatus(args)
-	case "write", "stdin", "send", "send_stdin", "write_stdin":
+	case "write", "stdin", "send", "send_stdin":
 		return r.writeStdin(args)
-	case "kill", "stop", "kill_session":
+	case "kill", "stop":
 		return r.killSession(args)
-	case "kill_all", "stop_all", "clear", "kill_all_sessions":
+	case "kill_all", "stop_all", "clear":
 		return r.killAllSessions(args)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported session_control action", "validation", map[string]any{"action": stringArg(args, "action", "")})
@@ -43,9 +43,9 @@ func (r *Runtime) memoryEdit(ctx context.Context, args map[string]any) (Result, 
 
 func (r *Runtime) gitInspect(ctx context.Context, args map[string]any) (Result, error) {
 	switch strings.ToLower(stringArg(args, "action", "show")) {
-	case "show", "git_show":
+	case "show":
 		return r.gitShow(ctx, args)
-	case "blame", "git_blame":
+	case "blame":
 		return r.gitBlame(ctx, args)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported git_inspect action", "validation", map[string]any{"action": stringArg(args, "action", "")})
@@ -54,11 +54,11 @@ func (r *Runtime) gitInspect(ctx context.Context, args map[string]any) (Result, 
 
 func (r *Runtime) gitRemote(ctx context.Context, args map[string]any) (Result, error) {
 	switch strings.ToLower(stringArg(args, "action", "fetch")) {
-	case "fetch", "git_fetch":
+	case "fetch":
 		return r.gitFetch(ctx, args)
-	case "pull", "git_pull":
+	case "pull":
 		return r.gitPull(ctx, args)
-	case "push", "git_push":
+	case "push":
 		return r.gitPush(ctx, args)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported git_remote action", "validation", map[string]any{"action": stringArg(args, "action", "")})
@@ -67,11 +67,11 @@ func (r *Runtime) gitRemote(ctx context.Context, args map[string]any) (Result, e
 
 func (r *Runtime) browserSession(ctx context.Context, args map[string]any) (Result, error) {
 	switch strings.ToLower(stringArg(args, "action", "start")) {
-	case "start", "open", "new", "browser_session_start":
+	case "start", "open", "new":
 		return r.browserRunnerCall(ctx, "session_start", args)
-	case "close", "stop", "browser_session_close":
+	case "close", "stop":
 		return r.browserRunnerCall(ctx, "session_close", args)
-	case "cleanup", "cleanup_stale", "browser_session_cleanup":
+	case "cleanup", "cleanup_stale":
 		return r.browserRunnerCall(ctx, "session_cleanup", args)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported browser_session action", "validation", map[string]any{"action": stringArg(args, "action", "")})
@@ -88,17 +88,17 @@ func (r *Runtime) desktopObserve(ctx context.Context, args map[string]any) (Resu
 		}
 	}
 	switch action {
-	case "preflight", "desktop_preflight":
+	case "preflight":
 		return r.desktopPreflight(ctx, args)
-	case "list_apps", "apps", "desktop_list_apps":
+	case "list_apps", "apps":
 		return r.desktopListApps(ctx, args)
-	case "app_state", "state", "get_app_state", "desktop_get_app_state":
+	case "app_state", "state", "get_app_state":
 		return r.desktopGetAppState(ctx, args)
-	case "window_list", "windows", "desktop_window_list":
+	case "window_list", "windows":
 		return r.desktopWindowList(ctx, args)
-	case "snapshot", "screen", "desktop_snapshot":
+	case "snapshot", "screen":
 		return r.desktopSnapshot(ctx, args)
-	case "snapshot_app", "app_snapshot", "desktop_snapshot_app":
+	case "snapshot_app", "app_snapshot":
 		return r.desktopSnapshotApp(ctx, args)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported desktop_observe action", "validation", map[string]any{"action": stringArg(args, "action", "")})
@@ -107,27 +107,27 @@ func (r *Runtime) desktopObserve(ctx context.Context, args map[string]any) (Resu
 
 func (r *Runtime) desktopAct(ctx context.Context, args map[string]any) (Result, error) {
 	switch strings.ToLower(stringArg(args, "action", "")) {
-	case "focus", "focus_app", "desktop_focus_app":
+	case "focus", "focus_app":
 		return r.desktopFocusApp(ctx, args)
-	case "move", "desktop_move":
+	case "move":
 		return r.desktopMove(ctx, args)
-	case "click", "desktop_click":
+	case "click":
 		return r.desktopClick(ctx, args)
-	case "double_click", "doubleclick", "desktop_double_click":
+	case "double_click", "doubleclick":
 		return r.desktopDoubleClick(ctx, args)
-	case "scroll", "desktop_scroll":
+	case "scroll":
 		return r.desktopScroll(ctx, args)
-	case "drag", "desktop_drag":
+	case "drag":
 		return r.desktopDrag(ctx, args)
-	case "type", "text", "desktop_type":
+	case "type", "text":
 		return r.desktopType(ctx, args)
-	case "set_value", "desktop_set_value":
+	case "set_value":
 		return r.desktopSetValue(ctx, args)
-	case "secondary_action", "perform_secondary_action", "accessibility_action", "desktop_perform_secondary_action":
+	case "secondary_action", "perform_secondary_action", "accessibility_action":
 		return r.desktopPerformSecondaryAction(ctx, args)
-	case "hotkey", "shortcut", "desktop_hotkey":
+	case "hotkey", "shortcut":
 		return r.desktopHotkey(ctx, args)
-	case "wait", "desktop_wait":
+	case "wait":
 		return r.desktopWait(ctx, args)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported desktop_act action", "validation", map[string]any{"action": stringArg(args, "action", "")})
@@ -144,9 +144,9 @@ func (r *Runtime) desktopClipboard(ctx context.Context, args map[string]any) (Re
 		}
 	}
 	switch action {
-	case "get", "read", "desktop_clipboard_get":
+	case "get", "read":
 		return r.desktopClipboardGet(ctx, args)
-	case "set", "write", "desktop_clipboard_set":
+	case "set", "write":
 		return r.desktopClipboardSet(ctx, args)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported desktop_clipboard action", "validation", map[string]any{"action": stringArg(args, "action", "")})

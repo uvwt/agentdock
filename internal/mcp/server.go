@@ -89,13 +89,6 @@ func (s *Server) callTool(ctx context.Context, req jsonrpc.Request) jsonrpc.Resp
 		}
 	}
 	slog.Info("tool started", "tool", params.Name)
-	if params.Name == "tool_descriptors" {
-		// 这个工具用于排查“源码已更新但 ChatGPT 侧工具描述缓存没刷新”的情况。
-		// 直接从 MCP server 返回当前实际暴露的完整 descriptor，避免只看到 runtime 工具名。
-		resp := jsonrpc.Success(req.ID, toolEnvelope(params.Name, map[string]any{"ok": true, "tools": s.toolDescriptors(), "count": len(s.toolDescriptors())}, nil))
-		slog.Info("tool finished", "tool", params.Name, "duration_ms", time.Since(started).Milliseconds(), "ok", true)
-		return resp
-	}
 	result, err := s.runtime.Call(ctx, params.Name, params.Arguments)
 	slog.Info("tool finished", "tool", params.Name, "duration_ms", time.Since(started).Milliseconds(), "ok", err == nil)
 	return jsonrpc.Success(req.ID, toolEnvelope(params.Name, result, err))
@@ -179,7 +172,7 @@ func toolEnvelope(name string, structured any, err error) map[string]any {
 			}
 		}
 	}
-	if name == "desktop_snapshot" || name == "desktop_get_app_state" || name == "desktop_observe" || name == "browser_act" || name == "browser_action" || name == "browser_snapshot" {
+	if name == "desktop_observe" || name == "browser_act" || name == "browser_snapshot" {
 		payload := asMap(structured)
 		if attached, _ := payload["image_attached"].(bool); attached {
 			return map[string]any{"isError": false, "structuredContent": structured, "content": []map[string]any{{"type": "image", "data": payload["image_base64"], "mimeType": payload["image_mime_type"]}}}

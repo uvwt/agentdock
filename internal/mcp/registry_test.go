@@ -85,7 +85,7 @@ func TestReadOnlyProfileExcludesDestructiveTools(t *testing.T) {
 	if !seen["desktop_observe"] {
 		t.Fatalf("read-only desktop profile should expose unified observation tool desktop_observe")
 	}
-	if seen["desktop_act"] || seen["desktop_click"] || seen["desktop_type"] || seen["desktop_set_value"] {
+	if seen["desktop_act"] {
 		t.Fatalf("read-only desktop profile exposed mutating desktop tools")
 	}
 	if seen["recall_write"] || seen["recall_maintain"] {
@@ -390,26 +390,15 @@ func TestRecallSearchSchemaHidesInternalRoutingFields(t *testing.T) {
 	}
 }
 
-func TestDesktopCommandSchemasExposeVerificationControls(t *testing.T) {
-	for _, tool := range []string{
-		"desktop_act",
-		"desktop_click",
-		"desktop_double_click",
-		"desktop_move",
-		"desktop_scroll",
-		"desktop_drag",
-		"desktop_type",
-		"desktop_hotkey",
-	} {
-		schema := inputSchema(tool)
-		props, ok := schema["properties"].(map[string]any)
-		if !ok {
-			t.Fatalf("%s input schema properties missing", tool)
-		}
-		for _, name := range []string{"verify", "before_snapshot", "after_snapshot", "verify_region", "wait_ms"} {
-			if _, ok := props[name]; !ok {
-				t.Fatalf("%s input schema missing %q", tool, name)
-			}
+func TestDesktopActSchemaExposesVerificationControls(t *testing.T) {
+	schema := inputSchema("desktop_act")
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("desktop_act input schema properties missing")
+	}
+	for _, name := range []string{"verify", "before_snapshot", "after_snapshot", "verify_region", "wait_ms"} {
+		if _, ok := props[name]; !ok {
+			t.Fatalf("desktop_act input schema missing %q", name)
 		}
 	}
 }

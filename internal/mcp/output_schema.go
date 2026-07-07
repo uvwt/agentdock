@@ -17,9 +17,6 @@ func outputSchema(name string) map[string]any {
 	props["ok"] = boolProp("Whether the tool call completed successfully.")
 
 	switch name {
-	case "tool_descriptors":
-		props["tools"] = arrayProp("Runtime-visible tool descriptors.")
-		props["count"] = intProp("Tool count.")
 	case "server_info":
 		props["server"] = stringProp("Server identifier.")
 		props["title"] = stringProp("Human-readable server title.")
@@ -31,8 +28,6 @@ func outputSchema(name string) map[string]any {
 		props["task_state_dir"] = stringProp("Local directory containing persistent recoverable task state.")
 		props["workflow_dir"] = stringProp("Local directory containing workflow templates.")
 		props["sandbox"] = objectProp("Sandbox status metadata.")
-	case "get_default_cwd", "set_default_cwd":
-		props["path"] = stringProp("Workspace-relative cwd path.")
 	case "read_file":
 		props["path"] = stringProp("Workspace-relative file path.")
 		props["content"] = stringProp("Text content slice.")
@@ -73,7 +68,7 @@ func outputSchema(name string) map[string]any {
 		props["diff_preview"] = stringProp("Unified diff preview.")
 		props["truncated"] = boolProp("Whether diff preview was truncated.")
 		props["summary"] = stringProp("Edit result summary.")
-	case "exec_command", "session_control", "write_stdin", "session_status", "kill_session":
+	case "exec_command", "session_control":
 		props["session_id"] = stringProp("Command session id.")
 		props["status"] = stringProp("Session status.")
 		props["stdout"] = stringProp("Captured stdout segment.")
@@ -82,14 +77,6 @@ func outputSchema(name string) map[string]any {
 		props["elapsed_ms"] = intProp("Session elapsed milliseconds.")
 		props["timed_out"] = boolProp("Whether the command timed out.")
 		props["diagnostic"] = objectProp("Structured diagnostic for common failures.")
-	case "list_sessions", "kill_all_sessions":
-		props["sessions"] = arrayProp("Running command sessions.")
-		props["count"] = intProp("Number of running sessions.")
-	case "configure_github_token":
-		props["token_found"] = boolProp("Whether a supported token variable was found.")
-		props["username"] = stringProp("Stored GitHub username.")
-		props["credential_helper"] = stringProp("Configured git credential helper.")
-		props["password_stored"] = boolProp("Whether a token was stored without exposing it.")
 	case "check_github_repo_access":
 		props["credential_found"] = boolProp("Whether a stored GitHub credential was found.")
 		props["username"] = stringProp("Stored GitHub username.")
@@ -99,17 +86,6 @@ func outputSchema(name string) map[string]any {
 		props["repo_status"] = intProp("GitHub API repo HTTP status.")
 		props["repo_access"] = boolProp("Whether the repository is visible to the token.")
 		props["diagnostic"] = objectProp("Structured access diagnostic.")
-	case "github_create_repo":
-		props["credential_found"] = boolProp("Whether a stored GitHub credential was found.")
-		props["username"] = stringProp("Stored GitHub username.")
-		props["auth_login"] = stringProp("Authenticated GitHub login.")
-		props["status"] = intProp("GitHub API HTTP status.")
-		props["created"] = boolProp("Whether the repository was created.")
-		props["full_name"] = stringProp("Created repository full name.")
-		props["html_url"] = stringProp("Repository web URL.")
-		props["clone_url"] = stringProp("Repository HTTPS clone URL.")
-		props["ssh_url"] = stringProp("Repository SSH clone URL.")
-		props["diagnostic"] = objectProp("Structured create diagnostic.")
 	case "task_manage":
 		props["action"] = stringProp("Completed task action.")
 		props["task_id"] = stringProp("Persistent task id returned by create and usable with get, final_review, or complete_after_review.")
@@ -275,14 +251,14 @@ func outputSchema(name string) map[string]any {
 		props["recipient"] = stringProp("Age public recipient generated or used.")
 		props["algorithm"] = stringProp("Encryption algorithm.")
 		props["missing_encrypted"] = arrayProp("Missing encrypted backup paths.")
-	case "browser_session", "browser_session_start", "browser_session_close", "browser_session_cleanup":
+	case "browser_session":
 		props["operation"] = stringProp("Browser operation name.")
 		props["session_id"] = stringProp("Browser session id.")
 		props["status"] = stringProp("Browser session status.")
 		props["removed_count"] = intProp("Number of stale browser sessions removed by cleanup.")
 		props["removed_sessions"] = arrayProp("Browser session ids removed by cleanup.")
 		props["stdout"] = stringProp("Raw browser runner output.")
-	case "browser_act", "browser_action", "browser_snapshot":
+	case "browser_act", "browser_snapshot":
 		props["operation"] = stringProp("Browser operation name.")
 		props["session_id"] = stringProp("Browser session id.")
 		props["url"] = stringProp("Current page URL.")
@@ -315,7 +291,7 @@ func outputSchema(name string) map[string]any {
 	case "workspace_repos":
 		props["repos"] = arrayProp("Git repositories found under the workspace.")
 		props["count"] = intProp("Repository count.")
-	case "git_status", "git_repo_status":
+	case "git_status":
 		props["command"] = stringProp("Executed git command.")
 		props["output"] = stringProp("Raw git output.")
 		props["repo_path"] = stringProp("Workspace-relative repository path.")
@@ -325,7 +301,7 @@ func outputSchema(name string) map[string]any {
 		props["behind"] = intProp("Commits behind upstream.")
 		props["files"] = arrayProp("Changed files.")
 		props["clean"] = boolProp("Whether the worktree is clean.")
-	case "git_diff", "git_log", "git_inspect", "git_show", "git_blame", "git_remote", "git_fetch", "git_pull", "git_push", "git_clone", "git_commit":
+	case "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit":
 		props["command"] = stringProp("Executed git command.")
 		props["output"] = stringProp("Raw git output.")
 		props["repo_path"] = stringProp("Workspace-relative repository path, when applicable.")
@@ -377,70 +353,6 @@ func outputSchema(name string) map[string]any {
 		props["text"] = stringProp("Clipboard text or typed text, when applicable.")
 		props["verified"] = boolProp("Whether clipboard write verification passed, when applicable.")
 		props["waited_ms"] = intProp("Wait duration for wait action.")
-	case "desktop_list_apps":
-		props["running"] = arrayProp("Running visible applications.")
-		props["recent"] = arrayProp("Best-effort recently used applications from Spotlight metadata.")
-		props["count"] = intProp("Running application count.")
-	case "desktop_get_app_state":
-		props["app"] = stringProp("Requested app.")
-		props["resolved_app"] = stringProp("Resolved running app name.")
-		props["bundle_id"] = stringProp("App bundle identifier when available.")
-		props["pid"] = intProp("Process id when available.")
-		props["frontmost"] = boolProp("Whether the app is frontmost.")
-		props["window"] = objectProp("Key window metadata.")
-		props["accessibility_ok"] = boolProp("Whether accessibility tree capture succeeded.")
-		props["accessibility_tree"] = arrayProp("Accessibility tree nodes with element indexes.")
-		props["node_count"] = intProp("Accessibility tree node count.")
-		props["coordinate_space"] = objectProp("Coordinate space metadata for screenshots and actions.")
-		props["screenshot_path"] = stringProp("Saved original screenshot path.")
-		props["screenshot_url"] = stringProp("Artifact URL for the original screenshot, when configured.")
-		props["screenshot_artifact_id"] = stringProp("Screenshot artifact id.")
-		props["mime_type"] = stringProp("Original screenshot MIME type.")
-		props["width"] = intProp("Original screenshot width.")
-		props["height"] = intProp("Original screenshot height.")
-		props["size_bytes"] = intProp("Original screenshot size in bytes.")
-		props["image_attached"] = boolProp("Whether compressed image content was attached to the MCP response.")
-		props["image_base64"] = stringProp("Compressed Base64 image data when image_attached is true.")
-		props["image_mime_type"] = stringProp("Compressed image MIME type when image_attached is true.")
-		props["image_width"] = intProp("Compressed image width when image_attached is true.")
-		props["image_height"] = intProp("Compressed image height when image_attached is true.")
-		props["image_size_bytes"] = intProp("Compressed image size in bytes when image_attached is true.")
-		props["original"] = objectProp("Original/crop metadata for attached image processing.")
-		props["image_warnings"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
-	case "desktop_snapshot", "desktop_snapshot_app":
-		props["operation"] = stringProp("Desktop operation name.")
-		props["screenshot_path"] = stringProp("Saved screenshot path.")
-		props["screenshot_url"] = stringProp("Artifact URL for the screenshot, when configured.")
-		props["screenshot_artifact_id"] = stringProp("Screenshot artifact id.")
-		props["mime_type"] = stringProp("Screenshot MIME type.")
-		props["width"] = intProp("Screenshot width in pixels.")
-		props["height"] = intProp("Screenshot height in pixels.")
-		props["size_bytes"] = intProp("Screenshot size in bytes.")
-		props["target_window"] = objectProp("Target app window metadata in macOS points, when applicable.")
-		props["crop"] = objectProp("Window-relative crop rectangle in macOS points, when applicable.")
-		props["screen_region"] = objectProp("Absolute screen region in macOS points used for capture, when applicable.")
-		props["action_coordinate_space"] = stringProp("Coordinate space used by desktop action inputs, typically screen_points or window_points.")
-		props["screenshot_coordinate_space"] = stringProp("Coordinate space of returned image, typically image_pixels.")
-	case "desktop_click", "desktop_double_click", "desktop_move", "desktop_scroll", "desktop_drag", "desktop_type", "desktop_set_value", "desktop_perform_secondary_action", "desktop_hotkey":
-		props["operation"] = stringProp("Desktop operation name.")
-		props["command_ok"] = boolProp("Whether the underlying command exited successfully.")
-		props["permission_ok"] = boolProp("Whether known macOS permission warnings were absent.")
-		props["effect_verified"] = boolProp("Whether before/after screenshot verification ran successfully.")
-		props["effect_changed"] = boolProp("Whether verification detected enough screenshot change after the command.")
-		props["verification"] = stringProp("Verification mode/status, for example not_requested, screenshot_diff, or diff_failed.")
-		props["diff_percent"] = floatProp("Approximate screenshot difference ratio when screenshot_diff verification ran.")
-		props["diff_score"] = floatProp("Alias for diff_percent; simple screenshot difference ratio between 0 and 1.")
-		props["before_snapshot_path"] = stringProp("Before screenshot path when captured.")
-		props["after_snapshot_path"] = stringProp("After screenshot path when captured.")
-		props["before_screenshot_path"] = stringProp("Alias for before_snapshot_path.")
-		props["after_screenshot_path"] = stringProp("Alias for after_snapshot_path.")
-		props["target_window"] = objectProp("Target app window metadata in macOS points, when app is provided.")
-		props["action_coordinate_space"] = stringProp("Input coordinate mode: screen or window.")
-		props["error_layer"] = stringProp("Failure layer: validation, focus, window, command, screenshot, verification, or runtime.")
-		props["error_code"] = stringProp("Structured error code for known desktop failures.")
-		props["warnings"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
-	case "request_permissions":
-		props["permission_request"] = objectProp("Permission request metadata.")
 	case "view_image":
 		props["path"] = stringProp("Workspace-relative image path.")
 		props["mime_type"] = stringProp("Returned image MIME type.")
@@ -456,25 +368,4 @@ func outputSchema(name string) map[string]any {
 	}
 
 	return map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": true}
-}
-
-func addDesktopActionOutputProps(props map[string]any, stringProp func(string) map[string]any, intProp func(string) map[string]any, boolProp func(string) map[string]any, objectProp func(string) map[string]any, arrayProp func(string) map[string]any) {
-	props["operation"] = stringProp("Desktop operation name.")
-	props["command_ok"] = boolProp("Whether cliclick command execution succeeded. This does not prove the UI changed.")
-	props["effect_verified"] = boolProp("Whether before/after screenshot verification ran successfully.")
-	props["effect_changed"] = boolProp("Whether verification detected a screenshot change after the command.")
-	props["verification"] = stringProp("Verification status such as not_requested, byte_diff, sha256_equal, before_screenshot_failed, after_screenshot_failed, or diff_failed.")
-	props["error_layer"] = stringProp("Failure layer: validation, focus, window, command, screenshot, verification, or runtime.")
-	props["before_screenshot_path"] = stringProp("Before screenshot path when verify=true.")
-	props["after_screenshot_path"] = stringProp("After screenshot path when verify=true.")
-	props["diff_score"] = map[string]any{"type": "number", "description": "Pixel-level screenshot difference ratio between 0 and 1."}
-	props["changed_pixels"] = intProp("Number of changed pixels detected by pixel-level screenshot diff.")
-	props["total_pixels"] = intProp("Total pixel denominator used for diff_score.")
-	props["changed_bounds"] = objectProp("Bounding box of changed pixels in image coordinates when a change is detected.")
-	props["size_mismatch"] = boolProp("Whether before/after screenshots had different pixel dimensions.")
-	props["target_window"] = objectProp("Target app window metadata in macOS points when app is provided.")
-	props["action_coordinate_space"] = stringProp("Input coordinate mode: screen or window.")
-	props["points"] = arrayProp("Actual global macOS point coordinates sent to cliclick.")
-	props["input_points"] = arrayProp("Original caller coordinates before window-relative conversion, when different from points.")
-	props["stdout"] = stringProp("Captured command stdout/stderr.")
 }

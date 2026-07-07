@@ -14,7 +14,6 @@ func inputSchema(name string) map[string]any {
 	}
 
 	switch name {
-	case "tool_descriptors":
 	case "read_file":
 		props["path"] = stringProp("Workspace-relative file path.")
 		props["start_line"] = intProp("1-based start line.")
@@ -92,29 +91,11 @@ func inputSchema(name string) map[string]any {
 		props["session_id"] = stringProp("Session id returned by exec_command, required for status/write/kill.")
 		props["chars"] = stringProp("Characters to write when action=write.")
 		props["max_output_bytes"] = intProp("Maximum output bytes.")
-	case "write_stdin", "session_status", "kill_session":
-		props["session_id"] = stringProp("Session id returned by exec_command.")
-		props["chars"] = stringProp("Characters to write to stdin.")
-		props["max_output_bytes"] = intProp("Maximum output bytes.")
-		required = []string{"session_id"}
-	case "kill_all_sessions":
-	case "configure_github_token":
-		props["env_file"] = stringProp("Workspace-relative .env file containing GITHUB_TOKEN, GH_TOKEN, GITHUB_PAT, or TOKEN.")
-		props["username"] = stringProp("GitHub username to store with the HTTPS credential. Defaults to GITHUB_USERNAME, GITHUB_USER, or x-access-token.")
 	case "check_github_repo_access":
 		props["repo"] = stringProp("GitHub repository as owner/name or https://github.com/owner/name.git.")
 		props["repository"] = stringProp("Alias for repo.")
 		props["timeout_ms"] = intProp("HTTP timeout in milliseconds.")
 		required = []string{"repo"}
-	case "github_create_repo":
-		props["name"] = stringProp("Repository name to create.")
-		props["owner"] = stringProp("Optional owner or organization. Defaults to the authenticated user.")
-		props["repo"] = stringProp("Optional owner/name shorthand.")
-		props["description"] = stringProp("Repository description.")
-		props["private"] = boolProp("Create a private repository. Defaults to true.")
-		props["auto_init"] = boolProp("Create the repository with an initial commit.")
-		props["timeout_ms"] = intProp("HTTP timeout in milliseconds.")
-		required = []string{"name"}
 	case "task_manage":
 		props["action"] = map[string]any{"type": "string", "description": "Task lifecycle action. Template authoring lives in workflow_template_manage.", "enum": []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review", "template_match"}}
 		props["task_id"] = stringProp("Persistent task id for get, block, resume, final_review, or complete_after_review.")
@@ -307,37 +288,7 @@ func inputSchema(name string) map[string]any {
 		props["max_interactive_elements"] = intProp("Maximum visible interactive elements to return. Defaults to 40.")
 		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
 		required = []string{"session_id", "actions"}
-	case "browser_session_start":
-		props["url"] = stringProp("Initial URL. Defaults to about:blank.")
-		props["backend"] = stringProp("Browser backend: playwright or cdp. Defaults to playwright.")
-		props["browser"] = stringProp("Browser family: chromium, chrome, edge, or msedge. edge/msedge selects Microsoft Edge.")
-		props["channel"] = stringProp("Optional Playwright Chromium channel, such as msedge or chrome.")
-		props["cdp_url"] = stringProp("CDP endpoint, required when backend=cdp.")
-		props["headless"] = boolProp("Run browser headless. Defaults to true.")
-		props["viewport"] = objectProp("Viewport object, for example {width:1280,height:800}.")
-		props["session_id"] = stringProp("Optional caller-provided session id.")
-		props["profile_id"] = stringProp("Optional persistent browser profile id stored under browser artifacts. Reuses cookies/localStorage across runs.")
-		props["cookies"] = arrayProp("Optional Playwright cookies to add to the browser context.")
-		props["local_storage"] = objectProp("Optional localStorage map by origin.")
-		props["storage_state"] = objectProp("Optional Playwright storageState object.")
-		props["save_storage_state"] = boolProp("Save context storage state after action/snapshot and return storage_state_path.")
-		props["reload_after_local_storage"] = boolProp("Reload the page after applying localStorage. Defaults to true.")
-		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
-	case "browser_action":
-		props["session_id"] = stringProp("Browser session id.")
-		props["actions"] = arrayProp("Actions to run: goto, click, fill, press, wait, wait_for_selector, select, scroll, reload, back, or forward. Page script actions are disabled by the default runner.")
-		props["full_page"] = boolProp("Capture full-page screenshot in the final snapshot.")
-		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
-		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 and screenshot_mime_type in the response. Disabled by default because screenshots can be large.")
-		props["include_image"] = boolProp("Attach screenshot as MCP image content when supported and below max_image_bytes.")
-		props["include_image_base64"] = boolProp("Alias for include_image.")
-		props["max_image_bytes"] = intProp("Maximum inline image bytes. Defaults to 750000.")
-		props["close_after"] = boolProp("Close and remove the browser session after the action/snapshot succeeds.")
-		props["save_storage_state"] = boolProp("Save context storage state and return storage_state_path.")
-		props["max_interactive_elements"] = intProp("Maximum visible interactive elements to return. Defaults to 40.")
-		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
-		required = []string{"session_id", "actions"}
-	case "browser_snapshot", "browser_session_close":
+	case "browser_snapshot":
 		props["session_id"] = stringProp("Browser session id.")
 		props["full_page"] = boolProp("Capture full-page screenshot for snapshot.")
 		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
@@ -408,136 +359,10 @@ func inputSchema(name string) map[string]any {
 		props["action"] = stringProp("Clipboard action: get or set.")
 		props["text"] = stringProp("Text to place into the macOS clipboard when action=set.")
 		props["verify"] = boolProp("Read back pbpaste after writing and report verified. Defaults to true.")
-	case "desktop_preflight":
-		props["check_screenshot"] = boolProp("Try a real screencapture check. Defaults to true.")
-		props["check_applescript"] = boolProp("Try a real AppleScript/System Events check. Defaults to true.")
-	case "desktop_list_apps":
-		props["max_recent"] = intProp("Maximum recent apps to include. Defaults to 50.")
-	case "desktop_get_app_state":
-		props["app"] = stringProp("App name, full .app path, or bundle identifier.")
-		props["activate"] = boolProp("Activate the app before reading state. Defaults to true.")
-		props["include_image"] = boolProp("Attach a compressed screenshot as MCP image content. Defaults to false.")
-		props["include_image_base64"] = boolProp("Alias for include_image. Defaults to false.")
-		props["max_bytes"] = intProp("Maximum encoded image bytes when include_image is true. Defaults to 750000.")
-		props["max_width"] = intProp("Maximum image width when include_image is true. Defaults to 1280.")
-		props["max_height"] = intProp("Maximum image height when include_image is true. Defaults to 1280.")
-		props["format"] = stringProp("Output image format when include_image is true: jpeg or png. Defaults to jpeg.")
-		props["quality"] = intProp("JPEG quality when format is jpeg. Defaults to 72.")
-		props["crop"] = map[string]any{"type": "object", "description": "Optional crop rectangle {x,y,width,height} before resizing.", "additionalProperties": true}
-		props["ax_max_depth"] = intProp("Maximum accessibility tree depth. Defaults to 8.")
-		props["ax_max_nodes"] = intProp("Maximum accessibility tree nodes. Defaults to 300.")
-		required = []string{"app"}
-	case "desktop_window_list":
-	case "desktop_snapshot":
-		props["include_image"] = boolProp("Attach a compressed screenshot as MCP image content. Defaults to false.")
-		props["include_image_base64"] = boolProp("Alias for include_image. Defaults to false.")
-		props["max_bytes"] = intProp("Maximum encoded image bytes when include_image is true. Defaults to 750000.")
-		props["max_width"] = intProp("Maximum image width when include_image is true. Defaults to 1280.")
-		props["max_height"] = intProp("Maximum image height when include_image is true. Defaults to 1280.")
-		props["format"] = stringProp("Output image format when include_image is true: jpeg or png. Defaults to jpeg.")
-		props["quality"] = intProp("JPEG quality when format is jpeg. Defaults to 72.")
-		props["crop"] = map[string]any{"type": "object", "description": "Optional crop rectangle {x,y,width,height} before resizing.", "additionalProperties": true}
-	case "desktop_snapshot_app":
-		props["app"] = stringProp("Target macOS application name, full .app path, or bundle identifier.")
-		props["crop"] = map[string]any{"type": "object", "description": "Optional window-relative crop rectangle {x,y,width,height}; defaults to the whole target window.", "additionalProperties": true}
-		props["focus_if_needed"] = boolProp("Activate the app before querying/capturing its window.")
-		props["require_frontmost"] = boolProp("Fail if the target app is not frontmost after optional focus.")
-		props["fail_if_window_not_visible"] = boolProp("Fail when the target app has no visible window.")
-		required = []string{"app"}
-	case "desktop_clipboard_set":
-		props["text"] = stringProp("Text to place into the macOS clipboard.")
-		props["verify"] = boolProp("Read back pbpaste after writing and report verified. Defaults to true.")
-		required = []string{"text"}
-	case "desktop_clipboard_get":
-	case "desktop_focus_app":
-		props["app"] = stringProp("macOS application name to activate, for example WeChat or Safari.")
-		required = []string{"app"}
-	case "desktop_move", "desktop_click", "desktop_double_click":
-		props["app"] = stringProp("Optional app name, full .app path, or bundle identifier. Used for AX element targeting, focus/window assertions, and space=window conversion.")
-		props["element_index"] = stringProp("Accessibility element index from desktop_get_app_state. Preferred over x/y for desktop_click.")
-		props["x"] = intProp("X coordinate. Defaults to global macOS screen points; when space=window, this is relative to the target app window.")
-		props["y"] = intProp("Y coordinate. Defaults to global macOS screen points; when space=window, this is relative to the target app window.")
-		props["space"] = stringProp("Coordinate space: screen or window. window converts app-window-relative points into global macOS points.")
-		props["verify"] = boolProp("When true, capture before/after screenshots, wait wait_ms, and return effect_verified/effect_changed/diff_score.")
-		props["before_snapshot"] = boolProp("Capture a before screenshot for effect verification. Defaults to verify.")
-		props["after_snapshot"] = boolProp("Capture an after screenshot for effect verification. Defaults to verify.")
-		props["verify_region"] = map[string]any{"type": "object", "description": "Optional screenshot diff region {x,y,width,height,space}. space may be screen or window.", "additionalProperties": true}
-		props["wait_ms"] = intProp("Milliseconds to wait before after-screenshot; defaults to 250 when verify=true.")
-		props["focus_if_needed"] = boolProp("Activate the target app before the action.")
-		props["require_frontmost"] = boolProp("Fail if the target app is not frontmost after optional focus.")
-		props["fail_if_window_not_visible"] = boolProp("Fail when app is set but no visible app window can be found.")
-		props["fail_if_coordinate_outside_window"] = boolProp("With space=window, fail when coordinate is outside the target window bounds.")
-		props["click_count"] = intProp("Click count for desktop_click. Defaults to 1.")
-		props["mouse_button"] = stringProp("Mouse button for desktop_click: left, right, or middle. Defaults to left.")
-	case "desktop_scroll":
-		props["app"] = stringProp("Optional app name, full .app path, or bundle identifier. When element_index is provided, call desktop_get_app_state first.")
-		props["element_index"] = stringProp("Accessibility element index from desktop_get_app_state to scroll at.")
-		props["direction"] = stringProp("Scroll direction: up, down, left, or right.")
-		props["pages"] = intProp("Scroll pages/amount multiplier. Defaults to 1.")
-		props["dx"] = intProp("Horizontal scroll amount.")
-		props["dy"] = intProp("Vertical scroll amount.")
-		props["amount"] = intProp("Alias for dy.")
-		props["verify"] = boolProp("When true, capture before/after screenshots, wait wait_ms, and return effect_verified/effect_changed/diff_score.")
-		props["before_snapshot"] = boolProp("Capture a before screenshot for effect verification. Defaults to verify.")
-		props["after_snapshot"] = boolProp("Capture an after screenshot for effect verification. Defaults to verify.")
-		props["verify_region"] = map[string]any{"type": "object", "description": "Optional screenshot diff region {x,y,width,height,space}. space may be screen or window.", "additionalProperties": true}
-		props["wait_ms"] = intProp("Milliseconds to wait before after-screenshot; defaults to 250 when verify=true.")
-	case "desktop_drag":
-		props["app"] = stringProp("Optional app name, full .app path, or bundle identifier. Used for focus/window assertions and space=window conversion.")
-		props["from_x"] = intProp("Start X coordinate. Defaults to global macOS screen points; when space=window, this is relative to the target app window.")
-		props["from_y"] = intProp("Start Y coordinate. Defaults to global macOS screen points; when space=window, this is relative to the target app window.")
-		props["to_x"] = intProp("End X coordinate. Defaults to global macOS screen points; when space=window, this is relative to the target app window.")
-		props["to_y"] = intProp("End Y coordinate. Defaults to global macOS screen points; when space=window, this is relative to the target app window.")
-		props["space"] = stringProp("Coordinate space: screen or window. window converts app-window-relative points into global macOS points.")
-		props["verify"] = boolProp("When true, capture before/after screenshots, wait wait_ms, and return effect_verified/effect_changed/diff_score.")
-		props["before_snapshot"] = boolProp("Capture a before screenshot for effect verification. Defaults to verify.")
-		props["after_snapshot"] = boolProp("Capture an after screenshot for effect verification. Defaults to verify.")
-		props["verify_region"] = map[string]any{"type": "object", "description": "Optional screenshot diff region {x,y,width,height,space}. space may be screen or window.", "additionalProperties": true}
-		props["wait_ms"] = intProp("Milliseconds to wait before after-screenshot; defaults to 250 when verify=true.")
-		props["focus_if_needed"] = boolProp("Activate the target app before the action.")
-		props["require_frontmost"] = boolProp("Fail if the target app is not frontmost after optional focus.")
-		props["fail_if_window_not_visible"] = boolProp("Fail when app is set but no visible app window can be found.")
-		props["fail_if_coordinate_outside_window"] = boolProp("With space=window, fail when any coordinate is outside the target window bounds.")
-		props["duration_ms"] = intProp("Total drag movement duration distributed across steps; capped at 30000.")
-		props["steps"] = intProp("Number of intermediate move steps for slower drags; capped at 200.")
-		props["hold_ms"] = intProp("Wait after mouse down before moving; capped at 10000.")
-		props["release_wait_ms"] = intProp("Wait before mouse up after movement; capped at 10000.")
-		required = []string{"from_x", "from_y", "to_x", "to_y"}
-	case "desktop_type":
-		props["app"] = stringProp("Optional app name, full .app path, or bundle identifier. When provided, call desktop_get_app_state first.")
-		props["text"] = stringProp("Text to input into the focused macOS app.")
-		props["strategy"] = stringProp("Input strategy: auto, keyboard, or clipboard. Auto uses clipboard for long, multiline, or non-ASCII text.")
-		props["verify"] = boolProp("When true, capture before/after screenshots, wait wait_ms, and return effect_verified/effect_changed/diff_score.")
-		props["before_snapshot"] = boolProp("Capture a before screenshot for effect verification. Defaults to verify.")
-		props["after_snapshot"] = boolProp("Capture an after screenshot for effect verification. Defaults to verify.")
-		props["verify_region"] = map[string]any{"type": "object", "description": "Optional screenshot diff region {x,y,width,height,space}. space may be screen or window.", "additionalProperties": true}
-		props["wait_ms"] = intProp("Milliseconds to wait before after-screenshot; defaults to 250 when verify=true.")
-		required = []string{"text"}
-	case "desktop_set_value":
-		props["app"] = stringProp("App name, full .app path, or bundle identifier.")
-		props["element_index"] = stringProp("Accessibility element index from desktop_get_app_state.")
-		props["value"] = stringProp("Value to set on the accessibility element.")
-		required = []string{"app", "element_index", "value"}
-	case "desktop_perform_secondary_action":
-		props["app"] = stringProp("App name, full .app path, or bundle identifier.")
-		props["element_index"] = stringProp("Accessibility element index from desktop_get_app_state.")
-		props["action"] = stringProp("Accessibility action name, for example AXPress or AXShowMenu.")
-		required = []string{"app", "element_index", "action"}
-	case "desktop_hotkey":
-		props["keys"] = stringProp("Shortcut, for example cmd+space, cmd+v, enter.")
-		props["verify"] = boolProp("When true, capture before/after screenshots, wait wait_ms, and return effect_verified/effect_changed/diff_score.")
-		props["before_snapshot"] = boolProp("Capture a before screenshot for effect verification. Defaults to verify.")
-		props["after_snapshot"] = boolProp("Capture an after screenshot for effect verification. Defaults to verify.")
-		props["verify_region"] = map[string]any{"type": "object", "description": "Optional screenshot diff region {x,y,width,height,space}. space may be screen or window.", "additionalProperties": true}
-		props["wait_ms"] = intProp("Milliseconds to wait before after-screenshot; defaults to 250 when verify=true.")
-		required = []string{"keys"}
-	case "desktop_wait":
-		props["ms"] = intProp("Milliseconds to wait.")
-		props["timeout_ms"] = intProp("Alias for ms; capped at 60000.")
 	case "workspace_repos":
 		props["path"] = stringProp("Directory to scan. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed. Defaults to current workspace/default cwd.")
 		props["max_depth"] = intProp("Maximum directory depth to scan for repositories.")
-	case "git_repo_status", "git_status":
+	case "git_status":
 		props["repo_path"] = stringProp("Repository path. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed. Defaults to current workspace/default cwd.")
 		props["max_output_bytes"] = intProp("Maximum output bytes.")
 	case "git_diff":
@@ -548,15 +373,6 @@ func inputSchema(name string) map[string]any {
 		props["repo_path"] = stringProp("Repository path. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed.")
 		props["limit"] = intProp("Maximum commits.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
-	case "git_show":
-		props["repo_path"] = stringProp("Repository path. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed.")
-		props["rev"] = stringProp("Revision to show.")
-		props["max_bytes"] = intProp("Maximum output bytes.")
-	case "git_blame":
-		props["repo_path"] = stringProp("Repository path. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed.")
-		props["path"] = stringProp("File path. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed.")
-		props["max_bytes"] = intProp("Maximum output bytes.")
-		required = []string{"path"}
 	case "git_inspect":
 		props["action"] = stringProp("Inspect action: show or blame.")
 		props["repo_path"] = stringProp("Repository path.")
@@ -566,11 +382,6 @@ func inputSchema(name string) map[string]any {
 	case "git_remote":
 		props["action"] = stringProp("Remote action: fetch, pull, or push.")
 		props["repo_path"] = stringProp("Repository path.")
-		props["remote"] = stringProp("Remote name. Defaults to origin.")
-		props["branch"] = stringProp("Branch name. Defaults to current branch where applicable.")
-		props["max_bytes"] = intProp("Maximum output bytes.")
-	case "git_fetch", "git_pull", "git_push":
-		props["repo_path"] = stringProp("Repository path. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed.")
 		props["remote"] = stringProp("Remote name. Defaults to origin.")
 		props["branch"] = stringProp("Branch name. Defaults to current branch where applicable.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
@@ -589,7 +400,7 @@ func inputSchema(name string) map[string]any {
 		props["all"] = boolProp("Stage all changes before committing.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
 		required = []string{"message"}
-	case "set_default_cwd", "view_image":
+	case "view_image":
 		props["path"] = stringProp("Workspace-relative path.")
 		if name == "view_image" {
 			props["max_bytes"] = intProp("Maximum encoded image bytes. Defaults to 750000.")
@@ -601,9 +412,6 @@ func inputSchema(name string) map[string]any {
 			props["crop"] = map[string]any{"type": "object", "description": "Optional crop rectangle {x,y,width,height} before resizing.", "additionalProperties": true}
 			props["output"] = stringProp("mcp_image or data_url. Defaults to mcp_image.")
 		}
-	case "request_permissions":
-		props["tool_name"] = stringProp("Tool needing permission.")
-		props["permission"] = stringProp("Permission type.")
 	}
 
 	schema := map[string]any{"type": "object", "properties": props, "additionalProperties": true}
