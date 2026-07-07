@@ -200,52 +200,22 @@ func assertObjectSchema(t *testing.T, name, kind string, schema map[string]any) 
 }
 
 func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
-	schema := inputSchema("task_manage")
-	props, ok := schema["properties"].(map[string]any)
-	if !ok {
-		t.Fatal("task_manage input schema properties missing")
-	}
-	action, ok := props["action"].(map[string]any)
-	if !ok {
-		t.Fatal("task_manage action schema missing")
-	}
-	values, ok := action["enum"].([]string)
-	if !ok {
-		t.Fatalf("task_manage action enum has unexpected type: %#v", action["enum"])
-	}
-	seen := map[string]bool{}
-	for _, value := range values {
-		seen[value] = true
-	}
-	for _, value := range []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review", "template_match"} {
-		if !seen[value] {
-			t.Fatalf("task_manage action enum missing %q: %#v", value, values)
-		}
-	}
-	for _, value := range []string{"phase_checkpoint", "complete_step", "record_attempt", "template_save"} {
-		if seen[value] {
-			t.Fatalf("task_manage action enum should hide recovery action %q: %#v", value, values)
-		}
-	}
-	for _, name := range []string{"completion_conditions", "review_status", "verified_facts", "open_risks", "missing_checks", "evidence"} {
+	props := schemaProperties(t, "task_manage")
+	assertSameStrings(t, enumStrings(t, props["action"]), []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review", "template_match"})
+	for _, name := range []string{"completion_conditions", "review_status", "verified_facts", "open_risks", "missing_checks", "evidence", "type"} {
 		if _, ok := props[name]; !ok {
 			t.Fatalf("task_manage input schema missing %q", name)
 		}
 	}
-	for _, name := range []string{"step_completions", "condition_evidence", "advance_phase", "complete_task", "strategy", "outcome", "diagnosis"} {
-		if _, ok := props[name]; ok {
-			t.Fatalf("task_manage input schema should hide %q", name)
+
+	templateProps := schemaProperties(t, "workflow_template_manage")
+	assertSameStrings(t, enumStrings(t, templateProps["action"]), []string{"save", "validate", "publish", "retire", "list", "get", "match"})
+	for _, name := range []string{"template", "template_id", "template_version", "template_status", "allow_long_template", "long_template_reason", "goal", "device", "type"} {
+		if _, ok := templateProps[name]; !ok {
+			t.Fatalf("workflow_template_manage input schema missing %q", name)
 		}
 	}
-	recoveryProps, ok := inputSchema("task_manage_recovery")["properties"].(map[string]any)
-	if !ok {
-		t.Fatal("task_manage_recovery input schema properties missing")
-	}
-	for _, name := range []string{"step_completions", "condition_evidence", "advance_phase", "complete_task", "strategy", "outcome", "diagnosis"} {
-		if _, ok := recoveryProps[name]; !ok {
-			t.Fatalf("task_manage_recovery input schema missing %q", name)
-		}
-	}
+
 	outputProps, ok := outputSchema("task_manage")["properties"].(map[string]any)
 	if !ok {
 		t.Fatal("task_manage output schema properties missing")
@@ -440,6 +410,58 @@ func TestDesktopCommandSchemasExposeVerificationControls(t *testing.T) {
 			if _, ok := props[name]; !ok {
 				t.Fatalf("%s input schema missing %q", tool, name)
 			}
+		}
+	}
+}
+
+func schemaProperties(t *testing.T, name string) map[string]any {
+	t.Helper()
+	schema := inputSchema(name)
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("schema properties missing for %s: %#v", name, schema)
+	}
+	return props
+}
+
+func enumStrings(t *testing.T, value any) []string {
+	t.Helper()
+	obj, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("schema property is not object: %#v", value)
+	}
+	raw, ok := obj["enum"]
+	if !ok {
+		t.Fatalf("enum missing: %#v", obj)
+	}
+	items, ok := raw.([]string)
+	if !ok {
+		t.Fatalf("enum has unexpected type: %#v", raw)
+	}
+	return items
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func assertSameStrings(t *testing.T, actual, expected []string) {
+	t.Helper()
+	if len(actual) != len(expected) {
+		t.Fatalf("unexpected enum length: got %#v want %#v", actual, expected)
+	}
+	seen := map[string]bool{}
+	for _, item := range actual {
+		seen[item] = true
+	}
+	for _, item := range expected {
+		if !seen[item] {
+			t.Fatalf("enum missing %q: got %#v want %#v", item, actual, expected)
 		}
 	}
 }

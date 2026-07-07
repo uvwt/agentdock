@@ -33,34 +33,30 @@ func TestTaskManageLifecycleAndRestartRecovery(t *testing.T) {
 	}
 	task := loadedTask["task"].(taskstate.Task)
 
-	for range 3 {
-		result, advanceErr := rt.taskManage(map[string]any{"action": "advance", "task_id": task.ID})
-		if advanceErr != nil {
-			t.Fatal(advanceErr)
-		}
-		if _, exists := result["task"]; exists {
-			t.Fatalf("advance should return compact summary instead of full task: %#v", result)
-		}
-		loadedTask, err = rt.taskManage(map[string]any{"action": "get", "task_id": task.ID})
-		if err != nil {
-			t.Fatal(err)
-		}
-		task = loadedTask["task"].(taskstate.Task)
+	if _, err := rt.taskManage(map[string]any{"action": "complete_after_review", "task_id": task.ID, "summary": ""}); err == nil {
+		t.Fatal("complete_after_review succeeded before final_review")
 	}
-	if _, err := rt.taskManage(map[string]any{"action": "complete", "task_id": task.ID, "summary": ""}); err == nil {
-		t.Fatal("completion without final verification summary succeeded")
+	reviewed, err := rt.taskManage(map[string]any{
+		"action": "final_review", "task_id": task.ID, "summary": "final verification passed",
+		"review_status": "pass", "verified_facts": []string{"health endpoint returns 200"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := reviewed["task"]; exists {
+		t.Fatalf("final_review should return compact summary instead of full task: %#v", reviewed)
 	}
 	completed, err := rt.taskManage(map[string]any{
-		"action": "complete", "task_id": task.ID, "summary": "final verification passed",
+		"action": "complete_after_review", "task_id": task.ID, "summary": "",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, exists := completed["task"]; exists {
-		t.Fatalf("complete should return compact summary instead of full task: %#v", completed)
+		t.Fatalf("complete_after_review should return compact summary instead of full task: %#v", completed)
 	}
 	summary := completed["task_summary"].(map[string]any)
-	if summary["status"] != taskstate.StatusCompleted {
+	if summary["status"] != taskstate.StatusCompleted || summary["review_status"] != taskstate.FinalReviewPass {
 		t.Fatalf("unexpected completion summary: %#v", summary)
 	}
 
@@ -215,93 +211,6 @@ func TestTaskManageFinalReviewFlow(t *testing.T) {
 	}
 }
 
-func TestTaskManagePhaseCheckpointReturnsCompactSummary(t *testing.T) {
-	rt, _ := newCodeToolsRuntime(t)
-	created, err := rt.taskManage(map[string]any{
-		"action": "create", "title": "Repair service", "goal": "restore service",
-		"completion_conditions": []string{"service responds"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	taskID := created["task_id"].(string)
-	loadedTask, err := rt.taskManage(map[string]any{"action": "get", "task_id": taskID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	task := loadedTask["task"].(taskstate.Task)
-	result, err := rt.taskManage(map[string]any{
-		"action": "phase_checkpoint", "task_id": task.ID,
-		"condition_evidence": []map[string]any{{"condition_id": "cond_01", "summary": "service observed", "source": "test"}},
-		"advance_phase":      true,
-		"summary":            "check milestone complete",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, exists := result["task"]; exists {
-		t.Fatalf("phase_checkpoint unexpectedly returned full task: %#v", result)
-	}
-	summary, ok := result["task_summary"].(map[string]any)
-	if !ok {
-		t.Fatalf("missing compact task summary: %#v", result)
-	}
-	if summary["phase"] != taskstate.PhaseExecute || summary["review_status"] != "not_started" {
-		t.Fatalf("unexpected compact summary: %#v", summary)
-	}
-	refs, ok := summary["condition_refs"].([]map[string]any)
-	if !ok || len(refs) != 1 || refs[0]["id"] != "cond_01" {
-		t.Fatalf("phase checkpoint summary missing checklist refs: %#v", summary)
-	}
-	if _, exists := refs[0]["evidence_count"]; exists {
-		t.Fatalf("phase checkpoint summary should not expose evidence counts: %#v", refs[0])
-	}
-}
-
-func TestTaskManageCompleteStepAllowsSummaryOnly(t *testing.T) {
-	rt, _ := newCodeToolsRuntime(t)
-	draft, err := rt.tasks.SaveTemplateDraft(taskstate.Template{
-		ID: "summary.step", Version: "1.0.0", Title: "Summary step", Status: taskstate.TemplateDraft,
-		CompletionConditions: []string{"done"},
-		Steps:                []taskstate.TemplateStep{{ID: "inspect", Title: "Inspect", Phase: taskstate.PhaseCheck}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := rt.tasks.ValidateTemplate(draft.ID, draft.Version); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := rt.tasks.PublishTemplate(draft.ID, draft.Version); err != nil {
-		t.Fatal(err)
-	}
-
-	created, err := rt.taskManage(map[string]any{
-		"action": "create", "title": "Repair service", "goal": "restore service",
-		"template_id": "summary.step", "template_version": "1.0.0",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	taskID := created["task_id"].(string)
-	result, err := rt.taskManage(map[string]any{
-		"action": "complete_step", "task_id": taskID, "step_id": "inspect", "summary": "context inspected",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, exists := result["task"]; exists {
-		t.Fatalf("complete_step should return compact summary instead of full task: %#v", result)
-	}
-	loaded, err := rt.taskManage(map[string]any{"action": "get", "task_id": taskID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	updated := loaded["task"].(taskstate.Task)
-	if updated.Steps[0].Status != "completed" || len(updated.Steps[0].Evidence) != 0 {
-		t.Fatalf("summary-only complete_step should not require structured evidence: %#v", updated.Steps[0])
-	}
-}
-
 func TestTaskManageStateMutationActionsReturnCompactSummary(t *testing.T) {
 	rt, _ := newCodeToolsRuntime(t)
 	created, err := rt.taskManage(map[string]any{
@@ -361,7 +270,7 @@ func TestTaskManageTemplateListReturnsCompactSummaries(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := rt.taskManage(map[string]any{"action": "template_list", "template_status": "active"})
+	result, err := rt.workflowTemplateManage(map[string]any{"action": "list", "template_status": "active"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +284,7 @@ func TestTaskManageTemplateListReturnsCompactSummaries(t *testing.T) {
 	if items[0]["step_count"] != 1 || items[0]["condition_count"] != 1 || items[0]["keyword_count"] != 2 {
 		t.Fatalf("compact template summary missing counts: %#v", items[0])
 	}
-	loaded, err := rt.taskManage(map[string]any{"action": "template_get", "template_id": "large.template", "template_version": "1.0.0"})
+	loaded, err := rt.workflowTemplateManage(map[string]any{"action": "get", "template_id": "large.template", "template_version": "1.0.0"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,12 +303,12 @@ func TestTaskManageTemplateMutationActionsReturnCompactSummaries(t *testing.T) {
 		"steps":                 []map[string]any{{"id": "inspect", "title": "Inspect", "phase": taskstate.PhaseCheck}},
 	}
 
-	for _, action := range []string{"template_save", "template_validate", "template_publish", "template_retire"} {
+	for _, action := range []string{"save", "validate", "publish", "retire"} {
 		args := map[string]any{"action": action, "template_id": templateID, "template_version": templateVersion}
-		if action == "template_save" {
+		if action == "save" {
 			args = map[string]any{"action": action, "template": templateInput}
 		}
-		result, err := rt.taskManage(args)
+		result, err := rt.workflowTemplateManage(args)
 		if err != nil {
 			t.Fatalf("%s failed: %v", action, err)
 		}
@@ -412,36 +321,11 @@ func TestTaskManageTemplateMutationActionsReturnCompactSummaries(t *testing.T) {
 		}
 	}
 
-	loaded, err := rt.taskManage(map[string]any{"action": "template_get", "template_id": templateID, "template_version": templateVersion})
+	loaded, err := rt.workflowTemplateManage(map[string]any{"action": "get", "template_id": templateID, "template_version": templateVersion})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(loaded["template"].(taskstate.Template).Steps) != 1 {
 		t.Fatalf("template_get should still return full template: %#v", loaded)
-	}
-}
-
-func TestTaskManageRecordAttemptReturnsActionGuard(t *testing.T) {
-	rt, _ := newCodeToolsRuntime(t)
-	created, err := rt.taskManage(map[string]any{
-		"action": "create", "title": "Repair service", "goal": "restore service",
-		"completion_conditions": []string{"service responds"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	taskID := created["task_id"].(string)
-	result, err := rt.taskManage(map[string]any{
-		"action": "record_attempt", "task_id": taskID, "strategy": "restart",
-		"outcome": "failure", "diagnosis": "restart failed", "evidence": "systemctl output A",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, exists := result["task"]; exists {
-		t.Fatalf("record_attempt should return compact guidance, got full task: %#v", result)
-	}
-	if result["warning"] == "" || result["next_required_action"] == "" {
-		t.Fatalf("record_attempt missing guard guidance: %#v", result)
 	}
 }

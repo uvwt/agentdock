@@ -67,24 +67,12 @@ type TemplateSelection struct {
 	Snapshot       Template            `json:"snapshot"`
 }
 
-type StepEvidence struct {
-	Type        string    `json:"type"`
-	Source      string    `json:"source"`
-	Result      string    `json:"result"`
-	Summary     string    `json:"summary"`
-	ArtifactRef string    `json:"artifact_ref,omitempty"`
-	SHA256      string    `json:"sha256,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-}
-
 type TaskStep struct {
-	ID         string         `json:"id"`
-	Title      string         `json:"title"`
-	Phase      Phase          `json:"phase"`
-	Status     string         `json:"status"`
-	SkipReason string         `json:"skip_reason,omitempty"`
-	Evidence   []StepEvidence `json:"evidence"`
-	UpdatedAt  time.Time      `json:"updated_at"`
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Phase     Phase     `json:"phase"`
+	Status    string    `json:"status"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func (s *Store) WorkflowRoot() string { return filepath.Join(filepath.Dir(s.root), "workflows") }

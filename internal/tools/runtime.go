@@ -59,7 +59,7 @@ func (r *Runtime) Config() config.Config           { return r.cfg }
 func (r *Runtime) Workspace() *workspace.Workspace { return r.ws }
 
 func (r *Runtime) ToolNames() []string {
-	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "edit_file", "exec_command", "session_control", "configure_github_token", "check_github_repo_access", "github_create_repo", "task_manage", "task_manage_recovery", "skill_manage", "env_manage", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "request_permissions", "view_image"}
+	all := []string{"server_info", "tool_descriptors", "get_default_cwd", "set_default_cwd", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "edit_file", "exec_command", "session_control", "configure_github_token", "check_github_repo_access", "github_create_repo", "task_manage", "workflow_template_manage", "skill_manage", "env_manage", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "request_permissions", "view_image"}
 	if r.cfg.RecallEndpoint != "" {
 		all = append(all, "recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain")
 	}
@@ -158,8 +158,10 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		return r.checkGitHubRepoAccess(args)
 	case "github_create_repo":
 		return r.githubCreateRepo(args)
-	case "task_manage", "task_manage_recovery":
+	case "task_manage":
 		return r.taskManage(args)
+	case "workflow_template_manage":
+		return r.workflowTemplateManage(args)
 	case "skill_manage":
 		return r.skillManage(ctx, args)
 	case "env_manage":

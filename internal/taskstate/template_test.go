@@ -61,22 +61,10 @@ func TestTemplateLifecycleMatchAndTaskSnapshot(t *testing.T) {
 	if task.Template == nil || task.Template.Hash != published.Hash || len(task.Steps) != len(published.Steps) {
 		t.Fatalf("task snapshot=%#v", task)
 	}
-	if _, err := store.Advance(task.ID); err != nil {
-		t.Fatal(err)
+	if task.Steps[0].Status != "pending" || task.Steps[0].ID != "inspect" {
+		t.Fatalf("unexpected step snapshot: %#v", task.Steps[0])
 	}
-	task, err = store.CompleteStep(task.ID, "inspect", StepEvidence{Type: "command", Source: "git status", Result: "exit_code=0", Summary: "repository inspected"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if task.Steps[0].Status != "completed" {
-		t.Fatalf("step=%#v", task.Steps[0])
-	}
-	if _, err := store.Advance(task.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.CompleteStep(task.ID, "install", StepEvidence{Type: "command", Source: "other installer", Result: "exit_code=0", Summary: "installed"}); err != nil {
-		t.Fatal(err)
-	}
+
 }
 
 func TestTemplateMatchTreatsProjectNameKeywordAsWeakContext(t *testing.T) {
@@ -321,7 +309,7 @@ func TestTemplateMatchNaturalTaskTypeAndDeviceMismatchStillRecallSemanticTemplat
 		t.Fatal(err)
 	}
 	if len(candidates) != 1 || candidates[0].ID != tpl.ID {
-		t.Fatalf("expected semantic template despite natural task_type and non-enumerated device hint, got %#v", candidates)
+		t.Fatalf("expected semantic template despite natural type and non-enumerated device hint, got %#v", candidates)
 	}
 }
 

@@ -115,64 +115,40 @@ func inputSchema(name string) map[string]any {
 		props["auto_init"] = boolProp("Create the repository with an initial commit.")
 		props["timeout_ms"] = intProp("HTTP timeout in milliseconds.")
 		required = []string{"name"}
-	case "task_manage", "task_manage_recovery":
-		props["action"] = map[string]any{"type": "string", "description": "Task action. Prefer create -> real work -> final_review -> complete_after_review. Legacy evidence actions are for recovery or compatibility only.", "enum": []string{"create", "list", "get", "add_condition", "add_evidence", "advance", "phase_checkpoint", "complete_step", "skip_step", "record_attempt", "block", "resume", "complete", "final_review", "complete_after_review", "template_save", "template_validate", "template_publish", "template_retire", "template_list", "template_get", "template_match"}}
-		props["task_id"] = stringProp("Persistent task id for all actions except create and list.")
+	case "task_manage":
+		props["action"] = map[string]any{"type": "string", "description": "Task lifecycle action. Template authoring lives in workflow_template_manage.", "enum": []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review", "template_match"}}
+		props["task_id"] = stringProp("Persistent task id for get, block, resume, final_review, or complete_after_review.")
 		props["title"] = stringProp("Short task title for create.")
-		props["goal"] = stringProp("Fixed task goal for create. Later actions cannot silently change it.")
-		props["completion_conditions"] = map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}, "description": "Optional review checklist items generated from the user goal. They guide final_review; do not fill per-condition evidence during normal execution."}
+		props["goal"] = stringProp("Fixed task goal for create or template_match.")
+		props["completion_conditions"] = map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}, "description": "Review checklist items used by final_review."}
 		props["status"] = map[string]any{"type": "string", "description": "Optional list filter.", "enum": []string{"active", "blocked", "completed"}}
-		props["review_status"] = map[string]any{"type": "string", "description": "Final review status for final_review. Use pass only after real verification; use failed when checks are missing or risks remain.", "enum": []string{"pass", "failed"}}
 		props["limit"] = intProp("Maximum tasks returned by list. Defaults to 50 and is capped at 200.")
-		props["condition"] = stringProp("Additional completion condition. Conditions can be added but not removed or weakened.")
-		props["condition_id"] = stringProp("Legacy completion condition id receiving evidence; avoid during normal work and use final_review instead.")
-		props["summary"] = stringProp("Concise task, blocker, recovery, or final review summary.")
-		props["source"] = stringProp("Legacy evidence source for recovery/failure records. Normal execution should use final_review instead of per-step evidence.")
-		props["strategy"] = stringProp("Attempt strategy identifier. The same strategy is limited to two attempts.")
-		props["outcome"] = map[string]any{"type": "string", "description": "Attempt outcome.", "enum": []string{"success", "failure"}}
-		props["diagnosis"] = stringProp("Diagnosis for a failed attempt. Required together with new evidence when outcome=failure.")
-		props["evidence"] = stringProp("Failure/blocker evidence only. Normal execution should use final_review instead of step evidence.")
+		props["summary"] = stringProp("Concise task, blocker, resume, or final review summary.")
 		props["blocker"] = stringProp("Explicit blocker that prevents further progress.")
+		props["evidence"] = stringProp("Evidence required only when blocking a task.")
+		props["review_status"] = map[string]any{"type": "string", "description": "Final review status. Use pass only after real verification.", "enum": []string{"pass", "failed"}}
 		props["verified_facts"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Facts verified during final_review. Required when final_review passes."}
-		props["open_risks"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Risks that remain after final review. Use with review_status=failed or disclose non-blocking risks."}
-		props["missing_checks"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Checks that were not completed. Must be empty when final_review passes."}
-		props["template_id"] = stringProp("Workflow template id for create or template actions.")
-		props["template_version"] = stringProp("Workflow template version for create or template actions.")
+		props["open_risks"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Risks that remain after final review."}
+		props["missing_checks"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Checks not completed. Must be empty when final_review passes."}
+		props["template_id"] = stringProp("Workflow template id for create.")
+		props["template_version"] = stringProp("Workflow template version for create.")
 		props["selected_reason"] = stringProp("Why the model selected this template.")
 		props["template_candidates"] = map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": true}, "description": "Candidate templates and scores considered before selection."}
-		props["template"] = map[string]any{"type": "object", "additionalProperties": true, "description": "Complete draft workflow template for template_save."}
-		props["allow_long_template"] = boolProp("Allow a workflow template to exceed the default guardrails. Only use for exceptional templates and always provide long_template_reason.")
-		props["long_template_reason"] = stringProp("Required reason when allow_long_template=true. The reason is saved into the template for review.")
-		props["template_status"] = map[string]any{"type": "string", "enum": []string{"draft", "validated", "active", "retired"}, "description": "Optional template_list status filter."}
-		props["device"] = stringProp("Optional free-text environment/device hint for template_match. Use only when the user explicitly names a target environment; omit when no real environment is involved. This is a soft ranking hint, not an enum or hard filter.")
-		props["task_type"] = stringProp("Optional free-text task type hint for template_match. It may be natural language or a stable label; it is a soft ranking hint, not an enum or hard filter.")
-		stepEvidenceSchema := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"type", "source", "result", "summary"}, "properties": map[string]any{"type": stringProp("Legacy evidence type such as command, http, tool, file, artifact."), "source": stringProp("Legacy command, endpoint, file, or tool source."), "result": stringProp("Legacy structured result summary such as exit_code=0 or HTTP 200."), "summary": stringProp("Legacy human-readable evidence summary."), "artifact_ref": stringProp("Optional external log, screenshot, report, or Artifact reference."), "sha256": stringProp("Optional external evidence SHA-256.")}}
-		props["step_id"] = stringProp("Template step id for complete_step or skip_step.")
-		props["step_evidence"] = stepEvidenceSchema
-		props["step_completions"] = map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"step_id", "evidence"}, "properties": map[string]any{"step_id": stringProp("Legacy template step id completed by this phase checkpoint."), "evidence": stepEvidenceSchema}}, "description": "Legacy phase-step update. Avoid for normal work; prefer final_review."}
-		props["condition_evidence"] = map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"condition_id", "summary"}, "properties": map[string]any{"condition_id": stringProp("Legacy completion condition receiving evidence."), "summary": stringProp("Legacy evidence summary."), "source": stringProp("Optional legacy evidence source.")}}, "description": "Legacy completion-condition evidence. Avoid for normal work; prefer final_review."}
-		props["advance_phase"] = boolProp("Advance exactly one phase. Prefer final_review for normal completion flow.")
-		props["complete_task"] = boolProp("Legacy checkpoint completion flag. Prefer complete_after_review after final_review passes. Mutually exclusive with advance_phase.")
-		if name == "task_manage" {
-			props["action"] = map[string]any{"type": "string", "description": "Simple task action. Use task_manage_recovery only for advanced recovery or template maintenance.", "enum": []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review", "template_match"}}
-			props["evidence"] = stringProp("Evidence required only when blocking a task; this is not step or condition evidence.")
-			delete(props, "condition")
-			delete(props, "condition_id")
-			delete(props, "source")
-			delete(props, "strategy")
-			delete(props, "outcome")
-			delete(props, "diagnosis")
-			delete(props, "template")
-			delete(props, "allow_long_template")
-			delete(props, "long_template_reason")
-			delete(props, "template_status")
-			delete(props, "step_id")
-			delete(props, "step_evidence")
-			delete(props, "step_completions")
-			delete(props, "condition_evidence")
-			delete(props, "advance_phase")
-			delete(props, "complete_task")
-		}
+		props["device"] = stringProp("Optional free-text device hint for template_match.")
+		props["type"] = stringProp("Optional free-text workflow type hint for template_match. This maps to template match.type.")
+		required = []string{"action"}
+
+	case "workflow_template_manage":
+		props["action"] = map[string]any{"type": "string", "description": "Workflow template action.", "enum": []string{"save", "validate", "publish", "retire", "list", "get", "match"}}
+		props["template"] = map[string]any{"type": "object", "additionalProperties": true, "description": "Complete draft workflow template for save."}
+		props["template_id"] = stringProp("Workflow template id.")
+		props["template_version"] = stringProp("Workflow template version.")
+		props["template_status"] = map[string]any{"type": "string", "enum": []string{"draft", "validated", "active", "retired"}, "description": "Optional list status filter."}
+		props["allow_long_template"] = boolProp("Allow a workflow template to exceed default guardrails. Provide long_template_reason when true.")
+		props["long_template_reason"] = stringProp("Reason required when allow_long_template=true.")
+		props["goal"] = stringProp("Goal text for match.")
+		props["device"] = stringProp("Optional device hint for match.")
+		props["type"] = stringProp("Optional workflow type hint for match. This maps to template match.type.")
 		required = []string{"action"}
 
 	case "skill_manage":

@@ -73,7 +73,6 @@ func (r *Runtime) RuntimeTasks(status string, limit int) (Result, error) {
 			"condition_count": len(task.Conditions),
 			"step_count":      len(task.Steps),
 			"event_count":     len(task.Events),
-			"attempt_count":   len(task.Attempts),
 			"review_status":   reviewStatus(task),
 			"created_at":      task.CreatedAt,
 			"updated_at":      task.UpdatedAt,

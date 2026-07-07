@@ -15,12 +15,9 @@ import (
 )
 
 const (
-	SchemaVersion                = 1
-	MaxStrategyAttempts          = 2
-	MaxConsecutiveAttemptRecords = 2
-	AttemptRecordedEventType     = "attempt_recorded"
-	FinalReviewPass              = "pass"
-	FinalReviewFailed            = "failed"
+	SchemaVersion     = 1
+	FinalReviewPass   = "pass"
+	FinalReviewFailed = "failed"
 )
 
 type Phase string
@@ -43,36 +40,9 @@ const (
 )
 
 type Condition struct {
-	ID        string     `json:"id"`
-	Text      string     `json:"text"`
-	CreatedAt time.Time  `json:"created_at"`
-	Evidence  []Evidence `json:"evidence"`
-}
-
-type Evidence struct {
-	Summary   string    `json:"summary"`
-	Source    string    `json:"source,omitempty"`
+	ID        string    `json:"id"`
+	Text      string    `json:"text"`
 	CreatedAt time.Time `json:"created_at"`
-}
-
-type ConditionEvidenceUpdate struct {
-	ConditionID string `json:"condition_id"`
-	Summary     string `json:"summary"`
-	Source      string `json:"source,omitempty"`
-}
-
-type StepCompletionUpdate struct {
-	StepID   string       `json:"step_id"`
-	Evidence StepEvidence `json:"evidence,omitempty"`
-	Summary  string       `json:"summary,omitempty"`
-}
-
-type PhaseCheckpointInput struct {
-	StepCompletions   []StepCompletionUpdate    `json:"step_completions,omitempty"`
-	ConditionEvidence []ConditionEvidenceUpdate `json:"condition_evidence,omitempty"`
-	AdvancePhase      bool                      `json:"advance_phase,omitempty"`
-	CompleteTask      bool                      `json:"complete_task,omitempty"`
-	Summary           string                    `json:"summary"`
 }
 
 type FinalReviewInput struct {
@@ -92,15 +62,6 @@ type FinalReview struct {
 	ReviewedAt    time.Time `json:"reviewed_at"`
 }
 
-type Attempt struct {
-	Phase     Phase     `json:"phase"`
-	Strategy  string    `json:"strategy"`
-	Outcome   string    `json:"outcome"`
-	Diagnosis string    `json:"diagnosis,omitempty"`
-	Evidence  string    `json:"evidence,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 type Event struct {
 	Type      string    `json:"type"`
 	Summary   string    `json:"summary"`
@@ -117,7 +78,6 @@ type Task struct {
 	Conditions    []Condition        `json:"conditions"`
 	Template      *TemplateSelection `json:"template,omitempty"`
 	Steps         []TaskStep         `json:"steps,omitempty"`
-	Attempts      []Attempt          `json:"attempts"`
 	Events        []Event            `json:"events"`
 	Blocker       string             `json:"blocker,omitempty"`
 	Summary       string             `json:"summary,omitempty"`
@@ -193,7 +153,7 @@ func (s *Store) CreateWithTemplate(title, goal string, conditionTexts []string, 
 		selection = &TemplateSelection{ID: template.ID, Version: template.Version, Hash: template.Hash, SelectedReason: strings.TrimSpace(selectedReason), Candidates: candidates, Snapshot: template}
 		steps = make([]TaskStep, 0, len(template.Steps))
 		for _, step := range template.Steps {
-			steps = append(steps, TaskStep{ID: step.ID, Title: step.Title, Phase: step.Phase, Status: "pending", Evidence: []StepEvidence{}, UpdatedAt: now})
+			steps = append(steps, TaskStep{ID: step.ID, Title: step.Title, Phase: step.Phase, Status: "pending", UpdatedAt: now})
 		}
 	}
 	conditionTexts = normalizeTexts(conditionTexts)
@@ -204,12 +164,12 @@ func (s *Store) CreateWithTemplate(title, goal string, conditionTexts []string, 
 	if err != nil {
 		return Task{}, err
 	}
-	task := Task{SchemaVersion: SchemaVersion, ID: id, Title: title, Goal: goal, Status: StatusActive, Phase: PhaseCheck, Conditions: make([]Condition, 0, len(conditionTexts)), Template: selection, Steps: steps, Attempts: []Attempt{}, Events: []Event{{Type: "created", Summary: "task created", CreatedAt: now}}, CreatedAt: now, UpdatedAt: now}
+	task := Task{SchemaVersion: SchemaVersion, ID: id, Title: title, Goal: goal, Status: StatusActive, Phase: PhaseCheck, Conditions: make([]Condition, 0, len(conditionTexts)), Template: selection, Steps: steps, Events: []Event{{Type: "created", Summary: "task created", CreatedAt: now}}, CreatedAt: now, UpdatedAt: now}
 	if selection != nil {
 		task.Events = append(task.Events, Event{Type: "template_selected", Summary: selection.ID + "@" + selection.Version + ": " + selection.SelectedReason, CreatedAt: now})
 	}
 	for i, text := range conditionTexts {
-		task.Conditions = append(task.Conditions, Condition{ID: fmt.Sprintf("cond_%02d", i+1), Text: text, CreatedAt: now, Evidence: []Evidence{}})
+		task.Conditions = append(task.Conditions, Condition{ID: fmt.Sprintf("cond_%02d", i+1), Text: text, CreatedAt: now})
 	}
 	if err := s.saveLocked(task); err != nil {
 		return Task{}, err
@@ -257,119 +217,6 @@ func (s *Store) List(status Status, limit int) ([]Task, error) {
 	return tasks, nil
 }
 
-func (s *Store) AddCondition(id, text string) (Task, error) {
-	return s.mutate(id, func(task *Task, now time.Time) error {
-		if err := requireMutable(task); err != nil {
-			return err
-		}
-		text = strings.TrimSpace(text)
-		if text == "" {
-			return errors.New("condition text is required")
-		}
-		for _, condition := range task.Conditions {
-			if strings.EqualFold(condition.Text, text) {
-				return errors.New("completion condition already exists")
-			}
-		}
-		conditionID := fmt.Sprintf("cond_%02d", len(task.Conditions)+1)
-		task.Conditions = append(task.Conditions, Condition{ID: conditionID, Text: text, CreatedAt: now, Evidence: []Evidence{}})
-		task.Events = append(task.Events, Event{Type: "condition_added", Summary: conditionID + ": " + text, CreatedAt: now})
-		return nil
-	})
-}
-
-func (s *Store) AddEvidence(id, conditionID, summary, source string) (Task, error) {
-	return s.mutate(id, func(task *Task, now time.Time) error {
-		return applyConditionEvidence(task, conditionID, summary, source, now, true)
-	})
-}
-
-func (s *Store) Advance(id string) (Task, error) {
-	return s.mutate(id, func(task *Task, now time.Time) error {
-		return advancePhase(task, now, true)
-	})
-}
-
-func (s *Store) CompleteStep(id, stepID string, evidence StepEvidence) (Task, error) {
-	return s.mutate(id, func(task *Task, now time.Time) error {
-		return applyStepCompletion(task, StepCompletionUpdate{StepID: stepID, Evidence: evidence}, now, true)
-	})
-}
-
-func (s *Store) SkipStep(id, stepID, reason string) (Task, error) {
-	return s.mutate(id, func(task *Task, now time.Time) error {
-		if err := requireActive(task); err != nil {
-			return err
-		}
-		reason = strings.TrimSpace(reason)
-		if reason == "" {
-			return errors.New("skip reason is required")
-		}
-		for i := range task.Steps {
-			step := &task.Steps[i]
-			if step.ID != strings.TrimSpace(stepID) {
-				continue
-			}
-			step.Status = "skipped"
-			step.SkipReason = reason
-			step.UpdatedAt = now
-			task.Events = append(task.Events, Event{Type: "step_skipped", Summary: step.ID + ": " + reason, CreatedAt: now})
-			return nil
-		}
-		return fmt.Errorf("task step %q not found", stepID)
-	})
-}
-
-func (s *Store) RecordAttempt(id, strategy, outcome, diagnosis, evidence string) (Task, error) {
-	return s.mutate(id, func(task *Task, now time.Time) error {
-		if err := requireActive(task); err != nil {
-			return err
-		}
-		strategy = strings.TrimSpace(strategy)
-		outcome = strings.ToLower(strings.TrimSpace(outcome))
-		diagnosis = strings.TrimSpace(diagnosis)
-		evidence = strings.TrimSpace(evidence)
-		if strategy == "" {
-			return errors.New("strategy is required")
-		}
-		if outcome != "success" && outcome != "failure" {
-			return errors.New("outcome must be success or failure")
-		}
-		if outcome == "failure" && (diagnosis == "" || evidence == "") {
-			return errors.New("failed attempts require diagnosis and new evidence")
-		}
-		attempts := 0
-		for _, attempt := range task.Attempts {
-			if strings.EqualFold(attempt.Strategy, strategy) {
-				attempts++
-			}
-			if outcome == "failure" && attempt.Outcome == "failure" && strings.EqualFold(strings.TrimSpace(attempt.Evidence), evidence) {
-				return errors.New("failed attempt evidence must be new")
-			}
-		}
-		if attempts >= MaxStrategyAttempts {
-			return fmt.Errorf("strategy %q reached the maximum of %d attempts; choose a different strategy", strategy, MaxStrategyAttempts)
-		}
-
-		// record_attempt 只是失败/尝试记录，不是真实执行动作。
-		// 如果连续记录多次，说明 Agent 正在把“写日志”误当成“推进任务”，这里直接打断。
-		consecutiveAttempts := 0
-		for i := len(task.Events) - 1; i >= 0; i-- {
-			if task.Events[i].Type != AttemptRecordedEventType {
-				break
-			}
-			consecutiveAttempts++
-		}
-		if consecutiveAttempts >= MaxConsecutiveAttemptRecords {
-			return errors.New("Stop recording attempts. Execute a real environment action next, then use final_review when the work is actually complete")
-		}
-
-		task.Attempts = append(task.Attempts, Attempt{Phase: task.Phase, Strategy: strategy, Outcome: outcome, Diagnosis: diagnosis, Evidence: evidence, CreatedAt: now})
-		task.Events = append(task.Events, Event{Type: AttemptRecordedEventType, Summary: strategy + ": " + outcome, CreatedAt: now})
-		return nil
-	})
-}
-
 func (s *Store) Block(id, blocker, evidence string) (Task, error) {
 	return s.mutate(id, func(task *Task, now time.Time) error {
 		if err := requireMutable(task); err != nil {
@@ -403,12 +250,6 @@ func (s *Store) Resume(id, summary string) (Task, error) {
 	})
 }
 
-func (s *Store) Complete(id, summary string) (Task, error) {
-	return s.mutate(id, func(task *Task, now time.Time) error {
-		return completeTask(task, summary, now, true)
-	})
-}
-
 func (s *Store) FinalReview(id string, input FinalReviewInput) (Task, error) {
 	return s.mutate(id, func(task *Task, now time.Time) error {
 		return applyFinalReview(task, input, now)
@@ -428,152 +269,6 @@ func (s *Store) CompleteAfterReview(id, summary string) (Task, error) {
 		}
 		return completeTask(task, summary, now, true)
 	})
-}
-
-func (s *Store) PhaseCheckpoint(id string, input PhaseCheckpointInput) (Task, error) {
-	return s.mutate(id, func(task *Task, now time.Time) error {
-		if err := requireActive(task); err != nil {
-			return err
-		}
-		input.Summary = strings.TrimSpace(input.Summary)
-		if input.Summary == "" {
-			return errors.New("checkpoint summary is required")
-		}
-		if input.AdvancePhase && input.CompleteTask {
-			return errors.New("advance_phase and complete_task are mutually exclusive")
-		}
-		if len(input.StepCompletions) == 0 && len(input.ConditionEvidence) == 0 && !input.AdvancePhase && !input.CompleteTask {
-			return errors.New("checkpoint requires at least one update, phase advance, or task completion")
-		}
-
-		phaseBefore := task.Phase
-		for _, update := range input.StepCompletions {
-			if err := applyStepCompletion(task, update, now, false); err != nil {
-				return err
-			}
-		}
-		for _, update := range input.ConditionEvidence {
-			if err := applyConditionEvidence(task, update.ConditionID, update.Summary, update.Source, now, false); err != nil {
-				return err
-			}
-		}
-		if input.AdvancePhase {
-			if err := advancePhase(task, now, false); err != nil {
-				return err
-			}
-		}
-		if input.CompleteTask {
-			if err := completeTask(task, input.Summary, now, false); err != nil {
-				return err
-			}
-		}
-
-		eventType := "phase_checkpoint"
-		eventSummary := fmt.Sprintf("%s: %s; steps=%d; conditions=%d", phaseBefore, input.Summary, len(input.StepCompletions), len(input.ConditionEvidence))
-		if input.AdvancePhase {
-			eventSummary += "; next=" + string(task.Phase)
-		}
-		if input.CompleteTask {
-			eventType = "completed"
-			eventSummary += "; status=completed"
-		}
-		task.Events = append(task.Events, Event{Type: eventType, Summary: eventSummary, CreatedAt: now})
-		return nil
-	})
-}
-
-func applyConditionEvidence(task *Task, conditionID, summary, source string, now time.Time, emitEvent bool) error {
-	if err := requireMutable(task); err != nil {
-		return err
-	}
-	conditionID = strings.TrimSpace(conditionID)
-	summary = strings.TrimSpace(summary)
-	source = strings.TrimSpace(source)
-	if conditionID == "" || summary == "" {
-		return errors.New("condition_id and evidence summary are required")
-	}
-	for i := range task.Conditions {
-		if task.Conditions[i].ID != conditionID {
-			continue
-		}
-		task.Conditions[i].Evidence = append(task.Conditions[i].Evidence, Evidence{Summary: summary, Source: source, CreatedAt: now})
-		if emitEvent {
-			task.Events = append(task.Events, Event{Type: "evidence_added", Summary: conditionID + ": " + summary, CreatedAt: now})
-		}
-		return nil
-	}
-	return fmt.Errorf("completion condition %q not found", conditionID)
-}
-
-func applyStepCompletion(task *Task, update StepCompletionUpdate, now time.Time, emitEvent bool) error {
-	if err := requireActive(task); err != nil {
-		return err
-	}
-	stepID := strings.TrimSpace(update.StepID)
-	for i := range task.Steps {
-		step := &task.Steps[i]
-		if step.ID != stepID {
-			continue
-		}
-		if step.Status == "completed" {
-			return errors.New("step is already completed")
-		}
-		evidence := update.Evidence
-		evidence.Type = strings.TrimSpace(evidence.Type)
-		evidence.Source = strings.TrimSpace(evidence.Source)
-		evidence.Result = strings.TrimSpace(evidence.Result)
-		evidence.Summary = strings.TrimSpace(evidence.Summary)
-		completionSummary := strings.TrimSpace(update.Summary)
-		if completionSummary == "" {
-			completionSummary = evidence.Summary
-		}
-		if completionSummary == "" {
-			return errors.New("step completion summary is required")
-		}
-		if phrase := incompleteEvidencePhrase(completionSummary, evidence.Summary, evidence.Result); phrase != "" {
-			return fmt.Errorf("step completion still describes incomplete work: %q", phrase)
-		}
-
-		evidenceProvided := evidence.Type != "" || evidence.Source != "" || evidence.Result != "" || evidence.ArtifactRef != "" || evidence.SHA256 != ""
-		if evidenceProvided {
-			// 普通步骤只需要一句完成摘要；但一旦传入结构化 evidence，仍要求字段完整，避免保存半截证据误导恢复上下文。
-			if evidence.Type == "" || evidence.Source == "" || evidence.Result == "" || evidence.Summary == "" {
-				return errors.New("step evidence requires type, source, result, and summary when provided")
-			}
-			evidence.CreatedAt = now
-		}
-
-		step.Status = "completed"
-		if evidenceProvided {
-			step.Evidence = append(step.Evidence, evidence)
-		}
-		step.UpdatedAt = now
-		if emitEvent {
-			task.Events = append(task.Events, Event{Type: "step_completed", Summary: step.ID + ": " + completionSummary, CreatedAt: now})
-		}
-		return nil
-	}
-	return fmt.Errorf("task step %q not found", stepID)
-}
-
-func advancePhase(task *Task, now time.Time, emitEvent bool) error {
-	if err := requireActive(task); err != nil {
-		return err
-	}
-	for i, phase := range phaseOrder {
-		if phase != task.Phase {
-			continue
-		}
-		if i == len(phaseOrder)-1 {
-			return errors.New("task is already in closeout; use final_review then complete_after_review")
-		}
-		task.Phase = phaseOrder[i+1]
-		if emitEvent {
-			task.Events = append(task.Events, Event{Type: "phase_advanced", Summary: string(task.Phase), CreatedAt: now})
-		}
-		return nil
-	}
-	return fmt.Errorf("invalid task phase %q", task.Phase)
 }
 
 func applyFinalReview(task *Task, input FinalReviewInput, now time.Time) error {
@@ -823,29 +518,6 @@ func requireActive(task *Task) error {
 		return fmt.Errorf("task status must be active, got %s", task.Status)
 	}
 	return nil
-}
-
-func incompleteEvidencePhrase(values ...string) string {
-	// step completion 代表“这一步完成了”，证据里如果还写着待检查/未验证，
-	// 大概率是把部分检查误标为完成，必须拒绝。
-	markers := []string{
-		"pending", "still required", "still needed", "not yet", "not checked", "not verified", "not executed", "remaining",
-		"待检查", "待验证", "待确认", "待处理", "待执行", "待完成",
-		"仍待", "仍需", "还需", "还没", "还未",
-		"尚未", "未完成", "未验证", "未检查", "未执行", "未确认",
-	}
-	for _, value := range values {
-		lower := strings.ToLower(strings.TrimSpace(value))
-		if lower == "" {
-			continue
-		}
-		for _, marker := range markers {
-			if strings.Contains(lower, marker) {
-				return marker
-			}
-		}
-	}
-	return ""
 }
 
 func normalizeReviewItems(values []string) []string {
