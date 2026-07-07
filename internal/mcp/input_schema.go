@@ -143,7 +143,7 @@ func inputSchema(name string) map[string]any {
 		props["template"] = map[string]any{"type": "object", "additionalProperties": true, "description": "Complete draft workflow template for save."}
 		props["template_id"] = stringProp("Workflow template id.")
 		props["template_version"] = stringProp("Workflow template version.")
-		props["template_status"] = map[string]any{"type": "string", "enum": []string{"draft", "validated", "active", "retired"}, "description": "Optional list status filter."}
+		props["template_status"] = map[string]any{"type": "string", "enum": []string{"draft", "active", "retired"}, "description": "Optional list status filter."}
 		props["allow_long_template"] = boolProp("Allow a workflow template to exceed default guardrails. Provide long_template_reason when true.")
 		props["long_template_reason"] = stringProp("Reason required when allow_long_template=true.")
 		props["goal"] = stringProp("Goal text for match.")

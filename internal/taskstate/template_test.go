@@ -33,12 +33,12 @@ func TestTemplateLifecycleMatchAndTaskSnapshot(t *testing.T) {
 	if draft.Status != TemplateDraft {
 		t.Fatalf("status=%s", draft.Status)
 	}
-	validated, err := store.ValidateTemplate(draft.ID, draft.Version)
+	checked, err := store.ValidateTemplate(draft.ID, draft.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if validated.Status != TemplateValidated {
-		t.Fatalf("status=%s", validated.Status)
+	if checked.Status != TemplateDraft {
+		t.Fatalf("validate should be read-only, status=%s", checked.Status)
 	}
 	published, err := store.PublishTemplate(draft.ID, draft.Version)
 	if err != nil {
@@ -46,6 +46,12 @@ func TestTemplateLifecycleMatchAndTaskSnapshot(t *testing.T) {
 	}
 	if published.Status != TemplateActive || published.Hash == "" {
 		t.Fatalf("published=%#v", published)
+	}
+	if _, err := store.GetTemplate(draft.ID, draft.Version); err != nil {
+		t.Fatalf("published template should remain readable after draft cleanup: %v", err)
+	}
+	if _, err := store.loadTemplateLocked("drafts", draft.ID, draft.Version); err == nil {
+		t.Fatal("publish should remove the source draft")
 	}
 	if _, err := store.PublishTemplate(draft.ID, draft.Version); err == nil {
 		t.Fatal("published version was overwritten")
@@ -142,6 +148,48 @@ func TestTemplateMatchReturnsLatestActiveVersionPerTemplateID(t *testing.T) {
 	}
 	if len(candidates) != 1 || candidates[0].ID != "development.example" || candidates[0].Version != "1.10.0" {
 		t.Fatalf("expected only latest active version, got %#v", candidates)
+	}
+}
+
+func TestPublishTemplateRetiresPreviousActiveVersion(t *testing.T) {
+	store, err := New(t.TempDir() + "/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, version := range []string{"1.0.0", "1.1.0"} {
+		tpl := testTemplate()
+		tpl.Version = version
+		draft, err := store.SaveTemplateDraft(tpl)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.PublishTemplate(draft.ID, draft.Version); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oldVersion, err := store.GetTemplate("agentdock.deploy.macos", "1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if oldVersion.Status != TemplateRetired || oldVersion.RetiredAt == nil {
+		t.Fatalf("old active version was not retired: %#v", oldVersion)
+	}
+	current, err := store.GetTemplate("agentdock.deploy.macos", "1.1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Status != TemplateActive {
+		t.Fatalf("new version is not active: %#v", current)
+	}
+	active, err := store.ListTemplates(TemplateActive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(active) != 1 || active[0].Version != "1.1.0" {
+		t.Fatalf("expected only the latest active version, got %#v", active)
+	}
+	if _, err := store.loadTemplateLocked("drafts", "agentdock.deploy.macos", "1.1.0"); err == nil {
+		t.Fatal("published draft should be removed")
 	}
 }
 

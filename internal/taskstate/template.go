@@ -16,10 +16,9 @@ import (
 type TemplateStatus string
 
 const (
-	TemplateDraft     TemplateStatus = "draft"
-	TemplateValidated TemplateStatus = "validated"
-	TemplateActive    TemplateStatus = "active"
-	TemplateRetired   TemplateStatus = "retired"
+	TemplateDraft   TemplateStatus = "draft"
+	TemplateActive  TemplateStatus = "active"
+	TemplateRetired TemplateStatus = "retired"
 )
 
 type MatchRule struct {
@@ -46,7 +45,6 @@ type Template struct {
 	AllowLongTemplate    bool           `json:"allow_long_template,omitempty"`
 	LongTemplateReason   string         `json:"long_template_reason,omitempty"`
 	Hash                 string         `json:"hash,omitempty"`
-	ValidatedAt          *time.Time     `json:"validated_at,omitempty"`
 	PublishedAt          *time.Time     `json:"published_at,omitempty"`
 	RetiredAt            *time.Time     `json:"retired_at,omitempty"`
 }
@@ -122,12 +120,6 @@ func (s *Store) ValidateTemplate(id, version string) (Template, error) {
 	if err := validateTemplate(t); err != nil {
 		return Template{}, err
 	}
-	now := time.Now().UTC()
-	t.Status = TemplateValidated
-	t.ValidatedAt = &now
-	if err := writeJSONAtomic(s.templatePath("drafts", t.ID, t.Version), t); err != nil {
-		return Template{}, err
-	}
 	return t, nil
 }
 
@@ -149,13 +141,45 @@ func (s *Store) PublishTemplate(id, version string) (Template, error) {
 		return Template{}, errors.New("published template version already exists and cannot be overwritten")
 	}
 	now := time.Now().UTC()
+	if err := s.retireActiveTemplatesLocked(id, version, now); err != nil {
+		return Template{}, err
+	}
 	t.Status = TemplateActive
 	t.PublishedAt = &now
+	t.RetiredAt = nil
 	t.Hash = templateHash(t)
 	if err := writeJSONAtomic(published, t); err != nil {
 		return Template{}, err
 	}
+	if err := os.Remove(s.templatePath("drafts", id, version)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return Template{}, err
+	}
 	return t, nil
+}
+
+func (s *Store) retireActiveTemplatesLocked(id, exceptVersion string, retiredAt time.Time) error {
+	entries, err := os.ReadDir(filepath.Join(s.WorkflowRoot(), "published"))
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		t, err := s.loadTemplateFileLocked(filepath.Join(s.WorkflowRoot(), "published", entry.Name()))
+		if err != nil {
+			return err
+		}
+		if t.ID != id || t.Version == exceptVersion || t.Status != TemplateActive {
+			continue
+		}
+		t.Status = TemplateRetired
+		t.RetiredAt = &retiredAt
+		if err := writeJSONAtomic(s.templatePath("published", t.ID, t.Version), t); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) RetireTemplate(id, version string) (Template, error) {
@@ -459,7 +483,11 @@ func (s *Store) loadTemplateLocked(area, id, version string) (Template, error) {
 	if !validTemplateToken(id) || !validTemplateToken(version) {
 		return Template{}, errors.New("invalid template id or version")
 	}
-	data, err := os.ReadFile(s.templatePath(area, id, version))
+	return s.loadTemplateFileLocked(s.templatePath(area, id, version))
+}
+
+func (s *Store) loadTemplateFileLocked(path string) (Template, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return Template{}, err
 	}
