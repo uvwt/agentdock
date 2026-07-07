@@ -9,6 +9,8 @@ import (
 
 type ToolHandler func(context.Context, *Runtime, map[string]any) (Result, error)
 
+// ToolSpec 是工具公开入口的单一事实源：运行时分发、MCP 描述、
+// profile 暴露和配置开关都从这里派生，避免多处手写列表漂移。
 type ToolSpec struct {
 	Name                   string
 	Title                  string
@@ -34,6 +36,8 @@ type ToolDefinition struct {
 	FileResultRewritePaths []string
 }
 
+// ToolDefinitions 只导出 MCP 层需要的描述信息，不暴露 handler。
+// schema 仍留在 mcp 包，后续迁移 workspace_edit/git_read 时再继续收敛。
 func ToolDefinitions() []ToolDefinition {
 	defs := make([]ToolDefinition, 0, len(allToolSpecs()))
 	for _, spec := range allToolSpecs() {
@@ -115,6 +119,7 @@ func ctxToolHandler(fn func(*Runtime, context.Context, map[string]any) (Result, 
 }
 
 func allToolSpecs() []ToolSpec {
+	// 顺序保持和旧 ToolNames 一致，避免 tools/list 与 server_info 的展示顺序无谓变化。
 	return []ToolSpec{
 		{Name: "server_info", Title: "Server info", Description: "Return server, workspace, auth, profile, sandbox, and exposed-tool metadata.", ReadOnly: true, Profiles: readOnlyProfiles(), Handler: func(_ context.Context, r *Runtime, _ map[string]any) (Result, error) { return r.serverInfo(), nil }},
 		{Name: "read_file", Title: "Read file", Description: "Read a UTF-8 text file slice inside the configured workspace.", ReadOnly: true, Profiles: readOnlyProfiles(), Handler: toolHandler((*Runtime).readFile)},
@@ -139,10 +144,6 @@ func allToolSpecs() []ToolSpec {
 		{Name: "git_clone", Title: "Git clone", Description: "Clone a Git repository into the workspace.", OpenWorld: true, Profiles: unifiedProfiles(), Handler: ctxToolHandler((*Runtime).gitClone)},
 		{Name: "git_commit", Title: "Git commit", Description: "Create a Git commit in a selected repository.", Profiles: unifiedProfiles(), Handler: ctxToolHandler((*Runtime).gitCommit)},
 		{Name: "view_image", Title: "View image", Description: "Return a workspace image as MCP image content.", ReadOnly: true, Profiles: readOnlyProfiles(), Availability: requiresViewImage, Handler: toolHandler((*Runtime).viewImage)},
-		{Name: "artifact_send", Title: "Send encrypted artifact", Description: "Encrypt and send a top-level file parameter or local file/directory through AgentDock Nexus to one or more registered devices. The target only writes to its controlled inbox or configured logical target and never executes the file.", OpenWorld: true, FileArgRewritePaths: []string{"file"}, Profiles: unifiedProfiles(), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).artifactSend)},
-		{Name: "artifact_fetch_create", Title: "Create artifact fetch", Description: "Create an asynchronous high-risk request for a registered device to list or encrypt an absolute-path file or directory under immutable deny rules.", Destructive: true, OpenWorld: true, Profiles: unifiedProfiles(), Availability: requiresArtifactFetch, Handler: ctxToolHandler((*Runtime).artifactFetchCreate)},
-		{Name: "artifact_fetch_status", Title: "Artifact fetch status", Description: "Return status or a bounded directory listing for a local artifact fetch request.", ReadOnly: true, OpenWorld: true, Profiles: unifiedProfiles(), Availability: requiresArtifactFetch, Handler: ctxToolHandler((*Runtime).artifactFetchStatus)},
-		{Name: "artifact_fetch_download", Title: "Download artifact fetch", Description: "Download and decrypt a ready artifact fetch, return a file resource, or confirm that the GPT sandbox mounted it so ciphertext can be deleted.", Destructive: true, OpenWorld: true, FileResultRewritePaths: []string{"file_path"}, Profiles: unifiedProfiles(), Availability: requiresArtifactFetch, Handler: ctxToolHandler((*Runtime).artifactFetchDownload)},
 		{Name: "recall_bootstrap", Title: "Bootstrap RecallDock context", Description: "Load high-priority RecallDock context at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks. max_bytes controls pack budget only; compact index/excerpt output is default, and full body requires include_body or targeted recall_read.", ReadOnly: true, OpenWorld: true, Profiles: readOnlyProfiles(), Availability: requiresRecall, Handler: ctxToolHandler((*Runtime).recallBootstrap)},
 		{Name: "recall_search", Title: "Search RecallDock", Description: "Search RecallDock memories, cards, and notes. Use kind=all, markdown, card, or note; when kind=note, use note_scope=questions or github-learning. Backend handles internal routing such as prefix and scope.", ReadOnly: true, OpenWorld: true, Profiles: readOnlyProfiles(), Availability: requiresRecall, Handler: ctxToolHandler((*Runtime).recallSearch)},
 		{Name: "recall_read", Title: "Read RecallDock entry", Description: "Read one Markdown, card, or note entry from the configured RecallDock store by path.", ReadOnly: true, OpenWorld: true, Profiles: readOnlyProfiles(), Availability: requiresRecall, Handler: ctxToolHandler((*Runtime).recallRead)},
@@ -163,5 +164,9 @@ func allToolSpecs() []ToolSpec {
 		{Name: "desktop_observe", Title: "Observe desktop", Description: "Unified macOS desktop observation tool for preflight, app list, app state, windows, screen snapshots, and app snapshots.", ReadOnly: true, Profiles: readOnlyProfiles(), Availability: requiresDesktop, Handler: ctxToolHandler((*Runtime).desktopObserve)},
 		{Name: "desktop_act", Title: "Act on desktop", Description: "Unified macOS desktop action tool for focus, move, click, double-click, scroll, drag, type, set value, accessibility actions, hotkeys, and waits.", Destructive: true, Profiles: unifiedProfiles(), Availability: requiresDesktop, Handler: ctxToolHandler((*Runtime).desktopAct)},
 		{Name: "desktop_clipboard", Title: "Desktop clipboard", Description: "Read or set the macOS clipboard text through one unified clipboard tool.", Destructive: true, Profiles: unifiedProfiles(), Availability: requiresDesktop, Handler: ctxToolHandler((*Runtime).desktopClipboard)},
+		{Name: "artifact_send", Title: "Send encrypted artifact", Description: "Encrypt and send a top-level file parameter or local file/directory through AgentDock Nexus to one or more registered devices. The target only writes to its controlled inbox or configured logical target and never executes the file.", OpenWorld: true, FileArgRewritePaths: []string{"file"}, Profiles: unifiedProfiles(), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).artifactSend)},
+		{Name: "artifact_fetch_create", Title: "Create artifact fetch", Description: "Create an asynchronous high-risk request for a registered device to list or encrypt an absolute-path file or directory under immutable deny rules.", Destructive: true, OpenWorld: true, Profiles: unifiedProfiles(), Availability: requiresArtifactFetch, Handler: ctxToolHandler((*Runtime).artifactFetchCreate)},
+		{Name: "artifact_fetch_status", Title: "Artifact fetch status", Description: "Return status or a bounded directory listing for a local artifact fetch request.", ReadOnly: true, OpenWorld: true, Profiles: unifiedProfiles(), Availability: requiresArtifactFetch, Handler: ctxToolHandler((*Runtime).artifactFetchStatus)},
+		{Name: "artifact_fetch_download", Title: "Download artifact fetch", Description: "Download and decrypt a ready artifact fetch, return a file resource, or confirm that the GPT sandbox mounted it so ciphertext can be deleted.", Destructive: true, OpenWorld: true, FileResultRewritePaths: []string{"file_path"}, Profiles: unifiedProfiles(), Availability: requiresArtifactFetch, Handler: ctxToolHandler((*Runtime).artifactFetchDownload)},
 	}
 }
