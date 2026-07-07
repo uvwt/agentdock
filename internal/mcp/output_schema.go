@@ -15,6 +15,9 @@ func outputSchema(name string) map[string]any {
 	}
 
 	props["ok"] = boolProp("Whether the tool call completed successfully.")
+	props["deprecated"] = boolProp("Whether this tool is a compatibility wrapper for a newer entrypoint.")
+	props["replacement_tool"] = stringProp("Recommended replacement tool when deprecated=true.")
+	props["replacement_args"] = objectProp("Recommended replacement arguments when deprecated=true.")
 
 	switch name {
 	case "server_info":
@@ -51,6 +54,17 @@ func outputSchema(name string) map[string]any {
 		props["matches"] = arrayProp("Text search matches.")
 		props["engine"] = stringProp("Search engine used: rg or go_fallback.")
 		props["truncated"] = boolProp("Whether matches were truncated.")
+	case "workspace_edit":
+		props["action"] = stringProp("Workspace edit action.")
+		props["summary"] = stringProp("Result summary.")
+		props["path"] = stringProp("Workspace-relative file path.")
+		props["dry_run"] = boolProp("Whether this was a dry run.")
+		props["matches"] = intProp("Match count for replace.")
+		props["changed"] = boolProp("Whether content changed.")
+		props["diff_preview"] = stringProp("Diff preview.")
+		props["files_changed"] = intProp("Changed file count.")
+		props["insertions"] = intProp("Inserted line count.")
+		props["deletions"] = intProp("Deleted line count.")
 	case "apply_patch":
 		props["summary"] = stringProp("Patch result summary.")
 		props["dry_run"] = boolProp("Whether this was a dry run.")
@@ -288,6 +302,37 @@ func outputSchema(name string) map[string]any {
 		props["page_errors"] = arrayProp("Browser page runtime errors captured during the operation.")
 		props["stdout"] = stringProp("Raw browser runner output.")
 		props["truncated"] = boolProp("Whether output was truncated.")
+	case "git_read":
+		props["action"] = stringProp("Read action performed.")
+		props["command"] = stringProp("Executed git command.")
+		props["output"] = stringProp("Raw git output.")
+		props["repo_path"] = stringProp("Repository path, when applicable.")
+		props["repos"] = arrayProp("Repositories for action=repos.")
+		props["count"] = intProp("Repository count for action=repos.")
+		props["branch"] = stringProp("Branch status line.")
+		props["upstream"] = stringProp("Upstream branch, when configured.")
+		props["ahead"] = intProp("Commits ahead of upstream.")
+		props["behind"] = intProp("Commits behind upstream.")
+		props["files"] = arrayProp("Changed files or diff files.")
+		props["clean"] = boolProp("Whether the worktree is clean.")
+		props["commits"] = arrayProp("Parsed commits for action=log.")
+		props["truncated"] = boolProp("Whether output was truncated.")
+		props["diagnostic"] = objectProp("Structured diagnostic.")
+	case "git_write":
+		props["action"] = stringProp("Write action performed.")
+		props["command"] = stringProp("Executed git command.")
+		props["output"] = stringProp("Raw git output.")
+		props["repo_path"] = stringProp("Repository path, when applicable.")
+		props["dest"] = stringProp("Clone destination, when applicable.")
+		props["truncated"] = boolProp("Whether output was truncated.")
+		props["diagnostic"] = objectProp("Structured diagnostic.")
+		props["push_succeeded"] = boolProp("Whether push exited successfully.")
+		props["pushed"] = boolProp("Alias for push_succeeded.")
+		props["remote_updated"] = boolProp("Whether push changed remote refs.")
+		props["up_to_date"] = boolProp("Whether push reported up-to-date.")
+		props["warnings"] = arrayProp("Git warning lines.")
+		props["fatal_but_non_blocking"] = boolProp("Whether fatal text was non-blocking.")
+		props["push_status"] = stringProp("Structured push status.")
 	case "workspace_repos":
 		props["repos"] = arrayProp("Git repositories found under the workspace.")
 		props["count"] = intProp("Repository count.")

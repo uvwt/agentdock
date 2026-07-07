@@ -262,6 +262,44 @@ func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	}
 }
 
+func TestWorkspaceEditAndGitUnifiedSchemas(t *testing.T) {
+	workspaceProps := schemaProperties(t, "workspace_edit")
+	assertSameStrings(t, enumStrings(t, workspaceProps["action"]), []string{"replace", "patch"})
+	for _, name := range []string{"path", "old", "new", "patch", "dry_run", "expected_matches", "replace_all"} {
+		if _, ok := workspaceProps[name]; !ok {
+			t.Fatalf("workspace_edit input schema missing %q", name)
+		}
+	}
+
+	gitReadProps := schemaProperties(t, "git_read")
+	assertSameStrings(t, enumStrings(t, gitReadProps["action"]), []string{"repos", "status", "diff", "log", "show", "blame"})
+	for _, name := range []string{"repo_path", "path", "paths", "rev", "limit", "max_bytes"} {
+		if _, ok := gitReadProps[name]; !ok {
+			t.Fatalf("git_read input schema missing %q", name)
+		}
+	}
+
+	gitWriteProps := schemaProperties(t, "git_write")
+	assertSameStrings(t, enumStrings(t, gitWriteProps["action"]), []string{"clone", "commit", "fetch", "pull", "push"})
+	for _, name := range []string{"repo_path", "url", "dest", "message", "remote", "branch", "max_bytes"} {
+		if _, ok := gitWriteProps[name]; !ok {
+			t.Fatalf("git_write input schema missing %q", name)
+		}
+	}
+}
+
+func TestLegacyToolDescriptionsAdvertiseReplacement(t *testing.T) {
+	for _, name := range []string{"apply_patch", "edit_file", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit"} {
+		def, ok := toolDefinition(name)
+		if !ok {
+			t.Fatalf("tool definition missing: %s", name)
+		}
+		if !strings.Contains(def.Description, "Deprecated compatibility wrapper") {
+			t.Fatalf("legacy tool %s should advertise deprecation: %q", name, def.Description)
+		}
+	}
+}
+
 func TestRecallModelChoiceFieldsUseEnums(t *testing.T) {
 	searchProps := schemaProperties(t, "recall_search")
 	for _, want := range []string{"all", "markdown", "card", "note"} {

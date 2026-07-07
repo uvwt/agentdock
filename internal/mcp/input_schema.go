@@ -47,6 +47,19 @@ func inputSchema(name string) map[string]any {
 		props["context_lines"] = intProp("Context lines around each match.")
 		props["max_results"] = intProp("Maximum matches.")
 		required = []string{"query"}
+	case "workspace_edit":
+		props["action"] = map[string]any{"type": "string", "description": "Workspace edit action.", "enum": []string{"replace", "patch"}}
+		props["path"] = stringProp("Workspace-relative file path for replace.")
+		props["old"] = stringProp("Exact UTF-8 text to replace.")
+		props["new"] = stringProp("Replacement UTF-8 text.")
+		props["replace_all"] = boolProp("Replace every match instead of only the first.")
+		props["expected_matches"] = intProp("Required number of matches. Defaults to 1.")
+		props["patch"] = stringProp("Patch text for action=patch.")
+		props["workdir"] = stringProp("Patch working directory.")
+		props["repo_path"] = stringProp("Alias for workdir.")
+		props["dry_run"] = boolProp("Preview or validate without writing.")
+		props["max_diff_bytes"] = intProp("Maximum diff preview bytes.")
+		required = []string{"action"}
 	case "apply_patch":
 		props["patch"] = stringProp("Unified diff or git-apply compatible patch.")
 		props["workdir"] = stringProp("Workspace-relative directory to apply the patch from. Defaults to current workspace/default cwd.")
@@ -359,6 +372,31 @@ func inputSchema(name string) map[string]any {
 		props["action"] = stringProp("Clipboard action: get or set.")
 		props["text"] = stringProp("Text to place into the macOS clipboard when action=set.")
 		props["verify"] = boolProp("Read back pbpaste after writing and report verified. Defaults to true.")
+	case "git_read":
+		props["action"] = map[string]any{"type": "string", "description": "Read action.", "enum": []string{"repos", "status", "diff", "log", "show", "blame"}}
+		props["path"] = stringProp("Directory path for repos or file path for blame.")
+		props["repo_path"] = stringProp("Repository path.")
+		props["paths"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
+		props["rev"] = stringProp("Revision for show.")
+		props["limit"] = intProp("Maximum commits for log.")
+		props["max_depth"] = intProp("Maximum scan depth for repos.")
+		props["max_bytes"] = intProp("Maximum output bytes.")
+		props["max_output_bytes"] = intProp("Alias for status output limit.")
+		required = []string{"action"}
+	case "git_write":
+		props["action"] = map[string]any{"type": "string", "description": "Write action.", "enum": []string{"clone", "commit", "fetch", "pull", "push"}}
+		props["repo_path"] = stringProp("Repository path.")
+		props["url"] = stringProp("Repository URL for clone.")
+		props["repo"] = stringProp("Alias for url.")
+		props["dest"] = stringProp("Destination directory for clone.")
+		props["message"] = stringProp("Commit message.")
+		props["paths"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
+		props["all"] = boolProp("Stage all changes before commit.")
+		props["remote"] = stringProp("Remote name. Defaults to origin.")
+		props["branch"] = stringProp("Branch name where applicable.")
+		props["depth"] = intProp("Shallow clone depth.")
+		props["max_bytes"] = intProp("Maximum output bytes.")
+		required = []string{"action"}
 	case "workspace_repos":
 		props["path"] = stringProp("Directory to scan. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed. Defaults to current workspace/default cwd.")
 		props["max_depth"] = intProp("Maximum directory depth to scan for repositories.")
