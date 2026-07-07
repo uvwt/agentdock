@@ -59,164 +59,27 @@ func (r *Runtime) Config() config.Config           { return r.cfg }
 func (r *Runtime) Workspace() *workspace.Workspace { return r.ws }
 
 func (r *Runtime) ToolNames() []string {
-	all := []string{"server_info", "read_file", "list_dir", "list_files", "search_text", "apply_patch", "edit_file", "exec_command", "session_control", "check_github_repo_access", "task_manage", "workflow_template_manage", "skill_manage", "env_manage", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "view_image"}
-	if r.cfg.RecallEndpoint != "" {
-		all = append(all, "recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain")
+	specs := r.availableToolSpecs()
+	names := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		names = append(names, spec.Name)
 	}
-	all = append(all, "private_notes_search", "private_notes_read", "private_notes_write", "private_notes_maintain")
-	if r.cfg.BrowserEnabled {
-		all = append(all, "browser_session", "browser_act", "browser_snapshot", "browser_profile")
-	}
-	if r.cfg.DesktopEnabled {
-		all = append(all, "desktop_observe", "desktop_act", "desktop_clipboard")
-	}
-	if strings.TrimSpace(r.cfg.NexusEndpoint) != "" {
-		all = append(all, "artifact_send")
-		if r.cfg.ArtifactFetchEnabled {
-			all = append(all, "artifact_fetch_create", "artifact_fetch_status", "artifact_fetch_download")
-		}
-	}
-	if !r.cfg.EnableViewImage {
-		all = removeTool(all, "view_image")
-	}
-	if r.cfg.ToolProfile != config.ProfileReadOnly {
-		return all
-	}
-	readOnly := []string{"server_info", "read_file", "list_dir", "list_files", "search_text", "session_control", "check_github_repo_access", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "view_image"}
-	if r.cfg.RecallEndpoint != "" {
-		readOnly = append(readOnly, "recall_bootstrap", "recall_search", "recall_read")
-	}
-	readOnly = append(readOnly, "private_notes_search", "private_notes_read", "private_notes_maintain")
-	if r.cfg.BrowserEnabled {
-		readOnly = append(readOnly, "browser_snapshot")
-	}
-	if r.cfg.DesktopEnabled {
-		readOnly = append(readOnly, "desktop_observe")
-	}
-	if !r.cfg.EnableViewImage {
-		readOnly = removeTool(readOnly, "view_image")
-	}
-	return readOnly
-}
-
-func removeTool(names []string, target string) []string {
-	out := names[:0]
-	for _, name := range names {
-		if name != target {
-			out = append(out, name)
-		}
-	}
-	return out
+	return names
 }
 
 func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (Result, error) {
 	if args == nil {
 		args = map[string]any{}
 	}
-	if !r.available(name) {
+	spec, ok := toolSpecByName(name)
+	if !ok || !spec.available(r.cfg) || !spec.allowedInProfile(r.cfg.ToolProfile) {
 		return nil, toolErrorDetails("UNKNOWN_TOOL", "tool is not available", "validation", map[string]any{"tool": name})
 	}
-	switch name {
-	case "server_info":
-		return r.serverInfo(), nil
-	case "read_file":
-		return r.readFile(args)
-	case "list_dir":
-		return r.listDir(args)
-	case "list_files":
-		return r.listFiles(args)
-	case "search_text":
-		return r.searchText(args)
-	case "apply_patch":
-		return r.applyPatch(ctx, args)
-	case "edit_file":
-		return r.editFile(args)
-	case "exec_command":
-		return r.execCommand(ctx, args)
-	case "session_control":
-		return r.sessionControl(args)
-	case "check_github_repo_access":
-		return r.checkGitHubRepoAccess(args)
-	case "task_manage":
-		return r.taskManage(args)
-	case "workflow_template_manage":
-		return r.workflowTemplateManage(args)
-	case "skill_manage":
-		return r.skillManage(ctx, args)
-	case "env_manage":
-		return r.envManage(ctx, args)
-	case "artifact_send":
-		return r.artifactSend(ctx, args)
-	case "artifact_fetch_create":
-		return r.artifactFetchCreate(ctx, args)
-	case "artifact_fetch_status":
-		return r.artifactFetchStatus(ctx, args)
-	case "artifact_fetch_download":
-		return r.artifactFetchDownload(ctx, args)
-	case "recall_bootstrap":
-		return r.recallBootstrap(ctx, args)
-	case "recall_search":
-		return r.recallSearch(ctx, args)
-	case "recall_read":
-		return r.recallRead(ctx, args)
-	case "recall_write":
-		return r.recallWrite(ctx, args)
-	case "recall_maintain":
-		return r.recallMaintain(ctx, args)
-	case "private_notes_search":
-		return r.privateNotesSearch(ctx, args)
-	case "private_notes_read":
-		return r.privateNotesRead(ctx, args)
-	case "private_notes_write":
-		return r.privateNotesWrite(ctx, args)
-	case "private_notes_maintain":
-		return r.privateNotesMaintain(ctx, args)
-	case "browser_session":
-		return r.browserSession(ctx, args)
-	case "browser_profile":
-		return r.browserProfile(ctx, args)
-	case "browser_act":
-		return r.browserRunnerCall(ctx, "action", args)
-	case "browser_snapshot":
-		return r.browserRunnerCall(ctx, "snapshot", args)
-	case "desktop_observe":
-		return r.desktopObserve(ctx, args)
-	case "desktop_act":
-		return r.desktopAct(ctx, args)
-	case "desktop_clipboard":
-		return r.desktopClipboard(ctx, args)
-	case "workspace_repos":
-		return r.workspaceRepos(ctx, args)
-	case "git_status":
-		return r.gitRepoStatus(ctx, args)
-	case "git_diff":
-		return r.gitDiff(ctx, args)
-	case "git_log":
-		return r.gitLog(ctx, args)
-	case "git_inspect":
-		return r.gitInspect(ctx, args)
-	case "git_remote":
-		return r.gitRemote(ctx, args)
-	case "git_clone":
-		return r.gitClone(ctx, args)
-	case "git_commit":
-		return r.gitCommit(ctx, args)
-	case "view_image":
-		return r.viewImage(args)
-	default:
-		return nil, toolErrorDetails("UNKNOWN_TOOL", "unknown tool", "validation", map[string]any{"tool": name})
+	if spec.Handler == nil {
+		return nil, toolErrorDetails("UNKNOWN_TOOL", "tool has no handler", "validation", map[string]any{"tool": name})
 	}
+	return spec.Handler(ctx, r, args)
 }
-
-func (r *Runtime) available(name string) bool {
-	for _, candidate := range r.ToolNames() {
-		if candidate == name {
-			return true
-		}
-	}
-	return false
-}
-
 func (r *Runtime) serverInfo() Result {
 	names := r.ToolNames()
 

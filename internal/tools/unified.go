@@ -3,23 +3,45 @@ package tools
 import (
 	"context"
 	"strings"
+
+	"github.com/uvwt/agentdock/internal/config"
 )
 
 func (r *Runtime) sessionControl(args map[string]any) (Result, error) {
-	switch strings.ToLower(stringArg(args, "action", "list")) {
+	action := strings.ToLower(stringArg(args, "action", "list"))
+	switch action {
 	case "list", "sessions":
 		return r.listSessions()
 	case "status", "get":
 		return r.sessionStatus(args)
 	case "write", "stdin", "send", "send_stdin":
+		if r.cfg.ToolProfile == config.ProfileReadOnly {
+			return nil, readOnlyActionError("session_control", action, []string{"list", "status"})
+		}
 		return r.writeStdin(args)
 	case "kill", "stop":
+		if r.cfg.ToolProfile == config.ProfileReadOnly {
+			return nil, readOnlyActionError("session_control", action, []string{"list", "status"})
+		}
 		return r.killSession(args)
 	case "kill_all", "stop_all", "clear":
+		if r.cfg.ToolProfile == config.ProfileReadOnly {
+			return nil, readOnlyActionError("session_control", action, []string{"list", "status"})
+		}
 		return r.killAllSessions(args)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported session_control action", "validation", map[string]any{"action": stringArg(args, "action", "")})
 	}
+}
+
+func readOnlyActionError(tool, action string, allowed []string) *ToolError {
+	return toolErrorDetails("UNKNOWN_ACTION_FOR_PROFILE", "action is not available in read-only profile", "permission", map[string]any{
+		"tool":          tool,
+		"action":        action,
+		"profile":       config.ProfileReadOnly,
+		"allowed":       allowed,
+		"required_tool": tool,
+	})
 }
 
 func (r *Runtime) memoryEdit(ctx context.Context, args map[string]any) (Result, error) {

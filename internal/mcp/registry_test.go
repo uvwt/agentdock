@@ -1,6 +1,8 @@
 package mcp
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -96,6 +98,39 @@ func TestReadOnlyProfileExcludesDestructiveTools(t *testing.T) {
 	}
 	if seen["edit_file"] {
 		t.Fatalf("read-only profile exposed edit_file")
+	}
+}
+
+func TestReadOnlyProfileRestrictsSessionControlActions(t *testing.T) {
+	cfg := config.Config{
+		Workspace:    t.TempDir(),
+		ToolProfile:  config.ProfileReadOnly,
+		Mode:         config.ModeSandboxed,
+		PathPolicy:   config.PathPolicyWorkspace,
+		AgentDockDir: "AgentDock",
+	}
+	cfg.Normalize()
+	rt, err := tools.NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := rt.Call(context.Background(), "session_control", map[string]any{"action": "list"}); err != nil {
+		t.Fatalf("read-only profile should allow session_control list: %v", err)
+	}
+
+	for _, action := range []string{"write", "kill", "kill_all"} {
+		_, err := rt.Call(context.Background(), "session_control", map[string]any{"action": action})
+		if err == nil {
+			t.Fatalf("read-only profile allowed session_control %s", action)
+		}
+		var toolErr *tools.ToolError
+		if !errors.As(err, &toolErr) {
+			t.Fatalf("session_control %s returned non-tool error: %T %v", action, err, err)
+		}
+		if toolErr.Code != "UNKNOWN_ACTION_FOR_PROFILE" {
+			t.Fatalf("session_control %s returned code %s, want UNKNOWN_ACTION_FOR_PROFILE", action, toolErr.Code)
+		}
 	}
 }
 
