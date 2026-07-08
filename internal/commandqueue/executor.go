@@ -12,9 +12,8 @@ import (
 )
 
 const (
-	defaultCommandTimeout  = 5 * time.Minute
-	defaultMaxOutputBytes  = 4 << 20
-	artifactCommandTimeout = 30 * time.Minute
+	defaultCommandTimeout = 5 * time.Minute
+	defaultMaxOutputBytes = 4 << 20
 )
 
 type ProgressReporter interface {
@@ -82,7 +81,7 @@ func NewExecutor(store *Store) *Executor {
 }
 
 func DefaultAllowedCommandTypes() []string {
-	return []string{"health.check", "skill.install", "skill.run", "skill.rollback", "recall.sync", "service.inspect", "service.restart", "diagnostics.collect", "agentdock.reload", "env.manage", "artifact.pull", "artifact.fetch"}
+	return []string{"health.check", "skill.install", "skill.run", "skill.rollback", "recall.sync", "service.inspect", "service.restart", "diagnostics.collect", "agentdock.reload", "env.manage"}
 }
 
 func (e *Executor) Register(handler CommandHandler) error {
@@ -149,11 +148,7 @@ func (e *Executor) Execute(ctx context.Context, lease contracts.CommandLease, pr
 	}
 
 	timeout := e.defaultTimeout
-	if cmd.Type == "artifact.pull" || cmd.Type == "artifact.fetch" {
-		// Artifact transfers can legitimately outlive the initial short lease.
-		// The Nexus agent renews that lease while this handler is running.
-		timeout = artifactCommandTimeout
-	} else if untilLeaseExpiry := time.Until(leaseExpiry); untilLeaseExpiry < timeout {
+	if untilLeaseExpiry := time.Until(leaseExpiry); untilLeaseExpiry < timeout {
 		timeout = untilLeaseExpiry
 	}
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
