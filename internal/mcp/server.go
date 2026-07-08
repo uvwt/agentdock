@@ -161,17 +161,6 @@ func toolEnvelope(name string, structured any, err error) map[string]any {
 			return map[string]any{"isError": false, "structuredContent": structured, "content": []map[string]any{{"type": "image", "data": payload["data_base64"], "mimeType": payload["mime_type"]}}}
 		}
 	}
-	if name == "artifact_fetch_download" {
-		payload := asMap(structured)
-		if mounted, _ := payload["mounted"].(bool); !mounted {
-			if uri, _ := payload["resource_uri"].(string); uri != "" {
-				return map[string]any{"isError": false, "structuredContent": structured, "content": []map[string]any{{
-					"type": "resource_link", "uri": uri, "name": payload["file_name"],
-					"mimeType": payload["mime_type"], "size": payload["size"],
-				}}}
-			}
-		}
-	}
 	if name == "browser_act" || name == "browser_snapshot" {
 		payload := asMap(structured)
 		if attached, _ := payload["image_attached"].(bool); attached {
@@ -205,12 +194,4 @@ func toolDescription(name string) string {
 		return def.Description
 	}
 	return "AgentDock tool."
-}
-
-func (s *Server) ResolveArtifactFetchOutput(fetchID, token string) (string, string, string, error) {
-	state, err := s.runtime.ResolveArtifactFetchOutput(fetchID, token)
-	if err != nil {
-		return "", "", "", err
-	}
-	return state.OutputPath, state.OutputName, state.OutputMIME, nil
 }

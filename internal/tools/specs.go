@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"strings"
 
 	"github.com/uvwt/agentdock/internal/config"
 )
@@ -90,12 +89,8 @@ func toolSpecByName(name string) (ToolSpec, bool) {
 	return ToolSpec{}, false
 }
 
-func requiresRecall(cfg config.Config) bool  { return cfg.RecallEndpoint != "" }
-func requiresBrowser(cfg config.Config) bool { return cfg.BrowserEnabled }
-func requiresNexus(cfg config.Config) bool   { return strings.TrimSpace(cfg.NexusEndpoint) != "" }
-func requiresArtifactFetch(cfg config.Config) bool {
-	return requiresNexus(cfg) && cfg.ArtifactFetchEnabled
-}
+func requiresRecall(cfg config.Config) bool    { return cfg.RecallEndpoint != "" }
+func requiresBrowser(cfg config.Config) bool   { return cfg.BrowserEnabled }
 func requiresViewImage(cfg config.Config) bool { return cfg.EnableViewImage }
 
 func toolHandler(fn func(*Runtime, map[string]any) (Result, error)) ToolHandler {
@@ -143,10 +138,7 @@ func allToolSpecs() []ToolSpec {
 		{Name: "browser_snapshot", Title: "Browser snapshot", Description: "Capture page URL, title, text, screenshot, image, viewport, visible interactive elements, and browser errors.", ReadOnly: true, OpenWorld: true, Availability: requiresBrowser, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
 			return r.browserRunnerCall(ctx, "snapshot", args)
 		}},
-		{Name: "artifact_send", Title: "Send encrypted artifact", Description: "Encrypt and send a top-level file parameter or local file/directory through AgentDock Nexus to one or more registered devices. The target only writes to its controlled inbox or configured logical target and never executes the file.", OpenWorld: true, FileArgRewritePaths: []string{"file"}, Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).artifactSend)},
-		{Name: "artifact_fetch_create", Title: "Create artifact fetch", Description: "Create an asynchronous high-risk request for a registered device to list or encrypt an absolute-path file or directory under immutable deny rules.", Destructive: true, OpenWorld: true, Availability: requiresArtifactFetch, Handler: ctxToolHandler((*Runtime).artifactFetchCreate)},
-		{Name: "artifact_fetch_status", Title: "Artifact fetch status", Description: "Return status or a bounded directory listing for a local artifact fetch request.", ReadOnly: true, OpenWorld: true, Availability: requiresArtifactFetch, Handler: ctxToolHandler((*Runtime).artifactFetchStatus)},
-		{Name: "artifact_fetch_download", Title: "Download artifact fetch", Description: "Download and decrypt a ready artifact fetch, return a file resource, or confirm that the GPT sandbox mounted it so ciphertext can be deleted.", Destructive: true, OpenWorld: true, FileResultRewritePaths: []string{"file_path"}, Availability: requiresArtifactFetch, Handler: ctxToolHandler((*Runtime).artifactFetchDownload)},
+		{Name: "file_publish", Title: "Publish signed file", Description: "Publish a local file or directory as an immutable snapshot under ~/.agentdock/public-artifacts and return a temporary signed download URL. Directories are packaged as tar.gz.", OpenWorld: true, FileArgRewritePaths: []string{"file"}, Handler: ctxToolHandler((*Runtime).filePublish)},
 	})
 }
 

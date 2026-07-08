@@ -20,12 +20,21 @@ import (
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/jsonrpc"
 	"github.com/uvwt/agentdock/internal/mcp"
+	"github.com/uvwt/agentdock/internal/publicartifacts"
+	"github.com/uvwt/agentdock/internal/requestmeta"
 )
 
 func Serve(server *mcp.Server, cfg config.Config) error {
 	authRequired := cfg.AuthToken != "" || cfg.OAuthClientID != "" || cfg.OAuthServerURL != ""
 	oauthCodes := auth.NewOAuthStore()
 	mux := http.NewServeMux()
+	publicArtifactStore := publicartifacts.New(cfg.AgentDockHome, cfg.OAuthServerURL, cfg.Port)
+	if err := publicArtifactStore.EnsureSecret(); err != nil {
+		return fmt.Errorf("ensure public artifact secret: %w", err)
+	}
+	if err := publicArtifactStore.Cleanup(time.Now().UTC()); err != nil {
+		return fmt.Errorf("clean public artifacts: %w", err)
+	}
 	slog.Info("http server configured", "host", cfg.Host, "port", cfg.Port, "auth_required", authRequired, "endpoint", "/mcp")
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "application/json")
@@ -50,8 +59,8 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	mux.HandleFunc("/artifacts/browser/screenshots/", func(w http.ResponseWriter, r *http.Request) {
 		handleBrowserScreenshotArtifact(w, r, cfg)
 	})
-	mux.HandleFunc("/artifacts/fetch/", func(w http.ResponseWriter, r *http.Request) {
-		handleArtifactFetchOutput(w, r, server)
+	mux.HandleFunc("/artifacts/public/", func(w http.ResponseWriter, r *http.Request) {
+		publicArtifactStore.ServeHTTP(w, r, "/artifacts/public/")
 	})
 	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
 		method := requestedTokenEndpointAuthMethod(r)
@@ -142,7 +151,7 @@ func mcpEndpointHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc 
 			writeJSON(w, jsonrpc.Failure(nil, -32700, "Parse error", err.Error()))
 			return
 		}
-		resp := server.Dispatch(r.Context(), req)
+		resp := server.Dispatch(requestmeta.WithBaseURL(r.Context(), requestPublicBaseURL(cfg, r)), req)
 		if req.ID == nil {
 			w.WriteHeader(http.StatusAccepted)
 			return
@@ -151,41 +160,26 @@ func mcpEndpointHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc 
 	}
 }
 
-func handleArtifactFetchOutput(w http.ResponseWriter, r *http.Request, server *mcp.Server) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
+func requestPublicBaseURL(cfg config.Config, r *http.Request) string {
+	configured := strings.TrimRight(strings.TrimSpace(cfg.OAuthServerURL), "/")
+	if configured != "" {
+		return configured
 	}
-	fetchID := strings.TrimPrefix(r.URL.Path, "/artifacts/fetch/")
-	fetchID, err := url.PathUnescape(fetchID)
-	if err != nil || fetchID == "" || fetchID != filepath.Base(fetchID) {
-		http.NotFound(w, r)
-		return
+	host := strings.TrimSpace(r.Host)
+	if host == "" {
+		return ""
 	}
-	path, name, mimeType, err := server.ResolveArtifactFetchOutput(fetchID, r.URL.Query().Get("token"))
-	if err != nil {
-		http.NotFound(w, r)
-		return
+	scheme := "http"
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwarded != "" {
+		parts := strings.Split(forwarded, ",")
+		candidate := strings.ToLower(strings.TrimSpace(parts[0]))
+		if candidate == "http" || candidate == "https" {
+			scheme = candidate
+		}
+	} else if r.TLS != nil {
+		scheme = "https"
 	}
-	file, err := os.Open(path)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() {
-		http.NotFound(w, r)
-		return
-	}
-	if mimeType == "" {
-		mimeType = firstNonEmpty(mime.TypeByExtension(filepath.Ext(name)), "application/octet-stream")
-	}
-	w.Header().Set("Content-Type", mimeType)
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
-	w.Header().Set("Cache-Control", "private, no-store")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	http.ServeContent(w, r, name, info.ModTime(), file)
+	return scheme + "://" + host
 }
 
 func handleBrowserScreenshotArtifact(w http.ResponseWriter, r *http.Request, cfg config.Config) {

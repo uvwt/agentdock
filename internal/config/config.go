@@ -32,9 +32,6 @@ type Config struct {
 	NexusToken                    string
 	NexusDeviceName               string
 	NexusHeartbeatSeconds         int
-	ArtifactTargetsJSON           string
-	ArtifactFetchEnabled          bool
-	ArtifactFetchDenyJSON         string
 	BrowserEnabled                bool
 	BrowserRunnerDir              string
 	BrowserArtifactDir            string
@@ -60,9 +57,6 @@ func FromEnv() Config {
 		NexusToken:                    firstNonEmpty(os.Getenv("AGENTDOCK_NEXUS_TOKEN"), os.Getenv("NEXUS_AUTH_TOKEN"), os.Getenv("RECALLDOCK_AUTH_TOKEN"), os.Getenv("AGENTDOCK_RECALL_TOKEN")),
 		NexusDeviceName:               getenv("AGENTDOCK_NEXUS_DEVICE_NAME", ""),
 		NexusHeartbeatSeconds:         getenvInt("AGENTDOCK_NEXUS_HEARTBEAT_SECONDS", 30),
-		ArtifactTargetsJSON:           getenv("AGENTDOCK_ARTIFACT_TARGETS_JSON", ""),
-		ArtifactFetchEnabled:          getenvBool("AGENTDOCK_ARTIFACT_FETCH_ENABLED", false),
-		ArtifactFetchDenyJSON:         getenv("AGENTDOCK_ARTIFACT_FETCH_DENY_JSON", ""),
 		BrowserEnabled:                getenvBool("AGENTDOCK_BROWSER_ENABLED", false),
 		BrowserRunnerDir:              getenv("AGENTDOCK_BROWSER_RUNNER_DIR", "browser-runner"),
 		BrowserArtifactDir:            getenv("AGENTDOCK_BROWSER_ARTIFACT_DIR", "browser-artifacts"),

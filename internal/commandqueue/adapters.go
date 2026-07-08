@@ -36,24 +36,14 @@ type Reloader interface {
 	Reload(context.Context, json.RawMessage) (any, error)
 }
 
-type ArtifactReceiver interface {
-	Pull(context.Context, json.RawMessage) (any, error)
-}
-
-type ArtifactFetcher interface {
-	Fetch(context.Context, json.RawMessage) (any, error)
-}
-
 type AdapterDependencies struct {
-	Health        HealthChecker
-	Recall        RecallSyncer
-	Skills        SkillRouter
-	Env           EnvCommandRunner
-	Services      ServiceController
-	Diagnostics   DiagnosticsCollector
-	Reloader      Reloader
-	Artifacts     ArtifactReceiver
-	ArtifactFetch ArtifactFetcher
+	Health      HealthChecker
+	Recall      RecallSyncer
+	Skills      SkillRouter
+	Env         EnvCommandRunner
+	Services    ServiceController
+	Diagnostics DiagnosticsCollector
+	Reloader    Reloader
 }
 
 // RegisterAdapters 将 Nexus v1 固定命令集接到本机受控能力上。
@@ -109,20 +99,6 @@ func RegisterAdapters(executor *Executor, dependencies AdapterDependencies) erro
 				return HandlerResult{}, missingDependency("env.manage")
 			}
 			return dependencies.Env.ExecuteEnvCommand(ctx, payload, progress)
-		}},
-		FuncHandler{CommandType: "artifact.pull", Run: func(ctx context.Context, payload json.RawMessage, _ ProgressReporter) (HandlerResult, error) {
-			if dependencies.Artifacts == nil {
-				return HandlerResult{}, missingDependency("artifact.pull")
-			}
-			output, err := dependencies.Artifacts.Pull(ctx, payload)
-			return HandlerResult{Output: output}, err
-		}},
-		FuncHandler{CommandType: "artifact.fetch", Run: func(ctx context.Context, payload json.RawMessage, _ ProgressReporter) (HandlerResult, error) {
-			if dependencies.ArtifactFetch == nil {
-				return HandlerResult{}, missingDependency("artifact.fetch")
-			}
-			output, err := dependencies.ArtifactFetch.Fetch(ctx, payload)
-			return HandlerResult{Output: output}, err
 		}},
 	}
 	for _, commandType := range []string{"skill.install", "skill.run", "skill.rollback"} {

@@ -142,30 +142,11 @@ func InputSchema(name string) map[string]any {
 		props["timeout_ms"] = intProp("Optional run timeout in milliseconds, capped by the operation timeout.")
 		props["max_output_bytes"] = intProp("Maximum stdout/stderr bytes for run.")
 		required = []string{"action"}
-	case "artifact_fetch_create":
-		props["source_device_id"] = stringProp("Registered source device id.")
-		props["source_path"] = stringProp("Absolute path on the source device. Immutable core deny rules and configured additions always apply.")
-		props["archive"] = boolProp("For a directory, create a tar.gz. Defaults to false, which returns a bounded immediate listing.")
-		props["retention_seconds"] = intProp("Fetch retention between 3600 and 604800 seconds. Defaults to 86400.")
-		required = []string{"source_device_id", "source_path"}
-	case "artifact_fetch_status":
-		props["fetch_id"] = stringProp("Artifact fetch id returned by artifact_fetch_create.")
-		required = []string{"fetch_id"}
-	case "artifact_fetch_download":
-		props["fetch_id"] = stringProp("Ready artifact fetch id.")
-		props["mounted"] = boolProp("Set true only after the GPT sandbox has mounted the returned file; this deletes Nexus ciphertext and local transient state.")
-		required = []string{"fetch_id"}
-	case "artifact_send":
-		props["file"] = map[string]any{"type": "string", "format": "binary", "description": "Top-level file parameter. Connector runtimes must upload the file body and pass the mounted local path; do not pass a remote /mnt/data path as plain text."}
-		props["path"] = stringProp("Alternative local file or directory path visible to this AgentDock instance. Directories are packed as tar.gz before encryption.")
-		props["target_devices"] = map[string]any{"type": "array", "minItems": 1, "maxItems": 32, "items": map[string]any{"type": "string"}, "description": "Registered Nexus device IDs that should receive independent deliveries."}
-		props["dispatch"] = boolProp("Immediately queue artifact.pull commands after upload. Defaults to true.")
-		props["retention_seconds"] = intProp("Ciphertext retention between 3600 and 604800 seconds. Defaults to 86400.")
-		props["delete_after_all_delivered"] = boolProp("Delete Nexus ciphertext once all deliveries complete, expire, or are cancelled.")
-		props["conflict_policy"] = map[string]any{"type": "string", "enum": []string{"reject", "rename", "overwrite"}, "description": "Target conflict policy. Defaults to reject."}
-		props["extract"] = boolProp("Safely extract a tar.gz after verification. Defaults to false.")
-		props["logical_target"] = stringProp("Target-side logical destination mapping. Defaults to inbox; arbitrary absolute paths are not accepted.")
-		required = []string{"target_devices"}
+	case "file_publish":
+		props["file"] = map[string]any{"type": "string", "format": "binary", "description": "Top-level file parameter. Connector runtimes should pass the mounted local path when available."}
+		props["path"] = stringProp("Local file or directory path visible to this AgentDock instance. Relative paths resolve from ~/AgentDock.")
+		props["retention_seconds"] = intProp("Signed URL retention in seconds. Defaults to 86400 and is capped at 604800.")
+		required = []string{}
 	case "env_manage":
 		props["action"] = map[string]any{"type": "string", "description": "Env action: list, inspect, set, delete, or verify.", "enum": []string{"list", "inspect", "set", "delete", "verify"}}
 		props["skill"] = stringProp("Skill name for inspect, set, delete, or verify.")
