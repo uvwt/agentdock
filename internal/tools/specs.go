@@ -50,14 +50,6 @@ func ToolDefinitions() []ToolDefinition {
 }
 
 func (s ToolSpec) definition() ToolDefinition {
-	inputSchema := s.InputSchema
-	if inputSchema == nil {
-		inputSchema = func() map[string]any { return InputSchema(s.Name) }
-	}
-	outputSchema := s.OutputSchema
-	if outputSchema == nil {
-		outputSchema = func() map[string]any { return OutputSchema(s.Name) }
-	}
 	return ToolDefinition{
 		Name:                   s.Name,
 		Title:                  s.Title,
@@ -67,8 +59,8 @@ func (s ToolSpec) definition() ToolDefinition {
 		OpenWorld:              s.OpenWorld,
 		FileArgRewritePaths:    append([]string(nil), s.FileArgRewritePaths...),
 		FileResultRewritePaths: append([]string(nil), s.FileResultRewritePaths...),
-		InputSchema:            inputSchema(),
-		OutputSchema:           outputSchema(),
+		InputSchema:            s.InputSchema(),
+		OutputSchema:           s.OutputSchema(),
 	}
 }
 
@@ -133,7 +125,7 @@ func ctxToolHandler(fn func(*Runtime, context.Context, map[string]any) (Result, 
 
 func allToolSpecs() []ToolSpec {
 	// 顺序保持和旧 ToolNames 一致，避免 tools/list 与 server_info 的展示顺序无谓变化。
-	return []ToolSpec{
+	return bindToolSchemas([]ToolSpec{
 		{Name: "server_info", Title: "Server info", Description: "Return server, workspace, auth, profile, sandbox, and exposed-tool metadata.", ReadOnly: true, Profiles: readOnlyProfiles(), Handler: func(_ context.Context, r *Runtime, _ map[string]any) (Result, error) { return r.serverInfo(), nil }},
 		{Name: "read_file", Title: "Read file", Description: "Read a UTF-8 text file slice inside the configured workspace.", ReadOnly: true, Profiles: readOnlyProfiles(), Handler: toolHandler((*Runtime).readFile)},
 		{Name: "list_dir", Title: "List directory", Description: "List directory entries inside the configured workspace.", ReadOnly: true, Profiles: readOnlyProfiles(), Handler: toolHandler((*Runtime).listDir)},
@@ -174,5 +166,18 @@ func allToolSpecs() []ToolSpec {
 		{Name: "artifact_fetch_create", Title: "Create artifact fetch", Description: "Create an asynchronous high-risk request for a registered device to list or encrypt an absolute-path file or directory under immutable deny rules.", Destructive: true, OpenWorld: true, Profiles: unifiedProfiles(), Availability: requiresArtifactFetch, Handler: ctxToolHandler((*Runtime).artifactFetchCreate)},
 		{Name: "artifact_fetch_status", Title: "Artifact fetch status", Description: "Return status or a bounded directory listing for a local artifact fetch request.", ReadOnly: true, OpenWorld: true, Profiles: unifiedProfiles(), Availability: requiresArtifactFetch, Handler: ctxToolHandler((*Runtime).artifactFetchStatus)},
 		{Name: "artifact_fetch_download", Title: "Download artifact fetch", Description: "Download and decrypt a ready artifact fetch, return a file resource, or confirm that the GPT sandbox mounted it so ciphertext can be deleted.", Destructive: true, OpenWorld: true, FileResultRewritePaths: []string{"file_path"}, Profiles: unifiedProfiles(), Availability: requiresArtifactFetch, Handler: ctxToolHandler((*Runtime).artifactFetchDownload)},
+	})
+}
+
+func bindToolSchemas(specs []ToolSpec) []ToolSpec {
+	for i := range specs {
+		name := specs[i].Name
+		if specs[i].InputSchema == nil {
+			specs[i].InputSchema = func() map[string]any { return InputSchema(name) }
+		}
+		if specs[i].OutputSchema == nil {
+			specs[i].OutputSchema = func() map[string]any { return OutputSchema(name) }
+		}
 	}
+	return specs
 }

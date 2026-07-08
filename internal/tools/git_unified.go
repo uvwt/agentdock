@@ -12,7 +12,7 @@ func (r *Runtime) gitRead(ctx context.Context, args map[string]any) (Result, err
 	}
 	switch action {
 	case "repos":
-		result, err := r.workspaceRepos(ctx, args)
+		result, err := r.listGitRepos(ctx, args)
 		if result != nil {
 			result["action"] = "repos"
 		}

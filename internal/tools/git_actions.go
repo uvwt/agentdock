@@ -284,7 +284,7 @@ func (r *Runtime) gitClone(ctx context.Context, args map[string]any) (Result, er
 	return result, err
 }
 
-func (r *Runtime) workspaceRepos(ctx context.Context, args map[string]any) (Result, error) {
+func (r *Runtime) listGitRepos(ctx context.Context, args map[string]any) (Result, error) {
 	// 给模型一个轻量的“仓库地图”。这样处理多项目工作区时，模型可以先
 	// 发现有哪些 repo、各自分支和 clean/ahead 状态，再对指定 repo_path 操作，
 	// 减少反复 ls + git status 的探测步骤，也避免误操作到错误项目。

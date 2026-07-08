@@ -40,7 +40,7 @@ func (r *Runtime) resolveGitRepo(args map[string]any) (gitRepo, error) {
 		return gitRepo{}, toolError("NOT_A_DIRECTORY", "repo_path is not a directory", "validation")
 	}
 	if _, err := os.Stat(filepath.Join(p.Abs, ".git")); err != nil {
-		return gitRepo{}, toolErrorDetails("NOT_A_GIT_REPOSITORY", "repo_path is not a git repository", "validation", map[string]any{"repo_path": p.Display, "suggestion": "pass repo_path for one project under the workspace, or call workspace_repos"})
+		return gitRepo{}, toolErrorDetails("NOT_A_GIT_REPOSITORY", "repo_path is not a git repository", "validation", map[string]any{"repo_path": p.Display, "suggestion": "pass repo_path for one project under the workspace, or call git_read action=repos"})
 	}
 	return gitRepo{Path: p.Display, Abs: p.Abs}, nil
 }

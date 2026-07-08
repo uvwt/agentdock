@@ -80,6 +80,20 @@ func TestLegacyModelEntrypointsRemovedFromRuntime(t *testing.T) {
 	}
 }
 
+func TestWorkflowTemplateMatchIsOnlyTemplateDiscoveryEntrypoint(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	result, err := rt.Call(context.Background(), "workflow_template_manage", map[string]any{"action": "match", "goal": "deploy AgentDock", "device": "DockMini"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["action"] != "match" {
+		t.Fatalf("unexpected workflow template match result: %#v", result)
+	}
+	if _, err := rt.Call(context.Background(), "task_manage", map[string]any{"action": "template_match", "goal": "deploy AgentDock"}); err == nil {
+		t.Fatal("task_manage template_match should not be callable")
+	}
+}
+
 func TestGitReadAvailableInReadOnlyButGitWriteHidden(t *testing.T) {
 	root := t.TempDir()
 	cfg := testRuntimeConfig(root)
