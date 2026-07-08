@@ -186,11 +186,30 @@ func TestServerInfoRecommendsCompactRecallBootstrap(t *testing.T) {
 	}
 }
 
-func TestServerInfoReportsOAuthAuthEnabled(t *testing.T) {
+func TestServerInfoServerURLAloneDoesNotEnableAuth(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
 		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
 		OAuthServerURL: "https://auth.example.test",
+	}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
+	rt, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := rt.serverInfo()
+	if info["auth_enabled"] != false {
+		t.Fatalf("auth_enabled = %#v, want false", info["auth_enabled"])
+	}
+}
+
+func TestServerInfoReportsOAuthClientIDAuthEnabled(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Config{
+		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
+		OAuthClientID: "client-id", OAuthServerURL: "https://auth.example.test",
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)

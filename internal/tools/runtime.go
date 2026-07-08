@@ -109,7 +109,7 @@ func (r *Runtime) serverInfo() Result {
 }
 
 func (r *Runtime) authEnabled() bool {
-	return strings.TrimSpace(r.cfg.AuthToken) != "" || strings.TrimSpace(r.cfg.OAuthClientID) != "" || strings.TrimSpace(r.cfg.OAuthServerURL) != ""
+	return r.cfg.AuthRequired()
 }
 
 func (r *Runtime) readFile(args map[string]any) (Result, error) {
