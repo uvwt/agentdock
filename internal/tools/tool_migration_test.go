@@ -138,7 +138,7 @@ func initGitRepo(t *testing.T, root string) {
 func testRuntimeConfig(root string) config.Config {
 	cfg := config.Config{
 		Workspace:       root,
-		ToolProfile:     config.ProfileUnified,
+		ToolProfile:     config.ProfileFull,
 		Mode:            config.ModeSandboxed,
 		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",

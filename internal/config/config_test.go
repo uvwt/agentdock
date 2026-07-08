@@ -44,17 +44,18 @@ func TestNormalizeSandboxNoneDoesNotInferHostMode(t *testing.T) {
 	}
 }
 
-func TestNormalizeToolProfileOnlyAllowsUnifiedAndReadOnly(t *testing.T) {
+func TestNormalizeToolProfileOnlyAllowsFullAndReadOnly(t *testing.T) {
 	tests := []struct {
 		name string
 		in   string
 		want string
 	}{
-		{name: "empty defaults to unified", in: "", want: ProfileUnified},
-		{name: "unified stays unified", in: ProfileUnified, want: ProfileUnified},
+		{name: "empty defaults to full", in: "", want: ProfileFull},
+		{name: "full stays full", in: ProfileFull, want: ProfileFull},
 		{name: "read only stays read only", in: ProfileReadOnly, want: ProfileReadOnly},
-		{name: "removed compat profile falls back", in: "compat-readonly-" + "all", want: ProfileUnified},
-		{name: "unknown profile falls back", in: "legacy", want: ProfileUnified},
+		{name: "removed old full-access profile falls back", in: "uni" + "fied", want: ProfileFull},
+		{name: "removed compat profile falls back", in: "compat-readonly-" + "all", want: ProfileFull},
+		{name: "unknown profile falls back", in: "legacy", want: ProfileFull},
 	}
 
 	for _, tt := range tests {

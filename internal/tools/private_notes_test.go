@@ -12,7 +12,7 @@ import (
 
 func TestPrivateNotesWriteReadSearchAndEncrypt(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "private-notes")
-	rt, err := NewRuntime(config.Config{Workspace: t.TempDir(), AgentDockDir: "AgentDock", PrivateNotesDir: root, ToolProfile: config.ProfileUnified, EnableViewImage: true})
+	rt, err := NewRuntime(config.Config{Workspace: t.TempDir(), AgentDockDir: "AgentDock", PrivateNotesDir: root, ToolProfile: config.ProfileFull, EnableViewImage: true})
 	if err != nil {
 		t.Fatal(err)
 	}

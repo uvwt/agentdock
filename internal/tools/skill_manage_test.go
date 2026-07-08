@@ -70,7 +70,7 @@ spec:
 
 	cfg := config.Config{
 		Workspace:       root,
-		ToolProfile:     config.ProfileUnified,
+		ToolProfile:     config.ProfileFull,
 		Mode:            config.ModeSandboxed,
 		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",
@@ -170,7 +170,7 @@ spec:
 	}
 	cfg := config.Config{
 		Workspace:    root,
-		ToolProfile:  config.ProfileUnified,
+		ToolProfile:  config.ProfileFull,
 		Mode:         config.ModeSandboxed,
 		PathPolicy:   config.PathPolicyWorkspace,
 		AgentDockDir: "AgentDock",
@@ -242,7 +242,7 @@ spec:
 	}
 	cfg := config.Config{
 		Workspace:    root,
-		ToolProfile:  config.ProfileUnified,
+		ToolProfile:  config.ProfileFull,
 		Mode:         config.ModeSandboxed,
 		PathPolicy:   config.PathPolicyWorkspace,
 		AgentDockDir: "AgentDock",
@@ -324,7 +324,7 @@ spec:
 	writeDemoSkillDoc(t, pkg)
 	cfg := config.Config{
 		Workspace:    root,
-		ToolProfile:  config.ProfileUnified,
+		ToolProfile:  config.ProfileFull,
 		Mode:         config.ModeSandboxed,
 		PathPolicy:   config.PathPolicyWorkspace,
 		AgentDockDir: "AgentDock",
@@ -370,7 +370,7 @@ func TestSkillManageRejectsUnknownAction(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
 		Workspace:    root,
-		ToolProfile:  config.ProfileUnified,
+		ToolProfile:  config.ProfileFull,
 		Mode:         config.ModeSandboxed,
 		PathPolicy:   config.PathPolicyWorkspace,
 		AgentDockDir: "AgentDock",
@@ -483,7 +483,7 @@ spec:
 	}
 	cfg := config.Config{
 		Workspace:       root,
-		ToolProfile:     config.ProfileUnified,
+		ToolProfile:     config.ProfileFull,
 		Mode:            config.ModeSandboxed,
 		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",

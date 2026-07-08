@@ -17,7 +17,7 @@ func newCodeToolsRuntime(t *testing.T) (*Runtime, string) {
 	root := t.TempDir()
 	cfg := config.Config{
 		Workspace:       root,
-		ToolProfile:     config.ProfileUnified,
+		ToolProfile:     config.ProfileFull,
 		Mode:            config.ModeSandboxed,
 		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",
@@ -35,7 +35,7 @@ func TestServerInfoRecommendsCompactRecallBootstrap(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
 		Workspace:       root,
-		ToolProfile:     config.ProfileUnified,
+		ToolProfile:     config.ProfileFull,
 		Mode:            config.ModeSandboxed,
 		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",
@@ -61,7 +61,7 @@ func TestServerInfoReportsOAuthAuthEnabled(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
 		Workspace:      root,
-		ToolProfile:    config.ProfileUnified,
+		ToolProfile:    config.ProfileFull,
 		Mode:           config.ModeSandboxed,
 		PathPolicy:     config.PathPolicyWorkspace,
 		AgentDockDir:   "AgentDock",
@@ -101,7 +101,7 @@ process.stdout.write(JSON.stringify({
 	}
 	cfg := config.Config{
 		Workspace:                     root,
-		ToolProfile:                   config.ProfileUnified,
+		ToolProfile:                   config.ProfileFull,
 		Mode:                          config.ModeSandboxed,
 		PathPolicy:                    config.PathPolicyWorkspace,
 		AgentDockDir:                  "AgentDock",

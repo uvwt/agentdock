@@ -61,7 +61,7 @@ func TestTaskManageLifecycleAndRestartRecovery(t *testing.T) {
 	}
 
 	cfg := config.Config{
-		Workspace: root, ToolProfile: config.ProfileUnified, Mode: config.ModeSandboxed,
+		Workspace: root, ToolProfile: config.ProfileFull, Mode: config.ModeSandboxed,
 		PathPolicy: config.PathPolicyWorkspace, AgentDockDir: "AgentDock", EnableViewImage: true,
 	}
 	cfg.Normalize()

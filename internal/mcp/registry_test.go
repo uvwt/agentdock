@@ -28,7 +28,7 @@ func TestToolRegistryHasNoDuplicates(t *testing.T) {
 func TestRuntimeToolsHaveRegistryDefinitionsAndSchemas(t *testing.T) {
 	cfg := config.Config{
 		Workspace:       t.TempDir(),
-		ToolProfile:     config.ProfileUnified,
+		ToolProfile:     config.ProfileFull,
 		Mode:            config.ModeSandboxed,
 		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",
@@ -84,7 +84,7 @@ func TestReadOnlyProfileExcludesDestructiveTools(t *testing.T) {
 		}
 	}
 	if !seen["desktop_observe"] {
-		t.Fatalf("read-only desktop profile should expose unified observation tool desktop_observe")
+		t.Fatalf("read-only desktop profile should expose desktop_observe")
 	}
 	if seen["desktop_act"] {
 		t.Fatalf("read-only desktop profile exposed mutating desktop tools")
@@ -132,7 +132,7 @@ func TestReadOnlyProfileSplitsSessionObserveAndAct(t *testing.T) {
 func TestRecallDockToolNamesHideLegacyMemoryTools(t *testing.T) {
 	cfg := config.Config{
 		Workspace:       t.TempDir(),
-		ToolProfile:     config.ProfileUnified,
+		ToolProfile:     config.ProfileFull,
 		Mode:            config.ModeSandboxed,
 		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",
@@ -150,14 +150,14 @@ func TestRecallDockToolNamesHideLegacyMemoryTools(t *testing.T) {
 	}
 	for _, name := range []string{"recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain"} {
 		if !seen[name] {
-			t.Fatalf("unified profile missing RecallDock tool %q", name)
+			t.Fatalf("full profile missing RecallDock tool %q", name)
 		}
 	}
 	oldPrefixes := []string{"mem" + "ory_", "notes_"}
 	for _, prefix := range oldPrefixes {
 		for name := range seen {
 			if strings.HasPrefix(name, prefix) {
-				t.Fatalf("unified profile still exposes legacy recall predecessor tool %q", name)
+				t.Fatalf("full profile still exposes legacy recall predecessor tool %q", name)
 			}
 		}
 	}

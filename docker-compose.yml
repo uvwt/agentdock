@@ -9,7 +9,7 @@ services:
       - ./workspace:/workspace
       - ./AgentDock:/agent-dock
     environment:
-      AGENTDOCK_TOOL_PROFILE: "unified"
+      AGENTDOCK_TOOL_PROFILE: "full"
       # AgentDock 是 MCP 自身控制层目录，和用户项目 workspace 分离。
       AGENTDOCK_DIR: "/agent-dock"
       # 公网/VPS 部署应设置 AGENTDOCK_AUTH_TOKEN，并移除下方 demo 便利模式参数。

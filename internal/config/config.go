@@ -10,7 +10,7 @@ const (
 	ServerName      = "agentdock"
 	Version         = "0.3.0-go"
 
-	ProfileUnified  = "unified"
+	ProfileFull     = "full"
 	ProfileReadOnly = "read-only"
 
 	ModeSandboxed = "sandboxed"
@@ -74,7 +74,7 @@ func FromEnv() Config {
 		AuthToken:                     os.Getenv("AGENTDOCK_AUTH_TOKEN"),
 		OAuthClientID:                 os.Getenv("AGENTDOCK_OAUTH_CLIENT_ID"),
 		OAuthServerURL:                os.Getenv("AGENTDOCK_SERVER_URL"),
-		ToolProfile:                   getenv("AGENTDOCK_TOOL_PROFILE", ProfileUnified),
+		ToolProfile:                   getenv("AGENTDOCK_TOOL_PROFILE", ProfileFull),
 		LogLevel:                      getenv("AGENTDOCK_LOG_LEVEL", "info"),
 		SandboxMode:                   os.Getenv("AGENTDOCK_SANDBOX_MODE"),
 		PathPolicy:                    os.Getenv("AGENTDOCK_PATH_POLICY"),
@@ -125,7 +125,7 @@ func (c *Config) Normalize() {
 	switch c.ToolProfile {
 	case ProfileReadOnly:
 	default:
-		c.ToolProfile = ProfileUnified
+		c.ToolProfile = ProfileFull
 	}
 	if c.Host == "" {
 		c.Host = "127.0.0.1"
