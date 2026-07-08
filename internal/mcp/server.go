@@ -108,11 +108,6 @@ func toolDescriptorsForNames(names []string) []map[string]any {
 			"description":  def.Description,
 			"inputSchema":  inputSchema(name),
 			"outputSchema": outputSchema(name),
-			"annotations": map[string]any{
-				"readOnlyHint":    def.ReadOnly,
-				"destructiveHint": def.Destructive,
-				"openWorldHint":   def.OpenWorld,
-			},
 		}
 		meta := map[string]any{}
 		if len(def.FileArgRewritePaths) > 0 {

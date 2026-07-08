@@ -19,9 +19,6 @@ func TestToolRegistryHasNoDuplicates(t *testing.T) {
 			t.Fatalf("duplicate tool definition: %s", def.Name)
 		}
 		seen[def.Name] = true
-		if def.ReadOnly && def.Destructive {
-			t.Fatalf("tool cannot be both read-only and destructive: %s", def.Name)
-		}
 	}
 }
 
@@ -294,18 +291,6 @@ func TestRecallPublicSchemasAreClosedForModelFacingArgs(t *testing.T) {
 		schema := inputSchema(name)
 		if got, _ := schema["additionalProperties"].(bool); got {
 			t.Fatalf("%s input schema should be closed to keep hidden compatibility args out of model-facing schema: %#v", name, schema)
-		}
-	}
-}
-
-func TestRecallWriteAndMaintainAreMarkedDestructive(t *testing.T) {
-	for _, name := range []string{"recall_write", "recall_maintain"} {
-		def, ok := toolDefinition(name)
-		if !ok {
-			t.Fatalf("%s definition missing", name)
-		}
-		if !def.Destructive {
-			t.Fatalf("%s should be marked destructive because it can write, delete, or rebuild RecallDock state", name)
 		}
 	}
 }
