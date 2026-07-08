@@ -25,7 +25,7 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 	payload := map[string]any{
 		"operation":    operation,
 		"args":         args,
-		"workspace":    r.ws.Root(),
+		"default_dir":  r.ws.Root(),
 		"artifact_dir": artifactDir.Abs,
 	}
 	data, _ := json.Marshal(payload)
@@ -43,7 +43,7 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 	env := map[string]string{
 		"BROWSER_RUNNER_PAYLOAD": string(data),
 		"BROWSER_ARTIFACT_DIR":   artifactDir.Abs,
-		"WORKSPACE":              r.ws.Root(),
+		"AGENTDOCK_DEFAULT_DIR":  r.ws.Root(),
 		"AGENTDOCK_SERVER_URL":   strings.TrimRight(r.cfg.OAuthServerURL, "/"),
 	}
 	// 浏览器增强 Docker 镜像会通过 ENV 固定浏览器安装目录。这里只在父进程存在该变量时转交给 Node runner；

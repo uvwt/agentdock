@@ -87,7 +87,7 @@ func (r *Runtime) artifactFetchRequester() (*artifactrelay.FetchRequester, *arti
 	if !r.cfg.ArtifactFetchEnabled {
 		return nil, nil, errors.New("artifact fetch is disabled")
 	}
-	stateDir, err := config.ResolveNexusStateDir(r.cfg)
+	stateDir, err := config.NexusStateDir(r.cfg)
 	if err != nil {
 		return nil, nil, err
 	}

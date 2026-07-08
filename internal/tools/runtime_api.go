@@ -13,19 +13,19 @@ const runtimeAPISource = "agentdock-runtime-api"
 func (r *Runtime) RuntimeStatus() Result {
 	tools := r.ToolNames()
 	return Result{
-		"ok":              true,
-		"source":          runtimeAPISource,
-		"service":         config.ServerName,
-		"version":         config.Version,
-		"runtime_profile": r.cfg.RuntimeProfile,
-		"path_policy":     r.cfg.PathPolicyName(),
-		"sandbox_mode":    r.cfg.CommandSandboxName(),
-		"auth_enabled":    r.cfg.AuthToken != "" || r.cfg.OAuthClientID != "" || r.cfg.OAuthServerURL != "",
-		"browser_enabled": r.cfg.BrowserEnabled,
-		"memory_enabled":  r.cfg.RecallEndpoint != "",
-		"nexus_enabled":   strings.TrimSpace(r.cfg.NexusEndpoint) != "",
-		"tool_count":      len(tools),
-		"tools":           tools,
+		"ok":                    true,
+		"source":                runtimeAPISource,
+		"service":               config.ServerName,
+		"version":               config.Version,
+		"agentdock_home":        r.cfg.AgentDockHome,
+		"agentdock_default_dir": r.cfg.AgentDockDefaultDir,
+		"path_model":            config.PathModel,
+		"auth_enabled":          r.cfg.AuthToken != "" || r.cfg.OAuthClientID != "" || r.cfg.OAuthServerURL != "",
+		"browser_enabled":       r.cfg.BrowserEnabled,
+		"memory_enabled":        r.cfg.RecallEndpoint != "",
+		"nexus_enabled":         strings.TrimSpace(r.cfg.NexusEndpoint) != "",
+		"tool_count":            len(tools),
+		"tools":                 tools,
 	}
 }
 

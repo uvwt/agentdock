@@ -20,8 +20,7 @@ func newCodeToolsRuntime(t *testing.T) (*Runtime, string) {
 	t.Helper()
 	root := t.TempDir()
 	cfg := config.Config{
-		Workspace:       root,
-		AgentDockDir:    "AgentDock",
+		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
 		EnableViewImage: true,
 	}
 	if err := cfg.Normalize(); err != nil {
@@ -166,8 +165,7 @@ func newWorkflowTemplateNexusTestServer(t *testing.T, _ *taskstate.Store) *httpt
 func TestServerInfoRecommendsCompactRecallBootstrap(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
-		Workspace:       root,
-		AgentDockDir:    "AgentDock",
+		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
 		RecallEndpoint:  "http://127.0.0.1:18777",
 		RecallTimeoutMS: 30000,
 	}
@@ -191,8 +189,7 @@ func TestServerInfoRecommendsCompactRecallBootstrap(t *testing.T) {
 func TestServerInfoReportsOAuthAuthEnabled(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
-		Workspace:      root,
-		AgentDockDir:   "AgentDock",
+		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
 		OAuthServerURL: "https://auth.example.test",
 	}
 	if err := cfg.Normalize(); err != nil {
@@ -213,7 +210,7 @@ func TestBrowserRunnerReceivesPayloadEnvWithoutSkipPermissions(t *testing.T) {
 		t.Skip("node is required for browser runner")
 	}
 	root := t.TempDir()
-	runnerDir := filepath.Join(root, "AgentDock", "browser-runner")
+	runnerDir := filepath.Join(root, ".agentdock", "browser-runner")
 	if err := os.MkdirAll(runnerDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -221,17 +218,17 @@ func TestBrowserRunnerReceivesPayloadEnvWithoutSkipPermissions(t *testing.T) {
 process.stdout.write(JSON.stringify({
   ok: Boolean(process.env.BROWSER_RUNNER_PAYLOAD),
   operation: payload.operation,
-  workspace: payload.workspace,
+  default_dir: payload.default_dir,
   artifact_dir: payload.artifact_dir,
-  env_workspace: process.env.WORKSPACE,
+  env_default_dir: process.env.AGENTDOCK_DEFAULT_DIR,
   artifact_env: process.env.BROWSER_ARTIFACT_DIR
 }));`
 	if err := os.WriteFile(filepath.Join(runnerDir, "browser-runner.js"), []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cfg := config.Config{
-		Workspace:                     root,
-		AgentDockDir:                  "AgentDock",
+		AgentDockDefaultDir:           root,
+		AgentDockHome:                 filepath.Join(root, ".agentdock"),
 		BrowserEnabled:                true,
 		BrowserRunnerDir:              "browser-runner",
 		BrowserArtifactDir:            "browser-artifacts",
@@ -254,8 +251,8 @@ process.stdout.write(JSON.stringify({
 	if result["operation"] != "snapshot" {
 		t.Fatalf("operation = %#v, want snapshot", result["operation"])
 	}
-	if result["workspace"] == "" || result["workspace"] != result["env_workspace"] {
-		t.Fatalf("workspace env mismatch: %#v", result)
+	if result["default_dir"] == "" || result["default_dir"] != result["env_default_dir"] {
+		t.Fatalf("default dir env mismatch: %#v", result)
 	}
 	if result["artifact_env"] == "" || result["artifact_env"] != result["artifact_dir"] {
 		t.Fatalf("artifact env mismatch: %#v", result)

@@ -12,7 +12,6 @@ import (
 type Workspace struct {
 	root       string
 	defaultCWD string
-	hostPaths  bool
 	mu         sync.RWMutex
 }
 
@@ -22,9 +21,14 @@ type Path struct {
 	Exists  bool   `json:"exists"`
 }
 
-func New(root string, hostPaths bool) (*Workspace, error) {
+// New builds the single Host path resolver. The optional second argument is ignored
+// so older internal tests can be updated gradually without reintroducing policy branches.
+func New(root string, _ ...bool) (*Workspace, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(abs, 0o700); err != nil {
 		return nil, err
 	}
 	realRoot, err := filepath.EvalSymlinks(abs)
@@ -36,17 +40,15 @@ func New(root string, hostPaths bool) (*Workspace, error) {
 		return nil, err
 	}
 	if !info.IsDir() {
-		return nil, fmt.Errorf("workspace root is not a directory: %s", realRoot)
+		return nil, fmt.Errorf("default directory is not a directory: %s", realRoot)
 	}
 	if realRoot == string(filepath.Separator) {
-		return nil, errors.New("refusing to use filesystem root as workspace")
+		return nil, errors.New("refusing to use filesystem root as default directory")
 	}
-	return &Workspace{root: realRoot, defaultCWD: realRoot, hostPaths: hostPaths}, nil
+	return &Workspace{root: realRoot, defaultCWD: realRoot}, nil
 }
 
 func (w *Workspace) Root() string { return w.root }
-
-func (w *Workspace) HostPaths() bool { return w.hostPaths }
 
 func (w *Workspace) DefaultCWD() string {
 	w.mu.RLock()
@@ -88,7 +90,7 @@ func (w *Workspace) ResolveForWrite(raw string) (Path, error) {
 	return w.resolve(raw, false)
 }
 
-func (w *Workspace) resolveHost(raw string, mustExist bool) (Path, error) {
+func (w *Workspace) resolve(raw string, mustExist bool) (Path, error) {
 	if raw == "" {
 		raw = "."
 	}
@@ -96,21 +98,24 @@ func (w *Workspace) resolveHost(raw string, mustExist bool) (Path, error) {
 		return Path{}, errors.New("path contains invalid byte")
 	}
 	var candidate string
-	if strings.HasPrefix(raw, "~") {
+	switch {
+	case raw == "~":
 		home, err := os.UserHomeDir()
-		if err != nil {
-			return Path{}, err
+		if err != nil || home == "" {
+			return Path{}, fmt.Errorf("resolve user home: %w", err)
 		}
-		if raw == "~" {
-			candidate = home
-		} else if strings.HasPrefix(raw, "~/") {
-			candidate = filepath.Join(home, raw[2:])
-		} else {
-			return Path{}, errors.New("unsupported home path; use ~/path or an absolute path")
+		candidate = home
+	case strings.HasPrefix(raw, "~/"):
+		home, err := os.UserHomeDir()
+		if err != nil || home == "" {
+			return Path{}, fmt.Errorf("resolve user home: %w", err)
 		}
-	} else if filepath.IsAbs(raw) {
+		candidate = filepath.Join(home, raw[2:])
+	case strings.HasPrefix(raw, "~"):
+		return Path{}, errors.New("unsupported home path; use ~/path or an absolute path")
+	case filepath.IsAbs(raw):
 		candidate = raw
-	} else {
+	default:
 		candidate = filepath.Join(w.DefaultCWD(), filepath.FromSlash(raw))
 	}
 	candidate = filepath.Clean(candidate)
@@ -147,54 +152,6 @@ func (w *Workspace) resolveHost(raw string, mustExist bool) (Path, error) {
 	return Path{Display: display, Abs: realPath, Exists: statErr == nil}, nil
 }
 
-func (w *Workspace) resolve(raw string, mustExist bool) (Path, error) {
-	if w.hostPaths {
-		return w.resolveHost(raw, mustExist)
-	}
-	clean, err := Clean(raw)
-	if err != nil {
-		return Path{}, err
-	}
-	candidate := filepath.Join(w.DefaultCWD(), filepath.FromSlash(clean))
-	if mustExist {
-		realPath, err := filepath.EvalSymlinks(candidate)
-		if err != nil {
-			return Path{}, err
-		}
-		if !w.inside(realPath) {
-			return Path{}, fmt.Errorf("path escapes workspace: %s", raw)
-		}
-		display, _ := w.Relative(realPath)
-		return Path{Display: display, Abs: realPath, Exists: true}, nil
-	}
-	parent := candidate
-	for {
-		if info, err := os.Lstat(parent); err == nil && info.IsDir() {
-			break
-		}
-		next := filepath.Dir(parent)
-		if next == parent {
-			return Path{}, fmt.Errorf("parent directory not found: %s", raw)
-		}
-		parent = next
-	}
-	realParent, err := filepath.EvalSymlinks(parent)
-	if err != nil {
-		return Path{}, err
-	}
-	if !w.inside(realParent) {
-		return Path{}, fmt.Errorf("path escapes workspace: %s", raw)
-	}
-	relFromParent, err := filepath.Rel(parent, candidate)
-	if err != nil {
-		return Path{}, err
-	}
-	realPath := filepath.Join(realParent, relFromParent)
-	display, _ := w.Relative(realPath)
-	_, statErr := os.Stat(realPath)
-	return Path{Display: display, Abs: realPath, Exists: statErr == nil}, nil
-}
-
 func (w *Workspace) Relative(abs string) (string, error) {
 	rel, err := filepath.Rel(w.root, abs)
 	if err != nil {
@@ -209,14 +166,7 @@ func (w *Workspace) Relative(abs string) (string, error) {
 	return filepath.ToSlash(rel), nil
 }
 
-func (w *Workspace) inside(path string) bool {
-	rel, err := filepath.Rel(w.root, path)
-	if err != nil {
-		return false
-	}
-	return rel == "." || (!strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel))
-}
-
+// Clean remains a lexical helper for patch parsing. It is not a security boundary.
 func Clean(raw string) (string, error) {
 	if raw == "" {
 		raw = "."
@@ -225,15 +175,9 @@ func Clean(raw string) (string, error) {
 		return "", errors.New("path contains invalid byte")
 	}
 	if filepath.IsAbs(raw) || strings.HasPrefix(raw, "~") {
-		return "", errors.New("absolute paths are denied; use workspace-relative paths such as '.' instead of '/workspace'")
+		return filepath.Clean(raw), nil
 	}
-	clean := filepath.ToSlash(filepath.Clean(raw))
-	for _, part := range strings.Split(clean, "/") {
-		if part == ".." {
-			return "", errors.New("path escapes workspace")
-		}
-	}
-	return clean, nil
+	return filepath.ToSlash(filepath.Clean(raw)), nil
 }
 
 func Hidden(name string) bool { return strings.HasPrefix(name, ".") }

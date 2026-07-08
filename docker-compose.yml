@@ -6,20 +6,16 @@ services:
     ports:
       - "127.0.0.1:18766:8765"
     volumes:
-      - ./workspace:/workspace
-      - ./AgentDock:/agent-dock
+      - ./AgentDockHome:/root/.agentdock
+      - ./AgentDock:/root/AgentDock
     environment:
-      # AgentDock 是 MCP 自身控制层目录，和用户项目 workspace 分离。
-      AGENTDOCK_DIR: "/agent-dock"
-      # 公网/VPS 部署应设置 AGENTDOCK_AUTH_TOKEN，并移除下方 demo 便利模式参数。
+      # 公网/VPS 部署建议设置 AGENTDOCK_AUTH_TOKEN，并移除下方 demo 便利模式参数。
       # AGENTDOCK_AUTH_TOKEN: "replace-with-a-local-secret"
     command:
       - agentdock
-      - --workspace
-      - /workspace
       - --host
       - 0.0.0.0
       - --port
       - "8765"
-      # 仅适合 localhost 或受信 demo 环境；公网 production path 不应默认跳过权限确认。
+      # 仅适合 localhost 或受信 demo 环境；公网 production path 不建议默认跳过权限确认。
       - --dangerously-skip-all-permissions

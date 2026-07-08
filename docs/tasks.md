@@ -24,13 +24,13 @@ workflow_template_manage action=match
 任务状态保存在当前 AgentDock 实例本地，不依赖 AgentDock Nexus。
 
 ```text
-<AGENTDOCK_DIR>/tasks
+~/.agentdock/tasks
 ```
 
 Workflow 模板保存在：
 
 ```text
-<AGENTDOCK_DIR>/workflows
+~/.agentdock/tasks/workflows
 ```
 
 任务和模板目录按本地状态处理，目录权限应为 `0700`，状态文件应为 `0600`。执行中的 `tasks/` 不跨设备同步；可发布模板可以按版本化定义分发到目标设备，并在目标设备本地 validate/publish/match 后生效。
@@ -212,7 +212,7 @@ AGENTDOCK_TASK_VECTOR_MIN_SCORE=0.55
 模板向量按 `template_id/version/hash/model` 写入：
 
 ```text
-<AGENTDOCK_DIR>/tasks/search_index.sqlite
+~/.agentdock/tasks/search_index.sqlite
 ```
 
 输出里的 `vector_search_enabled`、`vector_index_status`、`vector_index_items`、`embedding_model` 表示当前实例是否启用向量匹配、索引状态、当前模型下已持久化的模板向量数量和模型名。provider 未配置、超时或异常时，匹配会降级为关键词/结构化匹配。

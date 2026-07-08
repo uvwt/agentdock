@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -26,8 +27,7 @@ func TestToolRegistryHasNoDuplicates(t *testing.T) {
 
 func TestRuntimeToolsHaveRegistryDefinitionsAndSchemas(t *testing.T) {
 	cfg := config.Config{
-		Workspace:       t.TempDir(),
-		AgentDockDir:    "AgentDock",
+		AgentDockDefaultDir: t.TempDir(), AgentDockHome: filepath.Join(t.TempDir(), ".agentdock"),
 		RecallEndpoint:  "http://127.0.0.1:18777",
 		BrowserEnabled:  true,
 		EnableViewImage: true,
@@ -54,8 +54,7 @@ func TestRuntimeToolsHaveRegistryDefinitionsAndSchemas(t *testing.T) {
 
 func TestRuntimeExposesSingleToolSet(t *testing.T) {
 	cfg := config.Config{
-		Workspace:       t.TempDir(),
-		AgentDockDir:    "AgentDock",
+		AgentDockDefaultDir: t.TempDir(), AgentDockHome: filepath.Join(t.TempDir(), ".agentdock"),
 		RecallEndpoint:  "http://127.0.0.1:18777",
 		BrowserEnabled:  true,
 		EnableViewImage: true,
@@ -80,8 +79,7 @@ func TestRuntimeExposesSingleToolSet(t *testing.T) {
 
 func TestRecallDockToolNamesHideLegacyMemoryTools(t *testing.T) {
 	cfg := config.Config{
-		Workspace:       t.TempDir(),
-		AgentDockDir:    "AgentDock",
+		AgentDockDefaultDir: t.TempDir(), AgentDockHome: filepath.Join(t.TempDir(), ".agentdock"),
 		RecallEndpoint:  "http://127.0.0.1:18777",
 		EnableViewImage: true,
 	}
@@ -215,12 +213,12 @@ func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	}
 }
 
-func TestWorkspaceEditAndGitUnifiedSchemas(t *testing.T) {
-	workspaceProps := schemaProperties(t, "workspace_edit")
-	assertSameStrings(t, enumStrings(t, workspaceProps["action"]), []string{"replace", "patch", "add", "delete", "move"})
+func TestFileEditAndGitUnifiedSchemas(t *testing.T) {
+	fileProps := schemaProperties(t, "file_edit")
+	assertSameStrings(t, enumStrings(t, fileProps["action"]), []string{"replace", "patch", "add", "delete", "move"})
 	for _, name := range []string{"path", "old", "new", "patch", "dry_run", "expected_matches", "replace_all", "content", "new_path", "overwrite", "recursive"} {
-		if _, ok := workspaceProps[name]; !ok {
-			t.Fatalf("workspace_edit input schema missing %q", name)
+		if _, ok := fileProps[name]; !ok {
+			t.Fatalf("file_edit input schema missing %q", name)
 		}
 	}
 

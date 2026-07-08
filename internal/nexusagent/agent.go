@@ -205,7 +205,7 @@ func Start(ctx context.Context, cfg config.Config) (bool, error) {
 }
 
 func resolveStateDir(cfg config.Config) (string, error) {
-	return config.ResolveNexusStateDir(cfg)
+	return config.NexusStateDir(cfg)
 }
 
 func ensureDeviceKey(dir string) (string, error) {

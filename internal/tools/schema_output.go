@@ -20,15 +20,15 @@ func OutputSchema(name string) map[string]any {
 		props["server"] = stringProp("Server identifier.")
 		props["title"] = stringProp("Human-readable server title.")
 		props["version"] = stringProp("Server version.")
-		props["workspace"] = stringProp("Workspace root path.")
-		props["default_cwd"] = stringProp("Default workspace-relative cwd.")
+		props["workspace"] = stringProp("AgentDock default directory.")
+		props["default_cwd"] = stringProp("Default cwd relative to ~/AgentDock when applicable.")
 		props["tools"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 		props["tool_count"] = intProp("Number of exposed tools.")
 		props["task_state_dir"] = stringProp("Local directory containing persistent recoverable task state.")
 		props["workflow_dir"] = stringProp("Local directory containing workflow templates.")
 		props["sandbox"] = objectProp("Sandbox status metadata.")
 	case "read_file":
-		props["path"] = stringProp("Workspace-relative file path.")
+		props["path"] = stringProp("Host path. Relative paths resolve from ~/AgentDock.")
 		props["content"] = stringProp("Text content slice.")
 		props["encoding"] = stringProp("Detected text encoding.")
 		props["size_bytes"] = intProp("File size in bytes.")
@@ -39,21 +39,21 @@ func OutputSchema(name string) map[string]any {
 		props["next_start_line"] = intProp("Next line to read when output was truncated.")
 		props["total_lines"] = intProp("Total line count.")
 	case "list_dir":
-		props["path"] = stringProp("Workspace-relative directory path.")
+		props["path"] = stringProp("Host directory path. Relative paths resolve from ~/AgentDock.")
 		props["entries"] = arrayProp("Directory entries.")
 		props["truncated"] = boolProp("Whether entries were truncated.")
 	case "list_files":
-		props["path"] = stringProp("Workspace-relative directory path.")
+		props["path"] = stringProp("Host directory path. Relative paths resolve from ~/AgentDock.")
 		props["files"] = arrayProp("Matched files.")
 		props["truncated"] = boolProp("Whether files were truncated.")
 	case "search_text":
 		props["matches"] = arrayProp("Text search matches.")
 		props["engine"] = stringProp("Search engine used: rg or go_fallback.")
 		props["truncated"] = boolProp("Whether matches were truncated.")
-	case "workspace_edit":
-		props["action"] = stringProp("Workspace edit action.")
+	case "file_edit":
+		props["action"] = stringProp("File edit action.")
 		props["summary"] = stringProp("Result summary.")
-		props["path"] = stringProp("Workspace-relative file path.")
+		props["path"] = stringProp("Host path. Relative paths resolve from ~/AgentDock.")
 		props["dry_run"] = boolProp("Whether this was a dry run.")
 		props["matches"] = intProp("Match count for replace.")
 		props["changed"] = boolProp("Whether content changed.")
@@ -304,7 +304,7 @@ func OutputSchema(name string) map[string]any {
 		props["fatal_but_non_blocking"] = boolProp("Whether fatal text was non-blocking.")
 		props["push_status"] = stringProp("Structured push status.")
 	case "view_image":
-		props["path"] = stringProp("Workspace-relative image path.")
+		props["path"] = stringProp("Host image path. Relative paths resolve from ~/AgentDock.")
 		props["mime_type"] = stringProp("Returned image MIME type.")
 		props["width"] = intProp("Returned image width.")
 		props["height"] = intProp("Returned image height.")

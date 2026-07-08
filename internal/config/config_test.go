@@ -1,75 +1,55 @@
 package config
 
 import (
-	"os"
+	"path/filepath"
 	"testing"
 )
 
-func TestNormalizeDefaultsToWorkspaceRuntimeProfile(t *testing.T) {
+func TestNormalizeDefaultsToUserDirectories(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	cfg := Config{}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
 	}
-
-	if cfg.RuntimeProfile != RuntimeProfileWorkspace {
-		t.Fatalf("RuntimeProfile = %q, want %q", cfg.RuntimeProfile, RuntimeProfileWorkspace)
+	wantHome := filepath.Join(home, ".agentdock")
+	wantDefault := filepath.Join(home, "AgentDock")
+	if cfg.AgentDockHome != wantHome {
+		t.Fatalf("AgentDockHome = %q, want %q", cfg.AgentDockHome, wantHome)
 	}
-	if cfg.HostPaths() {
-		t.Fatal("workspace profile should not allow host paths")
-	}
-	if !cfg.CommandSandboxEnabled() {
-		t.Fatal("workspace profile should enable command sandbox")
-	}
-	if cfg.PathPolicyName() != "workspace" {
-		t.Fatalf("PathPolicyName() = %q, want workspace", cfg.PathPolicyName())
-	}
-	if cfg.CommandSandboxName() != "landlock" {
-		t.Fatalf("CommandSandboxName() = %q, want landlock", cfg.CommandSandboxName())
+	if cfg.AgentDockDefaultDir != wantDefault {
+		t.Fatalf("AgentDockDefaultDir = %q, want %q", cfg.AgentDockDefaultDir, wantDefault)
 	}
 }
 
-func TestRuntimeProfileHostDerivesHostPathsAndNoCommandSandbox(t *testing.T) {
-	cfg := Config{RuntimeProfile: RuntimeProfileHost}
-	if err := cfg.Normalize(); err != nil {
-		t.Fatalf("Normalize() error = %v", err)
-	}
-
-	if !cfg.HostPaths() {
-		t.Fatal("host profile should allow host paths")
-	}
-	if cfg.CommandSandboxEnabled() {
-		t.Fatal("host profile should disable command sandbox")
-	}
-	if cfg.PathPolicyName() != "host" {
-		t.Fatalf("PathPolicyName() = %q, want host", cfg.PathPolicyName())
-	}
-	if cfg.CommandSandboxName() != "none" {
-		t.Fatalf("CommandSandboxName() = %q, want none", cfg.CommandSandboxName())
-	}
-}
-
-func TestNormalizeRejectsInvalidRuntimeProfile(t *testing.T) {
-	cfg := Config{RuntimeProfile: "sandboxed"}
-	if err := cfg.Normalize(); err == nil {
-		t.Fatal("Normalize() should reject invalid runtime profile")
-	}
-}
-
-func TestFromEnvReadsRuntimeProfile(t *testing.T) {
-	t.Setenv("AGENTDOCK_RUNTIME_PROFILE", RuntimeProfileHost)
+func TestFromEnvIgnoresOldDirectoryConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("AGENTDOCK_WORKSPACE", "/tmp/old-workspace")
+	t.Setenv("AGENTDOCK_RUNTIME_PROFILE", "workspace")
+	t.Setenv("AGENTDOCK_DIR", "/tmp/old-control")
 
 	cfg := FromEnv()
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
 	}
-	if cfg.RuntimeProfile != RuntimeProfileHost {
-		t.Fatalf("RuntimeProfile = %q, want %q", cfg.RuntimeProfile, RuntimeProfileHost)
+	if cfg.AgentDockHome != filepath.Join(home, ".agentdock") {
+		t.Fatalf("AgentDockHome = %q", cfg.AgentDockHome)
 	}
-	if cfg.PathPolicyName() != "host" || cfg.CommandSandboxName() != "none" {
-		t.Fatalf("derived profile = path %q sandbox %q, want host/none", cfg.PathPolicyName(), cfg.CommandSandboxName())
+	if cfg.AgentDockDefaultDir != filepath.Join(home, "AgentDock") {
+		t.Fatalf("AgentDockDefaultDir = %q", cfg.AgentDockDefaultDir)
 	}
 }
 
-func TestMain(m *testing.M) {
-	os.Exit(m.Run())
+func TestNexusStateDirUsesAgentDockHome(t *testing.T) {
+	home := t.TempDir()
+	cfg := Config{AgentDockHome: filepath.Join(home, ".agentdock")}
+	got, err := NexusStateDir(cfg)
+	if err != nil {
+		t.Fatalf("NexusStateDir() error = %v", err)
+	}
+	want := filepath.Join(cfg.AgentDockHome, "nexus")
+	if got != want {
+		t.Fatalf("NexusStateDir() = %q, want %q", got, want)
+	}
 }

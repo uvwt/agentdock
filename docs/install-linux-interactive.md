@@ -151,8 +151,8 @@ AGENTDOCK_GO_VERSION
 
 ```text
 /opt/agentdock/bin/agentdock              AgentDock 二进制
-/srv/agentdock/workspace                  用户项目 workspace
-/srv/agentdock/AgentDock                  AgentDock 控制目录和状态
+/srv/agentdock/.agentdock                 AgentDock 内部状态目录
+/srv/agentdock/AgentDock                  默认工作目录
 /etc/agentdock/agentdock.env              root-only 环境变量
 /etc/systemd/system/agentdock.service     systemd unit，systemd 系统使用
 /etc/init.d/agentdock                     OpenRC init 脚本，Alpine/OpenRC 使用

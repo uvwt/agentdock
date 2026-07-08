@@ -203,15 +203,11 @@ func handleScreenshotArtifact(w http.ResponseWriter, r *http.Request, cfg config
 		http.NotFound(w, r)
 		return
 	}
-	root := cfg.AgentDockDir
-	if root == "" {
-		root = "AgentDock"
-	}
 	if artifactDir == "" {
 		artifactDir = "browser-artifacts"
 	}
 	if !filepath.IsAbs(artifactDir) {
-		artifactDir = filepath.Join(root, artifactDir)
+		artifactDir = filepath.Join(cfg.AgentDockHome, artifactDir)
 	}
 	artifactDir = filepath.Clean(artifactDir)
 	filePath := filepath.Clean(filepath.Join(artifactDir, "screenshots", name))

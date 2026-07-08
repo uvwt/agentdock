@@ -68,8 +68,7 @@ spec:
 	}
 
 	cfg := config.Config{
-		Workspace:       root,
-		AgentDockDir:    "AgentDock",
+		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
 		EnableViewImage: true,
 	}
 	if err := cfg.Normalize(); err != nil {
@@ -166,8 +165,7 @@ spec:
 		t.Fatal(err)
 	}
 	cfg := config.Config{
-		Workspace:    root,
-		AgentDockDir: "AgentDock",
+		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
@@ -236,8 +234,7 @@ spec:
 		t.Fatal(err)
 	}
 	cfg := config.Config{
-		Workspace:    root,
-		AgentDockDir: "AgentDock",
+		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
@@ -316,8 +313,7 @@ spec:
 	}
 	writeDemoSkillDoc(t, pkg)
 	cfg := config.Config{
-		Workspace:    root,
-		AgentDockDir: "AgentDock",
+		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
@@ -361,8 +357,7 @@ spec:
 func TestSkillManageRejectsUnknownAction(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
-		Workspace:    root,
-		AgentDockDir: "AgentDock",
+		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
@@ -454,8 +449,7 @@ spec:
 		t.Fatal(err)
 	}
 	cfg := config.Config{
-		Workspace:       root,
-		AgentDockDir:    "AgentDock",
+		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
 		EnableViewImage: true,
 	}
 	if err := cfg.Normalize(); err != nil {

@@ -26,7 +26,7 @@ type skillRuntimeManager struct {
 }
 
 func newSkillRuntimeManager(cfg config.Config) (*skillRuntimeManager, error) {
-	stateDir, err := config.ResolveNexusStateDir(cfg)
+	stateDir, err := config.NexusStateDir(cfg)
 	if err != nil {
 		return nil, err
 	}

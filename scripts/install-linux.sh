@@ -13,7 +13,6 @@ DEFAULT_SERVICE_USER="${AGENTDOCK_SERVICE_USER:-agentdock}"
 DEFAULT_HOST="${AGENTDOCK_HOST:-127.0.0.1}"
 DEFAULT_PORT="${AGENTDOCK_PORT:-8765}"
 DEFAULT_LOG_LEVEL="${AGENTDOCK_LOG_LEVEL:-info}"
-DEFAULT_RUNTIME_PROFILE="${AGENTDOCK_RUNTIME_PROFILE:-workspace}"
 DEFAULT_SERVICE_MANAGER="${AGENTDOCK_SERVICE_MANAGER:-auto}"
 DEFAULT_INSTALL_MODE="${AGENTDOCK_INSTALL_MODE:-binary}"
 DEFAULT_RELEASE_VERSION="${AGENTDOCK_RELEASE_VERSION:-latest}"
@@ -45,7 +44,7 @@ Alpine/极简系统如果没有 curl/bash：
   AGENTDOCK_INSTALL_MODE、AGENTDOCK_RELEASE_VERSION、AGENTDOCK_REPO_URL、AGENTDOCK_BRANCH
   AGENTDOCK_SOURCE_DIR、AGENTDOCK_DATA_DIR、AGENTDOCK_ENV_FILE
   AGENTDOCK_SERVICE_NAME、AGENTDOCK_SERVICE_USER、AGENTDOCK_HOST、AGENTDOCK_PORT
-  AGENTDOCK_RUNTIME_PROFILE、AGENTDOCK_AUTH_TOKEN、AGENTDOCK_GO_VERSION
+  AGENTDOCK_AUTH_TOKEN、AGENTDOCK_GO_VERSION
 
 参数：
   -h, --help    显示帮助，不执行部署
@@ -351,14 +350,6 @@ validate_install_mode() {
   esac
 }
 
-validate_runtime_profile() {
-  local profile="$1"
-  case "$profile" in
-    workspace|host) ;;
-    *) die "运行 profile 必须是 workspace/host：$profile" ;;
-  esac
-}
-
 clone_or_update_source() {
   local repo_url="$1"
   local branch="$2"
@@ -407,31 +398,24 @@ clone_or_update_source() {
 
 write_env_file() {
   local env_file="$1"
-  local workspace_dir="$2"
-  local control_dir="$3"
-  local host="$4"
-  local port="$5"
-  local token="$6"
-  local log_level="$7"
-  local runtime_profile="$8"
-  local skip_prompts="${9}"
-  local recall_endpoint="${10}"
-  local recall_token="${11}"
-  local nexus_endpoint="${12}"
-  local nexus_device_name="${13}"
-  local nexus_state_dir="${14}"
+  local host="$2"
+  local port="$3"
+  local token="$4"
+  local log_level="$5"
+  local skip_prompts="$6"
+  local recall_endpoint="$7"
+  local recall_token="$8"
+  local nexus_endpoint="$9"
+  local nexus_device_name="${10}"
 
   local env_dir tmp_file
   env_dir="$(dirname "$env_file")"
   tmp_file="$(mktemp)"
   cat >"$tmp_file" <<ENV
-AGENTDOCK_WORKSPACE=$workspace_dir
-AGENTDOCK_DIR=$control_dir
 AGENTDOCK_HOST=$host
 AGENTDOCK_PORT=$port
 AGENTDOCK_AUTH_TOKEN=$token
 AGENTDOCK_LOG_LEVEL=$log_level
-AGENTDOCK_RUNTIME_PROFILE=$runtime_profile
 AGENTDOCK_SKIP_PERMISSION_PROMPTS=$skip_prompts
 AGENTDOCK_ENABLE_VIEW_IMAGE=true
 ENV
@@ -446,9 +430,6 @@ ENV
   fi
   if [[ -n "$nexus_device_name" ]]; then
     printf 'AGENTDOCK_NEXUS_DEVICE_NAME=%s\n' "$nexus_device_name" >>"$tmp_file"
-  fi
-  if [[ -n "$nexus_state_dir" ]]; then
-    printf 'AGENTDOCK_NEXUS_STATE_DIR=%s\n' "$nexus_state_dir" >>"$tmp_file"
   fi
 
   run_root mkdir -p "$env_dir"
@@ -478,8 +459,6 @@ Group=$service_group
 WorkingDirectory=$source_dir
 EnvironmentFile=$env_file
 ExecStart=$source_dir/bin/agentdock \\
-  --workspace \${AGENTDOCK_WORKSPACE} \\
-  --agentdock-dir \${AGENTDOCK_DIR} \\
   --host \${AGENTDOCK_HOST} \\
   --port \${AGENTDOCK_PORT} \\
   --log-level \${AGENTDOCK_LOG_LEVEL}
@@ -524,7 +503,7 @@ start_pre() {
     set -a
     . "\$agentdock_env_file"
     set +a
-    command_args="--workspace \${AGENTDOCK_WORKSPACE} --agentdock-dir \${AGENTDOCK_DIR} --host \${AGENTDOCK_HOST} --port \${AGENTDOCK_PORT} --log-level \${AGENTDOCK_LOG_LEVEL}"
+    command_args="--host \${AGENTDOCK_HOST} --port \${AGENTDOCK_PORT} --log-level \${AGENTDOCK_LOG_LEVEL}"
   else
     eerror "env file not readable: \$agentdock_env_file"
     return 1
@@ -617,9 +596,9 @@ repo_root_from_script() {
 main() {
   require_linux
 
-  local detected_root source_default repo_url branch source_dir data_dir workspace_dir control_dir env_file
-  local service_name service_user service_group service_manager service_manager_prompt host port token log_level runtime_profile skip_prompts
-  local install_mode release_version recall_endpoint recall_token nexus_endpoint nexus_device_name nexus_state_dir update_existing run_full_check install_deps
+  local detected_root source_default repo_url branch source_dir data_dir env_file
+  local service_name service_user service_group service_manager service_manager_prompt host port token log_level skip_prompts
+  local install_mode release_version recall_endpoint recall_token nexus_endpoint nexus_device_name update_existing run_full_check install_deps
   local go_version public_domain smoke_url health_host build_from_source binary_installed
 
   detected_root="$(repo_root_from_script || true)"
@@ -634,7 +613,7 @@ main() {
 AgentDock Linux 一键部署将执行：
 1. 默认下载预编译二进制，避免安装 Go/gcc 编译链。
 2. 仅在选择 source 或 binary 下载失败且选择 fallback 时源码构建。
-3. 生成 /etc/agentdock/agentdock.env 和 systemd/OpenRC 服务配置。
+3. 生成 /etc/agentdock/agentdock.env 和 systemd/OpenRC 服务配置。AgentDock 固定使用运行用户 home 下的 .agentdock 与 AgentDock。
 4. 启动 systemd/OpenRC 服务并验证 healthz。
 
 生产建议：监听 127.0.0.1，通过 Caddy/Nginx 做 HTTPS 反代；不要把 AgentDock 直接裸露到公网。
@@ -661,9 +640,6 @@ INTRO
   host="$(prompt '监听地址' "$DEFAULT_HOST")"
   port="$(prompt '监听端口' "$DEFAULT_PORT")"
   log_level="$(prompt '日志级别' "$DEFAULT_LOG_LEVEL")"
-  runtime_profile="$(prompt '运行 profile：workspace/host' "$DEFAULT_RUNTIME_PROFILE")"
-  validate_runtime_profile "$runtime_profile"
-
   validate_abs_path '安装目录' "$source_dir"
   validate_abs_path '运行数据根目录' "$data_dir"
   validate_abs_path '环境变量文件' "$env_file"
@@ -671,10 +647,6 @@ INTRO
   validate_no_space '运行用户' "$service_user"
   validate_no_space '监听地址' "$host"
   validate_port "$port"
-
-  workspace_dir="$data_dir/workspace"
-  control_dir="$data_dir/AgentDock"
-  nexus_state_dir="$data_dir/nexus"
 
   if confirm '是否安装/更新系统基础依赖？binary 只装运行依赖，source 才装 Go/gcc' y; then install_deps="yes"; else install_deps="no"; fi
   update_existing="no"
@@ -717,9 +689,9 @@ INTRO
 
 即将部署：
 - 安装目录：$source_dir
-- 运行数据：$data_dir
-- workspace：$workspace_dir
-- AgentDock 控制目录：$control_dir
+- 运行用户 home：$data_dir
+- 内部状态目录：$data_dir/.agentdock
+- 默认工作目录：$data_dir/AgentDock
 - env 文件：$env_file
 - 安装方式：$install_mode
 - Release 版本：$release_version
@@ -786,9 +758,9 @@ SUMMARY
 
   ensure_service_user "$service_user" "$data_dir"
   service_group="$(id -gn "$service_user")"
-  run_root mkdir -p "$workspace_dir" "$control_dir" "$nexus_state_dir"
+  run_root mkdir -p "$data_dir/.agentdock" "$data_dir/AgentDock"
   run_root chown -R "$service_user:$service_group" "$data_dir"
-  write_env_file "$env_file" "$workspace_dir" "$control_dir" "$host" "$port" "$token" "$log_level" "$runtime_profile" "$skip_prompts" "$recall_endpoint" "$recall_token" "$nexus_endpoint" "$nexus_device_name" "$nexus_state_dir"
+  write_env_file "$env_file" "$host" "$port" "$token" "$log_level" "$skip_prompts" "$recall_endpoint" "$recall_token" "$nexus_endpoint" "$nexus_device_name"
   case "$service_manager" in
     systemd) write_systemd_unit "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
     openrc) write_openrc_service "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;

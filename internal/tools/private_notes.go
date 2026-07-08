@@ -228,28 +228,7 @@ func (r *Runtime) privateNotesMaintain(ctx context.Context, args map[string]any)
 }
 
 func (r *Runtime) privateNotesRoot() (string, error) {
-	root := strings.TrimSpace(r.cfg.PrivateNotesDir)
-	if root == "" {
-		if envRoot := strings.TrimSpace(os.Getenv("RECALLDOCK_RECALL_DIR")); envRoot != "" {
-			root = filepath.Join(envRoot, "private-notes")
-		}
-	}
-	if root == "" {
-		if _, err := os.Stat("/Volumes/KIOXIA/Docker/recalldock/recall"); err == nil {
-			root = "/Volumes/KIOXIA/Docker/recalldock/recall/private-notes"
-		}
-	}
-	if root == "" {
-		base := r.cfg.AgentDockDir
-		if base == "" {
-			base = "AgentDock"
-		}
-		if !filepath.IsAbs(base) {
-			base = filepath.Join(r.cfg.Workspace, base)
-		}
-		root = filepath.Join(base, "private-notes")
-	}
-	return filepath.Clean(root), nil
+	return filepath.Join(r.cfg.AgentDockHome, "private-notes"), nil
 }
 
 func initPrivateNotesTree(root string) error {

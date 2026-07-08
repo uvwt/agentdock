@@ -3,7 +3,6 @@
 APP := agentdock
 IMAGE := agentdock:local
 BROWSER_IMAGE := agentdock:browser
-WORKSPACE ?= /workspace
 HOST ?= 127.0.0.1
 PORT ?= 8765
 LOG_LEVEL ?= info
@@ -26,7 +25,7 @@ build:
 check: fmt test vet build
 
 run:
-	go run ./cmd/agentdock --workspace $(WORKSPACE) --host $(HOST) --port $(PORT) --log-level $(LOG_LEVEL)
+	go run ./cmd/agentdock --host $(HOST) --port $(PORT) --log-level $(LOG_LEVEL)
 
 install-linux:
 	./scripts/install-linux.sh

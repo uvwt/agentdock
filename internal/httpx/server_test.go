@@ -3,6 +3,7 @@ package httpx
 import (
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,14 +12,18 @@ import (
 	"github.com/uvwt/agentdock/internal/tools"
 )
 
-func TestMCPEndpointNotificationReturnsAcceptedWithEmptyBody(t *testing.T) {
-	cfg := config.Config{
-		Workspace: t.TempDir(),
-	}
+func testConfig(t *testing.T) config.Config {
+	t.Helper()
+	root := t.TempDir()
+	cfg := config.Config{AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock")}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
 	}
+	return cfg
+}
 
+func TestMCPEndpointNotificationReturnsAcceptedWithEmptyBody(t *testing.T) {
+	cfg := testConfig(t)
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
@@ -27,7 +32,6 @@ func TestMCPEndpointNotificationReturnsAcceptedWithEmptyBody(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}`))
 	recorder := httptest.NewRecorder()
-
 	handler.ServeHTTP(recorder, req)
 
 	if recorder.Code != http.StatusAccepted {
@@ -39,14 +43,8 @@ func TestMCPEndpointNotificationReturnsAcceptedWithEmptyBody(t *testing.T) {
 }
 
 func TestRuntimeAPIRequiresBearerWhenConfigured(t *testing.T) {
-	cfg := config.Config{
-		Workspace:    t.TempDir(),
-		AuthToken:    "secret-token",
-		AgentDockDir: "AgentDock",
-	}
-	if err := cfg.Normalize(); err != nil {
-		t.Fatalf("Normalize() error = %v", err)
-	}
+	cfg := testConfig(t)
+	cfg.AuthToken = "secret-token"
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
@@ -62,14 +60,8 @@ func TestRuntimeAPIRequiresBearerWhenConfigured(t *testing.T) {
 }
 
 func TestRuntimeAPIStatusWithBearer(t *testing.T) {
-	cfg := config.Config{
-		Workspace:    t.TempDir(),
-		AuthToken:    "secret-token",
-		AgentDockDir: "AgentDock",
-	}
-	if err := cfg.Normalize(); err != nil {
-		t.Fatalf("Normalize() error = %v", err)
-	}
+	cfg := testConfig(t)
+	cfg.AuthToken = "secret-token"
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
@@ -87,16 +79,13 @@ func TestRuntimeAPIStatusWithBearer(t *testing.T) {
 	if !strings.Contains(body, `"source":"agentdock-runtime-api"`) {
 		t.Fatalf("body missing source: %s", body)
 	}
-	if strings.Contains(body, "secret-token") || strings.Contains(body, cfg.Workspace) {
-		t.Fatalf("status response leaked token or workspace path: %s", body)
+	if strings.Contains(body, "secret-token") {
+		t.Fatalf("status response leaked token: %s", body)
 	}
 }
 
 func TestRuntimeAPISkillsNoAuthWhenUnconfigured(t *testing.T) {
-	cfg := config.Config{Workspace: t.TempDir(), AgentDockDir: "AgentDock"}
-	if err := cfg.Normalize(); err != nil {
-		t.Fatalf("Normalize() error = %v", err)
-	}
+	cfg := testConfig(t)
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)

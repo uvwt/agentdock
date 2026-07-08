@@ -18,8 +18,8 @@ type gitRepo struct {
 }
 
 func (r *Runtime) resolveGitRepo(args map[string]any) (gitRepo, error) {
-	// 设计背景：/workspace 是多项目工作区，里面可能同时有多个 Git 仓库。
-	// Git 工具不能假设 /workspace 本身就是仓库，所以统一通过 repo_path
+	// 设计背景：~/AgentDock 是默认工作目录，里面可能同时有多个 Git 仓库。
+	// Git 工具不能假设 默认工作目录本身就是仓库，所以统一通过 repo_path
 	// 选择具体项目；未传 repo_path 时才退回默认 cwd，保持兼容旧调用方式。
 	raw := stringArg(args, "repo_path", "")
 	if raw == "" {
@@ -40,7 +40,7 @@ func (r *Runtime) resolveGitRepo(args map[string]any) (gitRepo, error) {
 		return gitRepo{}, toolError("NOT_A_DIRECTORY", "repo_path is not a directory", "validation")
 	}
 	if _, err := os.Stat(filepath.Join(p.Abs, ".git")); err != nil {
-		return gitRepo{}, toolErrorDetails("NOT_A_GIT_REPOSITORY", "repo_path is not a git repository", "validation", map[string]any{"repo_path": p.Display, "suggestion": "pass repo_path for one project under the workspace, or call git_read action=repos"})
+		return gitRepo{}, toolErrorDetails("NOT_A_GIT_REPOSITORY", "repo_path is not a git repository", "validation", map[string]any{"repo_path": p.Display, "suggestion": "pass repo_path for a concrete repository, or call git_read action=repos"})
 	}
 	return gitRepo{Path: p.Display, Abs: p.Abs}, nil
 }

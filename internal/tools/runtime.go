@@ -13,7 +13,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/uvwt/agentdock/internal/config"
-	"github.com/uvwt/agentdock/internal/sandbox"
 	"github.com/uvwt/agentdock/internal/taskstate"
 	"github.com/uvwt/agentdock/internal/workspace"
 )
@@ -29,7 +28,7 @@ type Runtime struct {
 }
 
 func NewRuntime(cfg config.Config) (*Runtime, error) {
-	ws, err := workspace.New(cfg.Workspace, cfg.HostPaths())
+	ws, err := workspace.New(cfg.AgentDockDefaultDir)
 	if err != nil {
 		return nil, err
 	}
@@ -37,11 +36,7 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	taskRoot := cfg.AgentDockDir
-	if !filepath.IsAbs(taskRoot) {
-		taskRoot = filepath.Join(cfg.Workspace, taskRoot)
-	}
-	tasks, err := taskstate.New(filepath.Join(taskRoot, "tasks"))
+	tasks, err := taskstate.New(filepath.Join(cfg.AgentDockHome, "tasks"))
 	if err != nil {
 		return nil, err
 	}
@@ -89,12 +84,10 @@ func (r *Runtime) serverInfo() Result {
 		"arch":       runtime.GOARCH,
 		"go_version": runtime.Version(),
 
-		"workspace":       r.ws.Root(),
-		"default_cwd":     r.ws.DefaultDisplay(),
-		"runtime_profile": r.cfg.RuntimeProfile,
-		"path_policy":     r.cfg.PathPolicyName(),
-		"sandbox_mode":    r.cfg.CommandSandboxName(),
-		"agent_dock_dir":  r.cfg.AgentDockDir,
+		"agentdock_home":        r.cfg.AgentDockHome,
+		"agentdock_default_dir": r.cfg.AgentDockDefaultDir,
+		"default_cwd":           r.ws.DefaultDisplay(),
+		"path_model":            config.PathModel,
 
 		"recall_enabled":               r.cfg.RecallEndpoint != "",
 		"recall_endpoint":              r.cfg.RecallEndpoint,
@@ -112,7 +105,6 @@ func (r *Runtime) serverInfo() Result {
 		"endpoint_path": "/mcp",
 		"tools":         names,
 		"tool_count":    len(names),
-		"sandbox":       sandbox.StatusForWorkspace(r.ws.Root()),
 	}
 }
 

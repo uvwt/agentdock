@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -61,8 +62,7 @@ func TestTaskManageLifecycleAndRestartRecovery(t *testing.T) {
 	}
 
 	cfg := config.Config{
-		Workspace:    root,
-		AgentDockDir: "AgentDock", EnableViewImage: true,
+		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)

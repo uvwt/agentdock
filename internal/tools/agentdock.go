@@ -4,8 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/uvwt/agentdock/internal/workspace"
 )
 
 type controlPath struct {
@@ -14,18 +12,11 @@ type controlPath struct {
 }
 
 func (r *Runtime) agentDockRoot() (controlPath, error) {
-	if r.cfg.AgentDockDir == "" {
-		return controlPath{}, toolError("AGENT_DOCK_DISABLED", "AgentDock is not configured", "validation")
+	if r.cfg.AgentDockHome == "" {
+		return controlPath{}, toolError("AGENT_DOCK_DISABLED", "AgentDock home is not configured", "validation")
 	}
-	if filepath.IsAbs(r.cfg.AgentDockDir) {
-		abs := filepath.Clean(r.cfg.AgentDockDir)
-		return controlPath{Abs: abs, Display: abs}, nil
-	}
-	p, err := r.ws.ResolveForWrite(r.cfg.AgentDockDir)
-	if err != nil {
-		return controlPath{}, err
-	}
-	return fromWorkspacePath(p), nil
+	abs := filepath.Clean(r.cfg.AgentDockHome)
+	return controlPath{Abs: abs, Display: abs}, nil
 }
 
 func (r *Runtime) resolveControlForWrite(path string) (controlPath, error) {
@@ -63,10 +54,6 @@ func (r *Runtime) resolveAgentDockPath(path string, existing bool) (controlPath,
 		}
 	}
 	return controlPath{Abs: abs, Display: displayControlPath(root, abs)}, nil
-}
-
-func fromWorkspacePath(p workspace.Path) controlPath {
-	return controlPath{Abs: p.Abs, Display: p.Display}
 }
 
 func displayControlPath(root controlPath, abs string) string {

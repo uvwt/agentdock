@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/uvwt/agentdock/internal/policy"
-	"github.com/uvwt/agentdock/internal/sandbox"
 	"github.com/uvwt/agentdock/internal/session"
 )
 
@@ -51,13 +50,8 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 	// 如果子进程绑定到单次 MCP 请求 ctx，请求结束时 git push / npm install 等长任务会被杀掉。
 	// 因此长任务只受 timeout_ms 和 session_act action=kill/kill_all 控制。
 	s, sandboxStatus, err := session.Start(context.Background(), cmd, workdir.Abs, r.commandEnv(mapArg(args, "env")), timeout, func(command *exec.Cmd) (func(), map[string]any) {
-		if !r.cfg.CommandSandboxEnabled() {
-			// host profile 是明确的高危运行入口：命令不启用 Landlock，避免 sudo 等裸机维护命令
-			// 被 no_new_privs 阻断；workspace profile 始终走 Landlock。
-			return func() {}, map[string]any{"enabled": false, "mode": r.cfg.CommandSandboxName(), "warnings": []string{"command sandbox disabled by runtime_profile=host; rely on OS user permissions and sudoers policy"}}
-		}
-		cleanup, status := sandbox.PrepareCommand(command, r.ws.Root())
-		return cleanup, map[string]any{"enabled": status.Enabled, "mode": "landlock", "warnings": status.Warnings}
+		// AgentDock 采用单一 Host 路径模型，命令权限由当前 OS 用户、Docker volume 或 systemd 用户决定。
+		return func() {}, map[string]any{"enabled": false, "mode": "none", "warnings": []string{"command sandbox disabled by host path model; rely on OS user permissions, Docker volumes, and service configuration"}}
 	})
 	if err != nil {
 		return nil, err
@@ -236,16 +230,12 @@ func (r *Runtime) baseCommandEnv() map[string]string {
 			env[key] = value
 		}
 	}
-	env["AGENTDOCK_WORKSPACE"] = r.ws.Root()
-	if hostHome := os.Getenv("AGENTDOCK_HOST_HOME"); hostHome != "" {
-		env["AGENTDOCK_HOST_HOME"] = hostHome
-	} else if hostHome, err := os.UserHomeDir(); err == nil && hostHome != "" {
-		env["AGENTDOCK_HOST_HOME"] = hostHome
+	env["AGENTDOCK_HOME"] = r.cfg.AgentDockHome
+	env["AGENTDOCK_DEFAULT_DIR"] = r.cfg.AgentDockDefaultDir
+	if hostHome, err := os.UserHomeDir(); err == nil && hostHome != "" {
+		env["HOME"] = hostHome
 	}
-	// Keep HOME inside the workspace so arbitrary commands do not accidentally read or write
-	// the user's real ~/.ssh, ~/.config, package caches, or other private state.
-	env["HOME"] = r.ws.Root()
-	env["TMPDIR"] = filepath.Join(r.ws.Root(), ".tmp")
+	env["TMPDIR"] = filepath.Join(r.cfg.AgentDockHome, "tmp")
 	_ = os.MkdirAll(env["TMPDIR"], 0o755)
 	return env
 }

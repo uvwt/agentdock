@@ -17,7 +17,7 @@ func (r *Runtime) artifactSend(ctx context.Context, args map[string]any) (Result
 	if len(targets) == 0 {
 		return nil, toolError("ARTIFACT_TARGET_REQUIRED", "target_devices must contain at least one device id", "validation")
 	}
-	stateDir, err := config.ResolveNexusStateDir(r.cfg)
+	stateDir, err := config.NexusStateDir(r.cfg)
 	if err != nil {
 		return nil, err
 	}

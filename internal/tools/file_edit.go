@@ -6,10 +6,10 @@ import (
 	"strings"
 )
 
-func (r *Runtime) workspaceEdit(ctx context.Context, args map[string]any) (Result, error) {
+func (r *Runtime) fileEdit(ctx context.Context, args map[string]any) (Result, error) {
 	action := strings.ToLower(stringArg(args, "action", ""))
 	if action == "" {
-		return nil, toolErrorDetails("MISSING_ACTION", "workspace_edit requires action", "validation", map[string]any{"allowed": []string{"replace", "patch", "add", "delete", "move"}})
+		return nil, toolErrorDetails("MISSING_ACTION", "file_edit requires action", "validation", map[string]any{"allowed": []string{"replace", "patch", "add", "delete", "move"}})
 	}
 	switch action {
 	case "patch":
@@ -25,17 +25,17 @@ func (r *Runtime) workspaceEdit(ctx context.Context, args map[string]any) (Resul
 		}
 		return result, err
 	case "add":
-		return r.workspaceEditAdd(args)
+		return r.fileEditAdd(args)
 	case "delete":
-		return r.workspaceEditDelete(args)
+		return r.fileEditDelete(args)
 	case "move":
-		return r.workspaceEditMove(args)
+		return r.fileEditMove(args)
 	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported workspace_edit action", "validation", map[string]any{"action": action, "allowed": []string{"replace", "patch", "add", "delete", "move"}})
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported file_edit action", "validation", map[string]any{"action": action, "allowed": []string{"replace", "patch", "add", "delete", "move"}})
 	}
 }
 
-func (r *Runtime) workspaceEditAdd(args map[string]any) (Result, error) {
+func (r *Runtime) fileEditAdd(args map[string]any) (Result, error) {
 	path := stringArg(args, "path", "")
 	if path == "" {
 		return nil, toolError("INVALID_ARGUMENT", "path is required", "validation")
@@ -87,7 +87,7 @@ func (r *Runtime) workspaceEditAdd(args map[string]any) (Result, error) {
 	return result, nil
 }
 
-func (r *Runtime) workspaceEditDelete(args map[string]any) (Result, error) {
+func (r *Runtime) fileEditDelete(args map[string]any) (Result, error) {
 	path := stringArg(args, "path", "")
 	if path == "" {
 		return nil, toolError("INVALID_ARGUMENT", "path is required", "validation")
@@ -115,7 +115,7 @@ func (r *Runtime) workspaceEditDelete(args map[string]any) (Result, error) {
 	return result, os.Remove(p.Abs)
 }
 
-func (r *Runtime) workspaceEditMove(args map[string]any) (Result, error) {
+func (r *Runtime) fileEditMove(args map[string]any) (Result, error) {
 	path := stringArg(args, "path", "")
 	newPath := firstNonEmptyStringArg(args, "new_path", "dest", "to")
 	if path == "" || newPath == "" {

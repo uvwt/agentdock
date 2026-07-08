@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 )
 
@@ -10,31 +11,26 @@ const (
 	ProtocolVersion = "2025-06-18"
 	ServerName      = "agentdock"
 	Version         = "0.3.0-go"
-
-	RuntimeProfileWorkspace = "workspace"
-	RuntimeProfileHost      = "host"
+	PathModel       = "host"
 )
 
 type Config struct {
-	Workspace                     string
-	RuntimeProfile                string
+	AgentDockHome                 string
+	AgentDockDefaultDir           string
 	Host                          string
 	Port                          int
 	AuthToken                     string
 	OAuthClientID                 string
 	OAuthServerURL                string
 	LogLevel                      string
-	AgentDockDir                  string
 	RecallEndpoint                string
 	RecallToken                   string
 	RecallLoginUser               string
 	RecallLoginValue              string
 	RecallTimeoutMS               int
-	PrivateNotesDir               string
 	NexusEndpoint                 string
 	NexusToken                    string
 	NexusDeviceName               string
-	NexusStateDir                 string
 	NexusHeartbeatSeconds         int
 	ArtifactTargetsJSON           string
 	ArtifactFetchEnabled          bool
@@ -49,25 +45,20 @@ type Config struct {
 
 func FromEnv() Config {
 	return Config{
-		Workspace:                     getenv("AGENTDOCK_WORKSPACE", "."),
-		RuntimeProfile:                os.Getenv("AGENTDOCK_RUNTIME_PROFILE"),
 		Host:                          getenv("AGENTDOCK_HOST", "127.0.0.1"),
 		Port:                          getenvInt("AGENTDOCK_PORT", 8765),
 		AuthToken:                     os.Getenv("AGENTDOCK_AUTH_TOKEN"),
 		OAuthClientID:                 os.Getenv("AGENTDOCK_OAUTH_CLIENT_ID"),
 		OAuthServerURL:                os.Getenv("AGENTDOCK_SERVER_URL"),
 		LogLevel:                      getenv("AGENTDOCK_LOG_LEVEL", "info"),
-		AgentDockDir:                  getenv("AGENTDOCK_DIR", "AgentDock"),
 		RecallEndpoint:                os.Getenv("AGENTDOCK_RECALL_ENDPOINT"),
 		RecallToken:                   firstNonEmpty(os.Getenv("AGENTDOCK_RECALL_TOKEN"), os.Getenv("RECALLDOCK_AUTH_TOKEN")),
 		RecallLoginUser:               os.Getenv("AGENTDOCK_RECALL_LOGIN_USER"),
 		RecallLoginValue:              os.Getenv("AGENTDOCK_RECALL_LOGIN_VALUE"),
 		RecallTimeoutMS:               getenvInt("AGENTDOCK_RECALL_TIMEOUT_MS", 30000),
-		PrivateNotesDir:               firstNonEmpty(os.Getenv("AGENTDOCK_PRIVATE_NOTES_DIR"), os.Getenv("RECALLDOCK_PRIVATE_NOTES_DIR")),
 		NexusEndpoint:                 getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
 		NexusToken:                    firstNonEmpty(os.Getenv("AGENTDOCK_NEXUS_TOKEN"), os.Getenv("NEXUS_AUTH_TOKEN"), os.Getenv("RECALLDOCK_AUTH_TOKEN"), os.Getenv("AGENTDOCK_RECALL_TOKEN")),
 		NexusDeviceName:               getenv("AGENTDOCK_NEXUS_DEVICE_NAME", ""),
-		NexusStateDir:                 getenv("AGENTDOCK_NEXUS_STATE_DIR", ""),
 		NexusHeartbeatSeconds:         getenvInt("AGENTDOCK_NEXUS_HEARTBEAT_SECONDS", 30),
 		ArtifactTargetsJSON:           getenv("AGENTDOCK_ARTIFACT_TARGETS_JSON", ""),
 		ArtifactFetchEnabled:          getenvBool("AGENTDOCK_ARTIFACT_FETCH_ENABLED", false),
@@ -82,15 +73,31 @@ func FromEnv() Config {
 }
 
 func (c *Config) Normalize() error {
-	if c.RuntimeProfile == "" {
-		c.RuntimeProfile = RuntimeProfileWorkspace
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return fmt.Errorf("resolve user home for AgentDock directories: %w", err)
 	}
-	switch c.RuntimeProfile {
-	case RuntimeProfileWorkspace, RuntimeProfileHost:
-	default:
-		return fmt.Errorf("invalid runtime_profile %q; allowed values: %s, %s", c.RuntimeProfile, RuntimeProfileWorkspace, RuntimeProfileHost)
+	if c.AgentDockHome == "" {
+		c.AgentDockHome = filepath.Join(home, ".agentdock")
 	}
-
+	if c.AgentDockDefaultDir == "" {
+		c.AgentDockDefaultDir = filepath.Join(home, "AgentDock")
+	}
+	for label, value := range map[string]string{"AgentDockHome": c.AgentDockHome, "AgentDockDefaultDir": c.AgentDockDefaultDir} {
+		if !filepath.IsAbs(value) {
+			return fmt.Errorf("%s must resolve to an absolute path: %s", label, value)
+		}
+		if err := os.MkdirAll(value, 0o700); err != nil {
+			return fmt.Errorf("create %s %s: %w", label, value, err)
+		}
+		info, err := os.Stat(value)
+		if err != nil {
+			return fmt.Errorf("stat %s %s: %w", label, value, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("%s is not a directory: %s", label, value)
+		}
+	}
 	if c.Host == "" {
 		c.Host = "127.0.0.1"
 	}
@@ -99,9 +106,6 @@ func (c *Config) Normalize() error {
 	}
 	if c.LogLevel == "" {
 		c.LogLevel = "info"
-	}
-	if c.AgentDockDir == "" {
-		c.AgentDockDir = "AgentDock"
 	}
 	if c.RecallTimeoutMS <= 0 {
 		c.RecallTimeoutMS = 30000
@@ -116,28 +120,6 @@ func (c *Config) Normalize() error {
 		c.BrowserArtifactDir = "browser-artifacts"
 	}
 	return nil
-}
-
-func (c Config) HostPaths() bool {
-	return c.RuntimeProfile == RuntimeProfileHost
-}
-
-func (c Config) CommandSandboxEnabled() bool {
-	return c.RuntimeProfile != RuntimeProfileHost
-}
-
-func (c Config) PathPolicyName() string {
-	if c.HostPaths() {
-		return "host"
-	}
-	return "workspace"
-}
-
-func (c Config) CommandSandboxName() string {
-	if c.CommandSandboxEnabled() {
-		return "landlock"
-	}
-	return "none"
 }
 
 func getenv(key, fallback string) string {
@@ -157,27 +139,6 @@ func getenvInt(key string, fallback int) int {
 		return fallback
 	}
 	return parsed
-}
-
-func getenvFloat(key string, fallback float64) float64 {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.ParseFloat(value, 64)
-	if err != nil {
-		return fallback
-	}
-	return parsed
-}
-
-func firstNonZeroInt(values ...int) int {
-	for _, value := range values {
-		if value != 0 {
-			return value
-		}
-	}
-	return 0
 }
 
 func getenvBool(key string, fallback bool) bool {

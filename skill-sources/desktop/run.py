@@ -93,15 +93,12 @@ def error_result(operation, code, message, layer="validation", **extra):
     return out
 
 
-def workspace_root():
-    return Path(os.environ.get("AGENTDOCK_WORKSPACE") or os.environ.get("HOME") or ".").expanduser().resolve()
+def default_dir():
+    return Path(os.environ.get("AGENTDOCK_DEFAULT_DIR") or "~/AgentDock").expanduser().resolve()
 
 
 def agentdock_root():
-    root = Path(os.environ.get("AGENTDOCK_DIR") or "AgentDock").expanduser()
-    if root.is_absolute():
-        return root
-    return workspace_root() / root
+    return Path(os.environ.get("AGENTDOCK_HOME") or "~/.agentdock").expanduser().resolve()
 
 
 def skill_data_root():

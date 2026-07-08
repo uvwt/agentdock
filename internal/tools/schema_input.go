@@ -15,20 +15,20 @@ func InputSchema(name string) map[string]any {
 
 	switch name {
 	case "read_file":
-		props["path"] = stringProp("Workspace-relative file path.")
+		props["path"] = stringProp("Host path. Relative paths resolve from ~/AgentDock.")
 		props["start_line"] = intProp("1-based start line.")
 		props["end_line"] = intProp("Inclusive end line.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
 		required = []string{"path"}
 	case "list_dir":
-		props["path"] = stringProp("Workspace-relative directory path.")
+		props["path"] = stringProp("Host directory path. Relative paths resolve from ~/AgentDock.")
 		props["recursive"] = boolProp("List recursively.")
 		props["max_depth"] = intProp("Maximum recursive depth.")
 		props["max_entries"] = intProp("Maximum entries.")
 		props["include_hidden"] = boolProp("Include dotfiles.")
 		props["include_ignored"] = boolProp("Include normally skipped directories.")
 	case "list_files":
-		props["path"] = stringProp("Workspace-relative directory path.")
+		props["path"] = stringProp("Host directory path. Relative paths resolve from ~/AgentDock.")
 		props["patterns"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 		props["glob"] = stringProp("Single glob pattern override.")
 		props["exclude_patterns"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
@@ -36,7 +36,7 @@ func InputSchema(name string) map[string]any {
 		props["include_hidden"] = boolProp("Include dotfiles.")
 		props["include_ignored"] = boolProp("Include normally skipped directories.")
 	case "search_text":
-		props["path"] = stringProp("Workspace-relative path.")
+		props["path"] = stringProp("Host path. Relative paths resolve from ~/AgentDock.")
 		props["query"] = stringProp("Text or regex query.")
 		props["regex"] = boolProp("Treat query as regex.")
 		props["case_sensitive"] = boolProp("Use case-sensitive search.")
@@ -47,9 +47,9 @@ func InputSchema(name string) map[string]any {
 		props["context_lines"] = intProp("Context lines around each match.")
 		props["max_results"] = intProp("Maximum matches.")
 		required = []string{"query"}
-	case "workspace_edit":
-		props["action"] = map[string]any{"type": "string", "description": "Workspace edit action.", "enum": []string{"replace", "patch", "add", "delete", "move"}}
-		props["path"] = stringProp("Workspace-relative path for replace, add, delete, or move.")
+	case "file_edit":
+		props["action"] = map[string]any{"type": "string", "description": "File edit action.", "enum": []string{"replace", "patch", "add", "delete", "move"}}
+		props["path"] = stringProp("Host path for replace, add, delete, or move. Relative paths resolve from ~/AgentDock.")
 		props["old"] = stringProp("Exact UTF-8 text to replace.")
 		props["new"] = stringProp("Replacement UTF-8 text for replace, or content alias for add.")
 		props["replace_all"] = boolProp("Replace every match instead of only the first.")
@@ -67,7 +67,7 @@ func InputSchema(name string) map[string]any {
 
 	case "exec_command":
 		props["cmd"] = stringProp("Command to run.")
-		props["workdir"] = stringProp("Workspace-relative working directory.")
+		props["workdir"] = stringProp("Host working directory. Relative paths resolve from ~/AgentDock.")
 		props["timeout_ms"] = intProp("Timeout in milliseconds.")
 		props["yield_time_ms"] = intProp("Initial wait before returning running session.")
 		props["wait_until_exit"] = boolProp("Wait until the command exits instead of returning a running session after yield_time_ms.")
@@ -129,7 +129,7 @@ func InputSchema(name string) map[string]any {
 		props["skill"] = stringProp("Skill name for inspect, run, or rollback.")
 		props["version"] = stringProp("Optional installed Skill version.")
 		props["channel"] = map[string]any{"type": "string", "description": "Skill channel: development, canary, stable, or pinned.", "enum": []string{"development", "canary", "stable", "pinned"}}
-		props["source"] = stringProp("Workspace/host path or HTTP(S) URL for validate/install.")
+		props["source"] = stringProp("Host path or HTTP(S) URL for validate/install.")
 		props["digest"] = stringProp("Optional expected SHA-256 digest for validate/install.")
 		props["activate"] = boolProp("Activate the installed version. Defaults to true.")
 		props["confirmed_no_env"] = boolProp("Required for validating/installing a Skill with no manifest permissions.env declarations; confirms the Skill needs no Env Manager configuration.")
@@ -322,7 +322,7 @@ func InputSchema(name string) map[string]any {
 		required = []string{"action"}
 
 	case "view_image":
-		props["path"] = stringProp("Workspace-relative path.")
+		props["path"] = stringProp("Host path. Relative paths resolve from ~/AgentDock.")
 		if name == "view_image" {
 			props["max_bytes"] = intProp("Maximum encoded image bytes. Defaults to 750000.")
 			props["max_width"] = intProp("Maximum image width. Defaults to 1280.")

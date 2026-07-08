@@ -10,24 +10,24 @@ import (
 	"github.com/uvwt/agentdock/internal/config"
 )
 
-func TestWorkspaceEditReplace(t *testing.T) {
+func TestFileEditReplace(t *testing.T) {
 	rt, root := newCodeToolsRuntime(t)
 	path := filepath.Join(root, "note.txt")
 	if err := os.WriteFile(path, []byte("alpha\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	result, err := rt.Call(context.Background(), "workspace_edit", map[string]any{"action": "replace", "path": "note.txt", "old": "alpha", "new": "beta", "dry_run": true})
+	result, err := rt.Call(context.Background(), "file_edit", map[string]any{"action": "replace", "path": "note.txt", "old": "alpha", "new": "beta", "dry_run": true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result["action"] != "replace" || result["changed"] != true || result["matches"] != 1 {
-		t.Fatalf("unexpected workspace_edit result: %#v", result)
+		t.Fatalf("unexpected file_edit result: %#v", result)
 	}
 }
 
-func TestWorkspaceEditAddMoveDelete(t *testing.T) {
+func TestFileEditAddMoveDelete(t *testing.T) {
 	rt, root := newCodeToolsRuntime(t)
-	result, err := rt.Call(context.Background(), "workspace_edit", map[string]any{"action": "add", "path": "draft.txt", "content": "hello\n"})
+	result, err := rt.Call(context.Background(), "file_edit", map[string]any{"action": "add", "path": "draft.txt", "content": "hello\n"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestWorkspaceEditAddMoveDelete(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "draft.txt")); err != nil {
 		t.Fatalf("expected added file: %v", err)
 	}
-	result, err = rt.Call(context.Background(), "workspace_edit", map[string]any{"action": "move", "path": "draft.txt", "new_path": "final.txt"})
+	result, err = rt.Call(context.Background(), "file_edit", map[string]any{"action": "move", "path": "draft.txt", "new_path": "final.txt"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestWorkspaceEditAddMoveDelete(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "final.txt")); err != nil {
 		t.Fatalf("expected moved file: %v", err)
 	}
-	result, err = rt.Call(context.Background(), "workspace_edit", map[string]any{"action": "delete", "path": "final.txt"})
+	result, err = rt.Call(context.Background(), "file_edit", map[string]any{"action": "delete", "path": "final.txt"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,8 +117,7 @@ func initGitRepo(t *testing.T, root string) {
 
 func testRuntimeConfig(root string) config.Config {
 	cfg := config.Config{
-		Workspace:       root,
-		AgentDockDir:    "AgentDock",
+		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
 		EnableViewImage: true,
 	}
 	if err := cfg.Normalize(); err != nil {
