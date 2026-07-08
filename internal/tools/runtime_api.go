@@ -95,27 +95,6 @@ func (r *Runtime) RuntimeTask(id string) (Result, error) {
 	return Result{"ok": true, "source": runtimeAPISource, "action": "get", "task": task}, nil
 }
 
-func (r *Runtime) RuntimeTemplates(status string) (Result, error) {
-	templateStatus := taskstate.TemplateStatus(strings.ToLower(strings.TrimSpace(status)))
-	templates, err := r.tasks.ListTemplates(templateStatus)
-	if err != nil {
-		return nil, taskToolError(err)
-	}
-	items := make([]map[string]any, 0, len(templates))
-	for _, template := range templates {
-		items = append(items, compactTemplateSummary(template))
-	}
-	return Result{"ok": true, "source": runtimeAPISource, "action": "template_list", "templates": items, "count": len(items)}, nil
-}
-
-func (r *Runtime) RuntimeTemplate(id, version string) (Result, error) {
-	template, err := r.tasks.GetTemplate(strings.TrimSpace(id), strings.TrimSpace(version))
-	if err != nil {
-		return nil, taskToolError(err)
-	}
-	return Result{"ok": true, "source": runtimeAPISource, "action": "template_get", "template": template}, nil
-}
-
 func (r *Runtime) RuntimeEnv() (Result, error) {
 	items, err := r.skills.env.List()
 	if err != nil {

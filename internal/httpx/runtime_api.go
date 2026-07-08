@@ -21,8 +21,6 @@ func registerRuntimeAPI(mux *http.ServeMux, server *mcp.Server, cfg config.Confi
 	mux.HandleFunc("/internal/runtime/skills/", h)
 	mux.HandleFunc("/internal/runtime/tasks", h)
 	mux.HandleFunc("/internal/runtime/tasks/", h)
-	mux.HandleFunc("/internal/runtime/workflows", h)
-	mux.HandleFunc("/internal/runtime/workflows/", h)
 	mux.HandleFunc("/internal/runtime/env", h)
 }
 
@@ -75,41 +73,12 @@ func dispatchRuntimeAPI(ctx context.Context, server *mcp.Server, r *http.Request
 		id := strings.TrimPrefix(path, "/internal/runtime/tasks/")
 		result, err := server.RuntimeTask(id)
 		return map[string]any(result), err
-	case path == "/internal/runtime/workflows":
-		status := firstNonEmpty(r.URL.Query().Get("status"), r.URL.Query().Get("template_status"))
-		result, err := server.RuntimeTemplates(status)
-		return map[string]any(result), err
-	case strings.HasPrefix(path, "/internal/runtime/workflows/"):
-		id, version, ok := splitTemplatePath(strings.TrimPrefix(path, "/internal/runtime/workflows/"))
-		if !ok {
-			return map[string]any{"ok": false, "error": "template id and version are required"}, nil
-		}
-		result, err := server.RuntimeTemplate(id, version)
-		return map[string]any(result), err
 	case path == "/internal/runtime/env":
 		result, err := server.RuntimeEnv()
 		return map[string]any(result), err
 	default:
 		return map[string]any{"ok": false, "error": "not found"}, nil
 	}
-}
-
-func splitTemplatePath(value string) (string, string, bool) {
-	value = strings.Trim(value, "/")
-	if value == "" {
-		return "", "", false
-	}
-	parts := strings.Split(value, "/")
-	if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
-		return parts[0], parts[1], true
-	}
-	if strings.Contains(value, "@") {
-		pair := strings.SplitN(value, "@", 2)
-		if pair[0] != "" && pair[1] != "" {
-			return pair[0], pair[1], true
-		}
-	}
-	return "", "", false
 }
 
 func writeRuntimeAPIError(w http.ResponseWriter, status int, code, message string) {

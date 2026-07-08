@@ -135,20 +135,11 @@ func TestTaskManageCreateReturnsCompactSummary(t *testing.T) {
 
 func TestTaskManageCreateWithTemplateDoesNotReturnSnapshot(t *testing.T) {
 	rt, _ := newCodeToolsRuntime(t)
-	draft, err := rt.tasks.SaveTemplateDraft(taskstate.Template{
-		ID: "compact.template", Version: "1.0.0", Title: "Compact template", Status: taskstate.TemplateDraft,
+	createTestWorkflowTemplate(t, rt, taskstate.Template{
+		ID: "compact.template", Version: "1.0.0", Title: "Compact template",
 		CompletionConditions: []string{"done"},
 		Steps:                []taskstate.TemplateStep{{ID: "inspect", Title: "Inspect", Phase: taskstate.PhaseCheck}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := rt.tasks.ValidateTemplate(draft.ID, draft.Version); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := rt.tasks.PublishTemplate(draft.ID, draft.Version); err != nil {
-		t.Fatal(err)
-	}
 	result, err := rt.taskManage(map[string]any{
 		"action": "create", "title": "Template task", "goal": "run templated task",
 		"template_id": "compact.template", "template_version": "1.0.0",
@@ -170,6 +161,23 @@ func TestTaskManageCreateWithTemplateDoesNotReturnSnapshot(t *testing.T) {
 	}
 	if loaded["task"].(taskstate.Task).Template == nil {
 		t.Fatalf("full snapshot should still be available through get: %#v", loaded)
+	}
+}
+
+func createTestWorkflowTemplate(t *testing.T, rt *Runtime, template taskstate.Template) {
+	t.Helper()
+	var templateMap map[string]any
+	if err := remarshal(template, &templateMap); err != nil {
+		t.Fatalf("template map: %v", err)
+	}
+	if _, err := rt.workflowTemplateManage(map[string]any{"action": "save", "template": templateMap}); err != nil {
+		t.Fatalf("save template: %v", err)
+	}
+	if _, err := rt.workflowTemplateManage(map[string]any{"action": "validate", "template_id": template.ID, "template_version": template.Version}); err != nil {
+		t.Fatalf("validate template: %v", err)
+	}
+	if _, err := rt.workflowTemplateManage(map[string]any{"action": "publish", "template_id": template.ID, "template_version": template.Version}); err != nil {
+		t.Fatalf("publish template: %v", err)
 	}
 }
 
@@ -254,23 +262,14 @@ func TestTaskManageStateMutationActionsReturnCompactSummary(t *testing.T) {
 
 func TestTaskManageTemplateListReturnsCompactSummaries(t *testing.T) {
 	rt, _ := newCodeToolsRuntime(t)
-	draft, err := rt.tasks.SaveTemplateDraft(taskstate.Template{
-		ID: "large.template", Version: "1.0.0", Title: "Large template", Description: strings.Repeat("description ", 80), Status: taskstate.TemplateDraft,
+	createTestWorkflowTemplate(t, rt, taskstate.Template{
+		ID: "large.template", Version: "1.0.0", Title: "Large template", Description: strings.Repeat("description ", 80),
 		Match:                taskstate.MatchRule{Keywords: []string{"deploy", "agentdock"}, Devices: []string{"DockMini"}, Type: "deployment"},
 		CompletionConditions: []string{"done"},
 		Steps: []taskstate.TemplateStep{
 			{ID: "inspect", Title: "Inspect", Phase: taskstate.PhaseCheck},
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := rt.tasks.ValidateTemplate(draft.ID, draft.Version); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := rt.tasks.PublishTemplate(draft.ID, draft.Version); err != nil {
-		t.Fatal(err)
-	}
 
 	result, err := rt.workflowTemplateManage(map[string]any{"action": "list", "template_status": "active"})
 	if err != nil {

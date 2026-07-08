@@ -36,28 +36,65 @@ func newCodeToolsRuntime(t *testing.T) (*Runtime, string) {
 	return rt, root
 }
 
-func newWorkflowTemplateNexusTestServer(t *testing.T, store *taskstate.Store) *httptest.Server {
+func newWorkflowTemplateNexusTestServer(t *testing.T, _ *taskstate.Store) *httptest.Server {
 	t.Helper()
-	mux := http.NewServeMux()
+	templates := map[string]taskstate.Template{}
+	key := func(id, version string) string { return id + "@" + version }
 	write := func(w http.ResponseWriter, payload map[string]any) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(payload)
 	}
+	listSummaries := func(status taskstate.TemplateStatus) []map[string]any {
+		items := []map[string]any{}
+		for _, template := range templates {
+			if status != "" && template.Status != status {
+				continue
+			}
+			items = append(items, compactTemplateSummary(template))
+		}
+		return items
+	}
+	matchTemplates := func(goal, device, taskType string) []taskstate.TemplateCandidate {
+		query := strings.ToLower(goal + " " + device + " " + taskType)
+		candidates := []taskstate.TemplateCandidate{}
+		for _, template := range templates {
+			if template.Status != taskstate.TemplateActive {
+				continue
+			}
+			score := 0
+			reasons := []string{}
+			for _, keyword := range template.Match.Keywords {
+				if keyword != "" && strings.Contains(query, strings.ToLower(keyword)) {
+					score += 15
+					reasons = append(reasons, "keyword:"+keyword)
+				}
+			}
+			if taskType != "" && template.Match.Type == taskType {
+				score += 80
+				reasons = append(reasons, "type:"+taskType)
+			}
+			if device != "" {
+				for _, candidateDevice := range template.Match.Devices {
+					if candidateDevice == device {
+						score += 5
+						reasons = append(reasons, "device:"+device)
+					}
+				}
+			}
+			if score > 0 {
+				candidates = append(candidates, taskstate.TemplateCandidate{ID: template.ID, Version: template.Version, Score: score, Reason: strings.Join(reasons, ", ")})
+			}
+		}
+		return candidates
+	}
+
+	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/workflow-templates", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		templates, err := store.ListTemplates(taskstate.TemplateStatus(r.URL.Query().Get("status")))
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			write(w, map[string]any{"error": map[string]any{"message": err.Error()}})
-			return
-		}
-		items := make([]map[string]any, 0, len(templates))
-		for _, template := range templates {
-			items = append(items, compactTemplateSummary(template))
-		}
+		items := listSummaries(taskstate.TemplateStatus(r.URL.Query().Get("status")))
 		write(w, map[string]any{"ok": true, "items": items, "templates": items, "count": len(items)})
 	})
 	mux.HandleFunc("/v1/workflow-templates/drafts", func(w http.ResponseWriter, r *http.Request) {
@@ -69,23 +106,18 @@ func newWorkflowTemplateNexusTestServer(t *testing.T, store *taskstate.Store) *h
 			write(w, map[string]any{"error": map[string]any{"message": err.Error()}})
 			return
 		}
-		template, err := store.SaveTemplateDraft(req.Template)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			write(w, map[string]any{"error": map[string]any{"message": err.Error()}})
-			return
-		}
+		template := req.Template
+		template.Status = taskstate.TemplateDraft
+		template.Hash = ""
+		template.PublishedAt = nil
+		template.RetiredAt = nil
+		templates[key(template.ID, template.Version)] = template
 		write(w, map[string]any{"ok": true, "template": template, "template_summary": compactTemplateSummary(template)})
 	})
 	mux.HandleFunc("/v1/workflow-templates/match", func(w http.ResponseWriter, r *http.Request) {
 		var req struct{ Goal, Device, Type string }
 		_ = json.NewDecoder(r.Body).Decode(&req)
-		candidates, err := store.MatchTemplates(req.Goal, req.Device, req.Type)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			write(w, map[string]any{"error": map[string]any{"message": err.Error()}})
-			return
-		}
+		candidates := matchTemplates(req.Goal, req.Device, req.Type)
 		result := map[string]any{"ok": true, "action": "match", "candidates": candidates, "count": len(candidates)}
 		for key, value := range templateMatchRecommendation(candidates) {
 			result[key] = value
@@ -99,30 +131,29 @@ func newWorkflowTemplateNexusTestServer(t *testing.T, store *taskstate.Store) *h
 			return
 		}
 		id, version := parts[0], parts[1]
-		var (
-			template taskstate.Template
-			err      error
-		)
-		if r.Method == http.MethodGet {
-			template, err = store.GetTemplate(id, version)
-		} else if r.Method == http.MethodPost && len(parts) == 3 {
-			switch parts[2] {
-			case "validate":
-				template, err = store.ValidateTemplate(id, version)
-			case "publish":
-				template, err = store.PublishTemplate(id, version)
-			case "retire":
-				template, err = store.RetireTemplate(id, version)
-			default:
-				err = os.ErrNotExist
-			}
-		} else {
-			w.WriteHeader(http.StatusMethodNotAllowed)
+		template, ok := templates[key(id, version)]
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			write(w, map[string]any{"error": map[string]any{"message": "template not found"}})
 			return
 		}
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			write(w, map[string]any{"error": map[string]any{"message": err.Error()}})
+		if r.Method == http.MethodPost && len(parts) == 3 {
+			switch parts[2] {
+			case "validate":
+			case "publish":
+				template.Status = taskstate.TemplateActive
+				template.Hash = "sha256:" + template.ID + "@" + template.Version
+				templates[key(id, version)] = template
+			case "retire":
+				template.Status = taskstate.TemplateRetired
+				templates[key(id, version)] = template
+			default:
+				w.WriteHeader(http.StatusBadRequest)
+				write(w, map[string]any{"error": map[string]any{"message": "unknown action"}})
+				return
+			}
+		} else if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 		write(w, map[string]any{"ok": true, "template": template, "template_summary": compactTemplateSummary(template)})

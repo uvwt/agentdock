@@ -26,14 +26,6 @@ func (s *Server) RuntimeTask(id string) (tools.Result, error) {
 	return s.runtime.RuntimeTask(id)
 }
 
-func (s *Server) RuntimeTemplates(status string) (tools.Result, error) {
-	return s.runtime.RuntimeTemplates(status)
-}
-
-func (s *Server) RuntimeTemplate(id, version string) (tools.Result, error) {
-	return s.runtime.RuntimeTemplate(id, version)
-}
-
 func (s *Server) RuntimeEnv() (tools.Result, error) {
 	return s.runtime.RuntimeEnv()
 }

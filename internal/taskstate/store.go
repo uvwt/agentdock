@@ -90,19 +90,9 @@ type Task struct {
 type Store struct {
 	root string
 	mu   sync.Mutex
-
-	vectorMu       sync.Mutex
-	vectorProvider EmbeddingProvider
-	vectorModel    string
-	vectorMinScore float64
-	vectorIndex    *templateVectorIndex
 }
 
 func New(root string) (*Store, error) {
-	return NewWithOptions(root, StoreOptions{})
-}
-
-func NewWithOptions(root string, opts StoreOptions) (*Store, error) {
 	if strings.TrimSpace(root) == "" {
 		return nil, errors.New("task state root is required")
 	}
@@ -116,33 +106,13 @@ func NewWithOptions(root string, opts StoreOptions) (*Store, error) {
 	if err := os.Chmod(abs, 0o700); err != nil {
 		return nil, fmt.Errorf("secure task state root: %w", err)
 	}
-	return newStore(abs, opts), nil
+	return &Store{root: abs}, nil
 }
 
 func (s *Store) Root() string { return s.root }
 
-func (s *Store) VectorSearchEnabled() bool { return s.vectorProvider != nil }
-
 func (s *Store) Create(title, goal string, conditionTexts []string) (Task, error) {
 	return s.createTask(title, goal, conditionTexts, nil, nil)
-}
-
-func (s *Store) CreateWithTemplate(title, goal string, conditionTexts []string, templateID, templateVersion, selectedReason string, candidates []TemplateCandidate) (Task, error) {
-	s.mu.Lock()
-	if strings.TrimSpace(templateID) == "" {
-		s.mu.Unlock()
-		return s.Create(title, goal, conditionTexts)
-	}
-	if strings.TrimSpace(templateVersion) == "" {
-		s.mu.Unlock()
-		return Task{}, errors.New("template_version is required when template_id is set")
-	}
-	template, err := s.loadTemplateLocked("published", templateID, templateVersion)
-	s.mu.Unlock()
-	if err != nil {
-		return Task{}, fmt.Errorf("load active template: %w", err)
-	}
-	return s.CreateFromTemplate(title, goal, conditionTexts, template, selectedReason, candidates)
 }
 
 func (s *Store) CreateFromTemplate(title, goal string, conditionTexts []string, template Template, selectedReason string, candidates []TemplateCandidate) (Task, error) {

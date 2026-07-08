@@ -58,18 +58,7 @@ func TestFinalReviewRequiredBeforeCompleteAfterReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	draft, err := store.SaveTemplateDraft(testTemplate())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.ValidateTemplate(draft.ID, draft.Version); err != nil {
-		t.Fatal(err)
-	}
-	published, err := store.PublishTemplate(draft.ID, draft.Version)
-	if err != nil {
-		t.Fatal(err)
-	}
-	task, err := store.CreateWithTemplate("Deploy", "deploy AgentDock", nil, published.ID, published.Version, "test", nil)
+	task, err := store.CreateFromTemplate("Deploy", "deploy AgentDock", nil, testTemplate(), "test", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,22 +141,11 @@ func TestCreateWithTemplateSkipsSimilarCompletionConditions(t *testing.T) {
 		"已读取相关记忆、项目约束、用户开发风格、真实仓库状态和可用验证方式",
 		"每轮结束都检查 elapsed_minutes；未到目标时长不能仅因产物完成、验证通过、提交推送或部署通过停止",
 	}
-	draft, err := store.SaveTemplateDraft(template)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.ValidateTemplate(draft.ID, draft.Version); err != nil {
-		t.Fatal(err)
-	}
-	published, err := store.PublishTemplate(draft.ID, draft.Version)
-	if err != nil {
-		t.Fatal(err)
-	}
-	task, err := store.CreateWithTemplate("AgentDock 一小时完善", "完善 AgentDock", []string{
+	task, err := store.CreateFromTemplate("AgentDock 一小时完善", "完善 AgentDock", []string{
 		"已读取 AgentDock 相关记忆、项目约束、用户偏好、真实仓库状态和可用验证方式",
 		"每轮结束都检查 elapsed_minutes；未到 60 分钟不能仅因产物完成、验证通过、提交推送或部署通过停止",
 		"已确认最终提交已经推送到 origin/main",
-	}, published.ID, published.Version, "test", nil)
+	}, template, "test", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,5 +154,25 @@ func TestCreateWithTemplateSkipsSimilarCompletionConditions(t *testing.T) {
 	}
 	if task.Conditions[2].Text != "已确认最终提交已经推送到 origin/main" {
 		t.Fatalf("unique condition was not retained: %#v", task.Conditions)
+	}
+}
+
+func testTemplate() Template {
+	return Template{
+		ID:      "agentdock.deploy",
+		Version: "1.0.0",
+		Title:   "Deploy AgentDock",
+		Status:  TemplateActive,
+		Hash:    "sha256:test",
+		Match: MatchRule{
+			Keywords: []string{"deploy", "AgentDock"},
+			Devices:  []string{"DockMini"},
+			Type:     "deployment",
+		},
+		CompletionConditions: []string{"deployment succeeds", "health check passes"},
+		Steps: []TemplateStep{
+			{ID: "check", Title: "Check", Phase: PhaseCheck},
+			{ID: "deploy", Title: "Deploy", Phase: PhaseExecute},
+		},
 	}
 }
