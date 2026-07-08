@@ -20,6 +20,8 @@ type ToolSpec struct {
 	OpenWorld              bool
 	FileArgRewritePaths    []string
 	FileResultRewritePaths []string
+	InputSchema            func() map[string]any
+	OutputSchema           func() map[string]any
 	Profiles               []string
 	Availability           func(config.Config) bool
 	Handler                ToolHandler
@@ -34,10 +36,11 @@ type ToolDefinition struct {
 	OpenWorld              bool
 	FileArgRewritePaths    []string
 	FileResultRewritePaths []string
+	InputSchema            map[string]any
+	OutputSchema           map[string]any
 }
 
-// ToolDefinitions 只导出 MCP 层需要的描述信息，不暴露 handler。
-// schema 仍留在 mcp 包，后续迁移 workspace_edit/git_read 时再继续收敛。
+// ToolDefinitions 只导出 MCP 层需要的描述和 schema，不暴露 handler。
 func ToolDefinitions() []ToolDefinition {
 	defs := make([]ToolDefinition, 0, len(allToolSpecs()))
 	for _, spec := range allToolSpecs() {
@@ -47,6 +50,14 @@ func ToolDefinitions() []ToolDefinition {
 }
 
 func (s ToolSpec) definition() ToolDefinition {
+	inputSchema := s.InputSchema
+	if inputSchema == nil {
+		inputSchema = func() map[string]any { return InputSchema(s.Name) }
+	}
+	outputSchema := s.OutputSchema
+	if outputSchema == nil {
+		outputSchema = func() map[string]any { return OutputSchema(s.Name) }
+	}
 	return ToolDefinition{
 		Name:                   s.Name,
 		Title:                  s.Title,
@@ -56,6 +67,8 @@ func (s ToolSpec) definition() ToolDefinition {
 		OpenWorld:              s.OpenWorld,
 		FileArgRewritePaths:    append([]string(nil), s.FileArgRewritePaths...),
 		FileResultRewritePaths: append([]string(nil), s.FileResultRewritePaths...),
+		InputSchema:            inputSchema(),
+		OutputSchema:           outputSchema(),
 	}
 }
 
@@ -128,10 +141,11 @@ func allToolSpecs() []ToolSpec {
 		{Name: "search_text", Title: "Search text", Description: "Search UTF-8 workspace files for text or regex matches.", ReadOnly: true, Profiles: readOnlyProfiles(), Handler: toolHandler((*Runtime).searchText)},
 		{Name: "workspace_edit", Title: "Edit workspace", Description: "Edit workspace files through one action-based entrypoint: replace, patch, add, delete, or move.", Profiles: unifiedProfiles(), Handler: ctxToolHandler((*Runtime).workspaceEdit)},
 		{Name: "exec_command", Title: "Run workspace command", Description: "Run a bounded command in the workspace with sandbox and approval controls.", OpenWorld: true, Profiles: unifiedProfiles(), Handler: ctxToolHandler((*Runtime).execCommand)},
-		{Name: "session_control", Title: "Control command sessions", Description: "List, inspect, write to, or stop command sessions through one unified session action tool.", Profiles: readOnlyProfiles(), Handler: toolHandler((*Runtime).sessionControl)},
+		{Name: "session_observe", Title: "Observe command sessions", Description: "List or inspect command sessions through a read-only session tool.", ReadOnly: true, Profiles: readOnlyProfiles(), Handler: toolHandler((*Runtime).sessionObserve)},
+		{Name: "session_act", Title: "Act on command sessions", Description: "Write to or stop command sessions through a mutating session tool.", Destructive: true, Profiles: unifiedProfiles(), Handler: toolHandler((*Runtime).sessionAct)},
 		{Name: "check_github_repo_access", Title: "Check GitHub repo access", Description: "Check stored GitHub credential authentication and repository visibility without exposing secrets.", ReadOnly: true, OpenWorld: true, Profiles: readOnlyProfiles(), Handler: toolHandler((*Runtime).checkGitHubRepoAccess)},
-		{Name: "task_manage", Title: "Manage recoverable tasks", Description: "Persist and resume substantial AgentDock tasks; template_match is the only model-facing workflow-template match entrypoint.", Profiles: unifiedProfiles(), Handler: toolHandler((*Runtime).taskManage)},
-		{Name: "workflow_template_manage", Title: "Manage workflow templates", Description: "List, get, save, validate, publish, or retire AgentDock workflow templates. Use task_manage action=template_match for matching.", Profiles: unifiedProfiles(), Handler: toolHandler((*Runtime).workflowTemplateManage)},
+		{Name: "task_manage", Title: "Manage recoverable tasks", Description: "Persist and resume substantial AgentDock tasks. Use workflow_template_manage action=match for template discovery.", Profiles: unifiedProfiles(), Handler: toolHandler((*Runtime).taskManage)},
+		{Name: "workflow_template_manage", Title: "Manage workflow templates", Description: "List, get, save, validate, publish, retire, or match AgentDock workflow templates.", Profiles: unifiedProfiles(), Handler: toolHandler((*Runtime).workflowTemplateManage)},
 		{Name: "skill_manage", Title: "Manage AgentDock Skills", Description: "List, inspect, validate, install, run, or roll back AgentDock Skills through the local Skill Runtime.", Destructive: true, OpenWorld: true, Profiles: unifiedProfiles(), Handler: ctxToolHandler((*Runtime).skillManage)},
 		{Name: "env_manage", Title: "Manage Skill environment", Description: "Manage redacted Skill environment variables through the local Nexus Env Registry.", Destructive: true, OpenWorld: true, Profiles: unifiedProfiles(), Handler: ctxToolHandler((*Runtime).envManage)},
 		{Name: "git_read", Title: "Read Git repository state", Description: "Read Git repository information through one action-based entrypoint: repos, status, diff, log, show, or blame.", ReadOnly: true, Profiles: readOnlyProfiles(), Handler: ctxToolHandler((*Runtime).gitRead)},
@@ -140,7 +154,7 @@ func allToolSpecs() []ToolSpec {
 		{Name: "recall_bootstrap", Title: "Bootstrap RecallDock context", Description: "Load high-priority RecallDock context at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks. max_bytes controls pack budget only; compact index/excerpt output is default, and full body requires include_body or targeted recall_read.", ReadOnly: true, OpenWorld: true, Profiles: readOnlyProfiles(), Availability: requiresRecall, Handler: ctxToolHandler((*Runtime).recallBootstrap)},
 		{Name: "recall_search", Title: "Search RecallDock", Description: "Search RecallDock memories, cards, and notes. Use kind=all, markdown, card, or note; when kind=note, use note_scope=questions or github-learning. Backend handles internal routing such as prefix and scope.", ReadOnly: true, OpenWorld: true, Profiles: readOnlyProfiles(), Availability: requiresRecall, Handler: ctxToolHandler((*Runtime).recallSearch)},
 		{Name: "recall_read", Title: "Read RecallDock entry", Description: "Read one Markdown, card, or note entry from the configured RecallDock store by path.", ReadOnly: true, OpenWorld: true, Profiles: readOnlyProfiles(), Availability: requiresRecall, Handler: ctxToolHandler((*Runtime).recallRead)},
-		{Name: "recall_write", Title: "Write RecallDock entry", Description: "Plan, write, patch, update facts, or delete RecallDock content. The model must choose target and action; target=auto action=plan is the safe classifier path.", Destructive: true, OpenWorld: true, Profiles: unifiedProfiles(), Availability: requiresRecall, Handler: ctxToolHandler((*Runtime).recallWrite)},
+		{Name: "recall_write", Title: "Write RecallDock entry", Description: "Plan, create, replace, append, patch, update facts, diff, or delete RecallDock content. The model must choose target=card/note/markdown and action explicitly.", Destructive: true, OpenWorld: true, Profiles: unifiedProfiles(), Availability: requiresRecall, Handler: ctxToolHandler((*Runtime).recallWrite)},
 		{Name: "recall_maintain", Title: "Maintain RecallDock", Description: "Run RecallDock maintenance actions such as sync_status, list, lint, embedding_status, reindex, or reindex_cards.", Destructive: true, OpenWorld: true, Profiles: unifiedProfiles(), Availability: requiresRecall, Handler: ctxToolHandler((*Runtime).recallMaintain)},
 		{Name: "private_notes_search", Title: "Search private notes", Description: "Search the user private notes store. Returns titles, paths, metadata, and code-redacted snippets only; use private_notes_read for full plaintext.", ReadOnly: true, OpenWorld: true, Profiles: readOnlyProfiles(), Handler: ctxToolHandler((*Runtime).privateNotesSearch)},
 		{Name: "private_notes_read", Title: "Read private note", Description: "Read one plaintext private note from private-notes/notes. This explicit private-note access returns full plaintext by default.", ReadOnly: true, OpenWorld: true, Profiles: readOnlyProfiles(), Handler: ctxToolHandler((*Runtime).privateNotesRead)},

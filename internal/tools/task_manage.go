@@ -7,9 +7,9 @@ import (
 	"github.com/uvwt/agentdock/internal/taskstate"
 )
 
-var taskActions = []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review", "template_match"}
+var taskActions = []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review"}
 
-var workflowTemplateActions = []string{"save", "validate", "publish", "retire", "list", "get"}
+var workflowTemplateActions = []string{"save", "validate", "publish", "retire", "list", "get", "match"}
 
 func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
@@ -76,8 +76,6 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 		task, err = r.tasks.FinalReview(stringArg(args, "task_id", ""), input)
 	case "complete_after_review":
 		task, err = r.tasks.CompleteAfterReview(stringArg(args, "task_id", ""), stringArg(args, "summary", ""))
-	case "template_match":
-		return r.taskTemplateMatch(args)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported task_manage action", "validation", map[string]any{
 			"action": action, "allowed": taskActions,
@@ -137,12 +135,14 @@ func (r *Runtime) workflowTemplateManage(args map[string]any) (Result, error) {
 			items = append(items, compactTemplateSummary(template))
 		}
 		return Result{"ok": true, "action": action, "templates": items, "count": len(items), "workflow_dir": r.tasks.WorkflowRoot()}, nil
+	case "match":
+		return r.matchWorkflowTemplates(args)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported workflow_template_manage action", "validation", map[string]any{"action": action, "allowed": workflowTemplateActions})
 	}
 }
 
-func (r *Runtime) taskTemplateMatch(args map[string]any) (Result, error) {
+func (r *Runtime) matchWorkflowTemplates(args map[string]any) (Result, error) {
 	candidates, err := r.tasks.MatchTemplates(stringArg(args, "goal", ""), stringArg(args, "device", ""), stringArg(args, "type", ""))
 	if err != nil {
 		return nil, taskToolError(err)
@@ -150,7 +150,7 @@ func (r *Runtime) taskTemplateMatch(args map[string]any) (Result, error) {
 	vectorIndexStatus, vectorIndexItems, embeddingModel := r.tasks.VectorIndexInfo()
 	result := Result{
 		"ok":                    true,
-		"action":                "template_match",
+		"action":                "match",
 		"candidates":            candidates,
 		"count":                 len(candidates),
 		"workflow_dir":          r.tasks.WorkflowRoot(),

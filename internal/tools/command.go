@@ -47,9 +47,9 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 	tty := boolArg(args, "tty", false)
 
 	// 这里故意不用请求 ctx 派生子进程生命周期。
-	// 背景：exec_command 可能先返回 running，让模型后续通过 session_control action=status 继续取结果；
+	// 背景：exec_command 可能先返回 running，让模型后续通过 session_observe action=status 继续取结果；
 	// 如果子进程绑定到单次 MCP 请求 ctx，请求结束时 git push / npm install 等长任务会被杀掉。
-	// 因此长任务只受 timeout_ms 和 session_control action=kill/kill_all 控制。
+	// 因此长任务只受 timeout_ms 和 session_act action=kill/kill_all 控制。
 	s, sandboxStatus, err := session.Start(context.Background(), cmd, workdir.Abs, r.commandEnv(mapArg(args, "env")), timeout, func(command *exec.Cmd) (func(), map[string]any) {
 		if r.cfg.SandboxMode == "none" {
 			// 裸机可信部署需要 sudo 时，不能启用 Landlock；Landlock 必须设置 no_new_privs，

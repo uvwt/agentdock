@@ -3,54 +3,36 @@ package tools
 import (
 	"context"
 	"strings"
-
-	"github.com/uvwt/agentdock/internal/config"
 )
 
-func (r *Runtime) sessionControl(args map[string]any) (Result, error) {
+func (r *Runtime) sessionObserve(args map[string]any) (Result, error) {
 	action := strings.ToLower(stringArg(args, "action", "list"))
 	switch action {
 	case "list", "sessions":
 		return r.listSessions()
 	case "status", "get":
 		return r.sessionStatus(args)
-	case "write", "stdin", "send", "send_stdin":
-		if r.cfg.ToolProfile == config.ProfileReadOnly {
-			return nil, readOnlyActionError("session_control", action, []string{"list", "status"})
-		}
-		return r.writeStdin(args)
-	case "kill", "stop":
-		if r.cfg.ToolProfile == config.ProfileReadOnly {
-			return nil, readOnlyActionError("session_control", action, []string{"list", "status"})
-		}
-		return r.killSession(args)
-	case "kill_all", "stop_all", "clear":
-		if r.cfg.ToolProfile == config.ProfileReadOnly {
-			return nil, readOnlyActionError("session_control", action, []string{"list", "status"})
-		}
-		return r.killAllSessions(args)
 	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported session_control action", "validation", map[string]any{"action": stringArg(args, "action", "")})
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported session_observe action", "validation", map[string]any{"action": stringArg(args, "action", ""), "allowed": []string{"list", "status"}})
 	}
 }
 
-func readOnlyActionError(tool, action string, allowed []string) *ToolError {
-	return toolErrorDetails("UNKNOWN_ACTION_FOR_PROFILE", "action is not available in read-only profile", "permission", map[string]any{
-		"tool":          tool,
-		"action":        action,
-		"profile":       config.ProfileReadOnly,
-		"allowed":       allowed,
-		"required_tool": tool,
-	})
+func (r *Runtime) sessionAct(args map[string]any) (Result, error) {
+	action := strings.ToLower(stringArg(args, "action", ""))
+	switch action {
+	case "write", "stdin", "send", "send_stdin":
+		return r.writeStdin(args)
+	case "kill", "stop":
+		return r.killSession(args)
+	case "kill_all", "stop_all", "clear":
+		return r.killAllSessions(args)
+	default:
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported session_act action", "validation", map[string]any{"action": stringArg(args, "action", ""), "allowed": []string{"write", "kill", "kill_all"}})
+	}
 }
 
 func (r *Runtime) browserSession(ctx context.Context, args map[string]any) (Result, error) {
 	action := strings.ToLower(stringArg(args, "action", "start"))
-	if strings.HasPrefix(action, "profile_") {
-		profileArgs := copyArgs(args)
-		profileArgs["action"] = strings.TrimPrefix(action, "profile_")
-		return r.browserProfile(ctx, profileArgs)
-	}
 	switch action {
 	case "start", "open", "new":
 		return r.browserRunnerCall(ctx, "session_start", args)
@@ -59,7 +41,7 @@ func (r *Runtime) browserSession(ctx context.Context, args map[string]any) (Resu
 	case "cleanup", "cleanup_stale":
 		return r.browserRunnerCall(ctx, "session_cleanup", args)
 	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported browser_session action", "validation", map[string]any{"action": stringArg(args, "action", ""), "allowed": []string{"start", "close", "cleanup_stale", "profile_open", "profile_status", "profile_snapshot", "profile_save", "profile_close"}})
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported browser_session action", "validation", map[string]any{"action": stringArg(args, "action", ""), "allowed": []string{"start", "close", "cleanup_stale"}})
 	}
 }
 

@@ -81,63 +81,58 @@ func (r *Runtime) recallWrite(ctx context.Context, args map[string]any) (Result,
 	target := strings.ToLower(strings.TrimSpace(stringArg(args, "target", "")))
 	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
 	if target == "" || action == "" {
-		return nil, toolErrorDetails("MISSING_RECALL_TARGET_ACTION", "recall_write requires target and action", "validation", map[string]any{"targets": []string{"auto", "card", "note", "markdown"}, "actions": []string{"plan", "write", "patch", "fact", "delete"}})
-	}
-	if target == "auto" {
-		if action != "plan" {
-			return nil, toolErrorDetails("INVALID_RECALL_ACTION", "target=auto only supports action=plan", "validation", map[string]any{"target": target, "action": action})
-		}
-		result, err := r.recallWriteAutoPlan(ctx, args)
-		if err != nil {
-			return nil, err
-		}
-		decorateRecallResult(result)
-		result["recall_target"] = "auto"
-		result["recall_action"] = "plan"
-		return result, nil
+		return nil, toolErrorDetails("MISSING_RECALL_TARGET_ACTION", "recall_write requires target and action", "validation", map[string]any{"targets": []string{"card", "note", "markdown"}, "actions": []string{"plan", "create", "replace", "append", "patch", "update_fact", "diff", "delete"}})
 	}
 
 	var result Result
 	var err error
 	switch target {
 	case "card":
-		if action != "plan" && action != "write" {
-			return nil, invalidRecallTargetAction(target, action)
-		}
-		if action == "write" && boolArg(args, "confirmed", false) {
-			result, err = r.memoryCardWrite(ctx, args)
-		} else {
+		switch action {
+		case "plan":
 			result, err = r.memoryCardCapture(ctx, args)
+		case "create":
+			if boolArg(args, "confirmed", false) {
+				result, err = r.memoryCardWrite(ctx, args)
+			} else {
+				result, err = r.memoryCardCapture(ctx, args)
+			}
+		default:
+			return nil, invalidRecallTargetAction(target, action)
 		}
 	case "note", "notes":
-		if action != "plan" && action != "write" {
+		target = "note"
+		switch action {
+		case "plan":
+			result, err = r.notesCapture(ctx, args)
+		case "create":
+			if boolArg(args, "confirmed", false) {
+				result, err = r.notesWrite(ctx, args)
+			} else {
+				result, err = r.notesCapture(ctx, args)
+			}
+		default:
 			return nil, invalidRecallTargetAction(target, action)
 		}
-		if action == "write" && boolArg(args, "confirmed", false) {
-			result, err = r.notesWrite(ctx, args)
-		} else {
-			result, err = r.notesCapture(ctx, args)
-		}
-		target = "note"
 	case "markdown":
 		switch action {
-		case "write", "replace":
+		case "create", "replace":
 			result, err = r.memoryWrite(ctx, args)
-			action = "write"
-		case "patch", "edit":
+		case "append":
+			result, err = r.memoryAppendNote(ctx, args)
+		case "patch":
 			result, err = r.memoryPatch(ctx, args)
-			action = "patch"
-		case "fact", "update_fact":
+		case "update_fact":
 			result, err = r.memoryUpdateFact(ctx, args)
-			action = "fact"
-		case "delete", "remove":
+		case "diff":
+			result, err = r.memoryDiff(ctx, args)
+		case "delete":
 			result, err = r.memoryDelete(ctx, args)
-			action = "delete"
 		default:
 			return nil, invalidRecallTargetAction(target, action)
 		}
 	default:
-		return nil, toolErrorDetails("INVALID_RECALL_TARGET", "unsupported recall_write target", "validation", map[string]any{"target": target, "allowed": []string{"auto", "card", "note", "markdown"}})
+		return nil, toolErrorDetails("INVALID_RECALL_TARGET", "unsupported recall_write target", "validation", map[string]any{"target": target, "allowed": []string{"card", "note", "markdown"}})
 	}
 	if err != nil {
 		return nil, err
@@ -151,164 +146,6 @@ func (r *Runtime) recallWrite(ctx context.Context, args map[string]any) (Result,
 
 func invalidRecallTargetAction(target, action string) error {
 	return toolErrorDetails("INVALID_RECALL_ACTION", "unsupported recall_write action for target", "validation", map[string]any{"target": target, "action": action})
-}
-
-func (r *Runtime) recallWriteAutoPlan(ctx context.Context, args map[string]any) (Result, error) {
-	selectedKind, reason := classifyRecallWriteKind(args)
-	nextArgs := recallWriteNextArgs(args, selectedKind)
-	plan := Result{
-		"selected_kind":      selectedKind,
-		"reason":             reason,
-		"auto_write":         false,
-		"needs_review":       true,
-		"recommended_action": "review_next_call",
-		"policy":             "model should choose card/note/markdown explicitly; auto is only a safe fallback when kind=auto is explicitly selected",
-		"next_call": Result{
-			"tool": "recall_write",
-			"args": nextArgs,
-		},
-	}
-
-	result := Result{
-		"ok":            true,
-		"selected_kind": selectedKind,
-		"auto_plan":     plan,
-		"capture_plan":  plan,
-	}
-
-	switch selectedKind {
-	case "card":
-		if strings.TrimSpace(stringArg(nextArgs, "title", "")) != "" && strings.TrimSpace(firstNonEmptyString(nextArgs, "content", "summary")) != "" {
-			capture, err := r.memoryCardCapture(ctx, nextArgs)
-			if err != nil {
-				return nil, err
-			}
-			for k, v := range capture {
-				result[k] = v
-			}
-			result["auto_plan"] = plan
-		}
-	case "note":
-		if strings.TrimSpace(firstNonEmptyString(nextArgs, "question", "query")) != "" {
-			capture, err := r.notesCapture(ctx, nextArgs)
-			if err != nil {
-				return nil, err
-			}
-			for k, v := range capture {
-				result[k] = v
-			}
-			result["auto_plan"] = plan
-		}
-	}
-	result["selected_kind"] = selectedKind
-	return result, nil
-}
-
-func classifyRecallWriteKind(args map[string]any) (string, string) {
-	pathValue := strings.TrimSpace(stringArg(args, "path", ""))
-	content := strings.TrimSpace(firstNonEmptyString(args, "content", "summary"))
-	query := strings.TrimSpace(firstNonEmptyString(args, "query", "question"))
-	title := strings.TrimSpace(stringArg(args, "title", ""))
-	if pathValue != "" && (strings.TrimSpace(stringArg(args, "key", "")) != "" || len(mapArg(args, "facts")) > 0) {
-		return "fact", "path with key/value or facts updates an existing structured fact"
-	}
-	if pathValue != "" && hasRecallPatchArgs(args) {
-		return "patch", "path with edit fields updates an existing recall entry"
-	}
-	if pathValue != "" && content != "" {
-		return "markdown", "path with content writes or replaces a known Markdown entry"
-	}
-	if query != "" && (content == "" || strings.Contains(query, "?") || strings.Contains(query, "？")) {
-		return "note", "query/question is best captured as a reviewable note"
-	}
-	if content != "" || title != "" {
-		return "card", "title/content is best captured as an atomic experience card"
-	}
-	return "note", "insufficient write fields; start with a note planning step"
-}
-
-func hasRecallPatchArgs(args map[string]any) bool {
-	if _, ok := args["operations"]; ok {
-		return true
-	}
-	for _, key := range []string{"old", "pattern", "section", "section_content", "append", "prepend"} {
-		if strings.TrimSpace(stringArg(args, key, "")) != "" {
-			return true
-		}
-	}
-	return false
-}
-
-func recallWriteNextArgs(args map[string]any, selectedKind string) Result {
-	next := Result{}
-	copyIfPresent := func(key string) {
-		if value, ok := args[key]; ok && value != nil {
-			next[key] = value
-		}
-	}
-	for _, key := range []string{"path", "title", "content", "summary", "query", "question", "overwrite", "max_bytes"} {
-		copyIfPresent(key)
-	}
-	switch selectedKind {
-	case "card":
-		if strings.TrimSpace(stringArg(next, "title", "")) == "" {
-			if summary := strings.TrimSpace(stringArg(next, "summary", "")); summary != "" {
-				next["title"] = firstRunes(summary, 32)
-			} else if content := strings.TrimSpace(stringArg(next, "content", "")); content != "" {
-				next["title"] = firstRunes(content, 32)
-			}
-		}
-		for _, key := range []string{"type", "tags", "boundary", "source", "confidence", "evidence", "status", "scope"} {
-			copyIfPresent(key)
-		}
-	case "note":
-		if strings.TrimSpace(stringArg(next, "question", "")) == "" {
-			if query := strings.TrimSpace(stringArg(next, "query", "")); query != "" {
-				next["question"] = query
-			} else if title := strings.TrimSpace(stringArg(next, "title", "")); title != "" {
-				next["question"] = title
-			}
-		}
-		for _, key := range []string{"note_scope", "scope", "conclusion", "open_questions", "section", "source"} {
-			copyIfPresent(key)
-		}
-	case "patch":
-		for _, key := range []string{"old", "new", "pattern", "replacement", "section", "section_content", "append", "prepend", "operations", "dry_run"} {
-			copyIfPresent(key)
-		}
-	case "fact":
-		for _, key := range []string{"key", "value", "facts", "section", "append_if_missing"} {
-			copyIfPresent(key)
-		}
-	case "markdown":
-		for _, key := range []string{"type", "tags", "source", "confidence", "scope"} {
-			copyIfPresent(key)
-		}
-	}
-	switch selectedKind {
-	case "card":
-		next["target"] = "card"
-		next["action"] = "plan"
-	case "note":
-		next["target"] = "note"
-		next["action"] = "plan"
-	case "patch":
-		next["target"] = "markdown"
-		next["action"] = "patch"
-		next["confirmed"] = false
-	case "fact":
-		next["target"] = "markdown"
-		next["action"] = "fact"
-		next["confirmed"] = false
-	case "markdown":
-		next["target"] = "markdown"
-		next["action"] = "write"
-		next["confirmed"] = false
-	default:
-		next["target"] = "note"
-		next["action"] = "plan"
-	}
-	return next
 }
 
 func (r *Runtime) recallMaintain(ctx context.Context, args map[string]any) (Result, error) {

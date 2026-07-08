@@ -113,7 +113,7 @@ func TestNotesGithubLearningScopeThroughPublicArgsAndPathInference(t *testing.T)
 
 	_, err = rt.recallWrite(context.Background(), map[string]any{
 		"target":    "note",
-		"action":    "write",
+		"action":    "create",
 		"path":      "recall/managed/notes/github-learning/topics/new-note.md",
 		"content":   "# New GitHub note\n",
 		"confirmed": true,

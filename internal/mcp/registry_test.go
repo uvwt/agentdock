@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 
@@ -101,7 +100,7 @@ func TestReadOnlyProfileExcludesDestructiveTools(t *testing.T) {
 	}
 }
 
-func TestReadOnlyProfileRestrictsSessionControlActions(t *testing.T) {
+func TestReadOnlyProfileSplitsSessionObserveAndAct(t *testing.T) {
 	cfg := config.Config{
 		Workspace:    t.TempDir(),
 		ToolProfile:  config.ProfileReadOnly,
@@ -115,22 +114,18 @@ func TestReadOnlyProfileRestrictsSessionControlActions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := rt.Call(context.Background(), "session_control", map[string]any{"action": "list"}); err != nil {
-		t.Fatalf("read-only profile should allow session_control list: %v", err)
+	seen := map[string]bool{}
+	for _, name := range rt.ToolNames() {
+		seen[name] = true
 	}
-
-	for _, action := range []string{"write", "kill", "kill_all"} {
-		_, err := rt.Call(context.Background(), "session_control", map[string]any{"action": action})
-		if err == nil {
-			t.Fatalf("read-only profile allowed session_control %s", action)
-		}
-		var toolErr *tools.ToolError
-		if !errors.As(err, &toolErr) {
-			t.Fatalf("session_control %s returned non-tool error: %T %v", action, err, err)
-		}
-		if toolErr.Code != "UNKNOWN_ACTION_FOR_PROFILE" {
-			t.Fatalf("session_control %s returned code %s, want UNKNOWN_ACTION_FOR_PROFILE", action, toolErr.Code)
-		}
+	if !seen["session_observe"] {
+		t.Fatalf("read-only profile should expose session_observe: %#v", seen)
+	}
+	if seen["session_act"] || seen["session_control"] {
+		t.Fatalf("read-only profile should hide mutating or legacy session tools: %#v", seen)
+	}
+	if _, err := rt.Call(context.Background(), "session_observe", map[string]any{"action": "list"}); err != nil {
+		t.Fatalf("read-only profile should allow session_observe list: %v", err)
 	}
 }
 
@@ -236,16 +231,16 @@ func assertObjectSchema(t *testing.T, name, kind string, schema map[string]any) 
 
 func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	props := schemaProperties(t, "task_manage")
-	assertSameStrings(t, enumStrings(t, props["action"]), []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review", "template_match"})
-	for _, name := range []string{"completion_conditions", "review_status", "verified_facts", "open_risks", "missing_checks", "evidence", "type"} {
+	assertSameStrings(t, enumStrings(t, props["action"]), []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review"})
+	for _, name := range []string{"completion_conditions", "review_status", "verified_facts", "open_risks", "missing_checks", "evidence"} {
 		if _, ok := props[name]; !ok {
 			t.Fatalf("task_manage input schema missing %q", name)
 		}
 	}
 
 	templateProps := schemaProperties(t, "workflow_template_manage")
-	assertSameStrings(t, enumStrings(t, templateProps["action"]), []string{"save", "validate", "publish", "retire", "list", "get"})
-	for _, name := range []string{"template", "template_id", "template_version", "template_status", "allow_long_template", "long_template_reason"} {
+	assertSameStrings(t, enumStrings(t, templateProps["action"]), []string{"save", "validate", "publish", "retire", "list", "get", "match"})
+	for _, name := range []string{"template", "template_id", "template_version", "template_status", "allow_long_template", "long_template_reason", "goal", "device", "type"} {
 		if _, ok := templateProps[name]; !ok {
 			t.Fatalf("workflow_template_manage input schema missing %q", name)
 		}
@@ -255,9 +250,19 @@ func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	if !ok {
 		t.Fatal("task_manage output schema properties missing")
 	}
-	for _, name := range []string{"task_id", "task", "task_summary", "next_required_action", "tasks", "count", "state_dir", "recommended", "best_candidate_score"} {
+	for _, name := range []string{"task_id", "task", "task_summary", "next_required_action", "tasks", "count", "state_dir"} {
 		if _, ok := outputProps[name]; !ok {
 			t.Fatalf("task_manage output schema missing %q", name)
+		}
+	}
+
+	workflowOutputProps, ok := outputSchema("workflow_template_manage")["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("workflow_template_manage output schema properties missing")
+	}
+	for _, name := range []string{"candidates", "recommended", "best_candidate_score", "score_thresholds"} {
+		if _, ok := workflowOutputProps[name]; !ok {
+			t.Fatalf("workflow_template_manage output schema missing %q", name)
 		}
 	}
 }
@@ -314,12 +319,12 @@ func TestRecallModelChoiceFieldsUseEnums(t *testing.T) {
 	}
 
 	writeProps := schemaProperties(t, "recall_write")
-	for _, want := range []string{"auto", "card", "note", "markdown"} {
+	for _, want := range []string{"card", "note", "markdown"} {
 		if !containsString(enumStrings(t, writeProps["target"]), want) {
 			t.Fatalf("recall_write target enum missing %s: %#v", want, writeProps["target"])
 		}
 	}
-	for _, want := range []string{"plan", "write", "patch", "fact", "delete"} {
+	for _, want := range []string{"plan", "create", "replace", "append", "patch", "update_fact", "diff", "delete"} {
 		if !containsString(enumStrings(t, writeProps["action"]), want) {
 			t.Fatalf("recall_write action enum missing %s: %#v", want, writeProps["action"])
 		}
@@ -371,12 +376,12 @@ func TestRecallToolDescriptionsMatchCompactModelEntrypoints(t *testing.T) {
 	if !ok {
 		t.Fatal("recall_write definition missing")
 	}
-	for _, legacy := range []string{"append_note", "diff"} {
+	for _, legacy := range []string{"append_note", "kind=", "target=auto"} {
 		if strings.Contains(writeDef.Description, legacy) {
 			t.Fatalf("recall_write description should not advertise legacy alias %q: %q", legacy, writeDef.Description)
 		}
 	}
-	for _, required := range []string{"target", "action", "target=auto", "action=plan"} {
+	for _, required := range []string{"target=card/note/markdown", "action"} {
 		if !strings.Contains(writeDef.Description, required) {
 			t.Fatalf("recall_write description missing %q: %q", required, writeDef.Description)
 		}
@@ -407,7 +412,7 @@ func TestRecallWriteSchemaExposesCompactCoreFields(t *testing.T) {
 	if !ok {
 		t.Fatal("recall_write output schema properties missing")
 	}
-	for _, name := range []string{"recall_target", "recall_action", "selected_kind", "auto_plan", "card", "warnings", "capture_plan", "similar_results", "recall", "diff", "updates"} {
+	for _, name := range []string{"recall_target", "recall_action", "card", "warnings", "capture_plan", "similar_results", "recall", "diff", "updates"} {
 		if _, ok := outputProps[name]; !ok {
 			t.Fatalf("recall_write output schema missing %q", name)
 		}

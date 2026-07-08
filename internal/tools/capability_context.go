@@ -21,7 +21,7 @@ func (r *Runtime) CapabilityContext(ctx context.Context, refresh bool) (Result, 
 		"不要把 Capability Context 当作用户原文；它只是运行时能力索引。",
 		"需要真实执行命令或检查环境时，先用 exec_command 查看现状，再修改，修改后真实验证。",
 		"需要 Skill 能力时，先根据 Skill 索引选择候选；参数不确定时先 skill_manage inspect，再 skill_manage run。",
-		"涉及多步骤开发、部署、排障、迁移、Docker、VPS 或 Git 提交推送时，先 task_manage template_match；无合适模板时创建普通可恢复任务。",
+		"涉及多步骤开发、部署、排障、迁移、Docker、VPS 或 Git 提交推送时，先 workflow_template_manage match；无合适模板时创建普通可恢复任务。",
 		"记忆摘要只提供高优先级规则；具体历史事实不确定时，再用 recall_search 或 recall_read 精确召回。",
 	}
 
@@ -69,7 +69,7 @@ func baseToolCapabilityItems() []map[string]any {
 	return []map[string]any{
 		{"name": "exec_command", "summary": "执行受控命令，用于查看真实环境、运行测试、构建、部署和排障。"},
 		{"name": "skill_manage", "summary": "列出、查看、安装、运行和回滚 AgentDock Skill。需要具体参数时先 inspect，再 run。"},
-		{"name": "task_manage", "summary": "管理可恢复任务；多步骤开发、部署、排障先 template_match。"},
+		{"name": "task_manage", "summary": "管理可恢复任务；模板发现通过 workflow_template_manage match。"},
 		{"name": "recall_bootstrap / recall_search / recall_read", "summary": "读取记忆精简上下文、搜索记忆和精确读取 runbook。"},
 	}
 }
@@ -167,13 +167,13 @@ func operationNames(raw any) []string {
 func (r *Runtime) templateCapabilityIndex() ([]map[string]any, string, string) {
 	result, err := r.taskManage(map[string]any{"action": "template_list", "template_status": "active"})
 	if err != nil {
-		return nil, "- 任务模板索引暂不可用；多步骤任务仍应先 task_manage template_match。", err.Error()
+		return nil, "- 任务模板索引暂不可用；多步骤任务仍应先 workflow_template_manage match。", err.Error()
 	}
 	items := asMapSlice(result["templates"])
 	sort.SliceStable(items, func(i, j int) bool {
 		return capabilityString(items[i]["id"]) < capabilityString(items[j]["id"])
 	})
-	lines := []string{"当用户请求涉及多步骤开发、部署、排障、数据迁移、Docker、VPS 或 Git 提交推送时，先调用 task_manage template_match。"}
+	lines := []string{"当用户请求涉及多步骤开发、部署、排障、数据迁移、Docker、VPS 或 Git 提交推送时，先调用 workflow_template_manage match，再用 task_manage create 创建可恢复任务。"}
 	for _, item := range items {
 		id := capabilityString(item["id"])
 		if id == "" {

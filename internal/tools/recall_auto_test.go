@@ -40,13 +40,13 @@ func TestRecallWriteRequiresExplicitTargetAction(t *testing.T) {
 	}
 }
 
-func TestRecallWriteAutoPlanDoesNotWriteAndRecommendsCard(t *testing.T) {
+func TestRecallWriteCardPlanDoesNotWrite(t *testing.T) {
 	store := map[string]string{}
 	rt, closeServer := newMemoryTestRuntime(t, store)
 	defer closeServer()
 
 	res, err := rt.recallWrite(context.Background(), map[string]any{
-		"target":  "auto",
+		"target":  "card",
 		"action":  "plan",
 		"title":   "直接执行偏好",
 		"content": "用户偏好直接执行可以自动完成的操作，不要反复确认或让用户代替完成。",
@@ -55,55 +55,34 @@ func TestRecallWriteAutoPlanDoesNotWriteAndRecommendsCard(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(store) != 0 {
-		t.Fatalf("auto plan must not write, store=%#v", store)
+		t.Fatalf("card plan must not write, store=%#v", store)
 	}
-	if got, _ := res["selected_kind"].(string); got != "card" {
-		t.Fatalf("expected auto plan to recommend card, got %#v", res)
+	if got, _ := res["recall_target"].(string); got != "card" {
+		t.Fatalf("expected card target, got %#v", res)
 	}
-	plan := res["auto_plan"].(Result)
-	if autoWrite, _ := plan["auto_write"].(bool); autoWrite {
-		t.Fatalf("auto plan should never auto-write: %#v", plan)
-	}
-	nextCall := plan["next_call"].(Result)
-	nextArgs := nextCall["args"].(Result)
-	if got, _ := nextArgs["target"].(string); got != "card" {
-		t.Fatalf("next call should use explicit card target, got %#v", nextArgs)
-	}
-	if got, _ := nextArgs["action"].(string); got != "plan" {
-		t.Fatalf("next call should use action=plan, got %#v", nextArgs)
+	if got, _ := res["recall_action"].(string); got != "plan" {
+		t.Fatalf("expected plan action, got %#v", res)
 	}
 }
 
-func TestRecallWriteAutoPlanRecommendsMarkdownForKnownPathContent(t *testing.T) {
-	store := map[string]string{}
+func TestRecallWriteMarkdownDiffDoesNotWrite(t *testing.T) {
+	store := map[string]string{"projects/demo/project.md": "# Demo\nold\n"}
 	rt, closeServer := newMemoryTestRuntime(t, store)
 	defer closeServer()
 
 	res, err := rt.recallWrite(context.Background(), map[string]any{
-		"target":  "auto",
-		"action":  "plan",
+		"target":  "markdown",
+		"action":  "diff",
 		"path":    "projects/demo/project.md",
-		"content": "# Demo\n稳定项目文档。\n",
+		"content": "# Demo\nnew\n",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(store) != 0 {
-		t.Fatalf("auto plan must not write, store=%#v", store)
+	if store["projects/demo/project.md"] != "# Demo\nold\n" {
+		t.Fatalf("diff must not write, store=%#v", store)
 	}
-	if got, _ := res["selected_kind"].(string); got != "markdown" {
-		t.Fatalf("expected auto plan to recommend markdown, got %#v", res)
-	}
-	plan := res["auto_plan"].(Result)
-	nextCall := plan["next_call"].(Result)
-	nextArgs := nextCall["args"].(Result)
-	if got, _ := nextArgs["target"].(string); got != "markdown" {
-		t.Fatalf("next call should use explicit markdown target, got %#v", nextArgs)
-	}
-	if got, _ := nextArgs["action"].(string); got != "write" {
-		t.Fatalf("next call should use action=write, got %#v", nextArgs)
-	}
-	if confirmed, _ := nextArgs["confirmed"].(bool); confirmed {
-		t.Fatalf("auto plan must not set confirmed=true: %#v", nextArgs)
+	if got, _ := res["recall_action"].(string); got != "diff" {
+		t.Fatalf("expected diff action, got %#v", res)
 	}
 }
