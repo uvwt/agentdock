@@ -79,7 +79,9 @@ func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func
 		}
 	}))
 	cfg := config.Config{Workspace: t.TempDir(), RecallEndpoint: server.URL, RecallTimeoutMS: 30000, ToolProfile: config.ProfileFull}
-	cfg.Normalize()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
 	rt, err := NewRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)

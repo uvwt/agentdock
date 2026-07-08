@@ -14,9 +14,7 @@ DEFAULT_HOST="${AGENTDOCK_HOST:-127.0.0.1}"
 DEFAULT_PORT="${AGENTDOCK_PORT:-8765}"
 DEFAULT_LOG_LEVEL="${AGENTDOCK_LOG_LEVEL:-info}"
 DEFAULT_TOOL_PROFILE="${AGENTDOCK_TOOL_PROFILE:-full}"
-DEFAULT_MODE="${AGENTDOCK_MODE:-sandboxed}"
-DEFAULT_PATH_POLICY="${AGENTDOCK_PATH_POLICY:-workspace}"
-DEFAULT_SANDBOX_MODE="${AGENTDOCK_SANDBOX_MODE:-landlock}"
+DEFAULT_RUNTIME_PROFILE="${AGENTDOCK_RUNTIME_PROFILE:-workspace}"
 DEFAULT_SERVICE_MANAGER="${AGENTDOCK_SERVICE_MANAGER:-auto}"
 DEFAULT_INSTALL_MODE="${AGENTDOCK_INSTALL_MODE:-binary}"
 DEFAULT_RELEASE_VERSION="${AGENTDOCK_RELEASE_VERSION:-latest}"
@@ -48,7 +46,7 @@ Alpine/极简系统如果没有 curl/bash：
   AGENTDOCK_INSTALL_MODE、AGENTDOCK_RELEASE_VERSION、AGENTDOCK_REPO_URL、AGENTDOCK_BRANCH
   AGENTDOCK_SOURCE_DIR、AGENTDOCK_DATA_DIR、AGENTDOCK_ENV_FILE
   AGENTDOCK_SERVICE_NAME、AGENTDOCK_SERVICE_USER、AGENTDOCK_HOST、AGENTDOCK_PORT
-  AGENTDOCK_AUTH_TOKEN、AGENTDOCK_GO_VERSION
+  AGENTDOCK_RUNTIME_PROFILE、AGENTDOCK_AUTH_TOKEN、AGENTDOCK_GO_VERSION
 
 参数：
   -h, --help    显示帮助，不执行部署
@@ -354,6 +352,14 @@ validate_install_mode() {
   esac
 }
 
+validate_runtime_profile() {
+  local profile="$1"
+  case "$profile" in
+    workspace|host) ;;
+    *) die "运行 profile 必须是 workspace/host：$profile" ;;
+  esac
+}
+
 clone_or_update_source() {
   local repo_url="$1"
   local branch="$2"
@@ -409,15 +415,13 @@ write_env_file() {
   local token="$6"
   local tool_profile="$7"
   local log_level="$8"
-  local mode="$9"
-  local path_policy="${10}"
-  local sandbox_mode="${11}"
-  local skip_prompts="${12}"
-  local recall_endpoint="${13}"
-  local recall_token="${14}"
-  local nexus_endpoint="${15}"
-  local nexus_device_name="${16}"
-  local nexus_state_dir="${17}"
+  local runtime_profile="$9"
+  local skip_prompts="${10}"
+  local recall_endpoint="${11}"
+  local recall_token="${12}"
+  local nexus_endpoint="${13}"
+  local nexus_device_name="${14}"
+  local nexus_state_dir="${15}"
 
   local env_dir tmp_file
   env_dir="$(dirname "$env_file")"
@@ -430,9 +434,7 @@ AGENTDOCK_PORT=$port
 AGENTDOCK_TOOL_PROFILE=$tool_profile
 AGENTDOCK_AUTH_TOKEN=$token
 AGENTDOCK_LOG_LEVEL=$log_level
-AGENTDOCK_MODE=$mode
-AGENTDOCK_PATH_POLICY=$path_policy
-AGENTDOCK_SANDBOX_MODE=$sandbox_mode
+AGENTDOCK_RUNTIME_PROFILE=$runtime_profile
 AGENTDOCK_SKIP_PERMISSION_PROMPTS=$skip_prompts
 AGENTDOCK_ENABLE_VIEW_IMAGE=true
 ENV
@@ -619,7 +621,7 @@ main() {
   require_linux
 
   local detected_root source_default repo_url branch source_dir data_dir workspace_dir control_dir env_file
-  local service_name service_user service_group service_manager service_manager_prompt host port token tool_profile log_level mode path_policy sandbox_mode skip_prompts
+  local service_name service_user service_group service_manager service_manager_prompt host port token tool_profile log_level runtime_profile skip_prompts
   local install_mode release_version recall_endpoint recall_token nexus_endpoint nexus_device_name nexus_state_dir update_existing run_full_check install_deps
   local go_version public_domain smoke_url health_host build_from_source binary_installed
 
@@ -663,9 +665,8 @@ INTRO
   port="$(prompt '监听端口' "$DEFAULT_PORT")"
   tool_profile="$(prompt '工具配置 profile：full/read-only' "$DEFAULT_TOOL_PROFILE")"
   log_level="$(prompt '日志级别' "$DEFAULT_LOG_LEVEL")"
-  mode="$(prompt '运行模式：sandboxed/host' "$DEFAULT_MODE")"
-  path_policy="$(prompt '路径策略：workspace/host' "$DEFAULT_PATH_POLICY")"
-  sandbox_mode="$(prompt '命令沙箱：landlock/none' "$DEFAULT_SANDBOX_MODE")"
+  runtime_profile="$(prompt '运行 profile：workspace/host' "$DEFAULT_RUNTIME_PROFILE")"
+  validate_runtime_profile "$runtime_profile"
 
   validate_abs_path '安装目录' "$source_dir"
   validate_abs_path '运行数据根目录' "$data_dir"
@@ -791,7 +792,7 @@ SUMMARY
   service_group="$(id -gn "$service_user")"
   run_root mkdir -p "$workspace_dir" "$control_dir" "$nexus_state_dir"
   run_root chown -R "$service_user:$service_group" "$data_dir"
-  write_env_file "$env_file" "$workspace_dir" "$control_dir" "$host" "$port" "$token" "$tool_profile" "$log_level" "$mode" "$path_policy" "$sandbox_mode" "$skip_prompts" "$recall_endpoint" "$recall_token" "$nexus_endpoint" "$nexus_device_name" "$nexus_state_dir"
+  write_env_file "$env_file" "$workspace_dir" "$control_dir" "$host" "$port" "$token" "$tool_profile" "$log_level" "$runtime_profile" "$skip_prompts" "$recall_endpoint" "$recall_token" "$nexus_endpoint" "$nexus_device_name" "$nexus_state_dir"
   case "$service_manager" in
     systemd) write_systemd_unit "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
     openrc) write_openrc_service "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;

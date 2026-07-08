@@ -29,7 +29,7 @@ type Runtime struct {
 }
 
 func NewRuntime(cfg config.Config) (*Runtime, error) {
-	ws, err := workspace.New(cfg.Workspace, cfg.PathPolicy == config.PathPolicyHost)
+	ws, err := workspace.New(cfg.Workspace, cfg.HostPaths())
 	if err != nil {
 		return nil, err
 	}
@@ -96,13 +96,13 @@ func (r *Runtime) serverInfo() Result {
 		"arch":       runtime.GOARCH,
 		"go_version": runtime.Version(),
 
-		"workspace":      r.ws.Root(),
-		"default_cwd":    r.ws.DefaultDisplay(),
-		"mode":           r.cfg.Mode,
-		"path_policy":    r.cfg.PathPolicy,
-		"tool_profile":   r.cfg.ToolProfile,
-		"sandbox_mode":   r.cfg.SandboxMode,
-		"agent_dock_dir": r.cfg.AgentDockDir,
+		"workspace":       r.ws.Root(),
+		"default_cwd":     r.ws.DefaultDisplay(),
+		"runtime_profile": r.cfg.RuntimeProfile,
+		"path_policy":     r.cfg.PathPolicyName(),
+		"tool_profile":    r.cfg.ToolProfile,
+		"sandbox_mode":    r.cfg.CommandSandboxName(),
+		"agent_dock_dir":  r.cfg.AgentDockDir,
 
 		"recall_enabled":               r.cfg.RecallEndpoint != "",
 		"recall_endpoint":              r.cfg.RecallEndpoint,

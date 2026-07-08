@@ -5,67 +5,103 @@ import (
 	"testing"
 )
 
-func TestNormalizeDefaultsToSandboxedWorkspace(t *testing.T) {
+func TestNormalizeDefaultsToWorkspaceRuntimeProfile(t *testing.T) {
 	cfg := Config{}
-	cfg.Normalize()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
 
-	if cfg.Mode != ModeSandboxed {
-		t.Fatalf("Mode = %q, want %q", cfg.Mode, ModeSandboxed)
+	if cfg.RuntimeProfile != RuntimeProfileWorkspace {
+		t.Fatalf("RuntimeProfile = %q, want %q", cfg.RuntimeProfile, RuntimeProfileWorkspace)
 	}
-	if cfg.SandboxMode != SandboxModeLandlock {
-		t.Fatalf("SandboxMode = %q, want %q", cfg.SandboxMode, SandboxModeLandlock)
+	if cfg.HostPaths() {
+		t.Fatal("workspace profile should not allow host paths")
 	}
-	if cfg.PathPolicy != PathPolicyWorkspace {
-		t.Fatalf("PathPolicy = %q, want %q", cfg.PathPolicy, PathPolicyWorkspace)
+	if !cfg.CommandSandboxEnabled() {
+		t.Fatal("workspace profile should enable command sandbox")
+	}
+	if cfg.PathPolicyName() != "workspace" {
+		t.Fatalf("PathPolicyName() = %q, want workspace", cfg.PathPolicyName())
+	}
+	if cfg.CommandSandboxName() != "landlock" {
+		t.Fatalf("CommandSandboxName() = %q, want landlock", cfg.CommandSandboxName())
 	}
 }
 
-func TestNormalizeHostModeSelectsNoneAndHostPathPolicy(t *testing.T) {
-	cfg := Config{Mode: ModeHost}
-	cfg.Normalize()
-
-	if cfg.SandboxMode != SandboxModeNone {
-		t.Fatalf("SandboxMode = %q, want %q", cfg.SandboxMode, SandboxModeNone)
+func TestRuntimeProfileHostDerivesHostPathsAndNoCommandSandbox(t *testing.T) {
+	cfg := Config{RuntimeProfile: RuntimeProfileHost}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
 	}
-	if cfg.PathPolicy != PathPolicyHost {
-		t.Fatalf("PathPolicy = %q, want %q", cfg.PathPolicy, PathPolicyHost)
+
+	if !cfg.HostPaths() {
+		t.Fatal("host profile should allow host paths")
+	}
+	if cfg.CommandSandboxEnabled() {
+		t.Fatal("host profile should disable command sandbox")
+	}
+	if cfg.PathPolicyName() != "host" {
+		t.Fatalf("PathPolicyName() = %q, want host", cfg.PathPolicyName())
+	}
+	if cfg.CommandSandboxName() != "none" {
+		t.Fatalf("CommandSandboxName() = %q, want none", cfg.CommandSandboxName())
 	}
 }
 
-func TestNormalizeSandboxNoneDoesNotInferHostMode(t *testing.T) {
-	cfg := Config{SandboxMode: SandboxModeNone}
-	cfg.Normalize()
-
-	if cfg.Mode != ModeSandboxed {
-		t.Fatalf("Mode = %q, want %q", cfg.Mode, ModeSandboxed)
-	}
-	if cfg.PathPolicy != PathPolicyWorkspace {
-		t.Fatalf("PathPolicy = %q, want %q", cfg.PathPolicy, PathPolicyWorkspace)
+func TestNormalizeRejectsInvalidRuntimeProfile(t *testing.T) {
+	cfg := Config{RuntimeProfile: "sandboxed"}
+	if err := cfg.Normalize(); err == nil {
+		t.Fatal("Normalize() should reject invalid runtime profile")
 	}
 }
 
 func TestNormalizeToolProfileOnlyAllowsFullAndReadOnly(t *testing.T) {
 	tests := []struct {
-		name string
-		in   string
-		want string
+		name    string
+		in      string
+		want    string
+		wantErr bool
 	}{
 		{name: "empty defaults to full", in: "", want: ProfileFull},
 		{name: "full stays full", in: ProfileFull, want: ProfileFull},
 		{name: "read only stays read only", in: ProfileReadOnly, want: ProfileReadOnly},
-		{name: "removed old full-access profile falls back", in: "uni" + "fied", want: ProfileFull},
-		{name: "removed compat profile falls back", in: "compat-readonly-" + "all", want: ProfileFull},
-		{name: "unknown profile falls back", in: "legacy", want: ProfileFull},
+		{name: "removed old full-access profile is rejected", in: "uni" + "fied", wantErr: true},
+		{name: "removed compat profile is rejected", in: "compat-readonly-" + "all", wantErr: true},
+		{name: "unknown profile is rejected", in: "legacy", wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := Config{ToolProfile: tt.in}
-			cfg.Normalize()
+			err := cfg.Normalize()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("Normalize() should reject invalid tool profile")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Normalize() error = %v", err)
+			}
 			if cfg.ToolProfile != tt.want {
 				t.Fatalf("ToolProfile = %q, want %q", cfg.ToolProfile, tt.want)
 			}
 		})
+	}
+}
+
+func TestFromEnvReadsRuntimeProfile(t *testing.T) {
+	t.Setenv("AGENTDOCK_RUNTIME_PROFILE", RuntimeProfileHost)
+
+	cfg := FromEnv()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
+	if cfg.RuntimeProfile != RuntimeProfileHost {
+		t.Fatalf("RuntimeProfile = %q, want %q", cfg.RuntimeProfile, RuntimeProfileHost)
+	}
+	if cfg.PathPolicyName() != "host" || cfg.CommandSandboxName() != "none" {
+		t.Fatalf("derived profile = path %q sandbox %q, want host/none", cfg.PathPolicyName(), cfg.CommandSandboxName())
 	}
 }
 
@@ -75,7 +111,9 @@ func TestFromEnvTaskVectorSearchConfig(t *testing.T) {
 	t.Setenv("AGENTDOCK_TASK_VECTOR_TIMEOUT_MS", "1234")
 	t.Setenv("AGENTDOCK_TASK_VECTOR_MIN_SCORE", "0.67")
 	cfg := FromEnv()
-	cfg.Normalize()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
 
 	if !cfg.TaskVectorSearch {
 		t.Fatal("TaskVectorSearch should default to enabled when the embedding endpoint is configured")
@@ -98,7 +136,9 @@ func TestTaskVectorSearchCanBeDisabled(t *testing.T) {
 	t.Setenv("AGENTDOCK_TASK_VECTOR_SEARCH", "false")
 	t.Setenv("AGENTDOCK_TASK_EMBEDDING_ENDPOINT", "http://127.0.0.1:18788/v1/embeddings")
 	cfg := FromEnv()
-	cfg.Normalize()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
 	if cfg.TaskVectorSearch {
 		t.Fatal("TaskVectorSearch should respect AGENTDOCK_TASK_VECTOR_SEARCH=false")
 	}

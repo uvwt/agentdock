@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 )
@@ -13,19 +14,13 @@ const (
 	ProfileFull     = "full"
 	ProfileReadOnly = "read-only"
 
-	ModeSandboxed = "sandboxed"
-	ModeHost      = "host"
-
-	SandboxModeLandlock = "landlock"
-	SandboxModeNone     = "none"
-
-	PathPolicyWorkspace = "workspace"
-	PathPolicyHost      = "host"
+	RuntimeProfileWorkspace = "workspace"
+	RuntimeProfileHost      = "host"
 )
 
 type Config struct {
 	Workspace                     string
-	Mode                          string
+	RuntimeProfile                string
 	Host                          string
 	Port                          int
 	AuthToken                     string
@@ -33,8 +28,6 @@ type Config struct {
 	OAuthServerURL                string
 	ToolProfile                   string
 	LogLevel                      string
-	SandboxMode                   string
-	PathPolicy                    string
 	AgentDockDir                  string
 	RecallEndpoint                string
 	RecallToken                   string
@@ -68,7 +61,7 @@ type Config struct {
 func FromEnv() Config {
 	return Config{
 		Workspace:                     getenv("AGENTDOCK_WORKSPACE", "."),
-		Mode:                          os.Getenv("AGENTDOCK_MODE"),
+		RuntimeProfile:                os.Getenv("AGENTDOCK_RUNTIME_PROFILE"),
 		Host:                          getenv("AGENTDOCK_HOST", "127.0.0.1"),
 		Port:                          getenvInt("AGENTDOCK_PORT", 8765),
 		AuthToken:                     os.Getenv("AGENTDOCK_AUTH_TOKEN"),
@@ -76,8 +69,6 @@ func FromEnv() Config {
 		OAuthServerURL:                os.Getenv("AGENTDOCK_SERVER_URL"),
 		ToolProfile:                   getenv("AGENTDOCK_TOOL_PROFILE", ProfileFull),
 		LogLevel:                      getenv("AGENTDOCK_LOG_LEVEL", "info"),
-		SandboxMode:                   os.Getenv("AGENTDOCK_SANDBOX_MODE"),
-		PathPolicy:                    os.Getenv("AGENTDOCK_PATH_POLICY"),
 		AgentDockDir:                  getenv("AGENTDOCK_DIR", "AgentDock"),
 		RecallEndpoint:                os.Getenv("AGENTDOCK_RECALL_ENDPOINT"),
 		RecallToken:                   firstNonEmpty(os.Getenv("AGENTDOCK_RECALL_TOKEN"), os.Getenv("RECALLDOCK_AUTH_TOKEN")),
@@ -109,24 +100,25 @@ func FromEnv() Config {
 	}
 }
 
-func (c *Config) Normalize() {
-	if c.Mode == "" {
-		if c.PathPolicy == PathPolicyHost {
-			c.Mode = ModeHost
-		} else {
-			c.Mode = ModeSandboxed
-		}
+func (c *Config) Normalize() error {
+	if c.RuntimeProfile == "" {
+		c.RuntimeProfile = RuntimeProfileWorkspace
 	}
-	switch c.Mode {
-	case ModeSandboxed, ModeHost:
+	switch c.RuntimeProfile {
+	case RuntimeProfileWorkspace, RuntimeProfileHost:
 	default:
-		c.Mode = ModeSandboxed
+		return fmt.Errorf("invalid runtime_profile %q; allowed values: %s, %s", c.RuntimeProfile, RuntimeProfileWorkspace, RuntimeProfileHost)
 	}
-	switch c.ToolProfile {
-	case ProfileReadOnly:
-	default:
+
+	if c.ToolProfile == "" {
 		c.ToolProfile = ProfileFull
 	}
+	switch c.ToolProfile {
+	case ProfileFull, ProfileReadOnly:
+	default:
+		return fmt.Errorf("invalid tool_profile %q; allowed values: %s, %s", c.ToolProfile, ProfileFull, ProfileReadOnly)
+	}
+
 	if c.Host == "" {
 		c.Host = "127.0.0.1"
 	}
@@ -163,38 +155,29 @@ func (c *Config) Normalize() {
 	if c.DesktopArtifactDir == "" {
 		c.DesktopArtifactDir = "desktop-artifacts"
 	}
-	if c.SandboxMode == "" {
-		if c.Mode == ModeHost {
-			c.SandboxMode = SandboxModeNone
-		} else {
-			c.SandboxMode = SandboxModeLandlock
-		}
+	return nil
+}
+
+func (c Config) HostPaths() bool {
+	return c.RuntimeProfile == RuntimeProfileHost
+}
+
+func (c Config) CommandSandboxEnabled() bool {
+	return c.RuntimeProfile != RuntimeProfileHost
+}
+
+func (c Config) PathPolicyName() string {
+	if c.HostPaths() {
+		return "host"
 	}
-	switch c.SandboxMode {
-	case SandboxModeLandlock, SandboxModeNone:
-	default:
-		if c.Mode == ModeHost {
-			c.SandboxMode = SandboxModeNone
-		} else {
-			c.SandboxMode = SandboxModeLandlock
-		}
+	return "workspace"
+}
+
+func (c Config) CommandSandboxName() string {
+	if c.CommandSandboxEnabled() {
+		return "landlock"
 	}
-	if c.PathPolicy == "" {
-		if c.Mode == ModeHost {
-			c.PathPolicy = PathPolicyHost
-		} else {
-			c.PathPolicy = PathPolicyWorkspace
-		}
-	}
-	switch c.PathPolicy {
-	case PathPolicyWorkspace, PathPolicyHost:
-	default:
-		if c.Mode == ModeHost {
-			c.PathPolicy = PathPolicyHost
-		} else {
-			c.PathPolicy = PathPolicyWorkspace
-		}
-	}
+	return "none"
 }
 
 func getenv(key, fallback string) string {

@@ -18,12 +18,12 @@ func newCodeToolsRuntime(t *testing.T) (*Runtime, string) {
 	cfg := config.Config{
 		Workspace:       root,
 		ToolProfile:     config.ProfileFull,
-		Mode:            config.ModeSandboxed,
-		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",
 		EnableViewImage: true,
 	}
-	cfg.Normalize()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
 	rt, err := NewRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -36,13 +36,13 @@ func TestServerInfoRecommendsCompactRecallBootstrap(t *testing.T) {
 	cfg := config.Config{
 		Workspace:       root,
 		ToolProfile:     config.ProfileFull,
-		Mode:            config.ModeSandboxed,
-		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",
 		RecallEndpoint:  "http://127.0.0.1:18777",
 		RecallTimeoutMS: 30000,
 	}
-	cfg.Normalize()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
 	rt, err := NewRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -62,12 +62,12 @@ func TestServerInfoReportsOAuthAuthEnabled(t *testing.T) {
 	cfg := config.Config{
 		Workspace:      root,
 		ToolProfile:    config.ProfileFull,
-		Mode:           config.ModeSandboxed,
-		PathPolicy:     config.PathPolicyWorkspace,
 		AgentDockDir:   "AgentDock",
 		OAuthServerURL: "https://auth.example.test",
 	}
-	cfg.Normalize()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
 	rt, err := NewRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -102,15 +102,15 @@ process.stdout.write(JSON.stringify({
 	cfg := config.Config{
 		Workspace:                     root,
 		ToolProfile:                   config.ProfileFull,
-		Mode:                          config.ModeSandboxed,
-		PathPolicy:                    config.PathPolicyWorkspace,
 		AgentDockDir:                  "AgentDock",
 		BrowserEnabled:                true,
 		BrowserRunnerDir:              "browser-runner",
 		BrowserArtifactDir:            "browser-artifacts",
 		DangerouslySkipAllPermissions: false,
 	}
-	cfg.Normalize()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
 	rt, err := NewRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)

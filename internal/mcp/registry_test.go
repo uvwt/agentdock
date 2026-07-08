@@ -29,15 +29,15 @@ func TestRuntimeToolsHaveRegistryDefinitionsAndSchemas(t *testing.T) {
 	cfg := config.Config{
 		Workspace:       t.TempDir(),
 		ToolProfile:     config.ProfileFull,
-		Mode:            config.ModeSandboxed,
-		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",
 		RecallEndpoint:  "http://127.0.0.1:18777",
 		BrowserEnabled:  true,
 		DesktopEnabled:  true,
 		EnableViewImage: true,
 	}
-	cfg.Normalize()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
 	rt, err := tools.NewRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -59,15 +59,15 @@ func TestReadOnlyProfileExcludesDestructiveTools(t *testing.T) {
 	cfg := config.Config{
 		Workspace:       t.TempDir(),
 		ToolProfile:     config.ProfileReadOnly,
-		Mode:            config.ModeSandboxed,
-		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",
 		RecallEndpoint:  "http://127.0.0.1:18777",
 		BrowserEnabled:  true,
 		DesktopEnabled:  true,
 		EnableViewImage: true,
 	}
-	cfg.Normalize()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
 	rt, err := tools.NewRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -104,11 +104,11 @@ func TestReadOnlyProfileSplitsSessionObserveAndAct(t *testing.T) {
 	cfg := config.Config{
 		Workspace:    t.TempDir(),
 		ToolProfile:  config.ProfileReadOnly,
-		Mode:         config.ModeSandboxed,
-		PathPolicy:   config.PathPolicyWorkspace,
 		AgentDockDir: "AgentDock",
 	}
-	cfg.Normalize()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
 	rt, err := tools.NewRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -133,13 +133,13 @@ func TestRecallDockToolNamesHideLegacyMemoryTools(t *testing.T) {
 	cfg := config.Config{
 		Workspace:       t.TempDir(),
 		ToolProfile:     config.ProfileFull,
-		Mode:            config.ModeSandboxed,
-		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",
 		RecallEndpoint:  "http://127.0.0.1:18777",
 		EnableViewImage: true,
 	}
-	cfg.Normalize()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
 	rt, err := tools.NewRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)

@@ -139,11 +139,11 @@ func testRuntimeConfig(root string) config.Config {
 	cfg := config.Config{
 		Workspace:       root,
 		ToolProfile:     config.ProfileFull,
-		Mode:            config.ModeSandboxed,
-		PathPolicy:      config.PathPolicyWorkspace,
 		AgentDockDir:    "AgentDock",
 		EnableViewImage: true,
 	}
-	cfg.Normalize()
+	if err := cfg.Normalize(); err != nil {
+		panic(err)
+	}
 	return cfg
 }

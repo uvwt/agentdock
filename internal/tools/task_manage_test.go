@@ -61,10 +61,12 @@ func TestTaskManageLifecycleAndRestartRecovery(t *testing.T) {
 	}
 
 	cfg := config.Config{
-		Workspace: root, ToolProfile: config.ProfileFull, Mode: config.ModeSandboxed,
-		PathPolicy: config.PathPolicyWorkspace, AgentDockDir: "AgentDock", EnableViewImage: true,
+		Workspace: root, ToolProfile: config.ProfileFull,
+		AgentDockDir: "AgentDock", EnableViewImage: true,
 	}
-	cfg.Normalize()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
 	restarted, err := NewRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)

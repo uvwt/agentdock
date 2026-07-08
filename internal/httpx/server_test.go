@@ -16,7 +16,9 @@ func TestMCPEndpointNotificationReturnsAcceptedWithEmptyBody(t *testing.T) {
 		Workspace:   t.TempDir(),
 		ToolProfile: config.ProfileReadOnly,
 	}
-	cfg.Normalize()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
 
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
@@ -44,7 +46,9 @@ func TestRuntimeAPIRequiresBearerWhenConfigured(t *testing.T) {
 		AgentDockDir: "AgentDock",
 		ToolProfile:  config.ProfileReadOnly,
 	}
-	cfg.Normalize()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
@@ -66,7 +70,9 @@ func TestRuntimeAPIStatusWithBearer(t *testing.T) {
 		AgentDockDir: "AgentDock",
 		ToolProfile:  config.ProfileReadOnly,
 	}
-	cfg.Normalize()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
@@ -91,7 +97,9 @@ func TestRuntimeAPIStatusWithBearer(t *testing.T) {
 
 func TestRuntimeAPISkillsNoAuthWhenUnconfigured(t *testing.T) {
 	cfg := config.Config{Workspace: t.TempDir(), AgentDockDir: "AgentDock", ToolProfile: config.ProfileReadOnly}
-	cfg.Normalize()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
