@@ -70,7 +70,11 @@ func TestResolveForWriteRelativeUsesDefaultDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveForWrite() error = %v", err)
 	}
-	want := filepath.Join(root, "notes", "todo.md")
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks() error = %v", err)
+	}
+	want := filepath.Join(realRoot, "notes", "todo.md")
 	if p.Abs != want {
 		t.Fatalf("ResolveForWrite() Abs = %q, want %q", p.Abs, want)
 	}

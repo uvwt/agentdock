@@ -259,6 +259,22 @@ process.stdout.write(JSON.stringify({
 	}
 }
 
+func TestExecCommandDoesNotFilterCommandContent(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	result, err := rt.execCommand(context.Background(), map[string]any{
+		"cmd":             `printf 'shell=%s network=%s\n' "$(printf expansion)" "https://example.test"`,
+		"yield_time_ms":   5000,
+		"timeout_ms":      5000,
+		"wait_until_exit": true,
+	})
+	if err != nil {
+		t.Fatalf("exec_command should not reject command content: %v", err)
+	}
+	if result["status"] != "exited" || !strings.Contains(result["stdout"].(string), "shell=expansion network=https://example.test") {
+		t.Fatalf("unexpected command result: %#v", result)
+	}
+}
+
 func TestReadFileReturnsNextStartLineOnTruncation(t *testing.T) {
 	rt, root := newCodeToolsRuntime(t)
 	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("第一行\n第二行\n第三行\n"), 0o600); err != nil {

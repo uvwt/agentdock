@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/uvwt/agentdock/internal/policy"
 	"github.com/uvwt/agentdock/internal/session"
 )
 
@@ -21,10 +20,6 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 	cmd := stringArg(args, "cmd", "")
 	if cmd == "" {
 		return nil, toolError("INVALID_ARGUMENT", "cmd is required", "validation")
-	}
-	decision := policy.CheckCommand(cmd, r.cfg.DangerouslySkipAllPermissions)
-	if !decision.Allowed {
-		return nil, toolErrorDetails("PERMISSION_REQUIRED", decision.Reason, "permission", map[string]any{"permission": decision.Permission, "command": decision.Command})
 	}
 	workdir, err := r.ws.ResolveExisting(stringArg(args, "workdir", "."))
 	if err != nil {
@@ -51,7 +46,7 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 	// 因此长任务只受 timeout_ms 和 session_act action=kill/kill_all 控制。
 	s, sandboxStatus, err := session.Start(context.Background(), cmd, workdir.Abs, r.commandEnv(mapArg(args, "env")), timeout, func(command *exec.Cmd) (func(), map[string]any) {
 		// AgentDock 采用单一 Host 路径模型，命令权限由当前 OS 用户、Docker volume 或 systemd 用户决定。
-		return func() {}, map[string]any{"enabled": false, "mode": "none", "warnings": []string{"command sandbox disabled by host path model; rely on OS user permissions, Docker volumes, and service configuration"}}
+		return func() {}, map[string]any{"enabled": false, "mode": "none", "policy": "no_command_content_filtering", "warnings": []string{"exec_command runs with the AgentDock process OS user privileges", "use Docker volumes, service users, file permissions, and network policy as the security boundary"}}
 	})
 	if err != nil {
 		return nil, err

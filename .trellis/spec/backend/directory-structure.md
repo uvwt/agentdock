@@ -21,7 +21,6 @@ internal/logx/                 基于 slog 的项目日志封装
 internal/mcp/                  MCP 服务、工具描述、schema
 internal/nexusagent/           本地 Nexus agent 循环和 adapter
 internal/nexusclient/          Nexus client、heartbeat、本地状态
-internal/policy/               命令权限策略
 internal/sandbox/              Landlock 和平台 sandbox 集成
 internal/session/              长时间运行的命令会话
 internal/skillruntime/         原生 Skill 包解析、安装、执行
