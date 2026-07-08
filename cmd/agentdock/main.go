@@ -39,12 +39,6 @@ func run() error {
 	flag.StringVar(&cfg.RecallEndpoint, "recall-endpoint", cfg.RecallEndpoint, "optional RecallDock HTTP endpoint, for example http://127.0.0.1:18777")
 	flag.StringVar(&cfg.RecallToken, "recall-token", cfg.RecallToken, "optional RecallDock bearer credential")
 	flag.IntVar(&cfg.RecallTimeoutMS, "recall-timeout-ms", cfg.RecallTimeoutMS, "RecallDock HTTP timeout in milliseconds")
-	flag.BoolVar(&cfg.TaskVectorSearch, "task-vector-search", cfg.TaskVectorSearch, "enable optional embedding-backed task/template matching when an embedding endpoint is configured")
-	flag.StringVar(&cfg.TaskEmbeddingEndpoint, "task-embedding-endpoint", cfg.TaskEmbeddingEndpoint, "optional OpenAI-compatible embeddings endpoint for task/template matching")
-	flag.StringVar(&cfg.TaskEmbeddingToken, "task-embedding-token", cfg.TaskEmbeddingToken, "optional embeddings bearer credential for task/template matching")
-	flag.StringVar(&cfg.TaskEmbeddingModel, "task-embedding-model", cfg.TaskEmbeddingModel, "embedding model name for task/template matching")
-	flag.IntVar(&cfg.TaskVectorTimeoutMS, "task-vector-timeout-ms", cfg.TaskVectorTimeoutMS, "task/template embedding timeout in milliseconds")
-	flag.Float64Var(&cfg.TaskVectorMinScore, "task-vector-min-score", cfg.TaskVectorMinScore, "minimum cosine similarity for task/template vector recall")
 	flag.StringVar(&cfg.NexusEndpoint, "nexus-endpoint", cfg.NexusEndpoint, "optional AgentDock Nexus base URL")
 	flag.StringVar(&cfg.NexusDeviceName, "nexus-device-name", cfg.NexusDeviceName, "AgentDock Nexus device display name")
 	flag.StringVar(&cfg.NexusStateDir, "nexus-state-dir", cfg.NexusStateDir, "AgentDock Nexus local state directory")
@@ -63,7 +57,7 @@ func run() error {
 		return err
 	}
 	logx.Setup(cfg.LogLevel)
-	slog.Info("server starting", "workspace", cfg.Workspace, "runtime_profile", cfg.RuntimeProfile, "path_policy", cfg.PathPolicyName(), "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "log_level", cfg.LogLevel, "sandbox_mode", cfg.CommandSandboxName(), "agent_dock_dir", cfg.AgentDockDir, "recall_enabled", cfg.RecallEndpoint != "", "task_vector_search_enabled", cfg.TaskVectorSearch && cfg.TaskEmbeddingEndpoint != "", "nexus_enabled", cfg.NexusEndpoint != "", "browser_enabled", cfg.BrowserEnabled, "browser_runner_dir", cfg.BrowserRunnerDir)
+	slog.Info("server starting", "workspace", cfg.Workspace, "runtime_profile", cfg.RuntimeProfile, "path_policy", cfg.PathPolicyName(), "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "log_level", cfg.LogLevel, "sandbox_mode", cfg.CommandSandboxName(), "agent_dock_dir", cfg.AgentDockDir, "recall_enabled", cfg.RecallEndpoint != "", "nexus_enabled", cfg.NexusEndpoint != "", "browser_enabled", cfg.BrowserEnabled, "browser_runner_dir", cfg.BrowserRunnerDir)
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
 		return err

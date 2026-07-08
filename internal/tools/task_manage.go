@@ -1,8 +1,14 @@
 package tools
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/uvwt/agentdock/internal/taskstate"
 )
@@ -23,7 +29,17 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 		if raw := args["template_candidates"]; raw != nil {
 			_ = remarshal(raw, &candidates)
 		}
-		task, err = r.tasks.CreateWithTemplate(stringArg(args, "title", ""), stringArg(args, "goal", ""), stringSliceArg(args, "completion_conditions"), stringArg(args, "template_id", ""), stringArg(args, "template_version", ""), stringArg(args, "selected_reason", ""), candidates)
+		templateID := stringArg(args, "template_id", "")
+		templateVersion := stringArg(args, "template_version", "")
+		if strings.TrimSpace(templateID) != "" {
+			template, fetchErr := r.nexusWorkflowTemplate(templateID, templateVersion)
+			if fetchErr != nil {
+				return nil, fetchErr
+			}
+			task, err = r.tasks.CreateFromTemplate(stringArg(args, "title", ""), stringArg(args, "goal", ""), stringSliceArg(args, "completion_conditions"), template, stringArg(args, "selected_reason", ""), candidates)
+		} else {
+			task, err = r.tasks.Create(stringArg(args, "title", ""), stringArg(args, "goal", ""), stringSliceArg(args, "completion_conditions"))
+		}
 		if err != nil {
 			return nil, taskToolError(err)
 		}
@@ -96,45 +112,46 @@ func (r *Runtime) workflowTemplateManage(args map[string]any) (Result, error) {
 			return nil, taskToolError(err)
 		}
 		applyTemplateGuardrailArgs(args, &template)
-		template, err := r.tasks.SaveTemplateDraft(template)
-		if err != nil {
-			return nil, taskToolError(err)
-		}
-		return Result{"ok": true, "action": action, "template_id": template.ID, "template_summary": compactTemplateSummary(template), "workflow_dir": r.tasks.WorkflowRoot()}, nil
-	case "validate":
-		template, err := r.tasks.ValidateTemplate(stringArg(args, "template_id", ""), stringArg(args, "template_version", ""))
-		if err != nil {
-			return nil, taskToolError(err)
-		}
-		return Result{"ok": true, "action": action, "template_id": template.ID, "template_summary": compactTemplateSummary(template), "valid": true, "workflow_dir": r.tasks.WorkflowRoot()}, nil
-	case "publish":
-		template, err := r.tasks.PublishTemplate(stringArg(args, "template_id", ""), stringArg(args, "template_version", ""))
-		if err != nil {
-			return nil, taskToolError(err)
-		}
-		return Result{"ok": true, "action": action, "template_id": template.ID, "template_summary": compactTemplateSummary(template), "workflow_dir": r.tasks.WorkflowRoot()}, nil
-	case "retire":
-		template, err := r.tasks.RetireTemplate(stringArg(args, "template_id", ""), stringArg(args, "template_version", ""))
-		if err != nil {
-			return nil, taskToolError(err)
-		}
-		return Result{"ok": true, "action": action, "template_id": template.ID, "template_summary": compactTemplateSummary(template), "workflow_dir": r.tasks.WorkflowRoot()}, nil
+		return compactNexusTemplateMutationResult(r.nexusWorkflowJSON("POST", "/v1/workflow-templates/drafts", map[string]any{"template": template}))
+	case "validate", "publish", "retire":
+		id := url.PathEscape(stringArg(args, "template_id", ""))
+		version := url.PathEscape(stringArg(args, "template_version", ""))
+		return compactNexusTemplateMutationResult(r.nexusWorkflowJSON("POST", fmt.Sprintf("/v1/workflow-templates/%s/%s/%s", id, version, action), map[string]any{}))
 	case "get":
-		template, err := r.tasks.GetTemplate(stringArg(args, "template_id", ""), stringArg(args, "template_version", ""))
+		id := url.PathEscape(stringArg(args, "template_id", ""))
+		version := url.PathEscape(stringArg(args, "template_version", ""))
+		result, err := r.nexusWorkflowJSON("GET", fmt.Sprintf("/v1/workflow-templates/%s/%s", id, version), nil)
 		if err != nil {
-			return nil, taskToolError(err)
+			return nil, err
 		}
-		return Result{"ok": true, "action": action, "template": template, "workflow_dir": r.tasks.WorkflowRoot()}, nil
+		var template taskstate.Template
+		if err := remarshal(result["template"], &template); err == nil {
+			result["template"] = template
+		}
+		return result, nil
 	case "list":
-		templates, err := r.tasks.ListTemplates(taskstate.TemplateStatus(stringArg(args, "template_status", "")))
+		path := "/v1/workflow-templates"
+		if status := strings.TrimSpace(stringArg(args, "template_status", "")); status != "" {
+			path += "?status=" + url.QueryEscape(status)
+		}
+		result, err := r.nexusWorkflowJSON("GET", path, nil)
 		if err != nil {
-			return nil, taskToolError(err)
+			return nil, err
 		}
-		items := make([]map[string]any, 0, len(templates))
-		for _, template := range templates {
-			items = append(items, compactTemplateSummary(template))
+		if items, ok := result["items"]; ok {
+			var summaries []map[string]any
+			if err := remarshal(items, &summaries); err == nil {
+				for i := range summaries {
+					for key, value := range summaries[i] {
+						summaries[i][key] = normalizeJSONToolValue(value)
+					}
+				}
+				result["templates"] = summaries
+			} else {
+				result["templates"] = items
+			}
 		}
-		return Result{"ok": true, "action": action, "templates": items, "count": len(items), "workflow_dir": r.tasks.WorkflowRoot()}, nil
+		return result, nil
 	case "match":
 		return r.matchWorkflowTemplates(args)
 	default:
@@ -142,27 +159,120 @@ func (r *Runtime) workflowTemplateManage(args map[string]any) (Result, error) {
 	}
 }
 
+func compactNexusTemplateMutationResult(result Result, err error) (Result, error) {
+	if err != nil {
+		return nil, err
+	}
+	delete(result, "template")
+	return result, nil
+}
+
 func (r *Runtime) matchWorkflowTemplates(args map[string]any) (Result, error) {
-	candidates, err := r.tasks.MatchTemplates(stringArg(args, "goal", ""), stringArg(args, "device", ""), stringArg(args, "type", ""))
+	return r.nexusWorkflowJSON("POST", "/v1/workflow-templates/match", map[string]any{
+		"goal":   stringArg(args, "goal", ""),
+		"device": stringArg(args, "device", ""),
+		"type":   stringArg(args, "type", ""),
+	})
+}
+
+func (r *Runtime) nexusWorkflowTemplate(id, version string) (taskstate.Template, error) {
+	if strings.TrimSpace(version) == "" {
+		return taskstate.Template{}, taskToolError(fmt.Errorf("template_version is required when template_id is set"))
+	}
+	result, err := r.nexusWorkflowJSON("GET", fmt.Sprintf("/v1/workflow-templates/%s/%s", url.PathEscape(id), url.PathEscape(version)), nil)
+	if err != nil {
+		return taskstate.Template{}, err
+	}
+	var template taskstate.Template
+	if err := remarshal(result["template"], &template); err != nil {
+		return taskstate.Template{}, taskToolError(fmt.Errorf("decode Nexus workflow template: %w", err))
+	}
+	return template, nil
+}
+
+func (r *Runtime) nexusWorkflowJSON(method, path string, payload any) (Result, error) {
+	base := strings.TrimRight(strings.TrimSpace(r.cfg.NexusEndpoint), "/")
+	if base == "" {
+		return nil, toolErrorDetails("NEXUS_NOT_CONFIGURED", "AGENTDOCK_NEXUS_ENDPOINT is required for workflow_template_manage", "configuration", map[string]any{"retryable": false})
+	}
+	var body io.Reader
+	if payload != nil {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return nil, taskToolError(err)
+		}
+		body = bytes.NewReader(data)
+	}
+	client := http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequest(method, base+path, body)
 	if err != nil {
 		return nil, taskToolError(err)
 	}
-	vectorIndexStatus, vectorIndexItems, embeddingModel := r.tasks.VectorIndexInfo()
-	result := Result{
-		"ok":                    true,
-		"action":                "match",
-		"candidates":            candidates,
-		"count":                 len(candidates),
-		"workflow_dir":          r.tasks.WorkflowRoot(),
-		"vector_search_enabled": r.tasks.VectorSearchEnabled(),
-		"vector_index_status":   vectorIndexStatus,
-		"vector_index_items":    vectorIndexItems,
-		"embedding_model":       embeddingModel,
+	req.Header.Set("Accept", "application/json")
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
-	for key, value := range templateMatchRecommendation(candidates) {
-		result[key] = value
+	if token := strings.TrimSpace(r.cfg.NexusToken); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, toolErrorDetails("NEXUS_REQUEST_FAILED", err.Error(), "network", map[string]any{"retryable": true})
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
+	if err != nil {
+		return nil, taskToolError(err)
+	}
+	var result Result
+	if len(strings.TrimSpace(string(data))) > 0 {
+		if err := json.Unmarshal(data, &result); err != nil {
+			return nil, toolErrorDetails("NEXUS_INVALID_RESPONSE", err.Error(), "response", map[string]any{"status": resp.StatusCode})
+		}
+	} else {
+		result = Result{}
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		message := resp.Status
+		if errMap, ok := result["error"].(map[string]any); ok {
+			if msg, ok := errMap["message"].(string); ok && msg != "" {
+				message = msg
+			}
+		} else if msg, ok := result["message"].(string); ok && msg != "" {
+			message = msg
+		}
+		return nil, toolErrorDetails("NEXUS_WORKFLOW_ERROR", message, "nexus", map[string]any{"status": resp.StatusCode})
+	}
+	if result == nil {
+		result = Result{}
+	}
+	for key, value := range result {
+		result[key] = normalizeJSONToolValue(value)
+	}
+	result["nexus_endpoint"] = base
 	return result, nil
+}
+
+func normalizeJSONToolValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			typed[key] = normalizeJSONToolValue(child)
+		}
+		return typed
+	case []any:
+		for i, child := range typed {
+			typed[i] = normalizeJSONToolValue(child)
+		}
+		return typed
+	case float64:
+		if typed == float64(int(typed)) {
+			return int(typed)
+		}
+		return typed
+	default:
+		return value
+	}
 }
 
 func compactTaskSummary(task taskstate.Task) map[string]any {

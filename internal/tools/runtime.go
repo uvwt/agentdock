@@ -41,14 +41,7 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	if !filepath.IsAbs(taskRoot) {
 		taskRoot = filepath.Join(cfg.Workspace, taskRoot)
 	}
-	tasks, err := taskstate.NewWithOptions(filepath.Join(taskRoot, "tasks"), taskstate.StoreOptions{
-		TaskVectorSearch:    cfg.TaskVectorSearch,
-		EmbeddingEndpoint:   cfg.TaskEmbeddingEndpoint,
-		EmbeddingToken:      cfg.TaskEmbeddingToken,
-		EmbeddingModel:      cfg.TaskEmbeddingModel,
-		TaskVectorTimeoutMS: cfg.TaskVectorTimeoutMS,
-		TaskVectorMinScore:  cfg.TaskVectorMinScore,
-	})
+	tasks, err := taskstate.New(filepath.Join(taskRoot, "tasks"))
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +103,6 @@ func (r *Runtime) serverInfo() Result {
 		"recall_bootstrap_args":        map[string]any{},
 
 		"task_state_dir": r.tasks.Root(),
-		"workflow_dir":   r.tasks.WorkflowRoot(),
 
 		"browser_enabled":      r.cfg.BrowserEnabled,
 		"browser_runner_dir":   r.cfg.BrowserRunnerDir,

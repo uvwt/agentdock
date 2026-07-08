@@ -62,7 +62,6 @@ type TemplateSelection struct {
 	Hash           string              `json:"hash"`
 	SelectedReason string              `json:"selected_reason"`
 	Candidates     []TemplateCandidate `json:"candidates,omitempty"`
-	Snapshot       Template            `json:"snapshot"`
 }
 
 type TaskStep struct {

@@ -2,6 +2,9 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/taskstate"
 )
 
 func newCodeToolsRuntime(t *testing.T) (*Runtime, string) {
@@ -27,7 +31,105 @@ func newCodeToolsRuntime(t *testing.T) (*Runtime, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	server := newWorkflowTemplateNexusTestServer(t, rt.tasks)
+	rt.cfg.NexusEndpoint = server.URL
 	return rt, root
+}
+
+func newWorkflowTemplateNexusTestServer(t *testing.T, store *taskstate.Store) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	write := func(w http.ResponseWriter, payload map[string]any) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(payload)
+	}
+	mux.HandleFunc("/v1/workflow-templates", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		templates, err := store.ListTemplates(taskstate.TemplateStatus(r.URL.Query().Get("status")))
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			write(w, map[string]any{"error": map[string]any{"message": err.Error()}})
+			return
+		}
+		items := make([]map[string]any, 0, len(templates))
+		for _, template := range templates {
+			items = append(items, compactTemplateSummary(template))
+		}
+		write(w, map[string]any{"ok": true, "items": items, "templates": items, "count": len(items)})
+	})
+	mux.HandleFunc("/v1/workflow-templates/drafts", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Template taskstate.Template `json:"template"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			write(w, map[string]any{"error": map[string]any{"message": err.Error()}})
+			return
+		}
+		template, err := store.SaveTemplateDraft(req.Template)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			write(w, map[string]any{"error": map[string]any{"message": err.Error()}})
+			return
+		}
+		write(w, map[string]any{"ok": true, "template": template, "template_summary": compactTemplateSummary(template)})
+	})
+	mux.HandleFunc("/v1/workflow-templates/match", func(w http.ResponseWriter, r *http.Request) {
+		var req struct{ Goal, Device, Type string }
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		candidates, err := store.MatchTemplates(req.Goal, req.Device, req.Type)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			write(w, map[string]any{"error": map[string]any{"message": err.Error()}})
+			return
+		}
+		result := map[string]any{"ok": true, "action": "match", "candidates": candidates, "count": len(candidates)}
+		for key, value := range templateMatchRecommendation(candidates) {
+			result[key] = value
+		}
+		write(w, result)
+	})
+	mux.HandleFunc("/v1/workflow-templates/", func(w http.ResponseWriter, r *http.Request) {
+		parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/v1/workflow-templates/"), "/"), "/")
+		if len(parts) < 2 {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		id, version := parts[0], parts[1]
+		var (
+			template taskstate.Template
+			err      error
+		)
+		if r.Method == http.MethodGet {
+			template, err = store.GetTemplate(id, version)
+		} else if r.Method == http.MethodPost && len(parts) == 3 {
+			switch parts[2] {
+			case "validate":
+				template, err = store.ValidateTemplate(id, version)
+			case "publish":
+				template, err = store.PublishTemplate(id, version)
+			case "retire":
+				template, err = store.RetireTemplate(id, version)
+			default:
+				err = os.ErrNotExist
+			}
+		} else {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			write(w, map[string]any{"error": map[string]any{"message": err.Error()}})
+			return
+		}
+		write(w, map[string]any{"ok": true, "template": template, "template_summary": compactTemplateSummary(template)})
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	return server
 }
 
 func TestServerInfoRecommendsCompactRecallBootstrap(t *testing.T) {
