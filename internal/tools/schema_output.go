@@ -27,6 +27,16 @@ func OutputSchema(name string) map[string]any {
 		props["task_state_dir"] = stringProp("Local directory containing persistent recoverable task state.")
 		props["workflow_dir"] = stringProp("Local directory containing workflow templates.")
 		props["sandbox"] = objectProp("Sandbox status metadata.")
+	case "capability_context":
+		props["generated_at"] = stringProp("UTC timestamp when the capability context was generated.")
+		props["refreshed"] = boolProp("Whether the caller requested a refresh.")
+		props["context"] = stringProp("Rendered capability context text for clients that cannot inject system prompt context.")
+		props["summary"] = stringProp("Alias for rendered capability context text.")
+		props["base_tools"] = objectProp("Compact base tool index.")
+		props["skills"] = objectProp("Installed Skill capability index.")
+		props["task_templates"] = objectProp("Workflow template capability index.")
+		props["memory"] = objectProp("RecallDock capability summary when configured.")
+		props["rules"] = objectProp("Runtime usage rules included in the rendered context.")
 	case "read_file":
 		props["path"] = stringProp("Host path. Relative paths resolve from ~/AgentDock.")
 		props["content"] = stringProp("Text content slice.")

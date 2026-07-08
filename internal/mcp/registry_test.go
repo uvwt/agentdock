@@ -67,9 +67,33 @@ func TestRuntimeExposesSingleToolSet(t *testing.T) {
 	for _, name := range rt.ToolNames() {
 		seen[name] = true
 	}
-	for _, name := range []string{"git_read", "git_write", "session_observe", "session_act", "recall_read", "recall_write", "skill_manage"} {
+	for _, name := range []string{"capability_context", "git_read", "git_write", "session_observe", "session_act", "recall_read", "recall_write", "skill_manage"} {
 		if !seen[name] {
 			t.Fatalf("single tool set missing %s: %#v", name, seen)
+		}
+	}
+}
+
+func TestCapabilityContextSchemaIsModelFacingEntrypoint(t *testing.T) {
+	def, ok := toolDefinition("capability_context")
+	if !ok {
+		t.Fatal("capability_context definition missing")
+	}
+	if !strings.Contains(def.Description, "clients that cannot inject system prompt context") {
+		t.Fatalf("capability_context description should explain model-facing use: %q", def.Description)
+	}
+
+	inputProps := schemaProperties(t, "capability_context")
+	if _, ok := inputProps["refresh"]; !ok {
+		t.Fatalf("capability_context input schema missing refresh: %#v", inputProps)
+	}
+	outputProps, ok := outputSchema("capability_context")["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("capability_context output schema properties missing")
+	}
+	for _, name := range []string{"context", "summary", "base_tools", "skills", "task_templates", "memory", "rules"} {
+		if _, ok := outputProps[name]; !ok {
+			t.Fatalf("capability_context output schema missing %q", name)
 		}
 	}
 }

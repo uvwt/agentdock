@@ -18,7 +18,6 @@ func (r *Runtime) CapabilityContext(ctx context.Context, refresh bool) (Result, 
 	memorySummary, memoryItems, memoryErr := r.memoryCapabilitySummary(ctx)
 
 	rules := []string{
-		"不要把 Capability Context 当作用户原文；它只是运行时能力索引。",
 		"需要真实执行命令或检查环境时，先用 exec_command 查看现状，再修改，修改后真实验证。",
 		"需要 Skill 能力时，先根据 Skill 索引选择候选；参数不确定时先 skill_manage inspect，再 skill_manage run。",
 		"涉及多步骤开发、部署、排障、迁移、Docker、VPS 或 Git 提交推送时，先 workflow_template_manage match；无合适模板时创建普通可恢复任务。",
@@ -58,6 +57,10 @@ func (r *Runtime) CapabilityContext(ctx context.Context, refresh bool) (Result, 
 		result["memory"].(map[string]any)["error"] = memoryErr
 	}
 	return result, nil
+}
+
+func (r *Runtime) capabilityContextTool(ctx context.Context, args map[string]any) (Result, error) {
+	return r.CapabilityContext(ctx, boolArg(args, "refresh", false))
 }
 
 type capabilitySection struct {
