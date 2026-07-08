@@ -61,7 +61,6 @@ func run() error {
 	flag.BoolVar(&cfg.EnableViewImage, "enable-view-image", cfg.EnableViewImage, "expose view_image tool")
 	flag.BoolVar(&cfg.Stdio, "stdio", cfg.Stdio, "serve JSON-RPC over stdio")
 	flag.BoolVar(&cfg.DangerouslySkipAllPermissions, "dangerously-skip-all-permissions", cfg.DangerouslySkipAllPermissions, "auto-grant permission-gated operations")
-	_ = flag.Bool("oauth-mode", false, "compatibility placeholder")
 	flag.Parse()
 	if err := cfg.Normalize(); err != nil {
 		return err
