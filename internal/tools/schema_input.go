@@ -247,8 +247,10 @@ func InputSchema(name string) map[string]any {
 		props["confirmed"] = boolProp("Required for true writes.")
 		props["overwrite"] = boolProp("Replace an existing note.")
 		required = []string{"content", "confirmed"}
+	case "private_notes_status":
+		props["action"] = map[string]any{"type": "string", "description": "Read-only private notes status action.", "enum": []string{"check", "list"}}
 	case "private_notes_maintain":
-		props["action"] = stringProp("Action: init, init-encryption, check, list, sync-encrypted, encrypt-all, or migrate-enc-to-age.")
+		props["action"] = map[string]any{"type": "string", "description": "Mutating private notes maintenance action.", "enum": []string{"init", "init-encryption", "sync-encrypted", "encrypt-all", "migrate-enc-to-age"}}
 	case "browser_session":
 		props["action"] = map[string]any{"type": "string", "description": "Browser session action.", "enum": []string{"start", "close", "cleanup_stale"}}
 		props["url"] = stringProp("Initial URL when action=start. Defaults to about:blank.")
@@ -348,10 +350,12 @@ func InputSchema(name string) map[string]any {
 		props["keys"] = stringProp("Shortcut for hotkey action, for example cmd+space.")
 		props["ms"] = intProp("Milliseconds for wait action.")
 		props["timeout_ms"] = intProp("Alias for wait milliseconds.")
-	case "desktop_clipboard":
-		props["action"] = stringProp("Clipboard action: get or set.")
-		props["text"] = stringProp("Text to place into the macOS clipboard when action=set.")
+	case "desktop_clipboard_read":
+		props["max_bytes"] = intProp("Maximum clipboard text bytes to return.")
+	case "desktop_clipboard_write":
+		props["text"] = stringProp("Text to place into the macOS clipboard.")
 		props["verify"] = boolProp("Read back pbpaste after writing and report verified. Defaults to true.")
+		required = []string{"text"}
 	case "git_read":
 		props["action"] = map[string]any{"type": "string", "description": "Read action.", "enum": []string{"repos", "status", "diff", "log", "show", "blame"}}
 		props["path"] = stringProp("Directory path for repos or file path for blame.")

@@ -160,8 +160,38 @@ func (r *Runtime) privateNotesWrite(ctx context.Context, args map[string]any) (R
 	return Result{"ok": true, "root": root, "path": rel, "encrypted_path": encRel, "written": true, "encrypted": true, "algorithm": "age/X25519", "policy": "age encrypted backup is mandatory and cannot be skipped"}, nil
 }
 
-func (r *Runtime) privateNotesMaintain(ctx context.Context, args map[string]any) (Result, error) {
+func (r *Runtime) privateNotesStatus(ctx context.Context, args map[string]any) (Result, error) {
 	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "check")))
+	root, err := r.privateNotesRoot()
+	if err != nil {
+		return nil, err
+	}
+	switch action {
+	case "list":
+		items, err := listPrivateNotes(root)
+		if err != nil {
+			return nil, err
+		}
+		return Result{"ok": true, "action": "list", "root": root, "notes": items, "count": len(items)}, nil
+	case "check", "status":
+		items, err := listPrivateNotes(root)
+		if err != nil {
+			return nil, err
+		}
+		missing := []string{}
+		for _, item := range items {
+			if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(item.EncryptedPath))); err != nil {
+				missing = append(missing, item.EncryptedPath)
+			}
+		}
+		return Result{"ok": len(missing) == 0, "action": "check", "root": root, "notes_count": len(items), "missing_encrypted": missing, "policy": "notes/ is plaintext and ignored by git; encrypted/ stores mandatory .md.age backups"}, nil
+	default:
+		return nil, toolErrorDetails("INVALID_PRIVATE_NOTES_ACTION", "unsupported private_notes_status action", "validation", map[string]any{"action": action, "allowed": []string{"check", "list"}})
+	}
+}
+
+func (r *Runtime) privateNotesMaintain(ctx context.Context, args map[string]any) (Result, error) {
+	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "sync-encrypted")))
 	root, err := r.privateNotesRoot()
 	if err != nil {
 		return nil, err
@@ -192,26 +222,8 @@ func (r *Runtime) privateNotesMaintain(ctx context.Context, args map[string]any)
 			}
 		}
 		return Result{"ok": true, "action": action, "root": root, "encrypted_count": count, "legacy_removed_count": removed, "algorithm": "age/X25519"}, nil
-	case "list":
-		items, err := listPrivateNotes(root)
-		if err != nil {
-			return nil, err
-		}
-		return Result{"ok": true, "action": "list", "root": root, "notes": items, "count": len(items)}, nil
-	case "check", "status":
-		items, err := listPrivateNotes(root)
-		if err != nil {
-			return nil, err
-		}
-		missing := []string{}
-		for _, item := range items {
-			if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(item.EncryptedPath))); err != nil {
-				missing = append(missing, item.EncryptedPath)
-			}
-		}
-		return Result{"ok": len(missing) == 0, "action": "check", "root": root, "notes_count": len(items), "missing_encrypted": missing, "policy": "notes/ is plaintext and ignored by git; encrypted/ stores mandatory .md.age backups"}, nil
 	default:
-		return nil, toolErrorDetails("INVALID_PRIVATE_NOTES_ACTION", "unsupported private_notes_maintain action", "validation", map[string]any{"action": action})
+		return nil, toolErrorDetails("INVALID_PRIVATE_NOTES_ACTION", "unsupported private_notes_maintain action", "validation", map[string]any{"action": action, "allowed": []string{"init", "sync-encrypted", "encrypt-all", "migrate-enc-to-age"}})
 	}
 }
 

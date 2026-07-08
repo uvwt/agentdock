@@ -101,21 +101,10 @@ func (r *Runtime) desktopAct(ctx context.Context, args map[string]any) (Result, 
 	}
 }
 
-func (r *Runtime) desktopClipboard(ctx context.Context, args map[string]any) (Result, error) {
-	action := strings.ToLower(stringArg(args, "action", ""))
-	if action == "" {
-		if _, ok := args["text"]; ok {
-			action = "set"
-		} else {
-			action = "get"
-		}
-	}
-	switch action {
-	case "get", "read":
-		return r.desktopClipboardGet(ctx, args)
-	case "set", "write":
-		return r.desktopClipboardSet(ctx, args)
-	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported desktop_clipboard action", "validation", map[string]any{"action": stringArg(args, "action", "")})
-	}
+func (r *Runtime) desktopClipboardRead(ctx context.Context, args map[string]any) (Result, error) {
+	return r.desktopClipboardGet(ctx, args)
+}
+
+func (r *Runtime) desktopClipboardWrite(ctx context.Context, args map[string]any) (Result, error) {
+	return r.desktopClipboardSet(ctx, args)
 }

@@ -225,7 +225,7 @@ func OutputSchema(name string) map[string]any {
 		props["written"] = boolProp("Whether plaintext was written.")
 		props["encrypted"] = boolProp("Whether encrypted backup was written.")
 		props["algorithm"] = stringProp("Encryption algorithm.")
-	case "private_notes_maintain":
+	case "private_notes_status", "private_notes_maintain":
 		props["root"] = stringProp("Private notes root path.")
 		props["action"] = stringProp("Action performed.")
 		props["notes"] = arrayProp("Private note summaries.")
@@ -329,7 +329,7 @@ func OutputSchema(name string) map[string]any {
 		props["height"] = intProp("Screenshot height.")
 		props["size_bytes"] = intProp("Screenshot size in bytes.")
 		props["image_attached"] = boolProp("Whether an MCP image content part is attached.")
-	case "desktop_act", "desktop_clipboard":
+	case "desktop_act", "desktop_clipboard_read", "desktop_clipboard_write":
 		props["operation"] = stringProp("Underlying desktop action operation.")
 		props["command_ok"] = boolProp("Whether the underlying command exited successfully.")
 		props["effect_verified"] = boolProp("Whether UI effect verification was attempted.")

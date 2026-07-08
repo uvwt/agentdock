@@ -63,7 +63,7 @@ func TestPrivateNotesWriteReadSearchAndEncrypt(t *testing.T) {
 	if !strings.Contains(read["content"].(string), marker) {
 		t.Fatalf("read should return plaintext")
 	}
-	check, err := rt.privateNotesMaintain(context.Background(), map[string]any{"action": "check"})
+	check, err := rt.privateNotesStatus(context.Background(), map[string]any{"action": "check"})
 	if err != nil {
 		t.Fatal(err)
 	}
