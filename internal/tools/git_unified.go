@@ -6,9 +6,12 @@ import (
 )
 
 func (r *Runtime) gitRead(ctx context.Context, args map[string]any) (Result, error) {
-	action := strings.ToLower(stringArg(args, "action", "status"))
+	action := strings.ToLower(stringArg(args, "action", ""))
+	if action == "" {
+		return nil, toolErrorDetails("MISSING_ACTION", "git_read requires action", "validation", map[string]any{"allowed": []string{"repos", "status", "diff", "log", "show", "blame"}})
+	}
 	switch action {
-	case "repos", "repositories", "workspace_repos":
+	case "repos":
 		result, err := r.workspaceRepos(ctx, args)
 		if result != nil {
 			result["action"] = "repos"
@@ -85,64 +88,4 @@ func (r *Runtime) gitWrite(ctx context.Context, args map[string]any) (Result, er
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported git_write action", "validation", map[string]any{"action": action, "allowed": []string{"clone", "commit", "fetch", "pull", "push"}})
 	}
-}
-
-func (r *Runtime) workspaceReposCompat(ctx context.Context, args map[string]any) (Result, error) {
-	nextArgs := copyArgs(args)
-	nextArgs["action"] = "repos"
-	result, err := r.gitRead(ctx, nextArgs)
-	return annotateDeprecated(result, "git_read", nextArgs), err
-}
-
-func (r *Runtime) gitStatusCompat(ctx context.Context, args map[string]any) (Result, error) {
-	nextArgs := copyArgs(args)
-	nextArgs["action"] = "status"
-	result, err := r.gitRead(ctx, nextArgs)
-	return annotateDeprecated(result, "git_read", nextArgs), err
-}
-
-func (r *Runtime) gitDiffCompat(ctx context.Context, args map[string]any) (Result, error) {
-	nextArgs := copyArgs(args)
-	nextArgs["action"] = "diff"
-	result, err := r.gitRead(ctx, nextArgs)
-	return annotateDeprecated(result, "git_read", nextArgs), err
-}
-
-func (r *Runtime) gitLogCompat(ctx context.Context, args map[string]any) (Result, error) {
-	nextArgs := copyArgs(args)
-	nextArgs["action"] = "log"
-	result, err := r.gitRead(ctx, nextArgs)
-	return annotateDeprecated(result, "git_read", nextArgs), err
-}
-
-func (r *Runtime) gitInspectCompat(ctx context.Context, args map[string]any) (Result, error) {
-	nextArgs := copyArgs(args)
-	if stringArg(nextArgs, "action", "") == "" {
-		nextArgs["action"] = "show"
-	}
-	result, err := r.gitRead(ctx, nextArgs)
-	return annotateDeprecated(result, "git_read", nextArgs), err
-}
-
-func (r *Runtime) gitRemoteCompat(ctx context.Context, args map[string]any) (Result, error) {
-	nextArgs := copyArgs(args)
-	if stringArg(nextArgs, "action", "") == "" {
-		nextArgs["action"] = "fetch"
-	}
-	result, err := r.gitWrite(ctx, nextArgs)
-	return annotateDeprecated(result, "git_write", nextArgs), err
-}
-
-func (r *Runtime) gitCloneCompat(ctx context.Context, args map[string]any) (Result, error) {
-	nextArgs := copyArgs(args)
-	nextArgs["action"] = "clone"
-	result, err := r.gitWrite(ctx, nextArgs)
-	return annotateDeprecated(result, "git_write", nextArgs), err
-}
-
-func (r *Runtime) gitCommitCompat(ctx context.Context, args map[string]any) (Result, error) {
-	nextArgs := copyArgs(args)
-	nextArgs["action"] = "commit"
-	result, err := r.gitWrite(ctx, nextArgs)
-	return annotateDeprecated(result, "git_write", nextArgs), err
 }

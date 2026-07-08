@@ -44,49 +44,6 @@ func readOnlyActionError(tool, action string, allowed []string) *ToolError {
 	})
 }
 
-func (r *Runtime) memoryEdit(ctx context.Context, args map[string]any) (Result, error) {
-	switch strings.ToLower(stringArg(args, "action", "patch")) {
-	case "append", "append_note", "note":
-		return r.memoryAppendNote(ctx, args)
-	case "write", "create", "replace":
-		return r.memoryWrite(ctx, args)
-	case "delete", "remove":
-		return r.memoryDelete(ctx, args)
-	case "diff", "preview":
-		return r.memoryDiff(ctx, args)
-	case "patch", "edit":
-		return r.memoryPatch(ctx, args)
-	case "update_fact", "fact":
-		return r.memoryUpdateFact(ctx, args)
-	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported recall_write action", "validation", map[string]any{"action": stringArg(args, "action", "")})
-	}
-}
-
-func (r *Runtime) gitInspect(ctx context.Context, args map[string]any) (Result, error) {
-	switch strings.ToLower(stringArg(args, "action", "show")) {
-	case "show":
-		return r.gitShow(ctx, args)
-	case "blame":
-		return r.gitBlame(ctx, args)
-	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported git_inspect action", "validation", map[string]any{"action": stringArg(args, "action", "")})
-	}
-}
-
-func (r *Runtime) gitRemote(ctx context.Context, args map[string]any) (Result, error) {
-	switch strings.ToLower(stringArg(args, "action", "fetch")) {
-	case "fetch":
-		return r.gitFetch(ctx, args)
-	case "pull":
-		return r.gitPull(ctx, args)
-	case "push":
-		return r.gitPush(ctx, args)
-	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported git_remote action", "validation", map[string]any{"action": stringArg(args, "action", "")})
-	}
-}
-
 func (r *Runtime) browserSession(ctx context.Context, args map[string]any) (Result, error) {
 	action := strings.ToLower(stringArg(args, "action", "start"))
 	if strings.HasPrefix(action, "profile_") {

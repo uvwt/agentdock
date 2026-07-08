@@ -288,14 +288,14 @@ func TestWorkspaceEditAndGitUnifiedSchemas(t *testing.T) {
 	}
 }
 
-func TestLegacyToolDescriptionsAdvertiseReplacement(t *testing.T) {
-	for _, name := range []string{"apply_patch", "edit_file", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit"} {
-		def, ok := toolDefinition(name)
-		if !ok {
-			t.Fatalf("tool definition missing: %s", name)
+func TestLegacyModelEntrypointsAreRemoved(t *testing.T) {
+	for _, name := range []string{"apply_patch", "edit_file", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "browser_profile"} {
+		if _, ok := toolDefinition(name); ok {
+			t.Fatalf("legacy tool should not be model-facing: %s", name)
 		}
-		if !strings.Contains(def.Description, "Deprecated compatibility wrapper") {
-			t.Fatalf("legacy tool %s should advertise deprecation: %q", name, def.Description)
+		props := schemaProperties(t, name)
+		if len(props) != 0 {
+			t.Fatalf("legacy tool schema should be empty for %s: %#v", name, props)
 		}
 	}
 }

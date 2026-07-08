@@ -9,30 +9,26 @@ import (
 func (r *Runtime) workspaceEdit(ctx context.Context, args map[string]any) (Result, error) {
 	action := strings.ToLower(stringArg(args, "action", ""))
 	if action == "" {
-		if stringArg(args, "patch", "") != "" {
-			action = "patch"
-		} else if stringArg(args, "old", "") != "" {
-			action = "replace"
-		}
+		return nil, toolErrorDetails("MISSING_ACTION", "workspace_edit requires action", "validation", map[string]any{"allowed": []string{"replace", "patch", "add", "delete", "move"}})
 	}
 	switch action {
-	case "patch", "apply_patch":
+	case "patch":
 		result, err := r.applyPatch(ctx, args)
 		if result != nil {
 			result["action"] = "patch"
 		}
 		return result, err
-	case "replace", "edit":
+	case "replace":
 		result, err := r.editFile(args)
 		if result != nil {
 			result["action"] = "replace"
 		}
 		return result, err
-	case "add", "create", "write":
+	case "add":
 		return r.workspaceEditAdd(args)
-	case "delete", "remove":
+	case "delete":
 		return r.workspaceEditDelete(args)
-	case "move", "rename":
+	case "move":
 		return r.workspaceEditMove(args)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported workspace_edit action", "validation", map[string]any{"action": action, "allowed": []string{"replace", "patch", "add", "delete", "move"}})
@@ -170,28 +166,4 @@ func firstNonEmptyStringArg(args map[string]any, keys ...string) string {
 		}
 	}
 	return ""
-}
-
-func (r *Runtime) applyPatchCompat(ctx context.Context, args map[string]any) (Result, error) {
-	nextArgs := copyArgs(args)
-	nextArgs["action"] = "patch"
-	result, err := r.workspaceEdit(ctx, nextArgs)
-	return annotateDeprecated(result, "workspace_edit", nextArgs), err
-}
-
-func (r *Runtime) editFileCompat(args map[string]any) (Result, error) {
-	nextArgs := copyArgs(args)
-	nextArgs["action"] = "replace"
-	result, err := r.workspaceEdit(context.Background(), nextArgs)
-	return annotateDeprecated(result, "workspace_edit", nextArgs), err
-}
-
-func annotateDeprecated(result Result, replacementTool string, replacementArgs map[string]any) Result {
-	if result == nil {
-		return nil
-	}
-	result["deprecated"] = true
-	result["replacement_tool"] = replacementTool
-	result["replacement_args"] = replacementArgs
-	return result
 }

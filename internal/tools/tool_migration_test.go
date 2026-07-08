@@ -10,7 +10,7 @@ import (
 	"github.com/uvwt/agentdock/internal/config"
 )
 
-func TestWorkspaceEditReplaceAndDeprecatedEditFileAgree(t *testing.T) {
+func TestWorkspaceEditReplace(t *testing.T) {
 	rt, root := newCodeToolsRuntime(t)
 	path := filepath.Join(root, "note.txt")
 	if err := os.WriteFile(path, []byte("alpha\n"), 0o600); err != nil {
@@ -23,34 +23,60 @@ func TestWorkspaceEditReplaceAndDeprecatedEditFileAgree(t *testing.T) {
 	if result["action"] != "replace" || result["changed"] != true || result["matches"] != 1 {
 		t.Fatalf("unexpected workspace_edit result: %#v", result)
 	}
-	legacy, err := rt.Call(context.Background(), "edit_file", map[string]any{"path": "note.txt", "old": "alpha", "new": "beta", "dry_run": true})
+}
+
+func TestWorkspaceEditAddMoveDelete(t *testing.T) {
+	rt, root := newCodeToolsRuntime(t)
+	result, err := rt.Call(context.Background(), "workspace_edit", map[string]any{"action": "add", "path": "draft.txt", "content": "hello\n"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if legacy["deprecated"] != true || legacy["replacement_tool"] != "workspace_edit" {
-		t.Fatalf("legacy edit_file should advertise workspace_edit replacement: %#v", legacy)
+	if result["changed"] != true {
+		t.Fatalf("expected add to change file: %#v", result)
 	}
-	if legacy["action"] != result["action"] || legacy["matches"] != result["matches"] || legacy["changed"] != result["changed"] {
-		t.Fatalf("legacy edit_file core result differs: legacy=%#v new=%#v", legacy, result)
+	if _, err := os.Stat(filepath.Join(root, "draft.txt")); err != nil {
+		t.Fatalf("expected added file: %v", err)
+	}
+	result, err = rt.Call(context.Background(), "workspace_edit", map[string]any{"action": "move", "path": "draft.txt", "new_path": "final.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["new_path"] != "final.txt" {
+		t.Fatalf("unexpected move result: %#v", result)
+	}
+	if _, err := os.Stat(filepath.Join(root, "final.txt")); err != nil {
+		t.Fatalf("expected moved file: %v", err)
+	}
+	result, err = rt.Call(context.Background(), "workspace_edit", map[string]any{"action": "delete", "path": "final.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["changed"] != true {
+		t.Fatalf("expected delete to report changed: %#v", result)
+	}
+	if _, err := os.Stat(filepath.Join(root, "final.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected file to be deleted, err=%v", err)
 	}
 }
 
-func TestGitReadStatusAndDeprecatedGitStatusAgree(t *testing.T) {
+func TestGitReadStatus(t *testing.T) {
 	rt, root := newCodeToolsRuntime(t)
 	initGitRepo(t, root)
 	result, err := rt.Call(context.Background(), "git_read", map[string]any{"action": "status", "repo_path": "."})
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy, err := rt.Call(context.Background(), "git_status", map[string]any{"repo_path": "."})
-	if err != nil {
-		t.Fatal(err)
+	if result["action"] != "status" || result["clean"] != true {
+		t.Fatalf("unexpected git_read status result: %#v", result)
 	}
-	if legacy["deprecated"] != true || legacy["replacement_tool"] != "git_read" {
-		t.Fatalf("legacy git_status should advertise git_read replacement: %#v", legacy)
-	}
-	if result["branch"] != legacy["branch"] || result["clean"] != legacy["clean"] {
-		t.Fatalf("git_read status differs from git_status wrapper: new=%#v legacy=%#v", result, legacy)
+}
+
+func TestLegacyModelEntrypointsRemovedFromRuntime(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	for _, name := range []string{"apply_patch", "edit_file", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "browser_profile"} {
+		if _, err := rt.Call(context.Background(), name, map[string]any{}); err == nil {
+			t.Fatalf("legacy tool should not be callable: %s", name)
+		}
 	}
 }
 
@@ -106,38 +132,4 @@ func testRuntimeConfig(root string) config.Config {
 	}
 	cfg.Normalize()
 	return cfg
-}
-
-func TestWorkspaceEditAddMoveDelete(t *testing.T) {
-	rt, root := newCodeToolsRuntime(t)
-	result, err := rt.Call(context.Background(), "workspace_edit", map[string]any{"action": "add", "path": "draft.txt", "content": "hello\n"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result["changed"] != true {
-		t.Fatalf("expected add to change file: %#v", result)
-	}
-	if _, err := os.Stat(filepath.Join(root, "draft.txt")); err != nil {
-		t.Fatalf("expected added file: %v", err)
-	}
-	result, err = rt.Call(context.Background(), "workspace_edit", map[string]any{"action": "move", "path": "draft.txt", "new_path": "final.txt"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result["new_path"] != "final.txt" {
-		t.Fatalf("unexpected move result: %#v", result)
-	}
-	if _, err := os.Stat(filepath.Join(root, "final.txt")); err != nil {
-		t.Fatalf("expected moved file: %v", err)
-	}
-	result, err = rt.Call(context.Background(), "workspace_edit", map[string]any{"action": "delete", "path": "final.txt"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result["changed"] != true {
-		t.Fatalf("expected delete to report changed: %#v", result)
-	}
-	if _, err := os.Stat(filepath.Join(root, "final.txt")); !os.IsNotExist(err) {
-		t.Fatalf("expected file to be deleted, err=%v", err)
-	}
 }

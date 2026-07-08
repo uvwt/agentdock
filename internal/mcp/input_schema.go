@@ -64,21 +64,7 @@ func inputSchema(name string) map[string]any {
 		props["dry_run"] = boolProp("Preview or validate without writing.")
 		props["max_diff_bytes"] = intProp("Maximum diff preview bytes.")
 		required = []string{"action"}
-	case "apply_patch":
-		props["patch"] = stringProp("Unified diff or git-apply compatible patch.")
-		props["workdir"] = stringProp("Workspace-relative directory to apply the patch from. Defaults to current workspace/default cwd.")
-		props["repo_path"] = stringProp("Alias for workdir when applying a patch inside a specific repository.")
-		props["dry_run"] = boolProp("Validate patch without writing.")
-		required = []string{"patch"}
-	case "edit_file":
-		props["path"] = stringProp("Workspace-relative file path.")
-		props["old"] = stringProp("Exact UTF-8 text to replace.")
-		props["new"] = stringProp("Replacement UTF-8 text.")
-		props["replace_all"] = boolProp("Replace every match instead of only the first.")
-		props["expected_matches"] = intProp("Required number of matches. Defaults to 1.")
-		props["dry_run"] = boolProp("Preview the edit without writing.")
-		props["max_diff_bytes"] = intProp("Maximum diff preview bytes.")
-		required = []string{"path", "old", "new"}
+
 	case "exec_command":
 		props["cmd"] = stringProp("Command to run.")
 		props["workdir"] = stringProp("Workspace-relative working directory.")
@@ -394,47 +380,7 @@ func inputSchema(name string) map[string]any {
 		props["depth"] = intProp("Shallow clone depth.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
 		required = []string{"action"}
-	case "workspace_repos":
-		props["path"] = stringProp("Directory to scan. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed. Defaults to current workspace/default cwd.")
-		props["max_depth"] = intProp("Maximum directory depth to scan for repositories.")
-	case "git_status":
-		props["repo_path"] = stringProp("Repository path. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed. Defaults to current workspace/default cwd.")
-		props["max_output_bytes"] = intProp("Maximum output bytes.")
-	case "git_diff":
-		props["repo_path"] = stringProp("Repository path. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed.")
-		props["paths"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
-		props["max_bytes"] = intProp("Maximum output bytes.")
-	case "git_log":
-		props["repo_path"] = stringProp("Repository path. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed.")
-		props["limit"] = intProp("Maximum commits.")
-		props["max_bytes"] = intProp("Maximum output bytes.")
-	case "git_inspect":
-		props["action"] = stringProp("Inspect action: show or blame.")
-		props["repo_path"] = stringProp("Repository path.")
-		props["rev"] = stringProp("Revision to show when action=show.")
-		props["path"] = stringProp("File path when action=blame.")
-		props["max_bytes"] = intProp("Maximum output bytes.")
-	case "git_remote":
-		props["action"] = stringProp("Remote action: fetch, pull, or push.")
-		props["repo_path"] = stringProp("Repository path.")
-		props["remote"] = stringProp("Remote name. Defaults to origin.")
-		props["branch"] = stringProp("Branch name. Defaults to current branch where applicable.")
-		props["max_bytes"] = intProp("Maximum output bytes.")
-	case "git_clone":
-		props["url"] = stringProp("Git repository URL to clone.")
-		props["repo"] = stringProp("Alias for url.")
-		props["dest"] = stringProp("Destination directory. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed.")
-		props["branch"] = stringProp("Branch to clone.")
-		props["depth"] = intProp("Optional shallow clone depth.")
-		props["max_bytes"] = intProp("Maximum output bytes.")
-		required = []string{"url"}
-	case "git_commit":
-		props["repo_path"] = stringProp("Repository path. In workspace path policy this must be workspace-relative; in host path policy absolute paths and ~/ paths are allowed.")
-		props["message"] = stringProp("Commit message.")
-		props["paths"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
-		props["all"] = boolProp("Stage all changes before committing.")
-		props["max_bytes"] = intProp("Maximum output bytes.")
-		required = []string{"message"}
+
 	case "view_image":
 		props["path"] = stringProp("Workspace-relative path.")
 		if name == "view_image" {

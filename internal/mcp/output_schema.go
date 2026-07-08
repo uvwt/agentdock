@@ -15,9 +15,6 @@ func outputSchema(name string) map[string]any {
 	}
 
 	props["ok"] = boolProp("Whether the tool call completed successfully.")
-	props["deprecated"] = boolProp("Whether this tool is a compatibility wrapper for a newer entrypoint.")
-	props["replacement_tool"] = stringProp("Recommended replacement tool when deprecated=true.")
-	props["replacement_args"] = objectProp("Recommended replacement arguments when deprecated=true.")
 
 	switch name {
 	case "server_info":
@@ -65,23 +62,7 @@ func outputSchema(name string) map[string]any {
 		props["files_changed"] = intProp("Changed file count.")
 		props["insertions"] = intProp("Inserted line count.")
 		props["deletions"] = intProp("Deleted line count.")
-	case "apply_patch":
-		props["summary"] = stringProp("Patch result summary.")
-		props["dry_run"] = boolProp("Whether this was a dry run.")
-		props["affected_files"] = arrayProp("Files affected by the patch.")
-		props["diff_preview"] = stringProp("Unified diff preview when available.")
-		props["files_changed"] = intProp("Number of changed files.")
-		props["insertions"] = intProp("Number of inserted lines.")
-		props["deletions"] = intProp("Number of deleted lines.")
-		props["diagnostic"] = objectProp("Structured patch diagnostic.")
-	case "edit_file":
-		props["path"] = stringProp("Workspace-relative file path.")
-		props["dry_run"] = boolProp("Whether this was a dry run.")
-		props["matches"] = intProp("Number of exact old-text matches.")
-		props["changed"] = boolProp("Whether content changed.")
-		props["diff_preview"] = stringProp("Unified diff preview.")
-		props["truncated"] = boolProp("Whether diff preview was truncated.")
-		props["summary"] = stringProp("Edit result summary.")
+
 	case "exec_command", "session_control":
 		props["session_id"] = stringProp("Command session id.")
 		props["status"] = stringProp("Session status.")
@@ -328,38 +309,7 @@ func outputSchema(name string) map[string]any {
 		props["warnings"] = arrayProp("Git warning lines.")
 		props["fatal_but_non_blocking"] = boolProp("Whether fatal text was non-blocking.")
 		props["push_status"] = stringProp("Structured push status.")
-	case "workspace_repos":
-		props["repos"] = arrayProp("Git repositories found under the workspace.")
-		props["count"] = intProp("Repository count.")
-	case "git_status":
-		props["command"] = stringProp("Executed git command.")
-		props["output"] = stringProp("Raw git output.")
-		props["repo_path"] = stringProp("Workspace-relative repository path.")
-		props["branch"] = stringProp("Branch status line.")
-		props["upstream"] = stringProp("Upstream branch, when configured.")
-		props["ahead"] = intProp("Commits ahead of upstream.")
-		props["behind"] = intProp("Commits behind upstream.")
-		props["files"] = arrayProp("Changed files.")
-		props["clean"] = boolProp("Whether the worktree is clean.")
-	case "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit":
-		props["command"] = stringProp("Executed git command.")
-		props["output"] = stringProp("Raw git output.")
-		props["repo_path"] = stringProp("Workspace-relative repository path, when applicable.")
-		props["truncated"] = boolProp("Whether output was truncated.")
-		props["diagnostic"] = objectProp("Structured diagnostic for common failures.")
-		if name == "git_diff" {
-			props["files"] = arrayProp("Files in the diff.")
-		}
-		props["push_succeeded"] = boolProp("Whether git push exited successfully.")
-		props["pushed"] = boolProp("Alias for push_succeeded.")
-		props["remote_updated"] = boolProp("Whether push output indicates remote refs changed.")
-		props["up_to_date"] = boolProp("Whether push reported everything up-to-date.")
-		props["warnings"] = arrayProp("Non-blocking git warning lines.")
-		props["fatal_but_non_blocking"] = boolProp("Whether output contained fatal text even though push succeeded.")
-		props["push_status"] = stringProp("Structured push status: pushed, up_to_date, succeeded, or failed.")
-		if name == "git_log" {
-			props["commits"] = arrayProp("Parsed commits.")
-		}
+
 	case "desktop_observe":
 		props["operation"] = stringProp("Underlying desktop observation operation.")
 		props["app"] = stringProp("Requested app, when applicable.")
