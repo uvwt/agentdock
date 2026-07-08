@@ -1,6 +1,6 @@
 # VPS systemd 部署
 
-VPS 适合长期运行 AgentDock 远程 MCP 入口，并通过 HTTPS 反代暴露给外部 Agent。VPS 不具备 macOS 桌面自动化能力，不应启用 `desktop_*`。
+VPS 适合长期运行 AgentDock 远程 MCP 入口，并通过 HTTPS 反代暴露给外部 Agent。VPS 不具备 macOS 桌面自动化能力，不应安装或运行 `desktop` Skill。
 
 ## 目标拓扑
 

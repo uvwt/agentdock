@@ -55,8 +55,6 @@ func run() error {
 	flag.BoolVar(&cfg.BrowserEnabled, "browser-enabled", cfg.BrowserEnabled, "expose optional browser automation tools")
 	flag.StringVar(&cfg.BrowserRunnerDir, "browser-runner-dir", cfg.BrowserRunnerDir, "workspace-relative browser runner directory")
 	flag.StringVar(&cfg.BrowserArtifactDir, "browser-artifact-dir", cfg.BrowserArtifactDir, "workspace-relative browser artifact directory")
-	flag.BoolVar(&cfg.DesktopEnabled, "desktop-enabled", cfg.DesktopEnabled, "expose experimental macOS desktop automation tools")
-	flag.StringVar(&cfg.DesktopArtifactDir, "desktop-artifact-dir", cfg.DesktopArtifactDir, "AgentDock-relative desktop artifact directory")
 	flag.BoolVar(&cfg.EnableViewImage, "enable-view-image", cfg.EnableViewImage, "expose view_image tool")
 	flag.BoolVar(&cfg.Stdio, "stdio", cfg.Stdio, "serve JSON-RPC over stdio")
 	flag.BoolVar(&cfg.DangerouslySkipAllPermissions, "dangerously-skip-all-permissions", cfg.DangerouslySkipAllPermissions, "auto-grant permission-gated operations")
@@ -65,7 +63,7 @@ func run() error {
 		return err
 	}
 	logx.Setup(cfg.LogLevel)
-	slog.Info("server starting", "workspace", cfg.Workspace, "runtime_profile", cfg.RuntimeProfile, "path_policy", cfg.PathPolicyName(), "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "log_level", cfg.LogLevel, "sandbox_mode", cfg.CommandSandboxName(), "agent_dock_dir", cfg.AgentDockDir, "recall_enabled", cfg.RecallEndpoint != "", "task_vector_search_enabled", cfg.TaskVectorSearch && cfg.TaskEmbeddingEndpoint != "", "nexus_enabled", cfg.NexusEndpoint != "", "browser_enabled", cfg.BrowserEnabled, "browser_runner_dir", cfg.BrowserRunnerDir, "desktop_enabled", cfg.DesktopEnabled)
+	slog.Info("server starting", "workspace", cfg.Workspace, "runtime_profile", cfg.RuntimeProfile, "path_policy", cfg.PathPolicyName(), "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "log_level", cfg.LogLevel, "sandbox_mode", cfg.CommandSandboxName(), "agent_dock_dir", cfg.AgentDockDir, "recall_enabled", cfg.RecallEndpoint != "", "task_vector_search_enabled", cfg.TaskVectorSearch && cfg.TaskEmbeddingEndpoint != "", "nexus_enabled", cfg.NexusEndpoint != "", "browser_enabled", cfg.BrowserEnabled, "browser_runner_dir", cfg.BrowserRunnerDir)
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
 		return err

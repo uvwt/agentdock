@@ -38,7 +38,7 @@ restart-macos:
 	./scripts/restart-macos.sh
 
 smoke-macos:
-	./scripts/smoke-desktop-macos.sh
+	printf '{}\n' | AGENTDOCK_OPERATION=status ./skill-sources/desktop/run.py
 
 docker-build:
 	docker build -t $(IMAGE) .

@@ -5,7 +5,6 @@ func OutputSchema(name string) map[string]any {
 	required := []string{"ok"}
 	stringProp := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
 	intProp := func(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
-	floatProp := func(desc string) map[string]any { return map[string]any{"type": "number", "description": desc} }
 	boolProp := func(desc string) map[string]any { return map[string]any{"type": "boolean", "description": desc} }
 	arrayProp := func(desc string) map[string]any {
 		return map[string]any{"type": "array", "description": desc, "items": map[string]any{"type": "object", "additionalProperties": true}}
@@ -304,40 +303,6 @@ func OutputSchema(name string) map[string]any {
 		props["warnings"] = arrayProp("Git warning lines.")
 		props["fatal_but_non_blocking"] = boolProp("Whether fatal text was non-blocking.")
 		props["push_status"] = stringProp("Structured push status.")
-
-	case "desktop_observe":
-		props["operation"] = stringProp("Underlying desktop observation operation.")
-		props["app"] = stringProp("Requested app, when applicable.")
-		props["running"] = arrayProp("Running visible applications.")
-		props["recent"] = arrayProp("Best-effort recently used applications from Spotlight metadata.")
-		props["count"] = intProp("Running application count or result count.")
-		props["resolved_app"] = stringProp("Resolved running app name.")
-		props["bundle_id"] = stringProp("App bundle identifier when available.")
-		props["pid"] = intProp("Process id when available.")
-		props["frontmost"] = boolProp("Whether the app is frontmost.")
-		props["window"] = objectProp("Key window metadata.")
-		props["windows"] = arrayProp("Visible windows.")
-		props["accessibility_ok"] = boolProp("Whether accessibility tree capture succeeded.")
-		props["accessibility_tree"] = arrayProp("Accessibility tree nodes with element indexes.")
-		props["node_count"] = intProp("Accessibility tree node count.")
-		props["coordinate_space"] = objectProp("Coordinate space metadata for screenshots and actions.")
-		props["screenshot_path"] = stringProp("Saved screenshot path.")
-		props["screenshot_url"] = stringProp("Artifact URL for the screenshot, when configured.")
-		props["screenshot_artifact_id"] = stringProp("Screenshot artifact id.")
-		props["mime_type"] = stringProp("Screenshot MIME type.")
-		props["width"] = intProp("Screenshot width.")
-		props["height"] = intProp("Screenshot height.")
-		props["size_bytes"] = intProp("Screenshot size in bytes.")
-		props["image_attached"] = boolProp("Whether an MCP image content part is attached.")
-	case "desktop_act", "desktop_clipboard_read", "desktop_clipboard_write":
-		props["operation"] = stringProp("Underlying desktop action operation.")
-		props["command_ok"] = boolProp("Whether the underlying command exited successfully.")
-		props["effect_verified"] = boolProp("Whether UI effect verification was attempted.")
-		props["effect_changed"] = boolProp("Whether before/after screenshots changed enough to indicate effect.")
-		props["diff_score"] = floatProp("Screenshot difference score when verify=true.")
-		props["text"] = stringProp("Clipboard text or typed text, when applicable.")
-		props["verified"] = boolProp("Whether clipboard write verification passed, when applicable.")
-		props["waited_ms"] = intProp("Wait duration for wait action.")
 	case "view_image":
 		props["path"] = stringProp("Workspace-relative image path.")
 		props["mime_type"] = stringProp("Returned image MIME type.")

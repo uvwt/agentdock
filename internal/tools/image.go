@@ -26,6 +26,14 @@ type imageCrop struct {
 	Height int
 }
 
+func cropArg(args map[string]any) *imageCrop {
+	m := mapArg(args, "crop")
+	if m == nil {
+		return nil
+	}
+	return &imageCrop{X: intArg(m, "x", 0), Y: intArg(m, "y", 0), Width: intArg(m, "width", 0), Height: intArg(m, "height", 0)}
+}
+
 func prepareImageBytes(data []byte, crop *imageCrop, maxBytes, maxWidth, maxHeight int, format string, quality int) ([]byte, imageInfo, map[string]any, []string, bool) {
 	warnings := []string{}
 	if maxBytes <= 0 {

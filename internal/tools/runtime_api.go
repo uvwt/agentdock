@@ -21,7 +21,6 @@ func (r *Runtime) RuntimeStatus() Result {
 		"path_policy":     r.cfg.PathPolicyName(),
 		"sandbox_mode":    r.cfg.CommandSandboxName(),
 		"auth_enabled":    r.cfg.AuthToken != "" || r.cfg.OAuthClientID != "" || r.cfg.OAuthServerURL != "",
-		"desktop_enabled": r.cfg.DesktopEnabled,
 		"browser_enabled": r.cfg.BrowserEnabled,
 		"memory_enabled":  r.cfg.RecallEndpoint != "",
 		"nexus_enabled":   strings.TrimSpace(r.cfg.NexusEndpoint) != "",

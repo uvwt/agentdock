@@ -115,8 +115,6 @@ func (r *Runtime) serverInfo() Result {
 		"browser_enabled":      r.cfg.BrowserEnabled,
 		"browser_runner_dir":   r.cfg.BrowserRunnerDir,
 		"browser_artifact_dir": r.cfg.BrowserArtifactDir,
-		"desktop_enabled":      r.cfg.DesktopEnabled,
-		"desktop_artifact_dir": r.cfg.DesktopArtifactDir,
 
 		"auth_enabled":  r.authEnabled(),
 		"endpoint_path": "/mcp",

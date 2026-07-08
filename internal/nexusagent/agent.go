@@ -243,7 +243,6 @@ func capabilities(cfg config.Config, artifactPublicKey string) []contracts.Devic
 		{Name: "recall", Version: "v1", Enabled: strings.TrimSpace(cfg.RecallEndpoint) != ""},
 		{Name: "skill-runtime", Version: "v1", Enabled: true},
 		{Name: "browser", Version: "v1", Enabled: cfg.BrowserEnabled},
-		{Name: "desktop", Version: "v1", Enabled: cfg.DesktopEnabled},
 		{Name: "artifact-relay", Version: artifactrelay.FormatVersion, Enabled: true, Metadata: mustJSON(map[string]string{"x25519_public_key": artifactPublicKey, "max_cipher_bytes": fmt.Sprint(artifactrelay.MaxCipherBytes), "fetch_enabled": fmt.Sprint(cfg.ArtifactFetchEnabled)})},
 	}
 }
@@ -278,7 +277,6 @@ func (h healthChecker) Health(context.Context) (any, error) {
 		"arch":            runtime.GOARCH,
 		"recall_enabled":  strings.TrimSpace(h.cfg.RecallEndpoint) != "",
 		"browser_enabled": h.cfg.BrowserEnabled,
-		"desktop_enabled": h.cfg.DesktopEnabled,
 	}, nil
 }
 

@@ -1,0 +1,351 @@
+{
+  "apiVersion": "agentdock.dev/v1",
+  "kind": "Skill",
+  "metadata": {
+    "name": "desktop",
+    "version": "1.0.1",
+    "displayName": "macOS Desktop Automation",
+    "description": "macOS desktop observation, screenshots, Accessibility actions, pointer/keyboard control, and clipboard operations implemented as a native AgentDock Skill Runtime package."
+  },
+  "spec": {
+    "entrypoint": "run.py",
+    "operations": [
+      {
+        "name": "status",
+        "description": "Run a desktop preflight check and report migrated legacy artifact state.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "check_screenshot": {
+              "type": "boolean"
+            },
+            "check_applescript": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "required": [
+            "ok"
+          ],
+          "properties": {
+            "ok": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        },
+        "timeoutSeconds": 25
+      },
+      {
+        "name": "observe",
+        "description": "Unified macOS desktop observation operation: preflight, list_apps, app_state, window_list, snapshot, or snapshot_app.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "description": "Observation action: preflight, list_apps, app_state, window_list, snapshot, or snapshot_app."
+            },
+            "app": {
+              "type": "string",
+              "description": "App name, full .app path, or bundle identifier for app_state/snapshot_app."
+            },
+            "activate": {
+              "type": "boolean",
+              "description": "Activate the app before reading state. Defaults to true for app_state."
+            },
+            "include_image": {
+              "type": "boolean",
+              "description": "Include screenshot image_base64 when below max_bytes."
+            },
+            "include_image_base64": {
+              "type": "boolean",
+              "description": "Alias for include_image."
+            },
+            "max_bytes": {
+              "type": "integer",
+              "description": "Maximum inline image bytes."
+            },
+            "crop": {
+              "type": "object",
+              "description": "Optional crop rectangle.",
+              "additionalProperties": true
+            },
+            "ax_max_depth": {
+              "type": "integer",
+              "description": "Maximum accessibility tree depth for app_state."
+            },
+            "ax_max_nodes": {
+              "type": "integer",
+              "description": "Maximum accessibility tree nodes for app_state."
+            },
+            "max_recent": {
+              "type": "integer",
+              "description": "Maximum recent apps for list_apps."
+            },
+            "check_screenshot": {
+              "type": "boolean",
+              "description": "Try a real screencapture check for preflight."
+            },
+            "check_applescript": {
+              "type": "boolean",
+              "description": "Try a real AppleScript/System Events check for preflight."
+            }
+          },
+          "additionalProperties": true
+        },
+        "outputSchema": {
+          "type": "object",
+          "required": [
+            "ok"
+          ],
+          "properties": {
+            "ok": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        },
+        "timeoutSeconds": 60
+      },
+      {
+        "name": "act",
+        "description": "Unified macOS desktop action operation: focus, move, click, double_click, scroll, drag, type, set_value, secondary_action, hotkey, or wait.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "description": "Desktop action."
+            },
+            "app": {
+              "type": "string",
+              "description": "Optional app name, full .app path, or bundle identifier."
+            },
+            "element_index": {
+              "type": "string",
+              "description": "Accessibility element index returned by observe action=app_state."
+            },
+            "x": {
+              "type": "integer"
+            },
+            "y": {
+              "type": "integer"
+            },
+            "from_x": {
+              "type": "integer"
+            },
+            "from_y": {
+              "type": "integer"
+            },
+            "to_x": {
+              "type": "integer"
+            },
+            "to_y": {
+              "type": "integer"
+            },
+            "space": {
+              "type": "string",
+              "description": "Coordinate space: screen or window."
+            },
+            "verify": {
+              "type": "boolean",
+              "description": "Capture before/after screenshots and report effect verification."
+            },
+            "before_snapshot": {
+              "type": "boolean"
+            },
+            "after_snapshot": {
+              "type": "boolean"
+            },
+            "verify_region": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "wait_ms": {
+              "type": "integer"
+            },
+            "focus_if_needed": {
+              "type": "boolean"
+            },
+            "require_frontmost": {
+              "type": "boolean"
+            },
+            "fail_if_window_not_visible": {
+              "type": "boolean"
+            },
+            "fail_if_coordinate_outside_window": {
+              "type": "boolean"
+            },
+            "click_count": {
+              "type": "integer"
+            },
+            "mouse_button": {
+              "type": "string"
+            },
+            "direction": {
+              "type": "string"
+            },
+            "pages": {
+              "type": "number"
+            },
+            "dx": {
+              "type": "integer"
+            },
+            "dy": {
+              "type": "integer"
+            },
+            "amount": {
+              "type": "integer"
+            },
+            "duration_ms": {
+              "type": "integer"
+            },
+            "steps": {
+              "type": "integer"
+            },
+            "hold_ms": {
+              "type": "integer"
+            },
+            "release_wait_ms": {
+              "type": "integer"
+            },
+            "text": {
+              "type": "string"
+            },
+            "strategy": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            },
+            "keys": {
+              "type": "string"
+            },
+            "ms": {
+              "type": "integer"
+            },
+            "timeout_ms": {
+              "type": "integer"
+            },
+            "ax_action": {
+              "type": "string",
+              "description": "Accessibility action name for secondary_action."
+            },
+            "secondary_action": {
+              "type": "string",
+              "description": "Alias for ax_action."
+            }
+          },
+          "additionalProperties": true
+        },
+        "outputSchema": {
+          "type": "object",
+          "required": [
+            "ok"
+          ],
+          "properties": {
+            "ok": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        },
+        "timeoutSeconds": 60
+      },
+      {
+        "name": "clipboard-read",
+        "description": "Read macOS clipboard text.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "max_bytes": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "required": [
+            "ok"
+          ],
+          "properties": {
+            "ok": {
+              "type": "boolean"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        },
+        "timeoutSeconds": 10
+      },
+      {
+        "name": "clipboard-write",
+        "description": "Write macOS clipboard text and optionally verify by reading it back.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "text"
+          ],
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "verify": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "required": [
+            "ok"
+          ],
+          "properties": {
+            "ok": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        },
+        "timeoutSeconds": 10
+      }
+    ],
+    "compatibility": {
+      "platforms": [
+        "darwin"
+      ],
+      "architectures": [
+        "arm64",
+        "amd64"
+      ],
+      "agentdock": ">=1.0.0"
+    },
+    "permissions": {
+      "filesystem": [],
+      "network": [],
+      "env": [],
+      "commands": [
+        "python3",
+        "osascript",
+        "screencapture",
+        "pbcopy",
+        "pbpaste",
+        "open",
+        "mdfind",
+        "mdls",
+        "cliclick"
+      ]
+    },
+    "verification": [
+      "status"
+    ]
+  }
+}

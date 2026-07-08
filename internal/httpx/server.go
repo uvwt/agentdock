@@ -50,9 +50,6 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	mux.HandleFunc("/artifacts/browser/screenshots/", func(w http.ResponseWriter, r *http.Request) {
 		handleBrowserScreenshotArtifact(w, r, cfg)
 	})
-	mux.HandleFunc("/artifacts/desktop/screenshots/", func(w http.ResponseWriter, r *http.Request) {
-		handleDesktopScreenshotArtifact(w, r, cfg)
-	})
 	mux.HandleFunc("/artifacts/fetch/", func(w http.ResponseWriter, r *http.Request) {
 		handleArtifactFetchOutput(w, r, server)
 	})
@@ -189,10 +186,6 @@ func handleArtifactFetchOutput(w http.ResponseWriter, r *http.Request, server *m
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	http.ServeContent(w, r, name, info.ModTime(), file)
-}
-
-func handleDesktopScreenshotArtifact(w http.ResponseWriter, r *http.Request, cfg config.Config) {
-	handleScreenshotArtifact(w, r, cfg, "/artifacts/desktop/screenshots/", cfg.DesktopArtifactDir)
 }
 
 func handleBrowserScreenshotArtifact(w http.ResponseWriter, r *http.Request, cfg config.Config) {

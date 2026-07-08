@@ -30,7 +30,6 @@ func TestRuntimeToolsHaveRegistryDefinitionsAndSchemas(t *testing.T) {
 		AgentDockDir:    "AgentDock",
 		RecallEndpoint:  "http://127.0.0.1:18777",
 		BrowserEnabled:  true,
-		DesktopEnabled:  true,
 		EnableViewImage: true,
 	}
 	if err := cfg.Normalize(); err != nil {
@@ -59,7 +58,6 @@ func TestRuntimeExposesSingleToolSet(t *testing.T) {
 		AgentDockDir:    "AgentDock",
 		RecallEndpoint:  "http://127.0.0.1:18777",
 		BrowserEnabled:  true,
-		DesktopEnabled:  true,
 		EnableViewImage: true,
 	}
 	if err := cfg.Normalize(); err != nil {
@@ -73,7 +71,7 @@ func TestRuntimeExposesSingleToolSet(t *testing.T) {
 	for _, name := range rt.ToolNames() {
 		seen[name] = true
 	}
-	for _, name := range []string{"git_read", "git_write", "session_observe", "session_act", "recall_read", "recall_write", "desktop_observe", "desktop_act"} {
+	for _, name := range []string{"git_read", "git_write", "session_observe", "session_act", "recall_read", "recall_write", "skill_manage"} {
 		if !seen[name] {
 			t.Fatalf("single tool set missing %s: %#v", name, seen)
 		}
@@ -419,19 +417,6 @@ func TestRecallSearchSchemaHidesInternalRoutingFields(t *testing.T) {
 	for _, name := range []string{"candidate_paths", "candidates", "search_result_count", "search_results"} {
 		if _, ok := outputProps[name]; !ok {
 			t.Fatalf("recall_search output schema missing %q", name)
-		}
-	}
-}
-
-func TestDesktopActSchemaExposesVerificationControls(t *testing.T) {
-	schema := inputSchema("desktop_act")
-	props, ok := schema["properties"].(map[string]any)
-	if !ok {
-		t.Fatalf("desktop_act input schema properties missing")
-	}
-	for _, name := range []string{"verify", "before_snapshot", "after_snapshot", "verify_region", "wait_ms"} {
-		if _, ok := props[name]; !ok {
-			t.Fatalf("desktop_act input schema missing %q", name)
 		}
 	}
 }

@@ -92,7 +92,6 @@ func toolSpecByName(name string) (ToolSpec, bool) {
 
 func requiresRecall(cfg config.Config) bool  { return cfg.RecallEndpoint != "" }
 func requiresBrowser(cfg config.Config) bool { return cfg.BrowserEnabled }
-func requiresDesktop(cfg config.Config) bool { return cfg.DesktopEnabled }
 func requiresNexus(cfg config.Config) bool   { return strings.TrimSpace(cfg.NexusEndpoint) != "" }
 func requiresArtifactFetch(cfg config.Config) bool {
 	return requiresNexus(cfg) && cfg.ArtifactFetchEnabled
@@ -144,10 +143,6 @@ func allToolSpecs() []ToolSpec {
 		{Name: "browser_snapshot", Title: "Browser snapshot", Description: "Capture page URL, title, text, screenshot, image, viewport, visible interactive elements, and browser errors.", ReadOnly: true, OpenWorld: true, Availability: requiresBrowser, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
 			return r.browserRunnerCall(ctx, "snapshot", args)
 		}},
-		{Name: "desktop_observe", Title: "Observe desktop", Description: "Unified macOS desktop observation tool for preflight, app list, app state, windows, screen snapshots, and app snapshots.", ReadOnly: true, Availability: requiresDesktop, Handler: ctxToolHandler((*Runtime).desktopObserve)},
-		{Name: "desktop_act", Title: "Act on desktop", Description: "Unified macOS desktop action tool for focus, move, click, double-click, scroll, drag, type, set value, accessibility actions, hotkeys, and waits.", Destructive: true, Availability: requiresDesktop, Handler: ctxToolHandler((*Runtime).desktopAct)},
-		{Name: "desktop_clipboard_read", Title: "Read desktop clipboard", Description: "Read macOS clipboard text through a read-only clipboard tool.", ReadOnly: true, Availability: requiresDesktop, Handler: ctxToolHandler((*Runtime).desktopClipboardRead)},
-		{Name: "desktop_clipboard_write", Title: "Write desktop clipboard", Description: "Set macOS clipboard text through a mutating clipboard tool.", Destructive: true, Availability: requiresDesktop, Handler: ctxToolHandler((*Runtime).desktopClipboardWrite)},
 		{Name: "artifact_send", Title: "Send encrypted artifact", Description: "Encrypt and send a top-level file parameter or local file/directory through AgentDock Nexus to one or more registered devices. The target only writes to its controlled inbox or configured logical target and never executes the file.", OpenWorld: true, FileArgRewritePaths: []string{"file"}, Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).artifactSend)},
 		{Name: "artifact_fetch_create", Title: "Create artifact fetch", Description: "Create an asynchronous high-risk request for a registered device to list or encrypt an absolute-path file or directory under immutable deny rules.", Destructive: true, OpenWorld: true, Availability: requiresArtifactFetch, Handler: ctxToolHandler((*Runtime).artifactFetchCreate)},
 		{Name: "artifact_fetch_status", Title: "Artifact fetch status", Description: "Return status or a bounded directory listing for a local artifact fetch request.", ReadOnly: true, OpenWorld: true, Availability: requiresArtifactFetch, Handler: ctxToolHandler((*Runtime).artifactFetchStatus)},
