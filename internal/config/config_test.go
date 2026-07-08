@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -51,5 +52,54 @@ func TestNexusStateDirUsesAgentDockHome(t *testing.T) {
 	want := filepath.Join(cfg.AgentDockHome, "nexus")
 	if got != want {
 		t.Fatalf("NexusStateDir() = %q, want %q", got, want)
+	}
+}
+
+func TestValidateAuthAllowsNoOAuthOrServerURLOnly(t *testing.T) {
+	cases := []Config{
+		{},
+		{OAuthServerURL: "https://agentdock.example.com"},
+		{AuthToken: "static-token", OAuthServerURL: "https://agentdock.example.com"},
+	}
+	for _, cfg := range cases {
+		if err := cfg.ValidateAuth(); err != nil {
+			t.Fatalf("ValidateAuth() error = %v for cfg %#v", err, cfg)
+		}
+		if cfg.OAuthClientID == "" && cfg.OAuthEnabled() {
+			t.Fatalf("OAuthEnabled() = true without OAuthClientID")
+		}
+	}
+}
+
+func TestValidateAuthOAuthRequiresCompleteConfig(t *testing.T) {
+	base := Config{OAuthClientID: "client-id", OAuthServerURL: "https://agentdock.example.com"}
+	t.Setenv("AGENTDOCK_OAUTH_PASSWORD", "password")
+	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-secret")
+	if err := base.ValidateAuth(); err != nil {
+		t.Fatalf("ValidateAuth() complete config error = %v", err)
+	}
+
+	cases := []struct {
+		name    string
+		cfg     Config
+		unset   string
+		missing string
+	}{
+		{name: "server url", cfg: Config{OAuthClientID: "client-id"}, missing: "AGENTDOCK_SERVER_URL"},
+		{name: "password", cfg: base, unset: "AGENTDOCK_OAUTH_PASSWORD", missing: "AGENTDOCK_OAUTH_PASSWORD"},
+		{name: "token secret", cfg: base, unset: "AGENTDOCK_OAUTH_TOKEN_SECRET", missing: "AGENTDOCK_OAUTH_TOKEN_SECRET"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("AGENTDOCK_OAUTH_PASSWORD", "password")
+			t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-secret")
+			if tc.unset != "" {
+				t.Setenv(tc.unset, "")
+			}
+			err := tc.cfg.ValidateAuth()
+			if err == nil || !strings.Contains(err.Error(), tc.missing) {
+				t.Fatalf("ValidateAuth() error = %v, want missing %s", err, tc.missing)
+			}
+		})
 	}
 }

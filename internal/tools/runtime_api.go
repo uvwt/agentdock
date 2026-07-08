@@ -20,7 +20,7 @@ func (r *Runtime) RuntimeStatus() Result {
 		"agentdock_home":        r.cfg.AgentDockHome,
 		"agentdock_default_dir": r.cfg.AgentDockDefaultDir,
 		"path_model":            config.PathModel,
-		"auth_enabled":          r.cfg.AuthToken != "" || r.cfg.OAuthClientID != "" || r.cfg.OAuthServerURL != "",
+		"auth_enabled":          r.cfg.AuthRequired(),
 		"browser_enabled":       r.cfg.BrowserEnabled,
 		"memory_enabled":        r.cfg.RecallEndpoint != "",
 		"nexus_enabled":         strings.TrimSpace(r.cfg.NexusEndpoint) != "",

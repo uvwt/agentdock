@@ -26,7 +26,7 @@ func registerRuntimeAPI(mux *http.ServeMux, server *mcp.Server, cfg config.Confi
 
 func runtimeAPIHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc {
 	authorizer := auth.Bearer{Token: cfg.AuthToken}
-	authRequired := cfg.AuthToken != "" || cfg.OAuthClientID != "" || cfg.OAuthServerURL != ""
+	authRequired := cfg.AuthRequired()
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodPost {
 			writeRuntimeAPIError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")

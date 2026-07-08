@@ -66,7 +66,7 @@ func RandomToken(n int) string {
 
 func IssueToken(issuer, key string, ttl time.Duration) string {
 	if key == "" {
-		key = issuer + ":dev"
+		return ""
 	}
 	now := time.Now()
 	payload := map[string]any{"iss": issuer, "aud": issuer, "iat": now.Unix(), "exp": now.Add(ttl).Unix()}
@@ -80,7 +80,7 @@ func IssueToken(issuer, key string, ttl time.Duration) string {
 
 func ValidateToken(token, issuer, key string) bool {
 	if key == "" {
-		key = issuer + ":dev"
+		return false
 	}
 	parts := strings.Split(token, ".")
 	if len(parts) != 2 {

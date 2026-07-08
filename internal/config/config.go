@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -112,6 +113,34 @@ func (c *Config) Normalize() error {
 	}
 	if c.BrowserArtifactDir == "" {
 		c.BrowserArtifactDir = "browser-artifacts"
+	}
+	return nil
+}
+
+func (c Config) OAuthEnabled() bool {
+	return c.OAuthClientID != ""
+}
+
+func (c Config) AuthRequired() bool {
+	return c.AuthToken != "" || c.OAuthEnabled()
+}
+
+func (c Config) ValidateAuth() error {
+	if !c.OAuthEnabled() {
+		return nil
+	}
+	missing := []string{}
+	if c.OAuthServerURL == "" {
+		missing = append(missing, "AGENTDOCK_SERVER_URL")
+	}
+	if os.Getenv("AGENTDOCK_OAUTH_PASSWORD") == "" {
+		missing = append(missing, "AGENTDOCK_OAUTH_PASSWORD")
+	}
+	if os.Getenv("AGENTDOCK_OAUTH_TOKEN_SECRET") == "" {
+		missing = append(missing, "AGENTDOCK_OAUTH_TOKEN_SECRET")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("OAuth enabled by AGENTDOCK_OAUTH_CLIENT_ID but missing required environment variable(s): %s", strings.Join(missing, ", "))
 	}
 	return nil
 }

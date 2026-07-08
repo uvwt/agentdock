@@ -45,6 +45,9 @@ func run() error {
 	if err := cfg.Normalize(); err != nil {
 		return err
 	}
+	if err := cfg.ValidateAuth(); err != nil {
+		return err
+	}
 	logx.Setup(cfg.LogLevel)
 	slog.Info("server starting", "agentdock_home", cfg.AgentDockHome, "agentdock_default_dir", cfg.AgentDockDefaultDir, "path_model", config.PathModel, "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "log_level", cfg.LogLevel, "recall_enabled", cfg.RecallEndpoint != "", "nexus_enabled", cfg.NexusEndpoint != "", "browser_enabled", cfg.BrowserEnabled, "browser_runner_dir", cfg.BrowserRunnerDir)
 	runtime, err := tools.NewRuntime(cfg)

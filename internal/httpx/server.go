@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"mime"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,7 +24,7 @@ import (
 )
 
 func Serve(server *mcp.Server, cfg config.Config) error {
-	authRequired := cfg.AuthToken != "" || cfg.OAuthClientID != "" || cfg.OAuthServerURL != ""
+	authRequired := cfg.AuthRequired()
 	oauthCodes := auth.NewOAuthStore()
 	mux := http.NewServeMux()
 	publicArtifactStore := publicartifacts.New(cfg.AgentDockHome, cfg.OAuthServerURL, cfg.Port)
@@ -63,8 +62,7 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 		publicArtifactStore.ServeHTTP(w, r, "/artifacts/public/")
 	})
 	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
-		method := requestedTokenEndpointAuthMethod(r)
-		writeJSON(w, map[string]any{"client_id": firstNonEmpty(cfg.OAuthClientID, "coding-tools-client"), "token_endpoint_auth_method": method})
+		handleRegister(w, r, cfg)
 	})
 	mux.HandleFunc("/oauth/authorize", func(w http.ResponseWriter, r *http.Request) {
 		handleAuthorize(w, r, cfg, oauthCodes)
@@ -89,21 +87,9 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	return httpServer.ListenAndServe()
 }
 
-func isLoopbackHost(host string) bool {
-	host = strings.TrimSpace(strings.ToLower(host))
-	if host == "" {
-		return false
-	}
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
-}
-
 func capabilityContextHandler(server *mcp.Server, cfg config.Config, refresh bool) http.HandlerFunc {
 	authorizer := auth.Bearer{Token: cfg.AuthToken}
-	authRequired := !isLoopbackHost(cfg.Host) && (cfg.AuthToken != "" || cfg.OAuthClientID != "" || cfg.OAuthServerURL != "")
+	authRequired := cfg.AuthRequired()
 	return func(w http.ResponseWriter, r *http.Request) {
 		if refresh {
 			if r.Method != http.MethodPost {
@@ -133,7 +119,7 @@ func capabilityContextHandler(server *mcp.Server, cfg config.Config, refresh boo
 
 func mcpEndpointHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc {
 	authorizer := auth.Bearer{Token: cfg.AuthToken}
-	authRequired := cfg.AuthToken != "" || cfg.OAuthClientID != "" || cfg.OAuthServerURL != ""
+	authRequired := cfg.AuthRequired()
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -226,6 +212,15 @@ func handleScreenshotArtifact(w http.ResponseWriter, r *http.Request, cfg config
 	http.ServeContent(w, r, name, info.ModTime(), file)
 }
 
+func handleRegister(w http.ResponseWriter, r *http.Request, cfg config.Config) {
+	if !cfg.OAuthEnabled() {
+		http.NotFound(w, r)
+		return
+	}
+	method := requestedTokenEndpointAuthMethod(r)
+	writeJSON(w, map[string]any{"client_id": cfg.OAuthClientID, "token_endpoint_auth_method": method})
+}
+
 func oauthMetadata(cfg config.Config, r *http.Request) map[string]any {
 	issuer := issuerFor(cfg, r)
 	return map[string]any{
@@ -253,6 +248,10 @@ func issuerFor(cfg config.Config, r *http.Request) string {
 }
 
 func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, codes *auth.OAuthStore) {
+	if !cfg.OAuthEnabled() {
+		http.NotFound(w, r)
+		return
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -292,6 +291,10 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, 
 }
 
 func handleToken(w http.ResponseWriter, r *http.Request, cfg config.Config, codes *auth.OAuthStore) {
+	if !cfg.OAuthEnabled() {
+		http.NotFound(w, r)
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -331,6 +334,9 @@ func handleToken(w http.ResponseWriter, r *http.Request, cfg config.Config, code
 }
 
 func authorizedOAuth(r *http.Request, cfg config.Config) bool {
+	if !cfg.OAuthEnabled() {
+		return false
+	}
 	header := strings.TrimSpace(r.Header.Get("Authorization"))
 	if !strings.HasPrefix(header, "Bearer ") {
 		return false
@@ -404,7 +410,7 @@ func serverCard(cfg config.Config, r *http.Request) map[string]any {
 	if cfg.AuthToken != "" {
 		authInfo = map[string]any{"type": "bearer", "scheme": "Bearer", "header": "Authorization"}
 	}
-	if cfg.OAuthClientID != "" || cfg.OAuthServerURL != "" {
+	if cfg.OAuthEnabled() {
 		authInfo = map[string]any{"type": "oauth2", "scheme": "Bearer", "header": "Authorization", "authorizationUrl": issuer + "/oauth/authorize", "tokenUrl": issuer + "/oauth/token"}
 	}
 	return map[string]any{"name": config.ServerName, "title": "AgentDock", "version": config.Version, "description": "Local coding tools MCP server", "transport": map[string]any{"type": "streamable-http", "url": issuer + "/mcp"}, "auth": authInfo}
