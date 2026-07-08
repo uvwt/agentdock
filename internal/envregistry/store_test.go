@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-func TestStoreSetInspectAndMigrateRedactsValues(t *testing.T) {
+func TestStoreSetInspectRedactsValues(t *testing.T) {
 	root := t.TempDir()
 	store, err := New(root, func() []Definition {
-		return []Definition{{Skill: "weread-skills", Name: "WEREAD_API_KEY", Kind: KindSecret, Source: "compat"}}
+		return []Definition{{Skill: "weread-skills", Name: "WEREAD_API_KEY", Kind: KindSecret, Source: "manifest"}}
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -38,25 +38,6 @@ func TestStoreSetInspectAndMigrateRedactsValues(t *testing.T) {
 	}
 	if len(items) != 1 || !items[0].Configured || items[0].Length == 0 {
 		t.Fatalf("unexpected inspect result: %#v", items)
-	}
-
-	envFile := filepath.Join(root, "agentdock.env")
-	if err := os.WriteFile(envFile, []byte("export AGENTDOCK_AUTH_TOKEN=\"keep\"\nWEREAD_API_KEY=wrk-migrated\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	migrated, err := store.MigrateFromEnvFile(envFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !migrated.Changed || !migrated.RestartNeeded || migrated.BackupFile == "" {
-		t.Fatalf("unexpected migration result: %#v", migrated)
-	}
-	after, err := os.ReadFile(envFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(after) != "export AGENTDOCK_AUTH_TOKEN=\"keep\"\n" {
-		t.Fatalf("unexpected migrated env file: %q", after)
 	}
 }
 

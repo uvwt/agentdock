@@ -124,7 +124,7 @@ func OutputSchema(name string) map[string]any {
 		props["valid"] = boolProp("Whether a Skill source passed validation.")
 		props["source"] = stringProp("Resolved Skill source label.")
 		props["digest"] = stringProp("Computed Skill package digest.")
-		props["env"] = arrayProp("Manifest and compat env declarations without values.")
+		props["env"] = arrayProp("Manifest env declarations without values.")
 		props["commands"] = arrayProp("Declared command dependency checks.")
 		props["issues"] = arrayProp("Structured validation issues.")
 		props["requires_no_env_confirm"] = boolProp("Whether confirmed_no_env is needed for a Skill with no env declarations.")

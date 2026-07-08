@@ -2,8 +2,6 @@ package tools
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -56,12 +54,10 @@ func (r *Runtime) envManage(ctx context.Context, args map[string]any) (Result, e
 		return Result{"ok": true, "action": "delete", "skill": skill, "name": name, "deleted": deleted}, nil
 	case "verify":
 		return r.envVerify(ctx, args)
-	case "migrate-from-agentdock-env":
-		return r.envMigrateFromAgentDockEnv(args)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported env_manage action", "validation", map[string]any{
 			"action":  action,
-			"allowed": []string{"list", "inspect", "set", "delete", "verify", "migrate-from-agentdock-env"},
+			"allowed": []string{"list", "inspect", "set", "delete", "verify"},
 		})
 	}
 }
@@ -109,16 +105,4 @@ func skillRunRequest(skill, operation string, args map[string]any) (skillruntime
 		MaxOutput: intArg(args, "max_output_bytes", 0),
 		Input:     input,
 	}, nil
-}
-
-func (r *Runtime) envMigrateFromAgentDockEnv(args map[string]any) (Result, error) {
-	path := strings.TrimSpace(stringArg(args, "env_file", ""))
-	if path == "" {
-		path = filepath.Join(os.Getenv("HOME"), "agentdock-runtime", "agentdock.env")
-	}
-	result, err := r.skills.env.MigrateFromEnvFile(path)
-	if err != nil {
-		return nil, toolErrorDetails("ENV_MIGRATION_FAILED", err.Error(), "runtime", nil)
-	}
-	return Result{"ok": true, "action": "migrate-from-agentdock-env", "result": result}, nil
 }

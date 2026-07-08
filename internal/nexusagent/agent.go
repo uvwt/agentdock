@@ -18,7 +18,6 @@ import (
 	contracts "github.com/uvwt/agentdock/generated/nexuscontracts"
 	"github.com/uvwt/agentdock/internal/artifactrelay"
 	"github.com/uvwt/agentdock/internal/commandqueue"
-	"github.com/uvwt/agentdock/internal/compatenv"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envregistry"
 	"github.com/uvwt/agentdock/internal/nexusclient"
@@ -308,7 +307,6 @@ func (r envRouter) ExecuteEnvCommand(ctx context.Context, payload json.RawMessag
 		Kind           string `json:"kind,omitempty"`
 		Value          string `json:"value,omitempty"`
 		Operation      string `json:"operation,omitempty"`
-		EnvFile        string `json:"env_file,omitempty"`
 		TimeoutMS      int    `json:"timeout_ms,omitempty"`
 		MaxOutputBytes int    `json:"max_output_bytes,omitempty"`
 	}
@@ -347,13 +345,6 @@ func (r envRouter) ExecuteEnvCommand(ctx context.Context, payload json.RawMessag
 		}
 		_ = r.store.RecordVerification(request.Skill, ok, message)
 		return commandqueue.HandlerResult{Output: map[string]any{"ok": ok, "action": action, "skill": request.Skill, "result": run, "message": message}}, err
-	case "migrate-from-agentdock-env":
-		envFile := strings.TrimSpace(request.EnvFile)
-		if envFile == "" {
-			envFile = filepath.Join(os.Getenv("HOME"), "agentdock-runtime", "agentdock.env")
-		}
-		result, err := r.store.MigrateFromEnvFile(envFile)
-		return commandqueue.HandlerResult{Output: map[string]any{"ok": err == nil, "action": action, "result": result}}, err
 	default:
 		return commandqueue.HandlerResult{}, fmt.Errorf("unsupported env action %q", action)
 	}
@@ -380,13 +371,6 @@ func envDefinitions(state *skillstate.Store) []envregistry.Definition {
 					result[def.Skill+"\x00"+def.Name] = envregistry.Definition{Skill: def.Skill, Name: def.Name, Kind: def.Kind, Source: def.Source}
 				}
 			}
-		}
-	}
-	for _, compatDef := range compatenv.All() {
-		def := envregistry.Definition{Skill: compatDef.Skill, Name: compatDef.Name, Kind: compatDef.Kind, Source: compatDef.Source}
-		key := def.Skill + "\x00" + def.Name
-		if _, ok := result[key]; !ok {
-			result[key] = def
 		}
 	}
 	items := make([]envregistry.Definition, 0, len(result))

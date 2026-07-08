@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/uvwt/agentdock/internal/compatenv"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envregistry"
 	"github.com/uvwt/agentdock/internal/skillruntime"
@@ -95,7 +94,7 @@ func (r *Runtime) skillManage(ctx context.Context, args map[string]any) (Result,
 func (m *skillRuntimeManager) envDefinitions() []envregistry.Definition {
 	names, err := m.state.ListSkills()
 	if err != nil {
-		return compatEnvDefinitions()
+		return nil
 	}
 	defsByKey := map[string]envregistry.Definition{}
 	for _, name := range names {
@@ -116,26 +115,11 @@ func (m *skillRuntimeManager) envDefinitions() []envregistry.Definition {
 			defsByKey[key] = envregistry.Definition{Skill: def.Skill, Name: def.Name, Kind: def.Kind, Source: def.Source}
 		}
 	}
-	for _, def := range compatEnvDefinitions() {
-		key := def.Skill + "\x00" + def.Name
-		if _, ok := defsByKey[key]; !ok {
-			defsByKey[key] = def
-		}
-	}
 	defs := make([]envregistry.Definition, 0, len(defsByKey))
 	for _, def := range defsByKey {
 		defs = append(defs, def)
 	}
 	return defs
-}
-
-func compatEnvDefinitions() []envregistry.Definition {
-	defs := compatenv.All()
-	items := make([]envregistry.Definition, 0, len(defs))
-	for _, def := range defs {
-		items = append(items, envregistry.Definition{Skill: def.Skill, Name: def.Name, Kind: def.Kind, Source: def.Source})
-	}
-	return items
 }
 
 func (r *Runtime) skillList() (Result, error) {

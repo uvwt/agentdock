@@ -55,7 +55,6 @@ type Permissions struct {
 	Filesystem []string `json:"filesystem"`
 	Network    []string `json:"network"`
 	Env        []EnvVar `json:"env,omitempty"`
-	Secrets    []string `json:"secrets"`
 	Commands   []string `json:"commands"`
 }
 

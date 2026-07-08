@@ -148,7 +148,7 @@ printf '{}\n'
 	}
 }
 
-func TestInstallAllowsCompatEnvDefinition(t *testing.T) {
+func TestInstallDoesNotInferLegacyCompatEnvDefinitions(t *testing.T) {
 	root := t.TempDir()
 	state, err := skillstate.New(filepath.Join(root, "skills"))
 	if err != nil {
@@ -166,23 +166,11 @@ func TestInstallAllowsCompatEnvDefinition(t *testing.T) {
 printf '{}\n'
 `)
 
-	if _, err := rt.Install(context.Background(), skillruntime.InstallRequest{Source: source, Activate: true}); err != nil {
-		t.Fatal(err)
-	}
-	packageDir, err := rt.State.InstalledPath("baidu-netdisk", "1.0.0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifest, err := skillruntime.LoadManifest(packageDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	definitions := skillruntime.EnvDefinitionsForManifest(manifest)
-	if len(definitions) == 0 {
-		t.Fatal("compat env definitions were not discoverable")
-	}
-	if definitions[0].Source != "compat" {
-		t.Fatalf("definition source = %s, want compat", definitions[0].Source)
+	_, err = rt.Install(context.Background(), skillruntime.InstallRequest{Source: source, Activate: true})
+	assertRuntimeCode(t, err, skillruntime.ErrManifestInvalid)
+	var runtimeErr *skillruntime.Error
+	if !errors.As(err, &runtimeErr) || runtimeErr.Stage != "manifest.env" {
+		t.Fatalf("error stage = %#v, want manifest.env: %v", runtimeErr, err)
 	}
 }
 
@@ -361,9 +349,16 @@ func createPackageWithSecrets(t *testing.T, dir, name, version string, secrets [
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	secretList := "[]"
+	envList := "[]"
 	if len(secrets) > 0 {
-		secretList = "[" + strings.Join(secrets, ", ") + "]"
+		var b strings.Builder
+		b.WriteString("\n")
+		for _, name := range secrets {
+			b.WriteString("      - name: ")
+			b.WriteString(name)
+			b.WriteString("\n        kind: secret\n")
+		}
+		envList = b.String()
 	}
 	manifest := `apiVersion: agentdock.dev/v1
 kind: Skill
@@ -387,7 +382,7 @@ spec:
   permissions:
     filesystem: []
     network: []
-    secrets: ` + secretList + `
+    env: ` + envList + `
     commands: [sh]
   bindings: [local]
   verification: [smoke]
@@ -434,7 +429,6 @@ spec:
         kind: plain
       - name: DEMO_API_TOKEN
         kind: secret
-    secrets: []
     commands: [sh]
   verification: [smoke]
 `

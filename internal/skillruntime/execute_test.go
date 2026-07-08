@@ -148,73 +148,31 @@ printf '{"ok":true,"seen":"%s"}\n' "$WEREAD_API_KEY"
 	}
 }
 
-func TestCompatEnvDefinitionsIncludeDida365Config(t *testing.T) {
-	definitions := compatEnvDefinitions("dida365-open-api")
+func TestEnvDefinitionsForManifestDoesNotInferLegacyCompatNames(t *testing.T) {
+	manifest := Manifest{Metadata: Metadata{Name: "dida365-open-api"}}
+	if definitions := EnvDefinitionsForManifest(manifest); len(definitions) != 0 {
+		t.Fatalf("unexpected inferred env definitions: %#v", definitions)
+	}
+}
+
+func TestEnvDefinitionsForManifestUsesOnlyPermissionsEnv(t *testing.T) {
+	manifest := Manifest{Metadata: Metadata{Name: "demo-skill"}}
+	manifest.Spec.Permissions.Env = []EnvVar{
+		{Name: "DEMO_BASE_URL", Kind: "plain"},
+		{Name: "DEMO_API_TOKEN", Kind: "secret"},
+	}
+	definitions := EnvDefinitionsForManifest(manifest)
 	byName := map[string]EnvDefinition{}
 	for _, def := range definitions {
 		byName[def.Name] = def
 	}
-	for _, expected := range []EnvDefinition{
-		{Name: "DIDA365_CLIENT_ID", Kind: "plain"},
-		{Name: "DIDA365_REDIRECT_URI", Kind: "plain"},
-		{Name: "DIDA365_REGION", Kind: "plain"},
-	} {
-		got, ok := byName[expected.Name]
+	for name, kind := range map[string]string{"DEMO_BASE_URL": "plain", "DEMO_API_TOKEN": "secret"} {
+		got, ok := byName[name]
 		if !ok {
-			t.Fatalf("missing compat env %s", expected.Name)
+			t.Fatalf("missing manifest env %s", name)
 		}
-		if got.Kind != expected.Kind {
-			t.Fatalf("%s kind = %s, want %s", expected.Name, got.Kind, expected.Kind)
-		}
-	}
-}
-
-func TestCompatEnvDefinitionsIncludeSpotifyConfig(t *testing.T) {
-	definitions := compatEnvDefinitions("spotify-web-api")
-	byName := map[string]EnvDefinition{}
-	for _, def := range definitions {
-		byName[def.Name] = def
-	}
-	for _, expected := range []EnvDefinition{
-		{Name: "SPOTIFY_CLIENT_ID", Kind: "plain"},
-		{Name: "SPOTIFY_REDIRECT_URI", Kind: "plain"},
-		{Name: "SPOTIFY_SCOPES", Kind: "plain"},
-	} {
-		got, ok := byName[expected.Name]
-		if !ok {
-			t.Fatalf("missing compat env %s", expected.Name)
-		}
-		if got.Kind != expected.Kind {
-			t.Fatalf("%s kind = %s, want %s", expected.Name, got.Kind, expected.Kind)
-		}
-	}
-}
-
-func TestCompatEnvDefinitionsIncludeLocalToolConfig(t *testing.T) {
-	for skill, expected := range map[string][]EnvDefinition{
-		"baidu-netdisk": {
-			{Name: "BDPAN_BIN", Kind: "plain"},
-			{Name: "BDPAN_CONFIG_FILE", Kind: "plain"},
-			{Name: "BDPAN_HOME", Kind: "plain"},
-		},
-		"xiaohongshu-mcp": {
-			{Name: "XIAOHONGSHU_COOKIE_FILE", Kind: "plain"},
-			{Name: "XIAOHONGSHU_MCP_URL", Kind: "plain"},
-		},
-	} {
-		definitions := compatEnvDefinitions(skill)
-		byName := map[string]EnvDefinition{}
-		for _, def := range definitions {
-			byName[def.Name] = def
-		}
-		for _, want := range expected {
-			got, ok := byName[want.Name]
-			if !ok {
-				t.Fatalf("%s missing compat env %s", skill, want.Name)
-			}
-			if got.Kind != want.Kind {
-				t.Fatalf("%s/%s kind = %s, want %s", skill, want.Name, got.Kind, want.Kind)
-			}
+		if got.Kind != kind || got.Source != "manifest" {
+			t.Fatalf("%s definition = %#v, want kind=%s source=manifest", name, got, kind)
 		}
 	}
 }
@@ -264,7 +222,6 @@ func newTestRuntime(t *testing.T, script string) *Runtime {
 			"permissions": map[string]any{
 				"filesystem": []string{},
 				"network":    []string{},
-				"secrets":    []string{},
 				"commands":   []string{"sh"},
 			},
 		},

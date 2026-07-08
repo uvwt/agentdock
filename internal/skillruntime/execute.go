@@ -15,8 +15,6 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
-
-	"github.com/uvwt/agentdock/internal/compatenv"
 )
 
 const (
@@ -207,7 +205,8 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 }
 
 func (r *Runtime) loadBinding(manifest Manifest, selected string) (Binding, []string, error) {
-	if len(manifest.Spec.Bindings) == 0 && len(manifest.Spec.Permissions.Secrets) == 0 {
+	declaredSecrets := manifestSecretEnvNames(manifest)
+	if len(manifest.Spec.Bindings) == 0 && len(declaredSecrets) == 0 {
 		return Binding{Env: map[string]string{}, Secrets: map[string]string{}}, nil, nil
 	}
 	if r.Bindings == nil {
@@ -223,8 +222,8 @@ func (r *Runtime) loadBinding(manifest Manifest, selected string) (Binding, []st
 	if len(manifest.Spec.Bindings) > 0 && !contains(manifest.Spec.Bindings, binding.Name) {
 		return Binding{}, nil, runtimeError(ErrBindingInvalid, "binding", fmt.Errorf("binding %q is not declared by skill", binding.Name))
 	}
-	allowed := make(map[string]struct{}, len(manifest.Spec.Permissions.Secrets))
-	for _, name := range manifest.Spec.Permissions.Secrets {
+	allowed := make(map[string]struct{}, len(declaredSecrets))
+	for _, name := range declaredSecrets {
 		allowed[name] = struct{}{}
 		value, ok := binding.Secrets[name]
 		if !ok {
@@ -300,37 +299,37 @@ func (r *Runtime) buildEnv(manifest Manifest, operation Operation, binding Bindi
 }
 
 func EnvDefinitionsForManifest(manifest Manifest) []EnvDefinition {
-	items := make([]EnvDefinition, 0, len(manifest.Spec.Permissions.Secrets)+len(manifest.Spec.Permissions.Env))
+	items := make([]EnvDefinition, 0, len(manifest.Spec.Permissions.Env))
 	seen := map[string]struct{}{}
-	add := func(def EnvDefinition) {
-		key := def.Skill + "\x00" + def.Name
+	for _, env := range manifest.Spec.Permissions.Env {
+		name := strings.TrimSpace(env.Name)
+		kind := strings.ToLower(strings.TrimSpace(env.Kind))
+		if !envNamePattern.MatchString(name) || (kind != "plain" && kind != "secret") {
+			continue
+		}
+		key := manifest.Metadata.Name + "\x00" + name
 		if _, ok := seen[key]; ok {
-			return
+			continue
 		}
 		seen[key] = struct{}{}
-		items = append(items, def)
-	}
-	for _, name := range manifest.Spec.Permissions.Secrets {
-		if envNamePattern.MatchString(name) {
-			add(EnvDefinition{Skill: manifest.Metadata.Name, Name: name, Kind: "secret", Source: "manifest"})
-		}
-	}
-	for _, env := range manifest.Spec.Permissions.Env {
-		if envNamePattern.MatchString(env.Name) {
-			add(EnvDefinition{Skill: manifest.Metadata.Name, Name: env.Name, Kind: strings.ToLower(strings.TrimSpace(env.Kind)), Source: "manifest"})
-		}
-	}
-	for _, def := range compatEnvDefinitions(manifest.Metadata.Name) {
-		add(def)
+		items = append(items, EnvDefinition{Skill: manifest.Metadata.Name, Name: name, Kind: kind, Source: "manifest"})
 	}
 	return items
 }
 
-func compatEnvDefinitions(skill string) []EnvDefinition {
-	defs := compatenv.ForSkill(skill)
-	items := make([]EnvDefinition, 0, len(defs))
-	for _, def := range defs {
-		items = append(items, EnvDefinition{Skill: def.Skill, Name: def.Name, Kind: def.Kind, Source: def.Source})
+func manifestSecretEnvNames(manifest Manifest) []string {
+	items := make([]string, 0)
+	seen := map[string]struct{}{}
+	for _, env := range manifest.Spec.Permissions.Env {
+		name := strings.TrimSpace(env.Name)
+		if strings.ToLower(strings.TrimSpace(env.Kind)) != "secret" || !envNamePattern.MatchString(name) {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		items = append(items, name)
 	}
 	return items
 }

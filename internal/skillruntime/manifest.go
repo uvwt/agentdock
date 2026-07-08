@@ -18,7 +18,6 @@ var (
 	skillNamePattern  = regexp.MustCompile(`^[a-z][a-z0-9-]{1,62}$`)
 	operationPattern  = regexp.MustCompile(`^[a-z][a-z0-9._-]*$`)
 	semverPattern     = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$`)
-	secretNamePattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]{1,127}$`)
 	envVarNamePattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 )
 
@@ -55,6 +54,9 @@ func ParseManifest(data []byte) (Manifest, error) {
 		}
 		raw = parsed
 	}
+	if hasDeprecatedPermissionsSecrets(raw) {
+		return Manifest{}, errors.New("spec.permissions.secrets: deprecated; declare secret variables in spec.permissions.env with kind=secret")
+	}
 	encoded, err := json.Marshal(raw)
 	if err != nil {
 		return Manifest{}, err
@@ -69,6 +71,19 @@ func ParseManifest(data []byte) (Manifest, error) {
 		return Manifest{}, err
 	}
 	return manifest, nil
+}
+
+func hasDeprecatedPermissionsSecrets(raw map[string]any) bool {
+	spec, ok := raw["spec"].(map[string]any)
+	if !ok {
+		return false
+	}
+	permissions, ok := spec["permissions"].(map[string]any)
+	if !ok {
+		return false
+	}
+	_, exists := permissions["secrets"]
+	return exists
 }
 
 func ValidateManifest(m Manifest) error {
@@ -137,15 +152,7 @@ func ValidateManifest(m Manifest) error {
 			add(fmt.Sprintf("spec.compatibility.architectures[%d]", i), "must be arm64 or amd64")
 		}
 	}
-	for i, name := range m.Spec.Permissions.Secrets {
-		if !secretNamePattern.MatchString(name) {
-			add(fmt.Sprintf("spec.permissions.secrets[%d]", i), "invalid secret name")
-		}
-	}
 	seenEnv := map[string]struct{}{}
-	for _, name := range m.Spec.Permissions.Secrets {
-		seenEnv[name] = struct{}{}
-	}
 	for i, env := range m.Spec.Permissions.Env {
 		base := fmt.Sprintf("spec.permissions.env[%d]", i)
 		if !envVarNamePattern.MatchString(env.Name) {

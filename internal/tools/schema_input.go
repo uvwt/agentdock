@@ -132,7 +132,7 @@ func InputSchema(name string) map[string]any {
 		props["source"] = stringProp("Workspace/host path or HTTP(S) URL for validate/install.")
 		props["digest"] = stringProp("Optional expected SHA-256 digest for validate/install.")
 		props["activate"] = boolProp("Activate the installed version. Defaults to true.")
-		props["confirmed_no_env"] = boolProp("Required for validating/installing a Skill with no manifest permissions.env/secrets or compat env declarations; confirms the Skill needs no Env Manager configuration.")
+		props["confirmed_no_env"] = boolProp("Required for validating/installing a Skill with no manifest permissions.env declarations; confirms the Skill needs no Env Manager configuration.")
 		props["max_bytes"] = intProp("Maximum validate/install package bytes.")
 		props["operation"] = stringProp("Skill operation name for run.")
 		props["input"] = map[string]any{"description": "JSON input value for the Skill operation."}
@@ -167,7 +167,7 @@ func InputSchema(name string) map[string]any {
 		props["logical_target"] = stringProp("Target-side logical destination mapping. Defaults to inbox; arbitrary absolute paths are not accepted.")
 		required = []string{"target_devices"}
 	case "env_manage":
-		props["action"] = map[string]any{"type": "string", "description": "Env action: list, inspect, set, delete, verify, or migrate-from-agentdock-env.", "enum": []string{"list", "inspect", "set", "delete", "verify", "migrate-from-agentdock-env"}}
+		props["action"] = map[string]any{"type": "string", "description": "Env action: list, inspect, set, delete, or verify.", "enum": []string{"list", "inspect", "set", "delete", "verify"}}
 		props["skill"] = stringProp("Skill name for inspect, set, delete, or verify.")
 		props["name"] = stringProp("Environment variable name for set/delete.")
 		props["kind"] = map[string]any{"type": "string", "description": "Variable kind.", "enum": []string{"plain", "secret"}}
@@ -179,7 +179,6 @@ func InputSchema(name string) map[string]any {
 		props["channel"] = stringProp("Optional Skill channel for verify.")
 		props["timeout_ms"] = intProp("Optional verify timeout in milliseconds.")
 		props["max_output_bytes"] = intProp("Maximum verify stdout/stderr bytes.")
-		props["env_file"] = stringProp("Path to agentdock.env for migrate-from-agentdock-env. Defaults to ~/agentdock-runtime/agentdock.env.")
 		required = []string{"action"}
 	case "recall_bootstrap":
 		props["max_bytes"] = intProp("Maximum combined RecallDock pack bytes. Does not expose section bodies by itself; use include_body or recall_read when body text is needed.")

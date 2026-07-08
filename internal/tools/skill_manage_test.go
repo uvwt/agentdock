@@ -57,7 +57,6 @@ spec:
   permissions:
     filesystem: []
     network: []
-    secrets: []
     commands: []
 `
 	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
@@ -157,7 +156,6 @@ spec:
   permissions:
     filesystem: []
     network: []
-    secrets: []
     commands: []
 `
 	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
@@ -228,7 +226,6 @@ spec:
         kind: plain
       - name: DEMO_API_TOKEN
         kind: secret
-    secrets: []
     commands: [sh]
 `
 	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
@@ -312,7 +309,6 @@ spec:
   permissions:
     filesystem: []
     network: []
-    secrets: []
     commands: [agentdock-missing-command-for-test]
 `
 	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
@@ -419,24 +415,6 @@ func TestEnvManageVerifyAcceptsStructuredInput(t *testing.T) {
 	}
 }
 
-func TestToolsCompatEnvDefinitionsUseSharedSet(t *testing.T) {
-	byKey := map[string]struct{}{}
-	for _, def := range compatEnvDefinitions() {
-		byKey[def.Skill+"\x00"+def.Name] = struct{}{}
-	}
-	for _, key := range []string{
-		"baidu-netdisk\x00BDPAN_CONFIG_FILE",
-		"bark\x00BARK_SERVER_URL",
-		"cloudsaver\x00CLOUDSAVER_PASSWORD",
-		"telegram-official\x00TELEGRAM_CHAT_ID",
-		"xiaohongshu-mcp\x00XIAOHONGSHU_MCP_URL",
-	} {
-		if _, ok := byKey[key]; !ok {
-			t.Fatalf("missing compat env definition %s", key)
-		}
-	}
-}
-
 func newInstalledDemoSkillRuntime(t *testing.T) *Runtime {
 	t.Helper()
 	root := t.TempDir()
@@ -466,7 +444,6 @@ spec:
   permissions:
     filesystem: []
     network: []
-    secrets: []
     commands: []
 `
 	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
