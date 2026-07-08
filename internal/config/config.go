@@ -10,9 +10,8 @@ const (
 	ServerName      = "agentdock"
 	Version         = "0.3.0-go"
 
-	ProfileUnified           = "unified"
-	ProfileReadOnly          = "read-only"
-	ProfileCompatReadOnlyAll = "compat-readonly-all"
+	ProfileUnified  = "unified"
+	ProfileReadOnly = "read-only"
 
 	ModeSandboxed = "sandboxed"
 	ModeHost      = "host"
@@ -124,7 +123,7 @@ func (c *Config) Normalize() {
 		c.Mode = ModeSandboxed
 	}
 	switch c.ToolProfile {
-	case ProfileReadOnly, ProfileCompatReadOnlyAll:
+	case ProfileReadOnly:
 	default:
 		c.ToolProfile = ProfileUnified
 	}

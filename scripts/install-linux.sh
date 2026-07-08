@@ -661,7 +661,7 @@ INTRO
   service_user="$(prompt '运行用户' "$DEFAULT_SERVICE_USER")"
   host="$(prompt '监听地址' "$DEFAULT_HOST")"
   port="$(prompt '监听端口' "$DEFAULT_PORT")"
-  tool_profile="$(prompt '工具配置 profile：unified/read-only/compat-readonly-all' "$DEFAULT_TOOL_PROFILE")"
+  tool_profile="$(prompt '工具配置 profile：unified/read-only' "$DEFAULT_TOOL_PROFILE")"
   log_level="$(prompt '日志级别' "$DEFAULT_LOG_LEVEL")"
   mode="$(prompt '运行模式：sandboxed/host' "$DEFAULT_MODE")"
   path_policy="$(prompt '路径策略：workspace/host' "$DEFAULT_PATH_POLICY")"

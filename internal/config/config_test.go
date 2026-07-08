@@ -44,6 +44,30 @@ func TestNormalizeSandboxNoneDoesNotInferHostMode(t *testing.T) {
 	}
 }
 
+func TestNormalizeToolProfileOnlyAllowsUnifiedAndReadOnly(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "empty defaults to unified", in: "", want: ProfileUnified},
+		{name: "unified stays unified", in: ProfileUnified, want: ProfileUnified},
+		{name: "read only stays read only", in: ProfileReadOnly, want: ProfileReadOnly},
+		{name: "removed compat profile falls back", in: "compat-readonly-" + "all", want: ProfileUnified},
+		{name: "unknown profile falls back", in: "legacy", want: ProfileUnified},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{ToolProfile: tt.in}
+			cfg.Normalize()
+			if cfg.ToolProfile != tt.want {
+				t.Fatalf("ToolProfile = %q, want %q", cfg.ToolProfile, tt.want)
+			}
+		})
+	}
+}
+
 func TestFromEnvTaskVectorSearchConfig(t *testing.T) {
 	t.Setenv("AGENTDOCK_TASK_EMBEDDING_ENDPOINT", "http://127.0.0.1:18788/v1/embeddings")
 	t.Setenv("AGENTDOCK_TASK_EMBEDDING_MODEL", "test-model")
