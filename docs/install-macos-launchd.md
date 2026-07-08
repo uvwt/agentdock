@@ -35,7 +35,7 @@ $HOME/agentdock-runtime/backups/agentdock
 
 ## 任务向量检索配置
 
-AgentDock 不内置 embedding 模型。Mac mini 可在 `$HOME/agentdock-runtime/agentdock.env` 中复用 RecallDock 的 BGE-M3 embedding endpoint，让 `task_manage.template_match` 在关键词/任务类型/设备匹配之外增加可选向量召回：
+AgentDock 不内置 embedding 模型。Mac mini 可在 `$HOME/agentdock-runtime/agentdock.env` 中复用 RecallDock 的 BGE-M3 embedding endpoint，让 `workflow_template_manage action=match` 在关键词/任务类型/设备匹配之外增加可选向量召回：
 
 ```env
 AGENTDOCK_TASK_VECTOR_SEARCH=true

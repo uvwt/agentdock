@@ -53,6 +53,6 @@ scripts/                       本地安装、重启和 smoke 脚本
 
 ## 示例
 
-- `internal/tools/edit_file.go` 把校验、精确匹配语义和诊断细节放在工具实现附近。
+- `internal/tools/workspace_edit.go` 把工作区编辑的校验、精确匹配语义和诊断细节放在统一工具实现附近。
 - `internal/skillruntime/manifest.go` 集中处理 manifest 解析和校验，避免在 install 与 execution 路径中分散校验。
 - `internal/mcp/registry_test.go` 校验对外工具的 profile 和 descriptor 不变量。
