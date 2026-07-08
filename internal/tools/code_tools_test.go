@@ -17,7 +17,6 @@ func newCodeToolsRuntime(t *testing.T) (*Runtime, string) {
 	root := t.TempDir()
 	cfg := config.Config{
 		Workspace:       root,
-		ToolProfile:     config.ProfileFull,
 		AgentDockDir:    "AgentDock",
 		EnableViewImage: true,
 	}
@@ -35,7 +34,6 @@ func TestServerInfoRecommendsCompactRecallBootstrap(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
 		Workspace:       root,
-		ToolProfile:     config.ProfileFull,
 		AgentDockDir:    "AgentDock",
 		RecallEndpoint:  "http://127.0.0.1:18777",
 		RecallTimeoutMS: 30000,
@@ -61,7 +59,6 @@ func TestServerInfoReportsOAuthAuthEnabled(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
 		Workspace:      root,
-		ToolProfile:    config.ProfileFull,
 		AgentDockDir:   "AgentDock",
 		OAuthServerURL: "https://auth.example.test",
 	}
@@ -101,7 +98,6 @@ process.stdout.write(JSON.stringify({
 	}
 	cfg := config.Config{
 		Workspace:                     root,
-		ToolProfile:                   config.ProfileFull,
 		AgentDockDir:                  "AgentDock",
 		BrowserEnabled:                true,
 		BrowserRunnerDir:              "browser-runner",

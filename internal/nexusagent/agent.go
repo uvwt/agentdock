@@ -172,7 +172,7 @@ func Start(ctx context.Context, cfg config.Config) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		labels, _ := json.Marshal(map[string]string{"managed_by": "agentdock", "profile": cfg.ToolProfile})
+		labels, _ := json.Marshal(map[string]string{"managed_by": "agentdock"})
 		name := strings.TrimSpace(cfg.NexusDeviceName)
 		if name == "" {
 			name, _ = os.Hostname()
@@ -277,7 +277,6 @@ func (h healthChecker) Health(context.Context) (any, error) {
 		"version":         config.Version,
 		"platform":        runtime.GOOS,
 		"arch":            runtime.GOARCH,
-		"tool_profile":    h.cfg.ToolProfile,
 		"recall_enabled":  strings.TrimSpace(h.cfg.RecallEndpoint) != "",
 		"browser_enabled": h.cfg.BrowserEnabled,
 		"desktop_enabled": h.cfg.DesktopEnabled,

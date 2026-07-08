@@ -104,7 +104,7 @@ try:
     info = call.get("structuredContent") or {}
     require(info.get("ok") is True, f"server_info did not return ok=true: {info}")
     require(info.get("endpoint_path") == "/mcp", f"unexpected endpoint_path: {info}")
-    print(f"server_info ok (profile={info.get('tool_profile')}, auth_enabled={info.get('auth_enabled')})")
+    print(f"server_info ok (auth_enabled={info.get('auth_enabled')})")
 
     print("agentdock smoke ok")
 except Exception as exc:

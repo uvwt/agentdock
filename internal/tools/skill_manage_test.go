@@ -70,7 +70,6 @@ spec:
 
 	cfg := config.Config{
 		Workspace:       root,
-		ToolProfile:     config.ProfileFull,
 		AgentDockDir:    "AgentDock",
 		EnableViewImage: true,
 	}
@@ -170,7 +169,6 @@ spec:
 	}
 	cfg := config.Config{
 		Workspace:    root,
-		ToolProfile:  config.ProfileFull,
 		AgentDockDir: "AgentDock",
 	}
 	if err := cfg.Normalize(); err != nil {
@@ -242,7 +240,6 @@ spec:
 	}
 	cfg := config.Config{
 		Workspace:    root,
-		ToolProfile:  config.ProfileFull,
 		AgentDockDir: "AgentDock",
 	}
 	if err := cfg.Normalize(); err != nil {
@@ -324,7 +321,6 @@ spec:
 	writeDemoSkillDoc(t, pkg)
 	cfg := config.Config{
 		Workspace:    root,
-		ToolProfile:  config.ProfileFull,
 		AgentDockDir: "AgentDock",
 	}
 	if err := cfg.Normalize(); err != nil {
@@ -370,7 +366,6 @@ func TestSkillManageRejectsUnknownAction(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
 		Workspace:    root,
-		ToolProfile:  config.ProfileFull,
 		AgentDockDir: "AgentDock",
 	}
 	if err := cfg.Normalize(); err != nil {
@@ -483,7 +478,6 @@ spec:
 	}
 	cfg := config.Config{
 		Workspace:       root,
-		ToolProfile:     config.ProfileFull,
 		AgentDockDir:    "AgentDock",
 		EnableViewImage: true,
 	}

@@ -20,7 +20,6 @@ func (r *Runtime) RuntimeStatus() Result {
 		"runtime_profile": r.cfg.RuntimeProfile,
 		"path_policy":     r.cfg.PathPolicyName(),
 		"sandbox_mode":    r.cfg.CommandSandboxName(),
-		"tool_profile":    r.cfg.ToolProfile,
 		"auth_enabled":    r.cfg.AuthToken != "" || r.cfg.OAuthClientID != "" || r.cfg.OAuthServerURL != "",
 		"desktop_enabled": r.cfg.DesktopEnabled,
 		"browser_enabled": r.cfg.BrowserEnabled,

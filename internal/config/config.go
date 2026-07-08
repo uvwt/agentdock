@@ -11,9 +11,6 @@ const (
 	ServerName      = "agentdock"
 	Version         = "0.3.0-go"
 
-	ProfileFull     = "full"
-	ProfileReadOnly = "read-only"
-
 	RuntimeProfileWorkspace = "workspace"
 	RuntimeProfileHost      = "host"
 )
@@ -26,7 +23,6 @@ type Config struct {
 	AuthToken                     string
 	OAuthClientID                 string
 	OAuthServerURL                string
-	ToolProfile                   string
 	LogLevel                      string
 	AgentDockDir                  string
 	RecallEndpoint                string
@@ -67,7 +63,6 @@ func FromEnv() Config {
 		AuthToken:                     os.Getenv("AGENTDOCK_AUTH_TOKEN"),
 		OAuthClientID:                 os.Getenv("AGENTDOCK_OAUTH_CLIENT_ID"),
 		OAuthServerURL:                os.Getenv("AGENTDOCK_SERVER_URL"),
-		ToolProfile:                   getenv("AGENTDOCK_TOOL_PROFILE", ProfileFull),
 		LogLevel:                      getenv("AGENTDOCK_LOG_LEVEL", "info"),
 		AgentDockDir:                  getenv("AGENTDOCK_DIR", "AgentDock"),
 		RecallEndpoint:                os.Getenv("AGENTDOCK_RECALL_ENDPOINT"),
@@ -108,15 +103,6 @@ func (c *Config) Normalize() error {
 	case RuntimeProfileWorkspace, RuntimeProfileHost:
 	default:
 		return fmt.Errorf("invalid runtime_profile %q; allowed values: %s, %s", c.RuntimeProfile, RuntimeProfileWorkspace, RuntimeProfileHost)
-	}
-
-	if c.ToolProfile == "" {
-		c.ToolProfile = ProfileFull
-	}
-	switch c.ToolProfile {
-	case ProfileFull, ProfileReadOnly:
-	default:
-		return fmt.Errorf("invalid tool_profile %q; allowed values: %s, %s", c.ToolProfile, ProfileFull, ProfileReadOnly)
 	}
 
 	if c.Host == "" {

@@ -72,7 +72,7 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 		args = map[string]any{}
 	}
 	spec, ok := toolSpecByName(name)
-	if !ok || !spec.available(r.cfg) || !spec.allowedInProfile(r.cfg.ToolProfile) {
+	if !ok || !spec.available(r.cfg) {
 		return nil, toolErrorDetails("UNKNOWN_TOOL", "tool is not available", "validation", map[string]any{"tool": name})
 	}
 	if spec.Handler == nil {
@@ -100,7 +100,6 @@ func (r *Runtime) serverInfo() Result {
 		"default_cwd":     r.ws.DefaultDisplay(),
 		"runtime_profile": r.cfg.RuntimeProfile,
 		"path_policy":     r.cfg.PathPolicyName(),
-		"tool_profile":    r.cfg.ToolProfile,
 		"sandbox_mode":    r.cfg.CommandSandboxName(),
 		"agent_dock_dir":  r.cfg.AgentDockDir,
 

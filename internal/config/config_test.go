@@ -55,41 +55,6 @@ func TestNormalizeRejectsInvalidRuntimeProfile(t *testing.T) {
 	}
 }
 
-func TestNormalizeToolProfileOnlyAllowsFullAndReadOnly(t *testing.T) {
-	tests := []struct {
-		name    string
-		in      string
-		want    string
-		wantErr bool
-	}{
-		{name: "empty defaults to full", in: "", want: ProfileFull},
-		{name: "full stays full", in: ProfileFull, want: ProfileFull},
-		{name: "read only stays read only", in: ProfileReadOnly, want: ProfileReadOnly},
-		{name: "removed old full-access profile is rejected", in: "uni" + "fied", wantErr: true},
-		{name: "removed compat profile is rejected", in: "compat-readonly-" + "all", wantErr: true},
-		{name: "unknown profile is rejected", in: "legacy", wantErr: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := Config{ToolProfile: tt.in}
-			err := cfg.Normalize()
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("Normalize() should reject invalid tool profile")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("Normalize() error = %v", err)
-			}
-			if cfg.ToolProfile != tt.want {
-				t.Fatalf("ToolProfile = %q, want %q", cfg.ToolProfile, tt.want)
-			}
-		})
-	}
-}
-
 func TestFromEnvReadsRuntimeProfile(t *testing.T) {
 	t.Setenv("AGENTDOCK_RUNTIME_PROFILE", RuntimeProfileHost)
 

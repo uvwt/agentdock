@@ -61,7 +61,7 @@ func TestTaskManageLifecycleAndRestartRecovery(t *testing.T) {
 	}
 
 	cfg := config.Config{
-		Workspace: root, ToolProfile: config.ProfileFull,
+		Workspace:    root,
 		AgentDockDir: "AgentDock", EnableViewImage: true,
 	}
 	if err := cfg.Normalize(); err != nil {

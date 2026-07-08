@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -28,7 +27,6 @@ func TestToolRegistryHasNoDuplicates(t *testing.T) {
 func TestRuntimeToolsHaveRegistryDefinitionsAndSchemas(t *testing.T) {
 	cfg := config.Config{
 		Workspace:       t.TempDir(),
-		ToolProfile:     config.ProfileFull,
 		AgentDockDir:    "AgentDock",
 		RecallEndpoint:  "http://127.0.0.1:18777",
 		BrowserEnabled:  true,
@@ -55,10 +53,9 @@ func TestRuntimeToolsHaveRegistryDefinitionsAndSchemas(t *testing.T) {
 	}
 }
 
-func TestReadOnlyProfileExcludesDestructiveTools(t *testing.T) {
+func TestRuntimeExposesSingleToolSet(t *testing.T) {
 	cfg := config.Config{
 		Workspace:       t.TempDir(),
-		ToolProfile:     config.ProfileReadOnly,
 		AgentDockDir:    "AgentDock",
 		RecallEndpoint:  "http://127.0.0.1:18777",
 		BrowserEnabled:  true,
@@ -75,64 +72,17 @@ func TestReadOnlyProfileExcludesDestructiveTools(t *testing.T) {
 	seen := map[string]bool{}
 	for _, name := range rt.ToolNames() {
 		seen[name] = true
-		def, ok := toolDefinition(name)
-		if !ok {
-			t.Fatalf("read-only runtime exposes unregistered tool: %s", name)
+	}
+	for _, name := range []string{"git_read", "git_write", "session_observe", "session_act", "recall_read", "recall_write", "desktop_observe", "desktop_act"} {
+		if !seen[name] {
+			t.Fatalf("single tool set missing %s: %#v", name, seen)
 		}
-		if def.Destructive {
-			t.Fatalf("read-only profile exposes destructive tool: %s", name)
-		}
-	}
-	if !seen["desktop_observe"] {
-		t.Fatalf("read-only desktop profile should expose desktop_observe")
-	}
-	if seen["desktop_act"] {
-		t.Fatalf("read-only desktop profile exposed mutating desktop tools")
-	}
-	if seen["recall_write"] || seen["recall_maintain"] {
-		t.Fatalf("read-only profile exposed mutating recall tools: %#v", seen)
-	}
-	if !seen["recall_bootstrap"] || !seen["recall_search"] || !seen["recall_read"] {
-		t.Fatalf("read-only profile should expose read-only RecallDock tools")
-	}
-	if seen["edit_file"] {
-		t.Fatalf("read-only profile exposed edit_file")
-	}
-}
-
-func TestReadOnlyProfileSplitsSessionObserveAndAct(t *testing.T) {
-	cfg := config.Config{
-		Workspace:    t.TempDir(),
-		ToolProfile:  config.ProfileReadOnly,
-		AgentDockDir: "AgentDock",
-	}
-	if err := cfg.Normalize(); err != nil {
-		t.Fatalf("Normalize() error = %v", err)
-	}
-	rt, err := tools.NewRuntime(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	seen := map[string]bool{}
-	for _, name := range rt.ToolNames() {
-		seen[name] = true
-	}
-	if !seen["session_observe"] {
-		t.Fatalf("read-only profile should expose session_observe: %#v", seen)
-	}
-	if seen["session_act"] || seen["session_control"] {
-		t.Fatalf("read-only profile should hide mutating or legacy session tools: %#v", seen)
-	}
-	if _, err := rt.Call(context.Background(), "session_observe", map[string]any{"action": "list"}); err != nil {
-		t.Fatalf("read-only profile should allow session_observe list: %v", err)
 	}
 }
 
 func TestRecallDockToolNamesHideLegacyMemoryTools(t *testing.T) {
 	cfg := config.Config{
 		Workspace:       t.TempDir(),
-		ToolProfile:     config.ProfileFull,
 		AgentDockDir:    "AgentDock",
 		RecallEndpoint:  "http://127.0.0.1:18777",
 		EnableViewImage: true,

@@ -56,6 +56,6 @@ make clean-local-artifacts
 
 - 改动范围限制在被修改的包和行为内。
 - 新增抽象前优先复用已有 helper 和包模式。
-- 保持 read-only profile 边界和高风险工具的权限门禁。
+- 保持高风险工具的权限门禁、路径策略、认证和日志脱敏边界。
 - 新增具体应用自动化能力应使用原生 Skill Runtime 包，不使用旧动态 plugin 路径。
 - 修改工具描述、schema、path policy、权限、Skill Runtime、env registry、命令执行、HTTP auth 或桌面/浏览器自动化时，更新测试。

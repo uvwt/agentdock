@@ -34,7 +34,6 @@ func run() error {
 	flag.StringVar(&cfg.Host, "host", cfg.Host, "HTTP bind host")
 	flag.IntVar(&cfg.Port, "port", cfg.Port, "HTTP bind port")
 	flag.StringVar(&cfg.AuthToken, "auth-token", cfg.AuthToken, "optional bearer token")
-	flag.StringVar(&cfg.ToolProfile, "tool-profile", cfg.ToolProfile, "tool profile")
 	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "log level: debug, info, warn, error")
 	flag.StringVar(&cfg.AgentDockDir, "agentdock-dir", cfg.AgentDockDir, "AgentDock control directory; absolute or workspace-relative")
 	flag.StringVar(&cfg.RecallEndpoint, "recall-endpoint", cfg.RecallEndpoint, "optional RecallDock HTTP endpoint, for example http://127.0.0.1:18777")
@@ -66,7 +65,7 @@ func run() error {
 		return err
 	}
 	logx.Setup(cfg.LogLevel)
-	slog.Info("server starting", "workspace", cfg.Workspace, "runtime_profile", cfg.RuntimeProfile, "path_policy", cfg.PathPolicyName(), "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "tool_profile", cfg.ToolProfile, "log_level", cfg.LogLevel, "sandbox_mode", cfg.CommandSandboxName(), "agent_dock_dir", cfg.AgentDockDir, "recall_enabled", cfg.RecallEndpoint != "", "task_vector_search_enabled", cfg.TaskVectorSearch && cfg.TaskEmbeddingEndpoint != "", "nexus_enabled", cfg.NexusEndpoint != "", "browser_enabled", cfg.BrowserEnabled, "browser_runner_dir", cfg.BrowserRunnerDir, "desktop_enabled", cfg.DesktopEnabled)
+	slog.Info("server starting", "workspace", cfg.Workspace, "runtime_profile", cfg.RuntimeProfile, "path_policy", cfg.PathPolicyName(), "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "log_level", cfg.LogLevel, "sandbox_mode", cfg.CommandSandboxName(), "agent_dock_dir", cfg.AgentDockDir, "recall_enabled", cfg.RecallEndpoint != "", "task_vector_search_enabled", cfg.TaskVectorSearch && cfg.TaskEmbeddingEndpoint != "", "nexus_enabled", cfg.NexusEndpoint != "", "browser_enabled", cfg.BrowserEnabled, "browser_runner_dir", cfg.BrowserRunnerDir, "desktop_enabled", cfg.DesktopEnabled)
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
 		return err

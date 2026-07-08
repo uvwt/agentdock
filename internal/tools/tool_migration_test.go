@@ -94,26 +94,6 @@ func TestWorkflowTemplateMatchIsOnlyTemplateDiscoveryEntrypoint(t *testing.T) {
 	}
 }
 
-func TestGitReadAvailableInReadOnlyButGitWriteHidden(t *testing.T) {
-	root := t.TempDir()
-	cfg := testRuntimeConfig(root)
-	cfg.ToolProfile = "read-only"
-	rt, err := NewRuntime(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	seen := map[string]bool{}
-	for _, name := range rt.ToolNames() {
-		seen[name] = true
-	}
-	if !seen["git_read"] {
-		t.Fatalf("read-only profile should expose git_read: %#v", seen)
-	}
-	if seen["git_write"] {
-		t.Fatalf("read-only profile should hide git_write: %#v", seen)
-	}
-}
-
 func initGitRepo(t *testing.T, root string) {
 	t.Helper()
 	for _, args := range [][]string{{"init"}, {"config", "user.name", "AgentDock Test"}, {"config", "user.email", "agentdock@example.test"}} {
@@ -138,7 +118,6 @@ func initGitRepo(t *testing.T, root string) {
 func testRuntimeConfig(root string) config.Config {
 	cfg := config.Config{
 		Workspace:       root,
-		ToolProfile:     config.ProfileFull,
 		AgentDockDir:    "AgentDock",
 		EnableViewImage: true,
 	}

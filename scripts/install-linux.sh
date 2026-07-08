@@ -13,7 +13,6 @@ DEFAULT_SERVICE_USER="${AGENTDOCK_SERVICE_USER:-agentdock}"
 DEFAULT_HOST="${AGENTDOCK_HOST:-127.0.0.1}"
 DEFAULT_PORT="${AGENTDOCK_PORT:-8765}"
 DEFAULT_LOG_LEVEL="${AGENTDOCK_LOG_LEVEL:-info}"
-DEFAULT_TOOL_PROFILE="${AGENTDOCK_TOOL_PROFILE:-full}"
 DEFAULT_RUNTIME_PROFILE="${AGENTDOCK_RUNTIME_PROFILE:-workspace}"
 DEFAULT_SERVICE_MANAGER="${AGENTDOCK_SERVICE_MANAGER:-auto}"
 DEFAULT_INSTALL_MODE="${AGENTDOCK_INSTALL_MODE:-binary}"
@@ -413,15 +412,14 @@ write_env_file() {
   local host="$4"
   local port="$5"
   local token="$6"
-  local tool_profile="$7"
-  local log_level="$8"
-  local runtime_profile="$9"
-  local skip_prompts="${10}"
-  local recall_endpoint="${11}"
-  local recall_token="${12}"
-  local nexus_endpoint="${13}"
-  local nexus_device_name="${14}"
-  local nexus_state_dir="${15}"
+  local log_level="$7"
+  local runtime_profile="$8"
+  local skip_prompts="${9}"
+  local recall_endpoint="${10}"
+  local recall_token="${11}"
+  local nexus_endpoint="${12}"
+  local nexus_device_name="${13}"
+  local nexus_state_dir="${14}"
 
   local env_dir tmp_file
   env_dir="$(dirname "$env_file")"
@@ -431,7 +429,6 @@ AGENTDOCK_WORKSPACE=$workspace_dir
 AGENTDOCK_DIR=$control_dir
 AGENTDOCK_HOST=$host
 AGENTDOCK_PORT=$port
-AGENTDOCK_TOOL_PROFILE=$tool_profile
 AGENTDOCK_AUTH_TOKEN=$token
 AGENTDOCK_LOG_LEVEL=$log_level
 AGENTDOCK_RUNTIME_PROFILE=$runtime_profile
@@ -621,7 +618,7 @@ main() {
   require_linux
 
   local detected_root source_default repo_url branch source_dir data_dir workspace_dir control_dir env_file
-  local service_name service_user service_group service_manager service_manager_prompt host port token tool_profile log_level runtime_profile skip_prompts
+  local service_name service_user service_group service_manager service_manager_prompt host port token log_level runtime_profile skip_prompts
   local install_mode release_version recall_endpoint recall_token nexus_endpoint nexus_device_name nexus_state_dir update_existing run_full_check install_deps
   local go_version public_domain smoke_url health_host build_from_source binary_installed
 
@@ -663,7 +660,6 @@ INTRO
   service_user="$(prompt '运行用户' "$DEFAULT_SERVICE_USER")"
   host="$(prompt '监听地址' "$DEFAULT_HOST")"
   port="$(prompt '监听端口' "$DEFAULT_PORT")"
-  tool_profile="$(prompt '工具配置 profile：full/read-only' "$DEFAULT_TOOL_PROFILE")"
   log_level="$(prompt '日志级别' "$DEFAULT_LOG_LEVEL")"
   runtime_profile="$(prompt '运行 profile：workspace/host' "$DEFAULT_RUNTIME_PROFILE")"
   validate_runtime_profile "$runtime_profile"
@@ -792,7 +788,7 @@ SUMMARY
   service_group="$(id -gn "$service_user")"
   run_root mkdir -p "$workspace_dir" "$control_dir" "$nexus_state_dir"
   run_root chown -R "$service_user:$service_group" "$data_dir"
-  write_env_file "$env_file" "$workspace_dir" "$control_dir" "$host" "$port" "$token" "$tool_profile" "$log_level" "$runtime_profile" "$skip_prompts" "$recall_endpoint" "$recall_token" "$nexus_endpoint" "$nexus_device_name" "$nexus_state_dir"
+  write_env_file "$env_file" "$workspace_dir" "$control_dir" "$host" "$port" "$token" "$log_level" "$runtime_profile" "$skip_prompts" "$recall_endpoint" "$recall_token" "$nexus_endpoint" "$nexus_device_name" "$nexus_state_dir"
   case "$service_manager" in
     systemd) write_systemd_unit "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
     openrc) write_openrc_service "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
