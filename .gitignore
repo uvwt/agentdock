@@ -17,3 +17,5 @@
 /coverage.out
 /*.test
 /agentdock.killed*
+# Runtime Skill state and artifacts
+skill-data/
