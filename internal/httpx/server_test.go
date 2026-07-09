@@ -185,6 +185,76 @@ func TestServerCardDeclaresOAuthOnlyWhenOAuthEnabled(t *testing.T) {
 	}
 }
 
+func TestOAuthMetadataOmitsNoneWhenClientSecretConfigured(t *testing.T) {
+	t.Setenv("AGENTDOCK_OAUTH_CLIENT_SECRET", "client-secret")
+	cfg := testConfig(t)
+	cfg.OAuthClientID = "client-id"
+	cfg.OAuthServerURL = "https://agentdock.example.com"
+
+	metadata := oauthMetadata(cfg, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server", nil))
+	methods, ok := metadata["token_endpoint_auth_methods_supported"].([]string)
+	if !ok {
+		t.Fatalf("auth methods type = %T", metadata["token_endpoint_auth_methods_supported"])
+	}
+	for _, method := range methods {
+		if method == "none" {
+			t.Fatalf("auth methods include none despite configured client secret: %#v", methods)
+		}
+	}
+	if len(methods) != 2 || methods[0] != "client_secret_post" || methods[1] != "client_secret_basic" {
+		t.Fatalf("auth methods = %#v, want client_secret_post/client_secret_basic", methods)
+	}
+}
+
+func TestOAuthMetadataAllowsNoneWhenClientSecretUnconfigured(t *testing.T) {
+	t.Setenv("AGENTDOCK_OAUTH_CLIENT_SECRET", "")
+	cfg := testConfig(t)
+	cfg.OAuthClientID = "client-id"
+	cfg.OAuthServerURL = "https://agentdock.example.com"
+
+	metadata := oauthMetadata(cfg, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server", nil))
+	methods, ok := metadata["token_endpoint_auth_methods_supported"].([]string)
+	if !ok || len(methods) != 1 || methods[0] != "none" {
+		t.Fatalf("auth methods = %#v, want none", metadata["token_endpoint_auth_methods_supported"])
+	}
+}
+
+func TestValidClientAuthenticationRequiresConfiguredSecret(t *testing.T) {
+	t.Setenv("AGENTDOCK_OAUTH_CLIENT_SECRET", "client-secret")
+
+	missing := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader("grant_type=authorization_code"))
+	missing.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if validClientAuthentication(missing) {
+		t.Fatal("missing client_secret authenticated despite configured secret")
+	}
+
+	wrong := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader("client_secret=wrong"))
+	wrong.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if validClientAuthentication(wrong) {
+		t.Fatal("wrong client_secret authenticated")
+	}
+
+	post := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader("client_secret=client-secret"))
+	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if !validClientAuthentication(post) {
+		t.Fatal("valid client_secret_post rejected")
+	}
+
+	basic := httptest.NewRequest(http.MethodPost, "/oauth/token", nil)
+	basic.SetBasicAuth("client-id", "client-secret")
+	if !validClientAuthentication(basic) {
+		t.Fatal("valid client_secret_basic rejected")
+	}
+}
+
+func TestValidClientAuthenticationAllowsPublicClientWhenSecretUnconfigured(t *testing.T) {
+	t.Setenv("AGENTDOCK_OAUTH_CLIENT_SECRET", "")
+	req := httptest.NewRequest(http.MethodPost, "/oauth/token", nil)
+	if !validClientAuthentication(req) {
+		t.Fatal("public OAuth client rejected when no client secret is configured")
+	}
+}
+
 func TestOAuthEntrypointsDisabledWhenOAuthNotEnabled(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.OAuthServerURL = "https://agentdock.example.com"

@@ -15,6 +15,32 @@ type memoryPatchOutcome struct {
 	ChangeCount    int
 }
 
+type memoryPatchOperation struct {
+	Type        string `json:"type"`
+	Op          string `json:"op"`
+	Kind        string `json:"kind"`
+	Old         string `json:"old"`
+	New         string `json:"new"`
+	Pattern     string `json:"pattern"`
+	Replacement string `json:"replacement"`
+	Heading     string `json:"heading"`
+	Content     string `json:"content"`
+	All         *bool  `json:"all"`
+}
+
+func (op memoryPatchOperation) operationType() string {
+	return firstNonEmptyText(op.Type, op.Op, op.Kind)
+}
+
+func (op memoryPatchOperation) replaceAll(defaultValue bool) bool {
+	if op.All == nil {
+		return defaultValue
+	}
+	return *op.All
+}
+
+func boolPtr(value bool) *bool { return &value }
+
 type memoryLintFinding struct {
 	Path string `json:"path"`
 	Line int    `json:"line"`
@@ -235,36 +261,28 @@ func applyMemoryPatchOperations(content string, args map[string]any) (memoryPatc
 	operationCount, changeCount := 0, 0
 	for _, op := range ops {
 		operationCount++
-		kind := strings.TrimSpace(stringArg(op, "type", ""))
-		if kind == "" {
-			kind = strings.TrimSpace(stringArg(op, "op", ""))
-		}
-		if kind == "" {
-			kind = strings.TrimSpace(stringArg(op, "kind", ""))
-		}
+		kind := op.operationType()
 		var n int
 		var err error
 		switch kind {
 		case "replace_text", "replace":
-			current, n, err = applyTextReplace(current, stringArg(op, "old", ""), stringArg(op, "new", ""), boolArg(op, "all", true))
+			current, n, err = applyTextReplace(current, op.Old, op.New, op.replaceAll(true))
 		case "replace_regex", "regex":
-			current, n, err = applyRegexReplace(current, stringArg(op, "pattern", ""), stringArg(op, "replacement", ""), boolArg(op, "all", true))
+			current, n, err = applyRegexReplace(current, op.Pattern, op.Replacement, op.replaceAll(true))
 		case "replace_section", "section":
-			current, n, err = applySectionReplace(current, stringArg(op, "heading", ""), stringArg(op, "content", ""))
+			current, n, err = applySectionReplace(current, op.Heading, op.Content)
 		case "append":
-			text := stringArg(op, "content", "")
-			if text == "" {
+			if op.Content == "" {
 				err = toolError("MISSING_CONTENT", "append operation requires content", "validation")
 			} else {
-				current = ensureTrailingNewline(current) + text
+				current = ensureTrailingNewline(current) + op.Content
 				n = 1
 			}
 		case "prepend":
-			text := stringArg(op, "content", "")
-			if text == "" {
+			if op.Content == "" {
 				err = toolError("MISSING_CONTENT", "prepend operation requires content", "validation")
 			} else {
-				current = text + ensureLeadingNewline(current)
+				current = op.Content + ensureLeadingNewline(current)
 				n = 1
 			}
 		default:
@@ -278,34 +296,28 @@ func applyMemoryPatchOperations(content string, args map[string]any) (memoryPatc
 	return memoryPatchOutcome{Content: current, OperationCount: operationCount, ChangeCount: changeCount}, nil
 }
 
-func memoryOperationArgs(args map[string]any) []map[string]any {
-	ops := []map[string]any{}
+func memoryOperationArgs(args map[string]any) []memoryPatchOperation {
+	ops := make([]memoryPatchOperation, 0)
 	if raw, ok := args["operations"]; ok && raw != nil {
-		switch items := raw.(type) {
-		case []map[string]any:
-			ops = append(ops, items...)
-		case []any:
-			for _, item := range items {
-				if m, ok := item.(map[string]any); ok {
-					ops = append(ops, m)
-				}
-			}
+		var decoded []memoryPatchOperation
+		if err := remarshal(raw, &decoded); err == nil {
+			ops = append(ops, decoded...)
 		}
 	}
 	if old := stringArg(args, "old", ""); old != "" {
-		ops = append(ops, map[string]any{"type": "replace_text", "old": old, "new": stringArg(args, "new", ""), "all": boolArg(args, "all", true)})
+		ops = append(ops, memoryPatchOperation{Type: "replace_text", Old: old, New: stringArg(args, "new", ""), All: boolPtr(boolArg(args, "all", true))})
 	}
 	if pattern := stringArg(args, "pattern", ""); pattern != "" {
-		ops = append(ops, map[string]any{"type": "replace_regex", "pattern": pattern, "replacement": stringArg(args, "replacement", ""), "all": boolArg(args, "all", true)})
+		ops = append(ops, memoryPatchOperation{Type: "replace_regex", Pattern: pattern, Replacement: stringArg(args, "replacement", ""), All: boolPtr(boolArg(args, "all", true))})
 	}
 	if heading := stringArg(args, "section", ""); heading != "" {
-		ops = append(ops, map[string]any{"type": "replace_section", "heading": heading, "content": firstNonEmptyString(args, "section_content", "content")})
+		ops = append(ops, memoryPatchOperation{Type: "replace_section", Heading: heading, Content: firstNonEmptyString(args, "section_content", "content")})
 	}
 	if appendText := stringArg(args, "append", ""); appendText != "" {
-		ops = append(ops, map[string]any{"type": "append", "content": appendText})
+		ops = append(ops, memoryPatchOperation{Type: "append", Content: appendText})
 	}
 	if prependText := stringArg(args, "prepend", ""); prependText != "" {
-		ops = append(ops, map[string]any{"type": "prepend", "content": prependText})
+		ops = append(ops, memoryPatchOperation{Type: "prepend", Content: prependText})
 	}
 	return ops
 }
@@ -433,6 +445,15 @@ func memoryUnifiedDiff(p, oldText, newText string, maxBytes int) string {
 		return out[:maxBytes]
 	}
 	return out
+}
+
+func firstNonEmptyText(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func firstNonEmptyString(args map[string]any, keys ...string) string {

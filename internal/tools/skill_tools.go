@@ -25,6 +25,80 @@ type skillRuntimeManager struct {
 	env      *envregistry.Store
 }
 
+type skillToolInput struct {
+	Action         string
+	Skill          string
+	Version        string
+	Channel        skillstate.Channel
+	Source         string
+	Digest         string
+	MaxBytes       int64
+	ConfirmedNoEnv bool
+	Activate       bool
+	Operation      string
+	RunID          string
+	Binding        string
+	Timeout        time.Duration
+	MaxOutput      int
+	InputJSON      string
+	InputValue     any
+	HasInputValue  bool
+}
+
+func parseSkillToolInput(args map[string]any) skillToolInput {
+	inputValue, hasInputValue := args["input"]
+	return skillToolInput{
+		Action:         strings.ToLower(strings.TrimSpace(stringArg(args, "action", ""))),
+		Skill:          strings.TrimSpace(stringArg(args, "skill", "")),
+		Version:        strings.TrimSpace(stringArg(args, "version", "")),
+		Channel:        skillstate.Channel(strings.TrimSpace(stringArg(args, "channel", ""))),
+		Source:         strings.TrimSpace(stringArg(args, "source", "")),
+		Digest:         strings.TrimSpace(stringArg(args, "digest", "")),
+		MaxBytes:       int64(intArg(args, "max_bytes", 0)),
+		ConfirmedNoEnv: boolArg(args, "confirmed_no_env", false),
+		Activate:       boolArg(args, "activate", true),
+		Operation:      strings.TrimSpace(stringArg(args, "operation", "")),
+		RunID:          strings.TrimSpace(stringArg(args, "run_id", "")),
+		Binding:        strings.TrimSpace(stringArg(args, "binding", "")),
+		Timeout:        time.Duration(intArg(args, "timeout_ms", 0)) * time.Millisecond,
+		MaxOutput:      intArg(args, "max_output_bytes", 0),
+		InputJSON:      strings.TrimSpace(stringArg(args, "input_json", "")),
+		InputValue:     inputValue,
+		HasInputValue:  hasInputValue,
+	}
+}
+
+func (input skillToolInput) channelOr(fallback skillstate.Channel) skillstate.Channel {
+	if input.Channel == "" {
+		return fallback
+	}
+	return input.Channel
+}
+
+func (input skillToolInput) requiredSkill() (string, error) {
+	if input.Skill == "" {
+		return "", toolErrorDetails("VALIDATION_ERROR", "skill is required", "validation", map[string]any{"field": "skill"})
+	}
+	return input.Skill, nil
+}
+
+func (input skillToolInput) runInput() (json.RawMessage, error) {
+	if input.InputJSON != "" {
+		if !json.Valid([]byte(input.InputJSON)) {
+			return nil, toolErrorDetails("VALIDATION_ERROR", "input_json must contain valid JSON", "validation", map[string]any{"field": "input_json"})
+		}
+		return json.RawMessage(input.InputJSON), nil
+	}
+	if input.HasInputValue {
+		encoded, err := json.Marshal(input.InputValue)
+		if err != nil {
+			return nil, toolErrorDetails("VALIDATION_ERROR", "input cannot be encoded as JSON", "validation", map[string]any{"field": "input", "reason": err.Error()})
+		}
+		return encoded, nil
+	}
+	return json.RawMessage(`{}`), nil
+}
+
 func newSkillRuntimeManager(cfg config.Config) (*skillRuntimeManager, error) {
 	stateDir, err := config.NexusStateDir(cfg)
 	if err != nil {
@@ -69,32 +143,32 @@ func (p skillEnvProvider) EnvForSkill(skill string, definitions []skillruntime.E
 }
 
 func (r *Runtime) skillRead(_ context.Context, args map[string]any) (Result, error) {
-	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
-	switch action {
+	input := parseSkillToolInput(args)
+	switch input.Action {
 	case "list":
 		return r.skillList()
 	case "inspect":
-		return r.skillInspect(args)
+		return r.skillInspectInput(input)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported skill_read action", "validation", map[string]any{
-			"action":  action,
+			"action":  input.Action,
 			"allowed": []string{"list", "inspect"},
 		})
 	}
 }
 
 func (r *Runtime) skillPackage(ctx context.Context, args map[string]any) (Result, error) {
-	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
-	switch action {
+	input := parseSkillToolInput(args)
+	switch input.Action {
 	case "validate":
-		return r.skillValidate(ctx, args)
+		return r.skillValidate(ctx, input)
 	case "install":
-		return r.skillInstall(ctx, args)
+		return r.skillInstall(ctx, input)
 	case "rollback":
-		return r.skillRollback(ctx, args)
+		return r.skillRollback(ctx, input)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported skill_package action", "validation", map[string]any{
-			"action":  action,
+			"action":  input.Action,
 			"allowed": []string{"validate", "install", "rollback"},
 		})
 	}
@@ -158,7 +232,11 @@ func (r *Runtime) skillList() (Result, error) {
 }
 
 func (r *Runtime) skillInspect(args map[string]any) (Result, error) {
-	skill, err := requiredSkillArg(args)
+	return r.skillInspectInput(parseSkillToolInput(args))
+}
+
+func (r *Runtime) skillInspectInput(input skillToolInput) (Result, error) {
+	skill, err := input.requiredSkill()
 	if err != nil {
 		return nil, err
 	}
@@ -170,12 +248,9 @@ func (r *Runtime) skillInspect(args map[string]any) (Result, error) {
 	if err != nil {
 		return nil, skillToolError(err)
 	}
-	selected := strings.TrimSpace(stringArg(args, "version", ""))
-	if selected == "" {
-		channel := skillstate.Channel(strings.TrimSpace(stringArg(args, "channel", "")))
-		if channel != "" {
-			selected = selection.Channels[channel]
-		}
+	selected := input.Version
+	if selected == "" && input.Channel != "" {
+		selected = selection.Channels[input.Channel]
 	}
 	if selected == "" {
 		selected = selection.ActiveVersion
@@ -215,20 +290,19 @@ func (r *Runtime) skillInspect(args map[string]any) (Result, error) {
 	return result, nil
 }
 
-func (r *Runtime) skillValidate(ctx context.Context, args map[string]any) (Result, error) {
-	source := strings.TrimSpace(stringArg(args, "source", ""))
-	if source == "" {
+func (r *Runtime) skillValidate(ctx context.Context, input skillToolInput) (Result, error) {
+	if input.Source == "" {
 		return nil, toolErrorDetails("VALIDATION_ERROR", "source is required for skill validate", "validation", map[string]any{"field": "source"})
 	}
-	resolved, err := r.resolveSkillSource(source)
+	resolved, err := r.resolveSkillSource(input.Source)
 	if err != nil {
 		return nil, err
 	}
 	result, err := r.skills.runtime.Validate(ctx, skillruntime.ValidateRequest{
 		Source:         resolved,
-		DigestSHA256:   strings.TrimSpace(stringArg(args, "digest", "")),
-		MaxBytes:       int64(intArg(args, "max_bytes", 0)),
-		ConfirmedNoEnv: boolArg(args, "confirmed_no_env", false),
+		DigestSHA256:   input.Digest,
+		MaxBytes:       input.MaxBytes,
+		ConfirmedNoEnv: input.ConfirmedNoEnv,
 	})
 	if err != nil {
 		return nil, skillToolError(err)
@@ -250,22 +324,21 @@ func (r *Runtime) skillValidate(ctx context.Context, args map[string]any) (Resul
 	return response, nil
 }
 
-func (r *Runtime) skillInstall(ctx context.Context, args map[string]any) (Result, error) {
-	source := strings.TrimSpace(stringArg(args, "source", ""))
-	if source == "" {
+func (r *Runtime) skillInstall(ctx context.Context, input skillToolInput) (Result, error) {
+	if input.Source == "" {
 		return nil, toolErrorDetails("VALIDATION_ERROR", "source is required for skill install", "validation", map[string]any{"field": "source"})
 	}
-	resolved, err := r.resolveSkillSource(source)
+	resolved, err := r.resolveSkillSource(input.Source)
 	if err != nil {
 		return nil, err
 	}
 	result, err := r.skills.runtime.Install(ctx, skillruntime.InstallRequest{
 		Source:         resolved,
-		DigestSHA256:   strings.TrimSpace(stringArg(args, "digest", "")),
-		Activate:       boolArg(args, "activate", true),
-		Channel:        skillstate.Channel(strings.TrimSpace(stringArg(args, "channel", string(skillstate.ChannelStable)))),
-		MaxBytes:       int64(intArg(args, "max_bytes", 0)),
-		ConfirmedNoEnv: boolArg(args, "confirmed_no_env", false),
+		DigestSHA256:   input.Digest,
+		Activate:       input.Activate,
+		Channel:        input.channelOr(skillstate.ChannelStable),
+		MaxBytes:       input.MaxBytes,
+		ConfirmedNoEnv: input.ConfirmedNoEnv,
 	})
 	if err != nil {
 		return nil, skillToolError(err)
@@ -274,35 +347,34 @@ func (r *Runtime) skillInstall(ctx context.Context, args map[string]any) (Result
 }
 
 func (r *Runtime) skillRun(ctx context.Context, args map[string]any) (Result, error) {
-	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
-	if action != "" && action != "run" {
+	input := parseSkillToolInput(args)
+	if input.Action != "" && input.Action != "run" {
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported skill_run action", "validation", map[string]any{
-			"action":  action,
+			"action":  input.Action,
 			"allowed": []string{"run"},
 		})
 	}
-	skill, err := requiredSkillArg(args)
+	skill, err := input.requiredSkill()
 	if err != nil {
 		return nil, err
 	}
-	operation := strings.TrimSpace(stringArg(args, "operation", ""))
-	if operation == "" {
+	if input.Operation == "" {
 		return nil, toolErrorDetails("VALIDATION_ERROR", "operation is required for skill run", "validation", map[string]any{"field": "operation"})
 	}
-	input, err := skillRunInput(args)
+	rawInput, err := input.runInput()
 	if err != nil {
 		return nil, err
 	}
 	result, err := r.skills.runtime.Run(ctx, skillruntime.RunRequest{
-		RunID:     strings.TrimSpace(stringArg(args, "run_id", "")),
+		RunID:     input.RunID,
 		Skill:     skill,
-		Version:   strings.TrimSpace(stringArg(args, "version", "")),
-		Channel:   skillstate.Channel(strings.TrimSpace(stringArg(args, "channel", ""))),
-		Operation: operation,
-		Input:     input,
-		Binding:   strings.TrimSpace(stringArg(args, "binding", "")),
-		Timeout:   time.Duration(intArg(args, "timeout_ms", 0)) * time.Millisecond,
-		MaxOutput: intArg(args, "max_output_bytes", 0),
+		Version:   input.Version,
+		Channel:   input.Channel,
+		Operation: input.Operation,
+		Input:     rawInput,
+		Binding:   input.Binding,
+		Timeout:   input.Timeout,
+		MaxOutput: input.MaxOutput,
 	})
 	if err != nil {
 		return nil, skillToolError(err)
@@ -310,29 +382,12 @@ func (r *Runtime) skillRun(ctx context.Context, args map[string]any) (Result, er
 	return Result{"ok": true, "action": "run", "result": result}, nil
 }
 
-func skillRunInput(args map[string]any) (json.RawMessage, error) {
-	if inputJSON := strings.TrimSpace(stringArg(args, "input_json", "")); inputJSON != "" {
-		if !json.Valid([]byte(inputJSON)) {
-			return nil, toolErrorDetails("VALIDATION_ERROR", "input_json must contain valid JSON", "validation", map[string]any{"field": "input_json"})
-		}
-		return json.RawMessage(inputJSON), nil
-	}
-	if value, ok := args["input"]; ok {
-		encoded, err := json.Marshal(value)
-		if err != nil {
-			return nil, toolErrorDetails("VALIDATION_ERROR", "input cannot be encoded as JSON", "validation", map[string]any{"field": "input", "reason": err.Error()})
-		}
-		return encoded, nil
-	}
-	return json.RawMessage(`{}`), nil
-}
-
-func (r *Runtime) skillRollback(ctx context.Context, args map[string]any) (Result, error) {
-	skill, err := requiredSkillArg(args)
+func (r *Runtime) skillRollback(ctx context.Context, input skillToolInput) (Result, error) {
+	skill, err := input.requiredSkill()
 	if err != nil {
 		return nil, err
 	}
-	result, err := r.skills.runtime.Rollback(ctx, skill, skillstate.Channel(strings.TrimSpace(stringArg(args, "channel", string(skillstate.ChannelStable)))), nil)
+	result, err := r.skills.runtime.Rollback(ctx, skill, input.channelOr(skillstate.ChannelStable), nil)
 	if err != nil {
 		return nil, skillToolError(err)
 	}
@@ -350,12 +405,12 @@ func (r *Runtime) resolveSkillSource(source string) (string, error) {
 	return p.Abs, nil
 }
 
+func skillRunInput(args map[string]any) (json.RawMessage, error) {
+	return parseSkillToolInput(args).runInput()
+}
+
 func requiredSkillArg(args map[string]any) (string, error) {
-	skill := strings.TrimSpace(stringArg(args, "skill", ""))
-	if skill == "" {
-		return "", toolErrorDetails("VALIDATION_ERROR", "skill is required", "validation", map[string]any{"field": "skill"})
-	}
-	return skill, nil
+	return parseSkillToolInput(args).requiredSkill()
 }
 
 func skillToolError(err error) error {

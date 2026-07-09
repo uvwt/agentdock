@@ -231,8 +231,15 @@ func oauthMetadata(cfg config.Config, r *http.Request) map[string]any {
 		"response_types_supported":              []string{"code"},
 		"grant_types_supported":                 []string{"authorization_code"},
 		"code_challenge_methods_supported":      []string{"S256"},
-		"token_endpoint_auth_methods_supported": []string{"client_secret_post", "client_secret_basic", "none"},
+		"token_endpoint_auth_methods_supported": tokenEndpointAuthMethods(),
 	}
+}
+
+func tokenEndpointAuthMethods() []string {
+	if auth.ConfiguredClientSecret() == "" {
+		return []string{"none"}
+	}
+	return []string{"client_secret_post", "client_secret_basic"}
 }
 
 func issuerFor(cfg config.Config, r *http.Request) string {
@@ -349,25 +356,32 @@ func oauthSigningKey() string { return os.Getenv("AGENTDOCK_OAUTH_TOKEN_SECRET")
 
 func requestedTokenEndpointAuthMethod(r *http.Request) string {
 	if r.Method != http.MethodPost {
-		return "none"
+		return defaultTokenEndpointAuthMethod()
 	}
 	defer r.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil || len(body) == 0 {
-		return "none"
+		return defaultTokenEndpointAuthMethod()
 	}
 	var payload struct {
 		TokenEndpointAuthMethod string `json:"token_endpoint_auth_method"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return "none"
+		return defaultTokenEndpointAuthMethod()
 	}
 	switch payload.TokenEndpointAuthMethod {
 	case "client_secret_post", "client_secret_basic":
 		return payload.TokenEndpointAuthMethod
 	default:
+		return defaultTokenEndpointAuthMethod()
+	}
+}
+
+func defaultTokenEndpointAuthMethod() string {
+	if auth.ConfiguredClientSecret() == "" {
 		return "none"
 	}
+	return "client_secret_post"
 }
 
 func validClientAuthentication(r *http.Request) bool {
@@ -381,7 +395,7 @@ func validClientAuthentication(r *http.Request) bool {
 		clientSecret = password
 	}
 	if clientSecret == "" {
-		return true
+		return false
 	}
 	return auth.ConstantTimeEqual(clientSecret, configured)
 }

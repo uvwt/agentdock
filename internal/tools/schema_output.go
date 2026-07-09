@@ -221,7 +221,6 @@ func OutputSchema(name string) map[string]any {
 		props["notes"] = arrayProp("Private note summaries for action=status status_action=list.")
 		props["count"] = intProp("Result or note count.")
 		props["notes_count"] = intProp("Private note count for status checks.")
-		props["missing_encrypted"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Encrypted backups missing for status checks."}
 		props["encrypted_count"] = intProp("Encrypted backup count for maintenance actions.")
 		props["legacy_removed_count"] = intProp("Removed legacy backup count.")
 		props["recipient"] = stringProp("Age public recipient generated or used.")

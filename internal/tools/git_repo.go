@@ -19,12 +19,8 @@ type gitRepo struct {
 
 func (r *Runtime) resolveGitRepo(args map[string]any) (gitRepo, error) {
 	// 设计背景：~/AgentDock 是默认工作目录，里面可能同时有多个 Git 仓库。
-	// Git 工具不能假设 默认工作目录本身就是仓库，所以统一通过 repo_path
-	// 选择具体项目；未传 repo_path 时才退回默认 cwd，保持兼容旧调用方式。
+	// Git 工具统一通过 repo_path 选择具体项目；未传时使用默认工作目录。
 	raw := stringArg(args, "repo_path", "")
-	if raw == "" {
-		raw = stringArg(args, "workdir", "")
-	}
 	if raw == "" {
 		raw = "."
 	}

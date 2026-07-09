@@ -5,8 +5,19 @@ import (
 	"strings"
 )
 
-func parseGitStatus(output string) (branch, upstream string, ahead, behind int, files []map[string]any) {
-	files = make([]map[string]any, 0)
+type gitStatusFile struct {
+	Path   string `json:"path"`
+	Status string `json:"status"`
+}
+
+type gitDiffFile struct {
+	Path   string `json:"path"`
+	Status string `json:"status"`
+	Binary bool   `json:"binary"`
+}
+
+func parseGitStatus(output string) (branch, upstream string, ahead, behind int, files []gitStatusFile) {
+	files = make([]gitStatusFile, 0)
 	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
 		if line == "" {
 			continue
@@ -33,7 +44,7 @@ func parseGitStatus(output string) (branch, upstream string, ahead, behind int, 
 			status = strings.TrimSpace(line[:2])
 			path = strings.TrimSpace(line[3:])
 		}
-		files = append(files, map[string]any{"path": path, "status": status})
+		files = append(files, gitStatusFile{Path: path, Status: status})
 	}
 	return branch, upstream, ahead, behind, files
 }
@@ -52,9 +63,9 @@ func parseCountAfter(value, marker string) int {
 	return count
 }
 
-func parseDiffFiles(diffText string) []map[string]any {
-	files := make([]map[string]any, 0)
-	var current map[string]any
+func parseDiffFiles(diffText string) []gitDiffFile {
+	files := make([]gitDiffFile, 0)
+	current := -1
 	for _, line := range strings.Split(diffText, "\n") {
 		if strings.HasPrefix(line, "diff --git ") {
 			parts := strings.Fields(line)
@@ -62,21 +73,21 @@ func parseDiffFiles(diffText string) []map[string]any {
 			if len(parts) >= 4 {
 				path = strings.TrimPrefix(parts[3], "b/")
 			}
-			current = map[string]any{"path": path, "status": "modified", "binary": false}
-			files = append(files, current)
+			files = append(files, gitDiffFile{Path: path, Status: "modified"})
+			current = len(files) - 1
 			continue
 		}
-		if current == nil {
+		if current < 0 {
 			continue
 		}
 		if strings.HasPrefix(line, "new file mode") {
-			current["status"] = "added"
+			files[current].Status = "added"
 		}
 		if strings.HasPrefix(line, "deleted file mode") {
-			current["status"] = "deleted"
+			files[current].Status = "deleted"
 		}
 		if strings.HasPrefix(line, "Binary files") {
-			current["binary"] = true
+			files[current].Binary = true
 		}
 	}
 	return files
