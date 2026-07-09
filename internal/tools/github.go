@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func (r *Runtime) checkGitHubRepoAccess(args map[string]any) (Result, error) {
+func (r *Runtime) gitHubRepoAccess(args map[string]any) (Result, error) {
 	repo := normalizeGitHubRepo(stringArg(args, "repo", stringArg(args, "repository", "")))
 	if repo == "" || !strings.Contains(repo, "/") {
 		return nil, toolError("INVALID_ARGUMENT", "repo is required as owner/name or GitHub URL", "validation")

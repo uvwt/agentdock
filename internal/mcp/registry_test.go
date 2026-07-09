@@ -244,8 +244,8 @@ func TestFileEditAndGitUnifiedSchemas(t *testing.T) {
 	}
 
 	gitReadProps := schemaProperties(t, "git_read")
-	assertSameStrings(t, enumStrings(t, gitReadProps["action"]), []string{"repos", "status", "diff", "log", "show", "blame"})
-	for _, name := range []string{"repo_path", "path", "paths", "rev", "limit", "max_bytes"} {
+	assertSameStrings(t, enumStrings(t, gitReadProps["action"]), []string{"repos", "status", "diff", "log", "show", "blame", "github_repo_access"})
+	for _, name := range []string{"repo_path", "path", "paths", "rev", "limit", "max_bytes", "repo", "repository", "timeout_ms"} {
 		if _, ok := gitReadProps[name]; !ok {
 			t.Fatalf("git_read input schema missing %q", name)
 		}
@@ -261,7 +261,7 @@ func TestFileEditAndGitUnifiedSchemas(t *testing.T) {
 }
 
 func TestLegacyModelEntrypointsAreRemoved(t *testing.T) {
-	for _, name := range []string{"apply_patch", "edit_file", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "browser_profile", "private_notes_search", "private_notes_read", "private_notes_write", "private_notes_status", "private_notes_maintain"} {
+	for _, name := range []string{"apply_patch", "edit_file", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "check_github_repo_access", "browser_profile", "private_notes_search", "private_notes_read", "private_notes_write", "private_notes_status", "private_notes_maintain"} {
 		if _, ok := toolDefinition(name); ok {
 			t.Fatalf("legacy tool should not be model-facing: %s", name)
 		}

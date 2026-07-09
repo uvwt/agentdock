@@ -5,10 +5,12 @@ import (
 	"strings"
 )
 
+var gitReadActions = []string{"repos", "status", "diff", "log", "show", "blame", "github_repo_access"}
+
 func (r *Runtime) gitRead(ctx context.Context, args map[string]any) (Result, error) {
 	action := strings.ToLower(stringArg(args, "action", ""))
 	if action == "" {
-		return nil, toolErrorDetails("MISSING_ACTION", "git_read requires action", "validation", map[string]any{"allowed": []string{"repos", "status", "diff", "log", "show", "blame"}})
+		return nil, toolErrorDetails("MISSING_ACTION", "git_read requires action", "validation", map[string]any{"allowed": gitReadActions})
 	}
 	switch action {
 	case "repos":
@@ -47,8 +49,14 @@ func (r *Runtime) gitRead(ctx context.Context, args map[string]any) (Result, err
 			result["action"] = "blame"
 		}
 		return result, err
+	case "github_repo_access":
+		result, err := r.gitHubRepoAccess(args)
+		if result != nil {
+			result["action"] = "github_repo_access"
+		}
+		return result, err
 	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported git_read action", "validation", map[string]any{"action": action, "allowed": []string{"repos", "status", "diff", "log", "show", "blame"}})
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported git_read action", "validation", map[string]any{"action": action, "allowed": gitReadActions})
 	}
 }
 

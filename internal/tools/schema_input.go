@@ -87,11 +87,6 @@ func InputSchema(name string) map[string]any {
 		props["session_id"] = stringProp("Session id returned by exec_command, required for write/kill.")
 		props["chars"] = stringProp("Characters to write when action=write.")
 		props["max_output_bytes"] = intProp("Maximum output bytes.")
-	case "check_github_repo_access":
-		props["repo"] = stringProp("GitHub repository as owner/name or https://github.com/owner/name.git.")
-		props["repository"] = stringProp("Alias for repo.")
-		props["timeout_ms"] = intProp("HTTP timeout in milliseconds.")
-		required = []string{"repo"}
 	case "task_manage":
 		props["action"] = map[string]any{"type": "string", "description": "Task lifecycle action. Template discovery and authoring live in workflow_template_manage.", "enum": []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review"}}
 		props["task_id"] = stringProp("Persistent task id for get, block, resume, final_review, or complete_after_review.")
@@ -272,7 +267,7 @@ func InputSchema(name string) map[string]any {
 		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
 		required = []string{"session_id"}
 	case "git_read":
-		props["action"] = map[string]any{"type": "string", "description": "Read action.", "enum": []string{"repos", "status", "diff", "log", "show", "blame"}}
+		props["action"] = map[string]any{"type": "string", "description": "Read action.", "enum": gitReadActions}
 		props["path"] = stringProp("Directory path for repos or file path for blame.")
 		props["repo_path"] = stringProp("Repository path.")
 		props["paths"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
@@ -281,6 +276,9 @@ func InputSchema(name string) map[string]any {
 		props["max_depth"] = intProp("Maximum scan depth for repos.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
 		props["max_output_bytes"] = intProp("Alias for status output limit.")
+		props["repo"] = stringProp("GitHub repository as owner/name or https://github.com/owner/name.git; used by action=github_repo_access.")
+		props["repository"] = stringProp("Alias for repo; used by action=github_repo_access.")
+		props["timeout_ms"] = intProp("HTTP timeout in milliseconds; used by action=github_repo_access.")
 		required = []string{"action"}
 	case "git_write":
 		props["action"] = map[string]any{"type": "string", "description": "Write action.", "enum": []string{"clone", "commit", "fetch", "pull", "push"}}

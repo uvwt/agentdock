@@ -71,9 +71,20 @@ func TestGitReadStatus(t *testing.T) {
 	}
 }
 
+func TestGitReadGitHubRepoAccessMissingCredential(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	result, err := rt.Call(context.Background(), "git_read", map[string]any{"action": "github_repo_access", "repo": "owner/repo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["action"] != "github_repo_access" || result["credential_found"] != false {
+		t.Fatalf("unexpected git_read github_repo_access result: %#v", result)
+	}
+}
+
 func TestLegacyModelEntrypointsRemovedFromRuntime(t *testing.T) {
 	rt, _ := newCodeToolsRuntime(t)
-	for _, name := range []string{"apply_patch", "edit_file", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "browser_profile"} {
+	for _, name := range []string{"apply_patch", "edit_file", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "check_github_repo_access", "browser_profile"} {
 		if _, err := rt.Call(context.Background(), name, map[string]any{}); err == nil {
 			t.Fatalf("legacy tool should not be callable: %s", name)
 		}
