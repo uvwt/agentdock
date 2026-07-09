@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -34,30 +33,22 @@ func (r *Runtime) CapabilityContext(ctx context.Context, refresh bool) (Result, 
 	}
 	contextText := renderCapabilityContext(generatedAt, sections)
 
-	result := Result{
-		"ok":           true,
-		"generated_at": generatedAt,
-		"refreshed":    refresh,
-		"context":      contextText,
-		"summary":      contextText,
-		"base_tools":   map[string]any{"items": baseTools, "summary": strings.Join(baseToolSummaryLines(baseTools), "\n")},
-		"skills":       map[string]any{"items": skills, "summary": skillSummary, "count": len(skills)},
-		"task_templates": map[string]any{
-			"items": templates, "summary": templateSummary, "count": len(templates),
-		},
-		"memory": map[string]any{"items": memoryItems, "summary": memorySummary, "count": len(memoryItems)},
-		"rules":  map[string]any{"items": rules, "summary": strings.Join(rules, "\n")},
-	}
-	if skillErr != "" {
-		result["skills"].(map[string]any)["error"] = skillErr
-	}
-	if templateErr != "" {
-		result["task_templates"].(map[string]any)["error"] = templateErr
-	}
-	if memoryErr != "" {
-		result["memory"].(map[string]any)["error"] = memoryErr
-	}
-	return result, nil
+	skillBlock := capabilitySkillBlock{Items: skills, Summary: skillSummary, Count: len(skills), Error: skillErr}
+	templateBlock := capabilityTemplateBlock{Items: templates, Summary: templateSummary, Count: len(templates), Error: templateErr}
+	memoryBlock := capabilityMemoryBlock{Items: memoryItems, Summary: memorySummary, Count: len(memoryItems), Error: memoryErr}
+
+	return Result{
+		"ok":             true,
+		"generated_at":   generatedAt,
+		"refreshed":      refresh,
+		"context":        contextText,
+		"summary":        contextText,
+		"base_tools":     capabilityBaseToolBlock{Items: baseTools, Summary: strings.Join(baseToolSummaryLines(baseTools), "\n")},
+		"skills":         skillBlock,
+		"task_templates": templateBlock,
+		"memory":         memoryBlock,
+		"rules":          capabilityRulesBlock{Items: rules, Summary: strings.Join(rules, "\n")},
+	}, nil
 }
 
 func (r *Runtime) capabilityContextTool(ctx context.Context, args map[string]any) (Result, error) {
@@ -69,58 +60,183 @@ type capabilitySection struct {
 	Lines []string
 }
 
-func baseToolCapabilityItems() []map[string]any {
-	return []map[string]any{
-		{"name": "exec_command", "summary": "执行命令，用于查看真实环境、运行测试、构建、部署和排障；实际权限由运行用户和部署边界决定。"},
-		{"name": "skill_read", "summary": "只读发现 AgentDock Skill：list / inspect，低风险。"},
-		{"name": "skill_package", "summary": "管理 Skill 包生命周期：validate / install / rollback。"},
-		{"name": "skill_run", "summary": "专门执行 Skill operation；默认不传 action，需要时只允许 action=run。"},
-		{"name": "skill_env_manage", "summary": "管理 Skill env registry。"},
-		{"name": "task_manage", "summary": "管理可恢复任务；模板发现通过 workflow_template_manage match。"},
-		{"name": "recall_bootstrap / recall_search / recall_read", "summary": "读取记忆精简上下文、搜索记忆和精确读取 runbook。"},
-		{"name": "private_note_manage", "summary": "低频显式隐私笔记保险箱；默认不要用，只有用户要求隐私/本机不同步或内容明显敏感时再调用。"},
+type capabilityBaseToolItem struct {
+	Name    string `json:"name"`
+	Summary string `json:"summary"`
+}
+
+type capabilityBaseToolBlock struct {
+	Items   []capabilityBaseToolItem `json:"items"`
+	Summary string                   `json:"summary"`
+}
+
+type capabilitySkillItem struct {
+	Skill          string   `json:"skill"`
+	ActiveVersion  string   `json:"active_version,omitempty"`
+	UpdatedAt      string   `json:"updated_at,omitempty"`
+	Summary        string   `json:"summary,omitempty"`
+	Operations     []string `json:"operations,omitempty"`
+	OperationCount int      `json:"operation_count,omitempty"`
+}
+
+type capabilitySkillBlock struct {
+	Items   []capabilitySkillItem `json:"items"`
+	Summary string                `json:"summary"`
+	Count   int                   `json:"count"`
+	Error   string                `json:"error,omitempty"`
+}
+
+type capabilityTemplateItem struct {
+	ID                 string   `json:"id"`
+	Version            string   `json:"version,omitempty"`
+	Title              string   `json:"title,omitempty"`
+	Status             string   `json:"status,omitempty"`
+	Type               string   `json:"type,omitempty"`
+	Path               string   `json:"path,omitempty"`
+	Location           string   `json:"location,omitempty"`
+	FileName           string   `json:"file_name,omitempty"`
+	UpdatedAt          string   `json:"updated_at,omitempty"`
+	PublishedAt        string   `json:"published_at,omitempty"`
+	RetiredAt          string   `json:"retired_at,omitempty"`
+	Hash               string   `json:"hash,omitempty"`
+	KeywordCount       int      `json:"keyword_count,omitempty"`
+	DeviceCount        int      `json:"device_count,omitempty"`
+	ConditionCount     int      `json:"condition_count,omitempty"`
+	StepCount          int      `json:"step_count,omitempty"`
+	SizeBytes          int      `json:"size_bytes,omitempty"`
+	Current            bool     `json:"current,omitempty"`
+	AllowLongTemplate  bool     `json:"allow_long_template,omitempty"`
+	LongTemplateReason string   `json:"long_template_reason,omitempty"`
+	Keywords           []string `json:"keywords,omitempty"`
+	Devices            []string `json:"devices,omitempty"`
+}
+
+type capabilityTemplateBlock struct {
+	Items   []capabilityTemplateItem `json:"items"`
+	Summary string                   `json:"summary"`
+	Count   int                      `json:"count"`
+	Error   string                   `json:"error,omitempty"`
+}
+
+type capabilityMemoryItem struct {
+	Path    string `json:"path,omitempty"`
+	Title   string `json:"title,omitempty"`
+	Excerpt string `json:"excerpt,omitempty"`
+}
+
+type capabilityMemoryBlock struct {
+	Items   []capabilityMemoryItem `json:"items"`
+	Summary string                 `json:"summary"`
+	Count   int                    `json:"count"`
+	Error   string                 `json:"error,omitempty"`
+}
+
+type capabilityRulesBlock struct {
+	Items   []string `json:"items"`
+	Summary string   `json:"summary"`
+}
+
+type capabilitySkillList struct {
+	Skills []capabilitySkillItem `json:"skills"`
+}
+
+type capabilitySkillManifest struct {
+	Metadata    capabilitySkillMetadata `json:"metadata"`
+	Spec        capabilitySkillSpec     `json:"spec"`
+	Description string                  `json:"description"`
+	Summary     string                  `json:"summary"`
+	Title       string                  `json:"title"`
+	Name        string                  `json:"name"`
+	Operations  []capabilityOperation   `json:"operations"`
+	Tools       []capabilityOperation   `json:"tools"`
+}
+
+type capabilitySkillMetadata struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName"`
+	Description string `json:"description"`
+}
+
+type capabilitySkillSpec struct {
+	Operations []capabilityOperation `json:"operations"`
+}
+
+type capabilityOperation struct {
+	Name      string `json:"name"`
+	Operation string `json:"operation"`
+	ID        string `json:"id"`
+}
+
+type capabilityTemplateList struct {
+	Templates []capabilityTemplateItem `json:"templates"`
+}
+
+type capabilityRecallBootstrap struct {
+	Sections     []capabilityMemorySection `json:"sections"`
+	RunbookIndex []capabilityMemoryRunbook `json:"runbook_index"`
+}
+
+type capabilityMemorySection struct {
+	Path        string `json:"path"`
+	BodyExcerpt string `json:"body_excerpt"`
+	Summary     string `json:"summary"`
+}
+
+type capabilityMemoryRunbook struct {
+	Title string `json:"title"`
+	Path  string `json:"path"`
+}
+
+func baseToolCapabilityItems() []capabilityBaseToolItem {
+	return []capabilityBaseToolItem{
+		{Name: "exec_command", Summary: "执行命令，用于查看真实环境、运行测试、构建、部署和排障；实际权限由运行用户和部署边界决定。"},
+		{Name: "skill_read", Summary: "只读发现 AgentDock Skill：list / inspect，低风险。"},
+		{Name: "skill_package", Summary: "管理 Skill 包生命周期：validate / install / rollback。"},
+		{Name: "skill_run", Summary: "专门执行 Skill operation；默认不传 action，需要时只允许 action=run。"},
+		{Name: "skill_env_manage", Summary: "管理 Skill env registry。"},
+		{Name: "task_manage", Summary: "管理可恢复任务；模板发现通过 workflow_template_manage match。"},
+		{Name: "recall_bootstrap / recall_search / recall_read", Summary: "读取记忆精简上下文、搜索记忆和精确读取 runbook。"},
+		{Name: "private_note_manage", Summary: "低频显式隐私笔记保险箱；默认不要用，只有用户要求隐私/本机不同步或内容明显敏感时再调用。"},
 	}
 }
 
-func baseToolSummaryLines(items []map[string]any) []string {
+func baseToolSummaryLines(items []capabilityBaseToolItem) []string {
 	lines := make([]string, 0, len(items))
 	for _, item := range items {
-		lines = append(lines, fmt.Sprintf("- %s：%s", capabilityString(item["name"]), capabilityString(item["summary"])))
+		lines = append(lines, fmt.Sprintf("- %s：%s", item.Name, item.Summary))
 	}
 	return lines
 }
 
-func (r *Runtime) skillCapabilityIndex() ([]map[string]any, string, string) {
+func (r *Runtime) skillCapabilityIndex() ([]capabilitySkillItem, string, string) {
 	result, err := r.skillList()
 	if err != nil {
 		return nil, "- Skill 索引暂不可用；需要 Skill 时调用 skill_read list/inspect 重新确认。", err.Error()
 	}
-	rawItems := asMapSlice(result["skills"])
-	items := make([]map[string]any, 0, len(rawItems))
+	var listed capabilitySkillList
+	if err := remarshal(result, &listed); err != nil {
+		return nil, "- Skill 索引暂不可用；需要 Skill 时调用 skill_read list/inspect 重新确认。", err.Error()
+	}
+	items := make([]capabilitySkillItem, 0, len(listed.Skills))
 	lines := []string{"当前已安装 Skill 摘要如下；执行前先用 skill_read inspect 确认 operations 和输入参数。"}
-	for _, raw := range rawItems {
-		name := capabilityString(raw["skill"])
-		if name == "" {
+	for _, item := range listed.Skills {
+		item.Skill = strings.TrimSpace(item.Skill)
+		if item.Skill == "" {
 			continue
 		}
-		item := map[string]any{
-			"skill":          name,
-			"active_version": capabilityString(raw["active_version"]),
-			"updated_at":     raw["updated_at"],
-		}
-		if inspected, inspectErr := r.skillInspect(map[string]any{"skill": name}); inspectErr == nil {
-			mergeSkillManifestSummary(item, inspected)
+		if inspected, inspectErr := r.skillInspect(map[string]any{"skill": item.Skill}); inspectErr == nil {
+			mergeSkillManifestSummary(&item, inspected)
 		}
 		items = append(items, item)
-		line := "- " + name
-		if version := capabilityString(item["active_version"]); version != "" {
-			line += "@" + version
+		line := "- " + item.Skill
+		if item.ActiveVersion != "" {
+			line += "@" + item.ActiveVersion
 		}
-		if summary := capabilityString(item["summary"]); summary != "" {
-			line += "：" + summary
+		if item.Summary != "" {
+			line += "：" + item.Summary
 		}
-		if ops := capabilityStringSlice(item["operations"]); len(ops) > 0 {
-			line += "；operations=" + strings.Join(ops, ", ")
+		if len(item.Operations) > 0 {
+			line += "；operations=" + strings.Join(item.Operations, ", ")
 		}
 		lines = append(lines, truncateString(line, 320))
 	}
@@ -130,37 +246,42 @@ func (r *Runtime) skillCapabilityIndex() ([]map[string]any, string, string) {
 	return items, strings.Join(lines, "\n"), ""
 }
 
-func mergeSkillManifestSummary(item map[string]any, inspected Result) {
-	manifest := capabilityMap(inspected["manifest"])
-	if len(manifest) == 0 {
+func mergeSkillManifestSummary(item *capabilitySkillItem, inspected Result) {
+	var manifest capabilitySkillManifest
+	if err := remarshal(inspected["manifest"], &manifest); err != nil {
 		return
 	}
-	metadata := capabilityMap(manifest["metadata"])
-	spec := capabilityMap(manifest["spec"])
-	for _, value := range []any{metadata["description"], metadata["displayName"], metadata["name"], manifest["description"], manifest["summary"], manifest["title"], manifest["name"]} {
-		if text := strings.TrimSpace(capabilityString(value)); text != "" {
-			item["summary"] = truncateString(text, 120)
+	for _, text := range []string{
+		manifest.Metadata.Description,
+		manifest.Metadata.DisplayName,
+		manifest.Metadata.Name,
+		manifest.Description,
+		manifest.Summary,
+		manifest.Title,
+		manifest.Name,
+	} {
+		if text = strings.TrimSpace(text); text != "" {
+			item.Summary = truncateString(text, 120)
 			break
 		}
 	}
-	ops := operationNames(spec["operations"])
+	ops := operationNames(manifest.Spec.Operations)
 	if len(ops) == 0 {
-		ops = operationNames(manifest["operations"])
+		ops = operationNames(manifest.Operations)
 	}
 	if len(ops) == 0 {
-		ops = operationNames(manifest["tools"])
+		ops = operationNames(manifest.Tools)
 	}
 	if len(ops) > 0 {
-		item["operations"] = ops
-		item["operation_count"] = len(ops)
+		item.Operations = ops
+		item.OperationCount = len(ops)
 	}
 }
 
-func operationNames(raw any) []string {
-	items := asMapSlice(raw)
-	out := make([]string, 0, len(items))
-	for _, item := range items {
-		name := firstCapabilityString(item, "name", "operation", "id")
+func operationNames(operations []capabilityOperation) []string {
+	out := make([]string, 0, len(operations))
+	for _, operation := range operations {
+		name := firstCapabilityNonEmptyString(operation.Name, operation.Operation, operation.ID)
 		if name == "" {
 			continue
 		}
@@ -172,27 +293,30 @@ func operationNames(raw any) []string {
 	return out
 }
 
-func (r *Runtime) templateCapabilityIndex() ([]map[string]any, string, string) {
+func (r *Runtime) templateCapabilityIndex() ([]capabilityTemplateItem, string, string) {
 	result, err := r.workflowTemplateManage(map[string]any{"action": "list", "template_status": "active"})
 	if err != nil {
 		return nil, "- 任务模板索引暂不可用；多步骤任务仍应先 workflow_template_manage match。", err.Error()
 	}
-	items := asMapSlice(result["templates"])
+	var listed capabilityTemplateList
+	if err := remarshal(result, &listed); err != nil {
+		return nil, "- 任务模板索引暂不可用；多步骤任务仍应先 workflow_template_manage match。", err.Error()
+	}
+	items := listed.Templates
 	sort.SliceStable(items, func(i, j int) bool {
-		return capabilityString(items[i]["id"]) < capabilityString(items[j]["id"])
+		return items[i].ID < items[j].ID
 	})
 	lines := []string{"当用户请求涉及多步骤开发、部署、排障、数据迁移、Docker、VPS 或 Git 提交推送时，先调用 workflow_template_manage match，再用 task_manage create 创建可恢复任务。"}
 	for _, item := range items {
-		id := capabilityString(item["id"])
-		if id == "" {
+		if item.ID == "" {
 			continue
 		}
-		line := "- " + id
-		if title := capabilityString(item["title"]); title != "" {
-			line += "：" + title
+		line := "- " + item.ID
+		if item.Title != "" {
+			line += "：" + item.Title
 		}
-		if version := capabilityString(item["version"]); version != "" {
-			line += "；version=" + version
+		if item.Version != "" {
+			line += "；version=" + item.Version
 		}
 		lines = append(lines, truncateString(line, 260))
 	}
@@ -202,7 +326,7 @@ func (r *Runtime) templateCapabilityIndex() ([]map[string]any, string, string) {
 	return items, strings.Join(lines, "\n"), ""
 }
 
-func (r *Runtime) memoryCapabilitySummary(ctx context.Context) (string, []map[string]any, string) {
+func (r *Runtime) memoryCapabilitySummary(ctx context.Context) (string, []capabilityMemoryItem, string) {
 	if strings.TrimSpace(r.cfg.RecallEndpoint) == "" {
 		return "- RecallDock 未配置；无法自动注入记忆精简摘要。", nil, "recall endpoint is not configured"
 	}
@@ -212,34 +336,35 @@ func (r *Runtime) memoryCapabilitySummary(ctx context.Context) (string, []map[st
 	if err != nil {
 		return "- 记忆精简摘要暂不可用；需要项目事实时调用 recall_search/recall_read 精确确认。", nil, err.Error()
 	}
-	items := make([]map[string]any, 0)
+	var bootstrap capabilityRecallBootstrap
+	if err := remarshal(result, &bootstrap); err != nil {
+		return "- 记忆精简摘要暂不可用；需要项目事实时调用 recall_search/recall_read 精确确认。", nil, err.Error()
+	}
+	items := make([]capabilityMemoryItem, 0)
 	lines := []string{
 		"高优先级记忆摘要：默认中文、直接完成任务；涉及部署/修改/排障先查真实环境；多步骤任务先匹配任务模板；Git commit 使用 type(scope): 中文说明。",
 	}
-	for _, section := range asMapSlice(result["sections"]) {
-		title := capabilityString(section["path"])
-		excerpt := capabilityString(section["body_excerpt"])
+	for _, section := range bootstrap.Sections {
+		excerpt := strings.TrimSpace(section.BodyExcerpt)
 		if excerpt == "" {
-			excerpt = capabilityString(section["summary"])
+			excerpt = strings.TrimSpace(section.Summary)
 		}
 		if excerpt == "" {
 			continue
 		}
-		item := map[string]any{"path": title, "excerpt": truncateString(excerpt, 500)}
-		items = append(items, item)
+		items = append(items, capabilityMemoryItem{Path: section.Path, Excerpt: truncateString(excerpt, 500)})
 		lines = append(lines, "- "+truncateString(excerpt, 260))
 		if len(lines) >= 5 {
 			break
 		}
 	}
 	if len(lines) < 5 {
-		for _, runbook := range asMapSlice(result["runbook_index"]) {
-			title := capabilityString(runbook["title"])
-			path := capabilityString(runbook["path"])
+		for _, runbook := range bootstrap.RunbookIndex {
+			title := strings.TrimSpace(runbook.Title)
 			if title == "" {
 				continue
 			}
-			items = append(items, map[string]any{"title": title, "path": path})
+			items = append(items, capabilityMemoryItem{Title: title, Path: runbook.Path})
 			lines = append(lines, "- runbook: "+title)
 			if len(lines) >= 5 {
 				break
@@ -278,83 +403,13 @@ func splitNonEmptyLines(text string) []string {
 	return out
 }
 
-func asMapSlice(raw any) []map[string]any {
-	switch items := raw.(type) {
-	case []map[string]any:
-		return items
-	case []any:
-		out := make([]map[string]any, 0, len(items))
-		for _, item := range items {
-			if m, ok := item.(map[string]any); ok {
-				out = append(out, m)
-			}
-		}
-		return out
-	default:
-		data, err := json.Marshal(raw)
-		if err != nil {
-			return nil
-		}
-		var out []map[string]any
-		_ = json.Unmarshal(data, &out)
-		return out
-	}
-}
-
-func capabilityMap(raw any) map[string]any {
-	switch value := raw.(type) {
-	case map[string]any:
-		return value
-	case nil:
-		return nil
-	default:
-		data, err := json.Marshal(raw)
-		if err != nil {
-			return nil
-		}
-		var out map[string]any
-		_ = json.Unmarshal(data, &out)
-		return out
-	}
-}
-
-func capabilityString(raw any) string {
-	switch v := raw.(type) {
-	case string:
-		return strings.TrimSpace(v)
-	case fmt.Stringer:
-		return strings.TrimSpace(v.String())
-	case nil:
-		return ""
-	default:
-		return strings.TrimSpace(fmt.Sprint(v))
-	}
-}
-
-func firstCapabilityString(item map[string]any, keys ...string) string {
-	for _, key := range keys {
-		if value := capabilityString(item[key]); value != "" {
+func firstCapabilityNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
 			return value
 		}
 	}
 	return ""
-}
-
-func capabilityStringSlice(raw any) []string {
-	switch values := raw.(type) {
-	case []string:
-		return values
-	case []any:
-		out := make([]string, 0, len(values))
-		for _, value := range values {
-			if s := capabilityString(value); s != "" {
-				out = append(out, s)
-			}
-		}
-		return out
-	default:
-		return nil
-	}
 }
 
 func capMinInt(a, b int) int {

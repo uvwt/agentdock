@@ -10,8 +10,8 @@ import (
 )
 
 func TestMergeSkillManifestSummaryReadsNestedManifest(t *testing.T) {
-	item := map[string]any{"skill": "demo-skill"}
-	mergeSkillManifestSummary(item, Result{"manifest": skillruntime.Manifest{
+	item := capabilitySkillItem{Skill: "demo-skill"}
+	mergeSkillManifestSummary(&item, Result{"manifest": skillruntime.Manifest{
 		Metadata: skillruntime.Metadata{
 			Name:        "demo-skill",
 			DisplayName: "Demo Skill",
@@ -23,11 +23,10 @@ func TestMergeSkillManifestSummaryReadsNestedManifest(t *testing.T) {
 		}},
 	}})
 
-	if item["summary"] != "Use this demo Skill for capability context tests." {
+	if item.Summary != "Use this demo Skill for capability context tests." {
 		t.Fatalf("summary not read from metadata.description: %#v", item)
 	}
-	ops, ok := item["operations"].([]string)
-	if !ok || len(ops) != 2 || ops[0] != "echo" || ops[1] != "status" {
+	if len(item.Operations) != 2 || item.Operations[0] != "echo" || item.Operations[1] != "status" {
 		t.Fatalf("operations not read from spec.operations: %#v", item)
 	}
 }
