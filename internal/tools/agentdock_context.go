@@ -294,9 +294,7 @@ func (r *Runtime) memoryCapabilitySummary(ctx context.Context) (string, []capabi
 		return "- 记忆精简摘要暂不可用；需要项目事实时调用 recall_search/recall_read 精确确认。", nil, err.Error()
 	}
 	items := make([]capabilityMemoryItem, 0)
-	lines := []string{
-		"高优先级记忆摘要：默认中文、直接完成任务；涉及部署/修改/排障先查真实环境；多步骤任务先匹配任务模板；Git commit 使用 type(scope): 中文说明。",
-	}
+	lines := make([]string, 0, 5)
 	for _, section := range bootstrap.Sections {
 		excerpt := strings.TrimSpace(section.BodyExcerpt)
 		if excerpt == "" {
@@ -323,6 +321,9 @@ func (r *Runtime) memoryCapabilitySummary(ctx context.Context) (string, []capabi
 				break
 			}
 		}
+	}
+	if len(lines) == 0 {
+		return "- 记忆精简摘要暂无条目；需要项目事实时调用 recall_search/recall_read 精确确认。", items, ""
 	}
 	return strings.Join(lines, "\n"), items, ""
 }
