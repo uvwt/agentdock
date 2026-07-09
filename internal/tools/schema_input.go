@@ -252,7 +252,7 @@ func InputSchema(name string) map[string]any {
 		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
 	case "browser_act":
 		props["session_id"] = stringProp("Browser session id.")
-		props["actions"] = arrayProp("Actions to run: goto, click, fill, press, wait, wait_for_selector, select, scroll, reload, back, or forward. Page script actions are disabled by the default runner.")
+		props["actions"] = arrayProp("Actions to run. Each item may use action or type: goto, click, fill, press, wait, wait_for_selector, select, scroll, reload, back, or forward. For wait, use ms or value. Page script actions are disabled by the default runner.")
 		props["full_page"] = boolProp("Capture full-page screenshot in the final snapshot.")
 		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
 		props["screenshot_return_mode"] = stringProp("Screenshot return mode: none, url, mcp_image, base64, data_url, or both. Defaults to url.")
