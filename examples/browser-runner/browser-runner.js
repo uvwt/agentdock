@@ -11,7 +11,6 @@ const operation = payload.operation;
 const args = payload.args || {};
 const artifactDir = payload.artifact_dir || process.env.BROWSER_ARTIFACT_DIR || '.';
 const stateFile = path.join(artifactDir, 'browser-state.json');
-const serverUrl = (process.env.AGENTDOCK_SERVER_URL || '').replace(/\/+$/, '');
 
 // session_start 只写入状态，不应该因为本机尚未安装 Playwright 依赖而失败。
 // 只有真正打开页面时才延迟加载浏览器驱动。
@@ -351,7 +350,7 @@ async function cdpSnapshot(session, sessionId) {
     viewport: session.viewport || null,
     interactive_elements: []
   };
-  if (args.include_screenshot_base64 === true || args.include_image === true || args.include_image_base64 === true) {
+  if (shouldCaptureScreenshot(args)) {
     const screenshot = await cdpCall(target.webSocketDebuggerUrl, 'Page.captureScreenshot', { format: 'png' }, timeout).catch(() => null);
     if (screenshot?.data) {
       const screenshotDir = path.join(artifactDir, 'screenshots');
@@ -362,10 +361,6 @@ async function cdpSnapshot(session, sessionId) {
       result.screenshot_path = screenshotPath;
       result.screenshot_file = screenshotFile;
       result.artifact = { path: screenshotPath, mime_type: 'image/png' };
-      if (args.include_screenshot_base64 === true) {
-        result.screenshot_mime_type = 'image/png';
-        result.screenshot_base64 = screenshot.data;
-      }
     }
   }
   return { ...storageResult, ...result };
@@ -639,25 +634,9 @@ async function collectInteractiveElements(page, limit = 40) {
   }, limit).catch(() => []);
 }
 
-async function attachImageIfRequested(result, screenshotPath, captureArgs = args) {
-  if (captureArgs.include_image !== true && captureArgs.include_image_base64 !== true) return result;
-  if (!screenshotPath) {
-    result.image_attached = false;
-    result.image_warnings = ['screenshot was not captured'];
-    return result;
-  }
-  const maxBytes = captureArgs.max_image_bytes || 750000;
-  const data = await fs.readFile(screenshotPath);
-  if (data.length > maxBytes) {
-    result.image_attached = false;
-    result.image_warnings = [`screenshot image exceeds max_image_bytes (${data.length} > ${maxBytes})`];
-    return result;
-  }
-  result.image_attached = true;
-  result.image_mime_type = 'image/png';
-  result.image_size_bytes = data.length;
-  result.image_base64 = data.toString('base64');
-  return result;
+function shouldCaptureScreenshot(captureArgs = args) {
+  const mode = String(captureArgs.screenshot_return_mode || 'url').toLowerCase();
+  return captureArgs.capture_screenshot === true || mode !== 'none';
 }
 
 async function saveStorageStateIfNeeded(context, session, sessionId) {
@@ -761,15 +740,12 @@ async function launchPage(session) {
 async function capturePageState(page, captureArgs = args, extra = {}) {
   const maxText = captureArgs.max_text_chars || 12000;
   const fullPage = captureArgs.full_page === true;
-  const shouldCaptureScreenshot = captureArgs.capture_screenshot === true
-    || captureArgs.include_screenshot_base64 === true
-    || captureArgs.include_image === true
-    || captureArgs.include_image_base64 === true;
+  const shouldCapture = shouldCaptureScreenshot(captureArgs);
   let screenshotPath = '';
   let screenshotFile = '';
   let screenshotArtifactId = '';
   let artifact = {};
-  if (shouldCaptureScreenshot) {
+  if (shouldCapture) {
     const screenshotDir = path.join(artifactDir, 'screenshots');
     await fs.mkdir(screenshotDir, { recursive: true });
     screenshotFile = `snapshot-${Date.now()}.png`;
@@ -782,9 +758,6 @@ async function capturePageState(page, captureArgs = args, extra = {}) {
       file: screenshotFile,
       artifact_id: screenshotArtifactId
     };
-    if (serverUrl) {
-      artifact.url = `${serverUrl}/artifacts/browser/screenshots/${encodeURIComponent(screenshotFile)}`;
-    }
   }
   const rawText = await page.locator('body').innerText({ timeout: 3000 }).catch(async () => {
     return await page.evaluate(() => document.body ? document.body.innerText : '').catch(() => '');
@@ -801,21 +774,16 @@ async function capturePageState(page, captureArgs = args, extra = {}) {
     ...metrics,
     ...extra
   };
-  if (shouldCaptureScreenshot) {
+  if (shouldCapture) {
     result.screenshot_path = screenshotPath;
     result.screenshot_file = screenshotFile;
     result.screenshot_artifact_id = screenshotArtifactId;
-    if (serverUrl) result.screenshot_url = artifact.url;
-    if (captureArgs.include_screenshot_base64 === true) {
-      result.screenshot_mime_type = 'image/png';
-      result.screenshot_base64 = await fs.readFile(screenshotPath, 'base64');
-    }
   }
-  return await attachImageIfRequested(result, screenshotPath, captureArgs);
+  return result;
 }
 
 async function snapshot(page, extra = {}) {
-  return await capturePageState(page, { ...args, capture_screenshot: true }, extra);
+  return await capturePageState(page, args, extra);
 }
 
 async function runActions(page, actions = []) {
@@ -901,7 +869,7 @@ async function main() {
   }
   if (session.backend === 'daemon') {
     if (operation === 'action') {
-      const result = await daemonRequest(session.control_url, 'action', { ...args, actions: args.actions || [], max_text_chars: args.max_text_chars || 8000, capture_screenshot: args.capture_screenshot !== false }, cdpTimeout());
+      const result = await daemonRequest(session.control_url, 'action', { ...args, actions: args.actions || [], max_text_chars: args.max_text_chars || 8000, capture_screenshot: shouldCaptureScreenshot(args) }, cdpTimeout());
       const closeAfter = args.close_after === true;
       if (closeAfter) await closeSessionState(state, sessionId);
       else await writeState(state);
@@ -910,7 +878,7 @@ async function main() {
     }
     if (operation === 'snapshot') {
       const daemonAction = args.save_storage_state === true || session.save_storage_state === true ? 'save' : 'status';
-      const result = await daemonRequest(session.control_url, daemonAction, { ...args, max_text_chars: args.max_text_chars || 8000, capture_screenshot: args.capture_screenshot !== false }, cdpTimeout());
+      const result = await daemonRequest(session.control_url, daemonAction, { ...args, max_text_chars: args.max_text_chars || 8000, capture_screenshot: shouldCaptureScreenshot(args) }, cdpTimeout());
       const closeAfter = args.close_after === true;
       if (closeAfter) await closeSessionState(state, sessionId);
       else await writeState(state);

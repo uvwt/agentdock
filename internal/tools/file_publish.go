@@ -20,17 +20,11 @@ func (r *Runtime) filePublish(ctx context.Context, args map[string]any) (Result,
 	if err != nil {
 		return nil, fmt.Errorf("publish file: %w", err)
 	}
-	return Result{
-		"ok":          true,
-		"artifact_id": published.ArtifactID,
-		"url":         published.URL,
-		"expires_at":  published.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
-		"sha256":      published.SHA256,
-		"size":        published.Size,
-		"mime_type":   published.MimeType,
-		"filename":    published.Filename,
-		"archive":     published.Archive,
-	}, nil
+	result := Result{"ok": true}
+	for key, value := range artifactResult(published) {
+		result[key] = value
+	}
+	return result, nil
 }
 
 func (r *Runtime) filePublishSourcePath(args map[string]any) (string, error) {

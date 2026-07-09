@@ -255,10 +255,9 @@ func InputSchema(name string) map[string]any {
 		props["actions"] = arrayProp("Actions to run: goto, click, fill, press, wait, wait_for_selector, select, scroll, reload, back, or forward. Page script actions are disabled by the default runner.")
 		props["full_page"] = boolProp("Capture full-page screenshot in the final snapshot.")
 		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
-		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 and screenshot_mime_type in the response. Disabled by default because screenshots can be large.")
-		props["include_image"] = boolProp("Attach screenshot as MCP image content when supported and below max_image_bytes.")
-		props["include_image_base64"] = boolProp("Alias for include_image.")
-		props["max_image_bytes"] = intProp("Maximum inline image bytes. Defaults to 750000.")
+		props["screenshot_return_mode"] = stringProp("Screenshot return mode: none, url, mcp_image, base64, data_url, or both. Defaults to url.")
+		props["max_inline_bytes"] = intProp("Maximum inline image bytes for base64/data_url/mcp_image. Defaults to 750000 and is capped at 2097152.")
+		props["retention_seconds"] = intProp("Signed screenshot URL retention in seconds. Defaults to 86400 and is capped at 604800.")
 		props["close_after"] = boolProp("Close and remove the browser session after the action/snapshot succeeds.")
 		props["save_storage_state"] = boolProp("Save context storage state and return storage_state_path.")
 		props["max_interactive_elements"] = intProp("Maximum visible interactive elements to return. Defaults to 40.")
@@ -268,10 +267,9 @@ func InputSchema(name string) map[string]any {
 		props["session_id"] = stringProp("Browser session id.")
 		props["full_page"] = boolProp("Capture full-page screenshot for snapshot.")
 		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
-		props["include_screenshot_base64"] = boolProp("Include screenshot_base64 and screenshot_mime_type in the response. Disabled by default because screenshots can be large.")
-		props["include_image"] = boolProp("Attach screenshot as MCP image content when supported and below max_image_bytes.")
-		props["include_image_base64"] = boolProp("Alias for include_image.")
-		props["max_image_bytes"] = intProp("Maximum inline image bytes. Defaults to 750000.")
+		props["screenshot_return_mode"] = stringProp("Screenshot return mode: none, url, mcp_image, base64, data_url, or both. Defaults to url.")
+		props["max_inline_bytes"] = intProp("Maximum inline image bytes for base64/data_url/mcp_image. Defaults to 750000 and is capped at 2097152.")
+		props["retention_seconds"] = intProp("Signed screenshot URL retention in seconds. Defaults to 86400 and is capped at 604800.")
 		props["close_after"] = boolProp("Close and remove the browser session after snapshot succeeds.")
 		props["save_storage_state"] = boolProp("Save context storage state and return storage_state_path.")
 		props["max_interactive_elements"] = intProp("Maximum visible interactive elements to return. Defaults to 40.")
@@ -309,14 +307,16 @@ func InputSchema(name string) map[string]any {
 	case "view_image":
 		props["path"] = stringProp("Host path. Relative paths resolve from ~/AgentDock.")
 		if name == "view_image" {
-			props["max_bytes"] = intProp("Maximum encoded image bytes. Defaults to 750000.")
+			props["return_mode"] = stringProp("Image return mode: none, url, mcp_image, base64, data_url, or both. Defaults to url.")
+			props["retention_seconds"] = intProp("Signed image URL retention in seconds. Defaults to 86400 and is capped at 604800.")
+			props["max_inline_bytes"] = intProp("Maximum inline image bytes for base64/data_url/mcp_image. Defaults to 750000 and is capped at 2097152.")
+			props["max_bytes"] = intProp("Maximum processed image bytes. Defaults to 750000.")
 			props["max_width"] = intProp("Maximum image width. Defaults to 1280.")
 			props["max_height"] = intProp("Maximum image height. Defaults to 1280.")
 			props["auto_resize"] = boolProp("Resize/compress when limits are exceeded. Defaults to true.")
-			props["format"] = stringProp("Output image format: jpeg or png. Defaults to jpeg.")
+			props["format"] = stringProp("Processed image format: jpeg or png. Defaults to jpeg.")
 			props["quality"] = intProp("JPEG quality when format is jpeg. Defaults to 72.")
 			props["crop"] = map[string]any{"type": "object", "description": "Optional crop rectangle {x,y,width,height} before resizing.", "additionalProperties": true}
-			props["output"] = stringProp("mcp_image or data_url. Defaults to mcp_image.")
 		}
 	}
 

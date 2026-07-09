@@ -3,6 +3,9 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"image"
+	"image/color"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/publicartifacts"
 	"github.com/uvwt/agentdock/internal/taskstate"
 )
 
@@ -160,6 +164,133 @@ func newWorkflowTemplateNexusTestServer(t *testing.T, _ *taskstate.Store) *httpt
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	return server
+}
+
+func TestViewImageDefaultsToSignedURLWithoutBase64(t *testing.T) {
+	rt, root := newCodeToolsRuntime(t)
+	imagePath := filepath.Join(root, "tiny.png")
+	writeTinyPNG(t, imagePath)
+
+	result, err := rt.Call(context.Background(), "view_image", map[string]any{"path": "tiny.png", "format": "png"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["return_mode"] != "url" {
+		t.Fatalf("return_mode = %#v, want url", result["return_mode"])
+	}
+	if _, ok := result["inline"]; ok {
+		t.Fatalf("default view_image returned inline image data: %#v", result)
+	}
+	for _, forbidden := range []string{"data_base64", "data_url", "_mcp_image_base64"} {
+		if _, ok := result[forbidden]; ok {
+			t.Fatalf("default view_image returned %s: %#v", forbidden, result)
+		}
+	}
+	imageObject, ok := result["image"].(map[string]any)
+	if !ok {
+		t.Fatalf("image object missing: %#v", result)
+	}
+	rawURL, _ := imageObject["url"].(string)
+	if !strings.Contains(rawURL, "/artifacts/public/") || !strings.Contains(rawURL, "sig=") {
+		t.Fatalf("signed url missing: %#v", imageObject)
+	}
+	body, status := downloadPublicArtifact(t, rt, rawURL)
+	if status != http.StatusOK {
+		t.Fatalf("download status = %d body=%q", status, body)
+	}
+	if len(body) == 0 {
+		t.Fatalf("downloaded image is empty")
+	}
+}
+
+func TestBrowserScreenshotIsPublishedAndScratchFieldsAreRemoved(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node is required for browser runner")
+	}
+	root := t.TempDir()
+	runnerDir := filepath.Join(root, ".agentdock", "browser-runner")
+	if err := os.MkdirAll(runnerDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	script := `const fs = require('fs');
+const path = require('path');
+const payload = JSON.parse(process.env.BROWSER_RUNNER_PAYLOAD || '{}');
+const dir = path.join(payload.artifact_dir, 'screenshots');
+fs.mkdirSync(dir, { recursive: true });
+const file = 'snapshot-test.png';
+const screenshotPath = path.join(dir, file);
+fs.writeFileSync(screenshotPath, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGJgYGD4DwABBAEAgh7R8QAAAABJRU5ErkJggg==', 'base64'));
+process.stdout.write(JSON.stringify({ ok: true, operation: payload.operation, screenshot_path: screenshotPath, screenshot_file: file, artifact: { path: screenshotPath } }));`
+	if err := os.WriteFile(filepath.Join(runnerDir, "browser-runner.js"), []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		AgentDockDefaultDir: root,
+		AgentDockHome:       filepath.Join(root, ".agentdock"),
+		BrowserEnabled:      true,
+		BrowserRunnerDir:    "browser-runner",
+		BrowserArtifactDir:  "browser-artifacts",
+	}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
+	rt, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := rt.Call(context.Background(), "browser_snapshot", map[string]any{"timeout_ms": 5000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["screenshot_return_mode"] != "url" {
+		t.Fatalf("screenshot_return_mode = %#v, want url", result["screenshot_return_mode"])
+	}
+	if _, ok := result["stdout"]; ok {
+		t.Fatalf("parsed browser output should not echo raw stdout: %#v", result)
+	}
+	for _, forbidden := range []string{"artifact", "screenshot_path", "screenshot_file", "screenshot_artifact_id", "image_base64", "screenshot_base64"} {
+		if _, ok := result[forbidden]; ok {
+			t.Fatalf("browser result kept scratch field %s: %#v", forbidden, result)
+		}
+	}
+	screenshot, ok := result["screenshot"].(map[string]any)
+	if !ok {
+		t.Fatalf("screenshot object missing: %#v", result)
+	}
+	rawURL, _ := screenshot["url"].(string)
+	if !strings.Contains(rawURL, "/artifacts/public/") || !strings.Contains(rawURL, "sig=") {
+		t.Fatalf("signed screenshot url missing: %#v", screenshot)
+	}
+	body, status := downloadPublicArtifact(t, rt, rawURL)
+	if status != http.StatusOK || len(body) == 0 {
+		t.Fatalf("download status = %d len=%d", status, len(body))
+	}
+}
+
+func writeTinyPNG(t *testing.T, path string) {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := png.Encode(file, img); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func downloadPublicArtifact(t *testing.T, rt *Runtime, rawURL string) ([]byte, int) {
+	t.Helper()
+	store := publicartifacts.New(rt.cfg.AgentDockHome, rt.cfg.OAuthServerURL, rt.cfg.Port)
+	req := httptest.NewRequest(http.MethodGet, rawURL, nil)
+	recorder := httptest.NewRecorder()
+	store.ServeHTTP(recorder, req, "/artifacts/public/")
+	return recorder.Body.Bytes(), recorder.Code
 }
 
 func TestServerInfoRecommendsCompactRecallBootstrap(t *testing.T) {

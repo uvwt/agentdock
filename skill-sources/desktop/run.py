@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 import base64
+import datetime
+import hashlib
+import hmac
 import json
 import os
 import platform
+import secrets
 import shutil
+import stat
 import struct
 import subprocess
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 SEP = "\x1f"
 STATE_MAX_AGE_SECONDS = 90
 
@@ -109,6 +115,146 @@ def artifact_root():
     path = skill_data_root() / "artifacts"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def public_artifact_root():
+    path = agentdock_root() / "public-artifacts"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def public_secret_path():
+    return agentdock_root() / "secrets" / "public-url-secret"
+
+
+def ensure_public_secret():
+    path = public_secret_path()
+    if path.exists():
+        value = path.read_text(encoding="utf-8").strip()
+        try:
+            data = bytes.fromhex(value)
+        except ValueError:
+            data = b""
+        if len(data) >= 32:
+            try:
+                path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+            except OSError:
+                pass
+            return data
+        raise RuntimeError("public url secret is invalid")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.parent.chmod(stat.S_IRWXU)
+    except OSError:
+        pass
+    data = secrets.token_bytes(32)
+    path.write_text(data.hex() + "\n", encoding="utf-8")
+    try:
+        path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    except OSError:
+        pass
+    return data
+
+
+def public_base_url():
+    value = (os.environ.get("AGENTDOCK_SERVER_URL") or "").strip().rstrip("/")
+    if value:
+        return value
+    port = (os.environ.get("AGENTDOCK_PORT") or "8765").strip() or "8765"
+    return f"http://127.0.0.1:{port}"
+
+
+def rfc3339(timestamp):
+    return datetime.datetime.fromtimestamp(timestamp, datetime.UTC).isoformat().replace("+00:00", "Z")
+
+
+def safe_artifact_filename(value, default="desktop-snapshot.png"):
+    name = Path(str(value or default).replace("\\", "/")).name.strip()
+    if not name or name in {".", ".."}:
+        name = default
+    if len(name) > 240:
+        suffix = Path(name).suffix
+        stem = name[:-len(suffix)] if suffix else name
+        name = stem[: max(1, 240 - len(suffix))] + suffix
+    return name
+
+
+def sign_public_url(secret, artifact_id, filename, expires, sha256):
+    payload = f"{artifact_id}\n{filename}\n{expires}\n{sha256}".encode("utf-8")
+    return hmac.new(secret, payload, hashlib.sha256).hexdigest()
+
+
+def publish_public_image(path, data, info, args):
+    now = int(time.time())
+    retention = int_arg(args, "retention_seconds", 86400)
+    if retention <= 0:
+        retention = 86400
+    retention = min(retention, 7 * 24 * 60 * 60)
+    expires = now + retention
+    artifact_id = secrets.token_hex(16)
+    filename = safe_artifact_filename(path.name)
+    target_dir = public_artifact_root() / artifact_id
+    target_dir.mkdir(mode=0o700, parents=True, exist_ok=False)
+    payload_path = target_dir / "payload"
+    payload_path.write_bytes(data)
+    try:
+        payload_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    except OSError:
+        pass
+    sha = hashlib.sha256(data).hexdigest()
+    metadata = {
+        "artifact_id": artifact_id,
+        "filename": filename,
+        "mime_type": info["mime_type"],
+        "size_bytes": len(data),
+        "sha256": sha,
+        "created_at": rfc3339(now),
+        "expires_at": rfc3339(expires),
+        "archive": False,
+        "width": info["width"],
+        "height": info["height"],
+    }
+    (target_dir / "metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        (target_dir / "metadata.json").chmod(stat.S_IRUSR | stat.S_IWUSR)
+    except OSError:
+        pass
+    secret = ensure_public_secret()
+    sig = sign_public_url(secret, artifact_id, filename, expires, sha)
+    url = f"{public_base_url()}/artifacts/public/{urllib.parse.quote(artifact_id)}/{urllib.parse.quote(filename)}?expires={expires}&sig={urllib.parse.quote(sig)}"
+    metadata["url"] = url
+    return metadata
+
+
+def image_return_mode(args):
+    mode = str_arg(args, "return_mode", "url").strip().lower() or "url"
+    allowed = {"none", "url", "mcp_image", "base64", "data_url", "both"}
+    if mode not in allowed:
+        return "url", f"unsupported return_mode: {mode}"
+    return mode, ""
+
+
+def max_inline_bytes(args):
+    value = int_arg(args, "max_inline_bytes", 750000)
+    if value <= 0:
+        value = 750000
+    return min(value, 2 * 1024 * 1024)
+
+
+def attach_inline_image(out, data, info, mode, args):
+    if mode not in {"mcp_image", "base64", "data_url", "both"}:
+        return None
+    limit = max_inline_bytes(args)
+    if len(data) > limit:
+        return f"image exceeds max_inline_bytes ({len(data)} > {limit})"
+    encoded = base64.b64encode(data).decode("ascii")
+    inline = {"mode": mode, "mime_type": info["mime_type"], "size_bytes": len(data)}
+    if mode in {"base64", "both", "mcp_image"}:
+        inline["base64"] = encoded
+    elif mode == "data_url":
+        inline["data_url"] = f"data:{info['mime_type']};base64,{encoded}"
+    out["inline"] = inline
+    return None
 
 
 def state_file():
@@ -280,13 +426,19 @@ def capture_screenshot(subdir, prefix, region=None):
 def screenshot_result(path, operation, args):
     data = path.read_bytes()
     info = png_info(data)
-    out = {"ok": True, "operation": operation, "screenshot_path": str(path), "screenshot_artifact_id": path.stem, "size_bytes": len(data), "image_attached": False, **info}
-    if bool_arg(args, "include_image", bool_arg(args, "include_image_base64", False)):
-        max_bytes = int_arg(args, "max_bytes", 750000)
-        if len(data) <= max_bytes:
-            out.update({"image_attached": True, "image_base64": base64.b64encode(data).decode("ascii"), "image_mime_type": info["mime_type"], "image_width": info["width"], "image_height": info["height"], "image_size_bytes": len(data)})
-        else:
-            out["image_error"] = "image exceeds max_bytes; use screenshot_path or tighter crop"
+    mode, mode_error = image_return_mode(args)
+    if mode_error:
+        return error_result(operation, "INVALID_RETURN_MODE", mode_error)
+    screenshot = {"filename": path.name, "mime_type": info["mime_type"], "size_bytes": len(data), "width": info["width"], "height": info["height"]}
+    if mode in {"url", "both"}:
+        try:
+            screenshot = publish_public_image(path, data, info, args)
+        except Exception as exc:
+            return error_result(operation, "PUBLIC_ARTIFACT_PUBLISH_FAILED", f"发布截图失败: {exc}", layer="runtime")
+    out = {"ok": True, "operation": operation, "return_mode": mode, "screenshot": screenshot}
+    inline_error = attach_inline_image(out, data, info, mode, args)
+    if inline_error:
+        return error_result(operation, "IMAGE_INLINE_TOO_LARGE", inline_error)
     return out
 
 

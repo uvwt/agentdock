@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -297,7 +296,7 @@ func (r *Runtime) listFiles(args map[string]any) (Result, error) {
 	return Result{"ok": err == nil, "path": p.Display, "files": files, "truncated": maxResults > 0 && len(files) >= maxResults}, err
 }
 
-func (r *Runtime) viewImage(args map[string]any) (Result, error) {
+func (r *Runtime) viewImage(ctx context.Context, args map[string]any) (Result, error) {
 	p, err := r.ws.ResolveExisting(stringArg(args, "path", "."))
 	if err != nil {
 		return nil, err
@@ -310,6 +309,10 @@ func (r *Runtime) viewImage(args map[string]any) (Result, error) {
 	if err != nil {
 		return nil, toolError("BINARY_FILE", "file is not a supported image", "validation")
 	}
+	returnMode, err := imageReturnMode(args, "return_mode")
+	if err != nil {
+		return nil, err
+	}
 	maxBytes := intArg(args, "max_bytes", 750000)
 	maxWidth := intArg(args, "max_width", 1280)
 	maxHeight := intArg(args, "max_height", 1280)
@@ -318,7 +321,7 @@ func (r *Runtime) viewImage(args map[string]any) (Result, error) {
 	crop := cropArg(args)
 	autoResize := boolArg(args, "auto_resize", true)
 
-	original := map[string]any{"bytes": len(data), "width": info.Width, "height": info.Height, "mime_type": info.MIME}
+	original := map[string]any{"size_bytes": len(data), "width": info.Width, "height": info.Height, "mime_type": info.MIME}
 	prepared := data
 	preparedInfo := info
 	warnings := []string{}
@@ -328,6 +331,10 @@ func (r *Runtime) viewImage(args map[string]any) (Result, error) {
 		var prepOriginal map[string]any
 		prepared, preparedInfo, prepOriginal, warnings, ok = prepareImageBytes(data, crop, maxBytes, maxWidth, maxHeight, format, quality)
 		if prepOriginal != nil {
+			if bytes, ok := prepOriginal["bytes"]; ok {
+				prepOriginal["size_bytes"] = bytes
+				delete(prepOriginal, "bytes")
+			}
 			original = prepOriginal
 		}
 		if !ok {
@@ -338,11 +345,17 @@ func (r *Runtime) viewImage(args map[string]any) (Result, error) {
 	if len(prepared) > maxBytes {
 		return nil, toolErrorDetails("IMAGE_TOO_LARGE", "image exceeds max_bytes", "validation", map[string]any{"bytes": len(prepared), "max_bytes": maxBytes, "auto_resize": autoResize, "warnings": warnings})
 	}
-	output := stringArg(args, "output", "mcp_image")
-	encoded := base64.StdEncoding.EncodeToString(prepared)
-	result := Result{"ok": true, "path": p.Display, "mime_type": preparedInfo.MIME, "size_bytes": len(prepared), "width": preparedInfo.Width, "height": preparedInfo.Height, "original": original, "resized": resized, "warnings": warnings, "data_base64": encoded, "output": output, "image_attached": output == "mcp_image"}
-	if output == "data_url" {
-		result["data_url"] = "data:" + preparedInfo.MIME + ";base64," + encoded
+	image := imageMetadata(p.Display, preparedInfo, len(prepared))
+	if needsPublicURL(returnMode) {
+		published, err := r.publishImageBytes(ctx, prepared, p.Display, preparedInfo, intArg(args, "retention_seconds", 0))
+		if err != nil {
+			return nil, err
+		}
+		image = published
+	}
+	result := Result{"ok": true, "path": p.Display, "return_mode": returnMode, "image": image, "original": original, "resized": resized, "warnings": warnings}
+	if err := attachInlineImage(result, prepared, preparedInfo.MIME, returnMode, args); err != nil {
+		return nil, err
 	}
 	return result, nil
 }

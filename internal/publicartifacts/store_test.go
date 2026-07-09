@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"encoding/base64"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -87,6 +88,39 @@ func TestPublishDirectoryCreatesTarGzSnapshot(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("archive did not include nested file")
+	}
+}
+
+func TestPublishBytesImageUsesInlineDispositionAndDimensions(t *testing.T) {
+	root := t.TempDir()
+	data, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGJgYGD4DwABBAEAgh7R8QAAAABJRU5ErkJggg==")
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := New(filepath.Join(root, "home"), "https://agent.example", 8765)
+	result, err := store.PublishBytes(PublishBytesRequest{Filename: "tiny.png", Data: data, MimeType: "image/png", RetentionSeconds: 60})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Size != int64(len(data)) || result.Width != 1 || result.Height != 1 {
+		t.Fatalf("metadata = %#v", result.Metadata)
+	}
+	metadataBytes, err := os.ReadFile(filepath.Join(store.Root, result.ArtifactID, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadataText := string(metadataBytes)
+	if !strings.Contains(metadataText, `"size_bytes"`) || strings.Contains(metadataText, `"size"`) {
+		t.Fatalf("metadata json should use size_bytes only: %s", metadataText)
+	}
+	req := httptest.NewRequest(http.MethodGet, result.URL, nil)
+	recorder := httptest.NewRecorder()
+	store.ServeHTTP(recorder, req, "/artifacts/public/")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%q", recorder.Code, recorder.Body.String())
+	}
+	if disposition := recorder.Header().Get("Content-Disposition"); !strings.HasPrefix(disposition, "inline") {
+		t.Fatalf("Content-Disposition = %q, want inline", disposition)
 	}
 }
 

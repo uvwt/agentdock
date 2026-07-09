@@ -2,6 +2,7 @@ package publicartifacts
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"crypto/hmac"
 	"crypto/rand"
@@ -10,6 +11,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"mime"
 	"net/http"
@@ -37,15 +42,28 @@ type Metadata struct {
 	ArtifactID string    `json:"artifact_id"`
 	Filename   string    `json:"filename"`
 	MimeType   string    `json:"mime_type"`
-	Size       int64     `json:"size"`
+	Size       int64     `json:"size_bytes"`
 	SHA256     string    `json:"sha256"`
 	CreatedAt  time.Time `json:"created_at"`
 	ExpiresAt  time.Time `json:"expires_at"`
 	Archive    bool      `json:"archive"`
+	Width      int       `json:"width,omitempty"`
+	Height     int       `json:"height,omitempty"`
 }
 
 type PublishRequest struct {
 	Path             string
+	RetentionSeconds int
+	Now              time.Time
+	BaseURL          string
+}
+
+type PublishBytesRequest struct {
+	Filename         string
+	Data             []byte
+	MimeType         string
+	Width            int
+	Height           int
 	RetentionSeconds int
 	Now              time.Time
 	BaseURL          string
@@ -61,32 +79,18 @@ func New(agentDockHome, serverURL string, port int) Store {
 }
 
 func (s Store) Publish(req PublishRequest) (PublishResult, error) {
-	now := req.Now
-	if now.IsZero() {
-		now = time.Now().UTC()
-	} else {
-		now = now.UTC()
-	}
+	now := normalizeNow(req.Now)
 	if err := s.Cleanup(now); err != nil {
-		return PublishResult{}, err
-	}
-	secret, err := s.ensureSecret()
-	if err != nil {
 		return PublishResult{}, err
 	}
 	info, err := os.Stat(req.Path)
 	if err != nil {
 		return PublishResult{}, fmt.Errorf("stat publish source: %w", err)
 	}
-	id, err := randomHex(16)
+	dir, payload, id, err := s.prepareArtifactDir()
 	if err != nil {
 		return PublishResult{}, err
 	}
-	dir := filepath.Join(s.Root, id)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return PublishResult{}, fmt.Errorf("create artifact dir: %w", err)
-	}
-	payload := filepath.Join(dir, "payload")
 	filename := filepath.Base(req.Path)
 	archive := false
 	if info.IsDir() {
@@ -102,31 +106,118 @@ func (s Store) Publish(req PublishRequest) (PublishResult, error) {
 			return PublishResult{}, err
 		}
 	}
-	stat, err := os.Stat(payload)
-	if err != nil {
-		_ = os.RemoveAll(dir)
+	return s.finishPublishedPayload(publishPayloadRequest{
+		ID:               id,
+		Dir:              dir,
+		Payload:          payload,
+		Filename:         filename,
+		Archive:          archive,
+		RetentionSeconds: req.RetentionSeconds,
+		Now:              now,
+		BaseURL:          req.BaseURL,
+	})
+}
+
+func (s Store) PublishBytes(req PublishBytesRequest) (PublishResult, error) {
+	now := normalizeNow(req.Now)
+	if len(req.Data) == 0 {
+		return PublishResult{}, errors.New("publish bytes payload is empty")
+	}
+	if err := s.Cleanup(now); err != nil {
 		return PublishResult{}, err
 	}
-	sha, err := fileSHA256(payload)
+	dir, payload, id, err := s.prepareArtifactDir()
 	if err != nil {
-		_ = os.RemoveAll(dir)
 		return PublishResult{}, err
+	}
+	if err := os.WriteFile(payload, req.Data, 0o600); err != nil {
+		_ = os.RemoveAll(dir)
+		return PublishResult{}, fmt.Errorf("write payload: %w", err)
+	}
+	return s.finishPublishedPayload(publishPayloadRequest{
+		ID:               id,
+		Dir:              dir,
+		Payload:          payload,
+		Filename:         req.Filename,
+		MimeType:         req.MimeType,
+		Width:            req.Width,
+		Height:           req.Height,
+		RetentionSeconds: req.RetentionSeconds,
+		Now:              now,
+		BaseURL:          req.BaseURL,
+	})
+}
+
+type publishPayloadRequest struct {
+	ID               string
+	Dir              string
+	Payload          string
+	Filename         string
+	MimeType         string
+	Archive          bool
+	Width            int
+	Height           int
+	RetentionSeconds int
+	Now              time.Time
+	BaseURL          string
+}
+
+func (s Store) prepareArtifactDir() (string, string, string, error) {
+	id, err := randomHex(16)
+	if err != nil {
+		return "", "", "", err
+	}
+	dir := filepath.Join(s.Root, id)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", "", "", fmt.Errorf("create artifact dir: %w", err)
+	}
+	return dir, filepath.Join(dir, "payload"), id, nil
+}
+
+func (s Store) finishPublishedPayload(req publishPayloadRequest) (PublishResult, error) {
+	secret, err := s.ensureSecret()
+	if err != nil {
+		_ = os.RemoveAll(req.Dir)
+		return PublishResult{}, err
+	}
+	stat, err := os.Stat(req.Payload)
+	if err != nil {
+		_ = os.RemoveAll(req.Dir)
+		return PublishResult{}, err
+	}
+	sha, err := fileSHA256(req.Payload)
+	if err != nil {
+		_ = os.RemoveAll(req.Dir)
+		return PublishResult{}, err
+	}
+	filename := safeDownloadName(req.Filename)
+	mimeType := firstNonEmpty(req.MimeType, detectMime(req.Payload, filename, req.Archive))
+	width, height := req.Width, req.Height
+	if width <= 0 || height <= 0 {
+		width, height = imageDimensions(req.Payload, mimeType)
 	}
 	retention := retention(req.RetentionSeconds)
-	meta := Metadata{ArtifactID: id, Filename: safeDownloadName(filename), MimeType: detectMime(payload, filename, archive), Size: stat.Size(), SHA256: sha, CreatedAt: now, ExpiresAt: now.Add(retention), Archive: archive}
+	meta := Metadata{ArtifactID: req.ID, Filename: filename, MimeType: mimeType, Size: stat.Size(), SHA256: sha, CreatedAt: req.Now, ExpiresAt: req.Now.Add(retention), Archive: req.Archive, Width: width, Height: height}
 	encoded, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
-		_ = os.RemoveAll(dir)
+		_ = os.RemoveAll(req.Dir)
 		return PublishResult{}, err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "metadata.json"), encoded, 0o600); err != nil {
-		_ = os.RemoveAll(dir)
+	if err := os.WriteFile(filepath.Join(req.Dir, "metadata.json"), encoded, 0o600); err != nil {
+		_ = os.RemoveAll(req.Dir)
 		return PublishResult{}, fmt.Errorf("write artifact metadata: %w", err)
 	}
 	base := strings.TrimRight(firstNonEmpty(req.BaseURL, s.ServerURL, fallbackURL(s.Port)), "/")
 	sig := sign(secret, meta.ArtifactID, meta.Filename, meta.ExpiresAt.Unix(), meta.SHA256)
 	u := base + "/artifacts/public/" + url.PathEscape(meta.ArtifactID) + "/" + url.PathEscape(meta.Filename) + "?expires=" + strconv.FormatInt(meta.ExpiresAt.Unix(), 10) + "&sig=" + url.QueryEscape(sig)
 	return PublishResult{Metadata: meta, URL: u}, nil
+}
+
+func normalizeNow(now time.Time) time.Time {
+	if now.IsZero() {
+		return time.Now().UTC()
+	}
+	return now.UTC()
 }
 
 func (s Store) EnsureSecret() error {
@@ -194,7 +285,7 @@ func (s Store) ServeHTTP(w http.ResponseWriter, r *http.Request, prefix string) 
 		return
 	}
 	w.Header().Set("Content-Type", firstNonEmpty(meta.MimeType, "application/octet-stream"))
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": meta.Filename}))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType(contentDisposition(meta.MimeType), map[string]string{"filename": meta.Filename}))
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	http.ServeContent(w, r, meta.Filename, meta.CreatedAt, file)
@@ -428,6 +519,29 @@ func fileSHA256(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func imageDimensions(path, mimeType string) (int, int) {
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(mimeType)), "image/") {
+		return 0, 0
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, 0
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return 0, 0
+	}
+	return cfg.Width, cfg.Height
+}
+
+func contentDisposition(mimeType string) string {
+	value := strings.ToLower(strings.TrimSpace(mimeType))
+	if strings.HasPrefix(value, "image/") || strings.HasPrefix(value, "text/") {
+		return "inline"
+	}
+	return "attachment"
 }
 
 func detectMime(path, filename string, archive bool) string {

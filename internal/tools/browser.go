@@ -44,7 +44,6 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 		"BROWSER_RUNNER_PAYLOAD": string(data),
 		"BROWSER_ARTIFACT_DIR":   artifactDir.Abs,
 		"AGENTDOCK_DEFAULT_DIR":  r.ws.Root(),
-		"AGENTDOCK_SERVER_URL":   strings.TrimRight(r.cfg.OAuthServerURL, "/"),
 	}
 	// 浏览器增强 Docker 镜像会通过 ENV 固定浏览器安装目录。这里只在父进程存在该变量时转交给 Node runner；
 	// macOS/裸机部署不强行写死路径，让 Playwright 使用本机默认缓存目录。
@@ -53,19 +52,24 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 	}
 	cmd.Env = r.internalCommandEnv(env)
 	output, err := cmd.CombinedOutput()
-	// runner 可能按需返回 screenshot/image_base64。这里必须先解析完整 JSON，再截断 stdout 展示；
-	// 否则大图会把 JSON 截断，导致结构化结果丢失。
 	var parsed map[string]any
 	parseErr := json.Unmarshal(output, &parsed)
 	text, truncated := truncateBytes(output, intArg(args, "max_bytes", 262144))
 	text = redactSecrets(text, nil)
-	result := Result{"ok": err == nil, "operation": operation, "stdout": text, "truncated": truncated}
+	result := Result{"ok": err == nil, "operation": operation}
+	if boolArg(args, "debug_stdout", false) || parseErr != nil {
+		result["stdout"] = text
+		result["truncated"] = truncated
+	}
 	if err != nil {
 		result["error"] = err.Error()
 	}
 	if parseErr == nil {
 		for key, value := range parsed {
 			result[key] = value
+		}
+		if err := r.normalizeBrowserScreenshot(ctx, result, args); err != nil {
+			return nil, err
 		}
 	} else if len(output) > 0 {
 		result["json_error"] = parseErr.Error()
@@ -84,4 +88,52 @@ func (r *Runtime) browserRunnerScript() (controlPath, error) {
 		return controlPath{}, toolErrorDetails("BROWSER_RUNNER_NOT_FOUND", "browser-runner.js not found", "validation", map[string]any{"runner_dir": runnerDir.Display})
 	}
 	return runner, nil
+}
+
+func (r *Runtime) normalizeBrowserScreenshot(ctx context.Context, result Result, args map[string]any) error {
+	mode, err := imageReturnMode(args, "screenshot_return_mode")
+	if err != nil {
+		return err
+	}
+	result["screenshot_return_mode"] = mode
+	pathValue := strings.TrimSpace(stringValue(result["screenshot_path"]))
+	fileValue := strings.TrimSpace(stringValue(result["screenshot_file"]))
+	deleteBrowserScreenshotScratchFields(result)
+	if mode == imageReturnNone || pathValue == "" {
+		return nil
+	}
+	data, err := os.ReadFile(pathValue)
+	if err != nil {
+		return err
+	}
+	info, err := identifyImage(data)
+	if err != nil {
+		return toolError("BINARY_FILE", "browser screenshot is not a supported image", "validation")
+	}
+	if fileValue == "" {
+		fileValue = filepath.Base(pathValue)
+	}
+	screenshot := imageMetadata(fileValue, info, len(data))
+	if needsPublicURL(mode) {
+		published, err := r.publishImageBytes(ctx, data, fileValue, info, intArg(args, "retention_seconds", 0))
+		if err != nil {
+			return err
+		}
+		screenshot = published
+	}
+	result["screenshot"] = screenshot
+	return attachInlineImage(result, data, info.MIME, mode, args)
+}
+
+func deleteBrowserScreenshotScratchFields(result Result) {
+	for _, key := range []string{"artifact", "screenshot_path", "screenshot_file", "screenshot_artifact_id"} {
+		delete(result, key)
+	}
+}
+
+func stringValue(value any) string {
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return ""
 }

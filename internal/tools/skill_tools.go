@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -121,6 +122,12 @@ func newSkillRuntimeManager(cfg config.Config) (*skillRuntimeManager, error) {
 	if err != nil {
 		return nil, err
 	}
+	runtime.BaseEnv = append(runtime.BaseEnv,
+		"AGENTDOCK_HOME="+cfg.AgentDockHome,
+		"AGENTDOCK_DEFAULT_DIR="+cfg.AgentDockDefaultDir,
+		"AGENTDOCK_SERVER_URL="+cfg.OAuthServerURL,
+		"AGENTDOCK_PORT="+strconv.Itoa(cfg.Port),
+	)
 	skills.runtime = runtime
 	skills.env = envStore
 	runtime.EnvProvider = skillEnvProvider{store: envStore}

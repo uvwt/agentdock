@@ -150,19 +150,26 @@ func toolEnvelope(name string, structured any, err error) map[string]any {
 		}
 		return map[string]any{"isError": true, "structuredContent": payload, "content": []map[string]any{{"type": "text", "text": pretty(payload)}}}
 	}
-	if name == "view_image" {
+	if name == "view_image" || name == "browser_act" || name == "browser_snapshot" {
 		payload := asMap(structured)
-		if output, _ := payload["output"].(string); output == "mcp_image" {
-			return map[string]any{"isError": false, "structuredContent": structured, "content": []map[string]any{{"type": "image", "data": payload["data_base64"], "mimeType": payload["mime_type"]}}}
-		}
-	}
-	if name == "browser_act" || name == "browser_snapshot" {
-		payload := asMap(structured)
-		if attached, _ := payload["image_attached"].(bool); attached {
-			return map[string]any{"isError": false, "structuredContent": structured, "content": []map[string]any{{"type": "image", "data": payload["image_base64"], "mimeType": payload["image_mime_type"]}}}
+		if data, _ := payload["_mcp_image_base64"].(string); data != "" {
+			mimeType, _ := payload["_mcp_image_mime_type"].(string)
+			clean := cloneWithoutInternalImage(payload)
+			return map[string]any{"isError": false, "structuredContent": clean, "content": []map[string]any{{"type": "image", "data": data, "mimeType": mimeType}}}
 		}
 	}
 	return map[string]any{"isError": false, "structuredContent": structured, "content": []map[string]any{{"type": "text", "text": pretty(structured)}}}
+}
+
+func cloneWithoutInternalImage(value map[string]any) map[string]any {
+	clean := make(map[string]any, len(value))
+	for key, item := range value {
+		if key == "_mcp_image_base64" || key == "_mcp_image_mime_type" {
+			continue
+		}
+		clean[key] = item
+	}
+	return clean
 }
 
 func asMap(value any) map[string]any {

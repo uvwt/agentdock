@@ -7,11 +7,9 @@ import (
 	"html"
 	"io"
 	"log/slog"
-	"mime"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -54,9 +52,6 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	mux.HandleFunc("/.well-known/oauth-protected-resource", func(w http.ResponseWriter, r *http.Request) {
 		issuer := issuerFor(cfg, r)
 		writeJSON(w, map[string]any{"resource": issuer + "/mcp", "authorization_servers": []string{issuer}})
-	})
-	mux.HandleFunc("/artifacts/browser/screenshots/", func(w http.ResponseWriter, r *http.Request) {
-		handleBrowserScreenshotArtifact(w, r, cfg)
 	})
 	mux.HandleFunc("/artifacts/public/", func(w http.ResponseWriter, r *http.Request) {
 		publicArtifactStore.ServeHTTP(w, r, "/artifacts/public/")
@@ -160,50 +155,6 @@ func requestPublicBaseURL(cfg config.Config, r *http.Request) string {
 		scheme = "https"
 	}
 	return scheme + "://" + host
-}
-
-func handleBrowserScreenshotArtifact(w http.ResponseWriter, r *http.Request, cfg config.Config) {
-	handleScreenshotArtifact(w, r, cfg, "/artifacts/browser/screenshots/", cfg.BrowserArtifactDir)
-}
-
-func handleScreenshotArtifact(w http.ResponseWriter, r *http.Request, cfg config.Config, prefix string, artifactDir string) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	name := strings.TrimPrefix(r.URL.Path, prefix)
-	name, err := url.PathUnescape(name)
-	if err != nil || name == "" || name != filepath.Base(name) || filepath.Ext(name) != ".png" {
-		http.NotFound(w, r)
-		return
-	}
-	if artifactDir == "" {
-		artifactDir = "browser-artifacts"
-	}
-	if !filepath.IsAbs(artifactDir) {
-		artifactDir = filepath.Join(cfg.AgentDockHome, artifactDir)
-	}
-	artifactDir = filepath.Clean(artifactDir)
-	filePath := filepath.Clean(filepath.Join(artifactDir, "screenshots", name))
-	screenshotDir := filepath.Clean(filepath.Join(artifactDir, "screenshots"))
-	if filepath.Dir(filePath) != screenshotDir {
-		http.NotFound(w, r)
-		return
-	}
-	file, err := os.Open(filePath)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil || info.IsDir() {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("content-type", firstNonEmpty(mime.TypeByExtension(".png"), "image/png"))
-	w.Header().Set("cache-control", "private, max-age=3600")
-	http.ServeContent(w, r, name, info.ModTime(), file)
 }
 
 func handleRegister(w http.ResponseWriter, r *http.Request, cfg config.Config) {
