@@ -11,7 +11,6 @@ all    : run state then recall.
 
 Paths can be overridden with:
   AGENTDOCK_RUNTIME_DIR
-  AGENTDOCK_WORKFLOW_SOURCE_DIR
   AGENTDOCK_STATE_BACKUP_DIR
   RECALLDOCK_RECALL_DIR
   AGENTDOCK_BACKUP_TMP_DIR
@@ -30,7 +29,6 @@ TMP_ROOT="${AGENTDOCK_BACKUP_TMP_DIR:-$RUNTIME_ROOT/tmp-recovery}"
 STATE_REMOTE="${AGENTDOCK_STATE_BACKUP_REMOTE:-https://github.com/uvwt/agentdock-state-backup.git}"
 RECALL_REMOTE="${AGENTDOCK_RECALL_BACKUP_REMOTE:-https://github.com/uvwt/agentdock-recall.git}"
 AGENTDOCK_MCP_ENDPOINT="${AGENTDOCK_MCP_ENDPOINT:-http://127.0.0.1:18766/mcp}"
-WORKFLOW_SOURCE_DIR="${AGENTDOCK_WORKFLOW_SOURCE_DIR:-}"
 
 if [[ -f "$RUNTIME_ROOT/agentdock.env" ]]; then
   set -a
@@ -112,39 +110,76 @@ with_temp_clone() {
   printf '%s\n' "$target"
 }
 
-workflow_source_dir() {
-  if [[ -n "$WORKFLOW_SOURCE_DIR" ]]; then
-    [[ -d "$WORKFLOW_SOURCE_DIR" ]] || { echo "missing workflow source: $WORKFLOW_SOURCE_DIR" >&2; exit 2; }
-    printf '%s\n' "$WORKFLOW_SOURCE_DIR"
-    return 0
-  fi
+export_workflows_from_runtime_api() {
+  local repo="$1"
+  python3 - "$repo" "$AGENTDOCK_MCP_ENDPOINT" <<'PY'
+import json, os, pathlib, shutil, sys, urllib.request
 
-  local candidates=(
-    "/Volumes/KIOXIA/Docker/nexusdock/nexus-data/workflow-templates"
-    "$RUNTIME_ROOT/nexus-data/workflow-templates"
-    "$RUNTIME_DIR/nexus-data/workflow-templates"
-    "$RUNTIME_DIR/workflows"
-  )
-  local candidate
-  for candidate in "${candidates[@]}"; do
-    if [[ -d "$candidate" ]]; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done
+repo = pathlib.Path(sys.argv[1])
+endpoint = sys.argv[2]
+token = os.environ.get('AGENTDOCK_AUTH_TOKEN', '')
 
-  echo "missing workflow source; checked:" >&2
-  printf '  %s\n' "${candidates[@]}" >&2
-  echo "set AGENTDOCK_WORKFLOW_SOURCE_DIR to the Nexus workflow-templates directory when using a custom deployment" >&2
-  exit 2
+def call_tool(name, args, req_id):
+    payload = {'jsonrpc': '2.0', 'id': req_id, 'method': 'tools/call', 'params': {'name': name, 'arguments': args}}
+    request = urllib.request.Request(endpoint, data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json'})
+    if token:
+        request.add_header('Authorization', 'Bearer ' + token)
+    with urllib.request.urlopen(request, timeout=60) as response:
+        outer = json.loads(response.read())
+    if 'error' in outer:
+        raise RuntimeError(outer['error'])
+    text = outer['result']['content'][0]['text']
+    return json.loads(text)
+
+items = []
+seen = set()
+req_id = 1
+for status in ('draft', 'active', 'retired'):
+    listed = call_tool('workflow_template_manage', {'action': 'list', 'template_status': status}, req_id)
+    req_id += 1
+    for item in listed.get('items') or []:
+        template_id = str(item.get('id') or '').strip()
+        version = str(item.get('version') or '').strip()
+        if not template_id or not version:
+            continue
+        key = (template_id, version)
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append((template_id, version, status))
+
+if not items:
+    raise RuntimeError('workflow_template_manage returned no workflow templates')
+
+target = repo / 'workflows'
+tmp = repo / '.workflows-api-export.tmp'
+if tmp.exists():
+    shutil.rmtree(tmp)
+tmp.mkdir(parents=True)
+
+for template_id, version, listed_status in items:
+    detail = call_tool('workflow_template_manage', {'action': 'get', 'template_id': template_id, 'template_version': version}, req_id)
+    req_id += 1
+    template = detail.get('template') or {}
+    status = str(template.get('status') or listed_status)
+    location = 'drafts' if status in ('draft', 'validated') else 'published'
+    file_name = f'{template_id}@{version}.json'
+    content = json.dumps(template, ensure_ascii=False, indent=2) + '\n'
+    out = tmp / location / file_name
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(content, encoding='utf-8')
+
+if target.exists():
+    shutil.rmtree(target)
+tmp.rename(target)
+print(f'workflow source: AgentDock workflow_template_manage API {endpoint}')
+print(f'workflow templates exported: {len(items)}')
+PY
 }
 
 backup_state_worktree() {
   local repo="$1"
-  local source_dir
-  source_dir="$(workflow_source_dir)"
-  echo "workflow source: $source_dir"
-  rsync -a --delete "$source_dir/" "$repo/workflows/"
+  export_workflows_from_runtime_api "$repo"
   git -C "$repo" add workflows
   run_git_backup "$repo" "${MESSAGE:-backup(state): 同步 AgentDock workflow 状态}"
 }
