@@ -10,7 +10,7 @@ recall : commit/push RecallDock data. Uses RecallDock API + temporary clone when
 all    : run state then recall.
 
 Paths can be overridden with:
-  AGENTDOCK_RUNTIME_DIR
+  AGENTDOCK_RUNTIME_ROOT
   AGENTDOCK_STATE_BACKUP_DIR
   RECALLDOCK_RECALL_DIR
   AGENTDOCK_BACKUP_TMP_DIR
@@ -21,8 +21,7 @@ USAGE
 
 MODE="${1:-}"
 MESSAGE="${2:-}"
-RUNTIME_DIR="${AGENTDOCK_RUNTIME_DIR:-/Users/xx/agentdock-runtime/AgentDock}"
-RUNTIME_ROOT="$(cd "${RUNTIME_DIR%/AgentDock}" 2>/dev/null && pwd -P || printf '/Users/xx/agentdock-runtime')"
+RUNTIME_ROOT="$(cd "${AGENTDOCK_RUNTIME_ROOT:-$HOME/agentdock-runtime}" 2>/dev/null && pwd -P || printf '%s/agentdock-runtime' "$HOME")"
 STATE_REPO="${AGENTDOCK_STATE_BACKUP_DIR:-/Volumes/KIOXIA/Docker/agentdock-state-backup}"
 RECALL_REPO="${RECALLDOCK_RECALL_DIR:-/Volumes/KIOXIA/Docker/nexusdock/recall}"
 TMP_ROOT="${AGENTDOCK_BACKUP_TMP_DIR:-$RUNTIME_ROOT/tmp-recovery}"

@@ -1,10 +1,11 @@
 #!/usr/bin/env sh
 set -eu
-: "${AGENT_DOCK:=$(pwd)/AgentDock}"
-RUNNER_DIR="${1:-$AGENT_DOCK/browser-runner}"
+
+AGENTDOCK_HOME_DIR="${AGENTDOCK_HOME:-$HOME/.agentdock}"
+RUNNER_DIR="${1:-$AGENTDOCK_HOME_DIR/browser-runner}"
+
 mkdir -p "$RUNNER_DIR"
 cp -R examples/browser-runner/. "$RUNNER_DIR/"
 cd "$RUNNER_DIR"
 npm install
-npx playwright install chromium
 printf 'browser runner installed at %s\n' "$RUNNER_DIR"
