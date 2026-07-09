@@ -121,31 +121,42 @@ func InputSchema(name string) map[string]any {
 		props["type"] = stringProp("Optional workflow type hint for match. This maps to template match.type.")
 		required = []string{"action"}
 
-	case "skill_manage":
-		props["action"] = map[string]any{"type": "string", "description": "Skill action: list, inspect, validate, install, run, or rollback.", "enum": []string{"list", "inspect", "validate", "install", "run", "rollback"}}
-		props["skill"] = stringProp("Skill name for inspect, run, or rollback.")
-		props["version"] = stringProp("Optional installed Skill version.")
+	case "skill_read":
+		props["action"] = map[string]any{"type": "string", "description": "Read-only Skill discovery action.", "enum": []string{"list", "inspect"}}
+		props["skill"] = stringProp("Skill name for inspect.")
+		props["version"] = stringProp("Optional installed Skill version for inspect.")
+		props["channel"] = map[string]any{"type": "string", "description": "Optional Skill channel for inspect: development, canary, stable, or pinned.", "enum": []string{"development", "canary", "stable", "pinned"}}
+		required = []string{"action"}
+	case "skill_package":
+		props["action"] = map[string]any{"type": "string", "description": "Skill package lifecycle action.", "enum": []string{"validate", "install", "rollback"}}
+		props["skill"] = stringProp("Skill name for rollback.")
 		props["channel"] = map[string]any{"type": "string", "description": "Skill channel: development, canary, stable, or pinned.", "enum": []string{"development", "canary", "stable", "pinned"}}
 		props["source"] = stringProp("Host path or HTTP(S) URL for validate/install.")
 		props["digest"] = stringProp("Optional expected SHA-256 digest for validate/install.")
 		props["activate"] = boolProp("Activate the installed version. Defaults to true.")
-		props["confirmed_no_env"] = boolProp("Required for validating/installing a Skill with no manifest permissions.env declarations; confirms the Skill needs no Env Manager configuration.")
+		props["confirmed_no_env"] = boolProp("Required for validating/installing a Skill with no manifest permissions.env declarations; confirms the Skill needs no Skill Env Manager configuration.")
 		props["max_bytes"] = intProp("Maximum validate/install package bytes.")
-		props["operation"] = stringProp("Skill operation name for run.")
+		required = []string{"action"}
+	case "skill_run":
+		props["action"] = map[string]any{"type": "string", "description": "Optional action. Omit by default; when present it must be run.", "enum": []string{"run"}}
+		props["skill"] = stringProp("Skill name to run.")
+		props["operation"] = stringProp("Skill operation name to run.")
+		props["version"] = stringProp("Optional installed Skill version.")
+		props["channel"] = map[string]any{"type": "string", "description": "Optional Skill channel: development, canary, stable, or pinned.", "enum": []string{"development", "canary", "stable", "pinned"}}
 		props["input"] = map[string]any{"description": "JSON input value for the Skill operation."}
 		props["input_json"] = stringProp("Alternative raw JSON input string for the Skill operation.")
 		props["binding"] = stringProp("Optional binding name for run.")
 		props["run_id"] = stringProp("Optional run identifier.")
 		props["timeout_ms"] = intProp("Optional run timeout in milliseconds, capped by the operation timeout.")
 		props["max_output_bytes"] = intProp("Maximum stdout/stderr bytes for run.")
-		required = []string{"action"}
+		required = []string{"skill", "operation"}
 	case "file_publish":
 		props["file"] = map[string]any{"type": "string", "format": "binary", "description": "Top-level file parameter. Connector runtimes should pass the mounted local path when available."}
 		props["path"] = stringProp("Local file or directory path visible to this AgentDock instance. Relative paths resolve from ~/AgentDock.")
 		props["retention_seconds"] = intProp("Signed URL retention in seconds. Defaults to 86400 and is capped at 604800.")
 		required = []string{}
-	case "env_manage":
-		props["action"] = map[string]any{"type": "string", "description": "Env action: list, inspect, set, delete, or verify.", "enum": []string{"list", "inspect", "set", "delete", "verify"}}
+	case "skill_env_manage":
+		props["action"] = map[string]any{"type": "string", "description": "Skill env registry action: list, inspect, set, delete, or verify.", "enum": []string{"list", "inspect", "set", "delete", "verify"}}
 		props["skill"] = stringProp("Skill name for inspect, set, delete, or verify.")
 		props["name"] = stringProp("Environment variable name for set/delete.")
 		props["kind"] = map[string]any{"type": "string", "description": "Variable kind.", "enum": []string{"plain", "secret"}}

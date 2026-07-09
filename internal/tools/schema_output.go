@@ -113,8 +113,8 @@ func OutputSchema(name string) map[string]any {
 		props["best_candidate_score"] = intProp("Highest template match score.")
 		props["score_thresholds"] = objectProp("Template match score thresholds.")
 
-	case "skill_manage":
-		props["action"] = stringProp("Completed Skill action.")
+	case "skill_read":
+		props["action"] = stringProp("Completed Skill read action.")
 		props["skill"] = stringProp("Skill name.")
 		props["version"] = stringProp("Selected Skill version.")
 		props["skills"] = arrayProp("Installed Skill summaries.")
@@ -123,6 +123,9 @@ func OutputSchema(name string) map[string]any {
 		props["selection"] = objectProp("Active version, channels, and history.")
 		props["manifest"] = objectProp("Parsed agentdock.yaml manifest.")
 		props["binding_configured"] = boolProp("Whether a binding file exists for the Skill.")
+	case "skill_package":
+		props["action"] = stringProp("Completed Skill package action.")
+		props["skill"] = stringProp("Skill name.")
 		props["valid"] = boolProp("Whether a Skill source passed validation.")
 		props["source"] = stringProp("Resolved Skill source label.")
 		props["digest"] = stringProp("Computed Skill package digest.")
@@ -130,7 +133,11 @@ func OutputSchema(name string) map[string]any {
 		props["commands"] = arrayProp("Declared command dependency checks.")
 		props["issues"] = arrayProp("Structured validation issues.")
 		props["requires_no_env_confirm"] = boolProp("Whether confirmed_no_env is needed for a Skill with no env declarations.")
-		props["result"] = objectProp("Install, run, or rollback result.")
+		props["manifest"] = objectProp("Parsed agentdock.yaml manifest.")
+		props["result"] = objectProp("Install or rollback result.")
+	case "skill_run":
+		props["action"] = stringProp("Completed Skill run action.")
+		props["result"] = objectProp("Skill operation run result.")
 	case "file_publish":
 		props["artifact_id"] = stringProp("Published artifact id.")
 		props["url"] = stringProp("Temporary signed download URL.")
@@ -140,8 +147,8 @@ func OutputSchema(name string) map[string]any {
 		props["mime_type"] = stringProp("Payload media type.")
 		props["filename"] = stringProp("Download filename used for Content-Disposition and signature verification.")
 		props["archive"] = boolProp("Whether the source directory was packaged as tar.gz.")
-	case "env_manage":
-		props["action"] = stringProp("Completed Env action.")
+	case "skill_env_manage":
+		props["action"] = stringProp("Completed Skill env action.")
 		props["skill"] = stringProp("Skill name.")
 		props["skills"] = arrayProp("Skill env summaries.")
 		props["vars"] = arrayProp("Redacted env entries.")

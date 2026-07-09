@@ -19,7 +19,7 @@ func (r *Runtime) CapabilityContext(ctx context.Context, refresh bool) (Result, 
 
 	rules := []string{
 		"需要真实执行命令或检查环境时，先用 exec_command 查看现状，再修改，修改后真实验证。",
-		"需要 Skill 能力时，先根据 Skill 索引选择候选；参数不确定时先 skill_manage inspect，再 skill_manage run。",
+		"需要 Skill 能力时，先用 skill_read list/inspect 做只读发现；包生命周期用 skill_package；执行 operation 用 skill_run；Skill 环境变量用 skill_env_manage。",
 		"涉及多步骤开发、部署、排障、迁移、Docker、VPS 或 Git 提交推送时，先 workflow_template_manage match；无合适模板时创建普通可恢复任务。",
 		"记忆摘要只提供高优先级规则；具体历史事实不确定时，再用 recall_search 或 recall_read 精确召回。",
 		"普通项目记忆走 recall_*；private_note_manage 只在用户明确要求隐私/本机不同步，或内容明显包含 secret、凭据、个人敏感信息时使用。",
@@ -72,7 +72,10 @@ type capabilitySection struct {
 func baseToolCapabilityItems() []map[string]any {
 	return []map[string]any{
 		{"name": "exec_command", "summary": "执行命令，用于查看真实环境、运行测试、构建、部署和排障；实际权限由运行用户和部署边界决定。"},
-		{"name": "skill_manage", "summary": "列出、查看、安装、运行和回滚 AgentDock Skill。需要具体参数时先 inspect，再 run。"},
+		{"name": "skill_read", "summary": "只读发现 AgentDock Skill：list / inspect，低风险。"},
+		{"name": "skill_package", "summary": "管理 Skill 包生命周期：validate / install / rollback。"},
+		{"name": "skill_run", "summary": "专门执行 Skill operation；默认不传 action，需要时只允许 action=run。"},
+		{"name": "skill_env_manage", "summary": "管理 Skill env registry。"},
 		{"name": "task_manage", "summary": "管理可恢复任务；模板发现通过 workflow_template_manage match。"},
 		{"name": "recall_bootstrap / recall_search / recall_read", "summary": "读取记忆精简上下文、搜索记忆和精确读取 runbook。"},
 		{"name": "private_note_manage", "summary": "低频显式隐私笔记保险箱；默认不要用，只有用户要求隐私/本机不同步或内容明显敏感时再调用。"},
@@ -90,11 +93,11 @@ func baseToolSummaryLines(items []map[string]any) []string {
 func (r *Runtime) skillCapabilityIndex() ([]map[string]any, string, string) {
 	result, err := r.skillList()
 	if err != nil {
-		return nil, "- Skill 索引暂不可用；需要 Skill 时调用 skill_manage list/inspect 重新确认。", err.Error()
+		return nil, "- Skill 索引暂不可用；需要 Skill 时调用 skill_read list/inspect 重新确认。", err.Error()
 	}
 	rawItems := asMapSlice(result["skills"])
 	items := make([]map[string]any, 0, len(rawItems))
-	lines := []string{"当前已安装 Skill 摘要如下；需要执行前先 inspect 确认 operations 和输入参数。"}
+	lines := []string{"当前已安装 Skill 摘要如下；执行前先用 skill_read inspect 确认 operations 和输入参数。"}
 	for _, raw := range rawItems {
 		name := capabilityString(raw["skill"])
 		if name == "" {

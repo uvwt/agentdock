@@ -9,7 +9,7 @@ import (
 	"github.com/uvwt/agentdock/internal/skillstate"
 )
 
-func (r *Runtime) envManage(ctx context.Context, args map[string]any) (Result, error) {
+func (r *Runtime) skillEnvManage(ctx context.Context, args map[string]any) (Result, error) {
 	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
 	switch action {
 	case "list":
@@ -55,7 +55,7 @@ func (r *Runtime) envManage(ctx context.Context, args map[string]any) (Result, e
 	case "verify":
 		return r.envVerify(ctx, args)
 	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported env_manage action", "validation", map[string]any{
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported skill_env_manage action", "validation", map[string]any{
 			"action":  action,
 			"allowed": []string{"list", "inspect", "set", "delete", "verify"},
 		})

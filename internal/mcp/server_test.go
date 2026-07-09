@@ -3,13 +3,13 @@ package mcp
 import "testing"
 
 func TestToolDescriptorsDoNotExposePermissionAnnotations(t *testing.T) {
-	descriptors := toolDescriptorsForNames([]string{"read_file", "skill_manage"})
+	descriptors := toolDescriptorsForNames([]string{"read_file", "skill_run"})
 	byName := map[string]map[string]any{}
 	for _, descriptor := range descriptors {
 		name, _ := descriptor["name"].(string)
 		byName[name] = descriptor
 	}
-	for _, tool := range []string{"read_file", "skill_manage"} {
+	for _, tool := range []string{"read_file", "skill_run"} {
 		if _, ok := byName[tool]["annotations"]; ok {
 			t.Fatalf("%s should not expose permission annotations", tool)
 		}

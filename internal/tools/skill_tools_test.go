@@ -28,7 +28,7 @@ This test skill is intentionally small and echoes JSON input.
 	}
 }
 
-func TestSkillManageInstallInspectRunAndList(t *testing.T) {
+func TestSplitSkillToolsInstallInspectRunAndList(t *testing.T) {
 	root := t.TempDir()
 	pkg := filepath.Join(root, "demo-package")
 	if err := os.MkdirAll(pkg, 0o700); err != nil {
@@ -79,7 +79,7 @@ spec:
 		t.Fatal(err)
 	}
 
-	install, err := rt.Call(context.Background(), "skill_manage", map[string]any{
+	install, err := rt.Call(context.Background(), "skill_package", map[string]any{
 		"action":           "install",
 		"source":           "demo-package",
 		"activate":         true,
@@ -93,7 +93,7 @@ spec:
 		t.Fatalf("unexpected install result: %#v", install["result"])
 	}
 
-	inspect, err := rt.Call(context.Background(), "skill_manage", map[string]any{
+	inspect, err := rt.Call(context.Background(), "skill_read", map[string]any{
 		"action": "inspect",
 		"skill":  "demo-skill",
 	})
@@ -104,8 +104,7 @@ spec:
 		t.Fatalf("inspect version = %#v", inspect["version"])
 	}
 
-	runResult, err := rt.Call(context.Background(), "skill_manage", map[string]any{
-		"action":    "run",
+	runResult, err := rt.Call(context.Background(), "skill_run", map[string]any{
 		"skill":     "demo-skill",
 		"operation": "echo",
 		"input":     map[string]any{"message": "hello"},
@@ -118,7 +117,7 @@ spec:
 		t.Fatalf("unexpected run result: %#v", runResult["result"])
 	}
 
-	listed, err := rt.Call(context.Background(), "skill_manage", map[string]any{"action": "list"})
+	listed, err := rt.Call(context.Background(), "skill_read", map[string]any{"action": "list"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +126,7 @@ spec:
 	}
 }
 
-func TestSkillManageInstallRequiresNoEnvConfirmation(t *testing.T) {
+func TestSkillPackageInstallRequiresNoEnvConfirmation(t *testing.T) {
 	root := t.TempDir()
 	pkg := filepath.Join(root, "demo-package")
 	if err := os.MkdirAll(pkg, 0o700); err != nil {
@@ -175,7 +174,7 @@ spec:
 		t.Fatal(err)
 	}
 
-	_, err = rt.Call(context.Background(), "skill_manage", map[string]any{
+	_, err = rt.Call(context.Background(), "skill_package", map[string]any{
 		"action": "install",
 		"source": "demo-package",
 	})
@@ -191,7 +190,7 @@ spec:
 	}
 }
 
-func TestSkillManageValidateSuccessDoesNotInstall(t *testing.T) {
+func TestSkillPackageValidateSuccessDoesNotInstall(t *testing.T) {
 	root := t.TempDir()
 	pkg := filepath.Join(root, "demo-package")
 	if err := os.MkdirAll(pkg, 0o700); err != nil {
@@ -244,7 +243,7 @@ spec:
 		t.Fatal(err)
 	}
 
-	result, err := rt.Call(context.Background(), "skill_manage", map[string]any{
+	result, err := rt.Call(context.Background(), "skill_package", map[string]any{
 		"action": "validate",
 		"source": "demo-package",
 	})
@@ -269,7 +268,7 @@ spec:
 	if !ok || len(commands) != 1 || !commands[0].Found {
 		t.Fatalf("unexpected command checks: %#v", result["commands"])
 	}
-	listed, err := rt.Call(context.Background(), "skill_manage", map[string]any{"action": "list"})
+	listed, err := rt.Call(context.Background(), "skill_read", map[string]any{"action": "list"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +277,7 @@ spec:
 	}
 }
 
-func TestSkillManageValidateCollectsIssues(t *testing.T) {
+func TestSkillPackageValidateCollectsIssues(t *testing.T) {
 	root := t.TempDir()
 	pkg := filepath.Join(root, "demo-package")
 	if err := os.MkdirAll(pkg, 0o700); err != nil {
@@ -323,7 +322,7 @@ spec:
 		t.Fatal(err)
 	}
 
-	result, err := rt.Call(context.Background(), "skill_manage", map[string]any{
+	result, err := rt.Call(context.Background(), "skill_package", map[string]any{
 		"action": "validate",
 		"source": "demo-package",
 	})
@@ -354,7 +353,7 @@ spec:
 	}
 }
 
-func TestSkillManageRejectsUnknownAction(t *testing.T) {
+func TestSkillToolsRejectRemovedAggregateTool(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
 		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
@@ -366,15 +365,21 @@ func TestSkillManageRejectsUnknownAction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rt.Call(context.Background(), "skill_manage", map[string]any{"action": "destroy"}); err == nil {
-		t.Fatal("expected invalid action error")
+	removedTool := "skill" + "_manage"
+	_, err = rt.Call(context.Background(), removedTool, map[string]any{"action": "destroy"})
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) {
+		t.Fatalf("expected ToolError, got %T: %v", err, err)
+	}
+	if toolErr.Code != "UNKNOWN_TOOL" {
+		t.Fatalf("error code = %s, want UNKNOWN_TOOL", toolErr.Code)
 	}
 }
 
-func TestEnvManageVerifyRejectsInvalidInputJSON(t *testing.T) {
+func TestSkillEnvManageVerifyRejectsInvalidInputJSON(t *testing.T) {
 	rt := newInstalledDemoSkillRuntime(t)
 
-	_, err := rt.Call(context.Background(), "env_manage", map[string]any{
+	_, err := rt.Call(context.Background(), "skill_env_manage", map[string]any{
 		"action":     "verify",
 		"skill":      "demo-skill",
 		"operation":  "echo",
@@ -389,10 +394,10 @@ func TestEnvManageVerifyRejectsInvalidInputJSON(t *testing.T) {
 	}
 }
 
-func TestEnvManageVerifyAcceptsStructuredInput(t *testing.T) {
+func TestSkillEnvManageVerifyAcceptsStructuredInput(t *testing.T) {
 	rt := newInstalledDemoSkillRuntime(t)
 
-	result, err := rt.Call(context.Background(), "env_manage", map[string]any{
+	result, err := rt.Call(context.Background(), "skill_env_manage", map[string]any{
 		"action":    "verify",
 		"skill":     "demo-skill",
 		"operation": "echo",
@@ -459,7 +464,7 @@ spec:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rt.Call(context.Background(), "skill_manage", map[string]any{
+	if _, err := rt.Call(context.Background(), "skill_package", map[string]any{
 		"action":           "install",
 		"source":           "demo-package",
 		"activate":         true,

@@ -67,7 +67,7 @@ func TestRuntimeExposesSingleToolSet(t *testing.T) {
 	for _, name := range rt.ToolNames() {
 		seen[name] = true
 	}
-	for _, name := range []string{"capability_context", "git_read", "git_write", "session_observe", "session_act", "recall_read", "recall_write", "skill_manage"} {
+	for _, name := range []string{"capability_context", "git_read", "git_write", "session_observe", "session_act", "recall_read", "recall_write", "skill_read", "skill_package", "skill_run", "skill_env_manage"} {
 		if !seen[name] {
 			t.Fatalf("single tool set missing %s: %#v", name, seen)
 		}
@@ -149,36 +149,41 @@ func TestRecallBootstrapSchemaSeparatesPackBudgetFromBody(t *testing.T) {
 	}
 }
 
-func TestSkillManageSchemaIncludesValidate(t *testing.T) {
-	schema := inputSchema("skill_manage")
-	props, ok := schema["properties"].(map[string]any)
-	if !ok {
-		t.Fatal("skill_manage input schema properties missing")
-	}
-	action, ok := props["action"].(map[string]any)
-	if !ok {
-		t.Fatal("skill_manage action schema missing")
-	}
-	values, ok := action["enum"].([]string)
-	if !ok {
-		t.Fatalf("skill_manage action enum has unexpected type: %#v", action["enum"])
-	}
-	seen := map[string]bool{}
-	for _, value := range values {
-		seen[value] = true
-	}
-	for _, value := range []string{"list", "inspect", "validate", "install", "run", "rollback"} {
-		if !seen[value] {
-			t.Fatalf("skill_manage action enum missing %q: %#v", value, values)
+func TestSplitSkillSchemasMatchResponsibilities(t *testing.T) {
+	readProps := schemaProperties(t, "skill_read")
+	assertSameStrings(t, enumStrings(t, readProps["action"]), []string{"list", "inspect"})
+	for _, name := range []string{"skill", "version", "channel"} {
+		if _, ok := readProps[name]; !ok {
+			t.Fatalf("skill_read input schema missing %q", name)
 		}
 	}
-	outputProps, ok := outputSchema("skill_manage")["properties"].(map[string]any)
+
+	packageProps := schemaProperties(t, "skill_package")
+	assertSameStrings(t, enumStrings(t, packageProps["action"]), []string{"validate", "install", "rollback"})
+	for _, name := range []string{"source", "digest", "activate", "confirmed_no_env", "max_bytes", "skill", "channel"} {
+		if _, ok := packageProps[name]; !ok {
+			t.Fatalf("skill_package input schema missing %q", name)
+		}
+	}
+
+	runProps := schemaProperties(t, "skill_run")
+	assertSameStrings(t, enumStrings(t, runProps["action"]), []string{"run"})
+	for _, name := range []string{"skill", "operation", "input", "input_json", "binding", "run_id", "timeout_ms", "max_output_bytes"} {
+		if _, ok := runProps[name]; !ok {
+			t.Fatalf("skill_run input schema missing %q", name)
+		}
+	}
+
+	envProps := schemaProperties(t, "skill_env_manage")
+	assertSameStrings(t, enumStrings(t, envProps["action"]), []string{"list", "inspect", "set", "delete", "verify"})
+
+	packageOutputProps, ok := outputSchema("skill_package")["properties"].(map[string]any)
 	if !ok {
-		t.Fatal("skill_manage output schema properties missing")
+		t.Fatal("skill_package output schema properties missing")
 	}
 	for _, name := range []string{"valid", "source", "digest", "env", "commands", "issues", "requires_no_env_confirm"} {
-		if _, ok := outputProps[name]; !ok {
-			t.Fatalf("skill_manage output schema missing %q", name)
+		if _, ok := packageOutputProps[name]; !ok {
+			t.Fatalf("skill_package output schema missing %q", name)
 		}
 	}
 }

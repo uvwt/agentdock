@@ -68,25 +68,34 @@ func (p skillEnvProvider) EnvForSkill(skill string, definitions []skillruntime.E
 	return p.store.EnvForSkill(skill, converted)
 }
 
-func (r *Runtime) skillManage(ctx context.Context, args map[string]any) (Result, error) {
+func (r *Runtime) skillRead(_ context.Context, args map[string]any) (Result, error) {
 	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
 	switch action {
 	case "list":
 		return r.skillList()
 	case "inspect":
 		return r.skillInspect(args)
+	default:
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported skill_read action", "validation", map[string]any{
+			"action":  action,
+			"allowed": []string{"list", "inspect"},
+		})
+	}
+}
+
+func (r *Runtime) skillPackage(ctx context.Context, args map[string]any) (Result, error) {
+	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
+	switch action {
 	case "validate":
 		return r.skillValidate(ctx, args)
 	case "install":
 		return r.skillInstall(ctx, args)
-	case "run":
-		return r.skillRun(ctx, args)
 	case "rollback":
 		return r.skillRollback(ctx, args)
 	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported skill_manage action", "validation", map[string]any{
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported skill_package action", "validation", map[string]any{
 			"action":  action,
-			"allowed": []string{"list", "inspect", "validate", "install", "run", "rollback"},
+			"allowed": []string{"validate", "install", "rollback"},
 		})
 	}
 }
@@ -265,6 +274,13 @@ func (r *Runtime) skillInstall(ctx context.Context, args map[string]any) (Result
 }
 
 func (r *Runtime) skillRun(ctx context.Context, args map[string]any) (Result, error) {
+	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
+	if action != "" && action != "run" {
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported skill_run action", "validation", map[string]any{
+			"action":  action,
+			"allowed": []string{"run"},
+		})
+	}
 	skill, err := requiredSkillArg(args)
 	if err != nil {
 		return nil, err
