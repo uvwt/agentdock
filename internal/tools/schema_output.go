@@ -28,10 +28,7 @@ func OutputSchema(name string) map[string]any {
 		props["workflow_dir"] = stringProp("Local directory containing workflow templates.")
 		props["sandbox"] = objectProp("Sandbox status metadata.")
 	case "agentdock_context":
-		props["generated_at"] = stringProp("UTC timestamp when the AgentDock bootstrap context was generated.")
 		props["context"] = stringProp("Rendered AgentDock bootstrap context text for clients that cannot inject system prompt context.")
-		props["summary"] = stringProp("Short status summary; detailed rendered text is in context.")
-		props["counts"] = objectProp("Counts for rendered context sections without duplicating item details.")
 	case "read_file":
 		props["path"] = stringProp("Host path. Relative paths resolve from ~/AgentDock.")
 		props["content"] = stringProp("Text content slice.")

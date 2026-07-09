@@ -2,19 +2,17 @@ package tools
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 	"time"
 )
 
 func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
-	generatedAt := time.Now().UTC().Format(time.RFC3339)
 	baseTools := baseToolCapabilityItems()
 	baseToolLines := baseToolSummaryLines(baseTools)
 
-	skills, skillSummary, _ := r.skillCapabilityIndex()
-	templates, templateSummary, _ := r.templateCapabilityIndex()
+	_, skillSummary, _ := r.skillCapabilityIndex()
+	_, templateSummary, _ := r.templateCapabilityIndex()
 	memorySummary, _, _ := r.memoryCapabilitySummary(ctx)
 
 	rules := []string{
@@ -32,39 +30,15 @@ func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
 		{Title: "记忆精简摘要", Lines: splitNonEmptyLines(memorySummary)},
 		{Title: "使用规则", Lines: rules},
 	}
-	contextText := renderAgentDockContext(generatedAt, sections)
-	summary := agentDockContextSummary(len(baseTools), len(skills), len(templates))
+	contextText := renderAgentDockContext(sections)
 
 	return Result{
-		"ok":           true,
-		"generated_at": generatedAt,
-		"context":      contextText,
-		"summary":      summary,
-		"counts": map[string]int{
-			"base_tools":     len(baseTools),
-			"skills":         len(skills),
-			"task_templates": len(templates),
-			"rules":          len(rules),
-		},
+		"ok":      true,
+		"context": contextText,
 	}, nil
 }
 func (r *Runtime) agentDockContextTool(ctx context.Context, _ map[string]any) (Result, error) {
 	return r.AgentDockContext(ctx)
-}
-
-func agentDockContextSummary(baseToolCount, skillCount, templateCount int) string {
-	return fmt.Sprintf("AgentDock 启动上下文已生成：base_tools=%d, skills=%d, task_templates=%d。详情见 context。", baseToolCount, skillCount, templateCount)
-}
-
-func capabilityBlockSummary(name string, count int, errText, guidance string) string {
-	status := fmt.Sprintf("%s：%d 项。", name, count)
-	if strings.TrimSpace(errText) != "" {
-		status += "当前索引不完整：" + errText + "。"
-	}
-	if strings.TrimSpace(guidance) != "" {
-		status += guidance
-	}
-	return status
 }
 
 type capabilitySection struct {
@@ -77,21 +51,9 @@ type capabilityBaseToolItem struct {
 	Description string `json:"description,omitempty"`
 }
 
-type capabilityBaseToolBlock struct {
-	Items   []capabilityBaseToolItem `json:"items"`
-	Summary string                   `json:"summary"`
-}
-
 type capabilitySkillItem struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
-}
-
-type capabilitySkillBlock struct {
-	Items   []capabilitySkillItem `json:"items"`
-	Summary string                `json:"summary"`
-	Count   int                   `json:"count"`
-	Error   string                `json:"error,omitempty"`
 }
 
 type capabilityTemplateItem struct {
@@ -99,28 +61,9 @@ type capabilityTemplateItem struct {
 	Description string `json:"description,omitempty"`
 }
 
-type capabilityTemplateBlock struct {
-	Items   []capabilityTemplateItem `json:"items"`
-	Summary string                   `json:"summary"`
-	Count   int                      `json:"count"`
-	Error   string                   `json:"error,omitempty"`
-}
-
 type capabilityMemoryItem struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
-}
-
-type capabilityMemoryBlock struct {
-	Items   []capabilityMemoryItem `json:"items"`
-	Summary string                 `json:"summary"`
-	Count   int                    `json:"count"`
-	Error   string                 `json:"error,omitempty"`
-}
-
-type capabilityRulesBlock struct {
-	Items   []string `json:"items"`
-	Summary string   `json:"summary"`
 }
 
 type capabilitySkillList struct {
@@ -328,7 +271,7 @@ func (r *Runtime) memoryCapabilitySummary(ctx context.Context) (string, []capabi
 	return strings.Join(lines, "\n"), items, ""
 }
 
-func renderAgentDockContext(generatedAt string, sections []capabilitySection) string {
+func renderAgentDockContext(sections []capabilitySection) string {
 	lines := []string{
 		"# AgentDock Context",
 		"",

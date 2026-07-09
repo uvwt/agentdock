@@ -91,14 +91,12 @@ func TestAgentDockContextSchemaIsModelFacingEntrypoint(t *testing.T) {
 	if !ok {
 		t.Fatal("agentdock_context output schema properties missing")
 	}
-	for _, name := range []string{"context", "summary", "counts"} {
-		if _, ok := outputProps[name]; !ok {
-			t.Fatalf("agentdock_context output schema missing %q", name)
-		}
+	if _, ok := outputProps["context"]; !ok {
+		t.Fatal("agentdock_context output schema missing context")
 	}
-	for _, name := range []string{"base_tools", "skills", "task_templates", "memory", "rules"} {
+	for _, name := range []string{"generated_at", "summary", "counts", "base_tools", "skills", "task_templates", "memory", "rules"} {
 		if _, ok := outputProps[name]; ok {
-			t.Fatalf("agentdock_context output schema should not duplicate rendered block %q", name)
+			t.Fatalf("agentdock_context output schema should not expose non-context field %q", name)
 		}
 	}
 

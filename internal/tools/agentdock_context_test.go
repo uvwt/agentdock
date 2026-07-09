@@ -49,20 +49,9 @@ func TestAgentDockContextToolReturnsRuntimeIndex(t *testing.T) {
 	if contextText == "" {
 		t.Fatalf("agentdock_context returned empty context: %#v", result)
 	}
-	summary, _ := result["summary"].(string)
-	if summary == "" || summary == contextText {
-		t.Fatalf("agentdock_context summary should be compact and distinct from context: %#v", result)
-	}
-	counts, ok := result["counts"].(map[string]int)
-	if !ok {
-		t.Fatalf("agentdock_context counts has unexpected shape: %#v", result["counts"])
-	}
-	if counts["base_tools"] == 0 {
-		t.Fatalf("agentdock_context counts missing base_tools: %#v", counts)
-	}
-	for _, name := range []string{"base_tools", "skills", "task_templates", "memory", "rules"} {
+	for _, name := range []string{"generated_at", "summary", "counts", "base_tools", "skills", "task_templates", "memory", "rules"} {
 		if _, ok := result[name]; ok {
-			t.Fatalf("agentdock_context should not duplicate rendered block %q", name)
+			t.Fatalf("agentdock_context should only expose context payload; unexpected field %q", name)
 		}
 	}
 }
