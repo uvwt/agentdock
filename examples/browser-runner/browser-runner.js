@@ -305,12 +305,12 @@ async function runCDPActions(session, actions = []) {
   if (!Array.isArray(actions) || actions.length === 0) return;
   let target = await cdpPageTarget(session);
   for (const action of actions) {
-    const type = action.type || action.action;
+    const type = action.action;
     if (type === 'wait') {
-      await new Promise(resolve => setTimeout(resolve, action.ms ?? action.value ?? 1000));
+      await new Promise(resolve => setTimeout(resolve, action.value ?? 1000));
     } else if (type === 'goto') {
       await cdpCall(target.webSocketDebuggerUrl, 'Page.navigate', { url: action.url }, cdpTimeout());
-      await new Promise(resolve => setTimeout(resolve, action.wait_ms ?? 1500));
+      await new Promise(resolve => setTimeout(resolve, action.value ?? 1500));
       target = await cdpPageTarget(session);
     } else if (type === 'reload') {
       await cdpCall(target.webSocketDebuggerUrl, 'Page.reload', {}, cdpTimeout());
@@ -788,12 +788,12 @@ async function snapshot(page, extra = {}) {
 
 async function runActions(page, actions = []) {
   for (const action of actions) {
-    const type = action.type || action.action;
+    const type = action.action;
     if (type === 'goto') await page.goto(action.url, { waitUntil: action.wait_until || 'domcontentloaded' });
     else if (type === 'click') await page.click(action.selector);
     else if (type === 'fill') await page.fill(action.selector, action.value ?? '');
     else if (type === 'press') await page.press(action.selector || 'body', action.key);
-    else if (type === 'wait') await page.waitForTimeout(action.ms ?? action.value ?? 1000);
+    else if (type === 'wait') await page.waitForTimeout(action.value ?? 1000);
     else if (type === 'wait_for_selector') await page.waitForSelector(action.selector, { timeout: action.timeout_ms || 10000 });
     else if (type === 'select') await page.selectOption(action.selector, action.value);
     else if (type === 'scroll') await page.mouse.wheel(action.delta_x || 0, action.delta_y || 800);

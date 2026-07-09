@@ -252,7 +252,7 @@ func InputSchema(name string) map[string]any {
 		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
 	case "browser_act":
 		props["session_id"] = stringProp("Browser session id.")
-		props["actions"] = arrayProp("Actions to run. Each item may use action or type: goto, click, fill, press, wait, wait_for_selector, select, scroll, reload, back, or forward. For wait, use ms or value. Page script actions are disabled by the default runner.")
+		props["actions"] = browserActionsProp()
 		props["full_page"] = boolProp("Capture full-page screenshot in the final snapshot.")
 		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
 		props["screenshot_return_mode"] = stringProp("Screenshot return mode: none, url, mcp_image, base64, data_url, or both. Defaults to url.")
@@ -330,4 +330,31 @@ func InputSchema(name string) map[string]any {
 		schema["required"] = required
 	}
 	return schema
+}
+
+func browserActionsProp() map[string]any {
+	return map[string]any{
+		"type":        "array",
+		"description": "Browser actions. Every item must use the action field; type/ms are not accepted.",
+		"items": map[string]any{
+			"type":                 "object",
+			"additionalProperties": true,
+			"required":             []string{"action"},
+			"properties": map[string]any{
+				"action": map[string]any{
+					"type":        "string",
+					"description": "Required action name. Use this field, not type.",
+					"enum":        []string{"goto", "click", "fill", "press", "wait", "wait_for_selector", "select", "scroll", "reload", "back", "forward"},
+				},
+				"url":        map[string]any{"type": "string", "description": "URL for action=goto."},
+				"selector":   map[string]any{"type": "string", "description": "CSS selector for click/fill/press/wait_for_selector/select."},
+				"value":      map[string]any{"description": "Value for fill/select, or wait duration in milliseconds for action=wait."},
+				"key":        map[string]any{"type": "string", "description": "Keyboard key for action=press."},
+				"timeout_ms": map[string]any{"type": "integer", "description": "Timeout for action=wait_for_selector."},
+				"wait_until": map[string]any{"type": "string", "description": "Navigation wait state for goto/reload/back/forward, such as domcontentloaded or load."},
+				"delta_x":    map[string]any{"type": "integer", "description": "Horizontal wheel delta for action=scroll."},
+				"delta_y":    map[string]any{"type": "integer", "description": "Vertical wheel delta for action=scroll."},
+			},
+		},
+	}
 }
