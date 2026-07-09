@@ -170,7 +170,7 @@ func operationNames(raw any) []string {
 }
 
 func (r *Runtime) templateCapabilityIndex() ([]map[string]any, string, string) {
-	result, err := r.taskManage(map[string]any{"action": "template_list", "template_status": "active"})
+	result, err := r.workflowTemplateManage(map[string]any{"action": "list", "template_status": "active"})
 	if err != nil {
 		return nil, "- 任务模板索引暂不可用；多步骤任务仍应先 workflow_template_manage match。", err.Error()
 	}
