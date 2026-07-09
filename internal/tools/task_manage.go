@@ -17,44 +17,150 @@ var taskActions = []string{"create", "list", "get", "block", "resume", "final_re
 
 var workflowTemplateActions = []string{"save", "validate", "publish", "retire", "list", "get", "match", "vector_index"}
 
+type taskManageInput struct {
+	Action               string
+	Title                string
+	Goal                 string
+	CompletionConditions []string
+	TemplateID           string
+	TemplateVersion      string
+	SelectedReason       string
+	TemplateCandidates   []taskstate.TemplateCandidate
+	Status               taskstate.Status
+	Limit                int
+	TaskID               string
+	Blocker              string
+	Evidence             string
+	Summary              string
+	ReviewStatus         string
+	VerifiedFacts        []string
+	OpenRisks            []string
+	MissingChecks        []string
+}
+
+type workflowTemplateInput struct {
+	Action               string
+	TemplateID           string
+	TemplateVersion      string
+	TemplateStatus       string
+	Goal                 string
+	Device               string
+	Type                 string
+	Template             taskstate.Template
+	AllowLongTemplateSet bool
+	AllowLongTemplate    bool
+	LongTemplateReason   string
+}
+
+type workflowTemplateDraftRequest struct {
+	Template taskstate.Template `json:"template"`
+}
+
+type workflowTemplateMatchRequest struct {
+	Goal   string `json:"goal"`
+	Device string `json:"device"`
+	Type   string `json:"type"`
+}
+
+func parseTaskManageInput(args map[string]any) taskManageInput {
+	input := taskManageInput{
+		Action:               strings.ToLower(strings.TrimSpace(stringArg(args, "action", ""))),
+		Title:                stringArg(args, "title", ""),
+		Goal:                 stringArg(args, "goal", ""),
+		CompletionConditions: stringSliceArg(args, "completion_conditions"),
+		TemplateID:           strings.TrimSpace(stringArg(args, "template_id", "")),
+		TemplateVersion:      strings.TrimSpace(stringArg(args, "template_version", "")),
+		SelectedReason:       stringArg(args, "selected_reason", ""),
+		Status:               taskstate.Status(strings.ToLower(strings.TrimSpace(stringArg(args, "status", "")))),
+		Limit:                intArg(args, "limit", 50),
+		TaskID:               stringArg(args, "task_id", ""),
+		Blocker:              stringArg(args, "blocker", ""),
+		Evidence:             stringArg(args, "evidence", ""),
+		Summary:              stringArg(args, "summary", ""),
+		ReviewStatus:         stringArg(args, "review_status", stringArg(args, "status", "pass")),
+		VerifiedFacts:        stringSliceArg(args, "verified_facts"),
+		OpenRisks:            stringSliceArg(args, "open_risks"),
+		MissingChecks:        stringSliceArg(args, "missing_checks"),
+	}
+	if raw := args["template_candidates"]; raw != nil {
+		_ = remarshal(raw, &input.TemplateCandidates)
+	}
+	return input
+}
+
+func parseWorkflowTemplateInput(args map[string]any) (workflowTemplateInput, error) {
+	input := workflowTemplateInput{
+		Action:             strings.ToLower(strings.TrimSpace(stringArg(args, "action", ""))),
+		TemplateID:         strings.TrimSpace(stringArg(args, "template_id", "")),
+		TemplateVersion:    strings.TrimSpace(stringArg(args, "template_version", "")),
+		TemplateStatus:     strings.TrimSpace(stringArg(args, "template_status", "")),
+		Goal:               stringArg(args, "goal", ""),
+		Device:             stringArg(args, "device", ""),
+		Type:               stringArg(args, "type", ""),
+		LongTemplateReason: strings.TrimSpace(stringArg(args, "long_template_reason", "")),
+	}
+	if _, ok := args["allow_long_template"]; ok {
+		input.AllowLongTemplateSet = true
+		input.AllowLongTemplate = boolArg(args, "allow_long_template", false)
+	}
+	if input.Action == "save" {
+		if err := remarshal(mapArg(args, "template"), &input.Template); err != nil {
+			return input, taskToolError(err)
+		}
+		input.applyTemplateGuardrails()
+	}
+	return input, nil
+}
+
+func (input workflowTemplateInput) escapedTemplatePath(action string) string {
+	id := url.PathEscape(input.TemplateID)
+	version := url.PathEscape(input.TemplateVersion)
+	if action == "" {
+		return fmt.Sprintf("/v1/workflow-templates/%s/%s", id, version)
+	}
+	return fmt.Sprintf("/v1/workflow-templates/%s/%s/%s", id, version, action)
+}
+
+func (input *workflowTemplateInput) applyTemplateGuardrails() {
+	if input.AllowLongTemplateSet {
+		input.Template.AllowLongTemplate = input.AllowLongTemplate
+	}
+	if input.LongTemplateReason != "" {
+		input.Template.LongTemplateReason = input.LongTemplateReason
+	}
+}
+
 func (r *Runtime) taskManage(args map[string]any) (Result, error) {
-	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
+	input := parseTaskManageInput(args)
 	var (
 		task taskstate.Task
 		err  error
 	)
-	switch action {
+	switch input.Action {
 	case "create":
-		var candidates []taskstate.TemplateCandidate
-		if raw := args["template_candidates"]; raw != nil {
-			_ = remarshal(raw, &candidates)
-		}
-		templateID := stringArg(args, "template_id", "")
-		templateVersion := stringArg(args, "template_version", "")
-		if strings.TrimSpace(templateID) != "" {
-			template, fetchErr := r.nexusWorkflowTemplate(templateID, templateVersion)
+		if input.TemplateID != "" {
+			template, fetchErr := r.nexusWorkflowTemplate(input.TemplateID, input.TemplateVersion)
 			if fetchErr != nil {
 				return nil, fetchErr
 			}
-			task, err = r.tasks.CreateFromTemplate(stringArg(args, "title", ""), stringArg(args, "goal", ""), stringSliceArg(args, "completion_conditions"), template, stringArg(args, "selected_reason", ""), candidates)
+			task, err = r.tasks.CreateFromTemplate(input.Title, input.Goal, input.CompletionConditions, template, input.SelectedReason, input.TemplateCandidates)
 		} else {
-			task, err = r.tasks.Create(stringArg(args, "title", ""), stringArg(args, "goal", ""), stringSliceArg(args, "completion_conditions"))
+			task, err = r.tasks.Create(input.Title, input.Goal, input.CompletionConditions)
 		}
 		if err != nil {
 			return nil, taskToolError(err)
 		}
 		return Result{
-			"ok": true, "action": action, "task_id": task.ID, "task_summary": compactTaskSummary(task), "state_dir": r.tasks.Root(),
+			"ok": true, "action": input.Action, "task_id": task.ID, "task_summary": compactTaskSummary(task), "state_dir": r.tasks.Root(),
 			"next_required_action": "Do real work with non-task tools. Use block only for blockers. When work appears complete, call final_review once, then complete_after_review if it passes.",
 		}, nil
 	case "list":
-		status := taskstate.Status(strings.ToLower(strings.TrimSpace(stringArg(args, "status", ""))))
-		if status != "" && status != taskstate.StatusActive && status != taskstate.StatusBlocked && status != taskstate.StatusCompleted {
+		if input.Status != "" && input.Status != taskstate.StatusActive && input.Status != taskstate.StatusBlocked && input.Status != taskstate.StatusCompleted {
 			return nil, toolErrorDetails("INVALID_STATUS", "unsupported task status filter", "validation", map[string]any{
-				"status": status, "allowed": []string{"active", "blocked", "completed"},
+				"status": input.Status, "allowed": []string{"active", "blocked", "completed"},
 			})
 		}
-		tasks, listErr := r.tasks.List(status, intArg(args, "limit", 50))
+		tasks, listErr := r.tasks.List(input.Status, input.Limit)
 		if listErr != nil {
 			return nil, taskToolError(listErr)
 		}
@@ -66,61 +172,52 @@ func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 				"condition_count": len(item.Conditions), "review_status": reviewStatus(item),
 			})
 		}
-		return Result{"ok": true, "action": action, "tasks": items, "count": len(items), "state_dir": r.tasks.Root()}, nil
+		return Result{"ok": true, "action": input.Action, "tasks": items, "count": len(items), "state_dir": r.tasks.Root()}, nil
 	case "get":
-		task, err = r.tasks.Get(stringArg(args, "task_id", ""))
+		task, err = r.tasks.Get(input.TaskID)
 		if err != nil {
 			return nil, taskToolError(err)
 		}
-		return Result{"ok": true, "action": action, "task": task, "state_dir": r.tasks.Root()}, nil
+		return Result{"ok": true, "action": input.Action, "task": task, "state_dir": r.tasks.Root()}, nil
 	case "block":
-		task, err = r.tasks.Block(
-			stringArg(args, "task_id", ""),
-			stringArg(args, "blocker", ""),
-			stringArg(args, "evidence", ""),
-		)
+		task, err = r.tasks.Block(input.TaskID, input.Blocker, input.Evidence)
 	case "resume":
-		task, err = r.tasks.Resume(stringArg(args, "task_id", ""), stringArg(args, "summary", ""))
+		task, err = r.tasks.Resume(input.TaskID, input.Summary)
 	case "final_review":
-		input := taskstate.FinalReviewInput{
-			Status:        stringArg(args, "review_status", stringArg(args, "status", "pass")),
-			Summary:       stringArg(args, "summary", ""),
-			VerifiedFacts: stringSliceArg(args, "verified_facts"),
-			OpenRisks:     stringSliceArg(args, "open_risks"),
-			MissingChecks: stringSliceArg(args, "missing_checks"),
+		review := taskstate.FinalReviewInput{
+			Status:        input.ReviewStatus,
+			Summary:       input.Summary,
+			VerifiedFacts: input.VerifiedFacts,
+			OpenRisks:     input.OpenRisks,
+			MissingChecks: input.MissingChecks,
 		}
-		task, err = r.tasks.FinalReview(stringArg(args, "task_id", ""), input)
+		task, err = r.tasks.FinalReview(input.TaskID, review)
 	case "complete_after_review":
-		task, err = r.tasks.CompleteAfterReview(stringArg(args, "task_id", ""), stringArg(args, "summary", ""))
+		task, err = r.tasks.CompleteAfterReview(input.TaskID, input.Summary)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported task_manage action", "validation", map[string]any{
-			"action": action, "allowed": taskActions,
+			"action": input.Action, "allowed": taskActions,
 		})
 	}
 	if err != nil {
 		return nil, taskToolError(err)
 	}
-	return Result{"ok": true, "action": action, "task_id": task.ID, "task_summary": compactTaskSummary(task), "state_dir": r.tasks.Root()}, nil
+	return Result{"ok": true, "action": input.Action, "task_id": task.ID, "task_summary": compactTaskSummary(task), "state_dir": r.tasks.Root()}, nil
 }
 
 func (r *Runtime) workflowTemplateManage(args map[string]any) (Result, error) {
-	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
-	switch action {
+	input, err := parseWorkflowTemplateInput(args)
+	if err != nil {
+		return nil, err
+	}
+	switch input.Action {
 	case "save":
-		var template taskstate.Template
-		if err := remarshal(mapArg(args, "template"), &template); err != nil {
-			return nil, taskToolError(err)
-		}
-		applyTemplateGuardrailArgs(args, &template)
-		return compactNexusTemplateMutationResult(r.nexusWorkflowJSON("POST", "/v1/workflow-templates/drafts", map[string]any{"template": template}))
+		request := workflowTemplateDraftRequest{Template: input.Template}
+		return compactNexusTemplateMutationResult(r.nexusWorkflowJSON("POST", "/v1/workflow-templates/drafts", request))
 	case "validate", "publish", "retire":
-		id := url.PathEscape(stringArg(args, "template_id", ""))
-		version := url.PathEscape(stringArg(args, "template_version", ""))
-		return compactNexusTemplateMutationResult(r.nexusWorkflowJSON("POST", fmt.Sprintf("/v1/workflow-templates/%s/%s/%s", id, version, action), map[string]any{}))
+		return compactNexusTemplateMutationResult(r.nexusWorkflowJSON("POST", input.escapedTemplatePath(input.Action), struct{}{}))
 	case "get":
-		id := url.PathEscape(stringArg(args, "template_id", ""))
-		version := url.PathEscape(stringArg(args, "template_version", ""))
-		result, err := r.nexusWorkflowJSON("GET", fmt.Sprintf("/v1/workflow-templates/%s/%s", id, version), nil)
+		result, err := r.nexusWorkflowJSON("GET", input.escapedTemplatePath(""), nil)
 		if err != nil {
 			return nil, err
 		}
@@ -131,8 +228,8 @@ func (r *Runtime) workflowTemplateManage(args map[string]any) (Result, error) {
 		return result, nil
 	case "list":
 		path := "/v1/workflow-templates"
-		if status := strings.TrimSpace(stringArg(args, "template_status", "")); status != "" {
-			path += "?status=" + url.QueryEscape(status)
+		if input.TemplateStatus != "" {
+			path += "?status=" + url.QueryEscape(input.TemplateStatus)
 		}
 		result, err := r.nexusWorkflowJSON("GET", path, nil)
 		if err != nil {
@@ -153,11 +250,11 @@ func (r *Runtime) workflowTemplateManage(args map[string]any) (Result, error) {
 		}
 		return result, nil
 	case "match":
-		return r.matchWorkflowTemplates(args)
+		return r.matchWorkflowTemplates(input)
 	case "vector_index":
 		return r.nexusWorkflowJSON("GET", "/v1/workflow-templates/vector-index", nil)
 	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported workflow_template_manage action", "validation", map[string]any{"action": action, "allowed": workflowTemplateActions})
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported workflow_template_manage action", "validation", map[string]any{"action": input.Action, "allowed": workflowTemplateActions})
 	}
 }
 
@@ -169,12 +266,9 @@ func compactNexusTemplateMutationResult(result Result, err error) (Result, error
 	return result, nil
 }
 
-func (r *Runtime) matchWorkflowTemplates(args map[string]any) (Result, error) {
-	return r.nexusWorkflowJSON("POST", "/v1/workflow-templates/match", map[string]any{
-		"goal":   stringArg(args, "goal", ""),
-		"device": stringArg(args, "device", ""),
-		"type":   stringArg(args, "type", ""),
-	})
+func (r *Runtime) matchWorkflowTemplates(input workflowTemplateInput) (Result, error) {
+	request := workflowTemplateMatchRequest{Goal: input.Goal, Device: input.Device, Type: input.Type}
+	return r.nexusWorkflowJSON("POST", "/v1/workflow-templates/match", request)
 }
 
 func (r *Runtime) nexusWorkflowTemplate(id, version string) (taskstate.Template, error) {
@@ -381,13 +475,4 @@ func remarshal(input any, out any) error {
 		return err
 	}
 	return json.Unmarshal(data, out)
-}
-
-func applyTemplateGuardrailArgs(args map[string]any, template *taskstate.Template) {
-	if _, ok := args["allow_long_template"]; ok {
-		template.AllowLongTemplate = boolArg(args, "allow_long_template", false)
-	}
-	if reason := strings.TrimSpace(stringArg(args, "long_template_reason", "")); reason != "" {
-		template.LongTemplateReason = reason
-	}
 }

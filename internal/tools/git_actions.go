@@ -9,6 +9,42 @@ import (
 	"strings"
 )
 
+type gitLogCommit struct {
+	Raw     string `json:"raw"`
+	Hash    string `json:"hash,omitempty"`
+	Author  string `json:"author,omitempty"`
+	Date    string `json:"date,omitempty"`
+	Subject string `json:"subject,omitempty"`
+}
+
+type gitRepoSummary struct {
+	Path     string `json:"path"`
+	Branch   string `json:"branch"`
+	Upstream string `json:"upstream"`
+	Ahead    int    `json:"ahead"`
+	Behind   int    `json:"behind"`
+	Clean    bool   `json:"clean"`
+	Remote   string `json:"remote"`
+}
+
+func parseGitLogCommit(line string) gitLogCommit {
+	commit := gitLogCommit{Raw: line}
+	parts := strings.SplitN(line, "	", 4)
+	if len(parts) > 0 {
+		commit.Hash = parts[0]
+	}
+	if len(parts) > 1 {
+		commit.Author = parts[1]
+	}
+	if len(parts) > 2 {
+		commit.Date = parts[2]
+	}
+	if len(parts) > 3 {
+		commit.Subject = parts[3]
+	}
+	return commit
+}
+
 func (r *Runtime) gitRepoStatus(ctx context.Context, args map[string]any) (Result, error) {
 	repo, err := r.resolveGitRepo(args)
 	if err != nil {
@@ -66,26 +102,12 @@ func (r *Runtime) gitLog(ctx context.Context, args map[string]any) (Result, erro
 		return nil, err
 	}
 	output, _ := result["output"].(string)
-	commits := make([]map[string]any, 0)
+	commits := make([]gitLogCommit, 0)
 	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "\t", 4)
-		commit := map[string]any{"raw": line}
-		if len(parts) > 0 {
-			commit["hash"] = parts[0]
-		}
-		if len(parts) > 1 {
-			commit["author"] = parts[1]
-		}
-		if len(parts) > 2 {
-			commit["date"] = parts[2]
-		}
-		if len(parts) > 3 {
-			commit["subject"] = parts[3]
-		}
-		commits = append(commits, commit)
+		commits = append(commits, parseGitLogCommit(line))
 	}
 	result["repo_path"] = repo.Path
 	result["commits"] = commits
@@ -296,7 +318,7 @@ func (r *Runtime) listGitRepos(ctx context.Context, args map[string]any) (Result
 	if maxDepth < 1 {
 		maxDepth = 1
 	}
-	repos := make([]map[string]any, 0)
+	repos := make([]gitRepoSummary, 0)
 	rootDepth := len(strings.Split(filepath.Clean(start.Abs), string(os.PathSeparator)))
 	_ = filepath.WalkDir(start.Abs, func(abs string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -326,7 +348,7 @@ func (r *Runtime) listGitRepos(ctx context.Context, args map[string]any) (Result
 		branch := r.currentBranch(ctx, repo)
 		status, _ := r.gitInRepo(ctx, repo, 65536, "status", "--short", "--branch")
 		_, upstream, ahead, behind, files := parseGitStatus(fmt.Sprint(status["output"]))
-		repos = append(repos, map[string]any{"path": rel, "branch": branch, "upstream": upstream, "ahead": ahead, "behind": behind, "clean": len(files) == 0, "remote": redactSecrets(r.gitRemoteURL(ctx, repo, "origin"), nil)})
+		repos = append(repos, gitRepoSummary{Path: rel, Branch: branch, Upstream: upstream, Ahead: ahead, Behind: behind, Clean: len(files) == 0, Remote: redactSecrets(r.gitRemoteURL(ctx, repo, "origin"), nil)})
 		return filepath.SkipDir
 	})
 	return Result{"ok": true, "path": start.Display, "repos": repos, "count": len(repos)}, nil
