@@ -31,7 +31,7 @@ func OutputSchema(name string) map[string]any {
 		props["generated_at"] = stringProp("UTC timestamp when the capability context was generated.")
 		props["refreshed"] = boolProp("Whether the caller requested a refresh.")
 		props["context"] = stringProp("Rendered capability context text for clients that cannot inject system prompt context.")
-		props["summary"] = stringProp("Alias for rendered capability context text.")
+		props["summary"] = stringProp("Short non-overlapping status summary; detailed rendered text is in context and structured details are in each block's items.")
 		props["base_tools"] = objectProp("Compact base tool index.")
 		props["skills"] = objectProp("Installed Skill capability index.")
 		props["task_templates"] = objectProp("Workflow template capability index.")
