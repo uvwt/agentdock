@@ -16,7 +16,7 @@ import time
 import urllib.parse
 from pathlib import Path
 
-VERSION = "1.0.4"
+VERSION = "1.0.5"
 SEP = "\x1f"
 STATE_MAX_AGE_SECONDS = 90
 
@@ -1219,13 +1219,13 @@ def act(args):
     if unsupported:
         return unsupported
     action = str_arg(args, "action", "").lower().strip()
-    if action in {"focus", "focus_app"}:
+    if action == "focus":
         return activate_app(str_arg(args, "app", ""))
     if action == "wait":
-        ms = max(0, min(int_arg(args, "timeout_ms", int_arg(args, "ms", 1000)), 60000))
+        ms = max(0, min(int_arg(args, "ms", 1000), 60000))
         time.sleep(ms / 1000.0)
         return {"ok": True, "operation": "desktop_wait", "waited_ms": ms}
-    if action in {"click", "double_click", "doubleclick", "move", "scroll", "drag", "type", "text", "hotkey", "shortcut"}:
+    if action in {"click", "double_click", "move", "scroll", "drag", "type", "hotkey"}:
         if (err := require_cliclick("desktop_" + action)):
             return err
     app = str_arg(args, "app", "").strip()
@@ -1264,7 +1264,7 @@ def act(args):
         point, _, failure = resolve_point(args, "desktop_move", point)
         if failure: return failure
         return command_action_result("desktop_move", ["cliclick", f"m:{point['x']},{point['y']}"], args)
-    if action in {"double_click", "doubleclick"}:
+    if action == "double_click":
         point = {"x": int_arg(args, "x", -1), "y": int_arg(args, "y", -1)}
         if point["x"] < 0 or point["y"] < 0:
             return error_result("desktop_double_click", "INVALID_COORDINATE", "x and y must be non-negative")
@@ -1304,7 +1304,7 @@ def act(args):
             start = {"x": info["x"] + start["x"], "y": info["y"] + start["y"]}
             end = {"x": info["x"] + end["x"], "y": info["y"] + end["y"]}
         return command_action_result("desktop_drag", ["cliclick", *build_drag_commands(args, start, end)], args)
-    if action in {"type", "text"}:
+    if action == "type":
         text = str_arg(args, "text", "")
         strategy = str_arg(args, "strategy", "auto").lower().strip()
         if text == "": return error_result("desktop_type", "MISSING_TEXT", "text is required")
@@ -1322,7 +1322,7 @@ def act(args):
         if strategy not in {"auto", "keyboard"}:
             return error_result("desktop_type", "INVALID_TYPE_STRATEGY", "strategy must be auto, keyboard, or clipboard")
         return command_action_result("desktop_type", ["cliclick", "t:" + text], args)
-    if action in {"hotkey", "shortcut"}:
+    if action == "hotkey":
         keys = str_arg(args, "keys", "").strip()
         if not keys: return error_result("desktop_hotkey", "MISSING_KEYS", "keys is required, for example cmd+space or enter")
         return command_action_result("desktop_hotkey", ["cliclick", *cliclick_key_args(keys)], args)
@@ -1335,10 +1335,10 @@ def act(args):
         res = run_applescript(ax_operate_script("set_value"), [app_lookup_key(app), element_index, value], operation="desktop_set_value", timeout=30)
         res.update({"app": app, "element_index": element_index, "bytes": len(value.encode("utf-8"))})
         return res
-    if action in {"secondary_action", "perform_secondary_action", "accessibility_action"}:
+    if action == "secondary_action":
         if not app: return error_result("desktop_perform_secondary_action", "MISSING_APP", "app is required")
         if not element_index: return error_result("desktop_perform_secondary_action", "MISSING_ELEMENT_INDEX", "element_index is required")
-        ax_action = str_arg(args, "ax_action", str_arg(args, "secondary_action", "")).strip()
+        ax_action = str_arg(args, "ax_action", "").strip()
         if not ax_action:
             return error_result("desktop_perform_secondary_action", "MISSING_ACTION", "ax_action is required")
         if (err := require_recent_app_state(app)): return err
@@ -1351,19 +1351,17 @@ def act(args):
 
 def observe(args):
     action = str_arg(args, "action", "").lower().strip()
-    if not action and str_arg(args, "app", ""):
-        action = "app_state"
-    if action in {"", "preflight"}:
+    if action == "preflight":
         return preflight(args)
-    if action in {"list_apps", "apps"}:
+    if action == "list_apps":
         return list_apps(args)
-    if action in {"app_state", "state", "get_app_state"}:
+    if action == "app_state":
         return app_state(args)
-    if action in {"window_list", "windows"}:
+    if action == "window_list":
         return window_list(args)
-    if action in {"snapshot", "screen"}:
+    if action == "snapshot":
         return snapshot(args)
-    if action in {"snapshot_app", "app_snapshot"}:
+    if action == "snapshot_app":
         return snapshot_app(args)
     return error_result("desktop_observe", "INVALID_ACTION", "unsupported desktop observe action", action=action)
 

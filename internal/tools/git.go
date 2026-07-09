@@ -50,10 +50,7 @@ func patchDiagnostic(code, path, message, output, reason string) map[string]any 
 }
 
 func (r *Runtime) patchWorkdir(args map[string]any) (workspacepkg.Path, error) {
-	raw := stringArg(args, "repo_path", "")
-	if raw == "" {
-		raw = stringArg(args, "workdir", "")
-	}
+	raw := stringArg(args, "workdir", "")
 	if raw == "" {
 		raw = "."
 	}
@@ -66,7 +63,7 @@ func (r *Runtime) patchWorkdir(args map[string]any) (workspacepkg.Path, error) {
 		return workspacepkg.Path{}, err
 	}
 	if !info.IsDir() {
-		return workspacepkg.Path{}, toolError("NOT_A_DIRECTORY", "workdir/repo_path is not a directory", "validation")
+		return workspacepkg.Path{}, toolError("NOT_A_DIRECTORY", "workdir is not a directory", "validation")
 	}
 	return workdir, nil
 }

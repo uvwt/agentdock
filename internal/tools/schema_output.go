@@ -286,7 +286,6 @@ func OutputSchema(name string) map[string]any {
 		props["truncated"] = boolProp("Whether output was truncated.")
 		props["diagnostic"] = objectProp("Structured diagnostic.")
 		props["push_succeeded"] = boolProp("Whether push exited successfully.")
-		props["pushed"] = boolProp("Alias for push_succeeded.")
 		props["remote_updated"] = boolProp("Whether push changed remote refs.")
 		props["up_to_date"] = boolProp("Whether push reported up-to-date.")
 		props["warnings"] = arrayProp("Git warning lines.")

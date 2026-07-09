@@ -254,7 +254,7 @@ func TestFileEditAndGitUnifiedSchemas(t *testing.T) {
 
 	gitReadProps := schemaProperties(t, "git_read")
 	assertSameStrings(t, enumStrings(t, gitReadProps["action"]), []string{"repos", "status", "diff", "log", "show", "blame", "github_repo_access"})
-	for _, name := range []string{"repo_path", "path", "paths", "rev", "limit", "max_bytes", "repo", "repository", "timeout_ms"} {
+	for _, name := range []string{"repo_path", "path", "paths", "rev", "limit", "max_bytes", "repo", "timeout_ms"} {
 		if _, ok := gitReadProps[name]; !ok {
 			t.Fatalf("git_read input schema missing %q", name)
 		}

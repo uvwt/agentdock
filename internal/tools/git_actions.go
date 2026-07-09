@@ -50,7 +50,7 @@ func (r *Runtime) gitRepoStatus(ctx context.Context, args map[string]any) (Resul
 	if err != nil {
 		return nil, err
 	}
-	result, err := r.gitInRepo(ctx, repo, intArg(args, "max_output_bytes", 65536), "status", "--short", "--branch")
+	result, err := r.gitInRepo(ctx, repo, intArg(args, "max_bytes", 65536), "status", "--short", "--branch")
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +240,6 @@ func annotateGitPushResult(result Result) {
 	}
 
 	result["push_succeeded"] = ok
-	result["pushed"] = ok
 	result["remote_updated"] = remoteUpdated
 	result["up_to_date"] = upToDate
 	result["warnings"] = warnings
@@ -277,9 +276,6 @@ func (r *Runtime) gitCommit(ctx context.Context, args map[string]any) (Result, e
 
 func (r *Runtime) gitClone(ctx context.Context, args map[string]any) (Result, error) {
 	urlValue := stringArg(args, "url", "")
-	if urlValue == "" {
-		urlValue = stringArg(args, "repo", "")
-	}
 	if urlValue == "" {
 		return nil, toolError("INVALID_ARGUMENT", "url is required", "validation")
 	}

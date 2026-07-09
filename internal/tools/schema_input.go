@@ -53,7 +53,7 @@ func InputSchema(name string) map[string]any {
 		props["action"] = map[string]any{"type": "string", "description": "File edit action.", "enum": []string{"replace", "patch", "add", "delete", "move"}}
 		props["path"] = stringProp("Host path for replace, add, delete, or move. Relative paths resolve from ~/AgentDock.")
 		props["old"] = stringProp("Exact UTF-8 text to replace.")
-		props["new"] = stringProp("Replacement UTF-8 text for replace, or content alias for add.")
+		props["new"] = stringProp("Replacement UTF-8 text for action=replace.")
 		props["replace_all"] = boolProp("Replace every match instead of only the first.")
 		props["expected_matches"] = intProp("Required number of matches. Defaults to 1.")
 		props["content"] = stringProp("Text content for action=add.")
@@ -62,7 +62,6 @@ func InputSchema(name string) map[string]any {
 		props["recursive"] = boolProp("Required for deleting directories.")
 		props["patch"] = stringProp("Patch text for action=patch.")
 		props["workdir"] = stringProp("Patch working directory.")
-		props["repo_path"] = stringProp("Alias for workdir.")
 		props["dry_run"] = boolProp("Preview or validate without writing.")
 		props["max_diff_bytes"] = intProp("Maximum diff preview bytes.")
 		required = []string{"action"}
@@ -284,16 +283,13 @@ func InputSchema(name string) map[string]any {
 		props["limit"] = intProp("Maximum commits for log.")
 		props["max_depth"] = intProp("Maximum scan depth for repos.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
-		props["max_output_bytes"] = intProp("Alias for status output limit.")
 		props["repo"] = stringProp("GitHub repository as owner/name or https://github.com/owner/name.git; used by action=github_repo_access.")
-		props["repository"] = stringProp("Alias for repo; used by action=github_repo_access.")
 		props["timeout_ms"] = intProp("HTTP timeout in milliseconds; used by action=github_repo_access.")
 		required = []string{"action"}
 	case "git_write":
 		props["action"] = map[string]any{"type": "string", "description": "Write action.", "enum": []string{"clone", "commit", "fetch", "pull", "push"}}
 		props["repo_path"] = stringProp("Repository path.")
 		props["url"] = stringProp("Repository URL for clone.")
-		props["repo"] = stringProp("Alias for url.")
 		props["dest"] = stringProp("Destination directory for clone.")
 		props["message"] = stringProp("Commit message.")
 		props["paths"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}

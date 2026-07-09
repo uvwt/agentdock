@@ -41,9 +41,6 @@ func (r *Runtime) fileEditAdd(args map[string]any) (Result, error) {
 		return nil, toolError("INVALID_ARGUMENT", "path is required", "validation")
 	}
 	content := stringArg(args, "content", "")
-	if _, ok := args["content"]; !ok {
-		content = stringArg(args, "new", "")
-	}
 	dryRun := boolArg(args, "dry_run", false)
 	overwrite := boolArg(args, "overwrite", false)
 	maxDiffBytes := intArg(args, "max_diff_bytes", 65536)
@@ -117,7 +114,7 @@ func (r *Runtime) fileEditDelete(args map[string]any) (Result, error) {
 
 func (r *Runtime) fileEditMove(args map[string]any) (Result, error) {
 	path := stringArg(args, "path", "")
-	newPath := firstNonEmptyStringArg(args, "new_path", "dest", "to")
+	newPath := stringArg(args, "new_path", "")
 	if path == "" || newPath == "" {
 		return nil, toolError("INVALID_ARGUMENT", "path and new_path are required", "validation")
 	}
@@ -157,13 +154,4 @@ func (r *Runtime) fileEditMove(args map[string]any) (Result, error) {
 		return nil, err
 	}
 	return result, nil
-}
-
-func firstNonEmptyStringArg(args map[string]any, keys ...string) string {
-	for _, key := range keys {
-		if value := stringArg(args, key, ""); value != "" {
-			return value
-		}
-	}
-	return ""
 }

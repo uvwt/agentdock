@@ -3,7 +3,7 @@
   "kind": "Skill",
   "metadata": {
     "name": "desktop",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "displayName": "macOS Desktop Automation",
     "description": "macOS desktop observation, screenshots, Accessibility actions, pointer/keyboard control, and clipboard operations implemented as a native AgentDock Skill Runtime package."
   },
@@ -47,7 +47,15 @@
           "properties": {
             "action": {
               "type": "string",
-              "description": "Observation action: preflight, list_apps, app_state, window_list, snapshot, or snapshot_app."
+              "description": "Required observation action. Use exactly one of: preflight, list_apps, app_state, window_list, snapshot, snapshot_app.",
+              "enum": [
+                "preflight",
+                "list_apps",
+                "app_state",
+                "window_list",
+                "snapshot",
+                "snapshot_app"
+              ]
             },
             "app": {
               "type": "string",
@@ -119,7 +127,20 @@
           "properties": {
             "action": {
               "type": "string",
-              "description": "Desktop action."
+              "description": "Required desktop action. Use exactly one of: focus, move, click, double_click, scroll, drag, type, set_value, secondary_action, hotkey, wait.",
+              "enum": [
+                "focus",
+                "move",
+                "click",
+                "double_click",
+                "scroll",
+                "drag",
+                "type",
+                "set_value",
+                "secondary_action",
+                "hotkey",
+                "wait"
+              ]
             },
             "app": {
               "type": "string",
@@ -226,18 +247,12 @@
               "type": "string"
             },
             "ms": {
-              "type": "integer"
-            },
-            "timeout_ms": {
-              "type": "integer"
+              "type": "integer",
+              "description": "Wait duration in milliseconds for action=wait."
             },
             "ax_action": {
               "type": "string",
-              "description": "Accessibility action name for secondary_action."
-            },
-            "secondary_action": {
-              "type": "string",
-              "description": "Alias for ax_action."
+              "description": "Accessibility action name for action=secondary_action."
             }
           },
           "additionalProperties": true
