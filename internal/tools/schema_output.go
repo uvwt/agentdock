@@ -218,6 +218,8 @@ func OutputSchema(name string) map[string]any {
 		props["algorithm"] = stringProp("Encryption algorithm.")
 		props["missing_encrypted"] = arrayProp("Missing encrypted backup paths.")
 	case "browser_session":
+		props["code"] = stringProp("Structured browser error code, such as PLAYWRIGHT_CHROMIUM_MISSING.")
+		props["suggested_retry"] = objectProp("Structured retry suggestion for recoverable browser errors.")
 		props["operation"] = stringProp("Browser operation name.")
 		props["session_id"] = stringProp("Browser session id.")
 		props["status"] = stringProp("Browser session status.")
@@ -226,6 +228,9 @@ func OutputSchema(name string) map[string]any {
 		props["removed_sessions"] = arrayProp("Browser session ids removed by cleanup.")
 		props["stdout"] = stringProp("Raw browser runner output.")
 	case "browser_act", "browser_snapshot":
+		props["code"] = stringProp("Structured browser error code, such as PLAYWRIGHT_CHROMIUM_MISSING.")
+		props["suggested_retry"] = objectProp("Structured retry suggestion for recoverable browser errors.")
+		props["browser_launch"] = objectProp("Browser launch metadata, including fallback details when system Chrome is used.")
 		props["operation"] = stringProp("Browser operation name.")
 		props["session_id"] = stringProp("Browser session id.")
 		props["url"] = stringProp("Current page URL.")

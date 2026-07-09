@@ -76,7 +76,7 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 func (r *Runtime) browserRunnerScript() (controlPath, error) {
 	runnerDir, err := r.resolveControlExisting(r.cfg.BrowserRunnerDir)
 	if err != nil {
-		return controlPath{}, toolErrorDetails("BROWSER_RUNNER_NOT_FOUND", "browser runner directory not found", "validation", map[string]any{"runner_dir": r.cfg.BrowserRunnerDir, "suggestion": "copy examples/browser-runner to the configured runner directory and run npm install && npx playwright install chromium"})
+		return controlPath{}, toolErrorDetails("BROWSER_RUNNER_NOT_FOUND", "browser runner directory not found", "validation", map[string]any{"runner_dir": r.cfg.BrowserRunnerDir, "suggestion": "copy examples/browser-runner to the configured runner directory and run npm install; on macOS prefer browser=chrome for system Chrome"})
 	}
 	candidate := filepath.Join(r.cfg.BrowserRunnerDir, "browser-runner.js")
 	runner, err := r.resolveControlExisting(candidate)

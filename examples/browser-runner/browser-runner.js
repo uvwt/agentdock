@@ -27,6 +27,90 @@ function channelForSession(session) {
   return undefined;
 }
 
+function isPlaywrightBundledChromiumMissing(err) {
+  const message = String(err?.message || err || '');
+  return message.includes('Executable doesn')
+    && /[\/]ms-playwright[\/](chromium|chromium_headless_shell)-/.test(message);
+}
+
+function compactPlaywrightMissingMessage(err) {
+  const message = String(err?.message || err || '');
+  const withoutBox = message
+    .replace(/╔[\s\S]*?╝/g, '')
+    .split('\n')
+    .filter(line => !line.includes('Please run') && !(line.includes('npx playwright') && line.includes('install')) && !line.includes('Playwright Team'))
+    .join('\n')
+    .trim();
+  return withoutBox || 'Playwright bundled Chromium executable is missing';
+}
+
+function playwrightBundledChromiumMissingPayload(err) {
+  const detail = compactPlaywrightMissingMessage(err);
+  const match = detail.match(/Executable doesn't exist at ([^\n]+)/);
+  return {
+    ok: false,
+    code: 'PLAYWRIGHT_CHROMIUM_MISSING',
+    error: 'Playwright bundled Chromium executable is missing.',
+    detail,
+    missing_executable: match ? match[1] : undefined,
+    suggested_retry: { browser: 'chrome' },
+    suppressed_install_hint: true
+  };
+}
+
+function canFallbackToSystemChrome(session) {
+  const browser = String(session.browser || '').toLowerCase();
+  const channel = String(session.channel || '').toLowerCase();
+  if (process.platform !== 'darwin') return false;
+  if (channel) return false;
+  // 只有默认 bundled Chromium 路径失败时才自动切系统 Chrome；用户显式指定浏览器时保留其选择。
+  if (session.browser_defaulted === false) return false;
+  return browser === '' || browser === 'chromium' || browser === 'chrome-for-testing';
+}
+
+async function systemChromeFallbackLaunch(session, launchOptions, cause) {
+  if (!isPlaywrightBundledChromiumMissing(cause) || !canFallbackToSystemChrome(session)) return null;
+  const executable = await platformBrowserPath({ browser: 'chrome' });
+  if (!executable) return null;
+  const options = { ...launchOptions, executablePath: executable };
+  delete options.channel;
+  return {
+    options,
+    info: {
+      fallback: true,
+      reason: 'PLAYWRIGHT_CHROMIUM_MISSING',
+      from: 'playwright-chromium',
+      to: 'system-chrome',
+      executable
+    }
+  };
+}
+
+async function launchBrowserWithFallback(chromium, session, launchOptions) {
+  try {
+    return { browser: await chromium.launch(launchOptions), launchInfo: { fallback: false, browser: session.browser || 'chromium' } };
+  } catch (err) {
+    const fallback = await systemChromeFallbackLaunch(session, launchOptions, err);
+    if (!fallback) throw err;
+    return { browser: await chromium.launch(fallback.options), launchInfo: fallback.info };
+  }
+}
+
+async function launchPersistentContextWithFallback(chromium, session, profileDir, launchOptions, contextOptions) {
+  try {
+    return { context: await chromium.launchPersistentContext(profileDir, { ...launchOptions, ...contextOptions }), launchInfo: { fallback: false, browser: session.browser || 'chromium' } };
+  } catch (err) {
+    const fallback = await systemChromeFallbackLaunch(session, launchOptions, err);
+    if (!fallback) throw err;
+    return { context: await chromium.launchPersistentContext(profileDir, { ...fallback.options, ...contextOptions }), launchInfo: fallback.info };
+  }
+}
+
+function structuredErrorPayload(err) {
+  if (isPlaywrightBundledChromiumMissing(err)) return playwrightBundledChromiumMissingPayload(err);
+  return { ok: false, error: err.message, stack: err.stack };
+}
+
 async function readState() {
   try {
     return JSON.parse(await fs.readFile(stateFile, 'utf8'));
@@ -620,6 +704,7 @@ async function launchPage(session) {
   let browser;
   let context;
   let page;
+  let browserLaunch;
 
   // CDP 只连接已经由用户显式开启调试端口的浏览器；普通浏览器不能被直接接管。
   if (session.backend === 'cdp') {
@@ -635,14 +720,17 @@ async function launchPage(session) {
     if (channel) launchOptions.channel = channel;
     if (session.profile_id) {
       const profileDir = path.join(artifactDir, 'profiles', safeProfileId(session.profile_id));
-      context = await chromium.launchPersistentContext(profileDir, {
-        ...launchOptions,
+      const launched = await launchPersistentContextWithFallback(chromium, session, profileDir, launchOptions, {
         viewport: session.viewport || { width: 1280, height: 800 }
       });
+      context = launched.context;
+      browserLaunch = launched.launchInfo;
       browser = context.browser();
       page = context.pages()[0] || await context.newPage();
     } else {
-      browser = await chromium.launch(launchOptions);
+      const launched = await launchBrowserWithFallback(chromium, session, launchOptions);
+      browser = launched.browser;
+      browserLaunch = launched.launchInfo;
       context = await browser.newContext({
         viewport: session.viewport || { width: 1280, height: 800 },
         storageState: session.storage_state || undefined
@@ -667,7 +755,7 @@ async function launchPage(session) {
   if (localStorageApplied > 0 && session.reload_after_local_storage !== false) {
     await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
   }
-  return { browser, context, page, consoleErrors, networkErrors, pageErrors };
+  return { browser, context, page, consoleErrors, networkErrors, pageErrors, browserLaunch };
 }
 
 async function capturePageState(page, captureArgs = args, extra = {}) {
@@ -764,6 +852,7 @@ async function main() {
       backend: args.backend || 'playwright',
       cdp_url: args.cdp_url || undefined,
       browser: args.browser || 'chromium',
+      browser_defaulted: !args.browser,
       channel: args.channel || undefined,
       headless: args.headless !== false,
       viewport: args.viewport || { width: 1280, height: 800 },
@@ -852,12 +941,12 @@ async function main() {
       const closeAfter = args.close_after === true;
       if (closeAfter) await closeSessionState(state, sessionId);
       else await writeState(state);
-      console.log(JSON.stringify({ ok: true, session_id: sessionId, closed: closeAfter, ...storageResult, ...(await snapshot(env.page, { console_errors: env.consoleErrors, network_errors: env.networkErrors, page_errors: env.pageErrors })) }));
+      console.log(JSON.stringify({ ok: true, session_id: sessionId, closed: closeAfter, ...storageResult, ...(await snapshot(env.page, { console_errors: env.consoleErrors, network_errors: env.networkErrors, page_errors: env.pageErrors, browser_launch: env.browserLaunch })) }));
     } else if (operation === 'snapshot') {
       const storageResult = await saveStorageStateIfNeeded(env.context, session, sessionId);
       const closeAfter = args.close_after === true;
       if (closeAfter) await closeSessionState(state, sessionId);
-      console.log(JSON.stringify({ ok: true, session_id: sessionId, closed: closeAfter, ...storageResult, ...(await snapshot(env.page, { console_errors: env.consoleErrors, network_errors: env.networkErrors, page_errors: env.pageErrors })) }));
+      console.log(JSON.stringify({ ok: true, session_id: sessionId, closed: closeAfter, ...storageResult, ...(await snapshot(env.page, { console_errors: env.consoleErrors, network_errors: env.networkErrors, page_errors: env.pageErrors, browser_launch: env.browserLaunch })) }));
     } else {
       throw new Error(`Unknown operation: ${operation}`);
     }
@@ -873,6 +962,6 @@ async function main() {
 }
 
 main().catch(err => {
-  console.log(JSON.stringify({ ok: false, error: err.message, stack: err.stack }));
+  console.log(JSON.stringify(structuredErrorPayload(err)));
   process.exit(1);
 });

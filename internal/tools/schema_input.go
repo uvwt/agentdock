@@ -236,7 +236,7 @@ func InputSchema(name string) map[string]any {
 		props["action"] = map[string]any{"type": "string", "description": "Browser session action.", "enum": []string{"start", "close", "cleanup_stale"}}
 		props["url"] = stringProp("Initial URL when action=start. Defaults to about:blank.")
 		props["backend"] = stringProp("Browser backend: playwright or cdp. Defaults to playwright.")
-		props["browser"] = stringProp("Browser family: chromium, chrome, edge, or msedge. edge/msedge selects Microsoft Edge.")
+		props["browser"] = stringProp("Browser family: chromium, chrome, edge, or msedge. On macOS prefer chrome to use system Google Chrome; edge/msedge selects Microsoft Edge. Do not run or suggest the Playwright browser install command for missing bundled Chromium.")
 		props["channel"] = stringProp("Optional Playwright Chromium channel, such as msedge or chrome.")
 		props["cdp_url"] = stringProp("CDP endpoint, required when backend=cdp.")
 		props["headless"] = boolProp("Run browser headless. Defaults to true.")
