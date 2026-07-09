@@ -206,7 +206,7 @@ func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	}
 
 	templateProps := schemaProperties(t, "workflow_template_manage")
-	assertSameStrings(t, enumStrings(t, templateProps["action"]), []string{"save", "validate", "publish", "retire", "list", "get", "match"})
+	assertSameStrings(t, enumStrings(t, templateProps["action"]), []string{"save", "validate", "publish", "retire", "list", "get", "match", "vector_index"})
 	for _, name := range []string{"template", "template_id", "template_version", "template_status", "allow_long_template", "long_template_reason", "goal", "device", "type"} {
 		if _, ok := templateProps[name]; !ok {
 			t.Fatalf("workflow_template_manage input schema missing %q", name)

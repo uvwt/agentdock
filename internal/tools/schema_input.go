@@ -114,7 +114,7 @@ func InputSchema(name string) map[string]any {
 		required = []string{"action"}
 
 	case "workflow_template_manage":
-		props["action"] = map[string]any{"type": "string", "description": "Workflow template action.", "enum": []string{"save", "validate", "publish", "retire", "list", "get", "match"}}
+		props["action"] = map[string]any{"type": "string", "description": "Workflow template action.", "enum": []string{"save", "validate", "publish", "retire", "list", "get", "match", "vector_index"}}
 		props["template"] = map[string]any{"type": "object", "additionalProperties": true, "description": "Complete draft workflow template for save."}
 		props["template_id"] = stringProp("Workflow template id.")
 		props["template_version"] = stringProp("Workflow template version.")

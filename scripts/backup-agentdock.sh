@@ -169,6 +169,13 @@ for template_id, version, listed_status in items:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(content, encoding='utf-8')
 
+vector_index = call_tool('workflow_template_manage', {'action': 'vector_index'}, req_id)
+if vector_index.get('available') and isinstance(vector_index.get('content'), str) and vector_index['content'].strip():
+    (tmp / 'vector-index.json').write_text(vector_index['content'] if vector_index['content'].endswith('\n') else vector_index['content'] + '\n', encoding='utf-8')
+    print(f'workflow vector index exported: {vector_index.get("vector_index_items", 0)} items')
+else:
+    print(f'workflow vector index skipped: {vector_index.get("vector_index_status", "unavailable")}')
+
 if target.exists():
     shutil.rmtree(target)
 tmp.rename(target)

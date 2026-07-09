@@ -114,6 +114,8 @@ func OutputSchema(name string) map[string]any {
 		props["vector_search_enabled"] = boolProp("Whether optional embedding-backed template vector search is enabled for match.")
 		props["vector_index_status"] = stringProp("Template vector index status: disabled, ready, or degraded.")
 		props["vector_index_items"] = intProp("Number of persisted template vectors for the current embedding model.")
+		props["vector_index_available"] = boolProp("Whether workflow vector index content is available for export.")
+		props["content"] = stringProp("Raw workflow vector index JSON returned by vector_index.")
 		props["embedding_model"] = stringProp("Embedding model configured for template vector search.")
 		props["recommended"] = stringProp("Template recommendation: use_template, consider_template, or plain_task.")
 		props["recommendation_reason"] = stringProp("Reason for recommendation.")

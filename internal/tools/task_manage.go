@@ -15,7 +15,7 @@ import (
 
 var taskActions = []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review"}
 
-var workflowTemplateActions = []string{"save", "validate", "publish", "retire", "list", "get", "match"}
+var workflowTemplateActions = []string{"save", "validate", "publish", "retire", "list", "get", "match", "vector_index"}
 
 func (r *Runtime) taskManage(args map[string]any) (Result, error) {
 	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
@@ -154,6 +154,8 @@ func (r *Runtime) workflowTemplateManage(args map[string]any) (Result, error) {
 		return result, nil
 	case "match":
 		return r.matchWorkflowTemplates(args)
+	case "vector_index":
+		return r.nexusWorkflowJSON("GET", "/v1/workflow-templates/vector-index", nil)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported workflow_template_manage action", "validation", map[string]any{"action": action, "allowed": workflowTemplateActions})
 	}
