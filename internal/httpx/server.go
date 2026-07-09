@@ -76,8 +76,7 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	mux.HandleFunc("/oauth/token", func(w http.ResponseWriter, r *http.Request) {
 		handleToken(w, r, cfg, oauthCodes)
 	})
-	mux.HandleFunc("/capabilities/context", capabilityContextHandler(server, cfg, false))
-	mux.HandleFunc("/capabilities/context/refresh", capabilityContextHandler(server, cfg, true))
+	mux.HandleFunc("/context", agentDockContextHandler(server, cfg))
 	registerRuntimeAPI(mux, server, cfg)
 	mux.HandleFunc("/mcp", mcpEndpointHandler(server, cfg))
 
@@ -87,16 +86,11 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	return httpServer.ListenAndServe()
 }
 
-func capabilityContextHandler(server *mcp.Server, cfg config.Config, refresh bool) http.HandlerFunc {
+func agentDockContextHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc {
 	authorizer := auth.Bearer{Token: cfg.AuthToken}
 	authRequired := cfg.AuthRequired()
 	return func(w http.ResponseWriter, r *http.Request) {
-		if refresh {
-			if r.Method != http.MethodPost {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-				return
-			}
-		} else if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		if r.Method != http.MethodGet && r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
@@ -108,7 +102,7 @@ func capabilityContextHandler(server *mcp.Server, cfg config.Config, refresh boo
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 		defer cancel()
-		result, err := server.CapabilityContext(ctx, refresh || r.Method == http.MethodPost)
+		result, err := server.AgentDockContext(ctx)
 		if err != nil {
 			writeJSON(w, map[string]any{"ok": false, "error": err.Error()})
 			return

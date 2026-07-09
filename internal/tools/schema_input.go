@@ -20,8 +20,8 @@ func InputSchema(name string) map[string]any {
 		props["end_line"] = intProp("Inclusive end line.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
 		required = []string{"path"}
-	case "capability_context":
-		props["refresh"] = boolProp("Refresh dynamic capability context instead of returning a cached/client-side copy. AgentDock currently regenerates on each call.")
+	case "agentdock_context":
+
 	case "list_dir":
 		props["path"] = stringProp("Host directory path. Relative paths resolve from ~/AgentDock.")
 		props["recursive"] = boolProp("List recursively.")

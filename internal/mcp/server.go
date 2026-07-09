@@ -29,8 +29,8 @@ func NewServer(runtime *tools.Runtime, cfg config.Config) *Server {
 	return &Server{runtime: runtime, cfg: cfg}
 }
 
-func (s *Server) CapabilityContext(ctx context.Context, refresh bool) (tools.Result, error) {
-	return s.runtime.CapabilityContext(ctx, refresh)
+func (s *Server) AgentDockContext(ctx context.Context) (tools.Result, error) {
+	return s.runtime.AgentDockContext(ctx)
 }
 
 func (s *Server) Dispatch(ctx context.Context, req jsonrpc.Request) jsonrpc.Response {

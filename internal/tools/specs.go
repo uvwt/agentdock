@@ -96,7 +96,7 @@ func allToolSpecs() []ToolSpec {
 	// 顺序保持和旧 ToolNames 一致，避免 tools/list 与 server_info 的展示顺序无谓变化。
 	return bindToolSchemas([]ToolSpec{
 		{Name: "server_info", Title: "Server info", Description: "Return server, host path model, auth, and exposed-tool metadata.", Handler: func(_ context.Context, r *Runtime, _ map[string]any) (Result, error) { return r.serverInfo(), nil }},
-		{Name: "capability_context", Title: "Capability context", Description: "Return a compact runtime capability index for clients that cannot inject system prompt context.", Handler: ctxToolHandler((*Runtime).capabilityContextTool)},
+		{Name: "agentdock_context", Title: "AgentDock context", Description: "Return AgentDock bootstrap context including capabilities, skills, workflows, rules, and high-priority context for clients that cannot inject system prompt context.", Handler: ctxToolHandler((*Runtime).agentDockContextTool)},
 		{Name: "read_file", Title: "Read file", Description: "Read a UTF-8 text file slice. Relative paths resolve from ~/AgentDock; absolute and ~/ paths use Host rules.", Handler: toolHandler((*Runtime).readFile)},
 		{Name: "list_dir", Title: "List directory", Description: "List directory entries. Relative paths resolve from ~/AgentDock; absolute and ~/ paths use Host rules.", Handler: toolHandler((*Runtime).listDir)},
 		{Name: "list_files", Title: "List files", Description: "List files using glob and ignore filters. Relative paths resolve from ~/AgentDock by default.", Handler: toolHandler((*Runtime).listFiles)},

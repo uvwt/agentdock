@@ -25,7 +25,7 @@ func TestSkillManifestDescriptionReadsNestedManifest(t *testing.T) {
 	}
 }
 
-func TestCapabilityContextToolReturnsRuntimeIndex(t *testing.T) {
+func TestAgentDockContextToolReturnsRuntimeIndex(t *testing.T) {
 	cfg := config.Config{
 		AgentDockDefaultDir: t.TempDir(),
 		AgentDockHome:       filepath.Join(t.TempDir(), ".agentdock"),
@@ -38,37 +38,34 @@ func TestCapabilityContextToolReturnsRuntimeIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := rt.Call(context.Background(), "capability_context", map[string]any{"refresh": true})
+	result, err := rt.Call(context.Background(), "agentdock_context", map[string]any{"refresh": true})
 	if err != nil {
-		t.Fatalf("capability_context call failed: %v", err)
+		t.Fatalf("agentdock_context call failed: %v", err)
 	}
 	if result["ok"] != true {
-		t.Fatalf("capability_context ok = %#v, want true", result["ok"])
-	}
-	if result["refreshed"] != true {
-		t.Fatalf("capability_context refreshed = %#v, want true", result["refreshed"])
+		t.Fatalf("agentdock_context ok = %#v, want true", result["ok"])
 	}
 	contextText, _ := result["context"].(string)
 	if contextText == "" {
-		t.Fatalf("capability_context returned empty context: %#v", result)
+		t.Fatalf("agentdock_context returned empty context: %#v", result)
 	}
 	summary, _ := result["summary"].(string)
 	if summary == "" || summary == contextText {
-		t.Fatalf("capability_context summary should be compact and distinct from context: %#v", result)
+		t.Fatalf("agentdock_context summary should be compact and distinct from context: %#v", result)
 	}
 	baseTools, ok := result["base_tools"].(capabilityBaseToolBlock)
 	if !ok {
-		t.Fatalf("capability_context base_tools has unexpected shape: %#v", result["base_tools"])
+		t.Fatalf("agentdock_context base_tools has unexpected shape: %#v", result["base_tools"])
 	}
 	if len(baseTools.Items) == 0 {
-		t.Fatalf("capability_context base_tools missing items: %#v", baseTools)
+		t.Fatalf("agentdock_context base_tools missing items: %#v", baseTools)
 	}
 	if strings.Contains(baseTools.Summary, baseTools.Items[0].Description) {
 		t.Fatalf("base_tools summary should not duplicate item details: %#v", baseTools)
 	}
 }
 
-func TestCapabilityContextItemsExposeOnlyNameAndDescription(t *testing.T) {
+func TestAgentDockContextItemsExposeOnlyNameAndDescription(t *testing.T) {
 	items := []any{
 		capabilityBaseToolItem{Name: "exec_command", Description: "Run commands."},
 		capabilitySkillItem{Name: "desktop", Description: "Desktop automation."},

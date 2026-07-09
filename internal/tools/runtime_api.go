@@ -104,7 +104,7 @@ func (r *Runtime) RuntimeEnv() (Result, error) {
 }
 
 func (r *Runtime) RuntimeCapabilities(ctx context.Context, refresh bool) (Result, error) {
-	result, err := r.CapabilityContext(ctx, refresh)
+	result, err := r.AgentDockContext(ctx)
 	if err != nil {
 		return nil, err
 	}
