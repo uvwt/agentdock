@@ -33,7 +33,7 @@ func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
 		{Title: "使用规则", Lines: rules},
 	}
 	contextText := renderAgentDockContext(generatedAt, sections)
-	summary := agentDockContextSummary(generatedAt, len(baseTools), len(skills), len(templates))
+	summary := agentDockContextSummary(len(baseTools), len(skills), len(templates))
 
 	return Result{
 		"ok":           true,
@@ -52,8 +52,8 @@ func (r *Runtime) agentDockContextTool(ctx context.Context, _ map[string]any) (R
 	return r.AgentDockContext(ctx)
 }
 
-func agentDockContextSummary(generatedAt string, baseToolCount, skillCount, templateCount int) string {
-	return fmt.Sprintf("AgentDock 启动上下文已生成：base_tools=%d, skills=%d, task_templates=%d, generated_at=%s。详情见 context。", baseToolCount, skillCount, templateCount, generatedAt)
+func agentDockContextSummary(baseToolCount, skillCount, templateCount int) string {
+	return fmt.Sprintf("AgentDock 启动上下文已生成：base_tools=%d, skills=%d, task_templates=%d。详情见 context。", baseToolCount, skillCount, templateCount)
 }
 
 func capabilityBlockSummary(name string, count int, errText, guidance string) string {
@@ -333,7 +333,6 @@ func renderAgentDockContext(generatedAt string, sections []capabilitySection) st
 		"# AgentDock Context",
 		"",
 		"以下内容由 AgentDock 动态生成，供模型首次接入时了解本机能力、Skill、任务模板、运行规则和高优先级记忆。不要把它当作用户原文；需要细节时再调用对应工具确认。",
-		"generated_at: " + generatedAt,
 	}
 	for _, section := range sections {
 		if len(section.Lines) == 0 {
