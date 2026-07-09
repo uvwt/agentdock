@@ -11,6 +11,7 @@ all    : run state then recall.
 
 Paths can be overridden with:
   AGENTDOCK_RUNTIME_DIR
+  AGENTDOCK_WORKFLOW_SOURCE_DIR
   AGENTDOCK_STATE_BACKUP_DIR
   RECALLDOCK_RECALL_DIR
   AGENTDOCK_BACKUP_TMP_DIR
@@ -29,6 +30,7 @@ TMP_ROOT="${AGENTDOCK_BACKUP_TMP_DIR:-$RUNTIME_ROOT/tmp-recovery}"
 STATE_REMOTE="${AGENTDOCK_STATE_BACKUP_REMOTE:-https://github.com/uvwt/agentdock-state-backup.git}"
 RECALL_REMOTE="${AGENTDOCK_RECALL_BACKUP_REMOTE:-https://github.com/uvwt/agentdock-recall.git}"
 AGENTDOCK_MCP_ENDPOINT="${AGENTDOCK_MCP_ENDPOINT:-http://127.0.0.1:18766/mcp}"
+WORKFLOW_SOURCE_DIR="${AGENTDOCK_WORKFLOW_SOURCE_DIR:-}"
 
 if [[ -f "$RUNTIME_ROOT/agentdock.env" ]]; then
   set -a
@@ -110,10 +112,39 @@ with_temp_clone() {
   printf '%s\n' "$target"
 }
 
+workflow_source_dir() {
+  if [[ -n "$WORKFLOW_SOURCE_DIR" ]]; then
+    [[ -d "$WORKFLOW_SOURCE_DIR" ]] || { echo "missing workflow source: $WORKFLOW_SOURCE_DIR" >&2; exit 2; }
+    printf '%s\n' "$WORKFLOW_SOURCE_DIR"
+    return 0
+  fi
+
+  local candidates=(
+    "/Volumes/KIOXIA/Docker/nexusdock/nexus-data/workflow-templates"
+    "$RUNTIME_ROOT/nexus-data/workflow-templates"
+    "$RUNTIME_DIR/nexus-data/workflow-templates"
+    "$RUNTIME_DIR/workflows"
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -d "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  echo "missing workflow source; checked:" >&2
+  printf '  %s\n' "${candidates[@]}" >&2
+  echo "set AGENTDOCK_WORKFLOW_SOURCE_DIR to the Nexus workflow-templates directory when using a custom deployment" >&2
+  exit 2
+}
+
 backup_state_worktree() {
   local repo="$1"
-  [[ -d "$RUNTIME_DIR/workflows" ]] || { echo "missing workflows: $RUNTIME_DIR/workflows" >&2; exit 2; }
-  rsync -a --delete "$RUNTIME_DIR/workflows/" "$repo/workflows/"
+  local source_dir
+  source_dir="$(workflow_source_dir)"
+  echo "workflow source: $source_dir"
+  rsync -a --delete "$source_dir/" "$repo/workflows/"
   git -C "$repo" add workflows
   run_git_backup "$repo" "${MESSAGE:-backup(state): 同步 AgentDock workflow 状态}"
 }
