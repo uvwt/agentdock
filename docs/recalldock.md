@@ -18,34 +18,29 @@ RecallDock 只暴露 `recall_*` 公开工具；旧记忆/笔记工具名和旧 A
 
 ## 工具分工
 
-- `recall_bootstrap`：重要任务开始时加载偏好、环境、runbook 和经验索引。模型不需要选择 project；后端保留默认上下文和兼容参数。默认紧凑输出；需要正文时再用 `recall_read`。
+- `recall_bootstrap`：重要任务开始时加载偏好、环境、runbook 和经验索引。模型不需要选择 project；后端固定使用默认上下文。默认紧凑输出；需要正文时再用 `recall_read`。
 - `recall_search`：搜索 RecallDock 内容。模型只选择 query、kind；当 kind=note 时可用 note_scope 选择 questions 或 github-learning。prefix/scope 等内部路由由后端处理，工具描述不能再引导模型传 prefix。
 - `recall_read`：按 path 读取单个 Markdown、card 或 note。
-- `recall_write`：统一写入和修改入口。模型必须显式选择 `kind`，也就是先决定这条记忆应写成 card、note、markdown、patch、fact 还是 delete；缺少 `kind` 会直接报错。`auto` 只作为显式选择且不确定时的安全规划兜底，永不直接写入。模型侧不要选择 project；项目归属由路径、已有文件或后端兼容字段处理。
+- `recall_write`：统一写入和修改入口。模型必须显式选择 `target` 和 `action`，也就是先决定写入 card、note 还是 markdown，再选择 plan/create/replace/append/patch/update_fact/diff/delete 等动作；缺少 `target/action` 会直接报错。模型侧不要选择 project；项目归属由路径或已有文件处理。
 - `recall_maintain`：统一维护入口，包含同步状态、列表、lint、embedding 状态和重建索引。
 
-## recall_write kind
+## recall_write target/action
 
 ```text
-auto         显式不确定时生成安全规划和 next_call，永不直接写入；缺少 kind 不会默认进入 auto
-card         原子经验卡片；适合偏好、踩坑、决策、可复用操作经验；confirmed=false 生成计划，confirmed=true 写入
-note         notes/questions 或 notes/github-learning；适合问题讨论、未定结论、学习记录；通过 note_scope 选择 questions/github-learning，confirmed=false 生成计划，confirmed=true 写入
-markdown     传统 Markdown 长文档；适合稳定项目文档、runbook、总览和结构化长期事实
-append_note/diff/write/create/replace/edit/remove 等旧别名保持后端兼容，但工具描述和模型侧默认入口只保留主 kind
-patch        修改已有 Markdown，默认 dry-run
-fact         更新结构化事实字段
-delete       删除条目，必须 confirmed=true
+target=card      原子经验卡片；适合偏好、踩坑、决策、可复用操作经验；action=plan 生成计划，action=create 且 confirmed=true 写入
+target=note      notes/questions 或 notes/github-learning；适合问题讨论、未定结论、学习记录；通过 note_scope 选择 questions/github-learning
+target=markdown  传统 Markdown 长文档；适合稳定项目文档、runbook、总览和结构化长期事实；支持 create/replace/append/patch/update_fact/diff/delete
 ```
 
 设计原则：
 
 ```text
-kind = 模型明确选择的写入机制 / 记忆形态
+target/action = 模型明确选择的写入目标和动作
 server_info 只推荐调用 recall_bootstrap，不推荐 project 等隐藏参数
-公开 recall_* schema 使用 additionalProperties=false；旧参数仅作为 runtime 兼容，不作为模型入口
-card/note/markdown 的选择由模型负责，后端只做校验、规划和安全兜底
+公开 recall_* schema 使用 additionalProperties=false；runtime 只接收模型侧公开字段，不保留旧参数兼容
+card/note/markdown 的 target 选择由模型负责，后端只做校验、规划和安全兜底
 note 暴露 note_scope/conclusion/open_questions 以支持 questions/github-learning 并保留问题沉淀质量
-patch/fact 暴露最低必要参数，避免工具看得到 kind 却无法传参；新增 fact 必须显式 append_if_missing
+patch/update_fact 暴露最低必要参数；新增 fact 必须显式 append_if_missing
 card 遇到 warning 时，必须先 review，再显式 allow_warnings 才能写入
 path = 权威位置
 confirmed = 是否真实写入；delete 必须 confirmed=true，patch/fact 未确认时只预览

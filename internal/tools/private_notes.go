@@ -43,15 +43,11 @@ func (r *Runtime) privateNoteManage(ctx context.Context, args map[string]any) (R
 	case "write":
 		return r.privateNotesWrite(ctx, args)
 	case "status":
-		statusArgs := copyArgs(args)
-		statusAction := strings.TrimSpace(stringArg(statusArgs, "status_action", "check"))
-		statusArgs["action"] = statusAction
-		return r.privateNotesStatus(ctx, statusArgs)
+		statusAction := strings.TrimSpace(stringArg(args, "status_action", "check"))
+		return r.privateNotesStatus(ctx, map[string]any{"action": statusAction})
 	case "maintain":
-		maintainArgs := copyArgs(args)
-		maintenanceAction := strings.TrimSpace(stringArg(maintainArgs, "maintenance_action", "sync-encrypted"))
-		maintainArgs["action"] = maintenanceAction
-		return r.privateNotesMaintain(ctx, maintainArgs)
+		maintenanceAction := strings.TrimSpace(stringArg(args, "maintenance_action", "sync-encrypted"))
+		return r.privateNotesMaintain(ctx, map[string]any{"action": maintenanceAction})
 	default:
 		return nil, toolErrorDetails("INVALID_PRIVATE_NOTE_ACTION", "unsupported private_note_manage action", "validation", map[string]any{
 			"action":  action,
@@ -233,7 +229,7 @@ func (r *Runtime) privateNotesMaintain(ctx context.Context, args map[string]any)
 			return nil, err
 		}
 		return Result{"ok": true, "action": "init", "root": root, "recipient": identity.Recipient().String(), "identity_created": created, "algorithm": "age/X25519"}, nil
-	case "sync", "encrypt", "encrypt-all", "sync-encrypted", "migrate-enc-to-age":
+	case "sync-encrypted", "encrypt-all":
 		if err := initPrivateNotesTree(root); err != nil {
 			return nil, err
 		}
@@ -241,16 +237,9 @@ func (r *Runtime) privateNotesMaintain(ctx context.Context, args map[string]any)
 		if err != nil {
 			return nil, err
 		}
-		removed := 0
-		if action == "migrate-enc-to-age" {
-			removed, err = removeLegacyPrivateNoteBackups(root)
-			if err != nil {
-				return nil, err
-			}
-		}
-		return Result{"ok": true, "action": action, "root": root, "encrypted_count": count, "legacy_removed_count": removed, "algorithm": "age/X25519"}, nil
+		return Result{"ok": true, "action": action, "root": root, "encrypted_count": count, "algorithm": "age/X25519"}, nil
 	default:
-		return nil, toolErrorDetails("INVALID_PRIVATE_NOTE_ACTION", "unsupported private_note_manage maintain action", "validation", map[string]any{"action": action, "allowed": []string{"init", "sync-encrypted", "encrypt-all", "migrate-enc-to-age"}})
+		return nil, toolErrorDetails("INVALID_PRIVATE_NOTE_ACTION", "unsupported private_note_manage maintain action", "validation", map[string]any{"action": action, "allowed": []string{"init", "init-encryption", "sync-encrypted", "encrypt-all"}})
 	}
 }
 
@@ -512,25 +501,6 @@ func syncPrivateNotesEncrypted(root string) (int, error) {
 		return nil
 	})
 	return count, err
-}
-
-func removeLegacyPrivateNoteBackups(root string) (int, error) {
-	removed := 0
-	legacyRoot := filepath.Join(root, privateNotesEncryptedDir)
-	if _, err := os.Stat(legacyRoot); os.IsNotExist(err) {
-		return 0, nil
-	}
-	err := filepath.WalkDir(legacyRoot, func(p string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil || d == nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".enc") {
-			return walkErr
-		}
-		if err := os.Remove(p); err != nil {
-			return err
-		}
-		removed++
-		return nil
-	})
-	return removed, err
 }
 
 func listPrivateNotes(root string) ([]privateNoteSummary, error) {

@@ -14,15 +14,11 @@ import (
 )
 
 func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Result, error) {
-	project := strings.TrimSpace(stringArg(args, "project", ""))
-	if project == "" {
-		project = "agentdock"
-	}
 	maxBytes := intArg(args, "max_bytes", 12000)
 	if maxBytes <= 0 {
 		maxBytes = 12000
 	}
-	payload := map[string]any{"project": project, "max_bytes": maxBytes}
+	payload := map[string]any{"project": "agentdock", "max_bytes": maxBytes}
 	result, err := r.memoryRequest(ctx, http.MethodPost, "/v1/recall/pack", payload)
 	if err != nil {
 		return nil, err

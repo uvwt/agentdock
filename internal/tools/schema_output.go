@@ -222,7 +222,6 @@ func OutputSchema(name string) map[string]any {
 		props["count"] = intProp("Result or note count.")
 		props["notes_count"] = intProp("Private note count for status checks.")
 		props["encrypted_count"] = intProp("Encrypted backup count for maintenance actions.")
-		props["legacy_removed_count"] = intProp("Removed legacy backup count.")
 		props["recipient"] = stringProp("Age public recipient generated or used.")
 		props["algorithm"] = stringProp("Encryption algorithm.")
 		props["missing_encrypted"] = arrayProp("Missing encrypted backup paths.")

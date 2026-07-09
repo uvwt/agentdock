@@ -14,6 +14,6 @@ AgentDock 的 macOS 桌面自动化能力已经从 core 工具拆分为此 Skill
 - `operation=act`：`action=focus | move | click | double_click | scroll | drag | type | set_value | secondary_action | hotkey | wait`。
 - `operation=clipboard-read` / `operation=clipboard-write`：读写剪贴板。
 
-## 迁移说明
+## 数据目录
 
-旧 core `desktop_*` 工具使用的 `AgentDock/desktop-artifacts` 会在首次运行 Skill 时迁移到 `AgentDock/skill-data/desktop/legacy-desktop-artifacts`，新截图和验证数据写入 `AgentDock/skill-data/desktop/artifacts`。
+截图和验证数据写入 `AGENTDOCK_HOME/skill-data/desktop/artifacts`。旧 core `desktop_*` 工具的历史 artifacts 不再由 Skill 自动迁移。

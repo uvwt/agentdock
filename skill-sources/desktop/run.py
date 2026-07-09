@@ -10,7 +10,7 @@ import sys
 import time
 from pathlib import Path
 
-VERSION = "1.0.1"
+VERSION = "1.0.3"
 SEP = "\x1f"
 STATE_MAX_AGE_SECONDS = 90
 
@@ -109,46 +109,6 @@ def artifact_root():
     path = skill_data_root() / "artifacts"
     path.mkdir(parents=True, exist_ok=True)
     return path
-
-
-def legacy_artifact_root():
-    value = os.environ.get("AGENTDOCK_DESKTOP_ARTIFACT_DIR") or "desktop-artifacts"
-    path = Path(value).expanduser()
-    if not path.is_absolute():
-        path = agentdock_root() / path
-    return path
-
-
-def migrate_legacy_artifacts():
-    data = skill_data_root()
-    data.mkdir(parents=True, exist_ok=True)
-    marker = data / ".legacy-desktop-artifacts-migrated"
-    legacy = legacy_artifact_root()
-    target = data / "legacy-desktop-artifacts"
-    result = {"legacy_artifact_dir": str(legacy), "skill_data_dir": str(data), "migrated": False}
-    if not legacy.exists():
-        result["legacy_exists"] = False
-        return result
-    result["legacy_exists"] = True
-    if marker.exists():
-        result["migrated"] = True
-        result["migration_target"] = str(target)
-        return result
-    copied = 0
-    target.mkdir(parents=True, exist_ok=True)
-    # 旧截图是用户可观察数据，只迁移文件，不删除源目录，避免破坏已有路径引用。
-    for src in legacy.rglob("*"):
-        if not src.is_file():
-            continue
-        rel = src.relative_to(legacy)
-        dst = target / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        if not dst.exists():
-            shutil.copy2(src, dst)
-            copied += 1
-    marker.write_text(json.dumps({"migrated_at": time.time(), "source": str(legacy), "target": str(target), "copied_files": copied}, ensure_ascii=False), encoding="utf-8")
-    result.update({"migrated": True, "migration_target": str(target), "copied_files": copied})
-    return result
 
 
 def state_file():
@@ -269,7 +229,6 @@ def parse_pair(value):
 
 
 def preflight(args):
-    migration = migrate_legacy_artifacts()
     checks = {"os": platform.system().lower(), "supported": is_darwin(), "skill_version": VERSION}
     warnings = []
     for name in ["screencapture", "osascript", "pbcopy", "pbpaste", "cliclick"]:
@@ -279,7 +238,7 @@ def preflight(args):
             warnings.append("cliclick not found; desktop mouse/keyboard actions require: brew install cliclick")
     if not is_darwin():
         warnings.append("desktop automation is currently macOS-only")
-        return {"ok": False, "checks": checks, "warnings": warnings, "migration": migration}
+        return {"ok": False, "checks": checks, "warnings": warnings}
     if bool_arg(args, "check_screenshot", True):
         path = artifact_root() / "preflight" / f"preflight-{int(time.time()*1000)}.png"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -294,7 +253,7 @@ def preflight(args):
         if not res.get("ok"):
             warnings.append("AppleScript/System Events failed; grant Accessibility/Automation permission to the AgentDock process")
             checks["applescript_error"] = res.get("stdout") or res.get("error")
-    return {"ok": len(warnings) == 0, "checks": checks, "warnings": warnings, "migration": migration}
+    return {"ok": len(warnings) == 0, "checks": checks, "warnings": warnings}
 
 
 def png_info(data):

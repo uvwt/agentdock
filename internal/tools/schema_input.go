@@ -230,7 +230,7 @@ func InputSchema(name string) map[string]any {
 		props["overwrite"] = boolProp("Replace an existing note for action=write.")
 		props["max_bytes"] = intProp("Maximum bytes to return for action=read.")
 		props["status_action"] = map[string]any{"type": "string", "description": "Read-only status action when action=status.", "enum": []string{"check", "list"}}
-		props["maintenance_action"] = map[string]any{"type": "string", "description": "Maintenance operation when action=maintain.", "enum": []string{"init", "init-encryption", "sync-encrypted", "encrypt-all", "migrate-enc-to-age"}}
+		props["maintenance_action"] = map[string]any{"type": "string", "description": "Maintenance operation when action=maintain.", "enum": []string{"init", "init-encryption", "sync-encrypted", "encrypt-all"}}
 		required = []string{"action"}
 	case "browser_session":
 		props["action"] = map[string]any{"type": "string", "description": "Browser session action.", "enum": []string{"start", "close", "cleanup_stale"}}
@@ -323,8 +323,7 @@ func InputSchema(name string) map[string]any {
 	schema := map[string]any{"type": "object", "properties": props, "additionalProperties": true}
 	switch name {
 	case "recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain", "private_note_manage":
-		// Recall public schemas are intentionally closed: legacy/advanced args remain
-		// accepted by the runtime for compatibility, but should not be suggested to models.
+		// Recall public schemas are intentionally closed: only model-facing fields are accepted.
 		schema["additionalProperties"] = false
 	}
 	if len(required) > 0 {

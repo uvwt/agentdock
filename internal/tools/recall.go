@@ -29,11 +29,7 @@ func (r *Runtime) recallSearch(ctx context.Context, args map[string]any) (Result
 		result["recall_kind"] = "note"
 		return result, nil
 	case "card", "cards":
-		searchArgs := copyArgs(args)
-		if strings.TrimSpace(stringArg(searchArgs, "prefix", "")) == "" {
-			searchArgs["prefix"] = "cards"
-		}
-		result, err := r.memorySearch(ctx, searchArgs)
+		result, err := r.memorySearch(ctx, recallSearchArgs(args, "cards"))
 		if err != nil {
 			return nil, err
 		}
@@ -42,15 +38,7 @@ func (r *Runtime) recallSearch(ctx context.Context, args map[string]any) (Result
 		result["recall_kind"] = "card"
 		return result, nil
 	case "", "all", "markdown":
-		searchArgs := copyArgs(args)
-		prefix := strings.TrimSpace(stringArg(searchArgs, "prefix", ""))
-		if strings.HasPrefix(prefix, "private-notes") {
-			return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes is not searchable through recall_search; use private_note_manage action=search", "validation")
-		}
-		if prefix == "" {
-			searchArgs["prefix"] = ""
-		}
-		result, err := r.memorySearch(ctx, searchArgs)
+		result, err := r.memorySearch(ctx, recallSearchArgs(args, ""))
 		if err != nil {
 			return nil, err
 		}
@@ -160,12 +148,9 @@ func (r *Runtime) recallMaintain(ctx context.Context, args map[string]any) (Resu
 		result["recall_action"] = "sync_status"
 		return result, nil
 	case "list":
-		listArgs := copyArgs(args)
-		if strings.HasPrefix(strings.TrimSpace(stringArg(listArgs, "prefix", "")), "private-notes") {
-			return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes is not listable through recall_maintain; use private_note_manage action=status status_action=list", "validation")
-		}
-		if strings.TrimSpace(stringArg(listArgs, "prefix", "")) == "" {
-			listArgs["prefix"] = ""
+		listArgs, err := recallMaintainListArgs(args)
+		if err != nil {
+			return nil, err
 		}
 		result, err := r.memoryList(ctx, listArgs)
 		if err != nil {
@@ -175,12 +160,9 @@ func (r *Runtime) recallMaintain(ctx context.Context, args map[string]any) (Resu
 		result["recall_action"] = "list"
 		return result, nil
 	case "lint":
-		lintArgs := copyArgs(args)
-		if strings.HasPrefix(strings.TrimSpace(stringArg(lintArgs, "prefix", "")), "private-notes") {
-			return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes is not lintable through recall_maintain; use private_note_manage action=status or action=maintain", "validation")
-		}
-		if strings.TrimSpace(stringArg(lintArgs, "prefix", "")) == "" {
-			lintArgs["prefix"] = ""
+		lintArgs, err := recallMaintainLintArgs(args)
+		if err != nil {
+			return nil, err
 		}
 		result, err := r.memoryLint(ctx, lintArgs)
 		if err != nil {
@@ -238,10 +220,46 @@ func decorateRecallResult(result Result) {
 	result["recall_store"] = "RecallDock"
 }
 
-func copyArgs(args map[string]any) map[string]any {
-	out := make(map[string]any, len(args))
-	for k, v := range args {
-		out[k] = v
+func recallSearchArgs(args map[string]any, prefix string) map[string]any {
+	out := map[string]any{"query": stringArg(args, "query", "")}
+	if maxResults := intArg(args, "max_results", 0); maxResults > 0 {
+		out["max_results"] = maxResults
+	}
+	if prefix != "" {
+		out["prefix"] = prefix
 	}
 	return out
+}
+
+func recallMaintainListArgs(args map[string]any) (map[string]any, error) {
+	prefix := strings.TrimSpace(stringArg(args, "prefix", ""))
+	if strings.HasPrefix(prefix, "private-notes") {
+		return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes is not listable through recall_maintain; use private_note_manage action=status status_action=list", "validation")
+	}
+	out := map[string]any{"prefix": prefix}
+	if maxEntries := intArg(args, "max_entries", 0); maxEntries > 0 {
+		out["max_entries"] = maxEntries
+	}
+	return out, nil
+}
+
+func recallMaintainLintArgs(args map[string]any) (map[string]any, error) {
+	prefix := strings.TrimSpace(stringArg(args, "prefix", ""))
+	if strings.HasPrefix(prefix, "private-notes") {
+		return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes is not lintable through recall_maintain; use private_note_manage action=status or action=maintain", "validation")
+	}
+	out := map[string]any{"prefix": prefix}
+	if terms := stringSliceArg(args, "terms"); len(terms) > 0 {
+		out["terms"] = terms
+	}
+	if _, ok := args["regex"]; ok {
+		out["regex"] = boolArg(args, "regex", false)
+	}
+	if maxEntries := intArg(args, "max_entries", 0); maxEntries > 0 {
+		out["max_entries"] = maxEntries
+	}
+	if maxFindings := intArg(args, "max_findings", 0); maxFindings > 0 {
+		out["max_findings"] = maxFindings
+	}
+	return out, nil
 }

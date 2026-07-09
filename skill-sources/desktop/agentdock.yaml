@@ -3,7 +3,7 @@
   "kind": "Skill",
   "metadata": {
     "name": "desktop",
-    "version": "1.0.1",
+    "version": "1.0.3",
     "displayName": "macOS Desktop Automation",
     "description": "macOS desktop observation, screenshots, Accessibility actions, pointer/keyboard control, and clipboard operations implemented as a native AgentDock Skill Runtime package."
   },
@@ -12,7 +12,7 @@
     "operations": [
       {
         "name": "status",
-        "description": "Run a desktop preflight check and report migrated legacy artifact state.",
+        "description": "Run a desktop preflight check and report desktop automation readiness.",
         "inputSchema": {
           "type": "object",
           "properties": {
