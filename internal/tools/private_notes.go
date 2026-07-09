@@ -33,6 +33,33 @@ type privateNoteSummary struct {
 	ContainsSecret bool     `json:"contains_secret"`
 }
 
+func (r *Runtime) privateNoteManage(ctx context.Context, args map[string]any) (Result, error) {
+	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
+	switch action {
+	case "search":
+		return r.privateNotesSearch(ctx, args)
+	case "read":
+		return r.privateNotesRead(ctx, args)
+	case "write":
+		return r.privateNotesWrite(ctx, args)
+	case "status":
+		statusArgs := copyArgs(args)
+		statusAction := strings.TrimSpace(stringArg(statusArgs, "status_action", "check"))
+		statusArgs["action"] = statusAction
+		return r.privateNotesStatus(ctx, statusArgs)
+	case "maintain":
+		maintainArgs := copyArgs(args)
+		maintenanceAction := strings.TrimSpace(stringArg(maintainArgs, "maintenance_action", "sync-encrypted"))
+		maintainArgs["action"] = maintenanceAction
+		return r.privateNotesMaintain(ctx, maintainArgs)
+	default:
+		return nil, toolErrorDetails("INVALID_PRIVATE_NOTE_ACTION", "unsupported private_note_manage action", "validation", map[string]any{
+			"action":  action,
+			"allowed": []string{"search", "read", "write", "status", "maintain"},
+		})
+	}
+}
+
 func (r *Runtime) privateNotesSearch(ctx context.Context, args map[string]any) (Result, error) {
 	query := strings.TrimSpace(stringArg(args, "query", ""))
 	if query == "" {
@@ -91,7 +118,7 @@ func (r *Runtime) privateNotesSearch(ctx context.Context, args map[string]any) (
 	if len(results) > maxResults {
 		results = results[:maxResults]
 	}
-	return Result{"ok": true, "query": query, "root": root, "results": results, "count": len(results), "redacted": true, "policy": "search returns redacted snippets only; use private_notes_read to read full plaintext"}, nil
+	return Result{"ok": true, "action": "search", "query": query, "root": root, "results": results, "count": len(results), "redacted": true, "policy": "search returns redacted snippets only; use private_note_manage action=read to read full plaintext"}, nil
 }
 
 func (r *Runtime) privateNotesRead(ctx context.Context, args map[string]any) (Result, error) {
@@ -116,12 +143,12 @@ func (r *Runtime) privateNotesRead(ctx context.Context, args map[string]any) (Re
 		truncated = true
 	}
 	summary := privateNoteExtractSummary(rel, string(content))
-	return Result{"ok": true, "root": root, "path": rel, "encrypted_path": privateNoteEncryptedRel(rel), "content": body, "truncated": truncated, "contains_secret": summary.ContainsSecret, "policy": "private_notes_read returns plaintext by design"}, nil
+	return Result{"ok": true, "action": "read", "root": root, "path": rel, "encrypted_path": privateNoteEncryptedRel(rel), "content": body, "truncated": truncated, "contains_secret": summary.ContainsSecret, "policy": "private_note_manage action=read returns plaintext by design"}, nil
 }
 
 func (r *Runtime) privateNotesWrite(ctx context.Context, args map[string]any) (Result, error) {
 	if !boolArg(args, "confirmed", false) {
-		return nil, toolError("CONFIRMATION_REQUIRED", "private_notes_write requires confirmed=true", "validation")
+		return nil, toolError("CONFIRMATION_REQUIRED", "private_note_manage action=write requires confirmed=true", "validation")
 	}
 	content := stringArg(args, "content", "")
 	if strings.TrimSpace(content) == "" {
@@ -157,7 +184,7 @@ func (r *Runtime) privateNotesWrite(ctx context.Context, args map[string]any) (R
 		_ = os.Remove(abs)
 		return nil, err
 	}
-	return Result{"ok": true, "root": root, "path": rel, "encrypted_path": encRel, "written": true, "encrypted": true, "algorithm": "age/X25519", "policy": "age encrypted backup is mandatory and cannot be skipped"}, nil
+	return Result{"ok": true, "action": "write", "root": root, "path": rel, "encrypted_path": encRel, "written": true, "encrypted": true, "algorithm": "age/X25519", "policy": "age encrypted backup is mandatory and cannot be skipped"}, nil
 }
 
 func (r *Runtime) privateNotesStatus(ctx context.Context, args map[string]any) (Result, error) {
@@ -186,7 +213,7 @@ func (r *Runtime) privateNotesStatus(ctx context.Context, args map[string]any) (
 		}
 		return Result{"ok": len(missing) == 0, "action": "check", "root": root, "notes_count": len(items), "missing_encrypted": missing, "policy": "notes/ is plaintext and ignored by git; encrypted/ stores mandatory .md.age backups"}, nil
 	default:
-		return nil, toolErrorDetails("INVALID_PRIVATE_NOTES_ACTION", "unsupported private_notes_status action", "validation", map[string]any{"action": action, "allowed": []string{"check", "list"}})
+		return nil, toolErrorDetails("INVALID_PRIVATE_NOTE_ACTION", "unsupported private_note_manage status action", "validation", map[string]any{"action": action, "allowed": []string{"check", "list"}})
 	}
 }
 
@@ -223,7 +250,7 @@ func (r *Runtime) privateNotesMaintain(ctx context.Context, args map[string]any)
 		}
 		return Result{"ok": true, "action": action, "root": root, "encrypted_count": count, "legacy_removed_count": removed, "algorithm": "age/X25519"}, nil
 	default:
-		return nil, toolErrorDetails("INVALID_PRIVATE_NOTES_ACTION", "unsupported private_notes_maintain action", "validation", map[string]any{"action": action, "allowed": []string{"init", "sync-encrypted", "encrypt-all", "migrate-enc-to-age"}})
+		return nil, toolErrorDetails("INVALID_PRIVATE_NOTE_ACTION", "unsupported private_note_manage maintain action", "validation", map[string]any{"action": action, "allowed": []string{"init", "sync-encrypted", "encrypt-all", "migrate-enc-to-age"}})
 	}
 }
 
@@ -244,13 +271,13 @@ private-notes 是用户个人私密资料库。人和工具只维护 notes/ 明�
 
 - notes/：本地明文，允许保存私密凭据、恢复码和私密 runbook；不提交 Git。
 - encrypted/：notes/ 的强制 age 加密备份，文件后缀为 .md.age，可提交 Git。
-- private_notes_search：只返回脱敏片段。
-- private_notes_read：明确读取私密笔记时返回明文。
+- private_note_manage action=search：只返回脱敏片段。
+- private_note_manage action=read：明确读取私密笔记时返回明文。
 `,
 		"RULES.md": `# private-notes 规则
 
 1. 只把明文私密资料写入 notes/。
-2. private_notes_write 必须同步生成 encrypted 目录下的 .md.age age 加密备份；不允许跳过。
+2. private_note_manage action=write 必须同步生成 encrypted 目录下的 .md.age age 加密备份；不允许跳过。
 3. notes/ 和 .keys/ 不得提交 Git。
 4. encrypted/ 可以提交 Git，但只能存 age 加密产物。
 5. RecallDock 只记录索引和路径，不记录 secret 明文。
@@ -401,7 +428,7 @@ func privateNotesAgeRecipients(root string) ([]age.Recipient, error) {
 		}
 	}
 	if len(raw) == 0 {
-		return nil, toolError("PRIVATE_NOTES_AGE_RECIPIENT_MISSING", "private notes age recipient is missing; run private_notes_maintain action=init-encryption first", "configuration")
+		return nil, toolError("PRIVATE_NOTES_AGE_RECIPIENT_MISSING", "private notes age recipient is missing; run private_note_manage action=maintain maintenance_action=init-encryption first", "configuration")
 	}
 	recipients := make([]age.Recipient, 0, len(raw))
 	for _, value := range raw {

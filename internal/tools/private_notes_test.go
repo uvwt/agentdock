@@ -21,7 +21,7 @@ func TestPrivateNotesWriteReadSearchAndEncrypt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	initResult, err := rt.privateNotesMaintain(context.Background(), map[string]any{"action": "init-encryption"})
+	initResult, err := rt.privateNoteManage(context.Background(), map[string]any{"action": "maintain", "maintenance_action": "init-encryption"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestPrivateNotesWriteReadSearchAndEncrypt(t *testing.T) {
 	}
 	marker := "abc123"
 	content := "# Embedding\n\n" + "EMBEDDING_" + "TOKEN=" + marker + "\n"
-	write, err := rt.privateNotesWrite(context.Background(), map[string]any{"title": "Embedding 200399", "category": "services", "content": content, "confirmed": true})
+	write, err := rt.privateNoteManage(context.Background(), map[string]any{"action": "write", "title": "Embedding 200399", "category": "services", "content": content, "confirmed": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestPrivateNotesWriteReadSearchAndEncrypt(t *testing.T) {
 	if strings.Contains(string(encBytes), marker) {
 		t.Fatalf("encrypted backup should not contain plaintext marker")
 	}
-	search, err := rt.privateNotesSearch(context.Background(), map[string]any{"query": "embedding"})
+	search, err := rt.privateNoteManage(context.Background(), map[string]any{"action": "search", "query": "embedding"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,14 +61,14 @@ func TestPrivateNotesWriteReadSearchAndEncrypt(t *testing.T) {
 	if strings.Contains(results[0]["snippet"].(string), marker) {
 		t.Fatalf("search snippet leaked marker: %#v", results[0])
 	}
-	read, err := rt.privateNotesRead(context.Background(), map[string]any{"path": p})
+	read, err := rt.privateNoteManage(context.Background(), map[string]any{"action": "read", "path": p})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(read["content"].(string), marker) {
 		t.Fatalf("read should return plaintext")
 	}
-	check, err := rt.privateNotesStatus(context.Background(), map[string]any{"action": "check"})
+	check, err := rt.privateNoteManage(context.Background(), map[string]any{"action": "status", "status_action": "check"})
 	if err != nil {
 		t.Fatal(err)
 	}

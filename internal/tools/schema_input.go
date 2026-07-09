@@ -210,29 +210,22 @@ func InputSchema(name string) map[string]any {
 		props["max_entries"] = intProp("Maximum entries to list or scan.")
 		props["max_findings"] = intProp("Maximum lint findings to return.")
 		props["max_results"] = intProp("Maximum results where supported.")
-	case "private_notes_search":
-		props["query"] = stringProp("Text query to search in private notes.")
-		props["max_results"] = intProp("Maximum results to return.")
-		required = []string{"query"}
-	case "private_notes_read":
-		props["path"] = stringProp("Path under notes/.")
-		props["category"] = stringProp("Optional category used with title when path is omitted.")
-		props["title"] = stringProp("Optional title used to derive path when path is omitted.")
-		props["max_bytes"] = intProp("Maximum bytes to return.")
-	case "private_notes_write":
-		props["path"] = stringProp("Path under notes/. If omitted, category + title derive the path.")
-		props["category"] = stringProp("Category such as services, accounts, recovery, or networking. Defaults to services.")
-		props["title"] = stringProp("Title.")
-		props["summary"] = stringProp("Optional summary.")
+	case "private_note_manage":
+		props["action"] = map[string]any{"type": "string", "description": "Private note action. Do not use by default; use only for explicit private/local-only/non-synced notes or clearly sensitive secrets.", "enum": []string{"search", "read", "write", "status", "maintain"}}
+		props["query"] = stringProp("Search query for action=search.")
+		props["max_results"] = intProp("Maximum search results to return.")
+		props["path"] = stringProp("Path under notes/ for action=read or action=write.")
+		props["category"] = stringProp("Optional category used with title when path is omitted. Defaults to services.")
+		props["title"] = stringProp("Title used for frontmatter or to derive the path when path is omitted.")
+		props["summary"] = stringProp("Optional summary for action=write.")
 		props["tags"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
-		props["content"] = stringProp("Content to write.")
-		props["confirmed"] = boolProp("Required for true writes.")
-		props["overwrite"] = boolProp("Replace an existing note.")
-		required = []string{"content", "confirmed"}
-	case "private_notes_status":
-		props["action"] = map[string]any{"type": "string", "description": "Read-only private notes status action.", "enum": []string{"check", "list"}}
-	case "private_notes_maintain":
-		props["action"] = map[string]any{"type": "string", "description": "Mutating private notes maintenance action.", "enum": []string{"init", "init-encryption", "sync-encrypted", "encrypt-all", "migrate-enc-to-age"}}
+		props["content"] = stringProp("Plaintext private note content for action=write.")
+		props["confirmed"] = boolProp("Required for action=write true writes.")
+		props["overwrite"] = boolProp("Replace an existing note for action=write.")
+		props["max_bytes"] = intProp("Maximum bytes to return for action=read.")
+		props["status_action"] = map[string]any{"type": "string", "description": "Read-only status action when action=status.", "enum": []string{"check", "list"}}
+		props["maintenance_action"] = map[string]any{"type": "string", "description": "Maintenance operation when action=maintain.", "enum": []string{"init", "init-encryption", "sync-encrypted", "encrypt-all", "migrate-enc-to-age"}}
+		required = []string{"action"}
 	case "browser_session":
 		props["action"] = map[string]any{"type": "string", "description": "Browser session action.", "enum": []string{"start", "close", "cleanup_stale"}}
 		props["url"] = stringProp("Initial URL when action=start. Defaults to about:blank.")
@@ -320,7 +313,7 @@ func InputSchema(name string) map[string]any {
 
 	schema := map[string]any{"type": "object", "properties": props, "additionalProperties": true}
 	switch name {
-	case "recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain":
+	case "recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain", "private_note_manage":
 		// Recall public schemas are intentionally closed: legacy/advanced args remain
 		// accepted by the runtime for compatibility, but should not be suggested to models.
 		schema["additionalProperties"] = false

@@ -115,16 +115,16 @@ func TestRecallDockToolNamesHideLegacyMemoryTools(t *testing.T) {
 	for _, name := range rt.ToolNames() {
 		seen[name] = true
 	}
-	for _, name := range []string{"recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain"} {
+	for _, name := range []string{"recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain", "private_note_manage"} {
 		if !seen[name] {
-			t.Fatalf("full profile missing RecallDock tool %q", name)
+			t.Fatalf("full profile missing memory tool %q", name)
 		}
 	}
-	oldPrefixes := []string{"mem" + "ory_", "notes_"}
+	oldPrefixes := []string{"mem" + "ory_", "notes_", "private_notes_"}
 	for _, prefix := range oldPrefixes {
 		for name := range seen {
 			if strings.HasPrefix(name, prefix) {
-				t.Fatalf("full profile still exposes legacy recall predecessor tool %q", name)
+				t.Fatalf("full profile still exposes legacy memory/private-notes tool %q", name)
 			}
 		}
 	}
@@ -261,7 +261,7 @@ func TestFileEditAndGitUnifiedSchemas(t *testing.T) {
 }
 
 func TestLegacyModelEntrypointsAreRemoved(t *testing.T) {
-	for _, name := range []string{"apply_patch", "edit_file", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "browser_profile"} {
+	for _, name := range []string{"apply_patch", "edit_file", "workspace_repos", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "browser_profile", "private_notes_search", "private_notes_read", "private_notes_write", "private_notes_status", "private_notes_maintain"} {
 		if _, ok := toolDefinition(name); ok {
 			t.Fatalf("legacy tool should not be model-facing: %s", name)
 		}
@@ -311,10 +311,35 @@ func TestRecallModelChoiceFieldsUseEnums(t *testing.T) {
 }
 
 func TestRecallPublicSchemasAreClosedForModelFacingArgs(t *testing.T) {
-	for _, name := range []string{"recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain"} {
+	for _, name := range []string{"recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain", "private_note_manage"} {
 		schema := inputSchema(name)
 		if got, _ := schema["additionalProperties"].(bool); got {
 			t.Fatalf("%s input schema should be closed to keep hidden compatibility args out of model-facing schema: %#v", name, schema)
+		}
+	}
+}
+
+func TestPrivateNoteManageModelEntrypoint(t *testing.T) {
+	def, ok := toolDefinition("private_note_manage")
+	if !ok {
+		t.Fatal("private_note_manage definition missing")
+	}
+	for _, text := range []string{"Do not use by default", "private/local-only/non-synced", "Actions: search, read, write, status, or maintain"} {
+		if !strings.Contains(def.Description, text) {
+			t.Fatalf("private_note_manage description missing %q: %q", text, def.Description)
+		}
+	}
+
+	props := schemaProperties(t, "private_note_manage")
+	assertSameStrings(t, enumStrings(t, props["action"]), []string{"search", "read", "write", "status", "maintain"})
+	for _, name := range []string{"query", "path", "category", "title", "content", "confirmed", "overwrite", "status_action", "maintenance_action"} {
+		if _, ok := props[name]; !ok {
+			t.Fatalf("private_note_manage input schema missing %q", name)
+		}
+	}
+	for _, name := range []string{"private_notes_search", "private_notes_read", "private_notes_write", "private_notes_status", "private_notes_maintain"} {
+		if _, ok := toolDefinition(name); ok {
+			t.Fatalf("legacy private notes tool should not be model-facing: %s", name)
 		}
 	}
 }

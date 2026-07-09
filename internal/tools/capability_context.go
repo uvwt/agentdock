@@ -22,6 +22,7 @@ func (r *Runtime) CapabilityContext(ctx context.Context, refresh bool) (Result, 
 		"需要 Skill 能力时，先根据 Skill 索引选择候选；参数不确定时先 skill_manage inspect，再 skill_manage run。",
 		"涉及多步骤开发、部署、排障、迁移、Docker、VPS 或 Git 提交推送时，先 workflow_template_manage match；无合适模板时创建普通可恢复任务。",
 		"记忆摘要只提供高优先级规则；具体历史事实不确定时，再用 recall_search 或 recall_read 精确召回。",
+		"普通项目记忆走 recall_*；private_note_manage 只在用户明确要求隐私/本机不同步，或内容明显包含 secret、凭据、个人敏感信息时使用。",
 	}
 
 	sections := []capabilitySection{
@@ -74,6 +75,7 @@ func baseToolCapabilityItems() []map[string]any {
 		{"name": "skill_manage", "summary": "列出、查看、安装、运行和回滚 AgentDock Skill。需要具体参数时先 inspect，再 run。"},
 		{"name": "task_manage", "summary": "管理可恢复任务；模板发现通过 workflow_template_manage match。"},
 		{"name": "recall_bootstrap / recall_search / recall_read", "summary": "读取记忆精简上下文、搜索记忆和精确读取 runbook。"},
+		{"name": "private_note_manage", "summary": "低频显式隐私笔记保险箱；默认不要用，只有用户要求隐私/本机不同步或内容明显敏感时再调用。"},
 	}
 }
 
