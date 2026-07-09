@@ -38,7 +38,7 @@ func TestAgentDockContextToolReturnsRuntimeIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := rt.Call(context.Background(), "agentdock_context", map[string]any{"refresh": true})
+	result, err := rt.Call(context.Background(), "agentdock_context", map[string]any{})
 	if err != nil {
 		t.Fatalf("agentdock_context call failed: %v", err)
 	}
@@ -53,15 +53,17 @@ func TestAgentDockContextToolReturnsRuntimeIndex(t *testing.T) {
 	if summary == "" || summary == contextText {
 		t.Fatalf("agentdock_context summary should be compact and distinct from context: %#v", result)
 	}
-	baseTools, ok := result["base_tools"].(capabilityBaseToolBlock)
+	counts, ok := result["counts"].(map[string]int)
 	if !ok {
-		t.Fatalf("agentdock_context base_tools has unexpected shape: %#v", result["base_tools"])
+		t.Fatalf("agentdock_context counts has unexpected shape: %#v", result["counts"])
 	}
-	if len(baseTools.Items) == 0 {
-		t.Fatalf("agentdock_context base_tools missing items: %#v", baseTools)
+	if counts["base_tools"] == 0 {
+		t.Fatalf("agentdock_context counts missing base_tools: %#v", counts)
 	}
-	if strings.Contains(baseTools.Summary, baseTools.Items[0].Description) {
-		t.Fatalf("base_tools summary should not duplicate item details: %#v", baseTools)
+	for _, name := range []string{"base_tools", "skills", "task_templates", "memory", "rules"} {
+		if _, ok := result[name]; ok {
+			t.Fatalf("agentdock_context should not duplicate rendered block %q", name)
+		}
 	}
 }
 
