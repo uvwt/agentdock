@@ -15,7 +15,7 @@ func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
 
 	skills, skillSummary, _ := r.skillCapabilityIndex()
 	templates, templateSummary, _ := r.templateCapabilityIndex()
-	memorySummary, memoryItems, _ := r.memoryCapabilitySummary(ctx)
+	memorySummary, _, _ := r.memoryCapabilitySummary(ctx)
 
 	rules := []string{
 		"需要真实执行命令或检查环境时，先用 exec_command 查看现状，再修改，修改后真实验证。",
@@ -33,7 +33,7 @@ func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
 		{Title: "使用规则", Lines: rules},
 	}
 	contextText := renderAgentDockContext(generatedAt, sections)
-	summary := agentDockContextSummary(generatedAt, len(baseTools), len(skills), len(templates), len(memoryItems))
+	summary := agentDockContextSummary(generatedAt, len(baseTools), len(skills), len(templates))
 
 	return Result{
 		"ok":           true,
@@ -44,7 +44,6 @@ func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
 			"base_tools":     len(baseTools),
 			"skills":         len(skills),
 			"task_templates": len(templates),
-			"memory_items":   len(memoryItems),
 			"rules":          len(rules),
 		},
 	}, nil
@@ -53,8 +52,8 @@ func (r *Runtime) agentDockContextTool(ctx context.Context, _ map[string]any) (R
 	return r.AgentDockContext(ctx)
 }
 
-func agentDockContextSummary(generatedAt string, baseToolCount, skillCount, templateCount, memoryItemCount int) string {
-	return fmt.Sprintf("AgentDock 启动上下文已生成：base_tools=%d, skills=%d, task_templates=%d, memory_items=%d, generated_at=%s。详情见 context。", baseToolCount, skillCount, templateCount, memoryItemCount, generatedAt)
+func agentDockContextSummary(generatedAt string, baseToolCount, skillCount, templateCount int) string {
+	return fmt.Sprintf("AgentDock 启动上下文已生成：base_tools=%d, skills=%d, task_templates=%d, generated_at=%s。详情见 context。", baseToolCount, skillCount, templateCount, generatedAt)
 }
 
 func capabilityBlockSummary(name string, count int, errText, guidance string) string {
