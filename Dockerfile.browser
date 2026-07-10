@@ -54,8 +54,6 @@ RUN npm install -g corepack \
     && corepack prepare pnpm@latest --activate
 
 ENV AGENTDOCK_BROWSER_ENABLED=true \
-    AGENTDOCK_BROWSER_RUNNER_DIR=browser-runner \
-    AGENTDOCK_BROWSER_ARTIFACT_DIR=browser-artifacts \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 COPY --from=build /out/agentdock /usr/local/bin/agentdock

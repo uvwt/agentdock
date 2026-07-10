@@ -9,10 +9,12 @@ import (
 )
 
 const (
-	ProtocolVersion = "2025-06-18"
-	ServerName      = "agentdock"
-	Version         = "0.3.0-go"
-	PathModel       = "host"
+	ProtocolVersion    = "2025-06-18"
+	ServerName         = "agentdock"
+	Version            = "0.3.0-go"
+	PathModel          = "host"
+	BrowserRunnerDir   = "browser-runner"
+	BrowserArtifactDir = "browser-artifacts"
 )
 
 type Config struct {
@@ -32,32 +34,26 @@ type Config struct {
 	NexusEndpoint       string
 	NexusToken          string
 	BrowserEnabled      bool
-	BrowserRunnerDir    string
-	BrowserArtifactDir  string
-	EnableViewImage     bool
 	Stdio               bool
 }
 
 func FromEnv() Config {
 	return Config{
-		Host:               getenv("AGENTDOCK_HOST", "127.0.0.1"),
-		Port:               getenvInt("AGENTDOCK_PORT", 8765),
-		AuthToken:          os.Getenv("AGENTDOCK_AUTH_TOKEN"),
-		OAuthClientID:      os.Getenv("AGENTDOCK_OAUTH_CLIENT_ID"),
-		OAuthServerURL:     os.Getenv("AGENTDOCK_SERVER_URL"),
-		LogLevel:           getenv("AGENTDOCK_LOG_LEVEL", "info"),
-		RecallEndpoint:     os.Getenv("AGENTDOCK_RECALL_ENDPOINT"),
-		RecallToken:        firstNonEmpty(os.Getenv("AGENTDOCK_RECALL_TOKEN"), os.Getenv("RECALLDOCK_AUTH_TOKEN")),
-		RecallLoginUser:    os.Getenv("AGENTDOCK_RECALL_LOGIN_USER"),
-		RecallLoginValue:   os.Getenv("AGENTDOCK_RECALL_LOGIN_VALUE"),
-		RecallTimeoutMS:    getenvInt("AGENTDOCK_RECALL_TIMEOUT_MS", 30000),
-		NexusEndpoint:      getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
-		NexusToken:         firstNonEmpty(os.Getenv("AGENTDOCK_NEXUS_TOKEN"), os.Getenv("NEXUS_AUTH_TOKEN")),
-		BrowserEnabled:     getenvBool("AGENTDOCK_BROWSER_ENABLED", false),
-		BrowserRunnerDir:   getenv("AGENTDOCK_BROWSER_RUNNER_DIR", "browser-runner"),
-		BrowserArtifactDir: getenv("AGENTDOCK_BROWSER_ARTIFACT_DIR", "browser-artifacts"),
-		EnableViewImage:    getenvBool("AGENTDOCK_ENABLE_VIEW_IMAGE", true),
-		Stdio:              getenvBool("AGENTDOCK_STDIO", false),
+		Host:             getenv("AGENTDOCK_HOST", "127.0.0.1"),
+		Port:             getenvInt("AGENTDOCK_PORT", 8765),
+		AuthToken:        os.Getenv("AGENTDOCK_AUTH_TOKEN"),
+		OAuthClientID:    os.Getenv("AGENTDOCK_OAUTH_CLIENT_ID"),
+		OAuthServerURL:   os.Getenv("AGENTDOCK_SERVER_URL"),
+		LogLevel:         getenv("AGENTDOCK_LOG_LEVEL", "info"),
+		RecallEndpoint:   os.Getenv("AGENTDOCK_RECALL_ENDPOINT"),
+		RecallToken:      firstNonEmpty(os.Getenv("AGENTDOCK_RECALL_TOKEN"), os.Getenv("RECALLDOCK_AUTH_TOKEN")),
+		RecallLoginUser:  os.Getenv("AGENTDOCK_RECALL_LOGIN_USER"),
+		RecallLoginValue: os.Getenv("AGENTDOCK_RECALL_LOGIN_VALUE"),
+		RecallTimeoutMS:  getenvInt("AGENTDOCK_RECALL_TIMEOUT_MS", 30000),
+		NexusEndpoint:    getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
+		NexusToken:       firstNonEmpty(os.Getenv("AGENTDOCK_NEXUS_TOKEN"), os.Getenv("NEXUS_AUTH_TOKEN")),
+		BrowserEnabled:   getenvBool("AGENTDOCK_BROWSER_ENABLED", false),
+		Stdio:            getenvBool("AGENTDOCK_STDIO", false),
 	}
 }
 
@@ -98,12 +94,6 @@ func (c *Config) Normalize() error {
 	}
 	if c.RecallTimeoutMS <= 0 {
 		c.RecallTimeoutMS = 30000
-	}
-	if c.BrowserRunnerDir == "" {
-		c.BrowserRunnerDir = "browser-runner"
-	}
-	if c.BrowserArtifactDir == "" {
-		c.BrowserArtifactDir = "browser-artifacts"
 	}
 	return nil
 }

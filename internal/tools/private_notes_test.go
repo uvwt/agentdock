@@ -13,7 +13,7 @@ import (
 func TestPrivateNotesWriteReadSearchAndEncrypt(t *testing.T) {
 	home := t.TempDir()
 	root := filepath.Join(home, "private-notes")
-	cfg := config.Config{AgentDockDefaultDir: t.TempDir(), AgentDockHome: home, EnableViewImage: true}
+	cfg := config.Config{AgentDockDefaultDir: t.TempDir(), AgentDockHome: home}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
 	}

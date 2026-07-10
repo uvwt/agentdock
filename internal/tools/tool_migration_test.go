@@ -129,7 +129,6 @@ func initGitRepo(t *testing.T, root string) {
 func testRuntimeConfig(root string) config.Config {
 	cfg := config.Config{
 		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
-		EnableViewImage: true,
 	}
 	if err := cfg.Normalize(); err != nil {
 		panic(err)

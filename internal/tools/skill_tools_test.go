@@ -69,7 +69,6 @@ spec:
 
 	cfg := config.Config{
 		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
-		EnableViewImage: true,
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
@@ -455,7 +454,6 @@ spec:
 	}
 	cfg := config.Config{
 		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
-		EnableViewImage: true,
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)

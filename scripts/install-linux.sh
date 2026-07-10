@@ -415,7 +415,6 @@ AGENTDOCK_HOST=$host
 AGENTDOCK_PORT=$port
 AGENTDOCK_AUTH_TOKEN=$token
 AGENTDOCK_LOG_LEVEL=$log_level
-AGENTDOCK_ENABLE_VIEW_IMAGE=true
 ENV
   if [[ -n "$recall_endpoint" ]]; then
     printf 'AGENTDOCK_RECALL_ENDPOINT=%s\n' "$recall_endpoint" >>"$tmp_file"

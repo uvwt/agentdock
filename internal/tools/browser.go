@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/uvwt/agentdock/internal/config"
 )
 
 func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args map[string]any) (Result, error) {
@@ -15,7 +17,7 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 	if err != nil {
 		return nil, err
 	}
-	artifactDir, err := r.resolveControlForWrite(r.cfg.BrowserArtifactDir)
+	artifactDir, err := r.resolveControlForWrite(config.BrowserArtifactDir)
 	if err != nil {
 		return nil, err
 	}
@@ -78,11 +80,11 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 }
 
 func (r *Runtime) browserRunnerScript() (controlPath, error) {
-	runnerDir, err := r.resolveControlExisting(r.cfg.BrowserRunnerDir)
+	runnerDir, err := r.resolveControlExisting(config.BrowserRunnerDir)
 	if err != nil {
-		return controlPath{}, toolErrorDetails("BROWSER_RUNNER_NOT_FOUND", "browser runner directory not found", "validation", map[string]any{"runner_dir": r.cfg.BrowserRunnerDir, "suggestion": "copy examples/browser-runner to the configured runner directory and run npm install; on macOS prefer browser=chrome for system Chrome"})
+		return controlPath{}, toolErrorDetails("BROWSER_RUNNER_NOT_FOUND", "browser runner directory not found", "validation", map[string]any{"runner_dir": config.BrowserRunnerDir, "suggestion": "copy examples/browser-runner to the configured runner directory and run npm install; on macOS prefer browser=chrome for system Chrome"})
 	}
-	candidate := filepath.Join(r.cfg.BrowserRunnerDir, "browser-runner.js")
+	candidate := filepath.Join(config.BrowserRunnerDir, "browser-runner.js")
 	runner, err := r.resolveControlExisting(candidate)
 	if err != nil {
 		return controlPath{}, toolErrorDetails("BROWSER_RUNNER_NOT_FOUND", "browser-runner.js not found", "validation", map[string]any{"runner_dir": runnerDir.Display})

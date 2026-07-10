@@ -97,8 +97,8 @@ func (r *Runtime) serverInfo() Result {
 		"task_state_dir": r.tasks.Root(),
 
 		"browser_enabled":      r.cfg.BrowserEnabled,
-		"browser_runner_dir":   r.cfg.BrowserRunnerDir,
-		"browser_artifact_dir": r.cfg.BrowserArtifactDir,
+		"browser_runner_dir":   config.BrowserRunnerDir,
+		"browser_artifact_dir": config.BrowserArtifactDir,
 
 		"auth_enabled":  r.authEnabled(),
 		"endpoint_path": "/mcp",

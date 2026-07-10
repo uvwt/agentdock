@@ -25,7 +25,6 @@ func newCodeToolsRuntime(t *testing.T) (*Runtime, string) {
 	root := t.TempDir()
 	cfg := config.Config{
 		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
-		EnableViewImage: true,
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
@@ -228,8 +227,6 @@ process.stdout.write(JSON.stringify({ ok: true, operation: payload.operation, sc
 		AgentDockDefaultDir: root,
 		AgentDockHome:       filepath.Join(root, ".agentdock"),
 		BrowserEnabled:      true,
-		BrowserRunnerDir:    "browser-runner",
-		BrowserArtifactDir:  "browser-artifacts",
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
@@ -380,8 +377,6 @@ process.stdout.write(JSON.stringify({
 		AgentDockDefaultDir: root,
 		AgentDockHome:       filepath.Join(root, ".agentdock"),
 		BrowserEnabled:      true,
-		BrowserRunnerDir:    "browser-runner",
-		BrowserArtifactDir:  "browser-artifacts",
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)

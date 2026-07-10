@@ -80,9 +80,8 @@ func toolSpecByName(name string) (ToolSpec, bool) {
 	return ToolSpec{}, false
 }
 
-func requiresRecall(cfg config.Config) bool    { return cfg.RecallEndpoint != "" }
-func requiresBrowser(cfg config.Config) bool   { return cfg.BrowserEnabled }
-func requiresViewImage(cfg config.Config) bool { return cfg.EnableViewImage }
+func requiresRecall(cfg config.Config) bool  { return cfg.RecallEndpoint != "" }
+func requiresBrowser(cfg config.Config) bool { return cfg.BrowserEnabled }
 
 func toolHandler(fn func(*Runtime, map[string]any) (Result, error)) ToolHandler {
 	return func(_ context.Context, r *Runtime, args map[string]any) (Result, error) { return fn(r, args) }
@@ -113,7 +112,7 @@ func allToolSpecs() []ToolSpec {
 		{Name: "skill_env_manage", Title: "Manage Skill environment", Description: "Manage redacted Skill environment variables through the local Skill Env Registry.", Handler: ctxToolHandler((*Runtime).skillEnvManage)},
 		{Name: "git_read", Title: "Read Git repository state", Description: "Read Git repository information through one action-based entrypoint: repos, status, diff, log, show, blame, or github_repo_access.", Handler: ctxToolHandler((*Runtime).gitRead)},
 		{Name: "git_write", Title: "Write Git repository state", Description: "Run mutating Git operations through one action-based entrypoint: clone, commit, fetch, pull, or push.", Handler: ctxToolHandler((*Runtime).gitWrite)},
-		{Name: "view_image", Title: "View image", Description: "Publish or inline a local image. Defaults to a temporary signed public URL; Base64/MCP image/data URL require return_mode.", Availability: requiresViewImage, Handler: ctxToolHandler((*Runtime).viewImage)},
+		{Name: "view_image", Title: "View image", Description: "Publish or inline a local image. Defaults to a temporary signed public URL; Base64/MCP image/data URL require return_mode.", Handler: ctxToolHandler((*Runtime).viewImage)},
 		{Name: "recall_bootstrap", Title: "Bootstrap RecallDock context", Description: "Load high-priority RecallDock context at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks. max_bytes controls pack budget only; compact index/excerpt output is default, and full body requires include_body or targeted recall_read.", Availability: requiresRecall, Handler: ctxToolHandler((*Runtime).recallBootstrap)},
 		{Name: "recall_search", Title: "Search RecallDock", Description: "Search RecallDock memories, cards, and notes. Use kind=all, markdown, card, or note; when kind=note, use note_scope=questions or github-learning. Backend handles internal routing such as prefix and scope.", Availability: requiresRecall, Handler: ctxToolHandler((*Runtime).recallSearch)},
 		{Name: "recall_read", Title: "Read RecallDock entry", Description: "Read one Markdown, card, or note entry from the configured RecallDock store by path.", Availability: requiresRecall, Handler: ctxToolHandler((*Runtime).recallRead)},
