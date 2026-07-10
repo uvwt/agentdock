@@ -406,6 +406,7 @@ write_env_file() {
   local recall_endpoint="$7"
   local recall_token="$8"
   local nexus_endpoint="$9"
+  local nexus_token="${10}"
 
   local env_dir tmp_file
   env_dir="$(dirname "$env_file")"
@@ -594,7 +595,7 @@ main() {
 
   local detected_root source_default repo_url branch source_dir data_dir env_file
   local service_name service_user service_group service_manager service_manager_prompt host port token log_level skip_prompts
-  local install_mode release_version recall_endpoint recall_token nexus_endpoint update_existing run_full_check install_deps
+  local install_mode release_version recall_endpoint recall_token nexus_endpoint nexus_token update_existing run_full_check install_deps
   local go_version public_domain smoke_url health_host build_from_source binary_installed
 
   detected_root="$(repo_root_from_script || true)"
@@ -673,8 +674,12 @@ INTRO
   fi
 
   nexus_endpoint=""
+  nexus_token=""
   if confirm '是否配置 NexusDock workflow endpoint？' n; then
     nexus_endpoint="$(prompt 'NexusDock endpoint，例如 https://nexus.example.com' '')"
+    if [[ -n "$nexus_endpoint" ]] && confirm 'NexusDock workflow API 是否需要 token？' y; then
+      nexus_token="$(prompt_secret 'NexusDock workflow token')"
+    fi
   fi
 
   public_domain="$(prompt '公网域名，可留空；脚本只输出反代提示，不直接改 Caddy/Nginx' '')"
@@ -754,7 +759,7 @@ SUMMARY
   service_group="$(id -gn "$service_user")"
   run_root mkdir -p "$data_dir/.agentdock" "$data_dir/AgentDock"
   run_root chown -R "$service_user:$service_group" "$data_dir"
-  write_env_file "$env_file" "$host" "$port" "$token" "$log_level" "$skip_prompts" "$recall_endpoint" "$recall_token" "$nexus_endpoint"
+  write_env_file "$env_file" "$host" "$port" "$token" "$log_level" "$skip_prompts" "$recall_endpoint" "$recall_token" "$nexus_endpoint" "$nexus_token"
   case "$service_manager" in
     systemd) write_systemd_unit "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
     openrc) write_openrc_service "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
