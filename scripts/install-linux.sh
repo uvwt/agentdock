@@ -428,6 +428,9 @@ ENV
   if [[ -n "$nexus_endpoint" ]]; then
     printf 'AGENTDOCK_NEXUS_ENDPOINT=%s\n' "$nexus_endpoint" >>"$tmp_file"
   fi
+  if [[ -n "$nexus_token" ]]; then
+    printf 'AGENTDOCK_NEXUS_TOKEN=%s\n' "$nexus_token" >>"$tmp_file"
+  fi
 
   run_root mkdir -p "$env_dir"
   run_root install -m 600 -o root -g root "$tmp_file" "$env_file"
