@@ -31,8 +31,6 @@ type Config struct {
 	RecallTimeoutMS               int
 	NexusEndpoint                 string
 	NexusToken                    string
-	NexusDeviceName               string
-	NexusHeartbeatSeconds         int
 	BrowserEnabled                bool
 	BrowserRunnerDir              string
 	BrowserArtifactDir            string
@@ -55,9 +53,7 @@ func FromEnv() Config {
 		RecallLoginValue:              os.Getenv("AGENTDOCK_RECALL_LOGIN_VALUE"),
 		RecallTimeoutMS:               getenvInt("AGENTDOCK_RECALL_TIMEOUT_MS", 30000),
 		NexusEndpoint:                 getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
-		NexusToken:                    firstNonEmpty(os.Getenv("AGENTDOCK_NEXUS_TOKEN"), os.Getenv("NEXUS_AUTH_TOKEN"), os.Getenv("RECALLDOCK_AUTH_TOKEN"), os.Getenv("AGENTDOCK_RECALL_TOKEN")),
-		NexusDeviceName:               getenv("AGENTDOCK_NEXUS_DEVICE_NAME", ""),
-		NexusHeartbeatSeconds:         getenvInt("AGENTDOCK_NEXUS_HEARTBEAT_SECONDS", 30),
+		NexusToken:                    firstNonEmpty(os.Getenv("AGENTDOCK_NEXUS_TOKEN"), os.Getenv("NEXUS_AUTH_TOKEN")),
 		BrowserEnabled:                getenvBool("AGENTDOCK_BROWSER_ENABLED", false),
 		BrowserRunnerDir:              getenv("AGENTDOCK_BROWSER_RUNNER_DIR", "browser-runner"),
 		BrowserArtifactDir:            getenv("AGENTDOCK_BROWSER_ARTIFACT_DIR", "browser-artifacts"),
@@ -104,9 +100,6 @@ func (c *Config) Normalize() error {
 	}
 	if c.RecallTimeoutMS <= 0 {
 		c.RecallTimeoutMS = 30000
-	}
-	if c.NexusHeartbeatSeconds <= 0 {
-		c.NexusHeartbeatSeconds = 30
 	}
 	if c.BrowserRunnerDir == "" {
 		c.BrowserRunnerDir = "browser-runner"

@@ -2,7 +2,7 @@ package config
 
 import "path/filepath"
 
-// NexusStateDir returns AgentDock's internal Nexus state directory.
-func NexusStateDir(cfg Config) (string, error) {
-	return filepath.Join(cfg.AgentDockHome, "nexus"), nil
+// SkillRuntimeStateDir returns AgentDock's local Skill Runtime state directory.
+func SkillRuntimeStateDir(cfg Config) (string, error) {
+	return filepath.Join(cfg.AgentDockHome, "skill-runtime"), nil
 }

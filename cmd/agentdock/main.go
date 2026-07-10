@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -11,7 +10,6 @@ import (
 	"github.com/uvwt/agentdock/internal/httpx"
 	"github.com/uvwt/agentdock/internal/logx"
 	"github.com/uvwt/agentdock/internal/mcp"
-	"github.com/uvwt/agentdock/internal/nexusagent"
 	"github.com/uvwt/agentdock/internal/tools"
 )
 
@@ -32,9 +30,7 @@ func run() error {
 	flag.StringVar(&cfg.RecallEndpoint, "recall-endpoint", cfg.RecallEndpoint, "optional RecallDock HTTP endpoint, for example http://127.0.0.1:18777")
 	flag.StringVar(&cfg.RecallToken, "recall-token", cfg.RecallToken, "optional RecallDock bearer credential")
 	flag.IntVar(&cfg.RecallTimeoutMS, "recall-timeout-ms", cfg.RecallTimeoutMS, "RecallDock HTTP timeout in milliseconds")
-	flag.StringVar(&cfg.NexusEndpoint, "nexus-endpoint", cfg.NexusEndpoint, "optional AgentDock Nexus base URL")
-	flag.StringVar(&cfg.NexusDeviceName, "nexus-device-name", cfg.NexusDeviceName, "AgentDock Nexus device display name")
-	flag.IntVar(&cfg.NexusHeartbeatSeconds, "nexus-heartbeat-seconds", cfg.NexusHeartbeatSeconds, "AgentDock Nexus heartbeat interval seconds")
+	flag.StringVar(&cfg.NexusEndpoint, "nexus-endpoint", cfg.NexusEndpoint, "optional NexusDock base URL for workflow templates")
 	flag.BoolVar(&cfg.BrowserEnabled, "browser-enabled", cfg.BrowserEnabled, "expose optional browser automation tools")
 	flag.StringVar(&cfg.BrowserRunnerDir, "browser-runner-dir", cfg.BrowserRunnerDir, "AgentDock-home-relative browser runner directory")
 	flag.StringVar(&cfg.BrowserArtifactDir, "browser-artifact-dir", cfg.BrowserArtifactDir, "AgentDock-home-relative browser artifact directory")
@@ -57,11 +53,6 @@ func run() error {
 	server := mcp.NewServer(runtime, cfg)
 	if cfg.Stdio {
 		return server.ServeStdio(os.Stdin, os.Stdout)
-	}
-	if enabled, err := nexusagent.Start(context.Background(), cfg); err != nil {
-		return err
-	} else if enabled {
-		slog.Info("nexus agent enabled", "endpoint", cfg.NexusEndpoint, "device_name", cfg.NexusDeviceName)
 	}
 	return httpx.Serve(server, cfg)
 }

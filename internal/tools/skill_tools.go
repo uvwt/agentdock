@@ -101,7 +101,7 @@ func (input skillToolInput) runInput() (json.RawMessage, error) {
 }
 
 func newSkillRuntimeManager(cfg config.Config) (*skillRuntimeManager, error) {
-	stateDir, err := config.NexusStateDir(cfg)
+	stateDir, err := config.SkillRuntimeStateDir(cfg)
 	if err != nil {
 		return nil, err
 	}

@@ -21,7 +21,7 @@ workflow_template_manage action=match
 
 ## 存储位置与权限
 
-任务状态保存在当前 AgentDock 实例本地，不依赖 AgentDock Nexus。
+任务状态保存在当前 AgentDock 实例本地；Workflow 模板发现通过 NexusDock registry。
 
 ```text
 ~/.agentdock/tasks

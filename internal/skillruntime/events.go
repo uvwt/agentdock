@@ -6,8 +6,7 @@ import (
 	"time"
 )
 
-// Event is a local runtime envelope. T4 is responsible for mapping it to the
-// generated Nexus contracts and delivering it through the offline outbox.
+// Event is a local runtime envelope for future runtime observers.
 type Event struct {
 	Type      string         `json:"type"`
 	RunID     string         `json:"run_id,omitempty"`

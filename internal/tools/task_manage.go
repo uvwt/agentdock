@@ -281,7 +281,7 @@ func (r *Runtime) nexusWorkflowTemplate(id, version string) (taskstate.Template,
 	}
 	var template taskstate.Template
 	if err := remarshal(result["template"], &template); err != nil {
-		return taskstate.Template{}, taskToolError(fmt.Errorf("decode Nexus workflow template: %w", err))
+		return taskstate.Template{}, taskToolError(fmt.Errorf("decode NexusDock workflow template: %w", err))
 	}
 	return template, nil
 }

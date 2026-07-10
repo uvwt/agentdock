@@ -406,7 +406,6 @@ write_env_file() {
   local recall_endpoint="$7"
   local recall_token="$8"
   local nexus_endpoint="$9"
-  local nexus_device_name="${10}"
 
   local env_dir tmp_file
   env_dir="$(dirname "$env_file")"
@@ -427,9 +426,6 @@ ENV
   fi
   if [[ -n "$nexus_endpoint" ]]; then
     printf 'AGENTDOCK_NEXUS_ENDPOINT=%s\n' "$nexus_endpoint" >>"$tmp_file"
-  fi
-  if [[ -n "$nexus_device_name" ]]; then
-    printf 'AGENTDOCK_NEXUS_DEVICE_NAME=%s\n' "$nexus_device_name" >>"$tmp_file"
   fi
 
   run_root mkdir -p "$env_dir"
@@ -598,7 +594,7 @@ main() {
 
   local detected_root source_default repo_url branch source_dir data_dir env_file
   local service_name service_user service_group service_manager service_manager_prompt host port token log_level skip_prompts
-  local install_mode release_version recall_endpoint recall_token nexus_endpoint nexus_device_name update_existing run_full_check install_deps
+  local install_mode release_version recall_endpoint recall_token nexus_endpoint update_existing run_full_check install_deps
   local go_version public_domain smoke_url health_host build_from_source binary_installed
 
   detected_root="$(repo_root_from_script || true)"
@@ -677,10 +673,8 @@ INTRO
   fi
 
   nexus_endpoint=""
-  nexus_device_name=""
-  if confirm '是否配置 AgentDock Nexus endpoint？' n; then
-    nexus_endpoint="$(prompt 'Nexus endpoint，例如 https://nexus.example.com' '')"
-    nexus_device_name="$(prompt 'Nexus 设备名' "$(hostname)-linux")"
+  if confirm '是否配置 NexusDock workflow endpoint？' n; then
+    nexus_endpoint="$(prompt 'NexusDock endpoint，例如 https://nexus.example.com' '')"
   fi
 
   public_domain="$(prompt '公网域名，可留空；脚本只输出反代提示，不直接改 Caddy/Nginx' '')"
@@ -760,7 +754,7 @@ SUMMARY
   service_group="$(id -gn "$service_user")"
   run_root mkdir -p "$data_dir/.agentdock" "$data_dir/AgentDock"
   run_root chown -R "$service_user:$service_group" "$data_dir"
-  write_env_file "$env_file" "$host" "$port" "$token" "$log_level" "$skip_prompts" "$recall_endpoint" "$recall_token" "$nexus_endpoint" "$nexus_device_name"
+  write_env_file "$env_file" "$host" "$port" "$token" "$log_level" "$skip_prompts" "$recall_endpoint" "$recall_token" "$nexus_endpoint"
   case "$service_manager" in
     systemd) write_systemd_unit "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
     openrc) write_openrc_service "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;

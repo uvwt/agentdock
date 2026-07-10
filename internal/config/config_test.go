@@ -42,16 +42,16 @@ func TestFromEnvIgnoresOldDirectoryConfig(t *testing.T) {
 	}
 }
 
-func TestNexusStateDirUsesAgentDockHome(t *testing.T) {
+func TestSkillRuntimeStateDirUsesAgentDockHome(t *testing.T) {
 	home := t.TempDir()
 	cfg := Config{AgentDockHome: filepath.Join(home, ".agentdock")}
-	got, err := NexusStateDir(cfg)
+	got, err := SkillRuntimeStateDir(cfg)
 	if err != nil {
-		t.Fatalf("NexusStateDir() error = %v", err)
+		t.Fatalf("SkillRuntimeStateDir() error = %v", err)
 	}
-	want := filepath.Join(cfg.AgentDockHome, "nexus")
+	want := filepath.Join(cfg.AgentDockHome, "skill-runtime")
 	if got != want {
-		t.Fatalf("NexusStateDir() = %q, want %q", got, want)
+		t.Fatalf("SkillRuntimeStateDir() = %q, want %q", got, want)
 	}
 }
 
