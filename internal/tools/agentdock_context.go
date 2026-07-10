@@ -225,8 +225,8 @@ func (r *Runtime) templateCapabilityIndex() ([]capabilityTemplateItem, string, s
 }
 
 func (r *Runtime) memoryCapabilitySummary(ctx context.Context) (string, []capabilityMemoryItem, string) {
-	if strings.TrimSpace(r.cfg.RecallEndpoint) == "" {
-		return "- RecallDock 未配置；无法自动注入记忆精简摘要。", nil, "recall endpoint is not configured"
+	if strings.TrimSpace(r.cfg.NexusEndpoint) == "" {
+		return "- NexusDock Recall 未配置；无法自动注入记忆精简摘要。", nil, "nexus endpoint is not configured"
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(capMaxInt(1000, capMinInt(config.RecallTimeoutMS, 5000)))*time.Millisecond)
 	defer cancel()

@@ -217,7 +217,7 @@ func decorateRecallResult(result Result) {
 	if result == nil {
 		return
 	}
-	result["recall_store"] = "RecallDock"
+	result["recall_store"] = "NexusDock Recall"
 }
 
 func recallSearchArgs(args map[string]any, prefix string) map[string]any {

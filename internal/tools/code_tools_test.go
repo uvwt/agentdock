@@ -294,7 +294,7 @@ func TestServerInfoRecommendsCompactRecallBootstrap(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
 		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
-		RecallEndpoint: "http://127.0.0.1:18777",
+		NexusEndpoint: "http://127.0.0.1:18777",
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)

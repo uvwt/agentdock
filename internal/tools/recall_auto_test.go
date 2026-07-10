@@ -16,7 +16,7 @@ func TestRecallWriteDeleteRequiresConfirmationLocally(t *testing.T) {
 		"path":   "devices/test.md",
 	})
 	if err == nil {
-		t.Fatal("expected delete to require confirmed=true before calling RecallDock")
+		t.Fatal("expected delete to require confirmed=true before calling NexusDock Recall")
 	}
 	if _, ok := store["devices/test.md"]; !ok {
 		t.Fatalf("unconfirmed delete must not mutate store")

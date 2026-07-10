@@ -27,8 +27,6 @@ type Config struct {
 	OAuthClientID       string
 	OAuthServerURL      string
 	LogLevel            string
-	RecallEndpoint      string
-	RecallToken         string
 	NexusEndpoint       string
 	NexusToken          string
 	BrowserEnabled      bool
@@ -43,8 +41,6 @@ func FromEnv() Config {
 		OAuthClientID:  os.Getenv("AGENTDOCK_OAUTH_CLIENT_ID"),
 		OAuthServerURL: os.Getenv("AGENTDOCK_SERVER_URL"),
 		LogLevel:       getenv("AGENTDOCK_LOG_LEVEL", "info"),
-		RecallEndpoint: os.Getenv("AGENTDOCK_RECALL_ENDPOINT"),
-		RecallToken:    os.Getenv("AGENTDOCK_RECALL_TOKEN"),
 		NexusEndpoint:  getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
 		NexusToken:     os.Getenv("AGENTDOCK_NEXUS_TOKEN"),
 		BrowserEnabled: getenvBool("AGENTDOCK_BROWSER_ENABLED", false),

@@ -25,7 +25,7 @@ func TestToolRegistryHasNoDuplicates(t *testing.T) {
 func TestRuntimeToolsHaveRegistryDefinitionsAndSchemas(t *testing.T) {
 	cfg := config.Config{
 		AgentDockDefaultDir: t.TempDir(), AgentDockHome: filepath.Join(t.TempDir(), ".agentdock"),
-		RecallEndpoint: "http://127.0.0.1:18777",
+		NexusEndpoint:  "http://127.0.0.1:18777",
 		BrowserEnabled: true,
 	}
 	if err := cfg.Normalize(); err != nil {
@@ -51,7 +51,7 @@ func TestRuntimeToolsHaveRegistryDefinitionsAndSchemas(t *testing.T) {
 func TestRuntimeExposesSingleToolSet(t *testing.T) {
 	cfg := config.Config{
 		AgentDockDefaultDir: t.TempDir(), AgentDockHome: filepath.Join(t.TempDir(), ".agentdock"),
-		RecallEndpoint: "http://127.0.0.1:18777",
+		NexusEndpoint:  "http://127.0.0.1:18777",
 		BrowserEnabled: true,
 	}
 	if err := cfg.Normalize(); err != nil {
@@ -100,10 +100,10 @@ func TestAgentDockContextSchemaIsModelFacingEntrypoint(t *testing.T) {
 
 }
 
-func TestRecallDockToolNamesHideLegacyMemoryTools(t *testing.T) {
+func TestNexusDockRecallToolNamesHideLegacyMemoryTools(t *testing.T) {
 	cfg := config.Config{
 		AgentDockDefaultDir: t.TempDir(), AgentDockHome: filepath.Join(t.TempDir(), ".agentdock"),
-		RecallEndpoint: "http://127.0.0.1:18777",
+		NexusEndpoint: "http://127.0.0.1:18777",
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)

@@ -22,7 +22,7 @@ func (r *Runtime) RuntimeStatus() Result {
 		"path_model":            config.PathModel,
 		"auth_enabled":          r.cfg.AuthRequired(),
 		"browser_enabled":       r.cfg.BrowserEnabled,
-		"memory_enabled":        r.cfg.RecallEndpoint != "",
+		"memory_enabled":        r.cfg.NexusEndpoint != "",
 		"nexus_enabled":         strings.TrimSpace(r.cfg.NexusEndpoint) != "",
 		"tool_count":            len(tools),
 		"tools":                 tools,

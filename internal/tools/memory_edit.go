@@ -233,7 +233,7 @@ func (r *Runtime) memoryReadContent(ctx context.Context, p string) (string, erro
 	}
 	memory, ok := result["recall"].(map[string]any)
 	if !ok {
-		return "", toolErrorDetails("RECALL_RESPONSE_MISSING_RECALL", "RecallDock response does not contain recall object", "network", map[string]any{"path": p})
+		return "", toolErrorDetails("RECALL_RESPONSE_MISSING_RECALL", "NexusDock Recall response does not contain recall object", "network", map[string]any{"path": p})
 	}
 	if content, ok := memory["raw_content"].(string); ok {
 		return content, nil
@@ -244,7 +244,7 @@ func (r *Runtime) memoryReadContent(ctx context.Context, p string) (string, erro
 	if body, ok := memory["body"].(string); ok {
 		return body, nil
 	}
-	return "", toolErrorDetails("RECALL_RESPONSE_MISSING_CONTENT", "RecallDock recall object does not contain raw_content/content/body", "network", map[string]any{"path": p})
+	return "", toolErrorDetails("RECALL_RESPONSE_MISSING_CONTENT", "NexusDock Recall recall object does not contain raw_content/content/body", "network", map[string]any{"path": p})
 }
 
 func (r *Runtime) memoryWriteContent(ctx context.Context, p, content string) (Result, error) {

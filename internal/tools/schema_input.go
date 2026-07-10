@@ -169,24 +169,24 @@ func InputSchema(name string) map[string]any {
 		props["max_output_bytes"] = intProp("Maximum verify stdout/stderr bytes.")
 		required = []string{"action"}
 	case "recall_bootstrap":
-		props["max_bytes"] = intProp("Maximum combined RecallDock pack bytes. Does not expose section bodies by itself; use include_body or recall_read when body text is needed.")
+		props["max_bytes"] = intProp("Maximum combined NexusDock Recall pack bytes. Does not expose section bodies by itself; use include_body or recall_read when body text is needed.")
 		props["include_raw"] = boolProp("Include raw Markdown as raw_content. Defaults to false to avoid duplicating body/content tokens.")
 		props["include_body"] = boolProp("Include section body text in recall_bootstrap. Defaults to false; prefer recall_read for targeted full text.")
 	case "recall_search":
-		props["query"] = stringProp("Text query to search in RecallDock files and paths.")
+		props["query"] = stringProp("Text query to search in NexusDock Recall files and paths.")
 		props["kind"] = map[string]any{"type": "string", "description": "Search kind. Defaults to all.", "enum": []string{"all", "markdown", "card", "note"}}
 		props["note_scope"] = map[string]any{"type": "string", "description": "Note only: notes scope to search or capture.", "enum": []string{"questions", "github-learning"}}
 		props["max_results"] = intProp("Maximum results to return.")
 		required = []string{"query"}
 	case "recall_read":
-		props["path"] = stringProp("RecallDock-relative Markdown/card/note path.")
+		props["path"] = stringProp("NexusDock Recall-relative Markdown/card/note path.")
 		props["include_raw"] = boolProp("Include raw Markdown as raw_content. Defaults to false to avoid duplicating body/content tokens.")
 		required = []string{"path"}
 	case "recall_write":
 		props["target"] = map[string]any{"type": "string", "description": "Recall target selected by the model.", "enum": []string{"card", "note", "markdown"}}
 		props["action"] = map[string]any{"type": "string", "description": "Recall action selected by the model.", "enum": []string{"plan", "create", "replace", "append", "patch", "update_fact", "diff", "delete"}}
 		props["confirmed"] = boolProp("Required for true writes/deletes. card/note create with confirmed=false returns a review plan.")
-		props["path"] = stringProp("RecallDock-relative path when reading, updating, deleting, or writing a known entry.")
+		props["path"] = stringProp("NexusDock Recall-relative path when reading, updating, deleting, or writing a known entry.")
 		props["content"] = stringProp("Memory content, note content, Markdown content, or proposed replacement content.")
 		props["title"] = stringProp("Short title for a card or Markdown entry.")
 		props["summary"] = stringProp("Short summary for a card or note.")
@@ -209,7 +209,7 @@ func InputSchema(name string) map[string]any {
 		required = []string{"target", "action"}
 	case "recall_maintain":
 		props["action"] = map[string]any{"type": "string", "description": "Maintenance action.", "enum": []string{"sync_status", "list", "lint", "embedding_status", "reindex", "reindex_cards"}}
-		props["prefix"] = stringProp("Optional RecallDock-relative prefix.")
+		props["prefix"] = stringProp("Optional NexusDock Recall-relative prefix.")
 		props["terms"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Terms or regex patterns for lint."}
 		props["regex"] = boolProp("Treat terms as regex patterns for lint.")
 		props["max_entries"] = intProp("Maximum entries to list or scan.")

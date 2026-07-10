@@ -85,8 +85,7 @@ Release 版本：latest 或 vX.Y.Z
 工具 profile
 运行模式、路径策略、命令沙箱
 Bearer token
-是否配置 RecallDock endpoint/token
-是否配置 NexusDock workflow endpoint/token
+是否配置 NexusDock endpoint/token
 公网域名提示
 ```
 

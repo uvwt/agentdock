@@ -6,7 +6,7 @@ usage() {
 Usage: backup-agentdock.sh state|recall|all [commit message]
 
 state  : sync AgentDock publishable workflow state to agentdock-state-backup and push.
-recall : commit/push RecallDock data. Uses RecallDock API + temporary clone when the external worktree is not accessible.
+recall : commit/push NexusDock Recall data. Uses NexusDock Recall API + temporary clone when the external worktree is not accessible.
 all    : run state then recall.
 
 Paths can be overridden with:
@@ -231,7 +231,7 @@ for entry in entries:
         paths.append(path)
 paths = sorted(set(paths))
 if not paths:
-    raise RuntimeError('RecallDock export returned no markdown paths')
+    raise RuntimeError('NexusDock Recall export returned no markdown paths')
 
 preserved = {}
 for file_path in repo.rglob('*'):
@@ -265,7 +265,7 @@ with tempfile.TemporaryDirectory(prefix='recalldock-export-') as tmp:
 
     if empty_reads:
         preview = '\n'.join(f'{path} size_bytes={size}' for path, size in empty_reads[:80])
-        raise RuntimeError(f'RecallDock export produced empty markdown content; refusing to replace repo.\n{preview}')
+        raise RuntimeError(f'NexusDock Recall export produced empty markdown content; refusing to replace repo.\n{preview}')
 
     for child in list(repo.iterdir()):
         if child.name == '.git':
@@ -281,17 +281,17 @@ with tempfile.TemporaryDirectory(prefix='recalldock-export-') as tmp:
             shutil.copytree(child, target)
         else:
             shutil.copy2(child, target)
-print(f'exported RecallDock markdown files: {len(paths)}')
+print(f'exported NexusDock Recall markdown files: {len(paths)}')
 PY
 }
 
 backup_recall_worktree() {
   local repo="$1"
-  # 正常可访问真实 RecallDock Git worktree 时，不通过 API 重新导出覆盖仓库；
+  # 正常可访问真实 NexusDock Recall Git worktree 时，不通过 API 重新导出覆盖仓库；
   # 只提交当前 worktree 里的真实文件，避免 API/挂载异常时把空正文写回 Git。
   guard_no_zero_markdown "$repo"
   git -C "$repo" add -A
-  run_git_backup "$repo" "${MESSAGE:-备份 RecallDock 数据}"
+  run_git_backup "$repo" "${MESSAGE:-备份 NexusDock Recall 数据}"
 }
 
 backup_recall_export_clone() {
@@ -299,14 +299,14 @@ backup_recall_export_clone() {
   export_recall_to_repo "$repo"
   guard_no_zero_markdown "$repo"
   git -C "$repo" add -A
-  run_git_backup "$repo" "${MESSAGE:-备份 RecallDock 数据}"
+  run_git_backup "$repo" "${MESSAGE:-备份 NexusDock Recall 数据}"
 }
 
 backup_recall() {
   if quick_git_ok "$RECALL_REPO"; then
     backup_recall_worktree "$RECALL_REPO"
   else
-    echo "recall backup worktree unavailable, using RecallDock API + temporary clone: $RECALL_REPO" >&2
+    echo "recall backup worktree unavailable, using NexusDock Recall API + temporary clone: $RECALL_REPO" >&2
     local repo
     repo="$(with_temp_clone "$RECALL_REMOTE" agentdock-recall)"
     backup_recall_export_clone "$repo"

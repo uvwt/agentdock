@@ -42,7 +42,7 @@ func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Res
 			}
 
 			// bootstrap 是每个重要任务的入口，默认应像索引而不是正文包。
-			// max_bytes 只控制 RecallDock 打包预算，不应因为模型显式传了默认值就返回长正文；
+			// max_bytes 只控制 NexusDock Recall 打包预算，不应因为模型显式传了默认值就返回长正文；
 			// 需要正文时用 recall_read，或明确传 include_body/include_raw。
 			content, hasContent := compactedMemory["content"]
 			rawContent, hasRawContent := compactedMemory["raw_content"]
@@ -117,7 +117,7 @@ func (r *Runtime) memoryRead(ctx context.Context, args map[string]any) (Result, 
 			compactedMemory[key] = value
 		}
 
-		// RecallDock 返回的 content 与 body 会重复占用上下文；recall_read 的主流程
+		// NexusDock Recall 返回的 content 与 body 会重复占用上下文；recall_read 的主流程
 		// 直接展示这个取舍：默认只保留轻量字段，只有 include_raw=true 才暴露原文。
 		content, hasContent := compactedMemory["content"]
 		rawContent, hasRawContent := compactedMemory["raw_content"]
@@ -210,9 +210,9 @@ func (r *Runtime) memoryDelete(ctx context.Context, args map[string]any) (Result
 }
 
 func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, payload any) (Result, error) {
-	base := strings.TrimRight(strings.TrimSpace(r.cfg.RecallEndpoint), "/")
+	base := strings.TrimRight(strings.TrimSpace(r.cfg.NexusEndpoint), "/")
 	if base == "" {
-		return nil, toolError("RECALL_NOT_CONFIGURED", "AGENTDOCK_RECALL_ENDPOINT is not configured", "configuration")
+		return nil, toolError("RECALL_NOT_CONFIGURED", "AGENTDOCK_NEXUS_ENDPOINT is required for NexusDock Recall APIs", "configuration")
 	}
 	var body io.Reader
 	if payload != nil {
@@ -231,7 +231,7 @@ func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, pa
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if token := strings.TrimSpace(r.cfg.RecallToken); token != "" {
+	if token := strings.TrimSpace(r.cfg.NexusToken); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	resp, err := http.DefaultClient.Do(req)

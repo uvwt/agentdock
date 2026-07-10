@@ -88,9 +88,9 @@ func (r *Runtime) serverInfo() Result {
 		"default_cwd":           r.ws.DefaultDisplay(),
 		"path_model":            config.PathModel,
 
-		"recall_enabled":               r.cfg.RecallEndpoint != "",
-		"recall_endpoint":              r.cfg.RecallEndpoint,
-		"recall_bootstrap_recommended": r.cfg.RecallEndpoint != "",
+		"recall_enabled":               r.cfg.NexusEndpoint != "",
+		"nexus_endpoint":               r.cfg.NexusEndpoint,
+		"recall_bootstrap_recommended": r.cfg.NexusEndpoint != "",
 		"recall_bootstrap_tool":        "recall_bootstrap",
 		"recall_bootstrap_args":        map[string]any{},
 

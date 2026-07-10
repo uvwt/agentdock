@@ -402,10 +402,8 @@ write_env_file() {
   local port="$3"
   local token="$4"
   local log_level="$5"
-  local recall_endpoint="$6"
-  local recall_token="$7"
-  local nexus_endpoint="$8"
-  local nexus_token="$9"
+  local nexus_endpoint="$6"
+  local nexus_token="$7"
 
   local env_dir tmp_file
   env_dir="$(dirname "$env_file")"
@@ -416,12 +414,6 @@ AGENTDOCK_PORT=$port
 AGENTDOCK_AUTH_TOKEN=$token
 AGENTDOCK_LOG_LEVEL=$log_level
 ENV
-  if [[ -n "$recall_endpoint" ]]; then
-    printf 'AGENTDOCK_RECALL_ENDPOINT=%s\n' "$recall_endpoint" >>"$tmp_file"
-  fi
-  if [[ -n "$recall_token" ]]; then
-    printf 'AGENTDOCK_RECALL_TOKEN=%s\n' "$recall_token" >>"$tmp_file"
-  fi
   if [[ -n "$nexus_endpoint" ]]; then
     printf 'AGENTDOCK_NEXUS_ENDPOINT=%s\n' "$nexus_endpoint" >>"$tmp_file"
   fi
@@ -595,7 +587,7 @@ main() {
 
   local detected_root source_default repo_url branch source_dir data_dir env_file
   local service_name service_user service_group service_manager service_manager_prompt host port token log_level
-  local install_mode release_version recall_endpoint recall_token nexus_endpoint nexus_token update_existing run_full_check install_deps
+  local install_mode release_version nexus_endpoint nexus_token update_existing run_full_check install_deps
   local go_version public_domain smoke_url health_host build_from_source binary_installed
 
   detected_root="$(repo_root_from_script || true)"
@@ -662,21 +654,12 @@ INTRO
   fi
   validate_no_space 'Bearer token' "$token"
 
-  recall_endpoint=""
-  recall_token=""
-  if confirm '是否配置 RecallDock endpoint？' n; then
-    recall_endpoint="$(prompt 'RecallDock endpoint，例如 http://127.0.0.1:18777' '')"
-    if [[ -n "$recall_endpoint" ]] && confirm 'RecallDock 是否需要 token？' n; then
-      recall_token="$(prompt_secret 'RecallDock token')"
-    fi
-  fi
-
   nexus_endpoint=""
   nexus_token=""
-  if confirm '是否配置 NexusDock workflow endpoint？' n; then
-    nexus_endpoint="$(prompt 'NexusDock endpoint，例如 https://nexus.example.com' '')"
-    if [[ -n "$nexus_endpoint" ]] && confirm 'NexusDock workflow API 是否需要 token？' y; then
-      nexus_token="$(prompt_secret 'NexusDock workflow token')"
+  if confirm '是否配置 NexusDock endpoint？用于 Recall memory 和 workflow API' n; then
+    nexus_endpoint="$(prompt 'NexusDock endpoint，例如 https://nexus.example.com 或 http://127.0.0.1:18777' '')"
+    if [[ -n "$nexus_endpoint" ]] && confirm 'NexusDock API 是否需要 token？' y; then
+      nexus_token="$(prompt_secret 'NexusDock token')"
     fi
   fi
 
@@ -757,7 +740,7 @@ SUMMARY
   service_group="$(id -gn "$service_user")"
   run_root mkdir -p "$data_dir/.agentdock" "$data_dir/AgentDock"
   run_root chown -R "$service_user:$service_group" "$data_dir"
-  write_env_file "$env_file" "$host" "$port" "$token" "$log_level" "$recall_endpoint" "$recall_token" "$nexus_endpoint" "$nexus_token"
+  write_env_file "$env_file" "$host" "$port" "$token" "$log_level" "$nexus_endpoint" "$nexus_token"
   case "$service_manager" in
     systemd) write_systemd_unit "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
     openrc) write_openrc_service "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
