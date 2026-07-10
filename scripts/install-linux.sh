@@ -402,11 +402,10 @@ write_env_file() {
   local port="$3"
   local token="$4"
   local log_level="$5"
-  local skip_prompts="$6"
-  local recall_endpoint="$7"
-  local recall_token="$8"
-  local nexus_endpoint="$9"
-  local nexus_token="${10}"
+  local recall_endpoint="$6"
+  local recall_token="$7"
+  local nexus_endpoint="$8"
+  local nexus_token="$9"
 
   local env_dir tmp_file
   env_dir="$(dirname "$env_file")"
@@ -416,7 +415,6 @@ AGENTDOCK_HOST=$host
 AGENTDOCK_PORT=$port
 AGENTDOCK_AUTH_TOKEN=$token
 AGENTDOCK_LOG_LEVEL=$log_level
-AGENTDOCK_SKIP_PERMISSION_PROMPTS=$skip_prompts
 AGENTDOCK_ENABLE_VIEW_IMAGE=true
 ENV
   if [[ -n "$recall_endpoint" ]]; then
@@ -597,7 +595,7 @@ main() {
   require_linux
 
   local detected_root source_default repo_url branch source_dir data_dir env_file
-  local service_name service_user service_group service_manager service_manager_prompt host port token log_level skip_prompts
+  local service_name service_user service_group service_manager service_manager_prompt host port token log_level
   local install_mode release_version recall_endpoint recall_token nexus_endpoint nexus_token update_existing run_full_check install_deps
   local go_version public_domain smoke_url health_host build_from_source binary_installed
 
@@ -655,8 +653,6 @@ INTRO
     if confirm '安装目录已存在时是否尝试 git pull --ff-only？' y; then update_existing="yes"; else update_existing="no"; fi
     if confirm '是否运行 go test ./... 和 go vet ./...？首次部署可跳过以加快安装' n; then run_full_check="yes"; else run_full_check="no"; fi
   fi
-  if confirm '是否跳过工具权限确认？仅 localhost/demo 建议开启' n; then skip_prompts="true"; else skip_prompts="false"; fi
-
   token="${AGENTDOCK_AUTH_TOKEN:-}"
   if [[ -z "$token" ]]; then
     token="$(prompt_secret 'Bearer token')"
@@ -762,7 +758,7 @@ SUMMARY
   service_group="$(id -gn "$service_user")"
   run_root mkdir -p "$data_dir/.agentdock" "$data_dir/AgentDock"
   run_root chown -R "$service_user:$service_group" "$data_dir"
-  write_env_file "$env_file" "$host" "$port" "$token" "$log_level" "$skip_prompts" "$recall_endpoint" "$recall_token" "$nexus_endpoint" "$nexus_token"
+  write_env_file "$env_file" "$host" "$port" "$token" "$log_level" "$recall_endpoint" "$recall_token" "$nexus_endpoint" "$nexus_token"
   case "$service_manager" in
     systemd) write_systemd_unit "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
     openrc) write_openrc_service "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;

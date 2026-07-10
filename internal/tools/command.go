@@ -202,10 +202,8 @@ func redactCommandResult(result Result, patterns []string) {
 
 func (r *Runtime) commandEnv(extra map[string]any) []string {
 	env := r.baseCommandEnv()
-	if r.cfg.DangerouslySkipAllPermissions {
-		for key, value := range extra {
-			env[key] = fmt.Sprint(value)
-		}
+	for key, value := range extra {
+		env[key] = fmt.Sprint(value)
 	}
 	return formatCommandEnv(env)
 }

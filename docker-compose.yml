@@ -9,7 +9,7 @@ services:
       - ./AgentDockHome:/root/.agentdock
       - ./AgentDock:/root/AgentDock
     environment:
-      # 公网/VPS 部署建议设置 AGENTDOCK_AUTH_TOKEN，并移除下方 demo 便利模式参数。
+      # 公网/VPS 部署建议设置 AGENTDOCK_AUTH_TOKEN。
       # AGENTDOCK_AUTH_TOKEN: "replace-with-a-local-secret"
     command:
       - agentdock
@@ -17,5 +17,3 @@ services:
       - 0.0.0.0
       - --port
       - "8765"
-      # 仅适合 localhost 或受信 demo 环境；公网 production path 不建议默认跳过权限确认。
-      - --dangerously-skip-all-permissions

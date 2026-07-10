@@ -16,50 +16,48 @@ const (
 )
 
 type Config struct {
-	AgentDockHome                 string
-	AgentDockDefaultDir           string
-	Host                          string
-	Port                          int
-	AuthToken                     string
-	OAuthClientID                 string
-	OAuthServerURL                string
-	LogLevel                      string
-	RecallEndpoint                string
-	RecallToken                   string
-	RecallLoginUser               string
-	RecallLoginValue              string
-	RecallTimeoutMS               int
-	NexusEndpoint                 string
-	NexusToken                    string
-	BrowserEnabled                bool
-	BrowserRunnerDir              string
-	BrowserArtifactDir            string
-	EnableViewImage               bool
-	Stdio                         bool
-	DangerouslySkipAllPermissions bool
+	AgentDockHome       string
+	AgentDockDefaultDir string
+	Host                string
+	Port                int
+	AuthToken           string
+	OAuthClientID       string
+	OAuthServerURL      string
+	LogLevel            string
+	RecallEndpoint      string
+	RecallToken         string
+	RecallLoginUser     string
+	RecallLoginValue    string
+	RecallTimeoutMS     int
+	NexusEndpoint       string
+	NexusToken          string
+	BrowserEnabled      bool
+	BrowserRunnerDir    string
+	BrowserArtifactDir  string
+	EnableViewImage     bool
+	Stdio               bool
 }
 
 func FromEnv() Config {
 	return Config{
-		Host:                          getenv("AGENTDOCK_HOST", "127.0.0.1"),
-		Port:                          getenvInt("AGENTDOCK_PORT", 8765),
-		AuthToken:                     os.Getenv("AGENTDOCK_AUTH_TOKEN"),
-		OAuthClientID:                 os.Getenv("AGENTDOCK_OAUTH_CLIENT_ID"),
-		OAuthServerURL:                os.Getenv("AGENTDOCK_SERVER_URL"),
-		LogLevel:                      getenv("AGENTDOCK_LOG_LEVEL", "info"),
-		RecallEndpoint:                os.Getenv("AGENTDOCK_RECALL_ENDPOINT"),
-		RecallToken:                   firstNonEmpty(os.Getenv("AGENTDOCK_RECALL_TOKEN"), os.Getenv("RECALLDOCK_AUTH_TOKEN")),
-		RecallLoginUser:               os.Getenv("AGENTDOCK_RECALL_LOGIN_USER"),
-		RecallLoginValue:              os.Getenv("AGENTDOCK_RECALL_LOGIN_VALUE"),
-		RecallTimeoutMS:               getenvInt("AGENTDOCK_RECALL_TIMEOUT_MS", 30000),
-		NexusEndpoint:                 getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
-		NexusToken:                    firstNonEmpty(os.Getenv("AGENTDOCK_NEXUS_TOKEN"), os.Getenv("NEXUS_AUTH_TOKEN")),
-		BrowserEnabled:                getenvBool("AGENTDOCK_BROWSER_ENABLED", false),
-		BrowserRunnerDir:              getenv("AGENTDOCK_BROWSER_RUNNER_DIR", "browser-runner"),
-		BrowserArtifactDir:            getenv("AGENTDOCK_BROWSER_ARTIFACT_DIR", "browser-artifacts"),
-		EnableViewImage:               getenvBool("AGENTDOCK_ENABLE_VIEW_IMAGE", true),
-		Stdio:                         getenvBool("AGENTDOCK_STDIO", false),
-		DangerouslySkipAllPermissions: getenvBool("AGENTDOCK_SKIP_PERMISSION_PROMPTS", false),
+		Host:               getenv("AGENTDOCK_HOST", "127.0.0.1"),
+		Port:               getenvInt("AGENTDOCK_PORT", 8765),
+		AuthToken:          os.Getenv("AGENTDOCK_AUTH_TOKEN"),
+		OAuthClientID:      os.Getenv("AGENTDOCK_OAUTH_CLIENT_ID"),
+		OAuthServerURL:     os.Getenv("AGENTDOCK_SERVER_URL"),
+		LogLevel:           getenv("AGENTDOCK_LOG_LEVEL", "info"),
+		RecallEndpoint:     os.Getenv("AGENTDOCK_RECALL_ENDPOINT"),
+		RecallToken:        firstNonEmpty(os.Getenv("AGENTDOCK_RECALL_TOKEN"), os.Getenv("RECALLDOCK_AUTH_TOKEN")),
+		RecallLoginUser:    os.Getenv("AGENTDOCK_RECALL_LOGIN_USER"),
+		RecallLoginValue:   os.Getenv("AGENTDOCK_RECALL_LOGIN_VALUE"),
+		RecallTimeoutMS:    getenvInt("AGENTDOCK_RECALL_TIMEOUT_MS", 30000),
+		NexusEndpoint:      getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
+		NexusToken:         firstNonEmpty(os.Getenv("AGENTDOCK_NEXUS_TOKEN"), os.Getenv("NEXUS_AUTH_TOKEN")),
+		BrowserEnabled:     getenvBool("AGENTDOCK_BROWSER_ENABLED", false),
+		BrowserRunnerDir:   getenv("AGENTDOCK_BROWSER_RUNNER_DIR", "browser-runner"),
+		BrowserArtifactDir: getenv("AGENTDOCK_BROWSER_ARTIFACT_DIR", "browser-artifacts"),
+		EnableViewImage:    getenvBool("AGENTDOCK_ENABLE_VIEW_IMAGE", true),
+		Stdio:              getenvBool("AGENTDOCK_STDIO", false),
 	}
 }
 

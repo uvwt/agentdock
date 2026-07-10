@@ -355,7 +355,7 @@ func TestServerInfoReportsOAuthClientIDAuthEnabled(t *testing.T) {
 	}
 }
 
-func TestBrowserRunnerReceivesPayloadEnvWithoutSkipPermissions(t *testing.T) {
+func TestBrowserRunnerReceivesPayloadEnv(t *testing.T) {
 	if _, err := exec.LookPath("node"); err != nil {
 		t.Skip("node is required for browser runner")
 	}
@@ -377,12 +377,11 @@ process.stdout.write(JSON.stringify({
 		t.Fatal(err)
 	}
 	cfg := config.Config{
-		AgentDockDefaultDir:           root,
-		AgentDockHome:                 filepath.Join(root, ".agentdock"),
-		BrowserEnabled:                true,
-		BrowserRunnerDir:              "browser-runner",
-		BrowserArtifactDir:            "browser-artifacts",
-		DangerouslySkipAllPermissions: false,
+		AgentDockDefaultDir: root,
+		AgentDockHome:       filepath.Join(root, ".agentdock"),
+		BrowserEnabled:      true,
+		BrowserRunnerDir:    "browser-runner",
+		BrowserArtifactDir:  "browser-artifacts",
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
@@ -422,6 +421,23 @@ func TestExecCommandDoesNotFilterCommandContent(t *testing.T) {
 	}
 	if result["status"] != "exited" || !strings.Contains(result["stdout"].(string), "shell=expansion network=https://example.test") {
 		t.Fatalf("unexpected command result: %#v", result)
+	}
+}
+
+func TestExecCommandForwardsExplicitEnv(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	result, err := rt.execCommand(context.Background(), map[string]any{
+		"cmd":             `printf '%s' "$AGENTDOCK_TEST_EXEC_ENV"`,
+		"env":             map[string]any{"AGENTDOCK_TEST_EXEC_ENV": "forwarded"},
+		"yield_time_ms":   5000,
+		"timeout_ms":      5000,
+		"wait_until_exit": true,
+	})
+	if err != nil {
+		t.Fatalf("exec_command should accept explicit env: %v", err)
+	}
+	if result["status"] != "exited" || result["stdout"].(string) != "forwarded" {
+		t.Fatalf("explicit env was not forwarded: %#v", result)
 	}
 }
 

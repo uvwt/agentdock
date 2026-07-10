@@ -197,25 +197,11 @@ workflow_template_manage action=match
 
 `match` 返回候选、分数、匹配理由、推荐结论和向量索引状态。模型应根据候选和任务实际情况决定是否带模板创建任务；不要机械地把最高分候选用于所有任务。
 
-## 向量检索配置
+## 向量检索状态
 
-AgentDock 不内置 embedding 模型。需要模板语义召回时，可通过 OpenAI-compatible `/v1/embeddings` provider 配置：
+Workflow 模板的语义匹配由 Nexus 侧提供；AgentDock Runtime 不再读取本地任务向量检索或 embedding provider 环境变量。
 
-```env
-AGENTDOCK_TASK_VECTOR_SEARCH=true
-AGENTDOCK_TASK_EMBEDDING_ENDPOINT=http://127.0.0.1:18788/v1/embeddings
-AGENTDOCK_TASK_EMBEDDING_MODEL=BAAI/bge-m3
-AGENTDOCK_TASK_VECTOR_TIMEOUT_MS=10000
-AGENTDOCK_TASK_VECTOR_MIN_SCORE=0.55
-```
-
-模板向量按 `template_id/version/hash/model` 写入：
-
-```text
-~/.agentdock/tasks/search_index.sqlite
-```
-
-输出里的 `vector_search_enabled`、`vector_index_status`、`vector_index_items`、`embedding_model` 表示当前实例是否启用向量匹配、索引状态、当前模型下已持久化的模板向量数量和模型名。provider 未配置、超时或异常时，匹配会降级为关键词/结构化匹配。
+`match` 输出里的 `vector_search_enabled`、`vector_index_status`、`vector_index_items`、`embedding_model` 表示当前 Nexus 实例是否启用向量匹配、索引状态、模板向量数量和模型名。provider 未配置、超时或异常时，匹配会降级为关键词/结构化匹配。
 
 ## 使用原则
 

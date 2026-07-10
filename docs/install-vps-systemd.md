@@ -72,7 +72,6 @@ WantedBy=multi-user.target
 
 建议：
 
-- 公网场景不要默认使用 `--dangerously-skip-all-permissions`。
 - `User=agentdock` 建议只拥有需要操作的项目目录权限。
 - 如果用环境变量传 `AGENTDOCK_AUTH_TOKEN`，不要把 env 文件提交到仓库。
 

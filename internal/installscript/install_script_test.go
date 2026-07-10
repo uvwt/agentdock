@@ -13,7 +13,7 @@ func TestInstallLinuxWritesExplicitNexusDockWorkflowToken(t *testing.T) {
 	}
 	script := string(data)
 	checks := []string{
-		"local nexus_token=\"${10}\"",
+		"local nexus_token=\"$9\"",
 		"printf 'AGENTDOCK_NEXUS_TOKEN=%s\\n' \"$nexus_token\"",
 		"NexusDock workflow API 是否需要 token？",
 		"nexus_token=\"$(prompt_secret 'NexusDock workflow token')\"",
