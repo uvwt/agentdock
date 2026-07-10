@@ -229,9 +229,6 @@ func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, pa
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if user, value := strings.TrimSpace(r.cfg.RecallLoginUser), r.cfg.RecallLoginValue; user != "" || value != "" {
-		req.SetBasicAuth(user, value)
-	}
 	if token := strings.TrimSpace(r.cfg.RecallToken); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
