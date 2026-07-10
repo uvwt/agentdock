@@ -15,6 +15,7 @@ const (
 	PathModel          = "host"
 	BrowserRunnerDir   = "browser-runner"
 	BrowserArtifactDir = "browser-artifacts"
+	RecallTimeoutMS    = 30000
 )
 
 type Config struct {
@@ -28,7 +29,6 @@ type Config struct {
 	LogLevel            string
 	RecallEndpoint      string
 	RecallToken         string
-	RecallTimeoutMS     int
 	NexusEndpoint       string
 	NexusToken          string
 	BrowserEnabled      bool
@@ -37,19 +37,18 @@ type Config struct {
 
 func FromEnv() Config {
 	return Config{
-		Host:            getenv("AGENTDOCK_HOST", "127.0.0.1"),
-		Port:            getenvInt("AGENTDOCK_PORT", 8765),
-		AuthToken:       os.Getenv("AGENTDOCK_AUTH_TOKEN"),
-		OAuthClientID:   os.Getenv("AGENTDOCK_OAUTH_CLIENT_ID"),
-		OAuthServerURL:  os.Getenv("AGENTDOCK_SERVER_URL"),
-		LogLevel:        getenv("AGENTDOCK_LOG_LEVEL", "info"),
-		RecallEndpoint:  os.Getenv("AGENTDOCK_RECALL_ENDPOINT"),
-		RecallToken:     os.Getenv("AGENTDOCK_RECALL_TOKEN"),
-		RecallTimeoutMS: getenvInt("AGENTDOCK_RECALL_TIMEOUT_MS", 30000),
-		NexusEndpoint:   getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
-		NexusToken:      os.Getenv("AGENTDOCK_NEXUS_TOKEN"),
-		BrowserEnabled:  getenvBool("AGENTDOCK_BROWSER_ENABLED", false),
-		Stdio:           getenvBool("AGENTDOCK_STDIO", false),
+		Host:           getenv("AGENTDOCK_HOST", "127.0.0.1"),
+		Port:           getenvInt("AGENTDOCK_PORT", 8765),
+		AuthToken:      os.Getenv("AGENTDOCK_AUTH_TOKEN"),
+		OAuthClientID:  os.Getenv("AGENTDOCK_OAUTH_CLIENT_ID"),
+		OAuthServerURL: os.Getenv("AGENTDOCK_SERVER_URL"),
+		LogLevel:       getenv("AGENTDOCK_LOG_LEVEL", "info"),
+		RecallEndpoint: os.Getenv("AGENTDOCK_RECALL_ENDPOINT"),
+		RecallToken:    os.Getenv("AGENTDOCK_RECALL_TOKEN"),
+		NexusEndpoint:  getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
+		NexusToken:     os.Getenv("AGENTDOCK_NEXUS_TOKEN"),
+		BrowserEnabled: getenvBool("AGENTDOCK_BROWSER_ENABLED", false),
+		Stdio:          getenvBool("AGENTDOCK_STDIO", false),
 	}
 }
 
@@ -87,9 +86,6 @@ func (c *Config) Normalize() error {
 	}
 	if c.LogLevel == "" {
 		c.LogLevel = "info"
-	}
-	if c.RecallTimeoutMS <= 0 {
-		c.RecallTimeoutMS = 30000
 	}
 	return nil
 }

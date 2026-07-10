@@ -11,6 +11,8 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"github.com/uvwt/agentdock/internal/config"
 )
 
 func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Result, error) {
@@ -220,7 +222,7 @@ func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, pa
 		}
 		body = bytes.NewReader(data)
 	}
-	requestCtx, cancel := context.WithTimeout(ctx, time.Duration(r.cfg.RecallTimeoutMS)*time.Millisecond)
+	requestCtx, cancel := context.WithTimeout(ctx, time.Duration(config.RecallTimeoutMS)*time.Millisecond)
 	defer cancel()
 	req, err := http.NewRequestWithContext(requestCtx, method, base+endpoint, body)
 	if err != nil {

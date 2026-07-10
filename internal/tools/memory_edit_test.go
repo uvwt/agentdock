@@ -79,7 +79,7 @@ func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func
 			http.NotFound(w, r)
 		}
 	}))
-	cfg := config.Config{AgentDockDefaultDir: t.TempDir(), AgentDockHome: filepath.Join(t.TempDir(), ".agentdock"), RecallEndpoint: server.URL, RecallTimeoutMS: 30000}
+	cfg := config.Config{AgentDockDefaultDir: t.TempDir(), AgentDockHome: filepath.Join(t.TempDir(), ".agentdock"), RecallEndpoint: server.URL}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
 	}

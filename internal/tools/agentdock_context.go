@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/uvwt/agentdock/internal/config"
 )
 
 func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
@@ -226,7 +228,7 @@ func (r *Runtime) memoryCapabilitySummary(ctx context.Context) (string, []capabi
 	if strings.TrimSpace(r.cfg.RecallEndpoint) == "" {
 		return "- RecallDock 未配置；无法自动注入记忆精简摘要。", nil, "recall endpoint is not configured"
 	}
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(capMaxInt(1000, capMinInt(r.cfg.RecallTimeoutMS, 5000)))*time.Millisecond)
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(capMaxInt(1000, capMinInt(config.RecallTimeoutMS, 5000)))*time.Millisecond)
 	defer cancel()
 	result, err := r.recallBootstrap(ctx, map[string]any{"max_bytes": 3000})
 	if err != nil {
