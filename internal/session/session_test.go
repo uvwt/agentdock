@@ -45,6 +45,36 @@ func TestStartCapturesCompleteOutputAndExitState(t *testing.T) {
 	}
 }
 
+func TestStartCapturesFastCommandOutputRepeatedly(t *testing.T) {
+	requirePOSIXShell(t)
+	const iterations = 200
+	for iteration := range iterations {
+		s, _, err := Start(
+			context.Background(),
+			"printf 'fast-output'",
+			t.TempDir(),
+			os.Environ(),
+			time.Second,
+			nil,
+		)
+		if err != nil {
+			t.Fatalf("iteration %d Start() error = %v", iteration, err)
+		}
+		<-s.Done
+		s.Cancel()
+		if err := s.WaitError(); err != nil {
+			t.Fatalf("iteration %d WaitError() = %v", iteration, err)
+		}
+		result := s.Snapshot("exited", 1024)
+		if result["stdout"] != "fast-output" {
+			t.Fatalf("iteration %d stdout = %#v, want fast-output", iteration, result["stdout"])
+		}
+		if result["stdout_total_bytes"] != len("fast-output") {
+			t.Fatalf("iteration %d stdout_total_bytes = %#v", iteration, result["stdout_total_bytes"])
+		}
+	}
+}
+
 func TestStartCompletionSignalSupportsMultipleObservers(t *testing.T) {
 	requirePOSIXShell(t)
 	s, _, err := Start(context.Background(), "exit 0", t.TempDir(), os.Environ(), time.Second, nil)

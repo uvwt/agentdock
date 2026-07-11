@@ -122,43 +122,24 @@ func Start(ctx context.Context, command, workdir string, env []string, timeout t
 		cleanup()
 		return nil, status, err
 	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		cancel()
-		cleanup()
-		return nil, status, err
+	s := &Session{
+		ID: id, Command: cmd, Cancel: cancel, Stdin: stdin,
+		StartedAt: time.Now(), Done: make(chan struct{}), exitCode: -1,
 	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		cancel()
-		cleanup()
-		return nil, status, err
-	}
+	cmd.Stdout = sessionOutputWriter{session: s}
+	cmd.Stderr = sessionOutputWriter{session: s, stderr: true}
 	if err := cmd.Start(); err != nil {
+		_ = stdin.Close()
 		cancel()
 		cleanup()
 		return nil, status, err
 	}
 	cleanup()
 
-	s := &Session{
-		ID: id, Command: cmd, Cancel: cancel, Stdin: stdin,
-		StartedAt: time.Now(), Done: make(chan struct{}), exitCode: -1,
-	}
-	var output sync.WaitGroup
-	output.Add(2)
 	go func() {
-		defer output.Done()
-		s.copyTo(&s.stdout, stdout)
-	}()
-	go func() {
-		defer output.Done()
-		s.copyTo(&s.stderr, stderr)
-	}()
-	go func() {
+		// exec.Cmd.Wait 会等待其内部 stdout/stderr 复制协程完成，因此完成快照
+		// 不会与快速退出命令争抢管道关闭时机，也不会遗漏尾部输出。
 		waitErr := cmd.Wait()
-		// Wait 返回后仍要等两个读取协程排空管道，保证完成快照不会遗漏尾部输出。
-		output.Wait()
 		s.mu.Lock()
 		s.waitErr = waitErr
 		s.completed = true
@@ -243,30 +224,33 @@ func (s *Session) Snapshot(status string, maxBytes int) map[string]any {
 	return result
 }
 
-func (s *Session) copyTo(dst *bytes.Buffer, src io.Reader) {
-	buf := make([]byte, 32*1024)
-	for {
-		n, err := src.Read(buf)
-		if n > 0 {
-			s.mu.Lock()
-			_, _ = dst.Write(buf[:n])
-			if dst == &s.stdout {
-				s.stdoutTotalBytes += n
-				dropped := trimBuffer(dst, 4*1024*1024)
-				s.stdoutDroppedBytes += dropped
-				s.stdoutCursor = adjustCursorAfterDrop(s.stdoutCursor, dropped)
-			} else {
-				s.stderrTotalBytes += n
-				dropped := trimBuffer(dst, 4*1024*1024)
-				s.stderrDroppedBytes += dropped
-				s.stderrCursor = adjustCursorAfterDrop(s.stderrCursor, dropped)
-			}
-			s.mu.Unlock()
-		}
-		if err != nil {
-			return
-		}
+type sessionOutputWriter struct {
+	session *Session
+	stderr  bool
+}
+
+func (w sessionOutputWriter) Write(data []byte) (int, error) {
+	s := w.session
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	dst := &s.stdout
+	if w.stderr {
+		dst = &s.stderr
 	}
+	n, err := dst.Write(data)
+	if w.stderr {
+		s.stderrTotalBytes += n
+		dropped := trimBuffer(dst, 4*1024*1024)
+		s.stderrDroppedBytes += dropped
+		s.stderrCursor = adjustCursorAfterDrop(s.stderrCursor, dropped)
+	} else {
+		s.stdoutTotalBytes += n
+		dropped := trimBuffer(dst, 4*1024*1024)
+		s.stdoutDroppedBytes += dropped
+		s.stdoutCursor = adjustCursorAfterDrop(s.stdoutCursor, dropped)
+	}
+	return n, err
 }
 
 func ShellCommand(ctx context.Context, command string) *exec.Cmd {
