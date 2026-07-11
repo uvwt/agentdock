@@ -132,6 +132,32 @@ func InputSchema(name string) map[string]any {
 		props["activate"] = boolProp("Activate the installed version. Defaults to true.")
 		props["max_bytes"] = intProp("Maximum validate/install package bytes.")
 		required = []string{"action"}
+	case "mcp_manage":
+		props["action"] = map[string]any{"type": "string", "description": "Dynamic MCP server action.", "enum": []string{"list", "inspect", "add", "remove", "enable", "disable", "refresh"}}
+		props["name"] = stringProp("Dynamic MCP server name. Use a stable short identifier such as figma or github.")
+		props["description"] = stringProp("Short capability description shown in agentdock_context.")
+		props["transport"] = map[string]any{"type": "string", "description": "MCP transport for action=add.", "enum": []string{"streamable_http", "stdio"}}
+		props["url"] = stringProp("Absolute MCP endpoint URL for transport=streamable_http.")
+		props["command"] = stringProp("Executable name or path for transport=stdio.")
+		props["args"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Command arguments for transport=stdio."}
+		props["cwd"] = stringProp("Optional absolute working directory for transport=stdio.")
+		props["header_env"] = map[string]any{"type": "object", "description": "HTTP header name to host environment variable name. Secret values are never stored in the MCP registry.", "additionalProperties": map[string]any{"type": "string"}}
+		props["env_from_env"] = map[string]any{"type": "object", "description": "Child process environment variable name to host environment variable name for stdio. Secret values are never stored in the MCP registry.", "additionalProperties": map[string]any{"type": "string"}}
+		props["enabled"] = boolProp("Enable the server after registration. Defaults to true.")
+		props["timeout_ms"] = boundedIntProp("Per-request timeout. Defaults to 30000 and is capped at 300000.", 1, 300000)
+		required = []string{"action"}
+	case "mcp_tool_search":
+		props["query"] = stringProp("Capability or tool query.")
+		props["server"] = stringProp("Optional dynamic MCP server name from agentdock_context.")
+		props["limit"] = boundedIntProp("Maximum matching tools. Defaults to 10 and is capped at 100.", 1, 100)
+		required = []string{"query"}
+	case "mcp_tool_inspect":
+		props["name"] = stringProp("Qualified dynamic MCP tool name in <server>:<tool> form.")
+		required = []string{"name"}
+	case "mcp_tool_call":
+		props["name"] = stringProp("Qualified dynamic MCP tool name in <server>:<tool> form.")
+		props["arguments"] = map[string]any{"type": "object", "description": "Arguments matching the schema returned by mcp_tool_inspect.", "additionalProperties": true}
+		required = []string{"name", "arguments"}
 	case "file_publish":
 		props["file"] = map[string]any{"type": "string", "format": "binary", "description": "Top-level file parameter. Connector runtimes should pass the mounted local path when available."}
 		props["path"] = stringProp("Local file or directory path visible to this AgentDock instance. Relative paths resolve from ~/AgentDock.")
@@ -287,7 +313,7 @@ func InputSchema(name string) map[string]any {
 
 	schema := map[string]any{"type": "object", "properties": props, "additionalProperties": true}
 	switch name {
-	case "recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain", "private_note_manage":
+	case "recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain", "private_note_manage", "mcp_manage", "mcp_tool_search", "mcp_tool_inspect", "mcp_tool_call":
 		// Recall public schemas are intentionally closed: only model-facing fields are accepted.
 		schema["additionalProperties"] = false
 	}

@@ -65,7 +65,7 @@ func TestRuntimeExposesSingleToolSet(t *testing.T) {
 	for _, name := range rt.ToolNames() {
 		seen[name] = true
 	}
-	for _, name := range []string{"agentdock_context", "git_read", "git_write", "session_observe", "session_act", "recall_read", "recall_write", "skill_package"} {
+	for _, name := range []string{"agentdock_context", "git_read", "git_write", "session_observe", "session_act", "recall_read", "recall_write", "skill_package", "mcp_manage", "mcp_tool_search", "mcp_tool_inspect", "mcp_tool_call"} {
 		if !seen[name] {
 			t.Fatalf("single tool set missing %s: %#v", name, seen)
 		}
@@ -99,6 +99,9 @@ func TestAgentDockContextSchemaIsModelFacingEntrypoint(t *testing.T) {
 	}
 	if _, ok := outputProps["skills"]; !ok {
 		t.Fatal("agentdock_context output schema missing lightweight skills index")
+	}
+	if _, ok := outputProps["dynamic_mcp"]; !ok {
+		t.Fatal("agentdock_context output schema missing lightweight dynamic MCP index")
 	}
 	for _, name := range []string{"generated_at", "summary", "counts", "base_tools", "task_templates", "memory", "rules"} {
 		if _, ok := outputProps[name]; ok {

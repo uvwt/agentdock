@@ -162,7 +162,25 @@ func toolEnvelope(name string, structured any, err error) map[string]any {
 			return map[string]any{"isError": false, "structuredContent": clean, "content": []map[string]any{{"type": "image", "data": data, "mimeType": mimeType}}}
 		}
 	}
+	if name == "mcp_tool_call" {
+		return dynamicMCPToolEnvelope(structured)
+	}
 	return map[string]any{"isError": false, "structuredContent": structured, "content": []map[string]any{{"type": "text", "text": pretty(structured)}}}
+}
+
+func dynamicMCPToolEnvelope(structured any) map[string]any {
+	payload := asMap(structured)
+	remote, _ := payload["result"].(map[string]any)
+	isError, _ := remote["isError"].(bool)
+	content, ok := remote["content"]
+	if !ok {
+		content = []map[string]any{{"type": "text", "text": pretty(payload)}}
+	}
+	return map[string]any{
+		"isError":           isError,
+		"structuredContent": payload,
+		"content":           content,
+	}
 }
 
 func cloneWithoutInternalImage(value map[string]any) map[string]any {

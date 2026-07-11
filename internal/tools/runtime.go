@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/mcpclient"
 	"github.com/uvwt/agentdock/internal/taskstate"
 	"github.com/uvwt/agentdock/internal/workspace"
 )
@@ -29,6 +30,7 @@ type Runtime struct {
 	ws             *workspace.Workspace
 	sessions       *SessionStore
 	skills         *skillManager
+	mcpClients     *mcpclient.Manager
 	tasks          *taskstate.Store
 	privateNotesMu sync.RWMutex
 }
@@ -42,15 +44,26 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	mcpClients, err := mcpclient.NewManager(cfg.AgentDockHome)
+	if err != nil {
+		return nil, err
+	}
 	tasks, err := taskstate.New(filepath.Join(cfg.AgentDockHome, "tasks"))
 	if err != nil {
 		return nil, err
 	}
-	return &Runtime{cfg: cfg, ws: ws, sessions: NewSessionStore(), skills: skills, tasks: tasks}, nil
+	return &Runtime{cfg: cfg, ws: ws, sessions: NewSessionStore(), skills: skills, mcpClients: mcpClients, tasks: tasks}, nil
 }
 
 func (r *Runtime) Config() config.Config           { return r.cfg }
 func (r *Runtime) Workspace() *workspace.Workspace { return r.ws }
+
+func (r *Runtime) Close() error {
+	if r == nil || r.mcpClients == nil {
+		return nil
+	}
+	return r.mcpClients.Close()
+}
 
 func (r *Runtime) ToolNames() []string {
 	specs := r.availableToolSpecs()

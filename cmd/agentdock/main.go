@@ -44,6 +44,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if err := runtime.Close(); err != nil {
+			slog.Warn("runtime close failed", "error", err)
+		}
+	}()
 	server := mcp.NewServer(runtime, cfg)
 	if cfg.Stdio {
 		return server.ServeStdio(os.Stdin, os.Stdout)

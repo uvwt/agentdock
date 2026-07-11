@@ -30,6 +30,7 @@ func OutputSchema(name string) map[string]any {
 	case "agentdock_context":
 		props["context"] = stringProp("Rendered AgentDock bootstrap context text for clients that cannot inject system prompt context.")
 		props["skills"] = arrayProp("Lightweight Skill index entries containing name, description, and skill:// file URI.")
+		props["dynamic_mcp"] = arrayProp("Enabled dynamic MCP entries containing only name and description.")
 	case "read_file":
 		props["path"] = stringProp("Host path or skill:// resource URI. Relative Host paths resolve from ~/AgentDock.")
 		props["content"] = stringProp("Text content slice.")
@@ -115,6 +116,33 @@ func OutputSchema(name string) map[string]any {
 		props["issues"] = arrayProp("Structured validation issues.")
 		props["document"] = objectProp("Parsed SKILL.md frontmatter and body metadata.")
 		props["result"] = objectProp("Install or rollback result.")
+	case "mcp_manage":
+		props["action"] = stringProp("Completed dynamic MCP management action.")
+		props["servers"] = arrayProp("Registered dynamic MCP server summaries.")
+		props["server"] = objectProp("Dynamic MCP server summary.")
+		props["config"] = objectProp("Dynamic MCP server configuration containing only non-secret values and environment variable names.")
+		props["tools"] = arrayProp("Discovered lightweight MCP tool summaries.")
+		props["tool_count"] = intProp("Discovered tool count.")
+		props["count"] = intProp("Registered server count.")
+		props["name"] = stringProp("Dynamic MCP server name.")
+		props["removed"] = boolProp("Whether the server was removed.")
+	case "mcp_tool_search":
+		props["query"] = stringProp("Capability query used.")
+		props["server"] = stringProp("Optional server filter used.")
+		props["tools"] = arrayProp("Matching lightweight MCP tool summaries.")
+		props["count"] = intProp("Matching tool count.")
+	case "mcp_tool_inspect":
+		props["name"] = stringProp("Qualified MCP tool name.")
+		props["server"] = stringProp("Dynamic MCP server name.")
+		props["tool_name"] = stringProp("Upstream MCP tool name.")
+		props["title"] = stringProp("Tool title.")
+		props["description"] = stringProp("Tool description.")
+		props["input_schema"] = objectProp("Complete upstream MCP tool input schema.")
+		props["output_schema"] = objectProp("Optional upstream MCP tool output schema.")
+		props["annotations"] = objectProp("Optional upstream MCP tool annotations.")
+	case "mcp_tool_call":
+		props["name"] = stringProp("Qualified MCP tool name.")
+		props["result"] = objectProp("Raw upstream MCP tools/call result, including content and structuredContent when supplied.")
 	case "file_publish":
 		props["artifact_id"] = stringProp("Published artifact id.")
 		props["url"] = stringProp("Temporary signed download URL.")

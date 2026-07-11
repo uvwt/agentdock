@@ -15,12 +15,14 @@ func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
 	baseToolLines := baseToolSummaryLines(baseTools)
 
 	skillItems, skillSummary, _ := r.skillCapabilityIndex()
+	dynamicMCPItems, dynamicMCPSummary := r.dynamicMCPCapabilityIndex()
 	_, templateSummary, _ := r.templateCapabilityIndex(ctx)
 	memorySummary, _, _ := r.memoryCapabilitySummary(ctx)
 
 	rules := []string{
 		"需要真实执行命令或检查环境时，先用 exec_command 查看现状，再修改，修改后真实验证。",
 		"先根据 Skill 索引的 name 和 description 选择相关 Skill，再用 read_file 读取其 file 指向的 SKILL.md；Skill 只提供流程与约束，实际操作使用命令、文件、浏览器或 MCP 工具。",
+		"AgentDock 自带工具直接调用；动态 MCP 工具先用 mcp_tool_search 查找、mcp_tool_inspect 读取 schema，再用 mcp_tool_call 执行。",
 		"涉及多步骤开发、部署、排障、迁移、Docker、VPS 或 Git 提交推送时，先 workflow_template_manage match；无合适模板时创建普通可恢复任务。",
 		"记忆摘要只提供高优先级规则；具体历史事实不确定时，再用 recall_search 或 recall_read 精确召回。",
 		"普通项目记忆走 recall_*；private_note_manage 只在用户明确要求隐私/本机不同步，或内容明显包含 secret、凭据、个人敏感信息时使用。",
@@ -29,6 +31,7 @@ func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
 	sections := []capabilitySection{
 		{Title: "基础工具索引", Lines: baseToolLines},
 		{Title: "Skill 能力索引", Lines: splitNonEmptyLines(skillSummary)},
+		{Title: "动态 MCP 索引", Lines: splitNonEmptyLines(dynamicMCPSummary)},
 		{Title: "任务模板索引", Lines: splitNonEmptyLines(templateSummary)},
 		{Title: "记忆精简摘要", Lines: splitNonEmptyLines(memorySummary)},
 		{Title: "使用规则", Lines: rules},
@@ -36,9 +39,10 @@ func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
 	contextText := renderAgentDockContext(sections)
 
 	return Result{
-		"ok":      true,
-		"context": contextText,
-		"skills":  skillItems,
+		"ok":          true,
+		"context":     contextText,
+		"skills":      skillItems,
+		"dynamic_mcp": dynamicMCPItems,
 	}, nil
 }
 func (r *Runtime) agentDockContextTool(ctx context.Context, _ map[string]any) (Result, error) {
@@ -59,6 +63,11 @@ type capabilitySkillItem struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	File        string `json:"file"`
+}
+
+type capabilityDynamicMCPItem struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 type capabilityTemplateItem struct {
@@ -101,6 +110,7 @@ func baseToolCapabilityItems() []capabilityBaseToolItem {
 		{Name: "exec_command", Description: "执行命令，用于查看真实环境、运行测试、构建、部署和排障；实际权限由运行用户和部署边界决定。"},
 		{Name: "read_file", Description: "读取普通 UTF-8 文件或 skill:// 逻辑路径指向的 Skill 文档与引用资源。"},
 		{Name: "skill_package", Description: "管理 Skill 包生命周期：validate / install / rollback。"},
+		{Name: "mcp_manage / mcp_tool_search / mcp_tool_inspect / mcp_tool_call", Description: "管理和调用动态 MCP；远端工具不会混入 AgentDock 自带工具列表。"},
 		{Name: "task_manage", Description: "管理可恢复任务；模板发现通过 workflow_template_manage match。"},
 		{Name: "recall_bootstrap / recall_search / recall_read", Description: "读取记忆精简上下文、搜索记忆和精确读取 runbook。"},
 		{Name: "private_note_manage", Description: "低频显式隐私笔记保险箱；默认不要用，只有用户要求隐私/本机不同步或内容明显敏感时再调用。"},
@@ -121,6 +131,24 @@ func capabilityItemLine(name, description string) string {
 		line += "：" + description
 	}
 	return line
+}
+
+func (r *Runtime) dynamicMCPCapabilityIndex() ([]capabilityDynamicMCPItem, string) {
+	servers := r.mcpClients.EnabledIndex()
+	items := make([]capabilityDynamicMCPItem, 0, len(servers))
+	lines := []string{"当前已启用的动态 MCP 轻量索引如下；这里只展示名称和描述，具体工具按需发现。"}
+	for _, server := range servers {
+		item := capabilityDynamicMCPItem{
+			Name:        server.Name,
+			Description: truncateString(strings.TrimSpace(server.Description), 160),
+		}
+		items = append(items, item)
+		lines = append(lines, truncateString("- name: "+item.Name+"; description: "+item.Description, 260))
+	}
+	if len(items) == 0 {
+		lines = append(lines, "- 当前没有已启用的动态 MCP；需要时通过 mcp_manage 注册或启用。")
+	}
+	return items, strings.Join(lines, "\n")
 }
 
 func (r *Runtime) skillCapabilityIndex() ([]capabilitySkillItem, string, string) {
