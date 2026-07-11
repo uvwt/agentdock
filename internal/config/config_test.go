@@ -6,9 +6,15 @@ import (
 	"testing"
 )
 
+func setTestUserHome(t *testing.T, home string) {
+	t.Helper()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+}
+
 func TestNormalizeDefaultsToUserDirectories(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestUserHome(t, home)
 	cfg := Config{}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
@@ -25,7 +31,7 @@ func TestNormalizeDefaultsToUserDirectories(t *testing.T) {
 
 func TestFromEnvIgnoresOldDirectoryConfig(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestUserHome(t, home)
 	t.Setenv("AGENTDOCK_WORKSPACE", "/tmp/old-workspace")
 	t.Setenv("AGENTDOCK_RUNTIME_PROFILE", "workspace")
 	t.Setenv("AGENTDOCK_DIR", "/tmp/old-control")

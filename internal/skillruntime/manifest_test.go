@@ -16,6 +16,7 @@ metadata:
   displayName: Demo
   description: Demo skill
 spec:
+  runtime: binary
   entrypoint: run.sh
   operations:
     - name: echo
@@ -58,6 +59,7 @@ metadata:
   displayName: Demo
   description: Demo skill
 spec:
+  runtime: binary
   entrypoint: run.sh
   operations:
     - name: echo
@@ -103,6 +105,7 @@ metadata:
   displayName: Demo
   description: Demo skill
 spec:
+  runtime: binary
   entrypoint: run.sh
   operations:
     - name: echo
@@ -149,4 +152,30 @@ func FuzzParseManifestDoesNotPanic(f *testing.F) {
 		}
 		_, _ = ParseManifest(data)
 	})
+}
+
+func TestWindowsCompatibilityRequiresExplicitRuntime(t *testing.T) {
+	manifest := Manifest{
+		APIVersion: ManifestAPIVersion,
+		Kind:       ManifestKind,
+		Metadata: Metadata{
+			Name: "demo-skill", Version: "1.0.0", DisplayName: "Demo", Description: "Demo skill",
+		},
+		Spec: Spec{
+			Entrypoint: "run.py",
+			Operations: []Operation{{
+				Name: "status", Description: "Status", TimeoutSeconds: 5,
+				InputSchema: map[string]any{"type": "object"}, OutputSchema: map[string]any{"type": "object"},
+			}},
+			Compatibility: Compatibility{Platforms: []string{"windows"}, Architectures: []string{"amd64"}},
+			Permissions:   Permissions{},
+		},
+	}
+	if err := ValidateManifest(manifest); err == nil || !strings.Contains(err.Error(), "spec.runtime: is required") {
+		t.Fatalf("ValidateManifest() error = %v", err)
+	}
+	manifest.Spec.Runtime = RuntimePython
+	if err := ValidateManifest(manifest); err != nil {
+		t.Fatalf("ValidateManifest() with explicit runtime: %v", err)
+	}
 }

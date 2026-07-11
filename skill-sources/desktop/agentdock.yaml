@@ -3,7 +3,7 @@
   "kind": "Skill",
   "metadata": {
     "name": "desktop",
-    "version": "1.0.5",
+    "version": "1.0.6",
     "displayName": "macOS Desktop Automation",
     "description": "macOS desktop observation, screenshots, Accessibility actions, pointer/keyboard control, and clipboard operations implemented as a native AgentDock Skill Runtime package."
   },
@@ -361,6 +361,7 @@
     },
     "verification": [
       "status"
-    ]
+    ],
+    "runtime": "python"
   }
 }

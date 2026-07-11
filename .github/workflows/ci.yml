@@ -11,8 +11,12 @@ permissions:
 
 jobs:
   go:
-    name: Go check
-    runs-on: ubuntu-latest
+    name: Go check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,8 +28,8 @@ jobs:
           cache: true
 
       - name: Format check
-        run: |
-          test -z "$(gofmt -l ./cmd ./internal)"
+        shell: bash
+        run: test -z "$(gofmt -l ./cmd ./internal)"
 
       - name: Test
         run: go test ./...
@@ -35,3 +39,26 @@ jobs:
 
       - name: Build
         run: go build ./cmd/agentdock
+
+      - name: Check browser runner syntax
+        run: node --check examples/browser-runner/browser-runner.js
+
+      - name: Check PowerShell installer syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($path in @('scripts/install-windows.ps1', 'scripts/uninstall-windows.ps1')) {
+            $tokens = $null
+            $errors = $null
+            [void] [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path),
+              [ref] $tokens,
+              [ref] $errors
+            )
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "${path}: $($_.Message)" }
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }

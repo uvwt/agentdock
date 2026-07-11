@@ -8,12 +8,14 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/uvwt/agentdock/internal/securepath"
 )
 
 const (
 	ProtocolVersion    = "2025-06-18"
 	ServerName         = "agentdock"
-	Version            = "0.3.0-go"
+	Version            = "0.2.0"
 	PathModel          = "host"
 	BrowserRunnerDir   = "browser-runner"
 	BrowserArtifactDir = "browser-artifacts"
@@ -97,6 +99,9 @@ func (c *Config) Normalize() error {
 		}
 		if !info.IsDir() {
 			return fmt.Errorf("%s is not a directory: %s", path.label, cleaned)
+		}
+		if err := securepath.EnsurePrivate(cleaned); err != nil {
+			return fmt.Errorf("secure %s %s: %w", path.label, cleaned, err)
 		}
 		*path.value = cleaned
 	}

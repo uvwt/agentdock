@@ -107,6 +107,13 @@ func ValidateManifest(m Manifest) error {
 	if strings.TrimSpace(m.Metadata.Description) == "" {
 		add("metadata.description", "is required")
 	}
+	runtimeName := strings.ToLower(strings.TrimSpace(m.Spec.Runtime))
+	if runtimeName != "" && runtimeName != RuntimeBinary && runtimeName != RuntimePython && runtimeName != RuntimeNode && runtimeName != RuntimePowerShell {
+		add("spec.runtime", "must be binary, python, node or powershell")
+	}
+	if contains(m.Spec.Compatibility.Platforms, "windows") && runtimeName == "" {
+		add("spec.runtime", "is required when Windows compatibility is declared")
+	}
 	if err := validateRelativePackagePath(m.Spec.Entrypoint); err != nil {
 		add("spec.entrypoint", err.Error())
 	}
@@ -140,8 +147,8 @@ func ValidateManifest(m Manifest) error {
 		add("spec.compatibility.platforms", "at least one platform is required")
 	}
 	for i, value := range m.Spec.Compatibility.Platforms {
-		if value != "darwin" && value != "linux" {
-			add(fmt.Sprintf("spec.compatibility.platforms[%d]", i), "must be darwin or linux")
+		if value != "darwin" && value != "linux" && value != "windows" {
+			add(fmt.Sprintf("spec.compatibility.platforms[%d]", i), "must be darwin, linux or windows")
 		}
 	}
 	if len(m.Spec.Compatibility.Architectures) == 0 {
@@ -197,11 +204,19 @@ func ValidatePackageManifest(packageDir string, m Manifest) error {
 	return nil
 }
 
+func hasWindowsDrivePrefix(value string) bool {
+	if len(value) < 2 || value[1] != ':' {
+		return false
+	}
+	letter := value[0]
+	return (letter >= 'A' && letter <= 'Z') || (letter >= 'a' && letter <= 'z')
+}
+
 func validateRelativePackagePath(value string) error {
 	if strings.TrimSpace(value) == "" {
 		return errors.New("is required")
 	}
-	if filepath.IsAbs(value) || strings.Contains(value, `\`) {
+	if strings.HasPrefix(value, "/") || filepath.IsAbs(value) || strings.Contains(value, `\`) || hasWindowsDrivePrefix(value) {
 		return errors.New("must be a slash-separated relative path")
 	}
 	for _, part := range strings.Split(value, "/") {

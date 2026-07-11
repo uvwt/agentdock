@@ -61,6 +61,16 @@ bash scripts/install-linux.sh
 
 脚本会按提示填写安装目录、运行目录、监听端口、Bearer token、RecallDock/NexusDock workflow endpoint/token 可选配置，并按系统写入 systemd 或 OpenRC 服务、启动和验证。需要源码构建时选择 `source`；Alpine/极简系统可先用 `scripts/install-linux-bootstrap.sh` 补齐 `bash/curl`，单文件远程安装见 [Linux 问答式一键部署](docs/install-linux-interactive.md)。
 
+## Windows 原生安装
+
+Windows 11 x64/ARM64 可直接运行原生 `agentdock.exe`，不要求 WSL2：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-windows.ps1
+```
+
+加 `-RegisterStartup` 可注册当前用户登录自启动，并自动生成受 DPAPI 保护的 Bearer token。详见 [Windows 原生安装](docs/install-windows.md)。
+
 ## macOS 裸机更新
 
 ```bash
@@ -73,6 +83,7 @@ make smoke-macos
 
 ## 文档
 
+- [Windows 原生安装](docs/install-windows.md)
 - [macOS 裸机 launchd 部署](docs/install-macos-launchd.md)
 - [Docker 部署](docs/install-docker.md)
 - [VPS systemd 部署](docs/install-vps-systemd.md)

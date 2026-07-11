@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import net from 'node:net';
 import http from 'node:http';
 
@@ -60,7 +60,7 @@ function playwrightBundledChromiumMissingPayload(err) {
 function canFallbackToSystemChrome(session) {
   const browser = String(session.browser || '').toLowerCase();
   const channel = String(session.channel || '').toLowerCase();
-  if (process.platform !== 'darwin') return false;
+  if (process.platform !== 'darwin' && process.platform !== 'win32') return false;
   if (channel) return false;
   // 只有默认 bundled Chromium 路径失败时才自动切系统 Chrome；用户显式指定浏览器时保留其选择。
   if (session.browser_defaulted === false) return false;
@@ -160,6 +160,23 @@ async function platformBrowserPath(session) {
     }
   } else if (process.platform === 'linux') {
     candidates.push('/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser');
+  } else if (process.platform === 'win32') {
+    const programFiles = process.env.ProgramFiles || 'C:\Program Files';
+    const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\Program Files (x86)';
+    const localAppData = process.env.LOCALAPPDATA || '';
+    const chromePaths = [
+      path.join(programFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      path.join(programFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      localAppData && path.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe')
+    ];
+    const edgePaths = [
+      path.join(programFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      path.join(programFilesX86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      localAppData && path.join(localAppData, 'Microsoft', 'Edge', 'Application', 'msedge.exe')
+    ];
+    if (browser === 'edge' || browser === 'msedge' || channel === 'msedge') candidates.push(...edgePaths);
+    if (browser === 'chrome' || channel === 'chrome') candidates.push(...chromePaths);
+    if (browser === 'system' || browser === '') candidates.push(...chromePaths, ...edgePaths);
   }
   return candidates.find(candidate => {
     try { return candidate && fsSync.existsSync(candidate); } catch { return false; }
@@ -544,6 +561,12 @@ function stopVisibleProcess(session) {
   const pid = Number(session?.visible_process?.pid || 0);
   if (!pid) return false;
   try {
+    if (process.platform === 'win32') {
+      return spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], {
+        stdio: 'ignore',
+        windowsHide: true
+      }).status === 0;
+    }
     process.kill(pid, 'SIGTERM');
     return true;
   } catch {

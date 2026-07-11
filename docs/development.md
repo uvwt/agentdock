@@ -59,3 +59,17 @@ make clean-local-artifacts
 - 保持高风险工具的权限门禁、路径策略、认证和日志脱敏边界。
 - 新增具体应用自动化能力应使用原生 Skill Runtime 包，不使用旧动态 plugin 路径。
 - 修改工具描述、schema、path policy、权限、Skill Runtime、env registry、命令执行、HTTP auth 或桌面/浏览器自动化时，更新测试。
+
+
+## 跨平台 Skill Runtime
+
+`agentdock.yaml` 的 `spec.runtime` 用于明确入口文件的解释器，允许值为：
+
+- `binary`：直接执行包内原生二进制。
+- `python`：Windows 使用 `python.exe`，macOS/Linux 优先使用 `python3`。
+- `node`：使用 Node.js 执行入口脚本。
+- `powershell`：Windows 优先使用 PowerShell 7，回退到 Windows PowerShell；macOS/Linux 使用 `pwsh`。
+
+只声明 `darwin` 或 `linux` 的旧包可以继续省略 `spec.runtime`，保持现有 shebang 行为。任何声明 `windows` 兼容的平台包都必须显式提供 runtime，不能依赖 `.sh`、文件可执行位或隐式文件关联。
+
+平台相关进程实现必须放在带构建标签的文件中。公共 Go 文件不能直接引用 Unix `syscall` 或 Windows API。命令、Skill 和交互终端的进程树统一通过 `internal/processcontrol` 管理。

@@ -29,6 +29,7 @@ type Metadata struct {
 }
 
 type Spec struct {
+	Runtime       string        `json:"runtime,omitempty"`
 	Entrypoint    string        `json:"entrypoint"`
 	Operations    []Operation   `json:"operations"`
 	Compatibility Compatibility `json:"compatibility"`

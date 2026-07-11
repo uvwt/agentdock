@@ -110,8 +110,7 @@ func boolValue(value any) bool {
 }
 
 func pathOutsideRoot(relative string) bool {
-	cleaned := filepath.Clean(relative)
-	return filepath.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator))
+	return !filepath.IsLocal(filepath.Clean(relative))
 }
 
 func truncateBytes(data []byte, maxBytes int) (string, bool) {

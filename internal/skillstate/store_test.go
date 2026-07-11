@@ -156,7 +156,7 @@ func lockOwnerName(t *testing.T, lockPath string) string {
 	return entries[0].Name()
 }
 
-func TestActivateRestoresPreviousLinkWhenStateSaveFails(t *testing.T) {
+func TestActivateKeepsPreviousStateWhenAtomicSaveFails(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test requires POSIX directory permissions")
 	}
@@ -190,12 +190,32 @@ func TestActivateRestoresPreviousLinkWhenStateSaveFails(t *testing.T) {
 	if err := store.Activate(context.Background(), "demo", "2.0.0", ChannelStable); err == nil {
 		t.Fatal("Activate() succeeded despite unwritable state directory")
 	}
-	target, err := os.Readlink(filepath.Join(store.Root(), "active", "demo"))
+	active, err := store.ActiveVersion("demo")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := filepath.Base(filepath.Clean(target)); got != "1.0.0" {
-		t.Fatalf("active link = %q, want previous version 1.0.0", got)
+	if active != "1.0.0" {
+		t.Fatalf("active version = %q, want previous version 1.0.0", active)
+	}
+}
+
+func TestActivationDoesNotCreateLegacyActiveSymlink(t *testing.T) {
+	store, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := store.InstalledPath("demo", "1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Activate(context.Background(), "demo", "1.0.0", ChannelStable); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(store.Root(), "active")); !os.IsNotExist(err) {
+		t.Fatalf("legacy active directory exists: %v", err)
 	}
 }
 

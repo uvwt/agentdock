@@ -12,10 +12,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/uvwt/agentdock/internal/atomicfile"
+	"github.com/uvwt/agentdock/internal/securepath"
 )
 
 type Channel string
@@ -63,9 +63,13 @@ func New(root string) (*Store, error) {
 func (s *Store) Root() string { return s.root }
 
 func (s *Store) EnsureLayout() error {
-	for _, name := range []string{"installed", "active", "cache", "state", "locks", "tmp"} {
-		if err := os.MkdirAll(filepath.Join(s.root, name), 0o700); err != nil {
+	for _, name := range []string{"installed", "cache", "state", "locks", "tmp"} {
+		path := filepath.Join(s.root, name)
+		if err := os.MkdirAll(path, 0o700); err != nil {
 			return fmt.Errorf("create skill state directory %s: %w", name, err)
+		}
+		if err := securepath.EnsurePrivate(path); err != nil {
+			return fmt.Errorf("secure skill state directory %s: %w", name, err)
 		}
 	}
 	return nil
@@ -161,17 +165,7 @@ func (s *Store) ActiveVersion(skill string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if state.ActiveVersion != "" {
-		return state.ActiveVersion, nil
-	}
-	target, err := os.Readlink(filepath.Join(s.root, "active", skill))
-	if os.IsNotExist(err) {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	return filepath.Base(filepath.Clean(target)), nil
+	return state.ActiveVersion, nil
 }
 
 func (s *Store) Snapshot(skill string) (Selection, error) {
@@ -251,58 +245,8 @@ func (s *Store) Activate(ctx context.Context, skill, version string, channel Cha
 	state.Channels[channel] = version
 	state.UpdatedAt = time.Now().UTC()
 
-	activeDir := filepath.Join(s.root, "active")
-	activeLink := filepath.Join(activeDir, skill)
-	previousTarget, previousErr := os.Readlink(activeLink)
-	hadPreviousLink := previousErr == nil
-	if previousErr != nil && !errors.Is(previousErr, os.ErrNotExist) {
-		return fmt.Errorf("read current active symlink: %w", previousErr)
-	}
-
-	tmpLink := filepath.Join(activeDir, fmt.Sprintf(".%s-%d", skill, time.Now().UnixNano()))
-	relTarget := filepath.Join("..", "installed", skill, version)
-	if err := os.Symlink(relTarget, tmpLink); err != nil {
-		return fmt.Errorf("create temporary active symlink: %w", err)
-	}
-	defer func() {
-		if err := os.Remove(tmpLink); err != nil && !errors.Is(err, os.ErrNotExist) {
-			slog.Warn("remove temporary skill link failed", "path", tmpLink, "error", err)
-		}
-	}()
-	if err := os.Rename(tmpLink, activeLink); err != nil {
-		return fmt.Errorf("activate skill atomically: %w", err)
-	}
 	if err := s.save(skill, state); err != nil {
-		rollbackErr := restoreActiveLink(activeDir, activeLink, skill, previousTarget, hadPreviousLink)
-		if rollbackErr != nil {
-			return errors.Join(err, rollbackErr)
-		}
 		return err
-	}
-	return nil
-}
-
-func restoreActiveLink(activeDir, activeLink, skill, previousTarget string, hadPrevious bool) error {
-	if !hadPrevious {
-		if err := os.Remove(activeLink); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("remove active link after state save failure: %w", err)
-		}
-		return nil
-	}
-
-	rollbackLink := filepath.Join(activeDir, fmt.Sprintf(".%s-rollback-%d", skill, time.Now().UnixNano()))
-	if err := os.Symlink(previousTarget, rollbackLink); err != nil {
-		return fmt.Errorf("create active rollback symlink: %w", err)
-	}
-	if err := os.Rename(rollbackLink, activeLink); err != nil {
-		cleanupErr := os.Remove(rollbackLink)
-		if cleanupErr != nil && !errors.Is(cleanupErr, os.ErrNotExist) {
-			return errors.Join(
-				fmt.Errorf("restore previous active symlink: %w", err),
-				fmt.Errorf("remove active rollback symlink: %w", cleanupErr),
-			)
-		}
-		return fmt.Errorf("restore previous active symlink: %w", err)
 	}
 	return nil
 }
@@ -445,8 +389,7 @@ func releaseOwnedLock(lockPath, owner string) {
 	}
 	if err := os.Remove(lockPath); err != nil &&
 		!errors.Is(err, os.ErrNotExist) &&
-		!errors.Is(err, syscall.ENOTEMPTY) &&
-		!errors.Is(err, syscall.EEXIST) {
+		!isDirectoryBusy(err) {
 		slog.Warn("release skill lock failed", "path", lockPath, "error", err)
 	}
 }
@@ -461,7 +404,7 @@ func removeStaleOwnedLock(lockPath string) bool {
 		if err == nil || errors.Is(err, os.ErrNotExist) {
 			return true
 		}
-		if !errors.Is(err, syscall.ENOTEMPTY) {
+		if !isDirectoryBusy(err) {
 			slog.Warn("remove empty stale skill lock failed", "path", lockPath, "error", err)
 		}
 		return false
@@ -477,7 +420,7 @@ func removeStaleOwnedLock(lockPath string) bool {
 		if errors.Is(err, os.ErrNotExist) {
 			return true
 		}
-		if !errors.Is(err, syscall.ENOTEMPTY) && !errors.Is(err, syscall.EEXIST) {
+		if !isDirectoryBusy(err) {
 			slog.Warn("remove stale skill lock failed", "path", lockPath, "error", err)
 		}
 		return false

@@ -236,12 +236,12 @@ process.stdout.write(JSON.stringify({ ok: true, operation: payload.operation, sc
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := rt.Call(context.Background(), "browser_snapshot", map[string]any{"timeout_ms": 5000})
+	result, err := rt.Call(context.Background(), "browser_snapshot", map[string]any{"timeout_ms": 15000})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result["screenshot_return_mode"] != "url" {
-		t.Fatalf("screenshot_return_mode = %#v, want url", result["screenshot_return_mode"])
+		t.Fatalf("screenshot_return_mode = %#v, want url; result=%#v", result["screenshot_return_mode"], result)
 	}
 	if _, ok := result["stdout"]; ok {
 		t.Fatalf("parsed browser output should not echo raw stdout: %#v", result)
@@ -385,7 +385,7 @@ process.stdout.write(JSON.stringify({
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := rt.Call(context.Background(), "browser_snapshot", map[string]any{"timeout_ms": 5000})
+	result, err := rt.Call(context.Background(), "browser_snapshot", map[string]any{"timeout_ms": 15000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,10 +405,14 @@ process.stdout.write(JSON.stringify({
 
 func TestExecCommandDoesNotFilterCommandContent(t *testing.T) {
 	rt, _ := newCodeToolsRuntime(t)
+	command := `printf 'shell=%s network=%s\n' "$(printf expansion)" "https://example.test"`
+	if runtime.GOOS == "windows" {
+		command = `Write-Output "shell=expansion network=https://example.test"`
+	}
 	result, err := rt.execCommand(context.Background(), map[string]any{
-		"cmd":             `printf 'shell=%s network=%s\n' "$(printf expansion)" "https://example.test"`,
-		"yield_time_ms":   5000,
-		"timeout_ms":      5000,
+		"cmd":             command,
+		"yield_time_ms":   15000,
+		"timeout_ms":      15000,
 		"wait_until_exit": true,
 	})
 	if err != nil {
@@ -421,11 +425,15 @@ func TestExecCommandDoesNotFilterCommandContent(t *testing.T) {
 
 func TestExecCommandForwardsExplicitEnv(t *testing.T) {
 	rt, _ := newCodeToolsRuntime(t)
+	command := `printf '%s' "$AGENTDOCK_TEST_EXEC_ENV"`
+	if runtime.GOOS == "windows" {
+		command = `[Console]::Out.Write($env:AGENTDOCK_TEST_EXEC_ENV)`
+	}
 	result, err := rt.execCommand(context.Background(), map[string]any{
-		"cmd":             `printf '%s' "$AGENTDOCK_TEST_EXEC_ENV"`,
+		"cmd":             command,
 		"env":             map[string]any{"AGENTDOCK_TEST_EXEC_ENV": "forwarded"},
-		"yield_time_ms":   5000,
-		"timeout_ms":      5000,
+		"yield_time_ms":   15000,
+		"timeout_ms":      15000,
 		"wait_until_exit": true,
 	})
 	if err != nil {
@@ -531,7 +539,7 @@ func TestEditFileReplacesSingleMatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0o640 {
+	if got := info.Mode().Perm(); runtime.GOOS != "windows" && got != 0o640 {
 		t.Fatalf("mode = %v, want 0640", got)
 	}
 }
@@ -633,10 +641,11 @@ func TestSearchTextGoFallbackIncludesColumnsAndContext(t *testing.T) {
 func TestParseRGJSONIncludesColumnsAndContext(t *testing.T) {
 	rt, root := newCodeToolsRuntime(t)
 	abs := filepath.Join(root, "main.go")
+	escapedAbs := strings.ReplaceAll(abs, `\`, `\\`)
 	output := strings.Join([]string{
-		`{"type":"context","data":{"path":{"text":"` + abs + `"},"lines":{"text":"before\n"},"line_number":1}}`,
-		`{"type":"match","data":{"path":{"text":"` + abs + `"},"lines":{"text":"needle here\n"},"line_number":2,"submatches":[{"match":{"text":"needle"},"start":0,"end":6}]}}`,
-		`{"type":"context","data":{"path":{"text":"` + abs + `"},"lines":{"text":"after\n"},"line_number":3}}`,
+		`{"type":"context","data":{"path":{"text":"` + escapedAbs + `"},"lines":{"text":"before\n"},"line_number":1}}`,
+		`{"type":"match","data":{"path":{"text":"` + escapedAbs + `"},"lines":{"text":"needle here\n"},"line_number":2,"submatches":[{"match":{"text":"needle"},"start":0,"end":6}]}}`,
+		`{"type":"context","data":{"path":{"text":"` + escapedAbs + `"},"lines":{"text":"after\n"},"line_number":3}}`,
 	}, "\n")
 	matches, truncated, ok := rt.parseRGJSON([]byte(output), searchOptions{Query: "needle", MaxResults: 10, ContextLines: 1})
 	if !ok || truncated || len(matches) != 1 {
