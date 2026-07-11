@@ -24,7 +24,6 @@ func registerRuntimeAPI(mux *http.ServeMux, server *mcp.Server, cfg config.Confi
 	mux.HandleFunc("/internal/runtime/skills/", h)
 	mux.HandleFunc("/internal/runtime/tasks", h)
 	mux.HandleFunc("/internal/runtime/tasks/", h)
-	mux.HandleFunc("/internal/runtime/env", h)
 }
 
 func runtimeAPIHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc {
@@ -93,9 +92,6 @@ func dispatchRuntimeAPI(ctx context.Context, server *mcp.Server, r *http.Request
 	case strings.HasPrefix(path, "/internal/runtime/tasks/"):
 		id := strings.TrimPrefix(path, "/internal/runtime/tasks/")
 		result, err := server.RuntimeTask(id)
-		return map[string]any(result), err
-	case path == "/internal/runtime/env":
-		result, err := server.RuntimeEnv()
 		return map[string]any(result), err
 	default:
 		return nil, &tools.ToolError{Code: "NOT_FOUND", Message: "runtime API route not found", Category: "not_found"}

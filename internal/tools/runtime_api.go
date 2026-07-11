@@ -95,14 +95,6 @@ func (r *Runtime) RuntimeTask(id string) (Result, error) {
 	return Result{"ok": true, "source": runtimeAPISource, "action": "get", "task": task}, nil
 }
 
-func (r *Runtime) RuntimeEnv() (Result, error) {
-	items, err := r.skills.env.List()
-	if err != nil {
-		return nil, toolErrorDetails("ENV_REGISTRY_FAILED", err.Error(), "runtime", nil)
-	}
-	return Result{"ok": true, "source": runtimeAPISource, "action": "list", "skills": items, "count": len(items)}, nil
-}
-
 func (r *Runtime) RuntimeCapabilities(ctx context.Context, refresh bool) (Result, error) {
 	result, err := r.AgentDockContext(ctx)
 	if err != nil {

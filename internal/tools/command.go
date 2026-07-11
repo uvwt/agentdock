@@ -173,7 +173,7 @@ func (r *Runtime) writeStdin(args map[string]any) (Result, error) {
 	case <-s.Done:
 		return r.consumeCompletedSession(s, maxBytes), nil
 	default:
-		return s.Snapshot("running", maxBytes), nil
+		return s.Peek("running", maxBytes), nil
 	}
 }
 

@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>抖音热榜 - 数据可视化</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
+            background: #0f0f0f;
+            line-height: 1.6;
+            color: #fff;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #161823 0%, #0f0f0f 100%);
+            color: white;
+            padding: 25px 20px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            border-bottom: 1px solid #333;
+        }
+        .header h1 { font-size: 24px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
+        .header h1::before { content: "🎵"; }
+        .header .meta { font-size: 13px; opacity: 0.7; }
+        
+        .filters {
+            background: #1a1a1a;
+            padding: 20px;
+            border-bottom: 1px solid #333;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: flex-end;
+        }
+        
+        .filter-group { display: flex; flex-direction: column; gap: 6px; }
+        .filter-group label { font-size: 12px; color: #999; font-weight: 500; }
+        .filter-group select, .filter-group input {
+            padding: 8px 12px; border: 1px solid #444; border-radius: 6px;
+            font-size: 14px; background: #2a2a2a; color: #fff; min-width: 120px;
+        }
+        
+        .btn { padding: 8px 16px; border: none; border-radius: 6px;
+            cursor: pointer; font-size: 14px; background: #333; color: #fff; }
+        .btn:hover { background: #444; }
+        
+        .stats {
+            background: #1a1a1a;
+            padding: 12px 20px;
+            font-size: 13px;
+            color: #999;
+            border-bottom: 1px solid #333;
+            display: flex;
+            justify-content: space-between;
+        }
+        .stats .highlight { color: #fe2c55; font-weight: 600; }
+        
+        .content { max-width: 900px; margin: 0 auto; padding: 20px; }
+        
+        .hot-list { display: flex; flex-direction: column; gap: 10px; }
+        
+        .hot-item {
+            display: flex;
+            align-items: flex-start;
+            padding: 16px 20px;
+            background: #1a1a1a;
+            border-radius: 12px;
+            text-decoration: none;
+            color: inherit;
+            transition: transform 0.1s, background 0.2s;
+            border: 1px solid #2a2a2a;
+        }
+        
+        .hot-item:hover {
+            transform: translateY(-2px);
+            background: #252525;
+            border-color: #333;
+        }
+        
+        .rank {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 16px;
+            margin-right: 16px;
+            flex-shrink: 0;
+        }
+        
+        .rank.top1 { background: linear-gradient(135deg, #ff6b6b, #ee5a5a); color: white; }
+        .rank.top2 { background: linear-gradient(135deg, #ffa94d, #ff8c42); color: white; }
+        .rank.top3 { background: linear-gradient(135deg, #ffd43b, #fcc419); color: #333; }
+        .rank.normal { background: #2a2a2a; color: #999; }
+        
+        .item-content { flex: 1; min-width: 0; }
+        
+        .item-title {
+            font-size: 15px;
+            color: #fff;
+            margin-bottom: 8px;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+        
+        .item-meta { display: flex; align-items: center; gap: 12px; font-size: 12px; }
+        
+        .label-badge {
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            background: #fe2c55;
+            color: white;
+        }
+        
+        .heat-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            color: #fe2c55;
+            font-weight: 500;
+        }
+        
+        .empty { text-align: center; padding: 80px 20px; color: #666; }
+        .empty-icon { font-size: 48px; margin-bottom: 16px; }
+        
+        @media (max-width: 640px) {
+            .content { padding: 12px; }
+            .hot-item { padding: 12px 15px; }
+            .rank { width: 32px; height: 32px; font-size: 14px; margin-right: 12px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>抖音热榜数据可视化</h1>
+        <div class="meta">
+            更新时间: 2026-03-16 05:24 | 
+            共 10 条记录
+        </div>
+    </div>
+    
+    <div class="filters">
+        <div class="filter-group">
+            <label>日期</label>
+            <select id="dateSelect">
+                <option value="">全部</option>
+                <option value="2026-03-15">2026-03-15</option>
+            </select>
+        </div>
+        
+        <div class="filter-group">
+            <label>搜索</label>
+            <input type="text" id="searchInput" placeholder="输入关键词...">
+        </div>
+        
+        <button class="btn" onclick="resetFilters()">重置</button>
+    </div>
+    
+    <div class="stats">
+        <span>显示 <span class="highlight" id="showCount">10</span> / 10 条</span>
+    </div>
+    
+    <div class="content">
+        <div class="hot-list" id="hotList"></div>
+    </div>
+
+    <script>
+        const items = [{"rank": 1, "title": "315曝光名单", "popularity": 11221146, "link": "https://www.douyin.com/search/315%E6%9B%9D%E5%85%89%E5%90%8D%E5%8D%95", "label": "", "date": "2026-03-15"}, {"rank": 2, "title": "中国女篮84:74战胜捷克女篮", "popularity": 11191699, "link": "https://www.douyin.com/search/%E4%B8%AD%E5%9B%BD%E5%A5%B3%E7%AF%AE84%3A74%E6%88%98%E8%83%9C%E6%8D%B7%E5%85%8B%E5%A5%B3%E7%AF%AE", "label": "", "date": "2026-03-15"}, {"rank": 3, "title": "加快场景培育开放和大规模应用", "popularity": 11062336, "link": "https://www.douyin.com/search/%E5%8A%A0%E5%BF%AB%E5%9C%BA%E6%99%AF%E5%9F%B9%E8%82%B2%E5%BC%80%E6%94%BE%E5%92%8C%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%BA%94%E7%94%A8", "label": "", "date": "2026-03-15"}, {"rank": 4, "title": "315晚会", "popularity": 10806003, "link": "https://www.douyin.com/search/315%E6%99%9A%E4%BC%9A", "label": "", "date": "2026-03-15"}, {"rank": 5, "title": "美宜佳门店被查获假烟上百万支", "popularity": 10209614, "link": "https://www.douyin.com/search/%E7%BE%8E%E5%AE%9C%E4%BD%B3%E9%97%A8%E5%BA%97%E8%A2%AB%E6%9F%A5%E8%8E%B7%E5%81%87%E7%83%9F%E4%B8%8A%E7%99%BE%E4%B8%87%E6%94%AF", "label": "3", "date": "2026-03-15"}, {"rank": 6, "title": "这个杭州绿化带也太出片了", "popularity": 10123011, "link": "https://www.douyin.com/search/%E8%BF%99%E4%B8%AA%E6%9D%AD%E5%B7%9E%E7%BB%BF%E5%8C%96%E5%B8%A6%E4%B9%9F%E5%A4%AA%E5%87%BA%E7%89%87%E4%BA%86", "label": "", "date": "2026-03-15"}, {"rank": 7, "title": "停下来是为了更好地出发", "popularity": 8993111, "link": "https://www.douyin.com/search/%E5%81%9C%E4%B8%8B%E6%9D%A5%E6%98%AF%E4%B8%BA%E4%BA%86%E6%9B%B4%E5%A5%BD%E5%9C%B0%E5%87%BA%E5%8F%91", "label": "", "date": "2026-03-15"}, {"rank": 8, "title": "消防站水幕婚纱照太会拍", "popularity": 8962911, "link": "https://www.douyin.com/search/%E6%B6%88%E9%98%B2%E7%AB%99%E6%B0%B4%E5%B9%95%E5%A9%9A%E7%BA%B1%E7%85%A7%E5%A4%AA%E4%BC%9A%E6%8B%8D", "label": "3", "date": "2026-03-15"}, {"rank": 9, "title": "刘文祥麻辣烫回应食材以次充好", "popularity": 8342141, "link": "https://www.douyin.com/search/%E5%88%98%E6%96%87%E7%A5%A5%E9%BA%BB%E8%BE%A3%E7%83%AB%E5%9B%9E%E5%BA%94%E9%A3%9F%E6%9D%90%E4%BB%A5%E6%AC%A1%E5%85%85%E5%A5%BD", "label": "", "date": "2026-03-15"}, {"rank": 10, "title": "张本美和4:3蒯曼夺冠", "popularity": 8028926, "link": "https://www.douyin.com/search/%E5%BC%A0%E6%9C%AC%E7%BE%8E%E5%92%8C4%3A3%E8%92%AF%E6%9B%BC%E5%A4%BA%E5%86%A0", "label": "", "date": "2026-03-15"}];
+        
+        function formatHeat(num) {
+            if (num >= 10000) return (num / 10000).toFixed(1) + '万';
+            return num.toLocaleString();
+        }
+        
+        function getRankClass(rank) {
+            if (rank === 1) return 'top1';
+            if (rank === 2) return 'top2';
+            if (rank === 3) return 'top3';
+            return 'normal';
+        }
+        
+        function renderItems() {
+            const dateSelect = document.getElementById('dateSelect').value;
+            const search = document.getElementById('searchInput').value.toLowerCase().trim();
+            
+            let filtered = items.filter(item => {
+                if (dateSelect && item.date !== dateSelect) return false;
+                if (search && !item.title.toLowerCase().includes(search)) return false;
+                return true;
+            });
+            
+            document.getElementById('showCount').textContent = filtered.length;
+            
+            const container = document.getElementById('hotList');
+            if (filtered.length === 0) {
+                container.innerHTML = `
+                    <div class="empty" style="grid-column: 1/-1;">
+                        <div class="empty-icon">🎵</div>
+                        <div>没有找到记录</div>
+                    </div>
+                `;
+                return;
+            }
+            
+            // 按日期分组
+            const grouped = {};
+            filtered.forEach(item => {
+                if (!grouped[item.date]) grouped[item.date] = [];
+                grouped[item.date].push(item);
+            });
+            
+            let html = '';
+            Object.keys(grouped).sort().reverse().forEach(date => {
+                html += grouped[date].map(item => `
+                    <a href="${item.link}" class="hot-item" target="_blank">
+                        <div class="rank ${getRankClass(item.rank)}">${item.rank}</div>
+                        <div class="item-content">
+                            <div class="item-title">${item.title}</div>
+                            <div class="item-meta">
+                                ${item.label ? `<span class="label-badge">${item.label}</span>` : ''}
+                                ${item.popularity ? `<span class="heat-badge">🔥 ${formatHeat(item.popularity)}</span>` : ''}
+                                <span style="color: #666;">${item.date}</span>
+                            </div>
+                        </div>
+                    </a>
+                `).join('');
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        function resetFilters() {
+            document.getElementById('dateSelect').value = '';
+            document.getElementById('searchInput').value = '';
+            renderItems();
+        }
+        
+        document.getElementById('dateSelect').addEventListener('change', renderItems);
+        document.getElementById('searchInput').addEventListener('input', renderItems);
+        
+        renderItems();
+    </script>
+</body>
+</html>

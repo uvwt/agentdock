@@ -65,9 +65,14 @@ func TestRuntimeExposesSingleToolSet(t *testing.T) {
 	for _, name := range rt.ToolNames() {
 		seen[name] = true
 	}
-	for _, name := range []string{"agentdock_context", "git_read", "git_write", "session_observe", "session_act", "recall_read", "recall_write", "skill_read", "skill_package", "skill_run", "skill_env_manage"} {
+	for _, name := range []string{"agentdock_context", "git_read", "git_write", "session_observe", "session_act", "recall_read", "recall_write", "skill_package"} {
 		if !seen[name] {
 			t.Fatalf("single tool set missing %s: %#v", name, seen)
+		}
+	}
+	for _, removed := range []string{"skill_read", "skill_run", "skill_env_manage"} {
+		if seen[removed] {
+			t.Fatalf("removed model-facing Skill tool still exposed: %s", removed)
 		}
 	}
 }
@@ -92,7 +97,10 @@ func TestAgentDockContextSchemaIsModelFacingEntrypoint(t *testing.T) {
 	if _, ok := outputProps["context"]; !ok {
 		t.Fatal("agentdock_context output schema missing context")
 	}
-	for _, name := range []string{"generated_at", "summary", "counts", "base_tools", "skills", "task_templates", "memory", "rules"} {
+	if _, ok := outputProps["skills"]; !ok {
+		t.Fatal("agentdock_context output schema missing lightweight skills index")
+	}
+	for _, name := range []string{"generated_at", "summary", "counts", "base_tools", "task_templates", "memory", "rules"} {
 		if _, ok := outputProps[name]; ok {
 			t.Fatalf("agentdock_context output schema should not expose non-context field %q", name)
 		}
@@ -150,39 +158,26 @@ func TestRecallBootstrapSchemaSeparatesPackBudgetFromBody(t *testing.T) {
 	}
 }
 
-func TestSplitSkillSchemasMatchResponsibilities(t *testing.T) {
-	readProps := schemaProperties(t, "skill_read")
-	assertSameStrings(t, enumStrings(t, readProps["action"]), []string{"list", "inspect"})
-	for _, name := range []string{"skill", "version", "channel"} {
-		if _, ok := readProps[name]; !ok {
-			t.Fatalf("skill_read input schema missing %q", name)
-		}
-	}
-
+func TestSkillPackageSchemaAndRemovedRuntimeTools(t *testing.T) {
 	packageProps := schemaProperties(t, "skill_package")
 	assertSameStrings(t, enumStrings(t, packageProps["action"]), []string{"validate", "install", "rollback"})
-	for _, name := range []string{"source", "digest", "activate", "confirmed_no_env", "max_bytes", "skill", "channel"} {
+	for _, name := range []string{"source", "digest", "activate", "max_bytes", "skill", "channel"} {
 		if _, ok := packageProps[name]; !ok {
 			t.Fatalf("skill_package input schema missing %q", name)
 		}
 	}
 
-	runProps := schemaProperties(t, "skill_run")
-	assertSameStrings(t, enumStrings(t, runProps["action"]), []string{"run"})
-	for _, name := range []string{"skill", "operation", "input", "input_json", "binding", "run_id", "timeout_ms", "max_output_bytes"} {
-		if _, ok := runProps[name]; !ok {
-			t.Fatalf("skill_run input schema missing %q", name)
+	for _, removed := range []string{"skill_read", "skill_run", "skill_env_manage"} {
+		if _, ok := toolDefinition(removed); ok {
+			t.Fatalf("removed model-facing tool still has definition: %s", removed)
 		}
 	}
-
-	envProps := schemaProperties(t, "skill_env_manage")
-	assertSameStrings(t, enumStrings(t, envProps["action"]), []string{"list", "inspect", "set", "delete", "verify"})
 
 	packageOutputProps, ok := outputSchema("skill_package")["properties"].(map[string]any)
 	if !ok {
 		t.Fatal("skill_package output schema properties missing")
 	}
-	for _, name := range []string{"valid", "source", "digest", "env", "commands", "issues", "requires_no_env_confirm"} {
+	for _, name := range []string{"valid", "source", "digest", "document", "issues"} {
 		if _, ok := packageOutputProps[name]; !ok {
 			t.Fatalf("skill_package output schema missing %q", name)
 		}

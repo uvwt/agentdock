@@ -26,10 +26,6 @@ func (s *Server) RuntimeTask(id string) (tools.Result, error) {
 	return s.runtime.RuntimeTask(id)
 }
 
-func (s *Server) RuntimeEnv() (tools.Result, error) {
-	return s.runtime.RuntimeEnv()
-}
-
 func (s *Server) RuntimeCapabilities(ctx context.Context, refresh bool) (tools.Result, error) {
 	return s.runtime.RuntimeCapabilities(ctx, refresh)
 }

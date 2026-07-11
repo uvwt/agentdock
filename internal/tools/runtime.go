@@ -28,7 +28,7 @@ type Runtime struct {
 	cfg            config.Config
 	ws             *workspace.Workspace
 	sessions       *SessionStore
-	skills         *skillRuntimeManager
+	skills         *skillManager
 	tasks          *taskstate.Store
 	privateNotesMu sync.RWMutex
 }
@@ -38,7 +38,7 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	skills, err := newSkillRuntimeManager(cfg)
+	skills, err := newSkillManager(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -117,11 +117,24 @@ func (r *Runtime) authEnabled() bool {
 }
 
 func (r *Runtime) readFile(args map[string]any) (Result, error) {
-	p, err := r.ws.ResolveExisting(stringArg(args, "path", "."))
-	if err != nil {
-		return nil, err
+	rawPath := stringArg(args, "path", ".")
+	absPath := ""
+	displayPath := ""
+	if strings.HasPrefix(rawPath, "skill://") {
+		var err error
+		absPath, displayPath, err = r.resolveSkillResource(rawPath)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		p, err := r.ws.ResolveExisting(rawPath)
+		if err != nil {
+			return nil, err
+		}
+		absPath = p.Abs
+		displayPath = p.Display
 	}
-	info, err := os.Stat(p.Abs)
+	info, err := os.Stat(absPath)
 	if err != nil {
 		return nil, err
 	}
@@ -133,10 +146,10 @@ func (r *Runtime) readFile(args map[string]any) (Result, error) {
 			"FILE_TOO_LARGE",
 			"text file exceeds the read_file input limit",
 			"validation",
-			map[string]any{"path": p.Display, "size_bytes": info.Size(), "max_size_bytes": maxTextFileReadBytes},
+			map[string]any{"path": displayPath, "size_bytes": info.Size(), "max_size_bytes": maxTextFileReadBytes},
 		)
 	}
-	data, err := os.ReadFile(p.Abs)
+	data, err := os.ReadFile(absPath)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +161,7 @@ func (r *Runtime) readFile(args map[string]any) (Result, error) {
 	}
 	maxBytes := boundedInt(intArg(args, "max_bytes", 262144), 262144, 1, maxTextOutputBytes)
 	content, meta := sliceText(string(data), intArg(args, "start_line", 1), intArg(args, "end_line", 0), maxBytes)
-	result := Result{"ok": true, "path": p.Display, "content": content, "encoding": "utf-8", "size_bytes": len(data), "truncated": meta.Truncated, "start_line": meta.Start, "end_line": meta.End, "total_lines": meta.Total}
+	result := Result{"ok": true, "path": displayPath, "content": content, "encoding": "utf-8", "size_bytes": len(data), "truncated": meta.Truncated, "start_line": meta.Start, "end_line": meta.End, "total_lines": meta.Total}
 	if meta.NextStartLine > 0 {
 		result["next_start_line"] = meta.NextStartLine
 	}

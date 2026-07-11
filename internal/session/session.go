@@ -245,6 +245,16 @@ func (s *Session) Kill() bool {
 }
 
 func (s *Session) Snapshot(status string, maxBytes int) map[string]any {
+	return s.snapshot(status, maxBytes, true)
+}
+
+// Peek returns the current unread output without advancing the observation cursors.
+// Mutation tools use it so a following status call still receives the output.
+func (s *Session) Peek(status string, maxBytes int) map[string]any {
+	return s.snapshot(status, maxBytes, false)
+}
+
+func (s *Session) snapshot(status string, maxBytes int, advance bool) map[string]any {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	stdoutFull := s.stdout.String()
@@ -257,8 +267,10 @@ func (s *Session) Snapshot(status string, maxBytes int) map[string]any {
 	if s.stderrCursor > 0 && s.stderrCursor <= len(stderrFull) {
 		stderrSegment = stderrFull[s.stderrCursor:]
 	}
-	s.stdoutCursor = len(stdoutFull)
-	s.stderrCursor = len(stderrFull)
+	if advance {
+		s.stdoutCursor = len(stdoutFull)
+		s.stderrCursor = len(stderrFull)
+	}
 	stdout := trim(stdoutSegment, maxBytes)
 	stderr := trim(stderrSegment, maxBytes)
 	result := map[string]any{

@@ -1,5 +1,3 @@
-//go:build !windows
-
 package tools
 
 import (
@@ -7,495 +5,135 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/uvwt/agentdock/internal/config"
-	"github.com/uvwt/agentdock/internal/skillruntime"
+	"github.com/uvwt/agentdock/internal/skills"
 )
 
-func writeDemoSkillDoc(t *testing.T, pkg string) {
-	t.Helper()
+func TestSkillPackageValidateInstallInspectAndList(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "demo-skill")
+	if err := os.MkdirAll(filepath.Join(source, "references"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	doc := `---
 name: demo-skill
-description: Use this demo skill in tests.
+description: Use this Skill to test document-only package management.
+version: 1.0.0
 ---
 
 # Demo Skill
 
-This test skill is intentionally small and echoes JSON input.
+Read references and call existing tools.
 `
-	if err := os.WriteFile(filepath.Join(pkg, "SKILL.md"), []byte(doc), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(source, "SKILL.md"), []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func TestSplitSkillToolsInstallInspectRunAndList(t *testing.T) {
-	root := t.TempDir()
-	pkg := filepath.Join(root, "demo-package")
-	if err := os.MkdirAll(pkg, 0o700); err != nil {
+	if err := os.WriteFile(filepath.Join(source, "references", "guide.md"), []byte("# Guide\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	manifest := `apiVersion: agentdock.dev/v1
-kind: Skill
-metadata:
-  name: demo-skill
-  version: 1.0.0
-  displayName: Demo Skill
-  description: MCP Skill tool test
-spec:
-  entrypoint: run.sh
-  operations:
-    - name: echo
-      description: Echo JSON input
-      inputSchema: {"type":"object","required":["message"],"properties":{"message":{"type":"string"}},"additionalProperties":false}
-      outputSchema: {"type":"object","required":["message"],"properties":{"message":{"type":"string"}},"additionalProperties":false}
-      timeoutSeconds: 5
-  compatibility:
-    platforms: [` + runtime.GOOS + `]
-    architectures: [` + runtime.GOARCH + `]
-    agentdock: ">=1.0.0"
-  permissions:
-    filesystem: []
-    network: []
-    commands: []
-`
-	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	writeDemoSkillDoc(t, pkg)
-	if err := os.WriteFile(filepath.Join(pkg, "run.sh"), []byte("#!/bin/sh\ncat\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg := config.Config{
-		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
-	}
+	cfg := config.Config{AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock")}
 	if err := cfg.Normalize(); err != nil {
-		t.Fatalf("Normalize() error = %v", err)
+		t.Fatal(err)
 	}
 	rt, err := NewRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	install, err := rt.Call(context.Background(), "skill_package", map[string]any{
-		"action":           "install",
-		"source":           "demo-package",
-		"activate":         true,
-		"confirmed_no_env": true,
+	validated, err := rt.Call(context.Background(), "skill_package", map[string]any{
+		"action": "validate",
+		"source": "demo-skill",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	installResult, ok := install["result"].(skillruntime.InstallResult)
-	if !ok || installResult.Skill != "demo-skill" || !installResult.Activated {
-		t.Fatalf("unexpected install result: %#v", install["result"])
+	if validated["valid"] != true {
+		t.Fatalf("validation failed: %#v", validated)
+	}
+	document, ok := validated["document"].(skills.SkillDocument)
+	if !ok || document.Name != "demo-skill" || document.Version != "1.0.0" {
+		t.Fatalf("unexpected document: %#v", validated["document"])
 	}
 
-	inspect, err := rt.Call(context.Background(), "skill_read", map[string]any{
-		"action": "inspect",
-		"skill":  "demo-skill",
+	installed, err := rt.Call(context.Background(), "skill_package", map[string]any{
+		"action":   "install",
+		"source":   "demo-skill",
+		"activate": true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inspect["version"] != "1.0.0" {
-		t.Fatalf("inspect version = %#v", inspect["version"])
+	result, ok := installed["result"].(skills.InstallResult)
+	if !ok || result.Skill != "demo-skill" || !result.Activated {
+		t.Fatalf("unexpected install result: %#v", installed["result"])
 	}
-
-	runResult, err := rt.Call(context.Background(), "skill_run", map[string]any{
-		"skill":     "demo-skill",
-		"operation": "echo",
-		"input":     map[string]any{"message": "hello"},
-	})
+	inspected, err := rt.skillInspect(map[string]any{"skill": "demo-skill"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, ok := runResult["result"].(skillruntime.RunResult)
-	if !ok || !run.OK || string(run.Output) != `{"message":"hello"}` {
-		t.Fatalf("unexpected run result: %#v", runResult["result"])
+	if inspected["version"] != "1.0.0" {
+		t.Fatalf("unexpected inspected version: %#v", inspected)
 	}
-
-	listed, err := rt.Call(context.Background(), "skill_read", map[string]any{"action": "list"})
+	listed, err := rt.skillList()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if listed["count"] != 1 {
-		t.Fatalf("list count = %#v", listed["count"])
+		t.Fatalf("unexpected list: %#v", listed)
 	}
 }
 
-func TestSkillPackageInstallRequiresNoEnvConfirmation(t *testing.T) {
+func TestSkillPackageRejectsLegacyManifest(t *testing.T) {
 	root := t.TempDir()
-	pkg := filepath.Join(root, "demo-package")
-	if err := os.MkdirAll(pkg, 0o700); err != nil {
+	source := filepath.Join(root, "legacy-skill")
+	if err := os.MkdirAll(source, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `apiVersion: agentdock.dev/v1
-kind: Skill
-metadata:
-  name: demo-skill
-  version: 1.0.0
-  displayName: Demo Skill
-  description: MCP Skill tool test
-spec:
-  entrypoint: run.sh
-  operations:
-    - name: echo
-      description: Echo JSON input
-      inputSchema: {"type":"object","properties":{},"additionalProperties":false}
-      outputSchema: {"type":"object","properties":{},"additionalProperties":false}
-      timeoutSeconds: 5
-  compatibility:
-    platforms: [` + runtime.GOOS + `]
-    architectures: [` + runtime.GOARCH + `]
-    agentdock: ">=1.0.0"
-  permissions:
-    filesystem: []
-    network: []
-    commands: []
-`
-	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("---\nname: legacy-skill\ndescription: Legacy package.\nversion: 1.0.0\n---\n\n# Legacy\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	writeDemoSkillDoc(t, pkg)
-	if err := os.WriteFile(filepath.Join(pkg, "run.sh"), []byte("#!/bin/sh\ncat\n"), 0o700); err != nil {
+	if err := os.WriteFile(filepath.Join(source, "agentdock.yaml"), []byte("legacy"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Config{
-		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
-	}
+	cfg := config.Config{AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock")}
 	if err := cfg.Normalize(); err != nil {
-		t.Fatalf("Normalize() error = %v", err)
+		t.Fatal(err)
 	}
 	rt, err := NewRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	_, err = rt.Call(context.Background(), "skill_package", map[string]any{
-		"action": "install",
-		"source": "demo-package",
-	})
-	var toolErr *ToolError
-	if !errors.As(err, &toolErr) {
-		t.Fatalf("expected ToolError, got %T: %v", err, err)
+	validated, err := rt.Call(context.Background(), "skill_package", map[string]any{"action": "validate", "source": "legacy-skill"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if toolErr.Code != skillruntime.ErrManifestInvalid {
-		t.Fatalf("error code = %s, want %s: %v", toolErr.Code, skillruntime.ErrManifestInvalid, err)
+	if validated["valid"] != false {
+		t.Fatalf("legacy package unexpectedly valid: %#v", validated)
 	}
-	if toolErr.Details["stage"] != "manifest.env" {
-		t.Fatalf("error stage = %#v, want manifest.env", toolErr.Details["stage"])
+	issues, ok := validated["issues"].([]skills.ValidateIssue)
+	if !ok || len(issues) == 0 || issues[0].Stage != "package.legacy_manifest" {
+		t.Fatalf("unexpected legacy validation issues: %#v", validated["issues"])
 	}
 }
 
-func TestSkillPackageValidateSuccessDoesNotInstall(t *testing.T) {
+func TestRemovedSkillRuntimeToolsAreUnavailable(t *testing.T) {
 	root := t.TempDir()
-	pkg := filepath.Join(root, "demo-package")
-	if err := os.MkdirAll(pkg, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	manifest := `apiVersion: agentdock.dev/v1
-kind: Skill
-metadata:
-  name: demo-skill
-  version: 1.0.0
-  displayName: Demo Skill
-  description: MCP Skill validate test
-spec:
-  entrypoint: run.sh
-  operations:
-    - name: echo
-      description: Echo JSON input
-      inputSchema: {"type":"object","properties":{},"additionalProperties":false}
-      outputSchema: {"type":"object","properties":{},"additionalProperties":false}
-      timeoutSeconds: 5
-  compatibility:
-    platforms: [` + runtime.GOOS + `]
-    architectures: [` + runtime.GOARCH + `]
-    agentdock: ">=1.0.0"
-  permissions:
-    filesystem: []
-    network: []
-    env:
-      - name: DEMO_BASE_URL
-        kind: plain
-      - name: DEMO_API_TOKEN
-        kind: secret
-    commands: [sh]
-`
-	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	writeDemoSkillDoc(t, pkg)
-	if err := os.WriteFile(filepath.Join(pkg, "run.sh"), []byte("#!/bin/sh\ncat\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	cfg := config.Config{
-		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
-	}
+	cfg := config.Config{AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock")}
 	if err := cfg.Normalize(); err != nil {
-		t.Fatalf("Normalize() error = %v", err)
+		t.Fatal(err)
 	}
 	rt, err := NewRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	result, err := rt.Call(context.Background(), "skill_package", map[string]any{
-		"action": "validate",
-		"source": "demo-package",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result["valid"] != true {
-		t.Fatalf("validate result = %#v, want valid=true", result)
-	}
-	if result["digest"] == "" {
-		t.Fatalf("validate digest missing: %#v", result)
-	}
-	manifestResult, ok := result["manifest"].(skillruntime.Manifest)
-	if !ok || manifestResult.Metadata.Name != "demo-skill" {
-		t.Fatalf("unexpected manifest result: %#v", result["manifest"])
-	}
-	env, ok := result["env"].([]skillruntime.EnvDefinition)
-	if !ok || len(env) != 2 {
-		t.Fatalf("unexpected env result: %#v", result["env"])
-	}
-	commands, ok := result["commands"].([]skillruntime.CommandCheck)
-	if !ok || len(commands) != 1 || !commands[0].Found {
-		t.Fatalf("unexpected command checks: %#v", result["commands"])
-	}
-	listed, err := rt.Call(context.Background(), "skill_read", map[string]any{"action": "list"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if listed["count"] != 0 {
-		t.Fatalf("validate should not install skill; list result: %#v", listed)
-	}
-}
-
-func TestSkillPackageValidateCollectsIssues(t *testing.T) {
-	root := t.TempDir()
-	pkg := filepath.Join(root, "demo-package")
-	if err := os.MkdirAll(pkg, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	manifest := `apiVersion: agentdock.dev/v1
-kind: Skill
-metadata:
-  name: demo-skill
-  version: 1.0.0
-  displayName: Demo Skill
-  description: MCP Skill validate test
-spec:
-  entrypoint: missing.sh
-  operations:
-    - name: echo
-      description: Echo JSON input
-      inputSchema: {"type":"object","properties":{},"additionalProperties":false}
-      outputSchema: {"type":"object","properties":{},"additionalProperties":false}
-      timeoutSeconds: 5
-  compatibility:
-    platforms: [` + runtime.GOOS + `]
-    architectures: [` + runtime.GOARCH + `]
-    agentdock: ">=1.0.0"
-  permissions:
-    filesystem: []
-    network: []
-    commands: [agentdock-missing-command-for-test]
-`
-	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	writeDemoSkillDoc(t, pkg)
-	cfg := config.Config{
-		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
-	}
-	if err := cfg.Normalize(); err != nil {
-		t.Fatalf("Normalize() error = %v", err)
-	}
-	rt, err := NewRuntime(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	result, err := rt.Call(context.Background(), "skill_package", map[string]any{
-		"action": "validate",
-		"source": "demo-package",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result["valid"] != false {
-		t.Fatalf("validate result = %#v, want valid=false", result)
-	}
-	if manifestResult, ok := result["manifest"].(skillruntime.Manifest); !ok || manifestResult.Metadata.Name != "demo-skill" {
-		t.Fatalf("unexpected manifest result: %#v", result["manifest"])
-	}
-	if result["requires_no_env_confirm"] != true {
-		t.Fatalf("requires_no_env_confirm = %#v, want true", result["requires_no_env_confirm"])
-	}
-	issues, ok := result["issues"].([]skillruntime.ValidateIssue)
-	if !ok || len(issues) != 3 {
-		t.Fatalf("unexpected issues: %#v", result["issues"])
-	}
-	stages := map[string]bool{}
-	for _, issue := range issues {
-		stages[issue.Stage] = true
-	}
-	for _, stage := range []string{"manifest.entrypoint", "manifest.env", "dependency"} {
-		if !stages[stage] {
-			t.Fatalf("issues missing stage %q: %#v", stage, issues)
+	for _, name := range []string{"skill_read", "skill_run", "skill_env_manage"} {
+		_, err := rt.Call(context.Background(), name, map[string]any{})
+		var toolErr *ToolError
+		if !errors.As(err, &toolErr) || toolErr.Code != "UNKNOWN_TOOL" {
+			t.Fatalf("%s should be unavailable, got %T %v", name, err, err)
 		}
 	}
-}
-
-func TestSkillToolsRejectRemovedAggregateTool(t *testing.T) {
-	root := t.TempDir()
-	cfg := config.Config{
-		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
-	}
-	if err := cfg.Normalize(); err != nil {
-		t.Fatalf("Normalize() error = %v", err)
-	}
-	rt, err := NewRuntime(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	removedTool := "skill" + "_manage"
-	_, err = rt.Call(context.Background(), removedTool, map[string]any{"action": "destroy"})
-	var toolErr *ToolError
-	if !errors.As(err, &toolErr) {
-		t.Fatalf("expected ToolError, got %T: %v", err, err)
-	}
-	if toolErr.Code != "UNKNOWN_TOOL" {
-		t.Fatalf("error code = %s, want UNKNOWN_TOOL", toolErr.Code)
-	}
-}
-
-func TestSkillEnvManageVerifyRejectsInvalidInputJSON(t *testing.T) {
-	rt := newInstalledDemoSkillRuntime(t)
-
-	_, err := rt.Call(context.Background(), "skill_env_manage", map[string]any{
-		"action":     "verify",
-		"skill":      "demo-skill",
-		"operation":  "echo",
-		"input_json": "{",
-	})
-	var toolErr *ToolError
-	if !errors.As(err, &toolErr) {
-		t.Fatalf("expected ToolError, got %T: %v", err, err)
-	}
-	if toolErr.Code != "VALIDATION_ERROR" {
-		t.Fatalf("error code = %s, want VALIDATION_ERROR", toolErr.Code)
-	}
-}
-
-func TestSkillEnvManageVerifyAcceptsStructuredInput(t *testing.T) {
-	rt := newInstalledDemoSkillRuntime(t)
-
-	result, err := rt.Call(context.Background(), "skill_env_manage", map[string]any{
-		"action":    "verify",
-		"skill":     "demo-skill",
-		"operation": "echo",
-		"input":     map[string]any{"message": "hello"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result["ok"] != true {
-		t.Fatalf("verify failed: %#v", result)
-	}
-	run, ok := result["result"].(skillruntime.RunResult)
-	if !ok || !run.OK || string(run.Output) != `{"message":"hello"}` {
-		t.Fatalf("unexpected verify result: %#v", result["result"])
-	}
-}
-
-func TestSkillEnvManageVerifyReportsRegistryPersistenceFailure(t *testing.T) {
-	rt := newInstalledDemoSkillRuntime(t)
-	registryPath := filepath.Join(rt.skills.env.Root(), "registry.json")
-	if err := os.MkdirAll(registryPath, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := rt.Call(context.Background(), "skill_env_manage", map[string]any{
-		"action":    "verify",
-		"skill":     "demo-skill",
-		"operation": "echo",
-		"input":     map[string]any{"message": "hello"},
-	})
-	var toolErr *ToolError
-	if !errors.As(err, &toolErr) {
-		t.Fatalf("expected ToolError, got %T: %v", err, err)
-	}
-	if toolErr.Code != "ENV_REGISTRY_FAILED" {
-		t.Fatalf("error code = %s, want ENV_REGISTRY_FAILED", toolErr.Code)
-	}
-	if toolErr.Details["skill"] != "demo-skill" || toolErr.Details["run_ok"] != true {
-		t.Fatalf("error details = %#v", toolErr.Details)
-	}
-}
-
-func newInstalledDemoSkillRuntime(t *testing.T) *Runtime {
-	t.Helper()
-	root := t.TempDir()
-	pkg := filepath.Join(root, "demo-package")
-	if err := os.MkdirAll(pkg, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	manifest := `apiVersion: agentdock.dev/v1
-kind: Skill
-metadata:
-  name: demo-skill
-  version: 1.0.0
-  displayName: Demo Skill
-  description: MCP Skill tool test
-spec:
-  entrypoint: run.sh
-  operations:
-    - name: echo
-      description: Echo JSON input
-      inputSchema: {"type":"object","required":["message"],"properties":{"message":{"type":"string"}},"additionalProperties":false}
-      outputSchema: {"type":"object","required":["message"],"properties":{"message":{"type":"string"}},"additionalProperties":false}
-      timeoutSeconds: 5
-  compatibility:
-    platforms: [` + runtime.GOOS + `]
-    architectures: [` + runtime.GOARCH + `]
-    agentdock: ">=1.0.0"
-  permissions:
-    filesystem: []
-    network: []
-    commands: []
-`
-	if err := os.WriteFile(filepath.Join(pkg, "agentdock.yaml"), []byte(manifest), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	writeDemoSkillDoc(t, pkg)
-	if err := os.WriteFile(filepath.Join(pkg, "run.sh"), []byte("#!/bin/sh\ncat\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	cfg := config.Config{
-		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
-	}
-	if err := cfg.Normalize(); err != nil {
-		t.Fatalf("Normalize() error = %v", err)
-	}
-	rt, err := NewRuntime(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := rt.Call(context.Background(), "skill_package", map[string]any{
-		"action":           "install",
-		"source":           "demo-package",
-		"activate":         true,
-		"confirmed_no_env": true,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	return rt
 }

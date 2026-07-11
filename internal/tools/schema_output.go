@@ -29,8 +29,9 @@ func OutputSchema(name string) map[string]any {
 		props["sandbox"] = objectProp("Sandbox status metadata.")
 	case "agentdock_context":
 		props["context"] = stringProp("Rendered AgentDock bootstrap context text for clients that cannot inject system prompt context.")
+		props["skills"] = arrayProp("Lightweight Skill index entries containing name, description, and skill:// file URI.")
 	case "read_file":
-		props["path"] = stringProp("Host path. Relative paths resolve from ~/AgentDock.")
+		props["path"] = stringProp("Host path or skill:// resource URI. Relative Host paths resolve from ~/AgentDock.")
 		props["content"] = stringProp("Text content slice.")
 		props["encoding"] = stringProp("Detected text encoding.")
 		props["size_bytes"] = intProp("File size in bytes.")
@@ -105,31 +106,15 @@ func OutputSchema(name string) map[string]any {
 		props["best_candidate_score"] = intProp("Highest template match score.")
 		props["score_thresholds"] = objectProp("Template match score thresholds.")
 
-	case "skill_read":
-		props["action"] = stringProp("Completed Skill read action.")
-		props["skill"] = stringProp("Skill name.")
-		props["version"] = stringProp("Selected Skill version.")
-		props["skills"] = arrayProp("Installed Skill summaries.")
-		props["count"] = intProp("Installed Skill count.")
-		props["versions"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Installed versions."}
-		props["selection"] = objectProp("Active version, channels, and history.")
-		props["manifest"] = objectProp("Parsed agentdock.yaml manifest.")
-		props["binding_configured"] = boolProp("Whether a binding file exists for the Skill.")
 	case "skill_package":
 		props["action"] = stringProp("Completed Skill package action.")
 		props["skill"] = stringProp("Skill name.")
 		props["valid"] = boolProp("Whether a Skill source passed validation.")
 		props["source"] = stringProp("Resolved Skill source label.")
 		props["digest"] = stringProp("Computed Skill package digest.")
-		props["env"] = arrayProp("Manifest env declarations without values.")
-		props["commands"] = arrayProp("Declared command dependency checks.")
 		props["issues"] = arrayProp("Structured validation issues.")
-		props["requires_no_env_confirm"] = boolProp("Whether confirmed_no_env is needed for a Skill with no env declarations.")
-		props["manifest"] = objectProp("Parsed agentdock.yaml manifest.")
+		props["document"] = objectProp("Parsed SKILL.md frontmatter and body metadata.")
 		props["result"] = objectProp("Install or rollback result.")
-	case "skill_run":
-		props["action"] = stringProp("Completed Skill run action.")
-		props["result"] = objectProp("Skill operation run result.")
 	case "file_publish":
 		props["artifact_id"] = stringProp("Published artifact id.")
 		props["url"] = stringProp("Temporary signed download URL.")
@@ -141,16 +126,6 @@ func OutputSchema(name string) map[string]any {
 		props["archive"] = boolProp("Whether the source directory was packaged as tar.gz.")
 		props["width"] = intProp("Image width when the payload is an image.")
 		props["height"] = intProp("Image height when the payload is an image.")
-	case "skill_env_manage":
-		props["action"] = stringProp("Completed Skill env action.")
-		props["skill"] = stringProp("Skill name.")
-		props["skills"] = arrayProp("Skill env summaries.")
-		props["vars"] = arrayProp("Redacted env entries.")
-		props["var"] = objectProp("Redacted env entry.")
-		props["count"] = intProp("Env item count.")
-		props["deleted"] = boolProp("Whether a variable was deleted.")
-		props["result"] = objectProp("Migration or verification result.")
-		props["message"] = stringProp("Verification message.")
 	case "recall_bootstrap":
 		props["recall_endpoint"] = stringProp("Configured NexusDock Recall endpoint.")
 		props["project"] = stringProp("Backend-selected NexusDock Recall context returned by the backing service; not an input selector for the model.")

@@ -38,8 +38,8 @@ powershell -ExecutionPolicy Bypass -File scripts/install-windows.ps1 -RegisterSt
 
 - `exec_command` 优先使用 PowerShell 7，找不到时使用 Windows PowerShell，最终回退到 `cmd.exe`。
 - `tty=true` 使用 Windows ConPTY。
-- 声明 Windows 兼容的 Skill 必须在 `agentdock.yaml` 明确设置 `spec.runtime`：`binary`、`python`、`node` 或 `powershell`。
-- macOS `desktop` Skill 不支持 Windows。Windows 桌面自动化属于后续独立 Skill。
+- Skill 本身是平台无关文档；包内辅助脚本必须自行检查 Windows 所需的 Python、Node.js、PowerShell 或原生命令依赖。
+- macOS `desktop` Skill 不支持 Windows；Windows 桌面自动化应使用独立工具或对应平台的 MCP 能力。
 
 ## 浏览器
 

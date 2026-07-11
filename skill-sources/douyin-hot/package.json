@@ -1,0 +1,13 @@
+{
+  "name": "douyin-hot-trend",
+  "version": "1.0.1",
+  "description": "获取抖音热榜/热搜榜数据，包含热门视频、挑战赛、音乐等多领域热门内容",
+  "keywords": ["douyin", "tiktok", "hot", "trend", "social", "chinese"],
+  "author": "noah-1106 (based on franklu0819-lang's work)",
+  "license": "MIT",
+  "openclaw": {
+    "requires": {
+      "bins": ["node"]
+    }
+  }
+}

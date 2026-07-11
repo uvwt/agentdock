@@ -7,19 +7,20 @@ import (
 	"time"
 
 	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/skills"
 )
 
 func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
 	baseTools := baseToolCapabilityItems()
 	baseToolLines := baseToolSummaryLines(baseTools)
 
-	_, skillSummary, _ := r.skillCapabilityIndex()
+	skillItems, skillSummary, _ := r.skillCapabilityIndex()
 	_, templateSummary, _ := r.templateCapabilityIndex(ctx)
 	memorySummary, _, _ := r.memoryCapabilitySummary(ctx)
 
 	rules := []string{
 		"需要真实执行命令或检查环境时，先用 exec_command 查看现状，再修改，修改后真实验证。",
-		"需要 Skill 能力时，先用 skill_read list/inspect 做只读发现；包生命周期用 skill_package；执行 operation 用 skill_run；Skill 环境变量用 skill_env_manage。",
+		"先根据 Skill 索引的 name 和 description 选择相关 Skill，再用 read_file 读取其 file 指向的 SKILL.md；Skill 只提供流程与约束，实际操作使用命令、文件、浏览器或 MCP 工具。",
 		"涉及多步骤开发、部署、排障、迁移、Docker、VPS 或 Git 提交推送时，先 workflow_template_manage match；无合适模板时创建普通可恢复任务。",
 		"记忆摘要只提供高优先级规则；具体历史事实不确定时，再用 recall_search 或 recall_read 精确召回。",
 		"普通项目记忆走 recall_*；private_note_manage 只在用户明确要求隐私/本机不同步，或内容明显包含 secret、凭据、个人敏感信息时使用。",
@@ -37,6 +38,7 @@ func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
 	return Result{
 		"ok":      true,
 		"context": contextText,
+		"skills":  skillItems,
 	}, nil
 }
 func (r *Runtime) agentDockContextTool(ctx context.Context, _ map[string]any) (Result, error) {
@@ -55,7 +57,8 @@ type capabilityBaseToolItem struct {
 
 type capabilitySkillItem struct {
 	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
+	Description string `json:"description"`
+	File        string `json:"file"`
 }
 
 type capabilityTemplateItem struct {
@@ -66,28 +69,6 @@ type capabilityTemplateItem struct {
 type capabilityMemoryItem struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
-}
-
-type capabilitySkillList struct {
-	Skills []capabilitySkillListItem `json:"skills"`
-}
-
-type capabilitySkillListItem struct {
-	Skill string `json:"skill"`
-}
-
-type capabilitySkillManifest struct {
-	Metadata    capabilitySkillMetadata `json:"metadata"`
-	Description string                  `json:"description"`
-	Summary     string                  `json:"summary"`
-	Title       string                  `json:"title"`
-	Name        string                  `json:"name"`
-}
-
-type capabilitySkillMetadata struct {
-	Name        string `json:"name"`
-	DisplayName string `json:"displayName"`
-	Description string `json:"description"`
 }
 
 type capabilityTemplateList struct {
@@ -118,10 +99,8 @@ type capabilityMemoryRunbook struct {
 func baseToolCapabilityItems() []capabilityBaseToolItem {
 	return []capabilityBaseToolItem{
 		{Name: "exec_command", Description: "执行命令，用于查看真实环境、运行测试、构建、部署和排障；实际权限由运行用户和部署边界决定。"},
-		{Name: "skill_read", Description: "只读发现 AgentDock Skill：list / inspect，低风险。"},
+		{Name: "read_file", Description: "读取普通 UTF-8 文件或 skill:// 逻辑路径指向的 Skill 文档与引用资源。"},
 		{Name: "skill_package", Description: "管理 Skill 包生命周期：validate / install / rollback。"},
-		{Name: "skill_run", Description: "专门执行 Skill operation；默认不传 action，需要时只允许 action=run。"},
-		{Name: "skill_env_manage", Description: "管理 Skill env registry。"},
 		{Name: "task_manage", Description: "管理可恢复任务；模板发现通过 workflow_template_manage match。"},
 		{Name: "recall_bootstrap / recall_search / recall_read", Description: "读取记忆精简上下文、搜索记忆和精确读取 runbook。"},
 		{Name: "private_note_manage", Description: "低频显式隐私笔记保险箱；默认不要用，只有用户要求隐私/本机不同步或内容明显敏感时再调用。"},
@@ -145,53 +124,36 @@ func capabilityItemLine(name, description string) string {
 }
 
 func (r *Runtime) skillCapabilityIndex() ([]capabilitySkillItem, string, string) {
-	result, err := r.skillList()
+	names, err := r.skills.state.ListSkills()
 	if err != nil {
-		return nil, "- Skill 索引暂不可用；需要 Skill 时调用 skill_read list/inspect 重新确认。", err.Error()
+		return nil, "- Skill 索引暂不可用。", err.Error()
 	}
-	var listed capabilitySkillList
-	if err := remarshal(result, &listed); err != nil {
-		return nil, "- Skill 索引暂不可用；需要 Skill 时调用 skill_read list/inspect 重新确认。", err.Error()
-	}
-	items := make([]capabilitySkillItem, 0, len(listed.Skills))
-	lines := []string{"当前已安装 Skill 摘要如下；执行前先用 skill_read inspect 确认 operations 和输入参数。"}
-	for _, listedItem := range listed.Skills {
-		name := strings.TrimSpace(listedItem.Skill)
-		if name == "" {
+	items := make([]capabilitySkillItem, 0, len(names))
+	lines := []string{"当前可按文档机制使用的 Skill 轻量索引如下；匹配后先用 read_file 读取 file 指向的 SKILL.md，再使用实际工具执行。"}
+	for _, name := range names {
+		packageDir, resolveErr := r.skills.state.Resolve(name, "", "")
+		if resolveErr != nil {
 			continue
 		}
-		item := capabilitySkillItem{Name: name}
-		if inspected, inspectErr := r.skillInspect(map[string]any{"skill": name}); inspectErr == nil {
-			item.Description = skillManifestDescription(inspected)
+		if validateErr := skills.ValidatePackage(packageDir); validateErr != nil {
+			continue
+		}
+		doc, loadErr := skills.LoadSkillDocument(packageDir)
+		if loadErr != nil {
+			continue
+		}
+		item := capabilitySkillItem{
+			Name:        name,
+			Description: truncateString(strings.TrimSpace(doc.Description), 160),
+			File:        "skill://" + name + "/SKILL.md",
 		}
 		items = append(items, item)
-		lines = append(lines, truncateString(capabilityItemLine(item.Name, item.Description), 320))
+		lines = append(lines, truncateString("- name: "+item.Name+"; description: "+item.Description+"; file: "+item.File, 360))
 	}
 	if len(items) == 0 {
-		lines = append(lines, "- 当前没有可用 Skill；需要时先安装或刷新 Skill Runtime。")
+		lines = append(lines, "- 当前没有可用 Skill；需要时先通过 skill_package 安装。")
 	}
 	return items, strings.Join(lines, "\n"), ""
-}
-
-func skillManifestDescription(inspected Result) string {
-	var manifest capabilitySkillManifest
-	if err := remarshal(inspected["manifest"], &manifest); err != nil {
-		return ""
-	}
-	for _, text := range []string{
-		manifest.Metadata.Description,
-		manifest.Metadata.DisplayName,
-		manifest.Metadata.Name,
-		manifest.Description,
-		manifest.Summary,
-		manifest.Title,
-		manifest.Name,
-	} {
-		if text = strings.TrimSpace(text); text != "" {
-			return truncateString(text, 160)
-		}
-	}
-	return ""
 }
 
 func (r *Runtime) templateCapabilityIndex(ctx context.Context) ([]capabilityTemplateItem, string, string) {

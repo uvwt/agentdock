@@ -16,7 +16,7 @@ import time
 import urllib.parse
 from pathlib import Path
 
-VERSION = "1.0.5"
+VERSION = "1.0.9"
 SEP = "\x1f"
 STATE_MAX_AGE_SECONDS = 90
 
@@ -111,10 +111,25 @@ def skill_data_root():
     return agentdock_root() / "skill-data" / "desktop"
 
 
-def artifact_root():
-    path = skill_data_root() / "artifacts"
+def ensure_private_dir(path):
     path.mkdir(parents=True, exist_ok=True)
+    try:
+        path.chmod(stat.S_IRWXU)
+    except OSError:
+        pass
     return path
+
+
+def secure_private_file(path):
+    try:
+        path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    except OSError:
+        pass
+    return path
+
+
+def artifact_root():
+    return ensure_private_dir(skill_data_root() / "artifacts")
 
 
 def public_artifact_root():
@@ -258,9 +273,7 @@ def attach_inline_image(out, data, info, mode, args):
 
 
 def state_file():
-    root = skill_data_root()
-    root.mkdir(parents=True, exist_ok=True)
-    return root / "state.json"
+    return ensure_private_dir(skill_data_root()) / "state.json"
 
 
 def load_state():
@@ -281,7 +294,9 @@ def save_state(state):
     path = state_file()
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    secure_private_file(tmp)
     tmp.replace(path)
+    secure_private_file(path)
 
 
 def app_lookup_key(app):
@@ -387,8 +402,10 @@ def preflight(args):
         return {"ok": False, "checks": checks, "warnings": warnings}
     if bool_arg(args, "check_screenshot", True):
         path = artifact_root() / "preflight" / f"preflight-{int(time.time()*1000)}.png"
-        path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_private_dir(path.parent)
         res = run_process(["screencapture", "-x", str(path)], timeout=15, operation="screencapture")
+        if res.get("ok") and path.exists():
+            secure_private_file(path)
         checks["screenshot_ok"] = res.get("ok", False)
         if not res.get("ok"):
             warnings.append("screencapture failed; grant Screen Recording permission to the AgentDock process")
@@ -410,8 +427,7 @@ def png_info(data):
 
 
 def capture_screenshot(subdir, prefix, region=None):
-    directory = artifact_root() / subdir
-    directory.mkdir(parents=True, exist_ok=True)
+    directory = ensure_private_dir(artifact_root() / subdir)
     path = directory / f"{prefix}-{time.time_ns()}.png"
     argv = ["screencapture", "-x"]
     if region:
@@ -420,6 +436,7 @@ def capture_screenshot(subdir, prefix, region=None):
     res = run_process(argv, timeout=20, operation="screencapture")
     if not res.get("ok"):
         return None, res
+    secure_private_file(path)
     return path, res
 
 
@@ -1368,7 +1385,7 @@ def observe(args):
 
 def main():
     args = load_input()
-    op = os.environ.get("AGENTDOCK_OPERATION", "status")
+    op = str(args.pop("skill_action", "status"))
     try:
         if op == "status":
             result = preflight(args)

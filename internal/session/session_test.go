@@ -291,3 +291,16 @@ func tail(value string, size int) string {
 	}
 	return value[len(value)-size:]
 }
+
+func TestPeekDoesNotConsumeOutput(t *testing.T) {
+	s := &Session{ID: "test", StartedAt: time.Now(), exitCode: -1}
+	_, _ = s.stdout.WriteString("pending\n")
+	peeked := s.Peek("running", 1024)
+	if peeked["stdout"] != "pending\n" {
+		t.Fatalf("peek stdout = %#v", peeked["stdout"])
+	}
+	observed := s.Snapshot("running", 1024)
+	if observed["stdout"] != "pending\n" {
+		t.Fatalf("snapshot after peek stdout = %#v", observed["stdout"])
+	}
+}

@@ -7,7 +7,7 @@ macOS 裸机部署使用当前登录用户运行 AgentDock。AgentDock 使用单
 ~/AgentDock    默认工作目录
 ```
 
-裸机模式是可信本机高权限模式；实际能访问的文件由当前 macOS 用户权限决定。需要 macOS 桌面自动化时，使用原生 Skill Runtime 的 `desktop` Skill。
+裸机模式是可信本机高权限模式；实际能访问的文件由当前 macOS 用户权限决定。需要 macOS 桌面自动化时，读取 `desktop` Skill 后按其中说明通过命令工具调用辅助脚本。
 
 ## 安装与启动
 
