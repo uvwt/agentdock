@@ -3,6 +3,7 @@ package httpx
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -312,31 +313,10 @@ func TestServerCardDeclaresOAuthOnlyWhenOAuthEnabled(t *testing.T) {
 	}
 }
 
-func TestOAuthMetadataOmitsNoneWhenClientSecretConfigured(t *testing.T) {
-	t.Setenv("AGENTDOCK_OAUTH_CLIENT_SECRET", "client-secret")
+func TestOAuthMetadataUsesPublicPKCEClients(t *testing.T) {
+	t.Setenv("AGENTDOCK_OAUTH_CLIENT_SECRET", "legacy-secret-is-ignored")
 	cfg := testConfig(t)
-	cfg.OAuthClientID = "client-id"
-	cfg.OAuthServerURL = "https://agentdock.example.com"
-
-	metadata := oauthMetadata(cfg, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server", nil))
-	methods, ok := metadata["token_endpoint_auth_methods_supported"].([]string)
-	if !ok {
-		t.Fatalf("auth methods type = %T", metadata["token_endpoint_auth_methods_supported"])
-	}
-	for _, method := range methods {
-		if method == "none" {
-			t.Fatalf("auth methods include none despite configured client secret: %#v", methods)
-		}
-	}
-	if len(methods) != 1 || methods[0] != "client_secret_post" {
-		t.Fatalf("auth methods = %#v, want client_secret_post", methods)
-	}
-}
-
-func TestOAuthMetadataAllowsNoneWhenClientSecretUnconfigured(t *testing.T) {
-	t.Setenv("AGENTDOCK_OAUTH_CLIENT_SECRET", "")
-	cfg := testConfig(t)
-	cfg.OAuthClientID = "client-id"
+	cfg.OAuthClientID = "oauth-enabled"
 	cfg.OAuthServerURL = "https://agentdock.example.com"
 
 	metadata := oauthMetadata(cfg, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server", nil))
@@ -344,47 +324,59 @@ func TestOAuthMetadataAllowsNoneWhenClientSecretUnconfigured(t *testing.T) {
 	if !ok || len(methods) != 1 || methods[0] != "none" {
 		t.Fatalf("auth methods = %#v, want none", metadata["token_endpoint_auth_methods_supported"])
 	}
-}
-
-func TestValidClientAuthenticationRequiresConfiguredSecret(t *testing.T) {
-	t.Setenv("AGENTDOCK_OAUTH_CLIENT_SECRET", "client-secret")
-	cfg := testConfig(t)
-	cfg.OAuthClientID = "client-id"
-
-	missing := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader("grant_type=authorization_code&client_id=client-id"))
-	missing.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if validClientAuthentication(missing, cfg) {
-		t.Fatal("missing client_secret authenticated despite configured secret")
+	if supported, ok := metadata["resource_indicators_supported"].(bool); !ok || !supported {
+		t.Fatalf("resource_indicators_supported = %#v", metadata["resource_indicators_supported"])
 	}
-
-	wrong := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader("client_id=client-id&client_secret=wrong"))
-	wrong.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if validClientAuthentication(wrong, cfg) {
-		t.Fatal("wrong client_secret authenticated")
-	}
-
-	post := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader("client_id=client-id&client_secret=client-secret"))
-	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if !validClientAuthentication(post, cfg) {
-		t.Fatal("valid client_secret_post rejected")
-	}
-
-	basic := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader("client_id=client-id"))
-	basic.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	basic.SetBasicAuth("client-id", "client-secret")
-	if validClientAuthentication(basic, cfg) {
-		t.Fatal("client_secret_basic accepted despite client_secret_post metadata")
+	grantTypes, ok := metadata["grant_types_supported"].([]string)
+	if !ok || !containsString(grantTypes, "authorization_code") || !containsString(grantTypes, "refresh_token") {
+		t.Fatalf("grant_types_supported = %#v", metadata["grant_types_supported"])
 	}
 }
 
-func TestValidClientAuthenticationAllowsPublicClientWhenSecretUnconfigured(t *testing.T) {
-	t.Setenv("AGENTDOCK_OAUTH_CLIENT_SECRET", "")
+func TestValidClientAuthenticationRequiresRegisteredPublicClient(t *testing.T) {
+	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-secret")
+	redirectURI := "https://client.example/callback"
+	clientID, err := auth.IssueClientID(
+		[]string{redirectURI},
+		[]string{"authorization_code", "refresh_token"},
+		oauthSigningKey(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	values := url.Values{"client_id": {clientID}, "redirect_uri": {redirectURI}}
+	valid := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(values.Encode()))
+	valid.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if !validClientAuthentication(valid, "authorization_code") {
+		t.Fatal("registered public client rejected")
+	}
+
+	values.Set("client_secret", "not-allowed")
+	withSecret := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(values.Encode()))
+	withSecret.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if validClientAuthentication(withSecret, "authorization_code") {
+		t.Fatal("client_secret_post accepted for public client")
+	}
+
+	wrongRedirectValues := url.Values{"client_id": {clientID}, "redirect_uri": {"https://other.example/callback"}}
+	wrongRedirect := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(wrongRedirectValues.Encode()))
+	wrongRedirect.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if validClientAuthentication(wrongRedirect, "authorization_code") {
+		t.Fatal("unregistered redirect URI accepted")
+	}
+}
+
+func TestBearerChallengeReferencesPathSpecificResourceMetadata(t *testing.T) {
 	cfg := testConfig(t)
-	cfg.OAuthClientID = "client-id"
-	req := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader("client_id=client-id"))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if !validClientAuthentication(req, cfg) {
-		t.Fatal("public OAuth client rejected when no client secret is configured")
+	cfg.OAuthClientID = "oauth-enabled"
+	cfg.OAuthServerURL = "https://agentdock.example.com"
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	setBearerChallenge(recorder, cfg, request)
+	want := `Bearer resource_metadata="https://agentdock.example.com/.well-known/oauth-protected-resource/mcp"`
+	if got := recorder.Header().Get("WWW-Authenticate"); got != want {
+		t.Fatalf("WWW-Authenticate = %q, want %q", got, want)
 	}
 }
 
@@ -419,7 +411,7 @@ func TestAuthorizedOAuthFalseWhenOAuthDisabled(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.OAuthServerURL = "https://agentdock.example.com"
 	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-secret")
-	token, err := auth.IssueToken("https://agentdock.example.com", "token-secret", time.Hour)
+	token, err := auth.IssueToken("https://agentdock.example.com", "https://agentdock.example.com/mcp", "token-secret", time.Hour)
 	if err != nil {
 		t.Fatalf("IssueToken() error = %v", err)
 	}

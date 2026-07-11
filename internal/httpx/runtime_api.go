@@ -38,6 +38,7 @@ func runtimeAPIHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc {
 		staticOK := cfg.AuthToken != "" && authorizer.Authorized(r)
 		oauthOK := authorizedOAuth(r, cfg)
 		if authRequired && !staticOK && !oauthOK {
+			setBearerChallenge(w, cfg, r)
 			writeRuntimeAPIError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 			return
 		}

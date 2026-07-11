@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -91,6 +93,87 @@ func TestOAuthStoreRejectsExpiredAuthorizationCode(t *testing.T) {
 	}
 }
 
+func TestPersistentOAuthStoreRotatesRefreshTokensAcrossReloads(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "oauth", "refresh-tokens.json")
+	store, err := NewPersistentOAuthStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const clientID = "signed-client-id"
+	const resource = "https://agentdock.example/mcp"
+	refreshToken, err := store.IssueRefreshToken(clientID, resource, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), refreshToken) {
+		t.Fatal("refresh token state persisted the raw token")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("refresh token state mode = %o, want 600", info.Mode().Perm())
+	}
+
+	reloaded, err := NewPersistentOAuthStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotated, gotResource, ok, err := reloaded.RotateRefreshToken(refreshToken, clientID, resource, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || rotated == "" || rotated == refreshToken || gotResource != resource {
+		t.Fatalf("rotation = token:%t resource:%q ok:%v", rotated != "", gotResource, ok)
+	}
+	if _, _, ok, err := reloaded.RotateRefreshToken(refreshToken, clientID, resource, time.Hour); err != nil || ok {
+		t.Fatalf("consumed refresh token replay = ok:%v err:%v", ok, err)
+	}
+
+	reloadedAgain, err := NewPersistentOAuthStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondRotation, _, ok, err := reloadedAgain.RotateRefreshToken(rotated, clientID, "", time.Hour)
+	if err != nil || !ok || secondRotation == "" {
+		t.Fatalf("persisted rotated token = token:%t ok:%v err:%v", secondRotation != "", ok, err)
+	}
+}
+
+func TestOAuthRefreshTokenRejectsClientAndResourceMismatchWithoutConsumption(t *testing.T) {
+	store := NewOAuthStore()
+	const clientID = "client-id"
+	const resource = "https://agentdock.example/mcp"
+	refreshToken, err := store.IssueRefreshToken(clientID, resource, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok, err := store.RotateRefreshToken(refreshToken, "other-client", resource, time.Hour); err != nil || ok {
+		t.Fatalf("wrong client rotation = ok:%v err:%v", ok, err)
+	}
+	if _, _, ok, err := store.RotateRefreshToken(refreshToken, clientID, "https://agentdock.example/other", time.Hour); err != nil || ok {
+		t.Fatalf("wrong resource rotation = ok:%v err:%v", ok, err)
+	}
+	if rotated, _, ok, err := store.RotateRefreshToken(refreshToken, clientID, resource, time.Hour); err != nil || !ok || rotated == "" {
+		t.Fatalf("valid rotation after mismatches = token:%t ok:%v err:%v", rotated != "", ok, err)
+	}
+}
+
+func TestPersistentOAuthStoreRejectsCorruptState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "refresh-tokens.json")
+	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewPersistentOAuthStore(path); err == nil || !strings.Contains(err.Error(), "decode OAuth refresh token state") {
+		t.Fatalf("NewPersistentOAuthStore() error = %v", err)
+	}
+}
+
 func TestVerifyPKCEUsesS256(t *testing.T) {
 	const verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
 	const challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
@@ -119,41 +202,47 @@ func TestVerifyPKCEUsesS256(t *testing.T) {
 
 func TestIssueAndValidateToken(t *testing.T) {
 	const issuer = "https://agentdock.example"
+	const audience = issuer + "/mcp"
 	const key = "test-signing-key"
-	token, err := IssueToken(issuer, key, time.Hour)
+	token, err := IssueToken(issuer, audience, key, time.Hour)
 	if err != nil {
 		t.Fatalf("IssueToken() error = %v", err)
 	}
-	if !ValidateToken(token, issuer, key) {
+	if !ValidateToken(token, issuer, audience, key) {
 		t.Fatal("ValidateToken() rejected freshly issued token")
 	}
-	if ValidateToken(token, "https://other.example", key) {
+	if ValidateToken(token, "https://other.example", audience, key) {
 		t.Fatal("ValidateToken() accepted wrong issuer")
 	}
-	if ValidateToken(token, issuer, "wrong-key") {
+	if ValidateToken(token, issuer, "https://other.example/mcp", key) {
+		t.Fatal("ValidateToken() accepted wrong audience")
+	}
+	if ValidateToken(token, issuer, audience, "wrong-key") {
 		t.Fatal("ValidateToken() accepted wrong signing key")
 	}
 	parts := strings.Split(token, ".")
 	parts[1] = strings.Repeat("A", len(parts[1]))
-	if ValidateToken(strings.Join(parts, "."), issuer, key) {
+	if ValidateToken(strings.Join(parts, "."), issuer, audience, key) {
 		t.Fatal("ValidateToken() accepted tampered signature")
 	}
 }
 
 func TestIssueTokenValidatesRequiredInputs(t *testing.T) {
 	tests := []struct {
-		name   string
-		issuer string
-		key    string
-		ttl    time.Duration
+		name     string
+		issuer   string
+		audience string
+		key      string
+		ttl      time.Duration
 	}{
-		{name: "missing issuer", key: "key", ttl: time.Hour},
-		{name: "missing key", issuer: "issuer", ttl: time.Hour},
-		{name: "non-positive ttl", issuer: "issuer", key: "key"},
+		{name: "missing issuer", audience: "audience", key: "key", ttl: time.Hour},
+		{name: "missing audience", issuer: "issuer", key: "key", ttl: time.Hour},
+		{name: "missing key", issuer: "issuer", audience: "audience", ttl: time.Hour},
+		{name: "non-positive ttl", issuer: "issuer", audience: "audience", key: "key"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := IssueToken(test.issuer, test.key, test.ttl); err == nil {
+			if _, err := IssueToken(test.issuer, test.audience, test.key, test.ttl); err == nil {
 				t.Fatal("IssueToken() error = nil, want validation error")
 			}
 		})
@@ -162,6 +251,7 @@ func TestIssueTokenValidatesRequiredInputs(t *testing.T) {
 
 func TestValidateTokenRejectsInvalidClaims(t *testing.T) {
 	const issuer = "https://agentdock.example"
+	const audience = issuer + "/mcp"
 	const key = "test-signing-key"
 	now := time.Now()
 	tests := []struct {
@@ -171,14 +261,14 @@ func TestValidateTokenRejectsInvalidClaims(t *testing.T) {
 		{
 			name: "expired",
 			claims: tokenClaims{
-				Issuer: issuer, Audience: issuer,
+				Issuer: issuer, Audience: audience,
 				IssuedAt: now.Add(-2 * time.Hour).Unix(), ExpiresAt: now.Add(-time.Hour).Unix(),
 			},
 		},
 		{
 			name: "missing issued at",
 			claims: tokenClaims{
-				Issuer: issuer, Audience: issuer, ExpiresAt: now.Add(time.Hour).Unix(),
+				Issuer: issuer, Audience: audience, ExpiresAt: now.Add(time.Hour).Unix(),
 			},
 		},
 		{
@@ -191,14 +281,14 @@ func TestValidateTokenRejectsInvalidClaims(t *testing.T) {
 		{
 			name: "issued too far in future",
 			claims: tokenClaims{
-				Issuer: issuer, Audience: issuer,
+				Issuer: issuer, Audience: audience,
 				IssuedAt: now.Add(2 * time.Minute).Unix(), ExpiresAt: now.Add(time.Hour).Unix(),
 			},
 		},
 		{
 			name: "expires before issued at",
 			claims: tokenClaims{
-				Issuer: issuer, Audience: issuer,
+				Issuer: issuer, Audience: audience,
 				IssuedAt: now.Add(30 * time.Second).Unix(), ExpiresAt: now.Add(20 * time.Second).Unix(),
 			},
 		},
@@ -206,15 +296,50 @@ func TestValidateTokenRejectsInvalidClaims(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			token := signClaimsForTest(t, test.claims, key)
-			if ValidateToken(token, issuer, key) {
+			if ValidateToken(token, issuer, audience, key) {
 				t.Fatal("ValidateToken() accepted invalid claims")
 			}
 		})
 	}
 	for _, token := range []string{"", "one-part", "not-base64.signature", "e30.invalid-signature"} {
-		if ValidateToken(token, issuer, key) {
+		if ValidateToken(token, issuer, audience, key) {
 			t.Fatalf("ValidateToken(%q) = true, want false", token)
 		}
+	}
+}
+
+func TestIssueAndValidateClientID(t *testing.T) {
+	const key = "client-registration-key"
+	const redirectURI = "https://client.example/callback"
+	clientID, err := IssueClientID(
+		[]string{redirectURI, redirectURI},
+		[]string{"authorization_code", "refresh_token", "refresh_token"},
+		key,
+	)
+	if err != nil {
+		t.Fatalf("IssueClientID() error = %v", err)
+	}
+	if !ValidateClientID(clientID, key) {
+		t.Fatal("ValidateClientID() rejected signed dynamic client")
+	}
+	if !ValidateClientRedirect(clientID, redirectURI, key) {
+		t.Fatal("ValidateClientRedirect() rejected registered redirect URI")
+	}
+	if !ClientAllowsGrant(clientID, "authorization_code", key) || !ClientAllowsGrant(clientID, "refresh_token", key) {
+		t.Fatal("ClientAllowsGrant() rejected registered grant")
+	}
+	if ClientAllowsGrant(clientID, "client_credentials", key) {
+		t.Fatal("ClientAllowsGrant() accepted unregistered grant")
+	}
+	if ValidateClientRedirect(clientID, "https://other.example/callback", key) {
+		t.Fatal("ValidateClientRedirect() accepted unregistered redirect URI")
+	}
+	if ValidateClientRedirect(clientID, redirectURI, "wrong-key") {
+		t.Fatal("ValidateClientRedirect() accepted wrong signing key")
+	}
+	tampered := clientID[:len(clientID)-1] + "A"
+	if ValidateClientRedirect(tampered, redirectURI, key) {
+		t.Fatal("ValidateClientRedirect() accepted tampered client ID")
 	}
 }
 
