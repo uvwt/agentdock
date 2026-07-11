@@ -133,6 +133,7 @@ try {
         if (-not $AuthToken) {
             $AuthToken = New-AgentDockToken
         }
+        Add-Type -AssemblyName System.Security
         $protectedToken = [System.Security.Cryptography.ProtectedData]::Protect(
             [Text.Encoding]::UTF8.GetBytes($AuthToken),
             [Text.Encoding]::UTF8.GetBytes('agentdock.startup.v1'),
@@ -148,6 +149,7 @@ try {
         $escapedBinaryPath = $binaryPath.Replace("'", "''")
         $launcher = @"
 `$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Security
 `$tokenBytes = [Convert]::FromBase64String([IO.File]::ReadAllText('$escapedTokenPath').Trim())
 `$plainToken = [System.Security.Cryptography.ProtectedData]::Unprotect(
     `$tokenBytes,

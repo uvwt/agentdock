@@ -43,9 +43,9 @@ jobs:
       - name: Check browser runner syntax
         run: node --check examples/browser-runner/browser-runner.js
 
-      - name: Check PowerShell installer syntax
+      - name: Check Windows PowerShell installer syntax
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: powershell
         run: |
           $failed = $false
           foreach ($path in @('scripts/install-windows.ps1', 'scripts/uninstall-windows.ps1')) {
@@ -62,3 +62,28 @@ jobs:
             }
           }
           if ($failed) { exit 1 }
+
+      - name: Test Windows PowerShell DPAPI round trip
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.Security
+
+          $plainText = 'agentdock-dpapi-roundtrip'
+          $entropy = [Text.Encoding]::UTF8.GetBytes('agentdock.startup.v1')
+          $protectedBytes = [System.Security.Cryptography.ProtectedData]::Protect(
+            [Text.Encoding]::UTF8.GetBytes($plainText),
+            $entropy,
+            [System.Security.Cryptography.DataProtectionScope]::CurrentUser
+          )
+          $unprotectedBytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
+            $protectedBytes,
+            $entropy,
+            [System.Security.Cryptography.DataProtectionScope]::CurrentUser
+          )
+          $actual = [Text.Encoding]::UTF8.GetString($unprotectedBytes)
+
+          if ($actual -ne $plainText) {
+            throw "DPAPI round trip mismatch. Expected '$plainText', got '$actual'."
+          }

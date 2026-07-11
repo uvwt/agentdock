@@ -47,6 +47,10 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 			t.Fatalf("install-windows.ps1 missing %q", want)
 		}
 	}
+	const securityAssemblyLoad = "Add-Type -AssemblyName System.Security"
+	if got := strings.Count(script, securityAssemblyLoad); got != 2 {
+		t.Fatalf("install-windows.ps1 must load System.Security in the installer and generated launcher; got %d occurrences", got)
+	}
 	if strings.Contains(script, "RunLevel Highest") {
 		t.Fatal("Windows installer should not require elevated startup")
 	}
