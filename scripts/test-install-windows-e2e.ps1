@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string] $InstallerPath = (Join-Path $PSScriptRoot 'install-windows.ps1'),
-    [string] $Version = 'v0.2.4',
+    [string] $Version = 'v0.2.5',
     [int] $Port = 18765
 )
 
@@ -10,16 +10,17 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 $resolvedInstaller = Resolve-Path -LiteralPath $InstallerPath
-$taskName = 'AgentDock'
-$testRoot = Join-Path $env:RUNNER_TEMP ('agentdock-installer-e2e-' + [Guid]::NewGuid().ToString('N'))
+$testRoot = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-installer-e2e-' + [Guid]::NewGuid().ToString('N'))
 $installDir = Join-Path $testRoot 'bin'
 $binaryPath = Join-Path $installDir 'agentdock.exe'
 $tokenPath = Join-Path $testRoot 'auth-token.dpapi'
+$launcherPath = Join-Path $testRoot 'start-agentdock.ps1'
+$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$runValueName = 'AgentDock'
 $healthUrl = "http://127.0.0.1:$Port/healthz"
 $originalUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 
 function Stop-TestAgentDock {
-    Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     Get-Process -Name 'agentdock' -ErrorAction SilentlyContinue | Where-Object {
         try {
             [string]::Equals(
@@ -45,9 +46,16 @@ function Assert-AgentDockHealthy {
     if (-not (Test-Path -LiteralPath $tokenPath -PathType Leaf)) {
         throw "AgentDock DPAPI token was not created: $tokenPath"
     }
-    if ($null -eq (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue)) {
-        throw 'AgentDock scheduled task was not registered.'
+    $startupCommand = Get-ItemPropertyValue -LiteralPath $runKey -Name $runValueName -ErrorAction Stop
+    if (-not $startupCommand.Contains($launcherPath)) {
+        throw "AgentDock HKCU startup command does not reference the launcher: $startupCommand"
     }
+}
+
+$identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = [System.Security.Principal.WindowsPrincipal]::new($identity)
+if ($principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw 'Windows installer E2E must run as a non-administrator.'
 }
 
 try {
@@ -78,7 +86,7 @@ try {
 }
 finally {
     Stop-TestAgentDock
-    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    Remove-ItemProperty -LiteralPath $runKey -Name $runValueName -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
     [Environment]::SetEnvironmentVariable('Path', $originalUserPath, 'User')
 }

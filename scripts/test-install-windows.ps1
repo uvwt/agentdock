@@ -27,10 +27,25 @@ foreach ($forbidden in @(
     'icacls.exe',
     '$icaclsArguments',
     '$AclSelfTest',
-    '$sddl'
+    '$sddl',
+    'Register-ScheduledTask',
+    'Start-ScheduledTask',
+    'Stop-ScheduledTask',
+    'Get-ScheduledTask',
+    'Unregister-ScheduledTask'
 )) {
     if ($content.Contains($forbidden)) {
-        throw "$InstallerPath still contains removed ACL hardening code: $forbidden"
+        throw "$InstallerPath still contains removed privileged startup or ACL code: $forbidden"
+    }
+}
+
+foreach ($required in @(
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run',
+    'New-ItemProperty -Path $runKey -Name $runValueName',
+    'Start-AgentDockLauncher -LauncherPath $launcherPath'
+)) {
+    if (-not $content.Contains($required)) {
+        throw "$InstallerPath is missing current-user startup logic: $required"
     }
 }
 

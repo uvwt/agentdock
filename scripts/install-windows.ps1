@@ -53,14 +53,8 @@ function New-AgentDockToken {
 }
 
 function Stop-AgentDockForUpgrade([string] $BinaryPath) {
-    $taskName = 'AgentDock'
-    $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-    $taskWasRunning = $null -ne $task -and $task.State -eq 'Running'
-    if ($null -ne $task) {
-        Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-    }
-
     $normalizedBinaryPath = [IO.Path]::GetFullPath($BinaryPath)
+    $processWasRunning = $false
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
     do {
         $running = @(Get-Process -Name 'agentdock' -ErrorAction SilentlyContinue | Where-Object {
@@ -75,6 +69,9 @@ function Stop-AgentDockForUpgrade([string] $BinaryPath) {
                 $false
             }
         })
+        if ($running.Count -gt 0) {
+            $processWasRunning = $true
+        }
         foreach ($process in $running) {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
         }
@@ -101,9 +98,16 @@ function Stop-AgentDockForUpgrade([string] $BinaryPath) {
     }
 
     return [PSCustomObject]@{
-        TaskExisted = $null -ne $task
-        TaskWasRunning = $taskWasRunning
+        ProcessWasRunning = $processWasRunning
     }
+}
+
+function Start-AgentDockLauncher([string] $LauncherPath) {
+    if (-not (Test-Path -LiteralPath $LauncherPath -PathType Leaf)) {
+        throw "AgentDock launcher was not found: $LauncherPath"
+    }
+    $arguments = "-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$LauncherPath`""
+    Start-Process -FilePath 'powershell.exe' -ArgumentList $arguments -WindowStyle Hidden | Out-Null
 }
 
 function Install-AgentDockBinary([string] $SourceBinary, [string] $DestinationBinary) {
@@ -137,8 +141,15 @@ $archive = Join-Path $tempRoot $asset
 $checksumFile = "$archive.sha256"
 $destinationBinary = Join-Path $InstallDir 'agentdock.exe'
 $binaryBackup = Join-Path $tempRoot 'agentdock.exe.previous'
+$runtimeDir = Split-Path -Parent $InstallDir
+$launcherPath = Join-Path $runtimeDir 'start-agentdock.ps1'
+$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$runValueName = 'AgentDock'
 $upgradeState = $null
 $binaryReplacementStarted = $false
+$startupRegistrationChanged = $false
+$runValueExisted = $false
+$previousRunValue = $null
 
 try {
     New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
@@ -174,7 +185,6 @@ try {
     }
 
     if ($RegisterStartup) {
-        $runtimeDir = Split-Path -Parent $InstallDir
         New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
         $tokenPath = Join-Path $runtimeDir 'auth-token.dpapi'
         $generatedToken = $false
@@ -192,7 +202,6 @@ try {
             [IO.File]::WriteAllText($tokenPath, [Convert]::ToBase64String($protectedToken), [Text.UTF8Encoding]::new($false))
         }
 
-        $launcherPath = Join-Path $runtimeDir 'start-agentdock.ps1'
         $escapedTokenPath = $tokenPath.Replace("'", "''")
         $binaryPath = Join-Path $InstallDir 'agentdock.exe'
         $escapedBinaryPath = $binaryPath.Replace("'", "''")
@@ -212,12 +221,21 @@ Add-Type -AssemblyName System.Security
 "@
         [IO.File]::WriteAllText($launcherPath, $launcher, [Text.UTF8Encoding]::new($false))
 
-        $taskName = 'AgentDock'
-        $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$launcherPath`""
-        $trigger = New-ScheduledTaskTrigger -AtLogOn -User ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)
-        $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
-        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentDock user runtime' -Force | Out-Null
-        Start-ScheduledTask -TaskName $taskName
+        # HKCU Run 只写当前用户注册表，不需要管理员权限；安装完成后立即启动一次。
+        if (Test-Path -LiteralPath $runKey) {
+            try {
+                $previousRunValue = Get-ItemPropertyValue -LiteralPath $runKey -Name $runValueName -ErrorAction Stop
+                $runValueExisted = $true
+            }
+            catch {
+                $runValueExisted = $false
+            }
+        }
+        New-Item -Path $runKey -Force | Out-Null
+        $startupCommand = "powershell.exe -NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcherPath`""
+        New-ItemProperty -Path $runKey -Name $runValueName -Value $startupCommand -PropertyType String -Force | Out-Null
+        $startupRegistrationChanged = $true
+        Start-AgentDockLauncher -LauncherPath $launcherPath
 
         $health = $null
         $deadline = [DateTime]::UtcNow.AddSeconds(20)
@@ -235,8 +253,8 @@ Add-Type -AssemblyName System.Security
             Write-Host "Bearer token (shown once): $AuthToken"
         }
     }
-    elseif ($null -ne $upgradeState -and $upgradeState.TaskWasRunning) {
-        Start-ScheduledTask -TaskName 'AgentDock'
+    elseif ($null -ne $upgradeState -and $upgradeState.ProcessWasRunning -and (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
+        Start-AgentDockLauncher -LauncherPath $launcherPath
     }
 
     Write-Host "AgentDock installed: $destinationBinary"
@@ -254,19 +272,25 @@ catch {
                 Remove-Item -LiteralPath $destinationBinary -Force
             }
 
-            if ($null -ne $upgradeState -and -not $upgradeState.TaskExisted) {
-                Unregister-ScheduledTask -TaskName 'AgentDock' -Confirm:$false -ErrorAction SilentlyContinue
+            if ($startupRegistrationChanged) {
+                if ($runValueExisted) {
+                    New-Item -Path $runKey -Force | Out-Null
+                    New-ItemProperty -Path $runKey -Name $runValueName -Value $previousRunValue -PropertyType String -Force | Out-Null
+                }
+                else {
+                    Remove-ItemProperty -LiteralPath $runKey -Name $runValueName -ErrorAction SilentlyContinue
+                }
             }
-            elseif ($null -ne $upgradeState -and $upgradeState.TaskWasRunning) {
-                Start-ScheduledTask -TaskName 'AgentDock'
+            if ($null -ne $upgradeState -and $upgradeState.ProcessWasRunning -and (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
+                Start-AgentDockLauncher -LauncherPath $launcherPath
             }
         }
         catch {
             Write-Warning "AgentDock rollback failed: $($_.Exception.Message)"
         }
     }
-    elseif ($null -ne $upgradeState -and $upgradeState.TaskWasRunning) {
-        Start-ScheduledTask -TaskName 'AgentDock' -ErrorAction SilentlyContinue
+    elseif ($null -ne $upgradeState -and $upgradeState.ProcessWasRunning -and (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
+        Start-AgentDockLauncher -LauncherPath $launcherPath
     }
     throw $installError
 }

@@ -46,7 +46,9 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"Test-Path -LiteralPath $tokenPath -PathType Leaf",
 		"Copy-Item -LiteralPath $binaryBackup -Destination $destinationBinary -Force",
 		"DataProtectionScope]::CurrentUser",
-		"New-ScheduledTaskTrigger -AtLogOn",
+		"HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+		"New-ItemProperty -Path $runKey -Name $runValueName",
+		"Start-AgentDockLauncher -LauncherPath $launcherPath",
 		"http://127.0.0.1:$Port/healthz",
 	} {
 		if !strings.Contains(script, want) {
@@ -79,9 +81,14 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"$AclSelfTest",
 		"SetSecurityDescriptorSddlForm(",
 		"$sddl",
+		"Register-ScheduledTask",
+		"Start-ScheduledTask",
+		"Stop-ScheduledTask",
+		"Get-ScheduledTask",
+		"Unregister-ScheduledTask",
 	} {
 		if strings.Contains(script, forbidden) {
-			t.Fatalf("install-windows.ps1 still contains removed ACL hardening code %q", forbidden)
+			t.Fatalf("install-windows.ps1 still contains removed privileged startup or ACL code %q", forbidden)
 		}
 	}
 	for _, incompatible := range []string{

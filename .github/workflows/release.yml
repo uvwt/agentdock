@@ -77,6 +77,13 @@ jobs:
           $ErrorActionPreference = 'Stop'
           & .\scripts\test-install-windows.ps1
 
+      - name: Run full install and in-place upgrade as standard user
+        if: matrix.goarch == 'amd64'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\run-windows-installer-e2e-as-standard-user.ps1 -Version v0.2.5
+
       - name: Detect Authenticode configuration
         id: signing
         shell: pwsh

@@ -8,6 +8,7 @@ on:
       - 'scripts/install-windows.ps1'
       - 'scripts/test-install-windows.ps1'
       - 'scripts/test-install-windows-e2e.ps1'
+      - 'scripts/run-windows-installer-e2e-as-standard-user.ps1'
       - '.github/workflows/windows-installer.yml'
   workflow_dispatch:
 
@@ -28,8 +29,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           & .\scripts\test-install-windows.ps1
 
-      - name: Run full install and in-place upgrade
+      - name: Run full install and in-place upgrade as standard user
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          & .\scripts\test-install-windows-e2e.ps1 -Version v0.2.4
+          & .\scripts\run-windows-installer-e2e-as-standard-user.ps1 -Version v0.2.5
