@@ -1,3 +1,5 @@
+//go:build !windows
+
 package skillruntime_test
 
 import (

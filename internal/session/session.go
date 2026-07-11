@@ -7,13 +7,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
-	"runtime"
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/uvwt/agentdock/internal/textutil"
@@ -30,6 +27,9 @@ type Session struct {
 	FinishedAt time.Time
 	Done       chan struct{}
 	TimedOut   bool
+	Terminal   string
+
+	runner commandRunner
 
 	mu                 sync.Mutex
 	completed          bool
@@ -137,6 +137,10 @@ func (s *Session) CompletedBefore(cutoff time.Time) bool {
 }
 
 func Start(ctx context.Context, command, workdir string, env []string, timeout time.Duration, prepare PrepareFunc) (*Session, map[string]any, error) {
+	return StartWithTTY(ctx, command, workdir, env, timeout, false, prepare)
+}
+
+func StartWithTTY(ctx context.Context, command, workdir string, env []string, timeout time.Duration, tty bool, prepare PrepareFunc) (*Session, map[string]any, error) {
 	if timeout <= 0 {
 		return nil, nil, fmt.Errorf("timeout must be positive")
 	}
@@ -145,10 +149,9 @@ func Start(ctx context.Context, command, workdir string, env []string, timeout t
 		return nil, nil, fmt.Errorf("generate session id: %w", err)
 	}
 	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
-	cmd := ShellCommand(cmdCtx, command)
+	cmd := shellCommand(cmdCtx, command)
 	cmd.Dir = workdir
 	cmd.Env = env
-	setProcessGroup(cmd)
 	cleanup := func() {}
 	status := map[string]any{"enabled": false}
 	if prepare != nil {
@@ -158,37 +161,51 @@ func Start(ctx context.Context, command, workdir string, env []string, timeout t
 		}
 	}
 
-	stdin, err := cmd.StdinPipe()
+	s := &Session{
+		ID: id, Command: cmd, Cancel: cancel,
+		StartedAt: time.Now(), Done: make(chan struct{}), exitCode: -1,
+		Terminal: "pipes",
+	}
+	stdout := sessionOutputWriter{session: s}
+	stderr := sessionOutputWriter{session: s, stderr: true}
+
+	var runner commandRunner
+	usedInteractive := false
+	if tty {
+		runner, usedInteractive, err = startInteractiveRunner(cmdCtx, cmd, stdout, stderr)
+	}
+	if err == nil && !usedInteractive {
+		runner, err = startStandardRunner(cmd, stdout, stderr)
+	}
 	if err != nil {
 		cancel()
 		cleanup()
 		return nil, status, err
 	}
-	s := &Session{
-		ID: id, Command: cmd, Cancel: cancel, Stdin: stdin,
-		StartedAt: time.Now(), Done: make(chan struct{}), exitCode: -1,
+	if usedInteractive {
+		s.Terminal = "conpty"
 	}
-	cmd.Stdout = sessionOutputWriter{session: s}
-	cmd.Stderr = sessionOutputWriter{session: s, stderr: true}
-	if err := cmd.Start(); err != nil {
-		_ = stdin.Close()
-		cancel()
-		cleanup()
-		return nil, status, err
-	}
+	s.runner = runner
+	s.Stdin = runner.Stdin()
 	cleanup()
 
+	// CommandContext only guarantees termination of the direct child. Every runner
+	// therefore owns a platform process tree and receives timeout/cancel events.
 	go func() {
-		// exec.Cmd.Wait 会等待其内部 stdout/stderr 复制协程完成，因此完成快照
-		// 不会与快速退出命令争抢管道关闭时机，也不会遗漏尾部输出。
-		waitErr := cmd.Wait()
+		select {
+		case <-cmdCtx.Done():
+			_ = runner.Kill()
+		case <-s.Done:
+		}
+	}()
+
+	go func() {
+		exitCode, waitErr := runner.Wait()
 		s.mu.Lock()
 		s.waitErr = waitErr
 		s.completed = true
 		s.FinishedAt = time.Now()
-		if cmd.ProcessState != nil {
-			s.exitCode = cmd.ProcessState.ExitCode()
-		}
+		s.exitCode = exitCode
 		if cmdCtx.Err() == context.DeadlineExceeded {
 			s.TimedOut = true
 		}
@@ -217,16 +234,12 @@ func (s *Session) Kill() bool {
 		s.mu.Unlock()
 		return false
 	}
-	process := s.Command.Process
+	runner := s.runner
 	s.mu.Unlock()
-	if process == nil {
+	if runner == nil {
 		return false
 	}
-	if runtime.GOOS == "windows" {
-		_ = process.Kill()
-	} else {
-		_ = syscall.Kill(-process.Pid, syscall.SIGTERM)
-	}
+	_ = runner.Kill()
 	s.Cancel()
 	return true
 }
@@ -256,6 +269,7 @@ func (s *Session) Snapshot(status string, maxBytes int) map[string]any {
 		"stderr":               stderr,
 		"elapsed_ms":           time.Since(s.StartedAt).Milliseconds(),
 		"timed_out":            s.TimedOut,
+		"terminal":             s.Terminal,
 		"stdout_output_bytes":  len([]byte(stdout)),
 		"stderr_output_bytes":  len([]byte(stderr)),
 		"stdout_total_bytes":   s.stdoutTotalBytes,
@@ -302,23 +316,6 @@ func (w sessionOutputWriter) Write(data []byte) (int, error) {
 		s.stdoutCursor = adjustCursorAfterDrop(s.stdoutCursor, dropped)
 	}
 	return n, err
-}
-
-func ShellCommand(ctx context.Context, command string) *exec.Cmd {
-	if runtime.GOOS == "windows" {
-		return exec.CommandContext(ctx, "cmd", "/C", command)
-	}
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
-	}
-	return exec.CommandContext(ctx, shell, "-c", command)
-}
-
-func setProcessGroup(cmd *exec.Cmd) {
-	if runtime.GOOS != "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	}
 }
 
 func trim(value string, maxBytes int) string {

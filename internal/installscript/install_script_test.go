@@ -29,3 +29,34 @@ func TestInstallLinuxWritesExplicitNexusDockToken(t *testing.T) {
 		}
 	}
 }
+
+func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
+	data, err := os.ReadFile("../../scripts/install-windows.ps1")
+	if err != nil {
+		t.Fatalf("read install-windows.ps1: %v", err)
+	}
+	script := string(data)
+	for _, want := range []string{
+		"agentdock_windows_$architecture.zip",
+		"Get-FileHash -LiteralPath $archive -Algorithm SHA256",
+		"DataProtectionScope]::CurrentUser",
+		"New-ScheduledTaskTrigger -AtLogOn",
+		"http://127.0.0.1:$Port/healthz",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("install-windows.ps1 missing %q", want)
+		}
+	}
+	if strings.Contains(script, "RunLevel Highest") {
+		t.Fatal("Windows installer should not require elevated startup")
+	}
+	for _, incompatible := range []string{
+		"RandomNumberGenerator]::Fill",
+		"Convert]::ToHexString",
+		`Replace(\"`,
+	} {
+		if strings.Contains(script, incompatible) {
+			t.Fatalf("install-windows.ps1 contains Windows PowerShell 5.1 incompatible syntax %q", incompatible)
+		}
+	}
+}

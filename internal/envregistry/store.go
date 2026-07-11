@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/uvwt/agentdock/internal/atomicfile"
+	"github.com/uvwt/agentdock/internal/securepath"
 )
 
 const (
@@ -76,8 +77,9 @@ type varRegistry struct {
 }
 
 type valuesFile struct {
-	Env     map[string]string `json:"env,omitempty"`
-	Secrets map[string]string `json:"secrets,omitempty"`
+	Protection string            `json:"protection,omitempty"`
+	Env        map[string]string `json:"env,omitempty"`
+	Secrets    map[string]string `json:"secrets,omitempty"`
 }
 
 func New(root string, definitions func() []Definition) (*Store, error) {
@@ -449,13 +451,13 @@ func (s *Store) ensureDirs() error {
 	if err := os.MkdirAll(s.root, 0o700); err != nil {
 		return err
 	}
-	if err := os.Chmod(s.root, 0o700); err != nil {
+	if err := securepath.EnsurePrivate(s.root); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(s.valuesDir, 0o700); err != nil {
 		return err
 	}
-	return os.Chmod(s.valuesDir, 0o700)
+	return securepath.EnsurePrivate(s.valuesDir)
 }
 
 func (s *Store) loadRegistry() (registryFile, error) {
@@ -511,15 +513,38 @@ func (s *Store) loadValues(skill string) (valuesFile, error) {
 	if values.Secrets == nil {
 		values.Secrets = map[string]string{}
 	}
-	return values, nil
+	return unprotectValuesFromStorage(values)
 }
 
 func (s *Store) saveValues(skill string, values valuesFile) error {
-	data, err := json.MarshalIndent(values, "", "  ")
+	stored, err := protectValuesForStorage(values)
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(stored, "", "  ")
 	if err != nil {
 		return err
 	}
 	return atomicfile.Write(s.valuesPath(skill), append(data, '\n'), 0o600)
+}
+
+func cloneValues(values valuesFile) valuesFile {
+	cloned := valuesFile{
+		Protection: values.Protection,
+		Env:        make(map[string]string, len(values.Env)),
+		Secrets:    make(map[string]string, len(values.Secrets)),
+	}
+	for name, value := range values.Env {
+		cloned.Env[name] = value
+	}
+	for name, value := range values.Secrets {
+		cloned.Secrets[name] = value
+	}
+	return cloned
+}
+
+func errUnsupportedProtection(protection string) error {
+	return fmt.Errorf("unsupported env values protection %q", protection)
 }
 
 func (s *Store) valuesPath(skill string) string {

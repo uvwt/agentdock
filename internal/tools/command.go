@@ -58,7 +58,7 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 	if err != nil {
 		return nil, err
 	}
-	s, sandboxStatus, err := session.Start(context.Background(), cmd, workdir.Abs, commandEnv, timeout, func(command *exec.Cmd) (func(), map[string]any) {
+	s, sandboxStatus, err := session.StartWithTTY(context.Background(), cmd, workdir.Abs, commandEnv, timeout, tty, func(command *exec.Cmd) (func(), map[string]any) {
 		// AgentDock 采用单一 Host 路径模型，命令权限由当前 OS 用户、Docker volume 或 systemd 用户决定。
 		return func() {}, map[string]any{"enabled": false, "mode": "none", "policy": "no_command_content_filtering", "warnings": []string{"exec_command runs with the AgentDock process OS user privileges", "use Docker volumes, service users, file permissions, and network policy as the security boundary"}}
 	})

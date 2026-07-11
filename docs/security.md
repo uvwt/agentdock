@@ -25,3 +25,13 @@ curl -i http://127.0.0.1:18766/mcp
 ```
 
 无授权访问 `/mcp` 应返回 unauthorized。
+
+
+## Windows 本地保护
+
+Windows 原生运行时不把 POSIX `chmod` 当成安全边界：
+
+- AgentDock 状态目录和 0600 语义的原子文件使用受保护 DACL，只授权当前用户、SYSTEM 和本机管理员。
+- Env Registry 中 `kind=secret` 的值使用当前用户作用域 DPAPI 加密后落盘；旧明文值只作为迁移输入读取，并在下一次写入时转成 DPAPI 密文。
+- 登录自启动脚本保存的 Bearer token同样使用当前用户 DPAPI，任务计划程序以当前登录用户运行。
+- Windows Job Object 负责约束命令和 Skill 子进程树；这不是 Codex 等级的 Restricted Token 沙箱。AgentDock Windows Core 仍采用可信 Host 用户权限模型。

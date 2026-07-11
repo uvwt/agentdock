@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/uvwt/agentdock/internal/securepath"
 )
 
 const (
@@ -97,6 +99,9 @@ func (c *Config) Normalize() error {
 		}
 		if !info.IsDir() {
 			return fmt.Errorf("%s is not a directory: %s", path.label, cleaned)
+		}
+		if err := securepath.EnsurePrivate(cleaned); err != nil {
+			return fmt.Errorf("secure %s %s: %w", path.label, cleaned, err)
 		}
 		*path.value = cleaned
 	}

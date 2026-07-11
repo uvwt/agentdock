@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/uvwt/agentdock/internal/processcontrol"
 )
 
 const (
@@ -146,11 +148,14 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	}
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.Command(entrypoint)
-	configureProcessGroup(cmd)
+	cmd, err := entrypointCommand(manifest, entrypoint)
+	if err != nil {
+		return finish(runtimeError(ErrDependencyMissing, "runtime", err))
+	}
+	processcontrol.Configure(cmd)
 	cmd.Dir = packageDir
 	cmd.Stdin = bytes.NewReader(req.Input)
-	cmd.Env = r.buildEnv(manifest, operation, binding, envRegistryValues)
+	cmd.Env = applyRuntimeEnvironment(manifest, r.buildEnv(manifest, operation, binding, envRegistryValues))
 	captureLimit := maxOutput
 	if captureLimit < defaultMaxCapture {
 		captureLimit = defaultMaxCapture
@@ -162,6 +167,12 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if err := cmd.Start(); err != nil {
 		return finish(runtimeError(ErrExecutionFailed, "start", err))
 	}
+	controller, err := processcontrol.Attach(cmd)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return finish(runtimeError(ErrExecutionFailed, "process_control", err))
+	}
 	r.emit(ctx, Event{Type: "run.step.started", RunID: req.RunID, Skill: req.Skill, Version: manifest.Metadata.Version, Operation: req.Operation, Timestamp: time.Now().UTC(), Payload: map[string]any{"step": "execute"}})
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
@@ -169,9 +180,10 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	select {
 	case waitErr = <-done:
 	case <-runCtx.Done():
-		killProcessGroup(cmd)
+		_ = controller.Terminate()
 		waitErr = <-done
 	}
+	_ = controller.Close()
 	result.ExitCode = exitCode(waitErr)
 	stdoutBytes := stdout.Bytes()
 	stderrBytes := stderr.Bytes()
