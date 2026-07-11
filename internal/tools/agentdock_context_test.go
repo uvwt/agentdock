@@ -30,8 +30,8 @@ func TestAgentDockContextToolReturnsRuntimeIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("agentdock_context call failed: %v", err)
 	}
-	if result["ok"] != true {
-		t.Fatalf("agentdock_context ok = %#v, want true", result["ok"])
+	if len(result) != 1 {
+		t.Fatalf("agentdock_context should return only context: %#v", result)
 	}
 	contextText, _ := result["context"].(string)
 	if contextText == "" {
@@ -48,14 +48,7 @@ func TestAgentDockContextToolReturnsRuntimeIndex(t *testing.T) {
 		}
 	}
 
-	skills, ok := result["skills"].([]capabilitySkillItem)
-	if !ok || len(skills) != 1 {
-		t.Fatalf("unexpected lightweight Skill index: %#v", result["skills"])
-	}
-	if got := skills[0]; got.Name != "demo-skill" || got.Description == "" || got.File != "skill://demo-skill/SKILL.md" {
-		t.Fatalf("unexpected Skill index item: %#v", got)
-	}
-	for _, name := range []string{"generated_at", "summary", "counts", "base_tools", "task_templates", "memory", "rules"} {
+	for _, name := range []string{"ok", "skills", "dynamic_mcp", "generated_at", "summary", "counts", "base_tools", "task_templates", "memory", "rules"} {
 		if _, ok := result[name]; ok {
 			t.Fatalf("agentdock_context exposed unexpected field %q", name)
 		}

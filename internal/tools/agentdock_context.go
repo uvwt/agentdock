@@ -14,8 +14,8 @@ func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
 	baseTools := baseToolCapabilityItems()
 	baseToolLines := baseToolSummaryLines(baseTools)
 
-	skillItems, skillSummary, _ := r.skillCapabilityIndex()
-	dynamicMCPItems, dynamicMCPSummary := r.dynamicMCPCapabilityIndex()
+	_, skillSummary, _ := r.skillCapabilityIndex()
+	_, dynamicMCPSummary := r.dynamicMCPCapabilityIndex()
 	_, templateSummary, _ := r.templateCapabilityIndex(ctx)
 	memorySummary, _, _ := r.memoryCapabilitySummary(ctx)
 
@@ -38,12 +38,7 @@ func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
 	}
 	contextText := renderAgentDockContext(sections)
 
-	return Result{
-		"ok":          true,
-		"context":     contextText,
-		"skills":      skillItems,
-		"dynamic_mcp": dynamicMCPItems,
-	}, nil
+	return Result{"context": contextText}, nil
 }
 func (r *Runtime) agentDockContextTool(ctx context.Context, _ map[string]any) (Result, error) {
 	return r.AgentDockContext(ctx)

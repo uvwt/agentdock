@@ -90,19 +90,8 @@ func TestDynamicMCPToolsStaySeparateAndAppearLightweightInContext(t *testing.T) 
 	if err != nil {
 		t.Fatalf("agentdock_context: %v", err)
 	}
-	items, ok := contextResult["dynamic_mcp"].([]capabilityDynamicMCPItem)
-	if !ok || len(items) != 1 {
-		t.Fatalf("unexpected dynamic MCP context index: %#v", contextResult["dynamic_mcp"])
-	}
-	if items[0].Name != "demo" || items[0].Description != "Demo external capabilities" {
-		t.Fatalf("unexpected dynamic MCP index item: %#v", items[0])
-	}
-	encoded, err := json.Marshal(items[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := string(encoded); got != `{"name":"demo","description":"Demo external capabilities"}` {
-		t.Fatalf("dynamic MCP context item leaked extra fields: %s", got)
+	if len(contextResult) != 1 {
+		t.Fatalf("agentdock_context should return only context: %#v", contextResult)
 	}
 	contextText, _ := contextResult["context"].(string)
 	for _, forbidden := range []string{upstream.URL, "streamable_http", "demo:echo", "inputSchema"} {

@@ -28,9 +28,9 @@ func OutputSchema(name string) map[string]any {
 		props["workflow_dir"] = stringProp("Local directory containing workflow templates.")
 		props["sandbox"] = objectProp("Sandbox status metadata.")
 	case "agentdock_context":
+		delete(props, "ok")
+		required = []string{"context"}
 		props["context"] = stringProp("Rendered AgentDock bootstrap context text for clients that cannot inject system prompt context.")
-		props["skills"] = arrayProp("Lightweight Skill index entries containing name, description, and skill:// file URI.")
-		props["dynamic_mcp"] = arrayProp("Enabled dynamic MCP entries containing only name and description.")
 	case "read_file":
 		props["path"] = stringProp("Host path or skill:// resource URI. Relative Host paths resolve from ~/AgentDock.")
 		props["content"] = stringProp("Text content slice.")

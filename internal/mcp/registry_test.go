@@ -97,16 +97,17 @@ func TestAgentDockContextSchemaIsModelFacingEntrypoint(t *testing.T) {
 	if _, ok := outputProps["context"]; !ok {
 		t.Fatal("agentdock_context output schema missing context")
 	}
-	if _, ok := outputProps["skills"]; !ok {
-		t.Fatal("agentdock_context output schema missing lightweight skills index")
+	if len(outputProps) != 1 {
+		t.Fatalf("agentdock_context output schema should expose only context: %#v", outputProps)
 	}
-	if _, ok := outputProps["dynamic_mcp"]; !ok {
-		t.Fatal("agentdock_context output schema missing lightweight dynamic MCP index")
-	}
-	for _, name := range []string{"generated_at", "summary", "counts", "base_tools", "task_templates", "memory", "rules"} {
+	for _, name := range []string{"ok", "skills", "dynamic_mcp", "generated_at", "summary", "counts", "base_tools", "task_templates", "memory", "rules"} {
 		if _, ok := outputProps[name]; ok {
 			t.Fatalf("agentdock_context output schema should not expose non-context field %q", name)
 		}
+	}
+	required, ok := outputSchema("agentdock_context")["required"].([]string)
+	if !ok || len(required) != 1 || required[0] != "context" {
+		t.Fatalf("agentdock_context output schema required = %#v, want [context]", required)
 	}
 
 }
