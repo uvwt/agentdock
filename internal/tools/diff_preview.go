@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/uvwt/agentdock/internal/textutil"
 )
+
+const maxDiffProcessOutputBytes = 64 << 20
 
 type diffStats struct {
 	FilesChanged int
@@ -31,7 +34,10 @@ func unifiedDiffPreview(path, oldContent, newContent string, maxBytes int) (stri
 		return "", false, diffStats{}, err
 	}
 	cmd := exec.Command("diff", "-u", "--label", "a/"+path, "--label", "b/"+path, oldPath, newPath)
-	output, err := cmd.CombinedOutput()
+	output, totalBytes, outputTruncated, err := runBoundedCombinedOutput(cmd, maxDiffProcessOutputBytes)
+	if outputTruncated {
+		return "", false, diffStats{}, fmt.Errorf("diff output exceeds %d bytes (observed %d bytes)", maxDiffProcessOutputBytes, totalBytes)
+	}
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
 			return "", false, diffStats{}, err

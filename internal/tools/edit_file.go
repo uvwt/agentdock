@@ -20,11 +20,16 @@ func (r *Runtime) editFile(args map[string]any) (Result, error) {
 	newText := stringArg(args, "new", "")
 	expected := intArg(args, "expected_matches", 1)
 	if expected < 0 {
-		expected = 0
+		return nil, toolErrorDetails(
+			"INVALID_EXPECTED_MATCHES",
+			"expected_matches must be zero or greater",
+			"validation",
+			map[string]any{"expected_matches": expected},
+		)
 	}
 	replaceAll := boolArg(args, "replace_all", false)
 	dryRun := boolArg(args, "dry_run", false)
-	maxDiffBytes := intArg(args, "max_diff_bytes", 65536)
+	maxDiffBytes := boundedInt(intArg(args, "max_diff_bytes", 65536), 65536, 1, maxTextOutputBytes)
 
 	p, err := r.ws.ResolveExisting(path)
 	if err != nil {
@@ -36,6 +41,14 @@ func (r *Runtime) editFile(args map[string]any) (Result, error) {
 	}
 	if info.IsDir() {
 		return nil, toolError("IS_DIRECTORY", "cannot edit directory", "validation")
+	}
+	if info.Size() > maxTextFileReadBytes {
+		return nil, toolErrorDetails(
+			"FILE_TOO_LARGE",
+			"text file exceeds the file_edit input limit",
+			"validation",
+			map[string]any{"path": p.Display, "size_bytes": info.Size(), "max_size_bytes": maxTextFileReadBytes},
+		)
 	}
 	data, err := os.ReadFile(p.Abs)
 	if err != nil {

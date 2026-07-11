@@ -2,7 +2,11 @@ package tools
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/uvwt/agentdock/internal/atomicfile"
@@ -45,7 +49,7 @@ func (r *Runtime) fileEditAdd(args map[string]any) (Result, error) {
 	content := stringArg(args, "content", "")
 	dryRun := boolArg(args, "dry_run", false)
 	overwrite := boolArg(args, "overwrite", false)
-	maxDiffBytes := intArg(args, "max_diff_bytes", 65536)
+	maxDiffBytes := boundedInt(intArg(args, "max_diff_bytes", 65536), 65536, 1, maxTextOutputBytes)
 
 	p, err := r.ws.ResolveForWrite(path)
 	if err != nil {
@@ -63,6 +67,14 @@ func (r *Runtime) fileEditAdd(args map[string]any) (Result, error) {
 		}
 		if info.IsDir() {
 			return nil, toolErrorDetails("IS_DIRECTORY", "cannot overwrite a directory with text content", "validation", map[string]any{"path": p.Display})
+		}
+		if info.Size() > maxTextFileReadBytes {
+			return nil, toolErrorDetails(
+				"FILE_TOO_LARGE",
+				"text file exceeds the file_edit input limit",
+				"validation",
+				map[string]any{"path": p.Display, "size_bytes": info.Size(), "max_size_bytes": maxTextFileReadBytes},
+			)
 		}
 		data, err := os.ReadFile(p.Abs)
 		if err != nil {
@@ -133,6 +145,18 @@ func (r *Runtime) fileEditMove(args map[string]any) (Result, error) {
 	if dest.Exists && !overwrite {
 		return nil, toolErrorDetails("FILE_EXISTS", "destination already exists; set overwrite=true to replace it", "validation", map[string]any{"path": dest.Display})
 	}
+	srcInfo, err := os.Stat(src.Abs)
+	if err != nil {
+		return nil, err
+	}
+	if srcInfo.IsDir() && pathIsDescendant(src.Abs, dest.Abs) {
+		return nil, toolErrorDetails(
+			"INVALID_MOVE_DESTINATION",
+			"cannot move a directory into its own descendant",
+			"validation",
+			map[string]any{"path": src.Display, "new_path": dest.Display},
+		)
+	}
 	if dest.Exists {
 		info, err := os.Stat(dest.Abs)
 		if err != nil {
@@ -147,13 +171,53 @@ func (r *Runtime) fileEditMove(args map[string]any) (Result, error) {
 	if dryRun || !changed {
 		return result, nil
 	}
-	if dest.Exists && overwrite {
-		if err := os.Remove(dest.Abs); err != nil {
-			return nil, err
-		}
-	}
-	if err := os.Rename(src.Abs, dest.Abs); err != nil {
+	if err := movePathWithRollback(src.Abs, dest.Abs, dest.Exists && overwrite, os.Rename); err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+func pathIsDescendant(parent, candidate string) bool {
+	rel, err := filepath.Rel(parent, candidate)
+	if err != nil || rel == "." {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func movePathWithRollback(src, dest string, replace bool, rename func(string, string) error) error {
+	if !replace {
+		return rename(src, dest)
+	}
+
+	backupDir, err := os.MkdirTemp(filepath.Dir(dest), ".agentdock-move-backup-*")
+	if err != nil {
+		return fmt.Errorf("create move backup directory: %w", err)
+	}
+	backupPath := filepath.Join(backupDir, "payload")
+	cleanupBackupDir := func() error {
+		if err := os.RemoveAll(backupDir); err != nil {
+			return fmt.Errorf("remove move backup directory: %w", err)
+		}
+		return nil
+	}
+
+	if err := rename(dest, backupPath); err != nil {
+		cleanupErr := cleanupBackupDir()
+		return errors.Join(fmt.Errorf("backup move destination: %w", err), cleanupErr)
+	}
+	if err := rename(src, dest); err != nil {
+		if rollbackErr := rename(backupPath, dest); rollbackErr != nil {
+			return errors.Join(
+				fmt.Errorf("move source to destination: %w", err),
+				fmt.Errorf("restore move destination from %s: %w", backupPath, rollbackErr),
+			)
+		}
+		cleanupErr := cleanupBackupDir()
+		return errors.Join(fmt.Errorf("move source to destination: %w", err), cleanupErr)
+	}
+	if err := cleanupBackupDir(); err != nil {
+		slog.Warn("remove committed move backup failed", "path", backupDir, "error", err)
+	}
+	return nil
 }

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -77,6 +78,26 @@ func TestTaskManageLifecycleAndRestartRecovery(t *testing.T) {
 	}
 	if loaded["task"].(taskstate.Task).Status != taskstate.StatusCompleted {
 		t.Fatalf("task did not survive runtime restart: %#v", loaded)
+	}
+}
+
+func TestTaskManageRejectsInvalidTemplateCandidates(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	_, err := rt.taskManage(context.Background(), map[string]any{
+		"action":                "create",
+		"title":                 "Invalid evidence",
+		"goal":                  "reject malformed template selection evidence",
+		"completion_conditions": []string{"invalid input is rejected"},
+		"template_candidates": []any{
+			map[string]any{"id": "candidate", "version": "1.0.0", "score": "not-an-integer"},
+		},
+	})
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) {
+		t.Fatalf("expected ToolError, got %T: %v", err, err)
+	}
+	if toolErr.Code != "VALIDATION_ERROR" || toolErr.Details["field"] != "template_candidates" {
+		t.Fatalf("unexpected error: %#v", toolErr)
 	}
 }
 

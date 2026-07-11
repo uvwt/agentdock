@@ -15,6 +15,14 @@ import (
 
 type SessionStore = session.Store
 
+const (
+	completedSessionRetention = time.Hour
+	sessionKillWait           = 3 * time.Second
+	maxCommandYield           = 30 * time.Second
+	maxCommandTimeout         = 24 * time.Hour
+	maxCommandOutputBytes     = 4 << 20
+)
+
 func NewSessionStore() *SessionStore { return session.NewStore() }
 
 func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result, error) {
@@ -33,12 +41,13 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 	if !info.IsDir() {
 		return nil, toolError("NOT_A_DIRECTORY", "workdir is not a directory", "validation")
 	}
-	timeout := time.Duration(intArg(args, "timeout_ms", 30000)) * time.Millisecond
-	yield := time.Duration(intArg(args, "yield_time_ms", 1000)) * time.Millisecond
-	if yield > 30*time.Second {
-		yield = 30 * time.Second
+	timeout, err := commandTimeout(args)
+	if err != nil {
+		return nil, err
 	}
-	maxBytes := intArg(args, "max_output_bytes", 65536)
+	yieldMS := boundedInt(intArg(args, "yield_time_ms", 1000), 1000, 0, int(maxCommandYield/time.Millisecond))
+	yield := time.Duration(yieldMS) * time.Millisecond
+	maxBytes := commandOutputLimit(args)
 	tty := boolArg(args, "tty", false)
 
 	// 这里故意不用请求 ctx 派生子进程生命周期。
@@ -102,17 +111,38 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 				addCommandDiagnostics(result)
 				return result, nil
 			case <-ctx.Done():
-				r.sessions.Add(s)
+				r.storeSession(s)
 				result := s.Snapshot("running", maxBytes)
 				result["sandbox"] = sandboxStatus
 				return result, nil
 			}
 		}
-		r.sessions.Add(s)
+		r.storeSession(s)
 		result := s.Snapshot("running", maxBytes)
 		result["sandbox"] = sandboxStatus
 		return result, nil
 	}
+}
+
+func commandTimeout(args map[string]any) (time.Duration, error) {
+	timeoutMS := intArg(args, "timeout_ms", 30000)
+	if timeoutMS <= 0 {
+		return 0, toolErrorDetails(
+			"INVALID_TIMEOUT",
+			"timeout_ms must be a positive integer",
+			"validation",
+			map[string]any{"timeout_ms": timeoutMS},
+		)
+	}
+	maximumMS := int(maxCommandTimeout / time.Millisecond)
+	if timeoutMS > maximumMS {
+		timeoutMS = maximumMS
+	}
+	return time.Duration(timeoutMS) * time.Millisecond, nil
+}
+
+func commandOutputLimit(args map[string]any) int {
+	return boundedInt(intArg(args, "max_output_bytes", 65536), 65536, 1, maxCommandOutputBytes)
 }
 
 func (r *Runtime) writeStdin(args map[string]any) (Result, error) {
@@ -120,24 +150,45 @@ func (r *Runtime) writeStdin(args map[string]any) (Result, error) {
 	if !ok {
 		return nil, toolError("SESSION_NOT_FOUND", "session not found", "not_found")
 	}
+	maxBytes := commandOutputLimit(args)
+	select {
+	case <-s.Done:
+		return r.consumeCompletedSession(s, maxBytes), nil
+	default:
+	}
+
 	if chars := stringArg(args, "chars", ""); chars != "" {
-		if err := s.Write(chars); err != nil && err != io.ErrClosedPipe {
-			return nil, err
+		if err := s.Write(chars); err != nil {
+			select {
+			case <-s.Done:
+				return r.consumeCompletedSession(s, maxBytes), nil
+			default:
+			}
+			if !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, os.ErrClosed) {
+				return nil, fmt.Errorf("write session stdin: %w", err)
+			}
 		}
 	}
 	select {
 	case <-s.Done:
-		err := s.WaitError()
-		s.Cancel()
-		r.sessions.Delete(s.ID)
-		result := s.Snapshot("exited", intArg(args, "max_output_bytes", 65536))
-		if err != nil && !s.TimedOut {
-			result["error"] = err.Error()
-		}
-		return result, nil
+		return r.consumeCompletedSession(s, maxBytes), nil
 	default:
-		return s.Snapshot("running", intArg(args, "max_output_bytes", 65536)), nil
+		return s.Snapshot("running", maxBytes), nil
 	}
+}
+
+func (r *Runtime) consumeCompletedSession(s *session.Session, maxBytes int) Result {
+	err := s.WaitError()
+	s.Cancel()
+	r.sessions.Delete(s.ID)
+	result := s.Snapshot("exited", maxBytes)
+	if s.TimedOut {
+		result["status"] = "timeout"
+	} else if err != nil {
+		result["error"] = err.Error()
+	}
+	addCommandDiagnostics(result)
+	return result
 }
 
 func (r *Runtime) killSession(args map[string]any) (Result, error) {
@@ -146,21 +197,90 @@ func (r *Runtime) killSession(args map[string]any) (Result, error) {
 	if !ok {
 		return nil, toolError("SESSION_NOT_FOUND", "session not found", "not_found")
 	}
+	select {
+	case <-s.Done:
+		return r.consumeCompletedSession(s, commandOutputLimit(args)), nil
+	default:
+	}
 	s.Kill()
+	if !waitForSessionCompletion(s, sessionKillWait) {
+		return nil, toolErrorDetails(
+			"SESSION_KILL_TIMEOUT",
+			"session did not stop after kill request",
+			"runtime",
+			map[string]any{"session_id": s.ID, "wait_ms": sessionKillWait.Milliseconds()},
+		)
+	}
 	r.sessions.Delete(s.ID)
-	result := s.Snapshot("killed", intArg(args, "max_output_bytes", 65536))
+	result := s.Snapshot("killed", commandOutputLimit(args))
 	result["kill_operation_ms"] = time.Since(started).Milliseconds()
+	addCommandDiagnostics(result)
 	return result, nil
 }
 
 func (r *Runtime) killAllSessions(args map[string]any) (Result, error) {
-	items := make([]map[string]any, 0)
-	for _, s := range r.sessions.List() {
-		s.Kill()
+	sessions := r.sessions.List()
+	running := make([]*session.Session, 0, len(sessions))
+	items := make([]map[string]any, 0, len(sessions))
+	for _, s := range sessions {
+		select {
+		case <-s.Done:
+			summary := s.Summary()
+			s.Cancel()
+			r.sessions.Delete(s.ID)
+			items = append(items, map[string]any{"session_id": s.ID, "status": summary.Status})
+		default:
+			s.Kill()
+			running = append(running, s)
+		}
+	}
+
+	completed, timedOut := waitForSessionsCompletion(running, sessionKillWait)
+	for _, s := range completed {
 		r.sessions.Delete(s.ID)
 		items = append(items, map[string]any{"session_id": s.ID, "status": "killed"})
 	}
+	if len(timedOut) > 0 {
+		return nil, toolErrorDetails(
+			"SESSION_KILL_TIMEOUT",
+			"one or more sessions did not stop after kill request",
+			"runtime",
+			map[string]any{"session_ids": timedOut, "wait_ms": sessionKillWait.Milliseconds()},
+		)
+	}
 	return Result{"ok": true, "sessions": items, "count": len(items)}, nil
+}
+
+func waitForSessionCompletion(s *session.Session, timeout time.Duration) bool {
+	if timeout <= 0 {
+		select {
+		case <-s.Done:
+			return true
+		default:
+			return false
+		}
+	}
+	select {
+	case <-s.Done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
+}
+
+func waitForSessionsCompletion(sessions []*session.Session, timeout time.Duration) ([]*session.Session, []string) {
+	deadline := time.Now().Add(timeout)
+	completed := make([]*session.Session, 0, len(sessions))
+	timedOut := make([]string, 0)
+	for _, s := range sessions {
+		remaining := time.Until(deadline)
+		if waitForSessionCompletion(s, remaining) {
+			completed = append(completed, s)
+			continue
+		}
+		timedOut = append(timedOut, s.ID)
+	}
+	return completed, timedOut
 }
 
 func (r *Runtime) sessionStatus(args map[string]any) (Result, error) {
@@ -168,35 +288,27 @@ func (r *Runtime) sessionStatus(args map[string]any) (Result, error) {
 	if !ok {
 		return nil, toolError("SESSION_NOT_FOUND", "session not found", "not_found")
 	}
+	maxBytes := commandOutputLimit(args)
 	select {
 	case <-s.Done:
-		err := s.WaitError()
-		s.Cancel()
-		r.sessions.Delete(s.ID)
-		result := s.Snapshot("exited", intArg(args, "max_output_bytes", 65536))
-		if s.TimedOut {
-			result["status"] = "timeout"
-		}
-		if err != nil && !s.TimedOut {
-			result["error"] = err.Error()
-		}
-		addCommandDiagnostics(result)
-		return result, nil
+		return r.consumeCompletedSession(s, maxBytes), nil
 	default:
-		return s.Snapshot("running", intArg(args, "max_output_bytes", 65536)), nil
+		return s.Snapshot("running", maxBytes), nil
 	}
 }
 
+func (r *Runtime) storeSession(s *session.Session) {
+	r.sessions.PruneCompletedBefore(time.Now().Add(-completedSessionRetention))
+	r.sessions.Add(s)
+}
+
 func (r *Runtime) listSessions() (Result, error) {
+	// list 是只读观察入口，不能消费刚完成命令的最终输出。完成结果保留一小时，
+	// 由 status 正常读取后删除；无人领取的旧结果再在这里统一淘汰。
+	r.sessions.PruneCompletedBefore(time.Now().Add(-completedSessionRetention))
 	items := make([]map[string]any, 0)
 	for _, s := range r.sessions.List() {
-		select {
-		case <-s.Done:
-			r.sessions.Delete(s.ID)
-			continue
-		default:
-		}
-		summary := s.Summary("running")
+		summary := s.Summary()
 		items = append(items, map[string]any{"session_id": summary.ID, "status": summary.Status, "elapsed_ms": summary.ElapsedMS, "timed_out": summary.TimedOut})
 	}
 	return Result{"ok": true, "sessions": items, "count": len(items)}, nil

@@ -83,7 +83,15 @@ func (r *Runtime) envVerify(ctx context.Context, args map[string]any) (Result, e
 	} else if !run.OK {
 		message = run.Error
 	}
-	_ = r.skills.env.RecordVerification(skill, ok, message)
+	if recordErr := r.skills.env.RecordVerification(skill, ok, message); recordErr != nil {
+		return nil, toolErrorCause(
+			"ENV_REGISTRY_FAILED",
+			"record skill verification: "+recordErr.Error(),
+			"runtime",
+			map[string]any{"skill": skill, "operation": operation, "run_ok": ok},
+			recordErr,
+		)
+	}
 	if err != nil {
 		return Result{"ok": false, "action": "verify", "skill": skill, "result": run, "message": message}, nil
 	}

@@ -21,7 +21,7 @@ func (r *Runtime) gitHubRepoAccess(ctx context.Context, args map[string]any) (Re
 	if err != nil {
 		return Result{"ok": false, "credential_found": false, "diagnostic": map[string]any{"kind": "git_auth_missing", "suggestion": "configure a GitHub credential first"}}, nil
 	}
-	client := &http.Client{Timeout: time.Duration(intArg(args, "timeout_ms", 15000)) * time.Millisecond}
+	client := &http.Client{Timeout: githubRequestTimeout(args)}
 	result := Result{"ok": true, "credential_found": true, "username": username, "repo": repo}
 	login, scopes, authStatus, authMessage := githubGet(ctx, client, token, "https://api.github.com/user")
 	result["auth_status"] = authStatus
@@ -41,6 +41,10 @@ func (r *Runtime) gitHubRepoAccess(ctx context.Context, args map[string]any) (Re
 		result["diagnostic"] = diagnoseGitHubStatus(repoStatus, repoMessage)
 	}
 	return result, nil
+}
+
+func githubRequestTimeout(args map[string]any) time.Duration {
+	return boundedMilliseconds(intArg(args, "timeout_ms", 15000), 15000, int((2*time.Minute)/time.Millisecond))
 }
 
 func normalizeGitHubRepo(raw string) string {

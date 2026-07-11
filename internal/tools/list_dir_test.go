@@ -18,6 +18,16 @@ func TestListDirHonorsCanceledContext(t *testing.T) {
 	}
 }
 
+func TestListFilesHonorsCanceledContext(t *testing.T) {
+	runtime, _ := newCodeToolsRuntime(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := runtime.Call(ctx, "list_files", map[string]any{"path": "."})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("list_files error = %v, want context.Canceled", err)
+	}
+}
+
 func TestListDirRecursiveAppliesDepthAndHiddenRules(t *testing.T) {
 	runtime, root := newCodeToolsRuntime(t)
 	for path, content := range map[string]string{

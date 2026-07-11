@@ -414,6 +414,31 @@ func TestSkillEnvManageVerifyAcceptsStructuredInput(t *testing.T) {
 	}
 }
 
+func TestSkillEnvManageVerifyReportsRegistryPersistenceFailure(t *testing.T) {
+	rt := newInstalledDemoSkillRuntime(t)
+	registryPath := filepath.Join(rt.skills.env.Root(), "registry.json")
+	if err := os.MkdirAll(registryPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := rt.Call(context.Background(), "skill_env_manage", map[string]any{
+		"action":    "verify",
+		"skill":     "demo-skill",
+		"operation": "echo",
+		"input":     map[string]any{"message": "hello"},
+	})
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) {
+		t.Fatalf("expected ToolError, got %T: %v", err, err)
+	}
+	if toolErr.Code != "ENV_REGISTRY_FAILED" {
+		t.Fatalf("error code = %s, want ENV_REGISTRY_FAILED", toolErr.Code)
+	}
+	if toolErr.Details["skill"] != "demo-skill" || toolErr.Details["run_ok"] != true {
+		t.Fatalf("error details = %#v", toolErr.Details)
+	}
+}
+
 func newInstalledDemoSkillRuntime(t *testing.T) *Runtime {
 	t.Helper()
 	root := t.TempDir()

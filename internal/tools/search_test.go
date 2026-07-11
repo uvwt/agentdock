@@ -8,6 +8,28 @@ import (
 	"testing"
 )
 
+func TestBoundedInt(t *testing.T) {
+	tests := []struct {
+		name             string
+		value, fallback  int
+		minimum, maximum int
+		want             int
+	}{
+		{name: "below minimum", value: -1, fallback: 100, minimum: 1, maximum: 1000, want: 100},
+		{name: "zero below positive minimum", value: 0, fallback: 100, minimum: 1, maximum: 1000, want: 100},
+		{name: "zero allowed", value: 0, fallback: 0, minimum: 0, maximum: 20, want: 0},
+		{name: "inside", value: 12, fallback: 0, minimum: 0, maximum: 20, want: 12},
+		{name: "capped", value: 50, fallback: 0, minimum: 0, maximum: 20, want: 20},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := boundedInt(test.value, test.fallback, test.minimum, test.maximum); got != test.want {
+				t.Fatalf("boundedInt() = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
+
 func TestSearchTextGoKeepsUnicodeByteOffsets(t *testing.T) {
 	rt, root := newCodeToolsRuntime(t)
 	if err := os.WriteFile(filepath.Join(root, "sample.txt"), []byte("İX\n"), 0o600); err != nil {

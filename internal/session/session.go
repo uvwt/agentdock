@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -21,13 +22,14 @@ import (
 type PrepareFunc func(*exec.Cmd) (func(), map[string]any)
 
 type Session struct {
-	ID        string
-	Command   *exec.Cmd
-	Cancel    context.CancelFunc
-	Stdin     io.WriteCloser
-	StartedAt time.Time
-	Done      chan struct{}
-	TimedOut  bool
+	ID         string
+	Command    *exec.Cmd
+	Cancel     context.CancelFunc
+	Stdin      io.WriteCloser
+	StartedAt  time.Time
+	FinishedAt time.Time
+	Done       chan struct{}
+	TimedOut   bool
 
 	mu                 sync.Mutex
 	completed          bool
@@ -85,13 +87,53 @@ func (s *Store) List() []*Session {
 	for _, session := range s.sessions {
 		out = append(out, session)
 	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].StartedAt.Equal(out[j].StartedAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].StartedAt.Before(out[j].StartedAt)
+	})
 	return out
 }
 
-func (s *Session) Summary(status string) Summary {
+func (s *Store) PruneCompletedBefore(cutoff time.Time) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return Summary{ID: s.ID, Status: status, ElapsedMS: time.Since(s.StartedAt).Milliseconds(), TimedOut: s.TimedOut}
+	removed := 0
+	for id, session := range s.sessions {
+		if session.CompletedBefore(cutoff) {
+			delete(s.sessions, id)
+			removed++
+		}
+	}
+	return removed
+}
+
+func (s *Session) Summary() Summary {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	status := "running"
+	finishedAt := time.Now()
+	if s.completed {
+		status = "exited"
+		finishedAt = s.FinishedAt
+		if s.TimedOut {
+			status = "timeout"
+		}
+	}
+	return Summary{
+		ID:        s.ID,
+		Status:    status,
+		ElapsedMS: finishedAt.Sub(s.StartedAt).Milliseconds(),
+		TimedOut:  s.TimedOut,
+	}
+}
+
+func (s *Session) CompletedBefore(cutoff time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.completed && !s.FinishedAt.IsZero() && s.FinishedAt.Before(cutoff)
 }
 
 func Start(ctx context.Context, command, workdir string, env []string, timeout time.Duration, prepare PrepareFunc) (*Session, map[string]any, error) {
@@ -143,6 +185,7 @@ func Start(ctx context.Context, command, workdir string, env []string, timeout t
 		s.mu.Lock()
 		s.waitErr = waitErr
 		s.completed = true
+		s.FinishedAt = time.Now()
 		if cmd.ProcessState != nil {
 			s.exitCode = cmd.ProcessState.ExitCode()
 		}
@@ -168,16 +211,24 @@ func (s *Session) WaitError() error {
 	return s.waitErr
 }
 
-func (s *Session) Kill() {
-	if s.Command.Process == nil {
-		return
+func (s *Session) Kill() bool {
+	s.mu.Lock()
+	if s.completed {
+		s.mu.Unlock()
+		return false
+	}
+	process := s.Command.Process
+	s.mu.Unlock()
+	if process == nil {
+		return false
 	}
 	if runtime.GOOS == "windows" {
-		_ = s.Command.Process.Kill()
+		_ = process.Kill()
 	} else {
-		_ = syscall.Kill(-s.Command.Process.Pid, syscall.SIGTERM)
+		_ = syscall.Kill(-process.Pid, syscall.SIGTERM)
 	}
 	s.Cancel()
+	return true
 }
 
 func (s *Session) Snapshot(status string, maxBytes int) map[string]any {

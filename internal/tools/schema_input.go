@@ -5,6 +5,9 @@ func InputSchema(name string) map[string]any {
 	required := []string{}
 	stringProp := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
 	intProp := func(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
+	boundedIntProp := func(desc string, minimum, maximum int) map[string]any {
+		return map[string]any{"type": "integer", "description": desc, "minimum": minimum, "maximum": maximum}
+	}
 	boolProp := func(desc string) map[string]any { return map[string]any{"type": "boolean", "description": desc} }
 	objectProp := func(desc string) map[string]any {
 		return map[string]any{"type": "object", "description": desc, "additionalProperties": true}
@@ -18,15 +21,15 @@ func InputSchema(name string) map[string]any {
 		props["path"] = stringProp("Host path. Relative paths resolve from ~/AgentDock.")
 		props["start_line"] = intProp("1-based start line.")
 		props["end_line"] = intProp("Inclusive end line.")
-		props["max_bytes"] = intProp("Maximum output bytes.")
+		props["max_bytes"] = boundedIntProp("Maximum output bytes. Defaults to 262144 and is capped at 4194304.", 1, maxTextOutputBytes)
 		required = []string{"path"}
 	case "agentdock_context":
 
 	case "list_dir":
 		props["path"] = stringProp("Host directory path. Relative paths resolve from ~/AgentDock.")
 		props["recursive"] = boolProp("List recursively.")
-		props["max_depth"] = intProp("Maximum recursive depth.")
-		props["max_entries"] = intProp("Maximum entries.")
+		props["max_depth"] = boundedIntProp("Maximum recursive depth. Defaults to 1 and is capped at 20.", 1, 20)
+		props["max_entries"] = boundedIntProp("Maximum entries. Defaults to 200 and is capped at 2000.", 1, 2000)
 		props["include_hidden"] = boolProp("Include dotfiles.")
 		props["include_ignored"] = boolProp("Include normally skipped directories.")
 	case "list_files":
@@ -34,7 +37,7 @@ func InputSchema(name string) map[string]any {
 		props["patterns"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 		props["glob"] = stringProp("Single glob pattern override.")
 		props["exclude_patterns"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
-		props["max_results"] = intProp("Maximum files.")
+		props["max_results"] = boundedIntProp("Maximum files. Defaults to 500 and is capped at 5000.", 1, 5000)
 		props["include_hidden"] = boolProp("Include dotfiles.")
 		props["include_ignored"] = boolProp("Include normally skipped directories.")
 	case "search_text":
@@ -46,8 +49,8 @@ func InputSchema(name string) map[string]any {
 		props["include_globs"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 		props["glob"] = stringProp("Single include glob.")
 		props["exclude_globs"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
-		props["context_lines"] = intProp("Context lines around each match.")
-		props["max_results"] = intProp("Maximum matches.")
+		props["context_lines"] = boundedIntProp("Context lines around each match. Capped at 20.", 0, 20)
+		props["max_results"] = boundedIntProp("Maximum matches. Defaults to 100 and is capped at 1000.", 1, 1000)
 		required = []string{"query"}
 	case "file_edit":
 		props["action"] = map[string]any{"type": "string", "description": "File edit action.", "enum": []string{"replace", "patch", "add", "delete", "move"}}
@@ -55,7 +58,7 @@ func InputSchema(name string) map[string]any {
 		props["old"] = stringProp("Exact UTF-8 text to replace.")
 		props["new"] = stringProp("Replacement UTF-8 text for action=replace.")
 		props["replace_all"] = boolProp("Replace every match instead of only the first.")
-		props["expected_matches"] = intProp("Required number of matches. Defaults to 1.")
+		props["expected_matches"] = map[string]any{"type": "integer", "description": "Required number of matches. Defaults to 1; zero asserts no matches.", "minimum": 0}
 		props["content"] = stringProp("Text content for action=add.")
 		props["new_path"] = stringProp("Destination path for action=move.")
 		props["overwrite"] = boolProp("Allow add or move to replace an existing destination file.")
@@ -63,16 +66,16 @@ func InputSchema(name string) map[string]any {
 		props["patch"] = stringProp("Patch text for action=patch.")
 		props["workdir"] = stringProp("Patch working directory.")
 		props["dry_run"] = boolProp("Preview or validate without writing.")
-		props["max_diff_bytes"] = intProp("Maximum diff preview bytes.")
+		props["max_diff_bytes"] = boundedIntProp("Maximum diff preview bytes. Defaults to 65536 and is capped at 4194304.", 1, maxTextOutputBytes)
 		required = []string{"action"}
 
 	case "exec_command":
 		props["cmd"] = stringProp("Command to run.")
 		props["workdir"] = stringProp("Host working directory. Relative paths resolve from ~/AgentDock.")
-		props["timeout_ms"] = intProp("Timeout in milliseconds.")
-		props["yield_time_ms"] = intProp("Initial wait before returning running session.")
+		props["timeout_ms"] = boundedIntProp("Timeout in milliseconds. Must be positive and is capped at 86400000.", 1, 86400000)
+		props["yield_time_ms"] = boundedIntProp("Initial wait before returning a running session. Capped at 30000 milliseconds.", 0, 30000)
 		props["wait_until_exit"] = boolProp("Wait until the command exits instead of returning a running session after yield_time_ms.")
-		props["max_output_bytes"] = intProp("Maximum output bytes.")
+		props["max_output_bytes"] = boundedIntProp("Maximum output bytes. Defaults to 65536 and is capped at 4194304.", 1, maxCommandOutputBytes)
 		props["stdin"] = stringProp("Initial stdin.")
 		props["tty"] = boolProp("Keep stdin open.")
 		props["redact_patterns"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Additional regex patterns to redact from stdout/stderr/error."}
@@ -80,12 +83,12 @@ func InputSchema(name string) map[string]any {
 	case "session_observe":
 		props["action"] = map[string]any{"type": "string", "description": "Read-only session action.", "enum": []string{"list", "status"}}
 		props["session_id"] = stringProp("Session id returned by exec_command, required for status.")
-		props["max_output_bytes"] = intProp("Maximum output bytes.")
+		props["max_output_bytes"] = boundedIntProp("Maximum output bytes. Defaults to 65536 and is capped at 4194304.", 1, maxCommandOutputBytes)
 	case "session_act":
 		props["action"] = map[string]any{"type": "string", "description": "Mutating session action.", "enum": []string{"write", "kill", "kill_all"}}
 		props["session_id"] = stringProp("Session id returned by exec_command, required for write/kill.")
 		props["chars"] = stringProp("Characters to write when action=write.")
-		props["max_output_bytes"] = intProp("Maximum output bytes.")
+		props["max_output_bytes"] = boundedIntProp("Maximum output bytes. Defaults to 65536 and is capped at 4194304.", 1, maxCommandOutputBytes)
 	case "task_manage":
 		props["action"] = map[string]any{"type": "string", "description": "Task lifecycle action. Template discovery and authoring live in workflow_template_manage.", "enum": []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review"}}
 		props["task_id"] = stringProp("Persistent task id for get, block, resume, final_review, or complete_after_review.")
@@ -218,7 +221,7 @@ func InputSchema(name string) map[string]any {
 	case "private_note_manage":
 		props["action"] = map[string]any{"type": "string", "description": "Private note action. Do not use by default; use only for explicit private/local-only/non-synced notes or clearly sensitive secrets.", "enum": []string{"search", "read", "write", "status", "maintain"}}
 		props["query"] = stringProp("Search query for action=search.")
-		props["max_results"] = intProp("Maximum search results to return.")
+		props["max_results"] = boundedIntProp("Maximum search results to return. Defaults to 8 and is capped at 100.", 1, maxPrivateNoteSearchResults)
 		props["path"] = stringProp("Path under notes/ for action=read or action=write.")
 		props["category"] = stringProp("Optional category used with title when path is omitted. Defaults to services.")
 		props["title"] = stringProp("Title used for frontmatter or to derive the path when path is omitted.")
@@ -227,7 +230,7 @@ func InputSchema(name string) map[string]any {
 		props["content"] = stringProp("Plaintext private note content for action=write.")
 		props["confirmed"] = boolProp("Required for action=write true writes.")
 		props["overwrite"] = boolProp("Replace an existing note for action=write.")
-		props["max_bytes"] = intProp("Maximum bytes to return for action=read.")
+		props["max_bytes"] = boundedIntProp("Maximum bytes to return for action=read. Defaults to 256000 and is capped at 1048576.", 1, maxPrivateNoteReadBytes)
 		props["status_action"] = map[string]any{"type": "string", "description": "Read-only status action when action=status.", "enum": []string{"check", "list"}}
 		props["maintenance_action"] = map[string]any{"type": "string", "description": "Maintenance operation when action=maintain.", "enum": []string{"init", "init-encryption", "sync-encrypted", "encrypt-all"}}
 		required = []string{"action"}
@@ -248,7 +251,7 @@ func InputSchema(name string) map[string]any {
 		props["save_storage_state"] = boolProp("Save context storage state after action/snapshot and return storage_state_path.")
 		props["reload_after_local_storage"] = boolProp("Reload the page after applying localStorage. Defaults to true.")
 		props["max_age_ms"] = intProp("When action=cleanup_stale, remove sessions older than this age. Defaults to 6 hours.")
-		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
+		props["timeout_ms"] = boundedIntProp("Operation timeout in milliseconds. Defaults to 30000 and is capped at 300000.", 1, 300000)
 	case "browser_act":
 		props["session_id"] = stringProp("Browser session id.")
 		props["actions"] = browserActionsProp()
@@ -260,7 +263,7 @@ func InputSchema(name string) map[string]any {
 		props["close_after"] = boolProp("Close and remove the browser session after the action/snapshot succeeds.")
 		props["save_storage_state"] = boolProp("Save context storage state and return storage_state_path.")
 		props["max_interactive_elements"] = intProp("Maximum visible interactive elements to return. Defaults to 40.")
-		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
+		props["timeout_ms"] = boundedIntProp("Operation timeout in milliseconds. Defaults to 30000 and is capped at 300000.", 1, 300000)
 		required = []string{"session_id", "actions"}
 	case "browser_snapshot":
 		props["session_id"] = stringProp("Browser session id.")
@@ -272,7 +275,7 @@ func InputSchema(name string) map[string]any {
 		props["close_after"] = boolProp("Close and remove the browser session after snapshot succeeds.")
 		props["save_storage_state"] = boolProp("Save context storage state and return storage_state_path.")
 		props["max_interactive_elements"] = intProp("Maximum visible interactive elements to return. Defaults to 40.")
-		props["timeout_ms"] = intProp("Operation timeout in milliseconds.")
+		props["timeout_ms"] = boundedIntProp("Operation timeout in milliseconds. Defaults to 30000 and is capped at 300000.", 1, 300000)
 		required = []string{"session_id"}
 	case "git_read":
 		props["action"] = map[string]any{"type": "string", "description": "Read action.", "enum": gitReadActions}
@@ -284,7 +287,7 @@ func InputSchema(name string) map[string]any {
 		props["max_depth"] = intProp("Maximum scan depth for repos.")
 		props["max_bytes"] = intProp("Maximum output bytes.")
 		props["repo"] = stringProp("GitHub repository as owner/name or https://github.com/owner/name.git; used by action=github_repo_access.")
-		props["timeout_ms"] = intProp("HTTP timeout in milliseconds; used by action=github_repo_access.")
+		props["timeout_ms"] = boundedIntProp("HTTP timeout in milliseconds for github_repo_access. Defaults to 15000 and is capped at 120000.", 1, 120000)
 		required = []string{"action"}
 	case "git_write":
 		props["action"] = map[string]any{"type": "string", "description": "Write action.", "enum": []string{"clone", "commit", "fetch", "pull", "push"}}

@@ -12,6 +12,8 @@ import (
 	"github.com/uvwt/agentdock/internal/config"
 )
 
+const browserRunnerOutputLimit = 8 << 20
+
 func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args map[string]any) (Result, error) {
 	runner, err := r.browserRunnerScript()
 	if err != nil {
@@ -34,13 +36,7 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 	if err != nil {
 		return nil, toolErrorDetails("BROWSER_PAYLOAD_INVALID", "browser payload cannot be encoded as JSON", "validation", map[string]any{"reason": err.Error()})
 	}
-	timeout := time.Duration(intArg(args, "timeout_ms", 30000)) * time.Millisecond
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
-	if timeout > 5*time.Minute {
-		timeout = 5 * time.Minute
-	}
+	timeout := boundedMilliseconds(intArg(args, "timeout_ms", 30000), 30000, int((5*time.Minute)/time.Millisecond))
 	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, "node", runner.Abs)
@@ -60,15 +56,27 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 		return nil, err
 	}
 	cmd.Env = commandEnv
-	output, err := cmd.CombinedOutput()
+	output, outputTotal, outputTruncated, err := runBoundedCombinedOutput(cmd, browserRunnerOutputLimit)
+	maxBytes := boundedInt(intArg(args, "max_bytes", 262144), 262144, 1, 1<<20)
+	text, responseTruncated := truncateBytes(output, maxBytes)
+	text = redactSecrets(text, nil)
+	if outputTruncated {
+		return Result{
+			"ok":                 false,
+			"operation":          operation,
+			"error":              "browser runner output exceeded the capture limit",
+			"stdout":             text,
+			"truncated":          true,
+			"output_total_bytes": outputTotal,
+			"output_limit_bytes": browserRunnerOutputLimit,
+		}, nil
+	}
 	var parsed map[string]any
 	parseErr := json.Unmarshal(output, &parsed)
-	text, truncated := truncateBytes(output, intArg(args, "max_bytes", 262144))
-	text = redactSecrets(text, nil)
-	result := Result{"ok": err == nil, "operation": operation}
+	result := Result{"ok": err == nil, "operation": operation, "output_total_bytes": outputTotal}
 	if boolArg(args, "debug_stdout", false) || parseErr != nil {
 		result["stdout"] = text
-		result["truncated"] = truncated
+		result["truncated"] = responseTruncated
 	}
 	if err != nil {
 		result["error"] = err.Error()

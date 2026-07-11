@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"os"
+	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
@@ -10,6 +11,21 @@ import (
 	"testing"
 	"time"
 )
+
+func TestKillSkipsCompletedSession(t *testing.T) {
+	canceled := false
+	s := &Session{
+		Command:   &exec.Cmd{Process: &os.Process{Pid: 1 << 30}},
+		Cancel:    func() { canceled = true },
+		completed: true,
+	}
+	if killed := s.Kill(); killed {
+		t.Fatal("Kill() reported a signal for a completed session")
+	}
+	if canceled {
+		t.Fatal("Kill() canceled an already completed session")
+	}
+}
 
 func TestStartCapturesCompleteOutputAndExitState(t *testing.T) {
 	requirePOSIXShell(t)
@@ -207,6 +223,38 @@ func TestNewIDIsUniqueUnderConcurrency(t *testing.T) {
 	}
 	if len(seen) != count {
 		t.Fatalf("unique ids = %d, want %d", len(seen), count)
+	}
+}
+
+func TestStoreListIsDeterministic(t *testing.T) {
+	store := NewStore()
+	started := time.Now()
+	store.Add(&Session{ID: "session-b", StartedAt: started})
+	store.Add(&Session{ID: "session-c", StartedAt: started.Add(time.Second)})
+	store.Add(&Session{ID: "session-a", StartedAt: started})
+	listed := store.List()
+	if len(listed) != 3 || listed[0].ID != "session-a" || listed[1].ID != "session-b" || listed[2].ID != "session-c" {
+		t.Fatalf("session order = %#v", []string{listed[0].ID, listed[1].ID, listed[2].ID})
+	}
+}
+
+func TestStorePrunesOnlyExpiredCompletedSessions(t *testing.T) {
+	store := NewStore()
+	now := time.Now()
+	store.Add(&Session{ID: "old", StartedAt: now.Add(-2 * time.Hour), FinishedAt: now.Add(-90 * time.Minute), completed: true})
+	store.Add(&Session{ID: "recent", StartedAt: now.Add(-time.Minute), FinishedAt: now.Add(-time.Second), completed: true})
+	store.Add(&Session{ID: "running", StartedAt: now.Add(-2 * time.Hour)})
+	if removed := store.PruneCompletedBefore(now.Add(-time.Hour)); removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
+	}
+	if _, ok := store.Get("old"); ok {
+		t.Fatal("expired completed session remained")
+	}
+	if _, ok := store.Get("recent"); !ok {
+		t.Fatal("recent completed session was removed")
+	}
+	if _, ok := store.Get("running"); !ok {
+		t.Fatal("running session was removed")
 	}
 }
 

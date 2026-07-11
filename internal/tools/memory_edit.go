@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/uvwt/agentdock/internal/textutil"
 )
 
 type memoryPatchOutcome struct {
@@ -428,13 +430,13 @@ func memoryUnifiedDiff(p, oldText, newText string, maxBytes int) string {
 	for i := prefix; i < len(oldLines)-suffix; i++ {
 		b.WriteString("-" + oldLines[i] + "\n")
 		if maxBytes > 0 && b.Len() >= maxBytes {
-			return b.String()[:maxBytes]
+			return textutil.SafeTruncateString(b.String(), maxBytes).Text
 		}
 	}
 	for i := prefix; i < len(newLines)-suffix; i++ {
 		b.WriteString("+" + newLines[i] + "\n")
 		if maxBytes > 0 && b.Len() >= maxBytes {
-			return b.String()[:maxBytes]
+			return textutil.SafeTruncateString(b.String(), maxBytes).Text
 		}
 	}
 	for i := len(oldLines) - suffix; i < oldEnd && i < len(oldLines); i++ {
@@ -442,7 +444,7 @@ func memoryUnifiedDiff(p, oldText, newText string, maxBytes int) string {
 	}
 	out := b.String()
 	if maxBytes > 0 && len(out) > maxBytes {
-		return out[:maxBytes]
+		return textutil.SafeTruncateString(out, maxBytes).Text
 	}
 	return out
 }

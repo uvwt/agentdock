@@ -63,7 +63,7 @@ type workflowTemplateMatchRequest struct {
 	Type   string `json:"type"`
 }
 
-func parseTaskManageInput(args map[string]any) taskManageInput {
+func parseTaskManageInput(args map[string]any) (taskManageInput, error) {
 	input := taskManageInput{
 		Action:               strings.ToLower(strings.TrimSpace(stringArg(args, "action", ""))),
 		Title:                stringArg(args, "title", ""),
@@ -84,9 +84,16 @@ func parseTaskManageInput(args map[string]any) taskManageInput {
 		MissingChecks:        stringSliceArg(args, "missing_checks"),
 	}
 	if raw := args["template_candidates"]; raw != nil {
-		_ = remarshal(raw, &input.TemplateCandidates)
+		if err := remarshal(raw, &input.TemplateCandidates); err != nil {
+			return input, toolErrorDetails(
+				"VALIDATION_ERROR",
+				"template_candidates must be an array of valid template candidates",
+				"validation",
+				map[string]any{"field": "template_candidates", "reason": err.Error()},
+			)
+		}
 	}
-	return input
+	return input, nil
 }
 
 func parseWorkflowTemplateInput(args map[string]any) (workflowTemplateInput, error) {
@@ -132,11 +139,11 @@ func (input *workflowTemplateInput) applyTemplateGuardrails() {
 }
 
 func (r *Runtime) taskManage(ctx context.Context, args map[string]any) (Result, error) {
-	input := parseTaskManageInput(args)
-	var (
-		task taskstate.Task
-		err  error
-	)
+	input, err := parseTaskManageInput(args)
+	if err != nil {
+		return nil, err
+	}
+	var task taskstate.Task
 	switch input.Action {
 	case "create":
 		if input.TemplateID != "" {

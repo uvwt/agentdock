@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/uvwt/agentdock/internal/atomicfile"
@@ -50,6 +51,7 @@ type SkillSummary struct {
 }
 
 type Store struct {
+	mu          sync.RWMutex
 	root        string
 	registry    string
 	valuesDir   string
@@ -101,6 +103,8 @@ func New(root string, definitions func() []Definition) (*Store, error) {
 func (s *Store) Root() string { return s.root }
 
 func (s *Store) List() ([]SkillSummary, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	reg, err := s.loadRegistry()
 	if err != nil {
 		return nil, err
@@ -139,6 +143,8 @@ func (s *Store) List() ([]SkillSummary, error) {
 }
 
 func (s *Store) Inspect(skill string) ([]Entry, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if err := validateSkill(skill); err != nil {
 		return nil, err
 	}
@@ -150,6 +156,8 @@ func (s *Store) Inspect(skill string) ([]Entry, error) {
 }
 
 func (s *Store) Set(skill, name, kind, value string) (Entry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err := validateSkill(skill); err != nil {
 		return Entry{}, err
 	}
@@ -201,6 +209,8 @@ func (s *Store) Set(skill, name, kind, value string) (Entry, error) {
 }
 
 func (s *Store) Delete(skill, name string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err := validateSkill(skill); err != nil {
 		return false, err
 	}
@@ -241,6 +251,8 @@ func (s *Store) Delete(skill, name string) (bool, error) {
 }
 
 func (s *Store) EnvForSkill(skill string, definitions []Definition) (map[string]string, []string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if err := validateSkill(skill); err != nil {
 		return nil, nil, err
 	}
@@ -288,6 +300,8 @@ func (s *Store) EnvForSkill(skill string, definitions []Definition) (map[string]
 }
 
 func (s *Store) RecordVerification(skill string, ok bool, message string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err := validateSkill(skill); err != nil {
 		return err
 	}

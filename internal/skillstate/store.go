@@ -2,6 +2,8 @@ package skillstate
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/uvwt/agentdock/internal/atomicfile"
@@ -23,6 +26,8 @@ const (
 	ChannelStable      Channel = "stable"
 	ChannelPinned      Channel = "pinned"
 )
+
+const lockOwnerPrefix = "owner-"
 
 var validChannels = map[Channel]struct{}{
 	ChannelDevelopment: {},
@@ -217,6 +222,14 @@ func (s *Store) Activate(ctx context.Context, skill, version string, channel Cha
 	if _, ok := validChannels[channel]; !ok {
 		return fmt.Errorf("invalid skill channel %q", channel)
 	}
+	release, err := s.acquire(ctx, skill)
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	// 安装存在性检查必须位于同一个 Skill 锁内；否则删除操作可能在检查后、
+	// 激活前移除目标版本，最终留下指向不存在目录的 active 状态。
 	installed, err := s.IsInstalled(skill, version)
 	if err != nil {
 		return err
@@ -224,12 +237,6 @@ func (s *Store) Activate(ctx context.Context, skill, version string, channel Cha
 	if !installed {
 		return fmt.Errorf("skill %s version %s is not installed", skill, version)
 	}
-	release, err := s.acquire(ctx, skill)
-	if err != nil {
-		return err
-	}
-	defer release()
-
 	state, err := s.load(skill)
 	if err != nil {
 		return err
@@ -245,6 +252,13 @@ func (s *Store) Activate(ctx context.Context, skill, version string, channel Cha
 	state.UpdatedAt = time.Now().UTC()
 
 	activeDir := filepath.Join(s.root, "active")
+	activeLink := filepath.Join(activeDir, skill)
+	previousTarget, previousErr := os.Readlink(activeLink)
+	hadPreviousLink := previousErr == nil
+	if previousErr != nil && !errors.Is(previousErr, os.ErrNotExist) {
+		return fmt.Errorf("read current active symlink: %w", previousErr)
+	}
+
 	tmpLink := filepath.Join(activeDir, fmt.Sprintf(".%s-%d", skill, time.Now().UnixNano()))
 	relTarget := filepath.Join("..", "installed", skill, version)
 	if err := os.Symlink(relTarget, tmpLink); err != nil {
@@ -255,12 +269,40 @@ func (s *Store) Activate(ctx context.Context, skill, version string, channel Cha
 			slog.Warn("remove temporary skill link failed", "path", tmpLink, "error", err)
 		}
 	}()
-	activeLink := filepath.Join(activeDir, skill)
 	if err := os.Rename(tmpLink, activeLink); err != nil {
 		return fmt.Errorf("activate skill atomically: %w", err)
 	}
 	if err := s.save(skill, state); err != nil {
+		rollbackErr := restoreActiveLink(activeDir, activeLink, skill, previousTarget, hadPreviousLink)
+		if rollbackErr != nil {
+			return errors.Join(err, rollbackErr)
+		}
 		return err
+	}
+	return nil
+}
+
+func restoreActiveLink(activeDir, activeLink, skill, previousTarget string, hadPrevious bool) error {
+	if !hadPrevious {
+		if err := os.Remove(activeLink); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove active link after state save failure: %w", err)
+		}
+		return nil
+	}
+
+	rollbackLink := filepath.Join(activeDir, fmt.Sprintf(".%s-rollback-%d", skill, time.Now().UnixNano()))
+	if err := os.Symlink(previousTarget, rollbackLink); err != nil {
+		return fmt.Errorf("create active rollback symlink: %w", err)
+	}
+	if err := os.Rename(rollbackLink, activeLink); err != nil {
+		cleanupErr := os.Remove(rollbackLink)
+		if cleanupErr != nil && !errors.Is(cleanupErr, os.ErrNotExist) {
+			return errors.Join(
+				fmt.Errorf("restore previous active symlink: %w", err),
+				fmt.Errorf("remove active rollback symlink: %w", cleanupErr),
+			)
+		}
+		return fmt.Errorf("restore previous active symlink: %w", err)
 	}
 	return nil
 }
@@ -282,7 +324,16 @@ func (s *Store) PreviousVersion(skill string) (string, error) {
 	return "", fmt.Errorf("skill %s has no rollback version", skill)
 }
 
-func (s *Store) RemoveVersion(skill, version string) error {
+func (s *Store) RemoveVersion(ctx context.Context, skill, version string) error {
+	if _, err := s.InstalledPath(skill, version); err != nil {
+		return err
+	}
+	release, err := s.acquire(ctx, skill)
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	active, err := s.ActiveVersion(skill)
 	if err != nil {
 		return err
@@ -332,20 +383,30 @@ func (s *Store) acquire(ctx context.Context, skill string) (func(), error) {
 	if err := validateIdentifier("skill", skill); err != nil {
 		return nil, err
 	}
+	owner, err := newLockOwner()
+	if err != nil {
+		return nil, fmt.Errorf("create skill lock owner: %w", err)
+	}
 	lockPath := filepath.Join(s.root, "locks", skill+".lock")
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		err := os.Mkdir(lockPath, 0o700)
 		if err == nil {
-			return func() { _ = os.RemoveAll(lockPath) }, nil
+			ownerPath := filepath.Join(lockPath, lockOwnerPrefix+owner)
+			if err := os.WriteFile(ownerPath, nil, 0o600); err != nil {
+				cleanupErr := cleanupOwnedLockInitialization(lockPath, ownerPath)
+				return nil, errors.Join(fmt.Errorf("write skill lock owner: %w", err), cleanupErr)
+			}
+			return func() { releaseOwnedLock(lockPath, owner) }, nil
 		}
 		if !os.IsExist(err) {
 			return nil, fmt.Errorf("acquire skill lock: %w", err)
 		}
 		if info, statErr := os.Stat(lockPath); statErr == nil && time.Since(info.ModTime()) > 10*time.Minute {
-			_ = os.RemoveAll(lockPath)
-			continue
+			if removeStaleOwnedLock(lockPath) {
+				continue
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -353,6 +414,75 @@ func (s *Store) acquire(ctx context.Context, skill string) (func(), error) {
 		case <-ticker.C:
 		}
 	}
+}
+
+func newLockOwner() (string, error) {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(raw), nil
+}
+
+func cleanupOwnedLockInitialization(lockPath, ownerPath string) error {
+	var cleanupErrs []error
+	if err := os.Remove(ownerPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		cleanupErrs = append(cleanupErrs, fmt.Errorf("remove incomplete skill lock owner: %w", err))
+	}
+	if err := os.Remove(lockPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		cleanupErrs = append(cleanupErrs, fmt.Errorf("remove incomplete skill lock directory: %w", err))
+	}
+	return errors.Join(cleanupErrs...)
+}
+
+func releaseOwnedLock(lockPath, owner string) {
+	ownerPath := filepath.Join(lockPath, lockOwnerPrefix+owner)
+	if err := os.Remove(ownerPath); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("remove skill lock owner failed", "path", ownerPath, "error", err)
+		}
+		return
+	}
+	if err := os.Remove(lockPath); err != nil &&
+		!errors.Is(err, os.ErrNotExist) &&
+		!errors.Is(err, syscall.ENOTEMPTY) &&
+		!errors.Is(err, syscall.EEXIST) {
+		slog.Warn("release skill lock failed", "path", lockPath, "error", err)
+	}
+}
+
+func removeStaleOwnedLock(lockPath string) bool {
+	entries, err := os.ReadDir(lockPath)
+	if err != nil {
+		return errors.Is(err, os.ErrNotExist)
+	}
+	if len(entries) == 0 {
+		err := os.Remove(lockPath)
+		if err == nil || errors.Is(err, os.ErrNotExist) {
+			return true
+		}
+		if !errors.Is(err, syscall.ENOTEMPTY) {
+			slog.Warn("remove empty stale skill lock failed", "path", lockPath, "error", err)
+		}
+		return false
+	}
+	if len(entries) != 1 || !strings.HasPrefix(entries[0].Name(), lockOwnerPrefix) {
+		return false
+	}
+	ownerPath := filepath.Join(lockPath, entries[0].Name())
+	if err := os.Remove(ownerPath); err != nil {
+		return errors.Is(err, os.ErrNotExist)
+	}
+	if err := os.Remove(lockPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true
+		}
+		if !errors.Is(err, syscall.ENOTEMPTY) && !errors.Is(err, syscall.EEXIST) {
+			slog.Warn("remove stale skill lock failed", "path", lockPath, "error", err)
+		}
+		return false
+	}
+	return true
 }
 
 func validateIdentifier(label, value string) error {

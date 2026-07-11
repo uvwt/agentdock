@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -622,21 +623,47 @@ func detectMime(path, filename string, archive bool) string {
 }
 
 func safeDownloadName(value string) string {
+	value = strings.ToValidUTF8(value, "_")
+	value = strings.Map(func(char rune) rune {
+		if char < 0x20 || char == 0x7f {
+			return '_'
+		}
+		return char
+	}, value)
 	value = strings.ReplaceAll(strings.TrimSpace(value), "\\", "/")
 	value = filepath.Base(value)
-	if value == "" || value == "." || value == ".." {
+	if value == "" || value == "." || value == ".." || strings.ContainsAny(value, "/\\") {
 		return "artifact.bin"
 	}
-	if len(value) > 240 {
-		ext := filepath.Ext(value)
-		base := strings.TrimSuffix(value, ext)
-		max := 240 - len(ext)
-		if max < 1 {
-			return "artifact.bin"
-		}
-		value = base[:max] + ext
+	if len(value) <= 240 {
+		return value
 	}
-	return value
+
+	// 下载名受 HTTP 头和文件系统共同约束。按字节限制时必须停在 rune 边界，
+	// 否则长中文名会生成非法 UTF-8，并继续污染 metadata、URL 与响应头。
+	ext := filepath.Ext(value)
+	if len(ext) >= 240 {
+		ext = ""
+	}
+	base := strings.TrimSuffix(value, ext)
+	base = truncateUTF8Bytes(base, 240-len(ext))
+	if base == "" {
+		return "artifact.bin"
+	}
+	return base + ext
+}
+
+func truncateUTF8Bytes(value string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(value) <= maxBytes {
+		return value
+	}
+	for maxBytes > 0 && !utf8.ValidString(value[:maxBytes]) {
+		maxBytes--
+	}
+	return value[:maxBytes]
 }
 
 func fallbackURL(port int) string {

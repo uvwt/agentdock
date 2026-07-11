@@ -129,6 +129,22 @@ func TestBlockAndResume(t *testing.T) {
 	}
 }
 
+func TestCreateFromTemplateCopiesSelectionCandidates(t *testing.T) {
+	store, err := New(filepath.Join(t.TempDir(), "tasks"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates := []TemplateCandidate{{ID: "agentdock.deploy", Version: "1.0.0", Score: 90}}
+	task, err := store.CreateFromTemplate("Deploy", "deploy AgentDock", nil, testTemplate(), "best match", candidates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates[0].ID = "mutated"
+	if task.Template == nil || len(task.Template.Candidates) != 1 || task.Template.Candidates[0].ID != "agentdock.deploy" {
+		t.Fatalf("task selection aliases caller candidates: %#v", task.Template)
+	}
+}
+
 func TestCreateWithTemplateSkipsSimilarCompletionConditions(t *testing.T) {
 	store, err := New(t.TempDir() + "/tasks")
 	if err != nil {

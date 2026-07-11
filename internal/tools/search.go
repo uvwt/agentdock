@@ -50,11 +50,8 @@ func (r *Runtime) searchText(ctx context.Context, args map[string]any) (Result, 
 		IncludeHidden:  boolArg(args, "include_hidden", false),
 		IncludeGlobs:   includeGlobs,
 		ExcludeGlobs:   stringSliceArg(args, "exclude_globs"),
-		MaxResults:     intArg(args, "max_results", 100),
-		ContextLines:   intArg(args, "context_lines", 0),
-	}
-	if opts.MaxResults < 0 {
-		opts.MaxResults = 0
+		MaxResults:     boundedInt(intArg(args, "max_results", 100), 100, 1, 1000),
+		ContextLines:   boundedInt(intArg(args, "context_lines", 0), 0, 0, 20),
 	}
 	if result, ok := r.searchTextRG(ctx, p, opts); ok {
 		return result, nil

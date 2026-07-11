@@ -9,6 +9,27 @@ import (
 	"time"
 )
 
+func TestGitHubRequestTimeoutIsAlwaysBounded(t *testing.T) {
+	tests := []struct {
+		name string
+		args map[string]any
+		want time.Duration
+	}{
+		{name: "default", args: nil, want: 15 * time.Second},
+		{name: "negative", args: map[string]any{"timeout_ms": -1}, want: 15 * time.Second},
+		{name: "zero", args: map[string]any{"timeout_ms": 0}, want: 15 * time.Second},
+		{name: "custom", args: map[string]any{"timeout_ms": 2500}, want: 2500 * time.Millisecond},
+		{name: "capped", args: map[string]any{"timeout_ms": 600000}, want: 2 * time.Minute},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := githubRequestTimeout(test.args); got != test.want {
+				t.Fatalf("githubRequestTimeout() = %s, want %s", got, test.want)
+			}
+		})
+	}
+}
+
 func TestGitHubGetDecodesBoundedResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer token-value" {

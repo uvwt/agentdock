@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -16,14 +17,20 @@ import (
 	"github.com/uvwt/agentdock/internal/workspace"
 )
 
+const (
+	maxTextFileReadBytes = 32 << 20
+	maxTextOutputBytes   = 4 << 20
+)
+
 type Result map[string]any
 
 type Runtime struct {
-	cfg      config.Config
-	ws       *workspace.Workspace
-	sessions *SessionStore
-	skills   *skillRuntimeManager
-	tasks    *taskstate.Store
+	cfg            config.Config
+	ws             *workspace.Workspace
+	sessions       *SessionStore
+	skills         *skillRuntimeManager
+	tasks          *taskstate.Store
+	privateNotesMu sync.RWMutex
 }
 
 func NewRuntime(cfg config.Config) (*Runtime, error) {
@@ -121,6 +128,14 @@ func (r *Runtime) readFile(args map[string]any) (Result, error) {
 	if info.IsDir() {
 		return nil, toolError("IS_DIRECTORY", "cannot read directory", "validation")
 	}
+	if info.Size() > maxTextFileReadBytes {
+		return nil, toolErrorDetails(
+			"FILE_TOO_LARGE",
+			"text file exceeds the read_file input limit",
+			"validation",
+			map[string]any{"path": p.Display, "size_bytes": info.Size(), "max_size_bytes": maxTextFileReadBytes},
+		)
+	}
 	data, err := os.ReadFile(p.Abs)
 	if err != nil {
 		return nil, err
@@ -131,7 +146,8 @@ func (r *Runtime) readFile(args map[string]any) (Result, error) {
 	if !utf8.Valid(data) {
 		return nil, toolError("UNSUPPORTED_ENCODING", "file is not valid utf-8", "validation")
 	}
-	content, meta := sliceText(string(data), intArg(args, "start_line", 1), intArg(args, "end_line", 0), intArg(args, "max_bytes", 262144))
+	maxBytes := boundedInt(intArg(args, "max_bytes", 262144), 262144, 1, maxTextOutputBytes)
+	content, meta := sliceText(string(data), intArg(args, "start_line", 1), intArg(args, "end_line", 0), maxBytes)
 	result := Result{"ok": true, "path": p.Display, "content": content, "encoding": "utf-8", "size_bytes": len(data), "truncated": meta.Truncated, "start_line": meta.Start, "end_line": meta.End, "total_lines": meta.Total}
 	if meta.NextStartLine > 0 {
 		result["next_start_line"] = meta.NextStartLine
@@ -143,6 +159,9 @@ func (r *Runtime) readFile(args map[string]any) (Result, error) {
 }
 
 func (r *Runtime) listDir(ctx context.Context, args map[string]any) (Result, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	p, err := r.ws.ResolveExisting(stringArg(args, "path", "."))
 	if err != nil {
 		return nil, err
@@ -153,8 +172,8 @@ func (r *Runtime) listDir(ctx context.Context, args map[string]any) (Result, err
 	}
 	includeHidden := boolArg(args, "include_hidden", false)
 	recursive := boolArg(args, "recursive", false)
-	maxDepth := intArg(args, "max_depth", 1)
-	maxEntries := intArg(args, "max_entries", 200)
+	maxDepth := boundedInt(intArg(args, "max_depth", 1), 1, 1, 20)
+	maxEntries := boundedInt(intArg(args, "max_entries", 200), 200, 1, 2000)
 	includeIgnored := boolArg(args, "include_ignored", false)
 	if recursive {
 		return r.listDirRecursive(ctx, p, includeHidden, includeIgnored, maxDepth, maxEntries)
@@ -248,7 +267,10 @@ func (r *Runtime) listDirRecursive(ctx context.Context, root workspace.Path, inc
 	return Result{"ok": err == nil, "path": root.Display, "entries": items, "recursive": true, "max_depth": maxDepth, "truncated": maxEntries > 0 && len(items) >= maxEntries}, err
 }
 
-func (r *Runtime) listFiles(args map[string]any) (Result, error) {
+func (r *Runtime) listFiles(ctx context.Context, args map[string]any) (Result, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	p, err := r.ws.ResolveExisting(stringArg(args, "path", "."))
 	if err != nil {
 		return nil, err
@@ -261,14 +283,17 @@ func (r *Runtime) listFiles(args map[string]any) (Result, error) {
 		patterns = []string{glob}
 	}
 	excludePatterns := stringSliceArg(args, "exclude_patterns")
-	maxResults := intArg(args, "max_results", 500)
+	maxResults := boundedInt(intArg(args, "max_results", 500), 500, 1, 5000)
 	includeHidden := boolArg(args, "include_hidden", false)
 	includeIgnored := boolArg(args, "include_ignored", false)
 	ignore := loadIgnoreMatcher(r.ws.Root())
 	files := make([]map[string]any, 0)
 	err = filepath.WalkDir(p.Abs, func(abs string, d os.DirEntry, walkErr error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if walkErr != nil {
-			return nil
+			return walkErr
 		}
 		rel, relErr := r.ws.Relative(abs)
 		if relErr == nil && !includeIgnored && ignore.Ignored(rel, d.IsDir()) {
@@ -290,12 +315,15 @@ func (r *Runtime) listFiles(args map[string]any) (Result, error) {
 			return nil
 		}
 		rel, err := r.ws.Relative(abs)
-		if err != nil || !matchesAny(rel, patterns) || matchesAny(rel, excludePatterns) {
+		if err != nil {
+			return fmt.Errorf("resolve listed file %s: %w", abs, err)
+		}
+		if !matchesAny(rel, patterns) || matchesAny(rel, excludePatterns) {
 			return nil
 		}
 		info, err := d.Info()
 		if err != nil {
-			return nil
+			return fmt.Errorf("inspect listed file %s: %w", abs, err)
 		}
 		files = append(files, map[string]any{"path": rel, "type": "file", "size_bytes": info.Size(), "modified": info.ModTime().UTC().Format(time.RFC3339Nano)})
 		if maxResults > 0 && len(files) >= maxResults {

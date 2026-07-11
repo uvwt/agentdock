@@ -59,10 +59,17 @@ func (r *Runtime) gitInDir(ctx context.Context, dir string, maxBytes int, args .
 		return nil, err
 	}
 	cmd.Env = commandEnv
-	output, err := cmd.CombinedOutput()
-	text, truncated := truncateBytes(output, maxBytes)
+	maxBytes = boundedInt(maxBytes, 65536, 1, 8<<20)
+	output, outputTotal, outputTruncated, err := runBoundedCombinedOutput(cmd, maxBytes)
+	text, responseTruncated := truncateBytes(output, maxBytes)
 	text = redactSecrets(text, nil)
-	result := Result{"ok": err == nil, "command": "git " + strings.Join(args, " "), "output": text, "truncated": truncated}
+	result := Result{
+		"ok":                 err == nil,
+		"command":            "git " + strings.Join(args, " "),
+		"output":             text,
+		"truncated":          outputTruncated || responseTruncated,
+		"output_total_bytes": outputTotal,
+	}
 	if err != nil {
 		result["error"] = err.Error()
 		if diag := diagnoseGitOutput(text); diag != nil {

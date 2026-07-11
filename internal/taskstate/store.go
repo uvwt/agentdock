@@ -119,7 +119,8 @@ func (s *Store) CreateFromTemplate(title, goal string, conditionTexts []string, 
 	if template.Status != TemplateActive {
 		return Task{}, errors.New("only active templates can create tasks")
 	}
-	return s.createTask(title, goal, conditionTexts, &template, candidatesWithReason{reason: selectedReason, candidates: candidates})
+	selection := &candidatesWithReason{reason: selectedReason, candidates: candidates}
+	return s.createTask(title, goal, conditionTexts, &template, selection)
 }
 
 type candidatesWithReason struct {
@@ -127,7 +128,7 @@ type candidatesWithReason struct {
 	candidates []TemplateCandidate
 }
 
-func (s *Store) createTask(title, goal string, conditionTexts []string, template *Template, selectionInfo any) (Task, error) {
+func (s *Store) createTask(title, goal string, conditionTexts []string, template *Template, selectionInfo *candidatesWithReason) (Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	title = strings.TrimSpace(title)
@@ -140,8 +141,16 @@ func (s *Store) createTask(title, goal string, conditionTexts []string, template
 	var steps []TaskStep
 	if template != nil {
 		conditionTexts = append(append([]string{}, template.CompletionConditions...), conditionTexts...)
-		info, _ := selectionInfo.(candidatesWithReason)
-		selection = &TemplateSelection{ID: template.ID, Version: template.Version, Hash: template.Hash, SelectedReason: strings.TrimSpace(info.reason), Candidates: info.candidates}
+		if selectionInfo == nil {
+			return Task{}, errors.New("template selection metadata is required")
+		}
+		selection = &TemplateSelection{
+			ID:             template.ID,
+			Version:        template.Version,
+			Hash:           template.Hash,
+			SelectedReason: strings.TrimSpace(selectionInfo.reason),
+			Candidates:     append([]TemplateCandidate(nil), selectionInfo.candidates...),
+		}
 		steps = make([]TaskStep, 0, len(template.Steps))
 		for _, step := range template.Steps {
 			steps = append(steps, TaskStep{ID: step.ID, Title: step.Title, Phase: step.Phase, Status: "pending", UpdatedAt: now})

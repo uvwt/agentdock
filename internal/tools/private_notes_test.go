@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/uvwt/agentdock/internal/config"
 )
@@ -76,6 +77,112 @@ func TestPrivateNotesWriteReadSearchAndEncrypt(t *testing.T) {
 	}
 	if !check["ok"].(bool) {
 		t.Fatalf("check failed: %#v", check)
+	}
+}
+
+func TestPrivateNoteSnippetKeepsUTF8Boundaries(t *testing.T) {
+	for _, content := range []string{
+		strings.Repeat("你", 30) + " token=value " + strings.Repeat("好", 100),
+		strings.Repeat("İ", 200) + " TOKEN=value " + strings.Repeat("好", 100),
+	} {
+		snippet := privateNoteSnippet(content, []string{"token"})
+		if !utf8.ValidString(snippet) {
+			t.Fatalf("privateNoteSnippet() returned invalid UTF-8: %q", snippet)
+		}
+		if !strings.Contains(strings.ToLower(snippet), "token=value") {
+			t.Fatalf("privateNoteSnippet() lost matched term: %q", snippet)
+		}
+	}
+}
+
+func TestPrivateNotesReadTruncatesAtUTF8Boundary(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	root, err := rt.privateNotesRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, privateNotesPlainDir, "services", "utf8.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("你a"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		maxBytes int
+		want     string
+	}{
+		{maxBytes: 1, want: ""},
+		{maxBytes: 3, want: "你"},
+		{maxBytes: 4, want: "你a"},
+	} {
+		result, err := rt.privateNotesRead(context.Background(), map[string]any{
+			"path": "notes/services/utf8.md", "max_bytes": test.maxBytes,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := result["content"].(string)
+		if content != test.want || !utf8.ValidString(content) {
+			t.Fatalf("max_bytes=%d content = %q, want %q", test.maxBytes, content, test.want)
+		}
+		if got := result["truncated"].(bool); got != (test.maxBytes < 4) {
+			t.Fatalf("max_bytes=%d truncated = %v", test.maxBytes, got)
+		}
+	}
+}
+
+func TestPrivateNotesOverwriteRestoresPreviousContentWhenEncryptionFails(t *testing.T) {
+	home := t.TempDir()
+	cfg := config.Config{AgentDockDefaultDir: t.TempDir(), AgentDockHome: home}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	rt, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.privateNoteManage(context.Background(), map[string]any{"action": "maintain", "maintenance_action": "init-encryption"}); err != nil {
+		t.Fatal(err)
+	}
+	created, err := rt.privateNoteManage(context.Background(), map[string]any{
+		"action": "write", "path": "notes/services/rollback.md", "content": "original-content", "confirmed": true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plainPath := filepath.Join(home, "private-notes", filepath.FromSlash(created["path"].(string)))
+	encryptedPath := filepath.Join(home, "private-notes", filepath.FromSlash(created["encrypted_path"].(string)))
+	originalPlain, err := os.ReadFile(plainPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalEncrypted, err := os.ReadFile(encryptedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("AGENTDOCK_PRIVATE_NOTES_AGE_RECIPIENT", "not-a-valid-age-recipient")
+	_, err = rt.privateNoteManage(context.Background(), map[string]any{
+		"action": "write", "path": "notes/services/rollback.md", "content": "replacement-content", "confirmed": true, "overwrite": true,
+	})
+	if err == nil {
+		t.Fatal("overwrite succeeded despite invalid encryption recipient")
+	}
+	plainAfter, readErr := os.ReadFile(plainPath)
+	if readErr != nil {
+		t.Fatalf("previous plaintext was removed: %v", readErr)
+	}
+	if string(plainAfter) != string(originalPlain) {
+		t.Fatalf("plaintext changed after failed overwrite:\n%s", plainAfter)
+	}
+	encryptedAfter, readErr := os.ReadFile(encryptedPath)
+	if readErr != nil {
+		t.Fatalf("previous encrypted backup was removed: %v", readErr)
+	}
+	if string(encryptedAfter) != string(originalEncrypted) {
+		t.Fatal("encrypted backup changed after failed overwrite")
 	}
 }
 

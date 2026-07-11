@@ -23,7 +23,8 @@ func (r *Runtime) applyPatch(ctx context.Context, args map[string]any) (Result, 
 	if strings.HasPrefix(strings.TrimSpace(patch), "*** Begin Patch") {
 		return r.applyEnvelopePatch(patch, boolArg(args, "dry_run", false), workdir.Display)
 	}
-	preview := textutil.SafeTruncateString(patch, intArg(args, "max_diff_bytes", 65536))
+	maxDiffBytes := boundedInt(intArg(args, "max_diff_bytes", 65536), 65536, 1, maxTextOutputBytes)
+	preview := textutil.SafeTruncateString(patch, maxDiffBytes)
 	stats := countDiffStats(patch)
 	affected := parseDiffFiles(patch)
 	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -34,10 +35,14 @@ func (r *Runtime) applyPatch(ctx context.Context, args map[string]any) (Result, 
 	}
 	cmd.Dir = workdir.Abs
 	cmd.Stdin = strings.NewReader(patch)
-	output, err := cmd.CombinedOutput()
+	output, outputTotal, outputTruncated, err := runBoundedCombinedOutput(cmd, 1<<20)
 	if err != nil {
-		diagnostic := patchDiagnostic("GIT_APPLY_FAILED", workdir.Display, "git apply failed", redactSecrets(string(output), nil), err.Error())
-		return nil, toolErrorDetails("PATCH_FAILED", "git apply failed", "runtime", map[string]any{"workdir": workdir.Display, "output": diagnostic["output"], "reason": err.Error(), "diagnostic": diagnostic})
+		outputText, _ := truncateBytes(output, 1<<20)
+		diagnostic := patchDiagnostic("GIT_APPLY_FAILED", workdir.Display, "git apply failed", redactSecrets(outputText, nil), err.Error())
+		return nil, toolErrorDetails("PATCH_FAILED", "git apply failed", "runtime", map[string]any{
+			"workdir": workdir.Display, "output": diagnostic["output"], "reason": err.Error(), "diagnostic": diagnostic,
+			"output_total_bytes": outputTotal, "output_truncated": outputTruncated,
+		})
 	}
 	if boolArg(args, "dry_run", false) {
 		return Result{"ok": true, "summary": "patch validated", "dry_run": true, "workdir": workdir.Display, "affected_files": affected, "diff_preview": preview.Text, "truncated": preview.Truncated, "files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions}, nil

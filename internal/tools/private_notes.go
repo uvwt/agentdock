@@ -13,18 +13,22 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"filippo.io/age"
 
 	"github.com/uvwt/agentdock/internal/atomicfile"
+	"github.com/uvwt/agentdock/internal/textutil"
 )
 
 const (
-	privateNotesPlainDir      = "notes"
-	privateNotesEncryptedDir  = "encrypted"
-	privateNotesKeyDir        = ".keys"
-	privateNotesIdentityFile  = "private-notes-age-identity.txt"
-	privateNotesRecipientFile = "recipients.txt"
+	privateNotesPlainDir        = "notes"
+	privateNotesEncryptedDir    = "encrypted"
+	privateNotesKeyDir          = ".keys"
+	privateNotesIdentityFile    = "private-notes-age-identity.txt"
+	privateNotesRecipientFile   = "recipients.txt"
+	maxPrivateNoteSearchResults = 100
+	maxPrivateNoteReadBytes     = 1 << 20
 )
 
 type privateNoteSummary struct {
@@ -79,6 +83,8 @@ func (r *Runtime) privateNoteManage(ctx context.Context, args map[string]any) (R
 }
 
 func (r *Runtime) privateNotesSearch(ctx context.Context, args map[string]any) (Result, error) {
+	r.privateNotesMu.RLock()
+	defer r.privateNotesMu.RUnlock()
 	query := strings.TrimSpace(stringArg(args, "query", ""))
 	if query == "" {
 		return nil, toolError("MISSING_QUERY", "query is required", "validation")
@@ -87,10 +93,7 @@ func (r *Runtime) privateNotesSearch(ctx context.Context, args map[string]any) (
 	if err != nil {
 		return nil, err
 	}
-	maxResults := intArg(args, "max_results", 8)
-	if maxResults <= 0 {
-		maxResults = 8
-	}
+	maxResults := boundedInt(intArg(args, "max_results", 8), 8, 1, maxPrivateNoteSearchResults)
 	terms := privateNoteTerms(query)
 	var matches []privateNoteSearchMatch
 	walkRoot := filepath.Join(root, privateNotesPlainDir)
@@ -146,6 +149,8 @@ func (r *Runtime) privateNotesSearch(ctx context.Context, args map[string]any) (
 }
 
 func (r *Runtime) privateNotesRead(ctx context.Context, args map[string]any) (Result, error) {
+	r.privateNotesMu.RLock()
+	defer r.privateNotesMu.RUnlock()
 	root, err := r.privateNotesRoot()
 	if err != nil {
 		return nil, err
@@ -159,18 +164,21 @@ func (r *Runtime) privateNotesRead(ctx context.Context, args map[string]any) (Re
 	if err != nil {
 		return nil, toolErrorDetails("PRIVATE_NOTE_READ_FAILED", err.Error(), "filesystem", map[string]any{"path": rel})
 	}
-	maxBytes := intArg(args, "max_bytes", 256000)
+	maxBytes := boundedInt(intArg(args, "max_bytes", 256000), 256000, 1, maxPrivateNoteReadBytes)
 	body := string(content)
 	truncated := false
-	if maxBytes > 0 && len(body) > maxBytes {
-		body = body[:maxBytes]
-		truncated = true
+	if maxBytes > 0 {
+		truncation := textutil.SafeTruncateString(body, maxBytes)
+		body = truncation.Text
+		truncated = truncation.Truncated
 	}
 	summary := privateNoteExtractSummary(rel, string(content))
 	return Result{"ok": true, "action": "read", "root": root, "path": rel, "encrypted_path": privateNoteEncryptedRel(rel), "content": body, "truncated": truncated, "contains_secret": summary.ContainsSecret, "policy": "private_note_manage action=read returns plaintext by design"}, nil
 }
 
 func (r *Runtime) privateNotesWrite(ctx context.Context, args map[string]any) (Result, error) {
+	r.privateNotesMu.Lock()
+	defer r.privateNotesMu.Unlock()
 	if !boolArg(args, "confirmed", false) {
 		return nil, toolError("CONFIRMATION_REQUIRED", "private_note_manage action=write requires confirmed=true", "validation")
 	}
@@ -190,28 +198,48 @@ func (r *Runtime) privateNotesWrite(ctx context.Context, args map[string]any) (R
 		return nil, err
 	}
 	abs := filepath.Join(root, filepath.FromSlash(rel))
-	if _, err := os.Stat(abs); err == nil && !boolArg(args, "overwrite", false) {
+	previous, readErr := os.ReadFile(abs)
+	existed := readErr == nil
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		return nil, fmt.Errorf("read existing private note: %w", readErr)
+	}
+	if existed && !boolArg(args, "overwrite", false) {
 		return nil, toolErrorDetails("PRIVATE_NOTE_EXISTS", "private note already exists; pass overwrite=true", "validation", map[string]any{"path": rel})
 	}
 	if err := os.MkdirAll(filepath.Dir(abs), 0o700); err != nil {
 		return nil, err
 	}
 	finalContent := privateNoteWithFrontmatter(rel, content, args)
-	if err := os.WriteFile(abs, []byte(finalContent), 0o600); err != nil {
-		return nil, err
-	}
-	if err := os.Chmod(abs, 0o600); err != nil {
-		return nil, err
+	if err := atomicfile.Write(abs, []byte(finalContent), 0o600); err != nil {
+		return nil, fmt.Errorf("write private note: %w", err)
 	}
 	encRel, err := encryptPrivateNote(root, rel)
 	if err != nil {
-		_ = os.Remove(abs)
+		rollbackErr := restorePrivateNote(abs, previous, existed)
+		if rollbackErr != nil {
+			return nil, errors.Join(err, rollbackErr)
+		}
 		return nil, err
 	}
 	return Result{"ok": true, "action": "write", "root": root, "path": rel, "encrypted_path": encRel, "written": true, "encrypted": true, "algorithm": "age/X25519", "policy": "age encrypted backup is mandatory and cannot be skipped"}, nil
 }
 
+func restorePrivateNote(path string, previous []byte, existed bool) error {
+	if existed {
+		if err := atomicfile.Write(path, previous, 0o600); err != nil {
+			return fmt.Errorf("restore previous private note: %w", err)
+		}
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove unencrypted private note: %w", err)
+	}
+	return nil
+}
+
 func (r *Runtime) privateNotesStatus(ctx context.Context, args map[string]any) (Result, error) {
+	r.privateNotesMu.RLock()
+	defer r.privateNotesMu.RUnlock()
 	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "check")))
 	root, err := r.privateNotesRoot()
 	if err != nil {
@@ -242,6 +270,8 @@ func (r *Runtime) privateNotesStatus(ctx context.Context, args map[string]any) (
 }
 
 func (r *Runtime) privateNotesMaintain(ctx context.Context, args map[string]any) (Result, error) {
+	r.privateNotesMu.Lock()
+	defer r.privateNotesMu.Unlock()
 	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "sync-encrypted")))
 	root, err := r.privateNotesRoot()
 	if err != nil {
@@ -304,7 +334,7 @@ private-notes 是用户个人私密资料库。人和工具只维护 notes/ 明�
 	for rel, content := range files {
 		p := filepath.Join(root, rel)
 		if _, err := os.Stat(p); os.IsNotExist(err) {
-			if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+			if err := atomicfile.Write(p, []byte(content), 0o600); err != nil {
 				return err
 			}
 		}
@@ -409,7 +439,7 @@ func privateNotesEnsureAgeIdentity(root string) (*age.X25519Identity, bool, erro
 	if err := os.MkdirAll(filepath.Dir(identityPath), 0o700); err != nil {
 		return nil, false, err
 	}
-	if err := os.WriteFile(identityPath, []byte(identity.String()+"\n"), 0o600); err != nil {
+	if err := atomicfile.Write(identityPath, []byte(identity.String()+"\n"), 0o600); err != nil {
 		return nil, false, err
 	}
 	if err := privateNotesWriteRecipientFile(root, identity.Recipient().String()); err != nil {
@@ -423,7 +453,7 @@ func privateNotesWriteRecipientFile(root, recipient string) error {
 	if err := os.MkdirAll(filepath.Dir(recipientPath), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(recipientPath, []byte(recipient+"\n"), 0o600)
+	return atomicfile.Write(recipientPath, []byte(recipient+"\n"), 0o600)
 }
 
 func privateNotesAgeRecipients(root string) ([]age.Recipient, error) {
@@ -609,14 +639,14 @@ func privateNoteScore(rel, content string, terms []string) int {
 }
 
 func privateNoteSnippet(content string, terms []string) string {
-	lower := strings.ToLower(content)
 	idx := -1
 	for _, term := range terms {
 		if term == "" {
 			continue
 		}
-		if i := strings.Index(lower, strings.ToLower(term)); i >= 0 && (idx < 0 || i < idx) {
-			idx = i
+		match := regexp.MustCompile("(?i:" + regexp.QuoteMeta(term) + ")").FindStringIndex(content)
+		if match != nil && (idx < 0 || match[0] < idx) {
+			idx = match[0]
 		}
 	}
 	if idx < 0 {
@@ -626,9 +656,15 @@ func privateNoteSnippet(content string, terms []string) string {
 	if start < 0 {
 		start = 0
 	}
+	for start < len(content) && !utf8.RuneStart(content[start]) {
+		start++
+	}
 	end := idx + 180
 	if end > len(content) {
 		end = len(content)
+	}
+	for end > start && end < len(content) && !utf8.RuneStart(content[end]) {
+		end--
 	}
 	return strings.TrimSpace(content[start:end])
 }

@@ -1,8 +1,10 @@
 package envregistry
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -38,6 +40,48 @@ func TestStoreSetInspectRedactsValues(t *testing.T) {
 	}
 	if len(items) != 1 || !items[0].Configured || items[0].Length == 0 {
 		t.Fatalf("unexpected inspect result: %#v", items)
+	}
+}
+
+func TestConcurrentSetPreservesEveryVariable(t *testing.T) {
+	store, err := New(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const workers = 32
+	start := make(chan struct{})
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for worker := range workers {
+		go func() {
+			defer wg.Done()
+			<-start
+			name := fmt.Sprintf("VALUE_%02d", worker)
+			_, err := store.Set("demo-skill", name, KindPlain, name)
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("Set() error = %v", err)
+		}
+	}
+
+	entries, err := store.Inspect("demo-skill")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != workers {
+		t.Fatalf("configured variables = %d, want %d", len(entries), workers)
+	}
+	for _, entry := range entries {
+		if !entry.Configured {
+			t.Fatalf("entry is not configured: %#v", entry)
+		}
 	}
 }
 

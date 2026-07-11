@@ -18,6 +18,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestPublishFileCreatesImmutableSignedSnapshot(t *testing.T) {
@@ -125,6 +126,55 @@ func TestPublishBytesImageUsesInlineDispositionAndDimensions(t *testing.T) {
 	if disposition := recorder.Header().Get("Content-Disposition"); !strings.HasPrefix(disposition, "inline") {
 		t.Fatalf("Content-Disposition = %q, want inline", disposition)
 	}
+}
+
+func TestSafeDownloadNamePreservesValidUTF8WithinByteLimit(t *testing.T) {
+	name := strings.Repeat("文", 100) + ".txt"
+	got := safeDownloadName(name)
+	if !utf8.ValidString(got) {
+		t.Fatalf("safeDownloadName() returned invalid UTF-8: %q", got)
+	}
+	if len(got) > 240 {
+		t.Fatalf("safeDownloadName() bytes = %d, want <= 240", len(got))
+	}
+	if !strings.HasSuffix(got, ".txt") {
+		t.Fatalf("safeDownloadName() = %q, want .txt suffix", got)
+	}
+	if got == name {
+		t.Fatal("safeDownloadName() did not truncate an oversized name")
+	}
+
+	invalid := safeDownloadName("report-\xff.txt")
+	if !utf8.ValidString(invalid) || invalid != "report-_.txt" {
+		t.Fatalf("safeDownloadName() invalid input = %q", invalid)
+	}
+	if got := safeDownloadName("\\"); got != "artifact.bin" {
+		t.Fatalf("safeDownloadName(backslash) = %q", got)
+	}
+	if got := safeDownloadName("line\nfeed.txt"); got != "line_feed.txt" {
+		t.Fatalf("safeDownloadName(control) = %q", got)
+	}
+}
+
+func FuzzSafeDownloadName(f *testing.F) {
+	for _, seed := range []string{"", "\\", "report.txt", strings.Repeat("文", 100) + ".txt", "../secret", "report-\xff.txt"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, input string) {
+		got := safeDownloadName(input)
+		if got == "" || !utf8.ValidString(got) {
+			t.Fatalf("safeDownloadName(%q) = %q", input, got)
+		}
+		if len(got) > 240 {
+			t.Fatalf("safeDownloadName(%q) bytes = %d", input, len(got))
+		}
+		if strings.ContainsAny(got, "/\\") || got == "." || got == ".." {
+			t.Fatalf("safeDownloadName(%q) returned unsafe basename %q", input, got)
+		}
+		if strings.IndexFunc(got, func(char rune) bool { return char < 0x20 || char == 0x7f }) >= 0 {
+			t.Fatalf("safeDownloadName(%q) returned control character in %q", input, got)
+		}
+	})
 }
 
 func TestPublishCapsRetentionAtSevenDays(t *testing.T) {
