@@ -4,7 +4,8 @@ param(
     [string] $InstallDir = (Join-Path $env:LOCALAPPDATA 'AgentDock\bin'),
     [switch] $RegisterStartup,
     [int] $Port = 8765,
-    [string] $AuthToken = ''
+    [string] $AuthToken = '',
+    [switch] $AclSelfTest
 )
 
 Set-StrictMode -Version Latest
@@ -30,26 +31,20 @@ function Get-ReleaseBaseUrl([string] $RequestedVersion) {
 
 function Set-PrivateAcl([string] $Path) {
     $item = Get-Item -LiteralPath $Path
-    $accessFlags = if ($item.PSIsContainer) { 'OICI' } else { '' }
-    $identities = @(
-        [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value,
-        'S-1-5-18',
-        'S-1-5-32-544'
+    $currentUserSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $inheritance = if ($item.PSIsContainer) { '(OI)(CI)' } else { '' }
+    $grants = @(
+        "*${currentUserSid}:${inheritance}F",
+        "*S-1-5-18:${inheritance}F",
+        "*S-1-5-32-544:${inheritance}F"
     )
 
-    # 只构造并写入 DACL，避免把现有 SACL 带回 Set-Acl 后要求 SeSecurityPrivilege。
-    $sddl = 'D:P' + (($identities | ForEach-Object { "(A;$accessFlags;FA;;;$_)" }) -join '')
-    $acl = if ($item.PSIsContainer) {
-        [System.Security.AccessControl.DirectorySecurity]::new()
+    # icacls 只修改 DACL，不会读取或写回 SACL，因此普通用户无需 SeSecurityPrivilege。
+    $icaclsArguments = @($item.FullName, '/inheritance:r', '/grant:r') + $grants
+    & icacls.exe @icaclsArguments | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to set private ACL on $($item.FullName). icacls exited with code $LASTEXITCODE."
     }
-    else {
-        [System.Security.AccessControl.FileSecurity]::new()
-    }
-    $acl.SetSecurityDescriptorSddlForm(
-        $sddl,
-        [System.Security.AccessControl.AccessControlSections]::Access
-    )
-    Set-Acl -LiteralPath $Path -AclObject $acl
 }
 
 function Add-UserPath([string] $Directory) {
@@ -144,6 +139,40 @@ function Install-AgentDockBinary([string] $SourceBinary, [string] $DestinationBi
             Start-Sleep -Milliseconds 250
         }
     } while ($true)
+}
+
+if ($AclSelfTest) {
+    $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-acl-' + [Guid]::NewGuid().ToString('N'))
+    try {
+        New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
+        $testFile = Join-Path $testRoot 'token.dpapi'
+        [IO.File]::WriteAllText($testFile, 'test', [Text.UTF8Encoding]::new($false))
+        Set-PrivateAcl $testRoot
+        Set-PrivateAcl $testFile
+
+        $expectedSids = @(
+            [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value,
+            'S-1-5-18',
+            'S-1-5-32-544'
+        ) | Sort-Object -Unique
+        foreach ($target in @($testRoot, $testFile)) {
+            $acl = Get-Acl -LiteralPath $target
+            if (-not $acl.AreAccessRulesProtected) {
+                throw "ACL inheritance is still enabled for $target"
+            }
+            $actualSids = @($acl.Access | ForEach-Object {
+                $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+            } | Sort-Object -Unique)
+            if (Compare-Object -ReferenceObject $expectedSids -DifferenceObject $actualSids) {
+                throw "Unexpected ACL identities for ${target}: $($actualSids -join ', ')"
+            }
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Write-Host 'AgentDock Windows ACL self-test passed.'
+    return
 }
 
 if ($Port -lt 1 -or $Port -gt 65535) {

@@ -45,8 +45,12 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"Install-AgentDockBinary -SourceBinary $sourceBinary -DestinationBinary $destinationBinary",
 		"Test-Path -LiteralPath $tokenPath -PathType Leaf",
 		"Copy-Item -LiteralPath $binaryBackup -Destination $destinationBinary -Force",
-		"SetSecurityDescriptorSddlForm(",
-		"AccessControlSections]::Access",
+		"$icaclsArguments = @($item.FullName, '/inheritance:r', '/grant:r') + $grants",
+		"& icacls.exe @icaclsArguments",
+		"[switch] $AclSelfTest",
+		"AgentDock Windows ACL self-test passed.",
+		"*S-1-5-18:${inheritance}F",
+		"*S-1-5-32-544:${inheritance}F",
 		"DataProtectionScope]::CurrentUser",
 		"New-ScheduledTaskTrigger -AtLogOn",
 		"http://127.0.0.1:$Port/healthz",
@@ -72,8 +76,15 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	if strings.Contains(script, "RunLevel Highest") {
 		t.Fatal("Windows installer should not require elevated startup")
 	}
-	if strings.Contains(script, "Get-Acl -LiteralPath $Path") {
-		t.Fatal("Windows installer must not reuse a full security descriptor when writing private DACLs")
+	for _, forbidden := range []string{
+		"Get-Acl -LiteralPath $Path",
+		"Set-Acl -LiteralPath $Path",
+		"SetSecurityDescriptorSddlForm(",
+		"$sddl",
+	} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("Windows installer must not use full security descriptors for private DACLs: %s", forbidden)
+		}
 	}
 	for _, incompatible := range []string{
 		"RandomNumberGenerator]::Fill",
