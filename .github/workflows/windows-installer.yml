@@ -1,0 +1,28 @@
+name: Windows Installer
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/install-windows.ps1'
+      - 'scripts/test-install-windows.ps1'
+      - '.github/workflows/windows-installer.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate installer on Windows PowerShell 5.1
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run installer validation
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\test-install-windows.ps1

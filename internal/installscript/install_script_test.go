@@ -45,6 +45,8 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"Install-AgentDockBinary -SourceBinary $sourceBinary -DestinationBinary $destinationBinary",
 		"Test-Path -LiteralPath $tokenPath -PathType Leaf",
 		"Copy-Item -LiteralPath $binaryBackup -Destination $destinationBinary -Force",
+		"SetSecurityDescriptorSddlForm(",
+		"AccessControlSections]::Access",
 		"DataProtectionScope]::CurrentUser",
 		"New-ScheduledTaskTrigger -AtLogOn",
 		"http://127.0.0.1:$Port/healthz",
@@ -69,6 +71,9 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	}
 	if strings.Contains(script, "RunLevel Highest") {
 		t.Fatal("Windows installer should not require elevated startup")
+	}
+	if strings.Contains(script, "Get-Acl -LiteralPath $Path") {
+		t.Fatal("Windows installer must not reuse a full security descriptor when writing private DACLs")
 	}
 	for _, incompatible := range []string{
 		"RandomNumberGenerator]::Fill",

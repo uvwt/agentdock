@@ -72,19 +72,10 @@ jobs:
           cache: true
 
       - name: Validate Windows installer
-        shell: pwsh
+        shell: powershell
         run: |
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path 'scripts/install-windows.ps1'),
-            [ref] $tokens,
-            [ref] $errors
-          ) | Out-Null
-          if ($errors.Count -gt 0) {
-            $errors | ForEach-Object { Write-Error $_.Message }
-            throw 'scripts/install-windows.ps1 contains PowerShell syntax errors'
-          }
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\test-install-windows.ps1
 
       - name: Detect Authenticode configuration
         id: signing

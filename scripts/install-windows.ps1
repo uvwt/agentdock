@@ -29,31 +29,26 @@ function Get-ReleaseBaseUrl([string] $RequestedVersion) {
 }
 
 function Set-PrivateAcl([string] $Path) {
-    $acl = Get-Acl -LiteralPath $Path
-    $acl.SetAccessRuleProtection($true, $false)
-    foreach ($rule in @($acl.Access)) {
-        [void] $acl.RemoveAccessRuleAll($rule)
+    $item = Get-Item -LiteralPath $Path
+    $accessFlags = if ($item.PSIsContainer) { 'OICI' } else { '' }
+    $identities = @(
+        [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value,
+        'S-1-5-18',
+        'S-1-5-32-544'
+    )
+
+    # 只构造并写入 DACL，避免把现有 SACL 带回 Set-Acl 后要求 SeSecurityPrivilege。
+    $sddl = 'D:P' + (($identities | ForEach-Object { "(A;$accessFlags;FA;;;$_)" }) -join '')
+    $acl = if ($item.PSIsContainer) {
+        [System.Security.AccessControl.DirectorySecurity]::new()
     }
-    $inheritance = if ((Get-Item -LiteralPath $Path).PSIsContainer) {
-        [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
-    } else {
-        [System.Security.AccessControl.InheritanceFlags]::None
+    else {
+        [System.Security.AccessControl.FileSecurity]::new()
     }
-    $propagation = [System.Security.AccessControl.PropagationFlags]::None
-    foreach ($identity in @(
-        [System.Security.Principal.WindowsIdentity]::GetCurrent().User,
-        [System.Security.Principal.SecurityIdentifier]::new('S-1-5-18'),
-        [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
-    )) {
-        $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
-            $identity,
-            [System.Security.AccessControl.FileSystemRights]::FullControl,
-            $inheritance,
-            $propagation,
-            [System.Security.AccessControl.AccessControlType]::Allow
-        )
-        $acl.AddAccessRule($rule)
-    }
+    $acl.SetSecurityDescriptorSddlForm(
+        $sddl,
+        [System.Security.AccessControl.AccessControlSections]::Access
+    )
     Set-Acl -LiteralPath $Path -AclObject $acl
 }
 
