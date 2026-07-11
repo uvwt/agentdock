@@ -68,7 +68,28 @@ Windows 11 x64/ARM64 可直接运行原生 `agentdock.exe`，不要求 WSL2：
 powershell -ExecutionPolicy Bypass -File scripts/install-windows.ps1
 ```
 
-加 `-RegisterStartup` 可注册当前用户登录自启动，并自动生成受 DPAPI 保护的 Bearer token。详见 [Windows 原生安装](docs/install-windows.md)。
+加 `-RegisterStartup` 可注册当前用户**登录 Windows 后**自动启动，并自动生成受 DPAPI 保护的 Bearer token；它不是未登录前运行的系统服务。
+
+如果启动后出现承载 AgentDock 的 PowerShell/Windows Terminal 窗口，直接关闭该窗口会终止当前 `agentdock.exe` 进程。可以先最小化窗口，或者将计划任务改成隐藏窗口运行：
+
+```powershell
+$launcher = Join-Path $env:LOCALAPPDATA 'AgentDock\start-agentdock.ps1'
+$action = New-ScheduledTaskAction `
+  -Execute 'powershell.exe' `
+  -Argument "-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`""
+
+Set-ScheduledTask -TaskName 'AgentDock' -Action $action
+Stop-ScheduledTask -TaskName 'AgentDock' -ErrorAction SilentlyContinue
+Start-ScheduledTask -TaskName 'AgentDock'
+```
+
+修改后可关闭原窗口，并通过以下命令确认 AgentDock 仍在后台运行：
+
+```powershell
+Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8765/healthz
+```
+
+详见 [Windows 原生安装](docs/install-windows.md)。
 
 ## macOS 裸机更新
 
