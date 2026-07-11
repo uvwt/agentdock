@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>连接 AgentDock</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #f4f6fb;
+      --page-accent: #e9edff;
+      --card: rgba(255, 255, 255, 0.9);
+      --card-border: rgba(79, 70, 229, 0.12);
+      --text: #172033;
+      --muted: #6b7488;
+      --field: #f8f9fd;
+      --field-border: #d8ddea;
+      --field-focus: #6366f1;
+      --button: #4f46e5;
+      --button-hover: #4338ca;
+      --danger: #be3448;
+      --danger-bg: #fff1f3;
+      --danger-border: #fecdd5;
+      --shadow: 0 28px 80px rgba(43, 48, 82, 0.16);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+    }
+
+    body {
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      overflow-x: hidden;
+      background:
+        radial-gradient(circle at 12% 14%, rgba(99, 102, 241, 0.17), transparent 34rem),
+        radial-gradient(circle at 88% 86%, rgba(56, 189, 248, 0.13), transparent 30rem),
+        linear-gradient(145deg, var(--page), var(--page-accent));
+      color: var(--text);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .shell {
+      width: min(100%, 464px);
+    }
+
+    .card {
+      position: relative;
+      overflow: hidden;
+      padding: 38px;
+      border: 1px solid var(--card-border);
+      border-radius: 26px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 3px;
+      background: linear-gradient(90deg, #6366f1, #38bdf8, #8b5cf6);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 30px;
+    }
+
+    .logo {
+      display: grid;
+      place-items: center;
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      background: linear-gradient(145deg, #6366f1, #4338ca);
+      color: #fff;
+      box-shadow: 0 12px 26px rgba(79, 70, 229, 0.28);
+    }
+
+    .logo svg {
+      width: 25px;
+      height: 25px;
+    }
+
+    .brand-copy strong,
+    .brand-copy span {
+      display: block;
+    }
+
+    .brand-copy strong {
+      font-size: 15px;
+      letter-spacing: -0.01em;
+    }
+
+    .brand-copy span {
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(30px, 7vw, 36px);
+      line-height: 1.12;
+      letter-spacing: -0.04em;
+    }
+
+    .subtitle {
+      margin: 13px 0 26px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    .destination {
+      margin-bottom: 24px;
+      padding: 14px 15px;
+      border: 1px solid var(--field-border);
+      border-radius: 14px;
+      background: var(--field);
+    }
+
+    .destination span {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .destination code {
+      display: block;
+      overflow-wrap: anywhere;
+      color: var(--text);
+      font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    .alert {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin: 0 0 18px;
+      padding: 12px 14px;
+      border: 1px solid var(--danger-border);
+      border-radius: 12px;
+      background: var(--danger-bg);
+      color: var(--danger);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .alert svg {
+      flex: 0 0 auto;
+      width: 17px;
+      height: 17px;
+      margin-top: 1px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 9px;
+      font-size: 13px;
+      font-weight: 750;
+    }
+
+    input[type="password"] {
+      width: 100%;
+      min-height: 50px;
+      padding: 0 15px;
+      border: 1px solid var(--field-border);
+      border-radius: 13px;
+      outline: none;
+      background: var(--field);
+      color: var(--text);
+      font: inherit;
+      transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+    }
+
+    input[type="password"]::placeholder {
+      color: #9aa3b6;
+    }
+
+    input[type="password"]:focus {
+      border-color: var(--field-focus);
+      background: var(--card);
+      box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.14);
+    }
+
+    button {
+      width: 100%;
+      min-height: 50px;
+      margin-top: 16px;
+      border: 0;
+      border-radius: 13px;
+      background: var(--button);
+      color: #fff;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 760;
+      letter-spacing: -0.01em;
+      box-shadow: 0 13px 26px rgba(79, 70, 229, 0.24);
+      transition: transform 150ms ease, background 150ms ease, box-shadow 150ms ease;
+    }
+
+    button:hover {
+      background: var(--button-hover);
+      box-shadow: 0 15px 30px rgba(79, 70, 229, 0.29);
+      transform: translateY(-1px);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    button:focus-visible {
+      outline: 3px solid rgba(99, 102, 241, 0.28);
+      outline-offset: 3px;
+    }
+
+    .notice {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin: 18px 2px 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .notice svg {
+      flex: 0 0 auto;
+      width: 15px;
+      height: 15px;
+      margin-top: 1px;
+    }
+
+    .footer {
+      margin: 18px 0 0;
+      text-align: center;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.02em;
+    }
+
+    @media (max-width: 520px) {
+      body {
+        padding: 16px;
+      }
+
+      .card {
+        padding: 30px 22px;
+        border-radius: 22px;
+      }
+
+      .brand {
+        margin-bottom: 26px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        transition: none !important;
+      }
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --page: #0b1020;
+        --page-accent: #111827;
+        --card: rgba(18, 24, 42, 0.93);
+        --card-border: rgba(129, 140, 248, 0.18);
+        --text: #f4f6fb;
+        --muted: #9ca7bc;
+        --field: rgba(11, 16, 32, 0.72);
+        --field-border: #34405a;
+        --field-focus: #818cf8;
+        --button: #6366f1;
+        --button-hover: #7779f5;
+        --danger: #fda4af;
+        --danger-bg: rgba(127, 29, 29, 0.28);
+        --danger-border: rgba(251, 113, 133, 0.32);
+        --shadow: 0 30px 84px rgba(0, 0, 0, 0.44);
+      }
+
+      input[type="password"]::placeholder {
+        color: #69758d;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="card" aria-labelledby="page-title">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 9V7a5 5 0 0 1 10 0v2"/>
+            <rect x="4" y="9" width="16" height="11" rx="3"/>
+            <path d="M12 13v3"/>
+          </svg>
+        </div>
+        <div class="brand-copy">
+          <strong>AgentDock</strong>
+          <span>安全的 MCP 授权</span>
+        </div>
+      </div>
+
+      <h1 id="page-title">确认连接</h1>
+      <p class="subtitle">输入 AgentDock 密码以批准此客户端连接，并继续完成安全授权。</p>
+
+      <div class="destination">
+        <span>授权后返回</span>
+        <code>{{.RedirectURI}}</code>
+      </div>
+
+      {{if .Error}}
+      <div class="alert" role="alert">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 8v5M12 16.5h.01"/>
+        </svg>
+        <span id="password-error">{{.Error}}</span>
+      </div>
+      {{end}}
+
+      <form method="post" autocomplete="on">
+        <input type="hidden" name="response_type" value="{{.ResponseType}}">
+        <input type="hidden" name="client_id" value="{{.ClientID}}">
+        <input type="hidden" name="redirect_uri" value="{{.RedirectURI}}">
+        <input type="hidden" name="code_challenge" value="{{.CodeChallenge}}">
+        <input type="hidden" name="code_challenge_method" value="{{.CodeChallengeMethod}}">
+        <input type="hidden" name="resource" value="{{.Resource}}">
+        <input type="hidden" name="state" value="{{.State}}">
+
+        <label for="password">服务器密码</label>
+        <input id="password" type="password" name="password" placeholder="输入密码" autocomplete="current-password" required autofocus{{if .Error}} aria-invalid="true" aria-describedby="password-error"{{end}}>
+        <button type="submit">授权连接</button>
+      </form>
+
+      <p class="notice">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3 4.5 6v5.5c0 4.7 3.2 8.1 7.5 9.5 4.3-1.4 7.5-4.8 7.5-9.5V6L12 3Z"/>
+          <path d="m9 12 2 2 4-4"/>
+        </svg>
+        <span>仅在你主动发起连接时继续。密码只用于批准本次授权请求。</span>
+      </p>
+    </section>
+    <p class="footer">Protected by AgentDock OAuth</p>
+  </main>
+</body>
+</html>

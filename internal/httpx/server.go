@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"log/slog"
 	"net"
@@ -599,18 +598,6 @@ func validClientAuthentication(r *http.Request, grantType string) bool {
 		)
 	}
 	return grantType == "refresh_token"
-}
-
-func writeAuthorizeForm(w http.ResponseWriter, values url.Values, errorText string) {
-	w.Header().Set("content-type", "text/html; charset=utf-8")
-	errBlock := ""
-	if errorText != "" {
-		errBlock = "<p style='color:red'>" + html.EscapeString(errorText) + "</p>"
-	}
-	callback := html.EscapeString(values.Get("redirect_uri"))
-	if _, err := io.WriteString(w, "<html><body><h1>Authorize AgentDock</h1><p>Callback: <code>"+callback+"</code></p>"+errBlock+"<form method='POST'><input type='hidden' name='response_type' value='"+html.EscapeString(values.Get("response_type"))+"'><input type='hidden' name='client_id' value='"+html.EscapeString(values.Get("client_id"))+"'><input type='hidden' name='redirect_uri' value='"+callback+"'><input type='hidden' name='code_challenge' value='"+html.EscapeString(values.Get("code_challenge"))+"'><input type='hidden' name='code_challenge_method' value='"+html.EscapeString(values.Get("code_challenge_method"))+"'><input type='hidden' name='resource' value='"+html.EscapeString(values.Get("resource"))+"'><input type='hidden' name='state' value='"+html.EscapeString(values.Get("state"))+"'><label>Password <input type='password' name='password'></label><button type='submit'>Authorize</button></form></body></html>"); err != nil {
-		slog.Warn("write OAuth authorization form failed", "error", err)
-	}
 }
 
 func serverCard(cfg config.Config, r *http.Request) map[string]any {

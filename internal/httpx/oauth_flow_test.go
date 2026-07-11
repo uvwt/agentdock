@@ -197,15 +197,27 @@ func TestOAuthAuthorizePasswordGate(t *testing.T) {
 
 	getResponse := httptest.NewRecorder()
 	handleAuthorize(getResponse, httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+values.Encode(), nil), cfg, auth.NewOAuthStore())
-	if getResponse.Code != http.StatusOK || !strings.Contains(getResponse.Body.String(), "type='password'") || !strings.Contains(getResponse.Body.String(), oauthTestRedirect) {
-		t.Fatalf("GET authorize status=%d body=%s", getResponse.Code, getResponse.Body.String())
+	page := getResponse.Body.String()
+	if getResponse.Code != http.StatusOK ||
+		!strings.Contains(page, `type="password"`) ||
+		!strings.Contains(page, "确认连接") ||
+		!strings.Contains(page, "授权连接") ||
+		!strings.Contains(page, oauthTestRedirect) {
+		t.Fatalf("GET authorize status=%d body=%s", getResponse.Code, page)
+	}
+	if getResponse.Header().Get("Cache-Control") != "no-store" ||
+		!strings.Contains(getResponse.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") ||
+		getResponse.Header().Get("X-Frame-Options") != "DENY" {
+		t.Fatalf("authorization page security headers=%v", getResponse.Header())
 	}
 
 	wrongValues := cloneValues(values)
 	wrongValues.Set("password", "wrong")
 	wrongResponse := httptest.NewRecorder()
 	handleAuthorize(wrongResponse, formAuthorizeRequest(wrongValues), cfg, auth.NewOAuthStore())
-	if wrongResponse.Code != http.StatusOK || !strings.Contains(wrongResponse.Body.String(), "invalid password") {
+	if wrongResponse.Code != http.StatusOK ||
+		!strings.Contains(wrongResponse.Body.String(), "密码不正确，请重试。") ||
+		!strings.Contains(wrongResponse.Body.String(), `aria-invalid="true"`) {
 		t.Fatalf("wrong password status=%d body=%s", wrongResponse.Code, wrongResponse.Body.String())
 	}
 
