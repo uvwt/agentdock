@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/uvwt/agentdock/internal/atomicfile"
 )
 
 const (
@@ -471,7 +473,7 @@ func (s *Store) saveRegistry(reg registryFile) error {
 	if err != nil {
 		return err
 	}
-	return atomicWriteFile(s.registry, append(data, '\n'), 0o600)
+	return atomicfile.Write(s.registry, append(data, '\n'), 0o600)
 }
 
 func (s *Store) loadValues(skill string) (valuesFile, error) {
@@ -503,36 +505,11 @@ func (s *Store) saveValues(skill string, values valuesFile) error {
 	if err != nil {
 		return err
 	}
-	return atomicWriteFile(s.valuesPath(skill), append(data, '\n'), 0o600)
+	return atomicfile.Write(s.valuesPath(skill), append(data, '\n'), 0o600)
 }
 
 func (s *Store) valuesPath(skill string) string {
 	return filepath.Join(s.valuesDir, skill+".json")
-}
-
-func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, ".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(mode); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, path)
 }
 
 func normalizeKind(kind string) string {

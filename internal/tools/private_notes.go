@@ -3,6 +3,7 @@ package tools
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"unicode"
 
 	"filippo.io/age"
+
+	"github.com/uvwt/agentdock/internal/atomicfile"
 )
 
 const (
@@ -31,6 +34,25 @@ type privateNoteSummary struct {
 	Summary        string   `json:"summary,omitempty"`
 	Tags           []string `json:"tags,omitempty"`
 	ContainsSecret bool     `json:"contains_secret"`
+}
+
+type privateNoteSearchMatch struct {
+	Path           string
+	EncryptedPath  string
+	Title          string
+	Summary        string
+	Tags           []string
+	ContainsSecret bool
+	Score          int
+	Snippet        string
+}
+
+func (m privateNoteSearchMatch) result() map[string]any {
+	return map[string]any{
+		"path": m.Path, "encrypted_path": m.EncryptedPath,
+		"title": m.Title, "summary": m.Summary, "tags": m.Tags,
+		"contains_secret": m.ContainsSecret, "score": m.Score, "snippet": m.Snippet,
+	}
 }
 
 func (r *Runtime) privateNoteManage(ctx context.Context, args map[string]any) (Result, error) {
@@ -70,49 +92,55 @@ func (r *Runtime) privateNotesSearch(ctx context.Context, args map[string]any) (
 		maxResults = 8
 	}
 	terms := privateNoteTerms(query)
-	var results []map[string]any
+	var matches []privateNoteSearchMatch
 	walkRoot := filepath.Join(root, privateNotesPlainDir)
-	_ = filepath.WalkDir(walkRoot, func(p string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil || d == nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+	if err := filepath.WalkDir(walkRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry == nil || entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
 			return nil
 		}
-		contentBytes, err := os.ReadFile(p)
+		contentBytes, err := os.ReadFile(path)
 		if err != nil {
-			return nil
+			return fmt.Errorf("read private note %s: %w", path, err)
 		}
-		rel, err := filepath.Rel(root, p)
+		relative, err := filepath.Rel(root, path)
 		if err != nil {
-			return nil
+			return fmt.Errorf("resolve private note path %s: %w", path, err)
 		}
-		rel = filepath.ToSlash(rel)
+		relative = filepath.ToSlash(relative)
 		content := string(contentBytes)
-		score := privateNoteScore(rel, content, terms)
+		score := privateNoteScore(relative, content, terms)
 		if score <= 0 {
 			return nil
 		}
-		summary := privateNoteExtractSummary(rel, content)
-		results = append(results, map[string]any{
-			"path":            rel,
-			"encrypted_path":  privateNoteEncryptedRel(rel),
-			"title":           summary.Title,
-			"summary":         summary.Summary,
-			"tags":            summary.Tags,
-			"contains_secret": summary.ContainsSecret,
-			"score":           score,
-			"snippet":         redactPrivateNoteSnippet(privateNoteSnippet(content, terms)),
+		summary := privateNoteExtractSummary(relative, content)
+		matches = append(matches, privateNoteSearchMatch{
+			Path: relative, EncryptedPath: privateNoteEncryptedRel(relative),
+			Title: summary.Title, Summary: summary.Summary, Tags: summary.Tags,
+			ContainsSecret: summary.ContainsSecret, Score: score,
+			Snippet: redactPrivateNoteSnippet(privateNoteSnippet(content, terms)),
 		})
 		return nil
-	})
-	sort.Slice(results, func(i, j int) bool {
-		si, _ := results[i]["score"].(int)
-		sj, _ := results[j]["score"].(int)
-		if si == sj {
-			return fmt.Sprint(results[i]["path"]) < fmt.Sprint(results[j]["path"])
+	}); err != nil {
+		return nil, fmt.Errorf("search private notes: %w", err)
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		if matches[i].Score == matches[j].Score {
+			return matches[i].Path < matches[j].Path
 		}
-		return si > sj
+		return matches[i].Score > matches[j].Score
 	})
-	if len(results) > maxResults {
-		results = results[:maxResults]
+	if len(matches) > maxResults {
+		matches = matches[:maxResults]
+	}
+	results := make([]map[string]any, 0, len(matches))
+	for _, match := range matches {
+		results = append(results, match.result())
 	}
 	return Result{"ok": true, "action": "search", "query": query, "root": root, "results": results, "count": len(results), "redacted": true, "policy": "search returns redacted snippets only; use private_note_manage action=read to read full plaintext"}, nil
 }
@@ -411,9 +439,12 @@ func privateNotesAgeRecipients(root string) ([]age.Recipient, error) {
 		raw = append(raw, privateNotesRecipientLines(string(data))...)
 	}
 	if len(raw) == 0 {
-		data, err := os.ReadFile(filepath.Join(root, privateNotesKeyDir, privateNotesRecipientFile))
+		recipientPath := filepath.Join(root, privateNotesKeyDir, privateNotesRecipientFile)
+		data, err := os.ReadFile(recipientPath)
 		if err == nil {
 			raw = append(raw, privateNotesRecipientLines(string(data))...)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("read private notes recipients: %w", err)
 		}
 	}
 	if len(raw) == 0 {
@@ -466,11 +497,8 @@ func encryptPrivateNote(root, rel string) (string, error) {
 	}
 	encRel := privateNoteEncryptedRel(rel)
 	encPath := filepath.Join(root, filepath.FromSlash(encRel))
-	if err := os.MkdirAll(filepath.Dir(encPath), 0o700); err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(encPath, encrypted.Bytes(), 0o600); err != nil {
-		return "", err
+	if err := atomicfile.Write(encPath, encrypted.Bytes(), 0o600); err != nil {
+		return "", fmt.Errorf("write encrypted private note: %w", err)
 	}
 	return encRel, nil
 }
@@ -517,7 +545,10 @@ func listPrivateNotes(root string) ([]privateNoteSummary, error) {
 		if err != nil {
 			return err
 		}
-		content, _ := os.ReadFile(p)
+		content, err := os.ReadFile(p)
+		if err != nil {
+			return fmt.Errorf("read private note %s: %w", p, err)
+		}
 		summary := privateNoteExtractSummary(filepath.ToSlash(rel), string(content))
 		items = append(items, summary)
 		return nil

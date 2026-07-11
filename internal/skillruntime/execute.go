@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"regexp"
@@ -48,7 +49,14 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			result.Error = err.Error()
 		}
 		if r.Reporter != nil {
-			_ = r.Reporter.RunCompleted(ctx, result)
+			if reportErr := r.Reporter.RunCompleted(ctx, result); reportErr != nil {
+				slog.WarnContext(ctx, "skill run report failed",
+					"run_id", result.RunID,
+					"skill", result.Skill,
+					"operation", result.Operation,
+					"error", reportErr,
+				)
+			}
 		}
 		eventType := "run.completed"
 		if err != nil {
@@ -550,14 +558,16 @@ func truncatedJSONFallback(data []byte, originalBytes int64, limit int, secrets 
 	if previewLimit < 32 {
 		previewLimit = 32
 	}
-	preview := redactText(truncateText(data, previewLimit), secrets)
-	payload := map[string]any{
-		"truncated":      true,
-		"original_bytes": originalBytes,
-		"preview":        preview,
+	payload := struct {
+		Truncated     bool   `json:"truncated"`
+		OriginalBytes int64  `json:"original_bytes"`
+		Preview       string `json:"preview"`
+	}{
+		Truncated: true, OriginalBytes: originalBytes,
+		Preview: redactText(truncateText(data, previewLimit), secrets),
 	}
-	encoded, _ := json.Marshal(payload)
-	if limit > 0 && len(encoded) > limit {
+	encoded, err := json.Marshal(payload)
+	if err != nil || limit > 0 && len(encoded) > limit {
 		return json.RawMessage(`{"truncated":true}`)
 	}
 	return encoded

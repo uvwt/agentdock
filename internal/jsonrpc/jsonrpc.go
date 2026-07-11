@@ -12,10 +12,25 @@ type Request struct {
 }
 
 type Response struct {
-	JSONRPC string `json:"jsonrpc"`
-	ID      any    `json:"id,omitempty"`
-	Result  any    `json:"result,omitempty"`
-	Error   *Error `json:"error,omitempty"`
+	JSONRPC string
+	ID      any
+	Result  any
+	Error   *Error
+}
+
+func (r Response) MarshalJSON() ([]byte, error) {
+	if r.Error != nil {
+		return json.Marshal(struct {
+			JSONRPC string `json:"jsonrpc"`
+			ID      any    `json:"id"`
+			Error   *Error `json:"error"`
+		}{JSONRPC: r.JSONRPC, ID: r.ID, Error: r.Error})
+	}
+	return json.Marshal(struct {
+		JSONRPC string `json:"jsonrpc"`
+		ID      any    `json:"id"`
+		Result  any    `json:"result"`
+	}{JSONRPC: r.JSONRPC, ID: r.ID, Result: r.Result})
 }
 
 type Error struct {

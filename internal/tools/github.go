@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,7 +12,7 @@ import (
 	"time"
 )
 
-func (r *Runtime) gitHubRepoAccess(args map[string]any) (Result, error) {
+func (r *Runtime) gitHubRepoAccess(ctx context.Context, args map[string]any) (Result, error) {
 	repo := normalizeGitHubRepo(stringArg(args, "repo", ""))
 	if repo == "" || !strings.Contains(repo, "/") {
 		return nil, toolError("INVALID_ARGUMENT", "repo is required as owner/name or GitHub URL", "validation")
@@ -22,14 +23,14 @@ func (r *Runtime) gitHubRepoAccess(args map[string]any) (Result, error) {
 	}
 	client := &http.Client{Timeout: time.Duration(intArg(args, "timeout_ms", 15000)) * time.Millisecond}
 	result := Result{"ok": true, "credential_found": true, "username": username, "repo": repo}
-	login, scopes, authStatus, authMessage := githubGet(client, token, "https://api.github.com/user")
+	login, scopes, authStatus, authMessage := githubGet(ctx, client, token, "https://api.github.com/user")
 	result["auth_status"] = authStatus
 	result["auth_login"] = login
 	result["oauth_scopes"] = scopes
 	if authMessage != "" {
 		result["auth_message"] = authMessage
 	}
-	_, _, repoStatus, repoMessage := githubGet(client, token, "https://api.github.com/repos/"+repo)
+	_, _, repoStatus, repoMessage := githubGet(ctx, client, token, "https://api.github.com/repos/"+repo)
 	result["repo_status"] = repoStatus
 	if repoStatus == 200 {
 		result["repo_access"] = true
@@ -69,8 +70,8 @@ func githubCredential(home string) (token, username string, err error) {
 	return "", "", fmt.Errorf("github credential not found")
 }
 
-func githubGet(client *http.Client, token, endpoint string) (login, scopes string, status int, message string) {
-	req, err := http.NewRequest("GET", endpoint, nil)
+func githubGet(ctx context.Context, client *http.Client, token, endpoint string) (login, scopes string, status int, message string) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return "", "", 0, err.Error()
 	}
@@ -83,15 +84,21 @@ func githubGet(client *http.Client, token, endpoint string) (login, scopes strin
 		return "", "", 0, err.Error()
 	}
 	defer resp.Body.Close()
-	var body map[string]any
-	_ = json.NewDecoder(resp.Body).Decode(&body)
-	if value, ok := body["login"].(string); ok {
-		login = value
+	data, err := readBoundedBody(resp.Body, 1<<20)
+	if err != nil {
+		return "", resp.Header.Get("X-OAuth-Scopes"), resp.StatusCode, "read GitHub response: " + err.Error()
 	}
-	if value, ok := body["message"].(string); ok {
-		message = value
+	if len(data) == 0 {
+		return "", resp.Header.Get("X-OAuth-Scopes"), resp.StatusCode, ""
 	}
-	return login, resp.Header.Get("X-OAuth-Scopes"), resp.StatusCode, message
+	var body struct {
+		Login   string `json:"login"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(data, &body); err != nil {
+		return "", resp.Header.Get("X-OAuth-Scopes"), resp.StatusCode, "decode GitHub response: " + err.Error()
+	}
+	return body.Login, resp.Header.Get("X-OAuth-Scopes"), resp.StatusCode, body.Message
 }
 
 func diagnoseGitHubStatus(status int, message string) map[string]any {

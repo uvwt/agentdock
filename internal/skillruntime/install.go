@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -67,7 +68,7 @@ func (r *Runtime) Install(ctx context.Context, req InstallRequest) (InstallResul
 	if err != nil {
 		return InstallResult{}, runtimeError(ErrInstallFailed, "temp", err)
 	}
-	defer os.RemoveAll(work)
+	defer cleanupWorkingDirectory(work)
 	packageDir, digest, err := r.prepareSource(ctx, req.Source, work, maxBytes)
 	if err != nil {
 		return InstallResult{}, err
@@ -108,17 +109,22 @@ func (r *Runtime) Install(ctx context.Context, req InstallRequest) (InstallResul
 	}
 	staged := destination + fmt.Sprintf(".tmp-%d", time.Now().UnixNano())
 	if err := copyPackage(packageDir, staged); err != nil {
-		return InstallResult{}, runtimeError(ErrInstallFailed, "copy", err)
+		return InstallResult{}, runtimeError(ErrInstallFailed, "copy", removeStaged(staged, err))
 	}
-	metadata := map[string]any{"digest": digest, "source": req.Source, "installed_at": time.Now().UTC()}
-	metaData, _ := json.MarshalIndent(metadata, "", "  ")
+	metadata := struct {
+		Digest      string    `json:"digest"`
+		Source      string    `json:"source"`
+		InstalledAt time.Time `json:"installed_at"`
+	}{Digest: digest, Source: req.Source, InstalledAt: time.Now().UTC()}
+	metaData, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return InstallResult{}, runtimeError(ErrInstallFailed, "metadata", removeStaged(staged, err))
+	}
 	if err := os.WriteFile(filepath.Join(staged, ".agentdock-install.json"), metaData, 0o600); err != nil {
-		os.RemoveAll(staged)
-		return InstallResult{}, runtimeError(ErrInstallFailed, "metadata", err)
+		return InstallResult{}, runtimeError(ErrInstallFailed, "metadata", removeStaged(staged, err))
 	}
 	if err := os.Rename(staged, destination); err != nil {
-		os.RemoveAll(staged)
-		return InstallResult{}, runtimeError(ErrInstallFailed, "activate.install", err)
+		return InstallResult{}, runtimeError(ErrInstallFailed, "activate.install", removeStaged(staged, err))
 	}
 	return r.finishInstall(ctx, req, manifest, destination, digest)
 }
@@ -137,7 +143,13 @@ func (r *Runtime) finishInstall(ctx context.Context, req InstallRequest, manifes
 		result.Channel = channel
 	}
 	if r.Reporter != nil {
-		_ = r.Reporter.InstallationChanged(ctx, result)
+		if err := r.Reporter.InstallationChanged(ctx, result); err != nil {
+			slog.WarnContext(ctx, "skill installation report failed",
+				"skill", result.Skill,
+				"version", result.Version,
+				"error", err,
+			)
+		}
 	}
 	r.emit(ctx, Event{
 		Type:      "skill.installation.changed",
@@ -158,6 +170,19 @@ func validateInstallEnvDeclarations(manifest Manifest, confirmedNoEnv bool) erro
 		return nil
 	}
 	return runtimeError(ErrManifestInvalid, "manifest.env", fmt.Errorf("skill %s declares no env requirements; pass confirmed_no_env=true to confirm it does not need Env Manager configuration", manifest.Metadata.Name))
+}
+
+func cleanupWorkingDirectory(path string) {
+	if err := os.RemoveAll(path); err != nil {
+		slog.Warn("remove skill working directory failed", "path", path, "error", err)
+	}
+}
+
+func removeStaged(path string, cause error) error {
+	if cleanupErr := os.RemoveAll(path); cleanupErr != nil {
+		return errors.Join(cause, fmt.Errorf("remove staged package: %w", cleanupErr))
+	}
+	return cause
 }
 
 func installedDigest(destination string) (string, error) {

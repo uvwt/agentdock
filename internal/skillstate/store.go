@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/uvwt/agentdock/internal/atomicfile"
 )
 
 type Channel string
@@ -247,7 +250,11 @@ func (s *Store) Activate(ctx context.Context, skill, version string, channel Cha
 	if err := os.Symlink(relTarget, tmpLink); err != nil {
 		return fmt.Errorf("create temporary active symlink: %w", err)
 	}
-	defer os.Remove(tmpLink)
+	defer func() {
+		if err := os.Remove(tmpLink); err != nil && !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("remove temporary skill link failed", "path", tmpLink, "error", err)
+		}
+	}()
 	activeLink := filepath.Join(activeDir, skill)
 	if err := os.Rename(tmpLink, activeLink); err != nil {
 		return fmt.Errorf("activate skill atomically: %w", err)
@@ -315,28 +322,7 @@ func (s *Store) save(skill string, state Selection) error {
 		return fmt.Errorf("encode skill state: %w", err)
 	}
 	path := filepath.Join(s.root, "state", skill+".json")
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".state-")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := atomicfile.Write(path, data, 0o600); err != nil {
 		return fmt.Errorf("replace skill state: %w", err)
 	}
 	return nil

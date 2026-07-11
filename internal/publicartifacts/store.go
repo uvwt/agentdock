@@ -2,7 +2,6 @@ package publicartifacts
 
 import (
 	"archive/tar"
-	"bytes"
 	"compress/gzip"
 	"crypto/hmac"
 	"crypto/rand"
@@ -101,7 +100,7 @@ func (s Store) Publish(req PublishRequest) (PublishResult, error) {
 			return PublishResult{}, err
 		}
 	} else {
-		if err := copyFile(req.Path, payload, info.Mode().Perm()); err != nil {
+		if err := copyFile(req.Path, payload); err != nil {
 			_ = os.RemoveAll(dir)
 			return PublishResult{}, err
 		}
@@ -163,15 +162,22 @@ type publishPayloadRequest struct {
 }
 
 func (s Store) prepareArtifactDir() (string, string, string, error) {
-	id, err := randomHex(16)
-	if err != nil {
-		return "", "", "", err
+	if err := os.MkdirAll(s.Root, 0o700); err != nil {
+		return "", "", "", fmt.Errorf("create public artifacts root: %w", err)
 	}
-	dir := filepath.Join(s.Root, id)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", "", "", fmt.Errorf("create artifact dir: %w", err)
+	for attempt := 0; attempt < 10; attempt++ {
+		id, err := randomHex(16)
+		if err != nil {
+			return "", "", "", err
+		}
+		dir := filepath.Join(s.Root, id)
+		if err := os.Mkdir(dir, 0o700); err == nil {
+			return dir, filepath.Join(dir, "payload"), id, nil
+		} else if !os.IsExist(err) {
+			return "", "", "", fmt.Errorf("create artifact dir: %w", err)
+		}
 	}
-	return dir, filepath.Join(dir, "payload"), id, nil
+	return "", "", "", errors.New("create artifact dir: random identifier collision limit reached")
 }
 
 func (s Store) finishPublishedPayload(req publishPayloadRequest) (PublishResult, error) {
@@ -275,7 +281,7 @@ func (s Store) ServeHTTP(w http.ResponseWriter, r *http.Request, prefix string) 
 		http.NotFound(w, r)
 		return
 	}
-	payloadSHA, err := fileSHA256(payload)
+	payloadSHA, err := streamSHA256(file)
 	if err != nil || payloadSHA != meta.SHA256 {
 		http.NotFound(w, r)
 		return
@@ -304,30 +310,31 @@ func (s Store) Cleanup(now time.Time) error {
 	if err != nil {
 		return err
 	}
-	for _, e := range entries {
-		if !e.IsDir() {
+	var cleanupErrs []error
+	for _, entry := range entries {
+		if !entry.IsDir() {
 			continue
 		}
-		dir := filepath.Join(s.Root, e.Name())
-		info, statErr := e.Info()
+		dir := filepath.Join(s.Root, entry.Name())
+		info, statErr := entry.Info()
 		if statErr != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("inspect artifact directory %s: %w", dir, statErr))
 			continue
 		}
 		meta, metaErr := readMetadataPath(filepath.Join(dir, "metadata.json"))
 		payloadInfo, payloadErr := os.Stat(filepath.Join(dir, "payload"))
 		oldBroken := now.Sub(info.ModTime()) > 24*time.Hour
-		switch {
-		case metaErr == nil && meta.ExpiresAt.Before(now):
-			_ = os.RemoveAll(dir)
-		case metaErr != nil && oldBroken:
-			_ = os.RemoveAll(dir)
-		case payloadErr != nil && oldBroken:
-			_ = os.RemoveAll(dir)
-		case payloadErr == nil && !payloadInfo.Mode().IsRegular() && oldBroken:
-			_ = os.RemoveAll(dir)
+		remove := metaErr == nil && meta.ExpiresAt.Before(now) ||
+			metaErr != nil && oldBroken ||
+			payloadErr != nil && oldBroken ||
+			payloadErr == nil && !payloadInfo.Mode().IsRegular() && oldBroken
+		if remove {
+			if err := os.RemoveAll(dir); err != nil {
+				cleanupErrs = append(cleanupErrs, fmt.Errorf("remove artifact directory %s: %w", dir, err))
+			}
 		}
 	}
-	return nil
+	return errors.Join(cleanupErrs...)
 }
 
 func (s Store) readMetadata(id string) (Metadata, error) {
@@ -353,29 +360,70 @@ func readMetadataPath(path string) (Metadata, error) {
 }
 
 func (s Store) ensureSecret() ([]byte, error) {
-	if data, err := os.ReadFile(s.SecretPath); err == nil {
-		value := strings.TrimSpace(string(data))
-		decoded, err := hex.DecodeString(value)
-		if err != nil || len(decoded) < 32 {
-			return nil, errors.New("public url secret is invalid")
-		}
-		_ = os.Chmod(s.SecretPath, 0o600)
-		return decoded, nil
+	secret, err := readSecret(s.SecretPath)
+	if err == nil {
+		return secret, nil
 	}
-	if err := os.MkdirAll(filepath.Dir(s.SecretPath), 0o700); err != nil {
+	if !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	secretDir := filepath.Dir(s.SecretPath)
+	if err := os.MkdirAll(secretDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create secret dir: %w", err)
 	}
-	if err := os.Chmod(filepath.Dir(s.SecretPath), 0o700); err != nil {
+	if err := os.Chmod(secretDir, 0o700); err != nil {
 		return nil, fmt.Errorf("secure secret dir: %w", err)
 	}
-	secret := make([]byte, 32)
+	secret = make([]byte, 32)
 	if _, err := rand.Read(secret); err != nil {
 		return nil, fmt.Errorf("generate public url secret: %w", err)
 	}
-	if err := os.WriteFile(s.SecretPath, []byte(hex.EncodeToString(secret)+"\n"), 0o600); err != nil {
-		return nil, fmt.Errorf("write public url secret: %w", err)
+
+	// 先完整写入同目录临时文件，再用硬链接以“不覆盖”语义发布。
+	// 并发进程只有一个能创建最终路径，其他进程读取胜出的同一份密钥。
+	tmp, err := os.CreateTemp(secretDir, ".public-url-secret-*")
+	if err != nil {
+		return nil, fmt.Errorf("create public url secret temp file: %w", err)
 	}
-	return secret, nil
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return nil, fmt.Errorf("secure public url secret temp file: %w", err)
+	}
+	if _, err := tmp.WriteString(hex.EncodeToString(secret) + "\n"); err != nil {
+		_ = tmp.Close()
+		return nil, fmt.Errorf("write public url secret temp file: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return nil, fmt.Errorf("sync public url secret temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, fmt.Errorf("close public url secret temp file: %w", err)
+	}
+	if err := os.Link(tmpPath, s.SecretPath); err == nil {
+		return secret, nil
+	} else if !os.IsExist(err) {
+		return nil, fmt.Errorf("publish public url secret: %w", err)
+	}
+	return readSecret(s.SecretPath)
+}
+
+func readSecret(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	decoded, err := hex.DecodeString(strings.TrimSpace(string(data)))
+	if err != nil || len(decoded) < 32 {
+		return nil, errors.New("public url secret is invalid")
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return nil, fmt.Errorf("secure public url secret: %w", err)
+	}
+	return decoded, nil
 }
 
 func parsePublicPath(pathValue, prefix string) (string, string, bool) {
@@ -412,15 +460,18 @@ func retention(seconds int) time.Duration {
 	return d
 }
 
-func randomHex(bytes int) (string, error) {
-	b := make([]byte, bytes)
+func randomHex(byteCount int) (string, error) {
+	if byteCount <= 0 {
+		return "", errors.New("random byte count must be positive")
+	}
+	b := make([]byte, byteCount)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
 }
 
-func copyFile(src, dst string, perm os.FileMode) error {
+func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return fmt.Errorf("open publish source: %w", err)
@@ -438,8 +489,6 @@ func copyFile(src, dst string, perm os.FileMode) error {
 	if closeErr != nil {
 		return fmt.Errorf("close payload: %w", closeErr)
 	}
-	_ = os.Chmod(dst, 0o600)
-	_ = perm
 	return nil
 }
 
@@ -509,27 +558,32 @@ func writeTarGz(src, dst string) error {
 }
 
 func fileSHA256(path string) (string, error) {
-	f, err := os.Open(path)
+	file, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+	defer file.Close()
+	return streamSHA256(file)
+}
+
+func streamSHA256(reader io.Reader) (string, error) {
+	hash := sha256.New()
+	if _, err := io.Copy(hash, reader); err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func imageDimensions(path, mimeType string) (int, int) {
 	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(mimeType)), "image/") {
 		return 0, 0
 	}
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
 		return 0, 0
 	}
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	defer file.Close()
+	cfg, _, err := image.DecodeConfig(file)
 	if err != nil {
 		return 0, 0
 	}
@@ -557,11 +611,14 @@ func detectMime(path, filename string, archive bool) string {
 	}
 	defer f.Close()
 	buf := make([]byte, 512)
-	n, _ := io.ReadFull(f, buf)
-	if n > 0 {
-		return http.DetectContentType(buf[:n])
+	n, err := f.Read(buf)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "application/octet-stream"
 	}
-	return "application/octet-stream"
+	if n == 0 {
+		return "application/octet-stream"
+	}
+	return http.DetectContentType(buf[:n])
 }
 
 func safeDownloadName(value string) string {

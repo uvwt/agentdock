@@ -138,3 +138,15 @@ func TestValidateJSONRejectsUnknownProperty(t *testing.T) {
 		t.Fatal("expected validation error")
 	}
 }
+
+func FuzzParseManifestDoesNotPanic(f *testing.F) {
+	f.Add([]byte(""))
+	f.Add([]byte("apiVersion: agentdock.dev/v1\nkind: Skill\n"))
+	f.Add([]byte("spec:\n  operations:\n    - name: test\n      inputSchema: {}\n"))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		if len(data) > 1<<20 {
+			t.Skip()
+		}
+		_, _ = ParseManifest(data)
+	})
+}

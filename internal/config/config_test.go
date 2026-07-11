@@ -30,7 +30,10 @@ func TestFromEnvIgnoresOldDirectoryConfig(t *testing.T) {
 	t.Setenv("AGENTDOCK_RUNTIME_PROFILE", "workspace")
 	t.Setenv("AGENTDOCK_DIR", "/tmp/old-control")
 
-	cfg := FromEnv()
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v", err)
+	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
 	}
@@ -101,5 +104,94 @@ func TestValidateAuthOAuthRequiresCompleteConfig(t *testing.T) {
 				t.Fatalf("ValidateAuth() error = %v, want missing %s", err, tc.missing)
 			}
 		})
+	}
+}
+
+func TestFromEnvRejectsInvalidTypedValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{name: "port", key: "AGENTDOCK_PORT", value: "not-a-number"},
+		{name: "browser enabled", key: "AGENTDOCK_BROWSER_ENABLED", value: "sometimes"},
+		{name: "stdio", key: "AGENTDOCK_STDIO", value: "enabled"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("AGENTDOCK_PORT", "")
+			t.Setenv("AGENTDOCK_BROWSER_ENABLED", "")
+			t.Setenv("AGENTDOCK_STDIO", "")
+			t.Setenv(test.key, test.value)
+			if _, err := FromEnv(); err == nil || !strings.Contains(err.Error(), test.key) {
+				t.Fatalf("FromEnv() error = %v, want %s parse error", err, test.key)
+			}
+		})
+	}
+}
+
+func TestFromEnvParsesTypedValues(t *testing.T) {
+	t.Setenv("AGENTDOCK_PORT", " 9876 ")
+	t.Setenv("AGENTDOCK_BROWSER_ENABLED", "true")
+	t.Setenv("AGENTDOCK_STDIO", "1")
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v", err)
+	}
+	if cfg.Port != 9876 || !cfg.BrowserEnabled || !cfg.Stdio {
+		t.Fatalf("config = %#v", cfg)
+	}
+}
+
+func TestNormalizeValidatesPortAndLogLevel(t *testing.T) {
+	home := t.TempDir()
+	for _, test := range []struct {
+		name     string
+		port     int
+		logLevel string
+		want     string
+	}{
+		{name: "negative port", port: -1, logLevel: "info", want: "port must be between"},
+		{name: "large port", port: 65536, logLevel: "info", want: "port must be between"},
+		{name: "unknown log level", port: 8765, logLevel: "verbose", want: "unsupported log level"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := Config{
+				AgentDockHome:       filepath.Join(home, test.name, "home"),
+				AgentDockDefaultDir: filepath.Join(home, test.name, "workspace"),
+				Port:                test.port, LogLevel: test.logLevel,
+			}
+			if err := cfg.Normalize(); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Normalize() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+
+	cfg := Config{
+		AgentDockHome:       filepath.Join(home, "valid", "home"),
+		AgentDockDefaultDir: filepath.Join(home, "valid", "workspace"),
+		Port:                443, LogLevel: " WARNING ", Host: " 0.0.0.0 ",
+	}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
+	if cfg.LogLevel != "warn" || cfg.Host != "0.0.0.0" {
+		t.Fatalf("normalized config = %#v", cfg)
+	}
+}
+
+func TestValidateAuthRejectsInvalidServerURL(t *testing.T) {
+	t.Setenv("AGENTDOCK_OAUTH_PASSWORD", "password")
+	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-secret")
+	for _, serverURL := range []string{
+		"relative/path",
+		"ftp://agentdock.example",
+		"https://user:pass@agentdock.example",
+		"https://agentdock.example/#fragment",
+	} {
+		cfg := Config{OAuthClientID: "client-id", OAuthServerURL: serverURL}
+		if err := cfg.ValidateAuth(); err == nil {
+			t.Fatalf("ValidateAuth() accepted %q", serverURL)
+		}
 	}
 }

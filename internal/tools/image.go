@@ -5,7 +5,6 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
-	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -142,40 +141,6 @@ func encodeImageBytes(img image.Image, format string, quality int) ([]byte, imag
 	}
 }
 
-func imageDiffPercent(a, b []byte) (float64, bool) {
-	imgA, _, errA := image.Decode(bytes.NewReader(a))
-	imgB, _, errB := image.Decode(bytes.NewReader(b))
-	if errA != nil || errB != nil {
-		return 0, false
-	}
-	ba := imgA.Bounds()
-	bb := imgB.Bounds()
-	w := minInt(ba.Dx(), bb.Dx())
-	h := minInt(ba.Dy(), bb.Dy())
-	if w <= 0 || h <= 0 {
-		return 0, false
-	}
-	stepX := int(math.Max(1, math.Floor(float64(w)/160)))
-	stepY := int(math.Max(1, math.Floor(float64(h)/90)))
-	changed := 0
-	total := 0
-	for y := 0; y < h; y += stepY {
-		for x := 0; x < w; x += stepX {
-			r1, g1, b1, _ := imgA.At(ba.Min.X+x, ba.Min.Y+y).RGBA()
-			r2, g2, b2, _ := imgB.At(bb.Min.X+x, bb.Min.Y+y).RGBA()
-			delta := absInt(int(r1>>8)-int(r2>>8)) + absInt(int(g1>>8)-int(g2>>8)) + absInt(int(b1>>8)-int(b2>>8))
-			if delta > 45 {
-				changed++
-			}
-			total++
-		}
-	}
-	if total == 0 {
-		return 0, false
-	}
-	return float64(changed) / float64(total), true
-}
-
 func identifyImage(data []byte) (imageInfo, error) {
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
@@ -186,52 +151,6 @@ func identifyImage(data []byte) (imageInfo, error) {
 		mimeType = "image/jpeg"
 	}
 	return imageInfo{Width: cfg.Width, Height: cfg.Height, MIME: mimeType}, nil
-}
-
-func shouldResizeImage(size, width, height, maxBytes, maxWidth, maxHeight int) bool {
-	return size > maxBytes || width > maxWidth || height > maxHeight
-}
-
-func resizeImageBytes(data []byte, maxBytes, maxWidth, maxHeight int) ([]byte, imageInfo, bool) {
-	img, format, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return nil, imageInfo{}, false
-	}
-	bounds := img.Bounds()
-	w, h := bounds.Dx(), bounds.Dy()
-	scale := math.Min(float64(maxWidth)/float64(w), float64(maxHeight)/float64(h))
-	if scale <= 0 || scale > 1 {
-		scale = 1
-	}
-	newW := int(math.Max(1, math.Floor(float64(w)*scale)))
-	newH := int(math.Max(1, math.Floor(float64(h)*scale)))
-	resized := resizeBilinear(img, newW, newH)
-
-	var out bytes.Buffer
-	mimeType := "image/png"
-	switch format {
-	case "jpeg", "jpg":
-		mimeType = "image/jpeg"
-		for _, quality := range []int{85, 75, 65, 55} {
-			out.Reset()
-			if err := jpeg.Encode(&out, resized, &jpeg.Options{Quality: quality}); err != nil {
-				return nil, imageInfo{}, false
-			}
-			if out.Len() <= maxBytes || quality == 55 {
-				break
-			}
-		}
-	case "gif":
-		mimeType = "image/gif"
-		if err := gif.Encode(&out, resized, nil); err != nil {
-			return nil, imageInfo{}, false
-		}
-	default:
-		if err := png.Encode(&out, resized); err != nil && err != io.ErrClosedPipe {
-			return nil, imageInfo{}, false
-		}
-	}
-	return out.Bytes(), imageInfo{Width: newW, Height: newH, MIME: mimeType}, true
 }
 
 func resizeBilinear(src image.Image, width, height int) *image.RGBA {
@@ -273,11 +192,4 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
-}
-
-func absInt(v int) int {
-	if v < 0 {
-		return -v
-	}
-	return v
 }

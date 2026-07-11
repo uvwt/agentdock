@@ -3,10 +3,12 @@ package httpx
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -35,7 +37,9 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	slog.Info("http server configured", "host", cfg.Host, "port", cfg.Port, "auth_required", authRequired, "endpoint", "/mcp")
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "application/json")
-		_, _ = io.WriteString(w, "{\"ok\":true}")
+		if _, err := io.WriteString(w, "{\"ok\":true}"); err != nil {
+			slog.Warn("write health response failed", "error", err)
+		}
 	})
 	mux.HandleFunc("/.well-known/mcp.json", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, serverCard(cfg, r))
@@ -76,9 +80,20 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	mux.HandleFunc("/mcp", mcpEndpointHandler(server, cfg))
 
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	httpServer := &http.Server{Addr: addr, Handler: loggingMiddleware(mux), ReadHeaderTimeout: 10 * time.Second}
+	httpServer := newHTTPServer(addr, loggingMiddleware(mux))
 	slog.Info("http server listening", "addr", addr)
 	return httpServer.ListenAndServe()
+}
+
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
 }
 
 func agentDockContextHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc {
@@ -120,9 +135,9 @@ func mcpEndpointHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc 
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		defer r.Body.Close()
 		var req jsonrpc.Request
-		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		body := http.MaxBytesReader(w, r.Body, 1<<20)
+		if err := decodeSingleJSON(body, &req); err != nil {
 			writeJSON(w, jsonrpc.Failure(nil, -32700, "Parse error", err.Error()))
 			return
 		}
@@ -133,6 +148,20 @@ func mcpEndpointHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc 
 		}
 		writeJSON(w, resp)
 	}
+}
+
+func decodeSingleJSON(reader io.Reader, target any) error {
+	decoder := json.NewDecoder(reader)
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); err == io.EOF {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return errors.New("request body must contain exactly one JSON value")
 }
 
 func requestPublicBaseURL(cfg config.Config, r *http.Request) string {
@@ -162,8 +191,17 @@ func handleRegister(w http.ResponseWriter, r *http.Request, cfg config.Config) {
 		http.NotFound(w, r)
 		return
 	}
-	method := requestedTokenEndpointAuthMethod(r)
-	writeJSON(w, map[string]any{"client_id": cfg.OAuthClientID, "token_endpoint_auth_method": method})
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeJSONStatus(w, http.StatusMethodNotAllowed, map[string]any{"error": "method_not_allowed"})
+		return
+	}
+	method, err := requestedTokenEndpointAuthMethod(w, r)
+	if err != nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_client_metadata", "error_description": err.Error()})
+		return
+	}
+	writeJSONStatus(w, http.StatusCreated, map[string]any{"client_id": cfg.OAuthClientID, "token_endpoint_auth_method": method})
 }
 
 func oauthMetadata(cfg config.Config, r *http.Request) map[string]any {
@@ -184,7 +222,7 @@ func tokenEndpointAuthMethods() []string {
 	if auth.ConfiguredClientSecret() == "" {
 		return []string{"none"}
 	}
-	return []string{"client_secret_post", "client_secret_basic"}
+	return []string{"client_secret_post"}
 }
 
 func issuerFor(cfg config.Config, r *http.Request) string {
@@ -209,7 +247,10 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, 
 		return
 	}
 	if r.Method == http.MethodPost {
-		_ = r.ParseForm()
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "bad form", http.StatusBadRequest)
+			return
+		}
 	}
 	values := r.URL.Query()
 	if r.Method == http.MethodPost {
@@ -224,7 +265,7 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, 
 		http.Error(w, "invalid client_id", http.StatusBadRequest)
 		return
 	}
-	if redirectURI == "" || challenge == "" || method != "S256" {
+	if !validOAuthRedirectURI(redirectURI) || !auth.ValidPKCEChallenge(challenge) || method != "S256" {
 		http.Error(w, "invalid oauth request", http.StatusBadRequest)
 		return
 	}
@@ -233,11 +274,15 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, 
 		writeAuthorizeForm(w, values, "")
 		return
 	}
-	if loginPassword != "" && r.FormValue("password") != loginPassword {
+	if loginPassword != "" && !auth.ConstantTimeEqual(r.FormValue("password"), loginPassword) {
 		writeAuthorizeForm(w, values, "invalid password")
 		return
 	}
-	code := codes.Create(auth.OAuthCode{ClientID: clientID, RedirectURI: redirectURI, Challenge: challenge, State: state})
+	code, err := codes.Create(auth.OAuthCode{ClientID: clientID, RedirectURI: redirectURI, Challenge: challenge, State: state})
+	if err != nil {
+		http.Error(w, "failed to create authorization code", http.StatusInternalServerError)
+		return
+	}
 	location := auth.AppendQuery(redirectURI, url.Values{"code": []string{code}, "state": []string{state}})
 	http.Redirect(w, r, location, http.StatusFound)
 }
@@ -255,33 +300,37 @@ func handleToken(w http.ResponseWriter, r *http.Request, cfg config.Config, code
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	if !validClientAuthentication(r) {
-		writeJSON(w, map[string]any{"error": "invalid_client"})
+	if !validClientAuthentication(r, cfg) {
+		writeJSONStatus(w, http.StatusUnauthorized, map[string]any{"error": "invalid_client"})
 		return
 	}
 	if r.FormValue("grant_type") != "authorization_code" {
-		writeJSON(w, map[string]any{"error": "unsupported_grant_type"})
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "unsupported_grant_type"})
 		return
 	}
 	code, ok := codes.Consume(r.FormValue("code"))
 	if !ok {
-		writeJSON(w, map[string]any{"error": "invalid_grant"})
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_grant"})
 		return
 	}
 	if code.RedirectURI != r.FormValue("redirect_uri") {
-		writeJSON(w, map[string]any{"error": "invalid_grant"})
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_grant"})
 		return
 	}
 	if postedClientID := r.FormValue("client_id"); postedClientID != "" && postedClientID != code.ClientID {
-		writeJSON(w, map[string]any{"error": "invalid_grant"})
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_grant"})
 		return
 	}
 	if !auth.VerifyPKCE(r.FormValue("code_verifier"), code.Challenge) {
-		writeJSON(w, map[string]any{"error": "invalid_grant"})
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_grant"})
 		return
 	}
 	issuer := issuerFor(cfg, r)
-	token := auth.IssueToken(issuer, oauthSigningKey(), 30*24*time.Hour)
+	token, err := auth.IssueToken(issuer, oauthSigningKey(), 30*24*time.Hour)
+	if err != nil {
+		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"error": "server_error"})
+		return
+	}
 	writeJSON(w, map[string]any{"access_token": token, "token_type": "Bearer", "expires_in": 2592000})
 }
 
@@ -299,27 +348,22 @@ func authorizedOAuth(r *http.Request, cfg config.Config) bool {
 
 func oauthSigningKey() string { return os.Getenv("AGENTDOCK_OAUTH_TOKEN_SECRET") }
 
-func requestedTokenEndpointAuthMethod(r *http.Request) string {
-	if r.Method != http.MethodPost {
-		return defaultTokenEndpointAuthMethod()
-	}
-	defer r.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-	if err != nil || len(body) == 0 {
-		return defaultTokenEndpointAuthMethod()
-	}
+func requestedTokenEndpointAuthMethod(w http.ResponseWriter, r *http.Request) (string, error) {
+	body := http.MaxBytesReader(w, r.Body, 1<<20)
 	var payload struct {
 		TokenEndpointAuthMethod string `json:"token_endpoint_auth_method"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return defaultTokenEndpointAuthMethod()
+	if err := decodeSingleJSON(body, &payload); err != nil {
+		return "", fmt.Errorf("decode client metadata: %w", err)
 	}
-	switch payload.TokenEndpointAuthMethod {
-	case "client_secret_post", "client_secret_basic":
-		return payload.TokenEndpointAuthMethod
-	default:
-		return defaultTokenEndpointAuthMethod()
+	method := strings.TrimSpace(payload.TokenEndpointAuthMethod)
+	if method == "" {
+		method = defaultTokenEndpointAuthMethod()
 	}
+	if method != defaultTokenEndpointAuthMethod() {
+		return "", fmt.Errorf("token_endpoint_auth_method %q is not supported", method)
+	}
+	return method, nil
 }
 
 func defaultTokenEndpointAuthMethod() string {
@@ -329,20 +373,40 @@ func defaultTokenEndpointAuthMethod() string {
 	return "client_secret_post"
 }
 
-func validClientAuthentication(r *http.Request) bool {
-	configured := auth.ConfiguredClientSecret()
-	if configured == "" {
-		return true
-	}
-	clientSecret := r.FormValue("client_secret")
-	if user, password, ok := r.BasicAuth(); ok {
-		_ = user
-		clientSecret = password
-	}
-	if clientSecret == "" {
+func validOAuthRedirectURI(raw string) bool {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" || parsed.Opaque != "" {
 		return false
 	}
-	return auth.ConstantTimeEqual(clientSecret, configured)
+	switch strings.ToLower(parsed.Scheme) {
+	case "https":
+		return true
+	case "http":
+		hostname := strings.ToLower(parsed.Hostname())
+		if hostname == "localhost" {
+			return true
+		}
+		ip := net.ParseIP(hostname)
+		return ip != nil && ip.IsLoopback()
+	default:
+		return false
+	}
+}
+
+func validClientAuthentication(r *http.Request, cfg config.Config) bool {
+	clientID := strings.TrimSpace(r.FormValue("client_id"))
+	if clientID == "" || clientID != cfg.OAuthClientID {
+		return false
+	}
+	if _, _, ok := r.BasicAuth(); ok {
+		return false
+	}
+	configured := auth.ConfiguredClientSecret()
+	provided := r.FormValue("client_secret")
+	if configured == "" {
+		return provided == ""
+	}
+	return auth.ConstantTimeEqual(provided, configured)
 }
 
 func writeAuthorizeForm(w http.ResponseWriter, values url.Values, errorText string) {
@@ -351,16 +415,9 @@ func writeAuthorizeForm(w http.ResponseWriter, values url.Values, errorText stri
 	if errorText != "" {
 		errBlock = "<p style='color:red'>" + html.EscapeString(errorText) + "</p>"
 	}
-	_, _ = io.WriteString(w, "<html><body><h1>Authorize AgentDock</h1>"+errBlock+"<form method='POST'><input type='hidden' name='client_id' value='"+html.EscapeString(values.Get("client_id"))+"'><input type='hidden' name='redirect_uri' value='"+html.EscapeString(values.Get("redirect_uri"))+"'><input type='hidden' name='code_challenge' value='"+html.EscapeString(values.Get("code_challenge"))+"'><input type='hidden' name='code_challenge_method' value='"+html.EscapeString(values.Get("code_challenge_method"))+"'><input type='hidden' name='state' value='"+html.EscapeString(values.Get("state"))+"'><label>Password <input type='password' name='password'></label><button type='submit'>Authorize</button></form></body></html>")
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
+	if _, err := io.WriteString(w, "<html><body><h1>Authorize AgentDock</h1>"+errBlock+"<form method='POST'><input type='hidden' name='client_id' value='"+html.EscapeString(values.Get("client_id"))+"'><input type='hidden' name='redirect_uri' value='"+html.EscapeString(values.Get("redirect_uri"))+"'><input type='hidden' name='code_challenge' value='"+html.EscapeString(values.Get("code_challenge"))+"'><input type='hidden' name='code_challenge_method' value='"+html.EscapeString(values.Get("code_challenge_method"))+"'><input type='hidden' name='state' value='"+html.EscapeString(values.Get("state"))+"'><label>Password <input type='password' name='password'></label><button type='submit'>Authorize</button></form></body></html>"); err != nil {
+		slog.Warn("write OAuth authorization form failed", "error", err)
 	}
-	return ""
 }
 
 func serverCard(cfg config.Config, r *http.Request) map[string]any {
@@ -376,6 +433,13 @@ func serverCard(cfg config.Config, r *http.Request) map[string]any {
 }
 
 func writeJSON(w http.ResponseWriter, value any) {
+	writeJSONStatus(w, http.StatusOK, value)
+}
+
+func writeJSONStatus(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("content-type", "application/json")
-	_ = json.NewEncoder(w).Encode(value)
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+		slog.Warn("write JSON response failed", "status", status, "error", err)
+	}
 }

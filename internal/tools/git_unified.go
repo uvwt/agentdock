@@ -50,7 +50,7 @@ func (r *Runtime) gitRead(ctx context.Context, args map[string]any) (Result, err
 		}
 		return result, err
 	case "github_repo_access":
-		result, err := r.gitHubRepoAccess(args)
+		result, err := r.gitHubRepoAccess(ctx, args)
 		if result != nil {
 			result["action"] = "github_repo_access"
 		}

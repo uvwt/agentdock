@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -44,7 +45,11 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 	// 背景：exec_command 可能先返回 running，让模型后续通过 session_observe action=status 继续取结果；
 	// 如果子进程绑定到单次 MCP 请求 ctx，请求结束时 git push / npm install 等长任务会被杀掉。
 	// 因此长任务只受 timeout_ms 和 session_act action=kill/kill_all 控制。
-	s, sandboxStatus, err := session.Start(context.Background(), cmd, workdir.Abs, r.commandEnv(mapArg(args, "env")), timeout, func(command *exec.Cmd) (func(), map[string]any) {
+	commandEnv, err := r.commandEnv(mapArg(args, "env"))
+	if err != nil {
+		return nil, err
+	}
+	s, sandboxStatus, err := session.Start(context.Background(), cmd, workdir.Abs, commandEnv, timeout, func(command *exec.Cmd) (func(), map[string]any) {
 		// AgentDock 采用单一 Host 路径模型，命令权限由当前 OS 用户、Docker volume 或 systemd 用户决定。
 		return func() {}, map[string]any{"enabled": false, "mode": "none", "policy": "no_command_content_filtering", "warnings": []string{"exec_command runs with the AgentDock process OS user privileges", "use Docker volumes, service users, file permissions, and network policy as the security boundary"}}
 	})
@@ -52,14 +57,23 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 		return nil, err
 	}
 	if stdin := stringArg(args, "stdin", ""); stdin != "" {
-		_ = s.Write(stdin)
+		if err := s.Write(stdin); err != nil {
+			s.Kill()
+			s.Cancel()
+			return nil, fmt.Errorf("write command stdin: %w", err)
+		}
 	}
 	if !tty {
-		s.CloseStdin()
+		if err := s.CloseStdin(); err != nil && !errors.Is(err, os.ErrClosed) {
+			s.Kill()
+			s.Cancel()
+			return nil, fmt.Errorf("close command stdin: %w", err)
+		}
 	}
 
 	select {
-	case err := <-s.Done:
+	case <-s.Done:
+		err := s.WaitError()
 		s.Cancel()
 		result := s.Snapshot("exited", maxBytes)
 		result["sandbox"] = sandboxStatus
@@ -74,7 +88,8 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 	case <-time.After(yield):
 		if boolArg(args, "wait_until_exit", false) {
 			select {
-			case err := <-s.Done:
+			case <-s.Done:
+				err := s.WaitError()
 				s.Cancel()
 				result := s.Snapshot("exited", maxBytes)
 				result["sandbox"] = sandboxStatus
@@ -111,7 +126,8 @@ func (r *Runtime) writeStdin(args map[string]any) (Result, error) {
 		}
 	}
 	select {
-	case err := <-s.Done:
+	case <-s.Done:
+		err := s.WaitError()
 		s.Cancel()
 		r.sessions.Delete(s.ID)
 		result := s.Snapshot("exited", intArg(args, "max_output_bytes", 65536))
@@ -153,7 +169,8 @@ func (r *Runtime) sessionStatus(args map[string]any) (Result, error) {
 		return nil, toolError("SESSION_NOT_FOUND", "session not found", "not_found")
 	}
 	select {
-	case err := <-s.Done:
+	case <-s.Done:
+		err := s.WaitError()
 		s.Cancel()
 		r.sessions.Delete(s.ID)
 		result := s.Snapshot("exited", intArg(args, "max_output_bytes", 65536))
@@ -192,31 +209,29 @@ func addCommandDiagnostics(result Result) {
 	}
 }
 
-func redactCommandResult(result Result, patterns []string) {
-	for _, key := range []string{"stdout", "stderr", "error"} {
-		if value, ok := result[key].(string); ok {
-			result[key] = redactSecrets(value, patterns)
-		}
+func (r *Runtime) commandEnv(extra map[string]any) ([]string, error) {
+	env, err := r.baseCommandEnv()
+	if err != nil {
+		return nil, err
 	}
-}
-
-func (r *Runtime) commandEnv(extra map[string]any) []string {
-	env := r.baseCommandEnv()
 	for key, value := range extra {
 		env[key] = fmt.Sprint(value)
 	}
-	return formatCommandEnv(env)
+	return formatCommandEnv(env), nil
 }
 
-func (r *Runtime) internalCommandEnv(extra map[string]string) []string {
-	env := r.baseCommandEnv()
+func (r *Runtime) internalCommandEnv(extra map[string]string) ([]string, error) {
+	env, err := r.baseCommandEnv()
+	if err != nil {
+		return nil, err
+	}
 	for key, value := range extra {
 		env[key] = value
 	}
-	return formatCommandEnv(env)
+	return formatCommandEnv(env), nil
 }
 
-func (r *Runtime) baseCommandEnv() map[string]string {
+func (r *Runtime) baseCommandEnv() (map[string]string, error) {
 	env := map[string]string{}
 	for _, key := range []string{"PATH", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR"} {
 		if value := os.Getenv(key); value != "" {
@@ -229,8 +244,10 @@ func (r *Runtime) baseCommandEnv() map[string]string {
 		env["HOME"] = hostHome
 	}
 	env["TMPDIR"] = filepath.Join(r.cfg.AgentDockHome, "tmp")
-	_ = os.MkdirAll(env["TMPDIR"], 0o755)
-	return env
+	if err := os.MkdirAll(env["TMPDIR"], 0o755); err != nil {
+		return nil, fmt.Errorf("create command temp directory: %w", err)
+	}
+	return env, nil
 }
 
 func formatCommandEnv(env map[string]string) []string {

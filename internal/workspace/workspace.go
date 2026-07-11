@@ -21,9 +21,8 @@ type Path struct {
 	Exists  bool   `json:"exists"`
 }
 
-// New builds the single Host path resolver. The optional second argument is ignored
-// so older internal tests can be updated gradually without reintroducing policy branches.
-func New(root string, _ ...bool) (*Workspace, error) {
+// New builds the single Host path resolver.
+func New(root string) (*Workspace, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
@@ -100,15 +99,15 @@ func (w *Workspace) resolve(raw string, mustExist bool) (Path, error) {
 	var candidate string
 	switch {
 	case raw == "~":
-		home, err := os.UserHomeDir()
-		if err != nil || home == "" {
-			return Path{}, fmt.Errorf("resolve user home: %w", err)
+		home, err := userHomeDir()
+		if err != nil {
+			return Path{}, err
 		}
 		candidate = home
 	case strings.HasPrefix(raw, "~/"):
-		home, err := os.UserHomeDir()
-		if err != nil || home == "" {
-			return Path{}, fmt.Errorf("resolve user home: %w", err)
+		home, err := userHomeDir()
+		if err != nil {
+			return Path{}, err
 		}
 		candidate = filepath.Join(home, raw[2:])
 	case strings.HasPrefix(raw, "~"):
@@ -124,12 +123,11 @@ func (w *Workspace) resolve(raw string, mustExist bool) (Path, error) {
 		if err != nil {
 			return Path{}, err
 		}
-		display, _ := w.Relative(realPath)
-		return Path{Display: display, Abs: realPath, Exists: true}, nil
+		return Path{Display: w.displayPath(realPath), Abs: realPath, Exists: true}, nil
 	}
 	parent := candidate
 	for {
-		if info, err := os.Lstat(parent); err == nil && info.IsDir() {
+		if info, err := os.Stat(parent); err == nil && info.IsDir() {
 			break
 		}
 		next := filepath.Dir(parent)
@@ -147,9 +145,27 @@ func (w *Workspace) resolve(raw string, mustExist bool) (Path, error) {
 		return Path{}, err
 	}
 	realPath := filepath.Join(realParent, relFromParent)
-	display, _ := w.Relative(realPath)
 	_, statErr := os.Stat(realPath)
-	return Path{Display: display, Abs: realPath, Exists: statErr == nil}, nil
+	return Path{Display: w.displayPath(realPath), Abs: realPath, Exists: statErr == nil}, nil
+}
+
+func userHomeDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user home: %w", err)
+	}
+	if strings.TrimSpace(home) == "" {
+		return "", errors.New("resolve user home: home directory is empty")
+	}
+	return home, nil
+}
+
+func (w *Workspace) displayPath(abs string) string {
+	display, err := w.Relative(abs)
+	if err != nil || display == "" {
+		return filepath.Clean(abs)
+	}
+	return display
 }
 
 func (w *Workspace) Relative(abs string) (string, error) {
@@ -160,7 +176,7 @@ func (w *Workspace) Relative(abs string) (string, error) {
 	if rel == "." {
 		return ".", nil
 	}
-	if strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return filepath.Clean(abs), nil
 	}
 	return filepath.ToSlash(rel), nil

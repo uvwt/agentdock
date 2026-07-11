@@ -3,6 +3,7 @@ package workspace
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -77,5 +78,104 @@ func TestResolveForWriteRelativeUsesDefaultDirectory(t *testing.T) {
 	want := filepath.Join(realRoot, "notes", "todo.md")
 	if p.Abs != want {
 		t.Fatalf("ResolveForWrite() Abs = %q, want %q", p.Abs, want)
+	}
+}
+
+func TestResolveForWriteFollowsSymlinkParent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation may require elevated privileges")
+	}
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := ws.ResolveForWrite("linked/new/file.txt")
+	if err != nil {
+		t.Fatalf("ResolveForWrite() error = %v", err)
+	}
+	realOutside, err := filepath.EvalSymlinks(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(realOutside, "new", "file.txt")
+	if resolved.Abs != want {
+		t.Fatalf("Abs = %q, want %q", resolved.Abs, want)
+	}
+	if resolved.Display != want {
+		t.Fatalf("Display = %q, want outside absolute path %q", resolved.Display, want)
+	}
+	if resolved.Exists {
+		t.Fatal("Exists = true for a missing write target")
+	}
+}
+
+func TestRelativeAllowsNamesBeginningWithTwoDots(t *testing.T) {
+	root := t.TempDir()
+	ws, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ws.Relative(filepath.Join(ws.Root(), "..config", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "..config/settings.json" {
+		t.Fatalf("Relative() = %q, want relative child path", got)
+	}
+}
+
+func TestSetDefaultCWDAndDisplay(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "project")
+	if err := os.Mkdir(project, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	display, err := ws.SetDefaultCWD("project")
+	if err != nil {
+		t.Fatalf("SetDefaultCWD() error = %v", err)
+	}
+	if display != "project" || ws.DefaultDisplay() != "project" || ws.DefaultCWD() != project {
+		t.Fatalf("display=%q defaultDisplay=%q defaultCWD=%q", display, ws.DefaultDisplay(), ws.DefaultCWD())
+	}
+	file := filepath.Join(project, "file.txt")
+	if err := os.WriteFile(file, []byte("ok"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ws.SetDefaultCWD("file.txt"); err == nil {
+		t.Fatal("SetDefaultCWD() accepted a regular file")
+	}
+}
+
+func TestWorkspaceLexicalHelpers(t *testing.T) {
+	if got, err := Clean(""); err != nil || got != "." {
+		t.Fatalf("Clean(empty) = %q, %v", got, err)
+	}
+	if _, err := Clean("bad\x00path"); err == nil {
+		t.Fatal("Clean() accepted NUL byte")
+	}
+	if !Hidden(".git") || Hidden("git") {
+		t.Fatal("Hidden() classification is incorrect")
+	}
+	ws, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ws.ResolveExisting("~someone/path"); err == nil {
+		t.Fatal("ResolveExisting() accepted unsupported home shorthand")
+	}
+}
+
+func TestNewRejectsFilesystemRoot(t *testing.T) {
+	if _, err := New(string(filepath.Separator)); err == nil {
+		t.Fatal("New() accepted filesystem root")
 	}
 }

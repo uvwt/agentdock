@@ -6,8 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
-
-	"github.com/uvwt/agentdock/internal/config"
 )
 
 func TestFileEditReplace(t *testing.T) {
@@ -124,14 +122,4 @@ func initGitRepo(t *testing.T, root string) {
 			t.Fatalf("git %v failed: %v\n%s", args, err, output)
 		}
 	}
-}
-
-func testRuntimeConfig(root string) config.Config {
-	cfg := config.Config{
-		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
-	}
-	if err := cfg.Normalize(); err != nil {
-		panic(err)
-	}
-	return cfg
 }

@@ -30,7 +30,10 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 		"default_dir":  r.ws.Root(),
 		"artifact_dir": artifactDir.Abs,
 	}
-	data, _ := json.Marshal(payload)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, toolErrorDetails("BROWSER_PAYLOAD_INVALID", "browser payload cannot be encoded as JSON", "validation", map[string]any{"reason": err.Error()})
+	}
 	timeout := time.Duration(intArg(args, "timeout_ms", 30000)) * time.Millisecond
 	if timeout <= 0 {
 		timeout = 30 * time.Second
@@ -52,7 +55,11 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 	if value := strings.TrimSpace(os.Getenv("PLAYWRIGHT_BROWSERS_PATH")); value != "" {
 		env["PLAYWRIGHT_BROWSERS_PATH"] = value
 	}
-	cmd.Env = r.internalCommandEnv(env)
+	commandEnv, err := r.internalCommandEnv(env)
+	if err != nil {
+		return nil, err
+	}
+	cmd.Env = commandEnv
 	output, err := cmd.CombinedOutput()
 	var parsed map[string]any
 	parseErr := json.Unmarshal(output, &parsed)

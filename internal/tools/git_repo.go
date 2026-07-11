@@ -54,7 +54,11 @@ func (r *Runtime) gitInDir(ctx context.Context, dir string, maxBytes int, args .
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, "git", args...)
 	cmd.Dir = dir
-	cmd.Env = r.commandEnv(nil)
+	commandEnv, err := r.commandEnv(nil)
+	if err != nil {
+		return nil, err
+	}
+	cmd.Env = commandEnv
 	output, err := cmd.CombinedOutput()
 	text, truncated := truncateBytes(output, maxBytes)
 	text = redactSecrets(text, nil)
@@ -68,25 +72,39 @@ func (r *Runtime) gitInDir(ctx context.Context, dir string, maxBytes int, args .
 	return result, nil
 }
 
-func (r *Runtime) currentBranch(ctx context.Context, repo gitRepo) string {
-	result, _ := r.gitInRepo(ctx, repo, 4096, "branch", "--show-current")
-	return strings.TrimSpace(fmt.Sprint(result["output"]))
+func (r *Runtime) currentBranch(ctx context.Context, repo gitRepo) (string, error) {
+	result, err := r.gitInRepo(ctx, repo, 4096, "branch", "--show-current")
+	if err != nil {
+		return "", err
+	}
+	if !boolValue(result["ok"]) {
+		return "", nil
+	}
+	return strings.TrimSpace(fmt.Sprint(result["output"])), nil
 }
 
-func (r *Runtime) gitRemoteURL(ctx context.Context, repo gitRepo, remote string) string {
+func (r *Runtime) gitRemoteURL(ctx context.Context, repo gitRepo, remote string) (string, error) {
 	if remote == "" {
 		remote = "origin"
 	}
-	result, _ := r.gitInRepo(ctx, repo, 4096, "remote", "get-url", remote)
-	if !boolValue(result["ok"]) {
-		return ""
+	result, err := r.gitInRepo(ctx, repo, 4096, "remote", "get-url", remote)
+	if err != nil {
+		return "", err
 	}
-	return strings.TrimSpace(fmt.Sprint(result["output"]))
+	if !boolValue(result["ok"]) {
+		return "", nil
+	}
+	return strings.TrimSpace(fmt.Sprint(result["output"])), nil
 }
 
 func boolValue(value any) bool {
 	b, _ := value.(bool)
 	return b
+}
+
+func pathOutsideRoot(relative string) bool {
+	cleaned := filepath.Clean(relative)
+	return filepath.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator))
 }
 
 func truncateBytes(data []byte, maxBytes int) (string, bool) {

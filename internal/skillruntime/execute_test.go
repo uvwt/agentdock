@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -118,6 +119,31 @@ func TestRunPreservesSmallJSON(t *testing.T) {
 	}
 	if _, ok := output["truncated"]; ok {
 		t.Fatalf("small output should not use truncated fallback: %s", result.Output)
+	}
+}
+
+func TestTruncatedJSONFallbackRedactsSecretAndHonorsLimit(t *testing.T) {
+	data := []byte(`{"token":"secret-value","padding":"abcdefghijklmnopqrstuvwxyz"}`)
+	fallback := truncatedJSONFallback(data, int64(len(data)), 256, []string{"secret-value"})
+	if !json.Valid(fallback) {
+		t.Fatalf("fallback is invalid JSON: %s", fallback)
+	}
+	if strings.Contains(string(fallback), "secret-value") || !strings.Contains(string(fallback), "[REDACTED]") {
+		t.Fatalf("fallback did not redact secret: %s", fallback)
+	}
+	var payload struct {
+		Truncated     bool   `json:"truncated"`
+		OriginalBytes int64  `json:"original_bytes"`
+		Preview       string `json:"preview"`
+	}
+	if err := json.Unmarshal(fallback, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.Truncated || payload.OriginalBytes != int64(len(data)) || payload.Preview == "" {
+		t.Fatalf("fallback payload = %#v", payload)
+	}
+	if got := string(truncatedJSONFallback(data, int64(len(data)), 8, nil)); got != `{"truncated":true}` {
+		t.Fatalf("tiny fallback = %s", got)
 	}
 }
 

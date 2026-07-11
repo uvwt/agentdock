@@ -68,12 +68,16 @@ func (s *Server) ServeStdio(in io.Reader, out io.Writer) error {
 		}
 		var req jsonrpc.Request
 		if err := json.Unmarshal(line, &req); err != nil {
-			_ = encoder.Encode(jsonrpc.Failure(nil, -32700, "Parse error", err.Error()))
+			if writeErr := encoder.Encode(jsonrpc.Failure(nil, -32700, "Parse error", err.Error())); writeErr != nil {
+				return fmt.Errorf("write parse error response: %w", writeErr)
+			}
 			continue
 		}
 		resp := s.Dispatch(context.Background(), req)
 		if req.ID != nil {
-			_ = encoder.Encode(resp)
+			if err := encoder.Encode(resp); err != nil {
+				return fmt.Errorf("write JSON-RPC response: %w", err)
+			}
 		}
 	}
 	return scanner.Err()
@@ -189,11 +193,4 @@ func pretty(value any) string {
 		return fmt.Sprint(value)
 	}
 	return string(data)
-}
-
-func toolDescription(name string) string {
-	if def, ok := toolDefinition(name); ok {
-		return def.Description
-	}
-	return "AgentDock tool."
 }

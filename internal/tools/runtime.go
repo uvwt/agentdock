@@ -142,7 +142,7 @@ func (r *Runtime) readFile(args map[string]any) (Result, error) {
 	return result, nil
 }
 
-func (r *Runtime) listDir(args map[string]any) (Result, error) {
+func (r *Runtime) listDir(ctx context.Context, args map[string]any) (Result, error) {
 	p, err := r.ws.ResolveExisting(stringArg(args, "path", "."))
 	if err != nil {
 		return nil, err
@@ -157,20 +157,26 @@ func (r *Runtime) listDir(args map[string]any) (Result, error) {
 	maxEntries := intArg(args, "max_entries", 200)
 	includeIgnored := boolArg(args, "include_ignored", false)
 	if recursive {
-		return r.listDirRecursive(p, includeHidden, includeIgnored, maxDepth, maxEntries)
+		return r.listDirRecursive(ctx, p, includeHidden, includeIgnored, maxDepth, maxEntries)
 	}
 	ignore := loadIgnoreMatcher(r.ws.Root())
 	items := make([]map[string]any, 0, len(entries))
 	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if !includeHidden && workspace.Hidden(entry.Name()) {
 			continue
 		}
 		info, err := entry.Info()
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("inspect directory entry %s: %w", entry.Name(), err)
 		}
 		abs := filepath.Join(p.Abs, entry.Name())
-		rel, _ := r.ws.Relative(abs)
+		rel, err := r.ws.Relative(abs)
+		if err != nil {
+			return nil, fmt.Errorf("resolve directory entry %s: %w", abs, err)
+		}
 		if !includeIgnored && (shouldSkipDir(entry.Name()) || ignore.Ignored(rel, info.IsDir())) {
 			continue
 		}
@@ -187,13 +193,16 @@ func (r *Runtime) listDir(args map[string]any) (Result, error) {
 	return Result{"ok": true, "path": p.Display, "entries": items, "truncated": maxEntries > 0 && len(items) >= maxEntries}, nil
 }
 
-func (r *Runtime) listDirRecursive(root workspace.Path, includeHidden, includeIgnored bool, maxDepth, maxEntries int) (Result, error) {
+func (r *Runtime) listDirRecursive(ctx context.Context, root workspace.Path, includeHidden, includeIgnored bool, maxDepth, maxEntries int) (Result, error) {
 	items := make([]map[string]any, 0)
 	ignore := loadIgnoreMatcher(r.ws.Root())
 	rootDepth := len(strings.Split(filepath.Clean(root.Abs), string(os.PathSeparator)))
 	err := filepath.WalkDir(root.Abs, func(abs string, entry os.DirEntry, walkErr error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if walkErr != nil {
-			return nil
+			return walkErr
 		}
 		if abs == root.Abs {
 			return nil
@@ -211,7 +220,10 @@ func (r *Runtime) listDirRecursive(root workspace.Path, includeHidden, includeIg
 			}
 			return nil
 		}
-		rel, _ := r.ws.Relative(abs)
+		rel, err := r.ws.Relative(abs)
+		if err != nil {
+			return fmt.Errorf("resolve directory entry %s: %w", abs, err)
+		}
 		if !includeIgnored && (shouldSkipDir(entry.Name()) || ignore.Ignored(rel, entry.IsDir())) {
 			if entry.IsDir() {
 				return filepath.SkipDir
@@ -220,7 +232,7 @@ func (r *Runtime) listDirRecursive(root workspace.Path, includeHidden, includeIg
 		}
 		info, err := entry.Info()
 		if err != nil {
-			return nil
+			return fmt.Errorf("inspect directory entry %s: %w", abs, err)
 		}
 		kind := "file"
 		if info.IsDir() {

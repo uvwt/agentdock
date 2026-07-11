@@ -6,9 +6,12 @@ type ToolError struct {
 	Category  string         `json:"category"`
 	Retryable bool           `json:"retryable"`
 	Details   map[string]any `json:"details,omitempty"`
+	cause     error
 }
 
 func (e *ToolError) Error() string { return e.Message }
+
+func (e *ToolError) Unwrap() error { return e.cause }
 
 func toolError(code, message, category string) *ToolError {
 	return &ToolError{Code: code, Message: message, Category: category, Details: map[string]any{}}
@@ -16,4 +19,8 @@ func toolError(code, message, category string) *ToolError {
 
 func toolErrorDetails(code, message, category string, details map[string]any) *ToolError {
 	return &ToolError{Code: code, Message: message, Category: category, Details: details}
+}
+
+func toolErrorCause(code, message, category string, details map[string]any, cause error) *ToolError {
+	return &ToolError{Code: code, Message: message, Category: category, Details: details, cause: cause}
 }

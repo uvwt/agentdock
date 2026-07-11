@@ -70,7 +70,10 @@ func (s *BindingStore) Load(skill, selected string) (Binding, error) {
 	if !ok {
 		return Binding{}, runtimeError(ErrBindingInvalid, "binding.select", fmt.Errorf("binding %q is not defined", selected))
 	}
-	encoded, _ := json.Marshal(value)
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return Binding{}, runtimeError(ErrBindingInvalid, "binding.decode", err)
+	}
 	var binding Binding
 	if err := json.Unmarshal(encoded, &binding); err != nil {
 		return Binding{}, runtimeError(ErrBindingInvalid, "binding.decode", err)

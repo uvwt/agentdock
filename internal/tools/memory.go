@@ -236,17 +236,17 @@ func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, pa
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, toolErrorDetails("RECALL_REQUEST_FAILED", err.Error(), "network", map[string]any{"endpoint": endpoint})
+		return nil, toolErrorCause("RECALL_REQUEST_FAILED", err.Error(), "network", map[string]any{"endpoint": endpoint}, err)
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
+	data, err := readBoundedBody(resp.Body, 2*1024*1024)
 	if err != nil {
-		return nil, err
+		return nil, toolErrorCause("RECALL_RESPONSE_TOO_LARGE", err.Error(), "network", map[string]any{"status": resp.StatusCode}, err)
 	}
 	var parsed map[string]any
 	if len(data) > 0 {
 		if err := json.Unmarshal(data, &parsed); err != nil {
-			return nil, toolErrorDetails("RECALL_INVALID_RESPONSE", err.Error(), "network", map[string]any{"status": resp.StatusCode, "body": string(data)})
+			return nil, toolErrorCause("RECALL_INVALID_RESPONSE", err.Error(), "network", map[string]any{"status": resp.StatusCode, "response_bytes": len(data)}, err)
 		}
 	} else {
 		parsed = map[string]any{}

@@ -26,7 +26,7 @@ func (r *Runtime) Validate(ctx context.Context, req ValidateRequest) (ValidateRe
 	if err != nil {
 		return ValidateResult{}, runtimeError(ErrInstallFailed, "temp", err)
 	}
-	defer os.RemoveAll(work)
+	defer cleanupWorkingDirectory(work)
 
 	result := ValidateResult{Source: safeSourceLabel(req.Source)}
 	packageDir, digest, err := r.prepareSource(ctx, req.Source, work, maxBytes)

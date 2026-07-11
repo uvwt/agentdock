@@ -2,9 +2,10 @@ package tools
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/uvwt/agentdock/internal/atomicfile"
 )
 
 func (r *Runtime) editFile(args map[string]any) (Result, error) {
@@ -72,7 +73,7 @@ func (r *Runtime) editFile(args map[string]any) (Result, error) {
 	if dryRun || updated == content {
 		return result, nil
 	}
-	if err := writeFileAtomic(p.Abs, []byte(updated), info.Mode().Perm()); err != nil {
+	if err := atomicfile.Write(p.Abs, []byte(updated), info.Mode().Perm()); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -120,28 +121,6 @@ func editNearbyContext(content string, indexes []int) []map[string]any {
 		byteOffset = lineEnd + 1
 	}
 	return out
-}
-
-func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".agentdock-edit-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(mode); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpPath, path)
 }
 
 func editSummary(path string, changed bool) string {

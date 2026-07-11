@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"strings"
+
+	"github.com/uvwt/agentdock/internal/atomicfile"
 )
 
 func (r *Runtime) fileEdit(ctx context.Context, args map[string]any) (Result, error) {
@@ -78,7 +80,7 @@ func (r *Runtime) fileEditAdd(args map[string]any) (Result, error) {
 	if dryRun || !changed {
 		return result, nil
 	}
-	if err := writeFileAtomic(p.Abs, []byte(content), mode); err != nil {
+	if err := atomicfile.Write(p.Abs, []byte(content), mode); err != nil {
 		return nil, err
 	}
 	return result, nil

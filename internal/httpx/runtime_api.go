@@ -3,6 +3,8 @@ package httpx
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,6 +13,7 @@ import (
 	"github.com/uvwt/agentdock/internal/auth"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/mcp"
+	"github.com/uvwt/agentdock/internal/tools"
 )
 
 func registerRuntimeAPI(mux *http.ServeMux, server *mcp.Server, cfg config.Config) {
@@ -28,7 +31,8 @@ func runtimeAPIHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc {
 	authorizer := auth.Bearer{Token: cfg.AuthToken}
 	authRequired := cfg.AuthRequired()
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		if !runtimeAPIMethodAllowed(r.Method, r.URL.Path) {
+			w.Header().Set("Allow", runtimeAPIAllowHeader(r.URL.Path))
 			writeRuntimeAPIError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
 			return
 		}
@@ -42,11 +46,25 @@ func runtimeAPIHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc {
 		defer cancel()
 		result, err := dispatchRuntimeAPI(ctx, server, r)
 		if err != nil {
-			writeRuntimeAPIError(w, http.StatusInternalServerError, "RUNTIME_API_ERROR", err.Error())
+			writeRuntimeAPIHandlerError(w, err)
 			return
 		}
 		writeJSON(w, result)
 	}
+}
+
+func runtimeAPIMethodAllowed(method, path string) bool {
+	if method == http.MethodGet {
+		return true
+	}
+	return method == http.MethodPost && strings.TrimSuffix(path, "/") == "/internal/runtime/capabilities"
+}
+
+func runtimeAPIAllowHeader(path string) string {
+	if strings.TrimSuffix(path, "/") == "/internal/runtime/capabilities" {
+		return "GET, POST"
+	}
+	return "GET"
 }
 
 func dispatchRuntimeAPI(ctx context.Context, server *mcp.Server, r *http.Request) (map[string]any, error) {
@@ -66,7 +84,10 @@ func dispatchRuntimeAPI(ctx context.Context, server *mcp.Server, r *http.Request
 		result, err := server.RuntimeSkill(skill)
 		return map[string]any(result), err
 	case path == "/internal/runtime/tasks":
-		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		limit, err := parseRuntimeTaskLimit(r.URL.Query().Get("limit"))
+		if err != nil {
+			return nil, err
+		}
 		result, err := server.RuntimeTasks(r.URL.Query().Get("status"), limit)
 		return map[string]any(result), err
 	case strings.HasPrefix(path, "/internal/runtime/tasks/"):
@@ -77,12 +98,44 @@ func dispatchRuntimeAPI(ctx context.Context, server *mcp.Server, r *http.Request
 		result, err := server.RuntimeEnv()
 		return map[string]any(result), err
 	default:
-		return map[string]any{"ok": false, "error": "not found"}, nil
+		return nil, &tools.ToolError{Code: "NOT_FOUND", Message: "runtime API route not found", Category: "not_found"}
 	}
+}
+
+func parseRuntimeTaskLimit(raw string) (int, error) {
+	if strings.TrimSpace(raw) == "" {
+		return 0, nil
+	}
+	limit, err := strconv.Atoi(raw)
+	if err != nil || limit < 0 || limit > 200 {
+		return 0, &tools.ToolError{
+			Code: "INVALID_LIMIT", Message: "limit must be an integer between 0 and 200", Category: "validation",
+			Details: map[string]any{"limit": raw, "minimum": 0, "maximum": 200},
+		}
+	}
+	return limit, nil
+}
+
+func writeRuntimeAPIHandlerError(w http.ResponseWriter, err error) {
+	var toolErr *tools.ToolError
+	if errors.As(err, &toolErr) {
+		status := http.StatusInternalServerError
+		switch toolErr.Category {
+		case "validation":
+			status = http.StatusBadRequest
+		case "not_found":
+			status = http.StatusNotFound
+		}
+		writeRuntimeAPIError(w, status, toolErr.Code, toolErr.Message)
+		return
+	}
+	writeRuntimeAPIError(w, http.StatusInternalServerError, "RUNTIME_API_ERROR", err.Error())
 }
 
 func writeRuntimeAPIError(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("content-type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "code": code, "error": message})
+	if err := json.NewEncoder(w).Encode(map[string]any{"ok": false, "code": code, "error": message}); err != nil {
+		slog.Warn("write runtime API error response failed", "status", status, "code", code, "error", err)
+	}
 }

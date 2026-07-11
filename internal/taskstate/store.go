@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/uvwt/agentdock/internal/atomicfile"
 )
 
 const (
@@ -28,8 +30,6 @@ const (
 	PhaseVerify   Phase = "verify"
 	PhaseCloseout Phase = "closeout"
 )
-
-var phaseOrder = []Phase{PhaseCheck, PhaseExecute, PhaseVerify, PhaseCloseout}
 
 type Status string
 
@@ -381,32 +381,8 @@ func (s *Store) saveLocked(task Task) error {
 		return err
 	}
 	data = append(data, '\n')
-	tmp, err := os.CreateTemp(s.root, ".task-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
 	target := filepath.Join(s.root, task.ID+".json")
-	if err := os.Rename(tmpName, target); err != nil {
-		return err
-	}
-	return os.Chmod(target, 0o600)
+	return atomicfile.Write(target, data, 0o600)
 }
 
 func normalizeTexts(values []string) []string {

@@ -3,6 +3,7 @@ package skillruntime
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 )
 
@@ -22,8 +23,16 @@ type EventSink interface {
 }
 
 func (r *Runtime) emit(ctx context.Context, event Event) {
-	if r.Events != nil {
-		_ = r.Events.Emit(ctx, event)
+	if r.Events == nil {
+		return
+	}
+	if err := r.Events.Emit(ctx, event); err != nil {
+		slog.WarnContext(ctx, "skill runtime event delivery failed",
+			"event_type", event.Type,
+			"skill", event.Skill,
+			"operation", event.Operation,
+			"error", err,
+		)
 	}
 }
 

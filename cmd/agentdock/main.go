@@ -21,8 +21,10 @@ func main() {
 }
 
 func run() error {
-
-	cfg := config.FromEnv()
+	cfg, err := config.FromEnv()
+	if err != nil {
+		return err
+	}
 	flag.StringVar(&cfg.Host, "host", cfg.Host, "HTTP bind host")
 	flag.IntVar(&cfg.Port, "port", cfg.Port, "HTTP bind port")
 	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "log level: debug, info, warn, error")

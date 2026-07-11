@@ -3,6 +3,9 @@ package session
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -23,10 +26,13 @@ type Session struct {
 	Cancel    context.CancelFunc
 	Stdin     io.WriteCloser
 	StartedAt time.Time
-	Done      chan error
+	Done      chan struct{}
 	TimedOut  bool
 
 	mu                 sync.Mutex
+	completed          bool
+	exitCode           int
+	waitErr            error
 	stdout             bytes.Buffer
 	stderr             bytes.Buffer
 	stdoutTotalBytes   int
@@ -89,6 +95,13 @@ func (s *Session) Summary(status string) Summary {
 }
 
 func Start(ctx context.Context, command, workdir string, env []string, timeout time.Duration, prepare PrepareFunc) (*Session, map[string]any, error) {
+	if timeout <= 0 {
+		return nil, nil, fmt.Errorf("timeout must be positive")
+	}
+	id, err := newID()
+	if err != nil {
+		return nil, nil, fmt.Errorf("generate session id: %w", err)
+	}
 	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
 	cmd := ShellCommand(cmdCtx, command)
 	cmd.Dir = workdir
@@ -128,17 +141,35 @@ func Start(ctx context.Context, command, workdir string, env []string, timeout t
 	}
 	cleanup()
 
-	s := &Session{ID: newID(), Command: cmd, Cancel: cancel, Stdin: stdin, StartedAt: time.Now(), Done: make(chan error, 1)}
-	go s.copyTo(&s.stdout, stdout)
-	go s.copyTo(&s.stderr, stderr)
+	s := &Session{
+		ID: id, Command: cmd, Cancel: cancel, Stdin: stdin,
+		StartedAt: time.Now(), Done: make(chan struct{}), exitCode: -1,
+	}
+	var output sync.WaitGroup
+	output.Add(2)
 	go func() {
-		err := cmd.Wait()
-		if cmdCtx.Err() == context.DeadlineExceeded {
-			s.mu.Lock()
-			s.TimedOut = true
-			s.mu.Unlock()
+		defer output.Done()
+		s.copyTo(&s.stdout, stdout)
+	}()
+	go func() {
+		defer output.Done()
+		s.copyTo(&s.stderr, stderr)
+	}()
+	go func() {
+		waitErr := cmd.Wait()
+		// Wait 返回后仍要等两个读取协程排空管道，保证完成快照不会遗漏尾部输出。
+		output.Wait()
+		s.mu.Lock()
+		s.waitErr = waitErr
+		s.completed = true
+		if cmd.ProcessState != nil {
+			s.exitCode = cmd.ProcessState.ExitCode()
 		}
-		s.Done <- err
+		if cmdCtx.Err() == context.DeadlineExceeded {
+			s.TimedOut = true
+		}
+		s.mu.Unlock()
+		close(s.Done)
 	}()
 	return s, status, nil
 }
@@ -148,7 +179,13 @@ func (s *Session) Write(text string) error {
 	return err
 }
 
-func (s *Session) CloseStdin() { _ = s.Stdin.Close() }
+func (s *Session) CloseStdin() error { return s.Stdin.Close() }
+
+func (s *Session) WaitError() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.waitErr
+}
 
 func (s *Session) Kill() {
 	if s.Command.Process == nil {
@@ -200,8 +237,8 @@ func (s *Session) Snapshot(status string, maxBytes int) map[string]any {
 		"stdout_truncated":     maxBytes > 0 && len([]byte(stdoutSegment)) > maxBytes,
 		"stderr_truncated":     maxBytes > 0 && len([]byte(stderrSegment)) > maxBytes,
 	}
-	if s.Command.ProcessState != nil {
-		result["exit_code"] = s.Command.ProcessState.ExitCode()
+	if s.completed {
+		result["exit_code"] = s.exitCode
 	}
 	return result
 }
@@ -293,6 +330,10 @@ func adjustCursorAfterDrop(cursor, dropped int) int {
 	return cursor - dropped
 }
 
-func newID() string {
-	return strings.ReplaceAll(time.Now().UTC().Format("20060102150405.000000000"), ".", "")
+func newID() (string, error) {
+	raw := make([]byte, 12)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return "session-" + hex.EncodeToString(raw), nil
 }

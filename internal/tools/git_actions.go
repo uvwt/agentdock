@@ -63,7 +63,11 @@ func (r *Runtime) gitRepoStatus(ctx context.Context, args map[string]any) (Resul
 	result["behind"] = behind
 	result["files"] = files
 	result["clean"] = len(files) == 0
-	if remote := r.gitRemoteURL(ctx, repo, "origin"); remote != "" {
+	remote, err := r.gitRemoteURL(ctx, repo, "origin")
+	if err != nil {
+		return nil, err
+	}
+	if remote != "" {
 		result["remote"] = redactSecrets(remote, nil)
 	}
 	return result, nil
@@ -136,7 +140,7 @@ func (r *Runtime) gitBlame(ctx context.Context, args map[string]any) (Result, er
 		return nil, err
 	}
 	rel, err := filepath.Rel(repo.Abs, p.Abs)
-	if err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+	if err != nil || pathOutsideRoot(rel) {
 		return nil, toolErrorDetails("PATH_OUTSIDE_REPOSITORY", "path is outside repo_path", "validation", map[string]any{"repo_path": repo.Path, "path": p.Display})
 	}
 	result, err := r.gitInRepo(ctx, repo, intArg(args, "max_bytes", 262144), "blame", "--line-porcelain", "--", filepath.ToSlash(rel))
@@ -178,7 +182,10 @@ func (r *Runtime) gitPush(ctx context.Context, args map[string]any) (Result, err
 	remote := stringArg(args, "remote", "origin")
 	branch := stringArg(args, "branch", "")
 	if branch == "" {
-		branch = r.currentBranch(ctx, repo)
+		branch, err = r.currentBranch(ctx, repo)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if branch == "" {
 		branch = "HEAD"
@@ -315,37 +322,78 @@ func (r *Runtime) listGitRepos(ctx context.Context, args map[string]any) (Result
 		maxDepth = 1
 	}
 	repos := make([]gitRepoSummary, 0)
-	rootDepth := len(strings.Split(filepath.Clean(start.Abs), string(os.PathSeparator)))
-	_ = filepath.WalkDir(start.Abs, func(abs string, entry os.DirEntry, walkErr error) error {
+	walkErr := filepath.WalkDir(start.Abs, func(abs string, entry os.DirEntry, walkErr error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if walkErr != nil {
-			return nil
-		}
-		if abs == start.Abs {
-			return nil
-		}
-		if entry.IsDir() && shouldSkipDir(entry.Name()) && entry.Name() != ".git" {
-			return filepath.SkipDir
-		}
-		depth := len(strings.Split(filepath.Clean(abs), string(os.PathSeparator))) - rootDepth
-		if depth > maxDepth {
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
+			return walkErr
 		}
 		if !entry.IsDir() {
 			return nil
 		}
-		if _, err := os.Stat(filepath.Join(abs, ".git")); err != nil {
-			return nil
+		if abs != start.Abs && shouldSkipDir(entry.Name()) && entry.Name() != ".git" {
+			return filepath.SkipDir
 		}
-		rel, _ := r.ws.Relative(abs)
-		repo := gitRepo{Path: rel, Abs: abs}
-		branch := r.currentBranch(ctx, repo)
-		status, _ := r.gitInRepo(ctx, repo, 65536, "status", "--short", "--branch")
-		_, upstream, ahead, behind, files := parseGitStatus(fmt.Sprint(status["output"]))
-		repos = append(repos, gitRepoSummary{Path: rel, Branch: branch, Upstream: upstream, Ahead: ahead, Behind: behind, Clean: len(files) == 0, Remote: redactSecrets(r.gitRemoteURL(ctx, repo, "origin"), nil)})
+		depth, err := relativePathDepth(start.Abs, abs)
+		if err != nil {
+			return err
+		}
+		if depth > maxDepth {
+			return filepath.SkipDir
+		}
+		gitMetadata := filepath.Join(abs, ".git")
+		if _, err := os.Stat(gitMetadata); err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return fmt.Errorf("inspect git metadata %s: %w", gitMetadata, err)
+		}
+		summary, err := r.summarizeGitRepo(ctx, abs)
+		if err != nil {
+			return err
+		}
+		repos = append(repos, summary)
 		return filepath.SkipDir
 	})
+	if walkErr != nil {
+		return nil, fmt.Errorf("discover git repositories: %w", walkErr)
+	}
 	return Result{"ok": true, "path": start.Display, "repos": repos, "count": len(repos)}, nil
+}
+
+func relativePathDepth(root, path string) (int, error) {
+	relative, err := filepath.Rel(root, path)
+	if err != nil {
+		return 0, fmt.Errorf("resolve repository depth: %w", err)
+	}
+	if relative == "." {
+		return 0, nil
+	}
+	return len(strings.Split(filepath.Clean(relative), string(os.PathSeparator))), nil
+}
+
+func (r *Runtime) summarizeGitRepo(ctx context.Context, abs string) (gitRepoSummary, error) {
+	display, err := r.ws.Relative(abs)
+	if err != nil {
+		return gitRepoSummary{}, fmt.Errorf("resolve repository path %s: %w", abs, err)
+	}
+	repo := gitRepo{Path: display, Abs: abs}
+	status, err := r.gitInRepo(ctx, repo, 65536, "status", "--short", "--branch")
+	if err != nil {
+		return gitRepoSummary{}, fmt.Errorf("read git status for %s: %w", display, err)
+	}
+	if !boolValue(status["ok"]) {
+		return gitRepoSummary{}, fmt.Errorf("read git status for %s: %v", display, status["error"])
+	}
+	branch, upstream, ahead, behind, files := parseGitStatus(fmt.Sprint(status["output"]))
+	remote, err := r.gitRemoteURL(ctx, repo, "origin")
+	if err != nil {
+		return gitRepoSummary{}, fmt.Errorf("read git remote for %s: %w", display, err)
+	}
+	return gitRepoSummary{
+		Path: display, Branch: branch, Upstream: upstream,
+		Ahead: ahead, Behind: behind, Clean: len(files) == 0,
+		Remote: redactSecrets(remote, nil),
+	}, nil
 }

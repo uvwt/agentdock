@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -207,6 +210,119 @@ func TestSecretCreatedWithPrivatePermissionsAndReused(t *testing.T) {
 	}
 }
 
+func TestSecretInitializationIsAtomicUnderConcurrency(t *testing.T) {
+	store := New(filepath.Join(t.TempDir(), "home"), "", 1234)
+	const workers = 64
+	secrets := make(chan string, workers)
+	errs := make(chan error, workers)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for range workers {
+		go func() {
+			defer wg.Done()
+			<-start
+			secret, err := store.ensureSecret()
+			if err != nil {
+				errs <- err
+				return
+			}
+			secrets <- string(secret)
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(secrets)
+	close(errs)
+	for err := range errs {
+		t.Fatalf("ensureSecret() error = %v", err)
+	}
+	var expected string
+	for secret := range secrets {
+		if expected == "" {
+			expected = secret
+		}
+		if secret != expected {
+			t.Fatal("concurrent initialization returned different secrets")
+		}
+	}
+	if len(expected) != 32 {
+		t.Fatalf("secret length = %d, want 32", len(expected))
+	}
+	entries, err := os.ReadDir(filepath.Dir(store.SecretPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != filepath.Base(store.SecretPath) {
+		t.Fatalf("secret directory contains temporary artifacts: %#v", entries)
+	}
+}
+
+func TestConcurrentPublishBytesCreatesDistinctArtifacts(t *testing.T) {
+	store := New(filepath.Join(t.TempDir(), "home"), "https://agentdock.example", 1234)
+	const workers = 32
+	results := make(chan PublishResult, workers)
+	errs := make(chan error, workers)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := range workers {
+		go func(index int) {
+			defer wg.Done()
+			<-start
+			result, err := store.PublishBytes(PublishBytesRequest{
+				Filename: "artifact.txt", Data: []byte(fmt.Sprintf("payload-%d", index)),
+				MimeType: "text/plain", RetentionSeconds: 60,
+			})
+			if err != nil {
+				errs <- err
+				return
+			}
+			results <- result
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		t.Fatalf("PublishBytes() error = %v", err)
+	}
+	seen := make(map[string]struct{}, workers)
+	for result := range results {
+		if _, exists := seen[result.Metadata.ArtifactID]; exists {
+			t.Fatalf("duplicate artifact id = %q", result.Metadata.ArtifactID)
+		}
+		seen[result.Metadata.ArtifactID] = struct{}{}
+		if !strings.Contains(result.URL, result.Metadata.ArtifactID) {
+			t.Fatalf("URL %q does not contain artifact id %q", result.URL, result.Metadata.ArtifactID)
+		}
+	}
+	if len(seen) != workers {
+		t.Fatalf("published artifacts = %d, want %d", len(seen), workers)
+	}
+}
+
+func TestInvalidExistingSecretIsNotSilentlyReplaced(t *testing.T) {
+	store := New(filepath.Join(t.TempDir(), "home"), "", 1234)
+	if err := os.MkdirAll(filepath.Dir(store.SecretPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store.SecretPath, []byte("invalid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ensureSecret(); err == nil || !strings.Contains(err.Error(), "invalid") {
+		t.Fatalf("ensureSecret() error = %v, want invalid-secret error", err)
+	}
+	data, err := os.ReadFile(store.SecretPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "invalid\n" {
+		t.Fatalf("invalid secret was overwritten: %q", data)
+	}
+}
+
 func TestCleanupRemovesExpiredAndOldBrokenArtifacts(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "a.txt")
@@ -235,6 +351,41 @@ func TestCleanupRemovesExpiredAndOldBrokenArtifacts(t *testing.T) {
 	}
 	if _, err := os.Stat(broken); !os.IsNotExist(err) {
 		t.Fatalf("broken artifact still exists: %v", err)
+	}
+}
+
+func TestCleanupReportsRemovalFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory permission semantics differ on Windows")
+	}
+	store := New(filepath.Join(t.TempDir(), "home"), "", 8765)
+	artifactDir := filepath.Join(store.Root, "expired")
+	if err := os.MkdirAll(artifactDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	meta := Metadata{
+		ArtifactID: "expired", Filename: "payload.txt", SHA256: strings.Repeat("0", 64),
+		Size: 1, CreatedAt: time.Now().Add(-2 * time.Hour), ExpiresAt: time.Now().Add(-time.Hour),
+	}
+	data, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, "metadata.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, "payload"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(store.Root, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(store.Root, 0o700)
+	if err := store.Cleanup(time.Now().UTC()); err == nil || !strings.Contains(err.Error(), "remove artifact directory") {
+		t.Fatalf("Cleanup() error = %v, want removal failure", err)
+	}
+	if _, err := os.Stat(artifactDir); err != nil {
+		t.Fatalf("artifact should remain after failed cleanup: %v", err)
 	}
 }
 

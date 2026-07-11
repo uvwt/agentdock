@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -435,6 +436,56 @@ func TestExecCommandForwardsExplicitEnv(t *testing.T) {
 	}
 }
 
+func TestCommandEnvReportsTempDirectoryFailure(t *testing.T) {
+	rt, root := newCodeToolsRuntime(t)
+	blocked := filepath.Join(root, "blocked-home")
+	if err := os.WriteFile(blocked, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rt.cfg.AgentDockHome = blocked
+	if _, err := rt.commandEnv(nil); err == nil || !strings.Contains(err.Error(), "create command temp directory") {
+		t.Fatalf("commandEnv() error = %v, want temp-directory error", err)
+	}
+}
+
+func TestExecCommandForwardsStdinAndClosesPipe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test command uses POSIX cat")
+	}
+	rt, _ := newCodeToolsRuntime(t)
+	result, err := rt.execCommand(context.Background(), map[string]any{
+		"cmd":             "cat",
+		"stdin":           "input-line\n",
+		"yield_time_ms":   5000,
+		"timeout_ms":      5000,
+		"wait_until_exit": true,
+	})
+	if err != nil {
+		t.Fatalf("execCommand() error = %v", err)
+	}
+	if result["status"] != "exited" || result["stdout"] != "input-line\n" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestExecCommandReportsClosedStdin(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test command uses POSIX shell")
+	}
+	rt, _ := newCodeToolsRuntime(t)
+	largeInput := strings.Repeat("x", 8<<20)
+	_, err := rt.execCommand(context.Background(), map[string]any{
+		"cmd":             "exec 0<&-; sleep 1",
+		"stdin":           largeInput,
+		"yield_time_ms":   5000,
+		"timeout_ms":      5000,
+		"wait_until_exit": true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "write command stdin") {
+		t.Fatalf("execCommand() error = %v, want stdin write failure", err)
+	}
+}
+
 func TestReadFileReturnsNextStartLineOnTruncation(t *testing.T) {
 	rt, root := newCodeToolsRuntime(t)
 	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("第一行\n第二行\n第三行\n"), 0o600); err != nil {
@@ -563,7 +614,7 @@ func TestSearchTextGoFallbackIncludesColumnsAndContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := rt.searchTextGo(p, searchOptions{Query: "needle", MaxResults: 10, ContextLines: 1})
+	result, err := rt.searchTextGo(context.Background(), p, searchOptions{Query: "needle", MaxResults: 10, ContextLines: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

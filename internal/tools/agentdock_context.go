@@ -14,7 +14,7 @@ func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
 	baseToolLines := baseToolSummaryLines(baseTools)
 
 	_, skillSummary, _ := r.skillCapabilityIndex()
-	_, templateSummary, _ := r.templateCapabilityIndex()
+	_, templateSummary, _ := r.templateCapabilityIndex(ctx)
 	memorySummary, _, _ := r.memoryCapabilitySummary(ctx)
 
 	rules := []string{
@@ -194,8 +194,8 @@ func skillManifestDescription(inspected Result) string {
 	return ""
 }
 
-func (r *Runtime) templateCapabilityIndex() ([]capabilityTemplateItem, string, string) {
-	result, err := r.workflowTemplateManage(map[string]any{"action": "list", "template_status": "active"})
+func (r *Runtime) templateCapabilityIndex(ctx context.Context) ([]capabilityTemplateItem, string, string) {
+	result, err := r.workflowTemplateManage(ctx, map[string]any{"action": "list", "template_status": "active"})
 	if err != nil {
 		return nil, "- 任务模板索引暂不可用；多步骤任务仍应先 workflow_template_manage match。", err.Error()
 	}

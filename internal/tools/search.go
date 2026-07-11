@@ -29,7 +29,7 @@ type searchOptions struct {
 	ContextLines   int
 }
 
-func (r *Runtime) searchText(args map[string]any) (Result, error) {
+func (r *Runtime) searchText(ctx context.Context, args map[string]any) (Result, error) {
 	query := stringArg(args, "query", "")
 	if query == "" {
 		return nil, toolError("INVALID_ARGUMENT", "query is required", "validation")
@@ -56,13 +56,13 @@ func (r *Runtime) searchText(args map[string]any) (Result, error) {
 	if opts.MaxResults < 0 {
 		opts.MaxResults = 0
 	}
-	if result, ok := r.searchTextRG(p, opts); ok {
+	if result, ok := r.searchTextRG(ctx, p, opts); ok {
 		return result, nil
 	}
-	return r.searchTextGo(p, opts)
+	return r.searchTextGo(ctx, p, opts)
 }
 
-func (r *Runtime) searchTextRG(p workspace.Path, opts searchOptions) (Result, bool) {
+func (r *Runtime) searchTextRG(ctx context.Context, p workspace.Path, opts searchOptions) (Result, bool) {
 	rg, err := exec.LookPath("rg")
 	if err != nil {
 		return nil, false
@@ -95,7 +95,7 @@ func (r *Runtime) searchTextRG(p workspace.Path, opts searchOptions) (Result, bo
 	}
 	args = append(args, opts.Query, p.Abs)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, rg, args...)
 	cmd.Dir = p.Abs
@@ -183,16 +183,17 @@ func (r *Runtime) parseRGJSON(output []byte, opts searchOptions) ([]map[string]a
 	return matches, false, true
 }
 
-func (r *Runtime) searchTextGo(p workspace.Path, opts searchOptions) (Result, error) {
-	needle := opts.Query
-	if !opts.CaseSensitive {
-		needle = strings.ToLower(needle)
-	}
+func (r *Runtime) searchTextGo(ctx context.Context, p workspace.Path, opts searchOptions) (Result, error) {
 	var re *regexp.Regexp
-	if opts.Regex {
+	if opts.Regex || !opts.CaseSensitive {
 		pattern := opts.Query
+		if !opts.Regex {
+			pattern = regexp.QuoteMeta(pattern)
+		}
 		if !opts.CaseSensitive {
-			pattern = "(?i)" + pattern
+			// 直接在原始行上做 Unicode 大小写折叠，避免 strings.ToLower 改变
+			// UTF-8 字节长度后再用旧索引切片，导致列号错误或截断字符。
+			pattern = "(?i:" + pattern + ")"
 		}
 		compiled, err := regexp.Compile(pattern)
 		if err != nil {
@@ -202,7 +203,10 @@ func (r *Runtime) searchTextGo(p workspace.Path, opts searchOptions) (Result, er
 	}
 	matches := make([]map[string]any, 0)
 	ignore := loadIgnoreMatcher(r.ws.Root())
-	_ = filepath.WalkDir(p.Abs, func(abs string, d os.DirEntry, walkErr error) error {
+	walkErr := filepath.WalkDir(p.Abs, func(abs string, d os.DirEntry, walkErr error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if walkErr != nil {
 			return nil
 		}
@@ -237,10 +241,6 @@ func (r *Runtime) searchTextGo(p workspace.Path, opts searchOptions) (Result, er
 		}
 		lines := strings.Split(string(data), "\n")
 		for i, line := range lines {
-			probe := line
-			if !opts.CaseSensitive {
-				probe = strings.ToLower(probe)
-			}
 			ok := false
 			column := 0
 			matchText := ""
@@ -251,7 +251,7 @@ func (r *Runtime) searchTextGo(p workspace.Path, opts searchOptions) (Result, er
 					column = idx[0] + 1
 					matchText = line[idx[0]:idx[1]]
 				}
-			} else if idx := strings.Index(probe, needle); idx >= 0 {
+			} else if idx := strings.Index(line, opts.Query); idx >= 0 {
 				ok = true
 				column = idx + 1
 				matchText = line[idx : idx+len(opts.Query)]
@@ -267,5 +267,8 @@ func (r *Runtime) searchTextGo(p workspace.Path, opts searchOptions) (Result, er
 		}
 		return nil
 	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
 	return Result{"ok": true, "query": opts.Query, "engine": "go_fallback", "matches": matches, "total_matches": len(matches), "truncated": opts.MaxResults > 0 && len(matches) >= opts.MaxResults}, nil
 }
