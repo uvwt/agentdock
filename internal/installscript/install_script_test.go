@@ -45,12 +45,6 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"Install-AgentDockBinary -SourceBinary $sourceBinary -DestinationBinary $destinationBinary",
 		"Test-Path -LiteralPath $tokenPath -PathType Leaf",
 		"Copy-Item -LiteralPath $binaryBackup -Destination $destinationBinary -Force",
-		"$icaclsArguments = @($item.FullName, '/inheritance:r', '/grant:r') + $grants",
-		"& icacls.exe @icaclsArguments",
-		"[switch] $AclSelfTest",
-		"AgentDock Windows ACL self-test passed.",
-		"*S-1-5-18:${inheritance}F",
-		"*S-1-5-32-544:${inheritance}F",
 		"DataProtectionScope]::CurrentUser",
 		"New-ScheduledTaskTrigger -AtLogOn",
 		"http://127.0.0.1:$Port/healthz",
@@ -77,13 +71,17 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		t.Fatal("Windows installer should not require elevated startup")
 	}
 	for _, forbidden := range []string{
-		"Get-Acl -LiteralPath $Path",
-		"Set-Acl -LiteralPath $Path",
+		"Set-PrivateAcl",
+		"Get-Acl",
+		"Set-Acl",
+		"icacls.exe",
+		"$icaclsArguments",
+		"$AclSelfTest",
 		"SetSecurityDescriptorSddlForm(",
 		"$sddl",
 	} {
 		if strings.Contains(script, forbidden) {
-			t.Fatalf("Windows installer must not use full security descriptors for private DACLs: %s", forbidden)
+			t.Fatalf("install-windows.ps1 still contains removed ACL hardening code %q", forbidden)
 		}
 	}
 	for _, incompatible := range []string{

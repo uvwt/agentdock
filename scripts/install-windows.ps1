@@ -4,8 +4,7 @@ param(
     [string] $InstallDir = (Join-Path $env:LOCALAPPDATA 'AgentDock\bin'),
     [switch] $RegisterStartup,
     [int] $Port = 8765,
-    [string] $AuthToken = '',
-    [switch] $AclSelfTest
+    [string] $AuthToken = ''
 )
 
 Set-StrictMode -Version Latest
@@ -27,24 +26,6 @@ function Get-ReleaseBaseUrl([string] $RequestedVersion) {
     }
     $normalized = if ($RequestedVersion.StartsWith('v')) { $RequestedVersion } else { "v$RequestedVersion" }
     return "https://github.com/uvwt/agentdock/releases/download/$normalized"
-}
-
-function Set-PrivateAcl([string] $Path) {
-    $item = Get-Item -LiteralPath $Path
-    $currentUserSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-    $inheritance = if ($item.PSIsContainer) { '(OI)(CI)' } else { '' }
-    $grants = @(
-        "*${currentUserSid}:${inheritance}F",
-        "*S-1-5-18:${inheritance}F",
-        "*S-1-5-32-544:${inheritance}F"
-    )
-
-    # icacls 只修改 DACL，不会读取或写回 SACL，因此普通用户无需 SeSecurityPrivilege。
-    $icaclsArguments = @($item.FullName, '/inheritance:r', '/grant:r') + $grants
-    & icacls.exe @icaclsArguments | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw "Unable to set private ACL on $($item.FullName). icacls exited with code $LASTEXITCODE."
-    }
 }
 
 function Add-UserPath([string] $Directory) {
@@ -141,40 +122,6 @@ function Install-AgentDockBinary([string] $SourceBinary, [string] $DestinationBi
     } while ($true)
 }
 
-if ($AclSelfTest) {
-    $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-acl-' + [Guid]::NewGuid().ToString('N'))
-    try {
-        New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
-        $testFile = Join-Path $testRoot 'token.dpapi'
-        [IO.File]::WriteAllText($testFile, 'test', [Text.UTF8Encoding]::new($false))
-        Set-PrivateAcl $testRoot
-        Set-PrivateAcl $testFile
-
-        $expectedSids = @(
-            [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value,
-            'S-1-5-18',
-            'S-1-5-32-544'
-        ) | Sort-Object -Unique
-        foreach ($target in @($testRoot, $testFile)) {
-            $acl = Get-Acl -LiteralPath $target
-            if (-not $acl.AreAccessRulesProtected) {
-                throw "ACL inheritance is still enabled for $target"
-            }
-            $actualSids = @($acl.Access | ForEach-Object {
-                $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
-            } | Sort-Object -Unique)
-            if (Compare-Object -ReferenceObject $expectedSids -DifferenceObject $actualSids) {
-                throw "Unexpected ACL identities for ${target}: $($actualSids -join ', ')"
-            }
-        }
-    }
-    finally {
-        Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    Write-Host 'AgentDock Windows ACL self-test passed.'
-    return
-}
-
 if ($Port -lt 1 -or $Port -gt 65535) {
     throw 'Port must be between 1 and 65535.'
 }
@@ -218,27 +165,20 @@ try {
     }
     $binaryReplacementStarted = $true
     Install-AgentDockBinary -SourceBinary $sourceBinary -DestinationBinary $destinationBinary
-    Set-PrivateAcl $InstallDir
-    Set-PrivateAcl $destinationBinary
     Add-UserPath $InstallDir
 
     $agentDockHome = Join-Path $HOME '.agentdock'
     $workspace = Join-Path $HOME 'AgentDock'
     foreach ($directory in @($agentDockHome, $workspace)) {
         New-Item -ItemType Directory -Path $directory -Force | Out-Null
-        Set-PrivateAcl $directory
     }
 
     if ($RegisterStartup) {
         $runtimeDir = Split-Path -Parent $InstallDir
         New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
-        Set-PrivateAcl $runtimeDir
         $tokenPath = Join-Path $runtimeDir 'auth-token.dpapi'
         $generatedToken = $false
-        if (-not $AuthToken -and (Test-Path -LiteralPath $tokenPath -PathType Leaf)) {
-            Set-PrivateAcl $tokenPath
-        }
-        else {
+        if ($AuthToken -or -not (Test-Path -LiteralPath $tokenPath -PathType Leaf)) {
             if (-not $AuthToken) {
                 $AuthToken = New-AgentDockToken
                 $generatedToken = $true
@@ -250,7 +190,6 @@ try {
                 [System.Security.Cryptography.DataProtectionScope]::CurrentUser
             )
             [IO.File]::WriteAllText($tokenPath, [Convert]::ToBase64String($protectedToken), [Text.UTF8Encoding]::new($false))
-            Set-PrivateAcl $tokenPath
         }
 
         $launcherPath = Join-Path $runtimeDir 'start-agentdock.ps1'
@@ -272,7 +211,6 @@ Add-Type -AssemblyName System.Security
 & '$escapedBinaryPath'
 "@
         [IO.File]::WriteAllText($launcherPath, $launcher, [Text.UTF8Encoding]::new($false))
-        Set-PrivateAcl $launcherPath
 
         $taskName = 'AgentDock'
         $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$launcherPath`""
