@@ -102,11 +102,11 @@ func extractZip(src, dest string, maxBytes int64) error {
 		if file.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("zip symlink is not allowed: %s", file.Name)
 		}
-		name := filepath.Clean(filepath.FromSlash(file.Name))
-		if name == "." || filepath.IsAbs(name) || name == ".." || strings.HasPrefix(name, ".."+string(os.PathSeparator)) {
-			return fmt.Errorf("zip path escapes package root: %s", file.Name)
+		name := strings.TrimSuffix(file.Name, "/")
+		if err := validateRelativePackagePath(name); err != nil {
+			return fmt.Errorf("zip path escapes package root: %s: %w", file.Name, err)
 		}
-		target := filepath.Join(dest, name)
+		target := filepath.Join(dest, filepath.FromSlash(name))
 		if file.FileInfo().IsDir() {
 			if err := os.MkdirAll(target, 0o700); err != nil {
 				return err

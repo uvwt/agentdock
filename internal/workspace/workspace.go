@@ -41,7 +41,7 @@ func New(root string) (*Workspace, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("default directory is not a directory: %s", realRoot)
 	}
-	if realRoot == string(filepath.Separator) {
+	if filepath.Dir(realRoot) == realRoot {
 		return nil, errors.New("refusing to use filesystem root as default directory")
 	}
 	return &Workspace{root: realRoot, defaultCWD: realRoot}, nil
@@ -104,7 +104,7 @@ func (w *Workspace) resolve(raw string, mustExist bool) (Path, error) {
 			return Path{}, err
 		}
 		candidate = home
-	case strings.HasPrefix(raw, "~/"):
+	case strings.HasPrefix(raw, "~/") || strings.HasPrefix(raw, `~\`):
 		home, err := userHomeDir()
 		if err != nil {
 			return Path{}, err

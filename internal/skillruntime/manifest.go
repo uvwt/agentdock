@@ -204,11 +204,19 @@ func ValidatePackageManifest(packageDir string, m Manifest) error {
 	return nil
 }
 
+func hasWindowsDrivePrefix(value string) bool {
+	if len(value) < 2 || value[1] != ':' {
+		return false
+	}
+	letter := value[0]
+	return (letter >= 'A' && letter <= 'Z') || (letter >= 'a' && letter <= 'z')
+}
+
 func validateRelativePackagePath(value string) error {
 	if strings.TrimSpace(value) == "" {
 		return errors.New("is required")
 	}
-	if filepath.IsAbs(value) || strings.Contains(value, `\`) {
+	if strings.HasPrefix(value, "/") || filepath.IsAbs(value) || strings.Contains(value, `\`) || hasWindowsDrivePrefix(value) {
 		return errors.New("must be a slash-separated relative path")
 	}
 	for _, part := range strings.Split(value, "/") {

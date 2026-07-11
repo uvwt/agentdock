@@ -39,6 +39,7 @@ func TestResolveExistingExpandsHomePath(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	file := filepath.Join(home, "repo.txt")
 	if err := os.WriteFile(file, []byte("ok"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -58,6 +59,15 @@ func TestResolveExistingExpandsHomePath(t *testing.T) {
 	}
 	if p.Abs != realFile {
 		t.Fatalf("ResolveExisting() Abs = %q, want %q", p.Abs, realFile)
+	}
+	if runtime.GOOS == "windows" {
+		windowsPath, err := ws.ResolveExisting(`~\repo.txt`)
+		if err != nil {
+			t.Fatalf("ResolveExisting(Windows home path) error = %v", err)
+		}
+		if windowsPath.Abs != realFile {
+			t.Fatalf("ResolveExisting(Windows home path) Abs = %q, want %q", windowsPath.Abs, realFile)
+		}
 	}
 }
 
@@ -135,6 +145,10 @@ func TestSetDefaultCWDAndDisplay(t *testing.T) {
 	if err := os.Mkdir(project, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	realProject, err := filepath.EvalSymlinks(project)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ws, err := New(root)
 	if err != nil {
 		t.Fatal(err)
@@ -143,8 +157,8 @@ func TestSetDefaultCWDAndDisplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetDefaultCWD() error = %v", err)
 	}
-	if display != "project" || ws.DefaultDisplay() != "project" || ws.DefaultCWD() != project {
-		t.Fatalf("display=%q defaultDisplay=%q defaultCWD=%q", display, ws.DefaultDisplay(), ws.DefaultCWD())
+	if display != "project" || ws.DefaultDisplay() != "project" || ws.DefaultCWD() != realProject {
+		t.Fatalf("display=%q defaultDisplay=%q defaultCWD=%q want=%q", display, ws.DefaultDisplay(), ws.DefaultCWD(), realProject)
 	}
 	file := filepath.Join(project, "file.txt")
 	if err := os.WriteFile(file, []byte("ok"), 0o600); err != nil {
@@ -175,7 +189,11 @@ func TestWorkspaceLexicalHelpers(t *testing.T) {
 }
 
 func TestNewRejectsFilesystemRoot(t *testing.T) {
-	if _, err := New(string(filepath.Separator)); err == nil {
+	root := string(filepath.Separator)
+	if volume := filepath.VolumeName(t.TempDir()); volume != "" {
+		root = volume + string(filepath.Separator)
+	}
+	if _, err := New(root); err == nil {
 		t.Fatal("New() accepted filesystem root")
 	}
 }
