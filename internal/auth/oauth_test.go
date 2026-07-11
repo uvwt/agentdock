@@ -337,7 +337,12 @@ func TestIssueAndValidateClientID(t *testing.T) {
 	if ValidateClientRedirect(clientID, redirectURI, "wrong-key") {
 		t.Fatal("ValidateClientRedirect() accepted wrong signing key")
 	}
-	tampered := clientID[:len(clientID)-1] + "A"
+	// 最后一位可能本来就是 A，测试必须保证签名确实发生变化。
+	replacement := byte('A')
+	if clientID[len(clientID)-1] == replacement {
+		replacement = 'B'
+	}
+	tampered := clientID[:len(clientID)-1] + string(replacement)
 	if ValidateClientRedirect(tampered, redirectURI, key) {
 		t.Fatal("ValidateClientRedirect() accepted tampered client ID")
 	}
