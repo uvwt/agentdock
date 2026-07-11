@@ -71,6 +71,21 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Validate Windows installer
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/install-windows.ps1'),
+            [ref] $tokens,
+            [ref] $errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw 'scripts/install-windows.ps1 contains PowerShell syntax errors'
+          }
+
       - name: Detect Authenticode configuration
         id: signing
         shell: pwsh

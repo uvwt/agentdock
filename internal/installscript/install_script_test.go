@@ -39,6 +39,12 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	for _, want := range []string{
 		"agentdock_windows_$architecture.zip",
 		"Get-FileHash -LiteralPath $archive -Algorithm SHA256",
+		"Stop-AgentDockForUpgrade -BinaryPath $destinationBinary",
+		"Get-Process -Name 'agentdock'",
+		"Copy-Item -LiteralPath $destinationBinary -Destination $binaryBackup -Force",
+		"Install-AgentDockBinary -SourceBinary $sourceBinary -DestinationBinary $destinationBinary",
+		"Test-Path -LiteralPath $tokenPath -PathType Leaf",
+		"Copy-Item -LiteralPath $binaryBackup -Destination $destinationBinary -Force",
 		"DataProtectionScope]::CurrentUser",
 		"New-ScheduledTaskTrigger -AtLogOn",
 		"http://127.0.0.1:$Port/healthz",
@@ -47,6 +53,16 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 			t.Fatalf("install-windows.ps1 missing %q", want)
 		}
 	}
+	stopCall := strings.Index(script, "Stop-AgentDockForUpgrade -BinaryPath $destinationBinary")
+	replaceCall := strings.Index(script, "Install-AgentDockBinary -SourceBinary $sourceBinary -DestinationBinary $destinationBinary")
+	if stopCall < 0 || replaceCall < 0 || stopCall > replaceCall {
+		t.Fatal("install-windows.ps1 must stop the running instance before replacing agentdock.exe")
+	}
+	backupCall := strings.Index(script, "Copy-Item -LiteralPath $destinationBinary -Destination $binaryBackup -Force")
+	if backupCall < stopCall || backupCall > replaceCall {
+		t.Fatal("install-windows.ps1 must back up the stopped binary before replacement")
+	}
+
 	const securityAssemblyLoad = "Add-Type -AssemblyName System.Security"
 	if got := strings.Count(script, securityAssemblyLoad); got != 2 {
 		t.Fatalf("install-windows.ps1 must load System.Security in the installer and generated launcher; got %d occurrences", got)

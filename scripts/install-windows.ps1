@@ -81,6 +81,76 @@ function New-AgentDockToken {
     return -join ($bytes | ForEach-Object { $_.ToString('x2') })
 }
 
+function Stop-AgentDockForUpgrade([string] $BinaryPath) {
+    $taskName = 'AgentDock'
+    $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    $taskWasRunning = $null -ne $task -and $task.State -eq 'Running'
+    if ($null -ne $task) {
+        Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    }
+
+    $normalizedBinaryPath = [IO.Path]::GetFullPath($BinaryPath)
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        $running = @(Get-Process -Name 'agentdock' -ErrorAction SilentlyContinue | Where-Object {
+            try {
+                [string]::Equals(
+                    [IO.Path]::GetFullPath($_.Path),
+                    $normalizedBinaryPath,
+                    [StringComparison]::OrdinalIgnoreCase
+                )
+            }
+            catch {
+                $false
+            }
+        })
+        foreach ($process in $running) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        }
+        if ($running.Count -eq 0) {
+            break
+        }
+        Start-Sleep -Milliseconds 250
+    } while ([DateTime]::UtcNow -lt $deadline)
+
+    $stillRunning = @(Get-Process -Name 'agentdock' -ErrorAction SilentlyContinue | Where-Object {
+        try {
+            [string]::Equals(
+                [IO.Path]::GetFullPath($_.Path),
+                $normalizedBinaryPath,
+                [StringComparison]::OrdinalIgnoreCase
+            )
+        }
+        catch {
+            $false
+        }
+    })
+    if ($stillRunning.Count -gt 0) {
+        throw "Unable to stop the running AgentDock process at $BinaryPath."
+    }
+
+    return [PSCustomObject]@{
+        TaskExisted = $null -ne $task
+        TaskWasRunning = $taskWasRunning
+    }
+}
+
+function Install-AgentDockBinary([string] $SourceBinary, [string] $DestinationBinary) {
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        try {
+            Copy-Item -LiteralPath $SourceBinary -Destination $DestinationBinary -Force
+            return
+        }
+        catch {
+            if ([DateTime]::UtcNow -ge $deadline) {
+                throw "Unable to replace $DestinationBinary after stopping AgentDock: $($_.Exception.Message)"
+            }
+            Start-Sleep -Milliseconds 250
+        }
+    } while ($true)
+}
+
 if ($Port -lt 1 -or $Port -gt 65535) {
     throw 'Port must be between 1 and 65535.'
 }
@@ -94,6 +164,10 @@ $releaseBase = Get-ReleaseBaseUrl $Version
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("agentdock-install-" + [Guid]::NewGuid().ToString('N'))
 $archive = Join-Path $tempRoot $asset
 $checksumFile = "$archive.sha256"
+$destinationBinary = Join-Path $InstallDir 'agentdock.exe'
+$binaryBackup = Join-Path $tempRoot 'agentdock.exe.previous'
+$upgradeState = $null
+$binaryReplacementStarted = $false
 
 try {
     New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
@@ -114,9 +188,14 @@ try {
     }
 
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-    Copy-Item -LiteralPath $sourceBinary -Destination (Join-Path $InstallDir 'agentdock.exe') -Force
+    $upgradeState = Stop-AgentDockForUpgrade -BinaryPath $destinationBinary
+    if (Test-Path -LiteralPath $destinationBinary -PathType Leaf) {
+        Copy-Item -LiteralPath $destinationBinary -Destination $binaryBackup -Force
+    }
+    $binaryReplacementStarted = $true
+    Install-AgentDockBinary -SourceBinary $sourceBinary -DestinationBinary $destinationBinary
     Set-PrivateAcl $InstallDir
-    Set-PrivateAcl (Join-Path $InstallDir 'agentdock.exe')
+    Set-PrivateAcl $destinationBinary
     Add-UserPath $InstallDir
 
     $agentDockHome = Join-Path $HOME '.agentdock'
@@ -130,18 +209,25 @@ try {
         $runtimeDir = Split-Path -Parent $InstallDir
         New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
         Set-PrivateAcl $runtimeDir
-        if (-not $AuthToken) {
-            $AuthToken = New-AgentDockToken
-        }
-        Add-Type -AssemblyName System.Security
-        $protectedToken = [System.Security.Cryptography.ProtectedData]::Protect(
-            [Text.Encoding]::UTF8.GetBytes($AuthToken),
-            [Text.Encoding]::UTF8.GetBytes('agentdock.startup.v1'),
-            [System.Security.Cryptography.DataProtectionScope]::CurrentUser
-        )
         $tokenPath = Join-Path $runtimeDir 'auth-token.dpapi'
-        [IO.File]::WriteAllText($tokenPath, [Convert]::ToBase64String($protectedToken), [Text.UTF8Encoding]::new($false))
-        Set-PrivateAcl $tokenPath
+        $generatedToken = $false
+        if (-not $AuthToken -and (Test-Path -LiteralPath $tokenPath -PathType Leaf)) {
+            Set-PrivateAcl $tokenPath
+        }
+        else {
+            if (-not $AuthToken) {
+                $AuthToken = New-AgentDockToken
+                $generatedToken = $true
+            }
+            Add-Type -AssemblyName System.Security
+            $protectedToken = [System.Security.Cryptography.ProtectedData]::Protect(
+                [Text.Encoding]::UTF8.GetBytes($AuthToken),
+                [Text.Encoding]::UTF8.GetBytes('agentdock.startup.v1'),
+                [System.Security.Cryptography.DataProtectionScope]::CurrentUser
+            )
+            [IO.File]::WriteAllText($tokenPath, [Convert]::ToBase64String($protectedToken), [Text.UTF8Encoding]::new($false))
+            Set-PrivateAcl $tokenPath
+        }
 
         $launcherPath = Join-Path $runtimeDir 'start-agentdock.ps1'
         $escapedTokenPath = $tokenPath.Replace("'", "''")
@@ -165,7 +251,6 @@ Add-Type -AssemblyName System.Security
         Set-PrivateAcl $launcherPath
 
         $taskName = 'AgentDock'
-        Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
         $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$launcherPath`""
         $trigger = New-ScheduledTaskTrigger -AtLogOn -User ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)
         $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
@@ -184,11 +269,44 @@ Add-Type -AssemblyName System.Security
         if (-not $health -or $health.StatusCode -ne 200) {
             throw "AgentDock was installed, but health check failed at http://127.0.0.1:$Port/healthz"
         }
-        Write-Host "Bearer token (shown once): $AuthToken"
+        if ($generatedToken) {
+            Write-Host "Bearer token (shown once): $AuthToken"
+        }
+    }
+    elseif ($null -ne $upgradeState -and $upgradeState.TaskWasRunning) {
+        Start-ScheduledTask -TaskName 'AgentDock'
     }
 
-    Write-Host "AgentDock installed: $(Join-Path $InstallDir 'agentdock.exe')"
+    Write-Host "AgentDock installed: $destinationBinary"
     Write-Host 'Open a new terminal if the updated user PATH is not visible yet.'
+}
+catch {
+    $installError = $_
+    if ($binaryReplacementStarted) {
+        try {
+            [void] (Stop-AgentDockForUpgrade -BinaryPath $destinationBinary)
+            if (Test-Path -LiteralPath $binaryBackup -PathType Leaf) {
+                Copy-Item -LiteralPath $binaryBackup -Destination $destinationBinary -Force
+            }
+            elseif (Test-Path -LiteralPath $destinationBinary -PathType Leaf) {
+                Remove-Item -LiteralPath $destinationBinary -Force
+            }
+
+            if ($null -ne $upgradeState -and -not $upgradeState.TaskExisted) {
+                Unregister-ScheduledTask -TaskName 'AgentDock' -Confirm:$false -ErrorAction SilentlyContinue
+            }
+            elseif ($null -ne $upgradeState -and $upgradeState.TaskWasRunning) {
+                Start-ScheduledTask -TaskName 'AgentDock'
+            }
+        }
+        catch {
+            Write-Warning "AgentDock rollback failed: $($_.Exception.Message)"
+        }
+    }
+    elseif ($null -ne $upgradeState -and $upgradeState.TaskWasRunning) {
+        Start-ScheduledTask -TaskName 'AgentDock' -ErrorAction SilentlyContinue
+    }
+    throw $installError
 }
 finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
