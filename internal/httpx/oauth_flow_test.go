@@ -200,8 +200,8 @@ func TestOAuthAuthorizePasswordGate(t *testing.T) {
 	page := getResponse.Body.String()
 	if getResponse.Code != http.StatusOK ||
 		!strings.Contains(page, `type="password"`) ||
-		!strings.Contains(page, "确认连接") ||
-		!strings.Contains(page, "授权连接") ||
+		!strings.Contains(page, "连接到 AgentDock") ||
+		!strings.Contains(page, ">继续</button>") ||
 		!strings.Contains(page, oauthTestRedirect) {
 		t.Fatalf("GET authorize status=%d body=%s", getResponse.Code, page)
 	}
