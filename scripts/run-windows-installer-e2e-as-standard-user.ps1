@@ -28,7 +28,8 @@ try {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'test-install-windows-e2e.ps1') -Destination $testScriptDir -Force
 
     $testScript = Join-Path $testScriptDir 'test-install-windows-e2e.ps1'
-    $arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$testScript`" -Version $Version"
+    $installerScript = Join-Path $testScriptDir 'install-windows.ps1'
+    $arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$testScript`" -InstallerPath `"$installerScript`" -Version $Version"
     $process = Start-Process `
         -FilePath 'powershell.exe' `
         -Credential $credential `

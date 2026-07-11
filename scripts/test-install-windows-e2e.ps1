@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string] $InstallerPath = (Join-Path $PSScriptRoot 'install-windows.ps1'),
+    [string] $InstallerPath = '',
     [string] $Version = 'v0.2.5',
     [int] $Port = 18765
 )
@@ -9,6 +9,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
+if (-not $InstallerPath) {
+    $InstallerPath = Join-Path $PSScriptRoot 'install-windows.ps1'
+}
 $resolvedInstaller = Resolve-Path -LiteralPath $InstallerPath
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-installer-e2e-' + [Guid]::NewGuid().ToString('N'))
 $installDir = Join-Path $testRoot 'bin'
