@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // 授权页必须保持完全自包含，避免 OAuth 流程依赖第三方静态资源或前端构建链路。
@@ -26,6 +27,19 @@ type authorizePageData struct {
 	Error               string
 }
 
+func authorizationFormCSP(redirectURI string) string {
+	formActions := "'self'"
+	raw := strings.TrimSpace(redirectURI)
+	if validOAuthRedirectURI(raw) {
+		parsed, err := url.Parse(raw)
+		if err == nil {
+			origin := strings.ToLower(parsed.Scheme) + "://" + parsed.Host
+			formActions += " " + origin
+		}
+	}
+	return "default-src 'none'; style-src 'unsafe-inline'; form-action " + formActions + "; base-uri 'none'; frame-ancestors 'none'"
+}
+
 func writeAuthorizeForm(w http.ResponseWriter, values url.Values, errorText string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -34,7 +48,7 @@ func writeAuthorizeForm(w http.ResponseWriter, values url.Values, errorText stri
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+	w.Header().Set("Content-Security-Policy", authorizationFormCSP(values.Get("redirect_uri")))
 
 	message := ""
 	if errorText != "" {

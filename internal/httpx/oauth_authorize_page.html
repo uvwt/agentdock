@@ -247,11 +247,10 @@
 
     <section class="panel" aria-labelledby="page-title">
       <h1 id="page-title">连接到 AgentDock</h1>
-      <p class="subtitle">输入服务器密码以批准这次连接。</p>
+      <p class="subtitle">请输入 AgentDock 服务端密码，确认授权本次连接。</p>
 
       <div class="destination">
-        <span>授权完成后返回</span>
-        <code>{{.RedirectURI}}</code>
+        <span>验证成功后将自动返回发起连接的应用</span>
       </div>
 
       {{if .Error}}

@@ -30,3 +30,27 @@ func TestAuthorizePageEscapesOAuthValues(t *testing.T) {
 		}
 	}
 }
+
+func TestAuthorizationFormCSPAllowsRegisteredRedirectOrigin(t *testing.T) {
+	values := url.Values{
+		"redirect_uri": {"https://client.example/oauth/callback?source=test"},
+	}
+	response := httptest.NewRecorder()
+	writeAuthorizeForm(response, values, "")
+
+	want := "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://client.example; base-uri 'none'; frame-ancestors 'none'"
+	if got := response.Header().Get("Content-Security-Policy"); got != want {
+		t.Fatalf("Content-Security-Policy = %q, want %q", got, want)
+	}
+}
+
+func TestAuthorizationFormCSPRejectsInvalidRedirectOrigin(t *testing.T) {
+	values := url.Values{"redirect_uri": {"javascript:alert(1)"}}
+	response := httptest.NewRecorder()
+	writeAuthorizeForm(response, values, "")
+
+	want := "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+	if got := response.Header().Get("Content-Security-Policy"); got != want {
+		t.Fatalf("Content-Security-Policy = %q, want %q", got, want)
+	}
+}
