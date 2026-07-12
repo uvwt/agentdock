@@ -151,6 +151,158 @@ class GrokQuotaTests(unittest.TestCase):
             run.validate_xai_endpoint("https://evil.example/token", "token")
         self.assertEqual(raised.exception.code, "unsafe_endpoint")
 
+    def test_parse_and_merge_detailed_billing_quota(self) -> None:
+        credits_body = json.dumps(
+            {
+                "config": {
+                    "currentPeriod": {
+                        "type": "WEEKLY",
+                        "start": "2026-07-12T01:36:00Z",
+                        "end": "2026-07-19T01:36:00Z",
+                    },
+                    "creditUsagePercent": 20,
+                    "productUsage": [
+                        {"product": "GrokChat", "usagePercent": 18},
+                        {"product": "GrokBuild", "usagePercent": 2},
+                    ],
+                }
+            }
+        ).encode()
+        billing_body = json.dumps(
+            {
+                "config": {
+                    "monthlyLimit": {"val": 15_000},
+                    "used": {"val": 776},
+                    "onDemandCap": {"val": 0},
+                    "billingPeriodStart": "2026-07-01T00:00:00Z",
+                    "billingPeriodEnd": "2026-08-01T00:00:00Z",
+                }
+            }
+        ).encode()
+
+        merged = run.merge_billing_records(
+            run.parse_billing_body(credits_body),
+            run.parse_billing_body(billing_body),
+        )
+        self.assertIsNotNone(merged)
+        assert merged is not None
+        quota = run.render_billing_quota(merged)
+
+        self.assertEqual(quota["plan"]["name"], "SuperGrok")
+        self.assertEqual(quota["weekly_limit"]["used_percent"], 20)
+        self.assertEqual(quota["weekly_limit"]["remaining_percent"], 80)
+        self.assertEqual(quota["weekly_limit"]["reset_at"], "2026-07-19T01:36:00Z")
+        self.assertEqual(quota["product_usage"][0]["product"], "GrokChat")
+        self.assertEqual(quota["product_usage"][0]["used_percent"], 18)
+        self.assertEqual(quota["product_usage"][1]["product"], "GrokBuild")
+        self.assertEqual(quota["product_usage"][1]["used_percent"], 2)
+        self.assertEqual(quota["monthly_credits"]["used_cents"], 776)
+        self.assertEqual(quota["monthly_credits"]["remaining_cents"], 14_224)
+        self.assertEqual(quota["monthly_credits"]["used_usd"], 7.76)
+        self.assertEqual(quota["monthly_credits"]["remaining_usd"], 142.24)
+        self.assertEqual(quota["monthly_credits"]["limit_usd"], 150.0)
+        self.assertEqual(quota["monthly_credits"]["used_percent"], 5.17)
+        self.assertFalse(quota["pay_as_you_go"]["enabled"])
+
+    def test_query_prefers_billing_details_without_model_probe(self) -> None:
+        credits_body = json.dumps(
+            {
+                "config": {
+                    "currentPeriod": {
+                        "type": "WEEKLY",
+                        "end": "2026-07-19T01:36:00Z",
+                    },
+                    "creditUsagePercent": 20,
+                    "productUsage": [
+                        {"product": "GrokChat", "usagePercent": 18},
+                        {"product": "GrokBuild", "usagePercent": 2},
+                    ],
+                }
+            }
+        ).encode()
+        billing_body = json.dumps(
+            {
+                "config": {
+                    "monthlyLimit": {"val": 15_000},
+                    "used": {"val": 776},
+                    "onDemandCap": {"val": 0},
+                    "billingPeriodEnd": "2026-08-01T00:00:00Z",
+                }
+            }
+        ).encode()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            auth_path = Path(temp_dir) / "account.json"
+            auth_path.write_text(
+                json.dumps(
+                    {
+                        "type": "xai",
+                        "access_token": "opaque-access-token",
+                        "refresh_token": "opaque-refresh-token",
+                        "sub": "user-123",
+                        "expired": "2030-01-01T00:00:00Z",
+                    }
+                )
+            )
+
+            def billing_side_effect(
+                access_token: str,
+                user_id: str,
+                url: str,
+                timeout: int,
+            ) -> tuple[int, bytes, str]:
+                self.assertEqual(access_token, "opaque-access-token")
+                self.assertEqual(user_id, "user-123")
+                self.assertEqual(timeout, 20)
+                body = credits_body if url == run.BILLING_CREDITS_URL else billing_body
+                return 200, body, "application/json"
+
+            with mock.patch.object(run, "billing_request", side_effect=billing_side_effect), mock.patch.object(
+                run,
+                "probe_request",
+            ) as probe:
+                result = run.query({"auth_file": str(auth_path)})
+
+        encoded = json.dumps(result)
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["available"])
+        self.assertEqual(result["source"], "grok_billing_endpoints")
+        self.assertFalse(result["probe_may_consume_tokens"])
+        self.assertEqual(result["quota"]["weekly_limit"]["used_percent"], 20)
+        self.assertEqual(result["quota"]["monthly_credits"]["used_usd"], 7.76)
+        self.assertEqual(result["quota"]["monthly_credits"]["remaining_usd"], 142.24)
+        self.assertNotIn("opaque-access-token", encoded)
+        self.assertNotIn("opaque-refresh-token", encoded)
+        self.assertNotIn("user-123", encoded)
+        probe.assert_not_called()
+
+    def test_billing_request_uses_fixed_hosts_and_user_id(self) -> None:
+        response = mock.MagicMock()
+        response.status = 200
+        response.headers = {"Content-Type": "application/json"}
+        response.read.side_effect = [b'{"config":{}}', b""]
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+        with mock.patch.object(run.HTTP_OPENER, "open", return_value=response) as opener:
+            status, _, _ = run.billing_request(
+                "opaque-token",
+                "user-123",
+                run.BILLING_CREDITS_URL,
+                10,
+            )
+        request = opener.call_args.args[0]
+        headers = {key.lower(): value for key, value in request.header_items()}
+        self.assertEqual(status, 200)
+        self.assertEqual(request.full_url, run.BILLING_CREDITS_URL)
+        self.assertEqual(headers["x-xai-token-auth"], "xai-grok-cli")
+        self.assertEqual(headers["x-userid"], "user-123")
+        self.assertIsNone(request.data)
+
+    def test_billing_request_rejects_unknown_host(self) -> None:
+        with self.assertRaises(run.SkillError) as raised:
+            run.billing_request("opaque-token", "", "https://evil.example/billing", 10)
+        self.assertEqual(raised.exception.code, "unsafe_endpoint")
+
     def test_probe_request_uses_fixed_cli_proxy_host(self) -> None:
         response = mock.MagicMock()
         response.status = 200

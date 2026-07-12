@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import pwd
 import re
@@ -18,10 +19,16 @@ from pathlib import Path
 from typing import Any
 
 CLI_RESPONSES_URL = "https://cli-chat-proxy.grok.com/v1/responses"
+BILLING_CREDITS_URL = "https://cli-chat-proxy.grok.com/v1/billing?format=credits"
+BILLING_URL = "https://cli-chat-proxy.grok.com/v1/billing"
 OIDC_DISCOVERY_URL = "https://auth.x.ai/.well-known/openid-configuration"
 XAI_CLIENT_ID = "b1a00492-073a-47ea-816f-4c329264a828"
 CLIENT_VERSION = "0.2.93"
 DEFAULT_MODEL = "grok-4.5"
+PLAN_BY_MONTHLY_LIMIT_CENTS = {
+    15_000: "SuperGrok",
+    150_000: "SuperGrok Heavy",
+}
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_AUTH_BYTES = 1024 * 1024
 TOKEN_USAGE_PATTERN = re.compile(
@@ -62,6 +69,7 @@ class Credential:
     refresh_token: str
     token_endpoint: str
     client_id: str
+    user_id: str
     expired_at: str
     email_present: bool
     subject_present: bool
@@ -230,9 +238,22 @@ def discover_credentials(args: dict[str, Any]) -> tuple[list[Credential], dict[s
                     refresh_token=str(data.get("refresh_token") or "").strip(),
                     token_endpoint=str(data.get("token_endpoint") or "").strip(),
                     client_id=str(data.get("client_id") or "").strip(),
+                    user_id=str(
+                        data.get("sub")
+                        or data.get("user_id")
+                        or data.get("principal_id")
+                        or ""
+                    ).strip(),
                     expired_at=str(data.get("expired") or data.get("expires_at") or "").strip(),
                     email_present=bool(str(data.get("email") or "").strip()),
-                    subject_present=bool(str(data.get("sub") or "").strip()),
+                    subject_present=bool(
+                        str(
+                            data.get("sub")
+                            or data.get("user_id")
+                            or data.get("principal_id")
+                            or ""
+                        ).strip()
+                    ),
                 )
             )
     source_summary = {
@@ -449,6 +470,351 @@ def decode_json(body: bytes) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def number_value(value: Any) -> int | float | None:
+    if isinstance(value, dict):
+        value = value.get("val")
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+    elif isinstance(value, str):
+        try:
+            number = float(value.strip())
+        except ValueError:
+            return None
+    else:
+        return None
+    if not math.isfinite(number):
+        return None
+    if number.is_integer():
+        return int(number)
+    return round(number, 6)
+
+
+def text_value(value: Any) -> str | None:
+    if isinstance(value, str):
+        value = value.strip()
+        return value or None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    return None
+
+
+def first_present(mapping: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in mapping and mapping[key] is not None:
+            return mapping[key]
+    return None
+
+
+def percent_value(value: Any) -> int | float | None:
+    number = number_value(value)
+    if number is None:
+        return None
+    return round(float(number), 2)
+
+
+def remaining_percent(used_percent: int | float | None) -> int | float | None:
+    if used_percent is None:
+        return None
+    remaining = max(0.0, 100.0 - float(used_percent))
+    return int(remaining) if remaining.is_integer() else round(remaining, 2)
+
+
+def cents_to_usd(value: int | float | None) -> float | None:
+    if value is None:
+        return None
+    return round(float(value) / 100.0, 2)
+
+
+def billing_config(body: bytes) -> dict[str, Any] | None:
+    payload = decode_json(body)
+    config = payload.get("config")
+    if isinstance(config, dict):
+        return config
+    return payload if payload else None
+
+
+def billing_period_type(period: Any) -> str:
+    if not isinstance(period, dict):
+        return "unknown"
+    raw = text_value(period.get("type"))
+    lowered = raw.lower() if raw else ""
+    if "weekly" in lowered:
+        return "weekly"
+    if "monthly" in lowered:
+        return "monthly"
+    return "unknown"
+
+
+def parse_product_usage(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    products: list[dict[str, Any]] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            continue
+        name = text_value(item.get("product")) or f"Product {index + 1}"
+        used = percent_value(first_present(item, "usagePercent", "usage_percent"))
+        products.append(
+            {
+                "product": name,
+                "used_percent": used,
+                "remaining_percent": remaining_percent(used),
+            }
+        )
+    return products
+
+
+def parse_billing_body(body: bytes) -> dict[str, Any] | None:
+    config = billing_config(body)
+    if not isinstance(config, dict):
+        return None
+    current_period = first_present(config, "currentPeriod", "current_period")
+    current_period = current_period if isinstance(current_period, dict) else {}
+    period_type = billing_period_type(current_period)
+    usage_percent = percent_value(
+        first_present(config, "creditUsagePercent", "credit_usage_percent")
+    )
+    product_usage = parse_product_usage(
+        first_present(config, "productUsage", "product_usage")
+    )
+    period_start = text_value(current_period.get("start"))
+    period_end = text_value(current_period.get("end"))
+
+    monthly_limit = number_value(first_present(config, "monthlyLimit", "monthly_limit"))
+    used = number_value(config.get("used"))
+    on_demand_cap = number_value(first_present(config, "onDemandCap", "on_demand_cap"))
+    on_demand_used = number_value(first_present(config, "onDemandUsed", "on_demand_used"))
+    billing_period_start = text_value(
+        first_present(config, "billingPeriodStart", "billing_period_start")
+    )
+    billing_period_end = text_value(
+        first_present(config, "billingPeriodEnd", "billing_period_end")
+    )
+
+    has_weekly = usage_percent is not None or period_type == "weekly" or bool(product_usage)
+    has_monthly = any(
+        value is not None
+        for value in (monthly_limit, used, on_demand_cap, on_demand_used, billing_period_end)
+    )
+    if not has_weekly and not has_monthly:
+        return None
+    return {
+        "period_type": "weekly" if has_weekly and period_type == "unknown" else period_type,
+        "usage_percent": usage_percent,
+        "period_start": period_start,
+        "period_end": period_end,
+        "product_usage": product_usage,
+        "monthly_limit_cents": monthly_limit,
+        "used_cents": used,
+        "on_demand_cap_cents": on_demand_cap,
+        "on_demand_used_cents": on_demand_used,
+        "billing_period_start": billing_period_start,
+        "billing_period_end": billing_period_end,
+    }
+
+
+def merge_billing_records(
+    primary: dict[str, Any] | None,
+    secondary: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if primary is None:
+        return secondary
+    if secondary is None:
+        return primary
+    merged: dict[str, Any] = {}
+    for key in (
+        "period_type",
+        "usage_percent",
+        "period_start",
+        "period_end",
+        "monthly_limit_cents",
+        "used_cents",
+        "on_demand_cap_cents",
+        "on_demand_used_cents",
+        "billing_period_start",
+        "billing_period_end",
+    ):
+        first = primary.get(key)
+        if key == "period_type" and first == "unknown":
+            first = None
+        merged[key] = first if first is not None else secondary.get(key)
+    primary_products = primary.get("product_usage")
+    merged["product_usage"] = (
+        primary_products
+        if isinstance(primary_products, list) and primary_products
+        else secondary.get("product_usage") or []
+    )
+    return merged
+
+
+def plan_name(monthly_limit_cents: int | float | None) -> str | None:
+    if monthly_limit_cents is None:
+        return None
+    return PLAN_BY_MONTHLY_LIMIT_CENTS.get(monthly_limit_cents)
+
+
+def render_billing_quota(record: dict[str, Any]) -> dict[str, Any]:
+    weekly_used = percent_value(record.get("usage_percent"))
+    weekly_present = (
+        record.get("period_type") == "weekly"
+        or weekly_used is not None
+        or bool(record.get("product_usage"))
+    )
+    weekly_limit = None
+    if weekly_present:
+        weekly_limit = {
+            "used_percent": weekly_used,
+            "remaining_percent": remaining_percent(weekly_used),
+            "period_start": record.get("period_start"),
+            "reset_at": record.get("period_end"),
+        }
+
+    limit_cents = number_value(record.get("monthly_limit_cents"))
+    used_cents = number_value(record.get("used_cents"))
+    included_used = None
+    if used_cents is not None:
+        included_used = min(used_cents, limit_cents) if limit_cents is not None else used_cents
+    remaining_cents = None
+    if limit_cents is not None and included_used is not None:
+        remaining_cents = max(0, limit_cents - included_used)
+    monthly_used_percent = None
+    if limit_cents not in (None, 0) and included_used is not None:
+        monthly_used_percent = round(float(included_used) / float(limit_cents) * 100, 2)
+
+    monthly_present = any(
+        value is not None
+        for value in (
+            limit_cents,
+            used_cents,
+            record.get("billing_period_end"),
+        )
+    )
+    monthly_credits = None
+    if monthly_present:
+        monthly_credits = {
+            "used_cents": used_cents,
+            "limit_cents": limit_cents,
+            "remaining_cents": remaining_cents,
+            "used_usd": cents_to_usd(used_cents),
+            "limit_usd": cents_to_usd(limit_cents),
+            "remaining_usd": cents_to_usd(remaining_cents),
+            "used_percent": monthly_used_percent,
+            "remaining_percent": remaining_percent(monthly_used_percent),
+            "period_start": record.get("billing_period_start"),
+            "reset_at": record.get("billing_period_end"),
+        }
+
+    cap_cents = number_value(record.get("on_demand_cap_cents"))
+    explicit_on_demand_used = number_value(record.get("on_demand_used_cents"))
+    inferred_on_demand_used = None
+    if used_cents is not None and limit_cents is not None:
+        inferred_on_demand_used = max(0, used_cents - limit_cents)
+    on_demand_used = explicit_on_demand_used
+    if on_demand_used is None:
+        on_demand_used = inferred_on_demand_used
+    pay_as_you_go_enabled = cap_cents is not None and cap_cents > 0
+    pay_as_you_go_used_percent = None
+    if pay_as_you_go_enabled and on_demand_used is not None:
+        pay_as_you_go_used_percent = round(float(on_demand_used) / float(cap_cents) * 100, 2)
+    pay_as_you_go_remaining = None
+    if pay_as_you_go_enabled and on_demand_used is not None:
+        pay_as_you_go_remaining = max(0, cap_cents - on_demand_used)
+
+    known_plan = plan_name(limit_cents)
+    plan = None
+    if known_plan or limit_cents is not None:
+        plan = {
+            "name": known_plan,
+            "monthly_limit_cents": limit_cents,
+        }
+
+    return {
+        "exact_details_available": True,
+        "plan": plan,
+        "weekly_limit": weekly_limit,
+        "product_usage": record.get("product_usage") or [],
+        "monthly_credits": monthly_credits,
+        "pay_as_you_go": {
+            "enabled": pay_as_you_go_enabled,
+            "cap_cents": cap_cents,
+            "used_cents": on_demand_used,
+            "remaining_cents": pay_as_you_go_remaining,
+            "used_percent": pay_as_you_go_used_percent,
+            "remaining_percent": remaining_percent(pay_as_you_go_used_percent),
+        },
+    }
+
+
+def billing_request(
+    access_token: str,
+    user_id: str,
+    url: str,
+    timeout: int,
+) -> tuple[int, bytes, str]:
+    if url not in {BILLING_CREDITS_URL, BILLING_URL}:
+        raise SkillError("Refusing an unsupported Grok billing endpoint.", "unsafe_endpoint")
+    headers = {
+        "Accept": "*/*",
+        "Authorization": f"Bearer {access_token}",
+        "User-Agent": f"grok-pager/{CLIENT_VERSION} grok-shell/{CLIENT_VERSION} (macos; aarch64)",
+        "X-XAI-Token-Auth": "xai-grok-cli",
+        "x-grok-client-version": CLIENT_VERSION,
+    }
+    if user_id:
+        headers["x-userid"] = user_id
+    request = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with HTTP_OPENER.open(request, timeout=timeout) as response:
+            return response.status, read_http_body(response), response.headers.get("Content-Type", "")
+    except urllib.error.HTTPError as exc:
+        return exc.code, read_http_body(exc), exc.headers.get("Content-Type", "")
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise SkillError(
+            "Grok billing request failed before receiving an HTTP response.",
+            "billing_network_error",
+        ) from exc
+
+
+def fetch_billing_details(
+    access_token: str,
+    user_id: str,
+    timeout: int,
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    parsed_by_name: dict[str, dict[str, Any] | None] = {}
+    statuses: list[dict[str, Any]] = []
+    for name, url in (("credits", BILLING_CREDITS_URL), ("billing", BILLING_URL)):
+        try:
+            status_code, body, _ = billing_request(access_token, user_id, url, timeout)
+        except SkillError as exc:
+            parsed_by_name[name] = None
+            statuses.append(
+                {
+                    "name": name,
+                    "http_status": None,
+                    "parsed": False,
+                    "error_code": exc.code,
+                }
+            )
+            continue
+        parsed = parse_billing_body(body) if 200 <= status_code < 300 else None
+        parsed_by_name[name] = parsed
+        status_entry: dict[str, Any] = {
+            "name": name,
+            "http_status": status_code,
+            "parsed": parsed is not None,
+        }
+        if status_code < 200 or status_code >= 300:
+            provider_error = safe_provider_error(body)
+            status_entry["provider_code"] = provider_error.get("code")
+        statuses.append(status_entry)
+    return merge_billing_records(
+        parsed_by_name.get("credits"),
+        parsed_by_name.get("billing"),
+    ), statuses
+
+
 def provider_error_parts(body: bytes) -> tuple[str, str]:
     payload = decode_json(body)
     code = str(payload.get("code") or "").strip()
@@ -531,6 +897,67 @@ def parse_sse_usage(body: bytes) -> dict[str, Any] | None:
     return usage if isinstance(usage, dict) else None
 
 
+def query_via_probe(
+    credential: Credential,
+    access_token: str,
+    refreshed_in_memory: bool,
+    model: str,
+    timeout: int,
+    billing_statuses: list[dict[str, Any]],
+) -> dict[str, Any]:
+    status_code, body, content_type = probe_request(access_token, model, timeout)
+    if status_code == 401 and credential.refresh_token and not refreshed_in_memory:
+        access_token, refreshed_in_memory = refresh_access_token(credential, timeout)
+        status_code, body, content_type = probe_request(access_token, model, timeout)
+
+    common = {
+        "operation": "query",
+        "source": "grok_cli_chat_proxy_responses_fallback",
+        "account_ref": credential.account_ref,
+        "model": model,
+        "http_status": status_code,
+        "billing_endpoints": billing_statuses,
+        "refreshed_in_memory": refreshed_in_memory,
+        "probe_may_consume_tokens": True,
+        "fetched_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+    exhausted = parse_exhausted_quota(status_code, body)
+    if exhausted is not None:
+        return {
+            "ok": True,
+            **common,
+            "available": False,
+            "quota": exhausted,
+            "message": "Grok billing details were unavailable; the fallback probe shows included usage is exhausted.",
+        }
+    if 200 <= status_code < 300:
+        return {
+            "ok": True,
+            **common,
+            "available": True,
+            "quota": {
+                "exact_details_available": False,
+                "exhausted": False,
+                "actual_tokens": None,
+                "limit_tokens": None,
+                "remaining_tokens": None,
+            },
+            "probe_usage": parse_sse_usage(body),
+            "content_type": content_type or None,
+            "message": "Grok is available, but the billing endpoints did not expose detailed quota data.",
+        }
+    provider_error = safe_provider_error(body)
+    code = "unauthorized" if status_code in {401, 403} else "rate_limited" if status_code == 429 else "upstream_error"
+    return {
+        "ok": False,
+        **common,
+        "available": False,
+        "code": code,
+        "provider_error": provider_error,
+        "message": f"Grok billing and fallback quota probe failed; probe returned HTTP {status_code}.",
+    }
+
+
 def query(args: dict[str, Any]) -> dict[str, Any]:
     reject_unknown(args, {"auth_file", "auth_dir", "account_ref", "model", "timeout_seconds"})
     timeout = args.get("timeout_seconds", 20)
@@ -548,57 +975,46 @@ def query(args: dict[str, Any]) -> dict[str, Any]:
     if should_refresh(credential):
         access_token, refreshed_in_memory = refresh_access_token(credential, timeout)
 
-    status_code, body, content_type = probe_request(access_token, model, timeout)
-    if status_code == 401 and credential.refresh_token and not refreshed_in_memory:
+    billing_record, billing_statuses = fetch_billing_details(
+        access_token,
+        credential.user_id,
+        timeout,
+    )
+    auth_failed = any(
+        item.get("http_status") in {401, 403}
+        for item in billing_statuses
+    )
+    if billing_record is None and auth_failed and credential.refresh_token and not refreshed_in_memory:
         access_token, refreshed_in_memory = refresh_access_token(credential, timeout)
-        status_code, body, content_type = probe_request(access_token, model, timeout)
+        billing_record, billing_statuses = fetch_billing_details(
+            access_token,
+            credential.user_id,
+            timeout,
+        )
 
-    common = {
-        "operation": "query",
-        "source": "grok_cli_chat_proxy_responses",
-        "account_ref": credential.account_ref,
-        "model": model,
-        "http_status": status_code,
-        "refreshed_in_memory": refreshed_in_memory,
-        "probe_may_consume_tokens": True,
-        "fetched_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-    }
-    exhausted = parse_exhausted_quota(status_code, body)
-    if exhausted is not None:
+    if billing_record is not None:
         return {
             "ok": True,
-            **common,
-            "available": False,
-            "quota": exhausted,
-            "message": "Grok included free usage is exhausted for the rolling 24-hour window.",
-        }
-    if 200 <= status_code < 300:
-        return {
-            "ok": True,
-            **common,
+            "operation": "query",
+            "source": "grok_billing_endpoints",
+            "account_ref": credential.account_ref,
             "available": True,
-            "quota": {
-                "exhausted": False,
-                "actual_tokens": None,
-                "limit_tokens": None,
-                "remaining_tokens": None,
-                "reset_policy": "rolling_24_hours",
-                "exact_remaining_available": False,
-            },
-            "probe_usage": parse_sse_usage(body),
-            "content_type": content_type or None,
-            "message": "Grok is currently available; the successful response does not expose exact rolling quota remaining.",
+            "quota": render_billing_quota(billing_record),
+            "billing_endpoints": billing_statuses,
+            "refreshed_in_memory": refreshed_in_memory,
+            "probe_may_consume_tokens": False,
+            "fetched_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "message": "Detailed Grok quota was returned by the billing endpoints without a model probe.",
         }
-    provider_error = safe_provider_error(body)
-    code = "unauthorized" if status_code in {401, 403} else "rate_limited" if status_code == 429 else "upstream_error"
-    return {
-        "ok": False,
-        **common,
-        "available": False,
-        "code": code,
-        "provider_error": provider_error,
-        "message": f"Grok quota probe returned HTTP {status_code} without an exhausted quota payload.",
-    }
+
+    return query_via_probe(
+        credential,
+        access_token,
+        refreshed_in_memory,
+        model,
+        timeout,
+        billing_statuses,
+    )
 
 
 def main() -> int:
