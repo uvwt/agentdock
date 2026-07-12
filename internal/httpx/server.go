@@ -39,7 +39,7 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 		oauthStore = persistentStore
 	}
 	mux := http.NewServeMux()
-	publicArtifactStore := publicartifacts.New(cfg.AgentDockHome, cfg.OAuthServerURL, cfg.Port)
+	publicArtifactStore := publicartifacts.New(cfg.AgentDockHome, cfg.EffectivePublicServerURL(), cfg.Port)
 	if err := publicArtifactStore.EnsureSecret(); err != nil {
 		return fmt.Errorf("ensure public artifact secret: %w", err)
 	}
@@ -181,7 +181,7 @@ func decodeSingleJSON(reader io.Reader, target any) error {
 }
 
 func requestPublicBaseURL(cfg config.Config, r *http.Request) string {
-	configured := strings.TrimRight(strings.TrimSpace(cfg.OAuthServerURL), "/")
+	configured := strings.TrimRight(cfg.EffectivePublicServerURL(), "/")
 	if configured != "" {
 		return configured
 	}
@@ -359,6 +359,11 @@ func oauthMetadata(cfg config.Config, r *http.Request) map[string]any {
 }
 
 func issuerFor(cfg config.Config, r *http.Request) string {
+	if cfg.OAuthLoopbackIssuer {
+		if issuer, ok := loopbackRequestIssuer(r); ok {
+			return issuer
+		}
+	}
 	issuer := strings.TrimRight(cfg.OAuthServerURL, "/")
 	if issuer != "" {
 		return issuer
@@ -368,6 +373,30 @@ func issuerFor(cfg config.Config, r *http.Request) string {
 		scheme = "https"
 	}
 	return scheme + "://" + r.Host
+}
+
+func loopbackRequestIssuer(r *http.Request) (string, bool) {
+	host := strings.TrimSpace(r.Host)
+	if host == "" {
+		return "", false
+	}
+	hostname := host
+	if parsed, _, err := net.SplitHostPort(host); err == nil {
+		hostname = parsed
+	}
+	hostname = strings.Trim(strings.ToLower(hostname), "[]")
+	isLoopback := hostname == "localhost"
+	if ip := net.ParseIP(hostname); ip != nil {
+		isLoopback = ip.IsLoopback()
+	}
+	if !isLoopback {
+		return "", false
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + host, true
 }
 
 func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, codes *auth.OAuthStore) {

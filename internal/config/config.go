@@ -29,7 +29,9 @@ type Config struct {
 	Port                int
 	AuthToken           string
 	OAuthClientID       string
+	PublicServerURL     string
 	OAuthServerURL      string
+	OAuthLoopbackIssuer bool
 	LogLevel            string
 	NexusEndpoint       string
 	NexusToken          string
@@ -50,17 +52,28 @@ func FromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	oauthLoopbackIssuer, err := getenvBool("AGENTDOCK_OAUTH_LOOPBACK_ISSUER", false)
+	if err != nil {
+		return Config{}, err
+	}
+	publicServerURL := os.Getenv("AGENTDOCK_SERVER_URL")
+	oauthServerURL := os.Getenv("AGENTDOCK_OAUTH_SERVER_URL")
+	if strings.TrimSpace(oauthServerURL) == "" {
+		oauthServerURL = publicServerURL
+	}
 	return Config{
-		Host:           getenv("AGENTDOCK_HOST", "127.0.0.1"),
-		Port:           port,
-		AuthToken:      os.Getenv("AGENTDOCK_AUTH_TOKEN"),
-		OAuthClientID:  os.Getenv("AGENTDOCK_OAUTH_CLIENT_ID"),
-		OAuthServerURL: os.Getenv("AGENTDOCK_SERVER_URL"),
-		LogLevel:       getenv("AGENTDOCK_LOG_LEVEL", "info"),
-		NexusEndpoint:  getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
-		NexusToken:     os.Getenv("AGENTDOCK_NEXUS_TOKEN"),
-		BrowserEnabled: browserEnabled,
-		Stdio:          stdio,
+		Host:                getenv("AGENTDOCK_HOST", "127.0.0.1"),
+		Port:                port,
+		AuthToken:           os.Getenv("AGENTDOCK_AUTH_TOKEN"),
+		OAuthClientID:       os.Getenv("AGENTDOCK_OAUTH_CLIENT_ID"),
+		PublicServerURL:     publicServerURL,
+		OAuthServerURL:      oauthServerURL,
+		OAuthLoopbackIssuer: oauthLoopbackIssuer,
+		LogLevel:            getenv("AGENTDOCK_LOG_LEVEL", "info"),
+		NexusEndpoint:       getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
+		NexusToken:          os.Getenv("AGENTDOCK_NEXUS_TOKEN"),
+		BrowserEnabled:      browserEnabled,
+		Stdio:               stdio,
 	}, nil
 }
 
@@ -128,6 +141,13 @@ func (c *Config) Normalize() error {
 		return fmt.Errorf("unsupported log level %q; expected debug, info, warn, or error", c.LogLevel)
 	}
 	return nil
+}
+
+func (c Config) EffectivePublicServerURL() string {
+	if value := strings.TrimSpace(c.PublicServerURL); value != "" {
+		return value
+	}
+	return strings.TrimSpace(c.OAuthServerURL)
 }
 
 func (c Config) OAuthEnabled() bool {

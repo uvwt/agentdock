@@ -313,6 +313,29 @@ func TestServerCardDeclaresOAuthOnlyWhenOAuthEnabled(t *testing.T) {
 	}
 }
 
+func TestOAuthLoopbackIssuerKeepsPublicIssuerForPublicRequests(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.OAuthClientID = "oauth-enabled"
+	cfg.OAuthServerURL = "https://agentdock.example.com"
+	cfg.OAuthLoopbackIssuer = true
+
+	localRequest := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:18766/.well-known/oauth-authorization-server", nil)
+	localMetadata := oauthMetadata(cfg, localRequest)
+	if localMetadata["issuer"] != "http://127.0.0.1:18766" {
+		t.Fatalf("local issuer = %v", localMetadata["issuer"])
+	}
+	localResource := protectedResourceMetadata(cfg, localRequest)
+	if localResource["resource"] != "http://127.0.0.1:18766/mcp" {
+		t.Fatalf("local resource = %v", localResource["resource"])
+	}
+
+	publicRequest := httptest.NewRequest(http.MethodGet, "https://agentdock.example.com/.well-known/oauth-authorization-server", nil)
+	publicMetadata := oauthMetadata(cfg, publicRequest)
+	if publicMetadata["issuer"] != "https://agentdock.example.com" {
+		t.Fatalf("public issuer = %v", publicMetadata["issuer"])
+	}
+}
+
 func TestOAuthMetadataUsesPublicPKCEClients(t *testing.T) {
 	t.Setenv("AGENTDOCK_OAUTH_CLIENT_SECRET", "legacy-secret-is-ignored")
 	cfg := testConfig(t)

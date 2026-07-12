@@ -15,7 +15,7 @@ func (r *Runtime) filePublish(ctx context.Context, args map[string]any) (Result,
 	if err != nil {
 		return nil, err
 	}
-	store := publicartifacts.New(r.cfg.AgentDockHome, r.cfg.OAuthServerURL, r.cfg.Port)
+	store := publicartifacts.New(r.cfg.AgentDockHome, r.cfg.EffectivePublicServerURL(), r.cfg.Port)
 	published, err := store.Publish(publicartifacts.PublishRequest{Path: pathValue, RetentionSeconds: intArg(args, "retention_seconds", 0), BaseURL: requestmeta.BaseURL(ctx)})
 	if err != nil {
 		return nil, fmt.Errorf("publish file: %w", err)
