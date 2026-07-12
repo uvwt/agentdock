@@ -92,31 +92,31 @@ func InputSchema(name string) map[string]any {
 		props["chars"] = stringProp("Characters to write when action=write.")
 		props["max_output_bytes"] = boundedIntProp("Maximum output bytes. Defaults to 65536 and is capped at 4194304.", 1, maxCommandOutputBytes)
 	case "task_manage":
-		props["action"] = map[string]any{"type": "string", "description": "Task lifecycle action. Template discovery and authoring live in workflow_template_manage.", "enum": []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review"}}
-		props["task_id"] = stringProp("Persistent task id for get, block, resume, final_review, or complete_after_review.")
+		props["action"] = map[string]any{"type": "string", "description": "Task lifecycle action. Use checkpoint to update live step progress.", "enum": []string{"create", "list", "get", "checkpoint", "block", "resume", "final_review", "complete"}}
+		props["task_id"] = stringProp("Persistent task id for get, checkpoint, block, resume, final_review, or complete.")
 		props["title"] = stringProp("Short task title for create.")
 		props["goal"] = stringProp("Fixed task goal for create.")
-		props["completion_conditions"] = map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}, "description": "Review checklist items used by final_review."}
-		props["status"] = map[string]any{"type": "string", "description": "Optional list filter.", "enum": []string{"active", "blocked", "completed"}}
+		props["completion_conditions"] = map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}, "description": "Conditions that must be true before final_review can pass."}
+		props["steps"] = map[string]any{
+			"type": "array", "maxItems": 12, "description": "Concrete task steps. Required when composing multiple source templates.",
+			"items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"id", "title"}, "properties": map[string]any{"id": stringProp("Stable step id."), "title": stringProp("Human-readable step title.")}},
+		}
+		props["template_id"] = stringProp("Single active workflow template to apply. Its current active version is resolved automatically.")
+		props["source_template_ids"] = map[string]any{"type": "array", "minItems": 2, "maxItems": 3, "items": map[string]any{"type": "string"}, "description": "Two or three templates already composed by the model into steps and completion_conditions."}
+		props["step_id"] = stringProp("Task step id for checkpoint.")
+		props["status"] = map[string]any{"type": "string", "description": "Action-specific status: task list filter, checkpoint step status, or final review status.", "enum": []string{"active", "blocked", "completed", "pending", "in_progress", "pass", "failed"}}
 		props["limit"] = intProp("Maximum tasks returned by list. Defaults to 50 and is capped at 200.")
-		props["summary"] = stringProp("Concise task, blocker, resume, or final review summary.")
-		props["blocker"] = stringProp("Explicit blocker that prevents further progress.")
-		props["evidence"] = stringProp("Evidence required only when blocking a task.")
-		props["review_status"] = map[string]any{"type": "string", "description": "Final review status. Use pass only after real verification.", "enum": []string{"pass", "failed"}}
-		props["verified_facts"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Facts verified during final_review. Required when final_review passes."}
-		props["open_risks"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Risks that remain after final review."}
-		props["missing_checks"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Checks not completed. Must be empty when final_review passes."}
-		props["template_id"] = stringProp("Workflow template id for create.")
-		props["template_version"] = stringProp("Workflow template version for create.")
-		props["selected_reason"] = stringProp("Why the model selected this template.")
-		props["template_candidates"] = map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": true}, "description": "Candidate templates and scores considered before selection."}
+		props["summary"] = stringProp("Current progress, blocker, resume, or final review summary.")
+		props["verified"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Facts verified during final_review. Required when status=pass."}
+		props["risks"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Remaining risks. Required when final_review status=failed."}
 		required = []string{"action"}
 
 	case "workflow_template_manage":
-		props["action"] = map[string]any{"type": "string", "description": "Workflow template action.", "enum": []string{"save", "validate", "publish", "retire", "list", "get", "match", "vector_index"}}
+		props["action"] = map[string]any{"type": "string", "description": "Workflow template action. get_many returns full active templates that the model must compose before task creation.", "enum": []string{"save", "validate", "publish", "retire", "list", "get", "get_many", "match", "vector_index"}}
 		props["template"] = map[string]any{"type": "object", "additionalProperties": true, "description": "Complete draft workflow template for save."}
 		props["template_id"] = stringProp("Workflow template id.")
-		props["template_version"] = stringProp("Workflow template version.")
+		props["template_ids"] = map[string]any{"type": "array", "minItems": 2, "maxItems": 3, "items": map[string]any{"type": "string"}, "description": "Two or three active template ids for get_many. The returned templates must be pruned, deduplicated, ordered, and combined by the model."}
+		props["template_version"] = stringProp("Workflow template version for exact get, validate, publish, or retire actions.")
 		props["template_status"] = map[string]any{"type": "string", "enum": []string{"draft", "active", "retired"}, "description": "Optional list status filter."}
 		props["allow_long_template"] = boolProp("Allow a workflow template to exceed default guardrails. Provide long_template_reason when true.")
 		props["long_template_reason"] = stringProp("Reason required when allow_long_template=true.")

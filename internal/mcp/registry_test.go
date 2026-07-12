@@ -203,16 +203,21 @@ func assertObjectSchema(t *testing.T, name, kind string, schema map[string]any) 
 
 func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	props := schemaProperties(t, "task_manage")
-	assertSameStrings(t, enumStrings(t, props["action"]), []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review"})
-	for _, name := range []string{"completion_conditions", "review_status", "verified_facts", "open_risks", "missing_checks", "evidence"} {
+	assertSameStrings(t, enumStrings(t, props["action"]), []string{"create", "list", "get", "checkpoint", "block", "resume", "final_review", "complete"})
+	for _, name := range []string{"completion_conditions", "steps", "template_id", "source_template_ids", "step_id", "status", "summary", "verified", "risks"} {
 		if _, ok := props[name]; !ok {
 			t.Fatalf("task_manage input schema missing %q", name)
 		}
 	}
+	for _, removed := range []string{"template_version", "selected_reason", "template_candidates", "blocker", "evidence", "review_status", "verified_facts", "open_risks", "missing_checks"} {
+		if _, ok := props[removed]; ok {
+			t.Fatalf("task_manage input schema still exposes removed field %q", removed)
+		}
+	}
 
 	templateProps := schemaProperties(t, "workflow_template_manage")
-	assertSameStrings(t, enumStrings(t, templateProps["action"]), []string{"save", "validate", "publish", "retire", "list", "get", "match", "vector_index"})
-	for _, name := range []string{"template", "template_id", "template_version", "template_status", "allow_long_template", "long_template_reason", "goal", "device", "type"} {
+	assertSameStrings(t, enumStrings(t, templateProps["action"]), []string{"save", "validate", "publish", "retire", "list", "get", "get_many", "match", "vector_index"})
+	for _, name := range []string{"template", "template_id", "template_ids", "template_version", "template_status", "allow_long_template", "long_template_reason", "goal", "device", "type"} {
 		if _, ok := templateProps[name]; !ok {
 			t.Fatalf("workflow_template_manage input schema missing %q", name)
 		}
@@ -232,7 +237,7 @@ func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	if !ok {
 		t.Fatal("workflow_template_manage output schema properties missing")
 	}
-	for _, name := range []string{"candidates", "recommended", "best_candidate_score", "score_thresholds"} {
+	for _, name := range []string{"candidates", "recommended", "best_candidate_score", "score_thresholds", "composition_required", "next_required_action"} {
 		if _, ok := workflowOutputProps[name]; !ok {
 			t.Fatalf("workflow_template_manage output schema missing %q", name)
 		}

@@ -53,6 +53,24 @@ type TemplateSelection struct {
 	Candidates     []TemplateCandidate `json:"candidates,omitempty"`
 }
 
+type TemplateReference struct {
+	ID      string `json:"id"`
+	Version string `json:"version"`
+	Hash    string `json:"hash,omitempty"`
+}
+
+type TaskStepInput struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Phase Phase  `json:"phase,omitempty"`
+}
+
+const (
+	StepPending    = "pending"
+	StepInProgress = "in_progress"
+	StepCompleted  = "completed"
+)
+
 type TaskStep struct {
 	ID        string    `json:"id"`
 	Title     string    `json:"title"`

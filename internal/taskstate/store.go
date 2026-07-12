@@ -69,22 +69,23 @@ type Event struct {
 }
 
 type Task struct {
-	SchemaVersion int                `json:"schema_version"`
-	ID            string             `json:"id"`
-	Title         string             `json:"title"`
-	Goal          string             `json:"goal"`
-	Status        Status             `json:"status"`
-	Phase         Phase              `json:"phase"`
-	Conditions    []Condition        `json:"conditions"`
-	Template      *TemplateSelection `json:"template,omitempty"`
-	Steps         []TaskStep         `json:"steps,omitempty"`
-	Events        []Event            `json:"events"`
-	Blocker       string             `json:"blocker,omitempty"`
-	Summary       string             `json:"summary,omitempty"`
-	FinalReview   *FinalReview       `json:"final_review,omitempty"`
-	CreatedAt     time.Time          `json:"created_at"`
-	UpdatedAt     time.Time          `json:"updated_at"`
-	CompletedAt   *time.Time         `json:"completed_at,omitempty"`
+	SchemaVersion   int                 `json:"schema_version"`
+	ID              string              `json:"id"`
+	Title           string              `json:"title"`
+	Goal            string              `json:"goal"`
+	Status          Status              `json:"status"`
+	Phase           Phase               `json:"phase"`
+	Conditions      []Condition         `json:"conditions"`
+	Template        *TemplateSelection  `json:"template,omitempty"` // 仅用于读取旧任务状态。
+	SourceTemplates []TemplateReference `json:"source_templates,omitempty"`
+	Steps           []TaskStep          `json:"steps,omitempty"`
+	Events          []Event             `json:"events"`
+	Blocker         string              `json:"blocker,omitempty"`
+	Summary         string              `json:"summary,omitempty"`
+	FinalReview     *FinalReview        `json:"final_review,omitempty"`
+	CreatedAt       time.Time           `json:"created_at"`
+	UpdatedAt       time.Time           `json:"updated_at"`
+	CompletedAt     *time.Time          `json:"completed_at,omitempty"`
 }
 
 type Store struct {
@@ -111,62 +112,57 @@ func New(root string) (*Store, error) {
 
 func (s *Store) Root() string { return s.root }
 
-func (s *Store) Create(title, goal string, conditionTexts []string) (Task, error) {
-	return s.createTask(title, goal, conditionTexts, nil, nil)
-}
-
-func (s *Store) CreateFromTemplate(title, goal string, conditionTexts []string, template Template, selectedReason string, candidates []TemplateCandidate) (Task, error) {
-	if template.Status != TemplateActive {
-		return Task{}, errors.New("only active templates can create tasks")
-	}
-	selection := &candidatesWithReason{reason: selectedReason, candidates: candidates}
-	return s.createTask(title, goal, conditionTexts, &template, selection)
-}
-
-type candidatesWithReason struct {
-	reason     string
-	candidates []TemplateCandidate
-}
-
-func (s *Store) createTask(title, goal string, conditionTexts []string, template *Template, selectionInfo *candidatesWithReason) (Task, error) {
+func (s *Store) Create(title, goal string, conditionTexts []string, steps []TaskStepInput, sourceTemplates []TemplateReference) (Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	title = strings.TrimSpace(title)
 	goal = strings.TrimSpace(goal)
 	if title == "" || goal == "" {
 		return Task{}, errors.New("task title and goal are required")
 	}
-	now := time.Now().UTC()
-	var selection *TemplateSelection
-	var steps []TaskStep
-	if template != nil {
-		conditionTexts = append(append([]string{}, template.CompletionConditions...), conditionTexts...)
-		if selectionInfo == nil {
-			return Task{}, errors.New("template selection metadata is required")
-		}
-		selection = &TemplateSelection{
-			ID:             template.ID,
-			Version:        template.Version,
-			Hash:           template.Hash,
-			SelectedReason: strings.TrimSpace(selectionInfo.reason),
-			Candidates:     append([]TemplateCandidate(nil), selectionInfo.candidates...),
-		}
-		steps = make([]TaskStep, 0, len(template.Steps))
-		for _, step := range template.Steps {
-			steps = append(steps, TaskStep{ID: step.ID, Title: step.Title, Phase: step.Phase, Status: "pending", UpdatedAt: now})
-		}
-	}
 	conditionTexts = normalizeTexts(conditionTexts)
 	if len(conditionTexts) == 0 {
 		return Task{}, errors.New("at least one completion condition is required")
+	}
+
+	now := time.Now().UTC()
+	taskSteps, err := normalizeTaskSteps(steps, now)
+	if err != nil {
+		return Task{}, err
+	}
+	templateRefs, err := normalizeTemplateReferences(sourceTemplates)
+	if err != nil {
+		return Task{}, err
 	}
 	id, err := newID()
 	if err != nil {
 		return Task{}, err
 	}
-	task := Task{SchemaVersion: SchemaVersion, ID: id, Title: title, Goal: goal, Status: StatusActive, Phase: PhaseCheck, Conditions: make([]Condition, 0, len(conditionTexts)), Template: selection, Steps: steps, Events: []Event{{Type: "created", Summary: "task created", CreatedAt: now}}, CreatedAt: now, UpdatedAt: now}
-	if selection != nil {
-		task.Events = append(task.Events, Event{Type: "template_selected", Summary: selection.ID + "@" + selection.Version + ": " + selection.SelectedReason, CreatedAt: now})
+	phase := PhaseCheck
+	if len(taskSteps) > 0 {
+		phase = taskSteps[0].Phase
+	}
+	task := Task{
+		SchemaVersion:   SchemaVersion,
+		ID:              id,
+		Title:           title,
+		Goal:            goal,
+		Status:          StatusActive,
+		Phase:           phase,
+		Conditions:      make([]Condition, 0, len(conditionTexts)),
+		SourceTemplates: templateRefs,
+		Steps:           taskSteps,
+		Events:          []Event{{Type: "created", Summary: "task created", CreatedAt: now}},
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if len(templateRefs) > 0 {
+		ids := make([]string, 0, len(templateRefs))
+		for _, ref := range templateRefs {
+			ids = append(ids, ref.ID+"@"+ref.Version)
+		}
+		task.Events = append(task.Events, Event{Type: "templates_selected", Summary: strings.Join(ids, ", "), CreatedAt: now})
 	}
 	for i, text := range conditionTexts {
 		task.Conditions = append(task.Conditions, Condition{ID: fmt.Sprintf("cond_%02d", i+1), Text: text, CreatedAt: now})
@@ -217,19 +213,70 @@ func (s *Store) List(status Status, limit int) ([]Task, error) {
 	return tasks, nil
 }
 
-func (s *Store) Block(id, blocker, evidence string) (Task, error) {
+func (s *Store) Checkpoint(id, stepID, status, summary string) (Task, error) {
+	return s.mutate(id, func(task *Task, now time.Time) error {
+		if err := requireActive(task); err != nil {
+			return err
+		}
+		if task.FinalReview != nil && task.FinalReview.Status == FinalReviewPass {
+			return errors.New("task already passed final review")
+		}
+		stepID = strings.TrimSpace(stepID)
+		status = strings.ToLower(strings.TrimSpace(status))
+		summary = strings.TrimSpace(summary)
+		if stepID == "" || summary == "" {
+			return errors.New("step_id and summary are required")
+		}
+		if status != StepPending && status != StepInProgress && status != StepCompleted {
+			return errors.New("step status must be pending, in_progress, or completed")
+		}
+
+		stepIndex := -1
+		for i := range task.Steps {
+			if task.Steps[i].ID == stepID {
+				stepIndex = i
+				break
+			}
+		}
+		if stepIndex < 0 {
+			return fmt.Errorf("task step %s not found", stepID)
+		}
+		step := &task.Steps[stepIndex]
+		if !validStepTransition(step.Status, status) {
+			return fmt.Errorf("cannot move step %s from %s to %s", step.ID, step.Status, status)
+		}
+		if status == StepInProgress {
+			for i := range task.Steps {
+				if i != stepIndex && task.Steps[i].Status == StepInProgress {
+					return fmt.Errorf("step %s is already in progress", task.Steps[i].ID)
+				}
+			}
+		}
+		step.Status = status
+		step.UpdatedAt = now
+		if task.FinalReview != nil && task.FinalReview.Status == FinalReviewFailed {
+			task.FinalReview = nil
+		}
+		task.Phase = step.Phase
+		task.Summary = summary
+		task.Events = append(task.Events, Event{Type: "checkpoint", Summary: step.ID + "=" + status + ": " + summary, CreatedAt: now})
+		return nil
+	})
+}
+
+func (s *Store) Block(id, summary string) (Task, error) {
 	return s.mutate(id, func(task *Task, now time.Time) error {
 		if err := requireMutable(task); err != nil {
 			return err
 		}
-		blocker = strings.TrimSpace(blocker)
-		evidence = strings.TrimSpace(evidence)
-		if blocker == "" || evidence == "" {
-			return errors.New("blocker and evidence are required")
+		summary = strings.TrimSpace(summary)
+		if summary == "" {
+			return errors.New("block summary is required")
 		}
 		task.Status = StatusBlocked
-		task.Blocker = blocker
-		task.Events = append(task.Events, Event{Type: "blocked", Summary: blocker + "; evidence: " + evidence, CreatedAt: now})
+		task.Blocker = summary
+		task.Summary = summary
+		task.Events = append(task.Events, Event{Type: "blocked", Summary: summary, CreatedAt: now})
 		return nil
 	})
 }
@@ -256,18 +303,12 @@ func (s *Store) FinalReview(id string, input FinalReviewInput) (Task, error) {
 	})
 }
 
-func (s *Store) CompleteAfterReview(id, summary string) (Task, error) {
+func (s *Store) Complete(id string) (Task, error) {
 	return s.mutate(id, func(task *Task, now time.Time) error {
 		if task.FinalReview == nil || task.FinalReview.Status != FinalReviewPass {
-			return errors.New("final_review must pass before complete_after_review")
+			return errors.New("final_review must pass before complete")
 		}
-		if len(task.FinalReview.MissingChecks) > 0 {
-			return errors.New("final_review still has missing checks")
-		}
-		if strings.TrimSpace(summary) == "" {
-			summary = task.FinalReview.Summary
-		}
-		return completeTask(task, summary, now, true)
+		return completeTask(task, task.FinalReview.Summary, now, true)
 	})
 }
 
@@ -276,9 +317,6 @@ func applyFinalReview(task *Task, input FinalReviewInput, now time.Time) error {
 		return err
 	}
 	status := strings.ToLower(strings.TrimSpace(input.Status))
-	if status == "" {
-		status = FinalReviewPass
-	}
 	if status != FinalReviewPass && status != FinalReviewFailed {
 		return errors.New("final review status must be pass or failed")
 	}
@@ -290,36 +328,23 @@ func applyFinalReview(task *Task, input FinalReviewInput, now time.Time) error {
 	openRisks := normalizeReviewItems(input.OpenRisks)
 	missingChecks := normalizeReviewItems(input.MissingChecks)
 	if status == FinalReviewPass {
-		if len(missingChecks) > 0 {
-			return errors.New("passing final review cannot have missing checks")
-		}
 		if len(verifiedFacts) == 0 {
 			return errors.New("passing final review requires at least one verified fact")
 		}
+		if pending := incompleteStepIDs(task.Steps); len(pending) > 0 {
+			return fmt.Errorf("passing final review requires all task steps completed: %s", strings.Join(pending, ", "))
+		}
 	} else if len(openRisks) == 0 && len(missingChecks) == 0 {
-		return errors.New("failed final review requires open risks or missing checks")
+		return errors.New("failed final review requires at least one risk")
 	}
 
 	task.FinalReview = &FinalReview{Status: status, Summary: summary, VerifiedFacts: verifiedFacts, OpenRisks: openRisks, MissingChecks: missingChecks, ReviewedAt: now}
 	if status == FinalReviewPass {
-		// final_review 是常规收尾入口：模板步骤只作为流程锚点和恢复线索，
-		// 不再承担必填步骤、依赖或替代规则等工作流引擎职责。
-		markPendingStepsReviewed(task, now)
 		task.Phase = PhaseCloseout
 	}
+	task.Summary = summary
 	task.Events = append(task.Events, Event{Type: "final_review", Summary: status + ": " + summary, CreatedAt: now})
 	return nil
-}
-
-func markPendingStepsReviewed(task *Task, now time.Time) {
-	for i := range task.Steps {
-		step := &task.Steps[i]
-		if step.Status != "pending" {
-			continue
-		}
-		step.Status = "completed"
-		step.UpdatedAt = now
-	}
 }
 
 func completeTask(task *Task, summary string, now time.Time, emitEvent bool) error {
@@ -392,6 +417,93 @@ func (s *Store) saveLocked(task Task) error {
 	data = append(data, '\n')
 	target := filepath.Join(s.root, task.ID+".json")
 	return atomicfile.Write(target, data, 0o600)
+}
+
+func normalizeTaskSteps(values []TaskStepInput, now time.Time) ([]TaskStep, error) {
+	if len(values) > 12 {
+		return nil, errors.New("task steps cannot exceed 12")
+	}
+	seen := make(map[string]struct{}, len(values))
+	steps := make([]TaskStep, 0, len(values))
+	for _, value := range values {
+		id := strings.TrimSpace(value.ID)
+		title := strings.TrimSpace(value.Title)
+		if id == "" || title == "" {
+			return nil, errors.New("each task step requires id and title")
+		}
+		if !validStepID(id) {
+			return nil, fmt.Errorf("invalid task step id %q", id)
+		}
+		if _, exists := seen[id]; exists {
+			return nil, fmt.Errorf("duplicate task step id %q", id)
+		}
+		phase := value.Phase
+		if phase == "" {
+			phase = PhaseExecute
+		}
+		if phase != PhaseCheck && phase != PhaseExecute && phase != PhaseVerify && phase != PhaseCloseout {
+			return nil, fmt.Errorf("invalid task step phase %q", phase)
+		}
+		seen[id] = struct{}{}
+		steps = append(steps, TaskStep{ID: id, Title: title, Phase: phase, Status: StepPending, UpdatedAt: now})
+	}
+	return steps, nil
+}
+
+func normalizeTemplateReferences(values []TemplateReference) ([]TemplateReference, error) {
+	if len(values) > 3 {
+		return nil, errors.New("source templates cannot exceed 3")
+	}
+	seen := make(map[string]struct{}, len(values))
+	refs := make([]TemplateReference, 0, len(values))
+	for _, value := range values {
+		value.ID = strings.TrimSpace(value.ID)
+		value.Version = strings.TrimSpace(value.Version)
+		value.Hash = strings.TrimSpace(value.Hash)
+		if value.ID == "" || value.Version == "" {
+			return nil, errors.New("source template id and version are required")
+		}
+		if _, exists := seen[value.ID]; exists {
+			return nil, fmt.Errorf("duplicate source template %q", value.ID)
+		}
+		seen[value.ID] = struct{}{}
+		refs = append(refs, value)
+	}
+	return refs, nil
+}
+
+func validStepID(id string) bool {
+	for _, r := range id {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validStepTransition(from, to string) bool {
+	if from == to {
+		return true
+	}
+	switch from {
+	case StepPending:
+		return to == StepInProgress || to == StepCompleted
+	case StepInProgress:
+		return to == StepCompleted
+	default:
+		return false
+	}
+}
+
+func incompleteStepIDs(steps []TaskStep) []string {
+	ids := make([]string, 0)
+	for _, step := range steps {
+		if step.Status != StepCompleted {
+			ids = append(ids, step.ID)
+		}
+	}
+	return ids
 }
 
 func normalizeTexts(values []string) []string {

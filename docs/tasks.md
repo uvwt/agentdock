@@ -1,112 +1,205 @@
 # 可恢复任务状态
 
-`task_manage` 是 AgentDock 内置的轻量任务状态工具，用于部署、排障、重启、跨设备操作等可能因会话中断而需要恢复的多步骤任务。简单查询、单次 Skill 调用和单条明确命令不应创建任务。
+`task_manage` 是 AgentDock 内置的轻量任务状态工具，用于多步骤开发、部署、排障、迁移和跨设备操作。它只保存任务状态，不代替命令、测试、部署或真实验证。
 
-任务工具只记录任务生命周期、阻塞原因和最终自检，不执行命令，也不代理其他 AgentDock 工具。模型仍然负责规划、调用真实工具、诊断、验证和汇报。
+简单查询、单次 Skill 调用和一条明确命令不应创建任务。
 
-## 当前分工
-
-- `workflow_template_manage`：负责模板保存、校验、发布、退役、读取、列表和匹配。
-- `task_manage`：负责可恢复任务的创建、查询、阻塞、恢复、最终自检和完成。
-
-标准闭环：
+## 标准流程
 
 ```text
 workflow_template_manage action=match
+-> 可选：workflow_template_manage action=get_many
 -> task_manage action=create
--> 调用真实工具完成工作
+-> task_manage action=checkpoint
+-> 调用真实工具完成工作和验证
 -> task_manage action=final_review
--> task_manage action=complete_after_review
+-> task_manage action=complete
 ```
 
-## 存储位置与权限
-
-任务状态保存在当前 AgentDock 实例本地；Workflow 模板发现通过 NexusDock registry。
+任务状态保存在当前 AgentDock 实例：
 
 ```text
 ~/.agentdock/tasks
 ```
 
-Workflow 模板保存在：
-
-```text
-~/.agentdock/tasks/workflows
-```
-
-任务和模板目录按本地状态处理，目录权限应为 `0700`，状态文件应为 `0600`。执行中的 `tasks/` 不跨设备同步；可发布模板可以按版本化定义分发到目标设备，并在目标设备本地 validate/publish/match 后生效。
+目录权限为 `0700`，任务文件权限为 `0600`。执行中的任务不跨设备同步；Workflow 模板由 NexusDock registry 管理。
 
 ## task_manage
 
-当前 `task_manage` 只提供以下 action：
+当前 action：
 
 ```text
 create
 list
 get
+checkpoint
 block
 resume
 final_review
-complete_after_review
+complete
 ```
 
 ### create
 
-创建可恢复任务。必须提供：
+普通任务必须提供：
 
 - `title`
 - `goal`
 - `completion_conditions`，至少一条
 
-如果已经通过模板匹配选定模板，可以同时传：
+可选提供：
 
-- `template_id`
-- `template_version`
-- `selected_reason`
-- `template_candidates`
+- `steps`，最多 12 条，每条只包含 `id` 和 `title`
+- `template_id`，使用一个 active 模板
+- `source_template_ids`，记录由模型组合后的 2～3 个来源模板
 
-创建带模板任务时，模板的 `completion_conditions` 会先进入任务，调用方额外传入的完成条件作为补充。任务会保存模板 ID、版本、hash、选择理由、候选列表和模板快照，旧任务恢复时不受模板后续变化影响。
+普通任务示例：
+
+```json
+{
+  "action": "create",
+  "title": "修复 OAuth",
+  "goal": "修复并验证 OAuth 流程",
+  "completion_conditions": [
+    "测试通过",
+    "真实授权成功"
+  ],
+  "steps": [
+    {"id": "check", "title": "检查代码"},
+    {"id": "modify", "title": "修改实现"},
+    {"id": "test", "title": "运行测试"},
+    {"id": "verify", "title": "真实验证"}
+  ]
+}
+```
+
+单模板任务只传 `template_id`。服务端自动读取当前 active 版本，并记录模板 ID、版本和 hash；不再要求调用方传 `template_version`、选择理由或候选列表。
+
+```json
+{
+  "action": "create",
+  "title": "部署 AgentDock",
+  "goal": "完成 Mac mini 部署",
+  "template_id": "agentdock.deploy.macos"
+}
+```
+
+多模板任务必须同时显式提供：
+
+- `source_template_ids`
+- 模型组合后的 `steps`
+- 模型组合后的 `completion_conditions`
+
+服务端不会自动拼接多个模板。缺少组合结果时，创建请求会返回 `TEMPLATE_COMPOSITION_REQUIRED`。
+
+### checkpoint
+
+步骤开始或完成时更新进度：
+
+```json
+{
+  "action": "checkpoint",
+  "task_id": "tsk_xxx",
+  "step_id": "test",
+  "status": "in_progress",
+  "summary": "正在运行全部测试"
+}
+```
+
+步骤状态只有：
+
+```text
+pending
+in_progress
+completed
+```
+
+状态只能向前推进。一个任务同时最多有一个 `in_progress` 步骤。`checkpoint` 会更新步骤、当前阶段、最近进展摘要和事件记录。
+
+`list` 和生命周期 action 的摘要会返回：
+
+- `completed_step_count`
+- `step_count`
+- `current_step`
+- 每个步骤的 `status`
+- 最近 `summary`
+- `blocker`
+
+不返回百分比，调用方可直接使用“已完成步骤数 / 总步骤数”。
 
 ### list / get
 
-`list` 按更新时间返回任务摘要，可用 `status=active|blocked|completed` 过滤。
+`list` 按更新时间返回紧凑摘要，可用：
 
-`get` 读取完整任务，适合会话恢复或需要查看模板快照、事件、条件和最终自检时使用。
+```text
+status=active|blocked|completed
+```
+
+`get` 返回完整任务，包括步骤、完成条件、来源模板、事件和最终审查。
 
 ### block / resume
 
-遇到无法自动绕过的真实阻塞时使用 `block`，必须提供：
+遇到无法自动绕过的真实阻塞时：
 
-- `task_id`
-- `blocker`
-- `evidence`
+```json
+{
+  "action": "block",
+  "task_id": "tsk_xxx",
+  "summary": "SSH 连续三次连接超时"
+}
+```
 
-阻塞解除后使用 `resume`，必须提供 `summary`。不要把普通失败、临时测试不通过或可继续排查的问题直接标记为 blocked。
+阻塞解除后：
 
-### final_review / complete_after_review
+```json
+{
+  "action": "resume",
+  "task_id": "tsk_xxx",
+  "summary": "网络恢复，继续部署"
+}
+```
 
-真实工作完成后，先调用 `final_review`。
+普通失败、临时测试不通过或仍可继续排查的问题，不应直接标记为 blocked。
 
-`final_review` 必须提供：
+### final_review / complete
 
-- `task_id`
-- `review_status=pass|failed`
-- `summary`
-- `verified_facts`
-- `open_risks`
-- `missing_checks`
+真实工作完成后先调用：
 
-当 `review_status=pass` 时：
+```json
+{
+  "action": "final_review",
+  "task_id": "tsk_xxx",
+  "status": "pass",
+  "summary": "修改、测试和真实验证均已完成",
+  "verified": [
+    "go test ./... 通过",
+    "OAuth 授权真实成功"
+  ],
+  "risks": []
+}
+```
 
-- `verified_facts` 至少一条。
-- `missing_checks` 必须为空。
-- 模板步骤只作为恢复锚点和流程线索，未完成步骤会在最终自检通过时标记为已审阅完成。
-- 任务进入 `closeout` 阶段。
+规则：
 
-只有最终自检通过后，才能调用 `complete_after_review`。该动作会把任务标记为 `completed`，完成后的任务不可再修改。
+- `status` 只能是 `pass` 或 `failed`。
+- `pass` 必须至少有一条 `verified`。
+- 所有任务步骤必须已经通过 `checkpoint` 标记为 `completed`，`final_review` 不会自动补全步骤。
+- `failed` 必须至少有一条 `risks`。
+
+最终审查通过后：
+
+```json
+{
+  "action": "complete",
+  "task_id": "tsk_xxx"
+}
+```
+
+`complete` 不再重复接收摘要，直接使用 `final_review.summary`。完成后的任务不可再修改。
 
 ## workflow_template_manage
 
-当前 `workflow_template_manage` 提供以下 action：
+当前 action：
 
 ```text
 save
@@ -115,41 +208,66 @@ publish
 retire
 list
 get
+get_many
 match
+vector_index
 ```
 
-### 模板生命周期
+### match
 
-模板生命周期只有：
+模板匹配参数：
+
+- `goal`：主信号
+- `device`：可选设备提示
+- `type`：可选工作流类型提示
+
+`match` 返回候选、分数和匹配理由。模型根据用户目标判断使用单模板、组合模板，还是创建普通任务。
+
+### get_many
+
+当多个模板同时适合当前任务时，读取 2～3 个 active 模板：
+
+```json
+{
+  "action": "get_many",
+  "template_ids": [
+    "development.grillme-implement-commit",
+    "agentdock.deploy.macos"
+  ]
+}
+```
+
+返回内容包括每个模板的完整步骤和完成条件，并明确返回：
 
 ```text
-draft -> active -> retired
+composition_required=true
+next_required_action=...
 ```
 
-`validate` 是只读校验，不产生中间状态。`publish` 会读取 draft、执行校验、自动退役同一 template id 的旧 active 版本、写入 published 版本，并删除对应 draft。已发布的同一 `id + version` 不可覆盖；修改模板语义、步骤、完成条件或匹配规则时必须 bump version。
+模型必须结合当前用户目标：
 
-同一 template id 在运行态最多只有一个 active 版本。`match` 只对 active 模板匹配，并按同一 template id 的最新版本收敛候选。
+1. 删除不相关步骤。
+2. 合并重复步骤和完成条件。
+3. 调整最终执行顺序。
+4. 生成最终 `steps` 和 `completion_conditions`。
+5. 使用 `source_template_ids` 调用 `task_manage create`。
 
-### 模板结构
+不得把多个模板原样直接拼接，服务端也不会替模型自动合并。
 
-模板是流程指导，不是执行 DSL。当前核心结构：
+## 模板结构
+
+模板仍然是流程指导，不是执行 DSL：
 
 ```json
 {
   "id": "agentdock.deploy.macos",
   "version": "1.1.0",
   "title": "macOS AgentDock 部署",
-  "description": "构建、安装并验证 Mac mini 上的 AgentDock。",
   "status": "draft",
-  "match": {
-    "keywords": ["AgentDock", "部署", "macOS"],
-    "devices": ["DockMini"],
-    "type": "deployment"
-  },
   "completion_conditions": [
     "测试通过",
     "安装成功",
-    "生产 healthz 或 server_info 验证通过"
+    "生产服务验证通过"
   ],
   "steps": [
     {"id": "check", "title": "检查现状", "phase": "check"},
@@ -160,15 +278,7 @@ draft -> active -> retired
 }
 ```
 
-模板步骤只保留：
-
-```text
-id
-title
-phase
-```
-
-`phase` 只能是：
+模板步骤只保留 `id`、`title` 和 `phase`。`phase` 只能是：
 
 ```text
 check
@@ -177,36 +287,10 @@ verify
 closeout
 ```
 
-不要在模板里写旧 DSL 字段，例如必做标记、依赖、推荐命令、替代策略或逐步骤证据规则。当前模板步骤用于流程锚点、恢复提示和最终自检辅助，不是强制执行引擎。
-
-### match
-
-模板匹配使用：
-
-```text
-workflow_template_manage action=match
-```
-
-主要参数：
-
-- `goal`：主信号。
-- `device`：可选设备提示。
-- `type`：可选工作流类型提示，对应模板中的 `match.type`。
-
-`device` 和 `type` 都是匹配提示，不是硬约束；命中时加分，不匹配时不能直接排除 active 模板。项目名类关键词只作为上下文加分，不应单独构成强语义命中。
-
-`match` 返回候选、分数、匹配理由、推荐结论和向量索引状态。模型应根据候选和任务实际情况决定是否带模板创建任务；不要机械地把最高分候选用于所有任务。
-
-## 向量检索状态
-
-Workflow 模板的语义匹配由 Nexus 侧提供；AgentDock Runtime 不再读取本地任务向量检索或 embedding provider 环境变量。
-
-`match` 输出里的 `vector_search_enabled`、`vector_index_status`、`vector_index_items`、`embedding_model` 表示当前 Nexus 实例是否启用向量匹配、索引状态、模板向量数量和模型名。provider 未配置、超时或异常时，匹配会降级为关键词/结构化匹配。
-
 ## 使用原则
 
-- 多步骤开发、部署、排障、数据迁移、Docker、VPS 或 Git 提交推送任务，先做 `workflow_template_manage action=match`，再按需要 `task_manage action=create`。
-- 任务工具不替代真实验证。测试、构建、部署、截图、healthz、server_info、Git 状态等仍要用对应真实工具完成。
-- 不要在每条命令后写任务状态；任务状态只记录可恢复边界、真实阻塞和最终自检。
-- 没有完成真实验证时，不要调用 `complete_after_review`。
-- 当前会话的 Connector 工具 schema 可能不会热刷新；判断生产真实工具列表时，以服务端 `server_info` / `tools/list` 为准。
+- 多步骤任务先 `match`，多个模板合适时再 `get_many`。
+- 任务执行过程中只在步骤开始、完成、真实阻塞和最终审查时更新状态，不要在每条命令后写 checkpoint。
+- 任务工具不替代测试、构建、部署、截图、healthz、server_info 或 Git 状态验证。
+- 未完成真实验证时，不要调用 `complete`。
+- Connector 的工具 schema 可能不会热刷新；生产真实契约以服务端 `server_info` / `tools/list` 为准。

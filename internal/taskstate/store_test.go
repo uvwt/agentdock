@@ -4,20 +4,30 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
-func TestTaskLifecyclePersistsAndRequiresFinalReview(t *testing.T) {
+func TestTaskLifecyclePersistsLiveProgress(t *testing.T) {
 	root := t.TempDir()
 	store, err := New(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := store.Create("Deploy AgentDock", "deploy and verify", []string{"health is 200", "tool call succeeds"})
+	task, err := store.Create(
+		"Deploy AgentDock",
+		"deploy and verify",
+		[]string{"health is 200", "tool call succeeds"},
+		[]TaskStepInput{
+			{ID: "check", Title: "Check current state", Phase: PhaseCheck},
+			{ID: "verify", Title: "Verify service", Phase: PhaseVerify},
+		},
+		nil,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if task.Phase != PhaseCheck || task.Status != StatusActive {
+	if task.Phase != PhaseCheck || task.Status != StatusActive || task.Steps[0].Status != StepPending {
 		t.Fatalf("unexpected initial state: %#v", task)
 	}
 	info, err := os.Stat(filepath.Join(root, task.ID+".json"))
@@ -27,55 +37,23 @@ func TestTaskLifecyclePersistsAndRequiresFinalReview(t *testing.T) {
 	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("task file mode = %o", info.Mode().Perm())
 	}
-	if _, err := store.CompleteAfterReview(task.ID, ""); err == nil {
-		t.Fatal("complete_after_review succeeded before final_review")
-	}
-	task, err = store.FinalReview(task.ID, FinalReviewInput{Status: FinalReviewPass, Summary: "all checks passed", VerifiedFacts: []string{"health endpoint returned 200"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	task, err = store.CompleteAfterReview(task.ID, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if task.Status != StatusCompleted || task.CompletedAt == nil {
-		t.Fatalf("unexpected completed state: %#v", task)
-	}
-	reopened, err := New(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	loaded, err := reopened.Get(task.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.Summary != "all checks passed" {
-		t.Fatalf("summary = %q", loaded.Summary)
-	}
-}
-
-func TestFinalReviewRequiredBeforeCompleteAfterReview(t *testing.T) {
-	store, err := New(t.TempDir() + "/tasks")
-	if err != nil {
-		t.Fatal(err)
-	}
-	task, err := store.CreateFromTemplate("Deploy", "deploy AgentDock", nil, testTemplate(), "test", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.CompleteAfterReview(task.ID, ""); err == nil {
-		t.Fatal("complete_after_review succeeded before final_review")
-	}
-	if _, err := store.FinalReview(task.ID, FinalReviewInput{Status: FinalReviewPass, Summary: "checked", MissingChecks: []string{"go test"}, VerifiedFacts: []string{"build ok"}}); err == nil {
-		t.Fatal("passing final review accepted missing checks")
-	}
-	if _, err := store.FinalReview(task.ID, FinalReviewInput{Status: FinalReviewPass, Summary: "checked"}); err == nil {
-		t.Fatal("passing final review accepted no verified facts")
-	}
-	if _, err := store.FinalReview(task.ID, FinalReviewInput{Status: FinalReviewFailed, Summary: "checked"}); err == nil {
-		t.Fatal("failed final review accepted no risks or missing checks")
+	if _, err := store.Complete(task.ID); err == nil {
+		t.Fatal("complete succeeded before final_review")
 	}
 
+	task, err = store.Checkpoint(task.ID, "check", StepInProgress, "checking current state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Steps[0].Status != StepInProgress || task.Summary != "checking current state" {
+		t.Fatalf("checkpoint did not persist progress: %#v", task)
+	}
+	if _, err := store.Checkpoint(task.ID, "check", StepCompleted, "current state checked"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Checkpoint(task.ID, "verify", StepCompleted, "service verified"); err != nil {
+		t.Fatal(err)
+	}
 	task, err = store.FinalReview(task.ID, FinalReviewInput{
 		Status:        FinalReviewPass,
 		Summary:       "all checks passed",
@@ -84,44 +62,106 @@ func TestFinalReviewRequiredBeforeCompleteAfterReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if task.Phase != PhaseCloseout || task.FinalReview == nil || task.FinalReview.Status != FinalReviewPass {
-		t.Fatalf("unexpected reviewed state: %#v", task)
-	}
-	for _, step := range task.Steps {
-		if step.Status != "completed" {
-			t.Fatalf("pending step was not covered by final_review: %#v", step)
-		}
-	}
-
-	task, err = store.CompleteAfterReview(task.ID, "")
+	task, err = store.Complete(task.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if task.Status != StatusCompleted || task.Summary != "all checks passed" {
+	if task.Status != StatusCompleted || task.CompletedAt == nil || task.Summary != "all checks passed" {
 		t.Fatalf("unexpected completed state: %#v", task)
+	}
+
+	reopened, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := reopened.Get(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Status != StatusCompleted || loaded.Steps[1].Status != StepCompleted {
+		t.Fatalf("task did not survive restart: %#v", loaded)
 	}
 }
 
-func TestBlockAndResume(t *testing.T) {
+func TestFinalReviewRequiresCompletedStepsAndVerifiedFacts(t *testing.T) {
+	store, err := New(filepath.Join(t.TempDir(), "tasks"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := store.Create(
+		"Repair",
+		"repair service",
+		[]string{"service responds"},
+		[]TaskStepInput{{ID: "repair", Title: "Repair service"}},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.FinalReview(task.ID, FinalReviewInput{Status: FinalReviewPass, Summary: "checked", VerifiedFacts: []string{"unit test passed"}})
+	if err == nil || !strings.Contains(err.Error(), "all task steps completed") {
+		t.Fatalf("expected incomplete-step error, got %v", err)
+	}
+	if _, err := store.FinalReview(task.ID, FinalReviewInput{Status: FinalReviewFailed, Summary: "not ready"}); err == nil {
+		t.Fatal("failed final review accepted no risks")
+	}
+	if _, err := store.Checkpoint(task.ID, "repair", StepCompleted, "repair complete"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.FinalReview(task.ID, FinalReviewInput{Status: FinalReviewPass, Summary: "checked"}); err == nil {
+		t.Fatal("passing final review accepted no verified facts")
+	}
+}
+
+func TestCheckpointAllowsOnlyForwardProgress(t *testing.T) {
 	store, err := New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := store.Create("Repair", "repair service", []string{"service works"})
+	task, err := store.Create(
+		"Implement",
+		"implement change",
+		[]string{"tests pass"},
+		[]TaskStepInput{{ID: "code", Title: "Write code"}, {ID: "test", Title: "Run tests"}},
+		nil,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err = store.Block(task.ID, "missing prerequisite", "authorization failed")
+	if _, err := store.Checkpoint(task.ID, "code", StepInProgress, "coding"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Checkpoint(task.ID, "test", StepInProgress, "testing"); err == nil {
+		t.Fatal("accepted a second in-progress step")
+	}
+	if _, err := store.Checkpoint(task.ID, "code", StepCompleted, "code complete"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Checkpoint(task.ID, "code", StepPending, "regress"); err == nil {
+		t.Fatal("accepted backward step transition")
+	}
+	if _, err := store.Checkpoint(task.ID, "missing", StepCompleted, "missing"); err == nil {
+		t.Fatal("accepted unknown step")
+	}
+}
+
+func TestBlockAndResumeUsesOneSummary(t *testing.T) {
+	store, err := New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if task.Status != StatusBlocked {
-		t.Fatalf("status = %s", task.Status)
+	task, err := store.Create("Repair", "repair service", []string{"service works"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := store.FinalReview(task.ID, FinalReviewInput{Status: FinalReviewPass, Summary: "checked", VerifiedFacts: []string{"blocked task cannot finish"}}); err == nil {
-		t.Fatal("blocked task accepted final_review")
+	task, err = store.Block(task.ID, "SSH connection timed out three times")
+	if err != nil {
+		t.Fatal(err)
 	}
-	task, err = store.Resume(task.ID, "prerequisite restored")
+	if task.Status != StatusBlocked || task.Blocker == "" {
+		t.Fatalf("unexpected blocked state: %#v", task)
+	}
+	task, err = store.Resume(task.ID, "network restored")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,66 +170,47 @@ func TestBlockAndResume(t *testing.T) {
 	}
 }
 
-func TestCreateFromTemplateCopiesSelectionCandidates(t *testing.T) {
-	store, err := New(filepath.Join(t.TempDir(), "tasks"))
+func TestCreateStoresComposedTemplateSources(t *testing.T) {
+	store, err := New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidates := []TemplateCandidate{{ID: "agentdock.deploy", Version: "1.0.0", Score: 90}}
-	task, err := store.CreateFromTemplate("Deploy", "deploy AgentDock", nil, testTemplate(), "best match", candidates)
+	refs := []TemplateReference{
+		{ID: "development", Version: "1.2.0", Hash: "sha256:development"},
+		{ID: "deployment", Version: "1.1.0", Hash: "sha256:deployment"},
+	}
+	task, err := store.Create(
+		"Develop and deploy",
+		"implement, test, and deploy",
+		[]string{"tests pass", "tests pass", "production is healthy"},
+		[]TaskStepInput{{ID: "implement", Title: "Implement"}, {ID: "deploy", Title: "Deploy", Phase: PhaseVerify}},
+		refs,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidates[0].ID = "mutated"
-	if task.Template == nil || len(task.Template.Candidates) != 1 || task.Template.Candidates[0].ID != "agentdock.deploy" {
-		t.Fatalf("task selection aliases caller candidates: %#v", task.Template)
+	refs[0].ID = "mutated"
+	if len(task.SourceTemplates) != 2 || task.SourceTemplates[0].ID != "development" {
+		t.Fatalf("source templates were not copied: %#v", task.SourceTemplates)
+	}
+	if len(task.Conditions) != 2 || task.Steps[0].Phase != PhaseExecute || task.Steps[1].Phase != PhaseVerify {
+		t.Fatalf("task input was not normalized: %#v", task)
 	}
 }
 
-func TestCreateWithTemplateSkipsSimilarCompletionConditions(t *testing.T) {
-	store, err := New(t.TempDir() + "/tasks")
+func TestCreateRejectsInvalidSteps(t *testing.T) {
+	store, err := New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	template := testTemplate()
-	template.ID = "development.project-timeboxed-optimization"
-	template.Version = "1.0.0"
-	template.CompletionConditions = []string{
-		"已读取相关记忆、项目约束、用户开发风格、真实仓库状态和可用验证方式",
-		"每轮结束都检查 elapsed_minutes；未到目标时长不能仅因产物完成、验证通过、提交推送或部署通过停止",
-	}
-	task, err := store.CreateFromTemplate("AgentDock 一小时完善", "完善 AgentDock", []string{
-		"已读取 AgentDock 相关记忆、项目约束、用户偏好、真实仓库状态和可用验证方式",
-		"每轮结束都检查 elapsed_minutes；未到 60 分钟不能仅因产物完成、验证通过、提交推送或部署通过停止",
-		"已确认最终提交已经推送到 origin/main",
-	}, template, "test", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(task.Conditions) != 3 {
-		t.Fatalf("expected two template conditions plus one unique condition, got %d: %#v", len(task.Conditions), task.Conditions)
-	}
-	if task.Conditions[2].Text != "已确认最终提交已经推送到 origin/main" {
-		t.Fatalf("unique condition was not retained: %#v", task.Conditions)
-	}
-}
-
-func testTemplate() Template {
-	return Template{
-		ID:      "agentdock.deploy",
-		Version: "1.0.0",
-		Title:   "Deploy AgentDock",
-		Status:  TemplateActive,
-		Hash:    "sha256:test",
-		Match: MatchRule{
-			Keywords: []string{"deploy", "AgentDock"},
-			Devices:  []string{"DockMini"},
-			Type:     "deployment",
-		},
-		CompletionConditions: []string{"deployment succeeds", "health check passes"},
-		Steps: []TemplateStep{
-			{ID: "check", Title: "Check", Phase: PhaseCheck},
-			{ID: "deploy", Title: "Deploy", Phase: PhaseExecute},
-		},
+	_, err = store.Create(
+		"Invalid",
+		"reject duplicate steps",
+		[]string{"rejected"},
+		[]TaskStepInput{{ID: "same", Title: "One"}, {ID: "same", Title: "Two"}},
+		nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "duplicate task step") {
+		t.Fatalf("expected duplicate-step error, got %v", err)
 	}
 }

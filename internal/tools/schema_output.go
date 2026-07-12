@@ -77,10 +77,10 @@ func OutputSchema(name string) map[string]any {
 		props["diagnostic"] = objectProp("Structured diagnostic for common failures.")
 	case "task_manage":
 		props["action"] = stringProp("Completed task action.")
-		props["task_id"] = stringProp("Persistent task id returned by create and usable with get, final_review, or complete_after_review.")
+		props["task_id"] = stringProp("Persistent task id returned by create and usable with task lifecycle actions.")
 		props["task"] = objectProp("Full persistent task state returned only by get.")
 		props["task_summary"] = objectProp("Compact task summary returned by task lifecycle actions.")
-		props["next_required_action"] = stringProp("Concise guidance for the next real non-task action or final review.")
+		props["next_required_action"] = stringProp("Concise guidance for checkpoint progress, template composition, or final review.")
 		props["review_status"] = stringProp("Final review status when present: not_started, pass, or failed.")
 		props["final_review"] = objectProp("Compact final review state with status and counts.")
 		props["tasks"] = arrayProp("Compact task summaries ordered by most recent update.")
@@ -89,7 +89,9 @@ func OutputSchema(name string) map[string]any {
 	case "workflow_template_manage":
 		props["action"] = stringProp("Completed workflow template action.")
 		props["template"] = objectProp("Full workflow template returned by get.")
-		props["templates"] = arrayProp("Compact workflow template summaries returned by list.")
+		props["templates"] = arrayProp("Compact summaries from list or full active templates from get_many.")
+		props["composition_required"] = boolProp("Whether the returned templates must be combined by the model before task creation.")
+		props["next_required_action"] = stringProp("Required model action after get_many.")
 		props["template_id"] = stringProp("Workflow template id returned by save, validate, publish, or retire.")
 		props["template_summary"] = objectProp("Compact workflow template summary returned by save, validate, publish, retire, and list items.")
 		props["valid"] = boolProp("Whether a draft workflow template passed validation.")

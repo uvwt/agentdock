@@ -14,34 +14,31 @@ import (
 	"github.com/uvwt/agentdock/internal/taskstate"
 )
 
-var taskActions = []string{"create", "list", "get", "block", "resume", "final_review", "complete_after_review"}
+var taskActions = []string{"create", "list", "get", "checkpoint", "block", "resume", "final_review", "complete"}
 
-var workflowTemplateActions = []string{"save", "validate", "publish", "retire", "list", "get", "match", "vector_index"}
+var workflowTemplateActions = []string{"save", "validate", "publish", "retire", "list", "get", "get_many", "match", "vector_index"}
 
 type taskManageInput struct {
 	Action               string
 	Title                string
 	Goal                 string
 	CompletionConditions []string
+	Steps                []taskstate.TaskStepInput
 	TemplateID           string
-	TemplateVersion      string
-	SelectedReason       string
-	TemplateCandidates   []taskstate.TemplateCandidate
-	Status               taskstate.Status
+	SourceTemplateIDs    []string
+	Status               string
 	Limit                int
 	TaskID               string
-	Blocker              string
-	Evidence             string
+	StepID               string
 	Summary              string
-	ReviewStatus         string
-	VerifiedFacts        []string
-	OpenRisks            []string
-	MissingChecks        []string
+	Verified             []string
+	Risks                []string
 }
 
 type workflowTemplateInput struct {
 	Action               string
 	TemplateID           string
+	TemplateIDs          []string
 	TemplateVersion      string
 	TemplateStatus       string
 	Goal                 string
@@ -70,27 +67,18 @@ func parseTaskManageInput(args map[string]any) (taskManageInput, error) {
 		Goal:                 stringArg(args, "goal", ""),
 		CompletionConditions: stringSliceArg(args, "completion_conditions"),
 		TemplateID:           strings.TrimSpace(stringArg(args, "template_id", "")),
-		TemplateVersion:      strings.TrimSpace(stringArg(args, "template_version", "")),
-		SelectedReason:       stringArg(args, "selected_reason", ""),
-		Status:               taskstate.Status(strings.ToLower(strings.TrimSpace(stringArg(args, "status", "")))),
+		SourceTemplateIDs:    stringSliceArg(args, "source_template_ids"),
+		Status:               strings.ToLower(strings.TrimSpace(stringArg(args, "status", ""))),
 		Limit:                intArg(args, "limit", 50),
 		TaskID:               stringArg(args, "task_id", ""),
-		Blocker:              stringArg(args, "blocker", ""),
-		Evidence:             stringArg(args, "evidence", ""),
+		StepID:               stringArg(args, "step_id", ""),
 		Summary:              stringArg(args, "summary", ""),
-		ReviewStatus:         stringArg(args, "review_status", stringArg(args, "status", "pass")),
-		VerifiedFacts:        stringSliceArg(args, "verified_facts"),
-		OpenRisks:            stringSliceArg(args, "open_risks"),
-		MissingChecks:        stringSliceArg(args, "missing_checks"),
+		Verified:             stringSliceArg(args, "verified"),
+		Risks:                stringSliceArg(args, "risks"),
 	}
-	if raw := args["template_candidates"]; raw != nil {
-		if err := remarshal(raw, &input.TemplateCandidates); err != nil {
-			return input, toolErrorDetails(
-				"VALIDATION_ERROR",
-				"template_candidates must be an array of valid template candidates",
-				"validation",
-				map[string]any{"field": "template_candidates", "reason": err.Error()},
-			)
+	if raw := args["steps"]; raw != nil {
+		if err := remarshal(raw, &input.Steps); err != nil {
+			return input, toolErrorDetails("VALIDATION_ERROR", "steps must be an array of task steps", "validation", map[string]any{"field": "steps", "reason": err.Error()})
 		}
 	}
 	return input, nil
@@ -100,6 +88,7 @@ func parseWorkflowTemplateInput(args map[string]any) (workflowTemplateInput, err
 	input := workflowTemplateInput{
 		Action:             strings.ToLower(strings.TrimSpace(stringArg(args, "action", ""))),
 		TemplateID:         strings.TrimSpace(stringArg(args, "template_id", "")),
+		TemplateIDs:        stringSliceArg(args, "template_ids"),
 		TemplateVersion:    strings.TrimSpace(stringArg(args, "template_version", "")),
 		TemplateStatus:     strings.TrimSpace(stringArg(args, "template_status", "")),
 		Goal:               stringArg(args, "goal", ""),
@@ -146,39 +135,56 @@ func (r *Runtime) taskManage(ctx context.Context, args map[string]any) (Result, 
 	var task taskstate.Task
 	switch input.Action {
 	case "create":
+		steps := append([]taskstate.TaskStepInput(nil), input.Steps...)
+		conditions := append([]string(nil), input.CompletionConditions...)
+		var sourceTemplates []taskstate.TemplateReference
+		if input.TemplateID != "" && len(input.SourceTemplateIDs) > 0 {
+			return nil, taskToolError(fmt.Errorf("template_id and source_template_ids cannot be used together"))
+		}
 		if input.TemplateID != "" {
-			template, fetchErr := r.nexusWorkflowTemplate(ctx, input.TemplateID, input.TemplateVersion)
+			template, fetchErr := r.nexusActiveWorkflowTemplate(ctx, input.TemplateID)
 			if fetchErr != nil {
 				return nil, fetchErr
 			}
-			task, err = r.tasks.CreateFromTemplate(input.Title, input.Goal, input.CompletionConditions, template, input.SelectedReason, input.TemplateCandidates)
-		} else {
-			task, err = r.tasks.Create(input.Title, input.Goal, input.CompletionConditions)
+			if len(steps) == 0 {
+				steps = taskStepInputsFromTemplate(template)
+			}
+			conditions = append(append([]string{}, template.CompletionConditions...), conditions...)
+			sourceTemplates = []taskstate.TemplateReference{{ID: template.ID, Version: template.Version, Hash: template.Hash}}
 		}
+		if len(input.SourceTemplateIDs) > 0 {
+			if len(input.SourceTemplateIDs) < 2 || len(input.SourceTemplateIDs) > 3 {
+				return nil, taskToolError(fmt.Errorf("source_template_ids must contain 2 or 3 template ids"))
+			}
+			if len(steps) == 0 || len(conditions) == 0 {
+				return nil, toolErrorDetails("TEMPLATE_COMPOSITION_REQUIRED", "multiple source templates require composed steps and completion_conditions", "validation", map[string]any{"source_template_ids": input.SourceTemplateIDs})
+			}
+			templates, fetchErr := r.nexusActiveWorkflowTemplates(ctx, input.SourceTemplateIDs)
+			if fetchErr != nil {
+				return nil, fetchErr
+			}
+			sourceTemplates = templateReferences(templates)
+		}
+		task, err = r.tasks.Create(input.Title, input.Goal, conditions, steps, sourceTemplates)
 		if err != nil {
 			return nil, taskToolError(err)
 		}
 		return Result{
 			"ok": true, "action": input.Action, "task_id": task.ID, "task_summary": compactTaskSummary(task), "state_dir": r.tasks.Root(),
-			"next_required_action": "Do real work with non-task tools. Use block only for blockers. When work appears complete, call final_review once, then complete_after_review if it passes.",
+			"next_required_action": "Use checkpoint when a step starts or completes. Use block only for a real blocker. After all steps and real verification are complete, call final_review, then complete.",
 		}, nil
 	case "list":
-		if input.Status != "" && input.Status != taskstate.StatusActive && input.Status != taskstate.StatusBlocked && input.Status != taskstate.StatusCompleted {
-			return nil, toolErrorDetails("INVALID_STATUS", "unsupported task status filter", "validation", map[string]any{
-				"status": input.Status, "allowed": []string{"active", "blocked", "completed"},
-			})
+		status := taskstate.Status(input.Status)
+		if status != "" && status != taskstate.StatusActive && status != taskstate.StatusBlocked && status != taskstate.StatusCompleted {
+			return nil, toolErrorDetails("INVALID_STATUS", "unsupported task status filter", "validation", map[string]any{"status": status, "allowed": []string{"active", "blocked", "completed"}})
 		}
-		tasks, listErr := r.tasks.List(input.Status, input.Limit)
+		tasks, listErr := r.tasks.List(status, input.Limit)
 		if listErr != nil {
 			return nil, taskToolError(listErr)
 		}
 		items := make([]map[string]any, 0, len(tasks))
 		for _, item := range tasks {
-			items = append(items, map[string]any{
-				"id": item.ID, "title": item.Title, "goal": item.Goal,
-				"status": item.Status, "phase": item.Phase, "blocker": item.Blocker,
-				"condition_count": len(item.Conditions), "review_status": reviewStatus(item),
-			})
+			items = append(items, compactTaskListItem(item))
 		}
 		return Result{"ok": true, "action": input.Action, "tasks": items, "count": len(items), "state_dir": r.tasks.Root()}, nil
 	case "get":
@@ -187,25 +193,19 @@ func (r *Runtime) taskManage(ctx context.Context, args map[string]any) (Result, 
 			return nil, taskToolError(err)
 		}
 		return Result{"ok": true, "action": input.Action, "task": task, "state_dir": r.tasks.Root()}, nil
+	case "checkpoint":
+		task, err = r.tasks.Checkpoint(input.TaskID, input.StepID, input.Status, input.Summary)
 	case "block":
-		task, err = r.tasks.Block(input.TaskID, input.Blocker, input.Evidence)
+		task, err = r.tasks.Block(input.TaskID, input.Summary)
 	case "resume":
 		task, err = r.tasks.Resume(input.TaskID, input.Summary)
 	case "final_review":
-		review := taskstate.FinalReviewInput{
-			Status:        input.ReviewStatus,
-			Summary:       input.Summary,
-			VerifiedFacts: input.VerifiedFacts,
-			OpenRisks:     input.OpenRisks,
-			MissingChecks: input.MissingChecks,
-		}
+		review := taskstate.FinalReviewInput{Status: input.Status, Summary: input.Summary, VerifiedFacts: input.Verified, OpenRisks: input.Risks}
 		task, err = r.tasks.FinalReview(input.TaskID, review)
-	case "complete_after_review":
-		task, err = r.tasks.CompleteAfterReview(input.TaskID, input.Summary)
+	case "complete":
+		task, err = r.tasks.Complete(input.TaskID)
 	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported task_manage action", "validation", map[string]any{
-			"action": input.Action, "allowed": taskActions,
-		})
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported task_manage action", "validation", map[string]any{"action": input.Action, "allowed": taskActions})
 	}
 	if err != nil {
 		return nil, taskToolError(err)
@@ -234,6 +234,15 @@ func (r *Runtime) workflowTemplateManage(ctx context.Context, args map[string]an
 			result["template"] = template
 		}
 		return result, nil
+	case "get_many":
+		templates, err := r.nexusActiveWorkflowTemplates(ctx, input.TemplateIDs)
+		if err != nil {
+			return nil, err
+		}
+		return Result{
+			"ok": true, "action": input.Action, "templates": templates, "count": len(templates), "composition_required": true,
+			"next_required_action": "Combine these templates for the current user goal: prune irrelevant steps, deduplicate, order the remaining steps, and merge completion conditions. Then call task_manage create with source_template_ids, composed steps, and completion_conditions.",
+		}, nil
 	case "list":
 		path := "/v1/workflow-templates"
 		if input.TemplateStatus != "" {
@@ -279,10 +288,51 @@ func (r *Runtime) matchWorkflowTemplates(ctx context.Context, input workflowTemp
 	return r.nexusWorkflowJSON(ctx, "POST", "/v1/workflow-templates/match", request)
 }
 
-func (r *Runtime) nexusWorkflowTemplate(ctx context.Context, id, version string) (taskstate.Template, error) {
-	if strings.TrimSpace(version) == "" {
-		return taskstate.Template{}, taskToolError(fmt.Errorf("template_version is required when template_id is set"))
+func (r *Runtime) nexusActiveWorkflowTemplates(ctx context.Context, ids []string) ([]taskstate.Template, error) {
+	ids = normalizeTemplateIDs(ids)
+	if len(ids) < 2 || len(ids) > 3 {
+		return nil, taskToolError(fmt.Errorf("template_ids must contain 2 or 3 distinct ids"))
 	}
+	templates := make([]taskstate.Template, 0, len(ids))
+	for _, id := range ids {
+		template, err := r.nexusActiveWorkflowTemplate(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		templates = append(templates, template)
+	}
+	return templates, nil
+}
+
+func (r *Runtime) nexusActiveWorkflowTemplate(ctx context.Context, id string) (taskstate.Template, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return taskstate.Template{}, taskToolError(fmt.Errorf("template_id is required"))
+	}
+	result, err := r.nexusWorkflowJSON(ctx, "GET", "/v1/workflow-templates?status=active", nil)
+	if err != nil {
+		return taskstate.Template{}, err
+	}
+	raw := result["templates"]
+	if raw == nil {
+		raw = result["items"]
+	}
+	var summaries []struct {
+		ID      string `json:"id"`
+		Version string `json:"version"`
+	}
+	if err := remarshal(raw, &summaries); err != nil {
+		return taskstate.Template{}, taskToolError(fmt.Errorf("decode active workflow templates: %w", err))
+	}
+	for _, summary := range summaries {
+		if summary.ID == id {
+			return r.nexusWorkflowTemplate(ctx, summary.ID, summary.Version)
+		}
+	}
+	return taskstate.Template{}, taskToolError(fmt.Errorf("active workflow template %s not found", id))
+}
+
+func (r *Runtime) nexusWorkflowTemplate(ctx context.Context, id, version string) (taskstate.Template, error) {
 	result, err := r.nexusWorkflowJSON(ctx, "GET", fmt.Sprintf("/v1/workflow-templates/%s/%s", url.PathEscape(id), url.PathEscape(version)), nil)
 	if err != nil {
 		return taskstate.Template{}, err
@@ -291,7 +341,43 @@ func (r *Runtime) nexusWorkflowTemplate(ctx context.Context, id, version string)
 	if err := remarshal(result["template"], &template); err != nil {
 		return taskstate.Template{}, taskToolError(fmt.Errorf("decode NexusDock workflow template: %w", err))
 	}
+	if template.Status != taskstate.TemplateActive {
+		return taskstate.Template{}, taskToolError(fmt.Errorf("workflow template %s is not active", id))
+	}
 	return template, nil
+}
+
+func normalizeTemplateIDs(ids []string) []string {
+	seen := make(map[string]struct{}, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func taskStepInputsFromTemplate(template taskstate.Template) []taskstate.TaskStepInput {
+	steps := make([]taskstate.TaskStepInput, 0, len(template.Steps))
+	for _, step := range template.Steps {
+		steps = append(steps, taskstate.TaskStepInput{ID: step.ID, Title: step.Title, Phase: step.Phase})
+	}
+	return steps
+}
+
+func templateReferences(templates []taskstate.Template) []taskstate.TemplateReference {
+	refs := make([]taskstate.TemplateReference, 0, len(templates))
+	for _, template := range templates {
+		refs = append(refs, taskstate.TemplateReference{ID: template.ID, Version: template.Version, Hash: template.Hash})
+	}
+	return refs
 }
 
 func (r *Runtime) nexusWorkflowJSON(ctx context.Context, method, path string, payload any) (Result, error) {
@@ -381,45 +467,73 @@ func normalizeJSONToolValue(value any) any {
 
 func compactTaskSummary(task taskstate.Task) map[string]any {
 	completedSteps := 0
-	currentPhaseSteps := []map[string]any{}
+	steps := make([]map[string]any, 0, len(task.Steps))
+	var currentStep map[string]any
 	for _, step := range task.Steps {
-		if step.Status == "completed" || step.Status == "skipped" {
+		if step.Status == taskstate.StepCompleted {
 			completedSteps++
 		}
-		if step.Phase == task.Phase && step.Status == "pending" {
-			currentPhaseSteps = append(currentPhaseSteps, map[string]any{
-				"id":    step.ID,
-				"title": truncateString(step.Title, 120),
-			})
+		item := map[string]any{"id": step.ID, "title": truncateString(step.Title, 120), "status": step.Status}
+		steps = append(steps, item)
+		if currentStep == nil && step.Status == taskstate.StepInProgress {
+			currentStep = item
+		}
+	}
+	if currentStep == nil {
+		for _, item := range steps {
+			if item["status"] == taskstate.StepPending {
+				currentStep = item
+				break
+			}
 		}
 	}
 	conditionRefs := make([]map[string]any, 0, len(task.Conditions))
 	for _, condition := range task.Conditions {
-		conditionRefs = append(conditionRefs, map[string]any{
-			"id":   condition.ID,
-			"text": truncateString(condition.Text, 160),
-		})
+		conditionRefs = append(conditionRefs, map[string]any{"id": condition.ID, "text": truncateString(condition.Text, 160)})
 	}
 	summary := map[string]any{
 		"id": task.ID, "title": task.Title, "status": task.Status, "phase": task.Phase,
-		"completed_step_count": completedSteps, "step_count": len(task.Steps),
+		"completed_step_count": completedSteps, "step_count": len(task.Steps), "steps": steps,
 		"condition_count": len(task.Conditions), "condition_refs": conditionRefs, "review_status": reviewStatus(task),
-		"current_phase_steps": currentPhaseSteps, "updated_at": task.UpdatedAt,
+		"updated_at": task.UpdatedAt,
+	}
+	if currentStep != nil {
+		summary["current_step"] = currentStep
+	}
+	if task.Summary != "" {
+		summary["summary"] = truncateString(task.Summary, 240)
+	}
+	if len(task.SourceTemplates) > 0 {
+		summary["source_templates"] = task.SourceTemplates
+	}
+	if task.Blocker != "" {
+		summary["blocker"] = truncateString(task.Blocker, 240)
 	}
 	if task.FinalReview != nil {
 		summary["final_review"] = map[string]any{
-			"status":              task.FinalReview.Status,
-			"summary":             truncateString(task.FinalReview.Summary, 200),
-			"verified_fact_count": len(task.FinalReview.VerifiedFacts),
-			"open_risk_count":     len(task.FinalReview.OpenRisks),
-			"missing_check_count": len(task.FinalReview.MissingChecks),
-			"reviewed_at":         task.FinalReview.ReviewedAt,
+			"status": task.FinalReview.Status, "summary": truncateString(task.FinalReview.Summary, 200),
+			"verified_count": len(task.FinalReview.VerifiedFacts), "risk_count": len(task.FinalReview.OpenRisks), "reviewed_at": task.FinalReview.ReviewedAt,
 		}
 	}
 	if task.CompletedAt != nil {
 		summary["completed_at"] = *task.CompletedAt
 	}
 	return summary
+}
+
+func compactTaskListItem(task taskstate.Task) map[string]any {
+	summary := compactTaskSummary(task)
+	item := map[string]any{
+		"id": summary["id"], "title": summary["title"], "goal": task.Goal, "status": summary["status"], "phase": summary["phase"],
+		"completed_step_count": summary["completed_step_count"], "step_count": summary["step_count"],
+		"review_status": summary["review_status"], "updated_at": summary["updated_at"],
+	}
+	for _, key := range []string{"current_step", "summary", "blocker"} {
+		if value, ok := summary[key]; ok {
+			item[key] = value
+		}
+	}
+	return item
 }
 
 func reviewStatus(task taskstate.Task) string {
