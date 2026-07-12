@@ -152,7 +152,7 @@ func TestPersistentOAuthStoreRegistersShortClientAcrossReloads(t *testing.T) {
 		t.Fatal(err)
 	}
 	clientID, err := store.RegisterClient(
-		"ChatGPT",
+		"Test Client",
 		[]string{"https://client.example/callback"},
 		[]string{"authorization_code", "refresh_token"},
 	)
@@ -163,15 +163,15 @@ func TestPersistentOAuthStoreRegistersShortClientAcrossReloads(t *testing.T) {
 		t.Fatalf("client ID = %q, want short persisted ID", clientID)
 	}
 	registration, ok := store.ClientRegistration(clientID)
-	if !ok || registration.ClientName != "ChatGPT" {
+	if !ok || registration.ClientName != "Test Client" {
 		t.Fatalf("registration = %#v, ok=%v", registration, ok)
 	}
-	if !store.ValidateClientRedirect(clientID, "https://client.example/callback", "") ||
-		!store.ClientAllowsGrant(clientID, "refresh_token", "") {
+	if !store.ValidateClientRedirect(clientID, "https://client.example/callback") ||
+		!store.ClientAllowsGrant(clientID, "refresh_token") {
 		t.Fatal("new client registration was not bound to redirect URI and grant")
 	}
 	secondClientID, err := store.RegisterClient(
-		"ChatGPT",
+		"Test Client",
 		[]string{"https://client.example/callback"},
 		[]string{"authorization_code", "refresh_token"},
 	)
@@ -186,9 +186,9 @@ func TestPersistentOAuthStoreRegistersShortClientAcrossReloads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reloaded.ValidateClientID(clientID, "") ||
-		!reloaded.ValidateClientRedirect(clientID, "https://client.example/callback", "") ||
-		!reloaded.ClientAllowsGrant(clientID, "authorization_code", "") {
+	if !reloaded.ValidateClientID(clientID) ||
+		!reloaded.ValidateClientRedirect(clientID, "https://client.example/callback") ||
+		!reloaded.ClientAllowsGrant(clientID, "authorization_code") {
 		t.Fatal("persisted client registration was not valid after reload")
 	}
 	info, err := os.Stat(path)
@@ -212,7 +212,7 @@ func TestPersistentOAuthStoreMigratesVersionOneState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	clientID, err := store.RegisterClient("ChatGPT", []string{"https://client.example/callback"}, []string{"authorization_code"})
+	clientID, err := store.RegisterClient("Test Client", []string{"https://client.example/callback"}, []string{"authorization_code"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,76 +392,6 @@ func TestValidateTokenRejectsInvalidClaims(t *testing.T) {
 		if ValidateToken(token, issuer, audience, key) {
 			t.Fatalf("ValidateToken(%q) = true, want false", token)
 		}
-	}
-}
-
-func TestIssueAndValidateClientID(t *testing.T) {
-	const key = "client-registration-key"
-	const redirectURI = "https://client.example/callback"
-	clientID, err := IssueClientID(
-		[]string{redirectURI, redirectURI},
-		[]string{"authorization_code", "refresh_token", "refresh_token"},
-		key,
-	)
-	if err != nil {
-		t.Fatalf("IssueClientID() error = %v", err)
-	}
-	if !ValidateClientID(clientID, key) {
-		t.Fatal("ValidateClientID() rejected signed dynamic client")
-	}
-	secondClientID, err := IssueClientID(
-		[]string{redirectURI},
-		[]string{"authorization_code", "refresh_token"},
-		key,
-	)
-	if err != nil {
-		t.Fatalf("IssueClientID() second error = %v", err)
-	}
-	if secondClientID == clientID {
-		t.Fatal("IssueClientID() reused a client ID for a separate dynamic registration")
-	}
-
-	legacyRegistration := clientRegistration{
-		Version:      2,
-		RedirectURIs: []string{redirectURI},
-		GrantTypes:   []string{"authorization_code"},
-		IssuedAt:     time.Now().Unix(),
-	}
-	legacyBody, err := json.Marshal(legacyRegistration)
-	if err != nil {
-		t.Fatalf("marshal legacy client registration: %v", err)
-	}
-	legacyPayload := dynamicClientPrefix + base64.RawURLEncoding.EncodeToString(legacyBody)
-	legacyMAC := hmac.New(sha256.New, []byte(key))
-	_, _ = legacyMAC.Write([]byte(legacyPayload))
-	legacyClientID := legacyPayload + "." + base64.RawURLEncoding.EncodeToString(legacyMAC.Sum(nil))
-	if !ValidateClientRedirect(legacyClientID, redirectURI, key) {
-		t.Fatal("ValidateClientRedirect() rejected a legacy client ID without nonce")
-	}
-
-	if !ValidateClientRedirect(clientID, redirectURI, key) {
-		t.Fatal("ValidateClientRedirect() rejected registered redirect URI")
-	}
-	if !ClientAllowsGrant(clientID, "authorization_code", key) || !ClientAllowsGrant(clientID, "refresh_token", key) {
-		t.Fatal("ClientAllowsGrant() rejected registered grant")
-	}
-	if ClientAllowsGrant(clientID, "client_credentials", key) {
-		t.Fatal("ClientAllowsGrant() accepted unregistered grant")
-	}
-	if ValidateClientRedirect(clientID, "https://other.example/callback", key) {
-		t.Fatal("ValidateClientRedirect() accepted unregistered redirect URI")
-	}
-	if ValidateClientRedirect(clientID, redirectURI, "wrong-key") {
-		t.Fatal("ValidateClientRedirect() accepted wrong signing key")
-	}
-	// 最后一位可能本来就是 A，测试必须保证签名确实发生变化。
-	replacement := byte('A')
-	if clientID[len(clientID)-1] == replacement {
-		replacement = 'B'
-	}
-	tampered := clientID[:len(clientID)-1] + string(replacement)
-	if ValidateClientRedirect(tampered, redirectURI, key) {
-		t.Fatal("ValidateClientRedirect() accepted tampered client ID")
 	}
 }
 

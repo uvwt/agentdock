@@ -21,14 +21,13 @@ const (
 
 func TestOAuthDynamicRegistrationAuthorizationCodeAndRefreshFlow(t *testing.T) {
 	t.Setenv("AGENTDOCK_OAUTH_PASSWORD", "")
-	t.Setenv("AGENTDOCK_OAUTH_CLIENT_SECRET", "legacy-secret-is-ignored")
 	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-signing-secret")
 	cfg := oauthTestConfig(t)
 	store := auth.NewOAuthStore()
 	resource := cfg.OAuthServerURL + "/mcp"
 
 	registrationRequest := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{
-		"client_name":"ChatGPT",
+		"client_name":"Test Client",
 		"redirect_uris":["https://client.example/callback"],
 		"token_endpoint_auth_method":"none",
 		"grant_types":["authorization_code","refresh_token"],
@@ -50,13 +49,13 @@ func TestOAuthDynamicRegistrationAuthorizationCodeAndRefreshFlow(t *testing.T) {
 	if err := json.Unmarshal(registrationResponse.Body.Bytes(), &registration); err != nil {
 		t.Fatal(err)
 	}
-	if registration.ClientID == "" || len(registration.ClientID) > 64 || registration.ClientName != "ChatGPT" ||
+	if registration.ClientID == "" || len(registration.ClientID) > 64 || registration.ClientName != "Test Client" ||
 		registration.TokenEndpointAuthMethod != "none" || len(registration.RedirectURIs) != 1 ||
 		!containsString(registration.GrantTypes, "refresh_token") {
 		t.Fatalf("registration = %#v", registration)
 	}
-	if !store.ValidateClientRedirect(registration.ClientID, oauthTestRedirect, oauthSigningKey()) ||
-		!store.ClientAllowsGrant(registration.ClientID, "refresh_token", oauthSigningKey()) {
+	if !store.ValidateClientRedirect(registration.ClientID, oauthTestRedirect) ||
+		!store.ClientAllowsGrant(registration.ClientID, "refresh_token") {
 		t.Fatal("registered client ID is not bound to its redirect URI and grants")
 	}
 
@@ -121,7 +120,7 @@ func TestOAuthDynamicRegistrationAuthorizationCodeAndRefreshFlow(t *testing.T) {
 	replayResponse := postTokenRequest(t, cfg, store, tokenValues)
 	assertOAuthError(t, replayResponse, http.StatusBadRequest, "invalid_grant")
 
-	wrongClientID := oauthRegisteredClientID(t, "https://other.example/callback")
+	wrongClientID := oauthRegisteredClientID(t, store, "https://other.example/callback")
 	wrongClientRefresh := url.Values{
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {tokenPayload.RefreshToken},
@@ -187,7 +186,8 @@ func TestOAuthAuthorizePasswordGate(t *testing.T) {
 	t.Setenv("AGENTDOCK_OAUTH_PASSWORD", "login-secret")
 	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-signing-secret")
 	cfg := oauthTestConfig(t)
-	clientID := oauthRegisteredClientID(t, oauthTestRedirect)
+	store := auth.NewOAuthStore()
+	clientID := oauthRegisteredClientID(t, store, oauthTestRedirect)
 	values := url.Values{
 		"response_type":         {"code"},
 		"client_id":             {clientID},
@@ -199,7 +199,7 @@ func TestOAuthAuthorizePasswordGate(t *testing.T) {
 	}
 
 	getResponse := httptest.NewRecorder()
-	handleAuthorizeForTest(getResponse, httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+values.Encode(), nil), cfg, auth.NewOAuthStore())
+	handleAuthorizeForTest(getResponse, httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+values.Encode(), nil), cfg, store)
 	page := getResponse.Body.String()
 	if getResponse.Code != http.StatusOK ||
 		!strings.Contains(page, `type="password"`) ||
@@ -217,7 +217,7 @@ func TestOAuthAuthorizePasswordGate(t *testing.T) {
 	wrongValues := cloneValues(values)
 	wrongValues.Set("password", "wrong")
 	wrongResponse := httptest.NewRecorder()
-	handleAuthorizeForTest(wrongResponse, formAuthorizeRequest(wrongValues), cfg, auth.NewOAuthStore())
+	handleAuthorizeForTest(wrongResponse, formAuthorizeRequest(wrongValues), cfg, store)
 	if wrongResponse.Code != http.StatusOK ||
 		!strings.Contains(wrongResponse.Body.String(), "密码不正确，请重试。") ||
 		!strings.Contains(wrongResponse.Body.String(), `aria-invalid="true"`) {
@@ -227,7 +227,7 @@ func TestOAuthAuthorizePasswordGate(t *testing.T) {
 	validValues := cloneValues(values)
 	validValues.Set("password", "login-secret")
 	validResponse := httptest.NewRecorder()
-	handleAuthorizeForTest(validResponse, formAuthorizeRequest(validValues), cfg, auth.NewOAuthStore())
+	handleAuthorizeForTest(validResponse, formAuthorizeRequest(validValues), cfg, store)
 	if validResponse.Code != http.StatusFound {
 		t.Fatalf("valid password status=%d body=%s", validResponse.Code, validResponse.Body.String())
 	}
@@ -235,28 +235,28 @@ func TestOAuthAuthorizePasswordGate(t *testing.T) {
 
 func TestOAuthPublicClientAuthenticationContract(t *testing.T) {
 	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-signing-secret")
-	clientID := oauthRegisteredClientID(t, oauthTestRedirect)
 	store := auth.NewOAuthStore()
+	clientID := oauthRegisteredClientID(t, store, oauthTestRedirect)
 
 	valid := url.Values{"client_id": {clientID}, "redirect_uri": {oauthTestRedirect}}
-	if !validClientAuthentication(formRequest(valid), "authorization_code", oauthTestClients(store)) {
+	if !validClientAuthentication(formRequest(valid), "authorization_code", store) {
 		t.Fatal("registered public client was rejected")
 	}
-	if !validClientAuthentication(formRequest(url.Values{"client_id": {clientID}}), "refresh_token", oauthTestClients(store)) {
+	if !validClientAuthentication(formRequest(url.Values{"client_id": {clientID}}), "refresh_token", store) {
 		t.Fatal("registered refresh-token client was rejected")
 	}
 	withSecret := cloneValues(valid)
 	withSecret.Set("client_secret", "legacy-secret")
-	if validClientAuthentication(formRequest(withSecret), "authorization_code", oauthTestClients(store)) {
+	if validClientAuthentication(formRequest(withSecret), "authorization_code", store) {
 		t.Fatal("client_secret_post was accepted")
 	}
 	basic := formRequest(valid)
 	basic.SetBasicAuth(clientID, "secret")
-	if validClientAuthentication(basic, "authorization_code", oauthTestClients(store)) {
+	if validClientAuthentication(basic, "authorization_code", store) {
 		t.Fatal("client_secret_basic was accepted")
 	}
 	wrongRedirect := url.Values{"client_id": {clientID}, "redirect_uri": {"https://other.example/callback"}}
-	if validClientAuthentication(formRequest(wrongRedirect), "authorization_code", oauthTestClients(store)) {
+	if validClientAuthentication(formRequest(wrongRedirect), "authorization_code", store) {
 		t.Fatal("unregistered redirect URI was accepted")
 	}
 }
@@ -285,7 +285,8 @@ func TestOAuthAuthorizeBindsClientRedirectAndResource(t *testing.T) {
 	t.Setenv("AGENTDOCK_OAUTH_PASSWORD", "")
 	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-signing-secret")
 	cfg := oauthTestConfig(t)
-	clientID := oauthRegisteredClientID(t, oauthTestRedirect)
+	store := auth.NewOAuthStore()
+	clientID := oauthRegisteredClientID(t, store, oauthTestRedirect)
 	base := url.Values{
 		"response_type":         {"code"},
 		"client_id":             {clientID},
@@ -304,7 +305,7 @@ func TestOAuthAuthorizeBindsClientRedirectAndResource(t *testing.T) {
 			values := cloneValues(base)
 			mutate(values)
 			response := httptest.NewRecorder()
-			handleAuthorizeForTest(response, httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+values.Encode(), nil), cfg, auth.NewOAuthStore())
+			handleAuthorizeForTest(response, httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+values.Encode(), nil), cfg, store)
 			if response.Code != http.StatusBadRequest || response.Header().Get("Location") != "" {
 				t.Fatalf("status=%d location=%q body=%s", response.Code, response.Header().Get("Location"), response.Body.String())
 			}
@@ -312,20 +313,16 @@ func TestOAuthAuthorizeBindsClientRedirectAndResource(t *testing.T) {
 	}
 }
 
-func oauthTestClients(store *auth.OAuthStore) *oauthClientValidator {
-	return newOAuthClientValidator(store, oauthSigningKey())
-}
-
 func handleAuthorizeForTest(w http.ResponseWriter, r *http.Request, cfg config.Config, store *auth.OAuthStore) {
-	handleAuthorize(w, r, cfg, store, oauthTestClients(store))
+	handleAuthorize(w, r, cfg, store)
 }
 
-func oauthRegisteredClientID(t *testing.T, redirectURI string) string {
+func oauthRegisteredClientID(t *testing.T, store *auth.OAuthStore, redirectURI string) string {
 	t.Helper()
-	clientID, err := auth.IssueClientID(
+	clientID, err := store.RegisterClient(
+		"test client",
 		[]string{redirectURI},
 		[]string{"authorization_code", "refresh_token"},
-		oauthSigningKey(),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -345,7 +342,7 @@ func postTokenRequest(t *testing.T, cfg config.Config, codes *auth.OAuthStore, v
 	t.Helper()
 	request := formRequest(values)
 	response := httptest.NewRecorder()
-	handleToken(response, request, cfg, codes, oauthTestClients(codes))
+	handleToken(response, request, cfg, codes)
 	return response
 }
 

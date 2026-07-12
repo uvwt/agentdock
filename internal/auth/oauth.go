@@ -19,7 +19,6 @@ import (
 )
 
 const (
-	dynamicClientPrefix = "adcr."
 	shortClientPrefix   = "adcr_"
 	oauthStateVersion   = 2
 	maxRefreshStateSize = 1 << 20
@@ -69,14 +68,6 @@ type tokenClaims struct {
 	Audience  string `json:"aud"`
 	IssuedAt  int64  `json:"iat"`
 	ExpiresAt int64  `json:"exp"`
-}
-
-type clientRegistration struct {
-	Version      int      `json:"v"`
-	RedirectURIs []string `json:"redirect_uris"`
-	GrantTypes   []string `json:"grant_types"`
-	IssuedAt     int64    `json:"iat"`
-	Nonce        string   `json:"nonce,omitempty"`
 }
 
 func NewOAuthStore() *OAuthStore {
@@ -341,37 +332,37 @@ func (s *OAuthStore) RegisterClient(clientName string, redirectURIs, grantTypes 
 	return clientID, nil
 }
 
-func (s *OAuthStore) ValidateClientID(clientID, legacySigningKey string) bool {
-	if _, ok := s.clientRegistration(clientID); ok {
-		return true
-	}
-	return ValidateClientID(clientID, legacySigningKey)
+func (s *OAuthStore) ValidateClientID(clientID string) bool {
+	_, ok := s.clientRegistration(clientID)
+	return ok
 }
 
-func (s *OAuthStore) ValidateClientRedirect(clientID, redirectURI, legacySigningKey string) bool {
+func (s *OAuthStore) ValidateClientRedirect(clientID, redirectURI string) bool {
 	redirectURI = strings.TrimSpace(redirectURI)
-	if registration, ok := s.clientRegistration(clientID); ok {
-		for _, registered := range registration.RedirectURIs {
-			if registered == redirectURI {
-				return true
-			}
-		}
+	registration, ok := s.clientRegistration(clientID)
+	if !ok {
 		return false
 	}
-	return ValidateClientRedirect(clientID, redirectURI, legacySigningKey)
+	for _, registered := range registration.RedirectURIs {
+		if registered == redirectURI {
+			return true
+		}
+	}
+	return false
 }
 
-func (s *OAuthStore) ClientAllowsGrant(clientID, grantType, legacySigningKey string) bool {
+func (s *OAuthStore) ClientAllowsGrant(clientID, grantType string) bool {
 	grantType = strings.TrimSpace(grantType)
-	if registration, ok := s.clientRegistration(clientID); ok {
-		for _, registered := range registration.GrantTypes {
-			if registered == grantType {
-				return true
-			}
-		}
+	registration, ok := s.clientRegistration(clientID)
+	if !ok {
 		return false
 	}
-	return ClientAllowsGrant(clientID, grantType, legacySigningKey)
+	for _, registered := range registration.GrantTypes {
+		if registered == grantType {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *OAuthStore) ClientRegistration(clientID string) (OAuthClientRegistration, bool) {
@@ -438,104 +429,6 @@ func RandomToken(n int) (string, error) {
 		return "", fmt.Errorf("read cryptographic randomness: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
-}
-
-func IssueClientID(redirectURIs, grantTypes []string, key string) (string, error) {
-	if key == "" {
-		return "", errors.New("client registration signing key is required")
-	}
-	if len(redirectURIs) == 0 {
-		return "", errors.New("at least one redirect URI is required")
-	}
-	if len(grantTypes) == 0 {
-		return "", errors.New("at least one grant type is required")
-	}
-	nonce, err := RandomToken(16)
-	if err != nil {
-		return "", fmt.Errorf("generate client registration nonce: %w", err)
-	}
-	registration := clientRegistration{
-		Version:      2,
-		RedirectURIs: uniqueNonEmptyStrings(redirectURIs),
-		GrantTypes:   uniqueNonEmptyStrings(grantTypes),
-		IssuedAt:     time.Now().Unix(),
-		Nonce:        nonce,
-	}
-	if len(registration.RedirectURIs) == 0 || len(registration.GrantTypes) == 0 {
-		return "", errors.New("client registration contains empty metadata")
-	}
-	body, err := json.Marshal(registration)
-	if err != nil {
-		return "", fmt.Errorf("encode client registration: %w", err)
-	}
-	encoded := base64.RawURLEncoding.EncodeToString(body)
-	payload := dynamicClientPrefix + encoded
-	mac := hmac.New(sha256.New, []byte(key))
-	_, _ = mac.Write([]byte(payload))
-	signature := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	return payload + "." + signature, nil
-}
-
-func ValidateClientID(clientID, key string) bool {
-	_, ok := parseClientRegistration(clientID, key)
-	return ok
-}
-
-func ValidateClientRedirect(clientID, redirectURI, key string) bool {
-	registration, ok := parseClientRegistration(clientID, key)
-	if !ok || redirectURI == "" {
-		return false
-	}
-	for _, registered := range registration.RedirectURIs {
-		if registered == redirectURI {
-			return true
-		}
-	}
-	return false
-}
-
-func ClientAllowsGrant(clientID, grantType, key string) bool {
-	registration, ok := parseClientRegistration(clientID, key)
-	if !ok || grantType == "" {
-		return false
-	}
-	for _, registered := range registration.GrantTypes {
-		if registered == grantType {
-			return true
-		}
-	}
-	return false
-}
-
-func parseClientRegistration(clientID, key string) (clientRegistration, bool) {
-	if key == "" || !strings.HasPrefix(clientID, dynamicClientPrefix) {
-		return clientRegistration{}, false
-	}
-	parts := strings.Split(strings.TrimPrefix(clientID, dynamicClientPrefix), ".")
-	if len(parts) != 2 {
-		return clientRegistration{}, false
-	}
-	payload := dynamicClientPrefix + parts[0]
-	mac := hmac.New(sha256.New, []byte(key))
-	_, _ = mac.Write([]byte(payload))
-	expected := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	if !hmac.Equal([]byte(expected), []byte(parts[1])) {
-		return clientRegistration{}, false
-	}
-	data, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil {
-		return clientRegistration{}, false
-	}
-	var registration clientRegistration
-	if err := json.Unmarshal(data, &registration); err != nil {
-		return clientRegistration{}, false
-	}
-	now := time.Now().Unix()
-	if registration.Version != 2 || registration.IssuedAt <= 0 || registration.IssuedAt > now+60 ||
-		len(registration.RedirectURIs) == 0 || len(registration.GrantTypes) == 0 {
-		return clientRegistration{}, false
-	}
-	return registration, true
 }
 
 func uniqueNonEmptyStrings(values []string) []string {

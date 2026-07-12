@@ -311,16 +311,12 @@ func TestServerCardDeclaresOAuthOnlyWhenOAuthEnabled(t *testing.T) {
 	if metadata["token_endpoint"] != "https://agentdock.example.com/oauth/token" {
 		t.Fatalf("token_endpoint = %v", metadata["token_endpoint"])
 	}
-	if supported, ok := metadata["client_id_metadata_document_supported"].(bool); !ok || !supported {
-		t.Fatalf("client_id_metadata_document_supported = %#v", metadata["client_id_metadata_document_supported"])
-	}
-	if _, advertised := metadata["registration_endpoint"]; advertised {
-		t.Fatalf("registration_endpoint should not be advertised when CIMD is preferred")
+	if metadata["registration_endpoint"] != "https://agentdock.example.com/register" {
+		t.Fatalf("registration_endpoint = %v", metadata["registration_endpoint"])
 	}
 }
 
 func TestOAuthMetadataUsesPublicPKCEClients(t *testing.T) {
-	t.Setenv("AGENTDOCK_OAUTH_CLIENT_SECRET", "legacy-secret-is-ignored")
 	cfg := testConfig(t)
 	cfg.OAuthClientID = "oauth-enabled"
 	cfg.OAuthServerURL = "https://agentdock.example.com"
@@ -342,34 +338,34 @@ func TestOAuthMetadataUsesPublicPKCEClients(t *testing.T) {
 func TestValidClientAuthenticationRequiresRegisteredPublicClient(t *testing.T) {
 	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-secret")
 	redirectURI := "https://client.example/callback"
-	clientID, err := auth.IssueClientID(
+	store := auth.NewOAuthStore()
+	clientID, err := store.RegisterClient(
+		"test client",
 		[]string{redirectURI},
 		[]string{"authorization_code", "refresh_token"},
-		oauthSigningKey(),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := auth.NewOAuthStore()
 
 	values := url.Values{"client_id": {clientID}, "redirect_uri": {redirectURI}}
 	valid := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(values.Encode()))
 	valid.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if !validClientAuthentication(valid, "authorization_code", newOAuthClientValidator(store, oauthSigningKey())) {
+	if !validClientAuthentication(valid, "authorization_code", store) {
 		t.Fatal("registered public client rejected")
 	}
 
 	values.Set("client_secret", "not-allowed")
 	withSecret := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(values.Encode()))
 	withSecret.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if validClientAuthentication(withSecret, "authorization_code", newOAuthClientValidator(store, oauthSigningKey())) {
+	if validClientAuthentication(withSecret, "authorization_code", store) {
 		t.Fatal("client_secret_post accepted for public client")
 	}
 
 	wrongRedirectValues := url.Values{"client_id": {clientID}, "redirect_uri": {"https://other.example/callback"}}
 	wrongRedirect := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(wrongRedirectValues.Encode()))
 	wrongRedirect.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if validClientAuthentication(wrongRedirect, "authorization_code", newOAuthClientValidator(store, oauthSigningKey())) {
+	if validClientAuthentication(wrongRedirect, "authorization_code", store) {
 		t.Fatal("unregistered redirect URI accepted")
 	}
 }
@@ -400,10 +396,10 @@ func TestOAuthEntrypointsDisabledWhenOAuthNotEnabled(t *testing.T) {
 	}{
 		{name: "register", handler: func(w http.ResponseWriter, r *http.Request) { handleRegister(w, r, cfg, codes) }, method: http.MethodPost, path: "/register"},
 		{name: "authorize", handler: func(w http.ResponseWriter, r *http.Request) {
-			handleAuthorize(w, r, cfg, codes, newOAuthClientValidator(codes, oauthSigningKey()))
+			handleAuthorize(w, r, cfg, codes)
 		}, method: http.MethodGet, path: "/oauth/authorize"},
 		{name: "token", handler: func(w http.ResponseWriter, r *http.Request) {
-			handleToken(w, r, cfg, codes, newOAuthClientValidator(codes, oauthSigningKey()))
+			handleToken(w, r, cfg, codes)
 		}, method: http.MethodPost, path: "/oauth/token"},
 	}
 	for _, endpoint := range endpoints {
