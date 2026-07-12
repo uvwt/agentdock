@@ -10,7 +10,7 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-SKILL_VERSION = os.getenv("AGENTDOCK_SKILL_VERSION", "0.2.2")
+SKILL_VERSION = os.getenv("AGENTDOCK_SKILL_VERSION", "0.2.3")
 DEFAULT_BASE_URL = "http://127.0.0.1:8787"
 
 

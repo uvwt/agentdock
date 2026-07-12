@@ -8,8 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/envstore"
 	"github.com/uvwt/agentdock/internal/session"
 )
 
@@ -54,7 +56,7 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 	// 背景：exec_command 可能先返回 running，让模型后续通过 session_observe action=status 继续取结果；
 	// 如果子进程绑定到单次 MCP 请求 ctx，请求结束时 git push / npm install 等长任务会被杀掉。
 	// 因此长任务只受 timeout_ms 和 session_act action=kill/kill_all 控制。
-	commandEnv, err := r.commandEnv(mapArg(args, "env"))
+	commandEnv, err := r.commandEnv(strings.TrimSpace(stringArg(args, "skill_env", "")), mapArg(args, "env"))
 	if err != nil {
 		return nil, err
 	}
@@ -321,12 +323,24 @@ func addCommandDiagnostics(result Result) {
 	}
 }
 
-func (r *Runtime) commandEnv(extra map[string]any) ([]string, error) {
+func (r *Runtime) commandEnv(skillName string, extra map[string]any) ([]string, error) {
 	env, err := r.baseCommandEnv()
 	if err != nil {
 		return nil, err
 	}
+	if skillName != "" {
+		values, err := r.envs.Load(envstore.Scope{Kind: envstore.ScopeSkill, Name: skillName})
+		if err != nil {
+			return nil, toolErrorDetails("SKILL_ENV_INVALID", "load Skill environment", "validation", map[string]any{"skill": skillName, "reason": err.Error()})
+		}
+		for key, value := range values {
+			env[key] = value
+		}
+	}
 	for key, value := range extra {
+		if err := envstore.ValidateKey(key); err != nil {
+			return nil, toolErrorDetails("INVALID_ENV_NAME", err.Error(), "validation", map[string]any{"key": key})
+		}
 		env[key] = fmt.Sprint(value)
 	}
 	return formatCommandEnv(env), nil

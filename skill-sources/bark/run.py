@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 
-SKILL_VERSION = "0.1.6"
+SKILL_VERSION = "0.1.7"
 DEFAULT_SERVER_URL = "https://api.day.app"
 KEY_ENV_KEYS = ("BARK_DEVICE_KEY", "BARK_KEY")
 SERVER_ENV_KEYS = ("BARK_SERVER_URL", "BARK_BASE_URL", "BARK_URL")

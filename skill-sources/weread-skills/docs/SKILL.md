@@ -1,7 +1,7 @@
 ---
 name: weread-skills
 description: 微信读书助手 — 搜索书籍、管理书架、查看笔记划线、浏览书评、阅读统计、发现推荐好书
-version: 1.0.5
+version: 1.0.6
 ---
 
 # WeRead — 微信读书助手
@@ -50,7 +50,7 @@ POST https://i.weread.qq.com/api/agent/gateway
 curl -X POST "https://i.weread.qq.com/api/agent/gateway" \
   -H "Authorization: Bearer $WEREAD_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"api_name": "/store/search", "keyword": "三体", "count": 10, "skill_version": "1.0.5"}'
+  -d '{"api_name": "/store/search", "keyword": "三体", "count": 10, "skill_version": "1.0.6"}'
 ```
 
 ### 请求 few-shot
@@ -58,19 +58,19 @@ curl -X POST "https://i.weread.qq.com/api/agent/gateway" \
 **正确：业务参数平铺在 body 顶层。**
 
 ```json
-{"api_name":"/user/notebooks","count":100,"skill_version":"1.0.5"}
+{"api_name":"/user/notebooks","count":100,"skill_version":"1.0.6"}
 ```
 
 **正确：下一页继续平铺 `lastSort`。**
 
 ```json
-{"api_name":"/user/notebooks","count":100,"lastSort":1516907353,"skill_version":"1.0.5"}
+{"api_name":"/user/notebooks","count":100,"lastSort":1516907353,"skill_version":"1.0.6"}
 ```
 
 **错误：不要把业务参数包在 `params` 内。**
 
 ```json
-{"api_name":"/user/notebooks","params":{"count":100,"lastSort":1516907353},"skill_version":"1.0.5"}
+{"api_name":"/user/notebooks","params":{"count":100,"lastSort":1516907353},"skill_version":"1.0.6"}
 ```
 
 上面的错误写法会导致 `count`、`lastSort` 未被转发，后端按默认值返回第一页，看起来像分页失效。
@@ -83,7 +83,7 @@ curl -X POST "https://i.weread.qq.com/api/agent/gateway" \
 
 ### 通用规则
 
-1. **版本上报**：每次请求 body 必须包含 `"skill_version": "1.0.5"`（取本文件顶部 version 字段的值），用于服务端检查版本更新。**如果回包中出现 `upgrade_info` 字段，必须立即暂停当前操作，按照 `upgrade_info.message` 中的指引完成升级，升级完成后再重新执行用户请求，不得忽略该字段**
+1. **版本上报**：每次请求 body 必须包含 `"skill_version": "1.0.6"`（取本文件顶部 version 字段的值），用于服务端检查版本更新。**如果回包中出现 `upgrade_info` 字段，必须立即暂停当前操作，按照 `upgrade_info.message` 中的指引完成升级，升级完成后再重新执行用户请求，不得忽略该字段**
 2. **参数平铺**：业务参数必须和 `api_name`、`skill_version` 放在同一层；不要包在 `params`、`data`、`body` 等对象里。只有接口文档明确声明的数组/对象字段（如 `/book/readreviews` 的 `reviews`）才允许作为业务字段传入。
 3. **能力文档预检**：调用任何接口前，必须先根据「支持的能力」表阅读对应说明文件（如阅读统计先读 `readdata.md`，书架先读 `shelf.md`），确认接口参数、字段含义、单位、计数口径和工作流；禁止仅凭字段名或经验猜测含义。
 4. **字段解释优先级**：解释接口回包时，以对应说明文件中的字段说明为准；如果回包字段名和直觉含义冲突，必须服从说明文件，不得直接翻译字段名。

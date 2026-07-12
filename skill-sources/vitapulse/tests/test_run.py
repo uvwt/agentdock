@@ -85,7 +85,7 @@ class SkillTests(unittest.TestCase):
     def run_skill(self, operation, payload=None):
         env = os.environ.copy()
         env.update({
-            "AGENTDOCK_SKILL_VERSION": "0.2.2",
+            "AGENTDOCK_SKILL_VERSION": "0.2.3",
             "VITAPULSE_BASE_URL": f"http://127.0.0.1:{self.server.server_port}",
             "VITAPULSE_API_TOKEN": TOKEN,
             "PYTHONDONTWRITEBYTECODE": "1",

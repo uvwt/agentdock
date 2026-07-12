@@ -79,7 +79,7 @@ version: 1.0.0
 - 模型先通过 `agentdock_context` 选择 Skill，再用 `read_file skill://<name>/SKILL.md` 读取正文。
 - 实际动作使用 `exec_command`、文件工具、浏览器工具或 MCP 工具。
 - 包内辅助脚本如需多个动作，从 stdin JSON 的 `skill_action` 字段选择；业务参数保留在同一个 JSON 对象中。
-- 凭据和设备私有配置放在 `~/.agentdock/skill-data/<name>/.env`，权限必须为 `0600`，不得提交到仓库或随包安装。
+- 凭据和设备私有配置放在 `~/.agentdock/env/skill/<name>.env`，权限必须为 `0600`，不得提交到仓库或随包安装。
 - 修改 Skill 正文、引用或脚本后必须递增版本，校验并安装新版本；同名同版本内容不可变。
 
 平台相关辅助脚本应自行声明和检查依赖。公共 Go 文件不能直接引用 Unix `syscall` 或 Windows API；AgentDock 自身命令和交互终端的进程树统一通过 `internal/processcontrol` 管理。

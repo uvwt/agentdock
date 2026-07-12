@@ -148,7 +148,10 @@ func (c *streamableHTTPClient) do(ctx context.Context, payload []byte) (*http.Re
 		request.Header.Set("Mcp-Session-Id", sessionID)
 	}
 	for header, envName := range c.cfg.HeaderEnv {
-		value, ok := os.LookupEnv(envName)
+		value, ok := c.cfg.RuntimeEnv[envName]
+		if !ok {
+			value, ok = os.LookupEnv(envName)
+		}
 		if !ok || value == "" {
 			return nil, newError(
 				"MCP_AUTH_REQUIRED",

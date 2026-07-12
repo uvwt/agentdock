@@ -72,6 +72,8 @@ func InputSchema(name string) map[string]any {
 	case "exec_command":
 		props["cmd"] = stringProp("Command to run.")
 		props["workdir"] = stringProp("Host working directory. Relative paths resolve from ~/AgentDock.")
+		props["skill_env"] = stringProp("Optional Skill name whose isolated environment is loaded before the explicit env map.")
+		props["env"] = map[string]any{"type": "object", "description": "Explicit command environment values. These override the selected Skill environment.", "additionalProperties": map[string]any{"type": "string"}}
 		props["timeout_ms"] = boundedIntProp("Timeout in milliseconds. Must be positive and is capped at 86400000.", 1, 86400000)
 		props["yield_time_ms"] = boundedIntProp("Initial wait before returning a running session. Capped at 30000 milliseconds.", 0, 30000)
 		props["wait_until_exit"] = boolProp("Wait until the command exits instead of returning a running session after yield_time_ms.")
@@ -124,8 +126,10 @@ func InputSchema(name string) map[string]any {
 		required = []string{"action"}
 
 	case "skill_package":
-		props["action"] = map[string]any{"type": "string", "description": "Skill package lifecycle action.", "enum": []string{"validate", "install", "rollback"}}
-		props["skill"] = stringProp("Skill name for rollback.")
+		props["action"] = map[string]any{"type": "string", "description": "Skill package or isolated environment action.", "enum": []string{"validate", "install", "rollback", "env_set", "env_unset", "env_list"}}
+		props["skill"] = stringProp("Skill name for rollback or environment management.")
+		props["key"] = stringProp("Environment variable name for env_set/env_unset.")
+		props["value"] = stringProp("Environment variable value for env_set. Secret values are never returned.")
 		props["channel"] = map[string]any{"type": "string", "description": "Skill channel: development, canary, stable, or pinned.", "enum": []string{"development", "canary", "stable", "pinned"}}
 		props["source"] = stringProp("Host path or HTTP(S) URL for validate/install.")
 		props["digest"] = stringProp("Optional expected SHA-256 digest for validate/install.")
@@ -133,7 +137,7 @@ func InputSchema(name string) map[string]any {
 		props["max_bytes"] = intProp("Maximum validate/install package bytes.")
 		required = []string{"action"}
 	case "mcp_manage":
-		props["action"] = map[string]any{"type": "string", "description": "Dynamic MCP server action.", "enum": []string{"list", "inspect", "add", "remove", "enable", "disable", "refresh"}}
+		props["action"] = map[string]any{"type": "string", "description": "Dynamic MCP server or isolated environment action.", "enum": []string{"list", "inspect", "add", "remove", "enable", "disable", "env_set", "env_unset", "env_list", "refresh"}}
 		props["name"] = stringProp("Dynamic MCP server name. Use a stable short identifier such as figma or github.")
 		props["description"] = stringProp("Short capability description shown in agentdock_context.")
 		props["transport"] = map[string]any{"type": "string", "description": "MCP transport for action=add.", "enum": []string{"streamable_http", "stdio"}}
@@ -143,6 +147,8 @@ func InputSchema(name string) map[string]any {
 		props["cwd"] = stringProp("Optional absolute working directory for transport=stdio.")
 		props["header_env"] = map[string]any{"type": "object", "description": "HTTP header name to host environment variable name. Secret values are never stored in the MCP registry.", "additionalProperties": map[string]any{"type": "string"}}
 		props["env_from_env"] = map[string]any{"type": "object", "description": "Child process environment variable name to host environment variable name for stdio. Secret values are never stored in the MCP registry.", "additionalProperties": map[string]any{"type": "string"}}
+		props["key"] = stringProp("Environment variable name for env_set/env_unset.")
+		props["value"] = stringProp("Environment variable value for env_set. Secret values are never returned.")
 		props["enabled"] = boolProp("Enable the server after registration. Defaults to true.")
 		props["timeout_ms"] = boundedIntProp("Per-request timeout. Defaults to 30000 and is capped at 300000.", 1, 300000)
 		required = []string{"action"}

@@ -32,6 +32,6 @@ curl -i http://127.0.0.1:18766/mcp
 Windows 原生运行时不把 POSIX `chmod` 当成安全边界：
 
 - AgentDock 状态目录和 0600 语义的原子文件使用受保护 DACL，只授权当前用户、SYSTEM 和本机管理员。
-- Skill 包不得包含凭据；设备私有配置放在当前用户的 `~/.agentdock/skill-data/<name>/`，由操作系统用户权限和部署边界保护。Windows 上保存长期敏感值时应优先使用凭据管理器或当前用户作用域 DPAPI。
+- Skill 包不得包含凭据；环境变量放在当前用户的 `~/.agentdock/env/skill/<name>.env`，其他状态、缓存和会话数据仍放在 `~/.agentdock/skill-data/<name>/`，由操作系统用户权限和部署边界保护。Windows 上保存长期敏感值时应优先使用凭据管理器或当前用户作用域 DPAPI。
 - 登录自启动脚本保存的 Bearer token同样使用当前用户 DPAPI，任务计划程序以当前登录用户运行。
 - Windows Job Object 负责约束 AgentDock 启动的命令进程树；这不是 Codex 等级的 Restricted Token 沙箱。AgentDock Windows Core 仍采用可信 Host 用户权限模型。

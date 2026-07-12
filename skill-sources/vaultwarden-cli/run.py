@@ -6,7 +6,7 @@ import subprocess
 import sys
 from urllib.parse import urlparse
 
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 KEYCHAIN_SERVICE = "agentdock-vaultwarden-cli"
 KEYCHAIN_ACCOUNT = "bw-session"
 CLI_CANDIDATES = ("/opt/homebrew/bin/bw", "/usr/local/bin/bw")

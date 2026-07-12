@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/envstore"
 	"github.com/uvwt/agentdock/internal/skills"
 	"github.com/uvwt/agentdock/internal/skillstate"
 )
@@ -79,10 +80,16 @@ func (r *Runtime) skillPackage(ctx context.Context, args map[string]any) (Result
 		return r.skillInstall(ctx, input)
 	case "rollback":
 		return r.skillRollback(ctx, input)
+	case "env_set", "env_unset", "env_list":
+		skill, err := input.requiredSkill()
+		if err != nil {
+			return nil, err
+		}
+		return r.scopedEnvAction(envstore.ScopeSkill, skill, input.Action, args)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported skill_package action", "validation", map[string]any{
 			"action":  input.Action,
-			"allowed": []string{"validate", "install", "rollback"},
+			"allowed": []string{"validate", "install", "rollback", "env_set", "env_unset", "env_list"},
 		})
 	}
 }

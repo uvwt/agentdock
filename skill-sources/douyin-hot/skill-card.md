@@ -36,7 +36,7 @@ Mitigation: Use reasonable request frequency and verify fetched results before r
 **Other Properties Related to Output:** [Default fetch limit is 50 items; helper scripts can store trend history in a local SQLite database and generate a local HTML report.] <br>
 
 ## Skill Version(s): <br>
-1.0.7 (source: ClawHub release metadata) <br>
+1.0.8 (source: ClawHub release metadata) <br>
 
 ## Ethical Considerations: <br>
 Users should evaluate whether this skill is appropriate for their environment, review any generated or modified files before relying on them, and apply their organization's safety, security, and compliance requirements before deployment. <br>

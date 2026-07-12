@@ -102,10 +102,10 @@ type capabilityMemoryRunbook struct {
 
 func baseToolCapabilityItems() []capabilityBaseToolItem {
 	return []capabilityBaseToolItem{
-		{Name: "exec_command", Description: "执行命令，用于查看真实环境、运行测试、构建、部署和排障；实际权限由运行用户和部署边界决定。"},
+		{Name: "exec_command", Description: "执行命令，用于查看真实环境、运行测试、构建、部署和排障；可通过 skill_env 加载指定 Skill 的独立环境，再由本次显式 env 覆盖。"},
 		{Name: "read_file", Description: "读取普通 UTF-8 文件或 skill:// 逻辑路径指向的 Skill 文档与引用资源。"},
-		{Name: "skill_package", Description: "管理 Skill 包生命周期：validate / install / rollback。"},
-		{Name: "mcp_manage / mcp_tool_search / mcp_tool_inspect / mcp_tool_call", Description: "管理和调用动态 MCP；远端工具不会混入 AgentDock 自带工具列表。"},
+		{Name: "skill_package", Description: "管理 Skill 包生命周期和独立环境：validate / install / rollback / env_set / env_unset / env_list。"},
+		{Name: "mcp_manage / mcp_tool_search / mcp_tool_inspect / mcp_tool_call", Description: "管理动态 MCP、独立环境并调用远端工具；远端工具不会混入 AgentDock 自带工具列表。"},
 		{Name: "task_manage", Description: "管理可恢复任务；模板发现通过 workflow_template_manage match。"},
 		{Name: "recall_bootstrap / recall_search / recall_read", Description: "读取记忆精简上下文、搜索记忆和精确读取 runbook。"},
 		{Name: "private_note_manage", Description: "低频显式隐私笔记保险箱；默认不要用，只有用户要求隐私/本机不同步或内容明显敏感时再调用。"},

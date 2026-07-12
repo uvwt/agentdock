@@ -13,7 +13,7 @@ import urllib.request
 from typing import Any
 
 SKILL_NAME = "poke-api"
-SKILL_VERSION = "0.1.5"
+SKILL_VERSION = "0.1.6"
 API_ENDPOINT = "https://poke.com/api/v1/inbound/api-message"
 MAX_REQUEST_BYTES = 512 * 1024
 MAX_RESPONSE_BYTES = 1024 * 1024

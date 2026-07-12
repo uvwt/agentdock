@@ -29,6 +29,7 @@ type ServerConfig struct {
 	Cwd         string            `json:"cwd,omitempty"`
 	HeaderEnv   map[string]string `json:"header_env,omitempty"`
 	EnvFromEnv  map[string]string `json:"env_from_env,omitempty"`
+	RuntimeEnv  map[string]string `json:"-"`
 	Enabled     bool              `json:"enabled"`
 	TimeoutMS   int               `json:"timeout_ms,omitempty"`
 }
@@ -92,6 +93,7 @@ func normalizeServerConfig(cfg ServerConfig) ServerConfig {
 	cfg.Args = append([]string(nil), cfg.Args...)
 	cfg.HeaderEnv = cloneStringMap(cfg.HeaderEnv)
 	cfg.EnvFromEnv = cloneStringMap(cfg.EnvFromEnv)
+	cfg.RuntimeEnv = cloneStringMap(cfg.RuntimeEnv)
 	return cfg
 }
 

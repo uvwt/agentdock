@@ -1,7 +1,7 @@
 ---
 name: vaultwarden-cli
 description: 通过 Bitwarden 官方 bw CLI 安全访问自部署 Vaultwarden。默认只返回脱敏元数据，秘密只进入本机剪贴板。
-version: 1.0.3
+version: 1.0.4
 ---
 
 # Vaultwarden CLI
@@ -62,19 +62,12 @@ Skill 本身只提供流程说明。确需调用包内辅助脚本时，使用 `
 
 ```bash
 AGENTDOCK_HOME="${AGENTDOCK_HOME:-$HOME/.agentdock}"
-SKILL_DIR="$AGENTDOCK_HOME/skill-store/installed/vaultwarden-cli/1.0.3"
-ENV_FILE="$AGENTDOCK_HOME/skill-data/vaultwarden-cli/.env"
+SKILL_DIR="$AGENTDOCK_HOME/skill-store/installed/vaultwarden-cli/1.0.4"
 ```
 
-如存在私有环境文件，先加载：
+调用 `exec_command` 时传入 `skill_env: "vaultwarden-cli"`，由 AgentDock 自动加载该 Skill 的独立环境；不要在命令中手工 `source` 环境文件。
 
-```bash
-set -a
-[ ! -f "$ENV_FILE" ] || . "$ENV_FILE"
-set +a
-```
-
-调用动作：
+调用动作（`exec_command` 同时传入 `"skill_env": "vaultwarden-cli"`）：
 
 ```bash
 printf '%s' '{"skill_action":"<动作>"}' | python3 "$SKILL_DIR/run.py"

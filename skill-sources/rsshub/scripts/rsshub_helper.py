@@ -91,7 +91,7 @@ def http_request(route="/", query=None, method="GET", timeout=20):
         method=method.upper(),
         headers={
             "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, text/html, */*",
-            "User-Agent": "AgentDock-RSSHub-Skill/0.1.2",
+            "User-Agent": "AgentDock-RSSHub-Skill/0.1.3",
         },
     )
     started = time.time()

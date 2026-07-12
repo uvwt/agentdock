@@ -1,7 +1,7 @@
 ---
 name: baidu-netdisk
 description: Use this skill when managing Baidu Netdisk files through the bdpan CLI inside the application data scope.
-version: 0.3.3
+version: 0.3.4
 ---
 
 # Baidu Netdisk
@@ -25,19 +25,12 @@ Skill 本身只提供流程说明。确需调用包内辅助脚本时，使用 `
 
 ```bash
 AGENTDOCK_HOME="${AGENTDOCK_HOME:-$HOME/.agentdock}"
-SKILL_DIR="$AGENTDOCK_HOME/skill-store/installed/baidu-netdisk/0.3.3"
-ENV_FILE="$AGENTDOCK_HOME/skill-data/baidu-netdisk/.env"
+SKILL_DIR="$AGENTDOCK_HOME/skill-store/installed/baidu-netdisk/0.3.4"
 ```
 
-如存在私有环境文件，先加载：
+调用 `exec_command` 时传入 `skill_env: "baidu-netdisk"`，由 AgentDock 自动加载该 Skill 的独立环境；不要在命令中手工 `source` 环境文件。
 
-```bash
-set -a
-[ ! -f "$ENV_FILE" ] || . "$ENV_FILE"
-set +a
-```
-
-调用动作：
+调用动作（`exec_command` 同时传入 `"skill_env": "baidu-netdisk"`）：
 
 ```bash
 printf '%s' '{"skill_action":"<动作>"}' | python3 "$SKILL_DIR/run.py"

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/uvwt/agentdock/internal/envstore"
 	"github.com/uvwt/agentdock/internal/mcpclient"
 )
 
@@ -53,6 +54,12 @@ func (r *Runtime) mcpManage(ctx context.Context, args map[string]any) (Result, e
 			return nil, dynamicMCPToolError(err)
 		}
 		return Result{"ok": true, "action": action, "server": server}, nil
+	case "env_set", "env_unset", "env_list":
+		name := strings.TrimSpace(stringArg(args, "name", ""))
+		if _, _, err := r.mcpClients.Inspect(name); err != nil {
+			return nil, dynamicMCPToolError(err)
+		}
+		return r.scopedEnvAction(envstore.ScopeMCP, name, action, args)
 	case "refresh":
 		name := stringArg(args, "name", "")
 		server, tools, err := r.mcpClients.Refresh(ctx, name)
@@ -65,7 +72,7 @@ func (r *Runtime) mcpManage(ctx context.Context, args map[string]any) (Result, e
 			"INVALID_ACTION",
 			"unsupported mcp_manage action",
 			"validation",
-			map[string]any{"action": action, "allowed": []string{"list", "inspect", "add", "remove", "enable", "disable", "refresh"}},
+			map[string]any{"action": action, "allowed": []string{"list", "inspect", "add", "remove", "enable", "disable", "env_set", "env_unset", "env_list", "refresh"}},
 		)
 	}
 }

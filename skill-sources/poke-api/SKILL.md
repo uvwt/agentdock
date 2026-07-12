@@ -1,7 +1,7 @@
 ---
 name: poke-api
 description: Send context-rich instructions to Poke through the V2 inbound API using a securely injected API key.
-version: 0.1.5
+version: 0.1.6
 ---
 
 # Poke API Skill
@@ -11,7 +11,7 @@ version: 0.1.5
 ## 操作
 
 ### `status`
-检查 Skill 版本、固定端点以及 `POKE_API_KEY` 是否已从 `~/.agentdock/skill-data/poke-api/.env` 或当前命令环境加载。不会发起网络请求，也不会输出密钥。
+检查 Skill 版本、固定端点以及 `POKE_API_KEY` 是否已从 `~/.agentdock/env/skill/poke-api.env` 或当前命令显式环境加载。不会发起网络请求，也不会输出密钥。
 
 ### `send`
 向 `https://poke.com/api/v1/inbound/api-message` 发送 JSON。
@@ -51,19 +51,12 @@ Skill 本身只提供流程说明。确需调用包内辅助脚本时，使用 `
 
 ```bash
 AGENTDOCK_HOME="${AGENTDOCK_HOME:-$HOME/.agentdock}"
-SKILL_DIR="$AGENTDOCK_HOME/skill-store/installed/poke-api/0.1.5"
-ENV_FILE="$AGENTDOCK_HOME/skill-data/poke-api/.env"
+SKILL_DIR="$AGENTDOCK_HOME/skill-store/installed/poke-api/0.1.6"
 ```
 
-如存在私有环境文件，先加载：
+调用 `exec_command` 时传入 `skill_env: "poke-api"`，由 AgentDock 自动加载该 Skill 的独立环境；不要在命令中手工 `source` 环境文件。
 
-```bash
-set -a
-[ ! -f "$ENV_FILE" ] || . "$ENV_FILE"
-set +a
-```
-
-调用动作：
+调用动作（`exec_command` 同时传入 `"skill_env": "poke-api"`）：
 
 ```bash
 printf '%s' '{"skill_action":"<动作>"}' | python3 "$SKILL_DIR/run.py"

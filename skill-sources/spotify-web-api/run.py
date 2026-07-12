@@ -12,7 +12,7 @@ import urllib.request
 from collections import Counter
 from pathlib import Path
 
-VERSION = "0.1.6"
+VERSION = "0.1.7"
 AGENTDOCK_HOME = Path(os.environ.get("AGENTDOCK_HOME", Path.home() / ".agentdock"))
 STATE_DIR = AGENTDOCK_HOME / "skill-data" / "spotify-web-api"
 STATE_FILE = STATE_DIR / "state.json"

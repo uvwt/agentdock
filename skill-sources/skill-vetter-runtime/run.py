@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-VERSION = "0.1.3"
+VERSION = "0.1.4"
 BASE = Path(__file__).resolve().parent
 AGENTDOCK_HOME = Path(os.environ.get("AGENTDOCK_HOME", Path.home() / ".agentdock"))
 WORKSPACE = Path(os.environ.get("AGENTDOCK_DEFAULT_DIR", Path.home() / "AgentDock"))

@@ -52,22 +52,22 @@
 
 正确：首页请求，参数平铺。
 ```json
-{"api_name":"/user/notebooks","count":20,"skill_version":"1.0.5"}
+{"api_name":"/user/notebooks","count":20,"skill_version":"1.0.6"}
 ```
 
 正确：下一页请求，`lastSort` 取上一页 `books` 最后一项的 `sort`。
 ```json
-{"api_name":"/user/notebooks","count":20,"lastSort":1778312777,"skill_version":"1.0.5"}
+{"api_name":"/user/notebooks","count":20,"lastSort":1778312777,"skill_version":"1.0.6"}
 ```
 
 错误：不要使用 `params` 包裹业务参数，否则后端收不到 `count` 和 `lastSort`。
 ```json
-{"api_name":"/user/notebooks","params":{"count":20,"lastSort":1778312777},"skill_version":"1.0.5"}
+{"api_name":"/user/notebooks","params":{"count":20,"lastSort":1778312777},"skill_version":"1.0.6"}
 ```
 
 错误：不要使用 `offset`/`limit`，这些字段不是本接口分页参数。
 ```json
-{"api_name":"/user/notebooks","offset":20,"limit":20,"skill_version":"1.0.5"}
+{"api_name":"/user/notebooks","offset":20,"limit":20,"skill_version":"1.0.6"}
 ```
 
 ### `/book/bookmarklist` — 单本书的划线内容列表（不含书签内容）

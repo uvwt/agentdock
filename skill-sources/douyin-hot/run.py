@@ -20,7 +20,7 @@ def main():
     args=inp(); op=str(args.pop('skill_action','status')); node=shutil.which('node') or '/opt/homebrew/bin/node'
     script=BASE/'scripts'/'douyin_json.js'
     if op=='status':
-        emit({'ok':Path(node).exists(),'node':node,'script':str(script),'script_exists':script.exists(),'skill_version':'1.0.7'}); return
+        emit({'ok':Path(node).exists(),'node':node,'script':str(script),'script_exists':script.exists(),'skill_version':'1.0.8'}); return
     if op!='hot': fail('UNKNOWN_OPERATION','未知操作',{'operation':op})
     limit=args.get('limit',10)
     if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=50: fail('INVALID_LIMIT','limit 必须是 1 到 50 的整数')

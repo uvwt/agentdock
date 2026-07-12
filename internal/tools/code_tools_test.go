@@ -451,7 +451,7 @@ func TestCommandEnvReportsTempDirectoryFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	rt.cfg.AgentDockHome = blocked
-	if _, err := rt.commandEnv(nil); err == nil || !strings.Contains(err.Error(), "create command temp directory") {
+	if _, err := rt.commandEnv("", nil); err == nil || !strings.Contains(err.Error(), "create command temp directory") {
 		t.Fatalf("commandEnv() error = %v, want temp-directory error", err)
 	}
 }

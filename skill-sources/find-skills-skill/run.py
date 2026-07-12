@@ -78,7 +78,7 @@ def run_cli(args, timeout=35):
 
 def handle_status():
     stdout, _, cli = run_cli(["--cli-version"], timeout=10)
-    emit({"ok": True, "cli": cli, "version": stdout.strip(), "skill_version": "1.0.4"})
+    emit({"ok": True, "cli": cli, "version": stdout.strip(), "skill_version": "1.0.5"})
 
 
 def handle_search(args):

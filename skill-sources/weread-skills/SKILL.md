@@ -1,14 +1,14 @@
 ---
 name: weread-skills
 description: 微信读书助手，可搜索书籍、查看书架、笔记、书评、阅读统计与推荐。
-version: 1.0.5
+version: 1.0.6
 ---
 
 # 微信读书 Skill
 
 中文别名：微信读书
 
-该 Skill 使用宿主机 `weread-skills` 能力。API Key 从 `~/.agentdock/skill-data/weread-skills/.env` 或当前命令环境读取，不包含在 Skill 包中。
+该 Skill 使用宿主机 `weread-skills` 能力。API Key 从 `~/.agentdock/env/skill/weread-skills.env` 或当前命令显式环境读取，不包含在 Skill 包中。
 
 ## 操作
 
@@ -28,19 +28,12 @@ Skill 本身只提供流程说明。确需调用包内辅助脚本时，使用 `
 
 ```bash
 AGENTDOCK_HOME="${AGENTDOCK_HOME:-$HOME/.agentdock}"
-SKILL_DIR="$AGENTDOCK_HOME/skill-store/installed/weread-skills/1.0.5"
-ENV_FILE="$AGENTDOCK_HOME/skill-data/weread-skills/.env"
+SKILL_DIR="$AGENTDOCK_HOME/skill-store/installed/weread-skills/1.0.6"
 ```
 
-如存在私有环境文件，先加载：
+调用 `exec_command` 时传入 `skill_env: "weread-skills"`，由 AgentDock 自动加载该 Skill 的独立环境；不要在命令中手工 `source` 环境文件。
 
-```bash
-set -a
-[ ! -f "$ENV_FILE" ] || . "$ENV_FILE"
-set +a
-```
-
-调用动作：
+调用动作（`exec_command` 同时传入 `"skill_env": "weread-skills"`）：
 
 ```bash
 printf '%s' '{"skill_action":"<动作>"}' | python3 "$SKILL_DIR/run.py"

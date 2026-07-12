@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/envstore"
 	"github.com/uvwt/agentdock/internal/processcontrol"
 )
 
@@ -99,20 +100,11 @@ func (c *stdioClient) start() error {
 	}
 	cmd := exec.Command(c.cfg.Command, c.cfg.Args...)
 	cmd.Dir = c.cfg.Cwd
-	cmd.Env = os.Environ()
-	for childName, hostName := range c.cfg.EnvFromEnv {
-		value, ok := os.LookupEnv(hostName)
-		if !ok {
-			return newError(
-				"MCP_AUTH_REQUIRED",
-				"required MCP stdio environment variable is missing",
-				false,
-				map[string]any{"server": c.cfg.Name, "env": hostName},
-				nil,
-			)
-		}
-		cmd.Env = append(cmd.Env, childName+"="+value)
+	environment, err := stdioEnvironment(c.cfg)
+	if err != nil {
+		return err
 	}
+	cmd.Env = environment
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return newError("MCP_START_FAILED", "open MCP stdio stdin", false, nil, err)
@@ -144,6 +136,28 @@ func (c *stdioClient) start() error {
 		_, _ = io.Copy(c.stderr, stderr)
 	}()
 	return nil
+}
+
+func stdioEnvironment(cfg ServerConfig) ([]string, error) {
+	environment := envstore.MinimalSystemEnv()
+	for childName, hostName := range cfg.EnvFromEnv {
+		value, ok := os.LookupEnv(hostName)
+		if !ok {
+			return nil, newError(
+				"MCP_AUTH_REQUIRED",
+				"required MCP stdio environment variable is missing",
+				false,
+				map[string]any{"server": cfg.Name, "env": hostName},
+				nil,
+			)
+		}
+		environment[childName] = value
+	}
+	// 独立 MCP 环境文件属于该服务的明确配置，覆盖最小系统环境和 env_from_env 映射。
+	for key, value := range cfg.RuntimeEnv {
+		environment[key] = value
+	}
+	return envstore.Format(environment), nil
 }
 
 func (c *stdioClient) request(ctx context.Context, request rpcRequest, output any) error {

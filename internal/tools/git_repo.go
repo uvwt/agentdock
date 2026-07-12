@@ -54,7 +54,7 @@ func (r *Runtime) gitInDir(ctx context.Context, dir string, maxBytes int, args .
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, "git", args...)
 	cmd.Dir = dir
-	commandEnv, err := r.commandEnv(nil)
+	commandEnv, err := r.commandEnv("", nil)
 	if err != nil {
 		return nil, err
 	}

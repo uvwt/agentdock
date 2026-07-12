@@ -1,7 +1,7 @@
 ---
 name: volcengine-ark-quota
 description: Query VolcEngine Ark Coding Plan quota usage from the console endpoint using a logged-in cookie or Playwright storage state.
-version: 0.1.5
+version: 0.1.6
 ---
 
 # VolcEngine Ark Quota Skill
@@ -26,7 +26,7 @@ version: 0.1.5
 `query` 至少需要一种登录态：
 
 1. `storage_state_path`：Playwright storage state JSON，推荐。
-2. `VOLCENGINE_ARK_STORAGE_STATE`：可在 `~/.agentdock/skill-data/volcengine-ark-quota/.env` 或当前命令环境中配置，指向 storage state 文件。
+2. `VOLCENGINE_ARK_STORAGE_STATE`：可在 `~/.agentdock/env/skill/volcengine-ark-quota.env` 或当前命令显式环境中配置，指向 storage state 文件。
 3. `VOLCENGINE_ARK_COOKIE`：可在同一私有环境文件或当前命令环境中配置原始 Cookie header；不得写入 Skill 包或日志。
 4. `cookie` 输入参数：临时 Cookie header，不推荐长期使用。
 
@@ -58,7 +58,7 @@ version: 0.1.5
 ## 安全边界
 
 - Skill 不会把 Cookie、CSRF、API Key 等敏感值输出到 stdout。
-- Skill 包内不保存登录态；持久登录态应放在 `skill-data/volcengine-ark-quota/` 或 `~/.agentdock/skill-data/volcengine-ark-quota/.env`。
+- Skill 包内不保存登录态；持久登录态应放在 `skill-data/volcengine-ark-quota/`；环境变量单独放在 `~/.agentdock/env/skill/volcengine-ark-quota.env`。
 - 这是控制台内部接口封装，不是火山引擎公开 OpenAPI；如果前端接口改版，Skill 可能需要更新。
 
 ## 辅助脚本执行
@@ -69,19 +69,12 @@ Skill 本身只提供流程说明。确需调用包内辅助脚本时，使用 `
 
 ```bash
 AGENTDOCK_HOME="${AGENTDOCK_HOME:-$HOME/.agentdock}"
-SKILL_DIR="$AGENTDOCK_HOME/skill-store/installed/volcengine-ark-quota/0.1.5"
-ENV_FILE="$AGENTDOCK_HOME/skill-data/volcengine-ark-quota/.env"
+SKILL_DIR="$AGENTDOCK_HOME/skill-store/installed/volcengine-ark-quota/0.1.6"
 ```
 
-如存在私有环境文件，先加载：
+调用 `exec_command` 时传入 `skill_env: "volcengine-ark-quota"`，由 AgentDock 自动加载该 Skill 的独立环境；不要在命令中手工 `source` 环境文件。
 
-```bash
-set -a
-[ ! -f "$ENV_FILE" ] || . "$ENV_FILE"
-set +a
-```
-
-调用动作：
+调用动作（`exec_command` 同时传入 `"skill_env": "volcengine-ark-quota"`）：
 
 ```bash
 printf '%s' '{"skill_action":"<动作>"}' | python3 "$SKILL_DIR/run.py"

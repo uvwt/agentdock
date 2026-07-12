@@ -6,7 +6,7 @@ import urllib.error
 import urllib.request
 
 ENDPOINT = "https://i.weread.qq.com/api/agent/gateway"
-VERSION = "1.0.5"
+VERSION = "1.0.6"
 ALLOWED_PREFIXES = (
     "/_list",
     "/store/",
@@ -63,7 +63,7 @@ def gateway(api_name, params=None):
         headers={
             "Authorization": "Bearer " + token,
             "Content-Type": "application/json",
-            "User-Agent": "AgentDock-WeRead/1.0.5",
+            "User-Agent": "AgentDock-WeRead/1.0.6",
         },
         method="POST",
     )

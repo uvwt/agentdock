@@ -8,11 +8,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/uvwt/agentdock/internal/envstore"
 )
 
 type Manager struct {
 	mu      sync.RWMutex
 	store   *store
+	envs    *envstore.Store
 	servers map[string]ServerConfig
 	states  map[string]*serverState
 }
@@ -25,17 +28,27 @@ type serverState struct {
 	refreshedAt time.Time
 }
 
-func NewManager(agentDockHome string) (*Manager, error) {
+func NewManager(agentDockHome string, provided ...*envstore.Store) (*Manager, error) {
 	registry := newStore(agentDockHome)
 	servers, err := registry.load()
 	if err != nil {
 		return nil, err
 	}
+	envs := (*envstore.Store)(nil)
+	if len(provided) > 0 {
+		envs = provided[0]
+	}
+	if envs == nil {
+		envs, err = envstore.New(agentDockHome)
+		if err != nil {
+			return nil, err
+		}
+	}
 	states := make(map[string]*serverState, len(servers))
 	for name := range servers {
 		states[name] = &serverState{}
 	}
-	return &Manager{store: registry, servers: servers, states: states}, nil
+	return &Manager{store: registry, envs: envs, servers: servers, states: states}, nil
 }
 
 func (m *Manager) Add(cfg ServerConfig) (ServerSummary, error) {
@@ -150,10 +163,14 @@ func (m *Manager) Refresh(ctx context.Context, name string) (ServerSummary, []To
 	if !cfg.Enabled {
 		return ServerSummary{}, nil, newError("MCP_SERVER_DISABLED", "dynamic MCP server is disabled", false, map[string]any{"server": cfg.Name}, nil)
 	}
+	runtimeCfg, err := m.runtimeConfig(cfg)
+	if err != nil {
+		return ServerSummary{}, nil, err
+	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutMS)*time.Millisecond)
 	defer cancel()
 	state.mu.Lock()
-	tools, err := refreshStateLocked(ctx, cfg, state)
+	tools, err := refreshStateLocked(ctx, runtimeCfg, state)
 	summary := summaryForLocked(cfg, state)
 	state.mu.Unlock()
 	if err != nil {
@@ -256,7 +273,11 @@ func (m *Manager) Call(ctx context.Context, qualifiedName string, arguments map[
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	if state.client == nil || len(state.tools) == 0 {
-		if _, err := refreshStateLocked(ctx, cfg, state); err != nil {
+		runtimeCfg, err := m.runtimeConfig(cfg)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := refreshStateLocked(ctx, runtimeCfg, state); err != nil {
 			return nil, err
 		}
 	}
@@ -301,6 +322,21 @@ func (m *Manager) server(name string) (ServerConfig, *serverState, error) {
 	return cfg, state, nil
 }
 
+func (m *Manager) runtimeConfig(cfg ServerConfig) (ServerConfig, error) {
+	values, err := m.envs.Load(envstore.Scope{Kind: envstore.ScopeMCP, Name: cfg.Name})
+	if err != nil {
+		return ServerConfig{}, newError(
+			"MCP_ENV_READ_FAILED",
+			"read dynamic MCP environment",
+			false,
+			map[string]any{"server": cfg.Name},
+			err,
+		)
+	}
+	cfg.RuntimeEnv = values
+	return cfg, nil
+}
+
 func (m *Manager) searchServers(name string) ([]ServerConfig, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -337,7 +373,11 @@ func (m *Manager) ensureTools(ctx context.Context, name string) (map[string]Tool
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	if state.client == nil || len(state.tools) == 0 {
-		return refreshStateLocked(ctx, cfg, state)
+		runtimeCfg, err := m.runtimeConfig(cfg)
+		if err != nil {
+			return nil, err
+		}
+		return refreshStateLocked(ctx, runtimeCfg, state)
 	}
 	return cloneTools(state.tools), nil
 }
