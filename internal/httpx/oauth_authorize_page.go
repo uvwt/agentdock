@@ -33,17 +33,8 @@ type authorizePageData struct {
 	CancelURL           string
 }
 
-func authorizationFormCSP(redirectURI string) string {
-	formActions := "'self'"
-	raw := strings.TrimSpace(redirectURI)
-	if validOAuthRedirectURI(raw) {
-		parsed, err := url.Parse(raw)
-		if err == nil {
-			origin := strings.ToLower(parsed.Scheme) + "://" + parsed.Host
-			formActions += " " + origin
-		}
-	}
-	return "default-src 'none'; style-src 'unsafe-inline'; form-action " + formActions + "; base-uri 'none'; frame-ancestors 'none'"
+func authorizationFormCSP() string {
+	return "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 }
 
 func writeAuthorizeForm(w http.ResponseWriter, values url.Values, errorText, clientName string) {
@@ -54,7 +45,7 @@ func writeAuthorizeForm(w http.ResponseWriter, values url.Values, errorText, cli
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-	w.Header().Set("Content-Security-Policy", authorizationFormCSP(values.Get("redirect_uri")))
+	w.Header().Set("Content-Security-Policy", authorizationFormCSP())
 
 	message := ""
 	if errorText != "" {

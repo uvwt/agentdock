@@ -28,6 +28,7 @@ import (
 const (
 	oauthAccessTokenTTL  = time.Hour
 	oauthRefreshTokenTTL = 90 * 24 * time.Hour
+	oauthFormBodyLimit   = 64 << 10
 )
 
 func Serve(server *mcp.Server, cfg config.Config) error {
@@ -469,7 +470,7 @@ func protectedResourceMetadata(cfg config.Config, r *http.Request) map[string]an
 func setBearerChallenge(w http.ResponseWriter, cfg config.Config, r *http.Request, invalidToken bool) {
 	if cfg.OAuthEnabled {
 		metadataURL := issuerFor(cfg, r) + "/.well-known/oauth-protected-resource/mcp"
-		challenge := "Bearer resource_metadata=\"" + metadataURL + "\""
+		challenge := `Bearer resource_metadata="` + metadataURL + `"`
 		if invalidToken {
 			challenge += `, error="invalid_token"`
 		}
@@ -528,12 +529,17 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, 
 			http.Error(w, "content-type must be application/x-www-form-urlencoded", http.StatusBadRequest)
 			return
 		}
+		if len(r.URL.Query()["password"]) != 0 {
+			http.Error(w, "password must be supplied in the request body", http.StatusBadRequest)
+			return
+		}
 		for _, name := range authorizationParameterNames {
 			if len(r.URL.Query()[name]) != 0 {
 				http.Error(w, "OAuth parameters must be supplied in the request body", http.StatusBadRequest)
 				return
 			}
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, oauthFormBodyLimit)
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "bad form", http.StatusBadRequest)
 			return
@@ -542,6 +548,10 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, 
 	values := r.URL.Query()
 	if r.Method == http.MethodPost {
 		values = r.PostForm
+		if len(values["password"]) > 1 {
+			http.Error(w, "password must not be repeated", http.StatusBadRequest)
+			return
+		}
 	}
 	if duplicated := repeatedOAuthParameter(values, []string{"client_id", "redirect_uri"}); duplicated != "" {
 		http.Error(w, "OAuth parameter must not be repeated: "+duplicated, http.StatusBadRequest)
@@ -589,7 +599,7 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, 
 		writeAuthorizeForm(w, values, "", registration.ClientName)
 		return
 	}
-	if loginPassword != "" && !auth.ConstantTimeEqual(r.FormValue("password"), loginPassword) {
+	if loginPassword != "" && !auth.ConstantTimeEqual(r.PostForm.Get("password"), loginPassword) {
 		writeAuthorizeForm(w, values, "invalid password", registration.ClientName)
 		return
 	}
@@ -642,6 +652,7 @@ func handleToken(w http.ResponseWriter, r *http.Request, cfg config.Config, stor
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, oauthFormBodyLimit)
 	if err := parseOAuthTokenForm(r); err != nil {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "error_description": err.Error()})
 		return
@@ -652,7 +663,12 @@ func handleToken(w http.ResponseWriter, r *http.Request, cfg config.Config, stor
 		return
 	}
 	if !validClientAuthentication(r, grantType, store) {
-		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_client"})
+		status := http.StatusBadRequest
+		if _, _, ok := r.BasicAuth(); ok {
+			status = http.StatusUnauthorized
+			w.Header().Set("WWW-Authenticate", `Basic realm="oauth-token"`)
+		}
+		writeJSONStatus(w, status, map[string]any{"error": "invalid_client"})
 		return
 	}
 	if grantType == "refresh_token" {
@@ -810,18 +826,21 @@ func validOAuthRedirectURI(raw string) bool {
 }
 
 func validClientAuthentication(r *http.Request, grantType string, store *auth.OAuthStore) bool {
-	if _, _, ok := r.BasicAuth(); ok {
+	if strings.TrimSpace(r.Header.Get("Authorization")) != "" {
 		return false
 	}
-	if r.FormValue("client_secret") != "" {
+	if err := r.ParseForm(); err != nil {
 		return false
 	}
-	clientID := strings.TrimSpace(r.FormValue("client_id"))
+	if len(r.PostForm["client_secret"]) != 0 {
+		return false
+	}
+	clientID := strings.TrimSpace(r.PostForm.Get("client_id"))
 	if !store.ValidateClientID(clientID) || !store.ClientAllowsGrant(clientID, grantType) {
 		return false
 	}
 	if grantType == "authorization_code" {
-		return store.ValidateClientRedirect(clientID, strings.TrimSpace(r.FormValue("redirect_uri")))
+		return store.ValidateClientRedirect(clientID, strings.TrimSpace(r.PostForm.Get("redirect_uri")))
 	}
 	return grantType == "refresh_token"
 }

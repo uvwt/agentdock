@@ -114,6 +114,7 @@ func (c *Config) Normalize() error {
 	if c.Host == "" {
 		c.Host = "127.0.0.1"
 	}
+	c.OAuthServerURL = strings.TrimSpace(c.OAuthServerURL)
 	if c.Port == 0 {
 		c.Port = 8765
 	}

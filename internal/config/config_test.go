@@ -195,12 +195,15 @@ func TestNormalizeValidatesPortAndLogLevel(t *testing.T) {
 	cfg := Config{
 		AgentDockHome:       filepath.Join(home, "valid", "home"),
 		AgentDockDefaultDir: filepath.Join(home, "valid", "workspace"),
-		Port:                443, LogLevel: " WARNING ", Host: " 0.0.0.0 ",
+		Port:                443,
+		LogLevel:            " WARNING ",
+		Host:                " 0.0.0.0 ",
+		OAuthServerURL:      " https://agentdock.example.com ",
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
 	}
-	if cfg.LogLevel != "warn" || cfg.Host != "0.0.0.0" {
+	if cfg.LogLevel != "warn" || cfg.Host != "0.0.0.0" || cfg.OAuthServerURL != "https://agentdock.example.com" {
 		t.Fatalf("normalized config = %#v", cfg)
 	}
 }

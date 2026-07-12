@@ -241,6 +241,22 @@ func TestOAuthAuthorizePasswordGate(t *testing.T) {
 	if validResponse.Code != http.StatusFound {
 		t.Fatalf("valid password status=%d body=%s", validResponse.Code, validResponse.Body.String())
 	}
+
+	queryPasswordRequest := formAuthorizeRequest(values)
+	queryPasswordRequest.URL.RawQuery = "password=login-secret"
+	queryPasswordResponse := httptest.NewRecorder()
+	handleAuthorizeForTest(queryPasswordResponse, queryPasswordRequest, cfg, store)
+	if queryPasswordResponse.Code != http.StatusBadRequest || queryPasswordResponse.Header().Get("Location") != "" {
+		t.Fatalf("query password status=%d location=%q", queryPasswordResponse.Code, queryPasswordResponse.Header().Get("Location"))
+	}
+
+	repeatedPasswordValues := cloneValues(values)
+	repeatedPasswordValues["password"] = []string{"login-secret", "login-secret"}
+	repeatedPasswordResponse := httptest.NewRecorder()
+	handleAuthorizeForTest(repeatedPasswordResponse, formAuthorizeRequest(repeatedPasswordValues), cfg, store)
+	if repeatedPasswordResponse.Code != http.StatusBadRequest || repeatedPasswordResponse.Header().Get("Location") != "" {
+		t.Fatalf("repeated password status=%d location=%q", repeatedPasswordResponse.Code, repeatedPasswordResponse.Header().Get("Location"))
+	}
 }
 
 func TestOAuthPublicClientAuthenticationContract(t *testing.T) {
@@ -260,14 +276,46 @@ func TestOAuthPublicClientAuthenticationContract(t *testing.T) {
 	if validClientAuthentication(formRequest(withSecret), "authorization_code", store) {
 		t.Fatal("client_secret_post was accepted")
 	}
+	withEmptySecret := cloneValues(valid)
+	withEmptySecret.Set("client_secret", "")
+	if validClientAuthentication(formRequest(withEmptySecret), "authorization_code", store) {
+		t.Fatal("empty client_secret was accepted for a public client")
+	}
 	basic := formRequest(valid)
 	basic.SetBasicAuth(clientID, "secret")
 	if validClientAuthentication(basic, "authorization_code", store) {
 		t.Fatal("client_secret_basic was accepted")
 	}
+	bearer := formRequest(valid)
+	bearer.Header.Set("Authorization", "Bearer unexpected")
+	if validClientAuthentication(bearer, "authorization_code", store) {
+		t.Fatal("unexpected Authorization header was accepted")
+	}
 	wrongRedirect := url.Values{"client_id": {clientID}, "redirect_uri": {"https://other.example/callback"}}
 	if validClientAuthentication(formRequest(wrongRedirect), "authorization_code", store) {
 		t.Fatal("unregistered redirect URI was accepted")
+	}
+}
+
+func TestOAuthTokenUsesRFCInvalidClientStatusForBasicAuthentication(t *testing.T) {
+	cfg := oauthTestConfig(t)
+	store := auth.NewOAuthStore()
+	clientID := oauthRegisteredClientID(t, store, oauthTestRedirect)
+	values := url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {"unused"},
+		"client_id":     {clientID},
+		"redirect_uri":  {oauthTestRedirect},
+		"code_verifier": {oauthTestVerifier},
+		"resource":      {cfg.OAuthServerURL + "/mcp"},
+	}
+	request := formRequest(values)
+	request.SetBasicAuth(clientID, "not-supported")
+	response := httptest.NewRecorder()
+	handleToken(response, request, cfg, store)
+	assertOAuthError(t, response, http.StatusUnauthorized, "invalid_client")
+	if got := response.Header().Get("WWW-Authenticate"); got != `Basic realm="oauth-token"` {
+		t.Fatalf("WWW-Authenticate = %q", got)
 	}
 }
 
