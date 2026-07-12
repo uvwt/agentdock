@@ -22,6 +22,8 @@ const (
 	FinalReviewFailed = "failed"
 )
 
+var ErrTaskNotFound = errors.New("task not found")
+
 type Phase string
 
 const (
@@ -177,6 +179,20 @@ func (s *Store) Get(id string) (Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.loadLocked(id)
+}
+
+func (s *Store) Delete(id string) (Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	task, err := s.loadLocked(id)
+	if err != nil {
+		return Task{}, err
+	}
+	if err := os.Remove(filepath.Join(s.root, id+".json")); err != nil {
+		return Task{}, fmt.Errorf("delete task %s: %w", id, err)
+	}
+	return task, nil
 }
 
 func (s *Store) List(status Status, limit int) ([]Task, error) {
@@ -391,7 +407,7 @@ func (s *Store) loadLocked(id string) (Task, error) {
 	}
 	data, err := os.ReadFile(filepath.Join(s.root, id+".json"))
 	if os.IsNotExist(err) {
-		return Task{}, fmt.Errorf("task %s not found", id)
+		return Task{}, fmt.Errorf("%w: %s", ErrTaskNotFound, id)
 	}
 	if err != nil {
 		return Task{}, err

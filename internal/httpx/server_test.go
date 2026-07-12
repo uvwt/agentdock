@@ -186,64 +186,62 @@ func TestRuntimeAPIRejectsInvalidTaskQuery(t *testing.T) {
 	}
 }
 
-func TestRuntimeAPIBlocksTask(t *testing.T) {
+func TestRuntimeAPIDeletesOnlySelectedTask(t *testing.T) {
 	cfg := testConfig(t)
 	runtime, err := tools.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	created, err := runtime.Call(context.Background(), "task_manage", map[string]any{
-		"action":                "create",
-		"title":                 "Manual block test",
-		"goal":                  "Verify Runtime API task blocking",
-		"steps":                 []map[string]any{{"id": "verify", "title": "Verify block"}},
-		"completion_conditions": []string{"task can be blocked"},
-	})
-	if err != nil {
-		t.Fatalf("create task: %v", err)
+	createTask := func(title string) string {
+		t.Helper()
+		created, err := runtime.Call(context.Background(), "task_manage", map[string]any{
+			"action":                "create",
+			"title":                 title,
+			"goal":                  "Verify Runtime API task deletion",
+			"steps":                 []map[string]any{{"id": "verify", "title": "Verify deletion"}},
+			"completion_conditions": []string{"only the selected task is deleted"},
+		})
+		if err != nil {
+			t.Fatalf("create task: %v", err)
+		}
+		taskID, _ := created["task_id"].(string)
+		if taskID == "" {
+			t.Fatalf("created task missing id: %#v", created)
+		}
+		return taskID
 	}
-	taskID, _ := created["task_id"].(string)
-	if taskID == "" {
-		t.Fatalf("created task missing id: %#v", created)
-	}
+	deletedTaskID := createTask("Delete me")
+	keptTaskID := createTask("Keep me")
 
 	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
 	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/internal/runtime/tasks/"+taskID+"/block", strings.NewReader(`{"summary":"waiting for user input"}`))
-	handler.ServeHTTP(recorder, req)
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodDelete, "/internal/runtime/tasks/"+deletedTaskID, nil))
 	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+		t.Fatalf("delete status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
 	var payload struct {
 		Action      string `json:"action"`
 		TaskID      string `json:"task_id"`
-		TaskSummary struct {
-			Status  string `json:"status"`
-			Blocker string `json:"blocker"`
-		} `json:"task_summary"`
+		DeletedTask struct {
+			Title string `json:"title"`
+		} `json:"deleted_task"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if payload.Action != "block" || payload.TaskID != taskID || payload.TaskSummary.Status != "blocked" || payload.TaskSummary.Blocker != "waiting for user input" {
-		t.Fatalf("unexpected block response: %#v", payload)
+	if payload.Action != "delete" || payload.TaskID != deletedTaskID || payload.DeletedTask.Title != "Delete me" {
+		t.Fatalf("unexpected delete response: %#v", payload)
 	}
-}
 
-func TestRuntimeAPIRejectsInvalidTaskBlockRequest(t *testing.T) {
-	cfg := testConfig(t)
-	runtime, err := tools.NewRuntime(cfg)
-	if err != nil {
-		t.Fatalf("new runtime: %v", err)
+	deletedRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(deletedRecorder, httptest.NewRequest(http.MethodGet, "/internal/runtime/tasks/"+deletedTaskID, nil))
+	if deletedRecorder.Code != http.StatusNotFound || !strings.Contains(deletedRecorder.Body.String(), `"code":"TASK_NOT_FOUND"`) {
+		t.Fatalf("deleted task lookup status=%d body=%s", deletedRecorder.Code, deletedRecorder.Body.String())
 	}
-	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/internal/runtime/tasks/tsk_missing/block", strings.NewReader(`{"summary":`)))
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
-	}
-	if !strings.Contains(recorder.Body.String(), `"code":"INVALID_REQUEST"`) {
-		t.Fatalf("body missing INVALID_REQUEST code: %s", recorder.Body.String())
+	keptRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(keptRecorder, httptest.NewRequest(http.MethodGet, "/internal/runtime/tasks/"+keptTaskID, nil))
+	if keptRecorder.Code != http.StatusOK {
+		t.Fatalf("kept task lookup status=%d body=%s", keptRecorder.Code, keptRecorder.Body.String())
 	}
 }
 
@@ -280,7 +278,8 @@ func TestRuntimeAPIMethodContract(t *testing.T) {
 		{method: http.MethodGet, path: "/internal/runtime/status", status: http.StatusOK},
 		{method: http.MethodPost, path: "/internal/runtime/capabilities", status: http.StatusOK},
 		{method: http.MethodPost, path: "/internal/runtime/status", status: http.StatusMethodNotAllowed, allow: "GET"},
-		{method: http.MethodGet, path: "/internal/runtime/tasks/tsk_123/block", status: http.StatusMethodNotAllowed, allow: "POST"},
+		{method: http.MethodPost, path: "/internal/runtime/tasks/tsk_1234567890abcdef", status: http.StatusMethodNotAllowed, allow: "GET, DELETE"},
+		{method: http.MethodDelete, path: "/internal/runtime/tasks", status: http.StatusMethodNotAllowed, allow: "GET"},
 		{method: http.MethodDelete, path: "/internal/runtime/capabilities", status: http.StatusMethodNotAllowed, allow: "GET, POST"},
 	}
 	for _, test := range tests {

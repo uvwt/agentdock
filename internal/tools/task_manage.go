@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -588,6 +589,9 @@ func compactTemplateSummary(template taskstate.Template) map[string]any {
 }
 
 func taskToolError(err error) error {
+	if errors.Is(err, taskstate.ErrTaskNotFound) {
+		return toolErrorDetails("TASK_NOT_FOUND", err.Error(), "not_found", map[string]any{"retryable": false})
+	}
 	return toolErrorDetails("TASK_STATE_ERROR", err.Error(), "validation", map[string]any{"retryable": false})
 }
 

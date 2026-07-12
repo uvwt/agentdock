@@ -1,6 +1,7 @@
 package taskstate
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -212,5 +213,38 @@ func TestCreateRejectsInvalidSteps(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "duplicate task step") {
 		t.Fatalf("expected duplicate-step error, got %v", err)
+	}
+}
+
+func TestDeleteRemovesOnlySelectedTask(t *testing.T) {
+	store, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.Create("First", "delete first task", []string{"first removed"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.Create("Second", "keep second task", []string{"second remains"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := store.Delete(first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted.ID != first.ID {
+		t.Fatalf("deleted task id = %q, want %q", deleted.ID, first.ID)
+	}
+	if _, err := store.Get(first.ID); !errors.Is(err, ErrTaskNotFound) {
+		t.Fatalf("deleted task still exists or returned wrong error: %v", err)
+	}
+	kept, err := store.Get(second.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kept.ID != second.ID {
+		t.Fatalf("kept task id = %q, want %q", kept.ID, second.ID)
 	}
 }

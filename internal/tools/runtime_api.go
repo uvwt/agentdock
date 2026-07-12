@@ -86,14 +86,14 @@ func (r *Runtime) RuntimeTask(id string) (Result, error) {
 	return Result{"ok": true, "source": runtimeAPISource, "action": "get", "task": task}, nil
 }
 
-func (r *Runtime) RuntimeTaskBlock(id, summary string) (Result, error) {
-	task, err := r.tasks.Block(strings.TrimSpace(id), strings.TrimSpace(summary))
+func (r *Runtime) RuntimeTaskDelete(id string) (Result, error) {
+	task, err := r.tasks.Delete(strings.TrimSpace(id))
 	if err != nil {
 		return nil, taskToolError(err)
 	}
 	return Result{
-		"ok": true, "source": runtimeAPISource, "action": "block",
-		"task_id": task.ID, "task_summary": compactTaskSummary(task),
+		"ok": true, "source": runtimeAPISource, "action": "delete",
+		"task_id": task.ID, "deleted_task": compactTaskSummary(task),
 	}, nil
 }
 
