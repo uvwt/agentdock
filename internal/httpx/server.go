@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/uvwt/agentdock/internal/auth"
@@ -32,7 +34,7 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	authRequired := cfg.AuthRequired()
 	oauthStore := auth.NewOAuthStore()
 	if cfg.OAuthEnabled {
-		persistentStore, err := auth.NewPersistentOAuthStore(filepath.Join(cfg.AgentDockHome, "oauth", "refresh-tokens.json"))
+		persistentStore, err := auth.NewPersistentOAuthStore(filepath.Join(cfg.AgentDockHome, "oauth", "state-v4.json"), oauthSigningKey())
 		if err != nil {
 			return fmt.Errorf("initialize OAuth token store: %w", err)
 		}
@@ -63,9 +65,9 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 		publicArtifactStore.ServeHTTP(w, r, "/artifacts/public/")
 	})
 	registerOAuthRoutes(mux, cfg, oauthStore)
-	mux.HandleFunc("/context", agentDockContextHandler(server, cfg))
-	registerRuntimeAPI(mux, server, cfg)
-	mux.HandleFunc("/mcp", mcpEndpointHandler(server, cfg))
+	mux.HandleFunc("/context", agentDockContextHandler(server, cfg, oauthStore))
+	registerRuntimeAPI(mux, server, cfg, oauthStore)
+	mux.HandleFunc("/mcp", mcpEndpointHandler(server, cfg, oauthStore))
 
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 	httpServer := newHTTPServer(addr, loggingMiddleware(mux))
@@ -78,20 +80,92 @@ func registerOAuthRoutes(mux *http.ServeMux, cfg config.Config, store *auth.OAut
 		return
 	}
 	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		writeJSON(w, oauthMetadata(cfg, r))
 	})
 	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		writeJSON(w, protectedResourceMetadata(cfg, r))
 	})
+	registrationLimiter := newFixedWindowLimiter(30, time.Minute)
+	passwordLimiter := newFixedWindowLimiter(10, 5*time.Minute)
 	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && !registrationLimiter.Allow(requestRemoteIP(r), time.Now()) {
+			w.Header().Set("Retry-After", "60")
+			writeJSONStatus(w, http.StatusTooManyRequests, map[string]any{"error": "temporarily_unavailable"})
+			return
+		}
 		handleRegister(w, r, cfg, store)
 	})
 	mux.HandleFunc("/oauth/authorize", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && !passwordLimiter.Allow(requestRemoteIP(r), time.Now()) {
+			w.Header().Set("Retry-After", "300")
+			http.Error(w, "too many authorization attempts", http.StatusTooManyRequests)
+			return
+		}
 		handleAuthorize(w, r, cfg, store)
 	})
 	mux.HandleFunc("/oauth/token", func(w http.ResponseWriter, r *http.Request) {
 		handleToken(w, r, cfg, store)
 	})
+}
+
+type fixedWindowLimiter struct {
+	mu      sync.Mutex
+	maximum int
+	window  time.Duration
+	entries map[string]fixedWindowEntry
+}
+
+type fixedWindowEntry struct {
+	started time.Time
+	count   int
+}
+
+func newFixedWindowLimiter(maximum int, window time.Duration) *fixedWindowLimiter {
+	return &fixedWindowLimiter{maximum: maximum, window: window, entries: map[string]fixedWindowEntry{}}
+}
+
+func (l *fixedWindowLimiter) Allow(key string, now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	entry, exists := l.entries[key]
+	if !exists && len(l.entries) >= 4096 {
+		for candidate, value := range l.entries {
+			if now.Sub(value.started) >= l.window {
+				delete(l.entries, candidate)
+			}
+		}
+		if len(l.entries) >= 4096 {
+			return false
+		}
+	}
+	if entry.started.IsZero() || now.Sub(entry.started) >= l.window {
+		l.entries[key] = fixedWindowEntry{started: now, count: 1}
+		return true
+	}
+	if entry.count >= l.maximum {
+		return false
+	}
+	entry.count++
+	l.entries[key] = entry
+	return true
+}
+
+func requestRemoteIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil && host != "" {
+		return host
+	}
+	return strings.TrimSpace(r.RemoteAddr)
 }
 
 func newHTTPServer(addr string, handler http.Handler) *http.Server {
@@ -105,7 +179,7 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 	}
 }
 
-func agentDockContextHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc {
+func agentDockContextHandler(server *mcp.Server, cfg config.Config, oauthStore *auth.OAuthStore) http.HandlerFunc {
 	authorizer := auth.Bearer{Token: cfg.AuthToken}
 	authRequired := cfg.AuthRequired()
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -114,9 +188,9 @@ func agentDockContextHandler(server *mcp.Server, cfg config.Config) http.Handler
 			return
 		}
 		staticOK := cfg.AuthToken != "" && authorizer.Authorized(r)
-		oauthOK := authorizedOAuth(r, cfg)
+		oauthOK := authorizedOAuth(r, cfg, oauthStore)
 		if authRequired && !staticOK && !oauthOK {
-			setBearerChallenge(w, cfg, r)
+			setBearerChallenge(w, cfg, r, strings.TrimSpace(r.Header.Get("Authorization")) != "")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -131,7 +205,7 @@ func agentDockContextHandler(server *mcp.Server, cfg config.Config) http.Handler
 	}
 }
 
-func mcpEndpointHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc {
+func mcpEndpointHandler(server *mcp.Server, cfg config.Config, oauthStore *auth.OAuthStore) http.HandlerFunc {
 	authorizer := auth.Bearer{Token: cfg.AuthToken}
 	authRequired := cfg.AuthRequired()
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -140,9 +214,9 @@ func mcpEndpointHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc 
 			return
 		}
 		staticOK := cfg.AuthToken != "" && authorizer.Authorized(r)
-		oauthOK := authorizedOAuth(r, cfg)
+		oauthOK := authorizedOAuth(r, cfg, oauthStore)
 		if authRequired && !staticOK && !oauthOK {
-			setBearerChallenge(w, cfg, r)
+			setBearerChallenge(w, cfg, r, strings.TrimSpace(r.Header.Get("Authorization")) != "")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -207,9 +281,22 @@ func handleRegister(w http.ResponseWriter, r *http.Request, cfg config.Config, s
 		writeJSONStatus(w, http.StatusMethodNotAllowed, map[string]any{"error": "method_not_allowed"})
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_client_metadata", "error_description": "content-type must be application/json"})
+		return
+	}
 	metadata, err := decodeClientRegistration(w, r)
 	if err != nil {
-		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_client_metadata", "error_description": err.Error()})
+		errorCode := "invalid_client_metadata"
+		description := "client metadata is invalid"
+		if errors.Is(err, errInvalidOAuthRedirectURI) {
+			errorCode = "invalid_redirect_uri"
+			description = "one or more redirect_uris are invalid"
+		}
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": errorCode, "error_description": description})
 		return
 	}
 	clientID, err := store.RegisterClient(metadata.ClientName, metadata.RedirectURIs, metadata.GrantTypes)
@@ -231,6 +318,8 @@ func handleRegister(w http.ResponseWriter, r *http.Request, cfg config.Config, s
 	writeJSONStatus(w, http.StatusCreated, response)
 }
 
+var errInvalidOAuthRedirectURI = errors.New("invalid OAuth redirect URI")
+
 type clientRegistrationMetadata struct {
 	ClientName              string   `json:"client_name"`
 	RedirectURIs            []string `json:"redirect_uris"`
@@ -241,8 +330,15 @@ type clientRegistrationMetadata struct {
 
 func decodeClientRegistration(w http.ResponseWriter, r *http.Request) (clientRegistrationMetadata, error) {
 	body := http.MaxBytesReader(w, r.Body, 1<<20)
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return clientRegistrationMetadata{}, fmt.Errorf("read client metadata: %w", err)
+	}
+	if err := rejectDuplicateTopLevelJSONKeys(data); err != nil {
+		return clientRegistrationMetadata{}, err
+	}
 	var metadata clientRegistrationMetadata
-	if err := decodeSingleJSON(body, &metadata); err != nil {
+	if err := decodeSingleJSON(strings.NewReader(string(data)), &metadata); err != nil {
 		return metadata, fmt.Errorf("decode client metadata: %w", err)
 	}
 	metadata.ClientName = strings.TrimSpace(metadata.ClientName)
@@ -250,9 +346,6 @@ func decodeClientRegistration(w http.ResponseWriter, r *http.Request) (clientReg
 		return metadata, errors.New("client_name exceeds 200 characters")
 	}
 	method := strings.TrimSpace(metadata.TokenEndpointAuthMethod)
-	if method == "" {
-		method = "none"
-	}
 	if method != "none" {
 		return metadata, fmt.Errorf("token_endpoint_auth_method %q is not supported", method)
 	}
@@ -264,7 +357,7 @@ func decodeClientRegistration(w http.ResponseWriter, r *http.Request) (clientReg
 	for _, raw := range metadata.RedirectURIs {
 		redirectURI := strings.TrimSpace(raw)
 		if !validOAuthRedirectURI(redirectURI) {
-			return metadata, fmt.Errorf("invalid redirect_uri %q", redirectURI)
+			return metadata, fmt.Errorf("%w: %q", errInvalidOAuthRedirectURI, redirectURI)
 		}
 		if _, exists := seenRedirects[redirectURI]; exists {
 			continue
@@ -298,6 +391,41 @@ func decodeClientRegistration(w http.ResponseWriter, r *http.Request) (clientReg
 	metadata.GrantTypes = grantTypes
 	metadata.ResponseTypes = responseTypes
 	return metadata, nil
+}
+
+func rejectDuplicateTopLevelJSONKeys(data []byte) error {
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	start, err := decoder.Token()
+	if err != nil {
+		return fmt.Errorf("decode client metadata: %w", err)
+	}
+	delim, ok := start.(json.Delim)
+	if !ok || delim != '{' {
+		return errors.New("client metadata must be a JSON object")
+	}
+	seen := map[string]struct{}{}
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return fmt.Errorf("decode client metadata key: %w", err)
+		}
+		key, ok := token.(string)
+		if !ok {
+			return errors.New("client metadata key must be a string")
+		}
+		if _, exists := seen[key]; exists {
+			return fmt.Errorf("duplicate client metadata field %q", key)
+		}
+		seen[key] = struct{}{}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return fmt.Errorf("decode client metadata value: %w", err)
+		}
+	}
+	if _, err := decoder.Token(); err != nil {
+		return fmt.Errorf("decode client metadata: %w", err)
+	}
+	return nil
 }
 
 func normalizeClientMetadataValues(values, defaults []string, supported map[string]struct{}, label string) ([]string, error) {
@@ -338,13 +466,21 @@ func protectedResourceMetadata(cfg config.Config, r *http.Request) map[string]an
 	}
 }
 
-func setBearerChallenge(w http.ResponseWriter, cfg config.Config, r *http.Request) {
+func setBearerChallenge(w http.ResponseWriter, cfg config.Config, r *http.Request, invalidToken bool) {
 	if cfg.OAuthEnabled {
 		metadataURL := issuerFor(cfg, r) + "/.well-known/oauth-protected-resource/mcp"
-		w.Header().Set("WWW-Authenticate", "Bearer resource_metadata=\""+metadataURL+"\"")
+		challenge := "Bearer resource_metadata=\"" + metadataURL + "\""
+		if invalidToken {
+			challenge += `, error="invalid_token"`
+		}
+		w.Header().Set("WWW-Authenticate", challenge)
 		return
 	}
-	w.Header().Set("WWW-Authenticate", "Bearer")
+	challenge := "Bearer"
+	if invalidToken {
+		challenge += ` error="invalid_token"`
+	}
+	w.Header().Set("WWW-Authenticate", challenge)
 }
 
 func oauthMetadata(cfg config.Config, r *http.Request) map[string]any {
@@ -380,10 +516,24 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, 
 		return
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
 	if r.Method == http.MethodPost {
+		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil || mediaType != "application/x-www-form-urlencoded" {
+			http.Error(w, "content-type must be application/x-www-form-urlencoded", http.StatusBadRequest)
+			return
+		}
+		for _, name := range authorizationParameterNames {
+			if len(r.URL.Query()[name]) != 0 {
+				http.Error(w, "OAuth parameters must be supplied in the request body", http.StatusBadRequest)
+				return
+			}
+		}
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "bad form", http.StatusBadRequest)
 			return
@@ -393,52 +543,91 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, 
 	if r.Method == http.MethodPost {
 		values = r.PostForm
 	}
+	if duplicated := repeatedOAuthParameter(values, []string{"client_id", "redirect_uri"}); duplicated != "" {
+		http.Error(w, "OAuth parameter must not be repeated: "+duplicated, http.StatusBadRequest)
+		return
+	}
 	clientID := values.Get("client_id")
 	redirectURI := values.Get("redirect_uri")
 	challenge := values.Get("code_challenge")
 	method := values.Get("code_challenge_method")
 	state := values.Get("state")
-	responseType := values.Get("response_type")
-	if responseType != "code" {
-		http.Error(w, "unsupported response_type", http.StatusBadRequest)
-		return
-	}
 	if !codes.ValidateClientRedirect(clientID, redirectURI) ||
 		!codes.ClientAllowsGrant(clientID, "authorization_code") {
 		http.Error(w, "invalid client_id or redirect_uri", http.StatusBadRequest)
 		return
 	}
+	if duplicated := repeatedOAuthParameter(values, []string{
+		"response_type", "code_challenge", "code_challenge_method", "state",
+	}); duplicated != "" {
+		redirectOAuthError(w, r, redirectURI, state, "invalid_request")
+		return
+	}
+	responseType := values.Get("response_type")
+	if responseType != "code" {
+		redirectOAuthError(w, r, redirectURI, state, "unsupported_response_type")
+		return
+	}
 	if !auth.ValidPKCEChallenge(challenge) || method != "S256" {
-		http.Error(w, "invalid oauth request", http.StatusBadRequest)
+		redirectOAuthError(w, r, redirectURI, state, "invalid_request")
 		return
 	}
 	expectedResource := issuerFor(cfg, r) + "/mcp"
 	resource := strings.TrimSpace(values.Get("resource"))
-	if resource == "" {
-		resource = expectedResource
-	}
-	if resource != expectedResource {
-		http.Error(w, "invalid resource", http.StatusBadRequest)
+	if len(values["resource"]) != 1 || resource == "" {
+		redirectOAuthError(w, r, redirectURI, state, "invalid_target")
 		return
 	}
+	if !auth.EquivalentResourceURI(resource, expectedResource) {
+		redirectOAuthError(w, r, redirectURI, state, "invalid_target")
+		return
+	}
+	resource = expectedResource
 	loginPassword := auth.ConfiguredLoginValue()
+	registration, _ := codes.ClientRegistration(clientID)
 	if loginPassword != "" && r.Method == http.MethodGet {
-		writeAuthorizeForm(w, values, "")
+		writeAuthorizeForm(w, values, "", registration.ClientName)
 		return
 	}
 	if loginPassword != "" && !auth.ConstantTimeEqual(r.FormValue("password"), loginPassword) {
-		writeAuthorizeForm(w, values, "invalid password")
+		writeAuthorizeForm(w, values, "invalid password", registration.ClientName)
 		return
 	}
 	code, err := codes.Create(auth.OAuthCode{
-		ClientID: clientID, RedirectURI: redirectURI, Challenge: challenge, State: state, Resource: resource,
+		ClientID: clientID, RedirectURI: redirectURI, Challenge: challenge, Resource: resource,
 	})
 	if err != nil {
-		http.Error(w, "failed to create authorization code", http.StatusInternalServerError)
+		redirectOAuthError(w, r, redirectURI, state, "server_error")
 		return
 	}
-	location := auth.AppendQuery(redirectURI, url.Values{"code": []string{code}, "state": []string{state}})
+	responseValues := url.Values{"code": []string{code}}
+	if state != "" {
+		responseValues.Set("state", state)
+	}
+	location := auth.AppendQuery(redirectURI, responseValues)
 	http.Redirect(w, r, location, http.StatusFound)
+}
+
+var authorizationParameterNames = []string{
+	"response_type", "client_id", "redirect_uri", "code_challenge",
+	"code_challenge_method", "resource", "state",
+}
+
+func repeatedOAuthParameter(values url.Values, names []string) string {
+	for _, name := range names {
+		if len(values[name]) > 1 {
+			return name
+		}
+	}
+	return ""
+}
+
+func redirectOAuthError(w http.ResponseWriter, r *http.Request, redirectURI, state, code string) {
+	values := url.Values{"error": []string{code}}
+	if state != "" {
+		values.Set("state", state)
+	}
+	http.Redirect(w, r, auth.AppendQuery(redirectURI, values), http.StatusFound)
 }
 
 func handleToken(w http.ResponseWriter, r *http.Request, cfg config.Config, store *auth.OAuthStore) {
@@ -449,11 +638,12 @@ func handleToken(w http.ResponseWriter, r *http.Request, cfg config.Config, stor
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
 	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+	if err := parseOAuthTokenForm(r); err != nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "error_description": err.Error()})
 		return
 	}
 	grantType := strings.TrimSpace(r.FormValue("grant_type"))
@@ -462,7 +652,7 @@ func handleToken(w http.ResponseWriter, r *http.Request, cfg config.Config, stor
 		return
 	}
 	if !validClientAuthentication(r, grantType, store) {
-		writeJSONStatus(w, http.StatusUnauthorized, map[string]any{"error": "invalid_client"})
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_client"})
 		return
 	}
 	if grantType == "refresh_token" {
@@ -472,38 +662,68 @@ func handleToken(w http.ResponseWriter, r *http.Request, cfg config.Config, stor
 	handleAuthorizationCodeGrant(w, r, cfg, store)
 }
 
+func parseOAuthTokenForm(r *http.Request) error {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/x-www-form-urlencoded" {
+		return errors.New("content-type must be application/x-www-form-urlencoded")
+	}
+	if err := r.ParseForm(); err != nil {
+		return errors.New("invalid form body")
+	}
+	if len(r.URL.Query()["resource"]) != 0 {
+		return errors.New("parameter resource must be supplied in the request body")
+	}
+	singleValueFields := []string{"grant_type", "code", "redirect_uri", "client_id", "code_verifier", "refresh_token", "client_secret"}
+	for _, name := range singleValueFields {
+		if len(r.URL.Query()[name]) != 0 {
+			return fmt.Errorf("parameter %s must be supplied in the request body", name)
+		}
+		if len(r.PostForm[name]) > 1 {
+			return fmt.Errorf("parameter %s must not be repeated", name)
+		}
+	}
+	return nil
+}
+
 func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, cfg config.Config, store *auth.OAuthStore) {
-	code, ok := store.Consume(r.FormValue("code"))
+	clientID := strings.TrimSpace(r.PostForm.Get("client_id"))
+	resource := strings.TrimSpace(r.PostForm.Get("resource"))
+	if len(r.PostForm["resource"]) != 1 || resource == "" {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_target"})
+		return
+	}
+	code, ok, replay := store.Redeem(
+		r.PostForm.Get("code"), clientID, r.PostForm.Get("redirect_uri"),
+		r.PostForm.Get("code_verifier"), resource,
+	)
+	if replay {
+		if err := store.RevokeGrant(code.GrantID, oauthRefreshTokenTTL); err != nil {
+			writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"error": "server_error"})
+			return
+		}
+	}
 	if !ok {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_grant"})
 		return
 	}
-	clientID := strings.TrimSpace(r.FormValue("client_id"))
-	if code.RedirectURI != r.FormValue("redirect_uri") || clientID != code.ClientID {
-		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_grant"})
-		return
-	}
-	if !auth.VerifyPKCE(r.FormValue("code_verifier"), code.Challenge) {
-		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_grant"})
-		return
-	}
-	resource := strings.TrimSpace(r.FormValue("resource"))
-	if resource == "" {
-		resource = code.Resource
-	}
-	if resource != code.Resource {
-		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_target"})
-		return
-	}
+	resource = code.Resource
 	issuer := issuerFor(cfg, r)
-	accessToken, err := auth.IssueToken(issuer, resource, oauthSigningKey(), oauthAccessTokenTTL)
+	grantTTL := oauthAccessTokenTTL
+	if store.ClientAllowsGrant(clientID, "refresh_token") {
+		grantTTL = oauthRefreshTokenTTL
+	}
+	if err := store.ActivateGrant(clientID, resource, code.GrantID, grantTTL); err != nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_grant"})
+		return
+	}
+	accessToken, err := auth.IssueToken(issuer, resource, code.GrantID, oauthSigningKey(), oauthAccessTokenTTL)
 	if err != nil {
 		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"error": "server_error"})
 		return
 	}
 	refreshToken := ""
 	if store.ClientAllowsGrant(clientID, "refresh_token") {
-		refreshToken, err = store.IssueRefreshToken(clientID, resource, oauthRefreshTokenTTL)
+		refreshToken, err = store.IssueRefreshToken(clientID, resource, code.GrantID, oauthRefreshTokenTTL)
 		if err != nil {
 			writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"error": "server_error"})
 			return
@@ -514,10 +734,15 @@ func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, cfg co
 
 func handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request, cfg config.Config, store *auth.OAuthStore) {
 	clientID := strings.TrimSpace(r.FormValue("client_id"))
-	newRefreshToken, resource, ok, err := store.RotateRefreshToken(
+	resource := strings.TrimSpace(r.FormValue("resource"))
+	if len(r.PostForm["resource"]) != 1 || resource == "" {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_target"})
+		return
+	}
+	newRefreshToken, resource, grantID, ok, err := store.RotateRefreshToken(
 		r.FormValue("refresh_token"),
 		clientID,
-		r.FormValue("resource"),
+		resource,
 		oauthRefreshTokenTTL,
 	)
 	if err != nil {
@@ -528,7 +753,7 @@ func handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request, cfg config.
 		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_grant"})
 		return
 	}
-	accessToken, err := auth.IssueToken(issuerFor(cfg, r), resource, oauthSigningKey(), oauthAccessTokenTTL)
+	accessToken, err := auth.IssueToken(issuerFor(cfg, r), resource, grantID, oauthSigningKey(), oauthAccessTokenTTL)
 	if err != nil {
 		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"error": "server_error"})
 		return
@@ -548,17 +773,18 @@ func writeOAuthTokenResponse(w http.ResponseWriter, accessToken, refreshToken st
 	writeJSON(w, payload)
 }
 
-func authorizedOAuth(r *http.Request, cfg config.Config) bool {
+func authorizedOAuth(r *http.Request, cfg config.Config, store *auth.OAuthStore) bool {
 	if !cfg.OAuthEnabled {
 		return false
 	}
-	header := strings.TrimSpace(r.Header.Get("Authorization"))
-	if !strings.HasPrefix(header, "Bearer ") {
+	token, ok := auth.ParseBearerToken(r.Header.Get("Authorization"))
+	if !ok {
 		return false
 	}
 	issuer := issuerFor(cfg, r)
 	audience := issuer + "/mcp"
-	return auth.ValidateToken(strings.TrimPrefix(header, "Bearer "), issuer, audience, oauthSigningKey())
+	grantID, valid := auth.ValidateToken(token, issuer, audience, oauthSigningKey())
+	return valid && store.GrantActive(grantID)
 }
 
 func oauthSigningKey() string { return os.Getenv("AGENTDOCK_OAUTH_TOKEN_SECRET") }

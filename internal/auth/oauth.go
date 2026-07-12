@@ -19,35 +19,39 @@ import (
 )
 
 const (
-	shortClientPrefix   = "adcr_"
-	oauthStateVersion   = 2
-	maxRefreshStateSize = 1 << 20
-	maxRefreshTokens    = 1024
-	maxOAuthClients     = 1024
+	shortClientPrefix = "adcr_"
+	oauthStateVersion = 4
+	maxOAuthStateSize = 1 << 20
+	maxOAuthGrants    = 1024
+	maxOAuthClients   = 1024
+	maxOAuthCodes     = 1024
 )
 
 type OAuthStore struct {
-	mu            sync.Mutex
-	codes         map[string]OAuthCode
-	refreshTokens map[string]OAuthRefreshToken
-	clients       map[string]OAuthClientRegistration
-	refreshPath   string
+	mu         sync.Mutex
+	codes      map[string]OAuthCode
+	grants     map[string]OAuthGrant
+	clients    map[string]OAuthClientRegistration
+	statePath  string
+	signingKey string
 }
 
 type OAuthCode struct {
 	ClientID    string
 	RedirectURI string
 	Challenge   string
-	State       string
 	Resource    string
+	GrantID     string
+	Redeemed    bool
 	ExpiresAt   time.Time
 }
 
-type OAuthRefreshToken struct {
-	ClientID  string `json:"client_id"`
-	Resource  string `json:"resource"`
-	IssuedAt  int64  `json:"issued_at"`
-	ExpiresAt int64  `json:"expires_at"`
+type OAuthGrant struct {
+	ClientID          string `json:"client_id"`
+	Resource          string `json:"resource"`
+	CurrentGeneration uint64 `json:"current_generation"`
+	ExpiresAt         int64  `json:"expires_at"`
+	Revoked           bool   `json:"revoked,omitempty"`
 }
 
 type OAuthClientRegistration struct {
@@ -59,7 +63,7 @@ type OAuthClientRegistration struct {
 
 type oauthState struct {
 	Version int                                `json:"version"`
-	Tokens  map[string]OAuthRefreshToken       `json:"tokens"`
+	Grants  map[string]OAuthGrant              `json:"grants"`
 	Clients map[string]OAuthClientRegistration `json:"clients,omitempty"`
 }
 
@@ -68,51 +72,68 @@ type tokenClaims struct {
 	Audience  string `json:"aud"`
 	IssuedAt  int64  `json:"iat"`
 	ExpiresAt int64  `json:"exp"`
+	GrantID   string `json:"grant_id"`
+}
+
+type refreshTokenClaims struct {
+	GrantID    string `json:"grant_id"`
+	Generation uint64 `json:"generation"`
+	Nonce      string `json:"nonce"`
 }
 
 func NewOAuthStore() *OAuthStore {
+	key, err := RandomToken(32)
+	if err != nil {
+		panic(fmt.Sprintf("generate in-memory OAuth signing key: %v", err))
+	}
 	return &OAuthStore{
-		codes:         map[string]OAuthCode{},
-		refreshTokens: map[string]OAuthRefreshToken{},
-		clients:       map[string]OAuthClientRegistration{},
+		codes:      map[string]OAuthCode{},
+		grants:     map[string]OAuthGrant{},
+		clients:    map[string]OAuthClientRegistration{},
+		signingKey: key,
 	}
 }
 
-func NewPersistentOAuthStore(path string) (*OAuthStore, error) {
+func NewPersistentOAuthStore(path, signingKey string) (*OAuthStore, error) {
 	path = strings.TrimSpace(path)
+	signingKey = strings.TrimSpace(signingKey)
 	if path == "" {
-		return nil, errors.New("OAuth refresh token state path is required")
+		return nil, errors.New("OAuth state path is required")
+	}
+	if signingKey == "" {
+		return nil, errors.New("OAuth signing key is required")
 	}
 	store := NewOAuthStore()
-	store.refreshPath = path
+	store.statePath = path
+	store.signingKey = signingKey
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return store, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read OAuth refresh token state: %w", err)
+		return nil, fmt.Errorf("read OAuth state: %w", err)
 	}
-	if len(data) > maxRefreshStateSize {
-		return nil, fmt.Errorf("OAuth refresh token state exceeds %d bytes", maxRefreshStateSize)
+	if len(data) > maxOAuthStateSize {
+		return nil, fmt.Errorf("OAuth state exceeds %d bytes", maxOAuthStateSize)
 	}
 	var state oauthState
 	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, fmt.Errorf("decode OAuth refresh token state: %w", err)
+		return nil, fmt.Errorf("decode OAuth state: %w", err)
 	}
 	if state.Version != oauthStateVersion {
-		return nil, fmt.Errorf("unsupported OAuth refresh token state version %d", state.Version)
+		return nil, fmt.Errorf("unsupported OAuth state version %d", state.Version)
 	}
-	if state.Tokens == nil {
-		state.Tokens = map[string]OAuthRefreshToken{}
+	if state.Grants == nil {
+		state.Grants = map[string]OAuthGrant{}
 	}
 	if state.Clients == nil {
 		state.Clients = map[string]OAuthClientRegistration{}
 	}
 	now := time.Now().Unix()
 	pruned := false
-	for digest, token := range state.Tokens {
-		if !validStoredRefreshToken(digest, token, now) {
-			delete(state.Tokens, digest)
+	for grantID, grant := range state.Grants {
+		if !validStoredGrant(grantID, grant, now) {
+			delete(state.Grants, grantID)
 			pruned = true
 		}
 	}
@@ -122,15 +143,15 @@ func NewPersistentOAuthStore(path string) (*OAuthStore, error) {
 			pruned = true
 		}
 	}
-	if len(state.Tokens) > maxRefreshTokens {
-		return nil, fmt.Errorf("OAuth refresh token state contains %d entries, maximum is %d", len(state.Tokens), maxRefreshTokens)
+	if len(state.Grants) > maxOAuthGrants {
+		return nil, fmt.Errorf("OAuth grant state contains %d entries, maximum is %d", len(state.Grants), maxOAuthGrants)
 	}
 	if len(state.Clients) > maxOAuthClients {
 		return nil, fmt.Errorf("OAuth client state contains %d entries, maximum is %d", len(state.Clients), maxOAuthClients)
 	}
-	store.refreshTokens = state.Tokens
+	store.grants = state.Grants
 	store.clients = state.Clients
-	if pruned || state.Version != oauthStateVersion {
+	if pruned {
 		store.mu.Lock()
 		err = store.persistStateLocked()
 		store.mu.Unlock()
@@ -146,133 +167,259 @@ func (s *OAuthStore) Create(code OAuthCode) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("generate authorization code: %w", err)
 	}
+	if code.GrantID == "" {
+		code.GrantID, err = RandomToken(24)
+		if err != nil {
+			return "", fmt.Errorf("generate authorization grant ID: %w", err)
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	code.ExpiresAt = time.Now().Add(5 * time.Minute)
+	now := time.Now()
+	s.pruneExpiredCodesLocked(now)
+	if len(s.codes) >= maxOAuthCodes {
+		return "", fmt.Errorf("OAuth authorization code limit %d reached", maxOAuthCodes)
+	}
+	code.ExpiresAt = now.Add(5 * time.Minute)
 	s.codes[value] = code
 	return value, nil
 }
 
-func (s *OAuthStore) Consume(code string) (OAuthCode, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	value, ok := s.codes[code]
-	if !ok || time.Now().After(value.ExpiresAt) {
-		delete(s.codes, code)
-		return OAuthCode{}, false
+func (s *OAuthStore) pruneExpiredCodesLocked(now time.Time) {
+	for raw, code := range s.codes {
+		if !code.ExpiresAt.After(now) {
+			delete(s.codes, raw)
+		}
 	}
-	delete(s.codes, code)
-	return value, true
 }
 
-func (s *OAuthStore) IssueRefreshToken(clientID, resource string, ttl time.Duration) (string, error) {
-	clientID = strings.TrimSpace(clientID)
-	resource = strings.TrimSpace(resource)
-	if clientID == "" {
-		return "", errors.New("refresh token client ID is required")
-	}
-	if resource == "" {
-		return "", errors.New("refresh token resource is required")
-	}
-	if ttl <= 0 {
-		return "", errors.New("refresh token TTL must be positive")
-	}
-	raw, err := RandomToken(48)
-	if err != nil {
-		return "", fmt.Errorf("generate refresh token: %w", err)
-	}
-	now := time.Now()
-	entry := OAuthRefreshToken{
-		ClientID: clientID, Resource: resource,
-		IssuedAt: now.Unix(), ExpiresAt: now.Add(ttl).Unix(),
-	}
-	digest := refreshTokenDigest(raw)
-
+// Redeem validates every authorization-code binding while holding the store
+// lock and consumes the code only after all checks succeed.
+func (s *OAuthStore) Redeem(raw, clientID, redirectURI, verifier, resource string) (OAuthCode, bool, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.pruneExpiredRefreshTokensLocked(now.Unix())
-	if len(s.refreshTokens) >= maxRefreshTokens {
-		return "", fmt.Errorf("OAuth refresh token limit %d reached", maxRefreshTokens)
+	code, ok := s.codes[strings.TrimSpace(raw)]
+	if !ok || time.Now().After(code.ExpiresAt) {
+		delete(s.codes, strings.TrimSpace(raw))
+		return OAuthCode{}, false, false
 	}
-	s.refreshTokens[digest] = entry
+	if code.Redeemed {
+		return code, false, true
+	}
+	if code.ClientID != strings.TrimSpace(clientID) ||
+		code.RedirectURI != strings.TrimSpace(redirectURI) ||
+		!EquivalentResourceURI(code.Resource, resource) ||
+		!VerifyPKCE(verifier, code.Challenge) {
+		return OAuthCode{}, false, false
+	}
+	code.Redeemed = true
+	s.codes[strings.TrimSpace(raw)] = code
+	return code, true, false
+}
+
+func (s *OAuthStore) ActivateGrant(clientID, resource, grantID string, ttl time.Duration) error {
+	clientID, resource, grantID = strings.TrimSpace(clientID), strings.TrimSpace(resource), strings.TrimSpace(grantID)
+	if clientID == "" || resource == "" || grantID == "" || ttl <= 0 {
+		return errors.New("client ID, resource, grant ID, and positive TTL are required")
+	}
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pruneExpiredGrantsLocked(now.Unix())
+	if existing, ok := s.grants[grantID]; ok {
+		if existing.Revoked {
+			return errors.New("authorization grant is revoked")
+		}
+		return errors.New("authorization grant already exists")
+	}
+	if len(s.grants) >= maxOAuthGrants {
+		return fmt.Errorf("OAuth grant limit %d reached", maxOAuthGrants)
+	}
+	s.grants[grantID] = OAuthGrant{ClientID: clientID, Resource: resource, ExpiresAt: now.Add(ttl).Unix()}
 	if err := s.persistStateLocked(); err != nil {
-		delete(s.refreshTokens, digest)
+		delete(s.grants, grantID)
+		return err
+	}
+	return nil
+}
+
+func (s *OAuthStore) IssueRefreshToken(clientID, resource, grantID string, ttl time.Duration) (string, error) {
+	clientID, resource, grantID = strings.TrimSpace(clientID), strings.TrimSpace(resource), strings.TrimSpace(grantID)
+	if clientID == "" || resource == "" || grantID == "" || ttl <= 0 {
+		return "", errors.New("client ID, resource, grant ID, and positive TTL are required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	s.pruneExpiredGrantsLocked(now.Unix())
+	grant, ok := s.grants[grantID]
+	if !ok || grant.Revoked || grant.ClientID != clientID || !EquivalentResourceURI(grant.Resource, resource) || grant.CurrentGeneration != 0 {
+		return "", errors.New("authorization grant is not eligible for refresh token issuance")
+	}
+	raw, err := s.signRefreshToken(refreshTokenClaims{GrantID: grantID, Generation: 1})
+	if err != nil {
+		return "", err
+	}
+	previous := grant
+	grant.CurrentGeneration = 1
+	grant.ExpiresAt = now.Add(ttl).Unix()
+	s.grants[grantID] = grant
+	if err := s.persistStateLocked(); err != nil {
+		s.grants[grantID] = previous
 		return "", err
 	}
 	return raw, nil
 }
 
-func (s *OAuthStore) RotateRefreshToken(raw, clientID, requestedResource string, ttl time.Duration) (string, string, bool, error) {
-	raw = strings.TrimSpace(raw)
-	clientID = strings.TrimSpace(clientID)
-	requestedResource = strings.TrimSpace(requestedResource)
-	if raw == "" || clientID == "" || ttl <= 0 {
-		return "", "", false, nil
+func (s *OAuthStore) RotateRefreshToken(raw, clientID, requestedResource string, ttl time.Duration) (string, string, string, bool, error) {
+	clientID, requestedResource = strings.TrimSpace(clientID), strings.TrimSpace(requestedResource)
+	if strings.TrimSpace(raw) == "" || clientID == "" || requestedResource == "" || ttl <= 0 {
+		return "", "", "", false, nil
 	}
-	newRaw, err := RandomToken(48)
-	if err != nil {
-		return "", "", false, fmt.Errorf("generate rotated refresh token: %w", err)
+	claims, ok := s.verifyRefreshToken(raw)
+	if !ok {
+		return "", "", "", false, nil
 	}
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
-	s.pruneExpiredRefreshTokensLocked(now.Unix())
-	oldDigest := refreshTokenDigest(raw)
-	entry, ok := s.refreshTokens[oldDigest]
-	if !ok || entry.ClientID != clientID {
-		return "", "", false, nil
+	s.pruneExpiredGrantsLocked(now.Unix())
+	grant, ok := s.grants[claims.GrantID]
+	if !ok || grant.Revoked || grant.ClientID != clientID || !EquivalentResourceURI(grant.Resource, requestedResource) {
+		return "", "", "", false, nil
 	}
-	if requestedResource != "" && requestedResource != entry.Resource {
-		return "", "", false, nil
-	}
-	newEntry := OAuthRefreshToken{
-		ClientID: entry.ClientID, Resource: entry.Resource,
-		IssuedAt: now.Unix(), ExpiresAt: now.Add(ttl).Unix(),
-	}
-	newDigest := refreshTokenDigest(newRaw)
-	delete(s.refreshTokens, oldDigest)
-	s.refreshTokens[newDigest] = newEntry
-	if err := s.persistStateLocked(); err != nil {
-		delete(s.refreshTokens, newDigest)
-		s.refreshTokens[oldDigest] = entry
-		return "", "", false, err
-	}
-	return newRaw, entry.Resource, true, nil
-}
-
-func (s *OAuthStore) pruneExpiredRefreshTokensLocked(now int64) {
-	for digest, token := range s.refreshTokens {
-		if token.ExpiresAt <= now {
-			delete(s.refreshTokens, digest)
+	if claims.Generation != grant.CurrentGeneration {
+		grant.Revoked = true
+		s.grants[claims.GrantID] = grant
+		if err := s.persistStateLocked(); err != nil {
+			grant.Revoked = false
+			s.grants[claims.GrantID] = grant
+			return "", "", "", false, err
 		}
+		return "", "", "", false, nil
 	}
+	nextGeneration := grant.CurrentGeneration + 1
+	newRaw, err := s.signRefreshToken(refreshTokenClaims{GrantID: claims.GrantID, Generation: nextGeneration})
+	if err != nil {
+		return "", "", "", false, err
+	}
+	previous := grant
+	grant.CurrentGeneration = nextGeneration
+	grant.ExpiresAt = now.Add(ttl).Unix()
+	s.grants[claims.GrantID] = grant
+	if err := s.persistStateLocked(); err != nil {
+		s.grants[claims.GrantID] = previous
+		return "", "", "", false, err
+	}
+	return newRaw, grant.Resource, claims.GrantID, true, nil
 }
 
-func (s *OAuthStore) persistStateLocked() error {
-	if s.refreshPath == "" {
-		return nil
+func (s *OAuthStore) RevokeGrant(grantID string, ttl time.Duration) error {
+	grantID = strings.TrimSpace(grantID)
+	if grantID == "" || ttl <= 0 {
+		return errors.New("grant ID and positive revocation TTL are required")
 	}
-	state := oauthState{Version: oauthStateVersion, Tokens: s.refreshTokens, Clients: s.clients}
-	data, err := json.Marshal(state)
-	if err != nil {
-		return fmt.Errorf("encode OAuth refresh token state: %w", err)
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pruneExpiredGrantsLocked(now.Unix())
+	previous, existed := s.grants[grantID]
+	if !existed && len(s.grants) >= maxOAuthGrants {
+		return fmt.Errorf("OAuth grant limit %d reached", maxOAuthGrants)
 	}
-	if len(data) > maxRefreshStateSize {
-		return fmt.Errorf("OAuth refresh token state exceeds %d bytes", maxRefreshStateSize)
+	grant := previous
+	grant.Revoked = true
+	if grant.ExpiresAt < now.Add(ttl).Unix() {
+		grant.ExpiresAt = now.Add(ttl).Unix()
 	}
-	if err := atomicfile.Write(s.refreshPath, data, 0o600); err != nil {
-		return fmt.Errorf("persist OAuth refresh token state: %w", err)
+	s.grants[grantID] = grant
+	if err := s.persistStateLocked(); err != nil {
+		if existed {
+			s.grants[grantID] = previous
+		} else {
+			delete(s.grants, grantID)
+		}
+		return err
 	}
 	return nil
 }
 
-func validStoredRefreshToken(digest string, token OAuthRefreshToken, now int64) bool {
-	decoded, err := base64.RawURLEncoding.DecodeString(digest)
-	return err == nil && len(decoded) == sha256.Size &&
-		token.ClientID != "" && token.Resource != "" &&
-		token.IssuedAt > 0 && token.IssuedAt <= now+60 &&
-		token.ExpiresAt > now && token.ExpiresAt > token.IssuedAt
+func (s *OAuthStore) GrantActive(grantID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	grant, ok := s.grants[strings.TrimSpace(grantID)]
+	return ok && !grant.Revoked && grant.ExpiresAt > time.Now().Unix()
+}
+
+func (s *OAuthStore) pruneExpiredGrantsLocked(now int64) {
+	for grantID, grant := range s.grants {
+		if grant.ExpiresAt <= now {
+			delete(s.grants, grantID)
+		}
+	}
+}
+
+func (s *OAuthStore) signRefreshToken(claims refreshTokenClaims) (string, error) {
+	nonce, err := RandomToken(24)
+	if err != nil {
+		return "", fmt.Errorf("generate refresh token nonce: %w", err)
+	}
+	claims.Nonce = nonce
+	body, err := json.Marshal(claims)
+	if err != nil {
+		return "", fmt.Errorf("encode refresh token: %w", err)
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(body)
+	mac := hmac.New(sha256.New, []byte(s.signingKey))
+	_, _ = mac.Write([]byte("refresh:" + encoded))
+	return encoded + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
+}
+
+func (s *OAuthStore) verifyRefreshToken(raw string) (refreshTokenClaims, bool) {
+	parts := strings.Split(strings.TrimSpace(raw), ".")
+	if len(parts) != 2 {
+		return refreshTokenClaims{}, false
+	}
+	mac := hmac.New(sha256.New, []byte(s.signingKey))
+	_, _ = mac.Write([]byte("refresh:" + parts[0]))
+	expected := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	if !hmac.Equal([]byte(expected), []byte(parts[1])) {
+		return refreshTokenClaims{}, false
+	}
+	data, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return refreshTokenClaims{}, false
+	}
+	var claims refreshTokenClaims
+	if json.Unmarshal(data, &claims) != nil || claims.GrantID == "" || claims.Generation == 0 || claims.Nonce == "" {
+		return refreshTokenClaims{}, false
+	}
+	return claims, true
+}
+
+func (s *OAuthStore) persistStateLocked() error {
+	if s.statePath == "" {
+		return nil
+	}
+	state := oauthState{Version: oauthStateVersion, Grants: s.grants, Clients: s.clients}
+	data, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("encode OAuth state: %w", err)
+	}
+	if len(data) > maxOAuthStateSize {
+		return fmt.Errorf("OAuth state exceeds %d bytes", maxOAuthStateSize)
+	}
+	if err := atomicfile.Write(s.statePath, data, 0o600); err != nil {
+		return fmt.Errorf("persist OAuth state: %w", err)
+	}
+	return nil
+}
+
+func validStoredGrant(grantID string, grant OAuthGrant, now int64) bool {
+	decoded, err := base64.RawURLEncoding.DecodeString(grantID)
+	return err == nil && len(decoded) == 24 &&
+		grant.ExpiresAt > now &&
+		(grant.Revoked || grant.ClientID != "" && grant.Resource != "")
 }
 
 func validStoredClient(clientID string, registration OAuthClientRegistration, now int64) bool {
@@ -381,11 +528,6 @@ func (s *OAuthStore) clientRegistration(clientID string) (OAuthClientRegistratio
 	return registration, true
 }
 
-func refreshTokenDigest(raw string) string {
-	digest := sha256.Sum256([]byte(raw))
-	return base64.RawURLEncoding.EncodeToString(digest[:])
-}
-
 func VerifyPKCE(verifier, challenge string) bool {
 	if !validPKCEVerifier(verifier) || !ValidPKCEChallenge(challenge) {
 		return false
@@ -448,7 +590,7 @@ func uniqueNonEmptyStrings(values []string) []string {
 	return clean
 }
 
-func IssueToken(issuer, audience, key string, ttl time.Duration) (string, error) {
+func IssueToken(issuer, audience, grantID, key string, ttl time.Duration) (string, error) {
 	if key == "" {
 		return "", errors.New("token signing key is required")
 	}
@@ -457,6 +599,9 @@ func IssueToken(issuer, audience, key string, ttl time.Duration) (string, error)
 	}
 	if audience == "" {
 		return "", errors.New("token audience is required")
+	}
+	if grantID == "" {
+		return "", errors.New("token grant ID is required")
 	}
 	if ttl <= 0 {
 		return "", errors.New("token TTL must be positive")
@@ -467,6 +612,7 @@ func IssueToken(issuer, audience, key string, ttl time.Duration) (string, error)
 		Audience:  audience,
 		IssuedAt:  now.Unix(),
 		ExpiresAt: now.Add(ttl).Unix(),
+		GrantID:   grantID,
 	}
 	body, err := json.Marshal(claims)
 	if err != nil {
@@ -479,39 +625,41 @@ func IssueToken(issuer, audience, key string, ttl time.Duration) (string, error)
 	return encoded + "." + sig, nil
 }
 
-func ValidateToken(token, issuer, audience, key string) bool {
+func ValidateToken(token, issuer, audience, key string) (string, bool) {
 	if key == "" {
-		return false
+		return "", false
 	}
 	parts := strings.Split(token, ".")
 	if len(parts) != 2 {
-		return false
+		return "", false
 	}
 	mac := hmac.New(sha256.New, []byte(key))
 	_, _ = mac.Write([]byte(parts[0]))
 	expected := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	if !hmac.Equal([]byte(expected), []byte(parts[1])) {
-		return false
+		return "", false
 	}
 	data, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return false
+		return "", false
 	}
 	var claims tokenClaims
 	if err := json.Unmarshal(data, &claims); err != nil {
-		return false
+		return "", false
 	}
 	now := time.Now().Unix()
-	return claims.Audience == audience &&
+	valid := claims.Audience == audience &&
 		claims.Issuer == issuer &&
+		claims.GrantID != "" &&
 		claims.IssuedAt > 0 &&
 		claims.IssuedAt <= now+60 &&
 		claims.ExpiresAt > now &&
 		claims.ExpiresAt > claims.IssuedAt
+	return claims.GrantID, valid
 }
 
 func ConfiguredLoginValue() string {
-	return os.Getenv("AGENTDOCK_OAUTH_" + "PASSWORD")
+	return os.Getenv("AGENTDOCK_OAUTH_PASSWORD")
 }
 
 func ConstantTimeEqual(a, b string) bool {
@@ -531,4 +679,31 @@ func AppendQuery(raw string, values url.Values) string {
 	}
 	u.RawQuery = q.Encode()
 	return u.String()
+}
+
+func EquivalentResourceURI(left, right string) bool {
+	leftURL, leftOK := canonicalResourceURI(left)
+	rightURL, rightOK := canonicalResourceURI(right)
+	return leftOK && rightOK && leftURL == rightURL
+}
+
+func canonicalResourceURI(raw string) (string, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
+		return "", false
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	hostname := strings.ToLower(parsed.Hostname())
+	port := parsed.Port()
+	if (parsed.Scheme == "https" && port == "443") || (parsed.Scheme == "http" && port == "80") {
+		port = ""
+	}
+	if strings.Contains(hostname, ":") {
+		hostname = "[" + hostname + "]"
+	}
+	parsed.Host = hostname
+	if port != "" {
+		parsed.Host += ":" + port
+	}
+	return parsed.String(), true
 }

@@ -45,7 +45,7 @@ func TestMCPEndpointNotificationReturnsAcceptedWithEmptyBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	handler := mcpEndpointHandler(mcp.NewServer(runtime, cfg), cfg)
+	handler := mcpEndpointHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
 
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}`))
 	recorder := httptest.NewRecorder()
@@ -65,7 +65,7 @@ func TestMCPEndpointRejectsTrailingJSONValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	handler := mcpEndpointHandler(mcp.NewServer(runtime, cfg), cfg)
+	handler := mcpEndpointHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
 	body := `{"jsonrpc":"2.0","id":1,"method":"ping"} {"jsonrpc":"2.0","id":2,"method":"ping"}`
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body)))
@@ -83,7 +83,7 @@ func TestMCPEndpointRejectsOversizedBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	handler := mcpEndpointHandler(mcp.NewServer(runtime, cfg), cfg)
+	handler := mcpEndpointHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
 	body := `{"jsonrpc":"2.0","id":1,"method":"ping"}` + strings.Repeat(" ", (1<<20)+1)
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body)))
@@ -99,7 +99,7 @@ func TestRuntimeAPIRequiresBearerWhenConfigured(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg)
+	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
 
 	req := httptest.NewRequest(http.MethodGet, "/internal/runtime/status", nil)
 	recorder := httptest.NewRecorder()
@@ -116,7 +116,7 @@ func TestRuntimeAPIStatusWithBearer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg)
+	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
 
 	req := httptest.NewRequest(http.MethodGet, "/internal/runtime/status", nil)
 	req.Header.Set("Authorization", "Bearer secret-token")
@@ -140,7 +140,7 @@ func TestRuntimeAPISkillsNoAuthWhenUnconfigured(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg)
+	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
 
 	req := httptest.NewRequest(http.MethodGet, "/internal/runtime/skills", nil)
 	recorder := httptest.NewRecorder()
@@ -159,7 +159,7 @@ func TestRuntimeAPIRejectsInvalidTaskQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg)
+	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
 	tests := []struct {
 		name string
 		url  string
@@ -190,7 +190,7 @@ func TestRuntimeAPIUnknownRouteReturnsNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg)
+	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/internal/runtime/unknown", nil))
 	if recorder.Code != http.StatusNotFound {
@@ -207,7 +207,7 @@ func TestRuntimeAPIMethodContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg)
+	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
 	tests := []struct {
 		method string
 		path   string
@@ -241,7 +241,7 @@ func TestAgentDockContextRequiresBearerEvenOnLoopback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	handler := agentDockContextHandler(mcp.NewServer(runtime, cfg), cfg)
+	handler := agentDockContextHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
 
 	req := httptest.NewRequest(http.MethodGet, "/capabilities/context", nil)
 	recorder := httptest.NewRecorder()
@@ -258,7 +258,7 @@ func TestAgentDockContextAcceptsBearer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	handler := agentDockContextHandler(mcp.NewServer(runtime, cfg), cfg)
+	handler := agentDockContextHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
 
 	req := httptest.NewRequest(http.MethodGet, "/capabilities/context", nil)
 	req.Header.Set("Authorization", "Bearer secret-token")
@@ -276,7 +276,7 @@ func TestServerURLAloneDoesNotRequireAuthOrDeclareOAuth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	handler := mcpEndpointHandler(mcp.NewServer(runtime, cfg), cfg)
+	handler := mcpEndpointHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
 
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}`))
 	recorder := httptest.NewRecorder()
@@ -376,10 +376,30 @@ func TestBearerChallengeReferencesPathSpecificResourceMetadata(t *testing.T) {
 	cfg.OAuthServerURL = "https://agentdock.example.com"
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/mcp", nil)
-	setBearerChallenge(recorder, cfg, request)
+	setBearerChallenge(recorder, cfg, request, false)
 	want := `Bearer resource_metadata="https://agentdock.example.com/.well-known/oauth-protected-resource/mcp"`
 	if got := recorder.Header().Get("WWW-Authenticate"); got != want {
 		t.Fatalf("WWW-Authenticate = %q, want %q", got, want)
+	}
+	recorder = httptest.NewRecorder()
+	setBearerChallenge(recorder, cfg, request, true)
+	want = `Bearer resource_metadata="https://agentdock.example.com/.well-known/oauth-protected-resource/mcp", error="invalid_token"`
+	if got := recorder.Header().Get("WWW-Authenticate"); got != want {
+		t.Fatalf("invalid-token WWW-Authenticate = %q, want %q", got, want)
+	}
+}
+
+func TestFixedWindowLimiterResetsAfterWindow(t *testing.T) {
+	limiter := newFixedWindowLimiter(2, time.Minute)
+	now := time.Now()
+	if !limiter.Allow("client", now) || !limiter.Allow("client", now) {
+		t.Fatal("limiter rejected requests within allowance")
+	}
+	if limiter.Allow("client", now) {
+		t.Fatal("limiter accepted request above allowance")
+	}
+	if !limiter.Allow("client", now.Add(time.Minute)) {
+		t.Fatal("limiter did not reset after its window")
 	}
 }
 
@@ -423,6 +443,23 @@ func TestRegisterOAuthRoutesExposesOnlyCanonicalEndpoints(t *testing.T) {
 	}
 }
 
+func TestOAuthMetadataEndpointsOnlyAllowGet(t *testing.T) {
+	cfg := oauthTestConfig(t)
+	mux := http.NewServeMux()
+	registerOAuthRoutes(mux, cfg, auth.NewOAuthStore())
+	for _, path := range []string{
+		"/.well-known/oauth-authorization-server",
+		"/.well-known/oauth-protected-resource/mcp",
+	} {
+		request := httptest.NewRequest(http.MethodPost, path, nil)
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, request)
+		if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodGet {
+			t.Fatalf("POST %s status=%d Allow=%q", path, response.Code, response.Header().Get("Allow"))
+		}
+	}
+}
+
 func TestRegisterOAuthRoutesDoesNothingWhenOAuthDisabled(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.OAuthServerURL = "https://agentdock.example.com"
@@ -448,13 +485,13 @@ func TestAuthorizedOAuthFalseWhenOAuthDisabled(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.OAuthServerURL = "https://agentdock.example.com"
 	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-secret")
-	token, err := auth.IssueToken("https://agentdock.example.com", "https://agentdock.example.com/mcp", "token-secret", time.Hour)
+	token, err := auth.IssueToken("https://agentdock.example.com", "https://agentdock.example.com/mcp", "grant-id", "token-secret", time.Hour)
 	if err != nil {
 		t.Fatalf("IssueToken() error = %v", err)
 	}
 	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
-	if authorizedOAuth(req, cfg) {
+	if authorizedOAuth(req, cfg, auth.NewOAuthStore()) {
 		t.Fatalf("authorizedOAuth() = true when OAuth is disabled")
 	}
 }

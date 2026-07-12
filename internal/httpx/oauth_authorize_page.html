@@ -22,6 +22,8 @@
       --error-bg: #fff6f5;
       --error-border: #f3b7b2;
       --focus: rgba(28, 25, 23, 0.16);
+      --accent: #2563eb;
+      --accent-soft: #eff6ff;
     }
 
     * {
@@ -101,6 +103,53 @@
       border: 1px solid var(--border);
       border-radius: 8px;
       background: var(--page);
+    }
+
+    .requester {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--page);
+    }
+
+    .requester-mark {
+      display: grid;
+      flex: 0 0 auto;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 750;
+    }
+
+    .requester-copy {
+      min-width: 0;
+    }
+
+    .requester-name {
+      display: block;
+      overflow: hidden;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .requester-meta {
+      display: block;
+      overflow: hidden;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .destination span {
@@ -184,6 +233,32 @@
       background: var(--button-hover);
     }
 
+    button:active {
+      transform: translateY(1px);
+    }
+
+    .cancel {
+      display: block;
+      margin-top: 12px;
+      padding: 9px 12px;
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+      text-align: center;
+      text-decoration: none;
+    }
+
+    .cancel:hover {
+      background: var(--page);
+      color: var(--text);
+    }
+
+    .cancel:focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 2px;
+    }
+
     button:focus-visible {
       outline: 3px solid var(--focus);
       outline-offset: 2px;
@@ -194,6 +269,11 @@
       color: var(--muted);
       font-size: 12px;
       line-height: 1.55;
+    }
+
+    .note strong {
+      color: var(--text);
+      font-weight: 600;
     }
 
     @media (max-width: 520px) {
@@ -228,6 +308,8 @@
         --error-bg: #3b201f;
         --error-border: #7a3530;
         --focus: rgba(245, 245, 244, 0.16);
+        --accent: #93c5fd;
+        --accent-soft: #172554;
       }
     }
   </style>
@@ -247,10 +329,14 @@
 
     <section class="panel" aria-labelledby="page-title">
       <h1 id="page-title">连接到 AgentDock</h1>
-      <p class="subtitle">请输入 AgentDock 服务端密码，确认授权本次连接。</p>
+      <p class="subtitle">确认下方应用后，输入服务端密码完成连接。</p>
 
-      <div class="destination">
-        <span>验证成功后将自动返回发起连接的应用</span>
+      <div class="requester" aria-label="请求连接的应用">
+        <span class="requester-mark" aria-hidden="true">{{.ClientInitial}}</span>
+        <span class="requester-copy">
+          <span class="requester-name">{{.ClientName}}</span>
+          <span class="requester-meta">验证后返回 {{.RedirectHost}}</span>
+        </span>
       </div>
 
       {{if .Error}}
@@ -272,12 +358,13 @@
         <input type="hidden" name="resource" value="{{.Resource}}">
         <input type="hidden" name="state" value="{{.State}}">
 
-        <label for="password">服务器密码</label>
-        <input id="password" type="password" name="password" placeholder="输入密码" autocomplete="current-password" required autofocus{{if .Error}} aria-invalid="true" aria-describedby="password-error"{{end}}>
-        <button type="submit">继续</button>
+        <label for="password">AgentDock 服务端密码</label>
+        <input id="password" type="password" name="password" placeholder="请输入服务端密码" autocomplete="current-password" enterkeyhint="go" required autofocus{{if .Error}} aria-invalid="true" aria-describedby="password-error"{{end}}>
+        <button type="submit">验证并连接</button>
+        <a class="cancel" href="{{.CancelURL}}">拒绝并返回</a>
       </form>
 
-      <p class="note">仅在你主动发起连接时继续。</p>
+      <p class="note"><strong>请确认这是你刚刚发起的连接。</strong> 密码只会提交到当前 AgentDock 服务。</p>
     </section>
   </main>
 </body>

@@ -115,10 +115,7 @@ func TestOAuthDynamicRegistrationAuthorizationCodeAndRefreshFlow(t *testing.T) {
 		tokenPayload.TokenType != "Bearer" || tokenPayload.ExpiresIn != 3600 {
 		t.Fatalf("token payload = %#v", tokenPayload)
 	}
-	assertAuthorizedAccessToken(t, cfg, tokenPayload.AccessToken)
-
-	replayResponse := postTokenRequest(t, cfg, store, tokenValues)
-	assertOAuthError(t, replayResponse, http.StatusBadRequest, "invalid_grant")
+	assertAuthorizedAccessToken(t, cfg, store, tokenPayload.AccessToken)
 
 	wrongClientID := oauthRegisteredClientID(t, store, "https://other.example/callback")
 	wrongClientRefresh := url.Values{
@@ -159,25 +156,37 @@ func TestOAuthDynamicRegistrationAuthorizationCodeAndRefreshFlow(t *testing.T) {
 		refreshed.RefreshToken == tokenPayload.RefreshToken || refreshed.ExpiresIn != 3600 {
 		t.Fatalf("refreshed token payload = %#v", refreshed)
 	}
-	assertAuthorizedAccessToken(t, cfg, refreshed.AccessToken)
-	assertOAuthError(t, postTokenRequest(t, cfg, store, refreshValues), http.StatusBadRequest, "invalid_grant")
+	assertAuthorizedAccessToken(t, cfg, store, refreshed.AccessToken)
+
+	replayResponse := postTokenRequest(t, cfg, store, tokenValues)
+	assertOAuthError(t, replayResponse, http.StatusBadRequest, "invalid_grant")
+	revokedAccessRequest := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	revokedAccessRequest.Header.Set("Authorization", "Bearer "+refreshed.AccessToken)
+	if authorizedOAuth(revokedAccessRequest, cfg, store) {
+		t.Fatal("access token remained valid after authorization code replay revoked its grant")
+	}
+	refreshedValues := url.Values{
+		"grant_type": {"refresh_token"}, "refresh_token": {refreshed.RefreshToken},
+		"client_id": {registration.ClientID}, "resource": {resource},
+	}
+	assertOAuthError(t, postTokenRequest(t, cfg, store, refreshedValues), http.StatusBadRequest, "invalid_grant")
 
 	wrongAudienceRequest := httptest.NewRequest(http.MethodPost, "/mcp", nil)
-	wrongAudienceToken, err := auth.IssueToken(cfg.OAuthServerURL, cfg.OAuthServerURL+"/other", oauthSigningKey(), time.Hour)
+	wrongAudienceToken, err := auth.IssueToken(cfg.OAuthServerURL, cfg.OAuthServerURL+"/other", "grant-id", oauthSigningKey(), time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
 	wrongAudienceRequest.Header.Set("Authorization", "Bearer "+wrongAudienceToken)
-	if authorizedOAuth(wrongAudienceRequest, cfg) {
+	if authorizedOAuth(wrongAudienceRequest, cfg, store) {
 		t.Fatal("wrong-audience access token was accepted")
 	}
 }
 
-func assertAuthorizedAccessToken(t *testing.T, cfg config.Config, token string) {
+func assertAuthorizedAccessToken(t *testing.T, cfg config.Config, store *auth.OAuthStore, token string) {
 	t.Helper()
 	request := httptest.NewRequest(http.MethodPost, "/mcp", nil)
 	request.Header.Set("Authorization", "Bearer "+token)
-	if !authorizedOAuth(request, cfg) {
+	if !authorizedOAuth(request, cfg, store) {
 		t.Fatal("fresh access token was rejected")
 	}
 }
@@ -204,7 +213,8 @@ func TestOAuthAuthorizePasswordGate(t *testing.T) {
 	if getResponse.Code != http.StatusOK ||
 		!strings.Contains(page, `type="password"`) ||
 		!strings.Contains(page, "连接到 AgentDock") ||
-		!strings.Contains(page, ">继续</button>") ||
+		!strings.Contains(page, "AgentDock 服务端密码") ||
+		!strings.Contains(page, ">验证并连接</button>") ||
 		!strings.Contains(page, oauthTestRedirect) {
 		t.Fatalf("GET authorize status=%d body=%s", getResponse.Code, page)
 	}
@@ -267,6 +277,7 @@ func TestOAuthRegistrationRejectsInvalidMetadata(t *testing.T) {
 	store := auth.NewOAuthStore()
 	cases := []string{
 		`{"token_endpoint_auth_method":"none"}`,
+		`{"redirect_uris":["https://client.example/callback"]}`,
 		`{"redirect_uris":["http://attacker.example/callback"],"token_endpoint_auth_method":"none"}`,
 		`{"redirect_uris":["https://client.example/callback"],"token_endpoint_auth_method":"client_secret_post"}`,
 		`{"redirect_uris":["https://client.example/callback"],"grant_types":["client_credentials"]}`,
@@ -274,10 +285,47 @@ func TestOAuthRegistrationRejectsInvalidMetadata(t *testing.T) {
 	}
 	for _, body := range cases {
 		response := httptest.NewRecorder()
-		handleRegister(response, httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(body)), cfg, store)
+		request := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		handleRegister(response, request, cfg, store)
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("body %s status = %d; response=%s", body, response.Code, response.Body.String())
 		}
+	}
+}
+
+func TestOAuthRegistrationRequiresJSONAndUsesRedirectError(t *testing.T) {
+	cfg := oauthTestConfig(t)
+	store := auth.NewOAuthStore()
+
+	wrongContentType := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{"redirect_uris":["https://client.example/callback"]}`))
+	wrongContentType.Header.Set("Content-Type", "text/plain")
+	response := httptest.NewRecorder()
+	handleRegister(response, wrongContentType, cfg, store)
+	assertOAuthError(t, response, http.StatusBadRequest, "invalid_client_metadata")
+
+	invalidRedirect := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{"redirect_uris":["http://remote.example/callback"],"token_endpoint_auth_method":"none"}`))
+	invalidRedirect.Header.Set("Content-Type", "application/json; charset=utf-8")
+	response = httptest.NewRecorder()
+	handleRegister(response, invalidRedirect, cfg, store)
+	assertOAuthError(t, response, http.StatusBadRequest, "invalid_redirect_uri")
+	if response.Header().Get("Cache-Control") != "no-store" || response.Header().Get("Pragma") != "no-cache" {
+		t.Fatalf("registration cache headers = %v", response.Header())
+	}
+
+	duplicateField := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{"redirect_uris":["https://client.example/callback"],"redirect_uris":["https://other.example/callback"],"token_endpoint_auth_method":"none"}`))
+	duplicateField.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	handleRegister(response, duplicateField, cfg, store)
+	assertOAuthError(t, response, http.StatusBadRequest, "invalid_client_metadata")
+
+	nonASCIIValue := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{"redirect_uris":["https://client.example/callback"],"token_endpoint_auth_method":"密钥"}`))
+	nonASCIIValue.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	handleRegister(response, nonASCIIValue, cfg, store)
+	assertOAuthError(t, response, http.StatusBadRequest, "invalid_client_metadata")
+	if strings.Contains(response.Body.String(), "密钥") {
+		t.Fatal("registration error_description reflected non-ASCII client input")
 	}
 }
 
@@ -295,21 +343,157 @@ func TestOAuthAuthorizeBindsClientRedirectAndResource(t *testing.T) {
 		"code_challenge_method": {"S256"},
 		"resource":              {cfg.OAuthServerURL + "/mcp"},
 	}
-	for name, mutate := range map[string]func(url.Values){
-		"wrong redirect":         func(v url.Values) { v.Set("redirect_uri", "https://other.example/callback") },
-		"wrong resource":         func(v url.Values) { v.Set("resource", cfg.OAuthServerURL+"/other") },
-		"wrong response type":    func(v url.Values) { v.Set("response_type", "token") },
-		"wrong challenge method": func(v url.Values) { v.Set("code_challenge_method", "plain") },
-	} {
+	tests := map[string]struct {
+		mutate       func(url.Values)
+		wantStatus   int
+		wantRedirect bool
+	}{
+		"wrong redirect":         {func(v url.Values) { v.Set("redirect_uri", "https://other.example/callback") }, http.StatusBadRequest, false},
+		"wrong resource":         {func(v url.Values) { v.Set("resource", cfg.OAuthServerURL+"/other") }, http.StatusFound, true},
+		"wrong response type":    {func(v url.Values) { v.Set("response_type", "token") }, http.StatusFound, true},
+		"wrong challenge method": {func(v url.Values) { v.Set("code_challenge_method", "plain") }, http.StatusFound, true},
+	}
+	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			values := cloneValues(base)
-			mutate(values)
+			test.mutate(values)
 			response := httptest.NewRecorder()
 			handleAuthorizeForTest(response, httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+values.Encode(), nil), cfg, store)
-			if response.Code != http.StatusBadRequest || response.Header().Get("Location") != "" {
+			if response.Code != test.wantStatus || (response.Header().Get("Location") != "") != test.wantRedirect {
 				t.Fatalf("status=%d location=%q body=%s", response.Code, response.Header().Get("Location"), response.Body.String())
 			}
 		})
+	}
+}
+
+func TestOAuthAuthorizeRedirectsProtocolErrorsWithState(t *testing.T) {
+	t.Setenv("AGENTDOCK_OAUTH_PASSWORD", "")
+	cfg := oauthTestConfig(t)
+	store := auth.NewOAuthStore()
+	clientID := oauthRegisteredClientID(t, store, oauthTestRedirect)
+	values := url.Values{
+		"response_type": {"token"}, "client_id": {clientID},
+		"redirect_uri": {oauthTestRedirect}, "state": {"client-state"},
+	}
+	response := httptest.NewRecorder()
+	handleAuthorizeForTest(response, httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+values.Encode(), nil), cfg, store)
+	if response.Code != http.StatusFound {
+		t.Fatalf("status = %d, want redirect", response.Code)
+	}
+	location, err := url.Parse(response.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if location.Query().Get("error") != "unsupported_response_type" || location.Query().Get("state") != "client-state" {
+		t.Fatalf("redirect query = %v", location.Query())
+	}
+}
+
+func TestOAuthAuthorizeRequiresResourceAndRejectsRepeatedParameters(t *testing.T) {
+	t.Setenv("AGENTDOCK_OAUTH_PASSWORD", "")
+	cfg := oauthTestConfig(t)
+	store := auth.NewOAuthStore()
+	clientID := oauthRegisteredClientID(t, store, oauthTestRedirect)
+	base := url.Values{
+		"response_type": {"code"}, "client_id": {clientID}, "redirect_uri": {oauthTestRedirect},
+		"code_challenge": {oauthTestChallenge}, "code_challenge_method": {"S256"}, "state": {"strict"},
+	}
+	for name, test := range map[string]struct {
+		mutate func(url.Values)
+		error  string
+	}{
+		"missing resource": {func(url.Values) {}, "invalid_target"},
+		"repeated state":   {func(v url.Values) { v["state"] = []string{"strict", "duplicate"} }, "invalid_request"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			values := cloneValues(base)
+			test.mutate(values)
+			response := httptest.NewRecorder()
+			handleAuthorizeForTest(response, httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+values.Encode(), nil), cfg, store)
+			if response.Code != http.StatusFound {
+				t.Fatalf("status = %d; body=%s", response.Code, response.Body.String())
+			}
+			location, err := url.Parse(response.Header().Get("Location"))
+			if err != nil || location.Query().Get("error") != test.error {
+				t.Fatalf("location = %q, err=%v", response.Header().Get("Location"), err)
+			}
+		})
+	}
+
+	repeatedClient := cloneValues(base)
+	repeatedClient.Set("resource", cfg.OAuthServerURL+"/mcp")
+	repeatedClient["client_id"] = []string{clientID, clientID}
+	response := httptest.NewRecorder()
+	handleAuthorizeForTest(response, httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+repeatedClient.Encode(), nil), cfg, store)
+	if response.Code != http.StatusBadRequest || response.Header().Get("Location") != "" {
+		t.Fatalf("repeated client_id status=%d location=%q", response.Code, response.Header().Get("Location"))
+	}
+
+	postValues := cloneValues(base)
+	postValues.Set("resource", cfg.OAuthServerURL+"/mcp")
+	postRequest := formAuthorizeRequest(postValues)
+	postRequest.URL.RawQuery = "state=query-state"
+	response = httptest.NewRecorder()
+	handleAuthorizeForTest(response, postRequest, cfg, store)
+	if response.Code != http.StatusBadRequest || response.Header().Get("Location") != "" {
+		t.Fatalf("POST query OAuth parameter status=%d location=%q", response.Code, response.Header().Get("Location"))
+	}
+
+	multipleResources := cloneValues(base)
+	multipleResources["resource"] = []string{cfg.OAuthServerURL + "/mcp", cfg.OAuthServerURL + "/other"}
+	response = httptest.NewRecorder()
+	handleAuthorizeForTest(response, httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+multipleResources.Encode(), nil), cfg, store)
+	location, err := url.Parse(response.Header().Get("Location"))
+	if err != nil || location.Query().Get("error") != "invalid_target" {
+		t.Fatalf("multiple resource location=%q err=%v", response.Header().Get("Location"), err)
+	}
+}
+
+func TestOAuthTokenGrantsRequireResource(t *testing.T) {
+	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-signing-secret")
+	cfg := oauthTestConfig(t)
+	store := auth.NewOAuthStore()
+	clientID := oauthRegisteredClientID(t, store, oauthTestRedirect)
+	code, err := store.Create(auth.OAuthCode{
+		ClientID: clientID, RedirectURI: oauthTestRedirect,
+		Challenge: oauthTestChallenge, Resource: cfg.OAuthServerURL + "/mcp",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	missingCodeResource := url.Values{
+		"grant_type": {"authorization_code"}, "code": {code}, "client_id": {clientID},
+		"redirect_uri": {oauthTestRedirect}, "code_verifier": {oauthTestVerifier},
+	}
+	assertOAuthError(t, postTokenRequest(t, cfg, store, missingCodeResource), http.StatusBadRequest, "invalid_target")
+
+	missingRefreshResource := url.Values{
+		"grant_type": {"refresh_token"}, "refresh_token": {"unused"}, "client_id": {clientID},
+	}
+	assertOAuthError(t, postTokenRequest(t, cfg, store, missingRefreshResource), http.StatusBadRequest, "invalid_target")
+}
+
+func TestOAuthTokenRejectsNonFormQueryAndDuplicateParameters(t *testing.T) {
+	cfg := oauthTestConfig(t)
+	store := auth.NewOAuthStore()
+	resource := cfg.OAuthServerURL + "/mcp"
+	for name, request := range map[string]*http.Request{
+		"content type": httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(`{"grant_type":"authorization_code"}`)),
+		"query":        formRequest(url.Values{"grant_type": {"authorization_code"}}),
+		"resource query": formRequest(url.Values{
+			"grant_type": {"authorization_code"}, "resource": {resource},
+		}),
+		"duplicate": formRequest(url.Values{"grant_type": {"authorization_code", "refresh_token"}}),
+	} {
+		if name == "query" {
+			request.URL.RawQuery = "client_id=query-client"
+		}
+		if name == "resource query" {
+			request.URL.RawQuery = "resource=" + url.QueryEscape(resource)
+		}
+		response := httptest.NewRecorder()
+		handleToken(response, request, cfg, store)
+		assertOAuthError(t, response, http.StatusBadRequest, "invalid_request")
 	}
 }
 

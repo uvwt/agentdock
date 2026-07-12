@@ -19,7 +19,7 @@ func TestAuthorizePageEscapesOAuthValues(t *testing.T) {
 	}
 
 	response := httptest.NewRecorder()
-	writeAuthorizeForm(response, values, "")
+	writeAuthorizeForm(response, values, "", "Test Client")
 	body := response.Body.String()
 	if strings.Contains(body, "<script>alert(1)</script>") || strings.Contains(body, "<img src=x") {
 		t.Fatalf("authorization page rendered unescaped OAuth values: %s", body)
@@ -31,12 +31,24 @@ func TestAuthorizePageEscapesOAuthValues(t *testing.T) {
 	}
 }
 
+func TestAuthorizePageShowsClientIdentityAndRedirectHost(t *testing.T) {
+	values := url.Values{"redirect_uri": {"https://client.example:8443/oauth/callback"}, "state": {"request-state"}}
+	response := httptest.NewRecorder()
+	writeAuthorizeForm(response, values, "", "测试客户端")
+	body := response.Body.String()
+	for _, want := range []string{"测试客户端", ">测</span>", "验证后返回 client.example:8443", "验证并连接", "拒绝并返回", "error=access_denied", "state=request-state"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("authorization page missing %q", want)
+		}
+	}
+}
+
 func TestAuthorizationFormCSPAllowsRegisteredRedirectOrigin(t *testing.T) {
 	values := url.Values{
 		"redirect_uri": {"https://client.example/oauth/callback?source=test"},
 	}
 	response := httptest.NewRecorder()
-	writeAuthorizeForm(response, values, "")
+	writeAuthorizeForm(response, values, "", "Test Client")
 
 	want := "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://client.example; base-uri 'none'; frame-ancestors 'none'"
 	if got := response.Header().Get("Content-Security-Policy"); got != want {
@@ -47,7 +59,7 @@ func TestAuthorizationFormCSPAllowsRegisteredRedirectOrigin(t *testing.T) {
 func TestAuthorizationFormCSPRejectsInvalidRedirectOrigin(t *testing.T) {
 	values := url.Values{"redirect_uri": {"javascript:alert(1)"}}
 	response := httptest.NewRecorder()
-	writeAuthorizeForm(response, values, "")
+	writeAuthorizeForm(response, values, "", "Test Client")
 
 	want := "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 	if got := response.Header().Get("Content-Security-Policy"); got != want {

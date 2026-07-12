@@ -16,8 +16,8 @@ import (
 	"github.com/uvwt/agentdock/internal/tools"
 )
 
-func registerRuntimeAPI(mux *http.ServeMux, server *mcp.Server, cfg config.Config) {
-	h := runtimeAPIHandler(server, cfg)
+func registerRuntimeAPI(mux *http.ServeMux, server *mcp.Server, cfg config.Config, oauthStore *auth.OAuthStore) {
+	h := runtimeAPIHandler(server, cfg, oauthStore)
 	mux.HandleFunc("/internal/runtime/status", h)
 	mux.HandleFunc("/internal/runtime/capabilities", h)
 	mux.HandleFunc("/internal/runtime/skills", h)
@@ -26,7 +26,7 @@ func registerRuntimeAPI(mux *http.ServeMux, server *mcp.Server, cfg config.Confi
 	mux.HandleFunc("/internal/runtime/tasks/", h)
 }
 
-func runtimeAPIHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc {
+func runtimeAPIHandler(server *mcp.Server, cfg config.Config, oauthStore *auth.OAuthStore) http.HandlerFunc {
 	authorizer := auth.Bearer{Token: cfg.AuthToken}
 	authRequired := cfg.AuthRequired()
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -36,9 +36,9 @@ func runtimeAPIHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc {
 			return
 		}
 		staticOK := cfg.AuthToken != "" && authorizer.Authorized(r)
-		oauthOK := authorizedOAuth(r, cfg)
+		oauthOK := authorizedOAuth(r, cfg, oauthStore)
 		if authRequired && !staticOK && !oauthOK {
-			setBearerChallenge(w, cfg, r)
+			setBearerChallenge(w, cfg, r, strings.TrimSpace(r.Header.Get("Authorization")) != "")
 			writeRuntimeAPIError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 			return
 		}

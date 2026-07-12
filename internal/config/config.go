@@ -156,6 +156,14 @@ func (c Config) ValidateAuth() error {
 	if len(missing) > 0 {
 		return fmt.Errorf("OAuth enabled by AGENTDOCK_OAUTH_ENABLED but missing required environment variable(s): %s", strings.Join(missing, ", "))
 	}
+	password := os.Getenv("AGENTDOCK_OAUTH_PASSWORD")
+	if len([]rune(password)) < 12 {
+		return errors.New("AGENTDOCK_OAUTH_PASSWORD must contain at least 12 characters")
+	}
+	tokenSecret := os.Getenv("AGENTDOCK_OAUTH_TOKEN_SECRET")
+	if len(tokenSecret) < 32 {
+		return errors.New("AGENTDOCK_OAUTH_TOKEN_SECRET must contain at least 32 bytes")
+	}
 	serverURL, err := url.Parse(strings.TrimSpace(c.OAuthServerURL))
 	if err != nil || serverURL.Scheme == "" || serverURL.Host == "" {
 		return fmt.Errorf("AGENTDOCK_SERVER_URL must be an absolute HTTP(S) URL: %q", c.OAuthServerURL)

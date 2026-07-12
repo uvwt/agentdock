@@ -82,8 +82,8 @@ func TestValidateAuthAllowsNoOAuthOrServerURLOnly(t *testing.T) {
 
 func TestValidateAuthOAuthRequiresCompleteConfig(t *testing.T) {
 	base := Config{OAuthEnabled: true, OAuthServerURL: "https://agentdock.example.com"}
-	t.Setenv("AGENTDOCK_OAUTH_PASSWORD", "password")
-	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-secret")
+	t.Setenv("AGENTDOCK_OAUTH_PASSWORD", "strong-password")
+	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "0123456789abcdef0123456789abcdef")
 	if err := base.ValidateAuth(); err != nil {
 		t.Fatalf("ValidateAuth() complete config error = %v", err)
 	}
@@ -100,14 +100,30 @@ func TestValidateAuthOAuthRequiresCompleteConfig(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("AGENTDOCK_OAUTH_PASSWORD", "password")
-			t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-secret")
+			t.Setenv("AGENTDOCK_OAUTH_PASSWORD", "strong-password")
+			t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "0123456789abcdef0123456789abcdef")
 			if tc.unset != "" {
 				t.Setenv(tc.unset, "")
 			}
 			err := tc.cfg.ValidateAuth()
 			if err == nil || !strings.Contains(err.Error(), tc.missing) {
 				t.Fatalf("ValidateAuth() error = %v, want missing %s", err, tc.missing)
+			}
+		})
+	}
+}
+
+func TestValidateAuthRejectsWeakOAuthCredentials(t *testing.T) {
+	cfg := Config{OAuthEnabled: true, OAuthServerURL: "https://agentdock.example.com"}
+	for name, credentials := range map[string][2]string{
+		"short password": {"short", "0123456789abcdef0123456789abcdef"},
+		"short secret":   {"strong-password", "short"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("AGENTDOCK_OAUTH_PASSWORD", credentials[0])
+			t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", credentials[1])
+			if err := cfg.ValidateAuth(); err == nil {
+				t.Fatal("ValidateAuth() accepted weak OAuth credentials")
 			}
 		})
 	}
@@ -190,8 +206,8 @@ func TestNormalizeValidatesPortAndLogLevel(t *testing.T) {
 }
 
 func TestValidateAuthRejectsInvalidServerURL(t *testing.T) {
-	t.Setenv("AGENTDOCK_OAUTH_PASSWORD", "password")
-	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-secret")
+	t.Setenv("AGENTDOCK_OAUTH_PASSWORD", "strong-password")
+	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "0123456789abcdef0123456789abcdef")
 	for _, serverURL := range []string{
 		"relative/path",
 		"ftp://agentdock.example",
@@ -209,8 +225,8 @@ func TestValidateAuthRejectsInvalidServerURL(t *testing.T) {
 }
 
 func TestValidateAuthAllowsHTTPOnlyForLoopbackHosts(t *testing.T) {
-	t.Setenv("AGENTDOCK_OAUTH_PASSWORD", "password")
-	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-secret")
+	t.Setenv("AGENTDOCK_OAUTH_PASSWORD", "strong-password")
+	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "0123456789abcdef0123456789abcdef")
 	for _, serverURL := range []string{
 		"http://localhost:8765",
 		"http://127.0.0.1:8765",
