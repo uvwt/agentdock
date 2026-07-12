@@ -1,6 +1,8 @@
 package httpx
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -184,6 +186,67 @@ func TestRuntimeAPIRejectsInvalidTaskQuery(t *testing.T) {
 	}
 }
 
+func TestRuntimeAPIBlocksTask(t *testing.T) {
+	cfg := testConfig(t)
+	runtime, err := tools.NewRuntime(cfg)
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+	created, err := runtime.Call(context.Background(), "task_manage", map[string]any{
+		"action":                "create",
+		"title":                 "Manual block test",
+		"goal":                  "Verify Runtime API task blocking",
+		"steps":                 []map[string]any{{"id": "verify", "title": "Verify block"}},
+		"completion_conditions": []string{"task can be blocked"},
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	taskID, _ := created["task_id"].(string)
+	if taskID == "" {
+		t.Fatalf("created task missing id: %#v", created)
+	}
+
+	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/internal/runtime/tasks/"+taskID+"/block", strings.NewReader(`{"summary":"waiting for user input"}`))
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	var payload struct {
+		Action      string `json:"action"`
+		TaskID      string `json:"task_id"`
+		TaskSummary struct {
+			Status  string `json:"status"`
+			Blocker string `json:"blocker"`
+		} `json:"task_summary"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Action != "block" || payload.TaskID != taskID || payload.TaskSummary.Status != "blocked" || payload.TaskSummary.Blocker != "waiting for user input" {
+		t.Fatalf("unexpected block response: %#v", payload)
+	}
+}
+
+func TestRuntimeAPIRejectsInvalidTaskBlockRequest(t *testing.T) {
+	cfg := testConfig(t)
+	runtime, err := tools.NewRuntime(cfg)
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/internal/runtime/tasks/tsk_missing/block", strings.NewReader(`{"summary":`)))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"code":"INVALID_REQUEST"`) {
+		t.Fatalf("body missing INVALID_REQUEST code: %s", recorder.Body.String())
+	}
+}
+
 func TestRuntimeAPIUnknownRouteReturnsNotFound(t *testing.T) {
 	cfg := testConfig(t)
 	runtime, err := tools.NewRuntime(cfg)
@@ -217,6 +280,7 @@ func TestRuntimeAPIMethodContract(t *testing.T) {
 		{method: http.MethodGet, path: "/internal/runtime/status", status: http.StatusOK},
 		{method: http.MethodPost, path: "/internal/runtime/capabilities", status: http.StatusOK},
 		{method: http.MethodPost, path: "/internal/runtime/status", status: http.StatusMethodNotAllowed, allow: "GET"},
+		{method: http.MethodGet, path: "/internal/runtime/tasks/tsk_123/block", status: http.StatusMethodNotAllowed, allow: "POST"},
 		{method: http.MethodDelete, path: "/internal/runtime/capabilities", status: http.StatusMethodNotAllowed, allow: "GET, POST"},
 	}
 	for _, test := range tests {

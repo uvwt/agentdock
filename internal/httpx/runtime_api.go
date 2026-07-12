@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -54,14 +55,22 @@ func runtimeAPIHandler(server *mcp.Server, cfg config.Config, oauthStore *auth.O
 }
 
 func runtimeAPIMethodAllowed(method, path string) bool {
+	cleanPath := strings.TrimSuffix(path, "/")
+	if _, ok := runtimeTaskBlockID(cleanPath); ok {
+		return method == http.MethodPost
+	}
 	if method == http.MethodGet {
 		return true
 	}
-	return method == http.MethodPost && strings.TrimSuffix(path, "/") == "/internal/runtime/capabilities"
+	return method == http.MethodPost && cleanPath == "/internal/runtime/capabilities"
 }
 
 func runtimeAPIAllowHeader(path string) string {
-	if strings.TrimSuffix(path, "/") == "/internal/runtime/capabilities" {
+	cleanPath := strings.TrimSuffix(path, "/")
+	if _, ok := runtimeTaskBlockID(cleanPath); ok {
+		return "POST"
+	}
+	if cleanPath == "/internal/runtime/capabilities" {
 		return "GET, POST"
 	}
 	return "GET"
@@ -69,6 +78,16 @@ func runtimeAPIAllowHeader(path string) string {
 
 func dispatchRuntimeAPI(ctx context.Context, server *mcp.Server, r *http.Request) (map[string]any, error) {
 	path := strings.TrimSuffix(r.URL.Path, "/")
+	if id, ok := runtimeTaskBlockID(path); ok {
+		var input struct {
+			Summary string `json:"summary"`
+		}
+		if err := decodeSingleJSON(io.LimitReader(r.Body, 64<<10), &input); err != nil {
+			return nil, &tools.ToolError{Code: "INVALID_REQUEST", Message: "invalid task block request", Category: "validation"}
+		}
+		result, err := server.RuntimeTaskBlock(id, input.Summary)
+		return map[string]any(result), err
+	}
 	switch {
 	case path == "/internal/runtime/status":
 		return map[string]any(server.RuntimeStatus()), nil
@@ -97,6 +116,19 @@ func dispatchRuntimeAPI(ctx context.Context, server *mcp.Server, r *http.Request
 	default:
 		return nil, &tools.ToolError{Code: "NOT_FOUND", Message: "runtime API route not found", Category: "not_found"}
 	}
+}
+
+func runtimeTaskBlockID(path string) (string, bool) {
+	const prefix = "/internal/runtime/tasks/"
+	const suffix = "/block"
+	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+		return "", false
+	}
+	id := strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix)
+	if strings.TrimSpace(id) == "" || strings.Contains(id, "/") {
+		return "", false
+	}
+	return id, true
 }
 
 func parseRuntimeTaskLimit(raw string) (int, error) {

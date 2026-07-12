@@ -26,6 +26,10 @@ func (s *Server) RuntimeTask(id string) (tools.Result, error) {
 	return s.runtime.RuntimeTask(id)
 }
 
+func (s *Server) RuntimeTaskBlock(id, summary string) (tools.Result, error) {
+	return s.runtime.RuntimeTaskBlock(id, summary)
+}
+
 func (s *Server) RuntimeCapabilities(ctx context.Context, refresh bool) (tools.Result, error) {
 	return s.runtime.RuntimeCapabilities(ctx, refresh)
 }

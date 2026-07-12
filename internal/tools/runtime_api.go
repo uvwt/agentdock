@@ -86,6 +86,17 @@ func (r *Runtime) RuntimeTask(id string) (Result, error) {
 	return Result{"ok": true, "source": runtimeAPISource, "action": "get", "task": task}, nil
 }
 
+func (r *Runtime) RuntimeTaskBlock(id, summary string) (Result, error) {
+	task, err := r.tasks.Block(strings.TrimSpace(id), strings.TrimSpace(summary))
+	if err != nil {
+		return nil, taskToolError(err)
+	}
+	return Result{
+		"ok": true, "source": runtimeAPISource, "action": "block",
+		"task_id": task.ID, "task_summary": compactTaskSummary(task),
+	}, nil
+}
+
 func (r *Runtime) RuntimeCapabilities(ctx context.Context, refresh bool) (Result, error) {
 	result, err := r.AgentDockContext(ctx)
 	if err != nil {
