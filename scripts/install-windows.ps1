@@ -10,30 +10,43 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 function Get-AgentDockArchitecture {
-    $arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
-    switch ($arch.ToUpperInvariant()) {
+    $architecture = $env:PROCESSOR_ARCHITECTURE
+    if ($env:PROCESSOR_ARCHITEW6432) {
+        $architecture = $env:PROCESSOR_ARCHITEW6432
+    }
+
+    switch ($architecture.ToUpperInvariant()) {
         'AMD64' { return 'amd64' }
         'ARM64' { return 'arm64' }
-        default { throw "Unsupported Windows architecture: $arch" }
+        default { throw "Unsupported Windows architecture: $architecture" }
     }
 }
 
-function Get-ReleaseBaseUrl([string] $RequestedVersion) {
+function Get-ReleaseBaseUrl {
+    param([string] $RequestedVersion)
+
     if ($RequestedVersion -eq 'latest') {
         return 'https://github.com/uvwt/agentdock/releases/latest/download'
     }
-    $normalized = if ($RequestedVersion.StartsWith('v')) { $RequestedVersion } else { "v$RequestedVersion" }
-    return "https://github.com/uvwt/agentdock/releases/download/$normalized"
+
+    $normalizedVersion = $RequestedVersion
+    if (-not $normalizedVersion.StartsWith('v')) {
+        $normalizedVersion = "v$normalizedVersion"
+    }
+    return "https://github.com/uvwt/agentdock/releases/download/$normalizedVersion"
 }
 
-function Add-UserPath([string] $Directory) {
-    $current = [Environment]::GetEnvironmentVariable('Path', 'User')
-    $parts = @($current -split ';' | Where-Object { $_ })
-    if ($parts -notcontains $Directory) {
-        $updated = (@($parts) + $Directory) -join ';'
-        [Environment]::SetEnvironmentVariable('Path', $updated, 'User')
+function Add-UserPath {
+    param([string] $Directory)
+
+    $currentPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $pathParts = @($currentPath -split ';' | Where-Object { $_ })
+    if ($pathParts -notcontains $Directory) {
+        $updatedPath = (@($pathParts) + $Directory) -join ';'
+        [Environment]::SetEnvironmentVariable('Path', $updatedPath, 'User')
     }
     if (($env:Path -split ';') -notcontains $Directory) {
         $env:Path = "$env:Path;$Directory"
@@ -41,68 +54,63 @@ function Add-UserPath([string] $Directory) {
 }
 
 function New-AgentDockToken {
-    $bytes = [byte[]]::new(32)
+    $bytes = New-Object byte[] 32
     $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
     try {
         $generator.GetBytes($bytes)
-    }
-    finally {
+    } finally {
         $generator.Dispose()
     }
     return -join ($bytes | ForEach-Object { $_.ToString('x2') })
 }
 
-function Stop-AgentDockForUpgrade([string] $BinaryPath) {
+function Get-AgentDockProcesses {
+    param([string] $BinaryPath)
+
     $normalizedBinaryPath = [IO.Path]::GetFullPath($BinaryPath)
+    $matchingProcesses = @()
+    $processes = @(Get-Process -Name 'agentdock' -ErrorAction SilentlyContinue)
+    foreach ($process in $processes) {
+        try {
+            $processPath = [IO.Path]::GetFullPath($process.Path)
+            if ([string]::Equals($processPath, $normalizedBinaryPath, [StringComparison]::OrdinalIgnoreCase)) {
+                $matchingProcesses += $process
+            }
+        } catch {
+        }
+    }
+    return @($matchingProcesses)
+}
+
+function Stop-AgentDockForUpgrade {
+    param([string] $BinaryPath)
+
     $processWasRunning = $false
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
     do {
-        $running = @(Get-Process -Name 'agentdock' -ErrorAction SilentlyContinue | Where-Object {
-            try {
-                [string]::Equals(
-                    [IO.Path]::GetFullPath($_.Path),
-                    $normalizedBinaryPath,
-                    [StringComparison]::OrdinalIgnoreCase
-                )
-            }
-            catch {
-                $false
-            }
-        })
-        if ($running.Count -gt 0) {
+        $runningProcesses = @(Get-AgentDockProcesses -BinaryPath $BinaryPath)
+        if ($runningProcesses.Count -gt 0) {
             $processWasRunning = $true
         }
-        foreach ($process in $running) {
+        foreach ($process in $runningProcesses) {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
         }
-        if ($running.Count -eq 0) {
+        if ($runningProcesses.Count -eq 0) {
             break
         }
         Start-Sleep -Milliseconds 250
     } while ([DateTime]::UtcNow -lt $deadline)
 
-    $stillRunning = @(Get-Process -Name 'agentdock' -ErrorAction SilentlyContinue | Where-Object {
-        try {
-            [string]::Equals(
-                [IO.Path]::GetFullPath($_.Path),
-                $normalizedBinaryPath,
-                [StringComparison]::OrdinalIgnoreCase
-            )
-        }
-        catch {
-            $false
-        }
-    })
-    if ($stillRunning.Count -gt 0) {
+    $remainingProcesses = @(Get-AgentDockProcesses -BinaryPath $BinaryPath)
+    if ($remainingProcesses.Count -gt 0) {
         throw "Unable to stop the running AgentDock process at $BinaryPath."
     }
-
-    return [PSCustomObject]@{
-        ProcessWasRunning = $processWasRunning
-    }
+    return $processWasRunning
 }
 
-function Start-AgentDockLauncher([string] $LauncherPath) {
+function Start-AgentDockLauncher {
+    param([string] $LauncherPath)
+
     if (-not (Test-Path -LiteralPath $LauncherPath -PathType Leaf)) {
         throw "AgentDock launcher was not found: $LauncherPath"
     }
@@ -110,20 +118,42 @@ function Start-AgentDockLauncher([string] $LauncherPath) {
     Start-Process -FilePath 'powershell.exe' -ArgumentList $arguments -WindowStyle Hidden | Out-Null
 }
 
-function Install-AgentDockBinary([string] $SourceBinary, [string] $DestinationBinary) {
+function Install-AgentDockBinary {
+    param(
+        [string] $SourceBinary,
+        [string] $DestinationBinary
+    )
+
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
     do {
         try {
             Copy-Item -LiteralPath $SourceBinary -Destination $DestinationBinary -Force
             return
-        }
-        catch {
+        } catch {
             if ([DateTime]::UtcNow -ge $deadline) {
                 throw "Unable to replace $DestinationBinary after stopping AgentDock: $($_.Exception.Message)"
             }
             Start-Sleep -Milliseconds 250
         }
     } while ($true)
+}
+
+function Wait-AgentDockHealth {
+    param([int] $HealthPort)
+
+    $healthUrl = "http://127.0.0.1:$HealthPort/healthz"
+    $deadline = [DateTime]::UtcNow.AddSeconds(20)
+    do {
+        Start-Sleep -Milliseconds 500
+        try {
+            $response = Invoke-WebRequest -UseBasicParsing -Uri $healthUrl -TimeoutSec 2
+            if ($response.StatusCode -eq 200) {
+                return
+            }
+        } catch {
+        }
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw "AgentDock was installed, but health check failed at $healthUrl"
 }
 
 if ($Port -lt 1 -or $Port -gt 65535) {
@@ -134,18 +164,19 @@ if (-not $env:LOCALAPPDATA) {
 }
 
 $architecture = Get-AgentDockArchitecture
-$asset = "agentdock_windows_$architecture.zip"
-$releaseBase = Get-ReleaseBaseUrl $Version
+$assetName = "agentdock_windows_$architecture.zip"
+$releaseBaseUrl = Get-ReleaseBaseUrl -RequestedVersion $Version
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("agentdock-install-" + [Guid]::NewGuid().ToString('N'))
-$archive = Join-Path $tempRoot $asset
-$checksumFile = "$archive.sha256"
+$archivePath = Join-Path $tempRoot $assetName
+$checksumPath = "$archivePath.sha256"
 $destinationBinary = Join-Path $InstallDir 'agentdock.exe'
 $binaryBackup = Join-Path $tempRoot 'agentdock.exe.previous'
 $runtimeDir = Split-Path -Parent $InstallDir
 $launcherPath = Join-Path $runtimeDir 'start-agentdock.ps1'
+$tokenPath = Join-Path $runtimeDir 'auth-token.dpapi'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $runValueName = 'AgentDock'
-$upgradeState = $null
+$processWasRunning = $false
 $binaryReplacementStarted = $false
 $startupRegistrationChanged = $false
 $runValueExisted = $false
@@ -153,30 +184,31 @@ $previousRunValue = $null
 
 try {
     New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
-    Invoke-WebRequest -UseBasicParsing -Uri "$releaseBase/$asset" -OutFile $archive
-    Invoke-WebRequest -UseBasicParsing -Uri "$releaseBase/$asset.sha256" -OutFile $checksumFile
+    Invoke-WebRequest -UseBasicParsing -Uri "$releaseBaseUrl/$assetName" -OutFile $archivePath
+    Invoke-WebRequest -UseBasicParsing -Uri "$releaseBaseUrl/$assetName.sha256" -OutFile $checksumPath
 
-    $expected = ((Get-Content -LiteralPath $checksumFile -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
-    $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($actual -ne $expected) {
-        throw "SHA-256 mismatch for $asset. Expected $expected, got $actual."
+    $expectedHash = ((Get-Content -LiteralPath $checksumPath -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+    $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne $expectedHash) {
+        throw "SHA-256 mismatch for $assetName. Expected $expectedHash, got $actualHash."
     }
 
     $extractDir = Join-Path $tempRoot 'extract'
-    Expand-Archive -LiteralPath $archive -DestinationPath $extractDir -Force
+    Expand-Archive -LiteralPath $archivePath -DestinationPath $extractDir -Force
     $sourceBinary = Join-Path $extractDir 'agentdock.exe'
     if (-not (Test-Path -LiteralPath $sourceBinary -PathType Leaf)) {
-        throw "Release archive does not contain agentdock.exe: $asset"
+        throw "Release archive does not contain agentdock.exe: $assetName"
     }
 
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-    $upgradeState = Stop-AgentDockForUpgrade -BinaryPath $destinationBinary
+    $processWasRunning = Stop-AgentDockForUpgrade -BinaryPath $destinationBinary
     if (Test-Path -LiteralPath $destinationBinary -PathType Leaf) {
         Copy-Item -LiteralPath $destinationBinary -Destination $binaryBackup -Force
     }
+
     $binaryReplacementStarted = $true
     Install-AgentDockBinary -SourceBinary $sourceBinary -DestinationBinary $destinationBinary
-    Add-UserPath $InstallDir
+    Add-UserPath -Directory $InstallDir
 
     $agentDockHome = Join-Path $HOME '.agentdock'
     $workspace = Join-Path $HOME 'AgentDock'
@@ -186,9 +218,9 @@ try {
 
     if ($RegisterStartup) {
         New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
-        $tokenPath = Join-Path $runtimeDir 'auth-token.dpapi'
         $generatedToken = $false
-        if ($AuthToken -or -not (Test-Path -LiteralPath $tokenPath -PathType Leaf)) {
+        $mustWriteToken = $AuthToken -or -not (Test-Path -LiteralPath $tokenPath -PathType Leaf)
+        if ($mustWriteToken) {
             if (-not $AuthToken) {
                 $AuthToken = New-AgentDockToken
                 $generatedToken = $true
@@ -199,12 +231,12 @@ try {
                 [Text.Encoding]::UTF8.GetBytes('agentdock.startup.v1'),
                 [System.Security.Cryptography.DataProtectionScope]::CurrentUser
             )
-            [IO.File]::WriteAllText($tokenPath, [Convert]::ToBase64String($protectedToken), [Text.UTF8Encoding]::new($false))
+            $protectedTokenText = [Convert]::ToBase64String($protectedToken)
+            [IO.File]::WriteAllText($tokenPath, $protectedTokenText, $Utf8NoBom)
         }
 
         $escapedTokenPath = $tokenPath.Replace("'", "''")
-        $binaryPath = Join-Path $InstallDir 'agentdock.exe'
-        $escapedBinaryPath = $binaryPath.Replace("'", "''")
+        $escapedBinaryPath = $destinationBinary.Replace("'", "''")
         $launcher = @"
 `$ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Security
@@ -219,81 +251,67 @@ Add-Type -AssemblyName System.Security
 `$env:AGENTDOCK_PORT = '$Port'
 & '$escapedBinaryPath'
 "@
-        [IO.File]::WriteAllText($launcherPath, $launcher, [Text.UTF8Encoding]::new($false))
+        [IO.File]::WriteAllText($launcherPath, $launcher, $Utf8NoBom)
 
-        # HKCU Run 只写当前用户注册表，不需要管理员权限；安装完成后立即启动一次。
         if (Test-Path -LiteralPath $runKey) {
             try {
                 $previousRunValue = Get-ItemPropertyValue -LiteralPath $runKey -Name $runValueName -ErrorAction Stop
                 $runValueExisted = $true
-            }
-            catch {
+            } catch {
                 $runValueExisted = $false
             }
         }
+
         New-Item -Path $runKey -Force | Out-Null
         $startupCommand = "powershell.exe -NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcherPath`""
         New-ItemProperty -Path $runKey -Name $runValueName -Value $startupCommand -PropertyType String -Force | Out-Null
         $startupRegistrationChanged = $true
         Start-AgentDockLauncher -LauncherPath $launcherPath
+        Wait-AgentDockHealth -HealthPort $Port
 
-        $health = $null
-        $deadline = [DateTime]::UtcNow.AddSeconds(20)
-        do {
-            Start-Sleep -Milliseconds 500
-            try {
-                $health = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$Port/healthz" -TimeoutSec 2
-                if ($health.StatusCode -eq 200) { break }
-            } catch {}
-        } while ([DateTime]::UtcNow -lt $deadline)
-        if (-not $health -or $health.StatusCode -ne 200) {
-            throw "AgentDock was installed, but health check failed at http://127.0.0.1:$Port/healthz"
-        }
         if ($generatedToken) {
             Write-Host "Bearer token (shown once): $AuthToken"
         }
     }
-    elseif ($null -ne $upgradeState -and $upgradeState.ProcessWasRunning -and (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
+
+    $mustRestartExistingProcess = (-not $RegisterStartup) -and $processWasRunning -and (Test-Path -LiteralPath $launcherPath -PathType Leaf)
+    if ($mustRestartExistingProcess) {
         Start-AgentDockLauncher -LauncherPath $launcherPath
     }
 
     Write-Host "AgentDock installed: $destinationBinary"
     Write-Host 'Open a new terminal if the updated user PATH is not visible yet.'
-}
-catch {
+} catch {
     $installError = $_
     if ($binaryReplacementStarted) {
         try {
             [void] (Stop-AgentDockForUpgrade -BinaryPath $destinationBinary)
-            if (Test-Path -LiteralPath $binaryBackup -PathType Leaf) {
+            $backupExists = Test-Path -LiteralPath $binaryBackup -PathType Leaf
+            if ($backupExists) {
                 Copy-Item -LiteralPath $binaryBackup -Destination $destinationBinary -Force
             }
-            elseif (Test-Path -LiteralPath $destinationBinary -PathType Leaf) {
+            if (-not $backupExists -and (Test-Path -LiteralPath $destinationBinary -PathType Leaf)) {
                 Remove-Item -LiteralPath $destinationBinary -Force
             }
 
-            if ($startupRegistrationChanged) {
-                if ($runValueExisted) {
-                    New-Item -Path $runKey -Force | Out-Null
-                    New-ItemProperty -Path $runKey -Name $runValueName -Value $previousRunValue -PropertyType String -Force | Out-Null
-                }
-                else {
-                    Remove-ItemProperty -LiteralPath $runKey -Name $runValueName -ErrorAction SilentlyContinue
-                }
+            if ($startupRegistrationChanged -and $runValueExisted) {
+                New-Item -Path $runKey -Force | Out-Null
+                New-ItemProperty -Path $runKey -Name $runValueName -Value $previousRunValue -PropertyType String -Force | Out-Null
             }
-            if ($null -ne $upgradeState -and $upgradeState.ProcessWasRunning -and (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
+            if ($startupRegistrationChanged -and -not $runValueExisted) {
+                Remove-ItemProperty -LiteralPath $runKey -Name $runValueName -ErrorAction SilentlyContinue
+            }
+            if ($processWasRunning -and (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
                 Start-AgentDockLauncher -LauncherPath $launcherPath
             }
-        }
-        catch {
+        } catch {
             Write-Warning "AgentDock rollback failed: $($_.Exception.Message)"
         }
     }
-    elseif ($null -ne $upgradeState -and $upgradeState.ProcessWasRunning -and (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
+    if (-not $binaryReplacementStarted -and $processWasRunning -and (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
         Start-AgentDockLauncher -LauncherPath $launcherPath
     }
     throw $installError
-}
-finally {
+} finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }

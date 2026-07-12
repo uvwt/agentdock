@@ -20,6 +20,21 @@ if ($errors.Count -gt 0) {
 }
 
 $content = Get-Content -LiteralPath $resolvedInstaller -Raw
+$bytes = [IO.File]::ReadAllBytes($resolvedInstaller)
+for ($index = 0; $index -lt $bytes.Length; $index++) {
+    if ($bytes[$index] -gt 127) {
+        throw "$InstallerPath must remain ASCII for Windows PowerShell 5.1; non-ASCII byte at offset $index"
+    }
+}
+foreach ($line in ($content -split "`n")) {
+    $trimmed = $line.Trim()
+    foreach ($keyword in @('else', 'elseif', 'catch', 'finally')) {
+        if ($trimmed -eq $keyword -or $trimmed.StartsWith("$keyword ")) {
+            throw "$InstallerPath must keep $keyword on the same line as the preceding closing brace: $line"
+        }
+    }
+}
+
 foreach ($forbidden in @(
     'Set-PrivateAcl',
     'Get-Acl',

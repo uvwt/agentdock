@@ -35,10 +35,25 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read install-windows.ps1: %v", err)
 	}
+	for index, value := range data {
+		if value > 0x7f {
+			t.Fatalf("install-windows.ps1 must remain ASCII for Windows PowerShell 5.1; non-ASCII byte at offset %d", index)
+		}
+	}
+
 	script := string(data)
+	for _, line := range strings.Split(script, "\n") {
+		trimmed := strings.TrimSpace(line)
+		for _, keyword := range []string{"else", "elseif", "catch", "finally"} {
+			if trimmed == keyword || strings.HasPrefix(trimmed, keyword+" ") {
+				t.Fatalf("install-windows.ps1 must keep %s on the same line as the preceding closing brace: %q", keyword, line)
+			}
+		}
+	}
+
 	for _, want := range []string{
 		"agentdock_windows_$architecture.zip",
-		"Get-FileHash -LiteralPath $archive -Algorithm SHA256",
+		"Get-FileHash -LiteralPath $archivePath -Algorithm SHA256",
 		"Stop-AgentDockForUpgrade -BinaryPath $destinationBinary",
 		"Get-Process -Name 'agentdock'",
 		"Copy-Item -LiteralPath $destinationBinary -Destination $binaryBackup -Force",
@@ -49,7 +64,7 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
 		"New-ItemProperty -Path $runKey -Name $runValueName",
 		"Start-AgentDockLauncher -LauncherPath $launcherPath",
-		"http://127.0.0.1:$Port/healthz",
+		"http://127.0.0.1:$HealthPort/healthz",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("install-windows.ps1 missing %q", want)

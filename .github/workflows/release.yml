@@ -71,18 +71,26 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Validate Windows installer
+      - name: Download and validate exact installer bytes
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          & .\scripts\test-install-windows.ps1
+          $downloadedInstaller = Join-Path $env:RUNNER_TEMP 'install-windows-downloaded.ps1'
+          $installerUrl = 'https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/scripts/install-windows.ps1'
+          & .\scripts\test-install-windows-download.ps1 `
+            -Url $installerUrl `
+            -ExpectedInstallerPath .\scripts\install-windows.ps1 `
+            -OutputPath $downloadedInstaller
+          "DOWNLOADED_INSTALLER=$downloadedInstaller" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
 
       - name: Run full install and in-place upgrade as standard user
         if: matrix.goarch == 'amd64'
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          & .\scripts\run-windows-installer-e2e-as-standard-user.ps1 -Version v0.2.5
+          & .\scripts\run-windows-installer-e2e-as-standard-user.ps1 `
+            -InstallerPath $env:DOWNLOADED_INSTALLER `
+            -Version v0.2.6
 
       - name: Detect Authenticode configuration
         id: signing
@@ -151,11 +159,21 @@ jobs:
     needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+
+      - name: Package Windows installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp scripts/install-windows.ps1 dist/install-windows.ps1
+          shasum -a 256 dist/install-windows.ps1 > dist/install-windows.ps1.sha256
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -166,4 +184,36 @@ jobs:
             dist/*.tar.gz.sha256
             dist/*.zip
             dist/*.zip.sha256
+            dist/install-windows.ps1
+            dist/install-windows.ps1.sha256
           generate_release_notes: true
+
+  verify-windows-release:
+    name: Verify published Windows installer
+    needs: publish
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download published installer
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = '${{ github.event.inputs.tag || github.ref_name }}'
+          $downloadedInstaller = Join-Path $env:RUNNER_TEMP 'install-windows-release.ps1'
+          $installerUrl = "https://github.com/${{ github.repository }}/releases/download/$tag/install-windows.ps1"
+          & .\scripts\test-install-windows-download.ps1 `
+            -Url $installerUrl `
+            -ExpectedInstallerPath .\scripts\install-windows.ps1 `
+            -OutputPath $downloadedInstaller
+          "DOWNLOADED_INSTALLER=$downloadedInstaller" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
+
+      - name: Install and upgrade published version as standard user
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\run-windows-installer-e2e-as-standard-user.ps1 `
+            -InstallerPath $env:DOWNLOADED_INSTALLER `
+            -Version $env:RELEASE_TAG
