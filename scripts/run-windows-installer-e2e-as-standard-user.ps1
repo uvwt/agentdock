@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string] $InstallerPath = '',
-    [string] $Version = 'v0.2.6'
+    [string] $Version = 'v0.2.0'
 )
 
 Set-StrictMode -Version Latest

@@ -96,7 +96,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           & .\scripts\run-windows-installer-e2e-as-standard-user.ps1 `
             -InstallerPath $env:DOWNLOADED_INSTALLER `
-            -Version v0.2.6
+            -Version v0.2.0
 
       - name: Detect Authenticode configuration
         id: signing

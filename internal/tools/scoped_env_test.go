@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -42,8 +43,12 @@ func TestSkillEnvironmentActionsDoNotReturnValuesAndExecCommandUsesPriority(t *t
 		t.Fatalf("unexpected env_list result: %#v", listResult)
 	}
 
+	loadedCommand := `test "$DEMO_SECRET" = "skill-secret-value" && printf loaded`
+	if goruntime.GOOS == "windows" {
+		loadedCommand = `if ($env:DEMO_SECRET -ne "skill-secret-value") { exit 1 }; [Console]::Write("loaded")`
+	}
 	loaded, err := runtime.Call(context.Background(), "exec_command", map[string]any{
-		"cmd":             `test "$DEMO_SECRET" = "skill-secret-value" && printf loaded`,
+		"cmd":             loadedCommand,
 		"skill_env":       "demo-skill",
 		"wait_until_exit": true,
 	})
@@ -54,8 +59,12 @@ func TestSkillEnvironmentActionsDoNotReturnValuesAndExecCommandUsesPriority(t *t
 		t.Fatalf("Skill environment was not loaded: %#v", loaded)
 	}
 
+	overrideCommand := `printf %s "$DEMO_SECRET"`
+	if goruntime.GOOS == "windows" {
+		overrideCommand = `[Console]::Write($env:DEMO_SECRET)`
+	}
 	overridden, err := runtime.Call(context.Background(), "exec_command", map[string]any{
-		"cmd":             `printf %s "$DEMO_SECRET"`,
+		"cmd":             overrideCommand,
 		"skill_env":       "demo-skill",
 		"env":             map[string]any{"DEMO_SECRET": "request-override"},
 		"wait_until_exit": true,
