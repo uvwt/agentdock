@@ -94,6 +94,52 @@ class GrokQuotaTests(unittest.TestCase):
         self.assertNotIn("subject-123", encoded)
         self.assertNotIn("account.json", encoded)
 
+    def test_grok_build_cli_auth_file_is_detected_and_redacted(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            auth_path = Path(temp_dir) / "auth.json"
+            auth_path.write_text(
+                json.dumps(
+                    {
+                        f"https://auth.x.ai::{run.XAI_CLIENT_ID}": {
+                            "key": "cli-access-token",
+                            "refresh_token": "cli-refresh-token",
+                            "expires_at": "2030-01-01T00:00:00Z",
+                            "oidc_issuer": "https://auth.x.ai",
+                            "oidc_client_id": run.XAI_CLIENT_ID,
+                            "user_id": "user-123",
+                            "email": "person@example.com",
+                        }
+                    }
+                )
+            )
+            result = run.status({"auth_file": str(auth_path)})
+            encoded = json.dumps(result)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(result["accounts"]), 1)
+        self.assertEqual(result["accounts"][0]["credential_source"], "grok_build_cli")
+        self.assertTrue(result["accounts"][0]["access_token_present"])
+        self.assertTrue(result["accounts"][0]["refresh_token_present"])
+        self.assertNotIn("cli-access-token", encoded)
+        self.assertNotIn("cli-refresh-token", encoded)
+        self.assertNotIn("person@example.com", encoded)
+        self.assertNotIn("user-123", encoded)
+        self.assertNotIn("auth.json", encoded)
+
+    def test_default_grok_auth_is_kept_with_configured_cpa_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_home = Path(temp_dir) / "home"
+            cpa_dir = Path(temp_dir) / "cpa"
+            with mock.patch.object(run, "system_home", return_value=fake_home), mock.patch.dict(
+                run.os.environ,
+                {"GROK_QUOTA_AUTH_DIR": str(cpa_dir)},
+                clear=True,
+            ):
+                files, directories = run.credential_sources({})
+
+        self.assertIn(fake_home / ".grok" / "auth.json", files)
+        self.assertIn(cpa_dir, directories)
+
     def test_query_without_credentials_has_explicit_error(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with self.assertRaises(run.SkillError) as raised:

@@ -21,7 +21,7 @@ CLI_RESPONSES_URL = "https://cli-chat-proxy.grok.com/v1/responses"
 OIDC_DISCOVERY_URL = "https://auth.x.ai/.well-known/openid-configuration"
 XAI_CLIENT_ID = "b1a00492-073a-47ea-816f-4c329264a828"
 CLIENT_VERSION = "0.2.93"
-DEFAULT_MODEL = "grok-4.5-build-free"
+DEFAULT_MODEL = "grok-4.5"
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_AUTH_BYTES = 1024 * 1024
 TOKEN_USAGE_PATTERN = re.compile(
@@ -57,9 +57,11 @@ HTTP_OPENER = urllib.request.build_opener(NoRedirectHandler())
 class Credential:
     path: Path
     account_ref: str
+    source_kind: str
     access_token: str
     refresh_token: str
     token_endpoint: str
+    client_id: str
     expired_at: str
     email_present: bool
     subject_present: bool
@@ -116,13 +118,21 @@ def credential_sources(args: dict[str, Any]) -> tuple[list[Path], list[Path]]:
     if env_file:
         files.append(require_absolute_path(env_file, "GROK_QUOTA_AUTH_FILE") or Path(env_file))
 
+    configured_dir = False
     for env_name in ("GROK_QUOTA_AUTH_DIR", "CLIPROXY_AUTH_DIR"):
         raw = os.environ.get(env_name, "").strip()
         if raw:
+            configured_dir = True
             directories.append(require_absolute_path(raw, env_name) or Path(raw))
 
-    if not files and not directories:
-        home = system_home()
+    home = system_home()
+    if not explicit_file and not explicit_dir:
+        grok_home = os.environ.get("GROK_HOME", "").strip()
+        if grok_home:
+            files.append((require_absolute_path(grok_home, "GROK_HOME") or Path(grok_home)) / "auth.json")
+        files.append(home / ".grok" / "auth.json")
+
+    if not explicit_file and not explicit_dir and not env_file and not configured_dir:
         directories.extend((home / ".cli-proxy-api", home / ".config" / "cli-proxy-api"))
 
     return dedupe_paths(files), dedupe_paths(directories)
@@ -149,24 +159,58 @@ def auth_candidates(files: list[Path], directories: list[Path]) -> list[Path]:
     return sorted(dedupe_paths(candidates), key=lambda path: str(path))
 
 
-def read_auth_json(path: Path) -> dict[str, Any] | None:
+def is_xai_issuer(raw_url: str) -> bool:
+    try:
+        parsed = urllib.parse.urlparse(raw_url)
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").lower()
+    return parsed.scheme == "https" and (host == "x.ai" or host.endswith(".x.ai"))
+
+
+def read_auth_records(path: Path) -> list[tuple[dict[str, Any], str, str]]:
     try:
         if path.stat().st_size > MAX_AUTH_BYTES:
-            return None
+            return []
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
-        return None
+        return []
     if not isinstance(value, dict):
-        return None
+        return []
+
     provider = str(value.get("type") or value.get("provider") or "").strip().lower()
-    if provider not in {"xai", "x-ai", "grok"}:
-        return None
-    return value
+    if provider in {"xai", "x-ai", "grok"}:
+        return [(value, "cliproxyapi", "")]
+
+    records: list[tuple[dict[str, Any], str, str]] = []
+    for entry_key, raw_record in value.items():
+        if not isinstance(raw_record, dict):
+            continue
+        key_issuer, _, key_client_id = str(entry_key).partition("::")
+        issuer = str(raw_record.get("oidc_issuer") or key_issuer).strip()
+        if not is_xai_issuer(issuer):
+            continue
+        access_token = str(raw_record.get("key") or raw_record.get("access_token") or "").strip()
+        refresh_token = str(raw_record.get("refresh_token") or "").strip()
+        if not access_token and not refresh_token:
+            continue
+        normalized = {
+            "type": "xai",
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_endpoint": raw_record.get("token_endpoint"),
+            "expires_at": raw_record.get("expires_at"),
+            "email": raw_record.get("email"),
+            "sub": raw_record.get("user_id") or raw_record.get("principal_id"),
+            "client_id": raw_record.get("oidc_client_id") or key_client_id,
+        }
+        records.append((normalized, "grok_build_cli", str(entry_key)))
+    return records
 
 
-def account_reference(path: Path, data: dict[str, Any]) -> str:
+def account_reference(path: Path, data: dict[str, Any], identity_hint: str = "") -> str:
     identity = str(data.get("sub") or data.get("email") or "")
-    source = f"{path.absolute()}\0{identity}".encode("utf-8", errors="replace")
+    source = f"{path.absolute()}\0{identity_hint}\0{identity}".encode("utf-8", errors="replace")
     return hashlib.sha256(source).hexdigest()[:12]
 
 
@@ -176,21 +220,21 @@ def discover_credentials(args: dict[str, Any]) -> tuple[list[Credential], dict[s
     scanned_count = 0
     for path in auth_candidates(files, directories):
         scanned_count += 1
-        data = read_auth_json(path)
-        if data is None:
-            continue
-        credentials.append(
-            Credential(
-                path=path,
-                account_ref=account_reference(path, data),
-                access_token=str(data.get("access_token") or "").strip(),
-                refresh_token=str(data.get("refresh_token") or "").strip(),
-                token_endpoint=str(data.get("token_endpoint") or "").strip(),
-                expired_at=str(data.get("expired") or data.get("expires_at") or "").strip(),
-                email_present=bool(str(data.get("email") or "").strip()),
-                subject_present=bool(str(data.get("sub") or "").strip()),
+        for data, source_kind, identity_hint in read_auth_records(path):
+            credentials.append(
+                Credential(
+                    path=path,
+                    account_ref=account_reference(path, data, identity_hint),
+                    source_kind=source_kind,
+                    access_token=str(data.get("access_token") or "").strip(),
+                    refresh_token=str(data.get("refresh_token") or "").strip(),
+                    token_endpoint=str(data.get("token_endpoint") or "").strip(),
+                    client_id=str(data.get("client_id") or "").strip(),
+                    expired_at=str(data.get("expired") or data.get("expires_at") or "").strip(),
+                    email_present=bool(str(data.get("email") or "").strip()),
+                    subject_present=bool(str(data.get("sub") or "").strip()),
+                )
             )
-        )
     source_summary = {
         "explicit_file_configured": bool(args.get("auth_file") or os.environ.get("GROK_QUOTA_AUTH_FILE")),
         "explicit_dir_configured": bool(
@@ -222,6 +266,7 @@ def credential_summary(credential: Credential) -> dict[str, Any]:
     now = datetime.now(timezone.utc)
     return {
         "account_ref": credential.account_ref,
+        "credential_source": credential.source_kind,
         "access_token_present": bool(credential.access_token),
         "refresh_token_present": bool(credential.refresh_token),
         "expires_at": expires_at.isoformat().replace("+00:00", "Z") if expires_at else None,
@@ -339,7 +384,7 @@ def refresh_access_token(credential: Credential, timeout: int) -> tuple[str, boo
         timeout,
         form={
             "grant_type": "refresh_token",
-            "client_id": XAI_CLIENT_ID,
+            "client_id": credential.client_id or XAI_CLIENT_ID,
             "refresh_token": credential.refresh_token,
         },
     )
