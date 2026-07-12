@@ -170,6 +170,28 @@ func TestPersistentOAuthStoreRegistersShortClientAcrossReloads(t *testing.T) {
 		!store.ClientAllowsGrant(clientID, "refresh_token", "") {
 		t.Fatal("new client registration was not bound to redirect URI and grant")
 	}
+	repeatedID, err := store.RegisterClient(
+		"ChatGPT",
+		[]string{"https://client.example/callback"},
+		[]string{"refresh_token", "authorization_code"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repeatedID != clientID {
+		t.Fatalf("repeated registration ID = %q, want %q", repeatedID, clientID)
+	}
+	differentID, err := store.RegisterClient(
+		"ChatGPT",
+		[]string{"https://client.example/other-callback"},
+		[]string{"authorization_code", "refresh_token"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if differentID == clientID {
+		t.Fatal("different redirect URI reused the same client ID")
+	}
 
 	reloaded, err := NewPersistentOAuthStore(path)
 	if err != nil {
@@ -179,6 +201,17 @@ func TestPersistentOAuthStoreRegistersShortClientAcrossReloads(t *testing.T) {
 		!reloaded.ValidateClientRedirect(clientID, "https://client.example/callback", "") ||
 		!reloaded.ClientAllowsGrant(clientID, "authorization_code", "") {
 		t.Fatal("persisted client registration was not valid after reload")
+	}
+	reloadedID, err := reloaded.RegisterClient(
+		"ChatGPT",
+		[]string{"https://client.example/callback"},
+		[]string{"authorization_code", "refresh_token"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloadedID != clientID {
+		t.Fatalf("reloaded repeated registration ID = %q, want %q", reloadedID, clientID)
 	}
 	info, err := os.Stat(path)
 	if err != nil {
