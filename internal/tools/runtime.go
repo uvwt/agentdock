@@ -367,23 +367,22 @@ func (r *Runtime) listFiles(ctx context.Context, args map[string]any) (Result, e
 }
 
 func (r *Runtime) viewImage(ctx context.Context, args map[string]any) (Result, error) {
-	p, err := r.ws.ResolveExisting(stringArg(args, "path", "."))
+	loaded, err := r.loadImageSource(ctx, args)
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(p.Abs)
+	info, err := identifyImage(loaded.Data)
 	if err != nil {
-		return nil, err
+		return nil, toolError("BINARY_FILE", "source is not a supported image", "validation")
 	}
-	info, err := identifyImage(data)
-	if err != nil {
-		return nil, toolError("BINARY_FILE", "file is not a supported image", "validation")
+
+	maxBytes := intArg(args, "max_bytes", defaultViewImageBytes)
+	if maxBytes <= 0 {
+		maxBytes = defaultViewImageBytes
 	}
-	returnMode, err := imageReturnMode(args, "return_mode")
-	if err != nil {
-		return nil, err
+	if maxBytes > hardViewImageBytes {
+		maxBytes = hardViewImageBytes
 	}
-	maxBytes := intArg(args, "max_bytes", 750000)
 	maxWidth := intArg(args, "max_width", 1280)
 	maxHeight := intArg(args, "max_height", 1280)
 	format := stringArg(args, "format", "jpeg")
@@ -391,15 +390,15 @@ func (r *Runtime) viewImage(ctx context.Context, args map[string]any) (Result, e
 	crop := cropArg(args)
 	autoResize := boolArg(args, "auto_resize", true)
 
-	original := map[string]any{"size_bytes": len(data), "width": info.Width, "height": info.Height, "mime_type": info.MIME}
-	prepared := data
+	original := map[string]any{"size_bytes": len(loaded.Data), "width": info.Width, "height": info.Height, "mime_type": info.MIME}
+	prepared := loaded.Data
 	preparedInfo := info
 	warnings := []string{}
 	resized := false
 	if crop != nil || autoResize || strings.TrimSpace(format) != "" || quality != 72 {
 		var ok bool
 		var prepOriginal map[string]any
-		prepared, preparedInfo, prepOriginal, warnings, ok = prepareImageBytes(data, crop, maxBytes, maxWidth, maxHeight, format, quality)
+		prepared, preparedInfo, prepOriginal, warnings, ok = prepareImageBytes(loaded.Data, crop, maxBytes, maxWidth, maxHeight, format, quality)
 		if prepOriginal != nil {
 			if bytes, ok := prepOriginal["bytes"]; ok {
 				prepOriginal["size_bytes"] = bytes
@@ -410,22 +409,20 @@ func (r *Runtime) viewImage(ctx context.Context, args map[string]any) (Result, e
 		if !ok {
 			return nil, toolErrorDetails("IMAGE_TOO_LARGE", "image exceeds max_bytes after processing", "validation", map[string]any{"bytes": len(prepared), "max_bytes": maxBytes, "auto_resize": autoResize, "warnings": warnings})
 		}
-		resized = preparedInfo.Width != info.Width || preparedInfo.Height != info.Height || len(prepared) != len(data)
+		resized = preparedInfo.Width != info.Width || preparedInfo.Height != info.Height || len(prepared) != len(loaded.Data)
 	}
 	if len(prepared) > maxBytes {
 		return nil, toolErrorDetails("IMAGE_TOO_LARGE", "image exceeds max_bytes", "validation", map[string]any{"bytes": len(prepared), "max_bytes": maxBytes, "auto_resize": autoResize, "warnings": warnings})
 	}
-	image := imageMetadata(p.Display, preparedInfo, len(prepared))
-	if needsPublicURL(returnMode) {
-		published, err := r.publishImageBytes(ctx, prepared, p.Display, preparedInfo, intArg(args, "retention_seconds", 0))
-		if err != nil {
-			return nil, err
-		}
-		image = published
+
+	result := Result{
+		"ok":       true,
+		"source":   loaded.Source,
+		"image":    imageMetadata(loaded.Name, preparedInfo, len(prepared)),
+		"original": original,
+		"resized":  resized,
+		"warnings": warnings,
 	}
-	result := Result{"ok": true, "path": p.Display, "return_mode": returnMode, "image": image, "original": original, "resized": resized, "warnings": warnings}
-	if err := attachInlineImage(result, prepared, preparedInfo.MIME, returnMode, args); err != nil {
-		return nil, err
-	}
+	attachMCPImage(result, prepared, preparedInfo.MIME)
 	return result, nil
 }

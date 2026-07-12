@@ -52,4 +52,4 @@ Mac mini 裸机运行时，优先让 Playwright 使用系统 Google Chrome，避
 
 默认 runner 禁用页面脚本执行动作。AI 做网页操作时应优先使用打开、点击、输入、滚动、等待和截图等可观察动作。
 
-`browser_act` / `browser_snapshot` 默认把截图发布为带过期时间的签名公网 `screenshot.url`，不会返回 Base64。需要内联图片时显式传 `screenshot_return_mode=base64`、`data_url`、`mcp_image` 或 `both`；不需要截图时传 `screenshot_return_mode=none`。页面文本、console error、网络失败和页面运行错误会作为工具结果返回，方便开发和排障闭环。
+`browser_act` / `browser_snapshot` 把截图发布为轻量 Artifact 引用：始终返回 `screenshot.artifact_id`，存在可访问服务地址时额外返回带过期时间的签名 `screenshot.url`，不直接返回 Base64。模型需要查看截图时，再调用 `view_image(artifact_id=...)`。页面文本、console error、网络失败和页面运行错误会继续作为工具结果返回，方便开发和排障闭环。

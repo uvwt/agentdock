@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import base64
 import datetime
 import hashlib
 import hmac
@@ -16,7 +15,7 @@ import time
 import urllib.parse
 from pathlib import Path
 
-VERSION = "1.0.10"
+VERSION = "1.0.11"
 SEP = "\x1f"
 STATE_MAX_AGE_SECONDS = 90
 
@@ -172,11 +171,7 @@ def ensure_public_secret():
 
 
 def public_base_url():
-    value = (os.environ.get("AGENTDOCK_SERVER_URL") or "").strip().rstrip("/")
-    if value:
-        return value
-    port = (os.environ.get("AGENTDOCK_PORT") or "8765").strip() or "8765"
-    return f"http://127.0.0.1:{port}"
+    return (os.environ.get("AGENTDOCK_SERVER_URL") or "").strip().rstrip("/")
 
 
 def rfc3339(timestamp):
@@ -234,42 +229,12 @@ def publish_public_image(path, data, info, args):
         (target_dir / "metadata.json").chmod(stat.S_IRUSR | stat.S_IWUSR)
     except OSError:
         pass
-    secret = ensure_public_secret()
-    sig = sign_public_url(secret, artifact_id, filename, expires, sha)
-    url = f"{public_base_url()}/artifacts/public/{urllib.parse.quote(artifact_id)}/{urllib.parse.quote(filename)}?expires={expires}&sig={urllib.parse.quote(sig)}"
-    metadata["url"] = url
+    base_url = public_base_url()
+    if base_url:
+        secret = ensure_public_secret()
+        sig = sign_public_url(secret, artifact_id, filename, expires, sha)
+        metadata["url"] = f"{base_url}/artifacts/public/{urllib.parse.quote(artifact_id)}/{urllib.parse.quote(filename)}?expires={expires}&sig={urllib.parse.quote(sig)}"
     return metadata
-
-
-def image_return_mode(args):
-    mode = str_arg(args, "return_mode", "url").strip().lower() or "url"
-    allowed = {"none", "url", "mcp_image", "base64", "data_url", "both"}
-    if mode not in allowed:
-        return "url", f"unsupported return_mode: {mode}"
-    return mode, ""
-
-
-def max_inline_bytes(args):
-    value = int_arg(args, "max_inline_bytes", 750000)
-    if value <= 0:
-        value = 750000
-    return min(value, 2 * 1024 * 1024)
-
-
-def attach_inline_image(out, data, info, mode, args):
-    if mode not in {"mcp_image", "base64", "data_url", "both"}:
-        return None
-    limit = max_inline_bytes(args)
-    if len(data) > limit:
-        return f"image exceeds max_inline_bytes ({len(data)} > {limit})"
-    encoded = base64.b64encode(data).decode("ascii")
-    inline = {"mode": mode, "mime_type": info["mime_type"], "size_bytes": len(data)}
-    if mode in {"base64", "both", "mcp_image"}:
-        inline["base64"] = encoded
-    elif mode == "data_url":
-        inline["data_url"] = f"data:{info['mime_type']};base64,{encoded}"
-    out["inline"] = inline
-    return None
 
 
 def state_file():
@@ -443,20 +408,11 @@ def capture_screenshot(subdir, prefix, region=None):
 def screenshot_result(path, operation, args):
     data = path.read_bytes()
     info = png_info(data)
-    mode, mode_error = image_return_mode(args)
-    if mode_error:
-        return error_result(operation, "INVALID_RETURN_MODE", mode_error)
-    screenshot = {"filename": path.name, "mime_type": info["mime_type"], "size_bytes": len(data), "width": info["width"], "height": info["height"]}
-    if mode in {"url", "both"}:
-        try:
-            screenshot = publish_public_image(path, data, info, args)
-        except Exception as exc:
-            return error_result(operation, "PUBLIC_ARTIFACT_PUBLISH_FAILED", f"发布截图失败: {exc}", layer="runtime")
-    out = {"ok": True, "operation": operation, "return_mode": mode, "screenshot": screenshot}
-    inline_error = attach_inline_image(out, data, info, mode, args)
-    if inline_error:
-        return error_result(operation, "IMAGE_INLINE_TOO_LARGE", inline_error)
-    return out
+    try:
+        screenshot = publish_public_image(path, data, info, args)
+    except Exception as exc:
+        return error_result(operation, "PUBLIC_ARTIFACT_PUBLISH_FAILED", f"发布截图失败: {exc}", layer="runtime")
+    return {"ok": True, "operation": operation, "screenshot": screenshot}
 
 
 def snapshot(args):

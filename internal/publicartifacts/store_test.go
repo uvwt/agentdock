@@ -50,6 +50,39 @@ func TestPublishFileCreatesImmutableSignedSnapshot(t *testing.T) {
 	}
 }
 
+func TestPublishWithoutBaseURLReturnsArtifactReferenceAndCanRead(t *testing.T) {
+	root := t.TempDir()
+	data := []byte("artifact-only")
+	store := New(filepath.Join(root, "home"), "", 8765)
+
+	result, err := store.PublishBytes(PublishBytesRequest{Filename: "artifact.bin", Data: data, MimeType: "application/octet-stream", RetentionSeconds: 60})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ArtifactID == "" || result.URL != "" {
+		t.Fatalf("artifact-only result = %#v", result)
+	}
+	if _, err := os.Stat(store.SecretPath); !os.IsNotExist(err) {
+		t.Fatalf("publishing without a public URL should not create a signing secret: %v", err)
+	}
+
+	meta, readData, err := store.Read(result.ArtifactID, int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.ArtifactID != result.ArtifactID || !bytes.Equal(readData, data) {
+		t.Fatalf("read artifact mismatch: meta=%#v data=%q", meta, readData)
+	}
+
+	payload := filepath.Join(store.Root, result.ArtifactID, "payload")
+	if err := os.WriteFile(payload, []byte("tampered-data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.Read(result.ArtifactID, 1024); err == nil || !strings.Contains(err.Error(), "checksum") {
+		t.Fatalf("tampered artifact should fail checksum verification: %v", err)
+	}
+}
+
 func TestPublishDirectoryCreatesTarGzSnapshot(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "bundle")

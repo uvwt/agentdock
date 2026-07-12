@@ -154,7 +154,7 @@ func OutputSchema(name string) map[string]any {
 		props["result"] = objectProp("Raw upstream MCP tools/call result, including content and structuredContent when supplied.")
 	case "file_publish":
 		props["artifact_id"] = stringProp("Published artifact id.")
-		props["url"] = stringProp("Temporary signed download URL.")
+		props["url"] = stringProp("Optional temporary signed download URL when a reachable base URL is available.")
 		props["expires_at"] = stringProp("Signed URL expiry timestamp.")
 		props["sha256"] = stringProp("Snapshot payload SHA-256.")
 		props["size_bytes"] = intProp("Snapshot payload size in bytes.")
@@ -250,7 +250,7 @@ func OutputSchema(name string) map[string]any {
 		props["url"] = stringProp("Current page URL.")
 		props["title"] = stringProp("Current page title.")
 		props["text"] = stringProp("Current page body text excerpt.")
-		props["screenshot"] = objectProp("Structured screenshot metadata. Defaults to a signed public URL unless screenshot_return_mode=none.")
+		props["screenshot"] = objectProp("Artifact reference for the captured screenshot. Always includes artifact_id and includes url when a reachable base URL is available.")
 		props["viewport"] = objectProp("Browser viewport size.")
 		props["page_size"] = objectProp("Page scroll size and device pixel ratio.")
 		props["focused_element"] = objectProp("Current focused element summary.")
@@ -258,7 +258,6 @@ func OutputSchema(name string) map[string]any {
 		props["screenshot_size_bytes"] = intProp("Screenshot file size in bytes.")
 		props["screenshot_width"] = intProp("Estimated screenshot width.")
 		props["screenshot_height"] = intProp("Estimated screenshot height.")
-		props["inline"] = objectProp("Inline image metadata and optional base64/data_url when explicitly requested.")
 		props["closed"] = boolProp("Whether the session was closed by close_after.")
 		props["storage_state_path"] = stringProp("Saved Playwright storage state path when requested.")
 		props["console_errors"] = arrayProp("Browser console errors captured during the operation.")
@@ -304,10 +303,8 @@ func OutputSchema(name string) map[string]any {
 		props["fatal_but_non_blocking"] = boolProp("Whether fatal text was non-blocking.")
 		props["push_status"] = stringProp("Structured push status.")
 	case "view_image":
-		props["path"] = stringProp("Host image path. Relative paths resolve from ~/AgentDock.")
-		props["return_mode"] = stringProp("Image return mode used.")
-		props["image"] = objectProp("Processed image metadata, with signed URL when return_mode is url or both.")
-		props["inline"] = objectProp("Inline image metadata and optional base64/data_url when explicitly requested.")
+		props["source"] = objectProp("Resolved artifact, path, or URL source metadata.")
+		props["image"] = objectProp("Processed image metadata attached as standard MCP image content.")
 		props["original"] = objectProp("Original/crop metadata.")
 		props["resized"] = boolProp("Whether image bytes changed due to crop/resize/re-encode.")
 		props["warnings"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}

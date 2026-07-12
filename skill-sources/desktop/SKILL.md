@@ -1,7 +1,7 @@
 ---
 name: desktop
 description: macOS desktop automation as an AgentDock Skill workflow.
-version: 1.0.10
+version: 1.0.11
 ---
 
 # macOS Desktop Skill
@@ -16,7 +16,7 @@ AgentDock 的 macOS 桌面自动化能力已经从 core 工具拆分为此 Skill
 
 ## 数据目录
 
-截图原始文件写入 `AGENTDOCK_HOME/skill-data/desktop/artifacts`；`snapshot` / `snapshot_app` 默认同时发布到 `AGENTDOCK_HOME/public-artifacts` 并返回带过期时间的签名公网 `screenshot.url`。只有显式 `return_mode=base64`、`return_mode=data_url`、`return_mode=mcp_image` 或 `return_mode=both` 时才返回内联图片数据。历史截图已统一迁入同一私有数据目录。
+截图原始文件写入 `AGENTDOCK_HOME/skill-data/desktop/artifacts`；`snapshot` / `snapshot_app` 同时发布到 `AGENTDOCK_HOME/public-artifacts`，并返回包含 `artifact_id` 的轻量 `screenshot` 引用。配置 `AGENTDOCK_SERVER_URL` 时额外返回带过期时间的签名 `screenshot.url`。需要模型查看图片时，再调用 AgentDock `view_image(artifact_id=...)`；Desktop Skill 不直接返回 Base64。历史截图已统一迁入同一私有数据目录。
 
 - 动作参数不支持别名：`skill_action=act` 必须使用 `action` 枚举值；`secondary_action` 的辅助动作名必须放在 `ax_action`；`wait` 使用 `ms`。
 
@@ -28,7 +28,7 @@ Skill 本身只提供流程说明。确需调用包内辅助脚本时，使用 `
 
 ```bash
 AGENTDOCK_HOME="${AGENTDOCK_HOME:-$HOME/.agentdock}"
-SKILL_DIR="$AGENTDOCK_HOME/skill-store/installed/desktop/1.0.10"
+SKILL_DIR="$AGENTDOCK_HOME/skill-store/installed/desktop/1.0.11"
 ```
 
 调用 `exec_command` 时传入 `skill_env: "desktop"`，由 AgentDock 自动加载该 Skill 的独立环境；不要在命令中手工 `source` 环境文件。

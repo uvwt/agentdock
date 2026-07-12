@@ -36,10 +36,9 @@ func TestFilePublishDescriptorExposesFileRewritePath(t *testing.T) {
 func TestToolEnvelopeMCPImageStripsInternalBase64FromStructuredContent(t *testing.T) {
 	response := toolEnvelope("view_image", map[string]any{
 		"ok":                   true,
-		"return_mode":          "mcp_image",
+		"source":               map[string]any{"type": "artifact", "artifact_id": "artifact-1"},
 		"_mcp_image_base64":    "abc123",
 		"_mcp_image_mime_type": "image/png",
-		"inline":               map[string]any{"mode": "mcp_image", "attached": true},
 	}, nil)
 	content := response["content"].([]map[string]any)
 	if content[0]["type"] != "image" || content[0]["data"] != "abc123" || content[0]["mimeType"] != "image/png" {

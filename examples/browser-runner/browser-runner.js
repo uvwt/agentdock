@@ -658,8 +658,7 @@ async function collectInteractiveElements(page, limit = 40) {
 }
 
 function shouldCaptureScreenshot(captureArgs = args) {
-  const mode = String(captureArgs.screenshot_return_mode || 'url').toLowerCase();
-  return captureArgs.capture_screenshot === true || mode !== 'none';
+  return captureArgs.capture_screenshot !== false;
 }
 
 async function saveStorageStateIfNeeded(context, session, sessionId) {

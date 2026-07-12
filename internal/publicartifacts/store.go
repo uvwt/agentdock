@@ -182,11 +182,6 @@ func (s Store) prepareArtifactDir() (string, string, string, error) {
 }
 
 func (s Store) finishPublishedPayload(req publishPayloadRequest) (PublishResult, error) {
-	secret, err := s.ensureSecret()
-	if err != nil {
-		_ = os.RemoveAll(req.Dir)
-		return PublishResult{}, err
-	}
 	stat, err := os.Stat(req.Payload)
 	if err != nil {
 		_ = os.RemoveAll(req.Dir)
@@ -214,10 +209,18 @@ func (s Store) finishPublishedPayload(req publishPayloadRequest) (PublishResult,
 		_ = os.RemoveAll(req.Dir)
 		return PublishResult{}, fmt.Errorf("write artifact metadata: %w", err)
 	}
-	base := strings.TrimRight(firstNonEmpty(req.BaseURL, s.ServerURL, fallbackURL(s.Port)), "/")
-	sig := sign(secret, meta.ArtifactID, meta.Filename, meta.ExpiresAt.Unix(), meta.SHA256)
-	u := base + "/artifacts/public/" + url.PathEscape(meta.ArtifactID) + "/" + url.PathEscape(meta.Filename) + "?expires=" + strconv.FormatInt(meta.ExpiresAt.Unix(), 10) + "&sig=" + url.QueryEscape(sig)
-	return PublishResult{Metadata: meta, URL: u}, nil
+	base := strings.TrimRight(firstNonEmpty(req.BaseURL, s.ServerURL), "/")
+	publicURL := ""
+	if base != "" {
+		secret, err := s.ensureSecret()
+		if err != nil {
+			_ = os.RemoveAll(req.Dir)
+			return PublishResult{}, err
+		}
+		sig := sign(secret, meta.ArtifactID, meta.Filename, meta.ExpiresAt.Unix(), meta.SHA256)
+		publicURL = base + "/artifacts/public/" + url.PathEscape(meta.ArtifactID) + "/" + url.PathEscape(meta.Filename) + "?expires=" + strconv.FormatInt(meta.ExpiresAt.Unix(), 10) + "&sig=" + url.QueryEscape(sig)
+	}
+	return PublishResult{Metadata: meta, URL: publicURL}, nil
 }
 
 func normalizeNow(now time.Time) time.Time {
@@ -296,6 +299,32 @@ func (s Store) ServeHTTP(w http.ResponseWriter, r *http.Request, prefix string) 
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	http.ServeContent(w, r, meta.Filename, meta.CreatedAt, file)
+}
+
+func (s Store) Read(artifactID string, maxBytes int64) (Metadata, []byte, error) {
+	meta, err := s.readMetadata(artifactID)
+	if err != nil {
+		return Metadata{}, nil, fmt.Errorf("read artifact metadata: %w", err)
+	}
+	if time.Now().UTC().After(meta.ExpiresAt) {
+		return Metadata{}, nil, errors.New("artifact has expired")
+	}
+	if maxBytes > 0 && meta.Size > maxBytes {
+		return Metadata{}, nil, fmt.Errorf("artifact size %d exceeds limit %d", meta.Size, maxBytes)
+	}
+	payload := filepath.Join(s.Root, artifactID, "payload")
+	data, err := os.ReadFile(payload)
+	if err != nil {
+		return Metadata{}, nil, fmt.Errorf("read artifact payload: %w", err)
+	}
+	if int64(len(data)) != meta.Size {
+		return Metadata{}, nil, errors.New("artifact payload size does not match metadata")
+	}
+	digest := sha256.Sum256(data)
+	if hex.EncodeToString(digest[:]) != meta.SHA256 {
+		return Metadata{}, nil, errors.New("artifact payload checksum does not match metadata")
+	}
+	return meta, data, nil
 }
 
 func (s Store) Cleanup(now time.Time) error {
@@ -666,12 +695,6 @@ func truncateUTF8Bytes(value string, maxBytes int) string {
 	return value[:maxBytes]
 }
 
-func fallbackURL(port int) string {
-	if port <= 0 {
-		port = 8765
-	}
-	return "http://127.0.0.1:" + strconv.Itoa(port)
-}
 func firstNonEmpty(values ...string) string {
 	for _, v := range values {
 		if strings.TrimSpace(v) != "" {

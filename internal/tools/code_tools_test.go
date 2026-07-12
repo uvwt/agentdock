@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"image"
 	"image/color"
@@ -17,7 +18,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/uvwt/agentdock/internal/config"
-	"github.com/uvwt/agentdock/internal/publicartifacts"
 	"github.com/uvwt/agentdock/internal/taskstate"
 )
 
@@ -166,7 +166,7 @@ func newWorkflowTemplateNexusTestServer(t *testing.T, _ *taskstate.Store) *httpt
 	return server
 }
 
-func TestViewImageDefaultsToSignedURLWithoutBase64(t *testing.T) {
+func TestViewImageLoadsPathAsMCPImage(t *testing.T) {
 	rt, root := newCodeToolsRuntime(t)
 	imagePath := filepath.Join(root, "tiny.png")
 	writeTinyPNG(t, imagePath)
@@ -175,41 +175,57 @@ func TestViewImageDefaultsToSignedURLWithoutBase64(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result["return_mode"] != "url" {
-		t.Fatalf("return_mode = %#v, want url", result["return_mode"])
+	assertMCPImagePayload(t, result)
+	source, ok := result["source"].(map[string]any)
+	if !ok || source["type"] != "path" || source["path"] != "tiny.png" {
+		t.Fatalf("path source = %#v", result["source"])
+	}
+	if _, ok := result["return_mode"]; ok {
+		t.Fatalf("view_image should not expose return_mode: %#v", result)
 	}
 	if _, ok := result["inline"]; ok {
-		t.Fatalf("default view_image returned inline image data: %#v", result)
-	}
-	for _, forbidden := range []string{"data_base64", "data_url", "_mcp_image_base64"} {
-		if _, ok := result[forbidden]; ok {
-			t.Fatalf("default view_image returned %s: %#v", forbidden, result)
-		}
-	}
-	imageObject, ok := result["image"].(map[string]any)
-	if !ok {
-		t.Fatalf("image object missing: %#v", result)
-	}
-	rawURL, _ := imageObject["url"].(string)
-	if !strings.Contains(rawURL, "/artifacts/public/") || !strings.Contains(rawURL, "sig=") {
-		t.Fatalf("signed url missing: %#v", imageObject)
-	}
-	body, status := downloadPublicArtifact(t, rt, rawURL)
-	if status != http.StatusOK {
-		t.Fatalf("download status = %d body=%q", status, body)
-	}
-	if len(body) == 0 {
-		t.Fatalf("downloaded image is empty")
+		t.Fatalf("view_image should not expose inline Base64 metadata: %#v", result)
 	}
 }
 
-func TestBrowserScreenshotIsPublishedAndScratchFieldsAreRemoved(t *testing.T) {
+func TestViewImageLoadsHTTPURLAsMCPImage(t *testing.T) {
+	rt, root := newCodeToolsRuntime(t)
+	imagePath := filepath.Join(root, "remote.png")
+	writeTinyPNG(t, imagePath)
+	imageBytes, err := os.ReadFile(imagePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(imageBytes)
+	}))
+	t.Cleanup(server.Close)
+
+	result, err := rt.Call(context.Background(), "view_image", map[string]any{"url": server.URL + "/remote.png", "format": "png"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertMCPImagePayload(t, result)
+	source, ok := result["source"].(map[string]any)
+	if !ok || source["type"] != "url" || source["url"] != server.URL+"/remote.png" {
+		t.Fatalf("url source = %#v", result["source"])
+	}
+}
+
+func TestBrowserScreenshotReturnsArtifactAndViewImageLoadsIt(t *testing.T) {
 	if _, err := exec.LookPath("node"); err != nil {
 		t.Skip("node is required for browser runner")
 	}
 	root := t.TempDir()
 	runnerDir := filepath.Join(root, ".agentdock", "browser-runner")
 	if err := os.MkdirAll(runnerDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fixturePath := filepath.Join(root, "browser-fixture.png")
+	writeTinyPNG(t, fixturePath)
+	fixtureBytes, err := os.ReadFile(fixturePath)
+	if err != nil {
 		t.Fatal(err)
 	}
 	script := `const fs = require('fs');
@@ -219,8 +235,9 @@ const dir = path.join(payload.artifact_dir, 'screenshots');
 fs.mkdirSync(dir, { recursive: true });
 const file = 'snapshot-test.png';
 const screenshotPath = path.join(dir, file);
-fs.writeFileSync(screenshotPath, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGJgYGD4DwABBAEAgh7R8QAAAABJRU5ErkJggg==', 'base64'));
+fs.writeFileSync(screenshotPath, Buffer.from('__PNG_BASE64__', 'base64'));
 process.stdout.write(JSON.stringify({ ok: true, operation: payload.operation, screenshot_path: screenshotPath, screenshot_file: file, artifact: { path: screenshotPath } }));`
+	script = strings.Replace(script, "__PNG_BASE64__", base64.StdEncoding.EncodeToString(fixtureBytes), 1)
 	if err := os.WriteFile(filepath.Join(runnerDir, "browser-runner.js"), []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -240,28 +257,45 @@ process.stdout.write(JSON.stringify({ ok: true, operation: payload.operation, sc
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result["screenshot_return_mode"] != "url" {
-		t.Fatalf("screenshot_return_mode = %#v, want url; result=%#v", result["screenshot_return_mode"], result)
-	}
 	if _, ok := result["stdout"]; ok {
 		t.Fatalf("parsed browser output should not echo raw stdout: %#v", result)
 	}
-	for _, forbidden := range []string{"artifact", "screenshot_path", "screenshot_file", "screenshot_artifact_id", "image_base64", "screenshot_base64"} {
+	for _, forbidden := range []string{"artifact", "screenshot_path", "screenshot_file", "screenshot_artifact_id", "image_base64", "screenshot_base64", "screenshot_return_mode", "inline"} {
 		if _, ok := result[forbidden]; ok {
-			t.Fatalf("browser result kept scratch field %s: %#v", forbidden, result)
+			t.Fatalf("browser result kept forbidden field %s: %#v", forbidden, result)
 		}
 	}
 	screenshot, ok := result["screenshot"].(map[string]any)
 	if !ok {
 		t.Fatalf("screenshot object missing: %#v", result)
 	}
-	rawURL, _ := screenshot["url"].(string)
-	if !strings.Contains(rawURL, "/artifacts/public/") || !strings.Contains(rawURL, "sig=") {
-		t.Fatalf("signed screenshot url missing: %#v", screenshot)
+	artifactID, _ := screenshot["artifact_id"].(string)
+	if artifactID == "" {
+		t.Fatalf("artifact_id missing: %#v", screenshot)
 	}
-	body, status := downloadPublicArtifact(t, rt, rawURL)
-	if status != http.StatusOK || len(body) == 0 {
-		t.Fatalf("download status = %d len=%d", status, len(body))
+	if _, ok := screenshot["url"]; ok {
+		t.Fatalf("unconfigured runtime should not emit an unreachable URL: %#v", screenshot)
+	}
+
+	viewed, err := rt.Call(context.Background(), "view_image", map[string]any{"artifact_id": artifactID, "format": "png"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertMCPImagePayload(t, viewed)
+	source, ok := viewed["source"].(map[string]any)
+	if !ok || source["type"] != "artifact" || source["artifact_id"] != artifactID {
+		t.Fatalf("artifact source = %#v", viewed["source"])
+	}
+}
+
+func assertMCPImagePayload(t *testing.T, result Result) {
+	t.Helper()
+	data, ok := result["_mcp_image_base64"].(string)
+	if !ok || data == "" {
+		t.Fatalf("MCP image Base64 missing: %#v", result)
+	}
+	if result["_mcp_image_mime_type"] != "image/png" {
+		t.Fatalf("MCP image mime type = %#v", result["_mcp_image_mime_type"])
 	}
 }
 
@@ -280,15 +314,6 @@ func writeTinyPNG(t *testing.T, path string) {
 	if err := file.Close(); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func downloadPublicArtifact(t *testing.T, rt *Runtime, rawURL string) ([]byte, int) {
-	t.Helper()
-	store := publicartifacts.New(rt.cfg.AgentDockHome, rt.cfg.OAuthServerURL, rt.cfg.Port)
-	req := httptest.NewRequest(http.MethodGet, rawURL, nil)
-	recorder := httptest.NewRecorder()
-	store.ServeHTTP(recorder, req, "/artifacts/public/")
-	return recorder.Body.Bytes(), recorder.Code
 }
 
 func TestServerInfoRecommendsCompactRecallBootstrap(t *testing.T) {

@@ -108,15 +108,10 @@ func (r *Runtime) browserRunnerScript() (controlPath, error) {
 }
 
 func (r *Runtime) normalizeBrowserScreenshot(ctx context.Context, result Result, args map[string]any) error {
-	mode, err := imageReturnMode(args, "screenshot_return_mode")
-	if err != nil {
-		return err
-	}
-	result["screenshot_return_mode"] = mode
 	pathValue := strings.TrimSpace(stringValue(result["screenshot_path"]))
 	fileValue := strings.TrimSpace(stringValue(result["screenshot_file"]))
 	deleteBrowserScreenshotScratchFields(result)
-	if mode == imageReturnNone || pathValue == "" {
+	if pathValue == "" {
 		return nil
 	}
 	data, err := os.ReadFile(pathValue)
@@ -130,16 +125,12 @@ func (r *Runtime) normalizeBrowserScreenshot(ctx context.Context, result Result,
 	if fileValue == "" {
 		fileValue = filepath.Base(pathValue)
 	}
-	screenshot := imageMetadata(fileValue, info, len(data))
-	if needsPublicURL(mode) {
-		published, err := r.publishImageBytes(ctx, data, fileValue, info, intArg(args, "retention_seconds", 0))
-		if err != nil {
-			return err
-		}
-		screenshot = published
+	published, err := r.publishImageBytes(ctx, data, fileValue, info, intArg(args, "retention_seconds", 0))
+	if err != nil {
+		return err
 	}
-	result["screenshot"] = screenshot
-	return attachInlineImage(result, data, info.MIME, mode, args)
+	result["screenshot"] = published
+	return nil
 }
 
 func deleteBrowserScreenshotScratchFields(result Result) {

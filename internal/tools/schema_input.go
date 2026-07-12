@@ -255,8 +255,6 @@ func InputSchema(name string) map[string]any {
 		props["actions"] = browserActionsProp()
 		props["full_page"] = boolProp("Capture full-page screenshot in the final snapshot.")
 		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
-		props["screenshot_return_mode"] = stringProp("Screenshot return mode: none, url, mcp_image, base64, data_url, or both. Defaults to url.")
-		props["max_inline_bytes"] = intProp("Maximum inline image bytes for base64/data_url/mcp_image. Defaults to 750000 and is capped at 2097152.")
 		props["retention_seconds"] = intProp("Signed screenshot URL retention in seconds. Defaults to 86400 and is capped at 604800.")
 		props["close_after"] = boolProp("Close and remove the browser session after the action/snapshot succeeds.")
 		props["save_storage_state"] = boolProp("Save context storage state and return storage_state_path.")
@@ -267,8 +265,6 @@ func InputSchema(name string) map[string]any {
 		props["session_id"] = stringProp("Browser session id.")
 		props["full_page"] = boolProp("Capture full-page screenshot for snapshot.")
 		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
-		props["screenshot_return_mode"] = stringProp("Screenshot return mode: none, url, mcp_image, base64, data_url, or both. Defaults to url.")
-		props["max_inline_bytes"] = intProp("Maximum inline image bytes for base64/data_url/mcp_image. Defaults to 750000 and is capped at 2097152.")
 		props["retention_seconds"] = intProp("Signed screenshot URL retention in seconds. Defaults to 86400 and is capped at 604800.")
 		props["close_after"] = boolProp("Close and remove the browser session after snapshot succeeds.")
 		props["save_storage_state"] = boolProp("Save context storage state and return storage_state_path.")
@@ -302,22 +298,28 @@ func InputSchema(name string) map[string]any {
 		required = []string{"action"}
 
 	case "view_image":
-		props["path"] = stringProp("Host path. Relative paths resolve from ~/AgentDock.")
-		if name == "view_image" {
-			props["return_mode"] = stringProp("Image return mode: none, url, mcp_image, base64, data_url, or both. Defaults to url.")
-			props["retention_seconds"] = intProp("Signed image URL retention in seconds. Defaults to 86400 and is capped at 604800.")
-			props["max_inline_bytes"] = intProp("Maximum inline image bytes for base64/data_url/mcp_image. Defaults to 750000 and is capped at 2097152.")
-			props["max_bytes"] = intProp("Maximum processed image bytes. Defaults to 750000.")
-			props["max_width"] = intProp("Maximum image width. Defaults to 1280.")
-			props["max_height"] = intProp("Maximum image height. Defaults to 1280.")
-			props["auto_resize"] = boolProp("Resize/compress when limits are exceeded. Defaults to true.")
-			props["format"] = stringProp("Processed image format: jpeg or png. Defaults to jpeg.")
-			props["quality"] = intProp("JPEG quality when format is jpeg. Defaults to 72.")
-			props["crop"] = map[string]any{"type": "object", "description": "Optional crop rectangle {x,y,width,height} before resizing.", "additionalProperties": true}
-		}
+		props["artifact_id"] = stringProp("Artifact id returned by an AgentDock image-producing tool.")
+		props["path"] = stringProp("Host image path. Relative paths resolve from ~/AgentDock.")
+		props["url"] = stringProp("Absolute HTTP(S) image URL.")
+		props["max_source_bytes"] = intProp("Maximum source bytes before processing. Defaults to 20971520 and is capped at 104857600.")
+		props["source_timeout_ms"] = boundedIntProp("HTTP(S) source timeout in milliseconds. Defaults to 15000 and is capped at 120000.", 1, 120000)
+		props["max_bytes"] = intProp("Maximum processed image bytes returned to the model. Defaults to 750000 and is capped at 2097152.")
+		props["max_width"] = intProp("Maximum image width. Defaults to 1280.")
+		props["max_height"] = intProp("Maximum image height. Defaults to 1280.")
+		props["auto_resize"] = boolProp("Resize/compress when limits are exceeded. Defaults to true.")
+		props["format"] = stringProp("Processed image format: jpeg or png. Defaults to jpeg.")
+		props["quality"] = intProp("JPEG quality when format is jpeg. Defaults to 72.")
+		props["crop"] = map[string]any{"type": "object", "description": "Optional crop rectangle {x,y,width,height} before resizing.", "additionalProperties": true}
 	}
 
 	schema := map[string]any{"type": "object", "properties": props, "additionalProperties": true}
+	if name == "view_image" {
+		schema["oneOf"] = []map[string]any{
+			{"required": []string{"artifact_id"}},
+			{"required": []string{"path"}},
+			{"required": []string{"url"}},
+		}
+	}
 	switch name {
 	case "recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain", "private_note_manage", "mcp_manage", "mcp_tool_search", "mcp_tool_inspect", "mcp_tool_call":
 		// Recall public schemas are intentionally closed: only model-facing fields are accepted.
