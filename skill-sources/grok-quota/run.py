@@ -616,35 +616,54 @@ def parse_billing_body(body: bytes) -> dict[str, Any] | None:
 
 
 def merge_billing_records(
-    primary: dict[str, Any] | None,
-    secondary: dict[str, Any] | None,
+    credits: dict[str, Any] | None,
+    billing: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
-    if primary is None:
-        return secondary
-    if secondary is None:
-        return primary
-    merged: dict[str, Any] = {}
-    for key in (
-        "period_type",
-        "usage_percent",
-        "period_start",
-        "period_end",
-        "monthly_limit_cents",
-        "used_cents",
-        "on_demand_cap_cents",
-        "on_demand_used_cents",
-        "billing_period_start",
-        "billing_period_end",
-    ):
-        first = primary.get(key)
-        if key == "period_type" and first == "unknown":
-            first = None
-        merged[key] = first if first is not None else secondary.get(key)
-    primary_products = primary.get("product_usage")
+    if credits is None:
+        return billing
+    if billing is None:
+        return credits
+
+    def choose(
+        preferred: dict[str, Any],
+        fallback: dict[str, Any],
+        key: str,
+    ) -> Any:
+        value = preferred.get(key)
+        if key == "period_type" and value == "unknown":
+            value = None
+        return value if value is not None else fallback.get(key)
+
+    # credits endpoint owns the weekly/product window; plain billing owns
+    # monthly credits and pay-as-you-go. Keeping the priorities separate
+    # prevents a weekly billingPeriodEnd alias from masking the monthly reset.
+    merged = {
+        key: choose(credits, billing, key)
+        for key in (
+            "period_type",
+            "usage_percent",
+            "period_start",
+            "period_end",
+        )
+    }
+    merged.update(
+        {
+            key: choose(billing, credits, key)
+            for key in (
+                "monthly_limit_cents",
+                "used_cents",
+                "on_demand_cap_cents",
+                "on_demand_used_cents",
+                "billing_period_start",
+                "billing_period_end",
+            )
+        }
+    )
+    credit_products = credits.get("product_usage")
     merged["product_usage"] = (
-        primary_products
-        if isinstance(primary_products, list) and primary_products
-        else secondary.get("product_usage") or []
+        credit_products
+        if isinstance(credit_products, list) and credit_products
+        else billing.get("product_usage") or []
     )
     return merged
 

@@ -1,7 +1,7 @@
 ---
 name: grok-quota
 description: Query detailed Grok weekly usage, GrokChat/GrokBuild breakdown, plan, monthly credits, and pay-as-you-go state from local xAI OAuth credentials.
-version: 0.3.1
+version: 0.3.2
 ---
 
 # Grok Quota
@@ -98,7 +98,7 @@ Skill 本体是本说明文档。确需查询时，使用 `exec_command` 直接�
 
 ```bash
 AGENTDOCK_HOME="${AGENTDOCK_HOME:-$HOME/.agentdock}"
-SKILL_DIR="$AGENTDOCK_HOME/skill-store/installed/grok-quota/0.3.1"
+SKILL_DIR="$AGENTDOCK_HOME/skill-store/installed/grok-quota/0.3.2"
 printf '%s' '{"skill_action":"status"}' | python3 "$SKILL_DIR/run.py"
 ```
 

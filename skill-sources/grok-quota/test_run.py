@@ -165,6 +165,9 @@ class GrokQuotaTests(unittest.TestCase):
                         {"product": "GrokChat", "usagePercent": 18},
                         {"product": "GrokBuild", "usagePercent": 2},
                     ],
+                    "monthlyLimit": {"val": 999},
+                    "used": {"val": 111},
+                    "billingPeriodEnd": "2026-07-19T01:36:00Z",
                 }
             }
         ).encode()
@@ -202,6 +205,7 @@ class GrokQuotaTests(unittest.TestCase):
         self.assertEqual(quota["monthly_credits"]["remaining_usd"], 142.24)
         self.assertEqual(quota["monthly_credits"]["limit_usd"], 150.0)
         self.assertEqual(quota["monthly_credits"]["used_percent"], 5.17)
+        self.assertEqual(quota["monthly_credits"]["reset_at"], "2026-08-01T00:00:00Z")
         self.assertFalse(quota["pay_as_you_go"]["enabled"])
 
     def test_query_prefers_billing_details_without_model_probe(self) -> None:
@@ -217,6 +221,9 @@ class GrokQuotaTests(unittest.TestCase):
                         {"product": "GrokChat", "usagePercent": 18},
                         {"product": "GrokBuild", "usagePercent": 2},
                     ],
+                    "monthlyLimit": {"val": 999},
+                    "used": {"val": 111},
+                    "billingPeriodEnd": "2026-07-19T01:36:00Z",
                 }
             }
         ).encode()
