@@ -31,7 +31,7 @@ const (
 func Serve(server *mcp.Server, cfg config.Config) error {
 	authRequired := cfg.AuthRequired()
 	oauthStore := auth.NewOAuthStore()
-	if cfg.OAuthEnabled() {
+	if cfg.OAuthEnabled {
 		persistentStore, err := auth.NewPersistentOAuthStore(filepath.Join(cfg.AgentDockHome, "oauth", "refresh-tokens.json"))
 		if err != nil {
 			return fmt.Errorf("initialize OAuth token store: %w", err)
@@ -59,36 +59,10 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	mux.HandleFunc("/.well-known/mcp/server-card.json", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, serverCard(cfg, r))
 	})
-	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, oauthMetadata(cfg, r))
-	})
-	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, oauthMetadata(cfg, r))
-	})
-	protectedResourceHandler := func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, protectedResourceMetadata(cfg, r))
-	}
-	mux.HandleFunc("/.well-known/oauth-protected-resource", protectedResourceHandler)
-	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", protectedResourceHandler)
-	mux.HandleFunc("/mcp/.well-known/oauth-protected-resource", protectedResourceHandler)
 	mux.HandleFunc("/artifacts/public/", func(w http.ResponseWriter, r *http.Request) {
 		publicArtifactStore.ServeHTTP(w, r, "/artifacts/public/")
 	})
-	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
-		handleRegister(w, r, cfg, oauthStore)
-	})
-	mux.HandleFunc("/oauth/authorize", func(w http.ResponseWriter, r *http.Request) {
-		handleAuthorize(w, r, cfg, oauthStore)
-	})
-	mux.HandleFunc("/authorize", func(w http.ResponseWriter, r *http.Request) {
-		handleAuthorize(w, r, cfg, oauthStore)
-	})
-	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
-		handleToken(w, r, cfg, oauthStore)
-	})
-	mux.HandleFunc("/oauth/token", func(w http.ResponseWriter, r *http.Request) {
-		handleToken(w, r, cfg, oauthStore)
-	})
+	registerOAuthRoutes(mux, cfg, oauthStore)
 	mux.HandleFunc("/context", agentDockContextHandler(server, cfg))
 	registerRuntimeAPI(mux, server, cfg)
 	mux.HandleFunc("/mcp", mcpEndpointHandler(server, cfg))
@@ -97,6 +71,27 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	httpServer := newHTTPServer(addr, loggingMiddleware(mux))
 	slog.Info("http server listening", "addr", addr)
 	return httpServer.ListenAndServe()
+}
+
+func registerOAuthRoutes(mux *http.ServeMux, cfg config.Config, store *auth.OAuthStore) {
+	if !cfg.OAuthEnabled {
+		return
+	}
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, oauthMetadata(cfg, r))
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, protectedResourceMetadata(cfg, r))
+	})
+	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
+		handleRegister(w, r, cfg, store)
+	})
+	mux.HandleFunc("/oauth/authorize", func(w http.ResponseWriter, r *http.Request) {
+		handleAuthorize(w, r, cfg, store)
+	})
+	mux.HandleFunc("/oauth/token", func(w http.ResponseWriter, r *http.Request) {
+		handleToken(w, r, cfg, store)
+	})
 }
 
 func newHTTPServer(addr string, handler http.Handler) *http.Server {
@@ -203,7 +198,7 @@ func requestPublicBaseURL(cfg config.Config, r *http.Request) string {
 }
 
 func handleRegister(w http.ResponseWriter, r *http.Request, cfg config.Config, store *auth.OAuthStore) {
-	if !cfg.OAuthEnabled() {
+	if !cfg.OAuthEnabled {
 		http.NotFound(w, r)
 		return
 	}
@@ -344,7 +339,7 @@ func protectedResourceMetadata(cfg config.Config, r *http.Request) map[string]an
 }
 
 func setBearerChallenge(w http.ResponseWriter, cfg config.Config, r *http.Request) {
-	if cfg.OAuthEnabled() {
+	if cfg.OAuthEnabled {
 		metadataURL := issuerFor(cfg, r) + "/.well-known/oauth-protected-resource/mcp"
 		w.Header().Set("WWW-Authenticate", "Bearer resource_metadata=\""+metadataURL+"\"")
 		return
@@ -380,7 +375,7 @@ func issuerFor(cfg config.Config, r *http.Request) string {
 }
 
 func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, codes *auth.OAuthStore) {
-	if !cfg.OAuthEnabled() {
+	if !cfg.OAuthEnabled {
 		http.NotFound(w, r)
 		return
 	}
@@ -447,7 +442,7 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, 
 }
 
 func handleToken(w http.ResponseWriter, r *http.Request, cfg config.Config, store *auth.OAuthStore) {
-	if !cfg.OAuthEnabled() {
+	if !cfg.OAuthEnabled {
 		http.NotFound(w, r)
 		return
 	}
@@ -554,7 +549,7 @@ func writeOAuthTokenResponse(w http.ResponseWriter, accessToken, refreshToken st
 }
 
 func authorizedOAuth(r *http.Request, cfg config.Config) bool {
-	if !cfg.OAuthEnabled() {
+	if !cfg.OAuthEnabled {
 		return false
 	}
 	header := strings.TrimSpace(r.Header.Get("Authorization"))
@@ -611,7 +606,7 @@ func serverCard(cfg config.Config, r *http.Request) map[string]any {
 	if cfg.AuthToken != "" {
 		authInfo = map[string]any{"type": "bearer", "scheme": "Bearer", "header": "Authorization"}
 	}
-	if cfg.OAuthEnabled() {
+	if cfg.OAuthEnabled {
 		authInfo = map[string]any{"type": "oauth2", "scheme": "Bearer", "header": "Authorization", "authorizationUrl": issuer + "/oauth/authorize", "tokenUrl": issuer + "/oauth/token"}
 	}
 	return map[string]any{"name": config.ServerName, "title": "AgentDock", "version": config.Version, "description": "Local coding tools MCP server", "transport": map[string]any{"type": "streamable-http", "url": issuer + "/mcp"}, "auth": authInfo}

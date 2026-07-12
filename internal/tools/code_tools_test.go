@@ -358,11 +358,11 @@ func TestServerInfoServerURLAloneDoesNotEnableAuth(t *testing.T) {
 	}
 }
 
-func TestServerInfoReportsOAuthClientIDAuthEnabled(t *testing.T) {
+func TestServerInfoReportsOAuthAuthEnabled(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
 		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
-		OAuthClientID: "client-id", OAuthServerURL: "https://auth.example.test",
+		OAuthEnabled: true, OAuthServerURL: "https://auth.example.test",
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)

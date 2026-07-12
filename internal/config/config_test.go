@@ -74,14 +74,14 @@ func TestValidateAuthAllowsNoOAuthOrServerURLOnly(t *testing.T) {
 		if err := cfg.ValidateAuth(); err != nil {
 			t.Fatalf("ValidateAuth() error = %v for cfg %#v", err, cfg)
 		}
-		if cfg.OAuthClientID == "" && cfg.OAuthEnabled() {
-			t.Fatalf("OAuthEnabled() = true without OAuthClientID")
+		if cfg.OAuthEnabled {
+			t.Fatalf("OAuthEnabled = true without the explicit enable flag")
 		}
 	}
 }
 
 func TestValidateAuthOAuthRequiresCompleteConfig(t *testing.T) {
-	base := Config{OAuthClientID: "client-id", OAuthServerURL: "https://agentdock.example.com"}
+	base := Config{OAuthEnabled: true, OAuthServerURL: "https://agentdock.example.com"}
 	t.Setenv("AGENTDOCK_OAUTH_PASSWORD", "password")
 	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-secret")
 	if err := base.ValidateAuth(); err != nil {
@@ -94,7 +94,7 @@ func TestValidateAuthOAuthRequiresCompleteConfig(t *testing.T) {
 		unset   string
 		missing string
 	}{
-		{name: "server url", cfg: Config{OAuthClientID: "client-id"}, missing: "AGENTDOCK_SERVER_URL"},
+		{name: "server url", cfg: Config{OAuthEnabled: true}, missing: "AGENTDOCK_SERVER_URL"},
 		{name: "password", cfg: base, unset: "AGENTDOCK_OAUTH_PASSWORD", missing: "AGENTDOCK_OAUTH_PASSWORD"},
 		{name: "token secret", cfg: base, unset: "AGENTDOCK_OAUTH_TOKEN_SECRET", missing: "AGENTDOCK_OAUTH_TOKEN_SECRET"},
 	}
@@ -121,12 +121,14 @@ func TestFromEnvRejectsInvalidTypedValues(t *testing.T) {
 	}{
 		{name: "port", key: "AGENTDOCK_PORT", value: "not-a-number"},
 		{name: "browser enabled", key: "AGENTDOCK_BROWSER_ENABLED", value: "sometimes"},
+		{name: "oauth enabled", key: "AGENTDOCK_OAUTH_ENABLED", value: "enabled"},
 		{name: "stdio", key: "AGENTDOCK_STDIO", value: "enabled"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("AGENTDOCK_PORT", "")
 			t.Setenv("AGENTDOCK_BROWSER_ENABLED", "")
+			t.Setenv("AGENTDOCK_OAUTH_ENABLED", "")
 			t.Setenv("AGENTDOCK_STDIO", "")
 			t.Setenv(test.key, test.value)
 			if _, err := FromEnv(); err == nil || !strings.Contains(err.Error(), test.key) {
@@ -139,12 +141,13 @@ func TestFromEnvRejectsInvalidTypedValues(t *testing.T) {
 func TestFromEnvParsesTypedValues(t *testing.T) {
 	t.Setenv("AGENTDOCK_PORT", " 9876 ")
 	t.Setenv("AGENTDOCK_BROWSER_ENABLED", "true")
+	t.Setenv("AGENTDOCK_OAUTH_ENABLED", "true")
 	t.Setenv("AGENTDOCK_STDIO", "1")
 	cfg, err := FromEnv()
 	if err != nil {
 		t.Fatalf("FromEnv() error = %v", err)
 	}
-	if cfg.Port != 9876 || !cfg.BrowserEnabled || !cfg.Stdio {
+	if cfg.Port != 9876 || !cfg.BrowserEnabled || !cfg.OAuthEnabled || !cfg.Stdio {
 		t.Fatalf("config = %#v", cfg)
 	}
 }
@@ -192,12 +195,30 @@ func TestValidateAuthRejectsInvalidServerURL(t *testing.T) {
 	for _, serverURL := range []string{
 		"relative/path",
 		"ftp://agentdock.example",
+		"http://agentdock.example",
 		"https://user:pass@agentdock.example",
+		"https://agentdock.example/base",
+		"https://agentdock.example?mode=test",
 		"https://agentdock.example/#fragment",
 	} {
-		cfg := Config{OAuthClientID: "client-id", OAuthServerURL: serverURL}
+		cfg := Config{OAuthEnabled: true, OAuthServerURL: serverURL}
 		if err := cfg.ValidateAuth(); err == nil {
 			t.Fatalf("ValidateAuth() accepted %q", serverURL)
+		}
+	}
+}
+
+func TestValidateAuthAllowsHTTPOnlyForLoopbackHosts(t *testing.T) {
+	t.Setenv("AGENTDOCK_OAUTH_PASSWORD", "password")
+	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-secret")
+	for _, serverURL := range []string{
+		"http://localhost:8765",
+		"http://127.0.0.1:8765",
+		"http://[::1]:8765",
+	} {
+		cfg := Config{OAuthEnabled: true, OAuthServerURL: serverURL}
+		if err := cfg.ValidateAuth(); err != nil {
+			t.Fatalf("ValidateAuth() rejected loopback URL %q: %v", serverURL, err)
 		}
 	}
 }

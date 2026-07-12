@@ -294,7 +294,7 @@ func TestServerURLAloneDoesNotRequireAuthOrDeclareOAuth(t *testing.T) {
 
 func TestServerCardDeclaresOAuthOnlyWhenOAuthEnabled(t *testing.T) {
 	cfg := testConfig(t)
-	cfg.OAuthClientID = "client-id"
+	cfg.OAuthEnabled = true
 	cfg.OAuthServerURL = "https://agentdock.example.com"
 	card := serverCard(cfg, httptest.NewRequest(http.MethodGet, "/.well-known/mcp.json", nil))
 	authInfo := card["auth"].(map[string]any)
@@ -318,7 +318,7 @@ func TestServerCardDeclaresOAuthOnlyWhenOAuthEnabled(t *testing.T) {
 
 func TestOAuthMetadataUsesPublicPKCEClients(t *testing.T) {
 	cfg := testConfig(t)
-	cfg.OAuthClientID = "oauth-enabled"
+	cfg.OAuthEnabled = true
 	cfg.OAuthServerURL = "https://agentdock.example.com"
 
 	metadata := oauthMetadata(cfg, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server", nil))
@@ -372,7 +372,7 @@ func TestValidClientAuthenticationRequiresRegisteredPublicClient(t *testing.T) {
 
 func TestBearerChallengeReferencesPathSpecificResourceMetadata(t *testing.T) {
 	cfg := testConfig(t)
-	cfg.OAuthClientID = "oauth-enabled"
+	cfg.OAuthEnabled = true
 	cfg.OAuthServerURL = "https://agentdock.example.com"
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/mcp", nil)
@@ -383,34 +383,64 @@ func TestBearerChallengeReferencesPathSpecificResourceMetadata(t *testing.T) {
 	}
 }
 
-func TestOAuthEntrypointsDisabledWhenOAuthNotEnabled(t *testing.T) {
+func TestRegisterOAuthRoutesExposesOnlyCanonicalEndpoints(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.OAuthEnabled = true
+	cfg.OAuthServerURL = "https://agentdock.example.com"
+	mux := http.NewServeMux()
+	registerOAuthRoutes(mux, cfg, auth.NewOAuthStore())
+
+	canonical := []struct {
+		path       string
+		wantStatus int
+	}{
+		{path: "/.well-known/oauth-authorization-server", wantStatus: http.StatusOK},
+		{path: "/.well-known/oauth-protected-resource/mcp", wantStatus: http.StatusOK},
+		{path: "/register", wantStatus: http.StatusMethodNotAllowed},
+		{path: "/oauth/authorize", wantStatus: http.StatusBadRequest},
+		{path: "/oauth/token", wantStatus: http.StatusMethodNotAllowed},
+	}
+	for _, endpoint := range canonical {
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, endpoint.path, nil))
+		if recorder.Code != endpoint.wantStatus {
+			t.Fatalf("canonical endpoint %s status = %d, want %d", endpoint.path, recorder.Code, endpoint.wantStatus)
+		}
+	}
+
+	for _, oldPath := range []string{
+		"/authorize",
+		"/token",
+		"/.well-known/openid-configuration",
+		"/.well-known/oauth-protected-resource",
+		"/mcp/.well-known/oauth-protected-resource",
+	} {
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, oldPath, nil))
+		if recorder.Code != http.StatusNotFound {
+			t.Fatalf("old OAuth endpoint %s status = %d, want %d", oldPath, recorder.Code, http.StatusNotFound)
+		}
+	}
+}
+
+func TestRegisterOAuthRoutesDoesNothingWhenOAuthDisabled(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.OAuthServerURL = "https://agentdock.example.com"
-	codes := auth.NewOAuthStore()
+	mux := http.NewServeMux()
+	registerOAuthRoutes(mux, cfg, auth.NewOAuthStore())
 
-	endpoints := []struct {
-		name    string
-		handler http.HandlerFunc
-		method  string
-		path    string
-	}{
-		{name: "register", handler: func(w http.ResponseWriter, r *http.Request) { handleRegister(w, r, cfg, codes) }, method: http.MethodPost, path: "/register"},
-		{name: "authorize", handler: func(w http.ResponseWriter, r *http.Request) {
-			handleAuthorize(w, r, cfg, codes)
-		}, method: http.MethodGet, path: "/oauth/authorize"},
-		{name: "token", handler: func(w http.ResponseWriter, r *http.Request) {
-			handleToken(w, r, cfg, codes)
-		}, method: http.MethodPost, path: "/oauth/token"},
-	}
-	for _, endpoint := range endpoints {
-		t.Run(endpoint.name, func(t *testing.T) {
-			req := httptest.NewRequest(endpoint.method, endpoint.path, nil)
-			recorder := httptest.NewRecorder()
-			endpoint.handler.ServeHTTP(recorder, req)
-			if recorder.Code != http.StatusNotFound {
-				t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusNotFound, recorder.Body.String())
-			}
-		})
+	for _, path := range []string{
+		"/.well-known/oauth-authorization-server",
+		"/.well-known/oauth-protected-resource/mcp",
+		"/register",
+		"/oauth/authorize",
+		"/oauth/token",
+	} {
+		recorder := httptest.NewRecorder()
+		mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		if recorder.Code != http.StatusNotFound {
+			t.Fatalf("disabled OAuth endpoint %s status = %d, want %d", path, recorder.Code, http.StatusNotFound)
+		}
 	}
 }
 

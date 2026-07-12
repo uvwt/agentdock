@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -28,7 +29,7 @@ type Config struct {
 	Host                string
 	Port                int
 	AuthToken           string
-	OAuthClientID       string
+	OAuthEnabled        bool
 	OAuthServerURL      string
 	LogLevel            string
 	NexusEndpoint       string
@@ -46,6 +47,10 @@ func FromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	oauthEnabled, err := getenvBool("AGENTDOCK_OAUTH_ENABLED", false)
+	if err != nil {
+		return Config{}, err
+	}
 	stdio, err := getenvBool("AGENTDOCK_STDIO", false)
 	if err != nil {
 		return Config{}, err
@@ -54,7 +59,7 @@ func FromEnv() (Config, error) {
 		Host:           getenv("AGENTDOCK_HOST", "127.0.0.1"),
 		Port:           port,
 		AuthToken:      os.Getenv("AGENTDOCK_AUTH_TOKEN"),
-		OAuthClientID:  os.Getenv("AGENTDOCK_OAUTH_CLIENT_ID"),
+		OAuthEnabled:   oauthEnabled,
 		OAuthServerURL: os.Getenv("AGENTDOCK_SERVER_URL"),
 		LogLevel:       getenv("AGENTDOCK_LOG_LEVEL", "info"),
 		NexusEndpoint:  getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
@@ -130,16 +135,12 @@ func (c *Config) Normalize() error {
 	return nil
 }
 
-func (c Config) OAuthEnabled() bool {
-	return c.OAuthClientID != ""
-}
-
 func (c Config) AuthRequired() bool {
-	return c.AuthToken != "" || c.OAuthEnabled()
+	return c.AuthToken != "" || c.OAuthEnabled
 }
 
 func (c Config) ValidateAuth() error {
-	if !c.OAuthEnabled() {
+	if !c.OAuthEnabled {
 		return nil
 	}
 	missing := []string{}
@@ -153,17 +154,30 @@ func (c Config) ValidateAuth() error {
 		missing = append(missing, "AGENTDOCK_OAUTH_TOKEN_SECRET")
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("OAuth enabled by AGENTDOCK_OAUTH_CLIENT_ID but missing required environment variable(s): %s", strings.Join(missing, ", "))
+		return fmt.Errorf("OAuth enabled by AGENTDOCK_OAUTH_ENABLED but missing required environment variable(s): %s", strings.Join(missing, ", "))
 	}
-	serverURL, err := url.Parse(c.OAuthServerURL)
+	serverURL, err := url.Parse(strings.TrimSpace(c.OAuthServerURL))
 	if err != nil || serverURL.Scheme == "" || serverURL.Host == "" {
 		return fmt.Errorf("AGENTDOCK_SERVER_URL must be an absolute HTTP(S) URL: %q", c.OAuthServerURL)
 	}
-	if serverURL.Scheme != "http" && serverURL.Scheme != "https" {
-		return fmt.Errorf("AGENTDOCK_SERVER_URL must use http or https: %q", c.OAuthServerURL)
+	if serverURL.User != nil || serverURL.RawQuery != "" || serverURL.Fragment != "" {
+		return fmt.Errorf("AGENTDOCK_SERVER_URL must not contain user info, a query, or a fragment: %q", c.OAuthServerURL)
 	}
-	if serverURL.User != nil || serverURL.Fragment != "" {
-		return fmt.Errorf("AGENTDOCK_SERVER_URL must not contain user info or a fragment: %q", c.OAuthServerURL)
+	if serverURL.Path != "" && serverURL.Path != "/" {
+		return fmt.Errorf("AGENTDOCK_SERVER_URL must be an origin without a path: %q", c.OAuthServerURL)
+	}
+	if serverURL.Scheme == "https" {
+		return nil
+	}
+	if serverURL.Scheme != "http" {
+		return fmt.Errorf("AGENTDOCK_SERVER_URL must use https, or http for a loopback host: %q", c.OAuthServerURL)
+	}
+	hostname := strings.ToLower(serverURL.Hostname())
+	if hostname != "localhost" {
+		ip := net.ParseIP(hostname)
+		if ip == nil || !ip.IsLoopback() {
+			return fmt.Errorf("AGENTDOCK_SERVER_URL must use https for non-loopback hosts: %q", c.OAuthServerURL)
+		}
 	}
 	return nil
 }

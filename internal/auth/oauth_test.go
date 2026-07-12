@@ -200,7 +200,7 @@ func TestPersistentOAuthStoreRegistersShortClientAcrossReloads(t *testing.T) {
 	}
 }
 
-func TestPersistentOAuthStoreMigratesVersionOneState(t *testing.T) {
+func TestPersistentOAuthStoreRejectsVersionOneState(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "oauth", "refresh-tokens.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
@@ -208,27 +208,8 @@ func TestPersistentOAuthStoreMigratesVersionOneState(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"version":1,"tokens":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	store, err := NewPersistentOAuthStore(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	clientID, err := store.RegisterClient("Test Client", []string{"https://client.example/callback"}, []string{"authorization_code"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var state oauthState
-	if err := json.Unmarshal(data, &state); err != nil {
-		t.Fatal(err)
-	}
-	if state.Version != oauthStateVersion {
-		t.Fatalf("state version = %d, want %d", state.Version, oauthStateVersion)
-	}
-	if _, ok := state.Clients[clientID]; !ok {
-		t.Fatal("migrated state did not persist the registered client")
+	if _, err := NewPersistentOAuthStore(path); err == nil || !strings.Contains(err.Error(), "unsupported OAuth refresh token state version 1") {
+		t.Fatalf("NewPersistentOAuthStore() error = %v, want version 1 rejection", err)
 	}
 }
 

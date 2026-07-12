@@ -43,6 +43,17 @@ AGENTDOCK_LOG_LEVEL=info
 
 公网或共享入口建议配置 `AGENTDOCK_AUTH_TOKEN`，客户端访问 `/mcp` 时使用 bearer token。不要把 token、私钥或真实域名凭据写进仓库文档。
 
+需要通过 OAuth 连接 MCP 客户端时，改用明确的 OAuth 开关和服务端配置：
+
+```bash
+AGENTDOCK_OAUTH_ENABLED=true
+AGENTDOCK_SERVER_URL=https://agentdock.example.com
+AGENTDOCK_OAUTH_PASSWORD=<replace-with-a-login-password>
+AGENTDOCK_OAUTH_TOKEN_SECRET=<replace-with-a-random-signing-secret>
+```
+
+OAuth 只接受标准动态客户端注册和 PKCE S256，不需要配置静态 `client_id` 或 `client_secret`。公网 `AGENTDOCK_SERVER_URL` 必须使用 HTTPS；HTTP 只允许 localhost 或其他回环地址。
+
 ## systemd unit
 
 创建 `/etc/systemd/system/agentdock.service`：

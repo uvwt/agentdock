@@ -333,7 +333,7 @@ func oauthRegisteredClientID(t *testing.T, store *auth.OAuthStore, redirectURI s
 func oauthTestConfig(t *testing.T) config.Config {
 	t.Helper()
 	cfg := testConfig(t)
-	cfg.OAuthClientID = "oauth-enabled"
+	cfg.OAuthEnabled = true
 	cfg.OAuthServerURL = "https://agentdock.example"
 	return cfg
 }

@@ -99,7 +99,7 @@ func NewPersistentOAuthStore(path string) (*OAuthStore, error) {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, fmt.Errorf("decode OAuth refresh token state: %w", err)
 	}
-	if state.Version != 1 && state.Version != oauthStateVersion {
+	if state.Version != oauthStateVersion {
 		return nil, fmt.Errorf("unsupported OAuth refresh token state version %d", state.Version)
 	}
 	if state.Tokens == nil {
