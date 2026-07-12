@@ -65,6 +65,7 @@ type clientRegistration struct {
 	RedirectURIs []string `json:"redirect_uris"`
 	GrantTypes   []string `json:"grant_types"`
 	IssuedAt     int64    `json:"iat"`
+	Nonce        string   `json:"nonce,omitempty"`
 }
 
 func NewOAuthStore() *OAuthStore {
@@ -318,11 +319,16 @@ func IssueClientID(redirectURIs, grantTypes []string, key string) (string, error
 	if len(grantTypes) == 0 {
 		return "", errors.New("at least one grant type is required")
 	}
+	nonce, err := RandomToken(16)
+	if err != nil {
+		return "", fmt.Errorf("generate client registration nonce: %w", err)
+	}
 	registration := clientRegistration{
 		Version:      2,
 		RedirectURIs: uniqueNonEmptyStrings(redirectURIs),
 		GrantTypes:   uniqueNonEmptyStrings(grantTypes),
 		IssuedAt:     time.Now().Unix(),
+		Nonce:        nonce,
 	}
 	if len(registration.RedirectURIs) == 0 || len(registration.GrantTypes) == 0 {
 		return "", errors.New("client registration contains empty metadata")

@@ -322,6 +322,36 @@ func TestIssueAndValidateClientID(t *testing.T) {
 	if !ValidateClientID(clientID, key) {
 		t.Fatal("ValidateClientID() rejected signed dynamic client")
 	}
+	secondClientID, err := IssueClientID(
+		[]string{redirectURI},
+		[]string{"authorization_code", "refresh_token"},
+		key,
+	)
+	if err != nil {
+		t.Fatalf("IssueClientID() second error = %v", err)
+	}
+	if secondClientID == clientID {
+		t.Fatal("IssueClientID() reused a client ID for a separate dynamic registration")
+	}
+
+	legacyRegistration := clientRegistration{
+		Version:      2,
+		RedirectURIs: []string{redirectURI},
+		GrantTypes:   []string{"authorization_code"},
+		IssuedAt:     time.Now().Unix(),
+	}
+	legacyBody, err := json.Marshal(legacyRegistration)
+	if err != nil {
+		t.Fatalf("marshal legacy client registration: %v", err)
+	}
+	legacyPayload := dynamicClientPrefix + base64.RawURLEncoding.EncodeToString(legacyBody)
+	legacyMAC := hmac.New(sha256.New, []byte(key))
+	_, _ = legacyMAC.Write([]byte(legacyPayload))
+	legacyClientID := legacyPayload + "." + base64.RawURLEncoding.EncodeToString(legacyMAC.Sum(nil))
+	if !ValidateClientRedirect(legacyClientID, redirectURI, key) {
+		t.Fatal("ValidateClientRedirect() rejected a legacy client ID without nonce")
+	}
+
 	if !ValidateClientRedirect(clientID, redirectURI, key) {
 		t.Fatal("ValidateClientRedirect() rejected registered redirect URI")
 	}
