@@ -99,7 +99,7 @@ func TestOAuthStoreCreatePrunesExpiredCodesAtCapacity(t *testing.T) {
 }
 
 func TestRevokedGrantPreventsLaterRefreshTokenIssuanceAcrossReload(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "oauth", "state-v4.json")
+	path := filepath.Join(t.TempDir(), "oauth", "state-v1.json")
 	store, err := NewPersistentOAuthStore(path, "test-refresh-signing-key-32-bytes-long")
 	if err != nil {
 		t.Fatal(err)
@@ -120,7 +120,7 @@ func TestRevokedGrantPreventsLaterRefreshTokenIssuanceAcrossReload(t *testing.T)
 }
 
 func TestPersistentOAuthStoreRotatesRefreshTokensAcrossReloads(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "oauth", "state-v4.json")
+	path := filepath.Join(t.TempDir(), "oauth", "state-v1.json")
 	store, err := NewPersistentOAuthStore(path, "test-refresh-signing-key-32-bytes-long")
 	if err != nil {
 		t.Fatal(err)
@@ -200,7 +200,7 @@ func TestRefreshGenerationRotationRemainsBounded(t *testing.T) {
 }
 
 func TestPersistentOAuthStoreRegistersShortClientAcrossReloads(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "oauth", "state-v4.json")
+	path := filepath.Join(t.TempDir(), "oauth", "state-v1.json")
 	store, err := NewPersistentOAuthStore(path, "test-refresh-signing-key-32-bytes-long")
 	if err != nil {
 		t.Fatal(err)
@@ -254,21 +254,32 @@ func TestPersistentOAuthStoreRegistersShortClientAcrossReloads(t *testing.T) {
 	}
 }
 
-func TestPersistentOAuthStoreRejectsVersionOneState(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "oauth", "state-v4.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+func TestPersistentOAuthStoreWritesVersionOneState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "oauth", "state-v1.json")
+	store, err := NewPersistentOAuthStore(path, "test-refresh-signing-key-32-bytes-long")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(`{"version":1,"tokens":{}}`), 0o600); err != nil {
+	if err := store.ActivateGrant("client", "https://agentdock.example/mcp", oauthTestGrantID, time.Hour); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewPersistentOAuthStore(path, "test-refresh-signing-key-32-bytes-long"); err == nil || !strings.Contains(err.Error(), "unsupported OAuth state version 1") {
-		t.Fatalf("NewPersistentOAuthStore() error = %v, want version 1 rejection", err)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.Version != 1 {
+		t.Fatalf("OAuth state version = %d, want 1", state.Version)
 	}
 }
 
 func TestPersistentOAuthStoreRejectsVersionTwoState(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "oauth", "state-v4.json")
+	path := filepath.Join(t.TempDir(), "oauth", "state-v1.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +292,7 @@ func TestPersistentOAuthStoreRejectsVersionTwoState(t *testing.T) {
 }
 
 func TestPersistentOAuthStoreRejectsVersionThreeState(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "oauth", "state-v4.json")
+	path := filepath.Join(t.TempDir(), "oauth", "state-v1.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -290,6 +301,19 @@ func TestPersistentOAuthStoreRejectsVersionThreeState(t *testing.T) {
 	}
 	if _, err := NewPersistentOAuthStore(path, "test-refresh-signing-key-32-bytes-long"); err == nil || !strings.Contains(err.Error(), "unsupported OAuth state version 3") {
 		t.Fatalf("NewPersistentOAuthStore() error = %v, want version 3 rejection", err)
+	}
+}
+
+func TestPersistentOAuthStoreRejectsVersionFourState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "oauth", "state-v1.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"version":4,"grants":{},"clients":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewPersistentOAuthStore(path, "test-refresh-signing-key-32-bytes-long"); err == nil || !strings.Contains(err.Error(), "unsupported OAuth state version 4") {
+		t.Fatalf("NewPersistentOAuthStore() error = %v, want version 4 rejection", err)
 	}
 }
 
@@ -316,7 +340,7 @@ func TestOAuthRefreshTokenRejectsClientAndResourceMismatchWithoutConsumption(t *
 }
 
 func TestPersistentOAuthStoreRejectsCorruptState(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state-v4.json")
+	path := filepath.Join(t.TempDir(), "state-v1.json")
 	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
 		t.Fatal(err)
 	}

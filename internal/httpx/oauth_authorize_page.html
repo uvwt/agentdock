@@ -349,7 +349,7 @@
       </div>
       {{end}}
 
-      <form method="post" autocomplete="on">
+      <form method="post" action="/oauth/authorize" autocomplete="on">
         <input type="hidden" name="response_type" value="{{.ResponseType}}">
         <input type="hidden" name="client_id" value="{{.ClientID}}">
         <input type="hidden" name="redirect_uri" value="{{.RedirectURI}}">

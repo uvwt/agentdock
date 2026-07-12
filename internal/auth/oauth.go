@@ -20,7 +20,7 @@ import (
 
 const (
 	shortClientPrefix = "adcr_"
-	oauthStateVersion = 4
+	oauthStateVersion = 1
 	maxOAuthStateSize = 1 << 20
 	maxOAuthGrants    = 1024
 	maxOAuthClients   = 1024

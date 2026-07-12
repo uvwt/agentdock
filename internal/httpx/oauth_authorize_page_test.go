@@ -31,6 +31,23 @@ func TestAuthorizePageEscapesOAuthValues(t *testing.T) {
 	}
 }
 
+func TestAuthorizePagePostsToCleanAuthorizeEndpoint(t *testing.T) {
+	values := url.Values{
+		"client_id":    {"client-id"},
+		"redirect_uri": {"https://client.example/oauth/callback"},
+	}
+	response := httptest.NewRecorder()
+	writeAuthorizeForm(response, values, "", "Test Client")
+
+	body := response.Body.String()
+	if !strings.Contains(body, `<form method="post" action="/oauth/authorize" autocomplete="on">`) {
+		t.Fatalf("authorization form does not post to the clean endpoint: %s", body)
+	}
+	if strings.Contains(body, `action="/oauth/authorize?`) {
+		t.Fatalf("authorization form action unexpectedly contains OAuth query parameters: %s", body)
+	}
+}
+
 func TestAuthorizePageShowsClientIdentityAndRedirectHost(t *testing.T) {
 	values := url.Values{"redirect_uri": {"https://client.example:8443/oauth/callback"}, "state": {"request-state"}}
 	response := httptest.NewRecorder()

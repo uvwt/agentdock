@@ -54,7 +54,7 @@ AGENTDOCK_OAUTH_TOKEN_SECRET=<replace-with-a-random-signing-secret>
 
 OAuth 只接受标准动态客户端注册和 PKCE S256，不需要配置静态 `client_id` 或 `client_secret`。公网 `AGENTDOCK_SERVER_URL` 必须使用 HTTPS；HTTP 只允许 localhost 或其他回环地址。
 
-OAuth 状态使用 `$AGENTDOCK_HOME/oauth/state-v4.json`。v4 采用 grant generation 状态机，不读取旧版 `refresh-tokens.json`；升级后客户端必须重新执行动态注册和授权。确认不再回滚旧版本后，可人工归档或删除旧文件：
+OAuth 状态使用 `$AGENTDOCK_HOME/oauth/state-v1.json`。v1 采用 grant generation 状态机，不读取旧版状态文件；升级后客户端必须重新执行动态注册和授权。确认不再回滚旧版本后，可人工归档或删除旧文件：
 
 ```bash
 mv ~/.agentdock/oauth/refresh-tokens.json ~/.agentdock/oauth/refresh-tokens.json.retired

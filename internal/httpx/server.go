@@ -34,7 +34,7 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	authRequired := cfg.AuthRequired()
 	oauthStore := auth.NewOAuthStore()
 	if cfg.OAuthEnabled {
-		persistentStore, err := auth.NewPersistentOAuthStore(filepath.Join(cfg.AgentDockHome, "oauth", "state-v4.json"), oauthSigningKey())
+		persistentStore, err := auth.NewPersistentOAuthStore(filepath.Join(cfg.AgentDockHome, "oauth", "state-v1.json"), oauthSigningKey())
 		if err != nil {
 			return fmt.Errorf("initialize OAuth token store: %w", err)
 		}
