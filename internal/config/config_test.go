@@ -122,6 +122,7 @@ func TestFromEnvRejectsInvalidTypedValues(t *testing.T) {
 		{name: "port", key: "AGENTDOCK_PORT", value: "not-a-number"},
 		{name: "browser enabled", key: "AGENTDOCK_BROWSER_ENABLED", value: "sometimes"},
 		{name: "stdio", key: "AGENTDOCK_STDIO", value: "enabled"},
+		{name: "OAuth public discovery only", key: "AGENTDOCK_OAUTH_PUBLIC_DISCOVERY_ONLY", value: "sometimes"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -141,11 +142,12 @@ func TestFromEnvParsesTypedValues(t *testing.T) {
 	t.Setenv("AGENTDOCK_BROWSER_ENABLED", "true")
 	t.Setenv("AGENTDOCK_STDIO", "1")
 	t.Setenv("AGENTDOCK_OAUTH_LOOPBACK_ISSUER", "true")
+	t.Setenv("AGENTDOCK_OAUTH_PUBLIC_DISCOVERY_ONLY", "true")
 	cfg, err := FromEnv()
 	if err != nil {
 		t.Fatalf("FromEnv() error = %v", err)
 	}
-	if cfg.Port != 9876 || !cfg.BrowserEnabled || !cfg.Stdio || !cfg.OAuthLoopbackIssuer {
+	if cfg.Port != 9876 || !cfg.BrowserEnabled || !cfg.Stdio || !cfg.OAuthLoopbackIssuer || !cfg.OAuthPublicDiscoveryOnly {
 		t.Fatalf("config = %#v", cfg)
 	}
 }

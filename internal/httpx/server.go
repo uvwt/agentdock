@@ -60,12 +60,24 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 		writeJSON(w, serverCard(cfg, r))
 	})
 	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		if !oauthDiscoveryVisible(cfg, r) {
+			http.NotFound(w, r)
+			return
+		}
 		writeJSON(w, oauthMetadata(cfg, r))
 	})
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+		if !oauthDiscoveryVisible(cfg, r) {
+			http.NotFound(w, r)
+			return
+		}
 		writeJSON(w, oauthMetadata(cfg, r))
 	})
 	protectedResourceHandler := func(w http.ResponseWriter, r *http.Request) {
+		if !oauthDiscoveryVisible(cfg, r) {
+			http.NotFound(w, r)
+			return
+		}
 		writeJSON(w, protectedResourceMetadata(cfg, r))
 	}
 	mux.HandleFunc("/.well-known/oauth-protected-resource", protectedResourceHandler)
@@ -382,6 +394,14 @@ func issuerFor(cfg config.Config, r *http.Request) string {
 		scheme = "https"
 	}
 	return scheme + "://" + r.Host
+}
+
+func oauthDiscoveryVisible(cfg config.Config, r *http.Request) bool {
+	if !cfg.OAuthPublicDiscoveryOnly {
+		return true
+	}
+	_, isLoopback := loopbackRequestIssuer(r)
+	return !isLoopback
 }
 
 func loopbackRequestIssuer(r *http.Request) (string, bool) {

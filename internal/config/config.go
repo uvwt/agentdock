@@ -23,20 +23,21 @@ const (
 )
 
 type Config struct {
-	AgentDockHome       string
-	AgentDockDefaultDir string
-	Host                string
-	Port                int
-	AuthToken           string
-	OAuthClientID       string
-	PublicServerURL     string
-	OAuthServerURL      string
-	OAuthLoopbackIssuer bool
-	LogLevel            string
-	NexusEndpoint       string
-	NexusToken          string
-	BrowserEnabled      bool
-	Stdio               bool
+	AgentDockHome            string
+	AgentDockDefaultDir      string
+	Host                     string
+	Port                     int
+	AuthToken                string
+	OAuthClientID            string
+	PublicServerURL          string
+	OAuthServerURL           string
+	OAuthLoopbackIssuer      bool
+	OAuthPublicDiscoveryOnly bool
+	LogLevel                 string
+	NexusEndpoint            string
+	NexusToken               string
+	BrowserEnabled           bool
+	Stdio                    bool
 }
 
 func FromEnv() (Config, error) {
@@ -56,24 +57,29 @@ func FromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	oauthPublicDiscoveryOnly, err := getenvBool("AGENTDOCK_OAUTH_PUBLIC_DISCOVERY_ONLY", false)
+	if err != nil {
+		return Config{}, err
+	}
 	publicServerURL := os.Getenv("AGENTDOCK_SERVER_URL")
 	oauthServerURL := os.Getenv("AGENTDOCK_OAUTH_SERVER_URL")
 	if strings.TrimSpace(oauthServerURL) == "" {
 		oauthServerURL = publicServerURL
 	}
 	return Config{
-		Host:                getenv("AGENTDOCK_HOST", "127.0.0.1"),
-		Port:                port,
-		AuthToken:           os.Getenv("AGENTDOCK_AUTH_TOKEN"),
-		OAuthClientID:       os.Getenv("AGENTDOCK_OAUTH_CLIENT_ID"),
-		PublicServerURL:     publicServerURL,
-		OAuthServerURL:      oauthServerURL,
-		OAuthLoopbackIssuer: oauthLoopbackIssuer,
-		LogLevel:            getenv("AGENTDOCK_LOG_LEVEL", "info"),
-		NexusEndpoint:       getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
-		NexusToken:          os.Getenv("AGENTDOCK_NEXUS_TOKEN"),
-		BrowserEnabled:      browserEnabled,
-		Stdio:               stdio,
+		Host:                     getenv("AGENTDOCK_HOST", "127.0.0.1"),
+		Port:                     port,
+		AuthToken:                os.Getenv("AGENTDOCK_AUTH_TOKEN"),
+		OAuthClientID:            os.Getenv("AGENTDOCK_OAUTH_CLIENT_ID"),
+		PublicServerURL:          publicServerURL,
+		OAuthServerURL:           oauthServerURL,
+		OAuthLoopbackIssuer:      oauthLoopbackIssuer,
+		OAuthPublicDiscoveryOnly: oauthPublicDiscoveryOnly,
+		LogLevel:                 getenv("AGENTDOCK_LOG_LEVEL", "info"),
+		NexusEndpoint:            getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
+		NexusToken:               os.Getenv("AGENTDOCK_NEXUS_TOKEN"),
+		BrowserEnabled:           browserEnabled,
+		Stdio:                    stdio,
 	}, nil
 }
 

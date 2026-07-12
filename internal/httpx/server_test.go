@@ -336,6 +336,29 @@ func TestOAuthLoopbackIssuerKeepsPublicIssuerForPublicRequests(t *testing.T) {
 	}
 }
 
+func TestOAuthPublicDiscoveryOnlyHidesLoopbackMetadata(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.OAuthPublicDiscoveryOnly = true
+
+	localRequest := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:18766/.well-known/oauth-protected-resource/mcp", nil)
+	if oauthDiscoveryVisible(cfg, localRequest) {
+		t.Fatal("loopback OAuth discovery should be hidden")
+	}
+	localhostRequest := httptest.NewRequest(http.MethodGet, "http://localhost:18766/.well-known/oauth-authorization-server", nil)
+	if oauthDiscoveryVisible(cfg, localhostRequest) {
+		t.Fatal("localhost OAuth discovery should be hidden")
+	}
+	publicRequest := httptest.NewRequest(http.MethodGet, "https://agentdock.example.com/.well-known/oauth-authorization-server", nil)
+	if !oauthDiscoveryVisible(cfg, publicRequest) {
+		t.Fatal("public OAuth discovery should remain visible")
+	}
+
+	cfg.OAuthPublicDiscoveryOnly = false
+	if !oauthDiscoveryVisible(cfg, localRequest) {
+		t.Fatal("loopback OAuth discovery should remain visible by default")
+	}
+}
+
 func TestOAuthMetadataUsesPublicPKCEClients(t *testing.T) {
 	t.Setenv("AGENTDOCK_OAUTH_CLIENT_SECRET", "legacy-secret-is-ignored")
 	cfg := testConfig(t)
