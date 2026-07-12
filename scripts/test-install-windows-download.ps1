@@ -30,11 +30,12 @@ if (-not $downloaded) {
     throw "Unable to download Windows installer: $Url"
 }
 
-$expectedHash = (Get-FileHash -LiteralPath $resolvedExpected -Algorithm SHA256).Hash
-$downloadedHash = (Get-FileHash -LiteralPath $OutputPath -Algorithm SHA256).Hash
-if ($expectedHash -ne $downloadedHash) {
-    throw "Downloaded installer hash mismatch. Expected $expectedHash, got $downloadedHash."
+$expectedContent = [IO.File]::ReadAllText($resolvedExpected).Replace("`r`n", "`n")
+$downloadedContent = [IO.File]::ReadAllText($OutputPath).Replace("`r`n", "`n")
+if (-not [string]::Equals($expectedContent, $downloadedContent, [StringComparison]::Ordinal)) {
+    throw 'Downloaded installer content does not match the repository version after line-ending normalization.'
 }
 
+$downloadedHash = (Get-FileHash -LiteralPath $OutputPath -Algorithm SHA256).Hash
 & (Join-Path $PSScriptRoot 'test-install-windows.ps1') -InstallerPath $OutputPath
 Write-Host "Downloaded Windows installer validation passed: $downloadedHash"
