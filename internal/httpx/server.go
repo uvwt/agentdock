@@ -38,8 +38,9 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 		}
 		oauthStore = persistentStore
 	}
+	oauthClients := newOAuthClientValidator(oauthStore, oauthSigningKey())
 	mux := http.NewServeMux()
-	publicArtifactStore := publicartifacts.New(cfg.AgentDockHome, cfg.EffectivePublicServerURL(), cfg.Port)
+	publicArtifactStore := publicartifacts.New(cfg.AgentDockHome, cfg.OAuthServerURL, cfg.Port)
 	if err := publicArtifactStore.EnsureSecret(); err != nil {
 		return fmt.Errorf("ensure public artifact secret: %w", err)
 	}
@@ -60,24 +61,12 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 		writeJSON(w, serverCard(cfg, r))
 	})
 	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
-		if !oauthDiscoveryVisible(cfg, r) {
-			http.NotFound(w, r)
-			return
-		}
 		writeJSON(w, oauthMetadata(cfg, r))
 	})
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
-		if !oauthDiscoveryVisible(cfg, r) {
-			http.NotFound(w, r)
-			return
-		}
 		writeJSON(w, oauthMetadata(cfg, r))
 	})
 	protectedResourceHandler := func(w http.ResponseWriter, r *http.Request) {
-		if !oauthDiscoveryVisible(cfg, r) {
-			http.NotFound(w, r)
-			return
-		}
 		writeJSON(w, protectedResourceMetadata(cfg, r))
 	}
 	mux.HandleFunc("/.well-known/oauth-protected-resource", protectedResourceHandler)
@@ -90,16 +79,16 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 		handleRegister(w, r, cfg, oauthStore)
 	})
 	mux.HandleFunc("/oauth/authorize", func(w http.ResponseWriter, r *http.Request) {
-		handleAuthorize(w, r, cfg, oauthStore)
+		handleAuthorize(w, r, cfg, oauthStore, oauthClients)
 	})
 	mux.HandleFunc("/authorize", func(w http.ResponseWriter, r *http.Request) {
-		handleAuthorize(w, r, cfg, oauthStore)
+		handleAuthorize(w, r, cfg, oauthStore, oauthClients)
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
-		handleToken(w, r, cfg, oauthStore)
+		handleToken(w, r, cfg, oauthStore, oauthClients)
 	})
 	mux.HandleFunc("/oauth/token", func(w http.ResponseWriter, r *http.Request) {
-		handleToken(w, r, cfg, oauthStore)
+		handleToken(w, r, cfg, oauthStore, oauthClients)
 	})
 	mux.HandleFunc("/context", agentDockContextHandler(server, cfg))
 	registerRuntimeAPI(mux, server, cfg)
@@ -193,7 +182,7 @@ func decodeSingleJSON(reader io.Reader, target any) error {
 }
 
 func requestPublicBaseURL(cfg config.Config, r *http.Request) string {
-	configured := strings.TrimRight(cfg.EffectivePublicServerURL(), "/")
+	configured := strings.TrimRight(strings.TrimSpace(cfg.OAuthServerURL), "/")
 	if configured != "" {
 		return configured
 	}
@@ -370,7 +359,7 @@ func oauthMetadata(cfg config.Config, r *http.Request) map[string]any {
 		"issuer":                                issuer,
 		"authorization_endpoint":                issuer + "/oauth/authorize",
 		"token_endpoint":                        issuer + "/oauth/token",
-		"registration_endpoint":                 issuer + "/register",
+		"client_id_metadata_document_supported": true,
 		"response_types_supported":              []string{"code"},
 		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
 		"code_challenge_methods_supported":      []string{"S256"},
@@ -380,11 +369,6 @@ func oauthMetadata(cfg config.Config, r *http.Request) map[string]any {
 }
 
 func issuerFor(cfg config.Config, r *http.Request) string {
-	if cfg.OAuthLoopbackIssuer {
-		if issuer, ok := loopbackRequestIssuer(r); ok {
-			return issuer
-		}
-	}
 	issuer := strings.TrimRight(cfg.OAuthServerURL, "/")
 	if issuer != "" {
 		return issuer
@@ -396,39 +380,7 @@ func issuerFor(cfg config.Config, r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
-func oauthDiscoveryVisible(cfg config.Config, r *http.Request) bool {
-	if !cfg.OAuthPublicDiscoveryOnly {
-		return true
-	}
-	_, isLoopback := loopbackRequestIssuer(r)
-	return !isLoopback
-}
-
-func loopbackRequestIssuer(r *http.Request) (string, bool) {
-	host := strings.TrimSpace(r.Host)
-	if host == "" {
-		return "", false
-	}
-	hostname := host
-	if parsed, _, err := net.SplitHostPort(host); err == nil {
-		hostname = parsed
-	}
-	hostname = strings.Trim(strings.ToLower(hostname), "[]")
-	isLoopback := hostname == "localhost"
-	if ip := net.ParseIP(hostname); ip != nil {
-		isLoopback = ip.IsLoopback()
-	}
-	if !isLoopback {
-		return "", false
-	}
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	return scheme + "://" + host, true
-}
-
-func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, codes *auth.OAuthStore) {
+func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, codes *auth.OAuthStore, clients *oauthClientValidator) {
 	if !cfg.OAuthEnabled() {
 		http.NotFound(w, r)
 		return
@@ -457,7 +409,8 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, 
 		http.Error(w, "unsupported response_type", http.StatusBadRequest)
 		return
 	}
-	if !codes.ValidateClientRedirect(clientID, redirectURI, oauthSigningKey()) {
+	if !clients.ValidateRedirect(r.Context(), clientID, redirectURI) ||
+		!clients.AllowsGrant(r.Context(), clientID, "authorization_code") {
 		http.Error(w, "invalid client_id or redirect_uri", http.StatusBadRequest)
 		return
 	}
@@ -494,7 +447,7 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, 
 	http.Redirect(w, r, location, http.StatusFound)
 }
 
-func handleToken(w http.ResponseWriter, r *http.Request, cfg config.Config, store *auth.OAuthStore) {
+func handleToken(w http.ResponseWriter, r *http.Request, cfg config.Config, store *auth.OAuthStore, clients *oauthClientValidator) {
 	if !cfg.OAuthEnabled() {
 		http.NotFound(w, r)
 		return
@@ -514,7 +467,7 @@ func handleToken(w http.ResponseWriter, r *http.Request, cfg config.Config, stor
 		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "unsupported_grant_type"})
 		return
 	}
-	if !validClientAuthentication(r, grantType, store) {
+	if !validClientAuthentication(r, grantType, clients) {
 		writeJSONStatus(w, http.StatusUnauthorized, map[string]any{"error": "invalid_client"})
 		return
 	}
@@ -522,10 +475,10 @@ func handleToken(w http.ResponseWriter, r *http.Request, cfg config.Config, stor
 		handleRefreshTokenGrant(w, r, cfg, store)
 		return
 	}
-	handleAuthorizationCodeGrant(w, r, cfg, store)
+	handleAuthorizationCodeGrant(w, r, cfg, store, clients)
 }
 
-func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, cfg config.Config, store *auth.OAuthStore) {
+func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, cfg config.Config, store *auth.OAuthStore, clients *oauthClientValidator) {
 	code, ok := store.Consume(r.FormValue("code"))
 	if !ok {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_grant"})
@@ -555,7 +508,7 @@ func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, cfg co
 		return
 	}
 	refreshToken := ""
-	if store.ClientAllowsGrant(clientID, "refresh_token", oauthSigningKey()) {
+	if clients.AllowsGrant(r.Context(), clientID, "refresh_token") {
 		refreshToken, err = store.IssueRefreshToken(clientID, resource, oauthRefreshTokenTTL)
 		if err != nil {
 			writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"error": "server_error"})
@@ -636,7 +589,7 @@ func validOAuthRedirectURI(raw string) bool {
 	}
 }
 
-func validClientAuthentication(r *http.Request, grantType string, store *auth.OAuthStore) bool {
+func validClientAuthentication(r *http.Request, grantType string, clients *oauthClientValidator) bool {
 	if _, _, ok := r.BasicAuth(); ok {
 		return false
 	}
@@ -644,15 +597,15 @@ func validClientAuthentication(r *http.Request, grantType string, store *auth.OA
 		return false
 	}
 	clientID := strings.TrimSpace(r.FormValue("client_id"))
-	if !store.ValidateClientID(clientID, oauthSigningKey()) ||
-		!store.ClientAllowsGrant(clientID, grantType, oauthSigningKey()) {
+	if !clients.ValidateClientID(r.Context(), clientID) ||
+		!clients.AllowsGrant(r.Context(), clientID, grantType) {
 		return false
 	}
 	if grantType == "authorization_code" {
-		return store.ValidateClientRedirect(
+		return clients.ValidateRedirect(
+			r.Context(),
 			clientID,
 			strings.TrimSpace(r.FormValue("redirect_uri")),
-			oauthSigningKey(),
 		)
 	}
 	return grantType == "refresh_token"

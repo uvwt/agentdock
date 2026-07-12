@@ -311,51 +311,11 @@ func TestServerCardDeclaresOAuthOnlyWhenOAuthEnabled(t *testing.T) {
 	if metadata["token_endpoint"] != "https://agentdock.example.com/oauth/token" {
 		t.Fatalf("token_endpoint = %v", metadata["token_endpoint"])
 	}
-}
-
-func TestOAuthLoopbackIssuerKeepsPublicIssuerForPublicRequests(t *testing.T) {
-	cfg := testConfig(t)
-	cfg.OAuthClientID = "oauth-enabled"
-	cfg.OAuthServerURL = "https://agentdock.example.com"
-	cfg.OAuthLoopbackIssuer = true
-
-	localRequest := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:18766/.well-known/oauth-authorization-server", nil)
-	localMetadata := oauthMetadata(cfg, localRequest)
-	if localMetadata["issuer"] != "http://127.0.0.1:18766" {
-		t.Fatalf("local issuer = %v", localMetadata["issuer"])
+	if supported, ok := metadata["client_id_metadata_document_supported"].(bool); !ok || !supported {
+		t.Fatalf("client_id_metadata_document_supported = %#v", metadata["client_id_metadata_document_supported"])
 	}
-	localResource := protectedResourceMetadata(cfg, localRequest)
-	if localResource["resource"] != "http://127.0.0.1:18766/mcp" {
-		t.Fatalf("local resource = %v", localResource["resource"])
-	}
-
-	publicRequest := httptest.NewRequest(http.MethodGet, "https://agentdock.example.com/.well-known/oauth-authorization-server", nil)
-	publicMetadata := oauthMetadata(cfg, publicRequest)
-	if publicMetadata["issuer"] != "https://agentdock.example.com" {
-		t.Fatalf("public issuer = %v", publicMetadata["issuer"])
-	}
-}
-
-func TestOAuthPublicDiscoveryOnlyHidesLoopbackMetadata(t *testing.T) {
-	cfg := testConfig(t)
-	cfg.OAuthPublicDiscoveryOnly = true
-
-	localRequest := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:18766/.well-known/oauth-protected-resource/mcp", nil)
-	if oauthDiscoveryVisible(cfg, localRequest) {
-		t.Fatal("loopback OAuth discovery should be hidden")
-	}
-	localhostRequest := httptest.NewRequest(http.MethodGet, "http://localhost:18766/.well-known/oauth-authorization-server", nil)
-	if oauthDiscoveryVisible(cfg, localhostRequest) {
-		t.Fatal("localhost OAuth discovery should be hidden")
-	}
-	publicRequest := httptest.NewRequest(http.MethodGet, "https://agentdock.example.com/.well-known/oauth-authorization-server", nil)
-	if !oauthDiscoveryVisible(cfg, publicRequest) {
-		t.Fatal("public OAuth discovery should remain visible")
-	}
-
-	cfg.OAuthPublicDiscoveryOnly = false
-	if !oauthDiscoveryVisible(cfg, localRequest) {
-		t.Fatal("loopback OAuth discovery should remain visible by default")
+	if _, advertised := metadata["registration_endpoint"]; advertised {
+		t.Fatalf("registration_endpoint should not be advertised when CIMD is preferred")
 	}
 }
 
@@ -395,21 +355,21 @@ func TestValidClientAuthenticationRequiresRegisteredPublicClient(t *testing.T) {
 	values := url.Values{"client_id": {clientID}, "redirect_uri": {redirectURI}}
 	valid := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(values.Encode()))
 	valid.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if !validClientAuthentication(valid, "authorization_code", store) {
+	if !validClientAuthentication(valid, "authorization_code", newOAuthClientValidator(store, oauthSigningKey())) {
 		t.Fatal("registered public client rejected")
 	}
 
 	values.Set("client_secret", "not-allowed")
 	withSecret := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(values.Encode()))
 	withSecret.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if validClientAuthentication(withSecret, "authorization_code", store) {
+	if validClientAuthentication(withSecret, "authorization_code", newOAuthClientValidator(store, oauthSigningKey())) {
 		t.Fatal("client_secret_post accepted for public client")
 	}
 
 	wrongRedirectValues := url.Values{"client_id": {clientID}, "redirect_uri": {"https://other.example/callback"}}
 	wrongRedirect := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(wrongRedirectValues.Encode()))
 	wrongRedirect.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if validClientAuthentication(wrongRedirect, "authorization_code", store) {
+	if validClientAuthentication(wrongRedirect, "authorization_code", newOAuthClientValidator(store, oauthSigningKey())) {
 		t.Fatal("unregistered redirect URI accepted")
 	}
 }
@@ -439,8 +399,12 @@ func TestOAuthEntrypointsDisabledWhenOAuthNotEnabled(t *testing.T) {
 		path    string
 	}{
 		{name: "register", handler: func(w http.ResponseWriter, r *http.Request) { handleRegister(w, r, cfg, codes) }, method: http.MethodPost, path: "/register"},
-		{name: "authorize", handler: func(w http.ResponseWriter, r *http.Request) { handleAuthorize(w, r, cfg, codes) }, method: http.MethodGet, path: "/oauth/authorize"},
-		{name: "token", handler: func(w http.ResponseWriter, r *http.Request) { handleToken(w, r, cfg, codes) }, method: http.MethodPost, path: "/oauth/token"},
+		{name: "authorize", handler: func(w http.ResponseWriter, r *http.Request) {
+			handleAuthorize(w, r, cfg, codes, newOAuthClientValidator(codes, oauthSigningKey()))
+		}, method: http.MethodGet, path: "/oauth/authorize"},
+		{name: "token", handler: func(w http.ResponseWriter, r *http.Request) {
+			handleToken(w, r, cfg, codes, newOAuthClientValidator(codes, oauthSigningKey()))
+		}, method: http.MethodPost, path: "/oauth/token"},
 	}
 	for _, endpoint := range endpoints {
 		t.Run(endpoint.name, func(t *testing.T) {

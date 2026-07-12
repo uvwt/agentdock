@@ -16,7 +16,7 @@ const (
 )
 
 func (r *Runtime) publishImageBytes(ctx context.Context, data []byte, filename string, info imageInfo, retentionSeconds int) (map[string]any, error) {
-	store := publicartifacts.New(r.cfg.AgentDockHome, r.cfg.EffectivePublicServerURL(), r.cfg.Port)
+	store := publicartifacts.New(r.cfg.AgentDockHome, r.cfg.OAuthServerURL, r.cfg.Port)
 	published, err := store.PublishBytes(publicartifacts.PublishBytesRequest{
 		Filename:         imageFilename(filename, info.MIME),
 		Data:             data,

@@ -52,7 +52,7 @@ func (r *Runtime) loadImageSource(ctx context.Context, args map[string]any) (loa
 
 	switch {
 	case artifactID != "":
-		store := publicartifacts.New(r.cfg.AgentDockHome, r.cfg.EffectivePublicServerURL(), r.cfg.Port)
+		store := publicartifacts.New(r.cfg.AgentDockHome, r.cfg.OAuthServerURL, r.cfg.Port)
 		meta, data, err := store.Read(artifactID, maxSourceBytes)
 		if err != nil {
 			return loadedImageSource{}, toolErrorDetails("IMAGE_ARTIFACT_READ_FAILED", "cannot read image artifact", "validation", map[string]any{"artifact_id": artifactID, "reason": err.Error()})

@@ -122,7 +122,6 @@ func TestFromEnvRejectsInvalidTypedValues(t *testing.T) {
 		{name: "port", key: "AGENTDOCK_PORT", value: "not-a-number"},
 		{name: "browser enabled", key: "AGENTDOCK_BROWSER_ENABLED", value: "sometimes"},
 		{name: "stdio", key: "AGENTDOCK_STDIO", value: "enabled"},
-		{name: "OAuth public discovery only", key: "AGENTDOCK_OAUTH_PUBLIC_DISCOVERY_ONLY", value: "sometimes"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -141,35 +140,12 @@ func TestFromEnvParsesTypedValues(t *testing.T) {
 	t.Setenv("AGENTDOCK_PORT", " 9876 ")
 	t.Setenv("AGENTDOCK_BROWSER_ENABLED", "true")
 	t.Setenv("AGENTDOCK_STDIO", "1")
-	t.Setenv("AGENTDOCK_OAUTH_LOOPBACK_ISSUER", "true")
-	t.Setenv("AGENTDOCK_OAUTH_PUBLIC_DISCOVERY_ONLY", "true")
 	cfg, err := FromEnv()
 	if err != nil {
 		t.Fatalf("FromEnv() error = %v", err)
 	}
-	if cfg.Port != 9876 || !cfg.BrowserEnabled || !cfg.Stdio || !cfg.OAuthLoopbackIssuer || !cfg.OAuthPublicDiscoveryOnly {
+	if cfg.Port != 9876 || !cfg.BrowserEnabled || !cfg.Stdio {
 		t.Fatalf("config = %#v", cfg)
-	}
-}
-
-func TestFromEnvAllowsSeparatePublicAndOAuthServerURLs(t *testing.T) {
-	t.Setenv("AGENTDOCK_SERVER_URL", "https://public.example")
-	t.Setenv("AGENTDOCK_OAUTH_SERVER_URL", "http://127.0.0.1:18767")
-	cfg, err := FromEnv()
-	if err != nil {
-		t.Fatalf("FromEnv() error = %v", err)
-	}
-	if cfg.PublicServerURL != "https://public.example" || cfg.OAuthServerURL != "http://127.0.0.1:18767" {
-		t.Fatalf("config = %#v", cfg)
-	}
-
-	t.Setenv("AGENTDOCK_OAUTH_SERVER_URL", "")
-	cfg, err = FromEnv()
-	if err != nil {
-		t.Fatalf("FromEnv() fallback error = %v", err)
-	}
-	if cfg.OAuthServerURL != cfg.PublicServerURL {
-		t.Fatalf("OAuthServerURL = %q, want fallback %q", cfg.OAuthServerURL, cfg.PublicServerURL)
 	}
 }
 

@@ -322,64 +322,23 @@ func (s *OAuthStore) RegisterClient(clientName string, redirectURIs, grantTypes 
 	if len(registration.ClientName) > 200 {
 		return "", errors.New("client name exceeds 200 characters")
 	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// ChatGPT may repeat dynamic registration while creating and then opening the
-	// same connector service. Return the first registration for identical public
-	// client metadata so the tunnel can keep a stable service-to-client binding.
-	canonicalID := ""
-	canonicalIssuedAt := int64(0)
-	for clientID, existing := range s.clients {
-		if !sameClientRegistration(existing, registration) {
-			continue
-		}
-		if canonicalID == "" || existing.IssuedAt < canonicalIssuedAt ||
-			(existing.IssuedAt == canonicalIssuedAt && clientID < canonicalID) {
-			canonicalID = clientID
-			canonicalIssuedAt = existing.IssuedAt
-		}
-	}
-	if canonicalID != "" {
-		return canonicalID, nil
-	}
-	if len(s.clients) >= maxOAuthClients {
-		return "", fmt.Errorf("OAuth client limit %d reached", maxOAuthClients)
-	}
 	randomValue, err := RandomToken(24)
 	if err != nil {
 		return "", fmt.Errorf("generate OAuth client ID: %w", err)
 	}
 	clientID := shortClientPrefix + randomValue
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.clients) >= maxOAuthClients {
+		return "", fmt.Errorf("OAuth client limit %d reached", maxOAuthClients)
+	}
 	s.clients[clientID] = registration
 	if err := s.persistStateLocked(); err != nil {
 		delete(s.clients, clientID)
 		return "", err
 	}
 	return clientID, nil
-}
-
-func sameClientRegistration(left, right OAuthClientRegistration) bool {
-	return left.ClientName == right.ClientName &&
-		sameStringSet(left.RedirectURIs, right.RedirectURIs) &&
-		sameStringSet(left.GrantTypes, right.GrantTypes)
-}
-
-func sameStringSet(left, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	values := make(map[string]struct{}, len(left))
-	for _, value := range left {
-		values[value] = struct{}{}
-	}
-	for _, value := range right {
-		if _, ok := values[value]; !ok {
-			return false
-		}
-	}
-	return true
 }
 
 func (s *OAuthStore) ValidateClientID(clientID, legacySigningKey string) bool {
