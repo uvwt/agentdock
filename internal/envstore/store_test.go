@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sync"
 	"testing"
 )
@@ -134,6 +135,9 @@ func TestParserAcceptsShellEnvSyntax(t *testing.T) {
 
 func assertMode(t *testing.T, path string, mode os.FileMode) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		return
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)

@@ -71,6 +71,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Test Windows private storage
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          go test ./internal/envstore ./internal/securepath
+
       - name: Download and validate exact installer bytes
         shell: powershell
         run: |
@@ -111,6 +117,14 @@ jobs:
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           go build -trimpath -ldflags='-s -w' -o dist/agentdock.exe ./cmd/agentdock
+
+      - name: Smoke test current binary as standard user
+        if: matrix.goarch == 'amd64'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\test-windows-current-binary-as-standard-user.ps1 `
+            -BinaryPath .\dist\agentdock.exe
 
       - name: Authenticode sign
         if: steps.signing.outputs.enabled == 'true'

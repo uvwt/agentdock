@@ -10,6 +10,11 @@ on:
       - 'scripts/test-install-windows-download.ps1'
       - 'scripts/test-install-windows-e2e.ps1'
       - 'scripts/run-windows-installer-e2e-as-standard-user.ps1'
+      - 'scripts/test-windows-current-binary-as-standard-user.ps1'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'go.mod'
+      - 'go.sum'
       - '.github/workflows/windows-installer.yml'
   workflow_dispatch:
 
@@ -23,6 +28,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test Windows private storage
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          go test ./internal/envstore ./internal/securepath
 
       - name: Download and validate exact installer bytes
         shell: powershell
@@ -43,3 +60,20 @@ jobs:
           & .\scripts\run-windows-installer-e2e-as-standard-user.ps1 `
             -InstallerPath $env:DOWNLOADED_INSTALLER `
             -Version v0.2.6
+
+      - name: Build current Windows binary
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          $env:CGO_ENABLED = '0'
+          $env:GOOS = 'windows'
+          $env:GOARCH = 'amd64'
+          go build -trimpath -o dist\agentdock.exe .\cmd\agentdock
+
+      - name: Smoke test current binary as standard user
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\test-windows-current-binary-as-standard-user.ps1 `
+            -BinaryPath .\dist\agentdock.exe
