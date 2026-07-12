@@ -20,15 +20,18 @@ import (
 
 const (
 	dynamicClientPrefix = "adcr."
-	refreshStateVersion = 1
+	shortClientPrefix   = "adcr_"
+	oauthStateVersion   = 2
 	maxRefreshStateSize = 1 << 20
 	maxRefreshTokens    = 1024
+	maxOAuthClients     = 1024
 )
 
 type OAuthStore struct {
 	mu            sync.Mutex
 	codes         map[string]OAuthCode
 	refreshTokens map[string]OAuthRefreshToken
+	clients       map[string]OAuthClientRegistration
 	refreshPath   string
 }
 
@@ -48,9 +51,17 @@ type OAuthRefreshToken struct {
 	ExpiresAt int64  `json:"expires_at"`
 }
 
-type refreshTokenState struct {
-	Version int                          `json:"version"`
-	Tokens  map[string]OAuthRefreshToken `json:"tokens"`
+type OAuthClientRegistration struct {
+	ClientName   string   `json:"client_name,omitempty"`
+	RedirectURIs []string `json:"redirect_uris"`
+	GrantTypes   []string `json:"grant_types"`
+	IssuedAt     int64    `json:"issued_at"`
+}
+
+type oauthState struct {
+	Version int                                `json:"version"`
+	Tokens  map[string]OAuthRefreshToken       `json:"tokens"`
+	Clients map[string]OAuthClientRegistration `json:"clients,omitempty"`
 }
 
 type tokenClaims struct {
@@ -72,6 +83,7 @@ func NewOAuthStore() *OAuthStore {
 	return &OAuthStore{
 		codes:         map[string]OAuthCode{},
 		refreshTokens: map[string]OAuthRefreshToken{},
+		clients:       map[string]OAuthClientRegistration{},
 	}
 }
 
@@ -92,15 +104,18 @@ func NewPersistentOAuthStore(path string) (*OAuthStore, error) {
 	if len(data) > maxRefreshStateSize {
 		return nil, fmt.Errorf("OAuth refresh token state exceeds %d bytes", maxRefreshStateSize)
 	}
-	var state refreshTokenState
+	var state oauthState
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, fmt.Errorf("decode OAuth refresh token state: %w", err)
 	}
-	if state.Version != refreshStateVersion {
+	if state.Version != 1 && state.Version != oauthStateVersion {
 		return nil, fmt.Errorf("unsupported OAuth refresh token state version %d", state.Version)
 	}
 	if state.Tokens == nil {
 		state.Tokens = map[string]OAuthRefreshToken{}
+	}
+	if state.Clients == nil {
+		state.Clients = map[string]OAuthClientRegistration{}
 	}
 	now := time.Now().Unix()
 	pruned := false
@@ -110,13 +125,23 @@ func NewPersistentOAuthStore(path string) (*OAuthStore, error) {
 			pruned = true
 		}
 	}
+	for clientID, registration := range state.Clients {
+		if !validStoredClient(clientID, registration, now) {
+			delete(state.Clients, clientID)
+			pruned = true
+		}
+	}
 	if len(state.Tokens) > maxRefreshTokens {
 		return nil, fmt.Errorf("OAuth refresh token state contains %d entries, maximum is %d", len(state.Tokens), maxRefreshTokens)
 	}
+	if len(state.Clients) > maxOAuthClients {
+		return nil, fmt.Errorf("OAuth client state contains %d entries, maximum is %d", len(state.Clients), maxOAuthClients)
+	}
 	store.refreshTokens = state.Tokens
-	if pruned {
+	store.clients = state.Clients
+	if pruned || state.Version != oauthStateVersion {
 		store.mu.Lock()
-		err = store.persistRefreshTokensLocked()
+		err = store.persistStateLocked()
 		store.mu.Unlock()
 		if err != nil {
 			return nil, err
@@ -179,7 +204,7 @@ func (s *OAuthStore) IssueRefreshToken(clientID, resource string, ttl time.Durat
 		return "", fmt.Errorf("OAuth refresh token limit %d reached", maxRefreshTokens)
 	}
 	s.refreshTokens[digest] = entry
-	if err := s.persistRefreshTokensLocked(); err != nil {
+	if err := s.persistStateLocked(); err != nil {
 		delete(s.refreshTokens, digest)
 		return "", err
 	}
@@ -217,7 +242,7 @@ func (s *OAuthStore) RotateRefreshToken(raw, clientID, requestedResource string,
 	newDigest := refreshTokenDigest(newRaw)
 	delete(s.refreshTokens, oldDigest)
 	s.refreshTokens[newDigest] = newEntry
-	if err := s.persistRefreshTokensLocked(); err != nil {
+	if err := s.persistStateLocked(); err != nil {
 		delete(s.refreshTokens, newDigest)
 		s.refreshTokens[oldDigest] = entry
 		return "", "", false, err
@@ -233,11 +258,11 @@ func (s *OAuthStore) pruneExpiredRefreshTokensLocked(now int64) {
 	}
 }
 
-func (s *OAuthStore) persistRefreshTokensLocked() error {
+func (s *OAuthStore) persistStateLocked() error {
 	if s.refreshPath == "" {
 		return nil
 	}
-	state := refreshTokenState{Version: refreshStateVersion, Tokens: s.refreshTokens}
+	state := oauthState{Version: oauthStateVersion, Tokens: s.refreshTokens, Clients: s.clients}
 	data, err := json.Marshal(state)
 	if err != nil {
 		return fmt.Errorf("encode OAuth refresh token state: %w", err)
@@ -257,6 +282,112 @@ func validStoredRefreshToken(digest string, token OAuthRefreshToken, now int64) 
 		token.ClientID != "" && token.Resource != "" &&
 		token.IssuedAt > 0 && token.IssuedAt <= now+60 &&
 		token.ExpiresAt > now && token.ExpiresAt > token.IssuedAt
+}
+
+func validStoredClient(clientID string, registration OAuthClientRegistration, now int64) bool {
+	if !strings.HasPrefix(clientID, shortClientPrefix) {
+		return false
+	}
+	raw := strings.TrimPrefix(clientID, shortClientPrefix)
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil || len(decoded) != 24 || base64.RawURLEncoding.EncodeToString(decoded) != raw {
+		return false
+	}
+	if len(registration.RedirectURIs) == 0 || len(registration.GrantTypes) == 0 {
+		return false
+	}
+	if registration.IssuedAt <= 0 || registration.IssuedAt > now+60 {
+		return false
+	}
+	if len(registration.ClientName) > 200 {
+		return false
+	}
+	return len(uniqueNonEmptyStrings(registration.RedirectURIs)) == len(registration.RedirectURIs) &&
+		len(uniqueNonEmptyStrings(registration.GrantTypes)) == len(registration.GrantTypes)
+}
+
+func (s *OAuthStore) RegisterClient(clientName string, redirectURIs, grantTypes []string) (string, error) {
+	registration := OAuthClientRegistration{
+		ClientName:   strings.TrimSpace(clientName),
+		RedirectURIs: uniqueNonEmptyStrings(redirectURIs),
+		GrantTypes:   uniqueNonEmptyStrings(grantTypes),
+		IssuedAt:     time.Now().Unix(),
+	}
+	if len(registration.RedirectURIs) == 0 {
+		return "", errors.New("at least one redirect URI is required")
+	}
+	if len(registration.GrantTypes) == 0 {
+		return "", errors.New("at least one grant type is required")
+	}
+	if len(registration.ClientName) > 200 {
+		return "", errors.New("client name exceeds 200 characters")
+	}
+	randomValue, err := RandomToken(24)
+	if err != nil {
+		return "", fmt.Errorf("generate OAuth client ID: %w", err)
+	}
+	clientID := shortClientPrefix + randomValue
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.clients) >= maxOAuthClients {
+		return "", fmt.Errorf("OAuth client limit %d reached", maxOAuthClients)
+	}
+	s.clients[clientID] = registration
+	if err := s.persistStateLocked(); err != nil {
+		delete(s.clients, clientID)
+		return "", err
+	}
+	return clientID, nil
+}
+
+func (s *OAuthStore) ValidateClientID(clientID, legacySigningKey string) bool {
+	if _, ok := s.clientRegistration(clientID); ok {
+		return true
+	}
+	return ValidateClientID(clientID, legacySigningKey)
+}
+
+func (s *OAuthStore) ValidateClientRedirect(clientID, redirectURI, legacySigningKey string) bool {
+	redirectURI = strings.TrimSpace(redirectURI)
+	if registration, ok := s.clientRegistration(clientID); ok {
+		for _, registered := range registration.RedirectURIs {
+			if registered == redirectURI {
+				return true
+			}
+		}
+		return false
+	}
+	return ValidateClientRedirect(clientID, redirectURI, legacySigningKey)
+}
+
+func (s *OAuthStore) ClientAllowsGrant(clientID, grantType, legacySigningKey string) bool {
+	grantType = strings.TrimSpace(grantType)
+	if registration, ok := s.clientRegistration(clientID); ok {
+		for _, registered := range registration.GrantTypes {
+			if registered == grantType {
+				return true
+			}
+		}
+		return false
+	}
+	return ClientAllowsGrant(clientID, grantType, legacySigningKey)
+}
+
+func (s *OAuthStore) ClientRegistration(clientID string) (OAuthClientRegistration, bool) {
+	return s.clientRegistration(clientID)
+}
+
+func (s *OAuthStore) clientRegistration(clientID string) (OAuthClientRegistration, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	registration, ok := s.clients[strings.TrimSpace(clientID)]
+	if !ok {
+		return OAuthClientRegistration{}, false
+	}
+	registration.RedirectURIs = append([]string(nil), registration.RedirectURIs...)
+	registration.GrantTypes = append([]string(nil), registration.GrantTypes...)
+	return registration, true
 }
 
 func refreshTokenDigest(raw string) string {

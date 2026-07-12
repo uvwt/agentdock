@@ -367,25 +367,26 @@ func TestValidClientAuthenticationRequiresRegisteredPublicClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	store := auth.NewOAuthStore()
 
 	values := url.Values{"client_id": {clientID}, "redirect_uri": {redirectURI}}
 	valid := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(values.Encode()))
 	valid.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if !validClientAuthentication(valid, "authorization_code") {
+	if !validClientAuthentication(valid, "authorization_code", store) {
 		t.Fatal("registered public client rejected")
 	}
 
 	values.Set("client_secret", "not-allowed")
 	withSecret := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(values.Encode()))
 	withSecret.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if validClientAuthentication(withSecret, "authorization_code") {
+	if validClientAuthentication(withSecret, "authorization_code", store) {
 		t.Fatal("client_secret_post accepted for public client")
 	}
 
 	wrongRedirectValues := url.Values{"client_id": {clientID}, "redirect_uri": {"https://other.example/callback"}}
 	wrongRedirect := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(wrongRedirectValues.Encode()))
 	wrongRedirect.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if validClientAuthentication(wrongRedirect, "authorization_code") {
+	if validClientAuthentication(wrongRedirect, "authorization_code", store) {
 		t.Fatal("unregistered redirect URI accepted")
 	}
 }
@@ -414,7 +415,7 @@ func TestOAuthEntrypointsDisabledWhenOAuthNotEnabled(t *testing.T) {
 		method  string
 		path    string
 	}{
-		{name: "register", handler: func(w http.ResponseWriter, r *http.Request) { handleRegister(w, r, cfg) }, method: http.MethodPost, path: "/register"},
+		{name: "register", handler: func(w http.ResponseWriter, r *http.Request) { handleRegister(w, r, cfg, codes) }, method: http.MethodPost, path: "/register"},
 		{name: "authorize", handler: func(w http.ResponseWriter, r *http.Request) { handleAuthorize(w, r, cfg, codes) }, method: http.MethodGet, path: "/oauth/authorize"},
 		{name: "token", handler: func(w http.ResponseWriter, r *http.Request) { handleToken(w, r, cfg, codes) }, method: http.MethodPost, path: "/oauth/token"},
 	}

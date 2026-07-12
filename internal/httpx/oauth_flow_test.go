@@ -28,6 +28,7 @@ func TestOAuthDynamicRegistrationAuthorizationCodeAndRefreshFlow(t *testing.T) {
 	resource := cfg.OAuthServerURL + "/mcp"
 
 	registrationRequest := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{
+		"client_name":"ChatGPT",
 		"redirect_uris":["https://client.example/callback"],
 		"token_endpoint_auth_method":"none",
 		"grant_types":["authorization_code","refresh_token"],
@@ -35,12 +36,13 @@ func TestOAuthDynamicRegistrationAuthorizationCodeAndRefreshFlow(t *testing.T) {
 	}`))
 	registrationRequest.Header.Set("Content-Type", "application/json")
 	registrationResponse := httptest.NewRecorder()
-	handleRegister(registrationResponse, registrationRequest, cfg)
+	handleRegister(registrationResponse, registrationRequest, cfg, store)
 	if registrationResponse.Code != http.StatusCreated {
 		t.Fatalf("registration status = %d; body=%s", registrationResponse.Code, registrationResponse.Body.String())
 	}
 	var registration struct {
 		ClientID                string   `json:"client_id"`
+		ClientName              string   `json:"client_name"`
 		RedirectURIs            []string `json:"redirect_uris"`
 		GrantTypes              []string `json:"grant_types"`
 		TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
@@ -48,12 +50,13 @@ func TestOAuthDynamicRegistrationAuthorizationCodeAndRefreshFlow(t *testing.T) {
 	if err := json.Unmarshal(registrationResponse.Body.Bytes(), &registration); err != nil {
 		t.Fatal(err)
 	}
-	if registration.ClientID == "" || registration.TokenEndpointAuthMethod != "none" ||
-		len(registration.RedirectURIs) != 1 || !containsString(registration.GrantTypes, "refresh_token") {
+	if registration.ClientID == "" || len(registration.ClientID) > 64 || registration.ClientName != "ChatGPT" ||
+		registration.TokenEndpointAuthMethod != "none" || len(registration.RedirectURIs) != 1 ||
+		!containsString(registration.GrantTypes, "refresh_token") {
 		t.Fatalf("registration = %#v", registration)
 	}
-	if !auth.ValidateClientRedirect(registration.ClientID, oauthTestRedirect, oauthSigningKey()) ||
-		!auth.ClientAllowsGrant(registration.ClientID, "refresh_token", oauthSigningKey()) {
+	if !store.ValidateClientRedirect(registration.ClientID, oauthTestRedirect, oauthSigningKey()) ||
+		!store.ClientAllowsGrant(registration.ClientID, "refresh_token", oauthSigningKey()) {
 		t.Fatal("registered client ID is not bound to its redirect URI and grants")
 	}
 
@@ -233,26 +236,27 @@ func TestOAuthAuthorizePasswordGate(t *testing.T) {
 func TestOAuthPublicClientAuthenticationContract(t *testing.T) {
 	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-signing-secret")
 	clientID := oauthRegisteredClientID(t, oauthTestRedirect)
+	store := auth.NewOAuthStore()
 
 	valid := url.Values{"client_id": {clientID}, "redirect_uri": {oauthTestRedirect}}
-	if !validClientAuthentication(formRequest(valid), "authorization_code") {
+	if !validClientAuthentication(formRequest(valid), "authorization_code", store) {
 		t.Fatal("registered public client was rejected")
 	}
-	if !validClientAuthentication(formRequest(url.Values{"client_id": {clientID}}), "refresh_token") {
+	if !validClientAuthentication(formRequest(url.Values{"client_id": {clientID}}), "refresh_token", store) {
 		t.Fatal("registered refresh-token client was rejected")
 	}
 	withSecret := cloneValues(valid)
 	withSecret.Set("client_secret", "legacy-secret")
-	if validClientAuthentication(formRequest(withSecret), "authorization_code") {
+	if validClientAuthentication(formRequest(withSecret), "authorization_code", store) {
 		t.Fatal("client_secret_post was accepted")
 	}
 	basic := formRequest(valid)
 	basic.SetBasicAuth(clientID, "secret")
-	if validClientAuthentication(basic, "authorization_code") {
+	if validClientAuthentication(basic, "authorization_code", store) {
 		t.Fatal("client_secret_basic was accepted")
 	}
 	wrongRedirect := url.Values{"client_id": {clientID}, "redirect_uri": {"https://other.example/callback"}}
-	if validClientAuthentication(formRequest(wrongRedirect), "authorization_code") {
+	if validClientAuthentication(formRequest(wrongRedirect), "authorization_code", store) {
 		t.Fatal("unregistered redirect URI was accepted")
 	}
 }
@@ -260,6 +264,7 @@ func TestOAuthPublicClientAuthenticationContract(t *testing.T) {
 func TestOAuthRegistrationRejectsInvalidMetadata(t *testing.T) {
 	t.Setenv("AGENTDOCK_OAUTH_TOKEN_SECRET", "token-signing-secret")
 	cfg := oauthTestConfig(t)
+	store := auth.NewOAuthStore()
 	cases := []string{
 		`{"token_endpoint_auth_method":"none"}`,
 		`{"redirect_uris":["http://attacker.example/callback"],"token_endpoint_auth_method":"none"}`,
@@ -269,7 +274,7 @@ func TestOAuthRegistrationRejectsInvalidMetadata(t *testing.T) {
 	}
 	for _, body := range cases {
 		response := httptest.NewRecorder()
-		handleRegister(response, httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(body)), cfg)
+		handleRegister(response, httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(body)), cfg, store)
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("body %s status = %d; response=%s", body, response.Code, response.Body.String())
 		}

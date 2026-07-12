@@ -75,7 +75,7 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 		publicArtifactStore.ServeHTTP(w, r, "/artifacts/public/")
 	})
 	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
-		handleRegister(w, r, cfg)
+		handleRegister(w, r, cfg, oauthStore)
 	})
 	mux.HandleFunc("/oauth/authorize", func(w http.ResponseWriter, r *http.Request) {
 		handleAuthorize(w, r, cfg, oauthStore)
@@ -202,7 +202,7 @@ func requestPublicBaseURL(cfg config.Config, r *http.Request) string {
 	return scheme + "://" + host
 }
 
-func handleRegister(w http.ResponseWriter, r *http.Request, cfg config.Config) {
+func handleRegister(w http.ResponseWriter, r *http.Request, cfg config.Config, store *auth.OAuthStore) {
 	if !cfg.OAuthEnabled() {
 		http.NotFound(w, r)
 		return
@@ -217,22 +217,27 @@ func handleRegister(w http.ResponseWriter, r *http.Request, cfg config.Config) {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_client_metadata", "error_description": err.Error()})
 		return
 	}
-	clientID, err := auth.IssueClientID(metadata.RedirectURIs, metadata.GrantTypes, oauthSigningKey())
+	clientID, err := store.RegisterClient(metadata.ClientName, metadata.RedirectURIs, metadata.GrantTypes)
 	if err != nil {
 		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"error": "server_error"})
 		return
 	}
-	writeJSONStatus(w, http.StatusCreated, map[string]any{
+	response := map[string]any{
 		"client_id":                  clientID,
 		"client_id_issued_at":        time.Now().Unix(),
 		"redirect_uris":              metadata.RedirectURIs,
 		"token_endpoint_auth_method": "none",
 		"grant_types":                metadata.GrantTypes,
-		"response_types":             []string{"code"},
-	})
+		"response_types":             metadata.ResponseTypes,
+	}
+	if metadata.ClientName != "" {
+		response["client_name"] = metadata.ClientName
+	}
+	writeJSONStatus(w, http.StatusCreated, response)
 }
 
 type clientRegistrationMetadata struct {
+	ClientName              string   `json:"client_name"`
 	RedirectURIs            []string `json:"redirect_uris"`
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
 	GrantTypes              []string `json:"grant_types"`
@@ -244,6 +249,10 @@ func decodeClientRegistration(w http.ResponseWriter, r *http.Request) (clientReg
 	var metadata clientRegistrationMetadata
 	if err := decodeSingleJSON(body, &metadata); err != nil {
 		return metadata, fmt.Errorf("decode client metadata: %w", err)
+	}
+	metadata.ClientName = strings.TrimSpace(metadata.ClientName)
+	if len(metadata.ClientName) > 200 {
+		return metadata, errors.New("client_name exceeds 200 characters")
 	}
 	method := strings.TrimSpace(metadata.TokenEndpointAuthMethod)
 	if method == "" {
@@ -428,7 +437,7 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, 
 		http.Error(w, "unsupported response_type", http.StatusBadRequest)
 		return
 	}
-	if !auth.ValidateClientRedirect(clientID, redirectURI, oauthSigningKey()) {
+	if !codes.ValidateClientRedirect(clientID, redirectURI, oauthSigningKey()) {
 		http.Error(w, "invalid client_id or redirect_uri", http.StatusBadRequest)
 		return
 	}
@@ -485,7 +494,7 @@ func handleToken(w http.ResponseWriter, r *http.Request, cfg config.Config, stor
 		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "unsupported_grant_type"})
 		return
 	}
-	if !validClientAuthentication(r, grantType) {
+	if !validClientAuthentication(r, grantType, store) {
 		writeJSONStatus(w, http.StatusUnauthorized, map[string]any{"error": "invalid_client"})
 		return
 	}
@@ -526,7 +535,7 @@ func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, cfg co
 		return
 	}
 	refreshToken := ""
-	if auth.ClientAllowsGrant(clientID, "refresh_token", oauthSigningKey()) {
+	if store.ClientAllowsGrant(clientID, "refresh_token", oauthSigningKey()) {
 		refreshToken, err = store.IssueRefreshToken(clientID, resource, oauthRefreshTokenTTL)
 		if err != nil {
 			writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"error": "server_error"})
@@ -607,7 +616,7 @@ func validOAuthRedirectURI(raw string) bool {
 	}
 }
 
-func validClientAuthentication(r *http.Request, grantType string) bool {
+func validClientAuthentication(r *http.Request, grantType string, store *auth.OAuthStore) bool {
 	if _, _, ok := r.BasicAuth(); ok {
 		return false
 	}
@@ -615,12 +624,12 @@ func validClientAuthentication(r *http.Request, grantType string) bool {
 		return false
 	}
 	clientID := strings.TrimSpace(r.FormValue("client_id"))
-	if !auth.ValidateClientID(clientID, oauthSigningKey()) ||
-		!auth.ClientAllowsGrant(clientID, grantType, oauthSigningKey()) {
+	if !store.ValidateClientID(clientID, oauthSigningKey()) ||
+		!store.ClientAllowsGrant(clientID, grantType, oauthSigningKey()) {
 		return false
 	}
 	if grantType == "authorization_code" {
-		return auth.ValidateClientRedirect(
+		return store.ValidateClientRedirect(
 			clientID,
 			strings.TrimSpace(r.FormValue("redirect_uri")),
 			oauthSigningKey(),

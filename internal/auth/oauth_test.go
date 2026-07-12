@@ -145,6 +145,82 @@ func TestPersistentOAuthStoreRotatesRefreshTokensAcrossReloads(t *testing.T) {
 	}
 }
 
+func TestPersistentOAuthStoreRegistersShortClientAcrossReloads(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "oauth", "refresh-tokens.json")
+	store, err := NewPersistentOAuthStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientID, err := store.RegisterClient(
+		"ChatGPT",
+		[]string{"https://client.example/callback"},
+		[]string{"authorization_code", "refresh_token"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(clientID, shortClientPrefix) || len(clientID) > 64 {
+		t.Fatalf("client ID = %q, want short persisted ID", clientID)
+	}
+	registration, ok := store.ClientRegistration(clientID)
+	if !ok || registration.ClientName != "ChatGPT" {
+		t.Fatalf("registration = %#v, ok=%v", registration, ok)
+	}
+	if !store.ValidateClientRedirect(clientID, "https://client.example/callback", "") ||
+		!store.ClientAllowsGrant(clientID, "refresh_token", "") {
+		t.Fatal("new client registration was not bound to redirect URI and grant")
+	}
+
+	reloaded, err := NewPersistentOAuthStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reloaded.ValidateClientID(clientID, "") ||
+		!reloaded.ValidateClientRedirect(clientID, "https://client.example/callback", "") ||
+		!reloaded.ClientAllowsGrant(clientID, "authorization_code", "") {
+		t.Fatal("persisted client registration was not valid after reload")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("OAuth state mode = %o, want 600", info.Mode().Perm())
+	}
+}
+
+func TestPersistentOAuthStoreMigratesVersionOneState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "oauth", "refresh-tokens.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"version":1,"tokens":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewPersistentOAuthStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientID, err := store.RegisterClient("ChatGPT", []string{"https://client.example/callback"}, []string{"authorization_code"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state oauthState
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.Version != oauthStateVersion {
+		t.Fatalf("state version = %d, want %d", state.Version, oauthStateVersion)
+	}
+	if _, ok := state.Clients[clientID]; !ok {
+		t.Fatal("migrated state did not persist the registered client")
+	}
+}
+
 func TestOAuthRefreshTokenRejectsClientAndResourceMismatchWithoutConsumption(t *testing.T) {
 	store := NewOAuthStore()
 	const clientID = "client-id"
