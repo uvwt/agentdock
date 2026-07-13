@@ -1,7 +1,7 @@
 ---
 name: ntfy
 description: Use this skill when sending notifications via ntfy.sh or self-hosted ntfy servers.
-version: 0.2.4
+version: 0.2.5
 ---
 
 # ntfy Notifications Skill
@@ -38,21 +38,10 @@ Topic 名称从 `NTFY_TOPIC` 环境变量或调用参数 `topic` 获取。
 
 ## 辅助脚本执行
 
-Skill 本身只提供流程说明。确需调用包内辅助脚本时，使用 `exec_command` 直接运行当前版本脚本，不调用任何 Skill 执行入口。
-
-当前版本目录：
+Skill 本体是本说明文档。确需调用包内辅助脚本时，在 Skill 包根目录使用相对路径执行；运行宿主负责切换到包根目录并把所需变量注入当前子进程。
 
 ```bash
-AGENTDOCK_HOME="${AGENTDOCK_HOME:-$HOME/.agentdock}"
-SKILL_DIR="$AGENTDOCK_HOME/skill-store/installed/ntfy/0.2.4"
-```
-
-调用 `exec_command` 时传入 `skill_env: "ntfy"`，由 AgentDock 自动加载该 Skill 的独立环境；不要在命令中手工 `source` 环境文件。
-
-调用动作（`exec_command` 同时传入 `"skill_env": "ntfy"`）：
-
-```bash
-printf '%s' '{"skill_action":"<动作>"}' | python3 "$SKILL_DIR/run.py"
+printf '%s' '{"skill_action":"<动作>"}' | python3 run.py
 ```
 
 输入必须是 JSON 对象。写操作仍按本文档中的确认规则执行。

@@ -22,7 +22,7 @@ func TestWindowsExecCommandSchemaExposesWSLRuntime(t *testing.T) {
 func TestResolveWSLWorkdirAcceptsWindowsAndLinuxPaths(t *testing.T) {
 	runtime, _ := newCodeToolsRuntime(t)
 
-	windowsPath, err := runtime.resolveWSLWorkdir(map[string]any{"workdir": `D:\Project\synapse`})
+	windowsPath, err := runtime.resolveWSLWorkdir(map[string]any{"workdir": `D:\Project\synapse`}, "")
 	if err != nil {
 		t.Fatalf("resolve Windows path: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestResolveWSLWorkdirAcceptsWindowsAndLinuxPaths(t *testing.T) {
 		t.Fatalf("Windows path resolved to %q", windowsPath)
 	}
 
-	extendedPath, err := runtime.resolveWSLWorkdir(map[string]any{"workdir": `\\?\E:\Work`})
+	extendedPath, err := runtime.resolveWSLWorkdir(map[string]any{"workdir": `\\?\E:\Work`}, "")
 	if err != nil {
 		t.Fatalf("resolve extended Windows path: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestResolveWSLWorkdirAcceptsWindowsAndLinuxPaths(t *testing.T) {
 		t.Fatalf("extended Windows path resolved to %q", extendedPath)
 	}
 
-	linuxPath, err := runtime.resolveWSLWorkdir(map[string]any{"workdir": "/home/a/project"})
+	linuxPath, err := runtime.resolveWSLWorkdir(map[string]any{"workdir": "/home/a/project"}, "")
 	if err != nil {
 		t.Fatalf("resolve Linux path: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestResolveWSLWorkdirAcceptsWindowsAndLinuxPaths(t *testing.T) {
 		t.Fatalf("Linux path resolved to %q", linuxPath)
 	}
 
-	if _, err := runtime.resolveWSLWorkdir(map[string]any{"workdir": `\\server\share`}); err == nil {
+	if _, err := runtime.resolveWSLWorkdir(map[string]any{"workdir": `\\server\share`}, ""); err == nil {
 		t.Fatal("expected UNC path to be rejected")
 	}
 }

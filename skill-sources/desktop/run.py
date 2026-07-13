@@ -15,7 +15,7 @@ import time
 import urllib.parse
 from pathlib import Path
 
-VERSION = "1.0.11"
+VERSION = "1.0.12"
 SEP = "\x1f"
 STATE_MAX_AGE_SECONDS = 90
 

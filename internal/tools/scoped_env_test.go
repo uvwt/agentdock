@@ -158,3 +158,97 @@ func newScopedEnvTestRuntime(t *testing.T) *Runtime {
 	}
 	return runtime
 }
+
+func TestExecCommandSchemaExposesSkillContext(t *testing.T) {
+	properties := InputSchema("exec_command")["properties"].(map[string]any)
+	if _, ok := properties["skill"]; !ok {
+		t.Fatalf("exec_command schema is missing skill: %#v", properties)
+	}
+	if _, ok := properties["skill_env"]; !ok {
+		t.Fatalf("exec_command schema lost skill_env compatibility: %#v", properties)
+	}
+}
+
+func TestExecCommandSkillBindsActiveRootAndEnvironment(t *testing.T) {
+	runtime := newScopedEnvTestRuntime(t)
+	defer runtime.Close()
+
+	packageDir := installDocumentSkillForTest(t, runtime, "demo-skill", "1.0.0", "Demo Skill.")
+	_, err := runtime.Call(context.Background(), "skill_package", map[string]any{
+		"action": "env_set",
+		"skill":  "demo-skill",
+		"key":    "DEMO_SECRET",
+		"value":  "skill-secret-value",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	invocation, err := runtime.prepareCommandInvocation(map[string]any{"skill": "demo-skill"}, "true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if invocation.workdir != packageDir {
+		t.Fatalf("Skill workdir = %q, want %q", invocation.workdir, packageDir)
+	}
+	if got := commandEnvValue(invocation.env, "DEMO_SECRET"); got != "skill-secret-value" {
+		t.Fatalf("Skill environment value = %q", got)
+	}
+
+	overrideDir := t.TempDir()
+	overridden, err := runtime.prepareCommandInvocation(map[string]any{
+		"skill":   "demo-skill",
+		"workdir": overrideDir,
+		"env":     map[string]any{"DEMO_SECRET": "request-override"},
+	}, "true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overridden.workdir != overrideDir {
+		t.Fatalf("explicit workdir = %q, want %q", overridden.workdir, overrideDir)
+	}
+	if got := commandEnvValue(overridden.env, "DEMO_SECRET"); got != "request-override" {
+		t.Fatalf("explicit environment override = %q", got)
+	}
+}
+
+func TestExecCommandSkillRejectsConflictingEnvironmentBinding(t *testing.T) {
+	runtime := newScopedEnvTestRuntime(t)
+	defer runtime.Close()
+
+	_, err := runtime.prepareCommandInvocation(map[string]any{
+		"skill":     "demo-skill",
+		"skill_env": "other-skill",
+	}, "true")
+	if err == nil || !strings.Contains(err.Error(), "must reference the same Skill") {
+		t.Fatalf("expected conflicting Skill binding error, got %v", err)
+	}
+}
+
+func TestExecCommandSkillRequiresActiveVersion(t *testing.T) {
+	runtime := newScopedEnvTestRuntime(t)
+	defer runtime.Close()
+
+	_, err := runtime.prepareCommandInvocation(map[string]any{"skill": "missing-skill"}, "true")
+	if err == nil || !strings.Contains(err.Error(), "has no active version") {
+		t.Fatalf("expected missing active version error, got %v", err)
+	}
+
+	_, err = runtime.prepareCommandInvocation(map[string]any{
+		"skill":   "missing-skill",
+		"workdir": t.TempDir(),
+	}, "true")
+	if err == nil || !strings.Contains(err.Error(), "has no active version") {
+		t.Fatalf("expected explicit workdir to keep active Skill validation, got %v", err)
+	}
+}
+
+func commandEnvValue(env []string, key string) string {
+	prefix := key + "="
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			return strings.TrimPrefix(entry, prefix)
+		}
+	}
+	return ""
+}

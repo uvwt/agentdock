@@ -21,6 +21,11 @@ type commandInvocation struct {
 	execution session.ExecutionContext
 }
 
+type commandSkillContext struct {
+	skill    string
+	envSkill string
+}
+
 func (invocation commandInvocation) start(ctx context.Context, timeout time.Duration, tty bool, prepare session.PrepareFunc) (*session.Session, map[string]any, error) {
 	if invocation.build != nil {
 		return session.StartCommandWithTTY(ctx, invocation.build, timeout, tty, prepare)
@@ -29,22 +34,99 @@ func (invocation commandInvocation) start(ctx context.Context, timeout time.Dura
 }
 
 func (r *Runtime) newHostCommandInvocation(args map[string]any, command string) (commandInvocation, error) {
-	workdir, err := r.ws.ResolveExisting(stringArg(args, "workdir", "."))
+	skillContext, err := parseCommandSkillContext(args)
 	if err != nil {
 		return commandInvocation{}, err
 	}
-	info, err := os.Stat(workdir.Abs)
+	workdir, err := r.resolveHostCommandWorkdir(args, skillContext.skill)
+	if err != nil {
+		return commandInvocation{}, err
+	}
+	info, err := os.Stat(workdir)
 	if err != nil {
 		return commandInvocation{}, err
 	}
 	if !info.IsDir() {
 		return commandInvocation{}, toolError("NOT_A_DIRECTORY", "workdir is not a directory", "validation")
 	}
-	commandEnv, err := r.commandEnv(strings.TrimSpace(stringArg(args, "skill_env", "")), mapArg(args, "env"))
+	commandEnv, err := r.commandEnv(skillContext.envSkill, mapArg(args, "env"))
 	if err != nil {
 		return commandInvocation{}, err
 	}
-	return commandInvocation{command: command, workdir: workdir.Abs, env: commandEnv}, nil
+	return commandInvocation{command: command, workdir: workdir, env: commandEnv}, nil
+}
+
+func parseCommandSkillContext(args map[string]any) (commandSkillContext, error) {
+	skill := strings.TrimSpace(stringArg(args, "skill", ""))
+	envSkill := strings.TrimSpace(stringArg(args, "skill_env", ""))
+	if skill != "" && envSkill != "" && skill != envSkill {
+		return commandSkillContext{}, toolErrorDetails(
+			"INVALID_ARGUMENT",
+			"skill and skill_env must reference the same Skill when both are provided",
+			"validation",
+			map[string]any{"skill": skill, "skill_env": envSkill},
+		)
+	}
+	if envSkill == "" {
+		envSkill = skill
+	}
+	return commandSkillContext{skill: skill, envSkill: envSkill}, nil
+}
+
+func (r *Runtime) resolveHostCommandWorkdir(args map[string]any, skill string) (string, error) {
+	skillDir := ""
+	if skill != "" {
+		var err error
+		skillDir, err = r.resolveSkillCommandDir(skill)
+		if err != nil {
+			return "", err
+		}
+	}
+	if raw := strings.TrimSpace(stringArg(args, "workdir", "")); raw != "" {
+		resolved, err := r.ws.ResolveExisting(raw)
+		if err != nil {
+			return "", err
+		}
+		return resolved.Abs, nil
+	}
+	if skillDir != "" {
+		return skillDir, nil
+	}
+	resolved, err := r.ws.ResolveExisting(".")
+	if err != nil {
+		return "", err
+	}
+	return resolved.Abs, nil
+}
+
+func (r *Runtime) resolveSkillCommandDir(skill string) (string, error) {
+	path, err := r.skills.state.Resolve(skill, "", "")
+	if err != nil {
+		return "", toolErrorDetails(
+			"SKILL_CONTEXT_INVALID",
+			"resolve active Skill directory: "+err.Error(),
+			"validation",
+			map[string]any{"skill": skill, "reason": err.Error()},
+		)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", toolErrorDetails(
+			"SKILL_CONTEXT_INVALID",
+			"inspect active Skill directory: "+err.Error(),
+			"validation",
+			map[string]any{"skill": skill, "reason": err.Error()},
+		)
+	}
+	if !info.IsDir() {
+		return "", toolErrorDetails(
+			"SKILL_CONTEXT_INVALID",
+			"active Skill path is not a directory",
+			"validation",
+			map[string]any{"skill": skill, "path": path},
+		)
+	}
+	return path, nil
 }
 
 func (r *Runtime) commandEnvOverrides(skillName string, extra map[string]any) (map[string]string, error) {

@@ -32,6 +32,10 @@ func (r *Runtime) prepareCommandInvocation(args map[string]any, command string) 
 		return invocation, nil
 
 	case "wsl":
+		skillContext, err := parseCommandSkillContext(args)
+		if err != nil {
+			return commandInvocation{}, err
+		}
 		wslPath, err := exec.LookPath("wsl.exe")
 		if err != nil {
 			return commandInvocation{}, toolErrorDetails(
@@ -41,11 +45,11 @@ func (r *Runtime) prepareCommandInvocation(args map[string]any, command string) 
 				map[string]any{"reason": err.Error()},
 			)
 		}
-		workdir, err := r.resolveWSLWorkdir(args)
+		workdir, err := r.resolveWSLWorkdir(args, skillContext.skill)
 		if err != nil {
 			return commandInvocation{}, err
 		}
-		linuxEnv, err := r.commandEnvOverrides(strings.TrimSpace(stringArg(args, "skill_env", "")), mapArg(args, "env"))
+		linuxEnv, err := r.commandEnvOverrides(skillContext.envSkill, mapArg(args, "env"))
 		if err != nil {
 			return commandInvocation{}, err
 		}
@@ -73,8 +77,28 @@ func (r *Runtime) prepareCommandInvocation(args map[string]any, command string) 
 	}
 }
 
-func (r *Runtime) resolveWSLWorkdir(args map[string]any) (string, error) {
+func (r *Runtime) resolveWSLWorkdir(args map[string]any, skill string) (string, error) {
+	skillDir := ""
+	if skill != "" {
+		hostPath, err := r.resolveSkillCommandDir(skill)
+		if err != nil {
+			return "", err
+		}
+		converted, ok := windowsPathToWSL(hostPath)
+		if !ok {
+			return "", toolErrorDetails(
+				"SKILL_CONTEXT_INVALID",
+				"active Skill directory could not be mapped into WSL",
+				"validation",
+				map[string]any{"skill": skill, "path": hostPath},
+			)
+		}
+		skillDir = converted
+	}
 	raw := strings.TrimSpace(stringArg(args, "workdir", ""))
+	if raw == "" && skillDir != "" {
+		return skillDir, nil
+	}
 	if raw == "" {
 		return "~", nil
 	}
@@ -124,5 +148,5 @@ func addExecCommandRuntimeProperties(props map[string]any) {
 }
 
 func execCommandDescription() string {
-	return "Run a bounded command on Windows or WSL. runtime defaults to windows. When WSL is required, use runtime=wsl instead of putting wsl.exe in cmd; existing TTY and session lifecycle are reused. Skill environment values are loaded before explicit env overrides."
+	return "Run a bounded command on Windows or WSL. Bind an active Skill with skill to use its installed root and isolated environment for this command; explicit workdir and env values override those defaults. runtime defaults to windows."
 }

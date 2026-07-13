@@ -1,7 +1,7 @@
 ---
 name: skill-installation
 description: 审查、安装、配置、激活、验证、更新和回滚 AgentDock Skill 时使用；负责来源校验、安全评估、环境配置和已安装版本验收。
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Skill Installation
@@ -238,10 +238,10 @@ version: 1.0.0
 
 只有包包含辅助脚本和 `status` 能力时才执行：
 
-- 先解析当前 `active_version`，不要硬编码版本；
-- 使用 `exec_command` 运行当前激活目录中的脚本；
-- 传入 `skill_env: "<skill-name>"`；
+- 使用 `exec_command` 的 `skill: "<skill-name>"` 绑定当前激活版本的包根目录和独立环境；
+- 命令使用包内相对路径，例如 `python3 run.py`；
 - stdin 使用 `{"skill_action":"status"}`；
+- 不手工解析安装版本目录，不主动读取或 `source` 环境文件；
 - 不进行写入、删除、上传或权限修改；
 - 检查输出是否结构化、可诊断且不泄露秘密。
 

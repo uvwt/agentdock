@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 
-SKILL_VERSION = "0.1.7"
+SKILL_VERSION = "0.1.8"
 DEFAULT_BASE_URL = "http://127.0.0.1:5700"
 DEFAULT_DATA_DIR = Path("/Volumes/KIOXIA/Docker/qinglong/data")
 DEFAULT_COMPOSE_DIR = Path("/Volumes/KIOXIA/Docker/qinglong")

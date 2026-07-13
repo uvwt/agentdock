@@ -104,7 +104,7 @@ type capabilityMemoryRunbook struct {
 
 func baseToolCapabilityItems() []capabilityBaseToolItem {
 	return []capabilityBaseToolItem{
-		{Name: "exec_command", Description: "执行命令，用于查看真实环境、运行测试、构建、部署和排障；可通过 skill_env 加载指定 Skill 的独立环境，再由本次显式 env 覆盖。"},
+		{Name: "exec_command", Description: "执行命令；通过 skill 绑定当前激活 Skill 的根目录和独立环境，显式 workdir / env 优先；skill_env 仅保留环境注入兼容。"},
 		{Name: "read_file", Description: "读取普通 UTF-8 文件或 skill:// 逻辑路径指向的 Skill 文档与引用资源。"},
 		{Name: "skill_package", Description: "管理 Skill 包生命周期和独立环境：validate / install / rollback / env_set / env_unset / env_list。"},
 		{Name: "mcp_manage / mcp_tool_search / mcp_tool_inspect / mcp_tool_call", Description: "管理动态 MCP、独立环境并调用远端工具；远端工具不会混入 AgentDock 自带工具列表。"},

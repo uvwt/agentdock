@@ -1,7 +1,7 @@
 ---
 name: grok-quota
 description: Query detailed Grok weekly usage, GrokChat/GrokBuild breakdown, plan, monthly credits, and pay-as-you-go state from local xAI OAuth credentials.
-version: 0.3.2
+version: 0.3.3
 ---
 
 # Grok Quota
@@ -94,13 +94,13 @@ GROK_QUOTA_AUTH_DIR=/path/to/cli-proxy-api/auths
 
 ## 辅助脚本执行
 
-Skill 本体是本说明文档。确需查询时，使用 `exec_command` 直接运行当前安装版本的辅助脚本，并传入 `skill_env: "grok-quota"`：
+Skill 本体是本说明文档。确需调用包内辅助脚本时，在 Skill 包根目录使用相对路径执行；运行宿主负责切换到包根目录并把所需变量注入当前子进程。
 
 ```bash
-AGENTDOCK_HOME="${AGENTDOCK_HOME:-$HOME/.agentdock}"
-SKILL_DIR="$AGENTDOCK_HOME/skill-store/installed/grok-quota/0.3.2"
-printf '%s' '{"skill_action":"status"}' | python3 "$SKILL_DIR/run.py"
+printf '%s' '{"skill_action":"<动作>"}' | python3 run.py
 ```
+
+输入必须是 JSON 对象。写操作仍按本文档中的确认规则执行。
 
 | 动作 | 用途 |
 |---|---|

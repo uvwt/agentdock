@@ -14,13 +14,13 @@ from pathlib import Path
 from typing import Any
 
 
-VERSION = "0.1.7"
+VERSION = "0.1.8"
 PAGE_SIZE = 30
 CATEGORIES = {"movie": "movie", "book": "book", "music": "music"}
 STATUSES = {"collect": "已标记", "wish": "想看/想读/想听", "do": "在看/在读/在听"}
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) AgentDock-DoubanMarks/0.1.7 Safari/537.36"
+    "AppleWebKit/537.36 (KHTML, like Gecko) AgentDock-DoubanMarks/0.1.8 Safari/537.36"
 )
 
 

@@ -21,5 +21,5 @@ func execCommandWorkdirDescription() string {
 }
 
 func execCommandDescription() string {
-	return "Run a bounded command. Optionally load one isolated Skill environment before applying explicit env overrides. Relative workdir values resolve from ~/AgentDock; actual access follows the Host path model."
+	return "Run a bounded command. Bind an active Skill with skill to use its installed root and isolated environment for this command; explicit workdir and env values override those defaults."
 }
