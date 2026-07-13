@@ -9,6 +9,22 @@ import (
 	"testing"
 )
 
+func stagedExistingPatchFileForTest(t *testing.T, path, display string, updated *string) stagedPatchFile {
+	t.Helper()
+	info, original, err := readPatchFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return stagedPatchFile{
+		Abs:            path,
+		Display:        display,
+		Content:        updated,
+		Mode:           info.Mode().Perm(),
+		Original:       original,
+		OriginalExists: true,
+	}
+}
+
 func TestEnvelopePatchAbsolutePathWritesTheResolvedTarget(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix absolute path regression")
@@ -72,8 +88,8 @@ func TestCommitStagedPatchRollsBackEarlierFilesWhenInstallFails(t *testing.T) {
 	}
 	updated := "new\n"
 	staged := map[string]stagedPatchFile{
-		first:  {Abs: first, Display: "a.txt", Content: &updated, Mode: 0o600, Original: []byte("old\n"), OriginalExists: true},
-		second: {Abs: second, Display: "b.txt", Content: &updated, Mode: 0o600, Original: []byte("old\n"), OriginalExists: true},
+		first:  stagedExistingPatchFileForTest(t, first, "a.txt", &updated),
+		second: stagedExistingPatchFileForTest(t, second, "b.txt", &updated),
 	}
 	installFailure := errors.New("simulated second install failure")
 	failed := false
@@ -118,8 +134,8 @@ func TestCommitStagedPatchRestoresBackupWhenInstalledFileIsDeletedDuringRollback
 	}
 	updated := "new\n"
 	staged := map[string]stagedPatchFile{
-		first:  {Abs: first, Display: "a.txt", Content: &updated, Mode: 0o600, Original: []byte("old\n"), OriginalExists: true},
-		second: {Abs: second, Display: "b.txt", Content: &updated, Mode: 0o600, Original: []byte("old\n"), OriginalExists: true},
+		first:  stagedExistingPatchFileForTest(t, first, "a.txt", &updated),
+		second: stagedExistingPatchFileForTest(t, second, "b.txt", &updated),
 	}
 	installFailure := errors.New("simulated second install failure")
 	link := func(source, target string) error {
@@ -162,7 +178,7 @@ func TestCommitStagedPatchPreservesConcurrentChangeBeforeBackup(t *testing.T) {
 	}
 	updated := "patched\n"
 	staged := map[string]stagedPatchFile{
-		path: {Abs: path, Display: "target.txt", Content: &updated, Mode: 0o600, Original: []byte("old\n"), OriginalExists: true},
+		path: stagedExistingPatchFileForTest(t, path, "target.txt", &updated),
 	}
 	changed := false
 	rename := func(source, target string) error {
@@ -230,7 +246,7 @@ func TestCommitStagedPatchDoesNotOverwriteTargetRecreatedAfterBackup(t *testing.
 	}
 	updated := "patched\n"
 	staged := map[string]stagedPatchFile{
-		path: {Abs: path, Display: "target.txt", Content: &updated, Mode: 0o600, Original: []byte("old\n"), OriginalExists: true},
+		path: stagedExistingPatchFileForTest(t, path, "target.txt", &updated),
 	}
 	recreated := false
 	rename := func(source, target string) error {
