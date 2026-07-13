@@ -22,7 +22,9 @@ workflow_template_manage action=match
 ~/.agentdock/tasks
 ```
 
-目录权限为 `0700`，任务文件权限为 `0600`。执行中的任务不跨设备同步；Workflow 模板由 NexusDock registry 管理。
+目录权限为 `0700`，任务文件权限为 `0600`。同一状态目录的多个 AgentDock 进程通过跨进程锁串行读改写，不会互相覆盖；执行中的任务不跨设备同步，Workflow 模板由 NexusDock registry 管理。
+
+任务持久化会限制标题、目标、条件、摘要和 Review 项大小，事件只保留最近 256 条。重复提交相同步骤状态和相同摘要不会新增事件；`list` 遇到单个损坏任务文件时会跳过并记录告警，不影响其他任务。
 
 ## task_manage
 

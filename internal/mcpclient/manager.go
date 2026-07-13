@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -13,11 +15,12 @@ import (
 )
 
 type Manager struct {
-	mu      sync.RWMutex
-	store   *store
-	envs    *envstore.Store
-	servers map[string]ServerConfig
-	states  map[string]*serverState
+	registryMu sync.Mutex
+	mu         sync.RWMutex
+	store      *store
+	envs       *envstore.Store
+	servers    map[string]ServerConfig
+	states     map[string]*serverState
 }
 
 type serverState struct {
@@ -56,69 +59,142 @@ func (m *Manager) Add(cfg ServerConfig) (ServerSummary, error) {
 	if err := validateServerConfig(cfg); err != nil {
 		return ServerSummary{}, newError("MCP_CONFIG_INVALID", err.Error(), false, map[string]any{"server": cfg.Name}, err)
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if _, exists := m.servers[cfg.Name]; exists {
-		return ServerSummary{}, newError("MCP_SERVER_EXISTS", "dynamic MCP server already exists", false, map[string]any{"server": cfg.Name}, nil)
-	}
-	m.servers[cfg.Name] = cfg
-	m.states[cfg.Name] = &serverState{}
-	if err := m.store.save(m.servers); err != nil {
-		delete(m.servers, cfg.Name)
-		delete(m.states, cfg.Name)
+	m.registryMu.Lock()
+	defer m.registryMu.Unlock()
+	servers, err := m.store.update(func(servers map[string]ServerConfig) error {
+		if _, exists := servers[cfg.Name]; exists {
+			return newError("MCP_SERVER_EXISTS", "dynamic MCP server already exists", false, map[string]any{"server": cfg.Name}, nil)
+		}
+		servers[cfg.Name] = cfg
+		return nil
+	})
+	if err != nil {
+		var mcpErr *Error
+		if errors.As(err, &mcpErr) {
+			return ServerSummary{}, err
+		}
 		return ServerSummary{}, newError("MCP_REGISTRY_WRITE_FAILED", "persist dynamic MCP server", false, map[string]any{"server": cfg.Name}, err)
 	}
-	return summaryFor(cfg, m.states[cfg.Name]), nil
+
+	m.mu.Lock()
+	staleStates := m.replaceRegistryLocked(servers)
+	state := m.states[cfg.Name]
+	m.mu.Unlock()
+	closeServerStates(staleStates)
+	return summaryFor(cfg, state), nil
 }
 
 func (m *Manager) Remove(name string) error {
 	name = strings.TrimSpace(name)
-	m.mu.Lock()
-	cfg, exists := m.servers[name]
-	if !exists {
-		m.mu.Unlock()
-		return newError("MCP_SERVER_NOT_FOUND", "dynamic MCP server not found", false, map[string]any{"server": name}, nil)
-	}
-	state := m.states[name]
-	delete(m.servers, name)
-	delete(m.states, name)
-	if err := m.store.save(m.servers); err != nil {
-		m.servers[name] = cfg
-		m.states[name] = state
-		m.mu.Unlock()
+	m.registryMu.Lock()
+	defer m.registryMu.Unlock()
+	servers, err := m.store.update(func(servers map[string]ServerConfig) error {
+		if _, exists := servers[name]; !exists {
+			return newError("MCP_SERVER_NOT_FOUND", "dynamic MCP server not found", false, map[string]any{"server": name}, nil)
+		}
+		delete(servers, name)
+		return nil
+	})
+	if err != nil {
+		var mcpErr *Error
+		if errors.As(err, &mcpErr) {
+			return err
+		}
 		return newError("MCP_REGISTRY_WRITE_FAILED", "remove dynamic MCP server", false, map[string]any{"server": name}, err)
 	}
+
+	m.mu.Lock()
+	staleStates := m.replaceRegistryLocked(servers)
 	m.mu.Unlock()
-	return closeState(state)
+	return closeServerStates(staleStates)
 }
 
 func (m *Manager) SetEnabled(name string, enabled bool) (ServerSummary, error) {
 	name = strings.TrimSpace(name)
-	m.mu.Lock()
-	cfg, exists := m.servers[name]
-	if !exists {
-		m.mu.Unlock()
-		return ServerSummary{}, newError("MCP_SERVER_NOT_FOUND", "dynamic MCP server not found", false, map[string]any{"server": name}, nil)
-	}
-	previous := cfg
-	cfg.Enabled = enabled
-	m.servers[name] = cfg
-	if err := m.store.save(m.servers); err != nil {
-		m.servers[name] = previous
-		m.mu.Unlock()
+	m.registryMu.Lock()
+	defer m.registryMu.Unlock()
+	var selected ServerConfig
+	servers, err := m.store.update(func(servers map[string]ServerConfig) error {
+		cfg, exists := servers[name]
+		if !exists {
+			return newError("MCP_SERVER_NOT_FOUND", "dynamic MCP server not found", false, map[string]any{"server": name}, nil)
+		}
+		cfg.Enabled = enabled
+		servers[name] = cfg
+		selected = cfg
+		return nil
+	})
+	if err != nil {
+		var mcpErr *Error
+		if errors.As(err, &mcpErr) {
+			return ServerSummary{}, err
+		}
 		return ServerSummary{}, newError("MCP_REGISTRY_WRITE_FAILED", "persist dynamic MCP server state", false, map[string]any{"server": name}, err)
 	}
+
+	m.mu.Lock()
+	staleStates := m.replaceRegistryLocked(servers)
 	state := m.states[name]
 	m.mu.Unlock()
+	if err := closeServerStates(staleStates); err != nil {
+		return ServerSummary{}, err
+	}
 	if !enabled {
 		if err := closeState(state); err != nil {
 			return ServerSummary{}, err
 		}
 	}
-	return summaryFor(cfg, state), nil
+	return summaryFor(selected, state), nil
+}
+
+func (m *Manager) replaceRegistryLocked(servers map[string]ServerConfig) []*serverState {
+	states := make(map[string]*serverState, len(servers))
+	stale := make([]*serverState, 0)
+	for name, cfg := range servers {
+		if previous, exists := m.servers[name]; exists && reflect.DeepEqual(previous, cfg) {
+			states[name] = m.states[name]
+			continue
+		}
+		if previousState := m.states[name]; previousState != nil {
+			stale = append(stale, previousState)
+		}
+		states[name] = &serverState{}
+	}
+	for name, state := range m.states {
+		if _, exists := servers[name]; !exists && state != nil {
+			stale = append(stale, state)
+		}
+	}
+	m.servers = servers
+	m.states = states
+	return stale
+}
+
+func closeServerStates(states []*serverState) error {
+	var result error
+	for _, state := range states {
+		result = errors.Join(result, closeState(state))
+	}
+	return result
+}
+
+func (m *Manager) syncRegistry() error {
+	m.registryMu.Lock()
+	defer m.registryMu.Unlock()
+	servers, err := m.store.load()
+	if err != nil {
+		return newError("MCP_REGISTRY_READ_FAILED", "read dynamic MCP registry", true, nil, err)
+	}
+	m.mu.Lock()
+	staleStates := m.replaceRegistryLocked(servers)
+	m.mu.Unlock()
+	return closeServerStates(staleStates)
 }
 
 func (m *Manager) List() []ServerSummary {
+	if err := m.syncRegistry(); err != nil {
+		slog.Warn("refresh dynamic MCP registry before list failed", "error", err)
+	}
 	m.mu.RLock()
 	names := make([]string, 0, len(m.servers))
 	for name := range m.servers {
@@ -145,6 +221,9 @@ func (m *Manager) EnabledIndex() []ServerSummary {
 }
 
 func (m *Manager) Inspect(name string) (ServerConfig, ServerSummary, error) {
+	if err := m.syncRegistry(); err != nil {
+		return ServerConfig{}, ServerSummary{}, err
+	}
 	m.mu.RLock()
 	cfg, exists := m.servers[strings.TrimSpace(name)]
 	state := m.states[strings.TrimSpace(name)]
@@ -156,6 +235,9 @@ func (m *Manager) Inspect(name string) (ServerConfig, ServerSummary, error) {
 }
 
 func (m *Manager) Refresh(ctx context.Context, name string) (ServerSummary, []ToolSummary, error) {
+	if err := m.syncRegistry(); err != nil {
+		return ServerSummary{}, nil, err
+	}
 	cfg, state, err := m.server(strings.TrimSpace(name))
 	if err != nil {
 		return ServerSummary{}, nil, err
@@ -180,6 +262,9 @@ func (m *Manager) Refresh(ctx context.Context, name string) (ServerSummary, []To
 }
 
 func (m *Manager) Search(ctx context.Context, query, server string, limit int) ([]ToolSummary, error) {
+	if err := m.syncRegistry(); err != nil {
+		return nil, err
+	}
 	query = strings.ToLower(strings.TrimSpace(query))
 	server = strings.TrimSpace(server)
 	if query == "" {
@@ -241,6 +326,9 @@ func (m *Manager) Search(ctx context.Context, query, server string, limit int) (
 }
 
 func (m *Manager) InspectTool(ctx context.Context, qualifiedName string) (string, Tool, error) {
+	if err := m.syncRegistry(); err != nil {
+		return "", Tool{}, err
+	}
 	server, name, err := splitQualifiedToolName(qualifiedName)
 	if err != nil {
 		return "", Tool{}, newError("MCP_TOOL_NAME_INVALID", err.Error(), false, map[string]any{"tool": qualifiedName}, err)
@@ -257,6 +345,9 @@ func (m *Manager) InspectTool(ctx context.Context, qualifiedName string) (string
 }
 
 func (m *Manager) Call(ctx context.Context, qualifiedName string, arguments map[string]any) (map[string]any, error) {
+	if err := m.syncRegistry(); err != nil {
+		return nil, err
+	}
 	server, name, err := splitQualifiedToolName(qualifiedName)
 	if err != nil {
 		return nil, newError("MCP_TOOL_NAME_INVALID", err.Error(), false, map[string]any{"tool": qualifiedName}, err)
@@ -298,6 +389,8 @@ func (m *Manager) Call(ctx context.Context, qualifiedName string, arguments map[
 }
 
 func (m *Manager) Close() error {
+	m.registryMu.Lock()
+	defer m.registryMu.Unlock()
 	m.mu.RLock()
 	states := make([]*serverState, 0, len(m.states))
 	for _, state := range m.states {

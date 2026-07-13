@@ -39,6 +39,8 @@ AGENTDOCK_HOST=127.0.0.1
 AGENTDOCK_PORT=8765
 AGENTDOCK_AUTH_TOKEN=<replace-with-a-secret>
 AGENTDOCK_LOG_LEVEL=info
+# 仅当反代确实位于这些网段且会重写 X-Forwarded-For 时配置：
+AGENTDOCK_TRUSTED_PROXY_CIDRS=127.0.0.0/8,::1/128
 ```
 
 公网或共享入口建议配置 `AGENTDOCK_AUTH_TOKEN`，客户端访问 `/mcp` 时使用 bearer token。不要把 token、私钥或真实域名凭据写进仓库文档。
@@ -112,6 +114,8 @@ agentdock.example.com {
 ```
 
 建议反代不记录 Authorization header。公网环境建议使用 HTTPS，并限制只有需要访问 MCP 的客户端知道 bearer token。
+
+OAuth 注册和密码限流默认只使用 TCP 直接对端地址，不会信任客户端自行提供的 `X-Forwarded-For`。只有配置 `AGENTDOCK_TRUSTED_PROXY_CIDRS` 后，AgentDock 才会从可信代理链右向左解析第一个非可信地址；不要把不受控制的公网网段加入该配置。
 
 ## 验证
 

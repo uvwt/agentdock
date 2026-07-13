@@ -23,7 +23,7 @@ services:
       - ./AgentDockHome:/root/.agentdock
       - ./AgentDock:/root/AgentDock
     environment:
-      AGENTDOCK_AUTH_TOKEN: "replace-with-a-local-secret"
+      AGENTDOCK_AUTH_TOKEN: "${AGENTDOCK_AUTH_TOKEN:?set AGENTDOCK_AUTH_TOKEN before docker compose up}"
     command:
       - agentdock
       - --host
@@ -35,10 +35,13 @@ services:
 ## 快速启动
 
 ```bash
+export AGENTDOCK_AUTH_TOKEN="$(openssl rand -hex 32)"
 make docker-build
 make docker-up
 make smoke-docker
 ```
+
+容器内 AgentDock 监听 `0.0.0.0`，因此启动前必须设置 `AGENTDOCK_AUTH_TOKEN`。即使宿主端口只发布到 `127.0.0.1`，也不允许容器进程以非回环、无认证配置启动。
 
 默认 MCP 入口：
 

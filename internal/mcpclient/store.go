@@ -2,6 +2,7 @@ package mcpclient
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,8 +11,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/uvwt/agentdock/internal/atomicfile"
+	"github.com/uvwt/agentdock/internal/filelock"
 )
 
 const registryVersion = 1
@@ -22,14 +25,25 @@ type registryFile struct {
 }
 
 type store struct {
-	path string
+	path     string
+	lockPath string
 }
 
 func newStore(agentDockHome string) *store {
-	return &store{path: filepath.Join(agentDockHome, "mcp", "servers.json")}
+	root := filepath.Join(agentDockHome, "mcp")
+	return &store{path: filepath.Join(root, "servers.json"), lockPath: filepath.Join(root, ".store.lock")}
 }
 
 func (s *store) load() (map[string]ServerConfig, error) {
+	release, err := s.acquire()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	return s.loadUnlocked()
+}
+
+func (s *store) loadUnlocked() (map[string]ServerConfig, error) {
 	data, err := os.ReadFile(s.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return map[string]ServerConfig{}, nil
@@ -60,7 +74,7 @@ func (s *store) load() (map[string]ServerConfig, error) {
 	return servers, nil
 }
 
-func (s *store) save(servers map[string]ServerConfig) error {
+func (s *store) saveUnlocked(servers map[string]ServerConfig) error {
 	names := make([]string, 0, len(servers))
 	for name := range servers {
 		names = append(names, name)
@@ -79,6 +93,35 @@ func (s *store) save(servers map[string]ServerConfig) error {
 		return fmt.Errorf("write dynamic MCP registry: %w", err)
 	}
 	return nil
+}
+
+func (s *store) update(mutator func(map[string]ServerConfig) error) (map[string]ServerConfig, error) {
+	release, err := s.acquire()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	servers, err := s.loadUnlocked()
+	if err != nil {
+		return nil, err
+	}
+	if err := mutator(servers); err != nil {
+		return nil, err
+	}
+	if err := s.saveUnlocked(servers); err != nil {
+		return nil, err
+	}
+	return servers, nil
+}
+
+func (s *store) acquire() (func(), error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	release, err := filelock.Acquire(ctx, s.lockPath)
+	if err != nil {
+		return nil, fmt.Errorf("lock dynamic MCP registry: %w", err)
+	}
+	return release, nil
 }
 
 func validateServerConfig(cfg ServerConfig) error {

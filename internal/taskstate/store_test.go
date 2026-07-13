@@ -1,12 +1,16 @@
 package taskstate
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestTaskLifecyclePersistsLiveProgress(t *testing.T) {
@@ -342,5 +346,230 @@ func TestDeleteRemovesOnlySelectedTask(t *testing.T) {
 	}
 	if kept.ID != second.ID {
 		t.Fatalf("kept task id = %q, want %q", kept.ID, second.ID)
+	}
+}
+
+func TestIndependentStoresDoNotLoseConcurrentCheckpoints(t *testing.T) {
+	root := t.TempDir()
+	first, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := first.Create(
+		"Concurrent task",
+		"keep both updates",
+		[]string{"both steps complete"},
+		[]TaskStepInput{
+			{ID: "one", Title: "First step", Phase: PhaseExecute},
+			{ID: "two", Title: "Second step", Phase: PhaseVerify},
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for _, update := range []struct {
+		store  *Store
+		stepID string
+	}{
+		{store: first, stepID: "one"},
+		{store: second, stepID: "two"},
+	} {
+		wg.Add(1)
+		go func(update struct {
+			store  *Store
+			stepID string
+		}) {
+			defer wg.Done()
+			_, err := update.store.Checkpoint(task.ID, update.stepID, StepCompleted, "completed "+update.stepID)
+			errs <- err
+		}(update)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("Checkpoint() error = %v", err)
+		}
+	}
+
+	got, err := first.Get(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range got.Steps {
+		if step.Status != StepCompleted {
+			t.Fatalf("step %s status = %s, want completed", step.ID, step.Status)
+		}
+	}
+}
+
+func TestListSkipsCorruptTaskState(t *testing.T) {
+	store, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid, err := store.Create("Valid", "keep listing", []string{"listed"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	corruptID := "tsk_0123456789abcdef"
+	if err := os.WriteFile(filepath.Join(store.Root(), corruptID+".json"), []byte("{not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	listed, err := store.List("", 50)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != valid.ID {
+		t.Fatalf("List() = %#v, want only valid task", listed)
+	}
+}
+
+func TestTaskEventsAreBoundedAndDuplicateCheckpointIsIdempotent(t *testing.T) {
+	store, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := store.Create(
+		"Bounded events",
+		"keep task state bounded",
+		[]string{"event count bounded"},
+		[]TaskStepInput{{ID: "work", Title: "Work", Phase: PhaseExecute}},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.Checkpoint(task.ID, "work", StepInProgress, "started")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.Checkpoint(task.ID, "work", StepInProgress, "started")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Events) != len(first.Events) {
+		t.Fatalf("duplicate checkpoint events = %d, want %d", len(second.Events), len(first.Events))
+	}
+	for index := 0; index < maxTaskEvents+25; index++ {
+		appendTaskEvent(&second, Event{Type: "test", Summary: strings.Repeat("x", maxTaskEventSummaryBytes+100), CreatedAt: time.Now()})
+	}
+	if len(second.Events) != maxTaskEvents {
+		t.Fatalf("event count = %d, want %d", len(second.Events), maxTaskEvents)
+	}
+	for _, event := range second.Events {
+		if len([]byte(event.Summary)) > maxTaskEventSummaryBytes {
+			t.Fatalf("event summary bytes = %d, want <= %d", len([]byte(event.Summary)), maxTaskEventSummaryBytes)
+		}
+	}
+}
+
+func TestTaskStateRejectsOversizedText(t *testing.T) {
+	store, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.Create(strings.Repeat("x", maxTaskTitleBytes+1), "goal", []string{"done"}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "task title exceeds") {
+		t.Fatalf("Create() error = %v, want title limit", err)
+	}
+}
+
+func TestTaskStateFileSizeLimitDoesNotBreakList(t *testing.T) {
+	store, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid, err := store.Create("Valid", "keep listing", []string{"listed"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oversizedID := "tsk_0123456789abcdee"
+	file, err := os.Create(filepath.Join(store.Root(), oversizedID+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(maxTaskStateFileBytes + 1); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	listed, err := store.List("", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 1 || listed[0].ID != valid.ID {
+		t.Fatalf("List() = %#v, want only valid task", listed)
+	}
+	if _, err := store.Get(oversizedID); err == nil || !strings.Contains(err.Error(), "task state exceeds") {
+		t.Fatalf("Get() error = %v, want task state size limit", err)
+	}
+}
+
+func TestGetTrimsLegacyTaskEventHistory(t *testing.T) {
+	store, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := store.Create("Legacy events", "trim old events", []string{"bounded"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < maxTaskEvents+40; index++ {
+		task.Events = append(task.Events, Event{Type: "legacy", Summary: fmt.Sprintf("event-%03d", index), CreatedAt: time.Now()})
+	}
+	data, err := json.Marshal(task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(store.Root(), task.ID+".json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Get(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Events) != maxTaskEvents {
+		t.Fatalf("event count = %d, want %d", len(loaded.Events), maxTaskEvents)
+	}
+	if loaded.Events[0].Summary != "event-040" {
+		t.Fatalf("first retained event = %q, want event-040", loaded.Events[0].Summary)
+	}
+}
+
+func TestBatchCheckpointUsesTaskStateLimits(t *testing.T) {
+	store, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := store.Create(
+		"Batch limits",
+		"apply task governance to batch updates",
+		[]string{"bounded"},
+		[]TaskStepInput{{ID: "work", Title: "Work", Phase: PhaseExecute}},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.BatchCheckpoint(task.ID, []string{"work"}, "", strings.Repeat("x", maxTaskSummaryBytes+1)); err == nil || !strings.Contains(err.Error(), "checkpoint summary exceeds") {
+		t.Fatalf("BatchCheckpoint() error = %v, want summary limit", err)
+	}
+	loaded, err := store.Get(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Steps[0].Status != StepPending || len(loaded.Events) != len(task.Events) {
+		t.Fatalf("oversized batch changed task: %#v", loaded)
 	}
 }

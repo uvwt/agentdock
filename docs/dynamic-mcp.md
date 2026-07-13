@@ -120,7 +120,7 @@ mcp_manage remove
 ~/.agentdock/mcp/servers.json
 ```
 
-文件使用原子写入并设置为仅当前用户可读写。注册表中不得出现明文 Token、Cookie、OAuth Code 或密码。
+文件使用原子写入并设置为仅当前用户可读写。注册表中不得出现明文 Token、Cookie、OAuth Code 或密码。 同一 `AGENTDOCK_HOME` 下的多个 AgentDock 进程通过跨进程锁执行“重载、变更、保存”，不会用各自的旧内存快照覆盖其他进程写入。
 
 ## 当前边界
 

@@ -34,6 +34,10 @@ jobs:
       - name: Test
         run: go test ./...
 
+      - name: Race
+        if: runner.os == 'Linux'
+        run: go test -race ./...
+
       - name: Vet
         run: go vet ./...
 

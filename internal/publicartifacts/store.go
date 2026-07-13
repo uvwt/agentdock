@@ -298,6 +298,9 @@ func (s Store) ServeHTTP(w http.ResponseWriter, r *http.Request, prefix string) 
 	w.Header().Set("Content-Disposition", mime.FormatMediaType(contentDisposition(meta.MimeType), map[string]string{"filename": meta.Filename}))
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// 即使未来某种主动内容被错误标成 inline，浏览器也不能执行脚本、提交表单或加载外部资源。
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+	w.Header().Set("Referrer-Policy", "no-referrer")
 	http.ServeContent(w, r, meta.Filename, meta.CreatedAt, file)
 }
 
@@ -621,11 +624,17 @@ func imageDimensions(path, mimeType string) (int, int) {
 }
 
 func contentDisposition(mimeType string) string {
-	value := strings.ToLower(strings.TrimSpace(mimeType))
-	if strings.HasPrefix(value, "image/") || strings.HasPrefix(value, "text/") {
-		return "inline"
+	value, _, err := mime.ParseMediaType(strings.ToLower(strings.TrimSpace(mimeType)))
+	if err != nil {
+		value = strings.ToLower(strings.TrimSpace(mimeType))
 	}
-	return "attachment"
+	switch value {
+	case "image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "image/bmp", "text/plain":
+		return "inline"
+	default:
+		// HTML、SVG、XML 等主动内容必须下载，不能在 AgentDock 同源下解释执行。
+		return "attachment"
+	}
 }
 
 func detectMime(path, filename string, archive bool) string {

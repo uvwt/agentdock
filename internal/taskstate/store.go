@@ -1,11 +1,14 @@
 package taskstate
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,12 +17,26 @@ import (
 	"time"
 
 	"github.com/uvwt/agentdock/internal/atomicfile"
+	"github.com/uvwt/agentdock/internal/filelock"
+	"github.com/uvwt/agentdock/internal/textutil"
 )
 
 const (
 	SchemaVersion     = 1
 	FinalReviewPass   = "pass"
 	FinalReviewFailed = "failed"
+
+	maxTaskTitleBytes        = 512
+	maxTaskGoalBytes         = 16 << 10
+	maxTaskConditionBytes    = 4 << 10
+	maxTaskConditions        = 64
+	maxTaskStepTitleBytes    = 512
+	maxTaskSummaryBytes      = 8 << 10
+	maxTaskReviewItemBytes   = 4 << 10
+	maxTaskReviewItems       = 64
+	maxTaskEvents            = 256
+	maxTaskEventSummaryBytes = 4 << 10
+	maxTaskStateFileBytes    = 8 << 20
 )
 
 var ErrTaskNotFound = errors.New("task not found")
@@ -112,20 +129,52 @@ func New(root string) (*Store, error) {
 	return &Store{root: abs}, nil
 }
 
+func (s *Store) acquireStoreLock() (func(), error) {
+	s.mu.Lock()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	releaseFileLock, err := filelock.Acquire(ctx, filepath.Join(s.root, ".store.lock"))
+	cancel()
+	if err != nil {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("lock task state: %w", err)
+	}
+	return func() {
+		releaseFileLock()
+		s.mu.Unlock()
+	}, nil
+}
+
 func (s *Store) Root() string { return s.root }
 
 func (s *Store) Create(title, goal string, conditionTexts []string, steps []TaskStepInput, sourceTemplates []TemplateReference) (Task, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.acquireStoreLock()
+	if err != nil {
+		return Task{}, err
+	}
+	defer release()
 
 	title = strings.TrimSpace(title)
 	goal = strings.TrimSpace(goal)
 	if title == "" || goal == "" {
 		return Task{}, errors.New("task title and goal are required")
 	}
+	if err := validateTextLimit("task title", title, maxTaskTitleBytes); err != nil {
+		return Task{}, err
+	}
+	if err := validateTextLimit("task goal", goal, maxTaskGoalBytes); err != nil {
+		return Task{}, err
+	}
 	conditionTexts = normalizeTexts(conditionTexts)
 	if len(conditionTexts) == 0 {
 		return Task{}, errors.New("at least one completion condition is required")
+	}
+	if len(conditionTexts) > maxTaskConditions {
+		return Task{}, fmt.Errorf("task completion conditions cannot exceed %d", maxTaskConditions)
+	}
+	for _, condition := range conditionTexts {
+		if err := validateTextLimit("task completion condition", condition, maxTaskConditionBytes); err != nil {
+			return Task{}, err
+		}
 	}
 
 	now := time.Now().UTC()
@@ -164,7 +213,7 @@ func (s *Store) Create(title, goal string, conditionTexts []string, steps []Task
 		for _, ref := range templateRefs {
 			ids = append(ids, ref.ID+"@"+ref.Version)
 		}
-		task.Events = append(task.Events, Event{Type: "templates_selected", Summary: strings.Join(ids, ", "), CreatedAt: now})
+		appendTaskEvent(&task, Event{Type: "templates_selected", Summary: strings.Join(ids, ", "), CreatedAt: now})
 	}
 	for i, text := range conditionTexts {
 		task.Conditions = append(task.Conditions, Condition{ID: fmt.Sprintf("cond_%02d", i+1), Text: text, CreatedAt: now})
@@ -176,14 +225,20 @@ func (s *Store) Create(title, goal string, conditionTexts []string, steps []Task
 }
 
 func (s *Store) Get(id string) (Task, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.acquireStoreLock()
+	if err != nil {
+		return Task{}, err
+	}
+	defer release()
 	return s.loadLocked(id)
 }
 
 func (s *Store) Delete(id string) (Task, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.acquireStoreLock()
+	if err != nil {
+		return Task{}, err
+	}
+	defer release()
 
 	task, err := s.loadLocked(id)
 	if err != nil {
@@ -196,8 +251,11 @@ func (s *Store) Delete(id string) (Task, error) {
 }
 
 func (s *Store) List(status Status, limit int) ([]Task, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.acquireStoreLock()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
@@ -210,13 +268,15 @@ func (s *Store) List(status Status, limit int) ([]Task, error) {
 		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "tsk_") || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(s.root, entry.Name()))
+		data, err := readTaskStateFile(filepath.Join(s.root, entry.Name()))
 		if err != nil {
-			return nil, err
+			slog.Warn("skip unreadable task state", "file", entry.Name(), "error", err)
+			continue
 		}
-		var task Task
-		if err := json.Unmarshal(data, &task); err != nil {
-			return nil, fmt.Errorf("decode task %s: %w", entry.Name(), err)
+		task, err := decodeTask(data, entry.Name())
+		if err != nil {
+			slog.Warn("skip invalid task state", "file", entry.Name(), "error", err)
+			continue
 		}
 		if status == "" || task.Status == status {
 			tasks = append(tasks, task)
@@ -243,6 +303,9 @@ func (s *Store) Checkpoint(id, stepID, status, summary string) (Task, error) {
 		if stepID == "" || summary == "" {
 			return errors.New("step_id and summary are required")
 		}
+		if err := validateTextLimit("checkpoint summary", summary, maxTaskSummaryBytes); err != nil {
+			return err
+		}
 		if status != StepPending && status != StepInProgress && status != StepCompleted {
 			return errors.New("step status must be pending, in_progress, or completed")
 		}
@@ -258,6 +321,9 @@ func (s *Store) Checkpoint(id, stepID, status, summary string) (Task, error) {
 			return fmt.Errorf("task step %s not found", stepID)
 		}
 		step := &task.Steps[stepIndex]
+		if step.Status == status && task.Summary == summary {
+			return nil
+		}
 		if !validStepTransition(step.Status, status) {
 			return fmt.Errorf("cannot move step %s from %s to %s", step.ID, step.Status, status)
 		}
@@ -275,7 +341,7 @@ func (s *Store) Checkpoint(id, stepID, status, summary string) (Task, error) {
 		}
 		task.Phase = step.Phase
 		task.Summary = summary
-		task.Events = append(task.Events, Event{Type: "checkpoint", Summary: step.ID + "=" + status + ": " + summary, CreatedAt: now})
+		appendTaskEvent(task, Event{Type: "checkpoint", Summary: step.ID + "=" + status + ": " + summary, CreatedAt: now})
 		return nil
 	})
 }
@@ -297,6 +363,9 @@ func (s *Store) BatchCheckpoint(id string, completedStepIDs []string, currentSte
 		}
 		if summary == "" {
 			return errors.New("checkpoint summary is required")
+		}
+		if err := validateTextLimit("checkpoint summary", summary, maxTaskSummaryBytes); err != nil {
+			return err
 		}
 
 		// 批量 checkpoint 必须先验证所有目标步骤，再统一写入，避免无效请求留下半更新状态。
@@ -361,7 +430,7 @@ func (s *Store) BatchCheckpoint(id string, completedStepIDs []string, currentSte
 		if currentStepID != "" {
 			eventSummary += ", current=" + currentStepID
 		}
-		task.Events = append(task.Events, Event{Type: "checkpoint", Summary: eventSummary + ": " + summary, CreatedAt: now})
+		appendTaskEvent(task, Event{Type: "checkpoint", Summary: eventSummary + ": " + summary, CreatedAt: now})
 		return nil
 	})
 }
@@ -378,10 +447,13 @@ func (s *Store) Block(id, summary string) (Task, error) {
 		if summary == "" {
 			return errors.New("block summary is required")
 		}
+		if err := validateTextLimit("block summary", summary, maxTaskSummaryBytes); err != nil {
+			return err
+		}
 		task.Status = StatusBlocked
 		task.Blocker = summary
 		task.Summary = summary
-		task.Events = append(task.Events, Event{Type: "blocked", Summary: summary, CreatedAt: now})
+		appendTaskEvent(task, Event{Type: "blocked", Summary: summary, CreatedAt: now})
 		return nil
 	})
 }
@@ -395,10 +467,13 @@ func (s *Store) Resume(id, summary string) (Task, error) {
 		if summary == "" {
 			return errors.New("resume summary is required")
 		}
+		if err := validateTextLimit("resume summary", summary, maxTaskSummaryBytes); err != nil {
+			return err
+		}
 		task.Status = StatusActive
 		task.Blocker = ""
 		task.Summary = summary
-		task.Events = append(task.Events, Event{Type: "resumed", Summary: summary, CreatedAt: now})
+		appendTaskEvent(task, Event{Type: "resumed", Summary: summary, CreatedAt: now})
 		return nil
 	})
 }
@@ -433,9 +508,22 @@ func applyFinalReview(task *Task, input FinalReviewInput, now time.Time) error {
 	if summary == "" {
 		return errors.New("final review summary is required")
 	}
+	if err := validateTextLimit("final review summary", summary, maxTaskSummaryBytes); err != nil {
+		return err
+	}
 	verifiedFacts := normalizeReviewItems(input.VerifiedFacts)
 	openRisks := normalizeReviewItems(input.OpenRisks)
 	missingChecks := normalizeReviewItems(input.MissingChecks)
+	for label, items := range map[string][]string{"verified fact": verifiedFacts, "open risk": openRisks, "missing check": missingChecks} {
+		if len(items) > maxTaskReviewItems {
+			return fmt.Errorf("final review %s items cannot exceed %d", label, maxTaskReviewItems)
+		}
+		for _, item := range items {
+			if err := validateTextLimit("final review "+label, item, maxTaskReviewItemBytes); err != nil {
+				return err
+			}
+		}
+	}
 	if status == FinalReviewPass {
 		if len(verifiedFacts) == 0 {
 			return errors.New("passing final review requires at least one verified fact")
@@ -452,7 +540,7 @@ func applyFinalReview(task *Task, input FinalReviewInput, now time.Time) error {
 		task.Phase = PhaseCloseout
 	}
 	task.Summary = summary
-	task.Events = append(task.Events, Event{Type: "final_review", Summary: status + ": " + summary, CreatedAt: now})
+	appendTaskEvent(task, Event{Type: "final_review", Summary: status + ": " + summary, CreatedAt: now})
 	return nil
 }
 
@@ -464,6 +552,9 @@ func completeTask(task *Task, summary string, now time.Time, emitEvent bool) err
 	if summary == "" {
 		return errors.New("final verification summary is required")
 	}
+	if err := validateTextLimit("final verification summary", summary, maxTaskSummaryBytes); err != nil {
+		return err
+	}
 	if task.Phase != PhaseCloseout {
 		return errors.New("task must reach closeout before completion")
 	}
@@ -471,14 +562,17 @@ func completeTask(task *Task, summary string, now time.Time, emitEvent bool) err
 	task.Summary = summary
 	task.CompletedAt = &now
 	if emitEvent {
-		task.Events = append(task.Events, Event{Type: "completed", Summary: summary, CreatedAt: now})
+		appendTaskEvent(task, Event{Type: "completed", Summary: summary, CreatedAt: now})
 	}
 	return nil
 }
 
 func (s *Store) mutate(id string, fn func(*Task, time.Time) error) (Task, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.acquireStoreLock()
+	if err != nil {
+		return Task{}, err
+	}
+	defer release()
 	task, err := s.loadLocked(id)
 	if err != nil {
 		return Task{}, err
@@ -498,19 +592,16 @@ func (s *Store) loadLocked(id string) (Task, error) {
 	if err := validateID(id); err != nil {
 		return Task{}, err
 	}
-	data, err := os.ReadFile(filepath.Join(s.root, id+".json"))
+	data, err := readTaskStateFile(filepath.Join(s.root, id+".json"))
 	if os.IsNotExist(err) {
 		return Task{}, fmt.Errorf("%w: %s", ErrTaskNotFound, id)
 	}
 	if err != nil {
 		return Task{}, err
 	}
-	var task Task
-	if err := json.Unmarshal(data, &task); err != nil {
-		return Task{}, fmt.Errorf("decode task %s: %w", id, err)
-	}
-	if task.SchemaVersion != SchemaVersion {
-		return Task{}, fmt.Errorf("unsupported task schema version %d", task.SchemaVersion)
+	task, err := decodeTask(data, id)
+	if err != nil {
+		return Task{}, err
 	}
 	return task, nil
 }
@@ -519,11 +610,17 @@ func (s *Store) saveLocked(task Task) error {
 	if err := validateID(task.ID); err != nil {
 		return err
 	}
+	if len(task.Events) > maxTaskEvents {
+		task.Events = append([]Event(nil), task.Events[len(task.Events)-maxTaskEvents:]...)
+	}
 	data, err := json.MarshalIndent(task, "", "  ")
 	if err != nil {
 		return err
 	}
 	data = append(data, '\n')
+	if len(data) > maxTaskStateFileBytes {
+		return fmt.Errorf("task state exceeds %d bytes", maxTaskStateFileBytes)
+	}
 	target := filepath.Join(s.root, task.ID+".json")
 	return atomicfile.Write(target, data, 0o600)
 }
@@ -539,6 +636,9 @@ func normalizeTaskSteps(values []TaskStepInput, now time.Time) ([]TaskStep, erro
 		title := strings.TrimSpace(value.Title)
 		if id == "" || title == "" {
 			return nil, errors.New("each task step requires id and title")
+		}
+		if err := validateTextLimit("task step title", title, maxTaskStepTitleBytes); err != nil {
+			return nil, err
 		}
 		if !validStepID(id) {
 			return nil, fmt.Errorf("invalid task step id %q", id)
@@ -757,6 +857,58 @@ func normalizeReviewItems(values []string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func readTaskStateFile(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > maxTaskStateFileBytes {
+		return nil, fmt.Errorf("task state exceeds %d bytes", maxTaskStateFileBytes)
+	}
+	data, err := io.ReadAll(io.LimitReader(file, maxTaskStateFileBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxTaskStateFileBytes {
+		return nil, fmt.Errorf("task state exceeds %d bytes", maxTaskStateFileBytes)
+	}
+	return data, nil
+}
+
+func decodeTask(data []byte, label string) (Task, error) {
+	var task Task
+	if err := json.Unmarshal(data, &task); err != nil {
+		return Task{}, fmt.Errorf("decode task %s: %w", label, err)
+	}
+	if task.SchemaVersion != SchemaVersion {
+		return Task{}, fmt.Errorf("unsupported task schema version %d", task.SchemaVersion)
+	}
+	if len(task.Events) > maxTaskEvents {
+		task.Events = append([]Event(nil), task.Events[len(task.Events)-maxTaskEvents:]...)
+	}
+	return task, nil
+}
+
+func appendTaskEvent(task *Task, event Event) {
+	event.Summary = textutil.SafeTruncateString(strings.TrimSpace(event.Summary), maxTaskEventSummaryBytes).Text
+	task.Events = append(task.Events, event)
+	if len(task.Events) > maxTaskEvents {
+		task.Events = append([]Event(nil), task.Events[len(task.Events)-maxTaskEvents:]...)
+	}
+}
+
+func validateTextLimit(label, value string, maxBytes int) error {
+	if len([]byte(value)) > maxBytes {
+		return fmt.Errorf("%s exceeds %d bytes", label, maxBytes)
+	}
+	return nil
 }
 
 func validateID(id string) error {

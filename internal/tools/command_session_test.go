@@ -322,3 +322,98 @@ func TestSessionActWritesInputAndReturnsFinalOutput(t *testing.T) {
 		t.Fatalf("final result = %#v", result)
 	}
 }
+
+func TestExecCommandRejectsWhenRunningSessionLimitIsReached(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	for i := 0; i < maxConcurrentCommandSessions; i++ {
+		rt.sessions.Add(&session.Session{
+			ID:        fmt.Sprintf("running-%02d", i),
+			StartedAt: time.Now(),
+			Done:      make(chan struct{}),
+		})
+	}
+	_, err := rt.execCommand(context.Background(), map[string]any{"cmd": "must-not-start"})
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) || toolErr.Code != "SESSION_LIMIT_REACHED" {
+		t.Fatalf("execCommand() error = %#v, want SESSION_LIMIT_REACHED", err)
+	}
+}
+
+func TestRuntimeCloseStopsRunningCommandSessions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test command uses POSIX shell syntax")
+	}
+	rt, _ := newCodeToolsRuntime(t)
+	started, err := rt.execCommand(context.Background(), map[string]any{
+		"cmd": "sleep 30", "yield_time_ms": 1, "timeout_ms": 60000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID := started["session_id"].(string)
+	stored, ok := rt.sessions.Get(sessionID)
+	if !ok {
+		t.Fatalf("session %q was not stored", sessionID)
+	}
+	if err := rt.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	select {
+	case <-stored.Done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("runtime close did not stop the command session")
+	}
+	if _, ok := rt.sessions.Get(sessionID); ok {
+		t.Fatal("runtime close left the session in the store")
+	}
+	if err := rt.Close(); err != nil {
+		t.Fatalf("second Close() error = %v", err)
+	}
+}
+
+func TestRuntimeCloseCancelsCommandBeforeItIsStored(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test command uses POSIX sleep")
+	}
+	rt, _ := newCodeToolsRuntime(t)
+	callDone := make(chan error, 1)
+	go func() {
+		_, err := rt.execCommand(context.Background(), map[string]any{
+			"cmd":             "sleep 30",
+			"yield_time_ms":   30000,
+			"timeout_ms":      60000,
+			"wait_until_exit": true,
+		})
+		callDone <- err
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for rt.sessions.ReservationCount() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if rt.sessions.ReservationCount() == 0 {
+		t.Fatal("command did not enter the startup reservation window")
+	}
+	if err := rt.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	select {
+	case err := <-callDone:
+		if err != nil {
+			t.Fatalf("execCommand() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("starting command did not return after runtime close")
+	}
+	if got := rt.sessions.ReservationCount(); got != 0 {
+		t.Fatalf("reservation count = %d, want 0", got)
+	}
+	if listed := rt.sessions.List(); len(listed) != 0 {
+		t.Fatalf("sessions after close = %#v", listed)
+	}
+
+	_, err := rt.execCommand(context.Background(), map[string]any{"cmd": "echo must-not-run"})
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) || toolErr.Code != "RUNTIME_CLOSING" {
+		t.Fatalf("post-close exec error = %#v, want RUNTIME_CLOSING", err)
+	}
+}

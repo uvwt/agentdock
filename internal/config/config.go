@@ -36,6 +36,7 @@ type Config struct {
 	NexusToken          string
 	BrowserEnabled      bool
 	Stdio               bool
+	TrustedProxyCIDRs   []string
 }
 
 func FromEnv() (Config, error) {
@@ -56,16 +57,17 @@ func FromEnv() (Config, error) {
 		return Config{}, err
 	}
 	return Config{
-		Host:           getenv("AGENTDOCK_HOST", "127.0.0.1"),
-		Port:           port,
-		AuthToken:      os.Getenv("AGENTDOCK_AUTH_TOKEN"),
-		OAuthEnabled:   oauthEnabled,
-		OAuthServerURL: os.Getenv("AGENTDOCK_SERVER_URL"),
-		LogLevel:       getenv("AGENTDOCK_LOG_LEVEL", "info"),
-		NexusEndpoint:  getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
-		NexusToken:     os.Getenv("AGENTDOCK_NEXUS_TOKEN"),
-		BrowserEnabled: browserEnabled,
-		Stdio:          stdio,
+		Host:              getenv("AGENTDOCK_HOST", "127.0.0.1"),
+		Port:              port,
+		AuthToken:         os.Getenv("AGENTDOCK_AUTH_TOKEN"),
+		OAuthEnabled:      oauthEnabled,
+		OAuthServerURL:    os.Getenv("AGENTDOCK_SERVER_URL"),
+		LogLevel:          getenv("AGENTDOCK_LOG_LEVEL", "info"),
+		NexusEndpoint:     getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
+		NexusToken:        os.Getenv("AGENTDOCK_NEXUS_TOKEN"),
+		BrowserEnabled:    browserEnabled,
+		Stdio:             stdio,
+		TrustedProxyCIDRs: splitCommaSeparated(os.Getenv("AGENTDOCK_TRUSTED_PROXY_CIDRS")),
 	}, nil
 }
 
@@ -133,6 +135,21 @@ func (c *Config) Normalize() error {
 	default:
 		return fmt.Errorf("unsupported log level %q; expected debug, info, warn, or error", c.LogLevel)
 	}
+	networks := make([]string, 0, len(c.TrustedProxyCIDRs))
+	seenNetworks := map[string]struct{}{}
+	for _, raw := range c.TrustedProxyCIDRs {
+		_, network, err := net.ParseCIDR(strings.TrimSpace(raw))
+		if err != nil {
+			return fmt.Errorf("AGENTDOCK_TRUSTED_PROXY_CIDRS contains invalid CIDR %q: %w", raw, err)
+		}
+		canonical := network.String()
+		if _, exists := seenNetworks[canonical]; exists {
+			continue
+		}
+		seenNetworks[canonical] = struct{}{}
+		networks = append(networks, canonical)
+	}
+	c.TrustedProxyCIDRs = networks
 	return nil
 }
 
@@ -141,6 +158,11 @@ func (c Config) AuthRequired() bool {
 }
 
 func (c Config) ValidateAuth() error {
+	// stdio 不开放网络监听；HTTP 模式只允许回环地址在无认证下启动。
+	// AgentDock 暴露命令和文件写入能力，非回环无认证不是可接受的默认配置。
+	if !c.Stdio && !c.AuthRequired() && !isLoopbackBindHost(c.Host) {
+		return fmt.Errorf("non-loopback host %q requires AGENTDOCK_AUTH_TOKEN or OAuth", c.Host)
+	}
 	if !c.OAuthEnabled {
 		return nil
 	}
@@ -189,6 +211,29 @@ func (c Config) ValidateAuth() error {
 		}
 	}
 	return nil
+}
+
+func isLoopbackBindHost(host string) bool {
+	host = strings.TrimSpace(strings.Trim(strings.TrimSpace(host), "[]"))
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func splitCommaSeparated(value string) []string {
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if cleaned := strings.TrimSpace(part); cleaned != "" {
+			result = append(result, cleaned)
+		}
+	}
+	return result
 }
 
 func getenv(key, fallback string) string {

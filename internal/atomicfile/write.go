@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"github.com/uvwt/agentdock/internal/securepath"
 )
 
 // Write replaces path with data only after the complete payload has been
@@ -53,10 +51,8 @@ func Write(path string, data []byte, mode os.FileMode) (returnErr error) {
 	if err := replaceFile(tmpPath, path); err != nil {
 		return fmt.Errorf("replace atomic file: %w", err)
 	}
-	if mode.Perm()&0o077 == 0 {
-		if err := securepath.EnsurePrivate(path); err != nil {
-			return fmt.Errorf("secure atomic file: %w", err)
-		}
+	if err := secureWrittenFile(path, mode); err != nil {
+		return fmt.Errorf("secure atomic file: %w", err)
 	}
 	return nil
 }

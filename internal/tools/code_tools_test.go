@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -735,5 +736,18 @@ func TestApplyUnifiedDiffDryRunDoesNotWrite(t *testing.T) {
 	}
 	if string(data) != "alpha\n" {
 		t.Fatalf("dry-run wrote file: %q", data)
+	}
+}
+
+func TestReadFileUsesCanonicalEncodingErrorCode(t *testing.T) {
+	rt, root := newCodeToolsRuntime(t)
+	path := filepath.Join(root, "invalid-utf8.txt")
+	if err := os.WriteFile(path, []byte{0xff, 0xfe}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := rt.readFile(context.Background(), map[string]any{"path": "invalid-utf8.txt"})
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) || toolErr.Code != "ENCODING_UNSUPPORTED" {
+		t.Fatalf("readFile() error = %#v, want ENCODING_UNSUPPORTED", err)
 	}
 }

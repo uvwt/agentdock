@@ -16,11 +16,13 @@ import (
 type SessionStore = session.Store
 
 const (
-	completedSessionRetention = time.Hour
-	sessionKillWait           = 3 * time.Second
-	maxCommandYield           = 30 * time.Second
-	maxCommandTimeout         = 24 * time.Hour
-	maxCommandOutputBytes     = 4 << 20
+	completedSessionRetention    = time.Hour
+	sessionKillWait              = 3 * time.Second
+	maxCommandYield              = 30 * time.Second
+	maxCommandTimeout            = 24 * time.Hour
+	maxCommandOutputBytes        = 4 << 20
+	maxConcurrentCommandSessions = 32
+	maxRetainedCommandSessions   = 128
 )
 
 func NewSessionStore() *SessionStore { return session.NewStore() }
@@ -42,12 +44,31 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 	yield := time.Duration(yieldMS) * time.Millisecond
 	maxBytes := commandOutputLimit(args)
 	tty := boolArg(args, "tty", false)
+	commandCtx, err := r.commandExecutionContext()
+	if err != nil {
+		return nil, err
+	}
+
+	if !r.sessions.TryReserve(maxConcurrentCommandSessions) {
+		return nil, toolErrorDetails(
+			"SESSION_LIMIT_REACHED",
+			"too many command sessions are already running",
+			"resource_limit",
+			map[string]any{"max_running_sessions": maxConcurrentCommandSessions},
+		)
+	}
+	reservationActive := true
+	defer func() {
+		if reservationActive {
+			r.sessions.ReleaseReservation()
+		}
+	}()
 
 	// 这里故意不用请求 ctx 派生子进程生命周期。
 	// 背景：exec_command 可能先返回 running，让模型后续通过 session_observe action=status 继续取结果；
 	// 如果子进程绑定到单次 MCP 请求 ctx，请求结束时 git push / npm install 等长任务会被杀掉。
 	// 因此长任务只受 timeout_ms 和 session_act action=kill/kill_all 控制。
-	s, sandboxStatus, err := invocation.start(context.Background(), timeout, tty, func(command *exec.Cmd) (func(), map[string]any) {
+	s, sandboxStatus, err := invocation.start(commandCtx, timeout, tty, func(command *exec.Cmd) (func(), map[string]any) {
 		// AgentDock 不额外过滤命令，实际权限边界由所选运行环境决定。
 		privilegeWarning := "exec_command runs with the AgentDock process OS user privileges"
 		if invocation.execution.Runtime == "wsl" {
@@ -105,13 +126,15 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 				addCommandDiagnostics(result)
 				return result, nil
 			case <-ctx.Done():
-				r.storeSession(s)
+				r.storeReservedSession(s)
+				reservationActive = false
 				result := s.Snapshot("running", maxBytes)
 				result["sandbox"] = sandboxStatus
 				return result, nil
 			}
 		}
-		r.storeSession(s)
+		r.storeReservedSession(s)
+		reservationActive = false
 		result := s.Snapshot("running", maxBytes)
 		result["sandbox"] = sandboxStatus
 		return result, nil
@@ -291,9 +314,10 @@ func (r *Runtime) sessionStatus(args map[string]any) (Result, error) {
 	}
 }
 
-func (r *Runtime) storeSession(s *session.Session) {
+func (r *Runtime) storeReservedSession(s *session.Session) {
 	r.sessions.PruneCompletedBefore(time.Now().Add(-completedSessionRetention))
-	r.sessions.Add(s)
+	r.sessions.AddReserved(s)
+	r.sessions.PruneCompletedToLimit(maxRetainedCommandSessions)
 }
 
 func (r *Runtime) listSessions() (Result, error) {

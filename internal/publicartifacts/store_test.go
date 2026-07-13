@@ -483,3 +483,40 @@ func download(t *testing.T, store Store, rawURL string) ([]byte, int) {
 	store.ServeHTTP(recorder, req, "/artifacts/public/")
 	return recorder.Body.Bytes(), recorder.Code
 }
+
+func TestActiveContentArtifactsAreAttachmentsWithSandboxPolicy(t *testing.T) {
+	store := New(filepath.Join(t.TempDir(), "home"), "https://agent.example", 8765)
+	for _, test := range []struct {
+		name     string
+		filename string
+		mimeType string
+		data     string
+	}{
+		{name: "html", filename: "page.html", mimeType: "text/html", data: "<script>alert(1)</script>"},
+		{name: "svg", filename: "image.svg", mimeType: "image/svg+xml", data: `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`},
+		{name: "xml", filename: "data.xml", mimeType: "application/xml", data: "<root/>"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := store.PublishBytes(PublishBytesRequest{Filename: test.filename, Data: []byte(test.data), MimeType: test.mimeType, RetentionSeconds: 60})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodGet, result.URL, nil)
+			recorder := httptest.NewRecorder()
+			store.ServeHTTP(recorder, req, "/artifacts/public/")
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d body=%q", recorder.Code, recorder.Body.String())
+			}
+			if disposition := recorder.Header().Get("Content-Disposition"); !strings.HasPrefix(disposition, "attachment") {
+				t.Fatalf("Content-Disposition = %q, want attachment", disposition)
+			}
+			policy := recorder.Header().Get("Content-Security-Policy")
+			if !strings.Contains(policy, "sandbox") || !strings.Contains(policy, "default-src 'none'") {
+				t.Fatalf("Content-Security-Policy = %q", policy)
+			}
+			if recorder.Header().Get("X-Content-Type-Options") != "nosniff" {
+				t.Fatal("missing nosniff response header")
+			}
+		})
+	}
+}

@@ -558,3 +558,47 @@ func TestAuthorizedOAuthFalseWhenOAuthDisabled(t *testing.T) {
 		t.Fatalf("authorizedOAuth() = true when OAuth is disabled")
 	}
 }
+
+func TestServeHTTPStopsCleanlyWhenContextIsCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	server := newHTTPServer("127.0.0.1:0", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	done := make(chan error, 1)
+	go func() { done <- serveHTTP(ctx, server) }()
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("serveHTTP() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("serveHTTP did not stop after context cancellation")
+	}
+}
+
+func TestRequestRemoteIPOnlyTrustsConfiguredProxyChain(t *testing.T) {
+	tests := []struct {
+		name       string
+		remoteAddr string
+		forwarded  string
+		trusted    []string
+		want       string
+	}{
+		{name: "untrusted direct peer ignores spoofed header", remoteAddr: "198.51.100.10:443", forwarded: "203.0.113.99", trusted: []string{"127.0.0.0/8"}, want: "198.51.100.10"},
+		{name: "trusted proxy uses nearest untrusted hop", remoteAddr: "127.0.0.1:1234", forwarded: "203.0.113.9, 10.1.2.3", trusted: []string{"127.0.0.0/8", "10.0.0.0/8"}, want: "203.0.113.9"},
+		{name: "attacker prefix cannot replace nearest client", remoteAddr: "127.0.0.1:1234", forwarded: "192.0.2.123, 198.51.100.25", trusted: []string{"127.0.0.0/8"}, want: "198.51.100.25"},
+		{name: "invalid chain falls back to direct proxy", remoteAddr: "127.0.0.1:1234", forwarded: "bad-value", trusted: []string{"127.0.0.0/8"}, want: "127.0.0.1"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "http://agent.test/oauth/authorize", nil)
+			req.RemoteAddr = test.remoteAddr
+			req.Header.Set("X-Forwarded-For", test.forwarded)
+			if got := requestRemoteIP(req, config.Config{TrustedProxyCIDRs: test.trusted}); got != test.want {
+				t.Fatalf("requestRemoteIP() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}

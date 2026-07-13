@@ -9,8 +9,8 @@ services:
       - ./AgentDockHome:/root/.agentdock
       - ./AgentDock:/root/AgentDock
     environment:
-      # 公网/VPS 部署建议设置 AGENTDOCK_AUTH_TOKEN。
-      # AGENTDOCK_AUTH_TOKEN: "replace-with-a-local-secret"
+      # 容器内监听 0.0.0.0，因此必须显式提供认证 token。
+      AGENTDOCK_AUTH_TOKEN: "${AGENTDOCK_AUTH_TOKEN:?set AGENTDOCK_AUTH_TOKEN before docker compose up}"
     command:
       - agentdock
       - --host

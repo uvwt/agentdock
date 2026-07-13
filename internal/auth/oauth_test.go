@@ -564,3 +564,145 @@ func signClaimsForTest(t *testing.T, claims tokenClaims, key string) string {
 	}
 	return encoded + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
+
+func TestOAuthClientCleanupRemovesAssociatedStateAndFreesCapacity(t *testing.T) {
+	store := NewOAuthStore()
+	now := time.Now()
+	expiredAt := now.Add(-oauthClientIdleTTL - time.Hour).Unix()
+	for index := 0; index < maxOAuthClients; index++ {
+		clientID := fmt.Sprintf("expired-client-%04d", index)
+		store.clients[clientID] = OAuthClientRegistration{
+			ClientName:   "expired",
+			RedirectURIs: []string{"https://client.example/callback"},
+			GrantTypes:   []string{"authorization_code"},
+			IssuedAt:     expiredAt,
+			LastUsedAt:   expiredAt,
+		}
+	}
+	store.grants[oauthTestGrantID] = OAuthGrant{ClientID: "expired-client-0000", Resource: "https://agentdock.example/mcp", ExpiresAt: now.Add(time.Hour).Unix()}
+	store.codes["expired-code"] = OAuthCode{ClientID: "expired-client-0000", ExpiresAt: now.Add(time.Hour)}
+
+	clientID, err := store.RegisterClient("new", []string{"https://new.example/callback"}, []string{"authorization_code"})
+	if err != nil {
+		t.Fatalf("RegisterClient() after cleanup: %v", err)
+	}
+	if clientID == "" || len(store.clients) != 1 {
+		t.Fatalf("client registry = %#v", store.clients)
+	}
+	if len(store.grants) != 0 || len(store.codes) != 0 {
+		t.Fatalf("associated state remained: grants=%#v codes=%#v", store.grants, store.codes)
+	}
+}
+
+func TestOAuthClientUseRefreshesLastUsedAtAtMostDaily(t *testing.T) {
+	store := NewOAuthStore()
+	clientID, err := store.RegisterClient("client", []string{"https://client.example/callback"}, []string{"authorization_code"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.mu.Lock()
+	registration := store.clients[clientID]
+	registration.LastUsedAt = time.Now().Add(-oauthClientTouchInterval - time.Hour).Unix()
+	store.clients[clientID] = registration
+	store.mu.Unlock()
+	before := registration.LastUsedAt
+	if !store.ValidateClientID(clientID) {
+		t.Fatal("active client was rejected")
+	}
+	after := store.clients[clientID].LastUsedAt
+	if after <= before {
+		t.Fatalf("last_used_at = %d, want > %d", after, before)
+	}
+	if !store.ValidateClientID(clientID) {
+		t.Fatal("client was rejected on second validation")
+	}
+	if got := store.clients[clientID].LastUsedAt; got != after {
+		t.Fatalf("second validation rewrote last_used_at: got %d want %d", got, after)
+	}
+}
+
+func TestPersistentOAuthStoreMigratesLegacyClientLastUse(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "oauth", "state-v1.json")
+	rawID, err := RandomToken(24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientID := shortClientPrefix + rawID
+	now := time.Now().Unix()
+	state := oauthState{
+		Version: oauthStateVersion,
+		Grants:  map[string]OAuthGrant{},
+		Clients: map[string]OAuthClientRegistration{
+			clientID: {
+				ClientName:   "legacy",
+				RedirectURIs: []string{"https://client.example/callback"},
+				GrantTypes:   []string{"authorization_code"},
+				IssuedAt:     now - int64((oauthClientIdleTTL+24*time.Hour)/time.Second),
+			},
+		},
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewPersistentOAuthStore(path, "test-refresh-signing-key-32-bytes-long")
+	if err != nil {
+		t.Fatal(err)
+	}
+	registration, ok := store.ClientRegistration(clientID)
+	if !ok || registration.LastUsedAt == 0 {
+		t.Fatalf("legacy registration = %#v, ok=%v", registration, ok)
+	}
+}
+
+func TestOAuthClientLookupRestoresPrunedStateWhenPersistenceFails(t *testing.T) {
+	store := NewOAuthStore()
+	store.statePath = t.TempDir() // A directory cannot be replaced by the state file.
+	now := time.Now()
+	expiredAt := now.Add(-oauthClientIdleTTL - time.Hour).Unix()
+	store.clients["expired"] = OAuthClientRegistration{IssuedAt: expiredAt, LastUsedAt: expiredAt}
+	store.clients["active"] = OAuthClientRegistration{IssuedAt: now.Unix(), LastUsedAt: now.Unix()}
+	store.grants["grant"] = OAuthGrant{ClientID: "expired"}
+	store.codes["code"] = OAuthCode{ClientID: "expired"}
+
+	if !store.ValidateClientID("active") {
+		t.Fatal("active client was rejected after cleanup persistence failure")
+	}
+	if _, ok := store.clients["expired"]; !ok {
+		t.Fatal("expired client was not restored after persistence failure")
+	}
+	if _, ok := store.grants["grant"]; !ok {
+		t.Fatal("associated grant was not restored after persistence failure")
+	}
+	if _, ok := store.codes["code"]; !ok {
+		t.Fatal("associated code was not restored after persistence failure")
+	}
+}
+
+func TestRegisterClientRestoresPrunedCodesWhenPersistenceFails(t *testing.T) {
+	store := NewOAuthStore()
+	store.statePath = t.TempDir()
+	expiredAt := time.Now().Add(-oauthClientIdleTTL - time.Hour).Unix()
+	store.clients["expired"] = OAuthClientRegistration{IssuedAt: expiredAt, LastUsedAt: expiredAt}
+	store.codes["code"] = OAuthCode{ClientID: "expired"}
+
+	if _, err := store.RegisterClient("new", []string{"https://client.example/callback"}, []string{"authorization_code"}); err == nil {
+		t.Fatal("RegisterClient() succeeded despite persistence failure")
+	}
+	if len(store.clients) != 1 {
+		t.Fatalf("client count = %d, want original state", len(store.clients))
+	}
+	if _, ok := store.clients["expired"]; !ok {
+		t.Fatal("expired client was not restored")
+	}
+	if _, ok := store.codes["code"]; !ok {
+		t.Fatal("authorization code was not restored")
+	}
+}

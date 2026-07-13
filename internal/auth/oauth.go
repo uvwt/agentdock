@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"strings"
@@ -25,6 +26,9 @@ const (
 	maxOAuthGrants    = 1024
 	maxOAuthClients   = 1024
 	maxOAuthCodes     = 1024
+
+	oauthClientIdleTTL       = 180 * 24 * time.Hour
+	oauthClientTouchInterval = 24 * time.Hour
 )
 
 type OAuthStore struct {
@@ -59,6 +63,7 @@ type OAuthClientRegistration struct {
 	RedirectURIs []string `json:"redirect_uris"`
 	GrantTypes   []string `json:"grant_types"`
 	IssuedAt     int64    `json:"issued_at"`
+	LastUsedAt   int64    `json:"last_used_at,omitempty"`
 }
 
 type oauthState struct {
@@ -137,10 +142,25 @@ func NewPersistentOAuthStore(path, signingKey string) (*OAuthStore, error) {
 			pruned = true
 		}
 	}
+	expiredClientIDs := map[string]struct{}{}
 	for clientID, registration := range state.Clients {
-		if !validStoredClient(clientID, registration, now) {
-			delete(state.Clients, clientID)
+		if registration.LastUsedAt == 0 {
+			// v1 早期状态没有 last_used_at；升级时给予完整空闲窗口，避免立即踢掉仍在使用的客户端。
+			registration.LastUsedAt = now
+			state.Clients[clientID] = registration
 			pruned = true
+		}
+		if !validStoredClient(clientID, registration, now) || clientRegistrationExpired(registration, now) {
+			delete(state.Clients, clientID)
+			expiredClientIDs[clientID] = struct{}{}
+			pruned = true
+		}
+	}
+	if len(expiredClientIDs) > 0 {
+		for grantID, grant := range state.Grants {
+			if _, expired := expiredClientIDs[grant.ClientID]; expired {
+				delete(state.Grants, grantID)
+			}
 		}
 	}
 	if len(state.Grants) > maxOAuthGrants {
@@ -437,6 +457,9 @@ func validStoredClient(clientID string, registration OAuthClientRegistration, no
 	if registration.IssuedAt <= 0 || registration.IssuedAt > now+60 {
 		return false
 	}
+	if registration.LastUsedAt <= 0 || registration.LastUsedAt < registration.IssuedAt || registration.LastUsedAt > now+60 {
+		return false
+	}
 	if len(registration.ClientName) > 200 {
 		return false
 	}
@@ -445,11 +468,13 @@ func validStoredClient(clientID string, registration OAuthClientRegistration, no
 }
 
 func (s *OAuthStore) RegisterClient(clientName string, redirectURIs, grantTypes []string) (string, error) {
+	now := time.Now()
 	registration := OAuthClientRegistration{
 		ClientName:   strings.TrimSpace(clientName),
 		RedirectURIs: uniqueNonEmptyStrings(redirectURIs),
 		GrantTypes:   uniqueNonEmptyStrings(grantTypes),
-		IssuedAt:     time.Now().Unix(),
+		IssuedAt:     now.Unix(),
+		LastUsedAt:   now.Unix(),
 	}
 	if len(registration.RedirectURIs) == 0 {
 		return "", errors.New("at least one redirect URI is required")
@@ -468,15 +493,75 @@ func (s *OAuthStore) RegisterClient(clientName string, redirectURIs, grantTypes 
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	previousClients := cloneClientRegistrations(s.clients)
+	previousGrants := cloneOAuthGrants(s.grants)
+	previousCodes := cloneOAuthCodes(s.codes)
+	s.pruneExpiredClientsLocked(now.Unix())
 	if len(s.clients) >= maxOAuthClients {
+		s.clients = previousClients
+		s.grants = previousGrants
+		s.codes = previousCodes
 		return "", fmt.Errorf("OAuth client limit %d reached", maxOAuthClients)
 	}
 	s.clients[clientID] = registration
 	if err := s.persistStateLocked(); err != nil {
-		delete(s.clients, clientID)
+		s.clients = previousClients
+		s.grants = previousGrants
+		s.codes = previousCodes
 		return "", err
 	}
 	return clientID, nil
+}
+
+func (s *OAuthStore) PruneExpiredClients(now time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	previousClients := cloneClientRegistrations(s.clients)
+	previousGrants := cloneOAuthGrants(s.grants)
+	previousCodes := cloneOAuthCodes(s.codes)
+	removed := s.pruneExpiredClientsLocked(now.Unix())
+	if removed == 0 {
+		return 0, nil
+	}
+	if err := s.persistStateLocked(); err != nil {
+		s.clients = previousClients
+		s.grants = previousGrants
+		s.codes = previousCodes
+		return 0, err
+	}
+	return removed, nil
+}
+
+func (s *OAuthStore) pruneExpiredClientsLocked(now int64) int {
+	expired := make(map[string]struct{})
+	for clientID, registration := range s.clients {
+		if clientRegistrationExpired(registration, now) {
+			delete(s.clients, clientID)
+			expired[clientID] = struct{}{}
+		}
+	}
+	if len(expired) == 0 {
+		return 0
+	}
+	for grantID, grant := range s.grants {
+		if _, remove := expired[grant.ClientID]; remove {
+			delete(s.grants, grantID)
+		}
+	}
+	for raw, code := range s.codes {
+		if _, remove := expired[code.ClientID]; remove {
+			delete(s.codes, raw)
+		}
+	}
+	return len(expired)
+}
+
+func clientRegistrationExpired(registration OAuthClientRegistration, now int64) bool {
+	lastUsed := registration.LastUsedAt
+	if lastUsed == 0 {
+		lastUsed = registration.IssuedAt
+	}
+	return lastUsed <= 0 || now-lastUsed >= int64(oauthClientIdleTTL/time.Second)
 }
 
 func (s *OAuthStore) ValidateClientID(clientID string) bool {
@@ -517,15 +602,64 @@ func (s *OAuthStore) ClientRegistration(clientID string) (OAuthClientRegistratio
 }
 
 func (s *OAuthStore) clientRegistration(clientID string) (OAuthClientRegistration, bool) {
+	clientID = strings.TrimSpace(clientID)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	registration, ok := s.clients[strings.TrimSpace(clientID)]
+	now := time.Now().Unix()
+	previousClients := cloneClientRegistrations(s.clients)
+	previousGrants := cloneOAuthGrants(s.grants)
+	previousCodes := cloneOAuthCodes(s.codes)
+	if s.pruneExpiredClientsLocked(now) > 0 {
+		if err := s.persistStateLocked(); err != nil {
+			s.clients = previousClients
+			s.grants = previousGrants
+			s.codes = previousCodes
+			slog.Warn("persist OAuth client cleanup failed", "error", err)
+		}
+	}
+	registration, ok := s.clients[clientID]
 	if !ok {
 		return OAuthClientRegistration{}, false
+	}
+	if now-registration.LastUsedAt >= int64(oauthClientTouchInterval/time.Second) {
+		previous := registration
+		registration.LastUsedAt = now
+		s.clients[clientID] = registration
+		if err := s.persistStateLocked(); err != nil {
+			s.clients[clientID] = previous
+			registration = previous
+			slog.Warn("persist OAuth client last use failed", "client_id", clientID, "error", err)
+		}
 	}
 	registration.RedirectURIs = append([]string(nil), registration.RedirectURIs...)
 	registration.GrantTypes = append([]string(nil), registration.GrantTypes...)
 	return registration, true
+}
+
+func cloneClientRegistrations(input map[string]OAuthClientRegistration) map[string]OAuthClientRegistration {
+	cloned := make(map[string]OAuthClientRegistration, len(input))
+	for clientID, registration := range input {
+		registration.RedirectURIs = append([]string(nil), registration.RedirectURIs...)
+		registration.GrantTypes = append([]string(nil), registration.GrantTypes...)
+		cloned[clientID] = registration
+	}
+	return cloned
+}
+
+func cloneOAuthGrants(input map[string]OAuthGrant) map[string]OAuthGrant {
+	cloned := make(map[string]OAuthGrant, len(input))
+	for grantID, grant := range input {
+		cloned[grantID] = grant
+	}
+	return cloned
+}
+
+func cloneOAuthCodes(input map[string]OAuthCode) map[string]OAuthCode {
+	cloned := make(map[string]OAuthCode, len(input))
+	for raw, code := range input {
+		cloned[raw] = code
+	}
+	return cloned
 }
 
 func VerifyPKCE(verifier, challenge string) bool {

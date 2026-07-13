@@ -57,6 +57,7 @@ type Session struct {
 type Store struct {
 	mu       sync.Mutex
 	sessions map[string]*Session
+	reserved int
 }
 
 type Summary struct {
@@ -71,6 +72,48 @@ type Summary struct {
 
 func NewStore() *Store {
 	return &Store{sessions: map[string]*Session{}}
+}
+
+func (s *Store) TryReserve(maxRunning int) bool {
+	if maxRunning <= 0 {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	running := s.reserved
+	for _, session := range s.sessions {
+		if !session.Completed() {
+			running++
+		}
+	}
+	if running >= maxRunning {
+		return false
+	}
+	s.reserved++
+	return true
+}
+
+func (s *Store) ReleaseReservation() {
+	s.mu.Lock()
+	if s.reserved > 0 {
+		s.reserved--
+	}
+	s.mu.Unlock()
+}
+
+func (s *Store) ReservationCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.reserved
+}
+
+func (s *Store) AddReserved(session *Session) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.reserved > 0 {
+		s.reserved--
+	}
+	s.sessions[session.ID] = session
 }
 
 func (s *Store) Add(session *Session) {
@@ -121,6 +164,42 @@ func (s *Store) PruneCompletedBefore(cutoff time.Time) int {
 	return removed
 }
 
+func (s *Store) PruneCompletedToLimit(limit int) int {
+	if limit < 0 {
+		limit = 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.sessions) <= limit {
+		return 0
+	}
+	type completedSession struct {
+		session  *Session
+		finished time.Time
+	}
+	completed := make([]completedSession, 0, len(s.sessions))
+	for _, session := range s.sessions {
+		if finished, ok := session.completionTime(); ok {
+			completed = append(completed, completedSession{session: session, finished: finished})
+		}
+	}
+	sort.Slice(completed, func(i, j int) bool {
+		if completed[i].finished.Equal(completed[j].finished) {
+			return completed[i].session.ID < completed[j].session.ID
+		}
+		return completed[i].finished.Before(completed[j].finished)
+	})
+	removed := 0
+	for _, item := range completed {
+		if len(s.sessions) <= limit {
+			break
+		}
+		delete(s.sessions, item.session.ID)
+		removed++
+	}
+	return removed
+}
+
 func (s *Session) Summary() Summary {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -143,6 +222,18 @@ func (s *Session) Summary() Summary {
 		Distribution: s.execution.Distribution,
 		Workdir:      s.execution.Workdir,
 	}
+}
+
+func (s *Session) completionTime() (time.Time, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.FinishedAt, s.completed
+}
+
+func (s *Session) Completed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.completed
 }
 
 func (s *Session) CompletedBefore(cutoff time.Time) bool {

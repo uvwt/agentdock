@@ -304,3 +304,51 @@ func TestPeekDoesNotConsumeOutput(t *testing.T) {
 		t.Fatalf("snapshot after peek stdout = %#v", observed["stdout"])
 	}
 }
+
+func TestStoreReservationsEnforceRunningLimit(t *testing.T) {
+	store := NewStore()
+	if !store.TryReserve(2) || !store.TryReserve(2) {
+		t.Fatal("store rejected reservations below the limit")
+	}
+	if store.TryReserve(2) {
+		t.Fatal("store accepted a reservation above the running limit")
+	}
+	store.ReleaseReservation()
+	if !store.TryReserve(2) {
+		t.Fatal("released reservation did not free capacity")
+	}
+}
+
+func TestStorePrunesOldestCompletedSessionsToLimit(t *testing.T) {
+	store := NewStore()
+	now := time.Now()
+	for i := 0; i < 5; i++ {
+		done := make(chan struct{})
+		close(done)
+		store.Add(&Session{
+			ID:         "completed-" + strconv.Itoa(i),
+			StartedAt:  now.Add(time.Duration(i) * time.Second),
+			FinishedAt: now.Add(time.Duration(i) * time.Second),
+			Done:       done,
+			completed:  true,
+		})
+	}
+	running := &Session{ID: "running", StartedAt: now.Add(10 * time.Second), Done: make(chan struct{})}
+	store.Add(running)
+	if removed := store.PruneCompletedToLimit(3); removed != 3 {
+		t.Fatalf("removed = %d, want 3", removed)
+	}
+	items := store.List()
+	if len(items) != 3 {
+		t.Fatalf("stored sessions = %d, want 3", len(items))
+	}
+	if _, ok := store.Get("running"); !ok {
+		t.Fatal("running session was pruned")
+	}
+	if _, ok := store.Get("completed-0"); ok {
+		t.Fatal("oldest completed session was retained")
+	}
+	if _, ok := store.Get("completed-4"); !ok {
+		t.Fatal("newest completed session was pruned")
+	}
+}

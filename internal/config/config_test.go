@@ -66,9 +66,9 @@ func TestSkillStateDirUsesAgentDockHome(t *testing.T) {
 
 func TestValidateAuthAllowsNoOAuthOrServerURLOnly(t *testing.T) {
 	cases := []Config{
-		{},
-		{OAuthServerURL: "https://agentdock.example.com"},
-		{AuthToken: "static-token", OAuthServerURL: "https://agentdock.example.com"},
+		{Host: "127.0.0.1"},
+		{Host: "127.0.0.1", OAuthServerURL: "https://agentdock.example.com"},
+		{Host: "0.0.0.0", AuthToken: "static-token", OAuthServerURL: "https://agentdock.example.com"},
 	}
 	for _, cfg := range cases {
 		if err := cfg.ValidateAuth(); err != nil {
@@ -239,5 +239,70 @@ func TestValidateAuthAllowsHTTPOnlyForLoopbackHosts(t *testing.T) {
 		if err := cfg.ValidateAuth(); err != nil {
 			t.Fatalf("ValidateAuth() rejected loopback URL %q: %v", serverURL, err)
 		}
+	}
+}
+
+func TestValidateAuthRejectsUnauthenticatedNonLoopbackListener(t *testing.T) {
+	for _, host := range []string{"0.0.0.0", "::", "192.0.2.10", "agentdock.internal"} {
+		cfg := Config{Host: host}
+		if err := cfg.ValidateAuth(); err == nil || !strings.Contains(err.Error(), "requires AGENTDOCK_AUTH_TOKEN or OAuth") {
+			t.Fatalf("ValidateAuth(%q) error = %v, want non-loopback authentication error", host, err)
+		}
+	}
+}
+
+func TestValidateAuthAllowsSafeListenerModes(t *testing.T) {
+	for _, cfg := range []Config{
+		{Host: "127.0.0.1"},
+		{Host: "::1"},
+		{Host: "localhost"},
+		{Host: "0.0.0.0", AuthToken: "configured-token"},
+		{Host: "0.0.0.0", Stdio: true},
+	} {
+		if err := cfg.ValidateAuth(); err != nil {
+			t.Fatalf("ValidateAuth(%#v) error = %v", cfg, err)
+		}
+	}
+}
+
+func TestNormalizeValidatesAndCanonicalizesTrustedProxyCIDRs(t *testing.T) {
+	home := t.TempDir()
+	cfg := Config{
+		AgentDockHome:       filepath.Join(home, "home"),
+		AgentDockDefaultDir: filepath.Join(home, "workspace"),
+		TrustedProxyCIDRs:   []string{"127.0.0.1/8", "127.0.0.0/8", "::1/128"},
+	}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.TrustedProxyCIDRs) != 2 || cfg.TrustedProxyCIDRs[0] != "127.0.0.0/8" || cfg.TrustedProxyCIDRs[1] != "::1/128" {
+		t.Fatalf("TrustedProxyCIDRs = %#v", cfg.TrustedProxyCIDRs)
+	}
+	cfg.TrustedProxyCIDRs = []string{"not-a-cidr"}
+	if err := cfg.Normalize(); err == nil || !strings.Contains(err.Error(), "invalid CIDR") {
+		t.Fatalf("Normalize() error = %v, want invalid CIDR", err)
+	}
+}
+
+func TestFromEnvReadsTrustedProxyCIDRs(t *testing.T) {
+	home := t.TempDir()
+	setTestUserHome(t, home)
+	t.Setenv("AGENTDOCK_TRUSTED_PROXY_CIDRS", "127.0.0.0/8, ::1/128")
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.TrustedProxyCIDRs) != 2 {
+		t.Fatalf("TrustedProxyCIDRs = %#v", cfg.TrustedProxyCIDRs)
+	}
+}
+
+func TestValidateAuthTreatsEmptyHostAsWildcard(t *testing.T) {
+	cfg := Config{Host: ""}
+	if err := cfg.ValidateAuth(); err == nil || !strings.Contains(err.Error(), "requires AGENTDOCK_AUTH_TOKEN or OAuth") {
+		t.Fatalf("ValidateAuth() error = %v, want wildcard authentication error", err)
 	}
 }

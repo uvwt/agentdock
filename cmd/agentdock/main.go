@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/httpx"
@@ -14,13 +17,15 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := run(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "agentdock: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run(ctx context.Context) error {
 	cfg, err := config.FromEnv()
 	if err != nil {
 		return err
@@ -51,7 +56,18 @@ func run() error {
 	}()
 	server := mcp.NewServer(runtime, cfg)
 	if cfg.Stdio {
-		return server.ServeStdio(os.Stdin, os.Stdout)
+		return serveStdio(ctx, server)
 	}
-	return httpx.Serve(server, cfg)
+	return httpx.Serve(ctx, server, cfg)
+}
+
+func serveStdio(ctx context.Context, server *mcp.Server) error {
+	done := make(chan error, 1)
+	go func() { done <- server.ServeStdio(os.Stdin, os.Stdout) }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return nil
+	}
 }

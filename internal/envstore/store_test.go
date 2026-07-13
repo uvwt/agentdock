@@ -146,3 +146,40 @@ func assertMode(t *testing.T, path string, mode os.FileMode) {
 		t.Fatalf("%s mode = %04o, want %04o", path, got, mode)
 	}
 }
+
+func TestIndependentStoresDoNotLoseConcurrentUpdates(t *testing.T) {
+	home := t.TempDir()
+	first, err := New(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := New(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := Scope{Kind: ScopeMCP, Name: "shared"}
+
+	var wg sync.WaitGroup
+	for index := 0; index < 64; index++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			store := first
+			if index%2 == 1 {
+				store = second
+			}
+			key := fmt.Sprintf("KEY_%02d", index)
+			if err := store.Set(scope, key, fmt.Sprintf("value-%02d", index)); err != nil {
+				t.Errorf("Set(%s): %v", key, err)
+			}
+		}(index)
+	}
+	wg.Wait()
+	values, err := first.Load(scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 64 {
+		t.Fatalf("concurrent independent stores retained %d keys, want 64", len(values))
+	}
+}

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,6 +36,12 @@ type Runtime struct {
 	mcpClients     *mcpclient.Manager
 	tasks          *taskstate.Store
 	privateNotesMu sync.RWMutex
+	lifecycleMu    sync.RWMutex
+	commandCtx     context.Context
+	commandCancel  context.CancelFunc
+	closing        bool
+	closeOnce      sync.Once
+	closeErr       error
 }
 
 func NewRuntime(cfg config.Config) (*Runtime, error) {
@@ -56,19 +63,60 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	}
 	tasks, err := taskstate.New(filepath.Join(cfg.AgentDockHome, "tasks"))
 	if err != nil {
+		_ = mcpClients.Close()
 		return nil, err
 	}
-	return &Runtime{cfg: cfg, ws: ws, sessions: NewSessionStore(), skills: skills, envs: envs, mcpClients: mcpClients, tasks: tasks}, nil
+	commandCtx, commandCancel := context.WithCancel(context.Background())
+	return &Runtime{
+		cfg: cfg, ws: ws, sessions: NewSessionStore(), skills: skills, envs: envs,
+		mcpClients: mcpClients, tasks: tasks, commandCtx: commandCtx, commandCancel: commandCancel,
+	}, nil
 }
 
 func (r *Runtime) Config() config.Config           { return r.cfg }
 func (r *Runtime) Workspace() *workspace.Workspace { return r.ws }
 
 func (r *Runtime) Close() error {
-	if r == nil || r.mcpClients == nil {
+	if r == nil {
 		return nil
 	}
-	return r.mcpClients.Close()
+	r.closeOnce.Do(func() {
+		var closeErrors []error
+		r.lifecycleMu.Lock()
+		r.closing = true
+		if r.commandCancel != nil {
+			r.commandCancel()
+		}
+		r.lifecycleMu.Unlock()
+		if r.sessions != nil {
+			deadline := time.Now().Add(sessionKillWait)
+			for r.sessions.ReservationCount() > 0 && time.Now().Before(deadline) {
+				time.Sleep(10 * time.Millisecond)
+			}
+			if remaining := r.sessions.ReservationCount(); remaining > 0 {
+				closeErrors = append(closeErrors, fmt.Errorf("wait for %d starting command session(s): timeout after %s", remaining, sessionKillWait))
+			}
+			if _, err := r.killAllSessions(nil); err != nil {
+				closeErrors = append(closeErrors, fmt.Errorf("stop command sessions: %w", err))
+			}
+		}
+		if r.mcpClients != nil {
+			if err := r.mcpClients.Close(); err != nil {
+				closeErrors = append(closeErrors, fmt.Errorf("close dynamic MCP clients: %w", err))
+			}
+		}
+		r.closeErr = errors.Join(closeErrors...)
+	})
+	return r.closeErr
+}
+
+func (r *Runtime) commandExecutionContext() (context.Context, error) {
+	r.lifecycleMu.RLock()
+	defer r.lifecycleMu.RUnlock()
+	if r.closing || r.commandCtx == nil {
+		return nil, toolError("RUNTIME_CLOSING", "AgentDock runtime is shutting down", "runtime")
+	}
+	return r.commandCtx, nil
 }
 
 func (r *Runtime) ToolNames() []string {
@@ -121,8 +169,13 @@ func (r *Runtime) serverInfo() Result {
 		"recall_bootstrap_args":        map[string]any{},
 
 		"task_state_dir": r.tasks.Root(),
+		"command_session_limits": map[string]any{
+			"max_running":  maxConcurrentCommandSessions,
+			"max_retained": maxRetainedCommandSessions,
+		},
 
-		"browser_enabled": r.cfg.BrowserEnabled,
+		"browser_enabled":     r.cfg.BrowserEnabled,
+		"trusted_proxy_cidrs": append([]string(nil), r.cfg.TrustedProxyCIDRs...),
 
 		"auth_enabled":  r.authEnabled(),
 		"endpoint_path": "/mcp",
@@ -184,7 +237,7 @@ func (r *Runtime) readFile(ctx context.Context, args map[string]any) (Result, er
 		return nil, toolError("BINARY_FILE", "binary file read blocked for text tool", "validation")
 	}
 	if !utf8.Valid(data) {
-		return nil, toolError("UNSUPPORTED_ENCODING", "file is not valid utf-8", "validation")
+		return nil, toolError("ENCODING_UNSUPPORTED", "file is not valid utf-8", "validation")
 	}
 	maxBytes := boundedInt(intArg(args, "max_bytes", 262144), 262144, 1, maxTextOutputBytes)
 	content, meta := sliceText(string(data), intArg(args, "start_line", 1), intArg(args, "end_line", 0), maxBytes)

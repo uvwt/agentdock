@@ -99,3 +99,20 @@ func assertNoAtomicTemps(t *testing.T, dir string) {
 		}
 	}
 }
+
+func TestWritePreservesOwnerExecutableMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows permissions use DACL rather than Unix mode bits")
+	}
+	path := filepath.Join(t.TempDir(), "script.sh")
+	if err := Write(path, []byte("#!/bin/sh\necho ok\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("mode = %04o, want 0700", got)
+	}
+}

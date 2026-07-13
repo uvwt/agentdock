@@ -1,14 +1,17 @@
 package envstore
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/uvwt/agentdock/internal/atomicfile"
+	"github.com/uvwt/agentdock/internal/filelock"
 )
 
 type ScopeKind string
@@ -44,6 +47,21 @@ func New(agentDockHome string) (*Store, error) {
 	return store, nil
 }
 
+func (s *Store) acquireStoreLock() (func(), error) {
+	s.mu.Lock()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	releaseFileLock, err := filelock.Acquire(ctx, filepath.Join(s.root, ".store.lock"))
+	cancel()
+	if err != nil {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("lock environment store: %w", err)
+	}
+	return func() {
+		releaseFileLock()
+		s.mu.Unlock()
+	}, nil
+}
+
 func (s *Store) Root() string { return s.root }
 
 func (s *Store) Path(scope Scope) (string, error) {
@@ -61,8 +79,11 @@ func (s *Store) Set(scope Scope, key, value string) error {
 		return err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.acquireStoreLock()
+	if err != nil {
+		return err
+	}
+	defer release()
 
 	values, err := s.loadLocked(scope)
 	if err != nil {
@@ -80,8 +101,11 @@ func (s *Store) Unset(scope Scope, key string) (bool, error) {
 		return false, err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.acquireStoreLock()
+	if err != nil {
+		return false, err
+	}
+	defer release()
 
 	values, err := s.loadLocked(scope)
 	if err != nil {
@@ -119,8 +143,11 @@ func (s *Store) Load(scope Scope) (map[string]string, error) {
 		return nil, err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.acquireStoreLock()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	return s.loadLocked(scope)
 }
 

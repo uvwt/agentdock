@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -296,5 +297,95 @@ func writeRPCResult(t *testing.T, w http.ResponseWriter, id any, result any) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": result}); err != nil {
 		t.Errorf("write response: %v", err)
+	}
+}
+
+func TestIndependentManagersDoNotOverwriteRegistryUpdates(t *testing.T) {
+	home := t.TempDir()
+	first, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	second, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+
+	configs := []struct {
+		manager *Manager
+		config  ServerConfig
+	}{
+		{manager: first, config: ServerConfig{Name: "first", Description: "First server", Transport: TransportStreamableHTTP, URL: "https://example.invalid/first", Enabled: true}},
+		{manager: second, config: ServerConfig{Name: "second", Description: "Second server", Transport: TransportStreamableHTTP, URL: "https://example.invalid/second", Enabled: true}},
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, len(configs))
+	for _, item := range configs {
+		wg.Add(1)
+		go func(item struct {
+			manager *Manager
+			config  ServerConfig
+		}) {
+			defer wg.Done()
+			_, err := item.manager.Add(item.config)
+			errs <- err
+		}(item)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("Add() error = %v", err)
+		}
+	}
+
+	visible := first.List()
+	if len(visible) != 2 || visible[0].Name != "first" || visible[1].Name != "second" {
+		t.Fatalf("cross-process visible registry = %#v", visible)
+	}
+
+	reloaded, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reloaded.Close()
+	listed := reloaded.List()
+	if len(listed) != 2 || listed[0].Name != "first" || listed[1].Name != "second" {
+		t.Fatalf("persisted registry = %#v, want both independent updates", listed)
+	}
+}
+
+func TestSameManagerConcurrentRegistryUpdatesRemainVisible(t *testing.T) {
+	manager, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	configs := []ServerConfig{
+		{Name: "alpha", Description: "Alpha", Transport: TransportStreamableHTTP, URL: "https://example.invalid/alpha", Enabled: true},
+		{Name: "beta", Description: "Beta", Transport: TransportStreamableHTTP, URL: "https://example.invalid/beta", Enabled: true},
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, len(configs))
+	for _, cfg := range configs {
+		wg.Add(1)
+		go func(cfg ServerConfig) {
+			defer wg.Done()
+			_, err := manager.Add(cfg)
+			errs <- err
+		}(cfg)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("Add() error = %v", err)
+		}
+	}
+	listed := manager.List()
+	if len(listed) != 2 || listed[0].Name != "alpha" || listed[1].Name != "beta" {
+		t.Fatalf("manager registry = %#v", listed)
 	}
 }

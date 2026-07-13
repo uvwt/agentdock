@@ -31,7 +31,7 @@ const (
 	oauthFormBodyLimit   = 64 << 10
 )
 
-func Serve(server *mcp.Server, cfg config.Config) error {
+func Serve(ctx context.Context, server *mcp.Server, cfg config.Config) error {
 	authRequired := cfg.AuthRequired()
 	oauthStore := auth.NewOAuthStore()
 	if cfg.OAuthEnabled {
@@ -73,7 +73,32 @@ func Serve(server *mcp.Server, cfg config.Config) error {
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 	httpServer := newHTTPServer(addr, loggingMiddleware(mux))
 	slog.Info("http server listening", "addr", addr)
-	return httpServer.ListenAndServe()
+	return serveHTTP(ctx, httpServer)
+}
+
+func serveHTTP(ctx context.Context, server *http.Server) error {
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- server.ListenAndServe() }()
+
+	select {
+	case err := <-serveErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		_ = server.Close()
+		return fmt.Errorf("shutdown HTTP server: %w", err)
+	}
+	if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
 
 func registerOAuthRoutes(mux *http.ServeMux, cfg config.Config, store *auth.OAuthStore) {
@@ -99,7 +124,7 @@ func registerOAuthRoutes(mux *http.ServeMux, cfg config.Config, store *auth.OAut
 	registrationLimiter := newFixedWindowLimiter(30, time.Minute)
 	passwordLimiter := newFixedWindowLimiter(10, 5*time.Minute)
 	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && !registrationLimiter.Allow(requestRemoteIP(r), time.Now()) {
+		if r.Method == http.MethodPost && !registrationLimiter.Allow(requestRemoteIP(r, cfg), time.Now()) {
 			w.Header().Set("Retry-After", "60")
 			writeJSONStatus(w, http.StatusTooManyRequests, map[string]any{"error": "temporarily_unavailable"})
 			return
@@ -107,7 +132,7 @@ func registerOAuthRoutes(mux *http.ServeMux, cfg config.Config, store *auth.OAut
 		handleRegister(w, r, cfg, store)
 	})
 	mux.HandleFunc("/oauth/authorize", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && !passwordLimiter.Allow(requestRemoteIP(r), time.Now()) {
+		if r.Method == http.MethodPost && !passwordLimiter.Allow(requestRemoteIP(r, cfg), time.Now()) {
 			w.Header().Set("Retry-After", "300")
 			http.Error(w, "too many authorization attempts", http.StatusTooManyRequests)
 			return
@@ -161,12 +186,65 @@ func (l *fixedWindowLimiter) Allow(key string, now time.Time) bool {
 	return true
 }
 
-func requestRemoteIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
-	if err == nil && host != "" {
-		return host
+func requestRemoteIP(r *http.Request, cfg config.Config) string {
+	remote := parseRemoteIP(r.RemoteAddr)
+	if remote == nil {
+		return strings.TrimSpace(r.RemoteAddr)
 	}
-	return strings.TrimSpace(r.RemoteAddr)
+	networks := trustedProxyNetworks(cfg.TrustedProxyCIDRs)
+	if !ipInNetworks(remote, networks) {
+		return remote.String()
+	}
+
+	rawForwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
+	if rawForwarded == "" {
+		return remote.String()
+	}
+	parts := strings.Split(rawForwarded, ",")
+	chain := make([]net.IP, 0, len(parts)+1)
+	for _, part := range parts {
+		ip := net.ParseIP(strings.TrimSpace(part))
+		if ip == nil {
+			// 可信代理传来的链必须完全可解析；异常链回退到直接对端，不能部分信任。
+			return remote.String()
+		}
+		chain = append(chain, ip)
+	}
+	chain = append(chain, remote)
+	for index := len(chain) - 1; index >= 0; index-- {
+		if !ipInNetworks(chain[index], networks) {
+			return chain[index].String()
+		}
+	}
+	return chain[0].String()
+}
+
+func parseRemoteIP(remoteAddr string) net.IP {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(remoteAddr))
+	if err == nil {
+		return net.ParseIP(host)
+	}
+	return net.ParseIP(strings.Trim(strings.TrimSpace(remoteAddr), "[]"))
+}
+
+func trustedProxyNetworks(values []string) []*net.IPNet {
+	networks := make([]*net.IPNet, 0, len(values))
+	for _, value := range values {
+		_, network, err := net.ParseCIDR(value)
+		if err == nil {
+			networks = append(networks, network)
+		}
+	}
+	return networks
+}
+
+func ipInNetworks(ip net.IP, networks []*net.IPNet) bool {
+	for _, network := range networks {
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func newHTTPServer(addr string, handler http.Handler) *http.Server {
