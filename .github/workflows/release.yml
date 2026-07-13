@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   build-linux:
@@ -52,6 +53,50 @@ jobs:
           path: |
             agentdock_linux_${{ matrix.goarch }}.tar.gz
             agentdock_linux_${{ matrix.goarch }}.tar.gz.sha256
+          if-no-files-found: error
+
+  build-macos:
+    name: Build macOS ${{ matrix.goarch }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate installer
+        run: |
+          zsh -n scripts/install-macos.sh
+          ./scripts/test-install-macos.sh
+
+      - name: Build and package
+        env:
+          CGO_ENABLED: '0'
+          GOOS: darwin
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          asset="agentdock_darwin_${GOARCH}.tar.gz"
+          mkdir -p dist/bin
+          go build -trimpath -ldflags='-s -w' -o dist/bin/agentdock ./cmd/agentdock
+          tar -C dist -czf "$asset" bin/agentdock
+          shasum -a 256 "$asset" > "$asset.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentdock-macos-${{ matrix.goarch }}
+          path: |
+            agentdock_darwin_${{ matrix.goarch }}.tar.gz
+            agentdock_darwin_${{ matrix.goarch }}.tar.gz.sha256
           if-no-files-found: error
 
   build-windows:
@@ -170,7 +215,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: [build-linux, build-windows]
+    needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -182,12 +227,30 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Package Windows installer
+      - name: Package installers and Compose files
         shell: bash
         run: |
           set -euo pipefail
+          cp scripts/install-linux.sh dist/install-linux.sh
+          cp scripts/install-linux-bootstrap.sh dist/install-linux-bootstrap.sh
+          cp scripts/install-macos.sh dist/install-macos.sh
           cp scripts/install-windows.ps1 dist/install-windows.ps1
-          shasum -a 256 dist/install-windows.ps1 > dist/install-windows.ps1.sha256
+          cp scripts/uninstall-windows.ps1 dist/uninstall-windows.ps1
+          cp docker-compose.yml dist/docker-compose.yml
+          cp docker-compose.browser.yml dist/docker-compose.browser.yml
+          (
+            cd dist
+            for file in \
+              install-linux.sh \
+              install-linux-bootstrap.sh \
+              install-macos.sh \
+              install-windows.ps1 \
+              uninstall-windows.ps1 \
+              docker-compose.yml \
+              docker-compose.browser.yml; do
+              shasum -a 256 "$file" > "$file.sha256"
+            done
+          )
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -198,9 +261,86 @@ jobs:
             dist/*.tar.gz.sha256
             dist/*.zip
             dist/*.zip.sha256
-            dist/install-windows.ps1
-            dist/install-windows.ps1.sha256
+            dist/*.sh
+            dist/*.sh.sha256
+            dist/*.ps1
+            dist/*.ps1.sha256
+            dist/*.yml
+            dist/*.yml.sha256
           generate_release_notes: true
+
+  publish-container:
+    name: Publish container (${{ matrix.variant }})
+    needs: publish
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: runtime
+            dockerfile: Dockerfile
+            latest_tag: latest
+            tag_prefix: ''
+          - variant: browser
+            dockerfile: Dockerfile.browser
+            latest_tag: browser-latest
+            tag_prefix: browser-
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=${{ matrix.latest_tag }}
+            type=raw,value=${{ matrix.tag_prefix }}${{ github.event.inputs.tag || github.ref_name }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
+
+  verify-macos-release:
+    name: Verify published macOS installer
+    needs: publish
+    runs-on: macos-latest
+    steps:
+      - name: Download and run published installer
+        shell: zsh {0}
+        run: |
+          set -euo pipefail
+          tag='${{ github.event.inputs.tag || github.ref_name }}'
+          installer="$RUNNER_TEMP/install-macos.sh"
+          curl -fL "https://github.com/${{ github.repository }}/releases/download/$tag/install-macos.sh" -o "$installer"
+          zsh -n "$installer"
+          HOME="$RUNNER_TEMP/home" \
+          AGENTDOCK_INSTALL_DIR="$RUNNER_TEMP/bin" \
+            zsh "$installer" --version "$tag"
+          "$RUNNER_TEMP/bin/agentdock" --help >/dev/null 2>&1
 
   verify-windows-release:
     name: Verify published Windows installer
@@ -231,3 +371,23 @@ jobs:
           & .\scripts\run-windows-installer-e2e-as-standard-user.ps1 `
             -InstallerPath $env:DOWNLOADED_INSTALLER `
             -Version $env:RELEASE_TAG
+
+  verify-container:
+    name: Verify published containers
+    needs: publish-container
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run published images
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          docker run --rm "ghcr.io/${{ github.repository }}:$RELEASE_TAG" agentdock --help >/dev/null 2>&1
+          docker run --rm "ghcr.io/${{ github.repository }}:browser-$RELEASE_TAG" agentdock --help >/dev/null 2>&1

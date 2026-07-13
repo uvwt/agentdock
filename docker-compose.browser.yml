@@ -1,5 +1,5 @@
 services:
   agentdock:
-    image: agentdock:browser
+    image: ${AGENTDOCK_BROWSER_IMAGE:-ghcr.io/uvwt/agentdock:browser-latest}
     environment:
       AGENTDOCK_BROWSER_ENABLED: "true"

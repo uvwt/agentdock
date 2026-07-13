@@ -17,11 +17,15 @@ AgentDock 是面向本地与远程 Agent 的工具运行层，提供文件、命
 
 ## Docker 快速开始
 
+直接使用 GitHub Container Registry 中的预构建镜像：
+
 ```bash
+mkdir agentdock && cd agentdock
+curl -fL https://github.com/uvwt/agentdock/releases/latest/download/docker-compose.yml \
+  -o docker-compose.yml
 export AGENTDOCK_AUTH_TOKEN="$(openssl rand -hex 32)"
-make docker-build
-make docker-up
-make smoke-docker
+docker compose pull
+docker compose up -d
 ```
 
 默认 MCP 地址：
@@ -33,8 +37,8 @@ http://127.0.0.1:18766/mcp
 查看日志或停止服务：
 
 ```bash
-make logs
-make docker-down
+docker compose logs -f
+docker compose down
 ```
 
 完整说明见 [Docker 部署](https://uvwt.github.io/agentdock-docs/docs/getting-started/docker)。
@@ -44,11 +48,11 @@ make docker-down
 - [Linux 自动安装](https://uvwt.github.io/agentdock-docs/docs/getting-started/linux)
 - [Linux 手动 systemd 部署](https://uvwt.github.io/agentdock-docs/docs/getting-started/vps)
 - [Windows 原生安装](https://uvwt.github.io/agentdock-docs/docs/getting-started/windows)
-- [macOS 源码运行](https://uvwt.github.io/agentdock-docs/docs/getting-started/macos)
+- [macOS 安装](https://uvwt.github.io/agentdock-docs/docs/getting-started/macos)
 
-## 从源码运行
+## 开发者从源码运行
 
-使用 `go.mod` 声明的 Go 版本：
+普通安装不需要 Go 或源码。本节只面向参与开发和调试 AgentDock 的贡献者。使用 `go.mod` 声明的 Go 版本：
 
 ```bash
 git clone https://github.com/uvwt/agentdock.git

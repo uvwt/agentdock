@@ -1,4 +1,4 @@
-.PHONY: fmt test vet race build check run docker-build docker-browser-build docker-up docker-down smoke-docker logs clean clean-local-artifacts install-linux install-macos restart-macos smoke-macos
+.PHONY: fmt test vet race build check run docker-build docker-browser-build docker-up docker-browser-up docker-down smoke-docker logs clean clean-local-artifacts install-linux install-macos test-install-macos deploy-macos-source restart-macos smoke-macos
 
 APP := agentdock
 IMAGE := agentdock:local
@@ -33,6 +33,12 @@ install-linux:
 install-macos:
 	./scripts/install-macos.sh
 
+test-install-macos:
+	./scripts/test-install-macos.sh
+
+deploy-macos-source:
+	./scripts/deploy-macos-source.sh
+
 restart-macos:
 	./scripts/restart-macos.sh
 
@@ -46,7 +52,10 @@ docker-browser-build:
 	docker build -f Dockerfile.browser -t $(BROWSER_IMAGE) .
 
 docker-up:
-	docker compose up -d
+	AGENTDOCK_IMAGE=$(IMAGE) docker compose up -d
+
+docker-browser-up:
+	AGENTDOCK_IMAGE=$(IMAGE) AGENTDOCK_BROWSER_IMAGE=$(BROWSER_IMAGE) docker compose -f docker-compose.yml -f docker-compose.browser.yml up -d
 
 docker-down:
 	docker compose down

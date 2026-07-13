@@ -1,6 +1,6 @@
 services:
   agentdock:
-    image: agentdock:local
+    image: ${AGENTDOCK_IMAGE:-ghcr.io/uvwt/agentdock:latest}
     container_name: agentdock
     restart: unless-stopped
     ports:

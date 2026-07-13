@@ -1,9 +1,7 @@
 #!/bin/sh
 set -eu
 
-REPO_URL="${AGENTDOCK_REPO_URL:-https://github.com/uvwt/agentdock.git}"
-BRANCH="${AGENTDOCK_BRANCH:-main}"
-INSTALL_URL="${AGENTDOCK_INSTALL_URL:-https://raw.githubusercontent.com/uvwt/agentdock/main/scripts/install-linux.sh}"
+INSTALL_URL="${AGENTDOCK_INSTALL_URL:-https://github.com/uvwt/agentdock/releases/latest/download/install-linux.sh}"
 TMP_SCRIPT="${TMPDIR:-/tmp}/agentdock-install.sh"
 
 log() { printf '==> %s\n' "$*" >&2; }

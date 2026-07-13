@@ -48,9 +48,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g corepack \
-    && corepack enable \
-    && corepack prepare pnpm@latest --activate
+RUN npm install -g pnpm@10.28.0
 
 ENV AGENTDOCK_BROWSER_ENABLED=true \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
@@ -61,7 +59,7 @@ COPY examples/browser-runner /opt/agentdock/browser-runner
 
 RUN cd /opt/agentdock/browser-runner \
     && npm install \
-    && npx playwright install chromium
+    && npx playwright-core install chromium
 
 WORKDIR /workspace
 EXPOSE 8765

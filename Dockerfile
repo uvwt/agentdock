@@ -28,9 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g corepack \
-    && corepack enable \
-    && corepack prepare pnpm@latest --activate
+RUN npm install -g pnpm@10.28.0
 
 COPY --from=build /out/agentdock /usr/local/bin/agentdock
 COPY docker-entrypoint.sh /usr/local/bin/agentdock-entrypoint

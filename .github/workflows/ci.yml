@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,6 +46,10 @@ jobs:
 
       - name: Check browser runner syntax
         run: node --check examples/browser-runner/browser-runner.js
+
+      - name: Test macOS release installer
+        if: runner.os == 'macOS'
+        run: ./scripts/test-install-macos.sh
 
       - name: Check Windows PowerShell installer syntax
         if: runner.os == 'Windows'

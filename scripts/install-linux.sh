@@ -32,12 +32,12 @@ AgentDock Linux 问答式一键部署脚本。
 
 用法：
   bash scripts/install-linux.sh
-  curl -fsSL https://raw.githubusercontent.com/uvwt/agentdock/main/scripts/install-linux.sh -o /tmp/agentdock-install.sh
+  curl -fsSL https://github.com/uvwt/agentdock/releases/latest/download/install-linux.sh -o /tmp/agentdock-install.sh
   bash /tmp/agentdock-install.sh
 
 Alpine/极简系统如果没有 curl/bash：
   apk add --no-cache bash curl
-  curl -fsSL https://raw.githubusercontent.com/uvwt/agentdock/main/scripts/install-linux.sh -o /tmp/agentdock-install.sh
+  curl -fsSL https://github.com/uvwt/agentdock/releases/latest/download/install-linux.sh -o /tmp/agentdock-install.sh
   bash /tmp/agentdock-install.sh
 
 环境变量可覆盖默认值：
@@ -609,14 +609,19 @@ AgentDock Linux 一键部署将执行：
 
 INTRO
 
-  repo_url="$(prompt 'Git 仓库 URL' "$DEFAULT_REPO_URL")"
-  branch="$(prompt 'Git 分支' "$DEFAULT_BRANCH")"
+  install_mode="$(prompt '安装方式（普通用户选 binary；source/auto 仅开发调试）' "$DEFAULT_INSTALL_MODE")"
+  validate_install_mode "$install_mode"
+  release_version="$(prompt 'Release 版本：latest 或 vX.Y.Z' "$DEFAULT_RELEASE_VERSION")"
+  if [[ "$install_mode" == "binary" ]]; then
+    repo_url="$DEFAULT_REPO_URL"
+    branch="$DEFAULT_BRANCH"
+  else
+    repo_url="$(prompt 'Git 仓库 URL' "$DEFAULT_REPO_URL")"
+    branch="$(prompt 'Git 分支' "$DEFAULT_BRANCH")"
+  fi
   source_dir="$(prompt '安装目录' "$source_default")"
   data_dir="$(prompt '运行数据根目录' "$DEFAULT_DATA_DIR")"
   env_file="$(prompt '环境变量文件' "$DEFAULT_ENV_FILE")"
-  install_mode="$(prompt '安装方式：binary/source/auto' "$DEFAULT_INSTALL_MODE")"
-  validate_install_mode "$install_mode"
-  release_version="$(prompt 'Release 版本：latest 或 vX.Y.Z' "$DEFAULT_RELEASE_VERSION")"
   service_manager_prompt="$(prompt '服务管理器：auto/systemd/openrc/none' "$DEFAULT_SERVICE_MANAGER")"
   service_manager="$(detect_service_manager "$service_manager_prompt")"
   if [[ "$service_manager" == "none" ]]; then

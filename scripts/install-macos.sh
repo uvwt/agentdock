@@ -1,91 +1,133 @@
 #!/bin/zsh
 set -euo pipefail
 
-SCRIPT_DIR="${0:A:h}"
-SRC_DIR="${SCRIPT_DIR:h}"
-RUNTIME_DIR="${SRC_DIR:h}/agentdock-runtime"
-ALLOW_ENV="${AGENTDOCK_INSTALL_ALLOW_ENV_PATHS:-false}"
+RELEASE_VERSION="${AGENTDOCK_RELEASE_VERSION:-latest}"
+INSTALL_DIR="${AGENTDOCK_INSTALL_DIR:-$HOME/.local/bin}"
+BACKUP_DIR="${AGENTDOCK_BACKUP_DIR:-$HOME/.agentdock/backups/bin}"
+RELEASE_BASE_URL="${AGENTDOCK_RELEASE_BASE_URL:-}"
 
-if [[ "$ALLOW_ENV" == "true" ]]; then
-  if [[ -n "${AGENTDOCK_SRC:-}" && -d "$AGENTDOCK_SRC/.git" ]]; then
-    SRC_DIR="$AGENTDOCK_SRC"
-  fi
-  if [[ -n "${AGENTDOCK_RUNTIME_DIR:-}" && -f "$AGENTDOCK_RUNTIME_DIR/start-agentdock.sh" ]]; then
-    RUNTIME_DIR="$AGENTDOCK_RUNTIME_DIR"
-  fi
-fi
+usage() {
+  cat <<'EOF'
+AgentDock macOS 预编译版本安装脚本。
 
-TARGET="$SRC_DIR/agentdock"
-BACKUP_DIR="$RUNTIME_DIR/backups/agentdock"
-if [[ "$ALLOW_ENV" == "true" && -n "${AGENTDOCK_TARGET:-}" ]]; then
-  TARGET="$AGENTDOCK_TARGET"
-fi
-if [[ "$ALLOW_ENV" == "true" && -n "${AGENTDOCK_BACKUP_DIR:-}" ]]; then
-  case "$AGENTDOCK_BACKUP_DIR" in
-    "$RUNTIME_DIR"/*) BACKUP_DIR="$AGENTDOCK_BACKUP_DIR" ;;
-  esac
-fi
+用法：
+  zsh install-macos.sh [--version latest|vX.Y.Z] [--install-dir PATH]
 
-STAMP="$(date +%Y%m%d%H%M%S)"
-TMP_BIN="$TARGET.new.$STAMP"
-SIGN_IDENTITY="${AGENTDOCK_CODESIGN_IDENTITY:-9D54442D3B0C4DE872AEE926A44B1AF990B46D19}"
-SIGN_KEYCHAIN="${AGENTDOCK_CODESIGN_KEYCHAIN:-/Users/xx/Library/Keychains/login.keychain-db}"
-SIGN_IDENTIFIER="${AGENTDOCK_CODESIGN_IDENTIFIER:-com.local.agentdock}"
-SIGN_HOME="${AGENTDOCK_CODESIGN_HOME:-/Users/xx}"
+环境变量：
+  AGENTDOCK_RELEASE_VERSION   Release 版本，默认 latest
+  AGENTDOCK_INSTALL_DIR       二进制安装目录，默认 ~/.local/bin
+  AGENTDOCK_BACKUP_DIR        旧二进制备份目录，默认 ~/.agentdock/backups/bin
+  AGENTDOCK_RELEASE_BASE_URL  自定义 Release 下载根地址，主要用于镜像或测试
+EOF
+}
 
-cd "$SRC_DIR"
-
-printf '==> source: %s\n' "$SRC_DIR"
-printf '==> target: %s\n' "$TARGET"
-printf '==> backup_dir: %s\n' "$BACKUP_DIR"
-
-printf '==> running gofmt check\n'
-test -z "$(gofmt -l ./cmd ./internal)"
-
-printf '==> running tests\n'
-go test ./...
-
-printf '==> running go vet\n'
-go vet ./...
-
-printf '==> building %s\n' "$TMP_BIN"
-go build -trimpath -o "$TMP_BIN" ./cmd/agentdock
-
-if command -v codesign >/dev/null 2>&1; then
-  printf '==> stable codesigning identity=%s identifier=%s\n' "$SIGN_IDENTITY" "$SIGN_IDENTIFIER"
-  export HOME="$SIGN_HOME"
-  if [[ -n "$SIGN_KEYCHAIN" ]]; then
-    security find-identity -v -p codesigning "$SIGN_KEYCHAIN" | grep -q "$SIGN_IDENTITY"
-    codesign --force \
-      --keychain "$SIGN_KEYCHAIN" \
-      --sign "$SIGN_IDENTITY" \
-      --timestamp=none \
-      --options runtime \
-      --identifier "$SIGN_IDENTIFIER" \
-      "$TMP_BIN" >/dev/null
-  else
-    security find-identity -v -p codesigning | grep -q "$SIGN_IDENTITY"
-    codesign --force \
-      --sign "$SIGN_IDENTITY" \
-      --timestamp=none \
-      --options runtime \
-      --identifier "$SIGN_IDENTIFIER" \
-      "$TMP_BIN" >/dev/null
-  fi
-  codesign --verify --verbose=4 "$TMP_BIN" >/dev/null
-else
-  printf 'ERROR: codesign not found; refusing to install unsigned AgentDock binary on macOS\n' >&2
+die() {
+  print -u2 -- "ERROR: $*"
   exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "缺少命令：$1"
+}
+
+release_url() {
+  if [[ -n "$RELEASE_BASE_URL" ]]; then
+    print -r -- "${RELEASE_BASE_URL%/}"
+    return
+  fi
+
+  if [[ "$RELEASE_VERSION" == "latest" ]]; then
+    print -r -- "https://github.com/uvwt/agentdock/releases/latest/download"
+    return
+  fi
+
+  local normalized="$RELEASE_VERSION"
+  [[ "$normalized" == v* ]] || normalized="v$normalized"
+  print -r -- "https://github.com/uvwt/agentdock/releases/download/$normalized"
+}
+
+while (( $# > 0 )); do
+  case "$1" in
+    --version)
+      (( $# >= 2 )) || die "--version 需要值"
+      RELEASE_VERSION="$2"
+      shift 2
+      ;;
+    --install-dir)
+      (( $# >= 2 )) || die "--install-dir 需要值"
+      INSTALL_DIR="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      die "未知参数：$1"
+      ;;
+  esac
+done
+
+for command_name in curl install mktemp shasum tar uname; do
+  require_command "$command_name"
+done
+
+case "$(uname -m)" in
+  arm64|aarch64) release_arch="arm64" ;;
+  x86_64|amd64) release_arch="amd64" ;;
+  *) die "不支持的 macOS 架构：$(uname -m)" ;;
+esac
+
+asset="agentdock_darwin_${release_arch}.tar.gz"
+base_url="$(release_url)"
+tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agentdock-install.XXXXXX")"
+trap 'rm -rf "$tmp_dir"' EXIT
+
+print -- "==> 下载 $asset"
+curl -fL --retry 3 --retry-delay 1 \
+  "$base_url/$asset" \
+  -o "$tmp_dir/$asset"
+curl -fL --retry 3 --retry-delay 1 \
+  "$base_url/$asset.sha256" \
+  -o "$tmp_dir/$asset.sha256"
+
+print -- "==> 校验 SHA-256"
+(
+  cd "$tmp_dir"
+  shasum -a 256 -c "$asset.sha256"
+)
+
+mkdir -p "$tmp_dir/extract"
+tar -xzf "$tmp_dir/$asset" -C "$tmp_dir/extract"
+source_binary="$tmp_dir/extract/bin/agentdock"
+[[ -f "$source_binary" ]] || die "Release 压缩包缺少 bin/agentdock"
+
+target="$INSTALL_DIR/agentdock"
+mkdir -p "$INSTALL_DIR" "$HOME/.agentdock" "$HOME/AgentDock"
+
+if [[ -f "$target" ]]; then
+  mkdir -p "$BACKUP_DIR"
+  backup="$BACKUP_DIR/agentdock.$(date +%Y%m%d%H%M%S)"
+  cp -p "$target" "$backup"
+  print -- "==> 已备份旧版本到 $backup"
 fi
 
-mkdir -p "$BACKUP_DIR"
-if [[ -f "$TARGET" ]]; then
-  cp -p "$TARGET" "$BACKUP_DIR/agentdock.$STAMP"
+install -m 0755 "$source_binary" "$target"
+"$target" --help >/dev/null 2>&1
+
+print -- "installed: $target"
+if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+  print -- "PATH 尚未包含 $INSTALL_DIR，可执行："
+  print -- "  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.zprofile"
+  print -- "  export PATH=\"$INSTALL_DIR:\$PATH\""
 fi
 
-chmod +x "$TMP_BIN"
-mv "$TMP_BIN" "$TARGET"
+cat <<EOF
 
-printf 'installed: %s\n' "$TARGET"
-printf 'backup_dir: %s\n' "$BACKUP_DIR"
-printf 'restart with: make restart-macos\n'
+启动示例：
+  $target --host 127.0.0.1 --port 8765
+
+状态目录：
+  $HOME/.agentdock
+  $HOME/AgentDock
+EOF
