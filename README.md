@@ -1,128 +1,77 @@
 # AgentDock
 
-AgentDock 是本地/远程 Agent 工具运行层，提供文件、命令、Git、原生 Skill、浏览器自动化、macOS 桌面自动化和 RecallDock 长期召回能力。
+AgentDock 是面向本地与远程 Agent 的工具运行层，提供文件、命令、Git、Skill、动态 MCP、浏览器自动化、可恢复任务和 NexusDock Recall 集成。
+
+[在线文档](https://uvwt.github.io/agentdock-docs/) · [文档源码](https://github.com/uvwt/agentdock-docs)
 
 ## 核心能力
 
-- 工作区文件读取、搜索、结构化补丁。
-- 命令执行、会话管理、输出截断和脱敏。
-- 内置可恢复任务状态 `task_manage`，用于多步骤闭环任务的阶段、完成条件和证据持久化。
+- 文件读取、搜索和结构化修改。
+- 有边界的命令执行、长时间会话和输出脱敏。
 - Git / GitHub 仓库操作。
-- 原生 Skill 文档体系：Skill 采用“可移植核心 + 可选宿主适配”分层；`agentdock_context` 和 `read_file` 负责发现与读取，`exec_command skill=<name>` 绑定当前激活包根目录和本次子进程环境，`skill_package` 管理包与独立环境。Skill 负责说明流程，真实动作由命令、文件、浏览器或 MCP 工具完成。
-- 可选浏览器自动化 `browser_*`。
-- RecallDock 长期召回 `recall_*`。
+- 纯文档 Skill 与独立环境管理。
+- 动态 MCP Server 注册、发现和调用。
+- 可恢复任务、Workflow 模板与阶段验证。
+- 可选浏览器自动化和 macOS 桌面自动化。
+- 可选 NexusDock Recall 长期知识召回。
 
-
-## 路径模型
-
-AgentDock 使用单一 Host 路径模型：`~/.agentdock` 是内部状态目录，`~/.agentdock/skill-store` 保存已安装 Skill，`~/AgentDock` 是默认工作目录。相对路径从 `~/AgentDock` 解析，绝对路径和 `~/path` 按运行用户所在环境真实解析。AgentDock 不把默认工作目录当强安全边界；Docker 场景由 volume 控制可见文件范围，裸机场景由当前 OS 用户权限决定。
-
-## 快速验证开发环境
+## Docker 快速开始
 
 ```bash
-make check
-```
-
-## Docker Quickstart
-
-本机或受信环境中，最快路径是 Docker Compose：
-
-```bash
+export AGENTDOCK_AUTH_TOKEN="$(openssl rand -hex 32)"
 make docker-build
 make docker-up
 make smoke-docker
 ```
 
-默认 MCP 入口：
+默认 MCP 地址：
 
 ```text
 http://127.0.0.1:18766/mcp
 ```
 
-查看日志和停止服务：
+查看日志或停止服务：
 
 ```bash
 make logs
 make docker-down
 ```
 
-Docker quickstart 使用 localhost demo 配置。公网或长期运行请阅读 [VPS systemd 部署](docs/install-vps-systemd.md)，建议配置鉴权和反代后再开放访问。
+完整说明见 [Docker 部署](https://uvwt.github.io/agentdock-docs/docs/getting-started/docker)。
 
-需要浏览器自动化时，先运行 `make docker-browser-build`，再按 [Docker 部署](docs/install-docker.md) 使用 browser overlay。
+## 其他安装方式
 
-## Linux 一键部署
+- [Linux 自动安装](https://uvwt.github.io/agentdock-docs/docs/getting-started/linux)
+- [Linux 手动 systemd 部署](https://uvwt.github.io/agentdock-docs/docs/getting-started/vps)
+- [Windows 原生安装](https://uvwt.github.io/agentdock-docs/docs/getting-started/windows)
+- [macOS 源码运行](https://uvwt.github.io/agentdock-docs/docs/getting-started/macos)
 
-Linux 服务器推荐使用问答式安装脚本。默认下载 Release 预编译二进制，Alpine 不再默认安装 Go/gcc 编译链：
+## 从源码运行
 
-```bash
-bash scripts/install-linux.sh
-```
-
-脚本会按提示填写安装目录、运行目录、监听端口、Bearer token、RecallDock/NexusDock workflow endpoint/token 可选配置，并按系统写入 systemd 或 OpenRC 服务、启动和验证。需要源码构建时选择 `source`；Alpine/极简系统可先用 `scripts/install-linux-bootstrap.sh` 补齐 `bash/curl`，单文件远程安装见 [Linux 问答式一键部署](docs/install-linux-interactive.md)。
-
-## Windows 原生安装
-
-Windows 11 x64/ARM64 可直接运行原生 `agentdock.exe`，不要求 WSL2：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/install-windows.ps1
-```
-
-加 `-RegisterStartup` 可注册当前用户**登录 Windows 后**自动启动，并自动生成受 DPAPI 保护的 Bearer token；它不是未登录前运行的系统服务。
-
-如果启动后出现承载 AgentDock 的 PowerShell/Windows Terminal 窗口，直接关闭该窗口会终止当前 `agentdock.exe` 进程。可以先最小化窗口，或者将计划任务改成隐藏窗口运行：
-
-```powershell
-$launcher = Join-Path $env:LOCALAPPDATA 'AgentDock\start-agentdock.ps1'
-$action = New-ScheduledTaskAction `
-  -Execute 'powershell.exe' `
-  -Argument "-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`""
-
-Set-ScheduledTask -TaskName 'AgentDock' -Action $action
-Stop-ScheduledTask -TaskName 'AgentDock' -ErrorAction SilentlyContinue
-Start-ScheduledTask -TaskName 'AgentDock'
-```
-
-修改后可关闭原窗口，并通过以下命令确认 AgentDock 仍在后台运行：
-
-```powershell
-Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8765/healthz
-```
-
-详见 [Windows 原生安装](docs/install-windows.md)。
-
-## macOS 裸机更新
+使用 `go.mod` 声明的 Go 版本：
 
 ```bash
-cd ~/agentdock
+git clone https://github.com/uvwt/agentdock.git
+cd agentdock
 make check
-make install-macos
-make restart-macos
-make smoke-macos
+make run
 ```
 
-## 文档
+默认监听 `127.0.0.1:8765`。相对文件路径从 `~/AgentDock` 解析，内部状态保存在 `~/.agentdock`。
 
-- [Windows 原生安装](docs/install-windows.md)
-- [macOS 裸机 launchd 部署](docs/install-macos-launchd.md)
-- [Docker 部署](docs/install-docker.md)
-- [VPS systemd 部署](docs/install-vps-systemd.md)
-- [Linux 问答式一键部署](docs/install-linux-interactive.md)
-- [Skill 设计与运行模型](docs/skills.md)
-- [macOS desktop Skill 自动化](docs/desktop-automation.md)
-- [RecallDock](docs/recalldock.md)
-- [可恢复任务状态](docs/tasks.md)
-- [安全模型](docs/security.md)
-- [排障](docs/troubleshooting.md)
-- [开发与质量门禁](docs/development.md)
+## 开发
 
-## 开发约定
+提交前运行：
 
-- `main` 是稳定主分支。
-- 合并前运行 `make check`。
-- Git commit message 使用中文。
-- README 只保留入口和原则，细节放入 `docs/`。
-- macOS 桌面自动化需要裸机运行；Docker 不提供真实桌面控制。
+```bash
+make check
+```
+
+公开文档统一维护在 [`uvwt/agentdock-docs`](https://github.com/uvwt/agentdock-docs)。修改用户可见行为时，应在同一任务中同步更新文档仓库。
+
+## 安全
+
+仅回环地址可以无认证运行。监听非回环地址时必须配置 Bearer Token 或 OAuth，并配合 HTTPS、运行用户权限、Docker volume 或 systemd 隔离控制可访问范围。
 
 ## License
 
