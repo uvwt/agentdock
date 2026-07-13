@@ -135,7 +135,15 @@ func (r *Runtime) authEnabled() bool {
 	return r.cfg.AuthRequired()
 }
 
-func (r *Runtime) readFile(args map[string]any) (Result, error) {
+func (r *Runtime) readFile(ctx context.Context, args map[string]any) (Result, error) {
+	selection, err := selectFileRuntime(args)
+	if err != nil {
+		return nil, err
+	}
+	if selection.isWSL() {
+		return r.readFileWSL(ctx, args, selection)
+	}
+
 	rawPath := stringArg(args, "path", ".")
 	absPath := ""
 	displayPath := ""
@@ -187,10 +195,17 @@ func (r *Runtime) readFile(args map[string]any) (Result, error) {
 	if meta.TruncatedReason != "" {
 		result["truncated_reason"] = meta.TruncatedReason
 	}
-	return result, nil
+	return addFileRuntimeResult(result, selection), nil
 }
 
 func (r *Runtime) listDir(ctx context.Context, args map[string]any) (Result, error) {
+	selection, err := selectFileRuntime(args)
+	if err != nil {
+		return nil, err
+	}
+	if selection.isWSL() {
+		return r.listDirWSL(ctx, args, selection)
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -208,7 +223,8 @@ func (r *Runtime) listDir(ctx context.Context, args map[string]any) (Result, err
 	maxEntries := boundedInt(intArg(args, "max_entries", 200), 200, 1, 2000)
 	includeIgnored := boolArg(args, "include_ignored", false)
 	if recursive {
-		return r.listDirRecursive(ctx, p, includeHidden, includeIgnored, maxDepth, maxEntries)
+		result, err := r.listDirRecursive(ctx, p, includeHidden, includeIgnored, maxDepth, maxEntries)
+		return addFileRuntimeResult(result, selection), err
 	}
 	ignore := loadIgnoreMatcher(r.ws.Root())
 	items := make([]map[string]any, 0, len(entries))
@@ -241,7 +257,7 @@ func (r *Runtime) listDir(ctx context.Context, args map[string]any) (Result, err
 		}
 	}
 	sort.Slice(items, func(i, j int) bool { return fmt.Sprint(items[i]["path"]) < fmt.Sprint(items[j]["path"]) })
-	return Result{"ok": true, "path": p.Display, "entries": items, "truncated": maxEntries > 0 && len(items) >= maxEntries}, nil
+	return addFileRuntimeResult(Result{"ok": true, "path": p.Display, "entries": items, "truncated": maxEntries > 0 && len(items) >= maxEntries}, selection), nil
 }
 
 func (r *Runtime) listDirRecursive(ctx context.Context, root workspace.Path, includeHidden, includeIgnored bool, maxDepth, maxEntries int) (Result, error) {
@@ -300,6 +316,13 @@ func (r *Runtime) listDirRecursive(ctx context.Context, root workspace.Path, inc
 }
 
 func (r *Runtime) listFiles(ctx context.Context, args map[string]any) (Result, error) {
+	selection, err := selectFileRuntime(args)
+	if err != nil {
+		return nil, err
+	}
+	if selection.isWSL() {
+		return r.listFilesWSL(ctx, args, selection)
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -363,7 +386,7 @@ func (r *Runtime) listFiles(ctx context.Context, args map[string]any) (Result, e
 		}
 		return nil
 	})
-	return Result{"ok": err == nil, "path": p.Display, "files": files, "truncated": maxResults > 0 && len(files) >= maxResults}, err
+	return addFileRuntimeResult(Result{"ok": err == nil, "path": p.Display, "files": files, "truncated": maxResults > 0 && len(files) >= maxResults}, selection), err
 }
 
 func (r *Runtime) viewImage(ctx context.Context, args map[string]any) (Result, error) {

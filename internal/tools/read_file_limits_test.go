@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -23,7 +24,7 @@ func TestReadFileRejectsOversizedInputBeforeReading(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = rt.readFile(map[string]any{"path": "oversized.txt"})
+	_, err = rt.readFile(context.Background(), map[string]any{"path": "oversized.txt"})
 	var toolErr *ToolError
 	if !errors.As(err, &toolErr) {
 		t.Fatalf("expected ToolError, got %T: %v", err, err)
@@ -41,7 +42,7 @@ func TestReadFileBoundsRequestedOutput(t *testing.T) {
 	}
 
 	for _, maxBytes := range []int{-1, 0, maxTextOutputBytes + 1} {
-		result, err := rt.readFile(map[string]any{"path": "large.txt", "max_bytes": maxBytes})
+		result, err := rt.readFile(context.Background(), map[string]any{"path": "large.txt", "max_bytes": maxBytes})
 		if err != nil {
 			t.Fatal(err)
 		}

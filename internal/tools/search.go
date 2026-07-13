@@ -30,6 +30,14 @@ type searchOptions struct {
 }
 
 func (r *Runtime) searchText(ctx context.Context, args map[string]any) (Result, error) {
+	selection, err := selectFileRuntime(args)
+	if err != nil {
+		return nil, err
+	}
+	if selection.isWSL() {
+		return r.searchTextWSL(ctx, args, selection)
+	}
+
 	query := stringArg(args, "query", "")
 	if query == "" {
 		return nil, toolError("INVALID_ARGUMENT", "query is required", "validation")
@@ -54,9 +62,10 @@ func (r *Runtime) searchText(ctx context.Context, args map[string]any) (Result, 
 		ContextLines:   boundedInt(intArg(args, "context_lines", 0), 0, 0, 20),
 	}
 	if result, ok := r.searchTextRG(ctx, p, opts); ok {
-		return result, nil
+		return addFileRuntimeResult(result, selection), nil
 	}
-	return r.searchTextGo(ctx, p, opts)
+	result, err := r.searchTextGo(ctx, p, opts)
+	return addFileRuntimeResult(result, selection), err
 }
 
 func (r *Runtime) searchTextRG(ctx context.Context, p workspace.Path, opts searchOptions) (Result, bool) {

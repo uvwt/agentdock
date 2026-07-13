@@ -8,37 +8,43 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/uvwt/agentdock/internal/atomicfile"
 )
 
 func (r *Runtime) fileEdit(ctx context.Context, args map[string]any) (Result, error) {
+	selection, err := selectFileRuntime(args)
+	if err != nil {
+		return nil, err
+	}
+	if selection.isWSL() {
+		return r.fileEditWSL(ctx, args, selection)
+	}
+
 	action := strings.ToLower(stringArg(args, "action", ""))
 	if action == "" {
 		return nil, toolErrorDetails("MISSING_ACTION", "file_edit requires action", "validation", map[string]any{"allowed": []string{"replace", "patch", "add", "delete", "move"}})
 	}
+	var result Result
 	switch action {
 	case "patch":
-		result, err := r.applyPatch(ctx, args)
-		if result != nil {
-			result["action"] = "patch"
-		}
-		return result, err
+		result, err = r.applyPatch(ctx, args)
 	case "replace":
-		result, err := r.editFile(args)
-		if result != nil {
-			result["action"] = "replace"
-		}
-		return result, err
+		result, err = r.editFile(args)
 	case "add":
-		return r.fileEditAdd(args)
+		result, err = r.fileEditAdd(args)
 	case "delete":
-		return r.fileEditDelete(args)
+		result, err = r.fileEditDelete(args)
 	case "move":
-		return r.fileEditMove(args)
+		result, err = r.fileEditMove(args)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported file_edit action", "validation", map[string]any{"action": action, "allowed": []string{"replace", "patch", "add", "delete", "move"}})
 	}
+	if result != nil {
+		result["action"] = action
+	}
+	return addFileRuntimeResult(result, selection), err
 }
 
 func (r *Runtime) fileEditAdd(args map[string]any) (Result, error) {
@@ -49,7 +55,6 @@ func (r *Runtime) fileEditAdd(args map[string]any) (Result, error) {
 	content := stringArg(args, "content", "")
 	dryRun := boolArg(args, "dry_run", false)
 	overwrite := boolArg(args, "overwrite", false)
-	maxDiffBytes := boundedInt(intArg(args, "max_diff_bytes", 65536), 65536, 1, maxTextOutputBytes)
 
 	p, err := r.ws.ResolveForWrite(path)
 	if err != nil {
@@ -80,15 +85,20 @@ func (r *Runtime) fileEditAdd(args map[string]any) (Result, error) {
 		if err != nil {
 			return nil, err
 		}
+		if looksBinary(data) {
+			return nil, toolErrorDetails("BINARY_FILE", "binary file edit blocked for text tool", "validation", map[string]any{"path": p.Display})
+		}
+		if !utf8.Valid(data) {
+			return nil, toolErrorDetails("ENCODING_UNSUPPORTED", "file is not valid utf-8", "validation", map[string]any{"path": p.Display})
+		}
 		oldContent = string(data)
 		mode = info.Mode().Perm()
 	}
-	diffPreview, diffTruncated, stats, err := unifiedDiffPreview(p.Display, oldContent, content, maxDiffBytes)
+	result, err := prepareTextAddition(p.Display, oldContent, content, p.Exists, args)
 	if err != nil {
 		return nil, err
 	}
-	changed := oldContent != content
-	result := Result{"ok": true, "action": "add", "path": p.Display, "dry_run": dryRun, "changed": changed, "diff_preview": diffPreview, "truncated": diffTruncated, "files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions, "summary": editSummary(p.Display, changed)}
+	changed, _ := result["changed"].(bool)
 	if dryRun || !changed {
 		return result, nil
 	}

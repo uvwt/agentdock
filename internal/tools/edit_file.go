@@ -13,24 +13,6 @@ func (r *Runtime) editFile(args map[string]any) (Result, error) {
 	if path == "" {
 		return nil, toolError("INVALID_ARGUMENT", "path is required", "validation")
 	}
-	oldText := stringArg(args, "old", "")
-	if oldText == "" {
-		return nil, toolError("INVALID_ARGUMENT", "old is required", "validation")
-	}
-	newText := stringArg(args, "new", "")
-	expected := intArg(args, "expected_matches", 1)
-	if expected < 0 {
-		return nil, toolErrorDetails(
-			"INVALID_EXPECTED_MATCHES",
-			"expected_matches must be zero or greater",
-			"validation",
-			map[string]any{"expected_matches": expected},
-		)
-	}
-	replaceAll := boolArg(args, "replace_all", false)
-	dryRun := boolArg(args, "dry_run", false)
-	maxDiffBytes := boundedInt(intArg(args, "max_diff_bytes", 65536), 65536, 1, maxTextOutputBytes)
-
 	p, err := r.ws.ResolveExisting(path)
 	if err != nil {
 		return nil, err
@@ -61,29 +43,11 @@ func (r *Runtime) editFile(args map[string]any) (Result, error) {
 		return nil, toolErrorDetails("ENCODING_UNSUPPORTED", "file is not valid utf-8", "validation", map[string]any{"path": p.Display})
 	}
 	content := string(data)
-	indexes := findStringIndexes(content, oldText)
-	if expected > 0 && len(indexes) != expected {
-		return nil, toolErrorDetails("MATCH_COUNT_MISMATCH", "old text matched an unexpected number of times", "validation", map[string]any{"path": p.Display, "matches": len(indexes), "expected_matches": expected, "nearby_context": editNearbyContext(content, indexes)})
-	}
-	if expected == 0 && len(indexes) > 0 {
-		return nil, toolErrorDetails("MATCH_COUNT_MISMATCH", "old text matched but expected zero matches", "validation", map[string]any{"path": p.Display, "matches": len(indexes), "expected_matches": expected, "nearby_context": editNearbyContext(content, indexes)})
-	}
-	if len(indexes) == 0 {
-		return nil, toolErrorDetails("MATCH_COUNT_MISMATCH", "old text did not match", "validation", map[string]any{"path": p.Display, "matches": 0, "expected_matches": expected})
-	}
-
-	updated := content
-	if replaceAll {
-		updated = strings.ReplaceAll(content, oldText, newText)
-	} else {
-		updated = strings.Replace(content, oldText, newText, 1)
-	}
-	diffPreview, diffTruncated, stats, err := unifiedDiffPreview(p.Display, content, updated, maxDiffBytes)
+	result, updated, err := prepareTextReplacement(p.Display, content, args)
 	if err != nil {
 		return nil, err
 	}
-	result := Result{"ok": true, "path": p.Display, "dry_run": dryRun, "matches": len(indexes), "changed": updated != content, "diff_preview": diffPreview, "truncated": diffTruncated, "files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions, "summary": editSummary(p.Display, updated != content)}
-	if dryRun || updated == content {
+	if boolArg(args, "dry_run", false) || updated == content {
 		return result, nil
 	}
 	if err := atomicfile.Write(p.Abs, []byte(updated), info.Mode().Perm()); err != nil {

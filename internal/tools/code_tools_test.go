@@ -524,7 +524,7 @@ func TestReadFileReturnsNextStartLineOnTruncation(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("第一行\n第二行\n第三行\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	result, err := rt.readFile(map[string]any{"path": "notes.txt", "max_bytes": 13})
+	result, err := rt.readFile(context.Background(), map[string]any{"path": "notes.txt", "max_bytes": 13})
 	if err != nil {
 		t.Fatal(err)
 	}

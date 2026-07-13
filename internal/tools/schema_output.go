@@ -315,5 +315,9 @@ func OutputSchema(name string) map[string]any {
 		props["warnings"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 	}
 
+	switch name {
+	case "read_file", "list_dir", "list_files", "search_text", "file_edit":
+		addFileRuntimeOutputProperties(props)
+	}
 	return map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": true}
 }

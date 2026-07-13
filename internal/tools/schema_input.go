@@ -18,7 +18,8 @@ func InputSchema(name string) map[string]any {
 
 	switch name {
 	case "read_file":
-		props["path"] = stringProp("Host path. Relative paths resolve from ~/AgentDock.")
+		props["path"] = stringProp(filePathDescription("Host path. Relative paths resolve from ~/AgentDock."))
+		addFileRuntimeProperties(props)
 		props["start_line"] = intProp("1-based start line.")
 		props["end_line"] = intProp("Inclusive end line.")
 		props["max_bytes"] = boundedIntProp("Maximum output bytes. Defaults to 262144 and is capped at 4194304.", 1, maxTextOutputBytes)
@@ -26,14 +27,16 @@ func InputSchema(name string) map[string]any {
 	case "agentdock_context":
 
 	case "list_dir":
-		props["path"] = stringProp("Host directory path. Relative paths resolve from ~/AgentDock.")
+		props["path"] = stringProp(filePathDescription("Host directory path. Relative paths resolve from ~/AgentDock."))
+		addFileRuntimeProperties(props)
 		props["recursive"] = boolProp("List recursively.")
 		props["max_depth"] = boundedIntProp("Maximum recursive depth. Defaults to 1 and is capped at 20.", 1, 20)
 		props["max_entries"] = boundedIntProp("Maximum entries. Defaults to 200 and is capped at 2000.", 1, 2000)
 		props["include_hidden"] = boolProp("Include dotfiles.")
 		props["include_ignored"] = boolProp("Include normally skipped directories.")
 	case "list_files":
-		props["path"] = stringProp("Host directory path. Relative paths resolve from ~/AgentDock.")
+		props["path"] = stringProp(filePathDescription("Host directory path. Relative paths resolve from ~/AgentDock."))
+		addFileRuntimeProperties(props)
 		props["patterns"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 		props["glob"] = stringProp("Single glob pattern override.")
 		props["exclude_patterns"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
@@ -41,7 +44,8 @@ func InputSchema(name string) map[string]any {
 		props["include_hidden"] = boolProp("Include dotfiles.")
 		props["include_ignored"] = boolProp("Include normally skipped directories.")
 	case "search_text":
-		props["path"] = stringProp("Host path. Relative paths resolve from ~/AgentDock.")
+		props["path"] = stringProp(filePathDescription("Host path. Relative paths resolve from ~/AgentDock."))
+		addFileRuntimeProperties(props)
 		props["query"] = stringProp("Text or regex query.")
 		props["regex"] = boolProp("Treat query as regex.")
 		props["case_sensitive"] = boolProp("Use case-sensitive search.")
@@ -54,17 +58,18 @@ func InputSchema(name string) map[string]any {
 		required = []string{"query"}
 	case "file_edit":
 		props["action"] = map[string]any{"type": "string", "description": "File edit action.", "enum": []string{"replace", "patch", "add", "delete", "move"}}
-		props["path"] = stringProp("Host path for replace, add, delete, or move. Relative paths resolve from ~/AgentDock.")
+		props["path"] = stringProp(filePathDescription("Host path for replace, add, delete, or move. Relative paths resolve from ~/AgentDock."))
+		addFileRuntimeProperties(props)
 		props["old"] = stringProp("Exact UTF-8 text to replace.")
 		props["new"] = stringProp("Replacement UTF-8 text for action=replace.")
 		props["replace_all"] = boolProp("Replace every match instead of only the first.")
 		props["expected_matches"] = map[string]any{"type": "integer", "description": "Required number of matches. Defaults to 1; zero asserts no matches.", "minimum": 0}
 		props["content"] = stringProp("Text content for action=add.")
-		props["new_path"] = stringProp("Destination path for action=move.")
+		props["new_path"] = stringProp(filePathDescription("Destination path for action=move."))
 		props["overwrite"] = boolProp("Allow add or move to replace an existing destination file.")
 		props["recursive"] = boolProp("Required for deleting directories.")
-		props["patch"] = stringProp("Patch text for action=patch.")
-		props["workdir"] = stringProp("Patch working directory.")
+		props["patch"] = stringProp(filePatchDescription("Patch text for action=patch."))
+		props["workdir"] = stringProp(filePathDescription("Patch working directory."))
 		props["dry_run"] = boolProp("Preview or validate without writing.")
 		props["max_diff_bytes"] = boundedIntProp("Maximum diff preview bytes. Defaults to 65536 and is capped at 4194304.", 1, maxTextOutputBytes)
 		required = []string{"action"}
