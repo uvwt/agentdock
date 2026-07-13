@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -214,6 +215,9 @@ func (r *Runtime) memoryLint(ctx context.Context, args map[string]any) (Result, 
 	for _, p := range paths {
 		if len(findings) >= maxFindings {
 			break
+		}
+		if !isRecallLintTextPath(p) {
+			continue
 		}
 		content, err := r.memoryReadContent(ctx, p)
 		if err != nil {
@@ -479,6 +483,11 @@ func ensureLeadingNewline(value string) string {
 		return value
 	}
 	return "\n" + value
+}
+
+func isRecallLintTextPath(p string) bool {
+	ext := strings.ToLower(path.Ext(strings.TrimSpace(p)))
+	return ext == ".md" || ext == ".markdown" || ext == ".txt"
 }
 
 func memoryPathsFromList(result Result) []string {

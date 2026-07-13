@@ -224,8 +224,9 @@ func TestMemoryPatchConfirmedWrites(t *testing.T) {
 
 func TestMemoryUpdateFactAndLint(t *testing.T) {
 	store := map[string]string{
-		"devices/test.md": "---\ntype: test\n---\n\n# Device\nplugin_dir：old\n",
-		"ops/test.md":     "# Ops\nNo forbidden terms.\n",
+		"devices/test.md":                        "---\ntype: test\n---\n\n# Device\nplugin_dir：old\n",
+		"ops/test.md":                            "# Ops\nNo forbidden terms.\n",
+		"private-notes/encrypted/example.md.age": "not utf-8 recall content",
 	}
 	rt, closeServer := newMemoryTestRuntime(t, store)
 	defer closeServer()
@@ -258,6 +259,9 @@ func TestMemoryUpdateFactAndLint(t *testing.T) {
 	}
 	if count, _ := res["finding_count"].(int); count == 0 {
 		t.Fatalf("expected lint finding: %#v", res)
+	}
+	if scanned, _ := res["files_scanned"].(int); scanned != 2 {
+		t.Fatalf("recall lint should scan only markdown/text files, got %d: %#v", scanned, res)
 	}
 	for _, item := range res["findings"].([]memoryLintFinding) {
 		if item.Term == "READ_ERROR" {

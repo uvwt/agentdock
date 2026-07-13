@@ -185,7 +185,7 @@ func (r *Runtime) recallMaintain(ctx context.Context, args map[string]any) (Resu
 			payload["prefix"] = prefix
 		}
 		if action == "reindex_cards" && payload["prefix"] == nil {
-			payload["prefix"] = "cards"
+			payload["prefix"] = "recall/managed/cards"
 		}
 		result, err := r.memoryRequest(ctx, http.MethodPost, "/v1/embeddings/reindex", payload)
 		if err != nil {

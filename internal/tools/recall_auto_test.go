@@ -2,7 +2,13 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"testing"
+
+	"github.com/uvwt/agentdock/internal/config"
 )
 
 func TestRecallWriteDeleteRequiresConfirmationLocally(t *testing.T) {
@@ -84,5 +90,38 @@ func TestRecallWriteMarkdownDiffDoesNotWrite(t *testing.T) {
 	}
 	if got, _ := res["recall_action"].(string); got != "diff" {
 		t.Fatalf("expected diff action, got %#v", res)
+	}
+}
+
+func TestRecallMaintainReindexCardsUsesCanonicalPrefix(t *testing.T) {
+	var gotPrefix string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/embeddings/reindex" {
+			http.NotFound(w, r)
+			return
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		gotPrefix, _ = payload["prefix"].(string)
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "count": 1})
+	}))
+	defer server.Close()
+
+	cfg := config.Config{AgentDockDefaultDir: t.TempDir(), AgentDockHome: filepath.Join(t.TempDir(), ".agentdock"), NexusEndpoint: server.URL}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	rt, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := rt.recallMaintain(context.Background(), map[string]any{"action": "reindex_cards"}); err != nil {
+		t.Fatal(err)
+	}
+	if gotPrefix != "recall/managed/cards" {
+		t.Fatalf("unexpected reindex prefix %q", gotPrefix)
 	}
 }
