@@ -198,7 +198,7 @@ func TestMovePathOverwritePreservesDestinationRecreatedAfterBackup(t *testing.T)
 		t.Fatal(err)
 	}
 	install := func(source, target string) error {
-		if source == src && target == dest {
+		if sameTestPath(source, src) && sameTestPath(target, dest) {
 			if err := os.WriteFile(dest, []byte("concurrent"), 0o600); err != nil {
 				return err
 			}
@@ -233,13 +233,13 @@ func TestDeletePathPreservesReplacementCreatedBeforeCommit(t *testing.T) {
 	if err := os.WriteFile(path, []byte("original"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	expected, err := os.Lstat(path)
+	expected, err := captureFileSnapshot(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	replaced := false
 	rename := func(source, target string) error {
-		if source == path && !replaced {
+		if sameTestPath(source, path) && !replaced {
 			replaced = true
 			if err := os.Remove(path); err != nil {
 				return err
@@ -270,7 +270,7 @@ func TestMovePathRestoresSourceReplacedBeforeInstall(t *testing.T) {
 	}
 	replaced := false
 	install := func(source, target string) error {
-		if source == src && !replaced {
+		if sameTestPath(source, src) && !replaced {
 			replaced = true
 			if err := os.Remove(src); err != nil {
 				return err

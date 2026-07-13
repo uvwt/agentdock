@@ -188,8 +188,8 @@ func TestExecCommandSkillBindsActiveRootAndEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if invocation.workdir != packageDir {
-		t.Fatalf("Skill workdir = %q, want %q", invocation.workdir, packageDir)
+	if !sameExistingTestPath(invocation.workdir, packageDir) {
+		t.Fatalf("Skill workdir = %q, want path equivalent to %q", invocation.workdir, packageDir)
 	}
 	if got := commandEnvValue(invocation.env, "DEMO_SECRET"); got != "skill-secret-value" {
 		t.Fatalf("Skill environment value = %q", got)
@@ -204,8 +204,8 @@ func TestExecCommandSkillBindsActiveRootAndEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if overridden.workdir != overrideDir {
-		t.Fatalf("explicit workdir = %q, want %q", overridden.workdir, overrideDir)
+	if !sameExistingTestPath(overridden.workdir, overrideDir) {
+		t.Fatalf("explicit workdir = %q, want path equivalent to %q", overridden.workdir, overrideDir)
 	}
 	if got := commandEnvValue(overridden.env, "DEMO_SECRET"); got != "request-override" {
 		t.Fatalf("explicit environment override = %q", got)

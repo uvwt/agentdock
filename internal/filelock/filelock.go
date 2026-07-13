@@ -21,6 +21,9 @@ const (
 	pollDelay         = 25 * time.Millisecond
 	staleAfter        = 10 * time.Minute
 	heartbeatInterval = staleAfter / 3
+	emptyLockGrace    = 250 * time.Millisecond
+	removeRetryDelay  = 10 * time.Millisecond
+	removeRetryCount  = 50
 )
 
 // Acquire uses an owner-tagged directory as a portable cross-process lock.
@@ -46,6 +49,10 @@ func Acquire(ctx context.Context, path string) (func(), error) {
 			ownerPath := filepath.Join(path, ownerPrefix+owner)
 			if err := os.WriteFile(ownerPath, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600); err != nil {
 				cleanupErr := cleanupInitialization(path, ownerPath)
+				// 竞争者可能刚好清理了一个没有 owner 的残留目录；重新抢锁即可。
+				if errors.Is(err, os.ErrNotExist) && cleanupErr == nil {
+					continue
+				}
 				return nil, errors.Join(fmt.Errorf("write file lock owner: %w", err), cleanupErr)
 			}
 			stopHeartbeat := maintainHeartbeat(ownerPath)
@@ -111,8 +118,8 @@ func cleanupInitialization(lockPath, ownerPath string) error {
 	if err := os.Remove(ownerPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		cleanupErrors = append(cleanupErrors, fmt.Errorf("remove incomplete lock owner: %w", err))
 	}
-	if err := os.Remove(lockPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		cleanupErrors = append(cleanupErrors, fmt.Errorf("remove incomplete lock directory: %w", err))
+	if !removeLockDirectory(lockPath) {
+		cleanupErrors = append(cleanupErrors, fmt.Errorf("remove incomplete lock directory %s", lockPath))
 	}
 	return errors.Join(cleanupErrors...)
 }
@@ -125,11 +132,8 @@ func release(lockPath, owner string) {
 		}
 		return
 	}
-	if err := os.Remove(lockPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		// 目录非空通常说明陈旧持有者已经被替换；不能删除新持有者的锁。
-		if entries, readErr := os.ReadDir(lockPath); readErr != nil || len(entries) == 0 {
-			slog.Warn("release file lock failed", "path", lockPath, "error", err)
-		}
+	if !removeLockDirectory(lockPath) {
+		slog.Warn("release file lock failed", "path", lockPath)
 	}
 }
 
@@ -143,7 +147,8 @@ func removeSafeStale(lockPath string, now time.Time) bool {
 		if statErr != nil {
 			return errors.Is(statErr, os.ErrNotExist)
 		}
-		if now.Sub(info.ModTime()) <= staleAfter {
+		// 正常初始化只会短暂为空；超过宽限期仍为空说明释放或初始化中断。
+		if now.Sub(info.ModTime()) <= emptyLockGrace {
 			return false
 		}
 		return removeLockDirectory(lockPath)
@@ -195,9 +200,21 @@ func validOwnerName(name string) bool {
 }
 
 func removeLockDirectory(path string) bool {
-	err := os.Remove(path)
-	if err == nil || errors.Is(err, os.ErrNotExist) {
-		return true
+	for attempt := 0; attempt < removeRetryCount; attempt++ {
+		err := os.Remove(path)
+		if err == nil || errors.Is(err, os.ErrNotExist) {
+			return true
+		}
+		entries, readErr := os.ReadDir(path)
+		if readErr == nil && len(entries) > 0 {
+			return false
+		}
+		if errors.Is(readErr, os.ErrNotExist) {
+			return true
+		}
+		if attempt+1 < removeRetryCount {
+			time.Sleep(removeRetryDelay)
+		}
 	}
 	return false
 }

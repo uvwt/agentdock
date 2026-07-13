@@ -166,7 +166,7 @@ func TestCommitStagedPatchPreservesConcurrentChangeBeforeBackup(t *testing.T) {
 	}
 	changed := false
 	rename := func(source, target string) error {
-		if !changed && source == path && strings.Contains(filepath.Base(target), ".agentdock-patch-backup-") {
+		if !changed && sameExistingTestPath(source, path) && strings.Contains(filepath.Base(target), ".agentdock-patch-backup-") {
 			changed = true
 			if err := os.WriteFile(path, []byte("concurrent\n"), 0o600); err != nil {
 				return err
@@ -234,7 +234,7 @@ func TestCommitStagedPatchDoesNotOverwriteTargetRecreatedAfterBackup(t *testing.
 	}
 	recreated := false
 	rename := func(source, target string) error {
-		if source == path && strings.Contains(filepath.Base(target), ".agentdock-patch-backup-") {
+		if sameExistingTestPath(source, path) && strings.Contains(filepath.Base(target), ".agentdock-patch-backup-") {
 			if err := os.Rename(source, target); err != nil {
 				return err
 			}

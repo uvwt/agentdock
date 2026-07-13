@@ -128,21 +128,21 @@ func (r *Runtime) fileEditDelete(args map[string]any) (Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	info, err := os.Lstat(p.Abs)
+	snapshot, err := captureFileSnapshot(p.Abs)
 	if err != nil {
 		return nil, err
 	}
-	if info.IsDir() && !recursive {
+	if snapshot.Info.IsDir() && !recursive {
 		return nil, toolErrorDetails("IS_DIRECTORY", "directory deletion requires recursive=true", "validation", map[string]any{"path": p.Display})
 	}
 	result := Result{"ok": true, "action": "delete", "path": p.Display, "dry_run": dryRun, "changed": true, "recursive": recursive, "summary": "deleted " + p.Display}
 	if dryRun {
 		return result, nil
 	}
-	return result, deletePathSafely(p.Abs, info, recursive, os.Rename, renameNoReplace)
+	return result, deletePathSafely(p.Abs, snapshot, recursive, os.Rename, renameNoReplace)
 }
 
-func deletePathSafely(path string, expected os.FileInfo, recursive bool, rename, restoreNoReplace func(string, string) error) error {
+func deletePathSafely(path string, expected fileSnapshot, recursive bool, rename, restoreNoReplace func(string, string) error) error {
 	backupDir, err := os.MkdirTemp(filepath.Dir(path), ".agentdock-delete-backup-*")
 	if err != nil {
 		return fmt.Errorf("create delete backup directory: %w", err)
@@ -157,7 +157,7 @@ func deletePathSafely(path string, expected os.FileInfo, recursive bool, rename,
 	if err := rename(path, backupPath); err != nil {
 		return errors.Join(fmt.Errorf("stage delete target: %w", err), cleanup())
 	}
-	moved, err := os.Lstat(backupPath)
+	moved, err := captureFileSnapshot(backupPath)
 	if err != nil {
 		return fmt.Errorf("inspect staged delete target at %s: %w", backupPath, err)
 	}
@@ -174,7 +174,7 @@ func deletePathSafely(path string, expected os.FileInfo, recursive bool, rename,
 			fmt.Errorf("restore changed delete target: %w", restoreErr),
 		)
 	}
-	if recursive || moved.IsDir() {
+	if recursive || moved.Info.IsDir() {
 		err = os.RemoveAll(backupPath)
 	} else {
 		err = os.Remove(backupPath)
@@ -183,13 +183,6 @@ func deletePathSafely(path string, expected os.FileInfo, recursive bool, rename,
 		return fmt.Errorf("remove staged delete target at %s: %w", backupPath, err)
 	}
 	return cleanup()
-}
-
-func sameFileSnapshot(expected, actual os.FileInfo) bool {
-	return os.SameFile(expected, actual) &&
-		expected.Mode() == actual.Mode() &&
-		expected.Size() == actual.Size() &&
-		expected.ModTime().Equal(actual.ModTime())
 }
 
 func (r *Runtime) fileEditMove(args map[string]any) (Result, error) {
@@ -251,8 +244,8 @@ func pathIsDescendant(parent, candidate string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-func verifyMovedSource(src, dest, backupPath string, expected os.FileInfo, installNoReplace func(string, string) error, cleanup func() error) error {
-	moved, err := os.Lstat(dest)
+func verifyMovedSource(src, dest, backupPath string, expected fileSnapshot, installNoReplace func(string, string) error, cleanup func() error) error {
+	moved, err := captureFileSnapshot(dest)
 	if err == nil && sameFileSnapshot(expected, moved) {
 		return nil
 	}
@@ -280,7 +273,7 @@ func verifyMovedSource(src, dest, backupPath string, expected os.FileInfo, insta
 }
 
 func movePathWithRollback(src, dest string, replace bool, rename, installNoReplace func(string, string) error) error {
-	expectedSource, err := os.Lstat(src)
+	expectedSource, err := captureFileSnapshot(src)
 	if err != nil {
 		return fmt.Errorf("inspect move source: %w", err)
 	}

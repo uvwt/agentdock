@@ -119,10 +119,13 @@ func NewPersistentOAuthStore(path, signingKey string) (*OAuthStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read OAuth state: %w", err)
 	}
-	defer file.Close()
 	data, err := io.ReadAll(io.LimitReader(file, maxOAuthStateSize+1))
+	closeErr := file.Close()
 	if err != nil {
 		return nil, fmt.Errorf("read OAuth state: %w", err)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("close OAuth state: %w", closeErr)
 	}
 	if len(data) > maxOAuthStateSize {
 		return nil, fmt.Errorf("OAuth state exceeds %d bytes", maxOAuthStateSize)
