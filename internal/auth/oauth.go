@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/url"
 	"os"
@@ -111,10 +112,15 @@ func NewPersistentOAuthStore(path, signingKey string) (*OAuthStore, error) {
 	store := NewOAuthStore()
 	store.statePath = path
 	store.signingKey = signingKey
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return store, nil
 	}
+	if err != nil {
+		return nil, fmt.Errorf("read OAuth state: %w", err)
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxOAuthStateSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("read OAuth state: %w", err)
 	}

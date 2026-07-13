@@ -706,3 +706,24 @@ func TestRegisterClientRestoresPrunedCodesWhenPersistenceFails(t *testing.T) {
 		t.Fatal("authorization code was not restored")
 	}
 }
+
+func TestPersistentOAuthStoreRejectsOversizedState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "oauth", "state-v1.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(maxOAuthStateSize + 1); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewPersistentOAuthStore(path, "test-refresh-signing-key-32-bytes-long"); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("NewPersistentOAuthStore() error = %v, want size limit", err)
+	}
+}

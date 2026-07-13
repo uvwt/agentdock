@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/uvwt/agentdock/internal/envstore"
@@ -16,6 +17,7 @@ import (
 
 type Manager struct {
 	registryMu sync.Mutex
+	closed     atomic.Bool
 	mu         sync.RWMutex
 	store      *store
 	envs       *envstore.Store
@@ -61,6 +63,9 @@ func (m *Manager) Add(cfg ServerConfig) (ServerSummary, error) {
 	}
 	m.registryMu.Lock()
 	defer m.registryMu.Unlock()
+	if err := m.ensureOpenLocked(); err != nil {
+		return ServerSummary{}, err
+	}
 	servers, err := m.store.update(func(servers map[string]ServerConfig) error {
 		if _, exists := servers[cfg.Name]; exists {
 			return newError("MCP_SERVER_EXISTS", "dynamic MCP server already exists", false, map[string]any{"server": cfg.Name}, nil)
@@ -88,6 +93,9 @@ func (m *Manager) Remove(name string) error {
 	name = strings.TrimSpace(name)
 	m.registryMu.Lock()
 	defer m.registryMu.Unlock()
+	if err := m.ensureOpenLocked(); err != nil {
+		return err
+	}
 	servers, err := m.store.update(func(servers map[string]ServerConfig) error {
 		if _, exists := servers[name]; !exists {
 			return newError("MCP_SERVER_NOT_FOUND", "dynamic MCP server not found", false, map[string]any{"server": name}, nil)
@@ -113,6 +121,9 @@ func (m *Manager) SetEnabled(name string, enabled bool) (ServerSummary, error) {
 	name = strings.TrimSpace(name)
 	m.registryMu.Lock()
 	defer m.registryMu.Unlock()
+	if err := m.ensureOpenLocked(); err != nil {
+		return ServerSummary{}, err
+	}
 	var selected ServerConfig
 	servers, err := m.store.update(func(servers map[string]ServerConfig) error {
 		cfg, exists := servers[name]
@@ -181,6 +192,9 @@ func closeServerStates(states []*serverState) error {
 func (m *Manager) syncRegistry() error {
 	m.registryMu.Lock()
 	defer m.registryMu.Unlock()
+	if err := m.ensureOpenLocked(); err != nil {
+		return err
+	}
 	servers, err := m.store.load()
 	if err != nil {
 		return newError("MCP_REGISTRY_READ_FAILED", "read dynamic MCP registry", true, nil, err)
@@ -238,10 +252,11 @@ func (m *Manager) Refresh(ctx context.Context, name string) (ServerSummary, []To
 	if err := m.syncRegistry(); err != nil {
 		return ServerSummary{}, nil, err
 	}
-	cfg, state, err := m.server(strings.TrimSpace(name))
+	cfg, state, unlockState, err := m.lockServer(strings.TrimSpace(name))
 	if err != nil {
 		return ServerSummary{}, nil, err
 	}
+	defer unlockState()
 	if !cfg.Enabled {
 		return ServerSummary{}, nil, newError("MCP_SERVER_DISABLED", "dynamic MCP server is disabled", false, map[string]any{"server": cfg.Name}, nil)
 	}
@@ -251,10 +266,8 @@ func (m *Manager) Refresh(ctx context.Context, name string) (ServerSummary, []To
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutMS)*time.Millisecond)
 	defer cancel()
-	state.mu.Lock()
 	tools, err := refreshStateLocked(ctx, runtimeCfg, state)
 	summary := summaryForLocked(cfg, state)
-	state.mu.Unlock()
 	if err != nil {
 		return summary, nil, err
 	}
@@ -352,17 +365,16 @@ func (m *Manager) Call(ctx context.Context, qualifiedName string, arguments map[
 	if err != nil {
 		return nil, newError("MCP_TOOL_NAME_INVALID", err.Error(), false, map[string]any{"tool": qualifiedName}, err)
 	}
-	cfg, state, err := m.server(server)
+	cfg, state, unlockState, err := m.lockServer(server)
 	if err != nil {
 		return nil, err
 	}
+	defer unlockState()
 	if !cfg.Enabled {
 		return nil, newError("MCP_SERVER_DISABLED", "dynamic MCP server is disabled", false, map[string]any{"server": server}, nil)
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutMS)*time.Millisecond)
 	defer cancel()
-	state.mu.Lock()
-	defer state.mu.Unlock()
 	if state.client == nil || len(state.tools) == 0 {
 		runtimeCfg, err := m.runtimeConfig(cfg)
 		if err != nil {
@@ -391,6 +403,9 @@ func (m *Manager) Call(ctx context.Context, qualifiedName string, arguments map[
 func (m *Manager) Close() error {
 	m.registryMu.Lock()
 	defer m.registryMu.Unlock()
+	if m.closed.Swap(true) {
+		return nil
+	}
 	m.mu.RLock()
 	states := make([]*serverState, 0, len(m.states))
 	for _, state := range m.states {
@@ -404,15 +419,31 @@ func (m *Manager) Close() error {
 	return result
 }
 
-func (m *Manager) server(name string) (ServerConfig, *serverState, error) {
+func (m *Manager) lockServer(name string) (ServerConfig, *serverState, func(), error) {
+	if m.closed.Load() {
+		return ServerConfig{}, nil, nil, newError("MCP_MANAGER_CLOSED", "dynamic MCP manager is closed", false, nil, nil)
+	}
 	m.mu.RLock()
 	cfg, exists := m.servers[name]
 	state := m.states[name]
-	m.mu.RUnlock()
 	if !exists {
-		return ServerConfig{}, nil, newError("MCP_SERVER_NOT_FOUND", "dynamic MCP server not found", false, map[string]any{"server": name}, nil)
+		m.mu.RUnlock()
+		return ServerConfig{}, nil, nil, newError("MCP_SERVER_NOT_FOUND", "dynamic MCP server not found", false, map[string]any{"server": name}, nil)
 	}
-	return cfg, state, nil
+	state.mu.Lock()
+	m.mu.RUnlock()
+	if m.closed.Load() {
+		state.mu.Unlock()
+		return ServerConfig{}, nil, nil, newError("MCP_MANAGER_CLOSED", "dynamic MCP manager is closed", false, nil, nil)
+	}
+	return cfg, state, state.mu.Unlock, nil
+}
+
+func (m *Manager) ensureOpenLocked() error {
+	if !m.closed.Load() {
+		return nil
+	}
+	return newError("MCP_MANAGER_CLOSED", "dynamic MCP manager is closed", false, nil, nil)
 }
 
 func (m *Manager) runtimeConfig(cfg ServerConfig) (ServerConfig, error) {
@@ -454,17 +485,16 @@ func (m *Manager) searchServers(name string) ([]ServerConfig, error) {
 }
 
 func (m *Manager) ensureTools(ctx context.Context, name string) (map[string]Tool, error) {
-	cfg, state, err := m.server(name)
+	cfg, state, unlockState, err := m.lockServer(name)
 	if err != nil {
 		return nil, err
 	}
+	defer unlockState()
 	if !cfg.Enabled {
 		return nil, newError("MCP_SERVER_DISABLED", "dynamic MCP server is disabled", false, map[string]any{"server": name}, nil)
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutMS)*time.Millisecond)
 	defer cancel()
-	state.mu.Lock()
-	defer state.mu.Unlock()
 	if state.client == nil || len(state.tools) == 0 {
 		runtimeCfg, err := m.runtimeConfig(cfg)
 		if err != nil {

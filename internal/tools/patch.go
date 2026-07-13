@@ -2,13 +2,16 @@ package tools
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	workspacepkg "github.com/uvwt/agentdock/internal/workspace"
 )
@@ -36,6 +39,14 @@ type preparedPatchFile struct {
 	backupPath string
 	installed  bool
 }
+
+type installedPatchState int
+
+const (
+	installedPatchMissing installedPatchState = iota
+	installedPatchUnchanged
+	installedPatchChanged
+)
 
 func patchPathInBase(basePath, rawPath string) (string, error) {
 	cleanRaw, err := workspacepkg.Clean(rawPath)
@@ -75,6 +86,9 @@ func (r *Runtime) applyEnvelopePatch(patch string, dryRun bool, basePath string)
 			if target.Exists {
 				return nil, toolError("PATCH_FAILED", "cannot add file that already exists", "validation")
 			}
+			if err := ensurePatchPathUnused(staged, target.Abs, target.Display); err != nil {
+				return nil, err
+			}
 			content := op.AddContent
 			staged[target.Abs] = stagedPatchFile{Abs: target.Abs, Display: target.Display, Content: &content, Mode: 0o644}
 			affected = append(affected, map[string]any{"path": target.Display, "operation": "add"})
@@ -86,6 +100,9 @@ func (r *Runtime) applyEnvelopePatch(patch string, dryRun bool, basePath string)
 			}
 			target, err := r.ws.ResolveExisting(targetPath)
 			if err != nil {
+				return nil, err
+			}
+			if err := ensurePatchPathUnused(staged, target.Abs, target.Display); err != nil {
 				return nil, err
 			}
 			info, original, err := readPatchFile(target.Abs)
@@ -146,6 +163,9 @@ func (r *Runtime) applyEnvelopePatch(patch string, dryRun bool, basePath string)
 			if dest.Exists {
 				return nil, toolError("PATCH_FAILED", "cannot move over an existing file", "validation")
 			}
+			if err := ensurePatchPathUnused(staged, dest.Abs, dest.Display); err != nil {
+				return nil, err
+			}
 			staged[source.Abs] = stagedPatchFile{Abs: source.Abs, Display: source.Display, Mode: current.Mode, Original: current.Original, OriginalExists: true}
 			staged[dest.Abs] = stagedPatchFile{Abs: dest.Abs, Display: dest.Display, Content: &updated, Mode: current.Mode}
 			affected = append(affected, map[string]any{"path": source.Display, "operation": "move", "move_to": dest.Display})
@@ -167,19 +187,41 @@ func (r *Runtime) applyEnvelopePatch(patch string, dryRun bool, basePath string)
 	return Result{"ok": true, "dry_run": dryRun, "workdir": basePath, "affected_files": affected, "summary": strings.Join(summaries, "\n"), "diff_preview": diffPreview, "truncated": diffTruncated, "files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions}, nil
 }
 
+func ensurePatchPathUnused(staged map[string]stagedPatchFile, absPath, displayPath string) error {
+	if _, exists := staged[absPath]; !exists {
+		return nil
+	}
+	return toolErrorDetails(
+		"PATCH_FAILED",
+		"patch contains conflicting operations for the same path",
+		"validation",
+		map[string]any{"path": displayPath},
+	)
+}
+
 func readPatchFile(path string) (os.FileInfo, []byte, error) {
-	info, err := os.Stat(path)
+	read, err := readBoundedFile(path, int64(maxTextFileReadBytes))
 	if err != nil {
 		return nil, nil, err
 	}
-	if info.IsDir() {
+	if read.Info.IsDir() {
 		return nil, nil, toolError("PATCH_FAILED", "cannot patch a directory", "validation")
 	}
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return nil, nil, err
+	if read.TooLarge {
+		return nil, nil, toolErrorDetails(
+			"FILE_TOO_LARGE",
+			"patch target exceeds the text file input limit",
+			"validation",
+			map[string]any{"path": path, "size_bytes": read.Size, "max_size_bytes": maxTextFileReadBytes},
+		)
 	}
-	return info, content, nil
+	if looksBinary(read.Data) {
+		return nil, nil, toolError("BINARY_FILE", "binary file patch blocked for text tool", "validation")
+	}
+	if !utf8.Valid(read.Data) {
+		return nil, nil, toolError("ENCODING_UNSUPPORTED", "file is not valid utf-8", "validation")
+	}
+	return read.Info, read.Data, nil
 }
 
 func parseEnvelopePatch(patch string) ([]patchOperation, error) {
@@ -343,14 +385,14 @@ func findAllSubsequences(lines, needle []string) []int {
 }
 
 func commitStagedPatch(staged map[string]stagedPatchFile) error {
-	return commitStagedPatchWithFileOps(staged, os.Rename, os.Link)
+	return commitStagedPatchWithFileOps(staged, os.Rename, renameNoReplace)
 }
 
 func commitStagedPatchWithRename(staged map[string]stagedPatchFile, rename func(string, string) error) error {
 	return commitStagedPatchWithFileOps(staged, rename, os.Link)
 }
 
-func commitStagedPatchWithFileOps(staged map[string]stagedPatchFile, rename, link func(string, string) error) error {
+func commitStagedPatchWithFileOps(staged map[string]stagedPatchFile, rename, installNoReplace func(string, string) error) error {
 	paths := make([]string, 0, len(staged))
 	for path := range staged {
 		paths = append(paths, path)
@@ -404,22 +446,16 @@ func commitStagedPatchWithFileOps(staged map[string]stagedPatchFile, rename, lin
 		if item.file.Content == nil {
 			continue
 		}
-		if !item.file.OriginalExists {
-			if err := link(item.tempPath, item.file.Abs); err != nil {
-				return rollbackPatch(prepared, createdDirs, rename, toolErrorDetails("PATCH_CONFLICT", "patch target was created concurrently or cannot be installed without replacing an existing file", "runtime", map[string]any{"path": item.file.Display, "reason": err.Error()}))
-			}
-			item.installed = true
-			if err := os.Remove(item.tempPath); err != nil {
-				return rollbackPatch(prepared, createdDirs, rename, fmt.Errorf("remove linked patch temp for %s: %w", item.file.Display, err))
-			}
-			item.tempPath = ""
-			continue
+		// 备份后原路径必须仍为空；平台 no-replace rename 提供“目标存在则失败”
+		// 语义，避免外部程序在提交窗口重建文件后被静默覆盖。
+		if err := installNoReplace(item.tempPath, item.file.Abs); err != nil {
+			return rollbackPatch(prepared, createdDirs, rename, toolErrorDetails("PATCH_CONFLICT", "patch target was created concurrently or cannot be installed without replacing an existing file", "runtime", map[string]any{"path": item.file.Display, "reason": err.Error()}))
 		}
-		if err := rename(item.tempPath, item.file.Abs); err != nil {
-			return rollbackPatch(prepared, createdDirs, rename, fmt.Errorf("install patched file %s: %w", item.file.Display, err))
+		item.installed = true
+		if err := os.Remove(item.tempPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return rollbackPatch(prepared, createdDirs, rename, fmt.Errorf("remove installed patch temp for %s: %w", item.file.Display, err))
 		}
 		item.tempPath = ""
-		item.installed = true
 	}
 
 	for _, item := range prepared {
@@ -541,14 +577,34 @@ func rollbackPatch(prepared []preparedPatchFile, createdDirs []string, rename fu
 	errs := []error{cause}
 	for i := len(prepared) - 1; i >= 0; i-- {
 		item := &prepared[i]
+		canRestoreBackup := true
 		if item.installed {
-			if err := os.Remove(item.file.Abs); err != nil && !errors.Is(err, os.ErrNotExist) {
-				errs = append(errs, fmt.Errorf("remove partially installed %s: %w", item.file.Display, err))
+			switch inspectInstalledPatchFile(*item) {
+			case installedPatchChanged:
+				message := fmt.Sprintf("patched target %s changed during rollback; preserving current file", item.file.Display)
+				if item.backupPath != "" {
+					message += " and original backup at " + item.backupPath
+				}
+				errs = append(errs, errors.New(message))
+				canRestoreBackup = false
+			case installedPatchUnchanged:
+				if err := os.Remove(item.file.Abs); err != nil && !errors.Is(err, os.ErrNotExist) {
+					errs = append(errs, fmt.Errorf("remove partially installed %s: %w", item.file.Display, err))
+					canRestoreBackup = false
+				}
+			case installedPatchMissing:
+				// 外部删除了事务写入文件；原路径为空时可以直接恢复备份。
 			}
 		}
-		if item.backupPath != "" {
-			if err := rename(item.backupPath, item.file.Abs); err != nil {
+		if item.backupPath != "" && canRestoreBackup {
+			if _, err := os.Lstat(item.file.Abs); err == nil {
+				errs = append(errs, fmt.Errorf("cannot restore patch backup for %s without overwriting a concurrent file; original retained at %s", item.file.Display, item.backupPath))
+			} else if !errors.Is(err, os.ErrNotExist) {
+				errs = append(errs, fmt.Errorf("check patch restore target %s: %w", item.file.Display, err))
+			} else if err := rename(item.backupPath, item.file.Abs); err != nil {
 				errs = append(errs, fmt.Errorf("restore patch backup %s from %s: %w", item.file.Display, item.backupPath, err))
+			} else {
+				item.backupPath = ""
 			}
 		}
 		if item.tempPath != "" {
@@ -559,6 +615,36 @@ func rollbackPatch(prepared []preparedPatchFile, createdDirs []string, rename fu
 	}
 	removeEmptyPatchDirs(createdDirs)
 	return errors.Join(errs...)
+}
+
+func inspectInstalledPatchFile(item preparedPatchFile) installedPatchState {
+	if item.file.Content == nil {
+		return installedPatchChanged
+	}
+	file, err := os.Open(item.file.Abs)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return installedPatchMissing
+		}
+		return installedPatchChanged
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || info.Mode().Perm() != item.file.Mode.Perm() || info.Size() != int64(len(*item.file.Content)) {
+		return installedPatchChanged
+	}
+	actualHash := sha256.New()
+	if _, err := io.Copy(actualHash, file); err != nil {
+		return installedPatchChanged
+	}
+	expectedHash := sha256.New()
+	if _, err := io.Copy(expectedHash, strings.NewReader(*item.file.Content)); err != nil {
+		return installedPatchChanged
+	}
+	if bytes.Equal(actualHash.Sum(nil), expectedHash.Sum(nil)) {
+		return installedPatchUnchanged
+	}
+	return installedPatchChanged
 }
 
 func cleanupPreparedPatch(prepared []preparedPatchFile, createdDirs []string) {

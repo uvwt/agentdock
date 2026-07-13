@@ -1,11 +1,8 @@
 package tools
 
 import (
-	"os"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/uvwt/agentdock/internal/atomicfile"
 )
 
 func (r *Runtime) editFile(args map[string]any) (Result, error) {
@@ -17,25 +14,23 @@ func (r *Runtime) editFile(args map[string]any) (Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	info, err := os.Stat(p.Abs)
+	read, err := readBoundedFile(p.Abs, int64(maxTextFileReadBytes))
 	if err != nil {
 		return nil, err
 	}
-	if info.IsDir() {
+	if read.Info.IsDir() {
 		return nil, toolError("IS_DIRECTORY", "cannot edit directory", "validation")
 	}
-	if info.Size() > maxTextFileReadBytes {
+	if read.TooLarge {
 		return nil, toolErrorDetails(
 			"FILE_TOO_LARGE",
 			"text file exceeds the file_edit input limit",
 			"validation",
-			map[string]any{"path": p.Display, "size_bytes": info.Size(), "max_size_bytes": maxTextFileReadBytes},
+			map[string]any{"path": p.Display, "size_bytes": read.Size, "max_size_bytes": maxTextFileReadBytes},
 		)
 	}
-	data, err := os.ReadFile(p.Abs)
-	if err != nil {
-		return nil, err
-	}
+	info := read.Info
+	data := read.Data
 	if looksBinary(data) {
 		return nil, toolErrorDetails("BINARY_FILE", "binary file edit blocked for text tool", "validation", map[string]any{"path": p.Display})
 	}
@@ -50,7 +45,17 @@ func (r *Runtime) editFile(args map[string]any) (Result, error) {
 	if boolArg(args, "dry_run", false) || updated == content {
 		return result, nil
 	}
-	if err := atomicfile.Write(p.Abs, []byte(updated), info.Mode().Perm()); err != nil {
+	staged := map[string]stagedPatchFile{
+		p.Abs: {
+			Abs:            p.Abs,
+			Display:        p.Display,
+			Content:        &updated,
+			Mode:           info.Mode().Perm(),
+			Original:       append([]byte(nil), data...),
+			OriginalExists: true,
+		},
+	}
+	if err := commitStagedPatch(staged); err != nil {
 		return nil, err
 	}
 	return result, nil

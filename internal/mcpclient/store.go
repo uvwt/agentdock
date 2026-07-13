@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -17,7 +18,10 @@ import (
 	"github.com/uvwt/agentdock/internal/filelock"
 )
 
-const registryVersion = 1
+const (
+	registryVersion      = 1
+	maxRegistryFileBytes = 1 << 20
+)
 
 type registryFile struct {
 	Version int            `json:"version"`
@@ -44,18 +48,33 @@ func (s *store) load() (map[string]ServerConfig, error) {
 }
 
 func (s *store) loadUnlocked() (map[string]ServerConfig, error) {
-	data, err := os.ReadFile(s.path)
+	registryHandle, err := os.Open(s.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return map[string]ServerConfig{}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read dynamic MCP registry: %w", err)
 	}
+	defer registryHandle.Close()
+	data, err := io.ReadAll(io.LimitReader(registryHandle, maxRegistryFileBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read dynamic MCP registry: %w", err)
+	}
+	if len(data) > maxRegistryFileBytes {
+		return nil, fmt.Errorf("dynamic MCP registry exceeds %d bytes", maxRegistryFileBytes)
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var file registryFile
 	if err := decoder.Decode(&file); err != nil {
 		return nil, fmt.Errorf("decode dynamic MCP registry: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return nil, errors.New("decode dynamic MCP registry: trailing JSON value")
+		}
+		return nil, fmt.Errorf("decode dynamic MCP registry trailing data: %w", err)
 	}
 	if file.Version != registryVersion {
 		return nil, fmt.Errorf("unsupported dynamic MCP registry version %d", file.Version)
@@ -89,6 +108,9 @@ func (s *store) saveUnlocked(servers map[string]ServerConfig) error {
 		return fmt.Errorf("encode dynamic MCP registry: %w", err)
 	}
 	data = append(data, '\n')
+	if len(data) > maxRegistryFileBytes {
+		return fmt.Errorf("dynamic MCP registry exceeds %d bytes", maxRegistryFileBytes)
+	}
 	if err := atomicfile.Write(s.path, data, 0o600); err != nil {
 		return fmt.Errorf("write dynamic MCP registry: %w", err)
 	}

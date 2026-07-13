@@ -214,25 +214,22 @@ func (r *Runtime) readFile(ctx context.Context, args map[string]any) (Result, er
 		absPath = p.Abs
 		displayPath = p.Display
 	}
-	info, err := os.Stat(absPath)
+	read, err := readBoundedFile(absPath, int64(maxTextFileReadBytes))
 	if err != nil {
 		return nil, err
 	}
-	if info.IsDir() {
+	if read.Info.IsDir() {
 		return nil, toolError("IS_DIRECTORY", "cannot read directory", "validation")
 	}
-	if info.Size() > maxTextFileReadBytes {
+	if read.TooLarge {
 		return nil, toolErrorDetails(
 			"FILE_TOO_LARGE",
 			"text file exceeds the read_file input limit",
 			"validation",
-			map[string]any{"path": displayPath, "size_bytes": info.Size(), "max_size_bytes": maxTextFileReadBytes},
+			map[string]any{"path": displayPath, "size_bytes": read.Size, "max_size_bytes": maxTextFileReadBytes},
 		)
 	}
-	data, err := os.ReadFile(absPath)
-	if err != nil {
-		return nil, err
-	}
+	data := read.Data
 	if looksBinary(data) {
 		return nil, toolError("BINARY_FILE", "binary file read blocked for text tool", "validation")
 	}

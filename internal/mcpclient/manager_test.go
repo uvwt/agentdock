@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestManagerStreamableHTTPFlowAndPersistence(t *testing.T) {
@@ -387,5 +388,113 @@ func TestSameManagerConcurrentRegistryUpdatesRemainVisible(t *testing.T) {
 	listed := manager.List()
 	if len(listed) != 2 || listed[0].Name != "alpha" || listed[1].Name != "beta" {
 		t.Fatalf("manager registry = %#v", listed)
+	}
+}
+
+func TestManagerStatePinBlocksDisableUntilOperationFinishes(t *testing.T) {
+	manager, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	if _, err := manager.Add(ServerConfig{
+		Name:        "demo",
+		Description: "Demo",
+		Transport:   TransportStreamableHTTP,
+		URL:         "https://example.invalid/mcp",
+		Enabled:     true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, unlockState, err := manager.lockServer("demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := manager.SetEnabled("demo", false)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		unlockState()
+		t.Fatalf("SetEnabled() completed while state was pinned: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	unlockState()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("SetEnabled() remained blocked after state release")
+	}
+}
+
+func TestManagerRejectsOperationsAfterClose(t *testing.T) {
+	manager, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Close(); err != nil {
+		t.Fatalf("second Close() error = %v", err)
+	}
+	if _, err := manager.Add(ServerConfig{
+		Name:        "demo",
+		Description: "Demo",
+		Transport:   TransportStreamableHTTP,
+		URL:         "https://example.invalid/mcp",
+		Enabled:     true,
+	}); err == nil {
+		t.Fatal("Add() succeeded after Close()")
+	}
+	if _, _, err := manager.Refresh(context.Background(), "demo"); err == nil {
+		t.Fatal("Refresh() succeeded after Close()")
+	}
+}
+
+func TestLockServerRejectsCloseRace(t *testing.T) {
+	manager, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Add(ServerConfig{
+		Name:        "demo",
+		Description: "Demo",
+		Transport:   TransportStreamableHTTP,
+		URL:         "https://example.invalid/mcp",
+		Enabled:     true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manager.mu.RLock()
+	state := manager.states["demo"]
+	manager.mu.RUnlock()
+	state.mu.Lock()
+	lockResult := make(chan error, 1)
+	go func() {
+		_, _, unlock, err := manager.lockServer("demo")
+		if unlock != nil {
+			unlock()
+		}
+		lockResult <- err
+	}()
+	time.Sleep(20 * time.Millisecond)
+	closeResult := make(chan error, 1)
+	go func() { closeResult <- manager.Close() }()
+	time.Sleep(20 * time.Millisecond)
+	state.mu.Unlock()
+	if err := <-closeResult; err != nil {
+		t.Fatal(err)
+	}
+	err = <-lockResult
+	var mcpErr *Error
+	if !errors.As(err, &mcpErr) || mcpErr.Code != "MCP_MANAGER_CLOSED" {
+		t.Fatalf("lockServer() error = %#v, want MCP_MANAGER_CLOSED", err)
 	}
 }

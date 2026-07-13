@@ -6,17 +6,21 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 const (
-	ownerPrefix = "owner-"
-	pollDelay   = 25 * time.Millisecond
-	staleAfter  = 10 * time.Minute
+	ownerPrefix       = "owner-"
+	pollDelay         = 25 * time.Millisecond
+	staleAfter        = 10 * time.Minute
+	heartbeatInterval = staleAfter / 3
 )
 
 // Acquire uses an owner-tagged directory as a portable cross-process lock.
@@ -40,25 +44,57 @@ func Acquire(ctx context.Context, path string) (func(), error) {
 		err := os.Mkdir(path, 0o700)
 		if err == nil {
 			ownerPath := filepath.Join(path, ownerPrefix+owner)
-			if err := os.WriteFile(ownerPath, nil, 0o600); err != nil {
+			if err := os.WriteFile(ownerPath, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600); err != nil {
 				cleanupErr := cleanupInitialization(path, ownerPath)
 				return nil, errors.Join(fmt.Errorf("write file lock owner: %w", err), cleanupErr)
 			}
-			return func() { release(path, owner) }, nil
+			stopHeartbeat := maintainHeartbeat(ownerPath)
+			var releaseOnce sync.Once
+			return func() {
+				releaseOnce.Do(func() {
+					stopHeartbeat()
+					release(path, owner)
+				})
+			}, nil
 		}
 		if !errors.Is(err, os.ErrExist) {
 			return nil, fmt.Errorf("acquire file lock %s: %w", path, err)
 		}
-		if info, statErr := os.Stat(path); statErr == nil && time.Since(info.ModTime()) > staleAfter {
-			if removeSafeStale(path) {
-				continue
-			}
+		if removeSafeStale(path, time.Now()) {
+			continue
 		}
 		select {
 		case <-ctx.Done():
 			return nil, fmt.Errorf("acquire file lock %s: %w", path, ctx.Err())
 		case <-ticker.C:
 		}
+	}
+}
+
+func maintainHeartbeat(ownerPath string) func() {
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(heartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case now := <-ticker.C:
+				if err := os.Chtimes(ownerPath, now, now); err != nil {
+					if !errors.Is(err, os.ErrNotExist) {
+						slog.Warn("refresh file lock heartbeat failed", "path", ownerPath, "error", err)
+					}
+					return
+				}
+			}
+		}
+	}()
+	return func() {
+		close(stop)
+		<-done
 	}
 }
 
@@ -97,22 +133,65 @@ func release(lockPath, owner string) {
 	}
 }
 
-func removeSafeStale(lockPath string) bool {
+func removeSafeStale(lockPath string, now time.Time) bool {
 	entries, err := os.ReadDir(lockPath)
 	if err != nil {
 		return errors.Is(err, os.ErrNotExist)
 	}
 	if len(entries) == 0 {
+		info, statErr := os.Stat(lockPath)
+		if statErr != nil {
+			return errors.Is(statErr, os.ErrNotExist)
+		}
+		if now.Sub(info.ModTime()) <= staleAfter {
+			return false
+		}
 		return removeLockDirectory(lockPath)
 	}
-	if len(entries) != 1 || entries[0].IsDir() || !strings.HasPrefix(entries[0].Name(), ownerPrefix) {
+	if len(entries) != 1 || entries[0].IsDir() || !validOwnerName(entries[0].Name()) {
+		return false
+	}
+	info, err := entries[0].Info()
+	if err != nil {
+		return errors.Is(err, os.ErrNotExist)
+	}
+	if now.Sub(info.ModTime()) <= staleAfter {
 		return false
 	}
 	ownerPath := filepath.Join(lockPath, entries[0].Name())
+	if ownerPIDAlive(ownerPath) {
+		return false
+	}
 	if err := os.Remove(ownerPath); err != nil {
 		return errors.Is(err, os.ErrNotExist)
 	}
 	return removeLockDirectory(lockPath)
+}
+
+func ownerPIDAlive(ownerPath string) bool {
+	file, err := os.Open(ownerPath)
+	if err != nil {
+		return !errors.Is(err, os.ErrNotExist)
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, 65))
+	if err != nil || len(data) > 64 {
+		return true
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 0 {
+		return true
+	}
+	return processAlive(pid)
+}
+
+func validOwnerName(name string) bool {
+	raw := strings.TrimPrefix(name, ownerPrefix)
+	if raw == name || len(raw) != 32 {
+		return false
+	}
+	decoded, err := hex.DecodeString(raw)
+	return err == nil && len(decoded) == 16
 }
 
 func removeLockDirectory(path string) bool {

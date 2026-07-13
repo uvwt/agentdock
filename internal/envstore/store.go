@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,6 +20,8 @@ type ScopeKind string
 const (
 	ScopeSkill ScopeKind = "skill"
 	ScopeMCP   ScopeKind = "mcp"
+
+	maxEnvironmentFileBytes = 1 << 20
 )
 
 type Scope struct {
@@ -159,12 +162,20 @@ func (s *Store) loadLocked(scope Scope) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return map[string]string{}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read %s environment: %w", scope.Kind, err)
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxEnvironmentFileBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read %s environment: %w", scope.Kind, err)
+	}
+	if len(data) > maxEnvironmentFileBytes {
+		return nil, fmt.Errorf("%s environment exceeds %d bytes", scope.Kind, maxEnvironmentFileBytes)
 	}
 	if err := secureFile(path); err != nil {
 		return nil, err
@@ -192,7 +203,11 @@ func (s *Store) writeLocked(scope Scope, values map[string]string) error {
 			return err
 		}
 	}
-	if err := atomicfile.Write(path, marshal(values), 0o600); err != nil {
+	data := marshal(values)
+	if len(data) > maxEnvironmentFileBytes {
+		return fmt.Errorf("%s environment exceeds %d bytes", scope.Kind, maxEnvironmentFileBytes)
+	}
+	if err := atomicfile.Write(path, data, 0o600); err != nil {
 		return fmt.Errorf("write %s environment: %w", scope.Kind, err)
 	}
 	return secureFile(path)

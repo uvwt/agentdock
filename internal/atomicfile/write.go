@@ -37,6 +37,11 @@ func Write(path string, data []byte, mode os.FileMode) (returnErr error) {
 	if err := tmp.Chmod(mode.Perm()); err != nil {
 		return fmt.Errorf("set atomic temp file mode: %w", err)
 	}
+	// Windows 必须在写入敏感内容前收紧临时文件 DACL；Unix 在创建后已具备
+	// 私有临时权限，secureWrittenFile 在对应平台为空操作。
+	if err := secureWrittenFile(tmpPath, mode); err != nil {
+		return fmt.Errorf("secure atomic temp file: %w", err)
+	}
 	if _, err := tmp.Write(data); err != nil {
 		return fmt.Errorf("write atomic temp file: %w", err)
 	}
@@ -50,9 +55,6 @@ func Write(path string, data []byte, mode os.FileMode) (returnErr error) {
 	}
 	if err := replaceFile(tmpPath, path); err != nil {
 		return fmt.Errorf("replace atomic file: %w", err)
-	}
-	if err := secureWrittenFile(path, mode); err != nil {
-		return fmt.Errorf("secure atomic file: %w", err)
 	}
 	return nil
 }

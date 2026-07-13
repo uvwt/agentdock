@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/uvwt/agentdock/internal/atomicfile"
 )
 
 func (r *Runtime) fileEdit(ctx context.Context, args map[string]any) (Result, error) {
@@ -64,27 +62,26 @@ func (r *Runtime) fileEditAdd(args map[string]any) (Result, error) {
 		return nil, toolErrorDetails("FILE_EXISTS", "file already exists; set overwrite=true to replace it", "validation", map[string]any{"path": p.Display})
 	}
 	oldContent := ""
+	var original []byte
 	mode := os.FileMode(0o644)
 	if p.Exists {
-		info, err := os.Stat(p.Abs)
+		read, err := readBoundedFile(p.Abs, int64(maxTextFileReadBytes))
 		if err != nil {
 			return nil, err
 		}
-		if info.IsDir() {
+		if read.Info.IsDir() {
 			return nil, toolErrorDetails("IS_DIRECTORY", "cannot overwrite a directory with text content", "validation", map[string]any{"path": p.Display})
 		}
-		if info.Size() > maxTextFileReadBytes {
+		if read.TooLarge {
 			return nil, toolErrorDetails(
 				"FILE_TOO_LARGE",
 				"text file exceeds the file_edit input limit",
 				"validation",
-				map[string]any{"path": p.Display, "size_bytes": info.Size(), "max_size_bytes": maxTextFileReadBytes},
+				map[string]any{"path": p.Display, "size_bytes": read.Size, "max_size_bytes": maxTextFileReadBytes},
 			)
 		}
-		data, err := os.ReadFile(p.Abs)
-		if err != nil {
-			return nil, err
-		}
+		info := read.Info
+		data := read.Data
 		if looksBinary(data) {
 			return nil, toolErrorDetails("BINARY_FILE", "binary file edit blocked for text tool", "validation", map[string]any{"path": p.Display})
 		}
@@ -92,6 +89,7 @@ func (r *Runtime) fileEditAdd(args map[string]any) (Result, error) {
 			return nil, toolErrorDetails("ENCODING_UNSUPPORTED", "file is not valid utf-8", "validation", map[string]any{"path": p.Display})
 		}
 		oldContent = string(data)
+		original = append([]byte(nil), data...)
 		mode = info.Mode().Perm()
 	}
 	result, err := prepareTextAddition(p.Display, oldContent, content, p.Exists, args)
@@ -102,7 +100,18 @@ func (r *Runtime) fileEditAdd(args map[string]any) (Result, error) {
 	if dryRun || !changed {
 		return result, nil
 	}
-	if err := atomicfile.Write(p.Abs, []byte(content), mode); err != nil {
+	updated := content
+	staged := map[string]stagedPatchFile{
+		p.Abs: {
+			Abs:            p.Abs,
+			Display:        p.Display,
+			Content:        &updated,
+			Mode:           mode,
+			Original:       original,
+			OriginalExists: p.Exists,
+		},
+	}
+	if err := commitStagedPatch(staged); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -119,7 +128,7 @@ func (r *Runtime) fileEditDelete(args map[string]any) (Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	info, err := os.Stat(p.Abs)
+	info, err := os.Lstat(p.Abs)
 	if err != nil {
 		return nil, err
 	}
@@ -130,10 +139,57 @@ func (r *Runtime) fileEditDelete(args map[string]any) (Result, error) {
 	if dryRun {
 		return result, nil
 	}
-	if recursive {
-		return result, os.RemoveAll(p.Abs)
+	return result, deletePathSafely(p.Abs, info, recursive, os.Rename, renameNoReplace)
+}
+
+func deletePathSafely(path string, expected os.FileInfo, recursive bool, rename, restoreNoReplace func(string, string) error) error {
+	backupDir, err := os.MkdirTemp(filepath.Dir(path), ".agentdock-delete-backup-*")
+	if err != nil {
+		return fmt.Errorf("create delete backup directory: %w", err)
 	}
-	return result, os.Remove(p.Abs)
+	backupPath := filepath.Join(backupDir, "payload")
+	cleanup := func() error {
+		if err := os.RemoveAll(backupDir); err != nil {
+			return fmt.Errorf("remove delete backup directory: %w", err)
+		}
+		return nil
+	}
+	if err := rename(path, backupPath); err != nil {
+		return errors.Join(fmt.Errorf("stage delete target: %w", err), cleanup())
+	}
+	moved, err := os.Lstat(backupPath)
+	if err != nil {
+		return fmt.Errorf("inspect staged delete target at %s: %w", backupPath, err)
+	}
+	if !sameFileSnapshot(expected, moved) {
+		restoreErr := restoreNoReplace(backupPath, path)
+		if restoreErr == nil {
+			return errors.Join(
+				toolErrorDetails("FILE_CHANGED", "delete target changed before commit", "runtime", map[string]any{"path": path}),
+				cleanup(),
+			)
+		}
+		return errors.Join(
+			toolErrorDetails("FILE_CHANGED", "delete target changed before commit", "runtime", map[string]any{"path": path, "backup_path": backupPath}),
+			fmt.Errorf("restore changed delete target: %w", restoreErr),
+		)
+	}
+	if recursive || moved.IsDir() {
+		err = os.RemoveAll(backupPath)
+	} else {
+		err = os.Remove(backupPath)
+	}
+	if err != nil {
+		return fmt.Errorf("remove staged delete target at %s: %w", backupPath, err)
+	}
+	return cleanup()
+}
+
+func sameFileSnapshot(expected, actual os.FileInfo) bool {
+	return os.SameFile(expected, actual) &&
+		expected.Mode() == actual.Mode() &&
+		expected.Size() == actual.Size() &&
+		expected.ModTime().Equal(actual.ModTime())
 }
 
 func (r *Runtime) fileEditMove(args map[string]any) (Result, error) {
@@ -181,7 +237,7 @@ func (r *Runtime) fileEditMove(args map[string]any) (Result, error) {
 	if dryRun || !changed {
 		return result, nil
 	}
-	if err := movePathWithRollback(src.Abs, dest.Abs, dest.Exists && overwrite, os.Rename); err != nil {
+	if err := movePathWithRollback(src.Abs, dest.Abs, dest.Exists && overwrite, os.Rename, renameNoReplace); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -195,9 +251,44 @@ func pathIsDescendant(parent, candidate string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-func movePathWithRollback(src, dest string, replace bool, rename func(string, string) error) error {
+func verifyMovedSource(src, dest, backupPath string, expected os.FileInfo, installNoReplace func(string, string) error, cleanup func() error) error {
+	moved, err := os.Lstat(dest)
+	if err == nil && sameFileSnapshot(expected, moved) {
+		return nil
+	}
+	conflict := toolErrorDetails(
+		"FILE_CHANGED",
+		"move source changed before commit",
+		"runtime",
+		map[string]any{"path": src, "new_path": dest, "backup_path": backupPath},
+	)
+	if err != nil {
+		conflict.Details["reason"] = err.Error()
+	}
+	if restoreErr := installNoReplace(dest, src); restoreErr != nil {
+		return errors.Join(conflict, fmt.Errorf("restore changed move source: %w", restoreErr))
+	}
+	if backupPath != "" {
+		if restoreErr := installNoReplace(backupPath, dest); restoreErr != nil {
+			return errors.Join(conflict, fmt.Errorf("restore move destination: %w", restoreErr))
+		}
+	}
+	if cleanup != nil {
+		return errors.Join(conflict, cleanup())
+	}
+	return conflict
+}
+
+func movePathWithRollback(src, dest string, replace bool, rename, installNoReplace func(string, string) error) error {
+	expectedSource, err := os.Lstat(src)
+	if err != nil {
+		return fmt.Errorf("inspect move source: %w", err)
+	}
 	if !replace {
-		return rename(src, dest)
+		if err := installNoReplace(src, dest); err != nil {
+			return err
+		}
+		return verifyMovedSource(src, dest, "", expectedSource, installNoReplace, nil)
 	}
 
 	backupDir, err := os.MkdirTemp(filepath.Dir(dest), ".agentdock-move-backup-*")
@@ -216,8 +307,8 @@ func movePathWithRollback(src, dest string, replace bool, rename func(string, st
 		cleanupErr := cleanupBackupDir()
 		return errors.Join(fmt.Errorf("backup move destination: %w", err), cleanupErr)
 	}
-	if err := rename(src, dest); err != nil {
-		if rollbackErr := rename(backupPath, dest); rollbackErr != nil {
+	if err := installNoReplace(src, dest); err != nil {
+		if rollbackErr := installNoReplace(backupPath, dest); rollbackErr != nil {
 			return errors.Join(
 				fmt.Errorf("move source to destination: %w", err),
 				fmt.Errorf("restore move destination from %s: %w", backupPath, rollbackErr),
@@ -225,6 +316,9 @@ func movePathWithRollback(src, dest string, replace bool, rename func(string, st
 		}
 		cleanupErr := cleanupBackupDir()
 		return errors.Join(fmt.Errorf("move source to destination: %w", err), cleanupErr)
+	}
+	if err := verifyMovedSource(src, dest, backupPath, expectedSource, installNoReplace, cleanupBackupDir); err != nil {
+		return err
 	}
 	if err := cleanupBackupDir(); err != nil {
 		slog.Warn("remove committed move backup failed", "path", backupDir, "error", err)

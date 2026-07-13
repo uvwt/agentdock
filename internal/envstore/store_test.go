@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -181,5 +182,46 @@ func TestIndependentStoresDoNotLoseConcurrentUpdates(t *testing.T) {
 	}
 	if len(values) != 64 {
 		t.Fatalf("concurrent independent stores retained %d keys, want 64", len(values))
+	}
+}
+
+func TestStoreRejectsOversizedEnvironmentFile(t *testing.T) {
+	home := t.TempDir()
+	store, err := New(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := Scope{Kind: ScopeMCP, Name: "oversized"}
+	path, err := store.Path(scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(maxEnvironmentFileBytes + 1); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Load(scope); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("Load() error = %v, want size limit", err)
+	}
+}
+
+func TestStoreRejectsOversizedEnvironmentWrite(t *testing.T) {
+	store, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := Scope{Kind: ScopeSkill, Name: "oversized"}
+	if err := store.Set(scope, "VALUE", strings.Repeat("x", maxEnvironmentFileBytes)); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("Set() error = %v, want size limit", err)
 	}
 }
