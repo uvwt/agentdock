@@ -324,6 +324,39 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.variant }}
           cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
 
+  verify-linux-release:
+    name: Verify published Linux installer
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download and run published installer
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          installer="$RUNNER_TEMP/install-linux.sh"
+          install_dir="$RUNNER_TEMP/agentdock-install"
+          data_dir="$RUNNER_TEMP/agentdock-data"
+          env_file="$RUNNER_TEMP/agentdock.env"
+          curl -fL "https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG/install-linux.sh" -o "$installer"
+          curl -fL "https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG/install-linux.sh.sha256" -o "$installer.sha256"
+          (
+            cd "$RUNNER_TEMP"
+            sha256sum -c install-linux.sh.sha256
+          )
+          AGENTDOCK_NONINTERACTIVE=true \
+          AGENTDOCK_INSTALL_MODE=binary \
+          AGENTDOCK_RELEASE_VERSION="$RELEASE_TAG" \
+          AGENTDOCK_SOURCE_DIR="$install_dir" \
+          AGENTDOCK_DATA_DIR="$data_dir" \
+          AGENTDOCK_ENV_FILE="$env_file" \
+          AGENTDOCK_SERVICE_MANAGER=none \
+          AGENTDOCK_SERVICE_USER="$(id -un)" \
+          AGENTDOCK_AUTH_TOKEN=test-token \
+            bash "$installer"
+          "$install_dir/bin/agentdock" --help >/dev/null 2>&1
+
   verify-macos-release:
     name: Verify published macOS installer
     needs: publish

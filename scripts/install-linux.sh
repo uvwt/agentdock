@@ -26,6 +26,18 @@ if [[ ! -w "$TTY_OUT" ]]; then
   TTY_OUT="/dev/stderr"
 fi
 
+noninteractive_enabled() {
+  case "${AGENTDOCK_NONINTERACTIVE:-false}" in
+    1|true|TRUE|yes|YES) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if noninteractive_enabled; then
+  TTY_IN="/dev/stdin"
+  TTY_OUT="/dev/stderr"
+fi
+
 usage() {
   cat <<'USAGE'
 AgentDock Linux 问答式一键部署脚本。
@@ -41,8 +53,8 @@ Alpine/极简系统如果没有 curl/bash：
   bash /tmp/agentdock-install.sh
 
 环境变量可覆盖默认值：
-  AGENTDOCK_INSTALL_MODE、AGENTDOCK_RELEASE_VERSION、AGENTDOCK_REPO_URL、AGENTDOCK_BRANCH
-  AGENTDOCK_SOURCE_DIR、AGENTDOCK_DATA_DIR、AGENTDOCK_ENV_FILE
+  AGENTDOCK_INSTALL_MODE、AGENTDOCK_RELEASE_VERSION、AGENTDOCK_NONINTERACTIVE
+  AGENTDOCK_REPO_URL、AGENTDOCK_BRANCH、AGENTDOCK_SOURCE_DIR、AGENTDOCK_DATA_DIR、AGENTDOCK_ENV_FILE
   AGENTDOCK_SERVICE_NAME、AGENTDOCK_SERVICE_USER、AGENTDOCK_HOST、AGENTDOCK_PORT
   AGENTDOCK_AUTH_TOKEN、AGENTDOCK_GO_VERSION
 
@@ -64,6 +76,10 @@ prompt() {
   local label="$1"
   local default_value="${2:-}"
   local answer=""
+  if noninteractive_enabled; then
+    printf '%s' "$default_value"
+    return
+  fi
   if [[ -n "$default_value" ]]; then
     printf '%s [%s]: ' "$label" "$default_value" >"$TTY_OUT"
   else
@@ -80,6 +96,10 @@ prompt() {
 prompt_secret() {
   local label="$1"
   local answer=""
+  if noninteractive_enabled; then
+    printf ''
+    return
+  fi
   printf '%s（输入不回显，留空自动生成）: ' "$label" >"$TTY_OUT"
   stty -echo <"$TTY_IN" 2>/dev/null || true
   IFS= read -r answer <"$TTY_IN" || true
@@ -92,6 +112,10 @@ confirm() {
   local label="$1"
   local default_value="${2:-y}"
   local answer=""
+  if noninteractive_enabled; then
+    [[ "$default_value" == "y" ]]
+    return
+  fi
   while true; do
     if [[ "$default_value" == "y" ]]; then
       printf '%s [Y/n]: ' "$label" >"$TTY_OUT"
@@ -320,14 +344,25 @@ install_prebuilt_binary() {
   local repo_url="$1"
   local version="$2"
   local source_dir="$3"
-  local url tmp_dir tmp_tgz
+  local url tmp_dir file_name tmp_tgz tmp_checksum
   url="$(release_download_url "$repo_url" "$version")"
   tmp_dir="$(mktemp -d)"
-  tmp_tgz="$tmp_dir/agentdock.tgz"
+  file_name="${url##*/}"
+  tmp_tgz="$tmp_dir/$file_name"
+  tmp_checksum="$tmp_tgz.sha256"
   log "下载预编译 AgentDock：$url"
   if ! curl -fL "$url" -o "$tmp_tgz"; then
     rm -rf "$tmp_dir"
     return 1
+  fi
+  if ! curl -fL "$url.sha256" -o "$tmp_checksum"; then
+    rm -rf "$tmp_dir"
+    die "无法下载预编译包校验文件：$url.sha256"
+  fi
+  log "校验预编译包 SHA-256"
+  if ! (cd "$tmp_dir" && sha256sum -c "$file_name.sha256"); then
+    rm -rf "$tmp_dir"
+    die "预编译包 SHA-256 校验失败：$url"
   fi
   run_root mkdir -p "$source_dir/bin"
   tar -xzf "$tmp_tgz" -C "$tmp_dir"
@@ -755,16 +790,20 @@ SUMMARY
   start_service "$service_manager" "$service_name"
 
   health_host="$(local_health_host "$host")"
-  log "验证 healthz"
-  curl -fsS "http://$health_host:$port/healthz"
-  printf '\n'
-
   smoke_url="http://$health_host:$port"
-  if [[ -x "$source_dir/scripts/smoke-docker.sh" ]]; then
-    log "验证 MCP smoke"
-    AGENTDOCK_SMOKE_URL="$smoke_url" AGENTDOCK_AUTH_TOKEN="$token" "$source_dir/scripts/smoke-docker.sh"
+  if [[ "$service_manager" != "none" ]]; then
+    log "验证 healthz"
+    curl -fsS "$smoke_url/healthz"
+    printf '\n'
+
+    if [[ -x "$source_dir/scripts/smoke-docker.sh" ]]; then
+      log "验证 MCP smoke"
+      AGENTDOCK_SMOKE_URL="$smoke_url" AGENTDOCK_AUTH_TOKEN="$token" "$source_dir/scripts/smoke-docker.sh"
+    else
+      warn "未找到 smoke 脚本，跳过 MCP smoke：$source_dir/scripts/smoke-docker.sh"
+    fi
   else
-    warn "未找到 smoke 脚本，跳过 MCP smoke：$source_dir/scripts/smoke-docker.sh"
+    log "未配置系统服务，跳过运行时健康检查。"
   fi
 
   cat >"$TTY_OUT" <<DONE
