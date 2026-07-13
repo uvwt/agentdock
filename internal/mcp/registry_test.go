@@ -209,6 +209,10 @@ func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 			t.Fatalf("task_manage input schema missing %q", name)
 		}
 	}
+	completedStepIDs := props["completed_step_ids"].(map[string]any)
+	if completedStepIDs["minItems"] != 1 || completedStepIDs["maxItems"] != 12 || completedStepIDs["uniqueItems"] != true {
+		t.Fatalf("completed_step_ids schema bounds are incorrect: %#v", completedStepIDs)
+	}
 	for _, removed := range []string{"template_version", "selected_reason", "template_candidates", "blocker", "evidence", "review_status", "verified_facts", "open_risks", "missing_checks"} {
 		if _, ok := props[removed]; ok {
 			t.Fatalf("task_manage input schema still exposes removed field %q", removed)

@@ -145,6 +145,16 @@ func TestTaskManageBatchCheckpointAndModeValidation(t *testing.T) {
 	if !errors.As(err, &toolErr) || toolErr.Code != "VALIDATION_ERROR" {
 		t.Fatalf("expected mixed checkpoint validation error, got %T: %v", err, err)
 	}
+
+	_, err = rt.taskManage(context.Background(), map[string]any{
+		"action":             "checkpoint",
+		"task_id":            taskID,
+		"completed_step_ids": []string{},
+		"summary":            "empty batch",
+	})
+	if err == nil || !strings.Contains(err.Error(), "completed_step_ids or current_step_id") {
+		t.Fatalf("empty batch should use batch validation: %v", err)
+	}
 }
 
 func TestTaskManageSingleTemplateResolvesActiveVersion(t *testing.T) {

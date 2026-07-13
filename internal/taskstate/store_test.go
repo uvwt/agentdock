@@ -217,6 +217,19 @@ func TestBatchCheckpointUpdatesStepsAtomicallyAndSupportsRetry(t *testing.T) {
 	if _, err := store.BatchCheckpoint(atomicTask.ID, []string{"docs"}, "docs", "overlap"); err == nil {
 		t.Fatal("accepted step as both completed and current")
 	}
+	if _, err := store.Checkpoint(atomicTask.ID, "code", StepInProgress, "coding"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.BatchCheckpoint(atomicTask.ID, nil, "docs", "switch current step"); err == nil || !strings.Contains(err.Error(), "already in progress") {
+		t.Fatalf("accepted a second in-progress step: %v", err)
+	}
+	loaded, err = store.Get(atomicTask.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Steps[0].Status != StepInProgress || loaded.Steps[1].Status != StepPending {
+		t.Fatalf("rejected current-step switch changed task: %#v", loaded.Steps)
+	}
 }
 
 func TestBlockAndResumeUsesOneSummary(t *testing.T) {
@@ -248,6 +261,9 @@ func TestBlockAndResumeUsesOneSummary(t *testing.T) {
 	}
 	if _, err := store.Block(task.ID, "late blocker"); err == nil || !strings.Contains(err.Error(), "passed final review") {
 		t.Fatalf("block should reject a passed final review: %v", err)
+	}
+	if _, err := store.FinalReview(task.ID, FinalReviewInput{Status: FinalReviewFailed, Summary: "reopen", OpenRisks: []string{"late risk"}}); err == nil || !strings.Contains(err.Error(), "passed final review") {
+		t.Fatalf("final review should not overwrite a passed review: %v", err)
 	}
 }
 

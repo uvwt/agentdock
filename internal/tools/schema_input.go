@@ -111,7 +111,7 @@ func InputSchema(name string) map[string]any {
 		props["template_id"] = stringProp("Single active workflow template to apply. Its current active version is resolved automatically.")
 		props["source_template_ids"] = map[string]any{"type": "array", "minItems": 2, "maxItems": 3, "items": map[string]any{"type": "string"}, "description": "Two or three templates already composed by the model into steps and completion_conditions."}
 		props["step_id"] = stringProp("Task step id for a single-step checkpoint.")
-		props["completed_step_ids"] = map[string]any{"type": "array", "maxItems": 12, "uniqueItems": true, "items": map[string]any{"type": "string"}, "description": "Task step ids to mark completed in one atomic batch checkpoint."}
+		props["completed_step_ids"] = map[string]any{"type": "array", "minItems": 1, "maxItems": 12, "uniqueItems": true, "items": map[string]any{"type": "string"}, "description": "Task step ids to mark completed in one atomic batch checkpoint."}
 		props["current_step_id"] = stringProp("Single task step id to mark in_progress in a batch checkpoint.")
 		props["status"] = map[string]any{"type": "string", "description": "Action-specific status: task list filter, single-step checkpoint status, or final review status.", "enum": []string{"active", "blocked", "completed", "pending", "in_progress", "pass", "failed"}}
 		props["limit"] = intProp("Maximum tasks returned by list. Defaults to 50 and is capped at 200.")

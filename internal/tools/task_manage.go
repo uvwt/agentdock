@@ -32,6 +32,7 @@ type taskManageInput struct {
 	TaskID               string
 	StepID               string
 	CompletedStepIDs     []string
+	CompletedStepIDsSet  bool
 	CurrentStepID        string
 	Summary              string
 	Verified             []string
@@ -81,6 +82,7 @@ func parseTaskManageInput(args map[string]any) (taskManageInput, error) {
 		Verified:             stringSliceArg(args, "verified"),
 		Risks:                stringSliceArg(args, "risks"),
 	}
+	_, input.CompletedStepIDsSet = args["completed_step_ids"]
 	if raw := args["steps"]; raw != nil {
 		if err := remarshal(raw, &input.Steps); err != nil {
 			return input, toolErrorDetails("VALIDATION_ERROR", "steps must be an array of task steps", "validation", map[string]any{"field": "steps", "reason": err.Error()})
@@ -200,7 +202,7 @@ func (r *Runtime) taskManage(ctx context.Context, args map[string]any) (Result, 
 		return Result{"ok": true, "action": input.Action, "task": task, "state_dir": r.tasks.Root()}, nil
 	case "checkpoint":
 		singleStepMode := strings.TrimSpace(input.StepID) != "" || input.Status != ""
-		batchMode := len(input.CompletedStepIDs) > 0 || strings.TrimSpace(input.CurrentStepID) != ""
+		batchMode := input.CompletedStepIDsSet || strings.TrimSpace(input.CurrentStepID) != ""
 		if singleStepMode && batchMode {
 			return nil, toolErrorDetails("VALIDATION_ERROR", "single-step and batch checkpoint fields cannot be combined", "validation", map[string]any{
 				"single_step_fields": []string{"step_id", "status"},

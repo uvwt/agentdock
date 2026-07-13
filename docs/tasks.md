@@ -118,7 +118,7 @@ complete
 }
 ```
 
-只批量完成步骤时可以省略 `current_step_id`。单步模式使用 `step_id + status`，批量模式使用 `completed_step_ids + current_step_id`，两种模式不能混用。
+只批量完成步骤时可以省略 `current_step_id`；提供 `completed_step_ids` 时至少包含一个步骤。单步模式使用 `step_id + status`，批量模式使用 `completed_step_ids + current_step_id`，两种模式不能混用。
 
 步骤状态只有：
 
@@ -173,7 +173,7 @@ status=active|blocked|completed
 }
 ```
 
-普通失败、临时测试不通过或仍可继续排查的问题，不应直接标记为 blocked。`resume` 会清空 blocker，并把任务最近摘要更新为本次恢复说明。`final_review=pass` 后任务只允许进入 `complete`，不能再 block 或 checkpoint。
+普通失败、临时测试不通过或仍可继续排查的问题，不应直接标记为 blocked。`resume` 会清空 blocker，并把任务最近摘要更新为本次恢复说明。`final_review=pass` 后任务只允许进入 `complete`，不能再 block、checkpoint 或重新执行 final_review。
 
 ### final_review / complete
 

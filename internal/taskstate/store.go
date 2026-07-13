@@ -234,8 +234,8 @@ func (s *Store) Checkpoint(id, stepID, status, summary string) (Task, error) {
 		if err := requireActive(task); err != nil {
 			return err
 		}
-		if task.FinalReview != nil && task.FinalReview.Status == FinalReviewPass {
-			return errors.New("task already passed final review")
+		if err := requireFinalReviewOpen(task); err != nil {
+			return err
 		}
 		stepID = strings.TrimSpace(stepID)
 		status = strings.ToLower(strings.TrimSpace(status))
@@ -285,8 +285,8 @@ func (s *Store) BatchCheckpoint(id string, completedStepIDs []string, currentSte
 		if err := requireActive(task); err != nil {
 			return err
 		}
-		if task.FinalReview != nil && task.FinalReview.Status == FinalReviewPass {
-			return errors.New("task already passed final review")
+		if err := requireFinalReviewOpen(task); err != nil {
+			return err
 		}
 
 		completedStepIDs = normalizeStepIDs(completedStepIDs)
@@ -371,8 +371,8 @@ func (s *Store) Block(id, summary string) (Task, error) {
 		if err := requireMutable(task); err != nil {
 			return err
 		}
-		if task.FinalReview != nil && task.FinalReview.Status == FinalReviewPass {
-			return errors.New("task already passed final review")
+		if err := requireFinalReviewOpen(task); err != nil {
+			return err
 		}
 		summary = strings.TrimSpace(summary)
 		if summary == "" {
@@ -420,6 +420,9 @@ func (s *Store) Complete(id string) (Task, error) {
 
 func applyFinalReview(task *Task, input FinalReviewInput, now time.Time) error {
 	if err := requireActive(task); err != nil {
+		return err
+	}
+	if err := requireFinalReviewOpen(task); err != nil {
 		return err
 	}
 	status := strings.ToLower(strings.TrimSpace(input.Status))
@@ -727,6 +730,13 @@ func requireMutable(task *Task) error {
 func requireActive(task *Task) error {
 	if task.Status != StatusActive {
 		return fmt.Errorf("task status must be active, got %s", task.Status)
+	}
+	return nil
+}
+
+func requireFinalReviewOpen(task *Task) error {
+	if task.FinalReview != nil && task.FinalReview.Status == FinalReviewPass {
+		return errors.New("task already passed final review")
 	}
 	return nil
 }
