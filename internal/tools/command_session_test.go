@@ -302,24 +302,34 @@ func TestSessionActWritesInputAndReturnsFinalOutput(t *testing.T) {
 	if sessionID == "" {
 		t.Fatalf("initial result missing session_id: %#v", started)
 	}
-	if _, err := runtime.writeStdin(map[string]any{"session_id": sessionID, "chars": "hello\n"}); err != nil {
+	result, err := runtime.writeStdin(map[string]any{"session_id": sessionID, "chars": "hello\n"})
+	if err != nil {
 		t.Fatalf("writeStdin() error = %v", err)
 	}
 
-	var result Result
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		result, err = runtime.sessionStatus(map[string]any{"session_id": sessionID})
-		if err == nil && result["status"] == "exited" {
-			break
-		}
-		if err != nil && !strings.Contains(err.Error(), "session not found") {
-			t.Fatalf("sessionStatus() error = %v", err)
-		}
-		time.Sleep(10 * time.Millisecond)
+	var stdout strings.Builder
+	if value, _ := result["stdout"].(string); value != "" {
+		stdout.WriteString(value)
 	}
-	if result["status"] != "exited" || result["stdout"] != "received:hello" {
-		t.Fatalf("final result = %#v", result)
+	deadline := time.Now().Add(time.Second)
+	for result["status"] != "exited" && time.Now().Before(deadline) {
+		result, err = runtime.sessionStatus(map[string]any{"session_id": sessionID})
+		if err != nil {
+			if !strings.Contains(err.Error(), "session not found") {
+				t.Fatalf("sessionStatus() error = %v", err)
+			}
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		if value, _ := result["stdout"].(string); value != "" {
+			stdout.WriteString(value)
+		}
+		if result["status"] != "exited" {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	if result["status"] != "exited" || stdout.String() != "received:hello" {
+		t.Fatalf("final result = %#v, stdout = %q", result, stdout.String())
 	}
 }
 
