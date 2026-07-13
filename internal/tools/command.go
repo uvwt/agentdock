@@ -48,8 +48,12 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 	// 如果子进程绑定到单次 MCP 请求 ctx，请求结束时 git push / npm install 等长任务会被杀掉。
 	// 因此长任务只受 timeout_ms 和 session_act action=kill/kill_all 控制。
 	s, sandboxStatus, err := invocation.start(context.Background(), timeout, tty, func(command *exec.Cmd) (func(), map[string]any) {
-		// AgentDock 采用单一 Host 路径模型，命令权限由当前 OS 用户、Docker volume 或 systemd 用户决定。
-		return func() {}, map[string]any{"enabled": false, "mode": "none", "policy": "no_command_content_filtering", "warnings": []string{"exec_command runs with the AgentDock process OS user privileges", "use Docker volumes, service users, file permissions, and network policy as the security boundary"}}
+		// AgentDock 不额外过滤命令，实际权限边界由所选运行环境决定。
+		privilegeWarning := "exec_command runs with the AgentDock process OS user privileges"
+		if invocation.execution.Runtime == "wsl" {
+			privilegeWarning = "runtime=wsl executes with the selected distribution's default Linux user privileges"
+		}
+		return func() {}, map[string]any{"enabled": false, "mode": "none", "policy": "no_command_content_filtering", "warnings": []string{privilegeWarning, "use Docker volumes, service users, file permissions, and network policy as the security boundary"}}
 	})
 	if err != nil {
 		return nil, err

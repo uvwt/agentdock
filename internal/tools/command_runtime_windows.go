@@ -49,11 +49,6 @@ func (r *Runtime) prepareCommandInvocation(args map[string]any, command string) 
 		if err != nil {
 			return commandInvocation{}, err
 		}
-		for key := range linuxEnv {
-			if strings.EqualFold(key, "WSLENV") {
-				return commandInvocation{}, toolError("INVALID_ENV_NAME", "WSLENV is reserved by AgentDock when runtime is wsl", "validation")
-			}
-		}
 		hostEnv, err := r.commandEnv("", nil)
 		if err != nil {
 			return commandInvocation{}, err
@@ -129,5 +124,5 @@ func addExecCommandRuntimeProperties(props map[string]any) {
 }
 
 func execCommandDescription() string {
-	return "Run a bounded command on Windows or WSL. runtime defaults to windows; runtime=wsl uses wsl.exe while reusing the existing TTY and session lifecycle. Skill environment values are loaded before explicit env overrides."
+	return "Run a bounded command on Windows or WSL. runtime defaults to windows. When WSL is required, use runtime=wsl instead of putting wsl.exe in cmd; existing TTY and session lifecycle are reused. Skill environment values are loaded before explicit env overrides."
 }

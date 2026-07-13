@@ -22,6 +22,7 @@ func TestStartCommandWithTTYRunsDirectCommandFactory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartCommandWithTTY() error = %v", err)
 	}
+	defer s.Cancel()
 	select {
 	case <-s.Done:
 	case <-time.After(5 * time.Second):

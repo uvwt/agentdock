@@ -46,6 +46,17 @@ func TestBuildWSLProcessEnvForwardsValuesWithoutPuttingThemInArgs(t *testing.T) 
 	}
 }
 
+func TestBuildWSLProcessEnvHonorsExplicitWSLEnv(t *testing.T) {
+	env := buildWSLProcessEnv(
+		[]string{"CUSTOM=base", "WSLENV=OLD"},
+		map[string]string{"WSLENV": "CUSTOM/u", "TOKEN": "forwarded"},
+	)
+	want := []string{"CUSTOM=base", "TOKEN=forwarded", "WSLENV=CUSTOM/u:TOKEN"}
+	if !reflect.DeepEqual(env, want) {
+		t.Fatalf("buildWSLProcessEnv() = %#v, want %#v", env, want)
+	}
+}
+
 func TestWindowsPathToWSL(t *testing.T) {
 	tests := []struct {
 		name string

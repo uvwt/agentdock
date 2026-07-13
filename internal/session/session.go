@@ -36,7 +36,7 @@ type Session struct {
 	Done       chan struct{}
 	TimedOut   bool
 	Terminal   string
-	Execution  ExecutionContext
+	execution  ExecutionContext
 
 	runner commandRunner
 
@@ -139,9 +139,9 @@ func (s *Session) Summary() Summary {
 		Status:       status,
 		ElapsedMS:    finishedAt.Sub(s.StartedAt).Milliseconds(),
 		TimedOut:     s.TimedOut,
-		Runtime:      s.Execution.Runtime,
-		Distribution: s.Execution.Distribution,
-		Workdir:      s.Execution.Workdir,
+		Runtime:      s.execution.Runtime,
+		Distribution: s.execution.Distribution,
+		Workdir:      s.execution.Workdir,
 	}
 }
 
@@ -246,7 +246,7 @@ func StartCommandWithTTY(ctx context.Context, build CommandFactory, timeout time
 
 func (s *Session) SetExecutionContext(execution ExecutionContext) {
 	s.mu.Lock()
-	s.Execution = execution
+	s.execution = execution
 	s.mu.Unlock()
 }
 
@@ -333,14 +333,14 @@ func (s *Session) snapshot(status string, maxBytes int, advance bool) map[string
 	if s.completed {
 		result["exit_code"] = s.exitCode
 	}
-	if s.Execution.Runtime != "" {
-		result["runtime"] = s.Execution.Runtime
+	if s.execution.Runtime != "" {
+		result["runtime"] = s.execution.Runtime
 	}
-	if s.Execution.Distribution != "" {
-		result["wsl_distribution"] = s.Execution.Distribution
+	if s.execution.Distribution != "" {
+		result["wsl_distribution"] = s.execution.Distribution
 	}
-	if s.Execution.Workdir != "" {
-		result["workdir"] = s.Execution.Workdir
+	if s.execution.Workdir != "" {
+		result["workdir"] = s.execution.Workdir
 	}
 	return result
 }

@@ -61,14 +61,3 @@ func TestPrepareCommandInvocationRejectsWSLDistributionForWindowsRuntime(t *test
 		t.Fatal("expected wsl_distribution validation error")
 	}
 }
-
-func TestPrepareCommandInvocationRejectsReservedWSLEnv(t *testing.T) {
-	runtime, _ := newCodeToolsRuntime(t)
-	_, err := runtime.prepareCommandInvocation(map[string]any{
-		"runtime": "wsl",
-		"env":     map[string]any{"wslenv": "TOKEN"},
-	}, "printf ok")
-	if err == nil {
-		t.Fatal("expected reserved WSLENV validation error")
-	}
-}

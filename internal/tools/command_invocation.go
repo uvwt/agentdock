@@ -95,8 +95,15 @@ func buildWSLProcessEnv(base []string, forwarded map[string]string) []string {
 
 	wslEnvItems := make([]string, 0, len(forwarded))
 	forwardedNames := map[string]bool{}
-	if existing := values["WSLENV"]; existing != "" {
-		for _, item := range strings.Split(existing, ":") {
+	existingWSLEnv := values["WSLENV"]
+	for key, value := range forwarded {
+		if strings.EqualFold(key, "WSLENV") {
+			existingWSLEnv = value
+			break
+		}
+	}
+	if existingWSLEnv != "" {
+		for _, item := range strings.Split(existingWSLEnv, ":") {
 			item = strings.TrimSpace(item)
 			if item == "" {
 				continue
@@ -114,6 +121,9 @@ func buildWSLProcessEnv(base []string, forwarded map[string]string) []string {
 	sort.Strings(keys)
 	for _, key := range keys {
 		normalized := strings.ToUpper(key)
+		if normalized == "WSLENV" {
+			continue
+		}
 		names[normalized] = key
 		values[normalized] = forwarded[key]
 		if !forwardedNames[normalized] {
@@ -124,6 +134,9 @@ func buildWSLProcessEnv(base []string, forwarded map[string]string) []string {
 	if len(wslEnvItems) > 0 {
 		names["WSLENV"] = "WSLENV"
 		values["WSLENV"] = strings.Join(wslEnvItems, ":")
+	} else {
+		delete(names, "WSLENV")
+		delete(values, "WSLENV")
 	}
 
 	normalizedKeys := make([]string, 0, len(values))
