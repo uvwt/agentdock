@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/uvwt/agentdock/internal/config"
 )
@@ -156,5 +157,15 @@ func TestRecallSearchCardsUsesCanonicalPrefix(t *testing.T) {
 	}
 	if gotPrefix != "recall/managed/cards" {
 		t.Fatalf("unexpected card search prefix %q", gotPrefix)
+	}
+}
+
+func TestRecallRequestTimeoutUsesLongWindowForEmbeddingReindex(t *testing.T) {
+	if got := recallRequestTimeout("/v1/embeddings/reindex"); got != 180*time.Second {
+		t.Fatalf("unexpected embedding reindex timeout %s", got)
+	}
+	defaultTimeout := time.Duration(config.RecallTimeoutMS) * time.Millisecond
+	if got := recallRequestTimeout("/v1/recall/search"); got != defaultTimeout {
+		t.Fatalf("unexpected default recall timeout %s", got)
 	}
 }

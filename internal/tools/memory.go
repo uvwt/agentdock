@@ -209,6 +209,16 @@ func (r *Runtime) memoryDelete(ctx context.Context, args map[string]any) (Result
 	return r.memoryRequest(ctx, http.MethodDelete, endpoint, nil)
 }
 
+const recallEmbeddingReindexTimeout = 180 * time.Second
+
+func recallRequestTimeout(endpoint string) time.Duration {
+	if endpoint == "/v1/embeddings/reindex" {
+		// BGE-M3 全量重建会随卡片数量和文本长度增长，使用与 NexusDock 服务端一致的长操作窗口。
+		return recallEmbeddingReindexTimeout
+	}
+	return time.Duration(config.RecallTimeoutMS) * time.Millisecond
+}
+
 func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, payload any) (Result, error) {
 	base := strings.TrimRight(strings.TrimSpace(r.cfg.NexusEndpoint), "/")
 	if base == "" {
@@ -222,7 +232,7 @@ func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, pa
 		}
 		body = bytes.NewReader(data)
 	}
-	requestCtx, cancel := context.WithTimeout(ctx, time.Duration(config.RecallTimeoutMS)*time.Millisecond)
+	requestCtx, cancel := context.WithTimeout(ctx, recallRequestTimeout(endpoint))
 	defer cancel()
 	req, err := http.NewRequestWithContext(requestCtx, method, base+endpoint, body)
 	if err != nil {
