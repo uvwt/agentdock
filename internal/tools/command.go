@@ -8,10 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
-	"github.com/uvwt/agentdock/internal/envstore"
 	"github.com/uvwt/agentdock/internal/session"
 )
 
@@ -32,16 +30,9 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 	if cmd == "" {
 		return nil, toolError("INVALID_ARGUMENT", "cmd is required", "validation")
 	}
-	workdir, err := r.ws.ResolveExisting(stringArg(args, "workdir", "."))
+	invocation, err := r.prepareCommandInvocation(args, cmd)
 	if err != nil {
 		return nil, err
-	}
-	info, err := os.Stat(workdir.Abs)
-	if err != nil {
-		return nil, err
-	}
-	if !info.IsDir() {
-		return nil, toolError("NOT_A_DIRECTORY", "workdir is not a directory", "validation")
 	}
 	timeout, err := commandTimeout(args)
 	if err != nil {
@@ -56,17 +47,14 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 	// 背景：exec_command 可能先返回 running，让模型后续通过 session_observe action=status 继续取结果；
 	// 如果子进程绑定到单次 MCP 请求 ctx，请求结束时 git push / npm install 等长任务会被杀掉。
 	// 因此长任务只受 timeout_ms 和 session_act action=kill/kill_all 控制。
-	commandEnv, err := r.commandEnv(strings.TrimSpace(stringArg(args, "skill_env", "")), mapArg(args, "env"))
-	if err != nil {
-		return nil, err
-	}
-	s, sandboxStatus, err := session.StartWithTTY(context.Background(), cmd, workdir.Abs, commandEnv, timeout, tty, func(command *exec.Cmd) (func(), map[string]any) {
+	s, sandboxStatus, err := invocation.start(context.Background(), timeout, tty, func(command *exec.Cmd) (func(), map[string]any) {
 		// AgentDock 采用单一 Host 路径模型，命令权限由当前 OS 用户、Docker volume 或 systemd 用户决定。
 		return func() {}, map[string]any{"enabled": false, "mode": "none", "policy": "no_command_content_filtering", "warnings": []string{"exec_command runs with the AgentDock process OS user privileges", "use Docker volumes, service users, file permissions, and network policy as the security boundary"}}
 	})
 	if err != nil {
 		return nil, err
 	}
+	s.SetExecutionContext(invocation.execution)
 	if stdin := stringArg(args, "stdin", ""); stdin != "" {
 		if err := s.Write(stdin); err != nil {
 			s.Kill()
@@ -311,7 +299,17 @@ func (r *Runtime) listSessions() (Result, error) {
 	items := make([]map[string]any, 0)
 	for _, s := range r.sessions.List() {
 		summary := s.Summary()
-		items = append(items, map[string]any{"session_id": summary.ID, "status": summary.Status, "elapsed_ms": summary.ElapsedMS, "timed_out": summary.TimedOut})
+		item := map[string]any{"session_id": summary.ID, "status": summary.Status, "elapsed_ms": summary.ElapsedMS, "timed_out": summary.TimedOut}
+		if summary.Runtime != "" {
+			item["runtime"] = summary.Runtime
+		}
+		if summary.Distribution != "" {
+			item["wsl_distribution"] = summary.Distribution
+		}
+		if summary.Workdir != "" {
+			item["workdir"] = summary.Workdir
+		}
+		items = append(items, item)
 	}
 	return Result{"ok": true, "sessions": items, "count": len(items)}, nil
 }
@@ -328,20 +326,12 @@ func (r *Runtime) commandEnv(skillName string, extra map[string]any) ([]string, 
 	if err != nil {
 		return nil, err
 	}
-	if skillName != "" {
-		values, err := r.envs.Load(envstore.Scope{Kind: envstore.ScopeSkill, Name: skillName})
-		if err != nil {
-			return nil, toolErrorDetails("SKILL_ENV_INVALID", "load Skill environment", "validation", map[string]any{"skill": skillName, "reason": err.Error()})
-		}
-		for key, value := range values {
-			env[key] = value
-		}
+	overrides, err := r.commandEnvOverrides(skillName, extra)
+	if err != nil {
+		return nil, err
 	}
-	for key, value := range extra {
-		if err := envstore.ValidateKey(key); err != nil {
-			return nil, toolErrorDetails("INVALID_ENV_NAME", err.Error(), "validation", map[string]any{"key": key})
-		}
-		env[key] = fmt.Sprint(value)
+	for key, value := range overrides {
+		env[key] = value
 	}
 	return formatCommandEnv(env), nil
 }
@@ -359,7 +349,7 @@ func (r *Runtime) internalCommandEnv(extra map[string]string) ([]string, error) 
 
 func (r *Runtime) baseCommandEnv() (map[string]string, error) {
 	env := map[string]string{}
-	for _, key := range []string{"PATH", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR"} {
+	for _, key := range []string{"PATH", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP", "WSLENV"} {
 		if value := os.Getenv(key); value != "" {
 			env[key] = value
 		}

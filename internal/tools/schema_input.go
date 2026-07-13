@@ -71,7 +71,8 @@ func InputSchema(name string) map[string]any {
 
 	case "exec_command":
 		props["cmd"] = stringProp("Command to run.")
-		props["workdir"] = stringProp("Host working directory. Relative paths resolve from ~/AgentDock.")
+		props["workdir"] = stringProp(execCommandWorkdirDescription())
+		addExecCommandRuntimeProperties(props)
 		props["skill_env"] = stringProp("Optional Skill name whose isolated environment is loaded before the explicit env map.")
 		props["env"] = map[string]any{"type": "object", "description": "Explicit command environment values. These override the selected Skill environment.", "additionalProperties": map[string]any{"type": "string"}}
 		props["timeout_ms"] = boundedIntProp("Timeout in milliseconds. Must be positive and is capped at 86400000.", 1, 86400000)

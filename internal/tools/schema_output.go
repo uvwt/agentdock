@@ -69,6 +69,9 @@ func OutputSchema(name string) map[string]any {
 	case "exec_command", "session_observe", "session_act":
 		props["session_id"] = stringProp("Command session id.")
 		props["status"] = stringProp("Session status.")
+		props["runtime"] = stringProp("Command runtime when reported by the host, such as windows or wsl.")
+		props["wsl_distribution"] = stringProp("WSL distribution selected for the command when explicitly configured.")
+		props["workdir"] = stringProp("Logical command working directory in the selected runtime.")
 		props["stdout"] = stringProp("Captured stdout segment.")
 		props["stderr"] = stringProp("Captured stderr segment.")
 		props["exit_code"] = intProp("Process exit code, when available.")

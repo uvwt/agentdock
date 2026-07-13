@@ -18,6 +18,14 @@ import (
 
 type PrepareFunc func(*exec.Cmd) (func(), map[string]any)
 
+type CommandFactory func(context.Context) *exec.Cmd
+
+type ExecutionContext struct {
+	Runtime      string
+	Distribution string
+	Workdir      string
+}
+
 type Session struct {
 	ID         string
 	Command    *exec.Cmd
@@ -28,6 +36,7 @@ type Session struct {
 	Done       chan struct{}
 	TimedOut   bool
 	Terminal   string
+	Execution  ExecutionContext
 
 	runner commandRunner
 
@@ -51,10 +60,13 @@ type Store struct {
 }
 
 type Summary struct {
-	ID        string `json:"id"`
-	Status    string `json:"status"`
-	ElapsedMS int64  `json:"elapsed_ms"`
-	TimedOut  bool   `json:"timed_out"`
+	ID           string `json:"id"`
+	Status       string `json:"status"`
+	ElapsedMS    int64  `json:"elapsed_ms"`
+	TimedOut     bool   `json:"timed_out"`
+	Runtime      string `json:"runtime,omitempty"`
+	Distribution string `json:"wsl_distribution,omitempty"`
+	Workdir      string `json:"workdir,omitempty"`
 }
 
 func NewStore() *Store {
@@ -123,10 +135,13 @@ func (s *Session) Summary() Summary {
 		}
 	}
 	return Summary{
-		ID:        s.ID,
-		Status:    status,
-		ElapsedMS: finishedAt.Sub(s.StartedAt).Milliseconds(),
-		TimedOut:  s.TimedOut,
+		ID:           s.ID,
+		Status:       status,
+		ElapsedMS:    finishedAt.Sub(s.StartedAt).Milliseconds(),
+		TimedOut:     s.TimedOut,
+		Runtime:      s.Execution.Runtime,
+		Distribution: s.Execution.Distribution,
+		Workdir:      s.Execution.Workdir,
 	}
 }
 
@@ -141,17 +156,31 @@ func Start(ctx context.Context, command, workdir string, env []string, timeout t
 }
 
 func StartWithTTY(ctx context.Context, command, workdir string, env []string, timeout time.Duration, tty bool, prepare PrepareFunc) (*Session, map[string]any, error) {
+	return StartCommandWithTTY(ctx, func(cmdCtx context.Context) *exec.Cmd {
+		cmd := shellCommand(cmdCtx, command)
+		cmd.Dir = workdir
+		cmd.Env = env
+		return cmd
+	}, timeout, tty, prepare)
+}
+
+func StartCommandWithTTY(ctx context.Context, build CommandFactory, timeout time.Duration, tty bool, prepare PrepareFunc) (*Session, map[string]any, error) {
 	if timeout <= 0 {
 		return nil, nil, fmt.Errorf("timeout must be positive")
+	}
+	if build == nil {
+		return nil, nil, fmt.Errorf("command factory is required")
 	}
 	id, err := newID()
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate session id: %w", err)
 	}
 	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
-	cmd := shellCommand(cmdCtx, command)
-	cmd.Dir = workdir
-	cmd.Env = env
+	cmd := build(cmdCtx)
+	if cmd == nil {
+		cancel()
+		return nil, nil, fmt.Errorf("command factory returned nil command")
+	}
 	cleanup := func() {}
 	status := map[string]any{"enabled": false}
 	if prepare != nil {
@@ -213,6 +242,12 @@ func StartWithTTY(ctx context.Context, command, workdir string, env []string, ti
 		close(s.Done)
 	}()
 	return s, status, nil
+}
+
+func (s *Session) SetExecutionContext(execution ExecutionContext) {
+	s.mu.Lock()
+	s.Execution = execution
+	s.mu.Unlock()
 }
 
 func (s *Session) Write(text string) error {
@@ -297,6 +332,15 @@ func (s *Session) snapshot(status string, maxBytes int, advance bool) map[string
 	}
 	if s.completed {
 		result["exit_code"] = s.exitCode
+	}
+	if s.Execution.Runtime != "" {
+		result["runtime"] = s.Execution.Runtime
+	}
+	if s.Execution.Distribution != "" {
+		result["wsl_distribution"] = s.Execution.Distribution
+	}
+	if s.Execution.Workdir != "" {
+		result["workdir"] = s.Execution.Workdir
 	}
 	return result
 }
