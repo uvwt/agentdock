@@ -7,9 +7,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 MAX_FILES = 500
 MAX_TEXT_BYTES = 1 << 20
+HOST_METADATA_FILES = {".agentdock-install.json"}
 TEXT_SUFFIXES = {
     ".bash", ".css", ".go", ".html", ".ini", ".js", ".json", ".jsx", ".md",
     ".py", ".rs", ".sh", ".toml", ".ts", ".tsx", ".txt", ".yaml", ".yml", ".zsh",
@@ -117,6 +118,8 @@ def text_files(source: Path) -> list[Path]:
     files: list[Path] = []
     for path in sorted(source.rglob("*")):
         if path.is_symlink() or not path.is_file():
+            continue
+        if path.parent == source and path.name in HOST_METADATA_FILES:
             continue
         if path.name == "SKILL.md" or path.suffix.lower() in TEXT_SUFFIXES:
             files.append(path)

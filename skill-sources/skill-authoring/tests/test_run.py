@@ -59,6 +59,49 @@ version: 1.0.0
         self.assertEqual(result["error_count"], 0)
         self.assertEqual(result["warning_count"], 0)
 
+    def test_root_install_receipt_is_ignored(self):
+        temp, root = self.make_skill("""---
+name: demo-skill
+description: Demo.
+version: 1.0.0
+---
+
+在 Skill 包根目录执行 `python3 run.py`。
+""")
+        self.addCleanup(temp.cleanup)
+        (root / ".agentdock-install.json").write_text(
+            json.dumps({"source": "/Users/alice/agentdock/skill-sources/demo-skill"}),
+            encoding="utf-8",
+        )
+
+        _, result = self.run_skill({"skill_action": "lint", "source": str(root)})
+
+        self.assertTrue(result["portable"])
+        self.assertEqual(result["error_count"], 0)
+        self.assertEqual(result["checked_files"], 2)
+
+    def test_nested_install_receipt_name_is_still_scanned(self):
+        temp, root = self.make_skill("""---
+name: demo-skill
+description: Demo.
+version: 1.0.0
+---
+
+在 Skill 包根目录执行 `python3 run.py`。
+""")
+        self.addCleanup(temp.cleanup)
+        references = root / "references"
+        references.mkdir()
+        (references / ".agentdock-install.json").write_text(
+            json.dumps({"source": "/Users/alice/private/demo-skill"}),
+            encoding="utf-8",
+        )
+
+        _, result = self.run_skill({"skill_action": "lint", "source": str(root)})
+
+        self.assertFalse(result["portable"])
+        self.assertIn("FIXED_USER_ABSOLUTE_PATH", {issue["code"] for issue in result["issues"]})
+
     def test_hardcoded_install_path_and_env_file_access_fail(self):
         temp, root = self.make_skill("""---
 name: demo-skill
