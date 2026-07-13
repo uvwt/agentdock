@@ -11,8 +11,8 @@ import (
 )
 
 func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
-	baseTools := baseToolCapabilityItems()
-	baseToolLines := baseToolSummaryLines(baseTools)
+	toolItems := r.toolCapabilityItems()
+	toolLines := toolSummaryLines(toolItems)
 
 	_, skillSummary, _ := r.skillCapabilityIndex()
 	_, dynamicMCPSummary := r.dynamicMCPCapabilityIndex()
@@ -31,7 +31,7 @@ func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
 	}
 
 	sections := []capabilitySection{
-		{Title: "基础工具索引", Lines: baseToolLines},
+		{Title: "AgentDock 工具索引", Lines: toolLines},
 		{Title: "Skill 能力索引", Lines: splitNonEmptyLines(skillSummary)},
 		{Title: "动态 MCP 索引", Lines: splitNonEmptyLines(dynamicMCPSummary)},
 		{Title: "任务模板索引", Lines: splitNonEmptyLines(templateSummary)},
@@ -51,9 +51,9 @@ type capabilitySection struct {
 	Lines []string
 }
 
-type capabilityBaseToolItem struct {
+type capabilityToolItem struct {
 	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
+	Description string `json:"description"`
 }
 
 type capabilitySkillItem struct {
@@ -102,19 +102,19 @@ type capabilityMemoryRunbook struct {
 	Path  string `json:"path"`
 }
 
-func baseToolCapabilityItems() []capabilityBaseToolItem {
-	return []capabilityBaseToolItem{
-		{Name: "exec_command", Description: "执行命令；通过 skill 绑定当前激活 Skill 的根目录和独立环境，显式 workdir / env 优先；skill_env 仅保留环境注入兼容。"},
-		{Name: "read_file", Description: "读取普通 UTF-8 文件或 skill:// 逻辑路径指向的 Skill 文档与引用资源。"},
-		{Name: "skill_package", Description: "管理 Skill 包生命周期和独立环境：validate / install / rollback / env_set / env_unset / env_list。"},
-		{Name: "mcp_manage / mcp_tool_search / mcp_tool_inspect / mcp_tool_call", Description: "管理动态 MCP、独立环境并调用远端工具；远端工具不会混入 AgentDock 自带工具列表。"},
-		{Name: "task_manage", Description: "管理可恢复任务，并用 checkpoint 实时更新步骤状态；模板发现通过 workflow_template_manage match。"},
-		{Name: "recall_bootstrap / recall_search / recall_read", Description: "读取记忆精简上下文、搜索记忆和精确读取 runbook。"},
-		{Name: "private_note_manage", Description: "低频显式隐私笔记保险箱；默认不要用，只有用户要求隐私/本机不同步或内容明显敏感时再调用。"},
+func (r *Runtime) toolCapabilityItems() []capabilityToolItem {
+	specs := r.availableToolSpecs()
+	items := make([]capabilityToolItem, 0, len(specs))
+	for _, spec := range specs {
+		items = append(items, capabilityToolItem{
+			Name:        spec.Name,
+			Description: strings.TrimSpace(spec.Description),
+		})
 	}
+	return items
 }
 
-func baseToolSummaryLines(items []capabilityBaseToolItem) []string {
+func toolSummaryLines(items []capabilityToolItem) []string {
 	lines := make([]string, 0, len(items))
 	for _, item := range items {
 		lines = append(lines, capabilityItemLine(item.Name, item.Description))

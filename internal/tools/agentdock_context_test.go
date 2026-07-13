@@ -37,6 +37,12 @@ func TestAgentDockContextToolReturnsRuntimeIndex(t *testing.T) {
 	if contextText == "" {
 		t.Fatalf("agentdock_context returned empty context: %#v", result)
 	}
+	for _, spec := range rt.availableToolSpecs() {
+		want := capabilityItemLine(spec.Name, strings.TrimSpace(spec.Description))
+		if !strings.Contains(contextText, want) {
+			t.Fatalf("context missing available tool index %q", want)
+		}
+	}
 	for _, want := range []string{"demo-skill", "Use this Skill for context index tests.", "skill://demo-skill/SKILL.md"} {
 		if !strings.Contains(contextText, want) {
 			t.Fatalf("context missing %q: %s", want, contextText)
@@ -51,6 +57,49 @@ func TestAgentDockContextToolReturnsRuntimeIndex(t *testing.T) {
 	for _, name := range []string{"ok", "skills", "dynamic_mcp", "generated_at", "summary", "counts", "base_tools", "task_templates", "memory", "rules"} {
 		if _, ok := result[name]; ok {
 			t.Fatalf("agentdock_context exposed unexpected field %q", name)
+		}
+	}
+}
+
+func TestCapabilityToolItemsExposeOnlyNameAndDescription(t *testing.T) {
+	cfg := config.Config{
+		AgentDockDefaultDir: t.TempDir(),
+		AgentDockHome:       filepath.Join(t.TempDir(), ".agentdock"),
+	}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	rt, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	items := rt.toolCapabilityItems()
+	specs := rt.availableToolSpecs()
+	if len(items) != len(specs) {
+		t.Fatalf("tool index count = %d, want %d", len(items), len(specs))
+	}
+	for i, spec := range specs {
+		item := items[i]
+		if item.Name != spec.Name || item.Description != strings.TrimSpace(spec.Description) {
+			t.Fatalf("tool index item %d = %#v, want name=%q description=%q", i, item, spec.Name, spec.Description)
+		}
+		data, err := json.Marshal(item)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]any
+		if err := json.Unmarshal(data, &fields); err != nil {
+			t.Fatal(err)
+		}
+		if len(fields) != 2 {
+			t.Fatalf("tool index should expose only name and description: %s", data)
+		}
+		if _, ok := fields["name"]; !ok {
+			t.Fatalf("tool index missing name: %s", data)
+		}
+		if _, ok := fields["description"]; !ok {
+			t.Fatalf("tool index missing description: %s", data)
 		}
 	}
 }
