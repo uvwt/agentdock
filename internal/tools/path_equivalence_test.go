@@ -1,17 +1,14 @@
 package tools
 
-import (
-	"os"
-	"path/filepath"
-)
+import "path/filepath"
 
 func sameExistingTestPath(left, right string) bool {
-	leftInfo, err := os.Stat(left)
+	leftSnapshot, err := captureFileSnapshot(left)
 	if err != nil {
 		return false
 	}
-	rightInfo, err := os.Stat(right)
-	return err == nil && os.SameFile(leftInfo, rightInfo)
+	rightSnapshot, err := captureFileSnapshot(right)
+	return err == nil && leftSnapshot.Identity == rightSnapshot.Identity
 }
 
 func sameTestPath(left, right string) bool {
