@@ -59,27 +59,21 @@ make clean-local-artifacts
 - 保持高风险工具的权限门禁、路径策略、认证和日志脱敏边界。
 - 修改工具描述、Schema、路径策略、权限、命令执行、HTTP 认证或桌面/浏览器自动化时，必须同步更新测试。
 
-## Skill 包规范
+## Skill 开发规范
 
-Skill 是给模型读取的工作方法，不是可执行工具。包根目录必须包含 `SKILL.md`，Frontmatter 必须声明：
+Skill 是给模型读取的工作方法，不是可执行工具。第一方 Skill 必须遵循“可移植核心 + 可选宿主适配”分层：核心流程只使用包内相对路径、当前进程环境和通用协议；AgentDock 专属的 `skill://`、`exec_command skill=<name>` 和 `skill_package` 只负责发现、宿主绑定与生命周期。
 
-```yaml
----
-name: example-skill
-description: 何时使用以及解决什么问题
-version: 1.0.0
----
-```
+完整设计、执行语义和禁止项见 [Skill 设计与运行模型](skills.md)。开发时至少满足：
 
-约束如下：
+- 包根目录包含合法 `SKILL.md`，Frontmatter 只声明 `name`、`description`、`version`；
+- 不支持额外运行清单、统一执行入口或动作 Schema；
+- 包内脚本从 Skill 根目录使用相对路径运行，只从当前进程环境读取配置和凭据；
+- 不手工读取 Skill state、拼接已安装版本目录或 `source` AgentDock 私有环境文件；
+- 安装包不包含 `.env`、符号链接、缓存、编译产物或设备私有状态；
+- 修改正文、引用或脚本后递增语义化版本；同名同版本内容不可变；
+- 先运行 `skill-authoring lint` 检查创作质量与可移植性，再运行 `skill_package validate` 检查包能否合法安装；
+- 安装后通过 `agentdock_context`、`skill://` 和 `exec_command skill=<name>` 验证当前激活版本。
 
-- 不支持额外的运行清单、统一执行入口或动作 Schema。
-- 安装包不能包含 `.env`、符号链接、缓存或编译产物。
-- 引用资料放在 `references/`，可复用脚本放在 `scripts/` 或包根目录。
-- 模型先通过 `agentdock_context` 选择 Skill，再用 `read_file skill://<name>/SKILL.md` 读取正文。
-- 实际动作使用 `exec_command`、文件工具、浏览器工具或 MCP 工具。
-- 包内辅助脚本如需多个动作，从 stdin JSON 的 `skill_action` 字段选择；业务参数保留在同一个 JSON 对象中。
-- 凭据和设备私有配置放在 `~/.agentdock/env/skill/<name>.env`，权限必须为 `0600`，不得提交到仓库或随包安装。
-- 修改 Skill 正文、引用或脚本后必须递增版本，校验并安装新版本；同名同版本内容不可变。
+`skill-authoring lint` 与 `skill_package validate` 不能互相替代。前者判断第一方 Skill 是否把宿主耦合写进核心契约，后者只负责包结构、安全边界和安装合法性。
 
 平台相关辅助脚本应自行声明和检查依赖。公共 Go 文件不能直接引用 Unix `syscall` 或 Windows API；AgentDock 自身命令和交互终端的进程树统一通过 `internal/processcontrol` 管理。
