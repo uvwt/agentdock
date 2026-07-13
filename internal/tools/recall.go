@@ -29,7 +29,7 @@ func (r *Runtime) recallSearch(ctx context.Context, args map[string]any) (Result
 		result["recall_kind"] = "note"
 		return result, nil
 	case "card", "cards":
-		result, err := r.memorySearch(ctx, recallSearchArgs(args, "cards"))
+		result, err := r.memorySearch(ctx, recallSearchArgs(args, recallCardsPrefix))
 		if err != nil {
 			return nil, err
 		}
@@ -185,7 +185,7 @@ func (r *Runtime) recallMaintain(ctx context.Context, args map[string]any) (Resu
 			payload["prefix"] = prefix
 		}
 		if action == "reindex_cards" && payload["prefix"] == nil {
-			payload["prefix"] = "recall/managed/cards"
+			payload["prefix"] = recallCardsPrefix
 		}
 		result, err := r.memoryRequest(ctx, http.MethodPost, "/v1/embeddings/reindex", payload)
 		if err != nil {

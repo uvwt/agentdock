@@ -125,3 +125,36 @@ func TestRecallMaintainReindexCardsUsesCanonicalPrefix(t *testing.T) {
 		t.Fatalf("unexpected reindex prefix %q", gotPrefix)
 	}
 }
+
+func TestRecallSearchCardsUsesCanonicalPrefix(t *testing.T) {
+	var gotPrefix string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/recall/search" {
+			http.NotFound(w, r)
+			return
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		gotPrefix, _ = payload["prefix"].(string)
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "results": []any{}, "count": 0})
+	}))
+	defer server.Close()
+
+	cfg := config.Config{AgentDockDefaultDir: t.TempDir(), AgentDockHome: filepath.Join(t.TempDir(), ".agentdock"), NexusEndpoint: server.URL}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	rt, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := rt.recallSearch(context.Background(), map[string]any{"kind": "card", "query": "deployment"}); err != nil {
+		t.Fatal(err)
+	}
+	if gotPrefix != "recall/managed/cards" {
+		t.Fatalf("unexpected card search prefix %q", gotPrefix)
+	}
+}
