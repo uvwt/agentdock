@@ -103,6 +103,50 @@ func TestTaskManageCheckpointExposesLiveProgress(t *testing.T) {
 	}
 }
 
+func TestTaskManageBatchCheckpointAndModeValidation(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	created, err := rt.taskManage(context.Background(), map[string]any{
+		"action": "create", "title": "Batch progress", "goal": "record progress atomically",
+		"completion_conditions": []string{"done"},
+		"steps": []map[string]any{
+			{"id": "inspect", "title": "Inspect"},
+			{"id": "test", "title": "Test"},
+			{"id": "docs", "title": "Docs"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskID := created["task_id"].(string)
+	progress, err := rt.taskManage(context.Background(), map[string]any{
+		"action":             "checkpoint",
+		"task_id":            taskID,
+		"completed_step_ids": []string{"inspect", "test"},
+		"current_step_id":    "docs",
+		"summary":            "tests passed; writing docs",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := progress["task_summary"].(map[string]any)
+	if summary["completed_step_count"] != 2 || summary["current_step"].(map[string]any)["id"] != "docs" {
+		t.Fatalf("unexpected batch checkpoint summary: %#v", summary)
+	}
+
+	_, err = rt.taskManage(context.Background(), map[string]any{
+		"action":             "checkpoint",
+		"task_id":            taskID,
+		"step_id":            "docs",
+		"status":             "completed",
+		"completed_step_ids": []string{"docs"},
+		"summary":            "invalid mixed mode",
+	})
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) || toolErr.Code != "VALIDATION_ERROR" {
+		t.Fatalf("expected mixed checkpoint validation error, got %T: %v", err, err)
+	}
+}
+
 func TestTaskManageSingleTemplateResolvesActiveVersion(t *testing.T) {
 	rt, _ := newCodeToolsRuntime(t)
 	createTestWorkflowTemplate(t, rt, taskstate.Template{

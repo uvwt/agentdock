@@ -25,7 +25,7 @@ func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
 		"AgentDock 自带工具直接调用；动态 MCP 工具先用 mcp_tool_search 查找、mcp_tool_inspect 读取 schema，再用 mcp_tool_call 执行。",
 		"涉及多步骤开发、部署、排障、迁移、Docker、VPS 或 Git 提交推送时，先 workflow_template_manage match；无合适模板时创建普通可恢复任务。",
 		"当多个 Workflow 模板同时适合当前任务时，调用 workflow_template_manage get_many 读取详情；模型必须结合用户目标裁剪、去重、排序并生成最终 steps 和 completion_conditions，再用 source_template_ids 创建任务，服务端不会自动拼接模板。",
-		"任务执行过程中，在步骤开始或完成时调用 task_manage checkpoint；final_review=pass 不会自动补全未完成步骤。",
+		"任务执行过程中，在形成有恢复价值的断点时调用 task_manage checkpoint；可用 completed_step_ids/current_step_id 原子批量更新，final_review=pass 不会自动补全未完成步骤。",
 		"记忆摘要只提供高优先级规则；具体历史事实不确定时，再用 recall_search 或 recall_read 精确召回。",
 		"普通项目记忆走 recall_*；private_note_manage 只在用户明确要求隐私/本机不同步，或内容明显包含 secret、凭据、个人敏感信息时使用。",
 	}

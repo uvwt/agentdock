@@ -106,6 +106,20 @@ complete
 }
 ```
 
+也可以一次完成多个步骤并指定唯一的当前步骤：
+
+```json
+{
+  "action": "checkpoint",
+  "task_id": "tsk_xxx",
+  "completed_step_ids": ["inspect", "design", "implement", "test"],
+  "current_step_id": "docs",
+  "summary": "实现和测试已完成，开始整理文档"
+}
+```
+
+只批量完成步骤时可以省略 `current_step_id`。单步模式使用 `step_id + status`，批量模式使用 `completed_step_ids + current_step_id`，两种模式不能混用。
+
 步骤状态只有：
 
 ```text
@@ -114,7 +128,7 @@ in_progress
 completed
 ```
 
-状态只能向前推进。一个任务同时最多有一个 `in_progress` 步骤。`checkpoint` 会更新步骤、当前阶段、最近进展摘要和事件记录。
+状态只能向前推进。一个任务同时最多有一个 `in_progress` 步骤。批量 checkpoint 会先校验全部步骤再原子写入；未知步骤、完成与当前步骤重叠、或产生第二个进行中步骤时整批失败，不会留下部分更新。重复提交相同状态允许成功。每次批量调用只写一条 checkpoint 事件。
 
 `list` 和生命周期 action 的摘要会返回：
 
@@ -159,7 +173,7 @@ status=active|blocked|completed
 }
 ```
 
-普通失败、临时测试不通过或仍可继续排查的问题，不应直接标记为 blocked。
+普通失败、临时测试不通过或仍可继续排查的问题，不应直接标记为 blocked。`resume` 会清空 blocker，并把任务最近摘要更新为本次恢复说明。`final_review=pass` 后任务只允许进入 `complete`，不能再 block 或 checkpoint。
 
 ### final_review / complete
 

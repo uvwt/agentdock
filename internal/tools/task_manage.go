@@ -31,6 +31,8 @@ type taskManageInput struct {
 	Limit                int
 	TaskID               string
 	StepID               string
+	CompletedStepIDs     []string
+	CurrentStepID        string
 	Summary              string
 	Verified             []string
 	Risks                []string
@@ -73,6 +75,8 @@ func parseTaskManageInput(args map[string]any) (taskManageInput, error) {
 		Limit:                intArg(args, "limit", 50),
 		TaskID:               stringArg(args, "task_id", ""),
 		StepID:               stringArg(args, "step_id", ""),
+		CompletedStepIDs:     stringSliceArg(args, "completed_step_ids"),
+		CurrentStepID:        stringArg(args, "current_step_id", ""),
 		Summary:              stringArg(args, "summary", ""),
 		Verified:             stringSliceArg(args, "verified"),
 		Risks:                stringSliceArg(args, "risks"),
@@ -172,7 +176,7 @@ func (r *Runtime) taskManage(ctx context.Context, args map[string]any) (Result, 
 		}
 		return Result{
 			"ok": true, "action": input.Action, "task_id": task.ID, "task_summary": compactTaskSummary(task), "state_dir": r.tasks.Root(),
-			"next_required_action": "Use checkpoint when a step starts or completes. Use block only for a real blocker. After all steps and real verification are complete, call final_review, then complete.",
+			"next_required_action": "Use checkpoint at meaningful recovery points; completed_step_ids/current_step_id can update several steps atomically. Use block only for a real blocker. After all steps and real verification are complete, call final_review, then complete.",
 		}, nil
 	case "list":
 		status := taskstate.Status(input.Status)
@@ -195,7 +199,19 @@ func (r *Runtime) taskManage(ctx context.Context, args map[string]any) (Result, 
 		}
 		return Result{"ok": true, "action": input.Action, "task": task, "state_dir": r.tasks.Root()}, nil
 	case "checkpoint":
-		task, err = r.tasks.Checkpoint(input.TaskID, input.StepID, input.Status, input.Summary)
+		singleStepMode := strings.TrimSpace(input.StepID) != "" || input.Status != ""
+		batchMode := len(input.CompletedStepIDs) > 0 || strings.TrimSpace(input.CurrentStepID) != ""
+		if singleStepMode && batchMode {
+			return nil, toolErrorDetails("VALIDATION_ERROR", "single-step and batch checkpoint fields cannot be combined", "validation", map[string]any{
+				"single_step_fields": []string{"step_id", "status"},
+				"batch_fields":       []string{"completed_step_ids", "current_step_id"},
+			})
+		}
+		if batchMode {
+			task, err = r.tasks.BatchCheckpoint(input.TaskID, input.CompletedStepIDs, input.CurrentStepID, input.Summary)
+		} else {
+			task, err = r.tasks.Checkpoint(input.TaskID, input.StepID, input.Status, input.Summary)
+		}
 	case "block":
 		task, err = r.tasks.Block(input.TaskID, input.Summary)
 	case "resume":

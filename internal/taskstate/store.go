@@ -280,10 +280,99 @@ func (s *Store) Checkpoint(id, stepID, status, summary string) (Task, error) {
 	})
 }
 
+func (s *Store) BatchCheckpoint(id string, completedStepIDs []string, currentStepID, summary string) (Task, error) {
+	return s.mutate(id, func(task *Task, now time.Time) error {
+		if err := requireActive(task); err != nil {
+			return err
+		}
+		if task.FinalReview != nil && task.FinalReview.Status == FinalReviewPass {
+			return errors.New("task already passed final review")
+		}
+
+		completedStepIDs = normalizeStepIDs(completedStepIDs)
+		currentStepID = strings.TrimSpace(currentStepID)
+		summary = strings.TrimSpace(summary)
+		if len(completedStepIDs) == 0 && currentStepID == "" {
+			return errors.New("completed_step_ids or current_step_id is required")
+		}
+		if summary == "" {
+			return errors.New("checkpoint summary is required")
+		}
+
+		// 批量 checkpoint 必须先验证所有目标步骤，再统一写入，避免无效请求留下半更新状态。
+		stepIndexes := make(map[string]int, len(task.Steps))
+		for i := range task.Steps {
+			stepIndexes[task.Steps[i].ID] = i
+		}
+
+		completedSet := make(map[string]struct{}, len(completedStepIDs))
+		for _, stepID := range completedStepIDs {
+			stepIndex, ok := stepIndexes[stepID]
+			if !ok {
+				return fmt.Errorf("task step %s not found", stepID)
+			}
+			if !validStepTransition(task.Steps[stepIndex].Status, StepCompleted) {
+				return fmt.Errorf("cannot move step %s from %s to %s", stepID, task.Steps[stepIndex].Status, StepCompleted)
+			}
+			completedSet[stepID] = struct{}{}
+		}
+
+		currentStepIndex := -1
+		if currentStepID != "" {
+			if _, overlaps := completedSet[currentStepID]; overlaps {
+				return fmt.Errorf("step %s cannot be both completed and current", currentStepID)
+			}
+			stepIndex, ok := stepIndexes[currentStepID]
+			if !ok {
+				return fmt.Errorf("task step %s not found", currentStepID)
+			}
+			if !validStepTransition(task.Steps[stepIndex].Status, StepInProgress) {
+				return fmt.Errorf("cannot move step %s from %s to %s", currentStepID, task.Steps[stepIndex].Status, StepInProgress)
+			}
+			for i := range task.Steps {
+				if task.Steps[i].Status != StepInProgress || i == stepIndex {
+					continue
+				}
+				if _, completing := completedSet[task.Steps[i].ID]; !completing {
+					return fmt.Errorf("step %s is already in progress", task.Steps[i].ID)
+				}
+			}
+			currentStepIndex = stepIndex
+		}
+
+		for _, stepID := range completedStepIDs {
+			step := &task.Steps[stepIndexes[stepID]]
+			step.Status = StepCompleted
+			step.UpdatedAt = now
+		}
+		if currentStepIndex >= 0 {
+			step := &task.Steps[currentStepIndex]
+			step.Status = StepInProgress
+			step.UpdatedAt = now
+			task.Phase = step.Phase
+		} else if len(completedStepIDs) > 0 {
+			task.Phase = task.Steps[stepIndexes[completedStepIDs[len(completedStepIDs)-1]]].Phase
+		}
+		if task.FinalReview != nil && task.FinalReview.Status == FinalReviewFailed {
+			task.FinalReview = nil
+		}
+		task.Summary = summary
+		eventSummary := "completed=[" + strings.Join(completedStepIDs, ",") + "]"
+		if currentStepID != "" {
+			eventSummary += ", current=" + currentStepID
+		}
+		task.Events = append(task.Events, Event{Type: "checkpoint", Summary: eventSummary + ": " + summary, CreatedAt: now})
+		return nil
+	})
+}
+
 func (s *Store) Block(id, summary string) (Task, error) {
 	return s.mutate(id, func(task *Task, now time.Time) error {
 		if err := requireMutable(task); err != nil {
 			return err
+		}
+		if task.FinalReview != nil && task.FinalReview.Status == FinalReviewPass {
+			return errors.New("task already passed final review")
 		}
 		summary = strings.TrimSpace(summary)
 		if summary == "" {
@@ -308,6 +397,7 @@ func (s *Store) Resume(id, summary string) (Task, error) {
 		}
 		task.Status = StatusActive
 		task.Blocker = ""
+		task.Summary = summary
 		task.Events = append(task.Events, Event{Type: "resumed", Summary: summary, CreatedAt: now})
 		return nil
 	})
@@ -520,6 +610,23 @@ func incompleteStepIDs(steps []TaskStep) []string {
 		}
 	}
 	return ids
+}
+
+func normalizeStepIDs(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func normalizeTexts(values []string) []string {

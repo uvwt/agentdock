@@ -146,6 +146,79 @@ func TestCheckpointAllowsOnlyForwardProgress(t *testing.T) {
 	}
 }
 
+func TestBatchCheckpointUpdatesStepsAtomicallyAndSupportsRetry(t *testing.T) {
+	store, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := store.Create(
+		"Implement",
+		"implement and document change",
+		[]string{"tests pass"},
+		[]TaskStepInput{
+			{ID: "inspect", Title: "Inspect", Phase: PhaseCheck},
+			{ID: "test", Title: "Test", Phase: PhaseVerify},
+			{ID: "docs", Title: "Document", Phase: PhaseExecute},
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.Checkpoint(task.ID, "inspect", StepInProgress, "inspecting"); err != nil {
+		t.Fatal(err)
+	}
+	task, err = store.BatchCheckpoint(task.ID, []string{"inspect", "test"}, "docs", "tests passed; writing docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Steps[0].Status != StepCompleted || task.Steps[1].Status != StepCompleted || task.Steps[2].Status != StepInProgress {
+		t.Fatalf("unexpected batch progress: %#v", task.Steps)
+	}
+	if task.Phase != PhaseExecute || len(task.Events) != 3 {
+		t.Fatalf("unexpected batch task state: %#v", task)
+	}
+	if _, err := store.BatchCheckpoint(task.ID, []string{"inspect", "test"}, "docs", "retry same checkpoint"); err != nil {
+		t.Fatalf("idempotent batch retry failed: %v", err)
+	}
+	task, err = store.FinalReview(task.ID, FinalReviewInput{Status: FinalReviewFailed, Summary: "docs pending", OpenRisks: []string{"documentation incomplete"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err = store.BatchCheckpoint(task.ID, []string{"docs"}, "", "documentation complete")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.FinalReview != nil || task.Steps[2].Status != StepCompleted {
+		t.Fatalf("batch checkpoint did not clear failed review: %#v", task)
+	}
+
+	atomicTask, err := store.Create(
+		"Atomic",
+		"reject partial progress",
+		[]string{"invalid batch rejected"},
+		[]TaskStepInput{{ID: "code", Title: "Code"}, {ID: "docs", Title: "Docs"}},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.BatchCheckpoint(atomicTask.ID, []string{"code", "missing"}, "docs", "invalid batch"); err == nil {
+		t.Fatal("accepted batch with unknown step")
+	}
+	loaded, err := store.Get(atomicTask.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Steps[0].Status != StepPending || loaded.Steps[1].Status != StepPending {
+		t.Fatalf("invalid batch partially changed task: %#v", loaded.Steps)
+	}
+	if _, err := store.BatchCheckpoint(atomicTask.ID, []string{"docs"}, "docs", "overlap"); err == nil {
+		t.Fatal("accepted step as both completed and current")
+	}
+}
+
 func TestBlockAndResumeUsesOneSummary(t *testing.T) {
 	store, err := New(t.TempDir())
 	if err != nil {
@@ -166,8 +239,15 @@ func TestBlockAndResumeUsesOneSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if task.Status != StatusActive || task.Blocker != "" {
+	if task.Status != StatusActive || task.Blocker != "" || task.Summary != "network restored" {
 		t.Fatalf("unexpected resumed state: %#v", task)
+	}
+	task, err = store.FinalReview(task.ID, FinalReviewInput{Status: FinalReviewPass, Summary: "ready to close", VerifiedFacts: []string{"network restored"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Block(task.ID, "late blocker"); err == nil || !strings.Contains(err.Error(), "passed final review") {
+		t.Fatalf("block should reject a passed final review: %v", err)
 	}
 }
 
