@@ -64,7 +64,7 @@ func Acquire(ctx context.Context, path string) (func(), error) {
 				})
 			}, nil
 		}
-		if !errors.Is(err, os.ErrExist) {
+		if !retryableLockCreationError(err) {
 			return nil, fmt.Errorf("acquire file lock %s: %w", path, err)
 		}
 		if removeSafeStale(path, time.Now()) {

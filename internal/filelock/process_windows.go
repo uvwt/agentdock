@@ -4,6 +4,7 @@ package filelock
 
 import (
 	"errors"
+	"os"
 
 	"golang.org/x/sys/windows"
 )
@@ -25,4 +26,13 @@ func processAlive(pid int) bool {
 		return true
 	}
 	return exitCode == stillActiveExitCode
+}
+
+// Windows 删除目录期间，竞争者创建同名目录可能短暂收到 Access Denied
+// 或 Sharing Violation。这两种错误与“目录已存在”一样属于锁竞争，应该
+// 继续等待；其他错误仍立即返回，避免把真实路径或权限错误隐藏成超时。
+func retryableLockCreationError(err error) bool {
+	return errors.Is(err, os.ErrExist) ||
+		errors.Is(err, windows.ERROR_ACCESS_DENIED) ||
+		errors.Is(err, windows.ERROR_SHARING_VIOLATION)
 }

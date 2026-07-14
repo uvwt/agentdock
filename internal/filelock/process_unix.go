@@ -4,6 +4,7 @@ package filelock
 
 import (
 	"errors"
+	"os"
 	"syscall"
 )
 
@@ -13,4 +14,8 @@ func processAlive(pid int) bool {
 		return true
 	}
 	return !errors.Is(err, syscall.ESRCH)
+}
+
+func retryableLockCreationError(err error) bool {
+	return errors.Is(err, os.ErrExist)
 }
