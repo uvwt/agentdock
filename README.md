@@ -15,40 +15,16 @@ AgentDock 是面向本地与远程 Agent 的工具运行层，提供文件、命
 - 可选浏览器自动化和 macOS 桌面自动化。
 - 可选 NexusDock Recall 长期知识召回。
 
-## Docker 快速开始
+## 安装
 
-直接使用 GitHub Container Registry 中的预构建镜像。Release 中的 Compose 文件会固定到对应版本，正式镜像默认以非 root 用户运行：
+普通用户不需要下载源码、安装 Go 或自己构建镜像。先进入 [安装 AgentDock](https://uvwt.github.io/agentdock-docs/docs/getting-started/install)，按当前环境选择：
 
-```bash
-mkdir agentdock && cd agentdock
-curl -fL https://github.com/uvwt/agentdock/releases/latest/download/docker-compose.yml \
-  -o docker-compose.yml
-export AGENTDOCK_AUTH_TOKEN="$(openssl rand -hex 32)"
-docker compose pull
-docker compose up -d
-```
-
-默认 MCP 地址：
-
-```text
-http://127.0.0.1:18766/mcp
-```
-
-默认数据保存在 Docker named volume 中，避免 Linux 主机 bind mount 的 UID 冲突。`latest` 是不含 Go 编译器的正式运行镜像；需要 Go、C、C++ 构建链时使用 `dev-latest`，需要 Chromium 时使用 `browser-latest`。查看日志或停止服务：
-
-```bash
-docker compose logs -f
-docker compose down
-```
-
-完整说明见 [Docker 部署](https://uvwt.github.io/agentdock-docs/docs/getting-started/docker)。
-
-## 其他安装方式
-
-- [Linux 自动安装](https://uvwt.github.io/agentdock-docs/docs/getting-started/linux)
-- [Linux 手动 systemd 部署](https://uvwt.github.io/agentdock-docs/docs/getting-started/vps)
-- [Windows 原生安装](https://uvwt.github.io/agentdock-docs/docs/getting-started/windows)
 - [macOS 安装](https://uvwt.github.io/agentdock-docs/docs/getting-started/macos)
+- [Windows 安装](https://uvwt.github.io/agentdock-docs/docs/getting-started/windows)
+- [Linux 安装](https://uvwt.github.io/agentdock-docs/docs/getting-started/linux)
+- [Docker 安装](https://uvwt.github.io/agentdock-docs/docs/getting-started/docker)
+
+每个页面都给出安装命令、启动检查、MCP 地址和认证方式。需要浏览器、桌面自动化、systemd、WSL、反向代理或数据迁移时，再进入对应进阶文档。
 
 ## 开发者从源码运行
 

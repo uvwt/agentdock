@@ -241,16 +241,33 @@ jobs:
           cp scripts/uninstall-windows.ps1 dist/uninstall-windows.ps1
           python3 - <<'PY'
           import os
+          import re
+          import zipfile
           from pathlib import Path
 
           tag = os.environ["RELEASE_TAG"]
           repository = os.environ["RELEASE_REPOSITORY"].lower()
+          expected_version = tag.removeprefix("v")
+          config_source = Path("internal/config/config.go").read_text()
+          version_match = re.search(r'^\s*Version\s*=\s*"([^"]+)"', config_source, re.MULTILINE)
+          if version_match is None:
+              raise SystemExit("could not read config.Version from internal/config/config.go")
+          actual_version = version_match.group(1)
+          if actual_version != expected_version:
+              raise SystemExit(f"release tag {tag} does not match config.Version {actual_version}")
+
           runtime = Path("docker-compose.yml").read_text()
           browser = Path("docker-compose.browser.yml").read_text()
           runtime = runtime.replace("ghcr.io/uvwt/agentdock:latest", f"ghcr.io/{repository}:{tag}")
           browser = browser.replace("ghcr.io/uvwt/agentdock:browser-latest", f"ghcr.io/{repository}:browser-{tag}")
           Path("dist/docker-compose.yml").write_text(runtime)
           Path("dist/docker-compose.browser.yml").write_text(browser)
+
+          skill_root = Path("skill-sources/desktop")
+          with zipfile.ZipFile("dist/skill-desktop.zip", "w", zipfile.ZIP_DEFLATED) as archive:
+              for path in sorted(skill_root.rglob("*")):
+                  if path.is_file():
+                      archive.write(path, path.relative_to(skill_root))
           PY
           (
             cd dist
@@ -259,7 +276,8 @@ jobs:
               install-linux-bootstrap.sh \
               install-macos.sh \
               install-windows.ps1 \
-              uninstall-windows.ps1; do
+              uninstall-windows.ps1 \
+              skill-desktop.zip; do
               shasum -a 256 "$file" > "$file.sha256"
             done
           )
@@ -420,6 +438,26 @@ jobs:
           & .\scripts\run-windows-installer-e2e-as-standard-user.ps1 `
             -InstallerPath $env:DOWNLOADED_INSTALLER `
             -Version $env:RELEASE_TAG
+
+  verify-desktop-skill-release:
+    name: Verify published Desktop Skill
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download and inspect published Skill package
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          base="https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG"
+          curl -fL "$base/skill-desktop.zip" -o skill-desktop.zip
+          curl -fL "$base/skill-desktop.zip.sha256" -o skill-desktop.zip.sha256
+          sha256sum -c skill-desktop.zip.sha256
+          mapfile -t files < <(unzip -Z1 skill-desktop.zip | sort)
+          expected=(SKILL.md run.py)
+          test "${files[*]}" = "${expected[*]}"
+          unzip -p skill-desktop.zip SKILL.md | grep -q '^name: desktop$'
 
   verify-container:
     name: Verify published containers
