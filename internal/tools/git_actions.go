@@ -206,7 +206,7 @@ func annotateGitPushResult(result Result) {
 	// 自身仍然 exit 0 并完成远端更新。这里把“命令成功”和“输出警告”拆开，
 	// 避免调用方只看到 fatal 文本就误判推送失败。
 	output, _ := result["output"].(string)
-	ok := boolValue(result["ok"])
+	commandOK := boolValue(result["command_ok"])
 	remoteUpdated := false
 	upToDate := false
 	warnings := make([]string, 0)
@@ -228,7 +228,7 @@ func annotateGitPushResult(result Result) {
 	}
 
 	fatalButNonBlocking := false
-	if ok {
+	if commandOK {
 		for _, warning := range warnings {
 			if strings.HasPrefix(strings.ToLower(warning), "fatal:") {
 				fatalButNonBlocking = true
@@ -238,15 +238,15 @@ func annotateGitPushResult(result Result) {
 	}
 
 	status := "failed"
-	if ok && remoteUpdated {
+	if commandOK && remoteUpdated {
 		status = "pushed"
-	} else if ok && upToDate {
+	} else if commandOK && upToDate {
 		status = "up_to_date"
-	} else if ok {
+	} else if commandOK {
 		status = "succeeded"
 	}
 
-	result["push_succeeded"] = ok
+	result["push_succeeded"] = commandOK
 	result["remote_updated"] = remoteUpdated
 	result["up_to_date"] = upToDate
 	result["warnings"] = warnings
@@ -265,12 +265,12 @@ func (r *Runtime) gitCommit(ctx context.Context, args map[string]any) (Result, e
 	}
 	paths := stringSliceArg(args, "paths")
 	if boolArg(args, "all", false) {
-		if result, err := r.gitInRepo(ctx, repo, intArg(args, "max_bytes", 65536), "add", "-A"); err != nil || !boolValue(result["ok"]) {
+		if result, err := r.gitInRepo(ctx, repo, intArg(args, "max_bytes", 65536), "add", "-A"); err != nil || !boolValue(result["command_ok"]) {
 			return result, err
 		}
 	} else if len(paths) > 0 {
 		gitArgs := append([]string{"add", "--"}, paths...)
-		if result, err := r.gitInRepo(ctx, repo, intArg(args, "max_bytes", 65536), gitArgs...); err != nil || !boolValue(result["ok"]) {
+		if result, err := r.gitInRepo(ctx, repo, intArg(args, "max_bytes", 65536), gitArgs...); err != nil || !boolValue(result["command_ok"]) {
 			return result, err
 		}
 	}
@@ -359,7 +359,7 @@ func (r *Runtime) listGitRepos(ctx context.Context, args map[string]any) (Result
 	if walkErr != nil {
 		return nil, fmt.Errorf("discover git repositories: %w", walkErr)
 	}
-	return Result{"ok": true, "path": start.Display, "repos": repos, "count": len(repos)}, nil
+	return Result{"path": start.Display, "repos": repos, "count": len(repos)}, nil
 }
 
 func relativePathDepth(root, path string) (int, error) {
@@ -383,8 +383,8 @@ func (r *Runtime) summarizeGitRepo(ctx context.Context, abs string) (gitRepoSumm
 	if err != nil {
 		return gitRepoSummary{}, fmt.Errorf("read git status for %s: %w", display, err)
 	}
-	if !boolValue(status["ok"]) {
-		return gitRepoSummary{}, fmt.Errorf("read git status for %s: %v", display, status["error"])
+	if !boolValue(status["command_ok"]) {
+		return gitRepoSummary{}, fmt.Errorf("read git status for %s: %v", display, status["command_error"])
 	}
 	branch, upstream, ahead, behind, files := parseGitStatus(fmt.Sprint(status["output"]))
 	remote, err := r.gitRemoteURL(ctx, repo, "origin")

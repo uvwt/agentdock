@@ -42,6 +42,56 @@ func TestExecCommandRejectsNonPositiveTimeout(t *testing.T) {
 	}
 }
 
+func TestExecCommandReportsCommandStatusWithoutGenericOK(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test command uses POSIX shell syntax")
+	}
+	runtime, _ := newCodeToolsRuntime(t)
+	result, err := runtime.execCommand(context.Background(), map[string]any{
+		"cmd":             "printf 'before-fail'; printf 'failed' >&2; exit 7",
+		"yield_time_ms":   5000,
+		"wait_until_exit": true,
+		"timeout_ms":      5000,
+	})
+	if err != nil {
+		t.Fatalf("execCommand() tool error = %v", err)
+	}
+	if _, exists := result["ok"]; exists {
+		t.Fatalf("command result must not expose generic ok: %#v", result)
+	}
+	if result["command_ok"] != false || result["exit_code"] != 7 {
+		t.Fatalf("command status = command_ok:%#v exit_code:%#v", result["command_ok"], result["exit_code"])
+	}
+	if result["command_error"] == "" {
+		t.Fatalf("failed command missing command_error: %#v", result)
+	}
+	if result["stdout"] != "before-fail" || result["stderr"] != "failed" {
+		t.Fatalf("command output = stdout:%#v stderr:%#v", result["stdout"], result["stderr"])
+	}
+}
+
+func TestExecCommandTimeoutReportsCommandError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test command uses POSIX shell syntax")
+	}
+	runtime, _ := newCodeToolsRuntime(t)
+	result, err := runtime.execCommand(context.Background(), map[string]any{
+		"cmd":             "sleep 1",
+		"yield_time_ms":   5000,
+		"wait_until_exit": true,
+		"timeout_ms":      30,
+	})
+	if err != nil {
+		t.Fatalf("execCommand() tool error = %v", err)
+	}
+	if result["status"] != "timeout" || result["command_ok"] != false {
+		t.Fatalf("timeout status = status:%#v command_ok:%#v", result["status"], result["command_ok"])
+	}
+	if result["command_error"] == "" {
+		t.Fatalf("timed out command missing command_error: %#v", result)
+	}
+}
+
 func TestListSessionsKeepsCompletedResultAvailable(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test command uses POSIX shell syntax")

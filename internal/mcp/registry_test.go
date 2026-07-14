@@ -48,6 +48,22 @@ func TestRuntimeToolsHaveRegistryDefinitionsAndSchemas(t *testing.T) {
 	}
 }
 
+func TestToolOutputSchemasDoNotExposeGenericOK(t *testing.T) {
+	for _, def := range toolRegistry {
+		schema := outputSchema(def.Name)
+		properties, _ := schema["properties"].(map[string]any)
+		if _, exists := properties["ok"]; exists {
+			t.Fatalf("%s output schema exposes ambiguous generic ok", def.Name)
+		}
+		required, _ := schema["required"].([]string)
+		for _, field := range required {
+			if field == "ok" {
+				t.Fatalf("%s output schema requires ambiguous generic ok", def.Name)
+			}
+		}
+	}
+}
+
 func TestRuntimeExposesSingleToolSet(t *testing.T) {
 	cfg := config.Config{
 		AgentDockDefaultDir: t.TempDir(), AgentDockHome: filepath.Join(t.TempDir(), ".agentdock"),

@@ -53,8 +53,11 @@ func TestStartCapturesCompleteOutputAndExitState(t *testing.T) {
 	if result["stderr"] != "stderr-value" {
 		t.Fatalf("stderr = %#v", result["stderr"])
 	}
-	if result["exit_code"] != 7 {
-		t.Fatalf("exit_code = %#v, want 7", result["exit_code"])
+	if result["exit_code"] != 7 || result["command_ok"] != false {
+		t.Fatalf("exit state = exit_code:%#v command_ok:%#v", result["exit_code"], result["command_ok"])
+	}
+	if _, exists := result["ok"]; exists {
+		t.Fatalf("snapshot must not expose generic ok: %#v", result)
 	}
 	if result["stdout_total_bytes"] != len("stdout-value") || result["stderr_total_bytes"] != len("stderr-value") {
 		t.Fatalf("byte totals = stdout:%#v stderr:%#v", result["stdout_total_bytes"], result["stderr_total_bytes"])
@@ -87,6 +90,9 @@ func TestStartCapturesFastCommandOutputRepeatedly(t *testing.T) {
 		}
 		if result["stdout_total_bytes"] != len("fast-output") {
 			t.Fatalf("iteration %d stdout_total_bytes = %#v", iteration, result["stdout_total_bytes"])
+		}
+		if result["command_ok"] != true {
+			t.Fatalf("iteration %d command_ok = %#v, want true", iteration, result["command_ok"])
 		}
 	}
 }
@@ -161,6 +167,9 @@ func TestStartMarksTimeout(t *testing.T) {
 	if _, ok := result["exit_code"]; !ok {
 		t.Fatalf("snapshot missing exit_code: %#v", result)
 	}
+	if result["command_ok"] != false {
+		t.Fatalf("timeout command_ok = %#v, want false", result["command_ok"])
+	}
 }
 
 func TestStartRejectsNonPositiveTimeout(t *testing.T) {
@@ -174,6 +183,12 @@ func TestSnapshotReturnsOnlyNewOutput(t *testing.T) {
 	s := &Session{ID: "test", StartedAt: time.Now(), exitCode: -1}
 	_, _ = s.stdout.WriteString("first\n")
 	first := s.Snapshot("running", 1024)
+	if _, exists := first["command_ok"]; exists {
+		t.Fatalf("running snapshot must not expose command_ok: %#v", first)
+	}
+	if _, exists := first["ok"]; exists {
+		t.Fatalf("running snapshot must not expose generic ok: %#v", first)
+	}
 	if first["stdout"] != "first\n" {
 		t.Fatalf("first stdout = %#v", first["stdout"])
 	}

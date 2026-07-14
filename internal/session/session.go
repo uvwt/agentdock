@@ -400,7 +400,6 @@ func (s *Session) snapshot(status string, maxBytes int, advance bool) map[string
 	stdout := trim(stdoutSegment, maxBytes)
 	stderr := trim(stderrSegment, maxBytes)
 	result := map[string]any{
-		"ok":                   true,
 		"session_id":           s.ID,
 		"status":               status,
 		"stdout":               stdout,
@@ -423,6 +422,7 @@ func (s *Session) snapshot(status string, maxBytes int, advance bool) map[string
 	}
 	if s.completed {
 		result["exit_code"] = s.exitCode
+		result["command_ok"] = s.exitCode == 0 && !s.TimedOut
 	}
 	if s.execution.Runtime != "" {
 		result["runtime"] = s.execution.Runtime

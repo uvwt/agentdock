@@ -135,7 +135,7 @@ func (r *Runtime) fileEditDelete(args map[string]any) (Result, error) {
 	if snapshot.Info.IsDir() && !recursive {
 		return nil, toolErrorDetails("IS_DIRECTORY", "directory deletion requires recursive=true", "validation", map[string]any{"path": p.Display})
 	}
-	result := Result{"ok": true, "action": "delete", "path": p.Display, "dry_run": dryRun, "changed": true, "recursive": recursive, "summary": "deleted " + p.Display}
+	result := Result{"action": "delete", "path": p.Display, "dry_run": dryRun, "changed": true, "recursive": recursive, "summary": "deleted " + p.Display}
 	if dryRun {
 		return result, nil
 	}
@@ -226,7 +226,7 @@ func (r *Runtime) fileEditMove(args map[string]any) (Result, error) {
 		}
 	}
 	changed := src.Abs != dest.Abs
-	result := Result{"ok": true, "action": "move", "path": src.Display, "new_path": dest.Display, "dry_run": dryRun, "changed": changed, "summary": "moved " + src.Display + " to " + dest.Display}
+	result := Result{"action": "move", "path": src.Display, "new_path": dest.Display, "dry_run": dryRun, "changed": changed, "summary": "moved " + src.Display + " to " + dest.Display}
 	if dryRun || !changed {
 		return result, nil
 	}

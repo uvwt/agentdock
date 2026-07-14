@@ -75,7 +75,7 @@ func TestGitBlameAllowsChildNameBeginningWithTwoDots(t *testing.T) {
 	if err != nil {
 		t.Fatalf("gitBlame() error = %v", err)
 	}
-	if !boolValue(result["ok"]) || result["path"] != "..config" {
+	if !boolValue(result["command_ok"]) || result["path"] != "..config" {
 		t.Fatalf("gitBlame() result = %#v", result)
 	}
 }

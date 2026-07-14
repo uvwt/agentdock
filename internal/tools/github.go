@@ -19,10 +19,10 @@ func (r *Runtime) gitHubRepoAccess(ctx context.Context, args map[string]any) (Re
 	}
 	token, username, err := githubCredential(r.ws.Root())
 	if err != nil {
-		return Result{"ok": false, "credential_found": false, "diagnostic": map[string]any{"kind": "git_auth_missing", "suggestion": "configure a GitHub credential first"}}, nil
+		return Result{"credential_found": false, "diagnostic": map[string]any{"kind": "git_auth_missing", "suggestion": "configure a GitHub credential first"}}, nil
 	}
 	client := &http.Client{Timeout: githubRequestTimeout(args)}
-	result := Result{"ok": true, "credential_found": true, "username": username, "repo": repo}
+	result := Result{"credential_found": true, "username": username, "repo": repo}
 	login, scopes, authStatus, authMessage := githubGet(ctx, client, token, "https://api.github.com/user")
 	result["auth_status"] = authStatus
 	result["auth_login"] = login

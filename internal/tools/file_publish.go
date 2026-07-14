@@ -20,7 +20,7 @@ func (r *Runtime) filePublish(ctx context.Context, args map[string]any) (Result,
 	if err != nil {
 		return nil, fmt.Errorf("publish file: %w", err)
 	}
-	result := Result{"ok": true}
+	result := Result{}
 	for key, value := range artifactResult(published) {
 		result[key] = value
 	}

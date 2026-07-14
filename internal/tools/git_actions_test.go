@@ -4,8 +4,8 @@ import "testing"
 
 func TestAnnotateGitPushResultClassifiesSuccessfulWarning(t *testing.T) {
 	result := Result{
-		"ok":     true,
-		"output": "fatal: unable to get credential storage lock in 1000 ms: File exists\nTo https://example.invalid/repo.git\n   624b51e..9f6edef  main -> main\n",
+		"command_ok": true,
+		"output":     "fatal: unable to get credential storage lock in 1000 ms: File exists\nTo https://example.invalid/repo.git\n   624b51e..9f6edef  main -> main\n",
 	}
 
 	annotateGitPushResult(result)
@@ -19,7 +19,7 @@ func TestAnnotateGitPushResultClassifiesSuccessfulWarning(t *testing.T) {
 }
 
 func TestAnnotateGitPushResultClassifiesUpToDate(t *testing.T) {
-	result := Result{"ok": true, "output": "Everything up-to-date\n"}
+	result := Result{"command_ok": true, "output": "Everything up-to-date\n"}
 
 	annotateGitPushResult(result)
 

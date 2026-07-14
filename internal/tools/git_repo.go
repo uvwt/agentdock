@@ -64,14 +64,14 @@ func (r *Runtime) gitInDir(ctx context.Context, dir string, maxBytes int, args .
 	text, responseTruncated := truncateBytes(output, maxBytes)
 	text = redactSecrets(text, nil)
 	result := Result{
-		"ok":                 err == nil,
+		"command_ok":         err == nil,
 		"command":            "git " + strings.Join(args, " "),
 		"output":             text,
 		"truncated":          outputTruncated || responseTruncated,
 		"output_total_bytes": outputTotal,
 	}
 	if err != nil {
-		result["error"] = err.Error()
+		result["command_error"] = err.Error()
 		if diag := diagnoseGitOutput(text); diag != nil {
 			result["diagnostic"] = diag
 		}
@@ -84,7 +84,7 @@ func (r *Runtime) currentBranch(ctx context.Context, repo gitRepo) (string, erro
 	if err != nil {
 		return "", err
 	}
-	if !boolValue(result["ok"]) {
+	if !boolValue(result["command_ok"]) {
 		return "", nil
 	}
 	return strings.TrimSpace(fmt.Sprint(result["output"])), nil
@@ -98,7 +98,7 @@ func (r *Runtime) gitRemoteURL(ctx context.Context, repo gitRepo, remote string)
 	if err != nil {
 		return "", err
 	}
-	if !boolValue(result["ok"]) {
+	if !boolValue(result["command_ok"]) {
 		return "", nil
 	}
 	return strings.TrimSpace(fmt.Sprint(result["output"])), nil

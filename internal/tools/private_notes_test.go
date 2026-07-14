@@ -75,7 +75,7 @@ func TestPrivateNotesWriteReadSearchAndEncrypt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !check["ok"].(bool) {
+	if !check["encrypted_backup_ok"].(bool) {
 		t.Fatalf("check failed: %#v", check)
 	}
 }

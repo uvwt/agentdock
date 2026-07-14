@@ -40,7 +40,7 @@ func prepareTextReplacement(path, content string, args map[string]any) (Result, 
 		return nil, "", err
 	}
 	result := Result{
-		"ok": true, "path": path, "dry_run": boolArg(args, "dry_run", false),
+		"path": path, "dry_run": boolArg(args, "dry_run", false),
 		"matches": len(indexes), "changed": updated != content,
 		"diff_preview": diffPreview, "truncated": diffTruncated,
 		"files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions,
@@ -60,7 +60,7 @@ func prepareTextAddition(path, oldContent, content string, existed bool, args ma
 		stats.FilesChanged = 1
 	}
 	return Result{
-		"ok": true, "action": "add", "path": path, "dry_run": boolArg(args, "dry_run", false),
+		"action": "add", "path": path, "dry_run": boolArg(args, "dry_run", false),
 		"changed": changed, "diff_preview": diffPreview, "truncated": diffTruncated,
 		"files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions,
 		"summary": editSummary(path, changed),

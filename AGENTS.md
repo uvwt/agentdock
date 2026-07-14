@@ -43,6 +43,14 @@ make check
 - 修改后是否包含必要测试，或至少说明无法自动测试的原因。
 - README / runbook 是否只记录配置原则，不记录真实私密值。
 
+## 工具输出状态约定
+
+- MCP 工具调用是否失败只由协议层 `isError` 表达，模型可见的 `structuredContent` 不再重复返回通用 `ok` 或 `tool_ok`。
+- `exec_command`、`session_observe`、`session_act` 等命令结果在命令完成后使用 `command_ok`、`exit_code` 和可选的 `command_error`；命令仍在运行时不返回 `command_ok`。
+- 浏览器操作使用 `browser_ok`、`browser_error`，其他工具使用 `valid`、`changed`、`configured`、`written` 等领域字段，不复用含义模糊的通用成功标记。
+- 业务结果为失败不等于 MCP 工具调用失败。例如校验得到 `valid: false` 时仍可正常返回；只有参数、权限、资源、网络或内部执行错误才进入 MCP `isError: true`。
+- WSL 子进程、HTTP 健康检查等内部协议可以保留自己的状态字段，但不得把内部通用 `ok` 泄漏到 MCP 工具结果中。
+
 ## 不建议的审查意见
 
 - 不要只因为个人风格要求大规模重构。

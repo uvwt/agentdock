@@ -104,8 +104,8 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 		if s.TimedOut {
 			result["status"] = "timeout"
 		}
-		if err != nil && !s.TimedOut {
-			result["error"] = err.Error()
+		if err != nil {
+			result["command_error"] = err.Error()
 		}
 		addCommandDiagnostics(result)
 		return result, nil
@@ -120,8 +120,8 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 				if s.TimedOut {
 					result["status"] = "timeout"
 				}
-				if err != nil && !s.TimedOut {
-					result["error"] = err.Error()
+				if err != nil {
+					result["command_error"] = err.Error()
 				}
 				addCommandDiagnostics(result)
 				return result, nil
@@ -201,8 +201,9 @@ func (r *Runtime) consumeCompletedSession(s *session.Session, maxBytes int) Resu
 	result := s.Snapshot("exited", maxBytes)
 	if s.TimedOut {
 		result["status"] = "timeout"
-	} else if err != nil {
-		result["error"] = err.Error()
+	}
+	if err != nil {
+		result["command_error"] = err.Error()
 	}
 	addCommandDiagnostics(result)
 	return result
@@ -230,6 +231,9 @@ func (r *Runtime) killSession(args map[string]any) (Result, error) {
 	}
 	r.sessions.Delete(s.ID)
 	result := s.Snapshot("killed", commandOutputLimit(args))
+	if err := s.WaitError(); err != nil {
+		result["command_error"] = err.Error()
+	}
 	result["kill_operation_ms"] = time.Since(started).Milliseconds()
 	addCommandDiagnostics(result)
 	return result, nil
@@ -265,7 +269,7 @@ func (r *Runtime) killAllSessions(args map[string]any) (Result, error) {
 			map[string]any{"session_ids": timedOut, "wait_ms": sessionKillWait.Milliseconds()},
 		)
 	}
-	return Result{"ok": true, "sessions": items, "count": len(items)}, nil
+	return Result{"sessions": items, "count": len(items)}, nil
 }
 
 func waitForSessionCompletion(s *session.Session, timeout time.Duration) bool {
@@ -339,7 +343,7 @@ func (r *Runtime) listSessions() (Result, error) {
 		}
 		items = append(items, item)
 	}
-	return Result{"ok": true, "sessions": items, "count": len(items)}, nil
+	return Result{"sessions": items, "count": len(items)}, nil
 }
 
 func addCommandDiagnostics(result Result) {

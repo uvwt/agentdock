@@ -82,7 +82,7 @@ func TestDynamicMCPToolsStaySeparateAndAppearLightweightInContext(t *testing.T) 
 	if err != nil {
 		t.Fatalf("mcp_manage add: %v", err)
 	}
-	if added["ok"] != true {
+	if added["action"] != "add" {
 		t.Fatalf("unexpected add result: %#v", added)
 	}
 

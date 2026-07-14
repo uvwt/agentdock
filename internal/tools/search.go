@@ -108,7 +108,7 @@ func (r *Runtime) searchTextRG(ctx context.Context, p workspace.Path, opts searc
 	output, err := cmd.Output()
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 1 {
-			return Result{"ok": true, "query": opts.Query, "engine": "rg", "matches": []map[string]any{}, "total_matches": 0, "truncated": false}, true
+			return Result{"query": opts.Query, "engine": "rg", "matches": []map[string]any{}, "total_matches": 0, "truncated": false}, true
 		}
 		return nil, false
 	}
@@ -116,7 +116,7 @@ func (r *Runtime) searchTextRG(ctx context.Context, p workspace.Path, opts searc
 	if !ok {
 		return nil, false
 	}
-	return Result{"ok": true, "query": opts.Query, "engine": "rg", "matches": matches, "total_matches": len(matches), "truncated": truncated}, true
+	return Result{"query": opts.Query, "engine": "rg", "matches": matches, "total_matches": len(matches), "truncated": truncated}, true
 }
 
 func (r *Runtime) parseRGJSON(output []byte, opts searchOptions) ([]map[string]any, bool, bool) {
@@ -276,5 +276,5 @@ func (r *Runtime) searchTextGo(ctx context.Context, p workspace.Path, opts searc
 	if walkErr != nil {
 		return nil, walkErr
 	}
-	return Result{"ok": true, "query": opts.Query, "engine": "go_fallback", "matches": matches, "total_matches": len(matches), "truncated": opts.MaxResults > 0 && len(matches) >= opts.MaxResults}, nil
+	return Result{"query": opts.Query, "engine": "go_fallback", "matches": matches, "total_matches": len(matches), "truncated": opts.MaxResults > 0 && len(matches) >= opts.MaxResults}, nil
 }

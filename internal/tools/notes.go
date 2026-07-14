@@ -95,7 +95,6 @@ func (r *Runtime) notesSearch(ctx context.Context, args map[string]any) (Result,
 		candidatePaths = append(candidatePaths, candidate.Path)
 	}
 	result := Result{
-		"ok":                  true,
 		"scope":               scope.Name,
 		"prefix":              scope.Prefix,
 		"index_path":          scope.IndexPath,
@@ -164,7 +163,6 @@ func (r *Runtime) notesCapture(ctx context.Context, args map[string]any) (Result
 		"draft":              draft,
 	}
 	return Result{
-		"ok":           true,
 		"scope":        scope.Name,
 		"capture_plan": plan,
 		"search":       search,

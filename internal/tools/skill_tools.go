@@ -117,7 +117,7 @@ func (r *Runtime) skillList() (Result, error) {
 			"updated_at":     selection.UpdatedAt,
 		})
 	}
-	return Result{"ok": true, "action": "list", "count": len(items), "skills": items}, nil
+	return Result{"action": "list", "count": len(items), "skills": items}, nil
 }
 
 func (r *Runtime) skillInspect(args map[string]any) (Result, error) {
@@ -142,7 +142,6 @@ func (r *Runtime) skillInspect(args map[string]any) (Result, error) {
 		selected = selection.ActiveVersion
 	}
 	result := Result{
-		"ok":        true,
 		"action":    "inspect",
 		"skill":     skill,
 		"versions":  versions,
@@ -181,7 +180,6 @@ func (r *Runtime) skillValidate(ctx context.Context, input skillToolInput) (Resu
 		return nil, skillToolError(err)
 	}
 	response := Result{
-		"ok":       true,
 		"action":   "validate",
 		"valid":    result.Valid,
 		"source":   result.Source,
@@ -210,7 +208,7 @@ func (r *Runtime) skillInstall(ctx context.Context, input skillToolInput) (Resul
 	if err != nil {
 		return nil, skillToolError(err)
 	}
-	return Result{"ok": true, "action": "install", "result": result}, nil
+	return Result{"action": "install", "result": result}, nil
 }
 
 func (r *Runtime) skillRollback(ctx context.Context, input skillToolInput) (Result, error) {
@@ -222,7 +220,7 @@ func (r *Runtime) skillRollback(ctx context.Context, input skillToolInput) (Resu
 	if err != nil {
 		return nil, skillToolError(err)
 	}
-	return Result{"ok": true, "action": "rollback", "result": result}, nil
+	return Result{"action": "rollback", "result": result}, nil
 }
 
 func (r *Runtime) resolveSkillSource(source string) (string, error) {

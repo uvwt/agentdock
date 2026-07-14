@@ -145,7 +145,7 @@ func (r *Runtime) privateNotesSearch(ctx context.Context, args map[string]any) (
 	for _, match := range matches {
 		results = append(results, match.result())
 	}
-	return Result{"ok": true, "action": "search", "query": query, "root": root, "results": results, "count": len(results), "redacted": true, "policy": "search returns redacted snippets only; use private_note_manage action=read to read full plaintext"}, nil
+	return Result{"action": "search", "query": query, "root": root, "results": results, "count": len(results), "redacted": true, "policy": "search returns redacted snippets only; use private_note_manage action=read to read full plaintext"}, nil
 }
 
 func (r *Runtime) privateNotesRead(ctx context.Context, args map[string]any) (Result, error) {
@@ -173,7 +173,7 @@ func (r *Runtime) privateNotesRead(ctx context.Context, args map[string]any) (Re
 		truncated = truncation.Truncated
 	}
 	summary := privateNoteExtractSummary(rel, string(content))
-	return Result{"ok": true, "action": "read", "root": root, "path": rel, "encrypted_path": privateNoteEncryptedRel(rel), "content": body, "truncated": truncated, "contains_secret": summary.ContainsSecret, "policy": "private_note_manage action=read returns plaintext by design"}, nil
+	return Result{"action": "read", "root": root, "path": rel, "encrypted_path": privateNoteEncryptedRel(rel), "content": body, "truncated": truncated, "contains_secret": summary.ContainsSecret, "policy": "private_note_manage action=read returns plaintext by design"}, nil
 }
 
 func (r *Runtime) privateNotesWrite(ctx context.Context, args map[string]any) (Result, error) {
@@ -221,7 +221,7 @@ func (r *Runtime) privateNotesWrite(ctx context.Context, args map[string]any) (R
 		}
 		return nil, err
 	}
-	return Result{"ok": true, "action": "write", "root": root, "path": rel, "encrypted_path": encRel, "written": true, "encrypted": true, "algorithm": "age/X25519", "policy": "age encrypted backup is mandatory and cannot be skipped"}, nil
+	return Result{"action": "write", "root": root, "path": rel, "encrypted_path": encRel, "written": true, "encrypted": true, "algorithm": "age/X25519", "policy": "age encrypted backup is mandatory and cannot be skipped"}, nil
 }
 
 func restorePrivateNote(path string, previous []byte, existed bool) error {
@@ -251,7 +251,7 @@ func (r *Runtime) privateNotesStatus(ctx context.Context, args map[string]any) (
 		if err != nil {
 			return nil, err
 		}
-		return Result{"ok": true, "action": "list", "root": root, "notes": items, "count": len(items)}, nil
+		return Result{"action": "list", "root": root, "notes": items, "count": len(items)}, nil
 	case "check", "status":
 		items, err := listPrivateNotes(root)
 		if err != nil {
@@ -263,7 +263,7 @@ func (r *Runtime) privateNotesStatus(ctx context.Context, args map[string]any) (
 				missing = append(missing, item.EncryptedPath)
 			}
 		}
-		return Result{"ok": len(missing) == 0, "action": "check", "root": root, "notes_count": len(items), "missing_encrypted": missing, "policy": "notes/ is plaintext and ignored by git; encrypted/ stores mandatory .md.age backups"}, nil
+		return Result{"encrypted_backup_ok": len(missing) == 0, "action": "check", "root": root, "notes_count": len(items), "missing_encrypted": missing, "policy": "notes/ is plaintext and ignored by git; encrypted/ stores mandatory .md.age backups"}, nil
 	default:
 		return nil, toolErrorDetails("INVALID_PRIVATE_NOTE_ACTION", "unsupported private_note_manage status action", "validation", map[string]any{"action": action, "allowed": []string{"check", "list"}})
 	}
@@ -286,7 +286,7 @@ func (r *Runtime) privateNotesMaintain(ctx context.Context, args map[string]any)
 		if err != nil {
 			return nil, err
 		}
-		return Result{"ok": true, "action": "init", "root": root, "recipient": identity.Recipient().String(), "identity_created": created, "algorithm": "age/X25519"}, nil
+		return Result{"action": "init", "root": root, "recipient": identity.Recipient().String(), "identity_created": created, "algorithm": "age/X25519"}, nil
 	case "sync-encrypted", "encrypt-all":
 		if err := initPrivateNotesTree(root); err != nil {
 			return nil, err
@@ -295,7 +295,7 @@ func (r *Runtime) privateNotesMaintain(ctx context.Context, args map[string]any)
 		if err != nil {
 			return nil, err
 		}
-		return Result{"ok": true, "action": action, "root": root, "encrypted_count": count, "algorithm": "age/X25519"}, nil
+		return Result{"action": action, "root": root, "encrypted_count": count, "algorithm": "age/X25519"}, nil
 	default:
 		return nil, toolErrorDetails("INVALID_PRIVATE_NOTE_ACTION", "unsupported private_note_manage maintain action", "validation", map[string]any{"action": action, "allowed": []string{"init", "init-encryption", "sync-encrypted", "encrypt-all"}})
 	}

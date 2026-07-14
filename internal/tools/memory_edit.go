@@ -76,7 +76,7 @@ func (r *Runtime) memoryDiff(ctx context.Context, args map[string]any) (Result, 
 		maxBytes = 60000
 	}
 	diff := memoryUnifiedDiff(p, current, proposed, maxBytes)
-	return Result{"ok": true, "path": p, "changed": current != proposed, "diff": diff, "truncated": len(diff) >= maxBytes, "operation_count": operationCount, "change_count": changeCount}, nil
+	return Result{"path": p, "changed": current != proposed, "diff": diff, "truncated": len(diff) >= maxBytes, "operation_count": operationCount, "change_count": changeCount}, nil
 }
 
 func (r *Runtime) memoryPatch(ctx context.Context, args map[string]any) (Result, error) {
@@ -99,7 +99,7 @@ func (r *Runtime) memoryPatch(ctx context.Context, args map[string]any) (Result,
 		maxBytes = 60000
 	}
 	diff := memoryUnifiedDiff(p, current, out.Content, maxBytes)
-	result := Result{"ok": true, "path": p, "changed": current != out.Content, "dry_run": dryRun, "confirmed": confirmed, "diff": diff, "truncated": len(diff) >= maxBytes, "operation_count": out.OperationCount, "change_count": out.ChangeCount}
+	result := Result{"path": p, "changed": current != out.Content, "dry_run": dryRun, "confirmed": confirmed, "diff": diff, "truncated": len(diff) >= maxBytes, "operation_count": out.OperationCount, "change_count": out.ChangeCount}
 	if dryRun || current == out.Content {
 		return result, nil
 	}
@@ -171,7 +171,7 @@ func (r *Runtime) memoryUpdateFact(ctx context.Context, args map[string]any) (Re
 		maxBytes = 60000
 	}
 	diff := memoryUnifiedDiff(p, current, updated, maxBytes)
-	result := Result{"ok": true, "path": p, "changed": current != updated, "dry_run": dryRun, "confirmed": confirmed, "updates": updates, "diff": diff, "truncated": len(diff) >= maxBytes}
+	result := Result{"path": p, "changed": current != updated, "dry_run": dryRun, "confirmed": confirmed, "updates": updates, "diff": diff, "truncated": len(diff) >= maxBytes}
 	if dryRun || current == updated {
 		return result, nil
 	}
@@ -227,7 +227,7 @@ func (r *Runtime) memoryLint(ctx context.Context, args map[string]any) (Result, 
 		filesScanned++
 		findings = append(findings, lintMemoryContent(p, content, terms, regexMode, maxFindings-len(findings))...)
 	}
-	return Result{"ok": true, "terms": terms, "regex": regexMode, "files_scanned": filesScanned, "finding_count": len(findings), "findings": findings, "truncated": len(findings) >= maxFindings}, nil
+	return Result{"terms": terms, "regex": regexMode, "files_scanned": filesScanned, "finding_count": len(findings), "findings": findings, "truncated": len(findings) >= maxFindings}, nil
 }
 
 func (r *Runtime) memoryReadContent(ctx context.Context, p string) (string, error) {

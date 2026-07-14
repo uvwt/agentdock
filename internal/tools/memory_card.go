@@ -69,7 +69,6 @@ func (r *Runtime) memoryCardCapture(ctx context.Context, args map[string]any) (R
 		plan["search_error"] = searchError
 	}
 	return Result{
-		"ok":              true,
 		"card":            memoryCardResult(card),
 		"warnings":        warnings,
 		"capture_plan":    plan,

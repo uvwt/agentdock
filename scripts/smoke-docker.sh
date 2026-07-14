@@ -73,7 +73,8 @@ def tool_call(name, arguments, request_id):
     envelope = mcp("tools/call", {"name": name, "arguments": arguments}, request_id=request_id)
     require(envelope.get("isError") is False, f"{name} returned an error envelope: {envelope}")
     result = envelope.get("structuredContent") or {}
-    require(result.get("ok") is True, f"{name} did not return ok=true: {result}")
+    if name.startswith("browser_"):
+        require(result.get("browser_ok") is True, f"{name} did not return browser_ok=true: {result}")
     return result
 
 

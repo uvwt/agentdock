@@ -418,8 +418,8 @@ process.stdout.write(JSON.stringify({
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result["ok"] != true {
-		t.Fatalf("browser runner did not receive payload: %#v", result)
+	if result["browser_ok"] != true {
+		t.Fatalf("browser runner did not report success: %#v", result)
 	}
 	if result["operation"] != "snapshot" {
 		t.Fatalf("operation = %#v, want snapshot", result["operation"])

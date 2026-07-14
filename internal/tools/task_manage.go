@@ -177,7 +177,7 @@ func (r *Runtime) taskManage(ctx context.Context, args map[string]any) (Result, 
 			return nil, taskToolError(err)
 		}
 		return Result{
-			"ok": true, "action": input.Action, "task_id": task.ID, "task_summary": compactTaskSummary(task), "state_dir": r.tasks.Root(),
+			"action": input.Action, "task_id": task.ID, "task_summary": compactTaskSummary(task), "state_dir": r.tasks.Root(),
 			"next_required_action": "Use checkpoint at meaningful recovery points; completed_step_ids/current_step_id can update several steps atomically. Use block only for a real blocker. After all steps and real verification are complete, call final_review, then complete.",
 		}, nil
 	case "list":
@@ -193,13 +193,13 @@ func (r *Runtime) taskManage(ctx context.Context, args map[string]any) (Result, 
 		for _, item := range tasks {
 			items = append(items, compactTaskListItem(item))
 		}
-		return Result{"ok": true, "action": input.Action, "tasks": items, "count": len(items), "state_dir": r.tasks.Root()}, nil
+		return Result{"action": input.Action, "tasks": items, "count": len(items), "state_dir": r.tasks.Root()}, nil
 	case "get":
 		task, err = r.tasks.Get(input.TaskID)
 		if err != nil {
 			return nil, taskToolError(err)
 		}
-		return Result{"ok": true, "action": input.Action, "task": task, "state_dir": r.tasks.Root()}, nil
+		return Result{"action": input.Action, "task": task, "state_dir": r.tasks.Root()}, nil
 	case "checkpoint":
 		singleStepMode := strings.TrimSpace(input.StepID) != "" || input.Status != ""
 		batchMode := input.CompletedStepIDsSet || strings.TrimSpace(input.CurrentStepID) != ""
@@ -229,7 +229,7 @@ func (r *Runtime) taskManage(ctx context.Context, args map[string]any) (Result, 
 	if err != nil {
 		return nil, taskToolError(err)
 	}
-	return Result{"ok": true, "action": input.Action, "task_id": task.ID, "task_summary": compactTaskSummary(task), "state_dir": r.tasks.Root()}, nil
+	return Result{"action": input.Action, "task_id": task.ID, "task_summary": compactTaskSummary(task), "state_dir": r.tasks.Root()}, nil
 }
 
 func (r *Runtime) workflowTemplateManage(ctx context.Context, args map[string]any) (Result, error) {
@@ -259,7 +259,7 @@ func (r *Runtime) workflowTemplateManage(ctx context.Context, args map[string]an
 			return nil, err
 		}
 		return Result{
-			"ok": true, "action": input.Action, "templates": templates, "count": len(templates), "composition_required": true,
+			"action": input.Action, "templates": templates, "count": len(templates), "composition_required": true,
 			"next_required_action": "Combine these templates for the current user goal: prune irrelevant steps, deduplicate, order the remaining steps, and merge completion conditions. Then call task_manage create with source_template_ids, composed steps, and completion_conditions.",
 		}, nil
 	case "list":

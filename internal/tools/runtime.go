@@ -147,7 +147,6 @@ func (r *Runtime) serverInfo() Result {
 	// server_info 是排障入口：这里按主题分组保留字段，避免新增运行能力时
 	// 把自检输出重新堆成一行难以审查的 map。
 	return Result{
-		"ok":               true,
 		"server":           config.ServerName,
 		"title":            "AgentDock",
 		"version":          config.Version,
@@ -238,7 +237,7 @@ func (r *Runtime) readFile(ctx context.Context, args map[string]any) (Result, er
 	}
 	maxBytes := boundedInt(intArg(args, "max_bytes", 262144), 262144, 1, maxTextOutputBytes)
 	content, meta := sliceText(string(data), intArg(args, "start_line", 1), intArg(args, "end_line", 0), maxBytes)
-	result := Result{"ok": true, "path": displayPath, "content": content, "encoding": "utf-8", "size_bytes": len(data), "truncated": meta.Truncated, "start_line": meta.Start, "end_line": meta.End, "total_lines": meta.Total}
+	result := Result{"path": displayPath, "content": content, "encoding": "utf-8", "size_bytes": len(data), "truncated": meta.Truncated, "start_line": meta.Start, "end_line": meta.End, "total_lines": meta.Total}
 	if meta.NextStartLine > 0 {
 		result["next_start_line"] = meta.NextStartLine
 	}
@@ -307,7 +306,7 @@ func (r *Runtime) listDir(ctx context.Context, args map[string]any) (Result, err
 		}
 	}
 	sort.Slice(items, func(i, j int) bool { return fmt.Sprint(items[i]["path"]) < fmt.Sprint(items[j]["path"]) })
-	return addFileRuntimeResult(Result{"ok": true, "path": p.Display, "entries": items, "truncated": maxEntries > 0 && len(items) >= maxEntries}, selection), nil
+	return addFileRuntimeResult(Result{"path": p.Display, "entries": items, "truncated": maxEntries > 0 && len(items) >= maxEntries}, selection), nil
 }
 
 func (r *Runtime) listDirRecursive(ctx context.Context, root workspace.Path, includeHidden, includeIgnored bool, maxDepth, maxEntries int) (Result, error) {
@@ -362,7 +361,7 @@ func (r *Runtime) listDirRecursive(ctx context.Context, root workspace.Path, inc
 		return nil
 	})
 	sort.Slice(items, func(i, j int) bool { return fmt.Sprint(items[i]["path"]) < fmt.Sprint(items[j]["path"]) })
-	return Result{"ok": err == nil, "path": root.Display, "entries": items, "recursive": true, "max_depth": maxDepth, "truncated": maxEntries > 0 && len(items) >= maxEntries}, err
+	return Result{"path": root.Display, "entries": items, "recursive": true, "max_depth": maxDepth, "truncated": maxEntries > 0 && len(items) >= maxEntries}, err
 }
 
 func (r *Runtime) listFiles(ctx context.Context, args map[string]any) (Result, error) {
@@ -436,7 +435,7 @@ func (r *Runtime) listFiles(ctx context.Context, args map[string]any) (Result, e
 		}
 		return nil
 	})
-	return addFileRuntimeResult(Result{"ok": err == nil, "path": p.Display, "files": files, "truncated": maxResults > 0 && len(files) >= maxResults}, selection), err
+	return addFileRuntimeResult(Result{"path": p.Display, "files": files, "truncated": maxResults > 0 && len(files) >= maxResults}, selection), err
 }
 
 func (r *Runtime) viewImage(ctx context.Context, args map[string]any) (Result, error) {
@@ -489,7 +488,6 @@ func (r *Runtime) viewImage(ctx context.Context, args map[string]any) (Result, e
 	}
 
 	result := Result{
-		"ok":       true,
 		"source":   loaded.Source,
 		"image":    imageMetadata(loaded.Name, preparedInfo, len(prepared)),
 		"original": original,

@@ -14,14 +14,14 @@ func (r *Runtime) mcpManage(ctx context.Context, args map[string]any) (Result, e
 	switch action {
 	case "list":
 		servers := r.mcpClients.List()
-		return Result{"ok": true, "action": action, "servers": servers, "count": len(servers)}, nil
+		return Result{"action": action, "servers": servers, "count": len(servers)}, nil
 	case "inspect":
 		name := stringArg(args, "name", "")
 		cfg, summary, err := r.mcpClients.Inspect(name)
 		if err != nil {
 			return nil, dynamicMCPToolError(err)
 		}
-		return Result{"ok": true, "action": action, "server": summary, "config": cfg}, nil
+		return Result{"action": action, "server": summary, "config": cfg}, nil
 	case "add":
 		cfg := mcpclient.ServerConfig{
 			Name:        stringArg(args, "name", ""),
@@ -40,20 +40,20 @@ func (r *Runtime) mcpManage(ctx context.Context, args map[string]any) (Result, e
 		if err != nil {
 			return nil, dynamicMCPToolError(err)
 		}
-		return Result{"ok": true, "action": action, "server": server}, nil
+		return Result{"action": action, "server": server}, nil
 	case "remove":
 		name := stringArg(args, "name", "")
 		if err := r.mcpClients.Remove(name); err != nil {
 			return nil, dynamicMCPToolError(err)
 		}
-		return Result{"ok": true, "action": action, "name": strings.TrimSpace(name), "removed": true}, nil
+		return Result{"action": action, "name": strings.TrimSpace(name), "removed": true}, nil
 	case "enable", "disable":
 		name := stringArg(args, "name", "")
 		server, err := r.mcpClients.SetEnabled(name, action == "enable")
 		if err != nil {
 			return nil, dynamicMCPToolError(err)
 		}
-		return Result{"ok": true, "action": action, "server": server}, nil
+		return Result{"action": action, "server": server}, nil
 	case "env_set", "env_unset", "env_list":
 		name := strings.TrimSpace(stringArg(args, "name", ""))
 		if _, _, err := r.mcpClients.Inspect(name); err != nil {
@@ -66,7 +66,7 @@ func (r *Runtime) mcpManage(ctx context.Context, args map[string]any) (Result, e
 		if err != nil {
 			return nil, dynamicMCPToolError(err)
 		}
-		return Result{"ok": true, "action": action, "server": server, "tools": tools, "tool_count": len(tools)}, nil
+		return Result{"action": action, "server": server, "tools": tools, "tool_count": len(tools)}, nil
 	default:
 		return nil, toolErrorDetails(
 			"INVALID_ACTION",
@@ -85,7 +85,7 @@ func (r *Runtime) mcpToolSearch(ctx context.Context, args map[string]any) (Resul
 	if err != nil {
 		return nil, dynamicMCPToolError(err)
 	}
-	return Result{"ok": true, "query": query, "server": server, "tools": tools, "count": len(tools)}, nil
+	return Result{"query": query, "server": server, "tools": tools, "count": len(tools)}, nil
 }
 
 func (r *Runtime) mcpToolInspect(ctx context.Context, args map[string]any) (Result, error) {
@@ -95,7 +95,6 @@ func (r *Runtime) mcpToolInspect(ctx context.Context, args map[string]any) (Resu
 		return nil, dynamicMCPToolError(err)
 	}
 	return Result{
-		"ok":            true,
 		"name":          qualifiedName,
 		"server":        server,
 		"tool_name":     tool.Name,
@@ -117,7 +116,7 @@ func (r *Runtime) mcpToolCall(ctx context.Context, args map[string]any) (Result,
 	if err != nil {
 		return nil, dynamicMCPToolError(err)
 	}
-	return Result{"ok": true, "name": qualifiedName, "result": result}, nil
+	return Result{"name": qualifiedName, "result": result}, nil
 }
 
 func dynamicMCPToolError(err error) error {

@@ -19,7 +19,7 @@ func (r *Runtime) scopedEnvAction(kind envstore.ScopeKind, name, action string, 
 		if err := r.envs.Set(scope, key, text); err != nil {
 			return nil, scopedEnvToolError(scope, err)
 		}
-		return Result{"ok": true, "action": action, "name": scope.Name, "key": key, "configured": text != ""}, nil
+		return Result{"action": action, "name": scope.Name, "key": key, "configured": text != ""}, nil
 	case "env_unset":
 		key := strings.TrimSpace(stringArg(args, "key", ""))
 		if key == "" {
@@ -29,13 +29,13 @@ func (r *Runtime) scopedEnvAction(kind envstore.ScopeKind, name, action string, 
 		if err != nil {
 			return nil, scopedEnvToolError(scope, err)
 		}
-		return Result{"ok": true, "action": action, "name": scope.Name, "key": key, "removed": removed}, nil
+		return Result{"action": action, "name": scope.Name, "key": key, "removed": removed}, nil
 	case "env_list":
 		items, err := r.envs.List(scope)
 		if err != nil {
 			return nil, scopedEnvToolError(scope, err)
 		}
-		return Result{"ok": true, "action": action, "name": scope.Name, "items": items, "count": len(items)}, nil
+		return Result{"action": action, "name": scope.Name, "items": items, "count": len(items)}, nil
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported environment action", "validation", map[string]any{"action": action})
 	}

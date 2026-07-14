@@ -45,9 +45,9 @@ func (r *Runtime) applyPatch(ctx context.Context, args map[string]any) (Result, 
 		})
 	}
 	if boolArg(args, "dry_run", false) {
-		return Result{"ok": true, "summary": "patch validated", "dry_run": true, "workdir": workdir.Display, "affected_files": affected, "diff_preview": preview.Text, "truncated": preview.Truncated, "files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions}, nil
+		return Result{"summary": "patch validated", "dry_run": true, "workdir": workdir.Display, "affected_files": affected, "diff_preview": preview.Text, "truncated": preview.Truncated, "files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions}, nil
 	}
-	return Result{"ok": true, "summary": "patch applied", "dry_run": false, "workdir": workdir.Display, "affected_files": affected, "diff_preview": preview.Text, "truncated": preview.Truncated, "files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions}, nil
+	return Result{"summary": "patch applied", "dry_run": false, "workdir": workdir.Display, "affected_files": affected, "diff_preview": preview.Text, "truncated": preview.Truncated, "files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions}, nil
 }
 
 func patchDiagnostic(code, path, message, output, reason string) map[string]any {

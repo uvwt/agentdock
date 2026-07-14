@@ -63,9 +63,9 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 	text = redactSecrets(text, nil)
 	if outputTruncated {
 		return Result{
-			"ok":                 false,
+			"browser_ok":         false,
 			"operation":          operation,
-			"error":              "browser runner output exceeded the capture limit",
+			"browser_error":      "browser runner output exceeded the capture limit",
 			"stdout":             text,
 			"truncated":          true,
 			"output_total_bytes": outputTotal,
@@ -74,23 +74,35 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 	}
 	var parsed map[string]any
 	parseErr := json.Unmarshal(output, &parsed)
-	result := Result{"ok": err == nil, "operation": operation, "output_total_bytes": outputTotal}
+	result := Result{"browser_ok": err == nil, "operation": operation, "output_total_bytes": outputTotal}
 	if boolArg(args, "debug_stdout", false) || parseErr != nil {
 		result["stdout"] = text
 		result["truncated"] = responseTruncated
 	}
-	if err != nil {
-		result["error"] = err.Error()
-	}
 	if parseErr == nil {
 		for key, value := range parsed {
-			result[key] = value
+			switch key {
+			case "ok":
+				result["browser_ok"] = value
+			case "error":
+				result["browser_error"] = value
+			default:
+				result[key] = value
+			}
 		}
 		if err := r.normalizeBrowserScreenshot(ctx, result, args); err != nil {
 			return nil, err
 		}
-	} else if len(output) > 0 {
+	} else {
+		result["browser_ok"] = false
 		result["json_error"] = parseErr.Error()
+		result["browser_error"] = "browser runner returned invalid JSON"
+	}
+	if err != nil {
+		result["browser_ok"] = false
+		if _, exists := result["browser_error"]; !exists {
+			result["browser_error"] = err.Error()
+		}
 	}
 	return result, nil
 }

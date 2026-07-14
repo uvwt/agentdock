@@ -152,6 +152,8 @@ func (r *Runtime) callWSLFileHelper(ctx context.Context, selection fileRuntimeSe
 		}
 		return nil, toolErrorDetails(code, message, wslFileErrorPhase(code), details)
 	}
+	// ok 只属于 WSL 子进程内部协议；MCP 工具结果由 isError 表达调用错误。
+	delete(result, "ok")
 	delete(result, "code")
 	delete(result, "message")
 	delete(result, "details")
@@ -189,7 +191,6 @@ func (r *Runtime) readFileWSL(ctx context.Context, args map[string]any, selectio
 	maxBytes := boundedInt(intArg(args, "max_bytes", 262144), 262144, 1, maxTextOutputBytes)
 	sliced, meta := sliceText(content, intArg(args, "start_line", 1), intArg(args, "end_line", 0), maxBytes)
 	result := Result{
-		"ok":          true,
 		"path":        path,
 		"content":     sliced,
 		"encoding":    "utf-8",

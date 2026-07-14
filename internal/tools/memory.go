@@ -270,9 +270,7 @@ func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, pa
 		}
 		return nil, toolErrorDetails("RECALL_HTTP_ERROR", message, "network", map[string]any{"status": resp.StatusCode, "response": parsed})
 	}
-	if _, ok := parsed["ok"]; !ok {
-		parsed["ok"] = true
-	}
+	delete(parsed, "ok")
 	parsed["recall_endpoint"] = base
 	if mapped, ok := recallMapResponsePaths(parsed).(map[string]any); ok {
 		return Result(mapped), nil

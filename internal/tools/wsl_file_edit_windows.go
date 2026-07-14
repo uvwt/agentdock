@@ -94,7 +94,7 @@ func (r *Runtime) fileEditDeleteWSL(ctx context.Context, args map[string]any, se
 		return nil, err
 	}
 	dryRun := boolArg(args, "dry_run", false)
-	result := Result{"ok": true, "action": "delete", "path": path, "dry_run": dryRun, "changed": true, "summary": "deleted " + path}
+	result := Result{"action": "delete", "path": path, "dry_run": dryRun, "changed": true, "summary": "deleted " + path}
 	if !dryRun {
 		if _, err := r.callWSLFileHelper(ctx, selection, map[string]any{"action": "delete", "path": path}); err != nil {
 			return nil, err
@@ -125,7 +125,7 @@ func (r *Runtime) fileEditMoveWSL(ctx context.Context, args map[string]any, sele
 	}
 	changed := path != newPath
 	dryRun := boolArg(args, "dry_run", false)
-	result := Result{"ok": true, "action": "move", "path": path, "new_path": newPath, "dry_run": dryRun, "changed": changed, "summary": "moved " + path + " to " + newPath}
+	result := Result{"action": "move", "path": path, "new_path": newPath, "dry_run": dryRun, "changed": changed, "summary": "moved " + path + " to " + newPath}
 	if !dryRun && changed {
 		if _, err := r.callWSLFileHelper(ctx, selection, map[string]any{"action": "move", "path": path, "new_path": newPath, "overwrite": overwrite}); err != nil {
 			return nil, err
@@ -344,7 +344,7 @@ func (r *Runtime) fileEditPatchWSL(ctx context.Context, args map[string]any, sel
 		}
 	}
 	result := Result{
-		"ok": true, "action": "patch", "dry_run": dryRun, "workdir": workdir,
+		"action": "patch", "dry_run": dryRun, "workdir": workdir,
 		"affected_files": affected, "summary": strings.Join(summaries, "\n"),
 		"diff_preview": previewResult, "truncated": truncated,
 		"files_changed": totalStats.FilesChanged, "insertions": totalStats.Insertions, "deletions": totalStats.Deletions,

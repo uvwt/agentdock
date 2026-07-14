@@ -184,7 +184,7 @@ func (r *Runtime) applyEnvelopePatch(patch string, dryRun bool, basePath string)
 			return nil, err
 		}
 	}
-	return Result{"ok": true, "dry_run": dryRun, "workdir": basePath, "affected_files": affected, "summary": strings.Join(summaries, "\n"), "diff_preview": diffPreview, "truncated": diffTruncated, "files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions}, nil
+	return Result{"dry_run": dryRun, "workdir": basePath, "affected_files": affected, "summary": strings.Join(summaries, "\n"), "diff_preview": diffPreview, "truncated": diffTruncated, "files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions}, nil
 }
 
 func ensurePatchPathUnused(staged map[string]stagedPatchFile, absPath, displayPath string) error {

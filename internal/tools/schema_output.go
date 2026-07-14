@@ -2,7 +2,9 @@ package tools
 
 func OutputSchema(name string) map[string]any {
 	props := map[string]any{}
-	required := []string{"ok"}
+	// MCP envelope 的 isError 已表达工具调用错误；这里只描述领域结果，
+	// 不再要求含义模糊的通用 ok 字段。
+	required := []string{}
 	stringProp := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
 	intProp := func(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
 	boolProp := func(desc string) map[string]any { return map[string]any{"type": "boolean", "description": desc} }
@@ -12,8 +14,6 @@ func OutputSchema(name string) map[string]any {
 	objectProp := func(desc string) map[string]any {
 		return map[string]any{"type": "object", "description": desc, "additionalProperties": true}
 	}
-
-	props["ok"] = boolProp("Whether the tool call completed successfully.")
 
 	switch name {
 	case "server_info":
@@ -28,7 +28,6 @@ func OutputSchema(name string) map[string]any {
 		props["workflow_dir"] = stringProp("Local directory containing workflow templates.")
 		props["sandbox"] = objectProp("Sandbox status metadata.")
 	case "agentdock_context":
-		delete(props, "ok")
 		required = []string{"context"}
 		props["context"] = stringProp("Rendered AgentDock bootstrap context text for clients that cannot inject system prompt context.")
 	case "read_file":
@@ -74,6 +73,8 @@ func OutputSchema(name string) map[string]any {
 		props["workdir"] = stringProp("Logical command working directory in the selected runtime.")
 		props["stdout"] = stringProp("Captured stdout segment.")
 		props["stderr"] = stringProp("Captured stderr segment.")
+		props["command_ok"] = boolProp("Whether a completed command exited successfully. Omitted while the command is still running.")
+		props["command_error"] = stringProp("Command process error when execution did not succeed.")
 		props["exit_code"] = intProp("Process exit code, when available.")
 		props["elapsed_ms"] = intProp("Session elapsed milliseconds.")
 		props["timed_out"] = boolProp("Whether the command timed out.")
@@ -236,7 +237,10 @@ func OutputSchema(name string) map[string]any {
 		props["recipient"] = stringProp("Age public recipient generated or used.")
 		props["algorithm"] = stringProp("Encryption algorithm.")
 		props["missing_encrypted"] = arrayProp("Missing encrypted backup paths.")
+		props["encrypted_backup_ok"] = boolProp("Whether every private note has its required encrypted backup.")
 	case "browser_session":
+		props["browser_ok"] = boolProp("Whether the browser operation succeeded.")
+		props["browser_error"] = stringProp("Browser operation error when the runner completed without a successful browser result.")
 		props["code"] = stringProp("Structured browser error code, such as PLAYWRIGHT_CHROMIUM_MISSING.")
 		props["suggested_retry"] = objectProp("Structured retry suggestion for recoverable browser errors.")
 		props["operation"] = stringProp("Browser operation name.")
@@ -247,6 +251,8 @@ func OutputSchema(name string) map[string]any {
 		props["removed_sessions"] = arrayProp("Browser session ids removed by cleanup.")
 		props["stdout"] = stringProp("Raw browser runner output.")
 	case "browser_act", "browser_snapshot":
+		props["browser_ok"] = boolProp("Whether the browser operation succeeded.")
+		props["browser_error"] = stringProp("Browser operation error when the runner completed without a successful browser result.")
 		props["code"] = stringProp("Structured browser error code, such as PLAYWRIGHT_CHROMIUM_MISSING.")
 		props["suggested_retry"] = objectProp("Structured retry suggestion for recoverable browser errors.")
 		props["browser_launch"] = objectProp("Browser launch metadata, including fallback details when system Chrome is used.")
@@ -286,6 +292,8 @@ func OutputSchema(name string) map[string]any {
 		props["commits"] = arrayProp("Parsed commits for action=log.")
 		props["truncated"] = boolProp("Whether output was truncated.")
 		props["diagnostic"] = objectProp("Structured diagnostic.")
+		props["command_ok"] = boolProp("Whether the underlying Git command exited successfully, when a command was executed.")
+		props["command_error"] = stringProp("Underlying Git command process error, when present.")
 		props["credential_found"] = boolProp("Whether a stored GitHub credential was found for action=github_repo_access.")
 		props["username"] = stringProp("Stored GitHub username for action=github_repo_access.")
 		props["repo"] = stringProp("Checked repository for action=github_repo_access.")
@@ -301,6 +309,8 @@ func OutputSchema(name string) map[string]any {
 		props["dest"] = stringProp("Clone destination, when applicable.")
 		props["truncated"] = boolProp("Whether output was truncated.")
 		props["diagnostic"] = objectProp("Structured diagnostic.")
+		props["command_ok"] = boolProp("Whether the underlying Git command exited successfully.")
+		props["command_error"] = stringProp("Underlying Git command process error, when present.")
 		props["push_succeeded"] = boolProp("Whether push exited successfully.")
 		props["remote_updated"] = boolProp("Whether push changed remote refs.")
 		props["up_to_date"] = boolProp("Whether push reported up-to-date.")
