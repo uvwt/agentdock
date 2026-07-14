@@ -25,6 +25,7 @@ base_url = os.environ["BASE_URL"].rstrip("/")
 timeout = float(os.environ["TIMEOUT"])
 token = os.environ.get("AGENTDOCK_AUTH_TOKEN", "")
 attempts = int(os.environ.get("AGENTDOCK_SMOKE_ATTEMPTS", "10"))
+verify_browser = os.environ.get("AGENTDOCK_SMOKE_BROWSER", "").strip().lower() in {"1", "true", "yes"}
 
 
 def request(method, path, payload=None):
@@ -68,6 +69,14 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
+def tool_call(name, arguments, request_id):
+    envelope = mcp("tools/call", {"name": name, "arguments": arguments}, request_id=request_id)
+    require(envelope.get("isError") is False, f"{name} returned an error envelope: {envelope}")
+    result = envelope.get("structuredContent") or {}
+    require(result.get("ok") is True, f"{name} did not return ok=true: {result}")
+    return result
+
+
 try:
     print(f"==> healthz {base_url}/healthz")
     health_body = None
@@ -99,12 +108,41 @@ try:
     print(f"tools/list ok ({len(tool_names)} tools)")
 
     print("==> MCP tools/call server_info")
-    call = mcp("tools/call", {"name": "server_info", "arguments": {}}, request_id=3)
-    require(call.get("isError") is False, f"server_info returned an error envelope: {call}")
-    info = call.get("structuredContent") or {}
-    require(info.get("ok") is True, f"server_info did not return ok=true: {info}")
+    info = tool_call("server_info", {}, request_id=3)
     require(info.get("endpoint_path") == "/mcp", f"unexpected endpoint_path: {info}")
     print(f"server_info ok (auth_enabled={info.get('auth_enabled')})")
+
+    if verify_browser:
+        require("browser_session" in tool_names and "browser_snapshot" in tool_names, f"browser tools not exposed; tools={sorted(tool_names)}")
+        print("==> MCP browser smoke")
+        session = tool_call(
+            "browser_session",
+            {
+                "action": "start",
+                "headless": True,
+                "url": "data:text/html,<title>AgentDock Browser Smoke</title><main>browser-ok</main>",
+                "timeout_ms": 30000,
+            },
+            request_id=4,
+        )
+        session_id = session.get("session_id")
+        require(session_id, f"browser_session did not return session_id: {session}")
+        try:
+            snapshot = tool_call(
+                "browser_snapshot",
+                {
+                    "session_id": session_id,
+                    "max_text_chars": 2000,
+                    "max_interactive_elements": 10,
+                    "timeout_ms": 30000,
+                },
+                request_id=5,
+            )
+            require(snapshot.get("title") == "AgentDock Browser Smoke", f"unexpected browser title: {snapshot}")
+            require("browser-ok" in str(snapshot.get("text", "")), f"browser text missing: {snapshot}")
+        finally:
+            tool_call("browser_session", {"action": "close", "session_id": session_id}, request_id=6)
+        print("browser smoke ok")
 
     print("agentdock smoke ok")
 except Exception as exc:

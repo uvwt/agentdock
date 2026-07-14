@@ -46,10 +46,11 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 		"BROWSER_ARTIFACT_DIR":   artifactDir.Abs,
 		"AGENTDOCK_DEFAULT_DIR":  r.ws.Root(),
 	}
-	// 浏览器增强 Docker 镜像会通过 ENV 固定浏览器安装目录。这里只在父进程存在该变量时转交给 Node runner；
-	// macOS/裸机部署不强行写死路径，让 Playwright 使用本机默认缓存目录。
-	if value := strings.TrimSpace(os.Getenv("PLAYWRIGHT_BROWSERS_PATH")); value != "" {
-		env["PLAYWRIGHT_BROWSERS_PATH"] = value
+	// Docker 浏览器镜像会固定浏览器或 Playwright 缓存路径；裸机环境不写死，继续使用系统浏览器或本机缓存。
+	for _, key := range []string{"AGENTDOCK_BROWSER_EXECUTABLE_PATH", "PLAYWRIGHT_BROWSERS_PATH"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			env[key] = value
+		}
 	}
 	commandEnv, err := r.internalCommandEnv(env)
 	if err != nil {
@@ -95,16 +96,20 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 }
 
 func (r *Runtime) browserRunnerScript() (controlPath, error) {
-	runnerDir, err := r.resolveControlExisting(config.BrowserRunnerDir)
-	if err != nil {
-		return controlPath{}, toolErrorDetails("BROWSER_RUNNER_NOT_FOUND", "browser runner directory not found", "validation", map[string]any{"runner_dir": config.BrowserRunnerDir, "suggestion": "copy examples/browser-runner to the configured runner directory and run npm install; on macOS prefer browser=chrome for system Chrome"})
+	runnerDir := filepath.Clean(strings.TrimSpace(r.cfg.BrowserRunnerDir))
+	if runnerDir == "" || !filepath.IsAbs(runnerDir) {
+		return controlPath{}, toolErrorDetails("BROWSER_RUNNER_NOT_FOUND", "browser runner directory is not configured", "validation", map[string]any{"runner_dir": runnerDir})
 	}
-	candidate := filepath.Join(config.BrowserRunnerDir, "browser-runner.js")
-	runner, err := r.resolveControlExisting(candidate)
-	if err != nil {
-		return controlPath{}, toolErrorDetails("BROWSER_RUNNER_NOT_FOUND", "browser-runner.js not found", "validation", map[string]any{"runner_dir": runnerDir.Display})
+	info, err := os.Lstat(runnerDir)
+	if err != nil || !info.IsDir() {
+		return controlPath{}, toolErrorDetails("BROWSER_RUNNER_NOT_FOUND", "browser runner directory not found", "validation", map[string]any{"runner_dir": runnerDir, "suggestion": "copy examples/browser-runner to the configured runner directory and run npm install; on macOS prefer browser=chrome for system Chrome"})
 	}
-	return runner, nil
+	candidate := filepath.Join(runnerDir, "browser-runner.js")
+	info, err = os.Lstat(candidate)
+	if err != nil || !info.Mode().IsRegular() {
+		return controlPath{}, toolErrorDetails("BROWSER_RUNNER_NOT_FOUND", "browser-runner.js not found", "validation", map[string]any{"runner_dir": runnerDir})
+	}
+	return controlPath{Abs: candidate, Display: candidate}, nil
 }
 
 func (r *Runtime) normalizeBrowserScreenshot(ctx context.Context, result Result, args map[string]any) error {

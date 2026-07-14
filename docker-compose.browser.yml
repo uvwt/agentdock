@@ -1,5 +1,6 @@
 services:
   agentdock:
     image: ${AGENTDOCK_BROWSER_IMAGE:-ghcr.io/uvwt/agentdock:browser-latest}
+    shm_size: "1gb"
     environment:
       AGENTDOCK_BROWSER_ENABLED: "true"

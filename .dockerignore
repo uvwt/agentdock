@@ -1,0 +1,17 @@
+*
+!.dockerignore
+!Dockerfile
+!go.mod
+!go.sum
+!cmd/
+!cmd/**
+!internal/
+!internal/**
+!docker-entrypoint.sh
+!scripts/
+!scripts/docker-healthcheck.sh
+!examples/
+!examples/browser-runner/
+!examples/browser-runner/browser-runner.js
+!examples/browser-runner/package.json
+!examples/browser-runner/package-lock.json

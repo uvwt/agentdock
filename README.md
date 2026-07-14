@@ -17,7 +17,7 @@ AgentDock 是面向本地与远程 Agent 的工具运行层，提供文件、命
 
 ## Docker 快速开始
 
-直接使用 GitHub Container Registry 中的预构建镜像：
+直接使用 GitHub Container Registry 中的预构建镜像。Release 中的 Compose 文件会固定到对应版本，正式镜像默认以非 root 用户运行：
 
 ```bash
 mkdir agentdock && cd agentdock
@@ -34,7 +34,7 @@ docker compose up -d
 http://127.0.0.1:18766/mcp
 ```
 
-查看日志或停止服务：
+默认数据保存在 Docker named volume 中，避免 Linux 主机 bind mount 的 UID 冲突。`latest` 是不含 Go 编译器的正式运行镜像；需要 Go、C、C++ 构建链时使用 `dev-latest`，需要 Chromium 时使用 `browser-latest`。查看日志或停止服务：
 
 ```bash
 docker compose logs -f

@@ -383,7 +383,7 @@ func TestBrowserRunnerReceivesPayloadEnv(t *testing.T) {
 		t.Skip("node is required for browser runner")
 	}
 	root := t.TempDir()
-	runnerDir := filepath.Join(root, ".agentdock", "browser-runner")
+	runnerDir := filepath.Join(root, "image-browser-runner")
 	if err := os.MkdirAll(runnerDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -394,15 +394,18 @@ process.stdout.write(JSON.stringify({
   default_dir: payload.default_dir,
   artifact_dir: payload.artifact_dir,
   env_default_dir: process.env.AGENTDOCK_DEFAULT_DIR,
-  artifact_env: process.env.BROWSER_ARTIFACT_DIR
+  artifact_env: process.env.BROWSER_ARTIFACT_DIR,
+  browser_executable: process.env.AGENTDOCK_BROWSER_EXECUTABLE_PATH
 }));`
 	if err := os.WriteFile(filepath.Join(runnerDir, "browser-runner.js"), []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("AGENTDOCK_BROWSER_EXECUTABLE_PATH", "/opt/agentdock/chromium")
 	cfg := config.Config{
 		AgentDockDefaultDir: root,
 		AgentDockHome:       filepath.Join(root, ".agentdock"),
 		BrowserEnabled:      true,
+		BrowserRunnerDir:    runnerDir,
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
@@ -426,6 +429,72 @@ process.stdout.write(JSON.stringify({
 	}
 	if result["artifact_env"] == "" || result["artifact_env"] != result["artifact_dir"] {
 		t.Fatalf("artifact env mismatch: %#v", result)
+	}
+	if result["browser_executable"] != "/opt/agentdock/chromium" {
+		t.Fatalf("browser executable env = %#v", result["browser_executable"])
+	}
+}
+
+func TestBrowserRunnerRejectsSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks is not reliable on Windows runners")
+	}
+	root := t.TempDir()
+	targetDir := filepath.Join(root, "runner-target")
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	targetScript := filepath.Join(targetDir, "browser-runner.js")
+	if err := os.WriteFile(targetScript, []byte("process.stdout.write('{}')"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name      string
+		runnerDir string
+		prepare   func() error
+	}{
+		{
+			name:      "runner directory",
+			runnerDir: filepath.Join(root, "runner-link"),
+			prepare: func() error {
+				return os.Symlink(targetDir, filepath.Join(root, "runner-link"))
+			},
+		},
+		{
+			name:      "runner script",
+			runnerDir: filepath.Join(root, "runner-with-link"),
+			prepare: func() error {
+				if err := os.MkdirAll(filepath.Join(root, "runner-with-link"), 0o700); err != nil {
+					return err
+				}
+				return os.Symlink(targetScript, filepath.Join(root, "runner-with-link", "browser-runner.js"))
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.prepare(); err != nil {
+				t.Fatal(err)
+			}
+			cfg := config.Config{
+				AgentDockDefaultDir: filepath.Join(root, "workspace-"+strings.ReplaceAll(test.name, " ", "-")),
+				AgentDockHome:       filepath.Join(root, "state-"+strings.ReplaceAll(test.name, " ", "-")),
+				BrowserEnabled:      true,
+				BrowserRunnerDir:    test.runnerDir,
+			}
+			if err := cfg.Normalize(); err != nil {
+				t.Fatalf("Normalize() error = %v", err)
+			}
+			rt, err := NewRuntime(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := rt.browserRunnerScript(); err == nil {
+				t.Fatalf("browserRunnerScript() accepted symlinked %s", test.name)
+			}
+		})
 	}
 }
 

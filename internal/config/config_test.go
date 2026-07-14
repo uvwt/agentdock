@@ -27,6 +27,10 @@ func TestNormalizeDefaultsToUserDirectories(t *testing.T) {
 	if cfg.AgentDockDefaultDir != wantDefault {
 		t.Fatalf("AgentDockDefaultDir = %q, want %q", cfg.AgentDockDefaultDir, wantDefault)
 	}
+	wantRunner := filepath.Join(wantHome, BrowserRunnerDir)
+	if cfg.BrowserRunnerDir != wantRunner {
+		t.Fatalf("BrowserRunnerDir = %q, want %q", cfg.BrowserRunnerDir, wantRunner)
+	}
 }
 
 func TestFromEnvIgnoresOldDirectoryConfig(t *testing.T) {
@@ -155,16 +159,27 @@ func TestFromEnvRejectsInvalidTypedValues(t *testing.T) {
 }
 
 func TestFromEnvParsesTypedValues(t *testing.T) {
+	runnerDir := filepath.Join(t.TempDir(), "browser-runner")
 	t.Setenv("AGENTDOCK_PORT", " 9876 ")
 	t.Setenv("AGENTDOCK_BROWSER_ENABLED", "true")
+	t.Setenv("AGENTDOCK_BROWSER_RUNNER_DIR", runnerDir)
 	t.Setenv("AGENTDOCK_OAUTH_ENABLED", "true")
 	t.Setenv("AGENTDOCK_STDIO", "1")
 	cfg, err := FromEnv()
 	if err != nil {
 		t.Fatalf("FromEnv() error = %v", err)
 	}
-	if cfg.Port != 9876 || !cfg.BrowserEnabled || !cfg.OAuthEnabled || !cfg.Stdio {
+	if cfg.Port != 9876 || !cfg.BrowserEnabled || !cfg.OAuthEnabled || !cfg.Stdio || cfg.BrowserRunnerDir != runnerDir {
 		t.Fatalf("config = %#v", cfg)
+	}
+}
+
+func TestNormalizeRejectsRelativeBrowserRunnerDir(t *testing.T) {
+	home := t.TempDir()
+	setTestUserHome(t, home)
+	cfg := Config{BrowserRunnerDir: "relative/browser-runner"}
+	if err := cfg.Normalize(); err == nil || !strings.Contains(err.Error(), "BrowserRunnerDir must resolve to an absolute path") {
+		t.Fatalf("Normalize() error = %v, want absolute BrowserRunnerDir error", err)
 	}
 }
 

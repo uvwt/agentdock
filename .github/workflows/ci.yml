@@ -95,3 +95,14 @@ jobs:
           if ($actual -ne $plainText) {
             throw "DPAPI round trip mismatch. Expected '$plainText', got '$actual'."
           }
+
+
+  container:
+    name: Container check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and verify images
+        run: ./scripts/test-docker-images.sh

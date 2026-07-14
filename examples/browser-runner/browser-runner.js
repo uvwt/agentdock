@@ -26,6 +26,28 @@ function channelForSession(session) {
   return undefined;
 }
 
+function configuredBrowserExecutable(session) {
+  const configured = String(process.env.AGENTDOCK_BROWSER_EXECUTABLE_PATH || '').trim();
+  if (!configured || !fsSync.existsSync(configured)) return '';
+  const browser = String(session.browser || '').toLowerCase();
+  const channel = String(session.channel || '').toLowerCase();
+  if (channel && channel !== 'chromium') return '';
+  if (browser && browser !== 'chromium' && browser !== 'chrome-for-testing') return '';
+  return configured;
+}
+
+function chromiumLaunchOptions(session, options = {}) {
+  const launchOptions = { ...options };
+  const channel = channelForSession(session);
+  if (channel) launchOptions.channel = channel;
+  const executablePath = configuredBrowserExecutable(session);
+  if (executablePath) {
+    launchOptions.executablePath = executablePath;
+    delete launchOptions.channel;
+  }
+  return launchOptions;
+}
+
 function isPlaywrightBundledChromiumMissing(err) {
   const message = String(err?.message || err || '');
   return message.includes('Executable doesn')
@@ -138,6 +160,8 @@ async function platformBrowserPath(session) {
   const browser = String(session.browser || '').toLowerCase();
   const channel = String(session.channel || '').toLowerCase();
   const candidates = [];
+  const configured = configuredBrowserExecutable(session);
+  if (configured) candidates.push(configured);
   if (browser === 'chromium' || browser === 'chrome-for-testing' || channel === 'chromium') {
     try {
       const chromium = await loadChromium();
@@ -435,11 +459,11 @@ async function runProfileDaemon() {
   const profileId = safeProfileId(session.profile_id || sessionId) || sessionId;
   const profileDir = path.join(artifactDir, 'visible-profiles', profileId);
   await fs.mkdir(profileDir, { recursive: true, mode: 0o700 });
-  const context = await chromium.launchPersistentContext(profileDir, {
+  const context = await chromium.launchPersistentContext(profileDir, chromiumLaunchOptions(session, {
     headless: false,
     viewport: session.viewport || { width: 1280, height: 800 },
     args: ['--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-component-extensions-with-background-pages', '--disable-features=Translate']
-  });
+  }));
   const page = context.pages()[0] || await context.newPage();
   if (session.url && page.url() !== session.url) {
     await page.goto(session.url, { waitUntil: 'domcontentloaded', timeout: Number(session.timeout_ms || 30000) }).catch(() => {});
@@ -716,9 +740,7 @@ async function launchPage(session) {
     });
     page = context.pages()[0] || await context.newPage();
   } else {
-    const launchOptions = { headless: session.headless !== false };
-    const channel = channelForSession(session);
-    if (channel) launchOptions.channel = channel;
+    const launchOptions = chromiumLaunchOptions(session, { headless: session.headless !== false });
     if (session.profile_id) {
       const profileDir = path.join(artifactDir, 'profiles', safeProfileId(session.profile_id));
       const launched = await launchPersistentContextWithFallback(chromium, session, profileDir, launchOptions, {

@@ -1,7 +1,8 @@
-.PHONY: fmt test vet race build check run docker-build docker-browser-build docker-up docker-browser-up docker-down smoke-docker logs clean clean-local-artifacts install-linux install-macos test-install-macos deploy-macos-source restart-macos smoke-macos
+.PHONY: fmt test vet race build check run docker-build docker-dev-build docker-browser-build docker-up docker-browser-up docker-down smoke-docker logs clean clean-local-artifacts install-linux install-macos test-install-macos deploy-macos-source restart-macos smoke-macos
 
 APP := agentdock
 IMAGE := agentdock:local
+DEV_IMAGE := agentdock:dev
 BROWSER_IMAGE := agentdock:browser
 HOST ?= 127.0.0.1
 PORT ?= 8765
@@ -46,10 +47,13 @@ smoke-macos:
 	printf '%s\n' '{"skill_action":"status","check_screenshot":false,"check_applescript":true}' | ./skill-sources/desktop/run.py
 
 docker-build:
-	docker build -t $(IMAGE) .
+	docker build --target runtime -t $(IMAGE) .
+
+docker-dev-build:
+	docker build --target dev -t $(DEV_IMAGE) .
 
 docker-browser-build:
-	docker build -f Dockerfile.browser -t $(BROWSER_IMAGE) .
+	docker build --target browser -t $(BROWSER_IMAGE) .
 
 docker-up:
 	AGENTDOCK_IMAGE=$(IMAGE) docker compose up -d

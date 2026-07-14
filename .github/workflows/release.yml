@@ -227,8 +227,11 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Package installers and Compose files
+      - name: Package installers and versioned Compose files
         shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           cp scripts/install-linux.sh dist/install-linux.sh
@@ -236,8 +239,19 @@ jobs:
           cp scripts/install-macos.sh dist/install-macos.sh
           cp scripts/install-windows.ps1 dist/install-windows.ps1
           cp scripts/uninstall-windows.ps1 dist/uninstall-windows.ps1
-          cp docker-compose.yml dist/docker-compose.yml
-          cp docker-compose.browser.yml dist/docker-compose.browser.yml
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          tag = os.environ["RELEASE_TAG"]
+          repository = os.environ["RELEASE_REPOSITORY"].lower()
+          runtime = Path("docker-compose.yml").read_text()
+          browser = Path("docker-compose.browser.yml").read_text()
+          runtime = runtime.replace("ghcr.io/uvwt/agentdock:latest", f"ghcr.io/{repository}:{tag}")
+          browser = browser.replace("ghcr.io/uvwt/agentdock:browser-latest", f"ghcr.io/{repository}:browser-{tag}")
+          Path("dist/docker-compose.yml").write_text(runtime)
+          Path("dist/docker-compose.browser.yml").write_text(browser)
+          PY
           (
             cd dist
             for file in \
@@ -245,9 +259,7 @@ jobs:
               install-linux-bootstrap.sh \
               install-macos.sh \
               install-windows.ps1 \
-              uninstall-windows.ps1 \
-              docker-compose.yml \
-              docker-compose.browser.yml; do
+              uninstall-windows.ps1; do
               shasum -a 256 "$file" > "$file.sha256"
             done
           )
@@ -266,7 +278,6 @@ jobs:
             dist/*.ps1
             dist/*.ps1.sha256
             dist/*.yml
-            dist/*.yml.sha256
           generate_release_notes: true
 
   publish-container:
@@ -278,11 +289,15 @@ jobs:
       matrix:
         include:
           - variant: runtime
-            dockerfile: Dockerfile
+            target: runtime
             latest_tag: latest
             tag_prefix: ''
+          - variant: dev
+            target: dev
+            latest_tag: dev-latest
+            tag_prefix: dev-
           - variant: browser
-            dockerfile: Dockerfile.browser
+            target: browser
             latest_tag: browser-latest
             tag_prefix: browser-
     steps:
@@ -309,14 +324,15 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           flavor: latest=false
           tags: |
-            type=raw,value=${{ matrix.latest_tag }}
-            type=raw,value=${{ matrix.tag_prefix }}${{ github.event.inputs.tag || github.ref_name }}
+            type=raw,value=${{ matrix.tag_prefix }}${{ github.event.inputs.tag || github.ref_name }},priority=1000
+            type=raw,value=${{ matrix.latest_tag }},priority=100
 
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: Dockerfile
+          target: ${{ matrix.target }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -410,6 +426,9 @@ jobs:
     needs: publish-container
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -420,7 +439,9 @@ jobs:
       - name: Run published images
         env:
           RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
-        run: |
-          set -euo pipefail
-          docker run --rm "ghcr.io/${{ github.repository }}:$RELEASE_TAG" agentdock --help >/dev/null 2>&1
-          docker run --rm "ghcr.io/${{ github.repository }}:browser-$RELEASE_TAG" agentdock --help >/dev/null 2>&1
+          AGENTDOCK_TEST_BUILD: "false"
+          AGENTDOCK_TEST_RUNTIME_IMAGE: ghcr.io/${{ github.repository }}:${{ github.event.inputs.tag || github.ref_name }}
+          AGENTDOCK_TEST_DEV_IMAGE: ghcr.io/${{ github.repository }}:dev-${{ github.event.inputs.tag || github.ref_name }}
+          AGENTDOCK_TEST_BROWSER_IMAGE: ghcr.io/${{ github.repository }}:browser-${{ github.event.inputs.tag || github.ref_name }}
+          AGENTDOCK_EXPECT_IMAGE_VERSION: ${{ github.event.inputs.tag || github.ref_name }}
+        run: ./scripts/test-docker-images.sh

@@ -1,19 +1,24 @@
 services:
   agentdock:
     image: ${AGENTDOCK_IMAGE:-ghcr.io/uvwt/agentdock:latest}
-    container_name: agentdock
     restart: unless-stopped
     ports:
-      - "127.0.0.1:18766:8765"
+      - "${AGENTDOCK_PUBLISH_HOST:-127.0.0.1}:${AGENTDOCK_PUBLISH_PORT:-18766}:8765"
     volumes:
-      - ./AgentDockHome:/root/.agentdock
-      - ./AgentDock:/root/AgentDock
+      - agentdock_home:/home/agentdock/.agentdock
+      - agentdock_workspace:/home/agentdock/AgentDock
     environment:
       # 容器内监听 0.0.0.0，因此必须显式提供认证 token。
       AGENTDOCK_AUTH_TOKEN: "${AGENTDOCK_AUTH_TOKEN:?set AGENTDOCK_AUTH_TOKEN before docker compose up}"
-    command:
-      - agentdock
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8765"
+      AGENTDOCK_HOST: "0.0.0.0"
+      AGENTDOCK_PORT: "8765"
+    healthcheck:
+      test: ["CMD", "agentdock-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  agentdock_home:
+  agentdock_workspace:
