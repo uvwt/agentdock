@@ -60,8 +60,19 @@ func TestAuthorizePageShowsClientIdentityAndRedirectHost(t *testing.T) {
 	}
 }
 
-func TestAuthorizationFormCSPRestrictsSubmissionToSelf(t *testing.T) {
-	values := url.Values{"redirect_uri": {"https://client.example/oauth/callback?source=test"}}
+func TestAuthorizationFormCSPAllowsOnlyRegisteredRedirectOrigin(t *testing.T) {
+	values := url.Values{"redirect_uri": {"https://client.example:8443/oauth/callback?source=test"}}
+	response := httptest.NewRecorder()
+	writeAuthorizeForm(response, values, "", "Test Client")
+
+	want := "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://client.example:8443; base-uri 'none'; frame-ancestors 'none'"
+	if got := response.Header().Get("Content-Security-Policy"); got != want {
+		t.Fatalf("Content-Security-Policy = %q, want %q", got, want)
+	}
+}
+
+func TestAuthorizationFormCSPFallsBackToSelfForInvalidRedirect(t *testing.T) {
+	values := url.Values{"redirect_uri": {"javascript:alert(1)"}}
 	response := httptest.NewRecorder()
 	writeAuthorizeForm(response, values, "", "Test Client")
 

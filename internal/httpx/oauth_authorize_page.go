@@ -33,8 +33,14 @@ type authorizePageData struct {
 	CancelURL           string
 }
 
-func authorizationFormCSP() string {
-	return "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+func authorizationFormCSP(redirectURI string) string {
+	formAction := "'self'"
+	parsed, err := url.Parse(redirectURI)
+	if err == nil && validOAuthRedirectURI(redirectURI) {
+		// 浏览器会把表单提交后的 302 回调也纳入 form-action 校验，因此只放行已验证 redirect_uri 的来源。
+		formAction += " " + parsed.Scheme + "://" + parsed.Host
+	}
+	return "default-src 'none'; style-src 'unsafe-inline'; form-action " + formAction + "; base-uri 'none'; frame-ancestors 'none'"
 }
 
 func writeAuthorizeForm(w http.ResponseWriter, values url.Values, errorText, clientName string) {
@@ -45,7 +51,7 @@ func writeAuthorizeForm(w http.ResponseWriter, values url.Values, errorText, cli
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-	w.Header().Set("Content-Security-Policy", authorizationFormCSP())
+	w.Header().Set("Content-Security-Policy", authorizationFormCSP(values.Get("redirect_uri")))
 
 	message := ""
 	if errorText != "" {
