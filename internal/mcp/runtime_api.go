@@ -33,3 +33,15 @@ func (s *Server) RuntimeTaskDelete(id string) (tools.Result, error) {
 func (s *Server) RuntimeCapabilities(ctx context.Context, refresh bool) (tools.Result, error) {
 	return s.runtime.RuntimeCapabilities(ctx, refresh)
 }
+
+func (s *Server) RuntimeMCPServers(ctx context.Context) (tools.Result, error) {
+	return s.runtime.RuntimeMCPServers(ctx)
+}
+
+func (s *Server) RuntimeMCPServer(ctx context.Context, name string) (tools.Result, error) {
+	return s.runtime.RuntimeMCPServer(ctx, name)
+}
+
+func (s *Server) RuntimeMCPManage(ctx context.Context, args map[string]any) (tools.Result, error) {
+	return s.runtime.RuntimeMCPManage(ctx, args)
+}

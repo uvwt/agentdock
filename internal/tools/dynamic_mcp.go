@@ -56,10 +56,11 @@ func (r *Runtime) mcpManage(ctx context.Context, args map[string]any) (Result, e
 		return Result{"action": action, "server": server}, nil
 	case "env_set", "env_unset", "env_list":
 		name := strings.TrimSpace(stringArg(args, "name", ""))
-		if _, _, err := r.mcpClients.Inspect(name); err != nil {
+		cfg, _, err := r.mcpClients.Inspect(name)
+		if err != nil {
 			return nil, dynamicMCPToolError(err)
 		}
-		return r.scopedEnvAction(envstore.ScopeMCP, name, action, args)
+		return r.scopedEnvAction(envstore.ScopeMCP, cfg.Name, action, args)
 	case "refresh":
 		name := stringArg(args, "name", "")
 		server, tools, err := r.mcpClients.Refresh(ctx, name)

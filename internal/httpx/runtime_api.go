@@ -1,9 +1,11 @@
 package httpx
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -24,6 +26,8 @@ func registerRuntimeAPI(mux *http.ServeMux, server *mcp.Server, cfg config.Confi
 	mux.HandleFunc("/internal/runtime/skills/", h)
 	mux.HandleFunc("/internal/runtime/tasks", h)
 	mux.HandleFunc("/internal/runtime/tasks/", h)
+	mux.HandleFunc("/internal/runtime/mcp", h)
+	mux.HandleFunc("/internal/runtime/mcp/", h)
 }
 
 func runtimeAPIHandler(server *mcp.Server, cfg config.Config, oauthStore *auth.OAuthStore) http.HandlerFunc {
@@ -62,7 +66,7 @@ func runtimeAPIMethodAllowed(method, path string) bool {
 		_, ok := runtimeTaskID(cleanPath)
 		return ok
 	}
-	return method == http.MethodPost && cleanPath == "/internal/runtime/capabilities"
+	return method == http.MethodPost && (cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/mcp")
 }
 
 func runtimeAPIAllowHeader(path string) string {
@@ -70,7 +74,7 @@ func runtimeAPIAllowHeader(path string) string {
 	if _, ok := runtimeTaskID(cleanPath); ok {
 		return "GET, DELETE"
 	}
-	if cleanPath == "/internal/runtime/capabilities" {
+	if cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/mcp" {
 		return "GET, POST"
 	}
 	return "GET"
@@ -93,6 +97,23 @@ func dispatchRuntimeAPI(ctx context.Context, server *mcp.Server, r *http.Request
 		skill := strings.TrimPrefix(path, "/internal/runtime/skills/")
 		result, err := server.RuntimeSkill(skill)
 		return map[string]any(result), err
+	case path == "/internal/runtime/mcp" && r.Method == http.MethodPost:
+		args, err := decodeRuntimeMCPRequest(r)
+		if err != nil {
+			return nil, err
+		}
+		result, err := server.RuntimeMCPManage(ctx, args)
+		return map[string]any(result), err
+	case path == "/internal/runtime/mcp":
+		result, err := server.RuntimeMCPServers(ctx)
+		return map[string]any(result), err
+	case strings.HasPrefix(path, "/internal/runtime/mcp/"):
+		name, ok := runtimeMCPName(path)
+		if !ok {
+			return nil, &tools.ToolError{Code: "MCP_NAME_REQUIRED", Message: "dynamic MCP server name is required", Category: "validation"}
+		}
+		result, err := server.RuntimeMCPServer(ctx, name)
+		return map[string]any(result), err
 	case path == "/internal/runtime/tasks":
 		limit, err := parseRuntimeTaskLimit(r.URL.Query().Get("limit"))
 		if err != nil {
@@ -109,6 +130,94 @@ func dispatchRuntimeAPI(ctx context.Context, server *mcp.Server, r *http.Request
 	default:
 		return nil, &tools.ToolError{Code: "NOT_FOUND", Message: "runtime API route not found", Category: "not_found"}
 	}
+}
+
+type runtimeMCPRequest struct {
+	Action      string            `json:"action"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Transport   string            `json:"transport"`
+	URL         string            `json:"url"`
+	Command     string            `json:"command"`
+	Args        []string          `json:"args"`
+	Cwd         string            `json:"cwd"`
+	HeaderEnv   map[string]string `json:"header_env"`
+	EnvFromEnv  map[string]string `json:"env_from_env"`
+	Enabled     *bool             `json:"enabled"`
+	TimeoutMS   int               `json:"timeout_ms"`
+	Key         string            `json:"key"`
+	Value       *string           `json:"value"`
+}
+
+var runtimeMCPManageActions = map[string]bool{
+	"add": true, "remove": true, "enable": true, "disable": true,
+	"env_set": true, "env_unset": true, "env_list": true, "refresh": true,
+}
+
+func decodeRuntimeMCPRequest(r *http.Request) (map[string]any, error) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 64*1024+1))
+	if err != nil {
+		return nil, runtimeMCPRequestError("failed to read MCP request body")
+	}
+	if len(body) > 64*1024 {
+		return nil, runtimeMCPRequestError("MCP request body is too large")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	var request runtimeMCPRequest
+	if err := decoder.Decode(&request); err != nil {
+		return nil, runtimeMCPRequestError("invalid MCP request body")
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return nil, runtimeMCPRequestError("request body must contain exactly one JSON value")
+	}
+	action := strings.ToLower(strings.TrimSpace(request.Action))
+	if action == "" {
+		return nil, &tools.ToolError{Code: "MCP_ACTION_REQUIRED", Message: "dynamic MCP action is required", Category: "validation"}
+	}
+	if !runtimeMCPManageActions[action] {
+		return nil, &tools.ToolError{Code: "MCP_ACTION_UNSUPPORTED", Message: "dynamic MCP action is not available through the Runtime API", Category: "validation"}
+	}
+	args := map[string]any{
+		"action":       action,
+		"name":         request.Name,
+		"description":  request.Description,
+		"transport":    request.Transport,
+		"url":          request.URL,
+		"command":      request.Command,
+		"args":         request.Args,
+		"cwd":          request.Cwd,
+		"header_env":   request.HeaderEnv,
+		"env_from_env": request.EnvFromEnv,
+		"key":          request.Key,
+	}
+	if request.Value != nil {
+		args["value"] = *request.Value
+	}
+	if request.Enabled != nil {
+		args["enabled"] = *request.Enabled
+	}
+	if request.TimeoutMS > 0 {
+		args["timeout_ms"] = request.TimeoutMS
+	}
+	return args, nil
+}
+
+func runtimeMCPRequestError(message string) error {
+	return &tools.ToolError{Code: "INVALID_MCP_REQUEST", Message: message, Category: "validation"}
+}
+
+func runtimeMCPName(path string) (string, bool) {
+	const prefix = "/internal/runtime/mcp/"
+	if !strings.HasPrefix(path, prefix) {
+		return "", false
+	}
+	name := strings.TrimSpace(strings.TrimPrefix(path, prefix))
+	if name == "" || strings.Contains(name, "/") {
+		return "", false
+	}
+	return name, true
 }
 
 func runtimeTaskID(path string) (string, bool) {
