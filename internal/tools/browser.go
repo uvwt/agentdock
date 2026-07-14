@@ -36,7 +36,7 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 	if err != nil {
 		return nil, toolErrorDetails("BROWSER_PAYLOAD_INVALID", "browser payload cannot be encoded as JSON", "validation", map[string]any{"reason": err.Error()})
 	}
-	timeout := boundedMilliseconds(intArg(args, "timeout_ms", 30000), 30000, int((5*time.Minute)/time.Millisecond))
+	timeout := browserRunnerTimeout(args)
 	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, "node", runner.Abs)
@@ -141,6 +141,24 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 		}
 	}
 	return result, nil
+}
+
+func browserRunnerTimeout(args map[string]any) time.Duration {
+	requested := intArg(args, "timeout_ms", 30000)
+	required := requested + 2000 // 给 runner 留出序列化结构化错误和回收子进程的时间。
+	if actions, ok := args["actions"].([]any); ok {
+		for _, raw := range actions {
+			action, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			actionRequired := intArg(action, "timeout_ms", 0) + 5000
+			if actionRequired > required {
+				required = actionRequired
+			}
+		}
+	}
+	return boundedMilliseconds(required, 32000, int((5*time.Minute)/time.Millisecond))
 }
 
 func browserProtocolError(code, message string, details map[string]any) map[string]any {

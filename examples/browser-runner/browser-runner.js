@@ -215,6 +215,26 @@ function safeProfileId(value) {
   return raw.replace(/[^a-zA-Z0-9_.-]/g, '-').slice(0, 80);
 }
 
+function browserProfileLocation(session, sessionId) {
+  const profileId = safeProfileId(session.profile_id || sessionId) || sessionId;
+  const persistent = Boolean(session.profile_id);
+  const directory = persistent
+    ? (session.headless === false ? 'visible-profiles' : 'profiles')
+    : 'session-profiles';
+  return {
+    profileDir: path.join(artifactDir, directory, profileId),
+    persistent
+  };
+}
+
+async function removeEphemeralProfile(session) {
+  if (session.profile_id) return false;
+  const profileDir = String(session?.visible_process?.profile_dir || '').trim();
+  if (!profileDir) return false;
+  await fs.rm(profileDir, { recursive: true, force: true }).catch(() => {});
+  return !fsSync.existsSync(profileDir);
+}
+
 
 async function platformBrowserPath(session) {
   const browser = String(session.browser || '').toLowerCase();
@@ -768,8 +788,7 @@ async function runProfileDaemon() {
   const sessionId = session.session_id || args.session_id || 'profile-daemon';
   const chromium = await loadChromium();
   const storageState = await loadStorageState(session);
-  const profileId = safeProfileId(session.profile_id || sessionId) || sessionId;
-  const profileDir = path.join(artifactDir, 'visible-profiles', profileId);
+  const { profileDir, persistent } = browserProfileLocation(session, sessionId);
   await fs.mkdir(profileDir, { recursive: true, mode: 0o700 });
   const launched = await launchPersistentContextWithFallback(chromium, session, profileDir, chromiumLaunchOptions(session), {
     headless: session.headless !== false,
@@ -783,10 +802,14 @@ async function runProfileDaemon() {
   }
   let page = context.pages()[0] || await context.newPage();
   const responseLog = createResponseLog(context);
+  let actionRequestCount = 0;
   const diagnostics = createBrowserDiagnostics(context);
   const pageExtra = extra => ({ ...diagnostics.snapshot(), browser_launch: launched.launchInfo, ...extra });
   if (session.url && page.url() !== session.url) {
-    await page.goto(session.url, { waitUntil: 'domcontentloaded', timeout: Number(session.timeout_ms || 30000) }).catch(() => {});
+    // daemon 必须在父进程启动等待结束前进入可服务状态，初始页面不能独占整个操作超时。
+    const startupBudget = Math.min(Number(session.timeout_ms || 30000), Number(session.startup_timeout_ms || 30000));
+    const startupNavigationTimeout = Math.min(Math.max(startupBudget - 5000, 1000), 20000);
+    await page.goto(session.url, { waitUntil: 'domcontentloaded', timeout: startupNavigationTimeout }).catch(() => {});
   }
   const localStorageApplied = await applyLocalStorage(page, session.local_storage);
   if (localStorageApplied > 0 && session.reload_after_local_storage !== false) {
@@ -810,6 +833,8 @@ async function runProfileDaemon() {
         send(200, { ...(await daemonPageState(page, body, pageExtra())), session_id: sessionId });
       } else if (action === 'action') {
         page = selectPlaywrightPage(context, body.page_id, page);
+        if (actionRequestCount > 0) responseLog.length = 0;
+        actionRequestCount++;
         page = await runActions(context, page, body.actions || [], responseLog);
         const storageResult = body.save_storage_state === true || session.save_storage_state === true
           ? await saveContextStorageState(context, body, session, sessionId)
@@ -823,6 +848,7 @@ async function runProfileDaemon() {
         send(200, { ok: true, session_id: sessionId, status: 'closed' });
         setTimeout(async () => {
           await context.close().catch(() => {});
+          if (!persistent) await fs.rm(profileDir, { recursive: true, force: true }).catch(() => {});
           server.close(() => process.exit(0));
         }, 50).unref();
       } else {
@@ -840,7 +866,10 @@ async function launchProfileDaemon(session, sessionId) {
   const controlURL = `http://127.0.0.1:${port}`;
   const daemonPayload = {
     operation: 'profile_daemon',
-    args: { session: { ...session, session_id: sessionId }, control_port: port },
+    args: {
+      session: { ...session, session_id: sessionId, startup_timeout_ms: Number(args.timeout_ms || 30000) },
+      control_port: port
+    },
     artifact_dir: artifactDir
   };
   const child = spawn(process.execPath, [process.argv[1]], {
@@ -850,14 +879,17 @@ async function launchProfileDaemon(session, sessionId) {
   });
   child.unref();
   try {
-    await waitForDaemon(controlURL, Number(session.timeout_ms || 25000));
+    const startupBudget = Math.min(Number(session.timeout_ms || 30000), Number(args.timeout_ms || 30000));
+    await waitForDaemon(controlURL, Math.max(startupBudget - 1000, 1000));
   } catch (err) {
-    stopVisibleProcess({ visible_process: { pid: child.pid } });
+    await stopVisibleProcessCompletely({ visible_process: { pid: child.pid } });
+    const failedProfile = browserProfileLocation(session, sessionId);
+    if (!failedProfile.persistent) await fs.rm(failedProfile.profileDir, { recursive: true, force: true }).catch(() => {});
     err.code = err.code || 'BROWSER_DAEMON_START_FAILED';
     err.details = { ...(err.details || {}), control_url: controlURL };
     throw err;
   }
-  const profileId = safeProfileId(session.profile_id || sessionId) || sessionId;
+  const { profileDir } = browserProfileLocation(session, sessionId);
   return {
     backend: 'daemon',
     control_url: controlURL,
@@ -865,7 +897,7 @@ async function launchProfileDaemon(session, sessionId) {
       pid: child.pid,
       port,
       executable: 'playwright-chromium-daemon',
-      profile_dir: path.join(artifactDir, 'visible-profiles', profileId),
+      profile_dir: profileDir,
       browser: 'playwright-chromium'
     }
   };
@@ -889,8 +921,7 @@ async function launchKeepOpenBrowser(session, sessionId) {
   const executable = await platformBrowserPath(session);
   if (!executable) throw new Error('No visible Chrome/Chromium browser executable found');
   const port = Number(session.cdp_port || 0) || await findFreePort();
-  const profileId = safeProfileId(session.profile_id || sessionId) || sessionId;
-  const profileDir = path.join(artifactDir, 'visible-profiles', profileId);
+  const { profileDir } = browserProfileLocation({ ...session, headless: false }, sessionId);
   await fs.mkdir(profileDir, { recursive: true });
   const launchArgs = [
     `--remote-debugging-port=${port}`,
@@ -942,6 +973,69 @@ function stopVisibleProcess(session) {
   } catch {
     return false;
   }
+}
+
+async function stopVisibleProcessCompletely(session) {
+  const pid = Number(session?.visible_process?.pid || 0);
+  const stopped = stopVisibleProcess(session);
+  if (!pid || process.platform === 'win32') return stopped;
+  await new Promise(resolve => setTimeout(resolve, 200));
+  try {
+    process.kill(pid, 0);
+    process.kill(pid, 'SIGKILL');
+    return true;
+  } catch {
+    return stopped;
+  }
+}
+
+async function closeCDPBrowser(session) {
+  if (!session.cdp_url || !session.visible_process) return false;
+  try {
+    const version = await cdpJSON(session.cdp_url, '/json/version');
+    const wsURL = version.webSocketDebuggerUrl;
+    if (!wsURL) return false;
+    return await new Promise(resolve => {
+      const ws = new WebSocket(wsURL);
+      let settled = false;
+      let timer;
+      const finish = value => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        try { ws.close(); } catch {}
+        resolve(value);
+      };
+      timer = setTimeout(() => finish(false), 2000);
+      ws.onopen = () => ws.send(JSON.stringify({ id: 1, method: 'Browser.close', params: {} }));
+      ws.onmessage = event => {
+        let message;
+        try { message = JSON.parse(event.data); } catch { return; }
+        if (message.id === 1) finish(!message.error);
+      };
+      ws.onclose = () => finish(true);
+      ws.onerror = () => finish(false);
+    });
+  } catch {
+    return false;
+  }
+}
+
+async function closeOwnedBrowser(session) {
+  let daemonClosed = false;
+  let closed = false;
+  if (session.backend === 'daemon' && session.control_url) {
+    daemonClosed = await daemonRequest(session.control_url, 'close', {}, 3000).then(() => true).catch(() => false);
+    closed = daemonClosed;
+  } else if (session.backend === 'cdp') {
+    closed = await closeCDPBrowser(session);
+  }
+  if (!closed) closed = await stopVisibleProcessCompletely(session);
+  if (closed && !daemonClosed) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    await removeEphemeralProfile(session);
+  }
+  return closed;
 }
 
 function normalizeLocalStorage(value) {
@@ -1038,19 +1132,33 @@ function responseMatches(response, action) {
   return true;
 }
 
+async function runBrowserWait(action, operation) {
+  try {
+    return await operation();
+  } catch (err) {
+    if (String(err?.name || '').includes('Timeout') || String(err?.message || '').includes('Timeout')) {
+      err.code = 'BROWSER_WAIT_TIMEOUT';
+      err.details = { action: action.action, timeout_ms: Number(action.timeout_ms || 10000) };
+    }
+    throw err;
+  }
+}
+
 async function waitForResponse(context, responseLog, action) {
   const existing = responseLog.findLast(response => responseMatches(response, action));
   if (existing) return existing;
 
-  const response = await context.waitForEvent('response', {
-    timeout: Number(action.timeout_ms || 10000),
-    predicate: candidate => responseMatches({
-      url: candidate.url(),
-      status: candidate.status(),
-      method: candidate.request().method()
-    }, action)
+  return await runBrowserWait(action, async () => {
+    const response = await context.waitForEvent('response', {
+      timeout: Number(action.timeout_ms || 10000),
+      predicate: candidate => responseMatches({
+        url: candidate.url(),
+        status: candidate.status(),
+        method: candidate.request().method()
+      }, action)
+    });
+    return { url: response.url(), status: response.status(), method: response.request().method() };
   });
-  return { url: response.url(), status: response.status(), method: response.request().method() };
 }
 
 async function collectPageMetrics(page, screenshotPath, fullPage) {
@@ -1117,6 +1225,16 @@ async function closeSessionState(state, sessionId) {
   return existed;
 }
 
+function touchBrowserSession(state, sessionId, session, result = {}) {
+  const updated = {
+    ...session,
+    url: result.url || session.url,
+    updated_at: new Date().toISOString()
+  };
+  state.sessions[sessionId] = updated;
+  return updated;
+}
+
 async function cleanupStaleSessions(state) {
   const maxAgeMs = args.max_age_ms ?? 6 * 60 * 60 * 1000;
   const now = Date.now();
@@ -1124,12 +1242,7 @@ async function cleanupStaleSessions(state) {
   for (const [id, session] of Object.entries(state.sessions || {})) {
     const stamp = Date.parse(session.updated_at || session.created_at || 0);
     if (!stamp || now - stamp > maxAgeMs) {
-      if (session.backend === 'daemon' && session.control_url) {
-        const closed = await daemonRequest(session.control_url, 'close', {}, 3000).then(() => true).catch(() => false);
-        if (!closed) stopVisibleProcess(session);
-      } else {
-        stopVisibleProcess(session);
-      }
+      await closeOwnedBrowser(session);
       removed.push(id);
       delete state.sessions[id];
     }
@@ -1198,19 +1311,19 @@ async function runActions(context, page, actions = [], responseLog = []) {
     else if (type === 'fill') await activePage.fill(action.selector, action.value ?? '');
     else if (type === 'press') await activePage.press(action.selector || 'body', action.key);
     else if (type === 'wait') await activePage.waitForTimeout(action.value ?? 1000);
-    else if (type === 'wait_for_selector') await activePage.waitForSelector(action.selector, { timeout: action.timeout_ms || 10000 });
+    else if (type === 'wait_for_selector') await runBrowserWait(action, () => activePage.waitForSelector(action.selector, { timeout: action.timeout_ms || 10000 }));
     else if (type === 'wait_for_url') {
       const expectedURL = String(action.url || '');
       const matcher = expectedURL.includes('*') ? expectedURL : url => url.href.includes(expectedURL);
-      await activePage.waitForURL(matcher, { timeout: action.timeout_ms || 10000, waitUntil: action.wait_until || 'load' });
+      await runBrowserWait(action, () => activePage.waitForURL(matcher, { timeout: action.timeout_ms || 10000, waitUntil: action.wait_until || 'load' }));
     }
     else if (type === 'wait_for_text') {
       const text = String(action.text ?? action.value ?? '');
       if (!text) throw new Error('wait_for_text requires text or value');
-      await activePage.getByText(text, { exact: action.exact === true }).first().waitFor({
+      await runBrowserWait(action, () => activePage.getByText(text, { exact: action.exact === true }).first().waitFor({
         state: action.state || 'visible',
         timeout: action.timeout_ms || 10000
-      });
+      }));
     }
     else if (type === 'wait_for_response') await waitForResponse(context, responseLog, action);
     else if (type === 'select') await activePage.selectOption(action.selector, action.value);
@@ -1291,11 +1404,7 @@ async function main() {
   if (!sessionId || !state.sessions[sessionId]) throw new Error('Unknown or missing browser session_id');
   let session = state.sessions[sessionId];
   if (operation === 'session_close') {
-    let daemonClosed = false;
-    if (session.backend === 'daemon' && session.control_url) {
-      daemonClosed = await daemonRequest(session.control_url, 'close', {}, 3000).then(() => true).catch(() => false);
-    }
-    const stopped = daemonClosed ? true : stopVisibleProcess(session);
+    const stopped = await closeOwnedBrowser(session);
     const existed = await closeSessionState(state, sessionId);
     console.log(JSON.stringify({ ok: true, session_id: sessionId, status: existed ? 'closed' : 'not_found', visible_process_stopped: stopped }));
     return;
@@ -1308,10 +1417,13 @@ async function main() {
       const result = await daemonRequest(session.control_url, 'action', { ...args, actions: args.actions || [], max_text_chars: args.max_text_chars || 8000, capture_screenshot: shouldCaptureScreenshot(args) }, daemonTimeout(args));
       const closeAfter = args.close_after === true;
       if (closeAfter) {
-        await daemonRequest(session.control_url, 'close', {}, 3000).catch(() => {});
+        await closeOwnedBrowser(session);
         await closeSessionState(state, sessionId);
       }
-      else await writeState(state);
+      else {
+        session = touchBrowserSession(state, sessionId, session, result);
+        await writeState(state);
+      }
       console.log(JSON.stringify({ ...result, closed: closeAfter }));
       return;
     }
@@ -1320,10 +1432,13 @@ async function main() {
       const result = await daemonRequest(session.control_url, daemonAction, { ...args, max_text_chars: args.max_text_chars || 8000, capture_screenshot: shouldCaptureScreenshot(args) }, daemonTimeout(args));
       const closeAfter = args.close_after === true;
       if (closeAfter) {
-        await daemonRequest(session.control_url, 'close', {}, 3000).catch(() => {});
+        await closeOwnedBrowser(session);
         await closeSessionState(state, sessionId);
       }
-      else await writeState(state);
+      else {
+        session = touchBrowserSession(state, sessionId, session, result);
+        await writeState(state);
+      }
       console.log(JSON.stringify({ ...result, closed: closeAfter }));
       return;
     }
@@ -1335,10 +1450,13 @@ async function main() {
       const closeAfter = args.close_after === true;
       const result = await cdpSnapshot(session, sessionId, args.page_id || '');
       if (closeAfter) {
-        stopVisibleProcess(session);
+        await closeOwnedBrowser(session);
         await closeSessionState(state, sessionId);
       }
-      else await writeState(state);
+      else {
+        session = touchBrowserSession(state, sessionId, session, result);
+        await writeState(state);
+      }
       console.log(JSON.stringify({ ...result, closed: closeAfter }));
       return;
     }
