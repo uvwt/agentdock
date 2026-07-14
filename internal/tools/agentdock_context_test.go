@@ -61,6 +61,68 @@ func TestAgentDockContextToolReturnsRuntimeIndex(t *testing.T) {
 	}
 }
 
+func TestNexusUnavailableHidesWorkflowTemplateCapability(t *testing.T) {
+	cfg := config.Config{
+		AgentDockDefaultDir: t.TempDir(),
+		AgentDockHome:       filepath.Join(t.TempDir(), ".agentdock"),
+	}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	rt, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	toolNames := strings.Join(rt.ToolNames(), "\n")
+	if strings.Contains(toolNames, "workflow_template_manage") {
+		t.Fatalf("workflow_template_manage should be hidden without Nexus: %s", toolNames)
+	}
+	if !strings.Contains(toolNames, "task_manage") {
+		t.Fatalf("task_manage should remain available without Nexus: %s", toolNames)
+	}
+
+	if _, err := rt.Call(context.Background(), "workflow_template_manage", map[string]any{"action": "list"}); err == nil {
+		t.Fatal("workflow_template_manage call should be unavailable without Nexus")
+	} else if toolErr, ok := err.(*ToolError); !ok || toolErr.Code != "UNKNOWN_TOOL" {
+		t.Fatalf("workflow_template_manage error = %#v, want UNKNOWN_TOOL", err)
+	}
+
+	result, err := rt.Call(context.Background(), "agentdock_context", map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contextText := result["context"].(string)
+	for _, hidden := range []string{"任务模板", "workflow_template_manage", "source_template_ids"} {
+		if strings.Contains(contextText, hidden) {
+			t.Fatalf("context should hide %q without Nexus: %s", hidden, contextText)
+		}
+	}
+	if !strings.Contains(contextText, "task_manage") {
+		t.Fatalf("context should keep task_manage without Nexus: %s", contextText)
+	}
+}
+
+func TestNexusAvailableExposesWorkflowTemplateCapability(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+
+	toolNames := strings.Join(rt.ToolNames(), "\n")
+	if !strings.Contains(toolNames, "workflow_template_manage") {
+		t.Fatalf("workflow_template_manage should be available with Nexus: %s", toolNames)
+	}
+
+	result, err := rt.Call(context.Background(), "agentdock_context", map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contextText := result["context"].(string)
+	for _, want := range []string{"## 任务模板索引", "workflow_template_manage match", "source_template_ids"} {
+		if !strings.Contains(contextText, want) {
+			t.Fatalf("context missing %q with Nexus: %s", want, contextText)
+		}
+	}
+}
+
 func TestCapabilityToolItemsExposeOnlyNameAndDescription(t *testing.T) {
 	cfg := config.Config{
 		AgentDockDefaultDir: t.TempDir(),

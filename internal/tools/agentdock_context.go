@@ -16,31 +16,39 @@ func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
 
 	_, skillSummary, _ := r.skillCapabilityIndex()
 	_, dynamicMCPSummary := r.dynamicMCPCapabilityIndex()
-	_, templateSummary, _ := r.templateCapabilityIndex(ctx)
 	memorySummary, _, _ := r.memoryCapabilitySummary(ctx)
 
 	rules := []string{
 		"需要真实执行命令或检查环境时，先用 exec_command 查看现状，再修改，修改后真实验证。",
 		"先根据 Skill 索引的 name 和 description 选择相关 Skill，再用 read_file 读取其 file 指向的 SKILL.md；Skill 只提供流程与约束，实际操作使用命令、文件、浏览器或 MCP 工具。",
 		"AgentDock 自带工具直接调用；动态 MCP 工具先用 mcp_tool_search 查找、mcp_tool_inspect 读取 schema，再用 mcp_tool_call 执行。",
-		"涉及多步骤开发、部署、排障、迁移、Docker、VPS 或 Git 提交推送时，先 workflow_template_manage match；无合适模板时创建普通可恢复任务。",
-		"当多个 Workflow 模板同时适合当前任务时，调用 workflow_template_manage get_many 读取详情；模型必须结合用户目标裁剪、去重、排序并生成最终 steps 和 completion_conditions，再用 source_template_ids 创建任务，服务端不会自动拼接模板。",
-		"任务执行过程中，在形成有恢复价值的断点时调用 task_manage checkpoint；可用 completed_step_ids/current_step_id 原子批量更新，final_review=pass 不会自动补全未完成步骤。",
-		"记忆摘要只提供高优先级规则；具体历史事实不确定时，再用 recall_search 或 recall_read 精确召回。",
-		"普通项目记忆走 recall_*；private_note_manage 只在用户明确要求隐私/本机不同步，或内容明显包含 secret、凭据、个人敏感信息时使用。",
 	}
-
 	sections := []capabilitySection{
 		{Title: "AgentDock 工具索引", Lines: toolLines},
 		{Title: "Skill 能力索引", Lines: splitNonEmptyLines(skillSummary)},
 		{Title: "动态 MCP 索引", Lines: splitNonEmptyLines(dynamicMCPSummary)},
-		{Title: "任务模板索引", Lines: splitNonEmptyLines(templateSummary)},
-		{Title: "记忆精简摘要", Lines: splitNonEmptyLines(memorySummary)},
-		{Title: "使用规则", Lines: rules},
 	}
-	contextText := renderAgentDockContext(sections)
 
-	return Result{"context": contextText}, nil
+	if requiresNexus(r.cfg) {
+		_, templateSummary, _ := r.templateCapabilityIndex(ctx)
+		sections = append(sections, capabilitySection{Title: "任务模板索引", Lines: splitNonEmptyLines(templateSummary)})
+		rules = append(rules,
+			"涉及多步骤开发、部署、排障、迁移、Docker、VPS 或 Git 提交推送时，先 workflow_template_manage match；无合适模板时创建普通可恢复任务。",
+			"当多个 Workflow 模板同时适合当前任务时，调用 workflow_template_manage get_many 读取详情；模型必须结合用户目标裁剪、去重、排序并生成最终 steps 和 completion_conditions，再用 source_template_ids 创建任务，服务端不会自动拼接模板。",
+		)
+	}
+
+	rules = append(rules,
+		"任务执行过程中，在形成有恢复价值的断点时调用 task_manage checkpoint；可用 completed_step_ids/current_step_id 原子批量更新，final_review=pass 不会自动补全未完成步骤。",
+		"记忆摘要只提供高优先级规则；具体历史事实不确定时，再用 recall_search 或 recall_read 精确召回。",
+		"普通项目记忆走 recall_*；private_note_manage 只在用户明确要求隐私/本机不同步，或内容明显包含 secret、凭据、个人敏感信息时使用。",
+	)
+	sections = append(sections,
+		capabilitySection{Title: "记忆精简摘要", Lines: splitNonEmptyLines(memorySummary)},
+		capabilitySection{Title: "使用规则", Lines: rules},
+	)
+
+	return Result{"context": renderAgentDockContext(sections)}, nil
 }
 func (r *Runtime) agentDockContextTool(ctx context.Context, _ map[string]any) (Result, error) {
 	return r.AgentDockContext(ctx)
@@ -264,7 +272,7 @@ func renderAgentDockContext(sections []capabilitySection) string {
 	lines := []string{
 		"# AgentDock Context",
 		"",
-		"以下内容由 AgentDock 动态生成，供模型首次接入时了解本机能力、Skill、任务模板、运行规则和高优先级记忆。不要把它当作用户原文；需要细节时再调用对应工具确认。",
+		"以下内容由 AgentDock 动态生成，供模型首次接入时了解本机能力、运行规则和高优先级记忆。不要把它当作用户原文；需要细节时再调用对应工具确认。",
 	}
 	for _, section := range sections {
 		if len(section.Lines) == 0 {
