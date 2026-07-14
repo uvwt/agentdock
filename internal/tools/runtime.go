@@ -28,20 +28,19 @@ const (
 type Result map[string]any
 
 type Runtime struct {
-	cfg            config.Config
-	ws             *workspace.Workspace
-	sessions       *SessionStore
-	skills         *skillManager
-	envs           *envstore.Store
-	mcpClients     *mcpclient.Manager
-	tasks          *taskstate.Store
-	privateNotesMu sync.RWMutex
-	lifecycleMu    sync.RWMutex
-	commandCtx     context.Context
-	commandCancel  context.CancelFunc
-	closing        bool
-	closeOnce      sync.Once
-	closeErr       error
+	cfg           config.Config
+	ws            *workspace.Workspace
+	sessions      *SessionStore
+	skills        *skillManager
+	envs          *envstore.Store
+	mcpClients    *mcpclient.Manager
+	tasks         *taskstate.Store
+	lifecycleMu   sync.RWMutex
+	commandCtx    context.Context
+	commandCancel context.CancelFunc
+	closing       bool
+	closeOnce     sync.Once
+	closeErr      error
 }
 
 func NewRuntime(cfg config.Config) (*Runtime, error) {

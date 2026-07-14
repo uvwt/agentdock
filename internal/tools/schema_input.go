@@ -226,20 +226,20 @@ func InputSchema(name string) map[string]any {
 		props["max_findings"] = intProp("Maximum lint findings to return.")
 		props["max_results"] = intProp("Maximum results where supported.")
 	case "private_note_manage":
-		props["action"] = map[string]any{"type": "string", "description": "Private note action. Do not use by default; use only for explicit private/local-only/non-synced notes or clearly sensitive secrets.", "enum": []string{"search", "read", "write", "status", "maintain"}}
-		props["query"] = stringProp("Search query for action=search.")
-		props["max_results"] = boundedIntProp("Maximum search results to return. Defaults to 8 and is capped at 100.", 1, maxPrivateNoteSearchResults)
-		props["path"] = stringProp("Path under notes/ for action=read or action=write.")
+		props["action"] = map[string]any{"type": "string", "description": "NexusDock private note action. Do not use by default; use only for explicit private note access or clearly sensitive secrets, credentials, or personal information.", "enum": []string{"search", "read", "write", "delete", "status", "maintain"}}
+		props["query"] = stringProp("Metadata-only query for action=search. Matches title, summary, tags, category, and path; never searches plaintext body.")
+		props["max_results"] = boundedIntProp("Maximum metadata search results to return. Defaults to 8 and is capped at 100.", 1, maxPrivateNoteSearchResults)
+		props["path"] = stringProp("Path under notes/ for action=read, action=write, or action=delete.")
 		props["category"] = stringProp("Optional category used with title when path is omitted. Defaults to services.")
 		props["title"] = stringProp("Title used for frontmatter or to derive the path when path is omitted.")
-		props["summary"] = stringProp("Optional summary for action=write.")
-		props["tags"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
+		props["summary"] = stringProp("Optional human-maintained safe summary for metadata-only search.")
+		props["tags"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Optional safe tags for metadata-only search."}
 		props["content"] = stringProp("Plaintext private note content for action=write.")
-		props["confirmed"] = boolProp("Required for action=write true writes.")
+		props["confirmed"] = boolProp("Required for true action=write and action=delete mutations.")
 		props["overwrite"] = boolProp("Replace an existing note for action=write.")
-		props["max_bytes"] = boundedIntProp("Maximum bytes to return for action=read. Defaults to 256000 and is capped at 1048576.", 1, maxPrivateNoteReadBytes)
+		props["max_bytes"] = boundedIntProp("Maximum bytes to return for explicit action=read. Defaults to 256000 and is capped at 1048576.", 1, maxPrivateNoteReadBytes)
 		props["status_action"] = map[string]any{"type": "string", "description": "Read-only status action when action=status.", "enum": []string{"check", "list"}}
-		props["maintenance_action"] = map[string]any{"type": "string", "description": "Maintenance operation when action=maintain.", "enum": []string{"init", "init-encryption", "sync-encrypted", "encrypt-all"}}
+		props["maintenance_action"] = map[string]any{"type": "string", "description": "NexusDock encryption maintenance operation when action=maintain.", "enum": []string{"init", "init-encryption", "sync-encrypted", "encrypt-all"}}
 		required = []string{"action"}
 	case "browser_session":
 		props["action"] = map[string]any{"type": "string", "description": "Browser session action.", "enum": []string{"start", "close", "cleanup_stale"}}

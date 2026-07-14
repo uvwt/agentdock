@@ -159,6 +159,24 @@ func TestNexusDockRecallToolNamesHideLegacyMemoryTools(t *testing.T) {
 	}
 }
 
+func TestPrivateNoteManageIsHiddenWithoutNexus(t *testing.T) {
+	cfg := config.Config{
+		AgentDockDefaultDir: t.TempDir(), AgentDockHome: filepath.Join(t.TempDir(), ".agentdock"),
+	}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
+	rt, err := tools.NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range rt.ToolNames() {
+		if name == "private_note_manage" {
+			t.Fatal("private_note_manage must be hidden when AGENTDOCK_NEXUS_ENDPOINT is not configured")
+		}
+	}
+}
+
 func TestRecallBootstrapSchemaSeparatesPackBudgetFromBody(t *testing.T) {
 	schema := inputSchema("recall_bootstrap")
 	props, ok := schema["properties"].(map[string]any)
@@ -354,14 +372,14 @@ func TestPrivateNoteManageModelEntrypoint(t *testing.T) {
 	if !ok {
 		t.Fatal("private_note_manage definition missing")
 	}
-	for _, text := range []string{"Do not use by default", "private/local-only/non-synced", "Actions: search, read, write, status, or maintain"} {
+	for _, text := range []string{"Do not use by default", "NexusDock private note vault", "Search is metadata-only", "Actions: search, read, write, delete, status, or maintain"} {
 		if !strings.Contains(def.Description, text) {
 			t.Fatalf("private_note_manage description missing %q: %q", text, def.Description)
 		}
 	}
 
 	props := schemaProperties(t, "private_note_manage")
-	assertSameStrings(t, enumStrings(t, props["action"]), []string{"search", "read", "write", "status", "maintain"})
+	assertSameStrings(t, enumStrings(t, props["action"]), []string{"search", "read", "write", "delete", "status", "maintain"})
 	for _, name := range []string{"query", "path", "category", "title", "content", "confirmed", "overwrite", "status_action", "maintenance_action"} {
 		if _, ok := props[name]; !ok {
 			t.Fatalf("private_note_manage input schema missing %q", name)
