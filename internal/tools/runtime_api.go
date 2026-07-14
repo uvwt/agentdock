@@ -105,3 +105,25 @@ func (r *Runtime) RuntimeCapabilities(ctx context.Context, refresh bool) (Result
 	result["source"] = runtimeAPISource
 	return result, nil
 }
+
+func (r *Runtime) RuntimeMCPServers(ctx context.Context) (Result, error) {
+	return r.runtimeMCPManage(ctx, map[string]any{"action": "list"})
+}
+
+func (r *Runtime) RuntimeMCPServer(ctx context.Context, name string) (Result, error) {
+	return r.runtimeMCPManage(ctx, map[string]any{"action": "inspect", "name": name})
+}
+
+func (r *Runtime) RuntimeMCPManage(ctx context.Context, args map[string]any) (Result, error) {
+	return r.runtimeMCPManage(ctx, args)
+}
+
+func (r *Runtime) runtimeMCPManage(ctx context.Context, args map[string]any) (Result, error) {
+	result, err := r.mcpManage(ctx, args)
+	if err != nil {
+		return nil, err
+	}
+	result["ok"] = true
+	result["source"] = runtimeAPISource
+	return result, nil
+}
