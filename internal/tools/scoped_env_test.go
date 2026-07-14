@@ -107,7 +107,7 @@ func TestMCPEnvironmentActionsDoNotReturnValues(t *testing.T) {
 	const secret = "mcp-secret-value"
 	setResult, err := runtime.Call(context.Background(), "mcp_manage", map[string]any{
 		"action": "env_set",
-		"name":   "demo-mcp",
+		"name":   " demo-mcp ",
 		"key":    "MCP_SECRET",
 		"value":  secret,
 	})
@@ -120,7 +120,7 @@ func TestMCPEnvironmentActionsDoNotReturnValues(t *testing.T) {
 
 	listResult, err := runtime.Call(context.Background(), "mcp_manage", map[string]any{
 		"action": "env_list",
-		"name":   "demo-mcp",
+		"name":   " demo-mcp ",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +131,7 @@ func TestMCPEnvironmentActionsDoNotReturnValues(t *testing.T) {
 
 	unsetResult, err := runtime.Call(context.Background(), "mcp_manage", map[string]any{
 		"action": "env_unset",
-		"name":   "demo-mcp",
+		"name":   " demo-mcp ",
 		"key":    "MCP_SECRET",
 	})
 	if err != nil {
