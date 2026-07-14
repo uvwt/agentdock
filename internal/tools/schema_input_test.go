@@ -42,3 +42,41 @@ func TestInputSchemaPublishesRuntimeBounds(t *testing.T) {
 		})
 	}
 }
+
+func TestBrowserInputSchemaPublishesPageWaitAndStorageStateFields(t *testing.T) {
+	for _, test := range []struct {
+		tool       string
+		properties []string
+	}{
+		{tool: "browser_session", properties: []string{"storage_state_path"}},
+		{tool: "browser_act", properties: []string{"page_id", "storage_state_path"}},
+		{tool: "browser_snapshot", properties: []string{"page_id", "storage_state_path"}},
+	} {
+		t.Run(test.tool, func(t *testing.T) {
+			properties := InputSchema(test.tool)["properties"].(map[string]any)
+			for _, property := range test.properties {
+				if _, ok := properties[property]; !ok {
+					t.Fatalf("%s schema missing property %s", test.tool, property)
+				}
+			}
+		})
+	}
+
+	actions := InputSchema("browser_act")["properties"].(map[string]any)["actions"].(map[string]any)
+	items := actions["items"].(map[string]any)
+	properties := items["properties"].(map[string]any)
+	action := properties["action"].(map[string]any)
+	values := action["enum"].([]string)
+	for _, expected := range []string{"wait_for_url", "wait_for_text", "wait_for_response"} {
+		found := false
+		for _, value := range values {
+			if value == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("browser action enum missing %s: %#v", expected, values)
+		}
+	}
+}

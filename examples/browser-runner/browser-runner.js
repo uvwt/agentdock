@@ -6,7 +6,22 @@ import { spawn, spawnSync } from 'node:child_process';
 import net from 'node:net';
 import http from 'node:http';
 
-const payload = JSON.parse(process.env.BROWSER_RUNNER_PAYLOAD || '{}');
+let payload = {};
+try {
+  payload = JSON.parse(process.env.BROWSER_RUNNER_PAYLOAD || '{}');
+} catch (err) {
+  process.stdout.write(JSON.stringify({
+    ok: false,
+    code: 'BROWSER_PAYLOAD_INVALID',
+    error: {
+      code: 'BROWSER_PAYLOAD_INVALID',
+      message: 'browser runner payload is not valid JSON',
+      phase: 'protocol',
+      details: { reason: String(err?.message || err || '') }
+    }
+  }));
+  process.exit(1);
+}
 const operation = payload.operation;
 const args = payload.args || {};
 const artifactDir = payload.artifact_dir || process.env.BROWSER_ARTIFACT_DIR || '.';
@@ -71,7 +86,12 @@ function playwrightBundledChromiumMissingPayload(err) {
   return {
     ok: false,
     code: 'PLAYWRIGHT_CHROMIUM_MISSING',
-    error: 'Playwright bundled Chromium executable is missing.',
+    error: {
+      code: 'PLAYWRIGHT_CHROMIUM_MISSING',
+      message: 'Playwright bundled Chromium executable is missing.',
+      phase: 'browser_launch',
+      details: { detail, missing_executable: match ? match[1] : undefined }
+    },
     detail,
     missing_executable: match ? match[1] : undefined,
     suggested_retry: { browser: 'chrome' },
@@ -107,16 +127,6 @@ async function systemChromeFallbackLaunch(session, launchOptions, cause) {
   };
 }
 
-async function launchBrowserWithFallback(chromium, session, launchOptions) {
-  try {
-    return { browser: await chromium.launch(launchOptions), launchInfo: { fallback: false, browser: session.browser || 'chromium' } };
-  } catch (err) {
-    const fallback = await systemChromeFallbackLaunch(session, launchOptions, err);
-    if (!fallback) throw err;
-    return { browser: await chromium.launch(fallback.options), launchInfo: fallback.info };
-  }
-}
-
 async function launchPersistentContextWithFallback(chromium, session, profileDir, launchOptions, contextOptions) {
   try {
     return { context: await chromium.launchPersistentContext(profileDir, { ...launchOptions, ...contextOptions }), launchInfo: { fallback: false, browser: session.browser || 'chromium' } };
@@ -129,7 +139,19 @@ async function launchPersistentContextWithFallback(chromium, session, profileDir
 
 function structuredErrorPayload(err) {
   if (isPlaywrightBundledChromiumMissing(err)) return playwrightBundledChromiumMissingPayload(err);
-  return { ok: false, error: err.message, stack: err.stack };
+  const code = String(err?.code || 'BROWSER_OPERATION_FAILED');
+  const message = String(err?.message || err || 'browser operation failed');
+  return {
+    ok: false,
+    code,
+    error: {
+      code,
+      message,
+      phase: String(err?.phase || 'browser'),
+      details: err?.details && typeof err.details === 'object' ? err.details : undefined
+    },
+    stack: err?.stack
+  };
 }
 
 async function readState() {
@@ -147,6 +169,44 @@ async function writeState(state) {
 
 function newSessionId() {
   return `browser-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+const playwrightPageIds = new WeakMap();
+let playwrightPageSequence = 0;
+
+function playwrightPageId(page) {
+  if (!playwrightPageIds.has(page)) {
+    playwrightPageSequence += 1;
+    playwrightPageIds.set(page, `page-${playwrightPageSequence}`);
+  }
+  return playwrightPageIds.get(page);
+}
+
+async function describePlaywrightPages(context, activePage) {
+  const contextPages = context.pages();
+  const pages = contextPages.map(page => ({
+    page_id: playwrightPageId(page),
+    url: page.url(),
+    title: '',
+    active: page === activePage
+  }));
+  await Promise.all(pages.map(async (item, index) => {
+    item.title = await contextPages[index]?.title().catch(() => '') || '';
+  }));
+  return pages;
+}
+
+function selectPlaywrightPage(context, requestedPageId, fallbackPage) {
+  const requested = String(requestedPageId || '').trim();
+  if (!requested) return fallbackPage || context.pages()[0];
+  const page = context.pages().find(candidate => playwrightPageId(candidate) === requested);
+  if (!page) {
+    const err = new Error(`Unknown browser page_id: ${requested}`);
+    err.code = 'BROWSER_PAGE_NOT_FOUND';
+    err.details = { page_id: requested, available_page_ids: context.pages().map(playwrightPageId) };
+    throw err;
+  }
+  return page;
 }
 
 function safeProfileId(value) {
@@ -247,6 +307,14 @@ function cdpTimeout() {
   return Math.min(Number(args.timeout_ms || 10000), 8000);
 }
 
+function daemonTimeout(requestArgs = args) {
+  const operationTimeout = Number(requestArgs.timeout_ms || 30000);
+  const actionTimeout = Array.isArray(requestArgs.actions)
+    ? Math.max(0, ...requestArgs.actions.map(action => Number(action?.timeout_ms || 0)))
+    : 0;
+  return Math.min(Math.max(operationTimeout, actionTimeout + 2000), 300000);
+}
+
 function cdpCall(wsURL, method, params = {}, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
     const id = 1;
@@ -272,15 +340,146 @@ function cdpCall(wsURL, method, params = {}, timeoutMs = 10000) {
   });
 }
 
-async function cdpPageTarget(session) {
+async function createCDPResponseMonitor(target) {
+  const ws = new WebSocket(target.webSocketDebuggerUrl);
+  const requests = new Map();
+  const responses = [];
+  const waiters = new Set();
+  let closed = false;
+
+  const settleWaiter = (waiter, response) => {
+    clearTimeout(waiter.timer);
+    waiters.delete(waiter);
+    waiter.resolve(response);
+  };
+
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      try { ws.close(); } catch {}
+      const err = new Error('Timed out enabling CDP network monitoring');
+      err.code = 'BROWSER_CDP_MONITOR_FAILED';
+      reject(err);
+    }, 10000);
+    ws.onopen = () => ws.send(JSON.stringify({ id: 1, method: 'Network.enable', params: {} }));
+    ws.onerror = () => {
+      clearTimeout(timer);
+      const err = new Error('CDP network monitor websocket error');
+      err.code = 'BROWSER_CDP_MONITOR_FAILED';
+      reject(err);
+    };
+    ws.onmessage = event => {
+      let message;
+      try { message = JSON.parse(event.data); } catch { return; }
+      if (message.id === 1) {
+        clearTimeout(timer);
+        if (message.error) {
+          const err = new Error(`Network.enable: ${message.error.message || JSON.stringify(message.error)}`);
+          err.code = 'BROWSER_CDP_MONITOR_FAILED';
+          reject(err);
+        } else {
+          resolve();
+        }
+        return;
+      }
+      if (message.method === 'Network.requestWillBeSent') {
+        requests.set(message.params.requestId, String(message.params.request?.method || ''));
+        return;
+      }
+      if (message.method !== 'Network.responseReceived') return;
+      const response = {
+        url: String(message.params.response?.url || ''),
+        status: Number(message.params.response?.status || 0),
+        method: requests.get(message.params.requestId) || ''
+      };
+      responses.push(response);
+      if (responses.length > 200) responses.shift();
+      for (const waiter of [...waiters]) {
+        try {
+          if (responseMatches(response, waiter.action)) settleWaiter(waiter, response);
+        } catch (err) {
+          clearTimeout(waiter.timer);
+          waiters.delete(waiter);
+          waiter.reject(err);
+        }
+      }
+    };
+  });
+
+  return {
+    wait(action) {
+      const existing = responses.findLast(response => responseMatches(response, action));
+      if (existing) return Promise.resolve(existing);
+      return new Promise((resolve, reject) => {
+        const waiter = { action, resolve, reject, timer: null };
+        waiter.timer = setTimeout(() => {
+          waiters.delete(waiter);
+          const err = new Error('Timed out waiting for matching network response');
+          err.code = 'BROWSER_WAIT_TIMEOUT';
+          err.details = {
+            url: action.url || undefined,
+            url_pattern: action.url_pattern || undefined,
+            method: action.method || undefined,
+            status: action.status || undefined
+          };
+          reject(err);
+        }, Number(action.timeout_ms || 10000));
+        waiters.add(waiter);
+      });
+    },
+    close() {
+      if (closed) return;
+      closed = true;
+      for (const waiter of waiters) {
+        clearTimeout(waiter.timer);
+        waiter.reject(Object.assign(new Error('CDP response monitor closed'), { code: 'BROWSER_CDP_MONITOR_CLOSED' }));
+      }
+      waiters.clear();
+      try { ws.close(); } catch {}
+    }
+  };
+}
+
+async function cdpPageTargets(session) {
   const targets = await cdpJSON(session.cdp_url, '/json/list');
-  const page = targets.find(item => item.type === 'page' && !String(item.url || '').startsWith('chrome://'))
-    || targets.find(item => item.type === 'page');
-  if (!page?.webSocketDebuggerUrl) throw new Error('No debuggable page target found');
+  return targets.filter(item => item.type === 'page');
+}
+
+async function cdpPageTarget(session, requestedPageId = '') {
+  const pages = await cdpPageTargets(session);
+  const requested = String(requestedPageId || '').trim();
+  const page = requested
+    ? pages.find(item => item.id === requested)
+    : pages.find(item => !String(item.url || '').startsWith('chrome://')) || pages[0];
+  if (!page?.webSocketDebuggerUrl) {
+    const err = new Error(requested ? `Unknown browser page_id: ${requested}` : 'No debuggable page target found');
+    err.code = requested ? 'BROWSER_PAGE_NOT_FOUND' : 'BROWSER_PAGE_UNAVAILABLE';
+    err.details = { page_id: requested || undefined, available_page_ids: pages.map(item => item.id) };
+    throw err;
+  }
   return page;
 }
 
+function describeCDPPages(pages, activePage) {
+  return pages.map(page => ({
+    page_id: page.id,
+    url: page.url || '',
+    title: page.title || '',
+    active: page.id === activePage?.id
+  }));
+}
+
 function storageStateDestinationFrom(requestArgs, session, sessionId) {
+  const requestedPath = String(requestArgs.storage_state_path || session.storage_state_path || '').trim();
+  if (requestedPath) {
+    const storagePath = path.isAbsolute(requestedPath) ? path.normalize(requestedPath) : path.resolve(artifactDir, requestedPath);
+    return {
+      targetSkill: '',
+      storageDir: path.dirname(storagePath),
+      storageFile: path.basename(storagePath),
+      storagePath
+    };
+  }
+
   const targetSkill = safeProfileId(requestArgs.state_target_skill || session.state_target_skill || '');
   let storageDir;
   let storageFile;
@@ -292,6 +491,37 @@ function storageStateDestinationFrom(requestArgs, session, sessionId) {
     storageFile = `${safeProfileId(sessionId) || 'session'}-${Date.now()}.json`;
   }
   return { targetSkill, storageDir, storageFile, storagePath: path.join(storageDir, storageFile) };
+}
+
+async function loadStorageState(session) {
+  if (session.storage_state && typeof session.storage_state === 'object') return session.storage_state;
+  const storagePath = String(session.storage_state_path || '').trim();
+  if (!storagePath) return undefined;
+
+  const content = await fs.readFile(storagePath, 'utf8');
+  const state = JSON.parse(content);
+  if (!state || typeof state !== 'object' || !Array.isArray(state.cookies) || !Array.isArray(state.origins)) {
+    const err = new Error('storage_state_path does not contain a valid Playwright storage state');
+    err.code = 'BROWSER_STORAGE_STATE_INVALID';
+    err.details = { storage_state_path: storagePath };
+    throw err;
+  }
+  return state;
+}
+
+async function applyStorageStateToPersistentContext(context, storageState) {
+  if (!storageState) return;
+  if (Array.isArray(storageState.cookies) && storageState.cookies.length) {
+    await context.addCookies(storageState.cookies);
+  }
+  const origins = Array.isArray(storageState.origins) ? storageState.origins : [];
+  if (origins.length) {
+    const localStorageByOrigin = Object.fromEntries(origins.map(item => [item.origin, item.localStorage || []]));
+    await context.addInitScript(valuesByOrigin => {
+      const entries = valuesByOrigin[window.location.origin] || [];
+      for (const item of entries) window.localStorage.setItem(item.name, item.value);
+    }, localStorageByOrigin);
+  }
 }
 
 function storageStateDestination(session, sessionId) {
@@ -342,28 +572,101 @@ async function saveCDPStorageStateIfNeeded(session, sessionId, target) {
   return { storage_state_path: dest.storagePath, storage_state_file: dest.storageFile, state_target_skill: dest.targetSkill || undefined };
 }
 
-async function runCDPActions(session, actions = []) {
+async function applyCDPStorageState(session) {
+  const storageState = await loadStorageState(session);
+  if (!storageState) return;
+
+  const target = await cdpPageTarget(session);
+  const timeout = cdpTimeout();
+  const cookies = storageState.cookies.map(normalizeCookieForStorageState).filter(item => item.name && item.domain);
+  if (cookies.length) {
+    await cdpCall(target.webSocketDebuggerUrl, 'Network.enable', {}, timeout).catch(() => {});
+    await cdpCall(target.webSocketDebuggerUrl, 'Network.setCookies', { cookies }, timeout);
+  }
+
+  const localStorageByOrigin = Object.fromEntries(
+    storageState.origins.map(item => [item.origin, item.localStorage || []]).filter(([origin]) => origin)
+  );
+  if (Object.keys(localStorageByOrigin).length) {
+    const source = `(() => {
+      const valuesByOrigin = ${JSON.stringify(localStorageByOrigin)};
+      const entries = valuesByOrigin[window.location.origin] || [];
+      for (const item of entries) window.localStorage.setItem(item.name, item.value);
+    })()`;
+    await cdpCall(target.webSocketDebuggerUrl, 'Page.addScriptToEvaluateOnNewDocument', { source }, timeout);
+    await cdpCall(target.webSocketDebuggerUrl, 'Runtime.evaluate', { expression: source }, timeout).catch(() => {});
+  }
+
+  await cdpCall(target.webSocketDebuggerUrl, 'Page.reload', {}, timeout).catch(() => {});
+  await new Promise(resolve => setTimeout(resolve, 500));
+}
+
+function textOrURLMatches(actual, expected) {
+  const value = String(actual || '');
+  const pattern = String(expected || '');
+  if (!pattern) return false;
+  if (!pattern.includes('*')) return value.includes(pattern);
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*');
+  return new RegExp(`^${escaped}$`).test(value);
+}
+
+async function pollUntil(check, timeoutMs, description) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await check()) return;
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  const err = new Error(`Timed out waiting for ${description}`);
+  err.code = 'BROWSER_WAIT_TIMEOUT';
+  throw err;
+}
+
+async function runCDPActions(session, actions = [], requestedPageId = '') {
   if (!Array.isArray(actions) || actions.length === 0) return;
-  let target = await cdpPageTarget(session);
-  for (const action of actions) {
-    const type = action.action;
-    if (type === 'wait') {
-      await new Promise(resolve => setTimeout(resolve, action.value ?? 1000));
-    } else if (type === 'goto') {
-      await cdpCall(target.webSocketDebuggerUrl, 'Page.navigate', { url: action.url }, cdpTimeout());
-      await new Promise(resolve => setTimeout(resolve, action.value ?? 1500));
-      target = await cdpPageTarget(session);
-    } else if (type === 'reload') {
-      await cdpCall(target.webSocketDebuggerUrl, 'Page.reload', {}, cdpTimeout());
-      await new Promise(resolve => setTimeout(resolve, action.wait_ms || 1000));
-    } else {
-      throw new Error(`Unsupported CDP browser action: ${type}`);
+  let target = await cdpPageTarget(session, requestedPageId);
+  const responseMonitor = actions.some(action => action.action === 'wait_for_response')
+    ? await createCDPResponseMonitor(target)
+    : null;
+  try {
+    for (const action of actions) {
+      const type = action.action;
+      if (type === 'wait') {
+        await new Promise(resolve => setTimeout(resolve, action.value ?? 1000));
+      } else if (type === 'goto') {
+        await cdpCall(target.webSocketDebuggerUrl, 'Page.navigate', { url: action.url }, cdpTimeout());
+        await new Promise(resolve => setTimeout(resolve, action.value ?? 1500));
+        target = await cdpPageTarget(session, requestedPageId);
+      } else if (type === 'reload') {
+        await cdpCall(target.webSocketDebuggerUrl, 'Page.reload', {}, cdpTimeout());
+        await new Promise(resolve => setTimeout(resolve, action.wait_ms || 1000));
+      } else if (type === 'wait_for_url') {
+        await pollUntil(async () => {
+          target = await cdpPageTarget(session, requestedPageId);
+          return textOrURLMatches(target.url, action.url);
+        }, Number(action.timeout_ms || 10000), `URL ${action.url}`);
+      } else if (type === 'wait_for_text') {
+        const expected = String(action.text ?? action.value ?? '');
+        await pollUntil(async () => {
+          const result = await cdpCall(target.webSocketDebuggerUrl, 'Runtime.evaluate', {
+            expression: `(() => document.body ? document.body.innerText : '')()`,
+            returnByValue: true
+          }, cdpTimeout()).catch(() => ({ result: { value: '' } }));
+          return String(result?.result?.value || '').includes(expected);
+        }, Number(action.timeout_ms || 10000), `text ${expected}`);
+      } else if (type === 'wait_for_response') {
+        await responseMonitor.wait(action);
+      } else {
+        throw new Error(`Unsupported CDP browser action: ${type}`);
+      }
     }
+  } finally {
+    responseMonitor?.close();
   }
 }
 
-async function cdpSnapshot(session, sessionId) {
-  const target = await cdpPageTarget(session);
+async function cdpSnapshot(session, sessionId, requestedPageId = '') {
+  const pages = await cdpPageTargets(session);
+  const target = await cdpPageTarget(session, requestedPageId);
   const timeout = cdpTimeout();
   const textResult = await cdpCall(target.webSocketDebuggerUrl, 'Runtime.evaluate', {
     expression: `(() => document.body ? document.body.innerText : '')()`,
@@ -380,6 +683,8 @@ async function cdpSnapshot(session, sessionId) {
     ok: true,
     session_id: sessionId,
     closed: false,
+    page_id: target.id,
+    pages: describeCDPPages(pages, target),
     url: target.url || '',
     title: String(titleResult?.result?.value || target.title || ''),
     text: text.slice(0, maxText),
@@ -419,7 +724,13 @@ async function daemonRequest(controlURL, action, body = {}, timeoutMs = 15000) {
       signal: controller.signal
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `daemon HTTP ${res.status}`);
+    if (!res.ok) {
+      const message = typeof data.error === 'string' ? data.error : data.error?.message || `daemon HTTP ${res.status}`;
+      const err = new Error(message);
+      err.code = data.code || data.error?.code || 'BROWSER_DAEMON_REQUEST_FAILED';
+      err.details = data.error?.details;
+      throw err;
+    }
     return data;
   } finally {
     clearTimeout(timer);
@@ -456,17 +767,30 @@ async function runProfileDaemon() {
   const session = args.session || args;
   const sessionId = session.session_id || args.session_id || 'profile-daemon';
   const chromium = await loadChromium();
+  const storageState = await loadStorageState(session);
   const profileId = safeProfileId(session.profile_id || sessionId) || sessionId;
   const profileDir = path.join(artifactDir, 'visible-profiles', profileId);
   await fs.mkdir(profileDir, { recursive: true, mode: 0o700 });
-  const context = await chromium.launchPersistentContext(profileDir, chromiumLaunchOptions(session, {
-    headless: false,
+  const launched = await launchPersistentContextWithFallback(chromium, session, profileDir, chromiumLaunchOptions(session), {
+    headless: session.headless !== false,
     viewport: session.viewport || { width: 1280, height: 800 },
     args: ['--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-component-extensions-with-background-pages', '--disable-features=Translate']
-  }));
-  const page = context.pages()[0] || await context.newPage();
+  });
+  const context = launched.context;
+  await applyStorageStateToPersistentContext(context, storageState);
+  if (Array.isArray(session.cookies) && session.cookies.length) {
+    await context.addCookies(session.cookies);
+  }
+  let page = context.pages()[0] || await context.newPage();
+  const responseLog = createResponseLog(context);
+  const diagnostics = createBrowserDiagnostics(context);
+  const pageExtra = extra => ({ ...diagnostics.snapshot(), browser_launch: launched.launchInfo, ...extra });
   if (session.url && page.url() !== session.url) {
     await page.goto(session.url, { waitUntil: 'domcontentloaded', timeout: Number(session.timeout_ms || 30000) }).catch(() => {});
+  }
+  const localStorageApplied = await applyLocalStorage(page, session.local_storage);
+  if (localStorageApplied > 0 && session.reload_after_local_storage !== false) {
+    await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
   }
   const server = http.createServer(async (req, res) => {
     const send = (status, data) => {
@@ -482,13 +806,19 @@ async function runProfileDaemon() {
       }
       const action = new URL(req.url, 'http://127.0.0.1').pathname.replace(/^\//, '') || 'status';
       if (action === 'status') {
-        send(200, { ...(await daemonPageState(page, body)), session_id: sessionId });
+        page = selectPlaywrightPage(context, body.page_id, page);
+        send(200, { ...(await daemonPageState(page, body, pageExtra())), session_id: sessionId });
       } else if (action === 'action') {
-        await runActions(page, body.actions || []);
-        send(200, { ...(await daemonPageState(page, body)), session_id: sessionId });
+        page = selectPlaywrightPage(context, body.page_id, page);
+        page = await runActions(context, page, body.actions || [], responseLog);
+        const storageResult = body.save_storage_state === true || session.save_storage_state === true
+          ? await saveContextStorageState(context, body, session, sessionId)
+          : {};
+        send(200, { ...(await daemonPageState(page, body, pageExtra(storageResult))), session_id: sessionId });
       } else if (action === 'save') {
+        page = selectPlaywrightPage(context, body.page_id, page);
         const storageResult = await saveContextStorageState(context, { ...body, save_storage_state: true }, session, sessionId);
-        send(200, { ...(await daemonPageState(page, body, storageResult)), session_id: sessionId });
+        send(200, { ...(await daemonPageState(page, body, pageExtra(storageResult))), session_id: sessionId });
       } else if (action === 'close') {
         send(200, { ok: true, session_id: sessionId, status: 'closed' });
         setTimeout(async () => {
@@ -499,7 +829,7 @@ async function runProfileDaemon() {
         send(404, { ok: false, error: `unknown daemon action: ${action}` });
       }
     } catch (err) {
-      send(500, { ok: false, error: err.message, stack: err.stack });
+      send(500, structuredErrorPayload(err));
     }
   });
   await new Promise(resolve => server.listen(Number(args.control_port), '127.0.0.1', resolve));
@@ -519,7 +849,14 @@ async function launchProfileDaemon(session, sessionId) {
     env: { ...process.env, BROWSER_RUNNER_PAYLOAD: JSON.stringify(daemonPayload), BROWSER_ARTIFACT_DIR: artifactDir }
   });
   child.unref();
-  await waitForDaemon(controlURL, Number(session.timeout_ms || 25000));
+  try {
+    await waitForDaemon(controlURL, Number(session.timeout_ms || 25000));
+  } catch (err) {
+    stopVisibleProcess({ visible_process: { pid: child.pid } });
+    err.code = err.code || 'BROWSER_DAEMON_START_FAILED';
+    err.details = { ...(err.details || {}), control_url: controlURL };
+    throw err;
+  }
   const profileId = safeProfileId(session.profile_id || sessionId) || sessionId;
   return {
     backend: 'daemon',
@@ -532,6 +869,15 @@ async function launchProfileDaemon(session, sessionId) {
       browser: 'playwright-chromium'
     }
   };
+}
+
+async function ensurePlaywrightDaemon(state, sessionId, session) {
+  if (session.backend !== 'playwright') return session;
+  const daemon = await launchProfileDaemon(session, sessionId);
+  const updated = { ...session, ...daemon, updated_at: new Date().toISOString() };
+  state.sessions[sessionId] = updated;
+  await writeState(state);
+  return updated;
 }
 
 async function launchKeepOpenBrowser(session, sessionId) {
@@ -628,6 +974,85 @@ async function applyLocalStorage(page, localStorageConfig) {
   return applied;
 }
 
+function createResponseLog(context) {
+  const responses = [];
+  context.on('response', response => {
+    responses.push({
+      url: response.url(),
+      status: response.status(),
+      method: response.request().method(),
+      timestamp: Date.now()
+    });
+    if (responses.length > 200) responses.shift();
+  });
+  return responses;
+}
+
+function createBrowserDiagnostics(context) {
+  const consoleErrors = [];
+  const networkErrors = [];
+  const pageErrors = [];
+  const pushBounded = (items, value) => {
+    items.push(value);
+    if (items.length > 100) items.shift();
+  };
+  const attach = page => {
+    page.on('console', message => {
+      if (message.type() === 'error') pushBounded(consoleErrors, message.text());
+    });
+    page.on('pageerror', error => pushBounded(pageErrors, error.message));
+    page.on('requestfailed', request => {
+      pushBounded(networkErrors, `${request.method()} ${request.url()} ${request.failure()?.errorText || ''}`);
+    });
+  };
+  for (const page of context.pages()) attach(page);
+  context.on('page', attach);
+  return {
+    snapshot: () => ({
+      console_errors: [...consoleErrors],
+      network_errors: [...networkErrors],
+      page_errors: [...pageErrors]
+    })
+  };
+}
+
+function responseMatches(response, action) {
+  const expectedURL = String(action.url || '').trim();
+  const urlPattern = String(action.url_pattern || '').trim();
+  const expectedMethod = String(action.method || '').trim().toUpperCase();
+  const expectedStatus = Number(action.status || 0);
+  if (expectedURL && !String(response.url || '').includes(expectedURL)) return false;
+  if (urlPattern) {
+    let regex;
+    try {
+      regex = new RegExp(urlPattern);
+    } catch (err) {
+      const invalid = new Error(`Invalid wait_for_response url_pattern: ${err.message}`);
+      invalid.code = 'BROWSER_WAIT_PATTERN_INVALID';
+      throw invalid;
+    }
+    if (!regex.test(String(response.url || ''))) return false;
+  }
+  if (expectedMethod && String(response.method || '').toUpperCase() !== expectedMethod) return false;
+  if (expectedStatus && Number(response.status || 0) !== expectedStatus) return false;
+  return true;
+}
+
+async function waitForResponse(context, responseLog, action) {
+  const existing = responseLog.findLast(response => responseMatches(response, action));
+  if (existing) return existing;
+
+  const response = await context.waitForEvent('response', {
+    timeout: Number(action.timeout_ms || 10000),
+    predicate: candidate => responseMatches({
+      url: candidate.url(),
+      status: candidate.status(),
+      method: candidate.request().method()
+    }, action)
+  });
+  return { url: response.url(), status: response.status(), method: response.request().method() };
+}
+
 async function collectPageMetrics(page, screenshotPath, fullPage) {
   const stat = screenshotPath ? await fs.stat(screenshotPath).catch(() => null) : null;
   const viewport = page.viewportSize();
@@ -685,11 +1110,6 @@ function shouldCaptureScreenshot(captureArgs = args) {
   return captureArgs.capture_screenshot !== false;
 }
 
-async function saveStorageStateIfNeeded(context, session, sessionId) {
-  if (args.save_storage_state !== true && session.save_storage_state !== true) return {};
-  return await saveContextStorageState(context, args, session, sessionId);
-}
-
 async function closeSessionState(state, sessionId) {
   const existed = Boolean(state.sessions[sessionId]);
   delete state.sessions[sessionId];
@@ -704,81 +1124,18 @@ async function cleanupStaleSessions(state) {
   for (const [id, session] of Object.entries(state.sessions || {})) {
     const stamp = Date.parse(session.updated_at || session.created_at || 0);
     if (!stamp || now - stamp > maxAgeMs) {
+      if (session.backend === 'daemon' && session.control_url) {
+        const closed = await daemonRequest(session.control_url, 'close', {}, 3000).then(() => true).catch(() => false);
+        if (!closed) stopVisibleProcess(session);
+      } else {
+        stopVisibleProcess(session);
+      }
       removed.push(id);
       delete state.sessions[id];
     }
   }
   await writeState(state);
   return removed;
-}
-
-async function closeWithTimeout(target, label, ms = 4000) {
-  if (!target || typeof target.close !== 'function') return;
-  let timer;
-  await Promise.race([
-    target.close(),
-    new Promise(resolve => {
-      timer = setTimeout(resolve, ms);
-    })
-  ]).catch(() => {});
-  if (timer) clearTimeout(timer);
-}
-
-async function launchPage(session) {
-  const chromium = await loadChromium();
-  let browser;
-  let context;
-  let page;
-  let browserLaunch;
-
-  // CDP 只连接已经由用户显式开启调试端口的浏览器；普通浏览器不能被直接接管。
-  if (session.backend === 'cdp') {
-    if (!session.cdp_url) throw new Error('cdp_url is required when backend=cdp');
-    browser = await chromium.connectOverCDP(session.cdp_url);
-    context = browser.contexts()[0] || await browser.newContext({
-      viewport: session.viewport || { width: 1280, height: 800 }
-    });
-    page = context.pages()[0] || await context.newPage();
-  } else {
-    const launchOptions = chromiumLaunchOptions(session, { headless: session.headless !== false });
-    if (session.profile_id) {
-      const profileDir = path.join(artifactDir, 'profiles', safeProfileId(session.profile_id));
-      const launched = await launchPersistentContextWithFallback(chromium, session, profileDir, launchOptions, {
-        viewport: session.viewport || { width: 1280, height: 800 }
-      });
-      context = launched.context;
-      browserLaunch = launched.launchInfo;
-      browser = context.browser();
-      page = context.pages()[0] || await context.newPage();
-    } else {
-      const launched = await launchBrowserWithFallback(chromium, session, launchOptions);
-      browser = launched.browser;
-      browserLaunch = launched.launchInfo;
-      context = await browser.newContext({
-        viewport: session.viewport || { width: 1280, height: 800 },
-        storageState: session.storage_state || undefined
-      });
-      page = await context.newPage();
-    }
-  }
-
-  const consoleErrors = [];
-  const networkErrors = [];
-  const pageErrors = [];
-  page.on('console', msg => {
-    if (msg.type() === 'error') consoleErrors.push(msg.text());
-  });
-  page.on('pageerror', err => pageErrors.push(err.message));
-  page.on('requestfailed', req => networkErrors.push(`${req.method()} ${req.url()} ${req.failure()?.errorText || ''}`));
-  if (Array.isArray(session.cookies) && session.cookies.length) {
-    await context.addCookies(session.cookies);
-  }
-  if (session.url && page.url() !== session.url) await page.goto(session.url, { waitUntil: 'domcontentloaded' });
-  const localStorageApplied = await applyLocalStorage(page, session.local_storage);
-  if (localStorageApplied > 0 && session.reload_after_local_storage !== false) {
-    await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
-  }
-  return { browser, context, page, consoleErrors, networkErrors, pageErrors, browserLaunch };
 }
 
 async function capturePageState(page, captureArgs = args, extra = {}) {
@@ -808,7 +1165,10 @@ async function capturePageState(page, captureArgs = args, extra = {}) {
   });
   const text = String(rawText || '');
   const metrics = await collectPageMetrics(page, screenshotPath, fullPage);
+  const context = page.context();
   const result = {
+    page_id: playwrightPageId(page),
+    pages: await describePlaywrightPages(context, page),
     url: page.url(),
     title: await page.title().catch(() => ''),
     text: text.slice(0, maxText),
@@ -826,29 +1186,44 @@ async function capturePageState(page, captureArgs = args, extra = {}) {
   return result;
 }
 
-async function snapshot(page, extra = {}) {
-  return await capturePageState(page, args, extra);
-}
-
-async function runActions(page, actions = []) {
+async function runActions(context, page, actions = [], responseLog = []) {
+  let activePage = page;
   for (const action of actions) {
     const type = action.action;
-    if (type === 'goto') await page.goto(action.url, { waitUntil: action.wait_until || 'domcontentloaded' });
-    else if (type === 'click') await page.click(action.selector);
-    else if (type === 'fill') await page.fill(action.selector, action.value ?? '');
-    else if (type === 'press') await page.press(action.selector || 'body', action.key);
-    else if (type === 'wait') await page.waitForTimeout(action.value ?? 1000);
-    else if (type === 'wait_for_selector') await page.waitForSelector(action.selector, { timeout: action.timeout_ms || 10000 });
-    else if (type === 'select') await page.selectOption(action.selector, action.value);
-    else if (type === 'scroll') await page.mouse.wheel(action.delta_x || 0, action.delta_y || 800);
-    else if (type === 'reload') await page.reload({ waitUntil: action.wait_until || 'domcontentloaded' });
-    else if (type === 'back') await page.goBack({ waitUntil: action.wait_until || 'domcontentloaded' });
-    else if (type === 'forward') await page.goForward({ waitUntil: action.wait_until || 'domcontentloaded' });
+    if (activePage.isClosed()) activePage = context.pages().at(-1) || context.pages()[0];
+    if (!activePage) throw new Error('No active browser page is available');
+
+    if (type === 'goto') await activePage.goto(action.url, { waitUntil: action.wait_until || 'domcontentloaded' });
+    else if (type === 'click') await activePage.click(action.selector);
+    else if (type === 'fill') await activePage.fill(action.selector, action.value ?? '');
+    else if (type === 'press') await activePage.press(action.selector || 'body', action.key);
+    else if (type === 'wait') await activePage.waitForTimeout(action.value ?? 1000);
+    else if (type === 'wait_for_selector') await activePage.waitForSelector(action.selector, { timeout: action.timeout_ms || 10000 });
+    else if (type === 'wait_for_url') {
+      const expectedURL = String(action.url || '');
+      const matcher = expectedURL.includes('*') ? expectedURL : url => url.href.includes(expectedURL);
+      await activePage.waitForURL(matcher, { timeout: action.timeout_ms || 10000, waitUntil: action.wait_until || 'load' });
+    }
+    else if (type === 'wait_for_text') {
+      const text = String(action.text ?? action.value ?? '');
+      if (!text) throw new Error('wait_for_text requires text or value');
+      await activePage.getByText(text, { exact: action.exact === true }).first().waitFor({
+        state: action.state || 'visible',
+        timeout: action.timeout_ms || 10000
+      });
+    }
+    else if (type === 'wait_for_response') await waitForResponse(context, responseLog, action);
+    else if (type === 'select') await activePage.selectOption(action.selector, action.value);
+    else if (type === 'scroll') await activePage.mouse.wheel(action.delta_x || 0, action.delta_y || 800);
+    else if (type === 'reload') await activePage.reload({ waitUntil: action.wait_until || 'domcontentloaded' });
+    else if (type === 'back') await activePage.goBack({ waitUntil: action.wait_until || 'domcontentloaded' });
+    else if (type === 'forward') await activePage.goForward({ waitUntil: action.wait_until || 'domcontentloaded' });
     else if (type === 'evaluate') {
       throw new Error('evaluate action is disabled for browser safety');
     }
     else throw new Error(`Unsupported browser action: ${type}`);
   }
+  return activePage;
 }
 
 async function main() {
@@ -871,6 +1246,7 @@ async function main() {
       url: args.url || 'about:blank',
       profile_id: args.profile_id || undefined,
       storage_state: args.storage_state || undefined,
+      storage_state_path: args.storage_state_path || undefined,
       local_storage: args.local_storage || undefined,
       cookies: Array.isArray(args.cookies) ? args.cookies : undefined,
       reload_after_local_storage: args.reload_after_local_storage !== false,
@@ -882,13 +1258,26 @@ async function main() {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
+    if (state.sessions[sessionId].storage_state_path) await loadStorageState(state.sessions[sessionId]);
     let visible = {};
     if (state.sessions[sessionId].keep_open === true && state.sessions[sessionId].headless === false) {
       visible = await launchKeepOpenBrowser(state.sessions[sessionId], sessionId);
       state.sessions[sessionId] = { ...state.sessions[sessionId], ...visible };
     }
+    if (state.sessions[sessionId].backend === 'cdp' && state.sessions[sessionId].storage_state_path) {
+      await applyCDPStorageState(state.sessions[sessionId]);
+    }
     await writeState(state);
-    console.log(JSON.stringify({ ok: true, session_id: sessionId, status: 'created', keep_open: state.sessions[sessionId].keep_open, visible_process: state.sessions[sessionId].visible_process, backend: state.sessions[sessionId].backend, cdp_url: state.sessions[sessionId].cdp_url }));
+    let pageInfo = { page_id: null, pages: [] };
+    if (state.sessions[sessionId].backend === 'daemon' && state.sessions[sessionId].control_url) {
+      const status = await daemonRequest(state.sessions[sessionId].control_url, 'status', {}, daemonTimeout());
+      pageInfo = { page_id: status.page_id || null, pages: status.pages || [] };
+    } else if (state.sessions[sessionId].backend === 'cdp' && state.sessions[sessionId].cdp_url) {
+      const pages = await cdpPageTargets(state.sessions[sessionId]);
+      const activePage = await cdpPageTarget(state.sessions[sessionId]);
+      pageInfo = { page_id: activePage.id, pages: describeCDPPages(pages, activePage) };
+    }
+    console.log(JSON.stringify({ ok: true, session_id: sessionId, status: 'created', ...pageInfo, keep_open: state.sessions[sessionId].keep_open, visible_process: state.sessions[sessionId].visible_process, backend: state.sessions[sessionId].backend, cdp_url: state.sessions[sessionId].cdp_url }));
     return;
   }
 
@@ -900,7 +1289,7 @@ async function main() {
 
   const sessionId = args.session_id;
   if (!sessionId || !state.sessions[sessionId]) throw new Error('Unknown or missing browser session_id');
-  const session = state.sessions[sessionId];
+  let session = state.sessions[sessionId];
   if (operation === 'session_close') {
     let daemonClosed = false;
     if (session.backend === 'daemon' && session.control_url) {
@@ -911,20 +1300,29 @@ async function main() {
     console.log(JSON.stringify({ ok: true, session_id: sessionId, status: existed ? 'closed' : 'not_found', visible_process_stopped: stopped }));
     return;
   }
+  if (session.backend === 'playwright' && (operation === 'action' || operation === 'snapshot')) {
+    session = await ensurePlaywrightDaemon(state, sessionId, session);
+  }
   if (session.backend === 'daemon') {
     if (operation === 'action') {
-      const result = await daemonRequest(session.control_url, 'action', { ...args, actions: args.actions || [], max_text_chars: args.max_text_chars || 8000, capture_screenshot: shouldCaptureScreenshot(args) }, cdpTimeout());
+      const result = await daemonRequest(session.control_url, 'action', { ...args, actions: args.actions || [], max_text_chars: args.max_text_chars || 8000, capture_screenshot: shouldCaptureScreenshot(args) }, daemonTimeout(args));
       const closeAfter = args.close_after === true;
-      if (closeAfter) await closeSessionState(state, sessionId);
+      if (closeAfter) {
+        await daemonRequest(session.control_url, 'close', {}, 3000).catch(() => {});
+        await closeSessionState(state, sessionId);
+      }
       else await writeState(state);
       console.log(JSON.stringify({ ...result, closed: closeAfter }));
       return;
     }
     if (operation === 'snapshot') {
       const daemonAction = args.save_storage_state === true || session.save_storage_state === true ? 'save' : 'status';
-      const result = await daemonRequest(session.control_url, daemonAction, { ...args, max_text_chars: args.max_text_chars || 8000, capture_screenshot: shouldCaptureScreenshot(args) }, cdpTimeout());
+      const result = await daemonRequest(session.control_url, daemonAction, { ...args, max_text_chars: args.max_text_chars || 8000, capture_screenshot: shouldCaptureScreenshot(args) }, daemonTimeout(args));
       const closeAfter = args.close_after === true;
-      if (closeAfter) await closeSessionState(state, sessionId);
+      if (closeAfter) {
+        await daemonRequest(session.control_url, 'close', {}, 3000).catch(() => {});
+        await closeSessionState(state, sessionId);
+      }
       else await writeState(state);
       console.log(JSON.stringify({ ...result, closed: closeAfter }));
       return;
@@ -932,45 +1330,21 @@ async function main() {
     throw new Error(`Unknown operation: ${operation}`);
   }
   if (session.backend === 'cdp') {
-    if (operation === 'action') await runCDPActions(session, args.actions || []);
+    if (operation === 'action') await runCDPActions(session, args.actions || [], args.page_id || '');
     if (operation === 'action' || operation === 'snapshot') {
       const closeAfter = args.close_after === true;
-      const result = await cdpSnapshot(session, sessionId);
-      if (closeAfter) await closeSessionState(state, sessionId);
+      const result = await cdpSnapshot(session, sessionId, args.page_id || '');
+      if (closeAfter) {
+        stopVisibleProcess(session);
+        await closeSessionState(state, sessionId);
+      }
       else await writeState(state);
       console.log(JSON.stringify({ ...result, closed: closeAfter }));
       return;
     }
     throw new Error(`Unknown operation: ${operation}`);
   }
-  const env = await launchPage(session);
-  try {
-    if (operation === 'action') {
-      await runActions(env.page, args.actions || []);
-      session.url = env.page.url();
-      session.updated_at = new Date().toISOString();
-      const storageResult = await saveStorageStateIfNeeded(env.context, session, sessionId);
-      const closeAfter = args.close_after === true;
-      if (closeAfter) await closeSessionState(state, sessionId);
-      else await writeState(state);
-      console.log(JSON.stringify({ ok: true, session_id: sessionId, closed: closeAfter, ...storageResult, ...(await snapshot(env.page, { console_errors: env.consoleErrors, network_errors: env.networkErrors, page_errors: env.pageErrors, browser_launch: env.browserLaunch })) }));
-    } else if (operation === 'snapshot') {
-      const storageResult = await saveStorageStateIfNeeded(env.context, session, sessionId);
-      const closeAfter = args.close_after === true;
-      if (closeAfter) await closeSessionState(state, sessionId);
-      console.log(JSON.stringify({ ok: true, session_id: sessionId, closed: closeAfter, ...storageResult, ...(await snapshot(env.page, { console_errors: env.consoleErrors, network_errors: env.networkErrors, page_errors: env.pageErrors, browser_launch: env.browserLaunch })) }));
-    } else {
-      throw new Error(`Unknown operation: ${operation}`);
-    }
-  } finally {
-    // 有些持久化 profile / 系统浏览器在关闭上下文时会卡住，导致上层工具超时后 signal killed。
-    // 这里把关闭动作限制在几秒内；状态已经在业务分支里写完，不能让资源回收阻塞结果返回。
-    if (session.keep_open === true && session.backend === 'cdp') {
-      // Keep user-visible browser alive for interactive login; session_close owns shutdown.
-    } else if (env.context && typeof env.context.close === 'function') await closeWithTimeout(env.context, 'context');
-    else if (env.browser && typeof env.browser.close === 'function') await closeWithTimeout(env.browser, 'browser');
-    setTimeout(() => process.exit(0), 50).unref();
-  }
+  throw new Error(`Unsupported browser backend: ${session.backend}`);
 }
 
 main().catch(err => {

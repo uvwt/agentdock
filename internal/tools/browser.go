@@ -57,24 +57,46 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 		return nil, err
 	}
 	cmd.Env = commandEnv
-	output, outputTotal, outputTruncated, err := runBoundedCombinedOutput(cmd, browserRunnerOutputLimit)
+	stdout := newBoundedCommandOutput(browserRunnerOutputLimit)
+	stderr := newBoundedCommandOutput(browserRunnerOutputLimit)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	err = cmd.Run()
+	output, outputTotal, outputTruncated := stdout.Snapshot()
+	stderrOutput, stderrTotal, stderrTruncated := stderr.Snapshot()
 	maxBytes := boundedInt(intArg(args, "max_bytes", 262144), 262144, 1, 1<<20)
 	text, responseTruncated := truncateBytes(output, maxBytes)
 	text = redactSecrets(text, nil)
+	stderrText, stderrResponseTruncated := truncateBytes(stderrOutput, maxBytes)
+	stderrText = redactSecrets(stderrText, nil)
 	if outputTruncated {
 		return Result{
 			"browser_ok":         false,
 			"operation":          operation,
 			"browser_error":      "browser runner output exceeded the capture limit",
+			"code":               "BROWSER_RUNNER_OUTPUT_TRUNCATED",
+			"error":              browserProtocolError("BROWSER_RUNNER_OUTPUT_TRUNCATED", "browser runner output exceeded the capture limit", map[string]any{"output_limit_bytes": browserRunnerOutputLimit}),
 			"stdout":             text,
 			"truncated":          true,
 			"output_total_bytes": outputTotal,
 			"output_limit_bytes": browserRunnerOutputLimit,
+			"stderr":             stderrText,
+			"stderr_total_bytes": stderrTotal,
+			"stderr_truncated":   stderrTruncated || stderrResponseTruncated,
 		}, nil
 	}
 	var parsed map[string]any
 	parseErr := json.Unmarshal(output, &parsed)
-	result := Result{"browser_ok": err == nil, "operation": operation, "output_total_bytes": outputTotal}
+	result := Result{
+		"browser_ok":         err == nil,
+		"operation":          operation,
+		"output_total_bytes": outputTotal,
+		"stderr_total_bytes": stderrTotal,
+	}
+	if stderrText != "" {
+		result["stderr"] = stderrText
+		result["stderr_truncated"] = stderrTruncated || stderrResponseTruncated
+	}
 	if boolArg(args, "debug_stdout", false) || parseErr != nil {
 		result["stdout"] = text
 		result["truncated"] = responseTruncated
@@ -85,7 +107,10 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 			case "ok":
 				result["browser_ok"] = value
 			case "error":
-				result["browser_error"] = value
+				result["error"] = value
+				if message := browserErrorMessage(value); message != "" {
+					result["browser_error"] = message
+				}
 			default:
 				result[key] = value
 			}
@@ -95,16 +120,57 @@ func (r *Runtime) browserRunnerCall(ctx context.Context, operation string, args 
 		}
 	} else {
 		result["browser_ok"] = false
+		result["code"] = "BROWSER_RUNNER_PROTOCOL_ERROR"
 		result["json_error"] = parseErr.Error()
 		result["browser_error"] = "browser runner returned invalid JSON"
+		result["error"] = browserProtocolError("BROWSER_RUNNER_PROTOCOL_ERROR", "browser runner returned invalid JSON", map[string]any{
+			"json_error": parseErr.Error(),
+			"exit_error": commandErrorString(err),
+		})
 	}
 	if err != nil {
 		result["browser_ok"] = false
 		if _, exists := result["browser_error"]; !exists {
 			result["browser_error"] = err.Error()
 		}
+		if _, exists := result["code"]; !exists {
+			result["code"] = "BROWSER_RUNNER_EXITED"
+		}
+		if _, exists := result["error"]; !exists {
+			result["error"] = browserProtocolError("BROWSER_RUNNER_EXITED", err.Error(), map[string]any{"exit_error": err.Error()})
+		}
 	}
 	return result, nil
+}
+
+func browserProtocolError(code, message string, details map[string]any) map[string]any {
+	result := map[string]any{
+		"code":    code,
+		"message": message,
+		"phase":   "protocol",
+	}
+	if len(details) > 0 {
+		result["details"] = details
+	}
+	return result
+}
+
+func browserErrorMessage(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case map[string]any:
+		return strings.TrimSpace(stringValue(typed["message"]))
+	default:
+		return ""
+	}
+}
+
+func commandErrorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func (r *Runtime) browserRunnerScript() (controlPath, error) {

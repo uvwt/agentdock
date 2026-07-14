@@ -255,28 +255,33 @@ func InputSchema(name string) map[string]any {
 		props["cookies"] = arrayProp("Optional Playwright cookies to add to the browser context.")
 		props["local_storage"] = objectProp("Optional localStorage map by origin, for example origin to key/value object.")
 		props["storage_state"] = objectProp("Optional Playwright storageState object.")
+		props["storage_state_path"] = stringProp("Optional Playwright storage state JSON path to load when action=start. When saving, an explicitly supplied path is reused as the destination.")
 		props["save_storage_state"] = boolProp("Save context storage state after action/snapshot and return storage_state_path.")
 		props["reload_after_local_storage"] = boolProp("Reload the page after applying localStorage. Defaults to true.")
 		props["max_age_ms"] = intProp("When action=cleanup_stale, remove sessions older than this age. Defaults to 6 hours.")
 		props["timeout_ms"] = boundedIntProp("Operation timeout in milliseconds. Defaults to 30000 and is capped at 300000.", 1, 300000)
 	case "browser_act":
 		props["session_id"] = stringProp("Browser session id.")
+		props["page_id"] = stringProp("Page id returned by browser_session, browser_act, or browser_snapshot. Selects which page receives the actions.")
 		props["actions"] = browserActionsProp()
 		props["full_page"] = boolProp("Capture full-page screenshot in the final snapshot.")
 		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
 		props["retention_seconds"] = intProp("Signed screenshot URL retention in seconds. Defaults to 86400 and is capped at 604800.")
 		props["close_after"] = boolProp("Close and remove the browser session after the action/snapshot succeeds.")
 		props["save_storage_state"] = boolProp("Save context storage state and return storage_state_path.")
+		props["storage_state_path"] = stringProp("Optional destination path when save_storage_state=true. Relative paths resolve under browser artifacts.")
 		props["max_interactive_elements"] = intProp("Maximum visible interactive elements to return. Defaults to 40.")
 		props["timeout_ms"] = boundedIntProp("Operation timeout in milliseconds. Defaults to 30000 and is capped at 300000.", 1, 300000)
 		required = []string{"session_id", "actions"}
 	case "browser_snapshot":
 		props["session_id"] = stringProp("Browser session id.")
+		props["page_id"] = stringProp("Page id returned by browser_session, browser_act, or browser_snapshot. Selects which page is captured.")
 		props["full_page"] = boolProp("Capture full-page screenshot for snapshot.")
 		props["max_text_chars"] = intProp("Maximum body text characters in snapshot.")
 		props["retention_seconds"] = intProp("Signed screenshot URL retention in seconds. Defaults to 86400 and is capped at 604800.")
 		props["close_after"] = boolProp("Close and remove the browser session after snapshot succeeds.")
 		props["save_storage_state"] = boolProp("Save context storage state and return storage_state_path.")
+		props["storage_state_path"] = stringProp("Optional destination path when save_storage_state=true. Relative paths resolve under browser artifacts.")
 		props["max_interactive_elements"] = intProp("Maximum visible interactive elements to return. Defaults to 40.")
 		props["timeout_ms"] = boundedIntProp("Operation timeout in milliseconds. Defaults to 30000 and is capped at 300000.", 1, 300000)
 		required = []string{"session_id"}
@@ -352,16 +357,22 @@ func browserActionsProp() map[string]any {
 				"action": map[string]any{
 					"type":        "string",
 					"description": "Required action name. Use this field, not type.",
-					"enum":        []string{"goto", "click", "fill", "press", "wait", "wait_for_selector", "select", "scroll", "reload", "back", "forward"},
+					"enum":        []string{"goto", "click", "fill", "press", "wait", "wait_for_selector", "wait_for_url", "wait_for_text", "wait_for_response", "select", "scroll", "reload", "back", "forward"},
 				},
-				"url":        map[string]any{"type": "string", "description": "URL for action=goto."},
-				"selector":   map[string]any{"type": "string", "description": "CSS selector for click/fill/press/wait_for_selector/select."},
-				"value":      map[string]any{"description": "Value for fill/select, or wait duration in milliseconds for action=wait."},
-				"key":        map[string]any{"type": "string", "description": "Keyboard key for action=press."},
-				"timeout_ms": map[string]any{"type": "integer", "description": "Timeout for action=wait_for_selector."},
-				"wait_until": map[string]any{"type": "string", "description": "Navigation wait state for goto/reload/back/forward, such as domcontentloaded or load."},
-				"delta_x":    map[string]any{"type": "integer", "description": "Horizontal wheel delta for action=scroll."},
-				"delta_y":    map[string]any{"type": "integer", "description": "Vertical wheel delta for action=scroll."},
+				"url":         map[string]any{"type": "string", "description": "URL for action=goto, glob/substring for wait_for_url, or URL substring for wait_for_response."},
+				"selector":    map[string]any{"type": "string", "description": "CSS selector for click/fill/press/wait_for_selector/select."},
+				"value":       map[string]any{"description": "Value for fill/select, wait duration for wait, or fallback text for wait_for_text."},
+				"text":        map[string]any{"type": "string", "description": "Text to wait for when action=wait_for_text."},
+				"exact":       map[string]any{"type": "boolean", "description": "Require exact text match for wait_for_text."},
+				"state":       map[string]any{"type": "string", "description": "Playwright locator state for wait_for_text, such as visible or hidden."},
+				"url_pattern": map[string]any{"type": "string", "description": "Regular expression matched against response URLs for wait_for_response."},
+				"method":      map[string]any{"type": "string", "description": "Optional HTTP method for wait_for_response."},
+				"status":      map[string]any{"type": "integer", "description": "Optional HTTP status for wait_for_response."},
+				"key":         map[string]any{"type": "string", "description": "Keyboard key for action=press."},
+				"timeout_ms":  map[string]any{"type": "integer", "description": "Timeout for wait_for_selector, wait_for_url, wait_for_text, or wait_for_response."},
+				"wait_until":  map[string]any{"type": "string", "description": "Navigation wait state for goto/reload/back/forward/wait_for_url, such as domcontentloaded or load."},
+				"delta_x":     map[string]any{"type": "integer", "description": "Horizontal wheel delta for action=scroll."},
+				"delta_y":     map[string]any{"type": "integer", "description": "Vertical wheel delta for action=scroll."},
 			},
 		},
 	}

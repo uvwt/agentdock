@@ -435,6 +435,86 @@ process.stdout.write(JSON.stringify({
 	}
 }
 
+func TestBrowserRunnerProtocolSeparatesDiagnosticsAndReturnsStructuredErrors(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node is required for browser runner")
+	}
+
+	tests := []struct {
+		name       string
+		script     string
+		wantOK     bool
+		wantCode   string
+		wantStderr string
+	}{
+		{
+			name:       "stderr does not corrupt JSON stdout",
+			script:     `process.stderr.write('browser diagnostic'); process.stdout.write(JSON.stringify({ok:true, marker:'parsed'}));`,
+			wantOK:     true,
+			wantStderr: "browser diagnostic",
+		},
+		{
+			name:       "invalid JSON becomes protocol error",
+			script:     `process.stderr.write('runner crashed'); process.stdout.write('{"ok":'); process.exit(1);`,
+			wantOK:     false,
+			wantCode:   "BROWSER_RUNNER_PROTOCOL_ERROR",
+			wantStderr: "runner crashed",
+		},
+		{
+			name:     "runner error object is preserved",
+			script:   `process.stdout.write(JSON.stringify({ok:false,code:'BROWSER_PAGE_NOT_FOUND',error:{code:'BROWSER_PAGE_NOT_FOUND',message:'unknown page',phase:'browser',details:{page_id:'page-9'}}})); process.exit(1);`,
+			wantOK:   false,
+			wantCode: "BROWSER_PAGE_NOT_FOUND",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			runnerDir := filepath.Join(root, "browser-runner")
+			if err := os.MkdirAll(runnerDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(runnerDir, "browser-runner.js"), []byte(test.script), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg := config.Config{
+				AgentDockDefaultDir: root,
+				AgentDockHome:       filepath.Join(root, ".agentdock"),
+				BrowserEnabled:      true,
+				BrowserRunnerDir:    runnerDir,
+			}
+			if err := cfg.Normalize(); err != nil {
+				t.Fatalf("Normalize() error = %v", err)
+			}
+			rt, err := NewRuntime(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			result, err := rt.Call(context.Background(), "browser_snapshot", map[string]any{"timeout_ms": 15000})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result["browser_ok"] != test.wantOK {
+				t.Fatalf("browser_ok = %#v, want %v; result=%#v", result["browser_ok"], test.wantOK, result)
+			}
+			if test.wantCode != "" && result["code"] != test.wantCode {
+				t.Fatalf("code = %#v, want %q; result=%#v", result["code"], test.wantCode, result)
+			}
+			if test.wantStderr != "" && result["stderr"] != test.wantStderr {
+				t.Fatalf("stderr = %#v, want %q", result["stderr"], test.wantStderr)
+			}
+			if !test.wantOK {
+				errorObject, ok := result["error"].(map[string]any)
+				if !ok || errorObject["code"] == "" || errorObject["message"] == "" || errorObject["phase"] == "" {
+					t.Fatalf("structured error missing fields: %#v", result["error"])
+				}
+			}
+		})
+	}
+}
+
 func TestBrowserRunnerRejectsSymlinks(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("creating symlinks is not reliable on Windows runners")
