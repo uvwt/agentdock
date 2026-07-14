@@ -335,11 +335,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Prepare image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: |
+            ghcr.io/${{ github.repository }}
+            agentdockio/agentdock
           flavor: latest=false
           tags: |
             type=raw,value=${{ matrix.tag_prefix }}${{ github.event.inputs.tag || github.ref_name }},priority=1000
@@ -474,12 +482,28 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run published images
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Run published GHCR images
         env:
           RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
           AGENTDOCK_TEST_BUILD: "false"
           AGENTDOCK_TEST_RUNTIME_IMAGE: ghcr.io/${{ github.repository }}:${{ github.event.inputs.tag || github.ref_name }}
           AGENTDOCK_TEST_DEV_IMAGE: ghcr.io/${{ github.repository }}:dev-${{ github.event.inputs.tag || github.ref_name }}
           AGENTDOCK_TEST_BROWSER_IMAGE: ghcr.io/${{ github.repository }}:browser-${{ github.event.inputs.tag || github.ref_name }}
+          AGENTDOCK_EXPECT_IMAGE_VERSION: ${{ github.event.inputs.tag || github.ref_name }}
+        run: ./scripts/test-docker-images.sh
+
+      - name: Run published Docker Hub images
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          AGENTDOCK_TEST_BUILD: "false"
+          AGENTDOCK_TEST_RUNTIME_IMAGE: agentdockio/agentdock:${{ github.event.inputs.tag || github.ref_name }}
+          AGENTDOCK_TEST_DEV_IMAGE: agentdockio/agentdock:dev-${{ github.event.inputs.tag || github.ref_name }}
+          AGENTDOCK_TEST_BROWSER_IMAGE: agentdockio/agentdock:browser-${{ github.event.inputs.tag || github.ref_name }}
           AGENTDOCK_EXPECT_IMAGE_VERSION: ${{ github.event.inputs.tag || github.ref_name }}
         run: ./scripts/test-docker-images.sh
