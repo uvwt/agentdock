@@ -16,7 +16,7 @@ import (
 const (
 	ProtocolVersion    = "2025-06-18"
 	ServerName         = "agentdock"
-	Version            = "0.5.0"
+	Version            = "0.5.1"
 	PathModel          = "host"
 	BrowserRunnerDir   = "browser-runner"
 	BrowserArtifactDir = "browser-artifacts"

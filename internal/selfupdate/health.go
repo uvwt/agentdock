@@ -27,11 +27,14 @@ func healthCandidates(targetPath string) []string {
 
 	// 当前 macOS 裸机部署把端口写在启动脚本中；读取它可以避免把本机端口硬编码进更新流程。
 	if home, err := os.UserHomeDir(); err == nil {
+		defaultTarget := filepath.Join(home, "agentdock", "agentdock")
 		startScript := filepath.Join(home, "agentdock-runtime", "start-agentdock.sh")
-		if data, readErr := os.ReadFile(startScript); readErr == nil && strings.Contains(string(data), targetPath) {
-			portPattern := regexp.MustCompile(`--port\s+([0-9]+)`)
-			if match := portPattern.FindStringSubmatch(string(data)); len(match) == 2 {
-				candidates = append(candidates, "http://127.0.0.1:"+match[1]+"/healthz")
+		if filepath.Clean(targetPath) == defaultTarget {
+			if data, readErr := os.ReadFile(startScript); readErr == nil {
+				portPattern := regexp.MustCompile(`--port\s+([0-9]+)`)
+				if match := portPattern.FindStringSubmatch(string(data)); len(match) == 2 {
+					candidates = append(candidates, "http://127.0.0.1:"+match[1]+"/healthz")
+				}
 			}
 		}
 	}
