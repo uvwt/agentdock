@@ -79,6 +79,15 @@ AI Client / Agent
 
 普通用户不需要下载源码、安装 Go 或自行构建镜像。先进入 [安装 AgentDock](https://uvwt.github.io/agentdock-docs/docs/getting-started/install)，按当前环境选择安装方式。
 
+安装完成后可直接查看版本和更新：
+
+```bash
+agentdock --version
+agentdock update
+```
+
+`agentdock update` 会下载匹配当前平台的最新 Release、校验 SHA-256、备份并替换当前二进制；检测到 LaunchAgent、systemd、Windows Service 或 Windows 用户启动项时会自动重启并验证新版本，失败时自动恢复旧版本。普通 macOS Release 不额外执行本地签名；Mac mini 这类已配置本地固定签名脚本的裸机部署会在替换后沿用该脚本。
+
 ### 平台文档
 
 | 平台 | 文档 |

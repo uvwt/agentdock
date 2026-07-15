@@ -49,7 +49,11 @@ printf '==> running go vet\n'
 go vet ./...
 
 printf '==> building %s\n' "$TMP_BIN"
-go build -trimpath -o "$TMP_BIN" ./cmd/agentdock
+BUILD_COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || printf unknown)"
+BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+go build -trimpath \
+  -ldflags "-X github.com/uvwt/agentdock/internal/buildinfo.Commit=$BUILD_COMMIT -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=$BUILD_DATE" \
+  -o "$TMP_BIN" ./cmd/agentdock
 
 if command -v codesign >/dev/null 2>&1; then
   if [[ -z "$SIGN_IDENTITY" ]]; then

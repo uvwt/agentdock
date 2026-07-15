@@ -52,9 +52,7 @@ func Serve(ctx context.Context, server *mcp.Server, cfg config.Config) error {
 	slog.Info("http server configured", "host", cfg.Host, "port", cfg.Port, "auth_required", authRequired, "endpoint", "/mcp")
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "application/json")
-		if _, err := io.WriteString(w, "{\"ok\":true}"); err != nil {
-			slog.Warn("write health response failed", "error", err)
-		}
+		writeJSON(w, map[string]any{"ok": true, "version": config.Version})
 	})
 	mux.HandleFunc("/.well-known/mcp.json", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, serverCard(cfg, r))

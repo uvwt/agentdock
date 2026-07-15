@@ -7,6 +7,9 @@ BROWSER_IMAGE := agentdock:browser
 HOST ?= 127.0.0.1
 PORT ?= 8765
 LOG_LEVEL ?= info
+BUILD_COMMIT ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || printf unknown)
+BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+BUILD_LDFLAGS := -X github.com/uvwt/agentdock/internal/buildinfo.Commit=$(BUILD_COMMIT) -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=$(BUILD_DATE)
 
 fmt:
 	gofmt -w ./cmd ./internal
@@ -21,7 +24,7 @@ race:
 	go test -race ./...
 
 build:
-	go build -trimpath -o ./bin/$(APP) ./cmd/agentdock
+	go build -trimpath -ldflags "$(BUILD_LDFLAGS)" -o ./bin/$(APP) ./cmd/agentdock
 
 check: fmt test vet build
 
