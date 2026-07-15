@@ -127,7 +127,7 @@ docker compose down
 
 ### 使用 OAuth 接入 ChatGPT
 
-ChatGPT 通过自定义 MCP 连接器访问公网 AgentDock 时，推荐启用 OAuth。AgentDock 支持 Authorization Code、PKCE S256、动态客户端注册和 Refresh Token，ChatGPT 可以自动完成客户端注册，不需要手动创建 Client ID 或 Client Secret。
+ChatGPT 通过自定义 MCP 插件访问公网 AgentDock 时，推荐启用 OAuth。AgentDock 支持 Authorization Code、PKCE S256、动态客户端注册和 Refresh Token，ChatGPT 可以自动完成客户端注册，不需要手动创建 Client ID 或 Client Secret。
 
 服务端至少配置：
 
@@ -138,13 +138,13 @@ AGENTDOCK_OAUTH_PASSWORD=<至少-12-个字符的授权密码>
 AGENTDOCK_OAUTH_TOKEN_SECRET=<至少-32-字节的随机签名密钥>
 ```
 
-然后在 ChatGPT 的自定义连接器或 MCP 设置中添加：
+然后进入 ChatGPT 的 **设置 > 插件 > 高级设置**，开启开发人员模式并创建插件，MCP Server URL 填写：
 
 ```text
 https://agentdock.example.com/mcp
 ```
 
-保存连接后，浏览器会打开 AgentDock 授权页。确认请求来自刚刚添加的 ChatGPT 连接，输入 `AGENTDOCK_OAUTH_PASSWORD` 并完成授权，再通过一次 `server_info` 或其他只读工具调用验证连接。
+保存插件后，浏览器会打开 AgentDock 授权页。确认请求来自刚刚创建的 ChatGPT 插件，输入 `AGENTDOCK_OAUTH_PASSWORD` 并完成授权，再通过一次 `server_info` 或其他只读工具调用验证连接。
 
 公网入口必须使用 HTTPS，`AGENTDOCK_SERVER_URL` 只填写 Origin，不附加 `/mcp`。完整步骤、端点验证和常见问题见 [ChatGPT 接入教程](https://uvwt.github.io/agentdock-docs/docs/guides/chatgpt)。
 
