@@ -169,7 +169,7 @@ jobs:
           $buildDate = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
           $ldflags = "-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Commit=$env:GITHUB_SHA -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=$buildDate"
           New-Item -ItemType Directory -Path dist -Force | Out-Null
-          go build -trimpath -ldflags=$ldflags -o dist/agentdock.exe ./cmd/agentdock
+          go build -trimpath -ldflags $ldflags -o dist/agentdock.exe ./cmd/agentdock
 
       - name: Smoke test current binary as standard user
         if: matrix.goarch == 'amd64'
