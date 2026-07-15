@@ -1,4 +1,4 @@
-.PHONY: fmt test vet race build check run docker-build docker-dev-build docker-browser-build docker-up docker-browser-up docker-down smoke-docker logs clean clean-local-artifacts install-linux install-macos test-install-macos deploy-macos-source restart-macos smoke-macos
+.PHONY: fmt test test-scripts vet race build check run docker-build docker-dev-build docker-browser-build docker-up docker-browser-up docker-down smoke-docker logs clean clean-local-artifacts install-linux install-macos test-install-macos deploy-macos-source restart-macos smoke-macos
 
 APP := agentdock
 IMAGE := agentdock:local
@@ -17,6 +17,9 @@ fmt:
 test:
 	go test ./...
 
+test-scripts:
+	PYTHONDONTWRITEBYTECODE=1 python3 ./scripts/test_recall_backup_export.py
+
 vet:
 	go vet ./...
 
@@ -26,7 +29,7 @@ race:
 build:
 	go build -trimpath -ldflags "$(BUILD_LDFLAGS)" -o ./bin/$(APP) ./cmd/agentdock
 
-check: fmt test vet build
+check: fmt test test-scripts vet build
 
 run:
 	go run ./cmd/agentdock --host $(HOST) --port $(PORT) --log-level $(LOG_LEVEL)

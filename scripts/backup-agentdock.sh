@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+
 usage() {
   cat <<'USAGE'
 Usage: backup-agentdock.sh state|recall|all [commit message]
@@ -204,85 +206,9 @@ backup_state() {
 
 export_recall_to_repo() {
   local repo="$1"
-  python3 - "$repo" "$AGENTDOCK_MCP_ENDPOINT" <<'PY'
-import json, os, pathlib, shutil, sys, tempfile, urllib.request
-repo = pathlib.Path(sys.argv[1])
-endpoint = sys.argv[2]
-token = os.environ.get('AGENTDOCK_AUTH_TOKEN', '')
-
-def call(name, args, req_id=1):
-    payload = {'jsonrpc': '2.0', 'id': req_id, 'method': 'tools/call', 'params': {'name': name, 'arguments': args}}
-    request = urllib.request.Request(endpoint, data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json'})
-    if token:
-        request.add_header('Authorization', 'Bearer ' + token)
-    with urllib.request.urlopen(request, timeout=60) as response:
-        outer = json.loads(response.read())
-    if 'error' in outer:
-        raise RuntimeError(outer['error'])
-    text = outer['result']['content'][0]['text']
-    return json.loads(text)
-
-listed = call('recall_maintain', {'action': 'list', 'max_entries': 20000}, 1)
-entries = listed.get('entries') or []
-paths = []
-for entry in entries:
-    path = entry.get('path') if isinstance(entry, dict) else str(entry)
-    if path and path.endswith('.md'):
-        paths.append(path)
-paths = sorted(set(paths))
-if not paths:
-    raise RuntimeError('NexusDock Recall export returned no markdown paths')
-
-preserved = {}
-for file_path in repo.rglob('*'):
-    if not file_path.is_file():
-        continue
-    if '.git' in file_path.parts:
-        continue
-    if file_path.name in {'.gitignore', '.gitkeep'}:
-        preserved[file_path.relative_to(repo).as_posix()] = file_path.read_bytes()
-
-with tempfile.TemporaryDirectory(prefix='recalldock-export-') as tmp:
-    staging = pathlib.Path(tmp) / 'export'
-    staging.mkdir()
-    for rel, content in preserved.items():
-        target = staging / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(content)
-
-    empty_reads = []
-    for index, path in enumerate(paths, 1):
-        data = call('recall_read', {'path': path, 'include_raw': True}, 1000 + index)
-        recall = data.get('recall') or {}
-        content = recall.get('raw_content') or recall.get('content') or recall.get('body') or ''
-        size = recall.get('size_bytes')
-        if not content:
-            empty_reads.append((path, size))
-            continue
-        target = staging / path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding='utf-8')
-
-    if empty_reads:
-        preview = '\n'.join(f'{path} size_bytes={size}' for path, size in empty_reads[:80])
-        raise RuntimeError(f'NexusDock Recall export produced empty markdown content; refusing to replace repo.\n{preview}')
-
-    for child in list(repo.iterdir()):
-        if child.name == '.git':
-            continue
-        if child.is_dir():
-            shutil.rmtree(child)
-        else:
-            child.unlink()
-
-    for child in staging.iterdir():
-        target = repo / child.name
-        if child.is_dir():
-            shutil.copytree(child, target)
-        else:
-            shutil.copy2(child, target)
-print(f'exported NexusDock Recall markdown files: {len(paths)}')
-PY
+  python3 "$SCRIPT_DIR/recall_backup_export.py" \
+    --repo "$repo" \
+    --endpoint "$AGENTDOCK_MCP_ENDPOINT"
 }
 
 backup_recall_worktree() {
