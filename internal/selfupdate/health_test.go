@@ -36,6 +36,7 @@ func TestWaitForVersionRequiresConsecutiveHealthyResponses(t *testing.T) {
 func TestHealthCandidatesReadsPortFromDefaultMacStartScript(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("AGENTDOCK_PORT", "")
 
 	runtimeDir := filepath.Join(home, "agentdock-runtime")
