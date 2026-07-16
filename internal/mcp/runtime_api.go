@@ -18,6 +18,14 @@ func (s *Server) RuntimeSkill(skill string) (tools.Result, error) {
 	return s.runtime.RuntimeSkill(skill)
 }
 
+func (s *Server) RuntimeSkillFiles(skill string) (tools.Result, error) {
+	return s.runtime.RuntimeSkillFiles(skill)
+}
+
+func (s *Server) RuntimeSkillFile(skill, path string) (tools.Result, error) {
+	return s.runtime.RuntimeSkillFile(skill, path)
+}
+
 func (s *Server) RuntimeTasks(status string, limit int) (tools.Result, error) {
 	return s.runtime.RuntimeTasks(status, limit)
 }

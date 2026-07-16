@@ -94,9 +94,23 @@ func dispatchRuntimeAPI(ctx context.Context, server *mcp.Server, r *http.Request
 		result, err := server.RuntimeSkills()
 		return map[string]any(result), err
 	case strings.HasPrefix(path, "/internal/runtime/skills/"):
-		skill := strings.TrimPrefix(path, "/internal/runtime/skills/")
-		result, err := server.RuntimeSkill(skill)
-		return map[string]any(result), err
+		skill, filePath, action, ok := runtimeSkillRoute(path)
+		if !ok {
+			return nil, &tools.ToolError{Code: "NOT_FOUND", Message: "runtime Skill API route not found", Category: "not_found"}
+		}
+		switch action {
+		case "detail":
+			result, err := server.RuntimeSkill(skill)
+			return map[string]any(result), err
+		case "files":
+			result, err := server.RuntimeSkillFiles(skill)
+			return map[string]any(result), err
+		case "file":
+			result, err := server.RuntimeSkillFile(skill, filePath)
+			return map[string]any(result), err
+		default:
+			return nil, &tools.ToolError{Code: "NOT_FOUND", Message: "runtime Skill API route not found", Category: "not_found"}
+		}
 	case path == "/internal/runtime/mcp" && r.Method == http.MethodPost:
 		args, err := decodeRuntimeMCPRequest(r)
 		if err != nil {
@@ -206,6 +220,33 @@ func decodeRuntimeMCPRequest(r *http.Request) (map[string]any, error) {
 
 func runtimeMCPRequestError(message string) error {
 	return &tools.ToolError{Code: "INVALID_MCP_REQUEST", Message: message, Category: "validation"}
+}
+
+func runtimeSkillRoute(path string) (skill, filePath, action string, ok bool) {
+	const prefix = "/internal/runtime/skills/"
+	if !strings.HasPrefix(path, prefix) {
+		return "", "", "", false
+	}
+	rest := strings.TrimPrefix(path, prefix)
+	parts := strings.Split(rest, "/")
+	if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" {
+		return "", "", "", false
+	}
+	skill = parts[0]
+	switch {
+	case len(parts) == 1:
+		return skill, "", "detail", true
+	case len(parts) == 2 && parts[1] == "files":
+		return skill, "", "files", true
+	case len(parts) >= 3 && parts[1] == "files":
+		filePath = strings.Join(parts[2:], "/")
+		if strings.TrimSpace(filePath) == "" {
+			return "", "", "", false
+		}
+		return skill, filePath, "file", true
+	default:
+		return "", "", "", false
+	}
 }
 
 func runtimeMCPName(path string) (string, bool) {

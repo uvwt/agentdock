@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/skills"
 	"github.com/uvwt/agentdock/internal/taskstate"
 )
 
@@ -34,6 +35,29 @@ func (r *Runtime) RuntimeSkills() (Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	items, _ := result["skills"].([]map[string]any)
+	for _, item := range items {
+		skill, _ := item["skill"].(string)
+		version, _ := item["active_version"].(string)
+		if strings.TrimSpace(skill) == "" || strings.TrimSpace(version) == "" {
+			continue
+		}
+		packageDir, err := r.skills.state.InstalledPath(skill, version)
+		if err != nil {
+			return nil, skillToolError(err)
+		}
+		document, err := skills.LoadSkillDocument(packageDir)
+		if err != nil {
+			return nil, skillToolError(err)
+		}
+		files, err := collectRuntimeSkillFiles(packageDir)
+		if err != nil {
+			return nil, err
+		}
+		item["name"] = document.Name
+		item["description"] = document.Description
+		item["file_count"] = len(files)
+	}
 	result["source"] = runtimeAPISource
 	return result, nil
 }
@@ -44,6 +68,23 @@ func (r *Runtime) RuntimeSkill(skill string) (Result, error) {
 		return nil, err
 	}
 	result["source"] = runtimeAPISource
+	result["files"] = []runtimeSkillFile{}
+	result["file_count"] = 0
+
+	version, _ := result["version"].(string)
+	if strings.TrimSpace(version) == "" {
+		return result, nil
+	}
+	packageDir, err := r.skills.state.InstalledPath(skill, version)
+	if err != nil {
+		return nil, skillToolError(err)
+	}
+	files, err := collectRuntimeSkillFiles(packageDir)
+	if err != nil {
+		return nil, err
+	}
+	result["files"] = files
+	result["file_count"] = len(files)
 	return result, nil
 }
 
