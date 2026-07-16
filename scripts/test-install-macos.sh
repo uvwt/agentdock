@@ -51,7 +51,7 @@ mode_of() {
 assert_file_contains() {
   local file_path="$1"
   local text="$2"
-  grep -Fq "$text" "$file_path" || {
+  grep -Fq -- "$text" "$file_path" || {
     print -u2 -- "missing text in $file_path: $text"
     exit 1
   }
@@ -60,7 +60,7 @@ assert_file_contains() {
 assert_file_not_contains() {
   local file_path="$1"
   local text="$2"
-  if grep -Fq "$text" "$file_path"; then
+  if grep -Fq -- "$text" "$file_path"; then
     print -u2 -- "unexpected text in $file_path: $text"
     exit 1
   fi
@@ -248,5 +248,54 @@ env -i HOME="$home_dir" PATH="$fake_bin:$PATH" TEST_LAUNCHCTL_STATE="$fake_state
 test ! -e "$binary"
 test ! -e "$state_dir"
 test ! -e "$work_dir"
+
+# 签名脚本必须先解锁显式钥匙串，并原样传递包含空格的密码。
+sign_fake_bin="$TMP_ROOT/sign fake bin"
+sign_state="$TMP_ROOT/sign state"
+mkdir -p "$sign_fake_bin" "$sign_state"
+cat > "$sign_fake_bin/security" <<'SCRIPT'
+#!/bin/zsh
+set -euo pipefail
+print -r -- "${(j:|:)@}" >> "$SIGN_TEST_SECURITY_CALLS"
+case "$1" in
+  unlock-keychain) exit 0 ;;
+  find-identity)
+    print -- "  1) $SIGN_TEST_IDENTITY \"AgentDock Local Code Signing\""
+    ;;
+  *) exit 2 ;;
+esac
+SCRIPT
+cat > "$sign_fake_bin/codesign" <<'SCRIPT'
+#!/bin/zsh
+set -euo pipefail
+print -r -- "${(j:|:)@}" >> "$SIGN_TEST_CODESIGN_CALLS"
+case "$1" in
+  --force|--verify) exit 0 ;;
+  -dv)
+    print -u2 -- "Identifier=$SIGN_TEST_IDENTIFIER"
+    ;;
+  *) exit 2 ;;
+esac
+SCRIPT
+chmod 0755 "$sign_fake_bin/security" "$sign_fake_bin/codesign"
+sign_target="$sign_state/agentdock"
+sign_keychain="$sign_state/agentdock-codesign.keychain-db"
+: > "$sign_target"
+: > "$sign_keychain"
+env -i \
+  HOME="$home_dir" \
+  PATH="$sign_fake_bin:$PATH" \
+  SIGN_TEST_SECURITY_CALLS="$sign_state/security.calls" \
+  SIGN_TEST_CODESIGN_CALLS="$sign_state/codesign.calls" \
+  SIGN_TEST_IDENTITY=test-identity \
+  SIGN_TEST_IDENTIFIER=com.local.agentdock \
+  AGENTDOCK_CODESIGN_IDENTITY=test-identity \
+  AGENTDOCK_CODESIGN_KEYCHAIN="$sign_keychain" \
+  AGENTDOCK_CODESIGN_KEYCHAIN_PASSWORD='password with spaces' \
+  AGENTDOCK_CODESIGN_IDENTIFIER=com.local.agentdock \
+  zsh "$ROOT_DIR/scripts/sign-macos.sh" "$sign_target"
+assert_file_contains "$sign_state/security.calls" "unlock-keychain|-p|password with spaces|$sign_keychain"
+assert_file_contains "$sign_state/security.calls" "find-identity|-v|-p|codesigning|$sign_keychain"
+assert_file_contains "$sign_state/codesign.calls" "--force|--keychain|$sign_keychain|--sign|test-identity"
 
 print -- "macOS installer and uninstaller tests passed"

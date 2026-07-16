@@ -271,6 +271,7 @@ func signLocalReplacement(ctx context.Context, targetPath string) error {
 
 	identity := strings.TrimSpace(os.Getenv("AGENTDOCK_CODESIGN_IDENTITY"))
 	keychain := strings.TrimSpace(os.Getenv("AGENTDOCK_CODESIGN_KEYCHAIN"))
+	keychainPassword := os.Getenv("AGENTDOCK_CODESIGN_KEYCHAIN_PASSWORD")
 	identifier := strings.TrimSpace(os.Getenv("AGENTDOCK_CODESIGN_IDENTIFIER"))
 	if identifier == "" {
 		identifier = "com.local.agentdock"
@@ -297,6 +298,13 @@ func signLocalReplacement(ctx context.Context, targetPath string) error {
 		return fmt.Errorf("代码签名钥匙串不存在或不是普通文件: %s", keychain)
 	}
 	commandEnv := append(os.Environ(), "HOME="+signHome)
+	if keychain != "" {
+		unlockCommand := exec.CommandContext(ctx, "security", "unlock-keychain", "-p", keychainPassword, keychain)
+		unlockCommand.Env = commandEnv
+		if output, unlockErr := unlockCommand.CombinedOutput(); unlockErr != nil {
+			return fmt.Errorf("解锁 macOS 代码签名钥匙串失败: %w: %s", unlockErr, strings.TrimSpace(string(output)))
+		}
+	}
 	identityArgs := []string{"find-identity", "-v", "-p", "codesigning"}
 	if keychain != "" {
 		identityArgs = append(identityArgs, keychain)
