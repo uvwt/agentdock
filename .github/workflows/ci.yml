@@ -47,9 +47,18 @@ jobs:
       - name: Check browser runner syntax
         run: node --check examples/browser-runner/browser-runner.js
 
-      - name: Test macOS release installer
+      - name: Test macOS scripts
         if: runner.os == 'macOS'
-        run: ./scripts/test-install-macos.sh
+        run: |
+          for path in \
+            scripts/install-macos.sh \
+            scripts/uninstall-macos.sh \
+            scripts/sign-macos.sh \
+            scripts/deploy-macos-source.sh \
+            scripts/restart-macos.sh; do
+            zsh -n "$path"
+          done
+          ./scripts/test-install-macos.sh
 
       - name: Check Windows PowerShell installer syntax
         if: runner.os == 'Windows'

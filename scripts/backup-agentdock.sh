@@ -12,7 +12,7 @@ recall : commit/push NexusDock Recall data. Uses NexusDock Recall API + temporar
 all    : run state then recall.
 
 Paths can be overridden with:
-  AGENTDOCK_RUNTIME_ROOT
+  AGENTDOCK_SERVICE_ENV
   AGENTDOCK_STATE_BACKUP_DIR
   RECALLDOCK_RECALL_DIR
   AGENTDOCK_BACKUP_TMP_DIR
@@ -23,19 +23,33 @@ USAGE
 
 MODE="${1:-}"
 MESSAGE="${2:-}"
-RUNTIME_ROOT="$(cd "${AGENTDOCK_RUNTIME_ROOT:-$HOME/agentdock-runtime}" 2>/dev/null && pwd -P || printf '%s/agentdock-runtime' "$HOME")"
+SERVICE_ENV="${AGENTDOCK_SERVICE_ENV:-$HOME/Library/Application Support/AgentDock/agentdock.env}"
 STATE_REPO="${AGENTDOCK_STATE_BACKUP_DIR:-/Volumes/KIOXIA/Docker/agentdock-state-backup}"
 RECALL_REPO="${RECALLDOCK_RECALL_DIR:-/Volumes/KIOXIA/Docker/nexusdock/recall}"
-TMP_ROOT="${AGENTDOCK_BACKUP_TMP_DIR:-$RUNTIME_ROOT/tmp-recovery}"
+TMP_ROOT="${AGENTDOCK_BACKUP_TMP_DIR:-$HOME/.agentdock/tmp/backup-recovery}"
 STATE_REMOTE="${AGENTDOCK_STATE_BACKUP_REMOTE:-https://github.com/uvwt/agentdock-state-backup.git}"
 RECALL_REMOTE="${AGENTDOCK_RECALL_BACKUP_REMOTE:-https://github.com/uvwt/agentdock-recall.git}"
-AGENTDOCK_MCP_ENDPOINT="${AGENTDOCK_MCP_ENDPOINT:-http://127.0.0.1:18766/mcp}"
-
-if [[ -f "$RUNTIME_ROOT/agentdock.env" ]]; then
+if [[ -f "$SERVICE_ENV" && ! -L "$SERVICE_ENV" ]]; then
   set -a
   # shellcheck disable=SC1090
-  source "$RUNTIME_ROOT/agentdock.env"
+  source "$SERVICE_ENV"
   set +a
+fi
+
+if [[ -z "${AGENTDOCK_MCP_ENDPOINT:-}" ]]; then
+  service_host="${AGENTDOCK_HOST:-127.0.0.1}"
+  service_port="${AGENTDOCK_PORT:-8765}"
+  [[ "$service_port" =~ ^[0-9]+$ ]] && (( service_port >= 1 && service_port <= 65535 )) || {
+    echo "invalid AGENTDOCK_PORT in $SERVICE_ENV: $service_port" >&2
+    exit 2
+  }
+  case "$service_host" in
+    0.0.0.0|::) service_host="127.0.0.1" ;;
+  esac
+  if [[ "$service_host" == *:* && "$service_host" != \[*\] ]]; then
+    service_host="[$service_host]"
+  fi
+  AGENTDOCK_MCP_ENDPOINT="http://$service_host:$service_port/mcp"
 fi
 
 if [[ -z "$MODE" || "$MODE" == "-h" || "$MODE" == "--help" ]]; then

@@ -71,6 +71,10 @@ func platformHealthCandidates(ctx context.Context, _ string) []string {
 	return nil
 }
 
+func platformBackupPath(targetPath string) (string, error) {
+	return targetPath + ".backup", nil
+}
+
 func signLocalReplacement(context.Context, string) error {
 	return nil
 }

@@ -1,4 +1,4 @@
-.PHONY: fmt test test-scripts vet race build check run docker-build docker-dev-build docker-browser-build docker-up docker-browser-up docker-down smoke-docker logs clean clean-local-artifacts install-linux install-macos test-install-macos deploy-macos-source restart-macos smoke-macos
+.PHONY: fmt test test-scripts vet race build check run docker-build docker-dev-build docker-browser-build docker-up docker-browser-up docker-down smoke-docker logs clean clean-local-artifacts install-linux install-macos uninstall-macos test-install-macos deploy-macos-source restart-macos smoke-macos
 
 APP := agentdock
 IMAGE := agentdock:local
@@ -39,6 +39,9 @@ install-linux:
 
 install-macos:
 	./scripts/install-macos.sh
+
+uninstall-macos:
+	./scripts/uninstall-macos.sh
 
 test-install-macos:
 	./scripts/test-install-macos.sh

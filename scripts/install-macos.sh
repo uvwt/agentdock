@@ -5,20 +5,57 @@ RELEASE_VERSION="${AGENTDOCK_RELEASE_VERSION:-latest}"
 INSTALL_DIR="${AGENTDOCK_INSTALL_DIR:-$HOME/.local/bin}"
 BACKUP_DIR="${AGENTDOCK_BACKUP_DIR:-$HOME/.agentdock/backups/bin}"
 RELEASE_BASE_URL="${AGENTDOCK_RELEASE_BASE_URL:-}"
+REGISTER_SERVICE=false
+NO_START=false
+SERVICE_HOST="${AGENTDOCK_HOST:-127.0.0.1}"
+SERVICE_PORT="${AGENTDOCK_PORT:-8765}"
+SERVICE_LOG_LEVEL="${AGENTDOCK_LOG_LEVEL:-info}"
+AUTH_TOKEN_ARG=""
+HOST_EXPLICIT=false
+PORT_EXPLICIT=false
+
+LABEL="com.uvwt.agentdock"
+APP_SUPPORT_DIR="$HOME/Library/Application Support/AgentDock"
+AGENTDOCK_ENV="$APP_SUPPORT_DIR/agentdock.env"
+START_SCRIPT="$APP_SUPPORT_DIR/start-agentdock.sh"
+LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
+PLIST_PATH="$LAUNCH_AGENTS_DIR/$LABEL.plist"
+LOG_DIR="$HOME/Library/Logs/AgentDock"
+STDOUT_LOG="$LOG_DIR/agentdock.out.log"
+STDERR_LOG="$LOG_DIR/agentdock.err.log"
+WORK_DIR="$HOME/AgentDock"
+STATE_DIR="$HOME/.agentdock"
+TARGET="$INSTALL_DIR/agentdock"
 
 usage() {
-  cat <<'EOF'
+  cat <<'USAGE'
 AgentDock macOS 预编译版本安装脚本。
 
 用法：
-  zsh install-macos.sh [--version latest|vX.Y.Z] [--install-dir PATH]
+  zsh install-macos.sh [选项]
+
+选项：
+  --version latest|vX.Y.Z  Release 版本，默认 latest
+  --install-dir PATH       二进制安装目录，默认 ~/.local/bin
+  --register-service       生成、注册并启动用户级 LaunchAgent
+  --host HOST              服务监听地址，默认 127.0.0.1
+  --port PORT              服务监听端口，默认 8765
+  --auth-token TOKEN       首次创建 agentdock.env 时写入 Token；已有 Token 永不覆盖
+  --no-start               只生成服务文件和 plist，不加载或启动 LaunchAgent
+  -h, --help               显示帮助
 
 环境变量：
   AGENTDOCK_RELEASE_VERSION   Release 版本，默认 latest
   AGENTDOCK_INSTALL_DIR       二进制安装目录，默认 ~/.local/bin
   AGENTDOCK_BACKUP_DIR        旧二进制备份目录，默认 ~/.agentdock/backups/bin
   AGENTDOCK_RELEASE_BASE_URL  自定义 Release 下载根地址，主要用于镜像或测试
-EOF
+
+服务文件：
+  ~/Library/Application Support/AgentDock/agentdock.env
+  ~/Library/Application Support/AgentDock/start-agentdock.sh
+  ~/Library/LaunchAgents/com.uvwt.agentdock.plist
+  ~/Library/Logs/AgentDock/
+USAGE
 }
 
 die() {
@@ -28,6 +65,10 @@ die() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "缺少命令：$1"
+}
+
+validate_port() {
+  [[ "$1" == <1-65535> ]] || die "端口必须是 1-65535：$1"
 }
 
 release_url() {
@@ -46,6 +87,224 @@ release_url() {
   print -r -- "https://github.com/uvwt/agentdock/releases/download/$normalized"
 }
 
+next_backup_path() {
+  local base="$BACKUP_DIR/agentdock.$(date +%Y%m%d%H%M%S)"
+  local candidate="$base"
+  local suffix=1
+  while [[ -e "$candidate" ]]; do
+    candidate="$base.$suffix"
+    (( suffix++ ))
+  done
+  print -r -- "$candidate"
+}
+
+write_env_key() {
+  local key="$1"
+  local value="$2"
+  local replace_existing="$3"
+  local quoted
+  printf -v quoted '%q' "$value"
+
+  if grep -q "^${key}=" "$AGENTDOCK_ENV"; then
+    [[ "$replace_existing" == true ]] || return 0
+    local tmp_file="$AGENTDOCK_ENV.tmp.$$"
+    : > "$tmp_file"
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      if [[ "$line" == "$key="* ]]; then
+        printf '%s=%s\n' "$key" "$quoted" >> "$tmp_file"
+      else
+        printf '%s\n' "$line" >> "$tmp_file"
+      fi
+    done < "$AGENTDOCK_ENV"
+    chmod 0600 "$tmp_file"
+    mv -f "$tmp_file" "$AGENTDOCK_ENV"
+    return 0
+  fi
+
+  printf '%s=%s\n' "$key" "$quoted" >> "$AGENTDOCK_ENV"
+}
+
+write_service_env() {
+  mkdir -p "$APP_SUPPORT_DIR"
+  chmod 0700 "$APP_SUPPORT_DIR"
+  if [[ ! -f "$AGENTDOCK_ENV" ]]; then
+    umask 077
+    cat > "$AGENTDOCK_ENV" <<'ENV'
+# AgentDock macOS LaunchAgent 的唯一服务配置文件。
+# 修改后执行 launchctl kickstart -k "gui/$(id -u)/com.uvwt.agentdock" 使配置生效。
+ENV
+  fi
+  [[ -f "$AGENTDOCK_ENV" && ! -L "$AGENTDOCK_ENV" ]] || die "agentdock.env 必须是普通文件：$AGENTDOCK_ENV"
+  chmod 0600 "$AGENTDOCK_ENV"
+
+  write_env_key AGENTDOCK_HOST "$SERVICE_HOST" "$HOST_EXPLICIT"
+  write_env_key AGENTDOCK_PORT "$SERVICE_PORT" "$PORT_EXPLICIT"
+  write_env_key AGENTDOCK_LOG_LEVEL "$SERVICE_LOG_LEVEL" false
+  write_env_key AGENTDOCK_AUTH_TOKEN "$AUTH_TOKEN_ARG" false
+  write_env_key AGENTDOCK_NEXUS_ENDPOINT "${AGENTDOCK_NEXUS_ENDPOINT:-}" false
+  write_env_key AGENTDOCK_NEXUS_TOKEN "${AGENTDOCK_NEXUS_TOKEN:-}" false
+
+  # 稳定签名参数只在调用方明确提供时写入，避免把任何本机证书路径写死进安装器。
+  if [[ -n "${AGENTDOCK_CODESIGN_IDENTITY:-}" ]]; then
+    write_env_key AGENTDOCK_CODESIGN_IDENTITY "$AGENTDOCK_CODESIGN_IDENTITY" false
+  fi
+  if [[ -n "${AGENTDOCK_CODESIGN_KEYCHAIN:-}" ]]; then
+    write_env_key AGENTDOCK_CODESIGN_KEYCHAIN "$AGENTDOCK_CODESIGN_KEYCHAIN" false
+  fi
+  if [[ -n "${AGENTDOCK_CODESIGN_IDENTIFIER:-}" ]]; then
+    write_env_key AGENTDOCK_CODESIGN_IDENTIFIER "$AGENTDOCK_CODESIGN_IDENTIFIER" false
+  fi
+  if [[ -n "${AGENTDOCK_CODESIGN_HOME:-}" ]]; then
+    write_env_key AGENTDOCK_CODESIGN_HOME "$AGENTDOCK_CODESIGN_HOME" false
+  fi
+  chmod 0600 "$AGENTDOCK_ENV"
+}
+
+write_start_script() {
+  cat > "$START_SCRIPT" <<'SCRIPT'
+#!/bin/zsh
+set -euo pipefail
+
+APP_SUPPORT_DIR="$HOME/Library/Application Support/AgentDock"
+AGENTDOCK_ENV="$APP_SUPPORT_DIR/agentdock.env"
+[[ -r "$AGENTDOCK_ENV" ]] || { print -u2 -- "AgentDock agentdock.env 不可读：$AGENTDOCK_ENV"; exit 1; }
+
+set -a
+source "$AGENTDOCK_ENV"
+set +a
+
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+exec "$HOME/.local/bin/agentdock" \
+  --host "${AGENTDOCK_HOST:-127.0.0.1}" \
+  --port "${AGENTDOCK_PORT:-8765}" \
+  --log-level "${AGENTDOCK_LOG_LEVEL:-info}"
+SCRIPT
+  chmod 0700 "$START_SCRIPT"
+}
+
+xml_escape() {
+  print -nr -- "$1" | sed \
+    -e 's/&/\&amp;/g' \
+    -e 's/</\&lt;/g' \
+    -e 's/>/\&gt;/g' \
+    -e 's/"/\&quot;/g' \
+    -e "s/'/\&apos;/g"
+}
+
+write_launch_agent() {
+  mkdir -p "$LAUNCH_AGENTS_DIR" "$LOG_DIR" "$WORK_DIR" "$STATE_DIR"
+  chmod 0700 "$LOG_DIR" "$WORK_DIR" "$STATE_DIR"
+  touch "$STDOUT_LOG" "$STDERR_LOG"
+  chmod 0600 "$STDOUT_LOG" "$STDERR_LOG"
+
+  local plist_tmp="$PLIST_PATH.tmp.$$"
+  local start_script_xml="$(xml_escape "$START_SCRIPT")"
+  local work_dir_xml="$(xml_escape "$WORK_DIR")"
+  local stdout_xml="$(xml_escape "$STDOUT_LOG")"
+  local stderr_xml="$(xml_escape "$STDERR_LOG")"
+  cat > "$plist_tmp" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$start_script_xml</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>$work_dir_xml</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>$stdout_xml</string>
+  <key>StandardErrorPath</key>
+  <string>$stderr_xml</string>
+</dict>
+</plist>
+PLIST
+  plutil -lint "$plist_tmp" >/dev/null
+  chmod 0600 "$plist_tmp"
+  mv -f "$plist_tmp" "$PLIST_PATH"
+}
+
+launchd_pid() {
+  local domain="$1"
+  local output
+  output="$(launchctl print "$domain/$LABEL" 2>/dev/null)" || return 1
+  print -r -- "$output" | sed -n 's/^[[:space:]]*pid = \([0-9][0-9]*\).*$/\1/p' | head -n 1
+}
+
+health_host() {
+  case "$SERVICE_HOST" in
+    0.0.0.0|::) print -r -- "127.0.0.1" ;;
+    *:*) print -r -- "[$SERVICE_HOST]" ;;
+    *) print -r -- "$SERVICE_HOST" ;;
+  esac
+}
+
+normalize_version() {
+  print -r -- "${1#v}"
+}
+
+wait_for_service() {
+  local domain="$1"
+  local previous_pid="$2"
+  local expected_version="$3"
+  local pid=""
+  local host="$(health_host)"
+  local health_url="http://$host:$SERVICE_PORT/healthz"
+  local attempts=60
+
+  while (( attempts-- > 0 )); do
+    pid="$(launchd_pid "$domain" || true)"
+    if [[ -n "$pid" && "$pid" != "0" && "$pid" != "$previous_pid" ]]; then
+      local process_command
+      local listeners
+      process_command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+      listeners="$(lsof -nP -iTCP:"$SERVICE_PORT" -sTCP:LISTEN -t 2>/dev/null || true)"
+      if [[ "$process_command" == "$TARGET" || "$process_command" == "$TARGET "* ]] && print -r -- "$listeners" | grep -qx "$pid"; then
+        local health_body
+        health_body="$(curl -fsS --max-time 2 "$health_url" 2>/dev/null || true)"
+        local health_ok=false
+        local health_version
+        if print -r -- "$health_body" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'; then
+          health_ok=true
+        fi
+        health_version="$(print -r -- "$health_body" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+        if [[ "$health_ok" == true && "$(normalize_version "$health_version")" == "$(normalize_version "$expected_version")" ]]; then
+          print -r -- "$pid"
+          return 0
+        fi
+      fi
+    fi
+    sleep 0.5
+  done
+
+  print -u2 -- "LaunchAgent 验证失败：未确认新 PID、端口监听和目标版本 healthz"
+  return 1
+}
+
+register_and_start_service() {
+  local domain="gui/$(id -u)"
+  local previous_pid="$(launchd_pid "$domain" || true)"
+  launchctl bootout "$domain/$LABEL" >/dev/null 2>&1 || true
+  launchctl bootstrap "$domain" "$PLIST_PATH"
+  launchctl kickstart -k "$domain/$LABEL"
+
+  local expected_version
+  expected_version="$("$TARGET" --version | sed -n '1s/^AgentDock[[:space:]][[:space:]]*//p')"
+  [[ -n "$expected_version" ]] || { print -u2 -- "无法读取目标二进制版本"; return 1; }
+
+  local new_pid
+  new_pid="$(wait_for_service "$domain" "$previous_pid" "$expected_version")" || return 1
+  print -- "==> LaunchAgent 已启动：label=$LABEL pid=$new_pid port=$SERVICE_PORT version=$expected_version"
+}
+
 while (( $# > 0 )); do
   case "$1" in
     --version)
@@ -56,7 +315,33 @@ while (( $# > 0 )); do
     --install-dir)
       (( $# >= 2 )) || die "--install-dir 需要值"
       INSTALL_DIR="$2"
+      TARGET="$INSTALL_DIR/agentdock"
       shift 2
+      ;;
+    --register-service)
+      REGISTER_SERVICE=true
+      shift
+      ;;
+    --host)
+      (( $# >= 2 )) || die "--host 需要值"
+      SERVICE_HOST="$2"
+      HOST_EXPLICIT=true
+      shift 2
+      ;;
+    --port)
+      (( $# >= 2 )) || die "--port 需要值"
+      SERVICE_PORT="$2"
+      PORT_EXPLICIT=true
+      shift 2
+      ;;
+    --auth-token)
+      (( $# >= 2 )) || die "--auth-token 需要值"
+      AUTH_TOKEN_ARG="$2"
+      shift 2
+      ;;
+    --no-start)
+      NO_START=true
+      shift
       ;;
     -h|--help)
       usage
@@ -68,9 +353,25 @@ while (( $# > 0 )); do
   esac
 done
 
-for command_name in curl install mktemp shasum tar uname; do
+[[ "$(uname -s)" == "Darwin" ]] || die "此脚本只支持 macOS"
+validate_port "$SERVICE_PORT"
+[[ "$NO_START" == false || "$REGISTER_SERVICE" == true ]] || die "--no-start 必须与 --register-service 一起使用"
+if [[ "$REGISTER_SERVICE" == true && "$INSTALL_DIR" != "$HOME/.local/bin" ]]; then
+  die "注册 LaunchAgent 时二进制必须安装到 $HOME/.local/bin"
+fi
+
+for command_name in curl grep install mktemp sed shasum tar uname; do
   require_command "$command_name"
 done
+if [[ "$REGISTER_SERVICE" == true ]]; then
+  for command_name in launchctl plutil; do
+    require_command "$command_name"
+  done
+  if [[ "$NO_START" == false ]]; then
+    require_command lsof
+    require_command ps
+  fi
+fi
 
 case "$(uname -m)" in
   arm64|aarch64) release_arch="arm64" ;;
@@ -81,15 +382,16 @@ esac
 asset="agentdock_darwin_${release_arch}.tar.gz"
 base_url="$(release_url)"
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agentdock-install.XXXXXX")"
-trap 'rm -rf "$tmp_dir"' EXIT
+staged_target=""
+cleanup() {
+  rm -rf "$tmp_dir"
+  [[ -z "$staged_target" ]] || rm -f "$staged_target"
+}
+trap cleanup EXIT
 
 print -- "==> 下载 $asset"
-curl -fL --retry 3 --retry-delay 1 \
-  "$base_url/$asset" \
-  -o "$tmp_dir/$asset"
-curl -fL --retry 3 --retry-delay 1 \
-  "$base_url/$asset.sha256" \
-  -o "$tmp_dir/$asset.sha256"
+curl -fL --retry 3 --retry-delay 1 "$base_url/$asset" -o "$tmp_dir/$asset"
+curl -fL --retry 3 --retry-delay 1 "$base_url/$asset.sha256" -o "$tmp_dir/$asset.sha256"
 
 print -- "==> 校验 SHA-256"
 (
@@ -102,32 +404,84 @@ tar -xzf "$tmp_dir/$asset" -C "$tmp_dir/extract"
 source_binary="$tmp_dir/extract/bin/agentdock"
 [[ -f "$source_binary" ]] || die "Release 压缩包缺少 bin/agentdock"
 
-target="$INSTALL_DIR/agentdock"
-mkdir -p "$INSTALL_DIR" "$HOME/.agentdock" "$HOME/AgentDock"
+mkdir -p "$INSTALL_DIR" "$STATE_DIR" "$WORK_DIR" "$BACKUP_DIR"
+chmod 0700 "$STATE_DIR" "$WORK_DIR" "$BACKUP_DIR"
 
-if [[ -f "$target" ]]; then
-  mkdir -p "$BACKUP_DIR"
-  backup="$BACKUP_DIR/agentdock.$(date +%Y%m%d%H%M%S)"
-  cp -p "$target" "$backup"
+backup=""
+old_version=""
+if [[ -f "$TARGET" ]]; then
+  backup="$(next_backup_path)"
+  cp -p "$TARGET" "$backup"
+  old_version="$("$TARGET" --version 2>/dev/null | sed -n '1s/^AgentDock[[:space:]][[:space:]]*//p' || true)"
   print -- "==> 已备份旧版本到 $backup"
 fi
 
-install -m 0755 "$source_binary" "$target"
-"$target" --help >/dev/null 2>&1
+staged_target="$INSTALL_DIR/.agentdock.install.$$"
+rm -f "$staged_target"
+install -m 0755 "$source_binary" "$staged_target"
+"$staged_target" --help >/dev/null 2>&1
+mv -f "$staged_target" "$TARGET"
 
-print -- "installed: $target"
+if [[ "$REGISTER_SERVICE" == true ]]; then
+  write_service_env
+  write_start_script
+  write_launch_agent
+  if [[ "$NO_START" == false ]]; then
+    if ! register_and_start_service; then
+      print -u2 -- "==> 新服务验证失败，恢复安装前二进制"
+      domain="gui/$(id -u)"
+      failed_pid="$(launchd_pid "$domain" || true)"
+      if [[ -n "$backup" && -f "$backup" ]]; then
+        cp -p "$backup" "$staged_target"
+        mv -f "$staged_target" "$TARGET"
+        if ! launchctl kickstart -k "$domain/$LABEL" >/dev/null 2>&1; then
+          die "新服务验证失败；旧二进制已恢复，但 LaunchAgent 重启失败，备份保留在 $backup"
+        fi
+        [[ -n "$old_version" ]] || die "新服务验证失败；旧二进制已恢复，但无法读取旧版本并完成服务验证，备份保留在 $backup"
+        if ! wait_for_service "$domain" "$failed_pid" "$old_version" >/dev/null 2>&1; then
+          die "新服务验证失败；旧二进制已恢复，但旧服务验证失败，备份保留在 $backup"
+        fi
+        print -u2 -- "==> 已恢复旧二进制并验证旧服务：version=$old_version"
+      else
+        launchctl bootout "$domain/$LABEL" >/dev/null 2>&1 || true
+        rm -f "$TARGET"
+      fi
+      exit 1
+    fi
+  else
+    print -- "==> 已生成服务文件和 plist，按 --no-start 要求未加载 LaunchAgent"
+  fi
+fi
+
+print -- "installed: $TARGET"
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
   print -- "PATH 尚未包含 $INSTALL_DIR，可执行："
   print -- "  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.zprofile"
   print -- "  export PATH=\"$INSTALL_DIR:\$PATH\""
 fi
 
-cat <<EOF
-
-启动示例：
-  $target --host 127.0.0.1 --port 8765
+cat <<STATUS
 
 状态目录：
-  $HOME/.agentdock
-  $HOME/AgentDock
-EOF
+  $STATE_DIR
+  $WORK_DIR
+STATUS
+if [[ "$REGISTER_SERVICE" == true ]]; then
+  cat <<STATUS
+服务配置：
+  $AGENTDOCK_ENV
+LaunchAgent：
+  $PLIST_PATH
+日志目录：
+  $LOG_DIR
+STATUS
+else
+  cat <<STATUS
+
+启动示例：
+  $TARGET --host 127.0.0.1 --port 8765
+
+注册后台服务：
+  zsh install-macos.sh --register-service
+STATUS
+fi

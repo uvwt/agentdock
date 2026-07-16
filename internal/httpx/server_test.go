@@ -128,7 +128,7 @@ func TestRuntimeAPIStatusWithBearer(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
 	body := recorder.Body.String()
-	if !strings.Contains(body, `"source":"agentdock-runtime-api"`) {
+	if !strings.Contains(body, `"source":"agentdock-api"`) {
 		t.Fatalf("body missing source: %s", body)
 	}
 	if strings.Contains(body, "secret-token") {

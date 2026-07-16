@@ -5,9 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
-	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -33,24 +30,8 @@ func TestWaitForVersionRequiresConsecutiveHealthyResponses(t *testing.T) {
 	}
 }
 
-func TestHealthCandidatesReadsPortFromDefaultMacStartScript(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-	t.Setenv("AGENTDOCK_PORT", "")
-
-	runtimeDir := filepath.Join(home, "agentdock-runtime")
-	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	startScript := []byte("exec \"$HOME/agentdock/agentdock\" --host 127.0.0.1 --port 18766\n")
-	if err := os.WriteFile(filepath.Join(runtimeDir, "start-agentdock.sh"), startScript, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	candidates := healthCandidates(filepath.Join(home, "agentdock", "agentdock"))
-	want := "http://127.0.0.1:18766/healthz"
-	if !slices.Contains(candidates, want) {
-		t.Fatalf("health candidates %v do not contain %s", candidates, want)
+func TestLocalHealthURLSupportsIPv6(t *testing.T) {
+	if got := localHealthURL("::1", 8765); got != "http://[::1]:8765/healthz" {
+		t.Fatalf("unexpected IPv6 health URL: %s", got)
 	}
 }

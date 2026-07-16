@@ -75,9 +75,16 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Validate installer
+      - name: Validate macOS scripts
         run: |
-          zsh -n scripts/install-macos.sh
+          for path in \
+            scripts/install-macos.sh \
+            scripts/uninstall-macos.sh \
+            scripts/sign-macos.sh \
+            scripts/deploy-macos-source.sh \
+            scripts/restart-macos.sh; do
+            zsh -n "$path"
+          done
           ./scripts/test-install-macos.sh
 
       - name: Build and package
@@ -245,6 +252,7 @@ jobs:
           cp scripts/install-linux.sh dist/install-linux.sh
           cp scripts/install-linux-bootstrap.sh dist/install-linux-bootstrap.sh
           cp scripts/install-macos.sh dist/install-macos.sh
+          cp scripts/uninstall-macos.sh dist/uninstall-macos.sh
           cp scripts/install-windows.ps1 dist/install-windows.ps1
           cp scripts/uninstall-windows.ps1 dist/uninstall-windows.ps1
           python3 - <<'PY'
@@ -283,6 +291,7 @@ jobs:
               install-linux.sh \
               install-linux-bootstrap.sh \
               install-macos.sh \
+              uninstall-macos.sh \
               install-windows.ps1 \
               uninstall-windows.ps1 \
               skill-desktop.zip; do
@@ -418,8 +427,11 @@ jobs:
           set -euo pipefail
           tag='${{ github.event.inputs.tag || github.ref_name }}'
           installer="$RUNNER_TEMP/install-macos.sh"
+          uninstaller="$RUNNER_TEMP/uninstall-macos.sh"
           curl -fL "https://github.com/${{ github.repository }}/releases/download/$tag/install-macos.sh" -o "$installer"
+          curl -fL "https://github.com/${{ github.repository }}/releases/download/$tag/uninstall-macos.sh" -o "$uninstaller"
           zsh -n "$installer"
+          zsh -n "$uninstaller"
           HOME="$RUNNER_TEMP/home" \
           AGENTDOCK_INSTALL_DIR="$RUNNER_TEMP/bin" \
             zsh "$installer" --version "$tag"

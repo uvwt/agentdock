@@ -9,7 +9,7 @@ import (
 	"github.com/uvwt/agentdock/internal/taskstate"
 )
 
-const runtimeAPISource = "agentdock-runtime-api"
+const runtimeAPISource = "agentdock-api"
 
 func (r *Runtime) RuntimeStatus() Result {
 	tools := r.ToolNames()

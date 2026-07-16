@@ -7,8 +7,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -19,27 +17,25 @@ type healthResponse struct {
 	Version string `json:"version"`
 }
 
-func healthCandidates(targetPath string) []string {
+func healthCandidates(_ string) []string {
 	var candidates []string
 	if port, err := strconv.Atoi(strings.TrimSpace(os.Getenv("AGENTDOCK_PORT"))); err == nil && port > 0 && port <= 65535 {
-		candidates = append(candidates, fmt.Sprintf("http://127.0.0.1:%d/healthz", port))
-	}
-
-	// 当前 macOS 裸机部署把端口写在启动脚本中；读取它可以避免把本机端口硬编码进更新流程。
-	if home, err := os.UserHomeDir(); err == nil {
-		defaultTarget := filepath.Join(home, "agentdock", "agentdock")
-		startScript := filepath.Join(home, "agentdock-runtime", "start-agentdock.sh")
-		if filepath.Clean(targetPath) == defaultTarget {
-			if data, readErr := os.ReadFile(startScript); readErr == nil {
-				portPattern := regexp.MustCompile(`--port\s+([0-9]+)`)
-				if match := portPattern.FindStringSubmatch(string(data)); len(match) == 2 {
-					candidates = append(candidates, "http://127.0.0.1:"+match[1]+"/healthz")
-				}
-			}
-		}
+		candidates = append(candidates, localHealthURL(os.Getenv("AGENTDOCK_HOST"), port))
 	}
 	candidates = append(candidates, "http://127.0.0.1:8765/healthz")
 	return uniqueStrings(candidates)
+}
+
+func localHealthURL(host string, port int) string {
+	host = strings.TrimSpace(host)
+	switch host {
+	case "", "0.0.0.0", "::":
+		host = "127.0.0.1"
+	}
+	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
+		host = "[" + host + "]"
+	}
+	return fmt.Sprintf("http://%s:%d/healthz", host, port)
 }
 
 func findHealthyURL(ctx context.Context, candidates []string) string {

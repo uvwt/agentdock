@@ -13,26 +13,35 @@ import (
 
 func applyPlatformUpdate(ctx context.Context, request applyRequest) (applyResult, error) {
 	service := detectManagedService(ctx, request.CurrentPath)
-	candidates := uniqueStrings(append(platformHealthCandidates(ctx, request.CurrentPath), healthCandidates(request.CurrentPath)...))
+	platformCandidates := platformHealthCandidates(ctx, request.CurrentPath)
+	var candidates []string
+	if service != nil && len(platformCandidates) > 0 {
+		// 托管服务必须验证自身配置的地址，不能被同机其他 AgentDock 实例的默认端口误导。
+		candidates = uniqueStrings(platformCandidates)
+	} else {
+		candidates = uniqueStrings(append(platformCandidates, healthCandidates(request.CurrentPath)...))
+	}
 	if healthyURL := findHealthyURL(ctx, candidates); healthyURL != "" {
 		candidates = []string{healthyURL}
 	}
 
-	backupPath := request.CurrentPath + ".backup"
+	backupPath, err := platformBackupPath(request.CurrentPath)
+	if err != nil {
+		return applyResult{}, fmt.Errorf("准备更新备份路径失败，当前版本未被修改: %w", err)
+	}
 	newPath := request.CurrentPath + ".new"
 	if err := installReplacement(request.StagedPath, request.CurrentPath, newPath, backupPath); err != nil {
 		return applyResult{}, fmt.Errorf("安装新版本失败，当前版本未被修改: %w", err)
 	}
+	previousPID := managedServicePID(ctx, service)
 	rollback := func(cause error) error {
+		failedPID := managedServicePID(ctx, service)
 		if err := restoreBackup(request.CurrentPath, backupPath); err != nil {
 			return fmt.Errorf("%v；自动恢复旧版本失败: %w", cause, err)
 		}
 		if service != nil {
-			if err := service.Restart(ctx); err != nil {
-				return fmt.Errorf("%v；旧版本已恢复，但重新启动 %s 失败: %w", cause, service.Name(), err)
-			}
-			if err := waitForVersion(ctx, candidates, request.CurrentVersion, 30*time.Second); err != nil {
-				return fmt.Errorf("%v；旧版本已恢复并重启，但健康检查失败: %w", cause, err)
+			if err := restartManagedService(ctx, service, request.CurrentPath, failedPID, candidates, request.CurrentVersion); err != nil {
+				return fmt.Errorf("%v；旧版本已恢复，但重新启动 %s 或验证失败: %w", cause, service.Name(), err)
 			}
 		}
 		return fmt.Errorf("%v；已自动恢复旧版本", cause)
@@ -49,14 +58,45 @@ func applyPlatformUpdate(ctx context.Context, request applyRequest) (applyResult
 	}
 
 	fmt.Fprintf(request.Output, "正在重启 %s...\n", service.Name())
-	if err := service.Restart(ctx); err != nil {
-		return applyResult{}, rollback(fmt.Errorf("重启 %s 失败: %w", service.Name(), err))
-	}
-	if err := waitForVersion(ctx, candidates, request.TargetVersion, 30*time.Second); err != nil {
-		return applyResult{}, rollback(fmt.Errorf("新版本健康检查失败: %w", err))
+	if err := restartManagedService(ctx, service, request.CurrentPath, previousPID, candidates, request.TargetVersion); err != nil {
+		return applyResult{}, rollback(fmt.Errorf("重启 %s 或验证新进程失败: %w", service.Name(), err))
 	}
 	fmt.Fprintln(request.Output, "健康检查通过")
 	return applyResult{Restarted: true}, nil
+}
+
+func managedServicePID(ctx context.Context, service managedService) int {
+	verifier, ok := service.(managedServiceVerifier)
+	if !ok {
+		return 0
+	}
+	pid, err := verifier.CurrentPID(ctx)
+	if err != nil {
+		return 0
+	}
+	return pid
+}
+
+func restartManagedService(
+	ctx context.Context,
+	service managedService,
+	targetPath string,
+	previousPID int,
+	healthCandidates []string,
+	targetVersion string,
+) error {
+	if err := service.Restart(ctx); err != nil {
+		return err
+	}
+	if verifier, ok := service.(managedServiceVerifier); ok {
+		if err := verifier.WaitForRestart(ctx, targetPath, previousPID, 30*time.Second); err != nil {
+			return err
+		}
+	}
+	if err := waitForVersion(ctx, healthCandidates, targetVersion, 30*time.Second); err != nil {
+		return err
+	}
+	return nil
 }
 
 func installReplacement(stagedPath, targetPath, newPath, backupPath string) error {
