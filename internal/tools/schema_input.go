@@ -328,10 +328,12 @@ func InputSchema(name string) map[string]any {
 
 	schema := map[string]any{"type": "object", "properties": props, "additionalProperties": true}
 	if name == "view_image" {
+		// 严格的工具调用供应商会独立校验 oneOf 分支类型；每个分支都显式声明为对象，
+		// 避免把只有 required 的分支识别成可能接受非对象值。
 		schema["oneOf"] = []map[string]any{
-			{"required": []string{"artifact_id"}},
-			{"required": []string{"path"}},
-			{"required": []string{"url"}},
+			{"type": "object", "required": []string{"artifact_id"}},
+			{"type": "object", "required": []string{"path"}},
+			{"type": "object", "required": []string{"url"}},
 		}
 	}
 	switch name {

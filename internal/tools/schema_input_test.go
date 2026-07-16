@@ -80,3 +80,28 @@ func TestBrowserInputSchemaPublishesPageWaitAndStorageStateFields(t *testing.T) 
 		}
 	}
 }
+
+func TestViewImageInputSchemaDeclaresObjectTypeForEveryOneOfBranch(t *testing.T) {
+	schema := InputSchema("view_image")
+	if schema["type"] != "object" {
+		t.Fatalf("root type = %#v, want object", schema["type"])
+	}
+
+	branches, ok := schema["oneOf"].([]map[string]any)
+	if !ok {
+		t.Fatalf("oneOf type = %T", schema["oneOf"])
+	}
+	if len(branches) != 3 {
+		t.Fatalf("oneOf branches = %d, want 3", len(branches))
+	}
+
+	for index, branch := range branches {
+		if branch["type"] != "object" {
+			t.Fatalf("oneOf[%d] type = %#v, want object", index, branch["type"])
+		}
+		required, ok := branch["required"].([]string)
+		if !ok || len(required) != 1 || required[0] == "" {
+			t.Fatalf("oneOf[%d] required = %#v", index, branch["required"])
+		}
+	}
+}
