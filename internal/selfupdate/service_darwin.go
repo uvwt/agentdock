@@ -53,19 +53,20 @@ func macOSServiceAddress(path string) (string, int) {
 	if err != nil {
 		return "", 0
 	}
-	portMatch := regexp.MustCompile(`(?m)^[ \t]*(?:export[ \t]+)?AGENTDOCK_PORT[ \t]*=[ \t]*['"]?([0-9]+)['"]?[ \t]*(?:#.*)?$`).FindStringSubmatch(string(data))
-	if len(portMatch) != 2 {
+	portMatches := regexp.MustCompile(`(?m)^[ \t]*(?:export[ \t]+)?AGENTDOCK_PORT[ \t]*=[ \t]*['"]?([0-9]+)['"]?[ \t]*(?:#.*)?$`).FindAllStringSubmatch(string(data), -1)
+	if len(portMatches) == 0 {
 		return "", 0
 	}
+	portMatch := portMatches[len(portMatches)-1]
 	port, err := strconv.Atoi(portMatch[1])
 	if err != nil || port <= 0 || port > 65535 {
 		return "", 0
 	}
 
 	host := "127.0.0.1"
-	hostMatch := regexp.MustCompile(`(?m)^[ \t]*(?:export[ \t]+)?AGENTDOCK_HOST[ \t]*=[ \t]*['"]?([^'"#[:space:]]+)['"]?[ \t]*(?:#.*)?$`).FindStringSubmatch(string(data))
-	if len(hostMatch) == 2 {
-		host = strings.TrimSpace(hostMatch[1])
+	hostMatches := regexp.MustCompile(`(?m)^[ \t]*(?:export[ \t]+)?AGENTDOCK_HOST[ \t]*=[ \t]*['"]?([^'"#[:space:]]+)['"]?[ \t]*(?:#.*)?$`).FindAllStringSubmatch(string(data), -1)
+	if len(hostMatches) > 0 {
+		host = strings.TrimSpace(hostMatches[len(hostMatches)-1][1])
 	}
 	return host, port
 }
@@ -297,7 +298,7 @@ func signLocalReplacement(ctx context.Context, targetPath string) error {
 	if keychain != "" && !regularFile(keychain) {
 		return fmt.Errorf("代码签名钥匙串不存在或不是普通文件: %s", keychain)
 	}
-	commandEnv := append(os.Environ(), "HOME="+signHome)
+	commandEnv := environmentWithOverride(os.Environ(), "HOME", signHome)
 	if keychain != "" {
 		unlockCommand := exec.CommandContext(ctx, "security", "unlock-keychain", "-p", keychainPassword, keychain)
 		unlockCommand.Env = commandEnv
@@ -369,4 +370,16 @@ func containsCodeSignIdentifier(output, identifier string) bool {
 		}
 	}
 	return false
+}
+
+func environmentWithOverride(environment []string, key, value string) []string {
+	prefix := key + "="
+	result := make([]string, 0, len(environment)+1)
+	for _, entry := range environment {
+		if strings.HasPrefix(entry, prefix) {
+			continue
+		}
+		result = append(result, entry)
+	}
+	return append(result, prefix+value)
 }

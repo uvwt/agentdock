@@ -11,6 +11,11 @@ WORK_DIR="$HOME/AgentDock"
 REMOVE_BINARY=false
 PURGE_DATA=false
 
+die() {
+  print -u2 -- "ERROR: $*"
+  exit 1
+}
+
 usage() {
   cat <<'USAGE'
 AgentDock macOS 卸载脚本。
@@ -53,7 +58,12 @@ done
 [[ "$(uname -s)" == "Darwin" ]] || { print -u2 -- "ERROR: 此脚本只支持 macOS"; exit 1; }
 
 domain="gui/$(id -u)"
-launchctl bootout "$domain/$LABEL" >/dev/null 2>&1 || true
+if launchctl print "$domain/$LABEL" >/dev/null 2>&1; then
+  bootout_error="$(launchctl bootout "$domain/$LABEL" 2>&1)" || die "停止 LaunchAgent 失败：${bootout_error:-unknown error}"
+  if launchctl print "$domain/$LABEL" >/dev/null 2>&1; then
+    die "LaunchAgent 仍在运行，未删除任何服务文件：$LABEL"
+  fi
+fi
 rm -f "$PLIST_PATH"
 rm -rf "$APP_SUPPORT_DIR" "$LOG_DIR"
 print -- "removed service: $LABEL"

@@ -105,3 +105,24 @@ func TestContainsCodeSignIdentifierRequiresExactLine(t *testing.T) {
 		t.Fatal("partial identifier must not match")
 	}
 }
+
+func TestEnvironmentWithOverrideRemovesExistingValue(t *testing.T) {
+	environment := []string{"PATH=/usr/bin", "HOME=/old/home", "HOME=/duplicate/home"}
+	got := environmentWithOverride(environment, "HOME", "/new/home")
+	want := []string{"PATH=/usr/bin", "HOME=/new/home"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("environment = %v, want %v", got, want)
+	}
+}
+
+func TestMacOSServiceAddressUsesLastExportedValues(t *testing.T) {
+	serviceEnv := filepath.Join(t.TempDir(), "agentdock.env")
+	content := []byte("AGENTDOCK_HOST=127.0.0.1\nAGENTDOCK_PORT=8765\nexport AGENTDOCK_HOST=::1\nexport AGENTDOCK_PORT=18766\n")
+	if err := os.WriteFile(serviceEnv, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	host, port := macOSServiceAddress(serviceEnv)
+	if host != "::1" || port != 18766 {
+		t.Fatalf("service address = %s:%d, want ::1:18766", host, port)
+	}
+}

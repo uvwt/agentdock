@@ -1,6 +1,9 @@
 #!/bin/zsh
 set -euo pipefail
 
+EXECUTION_HOME="$HOME"
+EXECUTION_PATH="$PATH"
+
 [[ "$(uname -s)" == "Darwin" ]] || { print -u2 -- "ERROR: 此脚本只支持 macOS"; exit 1; }
 
 SCRIPT_DIR="${0:A:h}"
@@ -135,6 +138,9 @@ done
 [[ -x "$TARGET" && ! -L "$TARGET" ]] || die "缺少当前生产二进制：$TARGET"
 plutil -lint "$PLIST_PATH" >/dev/null
 
+source_status="$(git -C "$SRC_DIR" status --porcelain --untracked-files=normal)"
+[[ -z "$source_status" ]] || die "源码工作区不干净，拒绝部署无法追溯的构建：\n$source_status"
+
 grep -Fq 'exec "$HOME/.local/bin/agentdock"' "$START_SCRIPT" || die "启动脚本未指向标准二进制：$START_SCRIPT"
 domain="gui/$(id -u)"
 old_pid="$(launchd_pid "$domain" || true)"
@@ -143,6 +149,8 @@ old_pid="$(launchd_pid "$domain" || true)"
 set -a
 source "$AGENTDOCK_ENV"
 set +a
+export HOME="$EXECUTION_HOME"
+export PATH="$EXECUTION_PATH"
 : "${AGENTDOCK_HOST:=127.0.0.1}"
 : "${AGENTDOCK_PORT:=8765}"
 : "${AGENTDOCK_LOG_LEVEL:=info}"

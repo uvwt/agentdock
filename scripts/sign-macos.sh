@@ -37,7 +37,7 @@ command -v security >/dev/null 2>&1 || die "缺少命令：security"
 
 export HOME="$SIGN_HOME"
 if [[ -n "$KEYCHAIN" ]]; then
-  [[ -f "$KEYCHAIN" ]] || die "代码签名钥匙串不存在：$KEYCHAIN"
+  [[ -f "$KEYCHAIN" && ! -L "$KEYCHAIN" ]] || die "代码签名钥匙串不存在或不是普通文件：$KEYCHAIN"
   security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null 2>&1 || die "无法解锁代码签名钥匙串：$KEYCHAIN"
   identity_output="$(security find-identity -v -p codesigning "$KEYCHAIN")" || die "无法读取指定钥匙串中的签名身份"
   [[ "$identity_output" == *"$IDENTITY"* ]] || die "指定钥匙串中不存在签名身份：$IDENTITY"

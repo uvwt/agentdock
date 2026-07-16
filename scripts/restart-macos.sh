@@ -1,7 +1,9 @@
 #!/bin/zsh
 set -euo pipefail
 
-LABEL="${AGENTDOCK_LAUNCHD_LABEL:-com.uvwt.agentdock}"
+EXECUTION_HOME="$HOME"
+EXECUTION_PATH="$PATH"
+LABEL="com.uvwt.agentdock"
 AGENTDOCK_ENV="$HOME/Library/Application Support/AgentDock/agentdock.env"
 TARGET="$HOME/.local/bin/agentdock"
 
@@ -12,6 +14,8 @@ TARGET="$HOME/.local/bin/agentdock"
 set -a
 source "$AGENTDOCK_ENV"
 set +a
+export HOME="$EXECUTION_HOME"
+export PATH="$EXECUTION_PATH"
 : "${AGENTDOCK_HOST:=127.0.0.1}"
 : "${AGENTDOCK_PORT:=8765}"
 [[ "$AGENTDOCK_PORT" == <1-65535> ]] || { print -u2 -- "ERROR: 端口无效：$AGENTDOCK_PORT"; exit 1; }
@@ -33,6 +37,7 @@ case "$AGENTDOCK_HOST" in
 esac
 HEALTH_URL="http://$HEALTH_HOST:$AGENTDOCK_PORT/healthz"
 EXPECTED_VERSION="$("$TARGET" --version | sed -n '1s/^AgentDock[[:space:]][[:space:]]*//p')"
+[[ -n "$EXPECTED_VERSION" ]] || { print -u2 -- "ERROR: 无法读取目标二进制版本：$TARGET"; exit 1; }
 OLD_PID="$(launchd_pid || true)"
 [[ -n "$OLD_PID" && "$OLD_PID" != "0" ]] || { print -u2 -- "ERROR: LaunchAgent 未运行：$LABEL"; exit 1; }
 
