@@ -1,7 +1,7 @@
 ---
 name: openlist
 description: OpenList v4 HTTP API integration for AgentDock: authentication, file browsing/search, safe text uploads, file operations, storage/driver inspection, and restricted generic API calls.
-version: 0.2.4
+version: 0.2.5
 ---
 
 # OpenList Skill
@@ -22,7 +22,18 @@ version: 0.2.4
 
 默认连接 `http://127.0.0.1:5244`。可在调用中传 `base_url`，或设置 `OPENLIST_URL`。
 
-登录成功后默认把 token 保存到 `~/.agentdock/skill-data/openlist/session.json`，目录权限为 `0700`、文件权限为 `0600`。也可在单次调用中传 `token`，或设置 `OPENLIST_TOKEN`。
+登录成功后默认把 token 保存到 `$XDG_STATE_HOME/openlist-skill/session.json`；未设置 `XDG_STATE_HOME` 时使用 `~/.local/state/openlist-skill/session.json`。目录权限为 `0700`、文件权限为 `0600`。也可通过 `OPENLIST_SESSION_FILE` 指定会话文件，在单次调用中传 `token`，或设置 `OPENLIST_TOKEN`。
+
+AgentDock 安装会通过 `OPENLIST_SESSION_FILE` 将私有会话保存在 `~/.agentdock/skill-data/openlist/session.json`，因此升级不会迁移或丢失当前登录态。
+
+## 环境变量
+
+| 变量 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| `OPENLIST_URL` | config | 否 | OpenList 服务地址，默认 `http://127.0.0.1:5244` |
+| `OPENLIST_TOKEN` | secret | 否 | 直接提供访问令牌；未配置时尝试读取本地会话 |
+| `OPENLIST_SESSION_FILE` | config | 否 | 自定义会话文件路径 |
+| `XDG_STATE_HOME` | config | 否 | 未配置会话文件时的可移植状态目录 |
 
 ## 上传
 

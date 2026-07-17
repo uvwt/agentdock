@@ -1,7 +1,7 @@
 ---
 name: skill-authoring
 description: 创建、设计、修改、升级、重构和验证 AgentDock Skill 时使用；负责可移植核心、文档、引用、辅助脚本、测试、版本和本地安装验证。
-version: 1.1.2
+version: 1.1.3
 ---
 
 # Skill Authoring
@@ -143,7 +143,7 @@ printf '%s' '{"skill_action":"status"}' | python3 run.py
 
 - `~/.agentdock/skill-store/installed/...`；
 - 固定安装版本号；
-- `AGENTDOCK_HOME` 或 `AGENTDOCK_SKILL_DIR` 用于定位包内脚本；
+- `AGENTDOCK_DIR`、`AGENTDOCK_HOME` 或 `AGENTDOCK_SKILL_DIR` 用于定位包内脚本或私有数据；
 - `skill_env`、`exec_command` 或 `skill://`；
 - 固定用户绝对路径；
 - 主动读取或 `source` AgentDock 私有环境文件。

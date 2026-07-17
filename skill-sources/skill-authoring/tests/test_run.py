@@ -39,6 +39,18 @@ class SkillAuthoringLintTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertGreater(result["lint_rule_count"], 0)
 
+    def test_linter_does_not_report_its_own_rule_definitions(self):
+        source = pathlib.Path(__file__).resolve().parents[1]
+
+        proc, result = self.run_skill({"skill_action": "lint", "source": str(source)})
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertTrue(result["portable"])
+        self.assertNotIn(
+            "AGENTDOCK_PRIVATE_DIR_DEPENDENCY",
+            {issue["code"] for issue in result["issues"] if issue["file"] == "run.py"},
+        )
+
     def test_clean_portable_skill_passes(self):
         temp, root = self.make_skill("""---
 name: demo-skill
@@ -139,6 +151,22 @@ python3 "$SKILL_DIR/run.py"
         self.assertFalse(result["portable"])
         self.assertIn("HARDCODED_AGENTDOCK_INSTALL_PATH", {issue["code"] for issue in result["issues"]})
 
+    def test_agentdock_private_directory_dependency_fails(self):
+        temp, root = self.make_skill("""---
+name: demo-skill
+description: Demo.
+version: 1.0.0
+---
+
+在 Skill 包根目录执行 `python3 run.py`。
+""", "import os\nstate_dir = os.environ.get('AGENTDOCK_DIR')\n")
+        self.addCleanup(temp.cleanup)
+
+        _, result = self.run_skill({"skill_action": "lint", "source": str(root)})
+
+        self.assertFalse(result["portable"])
+        self.assertIn("AGENTDOCK_PRIVATE_DIR_DEPENDENCY", {issue["code"] for issue in result["issues"]})
+
     def test_explicit_prohibition_list_is_not_reported_as_dependency(self):
         temp, root = self.make_skill("""---
 name: demo-skill
@@ -151,6 +179,7 @@ version: 1.0.0
 禁止把以下内容作为运行依赖：
 
 - `AGENTDOCK_SKILL_DIR`
+- `AGENTDOCK_DIR`
 - `~/.agentdock/skill-store/installed/demo-skill/1.0.0`
 """)
         self.addCleanup(temp.cleanup)
