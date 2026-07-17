@@ -2,6 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+EXECUTION_HOME="$HOME"
+EXECUTION_PATH="$PATH"
 
 usage() {
   cat <<'USAGE'
@@ -34,6 +36,9 @@ if [[ -f "$SERVICE_ENV" && ! -L "$SERVICE_ENV" ]]; then
   # shellcheck disable=SC1090
   source "$SERVICE_ENV"
   set +a
+  # 服务配置只提供 AgentDock 参数，不得改变备份进程的用户目录和命令搜索路径。
+  export HOME="$EXECUTION_HOME"
+  export PATH="$EXECUTION_PATH"
 fi
 
 if [[ -z "${AGENTDOCK_MCP_ENDPOINT:-}" ]]; then
@@ -66,9 +71,22 @@ repo = sys.argv[1]
 try:
     subprocess.run(['git', '-C', repo, 'rev-parse', '--is-inside-work-tree'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8, check=True)
     subprocess.run(['git', '-C', repo, 'status', '--short', '--branch', '-uno'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8, check=True)
+    # macOS launchd 可能允许只读访问外置 worktree，却在 Git 进入目录并准备 index 时
+    # 因 TCC 无法解析 cwd。提前执行无副作用的 add --dry-run，失败就改用临时 clone。
+    subprocess.run(['git', '-C', repo, 'add', '--dry-run', '--all'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8, check=True)
 except Exception:
     raise SystemExit(1)
 PY
+}
+
+worktree_is_usable() {
+  local repo="$1"
+  # macOS LaunchAgent 对外置卷可能出现“绝对路径读写正常，但 Git 进入目录后
+  # getcwd 被 TCC 拒绝”的状态。定时任务对此不做冒险，统一使用用户目录临时 clone。
+  if [[ "$(uname -s)" == "Darwin" && -n "${XPC_SERVICE_NAME:-}" && "$repo" == /Volumes/* ]]; then
+    return 1
+  fi
+  quick_git_ok "$repo"
 }
 
 guard_no_zero_markdown() {
@@ -207,7 +225,7 @@ backup_state_worktree() {
 }
 
 backup_state() {
-  if quick_git_ok "$STATE_REPO"; then
+  if worktree_is_usable "$STATE_REPO"; then
     backup_state_worktree "$STATE_REPO"
   else
     echo "state backup worktree unavailable, using temporary clone: $STATE_REPO" >&2
@@ -243,7 +261,7 @@ backup_recall_export_clone() {
 }
 
 backup_recall() {
-  if quick_git_ok "$RECALL_REPO"; then
+  if worktree_is_usable "$RECALL_REPO"; then
     backup_recall_worktree "$RECALL_REPO"
   else
     echo "recall backup worktree unavailable, using NexusDock Recall API + temporary clone: $RECALL_REPO" >&2
