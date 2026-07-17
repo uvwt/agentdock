@@ -82,8 +82,8 @@ func InputSchema(name string) map[string]any {
 		props["skill_env"] = stringProp("Optional Skill name whose isolated environment is loaded without changing workdir. Kept for environment-only compatibility.")
 		props["env"] = map[string]any{"type": "object", "description": "Explicit command environment values. These override the selected Skill environment.", "additionalProperties": map[string]any{"type": "string"}}
 		props["timeout_ms"] = boundedIntProp("Timeout in milliseconds. Must be positive and is capped at 86400000.", 1, 86400000)
-		props["yield_time_ms"] = boundedIntProp("Initial wait before returning a running session. Capped at 30000 milliseconds.", 0, 30000)
-		props["wait_until_exit"] = boolProp("Wait until the command exits instead of returning a running session after yield_time_ms.")
+		props["execution_mode"] = map[string]any{"type": "string", "description": "Execution mode. Defaults to auto: wait up to yield_time_ms, then return a running session. sync waits for exit; async returns a session immediately.", "enum": []string{"auto", "sync", "async"}}
+		props["yield_time_ms"] = boundedIntProp("Foreground wait threshold for execution_mode=auto. Defaults to 5000 and is capped at 30000 milliseconds.", 0, 30000)
 		props["max_output_bytes"] = boundedIntProp("Maximum output bytes. Defaults to 65536 and is capped at 4194304.", 1, maxCommandOutputBytes)
 		props["stdin"] = stringProp("Initial stdin.")
 		props["tty"] = boolProp("Keep stdin open.")
@@ -337,8 +337,8 @@ func InputSchema(name string) map[string]any {
 		}
 	}
 	switch name {
-	case "recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain", "private_note_manage", "mcp_manage", "mcp_tool_search", "mcp_tool_inspect", "mcp_tool_call":
-		// Recall public schemas are intentionally closed: only model-facing fields are accepted.
+	case "exec_command", "recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain", "private_note_manage", "mcp_manage", "mcp_tool_search", "mcp_tool_inspect", "mcp_tool_call":
+		// 这些工具的参数契约需要严格收敛，避免删除或拼错的字段被静默忽略。
 		schema["additionalProperties"] = false
 	}
 	if len(required) > 0 {

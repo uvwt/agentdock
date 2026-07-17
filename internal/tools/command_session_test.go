@@ -42,16 +42,89 @@ func TestExecCommandRejectsNonPositiveTimeout(t *testing.T) {
 	}
 }
 
+func TestExecCommandRejectsInvalidExecutionMode(t *testing.T) {
+	runtime, _ := newCodeToolsRuntime(t)
+	_, err := runtime.execCommand(context.Background(), map[string]any{
+		"cmd":            "must-not-start",
+		"execution_mode": "background",
+	})
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) || toolErr.Code != "INVALID_EXECUTION_MODE" {
+		t.Fatalf("execution_mode error = %#v, want INVALID_EXECUTION_MODE", err)
+	}
+	if runtime.sessions.ReservationCount() != 0 || len(runtime.sessions.List()) != 0 {
+		t.Fatal("invalid execution mode started or reserved a command session")
+	}
+}
+
+func TestExecCommandDefaultsToAutoAndWaitsForShortCommand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test command uses POSIX shell syntax")
+	}
+	runtime, _ := newCodeToolsRuntime(t)
+	result, err := runtime.execCommand(context.Background(), map[string]any{
+		"cmd":        "sleep 0.02; printf 'completed'",
+		"timeout_ms": 2000,
+	})
+	if err != nil {
+		t.Fatalf("execCommand() error = %v", err)
+	}
+	if result["status"] != "exited" || result["stdout"] != "completed" {
+		t.Fatalf("default auto result = %#v", result)
+	}
+}
+
+func TestExecCommandSyncWaitsPastForegroundThreshold(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test command uses POSIX shell syntax")
+	}
+	runtime, _ := newCodeToolsRuntime(t)
+	result, err := runtime.execCommand(context.Background(), map[string]any{
+		"cmd":            "sleep 0.02; printf 'completed'",
+		"execution_mode": "sync",
+		"yield_time_ms":  1,
+		"timeout_ms":     2000,
+	})
+	if err != nil {
+		t.Fatalf("execCommand() error = %v", err)
+	}
+	if result["status"] != "exited" || result["stdout"] != "completed" {
+		t.Fatalf("sync result = %#v", result)
+	}
+}
+
+func TestExecCommandAsyncReturnsSessionImmediately(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test command uses POSIX sleep")
+	}
+	runtime, _ := newCodeToolsRuntime(t)
+	result, err := runtime.execCommand(context.Background(), map[string]any{
+		"cmd":            "sleep 10",
+		"execution_mode": "async",
+		"timeout_ms":     20000,
+	})
+	if err != nil {
+		t.Fatalf("execCommand() error = %v", err)
+	}
+	sessionID, _ := result["session_id"].(string)
+	if result["status"] != "running" || sessionID == "" || result["session_reason"] != "explicit_async" {
+		t.Fatalf("async result = %#v", result)
+	}
+	if _, err := runtime.killSession(map[string]any{"session_id": sessionID}); err != nil {
+		t.Fatalf("killSession() error = %v", err)
+	}
+}
+
 func TestExecCommandReportsCommandStatusWithoutGenericOK(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test command uses POSIX shell syntax")
 	}
 	runtime, _ := newCodeToolsRuntime(t)
 	result, err := runtime.execCommand(context.Background(), map[string]any{
-		"cmd":             "printf 'before-fail'; printf 'failed' >&2; exit 7",
-		"yield_time_ms":   5000,
-		"wait_until_exit": true,
-		"timeout_ms":      5000,
+		"cmd":            "printf 'before-fail'; printf 'failed' >&2; exit 7",
+		"yield_time_ms":  5000,
+		"execution_mode": "sync",
+		"timeout_ms":     5000,
 	})
 	if err != nil {
 		t.Fatalf("execCommand() tool error = %v", err)
@@ -76,10 +149,10 @@ func TestExecCommandTimeoutReportsCommandError(t *testing.T) {
 	}
 	runtime, _ := newCodeToolsRuntime(t)
 	result, err := runtime.execCommand(context.Background(), map[string]any{
-		"cmd":             "sleep 1",
-		"yield_time_ms":   5000,
-		"wait_until_exit": true,
-		"timeout_ms":      30,
+		"cmd":            "sleep 1",
+		"yield_time_ms":  5000,
+		"execution_mode": "sync",
+		"timeout_ms":     30,
 	})
 	if err != nil {
 		t.Fatalf("execCommand() tool error = %v", err)
@@ -107,6 +180,9 @@ func TestListSessionsKeepsCompletedResultAvailable(t *testing.T) {
 	}
 	if started["status"] != "running" {
 		t.Fatalf("initial status = %#v, want running", started["status"])
+	}
+	if started["session_reason"] != "foreground_threshold_exceeded" || started["observe_after_ms"] != 1000 {
+		t.Fatalf("auto session metadata = %#v", started)
 	}
 	sessionID, _ := started["session_id"].(string)
 	if sessionID == "" {
@@ -439,10 +515,10 @@ func TestRuntimeCloseCancelsCommandBeforeItIsStored(t *testing.T) {
 	callDone := make(chan error, 1)
 	go func() {
 		_, err := rt.execCommand(context.Background(), map[string]any{
-			"cmd":             "sleep 30",
-			"yield_time_ms":   30000,
-			"timeout_ms":      60000,
-			"wait_until_exit": true,
+			"cmd":            "sleep 30",
+			"yield_time_ms":  30000,
+			"timeout_ms":     60000,
+			"execution_mode": "sync",
 		})
 		callDone <- err
 	}()

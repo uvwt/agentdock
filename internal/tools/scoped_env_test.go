@@ -48,9 +48,9 @@ func TestSkillEnvironmentActionsDoNotReturnValuesAndExecCommandUsesPriority(t *t
 		loadedCommand = `if ($env:DEMO_SECRET -ne "skill-secret-value") { exit 1 }; [Console]::Write("loaded")`
 	}
 	loaded, err := runtime.Call(context.Background(), "exec_command", map[string]any{
-		"cmd":             loadedCommand,
-		"skill_env":       "demo-skill",
-		"wait_until_exit": true,
+		"cmd":            loadedCommand,
+		"skill_env":      "demo-skill",
+		"execution_mode": "sync",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -64,10 +64,10 @@ func TestSkillEnvironmentActionsDoNotReturnValuesAndExecCommandUsesPriority(t *t
 		overrideCommand = `[Console]::Write($env:DEMO_SECRET)`
 	}
 	overridden, err := runtime.Call(context.Background(), "exec_command", map[string]any{
-		"cmd":             overrideCommand,
-		"skill_env":       "demo-skill",
-		"env":             map[string]any{"DEMO_SECRET": "request-override"},
-		"wait_until_exit": true,
+		"cmd":            overrideCommand,
+		"skill_env":      "demo-skill",
+		"env":            map[string]any{"DEMO_SECRET": "request-override"},
+		"execution_mode": "sync",
 	})
 	if err != nil {
 		t.Fatal(err)

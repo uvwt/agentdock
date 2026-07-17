@@ -585,10 +585,10 @@ func TestExecCommandDoesNotFilterCommandContent(t *testing.T) {
 		command = `Write-Output "shell=expansion network=https://example.test"`
 	}
 	result, err := rt.execCommand(context.Background(), map[string]any{
-		"cmd":             command,
-		"yield_time_ms":   15000,
-		"timeout_ms":      15000,
-		"wait_until_exit": true,
+		"cmd":            command,
+		"yield_time_ms":  15000,
+		"timeout_ms":     15000,
+		"execution_mode": "sync",
 	})
 	if err != nil {
 		t.Fatalf("exec_command should not reject command content: %v", err)
@@ -605,11 +605,11 @@ func TestExecCommandForwardsExplicitEnv(t *testing.T) {
 		command = `[Console]::Out.Write($env:AGENTDOCK_TEST_EXEC_ENV)`
 	}
 	result, err := rt.execCommand(context.Background(), map[string]any{
-		"cmd":             command,
-		"env":             map[string]any{"AGENTDOCK_TEST_EXEC_ENV": "forwarded"},
-		"yield_time_ms":   15000,
-		"timeout_ms":      15000,
-		"wait_until_exit": true,
+		"cmd":            command,
+		"env":            map[string]any{"AGENTDOCK_TEST_EXEC_ENV": "forwarded"},
+		"yield_time_ms":  15000,
+		"timeout_ms":     15000,
+		"execution_mode": "sync",
 	})
 	if err != nil {
 		t.Fatalf("exec_command should accept explicit env: %v", err)
@@ -637,11 +637,11 @@ func TestExecCommandForwardsStdinAndClosesPipe(t *testing.T) {
 	}
 	rt, _ := newCodeToolsRuntime(t)
 	result, err := rt.execCommand(context.Background(), map[string]any{
-		"cmd":             "cat",
-		"stdin":           "input-line\n",
-		"yield_time_ms":   5000,
-		"timeout_ms":      5000,
-		"wait_until_exit": true,
+		"cmd":            "cat",
+		"stdin":          "input-line\n",
+		"yield_time_ms":  5000,
+		"timeout_ms":     5000,
+		"execution_mode": "sync",
 	})
 	if err != nil {
 		t.Fatalf("execCommand() error = %v", err)
@@ -658,11 +658,11 @@ func TestExecCommandReportsClosedStdin(t *testing.T) {
 	rt, _ := newCodeToolsRuntime(t)
 	largeInput := strings.Repeat("x", 8<<20)
 	_, err := rt.execCommand(context.Background(), map[string]any{
-		"cmd":             "exec 0<&-; sleep 1",
-		"stdin":           largeInput,
-		"yield_time_ms":   5000,
-		"timeout_ms":      5000,
-		"wait_until_exit": true,
+		"cmd":            "exec 0<&-; sleep 1",
+		"stdin":          largeInput,
+		"yield_time_ms":  5000,
+		"timeout_ms":     5000,
+		"execution_mode": "sync",
 	})
 	if err == nil || !strings.Contains(err.Error(), "write command stdin") {
 		t.Fatalf("execCommand() error = %v, want stdin write failure", err)
