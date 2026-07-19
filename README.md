@@ -2,9 +2,11 @@
 
 # AgentDock
 
-**为 AI 装上触达每一台设备的双手。**
+**让 AI 的双手，真正触达你的每一台设备。**
 
-面向 AI Agent 的独立工具运行层，为本地电脑、远程服务器与容器环境提供统一、安全、可控的文件、命令、Git、Skill、MCP、浏览器自动化和任务执行能力。
+打开网页版 ChatGPT，即可管理多台电脑与服务器：在真实设备上写代码、改配置、跑命令与部署，执行发生在你的机器上，不消耗Codex额度。
+
+AgentDock是面向 AI Agent 的独立工具运行层，为本地电脑、远程服务器与容器环境提供统一、安全、可控的文件、命令、Git、Skill、MCP、浏览器自动化和任务执行能力。配置多台 AgentDock，还能跨设备协同，把原本要在多机之间来回切换的工作，收敛到一次对话里完成。
 
 [快速开始](https://uvwt.github.io/agentdock-docs/docs/getting-started/install) · [在线文档](https://uvwt.github.io/agentdock-docs/) · [版本发布](https://github.com/uvwt/agentdock/releases) · [问题反馈](https://github.com/uvwt/agentdock/issues)
 
@@ -19,7 +21,7 @@
 <p align="center">
   <img
     src="./docs/assets/agentdock-multi-device.png"
-    alt="AgentDock 通过一个 AI Agent 统一查看多台设备状态"
+    alt="AgentDock：通过一个 AI 对话统一操控多台设备"
     width="100%"
   />
 </p>
@@ -28,45 +30,61 @@
 
 AgentDock 是一个面向 AI Agent 的独立工具运行层。
 
-它将设备上的文件系统、命令执行、Git、Skill、动态 MCP、浏览器自动化和可恢复任务封装为统一的 MCP 能力，让不同 AI 客户端能够以一致的方式操作本地电脑、远程服务器和容器环境。
+它将设备上的文件系统、命令执行、Git、Skill、动态 MCP、浏览器自动化和可恢复任务封装为统一的 MCP 能力，让网页版 ChatGPT、Claude、Codex 等支持 MCP 的客户端，以一致的方式操作本地电脑、远程服务器和容器环境。
+
+除了类似 Codex 的项目开发与设备操作能力之外，你还可以在多台机器上分别部署 AgentDock，在同一个 AI 对话中同时接入，实现跨设备控制。
 
 AgentDock 不提供聊天界面，也不负责模型推理。它专注于解决一件事：
 
 > 让 AI Agent 在明确的权限边界内操作真实环境，并返回结构化、可追踪、可验证的执行结果。
 
 ```text
-AI Client / Agent
-        │
-        │ MCP
-        ▼
-┌───────────────────────────────┐
-│           AgentDock           │
-│                               │
-│ Files · Commands · Git        │
-│ Skills · Dynamic MCP          │
-│ Browser · Tasks · Recall      │
-└───────────────┬───────────────┘
-                │
-                ▼
-   Local machine / VPS / Docker
+              ChatGPT / Claude / Codex
+                        │
+                        │ MCP（可接入多台）
+          ┌─────────────┼─────────────┐
+          ▼             ▼             ▼
+   ┌───────────┐ ┌───────────┐ ┌───────────┐
+   │ AgentDock │ │ AgentDock │ │ AgentDock │
+   │  本机电脑  │ │  内网机器  │ │  云服务器  │
+   └─────┬─────┘ └─────┬─────┘ └─────┬─────┘
+         │             │             │
+         ▼             ▼             ▼
+   文件·命令·Git  穿透客户端等   转发·反代·部署
 ```
 
 ## 你可以用 AgentDock 做什么
 
-- 让 AI 读取和修改本地项目，运行测试并操作 Git
-- 让 AI 管理 VPS、Docker 服务和部署配置
+- 用网页版 ChatGPT 直接管理多台电脑与服务器，无需分别 SSH 登录来回操作
+- 在真实设备上写代码、改项目、跑测试并操作 Git，执行发生在本机或服务器，不依赖专用编程 Agent 额度
+- 让 AI 管理 VPS、Docker 服务、反向代理和部署配置
 - 让 AI 检查日志、进程、端口和真实运行状态
 - 让 AI 操作登录后的网页与 macOS 桌面应用
+- 配置多台 AgentDock，在一次对话中完成跨设备协同任务
 - 通过 Skill 和动态 MCP 扩展外部能力
 - 保存长时间任务的执行状态，并在中断后继续
 - 用同一套工具模型连接 macOS、Linux、Windows 与容器环境
+
+## 典型场景：跨设备完成内网穿透
+
+例如你有一台位于内网中的电脑。要让外部访问它，通常需要：
+
+1. **本地电脑**：启动并检查穿透客户端
+2. **服务器**：配置转发、端口、域名和反向代理
+
+过去需要分别登录两台设备来回操作。现在只需打开一个 ChatGPT 网页，把两台机器上的 AgentDock 都接入对话，即可让 AI 同时操作电脑和服务器，完成整套流程。
+
+这类能力可以继续扩展到更多实际场景：多机部署、本地开发联调公网服务、跨环境排障、批量配置与状态巡检等。
 
 ## 为什么使用 AgentDock
 
 | 能力 | 说明 |
 | --- | --- |
+| 网页即可操控设备 | 通过 MCP 接入 ChatGPT 等客户端，在对话中操作真实电脑与服务器 |
+| 多机协同 | 配置多台 AgentDock，在同一对话中跨设备执行任务 |
 | 统一工具入口 | 通过一个 MCP 服务提供文件、命令、Git、Skill、任务和浏览器等能力 |
 | 本地与远程一致 | 同一套工具模型可运行在 macOS、Linux、Windows、VPS 和 Docker 环境 |
+| 执行不占编程额度 | 写代码、跑命令、改配置发生在你的设备上，不依赖专用编程 Agent 额度 |
 | 明确执行边界 | 对路径、权限、超时、输出长度和敏感信息进行约束 |
 | 结构化执行结果 | 区分工具调用状态、命令退出状态、标准输出和错误信息 |
 | 可扩展运行时 | 支持独立 Skill 和动态 MCP Server，无需将所有能力写入核心程序 |
@@ -355,6 +373,7 @@ AgentDock 是工具运行层，不是完整的 AI 应用平台。
 - [GitHub Releases](https://github.com/uvwt/agentdock/releases)
 - [GitHub Container Registry](https://github.com/uvwt/agentdock/pkgs/container/agentdock)
 - [Docker Hub](https://hub.docker.com/r/agentdockio/agentdock)
+- [Linux Do](https://linux.do/)
 
 ## License
 
