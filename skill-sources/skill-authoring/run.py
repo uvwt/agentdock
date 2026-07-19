@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-VERSION = "1.1.2"
+VERSION = "1.1.3"
 MAX_FILES = 500
 MAX_TEXT_BYTES = 1 << 20
 HOST_METADATA_FILES = {".agentdock-install.json"}
@@ -47,6 +47,13 @@ RULES = (
         re.compile(r"\bAGENTDOCK_SKILL_DIR\b"),
         "Skill 核心运行流程不应依赖 AgentDock 专属目录变量。",
         "让运行宿主切换到 Skill 包根目录，包内只使用相对路径。",
+    ),
+    Rule(
+        "AGENTDOCK_PRIVATE_DIR_DEPENDENCY",
+        "error",
+        re.compile(r"\bAGENTDOCK_(?:DIR|HOME)\b"),
+        "Skill 核心运行流程不应依赖 AgentDock 私有目录变量。",
+        "改用业务专属环境变量、XDG 目录或包内相对路径。",
     ),
     Rule(
         "AGENTDOCK_ENV_FILE_ACCESS",
@@ -168,7 +175,13 @@ def is_advisory_match(relative: str, content: str, start: int, end: int) -> bool
     if relative.startswith("tests/"):
         return True
 
-    # lint 实现自身会包含规则正则；这里只跳过规则定义，不跳过普通脚本中的真实使用。
+    # lint 实现自身会包含规则正则；这里只跳过完整 Rule(...) 定义，不跳过普通脚本中的真实使用。
+    rule_start = content.rfind("Rule(", 0, start)
+    if rule_start >= 0:
+        rule_end = content.find("\n    ),", rule_start)
+        if rule_end >= start:
+            return True
+
     line_start = content.rfind("\n", 0, start) + 1
     line_end = content.find("\n", end)
     if line_end < 0:

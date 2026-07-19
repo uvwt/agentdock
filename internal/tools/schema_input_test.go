@@ -43,6 +43,38 @@ func TestInputSchemaPublishesRuntimeBounds(t *testing.T) {
 	}
 }
 
+func TestExecCommandInputSchemaPublishesExecutionModes(t *testing.T) {
+	schema := InputSchema("exec_command")
+	properties := schema["properties"].(map[string]any)
+	mode, ok := properties["execution_mode"].(map[string]any)
+	if !ok {
+		t.Fatalf("execution_mode schema = %#v", properties["execution_mode"])
+	}
+	values, ok := mode["enum"].([]string)
+	if !ok || len(values) != 3 || values[0] != "auto" || values[1] != "sync" || values[2] != "async" {
+		t.Fatalf("execution_mode enum = %#v", mode["enum"])
+	}
+	if _, exists := properties["wait_until_exit"]; exists {
+		t.Fatal("exec_command schema still exposes wait_until_exit")
+	}
+	if schema["additionalProperties"] != false {
+		t.Fatalf("exec_command additionalProperties = %#v, want false", schema["additionalProperties"])
+	}
+}
+
+func TestExecCommandOutputSchemaPublishesSessionGuidance(t *testing.T) {
+	properties := OutputSchema("exec_command")["properties"].(map[string]any)
+	for _, property := range []string{"session_reason", "observe_after_ms"} {
+		if _, exists := properties[property]; !exists {
+			t.Fatalf("exec_command output schema missing %s", property)
+		}
+	}
+	sessionProperties := OutputSchema("session_observe")["properties"].(map[string]any)
+	if _, exists := sessionProperties["session_reason"]; exists {
+		t.Fatal("session_observe output schema unexpectedly exposes exec_command session guidance")
+	}
+}
+
 func TestBrowserInputSchemaPublishesPageWaitAndStorageStateFields(t *testing.T) {
 	for _, test := range []struct {
 		tool       string

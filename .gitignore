@@ -17,5 +17,10 @@
 /coverage.out
 /*.test
 /agentdock.killed*
+
+# Python 辅助脚本的本地缓存不得进入 Skill 源码和发布包。
+__pycache__/
+*.py[cod]
+
 # Runtime Skill state and artifacts
 skill-data/

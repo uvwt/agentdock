@@ -15,9 +15,16 @@ import (
 
 type SessionStore = session.Store
 
+type commandExecutionMode string
+
 const (
+	commandExecutionModeAuto  commandExecutionMode = "auto"
+	commandExecutionModeSync  commandExecutionMode = "sync"
+	commandExecutionModeAsync commandExecutionMode = "async"
+
 	completedSessionRetention    = time.Hour
 	sessionKillWait              = 3 * time.Second
+	defaultCommandYield          = 5 * time.Second
 	maxCommandYield              = 30 * time.Second
 	maxCommandTimeout            = 24 * time.Hour
 	maxCommandOutputBytes        = 4 << 20
@@ -40,7 +47,12 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 	if err != nil {
 		return nil, err
 	}
-	yieldMS := boundedInt(intArg(args, "yield_time_ms", 1000), 1000, 0, int(maxCommandYield/time.Millisecond))
+	executionMode, err := commandExecutionModeArg(args)
+	if err != nil {
+		return nil, err
+	}
+	defaultYieldMS := int(defaultCommandYield / time.Millisecond)
+	yieldMS := boundedInt(intArg(args, "yield_time_ms", defaultYieldMS), defaultYieldMS, 0, int(maxCommandYield/time.Millisecond))
 	yield := time.Duration(yieldMS) * time.Millisecond
 	maxBytes := commandOutputLimit(args)
 	tty := boolArg(args, "tty", false)
@@ -95,49 +107,63 @@ func (r *Runtime) execCommand(ctx context.Context, args map[string]any) (Result,
 		}
 	}
 
-	select {
-	case <-s.Done:
-		err := s.WaitError()
-		s.Cancel()
-		result := s.Snapshot("exited", maxBytes)
-		result["sandbox"] = sandboxStatus
-		if s.TimedOut {
-			result["status"] = "timeout"
-		}
-		if err != nil {
-			result["command_error"] = err.Error()
-		}
-		addCommandDiagnostics(result)
-		return result, nil
-	case <-time.After(yield):
-		if boolArg(args, "wait_until_exit", false) {
-			select {
-			case <-s.Done:
-				err := s.WaitError()
-				s.Cancel()
-				result := s.Snapshot("exited", maxBytes)
-				result["sandbox"] = sandboxStatus
-				if s.TimedOut {
-					result["status"] = "timeout"
-				}
-				if err != nil {
-					result["command_error"] = err.Error()
-				}
-				addCommandDiagnostics(result)
-				return result, nil
-			case <-ctx.Done():
-				r.storeReservedSession(s)
-				reservationActive = false
-				result := s.Snapshot("running", maxBytes)
-				result["sandbox"] = sandboxStatus
-				return result, nil
-			}
-		}
+	storeSession := func(reason string) Result {
 		r.storeReservedSession(s)
 		reservationActive = false
 		result := s.Snapshot("running", maxBytes)
 		result["sandbox"] = sandboxStatus
-		return result, nil
+		result["session_reason"] = reason
+		result["observe_after_ms"] = 1000
+		return result
+	}
+
+	switch executionMode {
+	case commandExecutionModeAsync:
+		return storeSession("explicit_async"), nil
+	case commandExecutionModeSync:
+		select {
+		case <-s.Done:
+		case <-ctx.Done():
+			return storeSession("request_cancelled"), nil
+		}
+	case commandExecutionModeAuto:
+		timer := time.NewTimer(yield)
+		defer timer.Stop()
+		select {
+		case <-s.Done:
+		case <-timer.C:
+			return storeSession("foreground_threshold_exceeded"), nil
+		case <-ctx.Done():
+			return storeSession("request_cancelled"), nil
+		}
+	}
+
+	err = s.WaitError()
+	s.Cancel()
+	result := s.Snapshot("exited", maxBytes)
+	result["sandbox"] = sandboxStatus
+	if s.TimedOut {
+		result["status"] = "timeout"
+	}
+	if err != nil {
+		result["command_error"] = err.Error()
+	}
+	addCommandDiagnostics(result)
+	return result, nil
+}
+
+func commandExecutionModeArg(args map[string]any) (commandExecutionMode, error) {
+	mode := commandExecutionMode(stringArg(args, "execution_mode", string(commandExecutionModeAuto)))
+	switch mode {
+	case commandExecutionModeAuto, commandExecutionModeSync, commandExecutionModeAsync:
+		return mode, nil
+	default:
+		return "", toolErrorDetails(
+			"INVALID_EXECUTION_MODE",
+			"execution_mode must be auto, sync, or async",
+			"validation",
+			map[string]any{"execution_mode": mode, "allowed": []string{"auto", "sync", "async"}},
+		)
 	}
 }
 

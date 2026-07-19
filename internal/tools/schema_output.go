@@ -79,6 +79,10 @@ func OutputSchema(name string) map[string]any {
 		props["elapsed_ms"] = intProp("Session elapsed milliseconds.")
 		props["timed_out"] = boolProp("Whether the command timed out.")
 		props["diagnostic"] = objectProp("Structured diagnostic for common failures.")
+		if name == "exec_command" {
+			props["session_reason"] = stringProp("Why exec_command returned a session instead of a completed result.")
+			props["observe_after_ms"] = intProp("Suggested delay before inspecting the returned session.")
+		}
 	case "task_manage":
 		props["action"] = stringProp("Completed task action.")
 		props["task_id"] = stringProp("Persistent task id returned by create and usable with task lifecycle actions.")

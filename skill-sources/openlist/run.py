@@ -13,7 +13,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
-SKILL_VERSION = "0.2.4"
+SKILL_VERSION = "0.2.5"
 UPSTREAM_REPOSITORY = "https://github.com/OpenListTeam/OpenList"
 DEFAULT_BASE_URL = "http://127.0.0.1:5244"
 
@@ -39,19 +39,18 @@ def load_input() -> dict[str, Any]:
     return value
 
 
-def control_dir() -> Path:
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        if parent.name == "AgentDock":
-            return parent
-    return Path(os.environ.get("AGENTDOCK_DIR", str(Path.home() / ".agentdock")))
+def default_session_path() -> Path:
+    state_home = os.environ.get("XDG_STATE_HOME", "").strip()
+    if state_home:
+        return Path(state_home).expanduser() / "openlist-skill" / "session.json"
+    return Path.home() / ".local" / "state" / "openlist-skill" / "session.json"
 
 
 def session_path() -> Path:
     configured = os.environ.get("OPENLIST_SESSION_FILE", "").strip()
     if configured:
         return Path(configured).expanduser()
-    return control_dir() / "skill-data" / "openlist" / "session.json"
+    return default_session_path()
 
 
 def load_session() -> dict[str, str]:
