@@ -27,7 +27,11 @@ const (
 	ChannelPinned      Channel = "pinned"
 )
 
-const lockOwnerPrefix = "owner-"
+const (
+	lockOwnerPrefix             = "owner-"
+	lockRetryInterval           = 25 * time.Millisecond
+	transientLockErrorRetryTime = 500 * time.Millisecond
+)
 
 var validChannels = map[Channel]struct{}{
 	ChannelDevelopment: {},
@@ -332,8 +336,9 @@ func (s *Store) acquire(ctx context.Context, skill string) (func(), error) {
 		return nil, fmt.Errorf("create skill lock owner: %w", err)
 	}
 	lockPath := filepath.Join(s.root, "locks", skill+".lock")
-	ticker := time.NewTicker(25 * time.Millisecond)
+	ticker := time.NewTicker(lockRetryInterval)
 	defer ticker.Stop()
+	var transientErrorSince time.Time
 	for {
 		err := os.Mkdir(lockPath, 0o700)
 		if err == nil {
@@ -344,7 +349,17 @@ func (s *Store) acquire(ctx context.Context, skill string) (func(), error) {
 			}
 			return func() { releaseOwnedLock(lockPath, owner) }, nil
 		}
-		if !os.IsExist(err) {
+		if os.IsExist(err) {
+			transientErrorSince = time.Time{}
+		} else if isTransientLockContention(err) {
+			// Windows 删除目录时可能短暂处于 delete-pending 状态，此时同路径 Mkdir
+			// 返回 Access Denied。只在有限窗口内重试，避免把真实权限错误无限掩盖。
+			if transientErrorSince.IsZero() {
+				transientErrorSince = time.Now()
+			} else if time.Since(transientErrorSince) >= transientLockErrorRetryTime {
+				return nil, fmt.Errorf("acquire skill lock: %w", err)
+			}
+		} else {
 			return nil, fmt.Errorf("acquire skill lock: %w", err)
 		}
 		if info, statErr := os.Stat(lockPath); statErr == nil && time.Since(info.ModTime()) > 10*time.Minute {
