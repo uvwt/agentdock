@@ -57,9 +57,59 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          & .\scripts\run-windows-installer-e2e-as-standard-user.ps1 `
-            -InstallerPath $env:DOWNLOADED_INSTALLER `
-            -Version v0.2.0
+          $releaseRoot = Join-Path $env:RUNNER_TEMP 'agentdock-current-release'
+          $distRoot = Join-Path $releaseRoot 'dist'
+          $bundleRoot = Join-Path $distRoot 'share\agentdock\core-skills'
+          New-Item -ItemType Directory -Path $distRoot -Force | Out-Null
+
+          $env:CGO_ENABLED = '0'
+          $env:GOOS = 'windows'
+          $env:GOARCH = 'amd64'
+          go build -trimpath -o (Join-Path $distRoot 'agentdock.exe') .\cmd\agentdock
+          python .\scripts\build-core-skill-bundle.py --output $bundleRoot
+
+          $assetName = 'agentdock_windows_amd64.zip'
+          $archivePath = Join-Path $releaseRoot $assetName
+          Compress-Archive `
+            -Path (Join-Path $distRoot 'agentdock.exe'), (Join-Path $distRoot 'share') `
+            -DestinationPath $archivePath `
+            -Force
+          $hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText(
+            "$archivePath.sha256",
+            "$hash  $assetName`n",
+            [Text.UTF8Encoding]::new($false)
+          )
+
+          $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+          $listener.Start()
+          $port = ([Net.IPEndPoint] $listener.LocalEndpoint).Port
+          $listener.Stop()
+          $releaseBaseUrl = "http://127.0.0.1:$port"
+          $server = Start-Process `
+            -FilePath 'python' `
+            -ArgumentList @('-m', 'http.server', $port, '--bind', '127.0.0.1', '--directory', $releaseRoot) `
+            -WindowStyle Hidden `
+            -PassThru
+          try {
+            $deadline = [DateTime]::UtcNow.AddSeconds(15)
+            do {
+              Start-Sleep -Milliseconds 250
+              try {
+                Invoke-WebRequest -UseBasicParsing -Uri "$releaseBaseUrl/$assetName.sha256" -TimeoutSec 2 | Out-Null
+                break
+              } catch {
+                if ([DateTime]::UtcNow -ge $deadline) { throw }
+              }
+            } while ($true)
+
+            & .\scripts\run-windows-installer-e2e-as-standard-user.ps1 `
+              -InstallerPath $env:DOWNLOADED_INSTALLER `
+              -Version latest `
+              -ReleaseBaseUrl $releaseBaseUrl
+          } finally {
+            Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+          }
 
       - name: Build current Windows binary
         shell: powershell
