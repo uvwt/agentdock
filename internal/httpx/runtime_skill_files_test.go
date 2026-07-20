@@ -29,7 +29,7 @@ func TestRuntimeAPISkillFilesStayInsideActivePackage(t *testing.T) {
 	writeTestFile(t, filepath.Join(sourceDir, "SKILL.md"), "---\nname: demo-skill\ndescription: Demo Skill\nversion: 0.1.0\n---\n\n# Demo Skill\n")
 	writeTestFile(t, filepath.Join(sourceDir, "references", "guide.md"), "# Guide\n\nSafe guide content.\n")
 	if _, err := runtime.Call(context.Background(), "skill_package", map[string]any{
-		"action": "install", "source": sourceDir, "activate": true, "channel": "development",
+		"action": "install", "source": sourceDir, "activate": true,
 	}); err != nil {
 		t.Fatalf("install skill: %v", err)
 	}

@@ -46,6 +46,12 @@ RUN apt-get update \
 COPY --from=build --chmod=0755 /out/agentdock /usr/local/bin/agentdock
 COPY --chmod=0755 docker-entrypoint.sh /usr/local/bin/agentdock-entrypoint
 COPY --chmod=0755 scripts/docker-healthcheck.sh /usr/local/bin/agentdock-healthcheck
+COPY skill-sources /tmp/agentdock-bundle/skill-sources
+COPY scripts/build-core-skill-bundle.py /tmp/agentdock-bundle/build-core-skill-bundle.py
+RUN python3 /tmp/agentdock-bundle/build-core-skill-bundle.py \
+      --repo-root /tmp/agentdock-bundle \
+      --output /usr/local/share/agentdock/core-skills \
+    && rm -rf /tmp/agentdock-bundle
 
 ENV HOME=/home/agentdock \
     AGENTDOCK_HOST=0.0.0.0 \

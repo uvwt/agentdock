@@ -84,9 +84,8 @@ func (m *Manager) Install(ctx context.Context, req InstallRequest) (InstallResul
 	}
 	metadata := struct {
 		Digest      string    `json:"digest"`
-		Source      string    `json:"source"`
 		InstalledAt time.Time `json:"installed_at"`
-	}{Digest: digest, Source: req.Source, InstalledAt: time.Now().UTC()}
+	}{Digest: digest, InstalledAt: time.Now().UTC()}
 	metaData, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
 		_ = os.RemoveAll(staged)
@@ -110,18 +109,12 @@ func (m *Manager) finishInstall(ctx context.Context, req InstallRequest, doc Ski
 		Digest:      digest,
 		InstalledAt: time.Now().UTC(),
 		Path:        destination,
-		Channel:     req.Channel,
 	}
 	if req.Activate {
-		channel := req.Channel
-		if channel == "" {
-			channel = skillstate.ChannelStable
-		}
-		if err := m.State.Activate(ctx, doc.Name, doc.Version, channel); err != nil {
+		if err := m.State.Activate(ctx, doc.Name, doc.Version); err != nil {
 			return InstallResult{}, packageError(ErrInstallFailed, "activate", err)
 		}
 		result.Activated = true
-		result.Channel = channel
 	}
 	return result, nil
 }

@@ -68,6 +68,7 @@ type capabilitySkillItem struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	File        string `json:"file"`
+	Bundled     bool   `json:"bundled,omitempty"`
 }
 
 type capabilityDynamicMCPItem struct {
@@ -161,10 +162,18 @@ func (r *Runtime) skillCapabilityIndex() ([]capabilitySkillItem, string, string)
 	if err != nil {
 		return nil, "- Skill 索引暂不可用。", err.Error()
 	}
+	bundledNames, err := r.skills.state.BundledSkills()
+	if err != nil {
+		return nil, "- Skill 索引暂不可用。", err.Error()
+	}
+	bundled := make(map[string]struct{}, len(bundledNames))
+	for _, name := range bundledNames {
+		bundled[name] = struct{}{}
+	}
 	items := make([]capabilitySkillItem, 0, len(names))
 	lines := []string{"当前可按文档机制使用的 Skill 轻量索引如下；匹配后先用 read_file 读取 file 指向的 SKILL.md，再使用实际工具执行。"}
 	for _, name := range names {
-		packageDir, resolveErr := r.skills.state.Resolve(name, "", "")
+		packageDir, resolveErr := r.skills.state.Resolve(name, "")
 		if resolveErr != nil {
 			continue
 		}
@@ -175,13 +184,19 @@ func (r *Runtime) skillCapabilityIndex() ([]capabilitySkillItem, string, string)
 		if loadErr != nil {
 			continue
 		}
+		_, isBundled := bundled[name]
 		item := capabilitySkillItem{
 			Name:        name,
 			Description: truncateString(strings.TrimSpace(doc.Description), 160),
 			File:        "skill://" + name + "/SKILL.md",
+			Bundled:     isBundled,
 		}
 		items = append(items, item)
-		lines = append(lines, truncateString("- name: "+item.Name+"; description: "+item.Description+"; file: "+item.File, 360))
+		line := "- name: " + item.Name + "; description: " + item.Description + "; file: " + item.File
+		if item.Bundled {
+			line += "; bundled: true"
+		}
+		lines = append(lines, truncateString(line, 380))
 	}
 	if len(items) == 0 {
 		lines = append(lines, "- 当前没有可用 Skill；需要时先通过 skill_package 安装。")

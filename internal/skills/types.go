@@ -2,8 +2,6 @@ package skills
 
 import (
 	"time"
-
-	"github.com/uvwt/agentdock/internal/skillstate"
 )
 
 type SkillDocument struct {
@@ -17,18 +15,16 @@ type InstallRequest struct {
 	Source       string
 	DigestSHA256 string
 	Activate     bool
-	Channel      skillstate.Channel
 	MaxBytes     int64
 }
 
 type InstallResult struct {
-	Skill       string             `json:"skill"`
-	Version     string             `json:"version"`
-	Digest      string             `json:"digest"`
-	InstalledAt time.Time          `json:"installed_at"`
-	Activated   bool               `json:"activated"`
-	Channel     skillstate.Channel `json:"channel,omitempty"`
-	Path        string             `json:"path"`
+	Skill       string    `json:"skill"`
+	Version     string    `json:"version"`
+	Digest      string    `json:"digest"`
+	InstalledAt time.Time `json:"installed_at"`
+	Activated   bool      `json:"activated"`
+	Path        string    `json:"path"`
 }
 
 type ValidateRequest struct {
@@ -56,4 +52,10 @@ type RollbackResult struct {
 	FromVersion string `json:"from_version"`
 	ToVersion   string `json:"to_version"`
 	Verified    bool   `json:"verified"`
+}
+
+type ActivateResult struct {
+	Skill       string `json:"skill"`
+	FromVersion string `json:"from_version,omitempty"`
+	ToVersion   string `json:"to_version"`
 }

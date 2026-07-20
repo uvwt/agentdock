@@ -27,7 +27,7 @@ func (r *Runtime) resolveSkillResource(raw string) (string, string, error) {
 		return "", "", toolErrorDetails("INVALID_SKILL_URI", "skill resource path must stay inside the active Skill package", "validation", map[string]any{"path": raw})
 	}
 
-	packageDir, err := r.skills.state.Resolve(parsed.Host, "", "")
+	packageDir, err := r.skills.state.Resolve(parsed.Host, "")
 	if err != nil {
 		return "", "", toolErrorCause("SKILL_NOT_AVAILABLE", "skill has no active installed version", "validation", map[string]any{"skill": parsed.Host}, err)
 	}

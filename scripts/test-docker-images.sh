@@ -140,6 +140,14 @@ test_volume=""
 runtime_container="$(docker run -d --rm -e AGENTDOCK_AUTH_TOKEN=runtime-health-value "$runtime_image")"
 wait_for_healthy "$runtime_container" runtime
 docker exec "$runtime_container" sh -c 'curl -fsS http://127.0.0.1:8765/healthz >/dev/null'
+docker exec "$runtime_container" sh -c '
+  test -f "$HOME/.agentdock/skill-store/bundled-skills.json"
+  for skill in skill-authoring skill-installation skill-vetter-runtime; do
+    version="$(jq -r .active_version "$HOME/.agentdock/skill-store/state/$skill.json")"
+    test -n "$version"
+    test -f "$HOME/.agentdock/skill-store/installed/$skill/$version/SKILL.md"
+  done
+'
 docker rm -f "$runtime_container" >/dev/null
 runtime_container=""
 

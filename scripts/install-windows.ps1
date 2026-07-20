@@ -199,6 +199,12 @@ try {
     if (-not (Test-Path -LiteralPath $sourceBinary -PathType Leaf)) {
         throw "Release archive does not contain agentdock.exe: $assetName"
     }
+    $coreSkillBundle = Join-Path $extractDir 'share\agentdock\core-skills'
+    $coreSkillManifest = Join-Path $coreSkillBundle 'manifest.json'
+    if (-not (Test-Path -LiteralPath $coreSkillBundle -PathType Container) -or
+        -not (Test-Path -LiteralPath $coreSkillManifest -PathType Leaf)) {
+        throw "Release archive does not contain a valid core Skill Bundle: $assetName"
+    }
 
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     $processWasRunning = Stop-AgentDockForUpgrade -BinaryPath $destinationBinary
@@ -277,6 +283,12 @@ Add-Type -AssemblyName System.Security
     $mustRestartExistingProcess = (-not $RegisterStartup) -and $processWasRunning -and (Test-Path -LiteralPath $launcherPath -PathType Leaf)
     if ($mustRestartExistingProcess) {
         Start-AgentDockLauncher -LauncherPath $launcherPath
+    }
+
+    Write-Host 'Installing official core Skills...'
+    & $destinationBinary skill bootstrap --bundle $coreSkillBundle
+    if ($LASTEXITCODE -ne 0) {
+        throw "Core Skill bootstrap failed with exit code $LASTEXITCODE."
     }
 
     Write-Host "AgentDock installed: $destinationBinary"

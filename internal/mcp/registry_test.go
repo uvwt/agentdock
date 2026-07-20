@@ -198,8 +198,8 @@ func TestRecallBootstrapSchemaSeparatesPackBudgetFromBody(t *testing.T) {
 
 func TestSkillPackageSchemaAndRemovedRuntimeTools(t *testing.T) {
 	packageProps := schemaProperties(t, "skill_package")
-	assertSameStrings(t, enumStrings(t, packageProps["action"]), []string{"validate", "install", "rollback", "env_set", "env_unset", "env_list"})
-	for _, name := range []string{"source", "digest", "activate", "max_bytes", "skill", "channel", "key", "value"} {
+	assertSameStrings(t, enumStrings(t, packageProps["action"]), []string{"validate", "install", "activate", "rollback", "env_set", "env_unset", "env_list"})
+	for _, name := range []string{"source", "digest", "activate", "max_bytes", "skill", "version", "key", "value"} {
 		if _, ok := packageProps[name]; !ok {
 			t.Fatalf("skill_package input schema missing %q", name)
 		}

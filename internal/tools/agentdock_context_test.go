@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/uvwt/agentdock/internal/config"
-	"github.com/uvwt/agentdock/internal/skillstate"
 )
 
 func TestAgentDockContextToolReturnsRuntimeIndex(t *testing.T) {
@@ -171,12 +170,13 @@ func TestCapabilitySkillItemExposesOnlyLightweightIndexFields(t *testing.T) {
 		Name:        "desktop",
 		Description: "Desktop automation.",
 		File:        "skill://desktop/SKILL.md",
+		Bundled:     true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, want := range []string{`"name"`, `"description"`, `"file"`} {
+	for _, want := range []string{`"name"`, `"description"`, `"file"`, `"bundled"`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("Skill index JSON missing %s: %s", want, text)
 		}
@@ -201,7 +201,7 @@ func installDocumentSkillForTest(t *testing.T, rt *Runtime, name, version, descr
 	if err := os.WriteFile(filepath.Join(packageDir, "SKILL.md"), []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := rt.skills.state.Activate(context.Background(), name, version, skillstate.ChannelStable); err != nil {
+	if err := rt.skills.state.Activate(context.Background(), name, version); err != nil {
 		t.Fatal(err)
 	}
 	return packageDir
@@ -262,7 +262,7 @@ spec:
 	if err := os.WriteFile(filepath.Join(legacyDir, "run.sh"), []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := rt.skills.state.Activate(context.Background(), "legacy-skill", "1.0.0", skillstate.ChannelStable); err != nil {
+	if err := rt.skills.state.Activate(context.Background(), "legacy-skill", "1.0.0"); err != nil {
 		t.Fatal(err)
 	}
 

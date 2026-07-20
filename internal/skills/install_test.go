@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/uvwt/agentdock/internal/skillstate"
@@ -45,7 +46,7 @@ Read references and use existing tools.
 	if !validated.Valid || validated.Document.Name != "demo-skill" {
 		t.Fatalf("unexpected validation: %#v", validated)
 	}
-	installed, err := manager.Install(context.Background(), InstallRequest{Source: source, Activate: true, Channel: skillstate.ChannelStable})
+	installed, err := manager.Install(context.Background(), InstallRequest{Source: source, Activate: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,6 +55,13 @@ Read references and use existing tools.
 	}
 	if _, err := os.Stat(filepath.Join(installed.Path, "references", "guide.md")); err != nil {
 		t.Fatalf("reference not installed: %v", err)
+	}
+	metadata, err := os.ReadFile(filepath.Join(installed.Path, ".agentdock-install.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(metadata), `"source"`) {
+		t.Fatalf("install metadata still persists source: %s", metadata)
 	}
 }
 

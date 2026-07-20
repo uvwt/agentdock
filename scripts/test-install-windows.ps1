@@ -57,7 +57,8 @@ foreach ($forbidden in @(
 foreach ($required in @(
     'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run',
     'New-ItemProperty -Path $runKey -Name $runValueName',
-    'Start-AgentDockLauncher -LauncherPath $launcherPath'
+    'Start-AgentDockLauncher -LauncherPath $launcherPath',
+    '& $destinationBinary skill bootstrap --bundle $coreSkillBundle'
 )) {
     if (-not $content.Contains($required)) {
         throw "$InstallerPath is missing current-user startup logic: $required"

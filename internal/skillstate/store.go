@@ -18,33 +18,16 @@ import (
 	"github.com/uvwt/agentdock/internal/securepath"
 )
 
-type Channel string
-
-const (
-	ChannelDevelopment Channel = "development"
-	ChannelCanary      Channel = "canary"
-	ChannelStable      Channel = "stable"
-	ChannelPinned      Channel = "pinned"
-)
-
 const (
 	lockOwnerPrefix             = "owner-"
 	lockRetryInterval           = 25 * time.Millisecond
 	transientLockErrorRetryTime = 500 * time.Millisecond
 )
 
-var validChannels = map[Channel]struct{}{
-	ChannelDevelopment: {},
-	ChannelCanary:      {},
-	ChannelStable:      {},
-	ChannelPinned:      {},
-}
-
 type Selection struct {
-	ActiveVersion string             `json:"active_version,omitempty"`
-	Channels      map[Channel]string `json:"channels,omitempty"`
-	History       []string           `json:"history,omitempty"`
-	UpdatedAt     time.Time          `json:"updated_at"`
+	ActiveVersion string    `json:"active_version,omitempty"`
+	History       []string  `json:"history,omitempty"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type Store struct{ root string }
@@ -179,7 +162,49 @@ func (s *Store) Snapshot(skill string) (Selection, error) {
 	return s.load(skill)
 }
 
-func (s *Store) Resolve(skill, version string, channel Channel) (string, error) {
+// RestoreSelection 恢复一次操作前保存的版本选择。
+// 它只用于安装事务回滚；正常版本切换应继续使用 Activate 记录历史。
+func (s *Store) RestoreSelection(ctx context.Context, skill string, selection Selection) error {
+	if err := validateIdentifier("skill", skill); err != nil {
+		return err
+	}
+	if selection.ActiveVersion != "" {
+		if err := validateIdentifier("version", selection.ActiveVersion); err != nil {
+			return err
+		}
+	}
+	for _, version := range selection.History {
+		if err := validateIdentifier("version", version); err != nil {
+			return err
+		}
+	}
+
+	release, err := s.acquire(ctx, skill)
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	if selection.ActiveVersion != "" {
+		installed, err := s.IsInstalled(skill, selection.ActiveVersion)
+		if err != nil {
+			return err
+		}
+		if !installed {
+			return fmt.Errorf("skill %s version %s is not installed", skill, selection.ActiveVersion)
+		}
+	}
+	if selection.ActiveVersion == "" && len(selection.History) == 0 && selection.UpdatedAt.IsZero() {
+		path := filepath.Join(s.root, "state", skill+".json")
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove skill state: %w", err)
+		}
+		return nil
+	}
+	return s.save(skill, selection)
+}
+
+func (s *Store) Resolve(skill, version string) (string, error) {
 	if version != "" {
 		installed, err := s.IsInstalled(skill, version)
 		if err != nil {
@@ -194,32 +219,13 @@ func (s *Store) Resolve(skill, version string, channel Channel) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	selected := ""
-	if channel != "" {
-		if _, ok := validChannels[channel]; !ok {
-			return "", fmt.Errorf("invalid skill channel %q", channel)
-		}
-		selected = state.Channels[channel]
-	}
-	if selected == "" {
-		selected = state.Channels[ChannelPinned]
-	}
-	if selected == "" {
-		selected = state.ActiveVersion
-	}
-	if selected == "" {
+	if state.ActiveVersion == "" {
 		return "", fmt.Errorf("skill %s has no active version", skill)
 	}
-	return s.InstalledPath(skill, selected)
+	return s.InstalledPath(skill, state.ActiveVersion)
 }
 
-func (s *Store) Activate(ctx context.Context, skill, version string, channel Channel) error {
-	if channel == "" {
-		channel = ChannelStable
-	}
-	if _, ok := validChannels[channel]; !ok {
-		return fmt.Errorf("invalid skill channel %q", channel)
-	}
+func (s *Store) Activate(ctx context.Context, skill, version string) error {
 	release, err := s.acquire(ctx, skill)
 	if err != nil {
 		return err
@@ -239,14 +245,10 @@ func (s *Store) Activate(ctx context.Context, skill, version string, channel Cha
 	if err != nil {
 		return err
 	}
-	if state.Channels == nil {
-		state.Channels = make(map[Channel]string)
-	}
 	if state.ActiveVersion != "" && state.ActiveVersion != version {
 		state.History = prependUnique(state.History, state.ActiveVersion, 20)
 	}
 	state.ActiveVersion = version
-	state.Channels[channel] = version
 	state.UpdatedAt = time.Now().UTC()
 
 	if err := s.save(skill, state); err != nil {
@@ -300,7 +302,7 @@ func (s *Store) load(skill string) (Selection, error) {
 	path := filepath.Join(s.root, "state", skill+".json")
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return Selection{Channels: make(map[Channel]string)}, nil
+		return Selection{}, nil
 	}
 	if err != nil {
 		return Selection{}, fmt.Errorf("read skill state: %w", err)
@@ -308,9 +310,6 @@ func (s *Store) load(skill string) (Selection, error) {
 	var state Selection
 	if err := json.Unmarshal(data, &state); err != nil {
 		return Selection{}, fmt.Errorf("decode skill state: %w", err)
-	}
-	if state.Channels == nil {
-		state.Channels = make(map[Channel]string)
 	}
 	return state, nil
 }
