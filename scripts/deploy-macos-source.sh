@@ -20,6 +20,8 @@ INSTALL_DIR="${TARGET:h}"
 STAMP="$(date +%Y%m%d%H%M%S)"
 TMP_BIN="$INSTALL_DIR/.agentdock.source.$STAMP.$$"
 ROLLBACK_BIN="$INSTALL_DIR/.agentdock.rollback.$STAMP.$$"
+CORE_SKILL_TEMP_DIR=""
+CORE_SKILL_BUNDLE=""
 
 EXPLICIT_SIGN_IDENTITY="${AGENTDOCK_CODESIGN_IDENTITY:-}"
 EXPLICIT_SIGN_KEYCHAIN="${AGENTDOCK_CODESIGN_KEYCHAIN:-}"
@@ -29,6 +31,7 @@ EXPLICIT_SIGN_HOME="${AGENTDOCK_CODESIGN_HOME:-}"
 
 cleanup() {
   rm -f "$TMP_BIN" "$ROLLBACK_BIN"
+  [[ -z "$CORE_SKILL_TEMP_DIR" ]] || rm -rf "$CORE_SKILL_TEMP_DIR"
 }
 trap cleanup EXIT
 
@@ -126,7 +129,7 @@ restore_previous_binary() {
   print -u2 -- "已恢复旧二进制并重新启动：pid=$rollback_pid version=$old_version"
 }
 
-for command_name in curl git go gofmt grep launchctl lsof plutil ps sed; do
+for command_name in curl git go gofmt grep launchctl lsof plutil ps python3 sed; do
   require_command "$command_name"
 done
 
@@ -190,6 +193,13 @@ go build -trimpath \
   -o "$TMP_BIN" ./cmd/agentdock
 chmod 0755 "$TMP_BIN"
 
+printf '==> building official core Skill Bundle\n'
+CORE_SKILL_TEMP_DIR="$(mktemp -d)"
+CORE_SKILL_BUNDLE="$CORE_SKILL_TEMP_DIR/core-skills"
+python3 "$SCRIPT_DIR/build-core-skill-bundle.py" \
+  --repo-root "$SRC_DIR" \
+  --output "$CORE_SKILL_BUNDLE"
+
 printf '==> signing temporary binary\n'
 "$SIGN_SCRIPT" "$TMP_BIN"
 
@@ -219,6 +229,15 @@ if ! new_pid="$(restart_and_verify "$target_version" "$old_pid")"; then
     die "新版本验证失败，且旧版本恢复验证失败；备份保留在 $backup"
   fi
   die "新版本服务验证失败，已恢复旧版本"
+fi
+
+printf '==> installing official core Skills\n'
+if ! "$TARGET" skill bootstrap --bundle "$CORE_SKILL_BUNDLE"; then
+  print -u2 -- "核心 Skill 初始化失败，开始恢复旧二进制"
+  if ! restore_previous_binary "$backup" "$old_version"; then
+    die "核心 Skill 初始化失败，且旧版本恢复验证失败；备份保留在 $backup"
+  fi
+  die "核心 Skill 初始化失败，已恢复旧版本"
 fi
 
 printf 'installed: %s\n' "$TARGET"
