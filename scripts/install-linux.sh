@@ -16,6 +16,15 @@ DEFAULT_LOG_LEVEL="${AGENTDOCK_LOG_LEVEL:-info}"
 DEFAULT_SERVICE_MANAGER="${AGENTDOCK_SERVICE_MANAGER:-auto}"
 DEFAULT_INSTALL_MODE="${AGENTDOCK_INSTALL_MODE:-binary}"
 DEFAULT_RELEASE_VERSION="${AGENTDOCK_RELEASE_VERSION:-latest}"
+CORE_SKILL_BUNDLE=""
+CORE_SKILL_TEMP_DIR=""
+
+cleanup_core_skill_bundle() {
+  if [[ -n "$CORE_SKILL_TEMP_DIR" ]]; then
+    rm -rf "$CORE_SKILL_TEMP_DIR"
+  fi
+}
+trap cleanup_core_skill_bundle EXIT
 
 TTY_IN="/dev/tty"
 TTY_OUT="/dev/tty"
@@ -164,6 +173,37 @@ run_root() {
   else
     sudo "$@"
   fi
+}
+
+run_as_service_user() {
+  local user="$1"
+  local home_dir="$2"
+  shift 2
+  if [[ "$(id -u)" == "$(id -u "$user")" ]]; then
+    env HOME="$home_dir" "$@"
+  elif command -v runuser >/dev/null 2>&1; then
+    run_root runuser -u "$user" -- env HOME="$home_dir" "$@"
+  elif command -v su >/dev/null 2>&1; then
+    run_root su -s /bin/sh "$user" -c 'HOME="$1"; export HOME; shift; exec "$@"' sh "$home_dir" "$@"
+  else
+    die "缺少 runuser 或 su，无法以运行用户初始化核心 Skill：$user"
+  fi
+}
+
+make_core_skill_bundle_readable() {
+  local path
+  [[ -n "$CORE_SKILL_TEMP_DIR" && -n "$CORE_SKILL_BUNDLE" ]] || die "核心 Skill Bundle 尚未准备"
+
+  # mktemp 默认创建 0700 目录。Bundle 需要由服务用户读取，但临时目录中的
+  # Release 压缩包和校验文件不需要写权限，因此只开放目录穿越和包只读权限。
+  run_root chmod 0755 "$CORE_SKILL_TEMP_DIR"
+  path="$(dirname "$CORE_SKILL_BUNDLE")"
+  while [[ "$path" != "$CORE_SKILL_TEMP_DIR" && "$path" != "/" ]]; do
+    run_root chmod 0755 "$path"
+    path="$(dirname "$path")"
+  done
+  run_root find "$CORE_SKILL_BUNDLE" -type d -exec chmod 0755 {} +
+  run_root find "$CORE_SKILL_BUNDLE" -type f -exec chmod 0644 {} +
 }
 
 validate_no_space() {
@@ -330,12 +370,16 @@ release_download_url() {
   local version="$2"
   local arch repo_slug file_name base
   arch="$(release_arch)"
-  repo_slug="$(release_repo_slug "$repo_url")"
   file_name="agentdock_linux_${arch}.tar.gz"
-  if [[ "$version" == "latest" ]]; then
-    base="https://github.com/${repo_slug}/releases/latest/download"
+  if [[ -n "${AGENTDOCK_RELEASE_BASE_URL:-}" ]]; then
+    base="${AGENTDOCK_RELEASE_BASE_URL%/}"
   else
-    base="https://github.com/${repo_slug}/releases/download/${version}"
+    repo_slug="$(release_repo_slug "$repo_url")"
+    if [[ "$version" == "latest" ]]; then
+      base="https://github.com/${repo_slug}/releases/latest/download"
+    else
+      base="https://github.com/${repo_slug}/releases/download/${version}"
+    fi
   fi
   printf '%s/%s' "$base" "$file_name"
 }
@@ -366,6 +410,11 @@ install_prebuilt_binary() {
   fi
   run_root mkdir -p "$source_dir/bin"
   tar -xzf "$tmp_tgz" -C "$tmp_dir"
+  local bundle_dir="$tmp_dir/share/agentdock/core-skills"
+  if [[ ! -d "$bundle_dir" || -L "$bundle_dir" || ! -f "$bundle_dir/manifest.json" || -L "$bundle_dir/manifest.json" ]]; then
+    rm -rf "$tmp_dir"
+    die "预编译包内缺少有效的核心 Skill Bundle：$url"
+  fi
   if [[ -x "$tmp_dir/bin/agentdock" ]]; then
     run_root install -m 755 "$tmp_dir/bin/agentdock" "$source_dir/bin/agentdock"
   elif [[ -x "$tmp_dir/agentdock" ]]; then
@@ -374,7 +423,8 @@ install_prebuilt_binary() {
     rm -rf "$tmp_dir"
     die "预编译包内未找到 agentdock 可执行文件：$url"
   fi
-  rm -rf "$tmp_dir"
+  CORE_SKILL_TEMP_DIR="$tmp_dir"
+  CORE_SKILL_BUNDLE="$bundle_dir"
 }
 
 validate_install_mode() {
@@ -779,7 +829,18 @@ SUMMARY
       -ldflags "-X github.com/uvwt/agentdock/internal/buildinfo.Commit=$build_commit -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=$build_date" \
       -o ./bin/agentdock ./cmd/agentdock)
     chmod +x "$source_dir/bin/agentdock"
+
+    command -v python3 >/dev/null 2>&1 || die "源码安装需要 python3 构建核心 Skill Bundle"
+    CORE_SKILL_TEMP_DIR="$(mktemp -d)"
+    CORE_SKILL_BUNDLE="$CORE_SKILL_TEMP_DIR/core-skills"
+    python3 "$source_dir/scripts/build-core-skill-bundle.py" \
+      --repo-root "$source_dir" \
+      --output "$CORE_SKILL_BUNDLE"
   fi
+
+  # 服务用户必须能够穿过安装目录并执行二进制；mkdir 会受调用者 umask 影响，
+  # 因此不能依赖目录碰巧是 0755。
+  run_root chmod 0755 "$source_dir" "$source_dir/bin" "$source_dir/bin/agentdock"
 
   ensure_service_user "$service_user" "$data_dir"
   service_group="$(id -gn "$service_user")"
@@ -810,6 +871,12 @@ SUMMARY
   else
     log "未配置系统服务，跳过运行时健康检查。"
   fi
+
+  [[ -n "$CORE_SKILL_BUNDLE" ]] || die "未准备核心 Skill Bundle"
+  make_core_skill_bundle_readable
+  log "安装官方核心 Skill"
+  run_as_service_user "$service_user" "$data_dir" \
+    "$source_dir/bin/agentdock" skill bootstrap --bundle "$CORE_SKILL_BUNDLE"
 
   cat >"$TTY_OUT" <<DONE
 

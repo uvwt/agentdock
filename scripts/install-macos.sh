@@ -455,6 +455,30 @@ restore_previous_service() {
   wait_for_service "$domain" "$failed_pid" "$old_version" "$old_host" "$old_port" >/dev/null
 }
 
+rollback_release_install() {
+  local domain="gui/$(id -u)"
+  local failed_pid=""
+
+  if [[ "$REGISTER_SERVICE" == true ]]; then
+    if [[ "$NO_START" == false ]]; then
+      failed_pid="$(launchd_pid "$domain" || true)"
+      prepare_service_rollback "$domain" || return 1
+    fi
+    restore_service_files || return 1
+  fi
+
+  if [[ -n "$backup" && -f "$backup" ]]; then
+    cp -p "$backup" "$staged_target" || return 1
+    mv -f "$staged_target" "$TARGET" || return 1
+  else
+    rm -f "$TARGET" || return 1
+  fi
+
+  if [[ "$REGISTER_SERVICE" == true && "$NO_START" == false && "$SERVICE_WAS_LOADED" == true && "$PREVIOUS_SERVICE_STOPPED" == true ]]; then
+    restore_previous_service "$old_version" "$failed_pid" || return 1
+  fi
+}
+
 while (( $# > 0 )); do
   case "$1" in
     --version)
@@ -569,7 +593,10 @@ print -- "==> 校验 SHA-256"
 mkdir -p "$tmp_dir/extract"
 tar -xzf "$tmp_dir/$asset" -C "$tmp_dir/extract"
 source_binary="$tmp_dir/extract/bin/agentdock"
+core_skill_bundle="$tmp_dir/extract/share/agentdock/core-skills"
 [[ -f "$source_binary" && ! -L "$source_binary" ]] || die "Release 压缩包中的 bin/agentdock 必须是普通文件"
+[[ -d "$core_skill_bundle" && ! -L "$core_skill_bundle" ]] || die "Release 压缩包缺少核心 Skill Bundle"
+[[ -f "$core_skill_bundle/manifest.json" && ! -L "$core_skill_bundle/manifest.json" ]] || die "Release 压缩包中的核心 Skill manifest 必须是普通文件"
 
 mkdir -p "$INSTALL_DIR" "$STATE_DIR" "$WORK_DIR" "$BACKUP_DIR"
 chmod 0700 "$STATE_DIR" "$WORK_DIR" "$BACKUP_DIR"
@@ -639,6 +666,15 @@ if [[ "$REGISTER_SERVICE" == true ]]; then
   else
     print -- "==> 已生成服务文件和 plist，按 --no-start 要求未加载 LaunchAgent"
   fi
+fi
+
+print -- "==> 安装官方核心 Skill"
+if ! "$TARGET" skill bootstrap --bundle "$core_skill_bundle"; then
+  print -u2 -- "==> 核心 Skill 初始化失败，恢复安装前状态"
+  if ! rollback_release_install; then
+    die "核心 Skill 初始化失败，且安装回滚失败；二进制备份保留在 ${backup:-无}"
+  fi
+  die "核心 Skill 初始化失败；已恢复安装前状态"
 fi
 
 print -- "installed: $TARGET"

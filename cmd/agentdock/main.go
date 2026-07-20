@@ -18,6 +18,9 @@ import (
 	"github.com/uvwt/agentdock/internal/logx"
 	"github.com/uvwt/agentdock/internal/mcp"
 	"github.com/uvwt/agentdock/internal/selfupdate"
+	"github.com/uvwt/agentdock/internal/skillbundle"
+	"github.com/uvwt/agentdock/internal/skills"
+	"github.com/uvwt/agentdock/internal/skillstate"
 	"github.com/uvwt/agentdock/internal/tools"
 )
 
@@ -44,7 +47,53 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		}
 		return selfupdate.Run(ctx, stdout)
 	}
+	if len(args) > 0 && args[0] == "skill" {
+		return runSkillCommand(ctx, args[1:], stdout, stderr)
+	}
 	return runServer(ctx, args, stderr)
+}
+
+func runSkillCommand(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	if len(args) == 0 || args[0] != "bootstrap" {
+		return errors.New("用法：agentdock skill bootstrap --bundle <目录>")
+	}
+	flags := flag.NewFlagSet("agentdock skill bootstrap", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	bundleDir := flags.String("bundle", "", "Release 随附 Skill Bundle 目录")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || strings.TrimSpace(*bundleDir) == "" {
+		return errors.New("用法：agentdock skill bootstrap --bundle <目录>")
+	}
+
+	cfg, err := config.FromEnv()
+	if err != nil {
+		return err
+	}
+	if err := cfg.Normalize(); err != nil {
+		return err
+	}
+	stateDir, err := config.SkillStateDir(cfg)
+	if err != nil {
+		return err
+	}
+	state, err := skillstate.New(stateDir)
+	if err != nil {
+		return err
+	}
+	manager, err := skills.New(state)
+	if err != nil {
+		return err
+	}
+	result, err := skillbundle.Bootstrap(ctx, state, manager, *bundleDir)
+	if err != nil {
+		return err
+	}
+	for _, item := range result.Skills {
+		fmt.Fprintf(stdout, "bundled skill installed: %s %s\n", item.Name, item.Version)
+	}
+	return nil
 }
 
 func printVersion(output io.Writer) {
@@ -68,6 +117,7 @@ func runServer(ctx context.Context, args []string, stderr io.Writer) error {
 		fmt.Fprintln(stderr, "  agentdock [服务参数]")
 		fmt.Fprintln(stderr, "  agentdock --version")
 		fmt.Fprintln(stderr, "  agentdock update")
+		fmt.Fprintln(stderr, "  agentdock skill bootstrap --bundle <目录>")
 		fmt.Fprintln(stderr, "\n服务参数：")
 		flags.PrintDefaults()
 	}

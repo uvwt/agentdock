@@ -53,16 +53,19 @@ func applyPlatformUpdate(ctx context.Context, request applyRequest) (applyResult
 	if err := verifyBinaryVersion(ctx, request.CurrentPath, request.TargetVersion); err != nil {
 		return applyResult{}, rollback(fmt.Errorf("替换后的二进制验证失败: %w", err))
 	}
-	if service == nil {
-		return applyResult{}, nil
+	if service != nil {
+		fmt.Fprintf(request.Output, "正在重启 %s...\n", service.Name())
+		if err := restartManagedService(ctx, service, request.CurrentPath, previousPID, candidates, request.TargetVersion); err != nil {
+			return applyResult{}, rollback(fmt.Errorf("重启 %s 或验证新进程失败: %w", service.Name(), err))
+		}
+		fmt.Fprintln(request.Output, "健康检查通过")
 	}
 
-	fmt.Fprintf(request.Output, "正在重启 %s...\n", service.Name())
-	if err := restartManagedService(ctx, service, request.CurrentPath, previousPID, candidates, request.TargetVersion); err != nil {
-		return applyResult{}, rollback(fmt.Errorf("重启 %s 或验证新进程失败: %w", service.Name(), err))
+	fmt.Fprintln(request.Output, "正在更新官方核心 Skill...")
+	if err := bootstrapBundledSkills(ctx, request.CurrentPath, request.BundlePath, request.Output); err != nil {
+		return applyResult{}, rollback(err)
 	}
-	fmt.Fprintln(request.Output, "健康检查通过")
-	return applyResult{Restarted: true}, nil
+	return applyResult{Restarted: service != nil}, nil
 }
 
 func managedServicePID(ctx context.Context, service managedService) int {

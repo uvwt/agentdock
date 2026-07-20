@@ -10,6 +10,14 @@
 !docker-entrypoint.sh
 !scripts/
 !scripts/docker-healthcheck.sh
+!scripts/build-core-skill-bundle.py
+!skill-sources/
+!skill-sources/skill-authoring/
+!skill-sources/skill-authoring/**
+!skill-sources/skill-installation/
+!skill-sources/skill-installation/**
+!skill-sources/skill-vetter-runtime/
+!skill-sources/skill-vetter-runtime/**
 !examples/
 !examples/browser-runner/
 !examples/browser-runner/browser-runner.js

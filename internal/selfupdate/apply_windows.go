@@ -25,6 +25,7 @@ type windowsUpdatePlan struct {
 	ParentPID      int      `json:"parent_pid"`
 	TargetPath     string   `json:"target_path"`
 	StagedPath     string   `json:"staged_path"`
+	BundlePath     string   `json:"bundle_path"`
 	CurrentVersion string   `json:"current_version"`
 	TargetVersion  string   `json:"target_version"`
 	RestartMode    string   `json:"restart_mode"`
@@ -46,12 +47,16 @@ func applyPlatformUpdate(ctx context.Context, request applyRequest) (applyResult
 
 	helperPath := filepath.Join(helperDir, "agentdock-update-helper.exe")
 	stagedPath := filepath.Join(helperDir, "agentdock-new.exe")
+	bundlePath := filepath.Join(helperDir, "core-skills")
 	planPath := filepath.Join(helperDir, "update-plan.json")
 	if err := copyFileWindows(request.CurrentPath, helperPath); err != nil {
 		return applyResult{}, fmt.Errorf("准备 Windows 更新辅助程序失败: %w", err)
 	}
 	if err := copyFileWindows(request.StagedPath, stagedPath); err != nil {
 		return applyResult{}, fmt.Errorf("准备 Windows 新版本文件失败: %w", err)
+	}
+	if err := copyDirectoryWindows(request.BundlePath, bundlePath); err != nil {
+		return applyResult{}, fmt.Errorf("准备 Windows 核心 Skill Bundle 失败: %w", err)
 	}
 
 	restartMode := "none"
@@ -69,6 +74,7 @@ func applyPlatformUpdate(ctx context.Context, request applyRequest) (applyResult
 		ParentPID:      os.Getpid(),
 		TargetPath:     request.CurrentPath,
 		StagedPath:     stagedPath,
+		BundlePath:     bundlePath,
 		CurrentVersion: request.CurrentVersion,
 		TargetVersion:  request.TargetVersion,
 		RestartMode:    restartMode,
@@ -111,7 +117,7 @@ func HandleInternalCommand(ctx context.Context, args []string) (bool, error) {
 	if err := json.Unmarshal(data, &plan); err != nil {
 		return true, fmt.Errorf("解析 Windows 更新计划失败: %w", err)
 	}
-	if plan.ParentPID <= 0 || strings.TrimSpace(plan.TargetPath) == "" || strings.TrimSpace(plan.StagedPath) == "" || normalizeVersion(plan.CurrentVersion) == "" || normalizeVersion(plan.TargetVersion) == "" {
+	if plan.ParentPID <= 0 || strings.TrimSpace(plan.TargetPath) == "" || strings.TrimSpace(plan.StagedPath) == "" || strings.TrimSpace(plan.BundlePath) == "" || normalizeVersion(plan.CurrentVersion) == "" || normalizeVersion(plan.TargetVersion) == "" {
 		return true, errors.New("Windows 更新计划缺少必要字段")
 	}
 	defer scheduleWindowsCleanup(filepath.Dir(args[1]))
@@ -184,18 +190,26 @@ func finalizeWindowsUpdate(ctx context.Context, plan windowsUpdatePlan) error {
 	if err := verifyBinaryVersion(ctx, plan.TargetPath, plan.TargetVersion); err != nil {
 		return rollback(fmt.Errorf("替换后的 Windows 二进制验证失败: %w", err))
 	}
-	if plan.RestartMode == "none" {
-		fmt.Printf("Windows 更新完成到 %s；当前未检测到托管服务，请重新启动 AgentDock。\n", plan.TargetVersion)
-		return nil
+	if plan.RestartMode != "none" {
+		if err := restartWindowsMode(ctx, plan); err != nil {
+			return rollback(fmt.Errorf("重新启动 Windows AgentDock 失败: %w", err))
+		}
+		if err := waitForVersion(ctx, plan.HealthURLs, plan.TargetVersion, 30*time.Second); err != nil {
+			return rollback(fmt.Errorf("Windows 新版本健康检查失败: %w", err))
+		}
+		fmt.Println("健康检查通过")
 	}
-	if err := restartWindowsMode(ctx, plan); err != nil {
-		return rollback(fmt.Errorf("重新启动 Windows AgentDock 失败: %w", err))
-	}
-	if err := waitForVersion(ctx, plan.HealthURLs, plan.TargetVersion, 30*time.Second); err != nil {
-		return rollback(fmt.Errorf("Windows 新版本健康检查失败: %w", err))
+
+	fmt.Println("正在更新官方核心 Skill...")
+	if err := bootstrapBundledSkills(ctx, plan.TargetPath, plan.BundlePath, os.Stdout); err != nil {
+		return rollback(err)
 	}
 	restartOldOnFailure = false
-	fmt.Printf("健康检查通过\nWindows 更新完成并已重启到 %s\n", plan.TargetVersion)
+	if plan.RestartMode == "none" {
+		fmt.Printf("Windows 更新完成到 %s；当前未检测到托管服务，请重新启动 AgentDock。\n", plan.TargetVersion)
+	} else {
+		fmt.Printf("Windows 更新完成并已重启到 %s\n", plan.TargetVersion)
+	}
 	return nil
 }
 
@@ -318,6 +332,42 @@ func runWindowsCommand(ctx context.Context, name string, args ...string) error {
 		return fmt.Errorf("%s %s 失败: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+func copyDirectoryWindows(sourceRoot, targetRoot string) error {
+	info, err := os.Lstat(sourceRoot)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("核心 Skill Bundle 必须是普通目录")
+	}
+	if err := os.Mkdir(targetRoot, 0o700); err != nil {
+		return err
+	}
+	return filepath.WalkDir(sourceRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == sourceRoot {
+			return nil
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("核心 Skill Bundle 不允许符号链接: %s", path)
+		}
+		relative, err := filepath.Rel(sourceRoot, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(targetRoot, relative)
+		if entry.IsDir() {
+			return os.Mkdir(target, 0o700)
+		}
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("核心 Skill Bundle 只允许普通文件: %s", path)
+		}
+		return copyFileWindows(path, target)
+	})
 }
 
 func copyFileWindows(sourcePath, targetPath string) error {

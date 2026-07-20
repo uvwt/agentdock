@@ -100,7 +100,7 @@ func (r *Runtime) resolveHostCommandWorkdir(args map[string]any, skill string) (
 }
 
 func (r *Runtime) resolveSkillCommandDir(skill string) (string, error) {
-	path, err := r.skills.state.Resolve(skill, "", "")
+	path, err := r.skills.state.Resolve(skill, "")
 	if err != nil {
 		return "", toolErrorDetails(
 			"SKILL_CONTEXT_INVALID",

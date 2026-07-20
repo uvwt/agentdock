@@ -28,9 +28,10 @@ PYURI
   cd "$ROOT_DIR"
   CGO_ENABLED=0 GOOS=darwin GOARCH="$release_arch" \
     go build -trimpath -o "$build_dir/bin/agentdock" ./cmd/agentdock
+  python3 scripts/build-core-skill-bundle.py --output "$build_dir/share/agentdock/core-skills"
 )
 
-tar -C "$build_dir" -czf "$release_dir/$asset" bin/agentdock
+tar -C "$build_dir" -czf "$release_dir/$asset" bin/agentdock share/agentdock/core-skills
 (
   cd "$release_dir"
   shasum -a 256 "$asset" > "$asset.sha256"
@@ -99,6 +100,10 @@ run_installer \
 test -x "$binary"
 "$binary" --help >/dev/null 2>&1
 test -d "$state_dir"
+test -f "$state_dir/skill-store/bundled-skills.json"
+test -f "$state_dir/skill-store/installed/skill-authoring/1.1.3/SKILL.md"
+test -f "$state_dir/skill-store/installed/skill-installation/1.2.0/SKILL.md"
+test -f "$state_dir/skill-store/installed/skill-vetter-runtime/0.1.5/SKILL.md"
 test -d "$backup_dir"
 test -d "$work_dir"
 test -d "$app_support"
@@ -339,7 +344,8 @@ test -f "$fake_state/pid"
 # 已有服务升级时，bootstrap 失败必须恢复旧二进制、env、启动脚本、plist 和旧 LaunchAgent。
 rollback_release_dir="$TMP_ROOT/rollback release"
 rollback_build_dir="$TMP_ROOT/rollback build"
-mkdir -p "$rollback_release_dir" "$rollback_build_dir/bin"
+mkdir -p "$rollback_release_dir" "$rollback_build_dir/bin" "$rollback_build_dir/share/agentdock"
+cp -R "$build_dir/share/agentdock/core-skills" "$rollback_build_dir/share/agentdock/core-skills"
 cat > "$rollback_build_dir/bin/agentdock" <<'SCRIPT'
 #!/bin/zsh
 case "${1:-}" in
@@ -352,7 +358,7 @@ case "${1:-}" in
 esac
 SCRIPT
 chmod 0755 "$rollback_build_dir/bin/agentdock"
-tar -C "$rollback_build_dir" -czf "$rollback_release_dir/$asset" bin/agentdock
+tar -C "$rollback_build_dir" -czf "$rollback_release_dir/$asset" bin/agentdock share/agentdock/core-skills
 (
   cd "$rollback_release_dir"
   shasum -a 256 "$asset" > "$asset.sha256"

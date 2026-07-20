@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -66,6 +67,9 @@ func TestRunDownloadsVerifiesAndAppliesRelease(t *testing.T) {
 			applied = true
 			if request.CurrentPath != "/tmp/agentdock" || request.TargetVersion != "v0.4.5" {
 				t.Fatalf("unexpected apply request: %#v", request)
+			}
+			if _, err := os.Stat(filepath.Join(request.BundlePath, "manifest.json")); err != nil {
+				t.Fatalf("core Skill Bundle was not extracted: %v", err)
 			}
 			return applyResult{Restarted: true}, nil
 		},
@@ -203,11 +207,21 @@ func makeTarGz(t *testing.T, name string, content []byte) []byte {
 	var buffer bytes.Buffer
 	gzipWriter := gzip.NewWriter(&buffer)
 	tarWriter := tar.NewWriter(gzipWriter)
-	if err := tarWriter.WriteHeader(&tar.Header{Name: name, Mode: 0o755, Size: int64(len(content))}); err != nil {
-		t.Fatal(err)
+	entries := []struct {
+		name    string
+		content []byte
+		mode    int64
+	}{
+		{name: name, content: content, mode: 0o755},
+		{name: coreSkillBundlePrefix + "manifest.json", content: []byte(`{"skills":[]}`), mode: 0o600},
 	}
-	if _, err := tarWriter.Write(content); err != nil {
-		t.Fatal(err)
+	for _, entry := range entries {
+		if err := tarWriter.WriteHeader(&tar.Header{Name: entry.name, Mode: entry.mode, Size: int64(len(entry.content))}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tarWriter.Write(entry.content); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := tarWriter.Close(); err != nil {
 		t.Fatal(err)

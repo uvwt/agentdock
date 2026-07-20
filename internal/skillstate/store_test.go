@@ -25,10 +25,10 @@ func TestStoreSupportsMultipleVersionsAndAtomicActivation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := store.Activate(context.Background(), "demo-skill", "1.0.0", ChannelStable); err != nil {
+	if err := store.Activate(context.Background(), "demo-skill", "1.0.0"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Activate(context.Background(), "demo-skill", "1.1.0", ChannelCanary); err != nil {
+	if err := store.Activate(context.Background(), "demo-skill", "1.1.0"); err != nil {
 		t.Fatal(err)
 	}
 	active, err := store.ActiveVersion("demo-skill")
@@ -45,12 +45,19 @@ func TestStoreSupportsMultipleVersionsAndAtomicActivation(t *testing.T) {
 	if previous != "1.0.0" {
 		t.Fatalf("previous version = %q, want 1.0.0", previous)
 	}
-	resolved, err := store.Resolve("demo-skill", "", ChannelStable)
+	resolved, err := store.Resolve("demo-skill", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filepath.Base(resolved) != "1.0.0" {
-		t.Fatalf("stable resolved to %q", resolved)
+	if filepath.Base(resolved) != "1.1.0" {
+		t.Fatalf("active version resolved to %q", resolved)
+	}
+	explicit, err := store.Resolve("demo-skill", "1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(explicit) != "1.0.0" {
+		t.Fatalf("explicit version resolved to %q", explicit)
 	}
 	versions, err := store.ListVersions("demo-skill")
 	if err != nil {
@@ -173,7 +180,7 @@ func TestActivateKeepsPreviousStateWhenAtomicSaveFails(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := store.Activate(context.Background(), "demo", "1.0.0", ChannelStable); err != nil {
+	if err := store.Activate(context.Background(), "demo", "1.0.0"); err != nil {
 		t.Fatal(err)
 	}
 	stateDir := filepath.Join(store.Root(), "state")
@@ -187,7 +194,7 @@ func TestActivateKeepsPreviousStateWhenAtomicSaveFails(t *testing.T) {
 		t.Skip("filesystem permissions do not block writes for this test user")
 	}
 
-	if err := store.Activate(context.Background(), "demo", "2.0.0", ChannelStable); err == nil {
+	if err := store.Activate(context.Background(), "demo", "2.0.0"); err == nil {
 		t.Fatal("Activate() succeeded despite unwritable state directory")
 	}
 	active, err := store.ActiveVersion("demo")
@@ -211,7 +218,7 @@ func TestActivationDoesNotCreateLegacyActiveSymlink(t *testing.T) {
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Activate(context.Background(), "demo", "1.0.0", ChannelStable); err != nil {
+	if err := store.Activate(context.Background(), "demo", "1.0.0"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(store.Root(), "active")); !os.IsNotExist(err) {
@@ -238,7 +245,7 @@ func TestActivateRechecksInstalledVersionAfterAcquiringLock(t *testing.T) {
 	}
 	result := make(chan error, 1)
 	go func() {
-		result <- store.Activate(context.Background(), "demo", "2.0.0", ChannelStable)
+		result <- store.Activate(context.Background(), "demo", "2.0.0")
 	}()
 	select {
 	case err := <-result:
@@ -313,7 +320,7 @@ func TestStoreRejectsRemovingActiveVersion(t *testing.T) {
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Activate(context.Background(), "demo", "1.0.0", ChannelStable); err != nil {
+	if err := store.Activate(context.Background(), "demo", "1.0.0"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.RemoveVersion(context.Background(), "demo", "1.0.0"); err == nil {

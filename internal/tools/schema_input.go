@@ -135,11 +135,11 @@ func InputSchema(name string) map[string]any {
 		required = []string{"action"}
 
 	case "skill_package":
-		props["action"] = map[string]any{"type": "string", "description": "Skill package or isolated environment action.", "enum": []string{"validate", "install", "rollback", "env_set", "env_unset", "env_list"}}
-		props["skill"] = stringProp("Skill name for rollback or environment management.")
+		props["action"] = map[string]any{"type": "string", "description": "Skill package or isolated environment action.", "enum": []string{"validate", "install", "activate", "rollback", "env_set", "env_unset", "env_list"}}
+		props["skill"] = stringProp("Skill name for activate, rollback, or environment management.")
+		props["version"] = stringProp("Installed Skill version for activate.")
 		props["key"] = stringProp("Environment variable name for env_set/env_unset.")
 		props["value"] = stringProp("Environment variable value for env_set. Secret values are never returned.")
-		props["channel"] = map[string]any{"type": "string", "description": "Skill channel: development, canary, stable, or pinned.", "enum": []string{"development", "canary", "stable", "pinned"}}
 		props["source"] = stringProp("Host path or HTTP(S) URL for validate/install.")
 		props["digest"] = stringProp("Optional expected SHA-256 digest for validate/install.")
 		props["activate"] = boolProp("Activate the installed version. Defaults to true.")

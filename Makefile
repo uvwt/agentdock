@@ -10,6 +10,7 @@ LOG_LEVEL ?= info
 BUILD_COMMIT ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || printf unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 BUILD_LDFLAGS := -X github.com/uvwt/agentdock/internal/buildinfo.Commit=$(BUILD_COMMIT) -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=$(BUILD_DATE)
+DOCKER_BUILD_ARGS := --build-arg BUILD_COMMIT=$(BUILD_COMMIT) --build-arg BUILD_DATE=$(BUILD_DATE)
 
 fmt:
 	gofmt -w ./cmd ./internal
@@ -56,13 +57,13 @@ smoke-macos:
 	printf '%s\n' '{"skill_action":"status","check_screenshot":false,"check_applescript":true}' | ./skill-sources/desktop/run.py
 
 docker-build:
-	docker build --target runtime -t $(IMAGE) .
+	docker build $(DOCKER_BUILD_ARGS) --target runtime -t $(IMAGE) .
 
 docker-dev-build:
-	docker build --target dev -t $(DEV_IMAGE) .
+	docker build $(DOCKER_BUILD_ARGS) --target dev -t $(DEV_IMAGE) .
 
 docker-browser-build:
-	docker build --target browser -t $(BROWSER_IMAGE) .
+	docker build $(DOCKER_BUILD_ARGS) --target browser -t $(BROWSER_IMAGE) .
 
 docker-up:
 	AGENTDOCK_IMAGE=$(IMAGE) docker compose up -d

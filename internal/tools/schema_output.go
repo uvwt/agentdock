@@ -131,7 +131,7 @@ func OutputSchema(name string) map[string]any {
 		props["digest"] = stringProp("Computed Skill package digest.")
 		props["issues"] = arrayProp("Structured validation issues.")
 		props["document"] = objectProp("Parsed SKILL.md frontmatter and body metadata.")
-		props["result"] = objectProp("Install or rollback result.")
+		props["result"] = objectProp("Install, activate, or rollback result.")
 	case "mcp_manage":
 		props["action"] = stringProp("Completed dynamic MCP management action.")
 		props["servers"] = arrayProp("Registered dynamic MCP server summaries.")

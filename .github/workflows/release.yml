@@ -46,7 +46,8 @@ jobs:
           go build -trimpath \
             -ldflags="-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Commit=${GITHUB_SHA} -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=${build_date}" \
             -o dist/bin/agentdock ./cmd/agentdock
-          tar -C dist -czf "$asset" bin/agentdock
+          python3 scripts/build-core-skill-bundle.py --output dist/share/agentdock/core-skills
+          tar -C dist -czf "$asset" bin/agentdock share/agentdock/core-skills
           shasum -a 256 "$asset" > "$asset.sha256"
 
       - name: Upload artifact
@@ -100,7 +101,8 @@ jobs:
           go build -trimpath \
             -ldflags="-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Commit=${GITHUB_SHA} -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=${build_date}" \
             -o dist/bin/agentdock ./cmd/agentdock
-          tar -C dist -czf "$asset" bin/agentdock
+          python3 scripts/build-core-skill-bundle.py --output dist/share/agentdock/core-skills
+          tar -C dist -czf "$asset" bin/agentdock share/agentdock/core-skills
           shasum -a 256 "$asset" > "$asset.sha256"
 
       - name: Upload artifact
@@ -147,14 +149,11 @@ jobs:
             -OutputPath $downloadedInstaller
           "DOWNLOADED_INSTALLER=$downloadedInstaller" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
 
-      - name: Run full install and in-place upgrade as standard user
-        if: matrix.goarch == 'amd64'
+      - name: Validate downloaded installer
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          & .\scripts\run-windows-installer-e2e-as-standard-user.ps1 `
-            -InstallerPath $env:DOWNLOADED_INSTALLER `
-            -Version v0.2.0
+          & .\scripts\test-install-windows.ps1 -InstallerPath $env:DOWNLOADED_INSTALLER
 
       - name: Detect Authenticode configuration
         id: signing
@@ -215,7 +214,8 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $asset = "agentdock_windows_$env:GOARCH.zip"
-          Compress-Archive -LiteralPath dist/agentdock.exe -DestinationPath $asset -Force
+          python .\scripts\build-core-skill-bundle.py --output dist\share\agentdock\core-skills
+          Compress-Archive -Path dist\agentdock.exe, dist\share -DestinationPath $asset -Force
           $hash = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
           [IO.File]::WriteAllText("$asset.sha256", "$hash  $asset`n", [Text.UTF8Encoding]::new($false))
 
@@ -370,6 +370,11 @@ jobs:
             type=raw,value=${{ matrix.tag_prefix }}${{ github.event.inputs.tag || github.ref_name }},priority=1000
             type=raw,value=${{ matrix.latest_tag }},priority=100
 
+      - name: Prepare image build metadata
+        id: build
+        shell: bash
+        run: echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
@@ -380,6 +385,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ steps.build.outputs.date }}
           cache-from: type=gha,scope=${{ matrix.variant }}
           cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
 
@@ -415,6 +423,13 @@ jobs:
           AGENTDOCK_AUTH_TOKEN=test-token \
             bash "$installer"
           "$install_dir/bin/agentdock" --help >/dev/null 2>&1
+          test -f "$data_dir/.agentdock/skill-store/bundled-skills.json"
+          for skill in skill-authoring skill-installation skill-vetter-runtime; do
+            state="$data_dir/.agentdock/skill-store/state/$skill.json"
+            version="$(jq -r .active_version "$state")"
+            test -n "$version"
+            test -f "$data_dir/.agentdock/skill-store/installed/$skill/$version/SKILL.md"
+          done
 
   verify-macos-release:
     name: Verify published macOS installer
@@ -436,6 +451,12 @@ jobs:
           AGENTDOCK_INSTALL_DIR="$RUNNER_TEMP/bin" \
             zsh "$installer" --version "$tag"
           "$RUNNER_TEMP/bin/agentdock" --help >/dev/null 2>&1
+          test -f "$RUNNER_TEMP/home/.agentdock/skill-store/bundled-skills.json"
+          for skill in skill-authoring skill-installation skill-vetter-runtime; do
+            state="$RUNNER_TEMP/home/.agentdock/skill-store/state/$skill.json"
+            version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["active_version"])' "$state")"
+            test -f "$RUNNER_TEMP/home/.agentdock/skill-store/installed/$skill/$version/SKILL.md"
+          done
 
   verify-windows-release:
     name: Verify published Windows installer

@@ -26,8 +26,9 @@ import (
 )
 
 const (
-	defaultReleaseAPI = "https://api.github.com/repos/uvwt/agentdock/releases/latest"
-	maxReleaseBytes   = 64 << 20
+	defaultReleaseAPI     = "https://api.github.com/repos/uvwt/agentdock/releases/latest"
+	maxReleaseBytes       = 64 << 20
+	coreSkillBundlePrefix = "share/agentdock/core-skills/"
 )
 
 type release struct {
@@ -56,6 +57,7 @@ type applyRequest struct {
 	CurrentPath    string
 	CurrentVersion string
 	StagedPath     string
+	BundlePath     string
 	TargetVersion  string
 	Output         io.Writer
 }
@@ -143,18 +145,23 @@ func run(ctx context.Context, opts options) error {
 	}
 	fmt.Fprintln(opts.Output, "文件校验通过")
 
-	binaryData, err := extractExecutable(archiveData, opts.GOOS, executableName)
-	if err != nil {
-		return fmt.Errorf("解压更新文件失败: %w", err)
-	}
 	tempDir, err := os.MkdirTemp("", "agentdock-update-*")
 	if err != nil {
 		return fmt.Errorf("创建更新临时目录失败: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
+
+	binaryData, err := extractExecutable(archiveData, opts.GOOS, executableName)
+	if err != nil {
+		return fmt.Errorf("解压更新文件失败: %w", err)
+	}
 	stagedPath := filepath.Join(tempDir, executableName)
 	if err := os.WriteFile(stagedPath, binaryData, 0o755); err != nil {
 		return fmt.Errorf("写入新版本二进制失败: %w", err)
+	}
+	bundlePath, err := extractCoreSkillBundle(archiveData, opts.GOOS, tempDir)
+	if err != nil {
+		return fmt.Errorf("解压核心 Skill Bundle 失败: %w", err)
 	}
 	if err := opts.VerifyBinary(ctx, stagedPath, targetVersion); err != nil {
 		return fmt.Errorf("新版本二进制验证失败，当前版本未被修改: %w", err)
@@ -165,6 +172,7 @@ func run(ctx context.Context, opts options) error {
 		CurrentPath:    opts.ExecutablePath,
 		CurrentVersion: currentVersion,
 		StagedPath:     stagedPath,
+		BundlePath:     bundlePath,
 		TargetVersion:  targetVersion,
 		Output:         opts.Output,
 	})

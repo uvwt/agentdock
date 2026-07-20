@@ -70,6 +70,9 @@ Read references and call existing tools.
 	if !ok || result.Skill != "demo-skill" || !result.Activated {
 		t.Fatalf("unexpected install result: %#v", installed["result"])
 	}
+	if err := rt.skills.state.ReplaceBundledSkills(context.Background(), []string{"demo-skill"}); err != nil {
+		t.Fatal(err)
+	}
 	inspected, err := rt.skillInspect(map[string]any{"skill": "demo-skill"})
 	if err != nil {
 		t.Fatal(err)
@@ -77,12 +80,19 @@ Read references and call existing tools.
 	if inspected["version"] != "1.0.0" {
 		t.Fatalf("unexpected inspected version: %#v", inspected)
 	}
+	if inspected["bundled"] != true {
+		t.Fatalf("inspect did not expose bundled Skill: %#v", inspected)
+	}
 	listed, err := rt.skillList()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if listed["count"] != 1 {
 		t.Fatalf("unexpected list: %#v", listed)
+	}
+	items, ok := listed["skills"].([]map[string]any)
+	if !ok || len(items) != 1 || items[0]["bundled"] != true {
+		t.Fatalf("list did not expose bundled Skill: %#v", listed)
 	}
 }
 

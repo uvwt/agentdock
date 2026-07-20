@@ -21,7 +21,6 @@ type skillToolInput struct {
 	Action   string
 	Skill    string
 	Version  string
-	Channel  skillstate.Channel
 	Source   string
 	Digest   string
 	MaxBytes int64
@@ -33,19 +32,11 @@ func parseSkillToolInput(args map[string]any) skillToolInput {
 		Action:   strings.ToLower(strings.TrimSpace(stringArg(args, "action", ""))),
 		Skill:    strings.TrimSpace(stringArg(args, "skill", "")),
 		Version:  strings.TrimSpace(stringArg(args, "version", "")),
-		Channel:  skillstate.Channel(strings.TrimSpace(stringArg(args, "channel", ""))),
 		Source:   strings.TrimSpace(stringArg(args, "source", "")),
 		Digest:   strings.TrimSpace(stringArg(args, "digest", "")),
 		MaxBytes: int64(intArg(args, "max_bytes", 0)),
 		Activate: boolArg(args, "activate", true),
 	}
-}
-
-func (input skillToolInput) channelOr(fallback skillstate.Channel) skillstate.Channel {
-	if input.Channel == "" {
-		return fallback
-	}
-	return input.Channel
 }
 
 func (input skillToolInput) requiredSkill() (string, error) {
@@ -78,6 +69,8 @@ func (r *Runtime) skillPackage(ctx context.Context, args map[string]any) (Result
 		return r.skillValidate(ctx, input)
 	case "install":
 		return r.skillInstall(ctx, input)
+	case "activate":
+		return r.skillActivate(ctx, input)
 	case "rollback":
 		return r.skillRollback(ctx, input)
 	case "env_set", "env_unset", "env_list":
@@ -89,7 +82,7 @@ func (r *Runtime) skillPackage(ctx context.Context, args map[string]any) (Result
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported skill_package action", "validation", map[string]any{
 			"action":  input.Action,
-			"allowed": []string{"validate", "install", "rollback", "env_set", "env_unset", "env_list"},
+			"allowed": []string{"validate", "install", "activate", "rollback", "env_set", "env_unset", "env_list"},
 		})
 	}
 }
@@ -98,6 +91,14 @@ func (r *Runtime) skillList() (Result, error) {
 	names, err := r.skills.state.ListSkills()
 	if err != nil {
 		return nil, skillToolError(err)
+	}
+	bundledNames, err := r.skills.state.BundledSkills()
+	if err != nil {
+		return nil, skillToolError(err)
+	}
+	bundled := make(map[string]struct{}, len(bundledNames))
+	for _, name := range bundledNames {
+		bundled[name] = struct{}{}
 	}
 	items := make([]map[string]any, 0, len(names))
 	for _, name := range names {
@@ -109,11 +110,12 @@ func (r *Runtime) skillList() (Result, error) {
 		if err != nil {
 			return nil, skillToolError(err)
 		}
+		_, isBundled := bundled[name]
 		items = append(items, map[string]any{
 			"skill":          name,
 			"versions":       versions,
 			"active_version": selection.ActiveVersion,
-			"channels":       selection.Channels,
+			"bundled":        isBundled,
 			"updated_at":     selection.UpdatedAt,
 		})
 	}
@@ -134,10 +136,11 @@ func (r *Runtime) skillInspect(args map[string]any) (Result, error) {
 	if err != nil {
 		return nil, skillToolError(err)
 	}
-	selected := input.Version
-	if selected == "" && input.Channel != "" {
-		selected = selection.Channels[input.Channel]
+	bundled, err := r.skills.state.IsBundled(skill)
+	if err != nil {
+		return nil, skillToolError(err)
 	}
+	selected := input.Version
 	if selected == "" {
 		selected = selection.ActiveVersion
 	}
@@ -146,6 +149,7 @@ func (r *Runtime) skillInspect(args map[string]any) (Result, error) {
 		"skill":     skill,
 		"versions":  versions,
 		"selection": selection,
+		"bundled":   bundled,
 	}
 	if selected == "" {
 		return result, nil
@@ -202,7 +206,6 @@ func (r *Runtime) skillInstall(ctx context.Context, input skillToolInput) (Resul
 		Source:       resolved,
 		DigestSHA256: input.Digest,
 		Activate:     input.Activate,
-		Channel:      input.channelOr(skillstate.ChannelStable),
 		MaxBytes:     input.MaxBytes,
 	})
 	if err != nil {
@@ -211,12 +214,27 @@ func (r *Runtime) skillInstall(ctx context.Context, input skillToolInput) (Resul
 	return Result{"action": "install", "result": result}, nil
 }
 
+func (r *Runtime) skillActivate(ctx context.Context, input skillToolInput) (Result, error) {
+	skill, err := input.requiredSkill()
+	if err != nil {
+		return nil, err
+	}
+	if input.Version == "" {
+		return nil, toolErrorDetails("VALIDATION_ERROR", "version is required for skill activate", "validation", map[string]any{"field": "version"})
+	}
+	result, err := r.skills.manager.Activate(ctx, skill, input.Version)
+	if err != nil {
+		return nil, skillToolError(err)
+	}
+	return Result{"action": "activate", "result": result}, nil
+}
+
 func (r *Runtime) skillRollback(ctx context.Context, input skillToolInput) (Result, error) {
 	skill, err := input.requiredSkill()
 	if err != nil {
 		return nil, err
 	}
-	result, err := r.skills.manager.Rollback(ctx, skill, input.channelOr(skillstate.ChannelStable))
+	result, err := r.skills.manager.Rollback(ctx, skill)
 	if err != nil {
 		return nil, skillToolError(err)
 	}
