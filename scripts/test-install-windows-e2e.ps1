@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string] $InstallerPath = '',
-    [string] $Version = 'v0.2.0',
+    [string] $Version = 'latest',
+    [string] $ReleaseBaseUrl = '',
     [int] $Port = 18765
 )
 
@@ -22,6 +23,10 @@ $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $runValueName = 'AgentDock'
 $healthUrl = "http://127.0.0.1:$Port/healthz"
 $originalUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$originalReleaseBaseUrl = $env:AGENTDOCK_RELEASE_BASE_URL
+if ($ReleaseBaseUrl) {
+    $env:AGENTDOCK_RELEASE_BASE_URL = $ReleaseBaseUrl
+}
 
 function Stop-TestAgentDock {
     Get-Process -Name 'agentdock' -ErrorAction SilentlyContinue | Where-Object {
@@ -113,4 +118,5 @@ finally {
     Remove-ItemProperty -LiteralPath $runKey -Name $runValueName -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
     [Environment]::SetEnvironmentVariable('Path', $originalUserPath, 'User')
+    $env:AGENTDOCK_RELEASE_BASE_URL = $originalReleaseBaseUrl
 }

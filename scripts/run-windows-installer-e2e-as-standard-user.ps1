@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string] $InstallerPath = '',
-    [string] $Version = 'v0.2.0'
+    [string] $Version = 'latest',
+    [string] $ReleaseBaseUrl = ''
 )
 
 Set-StrictMode -Version Latest
@@ -36,6 +37,9 @@ try {
     $testScript = Join-Path $testScriptDir 'test-install-windows-e2e.ps1'
     $installerScript = Join-Path $testScriptDir 'install-windows.ps1'
     $arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$testScript`" -InstallerPath `"$installerScript`" -Version $Version"
+    if ($ReleaseBaseUrl) {
+        $arguments += " -ReleaseBaseUrl `"$ReleaseBaseUrl`""
+    }
     $process = Start-Process `
         -FilePath 'powershell.exe' `
         -Credential $credential `

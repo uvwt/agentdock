@@ -28,6 +28,11 @@ function Get-AgentDockArchitecture {
 function Get-ReleaseBaseUrl {
     param([string] $RequestedVersion)
 
+    $customBaseUrl = [Environment]::GetEnvironmentVariable('AGENTDOCK_RELEASE_BASE_URL')
+    if (-not [string]::IsNullOrWhiteSpace($customBaseUrl)) {
+        return $customBaseUrl.TrimEnd('/')
+    }
+
     if ($RequestedVersion -eq 'latest') {
         return 'https://github.com/uvwt/agentdock/releases/latest/download'
     }
