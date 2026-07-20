@@ -26,6 +26,17 @@ func DigestFile(path string) (string, error) {
 }
 
 func DigestDirectory(root string) (string, error) {
+	return digestDirectory(root, false)
+}
+
+// digestPackageContent 计算安装后的稳定内容摘要。
+// 传输层 ZIP 摘要用于校验下载来源；版本冲突判断必须只看最终包内容，
+// 并忽略 AgentDock 自己写入的安装元数据。
+func digestPackageContent(root string) (string, error) {
+	return digestDirectory(root, true)
+}
+
+func digestDirectory(root string, packageContent bool) (string, error) {
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {
 		return "", err
@@ -48,7 +59,11 @@ func DigestDirectory(root string) (string, error) {
 		if err != nil {
 			return err
 		}
-		paths = append(paths, filepath.ToSlash(rel))
+		rel = filepath.ToSlash(rel)
+		if packageContent && rel == ".agentdock-install.json" {
+			return nil
+		}
+		paths = append(paths, rel)
 		return nil
 	})
 	if err != nil {
@@ -62,7 +77,16 @@ func DigestDirectory(root string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		fmt.Fprintf(h, "%s\x00%o\x00%d\x00", rel, info.Mode().Perm(), info.Size())
+		mode := info.Mode().Perm()
+		if packageContent {
+			// copyPackage 与 ZIP 解压都会把文件权限收敛到 0755 范围，
+			// 内容摘要使用相同规则，避免目录与 ZIP 传输产生虚假差异。
+			mode &= 0o755
+			if mode == 0 {
+				mode = 0o600
+			}
+		}
+		fmt.Fprintf(h, "%s\x00%o\x00%d\x00", rel, mode, info.Size())
 		f, err := os.Open(path)
 		if err != nil {
 			return "", err

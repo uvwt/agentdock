@@ -47,12 +47,12 @@ func (m *Manager) Install(ctx context.Context, req InstallRequest) (InstallResul
 	}
 	defer os.RemoveAll(work)
 
-	packageDir, digest, err := m.prepareSource(ctx, req.Source, work, maxBytes)
+	packageDir, sourceDigest, err := m.prepareSource(ctx, req.Source, work, maxBytes)
 	if err != nil {
 		return InstallResult{}, err
 	}
-	if expected := normalizeDigest(req.DigestSHA256); expected != "" && expected != digest {
-		return InstallResult{}, packageError(ErrDigestMismatch, "digest", fmt.Errorf("expected %s, got %s", expected, digest))
+	if expected := normalizeDigest(req.DigestSHA256); expected != "" && expected != sourceDigest {
+		return InstallResult{}, packageError(ErrDigestMismatch, "digest", fmt.Errorf("expected %s, got %s", expected, sourceDigest))
 	}
 	if err := ValidatePackage(packageDir); err != nil {
 		return InstallResult{}, err
@@ -61,14 +61,18 @@ func (m *Manager) Install(ctx context.Context, req InstallRequest) (InstallResul
 	if err != nil {
 		return InstallResult{}, err
 	}
+	contentDigest, err := digestPackageContent(packageDir)
+	if err != nil {
+		return InstallResult{}, packageError(ErrInstallFailed, "content_digest", err)
+	}
 	destination, err := m.State.InstalledPath(doc.Name, doc.Version)
 	if err != nil {
 		return InstallResult{}, packageError(ErrInstallFailed, "destination", err)
 	}
 	if _, err := os.Stat(destination); err == nil {
-		existingDigest, digestErr := installedDigest(destination)
-		if digestErr == nil && existingDigest == digest {
-			return m.finishInstall(ctx, req, doc, destination, digest)
+		existingDigest, digestErr := digestPackageContent(destination)
+		if digestErr == nil && existingDigest == contentDigest {
+			return m.finishInstall(ctx, req, doc, destination, sourceDigest)
 		}
 		return InstallResult{}, packageError(ErrInstallFailed, "install", errors.New("version already exists with different content"))
 	} else if !os.IsNotExist(err) {
@@ -85,7 +89,7 @@ func (m *Manager) Install(ctx context.Context, req InstallRequest) (InstallResul
 	metadata := struct {
 		Digest      string    `json:"digest"`
 		InstalledAt time.Time `json:"installed_at"`
-	}{Digest: digest, InstalledAt: time.Now().UTC()}
+	}{Digest: contentDigest, InstalledAt: time.Now().UTC()}
 	metaData, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
 		_ = os.RemoveAll(staged)
@@ -99,7 +103,7 @@ func (m *Manager) Install(ctx context.Context, req InstallRequest) (InstallResul
 		_ = os.RemoveAll(staged)
 		return InstallResult{}, packageError(ErrInstallFailed, "install", err)
 	}
-	return m.finishInstall(ctx, req, doc, destination, digest)
+	return m.finishInstall(ctx, req, doc, destination, sourceDigest)
 }
 
 func (m *Manager) finishInstall(ctx context.Context, req InstallRequest, doc SkillDocument, destination, digest string) (InstallResult, error) {
@@ -117,23 +121,6 @@ func (m *Manager) finishInstall(ctx context.Context, req InstallRequest, doc Ski
 		result.Activated = true
 	}
 	return result, nil
-}
-
-func installedDigest(destination string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(destination, ".agentdock-install.json"))
-	if err != nil {
-		return "", err
-	}
-	var metadata struct {
-		Digest string `json:"digest"`
-	}
-	if err := json.Unmarshal(data, &metadata); err != nil {
-		return "", err
-	}
-	if metadata.Digest == "" {
-		return "", errors.New("installed package metadata has no digest")
-	}
-	return metadata.Digest, nil
 }
 
 func (m *Manager) prepareSource(ctx context.Context, source, work string, maxBytes int64) (string, string, error) {
