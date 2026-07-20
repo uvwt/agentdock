@@ -370,6 +370,11 @@ jobs:
             type=raw,value=${{ matrix.tag_prefix }}${{ github.event.inputs.tag || github.ref_name }},priority=1000
             type=raw,value=${{ matrix.latest_tag }},priority=100
 
+      - name: Prepare image build metadata
+        id: build
+        shell: bash
+        run: echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
@@ -380,6 +385,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ steps.build.outputs.date }}
           cache-from: type=gha,scope=${{ matrix.variant }}
           cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
 

@@ -7,6 +7,8 @@ browser_image="${AGENTDOCK_TEST_BROWSER_IMAGE:-agentdock:test-browser}"
 build_images="${AGENTDOCK_TEST_BUILD:-true}"
 pull_images="${AGENTDOCK_TEST_PULL:-}"
 expected_version="${AGENTDOCK_EXPECT_IMAGE_VERSION:-}"
+build_commit="${AGENTDOCK_TEST_BUILD_COMMIT:-$(git rev-parse --short=12 HEAD 2>/dev/null || printf unknown)}"
+build_date="${AGENTDOCK_TEST_BUILD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 max_runtime_bytes="${AGENTDOCK_TEST_MAX_RUNTIME_BYTES:-700000000}"
 max_dev_bytes="${AGENTDOCK_TEST_MAX_DEV_BYTES:-1100000000}"
 max_browser_bytes="${AGENTDOCK_TEST_MAX_BROWSER_BYTES:-1600000000}"
@@ -72,9 +74,13 @@ if [[ -z "$pull_images" ]]; then
 fi
 
 if [[ "$build_images" == "true" ]]; then
-  docker build --target runtime -t "$runtime_image" .
-  docker build --target dev -t "$dev_image" .
-  docker build --target browser -t "$browser_image" .
+  docker_build_args=(
+    --build-arg "BUILD_COMMIT=$build_commit"
+    --build-arg "BUILD_DATE=$build_date"
+  )
+  docker build "${docker_build_args[@]}" --target runtime -t "$runtime_image" .
+  docker build "${docker_build_args[@]}" --target dev -t "$dev_image" .
+  docker build "${docker_build_args[@]}" --target browser -t "$browser_image" .
 elif [[ "$build_images" != "false" ]]; then
   printf 'AGENTDOCK_TEST_BUILD must be true or false\n' >&2
   exit 1
@@ -117,6 +123,13 @@ docker run --rm "$runtime_image" sh -c '
   rg --version >/dev/null
   fd --version >/dev/null
 '
+
+if [[ "$build_images" == "true" ]]; then
+  version_output="$(docker run --rm --entrypoint agentdock "$runtime_image" --version)"
+  printf '%s\n' "$version_output"
+  grep -Fq "commit: ${build_commit:0:12}" <<<"$version_output"
+  grep -Fq "built: $build_date" <<<"$version_output"
+fi
 
 if [[ -n "$expected_version" ]]; then
   actual_version="$(docker image inspect "$runtime_image" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"

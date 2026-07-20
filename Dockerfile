@@ -2,12 +2,17 @@
 
 FROM golang:1.26.5-bookworm@sha256:18aedc16aa19b3fd7ded7245fc14b109e054d65d22ed53c355c899582bbb2113 AS build
 
+ARG BUILD_COMMIT=unknown
+ARG BUILD_DATE=unknown
+
 WORKDIR /src
 COPY go.mod go.sum ./
 COPY cmd ./cmd
 COPY internal ./internal
 
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/agentdock ./cmd/agentdock
+RUN CGO_ENABLED=0 go build -trimpath \
+      -ldflags="-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Commit=${BUILD_COMMIT} -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=${BUILD_DATE}" \
+      -o /out/agentdock ./cmd/agentdock
 
 FROM node:22.17.0-bookworm-slim@sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0 AS runtime-base
 
