@@ -50,6 +50,14 @@ func Serve(ctx context.Context, server *mcp.Server, cfg config.Config) error {
 		return fmt.Errorf("clean public artifacts: %w", err)
 	}
 	slog.Info("http server configured", "host", cfg.Host, "port", cfg.Port, "auth_required", authRequired, "endpoint", "/mcp")
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Only the site root — do not swallow /mcp, /console, healthz, etc.
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		http.Redirect(w, r, "/console", http.StatusFound)
+	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "application/json")
 		writeJSON(w, map[string]any{"ok": true, "version": config.Version})
@@ -66,6 +74,9 @@ func Serve(ctx context.Context, server *mcp.Server, cfg config.Config) error {
 	registerOAuthRoutes(mux, cfg, oauthStore)
 	mux.HandleFunc("/context", agentDockContextHandler(server, cfg, oauthStore))
 	registerRuntimeAPI(mux, server, cfg, oauthStore)
+	registerGoalAPI(mux, server, cfg, oauthStore)
+	registerOpsAPI(mux, server, cfg, oauthStore)
+	registerConsole(mux, server, cfg, oauthStore)
 	mux.HandleFunc("/mcp", mcpEndpointHandler(server, cfg, oauthStore))
 
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)

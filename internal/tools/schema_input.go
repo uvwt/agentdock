@@ -57,14 +57,14 @@ func InputSchema(name string) map[string]any {
 		props["max_results"] = boundedIntProp("Maximum matches. Defaults to 100 and is capped at 1000.", 1, 1000)
 		required = []string{"query"}
 	case "file_edit":
-		props["action"] = map[string]any{"type": "string", "description": "File edit action.", "enum": []string{"replace", "patch", "add", "delete", "move"}}
-		props["path"] = stringProp(filePathDescription("Host path for replace, add, delete, or move. Relative paths resolve from ~/AgentDock."))
+		props["action"] = map[string]any{"type": "string", "description": "File edit action.", "enum": []string{"replace", "patch", "add", "delete", "move", "atomic_write"}}
+		props["path"] = stringProp(filePathDescription("Host path for replace, add, delete, move, or atomic_write. Relative paths resolve from ~/AgentDock."))
 		addFileRuntimeProperties(props)
 		props["old"] = stringProp("Exact UTF-8 text to replace.")
 		props["new"] = stringProp("Replacement UTF-8 text for action=replace.")
 		props["replace_all"] = boolProp("Replace every match instead of only the first.")
 		props["expected_matches"] = map[string]any{"type": "integer", "description": "Required number of matches. Defaults to 1; zero asserts no matches.", "minimum": 0}
-		props["content"] = stringProp("Text content for action=add.")
+		props["content"] = stringProp("Text content for action=add or action=atomic_write.")
 		props["new_path"] = stringProp(filePathDescription("Destination path for action=move."))
 		props["overwrite"] = boolProp("Allow add or move to replace an existing destination file.")
 		props["recursive"] = boolProp("Required for deleting directories.")
@@ -118,6 +118,124 @@ func InputSchema(name string) map[string]any {
 		props["summary"] = stringProp("Current progress, blocker, resume, or final review summary.")
 		props["verified"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Facts verified during final_review. Required when status=pass."}
 		props["risks"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Remaining risks. Required when final_review status=failed."}
+		required = []string{"action"}
+
+	case "goal_manage":
+		props["action"] = map[string]any{
+			"type":        "string",
+			"description": "Goal Mode lifecycle action. Long-running verifiable outcomes should use goal_manage instead of task_manage.",
+			"enum": []string{
+				"create", "list", "get", "commit_turn", "request_approval", "resolve_approval", "update_constraints",
+				"pause", "resume", "cancel", "mark_blocked", "mark_completed", "get_evidence",
+				"acquire_lease", "release_lease", "add_evidence", "verify", "check_policy",
+				"execute_steps", "run_workflow", "bind", "unbind", "store_artifact",
+				"request_reasoning", "chatgpt_wake", "chatgpt_worker_status", "set_auto_wake", "set_auto_approve_tools", "chatgpt_force_rotate",
+				"orchestrate_start", "orchestrate_stop", "orchestrate_status",
+			},
+		}
+		props["goal_id"] = stringProp("Persistent goal id for get, lease, commit, lifecycle, and evidence actions.")
+		props["title"] = stringProp("Short goal title for create.")
+		props["objective"] = stringProp("Fixed objective for create. Required.")
+		props["workspace_id"] = stringProp("Optional workspace label for create.")
+		props["device_id"] = stringProp("Optional device label for create.")
+		props["mode"] = map[string]any{"type": "string", "enum": []string{"guarded", "autopilot", "readonly"}, "description": "Policy mode. Defaults to guarded."}
+		props["base_git_sha"] = stringProp("Optional baseline git SHA recorded at create.")
+		props["success_criteria"] = map[string]any{
+			"type": "array", "minItems": 1, "maxItems": 32,
+			"description": "Machine-oriented success criteria for create. Each item needs type and expression.",
+			"items": map[string]any{
+				"type": "object", "additionalProperties": false,
+				"required": []string{"expression"},
+				"properties": map[string]any{
+					"id":         stringProp("Stable criterion id."),
+					"type":       map[string]any{"type": "string", "enum": []string{"command", "metric", "browser", "manual"}, "description": "Criterion kind."},
+					"expression": stringProp("Checkable expression, e.g. test_exit_code == 0 or url_contains:/dashboard."),
+				},
+			},
+		}
+		props["constraints"] = map[string]any{
+			"type": "array", "maxItems": 32,
+			"description": "Goal constraints for create or update_constraints.",
+			"items": map[string]any{
+				"type": "object", "additionalProperties": false,
+				"required": []string{"type", "value"},
+				"properties": map[string]any{
+					"type":  map[string]any{"type": "string", "enum": []string{"prohibition", "quality", "approval", "budget"}},
+					"value": stringProp("Constraint value such as no_git_push."),
+				},
+			},
+		}
+		props["milestones"] = map[string]any{
+			"type": "array", "maxItems": 24,
+			"description": "Optional milestones for create.",
+			"items": map[string]any{
+				"type": "object", "additionalProperties": false,
+				"required": []string{"title"},
+				"properties": map[string]any{
+					"id":    stringProp("Stable milestone id."),
+					"title": stringProp("Human-readable milestone title."),
+				},
+			},
+		}
+		props["budget"] = objectProp("Optional budget overrides for create: max_reasoning_turns, max_replans, max_conversation_rotations, max_runtime_minutes, max_identical_failures, max_browser_retries, max_changed_files.")
+		props["worker_id"] = stringProp("Reasoning worker id for acquire_lease.")
+		props["reasoning_lease_id"] = stringProp("Active lease id required by commit_turn and optional for release_lease.")
+		props["lease_id"] = stringProp("Alias of reasoning_lease_id.")
+		props["lease_ttl_seconds"] = boundedIntProp("Lease TTL in seconds for acquire_lease. Defaults to 1800.", 1, 86400)
+		props["expected_capsule_version"] = intProp("Capsule version the worker read before commit_turn. Required for commit_turn.")
+		props["decision"] = map[string]any{"type": "string", "enum": []string{"continue", "block", "complete", "replan", "pause", "verify"}, "description": "Structured decision for commit_turn."}
+		props["summary"] = stringProp("Progress, blocker, approval, completion, or commit summary.")
+		props["next_milestone"] = stringProp("Milestone id to activate on commit_turn.")
+		props["current_problem"] = stringProp("Latest problem statement stored into the capsule.")
+		props["current_request"] = stringProp("Latest request for the next reasoning worker.")
+		props["completed"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Notes of completed work to append on commit_turn."}
+		props["steps"] = map[string]any{
+			"type": "array", "maxItems": 24,
+			"description": "Whitelist commit steps. action must be a known StepAction; arbitrary shell strings are rejected.",
+			"items": map[string]any{
+				"type": "object", "additionalProperties": false,
+				"required": []string{"action"},
+				"properties": map[string]any{
+					"action": map[string]any{
+						"type": "string",
+						"enum": []string{
+							"inspect_files", "prepare_patch", "apply_patch", "run_tests", "run_command", "start_process",
+							"browser_navigate", "browser_act", "browser_verify", "collect_logs", "collect_metrics",
+							"create_checkpoint", "request_approval", "mark_blocked", "enter_verify", "replan",
+						},
+					},
+					"targets":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Optional file paths, selectors, or command labels."},
+					"summary":         stringProp("Optional step summary."),
+					"milestone_id":    stringProp("Optional milestone id."),
+					"idempotency_key": stringProp("Optional stable key to avoid duplicate steps on reconnect."),
+				},
+			},
+		}
+		props["reason"] = stringProp("Blocker reason for mark_blocked.")
+		props["tried"] = stringProp("What was already tried for mark_blocked.")
+		props["evidence_text"] = stringProp("Evidence summary text for mark_blocked.")
+		props["need_user"] = stringProp("What the user must do for mark_blocked.")
+		props["approval_action"] = stringProp("High-risk action name for request_approval.")
+		props["risk"] = stringProp("Risk level for request_approval, e.g. medium.")
+		props["evidence_ids"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Evidence ids referenced by mark_completed."}
+		props["evidence_kind"] = stringProp("Evidence kind for add_evidence, e.g. test_log or screenshot.")
+		props["evidence_summary"] = stringProp("Evidence summary for add_evidence.")
+		props["evidence_uri"] = stringProp("Optional evidence URI such as artifact://logs/tests-01.")
+		props["status"] = stringProp("Optional list status filter.")
+		props["limit"] = intProp("Maximum goals returned by list. Defaults to 50 and is capped at 200.")
+		props["full"] = boolProp("When true, get also returns the full durable goal document in addition to the capsule.")
+		props["approval_id"] = stringProp("Approval id or action key for resolve_approval.")
+		props["approval_decision"] = map[string]any{"type": "string", "enum": []string{"approved", "rejected"}, "description": "Decision for resolve_approval."}
+		props["evidence_data"] = objectProp("Structured evidence fields for verifier, e.g. exit_code, url, metrics, criterion_id.")
+		props["policy_action"] = stringProp("Step action name for check_policy, e.g. run_command or apply_patch.")
+		props["policy_targets"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Targets/command fragments for check_policy."}
+		props["workflow"] = objectProp("Deterministic workflow for run_workflow: {name, steps:[{type, command, observation, expression, criterion_id,...}]}.")
+		props["work_dir"] = stringProp("Working directory for execute_steps/run_workflow. Defaults to AgentDock workspace root.")
+		props["artifact_path"] = stringProp("Local file path for store_artifact.")
+		props["artifact_text"] = stringProp("Inline text content for store_artifact when artifact_path is not set.")
+		props["artifact_filename"] = stringProp("Filename for inline artifact_text.")
+		props["artifact_content_type"] = stringProp("Content type for inline artifact_text.")
+		props["criterion_id"] = stringProp("Optional success criterion id to attach when store_artifact also links evidence to a goal.")
 		required = []string{"action"}
 
 	case "workflow_template_manage":

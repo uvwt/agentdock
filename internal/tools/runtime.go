@@ -13,10 +13,15 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/uvwt/agentdock/internal/chatgpt"
 	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/device"
 	"github.com/uvwt/agentdock/internal/envstore"
+	"github.com/uvwt/agentdock/internal/goal"
 	"github.com/uvwt/agentdock/internal/mcpclient"
+	"github.com/uvwt/agentdock/internal/orchestrator"
 	"github.com/uvwt/agentdock/internal/taskstate"
+	"github.com/uvwt/agentdock/internal/tunnel"
 	"github.com/uvwt/agentdock/internal/workspace"
 )
 
@@ -35,12 +40,32 @@ type Runtime struct {
 	envs          *envstore.Store
 	mcpClients    *mcpclient.Manager
 	tasks         *taskstate.Store
+	goals         *goal.Store
+	artifacts     *goal.ArtifactStore
+	tunnel        *tunnel.Manager
+	devices       *device.Registry
+	chatgptWorker *chatgpt.Worker
+	orch          *orchestrator.Orchestrator
+	activeGoal    activeGoalState
 	lifecycleMu   sync.RWMutex
+	// mcpCallLog is a ring of recent MCP tool invocations (from /mcp Call path).
+	// Orchestrator uses this as the ground-truth "model actually called tools" signal.
+	mcpCallMu  sync.Mutex
+	mcpCallLog []MCPToolCall
 	commandCtx    context.Context
 	commandCancel context.CancelFunc
 	closing       bool
 	closeOnce     sync.Once
 	closeErr      error
+}
+
+// MCPToolCall is one recorded tool invocation from the MCP endpoint.
+type MCPToolCall struct {
+	Name      string    `json:"name"`
+	OK        bool      `json:"ok"`
+	At        time.Time `json:"at"`
+	GoalID    string    `json:"goal_id,omitempty"`
+	Action    string    `json:"action,omitempty"`
 }
 
 func NewRuntime(cfg config.Config) (*Runtime, error) {
@@ -65,15 +90,54 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 		_ = mcpClients.Close()
 		return nil, err
 	}
+	goals, err := goal.New(filepath.Join(cfg.AgentDockHome, "goals"))
+	if err != nil {
+		_ = mcpClients.Close()
+		return nil, err
+	}
+	artifacts, err := goal.NewArtifactStore(filepath.Join(cfg.AgentDockHome, "artifacts"))
+	if err != nil {
+		_ = mcpClients.Close()
+		return nil, err
+	}
+	tun, err := tunnel.NewManager(cfg.AgentDockHome)
+	if err != nil {
+		_ = mcpClients.Close()
+		return nil, err
+	}
+	devices, err := device.NewRegistry(cfg.AgentDockHome)
+	if err != nil {
+		_ = mcpClients.Close()
+		return nil, err
+	}
 	commandCtx, commandCancel := context.WithCancel(context.Background())
-	return &Runtime{
+	rt := &Runtime{
 		cfg: cfg, ws: ws, sessions: NewSessionStore(), skills: skills, envs: envs,
-		mcpClients: mcpClients, tasks: tasks, commandCtx: commandCtx, commandCancel: commandCancel,
-	}, nil
+		mcpClients: mcpClients, tasks: tasks, goals: goals, artifacts: artifacts,
+		tunnel: tun, devices: devices,
+		commandCtx: commandCtx, commandCancel: commandCancel,
+	}
+	opts := chatgpt.DefaultWorkerOptions()
+	opts.BrowserEnabled = cfg.BrowserEnabled
+	opts.AutoApproveTools = cfg.ChatGPTAutoApproveTools
+	rt.chatgptWorker = chatgpt.NewWorker(goals, runtimeToolCaller{rt: rt}, opts)
+	return rt, nil
 }
 
 func (r *Runtime) Config() config.Config           { return r.cfg }
 func (r *Runtime) Workspace() *workspace.Workspace { return r.ws }
+func (r *Runtime) Goals() *goal.Store              { return r.goals }
+func (r *Runtime) ChatGPTWorker() *chatgpt.Worker  { return r.chatgptWorker }
+
+type runtimeToolCaller struct{ rt *Runtime }
+
+func (c runtimeToolCaller) Call(ctx context.Context, name string, args map[string]any) (map[string]any, error) {
+	res, err := c.rt.Call(ctx, name, args)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any(res), nil
+}
 
 func (r *Runtime) Close() error {
 	if r == nil {
@@ -138,7 +202,60 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 	if spec.Handler == nil {
 		return nil, toolErrorDetails("UNKNOWN_TOOL", "tool has no handler", "validation", map[string]any{"tool": name})
 	}
-	return spec.Handler(ctx, r, args)
+	if err := r.enforceGoalToolPolicy(name, args); err != nil {
+		return nil, err
+	}
+	res, err := spec.Handler(ctx, r, args)
+	r.recordMCPToolCall(name, args, err == nil)
+	return res, err
+}
+
+const maxMCPCallLog = 200
+
+func (r *Runtime) recordMCPToolCall(name string, args map[string]any, ok bool) {
+	if r == nil {
+		return
+	}
+	// Browser automation used by the worker is not model MCP progress.
+	switch name {
+	case "browser_session", "browser_act", "browser_snapshot", "browser_profile":
+		return
+	}
+	goalID := strings.TrimSpace(stringArg(args, "goal_id", ""))
+	action := strings.TrimSpace(stringArg(args, "action", ""))
+	entry := MCPToolCall{Name: name, OK: ok, At: time.Now().UTC(), GoalID: goalID, Action: action}
+	r.mcpCallMu.Lock()
+	defer r.mcpCallMu.Unlock()
+	r.mcpCallLog = append(r.mcpCallLog, entry)
+	if len(r.mcpCallLog) > maxMCPCallLog {
+		r.mcpCallLog = append([]MCPToolCall(nil), r.mcpCallLog[len(r.mcpCallLog)-maxMCPCallLog:]...)
+	}
+}
+
+// MCPToolCallsSince returns tool calls at or after since (UTC).
+func (r *Runtime) MCPToolCallsSince(since time.Time) []MCPToolCall {
+	if r == nil {
+		return nil
+	}
+	r.mcpCallMu.Lock()
+	defer r.mcpCallMu.Unlock()
+	if since.IsZero() {
+		out := make([]MCPToolCall, len(r.mcpCallLog))
+		copy(out, r.mcpCallLog)
+		return out
+	}
+	out := make([]MCPToolCall, 0, len(r.mcpCallLog))
+	for _, c := range r.mcpCallLog {
+		if !c.At.Before(since) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// MCPConnectedRecently is true if any non-browser tool was called since t.
+func (r *Runtime) MCPConnectedRecently(since time.Time) bool {
+	return len(r.MCPToolCallsSince(since)) > 0
 }
 func (r *Runtime) serverInfo() Result {
 	names := r.ToolNames()

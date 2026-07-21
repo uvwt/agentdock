@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/uvwt/agentdock/internal/atomicfile"
 )
 
 func (r *Runtime) fileEdit(ctx context.Context, args map[string]any) (Result, error) {
@@ -22,7 +24,7 @@ func (r *Runtime) fileEdit(ctx context.Context, args map[string]any) (Result, er
 
 	action := strings.ToLower(stringArg(args, "action", ""))
 	if action == "" {
-		return nil, toolErrorDetails("MISSING_ACTION", "file_edit requires action", "validation", map[string]any{"allowed": []string{"replace", "patch", "add", "delete", "move"}})
+		return nil, toolErrorDetails("MISSING_ACTION", "file_edit requires action", "validation", map[string]any{"allowed": []string{"replace", "patch", "add", "delete", "move", "atomic_write"}})
 	}
 	var result Result
 	switch action {
@@ -32,12 +34,14 @@ func (r *Runtime) fileEdit(ctx context.Context, args map[string]any) (Result, er
 		result, err = r.editFile(args)
 	case "add":
 		result, err = r.fileEditAdd(args)
+	case "atomic_write":
+		result, err = r.fileEditAtomicWrite(args)
 	case "delete":
 		result, err = r.fileEditDelete(args)
 	case "move":
 		result, err = r.fileEditMove(args)
 	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported file_edit action", "validation", map[string]any{"action": action, "allowed": []string{"replace", "patch", "add", "delete", "move"}})
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported file_edit action", "validation", map[string]any{"action": action, "allowed": []string{"replace", "patch", "add", "delete", "move", "atomic_write"}})
 	}
 	if result != nil {
 		result["action"] = action
@@ -113,6 +117,69 @@ func (r *Runtime) fileEditAdd(args map[string]any) (Result, error) {
 	}
 	if err := commitStagedPatch(staged); err != nil {
 		return nil, err
+	}
+	return result, nil
+}
+
+func (r *Runtime) fileEditAtomicWrite(args map[string]any) (Result, error) {
+	path := stringArg(args, "path", "")
+	if path == "" {
+		return nil, toolError("INVALID_ARGUMENT", "path is required", "validation")
+	}
+	content := stringArg(args, "content", "")
+	dryRun := boolArg(args, "dry_run", false)
+	// atomic_write always replaces the whole file safely: temp + fsync + rename.
+	// Prefer this for long translations to avoid truncated/0-byte targets on interrupt.
+
+	p, err := r.ws.ResolveForWrite(path)
+	if err != nil {
+		return nil, err
+	}
+	if !utf8.ValidString(content) {
+		return nil, toolErrorDetails("ENCODING_UNSUPPORTED", "content is not valid utf-8", "validation", map[string]any{"path": p.Display})
+	}
+	if int64(len(content)) > int64(maxTextFileReadBytes) {
+		return nil, toolErrorDetails(
+			"FILE_TOO_LARGE",
+			"content exceeds the file_edit input limit",
+			"validation",
+			map[string]any{"path": p.Display, "size_bytes": len(content), "max_size_bytes": maxTextFileReadBytes},
+		)
+	}
+
+	mode := os.FileMode(0o644)
+	existed := p.Exists
+	oldSize := int64(0)
+	if p.Exists {
+		info, err := os.Stat(p.Abs)
+		if err != nil {
+			return nil, err
+		}
+		if info.IsDir() {
+			return nil, toolErrorDetails("IS_DIRECTORY", "cannot atomically write a directory path", "validation", map[string]any{"path": p.Display})
+		}
+		mode = info.Mode().Perm()
+		oldSize = info.Size()
+	}
+
+	result := Result{
+		"path":           p.Display,
+		"absolute_path":  p.Abs,
+		"created":        !existed,
+		"overwritten":    existed,
+		"bytes":          len(content),
+		"previous_bytes": oldSize,
+		"atomic":         true,
+		"changed":        true,
+		"message":        "atomic write via temp file + rename",
+	}
+	if dryRun {
+		result["dry_run"] = true
+		result["message"] = "atomic write dry-run; no bytes written"
+		return result, nil
+	}
+	if err := atomicfile.Write(p.Abs, []byte(content), mode); err != nil {
+		return nil, toolErrorDetails("ATOMIC_WRITE_FAILED", err.Error(), "runtime", map[string]any{"path": p.Display})
 	}
 	return result, nil
 }

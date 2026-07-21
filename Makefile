@@ -1,4 +1,4 @@
-.PHONY: fmt test test-scripts vet race build check run docker-build docker-dev-build docker-browser-build docker-up docker-browser-up docker-down smoke-docker logs clean clean-local-artifacts install-linux install-macos uninstall-macos test-install-macos deploy-macos-source restart-macos smoke-macos
+.PHONY: fmt test test-scripts vet race build desktop bundle-browser check product-check run docker-build docker-dev-build docker-browser-build docker-up docker-browser-up docker-down smoke-docker logs clean clean-local-artifacts install-linux install-macos uninstall-macos test-install-macos deploy-macos-source restart-macos smoke-macos
 
 APP := agentdock
 IMAGE := agentdock:local
@@ -29,8 +29,19 @@ race:
 
 build:
 	go build -trimpath -ldflags "$(BUILD_LDFLAGS)" -o ./bin/$(APP) ./cmd/agentdock
+	go build -trimpath -ldflags "$(BUILD_LDFLAGS)" -o ./bin/agentdock-desktop ./cmd/agentdock-desktop
+
+desktop:
+	go run ./cmd/agentdock-desktop --host $(HOST) --port $(PORT) --log-level $(LOG_LEVEL)
+
+bundle-browser:
+	./scripts/bundle-browser-desktop.sh
 
 check: fmt test test-scripts vet build
+
+product-check: test build
+	go test ./internal/httpx -run GoalDashboard -count=1
+	@echo "Goal Mode product check OK"
 
 run:
 	go run ./cmd/agentdock --host $(HOST) --port $(PORT) --log-level $(LOG_LEVEL)

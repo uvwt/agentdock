@@ -13,6 +13,12 @@ const runtimeAPISource = "agentdock-api"
 
 func (r *Runtime) RuntimeStatus() Result {
 	tools := r.ToolNames()
+	defaultCWD := ""
+	defaultDisplay := ""
+	if r.ws != nil {
+		defaultCWD = r.ws.DefaultCWD()
+		defaultDisplay = r.ws.DefaultDisplay()
+	}
 	return Result{
 		"ok":                    true,
 		"source":                runtimeAPISource,
@@ -20,14 +26,45 @@ func (r *Runtime) RuntimeStatus() Result {
 		"version":               config.Version,
 		"agentdock_home":        r.cfg.AgentDockHome,
 		"agentdock_default_dir": r.cfg.AgentDockDefaultDir,
+		"default_cwd":           defaultCWD,
+		"default_cwd_display":   defaultDisplay,
 		"path_model":            config.PathModel,
+		"host":                  r.cfg.Host,
+		"port":                  r.cfg.Port,
 		"auth_enabled":          r.cfg.AuthRequired(),
+		"auth_token_configured": strings.TrimSpace(r.cfg.AuthToken) != "",
+		"oauth_enabled":         r.cfg.OAuthEnabled,
+		"oauth_server_url":      r.cfg.OAuthServerURL,
 		"browser_enabled":       r.cfg.BrowserEnabled,
+		"browser_runner_dir":    r.cfg.BrowserRunnerDir,
 		"memory_enabled":        r.cfg.NexusEndpoint != "",
 		"nexus_enabled":         strings.TrimSpace(r.cfg.NexusEndpoint) != "",
 		"tool_count":            len(tools),
 		"tools":                 tools,
 	}
+}
+
+// RuntimeSetDefaultCWD updates the workspace default working directory for relative paths.
+func (r *Runtime) RuntimeSetDefaultCWD(path string) (Result, error) {
+	if r.ws == nil {
+		return nil, toolError("WORKSPACE_UNAVAILABLE", "workspace is not initialized", "runtime")
+	}
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, toolErrorDetails("VALIDATION_ERROR", "path is required", "validation", map[string]any{"field": "path"})
+	}
+	display, err := r.ws.SetDefaultCWD(path)
+	if err != nil {
+		return nil, toolErrorDetails("VALIDATION_ERROR", err.Error(), "validation", map[string]any{"field": "path"})
+	}
+	return Result{
+		"ok":                  true,
+		"source":              runtimeAPISource,
+		"action":              "set_default_cwd",
+		"default_cwd":         r.ws.DefaultCWD(),
+		"default_cwd_display": display,
+		"message":             "default working directory updated for relative paths; absolute paths still allowed (host path model)",
+	}, nil
 }
 
 func (r *Runtime) RuntimeSkills() (Result, error) {

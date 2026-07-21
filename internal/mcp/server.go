@@ -29,6 +29,14 @@ func NewServer(runtime *tools.Runtime, cfg config.Config) *Server {
 	return &Server{runtime: runtime, cfg: cfg}
 }
 
+// Runtime exposes the tool runtime for operator product surfaces (dashboard, wake loop).
+func (s *Server) Runtime() *tools.Runtime {
+	if s == nil {
+		return nil
+	}
+	return s.runtime
+}
+
 func (s *Server) AgentDockContext(ctx context.Context) (tools.Result, error) {
 	return s.runtime.AgentDockContext(ctx)
 }

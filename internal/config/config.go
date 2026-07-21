@@ -35,6 +35,10 @@ type Config struct {
 	NexusEndpoint       string
 	NexusToken          string
 	BrowserEnabled      bool
+	// ChatGPTAutoApproveTools clicks ChatGPT web tool/connector permission prompts
+	// (e.g. "Allow Svananda?") when the browser worker is driving the page.
+	// Default false: never auto-click without explicit operator opt-in.
+	ChatGPTAutoApproveTools bool
 	BrowserRunnerDir    string
 	Stdio               bool
 	TrustedProxyCIDRs   []string
@@ -46,6 +50,10 @@ func FromEnv() (Config, error) {
 		return Config{}, err
 	}
 	browserEnabled, err := getenvBool("AGENTDOCK_BROWSER_ENABLED", false)
+	if err != nil {
+		return Config{}, err
+	}
+	autoApproveTools, err := getenvBool("AGENTDOCK_CHATGPT_AUTO_APPROVE_TOOLS", false)
 	if err != nil {
 		return Config{}, err
 	}
@@ -66,7 +74,8 @@ func FromEnv() (Config, error) {
 		LogLevel:          getenv("AGENTDOCK_LOG_LEVEL", "info"),
 		NexusEndpoint:     getenv("AGENTDOCK_NEXUS_ENDPOINT", ""),
 		NexusToken:        os.Getenv("AGENTDOCK_NEXUS_TOKEN"),
-		BrowserEnabled:    browserEnabled,
+		BrowserEnabled:           browserEnabled,
+		ChatGPTAutoApproveTools:  autoApproveTools,
 		BrowserRunnerDir:  os.Getenv("AGENTDOCK_BROWSER_RUNNER_DIR"),
 		Stdio:             stdio,
 		TrustedProxyCIDRs: splitCommaSeparated(os.Getenv("AGENTDOCK_TRUSTED_PROXY_CIDRS")),

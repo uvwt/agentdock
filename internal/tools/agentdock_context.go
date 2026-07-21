@@ -40,7 +40,9 @@ func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
 	}
 
 	rules = append(rules,
-		"任务执行过程中，在形成有恢复价值的断点时调用 task_manage checkpoint；可用 completed_step_ids/current_step_id 原子批量更新，final_review=pass 不会自动补全未完成步骤。",
+		"长跑、可验证、需要跨对话恢复的结果优先使用 goal_manage：create → acquire_lease → commit_turn；不要把 ChatGPT 聊天文本当作 Goal 状态。",
+		"goal_manage commit_turn 必须携带 reasoning_lease_id 与 expected_capsule_version；版本冲突时先 get 最新 capsule 再租约重试。",
+		"任务执行过程中，在形成有恢复价值的断点时调用 task_manage checkpoint；可用 completed_step_ids/current_step_id 原子批量更新，final_review=pass 不会自动补全未完成步骤。轻量任务继续用 task_manage。",
 		"记忆摘要只提供高优先级规则；具体历史事实不确定时，再用 recall_search 或 recall_read 精确召回。",
 	)
 	sections = append(sections,

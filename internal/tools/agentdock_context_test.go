@@ -80,6 +80,9 @@ func TestNexusUnavailableHidesWorkflowTemplateCapability(t *testing.T) {
 	if !strings.Contains(toolNames, "task_manage") {
 		t.Fatalf("task_manage should remain available without Nexus: %s", toolNames)
 	}
+	if !strings.Contains(toolNames, "goal_manage") {
+		t.Fatalf("goal_manage should remain available without Nexus: %s", toolNames)
+	}
 
 	if _, err := rt.Call(context.Background(), "workflow_template_manage", map[string]any{"action": "list"}); err == nil {
 		t.Fatal("workflow_template_manage call should be unavailable without Nexus")
@@ -99,6 +102,9 @@ func TestNexusUnavailableHidesWorkflowTemplateCapability(t *testing.T) {
 	}
 	if !strings.Contains(contextText, "task_manage") {
 		t.Fatalf("context should keep task_manage without Nexus: %s", contextText)
+	}
+	if !strings.Contains(contextText, "goal_manage") {
+		t.Fatalf("context should keep goal_manage without Nexus: %s", contextText)
 	}
 }
 

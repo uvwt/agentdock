@@ -323,8 +323,13 @@ async function cdpJSON(cdpURL, pathPart) {
   return await res.json();
 }
 
-function cdpTimeout() {
-  return Math.min(Number(args.timeout_ms || 10000), 8000);
+function cdpTimeout(requestArgs = args, action = null) {
+  // Previous hard cap of 8000ms caused fill/navigate failures on busy ChatGPT pages
+  // (long resume prompts, streaming replies, or main-thread tool use).
+  const operationTimeout = Number(requestArgs?.timeout_ms || args.timeout_ms || 10000);
+  const actionTimeout = Number(action?.timeout_ms || 0);
+  const desired = Math.max(operationTimeout, actionTimeout, 10000);
+  return Math.min(desired, 120000);
 }
 
 function daemonTimeout(requestArgs = args) {
@@ -675,6 +680,14 @@ async function runCDPActions(session, actions = [], requestedPageId = '') {
         }, Number(action.timeout_ms || 10000), `text ${expected}`);
       } else if (type === 'wait_for_response') {
         await responseMonitor.wait(action);
+      } else if (type === 'click' || type === 'fill' || type === 'press' || type === 'select' || type === 'evaluate') {
+        // Visible Chrome uses CDP attach mode; Playwright page APIs are unavailable here.
+        // Drive DOM via Runtime.evaluate so ChatGPT wake can fill/send resume prompts.
+        target = await cdpPageTarget(session, requestedPageId);
+        await cdpDOMAction(target, action);
+        if (type === 'fill' || type === 'press' || type === 'click') {
+          await new Promise(resolve => setTimeout(resolve, 150));
+        }
       } else {
         throw new Error(`Unsupported CDP browser action: ${type}`);
       }
@@ -682,6 +695,281 @@ async function runCDPActions(session, actions = [], requestedPageId = '') {
   } finally {
     responseMonitor?.close();
   }
+}
+
+async function cdpFocusSelector(target, selector, timeoutMs = 10000) {
+  const expression = `(() => {
+    const selector = ${JSON.stringify(String(selector || ''))};
+    const q = (sel) => { try { return document.querySelector(sel); } catch { return null; } };
+    const el = q(selector);
+    if (!el) return { ok: false, error: 'element_not_found', selector };
+    const focusable = (node) => {
+      if (!node) return null;
+      if (node.isContentEditable || node.getAttribute?.('contenteditable') === 'true') return node;
+      const tag = (node.tagName || '').toLowerCase();
+      if (tag === 'textarea' || tag === 'input' || tag === 'select') return node;
+      return node.querySelector?.('textarea, input, [contenteditable="true"], [role="textbox"]') || node;
+    };
+    const targetEl = focusable(el);
+    if (!targetEl) return { ok: false, error: 'element_not_found', selector };
+    targetEl.scrollIntoView?.({ block: 'center', inline: 'center' });
+    targetEl.focus?.();
+    try { targetEl.click?.(); } catch {}
+    return {
+      ok: true,
+      tag: (targetEl.tagName || '').toLowerCase(),
+      contenteditable: !!(targetEl.isContentEditable || targetEl.getAttribute?.('contenteditable') === 'true')
+    };
+  })()`;
+  const result = await cdpCall(target.webSocketDebuggerUrl, 'Runtime.evaluate', {
+    expression,
+    returnByValue: true,
+    awaitPromise: true
+  }, timeoutMs);
+  const valueOut = result?.result?.value;
+  if (result?.exceptionDetails) {
+    const msg = result.exceptionDetails?.exception?.description || result.exceptionDetails?.text || 'CDP focus failed';
+    throw new Error(msg);
+  }
+  if (!valueOut || valueOut.ok === false) {
+    const err = new Error(valueOut?.error === 'element_not_found'
+      ? `Unable to find element: ${selector || '(none)'}`
+      : `CDP focus failed: ${valueOut?.error || 'unknown'}`);
+    err.code = valueOut?.error === 'element_not_found' ? 'BROWSER_ELEMENT_NOT_FOUND' : 'BROWSER_CDP_ACTION_FAILED';
+    throw err;
+  }
+  return valueOut;
+}
+
+async function cdpClearFocusedComposer(target, timeoutMs = 10000) {
+  // Keep this evaluate small — never embed the message body here.
+  const expression = `(() => {
+    const el = document.activeElement;
+    if (!el) return { ok: false, error: 'no_active_element' };
+    if (el.isContentEditable || el.getAttribute?.('contenteditable') === 'true') {
+      try { document.execCommand('selectAll', false, null); } catch {}
+      try { document.execCommand('delete', false, null); } catch {
+        el.textContent = '';
+        el.innerHTML = '';
+      }
+      try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContent' })); } catch {}
+      return { ok: true, mode: 'contenteditable' };
+    }
+    const tag = (el.tagName || '').toLowerCase();
+    if (tag === 'textarea' || tag === 'input') {
+      const proto = tag === 'textarea' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+      const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+      if (desc && desc.set) desc.set.call(el, '');
+      else el.value = '';
+      try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch {}
+      return { ok: true, mode: 'value' };
+    }
+    return { ok: false, error: 'unsupported_active_element', tag };
+  })()`;
+  const result = await cdpCall(target.webSocketDebuggerUrl, 'Runtime.evaluate', {
+    expression,
+    returnByValue: true,
+    awaitPromise: true
+  }, timeoutMs);
+  const valueOut = result?.result?.value;
+  if (!valueOut || valueOut.ok === false) {
+    throw new Error(`CDP clear composer failed: ${valueOut?.error || 'unknown'}`);
+  }
+  return valueOut;
+}
+
+// Prefer CDP Input.insertText for fills so the message body is NOT embedded into a giant
+// Runtime.evaluate script (that path frequently hits evaluate timeouts on ChatGPT).
+async function cdpFillViaInput(target, selector, text, timeoutMs = 30000) {
+  const focusTimeout = Math.min(timeoutMs, 15000);
+  await cdpFocusSelector(target, selector, focusTimeout);
+  await cdpClearFocusedComposer(target, focusTimeout);
+  // Input.insertText works on the focused element; payload travels as CDP params.
+  await cdpCall(target.webSocketDebuggerUrl, 'Input.insertText', {
+    text: String(text ?? '')
+  }, timeoutMs);
+  // Nudge React/ProseMirror controlled inputs.
+  await cdpCall(target.webSocketDebuggerUrl, 'Runtime.evaluate', {
+    expression: `(() => {
+      const el = document.activeElement;
+      if (!el) return false;
+      try { el.dispatchEvent(new InputEvent('input', { bubbles: true, data: 'x', inputType: 'insertText' })); } catch {
+        try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch {}
+      }
+      try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch {}
+      return true;
+    })()`,
+    returnByValue: true
+  }, focusTimeout).catch(() => null);
+  return { ok: true, mode: 'cdp_input_insertText' };
+}
+
+async function cdpPressViaInput(target, selector, key, timeoutMs = 10000) {
+  if (selector) {
+    await cdpFocusSelector(target, selector, timeoutMs).catch(() => null);
+  }
+  const keyName = String(key || 'Enter');
+  const commands = [
+    { type: 'keyDown', key: keyName },
+    { type: 'keyUp', key: keyName }
+  ];
+  // Enter needs text for some composers.
+  if (keyName === 'Enter') {
+    commands.splice(1, 0, { type: 'char', text: '\r' });
+  }
+  for (const cmd of commands) {
+    await cdpCall(target.webSocketDebuggerUrl, 'Input.dispatchKeyEvent', cmd, timeoutMs);
+  }
+  return { ok: true, mode: 'cdp_input_key', key: keyName };
+}
+
+async function cdpDOMAction(target, action) {
+  const type = String(action.action || '');
+  const selector = String(action.selector || '');
+  const value = action.value ?? action.text ?? '';
+  const key = String(action.key || 'Enter');
+  const preferInput = action.mode === 'cdp_input'
+    || action.via === 'input'
+    || type === 'fill'
+    || type === 'press';
+  const evalTimeout = cdpTimeout(args, {
+    timeout_ms: Math.max(Number(action.timeout_ms || 0), type === 'fill' ? 30000 : 10000)
+  });
+
+  // Fast path for fill/press: CDP Input domain (avoids embedding long strings in evaluate).
+  if (preferInput && type === 'fill') {
+    try {
+      return await cdpFillViaInput(target, selector, value, evalTimeout);
+    } catch (err) {
+      // Fall through to legacy evaluate path for short values / odd pages.
+      if (String(value ?? '').length > 4000) throw err;
+    }
+  }
+  if (preferInput && type === 'press') {
+    try {
+      return await cdpPressViaInput(target, selector, key, evalTimeout);
+    } catch {
+      // fall through
+    }
+  }
+
+  // For fill, never embed multi-KB bodies into the evaluate source (timeout magnet).
+  const embedValue = type === 'fill' && String(value ?? '').length > 1500
+    ? ''
+    : String(value ?? '');
+  if (type === 'fill' && embedValue === '' && String(value ?? '').length > 1500) {
+    // Force Input path only.
+    return await cdpFillViaInput(target, selector, value, evalTimeout);
+  }
+
+  const expression = `(() => {
+    const type = ${JSON.stringify(type)};
+    const selector = ${JSON.stringify(selector)};
+    const value = ${JSON.stringify(embedValue)};
+    const key = ${JSON.stringify(key)};
+    const q = (sel) => {
+      if (!sel) return null;
+      try { return document.querySelector(sel); } catch { return null; }
+    };
+    const focusable = (el) => {
+      if (!el) return null;
+      if (el.isContentEditable || el.getAttribute?.('contenteditable') === 'true') return el;
+      const tag = (el.tagName || '').toLowerCase();
+      if (tag === 'textarea' || tag === 'input' || tag === 'select') return el;
+      return el.querySelector?.('textarea, input, [contenteditable="true"], [role="textbox"]') || el;
+    };
+    const fire = (el, name, init = {}) => {
+      try { el.dispatchEvent(new Event(name, { bubbles: true, cancelable: true, ...init })); } catch {}
+      try { el.dispatchEvent(new InputEvent(name, { bubbles: true, cancelable: true, data: value, inputType: 'insertText', ...init })); } catch {}
+    };
+    const setValue = (el, text) => {
+      const targetEl = focusable(el);
+      if (!targetEl) return { ok: false, error: 'element_not_found' };
+      targetEl.focus?.();
+      if (targetEl.isContentEditable || targetEl.getAttribute?.('contenteditable') === 'true') {
+        targetEl.textContent = '';
+        targetEl.innerHTML = '';
+        // Prefer execCommand for ProseMirror/contenteditable composers.
+        try { document.execCommand('selectAll', false, null); } catch {}
+        try { document.execCommand('insertText', false, text); } catch {
+          targetEl.textContent = text;
+        }
+        fire(targetEl, 'input');
+        fire(targetEl, 'change');
+        return { ok: true, mode: 'contenteditable' };
+      }
+      const proto = targetEl.tagName === 'TEXTAREA'
+        ? window.HTMLTextAreaElement.prototype
+        : window.HTMLInputElement.prototype;
+      const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+      if (desc && desc.set) desc.set.call(targetEl, text);
+      else targetEl.value = text;
+      fire(targetEl, 'input');
+      fire(targetEl, 'change');
+      return { ok: true, mode: 'value' };
+    };
+    if (type === 'evaluate') {
+      try {
+        const expr = ${JSON.stringify(String(action.expression || action.script || action.code || 'null'))};
+        // eslint-disable-next-line no-eval
+        const result = (0, eval)(expr);
+        return { ok: true, result };
+      } catch (err) {
+        return { ok: false, error: String(err && err.message || err) };
+      }
+    }
+    const el = q(selector);
+    if (!el) return { ok: false, error: 'element_not_found', selector };
+    if (type === 'click') {
+      el.scrollIntoView?.({ block: 'center', inline: 'center' });
+      el.click?.();
+      fire(el, 'click');
+      return { ok: true, mode: 'click' };
+    }
+    if (type === 'fill') {
+      return setValue(el, value);
+    }
+    if (type === 'select') {
+      const targetEl = focusable(el);
+      if (!targetEl) return { ok: false, error: 'element_not_found' };
+      targetEl.value = value;
+      fire(targetEl, 'input');
+      fire(targetEl, 'change');
+      return { ok: true, mode: 'select' };
+    }
+    if (type === 'press') {
+      const targetEl = focusable(el) || document.activeElement || document.body;
+      targetEl.focus?.();
+      const opts = { key, code: key, bubbles: true, cancelable: true };
+      try { targetEl.dispatchEvent(new KeyboardEvent('keydown', opts)); } catch {}
+      try { targetEl.dispatchEvent(new KeyboardEvent('keypress', opts)); } catch {}
+      if (key === 'Enter' && targetEl.form) {
+        try { targetEl.form.requestSubmit?.(); } catch {}
+      }
+      try { targetEl.dispatchEvent(new KeyboardEvent('keyup', opts)); } catch {}
+      return { ok: true, mode: 'press', key };
+    }
+    return { ok: false, error: 'unsupported_dom_action', type };
+  })()`;
+  const result = await cdpCall(target.webSocketDebuggerUrl, 'Runtime.evaluate', {
+    expression,
+    returnByValue: true,
+    awaitPromise: true
+  }, evalTimeout);
+  const valueOut = result?.result?.value;
+  if (valueOut && valueOut.ok === false) {
+    const err = new Error(valueOut.error === 'element_not_found'
+      ? `Unable to find element: ${selector || '(none)'}`
+      : `CDP ${type} failed: ${valueOut.error || 'unknown'}`);
+    err.code = valueOut.error === 'element_not_found' ? 'BROWSER_ELEMENT_NOT_FOUND' : 'BROWSER_CDP_ACTION_FAILED';
+    err.details = { action: type, selector, value: valueOut };
+    throw err;
+  }
+  if (result?.exceptionDetails) {
+    const msg = result.exceptionDetails?.exception?.description || result.exceptionDetails?.text || 'CDP evaluate failed';
+    throw new Error(msg);
+  }
+  return valueOut;
 }
 
 async function cdpSnapshot(session, sessionId, requestedPageId = '') {
@@ -1215,7 +1503,10 @@ async function collectInteractiveElements(page, limit = 40) {
 }
 
 function shouldCaptureScreenshot(captureArgs = args) {
-  return captureArgs.capture_screenshot !== false;
+  // Default OFF: routine WaitIdle/DetectBlockers/action follow-up snapshots were
+  // capturing full-page PNGs of busy ChatGPT tabs and pinning the renderer.
+  // Callers that need a screenshot must set capture_screenshot=true explicitly.
+  return captureArgs.capture_screenshot === true;
 }
 
 async function closeSessionState(state, sessionId) {
@@ -1303,7 +1594,14 @@ async function runActions(context, page, actions = [], responseLog = []) {
   let activePage = page;
   for (const action of actions) {
     const type = action.action;
-    if (activePage.isClosed()) activePage = context.pages().at(-1) || context.pages()[0];
+    if (!activePage || activePage.isClosed()) {
+      activePage = context.pages().find((candidate) => !candidate.isClosed()) || context.pages().at(-1) || context.pages()[0];
+    }
+    if (!activePage || activePage.isClosed()) {
+      // Visible Chrome/CDP sessions can lose the last tab after rotation; open a fresh page
+      // instead of failing the whole ChatGPT wake loop with "No active browser page".
+      activePage = await context.newPage();
+    }
     if (!activePage) throw new Error('No active browser page is available');
 
     if (type === 'goto') await activePage.goto(action.url, { waitUntil: action.wait_until || 'domcontentloaded' });
@@ -1339,6 +1637,40 @@ async function runActions(context, page, actions = [], responseLog = []) {
   return activePage;
 }
 
+function normalizedDaemonPageInfo(status) {
+  const pages = Array.isArray(status?.pages) ? status.pages : [];
+  const requested = String(status?.page_id || '');
+  const valid = pages.find(page => page?.page_id === requested)
+    || pages.find(page => page?.active === true)
+    || pages[0];
+  return { page_id: valid?.page_id || null, pages };
+}
+
+async function reusableSessionForStart(state, startArgs) {
+  const profileID = String(startArgs.profile_id || '').trim();
+  if (!profileID || startArgs.keep_open !== true || startArgs.headless !== false) return null;
+  const candidates = Object.values(state.sessions || {})
+    .filter(session => session && session.profile_id === profileID && session.headless === false)
+    .sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+  for (const session of candidates) {
+    try {
+      if (session.backend === 'daemon' && session.control_url) {
+        const status = await daemonRequest(session.control_url, 'status', {}, 2000);
+        return { session, pageInfo: normalizedDaemonPageInfo(status) };
+      }
+      if (session.backend === 'cdp' && session.cdp_url) {
+        await cdpJSON(session.cdp_url, '/json/version');
+        const pages = await cdpPageTargets(session);
+        const activePage = await cdpPageTarget(session);
+        return { session, pageInfo: { page_id: activePage.id, pages: describeCDPPages(pages, activePage) } };
+      }
+    } catch {
+      // Stale sessions are ignored; normal startup will replace them.
+    }
+  }
+  return null;
+}
+
 async function main() {
   if (operation === 'profile_daemon') {
     await runProfileDaemon();
@@ -1346,6 +1678,22 @@ async function main() {
   }
   const state = await readState();
   if (operation === 'session_start') {
+    const reusable = await reusableSessionForStart(state, args);
+    if (reusable) {
+      reusable.session.updated_at = new Date().toISOString();
+      await writeState(state);
+      console.log(JSON.stringify({
+        ok: true,
+        session_id: reusable.session.session_id,
+        status: 'reused',
+        ...reusable.pageInfo,
+        keep_open: reusable.session.keep_open,
+        visible_process: reusable.session.visible_process,
+        backend: reusable.session.backend,
+        cdp_url: reusable.session.cdp_url
+      }));
+      return;
+    }
     const sessionId = args.session_id || newSessionId();
     state.sessions[sessionId] = {
       session_id: sessionId,
@@ -1384,7 +1732,7 @@ async function main() {
     let pageInfo = { page_id: null, pages: [] };
     if (state.sessions[sessionId].backend === 'daemon' && state.sessions[sessionId].control_url) {
       const status = await daemonRequest(state.sessions[sessionId].control_url, 'status', {}, daemonTimeout());
-      pageInfo = { page_id: status.page_id || null, pages: status.pages || [] };
+      pageInfo = normalizedDaemonPageInfo(status);
     } else if (state.sessions[sessionId].backend === 'cdp' && state.sessions[sessionId].cdp_url) {
       const pages = await cdpPageTargets(state.sessions[sessionId]);
       const activePage = await cdpPageTarget(state.sessions[sessionId]);

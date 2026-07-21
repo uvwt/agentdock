@@ -21,6 +21,7 @@ import (
 func registerRuntimeAPI(mux *http.ServeMux, server *mcp.Server, cfg config.Config, oauthStore *auth.OAuthStore) {
 	h := runtimeAPIHandler(server, cfg, oauthStore)
 	mux.HandleFunc("/internal/runtime/status", h)
+	mux.HandleFunc("/internal/runtime/workspace", h)
 	mux.HandleFunc("/internal/runtime/capabilities", h)
 	mux.HandleFunc("/internal/runtime/skills", h)
 	mux.HandleFunc("/internal/runtime/skills/", h)
@@ -66,7 +67,7 @@ func runtimeAPIMethodAllowed(method, path string) bool {
 		_, ok := runtimeTaskID(cleanPath)
 		return ok
 	}
-	return method == http.MethodPost && (cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/mcp")
+	return method == http.MethodPost && (cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/mcp" || cleanPath == "/internal/runtime/workspace")
 }
 
 func runtimeAPIAllowHeader(path string) string {
@@ -74,7 +75,7 @@ func runtimeAPIAllowHeader(path string) string {
 	if _, ok := runtimeTaskID(cleanPath); ok {
 		return "GET, DELETE"
 	}
-	if cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/mcp" {
+	if cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/mcp" || cleanPath == "/internal/runtime/workspace" {
 		return "GET, POST"
 	}
 	return "GET"
@@ -86,6 +87,24 @@ func dispatchRuntimeAPI(ctx context.Context, server *mcp.Server, r *http.Request
 	switch {
 	case path == "/internal/runtime/status":
 		return map[string]any(server.RuntimeStatus()), nil
+	case path == "/internal/runtime/workspace":
+		if r.Method == http.MethodGet {
+			st := map[string]any(server.RuntimeStatus())
+			return map[string]any{
+				"ok":                    true,
+				"agentdock_default_dir": st["agentdock_default_dir"],
+				"default_cwd":           st["default_cwd"],
+				"default_cwd_display":   st["default_cwd_display"],
+				"path_model":            st["path_model"],
+			}, nil
+		}
+		body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		var payload struct {
+			Path string `json:"path"`
+		}
+		_ = json.Unmarshal(body, &payload)
+		result, err := server.RuntimeSetDefaultCWD(payload.Path)
+		return map[string]any(result), err
 	case path == "/internal/runtime/capabilities":
 		refresh := strings.EqualFold(r.URL.Query().Get("refresh"), "true") || r.Method == http.MethodPost
 		result, err := server.RuntimeCapabilities(ctx, refresh)
