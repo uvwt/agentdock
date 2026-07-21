@@ -316,3 +316,25 @@ func TestActDoesNotThrashOnInvalidJSON(t *testing.T) {
 		t.Fatalf("expected single act attempt, n=%d", n)
 	}
 }
+
+func TestWaitIdleOneStrikeOnProbeError(t *testing.T) {
+	var n int
+	caller := &seqCaller{dynamic: func(name string, args map[string]any) (map[string]any, error) {
+		if name == "browser_act" {
+			n++
+			return nil, context.DeadlineExceeded
+		}
+		return map[string]any{"browser_ok": true}, nil
+	}}
+	b := &RuntimeBrowser{Caller: caller, ProfileID: "chatgpt", Headless: true}
+	err := b.WaitIdle(context.Background(), 500*time.Millisecond)
+	if err == nil {
+		t.Fatal("expected page_stuck error")
+	}
+	if !strings.Contains(err.Error(), "page_stuck") {
+		t.Fatalf("want page_stuck, got %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected one-strike probe, calls=%d", n)
+	}
+}

@@ -409,3 +409,209 @@ func TestWakeFailureBackoff(t *testing.T) {
 		t.Fatalf("%s", d)
 	}
 }
+
+func TestIsLiveMCPBusySummary(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"", false},
+		{"none", false},
+		{"file_edit:atomic_write", true},
+		{"atomic_write", true},
+		{"search_text x3", true},
+		{"read_file /tmp/x", true},
+		{"run_command go test", true},
+		{"exec_command ls", true},
+		{"browser_act evaluate", true},
+		{"goal_manage:get", false},
+		{"goal_manage:commit_turn", false},
+		{"goal_manage:acquire_lease", false},
+		{"goal_manage:get,goal_manage:commit_turn", false},
+		{"file_edit then goal_manage:commit", true},
+	}
+	for _, tc := range cases {
+		if got := isLiveMCPBusySummary(tc.in); got != tc.want {
+			t.Fatalf("isLiveMCPBusySummary(%q)=%v want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestIsProductiveMCPSummary(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"", false},
+		{"none", false},
+		{"search_text", false},
+		{"read_file", false},
+		{"file_edit", true},
+		{"atomic_write", true},
+		{"commit_turn", true},
+		{"goal_manage:commit", true},
+		{"goal_manage:acquire_lease", true},
+		{"add_evidence", true},
+		{"run_command", true},
+		{"exec_command", true},
+		{"search_text,read_file", false},
+		{"search_text,file_edit", true},
+	}
+	for _, tc := range cases {
+		if got := isProductiveMCPSummary(tc.in); got != tc.want {
+			t.Fatalf("isProductiveMCPSummary(%q)=%v want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
+// scriptedActivity returns a fixed summary for MCP activity probes.
+type scriptedActivity struct {
+	summary string
+	live    bool
+}
+
+func (s scriptedActivity) MCPToolActivitySince(since time.Time) bool {
+	if s.live {
+		return true
+	}
+	return s.summary != "" && s.summary != "none"
+}
+func (s scriptedActivity) MCPToolActivitySummary(since time.Time) string {
+	if s.summary == "" {
+		return "none"
+	}
+	return s.summary
+}
+
+func TestOrchestratorMCPBusyGateDelaysWake(t *testing.T) {
+	store, err := goal.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := store.Create(goal.CreateInput{
+		Title: "busy gate", Objective: "do not wake while file_edit live",
+		SuccessCriteria: []goal.SuccessCriterionInput{
+			{ID: "m", Type: goal.CriterionManual, Expression: "ok"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RequestReasoning(g.ID, "work", ""); err != nil {
+		t.Fatal(err)
+	}
+	waker := &fakeWaker{}
+	orch := New(store, waker, &fakeExec{}, Config{
+		CommitWait: 50 * time.Millisecond, PollInterval: 10 * time.Millisecond,
+		MaxNoCommit: 2, MaxTicks: 8, TickPause: 15 * time.Millisecond,
+		ToolActivityWait: -1,
+	})
+	orch.SetActivitySource(scriptedActivity{summary: "file_edit:atomic_write", live: true})
+	if _, err := orch.Start(g.ID); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(400 * time.Millisecond)
+	sawWaitIdle := false
+	for time.Now().Before(deadline) {
+		st := orch.Status(g.ID)
+		if st.Phase == "wait_idle" || strings.Contains(st.LastMessage, "MCP tools still active") {
+			sawWaitIdle = true
+			break
+		}
+		time.Sleep(15 * time.Millisecond)
+	}
+	orch.Stop(g.ID)
+	if !sawWaitIdle {
+		t.Fatalf("expected wait_idle MCP busy gate, status=%#v wakes=%d", orch.Status(g.ID), atomic.LoadInt32(&waker.wakeCount))
+	}
+	if atomic.LoadInt32(&waker.wakeCount) != 0 {
+		t.Fatalf("wake should be delayed while live tools, count=%d", atomic.LoadInt32(&waker.wakeCount))
+	}
+}
+
+func TestWaitCommitHandsOffStagnantAfterThrash(t *testing.T) {
+	store, err := goal.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := store.Create(goal.CreateInput{
+		Title: "thrash", Objective: "stagnant re-wake",
+		SuccessCriteria: []goal.SuccessCriterionInput{
+			{ID: "m", Type: goal.CriterionManual, Expression: "ok"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Activity always reports search_text only (non-productive).
+	orch := New(store, &fakeWaker{}, &fakeExec{}, Config{
+		CommitWait: 2 * time.Second, PollInterval: 20 * time.Millisecond,
+		// toolWait must be >= StagnantAfter or production bumps stagnant to toolWait+90s
+		ToolActivityWait: -1,
+		StagnantAfter:    80 * time.Millisecond,
+	})
+	orch.SetActivitySource(scriptedActivity{summary: "search_text", live: true})
+	base := progressBaseline{wakeAt: time.Now(), events: len(g.Events), evidence: len(g.Evidence), outBytes: 0, steps: len(g.Steps)}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	committed, _, activity, err := orch.waitCommitHandsOff(ctx, g.ID, g.CapsuleVersion, g.Status, 2*time.Second, 20*time.Millisecond, -1, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed {
+		t.Fatal("expected no commit")
+	}
+	if !activity {
+		t.Fatal("expected activity=true from thrash tools")
+	}
+}
+
+func TestWaitCommitHandsOffStagnantAfterProductiveQuiet(t *testing.T) {
+	store, err := goal.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := store.Create(goal.CreateInput{
+		Title: "quiet after write", Objective: "stagnant after productive",
+		SuccessCriteria: []goal.SuccessCriterionInput{
+			{ID: "m", Type: goal.CriterionManual, Expression: "ok"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// First summaries productive, then thrash-only via time-based switch.
+	act := &switchingActivity{productiveUntil: time.Now().Add(60 * time.Millisecond)}
+	orch := New(store, &fakeWaker{}, &fakeExec{}, Config{
+		CommitWait: 2 * time.Second, PollInterval: 15 * time.Millisecond,
+		ToolActivityWait: -1,
+		StagnantAfter:    70 * time.Millisecond,
+	})
+	orch.SetActivitySource(act)
+	base := progressBaseline{wakeAt: time.Now(), events: len(g.Events), evidence: len(g.Evidence), outBytes: 0, steps: len(g.Steps)}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	committed, _, activity, err := orch.waitCommitHandsOff(ctx, g.ID, g.CapsuleVersion, g.Status, 2*time.Second, 15*time.Millisecond, -1, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed {
+		t.Fatal("expected no commit")
+	}
+	if !activity {
+		t.Fatal("expected activity")
+	}
+}
+
+type switchingActivity struct {
+	productiveUntil time.Time
+}
+
+func (s *switchingActivity) MCPToolActivitySince(since time.Time) bool { return true }
+func (s *switchingActivity) MCPToolActivitySummary(since time.Time) string {
+	if time.Now().Before(s.productiveUntil) {
+		return "file_edit"
+	}
+	// After productive window: only search. Summary since lastProductive should be search-only.
+	return "search_text"
+}
