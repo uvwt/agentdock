@@ -50,6 +50,46 @@ func TestNexusClientsRejectOversizedResponses(t *testing.T) {
 	}
 }
 
+func TestNexusWorkflowJSONPreservesNonJSONHTTPError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("404 page not found"))
+	}))
+	defer server.Close()
+
+	runtime, _ := newCodeToolsRuntime(t)
+	runtime.cfg.NexusEndpoint = server.URL
+	_, err := runtime.nexusWorkflowJSON(context.Background(), http.MethodGet, "/v1/workflow-templates/missing", nil)
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) || toolErr.Code != "NEXUS_WORKFLOW_ERROR" {
+		t.Fatalf("nexusWorkflowJSON() error = %v", err)
+	}
+	if toolErr.Message != "404 Not Found" {
+		t.Fatalf("message = %q", toolErr.Message)
+	}
+	if toolErr.Details["status"] != http.StatusNotFound || toolErr.Details["response_preview"] != "404 page not found" {
+		t.Fatalf("details = %#v", toolErr.Details)
+	}
+}
+
+func TestNexusWorkflowJSONRejectsNonJSONSuccessResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("not json"))
+	}))
+	defer server.Close()
+
+	runtime, _ := newCodeToolsRuntime(t)
+	runtime.cfg.NexusEndpoint = server.URL
+	_, err := runtime.nexusWorkflowJSON(context.Background(), http.MethodGet, "/v1/workflow-templates", nil)
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) || toolErr.Code != "NEXUS_INVALID_RESPONSE" {
+		t.Fatalf("nexusWorkflowJSON() error = %v", err)
+	}
+	if toolErr.Details["response_preview"] != "not json" {
+		t.Fatalf("details = %#v", toolErr.Details)
+	}
+}
+
 func TestNexusClientsPreserveCanceledContext(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("canceled request reached server")

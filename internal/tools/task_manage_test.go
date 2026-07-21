@@ -329,3 +329,39 @@ func TestWorkflowTemplateListAndMutationRemainCompact(t *testing.T) {
 		t.Fatalf("exact get should return full template: %#v", loaded)
 	}
 }
+
+func TestWorkflowTemplateGetWithoutVersionResolvesActiveVersion(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	template := taskstate.Template{
+		ID: "active.template", Version: "1.2.3", Title: "Active template",
+		Match:                taskstate.MatchRule{Keywords: []string{"active"}},
+		CompletionConditions: []string{"done"},
+		Steps:                []taskstate.TemplateStep{{ID: "inspect", Title: "Inspect", Phase: taskstate.PhaseCheck}},
+	}
+	createTestWorkflowTemplate(t, rt, template)
+
+	loaded, err := rt.workflowTemplateManage(context.Background(), map[string]any{
+		"action": "get", "template_id": template.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := loaded["template"].(taskstate.Template)
+	if got.ID != template.ID || got.Version != template.Version || got.Status != taskstate.TemplateActive {
+		t.Fatalf("get without version returned %#v", got)
+	}
+}
+
+func TestWorkflowTemplateMutationRequiresExactVersion(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	_, err := rt.workflowTemplateManage(context.Background(), map[string]any{
+		"action": "validate", "template_id": "active.template",
+	})
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) || toolErr.Code != "VALIDATION_ERROR" {
+		t.Fatalf("validate without version error = %v", err)
+	}
+	if toolErr.Message != "template_id and template_version are required" {
+		t.Fatalf("unexpected validation message: %q", toolErr.Message)
+	}
+}

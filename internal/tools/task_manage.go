@@ -242,8 +242,22 @@ func (r *Runtime) workflowTemplateManage(ctx context.Context, args map[string]an
 		request := workflowTemplateDraftRequest{Template: input.Template}
 		return compactNexusTemplateMutationResult(r.nexusWorkflowJSON(ctx, "POST", "/v1/workflow-templates/drafts", request))
 	case "validate", "publish", "retire":
+		if input.TemplateID == "" || input.TemplateVersion == "" {
+			return nil, toolErrorDetails("VALIDATION_ERROR", "template_id and template_version are required", "validation", map[string]any{
+				"action": input.Action,
+			})
+		}
 		return compactNexusTemplateMutationResult(r.nexusWorkflowJSON(ctx, "POST", input.escapedTemplatePath(input.Action), struct{}{}))
 	case "get":
+		if input.TemplateID == "" {
+			return nil, toolErrorDetails("VALIDATION_ERROR", "template_id is required", "validation", nil)
+		}
+		if input.TemplateVersion == "" {
+			input.TemplateVersion, err = r.nexusActiveWorkflowTemplateVersion(ctx, input.TemplateID)
+			if err != nil {
+				return nil, err
+			}
+		}
 		result, err := r.nexusWorkflowJSON(ctx, "GET", input.escapedTemplatePath(""), nil)
 		if err != nil {
 			return nil, err
@@ -324,13 +338,21 @@ func (r *Runtime) nexusActiveWorkflowTemplates(ctx context.Context, ids []string
 }
 
 func (r *Runtime) nexusActiveWorkflowTemplate(ctx context.Context, id string) (taskstate.Template, error) {
+	version, err := r.nexusActiveWorkflowTemplateVersion(ctx, id)
+	if err != nil {
+		return taskstate.Template{}, err
+	}
+	return r.nexusWorkflowTemplate(ctx, strings.TrimSpace(id), version)
+}
+
+func (r *Runtime) nexusActiveWorkflowTemplateVersion(ctx context.Context, id string) (string, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
-		return taskstate.Template{}, taskToolError(fmt.Errorf("template_id is required"))
+		return "", taskToolError(fmt.Errorf("template_id is required"))
 	}
 	result, err := r.nexusWorkflowJSON(ctx, "GET", "/v1/workflow-templates?status=active", nil)
 	if err != nil {
-		return taskstate.Template{}, err
+		return "", err
 	}
 	raw := result["templates"]
 	if raw == nil {
@@ -341,14 +363,14 @@ func (r *Runtime) nexusActiveWorkflowTemplate(ctx context.Context, id string) (t
 		Version string `json:"version"`
 	}
 	if err := remarshal(raw, &summaries); err != nil {
-		return taskstate.Template{}, taskToolError(fmt.Errorf("decode active workflow templates: %w", err))
+		return "", taskToolError(fmt.Errorf("decode active workflow templates: %w", err))
 	}
 	for _, summary := range summaries {
 		if summary.ID == id {
-			return r.nexusWorkflowTemplate(ctx, summary.ID, summary.Version)
+			return summary.Version, nil
 		}
 	}
-	return taskstate.Template{}, taskToolError(fmt.Errorf("active workflow template %s not found", id))
+	return "", taskToolError(fmt.Errorf("active workflow template %s not found", id))
 }
 
 func (r *Runtime) nexusWorkflowTemplate(ctx context.Context, id, version string) (taskstate.Template, error) {
@@ -434,9 +456,18 @@ func (r *Runtime) nexusWorkflowJSON(ctx context.Context, method, path string, pa
 		return nil, toolErrorCause("NEXUS_RESPONSE_BODY_INVALID", err.Error(), "response", map[string]any{"status": resp.StatusCode}, err)
 	}
 	var result Result
-	if len(strings.TrimSpace(string(data))) > 0 {
+	trimmedBody := strings.TrimSpace(string(data))
+	if trimmedBody != "" {
 		if err := json.Unmarshal(data, &result); err != nil {
-			return nil, toolErrorCause("NEXUS_INVALID_RESPONSE", err.Error(), "response", map[string]any{"status": resp.StatusCode, "response_bytes": len(data)}, err)
+			details := map[string]any{
+				"status":           resp.StatusCode,
+				"response_bytes":   len(data),
+				"response_preview": truncateString(trimmedBody, 500),
+			}
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				return nil, toolErrorCause("NEXUS_WORKFLOW_ERROR", resp.Status, "nexus", details, err)
+			}
+			return nil, toolErrorCause("NEXUS_INVALID_RESPONSE", err.Error(), "response", details, err)
 		}
 	} else {
 		result = Result{}

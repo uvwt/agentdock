@@ -125,7 +125,7 @@ func InputSchema(name string) map[string]any {
 		props["template"] = map[string]any{"type": "object", "additionalProperties": true, "description": "Complete draft workflow template for save."}
 		props["template_id"] = stringProp("Workflow template id.")
 		props["template_ids"] = map[string]any{"type": "array", "minItems": 2, "maxItems": 3, "items": map[string]any{"type": "string"}, "description": "Two or three active template ids for get_many. The returned templates must be pruned, deduplicated, ordered, and combined by the model."}
-		props["template_version"] = stringProp("Workflow template version for exact get, validate, publish, or retire actions.")
+		props["template_version"] = stringProp("Workflow template version for exact get, validate, publish, or retire actions. Omit it for get to resolve the current active version.")
 		props["template_status"] = map[string]any{"type": "string", "enum": []string{"draft", "active", "retired"}, "description": "Optional list status filter."}
 		props["allow_long_template"] = boolProp("Allow a workflow template to exceed default guardrails. Provide long_template_reason when true.")
 		props["long_template_reason"] = stringProp("Reason required when allow_long_template=true.")
