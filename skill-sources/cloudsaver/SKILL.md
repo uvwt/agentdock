@@ -1,7 +1,7 @@
 ---
 name: cloudsaver
 description: Use this skill when calling the local CloudSaver API for status checks, resource search, Douban hot lists, share parsing, or transfer actions.
-version: 0.3.4
+version: 0.3.5
 ---
 
 # CloudSaver Skill
@@ -37,8 +37,8 @@ printf '%s' '{"skill_action":"<动作>"}' | python3 run.py
 | `quark-share-info` | Get Quark share info. Requires token. Params: shareCode, optional receiveCode. |
 | `register` | Register a CloudSaver user with register code. |
 | `save-setting` | Save CloudSaver settings. Requires token. Body should include userSettings and optionally globalSetting. |
-| `search` | Search CloudSaver resources by keyword. Supports auto-login on token expiry via request_with_auto_login. |
-| `search-with-login` | Login to local CloudSaver, keep the token internal, then search resources by keyword. Final output remains redacted by the helper. |
+| `search` | Search CloudSaver resources. Input: required `keyword`, optional `channelId` and `lastMessageId`. Supports auto-login on token expiry. |
+| `search-with-login` | Refresh login from the Skill's isolated `CLOUDSAVER_USERNAME/CLOUDSAVER_PASSWORD`, then search. Input: required `keyword`, optional `channelId` and `lastMessageId`; do not pass credentials in tool arguments. |
 | `sponsors` | Get CloudSaver sponsors list. |
 | `status` | Check CloudSaver container and HTTP endpoint status. |
 | `tele-images` | Get Telegram images from CloudSaver. |

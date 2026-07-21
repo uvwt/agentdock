@@ -224,7 +224,10 @@ def register(args):
 
 
 def search(args):
-    return request_with_auto_login("GET", "/api/search", params={"keyword": args["keyword"], "channelId": args.get("channelId", ""), "lastMessageId": args.get("lastMessageId", "")}, args=args, timeout=55)
+    keyword = str(args.get("keyword") or "").strip()
+    if not keyword:
+        return {"ok": False, "status": 400, "error": "keyword is required"}
+    return request_with_auto_login("GET", "/api/search", params={"keyword": keyword, "channelId": args.get("channelId", ""), "lastMessageId": args.get("lastMessageId", "")}, args=args, timeout=55)
 
 
 def extract_token(obj):
@@ -246,12 +249,9 @@ def extract_token(obj):
 
 
 def search_with_login(args):
-    login_resp = login(args)
-    if not login_resp.get("ok"):
-        return login_resp
-    token = extract_token(login_resp)
+    token, login_resp = refresh_saved_token()
     if not token:
-        return {"ok": False, "status": login_resp.get("status"), "error": "login succeeded but token was not found"}
+        return login_resp
     search_args = dict(args)
     search_args["token"] = token
     search_args.pop("username", None)
