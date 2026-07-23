@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/uvwt/agentdock/internal/atomicfile"
-	"github.com/uvwt/agentdock/internal/filelock"
+	"github.com/uvwt/agentdock/internal/fs/atomicfile"
+	"github.com/uvwt/agentdock/internal/fs/filelock"
 	"github.com/uvwt/agentdock/internal/textutil"
 )
 

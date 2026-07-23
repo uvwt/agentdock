@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/uvwt/agentdock/internal/session"
+	"github.com/uvwt/agentdock/internal/tool/command/session"
 )
 
 func TestCommandOutputLimit(t *testing.T) {

@@ -3,7 +3,7 @@ package skill
 import (
 	"strings"
 
-	"github.com/uvwt/agentdock/internal/skills"
+	skills "github.com/uvwt/agentdock/internal/skill"
 )
 
 type CapabilityItem struct {

@@ -5,7 +5,7 @@ import (
 
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envstore"
-	"github.com/uvwt/agentdock/internal/session"
+	"github.com/uvwt/agentdock/internal/tool/command/session"
 	"github.com/uvwt/agentdock/internal/workspace"
 )
 

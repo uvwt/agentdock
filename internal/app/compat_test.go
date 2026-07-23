@@ -5,8 +5,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/uvwt/agentdock/internal/session"
 	toolcommand "github.com/uvwt/agentdock/internal/tool/command"
+	"github.com/uvwt/agentdock/internal/tool/command/session"
 	toolcore "github.com/uvwt/agentdock/internal/tool/core"
 	toolfile "github.com/uvwt/agentdock/internal/tool/file"
 	toolmedia "github.com/uvwt/agentdock/internal/tool/media"

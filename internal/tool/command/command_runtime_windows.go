@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/uvwt/agentdock/internal/session"
+	"github.com/uvwt/agentdock/internal/tool/command/session"
 )
 
 func (svc *Service) prepareCommandInvocation(args map[string]any, command string) (commandInvocation, error) {

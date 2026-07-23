@@ -19,10 +19,10 @@ import (
 
 	"github.com/uvwt/agentdock/internal/auth"
 	"github.com/uvwt/agentdock/internal/config"
-	"github.com/uvwt/agentdock/internal/jsonrpc"
+	"github.com/uvwt/agentdock/internal/httpx/requestmeta"
 	"github.com/uvwt/agentdock/internal/mcp"
+	"github.com/uvwt/agentdock/internal/mcp/jsonrpc"
 	"github.com/uvwt/agentdock/internal/publicartifacts"
-	"github.com/uvwt/agentdock/internal/requestmeta"
 )
 
 const (

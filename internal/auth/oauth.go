@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/uvwt/agentdock/internal/atomicfile"
+	"github.com/uvwt/agentdock/internal/fs/atomicfile"
 )
 
 const (

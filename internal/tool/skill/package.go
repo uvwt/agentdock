@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/uvwt/agentdock/internal/envstore"
-	"github.com/uvwt/agentdock/internal/skills"
-	"github.com/uvwt/agentdock/internal/skillstate"
+	skills "github.com/uvwt/agentdock/internal/skill"
+	skillstate "github.com/uvwt/agentdock/internal/skill/state"
 )
 
 type skillManager struct {

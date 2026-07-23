@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/uvwt/agentdock/internal/envstore"
-	"github.com/uvwt/agentdock/internal/mcpclient"
+	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
 )
 
 func (s *Service) Manage(ctx context.Context, args map[string]any) (Result, error) {

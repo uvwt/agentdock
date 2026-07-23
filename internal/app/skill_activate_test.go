@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/uvwt/agentdock/internal/config"
-	"github.com/uvwt/agentdock/internal/skills"
+	skills "github.com/uvwt/agentdock/internal/skill"
 )
 
 func TestSkillPackageActivateInstalledVersion(t *testing.T) {

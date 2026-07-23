@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/uvwt/agentdock/internal/config"
-	"github.com/uvwt/agentdock/internal/skills"
+	skills "github.com/uvwt/agentdock/internal/skill"
 )
 
 func TestSkillPackageValidateInstallInspectAndList(t *testing.T) {

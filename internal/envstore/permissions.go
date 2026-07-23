@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/uvwt/agentdock/internal/securepath"
+	"github.com/uvwt/agentdock/internal/fs/securepath"
 )
 
 func (s *Store) ensureDirectories() error {

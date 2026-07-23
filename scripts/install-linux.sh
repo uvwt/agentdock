@@ -826,7 +826,7 @@ SUMMARY
     build_commit="$(cd "$source_dir" && git rev-parse --short=12 HEAD 2>/dev/null || printf unknown)"
     build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     (cd "$source_dir" && go build -trimpath \
-      -ldflags "-X github.com/uvwt/agentdock/internal/buildinfo.Commit=$build_commit -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=$build_date" \
+      -ldflags "-X github.com/uvwt/agentdock/cmd/agentdock/internal/buildinfo.Commit=$build_commit -X github.com/uvwt/agentdock/cmd/agentdock/internal/buildinfo.BuildDate=$build_date" \
       -o ./bin/agentdock ./cmd/agentdock)
     chmod +x "$source_dir/bin/agentdock"
 

@@ -39,7 +39,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          go test ./internal/envstore ./internal/securepath
+          go test ./internal/envstore ./internal/fs/securepath
 
       - name: Download and validate exact installer bytes
         shell: powershell

@@ -10,7 +10,7 @@ import (
 
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envstore"
-	"github.com/uvwt/agentdock/internal/mcpclient"
+	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
 	"github.com/uvwt/agentdock/internal/taskstate"
 	toolcommand "github.com/uvwt/agentdock/internal/tool/command"
 	toolcore "github.com/uvwt/agentdock/internal/tool/core"

@@ -12,7 +12,7 @@ import (
 
 	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/config"
-	"github.com/uvwt/agentdock/internal/jsonrpc"
+	"github.com/uvwt/agentdock/internal/mcp/jsonrpc"
 )
 
 type Server struct {

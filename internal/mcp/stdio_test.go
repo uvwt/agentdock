@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/uvwt/agentdock/internal/jsonrpc"
+	"github.com/uvwt/agentdock/internal/mcp/jsonrpc"
 )
 
 func TestServeStdioHandlesRequestsErrorsAndNotifications(t *testing.T) {

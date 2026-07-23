@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/uvwt/agentdock/internal/session"
+	"github.com/uvwt/agentdock/internal/tool/command/session"
 )
 
 func (s *Service) Observe(args map[string]any) (Result, error) {

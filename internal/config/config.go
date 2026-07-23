@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/uvwt/agentdock/internal/securepath"
+	"github.com/uvwt/agentdock/internal/fs/securepath"
 )
 
 const (

@@ -44,7 +44,7 @@ jobs:
           build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           mkdir -p dist/bin
           go build -trimpath \
-            -ldflags="-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Commit=${GITHUB_SHA} -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=${build_date}" \
+            -ldflags="-s -w -X github.com/uvwt/agentdock/cmd/agentdock/internal/buildinfo.Commit=${GITHUB_SHA} -X github.com/uvwt/agentdock/cmd/agentdock/internal/buildinfo.BuildDate=${build_date}" \
             -o dist/bin/agentdock ./cmd/agentdock
           python3 scripts/build-core-skill-bundle.py --output dist/share/agentdock/core-skills
           tar -C dist -czf "$asset" bin/agentdock share/agentdock/core-skills
@@ -99,7 +99,7 @@ jobs:
           build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           mkdir -p dist/bin
           go build -trimpath \
-            -ldflags="-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Commit=${GITHUB_SHA} -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=${build_date}" \
+            -ldflags="-s -w -X github.com/uvwt/agentdock/cmd/agentdock/internal/buildinfo.Commit=${GITHUB_SHA} -X github.com/uvwt/agentdock/cmd/agentdock/internal/buildinfo.BuildDate=${build_date}" \
             -o dist/bin/agentdock ./cmd/agentdock
           python3 scripts/build-core-skill-bundle.py --output dist/share/agentdock/core-skills
           tar -C dist -czf "$asset" bin/agentdock share/agentdock/core-skills
@@ -135,7 +135,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          go test ./internal/envstore ./internal/securepath
+          go test ./internal/envstore ./internal/fs/securepath
 
       - name: Download and validate exact installer bytes
         shell: powershell
@@ -173,7 +173,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $buildDate = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
-          $ldflags = "-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Commit=$env:GITHUB_SHA -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=$buildDate"
+          $ldflags = "-s -w -X github.com/uvwt/agentdock/cmd/agentdock/internal/buildinfo.Commit=$env:GITHUB_SHA -X github.com/uvwt/agentdock/cmd/agentdock/internal/buildinfo.BuildDate=$buildDate"
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           go build -trimpath -ldflags $ldflags -o dist/agentdock.exe ./cmd/agentdock
 

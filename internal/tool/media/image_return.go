@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/uvwt/agentdock/internal/httpx/requestmeta"
 	"github.com/uvwt/agentdock/internal/publicartifacts"
-	"github.com/uvwt/agentdock/internal/requestmeta"
 )
 
 const (

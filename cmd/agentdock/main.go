@@ -12,16 +12,16 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/uvwt/agentdock/cmd/agentdock/internal/buildinfo"
+	"github.com/uvwt/agentdock/cmd/agentdock/internal/logx"
 	"github.com/uvwt/agentdock/internal/app"
-	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/httpx"
-	"github.com/uvwt/agentdock/internal/logx"
 	"github.com/uvwt/agentdock/internal/mcp"
 	"github.com/uvwt/agentdock/internal/selfupdate"
-	"github.com/uvwt/agentdock/internal/skillbundle"
-	"github.com/uvwt/agentdock/internal/skills"
-	"github.com/uvwt/agentdock/internal/skillstate"
+	skills "github.com/uvwt/agentdock/internal/skill"
+	skillbundle "github.com/uvwt/agentdock/internal/skill/bundle"
+	skillstate "github.com/uvwt/agentdock/internal/skill/state"
 )
 
 func main() {
