@@ -12,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/httpx"
@@ -21,7 +22,6 @@ import (
 	"github.com/uvwt/agentdock/internal/skillbundle"
 	"github.com/uvwt/agentdock/internal/skills"
 	"github.com/uvwt/agentdock/internal/skillstate"
-	"github.com/uvwt/agentdock/internal/tools"
 )
 
 func main() {
@@ -144,7 +144,7 @@ func runServer(ctx context.Context, args []string, stderr io.Writer) error {
 	}
 	logx.Setup(cfg.LogLevel)
 	slog.Info("server starting", "agentdock_home", cfg.AgentDockHome, "agentdock_default_dir", cfg.AgentDockDefaultDir, "path_model", config.PathModel, "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "log_level", cfg.LogLevel, "recall_enabled", cfg.NexusEndpoint != "", "nexus_enabled", cfg.NexusEndpoint != "", "browser_enabled", cfg.BrowserEnabled)
-	runtime, err := tools.NewRuntime(cfg)
+	runtime, err := app.NewRuntime(cfg)
 	if err != nil {
 		return err
 	}

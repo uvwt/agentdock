@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/auth"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/mcp"
-	"github.com/uvwt/agentdock/internal/tools"
 )
 
 func registerRuntimeAPI(mux *http.ServeMux, server *mcp.Server, cfg config.Config, oauthStore *auth.OAuthStore) {
@@ -96,7 +96,7 @@ func dispatchRuntimeAPI(ctx context.Context, server *mcp.Server, r *http.Request
 	case strings.HasPrefix(path, "/internal/runtime/skills/"):
 		skill, filePath, action, ok := runtimeSkillRoute(path)
 		if !ok {
-			return nil, &tools.ToolError{Code: "NOT_FOUND", Message: "runtime Skill API route not found", Category: "not_found"}
+			return nil, &app.ToolError{Code: "NOT_FOUND", Message: "runtime Skill API route not found", Category: "not_found"}
 		}
 		switch action {
 		case "detail":
@@ -109,7 +109,7 @@ func dispatchRuntimeAPI(ctx context.Context, server *mcp.Server, r *http.Request
 			result, err := server.RuntimeSkillFile(skill, filePath)
 			return map[string]any(result), err
 		default:
-			return nil, &tools.ToolError{Code: "NOT_FOUND", Message: "runtime Skill API route not found", Category: "not_found"}
+			return nil, &app.ToolError{Code: "NOT_FOUND", Message: "runtime Skill API route not found", Category: "not_found"}
 		}
 	case path == "/internal/runtime/mcp" && r.Method == http.MethodPost:
 		args, err := decodeRuntimeMCPRequest(r)
@@ -124,7 +124,7 @@ func dispatchRuntimeAPI(ctx context.Context, server *mcp.Server, r *http.Request
 	case strings.HasPrefix(path, "/internal/runtime/mcp/"):
 		name, ok := runtimeMCPName(path)
 		if !ok {
-			return nil, &tools.ToolError{Code: "MCP_NAME_REQUIRED", Message: "dynamic MCP server name is required", Category: "validation"}
+			return nil, &app.ToolError{Code: "MCP_NAME_REQUIRED", Message: "dynamic MCP server name is required", Category: "validation"}
 		}
 		result, err := server.RuntimeMCPServer(ctx, name)
 		return map[string]any(result), err
@@ -142,7 +142,7 @@ func dispatchRuntimeAPI(ctx context.Context, server *mcp.Server, r *http.Request
 		result, err := server.RuntimeTask(taskID)
 		return map[string]any(result), err
 	default:
-		return nil, &tools.ToolError{Code: "NOT_FOUND", Message: "runtime API route not found", Category: "not_found"}
+		return nil, &app.ToolError{Code: "NOT_FOUND", Message: "runtime API route not found", Category: "not_found"}
 	}
 }
 
@@ -188,10 +188,10 @@ func decodeRuntimeMCPRequest(r *http.Request) (map[string]any, error) {
 	}
 	action := strings.ToLower(strings.TrimSpace(request.Action))
 	if action == "" {
-		return nil, &tools.ToolError{Code: "MCP_ACTION_REQUIRED", Message: "dynamic MCP action is required", Category: "validation"}
+		return nil, &app.ToolError{Code: "MCP_ACTION_REQUIRED", Message: "dynamic MCP action is required", Category: "validation"}
 	}
 	if !runtimeMCPManageActions[action] {
-		return nil, &tools.ToolError{Code: "MCP_ACTION_UNSUPPORTED", Message: "dynamic MCP action is not available through the Runtime API", Category: "validation"}
+		return nil, &app.ToolError{Code: "MCP_ACTION_UNSUPPORTED", Message: "dynamic MCP action is not available through the Runtime API", Category: "validation"}
 	}
 	args := map[string]any{
 		"action":       action,
@@ -219,7 +219,7 @@ func decodeRuntimeMCPRequest(r *http.Request) (map[string]any, error) {
 }
 
 func runtimeMCPRequestError(message string) error {
-	return &tools.ToolError{Code: "INVALID_MCP_REQUEST", Message: message, Category: "validation"}
+	return &app.ToolError{Code: "INVALID_MCP_REQUEST", Message: message, Category: "validation"}
 }
 
 func runtimeSkillRoute(path string) (skill, filePath, action string, ok bool) {
@@ -279,7 +279,7 @@ func parseRuntimeTaskLimit(raw string) (int, error) {
 	}
 	limit, err := strconv.Atoi(raw)
 	if err != nil || limit < 0 || limit > 200 {
-		return 0, &tools.ToolError{
+		return 0, &app.ToolError{
 			Code: "INVALID_LIMIT", Message: "limit must be an integer between 0 and 200", Category: "validation",
 			Details: map[string]any{"limit": raw, "minimum": 0, "maximum": 200},
 		}
@@ -288,7 +288,7 @@ func parseRuntimeTaskLimit(raw string) (int, error) {
 }
 
 func writeRuntimeAPIHandlerError(w http.ResponseWriter, err error) {
-	var toolErr *tools.ToolError
+	var toolErr *app.ToolError
 	if errors.As(err, &toolErr) {
 		status := http.StatusInternalServerError
 		switch toolErr.Category {

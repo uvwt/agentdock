@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/config"
-	"github.com/uvwt/agentdock/internal/tools"
 )
 
 func TestToolRegistryHasNoDuplicates(t *testing.T) {
@@ -31,7 +31,7 @@ func TestRuntimeToolsHaveRegistryDefinitionsAndSchemas(t *testing.T) {
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
 	}
-	rt, err := tools.NewRuntime(cfg)
+	rt, err := app.NewRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestRuntimeExposesSingleToolSet(t *testing.T) {
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
 	}
-	rt, err := tools.NewRuntime(cfg)
+	rt, err := app.NewRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestNexusDockRecallToolNamesHideLegacyMemoryTools(t *testing.T) {
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
 	}
-	rt, err := tools.NewRuntime(cfg)
+	rt, err := app.NewRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestPrivateNoteManageIsHiddenWithoutNexus(t *testing.T) {
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
 	}
-	rt, err := tools.NewRuntime(cfg)
+	rt, err := app.NewRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

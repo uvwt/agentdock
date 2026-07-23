@@ -1,5 +1,5 @@
 package mcp
 
-import "github.com/uvwt/agentdock/internal/tools"
+import "github.com/uvwt/agentdock/internal/app"
 
-func inputSchema(name string) map[string]any { return tools.InputSchema(name) }
+func inputSchema(name string) map[string]any { return app.InputSchema(name) }

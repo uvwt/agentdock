@@ -10,13 +10,13 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/jsonrpc"
-	"github.com/uvwt/agentdock/internal/tools"
 )
 
 type Server struct {
-	runtime *tools.Runtime
+	runtime *app.Runtime
 	cfg     config.Config
 }
 
@@ -25,11 +25,11 @@ type callToolParams struct {
 	Arguments map[string]any `json:"arguments"`
 }
 
-func NewServer(runtime *tools.Runtime, cfg config.Config) *Server {
+func NewServer(runtime *app.Runtime, cfg config.Config) *Server {
 	return &Server{runtime: runtime, cfg: cfg}
 }
 
-func (s *Server) AgentDockContext(ctx context.Context) (tools.Result, error) {
+func (s *Server) AgentDockContext(ctx context.Context) (app.Result, error) {
 	return s.runtime.AgentDockContext(ctx)
 }
 
@@ -138,7 +138,7 @@ func toolDescriptorsForNames(names []string) []map[string]any {
 func toolEnvelope(name string, structured any, err error) map[string]any {
 	if err != nil {
 		payload := map[string]any{"tool": name, "error": err.Error()}
-		var toolErr *tools.ToolError
+		var toolErr *app.ToolError
 		if errors.As(err, &toolErr) {
 			payload["code"] = toolErr.Code
 			payload["category"] = toolErr.Category
@@ -198,7 +198,7 @@ func asMap(value any) map[string]any {
 	switch typed := value.(type) {
 	case map[string]any:
 		return typed
-	case tools.Result:
+	case app.Result:
 		return map[string]any(typed)
 	default:
 		return map[string]any{}

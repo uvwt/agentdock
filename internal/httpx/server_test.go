@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/auth"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/mcp"
-	"github.com/uvwt/agentdock/internal/tools"
 )
 
 func testConfig(t *testing.T) config.Config {
@@ -43,7 +43,7 @@ func TestHTTPServerHasDefensiveConnectionLimits(t *testing.T) {
 
 func TestMCPEndpointNotificationReturnsAcceptedWithEmptyBody(t *testing.T) {
 	cfg := testConfig(t)
-	runtime, err := tools.NewRuntime(cfg)
+	runtime, err := app.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestMCPEndpointNotificationReturnsAcceptedWithEmptyBody(t *testing.T) {
 
 func TestMCPEndpointRejectsTrailingJSONValue(t *testing.T) {
 	cfg := testConfig(t)
-	runtime, err := tools.NewRuntime(cfg)
+	runtime, err := app.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestMCPEndpointRejectsTrailingJSONValue(t *testing.T) {
 
 func TestMCPEndpointRejectsOversizedBody(t *testing.T) {
 	cfg := testConfig(t)
-	runtime, err := tools.NewRuntime(cfg)
+	runtime, err := app.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestMCPEndpointRejectsOversizedBody(t *testing.T) {
 func TestRuntimeAPIRequiresBearerWhenConfigured(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.AuthToken = "secret-token"
-	runtime, err := tools.NewRuntime(cfg)
+	runtime, err := app.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestRuntimeAPIRequiresBearerWhenConfigured(t *testing.T) {
 func TestRuntimeAPIStatusWithBearer(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.AuthToken = "secret-token"
-	runtime, err := tools.NewRuntime(cfg)
+	runtime, err := app.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestRuntimeAPIStatusWithBearer(t *testing.T) {
 
 func TestRuntimeAPISkillsNoAuthWhenUnconfigured(t *testing.T) {
 	cfg := testConfig(t)
-	runtime, err := tools.NewRuntime(cfg)
+	runtime, err := app.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestRuntimeAPISkillsNoAuthWhenUnconfigured(t *testing.T) {
 
 func TestRuntimeAPIRejectsInvalidTaskQuery(t *testing.T) {
 	cfg := testConfig(t)
-	runtime, err := tools.NewRuntime(cfg)
+	runtime, err := app.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestRuntimeAPIRejectsInvalidTaskQuery(t *testing.T) {
 
 func TestRuntimeAPIDeletesOnlySelectedTask(t *testing.T) {
 	cfg := testConfig(t)
-	runtime, err := tools.NewRuntime(cfg)
+	runtime, err := app.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestRuntimeAPIDeletesOnlySelectedTask(t *testing.T) {
 
 func TestRuntimeAPIUnknownRouteReturnsNotFound(t *testing.T) {
 	cfg := testConfig(t)
-	runtime, err := tools.NewRuntime(cfg)
+	runtime, err := app.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestRuntimeAPIUnknownRouteReturnsNotFound(t *testing.T) {
 
 func TestRuntimeAPIMethodContract(t *testing.T) {
 	cfg := testConfig(t)
-	runtime, err := tools.NewRuntime(cfg)
+	runtime, err := app.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
@@ -300,7 +300,7 @@ func TestAgentDockContextRequiresBearerEvenOnLoopback(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.Host = "127.0.0.1"
 	cfg.AuthToken = "secret-token"
-	runtime, err := tools.NewRuntime(cfg)
+	runtime, err := app.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
@@ -317,7 +317,7 @@ func TestAgentDockContextRequiresBearerEvenOnLoopback(t *testing.T) {
 func TestAgentDockContextAcceptsBearer(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.AuthToken = "secret-token"
-	runtime, err := tools.NewRuntime(cfg)
+	runtime, err := app.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestAgentDockContextAcceptsBearer(t *testing.T) {
 func TestServerURLAloneDoesNotRequireAuthOrDeclareOAuth(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.OAuthServerURL = "https://agentdock.example.com"
-	runtime, err := tools.NewRuntime(cfg)
+	runtime, err := app.NewRuntime(cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}

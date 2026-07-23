@@ -1,10 +1,10 @@
 package mcp
 
-import "github.com/uvwt/agentdock/internal/tools"
+import "github.com/uvwt/agentdock/internal/app"
 
-type ToolDefinition = tools.ToolDefinition
+type ToolDefinition = app.ToolDefinition
 
-var toolRegistry = tools.ToolDefinitions()
+var toolRegistry = app.ToolDefinitions()
 
 func toolDefinition(name string) (ToolDefinition, bool) {
 	for _, def := range toolRegistry {
