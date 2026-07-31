@@ -1,16 +1,15 @@
 package file
 
 import (
+	"bytes"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 
+	anchoreddiff "github.com/rogpeppe/go-internal/diff"
 	"github.com/uvwt/agentdock/internal/textutil"
 )
 
-const maxDiffProcessOutputBytes = 64 << 20
+const maxDiffOutputBytes = 64 << 20
 
 type diffStats struct {
 	FilesChanged int
@@ -19,29 +18,15 @@ type diffStats struct {
 }
 
 func unifiedDiffPreview(path, oldContent, newContent string, maxBytes int) (string, bool, diffStats, error) {
-	dir, err := os.MkdirTemp("", "agentdock-diff-*")
-	if err != nil {
-		return "", false, diffStats{}, err
-	}
-	defer os.RemoveAll(dir)
-
-	oldPath := filepath.Join(dir, "old")
-	newPath := filepath.Join(dir, "new")
-	if err := os.WriteFile(oldPath, []byte(oldContent), 0o600); err != nil {
-		return "", false, diffStats{}, err
-	}
-	if err := os.WriteFile(newPath, []byte(newContent), 0o600); err != nil {
-		return "", false, diffStats{}, err
-	}
-	cmd := exec.Command("diff", "-u", "--label", "a/"+path, "--label", "b/"+path, oldPath, newPath)
-	output, totalBytes, outputTruncated, err := runBoundedCombinedOutput(cmd, maxDiffProcessOutputBytes)
-	if outputTruncated {
-		return "", false, diffStats{}, fmt.Errorf("diff output exceeds %d bytes (observed %d bytes)", maxDiffProcessOutputBytes, totalBytes)
-	}
-	if err != nil {
-		if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
-			return "", false, diffStats{}, err
+	output := anchoreddiff.Diff("a/"+path, []byte(oldContent), "b/"+path, []byte(newContent))
+	if len(output) > 0 {
+		// 该实现会额外输出 diff 命令头；工具契约只返回 unified diff。
+		if newline := bytes.IndexByte(output, '\n'); newline >= 0 {
+			output = output[newline+1:]
 		}
+	}
+	if len(output) > maxDiffOutputBytes {
+		return "", false, diffStats{}, fmt.Errorf("diff output exceeds %d bytes (observed %d bytes)", maxDiffOutputBytes, len(output))
 	}
 	stats := countDiffStats(string(output))
 	truncated := textutil.SafeTruncateBytes(output, maxBytes)

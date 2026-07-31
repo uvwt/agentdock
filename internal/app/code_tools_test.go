@@ -692,6 +692,7 @@ func TestReadFileReturnsNextStartLineOnTruncation(t *testing.T) {
 }
 
 func TestEditFileReplacesSingleMatch(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	rt, root := newCodeToolsRuntime(t)
 	path := filepath.Join(root, "main.go")
 	if err := os.WriteFile(path, []byte("package main\n\nfunc main() {}\n"), 0o640); err != nil {
