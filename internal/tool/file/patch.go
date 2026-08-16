@@ -302,11 +302,11 @@ func applyUpdateHunks(content string, hunks [][]string, path string) (string, er
 	if strings.Contains(content, "\r\n") {
 		lineEnding = "\r\n"
 	}
-	lines := strings.Split(strings.TrimSuffix(strings.ReplaceAll(content, "\r\n", "\n"), "\n"), "\n")
-	if content == "" {
-		lines = []string{}
-	}
-	trailing := strings.HasSuffix(content, "\n")
+	// Split on LF only and keep the trailing empty element. This makes the
+	// final newline an ordinary patchable line instead of state restored from
+	// the pre-patch file. It also preserves Unicode line-boundary characters
+	// such as U+2028 as file content rather than treating them as newlines.
+	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
 	for hunkIndex, hunk := range hunks {
 		oldLines, newLines, err := parseUpdateHunk(hunk)
 		if err != nil {
@@ -327,9 +327,6 @@ func applyUpdateHunks(content string, hunks [][]string, path string) (string, er
 		lines = updated
 	}
 	result := strings.Join(lines, lineEnding)
-	if trailing || len(lines) > 0 {
-		result += lineEnding
-	}
 	if hasBOM {
 		result = "\ufeff" + result
 	}
@@ -344,7 +341,12 @@ func parseUpdateHunk(hunk []string) ([]string, []string, error) {
 			continue
 		}
 		if raw == "" {
-			return nil, nil, toolError("PATCH_FAILED", "invalid empty patch line", "validation")
+			// V4A represents an empty context line as a single space, but model
+			// output and intermediate transports may strip that trailing space.
+			// Treat an empty raw hunk line as unchanged empty context.
+			oldLines = append(oldLines, "")
+			newLines = append(newLines, "")
+			continue
 		}
 		marker := raw[0]
 		value := raw[1:]
