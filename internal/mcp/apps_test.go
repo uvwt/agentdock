@@ -445,10 +445,8 @@ func TestMCPAppsExposeNexusViewsWhenNexusEnabled(t *testing.T) {
 		}
 		tools[tool.Name] = tool
 	}
-	for _, name := range []string{"recall_search", "recall_write"} {
-		assertToolUIResource(t, tools[name], protocol.RecallUIResourceURI)
-	}
-	for _, name := range []string{"recall_read", "recall_maintain"} {
+	assertToolUIResource(t, tools["recall_write"], protocol.RecallUIResourceURI)
+	for _, name := range []string{"recall_search", "recall_read", "recall_maintain"} {
 		tool := tools[name]
 		if tool == nil {
 			t.Fatalf("tools/list did not expose %s", name)

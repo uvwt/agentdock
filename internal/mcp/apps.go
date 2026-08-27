@@ -62,7 +62,7 @@ func (s *Server) appResourceDefinitions() []appResourceDefinition {
 				URI:         protocol.RecallUIResourceURI,
 				Name:        "agentdock-recall",
 				Title:       "AgentDock Recall",
-				Description: "Compact NexusDock Recall search and write results.",
+				Description: "Compact NexusDock Recall write results.",
 				HTML:        mcpAppHTML("recall", "Recall"),
 			},
 			appResourceDefinition{

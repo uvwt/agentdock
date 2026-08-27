@@ -16,7 +16,6 @@ var toolUIBindings = map[string]UIBinding{
 	"acp_session":              {ResourceURI: protocol.ACPStatusUIResourceURI},
 	"workflow_template_manage": {ResourceURI: protocol.WorkflowUIResourceURI, Action: "match"},
 	"mcp_tool_call":            {ResourceURI: protocol.DynamicMCPUIResourceURI},
-	"recall_search":            {ResourceURI: protocol.RecallUIResourceURI},
 	"recall_write":             {ResourceURI: protocol.RecallUIResourceURI},
 	"file_publish":             {ResourceURI: protocol.ArtifactUIResourceURI},
 }
