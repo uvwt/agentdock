@@ -37,10 +37,10 @@ enum ApplicationMenu {
             )
         )
         editMenu.addItem(.separator())
-        editMenu.addItem(item(title: "剪切", action: Selector(("cut:")), keyEquivalent: "x"))
-        editMenu.addItem(item(title: "复制", action: Selector(("copy:")), keyEquivalent: "c"))
-        editMenu.addItem(item(title: "粘贴", action: Selector(("paste:")), keyEquivalent: "v"))
-        editMenu.addItem(item(title: "全选", action: Selector(("selectAll:")), keyEquivalent: "a"))
+        editMenu.addItem(item(title: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
+        editMenu.addItem(item(title: "复制", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        editMenu.addItem(item(title: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        editMenu.addItem(item(title: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
         editMenuItem.submenu = editMenu
         mainMenu.addItem(editMenuItem)
 
