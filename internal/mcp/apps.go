@@ -7,10 +7,8 @@ import (
 	"strings"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/uvwt/agentdock/internal/app"
+	protocol "github.com/uvwt/agentdock-protocol"
 )
-
-const mcpAppMIMEType = "text/html;profile=mcp-app"
 
 type appResourceDefinition struct {
 	URI         string
@@ -23,35 +21,35 @@ type appResourceDefinition struct {
 func (s *Server) appResourceDefinitions() []appResourceDefinition {
 	definitions := []appResourceDefinition{
 		{
-			URI:         app.AgentContextUIResourceURI,
+			URI:         protocol.ContextUIResourceURI,
 			Name:        "agentdock-context",
 			Title:       "AgentDock context",
 			Description: "Compact read-only AgentDock capability summary with expandable bootstrap context.",
 			HTML:        mcpAppHTML("agentdock_context", "AgentDock context"),
 		},
 		{
-			URI:         app.TaskProgressUIResourceURI,
+			URI:         protocol.TaskProgressUIResourceURI,
 			Name:        "agentdock-task-progress",
 			Title:       "AgentDock task",
 			Description: "Compact read-only task lifecycle view for task_manage results and task snapshots.",
 			HTML:        mcpAppHTML("task_progress", "Task"),
 		},
 		{
-			URI:         app.FileChangeUIResourceURI,
+			URI:         protocol.FileChangeUIResourceURI,
 			Name:        "agentdock-file-change",
 			Title:       "AgentDock file change",
 			Description: "Read-only view of the file_edit result, including diff preview and file operation summary.",
 			HTML:        mcpAppHTML("file_change", "File change"),
 		},
 		{
-			URI:         app.DynamicMCPUIResourceURI,
+			URI:         protocol.DynamicMCPUIResourceURI,
 			Name:        "agentdock-dynamic-mcp",
 			Title:       "AgentDock dynamic MCP",
 			Description: "Compact external MCP tool invocation view.",
 			HTML:        mcpAppHTML("dynamic_mcp", "Dynamic MCP"),
 		},
 		{
-			URI:         app.ArtifactUIResourceURI,
+			URI:         protocol.ArtifactUIResourceURI,
 			Name:        "agentdock-artifact",
 			Title:       "AgentDock artifact",
 			Description: "Compact published Artifact summary with expandable file metadata and signed URL information.",
@@ -61,14 +59,14 @@ func (s *Server) appResourceDefinitions() []appResourceDefinition {
 	if s.cfg.NexusEndpoint != "" {
 		definitions = append(definitions,
 			appResourceDefinition{
-				URI:         app.RecallUIResourceURI,
+				URI:         protocol.RecallUIResourceURI,
 				Name:        "agentdock-recall",
 				Title:       "AgentDock Recall",
 				Description: "Compact NexusDock Recall search and write results.",
 				HTML:        mcpAppHTML("recall", "Recall"),
 			},
 			appResourceDefinition{
-				URI:         app.WorkflowUIResourceURI,
+				URI:         protocol.WorkflowUIResourceURI,
 				Name:        "agentdock-workflow",
 				Title:       "AgentDock workflow",
 				Description: "Compact workflow template match recommendation view.",
@@ -78,7 +76,7 @@ func (s *Server) appResourceDefinitions() []appResourceDefinition {
 	}
 	if s.cfg.ACPEnabled {
 		definitions = append(definitions, appResourceDefinition{
-			URI:         app.ACPStatusUIResourceURI,
+			URI:         protocol.ACPStatusUIResourceURI,
 			Name:        "agentdock-acp-status",
 			Title:       "AgentDock ACP conversation",
 			Description: "Read-only ACP session view with concise user and assistant conversation output.",
@@ -86,6 +84,23 @@ func (s *Server) appResourceDefinitions() []appResourceDefinition {
 		})
 	}
 	return definitions
+}
+
+// UIResources returns the exact MCP App resources this server can serve through the Nexus bridge.
+// Capability discovery is derived from the resource registry, never from tool/result UI bindings.
+func (s *Server) UIResources() []protocol.UIResourceCapability {
+	definitions := s.appResourceDefinitions()
+	resources := make([]protocol.UIResourceCapability, 0, len(definitions))
+	for _, definition := range definitions {
+		contract, ok := protocol.UIResourceContract(definition.URI)
+		if !ok {
+			continue
+		}
+		resources = append(resources, protocol.UIResourceCapability{
+			URI: definition.URI, Contract: contract, MIMEType: protocol.MCPAppMIMEType,
+		})
+	}
+	return resources
 }
 
 func (s *Server) registerAppResources() {
@@ -99,7 +114,7 @@ func (s *Server) registerAppResources() {
 			Name:        definition.Name,
 			Title:       definition.Title,
 			Description: definition.Description,
-			MIMEType:    mcpAppMIMEType,
+			MIMEType:    protocol.MCPAppMIMEType,
 			Meta:        meta,
 		}, func(_ context.Context, request *mcpsdk.ReadResourceRequest) (*mcpsdk.ReadResourceResult, error) {
 			if request == nil || request.Params == nil || request.Params.URI != definition.URI {
@@ -124,7 +139,7 @@ func (s *Server) ReadAppResource(uri string) (map[string]any, error) {
 		meta := appResourceMeta(appWidgetDomain(s.cfg.OAuthServerURL))
 		return map[string]any{
 			"contents": []any{map[string]any{
-				"uri": definition.URI, "mimeType": mcpAppMIMEType, "text": definition.HTML, "_meta": meta,
+				"uri": definition.URI, "mimeType": protocol.MCPAppMIMEType, "text": definition.HTML, "_meta": meta,
 			}},
 		}, nil
 	}
@@ -134,7 +149,7 @@ func (s *Server) ReadAppResource(uri string) (map[string]any, error) {
 func appResourceReadResult(definition appResourceDefinition, widgetDomain string) *mcpsdk.ReadResourceResult {
 	return &mcpsdk.ReadResourceResult{Contents: []*mcpsdk.ResourceContents{{
 		URI:      definition.URI,
-		MIMEType: mcpAppMIMEType,
+		MIMEType: protocol.MCPAppMIMEType,
 		Text:     definition.HTML,
 		Meta:     appResourceMeta(widgetDomain),
 	}}}

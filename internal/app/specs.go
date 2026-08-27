@@ -16,8 +16,6 @@ type ToolSpec struct {
 	Name                   string
 	Title                  string
 	Description            string
-	UIResourceURI          string
-	UIResourceAction       string
 	FileArgRewritePaths    []string
 	FileResultRewritePaths []string
 	InputSchema            func() map[string]any
@@ -39,8 +37,7 @@ type ToolDefinition struct {
 	Name                   string
 	Title                  string
 	Description            string
-	UIResourceURI          string
-	UIResourceAction       string
+	UIBinding              *UIBinding
 	FileArgRewritePaths    []string
 	FileResultRewritePaths []string
 	InputSchema            map[string]any
@@ -62,8 +59,7 @@ func (s ToolSpec) definition() ToolDefinition {
 		Name:                   s.Name,
 		Title:                  s.Title,
 		Description:            s.Description,
-		UIResourceURI:          s.UIResourceURI,
-		UIResourceAction:       s.UIResourceAction,
+		UIBinding:              toolUIBinding(s.Name),
 		FileArgRewritePaths:    append([]string(nil), s.FileArgRewritePaths...),
 		FileResultRewritePaths: append([]string(nil), s.FileResultRewritePaths...),
 		InputSchema:            s.InputSchema(),
@@ -141,18 +137,18 @@ func allToolSpecs() []ToolSpec {
 	// 顺序保持和旧 ToolNames 一致，避免 tools/list 与 server_info 的展示顺序无谓变化。
 	return bindToolSchemas([]ToolSpec{
 		{Name: "server_info", Title: "Server info", Description: "Return server, host path model, auth, and exposed-tool metadata.", Annotations: readOnlyToolAnnotations(false), Handler: func(_ context.Context, r *Runtime, _ map[string]any) (Result, error) { return r.serverInfo(), nil }},
-		{Name: "agentdock_context", Title: "AgentDock context", Description: "Return structured AgentDock bootstrap context including available capabilities, integrations, rules, and high-priority context.", UIResourceURI: AgentContextUIResourceURI, Annotations: readOnlyToolAnnotations(false), Handler: ctxToolHandler((*Runtime).agentDockContextTool)},
+		{Name: "agentdock_context", Title: "AgentDock context", Description: "Return structured AgentDock bootstrap context including available capabilities, integrations, rules, and high-priority context.", Annotations: readOnlyToolAnnotations(false), Handler: ctxToolHandler((*Runtime).agentDockContextTool)},
 		{Name: "read_file", Title: "Read file", Description: toolfile.ToolDescription("Read a UTF-8 text file slice. Supports normal Host paths and skill://<name>/<path> resources from the active Skill version."), Annotations: readOnlyToolAnnotations(false), Handler: ctxToolHandler((*Runtime).readFile)},
 		{Name: "list_dir", Title: "List directory", Description: toolfile.ToolDescription("List directory entries. Relative paths resolve from ~/AgentDock; absolute and ~/ paths use Host rules."), Annotations: readOnlyToolAnnotations(false), Handler: ctxToolHandler((*Runtime).listDir)},
 		{Name: "list_files", Title: "List files", Description: toolfile.ToolDescription("List files using glob and ignore filters. Relative paths resolve from ~/AgentDock by default."), Annotations: readOnlyToolAnnotations(false), Handler: ctxToolHandler((*Runtime).listFiles)},
 		{Name: "search_text", Title: "Search text", Description: toolfile.ToolDescription("Search UTF-8 files for text or regex matches. Relative paths search ~/AgentDock by default; absolute paths are allowed."), Annotations: readOnlyToolAnnotations(false), Handler: ctxToolHandler((*Runtime).searchText)},
-		{Name: "file_edit", Title: "Edit file", Description: toolfile.EditDescription("Edit files through one action-based entrypoint: replace, patch, add, delete, or move. Relative paths resolve from ~/AgentDock; absolute and ~/ paths use Host rules."), UIResourceURI: FileChangeUIResourceURI, Annotations: mutatingToolAnnotations(true, false), Handler: ctxToolHandler((*Runtime).fileEdit)},
+		{Name: "file_edit", Title: "Edit file", Description: toolfile.EditDescription("Edit files through one action-based entrypoint: replace, patch, add, delete, or move. Relative paths resolve from ~/AgentDock; absolute and ~/ paths use Host rules."), Annotations: mutatingToolAnnotations(true, false), Handler: ctxToolHandler((*Runtime).fileEdit)},
 		{Name: "exec_command", Title: "Run command", Description: toolcommand.Description(), Annotations: mutatingToolAnnotations(true, true), Handler: ctxToolHandler((*Runtime).execCommand)},
 		{Name: "session_observe", Title: "Observe command sessions", Description: "List or inspect command sessions through a read-only session tool.", Annotations: readOnlyToolAnnotations(false), Handler: toolHandler((*Runtime).sessionObserve)},
 		{Name: "session_act", Title: "Act on command sessions", Description: "Write to or stop command sessions through a mutating session tool.", Annotations: mutatingToolAnnotations(true, true), Handler: toolHandler((*Runtime).sessionAct)},
-		{Name: "task_manage", Title: "Manage recoverable tasks", Description: "Persist substantial AgentDock tasks and update live step progress with checkpoint.", UIResourceURI: TaskProgressUIResourceURI, Annotations: mutatingToolAnnotations(false, false), Handler: ctxToolHandler((*Runtime).taskManage)},
+		{Name: "task_manage", Title: "Manage recoverable tasks", Description: "Persist substantial AgentDock tasks and update live step progress with checkpoint.", Annotations: mutatingToolAnnotations(false, false), Handler: ctxToolHandler((*Runtime).taskManage)},
 		{Name: "evolve", Title: "Evolve AgentDock knowledge", Description: "Propose reusable knowledge, pre-bind Task learning checks, supersede, or retract. Bind must happen before execution and declares on_success/on_failure semantics; AgentDock resolves later Task outcomes and owns lifecycle policy while Recall only persists the result.", Annotations: mutatingToolAnnotations(true, false), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).evolve)},
-		{Name: "acp_session", Title: "Manage ACP sessions", Description: "Inspect or authenticate the configured ACP agent and create, load, resume, fork, configure, list, inspect, close, or delete persistent ACP sessions through one action-based entrypoint. Session workspaces may use any host-accessible directory and optional methods are capability-gated.", UIResourceURI: ACPStatusUIResourceURI, Annotations: mutatingToolAnnotations(true, true), Availability: requiresACP, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+		{Name: "acp_session", Title: "Manage ACP sessions", Description: "Inspect or authenticate the configured ACP agent and create, load, resume, fork, configure, list, inspect, close, or delete persistent ACP sessions through one action-based entrypoint. Session workspaces may use any host-accessible directory and optional methods are capability-gated.", Annotations: mutatingToolAnnotations(true, true), Availability: requiresACP, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
 			return r.acp.Session(ctx, args)
 		}},
 		{Name: "acp_prompt", Title: "Run ACP prompts", Description: "Start asynchronous ACP prompt turns, poll ordered session events, steer a running turn, or cancel a turn. start returns immediately with a run_id; use action=events for bounded long-poll observation.", Annotations: mutatingToolAnnotations(true, true), Availability: requiresACP, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
@@ -161,7 +157,7 @@ func allToolSpecs() []ToolSpec {
 		{Name: "acp_interaction", Title: "Handle ACP interactions", Description: "List, inspect, respond to, or cancel pending ACP permission interactions. Only options offered by the agent and permitted by the local AgentDock policy may be selected.", Annotations: mutatingToolAnnotations(true, true), Availability: requiresACP, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
 			return r.acp.Interaction(ctx, args)
 		}},
-		{Name: "workflow_template_manage", Title: "Manage workflow templates", UIResourceURI: WorkflowUIResourceURI, UIResourceAction: "match", Description: "List, get, get multiple, publish, retire, or match AgentDock workflow templates. publish validates and activates a complete immutable template version; get_many requires the model to compose the returned templates before task creation.", Annotations: mutatingToolAnnotations(true, false), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).workflowTemplateManage)},
+		{Name: "workflow_template_manage", Title: "Manage workflow templates", Description: "List, get, get multiple, publish, retire, or match AgentDock workflow templates. publish validates and activates a complete immutable template version; get_many requires the model to compose the returned templates before task creation.", Annotations: mutatingToolAnnotations(true, false), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).workflowTemplateManage)},
 		{Name: "skill_package", Title: "Manage Skill packages", Description: "Validate, install, activate, or roll back AgentDock Skill packages and manage each Skill's isolated environment without returning secret values.", Annotations: mutatingToolAnnotations(true, true), Handler: ctxToolHandler((*Runtime).skillPackage)},
 		{Name: "mcp_manage", Title: "Manage dynamic MCP servers", Description: "Register, inspect, enable, disable, refresh, remove, or manage the isolated environment of dynamic MCP servers. Dynamic MCP tools remain separate from AgentDock built-in tools.", Annotations: mutatingToolAnnotations(true, true), Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
 			return r.dynamicMCP.Manage(ctx, args)
@@ -172,22 +168,22 @@ func allToolSpecs() []ToolSpec {
 		{Name: "mcp_tool_inspect", Title: "Inspect a dynamic MCP tool", Description: "Read the complete schema for one dynamic MCP tool identified as <server>:<tool>.", Annotations: readOnlyToolAnnotations(true), Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
 			return r.dynamicMCP.Inspect(ctx, args)
 		}},
-		{Name: "mcp_tool_call", Title: "Call a dynamic MCP tool", UIResourceURI: DynamicMCPUIResourceURI, Description: "Call one previously discovered dynamic MCP tool identified as <server>:<tool>. Arguments are validated against the discovered tool schema before forwarding.", Annotations: mutatingToolAnnotations(true, true), Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+		{Name: "mcp_tool_call", Title: "Call a dynamic MCP tool", Description: "Call one previously discovered dynamic MCP tool identified as <server>:<tool>. Arguments are validated against the discovered tool schema before forwarding.", Annotations: mutatingToolAnnotations(true, true), Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
 			return r.dynamicMCP.Call(ctx, args)
 		}},
 		{Name: "view_image", Title: "View image", Description: "Load an image by AgentDock artifact_id, Host path, or HTTP(S) URL and return it as standard MCP image content.", Annotations: readOnlyToolAnnotations(true), Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
 			return r.media.ViewImage(ctx, args)
 		}},
 		{Name: "recall_bootstrap", Title: "Bootstrap NexusDock Recall context", Description: "Load high-priority NexusDock Recall context at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks. max_bytes controls pack budget only; compact index/excerpt output is default, and full body requires include_body or targeted recall_read.", Annotations: readOnlyToolAnnotations(false), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallBootstrap)},
-		{Name: "recall_search", Title: "Search NexusDock Recall", UIResourceURI: RecallUIResourceURI, Description: "Search NexusDock Recall Markdown documents and cards. Use kind=all, markdown, or card; backend routing such as card prefixes stays internal.", Annotations: readOnlyToolAnnotations(false), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallSearch)},
+		{Name: "recall_search", Title: "Search NexusDock Recall", Description: "Search NexusDock Recall Markdown documents and cards. Use kind=all, markdown, or card; backend routing such as card prefixes stays internal.", Annotations: readOnlyToolAnnotations(false), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallSearch)},
 		{Name: "recall_read", Title: "Read NexusDock Recall entry", Description: "Read one Markdown document or card from the configured NexusDock Recall store by path.", Annotations: readOnlyToolAnnotations(false), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallRead)},
-		{Name: "recall_write", Title: "Write NexusDock Recall entry", UIResourceURI: RecallUIResourceURI, Description: "Plan, create, replace, append, patch, update facts, diff, or delete NexusDock Recall content. The model must choose target=card/markdown and action explicitly.", Annotations: mutatingToolAnnotations(true, false), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallWrite)},
+		{Name: "recall_write", Title: "Write NexusDock Recall entry", Description: "Plan, create, replace, append, patch, update facts, diff, or delete NexusDock Recall content. The model must choose target=card/markdown and action explicitly.", Annotations: mutatingToolAnnotations(true, false), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallWrite)},
 		{Name: "recall_maintain", Title: "Maintain NexusDock Recall", Description: "Run NexusDock Recall maintenance actions such as list, lint, embedding_status, reindex, or reindex_cards.", Annotations: mutatingToolAnnotations(true, false), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallMaintain)},
 		{Name: "private_note_manage", Title: "Manage private notes", Description: "Explicit low-frequency NexusDock private note vault entrypoint. Do not use by default: use only when the user explicitly requests private note access or the content clearly contains sensitive secrets, credentials, or personal information. Search is metadata-only; plaintext is returned only by explicit read, and Git backups contain age ciphertext only. Actions: search, read, write, delete, status, or maintain.", Annotations: mutatingToolAnnotations(true, false), Handler: ctxToolHandler((*Runtime).privateNoteManage), Availability: requiresNexus},
 		{Name: "browser_session", Title: "Browser session", Description: "Start an AgentDock-owned Chromium-family browser or attach to an existing CDP browser with a dedicated AgentDock target, then close or clean up the session. External browsers remain running when the session closes.", Annotations: mutatingToolAnnotations(true, true), Availability: requiresBrowser, Handler: ctxToolHandler((*Runtime).browserSession)},
 		{Name: "browser_act", Title: "Browser actions", Description: "Run strictly validated CSS/CDP browser actions against an AgentDock-managed browser target and return the final typed page snapshot plus screenshot Artifact.", Annotations: mutatingToolAnnotations(true, true), Availability: requiresBrowser, Handler: ctxToolHandler((*Runtime).browserAct)},
 		{Name: "browser_snapshot", Title: "Browser snapshot", Description: "Capture the active or requested CDP target with page text, viewport, page size, focus, visible interactive elements, diagnostics, and a PNG screenshot Artifact.", Annotations: readOnlyToolAnnotations(true), Availability: requiresBrowser, Handler: ctxToolHandler((*Runtime).browserSnapshot)},
-		{Name: "file_publish", Title: "Publish signed file", UIResourceURI: ArtifactUIResourceURI, Description: "Publish a local file or directory as an immutable Artifact snapshot under ~/.agentdock/public-artifacts. Returns artifact_id and, when a reachable base URL is available, a temporary signed download URL. Directories are packaged as tar.gz.", Annotations: mutatingToolAnnotations(false, true), FileArgRewritePaths: []string{"file"}, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+		{Name: "file_publish", Title: "Publish signed file", Description: "Publish a local file or directory as an immutable Artifact snapshot under ~/.agentdock/public-artifacts. Returns artifact_id and, when a reachable base URL is available, a temporary signed download URL. Directories are packaged as tar.gz.", Annotations: mutatingToolAnnotations(false, true), FileArgRewritePaths: []string{"file"}, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
 			return r.media.FilePublish(ctx, args)
 		}},
 	})

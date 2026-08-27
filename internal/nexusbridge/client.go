@@ -15,52 +15,14 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	protocol "github.com/uvwt/agentdock-protocol"
 	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/httpx"
 	"github.com/uvwt/agentdock/internal/mcp"
 )
 
-const (
-	protocolVersion          = "1"
-	maxMessageBytes          = 8 << 20
-	resourceReadOperation    = "resource.read"
-	localContextOperation    = "context.local"
-	contextResourceContract  = "agentdock.context.fleet.v1"
-	recallResourceContract   = "agentdock.recall.v1"
-	workflowResourceContract = "agentdock.workflow.v1"
-)
-
-type message struct {
-	Type        string          `json:"type"`
-	RequestID   string          `json:"request_id,omitempty"`
-	Operation   string          `json:"operation,omitempty"`
-	Arguments   json.RawMessage `json:"arguments,omitempty"`
-	Result      any             `json:"result,omitempty"`
-	Error       *remoteError    `json:"error,omitempty"`
-	Hello       *hello          `json:"hello,omitempty"`
-	Protocol    string          `json:"protocol_version,omitempty"`
-	HeartbeatMS int             `json:"heartbeat_ms,omitempty"`
-}
-
-type hello struct {
-	DeviceID         string           `json:"device_id"`
-	Version          string           `json:"version"`
-	ProtocolVersion  string           `json:"protocol_version"`
-	OS               string           `json:"os"`
-	Arch             string           `json:"arch"`
-	Capabilities     []string         `json:"capabilities"`
-	ToolContractHash string           `json:"tool_contract_hash"`
-	Tools            []map[string]any `json:"tools"`
-}
-
-type remoteError struct {
-	Code      string         `json:"code"`
-	Message   string         `json:"message"`
-	Category  string         `json:"category,omitempty"`
-	Retryable bool           `json:"retryable,omitempty"`
-	Details   map[string]any `json:"details,omitempty"`
-}
+const maxMessageBytes = 8 << 20
 
 type Client struct {
 	identity Identity
@@ -120,18 +82,25 @@ func (c *Client) connect(ctx context.Context) error {
 	socket.SetReadLimit(maxMessageBytes)
 
 	tools := c.server.ToolNames()
-	if err := c.write(socket, message{Type: "node.hello", Protocol: protocolVersion, Hello: &hello{
-		DeviceID: c.identity.DeviceID, Version: buildinfo.Version, ProtocolVersion: protocolVersion,
-		OS: runtime.GOOS, Arch: runtime.GOARCH, Capabilities: tools, ToolContractHash: c.server.ToolContractHash(),
-		Tools: nexusToolDescriptors(c.server.ToolDescriptors()),
-	}}); err != nil {
+	descriptors, err := bridgeToolDescriptors(c.server.ToolDescriptors())
+	if err != nil {
 		return err
 	}
-	var ready message
+	if err := c.write(socket, protocol.Message{
+		Type: protocol.MessageNodeHello, ProtocolVersion: protocol.ConnectionProtocolVersion,
+		Hello: &protocol.Hello{
+			DeviceID: c.identity.DeviceID, Version: buildinfo.Version, ProtocolVersion: protocol.ConnectionProtocolVersion,
+			OS: runtime.GOOS, Arch: runtime.GOARCH, Capabilities: tools, ToolContractHash: c.server.ToolContractHash(),
+			Tools: descriptors, UIResources: c.server.UIResources(),
+		},
+	}); err != nil {
+		return err
+	}
+	var ready protocol.Message
 	if err := socket.ReadJSON(&ready); err != nil {
 		return fmt.Errorf("读取 NexusDock 握手响应: %w", err)
 	}
-	if ready.Type != "node.ready" || ready.Protocol != protocolVersion {
+	if ready.Type != protocol.MessageNodeReady || ready.ProtocolVersion != protocol.ConnectionProtocolVersion {
 		return errors.New("NexusDock 返回了不兼容的节点协议")
 	}
 	c.state.SetConnected(true)
@@ -145,21 +114,21 @@ func (c *Client) connect(ctx context.Context) error {
 	defer cancel()
 	go c.heartbeat(connectionCtx, socket, heartbeat)
 	for {
-		var incoming message
+		var incoming protocol.Message
 		if err := socket.ReadJSON(&incoming); err != nil {
 			return err
 		}
 		switch incoming.Type {
-		case "tool.invoke":
+		case protocol.MessageToolInvoke:
 			go c.invoke(connectionCtx, socket, incoming)
-		case "tool.cancel":
+		case protocol.MessageToolCancel:
 			c.cancel(incoming.RequestID)
-		case "node.heartbeat":
+		case protocol.MessageNodeHeartbeat:
 		}
 	}
 }
 
-func (c *Client) invoke(parent context.Context, socket *websocket.Conn, incoming message) {
+func (c *Client) invoke(parent context.Context, socket *websocket.Conn, incoming protocol.Message) {
 	ctx, cancel := context.WithCancel(parent)
 	c.cancelMu.Lock()
 	c.cancels[incoming.RequestID] = cancel
@@ -174,16 +143,16 @@ func (c *Client) invoke(parent context.Context, socket *websocket.Conn, incoming
 	var result map[string]any
 	var err error
 	switch incoming.Operation {
-	case "runtime.request":
+	case protocol.OperationRuntimeRequest:
 		var request httpx.RuntimeBridgeRequest
 		if decodeErr := json.Unmarshal(incoming.Arguments, &request); decodeErr != nil {
 			err = fmt.Errorf("解析 Runtime 请求: %w", decodeErr)
 		} else {
 			result, err = httpx.DispatchRuntimeBridgeRequest(ctx, c.server, request)
 		}
-	case localContextOperation:
+	case protocol.OperationContextLocal:
 		result, err = c.server.AgentDockLocalContext(ctx)
-	case "tool.call":
+	case protocol.OperationToolCall:
 		var request struct {
 			Tool      string         `json:"tool"`
 			Arguments map[string]any `json:"arguments"`
@@ -193,7 +162,7 @@ func (c *Client) invoke(parent context.Context, socket *websocket.Conn, incoming
 		} else {
 			result, err = c.server.Invoke(ctx, request.Tool, request.Arguments)
 		}
-	case resourceReadOperation:
+	case protocol.OperationResourceRead:
 		var request struct {
 			URI string `json:"uri"`
 		}
@@ -206,44 +175,27 @@ func (c *Client) invoke(parent context.Context, socket *websocket.Conn, incoming
 		err = fmt.Errorf("不支持的 NexusDock 节点操作: %s", incoming.Operation)
 	}
 	if err != nil {
-		_ = c.write(socket, message{Type: "tool.error", RequestID: incoming.RequestID, Error: bridgeError(err)})
+		_ = c.write(socket, protocol.Message{Type: protocol.MessageToolError, RequestID: incoming.RequestID, Error: bridgeError(err)})
 		return
 	}
-	_ = c.write(socket, message{Type: "tool.result", RequestID: incoming.RequestID, Result: result})
+	encoded, encodeErr := json.Marshal(result)
+	if encodeErr != nil {
+		_ = c.write(socket, protocol.Message{Type: protocol.MessageToolError, RequestID: incoming.RequestID, Error: bridgeError(fmt.Errorf("编码节点结果: %w", encodeErr))})
+		return
+	}
+	_ = c.write(socket, protocol.Message{Type: protocol.MessageToolResult, RequestID: incoming.RequestID, Result: encoded})
 }
 
-func nexusToolDescriptors(descriptors []map[string]any) []map[string]any {
-	for _, descriptor := range descriptors {
-		meta, ok := descriptor["_meta"].(map[string]any)
-		if !ok {
-			continue
-		}
-		ui, ok := meta["ui"].(map[string]any)
-		if !ok {
-			continue
-		}
-		resourceURI, _ := ui["resourceUri"].(string)
-		if strings.HasPrefix(strings.TrimSpace(resourceURI), "ui://agentdock/") {
-			descriptor["nexus_resource_relay"] = true
-			if contract := nexusResourceContract(resourceURI); contract != "" {
-				descriptor["nexus_resource_contract"] = contract
-			}
-		}
+func bridgeToolDescriptors(descriptors []map[string]any) ([]protocol.ToolDescriptor, error) {
+	encoded, err := json.Marshal(descriptors)
+	if err != nil {
+		return nil, fmt.Errorf("编码 Nexus Bridge 工具契约: %w", err)
 	}
-	return descriptors
-}
-
-func nexusResourceContract(uri string) string {
-	switch strings.TrimSpace(uri) {
-	case "ui://agentdock/context":
-		return contextResourceContract
-	case "ui://agentdock/recall":
-		return recallResourceContract
-	case "ui://agentdock/workflow":
-		return workflowResourceContract
-	default:
-		return ""
+	var tools []protocol.ToolDescriptor
+	if err := json.Unmarshal(encoded, &tools); err != nil {
+		return nil, fmt.Errorf("解析 Nexus Bridge 工具契约: %w", err)
 	}
+	return tools, nil
 }
 
 func (c *Client) heartbeat(ctx context.Context, socket *websocket.Conn, interval time.Duration) {
@@ -254,7 +206,7 @@ func (c *Client) heartbeat(ctx context.Context, socket *websocket.Conn, interval
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := c.write(socket, message{Type: "node.heartbeat"}); err != nil {
+			if err := c.write(socket, protocol.Message{Type: protocol.MessageNodeHeartbeat}); err != nil {
 				_ = socket.Close()
 				return
 			}
@@ -262,7 +214,7 @@ func (c *Client) heartbeat(ctx context.Context, socket *websocket.Conn, interval
 	}
 }
 
-func (c *Client) write(socket *websocket.Conn, outgoing message) error {
+func (c *Client) write(socket *websocket.Conn, outgoing protocol.Message) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	_ = socket.SetWriteDeadline(time.Now().Add(15 * time.Second))
@@ -278,8 +230,8 @@ func (c *Client) cancel(requestID string) {
 	}
 }
 
-func bridgeError(err error) *remoteError {
-	converted := &remoteError{Code: "NODE_OPERATION_FAILED", Message: err.Error()}
+func bridgeError(err error) *protocol.RemoteError {
+	converted := &protocol.RemoteError{Code: "NODE_OPERATION_FAILED", Message: err.Error()}
 	var toolErr *app.ToolError
 	if errors.As(err, &toolErr) {
 		converted.Code = toolErr.Code

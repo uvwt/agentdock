@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	protocol "github.com/uvwt/agentdock-protocol"
 	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/config"
 )
@@ -102,6 +103,35 @@ func newMCPAppTestHarness(t *testing.T, cfg config.Config) *mcpAppTestHarness {
 	return harness
 }
 
+func TestUIResourcesMatchServedResourceRegistry(t *testing.T) {
+	server := &Server{cfg: config.Config{NexusEndpoint: "https://nexus.example.test", ACPEnabled: true}}
+	definitions := server.appResourceDefinitions()
+	resources := server.UIResources()
+	if len(definitions) != 8 || len(resources) != len(definitions) {
+		t.Fatalf("resource registry=%d bridge capabilities=%d, want 8", len(definitions), len(resources))
+	}
+	byURI := make(map[string]protocol.UIResourceCapability, len(resources))
+	for _, resource := range resources {
+		if _, duplicate := byURI[resource.URI]; duplicate {
+			t.Fatalf("duplicate bridge UI resource capability: %s", resource.URI)
+		}
+		byURI[resource.URI] = resource
+	}
+	for _, definition := range definitions {
+		contract, known := protocol.UIResourceContract(definition.URI)
+		if !known {
+			t.Fatalf("served resource %s is missing from shared protocol registry", definition.URI)
+		}
+		resource, ok := byURI[definition.URI]
+		if !ok {
+			t.Fatalf("served resource %s was not advertised to Nexus", definition.URI)
+		}
+		if resource.Contract != contract || resource.MIMEType != protocol.MCPAppMIMEType {
+			t.Fatalf("resource capability %s = %#v", definition.URI, resource)
+		}
+	}
+}
+
 func TestMCPAppsBindResourcesDirectlyToBusinessTools(t *testing.T) {
 	root := t.TempDir()
 	const widgetDomain = "https://dockmini.example.test"
@@ -130,17 +160,17 @@ func TestMCPAppsBindResourcesDirectlyToBusinessTools(t *testing.T) {
 	if contextTool == nil {
 		t.Fatal("tools/list did not expose agentdock_context")
 	}
-	assertToolUIResource(t, contextTool, app.AgentContextUIResourceURI)
+	assertToolUIResource(t, contextTool, protocol.ContextUIResourceURI)
 	fileEditTool := tools["file_edit"]
 	if fileEditTool == nil {
 		t.Fatal("tools/list did not expose file_edit")
 	}
-	assertToolUIResource(t, fileEditTool, app.FileChangeUIResourceURI)
+	assertToolUIResource(t, fileEditTool, protocol.FileChangeUIResourceURI)
 	taskManageTool := tools["task_manage"]
 	if taskManageTool == nil {
 		t.Fatal("tools/list did not expose task_manage")
 	}
-	assertToolUIResource(t, taskManageTool, app.TaskProgressUIResourceURI)
+	assertToolUIResource(t, taskManageTool, protocol.TaskProgressUIResourceURI)
 	if taskManageTool.Annotations == nil || taskManageTool.Annotations.ReadOnlyHint {
 		t.Fatalf("task_manage annotations = %#v", taskManageTool.Annotations)
 	}
@@ -153,7 +183,7 @@ func TestMCPAppsBindResourcesDirectlyToBusinessTools(t *testing.T) {
 			t.Fatalf("%s should not bind an Apps UI because command tools are high-frequency: %#v", name, tool.Meta)
 		}
 	}
-	assertToolUIResource(t, tools["mcp_tool_call"], app.DynamicMCPUIResourceURI)
+	assertToolUIResource(t, tools["mcp_tool_call"], protocol.DynamicMCPUIResourceURI)
 	for _, name := range []string{"mcp_manage", "mcp_tool_search", "mcp_tool_inspect"} {
 		tool := tools[name]
 		if tool == nil {
@@ -163,7 +193,7 @@ func TestMCPAppsBindResourcesDirectlyToBusinessTools(t *testing.T) {
 			t.Fatalf("%s should not bind an Apps UI: %#v", name, tool.Meta)
 		}
 	}
-	assertToolUIResource(t, tools["file_publish"], app.ArtifactUIResourceURI, "file_arg_rewrite_paths", "openai/fileParams")
+	assertToolUIResource(t, tools["file_publish"], protocol.ArtifactUIResourceURI, "file_arg_rewrite_paths", "openai/fileParams")
 
 	resources := map[string]*mcpsdk.Resource{}
 	for resource, err := range harness.session.Resources(t.Context(), nil) {
@@ -176,21 +206,21 @@ func TestMCPAppsBindResourcesDirectlyToBusinessTools(t *testing.T) {
 		t.Fatalf("resources/list count = %d, want 5", len(resources))
 	}
 	for _, uri := range []string{
-		app.AgentContextUIResourceURI,
-		app.TaskProgressUIResourceURI,
-		app.FileChangeUIResourceURI,
-		app.DynamicMCPUIResourceURI,
-		app.ArtifactUIResourceURI,
+		protocol.ContextUIResourceURI,
+		protocol.TaskProgressUIResourceURI,
+		protocol.FileChangeUIResourceURI,
+		protocol.DynamicMCPUIResourceURI,
+		protocol.ArtifactUIResourceURI,
 	} {
 		resource := resources[uri]
-		if resource == nil || resource.MIMEType != mcpAppMIMEType {
+		if resource == nil || resource.MIMEType != protocol.MCPAppMIMEType {
 			t.Fatalf("resource %s = %#v", uri, resource)
 		}
 		read, err := harness.session.ReadResource(t.Context(), &mcpsdk.ReadResourceParams{URI: uri})
 		if err != nil {
 			t.Fatalf("ReadResource(%s) error = %v", uri, err)
 		}
-		if len(read.Contents) != 1 || read.Contents[0].MIMEType != mcpAppMIMEType || !strings.Contains(read.Contents[0].Text, `window.addEventListener("message"`) || !strings.Contains(read.Contents[0].Text, "connect-src 'none'") {
+		if len(read.Contents) != 1 || read.Contents[0].MIMEType != protocol.MCPAppMIMEType || !strings.Contains(read.Contents[0].Text, `window.addEventListener("message"`) || !strings.Contains(read.Contents[0].Text, "connect-src 'none'") {
 			t.Fatalf("ReadResource(%s) = %#v", uri, read.Contents)
 		}
 		html := read.Contents[0].Text
@@ -219,7 +249,7 @@ func TestMCPAppsBindResourcesDirectlyToBusinessTools(t *testing.T) {
 		assertResourceUIMeta(t, resource.Meta, widgetDomain)
 		assertResourceUIMeta(t, read.Contents[0].Meta, widgetDomain)
 	}
-	contextRead, err := harness.session.ReadResource(t.Context(), &mcpsdk.ReadResourceParams{URI: app.AgentContextUIResourceURI})
+	contextRead, err := harness.session.ReadResource(t.Context(), &mcpsdk.ReadResourceParams{URI: protocol.ContextUIResourceURI})
 	if err != nil {
 		t.Fatalf("ReadResource(agent context) error = %v", err)
 	}
@@ -238,7 +268,7 @@ func TestMCPAppsBindResourcesDirectlyToBusinessTools(t *testing.T) {
 		}
 	}
 
-	fileChangeRead, err := harness.session.ReadResource(t.Context(), &mcpsdk.ReadResourceParams{URI: app.FileChangeUIResourceURI})
+	fileChangeRead, err := harness.session.ReadResource(t.Context(), &mcpsdk.ReadResourceParams{URI: protocol.FileChangeUIResourceURI})
 	if err != nil {
 		t.Fatalf("ReadResource(file change) error = %v", err)
 	}
@@ -271,7 +301,7 @@ func TestMCPAppsBindResourcesDirectlyToBusinessTools(t *testing.T) {
 			t.Fatalf("file change resource still contains nested app frame marker %q", nestedFrame)
 		}
 	}
-	taskRead, err := harness.session.ReadResource(t.Context(), &mcpsdk.ReadResourceParams{URI: app.TaskProgressUIResourceURI})
+	taskRead, err := harness.session.ReadResource(t.Context(), &mcpsdk.ReadResourceParams{URI: protocol.TaskProgressUIResourceURI})
 	if err != nil {
 		t.Fatalf("ReadResource(task progress) error = %v", err)
 	}
@@ -285,8 +315,8 @@ func TestMCPAppsBindResourcesDirectlyToBusinessTools(t *testing.T) {
 		view     string
 		renderer string
 	}{
-		{app.DynamicMCPUIResourceURI, "dynamic_mcp", "renderDynamicMCP"},
-		{app.ArtifactUIResourceURI, "artifact", "renderArtifact"},
+		{protocol.DynamicMCPUIResourceURI, "dynamic_mcp", "renderDynamicMCP"},
+		{protocol.ArtifactUIResourceURI, "artifact", "renderArtifact"},
 	} {
 		read, err := harness.session.ReadResource(t.Context(), &mcpsdk.ReadResourceParams{URI: tc.uri})
 		if err != nil || len(read.Contents) != 1 {
@@ -303,7 +333,7 @@ func TestMCPAppsBindResourcesDirectlyToBusinessTools(t *testing.T) {
 				t.Fatalf("resource %s contains a separate gray domain header marker %q", tc.uri, forbidden)
 			}
 		}
-		if tc.uri == app.ArtifactUIResourceURI {
+		if tc.uri == protocol.ArtifactUIResourceURI {
 			for _, marker := range []string{`.detail-link{color:#6f9fc9;text-decoration:none}`, `href:data.url`, `link.target="_blank"`, `link.rel="noopener noreferrer"`} {
 				if !strings.Contains(html, marker) {
 					t.Fatalf("artifact resource missing clickable signed URL marker %q", marker)
@@ -311,10 +341,10 @@ func TestMCPAppsBindResourcesDirectlyToBusinessTools(t *testing.T) {
 			}
 		}
 	}
-	if resources[app.RecallUIResourceURI] != nil || resources[app.WorkflowUIResourceURI] != nil {
+	if resources[protocol.RecallUIResourceURI] != nil || resources[protocol.WorkflowUIResourceURI] != nil {
 		t.Fatal("Nexus-only UI resources should not be listed when Nexus is disabled")
 	}
-	if resources[app.ACPStatusUIResourceURI] != nil {
+	if resources[protocol.ACPStatusUIResourceURI] != nil {
 		t.Fatal("ACP UI resource should not be listed when ACP is disabled")
 	}
 
@@ -416,7 +446,7 @@ func TestMCPAppsExposeNexusViewsWhenNexusEnabled(t *testing.T) {
 		tools[tool.Name] = tool
 	}
 	for _, name := range []string{"recall_search", "recall_write"} {
-		assertToolUIResource(t, tools[name], app.RecallUIResourceURI)
+		assertToolUIResource(t, tools[name], protocol.RecallUIResourceURI)
 	}
 	for _, name := range []string{"recall_read", "recall_maintain"} {
 		tool := tools[name]
@@ -440,7 +470,7 @@ func TestMCPAppsExposeNexusViewsWhenNexusEnabled(t *testing.T) {
 	}
 	matchMeta := toolResultMetadata(workflowDef, map[string]any{"action": "match"})
 	matchUI, ok := matchMeta["ui"].(map[string]any)
-	if !ok || matchUI["resourceUri"] != app.WorkflowUIResourceURI {
+	if !ok || matchUI["resourceUri"] != protocol.WorkflowUIResourceURI {
 		t.Fatalf("workflow match result UI metadata = %#v", matchMeta)
 	}
 	if meta := toolResultMetadata(workflowDef, map[string]any{"action": "list"}); len(meta) != 0 {
@@ -467,11 +497,11 @@ func TestMCPAppsExposeNexusViewsWhenNexusEnabled(t *testing.T) {
 		view     string
 		renderer string
 	}{
-		{app.RecallUIResourceURI, "recall", "renderRecall"},
-		{app.WorkflowUIResourceURI, "workflow", "renderWorkflow"},
+		{protocol.RecallUIResourceURI, "recall", "renderRecall"},
+		{protocol.WorkflowUIResourceURI, "workflow", "renderWorkflow"},
 	} {
 		resource := resources[tc.uri]
-		if resource == nil || resource.MIMEType != mcpAppMIMEType {
+		if resource == nil || resource.MIMEType != protocol.MCPAppMIMEType {
 			t.Fatalf("resource %s = %#v", tc.uri, resource)
 		}
 		read, err := harness.session.ReadResource(t.Context(), &mcpsdk.ReadResourceParams{URI: tc.uri})
@@ -500,7 +530,7 @@ func TestReadAppResourceForNexusBridge(t *testing.T) {
 		OAuthServerURL:      "https://dockmini.example.test/",
 	})
 
-	result, err := harness.server.ReadAppResource(app.FileChangeUIResourceURI)
+	result, err := harness.server.ReadAppResource(protocol.FileChangeUIResourceURI)
 	if err != nil {
 		t.Fatalf("ReadAppResource() error = %v", err)
 	}
@@ -509,7 +539,7 @@ func TestReadAppResourceForNexusBridge(t *testing.T) {
 		t.Fatalf("ReadAppResource() contents = %#v", result["contents"])
 	}
 	content, ok := contents[0].(map[string]any)
-	if !ok || content["uri"] != app.FileChangeUIResourceURI || content["mimeType"] != mcpAppMIMEType {
+	if !ok || content["uri"] != protocol.FileChangeUIResourceURI || content["mimeType"] != protocol.MCPAppMIMEType {
 		t.Fatalf("ReadAppResource() content = %#v", contents[0])
 	}
 	text, _ := content["text"].(string)
@@ -551,7 +581,7 @@ func TestMCPAppsExposeACPViewOnlyWhenACPEnabled(t *testing.T) {
 	if len(tools) != 21 {
 		t.Fatalf("tools/list count = %d, want 21", len(tools))
 	}
-	assertToolUIResource(t, tools["acp_session"], app.ACPStatusUIResourceURI)
+	assertToolUIResource(t, tools["acp_session"], protocol.ACPStatusUIResourceURI)
 	for _, name := range []string{"acp_prompt", "acp_interaction"} {
 		if tool := tools[name]; tool == nil {
 			t.Fatalf("%s was not exposed", name)
@@ -560,7 +590,7 @@ func TestMCPAppsExposeACPViewOnlyWhenACPEnabled(t *testing.T) {
 		}
 	}
 
-	read, err := harness.session.ReadResource(t.Context(), &mcpsdk.ReadResourceParams{URI: app.ACPStatusUIResourceURI})
+	read, err := harness.session.ReadResource(t.Context(), &mcpsdk.ReadResourceParams{URI: protocol.ACPStatusUIResourceURI})
 	if err != nil {
 		t.Fatalf("ReadResource() error = %v", err)
 	}

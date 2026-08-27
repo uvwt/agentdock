@@ -178,8 +178,8 @@ func (s *Server) callTool(ctx context.Context, name string, request *mcpsdk.Call
 
 func toolMetadata(def ToolDefinition) map[string]any {
 	meta := map[string]any{}
-	if def.UIResourceURI != "" && def.UIResourceAction == "" {
-		meta["ui"] = map[string]any{"resourceUri": def.UIResourceURI}
+	if def.UIBinding != nil && def.UIBinding.Action == "" {
+		meta["ui"] = map[string]any{"resourceUri": def.UIBinding.ResourceURI}
 	}
 	if len(def.FileArgRewritePaths) > 0 {
 		paths := append([]string(nil), def.FileArgRewritePaths...)
@@ -198,14 +198,14 @@ func toolMetadata(def ToolDefinition) map[string]any {
 // Action-scoped Apps UI lives on the call result rather than the tool descriptor,
 // so unrelated actions on the same action-based tool do not render a widget.
 func toolResultMetadata(def ToolDefinition, arguments map[string]any) mcpsdk.Meta {
-	if def.UIResourceURI == "" || def.UIResourceAction == "" {
+	if def.UIBinding == nil || def.UIBinding.Action == "" {
 		return nil
 	}
 	action, _ := arguments["action"].(string)
-	if action != def.UIResourceAction {
+	if action != def.UIBinding.Action {
 		return nil
 	}
-	return mcpsdk.Meta{"ui": map[string]any{"resourceUri": def.UIResourceURI}}
+	return mcpsdk.Meta{"ui": map[string]any{"resourceUri": def.UIBinding.ResourceURI}}
 }
 
 func cloneBoolPointer(value *bool) *bool {
