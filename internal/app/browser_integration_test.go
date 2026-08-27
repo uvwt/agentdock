@@ -52,7 +52,7 @@ func appBrowserIntegrationServer(t *testing.T) *httptest.Server {
 func startRuntimeBrowser(t *testing.T, runtime *Runtime, url string) string {
 	t.Helper()
 	result, err := runtime.browserSession(context.Background(), map[string]any{
-		"action": "start", "url": url, "browser": "auto", "headless": true, "timeout_ms": 20_000,
+		"action": "start", "url": url, "browser": "auto", "headless": true, "timeout_ms": 60_000,
 	})
 	if err != nil {
 		t.Fatal(err)

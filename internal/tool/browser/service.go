@@ -189,7 +189,10 @@ func (s *Service) Start(ctx context.Context, req StartRequest) (StartResult, err
 			return StartResult{}, classifyLaunchError(err)
 		}
 	case <-launchCtx.Done():
-		sess.stop()
+		// chromedp.Run may still be initializing its context when the launch timeout fires.
+		// Abort only through cancellation functions here; stop() inspects chromedp context
+		// state and would race with that initialization.
+		sess.abortLaunch()
 		return StartResult{}, classifyLaunchError(launchCtx.Err())
 	}
 
@@ -432,6 +435,25 @@ func (s *Service) releaseProfile(profileID, profileDir string, temporary bool) {
 	}
 	if temporary && strings.Contains(profileDir, filepath.Join("browser", "tmp")) {
 		_ = os.RemoveAll(profileDir)
+	}
+}
+
+func (sess *session) abortLaunch() {
+	sess.mu.Lock()
+	if sess.closed {
+		sess.mu.Unlock()
+		return
+	}
+	sess.closed = true
+	browserCancel := sess.browserCancel
+	allocatorCancel := sess.allocatorCancel
+	sess.mu.Unlock()
+
+	if browserCancel != nil {
+		browserCancel()
+	}
+	if allocatorCancel != nil {
+		allocatorCancel()
 	}
 }
 

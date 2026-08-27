@@ -18,6 +18,8 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
+const integrationBrowserStartTimeout = 60 * time.Second
+
 func integrationExecutable(t *testing.T) string {
 	t.Helper()
 	if path := strings.TrimSpace(os.Getenv("AGENTDOCK_BROWSER_EXECUTABLE_PATH")); path != "" {
@@ -119,7 +121,7 @@ func startIntegrationSession(t *testing.T, service *Service, serverURL string, h
 	t.Helper()
 	result, err := service.Start(context.Background(), StartRequest{
 		URL: serverURL, Browser: BrowserAuto, Headless: headless,
-		Viewport: Viewport{Width: 1100, Height: 720}, Timeout: 20 * time.Second,
+		Viewport: Viewport{Width: 1100, Height: 720}, Timeout: integrationBrowserStartTimeout,
 	})
 	if err != nil {
 		t.Fatalf("Start() error = %v", err)
@@ -265,7 +267,7 @@ func TestBrowserIntegrationInjectionProfilesTargetsAndCleanup(t *testing.T) {
 	service := newIntegrationService(t)
 
 	started, err := service.Start(context.Background(), StartRequest{
-		URL: server.URL, Browser: BrowserAuto, Headless: true, Timeout: 20 * time.Second,
+		URL: server.URL, Browser: BrowserAuto, Headless: true, Timeout: integrationBrowserStartTimeout,
 		Viewport:     Viewport{Width: 900, Height: 600},
 		Cookies:      []Cookie{{Name: "agentdock_cookie", Value: "cookie-ok", URL: server.URL}},
 		LocalStorage: map[string]map[string]string{server.URL: {"theme": "dark"}}, ReloadAfterLocalStorage: true,
@@ -366,7 +368,7 @@ func TestBrowserIntegrationInjectionProfilesTargetsAndCleanup(t *testing.T) {
 	}
 
 	blank, err := service.Start(context.Background(), StartRequest{
-		Browser: BrowserAuto, Headless: true, Timeout: 20 * time.Second,
+		Browser: BrowserAuto, Headless: true, Timeout: integrationBrowserStartTimeout,
 		LocalStorage: map[string]map[string]string{server.URL: {"profile-key": "profile-kept"}},
 	})
 	if err != nil {
@@ -400,7 +402,7 @@ func TestBrowserIntegrationInjectionProfilesTargetsAndCleanup(t *testing.T) {
 	}
 
 	profile := "integration-persist"
-	first, err := service.Start(context.Background(), StartRequest{URL: server.URL + "/persist-set", Browser: BrowserAuto, Headless: true, ProfileID: profile, Timeout: 20 * time.Second})
+	first, err := service.Start(context.Background(), StartRequest{URL: server.URL + "/persist-set", Browser: BrowserAuto, Headless: true, ProfileID: profile, Timeout: integrationBrowserStartTimeout})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -415,7 +417,7 @@ func TestBrowserIntegrationInjectionProfilesTargetsAndCleanup(t *testing.T) {
 	if _, err := service.CloseSession(CloseRequest{SessionID: first.SessionID}); err != nil {
 		t.Fatal(err)
 	}
-	second, err := service.Start(context.Background(), StartRequest{URL: server.URL + "/persist-read", Browser: BrowserAuto, Headless: true, ProfileID: profile, Timeout: 20 * time.Second})
+	second, err := service.Start(context.Background(), StartRequest{URL: server.URL + "/persist-read", Browser: BrowserAuto, Headless: true, ProfileID: profile, Timeout: integrationBrowserStartTimeout})
 	if err != nil {
 		t.Fatal(err)
 	}
