@@ -1,8 +1,17 @@
 package app
 
-import toolfile "github.com/uvwt/agentdock/internal/tool/file"
+import (
+	mcpcontract "github.com/uvwt/agentdock-protocol/mcpcontract"
+	toolfile "github.com/uvwt/agentdock/internal/tool/file"
+)
 
 func OutputSchema(name string) map[string]any {
+	if name == mcpcontract.ToolAgentDockContext {
+		return mcpcontract.LocalAgentDockContextOutputSchema()
+	}
+	if schema, ok := mcpcontract.OutputSchema(name); ok {
+		return schema
+	}
 	props := map[string]any{}
 	// MCP envelope 的 isError 已表达工具调用错误；这里只描述领域结果，
 	// 不再要求含义模糊的通用 ok 字段。
@@ -45,50 +54,6 @@ func OutputSchema(name string) map[string]any {
 		props["trusted_proxy_cidrs"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 		props["auth_enabled"] = boolProp("Whether MCP authentication is required.")
 		props["endpoint_path"] = stringProp("HTTP path used by the MCP endpoint.")
-	case "agentdock_context":
-		required = []string{"skills", "dynamic_mcp", "workflow_templates", "rules"}
-		props["skills"] = map[string]any{
-			"type": "array", "description": "Installed document Skill capability index.",
-			"items": map[string]any{"type": "object", "properties": map[string]any{
-				"name": stringProp("Skill name."), "description": stringProp("Short capability description."),
-				"file": stringProp("skill:// URI for the active SKILL.md."), "bundled": boolProp("Whether the Skill is bundled by AgentDock."),
-			}, "required": []string{"name", "description", "file"}, "additionalProperties": false},
-		}
-		props["dynamic_mcp"] = map[string]any{
-			"type": "array", "description": "Enabled dynamic MCP server capability index.",
-			"items": map[string]any{"type": "object", "properties": map[string]any{
-				"name": stringProp("Dynamic MCP server name."), "description": stringProp("Short capability description."),
-			}, "required": []string{"name", "description"}, "additionalProperties": false},
-		}
-		props["acp"] = map[string]any{
-			"type": "object", "description": "Local ACP runtime orientation when ACP is enabled.",
-			"properties": map[string]any{
-				"enabled": boolProp("Whether ACP is enabled."), "agent": stringProp("Configured ACP agent name."),
-				"description": stringProp("Short ACP usage orientation."),
-			}, "required": []string{"enabled", "agent", "description"}, "additionalProperties": false,
-		}
-		props["workflow_templates"] = map[string]any{
-			"type": "array", "description": "Active NexusDock Workflow template index; empty when Nexus is unavailable.",
-			"items": map[string]any{"type": "object", "properties": map[string]any{
-				"name": stringProp("Workflow template id."), "description": stringProp("Workflow template title."),
-			}, "required": []string{"name"}, "additionalProperties": false},
-		}
-		props["recall"] = map[string]any{
-			"type": "object", "description": "High-priority NexusDock Recall index when Nexus is configured.",
-			"properties": map[string]any{
-				"enabled": boolProp("Whether NexusDock Recall context is configured."),
-				"items": map[string]any{"type": "array", "items": map[string]any{"type": "object", "properties": map[string]any{
-					"name": stringProp("Recall path or runbook title."), "description": stringProp("Short excerpt or Recall path."),
-				}, "required": []string{"name"}, "additionalProperties": false}},
-			}, "required": []string{"enabled", "items"}, "additionalProperties": false,
-		}
-		props["rules"] = map[string]any{"type": "array", "description": "Operational rules for using this AgentDock runtime.", "items": map[string]any{"type": "string"}}
-		props["warnings"] = map[string]any{
-			"type": "array", "description": "Best-effort context sections that could not be loaded.",
-			"items": map[string]any{"type": "object", "properties": map[string]any{
-				"source": stringProp("Context section identifier."), "message": stringProp("Safe warning message."),
-			}, "required": []string{"source", "message"}, "additionalProperties": false},
-		}
 	case "read_file":
 		props["path"] = stringProp("Host path or skill:// resource URI. Relative Host paths resolve from ~/AgentDock.")
 		props["content"] = stringProp("Text content slice.")
@@ -224,28 +189,6 @@ func OutputSchema(name string) map[string]any {
 		props["count"] = intProp("Returned ACP interaction count.")
 		props["responded"] = boolProp("Whether a permission option response was accepted.")
 		props["cancelled"] = boolProp("Whether the interaction was cancelled.")
-	case "workflow_template_manage":
-		props["action"] = stringProp("Completed workflow template action.")
-		props["template"] = objectProp("Full workflow template returned by get.")
-		props["templates"] = arrayProp("Compact summaries from list or full active templates from get_many.")
-		props["composition_required"] = boolProp("Whether the returned templates must be combined by the model before task creation.")
-		props["next_required_action"] = stringProp("Required model action after get_many.")
-		props["template_id"] = stringProp("Workflow template id returned by publish or retire.")
-		props["template_summary"] = objectProp("Compact workflow template summary returned by publish, retire, and list items.")
-		props["count"] = intProp("Returned item count.")
-		props["workflow_dir"] = stringProp("Local AgentDock workflow template directory.")
-		props["candidates"] = arrayProp("Matched workflow template candidates with scores and reasons.")
-		props["vector_search_enabled"] = boolProp("Whether optional embedding-backed template vector search is enabled for match.")
-		props["vector_index_status"] = stringProp("Template vector index status: disabled, ready, or degraded.")
-		props["vector_index_items"] = intProp("Number of persisted template vectors for the current embedding model.")
-		props["vector_index_available"] = boolProp("Whether workflow vector index content is available for export.")
-		props["content"] = stringProp("Raw workflow vector index JSON returned by vector_index.")
-		props["embedding_model"] = stringProp("Embedding model configured for template vector search.")
-		props["recommended"] = stringProp("Template recommendation: use_template, consider_template, or plain_task.")
-		props["recommendation_reason"] = stringProp("Reason for recommendation.")
-		props["best_candidate_score"] = intProp("Highest template match score.")
-		props["score_thresholds"] = objectProp("Template match score thresholds.")
-
 	case "skill_package":
 		props["action"] = stringProp("Completed Skill package action.")
 		props["skill"] = stringProp("Skill name.")
@@ -302,92 +245,6 @@ func OutputSchema(name string) map[string]any {
 		props["archive"] = boolProp("Whether the source directory was packaged as tar.gz.")
 		props["width"] = intProp("Image width when the payload is an image.")
 		props["height"] = intProp("Image height when the payload is an image.")
-	case "recall_bootstrap":
-		props["recall_endpoint"] = stringProp("Configured NexusDock Recall endpoint.")
-		props["project"] = stringProp("Backend-selected NexusDock Recall context returned by the backing service; not an input selector for the model.")
-		props["sections"] = arrayProp("Packed recall sections. Raw Markdown is omitted by default and returned as raw_content only when include_raw=true.")
-		props["count"] = intProp("Section count.")
-		props["bytes"] = intProp("Combined bytes.")
-	case "recall_search":
-		props["recall_endpoint"] = stringProp("Configured NexusDock Recall endpoint.")
-		props["recall_kind"] = stringProp("Search kind used.")
-		props["query"] = stringProp("Search query.")
-		props["recall_store"] = stringProp("Recall store name.")
-		props["results"] = map[string]any{
-			"type":        "array",
-			"description": "Recall search results with source identity fields.",
-			"items": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"frontmatter":    objectProp("Recall frontmatter metadata."),
-					"matched_fields": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-					"matched_terms":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-					"path":           stringProp("Recall-relative document path."),
-					"snippet":        stringProp("Matched content snippet."),
-					"id":             stringProp("Stable Recall document id."),
-					"title":          stringProp("Human-readable document title."),
-					"url":            stringProp("Absolute source URL."),
-				},
-				"required":             []string{"id", "title", "url"},
-				"additionalProperties": true,
-			},
-		}
-		props["count"] = intProp("Search result count.")
-	case "recall_read":
-		props["recall_endpoint"] = stringProp("Configured NexusDock Recall endpoint.")
-		props["recall"] = objectProp("NexusDock Recall document returned by the backing service. Raw Markdown is omitted by default and returned as raw_content only when include_raw=true.")
-	case "recall_write":
-		props["recall_endpoint"] = stringProp("Configured NexusDock Recall endpoint.")
-		props["recall_target"] = stringProp("Recall target used.")
-		props["recall_action"] = stringProp("Recall action used.")
-		props["recall"] = objectProp("NexusDock Recall document returned by the backing service when a write occurs.")
-		props["card"] = objectProp("Normalized card candidate or written card when target=card.")
-		props["warnings"] = arrayProp("Review warnings before writing.")
-		props["capture_plan"] = objectProp("Reviewable write plan for card captures.")
-		props["similar_results"] = arrayProp("Similar existing card search results.")
-		props["path"] = stringProp("NexusDock Recall-relative path.")
-		props["changed"] = boolProp("Whether the proposed edit changes content.")
-		props["dry_run"] = boolProp("Whether the operation only previewed changes.")
-		props["confirmed"] = boolProp("Whether write confirmation was supplied.")
-		props["written"] = boolProp("Whether the entry was written.")
-		props["diff"] = stringProp("Unified diff preview.")
-		props["updates"] = arrayProp("Fact update results.")
-	case "recall_maintain":
-		props["recall_endpoint"] = stringProp("Configured NexusDock Recall endpoint.")
-		props["recall_action"] = stringProp("Maintenance action performed.")
-		props["entries"] = arrayProp("NexusDock Recall entries for action=list.")
-		props["count"] = intProp("Entry count where applicable.")
-		props["terms"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
-		props["files_scanned"] = intProp("Files scanned for action=lint.")
-		props["finding_count"] = intProp("Finding count for action=lint.")
-		props["findings"] = arrayProp("Lint findings.")
-	case "private_note_manage":
-		props["root"] = stringProp("NexusDock private notes root path.")
-		props["private_note_store"] = stringProp("Private note store name, fixed to NexusDock Private Notes.")
-		props["action"] = stringProp("Action performed.")
-		props["query"] = stringProp("Metadata-only query for action=search.")
-		props["results"] = arrayProp("Metadata-only search results containing title, summary, tags, category, path, updated_at, and secret marker; never plaintext snippets.")
-		props["metadata_only"] = boolProp("Whether search was restricted to safe metadata.")
-		props["path"] = stringProp("Plain note path for read/write/delete results.")
-		props["encrypted_path"] = stringProp("Age encrypted backup path, typically encrypted/<category>/<name>.md.age.")
-		props["content"] = stringProp("Plaintext content returned only by explicit action=read.")
-		props["truncated"] = boolProp("Whether returned content was truncated.")
-		props["contains_secret"] = boolProp("Whether the note content is marked as containing secrets.")
-		props["written"] = boolProp("Whether plaintext was written.")
-		props["encrypted"] = boolProp("Whether encrypted backup was written.")
-		props["deleted_plaintext"] = boolProp("Whether plaintext was deleted.")
-		props["deleted_encrypted"] = boolProp("Whether encrypted backup was deleted.")
-		props["notes"] = arrayProp("Metadata-only private note summaries for action=status status_action=list.")
-		props["count"] = intProp("Result or note count.")
-		props["notes_count"] = intProp("Private note count for status checks.")
-		props["encrypted_count"] = intProp("Encrypted backup count for maintenance actions.")
-		props["recipient"] = stringProp("Age public recipient generated or used.")
-		props["identity_created"] = boolProp("Whether a new local age identity was created.")
-		props["algorithm"] = stringProp("Encryption algorithm.")
-		props["missing_encrypted"] = arrayProp("Missing encrypted backup paths.")
-		props["encrypted_backup_ok"] = boolProp("Whether every private note has its required encrypted backup.")
-		props["plaintext_git_ignored"] = boolProp("Whether private note plaintext is Git-ignored.")
-		props["keys_git_ignored"] = boolProp("Whether private note keys are Git-ignored.")
 	case "browser_session":
 		props["browser_ok"] = boolProp("Whether the native Go CDP browser operation succeeded.")
 		props["error"] = objectProp("Structured browser error with code, message, phase, and optional details.")

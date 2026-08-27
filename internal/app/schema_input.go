@@ -1,12 +1,15 @@
 package app
 
 import (
+	mcpcontract "github.com/uvwt/agentdock-protocol/mcpcontract"
 	toolcommand "github.com/uvwt/agentdock/internal/tool/command"
 	toolfile "github.com/uvwt/agentdock/internal/tool/file"
-	toolrecall "github.com/uvwt/agentdock/internal/tool/recall"
 )
 
 func InputSchema(name string) map[string]any {
+	if schema, ok := mcpcontract.InputSchema(name); ok {
+		return schema
+	}
 	props := map[string]any{}
 	required := []string{}
 	stringProp := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
@@ -15,9 +18,6 @@ func InputSchema(name string) map[string]any {
 		return map[string]any{"type": "integer", "description": desc, "minimum": minimum, "maximum": maximum}
 	}
 	boolProp := func(desc string) map[string]any { return map[string]any{"type": "boolean", "description": desc} }
-	objectProp := func(desc string) map[string]any {
-		return map[string]any{"type": "object", "description": desc, "additionalProperties": true}
-	}
 
 	switch name {
 	case "read_file":
@@ -27,8 +27,6 @@ func InputSchema(name string) map[string]any {
 		props["end_line"] = intProp("Inclusive end line.")
 		props["max_bytes"] = boundedIntProp("Maximum output bytes. Defaults to 262144 and is capped at 4194304.", 1, toolfile.MaxTextOutputBytes)
 		required = []string{"path"}
-	case "agentdock_context":
-
 	case "list_dir":
 		props["path"] = stringProp(toolfile.PathDescription("Host directory path. Relative paths resolve from ~/AgentDock."))
 		toolfile.AddRuntimeProperties(props)
@@ -201,20 +199,6 @@ func InputSchema(name string) map[string]any {
 		props["pending_only"] = boolProp("Return only pending interactions for list. Defaults to true.")
 		required = []string{"action"}
 
-	case "workflow_template_manage":
-		props["action"] = map[string]any{"type": "string", "description": "Workflow template action. publish accepts a complete template; get_many returns full active templates that the model must compose before task creation.", "enum": []string{"publish", "retire", "list", "get", "get_many", "match", "vector_index"}}
-		props["template"] = map[string]any{"type": "object", "additionalProperties": true, "description": "Complete workflow template for publish."}
-		props["template_id"] = stringProp("Workflow template id.")
-		props["template_ids"] = map[string]any{"type": "array", "minItems": 2, "maxItems": 3, "items": map[string]any{"type": "string"}, "description": "Two or three active template ids for get_many. The returned templates must be pruned, deduplicated, ordered, and combined by the model."}
-		props["template_version"] = stringProp("Workflow template version for exact get or retire actions. Omit it for get to resolve the current active version.")
-		props["template_status"] = map[string]any{"type": "string", "enum": []string{"active", "retired"}, "description": "Optional list status filter."}
-		props["allow_long_template"] = boolProp("Allow a workflow template to exceed default guardrails. Provide long_template_reason when true.")
-		props["long_template_reason"] = stringProp("Reason required when allow_long_template=true.")
-		props["goal"] = stringProp("Goal text for match.")
-		props["device"] = stringProp("Optional device hint for match.")
-		props["type"] = stringProp("Optional workflow type hint for match. This maps to template match.type.")
-		required = []string{"action"}
-
 	case "skill_package":
 		props["action"] = map[string]any{"type": "string", "description": "Skill package or isolated environment action.", "enum": []string{"validate", "install", "activate", "rollback", "env_set", "env_unset", "env_list"}}
 		props["skill"] = stringProp("Skill name for activate, rollback, or environment management.")
@@ -259,64 +243,6 @@ func InputSchema(name string) map[string]any {
 		props["path"] = stringProp("Local file or directory path visible to this AgentDock instance. Relative paths resolve from ~/AgentDock.")
 		props["retention_seconds"] = intProp("Signed URL retention in seconds. Defaults to 86400 and is capped at 604800.")
 		required = []string{}
-	case "recall_bootstrap":
-		props["max_bytes"] = intProp("Maximum combined NexusDock Recall pack bytes. Does not expose section bodies by itself; use include_body or recall_read when body text is needed.")
-		props["include_raw"] = boolProp("Include raw Markdown as raw_content. Defaults to false to avoid duplicating body/content tokens.")
-		props["include_body"] = boolProp("Include section body text in recall_bootstrap. Defaults to false; prefer recall_read for targeted full text.")
-	case "recall_search":
-		props["query"] = stringProp("Text query to search in NexusDock Recall files and paths.")
-		props["kind"] = map[string]any{"type": "string", "description": "Search kind. Defaults to all.", "enum": []string{"all", "markdown", "card"}}
-		props["max_results"] = intProp("Maximum results to return.")
-		required = []string{"query"}
-	case "recall_read":
-		props["path"] = stringProp("NexusDock Recall-relative Markdown or card path.")
-		props["include_raw"] = boolProp("Include raw Markdown as raw_content. Defaults to false to avoid duplicating body/content tokens.")
-		required = []string{"path"}
-	case "recall_write":
-		props["target"] = map[string]any{"type": "string", "description": "Recall target selected by the model.", "enum": []string{"card", "markdown"}}
-		props["action"] = map[string]any{"type": "string", "description": "Recall action selected by the model.", "enum": []string{"plan", "create", "replace", "append", "patch", "update_fact", "diff", "delete"}}
-		props["confirmed"] = boolProp("Required for true writes/deletes. card create with confirmed=false returns a review plan.")
-		props["path"] = stringProp("NexusDock Recall-relative path when reading, updating, deleting, or writing a known entry.")
-		props["content"] = stringProp("Card or Markdown content, or proposed replacement content.")
-		props["title"] = stringProp("Short title for a card or Markdown entry.")
-		props["summary"] = stringProp("Short summary for a card.")
-		props["overwrite"] = boolProp("Replace an existing entry when supported.")
-		props["allow_warnings"] = boolProp("Card only: after reviewing warnings, allow writing a warned card. Do not use by default.")
-		props["old"] = stringProp("Patch only: literal text to replace.")
-		props["new"] = stringProp("Patch only: replacement text for old.")
-		props["append"] = stringProp("Append/patch only: text to append to the recall document.")
-		props["section"] = stringProp("Patch/update_fact only: Markdown heading title whose section should be updated.")
-		props["section_content"] = stringProp("Patch only: new body for the selected Markdown section.")
-		props["key"] = stringProp("Update_fact only: fact key to update.")
-		props["value"] = stringProp("Update_fact only: new fact value.")
-		props["facts"] = objectProp("Update_fact only: multiple key/value facts to update.")
-		props["append_if_missing"] = boolProp("Update_fact only: append missing keys to the selected section or document instead of failing.")
-		props["max_bytes"] = intProp("Maximum diff/output bytes.")
-		required = []string{"target", "action"}
-	case "recall_maintain":
-		props["action"] = map[string]any{"type": "string", "description": "Maintenance action.", "enum": []string{"list", "lint", "embedding_status", "reindex", "reindex_cards"}}
-		props["prefix"] = stringProp("Optional NexusDock Recall-relative prefix.")
-		props["terms"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Terms or regex patterns for lint."}
-		props["regex"] = boolProp("Treat terms as regex patterns for lint.")
-		props["max_entries"] = intProp("Maximum entries to list or scan.")
-		props["max_findings"] = intProp("Maximum lint findings to return.")
-		props["max_results"] = intProp("Maximum results where supported.")
-	case "private_note_manage":
-		props["action"] = map[string]any{"type": "string", "description": "NexusDock private note action. Do not use by default; use only for explicit private note access or clearly sensitive secrets, credentials, or personal information.", "enum": []string{"search", "read", "write", "delete", "status", "maintain"}}
-		props["query"] = stringProp("Metadata-only query for action=search. Matches title, summary, tags, category, and path; never searches plaintext body.")
-		props["max_results"] = boundedIntProp("Maximum metadata search results to return. Defaults to 8 and is capped at 100.", 1, toolrecall.MaxPrivateNoteSearchResults)
-		props["path"] = stringProp("Path under notes/ for action=read, action=write, or action=delete.")
-		props["category"] = stringProp("Optional category used with title when path is omitted. Defaults to services.")
-		props["title"] = stringProp("Title used for frontmatter or to derive the path when path is omitted.")
-		props["summary"] = stringProp("Optional human-maintained safe summary for metadata-only search.")
-		props["tags"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Optional safe tags for metadata-only search."}
-		props["content"] = stringProp("Plaintext private note content for action=write.")
-		props["confirmed"] = boolProp("Required for true action=write and action=delete mutations.")
-		props["overwrite"] = boolProp("Replace an existing note for action=write.")
-		props["max_bytes"] = boundedIntProp("Maximum bytes to return for explicit action=read. Defaults to 256000 and is capped at 1048576.", 1, toolrecall.MaxPrivateNoteReadBytes)
-		props["status_action"] = map[string]any{"type": "string", "description": "Read-only status action when action=status.", "enum": []string{"check", "list"}}
-		props["maintenance_action"] = map[string]any{"type": "string", "description": "NexusDock encryption maintenance operation when action=maintain.", "enum": []string{"init", "init-encryption", "sync-encrypted", "encrypt-all"}}
-		required = []string{"action"}
 	case "browser_session":
 		props["action"] = map[string]any{"type": "string", "description": "Browser session action.", "enum": []string{"start", "close", "cleanup_stale"}}
 		props["url"] = stringProp("Initial URL for action=start. Defaults to about:blank in the AgentDock-managed target.")
@@ -400,7 +326,7 @@ func InputSchema(name string) map[string]any {
 		}
 	}
 	switch name {
-	case "exec_command", "acp_session", "acp_prompt", "acp_interaction", "recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain", "private_note_manage", "mcp_manage", "mcp_tool_search", "mcp_tool_inspect", "mcp_tool_call", "browser_session", "browser_act", "browser_snapshot":
+	case "exec_command", "acp_session", "acp_prompt", "acp_interaction", "mcp_manage", "mcp_tool_search", "mcp_tool_inspect", "mcp_tool_call", "browser_session", "browser_act", "browser_snapshot":
 		// 这些工具的参数契约需要严格收敛，避免删除或拼错的字段被静默忽略。
 		schema["additionalProperties"] = false
 	}

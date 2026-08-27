@@ -74,19 +74,42 @@ func (svc *Service) Write(ctx context.Context, args map[string]any) (Result, err
 		switch action {
 		case "plan":
 			result, err = svc.memoryCardCapture(ctx, args)
+			if err == nil {
+				result["dry_run"] = true
+				result["confirmed"] = boolArg(args, "confirmed", false)
+			}
 		case "create":
-			if boolArg(args, "confirmed", false) {
-				result, err = svc.memoryCardWrite(ctx, args)
-			} else {
+			confirmed := boolArg(args, "confirmed", false)
+			if boolArg(args, "dry_run", false) || !confirmed {
 				result, err = svc.memoryCardCapture(ctx, args)
+				if err == nil {
+					result["dry_run"] = true
+					result["confirmed"] = confirmed
+				}
+			} else {
+				result, err = svc.memoryCardWrite(ctx, args)
 			}
 		default:
 			return nil, invalidRecallTargetAction(target, action)
 		}
 	case "markdown":
 		switch action {
-		case "create", "replace":
-			result, err = svc.memoryWrite(ctx, args)
+		case "plan":
+			result, err = svc.memoryPreviewWrite(ctx, markdownWriteArgs(args, false))
+		case "create":
+			writeArgs := markdownWriteArgs(args, false)
+			if boolArg(args, "dry_run", false) {
+				result, err = svc.memoryPreviewWrite(ctx, writeArgs)
+			} else {
+				result, err = svc.memoryWrite(ctx, writeArgs)
+			}
+		case "replace":
+			writeArgs := markdownWriteArgs(args, true)
+			if boolArg(args, "dry_run", false) || !boolArg(args, "confirmed", false) {
+				result, err = svc.memoryPreviewWrite(ctx, writeArgs)
+			} else {
+				result, err = svc.memoryWrite(ctx, writeArgs)
+			}
 		case "append":
 			result, err = svc.memoryAppend(ctx, args)
 		case "patch":
@@ -111,6 +134,15 @@ func (svc *Service) Write(ctx context.Context, args map[string]any) (Result, err
 	result["recall_target"] = target
 	result["recall_action"] = action
 	return result, nil
+}
+
+func markdownWriteArgs(args map[string]any, overwrite bool) map[string]any {
+	result := make(map[string]any, len(args)+1)
+	for key, value := range args {
+		result[key] = value
+	}
+	result["overwrite"] = overwrite
+	return result
 }
 
 func invalidRecallTargetAction(target, action string) error {

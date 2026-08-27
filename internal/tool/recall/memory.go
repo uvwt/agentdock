@@ -151,6 +151,22 @@ func (svc *Service) memorySearch(ctx context.Context, args map[string]any) (Resu
 }
 
 func (svc *Service) memoryWrite(ctx context.Context, args map[string]any) (Result, error) {
+	payload, err := memoryWritePayload(args)
+	if err != nil {
+		return nil, err
+	}
+	return svc.Request(ctx, http.MethodPost, "/v1/recall", payload)
+}
+
+func (svc *Service) memoryPreviewWrite(ctx context.Context, args map[string]any) (Result, error) {
+	payload, err := memoryWritePayload(args)
+	if err != nil {
+		return nil, err
+	}
+	return svc.Request(ctx, http.MethodPost, "/v1/recall/preview", payload)
+}
+
+func memoryWritePayload(args map[string]any) (map[string]any, error) {
 	content := stringArg(args, "content", "")
 	if strings.TrimSpace(content) == "" {
 		return nil, toolError("MISSING_CONTENT", "content is required", "validation")
@@ -174,7 +190,7 @@ func (svc *Service) memoryWrite(ctx context.Context, args map[string]any) (Resul
 	if _, ok := args["overwrite"]; ok {
 		payload["overwrite"] = boolArg(args, "overwrite", false)
 	}
-	return svc.Request(ctx, http.MethodPost, "/v1/recall", payload)
+	return payload, nil
 }
 
 func (svc *Service) memoryDelete(ctx context.Context, args map[string]any) (Result, error) {

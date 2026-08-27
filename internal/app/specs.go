@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 
+	mcpcontract "github.com/uvwt/agentdock-protocol/mcpcontract"
 	"github.com/uvwt/agentdock/internal/config"
 	toolcommand "github.com/uvwt/agentdock/internal/tool/command"
 	toolfile "github.com/uvwt/agentdock/internal/tool/file"
@@ -125,6 +126,18 @@ func mutatingToolAnnotations(destructive, openWorld bool) *ToolAnnotations {
 
 func boolPointer(value bool) *bool { return &value }
 
+func canonicalToolAnnotations(value mcpcontract.Annotations) *ToolAnnotations {
+	annotations := &ToolAnnotations{
+		ReadOnlyHint:    value.ReadOnlyHint,
+		DestructiveHint: value.DestructiveHint,
+		OpenWorldHint:   value.OpenWorldHint,
+	}
+	if value.IdempotentHint != nil {
+		annotations.IdempotentHint = *value.IdempotentHint
+	}
+	return annotations
+}
+
 func toolHandler(fn func(*Runtime, map[string]any) (Result, error)) ToolHandler {
 	return func(_ context.Context, r *Runtime, args map[string]any) (Result, error) { return fn(r, args) }
 }
@@ -137,7 +150,7 @@ func allToolSpecs() []ToolSpec {
 	// 顺序保持和旧 ToolNames 一致，避免 tools/list 与 server_info 的展示顺序无谓变化。
 	return bindToolSchemas([]ToolSpec{
 		{Name: "server_info", Title: "Server info", Description: "Return server, host path model, auth, and exposed-tool metadata.", Annotations: readOnlyToolAnnotations(false), Handler: func(_ context.Context, r *Runtime, _ map[string]any) (Result, error) { return r.serverInfo(), nil }},
-		{Name: "agentdock_context", Title: "AgentDock context", Description: "Return structured AgentDock bootstrap context including available capabilities, integrations, rules, and high-priority context.", Annotations: readOnlyToolAnnotations(false), Handler: ctxToolHandler((*Runtime).agentDockContextTool)},
+		{Name: "agentdock_context", Title: "AgentDock context", Description: "Return structured AgentDock bootstrap context including available capabilities, integrations, rules, and high-priority context.", Handler: ctxToolHandler((*Runtime).agentDockContextTool)},
 		{Name: "read_file", Title: "Read file", Description: toolfile.ToolDescription("Read a UTF-8 text file slice. Supports normal Host paths and skill://<name>/<path> resources from the active Skill version."), Annotations: readOnlyToolAnnotations(false), Handler: ctxToolHandler((*Runtime).readFile)},
 		{Name: "list_dir", Title: "List directory", Description: toolfile.ToolDescription("List directory entries. Relative paths resolve from ~/AgentDock; absolute and ~/ paths use Host rules."), Annotations: readOnlyToolAnnotations(false), Handler: ctxToolHandler((*Runtime).listDir)},
 		{Name: "list_files", Title: "List files", Description: toolfile.ToolDescription("List files using glob and ignore filters. Relative paths resolve from ~/AgentDock by default."), Annotations: readOnlyToolAnnotations(false), Handler: ctxToolHandler((*Runtime).listFiles)},
@@ -157,7 +170,7 @@ func allToolSpecs() []ToolSpec {
 		{Name: "acp_interaction", Title: "Handle ACP interactions", Description: "List, inspect, respond to, or cancel pending ACP permission interactions. Only options offered by the agent and permitted by the local AgentDock policy may be selected.", Annotations: mutatingToolAnnotations(true, true), Availability: requiresACP, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
 			return r.acp.Interaction(ctx, args)
 		}},
-		{Name: "workflow_template_manage", Title: "Manage workflow templates", Description: "List, get, get multiple, publish, retire, or match AgentDock workflow templates. publish validates and activates a complete immutable template version; get_many requires the model to compose the returned templates before task creation.", Annotations: mutatingToolAnnotations(true, false), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).workflowTemplateManage)},
+		{Name: "workflow_template_manage", Title: "Manage workflow templates", Description: "List, get, get multiple, publish, retire, or match AgentDock workflow templates. publish validates and activates a complete immutable template version; get_many requires the model to compose the returned templates before task creation.", Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).workflowTemplateManage)},
 		{Name: "skill_package", Title: "Manage Skill packages", Description: "Validate, install, activate, or roll back AgentDock Skill packages and manage each Skill's isolated environment without returning secret values.", Annotations: mutatingToolAnnotations(true, true), Handler: ctxToolHandler((*Runtime).skillPackage)},
 		{Name: "mcp_manage", Title: "Manage dynamic MCP servers", Description: "Register, inspect, enable, disable, refresh, remove, or manage the isolated environment of dynamic MCP servers. Dynamic MCP tools remain separate from AgentDock built-in tools.", Annotations: mutatingToolAnnotations(true, true), Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
 			return r.dynamicMCP.Manage(ctx, args)
@@ -174,12 +187,12 @@ func allToolSpecs() []ToolSpec {
 		{Name: "view_image", Title: "View image", Description: "Load an image by AgentDock artifact_id, Host path, or HTTP(S) URL and return it as standard MCP image content.", Annotations: readOnlyToolAnnotations(true), Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
 			return r.media.ViewImage(ctx, args)
 		}},
-		{Name: "recall_bootstrap", Title: "Bootstrap NexusDock Recall context", Description: "Load high-priority NexusDock Recall context at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks. max_bytes controls pack budget only; compact index/excerpt output is default, and full body requires include_body or targeted recall_read.", Annotations: readOnlyToolAnnotations(false), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallBootstrap)},
-		{Name: "recall_search", Title: "Search NexusDock Recall", Description: "Search NexusDock Recall Markdown documents and cards. Use kind=all, markdown, or card; backend routing such as card prefixes stays internal.", Annotations: readOnlyToolAnnotations(false), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallSearch)},
-		{Name: "recall_read", Title: "Read NexusDock Recall entry", Description: "Read one Markdown document or card from the configured NexusDock Recall store by path.", Annotations: readOnlyToolAnnotations(false), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallRead)},
-		{Name: "recall_write", Title: "Write NexusDock Recall entry", Description: "Plan, create, replace, append, patch, update facts, diff, or delete NexusDock Recall content. The model must choose target=card/markdown and action explicitly.", Annotations: mutatingToolAnnotations(true, false), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallWrite)},
-		{Name: "recall_maintain", Title: "Maintain NexusDock Recall", Description: "Run NexusDock Recall maintenance actions such as list, lint, embedding_status, reindex, or reindex_cards.", Annotations: mutatingToolAnnotations(true, false), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallMaintain)},
-		{Name: "private_note_manage", Title: "Manage private notes", Description: "Explicit low-frequency NexusDock private note vault entrypoint. Do not use by default: use only when the user explicitly requests private note access or the content clearly contains sensitive secrets, credentials, or personal information. Search is metadata-only; plaintext is returned only by explicit read, and Git backups contain age ciphertext only. Actions: search, read, write, delete, status, or maintain.", Annotations: mutatingToolAnnotations(true, false), Handler: ctxToolHandler((*Runtime).privateNoteManage), Availability: requiresNexus},
+		{Name: "recall_bootstrap", Title: "Bootstrap NexusDock Recall context", Description: "Load high-priority NexusDock Recall context at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks. max_bytes controls pack budget only; compact index/excerpt output is default, and full body requires include_body or targeted recall_read.", Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallBootstrap)},
+		{Name: "recall_search", Title: "Search NexusDock Recall", Description: "Search NexusDock Recall Markdown documents and cards. Use kind=all, markdown, or card; backend routing such as card prefixes stays internal.", Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallSearch)},
+		{Name: "recall_read", Title: "Read NexusDock Recall entry", Description: "Read one Markdown document or card from the configured NexusDock Recall store by path.", Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallRead)},
+		{Name: "recall_write", Title: "Write NexusDock Recall entry", Description: "Plan, create, replace, append, patch, update facts, diff, or delete NexusDock Recall content. The model must choose target=card/markdown and action explicitly.", Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallWrite)},
+		{Name: "recall_maintain", Title: "Maintain NexusDock Recall", Description: "Run NexusDock Recall maintenance actions such as list, lint, embedding_status, reindex, or reindex_cards.", Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallMaintain)},
+		{Name: "private_note_manage", Title: "Manage private notes", Description: "Explicit low-frequency NexusDock private note vault entrypoint. Do not use by default: use only when the user explicitly requests private note access or the content clearly contains sensitive secrets, credentials, or personal information. Search is metadata-only; plaintext is returned only by explicit read, and Git backups contain age ciphertext only. Actions: search, read, write, delete, status, or maintain.", Handler: ctxToolHandler((*Runtime).privateNoteManage), Availability: requiresNexus},
 		{Name: "browser_session", Title: "Browser session", Description: "Start an AgentDock-owned Chromium-family browser or attach to an existing CDP browser with a dedicated AgentDock target, then close or clean up the session. External browsers remain running when the session closes.", Annotations: mutatingToolAnnotations(true, true), Availability: requiresBrowser, Handler: ctxToolHandler((*Runtime).browserSession)},
 		{Name: "browser_act", Title: "Browser actions", Description: "Run strictly validated CSS/CDP browser actions against an AgentDock-managed browser target and return the final typed page snapshot plus screenshot Artifact.", Annotations: mutatingToolAnnotations(true, true), Availability: requiresBrowser, Handler: ctxToolHandler((*Runtime).browserAct)},
 		{Name: "browser_snapshot", Title: "Browser snapshot", Description: "Capture the active or requested CDP target with page text, viewport, page size, focus, visible interactive elements, diagnostics, and a PNG screenshot Artifact.", Annotations: readOnlyToolAnnotations(true), Availability: requiresBrowser, Handler: ctxToolHandler((*Runtime).browserSnapshot)},
@@ -197,6 +210,9 @@ func bindToolSchemas(specs []ToolSpec) []ToolSpec {
 		}
 		if specs[i].OutputSchema == nil {
 			specs[i].OutputSchema = func() map[string]any { return OutputSchema(name) }
+		}
+		if annotations, ok := mcpcontract.AnnotationContract(name); ok {
+			specs[i].Annotations = canonicalToolAnnotations(annotations)
 		}
 	}
 	return specs

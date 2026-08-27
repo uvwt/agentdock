@@ -92,8 +92,8 @@ github.com/tidwall/rtree v0.0.0-20180113144539-6cd427091e0e h1:+NL1GDIUOKxVfbp2K
 github.com/tidwall/rtree v0.0.0-20180113144539-6cd427091e0e/go.mod h1:/h+UnNGt0IhNNJLkGikcdcJqm66zGD/uJGMRxK/9+Ao=
 github.com/tidwall/tinyqueue v0.0.0-20180302190814-1e39f5511563 h1:Otn9S136ELckZ3KKDyCkxapfufrqDqwmGjcHfAyXRrE=
 github.com/tidwall/tinyqueue v0.0.0-20180302190814-1e39f5511563/go.mod h1:mLqSmt7Dv/CNneF2wfcChfN1rvapyQr01LGKnKex0DQ=
-github.com/uvwt/agentdock-protocol v0.0.0-20260827062209-801b6428dd74 h1:Ye7f0YAJ9mieAwUaRme9UYHK5+wo/j/hDJkG6nzOACA=
-github.com/uvwt/agentdock-protocol v0.0.0-20260827062209-801b6428dd74/go.mod h1:yoFrGa/mNuAr3b8fupHCFT0b1Kf4Ni/00T4KnwuiFRk=
+github.com/uvwt/agentdock-protocol v0.1.0 h1:TRmAydkyvxNvDb2ScCWbqFbTjIgC/HV5XKcSRbZMBRs=
+github.com/uvwt/agentdock-protocol v0.1.0/go.mod h1:yoFrGa/mNuAr3b8fupHCFT0b1Kf4Ni/00T4KnwuiFRk=
 github.com/valyala/bytebufferpool v1.0.0 h1:GqA5TC/0021Y/b9FG4Oi9Mr3q7XYx6KllzawFIhcdPw=
 github.com/valyala/bytebufferpool v1.0.0/go.mod h1:6bBcMArwyJ5K/AmCkWv1jt77kVWyCJ6HpOuEn7z0Csc=
 github.com/valyala/fasthttp v1.34.0 h1:d3AAQJ2DRcxJYHm7OXNXtXt2as1vMDfxeIcFvhmGGm4=

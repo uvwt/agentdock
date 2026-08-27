@@ -46,10 +46,18 @@ func TestRuntimeCallRejectsUnknownStrictArgumentsBeforeHandler(t *testing.T) {
 	}
 }
 
-func TestRuntimeCallAllowsUnknownArgumentsForPermissiveTools(t *testing.T) {
+func TestRuntimeCallAllowsUnknownArgumentsForPermissiveNonCanonicalTools(t *testing.T) {
 	runtime := newRuntimeValidationTestRuntime(t)
-	if _, err := runtime.Call(context.Background(), "agentdock_context", map[string]any{"future_field": true}); err != nil {
+	if _, err := runtime.Call(context.Background(), "server_info", map[string]any{"future_field": true}); err != nil {
 		t.Fatalf("permissive tool rejected unknown field: %v", err)
+	}
+}
+
+func TestRuntimeCallRejectsUnknownArgumentsForCanonicalTools(t *testing.T) {
+	runtime := newRuntimeValidationTestRuntime(t)
+	_, err := runtime.Call(context.Background(), "agentdock_context", map[string]any{"future_field": true})
+	if err == nil {
+		t.Fatal("canonical tool accepted unknown field")
 	}
 }
 
