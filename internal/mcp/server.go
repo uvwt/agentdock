@@ -60,6 +60,16 @@ func (s *Server) AgentDockContext(ctx context.Context) (app.Result, error) {
 	return s.runtime.AgentDockContext(ctx)
 }
 
+// AgentDockLocalContext 为 Nexus Bridge 私有操作提供节点本地 Context，
+// 返回结构沿用 agentdock_context 的标准工具结果 envelope。
+func (s *Server) AgentDockLocalContext(ctx context.Context) (map[string]any, error) {
+	if s == nil || s.runtime == nil {
+		return nil, errors.New("AgentDock runtime is not initialized")
+	}
+	result, err := s.runtime.AgentDockLocalContext(ctx)
+	return toolEnvelope("agentdock_context", result, err), nil
+}
+
 func (s *Server) ToolNames() []string {
 	if s == nil || s.runtime == nil {
 		return nil

@@ -208,7 +208,7 @@ func TestNexusAvailableExposesWorkflowAndRecallContext(t *testing.T) {
 	}
 }
 
-func TestAgentDockContextNexusLocalOnlySkipsSharedNexusLookups(t *testing.T) {
+func TestAgentDockLocalContextSkipsSharedNexusLookups(t *testing.T) {
 	root := t.TempDir()
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -232,7 +232,7 @@ func TestAgentDockContextNexusLocalOnlySkipsSharedNexusLookups(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = rt.Close() })
 
-	result, err := rt.Call(context.Background(), "agentdock_context", map[string]any{nexusLocalContextArgument: true})
+	result, err := rt.AgentDockLocalContext(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

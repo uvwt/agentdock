@@ -9,10 +9,14 @@ import (
 	"github.com/uvwt/agentdock/internal/config"
 )
 
-const nexusLocalContextArgument = "_nexus_local_only"
-
 func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
 	return r.agentDockContext(ctx, false)
+}
+
+// AgentDockLocalContext 仅供 Nexus Bridge 使用。它不读取 Nexus 统一管理的
+// Workflow/Recall，避免 fleet 聚合时按节点重复回灌共享上下文。
+func (r *Runtime) AgentDockLocalContext(ctx context.Context) (Result, error) {
+	return r.agentDockContext(ctx, true)
 }
 
 func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool) (Result, error) {
@@ -70,11 +74,8 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool) (Re
 	return result, nil
 }
 
-func (r *Runtime) agentDockContextTool(ctx context.Context, args map[string]any) (Result, error) {
-	// Nexus fleet 只需要设备本地能力。这个桥接私有提示故意不进入模型可见 schema，
-	// 直接使用 AgentDock MCP 的客户端仍获得包含 Workflow/Recall 的完整 Context。
-	localOnly, _ := args[nexusLocalContextArgument].(bool)
-	return r.agentDockContext(ctx, localOnly)
+func (r *Runtime) agentDockContextTool(ctx context.Context, _ map[string]any) (Result, error) {
+	return r.AgentDockContext(ctx)
 }
 
 type capabilityContext struct {

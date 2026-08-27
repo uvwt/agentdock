@@ -22,9 +22,13 @@ import (
 )
 
 const (
-	protocolVersion       = "1"
-	maxMessageBytes       = 8 << 20
-	resourceReadOperation = "resource.read"
+	protocolVersion          = "1"
+	maxMessageBytes          = 8 << 20
+	resourceReadOperation    = "resource.read"
+	localContextOperation    = "context.local"
+	contextResourceContract  = "agentdock.context.fleet.v1"
+	recallResourceContract   = "agentdock.recall.v1"
+	workflowResourceContract = "agentdock.workflow.v1"
 )
 
 type message struct {
@@ -177,6 +181,8 @@ func (c *Client) invoke(parent context.Context, socket *websocket.Conn, incoming
 		} else {
 			result, err = httpx.DispatchRuntimeBridgeRequest(ctx, c.server, request)
 		}
+	case localContextOperation:
+		result, err = c.server.AgentDockLocalContext(ctx)
 	case "tool.call":
 		var request struct {
 			Tool      string         `json:"tool"`
@@ -219,9 +225,25 @@ func nexusToolDescriptors(descriptors []map[string]any) []map[string]any {
 		resourceURI, _ := ui["resourceUri"].(string)
 		if strings.HasPrefix(strings.TrimSpace(resourceURI), "ui://agentdock/") {
 			descriptor["nexus_resource_relay"] = true
+			if contract := nexusResourceContract(resourceURI); contract != "" {
+				descriptor["nexus_resource_contract"] = contract
+			}
 		}
 	}
 	return descriptors
+}
+
+func nexusResourceContract(uri string) string {
+	switch strings.TrimSpace(uri) {
+	case "ui://agentdock/context":
+		return contextResourceContract
+	case "ui://agentdock/recall":
+		return recallResourceContract
+	case "ui://agentdock/workflow":
+		return workflowResourceContract
+	default:
+		return ""
+	}
 }
 
 func (c *Client) heartbeat(ctx context.Context, socket *websocket.Conn, interval time.Duration) {
