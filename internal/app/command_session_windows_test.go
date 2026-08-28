@@ -8,46 +8,41 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
 
-type appWindowsNodeReady struct {
+const appWindowsNativeChildReadyEnv = "AGENTDOCK_TEST_WINDOWS_NATIVE_CHILD_READY"
+
+type appWindowsNativeChildReady struct {
 	PID  int `json:"pid"`
 	Port int `json:"port"`
 }
 
-func TestWindowsSessionActKillTerminatesNodeServer(t *testing.T) {
+func TestWindowsSessionActKillTerminatesNativeChildTree(t *testing.T) {
 	runtime, root := newCodeToolsRuntime(t)
 	defer runtime.Close()
-	nodePath, err := exec.LookPath("node.exe")
+	testBinary, err := os.Executable()
 	if err != nil {
-		t.Skip("node.exe is not installed")
+		t.Fatal(err)
 	}
-	readyPath := filepath.Join(root, "node-session-kill.ready.json")
-	tempReadyPath := readyPath + ".tmp"
-	nodeScript := fmt.Sprintf(
-		"const fs=require('fs'); const server=require('http').createServer((req,res)=>res.end('ok')); server.listen(0,'127.0.0.1',()=>{const address=server.address(); fs.writeFileSync('%s',JSON.stringify({pid:process.pid,port:address.port})); fs.renameSync('%s','%s')})",
-		strings.ReplaceAll(filepath.ToSlash(tempReadyPath), "'", "\\'"),
-		strings.ReplaceAll(filepath.ToSlash(tempReadyPath), "'", "\\'"),
-		strings.ReplaceAll(filepath.ToSlash(readyPath), "'", "\\'"),
-	)
-	command := fmt.Sprintf("& '%s' -e \"%s\"", strings.ReplaceAll(nodePath, "'", "''"), nodeScript)
+	readyPath := filepath.Join(root, "native-child.ready.json")
+	command := fmt.Sprintf("& '%s' -test.run '^TestWindowsSessionNativeChildHelper$'", strings.ReplaceAll(testBinary, "'", "''"))
 	started, err := runtime.execCommand(context.Background(), map[string]any{
 		"cmd": command, "execution_mode": "async", "timeout_ms": 60000,
+		"env": map[string]any{appWindowsNativeChildReadyEnv: readyPath},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	sessionID, _ := started["session_id"].(string)
-	ready := waitForAppWindowsNode(t, runtime, sessionID, readyPath)
-	nodePID := ready.PID
+	ready := waitForAppWindowsNativeChild(t, runtime, sessionID, readyPath)
+	childPID := ready.PID
 	port := ready.Port
 	defer func() {
-		if process, findErr := os.FindProcess(nodePID); findErr == nil {
+		if process, findErr := os.FindProcess(childPID); findErr == nil {
 			_ = process.Kill()
 		}
 	}()
@@ -64,16 +59,47 @@ func TestWindowsSessionActKillTerminatesNodeServer(t *testing.T) {
 	}
 }
 
-func waitForAppWindowsNode(t *testing.T, runtime *Runtime, sessionID, readyPath string) appWindowsNodeReady {
+func TestWindowsSessionNativeChildHelper(t *testing.T) {
+	readyPath := os.Getenv(appWindowsNativeChildReadyEnv)
+	if readyPath == "" {
+		return
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	ready := appWindowsNativeChildReady{PID: os.Getpid(), Port: listener.Addr().(*net.TCPAddr).Port}
+	data, err := json.Marshal(ready)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tempReadyPath := readyPath + ".tmp"
+	if err := os.WriteFile(tempReadyPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tempReadyPath, readyPath); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		connection, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		_ = connection.Close()
+	}
+}
+
+func waitForAppWindowsNativeChild(t *testing.T, runtime *Runtime, sessionID, readyPath string) appWindowsNativeChildReady {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		data, err := os.ReadFile(readyPath)
 		if err == nil {
-			var ready appWindowsNodeReady
+			var ready appWindowsNativeChildReady
 			if json.Unmarshal(data, &ready) == nil && ready.PID > 0 && ready.Port > 0 {
 				if err := waitForAppWindowsPort(ready.Port, true, 2*time.Second); err != nil {
-					t.Fatalf("Node reported ready but its port is unavailable: %v", err)
+					t.Fatalf("native child reported ready but its port is unavailable: %v", err)
 				}
 				return ready
 			}
@@ -84,7 +110,7 @@ func waitForAppWindowsNode(t *testing.T, runtime *Runtime, sessionID, readyPath 
 				status, observeErr := runtime.sessionObserve(map[string]any{
 					"action": "status", "session_id": sessionID, "max_output_bytes": 4096,
 				})
-				t.Fatalf("Node server exited before readiness: status=%#v observe_err=%v", status, observeErr)
+				t.Fatalf("native child exited before readiness: status=%#v observe_err=%v", status, observeErr)
 			default:
 			}
 		}
@@ -93,8 +119,8 @@ func waitForAppWindowsNode(t *testing.T, runtime *Runtime, sessionID, readyPath 
 	status, observeErr := runtime.sessionObserve(map[string]any{
 		"action": "status", "session_id": sessionID, "max_output_bytes": 4096,
 	})
-	t.Fatalf("Node server did not start: status=%#v observe_err=%v", status, observeErr)
-	return appWindowsNodeReady{}
+	t.Fatalf("native child did not start: status=%#v observe_err=%v", status, observeErr)
+	return appWindowsNativeChildReady{}
 }
 
 func waitForAppWindowsPort(port int, wantOpen bool, timeout time.Duration) error {
