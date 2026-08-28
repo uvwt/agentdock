@@ -90,12 +90,16 @@ func TestACPToolsAreFeatureGatedAndUseStrictSchemas(t *testing.T) {
 	if result["count"] != 0 {
 		t.Fatalf("empty ACP session count = %#v", result["count"])
 	}
-	serverInfo, err := runtime.Call(context.Background(), "server_info", nil)
+	contextResult, err := runtime.Call(context.Background(), "agentdock_context", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if serverInfo["acp_enabled"] != true || serverInfo["acp_agent"] != "helper" {
-		t.Fatalf("server ACP metadata = %#v", serverInfo)
+	var contextData capabilityContext
+	if err := remarshal(contextResult, &contextData); err != nil {
+		t.Fatal(err)
+	}
+	if contextData.ACP == nil || !contextData.ACP.Enabled || contextData.ACP.Agent != "helper" {
+		t.Fatalf("context ACP metadata = %#v", contextData.ACP)
 	}
 }
 

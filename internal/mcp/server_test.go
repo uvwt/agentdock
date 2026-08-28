@@ -199,30 +199,31 @@ func TestOfficialSDKServerListsAndCallsAgentDockTools(t *testing.T) {
 		t.Fatalf("Connect() error = %v", err)
 	}
 
-	foundServerInfo := false
+	foundAgentDockContext := false
 	foundFilePublishMetadata := false
 	for tool, err := range session.Tools(t.Context(), nil) {
 		if err != nil {
 			t.Fatalf("Tools() error = %v", err)
 		}
 		switch tool.Name {
-		case "server_info":
-			foundServerInfo = true
+		case "agentdock_context":
+			foundAgentDockContext = true
 		case "file_publish":
 			paths, _ := tool.Meta["openai/fileParams"].([]any)
 			foundFilePublishMetadata = len(paths) == 1 && paths[0] == "file"
 		}
 	}
-	if !foundServerInfo || !foundFilePublishMetadata {
-		t.Fatalf("tool discovery incomplete: server_info=%v file_publish_meta=%v", foundServerInfo, foundFilePublishMetadata)
+	if !foundAgentDockContext || !foundFilePublishMetadata {
+		t.Fatalf("tool discovery incomplete: agentdock_context=%v file_publish_meta=%v", foundAgentDockContext, foundFilePublishMetadata)
 	}
 
-	result, err := session.CallTool(t.Context(), &mcpsdk.CallToolParams{Name: "server_info", Arguments: map[string]any{}})
+	result, err := session.CallTool(t.Context(), &mcpsdk.CallToolParams{Name: "agentdock_context", Arguments: map[string]any{}})
 	if err != nil {
 		t.Fatalf("CallTool() error = %v", err)
 	}
 	structured, ok := result.StructuredContent.(map[string]any)
-	if !ok || structured["server"] != config.ServerName || result.IsError {
+	runtimeInfo, runtimeOK := structured["runtime"].(map[string]any)
+	if !ok || !runtimeOK || runtimeInfo["os"] == "" || runtimeInfo["path_model"] != config.PathModel || result.IsError {
 		t.Fatalf("CallTool() result = %#v", result)
 	}
 

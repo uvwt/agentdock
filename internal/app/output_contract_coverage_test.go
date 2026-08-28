@@ -15,7 +15,6 @@ type outputContractCoverageEntry struct {
 // 这里登记公开 MCP 工具已经被真实 outputSchema 校验覆盖的成功路径。
 // ToolDefinitions 是公开工具定义的单一事实源，tools/list 从同一 registry 派生；新增工具但忘记补契约测试时，门禁会直接失败。
 var outputContractCoverageInventory = map[string]outputContractCoverageEntry{
-	"server_info":              {Variants: []string{"success"}},
 	"agentdock_context":        {Variants: []string{"success"}},
 	"read_file":                {Variants: []string{"success"}},
 	"list_dir":                 {Variants: []string{"success"}},
@@ -61,12 +60,12 @@ func TestOutputContractCoverageGuardDetectsMissingAndInvalidEntries(t *testing.T
 	for name, entry := range outputContractCoverageInventory {
 		inventory[name] = entry
 	}
-	delete(inventory, "server_info")
+	delete(inventory, "agentdock_context")
 	inventory["file_edit"] = outputContractCoverageEntry{Variants: []string{"future_action"}}
 
 	findings := strings.Join(outputContractCoverageFindings(ToolDefinitions(), inventory), "\n")
 	for _, want := range []string{
-		"server_info: missing coverage",
+		"agentdock_context: missing coverage",
 		`file_edit: variant "future_action" is not in action enum`,
 	} {
 		if !strings.Contains(findings, want) {

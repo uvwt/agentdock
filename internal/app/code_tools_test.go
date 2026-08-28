@@ -262,67 +262,6 @@ func writeTinyPNG(t *testing.T, path string) {
 	}
 }
 
-func TestServerInfoRecommendsCompactRecallBootstrap(t *testing.T) {
-	root := t.TempDir()
-	cfg := config.Config{
-		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
-		NexusEndpoint: "http://127.0.0.1:18777",
-	}
-	if err := cfg.Normalize(); err != nil {
-		t.Fatalf("Normalize() error = %v", err)
-	}
-	rt, err := NewRuntime(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	info := rt.serverInfo()
-	args := info["recall_bootstrap_args"].(map[string]any)
-	if _, ok := args["max_bytes"]; ok {
-		t.Fatalf("server_info should not recommend explicit max_bytes because that disables compact bootstrap defaults: %#v", args)
-	}
-	if _, ok := args["project"]; ok {
-		t.Fatalf("server_info should not recommend project because recall_bootstrap hides project selection: %#v", args)
-	}
-}
-
-func TestServerInfoServerURLAloneDoesNotEnableAuth(t *testing.T) {
-	root := t.TempDir()
-	cfg := config.Config{
-		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
-		OAuthServerURL: "https://auth.example.test",
-	}
-	if err := cfg.Normalize(); err != nil {
-		t.Fatalf("Normalize() error = %v", err)
-	}
-	rt, err := NewRuntime(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	info := rt.serverInfo()
-	if info["auth_enabled"] != false {
-		t.Fatalf("auth_enabled = %#v, want false", info["auth_enabled"])
-	}
-}
-
-func TestServerInfoReportsOAuthAuthEnabled(t *testing.T) {
-	root := t.TempDir()
-	cfg := config.Config{
-		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
-		OAuthEnabled: true, OAuthServerURL: "https://auth.example.test",
-	}
-	if err := cfg.Normalize(); err != nil {
-		t.Fatalf("Normalize() error = %v", err)
-	}
-	rt, err := NewRuntime(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	info := rt.serverInfo()
-	if info["auth_enabled"] != true {
-		t.Fatalf("auth_enabled = %#v, want true", info["auth_enabled"])
-	}
-}
-
 func TestExecCommandDoesNotFilterCommandContent(t *testing.T) {
 	rt, _ := newCodeToolsRuntime(t)
 	command := `printf 'shell=%s network=%s\n' "$(printf expansion)" "https://example.test"`

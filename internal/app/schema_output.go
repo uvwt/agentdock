@@ -27,33 +27,6 @@ func OutputSchema(name string) map[string]any {
 	}
 
 	switch name {
-	case "server_info":
-		props["server"] = stringProp("Server identifier.")
-		props["title"] = stringProp("Human-readable server title.")
-		props["version"] = stringProp("Server version.")
-		props["protocol_version"] = stringProp("AgentDock protocol version.")
-		props["os"] = stringProp("Host operating system reported by the Go runtime.")
-		props["arch"] = stringProp("Host architecture reported by the Go runtime.")
-		props["go_version"] = stringProp("Go runtime version.")
-		props["agentdock_home"] = stringProp("AgentDock state and configuration directory.")
-		props["agentdock_default_dir"] = stringProp("AgentDock default working directory.")
-		props["default_cwd"] = stringProp("Default cwd relative to ~/AgentDock when applicable.")
-		props["path_model"] = stringProp("Path resolution model used by host tools.")
-		props["recall_enabled"] = boolProp("Whether NexusDock Recall integration is enabled.")
-		props["nexus_endpoint"] = stringProp("Configured NexusDock endpoint.")
-		props["recall_bootstrap_recommended"] = boolProp("Whether clients should load Recall bootstrap context.")
-		props["recall_bootstrap_tool"] = stringProp("Tool name used to load Recall bootstrap context.")
-		props["recall_bootstrap_args"] = objectProp("Recommended arguments for Recall bootstrap.")
-		props["tools"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
-		props["tool_count"] = intProp("Number of exposed tools.")
-		props["task_state_dir"] = stringProp("Local directory containing persistent recoverable task state.")
-		props["command_session_limits"] = objectProp("Concurrent and retained command-session limits.")
-		props["browser_enabled"] = boolProp("Whether browser tools are enabled by host configuration.")
-		props["acp_enabled"] = boolProp("Whether the built-in ACP runtime is enabled by host configuration.")
-		props["acp_agent"] = stringProp("Configured local ACP agent profile name.")
-		props["trusted_proxy_cidrs"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
-		props["auth_enabled"] = boolProp("Whether MCP authentication is required.")
-		props["endpoint_path"] = stringProp("HTTP path used by the MCP endpoint.")
 	case "read_file":
 		props["path"] = stringProp("Host path or skill:// resource URI. Relative Host paths resolve from ~/AgentDock.")
 		props["content"] = stringProp("Text content slice.")

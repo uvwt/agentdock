@@ -112,7 +112,7 @@ func TestAgentDockContextSchemaIsStructuredEntrypoint(t *testing.T) {
 	if !ok {
 		t.Fatal("agentdock_context output schema properties missing")
 	}
-	for _, name := range []string{"skills", "dynamic_mcp", "acp", "workflow_templates", "recall", "rules", "warnings"} {
+	for _, name := range []string{"runtime", "skills", "dynamic_mcp", "acp", "workflow_templates", "recall", "rules", "warnings"} {
 		if _, ok := outputProps[name]; !ok {
 			t.Fatalf("agentdock_context output schema missing %q: %#v", name, outputProps)
 		}
@@ -121,7 +121,7 @@ func TestAgentDockContextSchemaIsStructuredEntrypoint(t *testing.T) {
 		t.Fatalf("agentdock_context output schema still exposes legacy Markdown context: %#v", outputProps)
 	}
 	required, ok := output["required"].([]string)
-	if !ok || !reflect.DeepEqual(required, []string{"skills", "dynamic_mcp", "workflow_templates", "rules"}) {
+	if !ok || !reflect.DeepEqual(required, []string{"runtime", "skills", "dynamic_mcp", "workflow_templates", "rules"}) {
 		t.Fatalf("agentdock_context output schema required = %#v", output["required"])
 	}
 }

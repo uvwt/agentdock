@@ -48,7 +48,7 @@ func TestRuntimeCallRejectsUnknownStrictArgumentsBeforeHandler(t *testing.T) {
 
 func TestRuntimeCallAllowsUnknownArgumentsForPermissiveNonCanonicalTools(t *testing.T) {
 	runtime := newRuntimeValidationTestRuntime(t)
-	if _, err := runtime.Call(context.Background(), "server_info", map[string]any{"future_field": true}); err != nil {
+	if _, err := runtime.Call(context.Background(), "list_dir", map[string]any{"path": ".", "future_field": true}); err != nil {
 		t.Fatalf("permissive tool rejected unknown field: %v", err)
 	}
 }

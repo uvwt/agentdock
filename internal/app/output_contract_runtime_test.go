@@ -52,19 +52,6 @@ func assertToolResultMatchesOutputSchema(t *testing.T, name string, result Resul
 	return normalized
 }
 
-func TestRuntimeOutputContractServerInfoUsesEmptyTrustedProxyList(t *testing.T) {
-	runtime := newRuntimeValidationTestRuntime(t)
-	result, err := runtime.Call(context.Background(), "server_info", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	normalized := assertToolResultMatchesOutputSchema(t, "server_info", result)
-	trusted, ok := normalized["trusted_proxy_cidrs"].([]any)
-	if !ok || len(trusted) != 0 {
-		t.Fatalf("trusted_proxy_cidrs = %#v, want []", normalized["trusted_proxy_cidrs"])
-	}
-}
-
 func TestRuntimeOutputContractDefaultToolSuccessPaths(t *testing.T) {
 	runtime := newRuntimeValidationTestRuntime(t)
 	root := runtime.Config().AgentDockDefaultDir

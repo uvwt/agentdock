@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
 )
 
@@ -30,6 +32,15 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool) (Re
 			"先根据 Skill 索引的 name 和 description 选择相关 Skill，再用 read_file 读取其 file 指向的 SKILL.md；Skill 只提供流程与约束，实际操作使用命令、文件、浏览器或 MCP 工具。",
 			"AgentDock 自带工具直接调用；动态 MCP 工具先用 mcp_tool_search 查找、mcp_tool_inspect 读取 schema，再用 mcp_tool_call 执行。",
 		},
+	}
+	if !nexusLocalOnly {
+		// runtime 只保留模型操作主机所需的稳定环境事实；Nexus Bridge 已通过 Hello 持有这些节点事实，
+		// 私有 context.local 不重复传输，避免两个来源长期漂移。
+		contextResult.Runtime = &capabilityRuntimeContext{
+			Version: buildinfo.Version, OS: runtime.GOOS, Arch: runtime.GOARCH,
+			AgentDockHome: r.cfg.AgentDockHome, AgentDockDefaultDir: r.cfg.AgentDockDefaultDir,
+			DefaultCWD: r.ws.DefaultDisplay(), PathModel: config.PathModel,
+		}
 	}
 	if skillErr != nil {
 		contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "skills", Message: "Skill 索引暂不可用。"})
@@ -79,6 +90,7 @@ func (r *Runtime) agentDockContextTool(ctx context.Context, _ map[string]any) (R
 }
 
 type capabilityContext struct {
+	Runtime           *capabilityRuntimeContext  `json:"runtime,omitempty"`
 	Skills            []capabilitySkillItem      `json:"skills"`
 	DynamicMCP        []capabilityDynamicMCPItem `json:"dynamic_mcp"`
 	ACP               *capabilityACPContext      `json:"acp,omitempty"`
@@ -86,6 +98,16 @@ type capabilityContext struct {
 	Recall            *capabilityRecallContext   `json:"recall,omitempty"`
 	Rules             []string                   `json:"rules"`
 	Warnings          []capabilityWarning        `json:"warnings,omitempty"`
+}
+
+type capabilityRuntimeContext struct {
+	Version             string `json:"version"`
+	OS                  string `json:"os"`
+	Arch                string `json:"arch"`
+	AgentDockHome       string `json:"agentdock_home"`
+	AgentDockDefaultDir string `json:"agentdock_default_dir"`
+	DefaultCWD          string `json:"default_cwd"`
+	PathModel           string `json:"path_model"`
 }
 
 type capabilitySkillItem struct {

@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"sync"
 	"time"
 
 	acpruntime "github.com/uvwt/agentdock/internal/acp"
-	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envstore"
 	"github.com/uvwt/agentdock/internal/evolution"
@@ -222,51 +220,4 @@ func validateTopLevelArguments(spec ToolSpec, args map[string]any) error {
 		"validation",
 		map[string]any{"tool": spec.Name, "fields": unknown},
 	)
-}
-func (r *Runtime) serverInfo() Result {
-	names := r.ToolNames()
-
-	// server_info 是排障入口：这里按主题分组保留字段，避免新增运行能力时
-	// 把自检输出重新堆成一行难以审查的 map。
-	return Result{
-		"server":           config.ServerName,
-		"title":            "AgentDock",
-		"version":          buildinfo.Version,
-		"protocol_version": config.ProtocolVersion,
-
-		"os":         runtime.GOOS,
-		"arch":       runtime.GOARCH,
-		"go_version": runtime.Version(),
-
-		"agentdock_home":        r.cfg.AgentDockHome,
-		"agentdock_default_dir": r.cfg.AgentDockDefaultDir,
-		"default_cwd":           r.ws.DefaultDisplay(),
-		"path_model":            config.PathModel,
-
-		"recall_enabled":               r.cfg.NexusEndpoint != "",
-		"nexus_endpoint":               r.cfg.NexusEndpoint,
-		"recall_bootstrap_recommended": r.cfg.NexusEndpoint != "",
-		"recall_bootstrap_tool":        "recall_bootstrap",
-		"recall_bootstrap_args":        map[string]any{},
-
-		"task_state_dir": r.tasks.Root(),
-		"command_session_limits": map[string]any{
-			"max_running":  toolcommand.MaxConcurrentSessions,
-			"max_retained": toolcommand.MaxRetainedSessions,
-		},
-
-		"browser_enabled":     r.cfg.BrowserEnabled,
-		"acp_enabled":         r.cfg.ACPEnabled,
-		"acp_agent":           r.cfg.ACPAgentName,
-		"trusted_proxy_cidrs": append([]string{}, r.cfg.TrustedProxyCIDRs...),
-
-		"auth_enabled":  r.authEnabled(),
-		"endpoint_path": "/mcp",
-		"tools":         names,
-		"tool_count":    len(names),
-	}
-}
-
-func (r *Runtime) authEnabled() bool {
-	return r.cfg.AuthRequired()
 }

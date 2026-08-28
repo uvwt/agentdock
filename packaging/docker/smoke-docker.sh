@@ -110,13 +110,16 @@ try:
     print("==> MCP tools/list")
     tools = mcp("tools/list", request_id=2).get("tools", [])
     tool_names = {tool.get("name") for tool in tools if isinstance(tool, dict)}
-    require("server_info" in tool_names, f"server_info not exposed; tools={sorted(tool_names)}")
+    require("agentdock_context" in tool_names, f"agentdock_context not exposed; tools={sorted(tool_names)}")
+    require("server_info" not in tool_names, f"server_info should not be exposed; tools={sorted(tool_names)}")
     print(f"tools/list ok ({len(tool_names)} tools)")
 
-    print("==> MCP tools/call server_info")
-    info = tool_call("server_info", {}, request_id=3)
-    require(info.get("endpoint_path") == "/mcp", f"unexpected endpoint_path: {info}")
-    print(f"server_info ok (auth_enabled={info.get('auth_enabled')})")
+    print("==> MCP tools/call agentdock_context")
+    context = tool_call("agentdock_context", {}, request_id=3)
+    runtime = context.get("runtime", {})
+    require(runtime.get("version") == health.get("version"), f"runtime version does not match healthz: {context}")
+    require(runtime.get("path_model"), f"runtime path_model missing: {context}")
+    print(f"agentdock_context ok (os={runtime.get('os')}, arch={runtime.get('arch')})")
 
     if verify_browser:
         require("browser_session" in tool_names and "browser_snapshot" in tool_names, f"browser tools not exposed; tools={sorted(tool_names)}")

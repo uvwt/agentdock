@@ -52,6 +52,12 @@ func TestAgentDockContextToolReturnsStructuredRuntimeIndex(t *testing.T) {
 	if got.DynamicMCP == nil || got.WorkflowTemplates == nil || got.Rules == nil {
 		t.Fatalf("required structured context fields must be arrays: %#v", got)
 	}
+	if got.Runtime == nil || got.Runtime.Version == "" || got.Runtime.OS == "" || got.Runtime.Arch == "" || got.Runtime.PathModel != config.PathModel {
+		t.Fatalf("runtime context is incomplete: %#v", got.Runtime)
+	}
+	if got.Runtime.AgentDockHome != cfg.AgentDockHome || got.Runtime.AgentDockDefaultDir != cfg.AgentDockDefaultDir || got.Runtime.DefaultCWD != "." {
+		t.Fatalf("runtime paths = %#v", got.Runtime)
+	}
 	rules := strings.Join(got.Rules, "\n")
 	for _, want := range []string{"AgentDock 自带工具直接调用", "task_manage checkpoint"} {
 		if !strings.Contains(rules, want) {
@@ -245,6 +251,9 @@ func TestAgentDockLocalContextSkipsSharedNexusLookups(t *testing.T) {
 	}
 	if contextResult.WorkflowTemplates == nil || len(contextResult.WorkflowTemplates) != 0 || contextResult.Recall != nil {
 		t.Fatalf("local-only context leaked shared Nexus data: %#v", contextResult)
+	}
+	if contextResult.Runtime != nil {
+		t.Fatalf("local-only context duplicated Bridge Hello runtime facts: %#v", contextResult.Runtime)
 	}
 	rules := strings.Join(contextResult.Rules, "\n")
 	for _, sharedRule := range []string{"workflow_template_manage", "source_template_ids", "recall_search", "recall_read", "private_note_manage"} {
