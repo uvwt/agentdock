@@ -29,10 +29,25 @@ jobs:
 
       - name: Format check
         shell: bash
-        run: test -z "$(gofmt -l ./cmd ./internal)"
+        run: |
+          unformatted="$(git ls-files '*.go' | while IFS= read -r file; do gofmt -l "$file"; done)"
+          if [ -n "$unformatted" ]; then
+            printf 'Unformatted Go files:\n%s\n' "$unformatted"
+            exit 1
+          fi
 
       - name: Test
         run: go test ./...
+
+      - name: Check Windows test tree cleanliness
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          untracked="$(git ls-files --others --exclude-standard)"
+          if [ -n "$untracked" ]; then
+            printf 'Unexpected files created by tests:\n%s\n' "$untracked"
+            exit 1
+          fi
 
       - name: Race
         if: runner.os == 'Linux'

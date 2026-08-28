@@ -379,7 +379,7 @@ func (svc *Service) commandEnv(skillName string, extra map[string]any) ([]string
 		return nil, err
 	}
 	for key, value := range overrides {
-		env[key] = value
+		setPlatformCommandEnv(env, key, value)
 	}
 	return formatCommandEnv(env), nil
 }
@@ -390,18 +390,20 @@ func (svc *Service) internalCommandEnv(extra map[string]string) ([]string, error
 		return nil, err
 	}
 	for key, value := range extra {
-		env[key] = value
+		setPlatformCommandEnv(env, key, value)
 	}
 	return formatCommandEnv(env), nil
 }
 
 func (svc *Service) baseCommandEnv() (map[string]string, error) {
 	env := map[string]string{}
-	for _, key := range []string{"PATH", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP", "WSLENV", "PROGRAMFILES", "PROGRAMW6432"} {
+	keys := append([]string{"PATH", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR", "TEMP", "TMP"}, platformCommandEnvKeys()...)
+	for _, key := range keys {
 		if value := os.Getenv(key); value != "" {
 			env[key] = value
 		}
 	}
+	repairPlatformCommandEnv(env)
 	env["AGENTDOCK_HOME"] = svc.config().AgentDockHome
 	env["AGENTDOCK_DEFAULT_DIR"] = svc.config().AgentDockDefaultDir
 	hostHome := ""
@@ -414,8 +416,10 @@ func (svc *Service) baseCommandEnv() (map[string]string, error) {
 	if commandPath := platformCommandPath(env["PATH"], hostHome); commandPath != "" {
 		env["PATH"] = commandPath
 	}
-	env["TMPDIR"] = filepath.Join(svc.config().AgentDockHome, "tmp")
-	if err := os.MkdirAll(env["TMPDIR"], 0o755); err != nil {
+	commandTempDir := filepath.Join(svc.config().AgentDockHome, "tmp")
+	env["TMPDIR"] = commandTempDir
+	configurePlatformCommandTempEnv(env, commandTempDir)
+	if err := os.MkdirAll(commandTempDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create command temp directory: %w", err)
 	}
 	return env, nil

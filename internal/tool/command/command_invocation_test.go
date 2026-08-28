@@ -32,12 +32,14 @@ func TestBuildWSLCommandArgsUsesDefaultDistributionWithoutEmptyFlags(t *testing.
 
 func TestBuildWSLProcessEnvForwardsValuesWithoutPuttingThemInArgs(t *testing.T) {
 	env := buildWSLProcessEnv(
-		[]string{"PATH=C:\\Windows\\System32", "WSLENV=EXISTING/p", "existing=old"},
+		[]string{"PATH=C:\\Windows\\System32", "PROGRAMDATA=C:\\ProgramData", "SYSTEMDRIVE=C:", "WSLENV=EXISTING/p", "existing=old"},
 		map[string]string{"TOKEN": "forwarded value", "EXISTING": "new"},
 	)
 	want := []string{
 		"EXISTING=new",
 		"PATH=C:\\Windows\\System32",
+		"PROGRAMDATA=C:\\ProgramData",
+		"SYSTEMDRIVE=C:",
 		"TOKEN=forwarded value",
 		"WSLENV=EXISTING/p:TOKEN",
 	}
@@ -52,6 +54,17 @@ func TestBuildWSLProcessEnvHonorsExplicitWSLEnv(t *testing.T) {
 		map[string]string{"WSLENV": "CUSTOM/u", "TOKEN": "forwarded"},
 	)
 	want := []string{"CUSTOM=base", "TOKEN=forwarded", "WSLENV=CUSTOM/u:TOKEN"}
+	if !reflect.DeepEqual(env, want) {
+		t.Fatalf("buildWSLProcessEnv() = %#v, want %#v", env, want)
+	}
+}
+
+func TestBuildWSLProcessEnvPreservesExplicitHostWindowsForwarding(t *testing.T) {
+	env := buildWSLProcessEnv(
+		[]string{"PROGRAMDATA=C:\\ProgramData", "WSLENV=PROGRAMDATA/p"},
+		nil,
+	)
+	want := []string{"PROGRAMDATA=C:\\ProgramData", "WSLENV=PROGRAMDATA/p"}
 	if !reflect.DeepEqual(env, want) {
 		t.Fatalf("buildWSLProcessEnv() = %#v, want %#v", env, want)
 	}

@@ -18,12 +18,18 @@ func TestCoreSkillBundleNormalizesTextLineEndings(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		if err := exec.Command(path, "--version").Run(); err == nil {
+		probe := exec.Command(path, "--version")
+		probe.Dir = t.TempDir()
+		output, err := probe.CombinedOutput()
+		if err == nil && strings.Contains(string(output), "Python 3") {
 			python = path
 			break
 		}
 	}
 	if python == "" {
+		if os.Getenv("CI") != "" {
+			t.Fatal("Python 3 is required to test the core Skill bundle builder in CI")
+		}
 		t.Skip("Python is required to test the core Skill bundle builder")
 	}
 	script, err := filepath.Abs("../../packaging/build-core-skill-bundle.py")
@@ -51,6 +57,7 @@ func TestCoreSkillBundleNormalizesTextLineEndings(t *testing.T) {
 		}
 		output := filepath.Join(t.TempDir(), "bundle")
 		command := exec.Command(python, script, "--repo-root", repoRoot, "--output", output)
+		command.Dir = t.TempDir()
 		if data, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("build core Skill bundle: %v\n%s", err, data)
 		}
