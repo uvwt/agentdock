@@ -244,7 +244,15 @@ func (svc *Service) killSession(args map[string]any) (Result, error) {
 		return svc.consumeCompletedSession(s, commandOutputLimit(args)), nil
 	default:
 	}
-	s.Kill()
+	_, killErr := s.Kill()
+	if killErr != nil {
+		return nil, toolErrorDetails(
+			"SESSION_KILL_FAILED",
+			"failed to terminate the session process tree",
+			"runtime",
+			map[string]any{"session_id": s.ID, "reason": killErr.Error()},
+		)
+	}
 	if !waitForSessionCompletion(s, sessionKillWait) {
 		return nil, toolErrorDetails(
 			"SESSION_KILL_TIMEOUT",
@@ -266,6 +274,7 @@ func (svc *Service) KillAll(args map[string]any) (Result, error) {
 	sessions := svc.sessions.List()
 	running := make([]*session.Session, 0, len(sessions))
 	items := make([]map[string]any, 0, len(sessions))
+	killFailures := make([]map[string]any, 0)
 	for _, s := range sessions {
 		select {
 		case <-s.Done:
@@ -274,15 +283,30 @@ func (svc *Service) KillAll(args map[string]any) (Result, error) {
 			svc.sessions.Delete(s.ID)
 			items = append(items, map[string]any{"session_id": s.ID, "status": summary.Status})
 		default:
-			s.Kill()
+			_, killErr := s.Kill()
+			if killErr != nil {
+				killFailures = append(killFailures, map[string]any{"session_id": s.ID, "reason": killErr.Error()})
+			}
 			running = append(running, s)
 		}
 	}
-
 	completed, timedOut := waitForSessionsCompletion(running, sessionKillWait)
 	for _, s := range completed {
 		svc.sessions.Delete(s.ID)
 		items = append(items, map[string]any{"session_id": s.ID, "status": "killed"})
+	}
+	if len(killFailures) > 0 {
+		details := map[string]any{"sessions": killFailures}
+		if len(timedOut) > 0 {
+			details["timed_out_session_ids"] = timedOut
+			details["wait_ms"] = sessionKillWait.Milliseconds()
+		}
+		return nil, toolErrorDetails(
+			"SESSION_KILL_FAILED",
+			"failed to terminate one or more session process trees",
+			"runtime",
+			details,
+		)
 	}
 	if len(timedOut) > 0 {
 		return nil, toolErrorDetails(

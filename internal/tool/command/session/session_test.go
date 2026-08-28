@@ -19,7 +19,7 @@ func TestKillSkipsCompletedSession(t *testing.T) {
 		Cancel:    func() { canceled = true },
 		completed: true,
 	}
-	if killed := s.Kill(); killed {
+	if killed, err := s.Kill(); killed || err != nil {
 		t.Fatal("Kill() reported a signal for a completed session")
 	}
 	if canceled {
