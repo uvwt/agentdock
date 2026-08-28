@@ -215,14 +215,22 @@ func terminateProcessHandles(processes []processHandle) error {
 		if state == windows.WAIT_OBJECT_0 {
 			continue
 		}
-		if err := windows.TerminateProcess(process.handle, 1); err != nil {
-			result = errors.Join(result, fmt.Errorf("terminate descendant process %d: %w", process.pid, err))
+
+		terminateErr := windows.TerminateProcess(process.handle, 1)
+
+		// TerminateJobObject 可能已经开始结束同一个后代。这个竞态窗口里，
+		// 上面的零等待仍可能看到进程存活，而 TerminateProcess 会返回 Access Denied。
+		// 不按错误码猜测结果，只认预先固定的同一个 process handle 是否最终退出。
+		state, waitErr := windows.WaitForSingleObject(process.handle, 2000)
+		if state == windows.WAIT_OBJECT_0 && waitErr == nil {
 			continue
 		}
-		state, err = windows.WaitForSingleObject(process.handle, 2000)
-		if err != nil {
-			result = errors.Join(result, fmt.Errorf("wait for descendant process %d: %w", process.pid, err))
-		} else if state != windows.WAIT_OBJECT_0 {
+		if terminateErr != nil {
+			result = errors.Join(result, fmt.Errorf("terminate descendant process %d: %w", process.pid, terminateErr))
+		}
+		if waitErr != nil {
+			result = errors.Join(result, fmt.Errorf("wait for descendant process %d: %w", process.pid, waitErr))
+		} else if state != windows.WAIT_OBJECT_0 && terminateErr == nil {
 			result = errors.Join(result, fmt.Errorf("descendant process %d did not stop", process.pid))
 		}
 	}

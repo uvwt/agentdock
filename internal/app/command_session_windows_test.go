@@ -25,9 +25,9 @@ func TestWindowsSessionActKillTerminatesNodeServer(t *testing.T) {
 	port := reserveAppWindowsPort(t)
 	pidPath := filepath.Join(root, "node-session-kill.pid")
 	nodeScript := fmt.Sprintf(
-		"const fs=require('fs'); fs.writeFileSync('%s',String(process.pid)); require('http').createServer((req,res)=>res.end('ok')).listen(%d,'127.0.0.1')",
-		strings.ReplaceAll(filepath.ToSlash(pidPath), "'", "\\'"),
+		"const fs=require('fs'); const server=require('http').createServer((req,res)=>res.end('ok')); server.listen(%d,'127.0.0.1',()=>fs.writeFileSync('%s',String(process.pid)))",
 		port,
+		strings.ReplaceAll(filepath.ToSlash(pidPath), "'", "\\'"),
 	)
 	command := fmt.Sprintf("& '%s' -e \"%s\"", strings.ReplaceAll(nodePath, "'", "''"), nodeScript)
 	started, err := runtime.execCommand(context.Background(), map[string]any{
@@ -37,7 +37,7 @@ func TestWindowsSessionActKillTerminatesNodeServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessionID, _ := started["session_id"].(string)
-	nodePID := waitForAppWindowsNode(t, pidPath, port)
+	nodePID := waitForAppWindowsNode(t, runtime, sessionID, pidPath, port)
 	defer func() {
 		if process, findErr := os.FindProcess(nodePID); findErr == nil {
 			_ = process.Kill()
@@ -66,9 +66,9 @@ func reserveAppWindowsPort(t *testing.T) int {
 	return listener.Addr().(*net.TCPAddr).Port
 }
 
-func waitForAppWindowsNode(t *testing.T, pidPath string, port int) int {
+func waitForAppWindowsNode(t *testing.T, runtime *Runtime, sessionID, pidPath string, port int) int {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		data, err := os.ReadFile(pidPath)
 		if err == nil && waitForAppWindowsPort(port, true, 100*time.Millisecond) == nil {
@@ -79,7 +79,10 @@ func waitForAppWindowsNode(t *testing.T, pidPath string, port int) int {
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	t.Fatal("Node server did not start")
+	status, observeErr := runtime.sessionObserve(map[string]any{
+		"action": "status", "session_id": sessionID, "max_output_bytes": 4096,
+	})
+	t.Fatalf("Node server did not start: status=%#v observe_err=%v", status, observeErr)
 	return 0
 }
 
