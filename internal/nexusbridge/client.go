@@ -24,6 +24,11 @@ import (
 
 const maxMessageBytes = 8 << 20
 
+const (
+	artifactReadCapability = "bridge.artifact.read.v1"
+	operationArtifactRead  = "artifact.read"
+)
+
 type Client struct {
 	identity Identity
 	server   *mcp.Server
@@ -82,6 +87,7 @@ func (c *Client) connect(ctx context.Context) error {
 	socket.SetReadLimit(maxMessageBytes)
 
 	tools := c.server.ToolNames()
+	capabilities := append(append([]string(nil), tools...), artifactReadCapability)
 	descriptors, err := bridgeToolDescriptors(c.server.ToolDescriptors())
 	if err != nil {
 		return err
@@ -90,7 +96,7 @@ func (c *Client) connect(ctx context.Context) error {
 		Type: protocol.MessageNodeHello, ProtocolVersion: protocol.ConnectionProtocolVersion,
 		Hello: &protocol.Hello{
 			DeviceID: c.identity.DeviceID, Version: buildinfo.Version, ProtocolVersion: protocol.ConnectionProtocolVersion,
-			OS: runtime.GOOS, Arch: runtime.GOARCH, Capabilities: tools, ToolContractHash: c.server.ToolContractHash(),
+			OS: runtime.GOOS, Arch: runtime.GOARCH, Capabilities: capabilities, ToolContractHash: c.server.ToolContractHash(),
 			Tools: descriptors, UIResources: c.server.UIResources(),
 		},
 	}); err != nil {
@@ -170,6 +176,17 @@ func (c *Client) invoke(parent context.Context, socket *websocket.Conn, incoming
 			err = fmt.Errorf("解析 MCP App resource 请求: %w", decodeErr)
 		} else {
 			result, err = c.server.ReadAppResource(request.URI)
+		}
+	case operationArtifactRead:
+		var request struct {
+			ArtifactID string `json:"artifact_id"`
+			Offset     int64  `json:"offset"`
+			MaxBytes   int    `json:"max_bytes"`
+		}
+		if decodeErr := json.Unmarshal(incoming.Arguments, &request); decodeErr != nil {
+			err = fmt.Errorf("解析 Artifact 读取请求: %w", decodeErr)
+		} else {
+			result, err = c.server.ReadArtifactChunk(request.ArtifactID, request.Offset, request.MaxBytes)
 		}
 	default:
 		err = fmt.Errorf("不支持的 NexusDock 节点操作: %s", incoming.Operation)

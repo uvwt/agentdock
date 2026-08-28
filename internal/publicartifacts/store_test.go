@@ -83,6 +83,56 @@ func TestPublishWithoutBaseURLReturnsArtifactReferenceAndCanRead(t *testing.T) {
 	}
 }
 
+func TestReadChunkStreamsVerifiedArtifact(t *testing.T) {
+	store := New(t.TempDir(), "", 0)
+	data := bytes.Repeat([]byte("chunked-artifact-"), 70000)
+	result, err := store.PublishBytes(PublishBytesRequest{Filename: "report.bin", Data: data})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	metadata, empty, eof, err := store.ReadChunk(result.ArtifactID, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Size != int64(len(data)) || len(empty) != 0 || eof {
+		t.Fatalf("metadata read = size:%d bytes:%d eof:%t", metadata.Size, len(empty), eof)
+	}
+
+	var restored []byte
+	for offset := int64(0); ; {
+		meta, chunk, chunkEOF, readErr := store.ReadChunk(result.ArtifactID, offset, MaxBridgeChunkBytes)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if meta.SHA256 != result.SHA256 || len(chunk) > MaxBridgeChunkBytes {
+			t.Fatalf("unexpected chunk metadata or size: %#v bytes=%d", meta, len(chunk))
+		}
+		restored = append(restored, chunk...)
+		offset += int64(len(chunk))
+		if chunkEOF {
+			break
+		}
+	}
+	if !bytes.Equal(restored, data) {
+		t.Fatal("chunked Artifact content changed")
+	}
+}
+
+func TestReadChunkRejectsTamperedArtifactBeforeFirstChunk(t *testing.T) {
+	store := New(t.TempDir(), "", 0)
+	result, err := store.PublishBytes(PublishBytesRequest{Filename: "report.txt", Data: []byte("original")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(store.Root, result.ArtifactID, "payload"), []byte("tampered"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := store.ReadChunk(result.ArtifactID, 0, MaxBridgeChunkBytes); err == nil || !strings.Contains(err.Error(), "checksum") {
+		t.Fatalf("tampered Artifact error = %v", err)
+	}
+}
+
 func TestPublishDirectoryCreatesTarGzSnapshot(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "bundle")
