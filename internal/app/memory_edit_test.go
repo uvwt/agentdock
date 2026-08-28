@@ -43,10 +43,15 @@ func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func
 			query := strings.ToLower(fmt.Sprint(payload["query"]))
 			prefix, _ := payload["prefix"].(string)
 			prefix = strings.TrimSpace(prefix)
+			excludePrefix, _ := payload["exclude_prefix"].(string)
+			excludePrefix = strings.TrimSpace(excludePrefix)
 			terms := strings.Fields(query)
 			results := []map[string]any{}
 			for p, content := range store {
 				if prefix != "" && !strings.HasPrefix(p, prefix) {
+					continue
+				}
+				if excludePrefix != "" && (p == excludePrefix || strings.HasPrefix(p, excludePrefix+"/")) {
 					continue
 				}
 				haystack := strings.ToLower(p + "\n" + content)

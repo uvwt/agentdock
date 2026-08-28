@@ -20,29 +20,30 @@ func (svc *Service) Bootstrap(ctx context.Context, args map[string]any) (Result,
 
 func (svc *Service) Search(ctx context.Context, args map[string]any) (Result, error) {
 	kind := strings.ToLower(strings.TrimSpace(stringArg(args, "kind", "all")))
+	prefix, excludePrefix := "", ""
+	resultKind := kind
 	switch kind {
 	case "card", "cards":
-		result, err := svc.memorySearch(ctx, recallSearchArgs(args, recallCardsPrefix))
-		if err != nil {
-			return nil, err
-		}
-		decorateRecallResult(result)
-		decorateRecallSearchResults(result, svc.config().NexusEndpoint)
-		relabelRecallWriteResult(result)
-		result["recall_kind"] = "card"
-		return result, nil
-	case "", "all", "markdown":
-		result, err := svc.memorySearch(ctx, recallSearchArgs(args, ""))
-		if err != nil {
-			return nil, err
-		}
-		decorateRecallResult(result)
-		decorateRecallSearchResults(result, svc.config().NexusEndpoint)
-		result["recall_kind"] = kind
-		return result, nil
+		prefix = recallCardsPrefix
+		resultKind = "card"
+	case "markdown":
+		excludePrefix = recallCardsPrefix
+	case "", "all":
 	default:
 		return nil, toolErrorDetails("INVALID_RECALL_KIND", "unsupported recall_search kind", "validation", map[string]any{"kind": kind})
 	}
+
+	result, err := svc.memorySearch(ctx, recallSearchArgs(args, prefix, excludePrefix))
+	if err != nil {
+		return nil, err
+	}
+	decorateRecallResult(result)
+	decorateRecallSearchResults(result, svc.config().NexusEndpoint)
+	if resultKind == "card" {
+		relabelRecallWriteResult(result)
+	}
+	result["recall_kind"] = resultKind
+	return result, nil
 }
 
 func (svc *Service) Read(ctx context.Context, args map[string]any) (Result, error) {
@@ -256,13 +257,16 @@ func decorateRecallSearchResults(result Result, endpoint string) {
 	}
 }
 
-func recallSearchArgs(args map[string]any, prefix string) map[string]any {
+func recallSearchArgs(args map[string]any, prefix, excludePrefix string) map[string]any {
 	out := map[string]any{"query": stringArg(args, "query", "")}
 	if maxResults := intArg(args, "max_results", 0); maxResults > 0 {
 		out["max_results"] = maxResults
 	}
 	if prefix != "" {
 		out["prefix"] = prefix
+	}
+	if excludePrefix != "" {
+		out["exclude_prefix"] = excludePrefix
 	}
 	return out
 }

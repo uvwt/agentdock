@@ -477,10 +477,13 @@ func TestRecallSearchSchemaHidesInternalRoutingFields(t *testing.T) {
 	if !ok {
 		t.Fatal("recall_search input schema properties missing")
 	}
-	for _, name := range []string{"prefix", "scope", "include_search_results", "note_scope"} {
+	for _, name := range []string{"prefix", "exclude_prefix", "mode", "scope", "include_search_results", "note_scope"} {
 		if _, ok := inputProps[name]; ok {
 			t.Fatalf("recall_search input schema should hide internal field %q", name)
 		}
+	}
+	if len(inputProps) != 3 || inputProps["query"] == nil || inputProps["kind"] == nil || inputProps["max_results"] == nil {
+		t.Fatalf("recall_search model-facing inputs drifted: %#v", inputProps)
 	}
 	outputProps, ok := outputSchema("recall_search")["properties"].(map[string]any)
 	if !ok {

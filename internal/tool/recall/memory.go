@@ -144,6 +144,9 @@ func (svc *Service) memorySearch(ctx context.Context, args map[string]any) (Resu
 	if prefix := strings.TrimSpace(stringArg(args, "prefix", "")); prefix != "" {
 		payload["prefix"] = BackendPath(prefix)
 	}
+	if excludePrefix := strings.TrimSpace(stringArg(args, "exclude_prefix", "")); excludePrefix != "" {
+		payload["exclude_prefix"] = BackendPath(excludePrefix)
+	}
 	if maxResults := intArg(args, "max_results", 0); maxResults > 0 {
 		payload["max_results"] = maxResults
 	}
