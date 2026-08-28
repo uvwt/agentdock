@@ -3,6 +3,7 @@
 package process
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 	"syscall"
@@ -38,7 +39,13 @@ func (c *Controller) Terminate() error {
 	if c == nil || c.pid <= 0 {
 		return nil
 	}
-	return syscall.Kill(-c.pid, syscall.SIGKILL)
+	err := syscall.Kill(-c.pid, syscall.SIGKILL)
+	// 进程可能在终止请求到达前已经自然退出；如果整个进程组已不存在，
+	// shutdown 的目标已经达成，不应把 ESRCH 当成终止失败。
+	if errors.Is(err, syscall.ESRCH) {
+		return nil
+	}
+	return err
 }
 
 // Close releases platform resources. Unix process groups do not own handles.

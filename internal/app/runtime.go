@@ -129,10 +129,21 @@ func (r *Runtime) Close() error {
 		var closeErrors []error
 		r.lifecycleMu.Lock()
 		r.closing = true
-		if r.commandCancel != nil {
-			r.commandCancel()
-		}
+		commandCancel := r.commandCancel
 		r.lifecycleMu.Unlock()
+
+		// 先禁止新的 command reservation，并等已经拿到 reservation 的启动流程离开
+		// cmd.Start/平台进程控制器建立窗口。此处不能持有 lifecycleMu 等待，否则启动路径
+		// 一旦需要读取 Runtime 生命周期状态就会形成锁顺序死锁。
+		if r.command != nil {
+			r.command.BeginClose()
+			if err := r.command.WaitForStarts(); err != nil {
+				closeErrors = append(closeErrors, err)
+			}
+		}
+		if commandCancel != nil {
+			commandCancel()
+		}
 		if r.acp != nil {
 			if err := r.acp.Close(); err != nil {
 				closeErrors = append(closeErrors, fmt.Errorf("close ACP runtime: %w", err))

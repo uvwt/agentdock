@@ -4,16 +4,21 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
+
+type appWindowsNodeReady struct {
+	PID  int `json:"pid"`
+	Port int `json:"port"`
+}
 
 func TestWindowsSessionActKillTerminatesNodeServer(t *testing.T) {
 	runtime, root := newCodeToolsRuntime(t)
@@ -22,12 +27,13 @@ func TestWindowsSessionActKillTerminatesNodeServer(t *testing.T) {
 	if err != nil {
 		t.Skip("node.exe is not installed")
 	}
-	port := reserveAppWindowsPort(t)
-	pidPath := filepath.Join(root, "node-session-kill.pid")
+	readyPath := filepath.Join(root, "node-session-kill.ready.json")
+	tempReadyPath := readyPath + ".tmp"
 	nodeScript := fmt.Sprintf(
-		"const fs=require('fs'); const server=require('http').createServer((req,res)=>res.end('ok')); server.listen(%d,'127.0.0.1',()=>fs.writeFileSync('%s',String(process.pid)))",
-		port,
-		strings.ReplaceAll(filepath.ToSlash(pidPath), "'", "\\'"),
+		"const fs=require('fs'); const server=require('http').createServer((req,res)=>res.end('ok')); server.listen(0,'127.0.0.1',()=>{const address=server.address(); fs.writeFileSync('%s',JSON.stringify({pid:process.pid,port:address.port})); fs.renameSync('%s','%s')})",
+		strings.ReplaceAll(filepath.ToSlash(tempReadyPath), "'", "\\'"),
+		strings.ReplaceAll(filepath.ToSlash(tempReadyPath), "'", "\\'"),
+		strings.ReplaceAll(filepath.ToSlash(readyPath), "'", "\\'"),
 	)
 	command := fmt.Sprintf("& '%s' -e \"%s\"", strings.ReplaceAll(nodePath, "'", "''"), nodeScript)
 	started, err := runtime.execCommand(context.Background(), map[string]any{
@@ -37,7 +43,9 @@ func TestWindowsSessionActKillTerminatesNodeServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessionID, _ := started["session_id"].(string)
-	nodePID := waitForAppWindowsNode(t, runtime, sessionID, pidPath, port)
+	ready := waitForAppWindowsNode(t, runtime, sessionID, readyPath)
+	nodePID := ready.PID
+	port := ready.Port
 	defer func() {
 		if process, findErr := os.FindProcess(nodePID); findErr == nil {
 			_ = process.Kill()
@@ -56,25 +64,28 @@ func TestWindowsSessionActKillTerminatesNodeServer(t *testing.T) {
 	}
 }
 
-func reserveAppWindowsPort(t *testing.T) int {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	return listener.Addr().(*net.TCPAddr).Port
-}
-
-func waitForAppWindowsNode(t *testing.T, runtime *Runtime, sessionID, pidPath string, port int) int {
+func waitForAppWindowsNode(t *testing.T, runtime *Runtime, sessionID, readyPath string) appWindowsNodeReady {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		data, err := os.ReadFile(pidPath)
-		if err == nil && waitForAppWindowsPort(port, true, 100*time.Millisecond) == nil {
-			pid, parseErr := strconv.Atoi(strings.TrimSpace(string(data)))
-			if parseErr == nil {
-				return pid
+		data, err := os.ReadFile(readyPath)
+		if err == nil {
+			var ready appWindowsNodeReady
+			if json.Unmarshal(data, &ready) == nil && ready.PID > 0 && ready.Port > 0 {
+				if err := waitForAppWindowsPort(ready.Port, true, 2*time.Second); err != nil {
+					t.Fatalf("Node reported ready but its port is unavailable: %v", err)
+				}
+				return ready
+			}
+		}
+		if stored, ok := runtime.command.Store().Get(sessionID); ok {
+			select {
+			case <-stored.Done:
+				status, observeErr := runtime.sessionObserve(map[string]any{
+					"action": "status", "session_id": sessionID, "max_output_bytes": 4096,
+				})
+				t.Fatalf("Node server exited before readiness: status=%#v observe_err=%v", status, observeErr)
+			default:
 			}
 		}
 		time.Sleep(25 * time.Millisecond)
@@ -83,7 +94,7 @@ func waitForAppWindowsNode(t *testing.T, runtime *Runtime, sessionID, pidPath st
 		"action": "status", "session_id": sessionID, "max_output_bytes": 4096,
 	})
 	t.Fatalf("Node server did not start: status=%#v observe_err=%v", status, observeErr)
-	return 0
+	return appWindowsNodeReady{}
 }
 
 func waitForAppWindowsPort(port int, wantOpen bool, timeout time.Duration) error {

@@ -22,6 +22,11 @@ type standardRunner struct {
 
 func startStandardRunner(cmd *exec.Cmd, stdout, stderr io.Writer) (*standardRunner, error) {
 	processcontrol.Configure(cmd)
+	// command runner 统一拥有进程树取消权。CommandContext 默认只杀直接子进程，
+	// 会和这里的进程组/Job Object 终止并发竞争；保留 ctx 的启动前检查，
+	// 但关闭 os/exec 自带的直接子进程 Cancel，运行期取消由 Session watcher 处理。
+	cmd.Cancel = nil
+	cmd.WaitDelay = 0
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
