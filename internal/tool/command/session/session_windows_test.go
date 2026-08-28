@@ -86,7 +86,7 @@ func TestWindowsKillTerminatesPowerShellNativeChildTree(t *testing.T) {
 	}
 	root := t.TempDir()
 	readyPath := filepath.Join(root, "native-child.ready.json")
-	command := fmt.Sprintf("& '%s' -test.run '^TestWindowsNativeChildHelper$'", strings.ReplaceAll(testBinary, "'", "''"))
+	command := fmt.Sprintf("& '%s' '-test.run=^TestWindowsNativeChildHelper$'", strings.ReplaceAll(testBinary, "'", "''"))
 	childEnv := append(os.Environ(), windowsNativeChildReadyEnv+"="+readyPath)
 
 	s, _, err := Start(context.Background(), command, root, childEnv, time.Minute, nil)

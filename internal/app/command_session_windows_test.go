@@ -29,7 +29,7 @@ func TestWindowsSessionActKillTerminatesNativeChildTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	readyPath := filepath.Join(root, "native-child.ready.json")
-	command := fmt.Sprintf("& '%s' -test.run '^TestWindowsSessionNativeChildHelper$'", strings.ReplaceAll(testBinary, "'", "''"))
+	command := fmt.Sprintf("& '%s' '-test.run=^TestWindowsSessionNativeChildHelper$'", strings.ReplaceAll(testBinary, "'", "''"))
 	started, err := runtime.execCommand(context.Background(), map[string]any{
 		"cmd": command, "execution_mode": "async", "timeout_ms": 60000,
 		"env": map[string]any{appWindowsNativeChildReadyEnv: readyPath},
