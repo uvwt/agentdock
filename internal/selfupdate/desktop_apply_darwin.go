@@ -182,15 +182,14 @@ func (update *macOSDesktopUpdate) Finish(ctx context.Context, outcome desktopUpd
 	if err := writeMacOSDesktopUpdateResult(outcome); err != nil {
 		return err
 	}
-	executable := filepath.Join(update.targetPath, "Contents", "MacOS", "AgentDock")
-	command := exec.Command(executable, "--background")
+	// App Bundle 刚被原子替换后必须经 LaunchServices 启动。直接执行 Contents/MacOS/AgentDock
+	// 虽然能拉起 GUI，但系统可能还没有登记新版 Bundle；此时 GUI 内重新注册的
+	// SMAppService 会保留无法解析 BundleProgram 的 BTM 记录，Core/Tunnel 随后以 EX_CONFIG 退出。
+	command := exec.CommandContext(ctx, "/usr/bin/open", "-g", update.targetPath, "--args", "--background")
 	command.Env = os.Environ()
-	if err := command.Start(); err != nil {
-		return fmt.Errorf("启动 macOS 控制面板失败: %w", err)
+	if output, err := command.CombinedOutput(); err != nil {
+		return fmt.Errorf("通过 LaunchServices 启动 macOS 控制面板失败: %w: %s", err, strings.TrimSpace(string(output)))
 	}
-	// updater 可能在回滚路径主动终止这个子进程。保持 Wait 可以及时回收退出状态，
-	// 避免 kill(pid, 0) 把僵尸进程继续判断成“未退出”。
-	go func() { _ = command.Wait() }()
 
 	return waitForMacOSDesktopHandoff(ctx, update.targetPath, outcome.TargetVersion, outcome.OK, 60*time.Second)
 }

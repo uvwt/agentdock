@@ -251,7 +251,8 @@ func TestWriteMacOSDesktopUpdateResultIsPrivateAndExplicit(t *testing.T) {
 func writeHandoffTestMacOSApp(t *testing.T, root string) string {
 	t.Helper()
 	appPath := filepath.Join(root, "AgentDock.app")
-	macOSDir := filepath.Join(appPath, "Contents", "MacOS")
+	contents := filepath.Join(appPath, "Contents")
+	macOSDir := filepath.Join(contents, "MacOS")
 	if err := os.MkdirAll(macOSDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -262,6 +263,21 @@ func writeHandoffTestMacOSApp(t *testing.T, root string) string {
 	}
 	executable := filepath.Join(macOSDir, "AgentDock")
 	runTestCommand(t, "/usr/bin/xcrun", "clang", "-Os", source, "-o", executable)
+	plist := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>AgentDock</string>
+<key>CFBundleIdentifier</key><string>com.uvwt.agentdock.handoff-test</string>
+<key>CFBundleName</key><string>AgentDock</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>0.7.1</string>
+<key>CFBundleVersion</key><string>0.7.1</string>
+</dict></plist>
+`
+	if err := os.WriteFile(filepath.Join(contents, "Info.plist"), []byte(plist), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runTestCommand(t, "/usr/bin/codesign", "--force", "--deep", "--sign", "-", "--identifier", "com.uvwt.agentdock.handoff-test", appPath)
 	return appPath
 }
 
