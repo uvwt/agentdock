@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	protocol "github.com/uvwt/agentdock-protocol"
 	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/publicartifacts"
@@ -24,7 +25,7 @@ func TestReadArtifactChunkServesPrivateBridgePayload(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(nil, config.Config{AgentDockHome: home})
-	result, err := server.ReadArtifactChunk(published.ArtifactID, 0, publicartifacts.MaxBridgeChunkBytes)
+	result, err := server.ReadArtifactChunk(published.ArtifactID, 0, protocol.MaxArtifactChunkBytes)
 	if err != nil {
 		t.Fatal(err)
 	}

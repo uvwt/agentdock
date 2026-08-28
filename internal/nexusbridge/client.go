@@ -24,11 +24,6 @@ import (
 
 const maxMessageBytes = 8 << 20
 
-const (
-	artifactReadCapability = "bridge.artifact.read.v1"
-	operationArtifactRead  = "artifact.read"
-)
-
 type Client struct {
 	identity Identity
 	server   *mcp.Server
@@ -87,18 +82,13 @@ func (c *Client) connect(ctx context.Context) error {
 	socket.SetReadLimit(maxMessageBytes)
 
 	tools := c.server.ToolNames()
-	capabilities := append(append([]string(nil), tools...), artifactReadCapability)
 	descriptors, err := bridgeToolDescriptors(c.server.ToolDescriptors())
 	if err != nil {
 		return err
 	}
 	if err := c.write(socket, protocol.Message{
 		Type: protocol.MessageNodeHello, ProtocolVersion: protocol.ConnectionProtocolVersion,
-		Hello: &protocol.Hello{
-			DeviceID: c.identity.DeviceID, Version: buildinfo.Version, ProtocolVersion: protocol.ConnectionProtocolVersion,
-			OS: runtime.GOOS, Arch: runtime.GOARCH, Capabilities: capabilities, ToolContractHash: c.server.ToolContractHash(),
-			Tools: descriptors, UIResources: c.server.UIResources(),
-		},
+		Hello: bridgeHello(c.identity, tools, descriptors, c.server.UIResources(), c.server.ToolContractHash()),
 	}); err != nil {
 		return err
 	}
@@ -131,6 +121,21 @@ func (c *Client) connect(ctx context.Context) error {
 			c.cancel(incoming.RequestID)
 		case protocol.MessageNodeHeartbeat:
 		}
+	}
+}
+
+func bridgeHello(identity Identity, tools []string, descriptors []protocol.ToolDescriptor, uiResources []protocol.UIResourceCapability, toolContractHash string) *protocol.Hello {
+	return &protocol.Hello{
+		DeviceID:           identity.DeviceID,
+		Version:            buildinfo.Version,
+		ProtocolVersion:    protocol.ConnectionProtocolVersion,
+		OS:                 runtime.GOOS,
+		Arch:               runtime.GOARCH,
+		Capabilities:       append([]string(nil), tools...),
+		BridgeCapabilities: []string{protocol.ArtifactReadCapability},
+		ToolContractHash:   toolContractHash,
+		Tools:              descriptors,
+		UIResources:        uiResources,
 	}
 }
 
@@ -177,7 +182,7 @@ func (c *Client) invoke(parent context.Context, socket *websocket.Conn, incoming
 		} else {
 			result, err = c.server.ReadAppResource(request.URI)
 		}
-	case operationArtifactRead:
+	case protocol.OperationArtifactRead:
 		var request struct {
 			ArtifactID string `json:"artifact_id"`
 			Offset     int64  `json:"offset"`

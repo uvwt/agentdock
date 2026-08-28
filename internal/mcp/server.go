@@ -110,22 +110,48 @@ func (s *Server) ReadArtifactChunk(artifactID string, offset int64, maxBytes int
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{
-		"artifact_id": meta.ArtifactID,
-		"filename":    meta.Filename,
-		"mime_type":   meta.MimeType,
-		"size_bytes":  meta.Size,
-		"sha256":      meta.SHA256,
-		"created_at":  meta.CreatedAt,
-		"expires_at":  meta.ExpiresAt,
-		"archive":     meta.Archive,
-		"width":       meta.Width,
-		"height":      meta.Height,
-		"offset":      offset,
-		"next_offset": offset + int64(len(data)),
-		"data_base64": base64.StdEncoding.EncodeToString(data),
-		"eof":         eof,
-	}, nil
+	result := artifactChunkResult{
+		ArtifactID: meta.ArtifactID,
+		Filename:   meta.Filename,
+		MIMEType:   meta.MimeType,
+		Size:       meta.Size,
+		SHA256:     meta.SHA256,
+		CreatedAt:  meta.CreatedAt,
+		ExpiresAt:  meta.ExpiresAt,
+		Archive:    meta.Archive,
+		Width:      meta.Width,
+		Height:     meta.Height,
+		Offset:     offset,
+		NextOffset: offset + int64(len(data)),
+		DataBase64: base64.StdEncoding.EncodeToString(data),
+		EOF:        eof,
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("编码 Artifact Bridge 结果: %w", err)
+	}
+	var mapped map[string]any
+	if err := json.Unmarshal(encoded, &mapped); err != nil {
+		return nil, fmt.Errorf("构造 Artifact Bridge 结果: %w", err)
+	}
+	return mapped, nil
+}
+
+type artifactChunkResult struct {
+	ArtifactID string    `json:"artifact_id"`
+	Filename   string    `json:"filename"`
+	MIMEType   string    `json:"mime_type"`
+	Size       int64     `json:"size_bytes"`
+	SHA256     string    `json:"sha256"`
+	CreatedAt  time.Time `json:"created_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	Archive    bool      `json:"archive"`
+	Width      int       `json:"width,omitempty"`
+	Height     int       `json:"height,omitempty"`
+	Offset     int64     `json:"offset"`
+	NextOffset int64     `json:"next_offset"`
+	DataBase64 string    `json:"data_base64"`
+	EOF        bool      `json:"eof"`
 }
 
 func (s *Server) HTTPHandler() http.Handler {
