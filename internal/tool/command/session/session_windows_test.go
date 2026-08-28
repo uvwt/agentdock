@@ -82,9 +82,9 @@ func TestWindowsKillTerminatesPowerShellNativeChildTree(t *testing.T) {
 	port := reserveWindowsTestPort(t)
 	pidPath := filepath.Join(root, "node.pid")
 	nodeScript := fmt.Sprintf(
-		"const fs=require('fs'); fs.writeFileSync('%s',String(process.pid)); require('http').createServer((req,res)=>res.end('ok')).listen(%d,'127.0.0.1')",
-		strings.ReplaceAll(filepath.ToSlash(pidPath), "'", "\\'"),
+		"const fs=require('fs'); const server=require('http').createServer((req,res)=>res.end('ok')); server.listen(%d,'127.0.0.1',()=>fs.writeFileSync('%s',String(process.pid)))",
 		port,
+		strings.ReplaceAll(filepath.ToSlash(pidPath), "'", "\\'"),
 	)
 	command := fmt.Sprintf("& '%s' -e \"%s\"", strings.ReplaceAll(nodePath, "'", "''"), nodeScript)
 
@@ -98,7 +98,7 @@ func TestWindowsKillTerminatesPowerShellNativeChildTree(t *testing.T) {
 			_ = s.Command.Process.Kill()
 		}
 	}()
-	nodePID := waitForWindowsTestNode(t, pidPath, port)
+	nodePID := waitForWindowsTestNode(t, s, pidPath, port)
 	defer func() {
 		if process, findErr := os.FindProcess(nodePID); findErr == nil {
 			_ = process.Kill()
@@ -132,9 +132,9 @@ func reserveWindowsTestPort(t *testing.T) int {
 	return listener.Addr().(*net.TCPAddr).Port
 }
 
-func waitForWindowsTestNode(t *testing.T, pidPath string, port int) int {
+func waitForWindowsTestNode(t *testing.T, s *Session, pidPath string, port int) int {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		data, err := os.ReadFile(pidPath)
 		if err == nil && waitForWindowsTestPort(port, true, 100*time.Millisecond) == nil {
@@ -145,7 +145,8 @@ func waitForWindowsTestNode(t *testing.T, pidPath string, port int) int {
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	t.Fatal("Node server did not start")
+	status := s.Peek("running", 4096)
+	t.Fatalf("Node server did not start: stdout=%q stderr=%q", status["stdout"], status["stderr"])
 	return 0
 }
 
