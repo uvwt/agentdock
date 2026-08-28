@@ -363,7 +363,16 @@ func (s *Service) WorkflowManage(ctx context.Context, args map[string]any) (Resu
 	case "match":
 		return s.matchWorkflowTemplates(ctx, input)
 	case "vector_index":
-		return s.NexusWorkflowJSON(ctx, "GET", "/v1/workflow-templates/vector-index", nil)
+		result, err := s.NexusWorkflowJSON(ctx, "GET", "/v1/workflow-templates/vector-index", nil)
+		if err != nil {
+			return nil, err
+		}
+		result["action"] = input.Action
+		if available, exists := result["available"]; exists {
+			result["vector_index_available"] = available
+			delete(result, "available")
+		}
+		return result, nil
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported workflow_template_manage action", "validation", map[string]any{"action": input.Action, "allowed": workflowTemplateActions})
 	}

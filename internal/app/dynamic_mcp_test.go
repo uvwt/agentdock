@@ -95,6 +95,7 @@ func TestDynamicMCPToolsStaySeparateAndAppearLightweightInContext(t *testing.T) 
 	if added["action"] != "add" {
 		t.Fatalf("unexpected add result: %#v", added)
 	}
+	assertToolResultMatchesOutputSchema(t, "mcp_manage", added)
 
 	contextResult, err := runtime.Call(context.Background(), "agentdock_context", map[string]any{})
 	if err != nil {
@@ -133,6 +134,7 @@ func TestDynamicMCPToolsStaySeparateAndAppearLightweightInContext(t *testing.T) 
 	if search["count"] != 1 {
 		t.Fatalf("unexpected search result: %#v", search)
 	}
+	assertToolResultMatchesOutputSchema(t, "mcp_tool_search", search)
 
 	inspect, err := runtime.Call(context.Background(), "mcp_tool_inspect", map[string]any{"name": "demo:echo"})
 	if err != nil {
@@ -140,6 +142,12 @@ func TestDynamicMCPToolsStaySeparateAndAppearLightweightInContext(t *testing.T) 
 	}
 	if inspect["tool_name"] != "echo" {
 		t.Fatalf("unexpected inspect result: %#v", inspect)
+	}
+	normalizedInspect := assertToolResultMatchesOutputSchema(t, "mcp_tool_inspect", inspect)
+	for _, optional := range []string{"output_schema", "annotations"} {
+		if _, exists := normalizedInspect[optional]; exists {
+			t.Fatalf("mcp_tool_inspect returned absent upstream %s: %#v", optional, normalizedInspect[optional])
+		}
 	}
 
 	called, err := runtime.Call(context.Background(), "mcp_tool_call", map[string]any{
@@ -154,6 +162,7 @@ func TestDynamicMCPToolsStaySeparateAndAppearLightweightInContext(t *testing.T) 
 	if structured["echo"] != "hello" {
 		t.Fatalf("unexpected call result: %#v", called)
 	}
+	assertToolResultMatchesOutputSchema(t, "mcp_tool_call", called)
 
 	for _, name := range runtime.ToolNames() {
 		if name == "demo:echo" {

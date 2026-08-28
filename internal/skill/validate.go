@@ -23,7 +23,7 @@ func (m *Manager) Validate(ctx context.Context, req ValidateRequest) (ValidateRe
 	}
 	defer cleanupWorkingDirectory(work)
 
-	result := ValidateResult{Source: safeSourceLabel(req.Source)}
+	result := ValidateResult{Source: safeSourceLabel(req.Source), Issues: make([]ValidateIssue, 0)}
 	packageDir, digest, err := m.prepareSource(ctx, req.Source, work, maxBytes)
 	if err != nil {
 		result.addIssue(err)

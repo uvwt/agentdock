@@ -53,6 +53,11 @@ Read references and call existing tools.
 	if validated["valid"] != true {
 		t.Fatalf("validation failed: %#v", validated)
 	}
+	normalizedValidated := assertToolResultMatchesOutputSchema(t, "skill_package", validated)
+	issues, ok := normalizedValidated["issues"].([]any)
+	if !ok || len(issues) != 0 {
+		t.Fatalf("successful validation issues = %#v, want []", normalizedValidated["issues"])
+	}
 	document, ok := validated["document"].(skills.SkillDocument)
 	if !ok || document.Name != "demo-skill" || document.Version != "1.0.0" {
 		t.Fatalf("unexpected document: %#v", validated["document"])
@@ -69,6 +74,19 @@ Read references and call existing tools.
 	result, ok := installed["result"].(skills.InstallResult)
 	if !ok || result.Skill != "demo-skill" || !result.Activated {
 		t.Fatalf("unexpected install result: %#v", installed["result"])
+	}
+	assertToolResultMatchesOutputSchema(t, "skill_package", installed)
+
+	environment, err := rt.Call(context.Background(), "skill_package", map[string]any{
+		"action": "env_list", "skill": "demo-skill",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalizedEnvironment := assertToolResultMatchesOutputSchema(t, "skill_package", environment)
+	environmentItems, ok := normalizedEnvironment["items"].([]any)
+	if !ok || len(environmentItems) != 0 {
+		t.Fatalf("empty Skill environment items = %#v, want []", normalizedEnvironment["items"])
 	}
 	if err := rt.skills.ReplaceBundledSkills(context.Background(), []string{"demo-skill"}); err != nil {
 		t.Fatal(err)

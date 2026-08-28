@@ -152,6 +152,26 @@ func TestManagerPromptEventsPermissionAndPersistence(t *testing.T) {
 	}
 }
 
+func TestSetSessionConfigOptionRejectsMissingConfigOptions(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	manager, err := newTestManagerWithPromptMode(home, workspace, "helper-acp", "omit_config_options")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = manager.Close() }()
+
+	created, err := manager.NewSession(context.Background(), workspace, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = manager.SetSessionConfigOption(context.Background(), created.Session.ID, "safe", false)
+	var acpErr *Error
+	if !errors.As(err, &acpErr) || acpErr.Code != "ACP_INVALID_RESPONSE" {
+		t.Fatalf("missing configOptions error = %#v, want ACP_INVALID_RESPONSE", err)
+	}
+}
+
 func TestManagerSessionLifecycleCapabilities(t *testing.T) {
 	home := t.TempDir()
 	workspace := t.TempDir()
@@ -719,15 +739,19 @@ func TestACPHelperProcess(t *testing.T) {
 		case "initialize":
 			result := map[string]any{
 				"protocolVersion": ProtocolVersion,
-				"agentCapabilities": map[string]any{
+				"_meta":           map[string]any{"steering": map[string]any{"supported": true}},
+			}
+			if os.Getenv("GO_ACP_HELPER_OMIT_AGENT_CAPABILITIES") != "1" {
+				result["agentCapabilities"] = map[string]any{
 					"loadSession": true,
 					"sessionCapabilities": map[string]any{
 						"close": map[string]any{}, "delete": map[string]any{}, "resume": map[string]any{},
 						"fork": map[string]any{}, "additionalDirectories": map[string]any{},
 					},
-				},
-				"authMethods": []map[string]any{{"id": "test-auth", "name": "Test auth"}},
-				"_meta":       map[string]any{"steering": map[string]any{"supported": true}},
+				}
+			}
+			if os.Getenv("GO_ACP_HELPER_OMIT_AUTH_METHODS") != "1" {
+				result["authMethods"] = []map[string]any{{"id": "test-auth", "name": "Test auth"}}
 			}
 			if os.Getenv("GO_ACP_HELPER_OMIT_AGENT_INFO") != "1" {
 				result["agentInfo"] = map[string]any{"name": agentInfoName, "title": "Helper ACP", "version": agentVersion}
@@ -757,9 +781,13 @@ func TestACPHelperProcess(t *testing.T) {
 		case "session/set_mode":
 			writeHelperResult(encoder, message.ID, map[string]any{})
 		case "session/set_config_option":
-			writeHelperResult(encoder, message.ID, map[string]any{
-				"configOptions": []map[string]any{{"id": "safe", "name": "Safe", "type": "boolean", "currentValue": false}},
-			})
+			if promptMode == "omit_config_options" {
+				writeHelperResult(encoder, message.ID, map[string]any{})
+			} else {
+				writeHelperResult(encoder, message.ID, map[string]any{
+					"configOptions": []map[string]any{{"id": "safe", "name": "Safe", "type": "boolean", "currentValue": false}},
+				})
+			}
 		case "session/close":
 			if promptMode == "steering_reset_failure" {
 				_ = encoder.Encode(rpcMessage{JSONRPC: "2.0", ID: message.ID, Error: &rpcError{Code: -32603, Message: "reset failed"}})

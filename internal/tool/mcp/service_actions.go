@@ -95,16 +95,21 @@ func (s *Service) Inspect(ctx context.Context, args map[string]any) (Result, err
 	if err != nil {
 		return nil, dynamicMCPToolError(err)
 	}
-	return Result{
-		"name":          qualifiedName,
-		"server":        server,
-		"tool_name":     tool.Name,
-		"title":         tool.Title,
-		"description":   tool.Description,
-		"input_schema":  tool.InputSchema,
-		"output_schema": tool.OutputSchema,
-		"annotations":   tool.Annotations,
-	}, nil
+	result := Result{
+		"name":         qualifiedName,
+		"server":       server,
+		"tool_name":    tool.Name,
+		"title":        tool.Title,
+		"description":  tool.Description,
+		"input_schema": tool.InputSchema,
+	}
+	if tool.OutputSchema != nil {
+		result["output_schema"] = tool.OutputSchema
+	}
+	if tool.Annotations != nil {
+		result["annotations"] = tool.Annotations
+	}
+	return result, nil
 }
 
 func (s *Service) Call(ctx context.Context, args map[string]any) (Result, error) {

@@ -21,7 +21,7 @@ func (s *Service) Session(ctx context.Context, args map[string]any) (Result, err
 		policies := acpruntime.CurrentPolicies()
 		return Result{
 			"action": action, "agent": info.AgentInfo, "capabilities": info.AgentCapabilities,
-			"protocol_version": info.ProtocolVersion, "auth_methods": info.AuthMethods,
+			"protocol_version": info.ProtocolVersion, "auth_methods": append([]any{}, info.AuthMethods...),
 			"context_policy": policies.Context, "event_policy": policies.Events,
 			"interaction_policy": policies.Interactions, "steering_policy": policies.Steering,
 		}, nil
@@ -36,19 +36,19 @@ func (s *Service) Session(ctx context.Context, args map[string]any) (Result, err
 		if err != nil {
 			return nil, acpToolError(err)
 		}
-		return Result{"action": action, "session": result.Session, "modes": result.Modes, "config_options": result.ConfigOptions, "agent": result.Agent}, nil
+		return sessionActionResult(action, result), nil
 	case "load":
 		result, err := s.manager.LoadSession(ctx, stringArg(args, "session_id", ""))
 		if err != nil {
 			return nil, acpToolError(err)
 		}
-		return Result{"action": action, "session": result.Session, "modes": result.Modes, "config_options": result.ConfigOptions, "agent": result.Agent}, nil
+		return sessionActionResult(action, result), nil
 	case "resume":
 		result, err := s.manager.ResumeSession(ctx, stringArg(args, "session_id", ""))
 		if err != nil {
 			return nil, acpToolError(err)
 		}
-		return Result{"action": action, "session": result.Session, "modes": result.Modes, "config_options": result.ConfigOptions, "agent": result.Agent}, nil
+		return sessionActionResult(action, result), nil
 	case "fork":
 		var additional []string
 		if _, present := args["additional_directories"]; present {
@@ -58,7 +58,7 @@ func (s *Service) Session(ctx context.Context, args map[string]any) (Result, err
 		if err != nil {
 			return nil, acpToolError(err)
 		}
-		return Result{"action": action, "session": result.Session, "modes": result.Modes, "config_options": result.ConfigOptions, "agent": result.Agent}, nil
+		return sessionActionResult(action, result), nil
 	case "set_mode":
 		sessionID := stringArg(args, "session_id", "")
 		modeID := stringArg(args, "mode_id", "")
@@ -107,6 +107,17 @@ func (s *Service) Session(ctx context.Context, args map[string]any) (Result, err
 	}
 }
 
+func sessionActionResult(action string, result acpruntime.SessionResult) Result {
+	response := Result{"action": action, "session": result.Session, "agent": result.Agent}
+	if result.Modes != nil {
+		response["modes"] = result.Modes
+	}
+	if result.ConfigOptions != nil {
+		response["config_options"] = result.ConfigOptions
+	}
+	return response
+}
+
 func (s *Service) Prompt(ctx context.Context, args map[string]any) (Result, error) {
 	if s == nil || s.manager == nil {
 		return nil, validationError("ACP_NOT_CONFIGURED", "ACP runtime is not configured", nil)
@@ -139,14 +150,18 @@ func (s *Service) Prompt(ctx context.Context, args map[string]any) (Result, erro
 		if err != nil {
 			return nil, acpToolError(err)
 		}
-		return Result{
+		response := Result{
 			"action": action, "run_id": result.RunID, "session_id": result.SessionID,
 			"status": result.Status, "events": result.Events, "next_seq": result.NextSeq,
 			"first_seq": result.FirstSeq, "latest_seq": result.LatestSeq,
 			"dropped_count": result.DroppedCount, "has_more": result.HasMore, "truncated": result.Truncated,
-			"started_at": result.StartedAt, "ended_at": result.EndedAt,
+			"started_at":  result.StartedAt,
 			"stop_reason": result.StopReason, "error_code": result.ErrorCode, "message": result.Message,
-		}, nil
+		}
+		if result.EndedAt != nil {
+			response["ended_at"] = result.EndedAt
+		}
+		return response, nil
 	case "steer":
 		result, err := s.manager.Steer(ctx, stringArg(args, "session_id", ""), stringArg(args, "text", ""))
 		if err != nil {

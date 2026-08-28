@@ -56,6 +56,21 @@ func TestFileEditAddMoveDelete(t *testing.T) {
 	}
 }
 
+func TestWorkflowVectorIndexUsesCanonicalMCPFields(t *testing.T) {
+	rt, _ := newCodeToolsRuntime(t)
+	result, err := rt.Call(context.Background(), "workflow_template_manage", map[string]any{"action": "vector_index"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertToolResultMatchesOutputSchema(t, "workflow_template_manage", result)
+	if result["action"] != "vector_index" || result["vector_index_available"] != false {
+		t.Fatalf("vector_index result = %#v", result)
+	}
+	if _, legacy := result["available"]; legacy {
+		t.Fatalf("workflow MCP result leaked REST-only available field: %#v", result)
+	}
+}
+
 func TestLegacyModelEntrypointsRemovedFromRuntime(t *testing.T) {
 	rt, _ := newCodeToolsRuntime(t)
 	for _, name := range []string{"apply_patch", "edit_file", "workspace_repos", "git_read", "git_write", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "check_github_repo_access", "browser_profile"} {

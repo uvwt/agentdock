@@ -132,6 +132,13 @@ func newWorkflowTemplateNexusTestServer(t *testing.T, _ *taskstate.Store) *httpt
 		templates[key(template.ID, template.Version)] = template
 		write(w, map[string]any{"ok": true, "template": template, "template_summary": tooltask.CompactTemplateSummary(template)})
 	})
+	mux.HandleFunc("/v1/workflow-templates/vector-index", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		write(w, map[string]any{"ok": true, "available": false, "vector_index_status": "missing"})
+	})
 	mux.HandleFunc("/v1/workflow-templates/match", func(w http.ResponseWriter, r *http.Request) {
 		var req struct{ Goal, Device, Type string }
 		_ = json.NewDecoder(r.Body).Decode(&req)
@@ -188,6 +195,7 @@ func TestViewImageLoadsPathAsMCPImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertToolResultMatchesOutputSchema(t, "view_image", result)
 	assertMCPImagePayload(t, result)
 	source, ok := result["source"].(map[string]any)
 	if !ok || source["type"] != "path" || source["path"] != "tiny.png" {

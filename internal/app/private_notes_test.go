@@ -66,6 +66,7 @@ func TestPrivateNoteManageProxiesNexusAPI(t *testing.T) {
 		if result["private_note_store"] != "NexusDock Private Notes" || result["recall_endpoint"] != server.URL {
 			t.Fatalf("unexpected proxy result: %#v", result)
 		}
+		assertToolResultMatchesOutputSchema(t, "private_note_manage", result)
 	}
 	if index != len(calls) {
 		t.Fatalf("request count = %d, want %d", index, len(calls))

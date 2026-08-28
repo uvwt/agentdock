@@ -258,7 +258,7 @@ func (r *Runtime) serverInfo() Result {
 		"browser_enabled":     r.cfg.BrowserEnabled,
 		"acp_enabled":         r.cfg.ACPEnabled,
 		"acp_agent":           r.cfg.ACPAgentName,
-		"trusted_proxy_cidrs": append([]string(nil), r.cfg.TrustedProxyCIDRs...),
+		"trusted_proxy_cidrs": append([]string{}, r.cfg.TrustedProxyCIDRs...),
 
 		"auth_enabled":  r.authEnabled(),
 		"endpoint_path": "/mcp",

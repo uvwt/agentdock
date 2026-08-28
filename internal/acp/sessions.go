@@ -306,6 +306,11 @@ func (m *Manager) SetSessionConfigOption(ctx context.Context, id, configID strin
 	if err := process.connection.Request(ctx, "session/set_config_option", params, &response); err != nil {
 		return nil, process.wrapError("set ACP session config option", err)
 	}
+	// set_config_option 成功后必须返回更新后的配置选项；否则无法确认远端实际状态，
+	// 也不能把缺失值继续包装成符合 MCP array schema 的成功结果。
+	if response.ConfigOptions == nil {
+		return nil, newError("ACP_INVALID_RESPONSE", "ACP session/set_config_option omitted configOptions", false, map[string]any{"session_id": id, "config_id": configID}, nil)
+	}
 	m.mu.Lock()
 	if state, loaded := m.loaded[id]; loaded {
 		state.ConfigOptions = response.ConfigOptions

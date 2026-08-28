@@ -17,6 +17,7 @@ func TestRecallSearchKeepsNativeFieldsAndAddsSourceIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertToolResultMatchesOutputSchema(t, "recall_search", got)
 	for _, field := range []string{"count", "query", "recall_endpoint", "recall_kind", "recall_store", "results"} {
 		if _, ok := got[field]; !ok {
 			t.Fatalf("recall_search missing top-level field %q: %#v", field, got)

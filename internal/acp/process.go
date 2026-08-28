@@ -87,6 +87,14 @@ func startAgentProcess(ctx context.Context, spec AgentSpec, defaultCWD string, r
 			nil,
 		)
 	}
+	// ACP 对省略的 capabilities/authMethods 分别定义为空能力集与空认证列表。
+	// 在协议边界归一化，避免内部状态和后续 MCP structuredContent 携带 nil。
+	if initialized.AgentCapabilities == nil {
+		initialized.AgentCapabilities = map[string]any{}
+	}
+	if initialized.AuthMethods == nil {
+		initialized.AuthMethods = []any{}
+	}
 	process.initialize = initialized
 	return process, nil
 }
