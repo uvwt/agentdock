@@ -38,7 +38,9 @@ type Session struct {
 	Terminal   string
 	execution  ExecutionContext
 
-	runner commandRunner
+	runner   commandRunner
+	killOnce sync.Once
+	killErr  error
 
 	mu                 sync.Mutex
 	completed          bool
@@ -55,9 +57,13 @@ type Session struct {
 }
 
 type Store struct {
-	mu       sync.Mutex
-	sessions map[string]*Session
-	reserved int
+	mu              sync.Mutex
+	sessions        map[string]*Session
+	reserved        int
+	starting        int
+	closing         bool
+	startsDrained   chan struct{}
+	reservedDrained chan struct{}
 }
 
 type Summary struct {
@@ -71,7 +77,15 @@ type Summary struct {
 }
 
 func NewStore() *Store {
-	return &Store{sessions: map[string]*Session{}}
+	startsDrained := make(chan struct{})
+	reservedDrained := make(chan struct{})
+	close(startsDrained)
+	close(reservedDrained)
+	return &Store{
+		sessions:        map[string]*Session{},
+		startsDrained:   startsDrained,
+		reservedDrained: reservedDrained,
+	}
 }
 
 func (s *Store) TryReserve(maxRunning int) bool {
@@ -80,6 +94,9 @@ func (s *Store) TryReserve(maxRunning int) bool {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closing {
+		return false
+	}
 	running := s.reserved
 	for _, session := range s.sessions {
 		if !session.Completed() {
@@ -89,15 +106,68 @@ func (s *Store) TryReserve(maxRunning int) bool {
 	if running >= maxRunning {
 		return false
 	}
+	if s.reserved == 0 {
+		s.reservedDrained = make(chan struct{})
+	}
+	if s.starting == 0 {
+		s.startsDrained = make(chan struct{})
+	}
 	s.reserved++
+	s.starting++
 	return true
+}
+
+// FinishStart 标记命令已经离开不可安全抢占的启动窗口。
+// 调用方必须在 runner、进程控制器和取消监听都建立完成后调用。
+func (s *Store) FinishStart() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.starting == 0 {
+		return
+	}
+	s.starting--
+	if s.starting == 0 {
+		close(s.startsDrained)
+	}
+}
+
+func (s *Store) BeginClose() {
+	s.mu.Lock()
+	s.closing = true
+	s.mu.Unlock()
+}
+
+func (s *Store) Closing() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closing
+}
+
+func (s *Store) StartingCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.starting
+}
+
+func (s *Store) WaitForStarts(ctx context.Context) bool {
+	s.mu.Lock()
+	if s.starting == 0 {
+		s.mu.Unlock()
+		return true
+	}
+	drained := s.startsDrained
+	s.mu.Unlock()
+	select {
+	case <-drained:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 func (s *Store) ReleaseReservation() {
 	s.mu.Lock()
-	if s.reserved > 0 {
-		s.reserved--
-	}
+	s.releaseReservationLocked()
 	s.mu.Unlock()
 }
 
@@ -107,13 +177,37 @@ func (s *Store) ReservationCount() int {
 	return s.reserved
 }
 
+func (s *Store) WaitForReservations(ctx context.Context) bool {
+	s.mu.Lock()
+	if s.reserved == 0 {
+		s.mu.Unlock()
+		return true
+	}
+	drained := s.reservedDrained
+	s.mu.Unlock()
+	select {
+	case <-drained:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
 func (s *Store) AddReserved(session *Session) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.reserved > 0 {
-		s.reserved--
-	}
+	s.releaseReservationLocked()
 	s.sessions[session.ID] = session
+}
+
+func (s *Store) releaseReservationLocked() {
+	if s.reserved == 0 {
+		return
+	}
+	s.reserved--
+	if s.reserved == 0 {
+		close(s.reservedDrained)
+	}
 }
 
 func (s *Store) Add(session *Session) {
@@ -309,12 +403,12 @@ func StartCommandWithTTY(ctx context.Context, build CommandFactory, timeout time
 	s.Stdin = runner.Stdin()
 	cleanup()
 
-	// CommandContext only guarantees termination of the direct child. Every runner
-	// therefore owns a platform process tree and receives timeout/cancel events.
+	// 运行期取消统一交给 runner：标准 runner 关闭了 os/exec 的直接子进程 Cancel，
+	// 避免它与进程组 / Job Object 的整棵进程树终止并发竞争。
 	go func() {
 		select {
 		case <-cmdCtx.Done():
-			_ = runner.Kill()
+			_, _ = s.Kill()
 		case <-s.Done:
 		}
 	}()
@@ -365,9 +459,11 @@ func (s *Session) Kill() (bool, error) {
 	if runner == nil {
 		return false, nil
 	}
-	err := runner.Kill()
-	s.Cancel()
-	return true, err
+	s.killOnce.Do(func() {
+		s.killErr = runner.Kill()
+		s.Cancel()
+	})
+	return true, s.killErr
 }
 
 func (s *Session) Snapshot(status string, maxBytes int) map[string]any {

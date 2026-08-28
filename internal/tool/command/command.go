@@ -62,6 +62,9 @@ func (svc *Service) Exec(ctx context.Context, args map[string]any) (Result, erro
 	}
 
 	if !svc.sessions.TryReserve(maxConcurrentCommandSessions) {
+		if svc.sessions.Closing() {
+			return nil, toolError("RUNTIME_CLOSING", "AgentDock runtime is shutting down", "runtime")
+		}
 		return nil, toolErrorDetails(
 			"SESSION_LIMIT_REACHED",
 			"too many command sessions are already running",
@@ -88,6 +91,9 @@ func (svc *Service) Exec(ctx context.Context, args map[string]any) (Result, erro
 		}
 		return func() {}, map[string]any{"enabled": false, "mode": "none", "policy": "no_command_content_filtering", "warnings": []string{privilegeWarning, "use Docker volumes, service users, file permissions, and network policy as the security boundary"}}
 	})
+	// 只有 invocation.start 完整返回后，runner、平台进程控制器以及 cmdCtx 取消监听才都已经建立。
+	// Runtime.Close 会等待这个启动窗口排空，再取消 commandCtx，避免在半启动状态抢占进程。
+	svc.sessions.FinishStart()
 	if err != nil {
 		return nil, err
 	}

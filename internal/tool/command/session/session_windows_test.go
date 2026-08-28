@@ -4,16 +4,22 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
+
+const windowsNativeChildReadyEnv = "AGENTDOCK_TEST_WINDOWS_NATIVE_CHILD_READY"
+
+type windowsNativeChildReady struct {
+	PID  int `json:"pid"`
+	Port int `json:"port"`
+}
 
 func TestWindowsPowerShellOutputIsUTF8(t *testing.T) {
 	s, _, err := Start(
@@ -74,21 +80,16 @@ func TestWindowsTTYUsesConPTYAndAcceptsInput(t *testing.T) {
 }
 
 func TestWindowsKillTerminatesPowerShellNativeChildTree(t *testing.T) {
-	nodePath, err := exec.LookPath("node.exe")
+	testBinary, err := os.Executable()
 	if err != nil {
-		t.Skip("node.exe is not installed")
+		t.Fatal(err)
 	}
 	root := t.TempDir()
-	port := reserveWindowsTestPort(t)
-	pidPath := filepath.Join(root, "node.pid")
-	nodeScript := fmt.Sprintf(
-		"const fs=require('fs'); const server=require('http').createServer((req,res)=>res.end('ok')); server.listen(%d,'127.0.0.1',()=>fs.writeFileSync('%s',String(process.pid)))",
-		port,
-		strings.ReplaceAll(filepath.ToSlash(pidPath), "'", "\\'"),
-	)
-	command := fmt.Sprintf("& '%s' -e \"%s\"", strings.ReplaceAll(nodePath, "'", "''"), nodeScript)
+	readyPath := filepath.Join(root, "native-child.ready.json")
+	command := fmt.Sprintf("& '%s' '-test.run=^TestWindowsNativeChildHelper$'", strings.ReplaceAll(testBinary, "'", "''"))
+	childEnv := append(os.Environ(), windowsNativeChildReadyEnv+"="+readyPath)
 
-	s, _, err := Start(context.Background(), command, root, os.Environ(), time.Minute, nil)
+	s, _, err := Start(context.Background(), command, root, childEnv, time.Minute, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,9 +99,11 @@ func TestWindowsKillTerminatesPowerShellNativeChildTree(t *testing.T) {
 			_ = s.Command.Process.Kill()
 		}
 	}()
-	nodePID := waitForWindowsTestNode(t, s, pidPath, port)
+	ready := waitForWindowsNativeChild(t, s, readyPath)
+	childPID := ready.PID
+	port := ready.Port
 	defer func() {
-		if process, findErr := os.FindProcess(nodePID); findErr == nil {
+		if process, findErr := os.FindProcess(childPID); findErr == nil {
 			_ = process.Kill()
 		}
 	}()
@@ -122,32 +125,62 @@ func TestWindowsKillTerminatesPowerShellNativeChildTree(t *testing.T) {
 	}
 }
 
-func reserveWindowsTestPort(t *testing.T) int {
-	t.Helper()
+func TestWindowsNativeChildHelper(t *testing.T) {
+	readyPath := os.Getenv(windowsNativeChildReadyEnv)
+	if readyPath == "" {
+		return
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	return listener.Addr().(*net.TCPAddr).Port
+	ready := windowsNativeChildReady{PID: os.Getpid(), Port: listener.Addr().(*net.TCPAddr).Port}
+	data, err := json.Marshal(ready)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tempReadyPath := readyPath + ".tmp"
+	if err := os.WriteFile(tempReadyPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tempReadyPath, readyPath); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		connection, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		_ = connection.Close()
+	}
 }
 
-func waitForWindowsTestNode(t *testing.T, s *Session, pidPath string, port int) int {
+func waitForWindowsNativeChild(t *testing.T, s *Session, readyPath string) windowsNativeChildReady {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		data, err := os.ReadFile(pidPath)
-		if err == nil && waitForWindowsTestPort(port, true, 100*time.Millisecond) == nil {
-			pid, parseErr := strconv.Atoi(strings.TrimSpace(string(data)))
-			if parseErr == nil {
-				return pid
+		data, err := os.ReadFile(readyPath)
+		if err == nil {
+			var ready windowsNativeChildReady
+			if json.Unmarshal(data, &ready) == nil && ready.PID > 0 && ready.Port > 0 {
+				if err := waitForWindowsTestPort(ready.Port, true, 2*time.Second); err != nil {
+					t.Fatalf("native child reported ready but its port is unavailable: %v", err)
+				}
+				return ready
 			}
+		}
+		select {
+		case <-s.Done:
+			status := s.Peek("exited", 4096)
+			t.Fatalf("native child exited before readiness: stdout=%q stderr=%q command_error=%v", status["stdout"], status["stderr"], s.WaitError())
+		default:
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
 	status := s.Peek("running", 4096)
-	t.Fatalf("Node server did not start: stdout=%q stderr=%q", status["stdout"], status["stderr"])
-	return 0
+	t.Fatalf("native child did not start: stdout=%q stderr=%q", status["stdout"], status["stderr"])
+	return windowsNativeChildReady{}
 }
 
 func waitForWindowsTestPort(port int, wantOpen bool, timeout time.Duration) error {

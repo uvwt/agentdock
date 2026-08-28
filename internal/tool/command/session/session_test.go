@@ -325,6 +325,8 @@ func TestStoreReservationsEnforceRunningLimit(t *testing.T) {
 	if !store.TryReserve(2) || !store.TryReserve(2) {
 		t.Fatal("store rejected reservations below the limit")
 	}
+	store.FinishStart()
+	store.FinishStart()
 	if store.TryReserve(2) {
 		t.Fatal("store accepted a reservation above the running limit")
 	}
@@ -332,6 +334,28 @@ func TestStoreReservationsEnforceRunningLimit(t *testing.T) {
 	if !store.TryReserve(2) {
 		t.Fatal("released reservation did not free capacity")
 	}
+	store.FinishStart()
+}
+
+func TestStoreBeginCloseRejectsNewReservationsAndDrainsCurrentStart(t *testing.T) {
+	store := NewStore()
+	if !store.TryReserve(1) {
+		t.Fatal("store rejected initial reservation")
+	}
+	store.BeginClose()
+	if store.TryReserve(2) {
+		t.Fatal("store accepted a reservation after BeginClose")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	drained := make(chan bool, 1)
+	go func() { drained <- store.WaitForStarts(ctx) }()
+	store.FinishStart()
+	if ok := <-drained; !ok {
+		t.Fatal("startup drain did not finish after FinishStart")
+	}
+	store.ReleaseReservation()
 }
 
 func TestStorePrunesOldestCompletedSessionsToLimit(t *testing.T) {
