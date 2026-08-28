@@ -187,9 +187,12 @@ func (update *macOSDesktopUpdate) Finish(ctx context.Context, outcome desktopUpd
 	// SMAppService 会保留无法解析 BundleProgram 的 BTM 记录，Core/Tunnel 随后以 EX_CONFIG 退出。
 	command := exec.CommandContext(ctx, "/usr/bin/open", "-g", update.targetPath, "--args", "--background")
 	command.Env = os.Environ()
-	if output, err := command.CombinedOutput(); err != nil {
-		return fmt.Errorf("通过 LaunchServices 启动 macOS 控制面板失败: %w: %s", err, strings.TrimSpace(string(output)))
+	if err := command.Start(); err != nil {
+		return fmt.Errorf("通过 LaunchServices 启动 macOS 控制面板失败: %w", err)
 	}
+	// open 只负责把启动请求交给 LaunchServices；真正的事务接管信号是新版 App 写入的 handoff。
+	// 不同步等待 open 退出，避免 LaunchServices 响应变慢时占满 updater 的上下文期限。
+	go func() { _ = command.Wait() }()
 
 	return waitForMacOSDesktopHandoff(ctx, update.targetPath, outcome.TargetVersion, outcome.OK, 60*time.Second)
 }
@@ -219,11 +222,7 @@ func waitForMacOSDesktopHandoff(
 ) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		pids, findErr := runningMacOSAppPIDs(ctx, targetPath)
-		if findErr == nil && len(pids) > 0 {
-			if !requireHandoff {
-				return nil
-			}
+		if requireHandoff {
 			handoff, handoffErr := readMacOSDesktopUpdateHandoff()
 			if handoffErr != nil {
 				return fmt.Errorf("读取新版 macOS 控制面板接管确认失败: %w", handoffErr)
@@ -236,6 +235,11 @@ func waitForMacOSDesktopHandoff(
 						normalizeVersion(targetVersion),
 					)
 				}
+				return nil
+			}
+		} else {
+			pids, findErr := runningMacOSAppPIDs(ctx, targetPath)
+			if findErr == nil && len(pids) > 0 {
 				return nil
 			}
 		}

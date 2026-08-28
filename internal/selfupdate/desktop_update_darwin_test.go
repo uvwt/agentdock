@@ -198,13 +198,6 @@ func TestMacOSDesktopUpdateFinishAcceptsHandoffBeforeServiceRecovery(t *testing.
 		t.Fatalf("update result should remain until App finishes recovery: %v", err)
 	}
 
-	pids, err := runningMacOSAppPIDs(context.Background(), target)
-	if err != nil || len(pids) == 0 {
-		t.Fatalf("updated App is not running: pids=%v err=%v", pids, err)
-	}
-	if err := terminatePIDs(context.Background(), pids); err != nil {
-		t.Fatalf("updated App child was not reaped after termination: %v", err)
-	}
 }
 
 func TestWriteMacOSDesktopUpdateResultIsPrivateAndExplicit(t *testing.T) {
