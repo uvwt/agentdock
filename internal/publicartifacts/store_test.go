@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	protocol "github.com/uvwt/agentdock-protocol"
 )
 
 func TestPublishFileCreatesImmutableSignedSnapshot(t *testing.T) {
@@ -101,11 +103,11 @@ func TestReadChunkStreamsVerifiedArtifact(t *testing.T) {
 
 	var restored []byte
 	for offset := int64(0); ; {
-		meta, chunk, chunkEOF, readErr := store.ReadChunk(result.ArtifactID, offset, MaxBridgeChunkBytes)
+		meta, chunk, chunkEOF, readErr := store.ReadChunk(result.ArtifactID, offset, protocol.MaxArtifactChunkBytes)
 		if readErr != nil {
 			t.Fatal(readErr)
 		}
-		if meta.SHA256 != result.SHA256 || len(chunk) > MaxBridgeChunkBytes {
+		if meta.SHA256 != result.SHA256 || len(chunk) > protocol.MaxArtifactChunkBytes {
 			t.Fatalf("unexpected chunk metadata or size: %#v bytes=%d", meta, len(chunk))
 		}
 		restored = append(restored, chunk...)
@@ -119,16 +121,132 @@ func TestReadChunkStreamsVerifiedArtifact(t *testing.T) {
 	}
 }
 
-func TestReadChunkRejectsTamperedArtifactBeforeFirstChunk(t *testing.T) {
+func TestReadChunkClampsOversizedBridgeRequest(t *testing.T) {
+	store := New(t.TempDir(), "", 0)
+	data := bytes.Repeat([]byte("x"), protocol.MaxArtifactChunkBytes+1024)
+	result, err := store.PublishBytes(PublishBytesRequest{Filename: "large.bin", Data: data})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, chunk, eof, err := store.ReadChunk(result.ArtifactID, 0, protocol.MaxArtifactChunkBytes+1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chunk) != protocol.MaxArtifactChunkBytes || eof {
+		t.Fatalf("clamped chunk bytes=%d eof=%t", len(chunk), eof)
+	}
+}
+
+func TestArtifactReadsRejectInvalidIDs(t *testing.T) {
+	store := New(t.TempDir(), "", 0)
+	validHexID := strings.Repeat("a", 32)
+	invalidIDs := []string{
+		"",
+		"../" + validHexID,
+		"..\\" + validHexID,
+		"/" + validHexID,
+		validHexID + "/..",
+		strings.Repeat("A", 32),
+		strings.Repeat("g", 32),
+		strings.Repeat("a", 31),
+	}
+
+	for _, artifactID := range invalidIDs {
+		if _, _, err := store.Read(artifactID, 1024); err == nil || !strings.Contains(err.Error(), "invalid artifact id") {
+			t.Fatalf("Read(%q) error = %v", artifactID, err)
+		}
+		if _, _, _, err := store.ReadChunk(artifactID, 0, protocol.MaxArtifactChunkBytes); err == nil || !strings.Contains(err.Error(), "invalid artifact id") {
+			t.Fatalf("ReadChunk(%q) error = %v", artifactID, err)
+		}
+	}
+}
+
+func TestArtifactReadsRejectPayloadSymlinkEscape(t *testing.T) {
+	home := t.TempDir()
+	store := New(home, "https://agent.example", 8765)
+	original := []byte("same-bytes-outside-root")
+	result, err := store.PublishBytes(PublishBytesRequest{Filename: "report.bin", Data: original})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	artifactDir := filepath.Join(store.Root, result.ArtifactID)
+	outsidePayload := filepath.Join(home, "outside-payload.bin")
+	if err := os.WriteFile(outsidePayload, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	payloadPath := filepath.Join(artifactDir, "payload")
+	if err := os.Remove(payloadPath); err != nil {
+		t.Fatal(err)
+	}
+	target, err := filepath.Rel(artifactDir, outsidePayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, payloadPath); err != nil {
+		t.Skipf("symlink creation unavailable on this platform: %v", err)
+	}
+
+	if _, _, err := store.Read(result.ArtifactID, int64(len(original))); err == nil {
+		t.Fatal("Read followed an Artifact payload symlink outside the Artifact root")
+	}
+	if _, _, _, err := store.ReadChunk(result.ArtifactID, 0, protocol.MaxArtifactChunkBytes); err == nil {
+		t.Fatal("ReadChunk followed an Artifact payload symlink outside the Artifact root")
+	}
+	if _, status := download(t, store, result.URL); status != http.StatusNotFound {
+		t.Fatalf("ServeHTTP symlink escape status = %d, want %d", status, http.StatusNotFound)
+	}
+}
+
+func TestArtifactReadRejectsMetadataIDMismatch(t *testing.T) {
 	store := New(t.TempDir(), "", 0)
 	result, err := store.PublishBytes(PublishBytesRequest{Filename: "report.txt", Data: []byte("original")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(store.Root, result.ArtifactID, "payload"), []byte("tampered"), 0o600); err != nil {
+
+	metadataPath := filepath.Join(store.Root, result.ArtifactID, "metadata.json")
+	data, err := os.ReadFile(metadataPath)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := store.ReadChunk(result.ArtifactID, 0, MaxBridgeChunkBytes); err == nil || !strings.Contains(err.Error(), "checksum") {
+	var metadata Metadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	metadata.ArtifactID = strings.Repeat("b", 32)
+	data, err = json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(metadataPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := store.Read(result.ArtifactID, 1024); err == nil || !strings.Contains(err.Error(), "metadata id does not match path") {
+		t.Fatalf("mismatched metadata Read error = %v", err)
+	}
+	if _, _, _, err := store.ReadChunk(result.ArtifactID, 0, protocol.MaxArtifactChunkBytes); err == nil || !strings.Contains(err.Error(), "metadata id does not match path") {
+		t.Fatalf("mismatched metadata ReadChunk error = %v", err)
+	}
+}
+
+func TestReadChunkRejectsTamperedArtifactBeforeFirstChunk(t *testing.T) {
+	store := New(t.TempDir(), "", 0)
+	original := []byte("original")
+	tampered := []byte("tampered")
+	if len(original) != len(tampered) {
+		t.Fatal("test fixture must keep payload size unchanged so checksum validation is exercised")
+	}
+	result, err := store.PublishBytes(PublishBytesRequest{Filename: "report.txt", Data: original})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(store.Root, result.ArtifactID, "payload"), tampered, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := store.ReadChunk(result.ArtifactID, 0, protocol.MaxArtifactChunkBytes); err == nil || !strings.Contains(err.Error(), "checksum") {
 		t.Fatalf("tampered Artifact error = %v", err)
 	}
 }

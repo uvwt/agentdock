@@ -24,14 +24,13 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	protocol "github.com/uvwt/agentdock-protocol"
 )
 
 const (
 	DefaultRetention = 24 * time.Hour
 	MaxRetention     = 7 * 24 * time.Hour
-	// MaxBridgeChunkBytes keeps one base64-encoded Nexus Bridge response well below
-	// the WebSocket message limit while avoiding tiny repeated reads.
-	MaxBridgeChunkBytes = 512 << 10
 )
 
 type Store struct {
@@ -257,7 +256,7 @@ func (s Store) ServeHTTP(w http.ResponseWriter, r *http.Request, prefix string) 
 		http.Error(w, http.StatusText(http.StatusGone), http.StatusGone)
 		return
 	}
-	meta, err := s.readMetadata(id)
+	meta, payload, err := s.resolveArtifact(id)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -276,8 +275,7 @@ func (s Store) ServeHTTP(w http.ResponseWriter, r *http.Request, prefix string) 
 		http.NotFound(w, r)
 		return
 	}
-	payload := filepath.Join(s.Root, id, "payload")
-	file, err := os.Open(payload)
+	file, err := os.OpenInRoot(s.Root, payload)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -308,7 +306,7 @@ func (s Store) ServeHTTP(w http.ResponseWriter, r *http.Request, prefix string) 
 }
 
 func (s Store) Read(artifactID string, maxBytes int64) (Metadata, []byte, error) {
-	meta, err := s.readMetadata(artifactID)
+	meta, payload, err := s.resolveArtifact(artifactID)
 	if err != nil {
 		return Metadata{}, nil, fmt.Errorf("read artifact metadata: %w", err)
 	}
@@ -318,8 +316,12 @@ func (s Store) Read(artifactID string, maxBytes int64) (Metadata, []byte, error)
 	if maxBytes > 0 && meta.Size > maxBytes {
 		return Metadata{}, nil, fmt.Errorf("artifact size %d exceeds limit %d", meta.Size, maxBytes)
 	}
-	payload := filepath.Join(s.Root, artifactID, "payload")
-	data, err := os.ReadFile(payload)
+	file, err := os.OpenInRoot(s.Root, payload)
+	if err != nil {
+		return Metadata{}, nil, fmt.Errorf("read artifact payload: %w", err)
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
 	if err != nil {
 		return Metadata{}, nil, fmt.Errorf("read artifact payload: %w", err)
 	}
@@ -339,10 +341,13 @@ func (s Store) ReadChunk(artifactID string, offset int64, maxBytes int) (Metadat
 	if offset < 0 {
 		return Metadata{}, nil, false, errors.New("artifact offset must not be negative")
 	}
-	if maxBytes < 0 || maxBytes > MaxBridgeChunkBytes {
-		return Metadata{}, nil, false, fmt.Errorf("artifact chunk size must be between 0 and %d bytes", MaxBridgeChunkBytes)
+	if maxBytes < 0 {
+		return Metadata{}, nil, false, errors.New("artifact chunk size must not be negative")
 	}
-	meta, err := s.readMetadata(artifactID)
+	if maxBytes > protocol.MaxArtifactChunkBytes {
+		maxBytes = protocol.MaxArtifactChunkBytes
+	}
+	meta, payload, err := s.resolveArtifact(artifactID)
 	if err != nil {
 		return Metadata{}, nil, false, fmt.Errorf("read artifact metadata: %w", err)
 	}
@@ -353,8 +358,7 @@ func (s Store) ReadChunk(artifactID string, offset int64, maxBytes int) (Metadat
 		return Metadata{}, nil, false, fmt.Errorf("artifact offset %d exceeds payload size %d", offset, meta.Size)
 	}
 
-	payload := filepath.Join(s.Root, artifactID, "payload")
-	file, err := os.Open(payload)
+	file, err := os.OpenInRoot(s.Root, payload)
 	if err != nil {
 		return Metadata{}, nil, false, fmt.Errorf("open artifact payload: %w", err)
 	}
@@ -433,11 +437,43 @@ func (s Store) Cleanup(now time.Time) error {
 	return errors.Join(cleanupErrs...)
 }
 
-func (s Store) readMetadata(id string) (Metadata, error) {
-	if id == "" || id != filepath.Base(id) {
-		return Metadata{}, errors.New("invalid artifact id")
+func (s Store) resolveArtifact(id string) (Metadata, string, error) {
+	// Artifact IDs are generated as 16 random bytes encoded as lowercase hex.
+	// IsLocal plus the hex whitelist rejects absolute and traversing identifiers;
+	// os.Root below additionally prevents symlink traversal from escaping Root.
+	if !filepath.IsLocal(id) || !validArtifactID(id) {
+		return Metadata{}, "", errors.New("invalid artifact id")
 	}
-	return readMetadataPath(filepath.Join(s.Root, id, "metadata.json"))
+	root, err := os.OpenRoot(s.Root)
+	if err != nil {
+		return Metadata{}, "", err
+	}
+	defer root.Close()
+	metadataPath := filepath.Join(id, "metadata.json")
+	data, err := root.ReadFile(metadataPath)
+	if err != nil {
+		return Metadata{}, "", err
+	}
+	meta, err := decodeMetadata(data)
+	if err != nil {
+		return Metadata{}, "", err
+	}
+	if meta.ArtifactID != id {
+		return Metadata{}, "", errors.New("artifact metadata id does not match path")
+	}
+	return meta, filepath.Join(id, "payload"), nil
+}
+
+func validArtifactID(id string) bool {
+	if len(id) != 32 {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		if (id[i] < '0' || id[i] > '9') && (id[i] < 'a' || id[i] > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func readMetadataPath(path string) (Metadata, error) {
@@ -445,6 +481,10 @@ func readMetadataPath(path string) (Metadata, error) {
 	if err != nil {
 		return Metadata{}, err
 	}
+	return decodeMetadata(data)
+}
+
+func decodeMetadata(data []byte) (Metadata, error) {
 	var meta Metadata
 	if err := json.Unmarshal(data, &meta); err != nil {
 		return Metadata{}, err
