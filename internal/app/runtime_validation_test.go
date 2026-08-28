@@ -48,8 +48,19 @@ func TestRuntimeCallRejectsUnknownStrictArgumentsBeforeHandler(t *testing.T) {
 
 func TestRuntimeCallAllowsUnknownArgumentsForPermissiveNonCanonicalTools(t *testing.T) {
 	runtime := newRuntimeValidationTestRuntime(t)
-	if _, err := runtime.Call(context.Background(), "list_dir", map[string]any{"path": ".", "future_field": true}); err != nil {
+	if _, err := runtime.Call(context.Background(), "search_text", map[string]any{"path": ".", "query": "never", "future_field": true}); err != nil {
 		t.Fatalf("permissive tool rejected unknown field: %v", err)
+	}
+}
+
+func TestRuntimeCallRejectsRemovedListDirArguments(t *testing.T) {
+	runtime := newRuntimeValidationTestRuntime(t)
+	for _, field := range []string{"recursive", "glob", "max_results"} {
+		_, err := runtime.Call(context.Background(), "list_dir", map[string]any{"path": ".", field: true})
+		toolErr, ok := err.(*ToolError)
+		if !ok || toolErr.Code != "INVALID_ARGUMENT" {
+			t.Fatalf("removed list_dir field %q error = %T %v, want INVALID_ARGUMENT", field, err, err)
+		}
 	}
 }
 

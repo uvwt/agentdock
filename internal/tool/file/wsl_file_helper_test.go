@@ -75,26 +75,103 @@ func TestWSLFileHelperReadsListsAndSearchesNativeTree(t *testing.T) {
 	}
 
 	listed := runWSLFileHelperForTest(t, map[string]any{
-		"action": "list_dir", "path": root, "recursive": true, "max_depth": 3,
+		"action": "list_dir", "path": root, "max_depth": 3,
 		"include_hidden": false, "include_ignored": false, "max_entries": 100,
 	})
 	requireWSLHelperOK(t, listed)
 	entries := listed["entries"].([]any)
 	for _, raw := range entries {
 		entry := raw.(map[string]any)
-		if entry["relative_path"] == ".hidden.txt" || entry["relative_path"] == "ignored" || entry["relative_path"] == "ignored/skip.txt" {
+		if entry["path"] == ".hidden.txt" || entry["path"] == "ignored" || entry["path"] == "ignored/skip.txt" {
 			t.Fatalf("hidden or ignored entry leaked: %#v", entry)
+		}
+		for _, field := range []string{"name", "path", "type", "size_bytes", "modified", "is_hidden"} {
+			if _, ok := entry[field]; !ok {
+				t.Fatalf("listing entry missing %q: %#v", field, entry)
+			}
 		}
 	}
 
-	filesResult := runWSLFileHelperForTest(t, map[string]any{
-		"action": "list_files", "path": root, "patterns": []string{"**/*.go"},
-		"include_hidden": false, "include_ignored": false, "max_results": 100,
+	depthOne := runWSLFileHelperForTest(t, map[string]any{
+		"action": "list_dir", "path": root, "max_depth": 1,
+		"include_hidden": true, "include_ignored": true, "max_entries": 100,
 	})
-	requireWSLHelperOK(t, filesResult)
-	matchedFiles := filesResult["files"].([]any)
-	if len(matchedFiles) != 1 || matchedFiles[0].(map[string]any)["relative_path"] != "sub/b.go" {
-		t.Fatalf("list_files result = %#v", filesResult)
+	requireWSLHelperOK(t, depthOne)
+	for _, raw := range depthOne["entries"].([]any) {
+		if got := raw.(map[string]any)["path"]; got == "sub/b.go" {
+			t.Fatalf("max_depth=1 leaked depth-2 entry: %#v", depthOne)
+		}
+	}
+
+	depthTwo := runWSLFileHelperForTest(t, map[string]any{
+		"action": "list_dir", "path": root, "max_depth": 2,
+		"include_hidden": true, "include_ignored": true, "max_entries": 100,
+	})
+	requireWSLHelperOK(t, depthTwo)
+	foundDepthTwo := false
+	for _, raw := range depthTwo["entries"].([]any) {
+		if raw.(map[string]any)["path"] == "sub/b.go" {
+			foundDepthTwo = true
+		}
+	}
+	if !foundDepthTwo {
+		t.Fatalf("max_depth=2 did not include depth-2 entry: %#v", depthTwo)
+	}
+
+	shallowGo := runWSLFileHelperForTest(t, map[string]any{
+		"action": "list_dir", "path": root, "max_depth": 3, "entry_type": "file",
+		"patterns": []string{"*.go"}, "include_hidden": false, "include_ignored": false, "max_entries": 100,
+	})
+	requireWSLHelperOK(t, shallowGo)
+	if got := len(shallowGo["entries"].([]any)); got != 0 {
+		t.Fatalf("*.go crossed a directory boundary: %#v", shallowGo)
+	}
+
+	deepGo := runWSLFileHelperForTest(t, map[string]any{
+		"action": "list_dir", "path": root, "max_depth": 3, "entry_type": "file",
+		"patterns": []string{"**/*.go"}, "include_hidden": false, "include_ignored": false, "max_entries": 100,
+	})
+	requireWSLHelperOK(t, deepGo)
+	matchedFiles := deepGo["entries"].([]any)
+	if len(matchedFiles) != 1 || matchedFiles[0].(map[string]any)["path"] != "sub/b.go" {
+		t.Fatalf("deep list_dir result = %#v", deepGo)
+	}
+
+	exactLimit := runWSLFileHelperForTest(t, map[string]any{
+		"action": "list_dir", "path": root, "max_depth": 3, "entry_type": "file",
+		"patterns": []string{"**/*.go"}, "max_entries": 1,
+	})
+	requireWSLHelperOK(t, exactLimit)
+	if exactLimit["truncated"] != false {
+		t.Fatalf("exact max_entries should not truncate: %#v", exactLimit)
+	}
+
+	overflowLimit := runWSLFileHelperForTest(t, map[string]any{
+		"action": "list_dir", "path": root, "max_depth": 3, "entry_type": "file",
+		"patterns": []string{"**/*.txt"}, "include_hidden": true, "include_ignored": true, "max_entries": 1,
+	})
+	requireWSLHelperOK(t, overflowLimit)
+	if overflowLimit["truncated"] != true || len(overflowLimit["entries"].([]any)) != 1 {
+		t.Fatalf("overflow max_entries result = %#v", overflowLimit)
+	}
+
+	shallowSearch := runWSLFileHelperForTest(t, map[string]any{
+		"action": "search_text", "path": root, "query": "needle", "case_sensitive": false,
+		"include_globs": []string{"*.go"}, "include_hidden": false, "include_ignored": false, "max_results": 100,
+	})
+	requireWSLHelperOK(t, shallowSearch)
+	if got := len(shallowSearch["matches"].([]any)); got != 0 {
+		t.Fatalf("search *.go crossed a directory boundary: %#v", shallowSearch)
+	}
+
+	deepSearch := runWSLFileHelperForTest(t, map[string]any{
+		"action": "search_text", "path": root, "query": "needle", "case_sensitive": false,
+		"include_globs": []string{"**/*.go"}, "include_hidden": false, "include_ignored": false, "max_results": 100,
+	})
+	requireWSLHelperOK(t, deepSearch)
+	deepMatches := deepSearch["matches"].([]any)
+	if len(deepMatches) != 1 || deepMatches[0].(map[string]any)["relative_path"] != "sub/b.go" {
+		t.Fatalf("search **/*.go result = %#v", deepSearch)
 	}
 
 	searched := runWSLFileHelperForTest(t, map[string]any{

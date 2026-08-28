@@ -217,42 +217,21 @@ func (svc *Service) readFileWSL(ctx context.Context, args map[string]any, select
 	return addFileRuntimeResult(result, selection), nil
 }
 
-func (svc *Service) listDirWSL(ctx context.Context, args map[string]any, selection fileRuntimeSelection) (Result, error) {
+func (svc *Service) listDirWSL(ctx context.Context, args map[string]any, selection fileRuntimeSelection, opts listDirOptions) (Result, error) {
 	path, err := resolveWSLFilePath(stringArg(args, "path", ""))
 	if err != nil {
 		return nil, err
 	}
 	return svc.callWSLFileHelper(ctx, selection, map[string]any{
-		"action":          "list_dir",
-		"path":            path,
-		"recursive":       boolArg(args, "recursive", false),
-		"max_depth":       boundedInt(intArg(args, "max_depth", 1), 1, 1, 20),
-		"max_entries":     boundedInt(intArg(args, "max_entries", 200), 200, 1, 2000),
-		"include_hidden":  boolArg(args, "include_hidden", false),
-		"include_ignored": boolArg(args, "include_ignored", false),
-	})
-}
-
-func (svc *Service) listFilesWSL(ctx context.Context, args map[string]any, selection fileRuntimeSelection) (Result, error) {
-	path, err := resolveWSLFilePath(stringArg(args, "path", ""))
-	if err != nil {
-		return nil, err
-	}
-	patterns := stringSliceArg(args, "patterns")
-	if len(patterns) == 0 {
-		patterns = []string{"**/*"}
-	}
-	if glob := stringArg(args, "glob", ""); glob != "" {
-		patterns = []string{glob}
-	}
-	return svc.callWSLFileHelper(ctx, selection, map[string]any{
-		"action":           "list_files",
+		"action":           "list_dir",
 		"path":             path,
-		"patterns":         patterns,
-		"exclude_patterns": stringSliceArg(args, "exclude_patterns"),
-		"max_results":      boundedInt(intArg(args, "max_results", 500), 500, 1, 5000),
-		"include_hidden":   boolArg(args, "include_hidden", false),
-		"include_ignored":  boolArg(args, "include_ignored", false),
+		"max_depth":        opts.MaxDepth,
+		"max_entries":      opts.MaxEntries,
+		"patterns":         opts.Patterns,
+		"exclude_patterns": opts.ExcludePatterns,
+		"entry_type":       opts.EntryType,
+		"include_hidden":   opts.IncludeHidden,
+		"include_ignored":  opts.IncludeIgnored,
 	})
 }
 

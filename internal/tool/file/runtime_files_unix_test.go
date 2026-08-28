@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestListFilesSkipsUnreadableDescendant(t *testing.T) {
+func TestListDirSkipsUnreadableDescendant(t *testing.T) {
 	service, root := newCodeToolsRuntime(t)
 	visibleDir := filepath.Join(root, "visible")
 	if err := os.MkdirAll(visibleDir, 0o755); err != nil {
@@ -31,13 +31,13 @@ func TestListFilesSkipsUnreadableDescendant(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(blockedDir, 0o755) })
 
-	result, err := service.ListFiles(context.Background(), map[string]any{"path": ".", "glob": "**/*.txt"})
+	result, err := service.ListDir(context.Background(), map[string]any{"path": ".", "max_depth": 2, "patterns": []string{"**/*.txt"}, "entry_type": "file"})
 	if err != nil {
-		t.Fatalf("ListFiles returned a descendant permission error: %v", err)
+		t.Fatalf("ListDir returned a descendant permission error: %v", err)
 	}
-	files := result["files"].([]map[string]any)
-	if len(files) != 1 || files[0]["path"] != "visible/ok.txt" {
-		t.Fatalf("files = %#v", files)
+	entries := result["entries"].([]map[string]any)
+	if len(entries) != 1 || entries[0]["path"] != "visible/ok.txt" {
+		t.Fatalf("entries = %#v", entries)
 	}
 	if result["partial"] != true {
 		t.Fatalf("partial = %#v", result["partial"])

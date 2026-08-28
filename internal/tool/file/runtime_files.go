@@ -74,210 +74,184 @@ func (svc *Service) ReadFile(ctx context.Context, args map[string]any) (Result, 
 	return addFileRuntimeResult(result, selection), nil
 }
 
+type listDirOptions struct {
+	MaxDepth        int
+	MaxEntries      int
+	Patterns        []string
+	ExcludePatterns []string
+	EntryType       string
+	IncludeHidden   bool
+	IncludeIgnored  bool
+}
+
+func parseListDirOptions(args map[string]any) (listDirOptions, error) {
+	patterns := stringSliceArg(args, "patterns")
+	if len(patterns) == 0 {
+		patterns = []string{"**/*"}
+	}
+	entryType := stringArg(args, "entry_type", "any")
+	switch entryType {
+	case "any", "file", "directory":
+	default:
+		return listDirOptions{}, toolError("INVALID_ARGUMENT", "entry_type must be any, file, or directory", "validation")
+	}
+	return listDirOptions{
+		MaxDepth:        boundedInt(intArg(args, "max_depth", 1), 1, 1, 20),
+		MaxEntries:      boundedInt(intArg(args, "max_entries", 200), 200, 1, 5000),
+		Patterns:        patterns,
+		ExcludePatterns: stringSliceArg(args, "exclude_patterns"),
+		EntryType:       entryType,
+		IncludeHidden:   boolArg(args, "include_hidden", false),
+		IncludeIgnored:  boolArg(args, "include_ignored", false),
+	}, nil
+}
+
 func (svc *Service) ListDir(ctx context.Context, args map[string]any) (Result, error) {
 	selection, err := selectFileRuntime(args)
 	if err != nil {
 		return nil, err
 	}
-	if selection.isWSL() {
-		return svc.listDirWSL(ctx, args, selection)
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	p, err := svc.ws.ResolveExisting(stringArg(args, "path", "."))
-	if err != nil {
-		return nil, err
-	}
-	entries, err := os.ReadDir(p.Abs)
-	if err != nil {
-		return nil, err
-	}
-	includeHidden := boolArg(args, "include_hidden", false)
-	recursive := boolArg(args, "recursive", false)
-	maxDepth := boundedInt(intArg(args, "max_depth", 1), 1, 1, 20)
-	maxEntries := boundedInt(intArg(args, "max_entries", 200), 200, 1, 2000)
-	includeIgnored := boolArg(args, "include_ignored", false)
-	if recursive {
-		result, err := svc.listDirRecursive(ctx, p, includeHidden, includeIgnored, maxDepth, maxEntries)
-		return addFileRuntimeResult(result, selection), err
-	}
-	ignore := loadIgnoreMatcher(svc.ws.Root())
-	items := make([]map[string]any, 0, len(entries))
-	for _, entry := range entries {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if !includeHidden && workspace.Hidden(entry.Name()) {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return nil, fmt.Errorf("inspect directory entry %s: %w", entry.Name(), err)
-		}
-		abs := filepath.Join(p.Abs, entry.Name())
-		rel, err := svc.ws.Relative(abs)
-		if err != nil {
-			return nil, fmt.Errorf("resolve directory entry %s: %w", abs, err)
-		}
-		if !includeIgnored && (shouldSkipDir(entry.Name()) || ignore.Ignored(rel, info.IsDir())) {
-			continue
-		}
-		kind := "file"
-		if info.IsDir() {
-			kind = "directory"
-		}
-		items = append(items, map[string]any{"name": entry.Name(), "path": rel, "type": kind, "size_bytes": info.Size(), "modified": info.ModTime().UTC().Format(time.RFC3339Nano), "is_hidden": workspace.Hidden(entry.Name())})
-		if maxEntries > 0 && len(items) >= maxEntries {
-			break
-		}
-	}
-	sort.Slice(items, func(i, j int) bool { return fmt.Sprint(items[i]["path"]) < fmt.Sprint(items[j]["path"]) })
-	return addFileRuntimeResult(Result{"path": p.Display, "entries": items, "truncated": maxEntries > 0 && len(items) >= maxEntries}, selection), nil
-}
-
-func (svc *Service) listDirRecursive(ctx context.Context, root workspace.Path, includeHidden, includeIgnored bool, maxDepth, maxEntries int) (Result, error) {
-	items := make([]map[string]any, 0)
-	ignore := loadIgnoreMatcher(svc.ws.Root())
-	rootDepth := len(strings.Split(filepath.Clean(root.Abs), string(os.PathSeparator)))
-	err := filepath.WalkDir(root.Abs, func(abs string, entry os.DirEntry, walkErr error) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if walkErr != nil {
-			return walkErr
-		}
-		if abs == root.Abs {
-			return nil
-		}
-		depth := len(strings.Split(filepath.Clean(abs), string(os.PathSeparator))) - rootDepth
-		if maxDepth > 0 && depth > maxDepth {
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !includeHidden && workspace.Hidden(entry.Name()) {
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		rel, err := svc.ws.Relative(abs)
-		if err != nil {
-			return fmt.Errorf("resolve directory entry %s: %w", abs, err)
-		}
-		if !includeIgnored && (shouldSkipDir(entry.Name()) || ignore.Ignored(rel, entry.IsDir())) {
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return fmt.Errorf("inspect directory entry %s: %w", abs, err)
-		}
-		kind := "file"
-		if info.IsDir() {
-			kind = "directory"
-		}
-		items = append(items, map[string]any{"name": entry.Name(), "path": rel, "type": kind, "size_bytes": info.Size(), "modified": info.ModTime().UTC().Format(time.RFC3339Nano), "is_hidden": workspace.Hidden(entry.Name())})
-		if maxEntries > 0 && len(items) >= maxEntries {
-			return filepath.SkipAll
-		}
-		return nil
-	})
-	sort.Slice(items, func(i, j int) bool { return fmt.Sprint(items[i]["path"]) < fmt.Sprint(items[j]["path"]) })
-	return Result{"path": root.Display, "entries": items, "recursive": true, "max_depth": maxDepth, "truncated": maxEntries > 0 && len(items) >= maxEntries}, err
-}
-
-func (svc *Service) ListFiles(ctx context.Context, args map[string]any) (Result, error) {
-	selection, err := selectFileRuntime(args)
+	opts, err := parseListDirOptions(args)
 	if err != nil {
 		return nil, err
 	}
 	if selection.isWSL() {
-		return svc.listFilesWSL(ctx, args, selection)
+		return svc.listDirWSL(ctx, args, selection, opts)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	p, err := svc.ws.ResolveExisting(stringArg(args, "path", "."))
+
+	root, err := svc.ws.ResolveExisting(stringArg(args, "path", "."))
 	if err != nil {
 		return nil, err
 	}
-	patterns := stringSliceArg(args, "patterns")
-	if len(patterns) == 0 {
-		patterns = []string{"**/*"}
+	rootInfo, err := os.Stat(root.Abs)
+	if err != nil {
+		return nil, err
 	}
-	if glob := stringArg(args, "glob", ""); glob != "" {
-		patterns = []string{glob}
+	if !rootInfo.IsDir() {
+		return nil, toolError("NOT_A_DIRECTORY", "list_dir path is not a directory", "validation")
 	}
-	excludePatterns := stringSliceArg(args, "exclude_patterns")
-	maxResults := boundedInt(intArg(args, "max_results", 500), 500, 1, 5000)
-	includeHidden := boolArg(args, "include_hidden", false)
-	includeIgnored := boolArg(args, "include_ignored", false)
+
 	ignore := loadIgnoreMatcher(svc.ws.Root())
-	files := make([]map[string]any, 0)
+
+	items := make([]map[string]any, 0, min(opts.MaxEntries, 200))
 	skippedPaths := make([]string, 0)
-	err = filepath.WalkDir(p.Abs, func(abs string, d os.DirEntry, walkErr error) error {
+	truncated := false
+	walkErr := filepath.WalkDir(root.Abs, func(abs string, entry os.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if walkErr != nil {
-			// 搜索树中的单个后代目录可能由其他进程创建且当前用户不可读。
-			// 这不应让已经可读取的匹配结果全部丢失；根目录本身不可读仍按真实错误返回。
-			if abs != p.Abs && errors.Is(walkErr, os.ErrPermission) {
-				if rel, relErr := svc.ws.Relative(abs); relErr == nil {
+			if abs == root.Abs {
+				return walkErr
+			}
+			if errors.Is(walkErr, os.ErrPermission) {
+				if rel, relErr := relativePathFromRoot(root.Abs, abs); relErr == nil {
 					skippedPaths = append(skippedPaths, rel)
 				}
-				if d != nil && d.IsDir() {
+				if entry != nil && entry.IsDir() {
 					return filepath.SkipDir
 				}
 				return nil
 			}
 			return walkErr
 		}
-		rel, relErr := svc.ws.Relative(abs)
-		if relErr == nil && !includeIgnored && ignore.Ignored(rel, d.IsDir()) {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
+		if abs == root.Abs {
 			return nil
 		}
-		if d.IsDir() {
-			if !includeIgnored && abs != p.Abs && shouldSkipDir(d.Name()) {
-				return filepath.SkipDir
-			}
-			if !includeHidden && abs != p.Abs && workspace.Hidden(d.Name()) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !includeHidden && workspace.Hidden(d.Name()) {
-			return nil
-		}
-		rel, err := svc.ws.Relative(abs)
+
+		rel, err := relativePathFromRoot(root.Abs, abs)
 		if err != nil {
-			return fmt.Errorf("resolve listed file %s: %w", abs, err)
+			return fmt.Errorf("resolve directory entry %s: %w", abs, err)
 		}
-		if !matchesAny(rel, patterns) || matchesAny(rel, excludePatterns) {
+		depth := strings.Count(rel, "/") + 1
+		if depth > opts.MaxDepth {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
-		info, err := d.Info()
-		if err != nil {
-			return fmt.Errorf("inspect listed file %s: %w", abs, err)
+
+		isDir := entry.IsDir()
+		isHidden := hiddenRelativePath(rel)
+		if !opts.IncludeHidden && isHidden {
+			if isDir {
+				return filepath.SkipDir
+			}
+			return nil
 		}
-		files = append(files, map[string]any{"path": rel, "type": "file", "size_bytes": info.Size(), "modified": info.ModTime().UTC().Format(time.RFC3339Nano)})
-		if maxResults > 0 && len(files) >= maxResults {
-			return filepath.SkipAll
+		if !opts.IncludeIgnored {
+			ignoreRel, relErr := svc.ws.Relative(abs)
+			if relErr != nil {
+				return fmt.Errorf("resolve ignored directory entry %s: %w", abs, relErr)
+			}
+			if shouldSkipDir(entry.Name()) || ignore.Ignored(ignoreRel, isDir) {
+				if isDir {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+		}
+
+		kind := "file"
+		if isDir {
+			kind = "directory"
+		}
+		includeEntry := (opts.EntryType == "any" || opts.EntryType == kind) && matchesAny(rel, opts.Patterns) && !matchesAny(rel, opts.ExcludePatterns)
+		if includeEntry {
+			// 只有真正看到第 max_entries+1 个匹配项时才标记截断，避免“刚好达到上限”被误报。
+			if len(items) >= opts.MaxEntries {
+				truncated = true
+				return filepath.SkipAll
+			}
+			info, err := entry.Info()
+			if err != nil {
+				if errors.Is(err, os.ErrPermission) {
+					skippedPaths = append(skippedPaths, rel)
+					if isDir {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				return fmt.Errorf("inspect directory entry %s: %w", abs, err)
+			}
+			items = append(items, map[string]any{
+				"name":       entry.Name(),
+				"path":       rel,
+				"type":       kind,
+				"size_bytes": info.Size(),
+				"modified":   info.ModTime().UTC().Format(time.RFC3339Nano),
+				"is_hidden":  isHidden,
+			})
+		}
+
+		if isDir && depth >= opts.MaxDepth {
+			return filepath.SkipDir
 		}
 		return nil
 	})
-	result := Result{"path": p.Display, "files": files, "truncated": maxResults > 0 && len(files) >= maxResults}
-	if len(skippedPaths) > 0 {
-		result["partial"] = true
-		result["skipped_paths"] = skippedPaths
+	if walkErr != nil {
+		return nil, walkErr
 	}
-	return addFileRuntimeResult(result, selection), err
+
+	sort.Slice(items, func(i, j int) bool { return fmt.Sprint(items[i]["path"]) < fmt.Sprint(items[j]["path"]) })
+	result := Result{
+		"path":          root.Display,
+		"entries":       items,
+		"truncated":     truncated,
+		"partial":       len(skippedPaths) > 0,
+		"skipped_paths": skippedPaths,
+	}
+	return addFileRuntimeResult(result, selection), nil
+}
+
+func hiddenRelativePath(rel string) bool {
+	for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
+		if workspace.Hidden(part) {
+			return true
+		}
+	}
+	return false
 }

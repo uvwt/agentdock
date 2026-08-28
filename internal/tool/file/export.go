@@ -19,7 +19,7 @@ func (s *Service) SearchTextGo(ctx context.Context, path workspace.Path, options
 }
 
 func (s *Service) ParseRGJSON(output []byte, options SearchOptions) ([]map[string]any, bool, bool) {
-	return s.parseRGJSON(output, options)
+	return s.parseRGJSON(output, s.ws.Root(), options)
 }
 
 type FileRuntimeSelection = fileRuntimeSelection

@@ -22,6 +22,9 @@ func OutputSchema(name string) map[string]any {
 	arrayProp := func(desc string) map[string]any {
 		return map[string]any{"type": "array", "description": desc, "items": map[string]any{"type": "object", "additionalProperties": true}}
 	}
+	stringArrayProp := func(desc string) map[string]any {
+		return map[string]any{"type": "array", "description": desc, "items": map[string]any{"type": "string"}}
+	}
 	objectProp := func(desc string) map[string]any {
 		return map[string]any{"type": "object", "description": desc, "additionalProperties": true}
 	}
@@ -39,15 +42,28 @@ func OutputSchema(name string) map[string]any {
 		props["next_start_line"] = intProp("Next line to read when output was truncated.")
 		props["total_lines"] = intProp("Total line count.")
 	case "list_dir":
-		props["path"] = stringProp("Host directory path. Relative paths resolve from ~/AgentDock.")
-		props["entries"] = arrayProp("Directory entries.")
-		props["truncated"] = boolProp("Whether entries were truncated.")
-	case "list_files":
-		props["path"] = stringProp("Host directory path. Relative paths resolve from ~/AgentDock.")
-		props["files"] = arrayProp("Matched files.")
-		props["truncated"] = boolProp("Whether files were truncated.")
-		props["partial"] = boolProp("Whether unreadable descendant paths were skipped while returning readable matches.")
-		props["skipped_paths"] = arrayProp("Unreadable descendant paths skipped during traversal.")
+		props["path"] = stringProp("Listed Host directory path. Relative paths resolve from ~/AgentDock.")
+		props["entries"] = map[string]any{
+			"type":        "array",
+			"description": "Matched directory entries. Each entry path is slash-normalized and relative to the requested path.",
+			"items": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"required":             []string{"name", "path", "type", "size_bytes", "modified", "is_hidden"},
+				"properties": map[string]any{
+					"name":       stringProp("Entry base name."),
+					"path":       stringProp("Slash-normalized path relative to the requested directory."),
+					"type":       map[string]any{"type": "string", "enum": []string{"file", "directory"}},
+					"size_bytes": intProp("Entry size in bytes as reported by the selected runtime."),
+					"modified":   stringProp("Entry modification time in RFC3339-compatible form."),
+					"is_hidden":  boolProp("Whether the entry path contains a hidden component."),
+				},
+			},
+		}
+		props["truncated"] = boolProp("Whether at least one additional matching entry existed beyond max_entries.")
+		props["partial"] = boolProp("Whether unreadable descendant paths were skipped while returning readable entries.")
+		props["skipped_paths"] = stringArrayProp("Unreadable descendant paths skipped during traversal, relative to the requested path.")
+		required = []string{"path", "entries", "truncated", "partial", "skipped_paths"}
 	case "search_text":
 		props["matches"] = arrayProp("Text search matches.")
 		props["engine"] = stringProp("Search engine used: rg or go_fallback.")
@@ -260,7 +276,7 @@ func OutputSchema(name string) map[string]any {
 	}
 
 	switch name {
-	case "read_file", "list_dir", "list_files", "search_text", "file_edit":
+	case "read_file", "list_dir", "search_text", "file_edit":
 		toolfile.AddRuntimeOutputProperties(props)
 	}
 	return map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": true}

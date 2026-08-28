@@ -160,13 +160,35 @@ def parse_ignore_file(root):
 def glob_matches(pattern, rel):
     rel = rel.replace(os.sep, "/")
     pattern = pattern.replace("\\", "/")
-    if pattern in ("*", "**", "**/*"):
-        return True
-    if fnmatch.fnmatchcase(rel, pattern) or fnmatch.fnmatchcase(os.path.basename(rel), pattern):
-        return True
-    if pattern.startswith("**/") and fnmatch.fnmatchcase(rel, pattern[3:]):
-        return True
-    return False
+    if rel.startswith("./"):
+        rel = rel[2:]
+    if pattern.startswith("./"):
+        pattern = pattern[2:]
+
+    pattern_parts = pattern.split("/")
+    path_parts = rel.split("/")
+    memo = {}
+
+    def match(pattern_index, path_index):
+        key = (pattern_index, path_index)
+        if key in memo:
+            return memo[key]
+        if pattern_index == len(pattern_parts):
+            result = path_index == len(path_parts)
+        elif pattern_parts[pattern_index] == "**":
+            result = match(pattern_index + 1, path_index) or (
+                path_index < len(path_parts) and match(pattern_index, path_index + 1)
+            )
+        else:
+            result = (
+                path_index < len(path_parts)
+                and fnmatch.fnmatchcase(path_parts[path_index], pattern_parts[pattern_index])
+                and match(pattern_index + 1, path_index + 1)
+            )
+        memo[key] = result
+        return result
+
+    return match(0, 0)
 
 
 def ignored_by_rules(rel, is_directory, rules):
@@ -193,36 +215,47 @@ def entry_record(root, full_path, name=None):
     rel = os.path.relpath(full_path, root).replace(os.sep, "/")
     return {
         "name": name if name is not None else os.path.basename(full_path),
-        "path": full_path.replace(os.sep, "/"),
-        "relative_path": rel,
-        "type": kind_from_mode(info.st_mode),
+        "path": rel,
+        "type": "directory" if stat.S_ISDIR(info.st_mode) else "file",
         "size_bytes": info.st_size,
         "modified": timestamp(info.st_mtime),
-        "mode": stat.S_IMODE(info.st_mode),
         "is_hidden": hidden_path(rel),
     }
 
 
-def iter_tree(root, include_hidden, include_ignored, max_depth=None):
+def iter_tree(root, include_hidden, include_ignored, max_depth=None, skipped_paths=None):
     rules = [] if include_ignored else parse_ignore_file(root)
-    stack = [(root, 0)]
-    while stack:
-        current, depth = stack.pop()
+
+    def scan_directory(current):
         try:
-            entries = sorted(os.scandir(current), key=lambda item: item.name, reverse=True)
+            return sorted(os.scandir(current), key=lambda item: item.name)
         except PermissionError:
-            continue
-        for entry in entries:
-            full_path = entry.path
-            rel = os.path.relpath(full_path, root).replace(os.sep, "/")
+            if current == root:
+                raise
+            if skipped_paths is not None:
+                skipped_paths.append(os.path.relpath(current, root).replace(os.sep, "/"))
+            return []
+
+    # Match filepath.WalkDir's lexical depth-first order without Python recursion.
+    stack = [(entry.path, entry, 1) for entry in reversed(scan_directory(root))]
+    while stack:
+        full_path, entry, depth = stack.pop()
+        rel = os.path.relpath(full_path, root).replace(os.sep, "/")
+        try:
             is_directory = entry.is_dir(follow_symlinks=False)
-            if not include_hidden and hidden_path(rel):
-                continue
-            if not include_ignored and (entry.name in DEFAULT_SKIPPED_DIRS or ignored_by_rules(rel, is_directory, rules)):
-                continue
-            yield full_path, entry, depth + 1
-            if is_directory and (max_depth is None or depth + 1 < max_depth):
-                stack.append((full_path, depth + 1))
+        except PermissionError:
+            if skipped_paths is not None:
+                skipped_paths.append(rel)
+            continue
+        if not include_hidden and hidden_path(rel):
+            continue
+        if not include_ignored and (entry.name in DEFAULT_SKIPPED_DIRS or ignored_by_rules(rel, is_directory, rules)):
+            continue
+        yield full_path, entry, depth
+        if is_directory and (max_depth is None or depth < max_depth):
+            children = scan_directory(full_path)
+            for child in reversed(children):
+                stack.append((child.path, child, depth + 1))
 
 
 def ensure_directory(path):
@@ -237,48 +270,54 @@ def list_directory(request):
     ensure_directory(root)
     include_hidden = bool(request.get("include_hidden"))
     include_ignored = bool(request.get("include_ignored"))
-    recursive = bool(request.get("recursive"))
     max_depth = max(1, min(int(request.get("max_depth") or 1), 20))
-    max_entries = max(1, min(int(request.get("max_entries") or 200), 2000))
-    items = []
-    if recursive:
-        iterator = iter_tree(root, include_hidden, include_ignored, max_depth=max_depth)
-    else:
-        iterator = iter_tree(root, include_hidden, include_ignored, max_depth=1)
-    truncated = False
-    for full_path, entry, _ in iterator:
-        if len(items) >= max_entries:
-            truncated = True
-            break
-        items.append(entry_record(root, full_path, entry.name))
-    items.sort(key=lambda item: item["path"])
-    return {"path": root, "entries": items, "recursive": recursive, "max_depth": max_depth, "truncated": truncated}
-
-
-def list_files(request):
-    root = checked_path(request.get("path"))
-    ensure_directory(root)
-    include_hidden = bool(request.get("include_hidden"))
-    include_ignored = bool(request.get("include_ignored"))
+    max_entries = max(1, min(int(request.get("max_entries") or 200), 5000))
     patterns = request.get("patterns") or ["**/*"]
     exclude_patterns = request.get("exclude_patterns") or []
-    max_results = max(1, min(int(request.get("max_results") or 500), 5000))
+    entry_type = request.get("entry_type") or "any"
+    if entry_type not in ("any", "file", "directory"):
+        fail("INVALID_ARGUMENT", "entry_type must be any, file, or directory", entry_type=entry_type)
+
     items = []
+    skipped_paths = []
     truncated = False
-    for full_path, entry, _ in iter_tree(root, include_hidden, include_ignored):
-        if not entry.is_file(follow_symlinks=False):
-            continue
+    iterator = iter_tree(
+        root,
+        include_hidden,
+        include_ignored,
+        max_depth=max_depth,
+        skipped_paths=skipped_paths,
+    )
+    for full_path, entry, _ in iterator:
         rel = os.path.relpath(full_path, root).replace(os.sep, "/")
+        try:
+            kind = "directory" if entry.is_dir(follow_symlinks=False) else "file"
+        except PermissionError:
+            skipped_paths.append(rel)
+            continue
+        if entry_type != "any" and entry_type != kind:
+            continue
         if not any(glob_matches(pattern, rel) for pattern in patterns):
             continue
         if any(glob_matches(pattern, rel) for pattern in exclude_patterns):
             continue
-        if len(items) >= max_results:
+        if len(items) >= max_entries:
             truncated = True
             break
-        items.append(entry_record(root, full_path, entry.name))
+        try:
+            items.append(entry_record(root, full_path, entry.name))
+        except PermissionError:
+            skipped_paths.append(rel)
+
     items.sort(key=lambda item: item["path"])
-    return {"path": root, "files": items, "truncated": truncated}
+    skipped_paths = sorted(set(skipped_paths))
+    return {
+        "path": root,
+        "entries": items,
+        "truncated": truncated,
+        "partial": bool(skipped_paths),
+        "skipped_paths": skipped_paths,
+    }
 
 
 def search_text(request):
@@ -511,8 +550,6 @@ def dispatch(request):
         return {"exists": result is not None, **(result or {})}
     if action == "list_dir":
         return list_directory(request)
-    if action == "list_files":
-        return list_files(request)
     if action == "search_text":
         return search_text(request)
     if action == "write_atomic":

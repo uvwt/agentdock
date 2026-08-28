@@ -97,9 +97,6 @@ func matchesAny(path string, patterns []string) bool {
 		if pattern == "" {
 			continue
 		}
-		if pattern == "**/*" || pattern == "*" {
-			return true
-		}
 		if ok := globMatch(pattern, path); ok {
 			return true
 		}

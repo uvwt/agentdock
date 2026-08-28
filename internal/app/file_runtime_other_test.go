@@ -9,7 +9,7 @@ import (
 )
 
 func TestNonWindowsFileToolSchemasDoNotExposeWSLRuntime(t *testing.T) {
-	for _, name := range []string{"read_file", "list_dir", "list_files", "search_text", "file_edit"} {
+	for _, name := range []string{"read_file", "list_dir", "search_text", "file_edit"} {
 		properties := InputSchema(name)["properties"].(map[string]any)
 		if _, ok := properties["runtime"]; ok {
 			t.Fatalf("%s input schema unexpectedly exposes runtime", name)

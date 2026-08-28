@@ -2,6 +2,7 @@ package file
 
 import (
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	toolcore "github.com/uvwt/agentdock/internal/tool/core"
@@ -45,4 +46,12 @@ func runBoundedCombinedOutput(cmd *exec.Cmd, limit int) ([]byte, int64, bool, er
 
 func redactSecrets(value string, extraPatterns []string) string {
 	return toolcore.RedactSecrets(value, extraPatterns)
+}
+
+func relativePathFromRoot(root, abs string) (string, error) {
+	rel, err := filepath.Rel(root, abs)
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(rel), nil
 }

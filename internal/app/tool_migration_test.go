@@ -76,7 +76,7 @@ func TestWorkflowVectorIndexUsesCanonicalMCPFields(t *testing.T) {
 
 func TestLegacyModelEntrypointsRemovedFromRuntime(t *testing.T) {
 	rt, _ := newCodeToolsRuntime(t)
-	for _, name := range []string{"apply_patch", "edit_file", "workspace_repos", "git_read", "git_write", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "check_github_repo_access", "browser_profile"} {
+	for _, name := range []string{"apply_patch", "edit_file", "workspace_repos", "git_read", "git_write", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "check_github_repo_access", "browser_profile", "list_files"} {
 		if _, err := rt.Call(context.Background(), name, map[string]any{}); err == nil {
 			t.Fatalf("legacy tool should not be callable: %s", name)
 		}

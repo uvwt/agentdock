@@ -66,7 +66,6 @@ func TestRuntimeOutputContractDefaultToolSuccessPaths(t *testing.T) {
 		{name: "agentdock_context", args: map[string]any{}},
 		{name: "read_file", args: map[string]any{"path": "contract.txt"}},
 		{name: "list_dir", args: map[string]any{"path": "."}},
-		{name: "list_files", args: map[string]any{"path": ".", "glob": "*.txt"}},
 		{name: "search_text", args: map[string]any{"path": ".", "query": "contract-marker"}},
 		{name: "file_edit", args: map[string]any{"action": "replace", "path": "contract.txt", "old": "contract-marker", "new": "updated-marker", "dry_run": true}},
 		{name: "exec_command", args: map[string]any{"cmd": "printf contract-marker", "execution_mode": "sync"}},

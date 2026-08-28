@@ -65,8 +65,7 @@ func TestInputSchemaPublishesRuntimeBounds(t *testing.T) {
 	}{
 		{tool: "read_file", property: "max_bytes", minimum: 1, maximum: maxTextOutputBytes},
 		{tool: "list_dir", property: "max_depth", minimum: 1, maximum: 20},
-		{tool: "list_dir", property: "max_entries", minimum: 1, maximum: 2000},
-		{tool: "list_files", property: "max_results", minimum: 1, maximum: 5000},
+		{tool: "list_dir", property: "max_entries", minimum: 1, maximum: 5000},
 		{tool: "search_text", property: "context_lines", minimum: 0, maximum: 20},
 		{tool: "search_text", property: "max_results", minimum: 1, maximum: 1000},
 		{tool: "exec_command", property: "timeout_ms", minimum: 1, maximum: 86400000},

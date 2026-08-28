@@ -12,11 +12,7 @@ func (svc *Service) readFileWSL(context.Context, map[string]any, fileRuntimeSele
 	return unsupportedWSLFileRuntime()
 }
 
-func (svc *Service) listDirWSL(context.Context, map[string]any, fileRuntimeSelection) (Result, error) {
-	return unsupportedWSLFileRuntime()
-}
-
-func (svc *Service) listFilesWSL(context.Context, map[string]any, fileRuntimeSelection) (Result, error) {
+func (svc *Service) listDirWSL(context.Context, map[string]any, fileRuntimeSelection, listDirOptions) (Result, error) {
 	return unsupportedWSLFileRuntime()
 }
 

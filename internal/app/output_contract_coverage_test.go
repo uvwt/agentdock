@@ -18,7 +18,6 @@ var outputContractCoverageInventory = map[string]outputContractCoverageEntry{
 	"agentdock_context":        {Variants: []string{"success"}},
 	"read_file":                {Variants: []string{"success"}},
 	"list_dir":                 {Variants: []string{"success"}},
-	"list_files":               {Variants: []string{"success"}},
 	"search_text":              {Variants: []string{"success"}},
 	"file_edit":                {Variants: []string{"replace", "add", "move", "delete"}},
 	"exec_command":             {Variants: []string{"success"}},

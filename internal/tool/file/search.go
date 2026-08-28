@@ -89,16 +89,6 @@ func (svc *Service) searchTextRG(ctx context.Context, p workspace.Path, opts Sea
 	if opts.ContextLines > 0 {
 		args = append(args, "--context", strconv.Itoa(opts.ContextLines))
 	}
-	for _, glob := range opts.IncludeGlobs {
-		if strings.TrimSpace(glob) != "" {
-			args = append(args, "--glob", glob)
-		}
-	}
-	for _, glob := range opts.ExcludeGlobs {
-		if strings.TrimSpace(glob) != "" {
-			args = append(args, "--glob", "!"+glob)
-		}
-	}
 	args = append(args, opts.Query, p.Abs)
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -112,14 +102,14 @@ func (svc *Service) searchTextRG(ctx context.Context, p workspace.Path, opts Sea
 		}
 		return nil, false
 	}
-	matches, truncated, ok := svc.parseRGJSON(output, opts)
+	matches, truncated, ok := svc.parseRGJSON(output, p.Abs, opts)
 	if !ok {
 		return nil, false
 	}
 	return Result{"query": opts.Query, "engine": "rg", "matches": matches, "total_matches": len(matches), "truncated": truncated}, true
 }
 
-func (svc *Service) parseRGJSON(output []byte, opts SearchOptions) ([]map[string]any, bool, bool) {
+func (svc *Service) parseRGJSON(output []byte, searchRoot string, opts SearchOptions) ([]map[string]any, bool, bool) {
 	matches := make([]map[string]any, 0)
 	before := map[string][]string{}
 	var lastMatch map[string]any
@@ -148,9 +138,29 @@ func (svc *Service) parseRGJSON(output []byte, opts SearchOptions) ([]map[string
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
 			return nil, false, false
 		}
-		path, err := svc.ws.Relative(event.Data.Path.Text)
+		if event.Type != "context" && event.Type != "match" {
+			continue
+		}
+		eventPath := event.Data.Path.Text
+		if !filepath.IsAbs(eventPath) {
+			eventPath = filepath.Join(searchRoot, eventPath)
+		}
+		requestRel, err := relativePathFromRoot(searchRoot, eventPath)
+		if err != nil {
+			return nil, false, false
+		}
+		if requestRel == "." {
+			requestRel = filepath.Base(eventPath)
+		}
+		if len(opts.IncludeGlobs) > 0 && !matchesAny(requestRel, opts.IncludeGlobs) {
+			continue
+		}
+		if matchesAny(requestRel, opts.ExcludeGlobs) {
+			continue
+		}
+		path, err := svc.ws.Relative(eventPath)
 		if err != nil || path == "" {
-			path = filepath.ToSlash(event.Data.Path.Text)
+			path = filepath.ToSlash(eventPath)
 		}
 		line := strings.TrimSuffix(event.Data.Lines.Text, "\n")
 		switch event.Type {
@@ -216,12 +226,24 @@ func (svc *Service) searchTextGo(ctx context.Context, p workspace.Path, opts Sea
 		if walkErr != nil {
 			return nil
 		}
-		rel, _ := svc.ws.Relative(abs)
-		if !opts.IncludeIgnored && ignore.Ignored(rel, d.IsDir()) {
-			if d.IsDir() {
-				return filepath.SkipDir
+		requestRel, relErr := relativePathFromRoot(p.Abs, abs)
+		if relErr != nil {
+			return relErr
+		}
+		if requestRel == "." && !d.IsDir() {
+			requestRel = filepath.Base(abs)
+		}
+		if !opts.IncludeIgnored {
+			ignoreRel, ignoreRelErr := svc.ws.Relative(abs)
+			if ignoreRelErr != nil {
+				return ignoreRelErr
 			}
-			return nil
+			if ignore.Ignored(ignoreRel, d.IsDir()) {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
 		}
 		if d.IsDir() {
 			if !opts.IncludeIgnored && abs != p.Abs && shouldSkipDir(d.Name()) {
@@ -235,11 +257,15 @@ func (svc *Service) searchTextGo(ctx context.Context, p workspace.Path, opts Sea
 		if !opts.IncludeHidden && workspace.Hidden(d.Name()) {
 			return nil
 		}
-		if len(opts.IncludeGlobs) > 0 && !matchesAny(rel, opts.IncludeGlobs) {
+		if len(opts.IncludeGlobs) > 0 && !matchesAny(requestRel, opts.IncludeGlobs) {
 			return nil
 		}
-		if matchesAny(rel, opts.ExcludeGlobs) {
+		if matchesAny(requestRel, opts.ExcludeGlobs) {
 			return nil
+		}
+		displayPath, err := svc.ws.Relative(abs)
+		if err != nil || displayPath == "" {
+			displayPath = filepath.ToSlash(abs)
 		}
 		data, err := os.ReadFile(abs)
 		if err != nil || looksBinary(data) || !utf8.Valid(data) {
@@ -266,7 +292,7 @@ func (svc *Service) searchTextGo(ctx context.Context, p workspace.Path, opts Sea
 				continue
 			}
 			before, after := contextAround(lines, i, opts.ContextLines)
-			matches = append(matches, map[string]any{"path": rel, "line": i + 1, "column": column, "preview": truncateString(line, 500), "match_text": truncateString(matchText, 500), "before": before, "after": after, "context_start_line": i + 1 - len(before), "context_end_line": i + 1 + len(after)})
+			matches = append(matches, map[string]any{"path": displayPath, "line": i + 1, "column": column, "preview": truncateString(line, 500), "match_text": truncateString(matchText, 500), "before": before, "after": after, "context_start_line": i + 1 - len(before), "context_end_line": i + 1 + len(after)})
 			if opts.MaxResults > 0 && len(matches) >= opts.MaxResults {
 				return filepath.SkipAll
 			}

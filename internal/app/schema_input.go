@@ -30,20 +30,13 @@ func InputSchema(name string) map[string]any {
 	case "list_dir":
 		props["path"] = stringProp(toolfile.PathDescription("Host directory path. Relative paths resolve from ~/AgentDock."))
 		toolfile.AddRuntimeProperties(props)
-		props["recursive"] = boolProp("List recursively.")
-		props["max_depth"] = boundedIntProp("Maximum recursive depth. Defaults to 1 and is capped at 20.", 1, 20)
-		props["max_entries"] = boundedIntProp("Maximum entries. Defaults to 200 and is capped at 2000.", 1, 2000)
-		props["include_hidden"] = boolProp("Include dotfiles.")
-		props["include_ignored"] = boolProp("Include normally skipped directories.")
-	case "list_files":
-		props["path"] = stringProp(toolfile.PathDescription("Host directory path. Relative paths resolve from ~/AgentDock."))
-		toolfile.AddRuntimeProperties(props)
-		props["patterns"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
-		props["glob"] = stringProp("Single glob pattern override.")
-		props["exclude_patterns"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
-		props["max_results"] = boundedIntProp("Maximum files. Defaults to 500 and is capped at 5000.", 1, 5000)
-		props["include_hidden"] = boolProp("Include dotfiles.")
-		props["include_ignored"] = boolProp("Include normally skipped directories.")
+		props["max_depth"] = boundedIntProp("Maximum traversal depth relative to path. Defaults to 1 and is capped at 20.", 1, 20)
+		props["max_entries"] = boundedIntProp("Maximum returned entries. Defaults to 200 and is capped at 5000.", 1, 5000)
+		props["patterns"] = map[string]any{"type": "array", "description": "Include glob patterns relative to path. * stays within one path segment; ** crosses directories. Defaults to [\"**/*\"].", "items": map[string]any{"type": "string"}}
+		props["exclude_patterns"] = map[string]any{"type": "array", "description": "Exclude glob patterns relative to path, using the same * and ** semantics as patterns.", "items": map[string]any{"type": "string"}}
+		props["entry_type"] = map[string]any{"type": "string", "description": "Return any entries, files only, or directories only. Defaults to any.", "enum": []string{"any", "file", "directory"}}
+		props["include_hidden"] = boolProp("Include hidden paths.")
+		props["include_ignored"] = boolProp("Include normally skipped or ignored paths.")
 	case "search_text":
 		props["path"] = stringProp(toolfile.PathDescription("Host path. Relative paths resolve from ~/AgentDock."))
 		toolfile.AddRuntimeProperties(props)
@@ -51,9 +44,9 @@ func InputSchema(name string) map[string]any {
 		props["regex"] = boolProp("Treat query as regex.")
 		props["case_sensitive"] = boolProp("Use case-sensitive search.")
 		props["include_hidden"] = boolProp("Include hidden files and directories.")
-		props["include_globs"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
-		props["glob"] = stringProp("Single include glob.")
-		props["exclude_globs"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
+		props["include_globs"] = map[string]any{"type": "array", "description": "Include glob patterns relative to path. * stays within one path segment; ** crosses directories.", "items": map[string]any{"type": "string"}}
+		props["glob"] = stringProp("Single include glob relative to path. * stays within one path segment; ** crosses directories.")
+		props["exclude_globs"] = map[string]any{"type": "array", "description": "Exclude glob patterns relative to path, using the same * and ** semantics as include_globs.", "items": map[string]any{"type": "string"}}
 		props["context_lines"] = boundedIntProp("Context lines around each match. Capped at 20.", 0, 20)
 		props["max_results"] = boundedIntProp("Maximum matches. Defaults to 100 and is capped at 1000.", 1, 1000)
 		required = []string{"query"}
@@ -326,7 +319,7 @@ func InputSchema(name string) map[string]any {
 		}
 	}
 	switch name {
-	case "exec_command", "acp_session", "acp_prompt", "acp_interaction", "mcp_manage", "mcp_tool_search", "mcp_tool_inspect", "mcp_tool_call", "browser_session", "browser_act", "browser_snapshot":
+	case "list_dir", "exec_command", "acp_session", "acp_prompt", "acp_interaction", "mcp_manage", "mcp_tool_search", "mcp_tool_inspect", "mcp_tool_call", "browser_session", "browser_act", "browser_snapshot":
 		// 这些工具的参数契约需要严格收敛，避免删除或拼错的字段被静默忽略。
 		schema["additionalProperties"] = false
 	}

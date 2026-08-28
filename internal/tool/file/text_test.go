@@ -13,6 +13,9 @@ func TestMatchesAnyWithDoubleStar(t *testing.T) {
 		{name: "root go file", path: "main.go", patterns: []string{"**/*.go"}, want: true},
 		{name: "nested go file", path: "internal/tool/file/text.go", patterns: []string{"**/*.go"}, want: true},
 		{name: "scoped go file", path: "internal/tool/file/text.go", patterns: []string{"internal/**/*.go"}, want: true},
+		{name: "single star stays at root", path: "internal/tool/file/text.go", patterns: []string{"*.go"}, want: false},
+		{name: "single star matches root", path: "text.go", patterns: []string{"*.go"}, want: true},
+		{name: "scoped single star does not cross slash", path: "internal/a/b.go", patterns: []string{"internal/*.go"}, want: false},
 		{name: "wrong extension", path: "internal/tool/file/text.md", patterns: []string{"**/*.go"}, want: false},
 		{name: "empty pattern ignored", path: "internal/tool/file/text.go", patterns: []string{"", "**/*.go"}, want: true},
 	}
