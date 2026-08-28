@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/publicartifacts"
 )
 
 type Server struct {
@@ -95,6 +97,35 @@ func (s *Server) Invoke(ctx context.Context, name string, arguments map[string]a
 	}
 	result, err := s.runtime.Call(ctx, name, arguments)
 	return toolEnvelope(name, result, err), nil
+}
+
+// ReadArtifactChunk serves the private Bridge operation used by NexusDock's
+// signed download proxy. It is not exposed as an MCP tool.
+func (s *Server) ReadArtifactChunk(artifactID string, offset int64, maxBytes int) (map[string]any, error) {
+	if s == nil {
+		return nil, errors.New("AgentDock MCP server is not initialized")
+	}
+	store := publicartifacts.New(s.cfg.AgentDockHome, s.cfg.OAuthServerURL, s.cfg.Port)
+	meta, data, eof, err := store.ReadChunk(artifactID, offset, maxBytes)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"artifact_id": meta.ArtifactID,
+		"filename":    meta.Filename,
+		"mime_type":   meta.MimeType,
+		"size_bytes":  meta.Size,
+		"sha256":      meta.SHA256,
+		"created_at":  meta.CreatedAt,
+		"expires_at":  meta.ExpiresAt,
+		"archive":     meta.Archive,
+		"width":       meta.Width,
+		"height":      meta.Height,
+		"offset":      offset,
+		"next_offset": offset + int64(len(data)),
+		"data_base64": base64.StdEncoding.EncodeToString(data),
+		"eof":         eof,
+	}, nil
 }
 
 func (s *Server) HTTPHandler() http.Handler {
