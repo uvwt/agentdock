@@ -142,7 +142,7 @@ func TestNexusDockRecallToolNamesHideLegacyMemoryTools(t *testing.T) {
 	for _, name := range rt.ToolNames() {
 		seen[name] = true
 	}
-	for _, name := range []string{"recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain", "private_note_manage"} {
+	for _, name := range []string{"recall_search", "recall_read", "recall_write", "recall_maintain", "private_note_manage"} {
 		if !seen[name] {
 			t.Fatalf("full profile missing memory tool %q", name)
 		}
@@ -175,22 +175,9 @@ func TestPrivateNoteManageIsHiddenWithoutNexus(t *testing.T) {
 	}
 }
 
-func TestRecallBootstrapSchemaSeparatesPackBudgetFromBody(t *testing.T) {
-	schema := inputSchema("recall_bootstrap")
-	props, ok := schema["properties"].(map[string]any)
-	if !ok {
-		t.Fatal("recall_bootstrap input schema properties missing")
-	}
-	if _, ok := props["include_body"]; !ok {
-		t.Fatalf("recall_bootstrap schema missing include_body: %#v", props)
-	}
-	maxBytes, ok := props["max_bytes"].(map[string]any)
-	if !ok {
-		t.Fatalf("recall_bootstrap max_bytes schema missing: %#v", props["max_bytes"])
-	}
-	desc, _ := maxBytes["description"].(string)
-	if !strings.Contains(desc, "Does not expose section bodies") {
-		t.Fatalf("max_bytes description should not imply body exposure: %q", desc)
+func TestRecallBootstrapIsNotModelFacing(t *testing.T) {
+	if _, ok := toolDefinition("recall_bootstrap"); ok {
+		t.Fatal("recall_bootstrap should be absorbed by agentdock_context")
 	}
 }
 
@@ -354,7 +341,7 @@ func TestRecallModelChoiceFieldsUseEnums(t *testing.T) {
 }
 
 func TestRecallPublicSchemasAreClosedForModelFacingArgs(t *testing.T) {
-	for _, name := range []string{"recall_bootstrap", "recall_search", "recall_read", "recall_write", "recall_maintain", "private_note_manage"} {
+	for _, name := range []string{"recall_search", "recall_read", "recall_write", "recall_maintain", "private_note_manage"} {
 		schema := inputSchema(name)
 		if got, _ := schema["additionalProperties"].(bool); got {
 			t.Fatalf("%s input schema should be closed to keep hidden compatibility args out of model-facing schema: %#v", name, schema)
@@ -439,36 +426,6 @@ func TestRecallWriteSchemaExposesCompactCoreFields(t *testing.T) {
 		if _, ok := outputProps[name]; !ok {
 			t.Fatalf("recall_write output schema missing %q", name)
 		}
-	}
-}
-
-func TestRecallBootstrapSchemaHidesProjectSelector(t *testing.T) {
-	inputProps, ok := inputSchema("recall_bootstrap")["properties"].(map[string]any)
-	if !ok {
-		t.Fatal("recall_bootstrap input schema properties missing")
-	}
-	if _, ok := inputProps["project"]; ok {
-		t.Fatal("recall_bootstrap input schema should not expose project; backend keeps the default context")
-	}
-	for _, name := range []string{"max_bytes", "include_raw", "include_body"} {
-		if _, ok := inputProps[name]; !ok {
-			t.Fatalf("recall_bootstrap input schema missing %q", name)
-		}
-	}
-	outputProps, ok := outputSchema("recall_bootstrap")["properties"].(map[string]any)
-	if !ok {
-		t.Fatal("recall_bootstrap output schema properties missing")
-	}
-	projectProp, ok := outputProps["project"].(map[string]any)
-	if !ok {
-		t.Fatal("recall_bootstrap output schema should include actual backend project/context field")
-	}
-	projectDesc, _ := projectProp["description"].(string)
-	if strings.Contains(projectDesc, "input selector") && !strings.Contains(projectDesc, "not an input selector") {
-		t.Fatalf("recall_bootstrap output project description is ambiguous: %q", projectDesc)
-	}
-	if projectDesc == "Project key." {
-		t.Fatal("recall_bootstrap output project description should not look like a model-selected project parameter")
 	}
 }
 

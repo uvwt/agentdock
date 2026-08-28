@@ -15,76 +15,14 @@ import (
 	"github.com/uvwt/agentdock/internal/config"
 )
 
-func (svc *Service) memoryBootstrap(ctx context.Context, args map[string]any) (Result, error) {
-	maxBytes := intArg(args, "max_bytes", 12000)
+func (svc *Service) memoryContextIndex(ctx context.Context, maxBytes int) (Result, error) {
 	if maxBytes <= 0 {
-		maxBytes = 12000
+		maxBytes = 3000
 	}
-	payload := map[string]any{"project": "agentdock", "max_bytes": maxBytes}
-	result, err := svc.Request(ctx, http.MethodPost, "/v1/recall/pack", payload)
-	if err != nil {
-		return nil, err
-	}
-	includeRaw := boolArg(args, "include_raw", false)
-	includeBody := boolArg(args, "include_body", false)
-	if sections, ok := result["sections"].([]any); ok {
-		compactedSections := make([]any, 0, len(sections))
-		for _, section := range sections {
-			memory, ok := section.(map[string]any)
-			if !ok {
-				compactedSections = append(compactedSections, section)
-				continue
-			}
-
-			compactedMemory := make(map[string]any, len(memory))
-			for key, value := range memory {
-				compactedMemory[key] = value
-			}
-
-			// bootstrap 是每个重要任务的入口，默认应像索引而不是正文包。
-			// max_bytes 只控制 NexusDock Recall 打包预算，不应因为模型显式传了默认值就返回长正文；
-			// 需要正文时用 recall_read，或明确传 include_body/include_raw。
-			content, hasContent := compactedMemory["content"]
-			rawContent, hasRawContent := compactedMemory["raw_content"]
-			body, hasBody := compactedMemory["body"].(string)
-			delete(compactedMemory, "content")
-			delete(compactedMemory, "raw_content")
-			if !includeBody {
-				delete(compactedMemory, "body")
-				if hasBody && strings.TrimSpace(body) != "" {
-					compactedMemory["body_excerpt"] = firstRunes(strings.TrimSpace(body), 320)
-				}
-			}
-			if includeRaw {
-				if hasContent {
-					compactedMemory["raw_content"] = content
-				} else if hasRawContent {
-					compactedMemory["raw_content"] = rawContent
-				}
-			}
-			compactedSections = append(compactedSections, compactedMemory)
-		}
-		result["sections"] = compactedSections
-	}
-	if !includeBody {
-		result["compact"] = true
-		result["body_policy"] = "body hidden by default; use include_body=true or recall_read for full body"
-	}
-	result["max_bytes"] = maxBytes
-	result["bootstrap"] = true
-	result["recommended_use"] = "Call recall_bootstrap at the start of substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks before editing files or running destructive commands."
-	return result, nil
-}
-
-func firstRunes(value string, max int) string {
-	if max <= 0 {
-		return ""
-	}
-	runes := []rune(value)
-	if len(runes) <= max {
-		return value
-	}
-	return string(runes[:max]) + "…"
+	return svc.Request(ctx, http.MethodPost, "/v1/recall/context-index", map[string]any{
+		"project":   "agentdock",
+		"max_bytes": maxBytes,
+	})
 }
 
 func (svc *Service) memoryList(ctx context.Context, args map[string]any) (Result, error) {
@@ -140,15 +78,16 @@ func (svc *Service) memorySearch(ctx context.Context, args map[string]any) (Resu
 	if query == "" {
 		return nil, toolError("MISSING_QUERY", "query is required", "validation")
 	}
-	payload := map[string]any{"query": query}
+	maxResults := intArg(args, "max_results", 8)
+	if maxResults <= 0 {
+		maxResults = 8
+	}
+	payload := map[string]any{"query": query, "max_results": maxResults}
 	if prefix := strings.TrimSpace(stringArg(args, "prefix", "")); prefix != "" {
 		payload["prefix"] = BackendPath(prefix)
 	}
 	if excludePrefix := strings.TrimSpace(stringArg(args, "exclude_prefix", "")); excludePrefix != "" {
 		payload["exclude_prefix"] = BackendPath(excludePrefix)
-	}
-	if maxResults := intArg(args, "max_results", 0); maxResults > 0 {
-		payload["max_results"] = maxResults
 	}
 	return svc.Request(ctx, http.MethodPost, "/v1/recall/search", payload)
 }

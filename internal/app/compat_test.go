@@ -81,9 +81,6 @@ func (r *Runtime) parseRGJSON(output []byte, options searchOptions) ([]map[strin
 func (r *Runtime) memoryRequest(ctx context.Context, method, endpoint string, payload any) (Result, error) {
 	return r.recall.Request(ctx, method, endpoint, payload)
 }
-func (r *Runtime) memoryBootstrap(ctx context.Context, args map[string]any) (Result, error) {
-	return r.recall.MemoryBootstrap(ctx, args)
-}
 func (r *Runtime) memoryRead(ctx context.Context, args map[string]any) (Result, error) {
 	return r.recall.MemoryRead(ctx, args)
 }

@@ -2,9 +2,6 @@ package recall
 
 import "context"
 
-func (s *Service) MemoryBootstrap(ctx context.Context, args map[string]any) (Result, error) {
-	return s.memoryBootstrap(ctx, args)
-}
 func (s *Service) MemoryRead(ctx context.Context, args map[string]any) (Result, error) {
 	return s.memoryRead(ctx, args)
 }

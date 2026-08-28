@@ -29,12 +29,19 @@ func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func
 				return
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "recall": memoryTestDocument(p, content)})
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/recall/pack":
-			sections := []any{}
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/recall/context-index":
+			items := []any{}
 			for p, content := range store {
-				sections = append(sections, memoryTestDocument(p, content))
+				kind := "project"
+				if p == "profile.md" {
+					kind = "profile"
+				}
+				items = append(items, map[string]any{"kind": kind, "path": p, "title": filepath.Base(p), "summary": memoryTestBody(content)})
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "project": "agentdock", "sections": sections, "count": len(sections)})
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"ok":            true,
+				"context_index": map[string]any{"project": "agentdock", "items": items, "max_bytes": 3000, "truncated": false},
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/recall/search":
 			var payload map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -68,7 +75,7 @@ func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func
 					results = append(results, map[string]any{"path": p, "score": 1, "snippet": memoryTestBody(content)})
 				}
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "query": query, "results": results, "count": len(results)})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "query": query, "results": results, "count": len(results), "requested_max_results": payload["max_results"]})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/recall":
 			var payload map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -165,36 +172,23 @@ func TestMemoryReadCompactsRawMarkdownByDefault(t *testing.T) {
 	}
 }
 
-func TestRecallBootstrapCompactsSectionRawMarkdown(t *testing.T) {
-	full := "---\ntype: test\n---\n\n# Packed\n"
-	store := map[string]string{"projects/agentdock/project.md": full}
+func TestRecallContextIndexUsesContextIndexEndpoint(t *testing.T) {
+	store := map[string]string{"profile.md": "# Profile\n\nCompact Nexus context.\n"}
 	rt, closeServer := newMemoryTestRuntime(t, store)
 	defer closeServer()
 
-	res, err := rt.memoryBootstrap(context.Background(), map[string]any{"project": "agentdock"})
+	res, err := rt.recallContextIndex(context.Background(), 3000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sections := res["sections"].([]any)
-	section := sections[0].(map[string]any)
-	if _, ok := section["content"]; ok {
-		t.Fatalf("section content should be hidden by default: %#v", section)
+	index := res["context_index"].(map[string]any)
+	items := index["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("context index should return one compact item: %#v", res)
 	}
-	if _, ok := section["raw_content"]; ok {
-		t.Fatalf("section raw_content should be hidden by default: %#v", section)
-	}
-
-	res, err = rt.memoryBootstrap(context.Background(), map[string]any{"project": "agentdock", "include_raw": true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sections = res["sections"].([]any)
-	section = sections[0].(map[string]any)
-	if raw, _ := section["raw_content"].(string); raw != full {
-		t.Fatalf("section raw_content should contain full Markdown: %#v", section)
-	}
-	if _, ok := section["content"]; ok {
-		t.Fatalf("include_raw should expose raw_content, not content: %#v", section)
+	item := items[0].(map[string]any)
+	if item["path"] != "profile.md" || item["kind"] != "profile" {
+		t.Fatalf("unexpected context item: %#v", item)
 	}
 }
 
@@ -282,28 +276,24 @@ func TestMemoryUpdateFactAndLint(t *testing.T) {
 	}
 }
 
-func TestMemoryBootstrapCompactByDefault(t *testing.T) {
-	store := map[string]string{"projects/agentdock/project.md": "# Bootstrap\n正文正文正文正文正文\n"}
+func TestRecallSearchDefaultsToEightResults(t *testing.T) {
+	store := map[string]string{"profile.md": "# Profile\nsearchable memory\n"}
 	rt, closeServer := newMemoryTestRuntime(t, store)
 	defer closeServer()
-	res, err := rt.memoryBootstrap(context.Background(), map[string]any{"project": "agentdock", "max_bytes": 12000})
+
+	res, err := rt.recallSearch(context.Background(), map[string]any{"query": "searchable"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	section := res["sections"].([]any)[0].(map[string]any)
-	if _, ok := section["body"]; ok {
-		t.Fatalf("bootstrap should not include body unless include_body=true, even when max_bytes is explicit: %#v", section)
-	}
-	if _, ok := section["body_excerpt"]; !ok {
-		t.Fatalf("default bootstrap should include excerpt: %#v", section)
+	if got := fmt.Sprint(res["requested_max_results"]); got != "8" {
+		t.Fatalf("default max_results = %s, want 8: %#v", got, res)
 	}
 
-	res, err = rt.memoryBootstrap(context.Background(), map[string]any{"project": "agentdock", "include_body": true})
+	res, err = rt.recallSearch(context.Background(), map[string]any{"query": "searchable", "max_results": 3})
 	if err != nil {
 		t.Fatal(err)
 	}
-	section = res["sections"].([]any)[0].(map[string]any)
-	if body, _ := section["body"].(string); body == "" {
-		t.Fatalf("include_body should expose section body: %#v", section)
+	if got := fmt.Sprint(res["requested_max_results"]); got != "3" {
+		t.Fatalf("explicit max_results = %s, want 3: %#v", got, res)
 	}
 }

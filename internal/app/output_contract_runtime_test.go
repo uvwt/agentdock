@@ -87,7 +87,7 @@ func TestRuntimeOutputContractDefaultToolSuccessPaths(t *testing.T) {
 	}
 }
 
-func TestRuntimeOutputContractRecallReadBootstrapMaintain(t *testing.T) {
+func TestRuntimeOutputContractRecallReadMaintain(t *testing.T) {
 	store := map[string]string{
 		"devices/test.md": "---\ntype: test\n---\n\n# Contract\n",
 	}
@@ -100,7 +100,6 @@ func TestRuntimeOutputContractRecallReadBootstrapMaintain(t *testing.T) {
 		args map[string]any
 	}{
 		{name: "recall_read", args: map[string]any{"path": "devices/test.md"}},
-		{name: "recall_bootstrap", args: map[string]any{}},
 		{name: "recall_maintain", args: map[string]any{"action": "list"}},
 	}
 	for _, call := range calls {

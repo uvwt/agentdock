@@ -8,13 +8,13 @@ import (
 	"strings"
 )
 
-func (svc *Service) Bootstrap(ctx context.Context, args map[string]any) (Result, error) {
-	result, err := svc.memoryBootstrap(ctx, args)
+// ContextIndex 仅供 agentdock_context 内部加载紧凑 Recall 启动索引，不作为独立模型工具暴露。
+func (svc *Service) ContextIndex(ctx context.Context, maxBytes int) (Result, error) {
+	result, err := svc.memoryContextIndex(ctx, maxBytes)
 	if err != nil {
 		return nil, err
 	}
 	decorateRecallResult(result)
-	result["recommended_use"] = "Call recall_bootstrap before substantial AgentDock, project, deployment, debugging, or preference-sensitive tasks."
 	return result, nil
 }
 

@@ -75,7 +75,9 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool) (Re
 
 	contextResult.Rules = append(contextResult.Rules, "任务执行过程中，在形成有恢复价值的断点时调用 task_manage checkpoint；可用 completed_step_ids/current_step_id 原子批量更新，final_review=pass 不会自动补全未完成步骤。")
 	if requiresNexus(r.cfg) && !nexusLocalOnly {
-		contextResult.Rules = append(contextResult.Rules, "记忆摘要只提供高优先级规则；具体历史事实不确定时，再用 recall_search 或 recall_read 精确召回。")
+		contextResult.Rules = append(contextResult.Rules,
+			"记忆启动索引只提供紧凑背景与资料入口；索引已给出具体 path 时优先 recall_read 该条目，只有索引未覆盖且任务依赖具体历史事实时才 recall_search，索引信息已足够时不要机械检索。",
+		)
 	}
 
 	var result Result
@@ -157,20 +159,24 @@ type capabilityTemplateListItem struct {
 	Title string `json:"title"`
 }
 
-type capabilityRecallBootstrap struct {
-	Sections     []capabilityMemorySection `json:"sections"`
-	RunbookIndex []capabilityMemoryRunbook `json:"runbook_index"`
+type capabilityRecallContextIndexResponse struct {
+	ContextIndex capabilityRecallContextIndex `json:"context_index"`
 }
 
-type capabilityMemorySection struct {
-	Path        string `json:"path"`
-	BodyExcerpt string `json:"body_excerpt"`
-	Summary     string `json:"summary"`
+type capabilityRecallContextIndex struct {
+	Items     []capabilityRecallIndexItem `json:"items"`
+	Truncated bool                        `json:"truncated"`
 }
 
-type capabilityMemoryRunbook struct {
-	Title string `json:"title"`
-	Path  string `json:"path"`
+type capabilityRecallIndexItem struct {
+	Kind     string   `json:"kind"`
+	Path     string   `json:"path"`
+	Title    string   `json:"title"`
+	Summary  string   `json:"summary"`
+	Keywords []string `json:"keywords"`
+	Aliases  []string `json:"aliases"`
+	Tags     []string `json:"tags"`
+	CardType string   `json:"card_type"`
 }
 
 func (r *Runtime) dynamicMCPCapabilityIndex() []capabilityDynamicMCPItem {
@@ -226,39 +232,52 @@ func (r *Runtime) templateCapabilityIndex(ctx context.Context) ([]capabilityTemp
 func (r *Runtime) memoryCapabilityIndex(ctx context.Context) ([]capabilityMemoryItem, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(capMaxInt(1000, capMinInt(config.RecallTimeoutMS, 5000)))*time.Millisecond)
 	defer cancel()
-	result, err := r.recallBootstrap(ctx, map[string]any{"max_bytes": 3000})
+	result, err := r.recallContextIndex(ctx, 3000)
 	if err != nil {
 		return []capabilityMemoryItem{}, err
 	}
-	var bootstrap capabilityRecallBootstrap
-	if err := remarshal(result, &bootstrap); err != nil {
+	var response capabilityRecallContextIndexResponse
+	if err := remarshal(result, &response); err != nil {
 		return []capabilityMemoryItem{}, err
 	}
-	items := make([]capabilityMemoryItem, 0, 5)
-	for _, section := range bootstrap.Sections {
-		excerpt := strings.TrimSpace(section.BodyExcerpt)
-		if excerpt == "" {
-			excerpt = strings.TrimSpace(section.Summary)
-		}
-		if excerpt == "" {
+	items := make([]capabilityMemoryItem, 0, len(response.ContextIndex.Items))
+	seen := make(map[string]struct{}, len(response.ContextIndex.Items))
+	for _, item := range response.ContextIndex.Items {
+		path := strings.TrimSpace(item.Path)
+		if path == "" {
 			continue
 		}
-		items = append(items, capabilityMemoryItem{Name: section.Path, Description: truncateString(excerpt, 500)})
-		if len(items) >= 5 {
-			return items, nil
-		}
-	}
-	for _, runbook := range bootstrap.RunbookIndex {
-		title := strings.TrimSpace(runbook.Title)
-		if title == "" {
+		if _, exists := seen[path]; exists {
 			continue
 		}
-		items = append(items, capabilityMemoryItem{Name: title, Description: runbook.Path})
-		if len(items) >= 5 {
-			break
-		}
+		seen[path] = struct{}{}
+		items = append(items, capabilityMemoryItem{Name: path, Description: recallIndexDescription(item)})
 	}
 	return items, nil
+}
+
+func recallIndexDescription(item capabilityRecallIndexItem) string {
+	if summary := strings.TrimSpace(item.Summary); summary != "" {
+		if title := strings.TrimSpace(item.Title); title != "" {
+			return truncateString(title+" — "+summary, 360)
+		}
+		return truncateString(summary, 360)
+	}
+	parts := []string{}
+	if title := strings.TrimSpace(item.Title); title != "" {
+		parts = append(parts, title)
+	}
+	if kind := strings.TrimSpace(item.Kind); kind != "" {
+		parts = append(parts, kind)
+	}
+	if cardType := strings.TrimSpace(item.CardType); cardType != "" {
+		parts = append(parts, cardType)
+	}
+	labels := append(append(append([]string{}, item.Keywords...), item.Aliases...), item.Tags...)
+	if len(labels) > 0 {
+		parts = append(parts, strings.Join(labels, ", "))
+	}
+	return truncateString(strings.Join(parts, " · "), 360)
 }
 
 func capMinInt(a, b int) int {

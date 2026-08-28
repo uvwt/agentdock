@@ -388,8 +388,11 @@ promotion weight = 0
 Recall 是知识存储；Evolution 是知识生命周期。
 
 ```text
-recall_search / recall_read / recall_bootstrap
-→ 查询已有知识
+agentdock_context
+→ 自动提供 query-less compact Recall 启动索引与资料入口
+
+recall_search / recall_read
+→ 索引未覆盖时搜索，或按已知 path 精确读取已有知识
 
 recall_write
 → 明确的人/模型 CRUD

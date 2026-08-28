@@ -474,10 +474,8 @@ func TestMCPAppsExposeNexusViewsWhenNexusEnabled(t *testing.T) {
 	if meta := toolResultMetadata(workflowDef, map[string]any{"action": "list"}); len(meta) != 0 {
 		t.Fatalf("workflow list should not bind result UI: %#v", meta)
 	}
-	if tool := tools["recall_bootstrap"]; tool == nil {
-		t.Fatal("recall_bootstrap was not exposed")
-	} else if tool.Meta["ui"] != nil {
-		t.Fatalf("recall_bootstrap should keep the existing context-oriented presentation: %#v", tool.Meta)
+	if tool := tools["recall_bootstrap"]; tool != nil {
+		t.Fatalf("recall_bootstrap should be absorbed by agentdock_context, got %#v", tool)
 	}
 
 	resources := map[string]*mcpsdk.Resource{}
