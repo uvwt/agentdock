@@ -171,6 +171,7 @@ AgentDock can optionally pair with NexusDock as a multi-device aggregation entry
 - Workflow templates
 - Private notes
 - Multi-device state coordination
+- Temporary signed Artifact downloads proxied by NexusDock while the source node is online
 
 ## Runtime directories
 

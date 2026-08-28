@@ -29,6 +29,9 @@ import (
 const (
 	DefaultRetention = 24 * time.Hour
 	MaxRetention     = 7 * 24 * time.Hour
+	// MaxBridgeChunkBytes keeps one base64-encoded Nexus Bridge response well below
+	// the WebSocket message limit while avoiding tiny repeated reads.
+	MaxBridgeChunkBytes = 512 << 10
 )
 
 type Store struct {
@@ -328,6 +331,66 @@ func (s Store) Read(artifactID string, maxBytes int64) (Metadata, []byte, error)
 		return Metadata{}, nil, errors.New("artifact payload checksum does not match metadata")
 	}
 	return meta, data, nil
+}
+
+// ReadChunk returns one verified slice of an Artifact for the outbound-only
+// Nexus Bridge. A zero maxBytes performs a metadata-only read for HTTP HEAD.
+func (s Store) ReadChunk(artifactID string, offset int64, maxBytes int) (Metadata, []byte, bool, error) {
+	if offset < 0 {
+		return Metadata{}, nil, false, errors.New("artifact offset must not be negative")
+	}
+	if maxBytes < 0 || maxBytes > MaxBridgeChunkBytes {
+		return Metadata{}, nil, false, fmt.Errorf("artifact chunk size must be between 0 and %d bytes", MaxBridgeChunkBytes)
+	}
+	meta, err := s.readMetadata(artifactID)
+	if err != nil {
+		return Metadata{}, nil, false, fmt.Errorf("read artifact metadata: %w", err)
+	}
+	if time.Now().UTC().After(meta.ExpiresAt) {
+		return Metadata{}, nil, false, errors.New("artifact has expired")
+	}
+	if offset > meta.Size {
+		return Metadata{}, nil, false, fmt.Errorf("artifact offset %d exceeds payload size %d", offset, meta.Size)
+	}
+
+	payload := filepath.Join(s.Root, artifactID, "payload")
+	file, err := os.Open(payload)
+	if err != nil {
+		return Metadata{}, nil, false, fmt.Errorf("open artifact payload: %w", err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() != meta.Size {
+		return Metadata{}, nil, false, errors.New("artifact payload size does not match metadata")
+	}
+	if maxBytes == 0 {
+		return meta, nil, offset == meta.Size, nil
+	}
+	// The first chunk verifies the immutable snapshot before any bytes leave the
+	// node. Nexus additionally verifies the complete stream against this digest.
+	if offset == 0 {
+		payloadSHA, hashErr := streamSHA256(file)
+		if hashErr != nil || payloadSHA != meta.SHA256 {
+			return Metadata{}, nil, false, errors.New("artifact payload checksum does not match metadata")
+		}
+	}
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		return Metadata{}, nil, false, fmt.Errorf("seek artifact payload: %w", err)
+	}
+	remaining := meta.Size - offset
+	readBytes := int64(maxBytes)
+	if remaining < readBytes {
+		readBytes = remaining
+	}
+	data, err := io.ReadAll(io.LimitReader(file, readBytes))
+	if err != nil {
+		return Metadata{}, nil, false, fmt.Errorf("read artifact chunk: %w", err)
+	}
+	if int64(len(data)) != readBytes {
+		return Metadata{}, nil, false, errors.New("artifact payload changed while it was being read")
+	}
+	nextOffset := offset + int64(len(data))
+	return meta, data, nextOffset == meta.Size, nil
 }
 
 func (s Store) Cleanup(now time.Time) error {
