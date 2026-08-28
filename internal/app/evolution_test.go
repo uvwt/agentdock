@@ -79,7 +79,7 @@ func TestTaskFinalReviewAutomaticallyResolvesPreboundLearningCheck(t *testing.T)
 	}
 	defer runtime.Close()
 
-	proposed, err := runtime.evolve(t.Context(), map[string]any{
+	proposed, err := runtime.Call(t.Context(), "evolve", map[string]any{
 		"intent": "propose",
 		"candidate": map[string]any{
 			"type": "runbook", "statement": "final review 自动解析预绑定经验", "project": "agentdock",
@@ -88,6 +88,7 @@ func TestTaskFinalReviewAutomaticallyResolvesPreboundLearningCheck(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertToolResultMatchesOutputSchema(t, "evolve", proposed)
 	evolutionID := proposed["evolution_id"].(string)
 
 	created, err := runtime.taskManage(t.Context(), map[string]any{

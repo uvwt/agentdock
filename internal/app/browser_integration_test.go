@@ -57,6 +57,7 @@ func startRuntimeBrowser(t *testing.T, runtime *Runtime, url string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertToolResultMatchesOutputSchema(t, "browser_session", result)
 	if result["browser_ok"] != true {
 		t.Fatalf("browser_session result = %#v", result)
 	}
@@ -74,6 +75,12 @@ func TestBrowserIntegrationCloseAfterWaitsForArtifactPublication(t *testing.T) {
 	defer runtime.Close()
 	sessionID := startRuntimeBrowser(t, runtime, server.URL)
 
+	snapshot, err := runtime.browserSnapshot(context.Background(), map[string]any{"session_id": sessionID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertToolResultMatchesOutputSchema(t, "browser_snapshot", snapshot)
+
 	result, err := runtime.browserAct(context.Background(), map[string]any{
 		"session_id": sessionID,
 		"actions": []any{map[string]any{
@@ -85,6 +92,7 @@ func TestBrowserIntegrationCloseAfterWaitsForArtifactPublication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertToolResultMatchesOutputSchema(t, "browser_act", result)
 	if result["browser_ok"] != true || result["closed"] != true {
 		t.Fatalf("browser_act close_after result = %#v", result)
 	}

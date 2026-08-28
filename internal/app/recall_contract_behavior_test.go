@@ -22,6 +22,9 @@ func TestRecallWriteMatchesCanonicalBehaviorCases(t *testing.T) {
 			before, existedBefore := prepareRecallWriteBehaviorFixture(store, behavior)
 
 			result, err := runtime.recallWrite(context.Background(), args)
+			if err == nil {
+				assertToolResultMatchesOutputSchema(t, "recall_write", result)
+			}
 			got := classifyRecallWriteOutcome(behavior, result, err)
 			if got != behavior.Expected {
 				t.Fatalf("outcome=%s want=%s result=%#v err=%v", got, behavior.Expected, result, err)

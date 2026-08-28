@@ -101,6 +101,33 @@ func TestRuntimeOutputContractDefaultToolSuccessPaths(t *testing.T) {
 	}
 }
 
+func TestRuntimeOutputContractRecallReadBootstrapMaintain(t *testing.T) {
+	store := map[string]string{
+		"devices/test.md": "---\ntype: test\n---\n\n# Contract\n",
+	}
+	runtime, closeServer := newMemoryTestRuntime(t, store)
+	defer closeServer()
+	defer runtime.Close()
+
+	calls := []struct {
+		name string
+		args map[string]any
+	}{
+		{name: "recall_read", args: map[string]any{"path": "devices/test.md"}},
+		{name: "recall_bootstrap", args: map[string]any{}},
+		{name: "recall_maintain", args: map[string]any{"action": "list"}},
+	}
+	for _, call := range calls {
+		t.Run(call.name, func(t *testing.T) {
+			result, err := runtime.Call(context.Background(), call.name, call.args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertToolResultMatchesOutputSchema(t, call.name, result)
+		})
+	}
+}
+
 func TestRuntimeOutputContractACPInfoNormalizesOmittedInitializeFields(t *testing.T) {
 	const helperEnv = "GO_WANT_OUTPUT_CONTRACT_ACP_HELPER"
 	const omitCapabilitiesEnv = "GO_OUTPUT_CONTRACT_ACP_OMIT_CAPABILITIES"
@@ -243,6 +270,7 @@ func TestRuntimeOutputContractACPOptionalFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertToolResultMatchesOutputSchema(t, "acp_prompt", started)
 	runID, _ := started["run_id"].(string)
 	if runID == "" {
 		t.Fatalf("prompt start = %#v", started)
