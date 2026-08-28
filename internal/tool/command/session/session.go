@@ -354,20 +354,20 @@ func (s *Session) WaitError() error {
 	return s.waitErr
 }
 
-func (s *Session) Kill() bool {
+func (s *Session) Kill() (bool, error) {
 	s.mu.Lock()
 	if s.completed {
 		s.mu.Unlock()
-		return false
+		return false, nil
 	}
 	runner := s.runner
 	s.mu.Unlock()
 	if runner == nil {
-		return false
+		return false, nil
 	}
-	_ = runner.Kill()
+	err := runner.Kill()
 	s.Cancel()
-	return true
+	return true, err
 }
 
 func (s *Session) Snapshot(status string, maxBytes int) map[string]any {
