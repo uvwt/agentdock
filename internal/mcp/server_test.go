@@ -37,7 +37,7 @@ func TestReadArtifactChunkServesPrivateBridgePayload(t *testing.T) {
 }
 
 func TestToolDescriptorsExposeSafetyAnnotations(t *testing.T) {
-	descriptors := toolDescriptorsForNames([]string{"read_file", "skill_package", "task_manage", "file_publish"}, config.Config{})
+	descriptors := toolDescriptorsForConfig(t, []string{"read_file", "skill_package", "task_manage", "file_publish"}, config.Config{})
 	byName := map[string]map[string]any{}
 	for _, descriptor := range descriptors {
 		name, _ := descriptor["name"].(string)
@@ -76,7 +76,7 @@ func assertToolAnnotation(t *testing.T, descriptor map[string]any, readOnly, des
 }
 
 func TestFilePublishDescriptorExposesFileRewritePath(t *testing.T) {
-	descriptors := toolDescriptorsForNames([]string{"file_publish"}, config.Config{})
+	descriptors := toolDescriptorsForConfig(t, []string{"file_publish"}, config.Config{})
 	byName := map[string]map[string]any{}
 	for _, descriptor := range descriptors {
 		name, _ := descriptor["name"].(string)
@@ -128,7 +128,7 @@ func TestOpenAIFileMetadataMatchesDeclaredSchemas(t *testing.T) {
 }
 
 func TestToolDescriptorsUseConfigAwareTaskManageSchema(t *testing.T) {
-	withoutNexus := toolDescriptorsForNames([]string{"task_manage"}, config.Config{})[0]
+	withoutNexus := toolDescriptorsForConfig(t, []string{"task_manage"}, config.Config{})[0]
 	withoutProps := withoutNexus["inputSchema"].(map[string]any)["properties"].(map[string]any)
 	if _, ok := withoutProps["template_id"]; ok {
 		t.Fatal("task_manage descriptor should hide Nexus-only fields without Nexus")
@@ -138,7 +138,7 @@ func TestToolDescriptorsUseConfigAwareTaskManageSchema(t *testing.T) {
 		t.Fatal("task_manage descriptor should hide Nexus-only output fields without Nexus")
 	}
 
-	withNexus := toolDescriptorsForNames([]string{"task_manage"}, config.Config{NexusEndpoint: "http://127.0.0.1:18777"})[0]
+	withNexus := toolDescriptorsForConfig(t, []string{"task_manage"}, config.Config{NexusEndpoint: "http://127.0.0.1:18777"})[0]
 	withProps := withNexus["inputSchema"].(map[string]any)["properties"].(map[string]any)
 	if _, ok := withProps["template_id"]; !ok {
 		t.Fatal("task_manage descriptor should expose Nexus fields with Nexus")
@@ -307,4 +307,32 @@ func serveStreamableHTTPRequest(t *testing.T, cfg config.Config) *httptest.Respo
 	response := httptest.NewRecorder()
 	NewServer(nil, cfg).HTTPHandler().ServeHTTP(response, request)
 	return response
+}
+
+func toolDescriptorsForConfig(t *testing.T, names []string, cfg config.Config) []map[string]any {
+	t.Helper()
+	root := t.TempDir()
+	cfg.AgentDockDefaultDir = root
+	cfg.AgentDockHome = filepath.Join(root, ".agentdock")
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("normalize runtime config: %v", err)
+	}
+	runtime, err := app.NewRuntime(cfg)
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := runtime.Close(); err != nil {
+			t.Errorf("close runtime: %v", err)
+		}
+	})
+	definitions := make([]ToolDefinition, 0, len(names))
+	for _, name := range names {
+		definition, ok := runtime.ToolDefinition(name)
+		if !ok {
+			t.Fatalf("tool %s is not available for test config", name)
+		}
+		definitions = append(definitions, definition)
+	}
+	return toolDescriptors(definitions)
 }

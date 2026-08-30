@@ -15,8 +15,12 @@ import (
 func newCodeToolsRuntime(t *testing.T) (*Runtime, string) {
 	t.Helper()
 	root := t.TempDir()
+	server := newWorkflowTemplateNexusTestServer(t)
 	cfg := config.Config{
-		AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock"),
+		AgentDockDefaultDir: root,
+		AgentDockHome:       filepath.Join(root, ".agentdock"),
+		NexusEndpoint:       server.URL,
+		NexusDeviceToken:    "test-device-token",
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
@@ -25,9 +29,6 @@ func newCodeToolsRuntime(t *testing.T) (*Runtime, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := newWorkflowTemplateNexusTestServer(t)
-	rt.cfg.NexusEndpoint = server.URL
-	rt.cfg.NexusDeviceToken = "test-device-token"
 	return rt, root
 }
 

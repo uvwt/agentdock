@@ -88,7 +88,7 @@ func TestTaskFinalReviewAutomaticallyResolvesPreboundLearningCheck(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertToolResultMatchesOutputSchema(t, "evolve", proposed)
+	assertToolResultMatchestestOutputSchema(t, "evolve", proposed)
 	evolutionID := proposed["evolution_id"].(string)
 
 	created, err := runtime.Call(t.Context(), "task_manage", map[string]any{

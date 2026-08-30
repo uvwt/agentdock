@@ -6,7 +6,7 @@ import (
 )
 
 func TestRecallSearchOutputSchemaDeclaresCitationIdentityWithoutDroppingNativeFields(t *testing.T) {
-	schema := OutputSchema("recall_search")
+	schema := testOutputSchema("recall_search")
 	props := schema["properties"].(map[string]any)
 	for _, field := range []string{"count", "query", "recall_endpoint", "recall_kind", "recall_store", "results"} {
 		if _, ok := props[field]; !ok {

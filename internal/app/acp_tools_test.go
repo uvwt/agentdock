@@ -57,26 +57,26 @@ func TestACPToolsAreFeatureGatedAndUseStrictSchemas(t *testing.T) {
 		if !found {
 			t.Fatalf("ACP tool %s is not exposed", name)
 		}
-		schema := InputSchema(name)
+		schema := testInputSchema(name)
 		if schema["additionalProperties"] != false {
 			t.Fatalf("%s additionalProperties = %#v", name, schema["additionalProperties"])
 		}
 	}
 
-	sessionProperties := InputSchema("acp_session")["properties"].(map[string]any)
+	sessionProperties := testInputSchema("acp_session")["properties"].(map[string]any)
 	actions := sessionProperties["action"].(map[string]any)["enum"].([]string)
 	expectedActions := []string{"info", "authenticate", "new", "load", "resume", "fork", "set_mode", "set_config", "list", "inspect", "close", "delete"}
 	if !reflect.DeepEqual(actions, expectedActions) {
 		t.Fatalf("acp_session actions = %#v, want %#v", actions, expectedActions)
 	}
-	sessionOutputProperties := OutputSchema("acp_session")["properties"].(map[string]any)
+	sessionOutputProperties := testOutputSchema("acp_session")["properties"].(map[string]any)
 	for _, property := range []string{"context_policy", "event_policy", "interaction_policy", "steering_policy"} {
 		if _, exists := sessionOutputProperties[property]; !exists {
 			t.Fatalf("acp_session output schema missing %s", property)
 		}
 	}
 
-	promptProperties := OutputSchema("acp_prompt")["properties"].(map[string]any)
+	promptProperties := testOutputSchema("acp_prompt")["properties"].(map[string]any)
 	for _, property := range []string{"next_seq", "first_seq", "latest_seq", "dropped_count", "has_more", "truncated"} {
 		if _, exists := promptProperties[property]; !exists {
 			t.Fatalf("acp_prompt output schema missing %s", property)

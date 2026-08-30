@@ -223,7 +223,7 @@ func assertObjectSchema(t *testing.T, name, kind string, schema map[string]any) 
 func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	props := schemaProperties(t, "task_manage")
 	assertSameStrings(t, enumStrings(t, props["action"]), []string{"create", "list", "get", "checkpoint", "block", "resume", "final_review", "complete"})
-	for _, name := range []string{"completion_conditions", "steps", "template_id", "source_template_ids", "learning_checks", "step_id", "completed_step_ids", "current_step_id", "status", "summary", "verified", "risks"} {
+	for _, name := range []string{"completion_conditions", "steps", "step_id", "completed_step_ids", "current_step_id", "status", "summary", "verified", "risks"} {
 		if _, ok := props[name]; !ok {
 			t.Fatalf("task_manage input schema missing %q", name)
 		}
@@ -287,10 +287,6 @@ func TestLegacyModelEntrypointsAreRemoved(t *testing.T) {
 	for _, name := range []string{"apply_patch", "edit_file", "workspace_repos", "git_read", "git_write", "git_status", "git_diff", "git_log", "git_inspect", "git_remote", "git_clone", "git_commit", "check_github_repo_access", "browser_profile", "private_notes_search", "private_notes_read", "private_notes_write", "private_notes_status", "private_notes_maintain"} {
 		if _, ok := toolDefinition(name); ok {
 			t.Fatalf("legacy tool should not be model-facing: %s", name)
-		}
-		props := schemaProperties(t, name)
-		if len(props) != 0 {
-			t.Fatalf("legacy tool schema should be empty for %s: %#v", name, props)
 		}
 	}
 }

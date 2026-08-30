@@ -28,7 +28,7 @@ func TestFileEditAddMoveDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertToolResultMatchesOutputSchema(t, "file_edit", result)
+	assertToolResultMatchestestOutputSchema(t, "file_edit", result)
 	if result["changed"] != true {
 		t.Fatalf("expected add to change file: %#v", result)
 	}
@@ -39,7 +39,7 @@ func TestFileEditAddMoveDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertToolResultMatchesOutputSchema(t, "file_edit", result)
+	assertToolResultMatchestestOutputSchema(t, "file_edit", result)
 	if result["new_path"] != "final.txt" {
 		t.Fatalf("unexpected move result: %#v", result)
 	}
@@ -50,7 +50,7 @@ func TestFileEditAddMoveDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertToolResultMatchesOutputSchema(t, "file_edit", result)
+	assertToolResultMatchestestOutputSchema(t, "file_edit", result)
 	if result["changed"] != true {
 		t.Fatalf("expected delete to report changed: %#v", result)
 	}
@@ -65,7 +65,7 @@ func TestWorkflowVectorIndexUsesCanonicalMCPFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertToolResultMatchesOutputSchema(t, "workflow_template_manage", result)
+	assertToolResultMatchestestOutputSchema(t, "workflow_template_manage", result)
 	if result["action"] != "vector_index" || result["vector_index_available"] != false {
 		t.Fatalf("vector_index result = %#v", result)
 	}
@@ -89,7 +89,7 @@ func TestWorkflowTemplateMatchIsOnlyTemplateDiscoveryEntrypoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertToolResultMatchesOutputSchema(t, "workflow_template_manage", result)
+	assertToolResultMatchestestOutputSchema(t, "workflow_template_manage", result)
 	if result["action"] != "match" {
 		t.Fatalf("unexpected workflow template match result: %#v", result)
 	}

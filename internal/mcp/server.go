@@ -39,8 +39,8 @@ func NewServer(runtime *app.Runtime, cfg config.Config) *Server {
 	)
 	if runtime != nil {
 		server.registerAppResources()
-		for _, name := range runtime.ToolNames() {
-			server.registerTool(name, cfg)
+		for _, definition := range runtime.ToolDefinitions() {
+			server.registerTool(definition)
 		}
 	}
 	server.httpHandler = mcpsdk.NewStreamableHTTPHandler(
@@ -88,7 +88,10 @@ func (s *Server) ToolContractHash() string {
 }
 
 func (s *Server) ToolDescriptors() []map[string]any {
-	return toolDescriptorsForNames(s.ToolNames(), s.cfg)
+	if s == nil || s.runtime == nil {
+		return nil
+	}
+	return toolDescriptors(s.runtime.ToolDefinitions())
 }
 
 func (s *Server) Invoke(ctx context.Context, name string, arguments map[string]any) (map[string]any, error) {
@@ -168,18 +171,14 @@ func (s *Server) ServeStdio(in io.Reader, out io.Writer) error {
 	})
 }
 
-func (s *Server) registerTool(name string, cfg config.Config) {
-	def, ok := toolDefinition(name)
-	if !ok {
-		return
-	}
+func (s *Server) registerTool(def ToolDefinition) {
 	meta := toolMetadata(def)
 	tool := &mcpsdk.Tool{
-		Name:         name,
+		Name:         def.Name,
 		Title:        def.Title,
 		Description:  def.Description,
-		InputSchema:  app.InputSchemaForConfig(name, cfg),
-		OutputSchema: app.OutputSchemaForConfig(name, cfg),
+		InputSchema:  def.InputSchema,
+		OutputSchema: def.OutputSchema,
 	}
 	if def.Annotations != nil {
 		tool.Annotations = &mcpsdk.ToolAnnotations{
@@ -196,7 +195,7 @@ func (s *Server) registerTool(name string, cfg config.Config) {
 	// 使用低层 AddTool：AgentDock 的参数校验、权限错误和结构化输出都由
 	// Runtime 统一处理，SDK 只负责协议、会话与传输语义。
 	s.sdk.AddTool(tool, func(ctx context.Context, request *mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-		return s.callTool(ctx, name, request)
+		return s.callTool(ctx, def.Name, request)
 	})
 }
 
@@ -225,7 +224,7 @@ func (s *Server) callTool(ctx context.Context, name string, request *mcpsdk.Call
 	if decodeErr := json.Unmarshal(encoded, &response); decodeErr != nil {
 		return nil, fmt.Errorf("decode MCP tool result: %w", decodeErr)
 	}
-	if def, ok := toolDefinition(name); ok {
+	if def, ok := s.runtime.ToolDefinition(name); ok {
 		if meta := toolResultMetadata(def, arguments); len(meta) > 0 {
 			response.Meta = meta
 		}
@@ -281,16 +280,15 @@ type writeCloser struct{ io.Writer }
 
 func (writeCloser) Close() error { return nil }
 
-func toolDescriptorsForNames(names []string, cfg config.Config) []map[string]any {
-	descriptors := make([]map[string]any, 0, len(names))
-	for _, name := range names {
-		def, _ := toolDefinition(name)
+func toolDescriptors(definitions []ToolDefinition) []map[string]any {
+	descriptors := make([]map[string]any, 0, len(definitions))
+	for _, def := range definitions {
 		descriptor := map[string]any{
-			"name":         name,
+			"name":         def.Name,
 			"title":        def.Title,
 			"description":  def.Description,
-			"inputSchema":  app.InputSchemaForConfig(name, cfg),
-			"outputSchema": app.OutputSchemaForConfig(name, cfg),
+			"inputSchema":  def.InputSchema,
+			"outputSchema": def.OutputSchema,
 		}
 		if def.Annotations != nil {
 			descriptor["annotations"] = map[string]any{

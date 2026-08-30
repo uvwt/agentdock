@@ -8,7 +8,7 @@ import (
 
 func TestWindowsFileToolSchemasExposeWSLRuntime(t *testing.T) {
 	for _, name := range []string{"read_file", "list_dir", "search_text", "file_edit"} {
-		properties := InputSchema(name)["properties"].(map[string]any)
+		properties := testInputSchema(name)["properties"].(map[string]any)
 		runtimeProperty, ok := properties["runtime"].(map[string]any)
 		if !ok {
 			t.Fatalf("%s schema is missing runtime: %#v", name, properties)
@@ -21,7 +21,7 @@ func TestWindowsFileToolSchemasExposeWSLRuntime(t *testing.T) {
 			t.Fatalf("%s schema is missing wsl_distribution", name)
 		}
 
-		outputProperties := OutputSchema(name)["properties"].(map[string]any)
+		outputProperties := testOutputSchema(name)["properties"].(map[string]any)
 		if _, ok := outputProperties["runtime"]; !ok {
 			t.Fatalf("%s output schema is missing runtime", name)
 		}

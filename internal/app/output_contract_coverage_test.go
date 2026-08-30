@@ -127,7 +127,7 @@ func outputContractVariantFindings(name string, variants []string) []string {
 }
 
 func outputContractSelectorEnum(name string) (string, []string) {
-	properties, _ := InputSchema(name)["properties"].(map[string]any)
+	properties, _ := testInputSchema(name)["properties"].(map[string]any)
 	for _, selector := range []string{"action", "intent"} {
 		property, _ := properties[selector].(map[string]any)
 		if values, ok := property["enum"].([]string); ok && len(values) > 0 {
