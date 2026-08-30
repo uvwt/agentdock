@@ -1107,6 +1107,83 @@ func TestWindowsControlPanelUsesStableAppUserModelID(t *testing.T) {
 	}
 }
 
+func TestWindowsSetupLaunchesRuntimeOutsideRedirectionGuardTree(t *testing.T) {
+	installData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "install", "install.ps1"))
+	if err != nil {
+		t.Fatalf("read install.ps1: %v", err)
+	}
+	brokerData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "install", "launch-windows-process.ps1"))
+	if err != nil {
+		t.Fatalf("read launch-windows-process.ps1: %v", err)
+	}
+	setupData, err := os.ReadFile(filepath.Join("..", "..", "packaging", "windows", "includes", "code.iss"))
+	if err != nil {
+		t.Fatalf("read code.iss: %v", err)
+	}
+	definitionData, err := os.ReadFile(filepath.Join("..", "..", "packaging", "windows", "AgentDock.iss"))
+	if err != nil {
+		t.Fatalf("read AgentDock.iss: %v", err)
+	}
+
+	installScript := strings.ReplaceAll(string(installData), "\r\n", "\n")
+	brokerScript := strings.ReplaceAll(string(brokerData), "\r\n", "\n")
+	setupScript := strings.ReplaceAll(string(setupData), "\r\n", "\n")
+	definition := strings.ReplaceAll(string(definitionData), "\r\n", "\n")
+
+	for _, want := range []string{
+		"$setupRuntimeLauncherPath = Join-Path $PSScriptRoot 'launch-windows-process.ps1'",
+		"function Invoke-SetupRuntimeProcess",
+		"if ($InstallChannel -eq 'setup') {\n                Invoke-SetupRuntimeProcess `\n                    -FilePath $destinationBinary `\n                    -Arguments \"service start --runtime-root",
+		"if ($InstallChannel -eq 'setup') {\n                Invoke-SetupRuntimeProcess `\n                    -FilePath $destinationBinary `\n                    -Arguments \"tunnel start --runtime-root",
+		"Invoke-SetupRuntimeProcess -FilePath $BinaryPath -Arguments '--background'",
+		"Invoke-SetupRuntimeProcess -FilePath (Join-Path $PSHOME 'powershell.exe') -Arguments $arguments",
+	} {
+		if !strings.Contains(installScript, want) {
+			t.Fatalf("install.ps1 must route Setup-owned long-lived launches through the runtime broker; missing %q", want)
+		}
+	}
+
+	for _, want := range []string{
+		"New-ScheduledTaskAction",
+		"New-ScheduledTaskPrincipal",
+		"-LogonType Interactive",
+		"-RunLevel Limited",
+		"Register-ScheduledTask",
+		"Start-ScheduledTask",
+		"if ($WaitForExit) {",
+		"$process.WaitForExit()",
+		"$wrapperLines += 'exit 0'",
+		"Unregister-ScheduledTask",
+		"AGENTDOCK_HOME",
+		"AGENTDOCK_DEFAULT_DIR",
+	} {
+		if !strings.Contains(brokerScript, want) {
+			t.Fatalf("runtime launch broker missing %q", want)
+		}
+	}
+	if !strings.Contains(brokerScript, "finally {") || !strings.Contains(brokerScript, "Unregister-ScheduledTask") {
+		t.Fatal("runtime launch broker must remove its temporary task even when launch fails")
+	}
+
+	for _, want := range []string{
+		"Source: \"..\\..\\scripts\\install\\launch-windows-process.ps1\"; Flags: dontcopy",
+		"ExtractTemporaryFile('launch-windows-process.ps1')",
+		"function LaunchRuntimeProcess(",
+		"LaunchRuntimeProcess(ExpandConstant('{app}\\bin\\agentdock-tray.exe'), '')",
+	} {
+		if !strings.Contains(definition+"\n"+setupScript, want) {
+			t.Fatalf("Windows Setup must package and use the runtime launch broker; missing %q", want)
+		}
+	}
+	if strings.Contains(strings.ToLower(definition), "redirectionguard=no") || strings.Contains(strings.ToLower(definition), "/noredirectionguard") {
+		t.Fatal("Windows Setup must keep Inno RedirectionGuard enabled instead of disabling the mitigation globally")
+	}
+	legacyFinishLaunch := "if not Exec(\n      ExpandConstant('{app}\\bin\\agentdock-tray.exe')"
+	if strings.Contains(setupScript, legacyFinishLaunch) {
+		t.Fatal("Setup finish page must not launch the long-lived tray directly from the RedirectionGuard process tree")
+	}
+}
+
 func TestWindowsControlPanelOmitsCopyButtons(t *testing.T) {
 	xamlData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml"))
 	if err != nil {
