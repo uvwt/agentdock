@@ -117,6 +117,28 @@ func TestRecallWriteMarkdownAppendUsesGenericMarkdownFlow(t *testing.T) {
 	}
 }
 
+func TestRecallWriteMarkdownAppendIgnoresPatchOnlyFields(t *testing.T) {
+	store := map[string]string{"projects/demo/project.md": "# Demo\nold-value\n"}
+	rt, closeServer := newMemoryTestService(t, store)
+	defer closeServer()
+
+	_, err := rt.writeTest(context.Background(), map[string]any{
+		"target":    "markdown",
+		"action":    "append",
+		"path":      "projects/demo/project.md",
+		"append":    "appended\n",
+		"old":       "old-value",
+		"new":       "replaced-value",
+		"confirmed": true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := store["projects/demo/project.md"]; got != "# Demo\nold-value\nappended\n" {
+		t.Fatalf("append must not execute patch-only fields, got %q", got)
+	}
+}
+
 func TestRecallWriteRejectsRemovedNoteTarget(t *testing.T) {
 	store := map[string]string{}
 	rt, closeServer := newMemoryTestService(t, store)
