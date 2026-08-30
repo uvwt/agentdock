@@ -26,15 +26,15 @@ type skillToolInput struct {
 	Activate bool
 }
 
-func parseSkillToolInput(args map[string]any) skillToolInput {
+func normalizePackageRequest(request PackageRequest) skillToolInput {
 	return skillToolInput{
-		Action:   strings.ToLower(strings.TrimSpace(stringArg(args, "action", ""))),
-		Skill:    strings.TrimSpace(stringArg(args, "skill", "")),
-		Version:  strings.TrimSpace(stringArg(args, "version", "")),
-		Source:   strings.TrimSpace(stringArg(args, "source", "")),
-		Digest:   strings.TrimSpace(stringArg(args, "digest", "")),
-		MaxBytes: int64(intArg(args, "max_bytes", 0)),
-		Activate: boolArg(args, "activate", true),
+		Action:   strings.ToLower(strings.TrimSpace(request.Action)),
+		Skill:    strings.TrimSpace(request.Skill),
+		Version:  strings.TrimSpace(request.Version),
+		Source:   strings.TrimSpace(request.Source),
+		Digest:   strings.TrimSpace(request.Digest),
+		MaxBytes: int64(intValue(request.MaxBytes, 0)),
+		Activate: boolValue(request.Activate, true),
 	}
 }
 
@@ -45,8 +45,8 @@ func (input skillToolInput) requiredSkill() (string, error) {
 	return input.Skill, nil
 }
 
-func (s *Service) Package(ctx context.Context, args map[string]any) (Result, error) {
-	input := parseSkillToolInput(args)
+func (s *Service) Package(ctx context.Context, request PackageRequest) (Result, error) {
+	input := normalizePackageRequest(request)
 	switch input.Action {
 	case "validate":
 		return s.skillValidate(ctx, input)
@@ -61,7 +61,7 @@ func (s *Service) Package(ctx context.Context, args map[string]any) (Result, err
 		if err != nil {
 			return nil, err
 		}
-		return s.scopedEnvAction(envstore.ScopeSkill, skill, input.Action, args)
+		return s.scopedEnvAction(envstore.ScopeSkill, skill, input.Action, request)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported skill_package action", "validation", map[string]any{
 			"action":  input.Action,
@@ -70,7 +70,7 @@ func (s *Service) Package(ctx context.Context, args map[string]any) (Result, err
 	}
 }
 
-func (s *Service) List() (Result, error) {
+func (s *Service) list() (Result, error) {
 	names, err := s.state.ListSkills()
 	if err != nil {
 		return nil, skillToolError(err)
@@ -105,8 +105,8 @@ func (s *Service) List() (Result, error) {
 	return Result{"action": "list", "count": len(items), "skills": items}, nil
 }
 
-func (s *Service) Inspect(args map[string]any) (Result, error) {
-	input := parseSkillToolInput(args)
+func (s *Service) inspect(request InspectRequest) (Result, error) {
+	input := skillToolInput{Skill: strings.TrimSpace(request.Skill), Version: strings.TrimSpace(request.Version)}
 	skill, err := input.requiredSkill()
 	if err != nil {
 		return nil, err

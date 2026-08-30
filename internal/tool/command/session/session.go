@@ -16,7 +16,14 @@ import (
 	"github.com/uvwt/agentdock/internal/textutil"
 )
 
-type PrepareFunc func(*exec.Cmd) (func(), map[string]any)
+type PreparationStatus struct {
+	Enabled  bool
+	Mode     string
+	Policy   string
+	Warnings []string
+}
+
+type PrepareFunc func(*exec.Cmd) (func(), PreparationStatus)
 
 type CommandFactory func(context.Context) *exec.Cmd
 
@@ -54,6 +61,34 @@ type Session struct {
 	stderrDroppedBytes int
 	stdoutCursor       int
 	stderrCursor       int
+}
+
+type Snapshot struct {
+	SessionID          string
+	Status             string
+	Stdout             string
+	Stderr             string
+	ElapsedMS          int64
+	TimedOut           bool
+	Terminal           string
+	StdoutOutputBytes  int
+	StderrOutputBytes  int
+	StdoutTotalBytes   int
+	StderrTotalBytes   int
+	StdoutDroppedBytes int
+	StderrDroppedBytes int
+	StdoutOmittedBytes int
+	StderrOmittedBytes int
+	StdoutOutputLines  int
+	StderrOutputLines  int
+	StdoutTruncated    bool
+	StderrTruncated    bool
+	Completed          bool
+	ExitCode           int
+	CommandOK          bool
+	Runtime            string
+	WSLDistribution    string
+	Workdir            string
 }
 
 type Store struct {
@@ -336,11 +371,11 @@ func (s *Session) CompletedBefore(cutoff time.Time) bool {
 	return s.completed && !s.FinishedAt.IsZero() && s.FinishedAt.Before(cutoff)
 }
 
-func Start(ctx context.Context, command, workdir string, env []string, timeout time.Duration, prepare PrepareFunc) (*Session, map[string]any, error) {
+func Start(ctx context.Context, command, workdir string, env []string, timeout time.Duration, prepare PrepareFunc) (*Session, PreparationStatus, error) {
 	return StartWithTTY(ctx, command, workdir, env, timeout, false, prepare)
 }
 
-func StartWithTTY(ctx context.Context, command, workdir string, env []string, timeout time.Duration, tty bool, prepare PrepareFunc) (*Session, map[string]any, error) {
+func StartWithTTY(ctx context.Context, command, workdir string, env []string, timeout time.Duration, tty bool, prepare PrepareFunc) (*Session, PreparationStatus, error) {
 	return StartCommandWithTTY(ctx, func(cmdCtx context.Context) *exec.Cmd {
 		cmd := shellCommand(cmdCtx, command)
 		cmd.Dir = workdir
@@ -349,25 +384,25 @@ func StartWithTTY(ctx context.Context, command, workdir string, env []string, ti
 	}, timeout, tty, prepare)
 }
 
-func StartCommandWithTTY(ctx context.Context, build CommandFactory, timeout time.Duration, tty bool, prepare PrepareFunc) (*Session, map[string]any, error) {
+func StartCommandWithTTY(ctx context.Context, build CommandFactory, timeout time.Duration, tty bool, prepare PrepareFunc) (*Session, PreparationStatus, error) {
 	if timeout <= 0 {
-		return nil, nil, fmt.Errorf("timeout must be positive")
+		return nil, PreparationStatus{}, fmt.Errorf("timeout must be positive")
 	}
 	if build == nil {
-		return nil, nil, fmt.Errorf("command factory is required")
+		return nil, PreparationStatus{}, fmt.Errorf("command factory is required")
 	}
 	id, err := newID()
 	if err != nil {
-		return nil, nil, fmt.Errorf("generate session id: %w", err)
+		return nil, PreparationStatus{}, fmt.Errorf("generate session id: %w", err)
 	}
 	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
 	cmd := build(cmdCtx)
 	if cmd == nil {
 		cancel()
-		return nil, nil, fmt.Errorf("command factory returned nil command")
+		return nil, PreparationStatus{}, fmt.Errorf("command factory returned nil command")
 	}
 	cleanup := func() {}
-	status := map[string]any{"enabled": false}
+	status := PreparationStatus{}
 	if prepare != nil {
 		cleanup, status = prepare(cmd)
 		if cleanup == nil {
@@ -466,17 +501,17 @@ func (s *Session) Kill() (bool, error) {
 	return true, s.killErr
 }
 
-func (s *Session) Snapshot(status string, maxBytes int) map[string]any {
+func (s *Session) Snapshot(status string, maxBytes int) Snapshot {
 	return s.snapshot(status, maxBytes, true)
 }
 
 // Peek returns the current unread output without advancing the observation cursors.
 // Mutation tools use it so a following status call still receives the output.
-func (s *Session) Peek(status string, maxBytes int) map[string]any {
+func (s *Session) Peek(status string, maxBytes int) Snapshot {
 	return s.snapshot(status, maxBytes, false)
 }
 
-func (s *Session) snapshot(status string, maxBytes int, advance bool) map[string]any {
+func (s *Session) snapshot(status string, maxBytes int, advance bool) Snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	stdoutFull := s.stdout.String()
@@ -495,41 +530,19 @@ func (s *Session) snapshot(status string, maxBytes int, advance bool) map[string
 	}
 	stdout := trim(stdoutSegment, maxBytes)
 	stderr := trim(stderrSegment, maxBytes)
-	result := map[string]any{
-		"session_id":           s.ID,
-		"status":               status,
-		"stdout":               stdout,
-		"stderr":               stderr,
-		"elapsed_ms":           time.Since(s.StartedAt).Milliseconds(),
-		"timed_out":            s.TimedOut,
-		"terminal":             s.Terminal,
-		"stdout_output_bytes":  len([]byte(stdout)),
-		"stderr_output_bytes":  len([]byte(stderr)),
-		"stdout_total_bytes":   s.stdoutTotalBytes,
-		"stderr_total_bytes":   s.stderrTotalBytes,
-		"stdout_dropped_bytes": s.stdoutDroppedBytes,
-		"stderr_dropped_bytes": s.stderrDroppedBytes,
-		"stdout_omitted_bytes": omittedBytes(stdoutSegment, maxBytes),
-		"stderr_omitted_bytes": omittedBytes(stderrSegment, maxBytes),
-		"stdout_output_lines":  countLines(stdout),
-		"stderr_output_lines":  countLines(stderr),
-		"stdout_truncated":     maxBytes > 0 && len([]byte(stdoutSegment)) > maxBytes,
-		"stderr_truncated":     maxBytes > 0 && len([]byte(stderrSegment)) > maxBytes,
+	return Snapshot{
+		SessionID: s.ID, Status: status, Stdout: stdout, Stderr: stderr,
+		ElapsedMS: time.Since(s.StartedAt).Milliseconds(), TimedOut: s.TimedOut, Terminal: s.Terminal,
+		StdoutOutputBytes: len([]byte(stdout)), StderrOutputBytes: len([]byte(stderr)),
+		StdoutTotalBytes: s.stdoutTotalBytes, StderrTotalBytes: s.stderrTotalBytes,
+		StdoutDroppedBytes: s.stdoutDroppedBytes, StderrDroppedBytes: s.stderrDroppedBytes,
+		StdoutOmittedBytes: omittedBytes(stdoutSegment, maxBytes), StderrOmittedBytes: omittedBytes(stderrSegment, maxBytes),
+		StdoutOutputLines: countLines(stdout), StderrOutputLines: countLines(stderr),
+		StdoutTruncated: maxBytes > 0 && len([]byte(stdoutSegment)) > maxBytes,
+		StderrTruncated: maxBytes > 0 && len([]byte(stderrSegment)) > maxBytes,
+		Completed:       s.completed, ExitCode: s.exitCode, CommandOK: s.exitCode == 0 && !s.TimedOut,
+		Runtime: s.execution.Runtime, WSLDistribution: s.execution.Distribution, Workdir: s.execution.Workdir,
 	}
-	if s.completed {
-		result["exit_code"] = s.exitCode
-		result["command_ok"] = s.exitCode == 0 && !s.TimedOut
-	}
-	if s.execution.Runtime != "" {
-		result["runtime"] = s.execution.Runtime
-	}
-	if s.execution.Distribution != "" {
-		result["wsl_distribution"] = s.execution.Distribution
-	}
-	if s.execution.Workdir != "" {
-		result["workdir"] = s.execution.Workdir
-	}
-	return result
 }
 
 type sessionOutputWriter struct {

@@ -4,14 +4,14 @@ package command
 
 import "strings"
 
-func (svc *Service) prepareCommandInvocation(args map[string]any, command string) (commandInvocation, error) {
-	if runtimeName := strings.TrimSpace(stringArg(args, "runtime", "")); runtimeName != "" {
+func (svc *Service) prepareCommandInvocation(request ExecRequest) (commandInvocation, error) {
+	if runtimeName := strings.TrimSpace(request.Runtime); runtimeName != "" {
 		return commandInvocation{}, toolError("INVALID_ARGUMENT", "runtime is only supported by AgentDock on Windows", "validation")
 	}
-	if distribution := strings.TrimSpace(stringArg(args, "wsl_distribution", "")); distribution != "" {
+	if distribution := strings.TrimSpace(request.WSLDistribution); distribution != "" {
 		return commandInvocation{}, toolError("INVALID_ARGUMENT", "wsl_distribution is only supported by AgentDock on Windows", "validation")
 	}
-	return svc.newHostCommandInvocation(args, command)
+	return svc.newHostCommandInvocation(request)
 }
 
 func AddRuntimeProperties(_ map[string]any) {}

@@ -3,7 +3,7 @@ package file
 import "github.com/uvwt/agentdock/internal/workspace"
 
 type SkillResourceResolver func(raw string) (absolutePath, displayPath string, err error)
-type CommandEnv func(skillName string, extra map[string]any) ([]string, error)
+type CommandEnv func(skillName string, extra map[string]string) ([]string, error)
 
 type Service struct {
 	ws                   *workspace.Workspace
@@ -16,11 +16,7 @@ func New(ws *workspace.Workspace, resolveSkillResource SkillResourceResolver, co
 }
 
 const (
-	MaxTextFileReadBytes = 32 << 20
+	maxTextFileReadBytes = 32 << 20
 	MaxTextOutputBytes   = 4 << 20
-)
-
-const (
-	maxTextFileReadBytes = MaxTextFileReadBytes
 	maxTextOutputBytes   = MaxTextOutputBytes
 )

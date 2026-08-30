@@ -9,29 +9,29 @@ import (
 	"strings"
 )
 
-func (svc *Service) fileEditWSL(ctx context.Context, args map[string]any, selection fileRuntimeSelection) (Result, error) {
-	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
+func (svc *Service) fileEditWSL(ctx context.Context, request EditRequest, selection fileRuntimeSelection) (Result, error) {
+	action := strings.ToLower(strings.TrimSpace(request.Action))
 	if action == "" {
 		return nil, toolErrorDetails("MISSING_ACTION", "file_edit requires action", "validation", map[string]any{"allowed": []string{"replace", "patch", "add", "delete", "move"}})
 	}
 	switch action {
 	case "replace":
-		return svc.fileEditReplaceWSL(ctx, args, selection)
+		return svc.fileEditReplaceWSL(ctx, request, selection)
 	case "add":
-		return svc.fileEditAddWSL(ctx, args, selection)
+		return svc.fileEditAddWSL(ctx, request, selection)
 	case "delete":
-		return svc.fileEditDeleteWSL(ctx, args, selection)
+		return svc.fileEditDeleteWSL(ctx, request, selection)
 	case "move":
-		return svc.fileEditMoveWSL(ctx, args, selection)
+		return svc.fileEditMoveWSL(ctx, request, selection)
 	case "patch":
-		return svc.fileEditPatchWSL(ctx, args, selection)
+		return svc.fileEditPatchWSL(ctx, request, selection)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported file_edit action", "validation", map[string]any{"action": action, "allowed": []string{"replace", "patch", "add", "delete", "move"}})
 	}
 }
 
-func (svc *Service) fileEditReplaceWSL(ctx context.Context, args map[string]any, selection fileRuntimeSelection) (Result, error) {
-	path, err := resolveWSLFilePath(stringArg(args, "path", ""))
+func (svc *Service) fileEditReplaceWSL(ctx context.Context, request EditRequest, selection fileRuntimeSelection) (Result, error) {
+	path, err := resolveWSLFilePath(request.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -40,12 +40,12 @@ func (svc *Service) fileEditReplaceWSL(ctx context.Context, args map[string]any,
 		return nil, err
 	}
 	content, _ := loaded["content"].(string)
-	result, updated, err := prepareTextReplacement(path, content, args)
+	result, updated, err := prepareTextReplacement(path, content, request)
 	if err != nil {
 		return nil, err
 	}
 	result["action"] = "replace"
-	if !boolArg(args, "dry_run", false) && updated != content {
+	if !request.DryRun && updated != content {
 		if _, err := svc.callWSLFileHelper(ctx, selection, map[string]any{"action": "write_atomic", "path": path, "content": updated, "must_exist": true, "overwrite": true}); err != nil {
 			return nil, err
 		}
@@ -53,12 +53,12 @@ func (svc *Service) fileEditReplaceWSL(ctx context.Context, args map[string]any,
 	return addFileRuntimeResult(result, selection), nil
 }
 
-func (svc *Service) fileEditAddWSL(ctx context.Context, args map[string]any, selection fileRuntimeSelection) (Result, error) {
-	path, err := resolveWSLFilePath(stringArg(args, "path", ""))
+func (svc *Service) fileEditAddWSL(ctx context.Context, request EditRequest, selection fileRuntimeSelection) (Result, error) {
+	path, err := resolveWSLFilePath(request.Path)
 	if err != nil {
 		return nil, err
 	}
-	overwrite := boolArg(args, "overwrite", false)
+	overwrite := request.Overwrite
 	loaded, err := svc.callWSLFileHelper(ctx, selection, map[string]any{"action": "read", "path": path, "reject_symlink": true, "allow_missing": true})
 	if err != nil {
 		return nil, err
@@ -68,13 +68,12 @@ func (svc *Service) fileEditAddWSL(ctx context.Context, args map[string]any, sel
 		return nil, toolErrorDetails("FILE_EXISTS", "file already exists; set overwrite=true to replace it", "validation", map[string]any{"path": path})
 	}
 	oldContent, _ := loaded["content"].(string)
-	content := stringArg(args, "content", "")
-	result, err := prepareTextAddition(path, oldContent, content, exists, args)
+	content := request.Content
+	result, changed, err := prepareTextAddition(path, oldContent, content, exists, request)
 	if err != nil {
 		return nil, err
 	}
-	changed, _ := result["changed"].(bool)
-	if !boolArg(args, "dry_run", false) && changed {
+	if !request.DryRun && changed {
 		if _, err := svc.callWSLFileHelper(ctx, selection, map[string]any{"action": "write_atomic", "path": path, "content": content, "overwrite": overwrite}); err != nil {
 			return nil, err
 		}
@@ -82,18 +81,18 @@ func (svc *Service) fileEditAddWSL(ctx context.Context, args map[string]any, sel
 	return addFileRuntimeResult(result, selection), nil
 }
 
-func (svc *Service) fileEditDeleteWSL(ctx context.Context, args map[string]any, selection fileRuntimeSelection) (Result, error) {
-	path, err := resolveWSLFilePath(stringArg(args, "path", ""))
+func (svc *Service) fileEditDeleteWSL(ctx context.Context, request EditRequest, selection fileRuntimeSelection) (Result, error) {
+	path, err := resolveWSLFilePath(request.Path)
 	if err != nil {
 		return nil, err
 	}
-	if boolArg(args, "recursive", false) {
+	if request.Recursive {
 		return nil, toolError("INVALID_ARGUMENT", "runtime=wsl file_edit only deletes regular UTF-8 files; recursive directory deletion is not supported", "validation")
 	}
 	if _, err := svc.callWSLFileHelper(ctx, selection, map[string]any{"action": "read", "path": path, "reject_symlink": true}); err != nil {
 		return nil, err
 	}
-	dryRun := boolArg(args, "dry_run", false)
+	dryRun := request.DryRun
 	result := Result{"action": "delete", "path": path, "dry_run": dryRun, "changed": true, "summary": "deleted " + path}
 	if !dryRun {
 		if _, err := svc.callWSLFileHelper(ctx, selection, map[string]any{"action": "delete", "path": path}); err != nil {
@@ -103,19 +102,19 @@ func (svc *Service) fileEditDeleteWSL(ctx context.Context, args map[string]any, 
 	return addFileRuntimeResult(result, selection), nil
 }
 
-func (svc *Service) fileEditMoveWSL(ctx context.Context, args map[string]any, selection fileRuntimeSelection) (Result, error) {
-	path, err := resolveWSLFilePath(stringArg(args, "path", ""))
+func (svc *Service) fileEditMoveWSL(ctx context.Context, request EditRequest, selection fileRuntimeSelection) (Result, error) {
+	path, err := resolveWSLFilePath(request.Path)
 	if err != nil {
 		return nil, err
 	}
-	newPath, err := resolveWSLFilePath(stringArg(args, "new_path", ""))
+	newPath, err := resolveWSLFilePath(request.NewPath)
 	if err != nil {
 		return nil, err
 	}
 	if _, err := svc.callWSLFileHelper(ctx, selection, map[string]any{"action": "read", "path": path, "reject_symlink": true}); err != nil {
 		return nil, err
 	}
-	overwrite := boolArg(args, "overwrite", false)
+	overwrite := request.Overwrite
 	destination, err := svc.callWSLFileHelper(ctx, selection, map[string]any{"action": "read", "path": newPath, "reject_symlink": true, "allow_missing": true})
 	if err != nil {
 		return nil, err
@@ -124,7 +123,7 @@ func (svc *Service) fileEditMoveWSL(ctx context.Context, args map[string]any, se
 		return nil, toolErrorDetails("FILE_EXISTS", "destination already exists; set overwrite=true to replace it", "validation", map[string]any{"path": newPath})
 	}
 	changed := path != newPath
-	dryRun := boolArg(args, "dry_run", false)
+	dryRun := request.DryRun
 	result := Result{"action": "move", "path": path, "new_path": newPath, "dry_run": dryRun, "changed": changed, "summary": "moved " + path + " to " + newPath}
 	if !dryRun && changed {
 		if _, err := svc.callWSLFileHelper(ctx, selection, map[string]any{"action": "move", "path": path, "new_path": newPath, "overwrite": overwrite}); err != nil {
@@ -174,8 +173,8 @@ func (svc *Service) loadWSLPatchStage(ctx context.Context, selection fileRuntime
 	}, nil
 }
 
-func (svc *Service) fileEditPatchWSL(ctx context.Context, args map[string]any, selection fileRuntimeSelection) (Result, error) {
-	patch := stringArg(args, "patch", "")
+func (svc *Service) fileEditPatchWSL(ctx context.Context, request EditRequest, selection fileRuntimeSelection) (Result, error) {
+	patch := request.Patch
 	if patch == "" {
 		return nil, toolError("INVALID_ARGUMENT", "patch is required", "validation")
 	}
@@ -186,7 +185,7 @@ func (svc *Service) fileEditPatchWSL(ctx context.Context, args map[string]any, s
 			"validation",
 		)
 	}
-	workdir, err := resolveWSLFilePath(stringArg(args, "workdir", ""))
+	workdir, err := resolveWSLFilePath(request.Workdir)
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +278,7 @@ func (svc *Service) fileEditPatchWSL(ctx context.Context, args map[string]any, s
 		return nil, toolError("PATCH_FAILED", "no files were modified", "validation")
 	}
 
-	maxDiffBytes := boundedInt(intArg(args, "max_diff_bytes", 65536), 65536, 1, maxTextOutputBytes)
+	maxDiffBytes := boundedInt(intValue(request.MaxDiffBytes, 65536), 65536, 1, maxTextOutputBytes)
 	paths := make([]string, 0, len(staged))
 	for path := range staged {
 		paths = append(paths, path)
@@ -313,7 +312,7 @@ func (svc *Service) fileEditPatchWSL(ctx context.Context, args map[string]any, s
 	preview := diffBuilder.String()
 	previewResult := truncateString(preview, maxDiffBytes)
 	truncated := len(previewResult) < len(preview)
-	dryRun := boolArg(args, "dry_run", false)
+	dryRun := request.DryRun
 	if !dryRun {
 		// 先完整写入所有新增/更新目标，再删除旧路径。失败时最多留下重复文件，不会丢失原内容。
 		for _, path := range paths {

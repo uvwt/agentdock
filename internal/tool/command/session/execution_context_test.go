@@ -19,7 +19,7 @@ func TestExecutionContextIsIncludedInSnapshotAndSummary(t *testing.T) {
 	})
 
 	snapshot := s.Snapshot("running", 1024)
-	if snapshot["runtime"] != "wsl" || snapshot["wsl_distribution"] != "Ubuntu" || snapshot["workdir"] != "/mnt/d/Project/synapse" {
+	if snapshot.Runtime != "wsl" || snapshot.WSLDistribution != "Ubuntu" || snapshot.Workdir != "/mnt/d/Project/synapse" {
 		t.Fatalf("snapshot execution metadata = %#v", snapshot)
 	}
 

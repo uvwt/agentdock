@@ -10,13 +10,13 @@ import (
 	"github.com/uvwt/agentdock/internal/publicartifacts"
 )
 
-func (s *Service) FilePublish(ctx context.Context, args map[string]any) (Result, error) {
-	pathValue, err := s.filePublishSourcePath(args)
+func (s *Service) FilePublish(ctx context.Context, request FilePublishRequest) (Result, error) {
+	pathValue, err := s.filePublishSourcePath(request)
 	if err != nil {
 		return nil, err
 	}
 	store := publicartifacts.New(s.cfg.AgentDockHome, s.cfg.OAuthServerURL, s.cfg.Port)
-	published, err := store.Publish(publicartifacts.PublishRequest{Path: pathValue, RetentionSeconds: intArg(args, "retention_seconds", 0), BaseURL: requestmeta.BaseURL(ctx)})
+	published, err := store.Publish(publicartifacts.PublishRequest{Path: pathValue, RetentionSeconds: intValue(request.RetentionSeconds, 0), BaseURL: requestmeta.BaseURL(ctx)})
 	if err != nil {
 		return nil, fmt.Errorf("publish file: %w", err)
 	}
@@ -27,9 +27,9 @@ func (s *Service) FilePublish(ctx context.Context, args map[string]any) (Result,
 	return result, nil
 }
 
-func (s *Service) filePublishSourcePath(args map[string]any) (string, error) {
-	if fileValue, ok := args["file"]; ok && fileValue != nil {
-		if pathValue := connectorLocalPath(fileValue); pathValue != "" {
+func (s *Service) filePublishSourcePath(request FilePublishRequest) (string, error) {
+	if request.File != nil {
+		if pathValue := connectorLocalPath(request.File); pathValue != "" {
 			resolved, err := s.ws.ResolveExisting(pathValue)
 			if err != nil {
 				return "", err
@@ -37,7 +37,7 @@ func (s *Service) filePublishSourcePath(args map[string]any) (string, error) {
 			return resolved.Abs, nil
 		}
 	}
-	pathValue := strings.TrimSpace(stringArg(args, "path", ""))
+	pathValue := strings.TrimSpace(request.Path)
 	if pathValue == "" {
 		return "", toolError("FILE_PUBLISH_SOURCE_REQUIRED", "file or path is required", "validation")
 	}

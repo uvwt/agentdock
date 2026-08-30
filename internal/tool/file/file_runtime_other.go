@@ -2,8 +2,8 @@
 
 package file
 
-func selectFileRuntime(args map[string]any) (fileRuntimeSelection, error) {
-	runtimeName, distribution := normalizedFileRuntime(args, "")
+func selectFileRuntime(options RuntimeOptions) (fileRuntimeSelection, error) {
+	runtimeName, distribution := normalizedFileRuntime(options, "")
 	if runtimeName != "" {
 		return fileRuntimeSelection{}, toolError("INVALID_ARGUMENT", "runtime is only supported by AgentDock file tools on Windows", "validation")
 	}

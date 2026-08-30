@@ -4,9 +4,13 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -111,6 +115,77 @@ func TestRuntimeOutputContractRecallReadMaintain(t *testing.T) {
 			assertToolResultMatchesOutputSchema(t, call.name, result)
 		})
 	}
+}
+
+func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func()) {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/recall/search" {
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			query := strings.ToLower(strings.TrimSpace(fmt.Sprint(payload["query"])))
+			prefix := ""
+			if raw, ok := payload["prefix"]; ok {
+				prefix = strings.TrimSpace(fmt.Sprint(raw))
+			}
+			excludePrefix := ""
+			if raw, ok := payload["exclude_prefix"]; ok {
+				excludePrefix = strings.TrimSpace(fmt.Sprint(raw))
+			}
+			results := make([]map[string]any, 0, len(store))
+			for path, content := range store {
+				if prefix != "" && !strings.HasPrefix(path, prefix) {
+					continue
+				}
+				if excludePrefix != "" && (path == excludePrefix || strings.HasPrefix(path, excludePrefix+"/")) {
+					continue
+				}
+				if query == "" || strings.Contains(strings.ToLower(path+"\n"+content), query) {
+					results = append(results, map[string]any{"path": path, "score": 1, "snippet": content})
+				}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "query": query, "results": results, "count": len(results)})
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/recall" {
+			entries := make([]map[string]any, 0, len(store))
+			for path := range store {
+				entries = append(entries, map[string]any{"path": path, "type": "file"})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "entries": entries, "count": len(entries)})
+			return
+		}
+		path := r.URL.Path[len("/v1/recall/"):]
+		content, ok := store[path]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "recall": map[string]any{
+			"path": path, "content": content, "body": content,
+			"frontmatter": map[string]any{"type": "test"}, "size_bytes": len(content),
+		}})
+	}))
+	root := t.TempDir()
+	cfg := config.Config{
+		AgentDockDefaultDir: root,
+		AgentDockHome:       filepath.Join(root, ".agentdock"),
+		NexusEndpoint:       server.URL,
+		NexusDeviceToken:    "test-device-token",
+	}
+	if err := cfg.Normalize(); err != nil {
+		server.Close()
+		t.Fatal(err)
+	}
+	runtime, err := NewRuntime(cfg)
+	if err != nil {
+		server.Close()
+		t.Fatal(err)
+	}
+	return runtime, server.Close
 }
 
 func TestRuntimeOutputContractACPInfoNormalizesOmittedInitializeFields(t *testing.T) {

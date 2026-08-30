@@ -14,16 +14,19 @@ import (
 	"github.com/uvwt/agentdock/internal/workspace"
 )
 
-func (svc *Service) ReadFile(ctx context.Context, args map[string]any) (Result, error) {
-	selection, err := selectFileRuntime(args)
+func (svc *Service) ReadFile(ctx context.Context, request ReadRequest) (Result, error) {
+	selection, err := selectFileRuntime(request.RuntimeOptions)
 	if err != nil {
 		return nil, err
 	}
+	if request.Path == "" {
+		return nil, toolError("INVALID_ARGUMENT", "path is required", "validation")
+	}
 	if selection.isWSL() {
-		return svc.readFileWSL(ctx, args, selection)
+		return svc.readFileWSL(ctx, request, selection)
 	}
 
-	rawPath := stringArg(args, "path", ".")
+	rawPath := request.Path
 	absPath := ""
 	displayPath := ""
 	if strings.HasPrefix(rawPath, "skill://") {
@@ -62,8 +65,8 @@ func (svc *Service) ReadFile(ctx context.Context, args map[string]any) (Result, 
 	if !utf8.Valid(data) {
 		return nil, toolError("ENCODING_UNSUPPORTED", "file is not valid utf-8", "validation")
 	}
-	maxBytes := boundedInt(intArg(args, "max_bytes", 262144), 262144, 1, maxTextOutputBytes)
-	content, meta := sliceText(string(data), intArg(args, "start_line", 1), intArg(args, "end_line", 0), maxBytes)
+	maxBytes := boundedInt(intValue(request.MaxBytes, 262144), 262144, 1, maxTextOutputBytes)
+	content, meta := sliceText(string(data), intValue(request.StartLine, 1), intValue(request.EndLine, 0), maxBytes)
 	result := Result{"path": displayPath, "content": content, "encoding": "utf-8", "size_bytes": len(data), "truncated": meta.Truncated, "start_line": meta.Start, "end_line": meta.End, "total_lines": meta.Total}
 	if meta.NextStartLine > 0 {
 		result["next_start_line"] = meta.NextStartLine
@@ -84,45 +87,52 @@ type listDirOptions struct {
 	IncludeIgnored  bool
 }
 
-func parseListDirOptions(args map[string]any) (listDirOptions, error) {
-	patterns := stringSliceArg(args, "patterns")
+func parseListDirOptions(request ListRequest) (listDirOptions, error) {
+	patterns := append([]string(nil), request.Patterns...)
 	if len(patterns) == 0 {
 		patterns = []string{"**/*"}
 	}
-	entryType := stringArg(args, "entry_type", "any")
+	entryType := request.EntryType
+	if entryType == "" {
+		entryType = "any"
+	}
 	switch entryType {
 	case "any", "file", "directory":
 	default:
 		return listDirOptions{}, toolError("INVALID_ARGUMENT", "entry_type must be any, file, or directory", "validation")
 	}
 	return listDirOptions{
-		MaxDepth:        boundedInt(intArg(args, "max_depth", 1), 1, 1, 20),
-		MaxEntries:      boundedInt(intArg(args, "max_entries", 200), 200, 1, 5000),
+		MaxDepth:        boundedInt(intValue(request.MaxDepth, 1), 1, 1, 20),
+		MaxEntries:      boundedInt(intValue(request.MaxEntries, 200), 200, 1, 5000),
 		Patterns:        patterns,
-		ExcludePatterns: stringSliceArg(args, "exclude_patterns"),
+		ExcludePatterns: append([]string(nil), request.ExcludePatterns...),
 		EntryType:       entryType,
-		IncludeHidden:   boolArg(args, "include_hidden", false),
-		IncludeIgnored:  boolArg(args, "include_ignored", false),
+		IncludeHidden:   request.IncludeHidden,
+		IncludeIgnored:  request.IncludeIgnored,
 	}, nil
 }
 
-func (svc *Service) ListDir(ctx context.Context, args map[string]any) (Result, error) {
-	selection, err := selectFileRuntime(args)
+func (svc *Service) ListDir(ctx context.Context, request ListRequest) (Result, error) {
+	selection, err := selectFileRuntime(request.RuntimeOptions)
 	if err != nil {
 		return nil, err
 	}
-	opts, err := parseListDirOptions(args)
+	opts, err := parseListDirOptions(request)
 	if err != nil {
 		return nil, err
 	}
 	if selection.isWSL() {
-		return svc.listDirWSL(ctx, args, selection, opts)
+		return svc.listDirWSL(ctx, request, selection, opts)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	root, err := svc.ws.ResolveExisting(stringArg(args, "path", "."))
+	path := request.Path
+	if path == "" {
+		path = "."
+	}
+	root, err := svc.ws.ResolveExisting(path)
 	if err != nil {
 		return nil, err
 	}

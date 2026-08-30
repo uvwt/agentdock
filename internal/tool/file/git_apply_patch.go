@@ -11,26 +11,26 @@ import (
 	workspacepkg "github.com/uvwt/agentdock/internal/workspace"
 )
 
-func (svc *Service) applyPatch(ctx context.Context, args map[string]any) (Result, error) {
-	patch := stringArg(args, "patch", "")
+func (svc *Service) applyPatch(ctx context.Context, request EditRequest) (Result, error) {
+	patch := request.Patch
 	if patch == "" {
 		return nil, toolError("INVALID_ARGUMENT", "patch is required", "validation")
 	}
-	workdir, err := svc.patchWorkdir(args)
+	workdir, err := svc.patchWorkdir(request.Workdir)
 	if err != nil {
 		return nil, err
 	}
 	if strings.HasPrefix(strings.TrimSpace(patch), "*** Begin Patch") {
-		return svc.applyEnvelopePatch(patch, boolArg(args, "dry_run", false), workdir.Display)
+		return svc.applyEnvelopePatch(patch, request.DryRun, workdir.Display)
 	}
-	maxDiffBytes := boundedInt(intArg(args, "max_diff_bytes", 65536), 65536, 1, maxTextOutputBytes)
+	maxDiffBytes := boundedInt(intValue(request.MaxDiffBytes, 65536), 65536, 1, maxTextOutputBytes)
 	preview := textutil.SafeTruncateString(patch, maxDiffBytes)
 	stats := countDiffStats(patch)
 	affected := parseDiffFiles(patch)
 	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, "git", "apply", "--whitespace=nowarn", "-")
-	if boolArg(args, "dry_run", false) {
+	if request.DryRun {
 		cmd = exec.CommandContext(cmdCtx, "git", "apply", "--check", "--whitespace=nowarn", "-")
 	}
 	cmd.Dir = workdir.Abs
@@ -44,7 +44,7 @@ func (svc *Service) applyPatch(ctx context.Context, args map[string]any) (Result
 			"output_total_bytes": outputTotal, "output_truncated": outputTruncated,
 		})
 	}
-	if boolArg(args, "dry_run", false) {
+	if request.DryRun {
 		return Result{"summary": "patch validated", "dry_run": true, "workdir": workdir.Display, "affected_files": affected, "diff_preview": preview.Text, "truncated": preview.Truncated, "files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions}, nil
 	}
 	return Result{"summary": "patch applied", "dry_run": false, "workdir": workdir.Display, "affected_files": affected, "diff_preview": preview.Text, "truncated": preview.Truncated, "files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions}, nil
@@ -54,8 +54,8 @@ func patchDiagnostic(code, path, message, output, reason string) map[string]any 
 	return map[string]any{"code": code, "path": path, "message": message, "output": output, "reason": reason}
 }
 
-func (svc *Service) patchWorkdir(args map[string]any) (workspacepkg.Path, error) {
-	raw := stringArg(args, "workdir", "")
+func (svc *Service) patchWorkdir(requested string) (workspacepkg.Path, error) {
+	raw := requested
 	if raw == "" {
 		raw = "."
 	}

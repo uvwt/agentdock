@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-func BackendPath(value string) string {
+func backendPath(value string) string {
 	return recallCleanPath(value)
 }
 

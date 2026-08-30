@@ -29,37 +29,44 @@ type SearchOptions struct {
 	ContextLines   int
 }
 
-func (svc *Service) SearchText(ctx context.Context, args map[string]any) (Result, error) {
-	selection, err := selectFileRuntime(args)
+func (svc *Service) SearchText(ctx context.Context, request SearchRequest) (Result, error) {
+	selection, err := selectFileRuntime(request.RuntimeOptions)
 	if err != nil {
 		return nil, err
 	}
+	if request.Query == "" {
+		return nil, toolError("INVALID_ARGUMENT", "query is required", "validation")
+	}
 	if selection.isWSL() {
-		return svc.searchTextWSL(ctx, args, selection)
+		return svc.searchTextWSL(ctx, request, selection)
 	}
 
-	query := stringArg(args, "query", "")
+	query := request.Query
 	if query == "" {
 		return nil, toolError("INVALID_ARGUMENT", "query is required", "validation")
 	}
-	p, err := svc.ws.ResolveExisting(stringArg(args, "path", "."))
+	path := request.Path
+	if path == "" {
+		path = "."
+	}
+	p, err := svc.ws.ResolveExisting(path)
 	if err != nil {
 		return nil, err
 	}
-	includeGlobs := stringSliceArg(args, "include_globs")
-	if glob := stringArg(args, "glob", ""); glob != "" {
-		includeGlobs = append(includeGlobs, glob)
+	includeGlobs := append([]string(nil), request.IncludeGlobs...)
+	if request.Glob != "" {
+		includeGlobs = append(includeGlobs, request.Glob)
 	}
 	opts := SearchOptions{
 		Query:          query,
-		CaseSensitive:  boolArg(args, "case_sensitive", false),
-		Regex:          boolArg(args, "regex", false),
-		IncludeIgnored: boolArg(args, "include_ignored", false),
-		IncludeHidden:  boolArg(args, "include_hidden", false),
+		CaseSensitive:  request.CaseSensitive,
+		Regex:          request.Regex,
+		IncludeIgnored: request.IncludeIgnored,
+		IncludeHidden:  request.IncludeHidden,
 		IncludeGlobs:   includeGlobs,
-		ExcludeGlobs:   stringSliceArg(args, "exclude_globs"),
-		MaxResults:     boundedInt(intArg(args, "max_results", 100), 100, 1, 1000),
-		ContextLines:   boundedInt(intArg(args, "context_lines", 0), 0, 0, 20),
+		ExcludeGlobs:   append([]string(nil), request.ExcludeGlobs...),
+		MaxResults:     boundedInt(intValue(request.MaxResults, 100), 100, 1, 1000),
+		ContextLines:   boundedInt(intValue(request.ContextLines, 0), 0, 0, 20),
 	}
 	if result, ok := svc.searchTextRG(ctx, p, opts); ok {
 		return addFileRuntimeResult(result, selection), nil

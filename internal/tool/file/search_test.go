@@ -138,7 +138,7 @@ func TestSearchTextHonorsCanceledRequestContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := rt.SearchText(ctx, map[string]any{"path": ".", "query": "content"})
+	_, err := rt.searchTextTest(ctx, SearchRequest{Path: ".", Query: "content"})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}
@@ -162,9 +162,7 @@ func TestSearchTextGlobPatternsAreRelativeToRequestedPath(t *testing.T) {
 
 	assertMatches := func(pattern string, want int) {
 		t.Helper()
-		result, err := rt.SearchText(context.Background(), map[string]any{
-			"path": "src", "query": "needle", "include_globs": []string{pattern}, "max_results": 10,
-		})
+		result, err := rt.searchTextTest(context.Background(), SearchRequest{Path: "src", Query: "needle", IncludeGlobs: []string{pattern}, MaxResults: intPtrForTest(10)})
 		if err != nil {
 			t.Fatal(err)
 		}

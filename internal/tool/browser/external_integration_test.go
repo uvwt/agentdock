@@ -81,8 +81,8 @@ func TestExternalCDPAttachKeepsBrowserAliveAndIsolatesTargets(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := New(Config{AgentDockHome: t.TempDir()})
-	started, err := service.Start(context.Background(), StartRequest{
+	service := New(Config{AgentDockHome: t.TempDir()}, nil)
+	started, err := service.start(context.Background(), StartRequest{
 		CDPURL:  endpoint,
 		URL:     server.URL,
 		Timeout: 15 * time.Second,
@@ -96,14 +96,14 @@ func TestExternalCDPAttachKeepsBrowserAliveAndIsolatesTargets(t *testing.T) {
 	if len(started.Pages) != 1 {
 		t.Fatalf("external session exposed %d pages, want only AgentDock target: %#v", len(started.Pages), started.Pages)
 	}
-	if _, err := service.Act(context.Background(), ActRequest{
+	if _, err := service.act(context.Background(), ActRequest{
 		SessionID: started.SessionID,
 		Actions:   []Action{{Kind: "wait_for_text", WaitText: &WaitTextAction{Text: "external-ready", Exact: true, State: StateVisible, Timeout: 5 * time.Second}}},
 		Timeout:   10 * time.Second,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CloseSession(CloseRequest{SessionID: started.SessionID}); err != nil {
+	if _, err := service.closeSession(CloseRequest{SessionID: started.SessionID}); err != nil {
 		t.Fatal(err)
 	}
 	if err := probeCDPEndpoint(context.Background(), endpoint); err != nil {

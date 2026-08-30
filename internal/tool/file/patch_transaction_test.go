@@ -36,7 +36,7 @@ func TestEnvelopePatchAbsolutePathWritesTheResolvedTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	patch := "*** Begin Patch\n*** Update File: " + target + "\n@@\n-before\n+after\n*** End Patch"
-	if _, err := rt.applyPatch(t.Context(), map[string]any{"patch": patch}); err != nil {
+	if _, err := rt.applyPatchTest(t.Context(), EditRequest{Patch: patch}); err != nil {
 		t.Fatal(err)
 	}
 	content, err := os.ReadFile(target)
@@ -62,7 +62,7 @@ func TestEnvelopePatchMovePreservesExecutableMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	patch := "*** Begin Patch\n*** Update File: source.sh\n*** Move to: moved.sh\n@@\n-echo old\n+echo new\n*** End Patch"
-	if _, err := rt.applyPatch(t.Context(), map[string]any{"patch": patch}); err != nil {
+	if _, err := rt.applyPatchTest(t.Context(), EditRequest{Patch: patch}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(source); !errors.Is(err, os.ErrNotExist) {
@@ -286,7 +286,7 @@ func TestEnvelopePatchRejectsDuplicateNewTarget(t *testing.T) {
 		"+second",
 		"*** End Patch",
 	}, "\n")
-	if _, err := rt.applyPatch(t.Context(), map[string]any{"patch": patch, "dry_run": true}); err == nil {
+	if _, err := rt.applyPatchTest(t.Context(), EditRequest{Patch: patch, DryRun: true}); err == nil {
 		t.Fatal("duplicate add target was accepted")
 	}
 }
@@ -308,7 +308,7 @@ func TestEnvelopePatchRejectsNonTextTargets(t *testing.T) {
 				t.Fatal(err)
 			}
 			patch := "*** Begin Patch\n*** Update File: target.txt\n@@\n-missing\n+value\n*** End Patch"
-			_, err := rt.applyPatch(t.Context(), map[string]any{"patch": patch, "dry_run": true})
+			_, err := rt.applyPatchTest(t.Context(), EditRequest{Patch: patch, DryRun: true})
 			var toolErr *ToolError
 			if !errors.As(err, &toolErr) || toolErr.Code != tc.code {
 				t.Fatalf("applyPatch() error = %#v, want %s", err, tc.code)
@@ -332,7 +332,7 @@ func TestEnvelopePatchRejectsOversizedTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	patch := "*** Begin Patch\n*** Update File: target.txt\n@@\n-missing\n+value\n*** End Patch"
-	_, err = rt.applyPatch(t.Context(), map[string]any{"patch": patch, "dry_run": true})
+	_, err = rt.applyPatchTest(t.Context(), EditRequest{Patch: patch, DryRun: true})
 	var toolErr *ToolError
 	if !errors.As(err, &toolErr) || toolErr.Code != "FILE_TOO_LARGE" {
 		t.Fatalf("applyPatch() error = %#v, want FILE_TOO_LARGE", err)

@@ -6,12 +6,12 @@ import (
 )
 
 func TestMemoryUnifiedDiffTruncatesAtUTF8Boundary(t *testing.T) {
-	full := MemoryUnifiedDiff("note.md", "# 标题\n旧内容", "# 标题\n新内容", 0)
+	full := memoryUnifiedDiff("note.md", "# 标题\n旧内容", "# 标题\n新内容", 0)
 	if full == "" {
-		t.Fatal("MemoryUnifiedDiff() returned empty diff")
+		t.Fatal("memoryUnifiedDiff() returned empty diff")
 	}
 	for maxBytes := 1; maxBytes < len(full); maxBytes++ {
-		got := MemoryUnifiedDiff("note.md", "# 标题\n旧内容", "# 标题\n新内容", maxBytes)
+		got := memoryUnifiedDiff("note.md", "# 标题\n旧内容", "# 标题\n新内容", maxBytes)
 		if !utf8.ValidString(got) {
 			t.Fatalf("maxBytes=%d returned invalid UTF-8: %q", maxBytes, got)
 		}

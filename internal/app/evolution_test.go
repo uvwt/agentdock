@@ -91,7 +91,7 @@ func TestTaskFinalReviewAutomaticallyResolvesPreboundLearningCheck(t *testing.T)
 	assertToolResultMatchesOutputSchema(t, "evolve", proposed)
 	evolutionID := proposed["evolution_id"].(string)
 
-	created, err := runtime.taskManage(t.Context(), map[string]any{
+	created, err := runtime.Call(t.Context(), "task_manage", map[string]any{
 		"action": "create", "title": "验证自动解析", "goal": "验证预绑定经验", "project": "agentdock",
 		"completion_conditions": []string{"有真实结果"},
 		"learning_checks": []map[string]any{{
@@ -102,7 +102,7 @@ func TestTaskFinalReviewAutomaticallyResolvesPreboundLearningCheck(t *testing.T)
 		t.Fatal(err)
 	}
 	taskID := created["task_id"].(string)
-	final, err := runtime.taskManage(t.Context(), map[string]any{
+	final, err := runtime.Call(t.Context(), "task_manage", map[string]any{
 		"action": "final_review", "task_id": taskID, "status": "pass", "summary": "真实验证通过",
 		"verified": []string{"目标行为真实发生"},
 	})

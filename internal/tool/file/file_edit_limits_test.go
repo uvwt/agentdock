@@ -24,14 +24,14 @@ func TestFileEditRejectsOversizedExistingFile(t *testing.T) {
 	}
 
 	for _, test := range []struct {
-		name string
-		args map[string]any
+		name    string
+		request EditRequest
 	}{
-		{name: "replace", args: map[string]any{"action": "replace", "path": "oversized.txt", "old": "a", "new": "b"}},
-		{name: "overwrite", args: map[string]any{"action": "add", "path": "oversized.txt", "content": "replacement", "overwrite": true}},
+		{name: "replace", request: EditRequest{Action: "replace", Path: "oversized.txt", Old: "a", New: "b"}},
+		{name: "overwrite", request: EditRequest{Action: "add", Path: "oversized.txt", Content: "replacement", Overwrite: true}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := rt.Edit(t.Context(), test.args)
+			_, err := rt.editTest(t.Context(), test.request)
 			var toolErr *ToolError
 			if !errors.As(err, &toolErr) {
 				t.Fatalf("expected ToolError, got %T: %v", err, err)
@@ -48,9 +48,7 @@ func TestFileEditRejectsMovingDirectoryIntoDescendant(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "parent"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	_, err := rt.Edit(t.Context(), map[string]any{
-		"action": "move", "path": "parent", "new_path": "parent/child",
-	})
+	_, err := rt.editTest(t.Context(), EditRequest{Action: "move", Path: "parent", NewPath: "parent/child"})
 	var toolErr *ToolError
 	if !errors.As(err, &toolErr) || toolErr.Code != "INVALID_MOVE_DESTINATION" {
 		t.Fatalf("unexpected error: %#v", err)
@@ -155,9 +153,7 @@ func TestFileEditRejectsNegativeExpectedMatches(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "note.txt"), []byte("alpha"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := rt.Edit(t.Context(), map[string]any{
-		"action": "replace", "path": "note.txt", "old": "alpha", "new": "beta", "expected_matches": -1,
-	})
+	_, err := rt.editTest(t.Context(), EditRequest{Action: "replace", Path: "note.txt", Old: "alpha", New: "beta", ExpectedMatches: intPtrForTest(-1)})
 	var toolErr *ToolError
 	if !errors.As(err, &toolErr) || toolErr.Code != "INVALID_EXPECTED_MATCHES" {
 		t.Fatalf("unexpected error: %#v", err)

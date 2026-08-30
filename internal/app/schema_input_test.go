@@ -5,6 +5,9 @@ import (
 	"testing"
 
 	"github.com/uvwt/agentdock/internal/config"
+	toolcommand "github.com/uvwt/agentdock/internal/tool/command"
+	toolfile "github.com/uvwt/agentdock/internal/tool/file"
+	toolrecall "github.com/uvwt/agentdock/internal/tool/recall"
 )
 
 func TestTaskManageSchemaHidesNexusExtensionsWithoutNexus(t *testing.T) {
@@ -63,21 +66,21 @@ func TestInputSchemaPublishesRuntimeBounds(t *testing.T) {
 		tool, property   string
 		minimum, maximum int
 	}{
-		{tool: "read_file", property: "max_bytes", minimum: 1, maximum: maxTextOutputBytes},
+		{tool: "read_file", property: "max_bytes", minimum: 1, maximum: toolfile.MaxTextOutputBytes},
 		{tool: "list_dir", property: "max_depth", minimum: 1, maximum: 20},
 		{tool: "list_dir", property: "max_entries", minimum: 1, maximum: 5000},
 		{tool: "search_text", property: "context_lines", minimum: 0, maximum: 20},
 		{tool: "search_text", property: "max_results", minimum: 1, maximum: 1000},
 		{tool: "exec_command", property: "timeout_ms", minimum: 1, maximum: 86400000},
 		{tool: "exec_command", property: "yield_time_ms", minimum: 0, maximum: 30000},
-		{tool: "exec_command", property: "max_output_bytes", minimum: 1, maximum: maxCommandOutputBytes},
-		{tool: "session_observe", property: "max_output_bytes", minimum: 1, maximum: maxCommandOutputBytes},
-		{tool: "session_act", property: "max_output_bytes", minimum: 1, maximum: maxCommandOutputBytes},
+		{tool: "exec_command", property: "max_output_bytes", minimum: 1, maximum: toolcommand.MaxOutputBytes},
+		{tool: "session_observe", property: "max_output_bytes", minimum: 1, maximum: toolcommand.MaxOutputBytes},
+		{tool: "session_act", property: "max_output_bytes", minimum: 1, maximum: toolcommand.MaxOutputBytes},
 		{tool: "browser_session", property: "timeout_ms", minimum: 1, maximum: 300000},
 		{tool: "browser_act", property: "timeout_ms", minimum: 1, maximum: 300000},
 		{tool: "browser_snapshot", property: "timeout_ms", minimum: 1, maximum: 300000},
-		{tool: "private_note_manage", property: "max_results", minimum: 1, maximum: maxPrivateNoteSearchResults},
-		{tool: "private_note_manage", property: "max_bytes", minimum: 1, maximum: maxPrivateNoteReadBytes},
+		{tool: "private_note_manage", property: "max_results", minimum: 1, maximum: toolrecall.MaxPrivateNoteSearchResults},
+		{tool: "private_note_manage", property: "max_bytes", minimum: 1, maximum: toolrecall.MaxPrivateNoteReadBytes},
 	}
 	for _, test := range tests {
 		t.Run(test.tool+"/"+test.property, func(t *testing.T) {

@@ -18,13 +18,12 @@ func TestCommandEnvExplicitPathOverridesPlatformDefault(t *testing.T) {
 		func() config.Config { return config.Config{AgentDockHome: home, AgentDockDefaultDir: home} },
 		nil,
 		envs,
-		NewSessionStore(),
 		nil,
 		nil,
 	)
 
 	t.Setenv("PATH", "/usr/bin:/bin")
-	got, err := svc.CommandEnv("", map[string]any{"PATH": "/custom/bin"})
+	got, err := svc.CommandEnv("", map[string]string{"PATH": "/custom/bin"})
 	if err != nil {
 		t.Fatal(err)
 	}

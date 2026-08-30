@@ -35,8 +35,6 @@ type Runtime struct {
 	cfg           config.Config
 	ws            *workspace.Workspace
 	skills        *toolskill.Service
-	mcpClients    *mcpclient.Manager
-	tasks         *taskstate.Store
 	command       *toolcommand.Service
 	files         *toolfile.Service
 	dynamicMCP    *toolmcp.Service
@@ -77,16 +75,18 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 		return nil, err
 	}
 	commandCtx, commandCancel := context.WithCancel(context.Background())
-	sessions := toolcommand.NewSessionStore()
 	runtime := &Runtime{
 		cfg: cfg, ws: ws, skills: skills,
-		mcpClients: mcpClients, tasks: tasks, commandCtx: commandCtx, commandCancel: commandCancel,
+		commandCtx: commandCtx, commandCancel: commandCancel,
 	}
-	runtime.command = toolcommand.New(func() config.Config { return runtime.cfg }, ws, envs, sessions, skills.ResolveActive, runtime.commandExecutionContext)
+	runtime.command = toolcommand.New(func() config.Config { return runtime.cfg }, ws, envs, skills.ResolveActive, runtime.commandExecutionContext)
 	runtime.files = toolfile.New(ws, skills.ResolveResource, runtime.command.CommandEnv)
 	runtime.dynamicMCP = toolmcp.New(mcpClients, envs)
 	runtime.media = toolmedia.New(cfg, ws, runtime.command.InternalCommandEnv)
-	runtime.browser = toolbrowser.New(toolbrowser.Config{AgentDockHome: cfg.AgentDockHome, ExecutablePath: cfg.BrowserExecutablePath, CDPURL: cfg.BrowserCDPURL, ReuseExistingCDP: cfg.BrowserReuseExistingCDP})
+	runtime.browser = toolbrowser.New(
+		toolbrowser.Config{AgentDockHome: cfg.AgentDockHome, ExecutablePath: cfg.BrowserExecutablePath, CDPURL: cfg.BrowserCDPURL, ReuseExistingCDP: cfg.BrowserReuseExistingCDP},
+		runtime.media.PublishBrowserScreenshot,
+	)
 	runtime.recall = toolrecall.New(func() config.Config { return runtime.cfg })
 	runtime.evolution = evolution.New(func() config.Config { return runtime.cfg }, tasks)
 	runtime.taskTools = tooltask.New(func() config.Config { return runtime.cfg }, tasks, runtime.evolution)
@@ -159,8 +159,8 @@ func (r *Runtime) Close() error {
 				closeErrors = append(closeErrors, err)
 			}
 		}
-		if r.mcpClients != nil {
-			if err := r.mcpClients.Close(); err != nil {
+		if r.dynamicMCP != nil {
+			if err := r.dynamicMCP.Close(); err != nil {
 				closeErrors = append(closeErrors, fmt.Errorf("close dynamic MCP clients: %w", err))
 			}
 		}

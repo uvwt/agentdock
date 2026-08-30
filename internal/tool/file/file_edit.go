@@ -11,31 +11,31 @@ import (
 	"unicode/utf8"
 )
 
-func (svc *Service) Edit(ctx context.Context, args map[string]any) (Result, error) {
-	selection, err := selectFileRuntime(args)
+func (svc *Service) Edit(ctx context.Context, request EditRequest) (Result, error) {
+	selection, err := selectFileRuntime(request.RuntimeOptions)
 	if err != nil {
 		return nil, err
 	}
 	if selection.isWSL() {
-		return svc.fileEditWSL(ctx, args, selection)
+		return svc.fileEditWSL(ctx, request, selection)
 	}
 
-	action := strings.ToLower(stringArg(args, "action", ""))
+	action := strings.ToLower(strings.TrimSpace(request.Action))
 	if action == "" {
 		return nil, toolErrorDetails("MISSING_ACTION", "file_edit requires action", "validation", map[string]any{"allowed": []string{"replace", "patch", "add", "delete", "move"}})
 	}
 	var result Result
 	switch action {
 	case "patch":
-		result, err = svc.applyPatch(ctx, args)
+		result, err = svc.applyPatch(ctx, request)
 	case "replace":
-		result, err = svc.editFile(args)
+		result, err = svc.editFile(request)
 	case "add":
-		result, err = svc.fileEditAdd(args)
+		result, err = svc.fileEditAdd(request)
 	case "delete":
-		result, err = svc.fileEditDelete(args)
+		result, err = svc.fileEditDelete(request)
 	case "move":
-		result, err = svc.fileEditMove(args)
+		result, err = svc.fileEditMove(request)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported file_edit action", "validation", map[string]any{"action": action, "allowed": []string{"replace", "patch", "add", "delete", "move"}})
 	}
@@ -45,14 +45,14 @@ func (svc *Service) Edit(ctx context.Context, args map[string]any) (Result, erro
 	return addFileRuntimeResult(result, selection), err
 }
 
-func (svc *Service) fileEditAdd(args map[string]any) (Result, error) {
-	path := stringArg(args, "path", "")
+func (svc *Service) fileEditAdd(request EditRequest) (Result, error) {
+	path := request.Path
 	if path == "" {
 		return nil, toolError("INVALID_ARGUMENT", "path is required", "validation")
 	}
-	content := stringArg(args, "content", "")
-	dryRun := boolArg(args, "dry_run", false)
-	overwrite := boolArg(args, "overwrite", false)
+	content := request.Content
+	dryRun := request.DryRun
+	overwrite := request.Overwrite
 
 	p, err := svc.ws.ResolveForWrite(path)
 	if err != nil {
@@ -92,11 +92,10 @@ func (svc *Service) fileEditAdd(args map[string]any) (Result, error) {
 		original = append([]byte(nil), data...)
 		mode = info.Mode().Perm()
 	}
-	result, err := prepareTextAddition(p.Display, oldContent, content, p.Exists, args)
+	result, changed, err := prepareTextAddition(p.Display, oldContent, content, p.Exists, request)
 	if err != nil {
 		return nil, err
 	}
-	changed, _ := result["changed"].(bool)
 	if dryRun || !changed {
 		return result, nil
 	}
@@ -117,13 +116,13 @@ func (svc *Service) fileEditAdd(args map[string]any) (Result, error) {
 	return result, nil
 }
 
-func (svc *Service) fileEditDelete(args map[string]any) (Result, error) {
-	path := stringArg(args, "path", "")
+func (svc *Service) fileEditDelete(request EditRequest) (Result, error) {
+	path := request.Path
 	if path == "" {
 		return nil, toolError("INVALID_ARGUMENT", "path is required", "validation")
 	}
-	dryRun := boolArg(args, "dry_run", false)
-	recursive := boolArg(args, "recursive", false)
+	dryRun := request.DryRun
+	recursive := request.Recursive
 	p, err := svc.ws.ResolveExisting(path)
 	if err != nil {
 		return nil, err
@@ -185,14 +184,14 @@ func deletePathSafely(path string, expected fileSnapshot, recursive bool, rename
 	return cleanup()
 }
 
-func (svc *Service) fileEditMove(args map[string]any) (Result, error) {
-	path := stringArg(args, "path", "")
-	newPath := stringArg(args, "new_path", "")
+func (svc *Service) fileEditMove(request EditRequest) (Result, error) {
+	path := request.Path
+	newPath := request.NewPath
 	if path == "" || newPath == "" {
 		return nil, toolError("INVALID_ARGUMENT", "path and new_path are required", "validation")
 	}
-	dryRun := boolArg(args, "dry_run", false)
-	overwrite := boolArg(args, "overwrite", false)
+	dryRun := request.DryRun
+	overwrite := request.Overwrite
 	src, err := svc.ws.ResolveExisting(path)
 	if err != nil {
 		return nil, err
