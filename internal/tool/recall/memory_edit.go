@@ -120,9 +120,14 @@ func (svc *Service) memoryAppend(ctx context.Context, request WriteRequest) (Res
 	if strings.TrimSpace(appendText) == "" {
 		return nil, toolError("MISSING_CONTENT", "append or content is required", "validation")
 	}
-	patchRequest := request
-	patchRequest.Append = appendText
-	patchRequest.Content = ""
+	// append 是独立 action，只把该动作真正允许参与执行的字段下沉到 patch，
+	// 避免同一公开请求里的 old/new、section 等 patch 字段被意外一并执行。
+	patchRequest := WriteRequest{
+		Path:      request.Path,
+		Append:    appendText,
+		Confirmed: request.Confirmed,
+		MaxBytes:  request.MaxBytes,
+	}
 	return svc.memoryPatch(ctx, patchRequest)
 }
 
