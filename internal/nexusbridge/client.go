@@ -27,14 +27,15 @@ const maxMessageBytes = 8 << 20
 type Client struct {
 	identity Identity
 	server   *mcp.Server
+	runtime  httpx.RuntimeAPI
 	state    *ConnectionState
 	writeMu  sync.Mutex
 	cancelMu sync.Mutex
 	cancels  map[string]context.CancelFunc
 }
 
-func NewClient(identity Identity, server *mcp.Server, state *ConnectionState) *Client {
-	return &Client{identity: identity, server: server, state: state, cancels: make(map[string]context.CancelFunc)}
+func NewClient(identity Identity, server *mcp.Server, runtime httpx.RuntimeAPI, state *ConnectionState) *Client {
+	return &Client{identity: identity, server: server, runtime: runtime, state: state, cancels: make(map[string]context.CancelFunc)}
 }
 
 func (c *Client) Run(ctx context.Context) {
@@ -159,7 +160,7 @@ func (c *Client) invoke(parent context.Context, socket *websocket.Conn, incoming
 		if decodeErr := json.Unmarshal(incoming.Arguments, &request); decodeErr != nil {
 			err = fmt.Errorf("解析 Runtime 请求: %w", decodeErr)
 		} else {
-			result, err = httpx.DispatchRuntimeBridgeRequest(ctx, c.server, request)
+			result, err = httpx.DispatchRuntimeBridgeRequest(ctx, c.runtime, request)
 		}
 	case protocol.OperationContextLocal:
 		result, err = c.server.AgentDockLocalContext(ctx)

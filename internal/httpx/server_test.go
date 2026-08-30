@@ -112,7 +112,7 @@ func TestRuntimeAPIRequiresBearerWhenConfigured(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
+	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
 
 	req := httptest.NewRequest(http.MethodGet, "/internal/runtime/status", nil)
 	recorder := httptest.NewRecorder()
@@ -129,7 +129,7 @@ func TestRuntimeAPIStatusWithBearer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
+	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
 
 	req := httptest.NewRequest(http.MethodGet, "/internal/runtime/status", nil)
 	req.Header.Set("Authorization", "Bearer secret-token")
@@ -153,7 +153,7 @@ func TestRuntimeAPISkillsNoAuthWhenUnconfigured(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
+	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
 
 	req := httptest.NewRequest(http.MethodGet, "/internal/runtime/skills", nil)
 	recorder := httptest.NewRecorder()
@@ -172,7 +172,7 @@ func TestRuntimeAPIRejectsInvalidTaskQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
+	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
 	tests := []struct {
 		name string
 		url  string
@@ -224,7 +224,7 @@ func TestRuntimeAPIDeletesOnlySelectedTask(t *testing.T) {
 	deletedTaskID := createTask("Delete me")
 	keptTaskID := createTask("Keep me")
 
-	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
+	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodDelete, "/internal/runtime/tasks/"+deletedTaskID, nil))
 	if recorder.Code != http.StatusOK {
@@ -262,7 +262,7 @@ func TestRuntimeAPIUnknownRouteReturnsNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
+	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/internal/runtime/unknown", nil))
 	if recorder.Code != http.StatusNotFound {
@@ -279,7 +279,7 @@ func TestRuntimeAPIMethodContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
+	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
 	tests := []struct {
 		method string
 		path   string
