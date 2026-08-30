@@ -16,6 +16,27 @@ func New(manager *mcpclient.Manager, envs *envstore.Store) *Service {
 	return &Service{mcpClients: manager, envs: envs}
 }
 
+type CapabilityItem struct {
+	Name        string
+	Description string
+}
+
+func (s *Service) CapabilityItems() []CapabilityItem {
+	servers := s.mcpClients.EnabledIndex()
+	items := make([]CapabilityItem, 0, len(servers))
+	for _, server := range servers {
+		items = append(items, CapabilityItem{Name: server.Name, Description: server.Description})
+	}
+	return items
+}
+
+func (s *Service) Close() error {
+	if s == nil || s.mcpClients == nil {
+		return nil
+	}
+	return s.mcpClients.Close()
+}
+
 func (s *Service) envAction(kind envstore.ScopeKind, name, action string, args map[string]any) (Result, error) {
 	scope := envstore.Scope{Kind: kind, Name: strings.TrimSpace(name)}
 	switch action {

@@ -1,4 +1,4 @@
-package app
+package recall
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"github.com/uvwt/agentdock/internal/config"
 )
 
-func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func()) {
+func newMemoryTestService(t *testing.T, store map[string]string) (*Service, func()) {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test-device-token" {
@@ -102,11 +102,7 @@ func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
 	}
-	rt, err := NewRuntime(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return rt, server.Close
+	return New(func() config.Config { return cfg }), server.Close
 }
 
 func memoryTestDocument(p, content string) map[string]any {
@@ -132,7 +128,7 @@ func memoryTestBody(content string) string {
 func TestMemoryReadCompactsRawMarkdownByDefault(t *testing.T) {
 	full := "---\ntype: test\n---\n\n# Test\n正文\n"
 	store := map[string]string{"devices/test.md": full}
-	rt, closeServer := newMemoryTestRuntime(t, store)
+	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 
 	res, err := rt.memoryRead(context.Background(), map[string]any{"path": "devices/test.md"})
@@ -174,10 +170,10 @@ func TestMemoryReadCompactsRawMarkdownByDefault(t *testing.T) {
 
 func TestRecallContextIndexUsesContextIndexEndpoint(t *testing.T) {
 	store := map[string]string{"profile.md": "# Profile\n\nCompact Nexus context.\n"}
-	rt, closeServer := newMemoryTestRuntime(t, store)
+	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 
-	res, err := rt.recallContextIndex(context.Background(), 3000)
+	res, err := rt.ContextIndex(context.Background(), 3000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +190,7 @@ func TestRecallContextIndexUsesContextIndexEndpoint(t *testing.T) {
 
 func TestMemoryDiffAndPatchDryRun(t *testing.T) {
 	store := map[string]string{"devices/test.md": "# Test\nkey：old\n"}
-	rt, closeServer := newMemoryTestRuntime(t, store)
+	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 	res, err := rt.memoryDiff(context.Background(), map[string]any{"path": "devices/test.md", "old": "old", "new": "new"})
 	if err != nil {
@@ -217,7 +213,7 @@ func TestMemoryDiffAndPatchDryRun(t *testing.T) {
 
 func TestMemoryPatchConfirmedWrites(t *testing.T) {
 	store := map[string]string{"devices/test.md": "# Test\nkey：old\n"}
-	rt, closeServer := newMemoryTestRuntime(t, store)
+	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 	_, err := rt.memoryPatch(context.Background(), map[string]any{"path": "devices/test.md", "old": "old", "new": "new", "confirmed": true})
 	if err != nil {
@@ -234,7 +230,7 @@ func TestMemoryUpdateFactAndLint(t *testing.T) {
 		"ops/test.md":                            "# Ops\nNo forbidden terms.\n",
 		"private-notes/encrypted/example.md.age": "not utf-8 recall content",
 	}
-	rt, closeServer := newMemoryTestRuntime(t, store)
+	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 	res, err := rt.memoryUpdateFact(context.Background(), map[string]any{"path": "devices/test.md", "key": "plugin_dir", "value": "plugins", "confirmed": true})
 	if err != nil {
@@ -278,10 +274,10 @@ func TestMemoryUpdateFactAndLint(t *testing.T) {
 
 func TestRecallSearchDefaultsToEightResults(t *testing.T) {
 	store := map[string]string{"profile.md": "# Profile\nsearchable memory\n"}
-	rt, closeServer := newMemoryTestRuntime(t, store)
+	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 
-	res, err := rt.recallSearch(context.Background(), map[string]any{"query": "searchable"})
+	res, err := rt.Search(context.Background(), map[string]any{"query": "searchable"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +285,7 @@ func TestRecallSearchDefaultsToEightResults(t *testing.T) {
 		t.Fatalf("default max_results = %s, want 8: %#v", got, res)
 	}
 
-	res, err = rt.recallSearch(context.Background(), map[string]any{"query": "searchable", "max_results": 3})
+	res, err = rt.Search(context.Background(), map[string]any{"query": "searchable", "max_results": 3})
 	if err != nil {
 		t.Fatal(err)
 	}

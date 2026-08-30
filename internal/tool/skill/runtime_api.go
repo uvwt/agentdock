@@ -43,7 +43,7 @@ func (s *Service) CapabilityItems() ([]CapabilityItem, error) {
 }
 
 func (s *Service) RuntimeSkills() (Result, error) {
-	result, err := s.List()
+	result, err := s.list()
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (s *Service) RuntimeSkills() (Result, error) {
 }
 
 func (s *Service) RuntimeSkill(skill string) (Result, error) {
-	result, err := s.Inspect(map[string]any{"skill": skill})
+	result, err := s.inspect(map[string]any{"skill": skill})
 	if err != nil {
 		return nil, err
 	}

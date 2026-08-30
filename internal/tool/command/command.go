@@ -13,8 +13,6 @@ import (
 	"github.com/uvwt/agentdock/internal/tool/command/session"
 )
 
-type SessionStore = session.Store
-
 type commandExecutionMode string
 
 const (
@@ -31,8 +29,6 @@ const (
 	maxConcurrentCommandSessions = 32
 	maxRetainedCommandSessions   = 128
 )
-
-func NewSessionStore() *SessionStore { return session.NewStore() }
 
 func (svc *Service) Exec(ctx context.Context, args map[string]any) (Result, error) {
 	cmd := stringArg(args, "cmd", "")
@@ -276,7 +272,7 @@ func (svc *Service) killSession(args map[string]any) (Result, error) {
 	return result, nil
 }
 
-func (svc *Service) KillAll(args map[string]any) (Result, error) {
+func (svc *Service) killAll(args map[string]any) (Result, error) {
 	sessions := svc.sessions.List()
 	running := make([]*session.Session, 0, len(sessions))
 	items := make([]map[string]any, 0, len(sessions))

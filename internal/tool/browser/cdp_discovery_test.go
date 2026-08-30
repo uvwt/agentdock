@@ -144,13 +144,13 @@ func TestProbeCDPEndpointRequiresBrowserWebSocket(t *testing.T) {
 }
 
 func TestResolveCDPConnectionTrustBoundary(t *testing.T) {
-	service := New(Config{CDPURL: "http://browser.internal:9222"})
+	service := New(Config{CDPURL: "http://browser.internal:9222"}, nil)
 	got, mode, err := service.resolveCDPConnection(context.Background(), StartRequest{})
 	if err != nil || got != "http://browser.internal:9222" || mode != "external_configured" {
 		t.Fatalf("configured remote CDP = url %q mode %q err %v", got, mode, err)
 	}
 
-	service = New(Config{})
+	service = New(Config{}, nil)
 	_, _, err = service.resolveCDPConnection(context.Background(), StartRequest{CDPURL: "http://browser.internal:9222"})
 	var browserErr *Error
 	if !errors.As(err, &browserErr) || browserErr.Code != ErrActionInvalid {
@@ -159,7 +159,7 @@ func TestResolveCDPConnectionTrustBoundary(t *testing.T) {
 }
 
 func TestResolveCDPConnection(t *testing.T) {
-	service := New(Config{ReuseExistingCDP: true})
+	service := New(Config{ReuseExistingCDP: true}, nil)
 	service.discoverCDP = func(context.Context) ([]cdpCandidate, error) { return nil, nil }
 	url, mode, err := service.resolveCDPConnection(context.Background(), StartRequest{})
 	if err != nil || url != "" || mode != "owned" {

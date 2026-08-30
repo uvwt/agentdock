@@ -37,12 +37,12 @@ func TestFindExecutableUsesConfiguredPathAndRejectsMissing(t *testing.T) {
 }
 
 func TestExternalCDPRejectsProfileMutationsBeforeConnecting(t *testing.T) {
-	service := New(Config{AgentDockHome: t.TempDir()})
+	service := New(Config{AgentDockHome: t.TempDir()}, nil)
 	for _, req := range []StartRequest{
 		{CDPURL: "http://127.0.0.1:9", Cookies: []Cookie{{Name: "session", Value: "value"}}},
 		{CDPURL: "http://127.0.0.1:9", LocalStorage: map[string]map[string]string{"https://example.test": {"key": "value"}}},
 	} {
-		_, err := service.Start(context.Background(), req)
+		_, err := service.start(context.Background(), req)
 		var browserErr *Error
 		if !errors.As(err, &browserErr) || browserErr.Code != ErrActionInvalid {
 			t.Fatalf("Start() error = %#v, want %s", err, ErrActionInvalid)
@@ -101,7 +101,7 @@ func TestNormalizeProfileIDUsesSafeCharacters(t *testing.T) {
 }
 
 func TestProfileReservationRejectsConcurrentUse(t *testing.T) {
-	service := New(Config{AgentDockHome: t.TempDir()})
+	service := New(Config{AgentDockHome: t.TempDir()}, nil)
 	profileDir, temporary, err := service.reserveProfile("work")
 	if err != nil {
 		t.Fatal(err)
@@ -124,7 +124,7 @@ func TestProfileReservationRejectsConcurrentUse(t *testing.T) {
 
 func TestCleanupStaleOnlyRemovesOldCurrentProcessSessions(t *testing.T) {
 	now := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
-	service := New(Config{AgentDockHome: t.TempDir()})
+	service := New(Config{AgentDockHome: t.TempDir()}, nil)
 	service.now = func() time.Time { return now }
 	oldTemp := filepath.Join(t.TempDir(), "old-temp")
 	if err := os.MkdirAll(oldTemp, 0o700); err != nil {
@@ -134,7 +134,7 @@ func TestCleanupStaleOnlyRemovesOldCurrentProcessSessions(t *testing.T) {
 	service.sessions["fresh"] = &session{id: "fresh", lastActivity: now.Add(-time.Hour), profileID: "fresh-profile", pages: map[target.ID]*pageState{}}
 	service.profiles["fresh-profile"] = "fresh"
 
-	got := service.CleanupStale(CleanupRequest{})
+	got := service.cleanupStale(CleanupRequest{})
 	if got.RemovedCount != 1 || len(got.RemovedSessions) != 1 || got.RemovedSessions[0] != "old" {
 		t.Fatalf("CleanupStale() = %#v", got)
 	}
@@ -147,7 +147,7 @@ func TestCleanupStaleOnlyRemovesOldCurrentProcessSessions(t *testing.T) {
 }
 
 func TestSessionTableConcurrentAccess(t *testing.T) {
-	service := New(Config{AgentDockHome: t.TempDir()})
+	service := New(Config{AgentDockHome: t.TempDir()}, nil)
 	now := time.Now()
 	for index := 0; index < 20; index++ {
 		id := "session-" + time.Unix(0, int64(index+1)).Format("150405.000000000")
@@ -175,13 +175,13 @@ func TestSessionTableConcurrentAccess(t *testing.T) {
 }
 
 func TestCloseSessionIsStrictAndServiceCloseIsIdempotent(t *testing.T) {
-	service := New(Config{AgentDockHome: t.TempDir()})
+	service := New(Config{AgentDockHome: t.TempDir()}, nil)
 	service.sessions["one"] = &session{id: "one", pages: make(map[target.ID]*pageState)}
-	closed, err := service.CloseSession(CloseRequest{SessionID: "one"})
+	closed, err := service.closeSession(CloseRequest{SessionID: "one"})
 	if err != nil || !closed.Closed {
 		t.Fatalf("CloseSession() = %#v, %v", closed, err)
 	}
-	_, err = service.CloseSession(CloseRequest{SessionID: "one"})
+	_, err = service.closeSession(CloseRequest{SessionID: "one"})
 	var browserErr *Error
 	if !errors.As(err, &browserErr) || browserErr.Code != ErrSessionNotFound {
 		t.Fatalf("second close error = %#v", err)

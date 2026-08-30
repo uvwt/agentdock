@@ -45,7 +45,7 @@ func (svc *Service) prepareCommandInvocation(args map[string]any, command string
 				map[string]any{"reason": err.Error()},
 			)
 		}
-		workdir, err := svc.ResolveWSLWorkdir(args, skillContext.skill)
+		workdir, err := svc.resolveWSLWorkdir(args, skillContext.skill)
 		if err != nil {
 			return commandInvocation{}, err
 		}
@@ -77,7 +77,7 @@ func (svc *Service) prepareCommandInvocation(args map[string]any, command string
 	}
 }
 
-func (svc *Service) ResolveWSLWorkdir(args map[string]any, skill string) (string, error) {
+func (svc *Service) resolveWSLWorkdir(args map[string]any, skill string) (string, error) {
 	skillDir := ""
 	if skill != "" {
 		hostPath, err := svc.resolveSkillCommandDir(skill)

@@ -1,7 +1,6 @@
 package skill
 
 import (
-	"context"
 	"strings"
 
 	"github.com/uvwt/agentdock/internal/config"
@@ -81,16 +80,4 @@ func (s *Service) scopedEnvAction(kind envstore.ScopeKind, name, action string, 
 
 func skillEnvError(scope envstore.Scope, err error) error {
 	return toolErrorDetails("ENV_STORE_ERROR", "manage scoped environment", "validation", map[string]any{"kind": scope.Kind, "name": scope.Name, "reason": err.Error()})
-}
-
-func (s *Service) InstalledPath(skill, version string) (string, error) {
-	return s.state.InstalledPath(skill, version)
-}
-
-func (s *Service) Activate(ctx context.Context, skill, version string) error {
-	return s.state.Activate(ctx, skill, version)
-}
-
-func (s *Service) ReplaceBundledSkills(ctx context.Context, skills []string) error {
-	return s.state.ReplaceBundledSkills(ctx, skills)
 }

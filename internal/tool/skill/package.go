@@ -70,7 +70,7 @@ func (s *Service) Package(ctx context.Context, args map[string]any) (Result, err
 	}
 }
 
-func (s *Service) List() (Result, error) {
+func (s *Service) list() (Result, error) {
 	names, err := s.state.ListSkills()
 	if err != nil {
 		return nil, skillToolError(err)
@@ -105,7 +105,7 @@ func (s *Service) List() (Result, error) {
 	return Result{"action": "list", "count": len(items), "skills": items}, nil
 }
 
-func (s *Service) Inspect(args map[string]any) (Result, error) {
+func (s *Service) inspect(args map[string]any) (Result, error) {
 	input := parseSkillToolInput(args)
 	skill, err := input.requiredSkill()
 	if err != nil {

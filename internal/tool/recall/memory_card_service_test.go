@@ -1,16 +1,18 @@
-package app
+package recall
 
 import (
 	"context"
 	"strings"
 	"testing"
+
+	toolcore "github.com/uvwt/agentdock/internal/tool/core"
 )
 
 func TestMemoryCardCapturePlansWithoutWriting(t *testing.T) {
 	store := map[string]string{
 		"recall/managed/cards/chatdock/active/project_trap/deploy-check.md": "---\ntype: recall-card\nproject: chatdock\n---\n\n# Deploy Check\nChatDock deploy verification needs public smoke check.\n",
 	}
-	rt, closeServer := newMemoryTestRuntime(t, store)
+	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 
 	before := len(store)
@@ -27,7 +29,7 @@ func TestMemoryCardCapturePlansWithoutWriting(t *testing.T) {
 	if len(store) != before {
 		t.Fatalf("card capture must not write, store=%#v", store)
 	}
-	plan := res["capture_plan"].(Result)
+	plan := res["capture_plan"].(toolcore.Result)
 	if autoWrite, _ := plan["auto_write"].(bool); autoWrite {
 		t.Fatalf("capture plan should never auto-write: %#v", plan)
 	}
@@ -38,7 +40,7 @@ func TestMemoryCardCapturePlansWithoutWriting(t *testing.T) {
 
 func TestMemoryCardWriteRequiresConfirmationAndUsesCardsPath(t *testing.T) {
 	store := map[string]string{}
-	rt, closeServer := newMemoryTestRuntime(t, store)
+	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 
 	args := map[string]any{
@@ -64,7 +66,7 @@ func TestMemoryCardWriteRequiresConfirmationAndUsesCardsPath(t *testing.T) {
 	if !strings.HasPrefix(p, "recall/managed/cards/rss-monitor/inbox/runbook/") {
 		t.Fatalf("unexpected card path %q", p)
 	}
-	content := store[recallBackendPath(p)]
+	content := store[backendPath(p)]
 	for _, want := range []string{"type: recall-card", "card_type: runbook", "project: rss-monitor", "status: inbox", "# RSS Monitor 事实层现场检查"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("written card missing %q: %s", want, content)
@@ -73,7 +75,7 @@ func TestMemoryCardWriteRequiresConfirmationAndUsesCardsPath(t *testing.T) {
 }
 
 func TestMemoryCardDefaultsGlobalScopeWhenProjectOmitted(t *testing.T) {
-	card, _, err := memoryCardFromArgs(map[string]any{
+	card, _, err := parseMemoryCard(map[string]any{
 		"title":   "通用偏好",
 		"content": "用户偏好直接执行可自动完成的操作，不要让用户代替完成工具可执行的步骤。",
 	}, false)
@@ -86,7 +88,7 @@ func TestMemoryCardDefaultsGlobalScopeWhenProjectOmitted(t *testing.T) {
 }
 
 func TestMemoryCardDefaultsProjectScopeWhenProjectExplicit(t *testing.T) {
-	card, _, err := memoryCardFromArgs(map[string]any{
+	card, _, err := parseMemoryCard(map[string]any{
 		"title":   "ChatDock 部署目录",
 		"content": "ChatDock 部署时必须优先检查专用 compose 目录，不能误用默认仓库目录。",
 		"project": "chatdock",
@@ -101,7 +103,7 @@ func TestMemoryCardDefaultsProjectScopeWhenProjectExplicit(t *testing.T) {
 
 func TestMemoryCardWriteBlocksReviewedWarningsByDefault(t *testing.T) {
 	store := map[string]string{}
-	rt, closeServer := newMemoryTestRuntime(t, store)
+	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 
 	_, err := rt.memoryCardWrite(context.Background(), map[string]any{
@@ -117,7 +119,7 @@ func TestMemoryCardWriteBlocksReviewedWarningsByDefault(t *testing.T) {
 
 func TestMemoryCardWriteAllowsWarningsAfterExplicitReview(t *testing.T) {
 	store := map[string]string{}
-	rt, closeServer := newMemoryTestRuntime(t, store)
+	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 
 	res, err := rt.memoryCardWrite(context.Background(), map[string]any{
@@ -134,7 +136,7 @@ func TestMemoryCardWriteAllowsWarningsAfterExplicitReview(t *testing.T) {
 	if p == "" {
 		t.Fatalf("expected written card path: %#v", res)
 	}
-	if _, ok := store[recallBackendPath(p)]; !ok {
+	if _, ok := store[backendPath(p)]; !ok {
 		t.Fatalf("expected warned card to be written after allow_warnings, store=%#v", store)
 	}
 }

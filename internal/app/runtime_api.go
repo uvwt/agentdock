@@ -37,6 +37,14 @@ func (r *Runtime) RuntimeSkill(skill string) (Result, error) {
 	return r.skills.RuntimeSkill(skill)
 }
 
+func (r *Runtime) RuntimeSkillFiles(skill string) (Result, error) {
+	return r.skills.RuntimeSkillFiles(skill)
+}
+
+func (r *Runtime) RuntimeSkillFile(skill, relativePath string) (Result, error) {
+	return r.skills.RuntimeSkillFile(skill, relativePath)
+}
+
 func (r *Runtime) RuntimeTasks(status string, limit int) (Result, error) {
 	return r.taskTools.RuntimeTasks(status, limit)
 }

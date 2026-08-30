@@ -184,31 +184,41 @@ func TestExecCommandSkillBindsActiveRootAndEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	invocation, err := runtime.prepareCommandInvocation(map[string]any{"skill": "demo-skill"}, "true")
+	inspectCommand := `printf '%s\n%s' "$PWD" "$DEMO_SECRET"`
+	if goruntime.GOOS == "windows" {
+		inspectCommand = `[Console]::Write((Get-Location).Path + "` + "`n" + `" + $env:DEMO_SECRET)`
+	}
+	invocation, err := runtime.Call(context.Background(), "exec_command", map[string]any{
+		"cmd": inspectCommand, "skill": "demo-skill", "execution_mode": "sync",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !sameExistingTestPath(invocation.workdir, packageDir) {
-		t.Fatalf("Skill workdir = %q, want path equivalent to %q", invocation.workdir, packageDir)
+	lines := strings.SplitN(strings.TrimSpace(fmt.Sprint(invocation["stdout"])), "\n", 2)
+	if len(lines) != 2 || !sameExistingTestPath(lines[0], packageDir) {
+		t.Fatalf("Skill command workdir/output = %#v, want workdir equivalent to %q", invocation["stdout"], packageDir)
 	}
-	if got := commandEnvValue(invocation.env, "DEMO_SECRET"); got != "skill-secret-value" {
-		t.Fatalf("Skill environment value = %q", got)
+	if lines[1] != "skill-secret-value" {
+		t.Fatalf("Skill environment value = %q", lines[1])
 	}
 
 	overrideDir := t.TempDir()
-	overridden, err := runtime.prepareCommandInvocation(map[string]any{
-		"skill":   "demo-skill",
-		"workdir": overrideDir,
-		"env":     map[string]any{"DEMO_SECRET": "request-override"},
-	}, "true")
+	overridden, err := runtime.Call(context.Background(), "exec_command", map[string]any{
+		"cmd":            inspectCommand,
+		"skill":          "demo-skill",
+		"workdir":        overrideDir,
+		"env":            map[string]any{"DEMO_SECRET": "request-override"},
+		"execution_mode": "sync",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !sameExistingTestPath(overridden.workdir, overrideDir) {
-		t.Fatalf("explicit workdir = %q, want path equivalent to %q", overridden.workdir, overrideDir)
+	lines = strings.SplitN(strings.TrimSpace(fmt.Sprint(overridden["stdout"])), "\n", 2)
+	if len(lines) != 2 || !sameExistingTestPath(lines[0], overrideDir) {
+		t.Fatalf("explicit command workdir/output = %#v, want workdir equivalent to %q", overridden["stdout"], overrideDir)
 	}
-	if got := commandEnvValue(overridden.env, "DEMO_SECRET"); got != "request-override" {
-		t.Fatalf("explicit environment override = %q", got)
+	if lines[1] != "request-override" {
+		t.Fatalf("explicit environment override = %q", lines[1])
 	}
 }
 
@@ -216,10 +226,11 @@ func TestExecCommandSkillRejectsConflictingEnvironmentBinding(t *testing.T) {
 	runtime := newScopedEnvTestRuntime(t)
 	defer runtime.Close()
 
-	_, err := runtime.prepareCommandInvocation(map[string]any{
+	_, err := runtime.Call(context.Background(), "exec_command", map[string]any{
+		"cmd":       commandNoopForTest(),
 		"skill":     "demo-skill",
 		"skill_env": "other-skill",
-	}, "true")
+	})
 	if err == nil || !strings.Contains(err.Error(), "must reference the same Skill") {
 		t.Fatalf("expected conflicting Skill binding error, got %v", err)
 	}
@@ -229,26 +240,24 @@ func TestExecCommandSkillRequiresActiveVersion(t *testing.T) {
 	runtime := newScopedEnvTestRuntime(t)
 	defer runtime.Close()
 
-	_, err := runtime.prepareCommandInvocation(map[string]any{"skill": "missing-skill"}, "true")
+	_, err := runtime.Call(context.Background(), "exec_command", map[string]any{
+		"cmd": commandNoopForTest(), "skill": "missing-skill",
+	})
 	if err == nil || !strings.Contains(err.Error(), "has no active version") {
 		t.Fatalf("expected missing active version error, got %v", err)
 	}
 
-	_, err = runtime.prepareCommandInvocation(map[string]any{
-		"skill":   "missing-skill",
-		"workdir": t.TempDir(),
-	}, "true")
+	_, err = runtime.Call(context.Background(), "exec_command", map[string]any{
+		"cmd": commandNoopForTest(), "skill": "missing-skill", "workdir": t.TempDir(),
+	})
 	if err == nil || !strings.Contains(err.Error(), "has no active version") {
 		t.Fatalf("expected explicit workdir to keep active Skill validation, got %v", err)
 	}
 }
 
-func commandEnvValue(env []string, key string) string {
-	prefix := key + "="
-	for _, entry := range env {
-		if strings.HasPrefix(entry, prefix) {
-			return strings.TrimPrefix(entry, prefix)
-		}
+func commandNoopForTest() string {
+	if goruntime.GOOS == "windows" {
+		return `Write-Output ok`
 	}
-	return ""
+	return "true"
 }

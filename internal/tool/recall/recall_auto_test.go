@@ -1,4 +1,4 @@
-package app
+package recall
 
 import (
 	"context"
@@ -14,10 +14,10 @@ import (
 
 func TestRecallWriteDeleteRequiresConfirmationLocally(t *testing.T) {
 	store := map[string]string{"devices/test.md": "# Test\n"}
-	rt, closeServer := newMemoryTestRuntime(t, store)
+	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 
-	_, err := rt.recallWrite(context.Background(), map[string]any{
+	_, err := rt.Write(context.Background(), map[string]any{
 		"target": "markdown",
 		"action": "delete",
 		"path":   "devices/test.md",
@@ -32,10 +32,10 @@ func TestRecallWriteDeleteRequiresConfirmationLocally(t *testing.T) {
 
 func TestRecallWriteRequiresExplicitTargetAction(t *testing.T) {
 	store := map[string]string{}
-	rt, closeServer := newMemoryTestRuntime(t, store)
+	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 
-	_, err := rt.recallWrite(context.Background(), map[string]any{
+	_, err := rt.Write(context.Background(), map[string]any{
 		"title":   "缺少 target/action",
 		"content": "没有显式选择 target/action 时应该返回校验错误，而不是静默走 auto。",
 	})
@@ -49,10 +49,10 @@ func TestRecallWriteRequiresExplicitTargetAction(t *testing.T) {
 
 func TestRecallWriteCardPlanDoesNotWrite(t *testing.T) {
 	store := map[string]string{}
-	rt, closeServer := newMemoryTestRuntime(t, store)
+	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 
-	res, err := rt.recallWrite(context.Background(), map[string]any{
+	res, err := rt.Write(context.Background(), map[string]any{
 		"target":  "card",
 		"action":  "plan",
 		"title":   "直接执行偏好",
@@ -74,10 +74,10 @@ func TestRecallWriteCardPlanDoesNotWrite(t *testing.T) {
 
 func TestRecallWriteMarkdownDiffDoesNotWrite(t *testing.T) {
 	store := map[string]string{"projects/demo/project.md": "# Demo\nold\n"}
-	rt, closeServer := newMemoryTestRuntime(t, store)
+	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 
-	res, err := rt.recallWrite(context.Background(), map[string]any{
+	res, err := rt.Write(context.Background(), map[string]any{
 		"target":  "markdown",
 		"action":  "diff",
 		"path":    "projects/demo/project.md",
@@ -96,10 +96,10 @@ func TestRecallWriteMarkdownDiffDoesNotWrite(t *testing.T) {
 
 func TestRecallWriteMarkdownAppendUsesGenericMarkdownFlow(t *testing.T) {
 	store := map[string]string{"projects/demo/project.md": "# Demo\nold\n"}
-	rt, closeServer := newMemoryTestRuntime(t, store)
+	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 
-	res, err := rt.recallWrite(context.Background(), map[string]any{
+	res, err := rt.Write(context.Background(), map[string]any{
 		"target":    "markdown",
 		"action":    "append",
 		"path":      "projects/demo/project.md",
@@ -119,10 +119,10 @@ func TestRecallWriteMarkdownAppendUsesGenericMarkdownFlow(t *testing.T) {
 
 func TestRecallWriteRejectsRemovedNoteTarget(t *testing.T) {
 	store := map[string]string{}
-	rt, closeServer := newMemoryTestRuntime(t, store)
+	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 
-	_, err := rt.recallWrite(context.Background(), map[string]any{
+	_, err := rt.Write(context.Background(), map[string]any{
 		"target":  "note",
 		"action":  "create",
 		"content": "removed",
@@ -158,12 +158,9 @@ func TestRecallMaintainReindexCardsUsesCanonicalPrefix(t *testing.T) {
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	rt, err := NewRuntime(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rt := New(func() config.Config { return cfg })
 
-	if _, err := rt.recallMaintain(context.Background(), map[string]any{"action": "reindex_cards"}); err != nil {
+	if _, err := rt.Maintain(context.Background(), map[string]any{"action": "reindex_cards"}); err != nil {
 		t.Fatal(err)
 	}
 	if gotPrefix != "recall/managed/cards" {
@@ -194,12 +191,9 @@ func TestRecallSearchCardsUsesCanonicalPrefix(t *testing.T) {
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	rt, err := NewRuntime(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rt := New(func() config.Config { return cfg })
 
-	if _, err := rt.recallSearch(context.Background(), map[string]any{"kind": "card", "query": "deployment"}); err != nil {
+	if _, err := rt.Search(context.Background(), map[string]any{"kind": "card", "query": "deployment"}); err != nil {
 		t.Fatal(err)
 	}
 	if gotPrefix != "recall/managed/cards" {

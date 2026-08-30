@@ -10,7 +10,7 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-func (s *Service) Snapshot(ctx context.Context, req SnapshotRequest) (Snapshot, error) {
+func (s *Service) snapshot(ctx context.Context, req SnapshotRequest) (Snapshot, error) {
 	sess, err := s.getSession(req.SessionID)
 	if err != nil {
 		return Snapshot{}, err

@@ -1,15 +1,13 @@
-package app
+package browser
 
 import (
 	"errors"
 	"testing"
-
-	toolbrowser "github.com/uvwt/agentdock/internal/tool/browser"
 )
 
-func requireBrowserErrorCode(t *testing.T, err error, code string) *toolbrowser.Error {
+func requireBrowserErrorCode(t *testing.T, err error, code string) *Error {
 	t.Helper()
-	var browserErr *toolbrowser.Error
+	var browserErr *Error
 	if !errors.As(err, &browserErr) {
 		t.Fatalf("error = %T %v, want *browser.Error", err, err)
 	}
@@ -35,7 +33,7 @@ func TestParseBrowserActionRejectsLegacyAndUnknownFields(t *testing.T) {
 		if _, err := parseBrowserAction(input); err == nil {
 			t.Fatalf("case %d parseBrowserAction(%#v) unexpectedly succeeded", index, input)
 		} else {
-			requireBrowserErrorCode(t, err, toolbrowser.ErrActionInvalid)
+			requireBrowserErrorCode(t, err, ErrActionInvalid)
 		}
 	}
 }
@@ -45,7 +43,7 @@ func TestParseBrowserActionsAddsActionIndexToValidationError(t *testing.T) {
 		map[string]any{"action": "click", "selector": "#ok"},
 		map[string]any{"action": "wait_for_text", "text": "ready", "bogus": true},
 	})
-	browserErr := requireBrowserErrorCode(t, err, toolbrowser.ErrActionInvalid)
+	browserErr := requireBrowserErrorCode(t, err, ErrActionInvalid)
 	if browserErr.Details == nil || browserErr.Details.ActionIndex == nil || *browserErr.Details.ActionIndex != 1 {
 		t.Fatalf("action_index details = %#v, want 1", browserErr.Details)
 	}
@@ -66,7 +64,7 @@ func TestParseBrowserStartUsesNativeContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if req.Browser != toolbrowser.BrowserEdge || req.Viewport.Width != 1440 || req.Viewport.Height != 900 || req.ProfileID != "work" || req.Headless {
+	if req.Browser != BrowserEdge || req.Viewport.Width != 1440 || req.Viewport.Height != 900 || req.ProfileID != "work" || req.Headless {
 		t.Fatalf("request = %#v", req)
 	}
 	if len(req.Cookies) != 1 || req.Cookies[0].Name != "sid" || req.LocalStorage["https://example.test"]["theme"] != "dark" {
@@ -75,9 +73,9 @@ func TestParseBrowserStartUsesNativeContract(t *testing.T) {
 }
 
 func TestBrowserFailureNeverExposesProcessDiagnostics(t *testing.T) {
-	result := browserFailure(&toolbrowser.Error{
-		Code: toolbrowser.ErrLaunchFailed, Message: "failed", Phase: "browser_launch",
-		Details: &toolbrowser.ErrorDetails{Path: "/missing/chrome"},
+	result := browserFailure(&Error{
+		Code: ErrLaunchFailed, Message: "failed", Phase: "browser_launch",
+		Details: &ErrorDetails{Path: "/missing/chrome"},
 	})
 	if result["browser_ok"] != false || result["code"] != "LAUNCH_FAILED" {
 		t.Fatalf("result = %#v", result)

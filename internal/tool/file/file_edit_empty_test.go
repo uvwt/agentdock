@@ -1,4 +1,4 @@
-package app
+package file
 
 import (
 	"context"
@@ -8,8 +8,8 @@ import (
 )
 
 func TestFileEditAddCreatesEmptyFile(t *testing.T) {
-	runtime, root := newCodeToolsRuntime(t)
-	result, err := runtime.Call(context.Background(), "file_edit", map[string]any{
+	runtime, root := newFileTestService(t)
+	result, err := runtime.Edit(context.Background(), map[string]any{
 		"action":  "add",
 		"path":    "empty.txt",
 		"content": "",

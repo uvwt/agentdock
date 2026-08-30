@@ -1,19 +1,17 @@
-package app
+package task
 
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/taskstate"
 )
 
 func TestTaskManageLifecycleAndRestartRecovery(t *testing.T) {
-	rt, root := newCodeToolsRuntime(t)
-	created, err := rt.Call(context.Background(), "task_manage", map[string]any{
+	rt, root := newTaskTestService(t)
+	created, err := rt.Manage(context.Background(), map[string]any{
 		"action":                "create",
 		"title":                 "Deploy AgentDock",
 		"goal":                  "deploy and verify AgentDock",
@@ -35,17 +33,17 @@ func TestTaskManageLifecycleAndRestartRecovery(t *testing.T) {
 		{"action": "checkpoint", "task_id": taskID, "step_id": "deploy", "status": "completed", "summary": "deployed"},
 		{"action": "checkpoint", "task_id": taskID, "step_id": "verify", "status": "completed", "summary": "verified"},
 	} {
-		if _, err := rt.taskManage(context.Background(), checkpoint); err != nil {
+		if _, err := rt.Manage(context.Background(), checkpoint); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := rt.taskManage(context.Background(), map[string]any{
+	if _, err := rt.Manage(context.Background(), map[string]any{
 		"action": "final_review", "task_id": taskID, "status": "pass", "summary": "final verification passed",
 		"verified": []string{"health endpoint returned 200"}, "risks": []string{},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	completed, err := rt.taskManage(context.Background(), map[string]any{"action": "complete", "task_id": taskID})
+	completed, err := rt.Manage(context.Background(), map[string]any{"action": "complete", "task_id": taskID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,15 +52,8 @@ func TestTaskManageLifecycleAndRestartRecovery(t *testing.T) {
 		t.Fatalf("unexpected completion summary: %#v", summary)
 	}
 
-	cfg := config.Config{AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock")}
-	if err := cfg.Normalize(); err != nil {
-		t.Fatal(err)
-	}
-	restarted, err := NewRuntime(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	loaded, err := restarted.taskManage(context.Background(), map[string]any{"action": "get", "task_id": taskID})
+	restarted, _ := newTaskTestServiceAt(t, root)
+	loaded, err := restarted.Manage(context.Background(), map[string]any{"action": "get", "task_id": taskID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,8 +63,8 @@ func TestTaskManageLifecycleAndRestartRecovery(t *testing.T) {
 }
 
 func TestTaskManageCheckpointExposesLiveProgress(t *testing.T) {
-	rt, _ := newCodeToolsRuntime(t)
-	created, err := rt.taskManage(context.Background(), map[string]any{
+	rt, _ := newTaskTestService(t)
+	created, err := rt.Manage(context.Background(), map[string]any{
 		"action": "create", "title": "Implement change", "goal": "implement and test",
 		"completion_conditions": []string{"tests pass"},
 		"steps":                 []map[string]any{{"id": "code", "title": "Write code"}, {"id": "test", "title": "Run tests"}},
@@ -82,7 +73,7 @@ func TestTaskManageCheckpointExposesLiveProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	taskID := created["task_id"].(string)
-	progress, err := rt.taskManage(context.Background(), map[string]any{
+	progress, err := rt.Manage(context.Background(), map[string]any{
 		"action": "checkpoint", "task_id": taskID, "step_id": "code", "status": "in_progress", "summary": "editing task state",
 	})
 	if err != nil {
@@ -93,7 +84,7 @@ func TestTaskManageCheckpointExposesLiveProgress(t *testing.T) {
 	if current["id"] != "code" || current["status"] != taskstate.StepInProgress || summary["summary"] != "editing task state" {
 		t.Fatalf("live progress missing: %#v", summary)
 	}
-	listed, err := rt.taskManage(context.Background(), map[string]any{"action": "list", "status": "active"})
+	listed, err := rt.Manage(context.Background(), map[string]any{"action": "list", "status": "active"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,8 +95,8 @@ func TestTaskManageCheckpointExposesLiveProgress(t *testing.T) {
 }
 
 func TestTaskManageBatchCheckpointAndModeValidation(t *testing.T) {
-	rt, _ := newCodeToolsRuntime(t)
-	created, err := rt.taskManage(context.Background(), map[string]any{
+	rt, _ := newTaskTestService(t)
+	created, err := rt.Manage(context.Background(), map[string]any{
 		"action": "create", "title": "Batch progress", "goal": "record progress atomically",
 		"completion_conditions": []string{"done"},
 		"steps": []map[string]any{
@@ -118,7 +109,7 @@ func TestTaskManageBatchCheckpointAndModeValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	taskID := created["task_id"].(string)
-	progress, err := rt.taskManage(context.Background(), map[string]any{
+	progress, err := rt.Manage(context.Background(), map[string]any{
 		"action":             "checkpoint",
 		"task_id":            taskID,
 		"completed_step_ids": []string{"inspect", "test"},
@@ -133,7 +124,7 @@ func TestTaskManageBatchCheckpointAndModeValidation(t *testing.T) {
 		t.Fatalf("unexpected batch checkpoint summary: %#v", summary)
 	}
 
-	_, err = rt.taskManage(context.Background(), map[string]any{
+	_, err = rt.Manage(context.Background(), map[string]any{
 		"action":             "checkpoint",
 		"task_id":            taskID,
 		"step_id":            "docs",
@@ -146,7 +137,7 @@ func TestTaskManageBatchCheckpointAndModeValidation(t *testing.T) {
 		t.Fatalf("expected mixed checkpoint validation error, got %T: %v", err, err)
 	}
 
-	_, err = rt.taskManage(context.Background(), map[string]any{
+	_, err = rt.Manage(context.Background(), map[string]any{
 		"action":             "checkpoint",
 		"task_id":            taskID,
 		"completed_step_ids": []string{},
@@ -158,13 +149,13 @@ func TestTaskManageBatchCheckpointAndModeValidation(t *testing.T) {
 }
 
 func TestTaskManageSingleTemplateResolvesActiveVersion(t *testing.T) {
-	rt, _ := newCodeToolsRuntime(t)
+	rt, _ := newTaskTestService(t)
 	createTestWorkflowTemplate(t, rt, taskstate.Template{
 		ID: "compact.template", Version: "1.0.0", Title: "Compact template",
 		CompletionConditions: []string{"done"},
 		Steps:                []taskstate.TemplateStep{{ID: "inspect", Title: "Inspect", Phase: taskstate.PhaseCheck}},
 	})
-	result, err := rt.taskManage(context.Background(), map[string]any{
+	result, err := rt.Manage(context.Background(), map[string]any{
 		"action": "create", "title": "Template task", "goal": "run templated task", "template_id": "compact.template",
 	})
 	if err != nil {
@@ -174,7 +165,7 @@ func TestTaskManageSingleTemplateResolvesActiveVersion(t *testing.T) {
 	if summary["step_count"] != 1 || summary["current_step"].(map[string]any)["id"] != "inspect" {
 		t.Fatalf("single template was not applied: %#v", summary)
 	}
-	loaded, err := rt.taskManage(context.Background(), map[string]any{"action": "get", "task_id": result["task_id"]})
+	loaded, err := rt.Manage(context.Background(), map[string]any{"action": "get", "task_id": result["task_id"]})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,14 +176,14 @@ func TestTaskManageSingleTemplateResolvesActiveVersion(t *testing.T) {
 }
 
 func TestWorkflowTemplateGetManyRequiresModelComposition(t *testing.T) {
-	rt, _ := newCodeToolsRuntime(t)
+	rt, _ := newTaskTestService(t)
 	for _, template := range []taskstate.Template{
 		{ID: "development", Version: "1.0.0", Title: "Development", CompletionConditions: []string{"tests pass"}, Steps: []taskstate.TemplateStep{{ID: "code", Title: "Write code", Phase: taskstate.PhaseExecute}}},
 		{ID: "deployment", Version: "2.0.0", Title: "Deployment", CompletionConditions: []string{"production healthy"}, Steps: []taskstate.TemplateStep{{ID: "deploy", Title: "Deploy", Phase: taskstate.PhaseVerify}}},
 	} {
 		createTestWorkflowTemplate(t, rt, template)
 	}
-	result, err := rt.workflowTemplateManage(context.Background(), map[string]any{
+	result, err := rt.WorkflowManage(context.Background(), map[string]any{
 		"action": "get_many", "template_ids": []string{"development", "deployment"},
 	})
 	if err != nil {
@@ -208,14 +199,14 @@ func TestWorkflowTemplateGetManyRequiresModelComposition(t *testing.T) {
 }
 
 func TestTaskManageComposedTemplatesRequireExplicitResult(t *testing.T) {
-	rt, _ := newCodeToolsRuntime(t)
+	rt, _ := newTaskTestService(t)
 	for _, template := range []taskstate.Template{
 		{ID: "development", Version: "1.0.0", Title: "Development", CompletionConditions: []string{"tests pass"}, Steps: []taskstate.TemplateStep{{ID: "code", Title: "Write code", Phase: taskstate.PhaseExecute}}},
 		{ID: "deployment", Version: "2.0.0", Title: "Deployment", CompletionConditions: []string{"production healthy"}, Steps: []taskstate.TemplateStep{{ID: "deploy", Title: "Deploy", Phase: taskstate.PhaseVerify}}},
 	} {
 		createTestWorkflowTemplate(t, rt, template)
 	}
-	_, err := rt.taskManage(context.Background(), map[string]any{
+	_, err := rt.Manage(context.Background(), map[string]any{
 		"action": "create", "title": "Develop and deploy", "goal": "combine workflows",
 		"source_template_ids": []string{"development", "deployment"},
 	})
@@ -224,7 +215,7 @@ func TestTaskManageComposedTemplatesRequireExplicitResult(t *testing.T) {
 		t.Fatalf("expected composition guard, got %T: %v", err, err)
 	}
 
-	created, err := rt.taskManage(context.Background(), map[string]any{
+	created, err := rt.Manage(context.Background(), map[string]any{
 		"action": "create", "title": "Develop and deploy", "goal": "combine workflows",
 		"source_template_ids":   []string{"development", "deployment"},
 		"steps":                 []map[string]any{{"id": "code", "title": "Write and test code"}, {"id": "deploy", "title": "Deploy and verify"}},
@@ -233,7 +224,7 @@ func TestTaskManageComposedTemplatesRequireExplicitResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := rt.taskManage(context.Background(), map[string]any{"action": "get", "task_id": created["task_id"]})
+	loaded, err := rt.Manage(context.Background(), map[string]any{"action": "get", "task_id": created["task_id"]})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,15 +235,15 @@ func TestTaskManageComposedTemplatesRequireExplicitResult(t *testing.T) {
 }
 
 func TestTaskManageFinalReviewDoesNotAutoCompleteSteps(t *testing.T) {
-	rt, _ := newCodeToolsRuntime(t)
-	created, err := rt.taskManage(context.Background(), map[string]any{
+	rt, _ := newTaskTestService(t)
+	created, err := rt.Manage(context.Background(), map[string]any{
 		"action": "create", "title": "Review", "goal": "verify progress",
 		"completion_conditions": []string{"done"}, "steps": []map[string]any{{"id": "work", "title": "Do work"}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = rt.taskManage(context.Background(), map[string]any{
+	_, err = rt.Manage(context.Background(), map[string]any{
 		"action": "final_review", "task_id": created["task_id"], "status": "pass", "summary": "claimed done", "verified": []string{"claim"},
 	})
 	if err == nil || !strings.Contains(err.Error(), "all task steps completed") {
@@ -261,42 +252,42 @@ func TestTaskManageFinalReviewDoesNotAutoCompleteSteps(t *testing.T) {
 }
 
 func TestTaskManageBlockResumeAndLegacyActionRemoval(t *testing.T) {
-	rt, _ := newCodeToolsRuntime(t)
-	created, err := rt.taskManage(context.Background(), map[string]any{
+	rt, _ := newTaskTestService(t)
+	created, err := rt.Manage(context.Background(), map[string]any{
 		"action": "create", "title": "Blocked task", "goal": "resume safely", "completion_conditions": []string{"done"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	taskID := created["task_id"].(string)
-	blocked, err := rt.taskManage(context.Background(), map[string]any{"action": "block", "task_id": taskID, "summary": "SSH timed out three times"})
+	blocked, err := rt.Manage(context.Background(), map[string]any{"action": "block", "task_id": taskID, "summary": "SSH timed out three times"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if blocked["task_summary"].(map[string]any)["status"] != taskstate.StatusBlocked {
 		t.Fatalf("unexpected block state: %#v", blocked)
 	}
-	if _, err := rt.taskManage(context.Background(), map[string]any{"action": "resume", "task_id": taskID, "summary": "network restored"}); err != nil {
+	if _, err := rt.Manage(context.Background(), map[string]any{"action": "resume", "task_id": taskID, "summary": "network restored"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rt.taskManage(context.Background(), map[string]any{"action": "complete_after_review", "task_id": taskID}); err == nil {
+	if _, err := rt.Manage(context.Background(), map[string]any{"action": "complete_after_review", "task_id": taskID}); err == nil {
 		t.Fatal("legacy complete_after_review action is still accepted")
 	}
 }
 
-func createTestWorkflowTemplate(t *testing.T, rt *Runtime, template taskstate.Template) {
+func createTestWorkflowTemplate(t *testing.T, rt *Service, template taskstate.Template) {
 	t.Helper()
 	var templateMap map[string]any
 	if err := remarshal(template, &templateMap); err != nil {
 		t.Fatalf("template map: %v", err)
 	}
-	if _, err := rt.workflowTemplateManage(context.Background(), map[string]any{"action": "publish", "template": templateMap}); err != nil {
+	if _, err := rt.WorkflowManage(context.Background(), map[string]any{"action": "publish", "template": templateMap}); err != nil {
 		t.Fatalf("publish template: %v", err)
 	}
 }
 
 func TestWorkflowTemplateListAndMutationRemainCompact(t *testing.T) {
-	rt, _ := newCodeToolsRuntime(t)
+	rt, _ := newTaskTestService(t)
 	template := taskstate.Template{
 		ID: "large.template", Version: "1.0.0", Title: "Large template", Description: strings.Repeat("description ", 80),
 		Match:                taskstate.MatchRule{Keywords: []string{"deploy", "agentdock"}, Devices: []string{"DockMini"}, Type: "deployment"},
@@ -304,7 +295,7 @@ func TestWorkflowTemplateListAndMutationRemainCompact(t *testing.T) {
 		Steps:                []taskstate.TemplateStep{{ID: "inspect", Title: "Inspect", Phase: taskstate.PhaseCheck}},
 	}
 	createTestWorkflowTemplate(t, rt, template)
-	result, err := rt.workflowTemplateManage(context.Background(), map[string]any{"action": "list", "template_status": "active"})
+	result, err := rt.WorkflowManage(context.Background(), map[string]any{"action": "list", "template_status": "active"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +306,7 @@ func TestWorkflowTemplateListAndMutationRemainCompact(t *testing.T) {
 	if _, exists := items[0]["steps"]; exists {
 		t.Fatalf("list returned full template: %#v", items[0])
 	}
-	loaded, err := rt.workflowTemplateManage(context.Background(), map[string]any{"action": "get", "template_id": template.ID, "template_version": template.Version})
+	loaded, err := rt.WorkflowManage(context.Background(), map[string]any{"action": "get", "template_id": template.ID, "template_version": template.Version})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +316,7 @@ func TestWorkflowTemplateListAndMutationRemainCompact(t *testing.T) {
 }
 
 func TestWorkflowTemplateGetWithoutVersionResolvesActiveVersion(t *testing.T) {
-	rt, _ := newCodeToolsRuntime(t)
+	rt, _ := newTaskTestService(t)
 	template := taskstate.Template{
 		ID: "active.template", Version: "1.2.3", Title: "Active template",
 		Match:                taskstate.MatchRule{Keywords: []string{"active"}},
@@ -334,7 +325,7 @@ func TestWorkflowTemplateGetWithoutVersionResolvesActiveVersion(t *testing.T) {
 	}
 	createTestWorkflowTemplate(t, rt, template)
 
-	loaded, err := rt.workflowTemplateManage(context.Background(), map[string]any{
+	loaded, err := rt.WorkflowManage(context.Background(), map[string]any{
 		"action": "get", "template_id": template.ID,
 	})
 	if err != nil {
@@ -347,9 +338,9 @@ func TestWorkflowTemplateGetWithoutVersionResolvesActiveVersion(t *testing.T) {
 }
 
 func TestWorkflowTemplateLegacyActionsAreRejected(t *testing.T) {
-	rt, _ := newCodeToolsRuntime(t)
+	rt, _ := newTaskTestService(t)
 	for _, action := range []string{"save", "validate"} {
-		_, err := rt.workflowTemplateManage(context.Background(), map[string]any{"action": action})
+		_, err := rt.WorkflowManage(context.Background(), map[string]any{"action": action})
 		var toolErr *ToolError
 		if !errors.As(err, &toolErr) || toolErr.Code != "INVALID_ACTION" {
 			t.Fatalf("legacy action %q error = %v", action, err)
@@ -358,8 +349,8 @@ func TestWorkflowTemplateLegacyActionsAreRejected(t *testing.T) {
 }
 
 func TestWorkflowTemplateRetireRequiresExactVersion(t *testing.T) {
-	rt, _ := newCodeToolsRuntime(t)
-	_, err := rt.workflowTemplateManage(context.Background(), map[string]any{
+	rt, _ := newTaskTestService(t)
+	_, err := rt.WorkflowManage(context.Background(), map[string]any{
 		"action": "retire", "template_id": "active.template",
 	})
 	var toolErr *ToolError

@@ -15,7 +15,7 @@ import (
 	"github.com/chromedp/chromedp/kb"
 )
 
-func (s *Service) Act(ctx context.Context, req ActRequest) (Snapshot, error) {
+func (s *Service) act(ctx context.Context, req ActRequest) (Snapshot, error) {
 	sess, err := s.getSession(req.SessionID)
 	if err != nil {
 		return Snapshot{}, err

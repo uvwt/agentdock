@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/uvwt/agentdock/internal/config"
+	skillstate "github.com/uvwt/agentdock/internal/skill/state"
 )
 
 func TestAgentDockContextToolReturnsStructuredRuntimeIndex(t *testing.T) {
@@ -291,7 +292,15 @@ func TestCapabilitySkillItemExposesOnlyLightweightIndexFields(t *testing.T) {
 
 func installDocumentSkillForTest(t *testing.T, rt *Runtime, name, version, description string) string {
 	t.Helper()
-	packageDir, err := rt.skills.InstalledPath(name, version)
+	stateDir, err := config.SkillStateDir(rt.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := skillstate.New(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packageDir, err := state.InstalledPath(name, version)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +311,7 @@ func installDocumentSkillForTest(t *testing.T, rt *Runtime, name, version, descr
 	if err := os.WriteFile(filepath.Join(packageDir, "SKILL.md"), []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := rt.skills.Activate(context.Background(), name, version); err != nil {
+	if err := state.Activate(context.Background(), name, version); err != nil {
 		t.Fatal(err)
 	}
 	return packageDir
@@ -322,7 +331,15 @@ func TestSkillCapabilityIndexOmitsLegacyExecutableSkills(t *testing.T) {
 	}
 	installDocumentSkillForTest(t, rt, "document-skill", "1.0.0", "A document-only Skill.")
 
-	legacyDir, err := rt.skills.InstalledPath("legacy-skill", "1.0.0")
+	stateDir, err := config.SkillStateDir(rt.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := skillstate.New(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyDir, err := state.InstalledPath("legacy-skill", "1.0.0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +380,7 @@ spec:
 	if err := os.WriteFile(filepath.Join(legacyDir, "run.sh"), []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := rt.skills.Activate(context.Background(), "legacy-skill", "1.0.0"); err != nil {
+	if err := state.Activate(context.Background(), "legacy-skill", "1.0.0"); err != nil {
 		t.Fatal(err)
 	}
 

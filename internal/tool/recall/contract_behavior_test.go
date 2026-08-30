@@ -1,4 +1,4 @@
-package app
+package recall
 
 import (
 	"context"
@@ -11,20 +11,18 @@ import (
 
 	"github.com/uvwt/agentdock-protocol/mcpcontract"
 	"github.com/uvwt/agentdock/internal/config"
+	toolcore "github.com/uvwt/agentdock/internal/tool/core"
 )
 
 func TestRecallWriteMatchesCanonicalBehaviorCases(t *testing.T) {
 	for _, behavior := range mcpcontract.RecallWriteBehaviorCases() {
 		t.Run(behavior.Name, func(t *testing.T) {
-			runtime, store, closeRuntime := newRecallWriteBehaviorRuntime(t)
+			runtime, store, closeRuntime := newRecallWriteBehaviorService(t)
 			defer closeRuntime()
 			args := recallWriteBehaviorArgs(behavior)
 			before, existedBefore := prepareRecallWriteBehaviorFixture(store, behavior)
 
-			result, err := runtime.recallWrite(context.Background(), args)
-			if err == nil {
-				assertToolResultMatchesOutputSchema(t, "recall_write", result)
-			}
+			result, err := runtime.Write(context.Background(), args)
 			got := classifyRecallWriteOutcome(behavior, result, err)
 			if got != behavior.Expected {
 				t.Fatalf("outcome=%s want=%s result=%#v err=%v", got, behavior.Expected, result, err)
@@ -78,7 +76,7 @@ func prepareRecallWriteBehaviorFixture(store map[string]string, behavior mcpcont
 	return content, true
 }
 
-func classifyRecallWriteOutcome(behavior mcpcontract.RecallWriteBehaviorCase, result Result, err error) mcpcontract.RecallWriteOutcome {
+func classifyRecallWriteOutcome(behavior mcpcontract.RecallWriteBehaviorCase, result toolcore.Result, err error) mcpcontract.RecallWriteOutcome {
 	if err != nil {
 		return mcpcontract.RecallWriteError
 	}
@@ -91,7 +89,7 @@ func classifyRecallWriteOutcome(behavior mcpcontract.RecallWriteBehaviorCase, re
 	return mcpcontract.RecallWriteMutation
 }
 
-func assertRecallWriteBehaviorState(t *testing.T, store map[string]string, behavior mcpcontract.RecallWriteBehaviorCase, result Result, before string, existedBefore bool) {
+func assertRecallWriteBehaviorState(t *testing.T, store map[string]string, behavior mcpcontract.RecallWriteBehaviorCase, result toolcore.Result, before string, existedBefore bool) {
 	t.Helper()
 	if behavior.Target == "card" {
 		if behavior.Expected == mcpcontract.RecallWriteMutation && len(store) == 0 {
@@ -132,7 +130,7 @@ func assertRecallWriteBehaviorState(t *testing.T, store map[string]string, behav
 	}
 }
 
-func newRecallWriteBehaviorRuntime(t *testing.T) (*Runtime, map[string]string, func()) {
+func newRecallWriteBehaviorService(t *testing.T) (*Service, map[string]string, func()) {
 	t.Helper()
 	store := map[string]string{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -202,15 +200,7 @@ func newRecallWriteBehaviorRuntime(t *testing.T) (*Runtime, map[string]string, f
 		server.Close()
 		t.Fatal(err)
 	}
-	runtime, err := NewRuntime(cfg)
-	if err != nil {
-		server.Close()
-		t.Fatal(err)
-	}
-	return runtime, store, func() {
-		_ = runtime.Close()
-		server.Close()
-	}
+	return New(func() config.Config { return cfg }), store, server.Close
 }
 
 func decodeRecallBehaviorPayload(t *testing.T, r *http.Request) map[string]any {

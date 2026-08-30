@@ -1,6 +1,6 @@
 //go:build windows
 
-package app
+package command
 
 import (
 	"context"
@@ -14,31 +14,32 @@ import (
 	"time"
 )
 
-const appWindowsNativeChildReadyEnv = "AGENTDOCK_TEST_WINDOWS_NATIVE_CHILD_READY"
+const windowsNativeChildReadyEnv = "AGENTDOCK_TEST_WINDOWS_NATIVE_CHILD_READY"
 
-type appWindowsNativeChildReady struct {
+type windowsNativeChildReady struct {
 	PID  int `json:"pid"`
 	Port int `json:"port"`
 }
 
 func TestWindowsSessionActKillTerminatesNativeChildTree(t *testing.T) {
-	runtime, root := newCodeToolsRuntime(t)
-	defer runtime.Close()
+	service, cfg := newCommandTestService(t)
+	root := cfg.AgentDockDefaultDir
+	defer service.Close()
 	testBinary, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
 	readyPath := filepath.Join(root, "native-child.ready.json")
 	command := fmt.Sprintf("& '%s' '-test.run=^TestWindowsSessionNativeChildHelper$'", strings.ReplaceAll(testBinary, "'", "''"))
-	started, err := runtime.execCommand(context.Background(), map[string]any{
+	started, err := service.Exec(context.Background(), map[string]any{
 		"cmd": command, "execution_mode": "async", "timeout_ms": 60000,
-		"env": map[string]any{appWindowsNativeChildReadyEnv: readyPath},
+		"env": map[string]any{windowsNativeChildReadyEnv: readyPath},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	sessionID, _ := started["session_id"].(string)
-	ready := waitForAppWindowsNativeChild(t, runtime, sessionID, readyPath)
+	ready := waitForWindowsNativeChild(t, service, sessionID, readyPath)
 	childPID := ready.PID
 	port := ready.Port
 	defer func() {
@@ -47,20 +48,20 @@ func TestWindowsSessionActKillTerminatesNativeChildTree(t *testing.T) {
 		}
 	}()
 
-	result, err := runtime.sessionAct(map[string]any{"action": "kill", "session_id": sessionID})
+	result, err := service.Act(map[string]any{"action": "kill", "session_id": sessionID})
 	if err != nil {
 		t.Fatalf("session_act(kill) error = %v", err)
 	}
 	if result["status"] != "killed" {
 		t.Fatalf("kill result = %#v", result)
 	}
-	if err := waitForAppWindowsPort(port, false, 2*time.Second); err != nil {
+	if err := waitForWindowsPort(port, false, 2*time.Second); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestWindowsSessionNativeChildHelper(t *testing.T) {
-	readyPath := os.Getenv(appWindowsNativeChildReadyEnv)
+	readyPath := os.Getenv(windowsNativeChildReadyEnv)
 	if readyPath == "" {
 		return
 	}
@@ -69,7 +70,7 @@ func TestWindowsSessionNativeChildHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	ready := appWindowsNativeChildReady{PID: os.Getpid(), Port: listener.Addr().(*net.TCPAddr).Port}
+	ready := windowsNativeChildReady{PID: os.Getpid(), Port: listener.Addr().(*net.TCPAddr).Port}
 	data, err := json.Marshal(ready)
 	if err != nil {
 		t.Fatal(err)
@@ -90,24 +91,24 @@ func TestWindowsSessionNativeChildHelper(t *testing.T) {
 	}
 }
 
-func waitForAppWindowsNativeChild(t *testing.T, runtime *Runtime, sessionID, readyPath string) appWindowsNativeChildReady {
+func waitForWindowsNativeChild(t *testing.T, service *Service, sessionID, readyPath string) windowsNativeChildReady {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		data, err := os.ReadFile(readyPath)
 		if err == nil {
-			var ready appWindowsNativeChildReady
+			var ready windowsNativeChildReady
 			if json.Unmarshal(data, &ready) == nil && ready.PID > 0 && ready.Port > 0 {
-				if err := waitForAppWindowsPort(ready.Port, true, 2*time.Second); err != nil {
+				if err := waitForWindowsPort(ready.Port, true, 2*time.Second); err != nil {
 					t.Fatalf("native child reported ready but its port is unavailable: %v", err)
 				}
 				return ready
 			}
 		}
-		if stored, ok := runtime.command.Store().Get(sessionID); ok {
+		if stored, ok := service.sessions.Get(sessionID); ok {
 			select {
 			case <-stored.Done:
-				status, observeErr := runtime.sessionObserve(map[string]any{
+				status, observeErr := service.Observe(map[string]any{
 					"action": "status", "session_id": sessionID, "max_output_bytes": 4096,
 				})
 				t.Fatalf("native child exited before readiness: status=%#v observe_err=%v", status, observeErr)
@@ -116,14 +117,14 @@ func waitForAppWindowsNativeChild(t *testing.T, runtime *Runtime, sessionID, rea
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	status, observeErr := runtime.sessionObserve(map[string]any{
+	status, observeErr := service.Observe(map[string]any{
 		"action": "status", "session_id": sessionID, "max_output_bytes": 4096,
 	})
 	t.Fatalf("native child did not start: status=%#v observe_err=%v", status, observeErr)
-	return appWindowsNativeChildReady{}
+	return windowsNativeChildReady{}
 }
 
-func waitForAppWindowsPort(port int, wantOpen bool, timeout time.Duration) error {
+func waitForWindowsPort(port int, wantOpen bool, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		connection, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 50*time.Millisecond)

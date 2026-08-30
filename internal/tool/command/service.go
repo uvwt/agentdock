@@ -22,26 +22,11 @@ type Service struct {
 	commandContext CommandContext
 }
 
-func New(configProvider ConfigProvider, ws *workspace.Workspace, envs *envstore.Store, sessions *session.Store, resolveSkill SkillResolver, commandContext CommandContext) *Service {
+func New(configProvider ConfigProvider, ws *workspace.Workspace, envs *envstore.Store, resolveSkill SkillResolver, commandContext CommandContext) *Service {
 	return &Service{
-		config: configProvider, ws: ws, envs: envs, sessions: sessions,
+		config: configProvider, ws: ws, envs: envs, sessions: session.NewStore(),
 		resolveSkill: resolveSkill, commandContext: commandContext,
 	}
-}
-
-func (s *Service) Store() *session.Store { return s.sessions }
-
-type InvocationPreview struct {
-	Workdir string
-	Env     []string
-}
-
-func (s *Service) PreparePreview(args map[string]any, command string) (InvocationPreview, error) {
-	invocation, err := s.prepareCommandInvocation(args, command)
-	if err != nil {
-		return InvocationPreview{}, err
-	}
-	return InvocationPreview{Workdir: invocation.workdir, Env: append([]string(nil), invocation.env...)}, nil
 }
 
 func (s *Service) CommandEnv(skillName string, extra map[string]any) ([]string, error) {
@@ -52,8 +37,5 @@ func (s *Service) InternalCommandEnv(extra map[string]string) ([]string, error) 
 	return s.internalCommandEnv(extra)
 }
 
-const (
-	MaxOutputBytes        = maxCommandOutputBytes
-	MaxConcurrentSessions = maxConcurrentCommandSessions
-	MaxRetainedSessions   = maxRetainedCommandSessions
-)
+// MaxOutputBytes is the public exec/session output contract limit used by schema generation.
+const MaxOutputBytes = maxCommandOutputBytes

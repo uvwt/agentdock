@@ -44,7 +44,7 @@ func (op memoryPatchOperation) replaceAll(defaultValue bool) bool {
 
 func boolPtr(value bool) *bool { return &value }
 
-type MemoryLintFinding struct {
+type memoryLintFinding struct {
 	Path string `json:"path"`
 	Line int    `json:"line"`
 	Term string `json:"term"`
@@ -75,7 +75,7 @@ func (svc *Service) memoryDiff(ctx context.Context, args map[string]any) (Result
 	if maxBytes <= 0 {
 		maxBytes = 60000
 	}
-	diff := MemoryUnifiedDiff(p, current, proposed, maxBytes)
+	diff := memoryUnifiedDiff(p, current, proposed, maxBytes)
 	return Result{"path": p, "changed": current != proposed, "diff": diff, "truncated": len(diff) >= maxBytes, "operation_count": operationCount, "change_count": changeCount}, nil
 }
 
@@ -98,7 +98,7 @@ func (svc *Service) memoryPatch(ctx context.Context, args map[string]any) (Resul
 	if maxBytes <= 0 {
 		maxBytes = 60000
 	}
-	diff := MemoryUnifiedDiff(p, current, out.Content, maxBytes)
+	diff := memoryUnifiedDiff(p, current, out.Content, maxBytes)
 	result := Result{"path": p, "changed": current != out.Content, "dry_run": dryRun, "confirmed": confirmed, "diff": diff, "truncated": len(diff) >= maxBytes, "operation_count": out.OperationCount, "change_count": out.ChangeCount}
 	if dryRun || current == out.Content {
 		return result, nil
@@ -186,7 +186,7 @@ func (svc *Service) memoryUpdateFact(ctx context.Context, args map[string]any) (
 	if maxBytes <= 0 {
 		maxBytes = 60000
 	}
-	diff := MemoryUnifiedDiff(p, current, updated, maxBytes)
+	diff := memoryUnifiedDiff(p, current, updated, maxBytes)
 	result := Result{"path": p, "changed": current != updated, "dry_run": dryRun, "confirmed": confirmed, "updates": updates, "diff": diff, "truncated": len(diff) >= maxBytes}
 	if dryRun || current == updated {
 		return result, nil
@@ -226,7 +226,7 @@ func (svc *Service) memoryLint(ctx context.Context, args map[string]any) (Result
 	}
 	paths := memoryPathsFromList(listed)
 	regexMode := boolArg(args, "regex", false)
-	findings := []MemoryLintFinding{}
+	findings := []memoryLintFinding{}
 	filesScanned := 0
 	for _, p := range paths {
 		if len(findings) >= maxFindings {
@@ -237,7 +237,7 @@ func (svc *Service) memoryLint(ctx context.Context, args map[string]any) (Result
 		}
 		content, err := svc.memoryReadContent(ctx, p)
 		if err != nil {
-			findings = append(findings, MemoryLintFinding{Path: p, Line: 0, Term: "READ_ERROR", Text: err.Error()})
+			findings = append(findings, memoryLintFinding{Path: p, Line: 0, Term: "READ_ERROR", Text: err.Error()})
 			continue
 		}
 		filesScanned++
@@ -270,8 +270,8 @@ func (svc *Service) memoryReadContent(ctx context.Context, p string) (string, er
 }
 
 func (svc *Service) memoryWriteContent(ctx context.Context, p, content string) (Result, error) {
-	payload := map[string]any{"path": BackendPath(p), "content": content, "overwrite": true, "confirmed": true}
-	return svc.Request(ctx, http.MethodPost, "/v1/recall", payload)
+	payload := map[string]any{"path": backendPath(p), "content": content, "overwrite": true, "confirmed": true}
+	return svc.request(ctx, http.MethodPost, "/v1/recall", payload)
 }
 
 func applyMemoryPatchOperations(content string, args map[string]any) (memoryPatchOutcome, error) {
@@ -413,7 +413,7 @@ func applySectionReplace(content, heading, sectionContent string) (string, int, 
 	return strings.Join(out, "\n"), 1, nil
 }
 
-func MemoryUnifiedDiff(p, oldText, newText string, maxBytes int) string {
+func memoryUnifiedDiff(p, oldText, newText string, maxBytes int) string {
 	if oldText == newText {
 		return ""
 	}
@@ -592,11 +592,11 @@ func replaceFactValue(line, key, value string) string {
 	return prefix + key + sep + value
 }
 
-func lintMemoryContent(p, content string, terms []string, regexMode bool, limit int) []MemoryLintFinding {
+func lintMemoryContent(p, content string, terms []string, regexMode bool, limit int) []memoryLintFinding {
 	if limit <= 0 {
 		return nil
 	}
-	findings := []MemoryLintFinding{}
+	findings := []memoryLintFinding{}
 	lines := strings.Split(content, "\n")
 	regexes := []*regexp.Regexp{}
 	regexTerms := []string{}
@@ -618,7 +618,7 @@ func lintMemoryContent(p, content string, terms []string, regexMode bool, limit 
 		if regexMode {
 			for idx, re := range regexes {
 				if re.MatchString(line) {
-					findings = append(findings, MemoryLintFinding{Path: p, Line: i + 1, Term: regexTerms[idx], Text: strings.TrimSpace(line)})
+					findings = append(findings, memoryLintFinding{Path: p, Line: i + 1, Term: regexTerms[idx], Text: strings.TrimSpace(line)})
 					break
 				}
 			}
@@ -626,7 +626,7 @@ func lintMemoryContent(p, content string, terms []string, regexMode bool, limit 
 		}
 		for _, term := range terms {
 			if term != "" && strings.Contains(line, term) {
-				findings = append(findings, MemoryLintFinding{Path: p, Line: i + 1, Term: term, Text: strings.TrimSpace(line)})
+				findings = append(findings, memoryLintFinding{Path: p, Line: i + 1, Term: term, Text: strings.TrimSpace(line)})
 				break
 			}
 		}

@@ -180,7 +180,7 @@ type capabilityRecallIndexItem struct {
 }
 
 func (r *Runtime) dynamicMCPCapabilityIndex() []capabilityDynamicMCPItem {
-	servers := r.mcpClients.EnabledIndex()
+	servers := r.dynamicMCP.CapabilityItems()
 	items := make([]capabilityDynamicMCPItem, 0, len(servers))
 	for _, server := range servers {
 		items = append(items, capabilityDynamicMCPItem{
@@ -209,7 +209,7 @@ func (r *Runtime) skillCapabilityIndex() ([]capabilitySkillItem, error) {
 }
 
 func (r *Runtime) templateCapabilityIndex(ctx context.Context) ([]capabilityTemplateItem, error) {
-	result, err := r.workflowTemplateManage(ctx, map[string]any{"action": "list", "template_status": "active"})
+	result, err := r.taskTools.WorkflowManage(ctx, map[string]any{"action": "list", "template_status": "active"})
 	if err != nil {
 		return []capabilityTemplateItem{}, err
 	}
@@ -232,7 +232,7 @@ func (r *Runtime) templateCapabilityIndex(ctx context.Context) ([]capabilityTemp
 func (r *Runtime) memoryCapabilityIndex(ctx context.Context) ([]capabilityMemoryItem, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(capMaxInt(1000, capMinInt(config.RecallTimeoutMS, 5000)))*time.Millisecond)
 	defer cancel()
-	result, err := r.recallContextIndex(ctx, 3000)
+	result, err := r.recall.ContextIndex(ctx, 3000)
 	if err != nil {
 		return []capabilityMemoryItem{}, err
 	}

@@ -42,7 +42,7 @@ func (svc *Service) PrivateNoteManage(ctx context.Context, args map[string]any) 
 		})
 	}
 
-	result, err := svc.Request(ctx, http.MethodPost, endpoint, payload)
+	result, err := svc.request(ctx, http.MethodPost, endpoint, payload)
 	if err != nil {
 		return nil, err
 	}

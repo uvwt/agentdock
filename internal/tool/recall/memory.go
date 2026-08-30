@@ -19,7 +19,7 @@ func (svc *Service) memoryContextIndex(ctx context.Context, maxBytes int) (Resul
 	if maxBytes <= 0 {
 		maxBytes = 3000
 	}
-	return svc.Request(ctx, http.MethodPost, "/v1/recall/context-index", map[string]any{
+	return svc.request(ctx, http.MethodPost, "/v1/recall/context-index", map[string]any{
 		"project":   "agentdock",
 		"max_bytes": maxBytes,
 	})
@@ -28,7 +28,7 @@ func (svc *Service) memoryContextIndex(ctx context.Context, maxBytes int) (Resul
 func (svc *Service) memoryList(ctx context.Context, args map[string]any) (Result, error) {
 	query := url.Values{}
 	if prefix := strings.TrimSpace(stringArg(args, "prefix", "")); prefix != "" {
-		query.Set("prefix", BackendPath(prefix))
+		query.Set("prefix", backendPath(prefix))
 	}
 	if maxEntries := intArg(args, "max_entries", 0); maxEntries > 0 {
 		query.Set("max_entries", fmt.Sprint(maxEntries))
@@ -37,7 +37,7 @@ func (svc *Service) memoryList(ctx context.Context, args map[string]any) (Result
 	if encoded := query.Encode(); encoded != "" {
 		endpoint += "?" + encoded
 	}
-	return svc.Request(ctx, http.MethodGet, endpoint, nil)
+	return svc.request(ctx, http.MethodGet, endpoint, nil)
 }
 
 func (svc *Service) memoryRead(ctx context.Context, args map[string]any) (Result, error) {
@@ -45,7 +45,7 @@ func (svc *Service) memoryRead(ctx context.Context, args map[string]any) (Result
 	if p == "" {
 		return nil, toolError("MISSING_PATH", "path is required", "validation")
 	}
-	result, err := svc.Request(ctx, http.MethodGet, "/v1/recall/"+escapeMemoryPath(BackendPath(p)), nil)
+	result, err := svc.request(ctx, http.MethodGet, "/v1/recall/"+escapeMemoryPath(backendPath(p)), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -84,12 +84,12 @@ func (svc *Service) memorySearch(ctx context.Context, args map[string]any) (Resu
 	}
 	payload := map[string]any{"query": query, "max_results": maxResults}
 	if prefix := strings.TrimSpace(stringArg(args, "prefix", "")); prefix != "" {
-		payload["prefix"] = BackendPath(prefix)
+		payload["prefix"] = backendPath(prefix)
 	}
 	if excludePrefix := strings.TrimSpace(stringArg(args, "exclude_prefix", "")); excludePrefix != "" {
-		payload["exclude_prefix"] = BackendPath(excludePrefix)
+		payload["exclude_prefix"] = backendPath(excludePrefix)
 	}
-	return svc.Request(ctx, http.MethodPost, "/v1/recall/search", payload)
+	return svc.request(ctx, http.MethodPost, "/v1/recall/search", payload)
 }
 
 func (svc *Service) memoryWrite(ctx context.Context, args map[string]any) (Result, error) {
@@ -97,7 +97,7 @@ func (svc *Service) memoryWrite(ctx context.Context, args map[string]any) (Resul
 	if err != nil {
 		return nil, err
 	}
-	return svc.Request(ctx, http.MethodPost, "/v1/recall", payload)
+	return svc.request(ctx, http.MethodPost, "/v1/recall", payload)
 }
 
 func (svc *Service) memoryPreviewWrite(ctx context.Context, args map[string]any) (Result, error) {
@@ -105,7 +105,7 @@ func (svc *Service) memoryPreviewWrite(ctx context.Context, args map[string]any)
 	if err != nil {
 		return nil, err
 	}
-	return svc.Request(ctx, http.MethodPost, "/v1/recall/preview", payload)
+	return svc.request(ctx, http.MethodPost, "/v1/recall/preview", payload)
 }
 
 func memoryWritePayload(args map[string]any) (map[string]any, error) {
@@ -116,7 +116,7 @@ func memoryWritePayload(args map[string]any) (map[string]any, error) {
 	payload := map[string]any{"content": content}
 	copyMemoryString(args, payload, "path")
 	if p, ok := payload["path"].(string); ok {
-		payload["path"] = BackendPath(p)
+		payload["path"] = backendPath(p)
 	}
 	copyMemoryString(args, payload, "type")
 	copyMemoryString(args, payload, "scope")
@@ -145,16 +145,16 @@ func (svc *Service) memoryDelete(ctx context.Context, args map[string]any) (Resu
 	}
 	query := url.Values{}
 	query.Set("confirmed", "true")
-	endpoint := "/v1/recall/" + escapeMemoryPath(BackendPath(p))
+	endpoint := "/v1/recall/" + escapeMemoryPath(backendPath(p))
 	if encoded := query.Encode(); encoded != "" {
 		endpoint += "?" + encoded
 	}
-	return svc.Request(ctx, http.MethodDelete, endpoint, nil)
+	return svc.request(ctx, http.MethodDelete, endpoint, nil)
 }
 
 const recallEmbeddingReindexTimeout = 180 * time.Second
 
-func RecallRequestTimeout(endpoint string) time.Duration {
+func recallRequestTimeout(endpoint string) time.Duration {
 	if endpoint == "/v1/embeddings/reindex" {
 		// BGE-M3 全量重建会随卡片数量和文本长度增长，使用与 NexusDock 服务端一致的长操作窗口。
 		return recallEmbeddingReindexTimeout
@@ -162,7 +162,7 @@ func RecallRequestTimeout(endpoint string) time.Duration {
 	return time.Duration(config.RecallTimeoutMS) * time.Millisecond
 }
 
-func (svc *Service) Request(ctx context.Context, method, endpoint string, payload any) (Result, error) {
+func (svc *Service) request(ctx context.Context, method, endpoint string, payload any) (Result, error) {
 	base := strings.TrimRight(strings.TrimSpace(svc.config().NexusEndpoint), "/")
 	if base == "" {
 		return nil, toolError("RECALL_NOT_CONFIGURED", "pair this AgentDock device with NexusDock to use Recall", "configuration")
@@ -175,7 +175,7 @@ func (svc *Service) Request(ctx context.Context, method, endpoint string, payloa
 		}
 		body = bytes.NewReader(data)
 	}
-	requestCtx, cancel := context.WithTimeout(ctx, RecallRequestTimeout(endpoint))
+	requestCtx, cancel := context.WithTimeout(ctx, recallRequestTimeout(endpoint))
 	defer cancel()
 	req, err := http.NewRequestWithContext(requestCtx, method, base+endpoint, body)
 	if err != nil {

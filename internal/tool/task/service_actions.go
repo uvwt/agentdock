@@ -301,14 +301,14 @@ func (s *Service) WorkflowManage(ctx context.Context, args map[string]any) (Resu
 	switch input.Action {
 	case "publish":
 		request := workflowTemplatePublishRequest{Template: input.Template}
-		return compactNexusTemplateMutationResult(s.NexusWorkflowJSON(ctx, "POST", "/v1/workflow-templates/publish", request))
+		return compactNexusTemplateMutationResult(s.nexusWorkflowJSON(ctx, "POST", "/v1/workflow-templates/publish", request))
 	case "retire":
 		if input.TemplateID == "" || input.TemplateVersion == "" {
 			return nil, toolErrorDetails("VALIDATION_ERROR", "template_id and template_version are required", "validation", map[string]any{
 				"action": input.Action,
 			})
 		}
-		return compactNexusTemplateMutationResult(s.NexusWorkflowJSON(ctx, "POST", input.escapedTemplatePath("retire"), struct{}{}))
+		return compactNexusTemplateMutationResult(s.nexusWorkflowJSON(ctx, "POST", input.escapedTemplatePath("retire"), struct{}{}))
 	case "get":
 		if input.TemplateID == "" {
 			return nil, toolErrorDetails("VALIDATION_ERROR", "template_id is required", "validation", nil)
@@ -319,7 +319,7 @@ func (s *Service) WorkflowManage(ctx context.Context, args map[string]any) (Resu
 				return nil, err
 			}
 		}
-		result, err := s.NexusWorkflowJSON(ctx, "GET", input.escapedTemplatePath(""), nil)
+		result, err := s.nexusWorkflowJSON(ctx, "GET", input.escapedTemplatePath(""), nil)
 		if err != nil {
 			return nil, err
 		}
@@ -342,7 +342,7 @@ func (s *Service) WorkflowManage(ctx context.Context, args map[string]any) (Resu
 		if input.TemplateStatus != "" {
 			path += "?status=" + url.QueryEscape(input.TemplateStatus)
 		}
-		result, err := s.NexusWorkflowJSON(ctx, "GET", path, nil)
+		result, err := s.nexusWorkflowJSON(ctx, "GET", path, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -363,7 +363,7 @@ func (s *Service) WorkflowManage(ctx context.Context, args map[string]any) (Resu
 	case "match":
 		return s.matchWorkflowTemplates(ctx, input)
 	case "vector_index":
-		result, err := s.NexusWorkflowJSON(ctx, "GET", "/v1/workflow-templates/vector-index", nil)
+		result, err := s.nexusWorkflowJSON(ctx, "GET", "/v1/workflow-templates/vector-index", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -388,7 +388,7 @@ func compactNexusTemplateMutationResult(result Result, err error) (Result, error
 
 func (s *Service) matchWorkflowTemplates(ctx context.Context, input workflowTemplateInput) (Result, error) {
 	request := workflowTemplateMatchRequest{Goal: input.Goal, Device: input.Device, Type: input.Type}
-	return s.NexusWorkflowJSON(ctx, "POST", "/v1/workflow-templates/match", request)
+	return s.nexusWorkflowJSON(ctx, "POST", "/v1/workflow-templates/match", request)
 }
 
 func (s *Service) nexusActiveWorkflowTemplates(ctx context.Context, ids []string) ([]taskstate.Template, error) {
@@ -420,7 +420,7 @@ func (s *Service) nexusActiveWorkflowTemplateVersion(ctx context.Context, id str
 	if id == "" {
 		return "", taskToolError(fmt.Errorf("template_id is required"))
 	}
-	result, err := s.NexusWorkflowJSON(ctx, "GET", "/v1/workflow-templates?status=active", nil)
+	result, err := s.nexusWorkflowJSON(ctx, "GET", "/v1/workflow-templates?status=active", nil)
 	if err != nil {
 		return "", err
 	}
@@ -444,7 +444,7 @@ func (s *Service) nexusActiveWorkflowTemplateVersion(ctx context.Context, id str
 }
 
 func (s *Service) nexusWorkflowTemplate(ctx context.Context, id, version string) (taskstate.Template, error) {
-	result, err := s.NexusWorkflowJSON(ctx, "GET", fmt.Sprintf("/v1/workflow-templates/%s/%s", url.PathEscape(id), url.PathEscape(version)), nil)
+	result, err := s.nexusWorkflowJSON(ctx, "GET", fmt.Sprintf("/v1/workflow-templates/%s/%s", url.PathEscape(id), url.PathEscape(version)), nil)
 	if err != nil {
 		return taskstate.Template{}, err
 	}
@@ -491,7 +491,7 @@ func templateReferences(templates []taskstate.Template) []taskstate.TemplateRefe
 	return refs
 }
 
-func (s *Service) NexusWorkflowJSON(ctx context.Context, method, path string, payload any) (Result, error) {
+func (s *Service) nexusWorkflowJSON(ctx context.Context, method, path string, payload any) (Result, error) {
 	cfg := s.config()
 	base := strings.TrimRight(strings.TrimSpace(cfg.NexusEndpoint), "/")
 	if base == "" {
@@ -666,7 +666,7 @@ func reviewStatus(task taskstate.Task) string {
 	return task.FinalReview.Status
 }
 
-func TemplateMatchRecommendation(candidates []taskstate.TemplateCandidate) map[string]any {
+func templateMatchRecommendation(candidates []taskstate.TemplateCandidate) map[string]any {
 	bestScore := 0
 	if len(candidates) > 0 {
 		bestScore = candidates[0].Score
@@ -691,7 +691,7 @@ func TemplateMatchRecommendation(candidates []taskstate.TemplateCandidate) map[s
 		},
 	}
 }
-func CompactTemplateSummary(template taskstate.Template) map[string]any {
+func compactTemplateSummary(template taskstate.Template) map[string]any {
 	return map[string]any{
 		"id":                   template.ID,
 		"version":              template.Version,

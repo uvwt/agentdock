@@ -18,7 +18,6 @@ func TestCommandEnvExplicitPathOverridesPlatformDefault(t *testing.T) {
 		func() config.Config { return config.Config{AgentDockHome: home, AgentDockDefaultDir: home} },
 		nil,
 		envs,
-		NewSessionStore(),
 		nil,
 		nil,
 	)

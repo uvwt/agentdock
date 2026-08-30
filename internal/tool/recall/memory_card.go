@@ -11,7 +11,7 @@ import (
 
 const recallCardsPrefix = "recall/managed/cards"
 
-type MemoryCardSpec struct {
+type memoryCardSpec struct {
 	Title      string
 	Content    string
 	CardType   string
@@ -26,7 +26,7 @@ type MemoryCardSpec struct {
 }
 
 func (svc *Service) memoryCardCapture(ctx context.Context, args map[string]any) (Result, error) {
-	card, warnings, err := ParseMemoryCard(args, false)
+	card, warnings, err := parseMemoryCard(args, false)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (svc *Service) memoryCardWrite(ctx context.Context, args map[string]any) (R
 	if !boolArg(args, "confirmed", false) {
 		return nil, toolError("CONFIRMATION_REQUIRED", "recall_write requires confirmed=true", "validation")
 	}
-	card, warnings, err := ParseMemoryCard(args, true)
+	card, warnings, err := parseMemoryCard(args, true)
 	if err != nil {
 		return nil, err
 	}
@@ -124,10 +124,10 @@ func (svc *Service) memoryCardWrite(ctx context.Context, args map[string]any) (R
 	return result, nil
 }
 
-func ParseMemoryCard(args map[string]any, requireEvidenceForActive bool) (MemoryCardSpec, []string, error) {
+func parseMemoryCard(args map[string]any, requireEvidenceForActive bool) (memoryCardSpec, []string, error) {
 	rawScope := strings.TrimSpace(stringArg(args, "scope", ""))
 	rawProject := strings.TrimSpace(stringArg(args, "project", ""))
-	card := MemoryCardSpec{
+	card := memoryCardSpec{
 		Title:      strings.TrimSpace(stringArg(args, "title", "")),
 		Content:    strings.TrimSpace(firstNonEmptyString(args, "content", "summary")),
 		CardType:   strings.TrimSpace(stringArg(args, "type", "")),
@@ -180,7 +180,7 @@ func ParseMemoryCard(args map[string]any, requireEvidenceForActive bool) (Memory
 	return card, warnings, nil
 }
 
-func memoryCardWarnings(card MemoryCardSpec) []string {
+func memoryCardWarnings(card memoryCardSpec) []string {
 	warnings := []string{}
 	contentRunes := []rune(card.Content)
 	if len(contentRunes) > 500 {
@@ -226,7 +226,7 @@ func normalizedMemoryCardTags(tags []string) []string {
 	return out
 }
 
-func memoryCardPath(card MemoryCardSpec) string {
+func memoryCardPath(card memoryCardSpec) string {
 	project := cardSlug(card.Project)
 	if project == "" {
 		project = "global"
@@ -238,7 +238,7 @@ func memoryCardPath(card MemoryCardSpec) string {
 	return path.Join(recallCardsPrefix, project, card.Status, card.CardType, slug+".md")
 }
 
-func memoryCardMarkdown(card MemoryCardSpec) string {
+func memoryCardMarkdown(card memoryCardSpec) string {
 	var builder strings.Builder
 	builder.WriteString("---\n")
 	builder.WriteString("type: recall-card\n")
@@ -264,7 +264,7 @@ func memoryCardMarkdown(card MemoryCardSpec) string {
 	return builder.String()
 }
 
-func memoryCardResult(card MemoryCardSpec) Result {
+func memoryCardResult(card memoryCardSpec) Result {
 	return Result{
 		"title":      card.Title,
 		"content":    card.Content,

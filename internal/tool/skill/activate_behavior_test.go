@@ -1,4 +1,4 @@
-package app
+package skill
 
 import (
 	"context"
@@ -6,22 +6,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/uvwt/agentdock/internal/config"
 	skills "github.com/uvwt/agentdock/internal/skill"
 )
 
 func TestSkillPackageActivateInstalledVersion(t *testing.T) {
-	root := t.TempDir()
-	cfg := config.Config{AgentDockDefaultDir: root, AgentDockHome: filepath.Join(root, ".agentdock")}
-	if err := cfg.Normalize(); err != nil {
-		t.Fatal(err)
-	}
-	runtime, err := NewRuntime(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	runtime, _ := newSkillTestService(t)
 	for _, version := range []string{"1.0.0", "1.1.0"} {
-		packageDir, err := runtime.skills.InstalledPath("demo-skill", version)
+		packageDir, err := runtime.state.InstalledPath("demo-skill", version)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -33,11 +24,11 @@ func TestSkillPackageActivateInstalledVersion(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := runtime.skills.Activate(context.Background(), "demo-skill", "1.0.0"); err != nil {
+	if err := runtime.state.Activate(context.Background(), "demo-skill", "1.0.0"); err != nil {
 		t.Fatal(err)
 	}
 
-	response, err := runtime.Call(context.Background(), "skill_package", map[string]any{
+	response, err := runtime.Package(context.Background(), map[string]any{
 		"action":  "activate",
 		"skill":   "demo-skill",
 		"version": "1.1.0",

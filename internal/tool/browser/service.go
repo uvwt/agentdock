@@ -29,27 +29,31 @@ type Config struct {
 	ReuseExistingCDP bool
 }
 
+type ScreenshotPublisher func(context.Context, []byte, int) (map[string]any, error)
+
 type Service struct {
-	mu          sync.Mutex
-	cfg         Config
-	sessions    map[string]*session
-	profiles    map[string]string
-	closed      bool
-	now         func() time.Time
-	discoverCDP func(context.Context) ([]cdpCandidate, error)
+	mu                sync.Mutex
+	cfg               Config
+	sessions          map[string]*session
+	profiles          map[string]string
+	closed            bool
+	publishScreenshot ScreenshotPublisher
+	now               func() time.Time
+	discoverCDP       func(context.Context) ([]cdpCandidate, error)
 }
 
-func New(cfg Config) *Service {
+func New(cfg Config, publishScreenshot ScreenshotPublisher) *Service {
 	return &Service{
-		cfg:         cfg,
-		sessions:    make(map[string]*session),
-		profiles:    make(map[string]string),
-		now:         time.Now,
-		discoverCDP: discoverCDPEndpoints,
+		cfg:               cfg,
+		sessions:          make(map[string]*session),
+		profiles:          make(map[string]string),
+		publishScreenshot: publishScreenshot,
+		now:               time.Now,
+		discoverCDP:       discoverCDPEndpoints,
 	}
 }
 
-func (s *Service) Start(ctx context.Context, req StartRequest) (StartResult, error) {
+func (s *Service) start(ctx context.Context, req StartRequest) (StartResult, error) {
 	s.mu.Lock()
 	closed := s.closed
 	s.mu.Unlock()
@@ -302,7 +306,7 @@ func (s *Service) resolveCDPConnection(ctx context.Context, req StartRequest) (s
 	}
 }
 
-func (s *Service) CloseSession(req CloseRequest) (CloseResult, error) {
+func (s *Service) closeSession(req CloseRequest) (CloseResult, error) {
 	sess, err := s.removeSession(req.SessionID)
 	if err != nil {
 		return CloseResult{}, err
@@ -312,7 +316,7 @@ func (s *Service) CloseSession(req CloseRequest) (CloseResult, error) {
 	return CloseResult{SessionID: req.SessionID, Closed: true}, nil
 }
 
-func (s *Service) CleanupStale(req CleanupRequest) CleanupResult {
+func (s *Service) cleanupStale(req CleanupRequest) CleanupResult {
 	maxAge := req.MaxAge
 	if maxAge <= 0 {
 		maxAge = defaultStaleAge

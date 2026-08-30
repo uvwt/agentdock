@@ -112,14 +112,14 @@ nameInput.addEventListener('change', () => { fillEvents.textContent += '-change'
 
 func newIntegrationService(t *testing.T) *Service {
 	t.Helper()
-	service := New(Config{AgentDockHome: t.TempDir(), ExecutablePath: integrationExecutable(t)})
+	service := New(Config{AgentDockHome: t.TempDir(), ExecutablePath: integrationExecutable(t)}, nil)
 	t.Cleanup(func() { _ = service.Close() })
 	return service
 }
 
 func startIntegrationSession(t *testing.T, service *Service, serverURL string, headless bool) StartResult {
 	t.Helper()
-	result, err := service.Start(context.Background(), StartRequest{
+	result, err := service.start(context.Background(), StartRequest{
 		URL: serverURL, Browser: BrowserAuto, Headless: headless,
 		Viewport: Viewport{Width: 1100, Height: 720}, Timeout: integrationBrowserStartTimeout,
 	})
@@ -135,7 +135,7 @@ func TestBrowserIntegrationActionsSnapshotAndDiagnostics(t *testing.T) {
 	service := newIntegrationService(t)
 	started := startIntegrationSession(t, service, server.URL, true)
 
-	filled, err := service.Act(context.Background(), ActRequest{
+	filled, err := service.act(context.Background(), ActRequest{
 		SessionID: started.SessionID,
 		Timeout:   5 * time.Second,
 		Actions:   []Action{{Kind: "fill", Fill: &FillAction{Selector: "#name", Value: "event-check"}}},
@@ -147,7 +147,7 @@ func TestBrowserIntegrationActionsSnapshotAndDiagnostics(t *testing.T) {
 		t.Fatalf("fill behavior snapshot = %#v", filled)
 	}
 
-	snapshot, err := service.Act(context.Background(), ActRequest{
+	snapshot, err := service.act(context.Background(), ActRequest{
 		SessionID: started.SessionID,
 		Timeout:   20 * time.Second,
 		Actions: []Action{
@@ -181,7 +181,7 @@ func TestBrowserIntegrationActionsSnapshotAndDiagnostics(t *testing.T) {
 	if len(snapshot.InteractiveElements) == 0 {
 		t.Fatal("expected visible interactive elements")
 	}
-	_, err = service.Snapshot(context.Background(), SnapshotRequest{SessionID: started.SessionID, PageID: "missing-target", Timeout: time.Second})
+	_, err = service.snapshot(context.Background(), SnapshotRequest{SessionID: started.SessionID, PageID: "missing-target", Timeout: time.Second})
 	var pageErr *Error
 	if !errors.As(err, &pageErr) || pageErr.Code != ErrPageNotFound {
 		t.Fatalf("missing page error = %v, want %s", err, ErrPageNotFound)
@@ -203,7 +203,7 @@ func TestBrowserIntegrationExactElementTextAndNavigationLifecycle(t *testing.T) 
 	service := newIntegrationService(t)
 	started := startIntegrationSession(t, service, server.URL, true)
 
-	_, err := service.Act(context.Background(), ActRequest{
+	_, err := service.act(context.Background(), ActRequest{
 		SessionID: started.SessionID, Timeout: 5 * time.Second,
 		Actions: []Action{{Kind: "wait_for_text", WaitText: &WaitTextAction{Text: "Alpha", Exact: true, State: StateVisible, Timeout: time.Second}}},
 	})
@@ -211,7 +211,7 @@ func TestBrowserIntegrationExactElementTextAndNavigationLifecycle(t *testing.T) 
 		t.Fatalf("exact element text should match: %v", err)
 	}
 
-	_, err = service.Act(context.Background(), ActRequest{
+	_, err = service.act(context.Background(), ActRequest{
 		SessionID: started.SessionID, Timeout: 3 * time.Second,
 		Actions: []Action{{Kind: "select", Select: &SelectAction{Selector: "#choice", Value: "missing-option"}}},
 	})
@@ -219,10 +219,10 @@ func TestBrowserIntegrationExactElementTextAndNavigationLifecycle(t *testing.T) 
 	if !errors.As(err, &actionErr) || actionErr.Code != ErrActionFailed {
 		t.Fatalf("missing option error = %v, want %s", err, ErrActionFailed)
 	}
-	if _, err := service.Snapshot(context.Background(), SnapshotRequest{SessionID: started.SessionID, Timeout: 5 * time.Second}); err != nil {
+	if _, err := service.snapshot(context.Background(), SnapshotRequest{SessionID: started.SessionID, Timeout: 5 * time.Second}); err != nil {
 		t.Fatalf("session was not retained after action failure: %v", err)
 	}
-	_, err = service.Act(context.Background(), ActRequest{
+	_, err = service.act(context.Background(), ActRequest{
 		SessionID: started.SessionID, Timeout: 3 * time.Second,
 		Actions: []Action{{Kind: "wait_for_text", WaitText: &WaitTextAction{Text: "Alpha Beta", Exact: true, State: StateVisible, Timeout: 250 * time.Millisecond}}},
 	})
@@ -232,7 +232,7 @@ func TestBrowserIntegrationExactElementTextAndNavigationLifecycle(t *testing.T) 
 	}
 
 	startedAt := time.Now()
-	_, err = service.Act(context.Background(), ActRequest{
+	_, err = service.act(context.Background(), ActRequest{
 		SessionID: started.SessionID, Timeout: 5 * time.Second,
 		Actions: []Action{{Kind: "goto", Goto: &GotoAction{URL: server.URL + "/slow?nonce=load", WaitUntil: WaitLoad, Timeout: 3 * time.Second}}},
 	})
@@ -243,7 +243,7 @@ func TestBrowserIntegrationExactElementTextAndNavigationLifecycle(t *testing.T) 
 		t.Fatalf("wait_until=load returned before slow resource loaded: %v", elapsed)
 	}
 
-	snapshot, err := service.Act(context.Background(), ActRequest{
+	snapshot, err := service.act(context.Background(), ActRequest{
 		SessionID: started.SessionID, Timeout: 5 * time.Second,
 		Actions: []Action{{Kind: "goto", Goto: &GotoAction{URL: server.URL + "/redirect", WaitUntil: WaitDOMContentLoaded, Timeout: 3 * time.Second}}, {Kind: "wait_for_url", WaitURL: &WaitURLAction{URL: "/loaded", Timeout: time.Second}}},
 	})
@@ -251,11 +251,11 @@ func TestBrowserIntegrationExactElementTextAndNavigationLifecycle(t *testing.T) 
 		t.Fatalf("redirect navigation = url:%q text:%q err:%v", snapshot.URL, snapshot.Text, err)
 	}
 
-	back, err := service.Act(context.Background(), ActRequest{SessionID: started.SessionID, Timeout: 5 * time.Second, Actions: []Action{{Kind: "back", Navigation: &NavigationAction{WaitUntil: WaitLoad, Timeout: 3 * time.Second}}}})
+	back, err := service.act(context.Background(), ActRequest{SessionID: started.SessionID, Timeout: 5 * time.Second, Actions: []Action{{Kind: "back", Navigation: &NavigationAction{WaitUntil: WaitLoad, Timeout: 3 * time.Second}}}})
 	if err != nil || !strings.Contains(back.URL, "/slow") {
 		t.Fatalf("back navigation = %q err=%v", back.URL, err)
 	}
-	forward, err := service.Act(context.Background(), ActRequest{SessionID: started.SessionID, Timeout: 5 * time.Second, Actions: []Action{{Kind: "forward", Navigation: &NavigationAction{WaitUntil: WaitLoad, Timeout: 3 * time.Second}}, {Kind: "reload", Navigation: &NavigationAction{WaitUntil: WaitLoad, Timeout: 3 * time.Second}}}})
+	forward, err := service.act(context.Background(), ActRequest{SessionID: started.SessionID, Timeout: 5 * time.Second, Actions: []Action{{Kind: "forward", Navigation: &NavigationAction{WaitUntil: WaitLoad, Timeout: 3 * time.Second}}, {Kind: "reload", Navigation: &NavigationAction{WaitUntil: WaitLoad, Timeout: 3 * time.Second}}}})
 	if err != nil || !strings.Contains(forward.URL, "/loaded") {
 		t.Fatalf("forward/reload navigation = %q err=%v", forward.URL, err)
 	}
@@ -266,7 +266,7 @@ func TestBrowserIntegrationInjectionProfilesTargetsAndCleanup(t *testing.T) {
 	defer server.Close()
 	service := newIntegrationService(t)
 
-	started, err := service.Start(context.Background(), StartRequest{
+	started, err := service.start(context.Background(), StartRequest{
 		URL: server.URL, Browser: BrowserAuto, Headless: true, Timeout: integrationBrowserStartTimeout,
 		Viewport:     Viewport{Width: 900, Height: 600},
 		Cookies:      []Cookie{{Name: "agentdock_cookie", Value: "cookie-ok", URL: server.URL}},
@@ -303,7 +303,7 @@ func TestBrowserIntegrationInjectionProfilesTargetsAndCleanup(t *testing.T) {
 		t.Fatalf("injected state = %#v", state)
 	}
 
-	popup, err := service.Act(context.Background(), ActRequest{SessionID: started.SessionID, Timeout: 10 * time.Second, Actions: []Action{{Kind: "click", Click: &ClickAction{Selector: "#popup"}}, {Kind: "wait_for_text", WaitText: &WaitTextAction{Text: "popup-ready", Exact: true, State: StateVisible, Timeout: 5 * time.Second}}}})
+	popup, err := service.act(context.Background(), ActRequest{SessionID: started.SessionID, Timeout: 10 * time.Second, Actions: []Action{{Kind: "click", Click: &ClickAction{Selector: "#popup"}}, {Kind: "wait_for_text", WaitText: &WaitTextAction{Text: "popup-ready", Exact: true, State: StateVisible, Timeout: 5 * time.Second}}}})
 	if err != nil {
 		var browserErr *Error
 		if errors.As(err, &browserErr) {
@@ -315,7 +315,7 @@ func TestBrowserIntegrationInjectionProfilesTargetsAndCleanup(t *testing.T) {
 		t.Fatalf("new target did not become active: start=%s snapshot=%#v", started.PageID, popup)
 	}
 
-	pinned, err := service.Act(context.Background(), ActRequest{
+	pinned, err := service.act(context.Background(), ActRequest{
 		SessionID: started.SessionID,
 		PageID:    started.PageID,
 		Timeout:   10 * time.Second,
@@ -355,7 +355,7 @@ func TestBrowserIntegrationInjectionProfilesTargetsAndCleanup(t *testing.T) {
 		t.Fatalf("active page after popup close = %q err=%v, want %q", active, err, started.PageID)
 	}
 
-	if _, err := service.CloseSession(CloseRequest{SessionID: started.SessionID}); err != nil {
+	if _, err := service.closeSession(CloseRequest{SessionID: started.SessionID}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(tempProfile); !errors.Is(err, os.ErrNotExist) {
@@ -367,7 +367,7 @@ func TestBrowserIntegrationInjectionProfilesTargetsAndCleanup(t *testing.T) {
 		t.Fatalf("temporary profile was not removed: %v path=%s entries=%v", err, tempProfile, names)
 	}
 
-	blank, err := service.Start(context.Background(), StartRequest{
+	blank, err := service.start(context.Background(), StartRequest{
 		Browser: BrowserAuto, Headless: true, Timeout: integrationBrowserStartTimeout,
 		LocalStorage: map[string]map[string]string{server.URL: {"profile-key": "profile-kept"}},
 	})
@@ -387,7 +387,7 @@ func TestBrowserIntegrationInjectionProfilesTargetsAndCleanup(t *testing.T) {
 	if blankPageURL != "about:blank" {
 		t.Fatalf("active page URL after localStorage injection = %q, want about:blank", blankPageURL)
 	}
-	injected, err := service.Act(context.Background(), ActRequest{
+	injected, err := service.act(context.Background(), ActRequest{
 		SessionID: blank.SessionID,
 		Timeout:   10 * time.Second,
 		Actions: []Action{
@@ -397,16 +397,16 @@ func TestBrowserIntegrationInjectionProfilesTargetsAndCleanup(t *testing.T) {
 	if err != nil || !strings.Contains(injected.Text, "profile-kept") {
 		t.Fatalf("localStorage after restoring about:blank = %q err=%v", injected.Text, err)
 	}
-	if _, err := service.CloseSession(CloseRequest{SessionID: blank.SessionID}); err != nil {
+	if _, err := service.closeSession(CloseRequest{SessionID: blank.SessionID}); err != nil {
 		t.Fatal(err)
 	}
 
 	profile := "integration-persist"
-	first, err := service.Start(context.Background(), StartRequest{URL: server.URL + "/persist-set", Browser: BrowserAuto, Headless: true, ProfileID: profile, Timeout: integrationBrowserStartTimeout})
+	first, err := service.start(context.Background(), StartRequest{URL: server.URL + "/persist-set", Browser: BrowserAuto, Headless: true, ProfileID: profile, Timeout: integrationBrowserStartTimeout})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Start(context.Background(), StartRequest{URL: server.URL, Browser: BrowserAuto, Headless: true, ProfileID: profile, Timeout: 5 * time.Second}); err == nil {
+	if _, err := service.start(context.Background(), StartRequest{URL: server.URL, Browser: BrowserAuto, Headless: true, ProfileID: profile, Timeout: 5 * time.Second}); err == nil {
 		t.Fatal("same profile started twice")
 	} else {
 		var profileErr *Error
@@ -414,14 +414,14 @@ func TestBrowserIntegrationInjectionProfilesTargetsAndCleanup(t *testing.T) {
 			t.Fatalf("duplicate profile error = %v", err)
 		}
 	}
-	if _, err := service.CloseSession(CloseRequest{SessionID: first.SessionID}); err != nil {
+	if _, err := service.closeSession(CloseRequest{SessionID: first.SessionID}); err != nil {
 		t.Fatal(err)
 	}
-	second, err := service.Start(context.Background(), StartRequest{URL: server.URL + "/persist-read", Browser: BrowserAuto, Headless: true, ProfileID: profile, Timeout: integrationBrowserStartTimeout})
+	second, err := service.start(context.Background(), StartRequest{URL: server.URL + "/persist-read", Browser: BrowserAuto, Headless: true, ProfileID: profile, Timeout: integrationBrowserStartTimeout})
 	if err != nil {
 		t.Fatal(err)
 	}
-	persisted, err := service.Snapshot(context.Background(), SnapshotRequest{SessionID: second.SessionID, Timeout: 10 * time.Second})
+	persisted, err := service.snapshot(context.Background(), SnapshotRequest{SessionID: second.SessionID, Timeout: 10 * time.Second})
 	if err != nil || !strings.Contains(persisted.Text, "profile-kept") {
 		t.Fatalf("persistent profile snapshot = %q err=%v", persisted.Text, err)
 	}

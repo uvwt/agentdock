@@ -1,4 +1,4 @@
-package app
+package recall
 
 import (
 	"context"
@@ -49,7 +49,7 @@ func TestPrivateNoteManageProxiesNexusAPI(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rt := newPrivateNoteProxyRuntime(t, server.URL, "nexus-secret")
+	rt := newPrivateNoteProxyService(t, server.URL, "nexus-secret")
 	requests := []map[string]any{
 		{"action": "search", "query": "恢复", "max_results": 5},
 		{"action": "read", "path": "notes/recovery/demo.md", "max_bytes": 2048},
@@ -59,14 +59,13 @@ func TestPrivateNoteManageProxiesNexusAPI(t *testing.T) {
 		{"action": "maintain", "maintenance_action": "encrypt-all"},
 	}
 	for _, request := range requests {
-		result, err := rt.privateNoteManage(context.Background(), request)
+		result, err := rt.PrivateNoteManage(context.Background(), request)
 		if err != nil {
 			t.Fatalf("privateNoteManage(%v): %v", request["action"], err)
 		}
 		if result["private_note_store"] != "NexusDock Private Notes" || result["recall_endpoint"] != server.URL {
 			t.Fatalf("unexpected proxy result: %#v", result)
 		}
-		assertToolResultMatchesOutputSchema(t, "private_note_manage", result)
 	}
 	if index != len(calls) {
 		t.Fatalf("request count = %d, want %d", index, len(calls))
@@ -78,13 +77,13 @@ func TestPrivateNoteManageRejectsUnknownActionWithoutRequest(t *testing.T) {
 		t.Fatal("unknown action must not call Nexus")
 	}))
 	defer server.Close()
-	rt := newPrivateNoteProxyRuntime(t, server.URL, "")
-	if _, err := rt.privateNoteManage(context.Background(), map[string]any{"action": "unknown"}); err == nil {
+	rt := newPrivateNoteProxyService(t, server.URL, "")
+	if _, err := rt.PrivateNoteManage(context.Background(), map[string]any{"action": "unknown"}); err == nil {
 		t.Fatal("unknown private note action succeeded")
 	}
 }
 
-func newPrivateNoteProxyRuntime(t *testing.T, endpoint, token string) *Runtime {
+func newPrivateNoteProxyService(t *testing.T, endpoint, token string) *Service {
 	t.Helper()
 	home := t.TempDir()
 	cfg := config.Config{
@@ -96,10 +95,5 @@ func newPrivateNoteProxyRuntime(t *testing.T, endpoint, token string) *Runtime {
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	rt, err := NewRuntime(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = rt.Close() })
-	return rt
+	return New(func() config.Config { return cfg })
 }

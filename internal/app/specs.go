@@ -138,10 +138,6 @@ func canonicalToolAnnotations(value mcpcontract.Annotations) *ToolAnnotations {
 	return annotations
 }
 
-func toolHandler(fn func(*Runtime, map[string]any) (Result, error)) ToolHandler {
-	return func(_ context.Context, r *Runtime, args map[string]any) (Result, error) { return fn(r, args) }
-}
-
 func ctxToolHandler(fn func(*Runtime, context.Context, map[string]any) (Result, error)) ToolHandler {
 	return func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) { return fn(r, ctx, args) }
 }
@@ -149,14 +145,30 @@ func ctxToolHandler(fn func(*Runtime, context.Context, map[string]any) (Result, 
 func allToolSpecs() []ToolSpec {
 	return bindToolSchemas([]ToolSpec{
 		{Name: "agentdock_context", Title: "AgentDock context", Description: "Return structured AgentDock bootstrap context including available capabilities, integrations, rules, and high-priority context.", Handler: ctxToolHandler((*Runtime).agentDockContextTool)},
-		{Name: "read_file", Title: "Read file", Description: toolfile.ToolDescription("Read a UTF-8 text file slice. Supports normal Host paths and skill://<name>/<path> resources from the active Skill version."), Annotations: readOnlyToolAnnotations(false), Handler: ctxToolHandler((*Runtime).readFile)},
-		{Name: "list_dir", Title: "List directory", Description: toolfile.ToolDescription("List directory entries with explicit depth, glob filters, and entry-type filtering. Glob patterns are relative to path: * stays within one path segment and ** crosses directories. Relative paths resolve from ~/AgentDock; absolute and ~/ paths use Host rules."), Annotations: readOnlyToolAnnotations(false), Handler: ctxToolHandler((*Runtime).listDir)},
-		{Name: "search_text", Title: "Search text", Description: toolfile.ToolDescription("Search UTF-8 files for text or regex matches. Relative paths search ~/AgentDock by default; absolute paths are allowed."), Annotations: readOnlyToolAnnotations(false), Handler: ctxToolHandler((*Runtime).searchText)},
-		{Name: "file_edit", Title: "Edit file", Description: toolfile.EditDescription("Edit files through one action-based entrypoint: replace, patch, add, delete, or move. Relative paths resolve from ~/AgentDock; absolute and ~/ paths use Host rules."), Annotations: mutatingToolAnnotations(true, false), Handler: ctxToolHandler((*Runtime).fileEdit)},
-		{Name: "exec_command", Title: "Run command", Description: toolcommand.Description(), Annotations: mutatingToolAnnotations(true, true), Handler: ctxToolHandler((*Runtime).execCommand)},
-		{Name: "session_observe", Title: "Observe command sessions", Description: "List or inspect command sessions through a read-only session tool.", Annotations: readOnlyToolAnnotations(false), Handler: toolHandler((*Runtime).sessionObserve)},
-		{Name: "session_act", Title: "Act on command sessions", Description: "Write to or stop command sessions through a mutating session tool.", Annotations: mutatingToolAnnotations(true, true), Handler: toolHandler((*Runtime).sessionAct)},
-		{Name: "task_manage", Title: "Manage recoverable tasks", Description: "Persist substantial AgentDock tasks and update live step progress with checkpoint.", Annotations: mutatingToolAnnotations(false, false), Handler: ctxToolHandler((*Runtime).taskManage)},
+		{Name: "read_file", Title: "Read file", Description: toolfile.ToolDescription("Read a UTF-8 text file slice. Supports normal Host paths and skill://<name>/<path> resources from the active Skill version."), Annotations: readOnlyToolAnnotations(false), Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+			return r.files.ReadFile(ctx, args)
+		}},
+		{Name: "list_dir", Title: "List directory", Description: toolfile.ToolDescription("List directory entries with explicit depth, glob filters, and entry-type filtering. Glob patterns are relative to path: * stays within one path segment and ** crosses directories. Relative paths resolve from ~/AgentDock; absolute and ~/ paths use Host rules."), Annotations: readOnlyToolAnnotations(false), Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+			return r.files.ListDir(ctx, args)
+		}},
+		{Name: "search_text", Title: "Search text", Description: toolfile.ToolDescription("Search UTF-8 files for text or regex matches. Relative paths search ~/AgentDock by default; absolute paths are allowed."), Annotations: readOnlyToolAnnotations(false), Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+			return r.files.SearchText(ctx, args)
+		}},
+		{Name: "file_edit", Title: "Edit file", Description: toolfile.EditDescription("Edit files through one action-based entrypoint: replace, patch, add, delete, or move. Relative paths resolve from ~/AgentDock; absolute and ~/ paths use Host rules."), Annotations: mutatingToolAnnotations(true, false), Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+			return r.files.Edit(ctx, args)
+		}},
+		{Name: "exec_command", Title: "Run command", Description: toolcommand.Description(), Annotations: mutatingToolAnnotations(true, true), Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+			return r.command.Exec(ctx, args)
+		}},
+		{Name: "session_observe", Title: "Observe command sessions", Description: "List or inspect command sessions through a read-only session tool.", Annotations: readOnlyToolAnnotations(false), Handler: func(_ context.Context, r *Runtime, args map[string]any) (Result, error) {
+			return r.command.Observe(args)
+		}},
+		{Name: "session_act", Title: "Act on command sessions", Description: "Write to or stop command sessions through a mutating session tool.", Annotations: mutatingToolAnnotations(true, true), Handler: func(_ context.Context, r *Runtime, args map[string]any) (Result, error) {
+			return r.command.Act(args)
+		}},
+		{Name: "task_manage", Title: "Manage recoverable tasks", Description: "Persist substantial AgentDock tasks and update live step progress with checkpoint.", Annotations: mutatingToolAnnotations(false, false), Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+			return r.taskTools.Manage(ctx, args)
+		}},
 		{Name: "evolve", Title: "Evolve AgentDock knowledge", Description: "Propose reusable knowledge, pre-bind Task learning checks, supersede, or retract. Bind must happen before execution and declares on_success/on_failure semantics; AgentDock resolves later Task outcomes and owns lifecycle policy while Recall only persists the result.", Annotations: mutatingToolAnnotations(true, false), Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).evolve)},
 		{Name: "acp_session", Title: "Manage ACP sessions", Description: "Inspect or authenticate the configured ACP agent and create, load, resume, fork, configure, list, inspect, close, or delete persistent ACP sessions through one action-based entrypoint. Session workspaces may use any host-accessible directory and optional methods are capability-gated.", Annotations: mutatingToolAnnotations(true, true), Availability: requiresACP, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
 			return r.acp.Session(ctx, args)
@@ -167,8 +179,12 @@ func allToolSpecs() []ToolSpec {
 		{Name: "acp_interaction", Title: "Handle ACP interactions", Description: "List, inspect, respond to, or cancel pending ACP permission interactions. Only options offered by the agent and permitted by the local AgentDock policy may be selected.", Annotations: mutatingToolAnnotations(true, true), Availability: requiresACP, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
 			return r.acp.Interaction(ctx, args)
 		}},
-		{Name: "workflow_template_manage", Title: "Manage workflow templates", Description: "List, get, get multiple, publish, retire, or match AgentDock workflow templates. publish validates and activates a complete immutable template version; get_many requires the model to compose the returned templates before task creation.", Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).workflowTemplateManage)},
-		{Name: "skill_package", Title: "Manage Skill packages", Description: "Validate, install, activate, or roll back AgentDock Skill packages and manage each Skill's isolated environment without returning secret values.", Annotations: mutatingToolAnnotations(true, true), Handler: ctxToolHandler((*Runtime).skillPackage)},
+		{Name: "workflow_template_manage", Title: "Manage workflow templates", Description: "List, get, get multiple, publish, retire, or match AgentDock workflow templates. publish validates and activates a complete immutable template version; get_many requires the model to compose the returned templates before task creation.", Availability: requiresNexus, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+			return r.taskTools.WorkflowManage(ctx, args)
+		}},
+		{Name: "skill_package", Title: "Manage Skill packages", Description: "Validate, install, activate, or roll back AgentDock Skill packages and manage each Skill's isolated environment without returning secret values.", Annotations: mutatingToolAnnotations(true, true), Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+			return r.skills.Package(ctx, args)
+		}},
 		{Name: "mcp_manage", Title: "Manage dynamic MCP servers", Description: "Register, inspect, enable, disable, refresh, remove, or manage the isolated environment of dynamic MCP servers. Dynamic MCP tools remain separate from AgentDock built-in tools.", Annotations: mutatingToolAnnotations(true, true), Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
 			return r.dynamicMCP.Manage(ctx, args)
 		}},
@@ -184,14 +200,30 @@ func allToolSpecs() []ToolSpec {
 		{Name: "view_image", Title: "View image", Description: "Load an image by AgentDock artifact_id, Host path, or HTTP(S) URL and return it as standard MCP image content.", Annotations: readOnlyToolAnnotations(true), Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
 			return r.media.ViewImage(ctx, args)
 		}},
-		{Name: "recall_search", Title: "Search NexusDock Recall", Description: "Search NexusDock Recall Markdown documents and cards with lexical retrieval and optional semantic enhancement when embeddings are available. Use kind=all, markdown, or card; backend routing stays internal.", Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallSearch)},
-		{Name: "recall_read", Title: "Read NexusDock Recall entry", Description: "Read one Markdown document or card from the configured NexusDock Recall store by path.", Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallRead)},
-		{Name: "recall_write", Title: "Write NexusDock Recall entry", Description: "Plan, create, replace, append, patch, update facts, diff, or delete NexusDock Recall content. The model must choose target=card/markdown and action explicitly.", Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallWrite)},
-		{Name: "recall_maintain", Title: "Maintain NexusDock Recall", Description: "Run NexusDock Recall maintenance actions such as list, lint, embedding_status, reindex, or reindex_cards.", Availability: requiresNexus, Handler: ctxToolHandler((*Runtime).recallMaintain)},
-		{Name: "private_note_manage", Title: "Manage private notes", Description: "Explicit low-frequency NexusDock private note vault entrypoint. Do not use by default: use only when the user explicitly requests private note access or the content clearly contains sensitive secrets, credentials, or personal information. Search is metadata-only; plaintext is returned only by explicit read, and Git backups contain age ciphertext only. Actions: search, read, write, delete, status, or maintain.", Handler: ctxToolHandler((*Runtime).privateNoteManage), Availability: requiresNexus},
-		{Name: "browser_session", Title: "Browser session", Description: "Start an AgentDock-owned Chromium-family browser or attach to an existing CDP browser with a dedicated AgentDock target, then close or clean up the session. External browsers remain running when the session closes.", Annotations: mutatingToolAnnotations(true, true), Availability: requiresBrowser, Handler: ctxToolHandler((*Runtime).browserSession)},
-		{Name: "browser_act", Title: "Browser actions", Description: "Run strictly validated CSS/CDP browser actions against an AgentDock-managed browser target and return the final typed page snapshot plus screenshot Artifact.", Annotations: mutatingToolAnnotations(true, true), Availability: requiresBrowser, Handler: ctxToolHandler((*Runtime).browserAct)},
-		{Name: "browser_snapshot", Title: "Browser snapshot", Description: "Capture the active or requested CDP target with page text, viewport, page size, focus, visible interactive elements, diagnostics, and a PNG screenshot Artifact.", Annotations: readOnlyToolAnnotations(true), Availability: requiresBrowser, Handler: ctxToolHandler((*Runtime).browserSnapshot)},
+		{Name: "recall_search", Title: "Search NexusDock Recall", Description: "Search NexusDock Recall Markdown documents and cards with lexical retrieval and optional semantic enhancement when embeddings are available. Use kind=all, markdown, or card; backend routing stays internal.", Availability: requiresNexus, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+			return r.recall.Search(ctx, args)
+		}},
+		{Name: "recall_read", Title: "Read NexusDock Recall entry", Description: "Read one Markdown document or card from the configured NexusDock Recall store by path.", Availability: requiresNexus, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+			return r.recall.Read(ctx, args)
+		}},
+		{Name: "recall_write", Title: "Write NexusDock Recall entry", Description: "Plan, create, replace, append, patch, update facts, diff, or delete NexusDock Recall content. The model must choose target=card/markdown and action explicitly.", Availability: requiresNexus, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+			return r.recall.Write(ctx, args)
+		}},
+		{Name: "recall_maintain", Title: "Maintain NexusDock Recall", Description: "Run NexusDock Recall maintenance actions such as list, lint, embedding_status, reindex, or reindex_cards.", Availability: requiresNexus, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+			return r.recall.Maintain(ctx, args)
+		}},
+		{Name: "private_note_manage", Title: "Manage private notes", Description: "Explicit low-frequency NexusDock private note vault entrypoint. Do not use by default: use only when the user explicitly requests private note access or the content clearly contains sensitive secrets, credentials, or personal information. Search is metadata-only; plaintext is returned only by explicit read, and Git backups contain age ciphertext only. Actions: search, read, write, delete, status, or maintain.", Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+			return r.recall.PrivateNoteManage(ctx, args)
+		}, Availability: requiresNexus},
+		{Name: "browser_session", Title: "Browser session", Description: "Start an AgentDock-owned Chromium-family browser or attach to an existing CDP browser with a dedicated AgentDock target, then close or clean up the session. External browsers remain running when the session closes.", Annotations: mutatingToolAnnotations(true, true), Availability: requiresBrowser, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+			return r.browser.HandleSession(ctx, args)
+		}},
+		{Name: "browser_act", Title: "Browser actions", Description: "Run strictly validated CSS/CDP browser actions against an AgentDock-managed browser target and return the final typed page snapshot plus screenshot Artifact.", Annotations: mutatingToolAnnotations(true, true), Availability: requiresBrowser, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+			return r.browser.HandleAct(ctx, args)
+		}},
+		{Name: "browser_snapshot", Title: "Browser snapshot", Description: "Capture the active or requested CDP target with page text, viewport, page size, focus, visible interactive elements, diagnostics, and a PNG screenshot Artifact.", Annotations: readOnlyToolAnnotations(true), Availability: requiresBrowser, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
+			return r.browser.HandleSnapshot(ctx, args)
+		}},
 		{Name: "file_publish", Title: "Publish signed file", Description: "Publish a local file or directory as an immutable Artifact snapshot under ~/.agentdock/public-artifacts. Returns artifact_id and, when a reachable base URL is available, a temporary signed download URL. Directories are packaged as tar.gz.", Annotations: mutatingToolAnnotations(false, true), FileArgRewritePaths: []string{"file"}, Handler: func(ctx context.Context, r *Runtime, args map[string]any) (Result, error) {
 			return r.media.FilePublish(ctx, args)
 		}},

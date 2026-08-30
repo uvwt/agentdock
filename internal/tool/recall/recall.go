@@ -178,7 +178,7 @@ func (svc *Service) Maintain(ctx context.Context, args map[string]any) (Result, 
 		result["recall_action"] = "lint"
 		return result, nil
 	case "embedding_status", "embeddings_status":
-		result, err := svc.Request(ctx, http.MethodGet, "/v1/embeddings/status", nil)
+		result, err := svc.request(ctx, http.MethodGet, "/v1/embeddings/status", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -193,7 +193,7 @@ func (svc *Service) Maintain(ctx context.Context, args map[string]any) (Result, 
 		if action == "reindex_cards" && payload["prefix"] == nil {
 			payload["prefix"] = recallCardsPrefix
 		}
-		result, err := svc.Request(ctx, http.MethodPost, "/v1/embeddings/reindex", payload)
+		result, err := svc.request(ctx, http.MethodPost, "/v1/embeddings/reindex", payload)
 		if err != nil {
 			return nil, err
 		}

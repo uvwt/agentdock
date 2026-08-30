@@ -51,7 +51,7 @@ func (s *Service) Close() error {
 			sessionKillWait,
 		))
 	}
-	if _, err := s.KillAll(nil); err != nil {
+	if _, err := s.killAll(nil); err != nil {
 		closeErrors = append(closeErrors, fmt.Errorf("stop command sessions: %w", err))
 	}
 	return errors.Join(closeErrors...)
