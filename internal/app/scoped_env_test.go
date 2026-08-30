@@ -160,7 +160,7 @@ func newScopedEnvTestRuntime(t *testing.T) *Runtime {
 }
 
 func TestExecCommandSchemaExposesSkillContext(t *testing.T) {
-	properties := InputSchema("exec_command")["properties"].(map[string]any)
+	properties := testInputSchema("exec_command")["properties"].(map[string]any)
 	if _, ok := properties["skill"]; !ok {
 		t.Fatalf("exec_command schema is missing skill: %#v", properties)
 	}

@@ -5,7 +5,7 @@ package app
 import "testing"
 
 func TestWindowsExecCommandSchemaExposesWSLRuntime(t *testing.T) {
-	properties := InputSchema("exec_command")["properties"].(map[string]any)
+	properties := testInputSchema("exec_command")["properties"].(map[string]any)
 	runtimeProperty, ok := properties["runtime"].(map[string]any)
 	if !ok {
 		t.Fatalf("exec_command schema is missing runtime: %#v", properties)

@@ -80,6 +80,9 @@ func (r *Runtime) RuntimeMCPManage(ctx context.Context, args map[string]any) (Re
 }
 
 func (r *Runtime) runtimeMCPManage(ctx context.Context, args map[string]any) (Result, error) {
+	if err := r.validateToolArguments(toolmcp.ToolManage, args); err != nil {
+		return nil, err
+	}
 	var request toolmcp.ManageRequest
 	if err := decodeToolInput("mcp_manage", args, &request); err != nil {
 		return nil, err

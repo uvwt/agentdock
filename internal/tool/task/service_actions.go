@@ -68,6 +68,19 @@ type workflowTemplateMatchRequest struct {
 }
 
 func normalizeTaskManageRequest(request ManageRequest) (taskManageInput, error) {
+	steps := make([]taskstate.TaskStepInput, len(request.Steps))
+	for i, step := range request.Steps {
+		steps[i] = taskstate.TaskStepInput{ID: step.ID, Title: step.Title}
+	}
+	learningChecks := make([]taskstate.EvolutionBinding, len(request.LearningChecks))
+	for i, check := range request.LearningChecks {
+		learningChecks[i] = taskstate.EvolutionBinding{
+			EvolutionID: check.EvolutionID,
+			OnSuccess:   check.OnSuccess,
+			OnFailure:   check.OnFailure,
+		}
+	}
+
 	input := taskManageInput{
 		Action:               strings.ToLower(strings.TrimSpace(request.Action)),
 		Title:                request.Title,
@@ -75,10 +88,10 @@ func normalizeTaskManageRequest(request ManageRequest) (taskManageInput, error) 
 		Project:              strings.ToLower(strings.TrimSpace(request.Project)),
 		Device:               strings.TrimSpace(request.Device),
 		CompletionConditions: append([]string(nil), request.CompletionConditions...),
-		Steps:                append([]taskstate.TaskStepInput(nil), request.Steps...),
+		Steps:                steps,
 		TemplateID:           strings.TrimSpace(request.TemplateID),
 		SourceTemplateIDs:    append([]string(nil), request.SourceTemplateIDs...),
-		LearningChecks:       append([]taskstate.EvolutionBinding(nil), request.LearningChecks...),
+		LearningChecks:       learningChecks,
 		Status:               strings.ToLower(strings.TrimSpace(request.Status)),
 		Limit:                intValue(request.Limit, 50),
 		TaskID:               request.TaskID,

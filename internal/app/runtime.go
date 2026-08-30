@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"sync"
 	"time"
 
@@ -19,6 +18,7 @@ import (
 	toolacp "github.com/uvwt/agentdock/internal/tool/acp"
 	toolbrowser "github.com/uvwt/agentdock/internal/tool/browser"
 	toolcommand "github.com/uvwt/agentdock/internal/tool/command"
+	toolcontract "github.com/uvwt/agentdock/internal/tool/contract"
 	toolcore "github.com/uvwt/agentdock/internal/tool/core"
 	toolfile "github.com/uvwt/agentdock/internal/tool/file"
 	toolmcp "github.com/uvwt/agentdock/internal/tool/mcp"
@@ -32,27 +32,33 @@ import (
 type Result = toolcore.Result
 
 type Runtime struct {
-	cfg           config.Config
-	ws            *workspace.Workspace
-	skills        *toolskill.Service
-	command       *toolcommand.Service
-	files         *toolfile.Service
-	dynamicMCP    *toolmcp.Service
-	media         *toolmedia.Service
-	browser       *toolbrowser.Service
-	recall        *toolrecall.Service
-	evolution     *evolution.Service
-	taskTools     *tooltask.Service
-	acp           *toolacp.Service
-	lifecycleMu   sync.RWMutex
-	commandCtx    context.Context
-	commandCancel context.CancelFunc
-	closing       bool
-	closeOnce     sync.Once
-	closeErr      error
+	cfg            config.Config
+	toolNames      []string
+	toolValidators map[string]*toolcontract.InputValidator
+	ws             *workspace.Workspace
+	skills         *toolskill.Service
+	command        *toolcommand.Service
+	files          *toolfile.Service
+	dynamicMCP     *toolmcp.Service
+	media          *toolmedia.Service
+	browser        *toolbrowser.Service
+	recall         *toolrecall.Service
+	evolution      *evolution.Service
+	taskTools      *tooltask.Service
+	acp            *toolacp.Service
+	lifecycleMu    sync.RWMutex
+	commandCtx     context.Context
+	commandCancel  context.CancelFunc
+	closing        bool
+	closeOnce      sync.Once
+	closeErr       error
 }
 
 func NewRuntime(cfg config.Config) (*Runtime, error) {
+	toolNames, toolValidators, err := compileAvailableToolContracts(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("initialize tool contracts: %w", err)
+	}
 	ws, err := workspace.New(cfg.AgentDockDefaultDir)
 	if err != nil {
 		return nil, err
@@ -77,6 +83,7 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	commandCtx, commandCancel := context.WithCancel(context.Background())
 	runtime := &Runtime{
 		cfg: cfg, ws: ws, skills: skills,
+		toolNames: toolNames, toolValidators: toolValidators,
 		commandCtx: commandCtx, commandCancel: commandCancel,
 	}
 	runtime.command = toolcommand.New(func() config.Config { return runtime.cfg }, ws, envs, skills.ResolveActive, runtime.commandExecutionContext)
@@ -179,56 +186,54 @@ func (r *Runtime) commandExecutionContext() (context.Context, error) {
 }
 
 func (r *Runtime) ToolNames() []string {
-	specs := r.availableToolSpecs()
-	names := make([]string, 0, len(specs))
-	for _, spec := range specs {
-		names = append(names, spec.Name)
+	return append([]string(nil), r.toolNames...)
+}
+
+func (r *Runtime) ToolDefinitions() []ToolDefinition {
+	definitions := make([]ToolDefinition, 0, len(r.toolNames))
+	for _, name := range r.toolNames {
+		definition, _ := toolDefinitionForConfig(name, r.cfg)
+		definitions = append(definitions, definition)
 	}
-	return names
+	return definitions
+}
+
+func (r *Runtime) ToolDefinition(name string) (ToolDefinition, bool) {
+	if _, available := r.toolValidators[name]; !available {
+		return ToolDefinition{}, false
+	}
+	return toolDefinitionForConfig(name, r.cfg)
 }
 
 func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (Result, error) {
 	if args == nil {
 		args = map[string]any{}
 	}
-	spec, ok := toolSpecByName(name)
-	if !ok || !spec.available(r.cfg) {
-		return nil, toolErrorDetails("UNKNOWN_TOOL", "tool is not available", "validation", map[string]any{"tool": name})
-	}
-	if spec.Handler == nil {
-		return nil, toolErrorDetails("UNKNOWN_TOOL", "tool has no handler", "validation", map[string]any{"tool": name})
-	}
-	if err := validateTopLevelArguments(spec, args); err != nil {
+	if err := r.validateToolArguments(name, args); err != nil {
 		return nil, err
+	}
+	spec, ok := toolSpecByName(name)
+	if !ok || spec.Handler == nil {
+		return nil, toolErrorDetails("UNKNOWN_TOOL", "tool has no handler", "validation", map[string]any{"tool": name})
 	}
 	return spec.Handler(ctx, r, args)
 }
 
-// validateTopLevelArguments 只兑现 schema 的顶层严格契约；字段类型和嵌套结构仍由各工具处理。
-func validateTopLevelArguments(spec ToolSpec, args map[string]any) error {
-	if spec.InputSchema == nil {
-		return nil
+func (r *Runtime) validateToolArguments(name string, args map[string]any) error {
+	validator, available := r.toolValidators[name]
+	if !available {
+		return toolErrorDetails("UNKNOWN_TOOL", "tool is not available", "validation", map[string]any{"tool": name})
 	}
-	schema := spec.InputSchema()
-	allowsAdditionalProperties, ok := schema["additionalProperties"].(bool)
-	if !ok || allowsAdditionalProperties {
-		return nil
+	if args == nil {
+		args = map[string]any{}
 	}
-	properties, _ := schema["properties"].(map[string]any)
-	unknown := make([]string, 0)
-	for key := range args {
-		if _, allowed := properties[key]; !allowed {
-			unknown = append(unknown, key)
-		}
+	if err := validator.Validate(args); err != nil {
+		return toolErrorDetails(
+			"INVALID_ARGUMENT",
+			"tool arguments do not match the declared input schema",
+			"validation",
+			map[string]any{"tool": name, "reason": toolcontract.CompactValidationError(err)},
+		)
 	}
-	if len(unknown) == 0 {
-		return nil
-	}
-	sort.Strings(unknown)
-	return toolErrorDetails(
-		"INVALID_ARGUMENT",
-		"unknown tool arguments",
-		"validation",
-		map[string]any{"tool": spec.Name, "fields": unknown},
-	)
+	return nil
 }

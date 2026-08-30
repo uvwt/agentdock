@@ -245,18 +245,38 @@ func decodeRuntimeMCPRequest(r *http.Request) (map[string]any, error) {
 	if !runtimeMCPManageActions[action] {
 		return nil, &app.ToolError{Code: "MCP_ACTION_UNSUPPORTED", Message: "dynamic MCP action is not available through the Runtime API", Category: "validation"}
 	}
-	args := map[string]any{
-		"action":       action,
-		"name":         request.Name,
-		"description":  request.Description,
-		"transport":    request.Transport,
-		"url":          request.URL,
-		"command":      request.Command,
-		"args":         request.Args,
-		"cwd":          request.Cwd,
-		"header_env":   request.HeaderEnv,
-		"env_from_env": request.EnvFromEnv,
-		"key":          request.Key,
+	args := map[string]any{"action": action}
+	// Runtime API 与模型工具最终进入同一份公共契约。只转发请求中真正提供的可选字段，
+	// 避免 Go 零值被解释成 schema 中有语义的空 enum 值或未声明允许的 null。
+	if request.Name != "" {
+		args["name"] = request.Name
+	}
+	if request.Description != "" {
+		args["description"] = request.Description
+	}
+	if request.Transport != "" {
+		args["transport"] = request.Transport
+	}
+	if request.URL != "" {
+		args["url"] = request.URL
+	}
+	if request.Command != "" {
+		args["command"] = request.Command
+	}
+	if request.Cwd != "" {
+		args["cwd"] = request.Cwd
+	}
+	if request.Key != "" {
+		args["key"] = request.Key
+	}
+	if request.Args != nil {
+		args["args"] = request.Args
+	}
+	if request.HeaderEnv != nil {
+		args["header_env"] = request.HeaderEnv
+	}
+	if request.EnvFromEnv != nil {
+		args["env_from_env"] = request.EnvFromEnv
 	}
 	if request.Value != nil {
 		args["value"] = *request.Value

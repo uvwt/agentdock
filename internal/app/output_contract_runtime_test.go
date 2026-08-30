@@ -19,7 +19,7 @@ import (
 	"github.com/uvwt/agentdock/internal/config"
 )
 
-func assertToolResultMatchesOutputSchema(t *testing.T, name string, result Result) map[string]any {
+func assertToolResultMatchestestOutputSchema(t *testing.T, name string, result Result) map[string]any {
 	t.Helper()
 
 	encoded, err := json.Marshal(result)
@@ -31,7 +31,7 @@ func assertToolResultMatchesOutputSchema(t *testing.T, name string, result Resul
 		t.Fatalf("unmarshal %s result: %v", name, err)
 	}
 
-	schemaJSON, err := json.Marshal(OutputSchema(name))
+	schemaJSON, err := json.Marshal(testOutputSchema(name))
 	if err != nil {
 		t.Fatalf("marshal %s output schema: %v", name, err)
 	}
@@ -86,7 +86,7 @@ func TestRuntimeOutputContractDefaultToolSuccessPaths(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			assertToolResultMatchesOutputSchema(t, call.name, result)
+			assertToolResultMatchestestOutputSchema(t, call.name, result)
 		})
 	}
 }
@@ -112,7 +112,7 @@ func TestRuntimeOutputContractRecallReadMaintain(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			assertToolResultMatchesOutputSchema(t, call.name, result)
+			assertToolResultMatchestestOutputSchema(t, call.name, result)
 		})
 	}
 }
@@ -223,7 +223,7 @@ func TestRuntimeOutputContractACPInfoNormalizesOmittedInitializeFields(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	normalized := assertToolResultMatchesOutputSchema(t, "acp_session", info)
+	normalized := assertToolResultMatchestestOutputSchema(t, "acp_session", info)
 	capabilities, ok := normalized["capabilities"].(map[string]any)
 	if !ok || len(capabilities) != 0 {
 		t.Fatalf("omitted ACP capabilities = %#v, want {}", normalized["capabilities"])
@@ -264,7 +264,7 @@ func TestRuntimeOutputContractACPOptionalFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	normalizedInfo := assertToolResultMatchesOutputSchema(t, "acp_session", info)
+	normalizedInfo := assertToolResultMatchestestOutputSchema(t, "acp_session", info)
 	authMethods, ok := normalizedInfo["auth_methods"].([]any)
 	if !ok || len(authMethods) != 0 {
 		t.Fatalf("auth_methods = %#v, want []", normalizedInfo["auth_methods"])
@@ -274,7 +274,7 @@ func TestRuntimeOutputContractACPOptionalFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	normalizedListed := assertToolResultMatchesOutputSchema(t, "acp_session", listed)
+	normalizedListed := assertToolResultMatchestestOutputSchema(t, "acp_session", listed)
 	sessions, ok := normalizedListed["sessions"].([]any)
 	if !ok || len(sessions) != 0 {
 		t.Fatalf("empty ACP sessions = %#v, want []", normalizedListed["sessions"])
@@ -284,7 +284,7 @@ func TestRuntimeOutputContractACPOptionalFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	normalizedInteractions := assertToolResultMatchesOutputSchema(t, "acp_interaction", interactions)
+	normalizedInteractions := assertToolResultMatchestestOutputSchema(t, "acp_interaction", interactions)
 	pending, ok := normalizedInteractions["interactions"].([]any)
 	if !ok || len(pending) != 0 {
 		t.Fatalf("empty ACP interactions = %#v, want []", normalizedInteractions["interactions"])
@@ -320,7 +320,7 @@ func TestRuntimeOutputContractACPOptionalFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	normalizedConfigured := assertToolResultMatchesOutputSchema(t, "acp_session", configured)
+	normalizedConfigured := assertToolResultMatchestestOutputSchema(t, "acp_session", configured)
 	configOptions, ok := normalizedConfigured["config_options"].([]any)
 	if !ok || len(configOptions) != 0 {
 		t.Fatalf("set_config config_options = %#v, want []", normalizedConfigured["config_options"])
@@ -330,7 +330,7 @@ func TestRuntimeOutputContractACPOptionalFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertToolResultMatchesOutputSchema(t, "acp_prompt", started)
+	assertToolResultMatchestestOutputSchema(t, "acp_prompt", started)
 	runID, _ := started["run_id"].(string)
 	if runID == "" {
 		t.Fatalf("prompt start = %#v", started)
@@ -339,7 +339,7 @@ func TestRuntimeOutputContractACPOptionalFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	normalizedEvents := assertToolResultMatchesOutputSchema(t, "acp_prompt", events)
+	normalizedEvents := assertToolResultMatchestestOutputSchema(t, "acp_prompt", events)
 	if normalizedEvents["status"] != "running" {
 		t.Fatalf("prompt status = %#v, want running", normalizedEvents["status"])
 	}
@@ -357,7 +357,7 @@ func TestRuntimeOutputContractACPOptionalFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	normalizedSettled := assertToolResultMatchesOutputSchema(t, "acp_prompt", settled)
+	normalizedSettled := assertToolResultMatchestestOutputSchema(t, "acp_prompt", settled)
 	if normalizedSettled["status"] != "completed" {
 		t.Fatalf("settled prompt status = %#v, want completed", normalizedSettled["status"])
 	}
@@ -369,7 +369,7 @@ func TestRuntimeOutputContractACPOptionalFields(t *testing.T) {
 
 func assertACPOptionalSessionFieldsAbsent(t *testing.T, result Result) {
 	t.Helper()
-	normalized := assertToolResultMatchesOutputSchema(t, "acp_session", result)
+	normalized := assertToolResultMatchestestOutputSchema(t, "acp_session", result)
 	for _, field := range []string{"modes", "config_options"} {
 		if _, exists := normalized[field]; exists {
 			t.Fatalf("optional %s should be omitted: %#v", field, normalized[field])

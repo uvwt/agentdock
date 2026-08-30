@@ -11,7 +11,7 @@ import (
 )
 
 func TestTaskManageSchemaHidesNexusExtensionsWithoutNexus(t *testing.T) {
-	inputProps := InputSchemaForConfig("task_manage", config.Config{})["properties"].(map[string]any)
+	inputProps := testInputSchemaForConfig("task_manage", config.Config{})["properties"].(map[string]any)
 	for _, hidden := range []string{"template_id", "source_template_ids", "learning_checks"} {
 		if _, ok := inputProps[hidden]; ok {
 			t.Fatalf("task_manage input schema should hide %s without Nexus", hidden)
@@ -24,7 +24,7 @@ func TestTaskManageSchemaHidesNexusExtensionsWithoutNexus(t *testing.T) {
 		}
 	}
 
-	outputProps := OutputSchemaForConfig("task_manage", config.Config{})["properties"].(map[string]any)
+	outputProps := testOutputSchemaForConfig("task_manage", config.Config{})["properties"].(map[string]any)
 	for _, hidden := range []string{"guidance_context", "review_revision", "evolution_candidates", "evolution_warning"} {
 		if _, ok := outputProps[hidden]; ok {
 			t.Fatalf("task_manage output schema should hide %s without Nexus", hidden)
@@ -38,13 +38,13 @@ func TestTaskManageSchemaHidesNexusExtensionsWithoutNexus(t *testing.T) {
 
 func TestTaskManageSchemaKeepsNexusExtensionsWithNexus(t *testing.T) {
 	cfg := config.Config{NexusEndpoint: "http://127.0.0.1:18777"}
-	inputProps := InputSchemaForConfig("task_manage", cfg)["properties"].(map[string]any)
+	inputProps := testInputSchemaForConfig("task_manage", cfg)["properties"].(map[string]any)
 	for _, field := range []string{"template_id", "source_template_ids", "learning_checks"} {
 		if _, ok := inputProps[field]; !ok {
 			t.Fatalf("task_manage input schema should expose %s with Nexus", field)
 		}
 	}
-	outputProps := OutputSchemaForConfig("task_manage", cfg)["properties"].(map[string]any)
+	outputProps := testOutputSchemaForConfig("task_manage", cfg)["properties"].(map[string]any)
 	for _, field := range []string{"guidance_context", "review_revision", "evolution_candidates", "evolution_warning"} {
 		if _, ok := outputProps[field]; !ok {
 			t.Fatalf("task_manage output schema should expose %s with Nexus", field)
@@ -76,6 +76,11 @@ func TestInputSchemaPublishesRuntimeBounds(t *testing.T) {
 		{tool: "exec_command", property: "max_output_bytes", minimum: 1, maximum: toolcommand.MaxOutputBytes},
 		{tool: "session_observe", property: "max_output_bytes", minimum: 1, maximum: toolcommand.MaxOutputBytes},
 		{tool: "session_act", property: "max_output_bytes", minimum: 1, maximum: toolcommand.MaxOutputBytes},
+		{tool: "task_manage", property: "limit", minimum: 1, maximum: 200},
+		{tool: "view_image", property: "max_source_bytes", minimum: 1, maximum: 100 * 1024 * 1024},
+		{tool: "view_image", property: "max_bytes", minimum: 1, maximum: 2 * 1024 * 1024},
+		{tool: "view_image", property: "quality", minimum: 35, maximum: 95},
+		{tool: "file_publish", property: "retention_seconds", minimum: 0, maximum: 7 * 24 * 60 * 60},
 		{tool: "browser_session", property: "timeout_ms", minimum: 1, maximum: 300000},
 		{tool: "browser_act", property: "timeout_ms", minimum: 1, maximum: 300000},
 		{tool: "browser_snapshot", property: "timeout_ms", minimum: 1, maximum: 300000},
@@ -84,7 +89,7 @@ func TestInputSchemaPublishesRuntimeBounds(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.tool+"/"+test.property, func(t *testing.T) {
-			schema := InputSchema(test.tool)
+			schema := testInputSchema(test.tool)
 			properties, ok := schema["properties"].(map[string]any)
 			if !ok {
 				t.Fatalf("properties type = %T", schema["properties"])
@@ -101,7 +106,7 @@ func TestInputSchemaPublishesRuntimeBounds(t *testing.T) {
 }
 
 func TestExecCommandInputSchemaPublishesExecutionModes(t *testing.T) {
-	schema := InputSchema("exec_command")
+	schema := testInputSchema("exec_command")
 	properties := schema["properties"].(map[string]any)
 	mode, ok := properties["execution_mode"].(map[string]any)
 	if !ok {
@@ -120,13 +125,13 @@ func TestExecCommandInputSchemaPublishesExecutionModes(t *testing.T) {
 }
 
 func TestExecCommandOutputSchemaPublishesSessionGuidance(t *testing.T) {
-	properties := OutputSchema("exec_command")["properties"].(map[string]any)
+	properties := testOutputSchema("exec_command")["properties"].(map[string]any)
 	for _, property := range []string{"session_reason", "observe_after_ms"} {
 		if _, exists := properties[property]; !exists {
 			t.Fatalf("exec_command output schema missing %s", property)
 		}
 	}
-	sessionProperties := OutputSchema("session_observe")["properties"].(map[string]any)
+	sessionProperties := testOutputSchema("session_observe")["properties"].(map[string]any)
 	if _, exists := sessionProperties["session_reason"]; exists {
 		t.Fatal("session_observe output schema unexpectedly exposes exec_command session guidance")
 	}
@@ -134,7 +139,7 @@ func TestExecCommandOutputSchemaPublishesSessionGuidance(t *testing.T) {
 
 func TestBrowserSchemasUseNativeCDPContract(t *testing.T) {
 	for _, tool := range []string{"browser_session", "browser_act", "browser_snapshot"} {
-		schema := InputSchema(tool)
+		schema := testInputSchema(tool)
 		if schema["additionalProperties"] != false {
 			t.Fatalf("%s additionalProperties = %#v, want false", tool, schema["additionalProperties"])
 		}
@@ -144,14 +149,14 @@ func TestBrowserSchemasUseNativeCDPContract(t *testing.T) {
 				t.Fatalf("%s input schema still exposes %s", tool, forbidden)
 			}
 		}
-		output := OutputSchema(tool)["properties"].(map[string]any)
+		output := testOutputSchema(tool)["properties"].(map[string]any)
 		for _, forbidden := range []string{"backend", "cdp_url", "browser_ownership", "browser_launch", "suggested_retry", "stdout", "stderr", "storage_state_path"} {
 			if _, exists := output[forbidden]; exists {
 				t.Fatalf("%s output schema still exposes %s", tool, forbidden)
 			}
 		}
 	}
-	sessionProperties := InputSchema("browser_session")["properties"].(map[string]any)
+	sessionProperties := testInputSchema("browser_session")["properties"].(map[string]any)
 	if _, exists := sessionProperties["cdp_url"]; !exists {
 		t.Fatal("browser_session input schema missing cdp_url")
 	}
@@ -159,7 +164,7 @@ func TestBrowserSchemasUseNativeCDPContract(t *testing.T) {
 		t.Fatal("browser_session must not let a tool call enable automatic CDP reuse; it is a user configuration")
 	}
 	for _, tool := range []string{"browser_act", "browser_snapshot"} {
-		properties := InputSchema(tool)["properties"].(map[string]any)
+		properties := testInputSchema(tool)["properties"].(map[string]any)
 		if _, exists := properties["cdp_url"]; exists {
 			t.Fatalf("%s must not expose cdp_url; CDP attachment belongs to browser_session", tool)
 		}
@@ -167,7 +172,7 @@ func TestBrowserSchemasUseNativeCDPContract(t *testing.T) {
 }
 
 func TestBrowserSessionSchemaPublishesSupportedBrowsers(t *testing.T) {
-	properties := InputSchema("browser_session")["properties"].(map[string]any)
+	properties := testInputSchema("browser_session")["properties"].(map[string]any)
 	browser := properties["browser"].(map[string]any)
 	values, ok := browser["enum"].([]string)
 	want := []string{"auto", "chrome", "chromium", "edge"}
@@ -182,7 +187,7 @@ func TestBrowserSessionSchemaPublishesSupportedBrowsers(t *testing.T) {
 }
 
 func TestBrowserActionSchemaIsStrictPerAction(t *testing.T) {
-	actions := InputSchema("browser_act")["properties"].(map[string]any)["actions"].(map[string]any)
+	actions := testInputSchema("browser_act")["properties"].(map[string]any)["actions"].(map[string]any)
 	items := actions["items"].(map[string]any)
 	branches, ok := items["oneOf"].([]map[string]any)
 	if !ok || len(branches) != 14 {
@@ -213,7 +218,7 @@ func TestBrowserActionSchemaIsStrictPerAction(t *testing.T) {
 }
 
 func TestViewImageInputSchemaDeclaresObjectTypeForEveryOneOfBranch(t *testing.T) {
-	schema := InputSchema("view_image")
+	schema := testInputSchema("view_image")
 	if schema["type"] != "object" {
 		t.Fatalf("root type = %#v, want object", schema["type"])
 	}
