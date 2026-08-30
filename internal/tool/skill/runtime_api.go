@@ -75,7 +75,7 @@ func (s *Service) RuntimeSkills() (Result, error) {
 }
 
 func (s *Service) RuntimeSkill(skill string) (Result, error) {
-	result, err := s.inspect(map[string]any{"skill": skill})
+	result, err := s.inspect(InspectRequest{Skill: skill})
 	if err != nil {
 		return nil, err
 	}

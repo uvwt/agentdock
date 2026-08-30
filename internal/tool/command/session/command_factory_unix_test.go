@@ -29,7 +29,7 @@ func TestStartCommandWithTTYRunsDirectCommandFactory(t *testing.T) {
 		t.Fatal("direct command factory did not finish")
 	}
 	result := s.Snapshot("exited", 1024)
-	if result["exit_code"] != 0 || result["stdout"] != "direct-factory" {
+	if result.ExitCode != 0 || result.Stdout != "direct-factory" {
 		t.Fatalf("direct command result = %#v", result)
 	}
 }

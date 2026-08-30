@@ -24,7 +24,7 @@ func TestCommandOutputLimit(t *testing.T) {
 		{name: "capped", args: map[string]any{"max_output_bytes": MaxOutputBytes + 1}, want: MaxOutputBytes},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if got := commandOutputLimit(test.args); got != test.want {
+			if got := commandOutputLimitArgs(test.args); got != test.want {
 				t.Fatalf("commandOutputLimit() = %d, want %d", got, test.want)
 			}
 		})
@@ -34,7 +34,7 @@ func TestCommandOutputLimit(t *testing.T) {
 func TestExecCommandRejectsNonPositiveTimeout(t *testing.T) {
 	runtime, _ := newCommandTestService(t)
 	for _, timeout := range []int{-1, 0} {
-		_, err := runtime.Exec(context.Background(), map[string]any{"cmd": "true", "timeout_ms": timeout})
+		_, err := runtime.execArgs(context.Background(), map[string]any{"cmd": "true", "timeout_ms": timeout})
 		var toolErr *ToolError
 		if !errors.As(err, &toolErr) || toolErr.Code != "INVALID_TIMEOUT" {
 			t.Fatalf("timeout_ms=%d error = %#v", timeout, err)
@@ -44,7 +44,7 @@ func TestExecCommandRejectsNonPositiveTimeout(t *testing.T) {
 
 func TestExecCommandRejectsInvalidExecutionMode(t *testing.T) {
 	runtime, _ := newCommandTestService(t)
-	_, err := runtime.Exec(context.Background(), map[string]any{
+	_, err := runtime.execArgs(context.Background(), map[string]any{
 		"cmd":            "must-not-start",
 		"execution_mode": "background",
 	})
@@ -62,7 +62,7 @@ func TestExecCommandDefaultsToAutoAndWaitsForShortCommand(t *testing.T) {
 		t.Skip("test command uses POSIX shell syntax")
 	}
 	runtime, _ := newCommandTestService(t)
-	result, err := runtime.Exec(context.Background(), map[string]any{
+	result, err := runtime.execArgs(context.Background(), map[string]any{
 		"cmd":        "sleep 0.02; printf 'completed'",
 		"timeout_ms": 2000,
 	})
@@ -79,7 +79,7 @@ func TestExecCommandSyncWaitsPastForegroundThreshold(t *testing.T) {
 		t.Skip("test command uses POSIX shell syntax")
 	}
 	runtime, _ := newCommandTestService(t)
-	result, err := runtime.Exec(context.Background(), map[string]any{
+	result, err := runtime.execArgs(context.Background(), map[string]any{
 		"cmd":            "sleep 0.02; printf 'completed'",
 		"execution_mode": "sync",
 		"yield_time_ms":  1,
@@ -98,7 +98,7 @@ func TestExecCommandAsyncReturnsSessionImmediately(t *testing.T) {
 		t.Skip("test command uses POSIX sleep")
 	}
 	runtime, _ := newCommandTestService(t)
-	result, err := runtime.Exec(context.Background(), map[string]any{
+	result, err := runtime.execArgs(context.Background(), map[string]any{
 		"cmd":            "sleep 10",
 		"execution_mode": "async",
 		"timeout_ms":     20000,
@@ -110,7 +110,7 @@ func TestExecCommandAsyncReturnsSessionImmediately(t *testing.T) {
 	if result["status"] != "running" || sessionID == "" || result["session_reason"] != "explicit_async" {
 		t.Fatalf("async result = %#v", result)
 	}
-	if _, err := runtime.killSession(map[string]any{"session_id": sessionID}); err != nil {
+	if _, err := runtime.killSessionArgs(map[string]any{"session_id": sessionID}); err != nil {
 		t.Fatalf("killSession() error = %v", err)
 	}
 }
@@ -120,7 +120,7 @@ func TestExecCommandReportsCommandStatusWithoutGenericOK(t *testing.T) {
 		t.Skip("test command uses POSIX shell syntax")
 	}
 	runtime, _ := newCommandTestService(t)
-	result, err := runtime.Exec(context.Background(), map[string]any{
+	result, err := runtime.execArgs(context.Background(), map[string]any{
 		"cmd":            "printf 'before-fail'; printf 'failed' >&2; exit 7",
 		"yield_time_ms":  5000,
 		"execution_mode": "sync",
@@ -148,7 +148,7 @@ func TestExecCommandTimeoutReportsCommandError(t *testing.T) {
 		t.Skip("test command uses POSIX shell syntax")
 	}
 	runtime, _ := newCommandTestService(t)
-	result, err := runtime.Exec(context.Background(), map[string]any{
+	result, err := runtime.execArgs(context.Background(), map[string]any{
 		"cmd":            "sleep 1",
 		"yield_time_ms":  5000,
 		"execution_mode": "sync",
@@ -170,7 +170,7 @@ func TestListSessionsKeepsCompletedResultAvailable(t *testing.T) {
 		t.Skip("test command uses POSIX shell syntax")
 	}
 	runtime, _ := newCommandTestService(t)
-	started, err := runtime.Exec(context.Background(), map[string]any{
+	started, err := runtime.execArgs(context.Background(), map[string]any{
 		"cmd":           "sleep 0.05; printf 'completed-output'",
 		"yield_time_ms": 1,
 		"timeout_ms":    2000,
@@ -207,7 +207,7 @@ func TestListSessionsKeepsCompletedResultAvailable(t *testing.T) {
 		t.Fatalf("listed sessions = %#v, want completed session", listed["sessions"])
 	}
 
-	result, err := runtime.sessionStatus(map[string]any{"session_id": sessionID})
+	result, err := runtime.sessionStatusArgs(map[string]any{"session_id": sessionID})
 	if err != nil {
 		t.Fatalf("sessionStatus() error = %v", err)
 	}
@@ -224,7 +224,7 @@ func TestKillCompletedSessionReturnsActualStatus(t *testing.T) {
 		t.Skip("test command uses POSIX shell syntax")
 	}
 	runtime, _ := newCommandTestService(t)
-	started, err := runtime.Exec(context.Background(), map[string]any{
+	started, err := runtime.execArgs(context.Background(), map[string]any{
 		"cmd": "sleep 0.02; printf 'already-done'", "yield_time_ms": 1, "timeout_ms": 2000,
 	})
 	if err != nil {
@@ -241,7 +241,7 @@ func TestKillCompletedSessionReturnsActualStatus(t *testing.T) {
 		t.Fatal("command did not complete")
 	}
 
-	result, err := runtime.killSession(map[string]any{"session_id": sessionID})
+	result, err := runtime.killSessionArgs(map[string]any{"session_id": sessionID})
 	if err != nil {
 		t.Fatalf("killSession() error = %v", err)
 	}
@@ -255,7 +255,7 @@ func TestKillAllSessionsKeepsCompletedStatus(t *testing.T) {
 		t.Skip("test command uses POSIX shell syntax")
 	}
 	runtime, _ := newCommandTestService(t)
-	started, err := runtime.Exec(context.Background(), map[string]any{
+	started, err := runtime.execArgs(context.Background(), map[string]any{
 		"cmd": "sleep 0.02", "yield_time_ms": 1, "timeout_ms": 2000,
 	})
 	if err != nil {
@@ -271,7 +271,7 @@ func TestKillAllSessionsKeepsCompletedStatus(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("command did not complete")
 	}
-	result, err := runtime.killAll(nil)
+	result, err := runtime.killAll()
 	if err != nil {
 		t.Fatalf("killAllSessions() error = %v", err)
 	}
@@ -286,7 +286,7 @@ func TestKillSessionWaitsForProcessExit(t *testing.T) {
 		t.Skip("test command uses POSIX shell syntax")
 	}
 	runtime, _ := newCommandTestService(t)
-	started, err := runtime.Exec(context.Background(), map[string]any{
+	started, err := runtime.execArgs(context.Background(), map[string]any{
 		"cmd":           "sleep 10",
 		"yield_time_ms": 1,
 		"timeout_ms":    20000,
@@ -300,7 +300,7 @@ func TestKillSessionWaitsForProcessExit(t *testing.T) {
 		t.Fatalf("session %q was not stored", sessionID)
 	}
 
-	result, err := runtime.killSession(map[string]any{"session_id": sessionID})
+	result, err := runtime.killSessionArgs(map[string]any{"session_id": sessionID})
 	if err != nil {
 		t.Fatalf("killSession() error = %v", err)
 	}
@@ -343,7 +343,7 @@ func TestKillAllSessionsWaitsForEveryProcess(t *testing.T) {
 	runtime, _ := newCommandTestService(t)
 	sessions := make([]*session.Session, 0, 2)
 	for range 2 {
-		started, err := runtime.Exec(context.Background(), map[string]any{
+		started, err := runtime.execArgs(context.Background(), map[string]any{
 			"cmd": "sleep 10", "yield_time_ms": 1, "timeout_ms": 20000,
 		})
 		if err != nil {
@@ -357,7 +357,7 @@ func TestKillAllSessionsWaitsForEveryProcess(t *testing.T) {
 		sessions = append(sessions, stored)
 	}
 
-	result, err := runtime.killAll(nil)
+	result, err := runtime.killAll()
 	if err != nil {
 		t.Fatalf("killAllSessions() error = %v", err)
 	}
@@ -381,7 +381,7 @@ func TestSessionActWriteAfterCompletionReturnsFinalOutput(t *testing.T) {
 		t.Skip("test command uses POSIX shell syntax")
 	}
 	runtime, _ := newCommandTestService(t)
-	started, err := runtime.Exec(context.Background(), map[string]any{
+	started, err := runtime.execArgs(context.Background(), map[string]any{
 		"cmd": "sleep 0.05; printf 'final-output'", "yield_time_ms": 1, "timeout_ms": 2000,
 	})
 	if err != nil {
@@ -398,7 +398,7 @@ func TestSessionActWriteAfterCompletionReturnsFinalOutput(t *testing.T) {
 		t.Fatal("command did not complete")
 	}
 
-	result, err := runtime.writeStdin(map[string]any{"session_id": sessionID, "chars": "late-input"})
+	result, err := runtime.writeStdinArgs(map[string]any{"session_id": sessionID, "chars": "late-input"})
 	if err != nil {
 		t.Fatalf("writeStdin() error = %v", err)
 	}
@@ -415,7 +415,7 @@ func TestSessionActWritesInputAndReturnsFinalOutput(t *testing.T) {
 		t.Skip("test command uses POSIX shell syntax")
 	}
 	runtime, _ := newCommandTestService(t)
-	started, err := runtime.Exec(context.Background(), map[string]any{
+	started, err := runtime.execArgs(context.Background(), map[string]any{
 		"cmd":           "IFS= read -r line; printf 'received:%s' \"$line\"",
 		"tty":           true,
 		"yield_time_ms": 1,
@@ -428,7 +428,7 @@ func TestSessionActWritesInputAndReturnsFinalOutput(t *testing.T) {
 	if sessionID == "" {
 		t.Fatalf("initial result missing session_id: %#v", started)
 	}
-	result, err := runtime.writeStdin(map[string]any{"session_id": sessionID, "chars": "hello\n"})
+	result, err := runtime.writeStdinArgs(map[string]any{"session_id": sessionID, "chars": "hello\n"})
 	if err != nil {
 		t.Fatalf("writeStdin() error = %v", err)
 	}
@@ -443,7 +443,7 @@ func TestSessionActWritesInputAndReturnsFinalOutput(t *testing.T) {
 	}
 	deadline := time.Now().Add(time.Second)
 	for result["status"] != "exited" && time.Now().Before(deadline) {
-		result, err = runtime.sessionStatus(map[string]any{"session_id": sessionID})
+		result, err = runtime.sessionStatusArgs(map[string]any{"session_id": sessionID})
 		if err != nil {
 			if !strings.Contains(err.Error(), "session not found") {
 				t.Fatalf("sessionStatus() error = %v", err)
@@ -472,7 +472,7 @@ func TestExecCommandRejectsWhenRunningSessionLimitIsReached(t *testing.T) {
 			Done:      make(chan struct{}),
 		})
 	}
-	_, err := rt.Exec(context.Background(), map[string]any{"cmd": "must-not-start"})
+	_, err := rt.execArgs(context.Background(), map[string]any{"cmd": "must-not-start"})
 	var toolErr *ToolError
 	if !errors.As(err, &toolErr) || toolErr.Code != "SESSION_LIMIT_REACHED" {
 		t.Fatalf("execCommand() error = %#v, want SESSION_LIMIT_REACHED", err)

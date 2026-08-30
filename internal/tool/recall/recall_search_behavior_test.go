@@ -14,7 +14,7 @@ func TestRecallSearchKeepsNativeFieldsAndAddsSourceIdentity(t *testing.T) {
 	})
 	defer closeServer()
 
-	got, err := service.Search(context.Background(), map[string]any{"query": "AgentDock", "kind": "markdown"})
+	got, err := service.searchTest(context.Background(), map[string]any{"query": "AgentDock", "kind": "markdown"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestRecallSearchKindFiltersCardsFromMarkdown(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.kind, func(t *testing.T) {
-			result, err := service.Search(context.Background(), map[string]any{
+			result, err := service.searchTest(context.Background(), map[string]any{
 				"query": "shared recall term",
 				"kind":  test.kind,
 			})

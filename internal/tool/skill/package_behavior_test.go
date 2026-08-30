@@ -35,7 +35,7 @@ Read references and call existing tools.
 
 	rt, _ := newSkillTestServiceAtRoot(t, root)
 
-	validated, err := rt.Package(context.Background(), map[string]any{
+	validated, err := rt.packageTest(context.Background(), map[string]any{
 		"action": "validate",
 		"source": "demo-skill",
 	})
@@ -54,7 +54,7 @@ Read references and call existing tools.
 		t.Fatalf("unexpected document: %#v", validated["document"])
 	}
 
-	installed, err := rt.Package(context.Background(), map[string]any{
+	installed, err := rt.packageTest(context.Background(), map[string]any{
 		"action":   "install",
 		"source":   "demo-skill",
 		"activate": true,
@@ -67,7 +67,7 @@ Read references and call existing tools.
 		t.Fatalf("unexpected install result: %#v", installed["result"])
 	}
 
-	environment, err := rt.Package(context.Background(), map[string]any{
+	environment, err := rt.packageTest(context.Background(), map[string]any{
 		"action": "env_list", "skill": "demo-skill",
 	})
 	if err != nil {
@@ -80,7 +80,7 @@ Read references and call existing tools.
 	if err := rt.state.ReplaceBundledSkills(context.Background(), []string{"demo-skill"}); err != nil {
 		t.Fatal(err)
 	}
-	inspected, err := rt.inspect(map[string]any{"skill": "demo-skill"})
+	inspected, err := rt.inspectTest(map[string]any{"skill": "demo-skill"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestSkillPackageRejectsLegacyManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	rt, _ := newSkillTestServiceAtRoot(t, root)
-	validated, err := rt.Package(context.Background(), map[string]any{"action": "validate", "source": "legacy-skill"})
+	validated, err := rt.packageTest(context.Background(), map[string]any{"action": "validate", "source": "legacy-skill"})
 	if err != nil {
 		t.Fatal(err)
 	}

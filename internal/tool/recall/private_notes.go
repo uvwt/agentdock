@@ -11,30 +11,65 @@ const (
 	maxPrivateNoteReadBytes     = 1 << 20
 )
 
-func (svc *Service) PrivateNoteManage(ctx context.Context, args map[string]any) (Result, error) {
-	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
+func (svc *Service) PrivateNoteManage(ctx context.Context, request PrivateNoteRequest) (Result, error) {
+	action := strings.ToLower(strings.TrimSpace(request.Action))
 	payload := map[string]any{}
 	endpoint := ""
 
 	switch action {
 	case "search":
 		endpoint = "/v1/private-notes/search"
-		copyPrivateNoteArgs(args, payload, "query", "max_results")
+		if request.Query != "" {
+			payload["query"] = request.Query
+		}
+		if request.MaxResults != nil {
+			payload["max_results"] = *request.MaxResults
+		}
 	case "read":
 		endpoint = "/v1/private-notes/read"
-		copyPrivateNoteArgs(args, payload, "path", "max_bytes")
+		if request.Path != "" {
+			payload["path"] = request.Path
+		}
+		if request.MaxBytes != nil {
+			payload["max_bytes"] = *request.MaxBytes
+		}
 	case "write":
 		endpoint = "/v1/private-notes/write"
-		copyPrivateNoteArgs(args, payload, "path", "category", "title", "summary", "tags", "content", "confirmed", "overwrite")
+		copyPrivateNoteStrings(payload, map[string]string{
+			"path": request.Path, "category": request.Category, "title": request.Title,
+			"summary": request.Summary, "content": request.Content,
+		})
+		if len(request.Tags) > 0 {
+			payload["tags"] = append([]string(nil), request.Tags...)
+		}
+		if request.Confirmed != nil {
+			payload["confirmed"] = *request.Confirmed
+		}
+		if request.Overwrite != nil {
+			payload["overwrite"] = *request.Overwrite
+		}
 	case "delete":
 		endpoint = "/v1/private-notes/delete"
-		copyPrivateNoteArgs(args, payload, "path", "confirmed")
+		if request.Path != "" {
+			payload["path"] = request.Path
+		}
+		if request.Confirmed != nil {
+			payload["confirmed"] = *request.Confirmed
+		}
 	case "status":
 		endpoint = "/v1/private-notes/status"
-		payload["action"] = strings.ToLower(strings.TrimSpace(stringArg(args, "status_action", "check")))
+		statusAction := strings.ToLower(strings.TrimSpace(request.StatusAction))
+		if statusAction == "" {
+			statusAction = "check"
+		}
+		payload["action"] = statusAction
 	case "maintain":
 		endpoint = "/v1/private-notes/maintenance"
-		payload["action"] = strings.ToLower(strings.TrimSpace(stringArg(args, "maintenance_action", "sync-encrypted")))
+		maintenanceAction := strings.ToLower(strings.TrimSpace(request.MaintenanceAction))
+		if maintenanceAction == "" {
+			maintenanceAction = "sync-encrypted"
+		}
+		payload["action"] = maintenanceAction
 	default:
 		return nil, toolErrorDetails("INVALID_PRIVATE_NOTE_ACTION", "unsupported private_note_manage action", "validation", map[string]any{
 			"action":  action,
@@ -50,12 +85,10 @@ func (svc *Service) PrivateNoteManage(ctx context.Context, args map[string]any) 
 	return result, nil
 }
 
-func copyPrivateNoteArgs(src, dst map[string]any, keys ...string) {
-	for _, key := range keys {
-		value, ok := src[key]
-		if !ok || value == nil {
-			continue
+func copyPrivateNoteStrings(dst map[string]any, values map[string]string) {
+	for key, value := range values {
+		if value != "" {
+			dst[key] = value
 		}
-		dst[key] = value
 	}
 }

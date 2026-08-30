@@ -9,19 +9,19 @@ import (
 	"github.com/uvwt/agentdock/internal/tool/command/session"
 )
 
-func (svc *Service) prepareCommandInvocation(args map[string]any, command string) (commandInvocation, error) {
-	runtimeName := strings.ToLower(strings.TrimSpace(stringArg(args, "runtime", "windows")))
+func (svc *Service) prepareCommandInvocation(request ExecRequest) (commandInvocation, error) {
+	runtimeName := strings.ToLower(strings.TrimSpace(request.Runtime))
 	if runtimeName == "" {
 		runtimeName = "windows"
 	}
-	distribution := strings.TrimSpace(stringArg(args, "wsl_distribution", ""))
+	distribution := strings.TrimSpace(request.WSLDistribution)
 
 	switch runtimeName {
 	case "windows":
 		if distribution != "" {
 			return commandInvocation{}, toolError("INVALID_ARGUMENT", "wsl_distribution is only valid when runtime is wsl", "validation")
 		}
-		invocation, err := svc.newHostCommandInvocation(args, command)
+		invocation, err := svc.newHostCommandInvocation(request)
 		if err != nil {
 			return commandInvocation{}, err
 		}
@@ -32,7 +32,7 @@ func (svc *Service) prepareCommandInvocation(args map[string]any, command string
 		return invocation, nil
 
 	case "wsl":
-		skillContext, err := parseCommandSkillContext(args)
+		skillContext, err := parseCommandSkillContext(request)
 		if err != nil {
 			return commandInvocation{}, err
 		}
@@ -45,11 +45,11 @@ func (svc *Service) prepareCommandInvocation(args map[string]any, command string
 				map[string]any{"reason": err.Error()},
 			)
 		}
-		workdir, err := svc.resolveWSLWorkdir(args, skillContext.skill)
+		workdir, err := svc.resolveWSLWorkdir(request.Workdir, skillContext.skill)
 		if err != nil {
 			return commandInvocation{}, err
 		}
-		linuxEnv, err := svc.commandEnvOverrides(skillContext.envSkill, mapArg(args, "env"))
+		linuxEnv, err := svc.commandEnvOverrides(skillContext.envSkill, request.Env)
 		if err != nil {
 			return commandInvocation{}, err
 		}
@@ -57,7 +57,7 @@ func (svc *Service) prepareCommandInvocation(args map[string]any, command string
 		if err != nil {
 			return commandInvocation{}, err
 		}
-		wslArgs := buildWSLCommandArgs(distribution, workdir, command)
+		wslArgs := buildWSLCommandArgs(distribution, workdir, request.Cmd)
 		return commandInvocation{
 			build: newWSLCommandFactory(wslPath, wslArgs, buildWSLProcessEnv(hostEnv, linuxEnv), svc.ws.DefaultCWD()),
 			execution: session.ExecutionContext{
@@ -77,7 +77,7 @@ func (svc *Service) prepareCommandInvocation(args map[string]any, command string
 	}
 }
 
-func (svc *Service) resolveWSLWorkdir(args map[string]any, skill string) (string, error) {
+func (svc *Service) resolveWSLWorkdir(requested string, skill string) (string, error) {
 	skillDir := ""
 	if skill != "" {
 		hostPath, err := svc.resolveSkillCommandDir(skill)
@@ -95,7 +95,7 @@ func (svc *Service) resolveWSLWorkdir(args map[string]any, skill string) (string
 		}
 		skillDir = converted
 	}
-	raw := strings.TrimSpace(stringArg(args, "workdir", ""))
+	raw := strings.TrimSpace(requested)
 	if raw == "" && skillDir != "" {
 		return skillDir, nil
 	}

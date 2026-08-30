@@ -47,20 +47,17 @@ func TestStartCapturesCompleteOutputAndExitState(t *testing.T) {
 		t.Fatal("WaitError() = nil, want exit error")
 	}
 	result := s.Snapshot("exited", 1<<20)
-	if result["stdout"] != "stdout-value" {
-		t.Fatalf("stdout = %#v", result["stdout"])
+	if result.Stdout != "stdout-value" {
+		t.Fatalf("stdout = %#v", result.Stdout)
 	}
-	if result["stderr"] != "stderr-value" {
-		t.Fatalf("stderr = %#v", result["stderr"])
+	if result.Stderr != "stderr-value" {
+		t.Fatalf("stderr = %#v", result.Stderr)
 	}
-	if result["exit_code"] != 7 || result["command_ok"] != false {
-		t.Fatalf("exit state = exit_code:%#v command_ok:%#v", result["exit_code"], result["command_ok"])
+	if result.ExitCode != 7 || result.CommandOK != false {
+		t.Fatalf("exit state = exit_code:%#v command_ok:%#v", result.ExitCode, result.CommandOK)
 	}
-	if _, exists := result["ok"]; exists {
-		t.Fatalf("snapshot must not expose generic ok: %#v", result)
-	}
-	if result["stdout_total_bytes"] != len("stdout-value") || result["stderr_total_bytes"] != len("stderr-value") {
-		t.Fatalf("byte totals = stdout:%#v stderr:%#v", result["stdout_total_bytes"], result["stderr_total_bytes"])
+	if result.StdoutTotalBytes != len("stdout-value") || result.StderrTotalBytes != len("stderr-value") {
+		t.Fatalf("byte totals = stdout:%#v stderr:%#v", result.StdoutTotalBytes, result.StderrTotalBytes)
 	}
 }
 
@@ -85,14 +82,14 @@ func TestStartCapturesFastCommandOutputRepeatedly(t *testing.T) {
 			t.Fatalf("iteration %d WaitError() = %v", iteration, err)
 		}
 		result := s.Snapshot("exited", 1024)
-		if result["stdout"] != "fast-output" {
-			t.Fatalf("iteration %d stdout = %#v, want fast-output", iteration, result["stdout"])
+		if result.Stdout != "fast-output" {
+			t.Fatalf("iteration %d stdout = %#v, want fast-output", iteration, result.Stdout)
 		}
-		if result["stdout_total_bytes"] != len("fast-output") {
-			t.Fatalf("iteration %d stdout_total_bytes = %#v", iteration, result["stdout_total_bytes"])
+		if result.StdoutTotalBytes != len("fast-output") {
+			t.Fatalf("iteration %d stdout_total_bytes = %#v", iteration, result.StdoutTotalBytes)
 		}
-		if result["command_ok"] != true {
-			t.Fatalf("iteration %d command_ok = %#v, want true", iteration, result["command_ok"])
+		if result.CommandOK != true {
+			t.Fatalf("iteration %d command_ok = %#v, want true", iteration, result.CommandOK)
 		}
 	}
 }
@@ -133,10 +130,7 @@ func TestStartWaitsForOutputReadersBeforeCompletion(t *testing.T) {
 	}
 
 	result := s.Snapshot("exited", 1<<20)
-	stdout, ok := result["stdout"].(string)
-	if !ok {
-		t.Fatalf("stdout type = %T", result["stdout"])
-	}
+	stdout := result.Stdout
 	if got := strings.Count(stdout, "\n"); got != lineCount {
 		t.Fatalf("stdout line count = %d, want %d", got, lineCount)
 	}
@@ -161,14 +155,14 @@ func TestStartMarksTimeout(t *testing.T) {
 		t.Fatal("WaitError() = nil, want timeout termination error")
 	}
 	result := s.Snapshot("timeout", 1024)
-	if result["timed_out"] != true {
-		t.Fatalf("snapshot timed_out = %#v", result["timed_out"])
+	if result.TimedOut != true {
+		t.Fatalf("snapshot timed_out = %#v", result.TimedOut)
 	}
-	if _, ok := result["exit_code"]; !ok {
-		t.Fatalf("snapshot missing exit_code: %#v", result)
+	if !result.Completed {
+		t.Fatalf("completed snapshot marked incomplete: %#v", result)
 	}
-	if result["command_ok"] != false {
-		t.Fatalf("timeout command_ok = %#v, want false", result["command_ok"])
+	if result.CommandOK != false {
+		t.Fatalf("timeout command_ok = %#v, want false", result.CommandOK)
 	}
 }
 
@@ -183,23 +177,20 @@ func TestSnapshotReturnsOnlyNewOutput(t *testing.T) {
 	s := &Session{ID: "test", StartedAt: time.Now(), exitCode: -1}
 	_, _ = s.stdout.WriteString("first\n")
 	first := s.Snapshot("running", 1024)
-	if _, exists := first["command_ok"]; exists {
-		t.Fatalf("running snapshot must not expose command_ok: %#v", first)
+	if first.Completed {
+		t.Fatalf("running snapshot marked completed: %#v", first)
 	}
-	if _, exists := first["ok"]; exists {
-		t.Fatalf("running snapshot must not expose generic ok: %#v", first)
-	}
-	if first["stdout"] != "first\n" {
-		t.Fatalf("first stdout = %#v", first["stdout"])
+	if first.Stdout != "first\n" {
+		t.Fatalf("first stdout = %#v", first.Stdout)
 	}
 	second := s.Snapshot("running", 1024)
-	if second["stdout"] != "" {
-		t.Fatalf("second stdout = %#v, want empty delta", second["stdout"])
+	if second.Stdout != "" {
+		t.Fatalf("second stdout = %#v, want empty delta", second.Stdout)
 	}
 	_, _ = s.stdout.WriteString("second\n")
 	third := s.Snapshot("running", 1024)
-	if third["stdout"] != "second\n" {
-		t.Fatalf("third stdout = %#v", third["stdout"])
+	if third.Stdout != "second\n" {
+		t.Fatalf("third stdout = %#v", third.Stdout)
 	}
 }
 
@@ -311,12 +302,12 @@ func TestPeekDoesNotConsumeOutput(t *testing.T) {
 	s := &Session{ID: "test", StartedAt: time.Now(), exitCode: -1}
 	_, _ = s.stdout.WriteString("pending\n")
 	peeked := s.Peek("running", 1024)
-	if peeked["stdout"] != "pending\n" {
-		t.Fatalf("peek stdout = %#v", peeked["stdout"])
+	if peeked.Stdout != "pending\n" {
+		t.Fatalf("peek stdout = %#v", peeked.Stdout)
 	}
 	observed := s.Snapshot("running", 1024)
-	if observed["stdout"] != "pending\n" {
-		t.Fatalf("snapshot after peek stdout = %#v", observed["stdout"])
+	if observed.Stdout != "pending\n" {
+		t.Fatalf("snapshot after peek stdout = %#v", observed.Stdout)
 	}
 }
 

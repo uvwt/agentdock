@@ -7,7 +7,7 @@ import "testing"
 func TestResolveWSLWorkdirAcceptsWindowsAndLinuxPaths(t *testing.T) {
 	service, _ := newCommandTestService(t)
 
-	windowsPath, err := service.resolveWSLWorkdir(map[string]any{"workdir": `D:\Project\synapse`}, "")
+	windowsPath, err := service.resolveWSLWorkdir(`D:\Project\synapse`, "")
 	if err != nil {
 		t.Fatalf("resolve Windows path: %v", err)
 	}
@@ -15,7 +15,7 @@ func TestResolveWSLWorkdirAcceptsWindowsAndLinuxPaths(t *testing.T) {
 		t.Fatalf("Windows path resolved to %q", windowsPath)
 	}
 
-	extendedPath, err := service.resolveWSLWorkdir(map[string]any{"workdir": `\\?\E:\Work`}, "")
+	extendedPath, err := service.resolveWSLWorkdir(`\\?\E:\Work`, "")
 	if err != nil {
 		t.Fatalf("resolve extended Windows path: %v", err)
 	}
@@ -23,7 +23,7 @@ func TestResolveWSLWorkdirAcceptsWindowsAndLinuxPaths(t *testing.T) {
 		t.Fatalf("extended Windows path resolved to %q", extendedPath)
 	}
 
-	linuxPath, err := service.resolveWSLWorkdir(map[string]any{"workdir": "/home/a/project"}, "")
+	linuxPath, err := service.resolveWSLWorkdir("/home/a/project", "")
 	if err != nil {
 		t.Fatalf("resolve Linux path: %v", err)
 	}
@@ -31,14 +31,14 @@ func TestResolveWSLWorkdirAcceptsWindowsAndLinuxPaths(t *testing.T) {
 		t.Fatalf("Linux path resolved to %q", linuxPath)
 	}
 
-	if _, err := service.resolveWSLWorkdir(map[string]any{"workdir": `\\server\share`}, ""); err == nil {
+	if _, err := service.resolveWSLWorkdir(`\\server\share`, ""); err == nil {
 		t.Fatal("expected UNC path to be rejected")
 	}
 }
 
 func TestPrepareCommandInvocationRejectsWSLDistributionForWindowsRuntime(t *testing.T) {
 	service, _ := newCommandTestService(t)
-	_, err := service.prepareCommandInvocation(map[string]any{
+	_, err := service.prepareCommandInvocationArgs(map[string]any{
 		"runtime":          "windows",
 		"wsl_distribution": "Ubuntu",
 	}, "Write-Output ok")

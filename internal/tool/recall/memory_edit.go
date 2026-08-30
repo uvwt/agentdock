@@ -51,8 +51,8 @@ type memoryLintFinding struct {
 	Text string `json:"text"`
 }
 
-func (svc *Service) memoryDiff(ctx context.Context, args map[string]any) (Result, error) {
-	p := strings.TrimSpace(stringArg(args, "path", ""))
+func (svc *Service) memoryDiff(ctx context.Context, request WriteRequest) (Result, error) {
+	p := strings.TrimSpace(request.Path)
 	if p == "" {
 		return nil, toolError("MISSING_PATH", "path is required", "validation")
 	}
@@ -60,10 +60,10 @@ func (svc *Service) memoryDiff(ctx context.Context, args map[string]any) (Result
 	if err != nil {
 		return nil, err
 	}
-	proposed := firstNonEmptyString(args, "content", "proposed_content", "new_content")
+	proposed := request.Content
 	operationCount, changeCount := 0, 0
 	if proposed == "" {
-		out, err := applyMemoryPatchOperations(current, args)
+		out, err := applyMemoryPatchOperations(current, request)
 		if err != nil {
 			return nil, err
 		}
@@ -71,7 +71,7 @@ func (svc *Service) memoryDiff(ctx context.Context, args map[string]any) (Result
 		operationCount = out.OperationCount
 		changeCount = out.ChangeCount
 	}
-	maxBytes := intArg(args, "max_bytes", 60000)
+	maxBytes := intValue(request.MaxBytes, 60000)
 	if maxBytes <= 0 {
 		maxBytes = 60000
 	}
@@ -79,8 +79,8 @@ func (svc *Service) memoryDiff(ctx context.Context, args map[string]any) (Result
 	return Result{"path": p, "changed": current != proposed, "diff": diff, "truncated": len(diff) >= maxBytes, "operation_count": operationCount, "change_count": changeCount}, nil
 }
 
-func (svc *Service) memoryPatch(ctx context.Context, args map[string]any) (Result, error) {
-	p := strings.TrimSpace(stringArg(args, "path", ""))
+func (svc *Service) memoryPatch(ctx context.Context, request WriteRequest) (Result, error) {
+	p := strings.TrimSpace(request.Path)
 	if p == "" {
 		return nil, toolError("MISSING_PATH", "path is required", "validation")
 	}
@@ -88,13 +88,13 @@ func (svc *Service) memoryPatch(ctx context.Context, args map[string]any) (Resul
 	if err != nil {
 		return nil, err
 	}
-	out, err := applyMemoryPatchOperations(current, args)
+	out, err := applyMemoryPatchOperations(current, request)
 	if err != nil {
 		return nil, err
 	}
-	dryRun := boolArg(args, "dry_run", !boolArg(args, "confirmed", false))
-	confirmed := boolArg(args, "confirmed", false)
-	maxBytes := intArg(args, "max_bytes", 60000)
+	confirmed := boolValue(request.Confirmed, false)
+	dryRun := boolValue(request.DryRun, !confirmed)
+	maxBytes := intValue(request.MaxBytes, 60000)
 	if maxBytes <= 0 {
 		maxBytes = 60000
 	}
@@ -115,41 +115,34 @@ func (svc *Service) memoryPatch(ctx context.Context, args map[string]any) (Resul
 	return result, nil
 }
 
-func (svc *Service) memoryAppend(ctx context.Context, args map[string]any) (Result, error) {
-	appendText := firstNonEmptyString(args, "append", "content")
+func (svc *Service) memoryAppend(ctx context.Context, request WriteRequest) (Result, error) {
+	appendText := firstNonEmptyValue(request.Append, request.Content)
 	if strings.TrimSpace(appendText) == "" {
 		return nil, toolError("MISSING_CONTENT", "append or content is required", "validation")
 	}
-	patchArgs := map[string]any{
-		"path":      stringArg(args, "path", ""),
-		"append":    appendText,
-		"confirmed": boolArg(args, "confirmed", false),
-	}
-	if maxBytes := intArg(args, "max_bytes", 0); maxBytes > 0 {
-		patchArgs["max_bytes"] = maxBytes
-	}
-	return svc.memoryPatch(ctx, patchArgs)
+	patchRequest := request
+	patchRequest.Append = appendText
+	patchRequest.Content = ""
+	return svc.memoryPatch(ctx, patchRequest)
 }
 
-func (svc *Service) memoryUpdateFact(ctx context.Context, args map[string]any) (Result, error) {
-	p := strings.TrimSpace(stringArg(args, "path", ""))
+func (svc *Service) memoryUpdateFact(ctx context.Context, request WriteRequest) (Result, error) {
+	p := strings.TrimSpace(request.Path)
 	if p == "" {
 		return nil, toolError("MISSING_PATH", "path is required", "validation")
 	}
 	facts := map[string]string{}
-	if key := strings.TrimSpace(stringArg(args, "key", "")); key != "" {
-		value, ok := args["value"]
-		if !ok || value == nil {
+	if key := strings.TrimSpace(request.Key); key != "" {
+		if request.Value == nil {
 			return nil, toolError("MISSING_VALUE", "value is required when key is provided", "validation")
 		}
-		facts[key] = fmt.Sprint(value)
+		facts[key] = *request.Value
 	}
-	if m := mapArg(args, "facts"); len(m) > 0 {
-		for k, v := range m {
-			key := strings.TrimSpace(k)
-			if key != "" {
-				facts[key] = fmt.Sprint(v)
-			}
+	// facts 是共享协议明确开放的 JSON 对象；动态值只在这一处规范化，之后核心流程只使用 string。
+	for key, value := range request.Facts {
+		key = strings.TrimSpace(key)
+		if key != "" {
+			facts[key] = fmt.Sprint(value)
 		}
 	}
 	if len(facts) == 0 {
@@ -159,11 +152,11 @@ func (svc *Service) memoryUpdateFact(ctx context.Context, args map[string]any) (
 	if err != nil {
 		return nil, err
 	}
-	section := strings.TrimSpace(stringArg(args, "section", ""))
-	appendIfMissing := boolArg(args, "append_if_missing", false)
+	section := strings.TrimSpace(request.Section)
+	appendIfMissing := request.AppendIfMissing
 	keys := make([]string, 0, len(facts))
-	for k := range facts {
-		keys = append(keys, k)
+	for key := range facts {
+		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	updated := current
@@ -180,9 +173,9 @@ func (svc *Service) memoryUpdateFact(ctx context.Context, args map[string]any) (
 	if len(missing) > 0 && !appendIfMissing {
 		return nil, toolErrorDetails("FACT_NOT_FOUND", "one or more facts were not found", "validation", map[string]any{"path": p, "missing": missing})
 	}
-	dryRun := boolArg(args, "dry_run", !boolArg(args, "confirmed", false))
-	confirmed := boolArg(args, "confirmed", false)
-	maxBytes := intArg(args, "max_bytes", 60000)
+	confirmed := boolValue(request.Confirmed, false)
+	dryRun := boolValue(request.DryRun, !confirmed)
+	maxBytes := intValue(request.MaxBytes, 60000)
 	if maxBytes <= 0 {
 		maxBytes = 60000
 	}
@@ -203,29 +196,25 @@ func (svc *Service) memoryUpdateFact(ctx context.Context, args map[string]any) (
 	return result, nil
 }
 
-func (svc *Service) memoryLint(ctx context.Context, args map[string]any) (Result, error) {
-	terms := stringSliceArg(args, "terms")
+func (svc *Service) memoryLint(ctx context.Context, request MaintainRequest) (Result, error) {
+	terms := append([]string(nil), request.Terms...)
 	if len(terms) == 0 {
 		terms = []string{"Connector", "connector", "CONNECTOR", "connectors", "connector_"}
 	}
-	maxEntries := intArg(args, "max_entries", 200)
+	maxEntries := intValue(request.MaxEntries, 200)
 	if maxEntries <= 0 {
 		maxEntries = 200
 	}
-	maxFindings := intArg(args, "max_findings", 200)
+	maxFindings := intValue(request.MaxFindings, 200)
 	if maxFindings <= 0 {
 		maxFindings = 200
 	}
-	listArgs := map[string]any{"max_entries": maxEntries}
-	if prefix := strings.TrimSpace(stringArg(args, "prefix", "")); prefix != "" {
-		listArgs["prefix"] = prefix
-	}
-	listed, err := svc.memoryList(ctx, listArgs)
+	listed, err := svc.memoryList(ctx, memoryListRequest{Prefix: strings.TrimSpace(request.Prefix), MaxEntries: maxEntries})
 	if err != nil {
 		return nil, err
 	}
 	paths := memoryPathsFromList(listed)
-	regexMode := boolArg(args, "regex", false)
+	regexMode := boolValue(request.Regex, false)
 	findings := []memoryLintFinding{}
 	filesScanned := 0
 	for _, p := range paths {
@@ -249,7 +238,7 @@ func (svc *Service) memoryLint(ctx context.Context, args map[string]any) (Result
 func (svc *Service) memoryReadContent(ctx context.Context, p string) (string, error) {
 	// 编辑、diff、patch 需要完整 Markdown，不能使用默认瘦身后的 body，
 	// 否则写回时可能丢失 frontmatter。
-	result, err := svc.memoryRead(ctx, map[string]any{"path": p, "include_raw": true})
+	result, err := svc.memoryRead(ctx, ReadRequest{Path: p, IncludeRaw: true})
 	if err != nil {
 		return "", err
 	}
@@ -274,8 +263,8 @@ func (svc *Service) memoryWriteContent(ctx context.Context, p, content string) (
 	return svc.request(ctx, http.MethodPost, "/v1/recall", payload)
 }
 
-func applyMemoryPatchOperations(content string, args map[string]any) (memoryPatchOutcome, error) {
-	ops := memoryOperationArgs(args)
+func applyMemoryPatchOperations(content string, request WriteRequest) (memoryPatchOutcome, error) {
+	ops := memoryOperationArgs(request)
 	if len(ops) == 0 {
 		return memoryPatchOutcome{Content: content}, toolError("MISSING_OPERATIONS", "provide operations, old/new, pattern/replacement, section/content, append, or prepend", "validation")
 	}
@@ -318,28 +307,22 @@ func applyMemoryPatchOperations(content string, args map[string]any) (memoryPatc
 	return memoryPatchOutcome{Content: current, OperationCount: operationCount, ChangeCount: changeCount}, nil
 }
 
-func memoryOperationArgs(args map[string]any) []memoryPatchOperation {
-	ops := make([]memoryPatchOperation, 0)
-	if raw, ok := args["operations"]; ok && raw != nil {
-		var decoded []memoryPatchOperation
-		if err := remarshal(raw, &decoded); err == nil {
-			ops = append(ops, decoded...)
-		}
+func memoryOperationArgs(request WriteRequest) []memoryPatchOperation {
+	ops := append([]memoryPatchOperation(nil), request.Operations...)
+	if request.Old != "" {
+		ops = append(ops, memoryPatchOperation{Type: "replace_text", Old: request.Old, New: request.New, All: boolPtr(boolValue(request.All, true))})
 	}
-	if old := stringArg(args, "old", ""); old != "" {
-		ops = append(ops, memoryPatchOperation{Type: "replace_text", Old: old, New: stringArg(args, "new", ""), All: boolPtr(boolArg(args, "all", true))})
+	if request.Pattern != "" {
+		ops = append(ops, memoryPatchOperation{Type: "replace_regex", Pattern: request.Pattern, Replacement: request.Replacement, All: boolPtr(boolValue(request.All, true))})
 	}
-	if pattern := stringArg(args, "pattern", ""); pattern != "" {
-		ops = append(ops, memoryPatchOperation{Type: "replace_regex", Pattern: pattern, Replacement: stringArg(args, "replacement", ""), All: boolPtr(boolArg(args, "all", true))})
+	if request.Section != "" {
+		ops = append(ops, memoryPatchOperation{Type: "replace_section", Heading: request.Section, Content: firstNonEmptyValue(request.SectionContent, request.Content)})
 	}
-	if heading := stringArg(args, "section", ""); heading != "" {
-		ops = append(ops, memoryPatchOperation{Type: "replace_section", Heading: heading, Content: firstNonEmptyString(args, "section_content", "content")})
+	if request.Append != "" {
+		ops = append(ops, memoryPatchOperation{Type: "append", Content: request.Append})
 	}
-	if appendText := stringArg(args, "append", ""); appendText != "" {
-		ops = append(ops, memoryPatchOperation{Type: "append", Content: appendText})
-	}
-	if prependText := stringArg(args, "prepend", ""); prependText != "" {
-		ops = append(ops, memoryPatchOperation{Type: "prepend", Content: prependText})
+	if request.Prepend != "" {
+		ops = append(ops, memoryPatchOperation{Type: "prepend", Content: request.Prepend})
 	}
 	return ops
 }
@@ -469,18 +452,18 @@ func memoryUnifiedDiff(p, oldText, newText string, maxBytes int) string {
 	return out
 }
 
-func firstNonEmptyText(values ...string) string {
+func firstNonEmptyValue(values ...string) string {
 	for _, value := range values {
-		if value = strings.TrimSpace(value); value != "" {
+		if value != "" {
 			return value
 		}
 	}
 	return ""
 }
 
-func firstNonEmptyString(args map[string]any, keys ...string) string {
-	for _, key := range keys {
-		if value := stringArg(args, key, ""); value != "" {
+func firstNonEmptyText(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
 			return value
 		}
 	}

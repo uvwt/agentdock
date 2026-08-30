@@ -23,7 +23,7 @@ func TestCommandEnvExplicitPathOverridesPlatformDefault(t *testing.T) {
 	)
 
 	t.Setenv("PATH", "/usr/bin:/bin")
-	got, err := svc.CommandEnv("", map[string]any{"PATH": "/custom/bin"})
+	got, err := svc.CommandEnv("", map[string]string{"PATH": "/custom/bin"})
 	if err != nil {
 		t.Fatal(err)
 	}

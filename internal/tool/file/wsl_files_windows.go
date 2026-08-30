@@ -179,8 +179,8 @@ func resultInt(result Result, key string) int {
 	}
 }
 
-func (svc *Service) readFileWSL(ctx context.Context, args map[string]any, selection fileRuntimeSelection) (Result, error) {
-	rawPath := stringArg(args, "path", "")
+func (svc *Service) readFileWSL(ctx context.Context, request ReadRequest, selection fileRuntimeSelection) (Result, error) {
+	rawPath := request.Path
 	if strings.HasPrefix(rawPath, "skill://") {
 		return nil, toolError("INVALID_ARGUMENT", "skill:// resources use the Host runtime and cannot be read through WSL", "validation")
 	}
@@ -193,8 +193,8 @@ func (svc *Service) readFileWSL(ctx context.Context, args map[string]any, select
 		return nil, err
 	}
 	content, _ := loaded["content"].(string)
-	maxBytes := boundedInt(intArg(args, "max_bytes", 262144), 262144, 1, maxTextOutputBytes)
-	sliced, meta := sliceText(content, intArg(args, "start_line", 1), intArg(args, "end_line", 0), maxBytes)
+	maxBytes := boundedInt(intValue(request.MaxBytes, 262144), 262144, 1, maxTextOutputBytes)
+	sliced, meta := sliceText(content, intValue(request.StartLine, 1), intValue(request.EndLine, 0), maxBytes)
 	result := Result{
 		"path":        path,
 		"content":     sliced,
@@ -217,8 +217,8 @@ func (svc *Service) readFileWSL(ctx context.Context, args map[string]any, select
 	return addFileRuntimeResult(result, selection), nil
 }
 
-func (svc *Service) listDirWSL(ctx context.Context, args map[string]any, selection fileRuntimeSelection, opts listDirOptions) (Result, error) {
-	path, err := resolveWSLFilePath(stringArg(args, "path", ""))
+func (svc *Service) listDirWSL(ctx context.Context, request ListRequest, selection fileRuntimeSelection, opts listDirOptions) (Result, error) {
+	path, err := resolveWSLFilePath(request.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -235,30 +235,29 @@ func (svc *Service) listDirWSL(ctx context.Context, args map[string]any, selecti
 	})
 }
 
-func (svc *Service) searchTextWSL(ctx context.Context, args map[string]any, selection fileRuntimeSelection) (Result, error) {
-	query := stringArg(args, "query", "")
-	if query == "" {
+func (svc *Service) searchTextWSL(ctx context.Context, request SearchRequest, selection fileRuntimeSelection) (Result, error) {
+	if request.Query == "" {
 		return nil, toolError("INVALID_ARGUMENT", "query is required", "validation")
 	}
-	path, err := resolveWSLFilePath(stringArg(args, "path", ""))
+	path, err := resolveWSLFilePath(request.Path)
 	if err != nil {
 		return nil, err
 	}
-	includeGlobs := stringSliceArg(args, "include_globs")
-	if glob := stringArg(args, "glob", ""); glob != "" {
-		includeGlobs = append(includeGlobs, glob)
+	includeGlobs := append([]string(nil), request.IncludeGlobs...)
+	if request.Glob != "" {
+		includeGlobs = append(includeGlobs, request.Glob)
 	}
 	return svc.callWSLFileHelper(ctx, selection, map[string]any{
 		"action":          "search_text",
 		"path":            path,
-		"query":           query,
-		"regex":           boolArg(args, "regex", false),
-		"case_sensitive":  boolArg(args, "case_sensitive", false),
-		"include_hidden":  boolArg(args, "include_hidden", false),
-		"include_ignored": boolArg(args, "include_ignored", false),
+		"query":           request.Query,
+		"regex":           request.Regex,
+		"case_sensitive":  request.CaseSensitive,
+		"include_hidden":  request.IncludeHidden,
+		"include_ignored": request.IncludeIgnored,
 		"include_globs":   includeGlobs,
-		"exclude_globs":   stringSliceArg(args, "exclude_globs"),
-		"context_lines":   boundedInt(intArg(args, "context_lines", 0), 0, 0, 20),
-		"max_results":     boundedInt(intArg(args, "max_results", 100), 100, 1, 1000),
+		"exclude_globs":   append([]string(nil), request.ExcludeGlobs...),
+		"context_lines":   boundedInt(intValue(request.ContextLines, 0), 0, 0, 20),
+		"max_results":     boundedInt(intValue(request.MaxResults, 100), 100, 1, 1000),
 	})
 }

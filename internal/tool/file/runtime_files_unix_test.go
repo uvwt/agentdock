@@ -31,7 +31,7 @@ func TestListDirSkipsUnreadableDescendant(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(blockedDir, 0o755) })
 
-	result, err := service.ListDir(context.Background(), map[string]any{"path": ".", "max_depth": 2, "patterns": []string{"**/*.txt"}, "entry_type": "file"})
+	result, err := service.listDirTest(context.Background(), ListRequest{Path: ".", MaxDepth: intPtrForTest(2), Patterns: []string{"**/*.txt"}, EntryType: "file"})
 	if err != nil {
 		t.Fatalf("ListDir returned a descendant permission error: %v", err)
 	}

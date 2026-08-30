@@ -43,22 +43,21 @@ func (s *Service) ResolveActive(skill string) (string, error) {
 	return path, nil
 }
 
-func (s *Service) scopedEnvAction(kind envstore.ScopeKind, name, action string, args map[string]any) (Result, error) {
+func (s *Service) scopedEnvAction(kind envstore.ScopeKind, name, action string, request PackageRequest) (Result, error) {
 	scope := envstore.Scope{Kind: kind, Name: strings.TrimSpace(name)}
 	switch action {
 	case "env_set":
-		key := strings.TrimSpace(stringArg(args, "key", ""))
-		value, exists := args["value"]
-		if key == "" || !exists {
+		key := strings.TrimSpace(request.Key)
+		if key == "" || request.Value == nil {
 			return nil, toolErrorDetails("VALIDATION_ERROR", "key and value are required for env_set", "validation", map[string]any{"scope": scope.Name})
 		}
-		text := stringArg(map[string]any{"value": value}, "value", "")
+		text := *request.Value
 		if err := s.envs.Set(scope, key, text); err != nil {
 			return nil, skillEnvError(scope, err)
 		}
 		return Result{"action": action, "name": scope.Name, "key": key, "configured": text != ""}, nil
 	case "env_unset":
-		key := strings.TrimSpace(stringArg(args, "key", ""))
+		key := strings.TrimSpace(request.Key)
 		if key == "" {
 			return nil, toolErrorDetails("VALIDATION_ERROR", "key is required for env_unset", "validation", map[string]any{"scope": scope.Name})
 		}

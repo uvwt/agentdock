@@ -22,10 +22,10 @@ func addFileRuntimeResult(result Result, selection fileRuntimeSelection) Result 
 	return result
 }
 
-func normalizedFileRuntime(args map[string]any, defaultRuntime string) (string, string) {
-	runtimeName := strings.ToLower(strings.TrimSpace(stringArg(args, "runtime", defaultRuntime)))
+func normalizedFileRuntime(options RuntimeOptions, defaultRuntime string) (string, string) {
+	runtimeName := strings.ToLower(strings.TrimSpace(options.Runtime))
 	if runtimeName == "" {
 		runtimeName = defaultRuntime
 	}
-	return runtimeName, strings.TrimSpace(stringArg(args, "wsl_distribution", ""))
+	return runtimeName, strings.TrimSpace(options.WSLDistribution)
 }

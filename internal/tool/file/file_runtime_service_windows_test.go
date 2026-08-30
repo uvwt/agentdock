@@ -41,7 +41,7 @@ func TestWSLFileErrorPhaseSeparatesValidationFromRuntime(t *testing.T) {
 }
 
 func TestSelectWindowsFileRuntime(t *testing.T) {
-	selection, err := selectFileRuntime(map[string]any{})
+	selection, err := selectFileRuntimeTest(map[string]any{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestSelectWindowsFileRuntime(t *testing.T) {
 		t.Fatalf("default selection = %#v", selection)
 	}
 
-	selection, err = selectFileRuntime(map[string]any{"runtime": "wsl", "wsl_distribution": "Ubuntu"})
+	selection, err = selectFileRuntimeTest(map[string]any{"runtime": "wsl", "wsl_distribution": "Ubuntu"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestSelectWindowsFileRuntime(t *testing.T) {
 		t.Fatalf("WSL selection = %#v", selection)
 	}
 
-	if _, err := selectFileRuntime(map[string]any{"runtime": "windows", "wsl_distribution": "Ubuntu"}); err == nil {
+	if _, err := selectFileRuntimeTest(map[string]any{"runtime": "windows", "wsl_distribution": "Ubuntu"}); err == nil {
 		t.Fatal("expected Windows runtime to reject wsl_distribution")
 	}
 }

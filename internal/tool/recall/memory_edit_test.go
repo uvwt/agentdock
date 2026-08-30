@@ -131,7 +131,7 @@ func TestMemoryReadCompactsRawMarkdownByDefault(t *testing.T) {
 	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 
-	res, err := rt.memoryRead(context.Background(), map[string]any{"path": "devices/test.md"})
+	res, err := rt.memoryReadTest(context.Background(), map[string]any{"path": "devices/test.md"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestMemoryReadCompactsRawMarkdownByDefault(t *testing.T) {
 		t.Fatalf("unexpected body: %#v", recallDoc)
 	}
 
-	res, err = rt.memoryRead(context.Background(), map[string]any{"path": "devices/test.md", "include_content": true})
+	res, err = rt.memoryReadTest(context.Background(), map[string]any{"path": "devices/test.md", "include_content": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestMemoryReadCompactsRawMarkdownByDefault(t *testing.T) {
 		t.Fatalf("undocumented include_content should not expose raw_content: %#v", recallDoc)
 	}
 
-	res, err = rt.memoryRead(context.Background(), map[string]any{"path": "devices/test.md", "include_raw": true})
+	res, err = rt.memoryReadTest(context.Background(), map[string]any{"path": "devices/test.md", "include_raw": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,14 +192,14 @@ func TestMemoryDiffAndPatchDryRun(t *testing.T) {
 	store := map[string]string{"devices/test.md": "# Test\nkey：old\n"}
 	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
-	res, err := rt.memoryDiff(context.Background(), map[string]any{"path": "devices/test.md", "old": "old", "new": "new"})
+	res, err := rt.memoryDiffTest(context.Background(), map[string]any{"path": "devices/test.md", "old": "old", "new": "new"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if changed, _ := res["changed"].(bool); !changed {
 		t.Fatalf("expected changed result: %#v", res)
 	}
-	res, err = rt.memoryPatch(context.Background(), map[string]any{"path": "devices/test.md", "old": "old", "new": "new"})
+	res, err = rt.memoryPatchTest(context.Background(), map[string]any{"path": "devices/test.md", "old": "old", "new": "new"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +215,7 @@ func TestMemoryPatchConfirmedWrites(t *testing.T) {
 	store := map[string]string{"devices/test.md": "# Test\nkey：old\n"}
 	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
-	_, err := rt.memoryPatch(context.Background(), map[string]any{"path": "devices/test.md", "old": "old", "new": "new", "confirmed": true})
+	_, err := rt.memoryPatchTest(context.Background(), map[string]any{"path": "devices/test.md", "old": "old", "new": "new", "confirmed": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestMemoryUpdateFactAndLint(t *testing.T) {
 	}
 	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
-	res, err := rt.memoryUpdateFact(context.Background(), map[string]any{"path": "devices/test.md", "key": "plugin_dir", "value": "plugins", "confirmed": true})
+	res, err := rt.memoryUpdateFactTest(context.Background(), map[string]any{"path": "devices/test.md", "key": "plugin_dir", "value": "plugins", "confirmed": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +245,7 @@ func TestMemoryUpdateFactAndLint(t *testing.T) {
 	if !strings.Contains(store["devices/test.md"], "plugin_dir：plugins") {
 		t.Fatalf("fact was not written: %q", store["devices/test.md"])
 	}
-	res, err = rt.memoryUpdateFact(context.Background(), map[string]any{"path": "devices/test.md", "key": "missing_fact", "value": "created", "append_if_missing": true, "confirmed": true})
+	res, err = rt.memoryUpdateFactTest(context.Background(), map[string]any{"path": "devices/test.md", "key": "missing_fact", "value": "created", "append_if_missing": true, "confirmed": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestMemoryUpdateFactAndLint(t *testing.T) {
 	if !strings.Contains(store["devices/test.md"], "missing_fact：created") {
 		t.Fatalf("missing fact was not appended: %q", store["devices/test.md"])
 	}
-	res, err = rt.memoryLint(context.Background(), map[string]any{"terms": []any{"plugin_dir"}, "max_entries": 10})
+	res, err = rt.memoryLintTest(context.Background(), map[string]any{"terms": []any{"plugin_dir"}, "max_entries": 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestRecallSearchDefaultsToEightResults(t *testing.T) {
 	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 
-	res, err := rt.Search(context.Background(), map[string]any{"query": "searchable"})
+	res, err := rt.searchTest(context.Background(), map[string]any{"query": "searchable"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +285,7 @@ func TestRecallSearchDefaultsToEightResults(t *testing.T) {
 		t.Fatalf("default max_results = %s, want 8: %#v", got, res)
 	}
 
-	res, err = rt.Search(context.Background(), map[string]any{"query": "searchable", "max_results": 3})
+	res, err = rt.searchTest(context.Background(), map[string]any{"query": "searchable", "max_results": 3})
 	if err != nil {
 		t.Fatal(err)
 	}

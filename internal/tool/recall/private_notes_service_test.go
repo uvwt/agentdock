@@ -59,7 +59,7 @@ func TestPrivateNoteManageProxiesNexusAPI(t *testing.T) {
 		{"action": "maintain", "maintenance_action": "encrypt-all"},
 	}
 	for _, request := range requests {
-		result, err := rt.PrivateNoteManage(context.Background(), request)
+		result, err := rt.privateNoteManageTest(context.Background(), request)
 		if err != nil {
 			t.Fatalf("privateNoteManage(%v): %v", request["action"], err)
 		}
@@ -78,7 +78,7 @@ func TestPrivateNoteManageRejectsUnknownActionWithoutRequest(t *testing.T) {
 	}))
 	defer server.Close()
 	rt := newPrivateNoteProxyService(t, server.URL, "")
-	if _, err := rt.PrivateNoteManage(context.Background(), map[string]any{"action": "unknown"}); err == nil {
+	if _, err := rt.privateNoteManageTest(context.Background(), map[string]any{"action": "unknown"}); err == nil {
 		t.Fatal("unknown private note action succeeded")
 	}
 }

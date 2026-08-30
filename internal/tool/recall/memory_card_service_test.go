@@ -16,7 +16,7 @@ func TestMemoryCardCapturePlansWithoutWriting(t *testing.T) {
 	defer closeServer()
 
 	before := len(store)
-	res, err := rt.memoryCardCapture(context.Background(), map[string]any{
+	res, err := rt.memoryCardCaptureTest(context.Background(), map[string]any{
 		"title":   "ChatDock 部署验证",
 		"content": "ChatDock 前端嵌入 Go 二进制后，部署验证必须检查最终服务页面，而不是只看源码或 dist 文件。",
 		"type":    "project_trap",
@@ -53,12 +53,12 @@ func TestMemoryCardWriteRequiresConfirmationAndUsesCardsPath(t *testing.T) {
 		"confidence": "high",
 		"tags":       []any{"debugging", "recall"},
 	}
-	_, err := rt.memoryCardWrite(context.Background(), args)
+	_, err := rt.memoryCardWriteTest(context.Background(), args)
 	if err == nil {
 		t.Fatal("expected card write to require confirmation")
 	}
 	args["confirmed"] = true
-	res, err := rt.memoryCardWrite(context.Background(), args)
+	res, err := rt.memoryCardWriteTest(context.Background(), args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestMemoryCardWriteRequiresConfirmationAndUsesCardsPath(t *testing.T) {
 }
 
 func TestMemoryCardDefaultsGlobalScopeWhenProjectOmitted(t *testing.T) {
-	card, _, err := parseMemoryCard(map[string]any{
+	card, _, err := parseMemoryCardTest(map[string]any{
 		"title":   "通用偏好",
 		"content": "用户偏好直接执行可自动完成的操作，不要让用户代替完成工具可执行的步骤。",
 	}, false)
@@ -88,7 +88,7 @@ func TestMemoryCardDefaultsGlobalScopeWhenProjectOmitted(t *testing.T) {
 }
 
 func TestMemoryCardDefaultsProjectScopeWhenProjectExplicit(t *testing.T) {
-	card, _, err := parseMemoryCard(map[string]any{
+	card, _, err := parseMemoryCardTest(map[string]any{
 		"title":   "ChatDock 部署目录",
 		"content": "ChatDock 部署时必须优先检查专用 compose 目录，不能误用默认仓库目录。",
 		"project": "chatdock",
@@ -106,7 +106,7 @@ func TestMemoryCardWriteBlocksReviewedWarningsByDefault(t *testing.T) {
 	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 
-	_, err := rt.memoryCardWrite(context.Background(), map[string]any{
+	_, err := rt.memoryCardWriteTest(context.Background(), map[string]any{
 		"title":     "临时状态",
 		"content":   "当前端口是 1234。",
 		"project":   "demo",
@@ -122,7 +122,7 @@ func TestMemoryCardWriteAllowsWarningsAfterExplicitReview(t *testing.T) {
 	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()
 
-	res, err := rt.memoryCardWrite(context.Background(), map[string]any{
+	res, err := rt.memoryCardWriteTest(context.Background(), map[string]any{
 		"title":          "临时状态",
 		"content":        "当前端口是 1234。",
 		"project":        "demo",

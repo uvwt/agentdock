@@ -29,7 +29,7 @@ func New(configProvider ConfigProvider, ws *workspace.Workspace, envs *envstore.
 	}
 }
 
-func (s *Service) CommandEnv(skillName string, extra map[string]any) ([]string, error) {
+func (s *Service) CommandEnv(skillName string, extra map[string]string) ([]string, error) {
 	return s.commandEnv(skillName, extra)
 }
 

@@ -123,7 +123,7 @@ func TestCommandEnvOverridesWindowsKeysCaseInsensitively(t *testing.T) {
 	svc := newWindowsCommandEnvTestService(t)
 	t.Setenv("PATH", `C:\host-bin`)
 
-	got, err := svc.CommandEnv("", map[string]any{"Path": `C:\explicit-bin`})
+	got, err := svc.CommandEnv("", map[string]string{"Path": `C:\explicit-bin`})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestCommandEnvOverridesExplicitEnvWinsCaseInsensitively(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	overrides, err := svc.commandEnvOverrides("mixed-case-env", map[string]any{"PATH": `C:\explicit-bin`})
+	overrides, err := svc.commandEnvOverrides("mixed-case-env", map[string]string{"PATH": `C:\explicit-bin`})
 	if err != nil {
 		t.Fatal(err)
 	}

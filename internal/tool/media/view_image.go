@@ -5,8 +5,8 @@ import (
 	"strings"
 )
 
-func (s *Service) ViewImage(ctx context.Context, args map[string]any) (Result, error) {
-	loaded, err := s.loadImageSource(ctx, args)
+func (s *Service) ViewImage(ctx context.Context, request ViewImageRequest) (Result, error) {
+	loaded, err := s.loadImageSource(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -15,19 +15,22 @@ func (s *Service) ViewImage(ctx context.Context, args map[string]any) (Result, e
 		return nil, toolError("BINARY_FILE", "source is not a supported image", "validation")
 	}
 
-	maxBytes := intArg(args, "max_bytes", defaultViewImageBytes)
+	maxBytes := intValue(request.MaxBytes, defaultViewImageBytes)
 	if maxBytes <= 0 {
 		maxBytes = defaultViewImageBytes
 	}
 	if maxBytes > hardViewImageBytes {
 		maxBytes = hardViewImageBytes
 	}
-	maxWidth := intArg(args, "max_width", 1280)
-	maxHeight := intArg(args, "max_height", 1280)
-	format := stringArg(args, "format", "jpeg")
-	quality := intArg(args, "quality", 72)
-	crop := cropArg(args)
-	autoResize := boolArg(args, "auto_resize", true)
+	maxWidth := intValue(request.MaxWidth, 1280)
+	maxHeight := intValue(request.MaxHeight, 1280)
+	format := request.Format
+	if strings.TrimSpace(format) == "" {
+		format = "jpeg"
+	}
+	quality := intValue(request.Quality, 72)
+	crop := imageCropFromRequest(request.Crop)
+	autoResize := boolValue(request.AutoResize, true)
 
 	original := map[string]any{"size_bytes": len(loaded.Data), "width": info.Width, "height": info.Height, "mime_type": info.MIME}
 	prepared := loaded.Data

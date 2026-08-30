@@ -2,7 +2,6 @@ package command
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"sort"
@@ -27,19 +26,19 @@ type commandSkillContext struct {
 	envSkill string
 }
 
-func (invocation commandInvocation) start(ctx context.Context, timeout time.Duration, tty bool, prepare session.PrepareFunc) (*session.Session, map[string]any, error) {
+func (invocation commandInvocation) start(ctx context.Context, timeout time.Duration, tty bool, prepare session.PrepareFunc) (*session.Session, session.PreparationStatus, error) {
 	if invocation.build != nil {
 		return session.StartCommandWithTTY(ctx, invocation.build, timeout, tty, prepare)
 	}
 	return session.StartWithTTY(ctx, invocation.command, invocation.workdir, invocation.env, timeout, tty, prepare)
 }
 
-func (svc *Service) newHostCommandInvocation(args map[string]any, command string) (commandInvocation, error) {
-	skillContext, err := parseCommandSkillContext(args)
+func (svc *Service) newHostCommandInvocation(request ExecRequest) (commandInvocation, error) {
+	skillContext, err := parseCommandSkillContext(request)
 	if err != nil {
 		return commandInvocation{}, err
 	}
-	workdir, err := svc.resolveHostCommandWorkdir(args, skillContext.skill)
+	workdir, err := svc.resolveHostCommandWorkdir(request.Workdir, skillContext.skill)
 	if err != nil {
 		return commandInvocation{}, err
 	}
@@ -50,16 +49,16 @@ func (svc *Service) newHostCommandInvocation(args map[string]any, command string
 	if !info.IsDir() {
 		return commandInvocation{}, toolError("NOT_A_DIRECTORY", "workdir is not a directory", "validation")
 	}
-	commandEnv, err := svc.commandEnv(skillContext.envSkill, mapArg(args, "env"))
+	commandEnv, err := svc.commandEnv(skillContext.envSkill, request.Env)
 	if err != nil {
 		return commandInvocation{}, err
 	}
-	return commandInvocation{command: command, workdir: workdir, env: commandEnv}, nil
+	return commandInvocation{command: request.Cmd, workdir: workdir, env: commandEnv}, nil
 }
 
-func parseCommandSkillContext(args map[string]any) (commandSkillContext, error) {
-	skill := strings.TrimSpace(stringArg(args, "skill", ""))
-	envSkill := strings.TrimSpace(stringArg(args, "skill_env", ""))
+func parseCommandSkillContext(request ExecRequest) (commandSkillContext, error) {
+	skill := strings.TrimSpace(request.Skill)
+	envSkill := strings.TrimSpace(request.SkillEnv)
 	if skill != "" && envSkill != "" && skill != envSkill {
 		return commandSkillContext{}, toolErrorDetails(
 			"INVALID_ARGUMENT",
@@ -74,7 +73,7 @@ func parseCommandSkillContext(args map[string]any) (commandSkillContext, error) 
 	return commandSkillContext{skill: skill, envSkill: envSkill}, nil
 }
 
-func (svc *Service) resolveHostCommandWorkdir(args map[string]any, skill string) (string, error) {
+func (svc *Service) resolveHostCommandWorkdir(requested string, skill string) (string, error) {
 	skillDir := ""
 	if skill != "" {
 		var err error
@@ -83,7 +82,7 @@ func (svc *Service) resolveHostCommandWorkdir(args map[string]any, skill string)
 			return "", err
 		}
 	}
-	if raw := strings.TrimSpace(stringArg(args, "workdir", "")); raw != "" {
+	if raw := strings.TrimSpace(requested); raw != "" {
 		resolved, err := svc.ws.ResolveExisting(raw)
 		if err != nil {
 			return "", err
@@ -130,7 +129,7 @@ func (svc *Service) resolveSkillCommandDir(skill string) (string, error) {
 	return path, nil
 }
 
-func (svc *Service) commandEnvOverrides(skillName string, extra map[string]any) (map[string]string, error) {
+func (svc *Service) commandEnvOverrides(skillName string, extra map[string]string) (map[string]string, error) {
 	overrides := map[string]string{}
 	if skillName != "" {
 		values, err := svc.envs.Load(envstore.Scope{Kind: envstore.ScopeSkill, Name: skillName})
@@ -145,7 +144,7 @@ func (svc *Service) commandEnvOverrides(skillName string, extra map[string]any) 
 		if err := envstore.ValidateKey(key); err != nil {
 			return nil, toolErrorDetails("INVALID_ENV_NAME", err.Error(), "validation", map[string]any{"key": key})
 		}
-		setPlatformCommandEnv(overrides, key, fmt.Sprint(value))
+		setPlatformCommandEnv(overrides, key, value)
 	}
 	return overrides, nil
 }

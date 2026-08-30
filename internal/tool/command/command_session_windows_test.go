@@ -31,7 +31,7 @@ func TestWindowsSessionActKillTerminatesNativeChildTree(t *testing.T) {
 	}
 	readyPath := filepath.Join(root, "native-child.ready.json")
 	command := fmt.Sprintf("& '%s' '-test.run=^TestWindowsSessionNativeChildHelper$'", strings.ReplaceAll(testBinary, "'", "''"))
-	started, err := service.Exec(context.Background(), map[string]any{
+	started, err := service.execArgs(context.Background(), map[string]any{
 		"cmd": command, "execution_mode": "async", "timeout_ms": 60000,
 		"env": map[string]any{windowsNativeChildReadyEnv: readyPath},
 	})
@@ -48,7 +48,7 @@ func TestWindowsSessionActKillTerminatesNativeChildTree(t *testing.T) {
 		}
 	}()
 
-	result, err := service.Act(map[string]any{"action": "kill", "session_id": sessionID})
+	result, err := service.actArgs(map[string]any{"action": "kill", "session_id": sessionID})
 	if err != nil {
 		t.Fatalf("session_act(kill) error = %v", err)
 	}
@@ -108,7 +108,7 @@ func waitForWindowsNativeChild(t *testing.T, service *Service, sessionID, readyP
 		if stored, ok := service.sessions.Get(sessionID); ok {
 			select {
 			case <-stored.Done:
-				status, observeErr := service.Observe(map[string]any{
+				status, observeErr := service.observeArgs(map[string]any{
 					"action": "status", "session_id": sessionID, "max_output_bytes": 4096,
 				})
 				t.Fatalf("native child exited before readiness: status=%#v observe_err=%v", status, observeErr)
@@ -117,7 +117,7 @@ func waitForWindowsNativeChild(t *testing.T, service *Service, sessionID, readyP
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	status, observeErr := service.Observe(map[string]any{
+	status, observeErr := service.observeArgs(map[string]any{
 		"action": "status", "session_id": sessionID, "max_output_bytes": 4096,
 	})
 	t.Fatalf("native child did not start: status=%#v observe_err=%v", status, observeErr)

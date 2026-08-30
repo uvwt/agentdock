@@ -5,8 +5,8 @@ import (
 	"unicode/utf8"
 )
 
-func (svc *Service) editFile(args map[string]any) (Result, error) {
-	path := stringArg(args, "path", "")
+func (svc *Service) editFile(request EditRequest) (Result, error) {
+	path := request.Path
 	if path == "" {
 		return nil, toolError("INVALID_ARGUMENT", "path is required", "validation")
 	}
@@ -38,11 +38,11 @@ func (svc *Service) editFile(args map[string]any) (Result, error) {
 		return nil, toolErrorDetails("ENCODING_UNSUPPORTED", "file is not valid utf-8", "validation", map[string]any{"path": p.Display})
 	}
 	content := string(data)
-	result, updated, err := prepareTextReplacement(p.Display, content, args)
+	result, updated, err := prepareTextReplacement(p.Display, content, request)
 	if err != nil {
 		return nil, err
 	}
-	if boolArg(args, "dry_run", false) || updated == content {
+	if request.DryRun || updated == content {
 		return result, nil
 	}
 	staged := map[string]stagedPatchFile{

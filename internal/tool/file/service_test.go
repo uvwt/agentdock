@@ -17,7 +17,7 @@ func newCodeToolsRuntime(t *testing.T) (*Service, string) {
 	}
 	service := New(ws, func(string) (string, string, error) {
 		return "", "", os.ErrNotExist
-	}, func(string, map[string]any) ([]string, error) {
+	}, func(string, map[string]string) ([]string, error) {
 		return os.Environ(), nil
 	})
 	return service, root
@@ -43,3 +43,5 @@ func sameTestPath(left, right string) bool {
 	}
 	return sameExistingTestPath(filepath.Dir(left), filepath.Dir(right))
 }
+
+func intPtrForTest(value int) *int { return &value }

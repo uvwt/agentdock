@@ -11,24 +11,8 @@ import (
 type Result = toolcore.Result
 type ToolError = toolcore.ToolError
 
-func stringArg(args map[string]any, key, fallback string) string {
-	return toolcore.StringArg(args, key, fallback)
-}
-
-func intArg(args map[string]any, key string, fallback int) int {
-	return toolcore.IntArg(args, key, fallback)
-}
-
-func boolArg(args map[string]any, key string, fallback bool) bool {
-	return toolcore.BoolArg(args, key, fallback)
-}
-
-func stringSliceArg(args map[string]any, key string) []string {
-	return toolcore.StringSliceArg(args, key)
-}
-
-func actionArg(args map[string]any) string {
-	return strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
+func actionArg(raw string) string {
+	return strings.ToLower(strings.TrimSpace(raw))
 }
 
 func acpToolError(err error) error {

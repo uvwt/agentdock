@@ -2,8 +2,8 @@
 
 package file
 
-func selectFileRuntime(args map[string]any) (fileRuntimeSelection, error) {
-	runtimeName, distribution := normalizedFileRuntime(args, "windows")
+func selectFileRuntime(options RuntimeOptions) (fileRuntimeSelection, error) {
+	runtimeName, distribution := normalizedFileRuntime(options, "windows")
 	switch runtimeName {
 	case "windows":
 		if distribution != "" {

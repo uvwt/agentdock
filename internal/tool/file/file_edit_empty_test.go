@@ -9,7 +9,7 @@ import (
 
 func TestFileEditAddCreatesEmptyFile(t *testing.T) {
 	runtime, root := newFileTestService(t)
-	result, err := runtime.Edit(context.Background(), map[string]any{
+	result, err := runtime.editTest(context.Background(), map[string]any{
 		"action":  "add",
 		"path":    "empty.txt",
 		"content": "",

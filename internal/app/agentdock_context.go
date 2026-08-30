@@ -9,6 +9,7 @@ import (
 
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
+	tooltask "github.com/uvwt/agentdock/internal/tool/task"
 )
 
 func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
@@ -209,7 +210,7 @@ func (r *Runtime) skillCapabilityIndex() ([]capabilitySkillItem, error) {
 }
 
 func (r *Runtime) templateCapabilityIndex(ctx context.Context) ([]capabilityTemplateItem, error) {
-	result, err := r.taskTools.WorkflowManage(ctx, map[string]any{"action": "list", "template_status": "active"})
+	result, err := r.taskTools.WorkflowManage(ctx, tooltask.WorkflowRequest{Action: "list", TemplateStatus: "active"})
 	if err != nil {
 		return []capabilityTemplateItem{}, err
 	}

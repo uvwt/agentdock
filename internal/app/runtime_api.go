@@ -6,6 +6,7 @@ import (
 
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
+	toolmcp "github.com/uvwt/agentdock/internal/tool/mcp"
 )
 
 const runtimeAPISource = "agentdock-api"
@@ -79,7 +80,11 @@ func (r *Runtime) RuntimeMCPManage(ctx context.Context, args map[string]any) (Re
 }
 
 func (r *Runtime) runtimeMCPManage(ctx context.Context, args map[string]any) (Result, error) {
-	result, err := r.dynamicMCP.Manage(ctx, args)
+	var request toolmcp.ManageRequest
+	if err := decodeToolInput("mcp_manage", args, &request); err != nil {
+		return nil, err
+	}
+	result, err := r.dynamicMCP.Manage(ctx, request)
 	if err != nil {
 		return nil, err
 	}

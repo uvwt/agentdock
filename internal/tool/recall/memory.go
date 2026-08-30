@@ -25,13 +25,13 @@ func (svc *Service) memoryContextIndex(ctx context.Context, maxBytes int) (Resul
 	})
 }
 
-func (svc *Service) memoryList(ctx context.Context, args map[string]any) (Result, error) {
+func (svc *Service) memoryList(ctx context.Context, request memoryListRequest) (Result, error) {
 	query := url.Values{}
-	if prefix := strings.TrimSpace(stringArg(args, "prefix", "")); prefix != "" {
+	if prefix := strings.TrimSpace(request.Prefix); prefix != "" {
 		query.Set("prefix", backendPath(prefix))
 	}
-	if maxEntries := intArg(args, "max_entries", 0); maxEntries > 0 {
-		query.Set("max_entries", fmt.Sprint(maxEntries))
+	if request.MaxEntries > 0 {
+		query.Set("max_entries", fmt.Sprint(request.MaxEntries))
 	}
 	endpoint := "/v1/recall"
 	if encoded := query.Encode(); encoded != "" {
@@ -40,8 +40,8 @@ func (svc *Service) memoryList(ctx context.Context, args map[string]any) (Result
 	return svc.request(ctx, http.MethodGet, endpoint, nil)
 }
 
-func (svc *Service) memoryRead(ctx context.Context, args map[string]any) (Result, error) {
-	p := strings.TrimSpace(stringArg(args, "path", ""))
+func (svc *Service) memoryRead(ctx context.Context, request ReadRequest) (Result, error) {
+	p := strings.TrimSpace(request.Path)
 	if p == "" {
 		return nil, toolError("MISSING_PATH", "path is required", "validation")
 	}
@@ -61,7 +61,7 @@ func (svc *Service) memoryRead(ctx context.Context, args map[string]any) (Result
 		rawContent, hasRawContent := compactedMemory["raw_content"]
 		delete(compactedMemory, "content")
 		delete(compactedMemory, "raw_content")
-		if boolArg(args, "include_raw", false) {
+		if request.IncludeRaw {
 			if hasContent {
 				compactedMemory["raw_content"] = content
 			} else if hasRawContent {
@@ -73,74 +73,76 @@ func (svc *Service) memoryRead(ctx context.Context, args map[string]any) (Result
 	return result, nil
 }
 
-func (svc *Service) memorySearch(ctx context.Context, args map[string]any) (Result, error) {
-	query := strings.TrimSpace(stringArg(args, "query", ""))
+func (svc *Service) memorySearch(ctx context.Context, request memorySearchRequest) (Result, error) {
+	query := strings.TrimSpace(request.Query)
 	if query == "" {
 		return nil, toolError("MISSING_QUERY", "query is required", "validation")
 	}
-	maxResults := intArg(args, "max_results", 8)
+	maxResults := request.MaxResults
 	if maxResults <= 0 {
 		maxResults = 8
 	}
 	payload := map[string]any{"query": query, "max_results": maxResults}
-	if prefix := strings.TrimSpace(stringArg(args, "prefix", "")); prefix != "" {
+	if prefix := strings.TrimSpace(request.Prefix); prefix != "" {
 		payload["prefix"] = backendPath(prefix)
 	}
-	if excludePrefix := strings.TrimSpace(stringArg(args, "exclude_prefix", "")); excludePrefix != "" {
+	if excludePrefix := strings.TrimSpace(request.ExcludePrefix); excludePrefix != "" {
 		payload["exclude_prefix"] = backendPath(excludePrefix)
 	}
 	return svc.request(ctx, http.MethodPost, "/v1/recall/search", payload)
 }
 
-func (svc *Service) memoryWrite(ctx context.Context, args map[string]any) (Result, error) {
-	payload, err := memoryWritePayload(args)
+func (svc *Service) memoryWrite(ctx context.Context, request WriteRequest) (Result, error) {
+	payload, err := memoryWritePayload(request)
 	if err != nil {
 		return nil, err
 	}
 	return svc.request(ctx, http.MethodPost, "/v1/recall", payload)
 }
 
-func (svc *Service) memoryPreviewWrite(ctx context.Context, args map[string]any) (Result, error) {
-	payload, err := memoryWritePayload(args)
+func (svc *Service) memoryPreviewWrite(ctx context.Context, request WriteRequest) (Result, error) {
+	payload, err := memoryWritePayload(request)
 	if err != nil {
 		return nil, err
 	}
 	return svc.request(ctx, http.MethodPost, "/v1/recall/preview", payload)
 }
 
-func memoryWritePayload(args map[string]any) (map[string]any, error) {
-	content := stringArg(args, "content", "")
+func memoryWritePayload(request WriteRequest) (map[string]any, error) {
+	content := request.Content
 	if strings.TrimSpace(content) == "" {
 		return nil, toolError("MISSING_CONTENT", "content is required", "validation")
 	}
 	payload := map[string]any{"content": content}
-	copyMemoryString(args, payload, "path")
-	if p, ok := payload["path"].(string); ok {
-		payload["path"] = backendPath(p)
+	if value := strings.TrimSpace(request.Path); value != "" {
+		payload["path"] = backendPath(value)
 	}
-	copyMemoryString(args, payload, "type")
-	copyMemoryString(args, payload, "scope")
-	copyMemoryString(args, payload, "project")
-	copyMemoryString(args, payload, "source")
-	copyMemoryString(args, payload, "confidence")
-	if tags := stringSliceArg(args, "tags"); len(tags) > 0 {
-		payload["tags"] = tags
+	for key, value := range map[string]string{
+		"type": request.Type, "scope": request.Scope, "project": request.Project,
+		"source": request.Source, "confidence": request.Confidence,
+	} {
+		if value = strings.TrimSpace(value); value != "" {
+			payload[key] = value
+		}
 	}
-	if _, ok := args["confirmed"]; ok {
-		payload["confirmed"] = boolArg(args, "confirmed", false)
+	if len(request.Tags) > 0 {
+		payload["tags"] = append([]string(nil), request.Tags...)
 	}
-	if _, ok := args["overwrite"]; ok {
-		payload["overwrite"] = boolArg(args, "overwrite", false)
+	if request.Confirmed != nil {
+		payload["confirmed"] = *request.Confirmed
+	}
+	if request.Overwrite != nil {
+		payload["overwrite"] = *request.Overwrite
 	}
 	return payload, nil
 }
 
-func (svc *Service) memoryDelete(ctx context.Context, args map[string]any) (Result, error) {
-	p := strings.TrimSpace(stringArg(args, "path", ""))
+func (svc *Service) memoryDelete(ctx context.Context, request WriteRequest) (Result, error) {
+	p := strings.TrimSpace(request.Path)
 	if p == "" {
 		return nil, toolError("MISSING_PATH", "path is required", "validation")
 	}
-	if !boolArg(args, "confirmed", false) {
+	if !boolValue(request.Confirmed, false) {
 		return nil, toolError("CONFIRMATION_REQUIRED", "recall delete requires confirmed=true", "validation")
 	}
 	query := url.Values{}
@@ -221,12 +223,6 @@ func (svc *Service) request(ctx context.Context, method, endpoint string, payloa
 		return Result(mapped), nil
 	}
 	return Result(parsed), nil
-}
-
-func copyMemoryString(src, dst map[string]any, key string) {
-	if value := strings.TrimSpace(stringArg(src, key, "")); value != "" {
-		dst[key] = value
-	}
 }
 
 func escapeMemoryPath(value string) string {

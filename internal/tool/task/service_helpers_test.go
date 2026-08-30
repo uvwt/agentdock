@@ -1,6 +1,7 @@
 package task
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -178,4 +179,30 @@ func newWorkflowTemplateNexusTestServer(t *testing.T) *httptest.Server {
 	}))
 	t.Cleanup(server.Close)
 	return server
+}
+
+func decodeTaskTestRequest[T any](input any) (T, error) {
+	var request T
+	if typed, ok := input.(T); ok {
+		return typed, nil
+	}
+	data, err := json.Marshal(input)
+	if err != nil {
+		return request, err
+	}
+	return request, json.Unmarshal(data, &request)
+}
+func (s *Service) manageTest(ctx context.Context, input any) (Result, error) {
+	request, err := decodeTaskTestRequest[ManageRequest](input)
+	if err != nil {
+		return nil, err
+	}
+	return s.Manage(ctx, request)
+}
+func (s *Service) workflowManageTest(ctx context.Context, input any) (Result, error) {
+	request, err := decodeTaskTestRequest[WorkflowRequest](input)
+	if err != nil {
+		return nil, err
+	}
+	return s.WorkflowManage(ctx, request)
 }

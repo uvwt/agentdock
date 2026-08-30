@@ -15,7 +15,7 @@ func TestExecCommandDoesNotFilterCommandContent(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		command = `Write-Output "shell=expansion network=https://example.test"`
 	}
-	result, err := rt.Exec(context.Background(), map[string]any{
+	result, err := rt.execArgs(context.Background(), map[string]any{
 		"cmd":            command,
 		"yield_time_ms":  15000,
 		"timeout_ms":     15000,
@@ -35,7 +35,7 @@ func TestExecCommandForwardsExplicitEnv(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		command = `[Console]::Out.Write($env:AGENTDOCK_TEST_EXEC_ENV)`
 	}
-	result, err := rt.Exec(context.Background(), map[string]any{
+	result, err := rt.execArgs(context.Background(), map[string]any{
 		"cmd":            command,
 		"env":            map[string]any{"AGENTDOCK_TEST_EXEC_ENV": "forwarded"},
 		"yield_time_ms":  15000,
@@ -68,7 +68,7 @@ func TestExecCommandForwardsStdinAndClosesPipe(t *testing.T) {
 		t.Skip("test command uses POSIX cat")
 	}
 	rt, _ := newCommandTestService(t)
-	result, err := rt.Exec(context.Background(), map[string]any{
+	result, err := rt.execArgs(context.Background(), map[string]any{
 		"cmd":            "cat",
 		"stdin":          "input-line\n",
 		"yield_time_ms":  5000,
@@ -89,7 +89,7 @@ func TestExecCommandReportsClosedStdin(t *testing.T) {
 	}
 	rt, _ := newCommandTestService(t)
 	largeInput := strings.Repeat("x", 8<<20)
-	_, err := rt.Exec(context.Background(), map[string]any{
+	_, err := rt.execArgs(context.Background(), map[string]any{
 		"cmd":            "exec 0<&-; sleep 1",
 		"stdin":          largeInput,
 		"yield_time_ms":  5000,

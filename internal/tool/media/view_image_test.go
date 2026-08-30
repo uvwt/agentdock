@@ -34,7 +34,7 @@ func TestViewImageLoadsPathAsMCPImage(t *testing.T) {
 	imagePath := filepath.Join(root, "tiny.png")
 	writeTinyPNG(t, imagePath)
 
-	result, err := rt.ViewImage(context.Background(), map[string]any{"path": "tiny.png", "format": "png"})
+	result, err := rt.ViewImage(context.Background(), ViewImageRequest{Path: "tiny.png", Format: "png"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestViewImageLoadsHTTPURLAsMCPImage(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	result, err := rt.ViewImage(context.Background(), map[string]any{"url": server.URL + "/remote.png", "format": "png"})
+	result, err := rt.ViewImage(context.Background(), ViewImageRequest{URL: server.URL + "/remote.png", Format: "png"})
 	if err != nil {
 		t.Fatal(err)
 	}

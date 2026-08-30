@@ -25,10 +25,10 @@ type loadedImageSource struct {
 	Source map[string]any
 }
 
-func (s *Service) loadImageSource(ctx context.Context, args map[string]any) (loadedImageSource, error) {
-	artifactID := strings.TrimSpace(stringArg(args, "artifact_id", ""))
-	pathValue := strings.TrimSpace(stringArg(args, "path", ""))
-	urlValue := strings.TrimSpace(stringArg(args, "url", ""))
+func (s *Service) loadImageSource(ctx context.Context, request ViewImageRequest) (loadedImageSource, error) {
+	artifactID := strings.TrimSpace(request.ArtifactID)
+	pathValue := strings.TrimSpace(request.Path)
+	urlValue := strings.TrimSpace(request.URL)
 	provided := 0
 	for _, value := range []string{artifactID, pathValue, urlValue} {
 		if value != "" {
@@ -42,7 +42,7 @@ func (s *Service) loadImageSource(ctx context.Context, args map[string]any) (loa
 		return loadedImageSource{}, toolError("IMAGE_SOURCE_CONFLICT", "artifact_id, path, and url are mutually exclusive", "validation")
 	}
 
-	maxSourceBytes := int64(intArg(args, "max_source_bytes", defaultImageSourceBytes))
+	maxSourceBytes := int64(intValue(request.MaxSourceBytes, defaultImageSourceBytes))
 	if maxSourceBytes <= 0 {
 		maxSourceBytes = defaultImageSourceBytes
 	}
@@ -91,7 +91,7 @@ func (s *Service) loadImageSource(ctx context.Context, args map[string]any) (loa
 		}
 		return loadedImageSource{Data: data, Name: filepath.Base(resolved.Abs), Source: map[string]any{"type": "path", "path": resolved.Display, "size_bytes": len(data)}}, nil
 	default:
-		return loadRemoteImageSource(ctx, urlValue, maxSourceBytes, intArg(args, "source_timeout_ms", 15000))
+		return loadRemoteImageSource(ctx, urlValue, maxSourceBytes, intValue(request.SourceTimeoutMS, 15000))
 	}
 }
 

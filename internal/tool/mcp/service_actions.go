@@ -9,14 +9,17 @@ import (
 	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
 )
 
-func (s *Service) Manage(ctx context.Context, args map[string]any) (Result, error) {
-	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "list")))
+func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, error) {
+	action := strings.ToLower(strings.TrimSpace(request.Action))
+	if action == "" {
+		action = "list"
+	}
 	switch action {
 	case "list":
 		servers := s.mcpClients.List()
 		return Result{"action": action, "servers": servers, "count": len(servers)}, nil
 	case "inspect":
-		name := stringArg(args, "name", "")
+		name := request.Name
 		cfg, summary, err := s.mcpClients.Inspect(name)
 		if err != nil {
 			return nil, dynamicMCPToolError(err)
@@ -24,17 +27,17 @@ func (s *Service) Manage(ctx context.Context, args map[string]any) (Result, erro
 		return Result{"action": action, "server": summary, "config": cfg}, nil
 	case "add":
 		cfg := mcpclient.ServerConfig{
-			Name:        stringArg(args, "name", ""),
-			Description: stringArg(args, "description", ""),
-			Transport:   stringArg(args, "transport", ""),
-			URL:         stringArg(args, "url", ""),
-			Command:     stringArg(args, "command", ""),
-			Args:        stringSliceArg(args, "args"),
-			Cwd:         stringArg(args, "cwd", ""),
-			HeaderEnv:   stringMapArg(args, "header_env"),
-			EnvFromEnv:  stringMapArg(args, "env_from_env"),
-			Enabled:     boolArg(args, "enabled", true),
-			TimeoutMS:   intArg(args, "timeout_ms", 30000),
+			Name:        request.Name,
+			Description: request.Description,
+			Transport:   request.Transport,
+			URL:         request.URL,
+			Command:     request.Command,
+			Args:        append([]string(nil), request.Args...),
+			Cwd:         request.CWD,
+			HeaderEnv:   cloneStringMap(request.HeaderEnv),
+			EnvFromEnv:  cloneStringMap(request.EnvFromEnv),
+			Enabled:     boolValue(request.Enabled, true),
+			TimeoutMS:   intValue(request.TimeoutMS, 30000),
 		}
 		server, err := s.mcpClients.Add(cfg)
 		if err != nil {
@@ -42,27 +45,27 @@ func (s *Service) Manage(ctx context.Context, args map[string]any) (Result, erro
 		}
 		return Result{"action": action, "server": server}, nil
 	case "remove":
-		name := stringArg(args, "name", "")
+		name := request.Name
 		if err := s.mcpClients.Remove(name); err != nil {
 			return nil, dynamicMCPToolError(err)
 		}
 		return Result{"action": action, "name": strings.TrimSpace(name), "removed": true}, nil
 	case "enable", "disable":
-		name := stringArg(args, "name", "")
+		name := request.Name
 		server, err := s.mcpClients.SetEnabled(name, action == "enable")
 		if err != nil {
 			return nil, dynamicMCPToolError(err)
 		}
 		return Result{"action": action, "server": server}, nil
 	case "env_set", "env_unset", "env_list":
-		name := strings.TrimSpace(stringArg(args, "name", ""))
+		name := strings.TrimSpace(request.Name)
 		cfg, _, err := s.mcpClients.Inspect(name)
 		if err != nil {
 			return nil, dynamicMCPToolError(err)
 		}
-		return s.envAction(envstore.ScopeMCP, cfg.Name, action, args)
+		return s.envAction(envstore.ScopeMCP, cfg.Name, action, request)
 	case "refresh":
-		name := stringArg(args, "name", "")
+		name := request.Name
 		server, tools, err := s.mcpClients.Refresh(ctx, name)
 		if err != nil {
 			return nil, dynamicMCPToolError(err)
@@ -78,10 +81,10 @@ func (s *Service) Manage(ctx context.Context, args map[string]any) (Result, erro
 	}
 }
 
-func (s *Service) Search(ctx context.Context, args map[string]any) (Result, error) {
-	query := stringArg(args, "query", "")
-	server := stringArg(args, "server", "")
-	limit := boundedInt(intArg(args, "limit", 10), 10, 1, 100)
+func (s *Service) Search(ctx context.Context, request SearchRequest) (Result, error) {
+	query := request.Query
+	server := request.Server
+	limit := boundedInt(intValue(request.Limit, 10), 10, 1, 100)
 	tools, err := s.mcpClients.Search(ctx, query, server, limit)
 	if err != nil {
 		return nil, dynamicMCPToolError(err)
@@ -89,8 +92,8 @@ func (s *Service) Search(ctx context.Context, args map[string]any) (Result, erro
 	return Result{"query": query, "server": server, "tools": tools, "count": len(tools)}, nil
 }
 
-func (s *Service) Inspect(ctx context.Context, args map[string]any) (Result, error) {
-	qualifiedName := stringArg(args, "name", "")
+func (s *Service) Inspect(ctx context.Context, request InspectRequest) (Result, error) {
+	qualifiedName := request.Name
 	server, tool, err := s.mcpClients.InspectTool(ctx, qualifiedName)
 	if err != nil {
 		return nil, dynamicMCPToolError(err)
@@ -112,9 +115,9 @@ func (s *Service) Inspect(ctx context.Context, args map[string]any) (Result, err
 	return result, nil
 }
 
-func (s *Service) Call(ctx context.Context, args map[string]any) (Result, error) {
-	qualifiedName := stringArg(args, "name", "")
-	arguments := mapArg(args, "arguments")
+func (s *Service) Call(ctx context.Context, request CallRequest) (Result, error) {
+	qualifiedName := request.Name
+	arguments := request.Arguments
 	if arguments == nil {
 		arguments = map[string]any{}
 	}
@@ -142,14 +145,13 @@ func dynamicMCPToolError(err error) error {
 	return toolErr
 }
 
-func stringMapArg(args map[string]any, key string) map[string]string {
-	raw := mapArg(args, key)
-	if len(raw) == 0 {
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
 		return nil
 	}
-	out := make(map[string]string, len(raw))
-	for name, value := range raw {
-		out[name] = strings.TrimSpace(stringArg(map[string]any{"value": value}, "value", ""))
+	out := make(map[string]string, len(values))
+	for name, value := range values {
+		out[name] = strings.TrimSpace(value)
 	}
 	return out
 }

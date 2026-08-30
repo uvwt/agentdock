@@ -18,8 +18,8 @@ func (svc *Service) ContextIndex(ctx context.Context, maxBytes int) (Result, err
 	return result, nil
 }
 
-func (svc *Service) Search(ctx context.Context, args map[string]any) (Result, error) {
-	kind := strings.ToLower(strings.TrimSpace(stringArg(args, "kind", "all")))
+func (svc *Service) Search(ctx context.Context, request SearchRequest) (Result, error) {
+	kind := strings.ToLower(strings.TrimSpace(request.Kind))
 	prefix, excludePrefix := "", ""
 	resultKind := kind
 	switch kind {
@@ -29,11 +29,17 @@ func (svc *Service) Search(ctx context.Context, args map[string]any) (Result, er
 	case "markdown":
 		excludePrefix = recallCardsPrefix
 	case "", "all":
+		resultKind = "all"
 	default:
 		return nil, toolErrorDetails("INVALID_RECALL_KIND", "unsupported recall_search kind", "validation", map[string]any{"kind": kind})
 	}
 
-	result, err := svc.memorySearch(ctx, recallSearchArgs(args, prefix, excludePrefix))
+	result, err := svc.memorySearch(ctx, memorySearchRequest{
+		Query:         request.Query,
+		Prefix:        prefix,
+		ExcludePrefix: excludePrefix,
+		MaxResults:    intValue(request.MaxResults, 0),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -46,11 +52,11 @@ func (svc *Service) Search(ctx context.Context, args map[string]any) (Result, er
 	return result, nil
 }
 
-func (svc *Service) Read(ctx context.Context, args map[string]any) (Result, error) {
-	if strings.HasPrefix(strings.TrimSpace(stringArg(args, "path", "")), "private-notes/") {
+func (svc *Service) Read(ctx context.Context, request ReadRequest) (Result, error) {
+	if strings.HasPrefix(strings.TrimSpace(request.Path), "private-notes/") {
 		return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes is not readable through recall_read; use private_note_manage action=read", "validation")
 	}
-	result, err := svc.memoryRead(ctx, args)
+	result, err := svc.memoryRead(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -58,37 +64,38 @@ func (svc *Service) Read(ctx context.Context, args map[string]any) (Result, erro
 	return result, nil
 }
 
-func (svc *Service) Write(ctx context.Context, args map[string]any) (Result, error) {
-	if strings.HasPrefix(strings.TrimSpace(stringArg(args, "path", "")), "private-notes/") {
+func (svc *Service) Write(ctx context.Context, request WriteRequest) (Result, error) {
+	if strings.HasPrefix(strings.TrimSpace(request.Path), "private-notes/") {
 		return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes is not writable through recall_write; use private_note_manage action=write", "validation")
 	}
-	target := strings.ToLower(strings.TrimSpace(stringArg(args, "target", "")))
-	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "")))
+	target := strings.ToLower(strings.TrimSpace(request.Target))
+	action := strings.ToLower(strings.TrimSpace(request.Action))
 	if target == "" || action == "" {
 		return nil, toolErrorDetails("MISSING_RECALL_TARGET_ACTION", "recall_write requires target and action", "validation", map[string]any{"targets": []string{"card", "markdown"}, "actions": []string{"plan", "create", "replace", "append", "patch", "update_fact", "diff", "delete"}})
 	}
 
+	confirmed := boolValue(request.Confirmed, false)
+	dryRun := boolValue(request.DryRun, false)
 	var result Result
 	var err error
 	switch target {
 	case "card":
 		switch action {
 		case "plan":
-			result, err = svc.memoryCardCapture(ctx, args)
+			result, err = svc.memoryCardCapture(ctx, request)
 			if err == nil {
 				result["dry_run"] = true
-				result["confirmed"] = boolArg(args, "confirmed", false)
+				result["confirmed"] = confirmed
 			}
 		case "create":
-			confirmed := boolArg(args, "confirmed", false)
-			if boolArg(args, "dry_run", false) || !confirmed {
-				result, err = svc.memoryCardCapture(ctx, args)
+			if dryRun || !confirmed {
+				result, err = svc.memoryCardCapture(ctx, request)
 				if err == nil {
 					result["dry_run"] = true
 					result["confirmed"] = confirmed
 				}
 			} else {
-				result, err = svc.memoryCardWrite(ctx, args)
+				result, err = svc.memoryCardWrite(ctx, request)
 			}
 		default:
 			return nil, invalidRecallTargetAction(target, action)
@@ -96,31 +103,35 @@ func (svc *Service) Write(ctx context.Context, args map[string]any) (Result, err
 	case "markdown":
 		switch action {
 		case "plan":
-			result, err = svc.memoryPreviewWrite(ctx, markdownWriteArgs(args, false))
+			writeRequest := request
+			writeRequest.Overwrite = boolPtrValue(false)
+			result, err = svc.memoryPreviewWrite(ctx, writeRequest)
 		case "create":
-			writeArgs := markdownWriteArgs(args, false)
-			if boolArg(args, "dry_run", false) {
-				result, err = svc.memoryPreviewWrite(ctx, writeArgs)
+			writeRequest := request
+			writeRequest.Overwrite = boolPtrValue(false)
+			if dryRun {
+				result, err = svc.memoryPreviewWrite(ctx, writeRequest)
 			} else {
-				result, err = svc.memoryWrite(ctx, writeArgs)
+				result, err = svc.memoryWrite(ctx, writeRequest)
 			}
 		case "replace":
-			writeArgs := markdownWriteArgs(args, true)
-			if boolArg(args, "dry_run", false) || !boolArg(args, "confirmed", false) {
-				result, err = svc.memoryPreviewWrite(ctx, writeArgs)
+			writeRequest := request
+			writeRequest.Overwrite = boolPtrValue(true)
+			if dryRun || !confirmed {
+				result, err = svc.memoryPreviewWrite(ctx, writeRequest)
 			} else {
-				result, err = svc.memoryWrite(ctx, writeArgs)
+				result, err = svc.memoryWrite(ctx, writeRequest)
 			}
 		case "append":
-			result, err = svc.memoryAppend(ctx, args)
+			result, err = svc.memoryAppend(ctx, request)
 		case "patch":
-			result, err = svc.memoryPatch(ctx, args)
+			result, err = svc.memoryPatch(ctx, request)
 		case "update_fact":
-			result, err = svc.memoryUpdateFact(ctx, args)
+			result, err = svc.memoryUpdateFact(ctx, request)
 		case "diff":
-			result, err = svc.memoryDiff(ctx, args)
+			result, err = svc.memoryDiff(ctx, request)
 		case "delete":
-			result, err = svc.memoryDelete(ctx, args)
+			result, err = svc.memoryDelete(ctx, request)
 		default:
 			return nil, invalidRecallTargetAction(target, action)
 		}
@@ -137,28 +148,27 @@ func (svc *Service) Write(ctx context.Context, args map[string]any) (Result, err
 	return result, nil
 }
 
-func markdownWriteArgs(args map[string]any, overwrite bool) map[string]any {
-	result := make(map[string]any, len(args)+1)
-	for key, value := range args {
-		result[key] = value
-	}
-	result["overwrite"] = overwrite
-	return result
-}
-
 func invalidRecallTargetAction(target, action string) error {
 	return toolErrorDetails("INVALID_RECALL_ACTION", "unsupported recall_write action for target", "validation", map[string]any{"target": target, "action": action})
 }
 
-func (svc *Service) Maintain(ctx context.Context, args map[string]any) (Result, error) {
-	action := strings.ToLower(strings.TrimSpace(stringArg(args, "action", "list")))
+func (svc *Service) Maintain(ctx context.Context, request MaintainRequest) (Result, error) {
+	action := strings.ToLower(strings.TrimSpace(request.Action))
+	if action == "" {
+		action = "list"
+	}
+	prefix := strings.TrimSpace(request.Prefix)
+	if strings.HasPrefix(prefix, "private-notes") && (action == "list" || action == "lint") {
+		message := "private-notes is not listable through recall_maintain; use private_note_manage action=status status_action=list"
+		if action == "lint" {
+			message = "private-notes is not lintable through recall_maintain; use private_note_manage action=status or action=maintain"
+		}
+		return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", message, "validation")
+	}
+
 	switch action {
 	case "list":
-		listArgs, err := recallMaintainListArgs(args)
-		if err != nil {
-			return nil, err
-		}
-		result, err := svc.memoryList(ctx, listArgs)
+		result, err := svc.memoryList(ctx, memoryListRequest{Prefix: prefix, MaxEntries: intValue(request.MaxEntries, 0)})
 		if err != nil {
 			return nil, err
 		}
@@ -166,11 +176,7 @@ func (svc *Service) Maintain(ctx context.Context, args map[string]any) (Result, 
 		result["recall_action"] = "list"
 		return result, nil
 	case "lint":
-		lintArgs, err := recallMaintainLintArgs(args)
-		if err != nil {
-			return nil, err
-		}
-		result, err := svc.memoryLint(ctx, lintArgs)
+		result, err := svc.memoryLint(ctx, request)
 		if err != nil {
 			return nil, err
 		}
@@ -187,7 +193,7 @@ func (svc *Service) Maintain(ctx context.Context, args map[string]any) (Result, 
 		return result, nil
 	case "reindex", "reindex_cards":
 		payload := map[string]any{}
-		if prefix := strings.TrimSpace(stringArg(args, "prefix", "")); prefix != "" {
+		if prefix != "" {
 			payload["prefix"] = prefix
 		}
 		if action == "reindex_cards" && payload["prefix"] == nil {
@@ -255,51 +261,4 @@ func decorateRecallSearchResults(result Result, endpoint string) {
 		item["id"] = path
 		item["url"] = sourceURL.String()
 	}
-}
-
-func recallSearchArgs(args map[string]any, prefix, excludePrefix string) map[string]any {
-	out := map[string]any{"query": stringArg(args, "query", "")}
-	if maxResults := intArg(args, "max_results", 0); maxResults > 0 {
-		out["max_results"] = maxResults
-	}
-	if prefix != "" {
-		out["prefix"] = prefix
-	}
-	if excludePrefix != "" {
-		out["exclude_prefix"] = excludePrefix
-	}
-	return out
-}
-
-func recallMaintainListArgs(args map[string]any) (map[string]any, error) {
-	prefix := strings.TrimSpace(stringArg(args, "prefix", ""))
-	if strings.HasPrefix(prefix, "private-notes") {
-		return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes is not listable through recall_maintain; use private_note_manage action=status status_action=list", "validation")
-	}
-	out := map[string]any{"prefix": prefix}
-	if maxEntries := intArg(args, "max_entries", 0); maxEntries > 0 {
-		out["max_entries"] = maxEntries
-	}
-	return out, nil
-}
-
-func recallMaintainLintArgs(args map[string]any) (map[string]any, error) {
-	prefix := strings.TrimSpace(stringArg(args, "prefix", ""))
-	if strings.HasPrefix(prefix, "private-notes") {
-		return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes is not lintable through recall_maintain; use private_note_manage action=status or action=maintain", "validation")
-	}
-	out := map[string]any{"prefix": prefix}
-	if terms := stringSliceArg(args, "terms"); len(terms) > 0 {
-		out["terms"] = terms
-	}
-	if _, ok := args["regex"]; ok {
-		out["regex"] = boolArg(args, "regex", false)
-	}
-	if maxEntries := intArg(args, "max_entries", 0); maxEntries > 0 {
-		out["max_entries"] = maxEntries
-	}
-	if maxFindings := intArg(args, "max_findings", 0); maxFindings > 0 {
-		out["max_findings"] = maxFindings
-	}
-	return out, nil
 }

@@ -12,7 +12,7 @@ func TestListDirHonorsCanceledContext(t *testing.T) {
 	runtime, _ := newFileTestService(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := runtime.ListDir(ctx, map[string]any{"path": "."})
+	_, err := runtime.listDirTest(ctx, map[string]any{"path": "."})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("list_dir error = %v, want context.Canceled", err)
 	}
@@ -35,7 +35,7 @@ func TestListDirAppliesDepthAndHiddenRules(t *testing.T) {
 		}
 	}
 
-	result, err := runtime.ListDir(context.Background(), map[string]any{
+	result, err := runtime.listDirTest(context.Background(), map[string]any{
 		"path": ".", "max_depth": 2, "max_entries": 100,
 	})
 	if err != nil {
@@ -78,7 +78,7 @@ func TestListDirPatternsAreRelativeToRequestedPath(t *testing.T) {
 
 	list := func(pattern string) []map[string]any {
 		t.Helper()
-		result, err := runtime.ListDir(context.Background(), map[string]any{
+		result, err := runtime.listDirTest(context.Background(), map[string]any{
 			"path": "src", "max_depth": 2, "entry_type": "file", "patterns": []string{pattern},
 		})
 		if err != nil {
@@ -121,7 +121,7 @@ func TestListDirNestedPathKeepsWorkspaceRootIgnoreRules(t *testing.T) {
 
 	list := func(includeIgnored bool) map[string]bool {
 		t.Helper()
-		result, err := runtime.ListDir(context.Background(), map[string]any{
+		result, err := runtime.listDirTest(context.Background(), map[string]any{
 			"path": "src", "max_depth": 2, "include_ignored": includeIgnored,
 		})
 		if err != nil {
@@ -153,7 +153,7 @@ func TestListDirTruncatedRequiresAdditionalMatchingEntry(t *testing.T) {
 	}
 	args := map[string]any{"path": ".", "entry_type": "file", "patterns": []string{"*.txt"}, "max_entries": 2}
 
-	exact, err := runtime.ListDir(context.Background(), args)
+	exact, err := runtime.listDirTest(context.Background(), args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestListDirTruncatedRequiresAdditionalMatchingEntry(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "c.txt"), []byte("c"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	overflow, err := runtime.ListDir(context.Background(), args)
+	overflow, err := runtime.listDirTest(context.Background(), args)
 	if err != nil {
 		t.Fatal(err)
 	}

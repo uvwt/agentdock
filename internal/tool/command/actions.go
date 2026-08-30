@@ -2,28 +2,31 @@ package command
 
 import "strings"
 
-func (s *Service) Observe(args map[string]any) (Result, error) {
-	action := strings.ToLower(stringArg(args, "action", "list"))
+func (s *Service) Observe(request SessionObserveRequest) (Result, error) {
+	action := strings.ToLower(strings.TrimSpace(request.Action))
+	if action == "" {
+		action = "list"
+	}
 	switch action {
-	case "list", "sessions":
+	case "list":
 		return s.listSessions()
-	case "status", "get":
-		return s.sessionStatus(args)
+	case "status":
+		return s.sessionStatus(request)
 	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported session_observe action", "validation", map[string]any{"action": stringArg(args, "action", ""), "allowed": []string{"list", "status"}})
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported session_observe action", "validation", map[string]any{"action": request.Action, "allowed": []string{"list", "status"}})
 	}
 }
 
-func (s *Service) Act(args map[string]any) (Result, error) {
-	action := strings.ToLower(stringArg(args, "action", ""))
+func (s *Service) Act(request SessionActRequest) (Result, error) {
+	action := strings.ToLower(strings.TrimSpace(request.Action))
 	switch action {
-	case "write", "stdin", "send", "send_stdin":
-		return s.writeStdin(args)
-	case "kill", "stop":
-		return s.killSession(args)
-	case "kill_all", "stop_all", "clear":
-		return s.killAll(args)
+	case "write":
+		return s.writeStdin(request)
+	case "kill":
+		return s.killSession(request)
+	case "kill_all":
+		return s.killAll()
 	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported session_act action", "validation", map[string]any{"action": stringArg(args, "action", ""), "allowed": []string{"write", "kill", "kill_all"}})
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported session_act action", "validation", map[string]any{"action": request.Action, "allowed": []string{"write", "kill", "kill_all"}})
 	}
 }

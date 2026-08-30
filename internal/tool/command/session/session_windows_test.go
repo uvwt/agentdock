@@ -39,8 +39,8 @@ func TestWindowsPowerShellOutputIsUTF8(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := s.Snapshot("exited", 4096)
-	if result["stdout"] != "中文输出" {
-		t.Fatalf("stdout = %#v", result["stdout"])
+	if result.Stdout != "中文输出" {
+		t.Fatalf("stdout = %#v", result.Stdout)
 	}
 }
 
@@ -73,7 +73,7 @@ func TestWindowsTTYUsesConPTYAndAcceptsInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := s.Snapshot("exited", 4096)
-	stdout, _ := result["stdout"].(string)
+	stdout := result.Stdout
 	if !strings.Contains(stdout, "received:hello") {
 		t.Fatalf("stdout = %q", stdout)
 	}
@@ -173,13 +173,13 @@ func waitForWindowsNativeChild(t *testing.T, s *Session, readyPath string) windo
 		select {
 		case <-s.Done:
 			status := s.Peek("exited", 4096)
-			t.Fatalf("native child exited before readiness: stdout=%q stderr=%q command_error=%v", status["stdout"], status["stderr"], s.WaitError())
+			t.Fatalf("native child exited before readiness: stdout=%q stderr=%q command_error=%v", status.Stdout, status.Stderr, s.WaitError())
 		default:
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
 	status := s.Peek("running", 4096)
-	t.Fatalf("native child did not start: stdout=%q stderr=%q", status["stdout"], status["stderr"])
+	t.Fatalf("native child did not start: stdout=%q stderr=%q", status.Stdout, status.Stderr)
 	return windowsNativeChildReady{}
 }
 

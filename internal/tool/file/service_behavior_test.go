@@ -16,7 +16,7 @@ func TestReadFileReturnsNextStartLineOnTruncation(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("第一行\n第二行\n第三行\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	result, err := rt.ReadFile(context.Background(), map[string]any{"path": "notes.txt", "max_bytes": 13})
+	result, err := rt.readFileTest(context.Background(), map[string]any{"path": "notes.txt", "max_bytes": 13})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestEditFileReplacesSingleMatch(t *testing.T) {
 	if err := os.WriteFile(path, []byte("package main\n\nfunc main() {}\n"), 0o640); err != nil {
 		t.Fatal(err)
 	}
-	result, err := rt.editFile(map[string]any{"path": "main.go", "old": "func main() {}", "new": "func main() { println(\"ok\") }"})
+	result, err := rt.editFileTest(map[string]any{"path": "main.go", "old": "func main() {}", "new": "func main() { println(\"ok\") }"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestEditFileDryRunDoesNotWrite(t *testing.T) {
 	if err := os.WriteFile(path, []byte("alpha\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	result, err := rt.editFile(map[string]any{"path": "main.go", "old": "alpha", "new": "beta", "dry_run": true})
+	result, err := rt.editFileTest(map[string]any{"path": "main.go", "old": "alpha", "new": "beta", "dry_run": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,10 +89,10 @@ func TestEditFileRejectsUnexpectedMatchCounts(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("alpha\nalpha\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rt.editFile(map[string]any{"path": "main.go", "old": "alpha", "new": "beta"}); err == nil {
+	if _, err := rt.editFileTest(map[string]any{"path": "main.go", "old": "alpha", "new": "beta"}); err == nil {
 		t.Fatalf("expected multi-match error")
 	}
-	if _, err := rt.editFile(map[string]any{"path": "main.go", "old": "missing", "new": "beta"}); err == nil {
+	if _, err := rt.editFileTest(map[string]any{"path": "main.go", "old": "missing", "new": "beta"}); err == nil {
 		t.Fatalf("expected zero-match error")
 	}
 }
@@ -103,7 +103,7 @@ func TestEditFileReplaceAll(t *testing.T) {
 	if err := os.WriteFile(path, []byte("alpha\nalpha\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rt.editFile(map[string]any{"path": "main.go", "old": "alpha", "new": "beta", "replace_all": true, "expected_matches": 2}); err != nil {
+	if _, err := rt.editFileTest(map[string]any{"path": "main.go", "old": "alpha", "new": "beta", "replace_all": true, "expected_matches": 2}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)
@@ -120,13 +120,13 @@ func TestEditFileRejectsBinaryAndInvalidUTF8(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "bin.dat"), []byte{0, 1, 2}, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rt.editFile(map[string]any{"path": "bin.dat", "old": "x", "new": "y"}); err == nil {
+	if _, err := rt.editFileTest(map[string]any{"path": "bin.dat", "old": "x", "new": "y"}); err == nil {
 		t.Fatalf("expected binary rejection")
 	}
 	if err := os.WriteFile(filepath.Join(root, "bad.txt"), []byte{0xff, 'x'}, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rt.editFile(map[string]any{"path": "bad.txt", "old": "x", "new": "y"}); err == nil {
+	if _, err := rt.editFileTest(map[string]any{"path": "bad.txt", "old": "x", "new": "y"}); err == nil {
 		t.Fatalf("expected invalid UTF-8 rejection")
 	}
 }
@@ -184,7 +184,7 @@ func TestApplyEnvelopePatchDryRunAndDiagnostics(t *testing.T) {
 		t.Fatal(err)
 	}
 	patch := "*** Begin Patch\n*** Update File: main.go\n@@\n-alpha\n+ALPHA\n*** End Patch"
-	result, err := rt.applyPatch(context.Background(), map[string]any{"patch": patch, "dry_run": true})
+	result, err := rt.applyPatchTest(context.Background(), map[string]any{"patch": patch, "dry_run": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestApplyEnvelopePatchDryRunAndDiagnostics(t *testing.T) {
 		t.Fatalf("dry-run wrote file: %q", data)
 	}
 
-	_, err = rt.applyPatch(context.Background(), map[string]any{"patch": "*** Begin Patch\n*** Update File: main.go\n@@\n-missing\n+value\n*** End Patch"})
+	_, err = rt.applyPatchTest(context.Background(), map[string]any{"patch": "*** Begin Patch\n*** Update File: main.go\n@@\n-missing\n+value\n*** End Patch"})
 	if err == nil {
 		t.Fatalf("expected context diagnostic")
 	}
@@ -215,7 +215,7 @@ func TestApplyUnifiedDiffDryRunDoesNotWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	patch := "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n@@ -1 +1 @@\n-alpha\n+beta\n"
-	result, err := rt.applyPatch(context.Background(), map[string]any{"patch": patch, "dry_run": true})
+	result, err := rt.applyPatchTest(context.Background(), map[string]any{"patch": patch, "dry_run": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ func TestReadFileUsesCanonicalEncodingErrorCode(t *testing.T) {
 	if err := os.WriteFile(path, []byte{0xff, 0xfe}, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := rt.ReadFile(context.Background(), map[string]any{"path": "invalid-utf8.txt"})
+	_, err := rt.readFileTest(context.Background(), map[string]any{"path": "invalid-utf8.txt"})
 	var toolErr *ToolError
 	if !errors.As(err, &toolErr) || toolErr.Code != "ENCODING_UNSUPPORTED" {
 		t.Fatalf("readFile() error = %#v, want ENCODING_UNSUPPORTED", err)

@@ -30,28 +30,27 @@ const (
 	maxRetainedCommandSessions   = 128
 )
 
-func (svc *Service) Exec(ctx context.Context, args map[string]any) (Result, error) {
-	cmd := stringArg(args, "cmd", "")
-	if cmd == "" {
+func (svc *Service) Exec(ctx context.Context, request ExecRequest) (Result, error) {
+	if request.Cmd == "" {
 		return nil, toolError("INVALID_ARGUMENT", "cmd is required", "validation")
 	}
-	invocation, err := svc.prepareCommandInvocation(args, cmd)
+	invocation, err := svc.prepareCommandInvocation(request)
 	if err != nil {
 		return nil, err
 	}
-	timeout, err := commandTimeout(args)
+	timeout, err := commandTimeout(request.TimeoutMS)
 	if err != nil {
 		return nil, err
 	}
-	executionMode, err := commandExecutionModeArg(args)
+	executionMode, err := commandExecutionModeArg(request.ExecutionMode)
 	if err != nil {
 		return nil, err
 	}
 	defaultYieldMS := int(defaultCommandYield / time.Millisecond)
-	yieldMS := boundedInt(intArg(args, "yield_time_ms", defaultYieldMS), defaultYieldMS, 0, int(maxCommandYield/time.Millisecond))
+	yieldMS := boundedInt(intValue(request.YieldTimeMS, defaultYieldMS), defaultYieldMS, 0, int(maxCommandYield/time.Millisecond))
 	yield := time.Duration(yieldMS) * time.Millisecond
-	maxBytes := commandOutputLimit(args)
-	tty := boolArg(args, "tty", false)
+	maxBytes := commandOutputLimit(request.MaxOutputBytes)
+	tty := request.TTY
 	commandCtx, err := svc.commandContext()
 	if err != nil {
 		return nil, err
@@ -79,13 +78,13 @@ func (svc *Service) Exec(ctx context.Context, args map[string]any) (Result, erro
 	// 背景：exec_command 可能先返回 running，让模型后续通过 session_observe action=status 继续取结果；
 	// 如果子进程绑定到单次 MCP 请求 ctx，请求结束时 git push / npm install 等长任务会被杀掉。
 	// 因此长任务只受 timeout_ms 和 session_act action=kill/kill_all 控制。
-	s, sandboxStatus, err := invocation.start(commandCtx, timeout, tty, func(command *exec.Cmd) (func(), map[string]any) {
+	s, sandboxStatus, err := invocation.start(commandCtx, timeout, tty, func(command *exec.Cmd) (func(), session.PreparationStatus) {
 		// AgentDock 不额外过滤命令，实际权限边界由所选运行环境决定。
 		privilegeWarning := "exec_command runs with the AgentDock process OS user privileges"
 		if invocation.execution.Runtime == "wsl" {
 			privilegeWarning = "runtime=wsl executes with the selected distribution's default Linux user privileges"
 		}
-		return func() {}, map[string]any{"enabled": false, "mode": "none", "policy": "no_command_content_filtering", "warnings": []string{privilegeWarning, "use Docker volumes, service users, file permissions, and network policy as the security boundary"}}
+		return func() {}, session.PreparationStatus{Enabled: false, Mode: "none", Policy: "no_command_content_filtering", Warnings: []string{privilegeWarning, "use Docker volumes, service users, file permissions, and network policy as the security boundary"}}
 	})
 	// 只有 invocation.start 完整返回后，runner、平台进程控制器以及 cmdCtx 取消监听才都已经建立。
 	// Runtime.Close 会等待这个启动窗口排空，再取消 commandCtx，避免在半启动状态抢占进程。
@@ -94,8 +93,8 @@ func (svc *Service) Exec(ctx context.Context, args map[string]any) (Result, erro
 		return nil, err
 	}
 	s.SetExecutionContext(invocation.execution)
-	if stdin := stringArg(args, "stdin", ""); stdin != "" {
-		if err := s.Write(stdin); err != nil {
+	if request.Stdin != "" {
+		if err := s.Write(request.Stdin); err != nil {
 			s.Kill()
 			s.Cancel()
 			return nil, fmt.Errorf("write command stdin: %w", err)
@@ -112,8 +111,8 @@ func (svc *Service) Exec(ctx context.Context, args map[string]any) (Result, erro
 	storeSession := func(reason string) Result {
 		svc.storeReservedSession(s)
 		reservationActive = false
-		result := s.Snapshot("running", maxBytes)
-		result["sandbox"] = sandboxStatus
+		result := snapshotResult(s.Snapshot("running", maxBytes))
+		result["sandbox"] = preparationStatusResult(sandboxStatus)
 		result["session_reason"] = reason
 		result["observe_after_ms"] = 1000
 		return result
@@ -142,8 +141,8 @@ func (svc *Service) Exec(ctx context.Context, args map[string]any) (Result, erro
 
 	err = s.WaitError()
 	s.Cancel()
-	result := s.Snapshot("exited", maxBytes)
-	result["sandbox"] = sandboxStatus
+	result := snapshotResult(s.Snapshot("exited", maxBytes))
+	result["sandbox"] = preparationStatusResult(sandboxStatus)
 	if s.TimedOut {
 		result["status"] = "timeout"
 	}
@@ -153,8 +152,11 @@ func (svc *Service) Exec(ctx context.Context, args map[string]any) (Result, erro
 	return result, nil
 }
 
-func commandExecutionModeArg(args map[string]any) (commandExecutionMode, error) {
-	mode := commandExecutionMode(stringArg(args, "execution_mode", string(commandExecutionModeAuto)))
+func commandExecutionModeArg(raw string) (commandExecutionMode, error) {
+	if raw == "" {
+		raw = string(commandExecutionModeAuto)
+	}
+	mode := commandExecutionMode(raw)
 	switch mode {
 	case commandExecutionModeAuto, commandExecutionModeSync, commandExecutionModeAsync:
 		return mode, nil
@@ -168,8 +170,8 @@ func commandExecutionModeArg(args map[string]any) (commandExecutionMode, error) 
 	}
 }
 
-func commandTimeout(args map[string]any) (time.Duration, error) {
-	timeoutMS := intArg(args, "timeout_ms", 30000)
+func commandTimeout(requested *int) (time.Duration, error) {
+	timeoutMS := intValue(requested, 30000)
 	if timeoutMS <= 0 {
 		return 0, toolErrorDetails(
 			"INVALID_TIMEOUT",
@@ -185,24 +187,67 @@ func commandTimeout(args map[string]any) (time.Duration, error) {
 	return time.Duration(timeoutMS) * time.Millisecond, nil
 }
 
-func commandOutputLimit(args map[string]any) int {
-	return boundedInt(intArg(args, "max_output_bytes", 65536), 65536, 1, maxCommandOutputBytes)
+func commandOutputLimit(requested *int) int {
+	return boundedInt(intValue(requested, 65536), 65536, 1, maxCommandOutputBytes)
 }
 
-func (svc *Service) writeStdin(args map[string]any) (Result, error) {
-	s, ok := svc.sessions.Get(stringArg(args, "session_id", ""))
+// snapshotResult 是 Command capability 向外部 Tool Result 的输出边界；Session 核心只暴露强类型快照。
+func snapshotResult(snapshot session.Snapshot) Result {
+	result := Result{
+		"session_id": snapshot.SessionID, "status": snapshot.Status,
+		"stdout": snapshot.Stdout, "stderr": snapshot.Stderr,
+		"elapsed_ms": snapshot.ElapsedMS, "timed_out": snapshot.TimedOut, "terminal": snapshot.Terminal,
+		"stdout_output_bytes": snapshot.StdoutOutputBytes, "stderr_output_bytes": snapshot.StderrOutputBytes,
+		"stdout_total_bytes": snapshot.StdoutTotalBytes, "stderr_total_bytes": snapshot.StderrTotalBytes,
+		"stdout_dropped_bytes": snapshot.StdoutDroppedBytes, "stderr_dropped_bytes": snapshot.StderrDroppedBytes,
+		"stdout_omitted_bytes": snapshot.StdoutOmittedBytes, "stderr_omitted_bytes": snapshot.StderrOmittedBytes,
+		"stdout_output_lines": snapshot.StdoutOutputLines, "stderr_output_lines": snapshot.StderrOutputLines,
+		"stdout_truncated": snapshot.StdoutTruncated, "stderr_truncated": snapshot.StderrTruncated,
+	}
+	if snapshot.Completed {
+		result["exit_code"] = snapshot.ExitCode
+		result["command_ok"] = snapshot.CommandOK
+	}
+	if snapshot.Runtime != "" {
+		result["runtime"] = snapshot.Runtime
+	}
+	if snapshot.WSLDistribution != "" {
+		result["wsl_distribution"] = snapshot.WSLDistribution
+	}
+	if snapshot.Workdir != "" {
+		result["workdir"] = snapshot.Workdir
+	}
+	return result
+}
+
+func preparationStatusResult(status session.PreparationStatus) map[string]any {
+	result := map[string]any{"enabled": status.Enabled}
+	if status.Mode != "" {
+		result["mode"] = status.Mode
+	}
+	if status.Policy != "" {
+		result["policy"] = status.Policy
+	}
+	if len(status.Warnings) > 0 {
+		result["warnings"] = append([]string(nil), status.Warnings...)
+	}
+	return result
+}
+
+func (svc *Service) writeStdin(request SessionActRequest) (Result, error) {
+	s, ok := svc.sessions.Get(request.SessionID)
 	if !ok {
 		return nil, toolError("SESSION_NOT_FOUND", "session not found", "not_found")
 	}
-	maxBytes := commandOutputLimit(args)
+	maxBytes := commandOutputLimit(request.MaxOutputBytes)
 	select {
 	case <-s.Done:
 		return svc.consumeCompletedSession(s, maxBytes), nil
 	default:
 	}
 
-	if chars := stringArg(args, "chars", ""); chars != "" {
-		if err := s.Write(chars); err != nil {
+	if request.Chars != "" {
+		if err := s.Write(request.Chars); err != nil {
 			select {
 			case <-s.Done:
 				return svc.consumeCompletedSession(s, maxBytes), nil
@@ -217,7 +262,7 @@ func (svc *Service) writeStdin(args map[string]any) (Result, error) {
 	case <-s.Done:
 		return svc.consumeCompletedSession(s, maxBytes), nil
 	default:
-		return s.Peek("running", maxBytes), nil
+		return snapshotResult(s.Peek("running", maxBytes)), nil
 	}
 }
 
@@ -225,7 +270,7 @@ func (svc *Service) consumeCompletedSession(s *session.Session, maxBytes int) Re
 	err := s.WaitError()
 	s.Cancel()
 	svc.sessions.Delete(s.ID)
-	result := s.Snapshot("exited", maxBytes)
+	result := snapshotResult(s.Snapshot("exited", maxBytes))
 	if s.TimedOut {
 		result["status"] = "timeout"
 	}
@@ -235,15 +280,15 @@ func (svc *Service) consumeCompletedSession(s *session.Session, maxBytes int) Re
 	return result
 }
 
-func (svc *Service) killSession(args map[string]any) (Result, error) {
+func (svc *Service) killSession(request SessionActRequest) (Result, error) {
 	started := time.Now()
-	s, ok := svc.sessions.Get(stringArg(args, "session_id", ""))
+	s, ok := svc.sessions.Get(request.SessionID)
 	if !ok {
 		return nil, toolError("SESSION_NOT_FOUND", "session not found", "not_found")
 	}
 	select {
 	case <-s.Done:
-		return svc.consumeCompletedSession(s, commandOutputLimit(args)), nil
+		return svc.consumeCompletedSession(s, commandOutputLimit(request.MaxOutputBytes)), nil
 	default:
 	}
 	_, killErr := s.Kill()
@@ -264,7 +309,7 @@ func (svc *Service) killSession(args map[string]any) (Result, error) {
 		)
 	}
 	svc.sessions.Delete(s.ID)
-	result := s.Snapshot("killed", commandOutputLimit(args))
+	result := snapshotResult(s.Snapshot("killed", commandOutputLimit(request.MaxOutputBytes)))
 	if err := s.WaitError(); err != nil {
 		result["command_error"] = err.Error()
 	}
@@ -272,7 +317,7 @@ func (svc *Service) killSession(args map[string]any) (Result, error) {
 	return result, nil
 }
 
-func (svc *Service) killAll(args map[string]any) (Result, error) {
+func (svc *Service) killAll() (Result, error) {
 	sessions := svc.sessions.List()
 	running := make([]*session.Session, 0, len(sessions))
 	items := make([]map[string]any, 0, len(sessions))
@@ -353,17 +398,17 @@ func waitForSessionsCompletion(sessions []*session.Session, timeout time.Duratio
 	return completed, timedOut
 }
 
-func (svc *Service) sessionStatus(args map[string]any) (Result, error) {
-	s, ok := svc.sessions.Get(stringArg(args, "session_id", ""))
+func (svc *Service) sessionStatus(request SessionObserveRequest) (Result, error) {
+	s, ok := svc.sessions.Get(request.SessionID)
 	if !ok {
 		return nil, toolError("SESSION_NOT_FOUND", "session not found", "not_found")
 	}
-	maxBytes := commandOutputLimit(args)
+	maxBytes := commandOutputLimit(request.MaxOutputBytes)
 	select {
 	case <-s.Done:
 		return svc.consumeCompletedSession(s, maxBytes), nil
 	default:
-		return s.Snapshot("running", maxBytes), nil
+		return snapshotResult(s.Snapshot("running", maxBytes)), nil
 	}
 }
 
@@ -395,7 +440,7 @@ func (svc *Service) listSessions() (Result, error) {
 	return Result{"sessions": items, "count": len(items)}, nil
 }
 
-func (svc *Service) commandEnv(skillName string, extra map[string]any) ([]string, error) {
+func (svc *Service) commandEnv(skillName string, extra map[string]string) ([]string, error) {
 	env, err := svc.baseCommandEnv()
 	if err != nil {
 		return nil, err

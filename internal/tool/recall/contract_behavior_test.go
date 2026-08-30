@@ -22,7 +22,7 @@ func TestRecallWriteMatchesCanonicalBehaviorCases(t *testing.T) {
 			args := recallWriteBehaviorArgs(behavior)
 			before, existedBefore := prepareRecallWriteBehaviorFixture(store, behavior)
 
-			result, err := runtime.Write(context.Background(), args)
+			result, err := runtime.writeTest(context.Background(), args)
 			got := classifyRecallWriteOutcome(behavior, result, err)
 			if got != behavior.Expected {
 				t.Fatalf("outcome=%s want=%s result=%#v err=%v", got, behavior.Expected, result, err)
@@ -160,13 +160,13 @@ func newRecallWriteBehaviorService(t *testing.T) (*Service, map[string]string, f
 			}
 			writeRecallBehaviorJSON(w, http.StatusOK, map[string]any{
 				"ok": true, "path": path, "proposed_content": content, "overwrite": overwrite,
-				"dry_run": true, "confirmed": boolValue(payload["confirmed"]),
+				"dry_run": true, "confirmed": testBoolValue(payload["confirmed"]),
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/recall":
 			payload := decodeRecallBehaviorPayload(t, r)
 			path, _ := payload["path"].(string)
 			content, _ := payload["content"].(string)
-			confirmed, overwrite := boolValue(payload["confirmed"]), boolValue(payload["overwrite"])
+			confirmed, overwrite := testBoolValue(payload["confirmed"]), testBoolValue(payload["overwrite"])
 			if !strings.HasPrefix(path, "recall/docs/inbox/") && !confirmed {
 				writeRecallBehaviorJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "writing outside inbox requires confirmed=true"}})
 				return
@@ -217,7 +217,7 @@ func writeRecallBehaviorJSON(w http.ResponseWriter, status int, payload map[stri
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
-func boolValue(value any) bool {
+func testBoolValue(value any) bool {
 	result, _ := value.(bool)
 	return result
 }

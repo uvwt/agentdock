@@ -28,7 +28,7 @@ func TestSkillPackageActivateInstalledVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	response, err := runtime.Package(context.Background(), map[string]any{
+	response, err := runtime.packageTest(context.Background(), map[string]any{
 		"action":  "activate",
 		"skill":   "demo-skill",
 		"version": "1.1.0",
