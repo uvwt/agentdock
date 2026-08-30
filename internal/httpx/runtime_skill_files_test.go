@@ -12,7 +12,6 @@ import (
 
 	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/auth"
-	"github.com/uvwt/agentdock/internal/mcp"
 )
 
 func TestRuntimeAPISkillFilesStayInsideActivePackage(t *testing.T) {
@@ -40,7 +39,7 @@ func TestRuntimeAPISkillFilesStayInsideActivePackage(t *testing.T) {
 	symlinkCreated := os.Symlink(outside, filepath.Join(installedDir, "outside-link.txt")) == nil
 	insideSymlinkCreated := os.Symlink(filepath.Join(installedDir, "references", "guide.md"), filepath.Join(installedDir, "inside-link.txt")) == nil
 
-	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
+	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
 
 	listResponse := requestRuntimeAPI(t, handler, "/internal/runtime/skills")
 	var listPayload struct {

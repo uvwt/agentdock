@@ -16,8 +16,23 @@ import (
 	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/auth"
 	"github.com/uvwt/agentdock/internal/config"
-	"github.com/uvwt/agentdock/internal/mcp"
 )
+
+type RuntimeAPI interface {
+	RuntimeStatus() app.Result
+	RuntimeSkills() (app.Result, error)
+	RuntimeSkill(skill string) (app.Result, error)
+	RuntimeSkillFiles(skill string) (app.Result, error)
+	RuntimeSkillFile(skill, path string) (app.Result, error)
+	RuntimeTasks(status string, limit int) (app.Result, error)
+	RuntimeTask(id string) (app.Result, error)
+	RuntimeTaskDelete(id string) (app.Result, error)
+	RuntimeCapabilities(context.Context, bool) (app.Result, error)
+	RuntimeMCPServers(context.Context) (app.Result, error)
+	RuntimeMCPServer(context.Context, string) (app.Result, error)
+	RuntimeMCPManage(context.Context, map[string]any) (app.Result, error)
+	RuntimeEvolve(context.Context, map[string]any) (app.Result, error)
+}
 
 type RuntimeBridgeRequest struct {
 	Method string          `json:"method"`
@@ -26,7 +41,7 @@ type RuntimeBridgeRequest struct {
 	Body   json.RawMessage `json:"body,omitempty"`
 }
 
-func DispatchRuntimeBridgeRequest(ctx context.Context, server *mcp.Server, request RuntimeBridgeRequest) (map[string]any, error) {
+func DispatchRuntimeBridgeRequest(ctx context.Context, runtime RuntimeAPI, request RuntimeBridgeRequest) (map[string]any, error) {
 	method := strings.ToUpper(strings.TrimSpace(request.Method))
 	path := strings.TrimSpace(request.Path)
 	if !strings.HasPrefix(path, "/internal/runtime/") || !runtimeAPIMethodAllowed(method, path) {
@@ -41,11 +56,11 @@ func DispatchRuntimeBridgeRequest(ctx context.Context, server *mcp.Server, reque
 		URL:    parsed,
 		Body:   io.NopCloser(bytes.NewReader(request.Body)),
 	}
-	return dispatchRuntimeAPI(ctx, server, httpRequest)
+	return dispatchRuntimeAPI(ctx, runtime, httpRequest)
 }
 
-func registerRuntimeAPI(mux *http.ServeMux, server *mcp.Server, cfg config.Config, oauthStore *auth.OAuthStore) {
-	h := runtimeAPIHandler(server, cfg, oauthStore)
+func registerRuntimeAPI(mux *http.ServeMux, runtime RuntimeAPI, cfg config.Config, oauthStore *auth.OAuthStore) {
+	h := runtimeAPIHandler(runtime, cfg, oauthStore)
 	mux.HandleFunc("/internal/runtime/status", h)
 	mux.HandleFunc("/internal/runtime/capabilities", h)
 	mux.HandleFunc("/internal/runtime/skills", h)
@@ -57,7 +72,7 @@ func registerRuntimeAPI(mux *http.ServeMux, server *mcp.Server, cfg config.Confi
 	mux.HandleFunc("/internal/runtime/mcp/", h)
 }
 
-func runtimeAPIHandler(server *mcp.Server, cfg config.Config, oauthStore *auth.OAuthStore) http.HandlerFunc {
+func runtimeAPIHandler(runtime RuntimeAPI, cfg config.Config, oauthStore *auth.OAuthStore) http.HandlerFunc {
 	authorizer := auth.Bearer{Token: cfg.AuthToken}
 	authRequired := cfg.AuthRequired()
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +90,7 @@ func runtimeAPIHandler(server *mcp.Server, cfg config.Config, oauthStore *auth.O
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 		defer cancel()
-		result, err := dispatchRuntimeAPI(ctx, server, r)
+		result, err := dispatchRuntimeAPI(ctx, runtime, r)
 		if err != nil {
 			writeRuntimeAPIHandlerError(w, err)
 			return
@@ -110,18 +125,18 @@ func runtimeAPIAllowHeader(path string) string {
 	return "GET"
 }
 
-func dispatchRuntimeAPI(ctx context.Context, server *mcp.Server, r *http.Request) (map[string]any, error) {
+func dispatchRuntimeAPI(ctx context.Context, runtime RuntimeAPI, r *http.Request) (map[string]any, error) {
 	path := strings.TrimSuffix(r.URL.Path, "/")
 	taskID, isTaskPath := runtimeTaskID(path)
 	switch {
 	case path == "/internal/runtime/status":
-		return map[string]any(server.RuntimeStatus()), nil
+		return map[string]any(runtime.RuntimeStatus()), nil
 	case path == "/internal/runtime/capabilities":
 		refresh := strings.EqualFold(r.URL.Query().Get("refresh"), "true") || r.Method == http.MethodPost
-		result, err := server.RuntimeCapabilities(ctx, refresh)
+		result, err := runtime.RuntimeCapabilities(ctx, refresh)
 		return map[string]any(result), err
 	case path == "/internal/runtime/skills":
-		result, err := server.RuntimeSkills()
+		result, err := runtime.RuntimeSkills()
 		return map[string]any(result), err
 	case strings.HasPrefix(path, "/internal/runtime/skills/"):
 		skill, filePath, action, ok := runtimeSkillRoute(path)
@@ -130,13 +145,13 @@ func dispatchRuntimeAPI(ctx context.Context, server *mcp.Server, r *http.Request
 		}
 		switch action {
 		case "detail":
-			result, err := server.RuntimeSkill(skill)
+			result, err := runtime.RuntimeSkill(skill)
 			return map[string]any(result), err
 		case "files":
-			result, err := server.RuntimeSkillFiles(skill)
+			result, err := runtime.RuntimeSkillFiles(skill)
 			return map[string]any(result), err
 		case "file":
-			result, err := server.RuntimeSkillFile(skill, filePath)
+			result, err := runtime.RuntimeSkillFile(skill, filePath)
 			return map[string]any(result), err
 		default:
 			return nil, &app.ToolError{Code: "NOT_FOUND", Message: "runtime Skill API route not found", Category: "not_found"}
@@ -146,37 +161,37 @@ func dispatchRuntimeAPI(ctx context.Context, server *mcp.Server, r *http.Request
 		if err != nil {
 			return nil, err
 		}
-		result, err := server.RuntimeEvolve(ctx, args)
+		result, err := runtime.RuntimeEvolve(ctx, args)
 		return map[string]any(result), err
 	case path == "/internal/runtime/mcp" && r.Method == http.MethodPost:
 		args, err := decodeRuntimeMCPRequest(r)
 		if err != nil {
 			return nil, err
 		}
-		result, err := server.RuntimeMCPManage(ctx, args)
+		result, err := runtime.RuntimeMCPManage(ctx, args)
 		return map[string]any(result), err
 	case path == "/internal/runtime/mcp":
-		result, err := server.RuntimeMCPServers(ctx)
+		result, err := runtime.RuntimeMCPServers(ctx)
 		return map[string]any(result), err
 	case strings.HasPrefix(path, "/internal/runtime/mcp/"):
 		name, ok := runtimeMCPName(path)
 		if !ok {
 			return nil, &app.ToolError{Code: "MCP_NAME_REQUIRED", Message: "dynamic MCP server name is required", Category: "validation"}
 		}
-		result, err := server.RuntimeMCPServer(ctx, name)
+		result, err := runtime.RuntimeMCPServer(ctx, name)
 		return map[string]any(result), err
 	case path == "/internal/runtime/tasks":
 		limit, err := parseRuntimeTaskLimit(r.URL.Query().Get("limit"))
 		if err != nil {
 			return nil, err
 		}
-		result, err := server.RuntimeTasks(r.URL.Query().Get("status"), limit)
+		result, err := runtime.RuntimeTasks(r.URL.Query().Get("status"), limit)
 		return map[string]any(result), err
 	case isTaskPath && r.Method == http.MethodDelete:
-		result, err := server.RuntimeTaskDelete(taskID)
+		result, err := runtime.RuntimeTaskDelete(taskID)
 		return map[string]any(result), err
 	case isTaskPath:
-		result, err := server.RuntimeTask(taskID)
+		result, err := runtime.RuntimeTask(taskID)
 		return map[string]any(result), err
 	default:
 		return nil, &app.ToolError{Code: "NOT_FOUND", Message: "runtime API route not found", Category: "not_found"}

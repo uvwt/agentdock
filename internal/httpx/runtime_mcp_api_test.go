@@ -8,7 +8,6 @@ import (
 
 	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/auth"
-	"github.com/uvwt/agentdock/internal/mcp"
 )
 
 func TestRuntimeMCPAPIManagesServersWithoutReturningSecrets(t *testing.T) {
@@ -18,7 +17,7 @@ func TestRuntimeMCPAPIManagesServersWithoutReturningSecrets(t *testing.T) {
 		t.Fatalf("new runtime: %v", err)
 	}
 	defer runtime.Close()
-	handler := runtimeAPIHandler(mcp.NewServer(runtime, cfg), cfg, auth.NewOAuthStore())
+	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
 
 	postRuntimeMCP(t, handler, `{"action":"add","name":"demo","description":"Demo MCP","transport":"streamable_http","url":"http://127.0.0.1:1/mcp","enabled":false}`, http.StatusOK)
 
