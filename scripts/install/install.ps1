@@ -32,6 +32,30 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 Add-Type -AssemblyName System.Security
+$setupRuntimeLauncherPath = Join-Path $PSScriptRoot 'launch-windows-process.ps1'
+
+function Invoke-SetupRuntimeProcess {
+    param(
+        [string] $FilePath,
+        [string] $Arguments = '',
+        [switch] $WaitForExit
+    )
+
+    if ($InstallChannel -ne 'setup') {
+        throw 'The Setup runtime launcher is only valid for InstallChannel=setup.'
+    }
+    if (-not (Test-Path -LiteralPath $setupRuntimeLauncherPath -PathType Leaf)) {
+        throw "Setup runtime launcher was not found: $setupRuntimeLauncherPath"
+    }
+
+    # Inno Setup 6.7+ enables ProcessRedirectionTrustPolicy on its process tree.
+    # Task Scheduler creates the long-lived runtime from a clean user process context
+    # while Setup keeps RedirectionGuard enabled for install-time filesystem work.
+    & $setupRuntimeLauncherPath `
+        -FilePath $FilePath `
+        -Arguments $Arguments `
+        -WaitForExit:$WaitForExit
+}
 
 function Get-AgentDockArchitecture {
     $architecture = $env:PROCESSOR_ARCHITECTURE
@@ -683,6 +707,10 @@ function Start-HiddenPowerShellScript {
         throw "Launcher was not found: $ScriptPath"
     }
     $arguments = "-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$ScriptPath`""
+    if ($InstallChannel -eq 'setup') {
+        Invoke-SetupRuntimeProcess -FilePath (Join-Path $PSHOME 'powershell.exe') -Arguments $arguments
+        return
+    }
     Start-Process -FilePath 'powershell.exe' -ArgumentList $arguments -WindowStyle Hidden | Out-Null
 }
 
@@ -701,6 +729,10 @@ function Start-AgentDockTray {
 
     if (-not (Test-Path -LiteralPath $BinaryPath -PathType Leaf)) {
         throw "AgentDock tray was not found: $BinaryPath"
+    }
+    if ($InstallChannel -eq 'setup') {
+        Invoke-SetupRuntimeProcess -FilePath $BinaryPath -Arguments '--background'
+        return
     }
     Start-Process -FilePath $BinaryPath -ArgumentList '--background' -WindowStyle Hidden | Out-Null
 }
@@ -1316,9 +1348,16 @@ exit `$LASTEXITCODE
         } else {
             $startupCommand = "`"$destinationTrayBinary`" --start-core --runtime-root `"$runtimeDir`""
             Set-RunValue -RegistryPath $runKey -Name $runValueName -Value $startupCommand
-            & $destinationBinary service start --runtime-root $runtimeDir
-            if ($LASTEXITCODE -ne 0) {
-                throw "AgentDock native service start failed with exit code $LASTEXITCODE."
+            if ($InstallChannel -eq 'setup') {
+                Invoke-SetupRuntimeProcess `
+                    -FilePath $destinationBinary `
+                    -Arguments "service start --runtime-root `"$runtimeDir`"" `
+                    -WaitForExit
+            } else {
+                & $destinationBinary service start --runtime-root $runtimeDir
+                if ($LASTEXITCODE -ne 0) {
+                    throw "AgentDock native service start failed with exit code $LASTEXITCODE."
+                }
             }
         }
         $startupRegistrationChanged = $true
@@ -1525,9 +1564,16 @@ exit `$process.ExitCode
             $cloudflaredStartupCommand = "`"$destinationTrayBinary`" --start-tunnel --runtime-root `"$runtimeDir`""
             Set-RunValue -RegistryPath $runKey -Name $cloudflaredRunValueName -Value $cloudflaredStartupCommand
             $tunnelStartupRegistrationChanged = $true
-            & $destinationBinary tunnel start --runtime-root $runtimeDir
-            if ($LASTEXITCODE -ne 0) {
-                throw "AgentDock native Tunnel start failed with exit code $LASTEXITCODE."
+            if ($InstallChannel -eq 'setup') {
+                Invoke-SetupRuntimeProcess `
+                    -FilePath $destinationBinary `
+                    -Arguments "tunnel start --runtime-root `"$runtimeDir`"" `
+                    -WaitForExit
+            } else {
+                & $destinationBinary tunnel start --runtime-root $runtimeDir
+                if ($LASTEXITCODE -ne 0) {
+                    throw "AgentDock native Tunnel start failed with exit code $LASTEXITCODE."
+                }
             }
 
             if ($resolvedTunnelMode -eq 'quick') {
@@ -1556,9 +1602,16 @@ exit `$process.ExitCode
 
     $mustRestartExistingProcess = (-not $RegisterStartup) -and $processWasRunning
     if ($mustRestartExistingProcess) {
-        & $destinationBinary service start --runtime-root $runtimeDir
-        if ($LASTEXITCODE -ne 0) {
-            throw "AgentDock native service restart failed with exit code $LASTEXITCODE."
+        if ($InstallChannel -eq 'setup') {
+            Invoke-SetupRuntimeProcess `
+                -FilePath $destinationBinary `
+                -Arguments "service start --runtime-root `"$runtimeDir`"" `
+                -WaitForExit
+        } else {
+            & $destinationBinary service start --runtime-root $runtimeDir
+            if ($LASTEXITCODE -ne 0) {
+                throw "AgentDock native service restart failed with exit code $LASTEXITCODE."
+            }
         }
     }
 

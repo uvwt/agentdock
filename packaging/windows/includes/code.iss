@@ -182,6 +182,32 @@ begin
   Result := '"' + Value + '"';
 end;
 
+function LaunchRuntimeProcess(const Filename: String; const Arguments: String): Boolean;
+var
+  ExitCode: Integer;
+  Parameters: String;
+begin
+  Parameters :=
+    '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
+    QuoteArgument(ExpandConstant('{tmp}\launch-windows-process.ps1')) +
+    ' -FilePath ' + QuoteArgument(Filename);
+  if Arguments <> '' then
+    Parameters := Parameters + ' -Arguments ' + QuoteArgument(Arguments);
+
+  Result := Exec(
+    ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    Parameters,
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ExitCode);
+  if Result and (ExitCode <> 0) then
+  begin
+    Log('AgentDock runtime launch broker exited with code ' + IntToStr(ExitCode) + '.');
+    Result := False;
+  end;
+end;
+
 function SelectedTunnelMode(): String;
 begin
   case ConnectionPage.SelectedValueIndex of
@@ -332,20 +358,13 @@ end;
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
   URL: String;
-  ExitCode: Integer;
 begin
   Result := True;
   if CurPageID = wpFinished then
   begin
     if not ApplyDesktopControlPanelShortcut(DesktopShortcutCheckBox.Checked) then
       Log('AgentDock desktop shortcut state could not be applied.');
-    if not Exec(
-      ExpandConstant('{app}\bin\agentdock-tray.exe'),
-      '',
-      '',
-      SW_SHOWNORMAL,
-      ewNoWait,
-      ExitCode) then
+    if not LaunchRuntimeProcess(ExpandConstant('{app}\bin\agentdock-tray.exe'), '') then
       Log('AgentDock control panel could not be opened from the Finish button.');
     Exit;
   end;
@@ -403,6 +422,7 @@ begin
     InstallProgressPage.SetText(GetLocalizedMessage('OfflineProgressPreparing'), '');
     InstallProgressPage.SetProgress(1, 4);
     ExtractTemporaryFile('install.ps1');
+    ExtractTemporaryFile('launch-windows-process.ps1');
     ExtractTemporaryFile('agentdock_windows_{#PayloadArchitecture}.zip');
     ExtractTemporaryFile('agentdock_windows_{#PayloadArchitecture}.zip.sha256');
     ExtractTemporaryFile('cloudflared.exe');
