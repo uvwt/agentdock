@@ -75,6 +75,19 @@ func TestWindowsCommandEnvPlatformKeyContract(t *testing.T) {
 	}
 }
 
+func TestCommandEnvMappingUsesWindowsCaseInsensitiveKeys(t *testing.T) {
+	svc, cfg := newCommandTestService(t)
+	t.Setenv("AGENTDOCK_TEST_WINDOWS_HOST_MAPPING", "mapped-value")
+	cfg.CommandEnvFromEnv = map[string]string{
+		"custom_mapped_key": "AGENTDOCK_TEST_WINDOWS_HOST_MAPPING",
+	}
+
+	values := windowsCommandEnvValues(t, svc)
+	if got := values["CUSTOM_MAPPED_KEY"]; got != "mapped-value" {
+		t.Fatalf("mapped Windows environment = %q, want mapped-value", got)
+	}
+}
+
 func TestCommandEnvPreservesWindowsPlatformBaseline(t *testing.T) {
 	svc := newWindowsCommandEnvTestService(t)
 	for _, key := range platformCommandEnvKeys() {

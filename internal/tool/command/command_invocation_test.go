@@ -48,6 +48,17 @@ func TestBuildWSLProcessEnvForwardsValuesWithoutPuttingThemInArgs(t *testing.T) 
 	}
 }
 
+func TestBuildWSLProcessEnvDoesNotForwardBaseOnlyVariables(t *testing.T) {
+	env := buildWSLProcessEnv(
+		[]string{"HOST_ONLY=host-value"},
+		nil,
+	)
+	want := []string{"HOST_ONLY=host-value"}
+	if !reflect.DeepEqual(env, want) {
+		t.Fatalf("buildWSLProcessEnv() = %#v, want %#v", env, want)
+	}
+}
+
 func TestBuildWSLProcessEnvHonorsExplicitWSLEnv(t *testing.T) {
 	env := buildWSLProcessEnv(
 		[]string{"CUSTOM=base", "WSLENV=OLD"},

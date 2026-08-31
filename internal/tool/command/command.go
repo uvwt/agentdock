@@ -493,7 +493,17 @@ func (svc *Service) baseCommandEnv() (map[string]string, error) {
 	if err := os.MkdirAll(commandTempDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create command temp directory: %w", err)
 	}
+	svc.applyHostEnvMapping(env)
 	return env, nil
+}
+
+// applyHostEnvMapping 只复制部署者显式声明的宿主变量；未配置的宿主环境继续保持隔离。
+func (svc *Service) applyHostEnvMapping(env map[string]string) {
+	for childKey, hostKey := range svc.config().CommandEnvFromEnv {
+		if value, ok := os.LookupEnv(hostKey); ok {
+			setPlatformCommandEnv(env, childKey, value)
+		}
+	}
 }
 
 func formatCommandEnv(env map[string]string) []string {

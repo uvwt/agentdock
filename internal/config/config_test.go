@@ -35,6 +35,31 @@ func TestNormalizeDefaultsToUserDirectories(t *testing.T) {
 	}
 }
 
+func TestFromEnvParsesCommandEnvironmentMapping(t *testing.T) {
+	t.Setenv("AGENTDOCK_COMMAND_ENV_FROM_ENV_JSON", `{"NIX_LD":"NIX_LD","CHILD_TOKEN":"HOST_TOKEN"}`)
+
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v", err)
+	}
+	if cfg.CommandEnvFromEnv["NIX_LD"] != "NIX_LD" || cfg.CommandEnvFromEnv["CHILD_TOKEN"] != "HOST_TOKEN" {
+		t.Fatalf("CommandEnvFromEnv = %#v", cfg.CommandEnvFromEnv)
+	}
+}
+
+func TestCommandEnvironmentMappingRejectsInvalidNames(t *testing.T) {
+	t.Setenv("AGENTDOCK_COMMAND_ENV_FROM_ENV_JSON", `{"BAD-NAME":"HOST_TOKEN"}`)
+	if _, err := FromEnv(); err == nil || !strings.Contains(err.Error(), "AGENTDOCK_COMMAND_ENV_FROM_ENV_JSON") {
+		t.Fatalf("FromEnv() error = %v, want command env mapping validation error", err)
+	}
+
+	setTestUserHome(t, t.TempDir())
+	cfg := Config{CommandEnvFromEnv: map[string]string{"CHILD_TOKEN": "BAD-HOST"}}
+	if err := cfg.Normalize(); err == nil || !strings.Contains(err.Error(), "AGENTDOCK_COMMAND_ENV_FROM_ENV_JSON") {
+		t.Fatalf("Normalize() error = %v, want command env mapping validation error", err)
+	}
+}
+
 func TestFromEnvIgnoresOldDirectoryConfig(t *testing.T) {
 	home := t.TempDir()
 	setTestUserHome(t, home)

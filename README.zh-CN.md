@@ -122,6 +122,18 @@ AgentDock 通过 MCP Streamable HTTP 提供工具能力。下面是一个通用�
 - 输出截断和敏感信息脱敏
 - macOS、Linux、Windows 与 WSL 支持
 
+#### 显式透传宿主环境变量
+
+`exec_command` 默认只使用精简环境，不会完整继承 AgentDock 进程环境。宿主运行环境确实依赖额外变量时，可以配置“子进程变量名 -> AgentDock 宿主进程变量名”的显式映射：
+
+```bash
+export AGENTDOCK_COMMAND_ENV_FROM_ENV_JSON='{"NIX_LD":"NIX_LD","NIX_LD_LIBRARY_PATH":"NIX_LD_LIBRARY_PATH"}'
+```
+
+只有显式声明的变量会被复制；宿主变量不存在时会跳过。Skill 环境变量可以覆盖宿主映射值，单次 `exec_command.env` 又可以继续覆盖 Skill 环境。
+
+使用 systemd 或 OpenRC 部署时，映射来源是 **AgentDock 服务进程自身的环境**，不会读取某个用户的登录 Shell。以启用 `nix-ld` 的 NixOS 为例，需要同时通过服务配置向 AgentDock 注入当前的 `NIX_LD`、`NIX_LD_LIBRARY_PATH`，再配置上述映射。NixOS 建议通过声明式服务配置提供这些值，不要把某一代 `/nix/store` 的绝对路径长期快照到手写配置里。
+
 ### Git 与 GitHub
 
 - 仓库状态、差异和提交记录读取

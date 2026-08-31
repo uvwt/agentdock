@@ -29,6 +29,31 @@ func TestExecCommandDoesNotFilterCommandContent(t *testing.T) {
 	}
 }
 
+func TestExecCommandForwardsConfiguredHostEnv(t *testing.T) {
+	rt, cfg := newCommandTestService(t)
+	t.Setenv("AGENTDOCK_TEST_HOST_PASSTHROUGH", "host-forwarded")
+	cfg.CommandEnvFromEnv = map[string]string{
+		"AGENTDOCK_TEST_CHILD_PASSTHROUGH": "AGENTDOCK_TEST_HOST_PASSTHROUGH",
+	}
+
+	command := `printf '%s' "$AGENTDOCK_TEST_CHILD_PASSTHROUGH"`
+	if runtime.GOOS == "windows" {
+		command = `[Console]::Out.Write($env:AGENTDOCK_TEST_CHILD_PASSTHROUGH)`
+	}
+	result, err := rt.execArgs(context.Background(), map[string]any{
+		"cmd":            command,
+		"yield_time_ms":  15000,
+		"timeout_ms":     15000,
+		"execution_mode": "sync",
+	})
+	if err != nil {
+		t.Fatalf("exec_command should forward configured host env: %v", err)
+	}
+	if result["status"] != "exited" || result["stdout"].(string) != "host-forwarded" {
+		t.Fatalf("configured host env was not forwarded: %#v", result)
+	}
+}
+
 func TestExecCommandForwardsExplicitEnv(t *testing.T) {
 	rt, _ := newCommandTestService(t)
 	command := `printf '%s' "$AGENTDOCK_TEST_EXEC_ENV"`
