@@ -233,7 +233,9 @@ public sealed class RuntimeService : IDisposable
             "--browser-cdp-url", settings.BrowserCdpUrl ?? "",
             $"--browser-reuse-existing-cdp={settings.BrowserReuseExistingCdp.ToString().ToLowerInvariant()}",
             $"--acp-enabled={settings.AcpEnabled.ToString().ToLowerInvariant()}",
-            "--acp-agent", NormalizeAcpAgent(settings.AcpAgent)
+            "--acp-agent", NormalizeAcpAgent(settings.AcpAgent),
+            "--acp-command", settings.AcpCommand ?? "",
+            "--acp-args-json", JsonSerializer.Serialize(settings.AcpArgs ?? [])
         };
         await RunNativeAgentDockAsync("config", arguments, cancellationToken);
     }
@@ -927,9 +929,11 @@ public sealed class RuntimeService : IDisposable
     {
         return value?.Trim().ToLowerInvariant() switch
         {
+            "codex" => "codex",
             "claude" => "claude",
             "grok" => "grok",
-            _ => "codex"
+            "custom" => "custom",
+            var unsupported => throw new InvalidOperationException($"不支持的 Coding Agent: {unsupported ?? "<null>"}")
         };
     }
 

@@ -97,6 +97,9 @@ struct ServiceConfiguration: Equatable {
         let host = values["AGENTDOCK_HOST"] ?? "127.0.0.1"
         guard let port = Int(values["AGENTDOCK_PORT"] ?? "8765"), (1...65535).contains(port) else { return nil }
         let publicURL = values["AGENTDOCK_SERVER_URL"].flatMap { $0.isEmpty ? nil : $0 }
+        guard let acpAgent = ACPAgentPreset.parse(values["AGENTDOCK_ACP_AGENT"] ?? "codex") else {
+            return nil
+        }
         return ServiceConfiguration(
             host: host,
             port: port,
@@ -108,7 +111,7 @@ struct ServiceConfiguration: Equatable {
             browserCDPURL: values["AGENTDOCK_BROWSER_CDP_URL"] ?? "",
             browserReuseExistingCDP: parseBool(values["AGENTDOCK_BROWSER_REUSE_EXISTING_CDP"]),
             acpEnabled: parseBool(values["AGENTDOCK_ACP_ENABLED"]),
-            acpAgent: ACPAgentPreset.parse(values["AGENTDOCK_ACP_AGENT"] ?? "codex"),
+            acpAgent: acpAgent,
             acpCommand: values["AGENTDOCK_ACP_COMMAND"] ?? "",
             acpArgs: decodeStringArray(values["AGENTDOCK_ACP_ARGS_JSON"])
         )

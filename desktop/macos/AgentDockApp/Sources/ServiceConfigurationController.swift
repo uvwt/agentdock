@@ -24,8 +24,10 @@ struct EditableServiceSettings {
             throw ValidationError("未检测到受支持的 Chrome、Chromium 或 Microsoft Edge，且未配置外部 CDP。")
         }
 
-        var command = ""
-        var arguments: [String] = []
+        var command = acpAgent == .custom
+            ? acpCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+            : ""
+        var arguments = acpAgent == .custom ? acpArgs : []
         if acpEnabled {
             let resolution = acpAgent.resolveAdapter(
                 configuredCommand: acpCommand,

@@ -56,6 +56,28 @@ func TestResolveDesktopACPAdapterPreservesConfiguredNodeEntry(t *testing.T) {
 	}
 }
 
+func TestResolveDesktopACPAdapterCustomUsesOnlyExplicitCommand(t *testing.T) {
+	testRoot := t.TempDir()
+	bin := filepath.Join(testRoot, "bin")
+	setIsolatedDesktopACPEnvironment(t, testRoot, bin)
+
+	adapterPath := writeTestFile(t, filepath.Join(bin, "custom-acp.exe"), "adapter")
+	adapter, err := resolveDesktopACPAdapter("custom", filepath.Join(testRoot, "runtime"), adapterPath, []string{"--test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adapter.Command != adapterPath || !reflect.DeepEqual(adapter.Args, []string{"--test"}) {
+		t.Fatalf("adapter = %#v, want command=%q args=[--test]", adapter, adapterPath)
+	}
+
+	if _, err := resolveDesktopACPAdapter("custom", filepath.Join(testRoot, "runtime"), "", nil); err == nil {
+		t.Fatal("custom adapter unexpectedly auto-discovered an executable")
+	}
+	if _, err := resolveDesktopACPAdapter("custom", filepath.Join(testRoot, "runtime"), `bin\\custom-acp.exe`, nil); err == nil {
+		t.Fatal("custom adapter accepted a relative command")
+	}
+}
+
 func TestResolveDesktopACPAdapterRejectsNPMShimsWithoutNodePackage(t *testing.T) {
 	testRoot := t.TempDir()
 	npmBin := filepath.Join(testRoot, "npm")

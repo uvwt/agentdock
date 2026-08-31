@@ -69,11 +69,15 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 	}
 	var acpAdapter desktopACPAdapter
 	if request.ACPEnabled {
-		configuredCommand := ""
-		var configuredArgs []string
-		if runtime.settings.ACPAgent == request.ACPAgent {
-			configuredCommand = runtime.settings.ACPCommand
-			configuredArgs = runtime.settings.ACPArgs
+		configuredCommand := request.ACPCommand
+		configuredArgs := request.ACPArgs
+		if request.ACPAgent != "custom" {
+			configuredCommand = ""
+			configuredArgs = nil
+			if runtime.settings.ACPAgent == request.ACPAgent {
+				configuredCommand = runtime.settings.ACPCommand
+				configuredArgs = runtime.settings.ACPArgs
+			}
 		}
 		acpAdapter, err = resolveDesktopACPAdapter(request.ACPAgent, runtime.root, configuredCommand, configuredArgs)
 		if err != nil {
@@ -114,6 +118,12 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 		return cause
 	}
 
+	acpCommand := acpAdapter.Command
+	acpArgs := append([]string(nil), acpAdapter.Args...)
+	if !request.ACPEnabled && request.ACPAgent == "custom" {
+		acpCommand = request.ACPCommand
+		acpArgs = append([]string(nil), request.ACPArgs...)
+	}
 	settings := controlPanelSettings{
 		Port:                    request.Port,
 		LogLevel:                request.LogLevel,
@@ -123,8 +133,8 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 		BrowserReuseExistingCDP: request.BrowserReuseExistingCDP,
 		ACPEnabled:              request.ACPEnabled,
 		ACPAgent:                request.ACPAgent,
-		ACPCommand:              acpAdapter.Command,
-		ACPArgs:                 append([]string(nil), acpAdapter.Args...),
+		ACPCommand:              acpCommand,
+		ACPArgs:                 acpArgs,
 	}
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {

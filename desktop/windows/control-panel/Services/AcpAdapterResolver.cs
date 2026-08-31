@@ -12,6 +12,13 @@ internal static class AcpAdapterResolver
         IReadOnlyList<string>? configuredArguments = null)
     {
         var normalizedAgent = NormalizeAgent(agent);
+        if (normalizedAgent == "custom")
+        {
+            return TryResolveConfiguredAdapter(configuredCommand, configuredArguments, out var custom)
+                ? custom
+                : new AcpAdapterResolution(false, "", [], "未配置 · 请填写可执行的 ACP Adapter 绝对路径");
+        }
+
         string[] executableNames;
         string[] arguments;
         string[]? npmPackageSegments;
@@ -30,12 +37,14 @@ internal static class AcpAdapterResolver
                 npmPackageSegments = null;
                 npmBinName = null;
                 break;
-            default:
+            case "codex":
                 executableNames = ["codex-acp.exe", "codex-acp.com"];
                 arguments = [];
                 npmPackageSegments = ["@agentclientprotocol", "codex-acp"];
                 npmBinName = "codex-acp";
                 break;
+            default:
+                throw new InvalidOperationException($"不支持的 Coding Agent: {normalizedAgent}");
         }
 
         if (TryResolveConfiguredAdapter(configuredCommand, configuredArguments, out var configured))
@@ -76,7 +85,8 @@ internal static class AcpAdapterResolver
         out AcpAdapterResolution resolution)
     {
         resolution = Unavailable();
-        if (!TryResolveWindowsExecutable(configuredCommand, out var command))
+        if (string.IsNullOrWhiteSpace(configuredCommand) || !Path.IsPathFullyQualified(configuredCommand) ||
+            !TryResolveWindowsExecutable(configuredCommand, out var command))
         {
             return false;
         }
@@ -281,8 +291,10 @@ internal static class AcpAdapterResolver
 
     private static string NormalizeAgent(string value) => value.Trim().ToLowerInvariant() switch
     {
+        "codex" => "codex",
         "claude" => "claude",
         "grok" => "grok",
-        _ => "codex"
+        "custom" => "custom",
+        var unsupported => throw new ArgumentException($"不支持的 Coding Agent: {unsupported}", nameof(value))
     };
 }

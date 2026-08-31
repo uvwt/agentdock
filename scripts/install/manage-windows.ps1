@@ -348,9 +348,9 @@ function Get-ControlPanelSettings {
     if (@('debug', 'info', 'warn', 'error') -notcontains $storedLogLevel) {
         $storedLogLevel = 'info'
     }
-    $storedACPAgent = [string] (Get-ObjectProperty -Object $stored -Name 'acp_agent' -Default 'codex')
-    if (@('codex', 'claude', 'grok') -notcontains $storedACPAgent) {
-        $storedACPAgent = 'codex'
+    $storedACPAgent = ([string] (Get-ObjectProperty -Object $stored -Name 'acp_agent' -Default 'codex')).Trim().ToLowerInvariant()
+    if (@('codex', 'claude', 'grok', 'custom') -notcontains $storedACPAgent) {
+        throw "不支持的 Coding Agent: $storedACPAgent"
     }
     return [pscustomobject][ordered]@{
         port = $storedPort
