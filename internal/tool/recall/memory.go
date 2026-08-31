@@ -1,11 +1,9 @@
 package recall
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -13,6 +11,7 @@ import (
 	"time"
 
 	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/nexusclient"
 )
 
 func (svc *Service) memoryContextIndex(ctx context.Context, maxBytes int) (Result, error) {
@@ -169,34 +168,27 @@ func (svc *Service) request(ctx context.Context, method, endpoint string, payloa
 	if base == "" {
 		return nil, toolError("RECALL_NOT_CONFIGURED", "pair this AgentDock device with NexusDock to use Recall", "configuration")
 	}
-	var body io.Reader
+	var body []byte
 	if payload != nil {
 		data, err := json.Marshal(payload)
 		if err != nil {
 			return nil, err
 		}
-		body = bytes.NewReader(data)
+		body = data
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, recallRequestTimeout(endpoint))
 	defer cancel()
-	req, err := http.NewRequestWithContext(requestCtx, method, base+endpoint, body)
-	if err != nil {
-		return nil, err
-	}
-	if payload != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
 	token := strings.TrimSpace(svc.config().NexusDeviceToken)
 	if token == "" {
 		return nil, toolError("RECALL_NOT_CONFIGURED", "NexusDock Device Token is unavailable; pair this AgentDock device again", "configuration")
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := http.DefaultClient.Do(req)
+	client := nexusclient.New(base, token)
+	resp, err := client.Do(requestCtx, method, endpoint, body)
 	if err != nil {
 		return nil, toolErrorCause("RECALL_REQUEST_FAILED", err.Error(), "network", map[string]any{"endpoint": endpoint}, err)
 	}
 	defer resp.Body.Close()
-	data, err := readBoundedBody(resp.Body, 2*1024*1024)
+	data, err := nexusclient.ReadBoundedBody(resp.Body, 2*1024*1024)
 	if err != nil {
 		return nil, toolErrorCause("RECALL_RESPONSE_TOO_LARGE", err.Error(), "network", map[string]any{"status": resp.StatusCode}, err)
 	}

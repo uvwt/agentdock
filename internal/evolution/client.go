@@ -1,17 +1,16 @@
 package evolution
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/nexusclient"
 )
 
 const maxNexusResponseBytes = 4 << 20
@@ -48,32 +47,24 @@ func (c client) post(ctx context.Context, path string, payload any, out any) err
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+path, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
 	token := strings.TrimSpace(cfg.NexusDeviceToken)
 	if token == "" {
 		return errors.New("NexusDock Device Token is unavailable; pair this AgentDock device first")
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	httpClient := &http.Client{
-		Timeout:       8 * time.Second,
-		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
-	}
-	resp, err := httpClient.Do(req)
+	requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	client := nexusclient.New(endpoint, token)
+	resp, err := client.Do(requestCtx, http.MethodPost, path, body)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxNexusResponseBytes+1))
+	data, err := nexusclient.ReadBoundedBody(resp.Body, maxNexusResponseBytes)
 	if err != nil {
-		return err
-	}
-	if len(data) > maxNexusResponseBytes {
-		return errors.New("Nexus lifecycle response exceeds 4 MiB")
+		if errors.Is(err, nexusclient.ErrResponseTooLarge) {
+			return errors.New("Nexus lifecycle response exceeds 4 MiB")
+		}
+		return fmt.Errorf("read Nexus lifecycle response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var failure struct {

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -18,27 +19,44 @@ import (
 	protocol "github.com/uvwt/agentdock-protocol"
 	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/buildinfo"
-	"github.com/uvwt/agentdock/internal/httpx"
-	"github.com/uvwt/agentdock/internal/mcp"
+	"github.com/uvwt/agentdock/internal/publicartifacts"
+	"github.com/uvwt/agentdock/internal/runtimeapi"
 )
 
-const maxMessageBytes = 8 << 20
+const (
+	maxMessageBytes    = 8 << 20
+	invokeDrainTimeout = 5 * time.Second
+)
 
-type Client struct {
-	identity Identity
-	server   *mcp.Server
-	runtime  httpx.RuntimeAPI
-	state    *ConnectionState
-	writeMu  sync.Mutex
-	cancelMu sync.Mutex
-	cancels  map[string]context.CancelFunc
+// NodeAPI 由 Nexus Bridge 消费方定义，只包含握手和远程 operation 真正需要的节点能力。
+type NodeAPI interface {
+	ToolNames() []string
+	ToolDescriptors() []map[string]any
+	UIResources() []protocol.UIResourceCapability
+	ToolContractHash() string
+	AgentDockLocalContext(context.Context) (map[string]any, error)
+	Invoke(context.Context, string, map[string]any) (map[string]any, error)
+	ReadAppResource(string) (map[string]any, error)
 }
 
-func NewClient(identity Identity, server *mcp.Server, runtime httpx.RuntimeAPI, state *ConnectionState) *Client {
-	return &Client{identity: identity, server: server, runtime: runtime, state: state, cancels: make(map[string]context.CancelFunc)}
+type Client struct {
+	identity  Identity
+	node      NodeAPI
+	runtime   runtimeapi.Runtime
+	artifacts publicartifacts.Store
+	state     *ConnectionState
+	invokeWG  sync.WaitGroup
+	writeMu   sync.Mutex
+	cancelMu  sync.Mutex
+	cancels   map[string]context.CancelFunc
+}
+
+func NewClient(identity Identity, node NodeAPI, runtime runtimeapi.Runtime, artifacts publicartifacts.Store, state *ConnectionState) *Client {
+	return &Client{identity: identity, node: node, runtime: runtime, artifacts: artifacts, state: state, cancels: make(map[string]context.CancelFunc)}
 }
 
 func (c *Client) Run(ctx context.Context) {
+	defer c.drainInvocations()
 	backoff := time.Second
 	for ctx.Err() == nil {
 		err := c.connect(ctx)
@@ -56,6 +74,19 @@ func (c *Client) Run(ctx context.Context) {
 		if backoff < 30*time.Second {
 			backoff *= 2
 		}
+	}
+}
+
+func (c *Client) drainInvocations() {
+	done := make(chan struct{})
+	go func() {
+		c.invokeWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(invokeDrainTimeout):
+		slog.Warn("NexusDock bridge in-flight invocations drain timeout")
 	}
 }
 
@@ -80,16 +111,20 @@ func (c *Client) connect(ctx context.Context) error {
 		return fmt.Errorf("连接 NexusDock: %w", err)
 	}
 	defer socket.Close()
+	// gorilla/websocket 的阻塞读取不会自动观察 context；父 Context 取消时主动关闭连接，
+	// 让 ReadJSON 立即返回，确保 Bridge 能在 Runtime 关闭前退出。
+	stopContextClose := context.AfterFunc(ctx, func() { _ = socket.Close() })
+	defer stopContextClose()
 	socket.SetReadLimit(maxMessageBytes)
 
-	tools := c.server.ToolNames()
-	descriptors, err := bridgeToolDescriptors(c.server.ToolDescriptors())
+	tools := c.node.ToolNames()
+	descriptors, err := bridgeToolDescriptors(c.node.ToolDescriptors())
 	if err != nil {
 		return err
 	}
 	if err := c.write(socket, protocol.Message{
 		Type: protocol.MessageNodeHello, ProtocolVersion: protocol.ConnectionProtocolVersion,
-		Hello: bridgeHello(c.identity, tools, descriptors, c.server.UIResources(), c.server.ToolContractHash()),
+		Hello: bridgeHello(c.identity, tools, descriptors, c.node.UIResources(), c.node.ToolContractHash()),
 	}); err != nil {
 		return err
 	}
@@ -117,7 +152,11 @@ func (c *Client) connect(ctx context.Context) error {
 		}
 		switch incoming.Type {
 		case protocol.MessageToolInvoke:
-			go c.invoke(connectionCtx, socket, incoming)
+			c.invokeWG.Add(1)
+			go func() {
+				defer c.invokeWG.Done()
+				c.invoke(connectionCtx, socket, incoming)
+			}()
 		case protocol.MessageToolCancel:
 			c.cancel(incoming.RequestID)
 		case protocol.MessageNodeHeartbeat:
@@ -146,24 +185,35 @@ func (c *Client) invoke(parent context.Context, socket *websocket.Conn, incoming
 	c.cancels[incoming.RequestID] = cancel
 	c.cancelMu.Unlock()
 	defer func() {
+		recovered := recover()
 		cancel()
 		c.cancelMu.Lock()
 		delete(c.cancels, incoming.RequestID)
 		c.cancelMu.Unlock()
+		if recovered != nil {
+			// Nexus Bridge 是远程 RPC 边界。单次工具 panic 只结束当前请求，
+			// 避免把整个 AgentDock 守护进程和其他本地会话一并带崩。
+			slog.Error("NexusDock node operation panicked", "request_id", incoming.RequestID, "operation", incoming.Operation, "panic", recovered, "stack", string(debug.Stack()))
+			_ = c.write(socket, protocol.Message{
+				Type:      protocol.MessageToolError,
+				RequestID: incoming.RequestID,
+				Error:     &protocol.RemoteError{Code: "NODE_OPERATION_FAILED", Message: "AgentDock node operation failed", Category: "internal"},
+			})
+		}
 	}()
 
 	var result map[string]any
 	var err error
 	switch incoming.Operation {
 	case protocol.OperationRuntimeRequest:
-		var request httpx.RuntimeBridgeRequest
+		var request runtimeapi.Request
 		if decodeErr := json.Unmarshal(incoming.Arguments, &request); decodeErr != nil {
 			err = fmt.Errorf("解析 Runtime 请求: %w", decodeErr)
 		} else {
-			result, err = httpx.DispatchRuntimeBridgeRequest(ctx, c.runtime, request)
+			result, err = c.dispatchRuntimeRequest(ctx, request)
 		}
 	case protocol.OperationContextLocal:
-		result, err = c.server.AgentDockLocalContext(ctx)
+		result, err = c.node.AgentDockLocalContext(ctx)
 	case protocol.OperationToolCall:
 		var request struct {
 			Tool      string         `json:"tool"`
@@ -172,7 +222,7 @@ func (c *Client) invoke(parent context.Context, socket *websocket.Conn, incoming
 		if decodeErr := json.Unmarshal(incoming.Arguments, &request); decodeErr != nil {
 			err = fmt.Errorf("解析工具请求: %w", decodeErr)
 		} else {
-			result, err = c.server.Invoke(ctx, request.Tool, request.Arguments)
+			result, err = c.node.Invoke(ctx, request.Tool, request.Arguments)
 		}
 	case protocol.OperationResourceRead:
 		var request struct {
@@ -181,7 +231,7 @@ func (c *Client) invoke(parent context.Context, socket *websocket.Conn, incoming
 		if decodeErr := json.Unmarshal(incoming.Arguments, &request); decodeErr != nil {
 			err = fmt.Errorf("解析 MCP App resource 请求: %w", decodeErr)
 		} else {
-			result, err = c.server.ReadAppResource(request.URI)
+			result, err = c.node.ReadAppResource(request.URI)
 		}
 	case protocol.OperationArtifactRead:
 		var request struct {
@@ -192,7 +242,7 @@ func (c *Client) invoke(parent context.Context, socket *websocket.Conn, incoming
 		if decodeErr := json.Unmarshal(incoming.Arguments, &request); decodeErr != nil {
 			err = fmt.Errorf("解析 Artifact 读取请求: %w", decodeErr)
 		} else {
-			result, err = c.server.ReadArtifactChunk(request.ArtifactID, request.Offset, request.MaxBytes)
+			result, err = c.readArtifactChunk(request.ArtifactID, request.Offset, request.MaxBytes)
 		}
 	default:
 		err = fmt.Errorf("不支持的 NexusDock 节点操作: %s", incoming.Operation)
@@ -207,6 +257,14 @@ func (c *Client) invoke(parent context.Context, socket *websocket.Conn, incoming
 		return
 	}
 	_ = c.write(socket, protocol.Message{Type: protocol.MessageToolResult, RequestID: incoming.RequestID, Result: encoded})
+}
+
+func (c *Client) dispatchRuntimeRequest(ctx context.Context, request runtimeapi.Request) (map[string]any, error) {
+	// Nexus Runtime operation 沿用原有 64 KiB Bridge 请求上限；HTTP 各路由仍保留自己的错误语义。
+	if len(request.Body) > 64*1024 {
+		return nil, &app.ToolError{Code: "INVALID_ARGUMENT", Message: "runtime request body is too large", Category: "validation"}
+	}
+	return runtimeapi.Dispatch(ctx, c.runtime, request)
 }
 
 func bridgeToolDescriptors(descriptors []map[string]any) ([]protocol.ToolDescriptor, error) {

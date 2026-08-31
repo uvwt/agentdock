@@ -60,6 +60,23 @@ func TestRuntimeMCPAPIManagesServersWithoutReturningSecrets(t *testing.T) {
 	}
 }
 
+func TestRuntimeMCPAPIAcceptsTrailingSlash(t *testing.T) {
+	cfg := testConfig(t)
+	runtime, err := app.NewRuntime(cfg)
+	if err != nil {
+		t.Fatalf("new runtime: %v", err)
+	}
+	defer runtime.Close()
+	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
+
+	response := httptest.NewRecorder()
+	body := `{"action":"add","name":"slash-demo","description":"Slash MCP","transport":"streamable_http","url":"http://127.0.0.1:1/mcp","enabled":false}`
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/internal/runtime/mcp/", strings.NewReader(body)))
+	if response.Code != http.StatusOK {
+		t.Fatalf("POST /internal/runtime/mcp/ status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func postRuntimeMCP(t *testing.T, handler http.Handler, body string, wantStatus int) string {
 	t.Helper()
 	response := httptest.NewRecorder()

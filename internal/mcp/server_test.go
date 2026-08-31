@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/base64"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -11,30 +10,9 @@ import (
 	"testing"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-	protocol "github.com/uvwt/agentdock-protocol"
 	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/config"
-	"github.com/uvwt/agentdock/internal/publicartifacts"
 )
-
-func TestReadArtifactChunkServesPrivateBridgePayload(t *testing.T) {
-	home := t.TempDir()
-	store := publicartifacts.New(home, "", 0)
-	published, err := store.PublishBytes(publicartifacts.PublishBytesRequest{Filename: "result.txt", Data: []byte("bridge payload")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := NewServer(nil, config.Config{AgentDockHome: home})
-	result, err := server.ReadArtifactChunk(published.ArtifactID, 0, protocol.MaxArtifactChunkBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	encoded, _ := result["data_base64"].(string)
-	data, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil || string(data) != "bridge payload" || result["eof"] != true {
-		t.Fatalf("Bridge Artifact result = %#v decoded=%q err=%v", result, data, err)
-	}
-}
 
 func TestToolDescriptorsExposeSafetyAnnotations(t *testing.T) {
 	descriptors := toolDescriptorsForConfig(t, []string{"read_file", "skill_package", "task_manage", "file_publish"}, config.Config{})

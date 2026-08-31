@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,7 +16,6 @@ import (
 	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
-	"github.com/uvwt/agentdock/internal/publicartifacts"
 )
 
 type Server struct {
@@ -100,61 +98,6 @@ func (s *Server) Invoke(ctx context.Context, name string, arguments map[string]a
 	}
 	result, err := s.runtime.Call(ctx, name, arguments)
 	return toolEnvelope(name, result, err), nil
-}
-
-// ReadArtifactChunk serves the private Bridge operation used by NexusDock's
-// signed download proxy. It is not exposed as an MCP tool.
-func (s *Server) ReadArtifactChunk(artifactID string, offset int64, maxBytes int) (map[string]any, error) {
-	if s == nil {
-		return nil, errors.New("AgentDock MCP server is not initialized")
-	}
-	store := publicartifacts.New(s.cfg.AgentDockHome, s.cfg.OAuthServerURL, s.cfg.Port)
-	meta, data, eof, err := store.ReadChunk(artifactID, offset, maxBytes)
-	if err != nil {
-		return nil, err
-	}
-	result := artifactChunkResult{
-		ArtifactID: meta.ArtifactID,
-		Filename:   meta.Filename,
-		MIMEType:   meta.MimeType,
-		Size:       meta.Size,
-		SHA256:     meta.SHA256,
-		CreatedAt:  meta.CreatedAt,
-		ExpiresAt:  meta.ExpiresAt,
-		Archive:    meta.Archive,
-		Width:      meta.Width,
-		Height:     meta.Height,
-		Offset:     offset,
-		NextOffset: offset + int64(len(data)),
-		DataBase64: base64.StdEncoding.EncodeToString(data),
-		EOF:        eof,
-	}
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		return nil, fmt.Errorf("编码 Artifact Bridge 结果: %w", err)
-	}
-	var mapped map[string]any
-	if err := json.Unmarshal(encoded, &mapped); err != nil {
-		return nil, fmt.Errorf("构造 Artifact Bridge 结果: %w", err)
-	}
-	return mapped, nil
-}
-
-type artifactChunkResult struct {
-	ArtifactID string    `json:"artifact_id"`
-	Filename   string    `json:"filename"`
-	MIMEType   string    `json:"mime_type"`
-	Size       int64     `json:"size_bytes"`
-	SHA256     string    `json:"sha256"`
-	CreatedAt  time.Time `json:"created_at"`
-	ExpiresAt  time.Time `json:"expires_at"`
-	Archive    bool      `json:"archive"`
-	Width      int       `json:"width,omitempty"`
-	Height     int       `json:"height,omitempty"`
-	Offset     int64     `json:"offset"`
-	NextOffset int64     `json:"next_offset"`
-	DataBase64 string    `json:"data_base64"`
-	EOF        bool      `json:"eof"`
 }
 
 func (s *Server) HTTPHandler() http.Handler {
