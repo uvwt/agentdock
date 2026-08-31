@@ -32,6 +32,7 @@ const (
 type Config struct {
 	AgentDockHome                string
 	AgentDockDefaultDir          string
+	CommandEnvFromEnv            map[string]string
 	Host                         string
 	Port                         int
 	AuthToken                    string
@@ -84,6 +85,10 @@ func FromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	commandEnvFromEnv, err := getenvStringMapJSON("AGENTDOCK_COMMAND_ENV_FROM_ENV_JSON")
+	if err != nil {
+		return Config{}, err
+	}
 	acpEnabled, err := getenvBool("AGENTDOCK_ACP_ENABLED", false)
 	if err != nil {
 		return Config{}, err
@@ -117,6 +122,7 @@ func FromEnv() (Config, error) {
 	return Config{
 		AgentDockHome:                strings.TrimSpace(os.Getenv("AGENTDOCK_HOME")),
 		AgentDockDefaultDir:          strings.TrimSpace(os.Getenv("AGENTDOCK_DEFAULT_DIR")),
+		CommandEnvFromEnv:            commandEnvFromEnv,
 		Host:                         getenv("AGENTDOCK_HOST", "127.0.0.1"),
 		Port:                         port,
 		AuthToken:                    os.Getenv("AGENTDOCK_AUTH_TOKEN"),
@@ -242,6 +248,9 @@ func (c *Config) Normalize() error {
 		if c.Instructions == "" {
 			return fmt.Errorf("InstructionsFile must contain non-empty instructions: %s", c.InstructionsFile)
 		}
+	}
+	if err := validateEnvironmentMapping(c.CommandEnvFromEnv); err != nil {
+		return fmt.Errorf("AGENTDOCK_COMMAND_ENV_FROM_ENV_JSON: %w", err)
 	}
 	if err := c.normalizeACP(); err != nil {
 		return err
@@ -413,7 +422,7 @@ func (c *Config) normalizeACP() error {
 	if err := validateACPArguments(c.ACPArgs); err != nil {
 		return fmt.Errorf("AGENTDOCK_ACP_ARGS_JSON: %w", err)
 	}
-	if err := validateACPEnvironmentMapping(c.ACPEnvFromEnv); err != nil {
+	if err := validateEnvironmentMapping(c.ACPEnvFromEnv); err != nil {
 		return fmt.Errorf("AGENTDOCK_ACP_ENV_FROM_ENV_JSON: %w", err)
 	}
 	c.ACPCommand = filepath.Clean(strings.TrimSpace(c.ACPCommand))

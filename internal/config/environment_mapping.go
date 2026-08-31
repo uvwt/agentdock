@@ -16,13 +16,13 @@ func getenvStringMapJSON(key string) (map[string]string, error) {
 	if err := json.Unmarshal([]byte(value), &raw); err != nil {
 		return nil, fmt.Errorf("parse %s as JSON string map: %w", key, err)
 	}
-	if err := validateACPEnvironmentMapping(raw); err != nil {
+	if err := validateEnvironmentMapping(raw); err != nil {
 		return nil, fmt.Errorf("%s: %w", key, err)
 	}
 	return raw, nil
 }
 
-func validateACPEnvironmentMapping(values map[string]string) error {
+func validateEnvironmentMapping(values map[string]string) error {
 	if len(values) > 64 {
 		return fmt.Errorf("contains %d mappings; maximum is 64", len(values))
 	}

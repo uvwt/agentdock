@@ -117,6 +117,18 @@ AgentDock exposes tools over MCP Streamable HTTP. The exact client syntax varies
 - Output truncation and sensitive-value redaction
 - macOS, Linux, Windows, and WSL support
 
+#### Forward selected host environment variables
+
+`exec_command` intentionally starts from a small environment instead of inheriting the complete AgentDock process environment. When a host runtime needs additional variables, configure an explicit child-to-host mapping:
+
+```bash
+export AGENTDOCK_COMMAND_ENV_FROM_ENV_JSON='{"NIX_LD":"NIX_LD","NIX_LD_LIBRARY_PATH":"NIX_LD_LIBRARY_PATH"}'
+```
+
+Only mapped variables are copied. A missing host variable is skipped. Skill environment values override the mapped host value, and an explicit `exec_command.env` value overrides both.
+
+For a systemd or OpenRC deployment, the source variables must also exist in the AgentDock service process environment. The mapping does not read a user's login shell. For example, a NixOS service using `nix-ld` should provide the current `NIX_LD` and `NIX_LD_LIBRARY_PATH` values through the service configuration together with the mapping above. Prefer declarative NixOS service configuration over snapshotting generation-specific `/nix/store` paths into a long-lived file.
+
 ### Git and GitHub
 
 - Read repository status, diffs, and history
