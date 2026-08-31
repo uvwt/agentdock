@@ -14,9 +14,10 @@ import (
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/mcp"
 	"github.com/uvwt/agentdock/internal/publicartifacts"
+	"github.com/uvwt/agentdock/internal/runtimeapi"
 )
 
-func Serve(ctx context.Context, server *mcp.Server, runtime RuntimeAPI, cfg config.Config) error {
+func Serve(ctx context.Context, server *mcp.Server, runtime runtimeapi.Runtime, cfg config.Config) error {
 	authRequired := cfg.AuthRequired()
 	oauthStore := auth.NewOAuthStore()
 	if cfg.OAuthEnabled {

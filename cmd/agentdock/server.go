@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/uvwt/agentdock/cmd/agentdock/internal/logx"
 	"github.com/uvwt/agentdock/internal/app"
@@ -18,6 +19,7 @@ import (
 	"github.com/uvwt/agentdock/internal/httpx"
 	"github.com/uvwt/agentdock/internal/mcp"
 	"github.com/uvwt/agentdock/internal/nexusbridge"
+	"github.com/uvwt/agentdock/internal/publicartifacts"
 	"github.com/uvwt/agentdock/internal/selfupdate"
 )
 
@@ -99,22 +101,32 @@ func runServer(ctx context.Context, args []string, stderr io.Writer) error {
 		return serveStdio(ctx, server)
 	}
 	nexusStatus := &nexusbridge.ConnectionState{}
+	serviceCtx, cancelServices := context.WithCancel(ctx)
+	var bridgeWG sync.WaitGroup
+	defer func() {
+		// Bridge 必须先停止接收远程请求并完成 drain，再允许外层 defer 关闭 Runtime。
+		cancelServices()
+		bridgeWG.Wait()
+	}()
 	if identityErr == nil {
-		go nexusbridge.NewClient(identity, server, runtime, nexusStatus).Run(ctx)
+		artifactStore := publicartifacts.New(cfg.AgentDockHome, cfg.OAuthServerURL, cfg.Port)
+		bridgeWG.Add(1)
+		go func() {
+			defer bridgeWG.Done()
+			nexusbridge.NewClient(identity, server, runtime, artifactStore, nexusStatus).Run(serviceCtx)
+		}()
 	}
 	runtimeRoot := strings.TrimSpace(os.Getenv("AGENTDOCK_RUNTIME_ROOT"))
 	if runtimeRoot == "" {
-		return httpx.Serve(ctx, server, runtime, cfg)
+		return httpx.Serve(serviceCtx, server, runtime, cfg)
 	}
 
 	// 桌面控制端点与 HTTP/MCP 服务共享同一生命周期；任一端点异常退出时，
 	// 取消另一个端点并返回明确错误，避免后台只剩半套控制面。
-	runtimeCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	done := make(chan error, 2)
-	go func() { done <- httpx.Serve(runtimeCtx, server, runtime, cfg) }()
+	go func() { done <- httpx.Serve(serviceCtx, server, runtime, cfg) }()
 	go func() {
-		done <- desktopcontrol.Serve(runtimeCtx, runtimeRoot, func(controlCtx context.Context, request desktopcontrol.Request) (any, error) {
+		done <- desktopcontrol.Serve(serviceCtx, runtimeRoot, func(controlCtx context.Context, request desktopcontrol.Request) (any, error) {
 			return desktopruntime.DispatchControlRequest(
 				controlCtx,
 				request,
@@ -123,7 +135,7 @@ func runServer(ctx context.Context, args []string, stderr io.Writer) error {
 		})
 	}()
 	err = <-done
-	cancel()
+	cancelServices()
 	<-done
 	return err
 }

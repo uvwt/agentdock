@@ -1,4 +1,4 @@
-.PHONY: fmt test test-scripts test-scripts-macos vet race build check run docker-build docker-dev-build docker-browser-build docker-up docker-browser-up docker-down smoke-docker logs clean clean-local-artifacts install install-linux install-macos uninstall-macos test-install-macos deploy-macos-source restart-macos
+.PHONY: fmt fmt-check test test-scripts test-scripts-macos vet race build check run docker-build docker-dev-build docker-browser-build docker-up docker-browser-up docker-down smoke-docker logs clean clean-local-artifacts install install-linux install-macos uninstall-macos test-install-macos deploy-macos-source restart-macos
 
 APP := agentdock
 IMAGE := agentdock:local
@@ -13,7 +13,14 @@ BUILD_LDFLAGS := -X github.com/uvwt/agentdock/internal/buildinfo.Commit=$(BUILD_
 DOCKER_BUILD_ARGS := --build-arg BUILD_COMMIT=$(BUILD_COMMIT) --build-arg BUILD_DATE=$(BUILD_DATE)
 
 fmt:
-	gofmt -w ./cmd ./internal
+	gofmt -w ./cmd ./internal ./desktop
+
+fmt-check:
+	@files="$$(gofmt -l ./cmd ./internal ./desktop)"; \
+	if [ -n "$$files" ]; then \
+		printf 'unformatted Go files:\n%s\n' "$$files"; \
+		exit 1; \
+	fi
 
 test:
 	go test ./...
@@ -33,7 +40,7 @@ race:
 build:
 	go build -trimpath -ldflags "$(BUILD_LDFLAGS)" -o ./bin/$(APP) ./cmd/agentdock
 
-check: fmt test test-scripts vet build
+check: fmt-check test test-scripts vet build
 
 run:
 	go run ./cmd/agentdock --host $(HOST) --port $(PORT) --log-level $(LOG_LEVEL)
@@ -54,10 +61,10 @@ test-install-macos:
 	./scripts/test/test-install-macos.sh
 
 deploy-macos-source:
-	./packaging/macos/deploy-macos-source.sh
+	./scripts/dev/deploy-macos-source.sh
 
 restart-macos:
-	./packaging/macos/restart-macos.sh
+	./scripts/dev/restart-macos.sh
 
 docker-build:
 	docker build $(DOCKER_BUILD_ARGS) --target runtime -t $(IMAGE) .
