@@ -2,6 +2,7 @@ package desktopruntime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -23,6 +24,8 @@ type ConfigUpdateRequest struct {
 	BrowserReuseExistingCDP bool
 	ACPEnabled              bool
 	ACPAgent                string
+	ACPCommand              string
+	ACPArgs                 []string
 }
 
 func RunConfigCommand(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -42,11 +45,17 @@ func RunConfigCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		browserReuseExistingCDP := flags.Bool("browser-reuse-existing-cdp", false, "自动发现并复用唯一已有 CDP")
 		acpEnabled := flags.Bool("acp-enabled", false, "启用 Coding Agent")
 		acpAgent := flags.String("acp-agent", "codex", "Coding Agent 预设")
+		acpCommand := flags.String("acp-command", "", "自定义 ACP Adapter 可执行文件绝对路径")
+		acpArgsJSON := flags.String("acp-args-json", "[]", "自定义 ACP Adapter 参数 JSON 字符串数组")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
 		if flags.NArg() != 0 {
 			return configCommandUsageError()
+		}
+		var acpArgs []string
+		if err := json.Unmarshal([]byte(*acpArgsJSON), &acpArgs); err != nil {
+			return fmt.Errorf("解析 Coding Agent 参数失败: %w", err)
 		}
 		request := ConfigUpdateRequest{
 			RuntimeRoot:             strings.TrimSpace(*runtimeRoot),
@@ -58,6 +67,8 @@ func RunConfigCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 			BrowserReuseExistingCDP: *browserReuseExistingCDP,
 			ACPEnabled:              *acpEnabled,
 			ACPAgent:                strings.ToLower(strings.TrimSpace(*acpAgent)),
+			ACPCommand:              strings.TrimSpace(*acpCommand),
+			ACPArgs:                 acpArgs,
 		}
 		if err := validateConfigUpdate(request); err != nil {
 			return err
@@ -103,11 +114,12 @@ func validateConfigUpdate(request ConfigUpdateRequest) error {
 			return errors.New("浏览器 CDP 地址必须使用 http、https、ws 或 wss")
 		}
 	}
-	if !request.ACPEnabled {
-		return nil
-	}
 	switch request.ACPAgent {
 	case "codex", "claude", "grok":
+	case "custom":
+		if request.ACPEnabled && request.ACPCommand == "" {
+			return errors.New("自定义 Coding Agent 必须填写 ACP Adapter 命令")
+		}
 	default:
 		return fmt.Errorf("不支持的 Coding Agent: %s", request.ACPAgent)
 	}

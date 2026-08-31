@@ -43,6 +43,8 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     private let browserStatus = NSTextField(wrappingLabelWithString: "")
     private let acpEnabled = NSButton(checkboxWithTitle: "启用 Coding Agent", target: nil, action: nil)
     private let acpAgent = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let acpCommand = NSTextField(string: "")
+    private let acpArgsJSON = NSTextField(string: "[]")
     private let acpStatus = NSTextField(wrappingLabelWithString: "")
     private let nexusEndpoint = NSTextField(string: "")
     private let nexusPairingCode = NSSecureTextField(string: "")
@@ -63,8 +65,12 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     private var initialBrowserConnectionMode = BrowserConnectionMode.managed
     private var initialACPEnabled = false
     private var initialACPAgent = ACPAgentPreset.codex
+    private var initialACPCommand = ""
+    private var initialACPArgsJSON = "[]"
     private var isBusy = false
     private var browserCDPRow: NSView?
+    private var acpCommandRow: NSView?
+    private var acpArgsRow: NSView?
 
     init(
         service: ServiceController,
@@ -76,7 +82,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         self.menuLoginAgent = menuLoginAgent
         self.onChanged = onChanged
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 590, height: 780),
+            contentRect: NSRect(x: 0, y: 0, width: 590, height: 850),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -107,6 +113,10 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         )
         initialACPEnabled = configuration.acpEnabled
         initialACPAgent = configuration.acpAgent
+        initialACPCommand = configuration.acpAgent == .custom ? configuration.acpCommand : ""
+        initialACPArgsJSON = (try? ACPDesktopConfiguration.encodeArguments(
+            configuration.acpAgent == .custom ? configuration.acpArgs : []
+        )) ?? "[]"
 
         serviceAutostart.state = status.autostartEnabled ? .on : .off
         menuAutostart.state = initialMenuAutostart ? .on : .off
@@ -117,6 +127,8 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         selectBrowserConnectionMode(initialBrowserConnectionMode)
         acpEnabled.state = initialACPEnabled ? .on : .off
         acpAgent.selectItem(withTitle: initialACPAgent.title)
+        acpCommand.stringValue = initialACPCommand
+        acpArgsJSON.stringValue = initialACPArgsJSON
         nexusPairingCode.stringValue = ""
         refreshNexusStatus()
         refreshBrowserStatus()
@@ -176,6 +188,16 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         acpAgent.widthAnchor.constraint(equalToConstant: 180).isActive = true
         acpAgent.target = self
         acpAgent.action = #selector(acpChanged)
+        acpCommand.placeholderString = "/absolute/path/to/acp-adapter"
+        acpCommand.target = self
+        acpCommand.action = #selector(markChanged)
+        acpCommand.delegate = self
+        acpCommand.widthAnchor.constraint(equalToConstant: 390).isActive = true
+        acpArgsJSON.placeholderString = "[]"
+        acpArgsJSON.target = self
+        acpArgsJSON.action = #selector(markChanged)
+        acpArgsJSON.delegate = self
+        acpArgsJSON.widthAnchor.constraint(equalToConstant: 390).isActive = true
         acpStatus.textColor = .secondaryLabelColor
         acpStatus.font = .systemFont(ofSize: 12)
         acpStatus.widthAnchor.constraint(equalToConstant: 500).isActive = true
@@ -239,9 +261,15 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         browserStack.spacing = 5
         browserStatus.widthAnchor.constraint(equalToConstant: 500).isActive = true
 
+        let commandRow = formRow(title: "Command", control: acpCommand)
+        let argsRow = formRow(title: "Args JSON", control: acpArgsJSON)
+        acpCommandRow = commandRow
+        acpArgsRow = argsRow
         let acpStack = NSStackView(views: [
             acpEnabled,
             formRow(title: "Agent", control: acpAgent),
+            commandRow,
+            argsRow,
             acpStatus,
         ])
         acpStack.orientation = .vertical
@@ -336,6 +364,9 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         if obj.object as? NSTextField === browserCDPURL {
             refreshBrowserStatus()
         }
+        if obj.object as? NSTextField === acpCommand || obj.object as? NSTextField === acpArgsJSON {
+            refreshACPStatus()
+        }
         refreshApplyState()
     }
 
@@ -364,6 +395,16 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         guard let configuration = currentConfiguration else { return }
         let selectedAgent = selectedACPAgent()
         let sameAgent = selectedAgent == configuration.acpAgent
+        let customCommand = acpCommand.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let customArguments: [String]
+        do {
+            customArguments = selectedAgent == .custom
+                ? try ACPDesktopConfiguration.decodeArguments(acpArgsJSON.stringValue)
+                : []
+        } catch {
+            showStatus(error.localizedDescription, isError: true)
+            return
+        }
         let browserMode = selectedBrowserConnectionMode()
         let configuredCDP = browserCDPURL.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if browserMode == .specifiedCDP, configuredCDP.isEmpty {
@@ -378,8 +419,8 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
             browserReuseExistingCDP: browserMode == .reuseExisting,
             acpEnabled: acpEnabled.state == .on,
             acpAgent: selectedAgent,
-            acpCommand: sameAgent ? configuration.acpCommand : "",
-            acpArgs: sameAgent ? configuration.acpArgs : []
+            acpCommand: selectedAgent == .custom ? customCommand : (sameAgent ? configuration.acpCommand : ""),
+            acpArgs: selectedAgent == .custom ? customArguments : (sameAgent ? configuration.acpArgs : [])
         )
         setBusy(true)
         showStatus("正在保存配置并验证 AgentDock…", isError: false)
@@ -407,6 +448,12 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
                 )
                 initialACPEnabled = validatedSettings.acpEnabled
                 initialACPAgent = validatedSettings.acpAgent
+                initialACPCommand = validatedSettings.acpAgent == .custom ? validatedSettings.acpCommand : ""
+                initialACPArgsJSON = (try? ACPDesktopConfiguration.encodeArguments(
+                    validatedSettings.acpAgent == .custom ? validatedSettings.acpArgs : []
+                )) ?? "[]"
+                acpCommand.stringValue = initialACPCommand
+                acpArgsJSON.stringValue = initialACPArgsJSON
                 portField.integerValue = initialPort
                 logLevel.selectItem(withTitle: initialLogLevel)
                 browserCDPURL.stringValue = initialBrowserCDPURL
@@ -472,22 +519,34 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
 
     private func refreshACPStatus() {
         let preset = selectedACPAgent()
-        let configuredCommand = currentConfiguration?.acpAgent == preset
-            ? currentConfiguration?.acpCommand ?? ""
-            : ""
-        let configuredArguments = currentConfiguration?.acpAgent == preset
-            ? currentConfiguration?.acpArgs ?? []
-            : []
+        let isCustom = preset == .custom
+        acpCommandRow?.isHidden = !isCustom
+        acpArgsRow?.isHidden = !isCustom
+
+        let configuredCommand = isCustom
+            ? acpCommand.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            : (currentConfiguration?.acpAgent == preset ? currentConfiguration?.acpCommand ?? "" : "")
+        let configuredArguments: [String]
+        if isCustom {
+            configuredArguments = (try? ACPDesktopConfiguration.decodeArguments(acpArgsJSON.stringValue)) ?? []
+        } else {
+            configuredArguments = currentConfiguration?.acpAgent == preset ? currentConfiguration?.acpArgs ?? [] : []
+        }
         let resolution = preset.resolveAdapter(
             configuredCommand: configuredCommand,
             configuredArguments: configuredArguments
         )
         let enabled = acpEnabled.state == .on
         acpAgent.isEnabled = enabled && !isBusy
-        if resolution.available {
+        acpCommand.isEnabled = enabled && isCustom && !isBusy
+        acpArgsJSON.isEnabled = enabled && isCustom && !isBusy
+        if isCustom, (try? ACPDesktopConfiguration.decodeArguments(acpArgsJSON.stringValue)) == nil {
+            acpStatus.stringValue = "Args JSON 必须是 JSON 字符串数组。"
+            acpStatus.textColor = enabled ? .systemRed : .secondaryLabelColor
+        } else if resolution.available {
             acpStatus.stringValue = enabled
                 ? resolution.message
-                : "已检测到 \(preset.title) · 启用后生效"
+                : (isCustom ? "已配置 \(preset.title) · 启用后生效" : "已检测到 \(preset.title) · 启用后生效")
             acpStatus.textColor = .secondaryLabelColor
         } else {
             acpStatus.stringValue = resolution.message
@@ -544,8 +603,14 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
             return
         }
         let acpIsEnabled = acpEnabled.state == .on
+        let selectedAgent = selectedACPAgent()
+        let customSettingsChanged = selectedAgent == .custom && (
+            acpCommand.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) != initialACPCommand
+                || acpArgsJSON.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) != initialACPArgsJSON
+        )
         let acpSettingsChanged = acpIsEnabled != initialACPEnabled
-            || ((acpIsEnabled || initialACPEnabled) && selectedACPAgent() != initialACPAgent)
+            || ((acpIsEnabled || initialACPEnabled) && selectedAgent != initialACPAgent)
+            || ((acpIsEnabled || initialACPEnabled) && customSettingsChanged)
         let browserMode = selectedBrowserConnectionMode()
         let browserCDP = browserMode == .specifiedCDP
             ? browserCDPURL.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -566,7 +631,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
 
     private func setBusy(_ busy: Bool) {
         isBusy = busy
-        for control in [serviceAutostart, menuAutostart, portField, logLevel, browserEnabled, browserConnectionMode, browserCDPURL, acpEnabled, nexusEndpoint, nexusPairingCode, nexusPairButton] {
+        for control in [serviceAutostart, menuAutostart, portField, logLevel, browserEnabled, browserConnectionMode, browserCDPURL, acpEnabled, acpAgent, acpCommand, acpArgsJSON, nexusEndpoint, nexusPairingCode, nexusPairButton] {
             control.isEnabled = !busy
         }
         refreshBrowserStatus()

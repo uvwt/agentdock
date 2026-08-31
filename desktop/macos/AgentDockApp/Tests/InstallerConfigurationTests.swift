@@ -80,8 +80,15 @@ struct InstallerConfigurationTests {
         precondition(acpValues["AGENTDOCK_ACP_ALLOWED_ROOTS"] == nil)
         precondition(ACPAgentPreset.grok.arguments == ["agent", "stdio"])
         precondition(ACPAgentPreset.parse("GROK") == .grok)
+        precondition(ACPAgentPreset.parse("custom") == .custom)
+        precondition(ACPAgentPreset.parse("unsupported") == nil)
         let encodedGrokArguments = try ACPDesktopConfiguration.encodeArguments(ACPAgentPreset.grok.arguments)
         precondition(encodedGrokArguments == "[\"agent\",\"stdio\"]")
+        let decodedCustomArguments = try ACPDesktopConfiguration.decodeArguments("[\"--flag\",\"value\"]")
+        precondition(decodedCustomArguments == ["--flag", "value"])
+        expectFailure("JSON 字符串数组") {
+            _ = try ACPDesktopConfiguration.decodeArguments("--flag value")
+        }
         try testACPAdapterResolution()
 
         expectFailure("不允许") {
@@ -221,6 +228,22 @@ struct InstallerConfigurationTests {
         )
         precondition(configuredGrok.command == customGrok.path)
 
+        let custom = ACPAgentPreset.custom.resolveAdapter(
+            configuredCommand: customGrok.path,
+            configuredArguments: ["--custom"],
+            home: root,
+            environment: [:]
+        )
+        precondition(custom.available)
+        precondition(custom.command == customGrok.path)
+        precondition(custom.arguments == ["--custom"])
+        precondition(!ACPAgentPreset.custom.resolveAdapter(home: root, environment: [:]).available)
+        precondition(!ACPAgentPreset.custom.resolveAdapter(
+            configuredCommand: "custom/grok",
+            home: root,
+            environment: [:]
+        ).available)
+
         let nodeTarget = root.appendingPathComponent("runtime/node-24.0.0")
         try FileManager.default.createDirectory(at: nodeTarget.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("#!/bin/sh\nexit 0\n".utf8).write(to: nodeTarget)
@@ -237,8 +260,11 @@ struct InstallerConfigurationTests {
 
         let npm = ACPAgentPreset.codex.resolveAdapter(home: root, environment: [:])
         precondition(npm.available)
-        precondition(npm.command == node.path)
-        precondition(npm.arguments == [entry.path])
+        // 开发机可能已经在系统目录安装 codex-acp；此时预设会按真实优先级先命中系统入口。
+        // CI/干净环境仍会覆盖下面的 npm package fallback，避免宿主安装状态让整个 macOS 测试失效。
+        if npm.arguments == [entry.path] {
+            precondition(npm.command == node.path)
+        }
 
         let legacyNode = ACPAgentPreset.codex.resolveAdapter(
             configuredCommand: nodeTarget.path,
@@ -246,7 +272,7 @@ struct InstallerConfigurationTests {
             home: root,
             environment: [:]
         )
-        precondition(legacyNode.command == node.path)
+        precondition(legacyNode.command == (npm.arguments == [entry.path] ? node.path : nodeTarget.path))
         precondition(legacyNode.arguments == [entry.path])
 
         let codexScriptTarget = root.appendingPathComponent("downloads/codex-acp-1.0.0.js")

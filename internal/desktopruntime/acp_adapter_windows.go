@@ -25,8 +25,16 @@ type desktopACPAdapterPreset struct {
 }
 
 func resolveDesktopACPAdapter(agent, runtimeRoot, configuredCommand string, configuredArgs []string) (desktopACPAdapter, error) {
+	normalizedAgent := strings.ToLower(strings.TrimSpace(agent))
+	if normalizedAgent == "custom" {
+		if adapter, ok := resolveConfiguredACPAdapter(configuredCommand, configuredArgs); ok {
+			return adapter, nil
+		}
+		return desktopACPAdapter{}, errors.New("自定义 Coding Agent 必须指定可直接执行的 ACP Adapter 绝对路径")
+	}
+
 	var preset desktopACPAdapterPreset
-	switch strings.ToLower(strings.TrimSpace(agent)) {
+	switch normalizedAgent {
 	case "codex":
 		preset = desktopACPAdapterPreset{
 			executableNames: []string{"codex-acp.exe", "codex-acp.com"},
@@ -95,6 +103,9 @@ func resolveDesktopACPAdapter(agent, runtimeRoot, configuredCommand string, conf
 }
 
 func resolveConfiguredACPAdapter(command string, args []string) (desktopACPAdapter, bool) {
+	if !filepath.IsAbs(strings.TrimSpace(command)) {
+		return desktopACPAdapter{}, false
+	}
 	absolute, ok := regularWindowsExecutable(command)
 	if !ok {
 		return desktopACPAdapter{}, false

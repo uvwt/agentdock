@@ -16,12 +16,14 @@ enum ACPAgentPreset: String, CaseIterable {
     case codex
     case claude
     case grok
+    case custom
 
     var title: String {
         switch self {
         case .codex: return "Codex"
         case .claude: return "Claude"
         case .grok: return "Grok Build"
+        case .custom: return "自定义"
         }
     }
 
@@ -30,13 +32,14 @@ enum ACPAgentPreset: String, CaseIterable {
         case .codex: return ["codex-acp"]
         case .claude: return ["claude-agent-acp"]
         case .grok: return ["grok"]
+        case .custom: return []
         }
     }
 
     var arguments: [String] {
         switch self {
         case .grok: return ["agent", "stdio"]
-        case .codex, .claude: return []
+        case .codex, .claude, .custom: return []
         }
     }
 
@@ -46,20 +49,23 @@ enum ACPAgentPreset: String, CaseIterable {
             return ACPNodePackage(name: "@agentclientprotocol/codex-acp", binName: "codex-acp")
         case .claude:
             return ACPNodePackage(name: "@agentclientprotocol/claude-agent-acp", binName: "claude-agent-acp")
-        case .grok:
+        case .grok, .custom:
             return nil
         }
     }
 
     var missingAdapterMessage: String {
+        if self == .custom {
+            return "请填写可执行的 ACP Adapter 绝对路径"
+        }
         guard let nodePackage else {
             return "未找到 \(executableNames[0])"
         }
         return "未找到 \(executableNames[0]) 或 \(nodePackage.name)"
     }
 
-    static func parse(_ raw: String) -> ACPAgentPreset {
-        ACPAgentPreset(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) ?? .codex
+    static func parse(_ raw: String) -> ACPAgentPreset? {
+        ACPAgentPreset(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
     }
 
     func resolveAdapter(
@@ -74,6 +80,14 @@ enum ACPAgentPreset: String, CaseIterable {
             arguments: configuredArguments,
             directories: directories
         )
+        if self == .custom {
+            return configured ?? ACPAdapterResolution(
+                available: false,
+                command: "",
+                arguments: [],
+                message: "未配置 · \(missingAdapterMessage)"
+            )
+        }
 
         var discovered: ACPAdapterResolution?
         for directory in directories {
@@ -160,7 +174,7 @@ enum ACPAgentPreset: String, CaseIterable {
         directories: [URL]
     ) -> ACPAdapterResolution? {
         let trimmedCommand = command.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedCommand.isEmpty,
+        guard trimmedCommand.hasPrefix("/"),
               let executable = executableFile(URL(fileURLWithPath: trimmedCommand)) else {
             return nil
         }
@@ -343,5 +357,15 @@ struct ACPDesktopConfiguration {
             throw ValidationError("无法编码 Coding Agent 启动参数。")
         }
         return value
+    }
+
+    static func decodeArguments(_ raw: String) throws -> [String] {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return [] }
+        guard let data = value.data(using: .utf8),
+              let arguments = try? JSONDecoder().decode([String].self, from: data) else {
+            throw ValidationError("Coding Agent 启动参数必须是 JSON 字符串数组，例如 [\"--flag\",\"value\"]。")
+        }
+        return arguments
     }
 }

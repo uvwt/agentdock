@@ -233,6 +233,8 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <CheckBox x:Name="AcpEnabledCheckBox" Grid.ColumnSpan="3" Content="启用 Coding Agent" Margin="0,4,0,12" Checked="AcpSetting_Changed" Unchecked="AcpSetting_Changed" />
                 <TextBlock Grid.Row="1" Text="Agent" VerticalAlignment="Center" Margin="0,0,0,10" />
@@ -240,9 +242,14 @@
                   <ComboBoxItem Content="Codex" Tag="codex" />
                   <ComboBoxItem Content="Claude" Tag="claude" />
                   <ComboBoxItem Content="Grok Build" Tag="grok" />
+                  <ComboBoxItem Content="自定义" Tag="custom" />
                 </ComboBox>
-                <TextBlock Grid.Row="2" Text="状态" VerticalAlignment="Top" />
-                <TextBlock x:Name="AcpStatusText" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Foreground="#667085" Text="未启用" TextWrapping="Wrap" />
+                <TextBlock x:Name="AcpCommandLabel" Grid.Row="2" Text="Command" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <TextBox x:Name="AcpCommandTextBox" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" TextChanged="AcpSetting_Changed" ToolTip="ACP Adapter 可执行文件的绝对路径" />
+                <TextBlock x:Name="AcpArgsLabel" Grid.Row="3" Text="Args JSON" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <TextBox x:Name="AcpArgsTextBox" Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" Text="[]" TextChanged="AcpSetting_Changed" ToolTip="JSON 字符串数组，例如 [&quot;--flag&quot;,&quot;value&quot;]" />
+                <TextBlock Grid.Row="4" Text="状态" VerticalAlignment="Top" />
+                <TextBlock x:Name="AcpStatusText" Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Foreground="#667085" Text="未启用" TextWrapping="Wrap" />
               </Grid>
             </GroupBox>
 

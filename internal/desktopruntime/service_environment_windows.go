@@ -189,15 +189,13 @@ func loadControlPanelSettings(runtimeRoot string, fallbackPort int) (controlPane
 	if settings.ACPCommand != "" {
 		settings.ACPCommand = filepath.Clean(settings.ACPCommand)
 	}
-	if settings.ACPEnabled {
-		switch settings.ACPAgent {
-		case "codex", "claude", "grok":
-		default:
-			return controlPanelSettings{}, fmt.Errorf("不支持的 Coding Agent: %s", settings.ACPAgent)
-		}
-		if !filepath.IsAbs(settings.ACPCommand) {
-			return controlPanelSettings{}, fmt.Errorf("Coding Agent 命令必须是绝对路径: %s", settings.ACPCommand)
-		}
+	switch settings.ACPAgent {
+	case "codex", "claude", "grok", "custom":
+	default:
+		return controlPanelSettings{}, fmt.Errorf("不支持的 Coding Agent: %s", settings.ACPAgent)
+	}
+	if settings.ACPEnabled && !filepath.IsAbs(settings.ACPCommand) {
+		return controlPanelSettings{}, fmt.Errorf("Coding Agent 命令必须是绝对路径: %s", settings.ACPCommand)
 	}
 	return settings, nil
 }

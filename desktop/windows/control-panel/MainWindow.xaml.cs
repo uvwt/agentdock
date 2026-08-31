@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.IO;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -129,6 +130,10 @@ public partial class MainWindow : Window
                 SelectBrowserConnectionMode(snapshot.Settings);
                 AcpEnabledCheckBox.IsChecked = snapshot.Settings.AcpEnabled;
                 SelectAcpAgent(snapshot.Settings.AcpAgent);
+                AcpCommandTextBox.Text = snapshot.Settings.AcpAgent == "custom" ? snapshot.Settings.AcpCommand : "";
+                AcpArgsTextBox.Text = snapshot.Settings.AcpAgent == "custom"
+                    ? JsonSerializer.Serialize(snapshot.Settings.AcpArgs ?? [])
+                    : "[]";
                 _settingsLoaded = true;
             }
 
@@ -359,13 +364,43 @@ public partial class MainWindow : Window
         var enabled = AcpEnabledCheckBox.IsChecked == true;
         AcpAgentComboBox.IsEnabled = enabled;
         var agent = SelectedAcpAgent();
-        var sameAgent = string.Equals(_snapshot?.Settings.AcpAgent, agent, StringComparison.OrdinalIgnoreCase);
-        var configuredCommand = sameAgent ? _snapshot?.Settings.AcpCommand ?? "" : "";
-        var configuredArguments = sameAgent ? _snapshot?.Settings.AcpArgs : null;
+        var isCustom = agent == "custom";
+        var customVisibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
+        AcpCommandLabel.Visibility = customVisibility;
+        AcpCommandTextBox.Visibility = customVisibility;
+        AcpArgsLabel.Visibility = customVisibility;
+        AcpArgsTextBox.Visibility = customVisibility;
+        AcpCommandTextBox.IsEnabled = enabled && isCustom;
+        AcpArgsTextBox.IsEnabled = enabled && isCustom;
+
+        IReadOnlyList<string>? configuredArguments;
+        string configuredCommand;
+        if (isCustom)
+        {
+            configuredCommand = AcpCommandTextBox.Text.Trim();
+            if (!TryReadAcpArguments(AcpArgsTextBox.Text, out var customArguments))
+            {
+                AcpStatusText.Text = "Args JSON 必须是 JSON 字符串数组。";
+                AcpStatusText.Foreground = enabled
+                    ? new SolidColorBrush(Color.FromRgb(217, 45, 32))
+                    : new SolidColorBrush(Color.FromRgb(102, 112, 133));
+                return;
+            }
+            configuredArguments = customArguments;
+        }
+        else
+        {
+            var sameAgent = string.Equals(_snapshot?.Settings.AcpAgent, agent, StringComparison.OrdinalIgnoreCase);
+            configuredCommand = sameAgent ? _snapshot?.Settings.AcpCommand ?? "" : "";
+            configuredArguments = sameAgent ? _snapshot?.Settings.AcpArgs : null;
+        }
+
         var resolution = _runtime.ResolveAcpAdapter(agent, configuredCommand, configuredArguments);
         AcpStatusText.Text = enabled
             ? resolution.Message
-            : resolution.Available ? $"已检测到 {AgentDisplayName(agent)} · 启用后生效" : resolution.Message;
+            : resolution.Available
+                ? isCustom ? "已配置 自定义 · 启用后生效" : $"已检测到 {AgentDisplayName(agent)} · 启用后生效"
+                : resolution.Message;
         AcpStatusText.Foreground = enabled && !resolution.Available
             ? new SolidColorBrush(Color.FromRgb(217, 45, 32))
             : new SolidColorBrush(Color.FromRgb(102, 112, 133));
@@ -381,12 +416,31 @@ public partial class MainWindow : Window
 
         var acpEnabled = AcpEnabledCheckBox.IsChecked == true;
         var acpAgent = SelectedAcpAgent();
+        var isCustomAcp = acpAgent == "custom";
         var sameAcpAgent = string.Equals(_snapshot?.Settings.AcpAgent, acpAgent, StringComparison.OrdinalIgnoreCase);
-        var configuredAcpCommand = sameAcpAgent ? _snapshot?.Settings.AcpCommand ?? "" : "";
-        var configuredAcpArguments = sameAcpAgent ? _snapshot?.Settings.AcpArgs : null;
+        var configuredAcpCommand = isCustomAcp
+            ? AcpCommandTextBox.Text.Trim()
+            : sameAcpAgent ? _snapshot?.Settings.AcpCommand ?? "" : "";
+        IReadOnlyList<string>? configuredAcpArguments;
+        if (isCustomAcp)
+        {
+            if (!TryReadAcpArguments(AcpArgsTextBox.Text, out var customArguments))
+            {
+                MessageBox.Show(this, "Args JSON 必须是 JSON 字符串数组。", "AgentDock", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            configuredAcpArguments = customArguments;
+        }
+        else
+        {
+            configuredAcpArguments = sameAcpAgent ? _snapshot?.Settings.AcpArgs : null;
+        }
         if (acpEnabled && !_runtime.ResolveAcpAdapter(acpAgent, configuredAcpCommand, configuredAcpArguments).Available)
         {
-            MessageBox.Show(this, $"{AgentDisplayName(acpAgent)} 当前不可用，请先安装对应命令。", "AgentDock", MessageBoxButton.OK, MessageBoxImage.Warning);
+            var message = isCustomAcp
+                ? "自定义 ACP Adapter 当前不可用，请检查 Command 与 Args JSON。"
+                : $"{AgentDisplayName(acpAgent)} 当前不可用，请先安装对应命令。";
+            MessageBox.Show(this, message, "AgentDock", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
@@ -407,7 +461,9 @@ public partial class MainWindow : Window
             BrowserCdpUrl = browserConnectionMode == BrowserConnectionSpecified ? browserCdpUrl : "",
             BrowserReuseExistingCdp = browserConnectionMode == BrowserConnectionReuse,
             AcpEnabled = acpEnabled,
-            AcpAgent = acpAgent
+            AcpAgent = acpAgent,
+            AcpCommand = isCustomAcp ? configuredAcpCommand : "",
+            AcpArgs = isCustomAcp ? configuredAcpArguments?.ToList() ?? [] : []
         };
         var saved = await ExecuteActionAsync(
             "正在保存设置并重启…",
@@ -509,10 +565,36 @@ public partial class MainWindow : Window
 
     private static string AgentDisplayName(string agent) => agent switch
     {
+        "codex" => "Codex",
         "claude" => "Claude",
         "grok" => "Grok Build",
-        _ => "Codex"
+        "custom" => "自定义",
+        _ => throw new ArgumentOutOfRangeException(nameof(agent), agent, "不支持的 Coding Agent")
     };
+
+    private static bool TryReadAcpArguments(string raw, out List<string> arguments)
+    {
+        arguments = [];
+        var value = raw.Trim();
+        if (value.Length == 0)
+        {
+            return true;
+        }
+        try
+        {
+            var decoded = JsonSerializer.Deserialize<List<string>>(value);
+            if (decoded is null)
+            {
+                return false;
+            }
+            arguments = decoded;
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
 
     private void SelectLogLevel(string value)
     {
