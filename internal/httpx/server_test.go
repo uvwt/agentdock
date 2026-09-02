@@ -527,7 +527,7 @@ func TestRegisterOAuthRoutesExposesOnlyCanonicalEndpoints(t *testing.T) {
 	}
 }
 
-func TestOAuthMetadataEndpointsOnlyAllowGet(t *testing.T) {
+func TestOAuthMetadataEndpointsAllowGetAndHead(t *testing.T) {
 	cfg := oauthTestConfig(t)
 	mux := http.NewServeMux()
 	registerOAuthRoutes(mux, cfg, auth.NewOAuthStore())
@@ -535,11 +535,22 @@ func TestOAuthMetadataEndpointsOnlyAllowGet(t *testing.T) {
 		"/.well-known/oauth-authorization-server",
 		"/.well-known/oauth-protected-resource/mcp",
 	} {
-		request := httptest.NewRequest(http.MethodPost, path, nil)
-		response := httptest.NewRecorder()
-		mux.ServeHTTP(response, request)
-		if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodGet {
-			t.Fatalf("POST %s status=%d Allow=%q", path, response.Code, response.Header().Get("Allow"))
+		getResponse := httptest.NewRecorder()
+		mux.ServeHTTP(getResponse, httptest.NewRequest(http.MethodGet, path, nil))
+		if getResponse.Code != http.StatusOK || getResponse.Header().Get("Content-Type") != "application/json" || getResponse.Body.Len() == 0 {
+			t.Fatalf("GET %s status=%d Content-Type=%q bodyLen=%d", path, getResponse.Code, getResponse.Header().Get("Content-Type"), getResponse.Body.Len())
+		}
+
+		headResponse := httptest.NewRecorder()
+		mux.ServeHTTP(headResponse, httptest.NewRequest(http.MethodHead, path, nil))
+		if headResponse.Code != http.StatusOK || headResponse.Header().Get("Content-Type") != "application/json" || headResponse.Body.Len() != 0 {
+			t.Fatalf("HEAD %s status=%d Content-Type=%q bodyLen=%d", path, headResponse.Code, headResponse.Header().Get("Content-Type"), headResponse.Body.Len())
+		}
+
+		postResponse := httptest.NewRecorder()
+		mux.ServeHTTP(postResponse, httptest.NewRequest(http.MethodPost, path, nil))
+		if postResponse.Code != http.StatusMethodNotAllowed || postResponse.Header().Get("Allow") != "GET, HEAD" {
+			t.Fatalf("POST %s status=%d Allow=%q", path, postResponse.Code, postResponse.Header().Get("Allow"))
 		}
 	}
 }

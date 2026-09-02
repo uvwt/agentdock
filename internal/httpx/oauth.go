@@ -48,20 +48,10 @@ func registerOAuthRoutes(mux *http.ServeMux, cfg config.Config, store *auth.OAut
 		return
 	}
 	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", http.MethodGet)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		writeJSON(w, oauthMetadata(cfg, r))
+		writeOAuthMetadata(w, r, oauthMetadata(cfg, r))
 	})
 	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", http.MethodGet)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		writeJSON(w, protectedResourceMetadata(cfg, r))
+		writeOAuthMetadata(w, r, protectedResourceMetadata(cfg, r))
 	})
 	registrationLimiter := newFixedWindowLimiter(30, time.Minute)
 	passwordLimiter := newFixedWindowLimiter(10, 5*time.Minute)
@@ -85,6 +75,21 @@ func registerOAuthRoutes(mux *http.ServeMux, cfg config.Config, store *auth.OAut
 		handleToken(w, r, cfg, store)
 	})
 }
+
+func writeOAuthMetadata(w http.ResponseWriter, r *http.Request, metadata map[string]any) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", http.MethodGet+", "+http.MethodHead)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if r.Method == http.MethodHead {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	writeJSON(w, metadata)
+}
+
 func handleRegister(w http.ResponseWriter, r *http.Request, cfg config.Config, store *auth.OAuthStore) {
 	if !cfg.OAuthEnabled {
 		http.NotFound(w, r)
