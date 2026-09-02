@@ -163,6 +163,7 @@
                 <Grid.RowDefinitions>
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <TextBlock Text="端口" VerticalAlignment="Center" Margin="0,0,0,10" />
                 <TextBox x:Name="PortTextBox" Grid.Column="1" Width="130" HorizontalAlignment="Left" Margin="0,0,0,10" />
@@ -173,6 +174,7 @@
                   <ComboBoxItem Content="warn" />
                   <ComboBoxItem Content="error" />
                 </ComboBox>
+                <CheckBox x:Name="McpAppsEnabledCheckBox" Grid.Row="2" Grid.ColumnSpan="2" Content="启用 MCP Apps UI" Margin="0,4,0,4" />
               </Grid>
             </GroupBox>
 

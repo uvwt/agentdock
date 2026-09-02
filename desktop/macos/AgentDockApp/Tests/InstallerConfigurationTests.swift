@@ -57,6 +57,14 @@ struct InstallerConfigurationTests {
         precondition(updatedValues["AGENTDOCK_BROWSER_REUSE_EXISTING_CDP"] == "true")
         precondition(updatedText.components(separatedBy: "AGENTDOCK_PORT=").count == 2)
 
+        let serviceEnvironmentURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("agentdock-service-config-\(UUID().uuidString).env")
+        defer { try? FileManager.default.removeItem(at: serviceEnvironmentURL) }
+        try Data("AGENTDOCK_PORT=8765\n".utf8).write(to: serviceEnvironmentURL)
+        precondition(ServiceConfiguration.load(from: serviceEnvironmentURL)?.mcpAppsEnabled == true)
+        try Data("AGENTDOCK_PORT=8765\nAGENTDOCK_MCP_APPS_ENABLED=false\n".utf8).write(to: serviceEnvironmentURL)
+        precondition(ServiceConfiguration.load(from: serviceEnvironmentURL)?.mcpAppsEnabled == false)
+
         let nexusIdentityURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("agentdock-nexus-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: nexusIdentityURL) }

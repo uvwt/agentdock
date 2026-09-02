@@ -47,6 +47,25 @@ func TestFromEnvParsesCommandEnvironmentMapping(t *testing.T) {
 	}
 }
 
+func TestFromEnvMCPAppsEnabledDefaultsAndOverride(t *testing.T) {
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v", err)
+	}
+	if !cfg.MCPAppsEnabled {
+		t.Fatal("MCPAppsEnabled = false, want true by default")
+	}
+
+	t.Setenv("AGENTDOCK_MCP_APPS_ENABLED", "false")
+	cfg, err = FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() with override error = %v", err)
+	}
+	if cfg.MCPAppsEnabled {
+		t.Fatal("MCPAppsEnabled = true, want false from environment override")
+	}
+}
+
 func TestCommandEnvironmentMappingRejectsInvalidNames(t *testing.T) {
 	t.Setenv("AGENTDOCK_COMMAND_ENV_FROM_ENV_JSON", `{"BAD-NAME":"HOST_TOKEN"}`)
 	if _, err := FromEnv(); err == nil || !strings.Contains(err.Error(), "AGENTDOCK_COMMAND_ENV_FROM_ENV_JSON") {

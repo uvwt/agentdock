@@ -229,6 +229,7 @@ public sealed class RuntimeService : IDisposable
             "--port", settings.Port.ToString(),
             "--log-level", settings.LogLevel,
             "--oauth-access-token-ttl", settings.OAuthAccessTokenTtl ?? "",
+            $"--mcp-apps-enabled={settings.McpAppsEnabled.ToString().ToLowerInvariant()}",
             $"--browser-enabled={settings.BrowserEnabled.ToString().ToLowerInvariant()}",
             "--browser-cdp-url", settings.BrowserCdpUrl ?? "",
             $"--browser-reuse-existing-cdp={settings.BrowserReuseExistingCdp.ToString().ToLowerInvariant()}",

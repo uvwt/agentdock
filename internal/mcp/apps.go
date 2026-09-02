@@ -20,6 +20,9 @@ type appResourceDefinition struct {
 }
 
 func (s *Server) appResourceDefinitions() []appResourceDefinition {
+	if s == nil || !s.cfg.MCPAppsEnabled {
+		return nil
+	}
 	definitions := []appResourceDefinition{
 		{
 			URI:         protocol.ContextUIResourceURI,

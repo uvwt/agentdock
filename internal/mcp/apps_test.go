@@ -64,7 +64,12 @@ func assertResourceUIMeta(t *testing.T, meta mcpsdk.Meta, domain string) {
 }
 
 func newMCPAppTestHarness(t *testing.T, cfg config.Config) *mcpAppTestHarness {
+	return newMCPAppTestHarnessWithApps(t, cfg, true)
+}
+
+func newMCPAppTestHarnessWithApps(t *testing.T, cfg config.Config, enabled bool) *mcpAppTestHarness {
 	t.Helper()
+	cfg.MCPAppsEnabled = enabled
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
 	}
@@ -104,7 +109,7 @@ func newMCPAppTestHarness(t *testing.T, cfg config.Config) *mcpAppTestHarness {
 }
 
 func TestUIResourcesMatchServedResourceRegistry(t *testing.T) {
-	server := &Server{cfg: config.Config{NexusEndpoint: "https://nexus.example.test", ACPEnabled: true}}
+	server := &Server{cfg: config.Config{NexusEndpoint: "https://nexus.example.test", ACPEnabled: true, MCPAppsEnabled: true}}
 	definitions := server.appResourceDefinitions()
 	resources := server.UIResources()
 	if len(definitions) != 8 || len(resources) != len(definitions) {
@@ -129,6 +134,50 @@ func TestUIResourcesMatchServedResourceRegistry(t *testing.T) {
 		if resource.Contract != contract || resource.MIMEType != protocol.MCPAppMIMEType {
 			t.Fatalf("resource capability %s = %#v", definition.URI, resource)
 		}
+	}
+}
+
+func TestMCPAppsCanBeDisabledWithoutRemovingTools(t *testing.T) {
+	root := t.TempDir()
+	harness := newMCPAppTestHarnessWithApps(t, config.Config{
+		AgentDockDefaultDir: root,
+		AgentDockHome:       filepath.Join(root, ".agentdock"),
+	}, false)
+
+	tools := map[string]*mcpsdk.Tool{}
+	for tool, err := range harness.session.Tools(t.Context(), nil) {
+		if err != nil {
+			t.Fatalf("Tools() error = %v", err)
+		}
+		tools[tool.Name] = tool
+	}
+	if tools["agentdock_context"] == nil || tools["file_edit"] == nil || tools["task_manage"] == nil {
+		t.Fatalf("core tools disappeared when MCP Apps UI was disabled: %#v", tools)
+	}
+	for _, name := range []string{"agentdock_context", "file_edit", "task_manage", "mcp_tool_call", "file_publish"} {
+		if ui := tools[name].Meta["ui"]; ui != nil {
+			t.Fatalf("%s still exposes Apps UI metadata while disabled: %#v", name, ui)
+		}
+	}
+	if tools["file_publish"].Meta["file_arg_rewrite_paths"] == nil {
+		t.Fatalf("file_publish lost non-UI metadata while MCP Apps UI was disabled: %#v", tools["file_publish"].Meta)
+	}
+
+	resources := 0
+	for _, err := range harness.session.Resources(t.Context(), nil) {
+		if err != nil {
+			t.Fatalf("Resources() error = %v", err)
+		}
+		resources++
+	}
+	if resources != 0 {
+		t.Fatalf("resources/list count = %d, want 0 while MCP Apps UI is disabled", resources)
+	}
+	if got := harness.server.UIResources(); len(got) != 0 {
+		t.Fatalf("UIResources() = %#v, want empty while disabled", got)
+	}
+	if _, err := harness.server.ReadAppResource(protocol.ContextUIResourceURI); err == nil {
+		t.Fatal("ReadAppResource() served an MCP App while disabled")
 	}
 }
 
@@ -466,12 +515,12 @@ func TestMCPAppsExposeNexusViewsWhenNexusEnabled(t *testing.T) {
 	if !ok {
 		t.Fatal("workflow_template_manage definition missing")
 	}
-	matchMeta := toolResultMetadata(workflowDef, map[string]any{"action": "match"})
+	matchMeta := toolResultMetadata(workflowDef, map[string]any{"action": "match"}, true)
 	matchUI, ok := matchMeta["ui"].(map[string]any)
 	if !ok || matchUI["resourceUri"] != protocol.WorkflowUIResourceURI {
 		t.Fatalf("workflow match result UI metadata = %#v", matchMeta)
 	}
-	if meta := toolResultMetadata(workflowDef, map[string]any{"action": "list"}); len(meta) != 0 {
+	if meta := toolResultMetadata(workflowDef, map[string]any{"action": "list"}, true); len(meta) != 0 {
 		t.Fatalf("workflow list should not bind result UI: %#v", meta)
 	}
 	if tool := tools["recall_bootstrap"]; tool != nil {

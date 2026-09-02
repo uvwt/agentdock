@@ -64,6 +64,9 @@ public sealed class ControlPanelSettings
     [JsonPropertyName("oauth_access_token_ttl")]
     public string OAuthAccessTokenTtl { get; set; } = "";
 
+    [JsonPropertyName("mcp_apps_enabled")]
+    public bool McpAppsEnabled { get; set; } = true;
+
     [JsonPropertyName("browser_enabled")]
     public bool BrowserEnabled { get; set; }
 

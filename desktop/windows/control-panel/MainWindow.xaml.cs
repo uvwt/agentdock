@@ -125,6 +125,7 @@ public partial class MainWindow : Window
             {
                 PortTextBox.Text = snapshot.Settings.Port.ToString();
                 SelectLogLevel(snapshot.Settings.LogLevel);
+                McpAppsEnabledCheckBox.IsChecked = snapshot.Settings.McpAppsEnabled;
                 BrowserEnabledCheckBox.IsChecked = snapshot.Settings.BrowserEnabled;
                 BrowserCdpUrlTextBox.Text = snapshot.Settings.BrowserCdpUrl;
                 SelectBrowserConnectionMode(snapshot.Settings);
@@ -457,6 +458,7 @@ public partial class MainWindow : Window
             Port = port,
             LogLevel = SelectedLogLevel(),
             OAuthAccessTokenTtl = _snapshot?.Settings.OAuthAccessTokenTtl ?? "",
+            McpAppsEnabled = McpAppsEnabledCheckBox.IsChecked == true,
             BrowserEnabled = BrowserEnabledCheckBox.IsChecked == true,
             BrowserCdpUrl = browserConnectionMode == BrowserConnectionSpecified ? browserCdpUrl : "",
             BrowserReuseExistingCdp = browserConnectionMode == BrowserConnectionReuse,

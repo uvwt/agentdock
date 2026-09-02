@@ -19,6 +19,7 @@ type ConfigUpdateRequest struct {
 	Port                    int
 	LogLevel                string
 	OAuthAccessTokenTTL     string
+	MCPAppsEnabled          bool
 	BrowserEnabled          bool
 	BrowserCDPURL           string
 	BrowserReuseExistingCDP bool
@@ -40,6 +41,7 @@ func RunConfigCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		port := flags.Int("port", 0, "本地监听端口")
 		logLevel := flags.String("log-level", "info", "日志级别")
 		oauthAccessTokenTTL := flags.String("oauth-access-token-ttl", "", "OAuth Access Token 有效期；留空表示继承环境变量或使用默认值")
+		mcpAppsEnabled := flags.Bool("mcp-apps-enabled", true, "启用 MCP Apps UI")
 		browserEnabled := flags.Bool("browser-enabled", false, "启用浏览器")
 		browserCDPURL := flags.String("browser-cdp-url", "", "已有 Chromium CDP 地址")
 		browserReuseExistingCDP := flags.Bool("browser-reuse-existing-cdp", false, "自动发现并复用唯一已有 CDP")
@@ -62,6 +64,7 @@ func RunConfigCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 			Port:                    *port,
 			LogLevel:                strings.ToLower(strings.TrimSpace(*logLevel)),
 			OAuthAccessTokenTTL:     strings.TrimSpace(*oauthAccessTokenTTL),
+			MCPAppsEnabled:          *mcpAppsEnabled,
 			BrowserEnabled:          *browserEnabled,
 			BrowserCDPURL:           strings.TrimSpace(*browserCDPURL),
 			BrowserReuseExistingCDP: *browserReuseExistingCDP,
