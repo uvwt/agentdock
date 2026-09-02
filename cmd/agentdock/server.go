@@ -51,6 +51,7 @@ func runServer(ctx context.Context, args []string, stderr io.Writer) error {
 	flags.StringVar(&cfg.Host, "host", cfg.Host, "HTTP bind host")
 	flags.IntVar(&cfg.Port, "port", cfg.Port, "HTTP bind port")
 	flags.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "log level: debug, info, warn, error")
+	flags.BoolVar(&cfg.MCPAppsEnabled, "mcp-apps-enabled", cfg.MCPAppsEnabled, "expose optional MCP Apps UI resources and metadata")
 	flags.BoolVar(&cfg.BrowserEnabled, "browser-enabled", cfg.BrowserEnabled, "expose optional browser automation tools")
 	flags.StringVar(&cfg.BrowserExecutablePath, "browser-executable-path", cfg.BrowserExecutablePath, "optional absolute Chrome, Chromium, or Edge executable path")
 	flags.StringVar(&cfg.BrowserCDPURL, "browser-cdp-url", cfg.BrowserCDPURL, "optional existing Chromium CDP endpoint to attach")
@@ -86,7 +87,7 @@ func runServer(ctx context.Context, args []string, stderr io.Writer) error {
 		// 失败不应阻断 MCP 服务启动；保留明确日志并在下次启动继续重试。
 		slog.Warn("desktop runtime repair skipped", "error", err)
 	}
-	slog.Info("server starting", "agentdock_home", cfg.AgentDockHome, "agentdock_default_dir", cfg.AgentDockDefaultDir, "path_model", config.PathModel, "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "log_level", cfg.LogLevel, "recall_enabled", cfg.NexusEndpoint != "", "nexus_enabled", cfg.NexusEndpoint != "", "browser_enabled", cfg.BrowserEnabled)
+	slog.Info("server starting", "agentdock_home", cfg.AgentDockHome, "agentdock_default_dir", cfg.AgentDockDefaultDir, "path_model", config.PathModel, "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "log_level", cfg.LogLevel, "recall_enabled", cfg.NexusEndpoint != "", "nexus_enabled", cfg.NexusEndpoint != "", "mcp_apps_enabled", cfg.MCPAppsEnabled, "browser_enabled", cfg.BrowserEnabled)
 	runtime, err := app.NewRuntime(cfg)
 	if err != nil {
 		return err

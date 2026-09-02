@@ -43,6 +43,7 @@ type Config struct {
 	LogLevel                     string
 	NexusEndpoint                string
 	NexusDeviceToken             string
+	MCPAppsEnabled               bool
 	BrowserEnabled               bool
 	BrowserExecutablePath        string
 	BrowserCDPURL                string
@@ -82,6 +83,10 @@ func FromEnv() (Config, error) {
 		return Config{}, err
 	}
 	stdio, err := getenvBool("AGENTDOCK_STDIO", false)
+	if err != nil {
+		return Config{}, err
+	}
+	mcpAppsEnabled, err := getenvBool("AGENTDOCK_MCP_APPS_ENABLED", true)
 	if err != nil {
 		return Config{}, err
 	}
@@ -131,6 +136,7 @@ func FromEnv() (Config, error) {
 		OAuthAccessTokenTTLSeconds:   oauthAccessTokenTTLSeconds,
 		OAuthAccessTokenNeverExpires: oauthAccessTokenNeverExpires,
 		LogLevel:                     getenv("AGENTDOCK_LOG_LEVEL", "info"),
+		MCPAppsEnabled:               mcpAppsEnabled,
 		BrowserEnabled:               browserEnabled,
 		BrowserExecutablePath:        os.Getenv("AGENTDOCK_BROWSER_EXECUTABLE_PATH"),
 		BrowserCDPURL:                strings.TrimSpace(os.Getenv("AGENTDOCK_BROWSER_CDP_URL")),

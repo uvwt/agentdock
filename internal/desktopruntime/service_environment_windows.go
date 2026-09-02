@@ -22,6 +22,7 @@ var managedCoreEnvironment = []string{
 	"AGENTDOCK_HOST",
 	"AGENTDOCK_PORT",
 	"AGENTDOCK_LOG_LEVEL",
+	"AGENTDOCK_MCP_APPS_ENABLED",
 	// 仅用于清除旧服务环境，核心不再读取这两个配置。
 	"AGENTDOCK_NEXUS_ENDPOINT",
 	"AGENTDOCK_NEXUS_TOKEN",
@@ -47,6 +48,7 @@ type controlPanelSettings struct {
 	Port                    int      `json:"port"`
 	LogLevel                string   `json:"log_level"`
 	OAuthAccessTokenTTL     string   `json:"oauth_access_token_ttl,omitempty"`
+	MCPAppsEnabled          bool     `json:"mcp_apps_enabled"`
 	BrowserEnabled          bool     `json:"browser_enabled"`
 	BrowserCDPURL           string   `json:"browser_cdp_url"`
 	BrowserReuseExistingCDP bool     `json:"browser_reuse_existing_cdp"`
@@ -91,6 +93,7 @@ func platformPrepareCoreEnvironment(runtimeRoot string) error {
 		"AGENTDOCK_HOST":                       "127.0.0.1",
 		"AGENTDOCK_PORT":                       strconv.Itoa(settings.Port),
 		"AGENTDOCK_LOG_LEVEL":                  settings.LogLevel,
+		"AGENTDOCK_MCP_APPS_ENABLED":           strconv.FormatBool(settings.MCPAppsEnabled),
 		"AGENTDOCK_BROWSER_ENABLED":            strconv.FormatBool(settings.BrowserEnabled),
 		"AGENTDOCK_BROWSER_REUSE_EXISTING_CDP": strconv.FormatBool(settings.BrowserReuseExistingCDP),
 		"AGENTDOCK_ACP_ENABLED":                strconv.FormatBool(settings.ACPEnabled),
@@ -154,7 +157,7 @@ func platformPrepareCoreEnvironment(runtimeRoot string) error {
 }
 
 func loadControlPanelSettings(runtimeRoot string, fallbackPort int) (controlPanelSettings, error) {
-	settings := controlPanelSettings{Port: fallbackPort, LogLevel: "info", ACPAgent: "codex"}
+	settings := controlPanelSettings{Port: fallbackPort, LogLevel: "info", MCPAppsEnabled: true, ACPAgent: "codex"}
 	data, err := os.ReadFile(filepath.Join(runtimeRoot, "control-panel-settings.json"))
 	if errors.Is(err, os.ErrNotExist) {
 		return settings, nil

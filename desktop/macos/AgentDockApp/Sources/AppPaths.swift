@@ -36,6 +36,7 @@ struct ServiceConfiguration: Equatable {
     static let editableKeys = [
         "AGENTDOCK_PORT",
         "AGENTDOCK_LOG_LEVEL",
+        "AGENTDOCK_MCP_APPS_ENABLED",
         "AGENTDOCK_BROWSER_ENABLED",
         "AGENTDOCK_BROWSER_CDP_URL",
         "AGENTDOCK_BROWSER_REUSE_EXISTING_CDP",
@@ -58,6 +59,7 @@ struct ServiceConfiguration: Equatable {
     let authToken: String
     let oauthPassword: String
     let logLevel: String
+    let mcpAppsEnabled: Bool
     let browserEnabled: Bool
     let browserCDPURL: String
     let browserReuseExistingCDP: Bool
@@ -107,6 +109,7 @@ struct ServiceConfiguration: Equatable {
             authToken: values["AGENTDOCK_AUTH_TOKEN"] ?? "",
             oauthPassword: values["AGENTDOCK_OAUTH_PASSWORD"] ?? "",
             logLevel: normalizedLogLevel(values["AGENTDOCK_LOG_LEVEL"] ?? "info"),
+            mcpAppsEnabled: parseBool(values["AGENTDOCK_MCP_APPS_ENABLED"], defaultValue: true),
             browserEnabled: parseBool(values["AGENTDOCK_BROWSER_ENABLED"]),
             browserCDPURL: values["AGENTDOCK_BROWSER_CDP_URL"] ?? "",
             browserReuseExistingCDP: parseBool(values["AGENTDOCK_BROWSER_REUSE_EXISTING_CDP"]),
@@ -130,10 +133,11 @@ struct ServiceConfiguration: Equatable {
         return values
     }
 
-    private static func parseBool(_ raw: String?) -> Bool {
+    private static func parseBool(_ raw: String?, defaultValue: Bool = false) -> Bool {
         switch raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "1", "true", "yes", "on": return true
-        default: return false
+        case "0", "false", "no", "off": return false
+        default: return defaultValue
         }
     }
 }

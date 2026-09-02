@@ -37,6 +37,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     private let menuAutostart = NSButton(checkboxWithTitle: "登录后显示 AgentDock 菜单栏", target: nil, action: nil)
     private let portField = NSTextField(string: "8765")
     private let logLevel = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let mcpAppsEnabled = NSButton(checkboxWithTitle: "启用 MCP Apps UI", target: nil, action: nil)
     private let browserEnabled = NSButton(checkboxWithTitle: "启用浏览器 CDP 控制", target: nil, action: nil)
     private let browserConnectionMode = NSPopUpButton(frame: .zero, pullsDown: false)
     private let browserCDPURL = NSTextField(string: "")
@@ -60,6 +61,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     private var initialMenuAutostart = true
     private var initialPort = 8765
     private var initialLogLevel = "info"
+    private var initialMCPAppsEnabled = true
     private var initialBrowserEnabled = false
     private var initialBrowserCDPURL = ""
     private var initialBrowserConnectionMode = BrowserConnectionMode.managed
@@ -105,6 +107,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         initialMenuAutostart = menuLoginAgent.isEnabled
         initialPort = configuration.port
         initialLogLevel = configuration.logLevel
+        initialMCPAppsEnabled = configuration.mcpAppsEnabled
         initialBrowserEnabled = configuration.browserEnabled
         initialBrowserCDPURL = configuration.browserCDPURL
         initialBrowserConnectionMode = BrowserConnectionMode.resolve(
@@ -122,6 +125,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         menuAutostart.state = initialMenuAutostart ? .on : .off
         portField.integerValue = initialPort
         logLevel.selectItem(withTitle: initialLogLevel)
+        mcpAppsEnabled.state = initialMCPAppsEnabled ? .on : .off
         browserEnabled.state = initialBrowserEnabled ? .on : .off
         browserCDPURL.stringValue = initialBrowserCDPURL
         selectBrowserConnectionMode(initialBrowserConnectionMode)
@@ -167,6 +171,9 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         logLevel.widthAnchor.constraint(equalToConstant: 120).isActive = true
         logLevel.target = self
         logLevel.action = #selector(markChanged)
+
+        mcpAppsEnabled.target = self
+        mcpAppsEnabled.action = #selector(markChanged)
 
         browserEnabled.target = self
         browserEnabled.action = #selector(browserToggled)
@@ -243,6 +250,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         let serviceForm = NSStackView(views: [
             formRow(title: "服务端口", control: portField),
             formRow(title: "日志级别", control: logLevel),
+            mcpAppsEnabled,
         ])
         serviceForm.orientation = .vertical
         serviceForm.alignment = .leading
@@ -414,6 +422,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         let settings = EditableServiceSettings(
             port: portField.integerValue,
             logLevel: logLevel.titleOfSelectedItem ?? "info",
+            mcpAppsEnabled: mcpAppsEnabled.state == .on,
             browserEnabled: browserEnabled.state == .on,
             browserCDPURL: browserMode == .specifiedCDP ? configuredCDP : "",
             browserReuseExistingCDP: browserMode == .reuseExisting,
@@ -440,6 +449,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
                 initialMenuAutostart = menuAutostartValue
                 initialPort = validatedSettings.port
                 initialLogLevel = validatedSettings.logLevel
+                initialMCPAppsEnabled = validatedSettings.mcpAppsEnabled
                 initialBrowserEnabled = validatedSettings.browserEnabled
                 initialBrowserCDPURL = validatedSettings.browserCDPURL
                 initialBrowserConnectionMode = BrowserConnectionMode.resolve(
@@ -456,6 +466,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
                 acpArgsJSON.stringValue = initialACPArgsJSON
                 portField.integerValue = initialPort
                 logLevel.selectItem(withTitle: initialLogLevel)
+                mcpAppsEnabled.state = initialMCPAppsEnabled ? .on : .off
                 browserCDPURL.stringValue = initialBrowserCDPURL
                 selectBrowserConnectionMode(initialBrowserConnectionMode)
                 if let updatedConfiguration = ServiceConfiguration.load(from: service.paths.environment) {
@@ -619,6 +630,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
             || (menuAutostart.state == .on) != initialMenuAutostart
             || portField.integerValue != initialPort
             || (logLevel.titleOfSelectedItem ?? "info") != initialLogLevel
+            || (mcpAppsEnabled.state == .on) != initialMCPAppsEnabled
             || (browserEnabled.state == .on) != initialBrowserEnabled
             || browserMode != initialBrowserConnectionMode
             || browserCDP != initialBrowserCDPURL
@@ -631,7 +643,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
 
     private func setBusy(_ busy: Bool) {
         isBusy = busy
-        for control in [serviceAutostart, menuAutostart, portField, logLevel, browserEnabled, browserConnectionMode, browserCDPURL, acpEnabled, acpAgent, acpCommand, acpArgsJSON, nexusEndpoint, nexusPairingCode, nexusPairButton] {
+        for control in [serviceAutostart, menuAutostart, portField, logLevel, mcpAppsEnabled, browserEnabled, browserConnectionMode, browserCDPURL, acpEnabled, acpAgent, acpCommand, acpArgsJSON, nexusEndpoint, nexusPairingCode, nexusPairButton] {
             control.isEnabled = !busy
         }
         refreshBrowserStatus()

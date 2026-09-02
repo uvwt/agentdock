@@ -89,7 +89,7 @@ func (s *Server) ToolDescriptors() []map[string]any {
 	if s == nil || s.runtime == nil {
 		return nil
 	}
-	return toolDescriptors(s.runtime.ToolDefinitions())
+	return toolDescriptors(s.runtime.ToolDefinitions(), s.cfg.MCPAppsEnabled)
 }
 
 func (s *Server) Invoke(ctx context.Context, name string, arguments map[string]any) (map[string]any, error) {
@@ -115,7 +115,7 @@ func (s *Server) ServeStdio(in io.Reader, out io.Writer) error {
 }
 
 func (s *Server) registerTool(def ToolDefinition) {
-	meta := toolMetadata(def)
+	meta := toolMetadata(def, s.cfg.MCPAppsEnabled)
 	tool := &mcpsdk.Tool{
 		Name:         def.Name,
 		Title:        def.Title,
@@ -168,16 +168,16 @@ func (s *Server) callTool(ctx context.Context, name string, request *mcpsdk.Call
 		return nil, fmt.Errorf("decode MCP tool result: %w", decodeErr)
 	}
 	if def, ok := s.runtime.ToolDefinition(name); ok {
-		if meta := toolResultMetadata(def, arguments); len(meta) > 0 {
+		if meta := toolResultMetadata(def, arguments, s.cfg.MCPAppsEnabled); len(meta) > 0 {
 			response.Meta = meta
 		}
 	}
 	return &response, nil
 }
 
-func toolMetadata(def ToolDefinition) map[string]any {
+func toolMetadata(def ToolDefinition, mcpAppsEnabled bool) map[string]any {
 	meta := map[string]any{}
-	if def.UIBinding != nil && def.UIBinding.Action == "" {
+	if mcpAppsEnabled && def.UIBinding != nil && def.UIBinding.Action == "" {
 		meta["ui"] = map[string]any{"resourceUri": def.UIBinding.ResourceURI}
 	}
 	if len(def.FileArgRewritePaths) > 0 {
@@ -196,8 +196,8 @@ func toolMetadata(def ToolDefinition) map[string]any {
 
 // Action-scoped Apps UI lives on the call result rather than the tool descriptor,
 // so unrelated actions on the same action-based tool do not render a widget.
-func toolResultMetadata(def ToolDefinition, arguments map[string]any) mcpsdk.Meta {
-	if def.UIBinding == nil || def.UIBinding.Action == "" {
+func toolResultMetadata(def ToolDefinition, arguments map[string]any, mcpAppsEnabled bool) mcpsdk.Meta {
+	if !mcpAppsEnabled || def.UIBinding == nil || def.UIBinding.Action == "" {
 		return nil
 	}
 	action, _ := arguments["action"].(string)
@@ -223,7 +223,7 @@ type writeCloser struct{ io.Writer }
 
 func (writeCloser) Close() error { return nil }
 
-func toolDescriptors(definitions []ToolDefinition) []map[string]any {
+func toolDescriptors(definitions []ToolDefinition, mcpAppsEnabled bool) []map[string]any {
 	descriptors := make([]map[string]any, 0, len(definitions))
 	for _, def := range definitions {
 		descriptor := map[string]any{
@@ -240,7 +240,7 @@ func toolDescriptors(definitions []ToolDefinition) []map[string]any {
 				"openWorldHint": def.Annotations.OpenWorldHint,
 			}
 		}
-		meta := toolMetadata(def)
+		meta := toolMetadata(def, mcpAppsEnabled)
 		if paths, ok := meta["file_arg_rewrite_paths"].([]string); ok {
 			descriptor["file_arg_rewrite_paths"] = paths
 		}
