@@ -27,6 +27,13 @@ struct InstallResult: Decodable {
     }
 }
 
+enum QuickTunnelBootstrap {
+    static func prepareInitialCoreEnvironment(_ values: inout [String: String]) {
+        values.removeValue(forKey: "AGENTDOCK_SERVER_URL")
+        values["AGENTDOCK_OAUTH_ENABLED"] = "false"
+    }
+}
+
 final class InstallerRunner {
     private let service: ServiceController
     private let paths: AppPaths
@@ -76,8 +83,14 @@ final class InstallerRunner {
             try await service.start()
             if request.mode != .local {
                 try service.setTunnelEnabled(true)
-                if request.mode == .named, !(await service.waitForTunnelProcess()) {
-                    throw ValidationError("AgentDock Tunnel 已注册，但 cloudflared 没有稳定运行。")
+                if !(await service.waitForTunnelProcess()) {
+                    // App Bundle 被原子替换后，SMAppService 可能仍显示已注册，
+                    // 但实际的 Tunnel job 没有随之启动。对 Quick Tunnel 也
+                    // 需要与 Named Tunnel 相同的自愈，否则会一直等到 URL 超时。
+                    try service.restartTunnel()
+                    guard await service.waitForTunnelProcess() else {
+                        throw ValidationError("AgentDock Tunnel 已重新注册，但 cloudflared 没有稳定运行。")
+                    }
                 }
             }
 
@@ -183,8 +196,7 @@ final class InstallerRunner {
             values.removeValue(forKey: "AGENTDOCK_SERVER_URL")
             values["AGENTDOCK_OAUTH_ENABLED"] = "false"
         case .quick:
-            values.removeValue(forKey: "AGENTDOCK_SERVER_URL")
-            values["AGENTDOCK_OAUTH_ENABLED"] = "true"
+            QuickTunnelBootstrap.prepareInitialCoreEnvironment(&values)
             tunnelValues["AGENTDOCK_TUNNEL_TARGET"] = "http://127.0.0.1:\(port)"
         case .named:
             guard let serverURL else {
