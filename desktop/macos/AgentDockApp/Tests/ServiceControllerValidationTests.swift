@@ -53,6 +53,7 @@ struct ServiceControllerValidationTests {
         }
 
         try testConfiguredTunnelMode(root: root, appBundle: appBundle)
+        testQuickTunnelBootstrap()
         testServiceRegistrationStatusClassification()
         try testNexusConnectionStateResolution(root: root)
         try testDesktopUpdateCheckDecoding()
@@ -79,6 +80,24 @@ struct ServiceControllerValidationTests {
             let configuredMode = try service.configuredTunnelMode()
             precondition(configuredMode == expected, rawMode)
         }
+    }
+
+    private static func testQuickTunnelBootstrap() {
+        var values = [
+            "AGENTDOCK_AUTH_TOKEN": "token",
+            "AGENTDOCK_OAUTH_PASSWORD": "password",
+            "AGENTDOCK_OAUTH_TOKEN_SECRET": "secret",
+            "AGENTDOCK_SERVER_URL": "https://stale.trycloudflare.com",
+            "AGENTDOCK_OAUTH_ENABLED": "true",
+        ]
+
+        QuickTunnelBootstrap.prepareInitialCoreEnvironment(&values)
+
+        precondition(values["AGENTDOCK_SERVER_URL"] == nil)
+        precondition(values["AGENTDOCK_OAUTH_ENABLED"] == "false")
+        precondition(values["AGENTDOCK_AUTH_TOKEN"] == "token")
+        precondition(values["AGENTDOCK_OAUTH_PASSWORD"] == "password")
+        precondition(values["AGENTDOCK_OAUTH_TOKEN_SECRET"] == "secret")
     }
 
     private static func testServiceRegistrationStatusClassification() {
