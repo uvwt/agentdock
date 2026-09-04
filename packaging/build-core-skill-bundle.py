@@ -12,6 +12,7 @@ import zipfile
 from pathlib import Path
 
 CORE_SKILLS = (
+    "agentdock-user-guide",
     "skill-authoring",
     "skill-installation",
     "skill-vetter-runtime",
