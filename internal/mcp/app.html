@@ -416,15 +416,15 @@ pre{margin:8px 0 0;max-height:420px;overflow:auto;border-top:1px solid #eee;padd
     const recall=isObject(data.recall)&&data.recall.enabled;
 
     const overview=el("div","context-overview");
-    appendContextOverview(overview,skills.length,"Skills");
+    appendContextOverview(overview,skills.length,"AgentDock Skills");
     appendContextOverview(overview,mcps.length,"MCP");
     appendContextOverview(overview,workflows.length,"Workflow");
     appendContextOverview(overview,recall?"ON":"OFF","Recall");
     parent.append(overview);
 
     const groups=el("div","context-groups");
-    appendContextSection(groups,"Skills",skills,10);
-    appendContextSection(groups,"Common Skills · lower priority",commonSkills,10);
+    appendContextSection(groups,"AgentDock Skills",skills,10);
+    appendContextSection(groups,"Common Skills",commonSkills,10);
     appendContextSection(groups,"MCP",mcps,8);
     appendContextSection(groups,"ACP",acp,4);
     appendContextSection(groups,"Workflow",workflows,8);
@@ -436,7 +436,7 @@ pre{margin:8px 0 0;max-height:420px;overflow:auto;border-top:1px solid #eee;padd
     const fragment=document.createDocumentFragment();
     const summary=appendNodeAgentContext(fragment,data);
     const compact=el("span","compact-context");
-    compact.append(contextPill(summary.skills.length,"Skills"),contextPill(summary.mcps.length,"MCP"),contextPill(summary.workflows.length,"Workflow","workflow"),contextPill(summary.recall?"ON":"OFF","Recall"));
+    compact.append(contextPill(summary.skills.length,"AgentDock Skills"),contextPill(summary.mcps.length,"MCP"),contextPill(summary.workflows.length,"Workflow","workflow"),contextPill(summary.recall?"ON":"OFF","Recall"));
     compactShell({action:"context",title:"Capabilities"},[compact],fragment);
   }
 
