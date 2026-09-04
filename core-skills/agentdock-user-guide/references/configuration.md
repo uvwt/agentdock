@@ -32,6 +32,8 @@
 | `AGENTDOCK_TRUSTED_PROXY_CIDRS` | 受信任反向代理网段 | 服务器/反代场景 |
 | `AGENTDOCK_INSTRUCTIONS_FILE` | 额外 Instructions 文件 | 高级启动配置 |
 
+Coding Agent 的发现、Codex / Claude Adapter 安装、Grok stdio 模式、平台配置和验证流程见 `acp.md`。
+
 ## 重要边界
 
 - Windows Desktop 不应把认证秘密直接写入 `control-panel-settings.json`。Bearer Token、OAuth 密码、OAuth 签名密钥和 Tunnel Token 使用平台受保护存储。
