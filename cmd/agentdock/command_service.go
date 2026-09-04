@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"strings"
 
@@ -21,12 +22,27 @@ func runServiceCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 		if flags.NArg() != 0 || strings.TrimSpace(*runtimeRoot) == "" {
 			return errors.New("用法：agentdock service launch-core --runtime-root <目录>")
 		}
-		// launch-core 是桌面安装内部入口：先由原生代码恢复配置与 DPAPI 凭据，
-		// 再在当前进程直接运行服务，避免 PowerShell 启动脚本长期参与运行链路。
-		if err := desktopruntime.PrepareCoreEnvironment(*runtimeRoot); err != nil {
+		// launch-core 是桌面安装内部入口：先接管受限轮转日志，再恢复配置与 DPAPI 凭据，
+		// 最后在当前进程直接运行服务，避免平台启动器长期参与日志写入和运行链路。
+		logOutput, err := desktopruntime.OpenCoreLog(*runtimeRoot)
+		if err != nil {
 			return err
 		}
-		return runServer(ctx, nil, stderr)
+		if logOutput != nil {
+			defer logOutput.Close()
+			stderr = logOutput
+		}
+		if err := desktopruntime.PrepareCoreEnvironment(*runtimeRoot); err != nil {
+			if logOutput != nil {
+				fmt.Fprintf(stderr, "agentdock: %v\n", err)
+			}
+			return err
+		}
+		err = runServer(ctx, nil, stderr)
+		if err != nil && logOutput != nil {
+			fmt.Fprintf(stderr, "agentdock: %v\n", err)
+		}
+		return err
 	}
 	return desktopruntime.RunServiceCommand(ctx, args, stdout, stderr)
 }

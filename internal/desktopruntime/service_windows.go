@@ -102,24 +102,8 @@ func startDetachedCore(manifest Manifest, runtimeRoot string) error {
 	if info, err := os.Stat(manifest.AgentDockBinary); err != nil || info.IsDir() {
 		return fmt.Errorf("找不到 AgentDock 核心程序: %s", manifest.AgentDockBinary)
 	}
-	logDir := filepath.Join(runtimeRoot, "logs")
-	if err := os.MkdirAll(logDir, 0o700); err != nil {
-		return fmt.Errorf("创建日志目录失败: %w", err)
-	}
-	stdout, err := os.OpenFile(filepath.Join(logDir, "agentdock.out.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("打开 AgentDock 输出日志失败: %w", err)
-	}
-	defer stdout.Close()
-	stderr, err := os.OpenFile(filepath.Join(logDir, "agentdock.err.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("打开 AgentDock 错误日志失败: %w", err)
-	}
-	defer stderr.Close()
-
 	command := exec.Command(manifest.AgentDockBinary, "service", "launch-core", "--runtime-root", runtimeRoot)
-	command.Stdout = stdout
-	command.Stderr = stderr
+	// launch-core 会自行把运行日志写入受限轮转文件；父进程不再持有同一路径的追加句柄。
 	command.Dir = defaultWindowsWorkDir()
 	command.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow:    true,

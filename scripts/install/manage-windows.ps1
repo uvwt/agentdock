@@ -297,8 +297,6 @@ $TunnelModePath = Join-Path $RuntimeRoot 'cloudflared-mode.txt'
 $ServerUrlPath = Join-Path $RuntimeRoot 'server-url.txt'
 $NamedServerUrlPath = Join-Path $RuntimeRoot 'named-server-url.txt'
 $QuickTunnelUrlPath = Join-Path $RuntimeRoot 'quick-tunnel-url.txt'
-$CloudflaredStdoutPath = Join-Path $RuntimeRoot 'cloudflared.out.log'
-$CloudflaredStderrPath = Join-Path $RuntimeRoot 'cloudflared.err.log'
 $RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 
 $Manifest = Read-JsonFile -Path $ManifestPath
@@ -477,7 +475,6 @@ function Write-Launchers {
     $escapedManager = Escape-SingleQuoted -Value $ManagerPath
     $escapedRoot = Escape-SingleQuoted -Value $RuntimeRoot
     $escapedAgentDockBinary = Escape-SingleQuoted -Value $AgentDockBinary
-    $escapedCloudflaredBinary = Escape-SingleQuoted -Value $CloudflaredBinary
 
     # 旧版本升级仍可能由自更新逻辑识别该文件，因此暂时保留兼容启动器。
     # 新安装和桌面端均直接调用 agentdock service；支持的旧版本淘汰后可删除此文件。
@@ -492,7 +489,6 @@ exit `$LASTEXITCODE
 
     $tunnelLauncher = @"
 `$ErrorActionPreference = 'Stop'
-`$cloudflaredBinary = '$escapedCloudflaredBinary'
 & '$escapedManager' -Action launch-tunnel -RuntimeRoot '$escapedRoot'
 exit `$LASTEXITCODE
 "@
@@ -571,91 +567,10 @@ function Restart-Core {
     Invoke-NativeCoreCommand -Command restart
 }
 
-function Get-QuickTunnelUrlFromLogs {
-    param([Diagnostics.Process] $Process)
-
-    $deadline = [DateTime]::UtcNow.AddSeconds(35)
-    do {
-        Start-Sleep -Milliseconds 500
-        foreach ($path in @($CloudflaredStdoutPath, $CloudflaredStderrPath)) {
-            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-                continue
-            }
-            try {
-                # Provisioning failures also print the trycloudflare API URL; require the creation marker first.
-                $match = [Regex]::Match(
-                    (Get-Content -LiteralPath $path -Raw -Encoding UTF8 -ErrorAction Stop),
-                    '(?s)Your quick Tunnel has been created! Visit it at.*?(https://[A-Za-z0-9-]+\.trycloudflare\.com)'
-                )
-                if ($match.Success) {
-                    return $match.Groups[1].Value
-                }
-            } catch {
-            }
-        }
-        if ($Process.HasExited) {
-            throw "cloudflared 在生成临时地址前退出，退出码：$($Process.ExitCode)"
-        }
-    } while ([DateTime]::UtcNow -lt $deadline)
-    throw 'cloudflared 未在 35 秒内生成 trycloudflare.com 临时地址。'
-}
-
 function Invoke-LaunchTunnel {
-    $modeValue = (Read-TextFile -Path $TunnelModePath).ToLowerInvariant()
-    if ($modeValue -eq 'none' -or [string]::IsNullOrWhiteSpace($modeValue)) {
-        return 0
-    }
-    if (@('quick', 'named') -notcontains $modeValue) {
-        throw "不支持的 Cloudflare Tunnel 模式：$modeValue"
-    }
-    if (-not (Test-Path -LiteralPath $CloudflaredBinary -PathType Leaf)) {
-        throw '找不到 cloudflared.exe，请运行 Setup.exe 修复安装。'
-    }
-
-    $settings = Get-ControlPanelSettings
-    $arguments = @('tunnel', '--no-autoupdate')
-    if ($modeValue -eq 'quick') {
-        $arguments += @('--url', "http://127.0.0.1:$($settings.port)")
-    } else {
-        $token = Read-ProtectedText -Path $TunnelTokenPath -Entropy 'agentdock.cloudflare.tunnel.v1'
-        if ([string]::IsNullOrWhiteSpace($token)) {
-            throw '固定域名模式没有保存 Cloudflare Tunnel Token。'
-        }
-        $env:TUNNEL_TOKEN = $token
-        $arguments += 'run'
-    }
-
-    Write-TextAtomically -Path $CloudflaredStdoutPath -Value ''
-    Write-TextAtomically -Path $CloudflaredStderrPath -Value ''
-    if ($modeValue -eq 'quick') {
-        Remove-Item -LiteralPath $QuickTunnelUrlPath -Force -ErrorAction SilentlyContinue
-    }
-
-    $process = Start-Process `
-        -FilePath $CloudflaredBinary `
-        -ArgumentList $arguments `
-        -WindowStyle Hidden `
-        -RedirectStandardOutput $CloudflaredStdoutPath `
-        -RedirectStandardError $CloudflaredStderrPath `
-        -PassThru
-    if ($modeValue -eq 'quick') {
-        try {
-            $publicUrl = Get-QuickTunnelUrlFromLogs -Process $process
-            Write-TextAtomically -Path $ServerUrlPath -Value $publicUrl
-            Restart-Core
-            Update-RuntimeManifest -RuntimePort $settings.port -RuntimeMode 'quick' -PublicUrl $publicUrl
-            # 最后写入 ready 文件，确保 GUI 不会提前读取到尚未生效的新地址。
-            Write-TextAtomically -Path $QuickTunnelUrlPath -Value $publicUrl
-        } catch {
-            if (-not $process.HasExited) {
-                Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-            }
-            throw
-        }
-    }
-
-    $process.WaitForExit()
-    return $process.ExitCode
+    # 兼容启动器也只进入原生 Tunnel 生命周期；cloudflared 输出由 AgentDock 监督进程轮转。
+    & $AgentDockBinary tunnel start --runtime-root $RuntimeRoot
+    return $LASTEXITCODE
 }
 
 function Start-Tunnel {

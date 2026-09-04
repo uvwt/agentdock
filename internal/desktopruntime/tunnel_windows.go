@@ -15,8 +15,31 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func platformLaunchTunnel(context.Context, string) error {
-	return errors.New("Windows Tunnel 使用后台进程启动，不支持 launch 内部入口")
+func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
+	runtime, err := loadTunnelRuntime(runtimeRoot)
+	if err != nil {
+		return err
+	}
+	if runtime.mode == "none" {
+		return errors.New("Tunnel 模式为 none")
+	}
+	logs, err := openProcessLogs(runtime.files.stdoutLog, runtime.files.stderrLog)
+	if err != nil {
+		return err
+	}
+	defer logs.Close()
+
+	command, err := cloudflaredCommand(ctx, runtime)
+	if err != nil {
+		return err
+	}
+	command.Stdout = logs.stdout
+	command.Stderr = logs.stderr
+	if err := command.Run(); err != nil {
+		fmt.Fprintf(logs.stderr, "cloudflared 退出: %v\n", err)
+		return err
+	}
+	return nil
 }
 
 func platformTunnelStatus(ctx context.Context, runtimeRoot string) (TunnelStatus, error) {
@@ -151,6 +174,24 @@ func regenerateQuickTunnel(ctx context.Context, runtime tunnelRuntime) error {
 }
 
 func launchCloudflared(runtime tunnelRuntime) error {
+	// Windows 不能把轮转 writer 直接交给脱离父进程的 cloudflared；因此先启动一个
+	// 长驻的 AgentDock tunnel launch 监督进程，由它持有 cloudflared 并实时轮转日志。
+	command := exec.Command(runtime.manifest.AgentDockBinary, "tunnel", "launch", "--runtime-root", runtime.root)
+	command.Dir = runtime.root
+	command.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS,
+	}
+	if err := command.Start(); err != nil {
+		return fmt.Errorf("启动 cloudflared 监督进程失败: %w", err)
+	}
+	if err := command.Process.Release(); err != nil {
+		return fmt.Errorf("释放 cloudflared 监督进程句柄失败: %w", err)
+	}
+	return nil
+}
+
+func cloudflaredCommand(ctx context.Context, runtime tunnelRuntime) (*exec.Cmd, error) {
 	arguments := []string{"tunnel", "--no-autoupdate"}
 	environment := environmentWithout(os.Environ(), "TUNNEL_TOKEN")
 	if runtime.mode == "quick" {
@@ -158,43 +199,19 @@ func launchCloudflared(runtime tunnelRuntime) error {
 	} else {
 		token, err := readProtectedText(runtime.files.token, tunnelTokenEntropy)
 		if err != nil {
-			return fmt.Errorf("读取 Cloudflare Tunnel Token 失败: %w", err)
+			return nil, fmt.Errorf("读取 Cloudflare Tunnel Token 失败: %w", err)
 		}
 		if strings.TrimSpace(token) == "" {
-			return errors.New("固定域名模式没有保存 Cloudflare Tunnel Token")
+			return nil, errors.New("固定域名模式没有保存 Cloudflare Tunnel Token")
 		}
 		environment = append(environment, "TUNNEL_TOKEN="+token)
 		arguments = append(arguments, "run")
 	}
-
-	stdout, err := os.OpenFile(runtime.files.stdoutLog, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("打开 cloudflared 输出日志失败: %w", err)
-	}
-	stderr, err := os.OpenFile(runtime.files.stderrLog, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		_ = stdout.Close()
-		return fmt.Errorf("打开 cloudflared 错误日志失败: %w", err)
-	}
-	command := exec.Command(runtime.manifest.CloudflaredBinary, arguments...)
+	command := exec.CommandContext(ctx, runtime.manifest.CloudflaredBinary, arguments...)
 	command.Env = environment
 	command.Dir = runtime.root
-	command.Stdout = stdout
-	command.Stderr = stderr
-	command.SysProcAttr = &syscall.SysProcAttr{
-		HideWindow:    true,
-		CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS,
-	}
-	startErr := command.Start()
-	_ = stdout.Close()
-	_ = stderr.Close()
-	if startErr != nil {
-		return fmt.Errorf("启动 cloudflared 失败: %w", startErr)
-	}
-	if err := command.Process.Release(); err != nil {
-		return fmt.Errorf("释放 cloudflared 后台进程句柄失败: %w", err)
-	}
-	return nil
+	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	return command, nil
 }
 
 func finalizeQuickTunnel(ctx context.Context, runtime tunnelRuntime) error {

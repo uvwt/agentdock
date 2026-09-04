@@ -191,6 +191,15 @@ func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
 	if err != nil {
 		return err
 	}
+	stdout, stderr := io.Writer(os.Stdout), io.Writer(os.Stderr)
+	logs, err := platformOpenTunnelLogs(manifest)
+	if err != nil {
+		return err
+	}
+	if logs != nil {
+		defer logs.Close()
+		stdout, stderr = logs.stdout, logs.stderr
+	}
 	mode := tunnelMode(values)
 	switch mode {
 	case "quick":
@@ -198,7 +207,7 @@ func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
 		if target == "" {
 			return errors.New("Quick Tunnel 缺少目标地址")
 		}
-		return runQuickTunnel(ctx, manifest, root, runtimeRoot, target)
+		return runQuickTunnel(ctx, manifest, root, runtimeRoot, target, stdout)
 	case "named":
 		token := strings.TrimSpace(values["TUNNEL_TOKEN"])
 		if token == "" {
@@ -209,15 +218,15 @@ func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
 		}
 		command := exec.CommandContext(ctx, manifest.CloudflaredBinary, "tunnel", "--no-autoupdate", "run")
 		command.Env = append(os.Environ(), "TUNNEL_TOKEN="+token)
-		command.Stdout = os.Stdout
-		command.Stderr = os.Stderr
+		command.Stdout = stdout
+		command.Stderr = stderr
 		return command.Run()
 	default:
 		return errors.New("Tunnel 模式为 none")
 	}
 }
 
-func runQuickTunnel(ctx context.Context, manifest unixRuntimeManifest, root, runtimeRoot, target string) error {
+func runQuickTunnel(ctx context.Context, manifest unixRuntimeManifest, root, runtimeRoot, target string, logOutput io.Writer) error {
 	command := exec.CommandContext(ctx, manifest.CloudflaredBinary, "tunnel", "--no-autoupdate", "--url", target)
 	reader, writer := io.Pipe()
 	command.Stdout = writer
@@ -236,7 +245,7 @@ func runQuickTunnel(ctx context.Context, manifest unixRuntimeManifest, root, run
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
 		line := scanner.Text()
-		fmt.Fprintln(os.Stdout, line)
+		fmt.Fprintln(logOutput, line)
 		if addressApplied {
 			continue
 		}
