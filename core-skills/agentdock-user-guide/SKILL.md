@@ -1,7 +1,7 @@
 ---
 name: agentdock-user-guide
-description: 当用户询问 AgentDock 是什么、如何使用、配置在哪里、不同平台或安装方式怎样修改配置并生效、如何重启或验证配置，以及常见运行问题时使用；覆盖 macOS Desktop、Windows Desktop、Linux 服务、Docker 和直接运行二进制，不用于源码开发与贡献流程。
-version: 1.0.4
+description: 当用户询问 AgentDock 是什么、如何使用、配置在哪里、不同平台或安装方式怎样修改配置并生效、如何重启或验证配置、如何发现并配置 Codex/Claude/Grok 等 Coding Agent 的 ACP，以及常见运行问题时使用；覆盖 macOS Desktop、Windows Desktop、Linux 服务、Docker 和直接运行二进制，不用于源码开发与贡献流程。
+version: 1.1.0
 ---
 
 # AgentDock User Guide
@@ -81,7 +81,8 @@ AgentDock 主仓库的 `core-skills/` 只保留必须随 AgentDock 运行时一�
 - “配置文件在哪里”“这个配置怎么改”“改完为什么没生效”；
 - macOS、Windows、Linux、Docker、直接运行二进制之间的配置差异；
 - Core 的启动、停止、重启、健康检查和配置生效验证；
-- 浏览器、MCP Apps UI、ACP、端口、日志、OAuth 等运行配置的入口；
+- 浏览器、MCP Apps UI、端口、日志、OAuth 等运行配置的入口；
+- 发现本机已有 Codex、Claude、Grok 等 Coding Agent，补齐缺失 ACP Adapter，并把 ACP 正确接入 AgentDock；
 - 多台 AgentDock 设备中，确认应该修改哪一台设备的运行配置。
 
 不要用本 Skill 代替：
@@ -131,9 +132,10 @@ AgentDock Core 在启动时从**进程环境**读取运行配置。不同发行�
 - Windows Desktop：`references/windows.md`
 - Linux systemd/OpenRC/手工服务：`references/linux.md`
 - Docker / Docker Compose：`references/docker.md`
+- Coding Agent / ACP：`references/acp.md`
 - 直接运行 `agentdock`：继续使用本文件的“直接运行二进制”说明
 
-只读取与当前环境相关的 reference；不要一次把所有平台的命令都丢给用户选择。
+只读取与当前环境相关的 reference；处理 ACP 时除平台 reference 外，再读取 `references/acp.md`。不要一次把所有平台的命令都丢给用户选择。
 
 ### 3. 修改前先查看现状
 
