@@ -69,3 +69,32 @@ version: 1.0.0
 		t.Fatalf("expected empty description error, got %v", err)
 	}
 }
+
+func TestParseSkillMetadataAcceptsCommonSkillWithoutVersion(t *testing.T) {
+	metadata, err := ParseSkillMetadata([]byte(`---
+name: common-skill
+description: Common Agent Skill without AgentDock package version.
+---
+
+# Common Skill
+
+Follow the documented workflow.
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Name != "common-skill" || metadata.Description != "Common Agent Skill without AgentDock package version." {
+		t.Fatalf("unexpected metadata: %#v", metadata)
+	}
+}
+
+func TestParseSkillMetadataRejectsEmptyBody(t *testing.T) {
+	_, err := ParseSkillMetadata([]byte(`---
+name: common-skill
+description: Common Agent Skill.
+---
+`))
+	if err == nil || !strings.Contains(err.Error(), "markdown body is required") {
+		t.Fatalf("expected body error, got %v", err)
+	}
+}

@@ -408,6 +408,8 @@ pre{margin:8px 0 0;max-height:420px;overflow:auto;border-top:1px solid #eee;padd
 
   function appendNodeAgentContext(parent,data){
     const skills=contextItems(data.skills);
+    const commonSkillIndex=isObject(data.common_skills)?data.common_skills:{};
+    const commonSkills=contextItems(commonSkillIndex.items);
     const mcps=contextItems(data.dynamic_mcp);
     const acp=isObject(data.acp)&&data.acp.enabled?[{name:String(data.acp.agent||"ACP"),description:String(data.acp.description||"ACP agent")}]:[];
     const workflows=contextItems(data.workflow_templates);
@@ -422,6 +424,7 @@ pre{margin:8px 0 0;max-height:420px;overflow:auto;border-top:1px solid #eee;padd
 
     const groups=el("div","context-groups");
     appendContextSection(groups,"Skills",skills,10);
+    appendContextSection(groups,"Common Skills · lower priority",commonSkills,10);
     appendContextSection(groups,"MCP",mcps,8);
     appendContextSection(groups,"ACP",acp,4);
     appendContextSection(groups,"Workflow",workflows,8);
@@ -465,6 +468,7 @@ pre{margin:8px 0 0;max-height:420px;overflow:auto;border-top:1px solid #eee;padd
       // Fleet 只负责选择设备；设备内容继续复用 AgentDock 单节点 Context 视图。
       appendNodeAgentContext(content,{
         skills:node.context.skills,
+        common_skills:node.context.common_skills,
         dynamic_mcp:node.context.dynamic_mcp,
         acp:node.context.acp,
         workflow_templates:shared.workflow_templates,
