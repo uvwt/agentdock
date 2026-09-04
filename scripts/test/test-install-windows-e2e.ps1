@@ -130,7 +130,7 @@ function Assert-AgentDockHealthy {
         throw "Bundled Skill list was not created: $bundledPath"
     }
     $bundled = @((Get-Content -LiteralPath $bundledPath -Raw | ConvertFrom-Json).skills)
-    foreach ($skill in @('skill-authoring', 'skill-installation', 'skill-vetter-runtime')) {
+    foreach ($skill in @('agentdock-user-guide', 'skill-authoring', 'skill-installation', 'skill-vetter-runtime')) {
         if ($bundled -notcontains $skill) {
             throw "Bundled Skill list does not contain $skill."
         }

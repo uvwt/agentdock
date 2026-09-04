@@ -138,7 +138,7 @@ For a systemd or OpenRC deployment, the source variables must also exist in the 
 
 ### Skills and dynamic MCP
 
-Official and community Skill sources live in [uvwt/agentdock-skills](https://github.com/uvwt/agentdock-skills). This repository only keeps the three bootstrap Skills that must ship with the AgentDock runtime.
+Official and community Skill sources live in [uvwt/agentdock-skills](https://github.com/uvwt/agentdock-skills). This repository only keeps core Skills that must ship with the AgentDock runtime, including bootstrap/security Skills and the built-in `agentdock-user-guide` official user guide.
 
 - Validate, install, activate, and roll back Skill packages
 - Stable, development, canary, and pinned release channels
