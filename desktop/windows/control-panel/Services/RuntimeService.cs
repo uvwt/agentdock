@@ -644,7 +644,6 @@ public sealed class RuntimeService : IDisposable
             throw new FileNotFoundException($"找不到 AgentDock 核心程序（{binaryPath}）。", binaryPath);
         }
 
-        Directory.CreateDirectory(LogsDirectory);
         var workingDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AgentDock");
         Directory.CreateDirectory(workingDirectory);
 
@@ -654,9 +653,7 @@ public sealed class RuntimeService : IDisposable
             WorkingDirectory = workingDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
-            WindowStyle = ProcessWindowStyle.Hidden,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
+            WindowStyle = ProcessWindowStyle.Hidden
         };
         startInfo.ArgumentList.Add("service");
         startInfo.ArgumentList.Add("launch-core");
@@ -676,24 +673,8 @@ public sealed class RuntimeService : IDisposable
             process.Kill(entireProcessTree: true);
             throw;
         }
-        await using var stdout = new FileStream(
-            Path.Combine(LogsDirectory, "agentdock.out.log"),
-            FileMode.Append,
-            FileAccess.Write,
-            FileShare.ReadWrite,
-            4096,
-            useAsync: true);
-        await using var stderr = new FileStream(
-            Path.Combine(LogsDirectory, "agentdock.err.log"),
-            FileMode.Append,
-            FileAccess.Write,
-            FileShare.ReadWrite,
-            4096,
-            useAsync: true);
-
-        var stdoutCopy = process.StandardOutput.BaseStream.CopyToAsync(stdout, cancellationToken);
-        var stderrCopy = process.StandardError.BaseStream.CopyToAsync(stderr, cancellationToken);
-        await Task.WhenAll(process.WaitForExitAsync(cancellationToken), stdoutCopy, stderrCopy);
+        // Core 自己持有受限轮转日志；宿主只负责生命周期，避免第二个追加句柄绕过大小上限。
+        await process.WaitForExitAsync(cancellationToken);
         return process.ExitCode;
     }
 

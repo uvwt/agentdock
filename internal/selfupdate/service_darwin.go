@@ -197,12 +197,23 @@ func detectManagedService(ctx context.Context, targetPath string) managedService
 		"ProgramArguments.0": paths.binary,
 		"ProgramArguments.4": paths.runtimeRoot,
 		"WorkingDirectory":   paths.workDir,
-		"StandardOutPath":    paths.stdoutLog,
-		"StandardErrorPath":  paths.stderrLog,
 	}
 	for key, expected := range plistPaths {
 		value, valueErr := readPlistString(ctx, paths.launchAgent, key)
 		if valueErr != nil || filepath.Clean(value) != expected {
+			return nil
+		}
+	}
+	// 新安装不再让 launchd 直接追加运行日志，但自更新仍需识别旧版固定日志路径，
+	// 否则旧用户第一次升级时会丢失服务重启能力。
+	legacyLogs := map[string]string{
+		"StandardOutPath":   paths.stdoutLog,
+		"StandardErrorPath": paths.stderrLog,
+	}
+	for key, legacy := range legacyLogs {
+		value, valueErr := readPlistString(ctx, paths.launchAgent, key)
+		cleaned := filepath.Clean(value)
+		if valueErr != nil || (cleaned != os.DevNull && cleaned != legacy) {
 			return nil
 		}
 	}

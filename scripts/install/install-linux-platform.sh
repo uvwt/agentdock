@@ -681,14 +681,14 @@ command_user="$service_user:$service_group"
 directory="$source_dir"
 pidfile="/run/${service_name}.pid"
 command_background="yes"
-output_log="/var/log/${service_name}.log"
-error_log="/var/log/${service_name}.err"
+log_dir="/var/log/${service_name}"
+output_log="/dev/null"
+error_log="/dev/null"
 
 agentdock_env_file="$env_file"
 
 start_pre() {
-  checkpath -f -m 0644 -o "$service_user:$service_group" "\$output_log"
-  checkpath -f -m 0644 -o "$service_user:$service_group" "\$error_log"
+  checkpath -d -m 0750 -o "$service_user:$service_group" "\$log_dir"
   if [ -r "\$agentdock_env_file" ]; then
     set -a
     . "\$agentdock_env_file"
@@ -923,13 +923,13 @@ command_user="$service_user:$service_group"
 directory="$data_dir"
 pidfile="/run/${tunnel_service_name}.pid"
 command_background="yes"
-output_log="/var/log/${tunnel_service_name}.log"
-error_log="/var/log/${tunnel_service_name}.err"
+log_dir="/var/log/${tunnel_service_name}"
+output_log="/dev/null"
+error_log="/dev/null"
 cloudflared_env_file="$cloudflared_env_file"
 
 start_pre() {
-  checkpath -f -m 0644 -o "$service_user:$service_group" "\$output_log"
-  checkpath -f -m 0644 -o "$service_user:$service_group" "\$error_log"
+  checkpath -d -m 0750 -o "$service_user:$service_group" "\$log_dir"
   if [ -r "\$cloudflared_env_file" ]; then
     set -a
     . "\$cloudflared_env_file"
@@ -966,7 +966,7 @@ cloudflared_quick_url() {
   local output
   case "$service_manager" in
     systemd) output="$(run_root journalctl -u "$tunnel_service_name" --since "$started_at" --no-pager 2>/dev/null || true)" ;;
-    openrc) output="$(run_root tail -n 200 "/var/log/${tunnel_service_name}.log" "/var/log/${tunnel_service_name}.err" 2>/dev/null || true)" ;;
+    openrc) output="$(run_root tail -n 200 "/var/log/${tunnel_service_name}/cloudflared.out.log" "/var/log/${tunnel_service_name}/cloudflared.err.log" 2>/dev/null || true)" ;;
     *) return 1 ;;
   esac
   # provisioning 失败日志也会出现 trycloudflare.com API 地址，必须先确认 cloudflared 已报告创建成功。
@@ -1026,7 +1026,9 @@ start_cloudflared_service() {
       run_root systemctl restart "$tunnel_service_name"
       ;;
     openrc)
+      # 兼容升级：删除旧版 OpenRC 直接追加的平铺日志，再由 AgentDock 创建受限轮转目录。
       run_root rm -f "/var/log/${tunnel_service_name}.log" "/var/log/${tunnel_service_name}.err"
+      run_root rm -rf "/var/log/${tunnel_service_name}"
       run_root rc-update add "$tunnel_service_name" default
       run_root rc-service "$tunnel_service_name" restart
       ;;
@@ -1063,6 +1065,7 @@ remove_cloudflared_service() {
         run_root rc-update del "$tunnel_service_name" default >/dev/null 2>&1 || true
         run_root rm -f "/etc/init.d/${tunnel_service_name}"
       fi
+      run_root rm -rf "/var/log/${tunnel_service_name}"
       ;;
   esac
   run_root rm -f "$cloudflared_env_file"
@@ -1117,6 +1120,8 @@ start_service() {
       ;;
     openrc)
       log "启动 OpenRC 服务：$service_name"
+      # 升级旧版本时清理曾由 OpenRC 直接追加的平铺日志，后续改由 AgentDock 自己轮转。
+      run_root rm -f "/var/log/${service_name}.log" "/var/log/${service_name}.err"
       run_root rc-update add "$service_name" default
       run_root rc-service "$service_name" restart
       sleep 2
@@ -1144,7 +1149,7 @@ service_log_command() {
   local service_name="$2"
   case "$service_manager" in
     systemd) printf 'sudo journalctl -u %s -n 100 --no-pager' "$service_name" ;;
-    openrc) printf 'sudo tail -n 100 /var/log/%s.log /var/log/%s.err' "$service_name" "$service_name" ;;
+    openrc) printf 'sudo tail -n 100 /var/log/%s/agentdock.err.log' "$service_name" ;;
     none) printf '# 未安装系统服务' ;;
   esac
 }
@@ -1174,7 +1179,7 @@ cloudflared_log_command() {
   local service_name="$2"
   case "$service_manager" in
     systemd) printf 'sudo journalctl -u %s -n 100 --no-pager' "$service_name" ;;
-    openrc) printf 'sudo tail -n 100 /var/log/%s.log /var/log/%s.err' "$service_name" "$service_name" ;;
+    openrc) printf 'sudo tail -n 100 /var/log/%s/cloudflared.out.log /var/log/%s/cloudflared.err.log' "$service_name" "$service_name" ;;
     none) printf '# 未安装 Tunnel 服务' ;;
   esac
 }

@@ -1,6 +1,7 @@
 package logx
 
 import (
+	"bytes"
 	"context"
 	"log/slog"
 	"testing"
@@ -23,7 +24,7 @@ func TestSetupConfiguresExpectedMinimumLevel(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			Setup(test.configured)
+			Setup(test.configured, &bytes.Buffer{})
 			logger := slog.Default()
 			if logger.Enabled(ctx, test.disabled) {
 				t.Fatalf("level %s unexpectedly enabled for %q", test.disabled, test.configured)
@@ -32,5 +33,18 @@ func TestSetupConfiguresExpectedMinimumLevel(t *testing.T) {
 				t.Fatalf("minimum level %s disabled for %q", test.minimumLevel, test.configured)
 			}
 		})
+	}
+}
+
+func TestSetupWritesJSONToProvidedOutput(t *testing.T) {
+	previous := slog.Default()
+	defer slog.SetDefault(previous)
+
+	var output bytes.Buffer
+	Setup("info", &output)
+	slog.Info("rotation-test", "component", "core")
+	if !bytes.Contains(output.Bytes(), []byte(`"msg":"rotation-test"`)) ||
+		!bytes.Contains(output.Bytes(), []byte(`"component":"core"`)) {
+		t.Fatalf("unexpected log output: %s", output.String())
 	}
 }

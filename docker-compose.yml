@@ -2,6 +2,11 @@ services:
   agentdock:
     image: ${AGENTDOCK_IMAGE:-ghcr.io/uvwt/agentdock:latest}
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     # browser 镜像里 Chromium 需要更大 /dev/shm；普通镜像保留也无害。
     shm_size: "1gb"
     ports:
@@ -32,6 +37,11 @@ services:
     profiles: ["cloudflare-quick"]
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     command: ["tunnel", "--no-autoupdate", "--url", "http://agentdock:8765"]
     depends_on:
       agentdock:
@@ -43,6 +53,11 @@ services:
     profiles: ["cloudflare-named"]
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     command: ["tunnel", "--no-autoupdate", "run"]
     environment:
       TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"

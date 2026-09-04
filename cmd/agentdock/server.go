@@ -81,7 +81,7 @@ func runServer(ctx context.Context, args []string, stderr io.Writer) error {
 	} else if identityErr != nil && !errors.Is(identityErr, os.ErrNotExist) {
 		slog.Error("NexusDock device identity ignored", "error", identityErr)
 	}
-	logx.Setup(cfg.LogLevel)
+	logx.Setup(cfg.LogLevel, stderr)
 	if err := selfupdate.RepairDesktopRuntimeIfNeeded(ctx, stderr); err != nil {
 		// Windows v0.7.4 及更早版本只会替换 core。新版 core 启动时尝试补齐同版本控制面板，
 		// 失败不应阻断 MCP 服务启动；保留明确日志并在下次启动继续重试。

@@ -572,8 +572,6 @@ write_launch_agent() {
   local binary_xml="$(xml_escape "$TARGET")"
   local runtime_root_xml="$(xml_escape "$APP_SUPPORT_DIR")"
   local work_dir_xml="$(xml_escape "$WORK_DIR")"
-  local stdout_xml="$(xml_escape "$STDOUT_LOG")"
-  local stderr_xml="$(xml_escape "$STDERR_LOG")"
   cat > "$plist_tmp" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -596,9 +594,9 @@ write_launch_agent() {
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>$stdout_xml</string>
+  <string>/dev/null</string>
   <key>StandardErrorPath</key>
-  <string>$stderr_xml</string>
+  <string>/dev/null</string>
 </dict>
 </plist>
 PLIST
@@ -743,8 +741,6 @@ write_tunnel_launch_agent() {
   local binary_xml="$(xml_escape "$TARGET")"
   local runtime_root_xml="$(xml_escape "$APP_SUPPORT_DIR")"
   local work_dir_xml="$(xml_escape "$WORK_DIR")"
-  local stdout_xml="$(xml_escape "$TUNNEL_STDOUT_LOG")"
-  local stderr_xml="$(xml_escape "$TUNNEL_STDERR_LOG")"
   cat > "$plist_tmp" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -769,9 +765,9 @@ write_tunnel_launch_agent() {
   <key>ThrottleInterval</key>
   <integer>5</integer>
   <key>StandardOutPath</key>
-  <string>$stdout_xml</string>
+  <string>/dev/null</string>
   <key>StandardErrorPath</key>
-  <string>$stderr_xml</string>
+  <string>/dev/null</string>
 </dict>
 </plist>
 PLIST

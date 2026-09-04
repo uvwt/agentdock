@@ -7,16 +7,17 @@ import (
 	"testing"
 )
 
-func TestQuickTunnelInstallParsersRequireCloudflaredSuccessMarker(t *testing.T) {
+func TestQuickTunnelParsersRequireCloudflaredSuccessMarker(t *testing.T) {
 	const marker = "Your quick Tunnel has been created! Visit it at"
 	tests := []struct {
 		path      string
 		wantCount int
 	}{
 		{path: "../install/install.ps1", wantCount: 2},
-		{path: "../install/manage-windows.ps1", wantCount: 1},
 		{path: "../install/install-macos-platform.sh", wantCount: 1},
 		{path: "../install/install-linux-platform.sh", wantCount: 1},
+		// Windows 当前运行链路由原生 desktopruntime 解析，manage-windows 只保留委托入口。
+		{path: "../../internal/desktopruntime/quick_tunnel_log.go", wantCount: 1},
 	}
 
 	for _, tt := range tests {
