@@ -4,6 +4,11 @@ import (
 	"time"
 )
 
+type SkillMetadata struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
 type SkillDocument struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`

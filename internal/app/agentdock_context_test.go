@@ -16,6 +16,10 @@ import (
 )
 
 func TestAgentDockContextToolReturnsStructuredRuntimeIndex(t *testing.T) {
+	home := t.TempDir()
+	setUserHomeForTest(t, home)
+	writeCommonSkillForTest(t, filepath.Join(home, ".agents", "skills"), "demo-common", "demo-skill", "Lower-priority common Skill.")
+
 	cfg := config.Config{
 		AgentDockDefaultDir: t.TempDir(),
 		AgentDockHome:       filepath.Join(t.TempDir(), ".agentdock"),
@@ -50,6 +54,13 @@ func TestAgentDockContextToolReturnsStructuredRuntimeIndex(t *testing.T) {
 	if demo == nil || demo.Description != "Use this Skill for context index tests." || demo.File != "skill://demo-skill/SKILL.md" {
 		t.Fatalf("structured Skill index missing demo-skill: %#v", got.Skills)
 	}
+	if got.CommonSkills == nil || got.CommonSkills.Total != 1 || len(got.CommonSkills.Items) != 1 {
+		t.Fatalf("common Skill index = %#v", got.CommonSkills)
+	}
+	commonDemo := got.CommonSkills.Items[0]
+	if commonDemo.Name != "demo-skill" || commonDemo.Description != "Lower-priority common Skill." || commonDemo.File != filepath.Join(home, ".agents", "skills", "demo-common", "SKILL.md") {
+		t.Fatalf("common Skill index missing duplicate demo-skill: %#v", got.CommonSkills)
+	}
 	if got.DynamicMCP == nil || got.WorkflowTemplates == nil || got.Rules == nil {
 		t.Fatalf("required structured context fields must be arrays: %#v", got)
 	}
@@ -60,7 +71,7 @@ func TestAgentDockContextToolReturnsStructuredRuntimeIndex(t *testing.T) {
 		t.Fatalf("runtime paths = %#v", got.Runtime)
 	}
 	rules := strings.Join(got.Rules, "\n")
-	for _, want := range []string{"AgentDock 自带工具直接调用", "task_manage checkpoint"} {
+	for _, want := range []string{"AgentDock 自带工具直接调用", "同名时始终优先 skills", "common_skills.truncated=true", "task_manage checkpoint"} {
 		if !strings.Contains(rules, want) {
 			t.Fatalf("context rules missing %q: %s", want, rules)
 		}
