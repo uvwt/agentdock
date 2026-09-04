@@ -1,6 +1,11 @@
 package desktopruntime
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestFindQuickTunnelURL(t *testing.T) {
 	tests := []struct {
@@ -41,5 +46,65 @@ func TestFindQuickTunnelURL(t *testing.T) {
 				t.Fatalf("findQuickTunnelURL() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestReadQuickTunnelLogSinceSkipsPreviousGeneration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cloudflared.err.log")
+	oldLog := "INF Your quick Tunnel has been created! Visit it at:\nhttps://old.trycloudflare.com\n"
+	if err := os.WriteFile(path, []byte(oldLog), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cursor, err := captureQuickTunnelLogCursor(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newLog := "INF Your quick Tunnel has been created! Visit it at:\nhttps://new.trycloudflare.com\n"
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString(newLog); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := readQuickTunnelLogSince(path, cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := findQuickTunnelURL(data); got != "https://new.trycloudflare.com" {
+		t.Fatalf("findQuickTunnelURL(new generation) = %q", got)
+	}
+}
+
+func TestReadQuickTunnelLogSinceReadsResetLogFromStart(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cloudflared.err.log")
+	if err := os.WriteFile(path, []byte(strings.Repeat("x", 1024)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cursor, err := captureQuickTunnelLogCursor(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(path, path+".1"); err != nil {
+		t.Fatal(err)
+	}
+	newLog := "INF Your quick Tunnel has been created! Visit it at:\nhttps://rotated.trycloudflare.com\n"
+	if err := os.WriteFile(path, []byte(newLog), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := readQuickTunnelLogSince(path, cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := findQuickTunnelURL(data); got != "https://rotated.trycloudflare.com" {
+		t.Fatalf("findQuickTunnelURL(rotated generation) = %q", got)
 	}
 }
