@@ -103,6 +103,23 @@ func platformTunnelAction(ctx context.Context, runtimeRoot, action string) error
 	}
 }
 
+type quickTunnelLogCursors struct {
+	stdout quickTunnelLogCursor
+	stderr quickTunnelLogCursor
+}
+
+func captureQuickTunnelLogCursors(files tunnelFiles) (quickTunnelLogCursors, error) {
+	stdout, err := captureQuickTunnelLogCursor(files.stdoutLog)
+	if err != nil {
+		return quickTunnelLogCursors{}, fmt.Errorf("记录 cloudflared stdout 日志位置失败: %w", err)
+	}
+	stderr, err := captureQuickTunnelLogCursor(files.stderrLog)
+	if err != nil {
+		return quickTunnelLogCursors{}, fmt.Errorf("记录 cloudflared stderr 日志位置失败: %w", err)
+	}
+	return quickTunnelLogCursors{stdout: stdout, stderr: stderr}, nil
+}
+
 func startTunnel(ctx context.Context, runtime tunnelRuntime) error {
 	if runtime.mode == "none" {
 		return nil
@@ -122,18 +139,26 @@ func startTunnel(ctx context.Context, runtime tunnelRuntime) error {
 				return readyErr
 			}
 			if readyURL == "" {
-				return finalizeQuickTunnel(ctx, runtime)
+				// 已有进程可能早于当前控制命令启动，此时需要从完整日志恢复 ready URL。
+				return finalizeQuickTunnel(ctx, runtime, quickTunnelLogCursors{})
 			}
 		}
 		return nil
 	}
 
+	logCursors := quickTunnelLogCursors{}
 	if runtime.mode == "quick" {
 		// 旧临时地址在新进程真正拿到 URL 前不能继续暴露为 ready。
 		if err := clearActivePublicURL(runtime.files); err != nil {
 			return err
 		}
 		if err := runtime.updateManifest("none", ""); err != nil {
+			return err
+		}
+		// cloudflared 日志按设计持续追加；记录本轮启动前的位置，避免 regenerate 把历史 URL 当成新地址。
+		var err error
+		logCursors, err = captureQuickTunnelLogCursors(runtime.files)
+		if err != nil {
 			return err
 		}
 	}
@@ -144,7 +169,7 @@ func startTunnel(ctx context.Context, runtime tunnelRuntime) error {
 		return err
 	}
 	if runtime.mode == "quick" {
-		return finalizeQuickTunnel(ctx, runtime)
+		return finalizeQuickTunnel(ctx, runtime, logCursors)
 	}
 	return nil
 }
@@ -214,8 +239,8 @@ func cloudflaredCommand(ctx context.Context, runtime tunnelRuntime) (*exec.Cmd, 
 	return command, nil
 }
 
-func finalizeQuickTunnel(ctx context.Context, runtime tunnelRuntime) error {
-	publicURL, err := waitQuickTunnelURL(ctx, runtime, 35*time.Second)
+func finalizeQuickTunnel(ctx context.Context, runtime tunnelRuntime, cursors quickTunnelLogCursors) error {
+	publicURL, err := waitQuickTunnelURL(ctx, runtime, cursors, 35*time.Second)
 	if err != nil {
 		_ = StopBinaryProcesses(context.Background(), runtime.manifest.CloudflaredBinary, 5*time.Second)
 		return err
@@ -233,11 +258,18 @@ func finalizeQuickTunnel(ctx context.Context, runtime tunnelRuntime) error {
 	return writeRuntimeText(runtime.files.quickURL, publicURL)
 }
 
-func waitQuickTunnelURL(ctx context.Context, runtime tunnelRuntime, timeout time.Duration) (string, error) {
+func waitQuickTunnelURL(ctx context.Context, runtime tunnelRuntime, cursors quickTunnelLogCursors, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
+	logs := []struct {
+		path   string
+		cursor quickTunnelLogCursor
+	}{
+		{path: runtime.files.stdoutLog, cursor: cursors.stdout},
+		{path: runtime.files.stderrLog, cursor: cursors.stderr},
+	}
 	for time.Now().Before(deadline) {
-		for _, path := range []string{runtime.files.stdoutLog, runtime.files.stderrLog} {
-			data, err := os.ReadFile(path)
+		for _, log := range logs {
+			data, err := readQuickTunnelLogSince(log.path, log.cursor)
 			if err == nil {
 				if publicURL := findQuickTunnelURL(data); publicURL != "" {
 					return publicURL, nil
