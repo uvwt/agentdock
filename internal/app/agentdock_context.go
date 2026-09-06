@@ -141,8 +141,11 @@ type capabilityCommonSkillItem struct {
 }
 
 type capabilityDynamicMCPItem struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	Status        string `json:"status"`
+	ToolCount     int    `json:"tool_count"`
+	LastErrorCode string `json:"last_error_code,omitempty"`
 }
 
 type capabilityACPContext struct {
@@ -205,8 +208,11 @@ func (r *Runtime) dynamicMCPCapabilityIndex() []capabilityDynamicMCPItem {
 	items := make([]capabilityDynamicMCPItem, 0, len(servers))
 	for _, server := range servers {
 		items = append(items, capabilityDynamicMCPItem{
-			Name:        server.Name,
-			Description: truncateString(strings.TrimSpace(server.Description), 160),
+			Name:          server.Name,
+			Description:   truncateString(strings.TrimSpace(server.Description), 160),
+			Status:        server.Status,
+			ToolCount:     server.ToolCount,
+			LastErrorCode: server.LastErrorCode,
 		})
 	}
 	return items

@@ -26,11 +26,12 @@ type Manager struct {
 }
 
 type serverState struct {
-	mu          sync.Mutex
-	client      protocolClient
-	tools       map[string]Tool
-	lastError   string
-	refreshedAt time.Time
+	mu            sync.Mutex
+	client        protocolClient
+	tools         map[string]Tool
+	lastError     string
+	lastErrorCode string
+	refreshedAt   time.Time
 }
 
 func NewManager(agentDockHome string, provided ...*envstore.Store) (*Manager, error) {
@@ -262,6 +263,7 @@ func (m *Manager) Refresh(ctx context.Context, name string) (ServerSummary, []To
 	}
 	runtimeCfg, err := m.runtimeConfig(cfg)
 	if err != nil {
+		recordStateError(state, err)
 		return ServerSummary{}, nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutMS)*time.Millisecond)
@@ -378,6 +380,7 @@ func (m *Manager) Call(ctx context.Context, qualifiedName string, arguments map[
 	if state.client == nil || len(state.tools) == 0 {
 		runtimeCfg, err := m.runtimeConfig(cfg)
 		if err != nil {
+			recordStateError(state, err)
 			return nil, err
 		}
 		if _, err := refreshStateLocked(ctx, runtimeCfg, state); err != nil {
@@ -498,6 +501,7 @@ func (m *Manager) ensureTools(ctx context.Context, name string) (map[string]Tool
 	if state.client == nil || len(state.tools) == 0 {
 		runtimeCfg, err := m.runtimeConfig(cfg)
 		if err != nil {
+			recordStateError(state, err)
 			return nil, err
 		}
 		return refreshStateLocked(ctx, runtimeCfg, state)
@@ -513,18 +517,18 @@ func refreshStateLocked(ctx context.Context, cfg ServerConfig, state *serverStat
 	state.tools = nil
 	client, err := newProtocolClient(cfg)
 	if err != nil {
-		state.lastError = err.Error()
+		recordStateError(state, err)
 		return nil, err
 	}
 	if err := client.initialize(ctx); err != nil {
 		_ = client.close()
-		state.lastError = err.Error()
+		recordStateError(state, err)
 		return nil, err
 	}
 	listed, err := client.listTools(ctx)
 	if err != nil {
 		_ = client.close()
-		state.lastError = err.Error()
+		recordStateError(state, err)
 		return nil, err
 	}
 	tools := make(map[string]Tool, len(listed))
@@ -532,13 +536,15 @@ func refreshStateLocked(ctx context.Context, cfg ServerConfig, state *serverStat
 		tool.Name = strings.TrimSpace(tool.Name)
 		if tool.Name == "" {
 			_ = client.close()
-			state.lastError = "MCP tools/list returned an empty tool name"
-			return nil, newError("MCP_INVALID_RESPONSE", state.lastError, false, map[string]any{"server": cfg.Name}, nil)
+			err := newError("MCP_INVALID_RESPONSE", "MCP tools/list returned an empty tool name", false, map[string]any{"server": cfg.Name}, nil)
+			recordStateError(state, err)
+			return nil, err
 		}
 		if _, duplicate := tools[tool.Name]; duplicate {
 			_ = client.close()
-			state.lastError = "MCP tools/list returned duplicate tool names"
-			return nil, newError("MCP_INVALID_RESPONSE", state.lastError, false, map[string]any{"server": cfg.Name, "tool": tool.Name}, nil)
+			err := newError("MCP_INVALID_RESPONSE", "MCP tools/list returned duplicate tool names", false, map[string]any{"server": cfg.Name, "tool": tool.Name}, nil)
+			recordStateError(state, err)
+			return nil, err
 		}
 		if tool.InputSchema == nil {
 			tool.InputSchema = map[string]any{"type": "object", "additionalProperties": true}
@@ -546,14 +552,15 @@ func refreshStateLocked(ctx context.Context, cfg ServerConfig, state *serverStat
 		validator, err := compileToolInputSchema(tool.InputSchema)
 		if err != nil {
 			_ = client.close()
-			state.lastError = "MCP tools/list returned an invalid input schema"
-			return nil, newError(
+			schemaErr := newError(
 				"MCP_SCHEMA_INVALID",
-				state.lastError,
+				"MCP tools/list returned an invalid input schema",
 				false,
 				map[string]any{"server": cfg.Name, "tool": tool.Name, "reason": err.Error()},
 				err,
 			)
+			recordStateError(state, schemaErr)
+			return nil, schemaErr
 		}
 		tool.inputValidator = validator
 		tools[tool.Name] = tool
@@ -561,6 +568,7 @@ func refreshStateLocked(ctx context.Context, cfg ServerConfig, state *serverStat
 	state.client = client
 	state.tools = tools
 	state.lastError = ""
+	state.lastErrorCode = ""
 	state.refreshedAt = time.Now().UTC()
 	return cloneTools(tools), nil
 }
@@ -589,6 +597,7 @@ func closeState(state *serverState) error {
 	state.client = nil
 	state.tools = nil
 	state.lastError = ""
+	state.lastErrorCode = ""
 	state.refreshedAt = time.Time{}
 	return err
 }
@@ -609,18 +618,28 @@ func summaryForLocked(cfg ServerConfig, state *serverState) ServerSummary {
 		status = "ready"
 	}
 	item := ServerSummary{
-		Name:        cfg.Name,
-		Description: cfg.Description,
-		Transport:   cfg.Transport,
-		Enabled:     cfg.Enabled,
-		Status:      status,
-		ToolCount:   len(state.tools),
-		LastError:   state.lastError,
+		Name:          cfg.Name,
+		Description:   cfg.Description,
+		Transport:     cfg.Transport,
+		Enabled:       cfg.Enabled,
+		Status:        status,
+		ToolCount:     len(state.tools),
+		LastError:     state.lastError,
+		LastErrorCode: state.lastErrorCode,
 	}
 	if !state.refreshedAt.IsZero() {
 		item.RefreshedAt = state.refreshedAt.Format(time.RFC3339Nano)
 	}
 	return item
+}
+
+func recordStateError(state *serverState, err error) {
+	state.lastError = err.Error()
+	state.lastErrorCode = "MCP_ERROR"
+	var mcpErr *Error
+	if errors.As(err, &mcpErr) {
+		state.lastErrorCode = mcpErr.Code
+	}
 }
 
 func summarizeTools(server string, tools map[string]Tool) []ToolSummary {

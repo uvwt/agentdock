@@ -17,15 +17,21 @@ func New(manager *mcpclient.Manager, envs *envstore.Store) *Service {
 }
 
 type CapabilityItem struct {
-	Name        string
-	Description string
+	Name          string
+	Description   string
+	Status        string
+	ToolCount     int
+	LastErrorCode string
 }
 
 func (s *Service) CapabilityItems() []CapabilityItem {
 	servers := s.mcpClients.EnabledIndex()
 	items := make([]CapabilityItem, 0, len(servers))
 	for _, server := range servers {
-		items = append(items, CapabilityItem{Name: server.Name, Description: server.Description})
+		items = append(items, CapabilityItem{
+			Name: server.Name, Description: server.Description, Status: server.Status,
+			ToolCount: server.ToolCount, LastErrorCode: server.LastErrorCode,
+		})
 	}
 	return items
 }

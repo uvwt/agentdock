@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -105,7 +106,7 @@ func TestDynamicMCPToolsStaySeparateAndAppearLightweightInContext(t *testing.T) 
 	if err := remarshal(contextResult, &contextData); err != nil {
 		t.Fatal(err)
 	}
-	if len(contextData.DynamicMCP) != 1 || contextData.DynamicMCP[0].Name != "demo" || contextData.DynamicMCP[0].Description != "Demo external capabilities" {
+	if len(contextData.DynamicMCP) != 1 || contextData.DynamicMCP[0].Name != "demo" || contextData.DynamicMCP[0].Description != "Demo external capabilities" || contextData.DynamicMCP[0].Status != "idle" || contextData.DynamicMCP[0].ToolCount != 0 {
 		t.Fatalf("dynamic MCP context = %#v", contextData.DynamicMCP)
 	}
 	encodedContext, err := json.Marshal(contextResult)
@@ -133,6 +134,17 @@ func TestDynamicMCPToolsStaySeparateAndAppearLightweightInContext(t *testing.T) 
 	}
 	if search["count"] != 1 {
 		t.Fatalf("unexpected search result: %#v", search)
+	}
+	readyContextResult, err := runtime.Call(context.Background(), "agentdock_context", map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var readyContext capabilityContext
+	if err := remarshal(readyContextResult, &readyContext); err != nil {
+		t.Fatal(err)
+	}
+	if readyContext.DynamicMCP[0].Status != "ready" || readyContext.DynamicMCP[0].ToolCount != 1 || readyContext.DynamicMCP[0].LastErrorCode != "" {
+		t.Fatalf("ready dynamic MCP context = %#v", readyContext.DynamicMCP[0])
 	}
 	assertToolResultMatchestestOutputSchema(t, "mcp_tool_search", search)
 
@@ -168,6 +180,45 @@ func TestDynamicMCPToolsStaySeparateAndAppearLightweightInContext(t *testing.T) 
 		if name == "demo:echo" {
 			t.Fatal("dynamic upstream tool leaked into AgentDock built-in tools/list")
 		}
+	}
+}
+
+func TestAgentDockContextReportsDynamicMCPRefreshErrorCode(t *testing.T) {
+	cfg := config.Config{AgentDockDefaultDir: t.TempDir(), AgentDockHome: filepath.Join(t.TempDir(), ".agentdock")}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close()
+
+	if _, err := runtime.Call(context.Background(), "mcp_manage", map[string]any{
+		"action": "add", "name": "broken", "description": "Missing required host environment",
+		"transport": "stdio", "command": os.Args[0],
+		"env_from_env": map[string]any{"REQUIRED": "AGENTDOCK_TEST_MISSING_MCP_ENV"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.Call(context.Background(), "mcp_tool_search", map[string]any{"server": "broken", "query": "anything"}); err == nil {
+		t.Fatal("mcp_tool_search succeeded with a missing required environment variable")
+	}
+
+	result, err := runtime.Call(context.Background(), "agentdock_context", map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contextData capabilityContext
+	if err := remarshal(result, &contextData); err != nil {
+		t.Fatal(err)
+	}
+	if len(contextData.DynamicMCP) != 1 {
+		t.Fatalf("dynamic MCP context = %#v", contextData.DynamicMCP)
+	}
+	item := contextData.DynamicMCP[0]
+	if item.Name != "broken" || item.Status != "error" || item.ToolCount != 0 || item.LastErrorCode != "MCP_AUTH_REQUIRED" {
+		t.Fatalf("broken dynamic MCP context = %#v", item)
 	}
 }
 

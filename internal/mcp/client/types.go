@@ -53,14 +53,15 @@ type ToolSummary struct {
 }
 
 type ServerSummary struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Transport   string `json:"transport"`
-	Enabled     bool   `json:"enabled"`
-	Status      string `json:"status"`
-	ToolCount   int    `json:"tool_count"`
-	LastError   string `json:"last_error,omitempty"`
-	RefreshedAt string `json:"refreshed_at,omitempty"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	Transport     string `json:"transport"`
+	Enabled       bool   `json:"enabled"`
+	Status        string `json:"status"`
+	ToolCount     int    `json:"tool_count"`
+	LastError     string `json:"last_error,omitempty"`
+	LastErrorCode string `json:"last_error_code,omitempty"`
+	RefreshedAt   string `json:"refreshed_at,omitempty"`
 }
 
 type Error struct {
