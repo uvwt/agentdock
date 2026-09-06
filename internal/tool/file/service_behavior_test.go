@@ -97,6 +97,33 @@ func TestEditFileRejectsUnexpectedMatchCounts(t *testing.T) {
 	}
 }
 
+func TestEditFileExpectedZeroSucceedsWhenTextIsAbsent(t *testing.T) {
+	rt, root := newFileTestService(t)
+	path := filepath.Join(root, "main.go")
+	if err := os.WriteFile(path, []byte("alpha\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := rt.editFileTest(map[string]any{
+		"path":             "main.go",
+		"old":              "missing",
+		"new":              "beta",
+		"expected_matches": 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["matches"] != 0 || result["changed"] != false {
+		t.Fatalf("unexpected zero-match assertion result: %#v", result)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "alpha\n" {
+		t.Fatalf("zero-match assertion wrote file: %q", data)
+	}
+}
+
 func TestEditFileReplaceAll(t *testing.T) {
 	rt, root := newFileTestService(t)
 	path := filepath.Join(root, "main.go")
