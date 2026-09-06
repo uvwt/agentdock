@@ -13,9 +13,9 @@ func ManageInputSchema(cfg config.Config) map[string]any {
 	props := map[string]any{
 		"action":                map[string]any{"type": "string", "description": "Task lifecycle action. Use checkpoint to update live step progress.", "enum": []string{"create", "list", "get", "checkpoint", "block", "resume", "final_review", "complete"}},
 		"task_id":               stringProp("Persistent task id for get, checkpoint, block, resume, final_review, or complete."),
-		"title":                 stringProp("Short task title for create."),
-		"goal":                  stringProp("Fixed task goal for create."),
-		"completion_conditions": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}, "description": "Conditions that must be true before final_review can pass."},
+		"title":                 stringProp("Short task title. Required for action=create."),
+		"goal":                  stringProp("Fixed task goal. Required for action=create."),
+		"completion_conditions": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}, "description": "Conditions that must be true before final_review can pass. Required for action=create."},
 		"step_id":               stringProp("Task step id for a single-step checkpoint."),
 		"completed_step_ids":    map[string]any{"type": "array", "minItems": 1, "maxItems": 12, "uniqueItems": true, "items": map[string]any{"type": "string"}, "description": "Task step ids to mark completed in one atomic batch checkpoint."},
 		"current_step_id":       stringProp("Single task step id to mark in_progress in a batch checkpoint."),
@@ -33,7 +33,7 @@ func ManageInputSchema(cfg config.Config) map[string]any {
 			"type": "array", "maxItems": 12, "description": "Concrete task steps.",
 			"items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"id", "title"}, "properties": map[string]any{"id": stringProp("Stable step id."), "title": stringProp("Human-readable step title.")}},
 		}
-		return toolcontract.InputObject(props, "action")
+		return taskManageInputObject(props)
 	}
 
 	props["project"] = stringProp("Optional project identifier used to hard-scope Evolution guidance and evidence candidates. Omit only for global tasks.")
@@ -55,7 +55,19 @@ func ManageInputSchema(cfg config.Config) map[string]any {
 			},
 		},
 	}
-	return toolcontract.InputObject(props, "action")
+	return taskManageInputObject(props)
+}
+
+func taskManageInputObject(props map[string]any) map[string]any {
+	schema := toolcontract.InputObject(props, "action")
+	schema["allOf"] = []any{map[string]any{
+		"if": map[string]any{
+			"properties": map[string]any{"action": map[string]any{"const": "create"}},
+			"required":   []string{"action"},
+		},
+		"then": map[string]any{"required": []string{"title", "goal", "completion_conditions"}},
+	}}
+	return schema
 }
 
 func ManageOutputSchema(cfg config.Config) map[string]any {
