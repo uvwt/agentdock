@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,6 +29,24 @@ type SearchOptions struct {
 	MaxResults     int
 	ContextLines   int
 }
+
+type searchFallbackLimits struct {
+	MaxEntries    int
+	MaxFiles      int
+	MaxFileBytes  int64
+	MaxTotalBytes int64
+	Timeout       time.Duration
+}
+
+var defaultSearchFallbackLimits = searchFallbackLimits{
+	MaxEntries:    100_000,
+	MaxFiles:      10_000,
+	MaxFileBytes:  4 << 20,
+	MaxTotalBytes: 128 << 20,
+	Timeout:       10 * time.Second,
+}
+
+var errSearchResourceLimit = errors.New("text search resource limit exceeded")
 
 func (svc *Service) SearchText(ctx context.Context, request SearchRequest) (Result, error) {
 	selection, err := selectFileRuntime(request.RuntimeOptions)
@@ -68,17 +87,17 @@ func (svc *Service) SearchText(ctx context.Context, request SearchRequest) (Resu
 		MaxResults:     boundedInt(intValue(request.MaxResults, 100), 100, 1, 1000),
 		ContextLines:   boundedInt(intValue(request.ContextLines, 0), 0, 0, 20),
 	}
-	if result, ok := svc.searchTextRG(ctx, p, opts); ok {
-		return addFileRuntimeResult(result, selection), nil
+	if result, available, err := svc.searchTextRG(ctx, p, opts); available {
+		return addFileRuntimeResult(result, selection), err
 	}
 	result, err := svc.searchTextGo(ctx, p, opts)
 	return addFileRuntimeResult(result, selection), err
 }
 
-func (svc *Service) searchTextRG(ctx context.Context, p workspace.Path, opts SearchOptions) (Result, bool) {
+func (svc *Service) searchTextRG(ctx context.Context, p workspace.Path, opts SearchOptions) (Result, bool, error) {
 	rg, err := exec.LookPath("rg")
 	if err != nil {
-		return nil, false
+		return nil, false, nil
 	}
 	args := []string{"--json", "--line-number", "--column", "--color", "never"}
 	if !opts.Regex {
@@ -105,15 +124,15 @@ func (svc *Service) searchTextRG(ctx context.Context, p workspace.Path, opts Sea
 	output, err := cmd.Output()
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 1 {
-			return Result{"query": opts.Query, "engine": "rg", "matches": []map[string]any{}, "total_matches": 0, "truncated": false}, true
+			return Result{"query": opts.Query, "engine": "rg", "matches": []map[string]any{}, "total_matches": 0, "truncated": false}, true, nil
 		}
-		return nil, false
+		return nil, true, searchExecutionError(ctx, "rg", err)
 	}
 	matches, truncated, ok := svc.parseRGJSON(output, p.Abs, opts)
 	if !ok {
-		return nil, false
+		return nil, true, toolError("SEARCH_FAILED", "failed to parse ripgrep search results", "runtime")
 	}
-	return Result{"query": opts.Query, "engine": "rg", "matches": matches, "total_matches": len(matches), "truncated": truncated}, true
+	return Result{"query": opts.Query, "engine": "rg", "matches": matches, "total_matches": len(matches), "truncated": truncated}, true, nil
 }
 
 func (svc *Service) parseRGJSON(output []byte, searchRoot string, opts SearchOptions) ([]map[string]any, bool, bool) {
@@ -207,6 +226,13 @@ func (svc *Service) parseRGJSON(output []byte, searchRoot string, opts SearchOpt
 }
 
 func (svc *Service) searchTextGo(ctx context.Context, p workspace.Path, opts SearchOptions) (Result, error) {
+	return svc.searchTextGoWithLimits(ctx, p, opts, defaultSearchFallbackLimits)
+}
+
+func (svc *Service) searchTextGoWithLimits(ctx context.Context, p workspace.Path, opts SearchOptions, limits searchFallbackLimits) (Result, error) {
+	ctx, cancel := context.WithTimeout(ctx, limits.Timeout)
+	defer cancel()
+
 	var re *regexp.Regexp
 	if opts.Regex || !opts.CaseSensitive {
 		pattern := opts.Query
@@ -220,18 +246,31 @@ func (svc *Service) searchTextGo(ctx context.Context, p workspace.Path, opts Sea
 		}
 		compiled, err := regexp.Compile(pattern)
 		if err != nil {
-			return nil, err
+			return nil, toolErrorCause("INVALID_ARGUMENT", "query is not a valid regular expression", "validation", map[string]any{"reason": err.Error()}, err)
 		}
 		re = compiled
 	}
 	matches := make([]map[string]any, 0)
 	ignore := loadIgnoreMatcher(svc.ws.Root())
+	entriesVisited := 0
+	filesScanned := 0
+	bytesScanned := int64(0)
+	skippedLargeFiles := 0
+	limitResource := ""
 	walkErr := filepath.WalkDir(p.Abs, func(abs string, d os.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if walkErr != nil {
+			if abs == p.Abs {
+				return walkErr
+			}
 			return nil
+		}
+		entriesVisited++
+		if limits.MaxEntries > 0 && entriesVisited > limits.MaxEntries {
+			limitResource = "entries"
+			return errSearchResourceLimit
 		}
 		requestRel, relErr := relativePathFromRoot(p.Abs, abs)
 		if relErr != nil {
@@ -270,12 +309,42 @@ func (svc *Service) searchTextGo(ctx context.Context, p workspace.Path, opts Sea
 		if matchesAny(requestRel, opts.ExcludeGlobs) {
 			return nil
 		}
+		info, err := d.Info()
+		if err != nil || !info.Mode().IsRegular() {
+			return nil
+		}
+		if limits.MaxFileBytes > 0 && info.Size() > limits.MaxFileBytes {
+			skippedLargeFiles++
+			return nil
+		}
+		if limits.MaxFiles > 0 && filesScanned >= limits.MaxFiles {
+			limitResource = "files"
+			return errSearchResourceLimit
+		}
+		if limits.MaxTotalBytes > 0 && bytesScanned+info.Size() > limits.MaxTotalBytes {
+			limitResource = "bytes"
+			return errSearchResourceLimit
+		}
 		displayPath, err := svc.ws.Relative(abs)
 		if err != nil || displayPath == "" {
 			displayPath = filepath.ToSlash(abs)
 		}
-		data, err := os.ReadFile(abs)
-		if err != nil || looksBinary(data) || !utf8.Valid(data) {
+		read, err := readBoundedFile(abs, limits.MaxFileBytes)
+		if err != nil {
+			return nil
+		}
+		if read.TooLarge {
+			skippedLargeFiles++
+			return nil
+		}
+		if limits.MaxTotalBytes > 0 && bytesScanned+read.Size > limits.MaxTotalBytes {
+			limitResource = "bytes"
+			return errSearchResourceLimit
+		}
+		filesScanned++
+		bytesScanned += read.Size
+		data := read.Data
+		if looksBinary(data) || !utf8.Valid(data) {
 			return nil
 		}
 		lines := strings.Split(string(data), "\n")
@@ -307,7 +376,26 @@ func (svc *Service) searchTextGo(ctx context.Context, p workspace.Path, opts Sea
 		return nil
 	})
 	if walkErr != nil {
-		return nil, walkErr
+		if errors.Is(walkErr, errSearchResourceLimit) {
+			return nil, toolErrorCause("RESOURCE_LIMIT", "text search exceeded the Go fallback resource budget", "runtime", map[string]any{
+				"resource": limitResource, "entries_visited": entriesVisited, "files_scanned": filesScanned, "bytes_scanned": bytesScanned,
+			}, walkErr)
+		}
+		return nil, searchExecutionError(ctx, "go_fallback", walkErr)
 	}
-	return Result{"query": opts.Query, "engine": "go_fallback", "matches": matches, "total_matches": len(matches), "truncated": opts.MaxResults > 0 && len(matches) >= opts.MaxResults}, nil
+	return Result{
+		"query": opts.Query, "engine": "go_fallback", "matches": matches, "total_matches": len(matches),
+		"truncated": opts.MaxResults > 0 && len(matches) >= opts.MaxResults,
+		"partial":   skippedLargeFiles > 0, "files_scanned": filesScanned, "bytes_scanned": bytesScanned, "skipped_large_files": skippedLargeFiles,
+	}, nil
+}
+
+func searchExecutionError(ctx context.Context, engine string, err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+		return toolErrorCause("SEARCH_CANCELED", "text search was canceled", "runtime", map[string]any{"engine": engine}, err)
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return toolErrorCause("RESOURCE_LIMIT", "text search exceeded its time limit", "runtime", map[string]any{"engine": engine, "resource": "time"}, err)
+	}
+	return toolErrorCause("SEARCH_FAILED", "text search failed", "runtime", map[string]any{"engine": engine}, err)
 }

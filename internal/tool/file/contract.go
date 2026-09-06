@@ -120,6 +120,10 @@ func OutputSchema(name string) (map[string]any, bool) {
 		props["matches"] = arrayProp("Text search matches.")
 		props["engine"] = stringProp("Search engine used: rg or go_fallback.")
 		props["truncated"] = boolProp("Whether matches were truncated.")
+		props["partial"] = boolProp("Whether oversized files were skipped by the Go fallback.")
+		props["files_scanned"] = intProp("Regular files read by the Go fallback.")
+		props["bytes_scanned"] = intProp("File bytes read by the Go fallback.")
+		props["skipped_large_files"] = intProp("Oversized files skipped by the Go fallback.")
 	case ToolFileEdit:
 		props["action"] = stringProp("File edit action.")
 		props["summary"] = stringProp("Result summary.")

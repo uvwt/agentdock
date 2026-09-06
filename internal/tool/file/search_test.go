@@ -6,6 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/uvwt/agentdock/internal/workspace"
 )
 
 func TestBoundedInt(t *testing.T) {
@@ -141,6 +144,70 @@ func TestSearchTextHonorsCanceledRequestContext(t *testing.T) {
 	_, err := rt.searchTextTest(ctx, SearchRequest{Path: ".", Query: "content"})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) || toolErr.Code != "SEARCH_CANCELED" {
+		t.Fatalf("error = %#v, want structured SEARCH_CANCELED", err)
+	}
+}
+
+func TestSearchTextGoFallbackSkipsOversizedFiles(t *testing.T) {
+	rt, root := newCodeToolsRuntime(t)
+	if err := os.WriteFile(filepath.Join(root, "large.txt"), []byte("needle in a large file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "small.txt"), []byte("needle\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path, err := rt.ws.ResolveExisting(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := rt.searchTextGoWithLimits(context.Background(), path, SearchOptions{Query: "needle", CaseSensitive: true, MaxResults: 10}, searchFallbackLimits{
+		MaxEntries: 10, MaxFiles: 10, MaxFileBytes: 10, MaxTotalBytes: 100, Timeout: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["partial"] != true || result["skipped_large_files"] != 1 || result["files_scanned"] != 1 {
+		t.Fatalf("fallback accounting = %#v", result)
+	}
+	matches := result["matches"].([]map[string]any)
+	if len(matches) != 1 || matches[0]["path"] != "small.txt" {
+		t.Fatalf("matches = %#v, want only small.txt", matches)
+	}
+}
+
+func TestSearchTextGoFallbackReturnsStructuredResourceLimit(t *testing.T) {
+	rt, root := newCodeToolsRuntime(t)
+	for _, name := range []string{"one.txt", "two.txt"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("haystack\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path, err := rt.ws.ResolveExisting(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = rt.searchTextGoWithLimits(context.Background(), path, SearchOptions{Query: "needle", CaseSensitive: true, MaxResults: 10}, searchFallbackLimits{
+		MaxEntries: 10, MaxFiles: 1, MaxFileBytes: 100, MaxTotalBytes: 100, Timeout: time.Second,
+	})
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) || toolErr.Code != "RESOURCE_LIMIT" || toolErr.Details["resource"] != "files" {
+		t.Fatalf("error = %#v, want file RESOURCE_LIMIT", err)
+	}
+}
+
+func TestSearchTextGoFallbackReturnsStructuredRootFailure(t *testing.T) {
+	rt, root := newCodeToolsRuntime(t)
+	missing := workspace.Path{Abs: filepath.Join(root, "missing"), Display: "missing"}
+
+	_, err := rt.searchTextGo(context.Background(), missing, SearchOptions{Query: "needle", CaseSensitive: true, MaxResults: 10})
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) || toolErr.Code != "SEARCH_FAILED" || toolErr.Details["engine"] != "go_fallback" {
+		t.Fatalf("error = %#v, want structured SEARCH_FAILED", err)
 	}
 }
 
