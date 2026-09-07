@@ -114,6 +114,8 @@ try {
         $earlyExitCode = $LASTEXITCODE
     } finally {
         $ErrorActionPreference = $previousErrorActionPreference
+        # The probe above is expected to fail. Do not leak its native exit code to the caller/CI shell.
+        $global:LASTEXITCODE = 0
     }
     if ($earlyExitCode -eq 0) {
         throw 'Early installer validation probe unexpectedly succeeded'
