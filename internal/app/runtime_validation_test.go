@@ -60,6 +60,31 @@ func TestRuntimeCallEnforcesRequiredEnumBoundsAndOneOf(t *testing.T) {
 	}
 }
 
+func TestRuntimeCallEnforcesTaskCreateRequiredFields(t *testing.T) {
+	runtime := newRuntimeValidationTestRuntime(t)
+	valid := map[string]any{
+		"action":                "create",
+		"title":                 "schema contract",
+		"goal":                  "match runtime requirements",
+		"completion_conditions": []any{"task is created"},
+	}
+	for _, field := range []string{"title", "goal", "completion_conditions"} {
+		args := make(map[string]any, len(valid)-1)
+		for key, value := range valid {
+			if key != field {
+				args[key] = value
+			}
+		}
+		t.Run("missing_"+field, func(t *testing.T) {
+			assertInvalidToolArguments(t, runtime, "task_manage", args)
+		})
+	}
+
+	if _, err := runtime.Call(context.Background(), "task_manage", valid); err != nil {
+		t.Fatalf("schema-complete task create failed: %v", err)
+	}
+}
+
 func TestRuntimeCallRejectsNestedUnknownFields(t *testing.T) {
 	runtime := newRuntimeValidationTestRuntime(t)
 	assertInvalidToolArguments(t, runtime, "task_manage", map[string]any{

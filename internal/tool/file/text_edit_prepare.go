@@ -24,7 +24,7 @@ func prepareTextReplacement(path, content string, request EditRequest) (Result, 
 	if expected == 0 && len(indexes) > 0 {
 		return nil, "", toolErrorDetails("MATCH_COUNT_MISMATCH", "old text matched but expected zero matches", "validation", map[string]any{"path": path, "matches": len(indexes), "expected_matches": expected, "nearby_context": editNearbyContext(content, indexes)})
 	}
-	if len(indexes) == 0 {
+	if expected > 0 && len(indexes) == 0 {
 		return nil, "", toolErrorDetails("MATCH_COUNT_MISMATCH", "old text did not match", "validation", map[string]any{"path": path, "matches": 0, "expected_matches": expected})
 	}
 
