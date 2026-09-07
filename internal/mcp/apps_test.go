@@ -108,6 +108,17 @@ func newMCPAppTestHarnessWithApps(t *testing.T, cfg config.Config, enabled bool)
 	return harness
 }
 
+func TestMCPAppHTMLUsesOpaqueLightCanvas(t *testing.T) {
+	html := mcpAppHTML("file_change", "File change")
+	for _, marker := range []string{
+		":root{color-scheme:light;background:#fff;",
+		".compact-toggle:hover{background:#fafafa}",
+	} {
+		if !strings.Contains(html, marker) {
+			t.Fatalf("MCP App missing light canvas marker %q", marker)
+		}
+	}
+}
 func TestUIResourcesMatchServedResourceRegistry(t *testing.T) {
 	server := &Server{cfg: config.Config{NexusEndpoint: "https://nexus.example.test", ACPEnabled: true, MCPAppsEnabled: true}}
 	definitions := server.appResourceDefinitions()
