@@ -213,6 +213,16 @@ jobs:
             -AgentDockChecksumFile $env:AMD64_CHECKSUM `
             -FakeCloudflaredBinary $fakeCloudflared
 
+      - name: Test Setup activation deferral
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\test\test-windows-setup-activation-deferred.ps1 `
+            -InstallerPath .\scripts\install\install.ps1 `
+            -AgentDockArchive $env:AMD64_ARCHIVE `
+            -AgentDockChecksumFile $env:AMD64_CHECKSUM `
+            -CloudflaredBinary $env:AMD64_CLOUDFLARED
+
       - name: Compile offline AMD64 Setup
         shell: pwsh
         env:

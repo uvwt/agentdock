@@ -30,9 +30,6 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-Add-Type -AssemblyName System.Security
-$setupRuntimeLauncherPath = Join-Path $PSScriptRoot 'launch-windows-process.ps1'
 
 function Invoke-SetupRuntimeProcess {
     param(
@@ -555,6 +552,8 @@ function Get-AgentDockTaskState {
         Exists = $false
         WasEnabled = $false
         WasRunning = $false
+        SchedulerAvailable = $true
+        SchedulerError = ''
     }
     $state.Eligible = Test-AgentDockTaskEligible `
         -AgentDockValueName $AgentDockValueName `
@@ -564,7 +563,15 @@ function Get-AgentDockTaskState {
         return $state
     }
 
-    $task = Get-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -ErrorAction SilentlyContinue
+    try {
+        $task = Get-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -ErrorAction SilentlyContinue
+    } catch {
+        # fresh standard installs do not require Task Scheduler. Record capability failure instead of
+        # letting ScheduledTasks/WMI/COM terminate the installer before it can write diagnostics.
+        $state.SchedulerAvailable = $false
+        $state.SchedulerError = $_.Exception.Message
+        return $state
+    }
     if ($null -eq $task) {
         return $state
     }
@@ -641,18 +648,20 @@ function Start-ElevatedAgentDockTaskAction {
             ErrorMessage = $_.Exception.Message
         }
     }
-    if ($process.ExitCode -ne 0) {
-        throw "AgentDock administrator task action failed with exit code $($process.ExitCode)."
-    }
-
+    $succeeded = $process.ExitCode -eq 0
     return [pscustomobject]@{
         Started = $true
-        ErrorMessage = ''
+        Succeeded = $succeeded
+        ExitCode = $process.ExitCode
+        ErrorMessage = $(if ($succeeded) { '' } else { "AgentDock administrator task action failed with exit code $($process.ExitCode)." })
     }
 }
 
-function Enable-And-StartAgentDockTask {
+function Enable-AgentDockTask {
     Enable-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -ErrorAction Stop | Out-Null
+}
+
+function Start-AgentDockTask {
     Start-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -ErrorAction Stop
 }
 
@@ -969,18 +978,69 @@ function Set-RunValue {
     }
 }
 
-if ($Port -lt 1 -or $Port -gt 65535) {
-    throw 'Port must be between 1 and 65535.'
-}
-if ([string]::IsNullOrWhiteSpace($InstallDir)) {
-    throw 'InstallDir is required.'
-}
-$userHome = [Environment]::GetFolderPath('UserProfile')
-if ([string]::IsNullOrWhiteSpace($userHome)) {
-    throw 'Unable to resolve the current user profile directory.'
+$effectivePrivilegeMode = $CorePrivilegeMode
+$installWarningCode = ''
+$installWarningMessage = ''
+$installErrorCode = ''
+$resolvedTunnelMode = 'none'
+$existingInstallDetected = $false
+$taskUser = $null
+$taskState = [pscustomobject]@{
+    Eligible = $false
+    Exists = $false
+    WasEnabled = $false
+    WasRunning = $false
+    SchedulerAvailable = $false
+    SchedulerError = ''
 }
 
-$architecture = Get-AgentDockArchitecture
+# Initialize the result file before parameter, architecture, user, or ScheduledTasks probing.
+# Inno Setup can therefore always show a concrete PowerShell failure instead of a bare exit code.
+Write-InstallResult `
+    -Path $ResultFile `
+    -Success $false `
+    -Message 'AgentDock installation is initializing.' `
+    -InstalledVersion $Version `
+    -LocalMCPUrl "http://127.0.0.1:$Port/mcp" `
+    -PublicMCPUrl '' `
+    -BearerToken '' `
+    -OAuthLoginPassword '' `
+    -HealthStatus 'initializing' `
+    -PrivilegeMode $effectivePrivilegeMode
+
+try {
+    $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    Add-Type -AssemblyName System.Security
+    $setupRuntimeLauncherPath = Join-Path $PSScriptRoot 'launch-windows-process.ps1'
+
+    if ($Port -lt 1 -or $Port -gt 65535) {
+        throw 'Port must be between 1 and 65535.'
+    }
+    if ([string]::IsNullOrWhiteSpace($InstallDir)) {
+        throw 'InstallDir is required.'
+    }
+    $userHome = [Environment]::GetFolderPath('UserProfile')
+    if ([string]::IsNullOrWhiteSpace($userHome)) {
+        throw 'Unable to resolve the current user profile directory.'
+    }
+    $architecture = Get-AgentDockArchitecture
+} catch {
+    Write-InstallResult `
+        -Path $ResultFile `
+        -Success $false `
+        -Message $_.Exception.Message `
+        -InstalledVersion $Version `
+        -LocalMCPUrl "http://127.0.0.1:$Port/mcp" `
+        -PublicMCPUrl '' `
+        -BearerToken '' `
+        -OAuthLoginPassword '' `
+        -HealthStatus 'failed' `
+        -PrivilegeMode $effectivePrivilegeMode `
+        -ErrorCode 'install-validation-failed' `
+        -ErrorRecord $_
+    throw
+}
+
 $assetName = "agentdock_windows_$architecture.zip"
 $releaseBaseUrl = ''
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("agentdock-install-" + [Guid]::NewGuid().ToString('N'))
@@ -1033,31 +1093,10 @@ $tunnelStartupRegistrationChanged = $false
 $previousRunValue = $null
 $previousTrayRunValue = $null
 $previousTunnelRunValue = $null
-$taskUser = Get-CurrentTaskUser
-$effectivePrivilegeMode = $CorePrivilegeMode
-$installWarningCode = ''
-$installWarningMessage = ''
-$taskState = Get-AgentDockTaskState `
-    -AgentDockValueName $runValueName `
-    -CloudflaredValueName $cloudflaredRunValueName `
-    -TrayValueName $trayRunValueName
-if ($effectivePrivilegeMode -eq 'elevated' -and -not $taskState.Eligible) {
-    throw 'Elevated AgentDock mode requires the default Windows startup names.'
-}
 $taskBackupDirectory = Join-Path $tempRoot 'scheduled-task-backup'
-$taskTransactionPrepared = $false
+$taskTransactionStarted = $false
 $taskTransactionCommitted = $false
 $taskRestored = $false
-$installErrorCode = ''
-$resolvedTunnelMode = Resolve-TunnelMode -RequestedMode $TunnelMode -ModePath $tunnelModePath -StartupRequested ([bool] $RegisterStartup) -PublicAccessRequested ([bool] $ConfigurePublicAccess)
-$existingTunnelMode = (Read-TextFile -Path $tunnelModePath).ToLowerInvariant()
-$existingActiveServerUrl = Read-TextFile -Path $serverUrlPath
-if ($existingTunnelMode -eq 'named' -and -not [string]::IsNullOrWhiteSpace($existingActiveServerUrl)) {
-    Write-TextFile -Path $namedServerUrlPath -Value $existingActiveServerUrl
-}
-if ($resolvedTunnelMode -ne 'none' -or (Test-Path -LiteralPath $tunnelModePath -PathType Leaf)) {
-    $RegisterStartup = $true
-}
 
 $managedRuntimeFiles = @(
     @{ Path = $managerScriptPath; Name = 'manage-windows.ps1' },
@@ -1077,6 +1116,43 @@ $managedRuntimeFiles = @(
 )
 
 try {
+    $existingInstallDetected =
+        (Test-Path -LiteralPath $destinationBinary -PathType Leaf) -or
+        (Test-Path -LiteralPath $runtimeManifestPath -PathType Leaf) -or
+        (Test-Path -LiteralPath $launcherPath -PathType Leaf)
+    $taskUser = Get-CurrentTaskUser
+    $taskState = Get-AgentDockTaskState `
+        -AgentDockValueName $runValueName `
+        -CloudflaredValueName $cloudflaredRunValueName `
+        -TrayValueName $trayRunValueName
+    if ($effectivePrivilegeMode -eq 'elevated' -and -not $taskState.Eligible) {
+        throw 'Elevated AgentDock mode requires the default Windows startup names.'
+    }
+
+    $existingPrivilegeMode = ''
+    if (Test-Path -LiteralPath $runtimeManifestPath -PathType Leaf) {
+        try {
+            $existingManifest = Get-Content -LiteralPath $runtimeManifestPath -Raw | ConvertFrom-Json
+            $existingPrivilegeMode = [string] $existingManifest.privilege_mode
+        } catch {
+            $existingPrivilegeMode = ''
+        }
+    }
+    if (-not $taskState.SchedulerAvailable -and
+        ($effectivePrivilegeMode -eq 'elevated' -or $existingPrivilegeMode -eq 'elevated')) {
+        $installErrorCode = 'task-scheduler-unavailable'
+        throw "Windows Task Scheduler is required to preserve administrator-enhanced AgentDock mode: $($taskState.SchedulerError)"
+    }
+
+    $resolvedTunnelMode = Resolve-TunnelMode `
+        -RequestedMode $TunnelMode `
+        -ModePath $tunnelModePath `
+        -StartupRequested ([bool] $RegisterStartup) `
+        -PublicAccessRequested ([bool] $ConfigurePublicAccess)
+    if ($resolvedTunnelMode -ne 'none' -or (Test-Path -LiteralPath $tunnelModePath -PathType Leaf)) {
+        $RegisterStartup = $true
+    }
+
     # Setup must stay in the signed-in desktop user's context so HKCU,
     # current-user DPAPI, and per-user Skill state remain on the right account.
     if ($InstallChannel -eq 'setup') {
@@ -1101,6 +1177,12 @@ try {
     $previousTrayRunValue = Get-RunValue -RegistryPath $runKey -Name $trayRunValueName
     $previousTunnelRunValue = Get-RunValue -RegistryPath $runKey -Name $cloudflaredRunValueName
     $rollbackStateCaptured = $true
+
+    $existingTunnelMode = (Read-TextFile -Path $tunnelModePath).ToLowerInvariant()
+    $existingActiveServerUrl = Read-TextFile -Path $serverUrlPath
+    if ($existingTunnelMode -eq 'named' -and -not [string]::IsNullOrWhiteSpace($existingActiveServerUrl)) {
+        Write-TextFile -Path $namedServerUrlPath -Value $existingActiveServerUrl
+    }
 
     if (-not [string]::IsNullOrWhiteSpace($OfflineArchive)) {
         if (-not (Test-Path -LiteralPath $OfflineArchive -PathType Leaf)) {
@@ -1150,6 +1232,21 @@ try {
         throw "Release archive does not contain a valid core Skill Bundle: $assetName"
     }
 
+    # Validate the unpacked payload before stopping processes or touching an existing scheduled task.
+    # This catches architecture/runtime incompatibility while the previous installation is still intact.
+    $preflightVersionOutput = @(& $sourceBinary version --json 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "AgentDock payload preflight failed with exit code $LASTEXITCODE."
+    }
+    try {
+        $preflightVersionInfo = ($preflightVersionOutput | Out-String) | ConvertFrom-Json
+    } catch {
+        throw "AgentDock payload preflight returned invalid version metadata: $($_.Exception.Message)"
+    }
+    if ($null -eq $preflightVersionInfo -or [string]::IsNullOrWhiteSpace([string] $preflightVersionInfo.version)) {
+        throw 'AgentDock payload preflight did not return a version.'
+    }
+
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     $processWasRunning = @(Get-AgentDockProcesses -BinaryPath $destinationBinary).Count -gt 0
     if ($effectivePrivilegeMode -eq 'elevated' -or $taskState.Exists) {
@@ -1173,7 +1270,12 @@ try {
                 throw "Administrator approval for AgentDock was not completed: $($taskActionResult.ErrorMessage)"
             }
         } else {
-            $taskTransactionPrepared = $true
+            # Once the elevated helper actually started, task state may have changed even if the helper
+            # later reports failure. Mark the transaction before checking its exit status so rollback runs.
+            $taskTransactionStarted = $true
+            if (-not $taskActionResult.Succeeded) {
+                throw $taskActionResult.ErrorMessage
+            }
             Write-Host "Prepared AgentDock scheduled task transaction: $taskAction"
         }
     }
@@ -1344,27 +1446,15 @@ exit `$LASTEXITCODE
 
         if ($effectivePrivilegeMode -eq 'elevated') {
             Remove-ItemProperty -LiteralPath $runKey -Name $runValueName -ErrorAction SilentlyContinue
-            Enable-And-StartAgentDockTask
+            Enable-AgentDockTask
         } else {
             $startupCommand = "`"$destinationTrayBinary`" --start-core --runtime-root `"$runtimeDir`""
             Set-RunValue -RegistryPath $runKey -Name $runValueName -Value $startupCommand
-            if ($InstallChannel -eq 'setup') {
-                Invoke-SetupRuntimeProcess `
-                    -FilePath $destinationBinary `
-                    -Arguments "service start --runtime-root `"$runtimeDir`"" `
-                    -WaitForExit
-            } else {
-                & $destinationBinary service start --runtime-root $runtimeDir
-                if ($LASTEXITCODE -ne 0) {
-                    throw "AgentDock native service start failed with exit code $LASTEXITCODE."
-                }
-            }
         }
         $startupRegistrationChanged = $true
         $trayStartupCommand = "`"$destinationTrayBinary`" --background"
         Set-RunValue -RegistryPath $runKey -Name $trayRunValueName -Value $trayStartupCommand
         $trayStartupRegistrationChanged = $true
-        Wait-AgentDockHealth -HealthPort $Port
 
         if ($resolvedTunnelMode -ne 'none') {
             $escapedCloudflaredPath = $cloudflaredBinary.Replace("'", "''")
@@ -1564,28 +1654,6 @@ exit `$process.ExitCode
             $cloudflaredStartupCommand = "`"$destinationTrayBinary`" --start-tunnel --runtime-root `"$runtimeDir`""
             Set-RunValue -RegistryPath $runKey -Name $cloudflaredRunValueName -Value $cloudflaredStartupCommand
             $tunnelStartupRegistrationChanged = $true
-            if ($InstallChannel -eq 'setup') {
-                Invoke-SetupRuntimeProcess `
-                    -FilePath $destinationBinary `
-                    -Arguments "tunnel start --runtime-root `"$runtimeDir`"" `
-                    -WaitForExit
-            } else {
-                & $destinationBinary tunnel start --runtime-root $runtimeDir
-                if ($LASTEXITCODE -ne 0) {
-                    throw "AgentDock native Tunnel start failed with exit code $LASTEXITCODE."
-                }
-            }
-
-            if ($resolvedTunnelMode -eq 'quick') {
-                $publicUrl = Read-TextFile -Path $quickTunnelUrlPath
-                if ([string]::IsNullOrWhiteSpace($publicUrl)) {
-                    $publicUrl = Wait-QuickTunnelUrl -LogPaths @($cloudflaredStdoutLogPath, $cloudflaredStderrLogPath)
-                }
-                Wait-QuickTunnelReady -Path $quickTunnelUrlPath -ExpectedUrl $publicUrl
-            } else {
-                $publicUrl = $ServerUrl
-                Wait-CloudflaredRunning -BinaryPath $cloudflaredBinary
-            }
         } else {
             Remove-ItemProperty -LiteralPath $runKey -Name $cloudflaredRunValueName -ErrorAction SilentlyContinue
             $tunnelStartupRegistrationChanged = $true
@@ -1601,25 +1669,8 @@ exit `$process.ExitCode
     }
 
     $mustRestartExistingProcess = (-not $RegisterStartup) -and $processWasRunning
-    if ($mustRestartExistingProcess) {
-        if ($InstallChannel -eq 'setup') {
-            Invoke-SetupRuntimeProcess `
-                -FilePath $destinationBinary `
-                -Arguments "service start --runtime-root `"$runtimeDir`"" `
-                -WaitForExit
-        } else {
-            & $destinationBinary service start --runtime-root $runtimeDir
-            if ($LASTEXITCODE -ne 0) {
-                throw "AgentDock native service restart failed with exit code $LASTEXITCODE."
-            }
-        }
-    }
 
     $localMCPUrl = "http://127.0.0.1:$Port/mcp"
-    $publicMCPUrl = ''
-    if (-not [string]::IsNullOrWhiteSpace($publicUrl)) {
-        $publicMCPUrl = "$publicUrl/mcp"
-    }
     if (-not $RegisterStartup) {
         Write-RuntimeManifest `
             -Path $runtimeManifestPath `
@@ -1658,13 +1709,99 @@ exit `$process.ExitCode
         throw "Core Skill bootstrap failed with exit code $coreSkillExitCode`: $coreSkillOutputText"
     }
 
-    if ($RegisterStartup -or $trayProcessWasRunning) {
-        Start-AgentDockTray -BinaryPath $destinationTrayBinary
+    # Provision is complete here. Immediate activation is a separate phase; only a fresh standard
+    # install may defer activation, because an upgrade must still be able to roll back to its prior runtime.
+    $healthStatus = 'not-started'
+    try {
+        if ($InstallChannel -eq 'setup' -and -not $taskState.SchedulerAvailable -and
+            ($RegisterStartup -or $mustRestartExistingProcess -or $trayProcessWasRunning)) {
+            throw "Windows Task Scheduler is unavailable for immediate Setup activation: $($taskState.SchedulerError)"
+        }
+
+        if ($RegisterStartup) {
+            if ($effectivePrivilegeMode -eq 'elevated') {
+                Start-AgentDockTask
+            } elseif ($InstallChannel -eq 'setup') {
+                Invoke-SetupRuntimeProcess `
+                    -FilePath $destinationBinary `
+                    -Arguments "service start --runtime-root `"$runtimeDir`"" `
+                    -WaitForExit
+            } else {
+                & $destinationBinary service start --runtime-root $runtimeDir
+                if ($LASTEXITCODE -ne 0) {
+                    throw "AgentDock native service start failed with exit code $LASTEXITCODE."
+                }
+            }
+            Wait-AgentDockHealth -HealthPort $Port
+            $healthStatus = 'healthy'
+
+            if ($resolvedTunnelMode -ne 'none') {
+                if ($InstallChannel -eq 'setup') {
+                    Invoke-SetupRuntimeProcess `
+                        -FilePath $destinationBinary `
+                        -Arguments "tunnel start --runtime-root `"$runtimeDir`"" `
+                        -WaitForExit
+                } else {
+                    & $destinationBinary tunnel start --runtime-root $runtimeDir
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "AgentDock native Tunnel start failed with exit code $LASTEXITCODE."
+                    }
+                }
+
+                if ($resolvedTunnelMode -eq 'quick') {
+                    $publicUrl = Read-TextFile -Path $quickTunnelUrlPath
+                    if ([string]::IsNullOrWhiteSpace($publicUrl)) {
+                        $publicUrl = Wait-QuickTunnelUrl -LogPaths @($cloudflaredStdoutLogPath, $cloudflaredStderrLogPath)
+                    }
+                    Wait-QuickTunnelReady -Path $quickTunnelUrlPath -ExpectedUrl $publicUrl
+                } else {
+                    $publicUrl = $ServerUrl
+                    Wait-CloudflaredRunning -BinaryPath $cloudflaredBinary
+                }
+            }
+        } elseif ($mustRestartExistingProcess) {
+            if ($InstallChannel -eq 'setup') {
+                Invoke-SetupRuntimeProcess `
+                    -FilePath $destinationBinary `
+                    -Arguments "service start --runtime-root `"$runtimeDir`"" `
+                    -WaitForExit
+            } else {
+                & $destinationBinary service start --runtime-root $runtimeDir
+                if ($LASTEXITCODE -ne 0) {
+                    throw "AgentDock native service restart failed with exit code $LASTEXITCODE."
+                }
+            }
+            Wait-AgentDockHealth -HealthPort $Port
+            $healthStatus = 'healthy'
+        }
+
+        if ($RegisterStartup -or $trayProcessWasRunning) {
+            Start-AgentDockTray -BinaryPath $destinationTrayBinary
+        }
+    } catch {
+        if ($existingInstallDetected -or $effectivePrivilegeMode -ne 'standard') {
+            throw
+        }
+
+        $healthStatus = 'deferred'
+        $activationWarningMessage = 'AgentDock was installed and startup was configured, but immediate runtime activation or verification did not complete. Start AgentDock from the Start menu or sign in again to retry.'
+        if ([string]::IsNullOrWhiteSpace($installWarningMessage)) {
+            $installWarningMessage = $activationWarningMessage
+        } else {
+            $installWarningMessage = ($installWarningMessage + ' ' + $activationWarningMessage).Trim()
+        }
+        if ([string]::IsNullOrWhiteSpace($installWarningCode)) {
+            $installWarningCode = 'runtime-launch-deferred'
+        } else {
+            $installWarningCode = "$installWarningCode,runtime-launch-deferred"
+        }
+        Write-Warning "$activationWarningMessage Details: $($_.Exception.Message)"
     }
 
-    $healthStatus = 'not-started'
-    if ($RegisterStartup) {
-        $healthStatus = 'healthy'
+    $taskTransactionCommitted = $taskTransactionStarted
+    $publicMCPUrl = ''
+    if (-not [string]::IsNullOrWhiteSpace($publicUrl)) {
+        $publicMCPUrl = "$publicUrl/mcp"
     }
     Write-InstallResult `
         -Path $ResultFile `
@@ -1679,8 +1816,6 @@ exit `$process.ExitCode
         -PrivilegeMode $effectivePrivilegeMode `
         -WarningCode $installWarningCode `
         -WarningMessage $installWarningMessage
-
-    $taskTransactionCommitted = $taskTransactionPrepared
 
     Write-Host "AgentDock installed: $destinationBinary"
     Write-Host "Local MCP address: $localMCPUrl"
@@ -1709,6 +1844,9 @@ exit `$process.ExitCode
     }
 } catch {
     $installError = $_
+    $taskRollbackError = $null
+    $rollbackError = $null
+    $taskRecoveryPath = ''
     try {
         if ($trayStopAttempted -or $trayReplacementStarted -or $trayStartupRegistrationChanged) {
             [void] (Stop-AgentDockTrayForUpgrade -BinaryPath $destinationTrayBinary)
@@ -1783,17 +1921,45 @@ exit `$process.ExitCode
             }
         }
 
-        if ($taskTransactionPrepared -and -not $taskTransactionCommitted) {
-            $restoreTaskActionResult = Start-ElevatedAgentDockTaskAction `
-                -Action restore `
-                -BackupDirectory $taskBackupDirectory `
-                -AdminLauncherPath $sourceTrayBinary `
-                -LauncherPath '' `
-                -TaskUser $taskUser
-            if (-not $restoreTaskActionResult.Started) {
-                throw "Administrator approval for AgentDock rollback was not completed: $($restoreTaskActionResult.ErrorMessage)"
+        if ($taskTransactionStarted -and -not $taskTransactionCommitted) {
+            try {
+                $restoreTaskActionResult = Start-ElevatedAgentDockTaskAction `
+                    -Action restore `
+                    -BackupDirectory $taskBackupDirectory `
+                    -AdminLauncherPath $sourceTrayBinary `
+                    -LauncherPath '' `
+                    -TaskUser $taskUser
+                if (-not $restoreTaskActionResult.Started) {
+                    throw "Administrator approval for AgentDock rollback was not completed: $($restoreTaskActionResult.ErrorMessage)"
+                }
+                if (-not $restoreTaskActionResult.Succeeded) {
+                    throw $restoreTaskActionResult.ErrorMessage
+                }
+                $taskRestored = $true
+            } catch {
+                $taskRollbackError = $_
+                try {
+                    # Preserve the original task definition when automatic restore fails so temp cleanup does not destroy manual recovery material.
+                    $taskRecoveryPath = Join-Path `
+                        (Join-Path $runtimeDir 'logs\installer') `
+                        ('scheduled-task-recovery-' + [Guid]::NewGuid().ToString('N'))
+                    New-Item -ItemType Directory -Path $taskRecoveryPath -Force | Out-Null
+                    $taskBackupStatePath = Join-Path $taskBackupDirectory 'state.json'
+                    if (-not (Test-Path -LiteralPath $taskBackupStatePath -PathType Leaf)) {
+                        throw "AgentDock scheduled-task backup state is missing: $taskBackupStatePath"
+                    }
+                    Copy-Item -LiteralPath $taskBackupStatePath -Destination $taskRecoveryPath -Force
+                    $taskBackupXmlPath = Join-Path $taskBackupDirectory 'task.xml'
+                    if (Test-Path -LiteralPath $taskBackupXmlPath -PathType Leaf) {
+                        Copy-Item -LiteralPath $taskBackupXmlPath -Destination $taskRecoveryPath -Force
+                    }
+                    Write-Warning "AgentDock scheduled-task recovery files were preserved at: $taskRecoveryPath"
+                } catch {
+                    Write-Warning "AgentDock could not preserve scheduled-task recovery files: $($_.Exception.Message)"
+                    $taskRecoveryPath = ''
+                }
+                Write-Warning "AgentDock scheduled-task rollback failed: $($taskRollbackError.Exception.Message)"
             }
-            $taskRestored = $true
         }
 
         $taskWillRestartAgentDock = $taskRestored -and $taskState.WasRunning
@@ -1808,12 +1974,30 @@ exit `$process.ExitCode
             Start-AgentDockTray -BinaryPath $destinationTrayBinary
         }
     } catch {
+        $rollbackError = $_
         Write-Warning "AgentDock rollback failed: $($_.Exception.Message)"
     }
+
+    $resultErrorCode = $installErrorCode
+    $resultMessage = $installError.Exception.Message
+    $resultErrorRecord = $installError
+    if ($null -ne $taskRollbackError) {
+        $resultErrorCode = 'elevated-task-rollback-failed'
+        $resultMessage = "AgentDock installation failed and the previous administrator-enhanced task could not be restored automatically. Original error: $($installError.Exception.Message) Rollback error: $($taskRollbackError.Exception.Message)"
+        if (-not [string]::IsNullOrWhiteSpace($taskRecoveryPath)) {
+            $resultMessage += " Recovery files: $taskRecoveryPath"
+        }
+        $resultErrorRecord = $taskRollbackError
+    } elseif ($null -ne $rollbackError) {
+        $resultErrorCode = 'rollback-failed'
+        $resultMessage = "AgentDock installation failed and rollback did not complete. Original error: $($installError.Exception.Message) Rollback error: $($rollbackError.Exception.Message)"
+        $resultErrorRecord = $rollbackError
+    }
+
     Write-InstallResult `
         -Path $ResultFile `
         -Success $false `
-        -Message $installError.Exception.Message `
+        -Message $resultMessage `
         -InstalledVersion $Version `
         -LocalMCPUrl "http://127.0.0.1:$Port/mcp" `
         -PublicMCPUrl '' `
@@ -1821,8 +2005,8 @@ exit `$process.ExitCode
         -OAuthLoginPassword '' `
         -HealthStatus 'failed' `
         -PrivilegeMode $effectivePrivilegeMode `
-        -ErrorCode $installErrorCode `
-        -ErrorRecord $installError
+        -ErrorCode $resultErrorCode `
+        -ErrorRecord $resultErrorRecord
     throw $installError
 } finally {
     if ($DeleteTunnelTokenFile -and -not [string]::IsNullOrWhiteSpace($TunnelTokenFile)) {

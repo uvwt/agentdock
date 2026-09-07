@@ -89,6 +89,48 @@ if ($content.Contains('Get-FileHash')) {
     throw "$InstallerPath must compute runtime SHA-256 without depending on Get-FileHash"
 }
 
+$resultInitializationIndex = $content.IndexOf("-Message 'AgentDock installation is initializing.'")
+$protectedInitializationIndex = $content.IndexOf('$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)', $resultInitializationIndex)
+$architectureProbeIndex = $content.IndexOf('$architecture = Get-AgentDockArchitecture', $resultInitializationIndex)
+$taskProbeIndex = $content.IndexOf('$taskState = Get-AgentDockTaskState', $resultInitializationIndex)
+if ($resultInitializationIndex -lt 0 -or
+    $protectedInitializationIndex -le $resultInitializationIndex -or
+    $architectureProbeIndex -le $resultInitializationIndex -or
+    $taskProbeIndex -le $resultInitializationIndex) {
+    throw "$InstallerPath must create ResultFile before protected runtime, architecture, or scheduled-task initialization"
+}
+$payloadPreflightIndex = $content.IndexOf('$preflightVersionOutput = @(& $sourceBinary version --json 2>&1)')
+$taskMutationIndex = $content.IndexOf('$taskActionResult = Start-ElevatedAgentDockTaskAction')
+if ($payloadPreflightIndex -lt 0 -or $taskMutationIndex -le $payloadPreflightIndex) {
+    throw "$InstallerPath must validate the unpacked payload before mutating an existing scheduled task"
+}
+
+$earlyResultPath = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-install-early-result-' + [Guid]::NewGuid().ToString('N') + '.ini')
+try {
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $resolvedInstaller -Port 0 -ResultFile $earlyResultPath *> $null
+        $earlyExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if ($earlyExitCode -eq 0) {
+        throw 'Early installer validation probe unexpectedly succeeded'
+    }
+    if (-not (Test-Path -LiteralPath $earlyResultPath -PathType Leaf)) {
+        throw 'Early installer failure did not create ResultFile'
+    }
+    $earlyResult = [IO.File]::ReadAllText($earlyResultPath, [Text.Encoding]::Unicode)
+    foreach ($required in @('Success=false', 'Code=install-validation-failed', 'Message=Port must be between 1 and 65535.', 'Health=failed', 'ErrorType=')) {
+        if (-not $earlyResult.Contains($required)) {
+            throw "Early installer ResultFile is missing: $required"
+        }
+    }
+} finally {
+    Remove-Item -LiteralPath $earlyResultPath -Force -ErrorAction SilentlyContinue
+}
+
 foreach ($required in @(
     'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run',
     'Get-AgentDockTaskState',
@@ -104,9 +146,13 @@ foreach ($required in @(
     '-LauncherPath $destinationTrayBinary',
     '$effectivePrivilegeMode -eq ''elevated'' -and -not $taskState.Exists',
     '$installWarningCode = ''elevated-mode-fallback''',
+    '$installWarningCode = "$installWarningCode,runtime-launch-deferred"',
     'WarningCode=$WarningCode',
     '-WarningCode $installWarningCode',
+    '-ErrorCode ''install-validation-failed''',
     'Administrator approval for AgentDock rollback was not completed',
+    'scheduled-task-recovery-',
+    'Recovery files: $taskRecoveryPath',
     'setup-elevated-context',
     'Start Setup normally under the signed-in account',
     'function Set-RunValue',
@@ -134,8 +180,12 @@ foreach ($required in @(
     'Write-ProtectedText -Path $tunnelTokenPath',
     'Authentication: Bearer Token and OAuth are both enabled.',
     '$coreSkillOutput = @(& $destinationBinary skill bootstrap --bundle $coreSkillBundle 2>&1)',
-    '-ErrorCode $installErrorCode',
-    '-ErrorRecord $installError',
+    '-ErrorCode $resultErrorCode',
+    "`$resultErrorCode = 'elevated-task-rollback-failed'",
+    "`$resultErrorCode = 'rollback-failed'",
+    "`$installWarningCode = 'runtime-launch-deferred'",
+    '$taskTransactionCommitted = $taskTransactionStarted',
+    '-ErrorRecord $resultErrorRecord',
     'Get-Sha256Hex -Path $archivePath',
     'ErrorType=$safeErrorType',
     'ErrorStack=$safeErrorStack',
@@ -353,6 +403,43 @@ $installResultProbe = [scriptblock]::Create(
 )
 & $installResultProbe
 
+$taskStateFunction = $installerAst.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq 'Get-AgentDockTaskState'
+}, $true)
+if ($null -eq $taskStateFunction) {
+    throw "$InstallerPath does not define Get-AgentDockTaskState"
+}
+$taskStateProbePreamble = @'
+function Test-AgentDockTaskEligible {
+    return $true
+}
+function Get-ScheduledTask {
+    [CmdletBinding()]
+    param([string] $TaskName, [string] $TaskPath)
+    throw 'simulated Task Scheduler failure'
+}
+'@
+$taskStateProbeAssertions = @'
+$state = Get-AgentDockTaskState `
+    -AgentDockValueName 'AgentDock' `
+    -CloudflaredValueName 'AgentDockCloudflared' `
+    -TrayValueName 'AgentDockTray'
+if ($state.SchedulerAvailable -ne $false -or $state.Exists -ne $false) {
+    throw "Task Scheduler failure must be represented as unavailable state: $($state | Out-String)"
+}
+if ($state.SchedulerError -notlike '*simulated Task Scheduler failure*') {
+    throw "Task Scheduler failure diagnostic was not preserved: $($state.SchedulerError)"
+}
+'@
+$taskStateProbe = [scriptblock]::Create(
+    $taskStateProbePreamble + "`r`n" +
+    $taskStateFunction.Extent.Text + "`r`n" +
+    $taskStateProbeAssertions
+)
+& $taskStateProbe
+
 $currentTaskUserFunction = $installerAst.Find({
     param($node)
     $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
@@ -428,20 +515,16 @@ if ($script:mockStartProcessFilePath -notlike '*agentdock-tray.exe' -or
 }
 
 $script:mockStartProcessMode = 'helper-error'
-$helperError = ''
-try {
-    [void] (Start-ElevatedAgentDockTaskAction `
-        -Action prepare-elevated `
-        -BackupDirectory 'C:\Temp\AgentDockBackup' `
-        -AdminLauncherPath 'C:\AgentDock\agentdock-tray.exe' `
-        -LauncherPath 'C:\AgentDock\agentdock-tray.exe' `
-        -RuntimeRoot 'C:\AgentDock' `
-        -TaskUser $taskUser)
-} catch {
-    $helperError = $_.Exception.Message
-}
-if ($helperError -notlike '*administrator task action failed with exit code 23*') {
-    throw "Elevated helper failure must remain fatal, actual error: $helperError"
+$helperResult = Start-ElevatedAgentDockTaskAction `
+    -Action prepare-elevated `
+    -BackupDirectory 'C:\Temp\AgentDockBackup' `
+    -AdminLauncherPath 'C:\AgentDock\agentdock-tray.exe' `
+    -LauncherPath 'C:\AgentDock\agentdock-tray.exe' `
+    -RuntimeRoot 'C:\AgentDock' `
+    -TaskUser $taskUser
+if ($helperResult.Started -ne $true -or $helperResult.Succeeded -ne $false -or $helperResult.ExitCode -ne 23 -or
+    $helperResult.ErrorMessage -notlike '*administrator task action failed with exit code 23*') {
+    throw "Elevated helper failure must report that the privileged transaction started before it failed: $($helperResult | Out-String)"
 }
 '@
 $elevationProbe = [scriptblock]::Create(
@@ -509,8 +592,13 @@ foreach ($required in @(
     "GetIniString('AgentDock', 'ErrorStack', '', ResultFilePath)",
     "Log('AgentDock installation diagnostics: type=' + ErrorType",
     "Log('AgentDock installation stack: ' + ErrorStack)",
-    "InstallWarningCode = 'elevated-mode-fallback'",
-    "GetLocalizedMessage('ElevatedModeFallbackNotice')"
+    "Pos('elevated-mode-fallback', InstallWarningCode) > 0",
+    "Pos('runtime-launch-deferred', InstallWarningCode) > 0",
+    "Pos('runtime-launch-deferred', InstallWarningCode) = 0",
+    "GetLocalizedMessage('ElevatedModeFallbackNotice')",
+    "GetLocalizedMessage('FinishedDeferredControlPanel')",
+    'StartupPage.Values[1] := False',
+    "FileExists(SchTasksPath)"
 )) {
     if (-not $setupCode.Contains($required)) {
         throw "$setupCodePath is missing elevation fallback presentation: $required"
@@ -518,7 +606,9 @@ foreach ($required in @(
 }
 foreach ($required in @(
     'english.ElevatedModeFallbackNotice=',
-    'chinesesimplified.ElevatedModeFallbackNotice='
+    'chinesesimplified.ElevatedModeFallbackNotice=',
+    'english.FinishedDeferredControlPanel=',
+    'chinesesimplified.FinishedDeferredControlPanel='
 )) {
     if (-not $setupMessages.Contains($required)) {
         throw "$setupMessagesPath is missing elevation fallback message: $required"

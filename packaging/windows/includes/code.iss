@@ -15,6 +15,7 @@ var
   ResolvedInstallRoot: String;
   InstallProgressPage: TOutputProgressWizardPage;
   InstallWarningCode: String;
+  InstallWarningMessage: String;
 
 function GetLocalizedMessage(Key: String): String;
 begin
@@ -94,10 +95,19 @@ end;
 function LegacyAgentDockScheduledTaskExists(): Boolean;
 var
   ExitCode: Integer;
+  SchTasksPath: String;
 begin
+  SchTasksPath := ExpandConstant('{sys}\schtasks.exe');
+  if not FileExists(SchTasksPath) then
+  begin
+    Log('Windows schtasks.exe is unavailable; skipping legacy AgentDock task detection.');
+    Result := False;
+    Exit;
+  end;
+
   Result :=
     Exec(
-      ExpandConstant('{sys}\schtasks.exe'),
+      SchTasksPath,
       '/Query /TN "\AgentDock"',
       '',
       SW_HIDE,
@@ -250,7 +260,7 @@ begin
   StartupPage.Add(GetLocalizedMessage('StartupOption'));
   StartupPage.Add(GetLocalizedMessage('ElevatedCoreOption'));
   StartupPage.Values[0] := True;
-  StartupPage.Values[1] := True;
+  StartupPage.Values[1] := False;
 
   ConnectionPage := CreateInputOptionPage(
     StartupPage.ID,
@@ -364,8 +374,13 @@ begin
   begin
     if not ApplyDesktopControlPanelShortcut(DesktopShortcutCheckBox.Checked) then
       Log('AgentDock desktop shortcut state could not be applied.');
-    if not LaunchRuntimeProcess(ExpandConstant('{app}\bin\agentdock-tray.exe'), '') then
-      Log('AgentDock control panel could not be opened from the Finish button.');
+    if Pos('runtime-launch-deferred', InstallWarningCode) = 0 then
+    begin
+      if not LaunchRuntimeProcess(ExpandConstant('{app}\bin\agentdock-tray.exe'), '') then
+        Log('AgentDock control panel could not be opened from the Finish button.');
+    end
+    else
+      Log('AgentDock runtime activation was deferred; skipping Finish-page control panel launch.');
     Exit;
   end;
   if (CurPageID = StartupPage.ID) and StartupPage.Values[1] then
@@ -514,8 +529,11 @@ begin
       Exit;
     end;
     InstallWarningCode := GetIniString('AgentDock', 'WarningCode', '', ResultFilePath);
+    InstallWarningMessage := GetIniString('AgentDock', 'WarningMessage', '', ResultFilePath);
     if InstallWarningCode <> '' then
       Log('AgentDock installation warning: ' + InstallWarningCode);
+    if InstallWarningMessage <> '' then
+      Log('AgentDock installation warning detail: ' + InstallWarningMessage);
     InstallProgressPage.SetText(GetLocalizedMessage('OfflineProgressFinishing'), '');
     InstallProgressPage.SetProgress(4, 4);
   finally
@@ -529,8 +547,11 @@ begin
     WizardForm.ReadyLabel.Caption := GetLocalizedMessage('ReadyUpgrade');
   if CurPageID = wpFinished then
   begin
-    WizardForm.FinishedLabel.Caption := GetLocalizedMessage('FinishedControlPanel');
-    if InstallWarningCode = 'elevated-mode-fallback' then
+    if Pos('runtime-launch-deferred', InstallWarningCode) > 0 then
+      WizardForm.FinishedLabel.Caption := GetLocalizedMessage('FinishedDeferredControlPanel')
+    else
+      WizardForm.FinishedLabel.Caption := GetLocalizedMessage('FinishedControlPanel');
+    if Pos('elevated-mode-fallback', InstallWarningCode) > 0 then
       WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
         GetLocalizedMessage('ElevatedModeFallbackNotice');
   end;
