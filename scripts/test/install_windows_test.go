@@ -98,12 +98,7 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"Wait-QuickTunnelUrl -LogPaths @($cloudflaredStdoutLogPath, $cloudflaredStderrLogPath)",
 		"Wait-QuickTunnelReady -Path $quickTunnelUrlPath -ExpectedUrl $publicUrl",
 		"quick-tunnel-url.txt",
-		"Restart-AgentDockForQuickTunnel",
-		"Update-RuntimePublicUrl -PublicUrl `$publicUrl",
-		"Write-TextAtomically -Path '$escapedServerUrlPath' -Value `$publicUrl",
-		"Write-TextAtomically -Path '$escapedQuickTunnelUrlPath' -Value `$publicUrl",
-		"RedirectStandardOutput = '$escapedCloudflaredStdoutLogPath'",
-		"RedirectStandardError = '$escapedCloudflaredStderrLogPath'",
+		"& '$escapedBinaryPath' tunnel launch --runtime-root '$escapedRuntimeDir'",
 		"RuntimeInformation]::OSArchitecture",
 		"Authentication: Bearer Token and OAuth are both enabled.",
 		"$coreSkillOutput = @(& $destinationBinary skill bootstrap --bundle $coreSkillBundle 2>&1)",
@@ -157,8 +152,8 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	}
 
 	const securityAssemblyLoad = "Add-Type -AssemblyName System.Security"
-	if got := strings.Count(script, securityAssemblyLoad); got != 2 {
-		t.Fatalf("install.ps1 must load System.Security in the installer and generated tunnel launcher; got %d occurrences", got)
+	if got := strings.Count(script, securityAssemblyLoad); got != 1 {
+		t.Fatalf("install.ps1 must load System.Security only in the installer; the native Tunnel launcher does not decrypt secrets; got %d occurrences", got)
 	}
 	if !strings.Contains(script, "-Verb RunAs") {
 		t.Fatal("Windows installer must elevate only the scheduled-task helper")

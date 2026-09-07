@@ -31,10 +31,14 @@ func processRunningAtPath(binaryPath string) (bool, error) {
 
 // StopBinaryProcesses 只终止可执行文件路径与 binaryPath 完全一致的进程。
 func StopBinaryProcesses(ctx context.Context, binaryPath string, timeout time.Duration) error {
-	if err := terminateProcessesAtPath(binaryPath); err != nil {
+	return stopBinaryProcessesExcept(ctx, binaryPath, nil, timeout)
+}
+
+func stopBinaryProcessesExcept(ctx context.Context, binaryPath string, excluded map[uint32]struct{}, timeout time.Duration) error {
+	if err := terminateProcessesAtPathExcept(binaryPath, excluded); err != nil {
 		return err
 	}
-	stopped, err := WaitBinaryStopped(ctx, binaryPath, timeout)
+	stopped, err := waitBinaryStoppedExcept(ctx, binaryPath, excluded, timeout)
 	if err != nil {
 		return err
 	}
@@ -46,13 +50,17 @@ func StopBinaryProcesses(ctx context.Context, binaryPath string, timeout time.Du
 
 // WaitBinaryStopped waits until no process with the exact binary path remains.
 func WaitBinaryStopped(ctx context.Context, binaryPath string, timeout time.Duration) (bool, error) {
+	return waitBinaryStoppedExcept(ctx, binaryPath, nil, timeout)
+}
+
+func waitBinaryStoppedExcept(ctx context.Context, binaryPath string, excluded map[uint32]struct{}, timeout time.Duration) (bool, error) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		running, err := BinaryProcessRunning(binaryPath)
+		processes, err := processIDsAtPathExcept(binaryPath, excluded)
 		if err != nil {
 			return false, err
 		}
-		if !running {
+		if len(processes) == 0 {
 			return true, nil
 		}
 		select {
@@ -69,7 +77,11 @@ func waitBinaryStopped(ctx context.Context, binaryPath string, timeout time.Dura
 }
 
 func terminateProcessesAtPath(binaryPath string) error {
-	processIDs, err := processIDsAtPath(binaryPath)
+	return terminateProcessesAtPathExcept(binaryPath, nil)
+}
+
+func terminateProcessesAtPathExcept(binaryPath string, excluded map[uint32]struct{}) error {
+	processIDs, err := processIDsAtPathExcept(binaryPath, excluded)
 	if err != nil {
 		return err
 	}
@@ -90,6 +102,24 @@ func terminateProcessesAtPath(binaryPath string) error {
 		return errors.New(strings.Join(failures, "; "))
 	}
 	return nil
+}
+
+func processIDsAtPathExcept(binaryPath string, excluded map[uint32]struct{}) ([]uint32, error) {
+	processIDs, err := processIDsAtPath(binaryPath)
+	if err != nil {
+		return nil, err
+	}
+	if len(excluded) == 0 {
+		return processIDs, nil
+	}
+	filtered := processIDs[:0]
+	for _, processID := range processIDs {
+		if _, keep := excluded[processID]; keep {
+			continue
+		}
+		filtered = append(filtered, processID)
+	}
+	return filtered, nil
 }
 
 func processIDsAtPath(binaryPath string) ([]uint32, error) {

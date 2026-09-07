@@ -43,9 +43,9 @@ func platformServiceAction(ctx context.Context, runtimeRoot, action string) erro
 	case "start":
 		return startCore(ctx, manifest, root)
 	case "stop":
-		return stopCore(ctx, manifest)
+		return stopCore(ctx, manifest, root)
 	case "restart":
-		if err := stopCore(ctx, manifest); err != nil {
+		if err := stopCore(ctx, manifest, root); err != nil {
 			return err
 		}
 		return startCore(ctx, manifest, root)
@@ -80,19 +80,30 @@ func startCore(ctx context.Context, manifest Manifest, runtimeRoot string) error
 	return waitForHealth(ctx, manifest.HealthURL(), 45*time.Second)
 }
 
-func stopCore(ctx context.Context, manifest Manifest) error {
+func stopCore(ctx context.Context, manifest Manifest, runtimeRoot string) error {
+	excluded := map[uint32]struct{}{}
+	supervisorPID, err := activeTunnelSupervisorPID(runtimeRoot, manifest.AgentDockBinary)
+	if err != nil {
+		return fmt.Errorf("识别 Tunnel supervisor 失败: %w", err)
+	}
+	if supervisorPID != 0 {
+		// Core 与 Tunnel supervisor 共用 agentdock.exe。停止 Core 时必须保留 supervisor，
+		// 否则一次普通 Core 重启就会悄悄丢失 Tunnel 的后续自恢复能力。
+		excluded[supervisorPID] = struct{}{}
+	}
+
 	if manifest.UsesScheduledTask() {
 		// 先让任务计划程序正常结束最高权限进程，避免普通托盘立即申请 PROCESS_TERMINATE。
 		_ = runScheduledTaskCommand(ctx, "/End", "/TN", scheduledTaskPath(manifest.AgentDockTaskName))
-		stopped, err := waitBinaryStopped(ctx, manifest.AgentDockBinary, 5*time.Second)
-		if err != nil {
-			return err
+		stopped, waitErr := waitBinaryStoppedExcept(ctx, manifest.AgentDockBinary, excluded, 5*time.Second)
+		if waitErr != nil {
+			return waitErr
 		}
 		if stopped {
 			return nil
 		}
 	}
-	if err := StopBinaryProcesses(ctx, manifest.AgentDockBinary, 15*time.Second); err != nil {
+	if err := stopBinaryProcessesExcept(ctx, manifest.AgentDockBinary, excluded, 15*time.Second); err != nil {
 		return fmt.Errorf("停止 AgentDock 核心失败: %w", err)
 	}
 	return nil

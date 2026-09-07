@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	goruntime "runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -16,6 +17,11 @@ import (
 )
 
 func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
+	// Win32 mutex 的 owner 是线程而不是进程。supervisor 持有 mutex 的整个生命周期固定在
+	// 同一个 OS thread，确保最终 ReleaseMutex 一定由 owner thread 执行。
+	goruntime.LockOSThread()
+	defer goruntime.UnlockOSThread()
+
 	runtime, err := loadTunnelRuntime(runtimeRoot)
 	if err != nil {
 		return err
@@ -23,11 +29,90 @@ func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
 	if runtime.mode == "none" {
 		return errors.New("Tunnel 模式为 none")
 	}
+
+	guard, err := acquireTunnelSupervisor(runtime.root)
+	if err != nil {
+		return err
+	}
+	if guard == nil {
+		// 已有同一 runtime root 的 supervisor；重复 launch 静默退出，由现有实例继续持有 Tunnel。
+		return nil
+	}
+	defer guard.Close()
+
 	logs, err := openProcessLogs(runtime.files.stdoutLog, runtime.files.stderrLog)
 	if err != nil {
 		return err
 	}
 	defer logs.Close()
+
+	var retryDelay time.Duration
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		stopped, err := guard.stopRequested()
+		if err != nil {
+			return err
+		}
+		if stopped {
+			return nil
+		}
+
+		// 每轮重读 mode/token 等运行状态，避免 supervisor 长驻后继续使用过期配置。
+		runtime, err = loadTunnelRuntime(runtime.root)
+		if err != nil {
+			return err
+		}
+		if runtime.mode == "none" {
+			return nil
+		}
+
+		startedAt := time.Now()
+		runErr := runCloudflaredOnce(ctx, runtime, logs)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		stopped, err = guard.stopRequested()
+		if err != nil {
+			return err
+		}
+		if stopped {
+			return nil
+		}
+		if runErr != nil {
+			fmt.Fprintf(logs.stderr, "cloudflared 异常退出: %v\n", runErr)
+		} else {
+			fmt.Fprintln(logs.stderr, "cloudflared 意外退出，准备自动恢复")
+		}
+
+		if runtime.mode == "quick" {
+			if err := invalidateQuickTunnelAfterExit(ctx, runtime); err != nil {
+				fmt.Fprintf(logs.stderr, "清理失效 Quick Tunnel 状态失败: %v\n", err)
+			}
+		}
+
+		retryDelay = nextTunnelRetryDelay(retryDelay, time.Since(startedAt))
+		fmt.Fprintf(logs.stderr, "将在 %s 后重启 cloudflared\n", retryDelay)
+		stopped, err = guard.waitRetry(ctx, retryDelay)
+		if err != nil {
+			return err
+		}
+		if stopped {
+			return nil
+		}
+	}
+}
+
+func runCloudflaredOnce(ctx context.Context, runtime tunnelRuntime, logs *processLogs) error {
+	logCursors := quickTunnelLogCursors{}
+	var err error
+	if runtime.mode == "quick" {
+		logCursors, err = captureQuickTunnelLogCursors(runtime.files)
+		if err != nil {
+			return err
+		}
+	}
 
 	command, err := cloudflaredCommand(ctx, runtime)
 	if err != nil {
@@ -35,11 +120,24 @@ func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
 	}
 	command.Stdout = logs.stdout
 	command.Stderr = logs.stderr
-	if err := command.Run(); err != nil {
-		fmt.Fprintf(logs.stderr, "cloudflared 退出: %v\n", err)
+	if err := command.Start(); err != nil {
 		return err
 	}
-	return nil
+
+	if runtime.mode == "quick" {
+		publicURL, readyErr := waitQuickTunnelURL(ctx, runtime, logCursors, 35*time.Second)
+		if readyErr != nil {
+			_ = command.Process.Kill()
+			_ = command.Wait()
+			return readyErr
+		}
+		if err := applyQuickTunnelURL(ctx, runtime, publicURL); err != nil {
+			_ = command.Process.Kill()
+			_ = command.Wait()
+			return err
+		}
+	}
+	return command.Wait()
 }
 
 func platformTunnelStatus(ctx context.Context, runtimeRoot string) (TunnelStatus, error) {
@@ -132,33 +230,39 @@ func startTunnel(ctx context.Context, runtime tunnelRuntime) error {
 	if err != nil {
 		return err
 	}
-	if running {
+	supervisorPID, err := activeTunnelSupervisorPID(runtime.root, runtime.manifest.AgentDockBinary)
+	if err != nil {
+		return err
+	}
+	if running && supervisorPID != 0 {
 		if runtime.mode == "quick" {
-			readyURL, readyErr := readTrimmedText(runtime.files.quickURL)
-			if readyErr != nil {
-				return readyErr
-			}
-			if readyURL == "" {
-				// 已有进程可能早于当前控制命令启动，此时需要从完整日志恢复 ready URL。
-				return finalizeQuickTunnel(ctx, runtime, quickTunnelLogCursors{})
-			}
+			return waitQuickTunnelReady(ctx, runtime, 45*time.Second)
 		}
 		return nil
 	}
 
-	logCursors := quickTunnelLogCursors{}
+	if running {
+		// 升级或旧版本可能留下没有 supervisor 的孤立 cloudflared；重新纳入统一生命周期。
+		if err := StopBinaryProcesses(ctx, runtime.manifest.CloudflaredBinary, 15*time.Second); err != nil {
+			return fmt.Errorf("停止未受管 cloudflared 失败: %w", err)
+		}
+	}
+	if supervisorPID != 0 {
+		// supervisor 可能正处于退避期。显式 start 应立即重试，而不是继续等待旧退避计时。
+		if err := signalTunnelSupervisorStop(runtime.root); err != nil {
+			return err
+		}
+		if err := waitTunnelSupervisorStopped(ctx, runtime.root, 10*time.Second); err != nil {
+			return err
+		}
+	}
+
 	if runtime.mode == "quick" {
 		// 旧临时地址在新进程真正拿到 URL 前不能继续暴露为 ready。
 		if err := clearActivePublicURL(runtime.files); err != nil {
 			return err
 		}
 		if err := runtime.updateManifest("none", ""); err != nil {
-			return err
-		}
-		// cloudflared 日志按设计持续追加；记录本轮启动前的位置，避免 regenerate 把历史 URL 当成新地址。
-		var err error
-		logCursors, err = captureQuickTunnelLogCursors(runtime.files)
-		if err != nil {
 			return err
 		}
 	}
@@ -169,14 +273,20 @@ func startTunnel(ctx context.Context, runtime tunnelRuntime) error {
 		return err
 	}
 	if runtime.mode == "quick" {
-		return finalizeQuickTunnel(ctx, runtime, logCursors)
+		return waitQuickTunnelReady(ctx, runtime, 45*time.Second)
 	}
 	return nil
 }
 
 func stopTunnel(ctx context.Context, runtime tunnelRuntime) error {
+	if err := signalTunnelSupervisorStop(runtime.root); err != nil {
+		return err
+	}
 	if err := StopBinaryProcesses(ctx, runtime.manifest.CloudflaredBinary, 15*time.Second); err != nil {
 		return fmt.Errorf("停止 cloudflared 失败: %w", err)
+	}
+	if err := waitTunnelSupervisorStopped(ctx, runtime.root, 15*time.Second); err != nil {
+		return err
 	}
 	return nil
 }
@@ -239,12 +349,7 @@ func cloudflaredCommand(ctx context.Context, runtime tunnelRuntime) (*exec.Cmd, 
 	return command, nil
 }
 
-func finalizeQuickTunnel(ctx context.Context, runtime tunnelRuntime, cursors quickTunnelLogCursors) error {
-	publicURL, err := waitQuickTunnelURL(ctx, runtime, cursors, 35*time.Second)
-	if err != nil {
-		_ = StopBinaryProcesses(context.Background(), runtime.manifest.CloudflaredBinary, 5*time.Second)
-		return err
-	}
+func applyQuickTunnelURL(ctx context.Context, runtime tunnelRuntime, publicURL string) error {
 	if err := writeRuntimeText(runtime.files.serverURL, publicURL); err != nil {
 		return err
 	}
@@ -256,6 +361,49 @@ func finalizeQuickTunnel(ctx context.Context, runtime tunnelRuntime, cursors qui
 	}
 	// ready 文件最后写入，保证桌面端读到地址时核心已经采用新 OAuth Origin。
 	return writeRuntimeText(runtime.files.quickURL, publicURL)
+}
+
+func invalidateQuickTunnelAfterExit(ctx context.Context, runtime tunnelRuntime) error {
+	readyURL, err := readTrimmedText(runtime.files.quickURL)
+	if err != nil {
+		return err
+	}
+	if readyURL == "" {
+		return nil
+	}
+	if err := clearActivePublicURL(runtime.files); err != nil {
+		return err
+	}
+	if err := runtime.updateManifest("none", ""); err != nil {
+		return err
+	}
+	// 已对外发布过的 Quick URL 一旦失效，先让 Core 丢弃旧 OAuth Origin，再等待新 URL。
+	return platformServiceAction(ctx, runtime.root, "restart")
+}
+
+func waitQuickTunnelReady(ctx context.Context, runtime tunnelRuntime, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		readyURL, err := readTrimmedText(runtime.files.quickURL)
+		if err != nil {
+			return err
+		}
+		if readyURL != "" {
+			running, err := processRunningAtPath(runtime.manifest.CloudflaredBinary)
+			if err != nil {
+				return err
+			}
+			if running {
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	return fmt.Errorf("Quick Tunnel 未在 %s 内进入 ready: %s", timeout, tunnelLogSummary(runtime.files))
 }
 
 func waitQuickTunnelURL(ctx context.Context, runtime tunnelRuntime, cursors quickTunnelLogCursors, timeout time.Duration) (string, error) {

@@ -33,7 +33,7 @@ function Get-ProcessIdsByPath {
         return @()
     }
     $normalizedPath = [IO.Path]::GetFullPath($BinaryPath)
-    return @(Get-CimInstance Win32_Process -Filter "Name = '$ProcessName.exe'" -ErrorAction SilentlyContinue |
+    $processIds = @(Get-CimInstance Win32_Process -Filter "Name = '$ProcessName.exe'" -ErrorAction SilentlyContinue |
         Where-Object {
             $_.ExecutablePath -and
             [string]::Equals(
@@ -43,6 +43,19 @@ function Get-ProcessIdsByPath {
             )
         } |
         Select-Object -ExpandProperty ProcessId)
+    if ($processIds.Count -eq 0) {
+        $processIds = @(Get-Process -Name $ProcessName -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Path -and
+                [string]::Equals(
+                    [IO.Path]::GetFullPath($_.Path),
+                    $normalizedPath,
+                    [StringComparison]::OrdinalIgnoreCase
+                )
+            } |
+            Select-Object -ExpandProperty Id)
+    }
+    return @($processIds | Sort-Object -Unique)
 }
 
 function Stop-ProcessByPath {
@@ -117,6 +130,9 @@ $urlSourcePath = Join-Path $installDir 'quick-url-source.txt'
 $quickUrlPath = Join-Path $runtimeDir 'quick-tunnel-url.txt'
 $serverUrlPath = Join-Path $runtimeDir 'server-url.txt'
 $manifestPath = Join-Path $runtimeDir 'runtime.json'
+$supervisorPidPath = Join-Path $runtimeDir 'tunnel-supervisor.pid'
+$startCountPath = Join-Path $installDir 'start-count.txt'
+$failCountPath = Join-Path $installDir 'fail-count.txt'
 $authPath = Join-Path $runtimeDir 'auth-token.dpapi'
 $oauthPasswordPath = Join-Path $runtimeDir 'oauth-password.dpapi'
 $oauthSecretPath = Join-Path $runtimeDir 'oauth-token-secret.dpapi'
@@ -127,6 +143,7 @@ $trayStartupName = "AgentDockTrayQuickLifecycle-$testId"
 $port = Get-FreeTcpPort
 $healthUrl = "http://127.0.0.1:$port/healthz"
 $firstUrl = 'https://first-agentdock-test.trycloudflare.com'
+$recoveredUrl = 'https://recovered-agentdock-test.trycloudflare.com'
 $secondUrl = 'https://second-agentdock-test.trycloudflare.com'
 $thirdUrl = 'https://third-agentdock-test.trycloudflare.com'
 $oldUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -161,6 +178,8 @@ try {
         $quickUrlPath,
         $serverUrlPath,
         $manifestPath,
+        $supervisorPidPath,
+        $startCountPath,
         $authPath,
         $oauthPasswordPath,
         $oauthSecretPath
@@ -189,14 +208,67 @@ try {
     if ($firstManifest.tunnel_mode -ne 'quick' -or $firstManifest.public_url -ne $firstUrl) {
         throw "Initial runtime manifest did not contain the Quick Tunnel URL: $($firstManifest | ConvertTo-Json -Compress)"
     }
+    Wait-TextFileValue -Path $startCountPath -ExpectedValue '1'
     $firstAgentDockIds = @(Get-ProcessIdsByPath -ProcessName 'agentdock' -BinaryPath $agentDockBinary)
-    if ($firstAgentDockIds.Count -ne 1) {
-        throw "Expected one AgentDock process after Quick Tunnel install; got $($firstAgentDockIds.Count)."
+    if ($firstAgentDockIds.Count -ne 2) {
+        throw "Expected Core + Tunnel supervisor after Quick Tunnel install; got $($firstAgentDockIds.Count) AgentDock processes."
     }
-    $firstAgentDockId = [int] $firstAgentDockIds[0]
+    $firstSupervisorId = [int] ([IO.File]::ReadAllText($supervisorPidPath).Trim())
+    if ($firstAgentDockIds -notcontains $firstSupervisorId) {
+        throw "Tunnel supervisor PID file points outside AgentDock processes: $firstSupervisorId"
+    }
+    $firstCoreIds = @($firstAgentDockIds | Where-Object { [int] $_ -ne $firstSupervisorId })
+    if ($firstCoreIds.Count -ne 1) {
+        throw "Expected exactly one Core process; got $($firstCoreIds.Count)."
+    }
+    $firstCoreId = [int] $firstCoreIds[0]
     $authHash = (Get-FileHash -LiteralPath $authPath -Algorithm SHA256).Hash
     $oauthPasswordHash = (Get-FileHash -LiteralPath $oauthPasswordPath -Algorithm SHA256).Hash
     $oauthSecretHash = (Get-FileHash -LiteralPath $oauthSecretPath -Algorithm SHA256).Hash
+
+    # Fault injection must hit exactly one cloudflared from this isolated install.
+    # Otherwise a later timeout would not prove anything about supervisor recovery.
+    if ((Get-ProcessIdsByPath -ProcessName 'cloudflared' -BinaryPath $cloudflaredBinary | Measure-Object).Count -ne 1) {
+        throw 'Expected exactly one cloudflared before fault injection.'
+    }
+    Stop-ProcessByPath -ProcessName 'cloudflared' -BinaryPath $cloudflaredBinary
+    if ((Get-ProcessIdsByPath -ProcessName 'cloudflared' -BinaryPath $cloudflaredBinary | Measure-Object).Count -ne 0) {
+        throw 'Fault injection did not stop the isolated cloudflared process.'
+    }
+    # The supervisor backs off for at least five seconds. During that window,
+    # prepare a new Quick URL and make the first recovery attempt fail once.
+    [IO.File]::WriteAllText($urlSourcePath, $recoveredUrl, [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($failCountPath, '1', [Text.UTF8Encoding]::new($false))
+    if ([IO.File]::ReadAllText($urlSourcePath).Trim() -ne $recoveredUrl) {
+        throw 'Failed to prepare the recovered Quick Tunnel URL fixture.'
+    }
+    Wait-TextFileValue -Path $quickUrlPath -ExpectedValue $recoveredUrl -TimeoutSeconds 60
+    Wait-TextFileValue -Path $serverUrlPath -ExpectedValue $recoveredUrl -TimeoutSeconds 60
+    Wait-TextFileValue -Path $startCountPath -ExpectedValue '3' -TimeoutSeconds 60
+    Wait-Healthy -Url $healthUrl
+
+    $recoveredSupervisorId = [int] ([IO.File]::ReadAllText($supervisorPidPath).Trim())
+    if ($recoveredSupervisorId -ne $firstSupervisorId) {
+        throw "Tunnel supervisor restarted instead of supervising cloudflared: $firstSupervisorId -> $recoveredSupervisorId"
+    }
+    $recoveredAgentDockIds = @(Get-ProcessIdsByPath -ProcessName 'agentdock' -BinaryPath $agentDockBinary)
+    if ($recoveredAgentDockIds.Count -ne 2) {
+        throw "Expected Core + Tunnel supervisor after automatic recovery; got $($recoveredAgentDockIds.Count)."
+    }
+    $recoveredCoreIds = @($recoveredAgentDockIds | Where-Object { [int] $_ -ne $recoveredSupervisorId })
+    if ($recoveredCoreIds.Count -ne 1 -or [int] $recoveredCoreIds[0] -eq $firstCoreId) {
+        throw 'Core was not restarted when the recovered Quick Tunnel URL changed.'
+    }
+    $recoveredCoreId = [int] $recoveredCoreIds[0]
+    $recoveredManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    if ($recoveredManifest.public_url -ne $recoveredUrl) {
+        throw "Automatic recovery did not refresh runtime manifest: $($recoveredManifest | ConvertTo-Json -Compress)"
+    }
+    if ((Get-FileHash -LiteralPath $authPath -Algorithm SHA256).Hash -ne $authHash -or
+        (Get-FileHash -LiteralPath $oauthPasswordPath -Algorithm SHA256).Hash -ne $oauthPasswordHash -or
+        (Get-FileHash -LiteralPath $oauthSecretPath -Algorithm SHA256).Hash -ne $oauthSecretHash) {
+        throw 'Automatic Tunnel recovery unexpectedly rotated existing credentials.'
+    }
 
     [IO.File]::WriteAllText($urlSourcePath, $secondUrl, [Text.UTF8Encoding]::new($false))
     & $agentDockBinary tunnel regenerate --runtime-root $runtimeDir
@@ -213,11 +285,13 @@ try {
         throw "Runtime manifest was not refreshed: $($secondManifest | ConvertTo-Json -Compress)"
     }
     $secondAgentDockIds = @(Get-ProcessIdsByPath -ProcessName 'agentdock' -BinaryPath $agentDockBinary)
-    if ($secondAgentDockIds.Count -ne 1) {
-        throw "Expected one AgentDock process after Quick Tunnel refresh; got $($secondAgentDockIds.Count)."
+    if ($secondAgentDockIds.Count -ne 2) {
+        throw "Expected Core + Tunnel supervisor after Quick Tunnel refresh; got $($secondAgentDockIds.Count)."
     }
-    if ([int] $secondAgentDockIds[0] -eq $firstAgentDockId) {
-        throw 'AgentDock was not restarted after the Quick Tunnel URL changed.'
+    $secondSupervisorId = [int] ([IO.File]::ReadAllText($supervisorPidPath).Trim())
+    $secondCoreIds = @($secondAgentDockIds | Where-Object { [int] $_ -ne $secondSupervisorId })
+    if ($secondCoreIds.Count -ne 1 -or [int] $secondCoreIds[0] -eq $recoveredCoreId) {
+        throw 'Core was not restarted after the Quick Tunnel URL changed.'
     }
     if ((Get-FileHash -LiteralPath $authPath -Algorithm SHA256).Hash -ne $authHash -or
         (Get-FileHash -LiteralPath $oauthPasswordPath -Algorithm SHA256).Hash -ne $oauthPasswordHash -or
@@ -245,6 +319,12 @@ try {
     if (@(Get-ProcessIdsByPath -ProcessName 'cloudflared' -BinaryPath $cloudflaredBinary).Count -ne 0) {
         throw 'Switching to local-only mode did not stop cloudflared.'
     }
+    if (Test-Path -LiteralPath $supervisorPidPath -PathType Leaf) {
+        throw 'Switching to local-only mode left the Tunnel supervisor running.'
+    }
+    if (@(Get-ProcessIdsByPath -ProcessName 'agentdock' -BinaryPath $agentDockBinary).Count -ne 1) {
+        throw 'Switching to local-only mode should leave only the Core AgentDock process.'
+    }
     if ((Get-FileHash -LiteralPath $authPath -Algorithm SHA256).Hash -ne $authHash -or
         (Get-FileHash -LiteralPath $oauthPasswordPath -Algorithm SHA256).Hash -ne $oauthPasswordHash -or
         (Get-FileHash -LiteralPath $oauthSecretPath -Algorithm SHA256).Hash -ne $oauthSecretHash) {
@@ -263,13 +343,17 @@ try {
     if ($thirdManifest.tunnel_mode -ne 'quick' -or $thirdManifest.public_url -ne $thirdUrl) {
         throw "Quick Tunnel mode was not restored: $($thirdManifest | ConvertTo-Json -Compress)"
     }
+    if (-not (Test-Path -LiteralPath $supervisorPidPath -PathType Leaf) -or
+        @(Get-ProcessIdsByPath -ProcessName 'agentdock' -BinaryPath $agentDockBinary).Count -ne 2) {
+        throw 'Restoring Quick Tunnel mode did not restore Core + Tunnel supervisor.'
+    }
     if ((Get-FileHash -LiteralPath $authPath -Algorithm SHA256).Hash -ne $authHash -or
         (Get-FileHash -LiteralPath $oauthPasswordPath -Algorithm SHA256).Hash -ne $oauthPasswordHash -or
         (Get-FileHash -LiteralPath $oauthSecretPath -Algorithm SHA256).Hash -ne $oauthSecretHash) {
         throw 'Restoring Quick Tunnel mode unexpectedly changed existing credentials.'
     }
 
-    Write-Host "Windows Quick Tunnel lifecycle passed: $firstUrl -> $secondUrl -> local-only -> $thirdUrl"
+    Write-Host "Windows Quick Tunnel lifecycle passed: $firstUrl -> auto-recovery $recoveredUrl -> $secondUrl -> local-only -> $thirdUrl"
 
     & $UninstallerPath `
         -InstallDir $installDir `
