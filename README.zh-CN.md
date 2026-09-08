@@ -10,6 +10,7 @@
 
 打开网页版 ChatGPT，即可管理多台电脑与服务器：在真实设备上写代码、改配置、跑命令与部署，执行发生在你的机器上，不消耗Codex额度。
 
+<a href="https://trendshift.io/repositories/136526?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-136526" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/136526/daily?language=Go" alt="uvwt%2Fagentdock | Trendshift" width="250" height="55"/></a>
 
 [在线文档](https://uvwt.github.io/agentdock-docs/zh-CN/) · [下载安装](https://github.com/uvwt/agentdock/releases) · [QQ群](https://qun.qq.com/universal-share/share?ac=1&authKey=Rp86bSzI7vqm87KoYlKawgsPZ440Ubhyezw6Qkgcn3JISwX3zXxsXkbS5598RrY5&busi_data=eyJncm91cENvZGUiOiIxMDgxMzM3MDE5IiwidG9rZW4iOiJ0Mlg1bUU1ZWtuZzF3SHJDT3pSaGsrOURIMlNYaXBlYllOUjNLZ1BUb1hzM2lJSTZjeVNldzU0ajl0SjRVZkx2IiwidWluIjoiMzIwMjA4ODAzMiJ9&data=W28mWvuqaLf_Fwnf0CgAJXuDs6l3A78V7AoWZnizPboCpKoQMzHzZ-UlluYo47U3tmIBHK2xIgWEVEJbTiGsPQ&svctype=4&tempid=h5_group_info)
 
@@ -134,13 +135,6 @@ export AGENTDOCK_COMMAND_ENV_FROM_ENV_JSON='{"NIX_LD":"NIX_LD","NIX_LD_LIBRARY_P
 
 使用 systemd 或 OpenRC 部署时，映射来源是 **AgentDock 服务进程自身的环境**，不会读取某个用户的登录 Shell。以启用 `nix-ld` 的 NixOS 为例，需要同时通过服务配置向 AgentDock 注入当前的 `NIX_LD`、`NIX_LD_LIBRARY_PATH`，再配置上述映射。NixOS 建议通过声明式服务配置提供这些值，不要把某一代 `/nix/store` 的绝对路径长期快照到手写配置里。
 
-### Git 与 GitHub
-
-- 仓库状态、差异和提交记录读取
-- 分支、提交、拉取和推送
-- GitHub 仓库访问检查
-- 修改前状态检查和修改后差异验证
-
 ### Skill 与动态 MCP
 
 官方与社区 Skill 源码统一维护在 [uvwt/agentdock-skills](https://github.com/uvwt/agentdock-skills)。本仓库只保留必须随 AgentDock 运行时发布的核心 Skill，包括自举/安全相关 Skill，以及内置的 `agentdock-user-guide` 官方用户指南。
@@ -220,7 +214,7 @@ make check
 
 提交问题或功能建议请使用 [GitHub Issues](https://github.com/uvwt/agentdock/issues)。
 
-## ♥️ 支持项目
+## 支持项目
 
 <p>如果 <b>AgentDock</b> 对您有帮助，请考虑为它点个 <b>Star</b> ⭐，感谢您的支持！</p>
 <table>
@@ -237,10 +231,14 @@ make check
 </tbody>
 </table>
 
+## Star 趋势
+
+[![Star History Chart](https://api.star-history.com/svg?repos=uvwt/agentdock&type=Date)](https://star-history.com/#uvwt/agentdock&Date)
+
 ## 相关链接
 
-- [在线文档](https://uvwt.github.io/agentdock-docs/zh-CN/)
-- [文档源码](https://github.com/uvwt/agentdock-docs)
+- [Documentation](https://uvwt.github.io/agentdock-docs/zh-CN/)
+- [Documentation source](https://github.com/uvwt/agentdock-docs)
 - [GitHub Releases](https://github.com/uvwt/agentdock/releases)
 - [GitHub Container Registry](https://github.com/uvwt/agentdock/pkgs/container/agentdock)
 - [Docker Hub](https://hub.docker.com/r/agentdockio/agentdock)

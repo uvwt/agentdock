@@ -10,6 +10,8 @@ English | [简体中文](./README.zh-CN.md)
 
 Open ChatGPT in your browser and manage multiple computers and servers from one conversation. Write code, change configuration, run commands, and deploy in the real environment where the work belongs—without consuming a dedicated Codex coding quota.
 
+<a href="https://trendshift.io/repositories/136526?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-136526" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/136526/daily?language=Go" alt="uvwt%2Fagentdock | Trendshift" width="250" height="55"/></a>
+
 [Documentation](https://uvwt.github.io/agentdock-docs/) · [Download](https://github.com/uvwt/agentdock/releases) · [Community](https://qun.qq.com/universal-share/share?ac=1&authKey=Rp86bSzI7vqm87KoYlKawgsPZ440Ubhyezw6Qkgcn3JISwX3zXxsXkbS5598RrY5&busi_data=eyJncm91cENvZGUiOiIxMDgxMzM3MDE5IiwidG9rZW4iOiJ0Mlg1bUU1ZWtuZzF3SHJDT3pSaGsrOURIMlNYaXBlYllOUjNLZ1BUb1hzM2lJSTZjeVNldzU0ajl0SjRVZkx2IiwidWluIjoiMzIwMjA4ODAzMiJ9&data=W28mWvuqaLf_Fwnf0CgAJXuDs6l3A78V7AoWZnizPboCpKoQMzHzZ-UlluYo47U3tmIBHK2xIgWEVEJbTiGsPQ&svctype=4&tempid=h5_group_info)
 
 [![CI](https://github.com/uvwt/agentdock/actions/workflows/ci.yml/badge.svg)](https://github.com/uvwt/agentdock/actions/workflows/ci.yml)
@@ -129,13 +131,6 @@ Only mapped variables are copied. A missing host variable is skipped. Skill envi
 
 For a systemd or OpenRC deployment, the source variables must also exist in the AgentDock service process environment. The mapping does not read a user's login shell. For example, a NixOS service using `nix-ld` should provide the current `NIX_LD` and `NIX_LD_LIBRARY_PATH` values through the service configuration together with the mapping above. Prefer declarative NixOS service configuration over snapshotting generation-specific `/nix/store` paths into a long-lived file.
 
-### Git and GitHub
-
-- Read repository status, diffs, and history
-- Create commits, pull, and push
-- Check access to GitHub repositories
-- Inspect state before a change and verify the resulting diff afterward
-
 ### Skills and dynamic MCP
 
 Official and community Skill sources live in [uvwt/agentdock-skills](https://github.com/uvwt/agentdock-skills). This repository only keeps core Skills that must ship with the AgentDock runtime, including bootstrap/security Skills and the built-in `agentdock-user-guide` official user guide.
@@ -216,7 +211,7 @@ User documentation is maintained separately in [`uvwt/agentdock-docs`](https://g
 
 Submit bugs and feature requests through [GitHub Issues](https://github.com/uvwt/agentdock/issues).
 
-## ♥️ Support the project
+## Support the project
 
 <p>If <b>AgentDock</b> helps you, please consider giving it a <b>Star</b> ⭐. Thank you for your support!</p>
 <table>
@@ -232,6 +227,10 @@ Submit bugs and feature requests through [GitHub Issues](https://github.com/uvwt
 </tr>
 </tbody>
 </table>
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=uvwt/agentdock&type=Date)](https://star-history.com/#uvwt/agentdock&Date)
 
 ## Related links
 
