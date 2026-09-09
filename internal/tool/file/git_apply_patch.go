@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	processcontrol "github.com/uvwt/agentdock/internal/process"
 	"github.com/uvwt/agentdock/internal/textutil"
 	workspacepkg "github.com/uvwt/agentdock/internal/workspace"
 )
@@ -35,6 +36,7 @@ func (svc *Service) applyPatch(ctx context.Context, request EditRequest) (Result
 	}
 	cmd.Dir = workdir.Abs
 	cmd.Stdin = strings.NewReader(patch)
+	processcontrol.Configure(cmd)
 	output, outputTotal, outputTruncated, err := runBoundedCombinedOutput(cmd, 1<<20)
 	if err != nil {
 		outputText, _ := truncateBytes(output, 1<<20)

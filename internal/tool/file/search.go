@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	processcontrol "github.com/uvwt/agentdock/internal/process"
 	"github.com/uvwt/agentdock/internal/workspace"
 )
 
@@ -121,6 +122,7 @@ func (svc *Service) searchTextRG(ctx context.Context, p workspace.Path, opts Sea
 	defer cancel()
 	cmd := exec.CommandContext(ctx, rg, args...)
 	cmd.Dir = p.Abs
+	processcontrol.Configure(cmd)
 	output, err := cmd.Output()
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 1 {

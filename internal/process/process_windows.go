@@ -24,7 +24,7 @@ type Controller struct {
 }
 
 // Configure 在后台子进程启动前禁用控制台窗口，同时保留调用方已有的创建标志。
-// 标准命令、WSL 文件辅助进程和 stdio MCP 通过该入口启动；ACP 为兼容 Windows sandbox 使用独立启动策略。
+// 标准命令、短生命周期后台 CLI、WSL 文件辅助进程和 stdio MCP 通过该入口启动；ACP 为兼容 Windows sandbox 使用独立启动策略。
 func Configure(cmd *exec.Cmd) {
 	if cmd == nil {
 		return
