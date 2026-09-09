@@ -160,6 +160,40 @@ func TestInstallTreatsDirectoryAndZipAsSameContent(t *testing.T) {
 	}
 }
 
+func TestExtractZipRejectsPathTraversal(t *testing.T) {
+	root := t.TempDir()
+	archivePath := filepath.Join(root, "malicious.zip")
+	archive, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := zip.NewWriter(archive)
+	entry, err := writer.Create("../escape.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(entry, "escaped"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	destination := filepath.Join(root, "extracted")
+	if err := os.MkdirAll(destination, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := extractZip(archivePath, destination, 1<<20); err == nil || !strings.Contains(err.Error(), "escapes package root") {
+		t.Fatalf("path traversal ZIP should be rejected: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "escape.txt")); !os.IsNotExist(err) {
+		t.Fatalf("path traversal wrote outside extraction root: %v", err)
+	}
+}
+
 func TestInstallRejectsDifferentContentForSameVersion(t *testing.T) {
 	state, err := skillstate.New(filepath.Join(t.TempDir(), "skills"))
 	if err != nil {

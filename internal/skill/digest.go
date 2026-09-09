@@ -121,6 +121,11 @@ func extractZip(src, dest string, maxBytes int64) error {
 		return err
 	}
 	defer reader.Close()
+	root := filepath.Clean(dest)
+	rootPrefix := root
+	if !strings.HasSuffix(rootPrefix, string(os.PathSeparator)) {
+		rootPrefix += string(os.PathSeparator)
+	}
 	var total int64
 	for _, file := range reader.File {
 		if file.Mode()&os.ModeSymlink != 0 {
@@ -130,7 +135,12 @@ func extractZip(src, dest string, maxBytes int64) error {
 		if err := validateRelativePackagePath(name); err != nil {
 			return fmt.Errorf("zip path escapes package root: %s: %w", file.Name, err)
 		}
-		target := filepath.Join(dest, filepath.FromSlash(name))
+		target := filepath.Clean(filepath.Join(root, filepath.FromSlash(name)))
+		// 段级校验负责拒绝已知危险输入；这里再校验最终落盘路径，确保后续
+		// 路径规则即使调整，也不能把 ZIP 内容写出本次临时解压目录。
+		if !strings.HasPrefix(target, rootPrefix) {
+			return fmt.Errorf("zip path escapes package root after cleaning: %s", file.Name)
+		}
 		if file.FileInfo().IsDir() {
 			if err := os.MkdirAll(target, 0o700); err != nil {
 				return err
