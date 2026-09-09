@@ -7,9 +7,9 @@ const ToolPackage = "skill_package"
 func PackageInputSchema() map[string]any {
 	stringProp := toolcontract.String
 	return toolcontract.InputObject(map[string]any{
-		"action":    map[string]any{"type": "string", "description": "Skill package or isolated environment action.", "enum": []string{"validate", "install", "activate", "rollback", "env_set", "env_unset", "env_list"}},
-		"skill":     stringProp("Skill name for activate, rollback, or environment management."),
-		"version":   stringProp("Installed Skill version for activate."),
+		"action":    map[string]any{"type": "string", "description": "Skill package or isolated environment action.", "enum": []string{"validate", "install", "uninstall", "activate", "rollback", "env_set", "env_unset", "env_list"}},
+		"skill":     stringProp("Skill name for uninstall, activate, rollback, or environment management."),
+		"version":   stringProp("Installed Skill version for uninstall or activate. Omit for uninstall to remove the whole Skill."),
 		"key":       stringProp("Environment variable name for env_set/env_unset."),
 		"value":     stringProp("Environment variable value for env_set. Secret values are never returned."),
 		"source":    stringProp("Host path or HTTP(S) URL for validate/install."),
@@ -39,7 +39,7 @@ func PackageOutputSchema() map[string]any {
 		"digest":     stringProp("Computed Skill package digest."),
 		"issues":     arrayProp("Structured validation issues."),
 		"document":   objectProp("Parsed SKILL.md frontmatter and body metadata."),
-		"result":     objectProp("Install, activate, or rollback result."),
+		"result":     objectProp("Install, uninstall, activate, or rollback result."),
 	})
 }
 

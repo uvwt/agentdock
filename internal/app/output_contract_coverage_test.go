@@ -29,7 +29,7 @@ var outputContractCoverageInventory = map[string]outputContractCoverageEntry{
 	"acp_prompt":               {Variants: []string{"start", "events"}},
 	"acp_interaction":          {Variants: []string{"list"}},
 	"workflow_template_manage": {Variants: []string{"match", "vector_index"}},
-	"skill_package":            {Variants: []string{"validate", "install", "env_list"}},
+	"skill_package":            {Variants: []string{"validate", "install", "uninstall", "env_list"}},
 	"mcp_manage":               {Variants: []string{"list", "add"}},
 	"mcp_tool_search":          {Variants: []string{"success"}},
 	"mcp_tool_inspect":         {Variants: []string{"success"}},

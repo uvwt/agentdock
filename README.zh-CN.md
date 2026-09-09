@@ -139,7 +139,7 @@ export AGENTDOCK_COMMAND_ENV_FROM_ENV_JSON='{"NIX_LD":"NIX_LD","NIX_LD_LIBRARY_P
 
 官方与社区 Skill 源码统一维护在 [uvwt/agentdock-skills](https://github.com/uvwt/agentdock-skills)。本仓库只保留必须随 AgentDock 运行时发布的核心 Skill，包括自举/安全相关 Skill，以及内置的 `agentdock-user-guide` 官方用户指南。
 
-- Skill 包校验、安装、激活和回滚
+- Skill 包校验、安装、卸载、激活和回滚
 - 稳定版、开发版、Canary 和固定版本通道
 - Skill 独立环境变量与运行环境
 - 动态 MCP Server 注册、启停、刷新和移除

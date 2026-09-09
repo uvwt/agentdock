@@ -36,6 +36,7 @@ const (
 	ErrDigestMismatch      = "SKILL_DIGEST_MISMATCH"
 	ErrDocumentInvalid     = "SKILL_DOCUMENT_INVALID"
 	ErrInstallFailed       = "SKILL_INSTALL_FAILED"
+	ErrUninstallFailed     = "SKILL_UNINSTALL_FAILED"
 	ErrActivateFailed      = "SKILL_ACTIVATE_FAILED"
 	ErrRollbackUnavailable = "SKILL_ROLLBACK_UNAVAILABLE"
 )

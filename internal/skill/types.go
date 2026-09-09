@@ -32,6 +32,14 @@ type InstallResult struct {
 	Path        string    `json:"path"`
 }
 
+type UninstallResult struct {
+	Skill                string   `json:"skill"`
+	RemovedVersions      []string `json:"removed_versions"`
+	ActiveVersion        string   `json:"active_version,omitempty"`
+	PreservedEnvironment bool     `json:"preserved_environment"`
+	PreservedData        bool     `json:"preserved_data"`
+}
+
 type ValidateRequest struct {
 	Source       string
 	DigestSHA256 string

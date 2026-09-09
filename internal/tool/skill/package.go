@@ -52,6 +52,8 @@ func (s *Service) Package(ctx context.Context, request PackageRequest) (Result, 
 		return s.skillValidate(ctx, input)
 	case "install":
 		return s.skillInstall(ctx, input)
+	case "uninstall":
+		return s.skillUninstall(ctx, input)
 	case "activate":
 		return s.skillActivate(ctx, input)
 	case "rollback":
@@ -65,7 +67,7 @@ func (s *Service) Package(ctx context.Context, request PackageRequest) (Result, 
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported skill_package action", "validation", map[string]any{
 			"action":  input.Action,
-			"allowed": []string{"validate", "install", "activate", "rollback", "env_set", "env_unset", "env_list"},
+			"allowed": []string{"validate", "install", "uninstall", "activate", "rollback", "env_set", "env_unset", "env_list"},
 		})
 	}
 }
@@ -195,6 +197,18 @@ func (s *Service) skillInstall(ctx context.Context, input skillToolInput) (Resul
 		return nil, skillToolError(err)
 	}
 	return Result{"action": "install", "result": result}, nil
+}
+
+func (s *Service) skillUninstall(ctx context.Context, input skillToolInput) (Result, error) {
+	skill, err := input.requiredSkill()
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.manager.Uninstall(ctx, skill, input.Version)
+	if err != nil {
+		return nil, skillToolError(err)
+	}
+	return Result{"action": "uninstall", "result": result}, nil
 }
 
 func (s *Service) skillActivate(ctx context.Context, input skillToolInput) (Result, error) {
