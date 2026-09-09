@@ -3,6 +3,7 @@ package browser
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -108,9 +109,10 @@ func TestResolveCDPWebSocketPinsEndpointHost(t *testing.T) {
 
 func TestExtractUserDataDir(t *testing.T) {
 	cases := map[string]string{
-		`chrome --user-data-dir=/tmp/a --remote-debugging-port=9222`:         "/tmp/a",
-		`chrome --user-data-dir="/tmp/with space" --remote-debugging-port=0`: "/tmp/with space",
-		`chrome --user-data-dir '/tmp/single space'`:                         "/tmp/single space",
+		`chrome --user-data-dir=/tmp/a --remote-debugging-port=9222`:                                                         "/tmp/a",
+		`chrome --user-data-dir="/tmp/with space" --remote-debugging-port=0`:                                                 "/tmp/with space",
+		`chrome --user-data-dir '/tmp/single space'`:                                                                         "/tmp/single space",
+		`msedge.exe "--user-data-dir=C:\Users\Administrator\AppData\Local\Microsoft\Edge\User Data" --type=crashpad-handler`: `C:\Users\Administrator\AppData\Local\Microsoft\Edge\User Data`,
 	}
 	for command, want := range cases {
 		if got := extractUserDataDir(command); got != want {
@@ -120,13 +122,48 @@ func TestExtractUserDataDir(t *testing.T) {
 }
 
 func TestCandidateFromDevToolsActivePort(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "DevToolsActivePort"), []byte("49152\n/devtools/browser/test\n"), 0o600); err != nil {
+	cases := []struct {
+		name string
+		data string
+		want string
+	}{
+		{name: "browser websocket", data: "49152\n/devtools/browser/test\n", want: "ws://127.0.0.1:49152/devtools/browser/test"},
+		{name: "single line fallback", data: "49152\n", want: "http://127.0.0.1:49152"},
+		{name: "absolute URL fallback", data: "49152\nws://169.254.169.254/devtools/browser/test\n", want: "http://127.0.0.1:49152"},
+		{name: "network path fallback", data: "49152\n//example.invalid/devtools/browser/test\n", want: "http://127.0.0.1:49152"},
+		{name: "query fallback", data: "49152\n/devtools/browser/test?token=unexpected\n", want: "http://127.0.0.1:49152"},
+		{name: "nested path fallback", data: "49152\n/devtools/browser/test/extra\n", want: "http://127.0.0.1:49152"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "DevToolsActivePort"), []byte(tc.data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			candidate, ok := candidateFromDevToolsActivePort(dir)
+			if !ok || candidate.URL != tc.want || candidate.Source != "devtools_active_port" {
+				t.Fatalf("candidate = %#v, ok=%v, want URL %q", candidate, ok, tc.want)
+			}
+		})
+	}
+}
+
+func TestProbeCDPEndpointAcceptsBrowserWebSocketListenerWithoutHTTPDiscovery(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
 		t.Fatal(err)
 	}
-	candidate, ok := candidateFromDevToolsActivePort(dir)
-	if !ok || candidate.URL != "http://127.0.0.1:49152" || candidate.Source != "devtools_active_port" {
-		t.Fatalf("candidate = %#v, ok=%v", candidate, ok)
+	endpoint := "ws://" + listener.Addr().String() + "/devtools/browser/test"
+	if err := probeCDPEndpoint(context.Background(), endpoint); err != nil {
+		listener.Close()
+		t.Fatal(err)
+	}
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := probeCDPEndpoint(context.Background(), endpoint); err == nil {
+		t.Fatal("closed browser websocket listener unexpectedly passed probe")
 	}
 }
 

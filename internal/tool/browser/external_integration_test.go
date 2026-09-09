@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -114,14 +115,22 @@ func TestExternalCDPAttachKeepsBrowserAliveAndIsolatesTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	expectedEndpoint, err := url.Parse(endpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
 	found := false
 	for _, candidate := range candidates {
-		if candidate.URL == endpoint {
+		candidateURL, parseErr := url.Parse(candidate.URL)
+		if parseErr != nil || candidateURL.Host != expectedEndpoint.Host {
+			continue
+		}
+		if candidate.Source == "devtools_active_port" && isBrowserWebSocketURL(candidate.URL) {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatalf("auto-discovery did not find random-port external browser %s: %#v", endpoint, candidates)
+		t.Fatalf("auto-discovery did not find DevToolsActivePort browser websocket for %s: %#v", endpoint, candidates)
 	}
 }

@@ -21,7 +21,7 @@ const cdpProbeTimeout = 500 * time.Millisecond
 
 var (
 	remoteDebuggingPortPattern = regexp.MustCompile(`--remote-debugging-port(?:=|\s+)(\d+)`)
-	userDataDirPattern         = regexp.MustCompile(`--user-data-dir(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s]+))`)
+	userDataDirPattern         = regexp.MustCompile(`(?i)(?:"--user-data-dir(?:=|\s+)([^"]+)"|'--user-data-dir(?:=|\s+)([^']+)'|--user-data-dir(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s"]+)))`)
 )
 
 type cdpCandidate struct {
@@ -137,15 +137,26 @@ func resolveCDPWebSocket(parent context.Context, rawURL string, timeout time.Dur
 }
 
 func discoverCDPEndpoints(ctx context.Context) ([]cdpCandidate, error) {
-	candidateByURL := make(map[string]cdpCandidate)
+	candidateByListener := make(map[string]cdpCandidate)
 	add := func(rawURL, source string) {
 		rawURL = strings.TrimSpace(rawURL)
 		if rawURL == "" {
 			return
 		}
-		if _, exists := candidateByURL[rawURL]; !exists {
-			candidateByURL[rawURL] = cdpCandidate{URL: rawURL, Source: source}
+		parsed, err := url.Parse(rawURL)
+		if err != nil || parsed.Host == "" {
+			return
 		}
+		listener := strings.ToLower(parsed.Host)
+		candidate := cdpCandidate{URL: rawURL, Source: source}
+		if existing, exists := candidateByListener[listener]; exists {
+			// 同一个 CDP listener 可能同时从进程参数和 DevToolsActivePort 被发现。
+			// DevToolsActivePort 给出的 browser WebSocket 更精确，也能兼容 Edge 不暴露 /json/version 的模式。
+			if !isBrowserWebSocketURL(rawURL) || isBrowserWebSocketURL(existing.URL) {
+				return
+			}
+		}
+		candidateByListener[listener] = candidate
 	}
 
 	lines, _ := browserProcessCommandLines(ctx)
@@ -174,18 +185,44 @@ func discoverCDPEndpoints(ctx context.Context) ([]cdpCandidate, error) {
 		}
 	}
 
-	urls := make([]string, 0, len(candidateByURL))
-	for rawURL := range candidateByURL {
-		urls = append(urls, rawURL)
+	candidates := make([]cdpCandidate, 0, len(candidateByListener))
+	for _, candidate := range candidateByListener {
+		candidates = append(candidates, candidate)
 	}
-	sort.Strings(urls)
-	valid := make([]cdpCandidate, 0, len(urls))
-	for _, rawURL := range urls {
-		if err := probeCDPEndpoint(ctx, rawURL); err == nil {
-			valid = append(valid, candidateByURL[rawURL])
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].URL < candidates[j].URL })
+	valid := make([]cdpCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if err := probeCDPEndpoint(ctx, candidate.URL); err == nil {
+			valid = append(valid, candidate)
 		}
 	}
 	return valid, nil
+}
+
+func isBrowserWebSocketURL(rawURL string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	return (scheme == "ws" || scheme == "wss") && hasBrowserWebSocketPath(parsed)
+}
+
+func hasBrowserWebSocketPath(parsed *url.URL) bool {
+	const prefix = "/devtools/browser/"
+	if parsed == nil || !strings.HasPrefix(parsed.Path, prefix) {
+		return false
+	}
+	id := strings.TrimPrefix(parsed.Path, prefix)
+	return id != "" && !strings.ContainsAny(id, `/\\`)
+}
+
+func validDevToolsBrowserPath(rawPath string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(rawPath))
+	if err != nil || parsed.Scheme != "" || parsed.Host != "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return false
+	}
+	return hasBrowserWebSocketPath(parsed)
 }
 
 func extractUserDataDir(line string) string {
@@ -215,13 +252,53 @@ func candidateFromDevToolsActivePort(userDataDir string) (cdpCandidate, bool) {
 	if err != nil || port < 1 || port > 65535 {
 		return cdpCandidate{}, false
 	}
+	if len(lines) >= 2 {
+		browserPath := strings.TrimSpace(lines[1])
+		if validDevToolsBrowserPath(browserPath) {
+			return cdpCandidate{
+				URL:    fmt.Sprintf("ws://127.0.0.1:%d%s", port, browserPath),
+				Source: "devtools_active_port",
+			}, true
+		}
+	}
 	return cdpCandidate{URL: fmt.Sprintf("http://127.0.0.1:%d", port), Source: "devtools_active_port"}, true
 }
 
 func probeCDPEndpoint(parent context.Context, baseURL string) error {
+	if err := validateCDPURL(baseURL); err != nil {
+		return err
+	}
+	parsed, _ := url.Parse(strings.TrimSpace(baseURL))
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme == "ws" || scheme == "wss" {
+		if !hasBrowserWebSocketPath(parsed) {
+			return fmt.Errorf("CDP endpoint did not expose a browser websocket")
+		}
+		port := parsed.Port()
+		if port == "" {
+			if scheme == "wss" {
+				port = "443"
+			} else {
+				port = "80"
+			}
+		}
+		ctx, cancel := context.WithTimeout(parent, cdpProbeTimeout)
+		defer cancel()
+		conn, err := (&net.Dialer{Timeout: cdpProbeTimeout}).DialContext(ctx, "tcp", net.JoinHostPort(parsed.Hostname(), port))
+		if err != nil {
+			return err
+		}
+		return conn.Close()
+	}
+
 	ctx, cancel := context.WithTimeout(parent, cdpProbeTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(baseURL, "/")+"/json/version", nil)
+	endpoint := *parsed
+	endpoint.Path = "/json/version"
+	endpoint.RawPath = ""
+	endpoint.RawQuery = ""
+	endpoint.Fragment = ""
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
 		return err
 	}

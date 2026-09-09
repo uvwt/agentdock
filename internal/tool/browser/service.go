@@ -107,7 +107,12 @@ func (s *Service) start(ctx context.Context, req StartRequest) (StartResult, err
 			}
 		}
 		allocatorCtx, allocatorCancel := chromedp.NewRemoteAllocator(context.Background(), wsURL, chromedp.NoModifyURL)
-		browserCtx, browserCancel := chromedp.NewContext(allocatorCtx)
+		// Edge 内置 Remote Debugging 首次连接会等待用户在浏览器里确认授权。
+		// chromedp 默认只有 10 秒 dial timeout，这里与 browser_session 的请求 timeout 对齐。
+		browserCtx, browserCancel := chromedp.NewContext(
+			allocatorCtx,
+			chromedp.WithBrowserOption(chromedp.WithDialTimeout(req.Timeout)),
+		)
 		sess = &session{
 			id:              newSessionID(),
 			kind:            BrowserAuto,
