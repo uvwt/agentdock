@@ -119,18 +119,6 @@ AgentDock exposes tools over MCP Streamable HTTP. The exact client syntax varies
 - Output truncation and sensitive-value redaction
 - macOS, Linux, Windows, and WSL support
 
-#### Forward selected host environment variables
-
-`exec_command` intentionally starts from a small environment instead of inheriting the complete AgentDock process environment. When a host runtime needs additional variables, configure an explicit child-to-host mapping:
-
-```bash
-export AGENTDOCK_COMMAND_ENV_FROM_ENV_JSON='{"NIX_LD":"NIX_LD","NIX_LD_LIBRARY_PATH":"NIX_LD_LIBRARY_PATH"}'
-```
-
-Only mapped variables are copied. A missing host variable is skipped. Skill environment values override the mapped host value, and an explicit `exec_command.env` value overrides both.
-
-For a systemd or OpenRC deployment, the source variables must also exist in the AgentDock service process environment. The mapping does not read a user's login shell. For example, a NixOS service using `nix-ld` should provide the current `NIX_LD` and `NIX_LD_LIBRARY_PATH` values through the service configuration together with the mapping above. Prefer declarative NixOS service configuration over snapshotting generation-specific `/nix/store` paths into a long-lived file.
-
 ### Skills and dynamic MCP
 
 Official and community Skill sources live in [uvwt/agentdock-skills](https://github.com/uvwt/agentdock-skills). This repository only keeps core Skills that must ship with the AgentDock runtime, including bootstrap/security Skills and the built-in `agentdock-user-guide` official user guide.
@@ -209,11 +197,13 @@ GitHub Actions continuously run tests, static checks, builds, and release valida
 
 User documentation is maintained separately in [`uvwt/agentdock-docs`](https://github.com/uvwt/agentdock-docs). Changes to user-visible behavior, configuration, installation, or tool schemas should update the matching documentation in the same change set.
 
+Changes involving device pairing, cross-node tool routing, Recall, or Workflow integrations may also require coordinated changes in [`uvwt/nexusdock`](https://github.com/uvwt/nexusdock). The shared protocol is maintained in [`uvwt/agentdock-protocol`](https://github.com/uvwt/agentdock-protocol). When changing shared interfaces or data structures, update the protocol definitions first, then align both implementations and their protocol dependency versions, check compatibility, update the corresponding documentation, and link related cross-repository changes in the PR.
+
 Submit bugs and feature requests through [GitHub Issues](https://github.com/uvwt/agentdock/issues).
 
 ## Support the project
 
-<p>If <b>AgentDock</b> helps you, please consider giving it a <b>Star</b> ⭐. Thank you for your support!</p>
+<p>If <b>AgentDock</b> helps you, please consider giving it a <b>Star</b> ⭐. Thank you for your support</p>
 <table>
 <thead>
 <tr>

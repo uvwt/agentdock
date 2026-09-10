@@ -123,18 +123,6 @@ AgentDock 通过 MCP Streamable HTTP 提供工具能力。下面是一个通用�
 - 输出截断和敏感信息脱敏
 - macOS、Linux、Windows 与 WSL 支持
 
-#### 显式透传宿主环境变量
-
-`exec_command` 默认只使用精简环境，不会完整继承 AgentDock 进程环境。宿主运行环境确实依赖额外变量时，可以配置“子进程变量名 -> AgentDock 宿主进程变量名”的显式映射：
-
-```bash
-export AGENTDOCK_COMMAND_ENV_FROM_ENV_JSON='{"NIX_LD":"NIX_LD","NIX_LD_LIBRARY_PATH":"NIX_LD_LIBRARY_PATH"}'
-```
-
-只有显式声明的变量会被复制；宿主变量不存在时会跳过。Skill 环境变量可以覆盖宿主映射值，单次 `exec_command.env` 又可以继续覆盖 Skill 环境。
-
-使用 systemd 或 OpenRC 部署时，映射来源是 **AgentDock 服务进程自身的环境**，不会读取某个用户的登录 Shell。以启用 `nix-ld` 的 NixOS 为例，需要同时通过服务配置向 AgentDock 注入当前的 `NIX_LD`、`NIX_LD_LIBRARY_PATH`，再配置上述映射。NixOS 建议通过声明式服务配置提供这些值，不要把某一代 `/nix/store` 的绝对路径长期快照到手写配置里。
-
 ### Skill 与动态 MCP
 
 官方与社区 Skill 源码统一维护在 [uvwt/agentdock-skills](https://github.com/uvwt/agentdock-skills)。本仓库只保留必须随 AgentDock 运行时发布的核心 Skill，包括自举/安全相关 Skill，以及内置的 `agentdock-user-guide` 官方用户指南。
@@ -212,11 +200,13 @@ make check
 
 用户文档独立维护在 [`uvwt/agentdock-docs`](https://github.com/uvwt/agentdock-docs)。修改用户可见行为、配置参数、安装方式或工具 Schema 时，应同步更新对应文档。
 
+涉及设备配对、跨节点工具路由、Recall 或 Workflow 等集成能力时，可能还需协同修改独立仓库 [`uvwt/nexusdock`](https://github.com/uvwt/nexusdock)。两者共享的协议维护在 [`uvwt/agentdock-protocol`](https://github.com/uvwt/agentdock-protocol)。变更共享接口或数据结构时，应先更新协议定义，再同步两端实现与协议依赖版本，核对兼容性并更新对应文档，在 PR 中关联跨仓库改动。
+
 提交问题或功能建议请使用 [GitHub Issues](https://github.com/uvwt/agentdock/issues)。
 
 ## 支持项目
 
-<p>如果 <b>AgentDock</b> 对您有帮助，请考虑为它点个 <b>Star</b> ⭐，感谢您的支持！</p>
+<p>如果 <b>AgentDock</b> 对您有帮助，请考虑为它点个 <b>Star</b> ⭐，感谢您的支持</p>
 <table>
 <thead>
 <tr>

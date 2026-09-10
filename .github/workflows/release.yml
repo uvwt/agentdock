@@ -613,7 +613,7 @@ jobs:
           "$install_dir/bin/agentdock" --help >/dev/null 2>&1
 
           test -f "$data_dir/.agentdock/skill-store/bundled-skills.json"
-          for skill in skill-authoring skill-installation skill-vetter-runtime; do
+          for skill in skill-authoring skill-installation; do
             state="$data_dir/.agentdock/skill-store/state/$skill.json"
             version="$(jq -r .active_version "$state")"
             test -n "$version"
@@ -732,7 +732,7 @@ jobs:
             sh "$installer" --version "$tag"
           "$RUNNER_TEMP/bin/agentdock" --help >/dev/null 2>&1
           test -f "$RUNNER_TEMP/home/.agentdock/skill-store/bundled-skills.json"
-          for skill in skill-authoring skill-installation skill-vetter-runtime; do
+          for skill in skill-authoring skill-installation; do
             state="$RUNNER_TEMP/home/.agentdock/skill-store/state/$skill.json"
             version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["active_version"])' "$state")"
             test -f "$RUNNER_TEMP/home/.agentdock/skill-store/installed/$skill/$version/SKILL.md"
