@@ -15,6 +15,7 @@ internal static class UiText
     private static readonly ResourceManager Resources = new(
         "AgentDock.ControlPanel.Resources.UiStrings",
         typeof(UiText).Assembly);
+    private static CultureInfo _resourceCulture = CultureInfo.GetCultureInfo(SystemLocale);
 
     private static string PreferencePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -95,7 +96,7 @@ internal static class UiText
 
     public static string Get(string key)
     {
-        return Resources.GetString(key, CultureInfo.CurrentUICulture) ?? key;
+        return Resources.GetString(key, _resourceCulture) ?? key;
     }
 
     public static string Format(string key, params object?[] args)
@@ -107,6 +108,8 @@ internal static class UiText
     {
         var locale = ResolveLocale(preference, SystemLocale);
         var culture = CultureInfo.GetCultureInfo(locale);
+        // 资源查找使用显式 culture，避免 async 事件恢复旧 CurrentUICulture 后动态文案回退。
+        _resourceCulture = culture;
         CultureInfo.CurrentUICulture = culture;
         CultureInfo.DefaultThreadCurrentUICulture = culture;
     }

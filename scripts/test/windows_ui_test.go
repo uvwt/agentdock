@@ -71,6 +71,27 @@ func TestWindowsControlPanelSupportsPersistentLanguagePreference(t *testing.T) {
 	}
 }
 
+func TestWindowsControlPanelDynamicTextUsesSelectedResourceCulture(t *testing.T) {
+	path := filepath.Join("..", "..", "desktop", "windows", "control-panel", "Localization", "UiText.cs")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read UiText.cs: %v", err)
+	}
+	content := string(data)
+	for _, want := range []string{
+		`private static CultureInfo _resourceCulture`,
+		`Resources.GetString(key, _resourceCulture)`,
+		`_resourceCulture = culture;`,
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("Windows dynamic localization contract missing %q", want)
+		}
+	}
+	if strings.Contains(content, `Resources.GetString(key, CultureInfo.CurrentUICulture)`) {
+		t.Fatal("Windows dynamic localization must not depend on ambient CurrentUICulture")
+	}
+}
+
 func TestWindowsUpdateProgressWindowSizesToContent(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "UpdateProgressWindow.xaml"))
 	if err != nil {
