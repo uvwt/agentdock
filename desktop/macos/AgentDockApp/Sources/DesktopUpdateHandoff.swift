@@ -28,11 +28,14 @@ struct DesktopUpdateHandoff: Codable {
         let temporary = directory.appendingPathComponent(".\(path.lastPathComponent).tmp.\(UUID().uuidString)")
         defer { try? fileManager.removeItem(at: temporary) }
         guard fileManager.createFile(atPath: temporary.path, contents: data, attributes: [.posixPermissions: 0o600]) else {
-            throw ValidationError("无法创建 AgentDock 更新接管确认。")
+            throw ValidationError(L10n.text("Unable to create AgentDock update handoff confirmation."))
         }
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temporary.path)
         if Darwin.rename(temporary.path, path.path) != 0 {
-            throw ValidationError("无法保存 AgentDock 更新接管确认：\(String(cString: strerror(errno)))")
+            throw ValidationError(L10n.format(
+                "Unable to save AgentDock update handoff confirmation: %@",
+                String(cString: strerror(errno))
+            ))
         }
     }
 

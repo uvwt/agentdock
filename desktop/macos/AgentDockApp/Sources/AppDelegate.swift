@@ -58,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             var handoffAcknowledged = false
             do {
                 guard let serviceState = try DesktopUpdateServiceState.load(from: service.paths.updateServiceState) else {
-                    throw ValidationError("AgentDock 更新缺少后台服务恢复状态。")
+                    throw ValidationError(L10n.text("AgentDock update is missing background service recovery state."))
                 }
 
                 // 先恢复 SMAppService 注册，确认新版 Bundle 的后台服务定义可以被系统接受。
@@ -78,7 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     tunnelEnabled: serviceState.tunnelEnabled
                 )
                 guard let result = DesktopUpdateResult.consume(from: service.paths.updateResult) else {
-                    throw ValidationError("AgentDock 更新结果在服务恢复过程中丢失。")
+                    throw ValidationError(L10n.text("AgentDock update result was lost while restoring background services."))
                 }
                 DesktopUpdateServiceState.remove(at: service.paths.updateServiceState)
 
@@ -88,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 do {
                     try await service.reconcileTunnelRegistrationFromConfiguration()
                 } catch {
-                    warnings.append("Tunnel 未能按当前公网模式恢复：\(error.localizedDescription)")
+                    warnings.append(L10n.format("Tunnel could not be restored for the current public access mode: %@", error.localizedDescription))
                     NSLog("AgentDock 更新后 Tunnel 状态收敛失败：%@", error.localizedDescription)
                 }
                 if pendingResult.ok, let menuLoginWarning = await restoreMenuLoginAgentAfterUpdateCommit() {
@@ -102,10 +102,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // 可以继续恢复后台服务，而不是把瞬时 SMAppService 故障变成整包回滚。
                     self.presentUpdateResult(
                         pendingResult,
-                        warning: "后台服务尚未恢复，将在下次启动继续尝试：\(error.localizedDescription)"
+                        warning: L10n.format(
+                            "Background services have not been restored yet. AgentDock will try again at the next launch: %@",
+                            error.localizedDescription
+                        )
                     )
                 } else if !pendingResult.ok {
-                    self.presentAlert(title: "AgentDock 恢复失败", message: error.localizedDescription)
+                    self.presentAlert(
+                        title: L10n.text("AgentDock recovery failed"),
+                        message: error.localizedDescription,
+                        style: .warning
+                    )
                 }
                 self.refreshStatus()
             }
@@ -119,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
         guard !fileManager.fileExists(atPath: service.paths.updateHandoff.path) else {
-            let message = "菜单栏登录启动将在下次启动时重新收敛：更新事务尚未完成。"
+            let message = L10n.text("Menu bar launch at sign-in will be reconciled at the next launch because the update transaction is still in progress.")
             NSLog("AgentDock 更新后菜单栏登录启动延后恢复：更新事务尚未完成。")
             return message
         }
@@ -129,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return nil
         } catch {
             NSLog("AgentDock 更新后菜单栏登录启动恢复失败：%@", error.localizedDescription)
-            return "菜单栏登录启动未能恢复：\(error.localizedDescription)"
+            return L10n.format("Menu bar launch at sign-in could not be restored: %@", error.localizedDescription)
         }
     }
 
@@ -177,46 +184,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         let statusText: String
         if !currentStatus.installed {
-            statusText = "未安装"
+            statusText = L10n.text("Not installed")
         } else if currentStatus.healthy {
             if AppVersion.matchesHealthVersion(currentStatus.version) {
-                statusText = "运行正常"
+                statusText = L10n.text("Running normally")
             } else {
-                statusText = "版本异常 · AgentDock \(AppVersion.current) · Core \(AppVersion.display(currentStatus.version))"
+                statusText = L10n.format(
+                    "Version mismatch · AgentDock %@ · Core %@",
+                    AppVersion.current,
+                    AppVersion.display(currentStatus.version)
+                )
             }
         } else if currentStatus.requiresApproval {
-            statusText = "需要允许后台运行"
+            statusText = L10n.text("Background permission required")
         } else if currentStatus.loaded {
-            statusText = "服务异常"
+            statusText = L10n.text("Service error")
         } else {
-            statusText = "已停止"
+            statusText = L10n.text("Stopped")
         }
-        let statusMenuItem = NSMenuItem(title: "AgentDock：\(statusText)", action: nil, keyEquivalent: "")
+        let statusMenuItem = NSMenuItem(title: L10n.format("AgentDock: %@", statusText), action: nil, keyEquivalent: "")
         statusMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
         menu.addItem(.separator())
 
-        menu.addItem(item(currentStatus.installed ? "打开 AgentDock" : "设置 AgentDock…", #selector(showSetup)))
-        menu.addItem(item("权限检查…", #selector(openPermissions)))
+        menu.addItem(item(currentStatus.installed ? L10n.text("Open AgentDock") : L10n.text("Set up AgentDock…"), #selector(showSetup)))
+        menu.addItem(item(L10n.text("Check permissions…"), #selector(openPermissions)))
         if currentStatus.installed {
             menu.addItem(.separator())
 
             if currentStatus.requiresApproval {
-                menu.addItem(item("打开后台设置", #selector(openBackgroundSettings)))
+                menu.addItem(item(L10n.text("Open background settings"), #selector(openBackgroundSettings)))
             } else if currentStatus.loaded {
-                menu.addItem(item("停用 AgentDock", #selector(stopService)))
-                menu.addItem(item("重启 AgentDock", #selector(restartService)))
+                menu.addItem(item(L10n.text("Stop AgentDock"), #selector(stopService)))
+                menu.addItem(item(L10n.text("Restart AgentDock"), #selector(restartService)))
             } else {
-                menu.addItem(item("启用 AgentDock", #selector(startService)))
+                menu.addItem(item(L10n.text("Start AgentDock"), #selector(startService)))
             }
-            menu.addItem(item("检查更新…", #selector(updateService)))
+            menu.addItem(item(L10n.text("Check for updates…"), #selector(updateService)))
             menu.addItem(.separator())
-            menu.addItem(item("打开日志目录", #selector(openLogs)))
-            menu.addItem(item("打开配置目录", #selector(openConfiguration)))
+            menu.addItem(item(L10n.text("Open logs folder"), #selector(openLogs)))
+            menu.addItem(item(L10n.text("Open configuration folder"), #selector(openConfiguration)))
         }
-        menu.addItem(item("打开使用文档", #selector(openDocumentation)))
+        menu.addItem(item(L10n.text("Open documentation"), #selector(openDocumentation)))
         menu.addItem(.separator())
-        menu.addItem(item("退出菜单栏", #selector(quit)))
+        menu.addItem(item(L10n.text("Exit menu bar app"), #selector(quit)))
         statusItem.menu = menu
     }
 
@@ -238,20 +249,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func startService() { performServiceAction("启用") { try await self.service.start() } }
-    @objc private func stopService() { performServiceAction("停用") { try await self.service.stop() } }
-    @objc private func restartService() { performServiceAction("重启") { try await self.service.restart() } }
+    @objc private func startService() { performServiceAction(L10n.text("Start")) { try await self.service.start() } }
+    @objc private func stopService() { performServiceAction(L10n.text("Stop")) { try await self.service.stop() } }
+    @objc private func restartService() { performServiceAction(L10n.text("Restart")) { try await self.service.restart() } }
 
     @objc private func updateService() {
         Task {
             do {
                 let output = try await service.update()
                 await MainActor.run {
-                    self.presentAlert(title: "AgentDock 更新完成", message: output.isEmpty ? "更新已完成。" : output)
+                    self.presentAlert(
+                        title: L10n.text("AgentDock update completed"),
+                        message: output.isEmpty ? L10n.text("Update completed.") : output
+                    )
                     self.refreshStatus()
                 }
             } catch {
-                await MainActor.run { self.presentAlert(title: "更新失败", message: error.localizedDescription) }
+                await MainActor.run {
+                    self.presentAlert(title: L10n.text("Update failed"), message: error.localizedDescription, style: .warning)
+                }
             }
         }
     }
@@ -263,26 +279,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? await Task.sleep(nanoseconds: 800_000_000)
                 await MainActor.run { self.refreshStatus() }
             } catch {
-                await MainActor.run { self.presentAlert(title: "\(action)失败", message: error.localizedDescription) }
+                await MainActor.run {
+                    self.presentAlert(
+                        title: L10n.format("%@ failed", action),
+                        message: error.localizedDescription,
+                        style: .warning
+                    )
+                }
             }
         }
     }
 
     private func presentUpdateResult(_ result: DesktopUpdateResult, warning: String? = nil) {
         NSApp.activate(ignoringOtherApps: true)
-        let title = result.ok ? "AgentDock 更新完成" : "AgentDock 更新失败"
+        let title = result.ok ? L10n.text("AgentDock update completed") : L10n.text("AgentDock update failed")
         let message = [result.message, warning]
             .compactMap { $0 }
             .joined(separator: "\n\n")
-        presentAlert(title: title, message: message)
+        presentAlert(title: title, message: message, style: result.ok ? .informational : .warning)
         refreshStatus()
     }
 
-    private func presentAlert(title: String, message: String) {
+    private func presentAlert(title: String, message: String, style: NSAlert.Style = .informational) {
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
-        alert.alertStyle = title.contains("失败") ? .warning : .informational
+        alert.alertStyle = style
         alert.runModal()
     }
 

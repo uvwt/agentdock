@@ -22,7 +22,7 @@ internal sealed class KillOnCloseJob : IDisposable
         var handle = CreateJobObject(IntPtr.Zero, null);
         if (handle.IsInvalid)
         {
-            throw new Win32Exception(Marshal.GetLastWin32Error(), "无法创建 AgentDock Core Job Object。");
+            throw new Win32Exception(Marshal.GetLastWin32Error(), UiText.Get("CoreJobCreateFailed"));
         }
 
         var information = new JobObjectExtendedLimitInformationStruct
@@ -35,7 +35,7 @@ internal sealed class KillOnCloseJob : IDisposable
         var length = (uint)Marshal.SizeOf<JobObjectExtendedLimitInformationStruct>();
         if (!SetInformationJobObject(handle, JobObjectExtendedLimitInformation, ref information, length))
         {
-            var error = new Win32Exception(Marshal.GetLastWin32Error(), "无法配置 AgentDock Core Job Object。");
+            var error = new Win32Exception(Marshal.GetLastWin32Error(), UiText.Get("CoreJobConfigureFailed"));
             handle.Dispose();
             throw error;
         }
@@ -47,7 +47,7 @@ internal sealed class KillOnCloseJob : IDisposable
     {
         if (!AssignProcessToJobObject(_handle, process.Handle))
         {
-            throw new Win32Exception(Marshal.GetLastWin32Error(), "无法把 AgentDock Core 加入后台 Job Object。");
+            throw new Win32Exception(Marshal.GetLastWin32Error(), UiText.Get("CoreJobAssignFailed"));
         }
     }
 

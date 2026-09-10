@@ -43,12 +43,12 @@ struct DesktopUpdateCheck: Decodable {
 
     static func decode(_ output: String) throws -> DesktopUpdateCheck {
         guard let data = output.data(using: .utf8) else {
-            throw ValidationError("无法读取 AgentDock 更新检查结果。")
+            throw ValidationError(L10n.text("Unable to read the AgentDock update check result."))
         }
         do {
             return try JSONDecoder().decode(DesktopUpdateCheck.self, from: data)
         } catch {
-            throw ValidationError("无法解析 AgentDock 更新检查结果。")
+            throw ValidationError(L10n.text("Unable to parse the AgentDock update check result."))
         }
     }
 }
@@ -139,7 +139,7 @@ final class ServiceController: @unchecked Sendable {
         try registerCoreIfNeeded()
         guard let configuration = ServiceConfiguration.load(from: paths.environment),
               await waitForHealth(configuration: configuration) else {
-            throw ValidationError("AgentDock 后台服务已启用，但健康检查没有通过。")
+            throw ValidationError(L10n.text("AgentDock background service is enabled, but the health check did not pass."))
         }
     }
 
@@ -151,7 +151,7 @@ final class ServiceController: @unchecked Sendable {
         try reregister(service: coreService, label: Self.coreLabel, displayName: "AgentDock Core")
         guard let configuration = ServiceConfiguration.load(from: paths.environment),
               await waitForHealth(configuration: configuration) else {
-            throw ValidationError("AgentDock Core 已重新注册，但健康检查没有通过。")
+            throw ValidationError(L10n.text("AgentDock Core was re-registered, but the health check did not pass."))
         }
     }
 
@@ -163,7 +163,7 @@ final class ServiceController: @unchecked Sendable {
         let endpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         let pairingCode = pairingCode.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !endpoint.isEmpty, !pairingCode.isEmpty else {
-            throw ValidationError("NexusDock 地址和一次性配对码不能为空。")
+            throw ValidationError(L10n.text("NexusDock address and one-time pairing code cannot be empty."))
         }
         let result = try await runInBackground {
             try runProcess(
@@ -172,7 +172,7 @@ final class ServiceController: @unchecked Sendable {
             )
         }
         guard result.status == 0 else {
-            throw ValidationError(commandError(result.output, action: "NexusDock 配对"))
+            throw ValidationError(commandError(result.output, action: L10n.text("NexusDock pairing")))
         }
         try await restart()
     }
@@ -217,7 +217,7 @@ final class ServiceController: @unchecked Sendable {
                 NSLog("AgentDock Tunnel 注册显示 enabled 但进程未稳定，开始自动重新注册。")
                 try restartTunnel()
                 guard await waitForTunnelProcess() else {
-                    throw ValidationError("AgentDock Tunnel 已重新注册，但后台进程没有稳定启动。")
+                    throw ValidationError(L10n.text("AgentDock Tunnel was re-registered, but the background process did not start reliably."))
                 }
             }
         }
@@ -260,7 +260,7 @@ final class ServiceController: @unchecked Sendable {
         if tunnelEnabled,
            tunnelService.status == .enabled,
            !(await waitForTunnelProcess()) {
-            warnings.append("AgentDock Tunnel 已恢复后台注册，但进程仍在启动。")
+            warnings.append(L10n.text("AgentDock Tunnel background registration was restored, but the process is still starting."))
         }
         if coreEnabled,
            coreService.status == .enabled,
@@ -273,7 +273,10 @@ final class ServiceController: @unchecked Sendable {
             do {
                 try await restart()
             } catch {
-                warnings.append("AgentDock Core 已恢复后台注册，但自动重启仍未通过健康检查：\(error.localizedDescription)")
+                warnings.append(L10n.format(
+                    "AgentDock Core background registration was restored, but automatic restart still failed the health check: %@",
+                    error.localizedDescription
+                ))
             }
         }
         return warnings
@@ -321,7 +324,7 @@ final class ServiceController: @unchecked Sendable {
                 environment: ["AGENTDOCK_DESKTOP_APP_PATH": self.paths.appBundle.path]
             )
             guard result.status == 0 else {
-                throw ValidationError(self.commandError(result.output, action: "检查更新"))
+                throw ValidationError(self.commandError(result.output, action: L10n.text("Check for updates")))
             }
             return try DesktopUpdateCheck.decode(result.output)
         }
@@ -350,7 +353,7 @@ final class ServiceController: @unchecked Sendable {
                     outputURL: self.paths.updateLog
                 )
                 guard result.status == 0 else {
-                    throw ValidationError(self.commandError(result.output, action: "更新"))
+                    throw ValidationError(self.commandError(result.output, action: L10n.text("Update")))
                 }
                 return result.output.trimmingCharacters(in: .whitespacesAndNewlines)
             }
@@ -366,7 +369,11 @@ final class ServiceController: @unchecked Sendable {
                 }
                 DesktopUpdateServiceState.remove(at: paths.updateServiceState)
             } catch {
-                throw ValidationError("更新没有应用，而且后台服务恢复失败：\(updateError.localizedDescription)；\(error.localizedDescription)")
+                throw ValidationError(L10n.format(
+                    "The update was not applied, and restoring background services also failed: %@; %@",
+                    updateError.localizedDescription,
+                    error.localizedDescription
+                ))
             }
             throw updateError
         }
@@ -383,7 +390,10 @@ final class ServiceController: @unchecked Sendable {
             }
             DesktopUpdateServiceState.remove(at: paths.updateServiceState)
         } catch {
-            throw ValidationError("更新进程已经返回，但后台服务恢复失败：\(error.localizedDescription)")
+            throw ValidationError(L10n.format(
+                "The update process returned, but restoring background services failed: %@",
+                error.localizedDescription
+            ))
         }
         return output
     }
@@ -421,19 +431,28 @@ final class ServiceController: @unchecked Sendable {
         case .enabled:
             return
         case .requiresApproval:
-            throw ValidationError("\(displayName) 已注册，但需要你在“系统设置 → 通用 → 登录项与扩展”中允许后台运行。")
+            throw ValidationError(L10n.format(
+                "%@ is registered, but you need to allow it to run in the background in System Settings → General → Login Items & Extensions.",
+                displayName
+            ))
         case .notRegistered, .notFound:
             // SMAppService 在服务首次 register 前可能返回 .notFound，即使 Bundle 内 plist
             // 已经存在。定义是否完整由上面的 Bundle 文件校验负责，不用 status 猜测。
             try service.register()
         @unknown default:
-            throw ValidationError("无法确认 \(displayName) 的后台服务状态。")
+            throw ValidationError(L10n.format("Unable to determine background service status for %@.", displayName))
         }
         if service.status == .requiresApproval {
-            throw ValidationError("\(displayName) 需要你在“系统设置 → 通用 → 登录项与扩展”中允许后台运行。")
+            throw ValidationError(L10n.format(
+                "%@ requires permission to run in the background in System Settings → General → Login Items & Extensions.",
+                displayName
+            ))
         }
         guard service.status == .enabled else {
-            throw ValidationError("\(displayName) 注册完成，但系统没有将它标记为可运行。")
+            throw ValidationError(L10n.format(
+                "%@ registration completed, but the system did not mark it as runnable.",
+                displayName
+            ))
         }
     }
 
@@ -444,7 +463,10 @@ final class ServiceController: @unchecked Sendable {
         case .enabled, .requiresApproval:
             try service.unregister()
             guard waitUntilUnregistered(service: service, label: label, timeout: 5) else {
-                throw ValidationError("后台服务 \(label) 注销后系统状态没有完成收敛。")
+                throw ValidationError(L10n.format(
+                    "Background service %@ did not converge to the unregistered state.",
+                    label
+                ))
             }
         @unknown default:
             return
@@ -470,14 +492,14 @@ final class ServiceController: @unchecked Sendable {
     func validatePersistentAppLocation() throws {
         let path = paths.appBundle.resolvingSymlinksInPath().path
         if path == "/Volumes" || path.hasPrefix("/Volumes/") {
-            throw ValidationError("请先把 AgentDock 拖到“应用程序”文件夹，再启用后台服务。")
+            throw ValidationError(L10n.text("Move AgentDock to the Applications folder before enabling the background service."))
         }
     }
 
     func validateServiceManagementReadiness() throws {
         try validatePersistentAppLocation()
         if LegacyDesktopRuntimeMigration.isPresent(paths: paths) {
-            throw ValidationError("检测到旧版 AgentDock 后台结构，请先在主面板应用当前设置完成迁移。")
+            throw ValidationError(L10n.text("A legacy AgentDock background layout was detected. Apply the current settings in the main panel to complete migration first."))
         }
     }
 
@@ -488,7 +510,10 @@ final class ServiceController: @unchecked Sendable {
         guard let values = try? plist.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
               values.isRegularFile == true,
               values.isSymbolicLink != true else {
-            throw ValidationError("AgentDock.app 缺少 \(displayName) 的后台服务定义，请重新安装应用。")
+            throw ValidationError(L10n.format(
+                "AgentDock.app is missing the background service definition for %@. Reinstall the application.",
+                displayName
+            ))
         }
     }
 
@@ -604,7 +629,7 @@ final class ServiceController: @unchecked Sendable {
 
     private func commandError(_ output: String, action: String) -> String {
         let message = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        return message.isEmpty ? "AgentDock \(action)失败。" : message
+        return message.isEmpty ? L10n.format("AgentDock %@ failed.", action) : message
     }
 
     func runInBackground<T>(_ operation: @escaping () throws -> T) async throws -> T {

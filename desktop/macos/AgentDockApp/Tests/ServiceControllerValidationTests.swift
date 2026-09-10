@@ -29,7 +29,9 @@ struct ServiceControllerValidationTests {
 
         // 迁移入口必须允许旧结构存在，否则在 begin() 之前就会被自己拦住。
         try service.validatePersistentAppLocation()
-        expectFailure("检测到旧版") {
+        expectFailure(L10n.text(
+            "A legacy AgentDock background layout was detected. Apply the current settings in the main panel to complete migration first."
+        )) {
             try service.validateServiceManagementReadiness()
         }
         try service.validateBundledServiceDefinition(
@@ -37,7 +39,10 @@ struct ServiceControllerValidationTests {
             displayName: "AgentDock Core"
         )
         try FileManager.default.removeItem(at: corePlist)
-        expectFailure("缺少 AgentDock Core") {
+        expectFailure(L10n.format(
+            "AgentDock.app is missing the background service definition for %@. Reinstall the application.",
+            "AgentDock Core"
+        )) {
             try service.validateBundledServiceDefinition(
                 plistName: ServiceController.corePlistName,
                 displayName: "AgentDock Core"
@@ -48,7 +53,7 @@ struct ServiceControllerValidationTests {
             home: root,
             appBundle: URL(fileURLWithPath: "/Volumes/AgentDock/AgentDock.app", isDirectory: true)
         )
-        expectFailure("应用程序") {
+        expectFailure(L10n.text("Move AgentDock to the Applications folder before enabling the background service.")) {
             try ServiceController(paths: mountedPaths).validatePersistentAppLocation()
         }
 
@@ -143,7 +148,7 @@ struct ServiceControllerValidationTests {
         )
         precondition(available.updateAvailable)
 
-        expectFailure("解析") {
+        expectFailure(L10n.text("Unable to parse the AgentDock update check result.")) {
             _ = try DesktopUpdateCheck.decode("not-json")
         }
     }

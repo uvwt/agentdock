@@ -36,7 +36,7 @@ final class LegacyDesktopRuntimeMigration {
                 arguments: ["bootout", "\(domain)/\(label)"]
             )
             guard result.status == 0 || !Self.launchdLoaded(label: label) else {
-                throw ValidationError("无法停止旧版 AgentDock 后台服务：\(label)")
+                throw ValidationError(L10n.format("Unable to stop legacy AgentDock background service: %@", label))
             }
         }
 
@@ -50,7 +50,7 @@ final class LegacyDesktopRuntimeMigration {
             for (index, original) in managedFiles().enumerated() where fileManager.fileExists(atPath: original.path) {
                 let values = try original.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
                 guard values.isRegularFile == true || values.isSymbolicLink == true else {
-                    throw ValidationError("旧版 AgentDock 运行文件不是普通文件：\(original.path)")
+                    throw ValidationError(L10n.format("Legacy AgentDock runtime file is not a regular file: %@", original.path))
                 }
                 let backup = backupRoot.appendingPathComponent("\(index)-\(original.lastPathComponent)")
                 try fileManager.moveItem(at: original, to: backup)
@@ -165,7 +165,7 @@ final class LegacyDesktopRuntimeMigration {
                 arguments: ["bootstrap", launchdDomain, plist.path]
             )
             guard bootstrap.status == 0 || launchdLoaded(label: label) else {
-                throw ValidationError("无法恢复旧版 AgentDock 后台服务：\(label)")
+                throw ValidationError(L10n.format("Unable to restore legacy AgentDock background service: %@", label))
             }
             _ = try? runProcess(
                 executable: "/bin/launchctl",

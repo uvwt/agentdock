@@ -159,7 +159,7 @@ struct NexusDeviceStatus {
             let identity = try JSONDecoder().decode(NexusDeviceIdentity.self, from: Data(contentsOf: path))
             guard !identity.endpoint.isEmpty, !identity.nodeID.isEmpty,
                   !identity.deviceID.isEmpty, !identity.deviceToken.isEmpty else {
-                throw ValidationError("设备身份文件无效，请重新配对。")
+                throw ValidationError(L10n.text("Device identity file is invalid. Pair again."))
             }
             return NexusDeviceStatus(
                 paired: true,
@@ -174,7 +174,7 @@ struct NexusDeviceStatus {
                 endpoint: "",
                 nodeID: "",
                 deviceTokenStored: false,
-                error: "无法读取设备身份：\(error.localizedDescription)"
+                error: L10n.format("Unable to read device identity: %@", error.localizedDescription)
             )
         }
     }

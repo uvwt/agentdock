@@ -16,7 +16,7 @@ final class FileAccessPermissionsWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "AgentDock 文件访问检查"
+        window.title = L10n.text("AgentDock File Access Check")
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 610, height: 500)
         window.center()
@@ -52,10 +52,10 @@ final class FileAccessPermissionsWindowController: NSWindowController {
         contentStack.translatesAutoresizingMaskIntoConstraints = false
         scrollView.documentView = contentStack
 
-        let title = NSTextField(labelWithString: "文件访问")
+        let title = NSTextField(labelWithString: L10n.text("File access"))
         title.font = .systemFont(ofSize: 22, weight: .semibold)
         let intro = PermissionUI.detailLabel(
-            "检查 AgentDock 是否可以访问桌面、文稿、下载和你选择的其他目录。"
+            L10n.text("Check whether AgentDock can access Desktop, Documents, Downloads, and other folders you select.")
         )
         intro.widthAnchor.constraint(equalToConstant: 600).isActive = true
         contentStack.addArrangedSubview(title)
@@ -67,14 +67,14 @@ final class FileAccessPermissionsWindowController: NSWindowController {
         standardRows.spacing = 8
         contentStack.addArrangedSubview(standardRows)
         let checkStandardButton = NSButton(
-            title: "检查标准目录",
+            title: L10n.text("Check standard folders"),
             target: self,
             action: #selector(checkStandardDirectories)
         )
         checkStandardButton.bezelStyle = .rounded
         contentStack.addArrangedSubview(checkStandardButton)
 
-        let selectedTitle = NSTextField(labelWithString: "其他目录")
+        let selectedTitle = NSTextField(labelWithString: L10n.text("Other folders"))
         selectedTitle.font = .systemFont(ofSize: 15, weight: .semibold)
         contentStack.addArrangedSubview(PermissionUI.separator())
         contentStack.addArrangedSubview(selectedTitle)
@@ -83,9 +83,9 @@ final class FileAccessPermissionsWindowController: NSWindowController {
         selectedRows.spacing = 8
         contentStack.addArrangedSubview(selectedRows)
 
-        let selectButton = NSButton(title: "选择目录检查…", target: self, action: #selector(selectDirectory))
+        let selectButton = NSButton(title: L10n.text("Choose a folder to check…"), target: self, action: #selector(selectDirectory))
         selectButton.bezelStyle = .rounded
-        let filesSettingsButton = NSButton(title: "打开“文件与文件夹”设置", target: self, action: #selector(openFilesSettings))
+        let filesSettingsButton = NSButton(title: L10n.text("Open Files and Folders settings"), target: self, action: #selector(openFilesSettings))
         filesSettingsButton.bezelStyle = .rounded
         let selectedActions = NSStackView(views: [selectButton, filesSettingsButton])
         selectedActions.orientation = .horizontal
@@ -93,13 +93,13 @@ final class FileAccessPermissionsWindowController: NSWindowController {
         contentStack.addArrangedSubview(selectedActions)
 
         contentStack.addArrangedSubview(PermissionUI.separator())
-        let fullDiskTitle = NSTextField(labelWithString: "完全磁盘访问")
+        let fullDiskTitle = NSTextField(labelWithString: L10n.text("Full Disk Access"))
         fullDiskTitle.font = .systemFont(ofSize: 15, weight: .semibold)
         let fullDiskDetail = PermissionUI.detailLabel(
-            "用于访问其他应用的受保护数据。"
+            L10n.text("Used to access protected data from other applications.")
         )
         fullDiskDetail.widthAnchor.constraint(equalToConstant: 600).isActive = true
-        let fullDiskButton = NSButton(title: "打开完全磁盘访问设置", target: self, action: #selector(openFullDiskSettings))
+        let fullDiskButton = NSButton(title: L10n.text("Open Full Disk Access settings"), target: self, action: #selector(openFullDiskSettings))
         fullDiskButton.bezelStyle = .rounded
         contentStack.addArrangedSubview(fullDiskTitle)
         contentStack.addArrangedSubview(fullDiskDetail)
@@ -119,7 +119,7 @@ final class FileAccessPermissionsWindowController: NSWindowController {
         let selectedChecks = selectedURLs.map {
             FileAccessPermissionChecker.check(title: $0.lastPathComponent.isEmpty ? $0.path : $0.lastPathComponent, url: $0)
         }
-        replaceRows(in: selectedRows, with: selectedChecks, emptyText: "尚未选择其他目录。")
+        replaceRows(in: selectedRows, with: selectedChecks, emptyText: L10n.text("No additional folders selected."))
     }
 
     private func replaceRows(in stack: NSStackView, with checks: [FileAccessCheck], emptyText: String? = nil) {
@@ -169,7 +169,7 @@ final class FileAccessPermissionsWindowController: NSWindowController {
 
     @objc private func selectDirectory() {
         let panel = NSOpenPanel()
-        panel.title = "选择要检查的目录"
+        panel.title = L10n.text("Choose a folder to check")
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true

@@ -7,7 +7,7 @@ struct ManagedEnvironment {
     static func load(from url: URL) throws -> ManagedEnvironment {
         let data = try Data(contentsOf: url)
         guard let text = String(data: data, encoding: .utf8) else {
-            throw ValidationError("AgentDock 配置文件不是有效的 UTF-8 文本。")
+            throw ValidationError(L10n.text("AgentDock configuration is not valid UTF-8 text."))
         }
         return ManagedEnvironment(originalText: text, values: parseValues(text))
     }
@@ -17,15 +17,15 @@ struct ManagedEnvironment {
         let requested = Set(replacements.keys)
         guard requested.isSubset(of: editable) else {
             let rejected = requested.subtracting(editable).sorted().joined(separator: ", ")
-            throw ValidationError("包含不允许由图形界面修改的配置项：\(rejected)")
+            throw ValidationError(L10n.format("Contains configuration keys that the GUI is not allowed to modify: %@", rejected))
         }
         let removable = editable.union(ServiceConfiguration.removableLegacyKeys)
         guard removals.isSubset(of: removable) else {
             let rejected = removals.subtracting(removable).sorted().joined(separator: ", ")
-            throw ValidationError("包含不允许由图形界面删除的配置项：\(rejected)")
+            throw ValidationError(L10n.format("Contains configuration keys that the GUI is not allowed to remove: %@", rejected))
         }
         guard requested.isDisjoint(with: removals) else {
-            throw ValidationError("同一配置项不能同时更新和删除。")
+            throw ValidationError(L10n.text("The same configuration key cannot be updated and removed at the same time."))
         }
 
         var pending = replacements
@@ -57,7 +57,7 @@ struct ManagedEnvironment {
         while output.last == "" { output.removeLast() }
         output.append("")
         guard let data = output.joined(separator: "\n").data(using: .utf8) else {
-            throw ValidationError("无法编码 AgentDock 配置文件。")
+            throw ValidationError(L10n.text("Unable to encode the AgentDock configuration file."))
         }
         return data
     }

@@ -89,7 +89,7 @@ final class InstallerRunner {
                     // 需要与 Named Tunnel 相同的自愈，否则会一直等到 URL 超时。
                     try service.restartTunnel()
                     guard await service.waitForTunnelProcess() else {
-                        throw ValidationError("AgentDock Tunnel 已重新注册，但 cloudflared 没有稳定运行。")
+                        throw ValidationError(L10n.text("AgentDock Tunnel was re-registered, but cloudflared did not run reliably."))
                     }
                 }
             }
@@ -104,14 +104,14 @@ final class InstallerRunner {
                 publicURL = try await waitForQuickTunnelURL(timeout: 35)
                 guard let configuration = ServiceConfiguration.load(from: paths.environment),
                       await service.waitForHealth(configuration: configuration) else {
-                    throw ValidationError("临时公网地址已生成，但 AgentDock Core 没有恢复健康。")
+                    throw ValidationError(L10n.text("A temporary public address was generated, but AgentDock Core did not recover to a healthy state."))
                 }
             }
 
             let finalConfiguration = ServiceConfiguration.load(from: paths.environment)
             guard let finalConfiguration,
                   let localMCPURL = finalConfiguration.localMCPURL?.absoluteString else {
-                throw ValidationError("AgentDock 配置已写入，但无法读取最终本地 MCP 地址。")
+                throw ValidationError(L10n.text("AgentDock configuration was written, but the final local MCP address could not be read."))
             }
             let publicMCPURL = publicURL.isEmpty ? "" : publicURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/mcp"
             try legacyMigration?.commit()
@@ -141,7 +141,11 @@ final class InstallerRunner {
                     try service.setTunnelEnabled(true)
                 }
             } catch {
-                throw ValidationError("应用配置失败，而且安装前状态恢复也失败：\(originalError.localizedDescription)；\(error.localizedDescription)")
+                throw ValidationError(L10n.format(
+                    "Failed to apply configuration, and restoring the pre-install state also failed: %@; %@",
+                    originalError.localizedDescription,
+                    error.localizedDescription
+                ))
             }
             throw originalError
         }
@@ -200,7 +204,7 @@ final class InstallerRunner {
             tunnelValues["AGENTDOCK_TUNNEL_TARGET"] = "http://127.0.0.1:\(port)"
         case .named:
             guard let serverURL else {
-                throw ValidationError("固定域名模式缺少 HTTPS 公网地址。")
+                throw ValidationError(L10n.text("Custom domain mode is missing an HTTPS public address."))
             }
             let tokenStore = TunnelTokenStore(paths: paths)
             tunnelToken = try tokenStore.tokenForNamedTunnel(providedToken: providedTunnelToken)
@@ -236,23 +240,23 @@ final class InstallerRunner {
             guard values.isRegularFile == true,
                   values.isSymbolicLink != true,
                   fileManager.isExecutableFile(atPath: url.path) else {
-                throw ValidationError("AgentDock.app 缺少有效的 \(title)：\(url.path)")
+                throw ValidationError(L10n.format("AgentDock.app is missing a valid %@: %@", title, url.path))
             }
         }
         let manifest = paths.coreSkillBundle.appendingPathComponent("manifest.json")
         let manifestValues = try manifest.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
         guard manifestValues.isRegularFile == true, manifestValues.isSymbolicLink != true else {
-            throw ValidationError("AgentDock.app 缺少官方核心 Skill Bundle。")
+            throw ValidationError(L10n.text("AgentDock.app is missing the official core Skill bundle."))
         }
 
         let version = try runProcess(executable: paths.binary.path, arguments: ["--version"])
         guard version.status == 0,
               AppVersion.matchesCoreVersion(version.output) else {
-            throw ValidationError("AgentDock.app 内置 Core 与 App 版本不一致，请重新安装应用。")
+            throw ValidationError(L10n.text("The Core bundled in AgentDock.app does not match the app version. Reinstall the application."))
         }
         let cloudflared = try runProcess(executable: paths.cloudflared.path, arguments: ["--version"])
         guard cloudflared.status == 0 else {
-            throw ValidationError("AgentDock.app 内的 cloudflared 无法运行。")
+            throw ValidationError(L10n.text("The cloudflared bundled in AgentDock.app cannot run."))
         }
     }
 
@@ -262,7 +266,7 @@ final class InstallerRunner {
             arguments: ["skill", "bootstrap", "--bundle", paths.coreSkillBundle.path]
         )
         guard result.status == 0 else {
-            throw ValidationError(result.output.isEmpty ? "官方核心 Skill 初始化失败。" : result.output)
+            throw ValidationError(result.output.isEmpty ? L10n.text("Official core Skill initialization failed.") : result.output)
         }
     }
 
@@ -293,7 +297,7 @@ final class InstallerRunner {
             }
             let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
             guard values.isRegularFile == true, values.isSymbolicLink != true else {
-                throw ValidationError("运行配置必须是普通文件：\(url.path)")
+                throw ValidationError(L10n.format("Runtime configuration must be a regular file: %@", url.path))
             }
             return FileSnapshot(url: url, data: try Data(contentsOf: url))
         }
@@ -315,11 +319,15 @@ final class InstallerRunner {
         let temporary = directory.appendingPathComponent(".\(url.lastPathComponent).tmp.\(UUID().uuidString)")
         defer { try? fileManager.removeItem(at: temporary) }
         guard fileManager.createFile(atPath: temporary.path, contents: data, attributes: [.posixPermissions: 0o600]) else {
-            throw ValidationError("无法创建配置临时文件：\(url.lastPathComponent)")
+            throw ValidationError(L10n.format("Unable to create temporary configuration file: %@", url.lastPathComponent))
         }
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temporary.path)
         if Darwin.rename(temporary.path, url.path) != 0 {
-            throw ValidationError("无法原子替换 \(url.lastPathComponent)：\(String(cString: strerror(errno)))")
+            throw ValidationError(L10n.format(
+                "Unable to atomically replace %@: %@",
+                url.lastPathComponent,
+                String(cString: strerror(errno))
+            ))
         }
     }
 
@@ -343,7 +351,7 @@ final class InstallerRunner {
                 }
                 Thread.sleep(forTimeInterval: 0.25)
             }
-            throw ValidationError("cloudflared 未在超时前生成临时公网地址。")
+            throw ValidationError(L10n.text("cloudflared did not generate a temporary public address before the timeout."))
         }
     }
 
@@ -410,7 +418,7 @@ func runUpdateProcess(
         contents: nil,
         attributes: [.posixPermissions: 0o600]
     ) else {
-        throw ValidationError("无法创建更新日志文件。")
+        throw ValidationError(L10n.text("Unable to create the update log file."))
     }
     try FileManager.default.setAttributes(
         [.posixPermissions: 0o600],

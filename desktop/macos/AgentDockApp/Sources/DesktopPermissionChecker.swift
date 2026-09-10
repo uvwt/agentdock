@@ -12,10 +12,10 @@ enum DesktopPermissionState: Equatable {
 
     var title: String {
         switch self {
-        case .granted: return "已授权"
-        case .notGranted: return "未授权"
-        case .notDetermined: return "未确认"
-        case .unavailable: return "无法检测"
+        case .granted: return L10n.text("Granted")
+        case .notGranted: return L10n.text("Not granted")
+        case .notDetermined: return L10n.text("Not determined")
+        case .unavailable: return L10n.text("Unable to check")
         }
     }
 }
@@ -28,23 +28,23 @@ enum DesktopPermissionKind: Int, CaseIterable {
 
     var title: String {
         switch self {
-        case .accessibility: return "辅助功能"
-        case .screenRecording: return "屏幕录制"
-        case .systemEventsAutomation: return "自动化 · System Events"
-        case .finderAutomation: return "自动化 · Finder"
+        case .accessibility: return L10n.text("Accessibility")
+        case .screenRecording: return L10n.text("Screen Recording")
+        case .systemEventsAutomation: return L10n.text("Automation · System Events")
+        case .finderAutomation: return L10n.text("Automation · Finder")
         }
     }
 
     var detail: String {
         switch self {
         case .accessibility:
-            return "用于键盘、鼠标与受辅助功能保护的界面操作。"
+            return L10n.text("Used for keyboard, mouse, and accessibility-protected UI operations.")
         case .screenRecording:
-            return "用于截图和读取屏幕内容。"
+            return L10n.text("Used for screenshots and reading screen content.")
         case .systemEventsAutomation:
-            return "用于通过 Apple Events 执行系统级自动化。"
+            return L10n.text("Used for system-level automation through Apple Events.")
         case .finderAutomation:
-            return "用于通过 Apple Events 操作 Finder。"
+            return L10n.text("Used to control Finder through Apple Events.")
         }
     }
 

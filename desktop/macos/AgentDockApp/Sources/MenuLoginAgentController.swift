@@ -68,7 +68,7 @@ final class MenuLoginAgentController {
 
     func register() throws {
         guard !isRunningFromTransientVolume else {
-            throw ValidationError("请先把 AgentDock 拖到“应用程序”文件夹，再启用登录启动。")
+            throw ValidationError(L10n.text("Move AgentDock to the Applications folder before enabling launch at sign-in."))
         }
         try validateBundledAgent()
         switch menuAgent.status {
@@ -119,12 +119,12 @@ final class MenuLoginAgentController {
 
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: plist.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
-            throw ValidationError("AgentDock 应用包缺少菜单栏登录服务定义。")
+            throw ValidationError(L10n.text("AgentDock app bundle is missing the menu bar login service definition."))
         }
         guard fileManager.fileExists(atPath: helper.path, isDirectory: &isDirectory),
               !isDirectory.boolValue,
               fileManager.isExecutableFile(atPath: helper.path) else {
-            throw ValidationError("AgentDock 应用包缺少可执行的菜单栏登录组件。")
+            throw ValidationError(L10n.text("AgentDock app bundle is missing an executable menu bar login component."))
         }
     }
 

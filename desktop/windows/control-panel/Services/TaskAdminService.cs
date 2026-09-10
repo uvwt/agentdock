@@ -75,7 +75,7 @@ internal static class TaskAdminService
                     SetTaskEnabled(scheduler.Root, request.Enabled);
                     break;
                 default:
-                    throw new InvalidOperationException($"不支持的 AgentDock 计划任务操作：{request.Action}");
+                    throw new InvalidOperationException(UiText.Format("UnsupportedTaskAdminAction", request.Action));
             }
             return 0;
         }
@@ -91,7 +91,7 @@ internal static class TaskAdminService
         var action = ReadArgument(arguments, "--task-admin");
         if (action is not ("prepare-elevated" or "prepare-standard" or "restore" or "remove" or "set-enabled"))
         {
-            throw new InvalidOperationException("AgentDock 计划任务管理动作无效。");
+            throw new InvalidOperationException(UiText.Get("InvalidTaskAdminAction"));
         }
         return new TaskAdminRequest(
             action,
@@ -119,7 +119,7 @@ internal static class TaskAdminService
         }
         if (required)
         {
-            throw new InvalidOperationException($"缺少 AgentDock 管理参数：{name}");
+            throw new InvalidOperationException(UiText.Format("MissingAdminArgument", name));
         }
         return "";
     }
@@ -130,7 +130,7 @@ internal static class TaskAdminService
         var principal = new WindowsPrincipal(identity);
         if (!principal.IsInRole(WindowsBuiltInRole.Administrator))
         {
-            throw new InvalidOperationException("AgentDock 计划任务配置需要管理员权限。");
+            throw new InvalidOperationException(UiText.Get("TaskAdminRequiresElevation"));
         }
     }
 
@@ -138,12 +138,12 @@ internal static class TaskAdminService
     {
         if (string.IsNullOrWhiteSpace(expectedSid))
         {
-            throw new InvalidOperationException("管理员增强模式缺少当前 Windows 用户 SID。");
+            throw new InvalidOperationException(UiText.Get("ElevatedModeMissingSid"));
         }
         using var identity = WindowsIdentity.GetCurrent();
         if (!string.Equals(identity.User?.Value, expectedSid, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("管理员增强模式必须由当前登录的 Windows 账号确认 UAC。");
+            throw new InvalidOperationException(UiText.Get("ElevatedModeRequiresCurrentUserUac"));
         }
     }
 
@@ -156,7 +156,7 @@ internal static class TaskAdminService
         }
         if (!bool.TryParse(value, out var parsed))
         {
-            throw new InvalidOperationException($"AgentDock 管理参数 {name} 必须是 true 或 false。");
+            throw new InvalidOperationException(UiText.Format("AdminArgumentBoolean", name));
         }
         return parsed;
     }
@@ -165,12 +165,12 @@ internal static class TaskAdminService
     {
         if (enabled is null)
         {
-            throw new InvalidOperationException("AgentDock 计划任务启用状态不能为空。");
+            throw new InvalidOperationException(UiText.Get("TaskEnabledStateRequired"));
         }
         dynamic? task = FindTask(root);
         if (task is null)
         {
-            throw new InvalidOperationException("找不到 AgentDock 计划任务。");
+            throw new InvalidOperationException(UiText.Get("ScheduledTaskMissing"));
         }
         task.Enabled = enabled.Value;
     }
@@ -179,7 +179,7 @@ internal static class TaskAdminService
     {
         if (string.IsNullOrWhiteSpace(request.BackupDirectory))
         {
-            throw new InvalidOperationException("AgentDock 计划任务备份目录不能为空。");
+            throw new InvalidOperationException(UiText.Get("TaskBackupDirectoryRequired"));
         }
     }
 
@@ -187,7 +187,7 @@ internal static class TaskAdminService
     {
         if (string.IsNullOrWhiteSpace(request.RuntimeRoot))
         {
-            throw new InvalidOperationException("AgentDock 运行目录不能为空。");
+            throw new InvalidOperationException(UiText.Get("RuntimeDirectoryRequired"));
         }
     }
 
@@ -243,7 +243,7 @@ internal static class TaskAdminService
             }
             if (DateTime.UtcNow >= deadline)
             {
-                throw new InvalidOperationException($"无法停止正在运行的 AgentDock Core：{expectedBinary}");
+                throw new InvalidOperationException(UiText.Format("StopCoreFailed", expectedBinary));
             }
             Thread.Sleep(250);
         }
@@ -283,10 +283,10 @@ internal static class TaskAdminService
         var statePath = Path.Combine(backupDirectory, "state.json");
         if (!File.Exists(statePath))
         {
-            throw new InvalidOperationException($"找不到 AgentDock 计划任务备份状态：{statePath}");
+            throw new InvalidOperationException(UiText.Format("TaskBackupStateMissing", statePath));
         }
         var state = JsonSerializer.Deserialize<TaskBackupState>(File.ReadAllText(statePath))
-            ?? throw new InvalidOperationException("无法读取 AgentDock 计划任务备份状态。");
+            ?? throw new InvalidOperationException(UiText.Get("TaskBackupStateReadFailed"));
 
         RemoveTask(root);
         if (!state.Exists)
@@ -297,7 +297,7 @@ internal static class TaskAdminService
         var xmlPath = Path.Combine(backupDirectory, "task.xml");
         if (!File.Exists(xmlPath))
         {
-            throw new InvalidOperationException($"找不到 AgentDock 计划任务备份 XML：{xmlPath}");
+            throw new InvalidOperationException(UiText.Format("TaskBackupXmlMissing", xmlPath));
         }
         var xml = File.ReadAllText(xmlPath);
         var userId = ReadTaskUserId(xml);
@@ -327,7 +327,7 @@ internal static class TaskAdminService
             .FirstOrDefault(element => element.Name.LocalName == "UserId")?.Value;
         if (string.IsNullOrWhiteSpace(userId))
         {
-            throw new InvalidOperationException("AgentDock 计划任务备份缺少用户标识。");
+            throw new InvalidOperationException(UiText.Get("TaskBackupUserMissing"));
         }
         return userId;
     }
@@ -370,7 +370,7 @@ internal static class TaskAdminService
             string.IsNullOrWhiteSpace(request.UserSid) ||
             string.IsNullOrWhiteSpace(request.UserName))
         {
-            throw new InvalidOperationException("AgentDock 管理员增强计划任务参数不完整。");
+            throw new InvalidOperationException(UiText.Get("ElevatedTaskArgumentsIncomplete"));
         }
         dynamic definition = service.NewTask(0);
         definition.RegistrationInfo.Description = "AgentDock privileged core service for the current desktop user.";
@@ -413,9 +413,9 @@ internal static class TaskAdminService
         internal SchedulerSession()
         {
             var schedulerType = Type.GetTypeFromProgID("Schedule.Service")
-                ?? throw new InvalidOperationException("Windows Task Scheduler COM 服务不可用。");
+                ?? throw new InvalidOperationException(UiText.Get("TaskSchedulerComUnavailable"));
             Service = Activator.CreateInstance(schedulerType)
-                ?? throw new InvalidOperationException("无法连接 Windows Task Scheduler。");
+                ?? throw new InvalidOperationException(UiText.Get("TaskSchedulerConnectFailed"));
             Service.Connect();
             Root = Service.GetFolder("\\");
         }

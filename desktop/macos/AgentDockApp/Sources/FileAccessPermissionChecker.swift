@@ -9,11 +9,11 @@ enum FileAccessState: Equatable {
 
     var title: String {
         switch self {
-        case .notChecked: return "未检查"
-        case .accessible: return "可访问"
-        case .denied: return "无权限"
-        case .missing: return "目录不存在"
-        case .unavailable: return "无法检测"
+        case .notChecked: return L10n.text("Not checked")
+        case .accessible: return L10n.text("Accessible")
+        case .denied: return L10n.text("No access")
+        case .missing: return L10n.text("Folder does not exist")
+        case .unavailable: return L10n.text("Unable to check")
         }
     }
 }
@@ -56,9 +56,9 @@ enum FileAccessPermissionChecker {
 
     private static func standardTargets(home: URL) -> [(title: String, url: URL)] {
         [
-            ("桌面", home.appendingPathComponent("Desktop", isDirectory: true)),
-            ("文稿", home.appendingPathComponent("Documents", isDirectory: true)),
-            ("下载", home.appendingPathComponent("Downloads", isDirectory: true)),
+            (L10n.text("Desktop"), home.appendingPathComponent("Desktop", isDirectory: true)),
+            (L10n.text("Documents"), home.appendingPathComponent("Documents", isDirectory: true)),
+            (L10n.text("Downloads"), home.appendingPathComponent("Downloads", isDirectory: true)),
         ]
     }
 }

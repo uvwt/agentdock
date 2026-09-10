@@ -15,7 +15,7 @@ func TestWindowsControlPanelPrivilegeModeCopyStaysUserFacing(t *testing.T) {
 	content := string(data)
 	for _, want := range []string{
 		`x:Name="ElevatedCoreCheckBox"`,
-		`Content="以管理员权限运行 AgentDock 核心"`,
+		`Content="{local:Loc RunCoreElevated}"`,
 		`Click="ElevatedCoreCheckBox_Click"`,
 	} {
 		if !strings.Contains(content, want) {
@@ -50,17 +50,17 @@ func TestWindowsControlPanelShowsLiveNexusStatusInsideRuntimeStatus(t *testing.T
 	root := filepath.Join("..", "..", "desktop", "windows", "control-panel")
 	files := map[string][]string{
 		"MainWindow.xaml": {
-			`Text="健康检查" Grid.Row="1"`,
+			`Text="{local:Loc HealthCheck}" Grid.Row="1"`,
 			`Text="Nexus" Grid.Row="2"`,
-			`x:Name="NexusStatusText" Grid.Row="2" Grid.Column="1" Text="未配置"`,
-			`Text="版本" Grid.Row="3"`,
+			`x:Name="NexusStatusText" Grid.Row="2" Grid.Column="1" Text="{local:Loc NotConfigured}"`,
+			`Text="{local:Loc Version}" Grid.Row="3"`,
 		},
 		"MainWindow.xaml.cs": {
 			`NexusStatusText.Text`,
-			`"已连接"`,
-			`"未连接"`,
-			`"未配置"`,
-			`"配置异常"`,
+			`UiText.Get("Connected")`,
+			`UiText.Get("NotConnected")`,
+			`UiText.Get("NotConfigured")`,
+			`UiText.Get("ConfigurationError")`,
 			`snapshot.NexusConnected`,
 			`GetSnapshotAsync(includeNexusConnection: true)`,
 		},

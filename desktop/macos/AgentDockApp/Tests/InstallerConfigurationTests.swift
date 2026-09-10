@@ -94,22 +94,25 @@ struct InstallerConfigurationTests {
         precondition(encodedGrokArguments == "[\"agent\",\"stdio\"]")
         let decodedCustomArguments = try ACPDesktopConfiguration.decodeArguments("[\"--flag\",\"value\"]")
         precondition(decodedCustomArguments == ["--flag", "value"])
-        expectFailure("JSON 字符串数组") {
+        expectFailure(L10n.text("Coding Agent startup arguments must be a JSON string array, for example [\"--flag\",\"value\"].")) {
             _ = try ACPDesktopConfiguration.decodeArguments("--flag value")
         }
         try testACPAdapterResolution()
 
-        expectFailure("不允许") {
+        expectFailure(L10n.format(
+            "Contains configuration keys that the GUI is not allowed to modify: %@",
+            "AGENTDOCK_OAUTH_TOKEN_SECRET"
+        )) {
             _ = try environment.dataByUpdating(["AGENTDOCK_OAUTH_TOKEN_SECRET": "nope"])
         }
 
-        expectFailure("不能包含路径") {
+        expectFailure(L10n.text("The public address cannot contain a path. Do not include /mcp.")) {
             _ = try InstallRequest(mode: .named, serverURL: "https://mini.example.com/mcp", tunnelToken: "x").validatedServerURL()
         }
-        expectFailure("必须使用 https") {
+        expectFailure(L10n.text("The public address must use https://.")) {
             _ = try InstallRequest(mode: .named, serverURL: "http://mini.example.com", tunnelToken: "x").validatedServerURL()
         }
-        expectFailure("不能使用 localhost 或 IP") {
+        expectFailure(L10n.text("The public address must use a domain, not localhost or an IP address.")) {
             _ = try InstallRequest(mode: .named, serverURL: "https://127.0.0.1", tunnelToken: "x").validatedServerURL()
         }
         let blankTunnelToken = try InstallRequest(
@@ -120,7 +123,7 @@ struct InstallerConfigurationTests {
         precondition(blankTunnelToken == nil)
         try ServicePortValidation.validate(1024)
         try ServicePortValidation.validate(65535)
-        expectFailure("1024 到 65535") {
+        expectFailure(L10n.text("The service port for a standard user must be between 1024 and 65535.")) {
             try ServicePortValidation.validate(8)
         }
 
@@ -370,7 +373,7 @@ struct InstallerConfigurationTests {
         try store.persist("new-token")
         let updatedToken = try store.storedToken()
         precondition(updatedToken == "new-token")
-        expectFailure("单行文本") {
+        expectFailure(L10n.text("Cloudflare Tunnel Token must be a single line of text.")) {
             try store.persist("line-one\nline-two")
         }
     }
@@ -401,7 +404,7 @@ struct InstallerConfigurationTests {
         }
         let success = await checker.check(publicMCPURL: publicMCPURL)
         precondition(success.isReachable)
-        precondition(success.message == "可正常访问")
+        precondition(success.message == L10n.text("Reachable"))
         precondition(success.latencyMilliseconds != nil)
 
         MockURLProtocol.handler = { request in
@@ -415,14 +418,14 @@ struct InstallerConfigurationTests {
         }
         let badGateway = await checker.check(publicMCPURL: publicMCPURL)
         precondition(!badGateway.isReachable)
-        precondition(badGateway.message == "公网地址返回 HTTP 502")
+        precondition(badGateway.message == L10n.format("Public address returned HTTP %d", 502))
 
         MockURLProtocol.handler = { _ in
             throw URLError(.timedOut)
         }
         let timeout = await checker.check(publicMCPURL: publicMCPURL)
         precondition(!timeout.isReachable)
-        precondition(timeout.message == "公网访问超时")
+        precondition(timeout.message == L10n.text("Public access timed out"))
     }
 
     private static func expectFailure(_ message: String, _ operation: () throws -> Void) {

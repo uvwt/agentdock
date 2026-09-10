@@ -1,7 +1,8 @@
 <Window x:Class="AgentDock.ControlPanel.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="AgentDock 控制面板"
+        xmlns:local="clr-namespace:AgentDock.ControlPanel"
+        Title="{local:Loc MainWindowTitle}"
         Width="860" Height="780" MinWidth="760" MinHeight="680"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource SurfaceBrush}">
@@ -20,20 +21,20 @@
         </Grid.ColumnDefinitions>
         <StackPanel>
           <TextBlock Text="AgentDock" FontSize="24" FontWeight="SemiBold" />
-          <TextBlock Text="Windows 控制面板" Foreground="#667085" Margin="0,3,0,0" />
+          <TextBlock Text="{local:Loc WindowsControlPanel}" Foreground="#667085" Margin="0,3,0,0" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
           <Ellipse x:Name="StatusDot" Width="10" Height="10" Fill="#98A2B3" Margin="0,0,8,0" />
-          <TextBlock x:Name="HeaderStatusText" Text="正在读取状态…" VerticalAlignment="Center" />
+          <TextBlock x:Name="HeaderStatusText" Text="{local:Loc LoadingStatus}" VerticalAlignment="Center" />
         </StackPanel>
       </Grid>
     </Border>
 
     <TabControl Grid.Row="1" Margin="18">
-      <TabItem Header="概览">
+      <TabItem Header="{local:Loc Overview}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="18">
-            <GroupBox Header="运行状态">
+            <GroupBox Header="{local:Loc RuntimeStatus}">
               <Grid>
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="130" />
@@ -46,24 +47,24 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <TextBlock Text="服务" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBlock x:Name="ServiceStatusText" Grid.Column="1" Text="未知" FontWeight="SemiBold" Margin="0,0,0,10" />
-                <TextBlock Text="健康检查" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBlock x:Name="HealthStatusText" Grid.Row="1" Grid.Column="1" Text="未知" Margin="0,0,0,10" />
+                <TextBlock Text="{local:Loc Service}" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <TextBlock x:Name="ServiceStatusText" Grid.Column="1" Text="{local:Loc Unknown}" FontWeight="SemiBold" Margin="0,0,0,10" />
+                <TextBlock Text="{local:Loc HealthCheck}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <TextBlock x:Name="HealthStatusText" Grid.Row="1" Grid.Column="1" Text="{local:Loc Unknown}" Margin="0,0,0,10" />
                 <TextBlock Text="Nexus" Grid.Row="2" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBlock x:Name="NexusStatusText" Grid.Row="2" Grid.Column="1" Text="未配置" Margin="0,0,0,10" />
-                <TextBlock Text="版本" Grid.Row="3" VerticalAlignment="Center" />
-                <TextBlock x:Name="VersionText" Grid.Row="3" Grid.Column="1" Text="未知" />
+                <TextBlock x:Name="NexusStatusText" Grid.Row="2" Grid.Column="1" Text="{local:Loc NotConfigured}" Margin="0,0,0,10" />
+                <TextBlock Text="{local:Loc Version}" Grid.Row="3" VerticalAlignment="Center" />
+                <TextBlock x:Name="VersionText" Grid.Row="3" Grid.Column="1" Text="{local:Loc Unknown}" />
                 <StackPanel Grid.Column="2" Grid.RowSpan="4" Orientation="Horizontal" VerticalAlignment="Center">
-                  <Button Content="启动" Click="StartButton_Click" />
-                  <Button Content="停止" Click="StopButton_Click" />
-                  <Button Content="重启" Click="RestartButton_Click" />
-                  <Button x:Name="UpdateButton" Content="更新" Click="UpdateButton_Click" />
+                  <Button Content="{local:Loc Start}" Click="StartButton_Click" />
+                  <Button Content="{local:Loc Stop}" Click="StopButton_Click" />
+                  <Button Content="{local:Loc Restart}" Click="RestartButton_Click" />
+                  <Button x:Name="UpdateButton" Content="{local:Loc Update}" Click="UpdateButton_Click" />
                 </StackPanel>
               </Grid>
             </GroupBox>
 
-            <GroupBox Header="连接地址">
+            <GroupBox Header="{local:Loc ConnectionAddresses}">
               <Grid>
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="130" />
@@ -75,17 +76,17 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <TextBlock Text="本地 MCP" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <TextBlock Text="{local:Loc LocalMCP}" VerticalAlignment="Center" Margin="0,0,0,10" />
                 <TextBox x:Name="LocalMcpTextBox" Grid.Column="1" Grid.ColumnSpan="2" IsReadOnly="True" Margin="0,0,0,10" />
-                <TextBlock Text="公网 MCP" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <TextBlock Text="{local:Loc PublicMCP}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
                 <TextBox x:Name="PublicMcpTextBox" Grid.Row="1" Grid.Column="1" IsReadOnly="True" Margin="0,0,8,10" />
-                <Button Grid.Row="1" Grid.Column="2" Content="测试" Click="TestPublicButton_Click" />
-                <TextBlock Text="公网检测" Grid.Row="2" VerticalAlignment="Center" />
-                <TextBlock x:Name="PublicTestStatusText" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Text="尚未检测" TextWrapping="Wrap" />
+                <Button Grid.Row="1" Grid.Column="2" Content="{local:Loc Test}" Click="TestPublicButton_Click" />
+                <TextBlock Text="{local:Loc PublicCheck}" Grid.Row="2" VerticalAlignment="Center" />
+                <TextBlock x:Name="PublicTestStatusText" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Text="{local:Loc NotChecked}" TextWrapping="Wrap" />
               </Grid>
             </GroupBox>
 
-            <GroupBox Header="访问凭据">
+            <GroupBox Header="{local:Loc AccessCredentials}">
               <Grid>
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="130" />
@@ -98,31 +99,31 @@
                 </Grid.RowDefinitions>
                 <TextBlock Text="Bearer Token" VerticalAlignment="Center" Margin="0,0,0,10" />
                 <TextBox x:Name="BearerTokenTextBox" Grid.Column="1" IsReadOnly="True" Margin="0,0,8,10" />
-                <Button x:Name="ToggleBearerButton" Grid.Column="2" Content="显示" Click="ToggleBearerButton_Click" />
-                <TextBlock Text="OAuth 密码" Grid.Row="1" VerticalAlignment="Center" />
+                <Button x:Name="ToggleBearerButton" Grid.Column="2" Content="{local:Loc Show}" Click="ToggleBearerButton_Click" />
+                <TextBlock Text="{local:Loc OAuthPassword}" Grid.Row="1" VerticalAlignment="Center" />
                 <TextBox x:Name="OAuthPasswordTextBox" Grid.Row="1" Grid.Column="1" IsReadOnly="True" Margin="0,0,8,0" />
-                <Button x:Name="ToggleOAuthButton" Grid.Row="1" Grid.Column="2" Content="显示" Click="ToggleOAuthButton_Click" />
+                <Button x:Name="ToggleOAuthButton" Grid.Row="1" Grid.Column="2" Content="{local:Loc Show}" Click="ToggleOAuthButton_Click" />
               </Grid>
             </GroupBox>
           </StackPanel>
         </ScrollViewer>
       </TabItem>
 
-      <TabItem Header="公网访问">
+      <TabItem Header="{local:Loc PublicAccess}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="18">
-            <GroupBox Header="访问模式">
+            <GroupBox Header="{local:Loc AccessMode}">
               <StackPanel>
-                <RadioButton x:Name="LocalModeRadio" GroupName="TunnelMode" Content="仅本机" Tag="none" Margin="0,4,0,10" Checked="TunnelModeRadio_Checked" />
-                <TextBlock Text="仅允许这台电脑访问，不启用 Cloudflare 公网访问；或者自行配置内网穿透或反向代理。" Foreground="#667085" Margin="24,-8,0,14" TextWrapping="Wrap" />
-                <RadioButton x:Name="QuickModeRadio" GroupName="TunnelMode" Content="临时地址" Tag="quick" Margin="0,0,0,10" Checked="TunnelModeRadio_Checked" />
-                <TextBlock Text="通过 Cloudflare 自动生成临时公网地址，无需配置域名。适合临时访问或测试，地址可能会变化。" Foreground="#667085" Margin="24,-8,0,14" TextWrapping="Wrap" />
-                <RadioButton x:Name="NamedModeRadio" GroupName="TunnelMode" Content="固定域名" Tag="named" Margin="0,0,0,10" Checked="TunnelModeRadio_Checked" />
-                <TextBlock Text="通过 Cloudflare Tunnel 使用自己的 HTTPS 域名，完成配置后即可获得稳定的公网地址。" Foreground="#667085" Margin="24,-8,0,4" TextWrapping="Wrap" />
+                <RadioButton x:Name="LocalModeRadio" GroupName="TunnelMode" Content="{local:Loc LocalOnly}" Tag="none" Margin="0,4,0,10" Checked="TunnelModeRadio_Checked" />
+                <TextBlock Text="{local:Loc LocalOnlyDescription}" Foreground="#667085" Margin="24,-8,0,14" TextWrapping="Wrap" />
+                <RadioButton x:Name="QuickModeRadio" GroupName="TunnelMode" Content="{local:Loc TemporaryAddress}" Tag="quick" Margin="0,0,0,10" Checked="TunnelModeRadio_Checked" />
+                <TextBlock Text="{local:Loc TemporaryAddressDescription}" Foreground="#667085" Margin="24,-8,0,14" TextWrapping="Wrap" />
+                <RadioButton x:Name="NamedModeRadio" GroupName="TunnelMode" Content="{local:Loc CustomDomain}" Tag="named" Margin="0,0,0,10" Checked="TunnelModeRadio_Checked" />
+                <TextBlock Text="{local:Loc CustomDomainDescription}" Foreground="#667085" Margin="24,-8,0,4" TextWrapping="Wrap" />
               </StackPanel>
             </GroupBox>
 
-            <GroupBox x:Name="NamedTunnelGroup" Header="固定域名配置">
+            <GroupBox x:Name="NamedTunnelGroup" Header="{local:Loc CustomDomainConfiguration}">
               <Grid>
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="150" />
@@ -133,28 +134,28 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <TextBlock Text="HTTPS 公网地址" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <TextBlock Text="{local:Loc PublicHTTPSAddress}" VerticalAlignment="Center" Margin="0,0,0,10" />
                 <TextBox x:Name="ServerUrlTextBox" Grid.Column="1" Margin="0,0,0,10" />
                 <TextBlock Text="Tunnel Token" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
                 <PasswordBox x:Name="TunnelTokenPasswordBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" PreviewKeyDown="PasswordBox_PreviewKeyDown" />
-                <TextBlock Text="保存状态" Grid.Row="2" VerticalAlignment="Center" />
-                <TextBlock x:Name="TunnelTokenStoredText" Grid.Row="2" Grid.Column="1" Text="未保存" />
+                <TextBlock Text="{local:Loc SavedState}" Grid.Row="2" VerticalAlignment="Center" />
+                <TextBlock x:Name="TunnelTokenStoredText" Grid.Row="2" Grid.Column="1" Text="{local:Loc NotSaved}" />
               </Grid>
             </GroupBox>
 
             <StackPanel Orientation="Horizontal">
-              <Button Content="应用访问模式" Click="ApplyTunnelModeButton_Click" />
-              <Button x:Name="RegenerateQuickButton" Content="重新生成临时地址" Click="RegenerateQuickButton_Click" />
+              <Button Content="{local:Loc ApplyAccessMode}" Click="ApplyTunnelModeButton_Click" />
+              <Button x:Name="RegenerateQuickButton" Content="{local:Loc RegenerateTemporaryAddress}" Click="RegenerateQuickButton_Click" />
             </StackPanel>
             <TextBlock x:Name="TunnelActionStatusText" Foreground="#475467" TextWrapping="Wrap" Margin="0,6,0,0" />
           </StackPanel>
         </ScrollViewer>
       </TabItem>
 
-      <TabItem Header="高级设置">
+      <TabItem Header="{local:Loc AdvancedSettings}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="18">
-            <GroupBox Header="基础设置">
+            <GroupBox Header="{local:Loc BasicSettings}">
               <Grid>
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="150" />
@@ -165,16 +166,16 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <TextBlock Text="端口" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <TextBlock Text="{local:Loc Port}" VerticalAlignment="Center" Margin="0,0,0,10" />
                 <TextBox x:Name="PortTextBox" Grid.Column="1" Width="130" HorizontalAlignment="Left" Margin="0,0,0,10" />
-                <TextBlock Text="日志级别" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <TextBlock Text="{local:Loc LogLevel}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
                 <ComboBox x:Name="LogLevelComboBox" Grid.Row="1" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10">
                   <ComboBoxItem Content="debug" />
                   <ComboBoxItem Content="info" />
                   <ComboBoxItem Content="warn" />
                   <ComboBoxItem Content="error" />
                 </ComboBox>
-                <CheckBox x:Name="McpAppsEnabledCheckBox" Grid.Row="2" Grid.ColumnSpan="2" Content="启用 MCP Apps UI" Margin="0,4,0,4" />
+                <CheckBox x:Name="McpAppsEnabledCheckBox" Grid.Row="2" Grid.ColumnSpan="2" Content="{local:Loc EnableMcpAppsUi}" Margin="0,4,0,4" />
               </Grid>
             </GroupBox>
 
@@ -190,17 +191,17 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <TextBlock Text="地址" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="NexusEndpointTextBox" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" ToolTip="NexusDock 公网 HTTPS 地址" />
-                <TextBlock Text="一次性配对码" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <TextBlock Text="{local:Loc Address}" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <TextBox x:Name="NexusEndpointTextBox" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" ToolTip="{local:Loc NexusPublicHttpsTooltip}" />
+                <TextBlock Text="{local:Loc OneTimePairingCode}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
                 <PasswordBox x:Name="NexusPairingCodePasswordBox" Grid.Row="1" Grid.Column="1" Margin="0,0,8,10" PreviewKeyDown="PasswordBox_PreviewKeyDown" />
-                <Button Grid.Row="1" Grid.Column="2" Content="配对并重启" Click="PairNexusButton_Click" Margin="0,0,0,10" />
+                <Button Grid.Row="1" Grid.Column="2" Content="{local:Loc PairAndRestart}" Click="PairNexusButton_Click" Margin="0,0,0,10" />
                 <TextBlock Text="Device Token" Grid.Row="2" VerticalAlignment="Center" />
-                <TextBlock x:Name="NexusDeviceTokenStatusText" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Text="尚未配对" Foreground="#667085" TextWrapping="Wrap" />
+                <TextBlock x:Name="NexusDeviceTokenStatusText" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Text="{local:Loc NotPaired}" Foreground="#667085" TextWrapping="Wrap" />
               </Grid>
             </GroupBox>
 
-            <GroupBox Header="浏览器">
+            <GroupBox Header="{local:Loc Browser}">
               <Grid>
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="150" />
@@ -210,21 +211,21 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <CheckBox x:Name="BrowserEnabledCheckBox" Grid.ColumnSpan="2" Content="启用浏览器 CDP 控制" Margin="0,4,0,12" Checked="BrowserConnection_Changed" Unchecked="BrowserConnection_Changed" />
-                <TextBlock Text="连接方式" Grid.Row="1" VerticalAlignment="Top" Margin="0,5,0,10" />
+                <CheckBox x:Name="BrowserEnabledCheckBox" Grid.ColumnSpan="2" Content="{local:Loc EnableBrowserCdp}" Margin="0,4,0,12" Checked="BrowserConnection_Changed" Unchecked="BrowserConnection_Changed" />
+                <TextBlock Text="{local:Loc ConnectionMode}" Grid.Row="1" VerticalAlignment="Top" Margin="0,5,0,10" />
                 <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,10">
                   <ComboBox x:Name="BrowserConnectionModeComboBox" Width="320" HorizontalAlignment="Left" SelectionChanged="BrowserConnection_Changed">
-                    <ComboBoxItem Content="隔离浏览器" Tag="managed" />
-                    <ComboBoxItem Content="优先使用本机已有 CDP 浏览器" Tag="reuse" />
-                    <ComboBoxItem Content="连接指定 CDP 浏览器" Tag="specified" />
+                    <ComboBoxItem Content="{local:Loc ManagedBrowser}" Tag="managed" />
+                    <ComboBoxItem Content="{local:Loc ReuseExistingCdpBrowser}" Tag="reuse" />
+                    <ComboBoxItem Content="{local:Loc SpecifiedCdpBrowser}" Tag="specified" />
                   </ComboBox>
-                  <TextBox x:Name="BrowserCdpUrlTextBox" Margin="0,8,0,0" Visibility="Collapsed" ToolTip="例如 http://127.0.0.1:9222 或 ws://.../devtools/browser/..." />
+                  <TextBox x:Name="BrowserCdpUrlTextBox" Margin="0,8,0,0" Visibility="Collapsed" ToolTip="{local:Loc CdpUrlExample}" />
                   <TextBlock x:Name="BrowserConnectionHelpText" Margin="0,6,0,0" Foreground="#667085" TextWrapping="Wrap" />
                 </StackPanel>
               </Grid>
             </GroupBox>
 
-            <GroupBox Header="Coding Agent（ACP）">
+            <GroupBox Header="{local:Loc CodingAgentAcp}">
               <Grid>
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="150" />
@@ -238,36 +239,36 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <CheckBox x:Name="AcpEnabledCheckBox" Grid.ColumnSpan="3" Content="启用 Coding Agent" Margin="0,4,0,12" Checked="AcpSetting_Changed" Unchecked="AcpSetting_Changed" />
+                <CheckBox x:Name="AcpEnabledCheckBox" Grid.ColumnSpan="3" Content="{local:Loc EnableCodingAgent}" Margin="0,4,0,12" Checked="AcpSetting_Changed" Unchecked="AcpSetting_Changed" />
                 <TextBlock Grid.Row="1" Text="Agent" VerticalAlignment="Center" Margin="0,0,0,10" />
                 <ComboBox x:Name="AcpAgentComboBox" Grid.Row="1" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10" SelectionChanged="AcpSetting_Changed">
                   <ComboBoxItem Content="Codex" Tag="codex" />
                   <ComboBoxItem Content="Claude" Tag="claude" />
                   <ComboBoxItem Content="Grok Build" Tag="grok" />
-                  <ComboBoxItem Content="自定义" Tag="custom" />
+                  <ComboBoxItem Content="{local:Loc Custom}" Tag="custom" />
                 </ComboBox>
                 <TextBlock x:Name="AcpCommandLabel" Grid.Row="2" Text="Command" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="AcpCommandTextBox" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" TextChanged="AcpSetting_Changed" ToolTip="ACP Adapter 可执行文件的绝对路径" />
+                <TextBox x:Name="AcpCommandTextBox" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" TextChanged="AcpSetting_Changed" ToolTip="{local:Loc AcpCommandTooltip}" />
                 <TextBlock x:Name="AcpArgsLabel" Grid.Row="3" Text="Args JSON" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="AcpArgsTextBox" Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" Text="[]" TextChanged="AcpSetting_Changed" ToolTip="JSON 字符串数组，例如 [&quot;--flag&quot;,&quot;value&quot;]" />
-                <TextBlock Grid.Row="4" Text="状态" VerticalAlignment="Top" />
-                <TextBlock x:Name="AcpStatusText" Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Foreground="#667085" Text="未启用" TextWrapping="Wrap" />
+                <TextBox x:Name="AcpArgsTextBox" Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" Text="[]" TextChanged="AcpSetting_Changed" ToolTip="{local:Loc AcpArgsTooltip}" />
+                <TextBlock Grid.Row="4" Text="{local:Loc Status}" VerticalAlignment="Top" />
+                <TextBlock x:Name="AcpStatusText" Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Foreground="#667085" Text="{local:Loc Disabled}" TextWrapping="Wrap" />
               </Grid>
             </GroupBox>
 
-            <GroupBox Header="运行权限">
+            <GroupBox Header="{local:Loc RuntimePermissions}">
               <StackPanel>
                 <CheckBox x:Name="ElevatedCoreCheckBox"
-                          Content="以管理员权限运行 AgentDock 核心"
+                          Content="{local:Loc RunCoreElevated}"
                           Margin="0,4,0,8"
                           Click="ElevatedCoreCheckBox_Click" />
               </StackPanel>
             </GroupBox>
 
-            <GroupBox Header="开机启动">
+            <GroupBox Header="{local:Loc Startup}">
               <StackPanel>
-                <CheckBox x:Name="CoreStartupCheckBox" Content="AgentDock 核心开机启动" Margin="0,4,0,10" Click="CoreStartupCheckBox_Click" />
-                <CheckBox x:Name="TrayStartupCheckBox" Content="AgentDock 控制面板托盘开机启动" Margin="0,0,0,4" Click="TrayStartupCheckBox_Click" />
+                <CheckBox x:Name="CoreStartupCheckBox" Content="{local:Loc CoreStartup}" Margin="0,4,0,10" Click="CoreStartupCheckBox_Click" />
+                <CheckBox x:Name="TrayStartupCheckBox" Content="{local:Loc TrayStartup}" Margin="0,0,0,4" Click="TrayStartupCheckBox_Click" />
               </StackPanel>
             </GroupBox>
 
@@ -277,9 +278,9 @@
                        MinHeight="22"
                        Margin="0,0,0,8" />
             <StackPanel Orientation="Horizontal">
-              <Button Content="保存并重启" Click="SaveSettingsButton_Click" />
-              <Button Content="打开日志目录" Click="OpenLogsButton_Click" />
-              <Button Content="打开配置目录" Click="OpenConfigButton_Click" />
+              <Button Content="{local:Loc SaveAndRestart}" Click="SaveSettingsButton_Click" />
+              <Button Content="{local:Loc OpenLogsFolder}" Click="OpenLogsButton_Click" />
+              <Button Content="{local:Loc OpenConfigFolder}" Click="OpenConfigButton_Click" />
             </StackPanel>
           </StackPanel>
         </ScrollViewer>
@@ -288,8 +289,8 @@
 
     <Border Grid.Row="2" Background="White" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="18,10">
       <Grid>
-        <TextBlock x:Name="FooterStatusText" Text="准备就绪" Foreground="#667085" VerticalAlignment="Center" />
-        <Button Content="刷新" HorizontalAlignment="Right" Margin="0" Click="RefreshButton_Click" />
+        <TextBlock x:Name="FooterStatusText" Text="{local:Loc Ready}" Foreground="#667085" VerticalAlignment="Center" />
+        <Button Content="{local:Loc Refresh}" HorizontalAlignment="Right" Margin="0" Click="RefreshButton_Click" />
       </Grid>
     </Border>
   </Grid>

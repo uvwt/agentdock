@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="${0:A:h:h:h}"
 SOURCE_DIR="$ROOT_DIR/desktop/macos/AgentDockApp/Sources"
+LOCALIZATION_DIR="$ROOT_DIR/desktop/macos/AgentDockApp/Resources"
 LOGIN_HELPER_SOURCE="$ROOT_DIR/desktop/macos/AgentDockLoginHelper/main.swift"
 OUTPUT_DIR="${AGENTDOCK_MACOS_APP_OUTPUT_DIR:-$ROOT_DIR/dist/macos-app}"
 ARCH_LIST="${AGENTDOCK_MACOS_ARCHES:-$(uname -m)}"
@@ -39,6 +40,7 @@ for command_name in codesign ditto file hdiutil iconutil lipo plutil shasum sips
   command -v "$command_name" >/dev/null 2>&1 || die "缺少命令：$command_name"
 done
 [[ -d "$SOURCE_DIR" ]] || die "缺少 macOS App 源码：$SOURCE_DIR"
+[[ -d "$LOCALIZATION_DIR" ]] || die "缺少 macOS App 本地化资源：$LOCALIZATION_DIR"
 [[ -f "$APP_ICON_SOURCE" && ! -L "$APP_ICON_SOURCE" ]] || die "缺少 macOS App 图标：$APP_ICON_SOURCE"
 [[ -f "$LOGIN_HELPER_SOURCE" && ! -L "$LOGIN_HELPER_SOURCE" ]] || die "缺少 macOS 登录代理源码：$LOGIN_HELPER_SOURCE"
 [[ -n "$OFFLINE_PAYLOAD_DIR" ]] || die "构建 macOS DMG 必须设置 AGENTDOCK_MACOS_OFFLINE_PAYLOAD_DIR"
@@ -107,6 +109,11 @@ HELPERS_DIR="$CONTENTS_DIR/Helpers"
 LAUNCH_AGENTS_DIR="$CONTENTS_DIR/Library/LaunchAgents"
 MENU_LOGIN_HELPER="$HELPERS_DIR/AgentDockLoginHelper"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$HELPERS_DIR" "$LAUNCH_AGENTS_DIR"
+for localization in en zh-Hans; do
+  source_lproj="$LOCALIZATION_DIR/$localization.lproj"
+  [[ -d "$source_lproj" && ! -L "$source_lproj" ]] || die "缺少 macOS 本地化目录：$source_lproj"
+  ditto "$source_lproj" "$RESOURCES_DIR/$localization.lproj"
+done
 
 if (( ${#compiled_binaries[@]} == 1 )); then
   cp -p "$compiled_binaries[1]" "$MACOS_DIR/AgentDock"
@@ -292,7 +299,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key>
-  <string>zh_CN</string>
+  <string>en</string>
   <key>CFBundleDisplayName</key>
   <string>AgentDock</string>
   <key>CFBundleExecutable</key>
@@ -318,7 +325,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSAppleEventsUsageDescription</key>
-  <string>AgentDock 需要控制 System Events 和 Finder，以执行你发起的桌面自动化任务。</string>
+  <string>AgentDock needs to control System Events and Finder to perform desktop automation tasks you request.</string>
   <key>NSHumanReadableCopyright</key>
   <string>Copyright © AgentDock contributors</string>
 </dict>

@@ -5,7 +5,7 @@ enum ServicePortValidation {
 
     static func validate(_ port: Int) throws {
         guard allowedRange.contains(port) else {
-            throw ValidationError("普通用户服务端口必须在 1024 到 65535 之间。")
+            throw ValidationError(L10n.text("The service port for a standard user must be between 1024 and 65535."))
         }
     }
 }

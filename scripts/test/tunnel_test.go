@@ -38,13 +38,13 @@ func TestDesktopControlSurfacesCanRefreshQuickTunnel(t *testing.T) {
 		filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml.cs"): {
 			"RegenerateQuickButton_Click",
 			"RegenerateQuickTunnelAsync",
-			"旧地址已隐藏，正在启动新的 Quick Tunnel",
+			`UiText.Get("OldAddressHidden")`,
 			"PublicMcpTextBox.Text = \"\"",
 		},
 		filepath.Join("..", "..", "desktop", "macos", "AgentDockApp", "Sources", "SetupWindowController.swift"): {
 			"refreshingQuickTunnel",
-			"重新生成临时地址",
-			"正在生成新的临时公网地址",
+			`L10n.text("Regenerate temporary address")`,
+			`L10n.text("Generating a new temporary public address…")`,
 		},
 	}
 	for path, required := range checks {

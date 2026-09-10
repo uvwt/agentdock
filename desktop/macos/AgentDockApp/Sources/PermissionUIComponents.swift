@@ -5,7 +5,7 @@ final class TopAlignedStackView: NSStackView {
 }
 
 enum PermissionUI {
-    static func statusLabel(_ text: String = "未检查") -> NSTextField {
+    static func statusLabel(_ text: String = L10n.text("Not checked")) -> NSTextField {
         let label = NSTextField(labelWithString: text)
         label.font = .systemFont(ofSize: 12, weight: .medium)
         label.alignment = .right

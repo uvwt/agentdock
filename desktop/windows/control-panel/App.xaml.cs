@@ -37,6 +37,7 @@ public partial class App : System.Windows.Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        UiText.ConfigureCurrentUICulture();
         // 使用稳定的 AppUserModelID，避免升级后任务栏沿用旧版本的隐式图标缓存。
         _ = SetCurrentProcessExplicitAppUserModelID(AppUserModelId);
         base.OnStartup(e);
@@ -274,7 +275,7 @@ public partial class App : System.Windows.Application
         {
             if (_notifyIcon is not null)
             {
-                _notifyIcon.Text = "AgentDock：状态不可用";
+                _notifyIcon.Text = $"AgentDock: {UiText.Get("StatusUnavailable")}";
             }
             if (_trayMenu is not null && !_trayMenu.Visible)
             {
@@ -296,41 +297,41 @@ public partial class App : System.Windows.Application
             oldItem.Dispose();
         }
 
-        var statusText = snapshot is null ? "正在读取状态…" : GetTrayStatusText(snapshot);
-        var status = new Forms.ToolStripMenuItem($"AgentDock：{statusText}") { Enabled = false };
+        var statusText = snapshot is null ? UiText.Get("LoadingStatus") : GetTrayStatusText(snapshot);
+        var status = new Forms.ToolStripMenuItem($"AgentDock: {statusText}") { Enabled = false };
         menu.Items.Add(status);
         menu.Items.Add(new Forms.ToolStripSeparator());
 
-        menu.Items.Add(CreateMenuItem("打开 AgentDock", (_, _) => ShowControlPanel()));
+        menu.Items.Add(CreateMenuItem(UiText.Get("OpenAgentDock"), (_, _) => ShowControlPanel()));
         menu.Items.Add(new Forms.ToolStripSeparator());
 
         if (snapshot?.CoreRunning == true)
         {
-            menu.Items.Add(CreateMenuItem("停止 AgentDock", async (_, _) => await RunTrayActionAsync("stop")));
-            menu.Items.Add(CreateMenuItem("重启 AgentDock", async (_, _) => await RunTrayActionAsync("restart")));
+            menu.Items.Add(CreateMenuItem(UiText.Get("StopAgentDock"), async (_, _) => await RunTrayActionAsync("stop")));
+            menu.Items.Add(CreateMenuItem(UiText.Get("RestartAgentDock"), async (_, _) => await RunTrayActionAsync("restart")));
         }
         else
         {
             menu.Items.Add(CreateMenuItem(
-                "启动 AgentDock",
+                UiText.Get("StartAgentDock"),
                 async (_, _) => await RunTrayActionAsync("start"),
                 snapshot is not null));
         }
         menu.Items.Add(CreateMenuItem(
-            _updateInProgress ? "正在检查更新…" : "检查更新…",
+            _updateInProgress ? UiText.Get("CheckingForUpdates") : UiText.Get("CheckForUpdates"),
             async (_, _) => await RunTrayUpdateAsync(),
             snapshot is not null && !_updateInProgress));
         menu.Items.Add(new Forms.ToolStripSeparator());
 
-        menu.Items.Add(CreateMenuItem("打开日志目录", (_, _) => Runtime.OpenLogsDirectory()));
-        menu.Items.Add(CreateMenuItem("打开配置目录", (_, _) => Runtime.OpenConfigDirectory()));
-        menu.Items.Add(CreateMenuItem("打开使用文档", (_, _) => OpenDocumentation()));
+        menu.Items.Add(CreateMenuItem(UiText.Get("OpenLogsFolder"), (_, _) => Runtime.OpenLogsDirectory()));
+        menu.Items.Add(CreateMenuItem(UiText.Get("OpenConfigFolder"), (_, _) => Runtime.OpenConfigDirectory()));
+        menu.Items.Add(CreateMenuItem(UiText.Get("OpenDocumentation"), (_, _) => OpenDocumentation()));
         menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add(CreateMenuItem("退出菜单栏", (_, _) => Dispatcher.Invoke(RequestExit)));
+        menu.Items.Add(CreateMenuItem(UiText.Get("ExitTray"), (_, _) => Dispatcher.Invoke(RequestExit)));
 
         if (_notifyIcon is not null)
         {
-            _notifyIcon.Text = TruncateNotifyIconText($"AgentDock：{statusText}");
+            _notifyIcon.Text = TruncateNotifyIconText($"AgentDock: {statusText}");
         }
     }
 
@@ -345,9 +346,9 @@ public partial class App : System.Windows.Application
     {
         if (snapshot.Healthy)
         {
-            return "运行正常";
+            return UiText.Get("RunningNormally");
         }
-        return snapshot.CoreRunning ? "服务异常" : "已停止";
+        return snapshot.CoreRunning ? UiText.Get("ServiceError") : UiText.Get("Stopped");
     }
 
     private static void OpenDocumentation()
@@ -371,7 +372,7 @@ public partial class App : System.Windows.Application
         }
 
         _updateInProgress = true;
-        ControlPanelWindow.SetUpdateState(true, "正在检查更新，请稍候…");
+        ControlPanelWindow.SetUpdateState(true, UiText.Get("PleaseWaitCheckingUpdates"));
         UpdateProgressWindow? progressWindow = null;
         try
         {
@@ -383,10 +384,10 @@ public partial class App : System.Windows.Application
                 return;
             }
 
-            var prompt = $"发现 AgentDock 新版本。\n\n当前版本：{check.CurrentVersion}\n最新版本：{check.LatestVersion}\n\n是否立即更新？";
+            var prompt = UiText.Format("NewVersionPrompt", check.CurrentVersion, check.LatestVersion);
             if (ShowUpdateMessage(owner, prompt, MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
             {
-                ControlPanelWindow.SetUpdateStatus("已取消更新。");
+                ControlPanelWindow.SetUpdateStatus(UiText.Get("UpdateCancelled"));
                 return;
             }
 
@@ -404,13 +405,13 @@ public partial class App : System.Windows.Application
 
             var output = await Runtime.RunUpdateAsync(progress);
             await ControlPanelWindow.RefreshAsync();
-            var completedMessage = LastNonEmptyLine(output, "更新完成。");
+            var completedMessage = LastNonEmptyLine(output, UiText.Get("UpdateCompleted"));
             progressWindow.Complete(completedMessage);
             ControlPanelWindow.SetUpdateStatus(completedMessage);
         }
         catch (Exception ex)
         {
-            var message = LastNonEmptyLine(ex.Message, "检查更新失败。");
+            var message = LastNonEmptyLine(ex.Message, UiText.Get("UpdateCheckFailed"));
             ControlPanelWindow.SetUpdateStatus(message);
             if (progressWindow is null)
             {
@@ -436,8 +437,8 @@ public partial class App : System.Windows.Application
         MessageBoxImage image)
     {
         return owner is { IsVisible: true }
-            ? System.Windows.MessageBox.Show(owner, message, "AgentDock 更新", buttons, image)
-            : System.Windows.MessageBox.Show(message, "AgentDock 更新", buttons, image);
+            ? System.Windows.MessageBox.Show(owner, message, UiText.Get("UpdateWindowTitle"), buttons, image)
+            : System.Windows.MessageBox.Show(message, UiText.Get("UpdateWindowTitle"), buttons, image);
     }
 
     private async Task RunTrayActionAsync(string action)
@@ -451,7 +452,7 @@ public partial class App : System.Windows.Application
         }
         catch (Exception ex)
         {
-            _notifyIcon?.ShowBalloonTip(5000, "AgentDock", LastNonEmptyLine(ex.Message, "操作失败。"), Forms.ToolTipIcon.Error);
+            _notifyIcon?.ShowBalloonTip(5000, "AgentDock", LastNonEmptyLine(ex.Message, UiText.Get("OperationFailed")), Forms.ToolTipIcon.Error);
         }
     }
 

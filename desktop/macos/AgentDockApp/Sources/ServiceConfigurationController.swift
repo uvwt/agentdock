@@ -17,12 +17,12 @@ struct EditableServiceSettings {
         try ServicePortValidation.validate(port)
         let normalizedLogLevel = ServiceConfiguration.normalizedLogLevel(logLevel)
         guard ["debug", "info", "warn", "error"].contains(normalizedLogLevel) else {
-            throw ValidationError("日志级别必须是 debug、info、warn 或 error。")
+            throw ValidationError(L10n.text("Log level must be debug, info, warn, or error."))
         }
 
         let browserCDPURL = try Self.normalizeBrowserCDPURL(browserCDPURL)
         if browserEnabled, browserCDPURL.isEmpty, !browserReuseExistingCDP, BrowserSupportController.detectExecutable() == nil {
-            throw ValidationError("未检测到受支持的 Chrome、Chromium 或 Microsoft Edge，且未配置外部 CDP。")
+            throw ValidationError(L10n.text("No supported Chrome, Chromium, or Microsoft Edge was detected and no external CDP is configured."))
         }
 
         var command = acpAgent == .custom
@@ -35,7 +35,7 @@ struct EditableServiceSettings {
                 configuredArguments: acpArgs
             )
             guard resolution.available else {
-                throw ValidationError("\(acpAgent.title) 不可用：\(acpAgent.missingAdapterMessage)。")
+                throw ValidationError(L10n.format("%@ is unavailable: %@.", acpAgent.title, acpAgent.missingAdapterMessage))
             }
             command = resolution.command
             arguments = resolution.arguments
@@ -62,12 +62,12 @@ struct EditableServiceSettings {
               let scheme = components.scheme?.lowercased(),
               ["http", "https", "ws", "wss"].contains(scheme),
               components.host?.isEmpty == false else {
-            throw ValidationError("浏览器 CDP 地址必须是有效的 HTTP(S) 或 WS(S) 地址。")
+            throw ValidationError(L10n.text("Browser CDP address must be a valid HTTP(S) or WS(S) address."))
         }
         guard components.user == nil,
               components.password == nil,
               components.fragment == nil else {
-            throw ValidationError("浏览器 CDP 地址不能包含账号信息或片段。")
+            throw ValidationError(L10n.text("Browser CDP address cannot contain credentials or a fragment."))
         }
         return candidate
     }
@@ -120,25 +120,31 @@ final class ServiceConfigurationController {
                 }
                 try await service.restart()
             } catch {
-                throw ValidationError("新配置启动失败，而且旧配置恢复验证也失败：\(error.localizedDescription)")
+                throw ValidationError(L10n.format(
+                    "Failed to start the new configuration, and validation after restoring the old configuration also failed: %@",
+                    error.localizedDescription
+                ))
             }
-            throw ValidationError("新配置启动失败，已恢复旧配置：\(originalError.localizedDescription)")
+            throw ValidationError(L10n.format(
+                "Failed to start the new configuration; restored the previous configuration: %@",
+                originalError.localizedDescription
+            ))
         }
     }
 
     private func readPrivateRegularFile(_ url: URL) throws -> Data {
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
         guard values.isRegularFile == true, values.isSymbolicLink != true else {
-            throw ValidationError("AgentDock 配置必须是普通文件，不能是符号链接。")
+            throw ValidationError(L10n.text("AgentDock configuration must be a regular file, not a symbolic link."))
         }
         let attributes = try fileManager.attributesOfItem(atPath: url.path)
         if let owner = attributes[.ownerAccountID] as? NSNumber,
            owner.uint32Value != getuid() {
-            throw ValidationError("AgentDock 配置文件不属于当前用户。")
+            throw ValidationError(L10n.text("AgentDock configuration file does not belong to the current user."))
         }
         if let permissions = attributes[.posixPermissions] as? NSNumber,
            permissions.intValue & 0o077 != 0 {
-            throw ValidationError("AgentDock 配置文件权限过宽，请先恢复为 0600。")
+            throw ValidationError(L10n.text("AgentDock configuration file permissions are too broad. Restore them to 0600 first."))
         }
         return try Data(contentsOf: url)
     }
@@ -153,11 +159,14 @@ final class ServiceConfigurationController {
             contents: data,
             attributes: [.posixPermissions: 0o600]
         ) else {
-            throw ValidationError("无法创建 AgentDock 配置临时文件。")
+            throw ValidationError(L10n.text("Unable to create the temporary AgentDock configuration file."))
         }
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temporary.path)
         if Darwin.rename(temporary.path, url.path) != 0 {
-            throw ValidationError("无法原子替换 AgentDock 配置：\(String(cString: strerror(errno)))")
+            throw ValidationError(L10n.format(
+                "Unable to atomically replace AgentDock configuration: %@",
+                String(cString: strerror(errno))
+            ))
         }
     }
 }

@@ -1,0 +1,602 @@
+<?xml version='1.0' encoding='utf-8'?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="MainWindowTitle" xml:space="preserve">
+    <value>AgentDock Control Panel</value>
+  </data>
+  <data name="WindowsControlPanel" xml:space="preserve">
+    <value>Windows Control Panel</value>
+  </data>
+  <data name="LoadingStatus" xml:space="preserve">
+    <value>Loading status…</value>
+  </data>
+  <data name="Overview" xml:space="preserve">
+    <value>Overview</value>
+  </data>
+  <data name="RuntimeStatus" xml:space="preserve">
+    <value>Runtime status</value>
+  </data>
+  <data name="Service" xml:space="preserve">
+    <value>Service</value>
+  </data>
+  <data name="Unknown" xml:space="preserve">
+    <value>Unknown</value>
+  </data>
+  <data name="HealthCheck" xml:space="preserve">
+    <value>Health check</value>
+  </data>
+  <data name="NotConfigured" xml:space="preserve">
+    <value>Not configured</value>
+  </data>
+  <data name="Version" xml:space="preserve">
+    <value>Version</value>
+  </data>
+  <data name="Start" xml:space="preserve">
+    <value>Start</value>
+  </data>
+  <data name="Stop" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="Restart" xml:space="preserve">
+    <value>Restart</value>
+  </data>
+  <data name="Update" xml:space="preserve">
+    <value>Update</value>
+  </data>
+  <data name="ConnectionAddresses" xml:space="preserve">
+    <value>Connection addresses</value>
+  </data>
+  <data name="LocalMCP" xml:space="preserve">
+    <value>Local MCP</value>
+  </data>
+  <data name="PublicMCP" xml:space="preserve">
+    <value>Public MCP</value>
+  </data>
+  <data name="Test" xml:space="preserve">
+    <value>Test</value>
+  </data>
+  <data name="PublicCheck" xml:space="preserve">
+    <value>Public check</value>
+  </data>
+  <data name="NotChecked" xml:space="preserve">
+    <value>Not checked</value>
+  </data>
+  <data name="AccessCredentials" xml:space="preserve">
+    <value>Access credentials</value>
+  </data>
+  <data name="Show" xml:space="preserve">
+    <value>Show</value>
+  </data>
+  <data name="Hide" xml:space="preserve">
+    <value>Hide</value>
+  </data>
+  <data name="OAuthPassword" xml:space="preserve">
+    <value>OAuth password</value>
+  </data>
+  <data name="PublicAccess" xml:space="preserve">
+    <value>Public access</value>
+  </data>
+  <data name="AccessMode" xml:space="preserve">
+    <value>Access mode</value>
+  </data>
+  <data name="LocalOnly" xml:space="preserve">
+    <value>Local only</value>
+  </data>
+  <data name="LocalOnlyDescription" xml:space="preserve">
+    <value>Only allow this computer to access AgentDock. Cloudflare public access stays disabled; you can configure your own tunnel or reverse proxy.</value>
+  </data>
+  <data name="TemporaryAddress" xml:space="preserve">
+    <value>Temporary address</value>
+  </data>
+  <data name="TemporaryAddressDescription" xml:space="preserve">
+    <value>Automatically generate a temporary public address through Cloudflare without configuring a domain. Suitable for temporary access or testing; the address may change.</value>
+  </data>
+  <data name="CustomDomain" xml:space="preserve">
+    <value>Custom domain</value>
+  </data>
+  <data name="CustomDomainDescription" xml:space="preserve">
+    <value>Use your own HTTPS domain through Cloudflare Tunnel. Once configured, the public address remains stable.</value>
+  </data>
+  <data name="CustomDomainConfiguration" xml:space="preserve">
+    <value>Custom domain configuration</value>
+  </data>
+  <data name="PublicHTTPSAddress" xml:space="preserve">
+    <value>Public HTTPS address</value>
+  </data>
+  <data name="SavedState" xml:space="preserve">
+    <value>Saved state</value>
+  </data>
+  <data name="NotSaved" xml:space="preserve">
+    <value>Not saved</value>
+  </data>
+  <data name="ApplyAccessMode" xml:space="preserve">
+    <value>Apply access mode</value>
+  </data>
+  <data name="RegenerateTemporaryAddress" xml:space="preserve">
+    <value>Regenerate temporary address</value>
+  </data>
+  <data name="AdvancedSettings" xml:space="preserve">
+    <value>Advanced settings</value>
+  </data>
+  <data name="BasicSettings" xml:space="preserve">
+    <value>Basic settings</value>
+  </data>
+  <data name="Port" xml:space="preserve">
+    <value>Port</value>
+  </data>
+  <data name="LogLevel" xml:space="preserve">
+    <value>Log level</value>
+  </data>
+  <data name="EnableMcpAppsUi" xml:space="preserve">
+    <value>Enable MCP Apps UI</value>
+  </data>
+  <data name="Address" xml:space="preserve">
+    <value>Address</value>
+  </data>
+  <data name="NexusPublicHttpsTooltip" xml:space="preserve">
+    <value>NexusDock public HTTPS address</value>
+  </data>
+  <data name="OneTimePairingCode" xml:space="preserve">
+    <value>One-time pairing code</value>
+  </data>
+  <data name="PairAndRestart" xml:space="preserve">
+    <value>Pair and restart</value>
+  </data>
+  <data name="NotPaired" xml:space="preserve">
+    <value>Not paired</value>
+  </data>
+  <data name="Browser" xml:space="preserve">
+    <value>Browser</value>
+  </data>
+  <data name="EnableBrowserCdp" xml:space="preserve">
+    <value>Enable browser CDP control</value>
+  </data>
+  <data name="ConnectionMode" xml:space="preserve">
+    <value>Connection mode</value>
+  </data>
+  <data name="ManagedBrowser" xml:space="preserve">
+    <value>Isolated browser</value>
+  </data>
+  <data name="ReuseExistingCdpBrowser" xml:space="preserve">
+    <value>Prefer an existing local CDP browser</value>
+  </data>
+  <data name="SpecifiedCdpBrowser" xml:space="preserve">
+    <value>Connect to a specified CDP browser</value>
+  </data>
+  <data name="CdpUrlExample" xml:space="preserve">
+    <value>For example: http://127.0.0.1:9222 or ws://.../devtools/browser/...</value>
+  </data>
+  <data name="CodingAgentAcp" xml:space="preserve">
+    <value>Coding Agent (ACP)</value>
+  </data>
+  <data name="EnableCodingAgent" xml:space="preserve">
+    <value>Enable Coding Agent</value>
+  </data>
+  <data name="Custom" xml:space="preserve">
+    <value>Custom</value>
+  </data>
+  <data name="AcpCommandTooltip" xml:space="preserve">
+    <value>Absolute path to the ACP Adapter executable</value>
+  </data>
+  <data name="AcpArgsTooltip" xml:space="preserve">
+    <value>JSON string array, for example ["--flag","value"]</value>
+  </data>
+  <data name="Status" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="Disabled" xml:space="preserve">
+    <value>Disabled</value>
+  </data>
+  <data name="RuntimePermissions" xml:space="preserve">
+    <value>Runtime permissions</value>
+  </data>
+  <data name="RunCoreElevated" xml:space="preserve">
+    <value>Run AgentDock core with administrator privileges</value>
+  </data>
+  <data name="Startup" xml:space="preserve">
+    <value>Startup</value>
+  </data>
+  <data name="CoreStartup" xml:space="preserve">
+    <value>Start AgentDock core at sign-in</value>
+  </data>
+  <data name="TrayStartup" xml:space="preserve">
+    <value>Start AgentDock control panel tray at sign-in</value>
+  </data>
+  <data name="SaveAndRestart" xml:space="preserve">
+    <value>Save and restart</value>
+  </data>
+  <data name="OpenLogsFolder" xml:space="preserve">
+    <value>Open logs folder</value>
+  </data>
+  <data name="OpenConfigFolder" xml:space="preserve">
+    <value>Open config folder</value>
+  </data>
+  <data name="Ready" xml:space="preserve">
+    <value>Ready</value>
+  </data>
+  <data name="Refresh" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="UpdateWindowTitle" xml:space="preserve">
+    <value>AgentDock Update</value>
+  </data>
+  <data name="UpdatingAgentDock" xml:space="preserve">
+    <value>Updating AgentDock</value>
+  </data>
+  <data name="PreparingUpdate" xml:space="preserve">
+    <value>Preparing update…</value>
+  </data>
+  <data name="Close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="StatusUnavailable" xml:space="preserve">
+    <value>Status unavailable</value>
+  </data>
+  <data name="OpenAgentDock" xml:space="preserve">
+    <value>Open AgentDock</value>
+  </data>
+  <data name="StopAgentDock" xml:space="preserve">
+    <value>Stop AgentDock</value>
+  </data>
+  <data name="RestartAgentDock" xml:space="preserve">
+    <value>Restart AgentDock</value>
+  </data>
+  <data name="StartAgentDock" xml:space="preserve">
+    <value>Start AgentDock</value>
+  </data>
+  <data name="CheckingForUpdates" xml:space="preserve">
+    <value>Checking for updates…</value>
+  </data>
+  <data name="CheckForUpdates" xml:space="preserve">
+    <value>Check for updates…</value>
+  </data>
+  <data name="OpenDocumentation" xml:space="preserve">
+    <value>Open documentation</value>
+  </data>
+  <data name="ExitTray" xml:space="preserve">
+    <value>Exit tray</value>
+  </data>
+  <data name="RunningNormally" xml:space="preserve">
+    <value>Running normally</value>
+  </data>
+  <data name="ServiceError" xml:space="preserve">
+    <value>Service error</value>
+  </data>
+  <data name="Stopped" xml:space="preserve">
+    <value>Stopped</value>
+  </data>
+  <data name="PleaseWaitCheckingUpdates" xml:space="preserve">
+    <value>Checking for updates, please wait…</value>
+  </data>
+  <data name="NewVersionPrompt" xml:space="preserve">
+    <value>A new AgentDock version is available.
+
+Current version: {0}
+Latest version: {1}
+
+Update now?</value>
+  </data>
+  <data name="UpdateCancelled" xml:space="preserve">
+    <value>Update cancelled.</value>
+  </data>
+  <data name="UpdateCompleted" xml:space="preserve">
+    <value>Update completed.</value>
+  </data>
+  <data name="UpdateCheckFailed" xml:space="preserve">
+    <value>Failed to check for updates.</value>
+  </data>
+  <data name="OperationFailed" xml:space="preserve">
+    <value>Operation failed.</value>
+  </data>
+  <data name="LastRefresh" xml:space="preserve">
+    <value>Last refresh: {0:HH:mm:ss}</value>
+  </data>
+  <data name="StatusReadFailed" xml:space="preserve">
+    <value>Failed to read status</value>
+  </data>
+  <data name="RunningHealthFailed" xml:space="preserve">
+    <value>Running, but health check failed</value>
+  </data>
+  <data name="ConfigurationError" xml:space="preserve">
+    <value>Configuration error</value>
+  </data>
+  <data name="Connected" xml:space="preserve">
+    <value>Connected</value>
+  </data>
+  <data name="NotConnected" xml:space="preserve">
+    <value>Not connected</value>
+  </data>
+  <data name="Running" xml:space="preserve">
+    <value>Running</value>
+  </data>
+  <data name="Healthy" xml:space="preserve">
+    <value>Healthy</value>
+  </data>
+  <data name="Unavailable" xml:space="preserve">
+    <value>Unavailable</value>
+  </data>
+  <data name="TunnelTokenSaved" xml:space="preserve">
+    <value>Tunnel Token saved securely</value>
+  </data>
+  <data name="DeviceTokenSaved" xml:space="preserve">
+    <value>Saved securely · node_id={0}</value>
+  </data>
+  <data name="DeviceNotPairedHelp" xml:space="preserve">
+    <value>Not paired yet; Device Token will be generated automatically during one-time pairing.</value>
+  </data>
+  <data name="WaitingTemporaryAddress" xml:space="preserve">
+    <value>Waiting for a new temporary address…</value>
+  </data>
+  <data name="PublicAddressNotConfigured" xml:space="preserve">
+    <value>Public address is not configured</value>
+  </data>
+  <data name="AutoDetectingPublicAddress" xml:space="preserve">
+    <value>Detecting public address automatically…</value>
+  </data>
+  <data name="OperationCompleted" xml:space="preserve">
+    <value>Operation completed</value>
+  </data>
+  <data name="Starting" xml:space="preserve">
+    <value>Starting…</value>
+  </data>
+  <data name="Stopping" xml:space="preserve">
+    <value>Stopping…</value>
+  </data>
+  <data name="Restarting" xml:space="preserve">
+    <value>Restarting…</value>
+  </data>
+  <data name="CurrentNoPublicAddress" xml:space="preserve">
+    <value>There is no public address currently</value>
+  </data>
+  <data name="Testing" xml:space="preserve">
+    <value>Testing…</value>
+  </data>
+  <data name="GeneratingTemporaryAddress" xml:space="preserve">
+    <value>Generating a new temporary address…</value>
+  </data>
+  <data name="SwitchingPublicAccess" xml:space="preserve">
+    <value>Switching public access mode…</value>
+  </data>
+  <data name="OldAddressHidden" xml:space="preserve">
+    <value>Old address hidden; starting a new Quick Tunnel…</value>
+  </data>
+  <data name="BrowserReuseHelp" xml:space="preserve">
+    <value>Prefer an existing local CDP browser; fall back to an isolated browser when none is found. Existing login state may be reused.</value>
+  </data>
+  <data name="BrowserSpecifiedHelp" xml:space="preserve">
+    <value>Use the specified CDP browser. Existing login state in that browser may be reused.</value>
+  </data>
+  <data name="BrowserManagedHelp" xml:space="preserve">
+    <value>Use an isolated browser without reusing the login state from your everyday browser.</value>
+  </data>
+  <data name="ArgsJsonInvalid" xml:space="preserve">
+    <value>Args JSON must be a JSON string array.</value>
+  </data>
+  <data name="CustomConfigured" xml:space="preserve">
+    <value>Custom configured · takes effect when enabled</value>
+  </data>
+  <data name="AgentDetected" xml:space="preserve">
+    <value>Detected {0} · takes effect when enabled</value>
+  </data>
+  <data name="PortInvalid" xml:space="preserve">
+    <value>Port must be an integer between 1 and 65535.</value>
+  </data>
+  <data name="CustomAcpUnavailable" xml:space="preserve">
+    <value>The custom ACP Adapter is unavailable. Check Command and Args JSON.</value>
+  </data>
+  <data name="AgentUnavailable" xml:space="preserve">
+    <value>{0} is unavailable. Install the corresponding command first.</value>
+  </data>
+  <data name="SpecifiedCdpRequired" xml:space="preserve">
+    <value>A CDP address is required when ‘Connect to a specified CDP browser’ is selected.</value>
+  </data>
+  <data name="SavingAndRestarting" xml:space="preserve">
+    <value>Saving settings and restarting…</value>
+  </data>
+  <data name="PairingFieldsRequired" xml:space="preserve">
+    <value>Enter the NexusDock address and one-time pairing code.</value>
+  </data>
+  <data name="PairingAndRestarting" xml:space="preserve">
+    <value>Pairing and restarting AgentDock…</value>
+  </data>
+  <data name="SwitchingAdmin" xml:space="preserve">
+    <value>Switching to administrator mode…</value>
+  </data>
+  <data name="SwitchingStandard" xml:space="preserve">
+    <value>Switching to standard user mode…</value>
+  </data>
+  <data name="SwitchedAdmin" xml:space="preserve">
+    <value>Switched to administrator mode</value>
+  </data>
+  <data name="SwitchedStandard" xml:space="preserve">
+    <value>Switched to standard user mode</value>
+  </data>
+  <data name="UpdatingCoreStartup" xml:space="preserve">
+    <value>Updating core startup…</value>
+  </data>
+  <data name="UpdatingTrayStartup" xml:space="preserve">
+    <value>Updating tray startup…</value>
+  </data>
+  <data name="UnsupportedCodingAgent" xml:space="preserve">
+    <value>Unsupported Coding Agent</value>
+  </data>
+  <data name="MinimizedToTray" xml:space="preserve">
+    <value>Control panel minimized to the system tray</value>
+  </data>
+  <data name="AcpNotConfigured" xml:space="preserve">
+    <value>Not configured · enter an executable ACP Adapter absolute path</value>
+  </data>
+  <data name="AcpDetectedPath" xml:space="preserve">
+    <value>Detected · {0}</value>
+  </data>
+  <data name="AcpNotInstalled" xml:space="preserve">
+    <value>Not installed · could not find {0}{1}</value>
+  </data>
+  <data name="InvalidPublicAddress" xml:space="preserve">
+    <value>Invalid address</value>
+  </data>
+  <data name="AccessSuccess" xml:space="preserve">
+    <value>Access OK · {0} · {1} ms</value>
+  </data>
+  <data name="AccessFailed" xml:space="preserve">
+    <value>Access failed · {0}</value>
+  </data>
+  <data name="AccessTimeout" xml:space="preserve">
+    <value>Access timed out</value>
+  </data>
+  <data name="NexusPairingRequired" xml:space="preserve">
+    <value>NexusDock address and one-time pairing code cannot be empty.</value>
+  </data>
+  <data name="RuntimeJsonMissing" xml:space="preserve">
+    <value>AgentDock runtime.json was not found.</value>
+  </data>
+  <data name="RuntimeJsonInvalid" xml:space="preserve">
+    <value>AgentDock runtime.json is invalid.</value>
+  </data>
+  <data name="CoreBinaryMissing" xml:space="preserve">
+    <value>AgentDock core executable was not found ({0}). Run Setup.exe to repair the installation.</value>
+  </data>
+  <data name="TrayBinaryMissing" xml:space="preserve">
+    <value>AgentDock tray executable was not found ({0}).</value>
+  </data>
+  <data name="CurrentWindowsIdentityUnavailable" xml:space="preserve">
+    <value>Unable to read the current Windows user identity.</value>
+  </data>
+  <data name="AdminSwitchCancelled" xml:space="preserve">
+    <value>AgentDock administrator privilege switch was cancelled.</value>
+  </data>
+  <data name="StartupRegistryUnavailable" xml:space="preserve">
+    <value>Unable to open the Windows startup registry.</value>
+  </data>
+  <data name="CoreStartFailed" xml:space="preserve">
+    <value>Unable to start the AgentDock core executable.</value>
+  </data>
+  <data name="ManagerStartFailed" xml:space="preserve">
+    <value>Unable to start the AgentDock management executable.</value>
+  </data>
+  <data name="ManagerFailedWithExitCode" xml:space="preserve">
+    <value>AgentDock management executable failed with exit code {0}.</value>
+  </data>
+  <data name="DeviceIdentityInvalid" xml:space="preserve">
+    <value>Device identity file is invalid. Pair again.</value>
+  </data>
+  <data name="DeviceIdentityReadFailed" xml:space="preserve">
+    <value>Unable to read device identity: {0}</value>
+  </data>
+  <data name="ProcessStartFailed" xml:space="preserve">
+    <value>Unable to start {0}.</value>
+  </data>
+  <data name="Refreshing" xml:space="preserve">
+    <value>Refreshing…</value>
+  </data>
+  <data name="UnsupportedRuntimeAction" xml:space="preserve">
+    <value>Unsupported runtime action.</value>
+  </data>
+  <data name="EmptyUpdateCheckResult" xml:space="preserve">
+    <value>Update check returned an empty result.</value>
+  </data>
+  <data name="ParseUpdateCheckFailed" xml:space="preserve">
+    <value>Unable to parse the AgentDock update check result.</value>
+  </data>
+  <data name="UnsupportedStartupComponent" xml:space="preserve">
+    <value>Unsupported startup component.</value>
+  </data>
+  <data name="PrivilegeSwitchRollbackFailed" xml:space="preserve">
+    <value>Failed to switch AgentDock administrator mode and the rollback did not complete.</value>
+  </data>
+  <data name="ManagementBinaryMissing" xml:space="preserve">
+    <value>AgentDock management executable was not found ({0}).</value>
+  </data>
+  <data name="UnsupportedCoreServiceAction" xml:space="preserve">
+    <value>Unsupported core service action.</value>
+  </data>
+  <data name="UnsupportedTunnelAction" xml:space="preserve">
+    <value>Unsupported Tunnel action.</value>
+  </data>
+  <data name="UnsupportedCodingAgentValue" xml:space="preserve">
+    <value>Unsupported Coding Agent: {0}</value>
+  </data>
+  <data name="UnsupportedTaskAdminAction" xml:space="preserve">
+    <value>Unsupported AgentDock scheduled-task action: {0}</value>
+  </data>
+  <data name="InvalidTaskAdminAction" xml:space="preserve">
+    <value>Invalid AgentDock scheduled-task management action.</value>
+  </data>
+  <data name="MissingAdminArgument" xml:space="preserve">
+    <value>Missing AgentDock management argument: {0}</value>
+  </data>
+  <data name="TaskAdminRequiresElevation" xml:space="preserve">
+    <value>AgentDock scheduled-task configuration requires administrator privileges.</value>
+  </data>
+  <data name="ElevatedModeMissingSid" xml:space="preserve">
+    <value>Administrator mode is missing the current Windows user SID.</value>
+  </data>
+  <data name="ElevatedModeRequiresCurrentUserUac" xml:space="preserve">
+    <value>Administrator mode must be confirmed through UAC by the currently signed-in Windows account.</value>
+  </data>
+  <data name="AdminArgumentBoolean" xml:space="preserve">
+    <value>AgentDock management argument {0} must be true or false.</value>
+  </data>
+  <data name="TaskEnabledStateRequired" xml:space="preserve">
+    <value>The AgentDock scheduled-task enabled state cannot be empty.</value>
+  </data>
+  <data name="ScheduledTaskMissing" xml:space="preserve">
+    <value>AgentDock scheduled task was not found.</value>
+  </data>
+  <data name="TaskBackupDirectoryRequired" xml:space="preserve">
+    <value>AgentDock scheduled-task backup directory cannot be empty.</value>
+  </data>
+  <data name="RuntimeDirectoryRequired" xml:space="preserve">
+    <value>AgentDock runtime directory cannot be empty.</value>
+  </data>
+  <data name="StopCoreFailed" xml:space="preserve">
+    <value>Unable to stop the running AgentDock Core: {0}</value>
+  </data>
+  <data name="TaskBackupStateMissing" xml:space="preserve">
+    <value>AgentDock scheduled-task backup state was not found: {0}</value>
+  </data>
+  <data name="TaskBackupStateReadFailed" xml:space="preserve">
+    <value>Unable to read the AgentDock scheduled-task backup state.</value>
+  </data>
+  <data name="TaskBackupXmlMissing" xml:space="preserve">
+    <value>AgentDock scheduled-task backup XML was not found: {0}</value>
+  </data>
+  <data name="TaskBackupUserMissing" xml:space="preserve">
+    <value>AgentDock scheduled-task backup is missing the user identity.</value>
+  </data>
+  <data name="ElevatedTaskArgumentsIncomplete" xml:space="preserve">
+    <value>AgentDock administrator-mode scheduled-task arguments are incomplete.</value>
+  </data>
+  <data name="TaskSchedulerComUnavailable" xml:space="preserve">
+    <value>Windows Task Scheduler COM service is unavailable.</value>
+  </data>
+  <data name="TaskSchedulerConnectFailed" xml:space="preserve">
+    <value>Unable to connect to Windows Task Scheduler.</value>
+  </data>
+  <data name="CoreJobCreateFailed" xml:space="preserve">
+    <value>Unable to create the AgentDock Core Job Object.</value>
+  </data>
+  <data name="CoreJobConfigureFailed" xml:space="preserve">
+    <value>Unable to configure the AgentDock Core Job Object.</value>
+  </data>
+  <data name="CoreJobAssignFailed" xml:space="preserve">
+    <value>Unable to assign AgentDock Core to the background Job Object.</value>
+  </data>
+  <data name="AcpPackageHint" xml:space="preserve">
+    <value> or {0}</value>
+  </data>
+  <data name="AcpDetectedPathDetails" xml:space="preserve">
+    <value>Detected · {0} · {1}</value>
+  </data>
+</root>

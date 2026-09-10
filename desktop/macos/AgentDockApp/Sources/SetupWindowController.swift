@@ -16,26 +16,26 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private let onChanged: () -> Void
 
     private let titleLabel = NSTextField(labelWithString: "AgentDock")
-    private let subtitleLabel = NSTextField(labelWithString: "本机 MCP 服务与公网连接管理")
-    private let stateLabel = NSTextField(labelWithString: "未安装")
-    private let nexusStateLabel = NSTextField(labelWithString: "未配置")
+    private let subtitleLabel = NSTextField(labelWithString: L10n.text("Local MCP service and public access management"))
+    private let stateLabel = NSTextField(labelWithString: L10n.text("Not installed"))
+    private let nexusStateLabel = NSTextField(labelWithString: L10n.text("Not configured"))
 
     private let serviceSection = NSStackView()
-    private let localAddress = NSTextField(labelWithString: "未安装")
-    private let publicAddress = NSTextField(labelWithString: "未启用")
+    private let localAddress = NSTextField(labelWithString: L10n.text("Not installed"))
+    private let publicAddress = NSTextField(labelWithString: L10n.text("Disabled"))
     private let publicCheckStatus = NSTextField(labelWithString: "")
-    private let publicTestButton = NSButton(title: "测试", target: nil, action: nil)
-    private let publicCopyButton = NSButton(title: "复制", target: nil, action: nil)
-    private let authToken = NSTextField(labelWithString: "未生成")
-    private let oauthPassword = NSTextField(labelWithString: "未生成")
-    private let authReveal = NSButton(title: "显示", target: nil, action: nil)
-    private let oauthReveal = NSButton(title: "显示", target: nil, action: nil)
-    private let startStopButton = NSButton(title: "启动服务", target: nil, action: nil)
-    private let restartButton = NSButton(title: "重新启动", target: nil, action: nil)
-    private let updateButton = NSButton(title: "检查更新", target: nil, action: nil)
+    private let publicTestButton = NSButton(title: L10n.text("Test"), target: nil, action: nil)
+    private let publicCopyButton = NSButton(title: L10n.text("Copy"), target: nil, action: nil)
+    private let authToken = NSTextField(labelWithString: L10n.text("Not generated"))
+    private let oauthPassword = NSTextField(labelWithString: L10n.text("Not generated"))
+    private let authReveal = NSButton(title: L10n.text("Show"), target: nil, action: nil)
+    private let oauthReveal = NSButton(title: L10n.text("Show"), target: nil, action: nil)
+    private let startStopButton = NSButton(title: L10n.text("Start service"), target: nil, action: nil)
+    private let restartButton = NSButton(title: L10n.text("Restart"), target: nil, action: nil)
+    private let updateButton = NSButton(title: L10n.text("Check for updates"), target: nil, action: nil)
 
     private let publicMode = NSSegmentedControl(
-        labels: ["仅本机", "临时地址", "固定域名"],
+        labels: [L10n.text("Local only"), L10n.text("Temporary address"), L10n.text("Custom domain")],
         trackingMode: .selectOne,
         target: nil,
         action: nil
@@ -47,10 +47,10 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
 
     private let progress = NSProgressIndicator()
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
-    private let applyButton = NSButton(title: "配置并启用", target: nil, action: nil)
-    private let permissionsButton = NSButton(title: "权限检查…", target: nil, action: nil)
-    private let advancedButton = NSButton(title: "高级设置…", target: nil, action: nil)
-    private let logsButton = NSButton(title: "打开日志", target: nil, action: nil)
+    private let applyButton = NSButton(title: L10n.text("Configure and enable"), target: nil, action: nil)
+    private let permissionsButton = NSButton(title: L10n.text("Check permissions…"), target: nil, action: nil)
+    private let advancedButton = NSButton(title: L10n.text("Advanced settings…"), target: nil, action: nil)
+    private let logsButton = NSButton(title: L10n.text("Open logs"), target: nil, action: nil)
 
     private var currentStatus = ServiceStatus.missing
     private var initialMode: TunnelMode = .local
@@ -121,19 +121,19 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
 
         if status.installed {
             titleLabel.stringValue = "AgentDock"
-            subtitleLabel.stringValue = "本机 MCP 服务与公网连接管理"
-            applyButton.title = "应用更改"
+            subtitleLabel.stringValue = L10n.text("Local MCP service and public access management")
+            applyButton.title = L10n.text("Apply changes")
             advancedButton.isEnabled = true
             logsButton.isEnabled = true
             serviceSection.isHidden = false
             updateServiceSection(status)
             selectCurrentMode(configuration: status.configuration)
         } else {
-            titleLabel.stringValue = "设置 AgentDock"
-            subtitleLabel.stringValue = "配置本机服务并允许 AgentDock 在后台运行"
-            stateLabel.stringValue = "● 尚未配置"
+            titleLabel.stringValue = L10n.text("Set up AgentDock")
+            subtitleLabel.stringValue = L10n.text("Configure the local service and allow AgentDock to run in the background")
+            stateLabel.stringValue = L10n.text("● Not configured")
             stateLabel.textColor = .secondaryLabelColor
-            applyButton.title = "配置并启用"
+            applyButton.title = L10n.text("Configure and enable")
             applyButton.isEnabled = true
             advancedButton.isEnabled = false
             logsButton.isEnabled = false
@@ -218,13 +218,13 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         serviceSection.orientation = .vertical
         serviceSection.alignment = .leading
         serviceSection.spacing = 8
-        serviceSection.addArrangedSubview(sectionTitle("连接信息"))
-        serviceSection.addArrangedSubview(valueRow(title: "本地 MCP", field: localAddress, actions: [copyButton(#selector(copyLocalAddress))]))
-        serviceSection.addArrangedSubview(valueRow(title: "公网 MCP", field: publicAddress, actions: [publicTestButton, publicCopyButton]))
+        serviceSection.addArrangedSubview(sectionTitle(L10n.text("Connection information")))
+        serviceSection.addArrangedSubview(valueRow(title: L10n.text("Local MCP"), field: localAddress, actions: [copyButton(#selector(copyLocalAddress))]))
+        serviceSection.addArrangedSubview(valueRow(title: L10n.text("Public MCP"), field: publicAddress, actions: [publicTestButton, publicCopyButton]))
         serviceSection.addArrangedSubview(valueDetailRow(publicCheckStatus))
         serviceSection.addArrangedSubview(valueRow(title: "Nexus", field: nexusStateLabel, actions: []))
         serviceSection.addArrangedSubview(valueRow(title: "Bearer Token", field: authToken, actions: [authReveal, copyButton(#selector(copyAuthToken))]))
-        serviceSection.addArrangedSubview(valueRow(title: "OAuth 密码", field: oauthPassword, actions: [oauthReveal, copyButton(#selector(copyOAuthPassword))]))
+        serviceSection.addArrangedSubview(valueRow(title: L10n.text("OAuth password"), field: oauthPassword, actions: [oauthReveal, copyButton(#selector(copyOAuthPassword))]))
 
         startStopButton.target = self
         startStopButton.action = #selector(startStopPressed)
@@ -246,7 +246,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         modeDescription.widthAnchor.constraint(equalToConstant: 564).isActive = true
 
         serverURLField.placeholderString = "https://mini.example.com"
-        tunnelTokenField.placeholderString = "粘贴 Cloudflare Tunnel Token"
+        tunnelTokenField.placeholderString = L10n.text("Paste Cloudflare Tunnel Token")
         serverURLField.widthAnchor.constraint(equalToConstant: 430).isActive = true
         tunnelTokenField.widthAnchor.constraint(equalToConstant: 430).isActive = true
         serverURLField.target = self
@@ -257,7 +257,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         namedFields.orientation = .vertical
         namedFields.alignment = .leading
         namedFields.spacing = 7
-        namedFields.addArrangedSubview(formRow(title: "公网地址", control: serverURLField))
+        namedFields.addArrangedSubview(formRow(title: L10n.text("Public address"), control: serverURLField))
         namedFields.addArrangedSubview(formRow(title: "Tunnel Token", control: tunnelTokenField))
 
         progress.style = .spinning
@@ -292,7 +292,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             separator(),
             serviceSection,
             separator(),
-            sectionTitle("公网访问"),
+            sectionTitle(L10n.text("Public access")),
             publicMode,
             modeDescription,
             namedFields,
@@ -315,35 +315,39 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
 
     private func updateServiceSection(_ status: ServiceStatus) {
         if migrationRequired {
-            stateLabel.stringValue = "● 需要迁移"
+            stateLabel.stringValue = L10n.text("● Migration required")
             stateLabel.textColor = .systemOrange
         } else if status.healthy {
             if AppVersion.matchesHealthVersion(status.version) {
-                stateLabel.stringValue = "● 运行正常 · \(AppVersion.current)"
+                stateLabel.stringValue = L10n.format("● Running normally · %@", AppVersion.current)
                 stateLabel.textColor = .systemGreen
             } else {
-                stateLabel.stringValue = "● 版本异常 · AgentDock \(AppVersion.current) · Core \(AppVersion.display(status.version))"
+                stateLabel.stringValue = L10n.format(
+                    "● Version mismatch · AgentDock %@ · Core %@",
+                    AppVersion.current,
+                    AppVersion.display(status.version)
+                )
                 stateLabel.textColor = .systemRed
             }
         } else if status.requiresApproval {
-            stateLabel.stringValue = "● 需要允许后台运行"
+            stateLabel.stringValue = L10n.text("● Background permission required")
             stateLabel.textColor = .systemOrange
         } else if status.loaded {
-            stateLabel.stringValue = "● 服务异常"
+            stateLabel.stringValue = L10n.text("● Service error")
             stateLabel.textColor = .systemRed
         } else {
-            stateLabel.stringValue = "● 已停止"
+            stateLabel.stringValue = L10n.text("● Stopped")
             stateLabel.textColor = .secondaryLabelColor
         }
 
         let configuration = status.configuration
-        localAddress.stringValue = configuration?.localMCPURL?.absoluteString ?? "配置不可用"
+        localAddress.stringValue = configuration?.localMCPURL?.absoluteString ?? L10n.text("Configuration unavailable")
         renderPublicAddress(configuration?.publicMCPURL, automaticallyCheck: true)
         authTokenValue = configuration?.authToken ?? ""
         oauthPasswordValue = configuration?.oauthPassword ?? ""
         startStopButton.title = migrationRequired
-            ? "等待迁移"
-            : (status.requiresApproval ? "打开后台设置" : (status.loaded ? "停用服务" : "启用服务"))
+            ? L10n.text("Waiting for migration")
+            : (status.requiresApproval ? L10n.text("Open background settings") : (status.loaded ? L10n.text("Stop service") : L10n.text("Start service")))
         if !isBusy {
             startStopButton.isEnabled = status.installed && !migrationRequired
             restartButton.isEnabled = status.installed && !status.requiresApproval && !migrationRequired
@@ -354,13 +358,13 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private func updateNexusState(_ state: NexusConnectionState) {
         switch state {
         case .connected:
-            nexusStateLabel.stringValue = "已连接"
+            nexusStateLabel.stringValue = L10n.text("Connected")
         case .disconnected:
-            nexusStateLabel.stringValue = "未连接"
+            nexusStateLabel.stringValue = L10n.text("Disconnected")
         case .unconfigured:
-            nexusStateLabel.stringValue = "未配置"
+            nexusStateLabel.stringValue = L10n.text("Not configured")
         case .configurationError:
-            nexusStateLabel.stringValue = "配置异常"
+            nexusStateLabel.stringValue = L10n.text("Configuration error")
         }
     }
 
@@ -369,16 +373,16 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         case .refreshing:
             cancelPublicCheck(clearLastResult: true)
             displayedPublicMCPURL = nil
-            publicAddress.stringValue = "正在生成新地址…"
-            publicCheckStatus.stringValue = "旧地址已隐藏，等待新的临时公网地址"
+            publicAddress.stringValue = L10n.text("Generating a new address…")
+            publicCheckStatus.stringValue = L10n.text("The old address is hidden; waiting for a new temporary public address")
             publicCheckStatus.textColor = .secondaryLabelColor
             publicCheckStatus.isHidden = false
             refreshPublicActions()
         case .failed:
             cancelPublicCheck(clearLastResult: true)
             displayedPublicMCPURL = nil
-            publicAddress.stringValue = "未生成新地址"
-            publicCheckStatus.stringValue = "刷新失败，旧地址未作为新地址显示"
+            publicAddress.stringValue = L10n.text("No new address generated")
+            publicCheckStatus.stringValue = L10n.text("Refresh failed; the old address is not shown as the new address")
             publicCheckStatus.textColor = .systemRed
             publicCheckStatus.isHidden = false
             refreshPublicActions()
@@ -393,7 +397,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             cancelPublicCheck(clearLastResult: true)
         }
         displayedPublicMCPURL = publicMCPURL
-        publicAddress.stringValue = publicMCPURL?.absoluteString ?? "未启用"
+        publicAddress.stringValue = publicMCPURL?.absoluteString ?? L10n.text("Disabled")
 
         guard let publicMCPURL else {
             publicCheckStatus.stringValue = ""
@@ -426,7 +430,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
 
         cancelPublicCheck(clearLastResult: !automatic)
         activePublicCheckURL = publicMCPURL
-        publicCheckStatus.stringValue = "正在检测公网访问…"
+        publicCheckStatus.stringValue = L10n.text("Checking public access…")
         publicCheckStatus.textColor = .secondaryLabelColor
         publicCheckStatus.isHidden = false
         refreshPublicActions()
@@ -439,7 +443,11 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             for attempt in 1...maximumAttempts {
                 if Task.isCancelled { return }
                 if maximumAttempts > 1 {
-                    publicCheckStatus.stringValue = "正在检测公网访问（\(attempt)/\(maximumAttempts)）…"
+                    publicCheckStatus.stringValue = L10n.format(
+                        "Checking public access (%d/%d)…",
+                        attempt,
+                        maximumAttempts
+                    )
                 }
                 let result = await publicEndpointChecker.check(publicMCPURL: publicMCPURL)
                 finalResult = result
@@ -481,7 +489,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private func refreshPublicActions() {
         let hasAddress = quickTunnelRefreshState == .idle && displayedPublicMCPURL != nil
         publicCopyButton.isEnabled = hasAddress
-        publicTestButton.title = activePublicCheckURL == nil ? "测试" : "检测中"
+        publicTestButton.title = activePublicCheckURL == nil ? L10n.text("Test") : L10n.text("Checking")
         publicTestButton.isEnabled = hasAddress && activePublicCheckURL == nil && !isBusy
     }
 
@@ -510,9 +518,9 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         modeDescription.stringValue = mode.detail
         namedFields.isHidden = mode != .named
         if mode == .named, currentStatus.installed, initialMode == .named {
-            tunnelTokenField.placeholderString = "留空表示保留现有 Tunnel Token"
+            tunnelTokenField.placeholderString = L10n.text("Leave blank to keep the existing Tunnel Token")
         } else {
-            tunnelTokenField.placeholderString = "粘贴 Cloudflare Tunnel Token"
+            tunnelTokenField.placeholderString = L10n.text("Paste Cloudflare Tunnel Token")
         }
         updateWindowHeight()
     }
@@ -561,7 +569,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         }
         setBusy(true)
         showStatus(
-            refreshingQuickTunnel ? "正在生成新的临时公网地址…" : "正在校验并应用 AgentDock 配置…",
+            refreshingQuickTunnel ? L10n.text("Generating a new temporary public address…") : L10n.text("Validating and applying AgentDock configuration…"),
             isError: false
         )
         Task {
@@ -573,7 +581,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
                 } else if let parsedURL = URL(string: result.publicMCPURL) {
                     resultPublicMCPURL = parsedURL
                 } else {
-                    throw ValidationError("安装器返回的公网 MCP 地址格式无效。")
+                    throw ValidationError(L10n.text("The installer returned an invalid public MCP address."))
                 }
 
                 authTokenValue = result.authToken
@@ -587,8 +595,8 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
                 refreshCredentialFields()
                 showStatus(
                     refreshingQuickTunnel
-                        ? "新的临时公网地址已生成，正在自动检测公网访问。"
-                        : "AgentDock \(result.version) 已配置并正常运行。",
+                        ? L10n.text("A new temporary public address was generated; checking public access automatically.")
+                        : L10n.format("AgentDock %@ is configured and running normally.", result.version),
                     isError: false
                 )
                 setBusy(false)
@@ -611,24 +619,30 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             service.openBackgroundItemsSettings()
             return
         }
-        performServiceAction(currentStatus.loaded ? "停用" : "启用") {
+        performServiceAction(
+            inProgress: currentStatus.loaded ? L10n.text("Stopping AgentDock…") : L10n.text("Starting AgentDock…"),
+            completed: currentStatus.loaded ? L10n.text("AgentDock stopped.") : L10n.text("AgentDock started.")
+        ) {
             if self.currentStatus.loaded { try await self.service.stop() }
             else { try await self.service.start() }
         }
     }
 
     @objc private func restartPressed() {
-        performServiceAction("重启") { try await self.service.restart() }
+        performServiceAction(
+            inProgress: L10n.text("Restarting AgentDock…"),
+            completed: L10n.text("AgentDock restarted.")
+        ) { try await self.service.restart() }
     }
 
     @objc private func updatePressed() {
         setBusy(true)
-        showStatus("正在检查并安装更新…", isError: false)
+        showStatus(L10n.text("Checking for and installing updates…"), isError: false)
         Task {
             do {
                 let output = try await service.update()
                 setBusy(false)
-                showStatus(output.isEmpty ? "更新已完成。" : output, isError: false)
+                showStatus(output.isEmpty ? L10n.text("Update completed.") : output, isError: false)
                 onChanged()
             } catch {
                 setBusy(false)
@@ -637,14 +651,18 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    private func performServiceAction(_ action: String, operation: @escaping () async throws -> Void) {
+    private func performServiceAction(
+        inProgress: String,
+        completed: String,
+        operation: @escaping () async throws -> Void
+    ) {
         setBusy(true)
-        showStatus("正在\(action) AgentDock…", isError: false)
+        showStatus(inProgress, isError: false)
         Task {
             do {
                 try await operation()
                 setBusy(false)
-                showStatus("AgentDock \(action)完成。", isError: false)
+                showStatus(completed, isError: false)
                 onChanged()
             } catch {
                 setBusy(false)
@@ -680,10 +698,10 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func refreshCredentialFields() {
-        authToken.stringValue = displayedSecret(authTokenValue, visible: authVisible, empty: "未生成")
-        oauthPassword.stringValue = displayedSecret(oauthPasswordValue, visible: oauthVisible, empty: "未启用")
-        authReveal.title = authVisible ? "隐藏" : "显示"
-        oauthReveal.title = oauthVisible ? "隐藏" : "显示"
+        authToken.stringValue = displayedSecret(authTokenValue, visible: authVisible, empty: L10n.text("Not generated"))
+        oauthPassword.stringValue = displayedSecret(oauthPasswordValue, visible: oauthVisible, empty: L10n.text("Disabled"))
+        authReveal.title = authVisible ? L10n.text("Hide") : L10n.text("Show")
+        oauthReveal.title = oauthVisible ? L10n.text("Hide") : L10n.text("Show")
     }
 
     private func displayedSecret(_ value: String, visible: Bool, empty: String) -> String {
@@ -696,7 +714,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
         let original = button.title
-        button.title = "已复制"
+        button.title = L10n.text("Copied")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             button.title = original
         }
@@ -704,19 +722,19 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
 
     private func refreshChangeState() {
         guard currentStatus.installed else {
-            applyButton.title = "配置并启用"
+            applyButton.title = L10n.text("Configure and enable")
             applyButton.isEnabled = !isBusy
             return
         }
 
         if migrationRequired {
-            applyButton.title = "迁移并启用"
+            applyButton.title = L10n.text("Migrate and enable")
             applyButton.isEnabled = !isBusy
             return
         }
 
         let refreshingQuickTunnel = initialMode == .quick && selectedMode == .quick
-        applyButton.title = refreshingQuickTunnel ? "重新生成临时地址" : "应用更改"
+        applyButton.title = refreshingQuickTunnel ? L10n.text("Regenerate temporary address") : L10n.text("Apply changes")
 
         let serverChanged = selectedMode == .named
             && serverURLField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -814,7 +832,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func copyButton(_ action: Selector) -> NSButton {
-        let button = NSButton(title: "复制", target: self, action: action)
+        let button = NSButton(title: L10n.text("Copy"), target: self, action: action)
         button.bezelStyle = .inline
         return button
     }

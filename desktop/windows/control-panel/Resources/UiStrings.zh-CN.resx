@@ -1,0 +1,602 @@
+<?xml version='1.0' encoding='utf-8'?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="MainWindowTitle" xml:space="preserve">
+    <value>AgentDock 控制面板</value>
+  </data>
+  <data name="WindowsControlPanel" xml:space="preserve">
+    <value>Windows 控制面板</value>
+  </data>
+  <data name="LoadingStatus" xml:space="preserve">
+    <value>正在读取状态…</value>
+  </data>
+  <data name="Overview" xml:space="preserve">
+    <value>概览</value>
+  </data>
+  <data name="RuntimeStatus" xml:space="preserve">
+    <value>运行状态</value>
+  </data>
+  <data name="Service" xml:space="preserve">
+    <value>服务</value>
+  </data>
+  <data name="Unknown" xml:space="preserve">
+    <value>未知</value>
+  </data>
+  <data name="HealthCheck" xml:space="preserve">
+    <value>健康检查</value>
+  </data>
+  <data name="NotConfigured" xml:space="preserve">
+    <value>未配置</value>
+  </data>
+  <data name="Version" xml:space="preserve">
+    <value>版本</value>
+  </data>
+  <data name="Start" xml:space="preserve">
+    <value>启动</value>
+  </data>
+  <data name="Stop" xml:space="preserve">
+    <value>停止</value>
+  </data>
+  <data name="Restart" xml:space="preserve">
+    <value>重启</value>
+  </data>
+  <data name="Update" xml:space="preserve">
+    <value>更新</value>
+  </data>
+  <data name="ConnectionAddresses" xml:space="preserve">
+    <value>连接地址</value>
+  </data>
+  <data name="LocalMCP" xml:space="preserve">
+    <value>本地 MCP</value>
+  </data>
+  <data name="PublicMCP" xml:space="preserve">
+    <value>公网 MCP</value>
+  </data>
+  <data name="Test" xml:space="preserve">
+    <value>测试</value>
+  </data>
+  <data name="PublicCheck" xml:space="preserve">
+    <value>公网检测</value>
+  </data>
+  <data name="NotChecked" xml:space="preserve">
+    <value>尚未检测</value>
+  </data>
+  <data name="AccessCredentials" xml:space="preserve">
+    <value>访问凭据</value>
+  </data>
+  <data name="Show" xml:space="preserve">
+    <value>显示</value>
+  </data>
+  <data name="Hide" xml:space="preserve">
+    <value>隐藏</value>
+  </data>
+  <data name="OAuthPassword" xml:space="preserve">
+    <value>OAuth 密码</value>
+  </data>
+  <data name="PublicAccess" xml:space="preserve">
+    <value>公网访问</value>
+  </data>
+  <data name="AccessMode" xml:space="preserve">
+    <value>访问模式</value>
+  </data>
+  <data name="LocalOnly" xml:space="preserve">
+    <value>仅本机</value>
+  </data>
+  <data name="LocalOnlyDescription" xml:space="preserve">
+    <value>仅允许这台电脑访问，不启用 Cloudflare 公网访问；或者自行配置内网穿透或反向代理。</value>
+  </data>
+  <data name="TemporaryAddress" xml:space="preserve">
+    <value>临时地址</value>
+  </data>
+  <data name="TemporaryAddressDescription" xml:space="preserve">
+    <value>通过 Cloudflare 自动生成临时公网地址，无需配置域名。适合临时访问或测试，地址可能会变化。</value>
+  </data>
+  <data name="CustomDomain" xml:space="preserve">
+    <value>固定域名</value>
+  </data>
+  <data name="CustomDomainDescription" xml:space="preserve">
+    <value>通过 Cloudflare Tunnel 使用自己的 HTTPS 域名，完成配置后即可获得稳定的公网地址。</value>
+  </data>
+  <data name="CustomDomainConfiguration" xml:space="preserve">
+    <value>固定域名配置</value>
+  </data>
+  <data name="PublicHTTPSAddress" xml:space="preserve">
+    <value>HTTPS 公网地址</value>
+  </data>
+  <data name="SavedState" xml:space="preserve">
+    <value>保存状态</value>
+  </data>
+  <data name="NotSaved" xml:space="preserve">
+    <value>未保存</value>
+  </data>
+  <data name="ApplyAccessMode" xml:space="preserve">
+    <value>应用访问模式</value>
+  </data>
+  <data name="RegenerateTemporaryAddress" xml:space="preserve">
+    <value>重新生成临时地址</value>
+  </data>
+  <data name="AdvancedSettings" xml:space="preserve">
+    <value>高级设置</value>
+  </data>
+  <data name="BasicSettings" xml:space="preserve">
+    <value>基础设置</value>
+  </data>
+  <data name="Port" xml:space="preserve">
+    <value>端口</value>
+  </data>
+  <data name="LogLevel" xml:space="preserve">
+    <value>日志级别</value>
+  </data>
+  <data name="EnableMcpAppsUi" xml:space="preserve">
+    <value>启用 MCP Apps UI</value>
+  </data>
+  <data name="Address" xml:space="preserve">
+    <value>地址</value>
+  </data>
+  <data name="NexusPublicHttpsTooltip" xml:space="preserve">
+    <value>NexusDock 公网 HTTPS 地址</value>
+  </data>
+  <data name="OneTimePairingCode" xml:space="preserve">
+    <value>一次性配对码</value>
+  </data>
+  <data name="PairAndRestart" xml:space="preserve">
+    <value>配对并重启</value>
+  </data>
+  <data name="NotPaired" xml:space="preserve">
+    <value>尚未配对</value>
+  </data>
+  <data name="Browser" xml:space="preserve">
+    <value>浏览器</value>
+  </data>
+  <data name="EnableBrowserCdp" xml:space="preserve">
+    <value>启用浏览器 CDP 控制</value>
+  </data>
+  <data name="ConnectionMode" xml:space="preserve">
+    <value>连接方式</value>
+  </data>
+  <data name="ManagedBrowser" xml:space="preserve">
+    <value>隔离浏览器</value>
+  </data>
+  <data name="ReuseExistingCdpBrowser" xml:space="preserve">
+    <value>优先使用本机已有 CDP 浏览器</value>
+  </data>
+  <data name="SpecifiedCdpBrowser" xml:space="preserve">
+    <value>连接指定 CDP 浏览器</value>
+  </data>
+  <data name="CdpUrlExample" xml:space="preserve">
+    <value>例如 http://127.0.0.1:9222 或 ws://.../devtools/browser/...</value>
+  </data>
+  <data name="CodingAgentAcp" xml:space="preserve">
+    <value>Coding Agent（ACP）</value>
+  </data>
+  <data name="EnableCodingAgent" xml:space="preserve">
+    <value>启用 Coding Agent</value>
+  </data>
+  <data name="Custom" xml:space="preserve">
+    <value>自定义</value>
+  </data>
+  <data name="AcpCommandTooltip" xml:space="preserve">
+    <value>ACP Adapter 可执行文件的绝对路径</value>
+  </data>
+  <data name="AcpArgsTooltip" xml:space="preserve">
+    <value>JSON 字符串数组，例如 ["--flag","value"]</value>
+  </data>
+  <data name="Status" xml:space="preserve">
+    <value>状态</value>
+  </data>
+  <data name="Disabled" xml:space="preserve">
+    <value>未启用</value>
+  </data>
+  <data name="RuntimePermissions" xml:space="preserve">
+    <value>运行权限</value>
+  </data>
+  <data name="RunCoreElevated" xml:space="preserve">
+    <value>以管理员权限运行 AgentDock 核心</value>
+  </data>
+  <data name="Startup" xml:space="preserve">
+    <value>开机启动</value>
+  </data>
+  <data name="CoreStartup" xml:space="preserve">
+    <value>AgentDock 核心开机启动</value>
+  </data>
+  <data name="TrayStartup" xml:space="preserve">
+    <value>AgentDock 控制面板托盘开机启动</value>
+  </data>
+  <data name="SaveAndRestart" xml:space="preserve">
+    <value>保存并重启</value>
+  </data>
+  <data name="OpenLogsFolder" xml:space="preserve">
+    <value>打开日志目录</value>
+  </data>
+  <data name="OpenConfigFolder" xml:space="preserve">
+    <value>打开配置目录</value>
+  </data>
+  <data name="Ready" xml:space="preserve">
+    <value>准备就绪</value>
+  </data>
+  <data name="Refresh" xml:space="preserve">
+    <value>刷新</value>
+  </data>
+  <data name="UpdateWindowTitle" xml:space="preserve">
+    <value>AgentDock 更新</value>
+  </data>
+  <data name="UpdatingAgentDock" xml:space="preserve">
+    <value>正在更新 AgentDock</value>
+  </data>
+  <data name="PreparingUpdate" xml:space="preserve">
+    <value>正在准备更新…</value>
+  </data>
+  <data name="Close" xml:space="preserve">
+    <value>关闭</value>
+  </data>
+  <data name="StatusUnavailable" xml:space="preserve">
+    <value>状态不可用</value>
+  </data>
+  <data name="OpenAgentDock" xml:space="preserve">
+    <value>打开 AgentDock</value>
+  </data>
+  <data name="StopAgentDock" xml:space="preserve">
+    <value>停止 AgentDock</value>
+  </data>
+  <data name="RestartAgentDock" xml:space="preserve">
+    <value>重启 AgentDock</value>
+  </data>
+  <data name="StartAgentDock" xml:space="preserve">
+    <value>启动 AgentDock</value>
+  </data>
+  <data name="CheckingForUpdates" xml:space="preserve">
+    <value>正在检查更新…</value>
+  </data>
+  <data name="CheckForUpdates" xml:space="preserve">
+    <value>检查更新…</value>
+  </data>
+  <data name="OpenDocumentation" xml:space="preserve">
+    <value>打开使用文档</value>
+  </data>
+  <data name="ExitTray" xml:space="preserve">
+    <value>退出菜单栏</value>
+  </data>
+  <data name="RunningNormally" xml:space="preserve">
+    <value>运行正常</value>
+  </data>
+  <data name="ServiceError" xml:space="preserve">
+    <value>服务异常</value>
+  </data>
+  <data name="Stopped" xml:space="preserve">
+    <value>已停止</value>
+  </data>
+  <data name="PleaseWaitCheckingUpdates" xml:space="preserve">
+    <value>正在检查更新，请稍候…</value>
+  </data>
+  <data name="NewVersionPrompt" xml:space="preserve">
+    <value>发现 AgentDock 新版本。
+
+当前版本：{0}
+最新版本：{1}
+
+是否立即更新？</value>
+  </data>
+  <data name="UpdateCancelled" xml:space="preserve">
+    <value>已取消更新。</value>
+  </data>
+  <data name="UpdateCompleted" xml:space="preserve">
+    <value>更新完成。</value>
+  </data>
+  <data name="UpdateCheckFailed" xml:space="preserve">
+    <value>检查更新失败。</value>
+  </data>
+  <data name="OperationFailed" xml:space="preserve">
+    <value>操作失败。</value>
+  </data>
+  <data name="LastRefresh" xml:space="preserve">
+    <value>上次刷新：{0:HH:mm:ss}</value>
+  </data>
+  <data name="StatusReadFailed" xml:space="preserve">
+    <value>状态读取失败</value>
+  </data>
+  <data name="RunningHealthFailed" xml:space="preserve">
+    <value>运行但健康检查失败</value>
+  </data>
+  <data name="ConfigurationError" xml:space="preserve">
+    <value>配置异常</value>
+  </data>
+  <data name="Connected" xml:space="preserve">
+    <value>已连接</value>
+  </data>
+  <data name="NotConnected" xml:space="preserve">
+    <value>未连接</value>
+  </data>
+  <data name="Running" xml:space="preserve">
+    <value>正在运行</value>
+  </data>
+  <data name="Healthy" xml:space="preserve">
+    <value>正常</value>
+  </data>
+  <data name="Unavailable" xml:space="preserve">
+    <value>不可用</value>
+  </data>
+  <data name="TunnelTokenSaved" xml:space="preserve">
+    <value>Tunnel Token 已加密保存</value>
+  </data>
+  <data name="DeviceTokenSaved" xml:space="preserve">
+    <value>已安全保存 · node_id={0}</value>
+  </data>
+  <data name="DeviceNotPairedHelp" xml:space="preserve">
+    <value>尚未配对；Device Token 将由一次性配对自动生成。</value>
+  </data>
+  <data name="WaitingTemporaryAddress" xml:space="preserve">
+    <value>正在等待新的临时地址…</value>
+  </data>
+  <data name="PublicAddressNotConfigured" xml:space="preserve">
+    <value>未配置公网地址</value>
+  </data>
+  <data name="AutoDetectingPublicAddress" xml:space="preserve">
+    <value>正在自动检测公网地址…</value>
+  </data>
+  <data name="OperationCompleted" xml:space="preserve">
+    <value>操作完成</value>
+  </data>
+  <data name="Starting" xml:space="preserve">
+    <value>正在启动…</value>
+  </data>
+  <data name="Stopping" xml:space="preserve">
+    <value>正在停止…</value>
+  </data>
+  <data name="Restarting" xml:space="preserve">
+    <value>正在重启…</value>
+  </data>
+  <data name="CurrentNoPublicAddress" xml:space="preserve">
+    <value>当前没有公网地址</value>
+  </data>
+  <data name="Testing" xml:space="preserve">
+    <value>正在测试…</value>
+  </data>
+  <data name="GeneratingTemporaryAddress" xml:space="preserve">
+    <value>正在生成新的临时地址…</value>
+  </data>
+  <data name="SwitchingPublicAccess" xml:space="preserve">
+    <value>正在切换公网访问模式…</value>
+  </data>
+  <data name="OldAddressHidden" xml:space="preserve">
+    <value>旧地址已隐藏，正在启动新的 Quick Tunnel…</value>
+  </data>
+  <data name="BrowserReuseHelp" xml:space="preserve">
+    <value>优先使用本机已有 CDP 浏览器；未找到时自动使用隔离浏览器。可能沿用已有登录状态。</value>
+  </data>
+  <data name="BrowserSpecifiedHelp" xml:space="preserve">
+    <value>使用指定 CDP 浏览器，并可能沿用其中的登录状态。</value>
+  </data>
+  <data name="BrowserManagedHelp" xml:space="preserve">
+    <value>使用隔离浏览器，不沿用日常浏览器登录状态。</value>
+  </data>
+  <data name="ArgsJsonInvalid" xml:space="preserve">
+    <value>Args JSON 必须是 JSON 字符串数组。</value>
+  </data>
+  <data name="CustomConfigured" xml:space="preserve">
+    <value>已配置 自定义 · 启用后生效</value>
+  </data>
+  <data name="AgentDetected" xml:space="preserve">
+    <value>已检测到 {0} · 启用后生效</value>
+  </data>
+  <data name="PortInvalid" xml:space="preserve">
+    <value>端口必须是 1 到 65535 之间的整数。</value>
+  </data>
+  <data name="CustomAcpUnavailable" xml:space="preserve">
+    <value>自定义 ACP Adapter 当前不可用，请检查 Command 与 Args JSON。</value>
+  </data>
+  <data name="AgentUnavailable" xml:space="preserve">
+    <value>{0} 当前不可用，请先安装对应命令。</value>
+  </data>
+  <data name="SpecifiedCdpRequired" xml:space="preserve">
+    <value>选择“连接指定 CDP 浏览器”时必须填写 CDP 地址。</value>
+  </data>
+  <data name="SavingAndRestarting" xml:space="preserve">
+    <value>正在保存设置并重启…</value>
+  </data>
+  <data name="PairingFieldsRequired" xml:space="preserve">
+    <value>请填写 NexusDock 地址和一次性配对码。</value>
+  </data>
+  <data name="PairingAndRestarting" xml:space="preserve">
+    <value>正在配对并重启 AgentDock…</value>
+  </data>
+  <data name="SwitchingAdmin" xml:space="preserve">
+    <value>正在切换到管理员模式…</value>
+  </data>
+  <data name="SwitchingStandard" xml:space="preserve">
+    <value>正在切换到普通用户模式…</value>
+  </data>
+  <data name="SwitchedAdmin" xml:space="preserve">
+    <value>已切换到管理员模式</value>
+  </data>
+  <data name="SwitchedStandard" xml:space="preserve">
+    <value>已切换到普通用户模式</value>
+  </data>
+  <data name="UpdatingCoreStartup" xml:space="preserve">
+    <value>正在更新核心开机启动…</value>
+  </data>
+  <data name="UpdatingTrayStartup" xml:space="preserve">
+    <value>正在更新托盘开机启动…</value>
+  </data>
+  <data name="UnsupportedCodingAgent" xml:space="preserve">
+    <value>不支持的 Coding Agent</value>
+  </data>
+  <data name="MinimizedToTray" xml:space="preserve">
+    <value>控制面板已最小化到系统托盘</value>
+  </data>
+  <data name="AcpNotConfigured" xml:space="preserve">
+    <value>未配置 · 请填写可执行的 ACP Adapter 绝对路径</value>
+  </data>
+  <data name="AcpDetectedPath" xml:space="preserve">
+    <value>已检测到 · {0}</value>
+  </data>
+  <data name="AcpNotInstalled" xml:space="preserve">
+    <value>未安装 · 未找到 {0}{1}</value>
+  </data>
+  <data name="InvalidPublicAddress" xml:space="preserve">
+    <value>地址无效</value>
+  </data>
+  <data name="AccessSuccess" xml:space="preserve">
+    <value>访问正常 · {0} · {1} ms</value>
+  </data>
+  <data name="AccessFailed" xml:space="preserve">
+    <value>访问失败 · {0}</value>
+  </data>
+  <data name="AccessTimeout" xml:space="preserve">
+    <value>访问超时</value>
+  </data>
+  <data name="NexusPairingRequired" xml:space="preserve">
+    <value>NexusDock 地址和一次性配对码不能为空。</value>
+  </data>
+  <data name="RuntimeJsonMissing" xml:space="preserve">
+    <value>找不到 AgentDock runtime.json。</value>
+  </data>
+  <data name="RuntimeJsonInvalid" xml:space="preserve">
+    <value>AgentDock runtime.json 格式无效。</value>
+  </data>
+  <data name="CoreBinaryMissing" xml:space="preserve">
+    <value>找不到 AgentDock 核心程序（{0}），请运行 Setup.exe 修复安装。</value>
+  </data>
+  <data name="TrayBinaryMissing" xml:space="preserve">
+    <value>找不到 AgentDock 托盘程序（{0}）。</value>
+  </data>
+  <data name="CurrentWindowsIdentityUnavailable" xml:space="preserve">
+    <value>无法读取当前 Windows 用户身份。</value>
+  </data>
+  <data name="AdminSwitchCancelled" xml:space="preserve">
+    <value>已取消 AgentDock 管理员权限切换。</value>
+  </data>
+  <data name="StartupRegistryUnavailable" xml:space="preserve">
+    <value>无法打开 Windows 开机启动注册表。</value>
+  </data>
+  <data name="CoreStartFailed" xml:space="preserve">
+    <value>无法启动 AgentDock 核心程序。</value>
+  </data>
+  <data name="ManagerStartFailed" xml:space="preserve">
+    <value>无法启动 AgentDock 管理程序。</value>
+  </data>
+  <data name="ManagerFailedWithExitCode" xml:space="preserve">
+    <value>AgentDock 管理程序执行失败，退出码：{0}。</value>
+  </data>
+  <data name="DeviceIdentityInvalid" xml:space="preserve">
+    <value>设备身份文件无效，请重新配对。</value>
+  </data>
+  <data name="DeviceIdentityReadFailed" xml:space="preserve">
+    <value>无法读取设备身份：{0}</value>
+  </data>
+  <data name="ProcessStartFailed" xml:space="preserve">
+    <value>无法启动 {0}。</value>
+  </data>
+  <data name="Refreshing" xml:space="preserve">
+    <value>正在刷新…</value>
+  </data>
+  <data name="UnsupportedRuntimeAction" xml:space="preserve">
+    <value>不支持的运行时操作。</value>
+  </data>
+  <data name="EmptyUpdateCheckResult" xml:space="preserve">
+    <value>更新检查结果为空。</value>
+  </data>
+  <data name="ParseUpdateCheckFailed" xml:space="preserve">
+    <value>无法解析 AgentDock 更新检查结果。</value>
+  </data>
+  <data name="UnsupportedStartupComponent" xml:space="preserve">
+    <value>不支持的开机启动组件。</value>
+  </data>
+  <data name="PrivilegeSwitchRollbackFailed" xml:space="preserve">
+    <value>切换 AgentDock 管理员模式失败，且回滚未完成。</value>
+  </data>
+  <data name="ManagementBinaryMissing" xml:space="preserve">
+    <value>找不到 AgentDock 管理程序（{0}）。</value>
+  </data>
+  <data name="UnsupportedCoreServiceAction" xml:space="preserve">
+    <value>不支持的核心服务操作。</value>
+  </data>
+  <data name="UnsupportedTunnelAction" xml:space="preserve">
+    <value>不支持的 Tunnel 操作。</value>
+  </data>
+  <data name="UnsupportedCodingAgentValue" xml:space="preserve">
+    <value>不支持的 Coding Agent：{0}</value>
+  </data>
+  <data name="UnsupportedTaskAdminAction" xml:space="preserve">
+    <value>不支持的 AgentDock 计划任务操作：{0}</value>
+  </data>
+  <data name="InvalidTaskAdminAction" xml:space="preserve">
+    <value>AgentDock 计划任务管理动作无效。</value>
+  </data>
+  <data name="MissingAdminArgument" xml:space="preserve">
+    <value>缺少 AgentDock 管理参数：{0}</value>
+  </data>
+  <data name="TaskAdminRequiresElevation" xml:space="preserve">
+    <value>AgentDock 计划任务配置需要管理员权限。</value>
+  </data>
+  <data name="ElevatedModeMissingSid" xml:space="preserve">
+    <value>管理员增强模式缺少当前 Windows 用户 SID。</value>
+  </data>
+  <data name="ElevatedModeRequiresCurrentUserUac" xml:space="preserve">
+    <value>管理员增强模式必须由当前登录的 Windows 账号确认 UAC。</value>
+  </data>
+  <data name="AdminArgumentBoolean" xml:space="preserve">
+    <value>AgentDock 管理参数 {0} 必须是 true 或 false。</value>
+  </data>
+  <data name="TaskEnabledStateRequired" xml:space="preserve">
+    <value>AgentDock 计划任务启用状态不能为空。</value>
+  </data>
+  <data name="ScheduledTaskMissing" xml:space="preserve">
+    <value>找不到 AgentDock 计划任务。</value>
+  </data>
+  <data name="TaskBackupDirectoryRequired" xml:space="preserve">
+    <value>AgentDock 计划任务备份目录不能为空。</value>
+  </data>
+  <data name="RuntimeDirectoryRequired" xml:space="preserve">
+    <value>AgentDock 运行目录不能为空。</value>
+  </data>
+  <data name="StopCoreFailed" xml:space="preserve">
+    <value>无法停止正在运行的 AgentDock Core：{0}</value>
+  </data>
+  <data name="TaskBackupStateMissing" xml:space="preserve">
+    <value>找不到 AgentDock 计划任务备份状态：{0}</value>
+  </data>
+  <data name="TaskBackupStateReadFailed" xml:space="preserve">
+    <value>无法读取 AgentDock 计划任务备份状态。</value>
+  </data>
+  <data name="TaskBackupXmlMissing" xml:space="preserve">
+    <value>找不到 AgentDock 计划任务备份 XML：{0}</value>
+  </data>
+  <data name="TaskBackupUserMissing" xml:space="preserve">
+    <value>AgentDock 计划任务备份缺少用户标识。</value>
+  </data>
+  <data name="ElevatedTaskArgumentsIncomplete" xml:space="preserve">
+    <value>AgentDock 管理员增强计划任务参数不完整。</value>
+  </data>
+  <data name="TaskSchedulerComUnavailable" xml:space="preserve">
+    <value>Windows Task Scheduler COM 服务不可用。</value>
+  </data>
+  <data name="TaskSchedulerConnectFailed" xml:space="preserve">
+    <value>无法连接 Windows Task Scheduler。</value>
+  </data>
+  <data name="CoreJobCreateFailed" xml:space="preserve">
+    <value>无法创建 AgentDock Core Job Object。</value>
+  </data>
+  <data name="CoreJobConfigureFailed" xml:space="preserve">
+    <value>无法配置 AgentDock Core Job Object。</value>
+  </data>
+  <data name="CoreJobAssignFailed" xml:space="preserve">
+    <value>无法把 AgentDock Core 加入后台 Job Object。</value>
+  </data>
+  <data name="AcpPackageHint" xml:space="preserve">
+    <value> 或 {0}</value>
+  </data>
+  <data name="AcpDetectedPathDetails" xml:space="preserve">
+    <value>已检测到 · {0} · {1}</value>
+  </data>
+</root>

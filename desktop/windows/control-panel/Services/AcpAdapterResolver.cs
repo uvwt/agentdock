@@ -16,7 +16,7 @@ internal static class AcpAdapterResolver
         {
             return TryResolveConfiguredAdapter(configuredCommand, configuredArguments, out var custom)
                 ? custom
-                : new AcpAdapterResolution(false, "", [], "未配置 · 请填写可执行的 ACP Adapter 绝对路径");
+                : new AcpAdapterResolution(false, "", [], UiText.Get("AcpNotConfigured"));
         }
 
         string[] executableNames;
@@ -44,7 +44,7 @@ internal static class AcpAdapterResolver
                 npmBinName = "codex-acp";
                 break;
             default:
-                throw new InvalidOperationException($"不支持的 Coding Agent: {normalizedAgent}");
+                throw new InvalidOperationException(UiText.Format("UnsupportedCodingAgentValue", normalizedAgent));
         }
 
         if (TryResolveConfiguredAdapter(configuredCommand, configuredArguments, out var configured))
@@ -63,7 +63,7 @@ internal static class AcpAdapterResolver
                 {
                     continue;
                 }
-                return Available(fullPath, arguments, $"已检测到 · {fullPath}");
+                return Available(fullPath, arguments, UiText.Format("AcpDetectedPath", fullPath));
             }
         }
 
@@ -75,8 +75,8 @@ internal static class AcpAdapterResolver
 
         var packageHint = npmPackageSegments is null
             ? ""
-            : $" 或 {string.Join("/", npmPackageSegments)}";
-        return new AcpAdapterResolution(false, "", arguments, $"未安装 · 未找到 {executableNames[0]}{packageHint}");
+            : UiText.Format("AcpPackageHint", string.Join("/", npmPackageSegments));
+        return new AcpAdapterResolution(false, "", arguments, UiText.Format("AcpNotInstalled", executableNames[0], packageHint));
     }
 
     private static bool TryResolveConfiguredAdapter(
@@ -101,7 +101,7 @@ internal static class AcpAdapterResolver
             arguments[0] = entry;
         }
 
-        resolution = Available(command, arguments, $"已检测到 · {command}");
+        resolution = Available(command, arguments, UiText.Format("AcpDetectedPath", command));
         return true;
     }
 
@@ -173,7 +173,7 @@ internal static class AcpAdapterResolver
             resolution = Available(
                 nodePath,
                 arguments,
-                $"已检测到 · {nodePath} · {entryPath}");
+                UiText.Format("AcpDetectedPathDetails", nodePath, entryPath));
             return true;
         }
         return false;
@@ -295,6 +295,6 @@ internal static class AcpAdapterResolver
         "claude" => "claude",
         "grok" => "grok",
         "custom" => "custom",
-        var unsupported => throw new ArgumentException($"不支持的 Coding Agent: {unsupported}", nameof(value))
+        var unsupported => throw new ArgumentException(UiText.Format("UnsupportedCodingAgentValue", unsupported), nameof(value))
     };
 }

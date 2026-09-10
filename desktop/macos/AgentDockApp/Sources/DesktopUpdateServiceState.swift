@@ -25,7 +25,7 @@ struct DesktopUpdateServiceState: Codable {
         let data = try Data(contentsOf: path)
         let state = try JSONDecoder().decode(DesktopUpdateServiceState.self, from: data)
         guard state.schemaVersion == Self.schemaVersion else {
-            throw ValidationError("AgentDock 更新服务状态版本不受支持。")
+            throw ValidationError(L10n.text("The AgentDock update service state version is not supported."))
         }
         return state
     }
@@ -41,11 +41,14 @@ struct DesktopUpdateServiceState: Codable {
         let temporary = directory.appendingPathComponent(".\(path.lastPathComponent).tmp.\(UUID().uuidString)")
         defer { try? fileManager.removeItem(at: temporary) }
         guard fileManager.createFile(atPath: temporary.path, contents: data, attributes: [.posixPermissions: 0o600]) else {
-            throw ValidationError("无法创建 AgentDock 更新服务状态。")
+            throw ValidationError(L10n.text("Unable to create AgentDock update service state."))
         }
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temporary.path)
         if Darwin.rename(temporary.path, path.path) != 0 {
-            throw ValidationError("无法保存 AgentDock 更新服务状态：\(String(cString: strerror(errno)))")
+            throw ValidationError(L10n.format(
+                "Unable to save AgentDock update service state: %@",
+                String(cString: strerror(errno))
+            ))
         }
     }
 

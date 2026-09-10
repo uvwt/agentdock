@@ -7,20 +7,20 @@ enum TunnelMode: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .local: return "仅本机使用"
-        case .quick: return "临时公网访问"
-        case .named: return "使用自己的 Cloudflare 域名"
+        case .local: return L10n.text("Local only")
+        case .quick: return L10n.text("Temporary public access")
+        case .named: return L10n.text("Use your own Cloudflare domain")
         }
     }
 
     var detail: String {
         switch self {
         case .local:
-            return "仅允许这台电脑访问，不启用 Cloudflare 公网访问；或者自行配置内网穿透或反向代理。"
+            return L10n.text("Only allow this Mac to access AgentDock. Cloudflare public access stays disabled; you can configure your own tunnel or reverse proxy.")
         case .quick:
-            return "通过 Cloudflare 自动生成临时公网地址，无需配置域名。适合临时访问或测试，地址可能会变化。"
+            return L10n.text("Automatically generate a temporary public address through Cloudflare without configuring a domain. Suitable for temporary access or testing; the address may change.")
         case .named:
-            return "通过 Cloudflare Tunnel 使用自己的 HTTPS 域名，完成配置后即可获得稳定的公网地址。"
+            return L10n.text("Use your own HTTPS domain through Cloudflare Tunnel. Once configured, the public address remains stable.")
         }
     }
 }
@@ -40,36 +40,36 @@ struct InstallRequest {
         guard mode == .named else { return nil }
         let candidate = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !candidate.isEmpty else {
-            throw ValidationError("请填写固定 HTTPS 公网地址。")
+            throw ValidationError(L10n.text("Enter a fixed HTTPS public address."))
         }
         guard var components = URLComponents(string: candidate) else {
-            throw ValidationError("公网地址格式无效。")
+            throw ValidationError(L10n.text("Invalid public address format."))
         }
         guard components.scheme?.lowercased() == "https" else {
-            throw ValidationError("公网地址必须使用 https://。")
+            throw ValidationError(L10n.text("The public address must use https://."))
         }
         guard let host = components.host?.lowercased(), !host.isEmpty else {
-            throw ValidationError("公网地址缺少有效域名。")
+            throw ValidationError(L10n.text("The public address is missing a valid domain."))
         }
         guard host != "localhost", host.contains("."), !isIPAddress(host) else {
-            throw ValidationError("公网地址必须填写域名，不能使用 localhost 或 IP。")
+            throw ValidationError(L10n.text("The public address must use a domain, not localhost or an IP address."))
         }
         guard components.user == nil,
               components.password == nil,
               components.port == nil,
               components.query == nil,
               components.fragment == nil else {
-            throw ValidationError("公网地址只能填写 HTTPS Origin，不能包含账号、端口、查询参数或片段。")
+            throw ValidationError(L10n.text("Enter only the HTTPS origin; do not include credentials, a port, query parameters, or a fragment."))
         }
         let path = components.percentEncodedPath
         guard path.isEmpty || path == "/" else {
-            throw ValidationError("公网地址不能包含路径，请不要填写 /mcp。")
+            throw ValidationError(L10n.text("The public address cannot contain a path. Do not include /mcp."))
         }
         components.path = ""
         components.query = nil
         components.fragment = nil
         guard let normalized = components.string else {
-            throw ValidationError("无法规范化公网地址。")
+            throw ValidationError(L10n.text("Unable to normalize the public address."))
         }
         return normalized.hasSuffix("/") ? String(normalized.dropLast()) : normalized
     }
@@ -83,7 +83,7 @@ struct InstallRequest {
             return nil
         }
         guard !token.contains("\n"), !token.contains("\r") else {
-            throw ValidationError("Tunnel Token 必须是单行文本。")
+            throw ValidationError(L10n.text("Tunnel Token must be a single line of text."))
         }
         return token
     }

@@ -14,7 +14,7 @@ final class DesktopPermissionsWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "AgentDock 权限检查"
+        window.title = L10n.text("AgentDock Permission Check")
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 600, height: 520)
         window.center()
@@ -50,10 +50,10 @@ final class DesktopPermissionsWindowController: NSWindowController {
         contentStack.translatesAutoresizingMaskIntoConstraints = false
         scrollView.documentView = contentStack
 
-        let title = NSTextField(labelWithString: "系统权限")
+        let title = NSTextField(labelWithString: L10n.text("System permissions"))
         title.font = .systemFont(ofSize: 22, weight: .semibold)
         let intro = PermissionUI.detailLabel(
-            "权限由 AgentDock 应用直接检查。按功能需要授权即可，不要求一次开启所有权限。"
+            L10n.text("AgentDock checks permissions directly. Grant only the permissions required by the features you use; you do not need to enable everything at once.")
         )
         intro.widthAnchor.constraint(equalToConstant: 580).isActive = true
         contentStack.addArrangedSubview(title)
@@ -65,10 +65,10 @@ final class DesktopPermissionsWindowController: NSWindowController {
             contentStack.addArrangedSubview(PermissionUI.separator())
         }
 
-        let appManagementTitle = NSTextField(labelWithString: "应用程序管理")
+        let appManagementTitle = NSTextField(labelWithString: L10n.text("App Management"))
         appManagementTitle.font = .systemFont(ofSize: 13, weight: .medium)
         let appManagementDetail = PermissionUI.detailLabel(
-            "用于更新 AgentDock 或管理其他应用。"
+            L10n.text("Used to update AgentDock or manage other applications.")
         )
         appManagementDetail.widthAnchor.constraint(equalToConstant: 380).isActive = true
         let appManagementText = NSStackView(views: [appManagementTitle, appManagementDetail])
@@ -76,7 +76,7 @@ final class DesktopPermissionsWindowController: NSWindowController {
         appManagementText.alignment = .leading
         appManagementText.spacing = 3
         let appManagementButton = NSButton(
-            title: "打开应用程序管理设置",
+            title: L10n.text("Open App Management settings"),
             target: self,
             action: #selector(openAppManagementSettings)
         )
@@ -89,13 +89,13 @@ final class DesktopPermissionsWindowController: NSWindowController {
         contentStack.addArrangedSubview(appManagementRow)
         contentStack.addArrangedSubview(PermissionUI.separator())
 
-        let filesTitle = NSTextField(labelWithString: "文件与文件夹")
+        let filesTitle = NSTextField(labelWithString: L10n.text("Files and Folders"))
         filesTitle.font = .systemFont(ofSize: 15, weight: .semibold)
         let filesDetail = PermissionUI.detailLabel(
-            "检查 AgentDock 是否可以访问桌面、文稿、下载和你选择的其他目录。"
+            L10n.text("Check whether AgentDock can access Desktop, Documents, Downloads, and other folders you select.")
         )
         filesDetail.widthAnchor.constraint(equalToConstant: 580).isActive = true
-        let filesButton = NSButton(title: "检查文件访问…", target: self, action: #selector(openFileAccess))
+        let filesButton = NSButton(title: L10n.text("Check file access…"), target: self, action: #selector(openFileAccess))
         filesButton.bezelStyle = .rounded
         let filesRow = NSStackView(views: [filesTitle, NSView(), filesButton])
         filesRow.orientation = .horizontal
@@ -104,7 +104,7 @@ final class DesktopPermissionsWindowController: NSWindowController {
         contentStack.addArrangedSubview(filesRow)
         contentStack.addArrangedSubview(filesDetail)
 
-        let refreshButton = NSButton(title: "刷新", target: self, action: #selector(refreshPressed))
+        let refreshButton = NSButton(title: L10n.text("Refresh"), target: self, action: #selector(refreshPressed))
         refreshButton.bezelStyle = .rounded
         let footer = NSStackView(views: [NSView(), refreshButton])
         footer.orientation = .horizontal
@@ -134,10 +134,10 @@ final class DesktopPermissionsWindowController: NSWindowController {
         status.widthAnchor.constraint(equalToConstant: 72).isActive = true
         statusLabels[kind] = status
 
-        let request = NSButton(title: "请求授权", target: self, action: #selector(requestPermission(_:)))
+        let request = NSButton(title: L10n.text("Request access"), target: self, action: #selector(requestPermission(_:)))
         request.bezelStyle = .rounded
         request.tag = kind.rawValue
-        let settings = NSButton(title: "打开设置", target: self, action: #selector(openPermissionSettings(_:)))
+        let settings = NSButton(title: L10n.text("Open settings"), target: self, action: #selector(openPermissionSettings(_:)))
         settings.bezelStyle = .rounded
         settings.tag = kind.rawValue
 

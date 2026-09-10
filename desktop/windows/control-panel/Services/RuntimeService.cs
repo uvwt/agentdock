@@ -155,7 +155,7 @@ public sealed class RuntimeService : IDisposable
                 }
                 break;
             default:
-                throw new ArgumentOutOfRangeException(nameof(action), action, "不支持的运行时操作。");
+                throw new ArgumentOutOfRangeException(nameof(action), action, UiText.Get("UnsupportedRuntimeAction"));
         }
     }
 
@@ -169,11 +169,11 @@ public sealed class RuntimeService : IDisposable
         try
         {
             return JsonSerializer.Deserialize<UpdateCheckResult>(output, JsonOptions)
-                ?? throw new JsonException("更新检查结果为空");
+                ?? throw new JsonException(UiText.Get("EmptyUpdateCheckResult"));
         }
         catch (JsonException ex)
         {
-            throw new InvalidOperationException("无法解析 AgentDock 更新检查结果。", ex);
+            throw new InvalidOperationException(UiText.Get("ParseUpdateCheckFailed"), ex);
         }
     }
 
@@ -247,7 +247,7 @@ public sealed class RuntimeService : IDisposable
         pairingCode = pairingCode.Trim();
         if (endpoint.Length == 0 || pairingCode.Length == 0)
         {
-            throw new InvalidOperationException("NexusDock 地址和一次性配对码不能为空。");
+            throw new InvalidOperationException(UiText.Get("NexusPairingRequired"));
         }
 
         var binaryPath = await ResolveCoreBinaryAsync(cancellationToken);
@@ -264,7 +264,7 @@ public sealed class RuntimeService : IDisposable
     {
         if (component is not ("core" or "tray"))
         {
-            throw new ArgumentOutOfRangeException(nameof(component), component, "不支持的开机启动组件。");
+            throw new ArgumentOutOfRangeException(nameof(component), component, UiText.Get("UnsupportedStartupComponent"));
         }
         return RunNativeAgentDockAsync(
             "service",
@@ -275,7 +275,7 @@ public sealed class RuntimeService : IDisposable
     public async Task SetPrivilegeModeAsync(bool elevated, CancellationToken cancellationToken = default)
     {
         var manifest = await ReadRuntimeManifestAsync(cancellationToken)
-            ?? throw new InvalidOperationException("找不到 AgentDock runtime.json。");
+            ?? throw new InvalidOperationException(UiText.Get("RuntimeJsonMissing"));
         var wasElevated = string.Equals(manifest.PrivilegeMode, "elevated", StringComparison.OrdinalIgnoreCase);
         if (wasElevated == elevated)
         {
@@ -345,7 +345,7 @@ public sealed class RuntimeService : IDisposable
             }
             catch (Exception rollbackError)
             {
-                throw new AggregateException("切换 AgentDock 管理员模式失败，且回滚未完成。", transitionError, rollbackError);
+                throw new AggregateException(UiText.Get("PrivilegeSwitchRollbackFailed"), transitionError, rollbackError);
             }
             throw;
         }
@@ -366,7 +366,7 @@ public sealed class RuntimeService : IDisposable
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
         {
-            return new UrlTestResult(false, null, TimeSpan.Zero, "地址无效");
+            return new UrlTestResult(false, null, TimeSpan.Zero, UiText.Get("InvalidPublicAddress"));
         }
 
         var healthUri = new UriBuilder(uri) { Path = "/healthz", Query = "", Fragment = "" }.Uri;
@@ -381,12 +381,12 @@ public sealed class RuntimeService : IDisposable
                 success,
                 (int)response.StatusCode,
                 stopwatch.Elapsed,
-                success ? $"访问正常 · {(int)response.StatusCode} · {stopwatch.ElapsedMilliseconds} ms" : $"访问失败 · {(int)response.StatusCode}");
+                success ? UiText.Format("AccessSuccess", (int)response.StatusCode, stopwatch.ElapsedMilliseconds) : UiText.Format("AccessFailed", (int)response.StatusCode));
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
             stopwatch.Stop();
-            return new UrlTestResult(false, null, stopwatch.Elapsed, ex is TaskCanceledException ? "访问超时" : ex.Message);
+            return new UrlTestResult(false, null, stopwatch.Elapsed, ex is TaskCanceledException ? UiText.Get("AccessTimeout") : ex.Message);
         }
     }
 
@@ -520,7 +520,7 @@ public sealed class RuntimeService : IDisposable
         var binaryPath = ResolveCoreBinaryPath(manifest);
         if (!File.Exists(binaryPath))
         {
-            throw new FileNotFoundException($"找不到 AgentDock 核心程序（{binaryPath}），请运行 Setup.exe 修复安装。", binaryPath);
+            throw new FileNotFoundException(UiText.Format("CoreBinaryMissing", binaryPath), binaryPath);
         }
         return binaryPath;
     }
@@ -549,7 +549,7 @@ public sealed class RuntimeService : IDisposable
             : manifest.TrayBinaryPath;
         if (!File.Exists(trayBinary))
         {
-            throw new FileNotFoundException($"找不到 AgentDock 管理程序（{trayBinary}）。", trayBinary);
+            throw new FileNotFoundException(UiText.Format("ManagementBinaryMissing", trayBinary), trayBinary);
         }
 
         var arguments = new List<string>
@@ -564,7 +564,7 @@ public sealed class RuntimeService : IDisposable
             var userSid = identity.User?.Value;
             if (string.IsNullOrWhiteSpace(userSid) || string.IsNullOrWhiteSpace(identity.Name))
             {
-                throw new InvalidOperationException("无法读取当前 Windows 用户身份。");
+                throw new InvalidOperationException(UiText.Get("CurrentWindowsIdentityUnavailable"));
             }
             arguments.AddRange([
                 "--launcher-path", trayBinary,
@@ -579,7 +579,7 @@ public sealed class RuntimeService : IDisposable
         }
         catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
         {
-            throw new InvalidOperationException("已取消 AgentDock 管理员权限切换。", ex);
+            throw new InvalidOperationException(UiText.Get("AdminSwitchCancelled"), ex);
         }
     }
 
@@ -587,7 +587,7 @@ public sealed class RuntimeService : IDisposable
     {
         var text = await File.ReadAllTextAsync(ManifestPath, cancellationToken);
         var manifest = JsonNode.Parse(text) as JsonObject
-            ?? throw new InvalidOperationException("AgentDock runtime.json 格式无效。");
+            ?? throw new InvalidOperationException(UiText.Get("RuntimeJsonInvalid"));
         manifest["privilege_mode"] = elevated ? "elevated" : "standard";
         manifest["agentdock_task_name"] = elevated ? "AgentDock" : "";
 
@@ -617,7 +617,7 @@ public sealed class RuntimeService : IDisposable
     {
         var valueName = string.IsNullOrWhiteSpace(manifest.StartupValueName) ? "AgentDock" : manifest.StartupValueName;
         using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath, writable: true)
-            ?? throw new InvalidOperationException("无法打开 Windows 开机启动注册表。");
+            ?? throw new InvalidOperationException(UiText.Get("StartupRegistryUnavailable"));
         if (!enabled)
         {
             key.DeleteValue(valueName, throwOnMissingValue: false);
@@ -629,7 +629,7 @@ public sealed class RuntimeService : IDisposable
             : manifest.TrayBinaryPath;
         if (!File.Exists(trayBinary))
         {
-            throw new FileNotFoundException($"找不到 AgentDock 托盘程序（{trayBinary}）。", trayBinary);
+            throw new FileNotFoundException(UiText.Format("TrayBinaryMissing", trayBinary), trayBinary);
         }
         var command = $"\"{trayBinary}\" --start-core --runtime-root \"{RuntimeRoot}\"";
         key.SetValue(valueName, command, RegistryValueKind.String);
@@ -641,7 +641,7 @@ public sealed class RuntimeService : IDisposable
         var binaryPath = ResolveCoreBinaryPath(manifest);
         if (!File.Exists(binaryPath))
         {
-            throw new FileNotFoundException($"找不到 AgentDock 核心程序（{binaryPath}）。", binaryPath);
+            throw new FileNotFoundException(UiText.Format("CoreBinaryMissing", binaryPath), binaryPath);
         }
 
         var workingDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AgentDock");
@@ -663,7 +663,7 @@ public sealed class RuntimeService : IDisposable
         // Highest 计划任务运行 WinExe 托管进程，再由它无控制台启动核心并持续等待。
         // Core 加入 KILL_ON_JOB_CLOSE Job Object，确保 Task Scheduler 强制结束 host 时不会留下孤儿进程。
         using var job = KillOnCloseJob.Create();
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("无法启动 AgentDock 核心程序。");
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException(UiText.Get("CoreStartFailed"));
         try
         {
             job.Assign(process);
@@ -688,7 +688,7 @@ public sealed class RuntimeService : IDisposable
     {
         if (action is not ("start" or "stop" or "restart"))
         {
-            throw new ArgumentOutOfRangeException(nameof(action), action, "不支持的核心服务操作。");
+            throw new ArgumentOutOfRangeException(nameof(action), action, UiText.Get("UnsupportedCoreServiceAction"));
         }
         return RunNativeAgentDockAsync("service", [action], cancellationToken);
     }
@@ -697,7 +697,7 @@ public sealed class RuntimeService : IDisposable
     {
         if (action is not ("start" or "stop" or "restart" or "regenerate"))
         {
-            throw new ArgumentOutOfRangeException(nameof(action), action, "不支持的 Tunnel 操作。");
+            throw new ArgumentOutOfRangeException(nameof(action), action, UiText.Get("UnsupportedTunnelAction"));
         }
         return RunNativeAgentDockAsync("tunnel", [action], cancellationToken);
     }
@@ -751,11 +751,11 @@ public sealed class RuntimeService : IDisposable
             startInfo.ArgumentList.Add(argument);
         }
 
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("无法启动 AgentDock 管理程序。");
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException(UiText.Get("ManagerStartFailed"));
         await process.WaitForExitAsync(cancellationToken);
         if (process.ExitCode != 0)
         {
-            throw new InvalidOperationException($"AgentDock 管理程序执行失败，退出码：{process.ExitCode}。");
+            throw new InvalidOperationException(UiText.Format("ManagerFailedWithExitCode", process.ExitCode));
         }
     }
 
@@ -810,19 +810,19 @@ public sealed class RuntimeService : IDisposable
                 string.IsNullOrWhiteSpace(identity.NodeId) || string.IsNullOrWhiteSpace(identity.DeviceId) ||
                 string.IsNullOrWhiteSpace(identity.DeviceToken))
             {
-                return new NexusDeviceStatus(false, "", "", "", false, "设备身份文件无效，请重新配对。");
+                return new NexusDeviceStatus(false, "", "", "", false, UiText.Get("DeviceIdentityInvalid"));
             }
             return new NexusDeviceStatus(true, identity.Endpoint, identity.NodeId, identity.DeviceId, true);
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
-            return new NexusDeviceStatus(false, "", "", "", false, $"无法读取设备身份：{ex.Message}");
+            return new NexusDeviceStatus(false, "", "", "", false, UiText.Format("DeviceIdentityReadFailed", ex.Message));
         }
     }
 
     private static async Task<string> RunProcessAsync(ProcessStartInfo startInfo, CancellationToken cancellationToken)
     {
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException($"无法启动 {startInfo.FileName}。");
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException(UiText.Format("ProcessStartFailed", startInfo.FileName));
         var standardOutput = process.StandardOutput.ReadToEndAsync(cancellationToken);
         var standardError = process.StandardError.ReadToEndAsync(cancellationToken);
         await process.WaitForExitAsync(cancellationToken);
@@ -845,7 +845,7 @@ public sealed class RuntimeService : IDisposable
         IProgress<UpdateProgress>? progress,
         CancellationToken cancellationToken)
     {
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException($"无法启动 {startInfo.FileName}。");
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException(UiText.Format("ProcessStartFailed", startInfo.FileName));
         var output = new StringBuilder();
         var error = new StringBuilder();
         var outputTask = ReadProcessLinesAsync(process.StandardOutput, output, progress, cancellationToken);
@@ -862,7 +862,7 @@ public sealed class RuntimeService : IDisposable
         var result = string.IsNullOrWhiteSpace(outputText)
             ? errorText
             : string.IsNullOrWhiteSpace(errorText) ? outputText : outputText + Environment.NewLine + errorText;
-        progress?.Report(new UpdateProgress(100, LastNonEmptyLine(result, "更新完成。")));
+        progress?.Report(new UpdateProgress(100, LastNonEmptyLine(result, UiText.Get("UpdateCompleted"))));
         return result;
     }
 
@@ -915,7 +915,7 @@ public sealed class RuntimeService : IDisposable
             "claude" => "claude",
             "grok" => "grok",
             "custom" => "custom",
-            var unsupported => throw new InvalidOperationException($"不支持的 Coding Agent: {unsupported ?? "<null>"}")
+            var unsupported => throw new InvalidOperationException(UiText.Format("UnsupportedCodingAgentValue", unsupported ?? "<null>"))
         };
     }
 

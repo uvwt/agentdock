@@ -125,7 +125,7 @@ func TestWindowsControlPanelCanSwitchCorePrivilegeMode(t *testing.T) {
 	checks := map[string][]string{
 		filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml"): {
 			"ElevatedCoreCheckBox",
-			"以管理员权限运行 AgentDock 核心",
+			`Content="{local:Loc RunCoreElevated}"`,
 			"ElevatedCoreCheckBox_Click",
 		},
 		filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml.cs"): {
@@ -242,16 +242,16 @@ func TestDesktopTrayMenusUseNativeDismissalAndOmitCopyActions(t *testing.T) {
 	macApp := string(macData)
 
 	orderedItems := []string{
-		`AgentDock：{statusText}`,
-		`"打开 AgentDock"`,
-		`"停止 AgentDock"`,
-		`"重启 AgentDock"`,
-		`"启动 AgentDock"`,
-		`"检查更新…"`,
-		`"打开日志目录"`,
-		`"打开配置目录"`,
-		`"打开使用文档"`,
-		`"退出菜单栏"`,
+		`AgentDock: {statusText}`,
+		`UiText.Get("OpenAgentDock")`,
+		`UiText.Get("StopAgentDock")`,
+		`UiText.Get("RestartAgentDock")`,
+		`UiText.Get("StartAgentDock")`,
+		`UiText.Get("CheckForUpdates")`,
+		`UiText.Get("OpenLogsFolder")`,
+		`UiText.Get("OpenConfigFolder")`,
+		`UiText.Get("OpenDocumentation")`,
+		`UiText.Get("ExitTray")`,
 	}
 	lastIndex := -1
 	for _, item := range orderedItems {
@@ -282,19 +282,19 @@ func TestDesktopTrayMenusUseNativeDismissalAndOmitCopyActions(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		`"打开 AgentDock"`,
-		`"停用 AgentDock"`,
-		`"重启 AgentDock"`,
-		`"启用 AgentDock"`,
-		`"打开后台设置"`,
-		`"检查更新…"`,
-		`"打开日志目录"`,
-		`"打开配置目录"`,
-		`"打开使用文档"`,
-		`"退出菜单栏"`,
+		`L10n.text("Open AgentDock")`,
+		`L10n.text("Stop AgentDock")`,
+		`L10n.text("Restart AgentDock")`,
+		`L10n.text("Start AgentDock")`,
+		`L10n.text("Open background settings")`,
+		`L10n.text("Check for updates…")`,
+		`L10n.text("Open logs folder")`,
+		`L10n.text("Open configuration folder")`,
+		`L10n.text("Open documentation")`,
+		`L10n.text("Exit menu bar app")`,
 	} {
 		if !strings.Contains(macApp, want) {
-			t.Fatalf("macOS tray menu missing item %q", want)
+			t.Fatalf("macOS tray menu missing localized item %q", want)
 		}
 	}
 
@@ -356,8 +356,8 @@ func TestWindowsUpdateFeedbackUsesUTF8AndImmediateStatus(t *testing.T) {
 	script := string(scriptData)
 
 	for _, want := range []string{
-		`_updateInProgress ? "正在检查更新…" : "检查更新…"`,
-		`ControlPanelWindow.SetUpdateState(true, "正在检查更新，请稍候…")`,
+		`_updateInProgress ? UiText.Get("CheckingForUpdates") : UiText.Get("CheckForUpdates")`,
+		`ControlPanelWindow.SetUpdateState(true, UiText.Get("PleaseWaitCheckingUpdates"))`,
 		`var check = await Runtime.CheckForUpdatesAsync()`,
 		`if (!check.UpdateAvailable)`,
 		`MessageBoxButton.YesNo`,
