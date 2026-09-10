@@ -293,87 +293,26 @@ func signLocalReplacement(ctx context.Context, targetPath string) error {
 		return nil
 	}
 
-	identity := strings.TrimSpace(os.Getenv("AGENTDOCK_CODESIGN_IDENTITY"))
-	keychain := strings.TrimSpace(os.Getenv("AGENTDOCK_CODESIGN_KEYCHAIN"))
-	keychainPassword := os.Getenv("AGENTDOCK_CODESIGN_KEYCHAIN_PASSWORD")
-	identifier := strings.TrimSpace(os.Getenv("AGENTDOCK_CODESIGN_IDENTIFIER"))
-	if identifier == "" {
-		identifier = "com.local.agentdock"
+	config, err := localCodeSignConfigFromEnvironment(home)
+	if err != nil {
+		return err
 	}
-	signHome := strings.TrimSpace(os.Getenv("AGENTDOCK_CODESIGN_HOME"))
-	if signHome == "" {
-		signHome = home
-	}
-	signHomeInfo, err := os.Stat(signHome)
-	if err != nil || !signHomeInfo.IsDir() {
-		return fmt.Errorf("AGENTDOCK_CODESIGN_HOME 不是可用目录: %s", signHome)
-	}
-
 	// 没有本地身份时保留 Release 自带签名，但仍拒绝启动签名损坏的二进制。
-	if identity == "" {
+	if !config.enabled() {
 		output, verifyErr := exec.CommandContext(ctx, "codesign", "--verify", "--strict", "--verbose=2", targetPath).CombinedOutput()
 		if verifyErr != nil {
 			return fmt.Errorf("Release 代码签名验证失败: %w: %s", verifyErr, strings.TrimSpace(string(output)))
 		}
 		return nil
 	}
-
-	if keychain != "" && !regularFile(keychain) {
-		return fmt.Errorf("代码签名钥匙串不存在或不是普通文件: %s", keychain)
+	if err := config.prepare(ctx); err != nil {
+		return err
 	}
-	commandEnv := environmentWithOverride(os.Environ(), "HOME", signHome)
-	if keychain != "" {
-		unlockCommand := exec.CommandContext(ctx, "security", "unlock-keychain", "-p", keychainPassword, keychain)
-		unlockCommand.Env = commandEnv
-		if output, unlockErr := unlockCommand.CombinedOutput(); unlockErr != nil {
-			return fmt.Errorf("解锁 macOS 代码签名钥匙串失败: %w: %s", unlockErr, strings.TrimSpace(string(output)))
-		}
+	identifier := strings.TrimSpace(os.Getenv("AGENTDOCK_CODESIGN_IDENTIFIER"))
+	if identifier == "" {
+		identifier = "com.local.agentdock"
 	}
-	identityArgs := []string{"find-identity", "-v", "-p", "codesigning"}
-	if keychain != "" {
-		identityArgs = append(identityArgs, keychain)
-	}
-	identityCommand := exec.CommandContext(ctx, "security", identityArgs...)
-	identityCommand.Env = commandEnv
-	identityOutput, err := identityCommand.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("读取 macOS 代码签名身份失败: %w: %s", err, strings.TrimSpace(string(identityOutput)))
-	}
-	if !strings.Contains(string(identityOutput), identity) {
-		return fmt.Errorf("找不到 macOS 代码签名身份 %s: %s", identity, strings.TrimSpace(string(identityOutput)))
-	}
-
-	codesignArgs := []string{"--force"}
-	if keychain != "" {
-		codesignArgs = append(codesignArgs, "--keychain", keychain)
-	}
-	codesignArgs = append(codesignArgs,
-		"--sign", identity,
-		"--timestamp=none",
-		"--options", "runtime",
-		"--identifier", identifier,
-		targetPath,
-	)
-	codesignCommand := exec.CommandContext(ctx, "codesign", codesignArgs...)
-	codesignCommand.Env = commandEnv
-	if output, signErr := codesignCommand.CombinedOutput(); signErr != nil {
-		return fmt.Errorf("macOS 本地签名失败: %w: %s", signErr, strings.TrimSpace(string(output)))
-	}
-	verifyCommand := exec.CommandContext(ctx, "codesign", "--verify", "--strict", "--verbose=2", targetPath)
-	verifyCommand.Env = commandEnv
-	if output, verifyErr := verifyCommand.CombinedOutput(); verifyErr != nil {
-		return fmt.Errorf("macOS 本地签名验证失败: %w: %s", verifyErr, strings.TrimSpace(string(output)))
-	}
-	detailCommand := exec.CommandContext(ctx, "codesign", "-dv", "--verbose=4", targetPath)
-	detailCommand.Env = commandEnv
-	detailOutput, detailErr := detailCommand.CombinedOutput()
-	if detailErr != nil {
-		return fmt.Errorf("读取 macOS 签名详情失败: %w: %s", detailErr, strings.TrimSpace(string(detailOutput)))
-	}
-	if !containsCodeSignIdentifier(string(detailOutput), identifier) {
-		return fmt.Errorf("macOS 签名 Identifier 验证失败，期望 %s: %s", identifier, strings.TrimSpace(string(detailOutput)))
-	}
-	return nil
+	return config.sign(ctx, targetPath, identifier)
 }
 
 func regularFile(path string) bool {

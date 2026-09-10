@@ -316,12 +316,13 @@ final class ServiceController: @unchecked Sendable {
 
     func update() async throws -> String {
         try validateServiceManagementReadiness()
+        let updateEnvironment = try desktopUpdateEnvironment()
 
         let check = try await runInBackground {
             let result = try runProcess(
                 executable: self.paths.binary.path,
                 arguments: ["update", "--check"],
-                environment: ["AGENTDOCK_DESKTOP_APP_PATH": self.paths.appBundle.path]
+                environment: updateEnvironment
             )
             guard result.status == 0 else {
                 throw ValidationError(self.commandError(result.output, action: L10n.text("Check for updates")))
@@ -349,7 +350,7 @@ final class ServiceController: @unchecked Sendable {
                 let result = try runUpdateProcess(
                     executable: self.paths.binary.path,
                     arguments: ["update"],
-                    environment: ["AGENTDOCK_DESKTOP_APP_PATH": self.paths.appBundle.path],
+                    environment: updateEnvironment,
                     outputURL: self.paths.updateLog
                 )
                 guard result.status == 0 else {
@@ -396,6 +397,25 @@ final class ServiceController: @unchecked Sendable {
             ))
         }
         return output
+    }
+
+    func desktopUpdateEnvironment() throws -> [String: String] {
+        let configured = try ManagedEnvironment.load(from: paths.environment).values
+        var environment = ["AGENTDOCK_DESKTOP_APP_PATH": paths.appBundle.path]
+        // Updater 只需要本地签名配置。不要把 Auth/OAuth 等服务凭据整体继承给
+        // 更新子进程；稳定签名变量由 agentdock.env 持久化并显式白名单透传。
+        for key in [
+            "AGENTDOCK_CODESIGN_IDENTITY",
+            "AGENTDOCK_CODESIGN_KEYCHAIN",
+            "AGENTDOCK_CODESIGN_KEYCHAIN_PASSWORD",
+            "AGENTDOCK_CODESIGN_IDENTIFIER",
+            "AGENTDOCK_CODESIGN_HOME",
+        ] {
+            if let value = configured[key] {
+                environment[key] = value
+            }
+        }
+        return environment
     }
 
     func openLogs() {

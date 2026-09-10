@@ -147,6 +147,15 @@ func extractDesktopUpdateArchive(ctx context.Context, archiveData []byte, tempDi
 	if err := validateMacOSDesktopRuntime(ctx, appPath, targetVersion); err != nil {
 		return "", err
 	}
+	// 先验证 Release 原始签名，再按本机显式配置重签 staged App。这样公共
+	// Release 可以继续使用自己的签名，而启用了稳定本地身份的设备在更新后
+	// 仍保持同一 Designated Requirement，不会因 ad-hoc CDHash 变化丢失 TCC。
+	if err := signLocalDesktopReplacement(ctx, appPath); err != nil {
+		return "", fmt.Errorf("准备 macOS App 本地稳定签名失败: %w", err)
+	}
+	if err := validateMacOSDesktopRuntime(ctx, appPath, targetVersion); err != nil {
+		return "", fmt.Errorf("本地重签后的 macOS App 验证失败: %w", err)
+	}
 	return appPath, nil
 }
 

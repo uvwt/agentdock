@@ -11,6 +11,10 @@ OFFLINE_PAYLOAD_DIR="${AGENTDOCK_MACOS_OFFLINE_PAYLOAD_DIR:-}"
 MIN_VERSION="${AGENTDOCK_MACOS_MIN_VERSION:-13.0}"
 BUNDLE_ID="com.uvwt.agentdock"
 APP_ICON_SOURCE="$ROOT_DIR/packaging/assets/agentdock.png"
+SIGN_IDENTITY="${AGENTDOCK_CODESIGN_IDENTITY:-}"
+SIGN_KEYCHAIN="${AGENTDOCK_CODESIGN_KEYCHAIN:-}"
+SIGN_KEYCHAIN_PASSWORD="${AGENTDOCK_CODESIGN_KEYCHAIN_PASSWORD:-}"
+SIGN_HOME="${AGENTDOCK_CODESIGN_HOME:-$HOME}"
 
 usage() {
   cat <<'USAGE'
@@ -23,12 +27,59 @@ usage() {
   AGENTDOCK_MACOS_OFFLINE_PAYLOAD_DIR
                                双架构离线载荷目录，构建 DMG 时必须提供
   AGENTDOCK_MACOS_MIN_VERSION   最低 macOS 版本，默认 13.0
+  AGENTDOCK_CODESIGN_IDENTITY   可选稳定代码签名身份；未设置时保持 ad-hoc 签名
+  AGENTDOCK_CODESIGN_KEYCHAIN   可选专用签名钥匙串
+  AGENTDOCK_CODESIGN_KEYCHAIN_PASSWORD
+                               可选专用钥匙串密码，默认空字符串
+  AGENTDOCK_CODESIGN_HOME       可选 codesign/security HOME，默认当前 HOME
 USAGE
 }
 
 die() {
   print -u2 -- "ERROR: $*"
   exit 1
+}
+
+prepare_signing() {
+  [[ -n "$SIGN_IDENTITY" ]] || return 0
+  [[ -d "$SIGN_HOME" ]] || die "AGENTDOCK_CODESIGN_HOME 不是目录：$SIGN_HOME"
+  command -v security >/dev/null 2>&1 || die "缺少命令：security"
+
+  local identity_output
+  if [[ -n "$SIGN_KEYCHAIN" ]]; then
+    [[ -f "$SIGN_KEYCHAIN" && ! -L "$SIGN_KEYCHAIN" ]] || die "代码签名钥匙串不存在或不是普通文件：$SIGN_KEYCHAIN"
+    HOME="$SIGN_HOME" security unlock-keychain -p "$SIGN_KEYCHAIN_PASSWORD" "$SIGN_KEYCHAIN" >/dev/null 2>&1 || \
+      die "无法解锁代码签名钥匙串：$SIGN_KEYCHAIN"
+    identity_output="$(HOME="$SIGN_HOME" security find-identity -v -p codesigning "$SIGN_KEYCHAIN")" || \
+      die "无法读取指定钥匙串中的签名身份"
+  else
+    identity_output="$(HOME="$SIGN_HOME" security find-identity -v -p codesigning)" || \
+      die "无法读取系统钥匙串中的签名身份"
+  fi
+  [[ "$identity_output" == *"$SIGN_IDENTITY"* ]] || die "找不到代码签名身份：$SIGN_IDENTITY"
+}
+
+sign_code() {
+  local identifier="$1"
+  local target="$2"
+  if [[ -z "$SIGN_IDENTITY" ]]; then
+    codesign --force --sign - --identifier "$identifier" "$target"
+    return
+  fi
+
+  local -a sign_args
+  sign_args=(--force)
+  if [[ -n "$SIGN_KEYCHAIN" ]]; then
+    sign_args+=(--keychain "$SIGN_KEYCHAIN")
+  fi
+  sign_args+=(
+    --sign "$SIGN_IDENTITY"
+    --timestamp=none
+    --options runtime
+    --identifier "$identifier"
+    "$target"
+  )
+  HOME="$SIGN_HOME" codesign "${sign_args[@]}"
 }
 
 if (( $# > 1 )); then
@@ -333,13 +384,18 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 PLIST
 plutil -lint "$CONTENTS_DIR/Info.plist" >/dev/null
 
-print -- "==> ad-hoc 签名 AgentDock.app"
-codesign --force --sign - --identifier "com.uvwt.agentdock.login-helper" "$MENU_LOGIN_HELPER"
-codesign --force --sign - --identifier "com.uvwt.agentdock.core" "$HELPERS_DIR/agentdock"
-codesign --force --sign - --identifier "com.uvwt.agentdock.cloudflared" "$HELPERS_DIR/cloudflared"
+prepare_signing
+if [[ -n "$SIGN_IDENTITY" ]]; then
+  print -- "==> 使用稳定身份签名 AgentDock.app：$SIGN_IDENTITY"
+else
+  print -- "==> ad-hoc 签名 AgentDock.app"
+fi
+sign_code "com.uvwt.agentdock.login-helper" "$MENU_LOGIN_HELPER"
+sign_code "com.uvwt.agentdock.core" "$HELPERS_DIR/agentdock"
+sign_code "com.uvwt.agentdock.cloudflared" "$HELPERS_DIR/cloudflared"
 # 嵌套代码先分别签名，再签外层 App。不要用 --deep 做签名操作，否则会重新签
 # Core/cloudflared 并破坏它们的稳定代码身份；--deep 只用于最终递归验证。
-codesign --force --sign - --identifier "$BUNDLE_ID" "$APP_DIR"
+sign_code "$BUNDLE_ID" "$APP_DIR"
 codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 
 ZIP_PATH="$OUTPUT_DIR/AgentDock-macos-universal.zip"

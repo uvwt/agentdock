@@ -62,6 +62,7 @@ struct ServiceControllerValidationTests {
         testServiceRegistrationStatusClassification()
         try testNexusConnectionStateResolution(root: root)
         try testDesktopUpdateCheckDecoding()
+        try testDesktopUpdateEnvironment(root: root, appBundle: appBundle)
 
         print("service controller validation tests passed")
     }
@@ -151,6 +152,32 @@ struct ServiceControllerValidationTests {
         expectFailure(L10n.text("Unable to parse the AgentDock update check result.")) {
             _ = try DesktopUpdateCheck.decode("not-json")
         }
+    }
+
+    private static func testDesktopUpdateEnvironment(root: URL, appBundle: URL) throws {
+        let home = root.appendingPathComponent("update-environment-home", isDirectory: true)
+        let paths = AppPaths(home: home, appBundle: appBundle)
+        try FileManager.default.createDirectory(at: paths.appSupport, withIntermediateDirectories: true)
+        try Data("""
+        AGENTDOCK_AUTH_TOKEN='must-not-leak'
+        AGENTDOCK_OAUTH_PASSWORD='must-not-leak'
+        AGENTDOCK_CODESIGN_IDENTITY='stable-identity'
+        AGENTDOCK_CODESIGN_KEYCHAIN='/tmp/stable.keychain-db'
+        AGENTDOCK_CODESIGN_KEYCHAIN_PASSWORD=''
+        AGENTDOCK_CODESIGN_IDENTIFIER='com.uvwt.agentdock.core'
+        AGENTDOCK_CODESIGN_HOME='/Users/test'
+        """.utf8).write(to: paths.environment)
+
+        let environment = try ServiceController(paths: paths).desktopUpdateEnvironment()
+        precondition(environment["AGENTDOCK_DESKTOP_APP_PATH"] == appBundle.path)
+        precondition(environment["AGENTDOCK_CODESIGN_IDENTITY"] == "stable-identity")
+        precondition(environment["AGENTDOCK_CODESIGN_KEYCHAIN"] == "/tmp/stable.keychain-db")
+        precondition(environment["AGENTDOCK_CODESIGN_KEYCHAIN_PASSWORD"] == "")
+        precondition(environment["AGENTDOCK_CODESIGN_IDENTIFIER"] == "com.uvwt.agentdock.core")
+        precondition(environment["AGENTDOCK_CODESIGN_HOME"] == "/Users/test")
+        precondition(environment["AGENTDOCK_AUTH_TOKEN"] == nil)
+        precondition(environment["AGENTDOCK_OAUTH_PASSWORD"] == nil)
+        precondition(environment.count == 6)
     }
 
     private static func expectFailure(_ expected: String, operation: () throws -> Void) {
