@@ -79,12 +79,9 @@ func platformPrepareCoreEnvironment(runtimeRoot string) error {
 	if err := os.Remove(legacyNexusTokenPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("删除已废弃的 Nexus Token 失败: %w", err)
 	}
-	authToken, err := readProtectedText(filepath.Join(root, "auth-token.dpapi"), "agentdock.startup.v1")
+	authToken, err := readOrCreateProtectedText(filepath.Join(root, "auth-token.dpapi"), "agentdock.startup.v1", 32, "Bearer Token")
 	if err != nil {
-		return fmt.Errorf("读取 Bearer Token 失败: %w", err)
-	}
-	if strings.TrimSpace(authToken) == "" {
-		return errors.New("Bearer Token 为空，请运行 Setup.exe 修复安装")
+		return err
 	}
 
 	managed := map[string]string{
@@ -130,13 +127,13 @@ func platformPrepareCoreEnvironment(runtimeRoot string) error {
 		if err := writeRuntimeText(filepath.Join(root, "server-url.txt"), serverURL); err != nil {
 			return err
 		}
-		oauthPassword, passwordErr := readProtectedText(filepath.Join(root, "oauth-password.dpapi"), "agentdock.oauth.password.v1")
+		oauthPassword, passwordErr := readOrCreateProtectedText(filepath.Join(root, "oauth-password.dpapi"), "agentdock.oauth.password.v1", 12, "OAuth 密码")
 		if passwordErr != nil {
-			return fmt.Errorf("读取 OAuth 密码失败: %w", passwordErr)
+			return passwordErr
 		}
-		oauthSecret, secretErr := readProtectedText(filepath.Join(root, "oauth-token-secret.dpapi"), "agentdock.oauth.secret.v1")
+		oauthSecret, secretErr := readOrCreateProtectedText(filepath.Join(root, "oauth-token-secret.dpapi"), "agentdock.oauth.secret.v1", 32, "OAuth 签名密钥")
 		if secretErr != nil {
-			return fmt.Errorf("读取 OAuth 签名密钥失败: %w", secretErr)
+			return secretErr
 		}
 		managed["AGENTDOCK_SERVER_URL"] = serverURL
 		managed["AGENTDOCK_OAUTH_ENABLED"] = "true"

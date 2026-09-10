@@ -166,6 +166,28 @@ func readSecretFile(path string) (string, error) {
 	return value, nil
 }
 
+// readOrCreateProtectedText 读取受 DPAPI 保护的文本；文件缺失或已存在但无法解密时
+// （例如目录从其它机器/用户迁移、Windows 账户密码被重置导致 DPAPI 主密钥失效），
+// 按“不存在”处理并重新生成，避免启动/安装/隧道配置在恢复路径上反复失败。
+func readOrCreateProtectedText(path, entropy string, byteCount int, name string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err == nil && strings.TrimSpace(string(data)) != "" {
+		if value, decryptErr := readProtectedText(path, entropy); decryptErr == nil {
+			return value, nil
+		}
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("读取 %s 失败: %w", name, err)
+	}
+	value, err := randomHex(byteCount)
+	if err != nil {
+		return "", fmt.Errorf("生成 %s 失败: %w", name, err)
+	}
+	if err := writeProtectedText(path, value, entropy); err != nil {
+		return "", fmt.Errorf("保存 %s 失败: %w", name, err)
+	}
+	return value, nil
+}
+
 func ensureDesktopCredentials(runtimeRoot string) error {
 	credentials := []struct {
 		name    string
@@ -178,22 +200,8 @@ func ensureDesktopCredentials(runtimeRoot string) error {
 		{name: "OAuth 签名密钥", path: filepath.Join(runtimeRoot, "oauth-token-secret.dpapi"), entropy: "agentdock.oauth.secret.v1", bytes: 32},
 	}
 	for _, credential := range credentials {
-		data, err := os.ReadFile(credential.path)
-		if err == nil && strings.TrimSpace(string(data)) != "" {
-			if _, decryptErr := readProtectedText(credential.path, credential.entropy); decryptErr != nil {
-				return fmt.Errorf("%s 无法解密: %w", credential.name, decryptErr)
-			}
-			continue
-		}
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("读取 %s 失败: %w", credential.name, err)
-		}
-		value, err := randomHex(credential.bytes)
-		if err != nil {
-			return fmt.Errorf("生成 %s 失败: %w", credential.name, err)
-		}
-		if err := writeProtectedText(credential.path, value, credential.entropy); err != nil {
-			return fmt.Errorf("保存 %s 失败: %w", credential.name, err)
+		if _, err := readOrCreateProtectedText(credential.path, credential.entropy, credential.bytes, credential.name); err != nil {
+			return err
 		}
 	}
 	return nil

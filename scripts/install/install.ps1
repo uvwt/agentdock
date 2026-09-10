@@ -170,13 +170,20 @@ function Read-ProtectedText {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         return ''
     }
-    $protectedBytes = [Convert]::FromBase64String([IO.File]::ReadAllText($Path).Trim())
-    $plainBytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
-        $protectedBytes,
-        [Text.Encoding]::UTF8.GetBytes($Entropy),
-        [System.Security.Cryptography.DataProtectionScope]::CurrentUser
-    )
-    return [Text.Encoding]::UTF8.GetString($plainBytes)
+    try {
+        $protectedBytes = [Convert]::FromBase64String([IO.File]::ReadAllText($Path).Trim())
+        $plainBytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
+            $protectedBytes,
+            [Text.Encoding]::UTF8.GetBytes($Entropy),
+            [System.Security.Cryptography.DataProtectionScope]::CurrentUser
+        )
+        return [Text.Encoding]::UTF8.GetString($plainBytes)
+    } catch {
+        # 已存在但无法解密的凭据（目录从其它机器/用户迁移、Windows 账户密码被重置等）
+        # 按“不存在”处理，由调用方重新生成或重新提示输入，
+        # 避免 Setup 的“修复安装”路径与启动失败同因（DPAPI 无法解密）而中止。
+        return ''
+    }
 }
 
 function Read-TextFile {
