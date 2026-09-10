@@ -69,8 +69,12 @@ if (-not (Test-Path -LiteralPath $FilePath -PathType Leaf)) {
 }
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-if ($null -eq $identity -or [string]::IsNullOrWhiteSpace($identity.Name)) {
+if ($null -eq $identity -or $null -eq $identity.User -or [string]::IsNullOrWhiteSpace($identity.Name)) {
     throw 'Unable to resolve the current Windows identity for runtime launch.'
+}
+$managerScriptPath = Join-Path $PSScriptRoot 'manage-windows.ps1'
+if (-not (Test-Path -LiteralPath $managerScriptPath -PathType Leaf)) {
+    throw "Windows manager was not found: $managerScriptPath"
 }
 
 $taskName = 'AgentDock Setup Runtime ' + [Guid]::NewGuid().ToString('N')
@@ -169,7 +173,11 @@ try {
         -Settings $settings `
         -Force | Out-Null
     $registered = $true
-    Start-ScheduledTask -TaskName $taskName -TaskPath '\' -ErrorAction Stop
+    & $managerScriptPath `
+        -Action task-run-session `
+        -ScheduledTaskName $taskName `
+        -ScheduledTaskPath '\' `
+        -ExpectedUserSid $identity.User.Value
 
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     do {

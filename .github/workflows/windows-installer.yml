@@ -55,6 +55,13 @@ jobs:
           & .\scripts\test\test-windows-runtime-launch-diagnostics.ps1 `
             -LauncherPath .\scripts\install\launch-windows-process.ps1
 
+      - name: Test Task Scheduler session selection
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\test\test-windows-task-scheduler.ps1 `
+            -ManagerPath .\scripts\install\manage-windows.ps1
+
       - name: Download and validate exact installer bytes
         shell: powershell
         run: |

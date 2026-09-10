@@ -71,7 +71,7 @@ func startCore(ctx context.Context, manifest Manifest, runtimeRoot string) error
 		return nil
 	}
 	if manifest.UsesScheduledTask() {
-		if err := runScheduledTaskCommand(ctx, "/Run", "/TN", scheduledTaskPath(manifest.AgentDockTaskName)); err != nil {
+		if err := StartInteractiveScheduledTask(ctx, runtimeRoot, manifest.AgentDockTaskName); err != nil {
 			return err
 		}
 	} else if err := startDetachedCore(manifest, runtimeRoot); err != nil {

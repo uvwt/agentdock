@@ -51,6 +51,7 @@ func applyWindowsDesktopOnlyUpdate(ctx context.Context, request applyRequest) (a
 	}
 	taskWasRunning := manifest.UsesScheduledTask() && coreWasRunning
 	taskName := windowsScheduledTaskPath(manifest.AgentDockTaskName)
+	runtimeRoot := filepath.Dir(filepath.Dir(request.CurrentPath))
 
 	update, err := prepareWindowsDesktopUpdate(request.CurrentPath, request.DesktopTargetPath, request.DesktopStagedPath)
 	if err != nil {
@@ -77,7 +78,7 @@ func applyWindowsDesktopOnlyUpdate(ctx context.Context, request applyRequest) (a
 			failures = append(failures, "恢复旧控制面板失败: "+restoreErr.Error())
 		}
 		if taskWasRunning {
-			if restartErr := runWindowsCommand(ctx, "schtasks.exe", "/Run", "/TN", taskName); restartErr != nil {
+			if restartErr := desktopruntime.StartInteractiveScheduledTask(ctx, runtimeRoot, taskName); restartErr != nil {
 				failures = append(failures, "重新启动旧核心计划任务失败: "+restartErr.Error())
 			} else if waitErr := waitForVersion(ctx, []string{manifest.HealthURL()}, request.CurrentVersion, 30*time.Second); waitErr != nil {
 				failures = append(failures, "旧核心健康检查失败: "+waitErr.Error())
@@ -97,16 +98,16 @@ func applyWindowsDesktopOnlyUpdate(ctx context.Context, request applyRequest) (a
 			return applyResult{}, fmt.Errorf("停止 Windows 管理员核心计划任务失败: %w", err)
 		}
 		if stopped, waitErr := desktopruntime.WaitBinaryStopped(ctx, request.CurrentPath, 15*time.Second); waitErr != nil {
-			_ = runWindowsCommand(context.Background(), "schtasks.exe", "/Run", "/TN", taskName)
+			_ = desktopruntime.StartInteractiveScheduledTask(context.Background(), runtimeRoot, taskName)
 			return applyResult{}, fmt.Errorf("等待 Windows 管理员核心退出失败: %w", waitErr)
 		} else if !stopped {
-			_ = runWindowsCommand(context.Background(), "schtasks.exe", "/Run", "/TN", taskName)
+			_ = desktopruntime.StartInteractiveScheduledTask(context.Background(), runtimeRoot, taskName)
 			return applyResult{}, errors.New("Windows 管理员核心未在 15s 内退出")
 		}
 	}
 	if err := update.StopTray(ctx); err != nil {
 		if taskWasRunning {
-			_ = runWindowsCommand(context.Background(), "schtasks.exe", "/Run", "/TN", taskName)
+			_ = desktopruntime.StartInteractiveScheduledTask(context.Background(), runtimeRoot, taskName)
 		}
 		return applyResult{}, err
 	}
@@ -115,7 +116,7 @@ func applyWindowsDesktopOnlyUpdate(ctx context.Context, request applyRequest) (a
 		return applyResult{}, rollback(err)
 	}
 	if taskWasRunning {
-		if err := runWindowsCommand(ctx, "schtasks.exe", "/Run", "/TN", taskName); err != nil {
+		if err := desktopruntime.StartInteractiveScheduledTask(ctx, runtimeRoot, taskName); err != nil {
 			return applyResult{}, rollback(fmt.Errorf("重新启动 Windows 管理员核心计划任务失败: %w", err))
 		}
 		if err := waitForVersion(ctx, []string{manifest.HealthURL()}, request.TargetVersion, 30*time.Second); err != nil {

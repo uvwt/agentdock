@@ -412,7 +412,7 @@ func restartWindowsMode(ctx context.Context, plan windowsUpdatePlan) error {
 		if strings.TrimSpace(plan.TaskName) == "" {
 			return errors.New("Windows 计划任务名称为空")
 		}
-		if err := runWindowsCommand(ctx, "schtasks.exe", "/Run", "/TN", `\`+plan.TaskName); err != nil {
+		if err := desktopruntime.StartInteractiveScheduledTask(ctx, plan.RuntimeRoot, plan.TaskName); err != nil {
 			return fmt.Errorf("启动 Windows AgentDock 计划任务失败: %w", err)
 		}
 		return nil

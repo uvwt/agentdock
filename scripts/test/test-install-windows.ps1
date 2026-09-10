@@ -46,6 +46,22 @@ if ($managerBytes.Length -lt 3 -or
     $managerBytes[2] -ne 0xBF) {
     throw "$ManagerPath must use UTF-8 with BOM for Windows PowerShell 5.1"
 }
+$managerContent = Get-Content -LiteralPath $resolvedManager -Raw
+foreach ($requiredManagerText in @(
+    "'task-run-session'",
+    'WTSGetActiveConsoleSessionId',
+    'Select-InteractiveTaskSessionId',
+    '$task.RunEx($null, $script:TaskRunUseSessionId, $sessionId, $null)',
+    'Multiple active interactive Windows sessions',
+    'No active interactive Windows session'
+)) {
+    if (-not $managerContent.Contains($requiredManagerText)) {
+        throw "$ManagerPath is missing the shared InteractiveToken RunEx contract: $requiredManagerText"
+    }
+}
+if ($managerContent.Contains('Start-ScheduledTask')) {
+    throw "$ManagerPath must not bypass the shared InteractiveToken RunEx path with Start-ScheduledTask"
+}
 
 $content = Get-Content -LiteralPath $resolvedInstaller -Raw
 $bytes = [IO.File]::ReadAllBytes($resolvedInstaller)
@@ -164,6 +180,8 @@ foreach ($required in @(
     'Set-RunValue -RegistryPath $runKey -Name $cloudflaredRunValueName',
     'Start-AgentDockLauncher -LauncherPath $launcherPath',
     'Start-CloudflaredLauncher -LauncherPath $cloudflaredLauncherPath',
+    'Start-AgentDockTask -ManagerScriptPath $managerScriptPath',
+    '-Action task-run-session',
     'Release archive does not contain manage-windows.ps1',
     'Initialize-OAuthCredentials',
     'named-server-url.txt',

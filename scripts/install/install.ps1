@@ -662,7 +662,15 @@ function Enable-AgentDockTask {
 }
 
 function Start-AgentDockTask {
-    Start-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -ErrorAction Stop
+    param([Parameter(Mandatory = $true)][string] $ManagerScriptPath)
+
+    if (-not (Test-Path -LiteralPath $ManagerScriptPath -PathType Leaf)) {
+        throw "Windows manager was not found: $ManagerScriptPath"
+    }
+    & $ManagerScriptPath `
+        -Action task-run-session `
+        -ScheduledTaskName 'AgentDock' `
+        -ScheduledTaskPath '\'
 }
 
 function Stop-ProcessesForUpgrade {
@@ -1537,7 +1545,7 @@ exit `$LASTEXITCODE
 
         if ($RegisterStartup) {
             if ($effectivePrivilegeMode -eq 'elevated') {
-                Start-AgentDockTask
+                Start-AgentDockTask -ManagerScriptPath $managerScriptPath
             } elseif ($InstallChannel -eq 'setup') {
                 Invoke-SetupRuntimeProcess `
                     -FilePath $destinationBinary `
@@ -1779,7 +1787,15 @@ exit `$LASTEXITCODE
             }
         }
 
-        $taskWillRestartAgentDock = $taskRestored -and $taskState.WasRunning
+        $taskWillRestartAgentDock = $false
+        if ($taskRestored -and $taskState.WasRunning) {
+            & $sourceManagerScript `
+                -Action task-run-session `
+                -ScheduledTaskName 'AgentDock' `
+                -ScheduledTaskPath '\' `
+                -ExpectedUserSid $taskUser.Sid
+            $taskWillRestartAgentDock = $true
+        }
         if ($processWasRunning -and -not $taskWillRestartAgentDock -and
             (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
             Start-AgentDockLauncher -LauncherPath $launcherPath

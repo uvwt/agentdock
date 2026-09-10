@@ -509,7 +509,9 @@ func TestWindowsSetupLaunchesRuntimeOutsideRedirectionGuardTree(t *testing.T) {
 		"-LogonType Interactive",
 		"-RunLevel Limited",
 		"Register-ScheduledTask",
-		"Start-ScheduledTask",
+		"$managerScriptPath = Join-Path $PSScriptRoot 'manage-windows.ps1'",
+		"-Action task-run-session",
+		"-ScheduledTaskName $taskName",
 		"if ($WaitForExit) {",
 		"$process.WaitForExit()",
 		"RedirectStandardOutput = $true",
@@ -533,7 +535,9 @@ func TestWindowsSetupLaunchesRuntimeOutsideRedirectionGuardTree(t *testing.T) {
 
 	for _, want := range []string{
 		"Source: \"..\\..\\scripts\\install\\launch-windows-process.ps1\"; Flags: dontcopy",
+		"Source: \"..\\..\\scripts\\install\\manage-windows.ps1\"; Flags: dontcopy",
 		"ExtractTemporaryFile('launch-windows-process.ps1')",
+		"ExtractTemporaryFile('manage-windows.ps1')",
 		"function LaunchRuntimeProcess(",
 		"LaunchRuntimeProcess(ExpandConstant('{app}\\bin\\agentdock-tray.exe'), '')",
 	} {

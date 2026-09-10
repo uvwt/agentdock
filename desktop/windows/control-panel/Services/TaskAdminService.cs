@@ -314,10 +314,6 @@ internal static class TaskAdminService
         {
             task.SetSecurityDescriptor(state.SecurityDescriptor, 0);
         }
-        if (state.WasRunning)
-        {
-            task.Run(null);
-        }
     }
 
     private static string ReadTaskUserId(string xml)

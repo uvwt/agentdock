@@ -127,6 +127,14 @@ function Assert-CoreRunsWithoutConsole {
     }
 }
 
+function Start-AgentDockScheduledTask {
+    $managerPath = Join-Path $InstallRoot 'installer\manage-windows.ps1'
+    if (-not (Test-Path -LiteralPath $managerPath -PathType Leaf)) {
+        throw "Installed Windows manager is missing: $managerPath"
+    }
+    & $managerPath -Action task-run-session -ScheduledTaskName 'AgentDock' -ScheduledTaskPath '\'
+}
+
 function Assert-TaskStopKillsCore {
     Stop-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -ErrorAction Stop
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
@@ -145,7 +153,7 @@ function Assert-TaskStopKillsCore {
         Start-Sleep -Milliseconds 250
     } while ($true)
 
-    Start-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -ErrorAction Stop
+    Start-AgentDockScheduledTask
     $deadline = [DateTime]::UtcNow.AddSeconds(20)
     do {
         Start-Sleep -Milliseconds 250
@@ -381,7 +389,7 @@ try {
         -Trigger $legacyTaskTrigger `
         -Description 'AgentDock legacy migration test' `
         -Force | Out-Null
-    Start-ScheduledTask -TaskName 'AgentDock' -TaskPath '\'
+    Start-AgentDockScheduledTask
     $legacyDeadline = [DateTime]::UtcNow.AddSeconds(20)
     do {
         Start-Sleep -Milliseconds 500

@@ -14,6 +14,7 @@ param(
         'launch-core',
         'launch-tunnel',
         'set-task-startup',
+        'task-run-session',
         'task-start',
         'task-stop'
     )]
@@ -26,7 +27,10 @@ param(
     [ValidateSet('core', 'tray')]
     [string] $Component = 'core',
     [ValidateSet('true', 'false')]
-    [string] $Enabled = 'false'
+    [string] $Enabled = 'false',
+    [string] $ScheduledTaskName = 'AgentDock',
+    [string] $ScheduledTaskPath = '\',
+    [string] $ExpectedUserSid = ''
 )
 
 Set-StrictMode -Version Latest
@@ -37,6 +41,290 @@ $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding = $Utf8NoBom
 $global:OutputEncoding = $Utf8NoBom
 Add-Type -AssemblyName System.Security
+
+$script:TaskLogonInteractiveToken = 3
+$script:TaskRunUseSessionId = 4
+$script:WtsActive = 0
+$script:WtsUserName = 5
+$script:WtsDomainName = 7
+$script:NoConsoleSession = [uint32]::MaxValue
+
+if (-not ('AgentDock.WindowsTaskSession.NativeMethods' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+namespace AgentDock.WindowsTaskSession
+{
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct WtsSessionInfo
+    {
+        public int SessionId;
+        [MarshalAs(UnmanagedType.LPWStr)]
+        public string WinStationName;
+        public int State;
+    }
+
+    public static class NativeMethods
+    {
+        [DllImport("wtsapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern bool WTSEnumerateSessions(
+            IntPtr server,
+            int reserved,
+            int version,
+            out IntPtr sessionInfo,
+            out int count);
+
+        [DllImport("wtsapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern bool WTSQuerySessionInformation(
+            IntPtr server,
+            int sessionId,
+            int infoClass,
+            out IntPtr buffer,
+            out int bytesReturned);
+
+        [DllImport("wtsapi32.dll")]
+        public static extern void WTSFreeMemory(IntPtr memory);
+
+        [DllImport("kernel32.dll")]
+        public static extern uint WTSGetActiveConsoleSessionId();
+
+        public static int WtsSessionInfoSize()
+        {
+            return Marshal.SizeOf(typeof(WtsSessionInfo));
+        }
+
+        public static WtsSessionInfo ReadWtsSessionInfo(IntPtr address)
+        {
+            return (WtsSessionInfo)Marshal.PtrToStructure(address, typeof(WtsSessionInfo));
+        }
+    }
+}
+'@
+}
+
+function ConvertTo-WindowsUserSid {
+    param([Parameter(Mandatory = $true)][string] $Account)
+
+    $value = $Account.Trim()
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        throw 'Windows account is empty while resolving the scheduled-task user.'
+    }
+    try {
+        return ([Security.Principal.SecurityIdentifier] $value).Value
+    } catch {
+        try {
+            $ntAccount = New-Object Security.Principal.NTAccount($value)
+            return $ntAccount.Translate([Security.Principal.SecurityIdentifier]).Value
+        } catch {
+            throw "Unable to resolve Windows account '$value' to a SID: $($_.Exception.Message)"
+        }
+    }
+}
+
+function Get-WtsSessionText {
+    param(
+        [Parameter(Mandatory = $true)][int] $SessionId,
+        [Parameter(Mandatory = $true)][int] $InfoClass
+    )
+
+    $buffer = [IntPtr]::Zero
+    $bytesReturned = 0
+    try {
+        $ok = [AgentDock.WindowsTaskSession.NativeMethods]::WTSQuerySessionInformation(
+            [IntPtr]::Zero,
+            $SessionId,
+            $InfoClass,
+            [ref] $buffer,
+            [ref] $bytesReturned)
+        if (-not $ok -or $buffer -eq [IntPtr]::Zero -or $bytesReturned -le 2) {
+            return ''
+        }
+        return [Runtime.InteropServices.Marshal]::PtrToStringUni($buffer).TrimEnd([char] 0)
+    } finally {
+        if ($buffer -ne [IntPtr]::Zero) {
+            [AgentDock.WindowsTaskSession.NativeMethods]::WTSFreeMemory($buffer)
+        }
+    }
+}
+
+function Get-WindowsInteractiveSessions {
+    $buffer = [IntPtr]::Zero
+    $count = 0
+    try {
+        $ok = [AgentDock.WindowsTaskSession.NativeMethods]::WTSEnumerateSessions(
+            [IntPtr]::Zero,
+            0,
+            1,
+            [ref] $buffer,
+            [ref] $count)
+        if (-not $ok) {
+            $errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+            throw "Unable to enumerate Windows sessions (Win32 error $errorCode)."
+        }
+
+        $sessionSize = [AgentDock.WindowsTaskSession.NativeMethods]::WtsSessionInfoSize()
+        $sessions = @()
+        for ($index = 0; $index -lt $count; $index++) {
+            $entryAddress = [IntPtr] ($buffer.ToInt64() + ($index * $sessionSize))
+            $entry = [AgentDock.WindowsTaskSession.NativeMethods]::ReadWtsSessionInfo($entryAddress)
+            $userName = Get-WtsSessionText -SessionId $entry.SessionId -InfoClass $script:WtsUserName
+            $domain = Get-WtsSessionText -SessionId $entry.SessionId -InfoClass $script:WtsDomainName
+            $account = if ([string]::IsNullOrWhiteSpace($userName)) {
+                ''
+            } elseif ([string]::IsNullOrWhiteSpace($domain)) {
+                $userName
+            } else {
+                "$domain\$userName"
+            }
+            $sid = ''
+            if (-not [string]::IsNullOrWhiteSpace($account)) {
+                try {
+                    $sid = ConvertTo-WindowsUserSid -Account $account
+                } catch {
+                    $sid = ''
+                }
+            }
+            $sessions += [pscustomobject]@{
+                SessionId = [int] $entry.SessionId
+                State = [int] $entry.State
+                UserName = $account
+                UserSid = $sid
+            }
+        }
+        return $sessions
+    } finally {
+        if ($buffer -ne [IntPtr]::Zero) {
+            [AgentDock.WindowsTaskSession.NativeMethods]::WTSFreeMemory($buffer)
+        }
+    }
+}
+
+function Select-InteractiveTaskSessionId {
+    param(
+        [Parameter(Mandatory = $true)][object[]] $Sessions,
+        [Parameter(Mandatory = $true)][string] $ExpectedUserSid,
+        [Parameter(Mandatory = $true)][int] $CurrentSessionId,
+        [Parameter(Mandatory = $true)][string] $CurrentUserSid,
+        [Parameter(Mandatory = $true)][uint32] $ConsoleSessionId
+    )
+
+    $expectedSid = ConvertTo-WindowsUserSid -Account $ExpectedUserSid
+    $currentSession = @($Sessions | Where-Object {
+        $_.SessionId -eq $CurrentSessionId -and
+        $_.State -eq $script:WtsActive -and
+        -not [string]::IsNullOrWhiteSpace([string] $_.UserSid) -and
+        [string]::Equals([string] $_.UserSid, $expectedSid, [StringComparison]::OrdinalIgnoreCase)
+    })
+
+    # UAC elevation preserves the interactive Session ID. Prefer that verified session so RDP/cloud desktops are not redirected to console.
+    if ($CurrentSessionId -gt 0 -and
+        [string]::Equals($CurrentUserSid, $expectedSid, [StringComparison]::OrdinalIgnoreCase) -and
+        $currentSession.Count -eq 1) {
+        return $CurrentSessionId
+    }
+
+    $matchingSessions = @($Sessions | Where-Object {
+        $_.State -eq $script:WtsActive -and
+        -not [string]::IsNullOrWhiteSpace([string] $_.UserSid) -and
+        [string]::Equals([string] $_.UserSid, $expectedSid, [StringComparison]::OrdinalIgnoreCase)
+    })
+    if ($matchingSessions.Count -eq 0) {
+        throw "No active interactive Windows session was found for scheduled-task user SID $expectedSid. InteractiveToken tasks cannot be started from Session 0 or a disconnected-only login."
+    }
+    if ($matchingSessions.Count -eq 1) {
+        return [int] $matchingSessions[0].SessionId
+    }
+
+    if ($ConsoleSessionId -ne $script:NoConsoleSession) {
+        $consoleMatches = @($matchingSessions | Where-Object { $_.SessionId -eq [int] $ConsoleSessionId })
+        if ($consoleMatches.Count -eq 1) {
+            return [int] $ConsoleSessionId
+        }
+    }
+
+    $ids = (($matchingSessions | ForEach-Object { [string] $_.SessionId }) -join ', ')
+    throw "Multiple active interactive Windows sessions match scheduled-task user SID $expectedSid (sessions: $ids), and the caller/console session does not disambiguate them. Refusing to guess a target session."
+}
+
+function Resolve-InteractiveTaskSessionId {
+    param([Parameter(Mandatory = $true)][string] $ExpectedUserSid)
+
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    if ($null -eq $identity -or $null -eq $identity.User) {
+        throw 'Unable to resolve the current Windows identity while selecting an interactive session.'
+    }
+    $currentSessionId = [Diagnostics.Process]::GetCurrentProcess().SessionId
+    $consoleSessionId = [AgentDock.WindowsTaskSession.NativeMethods]::WTSGetActiveConsoleSessionId()
+    $sessions = @(Get-WindowsInteractiveSessions)
+    return Select-InteractiveTaskSessionId `
+        -Sessions $sessions `
+        -ExpectedUserSid $ExpectedUserSid `
+        -CurrentSessionId $currentSessionId `
+        -CurrentUserSid $identity.User.Value `
+        -ConsoleSessionId $consoleSessionId
+}
+
+function Start-InteractiveScheduledTask {
+    param(
+        [Parameter(Mandatory = $true)][string] $TaskName,
+        [string] $TaskPath = '\',
+        [string] $ExpectedUserSid = ''
+    )
+
+    $service = $null
+    $folder = $null
+    $task = $null
+    $runningTask = $null
+    try {
+        $service = New-Object -ComObject 'Schedule.Service'
+        $service.Connect()
+        $folder = $service.GetFolder($TaskPath)
+        $task = $folder.GetTask($TaskName)
+
+        $taskUserSid = ConvertTo-WindowsUserSid -Account ([string] $task.Definition.Principal.UserId)
+        if (-not [string]::IsNullOrWhiteSpace($ExpectedUserSid)) {
+            $expectedSid = ConvertTo-WindowsUserSid -Account $ExpectedUserSid
+            if (-not [string]::Equals($taskUserSid, $expectedSid, [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Scheduled task '$TaskPath$TaskName' belongs to SID $taskUserSid, not expected SID $expectedSid."
+            }
+        }
+        if ([int] $task.Definition.Principal.LogonType -ne $script:TaskLogonInteractiveToken) {
+            throw "Scheduled task '$TaskPath$TaskName' is not an InteractiveToken task; refusing the session-bound start path."
+        }
+
+        $sessionId = Resolve-InteractiveTaskSessionId -ExpectedUserSid $taskUserSid
+        $wasEnabled = [bool] $task.Enabled
+        if (-not $wasEnabled) {
+            $task.Enabled = $true
+        }
+        try {
+            $runningTask = $task.RunEx($null, $script:TaskRunUseSessionId, $sessionId, $null)
+        } finally {
+            if (-not $wasEnabled) {
+                $task.Enabled = $false
+            }
+        }
+        Write-Verbose "Started scheduled task '$TaskPath$TaskName' in interactive session $sessionId."
+    } finally {
+        foreach ($comObject in @($runningTask, $task, $folder, $service)) {
+            if ($null -ne $comObject -and [Runtime.InteropServices.Marshal]::IsComObject($comObject)) {
+                [void] [Runtime.InteropServices.Marshal]::FinalReleaseComObject($comObject)
+            }
+        }
+    }
+}
+
+if ($MyInvocation.InvocationName -eq '.') {
+    return
+}
+if ($Action -eq 'task-run-session') {
+    Start-InteractiveScheduledTask `
+        -TaskName $ScheduledTaskName `
+        -TaskPath $ScheduledTaskPath `
+        -ExpectedUserSid $ExpectedUserSid
+    exit 0
+}
 
 function Convert-ToBoolean {
     param(
@@ -496,20 +784,9 @@ exit `$LASTEXITCODE
 }
 
 function Start-TaskPreservingStartupState {
-    $task = Get-ScheduledTask -TaskName $TaskName -TaskPath '\' -ErrorAction Stop
-    $wasEnabled = [bool] $task.Settings.Enabled
-
-    # 用户关闭开机启动后仍应允许手动启动。这里临时启用任务，启动后恢复原状态。
-    if (-not $wasEnabled) {
-        Enable-ScheduledTask -TaskName $TaskName -TaskPath '\' -ErrorAction Stop | Out-Null
-    }
-    try {
-        Start-ScheduledTask -TaskName $TaskName -TaskPath '\' -ErrorAction Stop
-    } finally {
-        if (-not $wasEnabled) {
-            Disable-ScheduledTask -TaskName $TaskName -TaskPath '\' -ErrorAction Stop | Out-Null
-        }
-    }
+    Start-InteractiveScheduledTask `
+        -TaskName $TaskName `
+        -TaskPath '\'
 }
 
 function Set-TaskStartupState {

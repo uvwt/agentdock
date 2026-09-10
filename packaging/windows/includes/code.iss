@@ -438,6 +438,7 @@ begin
     InstallProgressPage.SetProgress(1, 4);
     ExtractTemporaryFile('install.ps1');
     ExtractTemporaryFile('launch-windows-process.ps1');
+    ExtractTemporaryFile('manage-windows.ps1');
     ExtractTemporaryFile('agentdock_windows_{#PayloadArchitecture}.zip');
     ExtractTemporaryFile('agentdock_windows_{#PayloadArchitecture}.zip.sha256');
     ExtractTemporaryFile('cloudflared.exe');
