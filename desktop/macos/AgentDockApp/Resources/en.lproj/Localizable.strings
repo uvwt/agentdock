@@ -295,3 +295,11 @@
 "Background service %@ did not converge to the unregistered state." = "Background service %@ did not converge to the unregistered state.";
 "AgentDock.app is missing the background service definition for %@. Reinstall the application." = "AgentDock.app is missing the background service definition for %@. Reinstall the application.";
 "AgentDock %@ failed." = "AgentDock %@ failed.";
+"Interface language" = "Interface language";
+"Follow system" = "Follow system";
+"Simplified Chinese" = "Simplified Chinese";
+"English" = "English";
+"Failed to restart AgentDock interface: %@" = "Failed to restart AgentDock interface: %@";
+"Change interface language?" = "Change interface language?";
+"Changing the interface language restarts the AgentDock interface. Any unsaved changes in this window will be lost." = "Changing the interface language restarts the AgentDock interface. Any unsaved changes in this window will be lost.";
+"Continue" = "Continue";

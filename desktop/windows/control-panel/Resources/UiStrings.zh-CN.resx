@@ -599,4 +599,22 @@
   <data name="AcpDetectedPathDetails" xml:space="preserve">
     <value>已检测到 · {0} · {1}</value>
   </data>
+  <data name="InterfaceLanguage" xml:space="preserve">
+    <value>界面语言</value>
+  </data>
+  <data name="FollowSystem" xml:space="preserve">
+    <value>跟随系统</value>
+  </data>
+  <data name="SimplifiedChinese" xml:space="preserve">
+    <value>简体中文</value>
+  </data>
+  <data name="EnglishLanguage" xml:space="preserve">
+    <value>English</value>
+  </data>
+  <data name="LanguageChangeFailed" xml:space="preserve">
+    <value>切换界面语言失败：{0}</value>
+  </data>
+  <data name="LanguageChangeDiscardWarning" xml:space="preserve">
+    <value>切换界面语言会重新加载此窗口，未保存的更改将会丢失。是否继续？</value>
+  </data>
 </root>

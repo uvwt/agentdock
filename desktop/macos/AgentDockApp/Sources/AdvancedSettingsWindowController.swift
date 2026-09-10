@@ -33,6 +33,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     private let menuLoginAgent: MenuLoginAgentController
     private let onChanged: () -> Void
 
+    private let languagePreference = NSPopUpButton(frame: .zero, pullsDown: false)
     private let serviceAutostart = NSButton(checkboxWithTitle: L10n.text("Allow AgentDock to run in the background"), target: nil, action: nil)
     private let menuAutostart = NSButton(checkboxWithTitle: L10n.text("Show AgentDock in the menu bar after sign-in"), target: nil, action: nil)
     private let portField = NSTextField(string: "8765")
@@ -148,6 +149,15 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     private func configureUI() {
         guard let contentView = window?.contentView else { return }
 
+        for preference in UILanguagePreference.allCases {
+            languagePreference.addItem(withTitle: preference.title)
+            languagePreference.lastItem?.representedObject = preference.rawValue
+        }
+        selectLanguagePreference(L10n.languagePreference())
+        languagePreference.widthAnchor.constraint(equalToConstant: 180).isActive = true
+        languagePreference.target = self
+        languagePreference.action = #selector(languageChanged)
+
         serviceAutostart.target = self
         serviceAutostart.action = #selector(markChanged)
         menuAutostart.target = self
@@ -242,7 +252,11 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         let openConfig = NSButton(title: L10n.text("Open configuration folder"), target: self, action: #selector(openConfigurationPressed))
         openConfig.bezelStyle = .inline
 
-        let startupStack = NSStackView(views: [serviceAutostart, menuAutostart])
+        let startupStack = NSStackView(views: [
+            formRow(title: L10n.text("Interface language"), control: languagePreference),
+            serviceAutostart,
+            menuAutostart,
+        ])
         startupStack.orientation = .vertical
         startupStack.alignment = .leading
         startupStack.spacing = 8
@@ -366,6 +380,37 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
 
     @objc private func markChanged() {
         refreshApplyState()
+    }
+
+    @objc private func languageChanged() {
+        let previous = L10n.languagePreference()
+        let selected = selectedLanguagePreference()
+        guard selected != previous else { return }
+
+        let warning = NSAlert()
+        warning.messageText = L10n.text("Change interface language?")
+        warning.informativeText = L10n.text("Changing the interface language restarts the AgentDock interface. Any unsaved changes in this window will be lost.")
+        warning.alertStyle = .warning
+        warning.addButton(withTitle: L10n.text("Continue"))
+        warning.addButton(withTitle: L10n.text("Cancel"))
+        guard warning.runModal() == .alertFirstButtonReturn else {
+            selectLanguagePreference(previous)
+            return
+        }
+
+        L10n.setLanguagePreference(selected)
+        let relaunch = Process()
+        relaunch.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        relaunch.arguments = ["-n", Bundle.main.bundlePath]
+        do {
+            // AppKit 的静态控件在创建时取本地化文本；只重启菜单栏 UI，Core/Tunnel 不受影响。
+            try relaunch.run()
+            NSApp.terminate(nil)
+        } catch {
+            L10n.setLanguagePreference(previous)
+            selectLanguagePreference(previous)
+            showStatus(L10n.format("Failed to restart AgentDock interface: %@", error.localizedDescription), isError: true)
+        }
     }
 
     func controlTextDidChange(_ obj: Notification) {
@@ -514,6 +559,22 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     @objc private func openLogsPressed() { service.openLogs() }
     @objc private func openConfigurationPressed() { service.openConfiguration() }
 
+    private func selectedLanguagePreference() -> UILanguagePreference {
+        guard let rawValue = languagePreference.selectedItem?.representedObject as? String,
+              let preference = UILanguagePreference(rawValue: rawValue) else {
+            return .system
+        }
+        return preference
+    }
+
+    private func selectLanguagePreference(_ preference: UILanguagePreference) {
+        for item in languagePreference.itemArray where (item.representedObject as? String) == preference.rawValue {
+            languagePreference.select(item)
+            return
+        }
+        languagePreference.selectItem(at: 0)
+    }
+
     private func selectedACPAgent() -> ACPAgentPreset {
         let title = acpAgent.titleOfSelectedItem ?? ""
         return ACPAgentPreset.allCases.first { $0.title == title } ?? .codex
@@ -645,7 +706,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
 
     private func setBusy(_ busy: Bool) {
         isBusy = busy
-        for control in [serviceAutostart, menuAutostart, portField, logLevel, mcpAppsEnabled, browserEnabled, browserConnectionMode, browserCDPURL, acpEnabled, acpAgent, acpCommand, acpArgsJSON, nexusEndpoint, nexusPairingCode, nexusPairButton] {
+        for control in [languagePreference, serviceAutostart, menuAutostart, portField, logLevel, mcpAppsEnabled, browserEnabled, browserConnectionMode, browserCDPURL, acpEnabled, acpAgent, acpCommand, acpArgsJSON, nexusEndpoint, nexusPairingCode, nexusPairButton] {
             control.isEnabled = !busy
         }
         refreshBrowserStatus()

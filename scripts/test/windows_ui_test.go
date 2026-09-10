@@ -27,6 +27,50 @@ func TestWindowsControlPanelPrivilegeModeCopyStaysUserFacing(t *testing.T) {
 	}
 }
 
+func TestWindowsControlPanelSupportsPersistentLanguagePreference(t *testing.T) {
+	root := filepath.Join("..", "..", "desktop", "windows", "control-panel")
+	checks := map[string][]string{
+		"MainWindow.xaml": {
+			`x:Name="LanguageComboBox"`,
+			`Tag="system"`,
+			`Tag="zh-CN"`,
+			`Tag="en"`,
+			`SelectionChanged="LanguageComboBox_SelectionChanged"`,
+		},
+		"MainWindow.xaml.cs": {
+			`UiText.ReadPreference()`,
+			`UiText.Get("LanguageChangeDiscardWarning")`,
+			`MessageBoxButton.YesNo`,
+			`SelectUiLanguage(UiText.ReadPreference())`,
+			`ApplyLanguagePreferenceAsync(preference)`,
+		},
+		"App.xaml.cs": {
+			`UiText.SetPreference(preference)`,
+			`new MainWindow(Runtime)`,
+			`previousWindow.CloseForReplacement()`,
+		},
+		filepath.Join("Localization", "UiText.cs"): {
+			`"AgentDock",`,
+			`"ui-language"`,
+			`File.Delete(PreferencePath)`,
+			`ResolveLocale(string preference, string systemCultureName)`,
+		},
+	}
+
+	for relativePath, wants := range checks {
+		data, err := os.ReadFile(filepath.Join(root, relativePath))
+		if err != nil {
+			t.Fatalf("read %s: %v", relativePath, err)
+		}
+		content := string(data)
+		for _, want := range wants {
+			if !strings.Contains(content, want) {
+				t.Fatalf("Windows language preference contract missing %q in %s", want, relativePath)
+			}
+		}
+	}
+}
+
 func TestWindowsUpdateProgressWindowSizesToContent(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "UpdateProgressWindow.xaml"))
 	if err != nil {

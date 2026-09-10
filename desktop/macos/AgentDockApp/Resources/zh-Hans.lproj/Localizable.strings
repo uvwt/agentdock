@@ -295,3 +295,11 @@
 "Background service %@ did not converge to the unregistered state." = "后台服务 %@ 注销后系统状态没有完成收敛。";
 "AgentDock.app is missing the background service definition for %@. Reinstall the application." = "AgentDock.app 缺少 %@ 的后台服务定义，请重新安装应用。";
 "AgentDock %@ failed." = "AgentDock %@失败。";
+"Interface language" = "界面语言";
+"Follow system" = "跟随系统";
+"Simplified Chinese" = "简体中文";
+"English" = "English";
+"Failed to restart AgentDock interface: %@" = "重启 AgentDock 界面失败：%@";
+"Change interface language?" = "切换界面语言？";
+"Changing the interface language restarts the AgentDock interface. Any unsaved changes in this window will be lost." = "切换界面语言会重启 AgentDock 界面，此窗口中未保存的更改将会丢失。";
+"Continue" = "继续";

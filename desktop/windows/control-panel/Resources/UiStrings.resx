@@ -599,4 +599,22 @@ Update now?</value>
   <data name="AcpDetectedPathDetails" xml:space="preserve">
     <value>Detected · {0} · {1}</value>
   </data>
+  <data name="InterfaceLanguage" xml:space="preserve">
+    <value>Interface language</value>
+  </data>
+  <data name="FollowSystem" xml:space="preserve">
+    <value>Follow system</value>
+  </data>
+  <data name="SimplifiedChinese" xml:space="preserve">
+    <value>Simplified Chinese</value>
+  </data>
+  <data name="EnglishLanguage" xml:space="preserve">
+    <value>English</value>
+  </data>
+  <data name="LanguageChangeFailed" xml:space="preserve">
+    <value>Failed to change interface language: {0}</value>
+  </data>
+  <data name="LanguageChangeDiscardWarning" xml:space="preserve">
+    <value>Changing the interface language reloads this window. Any unsaved changes will be lost. Continue?</value>
+  </data>
 </root>

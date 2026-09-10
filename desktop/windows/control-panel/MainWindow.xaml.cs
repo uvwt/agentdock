@@ -36,7 +36,16 @@ public partial class MainWindow : Window
     {
         _runtime = runtime;
         InitializeComponent();
+        _updatingUi = true;
+        SelectUiLanguage(UiText.ReadPreference());
+        _updatingUi = false;
         Closing += MainWindow_Closing;
+    }
+
+    internal void CloseForReplacement()
+    {
+        Closing -= MainWindow_Closing;
+        Close();
     }
 
     public async Task RefreshAsync()
@@ -406,6 +415,63 @@ public partial class MainWindow : Window
             ? new SolidColorBrush(Color.FromRgb(217, 45, 32))
             : new SolidColorBrush(Color.FromRgb(102, 112, 133));
     }
+
+    private async void LanguageComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingUi || Application.Current is not App app)
+        {
+            return;
+        }
+
+        var preference = SelectedUiLanguage();
+        if (preference == UiText.ReadPreference())
+        {
+            return;
+        }
+
+        var confirm = MessageBox.Show(
+            this,
+            UiText.Get("LanguageChangeDiscardWarning"),
+            "AgentDock",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (confirm != MessageBoxResult.Yes)
+        {
+            _updatingUi = true;
+            SelectUiLanguage(UiText.ReadPreference());
+            _updatingUi = false;
+            return;
+        }
+
+        try
+        {
+            await app.ApplyLanguagePreferenceAsync(preference);
+        }
+        catch (Exception ex)
+        {
+            _updatingUi = true;
+            SelectUiLanguage(UiText.ReadPreference());
+            _updatingUi = false;
+            SettingsStatusText.Text = UiText.Format("LanguageChangeFailed", ex.Message);
+            MessageBox.Show(this, SettingsStatusText.Text, "AgentDock", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void SelectUiLanguage(string preference)
+    {
+        foreach (var item in LanguageComboBox.Items.OfType<ComboBoxItem>())
+        {
+            if (string.Equals(item.Tag?.ToString(), preference, StringComparison.Ordinal))
+            {
+                LanguageComboBox.SelectedItem = item;
+                return;
+            }
+        }
+        LanguageComboBox.SelectedIndex = 0;
+    }
+
+    private string SelectedUiLanguage() =>
+        (LanguageComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? UiText.SystemPreference;
 
     private async void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
     {

@@ -3,6 +3,8 @@
 package tray
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"unsafe"
 
@@ -142,13 +144,39 @@ func currentTrayText() trayText {
 		uintptr(unsafe.Pointer(&localeName[0])),
 		uintptr(len(localeName)),
 	)
-	if result == 0 {
-		return trayTextEnglish
+	var systemLocale string
+	if result != 0 {
+		systemLocale = windows.UTF16ToString(localeName[:])
 	}
-	if isSimplifiedChineseLocale(windows.UTF16ToString(localeName[:])) {
+	if resolveTrayLocale(readTrayLanguagePreference(), systemLocale) == "zh-CN" {
 		return trayTextChinese
 	}
 	return trayTextEnglish
+}
+
+func readTrayLanguagePreference() string {
+	localAppData := strings.TrimSpace(os.Getenv("LOCALAPPDATA"))
+	if localAppData == "" {
+		return "system"
+	}
+	data, err := os.ReadFile(filepath.Join(localAppData, "AgentDock", "ui-language"))
+	if err != nil {
+		return "system"
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func resolveTrayLocale(preference, systemLocale string) string {
+	switch strings.TrimSpace(preference) {
+	case "en":
+		return "en"
+	case "zh-CN":
+		return "zh-CN"
+	}
+	if isSimplifiedChineseLocale(systemLocale) {
+		return "zh-CN"
+	}
+	return "en"
 }
 
 func isSimplifiedChineseLocale(value string) bool {

@@ -197,6 +197,46 @@ public partial class App : System.Windows.Application
         });
     }
 
+    public async Task ApplyLanguagePreferenceAsync(string preference)
+    {
+        var previousPreference = UiText.ReadPreference();
+        UiText.SetPreference(preference);
+        try
+        {
+            var previousWindow = ControlPanelWindow;
+            var wasVisible = previousWindow.IsVisible;
+            var previousState = previousWindow.WindowState;
+            var left = previousWindow.Left;
+            var top = previousWindow.Top;
+
+            var replacement = new MainWindow(Runtime)
+            {
+                Left = left,
+                Top = top,
+                WindowState = previousState == WindowState.Minimized ? WindowState.Normal : previousState
+            };
+            ControlPanelWindow = replacement;
+            MainWindow = replacement;
+            previousWindow.CloseForReplacement();
+
+            if (_trayMenu is not null && !_trayMenu.Visible)
+            {
+                PopulateTrayMenu(_trayMenu, _traySnapshot);
+            }
+            if (wasVisible)
+            {
+                replacement.Show();
+                replacement.Activate();
+                await replacement.RefreshAsync();
+            }
+        }
+        catch
+        {
+            UiText.SetPreference(previousPreference);
+            throw;
+        }
+    }
+
     public void RequestExit()
     {
         _exitRequested = true;
@@ -264,7 +304,7 @@ public partial class App : System.Windows.Application
             _traySnapshot = await Runtime.GetSnapshotAsync();
             if (_notifyIcon is not null)
             {
-                _notifyIcon.Text = TruncateNotifyIconText($"AgentDock：{GetTrayStatusText(_traySnapshot)}");
+                _notifyIcon.Text = TruncateNotifyIconText($"AgentDock: {GetTrayStatusText(_traySnapshot)}");
             }
             if (_trayMenu is not null && !_trayMenu.Visible)
             {

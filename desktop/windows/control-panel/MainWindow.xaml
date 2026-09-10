@@ -165,6 +165,7 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <TextBlock Text="{local:Loc Port}" VerticalAlignment="Center" Margin="0,0,0,10" />
                 <TextBox x:Name="PortTextBox" Grid.Column="1" Width="130" HorizontalAlignment="Left" Margin="0,0,0,10" />
@@ -175,7 +176,13 @@
                   <ComboBoxItem Content="warn" />
                   <ComboBoxItem Content="error" />
                 </ComboBox>
-                <CheckBox x:Name="McpAppsEnabledCheckBox" Grid.Row="2" Grid.ColumnSpan="2" Content="{local:Loc EnableMcpAppsUi}" Margin="0,4,0,4" />
+                <TextBlock Text="{local:Loc InterfaceLanguage}" Grid.Row="2" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <ComboBox x:Name="LanguageComboBox" Grid.Row="2" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10" SelectionChanged="LanguageComboBox_SelectionChanged">
+                  <ComboBoxItem Content="{local:Loc FollowSystem}" Tag="system" />
+                  <ComboBoxItem Content="{local:Loc SimplifiedChinese}" Tag="zh-CN" />
+                  <ComboBoxItem Content="{local:Loc EnglishLanguage}" Tag="en" />
+                </ComboBox>
+                <CheckBox x:Name="McpAppsEnabledCheckBox" Grid.Row="3" Grid.ColumnSpan="2" Content="{local:Loc EnableMcpAppsUi}" Margin="0,4,0,4" />
               </Grid>
             </GroupBox>
 

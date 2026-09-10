@@ -20,6 +20,14 @@ swiftc \
   -swift-version 5 \
   -parse-as-library \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/Localization.swift" \
+  "$ROOT_DIR/desktop/macos/AgentDockApp/Tests/LocalizationPreferenceTests.swift" \
+  -o "$TMP_ROOT/localization-preference-tests"
+"$TMP_ROOT/localization-preference-tests"
+
+swiftc \
+  -swift-version 5 \
+  -parse-as-library \
+  "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/Localization.swift" \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/InstallerConfiguration.swift" \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/AppVersion.swift" \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/DesktopUpdateResult.swift" \
