@@ -53,8 +53,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 				return err
 			}
 			return json.NewEncoder(stdout).Encode(result)
+		case len(args) == 2 && args[1] == "--progress-json":
+			// stdout 是稳定的机器事件流；人类可读日志单独走 stderr，桌面端无需解析文案。
+			return selfupdate.RunWithProgress(ctx, stderr, stdout)
 		default:
-			return errors.New("用法：agentdock update [--check]")
+			return errors.New("用法：agentdock update [--check|--progress-json]")
 		}
 	}
 	if len(args) > 0 && args[0] == "service" {

@@ -33,10 +33,14 @@ enum NexusConnectionState: Equatable {
 }
 
 struct DesktopUpdateCheck: Decodable {
+    let currentVersion: String?
+    let latestVersion: String?
     let updateAvailable: Bool
     let message: String
 
     private enum CodingKeys: String, CodingKey {
+        case currentVersion = "current_version"
+        case latestVersion = "latest_version"
         case updateAvailable = "update_available"
         case message
     }
@@ -314,7 +318,7 @@ final class ServiceController: @unchecked Sendable {
         }
     }
 
-    func update() async throws -> String {
+    func update(onProgress: @escaping (UpdateProgressEvent) -> Void) async throws -> String {
         try validateServiceManagementReadiness()
 
         let check = try await runInBackground {
@@ -331,6 +335,11 @@ final class ServiceController: @unchecked Sendable {
         guard check.updateAvailable else {
             // 没有 pending update result 时这只能是上一次未完成流程留下的临时状态。
             DesktopUpdateServiceState.remove(at: paths.updateServiceState)
+            onProgress(.local(
+                type: .completed,
+                currentVersion: check.currentVersion,
+                targetVersion: check.latestVersion
+            ))
             return check.message
         }
 
@@ -348,9 +357,10 @@ final class ServiceController: @unchecked Sendable {
             output = try await runInBackground {
                 let result = try runUpdateProcess(
                     executable: self.paths.binary.path,
-                    arguments: ["update"],
+                    arguments: ["update", "--progress-json"],
                     environment: ["AGENTDOCK_DESKTOP_APP_PATH": self.paths.appBundle.path],
-                    outputURL: self.paths.updateLog
+                    outputURL: self.paths.updateLog,
+                    onProgress: onProgress
                 )
                 guard result.status == 0 else {
                     throw ValidationError(self.commandError(result.output, action: L10n.text("Update")))

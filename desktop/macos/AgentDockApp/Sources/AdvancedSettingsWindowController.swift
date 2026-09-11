@@ -71,9 +71,18 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     private var initialACPCommand = ""
     private var initialACPArgsJSON = "[]"
     private var isBusy = false
+    private var isUpdateInProgress = false
     private var browserCDPRow: NSView?
     private var acpCommandRow: NSView?
     private var acpArgsRow: NSView?
+
+    private var controlsLocked: Bool {
+        isBusy || isUpdateInProgress
+    }
+
+    var hasActiveServiceOperation: Bool {
+        isBusy
+    }
 
     init(
         service: ServiceController,
@@ -146,6 +155,16 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func setUpdateInProgress(_ inProgress: Bool) {
+        isUpdateInProgress = inProgress
+        setBusy(isBusy)
+        if inProgress {
+            showStatus(L10n.text("Updating AgentDock…"), isError: false)
+        } else if statusLabel.stringValue == L10n.text("Updating AgentDock…") {
+            statusLabel.isHidden = true
+        }
     }
 
     private func configureUI() {
@@ -461,6 +480,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     }
 
     @objc private func languageChanged() {
+        guard !isUpdateInProgress else { return }
         let previous = L10n.languagePreference()
         let selected = selectedLanguagePreference()
         guard selected != previous else { return }
@@ -523,6 +543,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     }
 
     @objc private func applyPressed() {
+        guard !isUpdateInProgress else { return }
         guard let configuration = currentConfiguration else { return }
         let selectedAgent = selectedACPAgent()
         let sameAgent = selectedAgent == configuration.acpAgent
@@ -611,6 +632,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     @objc private func cancelPressed() { close() }
 
     @objc private func pairNexusPressed() {
+        guard !isUpdateInProgress else { return }
         let endpoint = nexusEndpoint.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let pairingCode = nexusPairingCode.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !endpoint.isEmpty, !pairingCode.isEmpty else {
@@ -687,9 +709,9 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
             configuredArguments: configuredArguments
         )
         let enabled = acpEnabled.state == .on
-        acpAgent.isEnabled = enabled && !isBusy
-        acpCommand.isEnabled = enabled && isCustom && !isBusy
-        acpArgsJSON.isEnabled = enabled && isCustom && !isBusy
+        acpAgent.isEnabled = enabled && !controlsLocked
+        acpCommand.isEnabled = enabled && isCustom && !controlsLocked
+        acpArgsJSON.isEnabled = enabled && isCustom && !controlsLocked
         if isCustom, (try? ACPDesktopConfiguration.decodeArguments(acpArgsJSON.stringValue)) == nil {
             acpStatus.stringValue = L10n.text("Args JSON must be a JSON string array.")
             acpStatus.textColor = enabled ? .systemRed : .secondaryLabelColor
@@ -711,7 +733,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         let mode = selectedBrowserConnectionMode()
         let configuredCDP = browserCDPURL.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         browserCDPRow?.isHidden = mode != .specifiedCDP
-        browserCDPURL.isEnabled = !isBusy && mode == .specifiedCDP
+        browserCDPURL.isEnabled = !controlsLocked && mode == .specifiedCDP
 
         switch mode {
         case .specifiedCDP:
@@ -750,7 +772,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     }
 
     private func refreshApplyState() {
-        guard !isBusy, currentConfiguration != nil else {
+        guard !controlsLocked, currentConfiguration != nil else {
             applyButton.isEnabled = false
             return
         }
@@ -777,15 +799,16 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
             || browserCDP != initialBrowserCDPURL
             || acpSettingsChanged
         applyButton.isEnabled = changed
-        nexusPairButton.isEnabled = !isBusy
+        nexusPairButton.isEnabled = !controlsLocked
             && !nexusEndpoint.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !nexusPairingCode.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func setBusy(_ busy: Bool) {
         isBusy = busy
+        let locked = controlsLocked
         for control in [languagePreference, serviceAutostart, menuAutostart, portField, logLevel, mcpAppsEnabled, browserEnabled, browserConnectionMode, browserCDPURL, acpEnabled, acpAgent, acpCommand, acpArgsJSON, nexusEndpoint, nexusPairingCode, nexusPairButton] {
-            control.isEnabled = !busy
+            control.isEnabled = !locked
         }
         refreshBrowserStatus()
         refreshACPStatus()

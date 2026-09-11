@@ -656,3 +656,55 @@ func mustOpen(t *testing.T, path string) *os.File {
 	t.Cleanup(func() { _ = file.Close() })
 	return file
 }
+
+func TestDownloadWithProgressReportsKnownLength(t *testing.T) {
+	payload := bytes.Repeat([]byte("agentdock"), 32*1024)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(payload)))
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+
+	var reports [][2]int64
+	data, err := downloadWithProgress(context.Background(), server.Client(), server.URL, int64(len(payload))+1, func(read, total int64) {
+		reports = append(reports, [2]int64{read, total})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, payload) {
+		t.Fatal("downloaded payload mismatch")
+	}
+	if len(reports) < 2 {
+		t.Fatalf("expected initial and final progress reports, got %v", reports)
+	}
+	last := reports[len(reports)-1]
+	if last[0] != int64(len(payload)) || last[1] != int64(len(payload)) {
+		t.Fatalf("unexpected final progress: %v", last)
+	}
+}
+
+func TestDownloadWithProgressSupportsUnknownLength(t *testing.T) {
+	payload := bytes.Repeat([]byte("x"), 96*1024)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+
+	var lastRead, lastTotal int64
+	data, err := downloadWithProgress(context.Background(), server.Client(), server.URL, int64(len(payload))+1, func(read, total int64) {
+		lastRead, lastTotal = read, total
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, payload) {
+		t.Fatal("downloaded payload mismatch")
+	}
+	if lastRead != int64(len(payload)) || lastTotal != -1 {
+		t.Fatalf("unexpected unknown-length progress: read=%d total=%d", lastRead, lastTotal)
+	}
+}
