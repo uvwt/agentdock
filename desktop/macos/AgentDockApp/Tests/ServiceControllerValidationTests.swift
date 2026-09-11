@@ -58,6 +58,7 @@ struct ServiceControllerValidationTests {
         }
 
         try testConfiguredTunnelMode(root: root, appBundle: appBundle)
+        try testLegacyRuntimeMigrationTransactions(root: root, appBundle: appBundle)
         testQuickTunnelBootstrap()
         testServiceRegistrationStatusClassification()
         try testNexusConnectionStateResolution(root: root)
@@ -86,6 +87,67 @@ struct ServiceControllerValidationTests {
             try Data("AGENTDOCK_TUNNEL_MODE='\(rawMode)'\n".utf8).write(to: paths.tunnelEnvironment)
             let configuredMode = try service.configuredTunnelMode()
             precondition(configuredMode == expected, rawMode)
+        }
+    }
+
+    private static func testLegacyRuntimeMigrationTransactions(root: URL, appBundle: URL) throws {
+        try verifyLegacyRuntimeMigration(root: root, appBundle: appBundle, shouldCommit: true)
+        try verifyLegacyRuntimeMigration(root: root, appBundle: appBundle, shouldCommit: false)
+    }
+
+    private static func verifyLegacyRuntimeMigration(
+        root: URL,
+        appBundle: URL,
+        shouldCommit: Bool
+    ) throws {
+        let name = shouldCommit ? "commit" : "rollback"
+        let home = root.appendingPathComponent("legacy-migration-\(name)", isDirectory: true)
+        let paths = AppPaths(home: home, appBundle: appBundle)
+        let launchAgents = home.appendingPathComponent("Library/LaunchAgents", isDirectory: true)
+        let localBin = home.appendingPathComponent(".local/bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: launchAgents, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: localBin, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: paths.stateDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: paths.workDirectory, withIntermediateDirectories: true)
+
+        let legacyBinary = localBin.appendingPathComponent("agentdock")
+        let legacyPlist = launchAgents.appendingPathComponent("com.uvwt.agentdock.plist")
+        let stateMarker = paths.stateDirectory.appendingPathComponent("preserve.txt")
+        let workspaceMarker = paths.workDirectory.appendingPathComponent("preserve.txt")
+        try Data("legacy-binary".utf8).write(to: legacyBinary)
+        try Data("legacy-plist".utf8).write(to: legacyPlist)
+        try Data("state".utf8).write(to: stateMarker)
+        try Data("workspace".utf8).write(to: workspaceMarker)
+
+        let migration = LegacyDesktopRuntimeMigration(paths: paths)
+        guard let transaction = try migration.begin() else {
+            preconditionFailure("legacy migration was not detected")
+        }
+        precondition(!FileManager.default.fileExists(atPath: legacyBinary.path))
+        precondition(!FileManager.default.fileExists(atPath: legacyPlist.path))
+
+        if shouldCommit {
+            try transaction.commit()
+            precondition(!FileManager.default.fileExists(atPath: legacyBinary.path))
+            precondition(!FileManager.default.fileExists(atPath: legacyPlist.path))
+        } else {
+            try transaction.rollback()
+            let restoredBinary = try Data(contentsOf: legacyBinary)
+            let restoredPlist = try Data(contentsOf: legacyPlist)
+            precondition(restoredBinary == Data("legacy-binary".utf8))
+            precondition(restoredPlist == Data("legacy-plist".utf8))
+        }
+
+        let preservedState = try Data(contentsOf: stateMarker)
+        let preservedWorkspace = try Data(contentsOf: workspaceMarker)
+        precondition(preservedState == Data("state".utf8))
+        precondition(preservedWorkspace == Data("workspace".utf8))
+        if FileManager.default.fileExists(atPath: paths.appSupport.path) {
+            let leftovers = try FileManager.default.contentsOfDirectory(
+                at: paths.appSupport,
+                includingPropertiesForKeys: nil
+            ).filter { $0.lastPathComponent.hasPrefix(".legacy-runtime-migration-") }
+            precondition(leftovers.isEmpty, "legacy migration backup was not cleaned")
         }
     }
 

@@ -293,6 +293,48 @@ Update now?</value>
   <data name="UpdateCompleted" xml:space="preserve">
     <value>Update completed.</value>
   </data>
+  <data name="UpdateFailed" xml:space="preserve">
+    <value>Update failed.</value>
+  </data>
+  <data name="UpdateRolledBack" xml:space="preserve">
+    <value>The update could not be committed and AgentDock was restored to the previous version.</value>
+  </data>
+  <data name="UpdateTransactionResultTimeout" xml:space="preserve">
+    <value>The update did not report a final result. Reopen AgentDock or run repair if the problem persists.</value>
+  </data>
+  <data name="UpdateStageRollingBack" xml:space="preserve">
+    <value>Restoring the previous version…</value>
+  </data>
+  <data name="PleaseWaitUpdating" xml:space="preserve">
+    <value>Updating AgentDock…</value>
+  </data>
+  <data name="UpdateStageChecking" xml:space="preserve">
+    <value>Checking for updates…</value>
+  </data>
+  <data name="UpdateStageDownloading" xml:space="preserve">
+    <value>Downloading update…</value>
+  </data>
+  <data name="UpdateStageVerifying" xml:space="preserve">
+    <value>Verifying update package…</value>
+  </data>
+  <data name="UpdateStageExtracting" xml:space="preserve">
+    <value>Preparing update package…</value>
+  </data>
+  <data name="UpdateStageInstalling" xml:space="preserve">
+    <value>Installing the new version…</value>
+  </data>
+  <data name="UpdateStageUpdatingSkills" xml:space="preserve">
+    <value>Updating built-in Skills…</value>
+  </data>
+  <data name="UpdateStageRestarting" xml:space="preserve">
+    <value>Starting and verifying the new version…</value>
+  </data>
+  <data name="UpdateDownloadingProgress" xml:space="preserve">
+    <value>Downloading update… {0} / {1}</value>
+  </data>
+  <data name="UpdateDownloadingUnknownSize" xml:space="preserve">
+    <value>Downloading update… {0}</value>
+  </data>
   <data name="UpdateCheckFailed" xml:space="preserve">
     <value>Failed to check for updates.</value>
   </data>

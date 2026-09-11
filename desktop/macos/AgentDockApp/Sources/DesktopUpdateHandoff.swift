@@ -5,16 +5,30 @@ struct DesktopUpdateHandoff: Codable {
     static let schemaVersion = 1
 
     let schemaVersion: Int
+    let transactionID: String?
     let targetVersion: String
+    let coreRegistration: String?
+    let tunnelRegistration: String?
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
+        case transactionID = "transaction_id"
         case targetVersion = "target_version"
+        case coreRegistration = "core_registration"
+        case tunnelRegistration = "tunnel_registration"
     }
 
-    init(targetVersion: String) {
+    init(
+        targetVersion: String,
+        transactionID: String? = nil,
+        coreRegistration: String? = nil,
+        tunnelRegistration: String? = nil
+    ) {
         schemaVersion = Self.schemaVersion
+        self.transactionID = transactionID
         self.targetVersion = targetVersion
+        self.coreRegistration = coreRegistration
+        self.tunnelRegistration = tunnelRegistration
     }
 
     func write(to path: URL) throws {

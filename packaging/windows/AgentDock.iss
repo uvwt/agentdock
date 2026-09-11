@@ -78,10 +78,14 @@ Source: "assets\agentdock.ico"; DestDir: "{app}\installer"; Flags: ignoreversion
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\bin"
+Type: filesandordirs; Name: "{app}\versions"
+Type: filesandordirs; Name: "{app}\update"
+Type: files; Name: "{app}\active-version.json"
+Type: files; Name: "{app}\desktop-version.txt"
 Type: files; Name: "{userdesktop}\{code:GetLocalizedMessage|DesktopShortcutName}.lnk"
 
 [Icons]
-Name: "{group}\AgentDock"; Filename: "{app}\bin\agentdock-tray.exe"; WorkingDir: "{app}"; AppUserModelID: "com.uvwt.agentdock.controlpanel"
+Name: "{group}\AgentDock"; Filename: "{app}\bin\agentdock-tray.exe"; WorkingDir: "{app}"; IconFilename: "{app}\installer\agentdock.ico"; AppUserModelID: "com.uvwt.agentdock.controlpanel"
 Name: "{group}\{code:GetLocalizedMessage|DocsShortcut}"; Filename: "https://uvwt.github.io/agentdock-docs/"
 Name: "{group}\{code:GetLocalizedMessage|UninstallShortcut}"; Filename: "{uninstallexe}"
 

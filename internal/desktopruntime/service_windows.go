@@ -21,7 +21,8 @@ func platformServiceStatus(ctx context.Context, runtimeRoot string) (ServiceStat
 	if err != nil {
 		return ServiceStatus{}, err
 	}
-	running, err := processRunningAtPath(manifest.AgentDockBinary)
+	coreBinary := ActiveCoreBinary(runtimeRoot, manifest)
+	running, err := processRunningAtPath(coreBinary)
 	if err != nil {
 		return ServiceStatus{}, err
 	}
@@ -81,8 +82,16 @@ func startCore(ctx context.Context, manifest Manifest, runtimeRoot string) error
 }
 
 func stopCore(ctx context.Context, manifest Manifest, runtimeRoot string) error {
+	coreBinary := ActiveCoreBinary(runtimeRoot, manifest)
 	excluded := map[uint32]struct{}{}
-	supervisorPID, err := activeTunnelSupervisorPID(runtimeRoot, manifest.AgentDockBinary)
+	ancestorPIDs, err := ancestorProcessIDsAtPath(coreBinary)
+	if err != nil {
+		return fmt.Errorf("识别 AgentDock Core 调用链失败: %w", err)
+	}
+	for processID := range ancestorPIDs {
+		excluded[processID] = struct{}{}
+	}
+	supervisorPID, err := activeTunnelSupervisorPID(runtimeRoot, coreBinary)
 	if err != nil {
 		return fmt.Errorf("识别 Tunnel supervisor 失败: %w", err)
 	}
@@ -95,7 +104,7 @@ func stopCore(ctx context.Context, manifest Manifest, runtimeRoot string) error 
 	if manifest.UsesScheduledTask() {
 		// 先让任务计划程序正常结束最高权限进程，避免普通托盘立即申请 PROCESS_TERMINATE。
 		_ = runScheduledTaskCommand(ctx, "/End", "/TN", scheduledTaskPath(manifest.AgentDockTaskName))
-		stopped, waitErr := waitBinaryStoppedExcept(ctx, manifest.AgentDockBinary, excluded, 5*time.Second)
+		stopped, waitErr := waitBinaryStoppedExcept(ctx, coreBinary, excluded, 5*time.Second)
 		if waitErr != nil {
 			return waitErr
 		}
@@ -103,17 +112,18 @@ func stopCore(ctx context.Context, manifest Manifest, runtimeRoot string) error 
 			return nil
 		}
 	}
-	if err := stopBinaryProcessesExcept(ctx, manifest.AgentDockBinary, excluded, 15*time.Second); err != nil {
+	if err := stopBinaryProcessesExcept(ctx, coreBinary, excluded, 15*time.Second); err != nil {
 		return fmt.Errorf("停止 AgentDock 核心失败: %w", err)
 	}
 	return nil
 }
 
 func startDetachedCore(manifest Manifest, runtimeRoot string) error {
-	if info, err := os.Stat(manifest.AgentDockBinary); err != nil || info.IsDir() {
-		return fmt.Errorf("找不到 AgentDock 核心程序: %s", manifest.AgentDockBinary)
+	coreBinary := ActiveCoreBinary(runtimeRoot, manifest)
+	if info, err := os.Stat(coreBinary); err != nil || info.IsDir() {
+		return fmt.Errorf("找不到 AgentDock 核心程序: %s", coreBinary)
 	}
-	command := exec.Command(manifest.AgentDockBinary, "service", "launch-core", "--runtime-root", runtimeRoot)
+	command := exec.Command(coreBinary, "service", "launch-core", "--runtime-root", runtimeRoot)
 	// launch-core 会自行把运行日志写入受限轮转文件；父进程不再持有同一路径的追加句柄。
 	command.Dir = defaultWindowsWorkDir()
 	command.SysProcAttr = &syscall.SysProcAttr{

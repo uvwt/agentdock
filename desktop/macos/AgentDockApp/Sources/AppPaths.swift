@@ -23,6 +23,8 @@ struct AppPaths {
     var updateResult: URL { appSupport.appendingPathComponent("update-result.json") }
     var updateServiceState: URL { appSupport.appendingPathComponent("update-services.json") }
     var updateHandoff: URL { appSupport.appendingPathComponent("update-handoff.json") }
+    var updateTransaction: URL { appSupport.appendingPathComponent("update/transaction.json") }
+    var updateTerminalResult: URL { appSupport.appendingPathComponent("update/result.json") }
     var updateLog: URL { appSupport.appendingPathComponent("update.log") }
     var logs: URL { home.appendingPathComponent("Library/Logs/AgentDock") }
     var workDirectory: URL { home.appendingPathComponent("AgentDock") }

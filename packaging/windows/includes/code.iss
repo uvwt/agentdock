@@ -358,7 +358,7 @@ begin
     ExpandConstant('{app}\bin\agentdock-tray.exe'),
     '',
     ExpandConstant('{app}'),
-    ExpandConstant('{app}\bin\agentdock-tray.exe'),
+    ExpandConstant('{app}\installer\agentdock.ico'),
     0,
     SW_SHOWNORMAL
   );
@@ -469,6 +469,11 @@ begin
       ' -InstallChannel setup' +
       ' -CorePrivilegeMode ' + PrivilegeMode +
       ' -ResultFile ' + QuoteArgument(ResultFilePath);
+
+    { PORT is intentionally a silent-setup override. The interactive installer keeps the product
+      default, while isolated E2E environments can avoid colliding with an already running AgentDock. }
+    if Trim(ExpandConstant('{param:PORT|}')) <> '' then
+      Parameters := Parameters + ' -Port ' + QuoteArgument(Trim(ExpandConstant('{param:PORT|}')));
 
     if StartupPage.Values[0] or (TunnelMode <> 'none') then
       Parameters := Parameters + ' -RegisterStartup';

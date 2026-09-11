@@ -970,7 +970,12 @@ switch ($Action) {
         }
         Stop-ScheduledTask -TaskName $TaskName -TaskPath '\' -ErrorAction SilentlyContinue
         Start-Sleep -Milliseconds 500
-        Stop-ProcessesAtPath -ProcessName 'agentdock' -BinaryPath $AgentDockBinary
+        # generation 布局下 agentdock_binary 是稳定 CUI shim，本身不是常驻 Core。
+        # 必须交给原生生命周期命令解析 active-version.json 后停止真实 generation。
+        & $AgentDockBinary service stop --runtime-root $RuntimeRoot
+        if ($LASTEXITCODE -ne 0) {
+            throw "AgentDock Core stop failed after ending the scheduled task: $LASTEXITCODE"
+        }
         exit 0
     }
     'start' {

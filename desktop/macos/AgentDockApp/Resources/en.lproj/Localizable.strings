@@ -306,6 +306,13 @@
 "Failed to start the new configuration; restored the previous configuration: %@" = "Failed to start the new configuration; restored the previous configuration: %@";
 "Unable to atomically replace AgentDock configuration: %@" = "Unable to atomically replace AgentDock configuration: %@";
 "AgentDock Core background registration was restored, but automatic restart still failed the health check: %@" = "AgentDock Core background registration was restored, but automatic restart still failed the health check: %@";
+"%@ background registration did not become available after the update." = "%@ background registration did not become available after the update.";
+"%@ background registration returned an unknown state after the update." = "%@ background registration returned an unknown state after the update.";
+"AgentDock Core needs background-item approval in System Settings." = "AgentDock Core needs background-item approval in System Settings.";
+"AgentDock Tunnel needs background-item approval in System Settings." = "AgentDock Tunnel needs background-item approval in System Settings.";
+"The active AgentDock App version %@ does not match the update target %@." = "The active AgentDock App version %@ does not match the update target %@.";
+"AgentDock update transaction did not report a final result. Recovery state was preserved." = "AgentDock update transaction did not report a final result. Recovery state was preserved.";
+"AgentDock update transaction final result did not match the pending update. Recovery state was preserved." = "AgentDock update transaction final result did not match the pending update. Recovery state was preserved.";
 "The update was not applied, and restoring background services also failed: %@; %@" = "The update was not applied, and restoring background services also failed: %@; %@";
 "The update process returned, but restoring background services failed: %@" = "The update process returned, but restoring background services failed: %@";
 "%@ is registered, but you need to allow it to run in the background in System Settings → General → Login Items & Extensions." = "%@ is registered, but you need to allow it to run in the background in System Settings → General → Login Items & Extensions.";
