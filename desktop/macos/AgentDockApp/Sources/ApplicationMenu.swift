@@ -2,11 +2,15 @@ import AppKit
 
 @MainActor
 enum ApplicationMenu {
+    private static var quitMenuItem: NSMenuItem?
+
     static func install() {
         let mainMenu = NSMenu(title: "AgentDock")
 
         let applicationMenuItem = NSMenuItem()
         let applicationMenu = NSMenu(title: "AgentDock")
+        // Quit 在更新事务期间需要保持显式禁用，避免 AppKit 自动校验重新启用它。
+        applicationMenu.autoenablesItems = false
         applicationMenu.addItem(
             item(
                 title: L10n.text("About AgentDock"),
@@ -15,13 +19,13 @@ enum ApplicationMenu {
             )
         )
         applicationMenu.addItem(.separator())
-        applicationMenu.addItem(
-            item(
-                title: L10n.text("Quit AgentDock"),
-                action: #selector(NSApplication.terminate(_:)),
-                keyEquivalent: "q"
-            )
+        let quitItem = item(
+            title: L10n.text("Quit AgentDock"),
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q"
         )
+        quitMenuItem = quitItem
+        applicationMenu.addItem(quitItem)
         applicationMenuItem.submenu = applicationMenu
         mainMenu.addItem(applicationMenuItem)
 
@@ -45,6 +49,10 @@ enum ApplicationMenu {
         mainMenu.addItem(editMenuItem)
 
         NSApp.mainMenu = mainMenu
+    }
+
+    static func setQuitEnabled(_ enabled: Bool) {
+        quitMenuItem?.isEnabled = enabled
     }
 
     private static func item(

@@ -111,17 +111,20 @@ func applyPlatformUpdate(ctx context.Context, request applyRequest) (applyResult
 
 	if desktopUpdate != nil {
 		fmt.Fprintln(request.Output, "正在更新 macOS 控制面板...")
+		reportUpdateStage(request.Progress, UpdateStageInstalling, request.CurrentVersion, request.TargetVersion, "")
 		if err := desktopUpdate.Install(ctx); err != nil {
 			return applyResult{}, rollback(fmt.Errorf("安装 macOS 控制面板失败: %w", err))
 		}
 	}
 
 	fmt.Fprintln(request.Output, "正在更新官方核心 Skill...")
+	reportUpdateStage(request.Progress, UpdateStageUpdatingSkill, request.CurrentVersion, request.TargetVersion, "")
 	if err := bootstrapBundledSkills(ctx, request.CurrentPath, request.BundlePath, request.Output); err != nil {
 		return applyResult{}, rollback(err)
 	}
 
 	if desktopUpdate != nil {
+		reportUpdateStage(request.Progress, UpdateStageRestarting, request.CurrentVersion, request.TargetVersion, "")
 		outcome := desktopUpdateOutcome{
 			OK:             true,
 			CurrentVersion: request.CurrentVersion,
@@ -176,6 +179,7 @@ func applyDesktopOnlyUpdate(ctx context.Context, request applyRequest) (applyRes
 	}
 
 	fmt.Fprintln(request.Output, "正在替换 AgentDock.app...")
+	reportUpdateStage(request.Progress, UpdateStageInstalling, request.CurrentVersion, request.TargetVersion, "")
 	if err := desktopUpdate.Install(ctx); err != nil {
 		return applyResult{}, rollback(err)
 	}
@@ -183,6 +187,7 @@ func applyDesktopOnlyUpdate(ctx context.Context, request applyRequest) (applyRes
 	installedCore := filepath.Join(request.DesktopTargetPath, "Contents", "Helpers", "agentdock")
 	installedSkills := filepath.Join(request.DesktopTargetPath, "Contents", "Resources", "core-skills")
 	fmt.Fprintln(request.Output, "正在更新官方核心 Skill...")
+	reportUpdateStage(request.Progress, UpdateStageUpdatingSkill, request.CurrentVersion, request.TargetVersion, "")
 	if err := bootstrapBundledSkills(ctx, installedCore, installedSkills, request.Output); err != nil {
 		return applyResult{}, rollback(err)
 	}
@@ -193,6 +198,7 @@ func applyDesktopOnlyUpdate(ctx context.Context, request applyRequest) (applyRes
 		TargetVersion:  request.TargetVersion,
 		Message:        fmt.Sprintf("AgentDock 已从 %s 更新到 %s。", request.CurrentVersion, request.TargetVersion),
 	}
+	reportUpdateStage(request.Progress, UpdateStageRestarting, request.CurrentVersion, request.TargetVersion, "")
 	if err := desktopUpdate.Finish(ctx, outcome); err != nil {
 		return applyResult{}, rollback(fmt.Errorf("新版 AgentDock.app 未完成更新接管: %w", err))
 	}

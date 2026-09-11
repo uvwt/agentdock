@@ -62,6 +62,8 @@ struct ServiceControllerValidationTests {
         testServiceRegistrationStatusClassification()
         try testNexusConnectionStateResolution(root: root)
         try testDesktopUpdateCheckDecoding()
+        try testUpdateProgressEventDecoding()
+        try testStreamingUpdateProcess(root: root)
 
         print("service controller validation tests passed")
     }
@@ -138,10 +140,12 @@ struct ServiceControllerValidationTests {
 
     private static func testDesktopUpdateCheckDecoding() throws {
         let current = try DesktopUpdateCheck.decode(
-            #"{"update_available":false,"message":"当前已是最新版本：v0.7.2"}"#
+            #"{"current_version":"v0.7.2","latest_version":"v0.7.2","update_available":false,"message":"当前已是最新版本：v0.7.2"}"#
         )
         precondition(!current.updateAvailable)
         precondition(current.message.contains("最新版本"))
+        precondition(current.currentVersion == "v0.7.2")
+        precondition(current.latestVersion == "v0.7.2")
 
         let available = try DesktopUpdateCheck.decode(
             #"{"update_available":true,"message":"发现 AgentDock App 更新"}"#
@@ -151,6 +155,40 @@ struct ServiceControllerValidationTests {
         expectFailure(L10n.text("Unable to parse the AgentDock update check result.")) {
             _ = try DesktopUpdateCheck.decode("not-json")
         }
+    }
+
+    private static func testUpdateProgressEventDecoding() throws {
+        let progress = try JSONDecoder().decode(
+            UpdateProgressEvent.self,
+            from: Data(#"{"schema_version":1,"type":"progress","stage":"downloading","current_version":"v0.8.3","target_version":"v0.9.0","bytes":1024,"total_bytes":4096}"#.utf8)
+        )
+        precondition(progress.schemaVersion == 1)
+        precondition(progress.type == .progress)
+        precondition(progress.stage == .downloading)
+        precondition(progress.currentVersion == "v0.8.3")
+        precondition(progress.targetVersion == "v0.9.0")
+        precondition(progress.bytes == 1024)
+        precondition(progress.totalBytes == 4096)
+    }
+
+    private static func testStreamingUpdateProcess(root: URL) throws {
+        let logURL = root.appendingPathComponent("streaming-update.log")
+        var events: [UpdateProgressEvent] = []
+        let result = try runUpdateProcess(
+            executable: "/bin/sh",
+            arguments: [
+                "-c",
+                #"printf '%s\n' '{"schema_version":1,"type":"stage","stage":"verifying","current_version":"v0.8.3","target_version":"v0.9.0"}'; printf '%s\n' 'human update log' >&2"#,
+            ],
+            environment: [:],
+            outputURL: logURL,
+            onProgress: { events.append($0) }
+        )
+        precondition(result.status == 0)
+        precondition(events.count == 1)
+        precondition(events[0].stage == .verifying)
+        precondition(result.output.contains("human update log"))
+        precondition(!result.output.contains("schema_version"))
     }
 
     private static func expectFailure(_ expected: String, operation: () throws -> Void) {

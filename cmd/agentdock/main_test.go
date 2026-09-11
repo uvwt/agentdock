@@ -42,7 +42,7 @@ func TestRunPrintsMachineReadableBuildInfo(t *testing.T) {
 
 func TestRunRejectsUnexpectedUpdateArguments(t *testing.T) {
 	err := run(context.Background(), []string{"update", "--check", "extra"}, &bytes.Buffer{}, &bytes.Buffer{})
-	if err == nil || !strings.Contains(err.Error(), "agentdock update [--check]") {
+	if err == nil || !strings.Contains(err.Error(), "agentdock update [--check|--progress-json]") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

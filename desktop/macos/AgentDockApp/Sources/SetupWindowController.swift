@@ -14,6 +14,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private let service: ServiceController
     private let menuLoginAgent: MenuLoginAgentController
     private let onChanged: () -> Void
+    private let onUpdateRequested: () -> Void
 
     private let titleLabel = NSTextField(labelWithString: "AgentDock")
     private let subtitleLabel = NSTextField(labelWithString: L10n.text("Local MCP service and public access management"))
@@ -63,31 +64,38 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private var authVisible = false
     private var oauthVisible = false
     private var isBusy = false
+    private var isUpdateInProgress = false
     private var quickTunnelRefreshState: QuickTunnelRefreshState = .idle
 
     private var migrationRequired: Bool {
         currentStatus.migrationRequired
+    }
+
+    private var controlsLocked: Bool {
+        isBusy || isUpdateInProgress
+    }
+
+    var hasActiveServiceOperation: Bool {
+        isBusy || (advancedSettings?.hasActiveServiceOperation ?? false)
     }
     private var displayedPublicMCPURL: URL?
     private var lastCheckedPublicMCPURL: URL?
     private var activePublicCheckURL: URL?
     private var publicCheckTask: Task<Void, Never>?
 
-    private lazy var advancedSettings = AdvancedSettingsWindowController(
-        service: service,
-        menuLoginAgent: menuLoginAgent,
-        onChanged: onChanged
-    )
+    private var advancedSettings: AdvancedSettingsWindowController?
     private lazy var permissionsWindow = DesktopPermissionsWindowController()
 
     init(
         service: ServiceController,
         menuLoginAgent: MenuLoginAgentController,
-        onChanged: @escaping () -> Void
+        onChanged: @escaping () -> Void,
+        onUpdateRequested: @escaping () -> Void
     ) {
         self.service = service
         self.menuLoginAgent = menuLoginAgent
         self.onChanged = onChanged
+        self.onUpdateRequested = onUpdateRequested
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 700, height: 590),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -127,7 +135,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             titleLabel.stringValue = "AgentDock"
             subtitleLabel.stringValue = L10n.text("Local MCP service and public access management")
             applyButton.title = L10n.text("Apply changes")
-            advancedButton.isEnabled = true
+            advancedButton.isEnabled = !controlsLocked
             logsButton.isEnabled = true
             serviceSection.isHidden = false
             updateServiceSection(status)
@@ -150,6 +158,17 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         refreshCredentialFields()
         refreshChangeState()
         updateWindowHeight()
+    }
+
+    func setUpdateInProgress(_ inProgress: Bool) {
+        isUpdateInProgress = inProgress
+        setBusy(isBusy)
+        advancedSettings?.setUpdateInProgress(inProgress)
+        if inProgress {
+            showStatus(L10n.text("Updating AgentDock…"), isError: false)
+        } else if statusLabel.stringValue == L10n.text("Updating AgentDock…") {
+            statusLabel.isHidden = true
+        }
     }
 
     func refreshServiceStatus(_ status: ServiceStatus) {
@@ -385,7 +404,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         startStopButton.title = migrationRequired
             ? L10n.text("Waiting for migration")
             : (status.requiresApproval ? L10n.text("Open background settings") : (status.loaded ? L10n.text("Stop service") : L10n.text("Start service")))
-        if !isBusy {
+        if !controlsLocked {
             startStopButton.isEnabled = status.installed && !migrationRequired
             restartButton.isEnabled = status.installed && !status.requiresApproval && !migrationRequired
             updateButton.isEnabled = status.installed && !migrationRequired
@@ -527,7 +546,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         let hasAddress = quickTunnelRefreshState == .idle && displayedPublicMCPURL != nil
         publicCopyButton.isEnabled = hasAddress
         publicTestButton.title = activePublicCheckURL == nil ? L10n.text("Test") : L10n.text("Checking")
-        publicTestButton.isEnabled = hasAddress && activePublicCheckURL == nil && !isBusy
+        publicTestButton.isEnabled = hasAddress && activePublicCheckURL == nil && !controlsLocked
     }
 
     private func selectCurrentMode(configuration: ServiceConfiguration?) {
@@ -586,6 +605,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     @objc private func configurationEdited() { refreshChangeState() }
 
     @objc private func applyPressed() {
+        guard !isUpdateInProgress else { return }
         let request = InstallRequest(
             mode: selectedMode,
             serverURL: serverURLField.stringValue,
@@ -652,6 +672,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func startStopPressed() {
+        guard !isUpdateInProgress else { return }
         if currentStatus.requiresApproval {
             service.openBackgroundItemsSettings()
             return
@@ -673,19 +694,8 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func updatePressed() {
-        setBusy(true)
-        showStatus(L10n.text("Checking for and installing updates…"), isError: false)
-        Task {
-            do {
-                let output = try await service.update()
-                setBusy(false)
-                showStatus(output.isEmpty ? L10n.text("Update completed.") : output, isError: false)
-                onChanged()
-            } catch {
-                setBusy(false)
-                showStatus(error.localizedDescription, isError: true)
-            }
-        }
+        guard !isUpdateInProgress else { return }
+        onUpdateRequested()
     }
 
     private func performServiceAction(
@@ -693,6 +703,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         completed: String,
         operation: @escaping () async throws -> Void
     ) {
+        guard !isUpdateInProgress else { return }
         setBusy(true)
         showStatus(inProgress, isError: false)
         Task {
@@ -709,7 +720,17 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func openPermissionsPressed() { permissionsWindow.present() }
-    @objc private func openAdvancedPressed() { advancedSettings.present(status: currentStatus) }
+    @objc private func openAdvancedPressed() {
+        guard !isUpdateInProgress else { return }
+        if advancedSettings == nil {
+            advancedSettings = AdvancedSettingsWindowController(
+                service: service,
+                menuLoginAgent: menuLoginAgent,
+                onChanged: onChanged
+            )
+        }
+        advancedSettings?.present(status: currentStatus)
+    }
     @objc private func openLogsPressed() { service.openLogs() }
 
     @objc private func testPublicAddressPressed() {
@@ -760,13 +781,13 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private func refreshChangeState() {
         guard currentStatus.installed else {
             applyButton.title = L10n.text("Configure and enable")
-            applyButton.isEnabled = !isBusy
+            applyButton.isEnabled = !controlsLocked
             return
         }
 
         if migrationRequired {
             applyButton.title = L10n.text("Migrate and enable")
-            applyButton.isEnabled = !isBusy
+            applyButton.isEnabled = !controlsLocked
             return
         }
 
@@ -780,19 +801,21 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             || selectedMode != initialMode
             || serverChanged
             || !tunnelTokenField.stringValue.isEmpty
-        applyButton.isEnabled = changed && !isBusy
+        applyButton.isEnabled = changed && !controlsLocked
     }
 
     private func setBusy(_ busy: Bool) {
         isBusy = busy
+        let locked = controlsLocked
         for control in [publicMode, serverURLField, tunnelTokenField, startStopButton, restartButton, updateButton, advancedButton] {
-            control.isEnabled = !busy && (control !== advancedButton || currentStatus.installed)
+            control.isEnabled = !locked && (control !== advancedButton || currentStatus.installed)
         }
-        if !busy && migrationRequired {
+        if !locked && migrationRequired {
             startStopButton.isEnabled = false
             restartButton.isEnabled = false
             updateButton.isEnabled = false
         }
+        // 查看日志在更新期间仍然安全，保留给用户排查长时间操作。
         logsButton.isEnabled = !busy && currentStatus.installed
         if busy {
             applyButton.isEnabled = false

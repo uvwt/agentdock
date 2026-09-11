@@ -9,24 +9,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private var currentStatus = ServiceStatus.missing
     private var timer: Timer?
+    private var isUpdating = false
+    private var trayServiceActionInProgress = false
+    private lazy var updateProgressWindow = UpdateProgressWindowController()
     private lazy var setupWindow = SetupWindowController(
         service: service,
-        menuLoginAgent: menuLoginAgent
-    ) { [weak self] in
-        self?.refreshStatus()
-    }
+        menuLoginAgent: menuLoginAgent,
+        onChanged: { [weak self] in
+            self?.refreshStatus()
+        },
+        onUpdateRequested: { [weak self] in
+            self?.startUpdate()
+        }
+    )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let pendingUpdateResult = DesktopUpdateResult.load(from: service.paths.updateResult)
         let updateResultExists = FileManager.default.fileExists(atPath: service.paths.updateResult.path)
         configureStatusItem()
         if let pendingUpdateResult {
+            setUpdateInProgress(true)
+            updateProgressWindow.presentFinishing(
+                currentVersion: pendingUpdateResult.currentVersion,
+                targetVersion: pendingUpdateResult.targetVersion
+            )
             restoreBackgroundServicesAfterUpdate(pendingUpdateResult)
         } else if updateResultExists {
             // 结果文件存在但无法解析时，外部更新事务仍可能在等待新版 App ACK。
             // 保留 update-services.json，让外部更新器按超时路径恢复旧 App。
             NSLog("AgentDock 更新结果存在但无法解析，保留后台服务事务状态等待回滚。")
-            refreshStatus(showWindow: !launchedInBackground)
+            setUpdateInProgress(true)
+            updateProgressWindow.presentFinishing(
+                currentVersion: AppVersion.current,
+                targetVersion: AppVersion.current
+            )
+            refreshStatus()
         } else {
             // 没有 pending result 时，更新协调文件只能是上一次已结束流程留下的临时状态。
             configureMenuLoginAgentIfNeeded()
@@ -51,6 +68,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         timer?.invalidate()
+    }
+
+    private func setUpdateInProgress(_ inProgress: Bool) {
+        isUpdating = inProgress
+        ApplicationMenu.setQuitEnabled(!inProgress)
+        setupWindow.setUpdateInProgress(inProgress)
+        rebuildMenu()
     }
 
     private func restoreBackgroundServicesAfterUpdate(_ pendingResult: DesktopUpdateResult) {
@@ -107,13 +131,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             error.localizedDescription
                         )
                     )
-                } else if !pendingResult.ok {
-                    self.presentAlert(
-                        title: L10n.text("AgentDock recovery failed"),
-                        message: error.localizedDescription,
-                        style: .warning
-                    )
+                    return
                 }
+                if !pendingResult.ok {
+                    // 回滚结果不要求 handoff，外部 updater 此时不会再接管旧 App。
+                    // 必须在这里释放 Updating 锁，同时保留 result/service-state 供下次启动继续恢复。
+                    self.presentUpdateResult(
+                        pendingResult,
+                        warning: L10n.format(
+                            "The update process returned, but restoring background services failed: %@",
+                            error.localizedDescription
+                        )
+                    )
+                    return
+                }
+                // 新版 App 尚未发出 handoff 时保持锁定；外部 updater 会按超时路径回滚。
                 self.refreshStatus()
             }
         }
@@ -176,12 +208,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if isUpdating {
+            updateProgressWindow.present()
+            return true
+        }
         setupWindow.present(status: currentStatus)
         return true
     }
 
     private func rebuildMenu() {
         let menu = NSMenu()
+        if isUpdating {
+            let statusMenuItem = NSMenuItem(
+                title: L10n.format("AgentDock: %@", L10n.text("Updating…")),
+                action: nil,
+                keyEquivalent: ""
+            )
+            statusMenuItem.isEnabled = false
+            menu.addItem(statusMenuItem)
+            menu.addItem(.separator())
+            menu.addItem(item(L10n.text("Show update progress"), #selector(showUpdateProgress)))
+            if currentStatus.installed {
+                menu.addItem(item(L10n.text("Open logs folder"), #selector(openLogs)))
+            }
+            statusItem.menu = menu
+            return
+        }
+
         let statusText: String
         if !currentStatus.installed {
             statusText = L10n.text("Not installed")
@@ -238,6 +291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showSetup() { setupWindow.present(status: currentStatus) }
+    @objc private func showUpdateProgress() { updateProgressWindow.present() }
     @objc private func openPermissions() { setupWindow.presentPermissions() }
     @objc private func openLogs() { service.openLogs() }
     @objc private func openConfiguration() { service.openConfiguration() }
@@ -254,32 +308,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func restartService() { performServiceAction(L10n.text("Restart")) { try await self.service.restart() } }
 
     @objc private func updateService() {
+        startUpdate()
+    }
+
+    private func startUpdate() {
+        guard !isUpdating else {
+            updateProgressWindow.present()
+            return
+        }
+        guard !trayServiceActionInProgress, !setupWindow.hasActiveServiceOperation else {
+            presentAlert(
+                title: L10n.text("AgentDock is busy"),
+                message: L10n.text("Wait for the current AgentDock operation to finish before starting an update.")
+            )
+            return
+        }
+        setUpdateInProgress(true)
+        updateProgressWindow.presentChecking()
         Task {
             do {
-                let output = try await service.update()
+                _ = try await service.update { [weak self] event in
+                    Task { @MainActor in
+                        self?.updateProgressWindow.apply(event)
+                    }
+                }
                 await MainActor.run {
-                    self.presentAlert(
-                        title: L10n.text("AgentDock update completed"),
-                        message: output.isEmpty ? L10n.text("Update completed.") : output
-                    )
+                    self.setUpdateInProgress(false)
                     self.refreshStatus()
                 }
             } catch {
                 await MainActor.run {
-                    self.presentAlert(title: L10n.text("Update failed"), message: error.localizedDescription, style: .warning)
+                    self.setUpdateInProgress(false)
+                    self.updateProgressWindow.showFailure(error.localizedDescription)
+                    self.refreshStatus()
                 }
             }
         }
     }
 
     private func performServiceAction(_ action: String, operation: @escaping () async throws -> Void) {
+        guard !isUpdating else {
+            updateProgressWindow.present()
+            return
+        }
+        guard !trayServiceActionInProgress else { return }
+        trayServiceActionInProgress = true
         Task {
             do {
                 try await operation()
                 try? await Task.sleep(nanoseconds: 800_000_000)
-                await MainActor.run { self.refreshStatus() }
+                await MainActor.run {
+                    self.trayServiceActionInProgress = false
+                    self.refreshStatus()
+                }
             } catch {
                 await MainActor.run {
+                    self.trayServiceActionInProgress = false
                     self.presentAlert(
                         title: L10n.format("%@ failed", action),
                         message: error.localizedDescription,
@@ -291,12 +375,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func presentUpdateResult(_ result: DesktopUpdateResult, warning: String? = nil) {
-        NSApp.activate(ignoringOtherApps: true)
-        let title = result.ok ? L10n.text("AgentDock update completed") : L10n.text("AgentDock update failed")
-        let message = [result.message, warning]
-            .compactMap { $0 }
-            .joined(separator: "\n\n")
-        presentAlert(title: title, message: message, style: result.ok ? .informational : .warning)
+        setUpdateInProgress(false)
+        if result.ok {
+            updateProgressWindow.showCompletion(targetVersion: result.targetVersion, warning: warning)
+        } else {
+            let message = [result.message, warning]
+                .compactMap { $0 }
+                .joined(separator: "\n\n")
+            updateProgressWindow.showFailure(message)
+        }
         refreshStatus()
     }
 
@@ -309,6 +396,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func quit() {
+        guard !isUpdating else {
+            updateProgressWindow.present()
+            return
+        }
         NSApp.terminate(nil)
     }
 }
