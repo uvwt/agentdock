@@ -36,6 +36,9 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"Using bundled AgentDock payload",
 		"-SourceBinary $OfflineCloudflaredBinary",
 		"agentdock-tray.exe",
+		"agentdock-arbiter.exe",
+		"agentdock-shim.exe",
+		"agentdock-tray-shim.exe",
 		"agentdock.ico",
 		"manage-windows.ps1",
 		"Initialize-OAuthCredentials",
@@ -44,6 +47,10 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"[string] $TunnelTokenFile = ''",
 		"[switch] $DeleteTunnelTokenFile",
 		"Write-RuntimeManifest",
+		"agentdock_home = $AgentDockHome",
+		"agentdock_default_dir = $AgentDockDefaultDir",
+		"$runtimeAgentDockHome = [Environment]::GetEnvironmentVariable('AGENTDOCK_HOME', 'Process')",
+		"$runtimeAgentDockDefaultDir = [Environment]::GetEnvironmentVariable('AGENTDOCK_DEFAULT_DIR', 'Process')",
 		"Write-InstallResult",
 		"runtime.json",
 		"desktop-version.txt",
@@ -58,11 +65,19 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"-ErrorRecord $resultErrorRecord",
 		"ErrorType=$safeErrorType",
 		"ErrorStack=$safeErrorStack",
-		"Stop-AgentDockForUpgrade -BinaryPath $destinationBinary",
-		"Get-ProcessesByPath -ProcessName 'agentdock'",
+		"$coreToStop = $(if ($generationLayoutDetected) { $existingGenerationCore } else { $destinationBinary })",
+		"Stop-AgentDockForUpgrade -BinaryPath $coreToStop",
+		"$processName = [IO.Path]::GetFileNameWithoutExtension($BinaryPath)",
+		"Get-ProcessesByPath -ProcessName $processName -BinaryPath $BinaryPath",
 		"Get-CimInstance Win32_Process",
 		"ExecutablePath",
 		"Get-AgentDockTaskState",
+		"Conflicting = $false",
+		"$state.Conflicting = $true",
+		"-RuntimeRoot $runtimeDir",
+		"-StableCorePath $destinationBinary",
+		"-StableTrayPath $destinationTrayBinary",
+		"The AgentDock scheduled task belongs to another installation root",
 		"Get-InteractiveDesktopUser",
 		"Start-ElevatedAgentDockTaskAction",
 		"--task-admin $Action",
@@ -76,7 +91,6 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"Start Setup normally under the signed-in account",
 		"Stop-CloudflaredForUpgrade -BinaryPath $cloudflaredBinary",
 		"Copy-Item -LiteralPath $destinationBinary -Destination $binaryBackup -Force",
-		"Install-AgentDockBinary -SourceBinary $sourceBinary -DestinationBinary $destinationBinary",
 		"Write-ProtectedText -Path $tokenPath",
 		"Write-ProtectedText -Path $PasswordPath",
 		"Write-ProtectedText -Path $TokenSecretPath",
@@ -92,7 +106,7 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"& $destinationBinary tunnel start --runtime-root $runtimeDir",
 		"--start-tunnel --runtime-root",
 		"-AdminLauncherPath $sourceTrayBinary",
-		"-LauncherPath $destinationTrayBinary",
+		"-LauncherPath $destinationBinary",
 		"-FilePath $AdminLauncherPath",
 		"Start-CloudflaredLauncher -LauncherPath $cloudflaredLauncherPath",
 		"Wait-QuickTunnelUrl -LogPaths @($cloudflaredStdoutLogPath, $cloudflaredStderrLogPath)",
@@ -111,6 +125,21 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"scheduled-task-recovery-",
 		"Recovery files: $taskRecoveryPath",
 		"$taskTransactionCommitted = $taskTransactionStarted",
+		"Write-ActiveVersionState",
+		"active-version.json",
+		"$versionsDir = Join-Path $runtimeDir 'versions'",
+		"Copy-Item -LiteralPath $sourceWSLHelperDir -Destination (Join-Path $generationStagingDirectory 'wsl-helper') -Recurse -Force",
+		"Delegating Setup upgrade to the AgentDock Update Engine",
+		"update --local-archive $archivePath --checksum $checksumPath --target-version $payloadVersion",
+		"Resolving pending AgentDock generation transaction before Setup continues",
+		"$recoveryOutput = @(& $destinationBinary version --json 2>&1)",
+		"Setup will not modify an unresolved generation",
+		"Install-AgentDockBinary -SourceBinary $sourceCoreShim -DestinationBinary $destinationBinary",
+		"Install-AgentDockBinary -SourceBinary $sourceTrayShim -DestinationBinary $destinationTrayBinary",
+		".repair-backup-",
+		"$generationBootstrapPublished = $true",
+		"$activeVersionCreatedByBootstrap -or $generationBootstrapPublished",
+		"$activeVersionCreatedByBootstrap = $true",
 		"AgentDock payload preflight failed with exit code",
 		"http://127.0.0.1:$HealthPort/healthz",
 	} {
@@ -135,14 +164,29 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	if got := strings.Count(script, "Set-RunValue -RegistryPath $runKey"); got != 6 {
 		t.Fatalf("install.ps1 must use Set-RunValue for all startup writes in install and rollback paths; got %d calls", got)
 	}
-	stopCall := strings.Index(script, "Stop-AgentDockForUpgrade -BinaryPath $destinationBinary")
-	replaceCall := strings.Index(script, "Install-AgentDockBinary -SourceBinary $sourceBinary -DestinationBinary $destinationBinary")
+	if strings.Contains(script, "Stop-ProcessesForUpgrade -ProcessName 'agentdock' -BinaryPath $BinaryPath") {
+		t.Fatal("generation Core stop logic must derive the process name from agentdock-core.exe instead of assuming agentdock.exe")
+	}
+	stopCall := strings.Index(script, "Stop-AgentDockForUpgrade -BinaryPath $coreToStop")
+	replaceCall := strings.Index(script, "Install-AgentDockBinary -SourceBinary $sourceCoreShim -DestinationBinary $destinationBinary")
 	if stopCall < 0 || replaceCall < 0 || stopCall > replaceCall {
-		t.Fatal("install.ps1 must stop the running instance before replacing agentdock.exe")
+		t.Fatal("install.ps1 must stop the active Core before installing the stable CUI shim")
 	}
 	backupCall := strings.Index(script, "Copy-Item -LiteralPath $destinationBinary -Destination $binaryBackup -Force")
 	if backupCall < stopCall || backupCall > replaceCall {
-		t.Fatal("install.ps1 must back up the stopped binary before replacement")
+		t.Fatal("install.ps1 must back up the stable Core entry before replacing it with the CUI shim")
+	}
+	stageCall := strings.Index(script, "Move-Item -LiteralPath $generationStagingDirectory -Destination $generationBootstrapDirectory")
+	if stageCall < 0 || stageCall > replaceCall {
+		t.Fatal("install.ps1 must publish the complete generation before installing stable shims")
+	}
+	upgradeHandledCall := strings.Index(script, "$generationUpgradeHandled = $true")
+	upgradeShimRefreshCall := strings.LastIndex(script, "Install-AgentDockBinary -SourceBinary $sourceCoreShim -DestinationBinary $destinationBinary")
+	if upgradeHandledCall < 0 || upgradeShimRefreshCall <= upgradeHandledCall {
+		t.Fatal("Setup generation upgrades must refresh the stable CUI shim after the Update Engine reaches a terminal result")
+	}
+	if strings.Contains(script, "Install-AgentDockBinary -SourceBinary $sourceBinary -DestinationBinary $destinationBinary") {
+		t.Fatal("install.ps1 must not restore the legacy in-place Core replacement path")
 	}
 	manifestCall := strings.Index(script, "$manifestTunnelMode = $resolvedTunnelMode")
 	coreStartCall := strings.Index(script, "& $destinationBinary service start --runtime-root $runtimeDir")
@@ -238,6 +282,7 @@ func TestWindowsManagerKeepsTunnelTransitionsAndManualTaskStartValid(t *testing.
 	for _, want := range []string{
 		"& $AgentDockBinary tunnel $Command --runtime-root $RuntimeRoot",
 		"'tunnel', 'configure'",
+		"& $AgentDockBinary service stop --runtime-root $RuntimeRoot",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("manage-windows.ps1 must delegate Tunnel operations to native commands: %q", want)
@@ -256,9 +301,15 @@ func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
 		"Stop-ProcessByPath -ProcessName 'agentdock-tray'",
 		"[switch] $KeepInstallDir",
 		"Remove-DirectoryWithRetry -Path $InstallDir",
+		"Remove-DirectoryWithRetry -Path $versionsDir",
+		"Remove-DirectoryWithRetry -Path $updateDir",
+		"Remove-Item -LiteralPath $activeVersionPath",
+		"Stop-ProcessByPath -ProcessName 'agentdock-core'",
+		"Stop-ProcessByPath -ProcessName 'agentdock-arbiter'",
 		"Stop-ProcessByPath -ProcessName 'cloudflared'",
 		"Remove-ItemProperty -LiteralPath $runKey -Name $TrayStartupValueName",
 		"'runtime.json'",
+		"'desktop-version.txt'",
 		"Remove-ItemProperty -LiteralPath $runKey -Name $CloudflaredStartupValueName",
 		"'start-cloudflared.ps1'",
 		"'installer\\manage-windows.ps1'",
@@ -271,10 +322,13 @@ func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
 		"'cloudflared.out.log'",
 		"'cloudflared.err.log'",
 		"'quick-tunnel-url.txt'",
-		"$StartupValueName -eq 'AgentDock' -and $CloudflaredStartupValueName -eq 'AgentDockCloudflared' -and $TrayStartupValueName -eq 'AgentDockTray'",
+		"$runtimeManifestPath = Join-Path $runtimeDir 'runtime.json'",
+		"$runtimeManifest.agentdock_task_name",
+		"$managedTaskName = 'AgentDock'",
 		"Remove-AgentDockScheduledTask",
 		"-AdminLauncherPath $trayBinary",
 		"--task-admin remove",
+		"--task-name",
 		"--runtime-root",
 		"-Verb RunAs",
 	} {
@@ -294,7 +348,7 @@ func TestWindowsTaskAdminUsesNativeAgentDockHelper(t *testing.T) {
 		"Schedule.Service",
 		"TaskRunLevelHighest",
 		"TaskLogonInteractiveToken",
-		"--run-core-task --runtime-root",
+		"service launch-core --runtime-root",
 		"SetSecurityDescriptor",
 		"prepare-elevated",
 		"prepare-standard",
@@ -302,7 +356,13 @@ func TestWindowsTaskAdminUsesNativeAgentDockHelper(t *testing.T) {
 		"remove",
 		"set-enabled",
 		"StopInstalledCore",
-		"Process.GetProcessesByName(\"agentdock\")",
+		"InstalledCorePaths",
+		"new[] { \"agentdock\", \"agentdock-core\" }",
+		"active-version.json",
+		"fallback_version",
+		"--task-name",
+		"request.TaskName",
+		"state.WasEnabled && state.WasRunning",
 		"process.Kill(entireProcessTree: true)",
 	} {
 		if !strings.Contains(source, want) {

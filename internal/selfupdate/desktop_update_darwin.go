@@ -202,17 +202,18 @@ func validateMacOSDesktopRuntime(ctx context.Context, appPath, targetVersion str
 	}
 	core := filepath.Join(appPath, "Contents", "Helpers", "agentdock")
 	cloudflared := filepath.Join(appPath, "Contents", "Helpers", "cloudflared")
+	arbiter := filepath.Join(appPath, "Contents", "Helpers", "agentdock-arbiter")
 	menuHelper := filepath.Join(appPath, "Contents", "Helpers", "AgentDockLoginHelper")
 	menuAgent := filepath.Join(appPath, "Contents", "Library", "LaunchAgents", "com.uvwt.agentdock.menu-login.plist")
 	skillManifest := filepath.Join(appPath, "Contents", "Resources", "core-skills", "manifest.json")
-	for _, path := range []string{core, cloudflared, menuHelper, menuAgent, skillManifest} {
+	for _, path := range []string{core, cloudflared, arbiter, menuHelper, menuAgent, skillManifest} {
 		info, err := os.Lstat(path)
 		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("macOS App 缺少有效运行组件: %s", path)
 		}
 	}
-	if !executableRegularFile(core) || !executableRegularFile(cloudflared) || !executableRegularFile(menuHelper) {
-		return errors.New("macOS App 内置 Core、cloudflared 或菜单栏登录组件不可执行")
+	if !executableRegularFile(core) || !executableRegularFile(cloudflared) || !executableRegularFile(arbiter) || !executableRegularFile(menuHelper) {
+		return errors.New("macOS App 内置 Core、cloudflared、Arbiter 或菜单栏登录组件不可执行")
 	}
 	for _, expected := range []struct {
 		key   string
@@ -239,6 +240,9 @@ func validateMacOSDesktopRuntime(ctx context.Context, appPath, targetVersion str
 	}
 	if err := verifyBinaryVersion(ctx, core, targetVersion); err != nil {
 		return fmt.Errorf("macOS App 内置 Core 版本不匹配: %w", err)
+	}
+	if output, err := exec.CommandContext(ctx, "codesign", "--verify", "--strict", "--verbose=2", arbiter).CombinedOutput(); err != nil {
+		return fmt.Errorf("macOS App 内置 Arbiter 签名验证失败: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	if output, err := exec.CommandContext(ctx, cloudflared, "--version").CombinedOutput(); err != nil {
 		return fmt.Errorf("macOS App 内置 cloudflared 无法运行: %w: %s", err, strings.TrimSpace(string(output)))

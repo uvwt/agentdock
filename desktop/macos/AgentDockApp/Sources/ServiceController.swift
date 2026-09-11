@@ -15,6 +15,11 @@ struct DesktopServiceStatusPayload: Decodable {
     }
 }
 
+struct DesktopUpdateRegistrationState {
+    let core: String
+    let tunnel: String
+}
+
 enum NexusConnectionState: Equatable {
     case unconfigured
     case connected
@@ -33,10 +38,14 @@ enum NexusConnectionState: Equatable {
 }
 
 struct DesktopUpdateCheck: Decodable {
+    let currentVersion: String?
+    let latestVersion: String?
     let updateAvailable: Bool
     let message: String
 
     private enum CodingKeys: String, CodingKey {
+        case currentVersion = "current_version"
+        case latestVersion = "latest_version"
         case updateAvailable = "update_available"
         case message
     }
@@ -147,6 +156,23 @@ final class ServiceController: @unchecked Sendable {
         try unregister(service: coreService, label: Self.coreLabel)
     }
 
+    func unregisterManagedBackgroundServicesForUninstall() throws {
+        var failures: [String] = []
+        do {
+            try unregister(service: tunnelService, label: Self.tunnelLabel)
+        } catch {
+            failures.append("AgentDock Tunnel: \(error.localizedDescription)")
+        }
+        do {
+            try unregister(service: coreService, label: Self.coreLabel)
+        } catch {
+            failures.append("AgentDock Core: \(error.localizedDescription)")
+        }
+        if !failures.isEmpty {
+            throw ValidationError(failures.joined(separator: "\n"))
+        }
+    }
+
     func restart() async throws {
         try reregister(service: coreService, label: Self.coreLabel, displayName: "AgentDock Core")
         guard let configuration = ServiceConfiguration.load(from: paths.environment),
@@ -252,6 +278,35 @@ final class ServiceController: @unchecked Sendable {
         }
     }
 
+    func restoreBackgroundServiceRegistrationsForUpdate(
+        coreEnabled: Bool,
+        tunnelEnabled: Bool
+    ) throws -> DesktopUpdateRegistrationState {
+        let coreState = try restoreRegistrationForUpdate(
+            service: coreService,
+            label: Self.coreLabel,
+            displayName: "AgentDock Core",
+            expectedEnabled: coreEnabled
+        )
+        let tunnelState: String
+        do {
+            tunnelState = try restoreRegistrationForUpdate(
+                service: tunnelService,
+                label: Self.tunnelLabel,
+                displayName: "AgentDock Tunnel",
+                expectedEnabled: tunnelEnabled
+            )
+        } catch {
+            // Tunnel availability depends on ServiceManagement policy plus external/network state.
+            // A broken Tunnel must not turn an otherwise healthy App/Core update into a rollback.
+            // Report an explicit non-ready state to the Arbiter; it commits with a warning, then
+            // AppDelegate's post-handoff reconciliation gets one more bounded recovery attempt.
+            NSLog("AgentDock Tunnel registration could not be restored during update handoff: %@", error.localizedDescription)
+            tunnelState = "unavailable"
+        }
+        return DesktopUpdateRegistrationState(core: coreState, tunnel: tunnelState)
+    }
+
     func recoverBackgroundServicesAfterUpdate(coreEnabled: Bool, tunnelEnabled: Bool) async -> [String] {
         // App Bundle 刚替换后，SMAppService 的注册状态可能已经生效，但 launchd 真正拉起
         // Core/Tunnel 仍需要更长时间。先给系统一个正常传播窗口，再做一次有界自愈；
@@ -314,7 +369,7 @@ final class ServiceController: @unchecked Sendable {
         }
     }
 
-    func update() async throws -> String {
+    func update(onProgress: @escaping (UpdateProgressEvent) -> Void) async throws -> String {
         try validateServiceManagementReadiness()
 
         let check = try await runInBackground {
@@ -331,6 +386,11 @@ final class ServiceController: @unchecked Sendable {
         guard check.updateAvailable else {
             // 没有 pending update result 时这只能是上一次未完成流程留下的临时状态。
             DesktopUpdateServiceState.remove(at: paths.updateServiceState)
+            onProgress(.local(
+                type: .completed,
+                currentVersion: check.currentVersion,
+                targetVersion: check.latestVersion
+            ))
             return check.message
         }
 
@@ -348,9 +408,10 @@ final class ServiceController: @unchecked Sendable {
             output = try await runInBackground {
                 let result = try runUpdateProcess(
                     executable: self.paths.binary.path,
-                    arguments: ["update"],
+                    arguments: ["update", "--progress-json"],
                     environment: ["AGENTDOCK_DESKTOP_APP_PATH": self.paths.appBundle.path],
-                    outputURL: self.paths.updateLog
+                    outputURL: self.paths.updateLog,
+                    onProgress: onProgress
                 )
                 guard result.status == 0 else {
                     throw ValidationError(self.commandError(result.output, action: L10n.text("Update")))
@@ -485,6 +546,41 @@ final class ServiceController: @unchecked Sendable {
         try validateBundledServiceDefinition(plistName: plistName, displayName: displayName)
         try unregister(service: service, label: label)
         try register(service: service, plistName: plistName, displayName: displayName)
+    }
+
+    private func restoreRegistrationForUpdate(
+        service: SMAppService,
+        label: String,
+        displayName: String,
+        expectedEnabled: Bool
+    ) throws -> String {
+        guard expectedEnabled else {
+            try unregister(service: service, label: label)
+            return "disabled"
+        }
+        do {
+            try restoreRegistration(service: service, label: label, displayName: displayName)
+        } catch {
+            // requiresApproval reflects user/system policy. It is a commit warning, not evidence
+            // that the newly installed App Bundle is invalid.
+            guard service.status == .requiresApproval else { throw error }
+        }
+        switch service.status {
+        case .enabled:
+            return "enabled"
+        case .requiresApproval:
+            return "requires_approval"
+        case .notRegistered, .notFound:
+            throw ValidationError(L10n.format(
+                "%@ background registration did not become available after the update.",
+                displayName
+            ))
+        @unknown default:
+            throw ValidationError(L10n.format(
+                "%@ background registration returned an unknown state after the update.",
+                displayName
+            ))
+        }
     }
 
     private var serviceDomain: String { "gui/\(getuid())" }

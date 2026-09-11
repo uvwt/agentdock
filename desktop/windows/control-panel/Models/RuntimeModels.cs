@@ -97,6 +97,9 @@ public sealed class CoreVersionInfo
 
 internal sealed class NativeServiceStatus
 {
+    [JsonPropertyName("running")]
+    public bool Running { get; set; }
+
     [JsonPropertyName("nexus_connected")]
     public bool NexusConnected { get; set; }
 }
@@ -160,6 +163,99 @@ public sealed class UpdateCheckResult
     public string Message { get; set; } = "";
 }
 
-public sealed record UpdateProgress(int Percentage, string Message);
+public sealed record UpdateProgress(int? Percentage, bool IsIndeterminate, string Message);
+
+internal sealed class UpdateProgressEvent
+{
+    [JsonPropertyName("schema_version")]
+    public int SchemaVersion { get; set; }
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "";
+
+    [JsonPropertyName("stage")]
+    public string Stage { get; set; } = "";
+
+    [JsonPropertyName("asset")]
+    public string Asset { get; set; } = "";
+
+    [JsonPropertyName("bytes_read")]
+    public long? BytesRead { get; set; }
+
+    [JsonPropertyName("total_bytes")]
+    public long? TotalBytes { get; set; }
+
+    [JsonPropertyName("error")]
+    public string Error { get; set; } = "";
+}
+
+internal sealed class UpdateTransactionState
+{
+    [JsonPropertyName("schema_version")]
+    public int SchemaVersion { get; set; }
+
+    [JsonPropertyName("transaction_id")]
+    public string TransactionId { get; set; } = "";
+
+    [JsonPropertyName("platform")]
+    public string Platform { get; set; } = "";
+
+    [JsonPropertyName("source_version")]
+    public string SourceVersion { get; set; } = "";
+
+    [JsonPropertyName("target_version")]
+    public string TargetVersion { get; set; } = "";
+
+    [JsonPropertyName("state")]
+    public string State { get; set; } = "";
+
+    [JsonPropertyName("phase")]
+    public string Phase { get; set; } = "";
+
+    [JsonPropertyName("windows")]
+    public WindowsUpdatePlan? Windows { get; set; }
+}
+
+internal sealed class WindowsUpdatePlan
+{
+    [JsonPropertyName("progress_ui_handoff")]
+    public bool ProgressUiHandoff { get; set; }
+}
+
+internal sealed class UpdateTerminalResult
+{
+    [JsonPropertyName("schema_version")]
+    public int SchemaVersion { get; set; }
+
+    [JsonPropertyName("transaction_id")]
+    public string TransactionId { get; set; } = "";
+
+    [JsonPropertyName("platform")]
+    public string Platform { get; set; } = "";
+
+    [JsonPropertyName("state")]
+    public string State { get; set; } = "";
+
+    [JsonPropertyName("failure")]
+    public UpdateFailure? Failure { get; set; }
+
+    [JsonPropertyName("warnings")]
+    public string[] Warnings { get; set; } = [];
+}
+
+internal sealed class UpdateFailure
+{
+    [JsonPropertyName("message")]
+    public string Message { get; set; } = "";
+}
+
+internal sealed class UpdateUiHandoffAck
+{
+    [JsonPropertyName("schema_version")]
+    public int SchemaVersion { get; set; } = 1;
+
+    [JsonPropertyName("transaction_id")]
+    public string TransactionId { get; set; } = "";
+}
 
 public sealed record AcpAdapterResolution(bool Available, string Command, IReadOnlyList<string> Arguments, string Message);

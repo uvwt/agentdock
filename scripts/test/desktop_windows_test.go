@@ -363,6 +363,11 @@ func TestWindowsUpdateFeedbackUsesUTF8AndImmediateStatus(t *testing.T) {
 		`MessageBoxButton.YesNo`,
 		`new UpdateProgressWindow(check.CurrentVersion, check.LatestVersion)`,
 		`var output = await Runtime.RunUpdateAsync(progress)`,
+		`ResumeUpdateProgressIfNeededAsync`,
+		`ReadUpdateUiHandoffTransactionAsync`,
+		`ReadUpdateTerminalResultAsync`,
+		`AcknowledgeUpdateUiHandoffAsync(transaction.TransactionId)`,
+		`UpdateStageRollingBack`,
 	} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("Windows tray update flow missing %q", want)
@@ -385,8 +390,14 @@ func TestWindowsUpdateFeedbackUsesUTF8AndImmediateStatus(t *testing.T) {
 		`startInfo.ArgumentList.Add("--check")`,
 		`JsonSerializer.Deserialize<UpdateCheckResult>`,
 		`IProgress<UpdateProgress>? progress`,
+		`startInfo.ArgumentList.Add("--progress-json")`,
+		`startInfo.Environment[UpdateUiHandoffEnvironment] = "1"`,
+		`"staged" or "trial" or "rolling_back" or "committed" or "rolled_back" or "failed" => transaction`,
+		`Path.Combine(RuntimeRoot, "update", "ui-handoff-ack.json")`,
+		`File.Move(temporaryPath, acknowledgementPath, overwrite: true)`,
 		`ReadProcessLinesAsync`,
-		`MapUpdateProgress`,
+		`ParseUpdateProgress`,
+		`JsonSerializer.Deserialize<UpdateProgressEvent>`,
 		`StandardOutputEncoding = utf8`,
 		`StandardErrorEncoding = utf8`,
 	} {
@@ -400,7 +411,8 @@ func TestWindowsUpdateFeedbackUsesUTF8AndImmediateStatus(t *testing.T) {
 		`<ProgressBar x:Name="UpdateProgressBar"`,
 		`IsEnabled="False"`,
 		`if (!_canClose)`,
-		`UpdateProgressBar.Value = Math.Max`,
+		`UpdateProgressBar.IsIndeterminate = progress.IsIndeterminate`,
+		`UpdateProgressBar.Value = Math.Clamp(percentage, 0, 100)`,
 		`public void Complete(string message)`,
 		`public void Fail(string message)`,
 	} {

@@ -298,6 +298,8 @@ func TestSaveManifestRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runtime.json")
 	manifest := Manifest{
 		SchemaVersion:               SchemaVersion,
+		AgentDockHome:               filepath.Join(filepath.Dir(path), "state"),
+		AgentDockDefaultDir:         filepath.Join(filepath.Dir(path), "workspace"),
 		AgentDockBinary:             filepath.Join(filepath.Dir(path), "bin", "agentdock.exe"),
 		TrayBinary:                  filepath.Join(filepath.Dir(path), "bin", "agentdock-tray.exe"),
 		CloudflaredBinary:           filepath.Join(filepath.Dir(path), "bin", "cloudflared.exe"),
@@ -317,7 +319,24 @@ func TestSaveManifestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.PublicURL != manifest.PublicURL || loaded.CloudflaredStartupValueName != manifest.CloudflaredStartupValueName {
+	if loaded.PublicURL != manifest.PublicURL || loaded.CloudflaredStartupValueName != manifest.CloudflaredStartupValueName ||
+		loaded.AgentDockHome != manifest.AgentDockHome || loaded.AgentDockDefaultDir != manifest.AgentDockDefaultDir {
 		t.Fatalf("manifest round trip mismatch: %#v", loaded)
+	}
+}
+
+func TestManifestRejectsRelativeRuntimeStatePaths(t *testing.T) {
+	manifest := Manifest{
+		SchemaVersion:       SchemaVersion,
+		AgentDockHome:       "relative-state",
+		AgentDockDefaultDir: filepath.Join(t.TempDir(), "workspace"),
+		AgentDockBinary:     filepath.Join(t.TempDir(), "agentdock.exe"),
+		Host:                "127.0.0.1",
+		Port:                8765,
+		LocalMCPURL:         "http://127.0.0.1:8765/mcp",
+		TunnelMode:          "none",
+	}
+	if err := manifest.Validate(); err == nil {
+		t.Fatal("expected relative agentdock_home to be rejected")
 	}
 }

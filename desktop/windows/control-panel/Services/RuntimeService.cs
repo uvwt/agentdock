@@ -18,6 +18,7 @@ public sealed class RuntimeService : IDisposable
     private const string OAuthPasswordEntropy = "agentdock.oauth.password.v1";
     private const string TunnelTokenEntropy = "agentdock.cloudflare.tunnel.v1";
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string UpdateUiHandoffEnvironment = "AGENTDOCK_UPDATE_UI_HANDOFF";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -88,7 +89,7 @@ public sealed class RuntimeService : IDisposable
         {
             version = await ReadCoreVersionAsync(binaryPath, cancellationToken);
         }
-        var coreRunning = health.Healthy || IsProcessRunningAtPath("agentdock", binaryPath);
+        var coreRunning = health.Healthy || await ReadCoreRunningAsync(binaryPath, cancellationToken);
         var nexus = ReadNexusDeviceStatus();
         var nexusConnected = includeNexusConnection && coreRunning && nexus.Paired && string.IsNullOrWhiteSpace(nexus.Error)
             && await ReadNexusConnectionAsync(binaryPath, cancellationToken);
@@ -184,7 +185,134 @@ public sealed class RuntimeService : IDisposable
         var binaryPath = await ResolveCoreBinaryAsync(cancellationToken);
         var startInfo = CreateRedirectedProcessStartInfo(binaryPath);
         startInfo.ArgumentList.Add("update");
+        startInfo.ArgumentList.Add("--progress-json");
+        startInfo.Environment[UpdateUiHandoffEnvironment] = "1";
         return await RunUpdateProcessAsync(startInfo, progress, cancellationToken);
+    }
+
+    internal async Task<UpdateTransactionState?> ReadUpdateUiHandoffTransactionAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var transaction = await ReadJsonAsync<UpdateTransactionState>(
+            Path.Combine(RuntimeRoot, "update", "transaction.json"),
+            cancellationToken);
+        if (transaction is null ||
+            transaction.SchemaVersion != 1 ||
+            !string.Equals(transaction.Platform, "windows", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(transaction.TransactionId) ||
+            transaction.Windows?.ProgressUiHandoff != true)
+        {
+            return null;
+        }
+
+        var acknowledgement = await ReadJsonAsync<UpdateUiHandoffAck>(
+            Path.Combine(RuntimeRoot, "update", "ui-handoff-ack.json"),
+            cancellationToken);
+        if (acknowledgement is not null &&
+            acknowledgement.SchemaVersion == 1 &&
+            string.Equals(
+                acknowledgement.TransactionId,
+                transaction.TransactionId,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return transaction.State.ToLowerInvariant() switch
+        {
+            "staged" or "trial" or "rolling_back" or "committed" or "rolled_back" or "failed" => transaction,
+            _ => null
+        };
+    }
+
+    internal async Task<UpdateTerminalResult?> ReadUpdateTerminalResultAsync(
+        string transactionId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(transactionId))
+        {
+            return null;
+        }
+        var result = await ReadJsonAsync<UpdateTerminalResult>(
+            Path.Combine(RuntimeRoot, "update", "result.json"),
+            cancellationToken);
+        if (result is null ||
+            result.SchemaVersion != 1 ||
+            !string.Equals(result.Platform, "windows", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(result.TransactionId, transactionId, StringComparison.OrdinalIgnoreCase))
+        {
+            // transaction.json is the durable commit point. result.json is a projection and
+            // can legitimately lag it if the machine stops between the two atomic writes.
+            // A terminal transaction contains the same fields this UI needs, so fall back to
+            // the journal instead of reporting a false four-minute result timeout.
+            result = await ReadJsonAsync<UpdateTerminalResult>(
+                Path.Combine(RuntimeRoot, "update", "transaction.json"),
+                cancellationToken);
+        }
+        if (result is null ||
+            result.SchemaVersion != 1 ||
+            !string.Equals(result.Platform, "windows", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(result.TransactionId, transactionId, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+        return result.State.ToLowerInvariant() switch
+        {
+            "committed" or "rolled_back" or "failed" => result,
+            _ => null
+        };
+    }
+
+    internal async Task AcknowledgeUpdateUiHandoffAsync(
+        string transactionId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(transactionId))
+        {
+            return;
+        }
+
+        string? temporaryPath = null;
+        try
+        {
+            var updateDirectory = Path.Combine(RuntimeRoot, "update");
+            Directory.CreateDirectory(updateDirectory);
+            var acknowledgementPath = Path.Combine(updateDirectory, "ui-handoff-ack.json");
+            temporaryPath = acknowledgementPath + $".tmp.{Guid.NewGuid():N}";
+            var acknowledgement = new UpdateUiHandoffAck
+            {
+                TransactionId = transactionId.Trim()
+            };
+            await File.WriteAllTextAsync(
+                temporaryPath,
+                JsonSerializer.Serialize(acknowledgement, JsonOptions),
+                new UTF8Encoding(false),
+                cancellationToken);
+            File.Move(temporaryPath, acknowledgementPath, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // UI acknowledgement is best-effort. If it cannot be persisted, the next Tray launch
+            // may show the terminal result again, which is safer than hiding a completed transaction.
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(temporaryPath))
+            {
+                try
+                {
+                    File.Delete(temporaryPath);
+                }
+                catch (IOException)
+                {
+                    // The atomic move already succeeded or another cleanup can retry later.
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Keep the terminal result visible even if best-effort temp cleanup is denied.
+                }
+            }
+        }
     }
 
     public async Task SetTunnelModeAsync(
@@ -544,6 +672,9 @@ public sealed class RuntimeService : IDisposable
         string backupDirectory,
         CancellationToken cancellationToken)
     {
+        var taskName = string.IsNullOrWhiteSpace(manifest.AgentDockTaskName)
+            ? "AgentDock"
+            : manifest.AgentDockTaskName.Trim();
         var trayBinary = string.IsNullOrWhiteSpace(manifest.TrayBinaryPath)
             ? Path.Combine(RuntimeRoot, "bin", "agentdock-tray.exe")
             : manifest.TrayBinaryPath;
@@ -555,11 +686,17 @@ public sealed class RuntimeService : IDisposable
         var arguments = new List<string>
         {
             "--task-admin", action,
+            "--task-name", taskName,
             "--backup-directory", backupDirectory,
             "--runtime-root", RuntimeRoot
         };
         if (action == "prepare-elevated")
         {
+            var stableCoreEntry = ResolveCoreBinaryPath(manifest);
+            if (!File.Exists(stableCoreEntry))
+            {
+                throw new FileNotFoundException(UiText.Format("ManagementBinaryMissing", stableCoreEntry), stableCoreEntry);
+            }
             using var identity = WindowsIdentity.GetCurrent();
             var userSid = identity.User?.Value;
             if (string.IsNullOrWhiteSpace(userSid) || string.IsNullOrWhiteSpace(identity.Name))
@@ -567,7 +704,7 @@ public sealed class RuntimeService : IDisposable
                 throw new InvalidOperationException(UiText.Get("CurrentWindowsIdentityUnavailable"));
             }
             arguments.AddRange([
-                "--launcher-path", trayBinary,
+                "--launcher-path", stableCoreEntry,
                 "--user-sid", userSid,
                 "--user-name", identity.Name
             ]);
@@ -859,11 +996,9 @@ public sealed class RuntimeService : IDisposable
             throw new InvalidOperationException(string.IsNullOrWhiteSpace(errorText) ? outputText : errorText);
         }
 
-        var result = string.IsNullOrWhiteSpace(outputText)
-            ? errorText
-            : string.IsNullOrWhiteSpace(errorText) ? outputText : outputText + Environment.NewLine + errorText;
-        progress?.Report(new UpdateProgress(100, LastNonEmptyLine(result, UiText.Get("UpdateCompleted"))));
-        return result;
+        var completedMessage = UiText.Get("UpdateCompleted");
+        progress?.Report(new UpdateProgress(100, false, completedMessage));
+        return completedMessage;
     }
 
     private static async Task ReadProcessLinesAsync(
@@ -877,26 +1012,70 @@ public sealed class RuntimeService : IDisposable
             buffer.AppendLine(line);
             if (!string.IsNullOrWhiteSpace(line))
             {
-                progress?.Report(MapUpdateProgress(line));
+                var updateProgress = ParseUpdateProgress(line);
+                if (updateProgress is not null)
+                {
+                    progress?.Report(updateProgress);
+                }
             }
         }
     }
 
-    private static UpdateProgress MapUpdateProgress(string line)
+    private static UpdateProgress? ParseUpdateProgress(string line)
     {
-        var message = line.Trim();
-        var percentage = message switch
+        UpdateProgressEvent? updateEvent;
+        try
         {
-            var value when value.Contains("正在下载", StringComparison.Ordinal) => 20,
-            var value when value.Contains("文件校验通过", StringComparison.Ordinal) => 50,
-            var value when value.Contains("正在备份并安装", StringComparison.Ordinal) => 70,
-            var value when value.Contains("交给辅助进程", StringComparison.Ordinal) => 80,
-            var value when value.Contains("正在更新官方核心 Skill", StringComparison.Ordinal) => 90,
-            var value when value.Contains("更新完成", StringComparison.Ordinal) => 100,
-            var value when value.Contains("当前已是最新版本", StringComparison.Ordinal) => 100,
-            _ => 10
+            updateEvent = JsonSerializer.Deserialize<UpdateProgressEvent>(line, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        if (updateEvent is null || updateEvent.SchemaVersion != 1)
+        {
+            return null;
+        }
+        if (string.Equals(updateEvent.Type, "completed", StringComparison.Ordinal))
+        {
+            return new UpdateProgress(100, false, UiText.Get("UpdateCompleted"));
+        }
+        if (string.Equals(updateEvent.Type, "failed", StringComparison.Ordinal))
+        {
+            return new UpdateProgress(null, false, string.IsNullOrWhiteSpace(updateEvent.Error) ? UiText.Get("UpdateFailed") : updateEvent.Error);
+        }
+        if (string.Equals(updateEvent.Stage, "downloading", StringComparison.Ordinal) && updateEvent.BytesRead is long bytesRead)
+        {
+            var totalBytes = updateEvent.TotalBytes.GetValueOrDefault(-1);
+            if (totalBytes > 0)
+            {
+                var percentage = (int)Math.Clamp(bytesRead * 100 / totalBytes, 0, 100);
+                return new UpdateProgress(percentage, false, UiText.Format("UpdateDownloadingProgress", FormatBytes(bytesRead), FormatBytes(totalBytes)));
+            }
+            return new UpdateProgress(null, true, UiText.Format("UpdateDownloadingUnknownSize", FormatBytes(bytesRead)));
+        }
+        var message = updateEvent.Stage switch
+        {
+            "checking" => UiText.Get("UpdateStageChecking"),
+            "downloading" => UiText.Get("UpdateStageDownloading"),
+            "verifying" => UiText.Get("UpdateStageVerifying"),
+            "extracting" => UiText.Get("UpdateStageExtracting"),
+            "installing" => UiText.Get("UpdateStageInstalling"),
+            "updating_skills" => UiText.Get("UpdateStageUpdatingSkills"),
+            "restarting" => UiText.Get("UpdateStageRestarting"),
+            _ => UiText.Get("PleaseWaitUpdating")
         };
-        return new UpdateProgress(percentage, message);
+        return new UpdateProgress(null, true, message);
+    }
+
+    private static string FormatBytes(long value)
+    {
+        if (value < 1024) return $"{value} B";
+        var kib = value / 1024d;
+        if (kib < 1024) return $"{kib:0.0} KiB";
+        var mib = kib / 1024d;
+        if (mib < 1024) return $"{mib:0.0} MiB";
+        return $"{mib / 1024d:0.0} GiB";
     }
 
     private static string LastNonEmptyLine(string value, string fallback)
@@ -938,6 +1117,18 @@ public sealed class RuntimeService : IDisposable
         if (!string.IsNullOrWhiteSpace(parent) && File.Exists(Path.Combine(parent, "runtime.json")))
         {
             return parent;
+        }
+
+        // generation Tray 位于 <root>\versions\<version>。运行时状态仍只属于稳定安装根，
+        // 不能在 generation 目录旁再生成第二份 runtime.json。
+        var versionsDirectory = executableDirectory.Parent;
+        var generationRoot = versionsDirectory?.Parent?.FullName;
+        if (versionsDirectory is not null &&
+            string.Equals(versionsDirectory.Name, "versions", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(generationRoot) &&
+            File.Exists(Path.Combine(generationRoot, "runtime.json")))
+        {
+            return generationRoot;
         }
 
         // 安装器会先启动 bin 中的托盘，再写入 runtime.json；此时仍应绑定当前安装目录。
@@ -1004,6 +1195,33 @@ public sealed class RuntimeService : IDisposable
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or Win32Exception or JsonException)
         {
             return "";
+        }
+    }
+
+    private async Task<bool> ReadCoreRunningAsync(string binaryPath, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(binaryPath))
+        {
+            return false;
+        }
+
+        var startInfo = CreateRedirectedProcessStartInfo(binaryPath);
+        startInfo.ArgumentList.Add("service");
+        startInfo.ArgumentList.Add("status");
+        startInfo.ArgumentList.Add("--runtime-root");
+        startInfo.ArgumentList.Add(RuntimeRoot);
+        try
+        {
+            var output = await RunProcessAsync(startInfo, cancellationToken);
+            return JsonSerializer.Deserialize<NativeServiceStatus>(output, JsonOptions)?.Running == true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or Win32Exception or JsonException)
+        {
+            return false;
         }
     }
 

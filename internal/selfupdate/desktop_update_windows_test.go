@@ -51,6 +51,38 @@ func TestExtractWindowsDesktopUpdateArchiveRequiresWholeDesktopPayload(t *testin
 	}
 }
 
+func TestExtractWindowsDesktopUpdateArchiveKeepsGenerationWSLHelper(t *testing.T) {
+	archive := makeWindowsDesktopArchive(t, map[string][]byte{
+		"agentdock-tray.exe":                          []byte("tray"),
+		"agentdock.ico":                               []byte("icon"),
+		"manage-windows.ps1":                          []byte("manager"),
+		"agentdock-arbiter.exe":                       []byte("arbiter"),
+		"agentdock-shim.exe":                          []byte("shim"),
+		"agentdock-tray-shim.exe":                     []byte("tray-shim"),
+		"wsl-helper/manifest.json":                    []byte(`{"protocol_version":"1"}`),
+		"wsl-helper/agentdock-wsl-helper-linux-amd64": []byte("linux-amd64"),
+		"wsl-helper/agentdock-wsl-helper-linux-arm64": []byte("linux-arm64"),
+	})
+
+	root, err := extractDesktopUpdateArchive(context.Background(), archive, t.TempDir(), "0.9.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for relative, expected := range map[string]string{
+		"wsl-helper/manifest.json":                    `{"protocol_version":"1"}`,
+		"wsl-helper/agentdock-wsl-helper-linux-amd64": "linux-amd64",
+		"wsl-helper/agentdock-wsl-helper-linux-arm64": "linux-arm64",
+	} {
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relative)))
+		if err != nil {
+			t.Fatalf("read %s: %v", relative, err)
+		}
+		if string(data) != expected {
+			t.Fatalf("%s = %q, want %q", relative, data, expected)
+		}
+	}
+}
+
 func TestWindowsDesktopUpdateVersionMarker(t *testing.T) {
 	root := t.TempDir()
 	if got := desktopUpdateVersion(root); got != "" {

@@ -266,6 +266,9 @@ jobs:
           $runtimeIdentifier = if ($env:GOARCH -eq 'arm64') { 'win-arm64' } else { 'win-x64' }
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           go build -trimpath -ldflags $ldflags -o dist/agentdock.exe ./cmd/agentdock
+          go build -trimpath -ldflags '-s -w' -o dist/agentdock-arbiter.exe ./cmd/agentdock-arbiter
+          go build -trimpath -ldflags '-s -w' -o dist/agentdock-shim.exe ./cmd/agentdock-shim
+          go build -trimpath -ldflags '-s -w -H=windowsgui' -o dist/agentdock-tray-shim.exe ./cmd/agentdock-shim
           & .\packaging\windows\build-wsl-helper-payload.ps1 -OutputDirectory .\dist\wsl-helper
           dotnet publish .\desktop\windows\control-panel\AgentDock.ControlPanel.csproj `
             -c Release `
@@ -290,7 +293,10 @@ jobs:
         run: |
           .\packaging\windows\sign-windows.ps1 -Path @(
             '.\dist\agentdock.exe',
-            '.\dist\agentdock-tray.exe'
+            '.\dist\agentdock-tray.exe',
+            '.\dist\agentdock-arbiter.exe',
+            '.\dist\agentdock-shim.exe',
+            '.\dist\agentdock-tray-shim.exe'
           )
 
       - name: Package
@@ -303,7 +309,7 @@ jobs:
           python .\packaging\build-core-skill-bundle.py --output dist\share\agentdock\core-skills
           Copy-Item .\packaging\windows\assets\agentdock.ico dist\agentdock.ico -Force
           Copy-Item .\scripts\install\manage-windows.ps1 dist\manage-windows.ps1 -Force
-          Compress-Archive -Path dist\agentdock.exe, dist\agentdock-tray.exe, dist\agentdock.ico, dist\manage-windows.ps1, dist\share, dist\wsl-helper -DestinationPath $asset -Force
+          Compress-Archive -Path dist\agentdock.exe, dist\agentdock-tray.exe, dist\agentdock-arbiter.exe, dist\agentdock-shim.exe, dist\agentdock-tray-shim.exe, dist\agentdock.ico, dist\manage-windows.ps1, dist\share, dist\wsl-helper -DestinationPath $asset -Force
           $hash = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
           [IO.File]::WriteAllText("$asset.sha256", "$hash  $asset`n", [Text.UTF8Encoding]::new($false))
 

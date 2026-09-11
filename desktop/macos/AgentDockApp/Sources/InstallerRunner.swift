@@ -405,7 +405,8 @@ func runUpdateProcess(
     executable: String,
     arguments: [String],
     environment: [String: String],
-    outputURL: URL
+    outputURL: URL,
+    onProgress: @escaping (UpdateProgressEvent) -> Void
 ) throws -> ProcessExecution {
     let outputDirectory = outputURL.deletingLastPathComponent()
     try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
@@ -427,14 +428,45 @@ func runUpdateProcess(
     let outputHandle = try FileHandle(forWritingTo: outputURL)
     defer { try? outputHandle.close() }
 
+    let progressPipe = Pipe()
     let process = Process()
     process.executableURL = URL(fileURLWithPath: executable)
     process.arguments = arguments
     process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, replacement in replacement }
-    process.standardOutput = outputHandle
+    process.standardOutput = progressPipe
     process.standardError = outputHandle
     try process.run()
+
+    // stdout 是版本化 NDJSON 机器协议；stderr 仍完整写入 update.log。
+    // 更新器进入 App 替换临界区前会把自身输出接管到日志文件，因此旧 GUI 退出时这里自然读到 EOF。
+    let progressHandle = progressPipe.fileHandleForReading
+    var buffered = Data()
+    var protocolWarnings: [String] = []
+    while true {
+        let chunk = progressHandle.availableData
+        if chunk.isEmpty { break }
+        buffered.append(chunk)
+        consumeUpdateProgressLines(
+            from: &buffered,
+            final: false,
+            onProgress: onProgress,
+            warnings: &protocolWarnings
+        )
+    }
+    consumeUpdateProgressLines(
+        from: &buffered,
+        final: true,
+        onProgress: onProgress,
+        warnings: &protocolWarnings
+    )
     process.waitUntilExit()
+
+    if !protocolWarnings.isEmpty {
+        let warningText = protocolWarnings.joined(separator: "\n") + "\n"
+        if let warningData = warningText.data(using: .utf8) {
+            try? outputHandle.write(contentsOf: warningData)
+        }
+    }
     try outputHandle.synchronize()
 
     let outputData = (try? Data(contentsOf: outputURL)) ?? Data()
@@ -442,4 +474,40 @@ func runUpdateProcess(
         status: process.terminationStatus,
         output: String(data: outputData, encoding: .utf8) ?? ""
     )
+}
+
+private func consumeUpdateProgressLines(
+    from buffer: inout Data,
+    final: Bool,
+    onProgress: (UpdateProgressEvent) -> Void,
+    warnings: inout [String]
+) {
+    while let newline = buffer.firstIndex(of: 0x0a) {
+        let line = Data(buffer[..<newline])
+        buffer.removeSubrange(...newline)
+        decodeUpdateProgressLine(line, onProgress: onProgress, warnings: &warnings)
+    }
+    if final, !buffer.isEmpty {
+        let line = buffer
+        buffer.removeAll(keepingCapacity: false)
+        decodeUpdateProgressLine(line, onProgress: onProgress, warnings: &warnings)
+    }
+}
+
+private func decodeUpdateProgressLine(
+    _ line: Data,
+    onProgress: (UpdateProgressEvent) -> Void,
+    warnings: inout [String]
+) {
+    guard !line.isEmpty else { return }
+    do {
+        let event = try JSONDecoder().decode(UpdateProgressEvent.self, from: line)
+        guard event.schemaVersion == 1 else {
+            warnings.append("Unsupported AgentDock update progress schema: \(event.schemaVersion)")
+            return
+        }
+        onProgress(event)
+    } catch {
+        warnings.append("Unable to decode AgentDock update progress event: \(error.localizedDescription)")
+    }
 }

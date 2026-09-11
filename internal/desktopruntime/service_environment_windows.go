@@ -98,6 +98,12 @@ func platformPrepareCoreEnvironment(runtimeRoot string) error {
 		"AGENTDOCK_BROWSER_REUSE_EXISTING_CDP": strconv.FormatBool(settings.BrowserReuseExistingCDP),
 		"AGENTDOCK_ACP_ENABLED":                strconv.FormatBool(settings.ACPEnabled),
 	}
+	if path := strings.TrimSpace(manifest.AgentDockHome); path != "" {
+		managed["AGENTDOCK_HOME"] = filepath.Clean(path)
+	}
+	if path := strings.TrimSpace(manifest.AgentDockDefaultDir); path != "" {
+		managed["AGENTDOCK_DEFAULT_DIR"] = filepath.Clean(path)
+	}
 	if settings.BrowserCDPURL != "" {
 		managed["AGENTDOCK_BROWSER_CDP_URL"] = settings.BrowserCDPURL
 	}

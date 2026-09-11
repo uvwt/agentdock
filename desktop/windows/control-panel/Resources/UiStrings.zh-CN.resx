@@ -293,6 +293,48 @@
   <data name="UpdateCompleted" xml:space="preserve">
     <value>更新完成。</value>
   </data>
+  <data name="UpdateFailed" xml:space="preserve">
+    <value>更新失败。</value>
+  </data>
+  <data name="UpdateRolledBack" xml:space="preserve">
+    <value>更新未能提交，AgentDock 已恢复到上一版本。</value>
+  </data>
+  <data name="UpdateTransactionResultTimeout" xml:space="preserve">
+    <value>更新事务未返回最终结果。如果问题持续，请重新打开 AgentDock 或执行修复安装。</value>
+  </data>
+  <data name="UpdateStageRollingBack" xml:space="preserve">
+    <value>正在恢复上一版本…</value>
+  </data>
+  <data name="PleaseWaitUpdating" xml:space="preserve">
+    <value>正在更新 AgentDock…</value>
+  </data>
+  <data name="UpdateStageChecking" xml:space="preserve">
+    <value>正在检查更新…</value>
+  </data>
+  <data name="UpdateStageDownloading" xml:space="preserve">
+    <value>正在下载更新…</value>
+  </data>
+  <data name="UpdateStageVerifying" xml:space="preserve">
+    <value>正在校验更新包…</value>
+  </data>
+  <data name="UpdateStageExtracting" xml:space="preserve">
+    <value>正在准备更新包…</value>
+  </data>
+  <data name="UpdateStageInstalling" xml:space="preserve">
+    <value>正在安装新版本…</value>
+  </data>
+  <data name="UpdateStageUpdatingSkills" xml:space="preserve">
+    <value>正在更新内置 Skill…</value>
+  </data>
+  <data name="UpdateStageRestarting" xml:space="preserve">
+    <value>正在启动并验证新版本…</value>
+  </data>
+  <data name="UpdateDownloadingProgress" xml:space="preserve">
+    <value>正在下载更新… {0} / {1}</value>
+  </data>
+  <data name="UpdateDownloadingUnknownSize" xml:space="preserve">
+    <value>正在下载更新… {0}</value>
+  </data>
   <data name="UpdateCheckFailed" xml:space="preserve">
     <value>检查更新失败。</value>
   </data>

@@ -87,6 +87,37 @@ final class MenuLoginAgentController {
         }
     }
 
+    func unregisterForUninstall() throws {
+        var failures: [String] = []
+        do {
+            try unregister()
+        } catch {
+            failures.append("AgentDock menu login item: \(error.localizedDescription)")
+        }
+
+        let obsoleteMainApp = SMAppService.mainApp
+        if obsoleteMainApp.status == .enabled || obsoleteMainApp.status == .requiresApproval {
+            do {
+                try obsoleteMainApp.unregister()
+            } catch {
+                failures.append("legacy AgentDock main app: \(error.localizedDescription)")
+            }
+        }
+
+        let legacyLoginItem = SMAppService.loginItem(identifier: legacyHelperIdentifier)
+        if legacyLoginItem.status == .enabled || legacyLoginItem.status == .requiresApproval {
+            do {
+                try legacyLoginItem.unregister()
+            } catch {
+                failures.append("legacy AgentDock login item: \(error.localizedDescription)")
+            }
+        }
+
+        if !failures.isEmpty {
+            throw ValidationError(failures.joined(separator: "\n"))
+        }
+    }
+
     private func initializePreferenceIfNeeded() {
         guard !defaults.bool(forKey: preferenceInitializedKey) else { return }
         defaults.set(true, forKey: preferenceInitializedKey)

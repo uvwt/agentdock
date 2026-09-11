@@ -43,6 +43,9 @@ func applyPlatformUpdate(ctx context.Context, request applyRequest) (applyResult
 	if request.DesktopOnly {
 		return applyWindowsDesktopOnlyUpdate(ctx, request)
 	}
+	if _, _, generationAware := windowsGenerationInstall(request.CurrentPath); generationAware {
+		return applyWindowsGenerationUpdate(ctx, request)
+	}
 	helperDir, err := os.MkdirTemp("", "agentdock-update-helper-*")
 	if err != nil {
 		return applyResult{}, fmt.Errorf("创建 Windows 更新辅助目录失败: %w", err)
@@ -483,7 +486,7 @@ func copyDirectoryWindows(sourceRoot, targetRoot string) error {
 		return err
 	}
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return errors.New("核心 Skill Bundle 必须是普通目录")
+		return fmt.Errorf("Windows 更新源必须是普通目录: %s", sourceRoot)
 	}
 	if err := os.Mkdir(targetRoot, 0o700); err != nil {
 		return err
@@ -496,7 +499,7 @@ func copyDirectoryWindows(sourceRoot, targetRoot string) error {
 			return nil
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("核心 Skill Bundle 不允许符号链接: %s", path)
+			return fmt.Errorf("Windows 更新目录不允许符号链接: %s", path)
 		}
 		relative, err := filepath.Rel(sourceRoot, path)
 		if err != nil {
@@ -507,7 +510,7 @@ func copyDirectoryWindows(sourceRoot, targetRoot string) error {
 			return os.Mkdir(target, 0o700)
 		}
 		if !entry.Type().IsRegular() {
-			return fmt.Errorf("核心 Skill Bundle 只允许普通文件: %s", path)
+			return fmt.Errorf("Windows 更新目录只允许普通文件: %s", path)
 		}
 		return copyFileWindows(path, target)
 	})

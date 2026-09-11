@@ -155,6 +155,58 @@ func processIDsAtPath(binaryPath string) ([]uint32, error) {
 	return processIDs, nil
 }
 
+// ancestorProcessIDsAtPath returns ancestor processes whose executable path exactly
+// matches binaryPath. A live generation update runs as:
+// stable shim -> source generation updater -> source Arbiter -> stable shim -> service stop.
+// The stop helper must terminate the long-running source Core, but it must not kill the
+// source updater that is synchronously waiting for the Arbiter's terminal result. Recovery
+// Arbiters do not have that updater ancestor, so crash recovery still stops every source Core.
+func ancestorProcessIDsAtPath(binaryPath string) (map[uint32]struct{}, error) {
+	target, err := filepath.Abs(binaryPath)
+	if err != nil {
+		return nil, err
+	}
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return nil, fmt.Errorf("创建 Windows 进程快照失败: %w", err)
+	}
+	defer windows.CloseHandle(snapshot)
+
+	parents := make(map[uint32]uint32)
+	entry := windows.ProcessEntry32{Size: uint32(unsafe.Sizeof(windows.ProcessEntry32{}))}
+	if err := windows.Process32First(snapshot, &entry); err != nil {
+		return nil, fmt.Errorf("读取 Windows 进程快照失败: %w", err)
+	}
+	for {
+		parents[entry.ProcessID] = entry.ParentProcessID
+		if err := windows.Process32Next(snapshot, &entry); err != nil {
+			if errors.Is(err, syscall.ERROR_NO_MORE_FILES) {
+				break
+			}
+			return nil, fmt.Errorf("继续读取 Windows 进程快照失败: %w", err)
+		}
+	}
+
+	excluded := map[uint32]struct{}{}
+	seen := map[uint32]struct{}{}
+	processID := uint32(os.Getpid())
+	for {
+		parentID := parents[processID]
+		if parentID == 0 {
+			break
+		}
+		if _, ok := seen[parentID]; ok {
+			break
+		}
+		seen[parentID] = struct{}{}
+		if processPath, pathErr := queryProcessPath(parentID); pathErr == nil && samePath(processPath, target) {
+			excluded[parentID] = struct{}{}
+		}
+		processID = parentID
+	}
+	return excluded, nil
+}
+
 func queryProcessPath(processID uint32) (string, error) {
 	process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, processID)
 	if err != nil {

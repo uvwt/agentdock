@@ -2,13 +2,19 @@
 param(
     [Parameter(Mandatory = $true)]
     [string] $SetupPath,
-    [string] $InstallRoot = (Join-Path $env:RUNNER_TEMP 'agentdock-setup-e2e'),
+    [string] $InstallRoot = '',
+    [int] $Port = 8765,
     [switch] $AllowLegacyTaskMutation
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+
+if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
+    $tempRoot = if ([string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) { [IO.Path]::GetTempPath() } else { $env:RUNNER_TEMP }
+    $InstallRoot = Join-Path $tempRoot 'agentdock-setup-e2e'
+}
 
 if (-not $AllowLegacyTaskMutation) {
     throw 'Legacy scheduled-task mutation is disabled. Pass -AllowLegacyTaskMutation only in an isolated Windows test environment.'
@@ -51,6 +57,28 @@ function Get-RunValue {
     }
 }
 
+function Get-ActiveGenerationPaths {
+    if (-not (Test-Path -LiteralPath $activeVersionPath -PathType Leaf)) {
+        throw "AgentDock active-version.json is missing: $activeVersionPath"
+    }
+    $active = Get-Content -LiteralPath $activeVersionPath -Raw | ConvertFrom-Json
+    if ([int] $active.schema_version -ne 1 -or [string]::IsNullOrWhiteSpace([string] $active.active_version)) {
+        throw "AgentDock active-version.json is invalid: $activeVersionPath"
+    }
+    $version = 'v' + ([string] $active.active_version).Trim().TrimStart('v')
+    $generationRoot = Join-Path $versionsDir $version
+    return [pscustomobject]@{
+        Version = $version
+        State = [string] $active.state
+        Root = $generationRoot
+        Core = Join-Path $generationRoot 'agentdock-core.exe'
+        Tray = Join-Path $generationRoot 'agentdock-tray.exe'
+        Arbiter = Join-Path $generationRoot 'agentdock-arbiter.exe'
+        Skills = Join-Path $generationRoot 'core-skills'
+        WSLHelper = Join-Path $generationRoot 'wsl-helper'
+    }
+}
+
 function Assert-ElevatedAgentDockTask {
     $task = Get-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -ErrorAction Stop
     if ($task.Principal.RunLevel.ToString() -ne 'Highest') {
@@ -70,45 +98,45 @@ function Assert-ElevatedAgentDockTask {
     $nativeActionMatch = @($task.Actions | Where-Object {
         $executeMatches = [string]::Equals(
             [IO.Path]::GetFullPath($_.Execute),
-            [IO.Path]::GetFullPath($trayPath),
+            [IO.Path]::GetFullPath($binaryPath),
             [StringComparison]::OrdinalIgnoreCase
         )
         $argumentsMatch = $_.Arguments -and
-            $_.Arguments.Contains('--run-core-task') -and
+            $_.Arguments.Contains('service launch-core') -and
             $_.Arguments.Contains('--runtime-root') -and
             $_.Arguments.Contains($InstallRoot)
         $executeMatches -and $argumentsMatch
     }).Count -eq 1
     if (-not $nativeActionMatch) {
         $actions = ($task.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -join '; '
-        throw "AgentDock task does not launch the elevated background host: $actions"
+        throw "AgentDock task does not launch the stable CUI service entry: $actions"
     }
     if (@($task.Actions | Where-Object {
         $_.Execute.Contains('powershell.exe') -or
-        [string]::Equals($_.Execute, $binaryPath, [StringComparison]::OrdinalIgnoreCase) -or
-        ($_.Arguments -and $_.Arguments.Contains('--start-core'))
+        [string]::Equals($_.Execute, $trayPath, [StringComparison]::OrdinalIgnoreCase) -or
+        ($_.Arguments -and ($_.Arguments.Contains('--run-core-task') -or $_.Arguments.Contains('--start-core')))
     }).Count -gt 0) {
-        throw 'AgentDock elevated task must use the tray background host without PowerShell or a console core action.'
+        throw 'AgentDock elevated task must use the stable CUI shim without PowerShell or the legacy tray host.'
     }
 }
 
 function Assert-CoreRunsWithoutConsole {
-    $normalizedBinary = [IO.Path]::GetFullPath($binaryPath)
+    $generation = Get-ActiveGenerationPaths
+    $normalizedBinary = [IO.Path]::GetFullPath($generation.Core)
     $coreProcesses = @(Get-CimInstance Win32_Process | Where-Object {
-        $_.Name -eq 'agentdock.exe' -and
         -not [string]::IsNullOrWhiteSpace($_.ExecutablePath) -and
         [string]::Equals([IO.Path]::GetFullPath($_.ExecutablePath), $normalizedBinary, [StringComparison]::OrdinalIgnoreCase)
     })
     if ($coreProcesses.Count -ne 1) {
-        throw "Expected one AgentDock core process, got $($coreProcesses.Count)."
+        throw "Expected one active generation Core process, got $($coreProcesses.Count): $normalizedBinary"
     }
 
     $core = $coreProcesses[0]
     $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$($core.ParentProcessId)" -ErrorAction Stop
-    if ($parent.Name -ne 'agentdock-tray.exe' -or
+    if ($parent.Name -ne 'agentdock.exe' -or
         [string]::IsNullOrWhiteSpace($parent.ExecutablePath) -or
-        -not [string]::Equals([IO.Path]::GetFullPath($parent.ExecutablePath), [IO.Path]::GetFullPath($trayPath), [StringComparison]::OrdinalIgnoreCase)) {
-        throw "Elevated core is not supervised by the AgentDock background host: $($parent.Name) $($parent.ExecutablePath)"
+        -not [string]::Equals([IO.Path]::GetFullPath($parent.ExecutablePath), [IO.Path]::GetFullPath($binaryPath), [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Elevated generation Core is not supervised by the stable CUI shim: $($parent.Name) $($parent.ExecutablePath)"
     }
 
     $consoleHosts = @(Get-CimInstance Win32_Process | Where-Object {
@@ -123,7 +151,7 @@ function Assert-CoreRunsWithoutConsole {
         }
     })
     if ($visibleConsoleHosts.Count -gt 0) {
-        throw "Elevated core unexpectedly owns a visible console window: $($visibleConsoleHosts.ProcessId -join ', ')"
+        throw "Elevated generation Core unexpectedly owns a visible console window: $($visibleConsoleHosts.ProcessId -join ', ')"
     }
 }
 
@@ -136,13 +164,13 @@ function Start-AgentDockScheduledTask {
 }
 
 function Assert-TaskStopKillsCore {
+    $generation = Get-ActiveGenerationPaths
     Stop-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -ErrorAction Stop
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
     do {
         $remainingCore = @(Get-CimInstance Win32_Process | Where-Object {
-            $_.Name -eq 'agentdock.exe' -and
             -not [string]::IsNullOrWhiteSpace($_.ExecutablePath) -and
-            [string]::Equals([IO.Path]::GetFullPath($_.ExecutablePath), [IO.Path]::GetFullPath($binaryPath), [StringComparison]::OrdinalIgnoreCase)
+            [string]::Equals([IO.Path]::GetFullPath($_.ExecutablePath), [IO.Path]::GetFullPath($generation.Core), [StringComparison]::OrdinalIgnoreCase)
         })
         if ($remainingCore.Count -eq 0) {
             break
@@ -177,11 +205,11 @@ function Assert-ElevatedCoreLifecycle {
         throw "Elevated core stop failed: $($stopOutput -join [Environment]::NewLine)"
     }
     $stopDeadline = [DateTime]::UtcNow.AddSeconds(15)
+    $generation = Get-ActiveGenerationPaths
     do {
         $remainingCore = @(Get-CimInstance Win32_Process | Where-Object {
-            $_.Name -eq 'agentdock.exe' -and
             -not [string]::IsNullOrWhiteSpace($_.ExecutablePath) -and
-            [string]::Equals([IO.Path]::GetFullPath($_.ExecutablePath), [IO.Path]::GetFullPath($binaryPath), [StringComparison]::OrdinalIgnoreCase)
+            [string]::Equals([IO.Path]::GetFullPath($_.ExecutablePath), [IO.Path]::GetFullPath($generation.Core), [StringComparison]::OrdinalIgnoreCase)
         })
         if ($remainingCore.Count -eq 0) {
             break
@@ -229,21 +257,24 @@ $binaryPath = Join-Path $InstallRoot 'bin\agentdock.exe'
 $trayPath = Join-Path $InstallRoot 'bin\agentdock-tray.exe'
 $trayIconPath = Join-Path $InstallRoot 'bin\agentdock.ico'
 $manifestPath = Join-Path $InstallRoot 'runtime.json'
+$activeVersionPath = Join-Path $InstallRoot 'active-version.json'
+$versionsDir = Join-Path $InstallRoot 'versions'
 $launcherPath = Join-Path $InstallRoot 'start-agentdock.ps1'
 $uninstallerPath = Join-Path $InstallRoot 'unins000.exe'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $userHome = [Environment]::GetFolderPath('UserProfile')
 $stateRoot = Join-Path $userHome '.agentdock'
 $stateMarker = Join-Path $stateRoot ('setup-e2e-preserve-' + [Guid]::NewGuid().ToString('N') + '.txt')
-$healthUrl = 'http://127.0.0.1:8765/healthz'
+$healthUrl = "http://127.0.0.1:$Port/healthz"
 $setupProcess = $null
 $repeatProcess = $null
 $repairProcess = $null
 $uninstallProcess = $null
-$setupLogPath = Join-Path $env:RUNNER_TEMP 'agentdock-setup-e2e-install.log'
-$repeatLogPath = Join-Path $env:RUNNER_TEMP 'agentdock-setup-e2e-repeat.log'
-$repairLogPath = Join-Path $env:RUNNER_TEMP 'agentdock-setup-e2e-repair.log'
-$uninstallLogPath = Join-Path $env:RUNNER_TEMP 'agentdock-setup-e2e-uninstall.log'
+$runtimeTempRoot = if ([string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) { [IO.Path]::GetTempPath() } else { $env:RUNNER_TEMP }
+$setupLogPath = Join-Path $runtimeTempRoot 'agentdock-setup-e2e-install.log'
+$repeatLogPath = Join-Path $runtimeTempRoot 'agentdock-setup-e2e-repeat.log'
+$repairLogPath = Join-Path $runtimeTempRoot 'agentdock-setup-e2e-repair.log'
+$uninstallLogPath = Join-Path $runtimeTempRoot 'agentdock-setup-e2e-uninstall.log'
 $oldReleaseBaseUrl = $env:AGENTDOCK_RELEASE_BASE_URL
 $oldCloudflaredReleaseBaseUrl = $env:AGENTDOCK_CLOUDFLARED_RELEASE_BASE_URL
 
@@ -271,6 +302,7 @@ try {
             '/NORESTART',
             "/DIR=$InstallRoot",
             "/LOG=$setupLogPath",
+            "/PORT=$Port",
             '/MODE=local',
             '/AUTOSTART=1',
             '/ADMINMODE=elevated'
@@ -294,6 +326,29 @@ try {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
             throw "Setup did not create expected file: $path"
         }
+    }
+    $generation = Get-ActiveGenerationPaths
+    if (-not [string]::Equals($generation.State, 'committed', [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Fresh Setup left active-version.json outside committed state: $($generation.State)"
+    }
+    foreach ($path in @(
+        $activeVersionPath,
+        $generation.Core,
+        $generation.Tray,
+        $generation.Arbiter,
+        (Join-Path $generation.Skills 'manifest.json'),
+        (Join-Path $generation.WSLHelper 'manifest.json'),
+        (Join-Path $generation.WSLHelper 'agentdock-wsl-helper-linux-amd64'),
+        (Join-Path $generation.WSLHelper 'agentdock-wsl-helper-linux-arm64')
+    )) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Setup generation layout is incomplete: $path"
+        }
+    }
+    $stableVersion = (& $binaryPath version --json | ConvertFrom-Json).version
+    if ([string]::IsNullOrWhiteSpace([string] $stableVersion) -or
+        -not [string]::Equals(('v' + ([string] $stableVersion).TrimStart('v')), $generation.Version, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Stable CUI shim did not resolve the committed generation: $stableVersion / $($generation.Version)"
     }
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     if (-not [string]::Equals(
@@ -323,7 +378,7 @@ try {
     if ($manifest.tunnel_mode -ne 'none') {
         throw "Local Setup unexpectedly enabled public access: $($manifest.tunnel_mode)"
     }
-    if ($manifest.local_mcp_url -ne 'http://127.0.0.1:8765/mcp') {
+    if ($manifest.local_mcp_url -ne "http://127.0.0.1:$Port/mcp") {
         throw "Unexpected local MCP URL: $($manifest.local_mcp_url)"
     }
     if ($manifest.privilege_mode -ne 'elevated' -or $manifest.agentdock_task_name -ne 'AgentDock') {
@@ -355,6 +410,7 @@ try {
             '/NORESTART',
             "/DIR=$InstallRoot",
             "/LOG=$repeatLogPath",
+            "/PORT=$Port",
             '/ADMINMODE=elevated'
         ) `
         -PassThru
@@ -367,12 +423,21 @@ try {
     if ($repeatLog -notmatch 'existing installation detected: source=setup') {
         throw 'Repeated Setup did not recognize the existing Setup-managed installation.'
     }
+    $generation = Get-ActiveGenerationPaths
+    if (-not [string]::Equals($generation.State, 'committed', [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Same-version Setup repair did not end committed: $($generation.State)"
+    }
+    if (@(Get-ChildItem -LiteralPath $versionsDir -Directory -Filter '.repair-backup-*' -ErrorAction SilentlyContinue).Count -ne 0) {
+        throw 'Same-version Setup repair left a .repair-backup-* directory behind.'
+    }
     Assert-ElevatedAgentDockTask
     Assert-CoreRunsWithoutConsole
 
     Write-Host 'Creating a running legacy AgentDock scheduled task for migration testing.'
     Stop-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -Confirm:$false -ErrorAction Stop
+    $generation = Get-ActiveGenerationPaths
+    Stop-ProcessByPath -ProcessName 'agentdock-core' -BinaryPath $generation.Core
     Stop-ProcessByPath -ProcessName 'agentdock' -BinaryPath $binaryPath
     Start-Sleep -Milliseconds 500
     foreach ($name in @('AgentDock', 'AgentDockTray')) {
@@ -415,7 +480,8 @@ try {
             '/LANG=chinesesimplified',
             '/NORESTART',
             "/DIR=$InstallRoot",
-            "/LOG=$repairLogPath"
+            "/LOG=$repairLogPath",
+            "/PORT=$Port"
         ) `
         -PassThru
     Wait-ProcessOrThrow `
@@ -464,6 +530,11 @@ try {
     if (Test-Path -LiteralPath $binaryPath -PathType Leaf) {
         throw 'AgentDock binary remained after Setup uninstall.'
     }
+    foreach ($path in @($activeVersionPath, $versionsDir, (Join-Path $InstallRoot 'update'))) {
+        if (Test-Path -LiteralPath $path) {
+            throw "Generation/update state remained after Setup uninstall: $path"
+        }
+    }
     if (-not (Test-Path -LiteralPath $stateMarker -PathType Leaf)) {
         throw 'Silent Setup uninstall unexpectedly deleted user state.'
     }
@@ -494,6 +565,13 @@ try {
     foreach ($process in @($setupProcess, $repairProcess, $uninstallProcess)) {
         if ($process -and -not $process.HasExited) {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if (Test-Path -LiteralPath $versionsDir -PathType Container) {
+        foreach ($generationDirectory in @(Get-ChildItem -LiteralPath $versionsDir -Directory -ErrorAction SilentlyContinue)) {
+            Stop-ProcessByPath -ProcessName 'agentdock-tray' -BinaryPath (Join-Path $generationDirectory.FullName 'agentdock-tray.exe')
+            Stop-ProcessByPath -ProcessName 'agentdock-core' -BinaryPath (Join-Path $generationDirectory.FullName 'agentdock-core.exe')
+            Stop-ProcessByPath -ProcessName 'agentdock-arbiter' -BinaryPath (Join-Path $generationDirectory.FullName 'agentdock-arbiter.exe')
         }
     }
     Stop-ProcessByPath -ProcessName 'agentdock-tray' -BinaryPath $trayPath

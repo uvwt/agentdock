@@ -58,10 +58,13 @@ struct ServiceControllerValidationTests {
         }
 
         try testConfiguredTunnelMode(root: root, appBundle: appBundle)
+        try testLegacyRuntimeMigrationTransactions(root: root, appBundle: appBundle)
         testQuickTunnelBootstrap()
         testServiceRegistrationStatusClassification()
         try testNexusConnectionStateResolution(root: root)
         try testDesktopUpdateCheckDecoding()
+        try testUpdateProgressEventDecoding()
+        try testStreamingUpdateProcess(root: root)
 
         print("service controller validation tests passed")
     }
@@ -84,6 +87,67 @@ struct ServiceControllerValidationTests {
             try Data("AGENTDOCK_TUNNEL_MODE='\(rawMode)'\n".utf8).write(to: paths.tunnelEnvironment)
             let configuredMode = try service.configuredTunnelMode()
             precondition(configuredMode == expected, rawMode)
+        }
+    }
+
+    private static func testLegacyRuntimeMigrationTransactions(root: URL, appBundle: URL) throws {
+        try verifyLegacyRuntimeMigration(root: root, appBundle: appBundle, shouldCommit: true)
+        try verifyLegacyRuntimeMigration(root: root, appBundle: appBundle, shouldCommit: false)
+    }
+
+    private static func verifyLegacyRuntimeMigration(
+        root: URL,
+        appBundle: URL,
+        shouldCommit: Bool
+    ) throws {
+        let name = shouldCommit ? "commit" : "rollback"
+        let home = root.appendingPathComponent("legacy-migration-\(name)", isDirectory: true)
+        let paths = AppPaths(home: home, appBundle: appBundle)
+        let launchAgents = home.appendingPathComponent("Library/LaunchAgents", isDirectory: true)
+        let localBin = home.appendingPathComponent(".local/bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: launchAgents, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: localBin, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: paths.stateDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: paths.workDirectory, withIntermediateDirectories: true)
+
+        let legacyBinary = localBin.appendingPathComponent("agentdock")
+        let legacyPlist = launchAgents.appendingPathComponent("com.uvwt.agentdock.plist")
+        let stateMarker = paths.stateDirectory.appendingPathComponent("preserve.txt")
+        let workspaceMarker = paths.workDirectory.appendingPathComponent("preserve.txt")
+        try Data("legacy-binary".utf8).write(to: legacyBinary)
+        try Data("legacy-plist".utf8).write(to: legacyPlist)
+        try Data("state".utf8).write(to: stateMarker)
+        try Data("workspace".utf8).write(to: workspaceMarker)
+
+        let migration = LegacyDesktopRuntimeMigration(paths: paths)
+        guard let transaction = try migration.begin() else {
+            preconditionFailure("legacy migration was not detected")
+        }
+        precondition(!FileManager.default.fileExists(atPath: legacyBinary.path))
+        precondition(!FileManager.default.fileExists(atPath: legacyPlist.path))
+
+        if shouldCommit {
+            try transaction.commit()
+            precondition(!FileManager.default.fileExists(atPath: legacyBinary.path))
+            precondition(!FileManager.default.fileExists(atPath: legacyPlist.path))
+        } else {
+            try transaction.rollback()
+            let restoredBinary = try Data(contentsOf: legacyBinary)
+            let restoredPlist = try Data(contentsOf: legacyPlist)
+            precondition(restoredBinary == Data("legacy-binary".utf8))
+            precondition(restoredPlist == Data("legacy-plist".utf8))
+        }
+
+        let preservedState = try Data(contentsOf: stateMarker)
+        let preservedWorkspace = try Data(contentsOf: workspaceMarker)
+        precondition(preservedState == Data("state".utf8))
+        precondition(preservedWorkspace == Data("workspace".utf8))
+        if FileManager.default.fileExists(atPath: paths.appSupport.path) {
+            let leftovers = try FileManager.default.contentsOfDirectory(
+                at: paths.appSupport,
+                includingPropertiesForKeys: nil
+            ).filter { $0.lastPathComponent.hasPrefix(".legacy-runtime-migration-") }
+            precondition(leftovers.isEmpty, "legacy migration backup was not cleaned")
         }
     }
 
@@ -138,10 +202,12 @@ struct ServiceControllerValidationTests {
 
     private static func testDesktopUpdateCheckDecoding() throws {
         let current = try DesktopUpdateCheck.decode(
-            #"{"update_available":false,"message":"当前已是最新版本：v0.7.2"}"#
+            #"{"current_version":"v0.7.2","latest_version":"v0.7.2","update_available":false,"message":"当前已是最新版本：v0.7.2"}"#
         )
         precondition(!current.updateAvailable)
         precondition(current.message.contains("最新版本"))
+        precondition(current.currentVersion == "v0.7.2")
+        precondition(current.latestVersion == "v0.7.2")
 
         let available = try DesktopUpdateCheck.decode(
             #"{"update_available":true,"message":"发现 AgentDock App 更新"}"#
@@ -151,6 +217,40 @@ struct ServiceControllerValidationTests {
         expectFailure(L10n.text("Unable to parse the AgentDock update check result.")) {
             _ = try DesktopUpdateCheck.decode("not-json")
         }
+    }
+
+    private static func testUpdateProgressEventDecoding() throws {
+        let progress = try JSONDecoder().decode(
+            UpdateProgressEvent.self,
+            from: Data(#"{"schema_version":1,"type":"progress","stage":"downloading","current_version":"v0.8.3","target_version":"v0.9.0","bytes":1024,"total_bytes":4096}"#.utf8)
+        )
+        precondition(progress.schemaVersion == 1)
+        precondition(progress.type == .progress)
+        precondition(progress.stage == .downloading)
+        precondition(progress.currentVersion == "v0.8.3")
+        precondition(progress.targetVersion == "v0.9.0")
+        precondition(progress.bytes == 1024)
+        precondition(progress.totalBytes == 4096)
+    }
+
+    private static func testStreamingUpdateProcess(root: URL) throws {
+        let logURL = root.appendingPathComponent("streaming-update.log")
+        var events: [UpdateProgressEvent] = []
+        let result = try runUpdateProcess(
+            executable: "/bin/sh",
+            arguments: [
+                "-c",
+                #"printf '%s\n' '{"schema_version":1,"type":"stage","stage":"verifying","current_version":"v0.8.3","target_version":"v0.9.0"}'; printf '%s\n' 'human update log' >&2"#,
+            ],
+            environment: [:],
+            outputURL: logURL,
+            onProgress: { events.append($0) }
+        )
+        precondition(result.status == 0)
+        precondition(events.count == 1)
+        precondition(events[0].stage == .verifying)
+        precondition(result.output.contains("human update log"))
+        precondition(!result.output.contains("schema_version"))
     }
 
     private static func expectFailure(_ expected: String, operation: () throws -> Void) {

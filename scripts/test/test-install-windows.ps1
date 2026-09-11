@@ -161,7 +161,7 @@ foreach ($required in @(
     '--user-sid',
     '--user-name',
     '-AdminLauncherPath $sourceTrayBinary',
-    '-LauncherPath $destinationTrayBinary',
+    '-LauncherPath $destinationBinary',
     '$effectivePrivilegeMode -eq ''elevated'' -and -not $taskState.Exists',
     '$installWarningCode = ''elevated-mode-fallback''',
     '$installWarningCode = "$installWarningCode,runtime-launch-deferred"',
@@ -561,14 +561,15 @@ foreach ($required in @(
     'EnsureSameWindowsUser(request.UserSid)',
     'RegisterTaskDefinition(',
     'SetSecurityDescriptor(',
-    '--run-core-task --runtime-root',
+    'service launch-core --runtime-root',
     'prepare-elevated',
     'prepare-standard',
     'restore',
     'remove',
     'set-enabled',
     'StopInstalledCore',
-    'Process.GetProcessesByName("agentdock")',
+    'new[] { "agentdock", "agentdock-core" }',
+    'Process.GetProcessesByName(processName)',
     'process.Kill(entireProcessTree: true)'
 )) {
     if (-not $taskAdminSource.Contains($required)) {

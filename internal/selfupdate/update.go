@@ -74,6 +74,7 @@ type options struct {
 	ReleaseAPI            string
 	HTTPClient            *http.Client
 	Output                io.Writer
+	Progress              updateProgressReporter
 	Apply                 func(context.Context, applyRequest) (applyResult, error)
 	VerifyBinary          func(context.Context, string, string) error
 	ExtractDesktop        func(context.Context, []byte, string, string) (string, error)
@@ -89,6 +90,7 @@ type applyRequest struct {
 	DesktopOnly       bool
 	TargetVersion     string
 	Output            io.Writer
+	Progress          updateProgressReporter
 }
 
 type applyResult struct {
@@ -102,6 +104,27 @@ func Run(ctx context.Context, output io.Writer) error {
 		return err
 	}
 	return run(ctx, opts)
+}
+
+func RunWithProgress(ctx context.Context, output io.Writer, progressOutput io.Writer) error {
+	opts, err := runtimeOptions(output)
+	if err != nil {
+		return err
+	}
+	if progressOutput == nil {
+		progressOutput = io.Discard
+	}
+	opts.Progress = newJSONProgressReporter(progressOutput)
+	reportUpdateStage(opts.Progress, UpdateStageChecking, opts.CurrentVersion, "", "")
+	if err := run(ctx, opts); err != nil {
+		opts.Progress(UpdateProgressEvent{
+			Type:           "failed",
+			CurrentVersion: normalizeVersion(opts.CurrentVersion),
+			Error:          err.Error(),
+		})
+		return err
+	}
+	return nil
 }
 
 func Check(ctx context.Context) (CheckResult, error) {
@@ -162,6 +185,13 @@ func run(ctx context.Context, opts options) error {
 	}
 	if !inspection.Result.UpdateAvailable {
 		fmt.Fprintln(opts.Output, inspection.Result.Message)
+		if opts.Progress != nil {
+			opts.Progress(UpdateProgressEvent{
+				Type:           "completed",
+				CurrentVersion: normalizeVersion(inspection.Result.CurrentVersion),
+				TargetVersion:  normalizeVersion(inspection.Result.LatestVersion),
+			})
+		}
 		return nil
 	}
 	if opts.DesktopOnly || (inspection.Result.DesktopUpdateAvailable && normalizeVersion(inspection.Result.CurrentVersion) == normalizeVersion(inspection.Result.LatestVersion)) {
@@ -177,10 +207,14 @@ func run(ctx context.Context, opts options) error {
 
 	fmt.Fprintf(opts.Output, "当前版本：%s\n最新版本：%s\n\n", currentVersion, targetVersion)
 	fmt.Fprintf(opts.Output, "正在下载 %s...\n", archiveName)
-	archiveData, err := download(ctx, opts.HTTPClient, archiveAsset.URL, maxReleaseArchiveBytes)
+	reportUpdateStage(opts.Progress, UpdateStageDownloading, currentVersion, targetVersion, archiveName)
+	archiveData, err := downloadWithProgress(ctx, opts.HTTPClient, archiveAsset.URL, maxReleaseArchiveBytes, func(bytesRead, totalBytes int64) {
+		reportDownloadProgress(opts.Progress, currentVersion, targetVersion, archiveName, bytesRead, totalBytes)
+	})
 	if err != nil {
 		return fmt.Errorf("下载更新文件失败: %w", err)
 	}
+	reportUpdateStage(opts.Progress, UpdateStageVerifying, currentVersion, targetVersion, archiveName)
 	checksumData, err := download(ctx, opts.HTTPClient, checksumAsset.URL, 1<<20)
 	if err != nil {
 		return fmt.Errorf("下载校验文件失败: %w", err)
@@ -196,6 +230,7 @@ func run(ctx context.Context, opts options) error {
 	}
 	defer os.RemoveAll(tempDir)
 
+	reportUpdateStage(opts.Progress, UpdateStageExtracting, currentVersion, targetVersion, archiveName)
 	binaryData, err := extractExecutable(archiveData, opts.GOOS, executableName)
 	if err != nil {
 		return fmt.Errorf("解压更新文件失败: %w", err)
@@ -217,11 +252,15 @@ func run(ctx context.Context, opts options) error {
 		desktopArchiveData := archiveData
 		if inspection.DesktopArchiveAsset.Name != archiveAsset.Name || inspection.DesktopArchiveAsset.URL != archiveAsset.URL {
 			fmt.Fprintf(opts.Output, "正在下载 %s...\n", inspection.DesktopArchiveAsset.Name)
+			reportUpdateStage(opts.Progress, UpdateStageDownloading, currentVersion, targetVersion, inspection.DesktopArchiveAsset.Name)
 			var downloadErr error
-			desktopArchiveData, downloadErr = download(ctx, opts.HTTPClient, inspection.DesktopArchiveAsset.URL, maxDesktopArchiveBytes)
+			desktopArchiveData, downloadErr = downloadWithProgress(ctx, opts.HTTPClient, inspection.DesktopArchiveAsset.URL, maxDesktopArchiveBytes, func(bytesRead, totalBytes int64) {
+				reportDownloadProgress(opts.Progress, currentVersion, targetVersion, inspection.DesktopArchiveAsset.Name, bytesRead, totalBytes)
+			})
 			if downloadErr != nil {
 				return fmt.Errorf("下载桌面组件更新文件失败: %w", downloadErr)
 			}
+			reportUpdateStage(opts.Progress, UpdateStageVerifying, currentVersion, targetVersion, inspection.DesktopArchiveAsset.Name)
 			desktopChecksumData, checksumErr := download(ctx, opts.HTTPClient, inspection.DesktopChecksumAsset.URL, 1<<20)
 			if checksumErr != nil {
 				return fmt.Errorf("下载桌面组件校验文件失败: %w", checksumErr)
@@ -230,6 +269,7 @@ func run(ctx context.Context, opts options) error {
 				return fmt.Errorf("桌面组件更新文件校验失败，当前版本未被修改: %w", checksumErr)
 			}
 		}
+		reportUpdateStage(opts.Progress, UpdateStageExtracting, currentVersion, targetVersion, inspection.DesktopArchiveAsset.Name)
 		desktopStagedPath, err = opts.ExtractDesktop(ctx, desktopArchiveData, tempDir, targetVersion)
 		if err != nil {
 			return fmt.Errorf("解压桌面组件更新文件失败: %w", err)
@@ -247,6 +287,7 @@ func run(ctx context.Context, opts options) error {
 		DesktopStagedPath: desktopStagedPath,
 		TargetVersion:     targetVersion,
 		Output:            opts.Output,
+		Progress:          opts.Progress,
 	})
 	if err != nil {
 		return err
@@ -259,6 +300,13 @@ func run(ctx context.Context, opts options) error {
 		fmt.Fprintf(opts.Output, "更新完成并已重启：%s → %s\n", currentVersion, targetVersion)
 	} else {
 		fmt.Fprintf(opts.Output, "更新完成：%s → %s。当前未检测到托管服务，请重新启动正在运行的 AgentDock。\n", currentVersion, targetVersion)
+	}
+	if opts.Progress != nil {
+		opts.Progress(UpdateProgressEvent{
+			Type:           "completed",
+			CurrentVersion: normalizeVersion(targetVersion),
+			TargetVersion:  normalizeVersion(targetVersion),
+		})
 	}
 	return nil
 }
@@ -273,10 +321,14 @@ func runDesktopOnlyUpdate(ctx context.Context, opts options, inspection updateIn
 
 	fmt.Fprintf(opts.Output, "当前版本：%s\n最新版本：%s\n\n", inspection.Result.CurrentVersion, targetVersion)
 	fmt.Fprintf(opts.Output, "正在下载 %s...\n", asset.Name)
-	archiveData, err := download(ctx, opts.HTTPClient, asset.URL, maxDesktopArchiveBytes)
+	reportUpdateStage(opts.Progress, UpdateStageDownloading, inspection.Result.CurrentVersion, targetVersion, asset.Name)
+	archiveData, err := downloadWithProgress(ctx, opts.HTTPClient, asset.URL, maxDesktopArchiveBytes, func(bytesRead, totalBytes int64) {
+		reportDownloadProgress(opts.Progress, inspection.Result.CurrentVersion, targetVersion, asset.Name, bytesRead, totalBytes)
+	})
 	if err != nil {
 		return fmt.Errorf("下载桌面组件更新文件失败: %w", err)
 	}
+	reportUpdateStage(opts.Progress, UpdateStageVerifying, inspection.Result.CurrentVersion, targetVersion, asset.Name)
 	checksumData, err := download(ctx, opts.HTTPClient, checksumAsset.URL, 1<<20)
 	if err != nil {
 		return fmt.Errorf("下载桌面组件校验文件失败: %w", err)
@@ -290,6 +342,7 @@ func runDesktopOnlyUpdate(ctx context.Context, opts options, inspection updateIn
 		return fmt.Errorf("创建桌面组件更新临时目录失败: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
+	reportUpdateStage(opts.Progress, UpdateStageExtracting, inspection.Result.CurrentVersion, targetVersion, asset.Name)
 	stagedDesktop, err := opts.ExtractDesktop(ctx, archiveData, tempDir, targetVersion)
 	if err != nil {
 		return fmt.Errorf("解压桌面组件更新文件失败: %w", err)
@@ -304,7 +357,15 @@ func runDesktopOnlyUpdate(ctx context.Context, opts options, inspection updateIn
 		DesktopOnly:       true,
 		TargetVersion:     targetVersion,
 		Output:            opts.Output,
+		Progress:          opts.Progress,
 	})
+	if err == nil && opts.Progress != nil {
+		opts.Progress(UpdateProgressEvent{
+			Type:           "completed",
+			CurrentVersion: normalizeVersion(targetVersion),
+			TargetVersion:  normalizeVersion(targetVersion),
+		})
+	}
 	return err
 }
 
@@ -443,6 +504,16 @@ func fetchLatestRelease(ctx context.Context, client *http.Client, endpoint strin
 }
 
 func download(ctx context.Context, client *http.Client, rawURL string, limit int64) ([]byte, error) {
+	return downloadWithProgress(ctx, client, rawURL, limit, nil)
+}
+
+func downloadWithProgress(
+	ctx context.Context,
+	client *http.Client,
+	rawURL string,
+	limit int64,
+	onProgress func(bytesRead int64, totalBytes int64),
+) ([]byte, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") {
 		return nil, fmt.Errorf("无效下载地址 %q", rawURL)
@@ -460,15 +531,49 @@ func download(ctx context.Context, client *http.Client, rawURL string, limit int
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	reader := io.LimitReader(resp.Body, limit+1)
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(data)) > limit {
+	totalBytes := resp.ContentLength
+	if totalBytes <= 0 {
+		totalBytes = -1
+	} else if totalBytes > limit {
 		return nil, fmt.Errorf("下载内容超过 %d 字节限制", limit)
 	}
-	return data, nil
+	if onProgress != nil {
+		onProgress(0, totalBytes)
+	}
+
+	reader := io.LimitReader(resp.Body, limit+1)
+	var buffer bytes.Buffer
+	chunk := make([]byte, 64*1024)
+	var bytesRead int64
+	var lastReported int64 = -1
+	lastReportAt := time.Now()
+	for {
+		n, readErr := reader.Read(chunk)
+		if n > 0 {
+			bytesRead += int64(n)
+			if bytesRead > limit {
+				return nil, fmt.Errorf("下载内容超过 %d 字节限制", limit)
+			}
+			if _, err := buffer.Write(chunk[:n]); err != nil {
+				return nil, err
+			}
+			if onProgress != nil && time.Since(lastReportAt) >= 100*time.Millisecond {
+				onProgress(bytesRead, totalBytes)
+				lastReported = bytesRead
+				lastReportAt = time.Now()
+			}
+		}
+		if readErr != nil {
+			if !errors.Is(readErr, io.EOF) {
+				return nil, readErr
+			}
+			break
+		}
+	}
+	if onProgress != nil && lastReported != bytesRead {
+		onProgress(bytesRead, totalBytes)
+	}
+	return buffer.Bytes(), nil
 }
 
 func verifyChecksum(data, checksumFile []byte) error {

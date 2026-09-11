@@ -53,8 +53,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 				return err
 			}
 			return json.NewEncoder(stdout).Encode(result)
+		case len(args) == 2 && args[1] == "--progress-json":
+			// stdout 是稳定的机器事件流；人类可读日志单独走 stderr，桌面端无需解析文案。
+			return selfupdate.RunWithProgress(ctx, stderr, stdout)
+		case len(args) == 7 && args[1] == "--local-archive" && args[3] == "--checksum" && args[5] == "--target-version":
+			// Setup 在 generation 布局建立后只负责分发离线 Release ZIP；真正的
+			// stage/trial/commit/rollback 仍走与在线更新相同的 Go Update Engine。
+			return selfupdate.RunLocalArchive(ctx, args[2], args[4], args[6], stdout)
 		default:
-			return errors.New("用法：agentdock update [--check]")
+			return errors.New("用法：agentdock update [--check|--progress-json|--local-archive <zip> --checksum <sha256> --target-version <version>]")
 		}
 	}
 	if len(args) > 0 && args[0] == "service" {

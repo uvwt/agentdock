@@ -308,6 +308,9 @@ func writeSignedMacOSApp(t *testing.T, root, version string) string {
 	if err := os.WriteFile(filepath.Join(helpersDir, "cloudflared"), cloudflaredBinary, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(helpersDir, "agentdock-arbiter"), cloudflaredBinary, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(helpersDir, "AgentDockLoginHelper"), cloudflaredBinary, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -344,6 +347,7 @@ func writeSignedMacOSApp(t *testing.T, root, version string) string {
 	runTestCommand(t, "/usr/bin/codesign", "--force", "--sign", "-", "--identifier", "com.uvwt.agentdock.login-helper", filepath.Join(helpersDir, "AgentDockLoginHelper"))
 	runTestCommand(t, "/usr/bin/codesign", "--force", "--sign", "-", "--identifier", "com.uvwt.agentdock.core", filepath.Join(helpersDir, "agentdock"))
 	runTestCommand(t, "/usr/bin/codesign", "--force", "--sign", "-", "--identifier", "com.uvwt.agentdock.cloudflared", filepath.Join(helpersDir, "cloudflared"))
+	runTestCommand(t, "/usr/bin/codesign", "--force", "--sign", "-", "--identifier", "com.uvwt.agentdock.arbiter", filepath.Join(helpersDir, "agentdock-arbiter"))
 	runTestCommand(t, "/usr/bin/codesign", "--force", "--deep", "--sign", "-", "--identifier", "com.uvwt.agentdock", appPath)
 	if err := validateMacOSDesktopRuntime(context.Background(), appPath, version); err != nil {
 		t.Fatal(err)
