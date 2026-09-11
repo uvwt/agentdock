@@ -75,6 +75,7 @@ function Get-ActiveGenerationPaths {
         Tray = Join-Path $generationRoot 'agentdock-tray.exe'
         Arbiter = Join-Path $generationRoot 'agentdock-arbiter.exe'
         Skills = Join-Path $generationRoot 'core-skills'
+        WSLHelper = Join-Path $generationRoot 'wsl-helper'
     }
 }
 
@@ -335,7 +336,10 @@ try {
         $generation.Core,
         $generation.Tray,
         $generation.Arbiter,
-        (Join-Path $generation.Skills 'manifest.json')
+        (Join-Path $generation.Skills 'manifest.json'),
+        (Join-Path $generation.WSLHelper 'manifest.json'),
+        (Join-Path $generation.WSLHelper 'agentdock-wsl-helper-linux-amd64'),
+        (Join-Path $generation.WSLHelper 'agentdock-wsl-helper-linux-arm64')
     )) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
             throw "Setup generation layout is incomplete: $path"

@@ -180,6 +180,9 @@ func (driver *WindowsDriver) verifyGeneration(version, generationRoot string) er
 		driver.layout.GenerationCore(version),
 		driver.layout.GenerationTray(version),
 		driver.layout.GenerationArbiter(version),
+		filepath.Join(driver.layout.GenerationDir(version), "wsl-helper", "manifest.json"),
+		filepath.Join(driver.layout.GenerationDir(version), "wsl-helper", "agentdock-wsl-helper-linux-amd64"),
+		filepath.Join(driver.layout.GenerationDir(version), "wsl-helper", "agentdock-wsl-helper-linux-arm64"),
 	} {
 		info, err := os.Stat(path)
 		if err != nil || !info.Mode().IsRegular() {

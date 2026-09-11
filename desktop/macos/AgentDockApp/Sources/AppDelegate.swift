@@ -279,6 +279,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ) {
                 return result
             }
+            // transaction.json is the durable commit point. result.json is a projection for
+            // desktop clients and may be missing if the Arbiter exits between the two atomic
+            // writes. The transaction carries the same terminal fields, so consume it directly
+            // instead of turning a completed update into a four-minute UI timeout.
+            if let result = DesktopUpdateTerminalResult.load(
+                from: service.paths.updateTransaction,
+                transactionID: transactionID
+            ) {
+                return result
+            }
 
             if Date() >= nextRecoveryProbe {
                 let paths = service.paths

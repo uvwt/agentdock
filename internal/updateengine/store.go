@@ -77,13 +77,85 @@ func (store *Store) WriteResult(result Result) error {
 
 func (store *Store) ReadResult(transactionID string) (Result, error) {
 	var result Result
-	if err := readJSON(store.ResultPath(transactionID), &result); err != nil {
-		return Result{}, err
+	resultErr := readJSON(store.ResultPath(transactionID), &result)
+	if resultErr == nil {
+		if err := result.Validate(); err != nil {
+			resultErr = err
+		} else if result.TransactionID != transactionID {
+			resultErr = fmt.Errorf("update result transaction changed: got %s, want %s", result.TransactionID, transactionID)
+		} else {
+			if err := store.repairCurrentResultProjection(result); err != nil {
+				return Result{}, err
+			}
+			return result, nil
+		}
+	}
+
+	// transaction.json is the durable commit point. A crash can happen after the terminal
+	// journal is synced but before either result projection is written. Reconstructing the
+	// projection from that journal makes terminal success/rollback observable after restart
+	// without ever guessing from the active process state.
+	transaction, transactionErr := store.ReadTransaction()
+	if transactionErr != nil || transaction.TransactionID != transactionID {
+		return Result{}, resultErr
+	}
+	result, err := resultFromTerminalTransaction(transaction)
+	if err != nil {
+		return Result{}, resultErr
+	}
+	if err := store.WriteResult(result); err != nil {
+		return Result{}, fmt.Errorf("repair terminal update result: %w", err)
+	}
+	return result, nil
+}
+
+func resultFromTerminalTransaction(transaction Transaction) (Result, error) {
+	if transaction.State != StateCommitted && transaction.State != StateRolledBack && transaction.State != StateFailed {
+		return Result{}, fmt.Errorf("update transaction is not terminal: %s", transaction.State)
+	}
+	if transaction.CompletedAt == nil || transaction.CompletedAt.IsZero() {
+		return Result{}, errors.New("terminal update transaction has no completion timestamp")
+	}
+	result := Result{
+		SchemaVersion:   SchemaVersion,
+		TransactionID:   transaction.TransactionID,
+		Platform:        transaction.Platform,
+		SourceVersion:   transaction.SourceVersion,
+		TargetVersion:   transaction.TargetVersion,
+		ActiveVersion:   transaction.ActiveVersion,
+		FallbackVersion: transaction.FallbackVersion,
+		State:           transaction.State,
+		CompletedAt:     *transaction.CompletedAt,
+		Failure:         transaction.Failure,
+		Warnings:        append([]string(nil), transaction.Warnings...),
 	}
 	if err := result.Validate(); err != nil {
 		return Result{}, err
 	}
 	return result, nil
+}
+
+func (store *Store) repairCurrentResultProjection(result Result) error {
+	transaction, err := store.ReadTransaction()
+	if err != nil || transaction.TransactionID != result.TransactionID {
+		// Historical per-transaction results must never replace the projection for a newer
+		// transaction. If there is no matching current journal, the historical read is done.
+		return nil
+	}
+	if _, err := resultFromTerminalTransaction(transaction); err != nil {
+		return nil
+	}
+
+	var current Result
+	if err := readJSON(store.CurrentResultPath(), &current); err == nil &&
+		current.Validate() == nil &&
+		current.TransactionID == result.TransactionID {
+		return nil
+	}
+	if err := writeJSON(store.CurrentResultPath(), result); err != nil {
+		return fmt.Errorf("repair current update result projection: %w", err)
+	}
+	return nil
 }
 
 func (store *Store) WriteActive(active ActiveVersion) error {

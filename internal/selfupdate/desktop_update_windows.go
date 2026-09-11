@@ -31,9 +31,12 @@ var windowsDesktopArchiveFiles = map[string]os.FileMode{
 // 这些文件对旧 0.8.x updater 保持可选，因此旧版本仍能消费同一 Release；
 // generation-aware updater 会在真正进入 trial 前强制校验它们存在。
 var windowsGenerationArchiveFiles = map[string]os.FileMode{
-	"agentdock-arbiter.exe":   0o755,
-	"agentdock-shim.exe":      0o755,
-	"agentdock-tray-shim.exe": 0o755,
+	"agentdock-arbiter.exe":                       0o755,
+	"agentdock-shim.exe":                          0o755,
+	"agentdock-tray-shim.exe":                     0o755,
+	"wsl-helper/manifest.json":                    0o644,
+	"wsl-helper/agentdock-wsl-helper-linux-amd64": 0o755,
+	"wsl-helper/agentdock-wsl-helper-linux-arm64": 0o755,
 }
 
 func detectDesktopUpdateTarget() string {
@@ -118,7 +121,11 @@ func extractDesktopUpdateArchive(_ context.Context, archiveData []byte, tempDir,
 		if len(data) > maxWindowsDesktopFileBytes {
 			return "", fmt.Errorf("Windows Release 文件 %s 超过 %d 字节限制", name, maxWindowsDesktopFileBytes)
 		}
-		if err := os.WriteFile(filepath.Join(stagedRoot, filepath.FromSlash(name)), data, mode); err != nil {
+		destination := filepath.Join(stagedRoot, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+			return "", fmt.Errorf("创建 Windows 桌面组件目录 %s 失败: %w", name, err)
+		}
+		if err := os.WriteFile(destination, data, mode); err != nil {
 			return "", fmt.Errorf("写入 Windows 桌面组件 %s 失败: %w", name, err)
 		}
 		found[name] = true

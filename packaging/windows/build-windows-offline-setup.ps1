@@ -75,6 +75,9 @@ try {
         'agentdock-tray-shim.exe',
         'agentdock.ico',
         'manage-windows.ps1',
+        'wsl-helper/manifest.json',
+        'wsl-helper/agentdock-wsl-helper-linux-amd64',
+        'wsl-helper/agentdock-wsl-helper-linux-arm64',
         'share/agentdock/core-skills/manifest.json'
     )) {
         if ($entryNames -notcontains $requiredEntry) {

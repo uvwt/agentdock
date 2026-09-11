@@ -59,6 +59,61 @@ func TestStorePersistsTransactionActiveAndResult(t *testing.T) {
 	}
 }
 
+func TestStoreRepairsTerminalResultProjectionsFromJournal(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transaction, err := NewTransaction("windows", "0.8.3", "0.9.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	transaction.Windows = &WindowsPlan{
+		InstallRoot:      root,
+		SourceGeneration: filepath.Join(root, "versions", "v0.8.3"),
+		TargetGeneration: filepath.Join(root, "versions", "v0.9.0"),
+	}
+	transaction.State = StateTrial
+	transaction.Phase = PhaseHealth
+	transaction.ActiveVersion = "v0.9.0"
+	transaction.FallbackVersion = "v0.8.3"
+	if _, err := store.Complete(transaction, StateCommitted, nil, []string{"warning"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// transaction.json is the commit point. Simulate power loss before either projection
+	// becomes durable by deleting both result files while leaving the terminal journal intact.
+	if err := os.Remove(store.ResultPath(transaction.TransactionID)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(store.CurrentResultPath()); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.ReadResult(transaction.TransactionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != StateCommitted || result.ActiveVersion != "v0.9.0" || len(result.Warnings) != 1 {
+		t.Fatalf("repaired result = %+v", result)
+	}
+	if _, err := os.Stat(store.CurrentResultPath()); err != nil {
+		t.Fatalf("current result projection was not repaired: %v", err)
+	}
+
+	// The per-transaction result may reach disk before result.json. Reading the durable
+	// result must also restore the current projection used by desktop clients.
+	if err := os.Remove(store.CurrentResultPath()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ReadResult(transaction.TransactionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(store.CurrentResultPath()); err != nil {
+		t.Fatalf("current result projection was not repaired from per-transaction result: %v", err)
+	}
+}
+
 func TestWindowsLayoutRecognizesGenerationBinaries(t *testing.T) {
 	layout, err := NewWindowsLayout(t.TempDir())
 	if err != nil {

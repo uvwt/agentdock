@@ -241,6 +241,19 @@ public sealed class RuntimeService : IDisposable
             !string.Equals(result.Platform, "windows", StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(result.TransactionId, transactionId, StringComparison.OrdinalIgnoreCase))
         {
+            // transaction.json is the durable commit point. result.json is a projection and
+            // can legitimately lag it if the machine stops between the two atomic writes.
+            // A terminal transaction contains the same fields this UI needs, so fall back to
+            // the journal instead of reporting a false four-minute result timeout.
+            result = await ReadJsonAsync<UpdateTerminalResult>(
+                Path.Combine(RuntimeRoot, "update", "transaction.json"),
+                cancellationToken);
+        }
+        if (result is null ||
+            result.SchemaVersion != 1 ||
+            !string.Equals(result.Platform, "windows", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(result.TransactionId, transactionId, StringComparison.OrdinalIgnoreCase))
+        {
             return null;
         }
         return result.State.ToLowerInvariant() switch

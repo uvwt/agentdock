@@ -1024,41 +1024,6 @@ function Restore-FileState {
     Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
 }
 
-function Backup-DirectoryState {
-    param(
-        [string] $Path,
-        [string] $Name,
-        [string] $BackupDirectory
-    )
-
-    if (Test-Path -LiteralPath $Path) {
-        if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
-            throw "Managed runtime path must be a directory: $Path"
-        }
-        $backup = Join-Path $BackupDirectory $Name
-        Copy-Item -LiteralPath $Path -Destination $backup -Recurse -Force
-        New-Item -ItemType File -Path (Join-Path $BackupDirectory "$Name.present") -Force | Out-Null
-    }
-}
-
-function Restore-DirectoryState {
-    param(
-        [string] $Path,
-        [string] $Name,
-        [string] $BackupDirectory
-    )
-
-    $marker = Join-Path $BackupDirectory "$Name.present"
-    $backup = Join-Path $BackupDirectory $Name
-    if (Test-Path -LiteralPath $Path) {
-        Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
-    }
-    if (Test-Path -LiteralPath $marker -PathType Leaf) {
-        New-Item -ItemType Directory -Path (Split-Path -Parent $Path) -Force | Out-Null
-        Copy-Item -LiteralPath $backup -Destination $Path -Recurse -Force
-    }
-}
-
 function Get-RunValue {
     param(
         [string] $RegistryPath,
@@ -1175,8 +1140,6 @@ $checksumPath = "$archivePath.sha256"
 $destinationBinary = Join-Path $InstallDir 'agentdock.exe'
 $destinationTrayBinary = Join-Path $InstallDir 'agentdock-tray.exe'
 $destinationTrayIcon = Join-Path $InstallDir 'agentdock.ico'
-$destinationWSLHelperDir = Join-Path $InstallDir 'wsl-helper'
-$wslHelperStageDir = Join-Path $InstallDir ('.wsl-helper-install-' + [Guid]::NewGuid().ToString('N'))
 $cloudflaredBinary = Join-Path $InstallDir 'cloudflared.exe'
 $binaryBackup = Join-Path $tempRoot 'agentdock.exe.previous'
 $trayBackup = Join-Path $tempRoot 'agentdock-tray.exe.previous'
@@ -1247,7 +1210,6 @@ $rollbackStateCaptured = $false
 $binaryReplacementStarted = $false
 $trayReplacementStarted = $false
 $cloudflaredReplacementStarted = $false
-$wslHelperReplacementStarted = $false
 $startupRegistrationChanged = $false
 $trayStartupRegistrationChanged = $false
 $tunnelStartupRegistrationChanged = $false
@@ -1347,7 +1309,6 @@ try {
     foreach ($item in $managedRuntimeFiles) {
         Backup-FileState -Path $item.Path -Name $item.Name -BackupDirectory $runtimeBackupDir
     }
-    Backup-DirectoryState -Path $destinationWSLHelperDir -Name 'wsl-helper' -BackupDirectory $runtimeBackupDir
     $previousRunValue = Get-RunValue -RegistryPath $runKey -Name $runValueName
     $previousTrayRunValue = Get-RunValue -RegistryPath $runKey -Name $trayRunValueName
     $previousTunnelRunValue = Get-RunValue -RegistryPath $runKey -Name $cloudflaredRunValueName
@@ -1610,6 +1571,7 @@ try {
             Copy-Item -LiteralPath $sourceTrayBinary -Destination (Join-Path $generationStagingDirectory 'agentdock-tray.exe') -Force
             Copy-Item -LiteralPath $sourceArbiter -Destination (Join-Path $generationStagingDirectory 'agentdock-arbiter.exe') -Force
             Copy-Item -LiteralPath $coreSkillBundle -Destination (Join-Path $generationStagingDirectory 'core-skills') -Recurse -Force
+            Copy-Item -LiteralPath $sourceWSLHelperDir -Destination (Join-Path $generationStagingDirectory 'wsl-helper') -Recurse -Force
 
             if (Test-Path -LiteralPath $generationBootstrapDirectory) {
                 if (-not $generationLayoutDetected) {
@@ -1668,19 +1630,6 @@ try {
 
     New-Item -ItemType Directory -Path $installerDir -Force | Out-Null
     Copy-Item -LiteralPath $sourceManagerScript -Destination $managerScriptPath -Force
-
-    # Stage the complete helper payload next to the install directory before replacing the
-    # active generation. Keeping staging on the same volume makes the final directory move local.
-    Remove-Item -LiteralPath $wslHelperStageDir -Recurse -Force -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Path $wslHelperStageDir -Force | Out-Null
-    Copy-Item -LiteralPath $sourceWSLHelperManifestPath -Destination (Join-Path $wslHelperStageDir 'manifest.json') -Force
-    Copy-Item -LiteralPath $sourceWSLHelperAMD64 -Destination (Join-Path $wslHelperStageDir 'agentdock-wsl-helper-linux-amd64') -Force
-    Copy-Item -LiteralPath $sourceWSLHelperARM64 -Destination (Join-Path $wslHelperStageDir 'agentdock-wsl-helper-linux-arm64') -Force
-    $wslHelperReplacementStarted = $true
-    if (Test-Path -LiteralPath $destinationWSLHelperDir) {
-        Remove-Item -LiteralPath $destinationWSLHelperDir -Recurse -Force -ErrorAction Stop
-    }
-    Move-Item -LiteralPath $wslHelperStageDir -Destination $destinationWSLHelperDir
 
     $installedVersionJson = & $destinationBinary version --json
     if ($LASTEXITCODE -ne 0) {
@@ -2132,9 +2081,6 @@ exit `$LASTEXITCODE
             foreach ($item in $managedRuntimeFiles) {
                 Restore-FileState -Path $item.Path -Name $item.Name -BackupDirectory $runtimeBackupDir
             }
-            if ($wslHelperReplacementStarted) {
-                Restore-DirectoryState -Path $destinationWSLHelperDir -Name 'wsl-helper' -BackupDirectory $runtimeBackupDir
-            }
 
             if ($null -ne $previousRunValue) {
                 Set-RunValue -RegistryPath $runKey -Name $runValueName -Value $previousRunValue
@@ -2252,6 +2198,5 @@ exit `$LASTEXITCODE
     if ($DeleteTunnelTokenFile -and -not [string]::IsNullOrWhiteSpace($TunnelTokenFile)) {
         Remove-Item -LiteralPath $TunnelTokenFile -Force -ErrorAction SilentlyContinue
     }
-    Remove-Item -LiteralPath $wslHelperStageDir -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }

@@ -128,6 +128,7 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"Write-ActiveVersionState",
 		"active-version.json",
 		"$versionsDir = Join-Path $runtimeDir 'versions'",
+		"Copy-Item -LiteralPath $sourceWSLHelperDir -Destination (Join-Path $generationStagingDirectory 'wsl-helper') -Recurse -Force",
 		"Delegating Setup upgrade to the AgentDock Update Engine",
 		"update --local-archive $archivePath --checksum $checksumPath --target-version $payloadVersion",
 		"Resolving pending AgentDock generation transaction before Setup continues",

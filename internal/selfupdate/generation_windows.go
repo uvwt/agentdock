@@ -116,18 +116,19 @@ func applyWindowsGenerationUpdate(ctx context.Context, request applyRequest) (ap
 		fmt.Fprintf(request.Output, "%s\n", bytes.TrimSpace(output))
 	}
 	result, resultErr := store.ReadResult(transaction.TransactionID)
-	if runErr != nil {
-		if resultErr == nil {
-			return applyResult{}, fmt.Errorf("Windows update %s: %s", result.State, terminalUpdateMessage(result))
-		}
-		return applyResult{}, fmt.Errorf("Windows Arbiter 失败: %w", runErr)
-	}
 	if resultErr != nil {
+		if runErr != nil {
+			return applyResult{}, fmt.Errorf("Windows Arbiter 失败且未写入可恢复的最终结果: %w: %v", runErr, resultErr)
+		}
 		return applyResult{}, fmt.Errorf("Windows Arbiter 未写入最终结果: %w", resultErr)
 	}
 	if result.State != updateengine.StateCommitted {
 		return applyResult{}, fmt.Errorf("Windows update 未提交: %s", terminalUpdateMessage(result))
 	}
+	// The terminal journal/result is authoritative. The Arbiter process can still exit non-zero
+	// if a derived result projection failed immediately after the durable commit; ReadResult above
+	// repairs that projection from transaction.json, so surfacing the stale process error would
+	// incorrectly report a committed update as failed.
 
 	// Stable shims are deliberately outside the online update transaction. The CUI shim is
 	// the parent that is waiting for this generation update to finish, so Windows may keep it
@@ -179,6 +180,22 @@ func stageWindowsGeneration(ctx context.Context, layout updateengine.WindowsLayo
 	}
 	if err := copyDirectoryWindows(request.BundlePath, filepath.Join(stagingDir, "core-skills")); err != nil {
 		return fmt.Errorf("暂存 Windows generation 核心 Skill 失败: %w", err)
+	}
+	if err := copyDirectoryWindows(
+		filepath.Join(request.DesktopStagedPath, "wsl-helper"),
+		filepath.Join(stagingDir, "wsl-helper"),
+	); err != nil {
+		return fmt.Errorf("暂存 Windows generation WSL helper 失败: %w", err)
+	}
+	for _, relative := range []string{
+		"wsl-helper/manifest.json",
+		"wsl-helper/agentdock-wsl-helper-linux-amd64",
+		"wsl-helper/agentdock-wsl-helper-linux-arm64",
+	} {
+		path := filepath.Join(stagingDir, filepath.FromSlash(relative))
+		if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+			return fmt.Errorf("Windows generation WSL helper 文件缺失: %s", relative)
+		}
 	}
 	if err := verifyBinaryVersion(ctx, filepath.Join(stagingDir, updateengine.GenerationCoreName), targetVersion); err != nil {
 		return fmt.Errorf("Windows generation 核心版本验证失败: %w", err)
