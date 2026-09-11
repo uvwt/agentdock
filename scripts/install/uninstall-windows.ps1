@@ -100,16 +100,20 @@ function Remove-DirectoryWithRetry {
 function Remove-AgentDockScheduledTask {
     param(
         [string] $AdminLauncherPath,
-        [string] $RuntimeRoot
+        [string] $RuntimeRoot,
+        [string] $TaskName
     )
 
-    $task = Get-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -ErrorAction SilentlyContinue
+    if ([string]::IsNullOrWhiteSpace($TaskName)) {
+        return
+    }
+    $task = Get-ScheduledTask -TaskName $TaskName -TaskPath '\' -ErrorAction SilentlyContinue
     if ($null -eq $task) {
         return
     }
     try {
-        Stop-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -ErrorAction SilentlyContinue
-        Unregister-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -Confirm:$false -ErrorAction Stop
+        Stop-ScheduledTask -TaskName $TaskName -TaskPath '\' -ErrorAction SilentlyContinue
+        Unregister-ScheduledTask -TaskName $TaskName -TaskPath '\' -Confirm:$false -ErrorAction Stop
         return
     } catch {
         $directError = $_
@@ -122,7 +126,7 @@ function Remove-AgentDockScheduledTask {
     try {
         $process = Start-Process `
             -FilePath $AdminLauncherPath `
-            -ArgumentList "--task-admin remove --runtime-root `"$RuntimeRoot`"" `
+            -ArgumentList "--task-admin remove --task-name `"$TaskName`" --runtime-root `"$RuntimeRoot`"" `
             -Verb RunAs `
             -WindowStyle Hidden `
             -Wait `
@@ -140,15 +144,47 @@ $userHome = [Environment]::GetFolderPath('UserProfile')
 $agentDockBinary = Join-Path $InstallDir 'agentdock.exe'
 $trayBinary = Join-Path $InstallDir 'agentdock-tray.exe'
 $cloudflaredBinary = Join-Path $InstallDir 'cloudflared.exe'
+$versionsDir = Join-Path $runtimeDir 'versions'
+$updateDir = Join-Path $runtimeDir 'update'
+$activeVersionPath = Join-Path $runtimeDir 'active-version.json'
+$runtimeManifestPath = Join-Path $runtimeDir 'runtime.json'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+
+$managedTaskName = ''
+if (Test-Path -LiteralPath $runtimeManifestPath -PathType Leaf) {
+    try {
+        $runtimeManifest = Get-Content -LiteralPath $runtimeManifestPath -Raw | ConvertFrom-Json
+        if ([string]::Equals([string] $runtimeManifest.privilege_mode, 'elevated', [StringComparison]::OrdinalIgnoreCase) -and
+            -not [string]::IsNullOrWhiteSpace([string] $runtimeManifest.agentdock_task_name)) {
+            $managedTaskName = ([string] $runtimeManifest.agentdock_task_name).Trim()
+        }
+    } catch {
+        Write-Warning "Unable to read runtime.json while resolving the managed scheduled task: $($_.Exception.Message)"
+    }
+} elseif ($StartupValueName -eq 'AgentDock' -and
+    $CloudflaredStartupValueName -eq 'AgentDockCloudflared' -and
+    $TrayStartupValueName -eq 'AgentDockTray') {
+    # Legacy pre-manifest installs used the fixed task name. Keep that one-time cleanup path without
+    # making a valid standard-mode runtime delete a task owned by another installation.
+    $managedTaskName = 'AgentDock'
+}
 
 # Stop the scheduled task before touching the elevated process. New installs
 # grant the desktop user task control; older administrator-owned tasks use a
 # one-time UAC fallback through the installed helper.
-if ($StartupValueName -eq 'AgentDock' -and $CloudflaredStartupValueName -eq 'AgentDockCloudflared' -and $TrayStartupValueName -eq 'AgentDockTray') {
-    Remove-AgentDockScheduledTask -AdminLauncherPath $trayBinary -RuntimeRoot $runtimeDir
+if (-not [string]::IsNullOrWhiteSpace($managedTaskName)) {
+    Remove-AgentDockScheduledTask -AdminLauncherPath $trayBinary -RuntimeRoot $runtimeDir -TaskName $managedTaskName
 }
 
+# Stable shims are short-lived and normally have no resident process. Stop every immutable
+# generation explicitly so uninstall also works after an interrupted trial/rollback.
+if (Test-Path -LiteralPath $versionsDir -PathType Container) {
+    foreach ($generation in @(Get-ChildItem -LiteralPath $versionsDir -Directory -Force -ErrorAction SilentlyContinue)) {
+        Stop-ProcessByPath -ProcessName 'agentdock-arbiter' -BinaryPath (Join-Path $generation.FullName 'agentdock-arbiter.exe')
+        Stop-ProcessByPath -ProcessName 'agentdock-tray' -BinaryPath (Join-Path $generation.FullName 'agentdock-tray.exe')
+        Stop-ProcessByPath -ProcessName 'agentdock-core' -BinaryPath (Join-Path $generation.FullName 'agentdock-core.exe')
+    }
+}
 Stop-ProcessByPath -ProcessName 'agentdock-tray' -BinaryPath $trayBinary
 Stop-ProcessByPath -ProcessName 'cloudflared' -BinaryPath $cloudflaredBinary
 Stop-ProcessByPath -ProcessName 'agentdock' -BinaryPath $agentDockBinary
@@ -162,6 +198,9 @@ if (Test-Path -LiteralPath $runKey) {
 if (-not $KeepInstallDir) {
     Remove-DirectoryWithRetry -Path $InstallDir
 }
+Remove-DirectoryWithRetry -Path $versionsDir
+Remove-DirectoryWithRetry -Path $updateDir
+Remove-Item -LiteralPath $activeVersionPath -Force -ErrorAction SilentlyContinue
 foreach ($name in @(
     'start-agentdock.ps1',
     'start-cloudflared.ps1',
@@ -178,7 +217,8 @@ foreach ($name in @(
     'cloudflared.out.log',
     'cloudflared.err.log',
     'quick-tunnel-url.txt',
-    'runtime.json'
+    'runtime.json',
+    'desktop-version.txt'
 )) {
     Remove-Item -LiteralPath (Join-Path $runtimeDir $name) -Force -ErrorAction SilentlyContinue
 }

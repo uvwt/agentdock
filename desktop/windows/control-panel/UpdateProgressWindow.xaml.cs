@@ -15,13 +15,18 @@ public partial class UpdateProgressWindow : Window
 
     public void Report(UpdateProgress progress)
     {
-        UpdateProgressBar.Value = Math.Max(UpdateProgressBar.Value, Math.Clamp(progress.Percentage, 0, 100));
+        UpdateProgressBar.IsIndeterminate = progress.IsIndeterminate;
+        if (progress.Percentage is int percentage)
+        {
+            UpdateProgressBar.Value = Math.Clamp(percentage, 0, 100);
+        }
         StatusText.Text = progress.Message;
     }
 
     public void Complete(string message)
     {
         _canClose = true;
+        UpdateProgressBar.IsIndeterminate = false;
         UpdateProgressBar.Value = 100;
         StatusText.Text = message;
         CloseButton.IsEnabled = true;

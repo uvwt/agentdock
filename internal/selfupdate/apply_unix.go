@@ -142,6 +142,9 @@ func applyPlatformUpdate(ctx context.Context, request applyRequest) (applyResult
 }
 
 func applyDesktopOnlyUpdate(ctx context.Context, request applyRequest) (applyResult, error) {
+	if result, handled, err := applyManagedDesktopOnlyUpdate(ctx, request); handled {
+		return result, err
+	}
 	if err := validateDesktopUpdateCoordination(); err != nil {
 		return applyResult{}, err
 	}

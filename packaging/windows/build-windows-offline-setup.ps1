@@ -29,6 +29,30 @@ function Resolve-RequiredFile {
     return (Resolve-Path -LiteralPath $Path).Path
 }
 
+function Resolve-InnoSetupCompiler {
+    $command = Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue
+    if ($null -ne $command -and -not [string]::IsNullOrWhiteSpace([string] $command.Source)) {
+        return $command.Source
+    }
+
+    $candidates = @()
+    if (-not [string]::IsNullOrWhiteSpace(${env:ProgramFiles(x86)})) {
+        $candidates += (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe')
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
+        $candidates += (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        $candidates += (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe')
+    }
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+    throw "Inno Setup compiler was not found. Checked PATH and: $($candidates -join ', ')"
+}
+
 $archivePath = Resolve-RequiredFile -Path $AgentDockArchive -Description 'AgentDock archive'
 $checksumPath = Resolve-RequiredFile -Path $AgentDockChecksumFile -Description 'AgentDock checksum file'
 $cloudflaredPath = Resolve-RequiredFile -Path $CloudflaredBinary -Description 'cloudflared binary'
@@ -43,7 +67,16 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [IO.Compression.ZipFile]::OpenRead($archivePath)
 try {
     $entryNames = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
-    foreach ($requiredEntry in @('agentdock.exe', 'agentdock-tray.exe', 'agentdock.ico', 'manage-windows.ps1', 'share/agentdock/core-skills/manifest.json')) {
+    foreach ($requiredEntry in @(
+        'agentdock.exe',
+        'agentdock-tray.exe',
+        'agentdock-arbiter.exe',
+        'agentdock-shim.exe',
+        'agentdock-tray-shim.exe',
+        'agentdock.ico',
+        'manage-windows.ps1',
+        'share/agentdock/core-skills/manifest.json'
+    )) {
         if ($entryNames -notcontains $requiredEntry) {
             throw "AgentDock archive does not contain required entry: $requiredEntry"
         }
@@ -57,10 +90,7 @@ if ($cloudflaredSignature.Status -ne [Management.Automation.SignatureStatus]::Va
     throw "cloudflared Authenticode signature is not valid: $($cloudflaredSignature.StatusMessage)"
 }
 
-$iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
-if (-not (Test-Path -LiteralPath $iscc -PathType Leaf)) {
-    throw "Inno Setup compiler was not found: $iscc"
-}
+$iscc = Resolve-InnoSetupCompiler
 
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null

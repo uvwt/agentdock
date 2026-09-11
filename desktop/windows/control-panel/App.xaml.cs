@@ -97,6 +97,7 @@ public partial class App : System.Windows.Application
         {
             ShowControlPanel();
         }
+        _ = ResumeUpdateProgressIfNeededAsync();
     }
 
     private static bool TryGetStartupRuntimeRoot(string[] arguments, string startupFlag, out string runtimeRoot)
@@ -403,6 +404,98 @@ public partial class App : System.Windows.Application
 
     private Task RunTrayUpdateAsync() =>
         CheckForUpdatesAsync(ControlPanelWindow.IsVisible ? ControlPanelWindow : null);
+
+    private async Task ResumeUpdateProgressIfNeededAsync()
+    {
+        UpdateProgressWindow? progressWindow = null;
+        try
+        {
+            var transaction = await Runtime.ReadUpdateUiHandoffTransactionAsync();
+            if (transaction is null)
+            {
+                return;
+            }
+
+            _updateInProgress = true;
+            ControlPanelWindow.SetUpdateState(true, UiText.Get("PleaseWaitUpdating"));
+            progressWindow = new UpdateProgressWindow(transaction.SourceVersion, transaction.TargetVersion)
+            {
+                WindowStartupLocation = WindowStartupLocation.CenterScreen
+            };
+            var initialMessage = string.Equals(transaction.State, "rolling_back", StringComparison.OrdinalIgnoreCase)
+                ? UiText.Get("UpdateStageRollingBack")
+                : UiText.Get("UpdateStageRestarting");
+            progressWindow.Report(new UpdateProgress(null, true, initialMessage));
+            progressWindow.Show();
+
+            var deadline = DateTimeOffset.UtcNow.AddMinutes(4);
+            UpdateTerminalResult? result = null;
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                result = await Runtime.ReadUpdateTerminalResultAsync(transaction.TransactionId);
+                if (result is not null)
+                {
+                    break;
+                }
+                await Task.Delay(250);
+            }
+
+            if (result is null)
+            {
+                var timeoutMessage = UiText.Get("UpdateTransactionResultTimeout");
+                progressWindow.Fail(timeoutMessage);
+                ControlPanelWindow.SetUpdateStatus(timeoutMessage);
+                return;
+            }
+
+            var state = result.State.ToLowerInvariant();
+            if (state == "committed")
+            {
+                var completedMessage = UiText.Get("UpdateCompleted");
+                var warnings = result.Warnings
+                    .Where(value => !string.IsNullOrWhiteSpace(value))
+                    .Select(value => value.Trim())
+                    .ToArray();
+                if (warnings.Length > 0)
+                {
+                    completedMessage += Environment.NewLine + string.Join(Environment.NewLine, warnings);
+                }
+                progressWindow.Complete(completedMessage);
+                ControlPanelWindow.SetUpdateStatus(completedMessage);
+                await Runtime.AcknowledgeUpdateUiHandoffAsync(transaction.TransactionId);
+                return;
+            }
+
+            var failureMessage = state == "rolled_back"
+                ? UiText.Get("UpdateRolledBack")
+                : UiText.Get("UpdateFailed");
+            if (!string.IsNullOrWhiteSpace(result.Failure?.Message))
+            {
+                failureMessage += Environment.NewLine + result.Failure.Message.Trim();
+            }
+            progressWindow.Fail(failureMessage);
+            ControlPanelWindow.SetUpdateStatus(failureMessage);
+            await Runtime.AcknowledgeUpdateUiHandoffAsync(transaction.TransactionId);
+        }
+        catch (Exception ex)
+        {
+            var message = LastNonEmptyLine(ex.Message, UiText.Get("UpdateFailed"));
+            if (progressWindow is not null)
+            {
+                progressWindow.Fail(message);
+            }
+            ControlPanelWindow.SetUpdateStatus(message);
+        }
+        finally
+        {
+            if (progressWindow is not null)
+            {
+                _updateInProgress = false;
+                ControlPanelWindow.SetUpdateState(false);
+                await RefreshTraySnapshotAsync();
+            }
+        }
+    }
 
     public async Task CheckForUpdatesAsync(Window? owner = null)
     {

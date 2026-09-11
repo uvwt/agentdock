@@ -8,7 +8,7 @@ namespace AgentDock.ControlPanel;
 
 internal static class TaskAdminService
 {
-    private const string TaskName = "AgentDock";
+    private const string DefaultTaskName = "AgentDock";
     private const int TaskActionExec = 0;
     private const int TaskTriggerLogon = 9;
     private const int TaskCreateOrUpdate = 6;
@@ -34,45 +34,45 @@ internal static class TaskAdminService
                 case "prepare-elevated":
                     RequireBackupDirectory(request);
                     RequireRuntimeRoot(request);
-                    SaveBackup(scheduler.Root, request.BackupDirectory);
+                    SaveBackup(scheduler.Root, request.TaskName, request.BackupDirectory);
                     try
                     {
-                        RemoveTask(scheduler.Root);
+                        RemoveTask(scheduler.Root, request.TaskName);
                         StopInstalledCore(request.RuntimeRoot);
                         CreateElevatedTask(scheduler.Service, scheduler.Root, request);
                     }
                     catch
                     {
-                        RestoreBackup(scheduler.Root, request.BackupDirectory);
+                        RestoreBackup(scheduler.Root, request.TaskName, request.BackupDirectory);
                         throw;
                     }
                     break;
                 case "prepare-standard":
                     RequireBackupDirectory(request);
                     RequireRuntimeRoot(request);
-                    SaveBackup(scheduler.Root, request.BackupDirectory);
+                    SaveBackup(scheduler.Root, request.TaskName, request.BackupDirectory);
                     try
                     {
-                        RemoveTask(scheduler.Root);
+                        RemoveTask(scheduler.Root, request.TaskName);
                         StopInstalledCore(request.RuntimeRoot);
                     }
                     catch
                     {
-                        RestoreBackup(scheduler.Root, request.BackupDirectory);
+                        RestoreBackup(scheduler.Root, request.TaskName, request.BackupDirectory);
                         throw;
                     }
                     break;
                 case "restore":
                     RequireBackupDirectory(request);
-                    RestoreBackup(scheduler.Root, request.BackupDirectory);
+                    RestoreBackup(scheduler.Root, request.TaskName, request.BackupDirectory);
                     break;
                 case "remove":
                     RequireRuntimeRoot(request);
-                    RemoveTask(scheduler.Root);
+                    RemoveTask(scheduler.Root, request.TaskName);
                     StopInstalledCore(request.RuntimeRoot);
                     break;
                 case "set-enabled":
-                    SetTaskEnabled(scheduler.Root, request.Enabled);
+                    SetTaskEnabled(scheduler.Root, request.TaskName, request.Enabled);
                     break;
                 default:
                     throw new InvalidOperationException(UiText.Format("UnsupportedTaskAdminAction", request.Action));
@@ -95,12 +95,27 @@ internal static class TaskAdminService
         }
         return new TaskAdminRequest(
             action,
+            NormalizeTaskName(ReadArgument(arguments, "--task-name", required: false)),
             ReadArgument(arguments, "--backup-directory", required: false),
             ReadArgument(arguments, "--launcher-path", required: false),
             ReadArgument(arguments, "--runtime-root", required: false),
             ReadArgument(arguments, "--user-sid", required: false),
             ReadArgument(arguments, "--user-name", required: false),
             ReadOptionalBoolArgument(arguments, "--enabled"));
+    }
+
+    private static string NormalizeTaskName(string value)
+    {
+        value = value.Trim();
+        if (value.Length == 0)
+        {
+            return DefaultTaskName;
+        }
+        if (value.Contains('\\') || value.Contains('/'))
+        {
+            throw new InvalidOperationException(UiText.Format("MissingAdminArgument", "--task-name"));
+        }
+        return value;
     }
 
     private static string ReadArgument(string[] arguments, string name, bool required = true)
@@ -161,13 +176,13 @@ internal static class TaskAdminService
         return parsed;
     }
 
-    private static void SetTaskEnabled(dynamic root, bool? enabled)
+    private static void SetTaskEnabled(dynamic root, string taskName, bool? enabled)
     {
         if (enabled is null)
         {
             throw new InvalidOperationException(UiText.Get("TaskEnabledStateRequired"));
         }
-        dynamic? task = FindTask(root);
+        dynamic? task = FindTask(root, taskName);
         if (task is null)
         {
             throw new InvalidOperationException(UiText.Get("ScheduledTaskMissing"));
@@ -193,46 +208,49 @@ internal static class TaskAdminService
 
     private static void StopInstalledCore(string runtimeRoot)
     {
-        var expectedBinary = Path.GetFullPath(Path.Combine(runtimeRoot, "bin", "agentdock.exe"));
+        var expectedPaths = InstalledCorePaths(runtimeRoot);
         var deadline = DateTime.UtcNow.AddSeconds(15);
 
-        // 升级 helper 已处于 High Integrity；这里按完整路径只终止当前安装的 Core，
-        // 兜底清理旧任务实现或异常退出 host 遗留的 elevated 孤儿进程。
+        // Task Scheduler may terminate only the stable CUI parent while a generation Core is still alive.
+        // Match by absolute path and cover both the stable legacy entry and active/fallback generations.
         while (true)
         {
             var foundTarget = false;
-            foreach (var process in Process.GetProcessesByName("agentdock"))
+            foreach (var processName in new[] { "agentdock", "agentdock-core" })
             {
-                using (process)
+                foreach (var process in Process.GetProcessesByName(processName))
                 {
-                    string? processPath;
-                    try
+                    using (process)
                     {
-                        processPath = process.MainModule?.FileName;
-                    }
-                    catch (System.ComponentModel.Win32Exception)
-                    {
-                        continue;
-                    }
-                    catch (InvalidOperationException)
-                    {
-                        continue;
-                    }
+                        string? processPath;
+                        try
+                        {
+                            processPath = process.MainModule?.FileName;
+                        }
+                        catch (System.ComponentModel.Win32Exception)
+                        {
+                            continue;
+                        }
+                        catch (InvalidOperationException)
+                        {
+                            continue;
+                        }
 
-                    if (string.IsNullOrWhiteSpace(processPath) ||
-                        !string.Equals(Path.GetFullPath(processPath), expectedBinary, StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
+                        if (string.IsNullOrWhiteSpace(processPath) ||
+                            !expectedPaths.Contains(Path.GetFullPath(processPath)))
+                        {
+                            continue;
+                        }
 
-                    foundTarget = true;
-                    try
-                    {
-                        process.Kill(entireProcessTree: true);
-                    }
-                    catch (InvalidOperationException)
-                    {
-                        // 进程可能在枚举后自行退出，下一轮会重新确认。
+                        foundTarget = true;
+                        try
+                        {
+                            process.Kill(entireProcessTree: true);
+                        }
+                        catch (InvalidOperationException)
+                        {
+                            // 进程可能在枚举后自行退出，下一轮会重新确认。
+                        }
                     }
                 }
             }
@@ -243,16 +261,52 @@ internal static class TaskAdminService
             }
             if (DateTime.UtcNow >= deadline)
             {
-                throw new InvalidOperationException(UiText.Format("StopCoreFailed", expectedBinary));
+                throw new InvalidOperationException(UiText.Format("StopCoreFailed", string.Join(", ", expectedPaths)));
             }
             Thread.Sleep(250);
         }
     }
 
-    private static void SaveBackup(dynamic root, string backupDirectory)
+    private static HashSet<string> InstalledCorePaths(string runtimeRoot)
+    {
+        var root = Path.GetFullPath(runtimeRoot);
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            Path.GetFullPath(Path.Combine(root, "bin", "agentdock.exe"))
+        };
+        var activePath = Path.Combine(root, "active-version.json");
+        try
+        {
+            if (!File.Exists(activePath))
+            {
+                return paths;
+            }
+            using var document = JsonDocument.Parse(File.ReadAllText(activePath));
+            foreach (var propertyName in new[] { "active_version", "fallback_version" })
+            {
+                if (!document.RootElement.TryGetProperty(propertyName, out var value) || value.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+                var version = value.GetString()?.Trim().TrimStart('v');
+                if (string.IsNullOrWhiteSpace(version))
+                {
+                    continue;
+                }
+                paths.Add(Path.GetFullPath(Path.Combine(root, "versions", "v" + version, "agentdock-core.exe")));
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            // The stable legacy entry remains a safe cleanup target even when generation state is unreadable.
+        }
+        return paths;
+    }
+
+    private static void SaveBackup(dynamic root, string taskName, string backupDirectory)
     {
         Directory.CreateDirectory(backupDirectory);
-        dynamic? task = FindTask(root);
+        dynamic? task = FindTask(root, taskName);
         var state = new TaskBackupState();
         if (task is not null)
         {
@@ -278,7 +332,7 @@ internal static class TaskAdminService
             new System.Text.UTF8Encoding(false));
     }
 
-    private static void RestoreBackup(dynamic root, string backupDirectory)
+    private static void RestoreBackup(dynamic root, string taskName, string backupDirectory)
     {
         var statePath = Path.Combine(backupDirectory, "state.json");
         if (!File.Exists(statePath))
@@ -288,7 +342,7 @@ internal static class TaskAdminService
         var state = JsonSerializer.Deserialize<TaskBackupState>(File.ReadAllText(statePath))
             ?? throw new InvalidOperationException(UiText.Get("TaskBackupStateReadFailed"));
 
-        RemoveTask(root);
+        RemoveTask(root, taskName);
         if (!state.Exists)
         {
             return;
@@ -302,7 +356,7 @@ internal static class TaskAdminService
         var xml = File.ReadAllText(xmlPath);
         var userId = ReadTaskUserId(xml);
         dynamic task = root.RegisterTask(
-            TaskName,
+            taskName,
             xml,
             TaskCreateOrUpdate,
             userId,
@@ -313,6 +367,10 @@ internal static class TaskAdminService
         if (!string.IsNullOrWhiteSpace(state.SecurityDescriptor))
         {
             task.SetSecurityDescriptor(state.SecurityDescriptor, 0);
+        }
+        if (state.WasEnabled && state.WasRunning)
+        {
+            task.Run(null);
         }
     }
 
@@ -328,9 +386,9 @@ internal static class TaskAdminService
         return userId;
     }
 
-    private static void RemoveTask(dynamic root)
+    private static void RemoveTask(dynamic root, string taskName)
     {
-        dynamic? task = FindTask(root);
+        dynamic? task = FindTask(root, taskName);
         if (task is null)
         {
             return;
@@ -343,15 +401,15 @@ internal static class TaskAdminService
         {
             // 任务可能已经退出；删除操作仍应继续。
         }
-        root.DeleteTask(TaskName, 0);
+        root.DeleteTask(taskName, 0);
     }
 
-    private static dynamic? FindTask(dynamic root)
+    private static dynamic? FindTask(dynamic root, string taskName)
     {
         dynamic tasks = root.GetTasks(0);
         foreach (dynamic task in tasks)
         {
-            if (string.Equals((string)task.Name, TaskName, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals((string)task.Name, taskName, StringComparison.OrdinalIgnoreCase))
             {
                 return task;
             }
@@ -388,10 +446,10 @@ internal static class TaskAdminService
 
         dynamic action = definition.Actions.Create(TaskActionExec);
         action.Path = Path.GetFullPath(request.LauncherPath);
-        action.Arguments = $"--run-core-task --runtime-root \"{Path.GetFullPath(request.RuntimeRoot)}\"";
+        action.Arguments = $"service launch-core --runtime-root \"{Path.GetFullPath(request.RuntimeRoot)}\"";
 
         dynamic task = root.RegisterTaskDefinition(
-            TaskName,
+            request.TaskName,
             definition,
             TaskCreateOrUpdate,
             request.UserSid,
@@ -434,6 +492,7 @@ internal static class TaskAdminService
 
     private sealed record TaskAdminRequest(
         string Action,
+        string TaskName,
         string BackupDirectory,
         string LauncherPath,
         string RuntimeRoot,

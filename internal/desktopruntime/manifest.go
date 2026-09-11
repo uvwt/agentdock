@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/uvwt/agentdock/internal/fs/atomicfile"
+	"github.com/uvwt/agentdock/internal/updateengine"
 )
 
 const SchemaVersion = 1
@@ -17,6 +18,8 @@ const SchemaVersion = 1
 type Manifest struct {
 	SchemaVersion               int    `json:"schema_version"`
 	InstallRoot                 string `json:"install_root,omitempty"`
+	AgentDockHome               string `json:"agentdock_home,omitempty"`
+	AgentDockDefaultDir         string `json:"agentdock_default_dir,omitempty"`
 	AgentDockBinary             string `json:"agentdock_binary"`
 	TrayBinary                  string `json:"tray_binary,omitempty"`
 	AgentDockLauncher           string `json:"agentdock_launcher,omitempty"`
@@ -36,6 +39,15 @@ type Manifest struct {
 }
 
 func PathForBinary(binaryPath string) string {
+	// 新 Windows generation 位于 <root>/versions/<version>/agentdock-core.exe。
+	// runtime.json 仍属于稳定安装根，而不是某个可回收 generation。
+	if strings.EqualFold(filepath.Base(binaryPath), updateengine.GenerationCoreName) {
+		generationDir := filepath.Dir(binaryPath)
+		versionsDir := filepath.Dir(generationDir)
+		if strings.EqualFold(filepath.Base(versionsDir), "versions") {
+			return filepath.Join(filepath.Dir(versionsDir), "runtime.json")
+		}
+	}
 	return filepath.Join(filepath.Dir(filepath.Dir(binaryPath)), "runtime.json")
 }
 
@@ -79,10 +91,46 @@ func LoadForBinary(binaryPath string) (Manifest, error) {
 	if err != nil {
 		return Manifest{}, err
 	}
-	if !samePath(manifest.AgentDockBinary, binaryPath) {
-		return Manifest{}, errors.New("Windows runtime manifest belongs to another AgentDock binary")
+	if samePath(manifest.AgentDockBinary, binaryPath) {
+		return manifest, nil
 	}
-	return manifest, nil
+	// generation core 通过 stable shim 进入运行时，因此 manifest.agentdock_binary
+	// 应该始终指向稳定入口。这里只接受 active-version.json 明确选中的 core，
+	// 避免任意旧 generation 伪装成当前运行时。
+	if strings.EqualFold(filepath.Base(binaryPath), updateengine.GenerationCoreName) {
+		root := filepath.Dir(PathForBinary(binaryPath))
+		store, storeErr := updateengine.NewStore(root)
+		if storeErr == nil {
+			active, activeErr := store.ReadActive()
+			layout, layoutErr := updateengine.NewWindowsLayout(root)
+			if activeErr == nil && layoutErr == nil && samePath(layout.GenerationCore(active.ActiveVersion), binaryPath) {
+				return manifest, nil
+			}
+		}
+	}
+	return Manifest{}, errors.New("Windows runtime manifest belongs to another AgentDock binary")
+}
+
+// ActiveCoreBinary 返回当前真正承载 Core 的 generation 二进制。
+// 旧布局没有 active-version.json 时回退 manifest.agentdock_binary，保持迁移兼容。
+func ActiveCoreBinary(runtimeRoot string, manifest Manifest) string {
+	store, err := updateengine.NewStore(runtimeRoot)
+	if err != nil {
+		return manifest.AgentDockBinary
+	}
+	active, err := store.ReadActive()
+	if err != nil {
+		return manifest.AgentDockBinary
+	}
+	layout, err := updateengine.NewWindowsLayout(runtimeRoot)
+	if err != nil {
+		return manifest.AgentDockBinary
+	}
+	path := layout.GenerationCore(active.ActiveVersion)
+	if regularFileExists(path) {
+		return path
+	}
+	return manifest.AgentDockBinary
 }
 
 // resolveRuntimePaths 以 runtime.json 的实际目录作为当前安装根。
@@ -181,6 +229,15 @@ func (manifest Manifest) Validate() error {
 	}
 	if strings.TrimSpace(manifest.AgentDockBinary) == "" || !filepath.IsAbs(manifest.AgentDockBinary) {
 		return errors.New("Windows runtime manifest requires an absolute agentdock_binary")
+	}
+	for name, path := range map[string]string{
+		"agentdock_home":        manifest.AgentDockHome,
+		"agentdock_default_dir": manifest.AgentDockDefaultDir,
+	} {
+		path = strings.TrimSpace(path)
+		if path != "" && !filepath.IsAbs(path) {
+			return fmt.Errorf("Windows runtime manifest %s must be absolute", name)
+		}
 	}
 	if manifest.PrivilegeMode != "" && manifest.PrivilegeMode != "standard" && manifest.PrivilegeMode != "elevated" {
 		return fmt.Errorf("unsupported Windows privilege mode: %s", manifest.PrivilegeMode)

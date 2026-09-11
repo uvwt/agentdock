@@ -11,7 +11,7 @@ BINARY_PATH="$HOME/.local/bin/agentdock"
 CLOUDFLARED_BINARY_PATH="$HOME/.local/bin/cloudflared"
 STATE_DIR="$HOME/.agentdock"
 WORK_DIR="$HOME/AgentDock"
-REMOVE_BINARY=false
+APP_PATH="${AGENTDOCK_APP_PATH:-/Applications/AgentDock.app}"
 PURGE_DATA=false
 
 die() {
@@ -27,11 +27,12 @@ AgentDock macOS 卸载脚本。
   zsh uninstall-macos.sh [--remove-binary] [--purge-data]
 
 默认行为：
-  停止并删除 LaunchAgent、服务支持文件和日志；保留二进制、~/.agentdock 与 ~/AgentDock。
+  注销 AgentDock.app 管理的后台服务，并停止/删除旧 LaunchAgent、服务支持文件和日志；
+  删除 AgentDock.app 与旧 ~/.local/bin 运行时；保留 ~/.agentdock 与 ~/AgentDock。
 
 选项：
-  --remove-binary  同时删除 ~/.local/bin/agentdock 和安装器管理的 cloudflared
-  --purge-data     彻底卸载，同时删除二进制、~/.agentdock 与 ~/AgentDock
+  --remove-binary  兼容旧调用；当前默认已经删除程序二进制
+  --purge-data     彻底卸载，同时删除程序、~/.agentdock 与 ~/AgentDock
   -h, --help       显示帮助
 USAGE
 }
@@ -39,12 +40,10 @@ USAGE
 while (( $# > 0 )); do
   case "$1" in
     --remove-binary)
-      REMOVE_BINARY=true
       shift
       ;;
     --purge-data)
       PURGE_DATA=true
-      REMOVE_BINARY=true
       shift
       ;;
     -h|--help)
@@ -60,6 +59,29 @@ done
 
 [[ "$(uname -s)" == "Darwin" ]] || { print -u2 -- "ERROR: 此脚本只支持 macOS"; exit 1; }
 
+unregister_app_background_services() {
+  local executable="$APP_PATH/Contents/MacOS/AgentDock"
+  if [[ ! -e "$APP_PATH" ]]; then
+    return 0
+  fi
+  [[ -d "$APP_PATH" && ! -L "$APP_PATH" ]] || die "AgentDock.app 路径不是普通应用目录：$APP_PATH"
+  [[ -f "$executable" && -x "$executable" && ! -L "$executable" ]] || die "AgentDock.app 后台服务注销入口不存在或不可执行：$executable"
+  local unregister_error
+  unregister_error="$("$executable" --unregister-background-services 2>&1)" || \
+    die "注销 AgentDock.app 后台服务失败：${unregister_error:-unknown error}"
+}
+
+remove_app_bundle() {
+  if [[ ! -e "$APP_PATH" ]]; then
+    return 0
+  fi
+  [[ -d "$APP_PATH" && ! -L "$APP_PATH" ]] || die "AgentDock.app 路径不是普通应用目录：$APP_PATH"
+  [[ "${APP_PATH:t}" == *.app ]] || die "拒绝删除非 .app 路径：$APP_PATH"
+  rm -rf "$APP_PATH"
+  [[ ! -e "$APP_PATH" ]] || die "AgentDock.app 删除失败：$APP_PATH"
+  print -- "removed app: $APP_PATH"
+}
+
 stop_launch_agent() {
   local domain="$1"
   local label="$2"
@@ -73,20 +95,17 @@ stop_launch_agent() {
 }
 
 domain="gui/$(id -u)"
+unregister_app_background_services
 stop_launch_agent "$domain" "$TUNNEL_LABEL"
 stop_launch_agent "$domain" "$LABEL"
 rm -f "$PLIST_PATH" "$TUNNEL_PLIST_PATH"
 rm -rf "$APP_SUPPORT_DIR" "$LOG_DIR"
+remove_app_bundle
 print -- "removed service: $LABEL"
 
-if [[ "$REMOVE_BINARY" == true ]]; then
-  rm -f "$BINARY_PATH" "$CLOUDFLARED_BINARY_PATH"
-  print -- "removed binary: $BINARY_PATH"
-  print -- "removed binary: $CLOUDFLARED_BINARY_PATH"
-else
-  print -- "preserved binary: $BINARY_PATH"
-  print -- "preserved binary: $CLOUDFLARED_BINARY_PATH"
-fi
+rm -f "$BINARY_PATH" "$CLOUDFLARED_BINARY_PATH"
+print -- "removed binary: $BINARY_PATH"
+print -- "removed binary: $CLOUDFLARED_BINARY_PATH"
 
 if [[ "$PURGE_DATA" == true ]]; then
   rm -rf "$STATE_DIR" "$WORK_DIR"

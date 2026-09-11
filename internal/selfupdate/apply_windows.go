@@ -43,6 +43,9 @@ func applyPlatformUpdate(ctx context.Context, request applyRequest) (applyResult
 	if request.DesktopOnly {
 		return applyWindowsDesktopOnlyUpdate(ctx, request)
 	}
+	if _, _, generationAware := windowsGenerationInstall(request.CurrentPath); generationAware {
+		return applyWindowsGenerationUpdate(ctx, request)
+	}
 	helperDir, err := os.MkdirTemp("", "agentdock-update-helper-*")
 	if err != nil {
 		return applyResult{}, fmt.Errorf("创建 Windows 更新辅助目录失败: %w", err)

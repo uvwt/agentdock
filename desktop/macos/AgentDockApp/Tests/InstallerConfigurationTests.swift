@@ -140,6 +140,7 @@ struct InstallerConfigurationTests {
 
         try testTunnelTokenStore()
         try testDesktopUpdateResult()
+        try testDesktopUpdateTerminalResult()
         try testDesktopUpdateServiceState()
         try testDesktopUpdateHandoff()
         try await testPublicEndpointChecker()
@@ -163,6 +164,27 @@ struct InstallerConfigurationTests {
         precondition(result?.ok == true)
         precondition(result?.targetVersion == "v0.7.0")
         precondition(!FileManager.default.fileExists(atPath: path.path))
+    }
+
+    private static func testDesktopUpdateTerminalResult() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AgentDockUpdateTerminalResultTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let path = root.appendingPathComponent("result.json")
+        let json = """
+        {"schema_version":1,"transaction_id":"tx-1","platform":"darwin","source_version":"v0.8.3","target_version":"v0.8.4","state":"committed","warnings":["warning"]}
+        """
+        try Data(json.utf8).write(to: path)
+
+        let result = DesktopUpdateTerminalResult.load(from: path, transactionID: "tx-1")
+        precondition(result?.state == "committed")
+        precondition(result?.warnings == ["warning"])
+        precondition(DesktopUpdateTerminalResult.load(from: path, transactionID: "tx-other") == nil)
+
+        let foreignPlatform = json.replacingOccurrences(of: "\"darwin\"", with: "\"windows\"")
+        try Data(foreignPlatform.utf8).write(to: path)
+        precondition(DesktopUpdateTerminalResult.load(from: path, transactionID: "tx-1") == nil)
     }
 
     private static func testDesktopUpdateServiceState() throws {
