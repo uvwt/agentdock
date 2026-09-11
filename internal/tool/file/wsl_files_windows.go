@@ -3,24 +3,19 @@
 package file
 
 import (
-	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	pathpkg "path"
 	"strings"
 	"time"
 
-	processcontrol "github.com/uvwt/agentdock/internal/process"
 	"github.com/uvwt/agentdock/internal/workspace"
 )
 
-//go:embed wsl_file_helper.py
-var wslFileHelper string
-
 const maxWSLFileHelperOutputBytes = maxTextFileReadBytes + maxTextOutputBytes + (2 << 20)
+
+const maxWSLFileHelperInputBytes = 64 << 20
 
 func wslFileErrorPhase(code string) string {
 	switch code {
@@ -67,39 +62,28 @@ func resolveWSLFilePath(raw string) (string, error) {
 }
 
 func (svc *Service) callWSLFileHelper(ctx context.Context, selection fileRuntimeSelection, request map[string]any) (Result, error) {
-	wslPath, err := exec.LookPath("wsl.exe")
-	if err != nil {
-		return nil, toolErrorDetails("WSL_NOT_AVAILABLE", "wsl.exe was not found on this Windows host", "runtime", map[string]any{"reason": err.Error()})
-	}
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("encode WSL file helper request: %w", err)
 	}
-	args := make([]string, 0, 8)
-	if selection.Distribution != "" {
-		args = append(args, "--distribution", selection.Distribution)
+	if len(payload) > maxWSLFileHelperInputBytes {
+		return nil, toolErrorDetails(
+			"WSL_FILE_INPUT_TOO_LARGE",
+			"WSL file helper request exceeds the safe input limit",
+			"validation",
+			map[string]any{"input_bytes": len(payload), "max_input_bytes": maxWSLFileHelperInputBytes},
+		)
 	}
-	args = append(args, "--exec", "python3", "-c", wslFileHelper)
-
-	commandEnv, err := svc.commandEnv("", nil)
+	helper, err := svc.ensureWSLFileHelper(ctx, selection)
 	if err != nil {
 		return nil, err
 	}
 	commandCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(commandCtx, wslPath, args...)
-	cmd.Dir = svc.ws.DefaultCWD()
-	cmd.Env = commandEnv
-	cmd.Stdin = bytes.NewReader(payload)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	// wsl.exe 在无控制台宿主下可能交给 Windows Terminal 承载；统一按后台子进程启动，避免文件工具调用闪出终端窗口。
-	processcontrol.Configure(cmd)
-	if err := cmd.Run(); err != nil {
-		message := strings.TrimSpace(stderr.String())
-		if commandCtx.Err() == context.DeadlineExceeded {
+	commandResult, err := svc.runWSLCommand(commandCtx, helper.WSLExecutable, selection, payload, helper.WSLPath)
+	if err != nil {
+		message := strings.TrimSpace(string(commandResult.Stderr))
+		if commandResult.TimedOut {
 			return nil, toolErrorDetails(
 				"WSL_FILE_TIMEOUT",
 				"WSL file operation exceeded the 60 second timeout",
@@ -107,14 +91,8 @@ func (svc *Service) callWSLFileHelper(ctx context.Context, selection fileRuntime
 				map[string]any{"wsl_distribution": selection.Distribution},
 			)
 		}
-		if strings.Contains(strings.ToLower(message), "python3") {
-			return nil, toolErrorDetails(
-				"WSL_PYTHON_NOT_AVAILABLE",
-				"runtime=wsl file tools require python3 in the selected distribution",
-				"runtime",
-				map[string]any{"wsl_distribution": selection.Distribution, "reason": message},
-			)
-		}
+		// helper 可能在本进程运行期间被用户删除或 WSL 发行版被重置；清缓存后下一次调用会重新部署。
+		invalidateWSLHelper(selection)
 		return nil, toolErrorDetails(
 			"WSL_FILE_RUNTIME_ERROR",
 			"WSL file helper failed to start",
@@ -122,21 +100,21 @@ func (svc *Service) callWSLFileHelper(ctx context.Context, selection fileRuntime
 			map[string]any{"wsl_distribution": selection.Distribution, "reason": err.Error(), "stderr": truncateString(message, 2000)},
 		)
 	}
-	if stdout.Len() > maxWSLFileHelperOutputBytes {
+	if len(commandResult.Stdout) > maxWSLFileHelperOutputBytes {
 		return nil, toolErrorDetails(
 			"WSL_FILE_OUTPUT_TOO_LARGE",
 			"WSL file helper output exceeded the safe limit",
 			"runtime",
-			map[string]any{"output_bytes": stdout.Len(), "max_output_bytes": maxWSLFileHelperOutputBytes},
+			map[string]any{"output_bytes": len(commandResult.Stdout), "max_output_bytes": maxWSLFileHelperOutputBytes},
 		)
 	}
 	result := Result{}
-	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+	if err := json.Unmarshal(commandResult.Stdout, &result); err != nil {
 		return nil, toolErrorDetails(
 			"WSL_FILE_INVALID_RESPONSE",
 			"WSL file helper returned invalid JSON",
 			"runtime",
-			map[string]any{"reason": err.Error(), "stderr": truncateString(strings.TrimSpace(stderr.String()), 2000)},
+			map[string]any{"reason": err.Error(), "stderr": truncateString(strings.TrimSpace(string(commandResult.Stderr)), 2000)},
 		)
 	}
 	if ok, _ := result["ok"].(bool); !ok {
