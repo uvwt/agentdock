@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,8 +21,12 @@ func newWSLPatchIntegrationService(t *testing.T) (*Service, fileRuntimeSelection
 	if err != nil {
 		t.Skip("wsl.exe is required for WSL patch integration tests")
 	}
-	if output, err := exec.Command(wslPath, "--exec", "python3", "--version").CombinedOutput(); err != nil {
-		t.Skipf("python3 is required in the default WSL distribution: %v (%s)", err, output)
+	helperPath := strings.TrimSpace(os.Getenv(wslHelperOverrideEnv))
+	if helperPath == "" {
+		t.Skipf("%s must point to an explicitly built Go helper for WSL integration tests", wslHelperOverrideEnv)
+	}
+	if output, err := exec.Command(wslPath, "--exec", helperPath, "--protocol-version").CombinedOutput(); err != nil {
+		t.Skipf("Go WSL helper is not runnable in the default distribution: %v (%s)", err, output)
 	}
 
 	ws, err := workspace.New(t.TempDir())
