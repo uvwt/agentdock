@@ -208,7 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
 
         menu.addItem(item(currentStatus.installed ? L10n.text("Open AgentDock") : L10n.text("Set up AgentDock…"), #selector(showSetup)))
-        menu.addItem(item(L10n.text("Check permissions…"), #selector(openPermissions)))
+        menu.addItem(item(L10n.text("Check permissions"), #selector(openPermissions)))
         if currentStatus.installed {
             menu.addItem(.separator())
 
