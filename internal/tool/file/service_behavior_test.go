@@ -334,6 +334,25 @@ func TestApplyEnvelopePatchEndOfFilePureInsertAppends(t *testing.T) {
 	}
 }
 
+func TestApplyEnvelopePatchAnchorPureInsertFollowsAnchor(t *testing.T) {
+	rt, root := newFileTestService(t)
+	path := filepath.Join(root, "main.txt")
+	if err := os.WriteFile(path, []byte("alpha\nbeta\ngamma\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	patch := "*** Begin Patch\n*** Update File: main.txt\n@@ beta\n+inserted\n*** End Patch"
+	if _, err := rt.applyPatchTest(context.Background(), map[string]any{"patch": patch}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "alpha\nbeta\ninserted\ngamma\n" {
+		t.Fatalf("anchored pure insert content = %q, want insert after anchor", got)
+	}
+}
+
 func TestApplyEnvelopePatchPreservesMissingTrailingNewline(t *testing.T) {
 	rt, root := newFileTestService(t)
 	path := filepath.Join(root, "main.txt")
