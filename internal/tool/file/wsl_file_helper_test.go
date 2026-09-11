@@ -3,38 +3,45 @@
 package file
 
 import (
-	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"syscall"
 	"testing"
+
+	"github.com/uvwt/agentdock/internal/wslfilehelper"
 )
 
 func runWSLFileHelperForTest(t *testing.T, request map[string]any) Result {
 	t.Helper()
-	python, err := exec.LookPath("python3")
-	if err != nil {
-		t.Skip("python3 is required for WSL file helper tests")
-	}
-	script, err := os.ReadFile("wsl_file_helper.py")
-	if err != nil {
-		t.Fatal(err)
-	}
 	payload, err := json.Marshal(request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(python, "-c", string(script))
-	cmd.Stdin = bytes.NewReader(payload)
-	output, err := cmd.CombinedOutput()
+	var helperRequest wslfilehelper.Request
+	if err := json.Unmarshal(payload, &helperRequest); err != nil {
+		t.Fatal(err)
+	}
+	helperResponse, dispatchErr := wslfilehelper.Dispatch(&helperRequest)
+	if dispatchErr != nil {
+		result := Result{"ok": false, "code": "WSL_FILE_RUNTIME_ERROR", "message": dispatchErr.Error()}
+		var failure *wslfilehelper.ToolFailure
+		if errors.As(dispatchErr, &failure) {
+			result["code"] = failure.Code
+			result["message"] = failure.Message
+			result["details"] = failure.Details
+		}
+		return result
+	}
+	helperResponse.OK = true
+	encoded, err := json.Marshal(helperResponse)
 	if err != nil {
-		t.Fatalf("run helper: %v\n%s", err, output)
+		t.Fatal(err)
 	}
 	result := Result{}
-	if err := json.Unmarshal(output, &result); err != nil {
-		t.Fatalf("decode helper result: %v\n%s", err, output)
+	if err := json.Unmarshal(encoded, &result); err != nil {
+		t.Fatal(err)
 	}
 	return result
 }

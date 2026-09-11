@@ -1,22 +1,13 @@
 package file
 
-import (
-	"errors"
-	"testing"
-)
+import "testing"
 
-func TestValidateWSLPatchOperationsRequiresSingleOperation(t *testing.T) {
-	if err := validateWSLPatchOperations([]patchOperation{{Kind: "update", Path: "a.txt"}}); err != nil {
-		t.Fatalf("single operation rejected: %v", err)
+func TestValidateWSLPatchOperationsAllowsMultipleOperations(t *testing.T) {
+	operations := []patchOperation{{Kind: "update", Path: "a.txt"}, {Kind: "update", Path: "b.txt"}}
+	if err := validateWSLPatchOperations(operations); err != nil {
+		t.Fatalf("multi-file operations rejected: %v", err)
 	}
-	for _, operations := range [][]patchOperation{
-		nil,
-		{{Kind: "update", Path: "a.txt"}, {Kind: "update", Path: "b.txt"}},
-	} {
-		err := validateWSLPatchOperations(operations)
-		var toolErr *ToolError
-		if !errors.As(err, &toolErr) || toolErr.Code != "WSL_PATCH_SINGLE_OPERATION_REQUIRED" {
-			t.Fatalf("operations=%d error=%#v", len(operations), err)
-		}
+	if err := validateWSLPatchOperations(nil); err == nil {
+		t.Fatal("empty operation list should fail")
 	}
 }

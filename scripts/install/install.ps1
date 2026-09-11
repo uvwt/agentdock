@@ -941,6 +941,41 @@ function Restore-FileState {
     Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
 }
 
+function Backup-DirectoryState {
+    param(
+        [string] $Path,
+        [string] $Name,
+        [string] $BackupDirectory
+    )
+
+    if (Test-Path -LiteralPath $Path) {
+        if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+            throw "Managed runtime path must be a directory: $Path"
+        }
+        $backup = Join-Path $BackupDirectory $Name
+        Copy-Item -LiteralPath $Path -Destination $backup -Recurse -Force
+        New-Item -ItemType File -Path (Join-Path $BackupDirectory "$Name.present") -Force | Out-Null
+    }
+}
+
+function Restore-DirectoryState {
+    param(
+        [string] $Path,
+        [string] $Name,
+        [string] $BackupDirectory
+    )
+
+    $marker = Join-Path $BackupDirectory "$Name.present"
+    $backup = Join-Path $BackupDirectory $Name
+    if (Test-Path -LiteralPath $Path) {
+        Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+    }
+    if (Test-Path -LiteralPath $marker -PathType Leaf) {
+        New-Item -ItemType Directory -Path (Split-Path -Parent $Path) -Force | Out-Null
+        Copy-Item -LiteralPath $backup -Destination $Path -Recurse -Force
+    }
+}
+
 function Get-RunValue {
     param(
         [string] $RegistryPath,
@@ -1057,6 +1092,8 @@ $checksumPath = "$archivePath.sha256"
 $destinationBinary = Join-Path $InstallDir 'agentdock.exe'
 $destinationTrayBinary = Join-Path $InstallDir 'agentdock-tray.exe'
 $destinationTrayIcon = Join-Path $InstallDir 'agentdock.ico'
+$destinationWSLHelperDir = Join-Path $InstallDir 'wsl-helper'
+$wslHelperStageDir = Join-Path $InstallDir ('.wsl-helper-install-' + [Guid]::NewGuid().ToString('N'))
 $cloudflaredBinary = Join-Path $InstallDir 'cloudflared.exe'
 $binaryBackup = Join-Path $tempRoot 'agentdock.exe.previous'
 $trayBackup = Join-Path $tempRoot 'agentdock-tray.exe.previous'
@@ -1095,6 +1132,7 @@ $rollbackStateCaptured = $false
 $binaryReplacementStarted = $false
 $trayReplacementStarted = $false
 $cloudflaredReplacementStarted = $false
+$wslHelperReplacementStarted = $false
 $startupRegistrationChanged = $false
 $trayStartupRegistrationChanged = $false
 $tunnelStartupRegistrationChanged = $false
@@ -1181,6 +1219,7 @@ try {
     foreach ($item in $managedRuntimeFiles) {
         Backup-FileState -Path $item.Path -Name $item.Name -BackupDirectory $runtimeBackupDir
     }
+    Backup-DirectoryState -Path $destinationWSLHelperDir -Name 'wsl-helper' -BackupDirectory $runtimeBackupDir
     $previousRunValue = Get-RunValue -RegistryPath $runKey -Name $runValueName
     $previousTrayRunValue = Get-RunValue -RegistryPath $runKey -Name $trayRunValueName
     $previousTunnelRunValue = Get-RunValue -RegistryPath $runKey -Name $cloudflaredRunValueName
@@ -1238,6 +1277,48 @@ try {
     if (-not (Test-Path -LiteralPath $coreSkillBundle -PathType Container) -or
         -not (Test-Path -LiteralPath $coreSkillManifest -PathType Leaf)) {
         throw "Release archive does not contain a valid core Skill Bundle: $assetName"
+    }
+    $sourceWSLHelperDir = Join-Path $extractDir 'wsl-helper'
+    $sourceWSLHelperManifestPath = Join-Path $sourceWSLHelperDir 'manifest.json'
+    $sourceWSLHelperAMD64 = Join-Path $sourceWSLHelperDir 'agentdock-wsl-helper-linux-amd64'
+    $sourceWSLHelperARM64 = Join-Path $sourceWSLHelperDir 'agentdock-wsl-helper-linux-arm64'
+    if (-not (Test-Path -LiteralPath $sourceWSLHelperDir -PathType Container) -or
+        -not (Test-Path -LiteralPath $sourceWSLHelperManifestPath -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $sourceWSLHelperAMD64 -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $sourceWSLHelperARM64 -PathType Leaf)) {
+        throw "Release archive does not contain a valid WSL helper payload: $assetName"
+    }
+    try {
+        $wslHelperManifest = Get-Content -LiteralPath $sourceWSLHelperManifestPath -Raw | ConvertFrom-Json
+        if ([string] $wslHelperManifest.protocol_version -ne '1') {
+            throw 'WSL helper manifest protocol_version must be 1.'
+        }
+        $helperChecks = @(
+            @{
+                Architecture = 'amd64'
+                ExpectedName = 'agentdock-wsl-helper-linux-amd64'
+                Path = $sourceWSLHelperAMD64
+                Entry = $wslHelperManifest.helpers.amd64
+            },
+            @{
+                Architecture = 'arm64'
+                ExpectedName = 'agentdock-wsl-helper-linux-arm64'
+                Path = $sourceWSLHelperARM64
+                Entry = $wslHelperManifest.helpers.arm64
+            }
+        )
+        foreach ($helperCheck in $helperChecks) {
+            if ([string] $helperCheck.Entry.file -ne [string] $helperCheck.ExpectedName) {
+                throw "WSL helper manifest file mismatch for $($helperCheck.Architecture)."
+            }
+            $expectedHelperHash = ([string] $helperCheck.Entry.sha256).Trim().ToLowerInvariant()
+            $actualHelperHash = Get-Sha256Hex -Path $helperCheck.Path
+            if ($expectedHelperHash -notmatch '^[0-9a-f]{64}$' -or $actualHelperHash -ne $expectedHelperHash) {
+                throw "WSL helper SHA-256 mismatch for $($helperCheck.Architecture)."
+            }
+        }
+    } catch {
+        throw "Release archive contains an invalid WSL helper manifest: $($_.Exception.Message)"
     }
 
     # Validate the unpacked payload before stopping processes or touching an existing scheduled task.
@@ -1310,6 +1391,20 @@ try {
     Copy-Item -LiteralPath $sourceTrayIcon -Destination $destinationTrayIcon -Force
     New-Item -ItemType Directory -Path $installerDir -Force | Out-Null
     Copy-Item -LiteralPath $sourceManagerScript -Destination $managerScriptPath -Force
+
+    # Stage the complete helper payload next to the install directory before replacing the
+    # active generation. Keeping staging on the same volume makes the final directory move local.
+    Remove-Item -LiteralPath $wslHelperStageDir -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $wslHelperStageDir -Force | Out-Null
+    Copy-Item -LiteralPath $sourceWSLHelperManifestPath -Destination (Join-Path $wslHelperStageDir 'manifest.json') -Force
+    Copy-Item -LiteralPath $sourceWSLHelperAMD64 -Destination (Join-Path $wslHelperStageDir 'agentdock-wsl-helper-linux-amd64') -Force
+    Copy-Item -LiteralPath $sourceWSLHelperARM64 -Destination (Join-Path $wslHelperStageDir 'agentdock-wsl-helper-linux-arm64') -Force
+    $wslHelperReplacementStarted = $true
+    if (Test-Path -LiteralPath $destinationWSLHelperDir) {
+        Remove-Item -LiteralPath $destinationWSLHelperDir -Recurse -Force -ErrorAction Stop
+    }
+    Move-Item -LiteralPath $wslHelperStageDir -Destination $destinationWSLHelperDir
+
     $installedVersionJson = & $destinationBinary version --json
     if ($LASTEXITCODE -ne 0) {
         throw 'Unable to read the installed AgentDock version after replacing the Windows payload.'
@@ -1728,6 +1823,9 @@ exit `$LASTEXITCODE
             foreach ($item in $managedRuntimeFiles) {
                 Restore-FileState -Path $item.Path -Name $item.Name -BackupDirectory $runtimeBackupDir
             }
+            if ($wslHelperReplacementStarted) {
+                Restore-DirectoryState -Path $destinationWSLHelperDir -Name 'wsl-helper' -BackupDirectory $runtimeBackupDir
+            }
 
             if ($null -ne $previousRunValue) {
                 Set-RunValue -RegistryPath $runKey -Name $runValueName -Value $previousRunValue
@@ -1845,5 +1943,6 @@ exit `$LASTEXITCODE
     if ($DeleteTunnelTokenFile -and -not [string]::IsNullOrWhiteSpace($TunnelTokenFile)) {
         Remove-Item -LiteralPath $TunnelTokenFile -Force -ErrorAction SilentlyContinue
     }
+    Remove-Item -LiteralPath $wslHelperStageDir -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
