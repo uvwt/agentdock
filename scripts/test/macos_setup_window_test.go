@@ -18,10 +18,13 @@ func TestMacOSSetupWindowUsesResponsiveScrollableLayout(t *testing.T) {
 	for _, want := range []string{
 		`styleMask: [.titled, .closable, .miniaturizable, .resizable]`,
 		`window.minSize = NSSize(width: 620, height: 420)`,
+		`private let scrollDocumentView = TopAlignedDocumentView()`,
 		`let scrollView = NSScrollView()`,
 		`scrollView.hasVerticalScroller = true`,
 		`scrollView.documentView = scrollDocumentView`,
 		`scrollDocumentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor)`,
+		`let footerSpacer = NSView()`,
+		`footerSpacer.heightAnchor.constraint(equalToConstant: 8)`,
 		`contentStack.leadingAnchor.constraint(equalTo: scrollDocumentView.leadingAnchor, constant: 28)`,
 		`contentStack.bottomAnchor.constraint(equalTo: scrollDocumentView.bottomAnchor, constant: -22)`,
 		`let visibleFrame = (window.screen ?? NSScreen.main)?.visibleFrame`,
@@ -33,6 +36,20 @@ func TestMacOSSetupWindowUsesResponsiveScrollableLayout(t *testing.T) {
 	} {
 		if !strings.Contains(setup, want) {
 			t.Fatalf("macOS setup window missing responsive layout contract %q", want)
+		}
+	}
+
+	componentsData, err := os.ReadFile(filepath.Join(root, "Sources", "PermissionUIComponents.swift"))
+	if err != nil {
+		t.Fatalf("read PermissionUIComponents.swift: %v", err)
+	}
+	components := string(componentsData)
+	for _, want := range []string{
+		`final class TopAlignedDocumentView: NSView`,
+		`override var isFlipped: Bool { true }`,
+	} {
+		if !strings.Contains(components, want) {
+			t.Fatalf("macOS setup window missing top-aligned document contract %q", want)
 		}
 	}
 

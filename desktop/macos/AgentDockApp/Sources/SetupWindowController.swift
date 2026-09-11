@@ -20,7 +20,8 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private let stateLabel = NSTextField(labelWithString: L10n.text("Not installed"))
     private let nexusStateLabel = NSTextField(labelWithString: L10n.text("Not configured"))
 
-    private let scrollDocumentView = NSView()
+    // 文档内容不足一屏时保持顶部对齐，把剩余空间自然留在底部。
+    private let scrollDocumentView = TopAlignedDocumentView()
     private let contentStack = TopAlignedStackView()
     private let serviceSection = NSStackView()
     private let localAddress = NSTextField(labelWithString: L10n.text("Not installed"))
@@ -320,6 +321,10 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         footer.alignment = .centerY
         footer.spacing = 10
 
+        // 给配置区和底部操作留出明确的呼吸空间；小窗口仍由外层滚动区承载。
+        let footerSpacer = NSView()
+        footerSpacer.heightAnchor.constraint(equalToConstant: 8).isActive = true
+
         addFullWidth(header, to: contentStack)
         addFullWidth(separator(), to: contentStack)
         addFullWidth(serviceSection, to: contentStack)
@@ -329,6 +334,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         addFullWidth(modeDescription, to: contentStack)
         addFullWidth(namedFields, to: contentStack)
         addFullWidth(separator(), to: contentStack)
+        addFullWidth(footerSpacer, to: contentStack)
         addFullWidth(footer, to: contentStack)
 
         NSLayoutConstraint.activate([
