@@ -23,4 +23,6 @@ func ToolDescription(base string) string { return base }
 
 func EditDescription(base string) string { return base }
 
-func PatchDescription(base string) string { return base }
+func PatchDescription(base string) string {
+	return base + structuredPatchGrammarDescription + " Prefer the structured envelope for multi-file edits so AgentDock can stage, conflict-check, and roll back the change set. Unified git diff remains accepted on the Host runtime."
+}

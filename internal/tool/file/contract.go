@@ -7,6 +7,21 @@ const (
 	ToolListDir    = "list_dir"
 	ToolSearchText = "search_text"
 	ToolFileEdit   = "file_edit"
+
+	structuredPatchGrammarDescription = ` Structured envelope format:
+*** Begin Patch
+*** Add File: <path>
++<added line>
+*** Delete File: <path>
+*** Update File: <path>
+[*** Move to: <new path>]
+@@ [<optional context line>]
+ <context line>
+-<removed line>
++<added line>
+[*** End of File]
+*** End Patch
+Add/Delete/Update operations may repeat in one envelope. Update lines use a leading space for context, '-' for removal, and '+' for addition; @@ may be used without context or with one context line.`
 )
 
 func InputSchema(name string) (map[string]any, bool) {
@@ -130,7 +145,22 @@ func OutputSchema(name string) (map[string]any, bool) {
 		props["path"] = stringProp("Host path. Relative paths resolve from ~/AgentDock.")
 		props["new_path"] = stringProp("Move destination path.")
 		props["workdir"] = stringProp("Patch working directory.")
-		props["affected_files"] = map[string]any{"type": "array", "description": "Files affected by a patch.", "items": map[string]any{"type": "string"}}
+		props["affected_files"] = map[string]any{
+			"type":        "array",
+			"description": "Files affected by a patch. Structured-envelope results use operation/move_to; unified-diff results use status/binary.",
+			"items": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"required":             []string{"path"},
+				"properties": map[string]any{
+					"path":      stringProp("Affected file path."),
+					"operation": map[string]any{"type": "string", "enum": []string{"add", "delete", "update", "move"}},
+					"move_to":   stringProp("Move destination for operation=move."),
+					"status":    stringProp("Unified diff file status."),
+					"binary":    boolProp("Whether a unified diff file is binary."),
+				},
+			},
+		}
 		props["dry_run"] = boolProp("Whether this was a dry run.")
 		props["matches"] = intProp("Match count for replace.")
 		props["changed"] = boolProp("Whether content changed.")

@@ -52,5 +52,5 @@ func EditDescription(base string) string {
 }
 
 func PatchDescription(base string) string {
-	return base + " With runtime=wsl, patch must use the structured *** Begin Patch envelope and contain exactly one file operation per call."
+	return base + structuredPatchGrammarDescription + " With runtime=wsl, this structured envelope is required and must contain exactly one file operation per call. With runtime=windows, structured envelopes use the Host staged commit path; unified git diff is also accepted."
 }
