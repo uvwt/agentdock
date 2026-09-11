@@ -269,18 +269,18 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         openConfig.bezelStyle = .inline
 
         let startupStack = NSStackView(views: [
-            formRow(title: L10n.text("Interface language"), control: languagePreference),
             serviceAutostart,
             menuAutostart,
+            formRow(title: L10n.text("Interface language"), control: languagePreference),
         ])
         startupStack.orientation = .vertical
         startupStack.alignment = .leading
         startupStack.spacing = 8
 
         let serviceForm = NSStackView(views: [
+            mcpAppsEnabled,
             formRow(title: L10n.text("Service port"), control: portField),
             formRow(title: L10n.text("Log level"), control: logLevel),
-            mcpAppsEnabled,
         ])
         serviceForm.orientation = .vertical
         serviceForm.alignment = .leading
@@ -320,20 +320,28 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
 
         let nexusEndpointRow = formRow(title: "Endpoint", control: nexusEndpoint, fillsAvailableWidth: true)
         let nexusPairingCodeRow = formRow(title: L10n.text("Pairing code"), control: nexusPairingCode, fillsAvailableWidth: true)
-        let nexusDeviceTokenRow = formRow(title: "Device Token", control: nexusDeviceTokenStatus, fillsAvailableWidth: true)
-        let nexusPairRow = NSStackView(views: [nexusPairButton, NSView()])
-        nexusPairRow.orientation = .horizontal
-        nexusPairRow.spacing = 8
+        let nexusPairRow = NSView()
+        nexusPairButton.translatesAutoresizingMaskIntoConstraints = false
+        nexusDeviceTokenStatus.translatesAutoresizingMaskIntoConstraints = false
+        nexusPairRow.addSubview(nexusPairButton)
+        nexusPairRow.addSubview(nexusDeviceTokenStatus)
+        NSLayoutConstraint.activate([
+            nexusPairButton.leadingAnchor.constraint(equalTo: nexusPairRow.leadingAnchor),
+            nexusPairButton.centerYAnchor.constraint(equalTo: nexusPairRow.centerYAnchor),
+            nexusDeviceTokenStatus.leadingAnchor.constraint(equalTo: nexusPairRow.leadingAnchor, constant: 140),
+            nexusDeviceTokenStatus.trailingAnchor.constraint(equalTo: nexusPairRow.trailingAnchor),
+            nexusDeviceTokenStatus.topAnchor.constraint(equalTo: nexusPairRow.topAnchor),
+            nexusDeviceTokenStatus.bottomAnchor.constraint(equalTo: nexusPairRow.bottomAnchor),
+        ])
         let nexusStack = NSStackView(views: [
             nexusEndpointRow,
             nexusPairingCodeRow,
             nexusPairRow,
-            nexusDeviceTokenRow,
         ])
         nexusStack.orientation = .vertical
         nexusStack.alignment = .leading
         nexusStack.spacing = 8
-        for row in [nexusEndpointRow, nexusPairingCodeRow, nexusDeviceTokenRow] {
+        for row in [nexusEndpointRow, nexusPairingCodeRow, nexusPairRow] {
             row.widthAnchor.constraint(equalTo: nexusStack.widthAnchor).isActive = true
         }
 

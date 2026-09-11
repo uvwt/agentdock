@@ -4,6 +4,10 @@ final class TopAlignedStackView: NSStackView {
     override var isFlipped: Bool { true }
 }
 
+final class TopAlignedDocumentView: NSView {
+    override var isFlipped: Bool { true }
+}
+
 enum PermissionUI {
     static func statusLabel(_ text: String = L10n.text("Not checked")) -> NSTextField {
         let label = NSTextField(labelWithString: text)
