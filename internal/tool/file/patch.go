@@ -94,7 +94,7 @@ func (svc *Service) applyEnvelopePatch(patch string, dryRun bool, basePath strin
 				content := string(original)
 				current = stagedPatchFile{Abs: source.Abs, Display: source.Display, Content: &content, Mode: info.Mode().Perm(), Original: original, OriginalExists: true}
 			}
-			updated, err := applyUpdateHunks(*current.Content, op.Hunks, source.Display)
+			updated, err := applyUpdateHunks(*current.Content, op.Chunks, source.Display)
 			if err != nil {
 				return nil, err
 			}

@@ -2,11 +2,17 @@ package file
 
 import "strings"
 
+type patchUpdateChunk struct {
+	Anchor    string
+	Lines     []string
+	EndOfFile bool
+}
+
 type patchOperation struct {
 	Kind       string
 	Path       string
 	AddContent string
-	Hunks      [][]string
+	Chunks     []patchUpdateChunk
 	MoveTo     string
 }
 
@@ -18,6 +24,7 @@ func parseEnvelopePatch(patch string) ([]patchOperation, error) {
 	if len(lines) < 2 || strings.TrimSpace(lines[0]) != "*** Begin Patch" || strings.TrimSpace(lines[len(lines)-1]) != "*** End Patch" {
 		return nil, toolError("PATCH_FAILED", "patch must use begin/end envelope", "validation")
 	}
+
 	operations := make([]patchOperation, 0)
 	for i := 1; i < len(lines)-1; {
 		line := lines[i]
@@ -52,23 +59,51 @@ func parseEnvelopePatch(patch string) ([]patchOperation, error) {
 				moveTo = strings.TrimSpace(strings.TrimPrefix(lines[i], "*** Move to: "))
 				i++
 			}
-			hunks := make([][]string, 0)
-			current := make([]string, 0)
-			for i < len(lines)-1 && !strings.HasPrefix(lines[i], "*** ") {
-				if strings.HasPrefix(lines[i], "@@") {
-					if len(current) > 0 {
-						hunks = append(hunks, current)
-					}
-					current = make([]string, 0)
-				} else {
-					current = append(current, lines[i])
+
+			chunks := make([]patchUpdateChunk, 0)
+			var current *patchUpdateChunk
+			startChunk := func(anchor string) {
+				chunks = append(chunks, patchUpdateChunk{Anchor: anchor})
+				current = &chunks[len(chunks)-1]
+			}
+			for i < len(lines)-1 {
+				raw := lines[i]
+				if strings.HasPrefix(raw, "*** Add File: ") || strings.HasPrefix(raw, "*** Delete File: ") || strings.HasPrefix(raw, "*** Update File: ") {
+					break
 				}
+				if raw == "*** End of File" {
+					if current == nil {
+						startChunk("")
+					}
+					if current.EndOfFile {
+						return nil, toolError("PATCH_FAILED", "duplicate end-of-file marker", "validation")
+					}
+					current.EndOfFile = true
+					i++
+					continue
+				}
+				if strings.HasPrefix(raw, "*** ") {
+					break
+				}
+				if current != nil && current.EndOfFile {
+					return nil, toolError("PATCH_FAILED", "end-of-file marker must terminate its update chunk", "validation")
+				}
+				if raw == "@@" || strings.HasPrefix(raw, "@@ ") {
+					anchor := strings.TrimPrefix(raw, "@@")
+					if strings.HasPrefix(anchor, " ") {
+						anchor = anchor[1:]
+					}
+					startChunk(anchor)
+					i++
+					continue
+				}
+				if current == nil {
+					startChunk("")
+				}
+				current.Lines = append(current.Lines, raw)
 				i++
 			}
-			if len(current) > 0 {
-				hunks = append(hunks, current)
-			}
-			operations = append(operations, patchOperation{Kind: "update", Path: path, Hunks: hunks, MoveTo: moveTo})
+			operations = append(operations, patchOperation{Kind: "update", Path: path, Chunks: chunks, MoveTo: moveTo})
 			continue
 		}
 		return nil, toolErrorDetails("PATCH_FAILED", "unrecognized patch line", "validation", map[string]any{"line": line})
@@ -76,10 +111,11 @@ func parseEnvelopePatch(patch string) ([]patchOperation, error) {
 	return operations, nil
 }
 
-func applyUpdateHunks(content string, hunks [][]string, path string) (string, error) {
-	if len(hunks) == 0 {
+func applyUpdateHunks(content string, chunks []patchUpdateChunk, path string) (string, error) {
+	if len(chunks) == 0 {
 		return content, nil
 	}
+
 	hasBOM := strings.HasPrefix(content, "\ufeff")
 	if hasBOM {
 		content = strings.TrimPrefix(content, "\ufeff")
@@ -88,32 +124,65 @@ func applyUpdateHunks(content string, hunks [][]string, path string) (string, er
 	if strings.Contains(content, "\r\n") {
 		lineEnding = "\r\n"
 	}
-	lines := strings.Split(strings.TrimSuffix(strings.ReplaceAll(content, "\r\n", "\n"), "\n"), "\n")
-	if content == "" {
-		lines = []string{}
+	normalized := strings.ReplaceAll(content, "\r\n", "\n")
+	trailingNewline := strings.HasSuffix(normalized, "\n")
+	body := normalized
+	if trailingNewline {
+		body = strings.TrimSuffix(body, "\n")
 	}
-	trailing := strings.HasSuffix(content, "\n")
-	for hunkIndex, hunk := range hunks {
-		oldLines, newLines, err := parseUpdateHunk(hunk)
+	var lines []string
+	if body != "" || normalized != "" {
+		lines = strings.Split(body, "\n")
+	}
+
+	searchStart := 0
+	for chunkIndex, chunk := range chunks {
+		oldLines, newLines, err := parseUpdateChunk(chunk)
 		if err != nil {
 			return "", err
 		}
-		idxs := findAllSubsequences(lines, oldLines)
-		if len(idxs) == 0 {
-			return "", toolErrorDetails("PATCH_FAILED", "patch context did not match", "validation", map[string]any{"path": path, "diagnostic": map[string]any{"code": "CONTEXT_NOT_FOUND", "path": path, "hunk_index": hunkIndex, "message": "patch context did not match", "nearby_context": patchNearbyContext(lines, oldLines)}})
+
+		if chunk.Anchor != "" {
+			matches := findPatchMatches(lines, []string{chunk.Anchor}, searchStart, false)
+			if len(matches) == 0 {
+				return "", patchContextError("patch anchor did not match", "CONTEXT_NOT_FOUND", path, chunkIndex, lines, []string{chunk.Anchor}, nil)
+			}
+			if len(matches) > 1 {
+				return "", patchContextError("patch anchor matched multiple locations", "AMBIGUOUS_CONTEXT", path, chunkIndex, lines, []string{chunk.Anchor}, matches)
+			}
+			searchStart = matches[0] + 1
 		}
-		if len(idxs) > 1 {
-			return "", toolErrorDetails("PATCH_FAILED", "patch context matched multiple locations", "validation", map[string]any{"path": path, "matches": len(idxs), "diagnostic": map[string]any{"code": "AMBIGUOUS_CONTEXT", "path": path, "hunk_index": hunkIndex, "message": "patch context matched multiple locations", "nearby_context": patchContextsForMatches(lines, idxs)}})
+
+		if len(oldLines) == 0 {
+			if len(newLines) == 0 {
+				continue
+			}
+			insertAt := len(lines)
+			lines = append(lines, newLines...)
+			searchStart = insertAt + len(newLines)
+			continue
 		}
-		idx := idxs[0]
+
+		matches := findPatchMatches(lines, oldLines, searchStart, chunk.EndOfFile)
+		if len(matches) == 0 {
+			return "", patchContextError("patch context did not match", "CONTEXT_NOT_FOUND", path, chunkIndex, lines, oldLines, nil)
+		}
+		if len(matches) > 1 {
+			return "", patchContextError("patch context matched multiple locations", "AMBIGUOUS_CONTEXT", path, chunkIndex, lines, oldLines, matches)
+		}
+		idx := matches[0]
+		// 匹配允许忽略行尾空白，但未修改的 context 行仍保留磁盘原文，避免容错匹配带来附带格式变更。
+		newLines = materializeUpdateLines(chunk, lines[idx:idx+len(oldLines)])
 		updated := make([]string, 0, len(lines)-len(oldLines)+len(newLines))
 		updated = append(updated, lines[:idx]...)
 		updated = append(updated, newLines...)
 		updated = append(updated, lines[idx+len(oldLines):]...)
 		lines = updated
+		searchStart = idx + len(newLines)
 	}
+
 	result := strings.Join(lines, lineEnding)
-	if trailing || len(lines) > 0 {
+	if trailingNewline {
 		result += lineEnding
 	}
 	if hasBOM {
@@ -122,15 +191,15 @@ func applyUpdateHunks(content string, hunks [][]string, path string) (string, er
 	return result, nil
 }
 
-func parseUpdateHunk(hunk []string) ([]string, []string, error) {
-	oldLines := make([]string, 0)
-	newLines := make([]string, 0)
-	for _, raw := range hunk {
-		if raw == "*** End of File" {
-			continue
-		}
+func parseUpdateChunk(chunk patchUpdateChunk) ([]string, []string, error) {
+	oldLines := make([]string, 0, len(chunk.Lines))
+	newLines := make([]string, 0, len(chunk.Lines))
+	for _, raw := range chunk.Lines {
 		if raw == "" {
-			return nil, nil, toolError("PATCH_FAILED", "invalid empty patch line", "validation")
+			// 部分模型或传输层会去掉空上下文行唯一的前导空格；按 Codex 的宽松解析视为空上下文。
+			oldLines = append(oldLines, "")
+			newLines = append(newLines, "")
+			continue
 		}
 		marker := raw[0]
 		value := raw[1:]
@@ -149,16 +218,63 @@ func parseUpdateHunk(hunk []string) ([]string, []string, error) {
 	return oldLines, newLines, nil
 }
 
-func findAllSubsequences(lines, needle []string) []int {
-	if len(needle) == 0 {
-		return []int{0}
+func materializeUpdateLines(chunk patchUpdateChunk, matchedOld []string) []string {
+	result := make([]string, 0, len(chunk.Lines))
+	oldIndex := 0
+	for _, raw := range chunk.Lines {
+		if raw == "" {
+			result = append(result, matchedOld[oldIndex])
+			oldIndex++
+			continue
+		}
+		switch raw[0] {
+		case ' ':
+			result = append(result, matchedOld[oldIndex])
+			oldIndex++
+		case '-':
+			oldIndex++
+		case '+':
+			result = append(result, raw[1:])
+		}
 	}
-	limit := len(lines) - len(needle) + 1
+	return result
+}
+
+func findPatchMatches(lines, needle []string, start int, endOfFile bool) []int {
+	exact := findPatchMatchesWith(lines, needle, start, endOfFile, func(left, right string) bool { return left == right })
+	if len(exact) > 0 {
+		return exact
+	}
+	return findPatchMatchesWith(lines, needle, start, endOfFile, func(left, right string) bool {
+		return strings.TrimRight(left, " \t") == strings.TrimRight(right, " \t")
+	})
+}
+
+func findPatchMatchesWith(lines, needle []string, start int, endOfFile bool, equal func(string, string) bool) []int {
+	if len(needle) == 0 {
+		if endOfFile {
+			return []int{len(lines)}
+		}
+		if start > len(lines) {
+			return nil
+		}
+		return []int{start}
+	}
+	if start < 0 {
+		start = 0
+	}
+	last := len(lines) - len(needle)
+	if last < start {
+		return nil
+	}
+	if endOfFile {
+		start = last
+	}
 	matches := make([]int, 0)
-	for i := 0; i < limit; i++ {
+	for i := start; i <= last; i++ {
 		ok := true
 		for j := range needle {
-			if lines[i+j] != needle[j] {
+			if !equal(lines[i+j], needle[j]) {
 				ok = false
 				break
 			}
@@ -166,6 +282,28 @@ func findAllSubsequences(lines, needle []string) []int {
 		if ok {
 			matches = append(matches, i)
 		}
+		if endOfFile {
+			break
+		}
 	}
 	return matches
+}
+
+func patchContextError(message, code, path string, chunkIndex int, lines, needle []string, matches []int) error {
+	diagnostic := map[string]any{
+		"code":       code,
+		"path":       path,
+		"hunk_index": chunkIndex,
+		"message":    message,
+	}
+	if len(matches) > 0 {
+		diagnostic["nearby_context"] = patchContextsForMatches(lines, matches)
+	} else {
+		diagnostic["nearby_context"] = patchNearbyContext(lines, needle)
+	}
+	details := map[string]any{"path": path, "diagnostic": diagnostic}
+	if len(matches) > 1 {
+		details["matches"] = len(matches)
+	}
+	return toolErrorDetails("PATCH_FAILED", message, "validation", details)
 }

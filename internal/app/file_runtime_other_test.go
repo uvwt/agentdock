@@ -3,8 +3,20 @@
 package app
 
 import (
+	"strings"
 	"testing"
 )
+
+func TestFileEditPatchSchemaDescribesStructuredEnvelope(t *testing.T) {
+	properties := testInputSchema("file_edit")["properties"].(map[string]any)
+	patch := properties["patch"].(map[string]any)
+	description, _ := patch["description"].(string)
+	for _, marker := range []string{"*** Begin Patch", "*** Update File: <path>", "@@ [<optional context line>]", "*** End of File"} {
+		if !strings.Contains(description, marker) {
+			t.Fatalf("file_edit patch description missing %q: %q", marker, description)
+		}
+	}
+}
 
 func TestNonWindowsFileToolSchemasDoNotExposeWSLRuntime(t *testing.T) {
 	for _, name := range []string{"read_file", "list_dir", "search_text", "file_edit"} {

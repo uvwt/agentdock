@@ -235,6 +235,204 @@ func TestApplyEnvelopePatchDryRunAndDiagnostics(t *testing.T) {
 	}
 }
 
+func TestApplyEnvelopePatchContextAnchorDisambiguates(t *testing.T) {
+	rt, root := newFileTestService(t)
+	path := filepath.Join(root, "main.go")
+	content := "func first() {\n\treturn nil\n}\n\nfunc second() {\n\treturn nil\n}\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	patch := "*** Begin Patch\n*** Update File: main.go\n@@ func second() {\n-\treturn nil\n+\treturn secondErr\n*** End Patch"
+	if _, err := rt.applyPatchTest(context.Background(), map[string]any{"patch": patch}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "func first() {\n\treturn nil\n}\n\nfunc second() {\n\treturn secondErr\n}\n"
+	if string(got) != want {
+		t.Fatalf("anchored patch content = %q, want %q", got, want)
+	}
+}
+
+func TestApplyEnvelopePatchContextAnchorSearchesForward(t *testing.T) {
+	rt, root := newFileTestService(t)
+	path := filepath.Join(root, "main.go")
+	content := "func target() {\n\tprepare()\n\twork()\n\treturn nil\n}\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	patch := "*** Begin Patch\n*** Update File: main.go\n@@ func target() {\n-\treturn nil\n+\treturn targetErr\n*** End Patch"
+	if _, err := rt.applyPatchTest(context.Background(), map[string]any{"patch": patch}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "func target() {\n\tprepare()\n\twork()\n\treturn targetErr\n}\n"
+	if string(got) != want {
+		t.Fatalf("forward anchored patch content = %q, want %q", got, want)
+	}
+}
+
+func TestApplyEnvelopePatchAcceptsBlankContextLine(t *testing.T) {
+	rt, root := newFileTestService(t)
+	path := filepath.Join(root, "main.txt")
+	if err := os.WriteFile(path, []byte("alpha\n\nbeta\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	patch := "*** Begin Patch\n*** Update File: main.txt\n@@\n alpha\n\n-beta\n+BETA\n*** End Patch"
+	if _, err := rt.applyPatchTest(context.Background(), map[string]any{"patch": patch}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "alpha\n\nBETA\n" {
+		t.Fatalf("blank-context patch content = %q", got)
+	}
+}
+
+func TestApplyEnvelopePatchEndOfFileAnchorsLastMatch(t *testing.T) {
+	rt, root := newFileTestService(t)
+	path := filepath.Join(root, "main.txt")
+	if err := os.WriteFile(path, []byte("alpha\nomega\nalpha\nomega\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	patch := "*** Begin Patch\n*** Update File: main.txt\n@@\n-alpha\n-omega\n+ALPHA\n+OMEGA\n*** End of File\n*** End Patch"
+	if _, err := rt.applyPatchTest(context.Background(), map[string]any{"patch": patch}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "alpha\nomega\nALPHA\nOMEGA\n" {
+		t.Fatalf("EOF-anchored patch content = %q", got)
+	}
+}
+
+func TestApplyEnvelopePatchEndOfFilePureInsertAppends(t *testing.T) {
+	rt, root := newFileTestService(t)
+	path := filepath.Join(root, "main.txt")
+	if err := os.WriteFile(path, []byte("alpha\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	patch := "*** Begin Patch\n*** Update File: main.txt\n@@\n+omega\n*** End of File\n*** End Patch"
+	if _, err := rt.applyPatchTest(context.Background(), map[string]any{"patch": patch}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "alpha\nomega\n" {
+		t.Fatalf("EOF pure insert content = %q", got)
+	}
+}
+
+func TestApplyEnvelopePatchPreservesMissingTrailingNewline(t *testing.T) {
+	rt, root := newFileTestService(t)
+	path := filepath.Join(root, "main.txt")
+	if err := os.WriteFile(path, []byte("alpha"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	patch := "*** Begin Patch\n*** Update File: main.txt\n@@\n-alpha\n+beta\n*** End Patch"
+	if _, err := rt.applyPatchTest(context.Background(), map[string]any{"patch": patch}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "beta" {
+		t.Fatalf("patch added an unexpected trailing newline: %q", got)
+	}
+}
+
+func TestApplyUpdateHunksRStripFallbackRequiresUniqueMatch(t *testing.T) {
+	t.Run("rstrip fallback", func(t *testing.T) {
+		got, err := applyUpdateHunks("alpha   \nbeta\n", []patchUpdateChunk{{Lines: []string{"-alpha", "+ALPHA"}}}, "main.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != "ALPHA\nbeta\n" {
+			t.Fatalf("rstrip patch content = %q", got)
+		}
+	})
+
+	t.Run("rstrip keeps unchanged context text", func(t *testing.T) {
+		got, err := applyUpdateHunks("alpha   \nbeta\n", []patchUpdateChunk{{Lines: []string{" alpha", "-beta", "+BETA"}}}, "main.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != "alpha   \nBETA\n" {
+			t.Fatalf("rstrip context was rewritten: %q", got)
+		}
+	})
+
+	t.Run("rstrip ambiguity", func(t *testing.T) {
+		_, err := applyUpdateHunks("alpha \nalpha\t\n", []patchUpdateChunk{{Lines: []string{"-alpha", "+ALPHA"}}}, "main.txt")
+		var toolErr *ToolError
+		if !errors.As(err, &toolErr) || toolErr.Code != "PATCH_FAILED" {
+			t.Fatalf("ambiguous rstrip error = %#v", err)
+		}
+		diagnostic, _ := toolErr.Details["diagnostic"].(map[string]any)
+		if diagnostic["code"] != "AMBIGUOUS_CONTEXT" {
+			t.Fatalf("ambiguous rstrip diagnostic = %#v", diagnostic)
+		}
+	})
+
+	t.Run("leading whitespace remains significant", func(t *testing.T) {
+		_, err := applyUpdateHunks("    alpha\n", []patchUpdateChunk{{Lines: []string{"-  alpha", "+ALPHA"}}}, "main.txt")
+		var toolErr *ToolError
+		if !errors.As(err, &toolErr) || toolErr.Code != "PATCH_FAILED" {
+			t.Fatalf("leading-whitespace error = %#v", err)
+		}
+		diagnostic, _ := toolErr.Details["diagnostic"].(map[string]any)
+		if diagnostic["code"] != "CONTEXT_NOT_FOUND" {
+			t.Fatalf("leading-whitespace diagnostic = %#v", diagnostic)
+		}
+	})
+}
+
+func TestApplyEnvelopePatchDoesNotWriteEarlierFileWhenLaterContextFails(t *testing.T) {
+	rt, root := newFileTestService(t)
+	first := filepath.Join(root, "first.txt")
+	second := filepath.Join(root, "second.txt")
+	if err := os.WriteFile(first, []byte("first old\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(second, []byte("second old\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	patch := strings.Join([]string{
+		"*** Begin Patch",
+		"*** Update File: first.txt",
+		"@@",
+		"-first old",
+		"+first new",
+		"*** Update File: second.txt",
+		"@@",
+		"-missing",
+		"+second new",
+		"*** End Patch",
+	}, "\n")
+	if _, err := rt.applyPatchTest(context.Background(), map[string]any{"patch": patch}); err == nil {
+		t.Fatal("expected the second file context to fail")
+	}
+	got, err := os.ReadFile(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "first old\n" {
+		t.Fatalf("first file was written before full patch validation: %q", got)
+	}
+}
+
 func TestApplyUnifiedDiffDryRunDoesNotWrite(t *testing.T) {
 	rt, root := newFileTestService(t)
 	path := filepath.Join(root, "main.go")

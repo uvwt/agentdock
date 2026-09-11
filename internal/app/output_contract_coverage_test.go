@@ -19,7 +19,7 @@ var outputContractCoverageInventory = map[string]outputContractCoverageEntry{
 	"read_file":                {Variants: []string{"success"}},
 	"list_dir":                 {Variants: []string{"success"}},
 	"search_text":              {Variants: []string{"success"}},
-	"file_edit":                {Variants: []string{"replace", "add", "move", "delete"}},
+	"file_edit":                {Variants: []string{"replace", "patch", "add", "move", "delete"}},
 	"exec_command":             {Variants: []string{"success"}},
 	"session_observe":          {Variants: []string{"list"}},
 	"session_act":              {Variants: []string{"kill_all"}},

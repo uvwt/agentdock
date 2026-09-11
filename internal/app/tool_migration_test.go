@@ -22,6 +22,44 @@ func TestFileEditReplace(t *testing.T) {
 	}
 }
 
+func TestFileEditPatch(t *testing.T) {
+	rt, root := newCodeToolsRuntime(t)
+	path := filepath.Join(root, "patch.txt")
+	if err := os.WriteFile(path, []byte("alpha\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	patch := "*** Begin Patch\n*** Update File: patch.txt\n@@\n-alpha\n+beta\n*** End Patch"
+	result, err := rt.Call(context.Background(), "file_edit", map[string]any{"action": "patch", "patch": patch, "dry_run": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertToolResultMatchestestOutputSchema(t, "file_edit", result)
+	if result["action"] != "patch" || result["dry_run"] != true || result["files_changed"] != 1 {
+		t.Fatalf("unexpected file_edit patch result: %#v", result)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "alpha\n" {
+		t.Fatalf("dry-run patch changed file: %q", content)
+	}
+}
+
+func TestFileEditUnifiedDiffOutputContract(t *testing.T) {
+	rt, root := newCodeToolsRuntime(t)
+	path := filepath.Join(root, "unified.txt")
+	if err := os.WriteFile(path, []byte("alpha\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	patch := "diff --git a/unified.txt b/unified.txt\n--- a/unified.txt\n+++ b/unified.txt\n@@ -1 +1 @@\n-alpha\n+beta\n"
+	result, err := rt.Call(context.Background(), "file_edit", map[string]any{"action": "patch", "patch": patch, "dry_run": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertToolResultMatchestestOutputSchema(t, "file_edit", result)
+}
+
 func TestFileEditAddMoveDelete(t *testing.T) {
 	rt, root := newCodeToolsRuntime(t)
 	result, err := rt.Call(context.Background(), "file_edit", map[string]any{"action": "add", "path": "draft.txt", "content": "hello\n"})

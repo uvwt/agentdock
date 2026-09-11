@@ -239,7 +239,7 @@ func (svc *Service) fileEditPatchWSL(ctx context.Context, request EditRequest, s
 			if stage.NewContent == nil {
 				return nil, toolErrorDetails("PATCH_FAILED", "cannot update a deleted file", "validation", map[string]any{"path": sourcePath})
 			}
-			updated, err := applyUpdateHunks(*stage.NewContent, operation.Hunks, sourcePath)
+			updated, err := applyUpdateHunks(*stage.NewContent, operation.Chunks, sourcePath)
 			if err != nil {
 				return nil, err
 			}
