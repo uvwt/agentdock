@@ -114,6 +114,83 @@ func TestStoreRepairsTerminalResultProjectionsFromJournal(t *testing.T) {
 	}
 }
 
+func TestStoreDoesNotProjectNonTerminalJournalAsResult(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transaction, err := NewTransaction("windows", "0.8.3", "0.9.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	transaction.Windows = &WindowsPlan{
+		InstallRoot:      root,
+		SourceGeneration: filepath.Join(root, "versions", "v0.8.3"),
+		TargetGeneration: filepath.Join(root, "versions", "v0.9.0"),
+	}
+	transaction.State = StateTrial
+	transaction.Phase = PhaseHealth
+	transaction.ActiveVersion = "v0.9.0"
+	transaction.FallbackVersion = "v0.8.3"
+	if err := store.WriteTransaction(transaction); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.ReadResult(transaction.TransactionID); err == nil {
+		t.Fatal("non-terminal journal unexpectedly projected a result")
+	}
+	if _, err := os.Stat(store.CurrentResultPath()); !os.IsNotExist(err) {
+		t.Fatalf("non-terminal journal created current result projection: %v", err)
+	}
+}
+
+func TestHistoricalResultDoesNotReplaceNewerCurrentProjection(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldTransaction, err := NewTransaction("windows", "0.8.2", "0.8.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldTransaction.Windows = &WindowsPlan{
+		InstallRoot:      root,
+		SourceGeneration: filepath.Join(root, "versions", "v0.8.2"),
+		TargetGeneration: filepath.Join(root, "versions", "v0.8.3"),
+	}
+	oldTransaction.ActiveVersion = "v0.8.3"
+	if _, err := store.Complete(oldTransaction, StateCommitted, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	newTransaction, err := NewTransaction("windows", "0.8.3", "0.9.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newTransaction.Windows = &WindowsPlan{
+		InstallRoot:      root,
+		SourceGeneration: filepath.Join(root, "versions", "v0.8.3"),
+		TargetGeneration: filepath.Join(root, "versions", "v0.9.0"),
+	}
+	newTransaction.ActiveVersion = "v0.9.0"
+	if _, err := store.Complete(newTransaction, StateCommitted, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.ReadResult(oldTransaction.TransactionID); err != nil {
+		t.Fatal(err)
+	}
+	var current Result
+	if err := readJSON(store.CurrentResultPath(), &current); err != nil {
+		t.Fatal(err)
+	}
+	if current.TransactionID != newTransaction.TransactionID {
+		t.Fatalf("historical read replaced current result: got %s, want %s", current.TransactionID, newTransaction.TransactionID)
+	}
+}
+
 func TestWindowsLayoutRecognizesGenerationBinaries(t *testing.T) {
 	layout, err := NewWindowsLayout(t.TempDir())
 	if err != nil {

@@ -463,18 +463,31 @@ func processIDsAtExecutable(ctx context.Context, executable string) ([]int, erro
 	if err != nil {
 		return nil, err
 	}
+	return processIDsFromPSOutput(output, executable), nil
+}
+
+func processIDsFromPSOutput(output []byte, executable string) []int {
+	cleanExecutable := filepath.Clean(executable)
 	var pids []int
 	for _, line := range strings.Split(string(output), "\n") {
-		fields := strings.Fields(strings.TrimSpace(line))
-		if len(fields) < 2 || filepath.Clean(fields[1]) != filepath.Clean(executable) {
+		line = strings.TrimSpace(line)
+		separator := strings.IndexByte(line, ' ')
+		if separator <= 0 {
 			continue
 		}
-		pid, err := strconv.Atoi(fields[0])
+		pidText := strings.TrimSpace(line[:separator])
+		command := strings.TrimSpace(line[separator+1:])
+		// command= 保留完整 argv；不能用 strings.Fields 拆路径，否则带空格的 App 路径
+		// 会被截断。只接受精确 executable 或 executable 后跟参数，避免前缀误匹配。
+		if command != cleanExecutable && !strings.HasPrefix(command, cleanExecutable+" ") {
+			continue
+		}
+		pid, err := strconv.Atoi(pidText)
 		if err == nil && pid != os.Getpid() {
 			pids = append(pids, pid)
 		}
 	}
-	return pids, nil
+	return pids
 }
 
 func removeIfExists(path string) error {

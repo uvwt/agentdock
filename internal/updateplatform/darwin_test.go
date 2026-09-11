@@ -13,6 +13,17 @@ import (
 	"github.com/uvwt/agentdock/internal/updateengine"
 )
 
+func TestProcessIDsFromPSOutputPreservesExecutablePathsWithSpaces(t *testing.T) {
+	executable := "/Users/Test User/Applications/AgentDock.app/Contents/MacOS/AgentDock"
+	output := []byte("  123 " + executable + " --background\n" +
+		"  124 /Applications/AgentDock.app/Contents/MacOS/AgentDock --background\n" +
+		"  125 " + executable + "-helper\n")
+
+	if got := processIDsFromPSOutput(output, executable); !slices.Equal(got, []int{123}) {
+		t.Fatalf("process ids = %v", got)
+	}
+}
+
 func TestMacOSOpenArgumentsPreserveRuntimeHomeOverrides(t *testing.T) {
 	t.Setenv("HOME", "/tmp/agentdock-home")
 	t.Setenv("CFFIXED_USER_HOME", "/tmp/agentdock-home")

@@ -9,10 +9,12 @@ import (
 )
 
 type recordingDriver struct {
-	calls       []string
-	verifyError error
-	rollbackErr error
-	warnings    []string
+	calls              []string
+	verifyError        error
+	rollbackErr        error
+	warnings           []string
+	cancelDuringVerify context.CancelFunc
+	rollbackContextErr error
 }
 
 func (driver *recordingDriver) PrepareTrial(context.Context, Transaction) error {
@@ -21,14 +23,18 @@ func (driver *recordingDriver) PrepareTrial(context.Context, Transaction) error 
 }
 func (driver *recordingDriver) VerifyTrial(context.Context, Transaction) ([]string, error) {
 	driver.calls = append(driver.calls, "verify")
+	if driver.cancelDuringVerify != nil {
+		driver.cancelDuringVerify()
+	}
 	return driver.warnings, driver.verifyError
 }
 func (driver *recordingDriver) Commit(context.Context, Transaction) error {
 	driver.calls = append(driver.calls, "commit")
 	return nil
 }
-func (driver *recordingDriver) Rollback(context.Context, Transaction) error {
+func (driver *recordingDriver) Rollback(ctx context.Context, _ Transaction) error {
 	driver.calls = append(driver.calls, "rollback")
+	driver.rollbackContextErr = ctx.Err()
 	return driver.rollbackErr
 }
 
@@ -81,6 +87,26 @@ func TestArbiterRollsBackFailedTrial(t *testing.T) {
 	result, err := (Arbiter{Store: store, Driver: driver}).Run(context.Background(), transaction.TransactionID)
 	if err == nil || result.State != StateRolledBack {
 		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if !reflect.DeepEqual(driver.calls, []string{"prepare", "verify", "rollback"}) {
+		t.Fatalf("calls = %v", driver.calls)
+	}
+}
+
+func TestArbiterRollbackGetsFreshBudgetAfterTrialContextIsCanceled(t *testing.T) {
+	store, transaction := writeWindowsTransaction(t, StateStaged)
+	ctx, cancel := context.WithCancel(context.Background())
+	driver := &recordingDriver{
+		verifyError:        context.Canceled,
+		cancelDuringVerify: cancel,
+	}
+
+	result, err := (Arbiter{Store: store, Driver: driver}).Run(ctx, transaction.TransactionID)
+	if err == nil || result.State != StateRolledBack {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if driver.rollbackContextErr != nil {
+		t.Fatalf("rollback inherited canceled trial context: %v", driver.rollbackContextErr)
 	}
 	if !reflect.DeepEqual(driver.calls, []string{"prepare", "verify", "rollback"}) {
 		t.Fatalf("calls = %v", driver.calls)

@@ -22,6 +22,8 @@ type Arbiter struct {
 	Driver Driver
 }
 
+const rollbackRecoveryTimeout = 3 * time.Minute
+
 func (arbiter Arbiter) Run(ctx context.Context, transactionID string) (Result, error) {
 	if arbiter.Store == nil || arbiter.Driver == nil {
 		return Result{}, errors.New("update arbiter requires store and platform driver")
@@ -108,7 +110,13 @@ func (arbiter Arbiter) rollback(ctx context.Context, transaction Transaction, co
 	if err := arbiter.Store.WriteTransaction(transaction); err != nil {
 		return Result{}, errors.Join(cause, fmt.Errorf("persist rollback journal: %w", err))
 	}
-	if err := arbiter.Driver.Rollback(ctx, transaction); err != nil {
+	// 一旦进入 trial，恢复已知良好版本就是独立的安全事务，不能继续消耗 trial 的
+	// deadline/cancellation。否则 trial 在超时边缘失败时，rollback 会拿到已经取消的
+	// context，导致“物理上已换回旧版本、journal 却记为 failed”的半恢复状态。
+	// 仍给 rollback 自己的有限预算，避免平台恢复逻辑无限挂起。
+	rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackRecoveryTimeout)
+	defer cancel()
+	if err := arbiter.Driver.Rollback(rollbackCtx, transaction); err != nil {
 		rollbackFailure := &Failure{
 			Code:    "rollback-failed",
 			Message: errors.Join(cause, err).Error(),
