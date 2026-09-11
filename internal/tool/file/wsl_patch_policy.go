@@ -1,13 +1,8 @@
 package file
 
 func validateWSLPatchOperations(operations []patchOperation) error {
-	if len(operations) == 1 {
-		return nil
+	if len(operations) == 0 {
+		return toolError("PATCH_FAILED", "patch contains no file operations", "validation")
 	}
-	return toolErrorDetails(
-		"WSL_PATCH_SINGLE_OPERATION_REQUIRED",
-		"runtime=wsl patch accepts exactly one file operation per call so writes remain atomic and recoverable",
-		"validation",
-		map[string]any{"operations": len(operations)},
-	)
+	return nil
 }

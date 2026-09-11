@@ -6,8 +6,10 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	pathpkg "path"
 	"strings"
@@ -21,6 +23,20 @@ import (
 var wslFileHelper string
 
 const maxWSLFileHelperOutputBytes = maxTextFileReadBytes + maxTextOutputBytes + (2 << 20)
+
+const maxWSLFileHelperInputBytes = 64 << 20
+
+// stdin frame: 8-byte helper-source length, helper source, then the JSON request to EOF.
+// The embedded helper reads the remaining JSON directly from the same stdin stream,
+// avoiding a second full payload copy inside Python.
+const wslFileHelperBootstrap = `import sys
+stream = sys.stdin.buffer
+helper_size = int.from_bytes(stream.read(8), "big")
+helper = stream.read(helper_size)
+if len(helper) != helper_size:
+    raise EOFError("incomplete AgentDock WSL file helper frame")
+exec(compile(helper, "<agentdock-wsl-file-helper>", "exec"))
+`
 
 func wslFileErrorPhase(code string) string {
 	switch code {
@@ -75,11 +91,19 @@ func (svc *Service) callWSLFileHelper(ctx context.Context, selection fileRuntime
 	if err != nil {
 		return nil, fmt.Errorf("encode WSL file helper request: %w", err)
 	}
+	if len(payload) > maxWSLFileHelperInputBytes {
+		return nil, toolErrorDetails(
+			"WSL_FILE_INPUT_TOO_LARGE",
+			"WSL file helper request exceeds the safe input limit",
+			"validation",
+			map[string]any{"input_bytes": len(payload), "max_input_bytes": maxWSLFileHelperInputBytes},
+		)
+	}
 	args := make([]string, 0, 8)
 	if selection.Distribution != "" {
 		args = append(args, "--distribution", selection.Distribution)
 	}
-	args = append(args, "--exec", "python3", "-c", wslFileHelper)
+	args = append(args, "--exec", "python3", "-c", wslFileHelperBootstrap)
 
 	commandEnv, err := svc.commandEnv("", nil)
 	if err != nil {
@@ -90,7 +114,13 @@ func (svc *Service) callWSLFileHelper(ctx context.Context, selection fileRuntime
 	cmd := exec.CommandContext(commandCtx, wslPath, args...)
 	cmd.Dir = svc.ws.DefaultCWD()
 	cmd.Env = commandEnv
-	cmd.Stdin = bytes.NewReader(payload)
+	var frameHeader [8]byte
+	binary.BigEndian.PutUint64(frameHeader[:], uint64(len(wslFileHelper)))
+	cmd.Stdin = io.MultiReader(
+		bytes.NewReader(frameHeader[:]),
+		strings.NewReader(wslFileHelper),
+		bytes.NewReader(payload),
+	)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout

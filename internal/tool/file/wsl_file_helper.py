@@ -1,5 +1,7 @@
 import datetime
+import ctypes
 import errno
+import fcntl
 import fnmatch
 import hashlib
 import json
@@ -8,6 +10,7 @@ import re
 import stat
 import sys
 import tempfile
+import uuid
 
 MAX_TEXT_FILE_BYTES = 32 << 20
 DEFAULT_SKIPPED_DIRS = {
@@ -414,6 +417,14 @@ def fsync_directory(path):
         pass
 
 
+def fsync_directory_strict(path):
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def atomic_write(request):
     path = checked_path(request.get("path"), write=True)
     content = request.get("content")
@@ -539,6 +550,567 @@ def move_file(request):
     return {"path": source, "new_path": destination}
 
 
+def transaction_state_dir(workdir):
+    state_home = os.environ.get("XDG_STATE_HOME")
+    if not state_home:
+        state_home = os.path.join(os.path.expanduser("~"), ".local", "state")
+    key = hashlib.sha256(workdir.encode("utf-8")).hexdigest()
+    root = os.path.join(state_home, "agentdock", "wsl-patch-transactions", key)
+    os.makedirs(root, mode=0o700, exist_ok=True)
+    try:
+        os.chmod(root, 0o700)
+    except OSError:
+        pass
+    return root
+
+
+def acquire_transaction_lock(state_dir):
+    lock_path = os.path.join(state_dir, "lock")
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(descriptor)
+        fail("PATCH_BUSY", "another WSL patch transaction is active for this workdir")
+    return descriptor
+
+
+def write_json_atomic(path, value):
+    parent = os.path.dirname(path)
+    temporary = path + ".tmp-" + uuid.uuid4().hex
+    descriptor = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    replaced = False
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", closefd=True) as handle:
+            descriptor = -1
+            json.dump(value, handle, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        replaced = True
+        # Journal durability is part of crash recovery semantics, unlike the
+        # best-effort directory fsync used by ordinary file operations.
+        fsync_directory_strict(parent)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if not replaced:
+            try:
+                os.remove(temporary)
+            except FileNotFoundError:
+                pass
+
+
+def path_snapshot(path):
+    path = checked_path(path, write=True)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            fail("SYMLINK_NOT_ALLOWED", "file_edit does not allow symlink targets", path=path)
+        raise
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            fail("NOT_REGULAR_FILE", "file_edit patch only supports regular files", path=path, type=kind_from_mode(info.st_mode))
+        if info.st_size > MAX_TEXT_FILE_BYTES:
+            fail("FILE_TOO_LARGE", "patch target exceeds the text file input limit", path=path, size_bytes=info.st_size)
+        with os.fdopen(descriptor, "rb", closefd=True) as handle:
+            descriptor = -1
+            data = handle.read(MAX_TEXT_FILE_BYTES + 1)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    if len(data) > MAX_TEXT_FILE_BYTES:
+        fail("FILE_TOO_LARGE", "patch target exceeds the text file input limit", path=path)
+    return {
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "mode": stat.S_IMODE(info.st_mode),
+        "uid": info.st_uid,
+        "gid": info.st_gid,
+    }
+
+
+def snapshot_matches(snapshot, sha256_value, mode=None, uid=None, gid=None):
+    if snapshot is None or snapshot.get("sha256") != sha256_value:
+        return False
+    if mode is not None and snapshot.get("mode") != int(mode):
+        return False
+    if uid is not None and snapshot.get("uid") != int(uid):
+        return False
+    if gid is not None and snapshot.get("gid") != int(gid):
+        return False
+    return True
+
+
+def missing_parent_directories(path):
+    missing = []
+    cursor = os.path.dirname(path)
+    while True:
+        try:
+            info = os.lstat(cursor)
+        except FileNotFoundError:
+            missing.append(cursor)
+            parent = os.path.dirname(cursor)
+            if parent == cursor:
+                fail("PATH_NOT_FOUND", "patch parent directory does not exist", path=path)
+            cursor = parent
+            continue
+        if stat.S_ISLNK(info.st_mode):
+            fail("SYMLINK_NOT_ALLOWED", "file_edit does not allow symlink path components", path=cursor)
+        if not stat.S_ISDIR(info.st_mode):
+            fail("NOT_A_DIRECTORY", "patch parent is not a directory", path=cursor)
+        break
+    missing.reverse()
+    return missing
+
+
+def rename_no_replace(source, destination):
+    # renameat2(RENAME_NOREPLACE) closes the final TOCTOU window without ever
+    # replacing a concurrently-created target. Hard-link installation is a
+    # safe fallback because transaction temps always live beside the target.
+    libc = ctypes.CDLL(None, use_errno=True)
+    renameat2 = getattr(libc, "renameat2", None)
+    if renameat2 is not None:
+        renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        renameat2.restype = ctypes.c_int
+        result = renameat2(-100, os.fsencode(source), -100, os.fsencode(destination), 1)
+        if result == 0:
+            return
+        error = ctypes.get_errno()
+        if error == errno.EEXIST:
+            raise FileExistsError(error, os.strerror(error), destination)
+        if error not in (errno.ENOSYS, errno.EINVAL, errno.EOPNOTSUPP):
+            raise OSError(error, os.strerror(error), destination)
+    try:
+        os.link(source, destination)
+    except FileExistsError:
+        raise
+    except OSError as error:
+        fail(
+            "NO_REPLACE_UNSUPPORTED",
+            "WSL filesystem cannot install patch files without replace semantics",
+            path=destination,
+            reason=str(error),
+        )
+    os.remove(source)
+
+
+def normalize_transaction_changes(request, transaction_id):
+    changes = request.get("changes")
+    if not isinstance(changes, list) or not changes:
+        fail("INVALID_ARGUMENT", "patch transaction requires at least one staged change")
+    items = []
+    seen = set()
+    created_dirs = []
+    created_seen = set()
+    for index, raw in enumerate(changes):
+        if not isinstance(raw, dict):
+            fail("INVALID_ARGUMENT", "patch transaction changes must be objects", index=index)
+        path = checked_path(raw.get("path"), write=True)
+        if path in seen:
+            fail("INVALID_ARGUMENT", "patch transaction contains a duplicate path", path=path)
+        seen.add(path)
+        expected_exists = raw.get("expected_exists")
+        new_exists = raw.get("new_exists")
+        if not isinstance(expected_exists, bool) or not isinstance(new_exists, bool):
+            fail("INVALID_ARGUMENT", "patch transaction existence fields must be booleans", path=path)
+
+        item = {
+            "path": path,
+            "expected_exists": expected_exists,
+            "new_exists": new_exists,
+            "expected_sha256": raw.get("expected_sha256"),
+            "expected_mode": raw.get("expected_mode"),
+            "expected_uid": raw.get("expected_uid"),
+            "expected_gid": raw.get("expected_gid"),
+            "new_sha256": raw.get("sha256"),
+            "new_mode": raw.get("mode"),
+            "new_uid": raw.get("owner_uid"),
+            "new_gid": raw.get("owner_gid"),
+            "temp_path": None,
+            "backup_path": None,
+        }
+        if expected_exists:
+            if not isinstance(item["expected_sha256"], str) or len(item["expected_sha256"]) != 64:
+                fail("INVALID_ARGUMENT", "existing patch target requires expected_sha256", path=path)
+            if item["expected_mode"] is None or item["expected_uid"] is None or item["expected_gid"] is None:
+                fail("INVALID_ARGUMENT", "existing patch target requires expected mode and ownership", path=path)
+            item["backup_path"] = os.path.join(
+                os.path.dirname(path), f".agentdock-patch-backup-{transaction_id}-{index}"
+            )
+        if new_exists:
+            content = raw.get("content")
+            if not isinstance(content, str):
+                fail("INVALID_ARGUMENT", "new patch content must be UTF-8 text", path=path)
+            payload = content.encode("utf-8")
+            if len(payload) > MAX_TEXT_FILE_BYTES:
+                fail("FILE_TOO_LARGE", "new patch content exceeds the text file input limit", path=path)
+            actual_hash = hashlib.sha256(payload).hexdigest()
+            if raw.get("sha256") != actual_hash:
+                fail("INVALID_ARGUMENT", "new patch content hash does not match request", path=path)
+            if item["new_mode"] is None:
+                fail("INVALID_ARGUMENT", "new patch content requires mode", path=path)
+            if (item["new_uid"] is None) != (item["new_gid"] is None):
+                fail("INVALID_ARGUMENT", "owner_uid and owner_gid must be provided together", path=path)
+            item["content"] = content
+            item["temp_path"] = os.path.join(
+                os.path.dirname(path), f".agentdock-patch-write-{transaction_id}-{index}"
+            )
+            for directory in missing_parent_directories(path):
+                if directory not in created_seen:
+                    created_seen.add(directory)
+                    created_dirs.append(directory)
+        items.append(item)
+    created_dirs.sort(key=lambda value: (value.count(os.sep), value))
+    return items, created_dirs
+
+
+def verify_transaction_preflight(items):
+    for item in items:
+        path = item["path"]
+        snapshot = path_snapshot(path)
+        if not item["expected_exists"]:
+            if snapshot is not None:
+                fail("PATCH_CONFLICT", "patch target was created concurrently", path=path)
+            continue
+        if not snapshot_matches(
+            snapshot,
+            item["expected_sha256"],
+            item["expected_mode"],
+            item["expected_uid"],
+            item["expected_gid"],
+        ):
+            fail("PATCH_CONFLICT", "patch target changed before commit", path=path)
+
+
+def create_transaction_temp(item):
+    if not item["new_exists"]:
+        return
+    checked_path(item["temp_path"], write=True)
+    payload = item["content"].encode("utf-8")
+    descriptor = os.open(item["temp_path"], os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    try:
+        os.fchmod(descriptor, int(item["new_mode"]))
+        if item["new_uid"] is not None:
+            try:
+                os.fchown(descriptor, int(item["new_uid"]), int(item["new_gid"]))
+            except PermissionError:
+                fail(
+                    "OWNERSHIP_CHANGE_BLOCKED",
+                    "patch transaction could not preserve file ownership",
+                    path=item["path"],
+                    owner_uid=item["new_uid"],
+                    owner_gid=item["new_gid"],
+                    current_uid=os.geteuid(),
+                    current_gid=os.getegid(),
+                )
+        with os.fdopen(descriptor, "wb", closefd=True) as handle:
+            descriptor = -1
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def verify_backup(item):
+    snapshot = path_snapshot(item["backup_path"])
+    if not snapshot_matches(
+        snapshot,
+        item["expected_sha256"],
+        item["expected_mode"],
+        item["expected_uid"],
+        item["expected_gid"],
+    ):
+        fail("PATCH_CONFLICT", "patch target changed while commit was starting", path=item["path"])
+
+
+def new_target_matches(item):
+    # Existing/moved files explicitly carry an owner and therefore verify it.
+    # A newly-added file intentionally inherits the helper process owner; when
+    # no owner was requested, a later external chown is not transaction-owned
+    # state and must not be treated as a rollback conflict.
+    snapshot = path_snapshot(item["path"])
+    return snapshot_matches(snapshot, item["new_sha256"], item["new_mode"], item["new_uid"], item["new_gid"])
+
+
+def original_target_matches(item):
+    snapshot = path_snapshot(item["path"])
+    return snapshot_matches(
+        snapshot,
+        item["expected_sha256"],
+        item["expected_mode"],
+        item["expected_uid"],
+        item["expected_gid"],
+    )
+
+
+def rollback_transaction(journal):
+    errors = []
+    for item in reversed(journal.get("items") or []):
+        path = item["path"]
+        backup_path = item.get("backup_path")
+        backup_exists = bool(backup_path and os.path.lexists(backup_path))
+        target_exists = os.path.lexists(path)
+
+        if item["expected_exists"] and not backup_exists:
+            # This item was never backed up, so its current target still belongs
+            # to the pre-transaction world. Never remove it based on hash alone.
+            if not target_exists:
+                errors.append(f"original target and backup are both missing: {path}")
+        elif target_exists:
+            try:
+                original_unchanged = item["expected_exists"] and backup_exists and original_target_matches(item)
+                installed_unchanged = item["new_exists"] and new_target_matches(item)
+            except (ToolFailure, OSError):
+                # A target that became unreadable, a symlink, or another file
+                # type during rollback belongs to an external actor or an I/O
+                # boundary we cannot safely classify. Preserve it; programming
+                # errors still propagate instead of being mistaken for concurrency.
+                original_unchanged = False
+                installed_unchanged = False
+            if original_unchanged:
+                # Safe no-replace fallback may implement rename as link+unlink.
+                # A crash between those syscalls leaves the original and backup
+                # as equivalent links; rollback is already complete once the
+                # duplicate backup is removed.
+                try:
+                    os.remove(backup_path)
+                    fsync_directory_strict(os.path.dirname(path))
+                    backup_exists = False
+                except OSError as error:
+                    errors.append(f"remove duplicate patch backup {backup_path}: {error}")
+            elif installed_unchanged:
+                try:
+                    os.remove(path)
+                    fsync_directory_strict(os.path.dirname(path))
+                    target_exists = False
+                except OSError as error:
+                    errors.append(f"remove partially installed {path}: {error}")
+            else:
+                errors.append(f"patched target changed during rollback; preserving current file: {path}")
+
+        if backup_exists and not target_exists:
+            try:
+                # The source may have been changed by another process after our
+                # preflight but before we renamed it to the backup path. In that
+                # case verify_backup intentionally fails the commit, but rollback
+                # must still put that externally-changed file back where it came
+                # from. Only require that the backup is still a regular file;
+                # never overwrite a concurrently recreated target.
+                path_snapshot(backup_path)
+                rename_no_replace(backup_path, path)
+                fsync_directory_strict(os.path.dirname(path))
+                backup_exists = False
+            except Exception as error:
+                errors.append(f"restore patch backup for {path}: {error}")
+
+        temp_path = item.get("temp_path")
+        if temp_path:
+            try:
+                os.remove(temp_path)
+            except FileNotFoundError:
+                pass
+            except OSError as error:
+                errors.append(f"remove patch temp {temp_path}: {error}")
+
+    for directory in reversed(journal.get("created_dirs") or []):
+        try:
+            os.rmdir(directory)
+            fsync_directory_strict(os.path.dirname(directory))
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            errors.append(f"remove transaction-created directory {directory}: {error}")
+    return errors
+
+
+def cleanup_committed_transaction(journal):
+    errors = []
+    affected_dirs = set()
+    for item in journal.get("items") or []:
+        affected_dirs.add(os.path.dirname(item["path"]))
+        for key in ("backup_path", "temp_path"):
+            candidate = item.get(key)
+            if not candidate:
+                continue
+            try:
+                os.remove(candidate)
+            except FileNotFoundError:
+                pass
+            except OSError as error:
+                errors.append(f"remove committed transaction artifact {candidate}: {error}")
+    for directory in sorted(affected_dirs):
+        try:
+            fsync_directory_strict(directory)
+        except OSError as error:
+            errors.append(f"fsync committed transaction directory {directory}: {error}")
+    return errors
+
+
+def recover_transaction_journals(state_dir):
+    recovered = 0
+    try:
+        names = sorted(name for name in os.listdir(state_dir) if name.endswith(".json"))
+    except FileNotFoundError:
+        return 0
+    for name in names:
+        journal_path = os.path.join(state_dir, name)
+        try:
+            with open(journal_path, "r", encoding="utf-8") as handle:
+                journal = json.load(handle)
+        except Exception as error:
+            fail("PATCH_RECOVERY_REQUIRED", "cannot read WSL patch transaction journal", journal=journal_path, reason=str(error))
+        if journal.get("version") != 1:
+            fail("PATCH_RECOVERY_REQUIRED", "unsupported WSL patch transaction journal version", journal=journal_path)
+        if journal.get("phase") == "committed":
+            errors = cleanup_committed_transaction(journal)
+        else:
+            errors = rollback_transaction(journal)
+        if errors:
+            fail("PATCH_RECOVERY_REQUIRED", "WSL patch transaction recovery is incomplete", journal=journal_path, errors=errors)
+        try:
+            os.remove(journal_path)
+        except FileNotFoundError:
+            pass
+        fsync_directory_strict(state_dir)
+        recovered += 1
+    return recovered
+
+
+def patch_transaction(request):
+    workdir = checked_path(request.get("workdir"))
+    ensure_directory(workdir)
+    state_dir = transaction_state_dir(workdir)
+    lock_descriptor = acquire_transaction_lock(state_dir)
+    try:
+        recovered = recover_transaction_journals(state_dir)
+        transaction_id = uuid.uuid4().hex
+        items, planned_dirs = normalize_transaction_changes(request, transaction_id)
+        verify_transaction_preflight(items)
+
+        journal_path = os.path.join(state_dir, transaction_id + ".json")
+        journal = {
+            "version": 1,
+            "transaction_id": transaction_id,
+            "workdir": workdir,
+            "phase": "preparing",
+            "created_dirs": [],
+            "items": [{key: value for key, value in item.items() if key != "content"} for item in items],
+        }
+        write_json_atomic(journal_path, journal)
+
+        try:
+            for directory in planned_dirs:
+                try:
+                    os.mkdir(directory, 0o755)
+                except FileExistsError:
+                    info = os.lstat(directory)
+                    if stat.S_ISLNK(info.st_mode):
+                        fail("SYMLINK_NOT_ALLOWED", "file_edit does not allow symlink path components", path=directory)
+                    if not stat.S_ISDIR(info.st_mode):
+                        fail("NOT_A_DIRECTORY", "patch parent is not a directory", path=directory)
+                    continue
+                journal["created_dirs"].append(directory)
+                write_json_atomic(journal_path, journal)
+
+            # Re-check path components after parent creation. An external actor
+            # must not be able to replace a just-created parent with a symlink
+            # and redirect temp/backup/install I/O elsewhere.
+            for item in items:
+                checked_path(item["path"], write=True)
+            for item in items:
+                create_transaction_temp(item)
+            journal["phase"] = "prepared"
+            write_json_atomic(journal_path, journal)
+
+            # Destructive commit starts only after every target passed preflight,
+            # every parent exists, every new file is fsynced, and the recovery
+            # journal is durable.
+            for item in items:
+                checked_path(item["path"], write=True)
+            for item in items:
+                if not item["expected_exists"]:
+                    continue
+                try:
+                    rename_no_replace(item["path"], item["backup_path"])
+                except FileExistsError:
+                    fail("PATCH_CONFLICT", "patch backup path already exists", path=item["path"])
+                fsync_directory_strict(os.path.dirname(item["path"]))
+                verify_backup(item)
+
+            for item in items:
+                if not item["new_exists"]:
+                    continue
+                try:
+                    rename_no_replace(item["temp_path"], item["path"])
+                except FileExistsError:
+                    fail("PATCH_CONFLICT", "patch target was created concurrently", path=item["path"])
+                fsync_directory_strict(os.path.dirname(item["path"]))
+
+            for item in items:
+                if item["new_exists"]:
+                    if not new_target_matches(item):
+                        fail("WRITE_VERIFICATION_FAILED", "patch transaction content verification failed", path=item["path"])
+                elif os.path.lexists(item["path"]):
+                    fail("PATCH_CONFLICT", "deleted patch target was recreated concurrently", path=item["path"])
+
+            affected_dirs = sorted({os.path.dirname(item["path"]) for item in items})
+            for directory in affected_dirs:
+                fsync_directory_strict(directory)
+            journal["phase"] = "committed"
+            write_json_atomic(journal_path, journal)
+        except Exception as cause:
+            rollback_errors = rollback_transaction(journal)
+            if rollback_errors:
+                fail(
+                    "PATCH_ROLLBACK_INCOMPLETE",
+                    "WSL patch transaction failed and rollback is incomplete",
+                    journal=journal_path,
+                    reason=str(cause),
+                    rollback_errors=rollback_errors,
+                )
+            try:
+                os.remove(journal_path)
+            except FileNotFoundError:
+                pass
+            fsync_directory_strict(state_dir)
+            raise
+
+        cleanup_errors = cleanup_committed_transaction(journal)
+        cleanup_pending = bool(cleanup_errors)
+        if not cleanup_pending:
+            try:
+                os.remove(journal_path)
+            except FileNotFoundError:
+                pass
+            fsync_directory_strict(state_dir)
+        return {
+            "transaction_id": transaction_id,
+            "files_changed": len(items),
+            "recovered_transactions": recovered,
+            "cleanup_pending": cleanup_pending,
+        }
+    finally:
+        os.close(lock_descriptor)
+
+
+def recover_patch_transactions(request):
+    workdir = checked_path(request.get("workdir"))
+    ensure_directory(workdir)
+    state_dir = transaction_state_dir(workdir)
+    lock_descriptor = acquire_transaction_lock(state_dir)
+    try:
+        return {"recovered_transactions": recover_transaction_journals(state_dir)}
+    finally:
+        os.close(lock_descriptor)
+
+
 def dispatch(request):
     action = request.get("action")
     if action == "read":
@@ -558,6 +1130,10 @@ def dispatch(request):
         return delete_file(request)
     if action == "move":
         return move_file(request)
+    if action == "patch_transaction":
+        return patch_transaction(request)
+    if action == "recover_patch_transactions":
+        return recover_patch_transactions(request)
     fail("INVALID_ACTION", "unsupported WSL file helper action", action=action)
 
 

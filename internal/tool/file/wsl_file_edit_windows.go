@@ -4,6 +4,8 @@ package file
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	pathpkg "path"
 	"sort"
 	"strings"
@@ -207,6 +209,9 @@ func (svc *Service) fileEditPatchWSL(ctx context.Context, request EditRequest, s
 		}
 		switch operation.Kind {
 		case "add":
+			if _, exists := staged[sourcePath]; exists {
+				return nil, toolErrorDetails("PATCH_FAILED", "patch contains conflicting operations for the same path", "validation", map[string]any{"path": sourcePath})
+			}
 			stage, err := svc.loadWSLPatchStage(ctx, selection, sourcePath, true)
 			if err != nil {
 				return nil, err
@@ -220,6 +225,9 @@ func (svc *Service) fileEditPatchWSL(ctx context.Context, request EditRequest, s
 			affected = append(affected, map[string]any{"path": sourcePath, "operation": "add"})
 			summaries = append(summaries, "A "+sourcePath)
 		case "delete":
+			if _, exists := staged[sourcePath]; exists {
+				return nil, toolErrorDetails("PATCH_FAILED", "patch contains conflicting operations for the same path", "validation", map[string]any{"path": sourcePath})
+			}
 			stage, err := svc.loadWSLPatchStage(ctx, selection, sourcePath, false)
 			if err != nil {
 				return nil, err
@@ -235,6 +243,8 @@ func (svc *Service) fileEditPatchWSL(ctx context.Context, request EditRequest, s
 				if err != nil {
 					return nil, err
 				}
+			} else if !stage.Existed {
+				return nil, toolErrorDetails("PATCH_FAILED", "cannot update a file added earlier in the same patch", "validation", map[string]any{"path": sourcePath})
 			}
 			if stage.NewContent == nil {
 				return nil, toolErrorDetails("PATCH_FAILED", "cannot update a deleted file", "validation", map[string]any{"path": sourcePath})
@@ -253,6 +263,16 @@ func (svc *Service) fileEditPatchWSL(ctx context.Context, request EditRequest, s
 			destinationPath, err := resolveWSLPatchPath(workdir, operation.MoveTo)
 			if err != nil {
 				return nil, err
+			}
+			if destinationPath == sourcePath {
+				stage.NewContent = &updated
+				staged[sourcePath] = stage
+				affected = append(affected, map[string]any{"path": sourcePath, "operation": "update"})
+				summaries = append(summaries, "M "+sourcePath)
+				continue
+			}
+			if _, exists := staged[destinationPath]; exists {
+				return nil, toolErrorDetails("PATCH_FAILED", "patch contains conflicting operations for the same path", "validation", map[string]any{"path": destinationPath})
 			}
 			destination, err := svc.loadWSLPatchStage(ctx, selection, destinationPath, true)
 			if err != nil {
@@ -314,32 +334,37 @@ func (svc *Service) fileEditPatchWSL(ctx context.Context, request EditRequest, s
 	truncated := len(previewResult) < len(preview)
 	dryRun := request.DryRun
 	if !dryRun {
-		// 先完整写入所有新增/更新目标，再删除旧路径。失败时最多留下重复文件，不会丢失原内容。
+		changes := make([]map[string]any, 0, len(paths))
 		for _, path := range paths {
 			stage := staged[path]
-			if stage.NewContent == nil {
-				continue
+			change := map[string]any{
+				"path":            path,
+				"expected_exists": stage.Existed,
+				"new_exists":      stage.NewContent != nil,
 			}
-			writeRequest := map[string]any{
-				"action": "write_atomic", "path": path, "content": *stage.NewContent,
-				"must_exist": stage.Existed, "overwrite": stage.Existed, "mode": stage.Mode,
+			if stage.Existed {
+				sum := sha256.Sum256([]byte(stage.OldContent))
+				change["expected_sha256"] = fmt.Sprintf("%x", sum)
+				change["expected_mode"] = stage.Mode
+				change["expected_uid"] = stage.OwnerUID
+				change["expected_gid"] = stage.OwnerGID
 			}
-			if !stage.Existed && stage.PreserveOwner {
-				writeRequest["owner_uid"] = stage.OwnerUID
-				writeRequest["owner_gid"] = stage.OwnerGID
-			}
-			if _, err := svc.callWSLFileHelper(ctx, selection, writeRequest); err != nil {
-				return nil, err
-			}
-		}
-		for _, path := range paths {
-			stage := staged[path]
 			if stage.NewContent != nil {
-				continue
+				sum := sha256.Sum256([]byte(*stage.NewContent))
+				change["content"] = *stage.NewContent
+				change["sha256"] = fmt.Sprintf("%x", sum)
+				change["mode"] = stage.Mode
+				if stage.PreserveOwner {
+					change["owner_uid"] = stage.OwnerUID
+					change["owner_gid"] = stage.OwnerGID
+				}
 			}
-			if _, err := svc.callWSLFileHelper(ctx, selection, map[string]any{"action": "delete", "path": path}); err != nil {
-				return nil, err
-			}
+			changes = append(changes, change)
+		}
+		if _, err := svc.callWSLFileHelper(ctx, selection, map[string]any{
+			"action": "patch_transaction", "workdir": workdir, "changes": changes,
+		}); err != nil {
+			return nil, err
 		}
 	}
 	result := Result{
