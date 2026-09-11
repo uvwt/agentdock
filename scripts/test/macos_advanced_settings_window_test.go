@@ -13,7 +13,7 @@ func TestMacOSAdvancedSettingsUsesResponsiveScrollableLayout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read AdvancedSettingsWindowController.swift: %v", err)
 	}
-	content := string(data)
+	content := strings.ReplaceAll(string(data), "\r\n", "\n")
 
 	for _, want := range []string{
 		`contentRect: NSRect(x: 0, y: 0, width: 680, height: 760)`,
