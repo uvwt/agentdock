@@ -142,6 +142,7 @@ func applyUpdateHunks(content string, chunks []patchUpdateChunk, path string) (s
 			return "", err
 		}
 
+		anchorPos := -1
 		if chunk.Anchor != "" {
 			matches := findPatchMatches(lines, []string{chunk.Anchor}, searchStart, false)
 			if len(matches) == 0 {
@@ -150,15 +151,24 @@ func applyUpdateHunks(content string, chunks []patchUpdateChunk, path string) (s
 			if len(matches) > 1 {
 				return "", patchContextError("patch anchor matched multiple locations", "AMBIGUOUS_CONTEXT", path, chunkIndex, lines, []string{chunk.Anchor}, matches)
 			}
-			searchStart = matches[0] + 1
+			anchorPos = matches[0]
+			searchStart = anchorPos + 1
 		}
 
 		if len(oldLines) == 0 {
 			if len(newLines) == 0 {
 				continue
 			}
+			// 有锚点的纯插入落在锚点行之后；无锚点的纯插入按 Codex 语义追加到文件末尾。
 			insertAt := len(lines)
-			lines = append(lines, newLines...)
+			if anchorPos >= 0 {
+				insertAt = anchorPos + 1
+			}
+			updated := make([]string, 0, len(lines)+len(newLines))
+			updated = append(updated, lines[:insertAt]...)
+			updated = append(updated, newLines...)
+			updated = append(updated, lines[insertAt:]...)
+			lines = updated
 			searchStart = insertAt + len(newLines)
 			continue
 		}
