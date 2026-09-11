@@ -20,6 +20,8 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private let stateLabel = NSTextField(labelWithString: L10n.text("Not installed"))
     private let nexusStateLabel = NSTextField(labelWithString: L10n.text("Not configured"))
 
+    private let scrollDocumentView = NSView()
+    private let contentStack = TopAlignedStackView()
     private let serviceSection = NSStackView()
     private let localAddress = NSTextField(labelWithString: L10n.text("Not installed"))
     private let publicAddress = NSTextField(labelWithString: L10n.text("Disabled"))
@@ -48,8 +50,8 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private let progress = NSProgressIndicator()
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
     private let applyButton = NSButton(title: L10n.text("Configure and enable"), target: nil, action: nil)
-    private let permissionsButton = NSButton(title: L10n.text("Check permissions…"), target: nil, action: nil)
-    private let advancedButton = NSButton(title: L10n.text("Advanced settings…"), target: nil, action: nil)
+    private let permissionsButton = NSButton(title: L10n.text("Check permissions"), target: nil, action: nil)
+    private let advancedButton = NSButton(title: L10n.text("Advanced settings"), target: nil, action: nil)
     private let logsButton = NSButton(title: L10n.text("Open logs"), target: nil, action: nil)
 
     private var currentStatus = ServiceStatus.missing
@@ -86,13 +88,14 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         self.menuLoginAgent = menuLoginAgent
         self.onChanged = onChanged
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 620, height: 590),
-            styleMask: [.titled, .closable, .miniaturizable],
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 590),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "AgentDock"
         window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 620, height: 420)
         window.center()
         super.init(window: window)
         window.delegate = self
@@ -174,12 +177,32 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private func configureUI() {
         guard let contentView = window?.contentView else { return }
 
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(scrollView)
+
+        scrollDocumentView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.documentView = scrollDocumentView
+
+        contentStack.orientation = .vertical
+        contentStack.alignment = .leading
+        contentStack.spacing = 12
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        scrollDocumentView.addSubview(contentStack)
+
         titleLabel.font = .systemFont(ofSize: 25, weight: .semibold)
         subtitleLabel.textColor = .secondaryLabelColor
         stateLabel.alignment = .right
         stateLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        stateLabel.lineBreakMode = .byTruncatingMiddle
+        stateLabel.setContentCompressionResistancePriority(.fittingSizeCompression, for: .horizontal)
         nexusStateLabel.alignment = .left
         nexusStateLabel.font = .systemFont(ofSize: 12, weight: .regular)
+        nexusStateLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        nexusStateLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let headerText = NSStackView(views: [titleLabel, subtitleLabel])
         headerText.orientation = .vertical
@@ -188,19 +211,27 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         let header = NSStackView(views: [headerText, NSView(), stateLabel])
         header.orientation = .horizontal
         header.alignment = .centerY
-        header.widthAnchor.constraint(equalToConstant: 564).isActive = true
 
         for field in [localAddress, publicAddress, authToken, oauthPassword] {
-            field.lineBreakMode = .byTruncatingMiddle
             field.isSelectable = true
             field.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+            field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         }
+        for field in [localAddress, authToken, oauthPassword] {
+            field.lineBreakMode = .byTruncatingMiddle
+        }
+        publicAddress.lineBreakMode = .byCharWrapping
+        publicAddress.maximumNumberOfLines = 2
+        publicAddress.setContentCompressionResistancePriority(.fittingSizeCompression, for: .horizontal)
+        publicAddress.cell?.wraps = true
 
         publicCheckStatus.font = .systemFont(ofSize: 11.5)
         publicCheckStatus.textColor = .secondaryLabelColor
         publicCheckStatus.isHidden = true
         publicCheckStatus.lineBreakMode = .byTruncatingTail
-        publicCheckStatus.widthAnchor.constraint(equalToConstant: 450).isActive = true
+        publicCheckStatus.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        publicCheckStatus.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         publicTestButton.bezelStyle = .inline
         publicTestButton.target = self
         publicTestButton.action = #selector(testPublicAddressPressed)
@@ -219,12 +250,12 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         serviceSection.alignment = .leading
         serviceSection.spacing = 8
         serviceSection.addArrangedSubview(sectionTitle(L10n.text("Connection information")))
-        serviceSection.addArrangedSubview(valueRow(title: L10n.text("Local MCP"), field: localAddress, actions: [copyButton(#selector(copyLocalAddress))]))
-        serviceSection.addArrangedSubview(valueRow(title: L10n.text("Public MCP"), field: publicAddress, actions: [publicTestButton, publicCopyButton]))
-        serviceSection.addArrangedSubview(valueDetailRow(publicCheckStatus))
-        serviceSection.addArrangedSubview(valueRow(title: "Nexus", field: nexusStateLabel, actions: []))
-        serviceSection.addArrangedSubview(valueRow(title: "Bearer Token", field: authToken, actions: [authReveal, copyButton(#selector(copyAuthToken))]))
-        serviceSection.addArrangedSubview(valueRow(title: L10n.text("OAuth password"), field: oauthPassword, actions: [oauthReveal, copyButton(#selector(copyOAuthPassword))]))
+        addFullWidth(valueRow(title: L10n.text("Local MCP"), field: localAddress, actions: [copyButton(#selector(copyLocalAddress))]), to: serviceSection)
+        addFullWidth(valueRow(title: L10n.text("Public MCP"), field: publicAddress, actions: [publicTestButton, publicCopyButton]), to: serviceSection)
+        addFullWidth(valueDetailRow(publicCheckStatus), to: serviceSection)
+        addFullWidth(valueRow(title: "Nexus", field: nexusStateLabel, actions: []), to: serviceSection)
+        addFullWidth(valueRow(title: "Bearer Token", field: authToken, actions: [authReveal, copyButton(#selector(copyAuthToken))]), to: serviceSection)
+        addFullWidth(valueRow(title: L10n.text("OAuth password"), field: oauthPassword, actions: [oauthReveal, copyButton(#selector(copyOAuthPassword))]), to: serviceSection)
 
         startStopButton.target = self
         startStopButton.action = #selector(startStopPressed)
@@ -232,10 +263,10 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         restartButton.action = #selector(restartPressed)
         updateButton.target = self
         updateButton.action = #selector(updatePressed)
-        let serviceActions = NSStackView(views: [startStopButton, restartButton, updateButton])
+        let serviceActions = NSStackView(views: [startStopButton, restartButton, updateButton, NSView()])
         serviceActions.orientation = .horizontal
         serviceActions.spacing = 8
-        serviceSection.addArrangedSubview(serviceActions)
+        addFullWidth(serviceActions, to: serviceSection)
 
         publicMode.target = self
         publicMode.action = #selector(modeChanged)
@@ -243,12 +274,13 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         publicMode.widthAnchor.constraint(equalToConstant: 360).isActive = true
         modeDescription.textColor = .secondaryLabelColor
         modeDescription.font = .systemFont(ofSize: 12)
-        modeDescription.widthAnchor.constraint(equalToConstant: 564).isActive = true
 
         serverURLField.placeholderString = "https://mini.example.com"
         tunnelTokenField.placeholderString = L10n.text("Paste Cloudflare Tunnel Token")
-        serverURLField.widthAnchor.constraint(equalToConstant: 430).isActive = true
-        tunnelTokenField.widthAnchor.constraint(equalToConstant: 430).isActive = true
+        for field in [serverURLField, tunnelTokenField] {
+            field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
         serverURLField.target = self
         serverURLField.action = #selector(configurationEdited)
         tunnelTokenField.target = self
@@ -257,14 +289,16 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         namedFields.orientation = .vertical
         namedFields.alignment = .leading
         namedFields.spacing = 7
-        namedFields.addArrangedSubview(formRow(title: L10n.text("Public address"), control: serverURLField))
-        namedFields.addArrangedSubview(formRow(title: "Tunnel Token", control: tunnelTokenField))
+        addFullWidth(formRow(title: L10n.text("Public address"), control: serverURLField), to: namedFields)
+        addFullWidth(formRow(title: "Tunnel Token", control: tunnelTokenField), to: namedFields)
 
         progress.style = .spinning
         progress.controlSize = .small
         progress.isDisplayedWhenStopped = false
         statusLabel.textColor = .secondaryLabelColor
+        statusLabel.lineBreakMode = .byTruncatingTail
         statusLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         statusLabel.isHidden = true
 
         logsButton.bezelStyle = .inline
@@ -285,31 +319,28 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         footer.orientation = .horizontal
         footer.alignment = .centerY
         footer.spacing = 10
-        footer.widthAnchor.constraint(equalToConstant: 564).isActive = true
 
-        let root = NSStackView(views: [
-            header,
-            separator(),
-            serviceSection,
-            separator(),
-            sectionTitle(L10n.text("Public access")),
-            publicMode,
-            modeDescription,
-            namedFields,
-            separator(),
-            footer,
-        ])
-        root.orientation = .vertical
-        root.alignment = .leading
-        root.spacing = 12
-        root.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(root)
+        addFullWidth(header, to: contentStack)
+        addFullWidth(separator(), to: contentStack)
+        addFullWidth(serviceSection, to: contentStack)
+        addFullWidth(separator(), to: contentStack)
+        contentStack.addArrangedSubview(sectionTitle(L10n.text("Public access")))
+        contentStack.addArrangedSubview(publicMode)
+        addFullWidth(modeDescription, to: contentStack)
+        addFullWidth(namedFields, to: contentStack)
+        addFullWidth(separator(), to: contentStack)
+        addFullWidth(footer, to: contentStack)
 
         NSLayoutConstraint.activate([
-            root.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 28),
-            root.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -28),
-            root.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 24),
-            root.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -22),
+            scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            scrollDocumentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
+            contentStack.leadingAnchor.constraint(equalTo: scrollDocumentView.leadingAnchor, constant: 28),
+            contentStack.trailingAnchor.constraint(equalTo: scrollDocumentView.trailingAnchor, constant: -28),
+            contentStack.topAnchor.constraint(equalTo: scrollDocumentView.topAnchor, constant: 24),
+            contentStack.bottomAnchor.constraint(equalTo: scrollDocumentView.bottomAnchor, constant: -22),
         ])
     }
 
@@ -774,14 +805,24 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func updateWindowHeight() {
-        let installedHeight: CGFloat = selectedMode == .named ? 675 : 580
+        let installedHeight: CGFloat = selectedMode == .named ? 620 : 580
         let installHeight: CGFloat = selectedMode == .named ? 455 : 360
-        let target = currentStatus.installed ? installedHeight : installHeight
+        let desiredHeight = currentStatus.installed ? installedHeight : installHeight
         guard let window else { return }
+
+        let visibleFrame = (window.screen ?? NSScreen.main)?.visibleFrame
+        let verticalMargin: CGFloat = 12
+        let maximumHeight = visibleFrame.map { max(window.minSize.height, $0.height - verticalMargin * 2) }
+        let targetHeight = min(desiredHeight, maximumHeight ?? desiredHeight)
+
+        // 保持窗口顶部尽量不跳动，同时确保整个窗口始终位于菜单栏和 Dock 之间的可用区域。
         var frame = window.frame
-        let delta = target - frame.height
-        frame.origin.y -= delta
-        frame.size.height = target
+        frame.origin.y = frame.maxY - targetHeight
+        frame.size.height = targetHeight
+        if let visibleFrame {
+            frame.origin.y = min(frame.origin.y, visibleFrame.maxY - verticalMargin - targetHeight)
+            frame.origin.y = max(frame.origin.y, visibleFrame.minY + verticalMargin)
+        }
         window.setFrame(frame, display: true, animate: window.isVisible)
     }
 
@@ -794,7 +835,6 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private func separator() -> NSBox {
         let box = NSBox()
         box.boxType = .separator
-        box.widthAnchor.constraint(equalToConstant: 564).isActive = true
         return box
     }
 
@@ -823,12 +863,16 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         let label = NSTextField(labelWithString: title)
         label.textColor = .secondaryLabelColor
         label.widthAnchor.constraint(equalToConstant: 94).isActive = true
-        field.widthAnchor.constraint(equalToConstant: actions.count > 1 ? 310 : 370).isActive = true
         let row = NSStackView(views: [label, field] + actions)
         row.orientation = .horizontal
         row.alignment = .centerY
         row.spacing = 8
         return row
+    }
+
+    private func addFullWidth(_ view: NSView, to stack: NSStackView, widthAdjustment: CGFloat = 0) {
+        stack.addArrangedSubview(view)
+        view.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: widthAdjustment).isActive = true
     }
 
     private func copyButton(_ action: Selector) -> NSButton {

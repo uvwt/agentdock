@@ -51,7 +51,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     private let nexusEndpoint = NSTextField(string: "")
     private let nexusPairingCode = NSSecureTextField(string: "")
     private let nexusPairButton = NSButton(title: L10n.text("Pair and restart"), target: nil, action: nil)
-    private let nexusDeviceTokenStatus = NSTextField(wrappingLabelWithString: "")
+    private let nexusDeviceTokenStatus = NSTextField(labelWithString: "")
     private let progress = NSProgressIndicator()
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
     private let applyButton = NSButton(title: L10n.text("Apply and restart"), target: nil, action: nil)
@@ -85,13 +85,14 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         self.menuLoginAgent = menuLoginAgent
         self.onChanged = onChanged
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 590, height: 850),
-            styleMask: [.titled, .closable],
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 760),
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = L10n.text("AgentDock Advanced Settings")
         window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 620, height: 520)
         window.center()
         super.init(window: window)
         configureUI()
@@ -141,6 +142,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         showStatus("", isError: false)
         setBusy(false)
         refreshApplyState()
+        fitWindowToVisibleScreen()
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -149,12 +151,23 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     private func configureUI() {
         guard let contentView = window?.contentView else { return }
 
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(scrollView)
+
+        let scrollDocumentView = NSView()
+        scrollDocumentView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.documentView = scrollDocumentView
+
         for preference in UILanguagePreference.allCases {
             languagePreference.addItem(withTitle: preference.title)
             languagePreference.lastItem?.representedObject = preference.rawValue
         }
         selectLanguagePreference(L10n.languagePreference())
-        languagePreference.widthAnchor.constraint(equalToConstant: 180).isActive = true
+        languagePreference.widthAnchor.constraint(equalToConstant: 220).isActive = true
         languagePreference.target = self
         languagePreference.action = #selector(languageChanged)
 
@@ -188,36 +201,32 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         browserEnabled.target = self
         browserEnabled.action = #selector(browserToggled)
         browserConnectionMode.addItems(withTitles: BrowserConnectionMode.allCases.map(\.title))
-        browserConnectionMode.widthAnchor.constraint(equalToConstant: 290).isActive = true
+        browserConnectionMode.widthAnchor.constraint(equalToConstant: 360).isActive = true
         browserConnectionMode.target = self
         browserConnectionMode.action = #selector(browserConnectionChanged)
         browserCDPURL.placeholderString = L10n.text("For example: http://127.0.0.1:9222")
         browserCDPURL.target = self
         browserCDPURL.action = #selector(markChanged)
         browserCDPURL.delegate = self
-        browserCDPURL.widthAnchor.constraint(equalToConstant: 390).isActive = true
         browserStatus.textColor = .secondaryLabelColor
         browserStatus.font = .systemFont(ofSize: 12)
 
         acpEnabled.target = self
         acpEnabled.action = #selector(acpChanged)
         acpAgent.addItems(withTitles: ACPAgentPreset.allCases.map(\.title))
-        acpAgent.widthAnchor.constraint(equalToConstant: 180).isActive = true
+        acpAgent.widthAnchor.constraint(equalToConstant: 220).isActive = true
         acpAgent.target = self
         acpAgent.action = #selector(acpChanged)
         acpCommand.placeholderString = "/absolute/path/to/acp-adapter"
         acpCommand.target = self
         acpCommand.action = #selector(markChanged)
         acpCommand.delegate = self
-        acpCommand.widthAnchor.constraint(equalToConstant: 390).isActive = true
         acpArgsJSON.placeholderString = "[]"
         acpArgsJSON.target = self
         acpArgsJSON.action = #selector(markChanged)
         acpArgsJSON.delegate = self
-        acpArgsJSON.widthAnchor.constraint(equalToConstant: 390).isActive = true
         acpStatus.textColor = .secondaryLabelColor
         acpStatus.font = .systemFont(ofSize: 12)
-        acpStatus.widthAnchor.constraint(equalToConstant: 500).isActive = true
 
         nexusEndpoint.placeholderString = "https://nexus.example.com"
         nexusEndpoint.target = self
@@ -231,7 +240,14 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         nexusPairButton.action = #selector(pairNexusPressed)
         nexusDeviceTokenStatus.textColor = .secondaryLabelColor
         nexusDeviceTokenStatus.font = .systemFont(ofSize: 12)
-        nexusDeviceTokenStatus.widthAnchor.constraint(equalToConstant: 390).isActive = true
+        nexusDeviceTokenStatus.lineBreakMode = .byCharWrapping
+        nexusDeviceTokenStatus.maximumNumberOfLines = 2
+        nexusDeviceTokenStatus.heightAnchor.constraint(equalToConstant: 34).isActive = true
+
+        for flexibleView in [browserCDPURL, browserStatus, acpCommand, acpArgsJSON, acpStatus, nexusEndpoint, nexusPairingCode, nexusDeviceTokenStatus] {
+            flexibleView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            flexibleView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
 
         progress.style = .spinning
         progress.controlSize = .small
@@ -270,7 +286,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         serviceForm.alignment = .leading
         serviceForm.spacing = 10
 
-        let cdpRow = formRow(title: L10n.text("CDP address"), control: browserCDPURL)
+        let cdpRow = formRow(title: L10n.text("CDP address"), control: browserCDPURL, fillsAvailableWidth: true)
         browserCDPRow = cdpRow
         let browserStack = NSStackView(views: [
             browserEnabled,
@@ -281,10 +297,11 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         browserStack.orientation = .vertical
         browserStack.alignment = .leading
         browserStack.spacing = 5
-        browserStatus.widthAnchor.constraint(equalToConstant: 500).isActive = true
+        cdpRow.widthAnchor.constraint(equalTo: browserStack.widthAnchor).isActive = true
+        browserStatus.widthAnchor.constraint(equalTo: browserStack.widthAnchor).isActive = true
 
-        let commandRow = formRow(title: "Command", control: acpCommand)
-        let argsRow = formRow(title: "Args JSON", control: acpArgsJSON)
+        let commandRow = formRow(title: "Command", control: acpCommand, fillsAvailableWidth: true)
+        let argsRow = formRow(title: "Args JSON", control: acpArgsJSON, fillsAvailableWidth: true)
         acpCommandRow = commandRow
         acpArgsRow = argsRow
         let acpStack = NSStackView(views: [
@@ -297,20 +314,30 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         acpStack.orientation = .vertical
         acpStack.alignment = .leading
         acpStack.spacing = 8
+        commandRow.widthAnchor.constraint(equalTo: acpStack.widthAnchor).isActive = true
+        argsRow.widthAnchor.constraint(equalTo: acpStack.widthAnchor).isActive = true
+        acpStatus.widthAnchor.constraint(equalTo: acpStack.widthAnchor).isActive = true
 
+        let nexusEndpointRow = formRow(title: "Endpoint", control: nexusEndpoint, fillsAvailableWidth: true)
+        let nexusPairingCodeRow = formRow(title: L10n.text("Pairing code"), control: nexusPairingCode, fillsAvailableWidth: true)
+        let nexusDeviceTokenRow = formRow(title: "Device Token", control: nexusDeviceTokenStatus, fillsAvailableWidth: true)
+        let nexusPairRow = NSStackView(views: [nexusPairButton, NSView()])
+        nexusPairRow.orientation = .horizontal
+        nexusPairRow.spacing = 8
         let nexusStack = NSStackView(views: [
-            formRow(title: "Endpoint", control: nexusEndpoint),
-            formRow(title: L10n.text("Pairing code"), control: nexusPairingCode),
-            nexusPairButton,
-            formRow(title: "Device Token", control: nexusDeviceTokenStatus),
+            nexusEndpointRow,
+            nexusPairingCodeRow,
+            nexusPairRow,
+            nexusDeviceTokenRow,
         ])
         nexusStack.orientation = .vertical
         nexusStack.alignment = .leading
         nexusStack.spacing = 8
-        nexusEndpoint.widthAnchor.constraint(equalToConstant: 390).isActive = true
-        nexusPairingCode.widthAnchor.constraint(equalToConstant: 390).isActive = true
+        for row in [nexusEndpointRow, nexusPairingCodeRow, nexusDeviceTokenRow] {
+            row.widthAnchor.constraint(equalTo: nexusStack.widthAnchor).isActive = true
+        }
 
-        let utilityRow = NSStackView(views: [openLogs, openConfig])
+        let utilityRow = NSStackView(views: [openLogs, openConfig, NSView()])
         utilityRow.orientation = .horizontal
         utilityRow.spacing = 14
 
@@ -319,6 +346,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         actionRow.alignment = .centerY
         actionRow.spacing = 10
         statusLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let root = NSStackView(views: [
             sectionTitle(L10n.text("Startup")),
@@ -343,14 +371,25 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         root.alignment = .leading
         root.spacing = 12
         root.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(root)
+        scrollDocumentView.addSubview(root)
+
+        for separator in root.arrangedSubviews.compactMap({ $0 as? NSBox }) {
+            separator.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
+        }
+        for section in [startupStack, serviceForm, browserStack, acpStack, nexusStack, utilityRow, actionRow] {
+            section.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
+        }
 
         NSLayoutConstraint.activate([
-            root.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 28),
-            root.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -28),
-            root.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 24),
-            root.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -22),
-            actionRow.widthAnchor.constraint(equalTo: root.widthAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            scrollDocumentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
+            root.leadingAnchor.constraint(equalTo: scrollDocumentView.leadingAnchor, constant: 28),
+            root.trailingAnchor.constraint(equalTo: scrollDocumentView.trailingAnchor, constant: -28),
+            root.topAnchor.constraint(equalTo: scrollDocumentView.topAnchor, constant: 24),
+            root.bottomAnchor.constraint(equalTo: scrollDocumentView.bottomAnchor, constant: -22),
         ])
     }
 
@@ -363,19 +402,50 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     private func separator() -> NSBox {
         let box = NSBox()
         box.boxType = .separator
-        box.widthAnchor.constraint(equalToConstant: 534).isActive = true
         return box
     }
 
-    private func formRow(title: String, control: NSView) -> NSView {
+    private func formRow(title: String, control: NSView, fillsAvailableWidth: Bool = false) -> NSView {
+        let row = NSView()
         let label = NSTextField(labelWithString: title)
         label.textColor = .secondaryLabelColor
-        label.widthAnchor.constraint(equalToConstant: 92).isActive = true
-        let row = NSStackView(views: [label, control])
-        row.orientation = .horizontal
-        row.alignment = .centerY
-        row.spacing = 12
+        label.lineBreakMode = .byClipping
+        label.translatesAutoresizingMaskIntoConstraints = false
+        control.translatesAutoresizingMaskIntoConstraints = false
+        label.widthAnchor.constraint(equalToConstant: 128).isActive = true
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        if fillsAvailableWidth {
+            control.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            control.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
+
+        row.addSubview(label)
+        row.addSubview(control)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+            label.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            control.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 12),
+            control.topAnchor.constraint(equalTo: row.topAnchor),
+            control.bottomAnchor.constraint(equalTo: row.bottomAnchor),
+            fillsAvailableWidth
+                ? control.trailingAnchor.constraint(equalTo: row.trailingAnchor)
+                : row.trailingAnchor.constraint(equalTo: control.trailingAnchor),
+        ])
         return row
+    }
+
+    private func fitWindowToVisibleScreen() {
+        guard let window else { return }
+        let visibleFrame = (window.screen ?? NSScreen.main)?.visibleFrame
+        let margin: CGFloat = 12
+        guard let visibleFrame else { return }
+
+        var frame = window.frame
+        frame.size.width = min(frame.width, visibleFrame.width - margin * 2)
+        frame.size.height = min(frame.height, visibleFrame.height - margin * 2)
+        frame.origin.x = min(max(frame.origin.x, visibleFrame.minX + margin), visibleFrame.maxX - margin - frame.width)
+        frame.origin.y = min(max(frame.origin.y, visibleFrame.minY + margin), visibleFrame.maxY - margin - frame.height)
+        window.setFrame(frame, display: false)
     }
 
     @objc private func markChanged() {

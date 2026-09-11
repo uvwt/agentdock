@@ -1,7 +1,7 @@
 "A CDP address is required when “Connect to a specified CDP browser” is selected." = "A CDP address is required when “Connect to a specified CDP browser” is selected.";
 "A new temporary public address was generated; checking public access automatically." = "A new temporary public address was generated; checking public access automatically.";
 "About AgentDock" = "About AgentDock";
-"Advanced settings…" = "Advanced settings…";
+"Advanced settings" = "Advanced settings";
 "AgentDock Advanced Settings" = "AgentDock Advanced Settings";
 "AgentDock File Access Check" = "AgentDock File Access Check";
 "AgentDock Permission Check" = "AgentDock Permission Check";
@@ -17,7 +17,7 @@
 "Check cancelled" = "Check cancelled";
 "Check file access…" = "Check file access…";
 "Check for updates" = "Check for updates";
-"Check permissions…" = "Check permissions…";
+"Check permissions" = "Check permissions";
 "Check standard folders" = "Check standard folders";
 "Check whether AgentDock can access Desktop, Documents, Downloads, and other folders you select." = "Check whether AgentDock can access Desktop, Documents, Downloads, and other folders you select.";
 "Checking" = "Checking";

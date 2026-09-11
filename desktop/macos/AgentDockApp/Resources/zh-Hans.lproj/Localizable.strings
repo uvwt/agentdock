@@ -1,7 +1,7 @@
 "A CDP address is required when “Connect to a specified CDP browser” is selected." = "选择“连接指定 CDP 浏览器”时必须填写 CDP 地址。";
 "A new temporary public address was generated; checking public access automatically." = "新的临时公网地址已生成，正在自动检测公网访问。";
 "About AgentDock" = "关于 AgentDock";
-"Advanced settings…" = "高级设置…";
+"Advanced settings" = "高级设置";
 "AgentDock Advanced Settings" = "AgentDock 高级设置";
 "AgentDock File Access Check" = "AgentDock 文件访问检查";
 "AgentDock Permission Check" = "AgentDock 权限检查";
@@ -17,7 +17,7 @@
 "Check cancelled" = "检测已取消";
 "Check file access…" = "检查文件访问…";
 "Check for updates" = "检查更新";
-"Check permissions…" = "权限检查…";
+"Check permissions" = "权限检查";
 "Check standard folders" = "检查标准目录";
 "Check whether AgentDock can access Desktop, Documents, Downloads, and other folders you select." = "检查 AgentDock 是否可以访问桌面、文稿、下载和你选择的其他目录。";
 "Checking" = "检测中";
