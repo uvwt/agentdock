@@ -5,56 +5,22 @@ package desktopruntime
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
-	"syscall"
 )
 
-// StartInteractiveScheduledTask starts an InteractiveToken task through the
-// shared Windows Task Scheduler helper so every caller uses the same session
-// selection, user-SID validation, and RunEx(TASK_RUN_USE_SESSION_ID) behavior.
+// StartInteractiveScheduledTask 用原生 Task Scheduler COM 启动 InteractiveToken 任务。
+// 会话选择和 RunEx(TASK_RUN_USE_SESSION_ID) 走 Go 实现，不再调用 PowerShell 兼容垫片。
 func StartInteractiveScheduledTask(ctx context.Context, runtimeRoot, taskName string) error {
-	runtimeRoot = strings.TrimSpace(runtimeRoot)
-	if runtimeRoot == "" {
-		return fmt.Errorf("Windows runtime root is empty while starting scheduled task")
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-
-	scriptPath := filepath.Join(runtimeRoot, "installer", "manage-windows.ps1")
-	info, err := os.Stat(scriptPath)
-	if err != nil || info.IsDir() {
-		if err == nil {
-			err = fmt.Errorf("path is a directory")
-		}
-		return fmt.Errorf("Windows task-session helper is unavailable at %s: %w", scriptPath, err)
-	}
-
+	_ = runtimeRoot
 	taskName = strings.TrimLeft(strings.TrimSpace(taskName), `\`)
 	if taskName == "" {
 		taskName = "AgentDock"
 	}
-	command := exec.CommandContext(
-		ctx,
-		"powershell.exe",
-		"-NoLogo",
-		"-NoProfile",
-		"-NonInteractive",
-		"-WindowStyle", "Hidden",
-		"-ExecutionPolicy", "Bypass",
-		"-File", scriptPath,
-		"-Action", "task-run-session",
-		"-ScheduledTaskName", taskName,
-		"-ScheduledTaskPath", `\`,
-	)
-	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	output, err := command.CombinedOutput()
-	if err != nil {
-		message := strings.TrimSpace(string(output))
-		if message == "" {
-			return fmt.Errorf("start Windows scheduled task %s through session helper: %w", taskName, err)
-		}
-		return fmt.Errorf("start Windows scheduled task %s through session helper: %w: %s", taskName, err, message)
+	if err := startInteractiveScheduledTaskNative(taskName, ""); err != nil {
+		return fmt.Errorf("start Windows scheduled task %s: %w", taskName, err)
 	}
 	return nil
 }

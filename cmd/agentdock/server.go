@@ -45,6 +45,8 @@ func runServer(ctx context.Context, args []string, stderr io.Writer) error {
 		fmt.Fprintln(stderr, "  agentdock skill bootstrap --bundle <目录>")
 		fmt.Fprintln(stderr, "  agentdock nexus pair --endpoint <URL> --code <配对码> [--name <名称>]")
 		fmt.Fprintln(stderr, "  agentdock nexus status [--json]")
+		fmt.Fprintln(stderr, "  agentdock install --install-root <目录> [--payload-dir <目录>|--binary <文件>]")
+		fmt.Fprintln(stderr, "  agentdock uninstall --install-root <目录>")
 		fmt.Fprintln(stderr, "\n服务参数：")
 		flags.PrintDefaults()
 	}

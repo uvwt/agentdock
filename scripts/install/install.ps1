@@ -329,6 +329,8 @@ function Initialize-OAuthCredentials {
     }
 }
 
+# runtime.json is owned by agentdock install. Generation and active-version.json
+# are owned by the Update Engine on upgrades, or by Setup bootstrap on first publish.
 function Write-RuntimeManifest {
     param(
         [string] $Path,
@@ -1207,6 +1209,9 @@ $agentDockStopAttempted = $false
 $trayStopAttempted = $false
 $cloudflaredStopAttempted = $false
 $rollbackStateCaptured = $false
+$engineCommitted = $false
+$enginePrepared = $false
+$engineTransactionId = ''
 $binaryReplacementStarted = $false
 $trayReplacementStarted = $false
 $cloudflaredReplacementStarted = $false
@@ -1241,7 +1246,10 @@ $managedRuntimeFiles = @(
     @{ Path = $tunnelTokenPath; Name = 'cloudflared-token.dpapi' },
     @{ Path = $runtimeManifestPath; Name = 'runtime.json' },
     @{ Path = $desktopVersionPath; Name = 'desktop-version.txt' },
-    @{ Path = $quickTunnelUrlPath; Name = 'quick-tunnel-url.txt' }
+    @{ Path = $quickTunnelUrlPath; Name = 'quick-tunnel-url.txt' },
+    @{ Path = $activeVersionPath; Name = 'active-version.json' },
+    @{ Path = (Join-Path $runtimeDir 'update\transaction.json'); Name = 'update-transaction.json' },
+    @{ Path = (Join-Path $runtimeDir 'update\result.json'); Name = 'update-result.json' }
 )
 
 try {
@@ -1662,6 +1670,17 @@ try {
         -SourceBinary $OfflineCloudflaredBinary
 
     $publicUrl = ''
+    $manifestPublicUrl = ''
+    $engineReady = $false
+    $engineCommitted = $false
+    $enginePrepared = $false
+    $engineTransactionId = ''
+    if (Test-Path -LiteralPath $sourceBinary -PathType Leaf) {
+        $engineReadyOutput = & $sourceBinary install --engine-ready 2>$null
+        if ($LASTEXITCODE -eq 0 -and ("$engineReadyOutput" -like '*agentdock-installer-engine*')) {
+            $engineReady = $true
+        }
+    }
     if ($RegisterStartup) {
         New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
 
@@ -1749,32 +1768,9 @@ exit `$LASTEXITCODE
         $manifestPublicUrl = ''
         if ($resolvedTunnelMode -eq 'named') {
             $manifestPublicUrl = $ServerUrl
-        } elseif ($resolvedTunnelMode -eq 'quick') {
-            # Quick Tunnel starts locally; the native command writes the real URL after cloudflared is ready.
-            $manifestTunnelMode = 'none'
         }
         $publicUrl = $manifestPublicUrl
         $localMCPUrl = "http://127.0.0.1:$Port/mcp"
-        Write-RuntimeManifest `
-            -Path $runtimeManifestPath `
-            -InstallRoot $runtimeDir `
-            -AgentDockHome $runtimeAgentDockHome `
-            -AgentDockDefaultDir $runtimeAgentDockDefaultDir `
-            -AgentDockBinary $destinationBinary `
-            -TrayBinary $destinationTrayBinary `
-            -AgentDockLauncher $launcherPath `
-            -AgentDockTaskName $(if ($effectivePrivilegeMode -eq 'elevated') { 'AgentDock' } else { '' }) `
-            -PrivilegeMode $effectivePrivilegeMode `
-            -CloudflaredBinary $cloudflaredBinary `
-            -CloudflaredLauncher $cloudflaredLauncherPath `
-            -CoreStartupValueName $runValueName `
-            -TrayStartupValueName $trayRunValueName `
-            -TunnelStartupValueName $cloudflaredRunValueName `
-            -RuntimePort $Port `
-            -RuntimeTunnelMode $manifestTunnelMode `
-            -RuntimePublicUrl $manifestPublicUrl `
-            -Channel $InstallChannel
-
         if ($effectivePrivilegeMode -eq 'elevated') {
             Remove-ItemProperty -LiteralPath $runKey -Name $runValueName -ErrorAction SilentlyContinue
             Enable-AgentDockTask
@@ -1809,6 +1805,74 @@ exit `$LASTEXITCODE
             Write-TextFile -Path $serverUrlPath -Value ''
             Remove-Item -LiteralPath $quickTunnelUrlPath -Force -ErrorAction SilentlyContinue
         }
+
+        if (-not $engineReady) {
+            Write-RuntimeManifest `
+                -Path $runtimeManifestPath `
+                -InstallRoot $runtimeDir `
+                -AgentDockHome $runtimeAgentDockHome `
+                -AgentDockDefaultDir $runtimeAgentDockDefaultDir `
+                -AgentDockBinary $destinationBinary `
+                -TrayBinary $destinationTrayBinary `
+                -AgentDockLauncher $launcherPath `
+                -AgentDockTaskName $(if ($effectivePrivilegeMode -eq 'elevated') { 'AgentDock' } else { '' }) `
+                -PrivilegeMode $effectivePrivilegeMode `
+                -CloudflaredBinary $cloudflaredBinary `
+                -CloudflaredLauncher $cloudflaredLauncherPath `
+                -CoreStartupValueName $runValueName `
+                -TrayStartupValueName $trayRunValueName `
+                -TunnelStartupValueName $cloudflaredRunValueName `
+                -RuntimePort $Port `
+                -RuntimeTunnelMode $manifestTunnelMode `
+                -RuntimePublicUrl $manifestPublicUrl `
+                -Channel $InstallChannel
+        }
+    }
+
+    if ($engineReady) {
+        # HKCU/Task (if any) are already written. Engine owns runtime.json/skills/start.
+        # committed is written only after this script finishes adapter work and calls install commit.
+        New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
+        $engineArgs = @(
+            'install',
+            '--install-root', $runtimeDir,
+            '--payload-dir', $extractDir,
+            '--host', '127.0.0.1',
+            '--port', "$Port",
+            '--tunnel-mode', $resolvedTunnelMode,
+            '--privilege-mode', $effectivePrivilegeMode,
+            '--agentdock-home', $runtimeAgentDockHome,
+            '--agentdock-default-dir', $runtimeAgentDockDefaultDir,
+            '--channel', $InstallChannel,
+            '--defer-commit'
+        )
+        if ((-not $RegisterStartup) -or ($InstallChannel -eq 'setup' -and -not $existingInstallDetected)) {
+            $engineArgs += @('--no-start', '--skip-health')
+        }
+        if (-not [string]::IsNullOrWhiteSpace($payloadVersion)) {
+            $engineArgs += @('--version', $payloadVersion)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($coreSkillBundle)) {
+            $engineArgs += @('--skill-bundle', $coreSkillBundle)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($manifestPublicUrl)) {
+            $engineArgs += @('--server-url', $manifestPublicUrl)
+        }
+        $engineJson = (& $sourceBinary @engineArgs 2>$null | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Installer Engine failed to write the runtime generation and manifest.'
+        }
+        # Engine already left a trial. Catch must abandon even if the JSON handshake is unreadable.
+        $enginePrepared = $true
+        try {
+            $engineResult = $engineJson | ConvertFrom-Json
+        } catch {
+            throw "Installer Engine returned invalid JSON: $($_.Exception.Message)"
+        }
+        $engineTransactionId = [string] $engineResult.transaction_id
+        if ([string]::IsNullOrWhiteSpace($engineTransactionId)) {
+            throw 'Installer Engine did not return a transaction id.'
+        }
     }
 
     if (-not $RegisterStartup) {
@@ -1819,7 +1883,7 @@ exit `$LASTEXITCODE
     $mustRestartExistingProcess = (-not $RegisterStartup) -and $processWasRunning
 
     $localMCPUrl = "http://127.0.0.1:$Port/mcp"
-    if (-not $RegisterStartup) {
+    if ((-not $RegisterStartup) -and (-not $engineReady)) {
         Write-RuntimeManifest `
             -Path $runtimeManifestPath `
             -InstallRoot $runtimeDir `
@@ -1841,6 +1905,11 @@ exit `$LASTEXITCODE
             -Channel $InstallChannel
     }
 
+    if ($engineReady) {
+        Write-Host 'Core Skills were installed by the Installer Engine.'
+        $coreSkillExitCode = 0
+        $coreSkillOutputText = ''
+    } else {
     Write-Host 'Installing official core Skills...'
     $coreSkillOutput = @(& $destinationBinary skill bootstrap --bundle $coreSkillBundle 2>&1)
     $coreSkillExitCode = $LASTEXITCODE
@@ -1858,17 +1927,29 @@ exit `$LASTEXITCODE
         }
         throw "Core Skill bootstrap failed with exit code $coreSkillExitCode`: $coreSkillOutputText"
     }
+    }
 
     # Provision is complete here. Immediate activation is a separate phase; only a fresh standard
     # install may defer activation, because an upgrade must still be able to roll back to its prior runtime.
     $healthStatus = 'not-started'
+    $engineOwnsActivation = $engineReady -and -not ($InstallChannel -eq 'setup' -and -not $existingInstallDetected)
     try {
         if ($InstallChannel -eq 'setup' -and -not $taskState.SchedulerAvailable -and
             ($RegisterStartup -or $mustRestartExistingProcess -or $trayProcessWasRunning)) {
             throw "Windows Task Scheduler is unavailable for immediate Setup activation: $($taskState.SchedulerError)"
         }
 
-        if ($RegisterStartup) {
+        if ($engineOwnsActivation -and $RegisterStartup) {
+            $healthStatus = 'healthy'
+            if ($resolvedTunnelMode -eq 'quick') {
+                $publicUrl = Read-TextFile -Path $quickTunnelUrlPath
+                if ([string]::IsNullOrWhiteSpace($publicUrl)) {
+                    throw 'Installer Engine finished trial without a Quick Tunnel public address.'
+                }
+            } elseif ($resolvedTunnelMode -eq 'named') {
+                $publicUrl = $ServerUrl
+            }
+        } elseif ($RegisterStartup) {
             if ($effectivePrivilegeMode -eq 'elevated') {
                 Start-AgentDockTask -ManagerScriptPath $managerScriptPath
             } elseif ($InstallChannel -eq 'setup') {
@@ -1948,6 +2029,14 @@ exit `$LASTEXITCODE
         Write-Warning "$activationWarningMessage Details: $($_.Exception.Message)"
     }
 
+    if ($enginePrepared) {
+        & $sourceBinary install commit --install-root $runtimeDir --runtime-root $runtimeDir --transaction-id $engineTransactionId 1>$null
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Installer Engine failed to commit the install transaction.'
+        }
+        $engineCommitted = $true
+    }
+
     $taskTransactionCommitted = $taskTransactionStarted
     if (-not [string]::IsNullOrWhiteSpace($generationRepairBackupDirectory) -and
         (Test-Path -LiteralPath $generationRepairBackupDirectory -PathType Container)) {
@@ -2007,7 +2096,9 @@ exit `$LASTEXITCODE
     $rollbackError = $null
     $taskRecoveryPath = ''
     try {
-        if (-not $generationUpgradeHandled -and $generationLayoutDetected) {
+        if ($generationLayoutDetected) {
+            # Target Core runs as agentdock-core.exe after both bootstrap and Update Engine.
+            # Stopping the CUI shim would miss the running generation and leave the new pointer live.
             $rollbackGenerationTray = Join-Path $generationBootstrapDirectory 'agentdock-tray.exe'
             $rollbackGenerationCore = Join-Path $generationBootstrapDirectory 'agentdock-core.exe'
             [void] (Stop-AgentDockTrayForUpgrade -BinaryPath $rollbackGenerationTray)
@@ -2162,6 +2253,28 @@ exit `$LASTEXITCODE
     } catch {
         $rollbackError = $_
         Write-Warning "AgentDock rollback failed: $($_.Exception.Message)"
+    }
+
+    if (($enginePrepared -or $engineCommitted) -and (Test-Path -LiteralPath $sourceBinary -PathType Leaf)) {
+        $abandonArgs = @(
+            'install', 'abandon',
+            '--install-root', $runtimeDir,
+            '--runtime-root', $runtimeDir
+        )
+        if (-not [string]::IsNullOrWhiteSpace($engineTransactionId)) {
+            $abandonArgs += @('--transaction-id', $engineTransactionId)
+        }
+        if ($null -ne $rollbackError -or $null -ne $taskRollbackError) {
+            $abandonArgs += '--rollback-failed'
+        }
+        & $sourceBinary @abandonArgs 1>$null
+        if ($LASTEXITCODE -ne 0 -and $null -eq $rollbackError) {
+            try {
+                throw "Installer Engine could not record rollback state (exit $LASTEXITCODE)."
+            } catch {
+                $rollbackError = $_
+            }
+        }
     }
 
     $resultErrorCode = $installErrorCode

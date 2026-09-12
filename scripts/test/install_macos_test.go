@@ -17,7 +17,7 @@ func TestMacOSAppBuildPublishesDesktopUpdateArchive(t *testing.T) {
 		`ditto -c -k --keepParent "$APP_DIR" "$ZIP_PATH"`,
 		`unzip -tq "$ZIP_PATH"`,
 		`shasum -a 256 "${ZIP_PATH:t}" > "${ZIP_PATH:t}.sha256"`,
-		`$ROOT_DIR/internal/buildinfo/buildinfo.go`,
+		`go run "$ROOT_DIR/tools/release" version`,
 	} {
 		if !strings.Contains(build, want) {
 			t.Fatalf("build-app.sh missing macOS desktop update archive behavior %q", want)

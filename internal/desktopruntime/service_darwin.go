@@ -28,8 +28,11 @@ func launchdLoaded(ctx context.Context, label string) bool {
 	return err == nil
 }
 
-func kickstartRegisteredLaunchAgent(ctx context.Context, label string) error {
+func kickstartRegisteredLaunchAgent(ctx context.Context, label, manager string) error {
 	if !launchdLoaded(ctx, label) {
+		if manager == "launchd" {
+			return fmt.Errorf("CLI LaunchAgent %s 未加载；请先完成 agentdock install --register-service", label)
+		}
 		return fmt.Errorf("后台服务 %s 尚未由 AgentDock.app 注册", label)
 	}
 	_, err := runCommand(ctx, launchctlBinary(), "kickstart", "-k", launchdTarget(label))
@@ -55,16 +58,19 @@ func platformServiceAction(ctx context.Context, runtimeRoot, action string) erro
 		return err
 	}
 
-	// SMAppService 是 macOS 桌面后台服务的唯一注册入口。Go 只允许重启已经注册的
-	// Core；这样 Quick Tunnel 可以在写入新公网地址后刷新 Core，又不会重新引入
-	// ~/Library/LaunchAgents 或 launchctl bootstrap 这套第二生命周期。
+	// App Bundle：只 kickstart SMAppService 已经注册的 job。
+	// CLI 安装：kickstart 用户 LaunchAgent（com.uvwt.agentdock），标签来自 desktop-runtime.json。
 	switch action {
 	case "start", "restart":
-		if err := kickstartRegisteredLaunchAgent(ctx, manifest.ServiceName); err != nil {
+		if err := kickstartRegisteredLaunchAgent(ctx, manifest.ServiceName, manifest.ServiceManager); err != nil {
 			return err
 		}
 		return waitHealthy(ctx, values, 30*time.Second)
 	case "stop":
+		if manifest.ServiceManager == "launchd" {
+			_, err := runCommand(ctx, launchctlBinary(), "bootout", launchdTarget(manifest.ServiceName))
+			return err
+		}
 		return errors.New("macOS 后台服务停用由 AgentDock.app 的 SMAppService 管理")
 	default:
 		return errors.New("不支持的 AgentDock 服务操作")

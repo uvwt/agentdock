@@ -1495,31 +1495,94 @@ if [[ -f "$TARGET" ]]; then
   print -- "==> 已备份旧版本到 $backup"
 fi
 
+"$source_binary" --help >/dev/null 2>&1
 staged_target="$INSTALL_DIR/.agentdock.install.$$"
-rm -f "$staged_target"
-install -m 0755 "$source_binary" "$staged_target"
-"$staged_target" --help >/dev/null 2>&1
-mv -f "$staged_target" "$TARGET"
+engine_applied=false
+
+restore_install_files() {
+  if ! restore_service_files; then
+    die "生成服务文件失败，且旧服务文件恢复失败"
+  fi
+  if [[ -n "$backup" && -f "$backup" ]]; then
+    cp -p "$backup" "$staged_target" || die "生成服务文件失败，且旧二进制复制失败；备份保留在 $backup"
+    mv -f "$staged_target" "$TARGET" || die "生成服务文件失败，且旧二进制恢复失败；备份保留在 $backup"
+  else
+    rm -f "$TARGET"
+  fi
+}
+
+install_live_binary_from_payload() {
+  rm -f "$staged_target"
+  install -m 0755 "$source_binary" "$staged_target"
+  mv -f "$staged_target" "$TARGET"
+}
 
 if [[ "$REGISTER_SERVICE" == true ]]; then
-  if ! (
-    write_service_env
-    write_launch_agent
-  ); then
-    if ! restore_service_files; then
-      die "生成服务文件失败，且旧服务文件恢复失败"
+  # 二进制一旦支持 Engine，产品状态机只能由 Go 执行。
+  # fallback 只允许发生在 --engine-ready 之前，即旧 binary 根本没有 Engine。
+  if [[ "$("$source_binary" install --engine-ready 2>/dev/null || true)" == *agentdock-installer-engine* ]]; then
+    if [[ "$TUNNEL_MODE" != none ]]; then
+      install_cloudflared
     fi
-    if [[ -n "$backup" && -f "$backup" ]]; then
-      cp -p "$backup" "$staged_target" || die "生成服务文件失败，且旧二进制复制失败；备份保留在 $backup"
-      mv -f "$staged_target" "$TARGET" || die "生成服务文件失败，且旧二进制恢复失败；备份保留在 $backup"
-    else
-      rm -f "$TARGET"
+    install_args=(
+      install
+      --install-root "$INSTALL_DIR"
+      --runtime-root "$APP_SUPPORT_DIR"
+      --binary "$source_binary"
+      --live-binary "$TARGET"
+      --skill-bundle "$core_skill_bundle"
+      --log-level "$SERVICE_LOG_LEVEL"
+      --tunnel-mode "$TUNNEL_MODE"
+      --launch-agents-dir "$LAUNCH_AGENTS_DIR"
+      --data-dir "$WORK_DIR"
+      --agentdock-home "$STATE_DIR"
+      --register-service
+    )
+    if [[ "$NO_START" == true ]]; then
+      install_args+=(--no-start --skip-health)
     fi
-    die "生成服务文件失败；已恢复安装前状态"
+    if [[ "$HOST_EXPLICIT" == true ]]; then
+      install_args+=(--host "$SERVICE_HOST")
+    fi
+    if [[ "$PORT_EXPLICIT" == true ]]; then
+      install_args+=(--port "$SERVICE_PORT")
+    fi
+    if [[ -n "$SERVER_URL" ]]; then
+      install_args+=(--server-url "$SERVER_URL")
+    fi
+    if [[ -n "$TUNNEL_TOKEN" ]]; then
+      install_args+=(--tunnel-token "$TUNNEL_TOKEN")
+    fi
+    if [[ -x "$CLOUDFLARED_TARGET" ]]; then
+      install_args+=(--cloudflared "$CLOUDFLARED_TARGET")
+    fi
+    if [[ -z "$(read_agentdock_env_key AGENTDOCK_AUTH_TOKEN 2>/dev/null || true)" && -n "$AUTH_TOKEN_ARG" ]]; then
+      install_args+=(--auth-token "$AUTH_TOKEN_ARG")
+    fi
+    if [[ -n "$OAUTH_PASSWORD_VALUE" ]]; then
+      install_args+=(--oauth-password "$OAUTH_PASSWORD_VALUE")
+    fi
+    if [[ -n "$OAUTH_TOKEN_SECRET_VALUE" ]]; then
+      install_args+=(--oauth-token-secret "$OAUTH_TOKEN_SECRET_VALUE")
+    fi
+    if ! "$source_binary" "${install_args[@]}" >"$tmp_dir/installer-engine.json"; then
+      restore_install_files
+      die "Go Installer Engine 失败，已禁止回退 legacy 实现"
+    fi
+    engine_applied=true
+  else
+    install_live_binary_from_payload
+    if ! write_service_env || ! write_launch_agent; then
+      restore_install_files
+      die "生成服务文件失败；已恢复安装前状态"
+    fi
   fi
 
-  if [[ "$NO_START" == false ]]; then
-    if ! register_and_start_service; then
+  if [[ "$NO_START" == true ]]; then
+    print -- "==> 已生成服务文件和 plist，按 --no-start 要求未加载 LaunchAgent"
+  elif [[ "$engine_applied" == true ]]; then
+    print -- "==> 已由 Go Installer Engine 完成 LaunchAgent 启动与健康检查"
+  elif ! register_and_start_service; then
       print -u2 -- "==> 新服务验证失败，恢复安装前状态"
       domain="gui/$(id -u)"
       failed_pid="$(launchd_pid "$domain" || true)"
@@ -1543,22 +1606,23 @@ if [[ "$REGISTER_SERVICE" == true ]]; then
         rm -f "$TARGET"
       fi
       exit 1
+  fi
+else
+  install_live_binary_from_payload
+fi
+
+if [[ "$engine_applied" != true ]]; then
+  print -- "==> 安装官方核心 Skill"
+  if ! "$TARGET" skill bootstrap --bundle "$core_skill_bundle"; then
+    print -u2 -- "==> 核心 Skill 初始化失败，恢复安装前状态"
+    if ! rollback_release_install; then
+      die "核心 Skill 初始化失败，且安装回滚失败；二进制备份保留在 ${backup:-无}"
     fi
-  else
-    print -- "==> 已生成服务文件和 plist，按 --no-start 要求未加载 LaunchAgent"
+    die "核心 Skill 初始化失败；已恢复安装前状态"
   fi
 fi
 
-print -- "==> 安装官方核心 Skill"
-if ! "$TARGET" skill bootstrap --bundle "$core_skill_bundle"; then
-  print -u2 -- "==> 核心 Skill 初始化失败，恢复安装前状态"
-  if ! rollback_release_install; then
-    die "核心 Skill 初始化失败，且安装回滚失败；二进制备份保留在 ${backup:-无}"
-  fi
-  die "核心 Skill 初始化失败；已恢复安装前状态"
-fi
-
-if [[ "$TUNNEL_MODE_EXPLICIT" == true ]]; then
+if [[ "$engine_applied" != true && "$TUNNEL_MODE_EXPLICIT" == true ]]; then
   if [[ "$TUNNEL_MODE" == none ]]; then
     remove_tunnel_service
   else

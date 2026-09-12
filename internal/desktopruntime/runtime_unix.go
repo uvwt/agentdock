@@ -32,6 +32,10 @@ type unixRuntimeManifest struct {
 	TunnelEnvironment string `json:"tunnel_environment"`
 }
 
+func darwinExecutableFromAppBundle(executable string) bool {
+	return strings.Contains(filepath.ToSlash(executable), ".app/Contents/")
+}
+
 func loadUnixRuntime(runtimeRoot string) (unixRuntimeManifest, string, error) {
 	root, err := filepath.Abs(strings.TrimSpace(runtimeRoot))
 	if err != nil || root == "" {
@@ -43,19 +47,34 @@ func loadUnixRuntime(runtimeRoot string) (unixRuntimeManifest, string, error) {
 	serviceName := "agentdock"
 	tunnelServiceName := "agentdock-cloudflared"
 	serviceManager := ""
-	if runtime.GOOS == "darwin" {
-		// macOS 桌面版的 Core 与 cloudflared 都属于 AgentDock.app，运行时必须跟随当前
-		// Helper 的真实位置，不能再把 ~/.local/bin 当成第二套生产安装位置。
-		if executable, executableErr := os.Executable(); executableErr == nil {
-			if resolved, resolveErr := filepath.EvalSymlinks(executable); resolveErr == nil {
-				executable = resolved
-			}
-			agentDockBinary = executable
-			cloudflaredBinary = filepath.Join(filepath.Dir(executable), "cloudflared")
+	executable := ""
+	if resolved, err := os.Executable(); err == nil {
+		if eval, evalErr := filepath.EvalSymlinks(resolved); evalErr == nil {
+			resolved = eval
 		}
-		serviceManager = "smappservice"
-		serviceName = "com.uvwt.agentdock.core"
-		tunnelServiceName = "com.uvwt.agentdock.tunnel"
+		executable = resolved
+	}
+	fromApp := runtime.GOOS == "darwin" && darwinExecutableFromAppBundle(executable)
+	if runtime.GOOS == "darwin" {
+		if fromApp {
+			// App Bundle 的 Core/cloudflared 由 SMAppService 注册，路径必须跟随 Helper。
+			if executable != "" {
+				agentDockBinary = executable
+				cloudflaredBinary = filepath.Join(filepath.Dir(executable), "cloudflared")
+			}
+			serviceManager = "smappservice"
+			serviceName = "com.uvwt.agentdock.core"
+			tunnelServiceName = "com.uvwt.agentdock.tunnel"
+		} else {
+			// CLI 安装把 LaunchAgent 写在用户目录，标签是 com.uvwt.agentdock / .cloudflared。
+			if executable != "" {
+				agentDockBinary = executable
+				cloudflaredBinary = filepath.Join(filepath.Dir(executable), "cloudflared")
+			}
+			serviceManager = "launchd"
+			serviceName = "com.uvwt.agentdock"
+			tunnelServiceName = "com.uvwt.agentdock.cloudflared"
+		}
 	}
 	manifest := unixRuntimeManifest{
 		SchemaVersion:     1,
@@ -67,9 +86,8 @@ func loadUnixRuntime(runtimeRoot string) (unixRuntimeManifest, string, error) {
 		EnvironmentFile:   filepath.Join(root, "agentdock.env"),
 		TunnelEnvironment: filepath.Join(root, "cloudflared.env"),
 	}
-	// macOS 桌面版的程序路径由已签名 App Bundle 唯一决定，不允许外部清单把
-	// Core/cloudflared 再指向用户目录中的第二份二进制。Linux 仍保留运行清单覆盖。
-	if runtime.GOOS != "darwin" {
+	// App Bundle 不允许外部清单改写已签名 Helper 路径。CLI / Linux 读取 desktop-runtime.json。
+	if runtime.GOOS != "darwin" || !fromApp {
 		data, readErr := os.ReadFile(filepath.Join(root, "desktop-runtime.json"))
 		if readErr == nil {
 			if err := json.Unmarshal(data, &manifest); err != nil {

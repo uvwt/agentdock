@@ -127,6 +127,9 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"$taskTransactionCommitted = $taskTransactionStarted",
 		"Write-ActiveVersionState",
 		"active-version.json",
+		"Name = 'active-version.json'",
+		"Name = 'update-transaction.json'",
+		"Name = 'update-result.json'",
 		"$versionsDir = Join-Path $runtimeDir 'versions'",
 		"Copy-Item -LiteralPath $sourceWSLHelperDir -Destination (Join-Path $generationStagingDirectory 'wsl-helper') -Recurse -Force",
 		"Delegating Setup upgrade to the AgentDock Update Engine",
@@ -188,11 +191,45 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	if strings.Contains(script, "Install-AgentDockBinary -SourceBinary $sourceBinary -DestinationBinary $destinationBinary") {
 		t.Fatal("install.ps1 must not restore the legacy in-place Core replacement path")
 	}
+	if strings.Contains(script, "-not $generationUpgradeHandled -and $generationLayoutDetected") {
+		t.Fatal("Setup rollback must stop the target generation even after Update Engine committed")
+	}
 	manifestCall := strings.Index(script, "$manifestTunnelMode = $resolvedTunnelMode")
 	coreStartCall := strings.Index(script, "& $destinationBinary service start --runtime-root $runtimeDir")
 	tunnelStartCall := strings.Index(script, "& $destinationBinary tunnel start --runtime-root $runtimeDir")
 	if manifestCall < 0 || coreStartCall < 0 || tunnelStartCall < 0 || manifestCall > coreStartCall || manifestCall > tunnelStartCall {
 		t.Fatal("install.ps1 must write the runtime manifest before native core and Tunnel startup")
+	}
+	if strings.Contains(script, "$manifestTunnelMode = 'none'") {
+		t.Fatal("Quick Tunnel must not rewrite Engine tunnel-mode to none")
+	}
+	if !strings.Contains(script, "'--tunnel-mode', $resolvedTunnelMode") {
+		t.Fatal("Engine must receive the real resolved tunnel mode, including quick")
+	}
+	if !strings.Contains(script, "'--defer-commit'") {
+		t.Fatal("Windows Engine install must defer commit until the adapter finishes")
+	}
+	commitCall := strings.Index(script, "install commit --install-root $runtimeDir --runtime-root $runtimeDir --transaction-id $engineTransactionId")
+	if commitCall < 0 {
+		t.Fatal("Windows installer must finalize a deferred Engine trial with install commit bound to the trial transaction id")
+	}
+	engineInvoke := strings.Index(script, "if ($engineReady) {")
+	registerBlock := strings.Index(script, "if ($RegisterStartup) {")
+	if engineInvoke < 0 || registerBlock < 0 || engineInvoke < registerBlock {
+		t.Fatal("Installer Engine must run even when RegisterStartup is false")
+	}
+	rollbackRestore := strings.LastIndex(script, "Restore-FileState")
+	abandonCall := strings.LastIndex(script, "install', 'abandon'")
+	if rollbackRestore < 0 || abandonCall < 0 || abandonCall < rollbackRestore {
+		t.Fatal("install abandon must run after real file/registry rollback")
+	}
+	if !strings.Contains(script, "--rollback-failed") {
+		t.Fatal("adapter rollback failure must be recorded as failed/rollback_failed, not rolled_back")
+	}
+	preparedMark := strings.Index(script, "$enginePrepared = $true")
+	engineJSON := strings.Index(script, "Installer Engine returned invalid JSON")
+	if preparedMark < 0 || engineJSON < 0 || preparedMark > engineJSON {
+		t.Fatal("Engine trial must be marked prepared before JSON handshake parsing so catch still abandons")
 	}
 
 	const securityAssemblyLoad = "Add-Type -AssemblyName System.Security"

@@ -23,6 +23,7 @@ CLOUDFLARED_RELEASE_BASE_URL="${AGENTDOCK_CLOUDFLARED_RELEASE_BASE_URL:-https://
 CLOUDFLARED_SOURCE_BINARY="${AGENTDOCK_CLOUDFLARED_BINARY:-}"
 CORE_SKILL_BUNDLE=""
 CORE_SKILL_TEMP_DIR=""
+PREBUILT_BINARY=""
 TUNNEL_PUBLIC_URL=""
 
 cleanup_core_skill_bundle() {
@@ -512,9 +513,9 @@ install_prebuilt_binary() {
     die "预编译包内缺少有效的核心 Skill Bundle：$url"
   fi
   if [[ -x "$tmp_dir/bin/agentdock" ]]; then
-    run_root install -m 755 "$tmp_dir/bin/agentdock" "$source_dir/bin/agentdock"
+    PREBUILT_BINARY="$tmp_dir/bin/agentdock"
   elif [[ -x "$tmp_dir/agentdock" ]]; then
-    run_root install -m 755 "$tmp_dir/agentdock" "$source_dir/bin/agentdock"
+    PREBUILT_BINARY="$tmp_dir/agentdock"
   else
     rm -rf "$tmp_dir"
     die "预编译包内未找到 agentdock 可执行文件：$url"
@@ -734,6 +735,70 @@ JSON
   run_root mkdir -p "$runtime_root"
   run_root install -m 0644 -o root -g root "$tmp_file" "$runtime_root/desktop-runtime.json"
   rm -f "$tmp_file"
+}
+
+go_installer_engine_ready() {
+  local binary="$1"
+  local output
+  [[ -x "$binary" ]] || return 1
+  output="$("$binary" install --engine-ready 2>/dev/null || true)"
+  [[ "$output" == *agentdock-installer-engine* ]]
+}
+
+# 二进制一旦支持 Engine，产品状态机只能由 Go 执行。
+# fallback 只允许发生在 --engine-ready 之前，即旧 binary 根本没有 Engine。
+apply_linux_with_go_installer() {
+  local binary="$1"
+  local args=(
+    install
+    --install-root "$source_dir"
+    --runtime-root "$(dirname "$env_file")"
+    --binary "$binary"
+    --host "$host"
+    --port "$port"
+    --log-level "$log_level"
+    --tunnel-mode "$tunnel_mode"
+    --service-name "$service_name"
+    --service-user "$service_user"
+    --service-group "$service_group"
+    --service-manager "$service_manager"
+    --data-dir "$data_dir"
+    --auth-token "$token"
+  )
+  if [[ -n "${CORE_SKILL_BUNDLE:-}" ]]; then
+    args+=(--skill-bundle "$CORE_SKILL_BUNDLE")
+  fi
+  if [[ -n "${CORE_SKILL_TEMP_DIR:-}" && -d "${CORE_SKILL_TEMP_DIR}" ]]; then
+    args+=(--payload-dir "$CORE_SKILL_TEMP_DIR")
+  fi
+  if [[ -n "$server_url" ]]; then
+    args+=(--server-url "$server_url")
+  fi
+  if [[ -n "${tunnel_token:-}" ]]; then
+    args+=(--tunnel-token "$tunnel_token")
+  fi
+  if [[ -n "${cloudflared_binary:-}" ]]; then
+    args+=(--cloudflared "$cloudflared_binary")
+  fi
+  if [[ -n "${oauth_password:-}" ]]; then
+    args+=(--oauth-password "$oauth_password")
+  fi
+  if [[ -n "${oauth_token_secret:-}" ]]; then
+    args+=(--oauth-token-secret "$oauth_token_secret")
+  fi
+  if [[ -n "${AGENTDOCK_SYSTEMD_DIR:-}" ]]; then
+    args+=(--systemd-dir "$AGENTDOCK_SYSTEMD_DIR")
+  fi
+  if [[ -n "${AGENTDOCK_OPENRC_DIR:-}" ]]; then
+    args+=(--openrc-dir "$AGENTDOCK_OPENRC_DIR")
+  fi
+  if [[ "$release_version" != "latest" && -n "$release_version" ]]; then
+    args+=(--version "$release_version")
+  fi
+  if [[ "$service_manager" == "none" ]]; then
+    args+=(--no-start --skip-health)
+  fi
+  "$binary" "${args[@]}" >/dev/null
 }
 
 resolve_cloudflared_binary() {
@@ -1419,7 +1484,7 @@ SUMMARY
 
   if [[ "$install_mode" == "binary" || "$install_mode" == "auto" ]]; then
     if install_prebuilt_binary "$repo_url" "$release_version" "$source_dir"; then
-      log "预编译二进制安装完成：$source_dir/bin/agentdock"
+      log "预编译载荷已就绪，等待 Installer Engine 切换生产二进制"
     elif [[ "$install_mode" == "auto" ]]; then
       warn "预编译二进制下载失败，将 fallback 到源码构建。"
       build_from_source="yes"
@@ -1458,8 +1523,8 @@ SUMMARY
     build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     (cd "$source_dir" && go build -trimpath \
       -ldflags "-X github.com/uvwt/agentdock/internal/buildinfo.Commit=$build_commit -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=$build_date" \
-      -o ./bin/agentdock ./cmd/agentdock)
-    chmod +x "$source_dir/bin/agentdock"
+      -o ./bin/.agentdock.stage ./cmd/agentdock)
+    chmod +x "$source_dir/bin/.agentdock.stage"
 
     command -v python3 >/dev/null 2>&1 || die "源码安装需要 python3 构建核心 Skill Bundle"
     CORE_SKILL_TEMP_DIR="$(mktemp -d)"
@@ -1471,66 +1536,93 @@ SUMMARY
 
   # 服务用户必须能够穿过安装目录并执行二进制；mkdir 会受调用者 umask 影响，
   # 因此不能依赖目录碰巧是 0755。
-  run_root chmod 0755 "$source_dir" "$source_dir/bin" "$source_dir/bin/agentdock"
+  run_root mkdir -p "$source_dir/bin"
+  run_root chmod 0755 "$source_dir" "$source_dir/bin"
 
   ensure_service_user "$service_user" "$data_dir"
   service_group="$(id -gn "$service_user")"
   run_root mkdir -p "$data_dir/.agentdock" "$data_dir/AgentDock"
   run_root chown -R "$service_user:$service_group" "$data_dir"
-  write_env_file "$env_file" "$host" "$port" "$token" "$log_level" \
-    "$server_url" "$configure_oauth" "$oauth_enabled" "$oauth_password" "$oauth_token_secret"
-  # 原生运行时需要在服务用户身份下读取并原子更新公网地址；目录仅允许该服务用户访问。
-  run_root chown "$service_user:$service_group" "$(dirname "$env_file")" "$env_file"
-  run_root chmod 0700 "$(dirname "$env_file")"
-  write_runtime_manifest "$service_manager" "$service_name" "$tunnel_service_name" \
-    "$source_dir" "$env_file" "$cloudflared_binary" "$cloudflared_env_file"
-  case "$service_manager" in
-    systemd) write_systemd_unit "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
-    openrc) write_openrc_service "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
-    none) warn "跳过系统服务写入。" ;;
-  esac
 
-  start_service "$service_manager" "$service_name"
+  payload_binary="${PREBUILT_BINARY:-}"
+  if [[ -z "$payload_binary" && -x "$source_dir/bin/.agentdock.stage" ]]; then
+    payload_binary="$source_dir/bin/.agentdock.stage"
+  fi
+  if [[ -z "$payload_binary" && -x "$source_dir/bin/agentdock" ]]; then
+    payload_binary="$source_dir/bin/agentdock"
+  fi
+  [[ -n "$payload_binary" ]] || die "找不到待安装的 AgentDock 二进制"
+
+  engine_applied=false
+  if go_installer_engine_ready "$payload_binary"; then
+    if [[ "$tunnel_mode" != none ]]; then
+      install_cloudflared "$cloudflared_binary"
+    fi
+    apply_linux_with_go_installer "$payload_binary" ||
+      die "Go Installer Engine 失败，已禁止回退 legacy 实现"
+    engine_applied=true
+    log "已由 Go Installer Engine 完成安装事务"
+  else
+    run_root install -m 755 "$payload_binary" "$source_dir/bin/agentdock"
+    write_env_file "$env_file" "$host" "$port" "$token" "$log_level" \
+      "$server_url" "$configure_oauth" "$oauth_enabled" "$oauth_password" "$oauth_token_secret"
+    write_runtime_manifest "$service_manager" "$service_name" "$tunnel_service_name" \
+      "$source_dir" "$env_file" "$cloudflared_binary" "$cloudflared_env_file"
+    case "$service_manager" in
+      systemd) write_systemd_unit "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
+      openrc) write_openrc_service "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
+      none) warn "跳过系统服务写入。" ;;
+    esac
+  fi
+  if [[ -x "$source_dir/bin/agentdock" ]]; then
+    run_root chmod 0755 "$source_dir/bin/agentdock"
+  fi
+  rm -f "$source_dir/bin/.agentdock.stage"
+  # 原生运行时需要在服务用户身份下读取并原子更新公网地址；目录仅允许该服务用户访问。
+  run_root chown "$service_user:$service_group" "$(dirname "$env_file")" "$env_file" >/dev/null 2>&1 || true
+  run_root chmod 0700 "$(dirname "$env_file")" >/dev/null 2>&1 || true
 
   health_host="$(local_health_host "$host")"
   smoke_url="http://$health_host:$port"
-  if [[ "$service_manager" != "none" ]]; then
-    log "验证 healthz"
-    curl -fsS "$smoke_url/healthz"
-    printf '\n'
-
-    if [[ -x "$source_dir/packaging/docker/smoke-docker.sh" ]]; then
-      log "验证 MCP smoke"
-      AGENTDOCK_SMOKE_URL="$smoke_url" AGENTDOCK_AUTH_TOKEN="$token" "$source_dir/packaging/docker/smoke-docker.sh"
+  if [[ "$engine_applied" != true ]]; then
+    start_service "$service_manager" "$service_name"
+    if [[ "$service_manager" != "none" ]]; then
+      log "验证 healthz"
+      curl -fsS "$smoke_url/healthz"
+      printf '\n'
+      if [[ -x "$source_dir/packaging/docker/smoke-docker.sh" ]]; then
+        log "验证 MCP smoke"
+        AGENTDOCK_SMOKE_URL="$smoke_url" AGENTDOCK_AUTH_TOKEN="$token" "$source_dir/packaging/docker/smoke-docker.sh"
+      else
+        warn "未找到 smoke 脚本，跳过 MCP smoke：$source_dir/packaging/docker/smoke-docker.sh"
+      fi
     else
-      warn "未找到 smoke 脚本，跳过 MCP smoke：$source_dir/packaging/docker/smoke-docker.sh"
+      log "未配置系统服务，跳过运行时健康检查。"
     fi
-  else
-    log "未配置系统服务，跳过运行时健康检查。"
-  fi
 
-  [[ -n "$CORE_SKILL_BUNDLE" ]] || die "未准备核心 Skill Bundle"
-  make_core_skill_bundle_readable
-  log "安装官方核心 Skill"
-  run_as_service_user "$service_user" "$data_dir" \
-    "$source_dir/bin/agentdock" skill bootstrap --bundle "$CORE_SKILL_BUNDLE"
+    [[ -n "$CORE_SKILL_BUNDLE" ]] || die "未准备核心 Skill Bundle"
+    make_core_skill_bundle_readable
+    log "安装官方核心 Skill"
+    run_as_service_user "$service_user" "$data_dir" \
+      "$source_dir/bin/agentdock" skill bootstrap --bundle "$CORE_SKILL_BUNDLE"
 
-  if [[ "$tunnel_mode" == none ]]; then
-    remove_cloudflared_service "$service_manager" "$tunnel_service_name" "$cloudflared_env_file"
-  else
-    tunnel_target_url="http://$health_host:$port"
-    configure_cloudflared "$service_manager" "$tunnel_service_name" "$service_user" "$service_group" \
-      "$data_dir" "$cloudflared_binary" "$cloudflared_env_file" "$tunnel_mode" \
-      "$tunnel_target_url" "$tunnel_token" "$server_url" "$source_dir/bin/agentdock" "$(dirname "$env_file")"
-    if [[ "$tunnel_mode" == quick ]]; then
-      server_url="$TUNNEL_PUBLIC_URL"
-      oauth_enabled="true"
-      write_env_file "$env_file" "$host" "$port" "$token" "$log_level" \
-        "$server_url" yes true "$oauth_password" "$oauth_token_secret"
-      run_root chown "$service_user:$service_group" "$env_file"
-      log "已将临时公网地址写入 AgentDock OAuth 配置并重启服务"
-      start_service "$service_manager" "$service_name"
-      curl -fsS "$smoke_url/healthz" >/dev/null
+    if [[ "$tunnel_mode" == none ]]; then
+      remove_cloudflared_service "$service_manager" "$tunnel_service_name" "$cloudflared_env_file"
+    else
+      tunnel_target_url="http://$health_host:$port"
+      configure_cloudflared "$service_manager" "$tunnel_service_name" "$service_user" "$service_group" \
+        "$data_dir" "$cloudflared_binary" "$cloudflared_env_file" "$tunnel_mode" \
+        "$tunnel_target_url" "$tunnel_token" "$server_url" "$source_dir/bin/agentdock" "$(dirname "$env_file")"
+      if [[ "$tunnel_mode" == quick ]]; then
+        server_url="$TUNNEL_PUBLIC_URL"
+        oauth_enabled="true"
+        write_env_file "$env_file" "$host" "$port" "$token" "$log_level" \
+          "$server_url" yes true "$oauth_password" "$oauth_token_secret"
+        run_root chown "$service_user:$service_group" "$env_file"
+        log "已将临时公网地址写入 AgentDock OAuth 配置并重启服务"
+        start_service "$service_manager" "$service_name"
+        curl -fsS "$smoke_url/healthz" >/dev/null
+      fi
     fi
   fi
 

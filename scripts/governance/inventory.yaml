@@ -1,0 +1,326 @@
+# AgentDock 脚本治理清单。
+# 分类：bootstrap / runtime-adapter / packaging / test / dev / legacy / ci
+# 公开入口不得改名删除。legacy 脚本禁止新增产品能力。
+# 超过 review_threshold_lines 的新增脚本必须写 oversize_justification。
+
+review_threshold_lines: 300
+
+frozen_legacy_actions:
+  manage-windows.ps1:
+    - start
+    - stop
+    - restart
+    - start-tunnel
+    - stop-tunnel
+    - update
+    - set-mode
+    - regenerate-quick
+    - set-startup
+    - launch-core
+    - launch-tunnel
+    - set-task-startup
+    - task-run-session
+    - task-start
+    - task-stop
+
+manage_windows_allowlist:
+  - scripts/install/manage-windows.ps1
+  - scripts/install/launch-windows-process.ps1
+  - scripts/install/install.ps1
+  - scripts/install/uninstall-windows.ps1
+  - scripts/test/install_windows_test.go
+  - scripts/test/desktop_windows_test.go
+  - scripts/test/logging_policy_test.go
+  - scripts/test/script_governance_test.go
+  - scripts/test/test-windows-task-scheduler.ps1
+  - scripts/test/test-install-windows.ps1
+  - scripts/test/test-install-windows-e2e.ps1
+  - scripts/test/test-windows-setup-e2e.ps1
+  - scripts/test/test-windows-quick-tunnel-lifecycle.ps1
+  - scripts/governance/inventory.yaml
+  - packaging/windows/AgentDock.iss
+  - packaging/windows/build-windows-offline-setup.ps1
+  - packaging/windows/includes/code.iss
+  - internal/selfupdate/desktop_apply_windows.go
+  - internal/selfupdate/desktop_apply_windows_test.go
+  - internal/selfupdate/desktop_update_windows.go
+  - internal/selfupdate/desktop_update_windows_test.go
+  - internal/installer/apply.go
+  - .github/workflows/release.yml
+  - .github/workflows/windows-installer.yml
+
+scripts:
+  - path: scripts/install/install.sh
+    class: bootstrap
+    owner: installer
+    public_contract: true
+    deletable: false
+    legacy_oversize: true
+    oversize_justification: 公开 Unix bootstrap，包含 Linux 交互菜单、校验下载和卸载转发；不得改名。
+    notes: Unix 公开安装入口。只负责平台检测、交互、下载校验，再调用平台适配或 Go Installer Engine。
+
+  - path: scripts/install/install.ps1
+    class: runtime-adapter
+    owner: installer
+    public_contract: true
+    deletable: false
+    legacy_oversize: true
+    oversize_justification: Windows Setup / 自更新公开契约，正在把 generation、manifest、事务迁入 Go Installer Engine。
+    notes: 公开 Windows 安装入口。UAC、DPAPI、Inno 结果文件和用户 session broker 仍留在脚本。
+
+  - path: scripts/install/install-linux-platform.sh
+    class: runtime-adapter
+    owner: installer
+    public_contract: true
+    deletable: false
+    legacy_oversize: true
+    oversize_justification: 历史 Linux 安装器，仍被旧版 install.sh 下载。新路径委托 agentdock install。
+
+  - path: scripts/install/install-macos-platform.sh
+    class: runtime-adapter
+    owner: installer
+    public_contract: true
+    deletable: false
+    legacy_oversize: true
+    oversize_justification: 历史 macOS CLI/LaunchAgent 安装器，仍被旧版 install.sh 下载。新路径委托 agentdock install。
+
+  - path: scripts/install/uninstall-linux.sh
+    class: runtime-adapter
+    owner: installer
+    public_contract: true
+    deletable: false
+    legacy_oversize: true
+    oversize_justification: Linux 公开卸载入口，逐步委托 agentdock uninstall。
+
+  - path: scripts/install/uninstall-macos.sh
+    class: runtime-adapter
+    owner: installer
+    public_contract: true
+    deletable: false
+
+  - path: scripts/install/uninstall-windows.ps1
+    class: runtime-adapter
+    owner: installer
+    public_contract: true
+    deletable: false
+
+  - path: scripts/install/manage-windows.ps1
+    class: legacy
+    owner: installer
+    public_contract: true
+    deletable: false
+    legacy_oversize: true
+    oversize_justification: 旧 launcher/runtime 兼容垫片。禁止新增 Action；产品逻辑必须走 agentdock service/tunnel/update。
+    notes: 仅保留旧入口、task-run-session 兼容，以及 Setup 解包契约。
+
+  - path: scripts/install/launch-windows-process.ps1
+    class: runtime-adapter
+    owner: installer
+    public_contract: true
+    deletable: false
+    notes: Setup 进程树到用户 session 的薄 broker，必须保留。
+
+  - path: scripts/dev/deploy-macos-source.sh
+    class: dev
+    owner: desktop
+    public_contract: false
+    deletable: true
+
+  - path: scripts/dev/restart-macos.sh
+    class: dev
+    owner: desktop
+    public_contract: false
+    deletable: true
+
+  - path: scripts/test/check-scripts.sh
+    class: test
+    owner: ci
+    public_contract: false
+    deletable: false
+
+  - path: scripts/test/check-macos-i18n.py
+    class: test
+    owner: ci
+    public_contract: false
+    deletable: true
+
+  - path: scripts/test/test_shell_variable_boundaries.py
+    class: test
+    owner: ci
+    public_contract: false
+    deletable: true
+
+  - path: scripts/test/test-install-entry.sh
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+    legacy_oversize: true
+    oversize_justification: 覆盖公开 install.sh 下载、校验、卸载和参数透传。
+
+  - path: scripts/test/test-install-macos.sh
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+    legacy_oversize: true
+    oversize_justification: macOS 安装器平台 E2E，负责 VM/权限之外的环境编排。
+
+  - path: scripts/test/test-macos-app.sh
+    class: test
+    owner: desktop
+    public_contract: false
+    deletable: false
+
+  - path: scripts/test/test-docker-images.sh
+    class: test
+    owner: ci
+    public_contract: false
+    deletable: true
+
+  - path: scripts/test/test-install-windows.ps1
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+    legacy_oversize: true
+    oversize_justification: Windows 安装器契约测试，含下载字节一致性和 PowerShell 5.1 约束。
+
+  - path: scripts/test/test-install-windows-download.ps1
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+
+  - path: scripts/test/test-install-windows-e2e.ps1
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+
+  - path: scripts/test/test-windows-setup-e2e.ps1
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+    legacy_oversize: true
+    oversize_justification: Windows Setup E2E，负责管理员权限、Task Scheduler 和用户 session。
+
+  - path: scripts/test/test-windows-setup-activation-deferred.ps1
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+
+  - path: scripts/test/test-windows-quick-tunnel-lifecycle.ps1
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+    legacy_oversize: true
+    oversize_justification: Windows Quick Tunnel 生命周期，依赖真实 Task Scheduler/进程。
+
+  - path: scripts/test/test-windows-task-scheduler.ps1
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+
+  - path: scripts/test/test-windows-runtime-launch-diagnostics.ps1
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+
+  - path: scripts/test/test-windows-current-binary-as-standard-user.ps1
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+
+  - path: scripts/test/run-windows-installer-e2e-as-standard-user.ps1
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+
+  - path: packaging/macos/build-app.sh
+    class: packaging
+    owner: release
+    public_contract: false
+    deletable: false
+    legacy_oversize: true
+    oversize_justification: macOS App/DMG 构建。签名和 bundle 布局必须用平台工具；版本与 checksum 归 tools/release。
+
+  - path: packaging/macos/sign-macos.sh
+    class: packaging
+    owner: release
+    public_contract: false
+    deletable: false
+    notes: 调用 codesign / notarytool，保留为薄适配。
+
+  - path: packaging/windows/build-windows-offline-setup.ps1
+    class: packaging
+    owner: release
+    public_contract: false
+    deletable: false
+
+  - path: packaging/windows/build-wsl-helper-payload.ps1
+    class: packaging
+    owner: release
+    public_contract: false
+    deletable: false
+
+  - path: packaging/windows/sign-windows.ps1
+    class: packaging
+    owner: release
+    public_contract: false
+    deletable: false
+    notes: 调用 Authenticode 签名工具，保留为薄适配。
+
+  - path: packaging/windows/AgentDock.iss
+    class: packaging
+    owner: release
+    public_contract: true
+    deletable: false
+    notes: Inno Setup 定义，平台打包工具本身合理。
+
+  - path: packaging/windows/includes/code.iss
+    class: packaging
+    owner: release
+    public_contract: true
+    deletable: false
+    legacy_oversize: true
+    oversize_justification: Inno Setup Pascal 安装过程，平台打包工具本身合理。
+
+  - path: packaging/windows/includes/messages.iss
+    class: packaging
+    owner: release
+    public_contract: true
+    deletable: false
+
+  - path: packaging/docker/docker-healthcheck.sh
+    class: ci
+    owner: release
+    public_contract: false
+    deletable: false
+
+  - path: packaging/docker/smoke-docker.sh
+    class: test
+    owner: ci
+    public_contract: false
+    deletable: true
+
+  - path: packaging/build-core-skill-bundle.py
+    class: packaging
+    owner: release
+    public_contract: false
+    deletable: false
+    notes: 构建辅助，低优先级。
+
+  - path: docker-entrypoint.sh
+    class: ci
+    owner: release
+    public_contract: false
+    deletable: false
+    notes: 容器启动边界，合理保留。

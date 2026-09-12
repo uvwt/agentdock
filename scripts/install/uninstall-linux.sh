@@ -347,6 +347,39 @@ if is_true "$PURGE_DATA"; then
     die "拒绝清除与配置目录重叠的数据目录：${data_dir}、$config_dir"
 fi
 
+engine_binary="$source_dir/bin/agentdock"
+if [ -x "$engine_binary" ]; then
+  engine_ready_out="$("$engine_binary" install --engine-ready 2>/dev/null || true)"
+  case "$engine_ready_out" in
+    *agentdock-installer-engine*)
+      if is_true "$PURGE_DATA"; then
+        run_root "$engine_binary" uninstall \
+          --install-root "$source_dir" \
+          --runtime-root "$config_dir" \
+          --service-name "$service_name" \
+          --systemd-dir "$systemd_dir" \
+          --openrc-dir "$openrc_dir" \
+          --purge-data || die "Go Installer Engine 卸载失败"
+      elif is_true "$PURGE_CONFIG"; then
+        run_root "$engine_binary" uninstall \
+          --install-root "$source_dir" \
+          --runtime-root "$config_dir" \
+          --service-name "$service_name" \
+          --systemd-dir "$systemd_dir" \
+          --openrc-dir "$openrc_dir" \
+          --purge-config || die "Go Installer Engine 卸载失败"
+      else
+        run_root "$engine_binary" uninstall \
+          --install-root "$source_dir" \
+          --runtime-root "$config_dir" \
+          --service-name "$service_name" \
+          --systemd-dir "$systemd_dir" \
+          --openrc-dir "$openrc_dir" || die "Go Installer Engine 卸载失败"
+      fi
+      ;;
+  esac
+fi
+
 remove_systemd_services "$service_name" "$tunnel_service_name" "$systemd_dir"
 remove_openrc_services "$service_name" "$tunnel_service_name" "$openrc_dir"
 

@@ -47,6 +47,37 @@ func TestRunRejectsUnexpectedUpdateArguments(t *testing.T) {
 	}
 }
 
+func TestInstallEngineReadyDoesNotStartServer(t *testing.T) {
+	stdout := &bytes.Buffer{}
+	if err := run(context.Background(), []string{"install", "--engine-ready"}, stdout, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "agentdock-installer-engine") {
+		t.Fatalf("engine-ready handshake missing: %q", stdout.String())
+	}
+}
+
+func TestInstallInspectRequiresStateRoot(t *testing.T) {
+	err := run(context.Background(), []string{"install", "inspect"}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "--state-root") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestInstallCommitRequiresInstallRoot(t *testing.T) {
+	err := run(context.Background(), []string{"install", "commit"}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "--install-root") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestInstallAbandonRequiresInstallRoot(t *testing.T) {
+	err := run(context.Background(), []string{"install", "abandon"}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "--install-root") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRunRejectsUnknownCommand(t *testing.T) {
 	err := run(context.Background(), []string{"unknown"}, &bytes.Buffer{}, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "未知命令或参数") {

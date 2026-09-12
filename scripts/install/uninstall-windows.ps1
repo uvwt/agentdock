@@ -169,6 +169,27 @@ if (Test-Path -LiteralPath $runtimeManifestPath -PathType Leaf) {
     $managedTaskName = 'AgentDock'
 }
 
+if (Test-Path -LiteralPath $agentDockBinary -PathType Leaf) {
+    $engineReadyOutput = & $agentDockBinary install --engine-ready 2>$null
+    if ($LASTEXITCODE -eq 0 -and ("$engineReadyOutput" -like '*agentdock-installer-engine*')) {
+        $engineUninstall = @(
+            'uninstall',
+            '--install-root', $runtimeDir,
+            '--runtime-root', $runtimeDir
+        )
+        if (-not [string]::IsNullOrWhiteSpace($managedTaskName)) {
+            $engineUninstall += @('--task-name', $managedTaskName)
+        }
+        if ($PurgeState) {
+            $engineUninstall += '--purge-data'
+        }
+        & $agentDockBinary @engineUninstall
+        if ($LASTEXITCODE -ne 0) {
+            throw "Installer Engine uninstall failed with exit code $LASTEXITCODE."
+        }
+    }
+}
+
 # Stop the scheduled task before touching the elevated process. New installs
 # grant the desktop user task control; older administrator-owned tasks use a
 # one-time UAC fallback through the installed helper.
