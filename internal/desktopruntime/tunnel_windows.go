@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	goruntime "runtime"
 	"strings"
 	"syscall"
@@ -326,8 +327,23 @@ func launchCloudflared(runtime tunnelRuntime) error {
 	return nil
 }
 
+// ensureIsolatedConfig 在运行目录写一个空 cloudflared 配置，用于 --config 隔离。
+// cloudflared 默认加载 %USERPROFILE%\.cloudflared\config.yml，其兜底 ingress
+// `- service: http_status:404` 会把隧道入站请求就地吞成 404。
+func ensureIsolatedConfig(root string) (string, error) {
+	path := filepath.Join(root, "cloudflared-isolated.yml")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		return "", fmt.Errorf("写入 cloudflared 隔离配置失败: %w", err)
+	}
+	return path, nil
+}
+
 func cloudflaredCommand(ctx context.Context, runtime tunnelRuntime) (*exec.Cmd, error) {
-	arguments := []string{"tunnel", "--no-autoupdate"}
+	isolatedConfig, err := ensureIsolatedConfig(runtime.root)
+	if err != nil {
+		return nil, err
+	}
+	arguments := []string{"--config", isolatedConfig, "tunnel", "--no-autoupdate"}
 	environment := environmentWithout(os.Environ(), "TUNNEL_TOKEN")
 	if runtime.mode == "quick" {
 		arguments = append(arguments, "--url", fmt.Sprintf("http://127.0.0.1:%d", runtime.settings.Port))
