@@ -8,7 +8,7 @@
 
 **让 AI 的双手，真正触达你的每一台设备。**
 
-打开网页版 ChatGPT，即可管理多台电脑与服务器：在真实设备上写代码、改配置、跑命令与部署，执行发生在你的机器上，不消耗Codex额度。
+打开网页版 ChatGPT，或接入 Hermes 这类 MCP 客户端，即可管理多台电脑与服务器：在真实设备上写代码、改配置、跑命令与部署，执行发生在你的机器上，不消耗 Codex 额度。
 
 <a href="https://trendshift.io/repositories/136526?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-136526" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/136526/daily?language=Go" alt="uvwt%2Fagentdock | Trendshift" width="250" height="55"/></a>
 
@@ -41,7 +41,7 @@ AgentDock 不提供聊天界面，也不负责模型推理。它专注于解决�
 > 让 AI Agent 在明确的权限边界内操作真实环境，并返回结构化、可追踪、可验证的执行结果。
 
 ```text
-              ChatGPT / Claude / Codex
+              ChatGPT / Claude / Codex / Hermes
                         │
                         │ MCP（可接入多台）
           ┌─────────────┼─────────────┐
@@ -110,6 +110,64 @@ AgentDock 通过 MCP Streamable HTTP 提供工具能力。下面是一个通用�
 }
 ```
 
+
+## 接入 Hermes Agent
+
+Hermes Agent 内置 MCP 客户端，可以通过本机 stdio 或远程 Streamable HTTP 使用 AgentDock。两种方式都不需要 OpenAI API Key。
+
+### 本机 stdio
+
+当 Hermes 和 AgentDock 运行在同一台设备时，优先使用 stdio，避免暴露公网地址：
+
+```bash
+hermes mcp add agentdock \
+  --command /absolute/path/to/agentdock \
+  --args --stdio
+```
+
+该命令会先连接并发现工具，然后询问要启用哪些 AgentDock 工具。若要固定工作目录，也可以直接在 `~/.hermes/config.yaml` 中配置：
+
+```yaml
+mcp_servers:
+  agentdock:
+    command: "/absolute/path/to/agentdock"
+    args: ["--stdio"]
+    env:
+      AGENTDOCK_DEFAULT_DIR: "/absolute/path/to/workspace"
+```
+
+`AGENTDOCK_DEFAULT_DIR` 是可选的。本机 stdio 不需要 AgentDock Bearer Token、OAuth 密码或 Cloudflare Tunnel。
+
+### 远程 Streamable HTTP
+
+当 Hermes 与 AgentDock 位于不同设备、容器或隧道后面时，使用完整的 `/mcp` 地址，并保持认证开启：
+
+```yaml
+mcp_servers:
+  agentdock:
+    url: "https://agent.example.com/mcp"
+    headers:
+      Authorization: "Bearer ${MCP_AGENTDOCK_API_KEY}"
+```
+
+将 `MCP_AGENTDOCK_API_KEY` 放入当前 Hermes Profile 的 `.env`，不要写进 `config.yaml`。如果 AgentDock 使用 OAuth，可以运行：
+
+```bash
+hermes mcp add agentdock \
+  --url "https://agent.example.com/mcp" \
+  --auth oauth
+```
+
+然后按浏览器提示完成授权。不要把 OAuth 密码、Tunnel Token 或 Access Token 放进 MCP URL。
+
+在同一个 Hermes Profile 下验证连接：
+
+```bash
+hermes mcp list
+hermes mcp test agentdock
+```
+
+修改 `mcp_servers` 后请新开 Hermes 会话，因为 MCP 工具会在 Hermes 初始化连接时发现。先让 Hermes 调用 `agentdock_context` 检查运行环境，再执行一个无副作用的只读操作验证工作目录。
 
 ## 核心能力
 

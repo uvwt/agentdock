@@ -8,7 +8,7 @@ English | [简体中文](./README.zh-CN.md)
 
 **Give AI agents secure, controlled access to every machine you operate.**
 
-Open ChatGPT in your browser and manage multiple computers and servers from one conversation. Write code, change configuration, run commands, and deploy in the real environment where the work belongs—without consuming a dedicated Codex coding quota.
+Open ChatGPT in your browser or connect an MCP client such as Hermes to manage multiple computers and servers from one conversation. Write code, change configuration, run commands, and deploy in the real environment where the work belongs—without consuming a dedicated Codex coding quota.
 
 <a href="https://trendshift.io/repositories/136526?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-136526" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/136526/daily?language=Go" alt="uvwt%2Fagentdock | Trendshift" width="250" height="55"/></a>
 
@@ -41,7 +41,7 @@ AgentDock does not provide a chat interface or perform model inference. It focus
 > Let AI agents operate real environments within explicit permission boundaries and return structured, traceable, and verifiable results.
 
 ```text
-              ChatGPT / Claude / Codex
+              ChatGPT / Claude / Codex / Hermes
                         │
                         │ MCP (multiple instances supported)
           ┌─────────────┼─────────────┐
@@ -106,6 +106,56 @@ AgentDock exposes tools over MCP Streamable HTTP. The exact client syntax varies
   }
 }
 ```
+
+## Connect Hermes Agent
+
+Hermes Agent has a native MCP client and can use AgentDock locally over stdio or remotely over Streamable HTTP. No OpenAI API key is required for either path.
+
+### Local stdio
+
+When Hermes and AgentDock run on the same machine, use stdio to avoid a public tunnel:
+
+```bash
+hermes mcp add agentdock \
+  --command /absolute/path/to/agentdock \
+  --args --stdio
+```
+
+The command performs tool discovery and asks which AgentDock tools to enable. For a fixed workspace, the equivalent `~/.hermes/config.yaml` entry is:
+
+```yaml
+mcp_servers:
+  agentdock:
+    command: "/absolute/path/to/agentdock"
+    args: ["--stdio"]
+    env:
+      AGENTDOCK_DEFAULT_DIR: "/absolute/path/to/workspace"
+```
+
+`AGENTDOCK_DEFAULT_DIR` is optional. Local stdio does not need an AgentDock Bearer token, OAuth password, or Cloudflare Tunnel.
+
+### Remote Streamable HTTP
+
+For an AgentDock instance on another machine or behind a tunnel, use its complete `/mcp` URL and keep authentication enabled:
+
+```yaml
+mcp_servers:
+  agentdock:
+    url: "https://agent.example.com/mcp"
+    headers:
+      Authorization: "Bearer ${MCP_AGENTDOCK_API_KEY}"
+```
+
+Store `MCP_AGENTDOCK_API_KEY` in the active Hermes profile's `.env`, not in `config.yaml`. If AgentDock uses OAuth, run `hermes mcp add agentdock --url "https://agent.example.com/mcp" --auth oauth` and complete the browser authorization flow.
+
+Verify the connection from the same Hermes profile:
+
+```bash
+hermes mcp list
+hermes mcp test agentdock
+```
+
+Start a new Hermes session after changing `mcp_servers`, because MCP tools are discovered when Hermes initializes its connections. Use `agentdock_context` for a behavioral check, then perform a harmless read-only operation in the configured workspace.
 
 ## Core capabilities
 

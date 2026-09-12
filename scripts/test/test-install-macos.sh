@@ -115,7 +115,7 @@ test -x "$binary"
 "$binary" --help >/dev/null 2>&1
 test -d "$state_dir"
 test -f "$state_dir/skill-store/bundled-skills.json"
-test -f "$state_dir/skill-store/installed/agentdock-user-guide/1.1.0/SKILL.md"
+test -f "$state_dir/skill-store/installed/agentdock-user-guide/1.2.0/SKILL.md"
 test -f "$state_dir/skill-store/installed/skill-authoring/1.2.0/SKILL.md"
 test -f "$state_dir/skill-store/installed/skill-installation/1.2.1/SKILL.md"
 test -d "$backup_dir"
