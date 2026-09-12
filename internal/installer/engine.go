@@ -84,39 +84,82 @@ func (engine Engine) recoverInterrupted(ctx context.Context, store *Store, reque
 		}
 		return Result{}, err
 	}
+
+	// 卸载事务没有 install rollback journal，不能按安装中断去 Restore。
+	if transaction.Action == ActionUninstall {
+		return Result{}, nil
+	}
+
+	// 终态事务以 transaction.json 为准，不能先读 rollback journal。
+	// 成功安装后旧 journal 损坏或被清掉，都不能阻断下一次 install。
+	switch transaction.State {
+	case updateengine.StateCommitted:
+		if err := commitWindowsActivePointer(transaction.InstallRoot, transaction.TransactionID); err != nil {
+			return resultFromTransaction(transaction), err
+		}
+		discardJournal(store.Root(), transaction.TransactionID)
+		return Result{}, nil
+	case updateengine.StateRolledBack:
+		if err := releaseWindowsTrialPointer(transaction.InstallRoot, transaction.TransactionID); err != nil {
+			return resultFromTransaction(transaction), fmt.Errorf("previous rollback left a trial generation pointer: %w", err)
+		}
+		discardJournal(store.Root(), transaction.TransactionID)
+		return Result{}, nil
+	case "":
+		return Result{}, nil
+	case updateengine.StateFailed:
+		if isExternalRollbackFailure(transaction) {
+			if request.Action == ActionUninstall {
+				return Result{}, nil
+			}
+			result := projectRestoredResult(resultFromTransaction(transaction), transaction, request, false)
+			return result, errors.New("previous OS adapter rollback failed; repair Task/Registry/service state, then run install abandon without --rollback-failed")
+		}
+	}
+
+	// pointer 已随本事务 committed、权威事务还停在 trial：只把事务补写成 committed。
+	// 绝不能按中断 trial 回滚，否则会删掉 committed pointer 仍指向的 generation。
+	if transaction.State == updateengine.StateTrial {
+		owned, err := windowsPointerCommittedBy(transaction.InstallRoot, transaction.TransactionID)
+		if err != nil {
+			return resultFromTransaction(transaction), err
+		}
+		if owned {
+			current, readErr := store.ReadResult(transaction.TransactionID)
+			if readErr != nil {
+				current = resultFromTransaction(transaction)
+			}
+			if _, err := commitPreparedInstall(store, transaction, current); err != nil {
+				return current, err
+			}
+			return Result{}, nil
+		}
+	}
+
 	journal, err := loadJournal(store.Root(), transaction.TransactionID)
 	if err != nil {
 		return Result{}, fmt.Errorf("load interrupted install journal: %w", err)
 	}
-	switch transaction.State {
-	case updateengine.StateCommitted, updateengine.StateRolledBack:
-		return Result{}, nil
-	case updateengine.StateFailed:
-		// rollback_failed 必须重试 Restore。没有 journal 且已经动过文件时，
+
+	if transaction.State == updateengine.StateFailed && journal == nil {
+		// Engine-owned rollback_failed 必须重试 Restore。没有 journal 且已经动过文件时，
 		// 每次 install 都要拒绝，不能第二次当成“已处理完”把 v2 文件当 v1 source。
-		if journal == nil {
-			if installPhaseMayHaveMutatedFiles(transaction.Phase) {
-				return resultFromTransaction(transaction), errors.New("interrupted install has no rollback journal after files may have changed")
-			}
-			return Result{}, nil
+		if installPhaseMayHaveMutatedFiles(transaction.Phase) {
+			return resultFromTransaction(transaction), errors.New("interrupted install has no rollback journal after files may have changed")
 		}
-	case "":
 		return Result{}, nil
 	}
 
 	// 未终结的 install 不能当下一次 known-good source。先按 journal 恢复文件/服务，
 	// 再把权威状态写成 rolled_back 或 rollback_failed。
 	result := resultFromTransaction(transaction)
-	result.Healthy = false
-	result.ActiveVersion = transaction.SourceVersion
-	result.FallbackVersion = transaction.SourceVersion
 	result.Failure = &updateengine.Failure{
-		Code:    "trial-interrupted",
+		Code:    FailureTrialInterrupted,
 		Message: "previous install trial was interrupted before commit",
 		At:      time.Now().UTC(),
 	}
 	if journal == nil {
-		// 没有 journal 就不能宣称文件已回到安装前。
+		result = projectRestoredResult(result, transaction, request, false)
 		completed, completeErr := store.Complete(transaction, updateengine.StateFailed, result)
 		if completeErr != nil {
 			return result, completeErr
@@ -129,25 +172,21 @@ func (engine Engine) recoverInterrupted(ctx context.Context, store *Store, reque
 	rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), installRecoveryTimeout)
 	defer cancel()
 	if rollbackErr := journal.Restore(rollbackCtx, request); rollbackErr != nil {
-		result.Failure.Code = "rollback_failed"
+		result.Failure.Code = FailureRollbackFailed
 		result.Failure.Message = errors.Join(errors.New(result.Failure.Message), rollbackErr).Error()
-		transaction.ActiveVersion = transaction.SourceVersion
-		transaction.FallbackVersion = transaction.SourceVersion
+		result = projectRestoredResult(result, transaction, request, false)
+		transaction.ActiveVersion = result.ActiveVersion
+		transaction.FallbackVersion = result.FallbackVersion
 		completed, completeErr := store.Complete(transaction, updateengine.StateFailed, result)
 		if completeErr != nil {
 			return result, errors.Join(rollbackErr, completeErr)
 		}
 		return completed, rollbackErr
 	}
-	result.ActiveVersion = transaction.SourceVersion
-	result.FallbackVersion = transaction.SourceVersion
-	transaction.ActiveVersion = transaction.SourceVersion
-	transaction.FallbackVersion = transaction.SourceVersion
-	completed, err := store.Complete(transaction, updateengine.StateRolledBack, result)
-	if err != nil {
-		return result, err
-	}
-	return completed, nil
+	result = projectRestoredResult(result, transaction, request, true)
+	transaction.ActiveVersion = result.ActiveVersion
+	transaction.FallbackVersion = result.FallbackVersion
+	return sealRolledBackInstall(store, transaction, result, nil)
 }
 
 func (engine Engine) install(ctx context.Context, store *Store, request Request) (Result, error) {
@@ -183,34 +222,29 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 
 	fail := func(phase Phase, err error, staged stagedInstall) (Result, error) {
 		transaction.Phase = PhaseRollback
-		result.Healthy = false
 		result.Failure = &updateengine.Failure{Code: string(phase) + "_failed", Message: err.Error(), At: time.Now().UTC()}
 		if staged.Journal != nil {
 			if rollbackErr := rollbackInstall(ctx, request, staged); rollbackErr != nil {
-				result.Failure.Code = "rollback_failed"
+				result.Failure.Code = FailureRollbackFailed
 				result.Failure.Message = errors.Join(err, rollbackErr).Error()
-				result.ActiveVersion = transaction.SourceVersion
-				result.FallbackVersion = transaction.SourceVersion
-				transaction.ActiveVersion = transaction.SourceVersion
-				transaction.FallbackVersion = transaction.SourceVersion
+				result = projectRestoredResult(result, transaction, request, false)
+				transaction.ActiveVersion = result.ActiveVersion
+				transaction.FallbackVersion = result.FallbackVersion
 				completed, completeErr := store.Complete(transaction, updateengine.StateFailed, result)
 				if completeErr != nil {
 					return result, errors.Join(err, rollbackErr, completeErr)
 				}
 				return completed, errors.Join(err, rollbackErr)
 			}
-			// 文件和服务已经回到安装前。Version 仍记录失败目标，ActiveVersion 必须是真正在跑的源版本。
-			result.ActiveVersion = transaction.SourceVersion
-			transaction.ActiveVersion = transaction.SourceVersion
-			transaction.FallbackVersion = transaction.SourceVersion
-			result.FallbackVersion = transaction.SourceVersion
-			completed, completeErr := store.Complete(transaction, updateengine.StateRolledBack, result)
-			if completeErr != nil {
-				return result, errors.Join(err, completeErr)
-			}
-			return completed, err
+			// 文件和服务已经回到安装前。Version 仍记录失败目标；
+			// PublicURL / LocalMCPURL / PrivilegeMode 必须是恢复后的 known-good，不能留失败目标。
+			result = projectRestoredResult(result, transaction, request, true)
+			transaction.ActiveVersion = result.ActiveVersion
+			transaction.FallbackVersion = result.FallbackVersion
+			return sealRolledBackInstall(store, transaction, result, err)
 		}
 		transaction.Phase = phase
+		result = projectRestoredResult(result, transaction, request, false)
 		completed, completeErr := store.Complete(transaction, updateengine.StateFailed, result)
 		if completeErr != nil {
 			return result, errors.Join(err, completeErr)
@@ -334,11 +368,10 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 	}
 
 	transaction.Phase = PhaseCommit
-	completed, err := store.Complete(transaction, updateengine.StateCommitted, result)
-	if err != nil {
-		return result, err
+	if err := store.WriteTransaction(transaction); err != nil {
+		return fail(PhaseCommit, err, staged)
 	}
-	return completed, nil
+	return commitPreparedInstall(store, transaction, result)
 }
 
 func installPhaseMayHaveMutatedFiles(phase Phase) bool {
@@ -348,6 +381,72 @@ func installPhaseMayHaveMutatedFiles(phase Phase) bool {
 	default:
 		return true
 	}
+}
+
+// commitPreparedInstall 先把 Windows trial pointer 收敛成 committed，再写权威事务。
+// pointer 失败时 transaction/result 必须仍是 trial，journal 保留，恢复后可以安全重试完成。
+func commitPreparedInstall(store *Store, transaction Transaction, result Result) (Result, error) {
+	if err := commitWindowsActivePointer(transaction.InstallRoot, transaction.TransactionID); err != nil {
+		return result, err
+	}
+	completed, err := store.Complete(transaction, updateengine.StateCommitted, result)
+	if err != nil {
+		return result, err
+	}
+	discardJournal(store.Root(), transaction.TransactionID)
+	return completed, nil
+}
+
+// sealRolledBackInstall 只有 trial pointer 清掉之后才能写成 rolled_back 并丢 journal。
+// 清理失败必须是 failed/rollback_failed，并保留 journal 作为恢复证据。
+func sealRolledBackInstall(store *Store, transaction Transaction, result Result, original error) (Result, error) {
+	if err := releaseWindowsTrialPointer(transaction.InstallRoot, transaction.TransactionID); err != nil {
+		if result.Failure == nil {
+			result.Failure = &updateengine.Failure{At: time.Now().UTC()}
+		}
+		result.Failure.Code = FailureRollbackFailed
+		pointerErr := fmt.Errorf("release windows trial pointer: %w", err)
+		if strings.TrimSpace(result.Failure.Message) == "" {
+			result.Failure.Message = pointerErr.Error()
+		} else {
+			result.Failure.Message = errors.Join(errors.New(result.Failure.Message), pointerErr).Error()
+		}
+		transaction.Phase = PhaseRollback
+		transaction.ActiveVersion = result.ActiveVersion
+		transaction.FallbackVersion = result.FallbackVersion
+		completed, completeErr := store.Complete(transaction, updateengine.StateFailed, result)
+		if completeErr != nil {
+			return result, errors.Join(original, err, completeErr)
+		}
+		return completed, errors.Join(original, err)
+	}
+	transaction.Phase = PhaseRollback
+	transaction.ActiveVersion = result.ActiveVersion
+	transaction.FallbackVersion = result.FallbackVersion
+	completed, completeErr := store.Complete(transaction, updateengine.StateRolledBack, result)
+	if completeErr != nil {
+		return result, errors.Join(original, completeErr)
+	}
+	discardJournal(store.Root(), transaction.TransactionID)
+	return completed, original
+}
+
+func removeWarning(warnings []string, remove string) []string {
+	filtered := warnings[:0]
+	for _, warning := range warnings {
+		if warning != remove {
+			filtered = append(filtered, warning)
+		}
+	}
+	return filtered
+}
+
+func windowsUninstallAdapterWarnings(request Request) []string {
+	if runtimeGOOS() != "windows" || request.PurgeData {
+		return nil
+	}
+	// Engine 停进程不是整个产品卸载完成。Task/Registry/文件仍由 OS adapter 负责。
+	return []string{"windows_adapter_pending"}
 }
 
 func bindInstallTransaction(store *Store, request Request) (Transaction, Result, error) {
@@ -374,13 +473,20 @@ func (engine Engine) commit(store *Store, request Request) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("commit: %w", err)
 	}
+	if transaction.Action == ActionUninstall {
+		current.Warnings = removeWarning(current.Warnings, "windows_adapter_pending")
+	}
 	if transaction.State == updateengine.StateCommitted && current.TransactionID == transaction.TransactionID {
+		if err := commitWindowsActivePointer(transaction.InstallRoot, transaction.TransactionID); err != nil {
+			return current, err
+		}
+		discardJournal(store.Root(), transaction.TransactionID)
 		return current, nil
 	}
 	if transaction.State != updateengine.StateTrial {
 		return current, fmt.Errorf("install commit 只能结束 trial，当前 state=%s transaction=%s", transaction.State, transaction.TransactionID)
 	}
-	return store.Complete(transaction, updateengine.StateCommitted, current)
+	return commitPreparedInstall(store, transaction, current)
 }
 
 func (engine Engine) abandon(store *Store, request Request) (Result, error) {
@@ -389,24 +495,38 @@ func (engine Engine) abandon(store *Store, request Request) (Result, error) {
 		return Result{}, fmt.Errorf("abandon: %w", err)
 	}
 
-	seal := func(state updateengine.State, code, message string) (Result, error) {
-		current.ActiveVersion = transaction.SourceVersion
-		current.FallbackVersion = transaction.SourceVersion
-		current.Healthy = false
-		transaction.Phase = PhaseRollback
-		transaction.ActiveVersion = transaction.SourceVersion
-		transaction.FallbackVersion = transaction.SourceVersion
+	seal := func(state updateengine.State, code, message string, restored bool) (Result, error) {
 		current.Failure = &updateengine.Failure{Code: code, Message: message, At: time.Now().UTC()}
-		return store.Complete(transaction, state, current)
+		current = projectRestoredResult(current, transaction, request, restored)
+		transaction.Phase = PhaseRollback
+		transaction.ActiveVersion = current.ActiveVersion
+		transaction.FallbackVersion = current.FallbackVersion
+		if state == updateengine.StateRolledBack {
+			return sealRolledBackInstall(store, transaction, current, nil)
+		}
+		completed, err := store.Complete(transaction, state, current)
+		if err != nil {
+			return current, err
+		}
+		return completed, nil
 	}
 
 	if request.RollbackFailed {
-		return seal(updateengine.StateFailed, "rollback_failed", "OS adapter 回滚外部状态失败，权威事务不能写成 rolled_back")
+		return seal(updateengine.StateFailed, FailureExternalRollbackFailed, "OS adapter 回滚外部状态失败，权威事务不能写成 rolled_back", false)
 	}
 	if current.TransactionID == transaction.TransactionID && current.State == updateengine.StateRolledBack && current.Phase == PhaseRollback {
+		if err := releaseWindowsTrialPointer(transaction.InstallRoot, transaction.TransactionID); err != nil {
+			return seal(updateengine.StateFailed, FailureRollbackFailed, "release windows trial pointer: "+err.Error(), false)
+		}
+		discardJournal(store.Root(), transaction.TransactionID)
 		return current, nil
 	}
 	if current.TransactionID == transaction.TransactionID && current.State == updateengine.StateFailed {
+		if isExternalRollbackFailure(transaction) {
+			// 明确恢复入口：操作者已经修好 Task/Registry/服务后，再次 abandon（不带 --rollback-failed）
+			// 才能把外部失败收敛成 rolled_back。Engine journal 成功不能代替这一步。
+			return seal(updateengine.StateRolledBack, FailureAbandoned, "operator confirmed external rollback is complete", true)
+		}
 		return current, nil
 	}
 	switch transaction.State {
@@ -414,12 +534,13 @@ func (engine Engine) abandon(store *Store, request Request) (Result, error) {
 	default:
 		return current, fmt.Errorf("install abandon 不能处理 state=%s", transaction.State)
 	}
-	return seal(updateengine.StateRolledBack, "abandoned", "OS adapter 已完成外部回滚，权威状态撤销为 rolled_back")
+	return seal(updateengine.StateRolledBack, FailureAbandoned, "OS adapter 已完成外部回滚，权威状态撤销为 rolled_back", true)
 }
 
 func (engine Engine) uninstall(ctx context.Context, store *Store, request Request) (Result, error) {
 	platform := currentPlatform()
-	transaction, err := newTransaction(request, platform, existingVersion(request))
+	sourceVersion := existingVersion(request)
+	transaction, err := newTransaction(request, platform, sourceVersion)
 	if err != nil {
 		return Result{}, err
 	}
@@ -427,10 +548,13 @@ func (engine Engine) uninstall(ctx context.Context, store *Store, request Reques
 	if err := store.WriteTransaction(transaction); err != nil {
 		return Result{}, err
 	}
-	if err := uninstallPlatform(ctx, request); err != nil {
+
+	fail := func(err error) (Result, error) {
 		result := Result{
-			Failure: &updateengine.Failure{Code: "uninstall_failed", Message: err.Error(), At: time.Now().UTC()},
-			Version: request.Version,
+			Failure:       &updateengine.Failure{Code: FailureUninstallFailed, Message: err.Error(), At: time.Now().UTC()},
+			Version:       request.Version,
+			ActiveVersion: sourceVersion,
+			Healthy:       false,
 		}
 		completed, completeErr := store.Complete(transaction, updateengine.StateFailed, result)
 		if completeErr != nil {
@@ -438,22 +562,68 @@ func (engine Engine) uninstall(ctx context.Context, store *Store, request Reques
 		}
 		return completed, err
 	}
-	result := Result{Version: request.Version, Healthy: false}
+
+	if err := uninstallPlatform(ctx, request); err != nil {
+		return fail(err)
+	}
+	if request.PurgeConfig && !request.PurgeData {
+		if err := purgeInstallConfig(request); err != nil {
+			return fail(err)
+		}
+	}
+	if request.PurgeData {
+		if err := purgeInstallData(request); err != nil {
+			return fail(err)
+		}
+		// runtime-root 已经删掉，不能再写 journal 把卸载成功伪装成“状态还在”。
+		now := time.Now().UTC()
+		return Result{
+			SchemaVersion: SchemaVersion,
+			TransactionID: transaction.TransactionID,
+			Platform:      platform,
+			Action:        ActionUninstall,
+			State:         updateengine.StateCommitted,
+			Phase:         PhaseCommit,
+			Version:       request.Version,
+			ActiveVersion: sourceVersion,
+			Healthy:       false,
+			StartedAt:     transaction.StartedAt,
+			CompletedAt:   now,
+		}, nil
+	}
+
+	result := Result{
+		Version:       request.Version,
+		ActiveVersion: sourceVersion,
+		Healthy:       false,
+		Warnings:      windowsUninstallAdapterWarnings(request),
+	}
+	if request.DeferCommit {
+		// Windows OS adapter 还要删 Task/Registry/文件。现在只能停在 trial，
+		// 不能把 Engine 停进程写成“整个产品已经卸载完成”。
+		transaction.State = updateengine.StateTrial
+		transaction.Phase = PhaseCommit
+		if err := store.WriteTransaction(transaction); err != nil {
+			return result, err
+		}
+		result.SchemaVersion = SchemaVersion
+		result.TransactionID = transaction.TransactionID
+		result.Platform = platform
+		result.Action = ActionUninstall
+		result.State = updateengine.StateTrial
+		result.Phase = PhaseCommit
+		result.StartedAt = transaction.StartedAt
+		if err := store.WriteResult(result); err != nil {
+			return result, err
+		}
+		return result, nil
+	}
+
 	completed, err := store.Complete(transaction, updateengine.StateCommitted, result)
 	if err != nil {
 		return result, err
 	}
-	if request.PurgeConfig {
-		for _, name := range []string{"agentdock.env", "cloudflared.env", "desktop-runtime.json", "runtime.json", "active-version.json"} {
-			_ = os.Remove(filepath.Join(request.RuntimeRoot, name))
-		}
-	}
-	if request.PurgeData {
-		_ = os.RemoveAll(request.InstallRoot)
-		if request.RuntimeRoot != request.InstallRoot {
-			_ = os.RemoveAll(request.RuntimeRoot)
-		}
-	}
+	discardJournal(store.Root(), transaction.TransactionID)
 	return completed, nil
 }
 
@@ -530,25 +700,90 @@ func existingVersion(request Request) string {
 	}
 	transaction, err := store.ReadTransaction()
 	if err == nil {
-		switch transaction.State {
-		case updateengine.StateCommitted:
-			if version := strings.TrimSpace(transaction.ActiveVersion); version != "" {
-				return version
-			}
-			return strings.TrimSpace(transaction.TargetVersion)
-		case updateengine.StateRolledBack, updateengine.StateFailed, updateengine.StateTrial, updateengine.StateStaged, updateengine.StateRollingBack:
-			// trial / rollback_failed 的 ActiveVersion 可能仍是失败目标，只能回到 source。
-			return strings.TrimSpace(transaction.SourceVersion)
+		if version := versionFromInstallTransaction(transaction); version != "" {
+			return version
 		}
 	}
 	current, err := store.ReadCurrentResult()
-	if err == nil && current.State == updateengine.StateCommitted {
-		if version := strings.TrimSpace(current.ActiveVersion); version != "" {
+	if err == nil {
+		if version := versionFromInstallResult(current); version != "" {
 			return version
 		}
-		return strings.TrimSpace(current.Version)
 	}
 	return windowsCommittedGeneration(request)
+}
+
+func versionFromInstallTransaction(transaction Transaction) string {
+	switch transaction.Action {
+	case ActionUninstall:
+		// 卸载终态不是一次成功安装。known-good 是卸载前仍保留的程序版本，
+		// 不能把 target_version=unknown 当成下一次 install 的 source。
+		return knownInstallVersion(transaction.SourceVersion, transaction.ActiveVersion)
+	}
+	switch transaction.State {
+	case updateengine.StateCommitted:
+		if version := knownInstallVersion(transaction.ActiveVersion, transaction.TargetVersion); version != "" {
+			return version
+		}
+	case updateengine.StateRolledBack, updateengine.StateFailed, updateengine.StateTrial, updateengine.StateStaged, updateengine.StateRollingBack:
+		return knownInstallVersion(transaction.SourceVersion)
+	}
+	return ""
+}
+
+func versionFromInstallResult(result Result) string {
+	if result.Action == ActionUninstall {
+		return knownInstallVersion(result.ActiveVersion)
+	}
+	if result.State != updateengine.StateCommitted {
+		return ""
+	}
+	return knownInstallVersion(result.ActiveVersion, result.Version)
+}
+
+func knownInstallVersion(candidates ...string) string {
+	for _, candidate := range candidates {
+		version := strings.TrimSpace(candidate)
+		if version != "" && version != "unknown" && version != "uninstalled" {
+			return version
+		}
+	}
+	return ""
+}
+
+func isExternalRollbackFailure(transaction Transaction) bool {
+	if transaction.State != updateengine.StateFailed || transaction.Failure == nil {
+		return false
+	}
+	switch transaction.Failure.Code {
+	case FailureExternalRollbackFailed:
+		return true
+	case FailureRollbackFailed:
+		// 兼容本轮之前 abandon --rollback-failed 写入的 rollback_failed + OS adapter 文案。
+		return strings.Contains(transaction.Failure.Message, "OS adapter")
+	default:
+		return false
+	}
+}
+
+func projectRestoredResult(result Result, transaction Transaction, request Request, restored bool) Result {
+	result.Healthy = false
+	result.ActiveVersion = transaction.SourceVersion
+	result.FallbackVersion = transaction.SourceVersion
+	result.LocalMCPURL = ""
+	result.PublicURL = ""
+	result.PrivilegeMode = ""
+	if !restored {
+		return result
+	}
+	activated, err := readActivatedInstall(request)
+	if err != nil {
+		return result
+	}
+	result.LocalMCPURL = activated.LocalMCPURL
+	result.PublicURL = activated.PublicURL
+	result.PrivilegeMode = activated.PrivilegeMode
+	return result
 }
 
 func windowsCommittedGeneration(request Request) string {

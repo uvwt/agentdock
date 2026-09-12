@@ -23,8 +23,21 @@ const (
 	// 只有 OS adapter 确认外部状态已落地之后才能调用；Engine 自己不再抢先 commit。
 	ActionCommit Action = "commit"
 	// ActionAbandon 只改权威事务状态，不代替真实文件/注册表/服务回滚。
-	// 调用方必须先完成外部 rollback：成功后写 rolled_back，rollback 自身失败则带 RollbackFailed 写 failed/rollback_failed。
+	// 调用方必须先完成外部 rollback：成功后写 rolled_back。
+	// rollback 自身失败则带 RollbackFailed 写 failed/external_rollback_failed，
+	// 这会阻断下一次自动 install；修复 OS adapter 状态后再 abandon 一次（不要带 --rollback-failed）才是恢复入口。
 	ActionAbandon Action = "abandon"
+)
+
+const (
+	// FailureRollbackFailed 是 Engine journal Restore 失败，下一次 install 可以重试 Restore。
+	FailureRollbackFailed = "rollback_failed"
+	// FailureExternalRollbackFailed 是 OS adapter（Task/Registry/PowerShell 等）回滚失败。
+	// Engine journal 没有能力修好外部状态，禁止只凭 Restore 成功就放行下一次 install。
+	FailureExternalRollbackFailed = "external_rollback_failed"
+	FailureTrialInterrupted       = "trial-interrupted"
+	FailureUninstallFailed        = "uninstall_failed"
+	FailureAbandoned              = "abandoned"
 )
 
 type Action string
@@ -224,7 +237,7 @@ func newTransaction(request Request, platform, sourceVersion string) (Transactio
 	}
 	now := time.Now().UTC()
 	target := strings.TrimSpace(request.Version)
-	if target == "" {
+	if target == "" && request.Action != ActionUninstall {
 		target = "unknown"
 	}
 	return Transaction{

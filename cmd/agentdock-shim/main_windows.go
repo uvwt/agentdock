@@ -89,7 +89,9 @@ func resolveActiveWithRecovery(root string, store *updateengine.Store, layout up
 	transaction, transactionErr := store.ReadTransaction()
 	if transactionErr != nil {
 		if active.State == updateengine.StateTrial {
-			return updateengine.ActiveVersion{}, fmt.Errorf("read interrupted update transaction: %w", transactionErr)
+			// Installer fresh bootstrap 把 pointer 停在 trial，直到 install commit。
+			// shim 恢复只认 update/transaction.json；没有这份 journal 就不能把未完成安装当 committed 启动。
+			return updateengine.ActiveVersion{}, fmt.Errorf("active generation is still a trial and no update transaction is present; refusing to launch an uncommitted installer generation: %w", transactionErr)
 		}
 		return active, nil
 	}

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -545,21 +544,30 @@ func stageWindowsPayload(request Request, journal *rollbackJournal) (stagedInsta
 	if err != nil {
 		return stagedInstall{}, err
 	}
+	// 必须在 target trial pointer 发布之前记录旧 Core/Tunnel 运行态，否则 status 会解析到
+	// 新 generation，失败回滚时就无法知道是否应重启 known-good source。
+	if err := snapshotWindowsRuntimeState(request, journal); err != nil {
+		return stagedInstall{}, err
+	}
 	// Windows generation 只能有一个事务 owner：
 	// 升级走 Update Engine，首次发布走 Setup bootstrap 或下面的 publish。
 	// 已有 active-version / generation 时 Installer 只附着，禁止再删再写同一目录。
-	if strings.TrimSpace(request.PayloadDir) == "" || windowsGenerationAlreadyOwned(request, layout) {
+	if strings.TrimSpace(request.PayloadDir) == "" || windowsGenerationAlreadyOwned(request) {
 		return attachWindowsGeneration(request, journal, layout)
 	}
 	return publishWindowsGeneration(request, journal, layout)
 }
 
-func windowsGenerationAlreadyOwned(request Request, layout updateengine.WindowsLayout) bool {
-	if fileExists(filepath.Join(request.InstallRoot, "active-version.json")) {
-		return true
+func windowsGenerationAlreadyOwned(request Request) bool {
+	// 只有 committed pointer 且它已经是本次目标版本时，Installer 才能附着。
+	// 不同版本升级必须由 Installer 自己发布 target trial + source fallback，不能先让
+	// Update Engine 把 target committed 后再继续 OS adapter，否则后续失败无法原子回退。
+	active := windowsCommittedGeneration(request)
+	if active == "" {
+		return false
 	}
-	version := strings.TrimSpace(request.Version)
-	return version != "" && fileExists(layout.GenerationCore(version))
+	target := updateengine.NormalizeVersion(request.Version)
+	return target == "" || updateengine.NormalizeVersion(active) == target
 }
 
 func publishWindowsGeneration(request Request, journal *rollbackJournal, layout updateengine.WindowsLayout) (stagedInstall, error) {
@@ -622,21 +630,25 @@ func publishWindowsGeneration(request Request, journal *rollbackJournal, layout 
 	if skillDir := filepath.Join(generation, "core-skills"); dirExists(skillDir) {
 		staged.SkillBundle = skillDir
 	}
-	// 第一次发布 generation 时 Installer 就是 owner，立即写入 committed pointer。
-	// 已有 active-version 的路径不会走进 publish。pointer 必须进 journal，
-	// 否则 --defer-commit 失败后 generation 被删，shim 仍会指向已删除目录。
+	// Installer 是本次 target generation 的唯一事务 owner。已有 committed source 时把它
+	// 写进 fallback，外层 Task/Registry 适配器即使在 Engine commit 之后失败，也能依据
+	// TransactionID 把 pointer 原子恢复到 known-good source。
 	activePath := filepath.Join(request.InstallRoot, "active-version.json")
+	fallbackVersion := ""
+	if store, err := updateengine.NewStore(request.InstallRoot); err == nil {
+		if active, err := store.ReadActive(); err == nil && active.State == updateengine.StateCommitted {
+			fallbackVersion = active.ActiveVersion
+		}
+	}
 	if err := journal.Snapshot(activePath); err != nil {
 		return stagedInstall{}, err
 	}
-	store, err := updateengine.NewStore(request.InstallRoot)
-	if err != nil {
-		return stagedInstall{}, err
-	}
-	if err := store.WriteActive(updateengine.ActiveVersion{
-		SchemaVersion: updateengine.SchemaVersion,
-		ActiveVersion: version,
-		State:         updateengine.StateCommitted,
+	if err := writeWindowsActivePointer(request.InstallRoot, updateengine.ActiveVersion{
+		SchemaVersion:   updateengine.SchemaVersion,
+		ActiveVersion:   version,
+		FallbackVersion: fallbackVersion,
+		State:           updateengine.StateTrial,
+		TransactionID:   journal.TransactionID,
 	}); err != nil {
 		return stagedInstall{}, err
 	}
@@ -687,107 +699,6 @@ func attachWindowsGeneration(request Request, journal *rollbackJournal, layout u
 	return staged, nil
 }
 
-func uninstallPlatform(ctx context.Context, request Request) error {
-	switch runtime.GOOS {
-	case "darwin":
-		if err := uninstallDarwin(ctx, request); err != nil {
-			return err
-		}
-	case "windows":
-		if err := uninstallWindows(ctx, request); err != nil {
-			return err
-		}
-	}
-	manager := request.ServiceManager
-	if manager == "auto" {
-		manager = detectLinuxServiceManager(request)
-	}
-	if err := stopManagedServices(ctx, request, manager); err != nil {
-		return err
-	}
-	removeManagedUnits(request, manager)
-	return nil
-}
-
-func uninstallDarwin(ctx context.Context, request Request) error {
-	agentsDir := request.LaunchAgentsDir
-	if agentsDir == "" {
-		// Linux 布局测试会在 Darwin 上跑 uninstall，不能去 bootout 当前用户真实 LaunchAgent。
-		if request.SystemdDir != "" || request.OpenRCDir != "" {
-			return nil
-		}
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return err
-		}
-		agentsDir = filepath.Join(home, "Library", "LaunchAgents")
-	}
-	domain := "gui/" + strconv.Itoa(currentUnixUID())
-	for _, label := range []string{darwinCLITunnelLabel, darwinCLICoreLabel} {
-		loaded := exec.CommandContext(ctx, "launchctl", "print", domain+"/"+label).Run() == nil
-		if loaded {
-			if err := exec.CommandContext(ctx, "launchctl", "bootout", domain+"/"+label).Run(); err != nil {
-				return fmt.Errorf("无法停止 LaunchAgent %s: %w", label, err)
-			}
-			if exec.CommandContext(ctx, "launchctl", "print", domain+"/"+label).Run() == nil {
-				return fmt.Errorf("LaunchAgent 仍在运行，未删除服务文件：%s", label)
-			}
-		}
-		_ = os.Remove(filepath.Join(agentsDir, label+".plist"))
-	}
-	return nil
-}
-
-func uninstallWindows(ctx context.Context, request Request) error {
-	taskName := strings.TrimSpace(request.TaskName)
-	if taskName == "" {
-		taskName = "AgentDock"
-	}
-	_ = exec.CommandContext(ctx, "schtasks", "/End", "/TN", taskName).Run()
-	_ = exec.CommandContext(ctx, "schtasks", "/Change", "/TN", taskName, "/DISABLE").Run()
-	if binary := windowsServiceBinary(request); binary != "" {
-		_ = exec.CommandContext(ctx, binary, "service", "stop", "--runtime-root", request.RuntimeRoot).Run()
-		_ = exec.CommandContext(ctx, binary, "tunnel", "stop", "--runtime-root", request.RuntimeRoot).Run()
-	}
-	return nil
-}
-
-func stopManagedServices(ctx context.Context, request Request, manager string) error {
-	names := []string{request.ServiceName, request.ServiceName + "-cloudflared"}
-	for _, name := range names {
-		if strings.TrimSpace(name) == "" {
-			continue
-		}
-		switch manager {
-		case "systemd":
-			_ = exec.CommandContext(ctx, "systemctl", "disable", "--now", name).Run()
-		case "openrc":
-			_ = exec.CommandContext(ctx, "rc-service", name, "stop").Run()
-			_ = exec.CommandContext(ctx, "rc-update", "del", name, "default").Run()
-		}
-	}
-	return nil
-}
-
-func removeManagedUnits(request Request, manager string) {
-	switch manager {
-	case "systemd":
-		systemdDir := request.SystemdDir
-		if systemdDir == "" {
-			systemdDir = "/etc/systemd/system"
-		}
-		_ = os.Remove(filepath.Join(systemdDir, request.ServiceName+".service"))
-		_ = os.Remove(filepath.Join(systemdDir, request.ServiceName+"-cloudflared.service"))
-	case "openrc":
-		openRCDir := request.OpenRCDir
-		if openRCDir == "" {
-			openRCDir = "/etc/init.d"
-		}
-		_ = os.Remove(filepath.Join(openRCDir, request.ServiceName))
-		_ = os.Remove(filepath.Join(openRCDir, request.ServiceName+"-cloudflared"))
-	}
-}
-
 func detectLinuxServiceManager(request Request) string {
 	if request.SystemdDir != "" {
 		return "systemd"
@@ -811,6 +722,117 @@ func writeUnixManifest(path string, manifest unixRuntimeManifest) error {
 	}
 	data = append(data, '\n')
 	return atomicfile.Write(path, data, 0o644)
+}
+
+func writeWindowsActivePointer(installRoot string, active updateengine.ActiveVersion) error {
+	store, err := updateengine.NewStore(installRoot)
+	if err != nil {
+		return err
+	}
+	return store.WriteActive(active)
+}
+
+func commitWindowsActivePointer(installRoot, transactionID string) error {
+	store, err := updateengine.NewStore(installRoot)
+	if err != nil {
+		return err
+	}
+	active, err := store.ReadActive()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if active.State == updateengine.StateCommitted {
+		return nil
+	}
+	if active.State != updateengine.StateTrial {
+		return fmt.Errorf("active generation state=%s，不能随 install commit 收敛", active.State)
+	}
+	if strings.TrimSpace(transactionID) != "" && active.TransactionID != transactionID {
+		return fmt.Errorf("active generation trial %s 与 install 事务 %s 不一致", active.TransactionID, transactionID)
+	}
+	// 保留 TransactionID，崩溃后 recover 能认出“本事务已经 committed pointer”，
+	// 从而把 trial 事务补写成 committed，而不是按中断安装回滚 generation。
+	return store.WriteActive(updateengine.ActiveVersion{
+		SchemaVersion:   updateengine.SchemaVersion,
+		ActiveVersion:   active.ActiveVersion,
+		FallbackVersion: active.FallbackVersion,
+		State:           updateengine.StateCommitted,
+		TransactionID:   transactionID,
+	})
+}
+
+func windowsPointerCommittedBy(installRoot, transactionID string) (bool, error) {
+	transactionID = strings.TrimSpace(transactionID)
+	if transactionID == "" {
+		return false, nil
+	}
+	store, err := updateengine.NewStore(installRoot)
+	if err != nil {
+		return false, err
+	}
+	active, err := store.ReadActive()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return active.State == updateengine.StateCommitted && active.TransactionID == transactionID, nil
+}
+
+func releaseWindowsTrialPointer(installRoot, transactionID string) error {
+	store, err := updateengine.NewStore(installRoot)
+	if err != nil {
+		return err
+	}
+	active, err := store.ReadActive()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	want := strings.TrimSpace(transactionID)
+	if want == "" || active.TransactionID != want {
+		return nil
+	}
+	if active.State != updateengine.StateTrial && active.State != updateengine.StateCommitted {
+		return nil
+	}
+	if fallback := updateengine.NormalizeVersion(active.FallbackVersion); fallback != "" {
+		return store.WriteActive(updateengine.ActiveVersion{
+			SchemaVersion: updateengine.SchemaVersion,
+			ActiveVersion: fallback,
+			State:         updateengine.StateCommitted,
+		})
+	}
+	if err := os.Remove(store.ActivePath()); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func readActivatedInstall(request Request) (activatedInstall, error) {
+	if runtime.GOOS == "windows" {
+		manifest, err := desktopruntime.Load(filepath.Join(request.RuntimeRoot, "runtime.json"))
+		if err != nil {
+			return activatedInstall{}, err
+		}
+		return activatedInstall{
+			LocalMCPURL:   manifest.LocalMCPURL,
+			PublicURL:     manifest.PublicURL,
+			PrivilegeMode: manifest.PrivilegeMode,
+			ActiveVersion: windowsCommittedGeneration(request),
+		}, nil
+	}
+	probe := request
+	probe.ServerURL = ""
+	probe.Host = ""
+	probe.Port = 0
+	return resultFromEnv(filepath.Join(request.RuntimeRoot, "agentdock.env"), probe)
 }
 
 func resultFromEnv(envFile string, request Request) (activatedInstall, error) {

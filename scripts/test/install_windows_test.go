@@ -125,15 +125,15 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"scheduled-task-recovery-",
 		"Recovery files: $taskRecoveryPath",
 		"$taskTransactionCommitted = $taskTransactionStarted",
-		"Write-ActiveVersionState",
+		"function Write-ActiveVersionState",
+		"Installer Engine owns the fresh generation pointer",
+		"Incomplete installer generation pointer",
 		"active-version.json",
 		"Name = 'active-version.json'",
 		"Name = 'update-transaction.json'",
 		"Name = 'update-result.json'",
 		"$versionsDir = Join-Path $runtimeDir 'versions'",
 		"Copy-Item -LiteralPath $sourceWSLHelperDir -Destination (Join-Path $generationStagingDirectory 'wsl-helper') -Recurse -Force",
-		"Delegating Setup upgrade to the AgentDock Update Engine",
-		"update --local-archive $archivePath --checksum $checksumPath --target-version $payloadVersion",
 		"Resolving pending AgentDock generation transaction before Setup continues",
 		"$recoveryOutput = @(& $destinationBinary version --json 2>&1)",
 		"Setup will not modify an unresolved generation",
@@ -183,10 +183,21 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	if stageCall < 0 || stageCall > replaceCall {
 		t.Fatal("install.ps1 must publish the complete generation before installing stable shims")
 	}
-	upgradeHandledCall := strings.Index(script, "$generationUpgradeHandled = $true")
-	upgradeShimRefreshCall := strings.LastIndex(script, "Install-AgentDockBinary -SourceBinary $sourceCoreShim -DestinationBinary $destinationBinary")
-	if upgradeHandledCall < 0 || upgradeShimRefreshCall <= upgradeHandledCall {
-		t.Fatal("Setup generation upgrades must refresh the stable CUI shim after the Update Engine reaches a terminal result")
+	probeCall := strings.Index(script, "install --engine-ready")
+	if probeCall < 0 || probeCall > stageCall {
+		t.Fatal("Engine readiness must be known before any generation Move-Item")
+	}
+	if !strings.Contains(script, "$engineOwnsTargetGeneration = $engineReady -and (") {
+		t.Fatal("fresh and cross-version target generations must be owned by the Installer Engine")
+	}
+	if !strings.Contains(script, "if (-not $engineOwnsTargetGeneration)") {
+		t.Fatal("legacy/same-version PowerShell generation publish must be isolated from Installer-owned targets")
+	}
+	if !strings.Contains(script, "PowerShell does not pre-commit it") {
+		t.Fatal("Engine --payload-dir must be the sole fresh/cross-version generation source")
+	}
+	if strings.Contains(script, "update --local-archive") || strings.Contains(script, "Delegating Setup upgrade to the AgentDock Update Engine") {
+		t.Fatal("Setup must not commit a target generation through Update Engine before Installer/OS adapter commit")
 	}
 	if strings.Contains(script, "Install-AgentDockBinary -SourceBinary $sourceBinary -DestinationBinary $destinationBinary") {
 		t.Fatal("install.ps1 must not restore the legacy in-place Core replacement path")
@@ -205,6 +216,9 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	}
 	if !strings.Contains(script, "'--tunnel-mode', $resolvedTunnelMode") {
 		t.Fatal("Engine must receive the real resolved tunnel mode, including quick")
+	}
+	if strings.Contains(script, "Write-ActiveVersionState -Path $activeVersionPath") {
+		t.Fatal("fresh bootstrap must not write committed active-version.json before Installer commit")
 	}
 	if !strings.Contains(script, "'--defer-commit'") {
 		t.Fatal("Windows Engine install must defer commit until the adapter finishes")
@@ -368,10 +382,37 @@ func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
 		"--task-name",
 		"--runtime-root",
 		"-Verb RunAs",
+		"--defer-commit",
+		"install', 'commit'",
+		"Engine stopping Core/Tunnel/task is not the whole product uninstall",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("uninstall-windows.ps1 missing %q", want)
 		}
+	}
+	uninstallCall := strings.Index(script, "'uninstall'")
+	taskCall := strings.Index(script, "Remove-AgentDockScheduledTask")
+	registryCall := strings.LastIndex(script, "Remove-RegistryValueIfPresent -Path $runKey")
+	commitCall := strings.Index(script, "install', 'commit'")
+	fileCall := strings.Index(script, "Remove-DirectoryWithRetry -Path $InstallDir")
+	purgeCall := strings.Index(script, "Remove-DirectoryWithRetry -Path (Join-Path $userHome '.agentdock')")
+	if uninstallCall < 0 || taskCall < 0 || uninstallCall > taskCall {
+		t.Fatal("Engine uninstall must run before Task/Registry adapter work")
+	}
+	if commitCall < 0 || registryCall < 0 || commitCall < registryCall {
+		t.Fatal("Engine uninstall commit must wait until Task/Registry removal")
+	}
+	if fileCall < 0 || commitCall < fileCall {
+		t.Fatal("Engine uninstall commit must happen only after install files are removed")
+	}
+	if purgeCall < 0 || commitCall < purgeCall {
+		t.Fatal("PurgeState user data removal must complete before uninstall is committed")
+	}
+	if strings.Contains(script, "--purge-data") {
+		t.Fatal("Windows adapter must not let Engine purge state/commit before Task/Registry/file cleanup")
+	}
+	if !strings.Contains(script, "$engineCommitBinary") {
+		t.Fatal("uninstall must preserve an ephemeral Engine executable so product files can be removed before commit")
 	}
 }
 func TestWindowsTaskAdminUsesNativeAgentDockHelper(t *testing.T) {

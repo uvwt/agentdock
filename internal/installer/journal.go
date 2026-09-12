@@ -8,16 +8,18 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 // rollbackJournal 同时记录文件快照和服务运行态。
 // 回滚顺序必须是：停掉新进程 → 还原文件 → 重载 unit → 按安装前状态拉起旧服务。
 // 只有 Restore 成功才允许把事务写成 rolled_back；还原失败必须是 failed/rollback_failed。
 type rollbackJournal struct {
-	Dir      string           `json:"dir"`
-	Backups  []journalBackup  `json:"backups"`
-	Created  []string         `json:"created"`
-	Services []journalService `json:"services,omitempty"`
+	Dir           string           `json:"dir"`
+	TransactionID string           `json:"transaction_id,omitempty"`
+	Backups       []journalBackup  `json:"backups"`
+	Created       []string         `json:"created"`
+	Services      []journalService `json:"services,omitempty"`
 }
 
 // journalService 记住安装前服务是否在跑，以及本次事务有没有动过它。
@@ -41,7 +43,8 @@ type journalBackup struct {
 
 func newJournal(stateRoot, transactionID string) *rollbackJournal {
 	return &rollbackJournal{
-		Dir: filepath.Join(stateRoot, "install", "rollback", transactionID),
+		Dir:           filepath.Join(stateRoot, "install", "rollback", transactionID),
+		TransactionID: transactionID,
 	}
 }
 
@@ -59,7 +62,20 @@ func loadJournal(stateRoot, transactionID string) (*rollbackJournal, error) {
 		return nil, fmt.Errorf("parse rollback journal: %w", err)
 	}
 	journal.Dir = dir
+	if journal.TransactionID == "" {
+		journal.TransactionID = transactionID
+	}
 	return &journal, nil
+}
+
+func discardJournal(stateRoot, transactionID string) {
+	transactionID = strings.TrimSpace(transactionID)
+	if stateRoot == "" || transactionID == "" {
+		return
+	}
+	// committed / rolled_back 不再依赖 rollback journal。残留 journal 只是垃圾，
+	// 删除失败不能把一次已经终态的事务打成失败。
+	_ = os.RemoveAll(filepath.Join(stateRoot, "install", "rollback", transactionID))
 }
 
 func (journal *rollbackJournal) Snapshot(path string) error {
@@ -105,6 +121,18 @@ func (journal *rollbackJournal) NoteService(service journalService) error {
 	}
 	journal.Services = append(journal.Services, service)
 	return journal.persist()
+}
+
+func (journal *rollbackJournal) hasService(name string) bool {
+	if journal == nil {
+		return false
+	}
+	for _, service := range journal.Services {
+		if service.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (journal *rollbackJournal) updateService(name string, mutate func(*journalService)) error {

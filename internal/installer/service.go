@@ -270,13 +270,67 @@ func startDarwinTunnel(ctx context.Context, request Request, journal *rollbackJo
 	})
 }
 
+func snapshotWindowsRuntimeState(request Request, journal *rollbackJournal) error {
+	if !request.StartService || !fileExists(filepath.Join(request.RuntimeRoot, "runtime.json")) {
+		return nil
+	}
+	binary := windowsServiceBinary(request)
+	if binary == "" {
+		return fmt.Errorf("Windows 状态快照找不到 agentdock 二进制")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for _, component := range []struct {
+		command string
+		name    string
+	}{
+		{command: "service", name: "agentdock"},
+		{command: "tunnel", name: "agentdock-tunnel"},
+	} {
+		running, err := probeWindowsComponentRunning(ctx, binary, component.command, request.RuntimeRoot)
+		if err != nil {
+			return err
+		}
+		if err := journal.NoteService(journalService{Manager: "windows", Name: component.name, WasActive: running}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func probeWindowsComponentRunning(ctx context.Context, binary, component, runtimeRoot string) (bool, error) {
+	cmd := exec.CommandContext(ctx, binary, component, "status", "--runtime-root", runtimeRoot)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, fmt.Errorf("读取 Windows %s 安装前状态失败: %w: %s", component, err, strings.TrimSpace(string(out)))
+	}
+	switch component {
+	case "service":
+		var status desktopruntime.ServiceStatus
+		if err := json.Unmarshal(out, &status); err != nil {
+			return false, fmt.Errorf("解析 Windows Core 状态失败: %w", err)
+		}
+		return status.Running, nil
+	case "tunnel":
+		var status desktopruntime.TunnelStatus
+		if err := json.Unmarshal(out, &status); err != nil {
+			return false, fmt.Errorf("解析 Windows Tunnel 状态失败: %w", err)
+		}
+		return status.Running, nil
+	default:
+		return false, fmt.Errorf("未知 Windows 运行组件: %s", component)
+	}
+}
+
 func startWindowsServices(ctx context.Context, request Request, journal *rollbackJournal) error {
 	binary := windowsServiceBinary(request)
 	if binary == "" {
 		return fmt.Errorf("Windows 启动找不到 agentdock 二进制")
 	}
-	if err := journal.NoteService(journalService{Manager: "windows", Name: "agentdock"}); err != nil {
-		return err
+	if !journal.hasService("agentdock") {
+		if err := journal.NoteService(journalService{Manager: "windows", Name: "agentdock"}); err != nil {
+			return err
+		}
 	}
 	if err := runCmd(ctx, binary, "service", "start", "--runtime-root", request.RuntimeRoot); err != nil {
 		return err
@@ -291,8 +345,10 @@ func startWindowsTunnel(ctx context.Context, request Request, journal *rollbackJ
 	if binary == "" {
 		return fmt.Errorf("Windows Tunnel 启动找不到 agentdock 二进制")
 	}
-	if err := journal.NoteService(journalService{Manager: "windows", Name: "agentdock-tunnel"}); err != nil {
-		return err
+	if !journal.hasService("agentdock-tunnel") {
+		if err := journal.NoteService(journalService{Manager: "windows", Name: "agentdock-tunnel"}); err != nil {
+			return err
+		}
 	}
 	if err := runCmd(ctx, binary, "tunnel", "start", "--runtime-root", request.RuntimeRoot); err != nil {
 		return err

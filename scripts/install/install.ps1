@@ -329,8 +329,8 @@ function Initialize-OAuthCredentials {
     }
 }
 
-# runtime.json is owned by agentdock install. Generation and active-version.json
-# are owned by the Update Engine on upgrades, or by Setup bootstrap on first publish.
+# runtime.json is owned by agentdock install. Generation pointer is owned by the
+# Update Engine on upgrades, and by the Installer Engine on first publish.
 function Write-RuntimeManifest {
     param(
         [string] $Path,
@@ -1211,6 +1211,7 @@ $cloudflaredStopAttempted = $false
 $rollbackStateCaptured = $false
 $engineCommitted = $false
 $enginePrepared = $false
+$engineReady = $false
 $engineTransactionId = ''
 $binaryReplacementStarted = $false
 $trayReplacementStarted = $false
@@ -1226,7 +1227,7 @@ $taskTransactionStarted = $false
 $taskTransactionCommitted = $false
 $taskRestored = $false
 $generationLayoutDetected = $false
-$generationUpgradeHandled = $false
+$engineOwnsTargetGeneration = $false
 $generationBootstrapDirectory = ''
 $generationRepairBackupDirectory = ''
 $generationBootstrapPublished = $false
@@ -1442,6 +1443,12 @@ try {
     }
 
     $payloadVersion = 'v' + ([string] $preflightVersionInfo.version).TrimStart('v')
+    if (Test-Path -LiteralPath $sourceBinary -PathType Leaf) {
+        $engineReadyOutput = & $sourceBinary install --engine-ready 2>$null
+        if ($LASTEXITCODE -eq 0 -and ("$engineReadyOutput" -like '*agentdock-installer-engine*')) {
+            $engineReady = $true
+        }
+    }
     $generationBootstrapDirectory = Join-Path $versionsDir $payloadVersion
     $generationCorePath = Join-Path $generationBootstrapDirectory 'agentdock-core.exe'
     $generationTrayPath = Join-Path $generationBootstrapDirectory 'agentdock-tray.exe'
@@ -1459,28 +1466,40 @@ try {
             # Setup must never repair or replace a generation while an update trial is unresolved.
             # Running the stable CUI entry is also the crash-recovery trigger: a live Arbiter leaves
             # the state in trial and Setup stops safely; an abandoned trial is rolled back first.
+            # Fresh installer trials use install/transaction.json. The shim only recovers
+            # update/transaction.json, so an installer trial is not a committed generation layout.
             $activeStateName = ([string] $activeState.state).Trim().ToLowerInvariant()
             if ($activeStateName -ne 'committed') {
-                if (-not (Test-Path -LiteralPath $destinationBinary -PathType Leaf)) {
-                    throw "AgentDock generation state is '$activeStateName', but the stable recovery entry is missing: $destinationBinary"
+                $updateTransactionPath = Join-Path $runtimeDir 'update\transaction.json'
+                if (-not (Test-Path -LiteralPath $updateTransactionPath -PathType Leaf)) {
+                    Write-Host 'Incomplete installer generation pointer; Setup will let the Installer Engine recover.'
+                    $existingActiveVersion = ''
+                    $generationLayoutDetected = $false
+                } else {
+                    if (-not (Test-Path -LiteralPath $destinationBinary -PathType Leaf)) {
+                        throw "AgentDock generation state is '$activeStateName', but the stable recovery entry is missing: $destinationBinary"
+                    }
+                    Write-Host "Resolving pending AgentDock generation transaction before Setup continues..."
+                    $recoveryOutput = @(& $destinationBinary version --json 2>&1)
+                    $recoveryExitCode = $LASTEXITCODE
+                    if ($recoveryExitCode -ne 0) {
+                        $recoveryText = (($recoveryOutput | Out-String).Trim())
+                        throw "AgentDock generation recovery failed with exit code $recoveryExitCode. $recoveryText"
+                    }
+                    $activeState = Get-Content -LiteralPath $activeVersionPath -Raw | ConvertFrom-Json
+                    $activeStateName = ([string] $activeState.state).Trim().ToLowerInvariant()
+                    if ([int] $activeState.schema_version -ne 1 -or
+                        [string]::IsNullOrWhiteSpace([string] $activeState.active_version) -or
+                        $activeStateName -ne 'committed') {
+                        throw "AgentDock generation transaction is still '$activeStateName'; Setup will not modify an unresolved generation."
+                    }
+                    $existingActiveVersion = 'v' + ([string] $activeState.active_version).TrimStart('v')
+                    $generationLayoutDetected = $true
                 }
-                Write-Host "Resolving pending AgentDock generation transaction before Setup continues..."
-                $recoveryOutput = @(& $destinationBinary version --json 2>&1)
-                $recoveryExitCode = $LASTEXITCODE
-                if ($recoveryExitCode -ne 0) {
-                    $recoveryText = (($recoveryOutput | Out-String).Trim())
-                    throw "AgentDock generation recovery failed with exit code $recoveryExitCode. $recoveryText"
-                }
-                $activeState = Get-Content -LiteralPath $activeVersionPath -Raw | ConvertFrom-Json
-                $activeStateName = ([string] $activeState.state).Trim().ToLowerInvariant()
-                if ([int] $activeState.schema_version -ne 1 -or
-                    [string]::IsNullOrWhiteSpace([string] $activeState.active_version) -or
-                    $activeStateName -ne 'committed') {
-                    throw "AgentDock generation transaction is still '$activeStateName'; Setup will not modify an unresolved generation."
-                }
+            } else {
+                $existingActiveVersion = 'v' + ([string] $activeState.active_version).TrimStart('v')
+                $generationLayoutDetected = $true
             }
-            $existingActiveVersion = 'v' + ([string] $activeState.active_version).TrimStart('v')
-            $generationLayoutDetected = $true
         } catch {
             throw "Unable to read the existing AgentDock generation state: $($_.Exception.Message)"
         }
@@ -1494,22 +1513,8 @@ try {
         $trayProcessWasRunning = @(Get-AgentDockTrayProcesses -BinaryPath $existingGenerationTray).Count -gt 0
     }
 
-    if ($generationLayoutDetected -and -not [string]::Equals($existingActiveVersion, $payloadVersion, [StringComparison]::OrdinalIgnoreCase)) {
-        if (-not (Test-Path -LiteralPath $destinationBinary -PathType Leaf)) {
-            throw "AgentDock generation layout is missing the stable Core entry: $destinationBinary"
-        }
-        Write-Host "Delegating Setup upgrade to the AgentDock Update Engine: $existingActiveVersion -> $payloadVersion"
-        $localUpdateOutput = @(& $destinationBinary update --local-archive $archivePath --checksum $checksumPath --target-version $payloadVersion 2>&1)
-        $localUpdateExitCode = $LASTEXITCODE
-        $localUpdateText = (($localUpdateOutput | Out-String).Trim())
-        if (-not [string]::IsNullOrWhiteSpace($localUpdateText)) {
-            Write-Host $localUpdateText
-        }
-        if ($localUpdateExitCode -ne 0) {
-            throw "AgentDock Update Engine rejected the Setup upgrade with exit code $localUpdateExitCode."
-        }
-        $generationUpgradeHandled = $true
-    }
+    # Setup upgrades and fresh installs share one Installer transaction. Do not pre-commit
+    # the target generation through Update Engine before Task/Registry/runtime adapter work.
 
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     if (-not $generationLayoutDetected) {
@@ -1545,31 +1550,37 @@ try {
             Write-Host "Prepared AgentDock scheduled task transaction: $taskAction"
         }
     }
-    if (-not $generationUpgradeHandled) {
-        $agentDockStopAttempted = $true
-        $coreToStop = $(if ($generationLayoutDetected) { $existingGenerationCore } else { $destinationBinary })
-        [void] (Stop-AgentDockForUpgrade -BinaryPath $coreToStop)
+    $agentDockStopAttempted = $true
+    $coreToStop = $(if ($generationLayoutDetected) { $existingGenerationCore } else { $destinationBinary })
+    [void] (Stop-AgentDockForUpgrade -BinaryPath $coreToStop)
 
-        # Stable entries remain the rollback boundary for both legacy bootstrap and same-version repair.
-        # Preserve them before replacement even when active-version.json already exists.
-        if (Test-Path -LiteralPath $destinationBinary -PathType Leaf) {
-            Copy-Item -LiteralPath $destinationBinary -Destination $binaryBackup -Force
-        }
-        if (Test-Path -LiteralPath $destinationTrayBinary -PathType Leaf) {
-            Copy-Item -LiteralPath $destinationTrayBinary -Destination $trayBackup -Force
-        }
+    # Stable entries remain the rollback boundary for both legacy bootstrap and same-version repair.
+    # Preserve them before replacement even when active-version.json already exists.
+    if (Test-Path -LiteralPath $destinationBinary -PathType Leaf) {
+        Copy-Item -LiteralPath $destinationBinary -Destination $binaryBackup -Force
+    }
+    if (Test-Path -LiteralPath $destinationTrayBinary -PathType Leaf) {
+        Copy-Item -LiteralPath $destinationTrayBinary -Destination $trayBackup -Force
+    }
 
-        if (-not $generationLayoutDetected) {
-            $trayProcessWasRunning = @(Get-AgentDockTrayProcesses -BinaryPath $destinationTrayBinary).Count -gt 0
-        }
+    if (-not $generationLayoutDetected) {
+        $trayProcessWasRunning = @(Get-AgentDockTrayProcesses -BinaryPath $destinationTrayBinary).Count -gt 0
+    }
 
-        $trayStopAttempted = $true
-        $trayToStop = $(if ($generationLayoutDetected) { $existingGenerationTray } else { $destinationTrayBinary })
-        [void] (Stop-AgentDockTrayForUpgrade -BinaryPath $trayToStop)
-        if (Test-Path -LiteralPath $destinationTrayIcon -PathType Leaf) {
-            Copy-Item -LiteralPath $destinationTrayIcon -Destination $trayIconBackup -Force
-        }
+    $trayStopAttempted = $true
+    $trayToStop = $(if ($generationLayoutDetected) { $existingGenerationTray } else { $destinationTrayBinary })
+    [void] (Stop-AgentDockTrayForUpgrade -BinaryPath $trayToStop)
+    if (Test-Path -LiteralPath $destinationTrayIcon -PathType Leaf) {
+        Copy-Item -LiteralPath $destinationTrayIcon -Destination $trayIconBackup -Force
+    }
 
+    # Engine-ready fresh installs and cross-version upgrades have one generation owner: Go Installer Engine.
+    # PowerShell only publishes for legacy payloads and same-version repair of an already committed layout.
+    $engineOwnsTargetGeneration = $engineReady -and (
+        (-not $generationLayoutDetected) -or
+        (-not [string]::Equals($existingActiveVersion, $payloadVersion, [StringComparison]::OrdinalIgnoreCase))
+    )
+    if (-not $engineOwnsTargetGeneration) {
         # Stage the complete immutable generation first. The stable entries are only replaced after
         # core/tray/arbiter/skills are all present, so bootstrap never points at a partial generation.
         $generationStagingDirectory = Join-Path $versionsDir ('.bootstrap-' + [Guid]::NewGuid().ToString('N'))
@@ -1583,12 +1594,15 @@ try {
 
             if (Test-Path -LiteralPath $generationBootstrapDirectory) {
                 if (-not $generationLayoutDetected) {
-                    throw "AgentDock generation target already exists before bootstrap: $generationBootstrapDirectory"
+                    # Leftover from a crashed fresh bootstrap. No committed pointer exists, so this
+                    # directory is not a known-good generation and must not block retry.
+                    Remove-Item -LiteralPath $generationBootstrapDirectory -Recurse -Force
+                } else {
+                    # Same-version Setup is a repair transaction. Move the active generation aside instead
+                    # of deleting it so any later configuration/activation failure can restore it exactly.
+                    $generationRepairBackupDirectory = Join-Path $versionsDir ('.repair-backup-' + [Guid]::NewGuid().ToString('N'))
+                    Move-Item -LiteralPath $generationBootstrapDirectory -Destination $generationRepairBackupDirectory
                 }
-                # Same-version Setup is a repair transaction. Move the active generation aside instead
-                # of deleting it so any later configuration/activation failure can restore it exactly.
-                $generationRepairBackupDirectory = Join-Path $versionsDir ('.repair-backup-' + [Guid]::NewGuid().ToString('N'))
-                Move-Item -LiteralPath $generationBootstrapDirectory -Destination $generationRepairBackupDirectory
             }
             Move-Item -LiteralPath $generationStagingDirectory -Destination $generationBootstrapDirectory
             if (-not $generationLayoutDetected) {
@@ -1599,55 +1613,41 @@ try {
         } finally {
             Remove-Item -LiteralPath $generationStagingDirectory -Recurse -Force -ErrorAction SilentlyContinue
         }
-
-        # The two fixed entries intentionally have different PE subsystems. The CUI entry owns CLI/
-        # Task Scheduler semantics; the GUI entry owns tray/Start-menu semantics without console flash.
-        $binaryReplacementStarted = $true
-        Install-AgentDockBinary -SourceBinary $sourceCoreShim -DestinationBinary $destinationBinary
-        $trayReplacementStarted = $true
-        Install-AgentDockBinary -SourceBinary $sourceTrayShim -DestinationBinary $destinationTrayBinary
-        Copy-Item -LiteralPath $sourceTrayIcon -Destination $destinationTrayIcon -Force
-
-        if (-not $generationLayoutDetected) {
-            Write-ActiveVersionState -Path $activeVersionPath -ActiveVersion $payloadVersion
-            $activeVersionCreatedByBootstrap = $true
-            $generationLayoutDetected = $true
-        }
     }
 
-    if ($generationUpgradeHandled) {
-        # Online updates deliberately never self-replace the stable ABI shims. Setup is the supported
-        # refresh boundary, so a successful generation upgrade must still install the shims carried by
-        # this package. The scheduled-task transaction above has already stopped/disabled any elevated
-        # long-running launcher that could keep the CUI shim locked.
-        if (Test-Path -LiteralPath $destinationBinary -PathType Leaf) {
-            Copy-Item -LiteralPath $destinationBinary -Destination $binaryBackup -Force
-        }
-        if (Test-Path -LiteralPath $destinationTrayBinary -PathType Leaf) {
-            Copy-Item -LiteralPath $destinationTrayBinary -Destination $trayBackup -Force
-        }
-        if (Test-Path -LiteralPath $destinationTrayIcon -PathType Leaf) {
-            Copy-Item -LiteralPath $destinationTrayIcon -Destination $trayIconBackup -Force
-        }
-        $binaryReplacementStarted = $true
-        Install-AgentDockBinary -SourceBinary $sourceCoreShim -DestinationBinary $destinationBinary
-        $trayReplacementStarted = $true
-        Install-AgentDockBinary -SourceBinary $sourceTrayShim -DestinationBinary $destinationTrayBinary
-        Copy-Item -LiteralPath $sourceTrayIcon -Destination $destinationTrayIcon -Force
+    # The two fixed entries intentionally have different PE subsystems. The CUI entry owns CLI/
+    # Task Scheduler semantics; the GUI entry owns tray/Start-menu semantics without console flash.
+    $binaryReplacementStarted = $true
+    Install-AgentDockBinary -SourceBinary $sourceCoreShim -DestinationBinary $destinationBinary
+    $trayReplacementStarted = $true
+    Install-AgentDockBinary -SourceBinary $sourceTrayShim -DestinationBinary $destinationTrayBinary
+    Copy-Item -LiteralPath $sourceTrayIcon -Destination $destinationTrayIcon -Force
+
+    if (-not $generationLayoutDetected -and -not $engineOwnsTargetGeneration) {
+        # Legacy first-publish still records the bootstrap so rollback can delete the
+        # generation it just moved. Engine fresh path leaves this false: abandon owns it.
+        $activeVersionCreatedByBootstrap = $true
+        $generationLayoutDetected = $true
     }
 
     New-Item -ItemType Directory -Path $installerDir -Force | Out-Null
     Copy-Item -LiteralPath $sourceManagerScript -Destination $managerScriptPath -Force
 
-    $installedVersionJson = & $destinationBinary version --json
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Unable to read the installed AgentDock version after replacing the Windows payload.'
+    if ($engineOwnsTargetGeneration) {
+        # The stable shim intentionally refuses a trial pointer, so pre-commit version reporting must
+        # use the payload version already verified above rather than executing the shim too early.
+        Write-TextFile -Path $desktopVersionPath -Value $payloadVersion
+    } else {
+        $installedVersionJson = & $destinationBinary version --json
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to read the installed AgentDock version after replacing the Windows payload.'
+        }
+        $installedVersionInfo = $installedVersionJson | ConvertFrom-Json
+        if ($null -eq $installedVersionInfo -or [string]::IsNullOrWhiteSpace([string] $installedVersionInfo.version)) {
+            throw 'Unable to read the installed AgentDock version after replacing the Windows payload.'
+        }
+        Write-TextFile -Path $desktopVersionPath -Value ("v" + ([string] $installedVersionInfo.version).TrimStart('v'))
     }
-    $installedVersionInfo = $installedVersionJson | ConvertFrom-Json
-    if ($null -eq $installedVersionInfo -or [string]::IsNullOrWhiteSpace([string] $installedVersionInfo.version)) {
-        throw 'Unable to read the installed AgentDock version after replacing the Windows payload.'
-    }
-    Write-TextFile -Path $desktopVersionPath -Value ("v" + ([string] $installedVersionInfo.version).TrimStart('v'))
     Add-UserPath -Directory $InstallDir
 
     $agentDockHome = Join-Path $userHome '.agentdock'
@@ -1671,16 +1671,9 @@ try {
 
     $publicUrl = ''
     $manifestPublicUrl = ''
-    $engineReady = $false
     $engineCommitted = $false
     $enginePrepared = $false
     $engineTransactionId = ''
-    if (Test-Path -LiteralPath $sourceBinary -PathType Leaf) {
-        $engineReadyOutput = & $sourceBinary install --engine-ready 2>$null
-        if ($LASTEXITCODE -eq 0 -and ("$engineReadyOutput" -like '*agentdock-installer-engine*')) {
-            $engineReady = $true
-        }
-    }
     if ($RegisterStartup) {
         New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
 
@@ -1832,6 +1825,7 @@ exit `$LASTEXITCODE
     if ($engineReady) {
         # HKCU/Task (if any) are already written. Engine owns runtime.json/skills/start.
         # committed is written only after this script finishes adapter work and calls install commit.
+        # A fresh or different-version generation is published here from --payload-dir; PowerShell does not pre-commit it.
         New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
         $engineArgs = @(
             'install',
@@ -1929,8 +1923,19 @@ exit `$LASTEXITCODE
     }
     }
 
-    # Provision is complete here. Immediate activation is a separate phase; only a fresh standard
-    # install may defer activation, because an upgrade must still be able to roll back to its prior runtime.
+    # Provision is complete here. A fresh Installer-owned generation must become committed before
+    # the stable shim can be used for optional immediate activation; outer rollback can still abandon
+    # this transaction because the committed pointer keeps the Installer transaction id.
+    if ($enginePrepared -and -not $existingInstallDetected) {
+        & $sourceBinary install commit --install-root $runtimeDir --runtime-root $runtimeDir --transaction-id $engineTransactionId 1>$null
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Installer Engine failed to commit the fresh install transaction.'
+        }
+        $engineCommitted = $true
+    }
+
+    # Immediate activation is a separate phase; only a fresh standard install may defer activation,
+    # because an upgrade must still be able to roll back to its prior runtime.
     $healthStatus = 'not-started'
     $engineOwnsActivation = $engineReady -and -not ($InstallChannel -eq 'setup' -and -not $existingInstallDetected)
     try {
@@ -2029,7 +2034,7 @@ exit `$LASTEXITCODE
         Write-Warning "$activationWarningMessage Details: $($_.Exception.Message)"
     }
 
-    if ($enginePrepared) {
+    if ($enginePrepared -and -not $engineCommitted) {
         & $sourceBinary install commit --install-root $runtimeDir --runtime-root $runtimeDir --transaction-id $engineTransactionId 1>$null
         if ($LASTEXITCODE -ne 0) {
             throw 'Installer Engine failed to commit the install transaction.'
@@ -2096,7 +2101,7 @@ exit `$LASTEXITCODE
     $rollbackError = $null
     $taskRecoveryPath = ''
     try {
-        if ($generationLayoutDetected) {
+        if ($generationLayoutDetected -or $enginePrepared) {
             # Target Core runs as agentdock-core.exe after both bootstrap and Update Engine.
             # Stopping the CUI shim would miss the running generation and leave the new pointer live.
             $rollbackGenerationTray = Join-Path $generationBootstrapDirectory 'agentdock-tray.exe'

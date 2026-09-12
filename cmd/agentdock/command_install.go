@@ -37,6 +37,7 @@ func runInstallCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 		fmt.Fprintln(stderr, "  agentdock install --repair --install-root <目录>")
 		fmt.Fprintln(stderr, "  agentdock install inspect --state-root <目录> [--require-committed] [--require-version <版本>]")
 		fmt.Fprintln(stderr, "  agentdock install abandon --install-root <目录> [--transaction-id <ID>] [--rollback-failed]")
+		fmt.Fprintln(stderr, "  --rollback-failed 表示 OS adapter 回滚失败，写入 failed/external_rollback_failed 并阻断后续自动 install")
 		fmt.Fprintln(stderr, "  agentdock install commit --install-root <目录> [--transaction-id <ID>]")
 		fmt.Fprintln(stderr, "  agentdock install --engine-ready")
 	}
@@ -139,19 +140,24 @@ func runUninstallCommand(ctx context.Context, args []string, stdout, stderr io.W
 	flags.StringVar(&request.TaskName, "task-name", "", "Windows Scheduled Task 名称")
 	purgeConfig := flags.Bool("purge-config", false, "同时删除配置")
 	purgeData := flags.Bool("purge-data", false, "删除程序、配置和数据")
+	deferCommit := flags.Bool("defer-commit", false, "停在 trial；OS adapter 完成 Task/Registry 后再 install commit。Engine committed 不是整个产品已卸载")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 || strings.TrimSpace(request.InstallRoot) == "" {
-		return errors.New("用法：agentdock uninstall --install-root <目录> [--purge-config|--purge-data]")
+		return errors.New("用法：agentdock uninstall --install-root <目录> [--purge-config|--purge-data] [--defer-commit]")
 	}
 	request.PurgeConfig = *purgeConfig
 	request.PurgeData = *purgeData
+	request.DeferCommit = *deferCommit
 	if *purgeData {
 		request.PurgeConfig = true
 	}
 	result, err := installer.Engine{}.Run(ctx, request)
 	if err != nil {
+		if result.TransactionID != "" {
+			_ = json.NewEncoder(stdout).Encode(result)
+		}
 		return err
 	}
 	return json.NewEncoder(stdout).Encode(result)
@@ -192,7 +198,7 @@ func runInstallAbandon(ctx context.Context, args []string, stdout, stderr io.Wri
 	flags.StringVar(&request.InstallRoot, "install-root", "", "安装根目录")
 	flags.StringVar(&request.RuntimeRoot, "runtime-root", "", "运行配置目录")
 	flags.StringVar(&request.TransactionID, "transaction-id", "", "要撤销的 install 事务 ID")
-	rollbackFailed := flags.Bool("rollback-failed", false, "外部 rollback 自身失败，写入 failed/rollback_failed")
+	rollbackFailed := flags.Bool("rollback-failed", false, "OS adapter 回滚失败，写入 failed/external_rollback_failed 并阻断后续自动 install")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}

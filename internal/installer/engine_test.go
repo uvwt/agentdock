@@ -522,8 +522,21 @@ func TestWindowsGenerationLayoutAndManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if active.ActiveVersion != "v0.9.0" || active.State != updateengine.StateTrial {
+		t.Fatalf("first publish active=%s state=%s, want trial until install commit", active.ActiveVersion, active.State)
+	}
+	if active.TransactionID != "windows-test" {
+		t.Fatalf("trial pointer transaction=%s, want windows-test", active.TransactionID)
+	}
+	if err := commitWindowsActivePointer(request.InstallRoot, "windows-test"); err != nil {
+		t.Fatal(err)
+	}
+	active, err = store.ReadActive()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if active.ActiveVersion != "v0.9.0" || active.State != updateengine.StateCommitted {
-		t.Fatalf("first publish active=%s state=%s", active.ActiveVersion, active.State)
+		t.Fatalf("commit pointer active=%s state=%s", active.ActiveVersion, active.State)
 	}
 }
 
@@ -554,6 +567,9 @@ func TestWindowsDoesNotRestageOwnedGeneration(t *testing.T) {
 		StartService: false,
 	}
 	if _, err := stageWindowsPayload(request, newJournal(request.InstallRoot, "owned-1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := commitWindowsActivePointer(request.InstallRoot, "owned-1"); err != nil {
 		t.Fatal(err)
 	}
 	layout, err := updateengine.NewWindowsLayout(request.InstallRoot)
@@ -934,7 +950,7 @@ func TestAbandonTrialAndRollbackFailed(t *testing.T) {
 	if failed.Phase != PhaseRollback {
 		t.Fatalf("rollback-failed phase=%s, want rollback", failed.Phase)
 	}
-	if failed.Failure == nil || failed.Failure.Code != "rollback_failed" {
+	if failed.Failure == nil || failed.Failure.Code != FailureExternalRollbackFailed {
 		t.Fatalf("rollback-failed failure=%v", failed.Failure)
 	}
 	if failed.Healthy {
@@ -1406,6 +1422,13 @@ func TestLinuxUnitsKeepManagedLogging(t *testing.T) {
 }
 
 func TestUninstallStopsUnitsThenPurgesWithoutRecreatingState(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		binDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(binDir, "systemctl"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	}
 	root := t.TempDir()
 	installRoot := filepath.Join(root, "opt")
 	runtimeRoot := filepath.Join(root, "etc")
@@ -1449,5 +1472,465 @@ func TestUninstallStopsUnitsThenPurgesWithoutRecreatingState(t *testing.T) {
 	}
 	if dirExists(filepath.Join(runtimeRoot, "install")) {
 		t.Fatal("purge-data must not recreate install journal")
+	}
+}
+
+func TestCommitPointerFailureIsNotObservableCommitted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod on install-root injects pointer write failure on Unix")
+	}
+	root := t.TempDir()
+	installRoot := filepath.Join(root, "opt")
+	runtimeRoot := filepath.Join(root, "etc")
+	payload := writeUnixPayload(t, root, "p1", "version-one")
+	prepared, err := (Engine{}).Run(context.Background(), Request{
+		InstallRoot:    installRoot,
+		RuntimeRoot:    runtimeRoot,
+		PayloadDir:     payload,
+		Version:        "v1.0.0",
+		SkipHealth:     true,
+		StartService:   false,
+		SkipSkills:     true,
+		ServiceManager: "none",
+		DeferCommit:    true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeWindowsTrialPointer(t, installRoot, "v1.0.0", prepared.TransactionID)
+	if err := os.Chmod(installRoot, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(installRoot, 0o755) }()
+
+	committed, err := (Engine{}).Run(context.Background(), Request{
+		Action:        ActionCommit,
+		InstallRoot:   installRoot,
+		RuntimeRoot:   runtimeRoot,
+		TransactionID: prepared.TransactionID,
+	})
+	if err == nil {
+		t.Fatal("pointer write failure must fail commit")
+	}
+	if committed.State == updateengine.StateCommitted {
+		t.Fatalf("returned state=%s, pointer failure must not be observable committed", committed.State)
+	}
+	_, tx, current := readInstallStore(t, runtimeRoot)
+	if tx.State == updateengine.StateCommitted || current.State == updateengine.StateCommitted {
+		t.Fatalf("disk state=%s result=%s, transaction/result must stay trial", tx.State, current.State)
+	}
+	if !fileExists(journalFile(runtimeRoot, prepared.TransactionID)) {
+		t.Fatal("journal must remain so recovery can finish or roll back")
+	}
+
+	if err := os.Chmod(installRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	finished, err := (Engine{}).Run(context.Background(), Request{
+		Action:        ActionCommit,
+		InstallRoot:   installRoot,
+		RuntimeRoot:   runtimeRoot,
+		TransactionID: prepared.TransactionID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finished.State != updateengine.StateCommitted {
+		t.Fatalf("retry commit state=%s", finished.State)
+	}
+	store, err := updateengine.NewStore(installRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err := store.ReadActive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.State != updateengine.StateCommitted || active.TransactionID != prepared.TransactionID {
+		t.Fatalf("recovered pointer state=%s tx=%s", active.State, active.TransactionID)
+	}
+}
+
+func TestRecoverCompletesWhenPointerAlreadyCommitted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix payload install is exercised on Unix CI")
+	}
+	root := t.TempDir()
+	installRoot := filepath.Join(root, "opt")
+	runtimeRoot := filepath.Join(root, "etc")
+	v1 := writeUnixPayload(t, root, "p1", "version-one")
+	prepared, err := (Engine{}).Run(context.Background(), unixInstallRequest(installRoot, runtimeRoot, v1, "v1.0.0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.State != updateengine.StateCommitted {
+		t.Fatalf("v1 state=%s", prepared.State)
+	}
+
+	v2payload := writeUnixPayload(t, root, "p2", "version-two")
+	trial, err := (Engine{}).Run(context.Background(), Request{
+		InstallRoot:    installRoot,
+		RuntimeRoot:    runtimeRoot,
+		PayloadDir:     v2payload,
+		Version:        "v2.0.0",
+		SkipHealth:     true,
+		StartService:   false,
+		SkipSkills:     true,
+		ServiceManager: "none",
+		DeferCommit:    true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeWindowsTrialPointer(t, installRoot, "v2.0.0", trial.TransactionID)
+	if err := commitWindowsActivePointer(installRoot, trial.TransactionID); err != nil {
+		t.Fatal(err)
+	}
+	_, tx, _ := readInstallStore(t, runtimeRoot)
+	if tx.State != updateengine.StateTrial {
+		t.Fatalf("simulated crash must leave trial, got %s", tx.State)
+	}
+
+	v3payload := writeUnixPayload(t, root, "p3", "version-three")
+	next, err := (Engine{}).Run(context.Background(), unixInstallRequest(installRoot, runtimeRoot, v3payload, "v3.0.0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.State != updateengine.StateCommitted {
+		t.Fatalf("v3 state=%s", next.State)
+	}
+	_, tx, _ = readInstallStore(t, runtimeRoot)
+	if tx.SourceVersion != "v2.0.0" {
+		t.Fatalf("v3 source_version=%s, want v2.0.0 from recovered pointer commit, not rollback", tx.SourceVersion)
+	}
+}
+
+func TestReleaseTrialPointerFailureIsRollbackFailed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod on install-root injects pointer unlink failure on Unix")
+	}
+	root := t.TempDir()
+	installRoot := filepath.Join(root, "opt")
+	runtimeRoot := filepath.Join(root, "etc")
+	if err := os.MkdirAll(installRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(runtimeRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewStore(runtimeRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	tx := Transaction{
+		SchemaVersion: SchemaVersion,
+		TransactionID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		Platform:      "linux",
+		Action:        ActionInstall,
+		SourceVersion: "",
+		TargetVersion: "v1.0.0",
+		State:         updateengine.StateTrial,
+		Phase:         PhaseActivate,
+		InstallRoot:   installRoot,
+		RuntimeRoot:   runtimeRoot,
+		StartedAt:     now,
+		UpdatedAt:     now,
+	}
+	if err := store.WriteTransaction(tx); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(runtimeRoot, "marker.txt")
+	if err := os.WriteFile(marker, []byte("known-good"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	journal := newJournal(runtimeRoot, tx.TransactionID)
+	if err := journal.Snapshot(marker); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, []byte("trial"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeWindowsTrialPointer(t, installRoot, "v1.0.0", tx.TransactionID)
+	if err := os.Chmod(installRoot, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(installRoot, 0o755) }()
+
+	result, err := (Engine{}).Run(context.Background(), unixInstallRequest(installRoot, runtimeRoot, writeUnixPayload(t, root, "p2", "v2"), "v2.0.0"))
+	if err == nil {
+		t.Fatal("trial pointer cleanup failure must block the next install")
+	}
+	if result.State == updateengine.StateRolledBack {
+		t.Fatal("pointer cleanup failure must not be recorded as rolled_back")
+	}
+	if result.Failure == nil || result.Failure.Code != FailureRollbackFailed {
+		t.Fatalf("failure=%v, want rollback_failed", result.Failure)
+	}
+	if !fileExists(journalFile(runtimeRoot, tx.TransactionID)) {
+		t.Fatal("journal must be kept as recovery evidence")
+	}
+	_, stored, current := readInstallStore(t, runtimeRoot)
+	if stored.State == updateengine.StateRolledBack || current.State == updateengine.StateRolledBack {
+		t.Fatal("disk state must not be rolled_back after pointer cleanup failure")
+	}
+
+	if err := os.Chmod(installRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	next, err := (Engine{}).Run(context.Background(), unixInstallRequest(installRoot, runtimeRoot, writeUnixPayload(t, root, "p3", "v3"), "v3.0.0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.State != updateengine.StateCommitted {
+		t.Fatalf("after pointer cleanup, next install state=%s", next.State)
+	}
+}
+
+func TestExternalRollbackFailedBlocksNextInstallUntilAbandon(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("abandon recovery is exercised on Unix CI")
+	}
+	root := t.TempDir()
+	installRoot := filepath.Join(root, "opt")
+	runtimeRoot := filepath.Join(root, "etc")
+	payload := writeUnixPayload(t, root, "p1", "v1")
+	if _, err := (Engine{}).Run(context.Background(), Request{
+		InstallRoot:    installRoot,
+		RuntimeRoot:    runtimeRoot,
+		PayloadDir:     payload,
+		Version:        "v1.0.0",
+		SkipHealth:     true,
+		StartService:   false,
+		SkipSkills:     true,
+		ServiceManager: "none",
+		DeferCommit:    true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	failed, err := (Engine{}).Run(context.Background(), Request{
+		Action:         ActionAbandon,
+		InstallRoot:    installRoot,
+		RuntimeRoot:    runtimeRoot,
+		RollbackFailed: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failed.State != updateengine.StateFailed || failed.Failure == nil || failed.Failure.Code != FailureExternalRollbackFailed {
+		t.Fatalf("state=%s failure=%v", failed.State, failed.Failure)
+	}
+
+	if _, err := (Engine{}).Run(context.Background(), unixInstallRequest(installRoot, runtimeRoot, writeUnixPayload(t, root, "p2", "v2"), "v2.0.0")); err == nil {
+		t.Fatal("next Engine.Run must stay blocked after external_rollback_failed")
+	}
+
+	if _, err := (Engine{}).Run(context.Background(), Request{
+		Action:      ActionAbandon,
+		InstallRoot: installRoot,
+		RuntimeRoot: runtimeRoot,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	next, err := (Engine{}).Run(context.Background(), unixInstallRequest(installRoot, runtimeRoot, writeUnixPayload(t, root, "p3", "v3"), "v3.0.0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.State != updateengine.StateCommitted {
+		t.Fatalf("explicit abandon must unblock install, state=%s", next.State)
+	}
+}
+
+func TestRolledBackResultDoesNotKeepFailedTrialURLs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix rollback result projection is exercised on Unix CI")
+	}
+	root := t.TempDir()
+	installRoot := filepath.Join(root, "opt")
+	runtimeRoot := filepath.Join(root, "etc")
+	v1 := writeUnixPayload(t, root, "p1", "version-one")
+	first := unixInstallRequest(installRoot, runtimeRoot, v1, "v1.0.0")
+	first.Host = "127.0.0.1"
+	first.Port = 8765
+	first.TunnelMode = "named"
+	first.ServerURL = "https://v1.example.test"
+	if _, err := (Engine{}).Run(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+
+	badBundle := filepath.Join(root, "not-a-bundle")
+	if err := os.WriteFile(badBundle, []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v2 := writeUnixPayload(t, root, "p2", "version-two")
+	second := unixInstallRequest(installRoot, runtimeRoot, v2, "v2.0.0")
+	second.Host = "127.0.0.1"
+	second.Port = 9876
+	second.TunnelMode = "named"
+	second.ServerURL = "https://v2.example.test"
+	second.SkipSkills = false
+	second.SkillBundle = badBundle
+	second.PrivilegeMode = "elevated"
+	second.AgentDockHome = filepath.Join(root, "home")
+	result, err := (Engine{}).Run(context.Background(), second)
+	if err == nil {
+		t.Fatal("expected v2 skill bootstrap to fail")
+	}
+	if result.State != updateengine.StateRolledBack {
+		t.Fatalf("state=%s", result.State)
+	}
+	if result.PublicURL == "https://v2.example.test" || result.LocalMCPURL == "http://127.0.0.1:9876/mcp" || result.PrivilegeMode == "elevated" {
+		t.Fatalf("rolled_back result kept failed trial urls: public=%q mcp=%q privilege=%q", result.PublicURL, result.LocalMCPURL, result.PrivilegeMode)
+	}
+	_, _, current := readInstallStore(t, runtimeRoot)
+	if current.PublicURL == "https://v2.example.test" || current.LocalMCPURL == "http://127.0.0.1:9876/mcp" || current.PrivilegeMode == "elevated" {
+		t.Fatalf("result.json kept failed trial urls: public=%q mcp=%q privilege=%q", current.PublicURL, current.LocalMCPURL, current.PrivilegeMode)
+	}
+	if current.PublicURL != "https://v1.example.test" {
+		t.Fatalf("restored public_url=%q, want v1 origin", current.PublicURL)
+	}
+	if current.LocalMCPURL != "http://127.0.0.1:8765/mcp" {
+		t.Fatalf("restored local_mcp_url=%q, want v1 listen address", current.LocalMCPURL)
+	}
+}
+
+func TestProjectRestoredResultClearsFailedTrialProjection(t *testing.T) {
+	got := projectRestoredResult(Result{
+		PublicURL:     "https://v2.example.test",
+		LocalMCPURL:   "http://127.0.0.1:9876/mcp",
+		PrivilegeMode: "elevated",
+		Healthy:       true,
+		ActiveVersion: "v2.0.0",
+	}, Transaction{SourceVersion: "v1.0.0"}, Request{}, false)
+	if got.PublicURL != "" || got.LocalMCPURL != "" || got.PrivilegeMode != "" || got.Healthy {
+		t.Fatalf("failed trial projection leaked: public=%q mcp=%q privilege=%q healthy=%v", got.PublicURL, got.LocalMCPURL, got.PrivilegeMode, got.Healthy)
+	}
+	if got.ActiveVersion != "v1.0.0" {
+		t.Fatalf("active_version=%s, want source v1.0.0", got.ActiveVersion)
+	}
+}
+
+func TestCorruptRollbackJournalAfterCommitDoesNotBlockNextInstall(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix payload install is exercised on Unix CI")
+	}
+	root := t.TempDir()
+	installRoot := filepath.Join(root, "opt")
+	runtimeRoot := filepath.Join(root, "etc")
+	v1 := writeUnixPayload(t, root, "p1", "version-one")
+	first, err := (Engine{}).Run(context.Background(), unixInstallRequest(installRoot, runtimeRoot, v1, "v1.0.0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.State != updateengine.StateCommitted {
+		t.Fatalf("v1 state=%s", first.State)
+	}
+	journalDir := filepath.Join(runtimeRoot, "install", "rollback", first.TransactionID)
+	if err := os.MkdirAll(journalDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(journalDir, "journal.json"), []byte("{not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	v2 := writeUnixPayload(t, root, "p2", "version-two")
+	second, err := (Engine{}).Run(context.Background(), unixInstallRequest(installRoot, runtimeRoot, v2, "v2.0.0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.State != updateengine.StateCommitted {
+		t.Fatalf("corrupt leftover journal must not block next install, state=%s err=%v", second.State, err)
+	}
+}
+
+func TestWindowsCrossVersionInstallerOwnsTrialWithFallback(t *testing.T) {
+	root := t.TempDir()
+	installRoot := filepath.Join(root, "runtime")
+	makePayload := func(name, body string) string {
+		payload := filepath.Join(root, name)
+		if err := os.MkdirAll(payload, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, file := range []string{"agentdock.exe", "agentdock-tray.exe", "agentdock-arbiter.exe"} {
+			if err := os.WriteFile(filepath.Join(payload, file), []byte(body+"-"+file), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return payload
+	}
+	v1 := Request{InstallRoot: installRoot, RuntimeRoot: installRoot, PayloadDir: makePayload("p1", "v1"), Version: "v1.0.0"}
+	if _, err := stageWindowsPayload(v1, newJournal(installRoot, "tx-v1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := commitWindowsActivePointer(installRoot, "tx-v1"); err != nil {
+		t.Fatal(err)
+	}
+
+	v2 := v1
+	v2.PayloadDir = makePayload("p2", "v2")
+	v2.Version = "v2.0.0"
+	staged, err := stageWindowsPayload(v2, newJournal(installRoot, "tx-v2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, _ := updateengine.NewWindowsLayout(installRoot)
+	if staged.Binary != layout.GenerationCore("v2.0.0") {
+		t.Fatalf("cross-version stage attached old generation: %s", staged.Binary)
+	}
+	store, _ := updateengine.NewStore(installRoot)
+	active, err := store.ReadActive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.State != updateengine.StateTrial || active.ActiveVersion != "v2.0.0" || active.FallbackVersion != "v1.0.0" || active.TransactionID != "tx-v2" {
+		t.Fatalf("cross-version trial=%+v", active)
+	}
+	if err := commitWindowsActivePointer(installRoot, "tx-v2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := releaseWindowsTrialPointer(installRoot, "tx-v2"); err != nil {
+		t.Fatal(err)
+	}
+	active, err = store.ReadActive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.State != updateengine.StateCommitted || active.ActiveVersion != "v1.0.0" || active.TransactionID != "" {
+		t.Fatalf("outer rollback did not restore fallback: %+v", active)
+	}
+}
+
+func TestSnapshotWindowsRuntimeStateRecordsWasActive(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix harness uses an executable shell fixture; Windows behavior is covered by native E2E")
+	}
+	root := t.TempDir()
+	payload := filepath.Join(root, "payload")
+	if err := os.MkdirAll(payload, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	binary := filepath.Join(payload, "agentdock.exe")
+	script := `#!/bin/sh
+if [ "$1" = service ] && [ "$2" = status ]; then echo '{"running":true,"healthy":true,"startup_enabled":true}'; exit 0; fi
+if [ "$1" = tunnel ] && [ "$2" = status ]; then echo '{"mode":"quick","running":true,"ready":true,"startup_enabled":true}'; exit 0; fi
+exit 2
+`
+	if err := os.WriteFile(binary, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runtimeRoot := filepath.Join(root, "runtime")
+	if err := os.MkdirAll(runtimeRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimeRoot, "runtime.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	journal := newJournal(runtimeRoot, "snapshot-running")
+	request := Request{InstallRoot: runtimeRoot, RuntimeRoot: runtimeRoot, PayloadDir: payload, StartService: true}
+	if err := snapshotWindowsRuntimeState(request, journal); err != nil {
+		t.Fatal(err)
+	}
+	if len(journal.Services) != 2 || !journal.Services[0].WasActive || !journal.Services[1].WasActive {
+		t.Fatalf("runtime snapshot=%+v", journal.Services)
 	}
 }

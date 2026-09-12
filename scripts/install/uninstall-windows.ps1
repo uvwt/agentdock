@@ -97,6 +97,18 @@ function Remove-DirectoryWithRetry {
     throw "Directory could not be removed within 15 seconds: $Path"
 }
 
+function Remove-FileIfPresent {
+    param([string] $Path)
+    if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Force -ErrorAction Stop }
+}
+function Remove-RegistryValueIfPresent {
+    param([string] $Path, [string] $Name)
+    if ((Test-Path -LiteralPath $Path) -and
+        ($null -ne (Get-ItemProperty -LiteralPath $Path -Name $Name -ErrorAction SilentlyContinue))) {
+        Remove-ItemProperty -LiteralPath $Path -Name $Name -ErrorAction Stop
+    }
+}
+
 function Remove-AgentDockScheduledTask {
     param(
         [string] $AdminLauncherPath,
@@ -169,34 +181,47 @@ if (Test-Path -LiteralPath $runtimeManifestPath -PathType Leaf) {
     $managedTaskName = 'AgentDock'
 }
 
+$engineUninstallPrepared = $false
+$engineUninstallTransactionId = ''
+$engineCommitBinary = ''
 if (Test-Path -LiteralPath $agentDockBinary -PathType Leaf) {
     $engineReadyOutput = & $agentDockBinary install --engine-ready 2>$null
     if ($LASTEXITCODE -eq 0 -and ("$engineReadyOutput" -like '*agentdock-installer-engine*')) {
+        # Keep uninstall trial until every OS-adapter removal succeeds, including PurgeState.
         $engineUninstall = @(
             'uninstall',
             '--install-root', $runtimeDir,
-            '--runtime-root', $runtimeDir
+            '--runtime-root', $runtimeDir,
+            '--defer-commit'
         )
         if (-not [string]::IsNullOrWhiteSpace($managedTaskName)) {
             $engineUninstall += @('--task-name', $managedTaskName)
         }
-        if ($PurgeState) {
-            $engineUninstall += '--purge-data'
-        }
-        & $agentDockBinary @engineUninstall
+        $engineUninstallJson = (& $agentDockBinary @engineUninstall | Out-String).Trim()
         if ($LASTEXITCODE -ne 0) {
             throw "Installer Engine uninstall failed with exit code $LASTEXITCODE."
         }
+        $engineUninstallPrepared = $true
+        try {
+            $engineUninstallResult = $engineUninstallJson | ConvertFrom-Json
+            $engineUninstallTransactionId = [string] $engineUninstallResult.transaction_id
+        } catch {
+            throw "Installer Engine returned invalid uninstall JSON: $($_.Exception.Message)"
+        }
+        if ([string]::IsNullOrWhiteSpace($engineUninstallTransactionId)) {
+            throw 'Installer Engine uninstall did not return a transaction id.'
+        }
+        # Commit from outside the product tree after the installed binary is deleted.
+        $engineCommitBinary = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-uninstall-' + [Guid]::NewGuid().ToString('N') + '.exe')
+        Copy-Item -LiteralPath $agentDockBinary -Destination $engineCommitBinary -Force -ErrorAction Stop
     }
 }
-
 # Stop the scheduled task before touching the elevated process. New installs
 # grant the desktop user task control; older administrator-owned tasks use a
 # one-time UAC fallback through the installed helper.
 if (-not [string]::IsNullOrWhiteSpace($managedTaskName)) {
     Remove-AgentDockScheduledTask -AdminLauncherPath $trayBinary -RuntimeRoot $runtimeDir -TaskName $managedTaskName
 }
-
 # Stable shims are short-lived and normally have no resident process. Stop every immutable
 # generation explicitly so uninstall also works after an interrupted trial/rollback.
 if (Test-Path -LiteralPath $versionsDir -PathType Container) {
@@ -210,18 +235,15 @@ Stop-ProcessByPath -ProcessName 'agentdock-tray' -BinaryPath $trayBinary
 Stop-ProcessByPath -ProcessName 'cloudflared' -BinaryPath $cloudflaredBinary
 Stop-ProcessByPath -ProcessName 'agentdock' -BinaryPath $agentDockBinary
 
-if (Test-Path -LiteralPath $runKey) {
-    Remove-ItemProperty -LiteralPath $runKey -Name $StartupValueName -ErrorAction SilentlyContinue
-    Remove-ItemProperty -LiteralPath $runKey -Name $CloudflaredStartupValueName -ErrorAction SilentlyContinue
-    Remove-ItemProperty -LiteralPath $runKey -Name $TrayStartupValueName -ErrorAction SilentlyContinue
-}
-
+Remove-RegistryValueIfPresent -Path $runKey -Name $StartupValueName
+Remove-RegistryValueIfPresent -Path $runKey -Name $CloudflaredStartupValueName
+Remove-RegistryValueIfPresent -Path $runKey -Name $TrayStartupValueName
 if (-not $KeepInstallDir) {
     Remove-DirectoryWithRetry -Path $InstallDir
 }
 Remove-DirectoryWithRetry -Path $versionsDir
 Remove-DirectoryWithRetry -Path $updateDir
-Remove-Item -LiteralPath $activeVersionPath -Force -ErrorAction SilentlyContinue
+Remove-FileIfPresent -Path $activeVersionPath
 foreach ($name in @(
     'start-agentdock.ps1',
     'start-cloudflared.ps1',
@@ -241,7 +263,7 @@ foreach ($name in @(
     'runtime.json',
     'desktop-version.txt'
 )) {
-    Remove-Item -LiteralPath (Join-Path $runtimeDir $name) -Force -ErrorAction SilentlyContinue
+    Remove-FileIfPresent -Path (Join-Path $runtimeDir $name)
 }
 
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -252,8 +274,25 @@ if ($PurgeState) {
     if ([string]::IsNullOrWhiteSpace($userHome)) {
         throw 'Unable to resolve the current user profile directory.'
     }
-    Remove-Item -LiteralPath (Join-Path $userHome '.agentdock') -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath (Join-Path $userHome 'AgentDock') -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-DirectoryWithRetry -Path (Join-Path $userHome '.agentdock')
+    Remove-DirectoryWithRetry -Path (Join-Path $userHome 'AgentDock')
 }
-
+# committed means all requested adapter removal is complete.
+if ($engineUninstallPrepared) {
+    if ([string]::IsNullOrWhiteSpace($engineCommitBinary) -or -not (Test-Path -LiteralPath $engineCommitBinary -PathType Leaf)) {
+        throw 'Installer Engine commit helper is missing after uninstall adapter cleanup.'
+    }
+    $engineCommit = @(
+        'install', 'commit',
+        '--install-root', $runtimeDir,
+        '--runtime-root', $runtimeDir,
+        '--transaction-id', $engineUninstallTransactionId
+    )
+    & $engineCommitBinary @engineCommit 1>$null
+    $engineCommitExitCode = $LASTEXITCODE
+    Remove-Item -LiteralPath $engineCommitBinary -Force -ErrorAction SilentlyContinue
+    if ($engineCommitExitCode -ne 0) {
+        throw "Installer Engine failed to commit uninstall after adapter cleanup (exit $engineCommitExitCode)."
+    }
+}
 Write-Host 'AgentDock, its tray, and its managed Cloudflare Tunnel were uninstalled.'

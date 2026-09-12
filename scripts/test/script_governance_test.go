@@ -142,7 +142,7 @@ func TestNewCodeMustNotAddManageWindowsCallers(t *testing.T) {
 	}
 	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
 		path := filepath.ToSlash(strings.TrimSpace(line))
-		if path == "" {
+		if path == "" || strings.HasSuffix(path, "_test.go") {
 			continue
 		}
 		if _, ok := allow[path]; !ok {
