@@ -588,15 +588,35 @@ func namedTunnelRunning(ctx context.Context, request Request) error {
 			return fmt.Errorf("Named Tunnel LaunchAgent %s 未加载", label)
 		}
 	case "windows":
-		serverURL := strings.TrimSpace(readTextFile(filepath.Join(request.RuntimeRoot, "server-url.txt")))
-		if serverURL == "" {
-			return fmt.Errorf("Named Tunnel 尚未写入 server-url.txt")
-		}
+		return windowsNamedTunnelRunning(ctx, request)
 	default:
 		return fmt.Errorf("Named Tunnel 不支持当前平台")
 	}
 	if !cloudflaredProcessRunning(ctx, request) {
 		return fmt.Errorf("Named Tunnel cloudflared 进程未在运行")
+	}
+	return nil
+}
+
+func windowsNamedTunnelRunning(ctx context.Context, request Request) error {
+	binary := windowsServiceBinary(request)
+	if binary == "" {
+		return fmt.Errorf("Windows Named Tunnel 找不到 agentdock 二进制")
+	}
+	cmd := exec.CommandContext(ctx, binary, "tunnel", "status", "--runtime-root", request.RuntimeRoot)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("读取 Windows Named Tunnel 状态失败: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	var status desktopruntime.TunnelStatus
+	if err := json.Unmarshal(out, &status); err != nil {
+		return fmt.Errorf("解析 Windows Named Tunnel 状态失败: %w", err)
+	}
+	if !strings.EqualFold(status.Mode, "named") || !status.Running || !status.Ready {
+		return fmt.Errorf("Windows Named Tunnel 尚未 ready: mode=%s running=%t ready=%t", status.Mode, status.Running, status.Ready)
+	}
+	if want := strings.TrimSpace(request.ServerURL); want != "" && !strings.EqualFold(strings.TrimSpace(status.PublicURL), want) {
+		return fmt.Errorf("Windows Named Tunnel 公网地址不一致: got=%s want=%s", status.PublicURL, want)
 	}
 	return nil
 }
@@ -614,10 +634,6 @@ func cloudflaredProcessRunning(ctx context.Context, request Request) bool {
 		}
 	}
 	base := filepath.Base(path)
-	if runtimeGOOS() == "windows" {
-		out := cmdOutput(ctx, "tasklist", "/FI", "IMAGENAME eq "+base, "/FO", "CSV", "/NH")
-		return strings.Contains(strings.ToLower(string(out)), strings.ToLower(base))
-	}
 	if path != base {
 		// 有绝对路径时不要退回 pgrep -x 进程名，避免命中别人的 cloudflared。
 		return cmdOK(ctx, "pgrep", "-f", path)

@@ -108,3 +108,40 @@ func TestTunnelSupervisorHelperProcess(t *testing.T) {
 		t.Fatal("helper was not stopped by named event")
 	}
 }
+
+func TestWaitNamedTunnelReadyRejectsInvalidTokenLog(t *testing.T) {
+	runtimeRoot := t.TempDir()
+	runtime := tunnelRuntime{
+		root: runtimeRoot,
+		manifest: Manifest{
+			CloudflaredBinary: filepath.Join(runtimeRoot, "cloudflared.exe"),
+		},
+		files: tunnelFiles{
+			stdoutLog: filepath.Join(runtimeRoot, "cloudflared.out.log"),
+			stderrLog: filepath.Join(runtimeRoot, "cloudflared.err.log"),
+		},
+	}
+	if err := os.WriteFile(runtime.files.stderrLog, []byte("old log\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cursors, err := captureTunnelLogCursors(runtime.files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.OpenFile(runtime.files.stderrLog, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString(namedTunnelInvalidTokenMarker + "\n"); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := waitNamedTunnelReady(context.Background(), runtime, cursors, time.Second); err == nil ||
+		!strings.Contains(err.Error(), "Token 无效") {
+		t.Fatalf("invalid Named token log must fail readiness immediately, got %v", err)
+	}
+}

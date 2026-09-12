@@ -3,6 +3,7 @@
 package desktopruntime
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -105,10 +106,10 @@ func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
 }
 
 func runCloudflaredOnce(ctx context.Context, runtime tunnelRuntime, logs *processLogs) error {
-	logCursors := quickTunnelLogCursors{}
+	logCursors := tunnelLogCursors{}
 	var err error
 	if runtime.mode == "quick" {
-		logCursors, err = captureQuickTunnelLogCursors(runtime.files)
+		logCursors, err = captureTunnelLogCursors(runtime.files)
 		if err != nil {
 			return err
 		}
@@ -201,21 +202,21 @@ func platformTunnelAction(ctx context.Context, runtimeRoot, action string) error
 	}
 }
 
-type quickTunnelLogCursors struct {
-	stdout quickTunnelLogCursor
-	stderr quickTunnelLogCursor
+type tunnelLogCursors struct {
+	stdout tunnelLogCursor
+	stderr tunnelLogCursor
 }
 
-func captureQuickTunnelLogCursors(files tunnelFiles) (quickTunnelLogCursors, error) {
-	stdout, err := captureQuickTunnelLogCursor(files.stdoutLog)
+func captureTunnelLogCursors(files tunnelFiles) (tunnelLogCursors, error) {
+	stdout, err := captureTunnelLogCursor(files.stdoutLog)
 	if err != nil {
-		return quickTunnelLogCursors{}, fmt.Errorf("记录 cloudflared stdout 日志位置失败: %w", err)
+		return tunnelLogCursors{}, fmt.Errorf("记录 cloudflared stdout 日志位置失败: %w", err)
 	}
-	stderr, err := captureQuickTunnelLogCursor(files.stderrLog)
+	stderr, err := captureTunnelLogCursor(files.stderrLog)
 	if err != nil {
-		return quickTunnelLogCursors{}, fmt.Errorf("记录 cloudflared stderr 日志位置失败: %w", err)
+		return tunnelLogCursors{}, fmt.Errorf("记录 cloudflared stderr 日志位置失败: %w", err)
 	}
-	return quickTunnelLogCursors{stdout: stdout, stderr: stderr}, nil
+	return tunnelLogCursors{stdout: stdout, stderr: stderr}, nil
 }
 
 func startTunnel(ctx context.Context, runtime tunnelRuntime) error {
@@ -257,12 +258,20 @@ func startTunnel(ctx context.Context, runtime tunnelRuntime) error {
 		}
 	}
 
+	var namedLogCursors tunnelLogCursors
 	if runtime.mode == "quick" {
 		// 旧临时地址在新进程真正拿到 URL 前不能继续暴露为 ready。
 		if err := clearActivePublicURL(runtime.files); err != nil {
 			return err
 		}
 		if err := runtime.updateManifest("none", ""); err != nil {
+			return err
+		}
+	} else {
+		// Named Tunnel 不能只看 cloudflared 瞬时进程存在。无效 Token 会让 supervisor
+		// 不断拉起一个很快退出的进程；只接受本次启动后真正注册连接的日志证据。
+		namedLogCursors, err = captureTunnelLogCursors(runtime.files)
+		if err != nil {
 			return err
 		}
 	}
@@ -275,7 +284,7 @@ func startTunnel(ctx context.Context, runtime tunnelRuntime) error {
 	if runtime.mode == "quick" {
 		return waitQuickTunnelReady(ctx, runtime, 45*time.Second)
 	}
-	return nil
+	return waitNamedTunnelReady(ctx, runtime, namedLogCursors, 45*time.Second)
 }
 
 func stopTunnel(ctx context.Context, runtime tunnelRuntime) error {
@@ -381,6 +390,53 @@ func invalidateQuickTunnelAfterExit(ctx context.Context, runtime tunnelRuntime) 
 	return platformServiceAction(ctx, runtime.root, "restart")
 }
 
+const (
+	namedTunnelConnectedMarker    = "Registered tunnel connection"
+	namedTunnelInvalidTokenMarker = "Provided Tunnel token is not valid."
+)
+
+func waitNamedTunnelReady(ctx context.Context, runtime tunnelRuntime, cursors tunnelLogCursors, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	logs := []struct {
+		path   string
+		cursor tunnelLogCursor
+	}{
+		{path: runtime.files.stdoutLog, cursor: cursors.stdout},
+		{path: runtime.files.stderrLog, cursor: cursors.stderr},
+	}
+	for time.Now().Before(deadline) {
+		connected := false
+		for _, log := range logs {
+			data, err := readTunnelLogSince(log.path, log.cursor)
+			if err != nil {
+				if !errors.Is(err, os.ErrNotExist) {
+					return err
+				}
+				continue
+			}
+			if bytes.Contains(data, []byte(namedTunnelInvalidTokenMarker)) {
+				return fmt.Errorf("Named Tunnel Token 无效: %s", tunnelLogSummary(runtime.files))
+			}
+			if bytes.Contains(data, []byte(namedTunnelConnectedMarker)) {
+				connected = true
+			}
+		}
+		running, err := processRunningAtPath(runtime.manifest.CloudflaredBinary)
+		if err != nil {
+			return err
+		}
+		if connected && running {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	return fmt.Errorf("Named Tunnel 未在 %s 内注册连接: %s", timeout, tunnelLogSummary(runtime.files))
+}
+
 func waitQuickTunnelReady(ctx context.Context, runtime tunnelRuntime, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -406,18 +462,18 @@ func waitQuickTunnelReady(ctx context.Context, runtime tunnelRuntime, timeout ti
 	return fmt.Errorf("Quick Tunnel 未在 %s 内进入 ready: %s", timeout, tunnelLogSummary(runtime.files))
 }
 
-func waitQuickTunnelURL(ctx context.Context, runtime tunnelRuntime, cursors quickTunnelLogCursors, timeout time.Duration) (string, error) {
+func waitQuickTunnelURL(ctx context.Context, runtime tunnelRuntime, cursors tunnelLogCursors, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
 	logs := []struct {
 		path   string
-		cursor quickTunnelLogCursor
+		cursor tunnelLogCursor
 	}{
 		{path: runtime.files.stdoutLog, cursor: cursors.stdout},
 		{path: runtime.files.stderrLog, cursor: cursors.stderr},
 	}
 	for time.Now().Before(deadline) {
 		for _, log := range logs {
-			data, err := readQuickTunnelLogSince(log.path, log.cursor)
+			data, err := readTunnelLogSince(log.path, log.cursor)
 			if err == nil {
 				if publicURL := findQuickTunnelURL(data); publicURL != "" {
 					return publicURL, nil
