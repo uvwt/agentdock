@@ -216,7 +216,11 @@ func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
 				return err
 			}
 		}
-		command := exec.CommandContext(ctx, manifest.CloudflaredBinary, "tunnel", "--no-autoupdate", "run")
+		isolatedConfig, err := ensureIsolatedConfig(root)
+		if err != nil {
+			return err
+		}
+		command := exec.CommandContext(ctx, manifest.CloudflaredBinary, "--config", isolatedConfig, "tunnel", "--no-autoupdate", "run")
 		command.Env = append(os.Environ(), "TUNNEL_TOKEN="+token)
 		command.Stdout = stdout
 		command.Stderr = stderr
@@ -226,8 +230,23 @@ func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
 	}
 }
 
+// ensureIsolatedConfig 在运行目录写一个空 cloudflared 配置，用于 --config 隔离。
+// cloudflared 默认加载 ~/.cloudflared/config.yml，其兜底 ingress
+// `- service: http_status:404` 会把隧道入站请求就地吞成 404。
+func ensureIsolatedConfig(root string) (string, error) {
+	path := filepath.Join(root, "cloudflared-isolated.yml")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		return "", fmt.Errorf("写入 cloudflared 隔离配置失败: %w", err)
+	}
+	return path, nil
+}
+
 func runQuickTunnel(ctx context.Context, manifest unixRuntimeManifest, root, runtimeRoot, target string, logOutput io.Writer) error {
-	command := exec.CommandContext(ctx, manifest.CloudflaredBinary, "tunnel", "--no-autoupdate", "--url", target)
+	isolatedConfig, err := ensureIsolatedConfig(root)
+	if err != nil {
+		return err
+	}
+	command := exec.CommandContext(ctx, manifest.CloudflaredBinary, "--config", isolatedConfig, "tunnel", "--no-autoupdate", "--url", target)
 	reader, writer := io.Pipe()
 	command.Stdout = writer
 	command.Stderr = writer
