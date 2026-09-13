@@ -170,13 +170,19 @@ function Read-ProtectedText {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         return ''
     }
-    $protectedBytes = [Convert]::FromBase64String([IO.File]::ReadAllText($Path).Trim())
-    $plainBytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
-        $protectedBytes,
-        [Text.Encoding]::UTF8.GetBytes($Entropy),
-        [System.Security.Cryptography.DataProtectionScope]::CurrentUser
-    )
-    return [Text.Encoding]::UTF8.GetString($plainBytes)
+    try {
+        $protectedBytes = [Convert]::FromBase64String([IO.File]::ReadAllText($Path).Trim())
+        $plainBytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
+            $protectedBytes,
+            [Text.Encoding]::UTF8.GetBytes($Entropy),
+            [System.Security.Cryptography.DataProtectionScope]::CurrentUser
+        )
+        return [Text.Encoding]::UTF8.GetString($plainBytes)
+    } catch {
+        # Treat an existing but undecryptable DPAPI value as missing. Auto-generated
+        # credentials can then be recreated, while external credentials are requested again.
+        return ''
+    }
 }
 
 function Read-TextFile {
@@ -277,6 +283,31 @@ function Read-SecretFile {
         throw "Secret file is empty: $Path"
     }
     return $value
+}
+
+function Resolve-AvailableTunnelToken {
+    param(
+        [string] $TokenPath,
+        [string] $RequestedToken,
+        [string] $TokenFile
+    )
+
+    $existingToken = Read-ProtectedText -Path $TokenPath -Entropy 'agentdock.cloudflare.tunnel.v1'
+    $resolvedToken = $RequestedToken
+    if ([string]::IsNullOrWhiteSpace($resolvedToken) -and -not [string]::IsNullOrWhiteSpace($TokenFile)) {
+        $resolvedToken = Read-SecretFile -Path $TokenFile
+    }
+    if ([string]::IsNullOrWhiteSpace($resolvedToken)) {
+        $resolvedToken = [Environment]::GetEnvironmentVariable('AGENTDOCK_CLOUDFLARE_TUNNEL_TOKEN')
+    }
+    if ([string]::IsNullOrWhiteSpace($resolvedToken)) {
+        $resolvedToken = $existingToken
+    }
+
+    return [pscustomobject]@{
+        Token = $resolvedToken
+        ExistingToken = $existingToken
+    }
 }
 
 function Initialize-OAuthCredentials {
@@ -1304,6 +1335,20 @@ try {
         }
     }
 
+    # Setup is non-interactive. Resolve external Tunnel credentials only after confirming the
+    # current-user context, but before payload extraction or runtime mutation.
+    if ($InstallChannel -eq 'setup' -and $resolvedTunnelMode -eq 'named') {
+        $setupTunnelTokenState = Resolve-AvailableTunnelToken `
+            -TokenPath $tunnelTokenPath `
+            -RequestedToken $TunnelToken `
+            -TokenFile $TunnelTokenFile
+        if ([string]::IsNullOrWhiteSpace($setupTunnelTokenState.Token)) {
+            $installErrorCode = 'tunnel-token-required'
+            throw 'The saved Cloudflare Tunnel Token is missing or unreadable. Re-enter it in Setup.'
+        }
+        $TunnelToken = $setupTunnelTokenState.Token
+    }
+
     New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
     New-Item -ItemType Directory -Path $runtimeBackupDir -Force | Out-Null
     foreach ($item in $managedRuntimeFiles) {
@@ -1705,17 +1750,17 @@ try {
                 $ServerUrl = Normalize-ServerUrl -Value $ServerUrl
                 Write-TextFile -Path $namedServerUrlPath -Value $ServerUrl
 
-                $existingTunnelToken = Read-ProtectedText -Path $tunnelTokenPath -Entropy 'agentdock.cloudflare.tunnel.v1'
-                if ([string]::IsNullOrWhiteSpace($TunnelToken) -and -not [string]::IsNullOrWhiteSpace($TunnelTokenFile)) {
-                    $TunnelToken = Read-SecretFile -Path $TunnelTokenFile
-                }
+                $tunnelTokenState = Resolve-AvailableTunnelToken `
+                    -TokenPath $tunnelTokenPath `
+                    -RequestedToken $TunnelToken `
+                    -TokenFile $TunnelTokenFile
+                $existingTunnelToken = $tunnelTokenState.ExistingToken
+                $TunnelToken = $tunnelTokenState.Token
                 if ([string]::IsNullOrWhiteSpace($TunnelToken)) {
-                    $TunnelToken = [Environment]::GetEnvironmentVariable('AGENTDOCK_CLOUDFLARE_TUNNEL_TOKEN')
-                }
-                if ([string]::IsNullOrWhiteSpace($TunnelToken)) {
-                    $TunnelToken = $existingTunnelToken
-                }
-                if ([string]::IsNullOrWhiteSpace($TunnelToken)) {
+                    if ($InstallChannel -eq 'setup') {
+                        $installErrorCode = 'tunnel-token-required'
+                        throw 'The saved Cloudflare Tunnel Token is missing or unreadable. Re-enter it in Setup.'
+                    }
                     $secureTunnelToken = Read-Host 'Cloudflare Tunnel Token' -AsSecureString
                     $credential = New-Object System.Management.Automation.PSCredential('token', $secureTunnelToken)
                     $TunnelToken = $credential.GetNetworkCredential().Password

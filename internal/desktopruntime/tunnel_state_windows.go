@@ -3,6 +3,7 @@
 package desktopruntime
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -13,14 +14,19 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 
 	"github.com/uvwt/agentdock/internal/fs/atomicfile"
+	"github.com/uvwt/agentdock/internal/fs/filelock"
 )
 
-const tunnelTokenEntropy = "agentdock.cloudflare.tunnel.v1"
+const (
+	tunnelTokenEntropy             = "agentdock.cloudflare.tunnel.v1"
+	generatedCredentialLockTimeout = 30 * time.Second
+)
 
 type tunnelFiles struct {
 	manifest       string
@@ -166,6 +172,36 @@ func readSecretFile(path string) (string, error) {
 	return value, nil
 }
 
+// readOrCreateProtectedText 读取可自动轮换的 DPAPI 凭据。锁必须覆盖读取、解密、
+// 生成和持久化整个流程；否则两个 launch-core 并发恢复时，进程可能拿到不同于磁盘最终值的凭据。
+func readOrCreateProtectedText(path, entropy string, byteCount int, name string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), generatedCredentialLockTimeout)
+	defer cancel()
+	release, err := filelock.Acquire(ctx, path+".lock")
+	if err != nil {
+		return "", fmt.Errorf("锁定 %s 失败: %w", name, err)
+	}
+	defer release()
+
+	// 获得锁后重新读取。等待锁期间，另一个进程可能已经完成了创建或损坏恢复。
+	data, err := os.ReadFile(path)
+	if err == nil && strings.TrimSpace(string(data)) != "" {
+		if value, decryptErr := readProtectedText(path, entropy); decryptErr == nil && strings.TrimSpace(value) != "" {
+			return value, nil
+		}
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("读取 %s 失败: %w", name, err)
+	}
+	value, err := randomHex(byteCount)
+	if err != nil {
+		return "", fmt.Errorf("生成 %s 失败: %w", name, err)
+	}
+	if err := writeProtectedText(path, value, entropy); err != nil {
+		return "", fmt.Errorf("保存 %s 失败: %w", name, err)
+	}
+	return value, nil
+}
+
 func ensureDesktopCredentials(runtimeRoot string) error {
 	credentials := []struct {
 		name    string
@@ -178,22 +214,8 @@ func ensureDesktopCredentials(runtimeRoot string) error {
 		{name: "OAuth 签名密钥", path: filepath.Join(runtimeRoot, "oauth-token-secret.dpapi"), entropy: "agentdock.oauth.secret.v1", bytes: 32},
 	}
 	for _, credential := range credentials {
-		data, err := os.ReadFile(credential.path)
-		if err == nil && strings.TrimSpace(string(data)) != "" {
-			if _, decryptErr := readProtectedText(credential.path, credential.entropy); decryptErr != nil {
-				return fmt.Errorf("%s 无法解密: %w", credential.name, decryptErr)
-			}
-			continue
-		}
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("读取 %s 失败: %w", credential.name, err)
-		}
-		value, err := randomHex(credential.bytes)
-		if err != nil {
-			return fmt.Errorf("生成 %s 失败: %w", credential.name, err)
-		}
-		if err := writeProtectedText(credential.path, value, credential.entropy); err != nil {
-			return fmt.Errorf("保存 %s 失败: %w", credential.name, err)
+		if _, err := readOrCreateProtectedText(credential.path, credential.entropy, credential.bytes, credential.name); err != nil {
+			return err
 		}
 	}
 	return nil

@@ -67,6 +67,7 @@ Name: "chinesesimplified"; MessagesFile: "compiler:Default.isl, languages\Chines
 
 [Files]
 Source: "..\..\scripts\install\install.ps1"; Flags: dontcopy
+Source: "..\..\scripts\install\probe-protected-text.ps1"; Flags: dontcopy
 Source: "..\..\scripts\install\launch-windows-process.ps1"; Flags: dontcopy
 Source: "..\..\scripts\install\manage-windows.ps1"; Flags: dontcopy
 Source: "{#OfflinePayloadDir}\agentdock_windows_{#PayloadArchitecture}.zip"; Flags: dontcopy
