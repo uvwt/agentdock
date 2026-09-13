@@ -98,29 +98,35 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	runtime.evolution = evolution.New(func() config.Config { return runtime.cfg }, tasks)
 	runtime.taskTools = tooltask.New(func() config.Config { return runtime.cfg }, tasks, runtime.evolution)
 	if cfg.ACPEnabled {
-		acpEnvironment := make(map[string]string, len(cfg.ACPEnvFromEnv))
-		for childName, hostName := range cfg.ACPEnvFromEnv {
-			value, exists := os.LookupEnv(hostName)
-			if !exists {
-				_ = runtime.Close()
-				return nil, fmt.Errorf("required ACP environment variable %s is missing", hostName)
+		managers := make(map[string]*acpruntime.Manager)
+		for _, profile := range cfg.EffectiveACPProfiles() {
+			acpEnvironment := make(map[string]string, len(profile.EnvFromEnv))
+			for childName, hostName := range profile.EnvFromEnv {
+				value, exists := os.LookupEnv(hostName)
+				if !exists {
+					_ = toolacp.NewMulti(cfg.EffectiveACPDefaultProfile(), managers).Close()
+					_ = runtime.Close()
+					return nil, fmt.Errorf("required ACP environment variable %s for profile %s is missing", hostName, profile.ID)
+				}
+				acpEnvironment[childName] = value
 			}
-			acpEnvironment[childName] = value
+			manager, err := acpruntime.NewManager(acpruntime.Options{
+				Home:       cfg.AgentDockHome,
+				DefaultCWD: cfg.AgentDockDefaultDir,
+				Agent: acpruntime.AgentSpec{
+					Name: profile.ID, Command: profile.Command, Args: append([]string(nil), profile.Args...), Environment: acpEnvironment,
+				},
+				MaxConcurrentRuns:  cfg.ACPMaxPrompts,
+				InteractionTimeout: time.Duration(cfg.ACPInteractionMS) * time.Millisecond,
+			})
+			if err != nil {
+				_ = toolacp.NewMulti(cfg.EffectiveACPDefaultProfile(), managers).Close()
+				_ = runtime.Close()
+				return nil, fmt.Errorf("initialize ACP profile %s: %w", profile.ID, err)
+			}
+			managers[profile.ID] = manager
 		}
-		manager, err := acpruntime.NewManager(acpruntime.Options{
-			Home:       cfg.AgentDockHome,
-			DefaultCWD: cfg.AgentDockDefaultDir,
-			Agent: acpruntime.AgentSpec{
-				Name: cfg.ACPAgentName, Command: cfg.ACPCommand, Args: append([]string(nil), cfg.ACPArgs...), Environment: acpEnvironment,
-			},
-			MaxConcurrentRuns:  cfg.ACPMaxPrompts,
-			InteractionTimeout: time.Duration(cfg.ACPInteractionMS) * time.Millisecond,
-		})
-		if err != nil {
-			_ = runtime.Close()
-			return nil, fmt.Errorf("initialize ACP runtime: %w", err)
-		}
-		runtime.acp = toolacp.New(manager)
+		runtime.acp = toolacp.NewMulti(cfg.EffectiveACPDefaultProfile(), managers)
 	}
 	return runtime, nil
 }

@@ -1,6 +1,11 @@
 package desktopruntime
 
-import "testing"
+import (
+	"os"
+	"testing"
+
+	agentconfig "github.com/uvwt/agentdock/internal/config"
+)
 
 func TestValidateConfigUpdate(t *testing.T) {
 	valid := ConfigUpdateRequest{
@@ -32,6 +37,42 @@ func TestValidateConfigUpdate(t *testing.T) {
 	validCustomACP.ACPCommand = `C:\\Tools\\custom-acp.exe`
 	if err := validateConfigUpdate(validCustomACP); err != nil {
 		t.Fatalf("valid custom ACP config rejected: %v", err)
+	}
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	validProfiles := valid
+	validProfiles.ACPEnabled = true
+	validProfiles.ACPDefaultProfile = "zcode"
+	validProfiles.ACPProfiles = []agentconfig.ACPProfile{
+		{ID: "codex", Kind: "codex", Command: executable, Enabled: true},
+		{ID: "zcode", Kind: "custom", Command: executable, Enabled: true},
+		{ID: "agy", Kind: "custom", Command: executable, Enabled: true},
+	}
+	if err := validateConfigUpdate(validProfiles); err != nil {
+		t.Fatalf("valid ACP profiles rejected: %v", err)
+	}
+
+	invalidBuiltinProfile := validProfiles
+	invalidBuiltinProfile.ACPProfiles = append([]agentconfig.ACPProfile(nil), validProfiles.ACPProfiles...)
+	invalidBuiltinProfile.ACPProfiles[0].ID = "codex-work"
+	if err := validateConfigUpdate(invalidBuiltinProfile); err == nil {
+		t.Fatal("renamed built-in ACP profile was accepted")
+	}
+
+	invalidDefaultProfile := validProfiles
+	invalidDefaultProfile.ACPDefaultProfile = "missing"
+	if err := validateConfigUpdate(invalidDefaultProfile); err == nil {
+		t.Fatal("missing default ACP profile was accepted")
+	}
+
+	invalidProfileID := validProfiles
+	invalidProfileID.ACPProfiles = append([]agentconfig.ACPProfile(nil), validProfiles.ACPProfiles...)
+	invalidProfileID.ACPProfiles[1].ID = "中文"
+	if err := validateConfigUpdate(invalidProfileID); err == nil {
+		t.Fatal("non-ASCII ACP profile id was accepted")
 	}
 
 	validTTL := valid

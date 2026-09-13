@@ -91,15 +91,15 @@ grok agent stdio
 
 1. 打开 **Coding Agent（ACP）**；
 2. 勾选“启用 Coding Agent”；
-3. 选择 Codex、Claude 或 Grok Build；
-4. 确认界面显示“已检测到”对应 Adapter；
-5. 保存设置。
+3. 新增或选择一个 Profile；内置 Codex、Claude、Grok Build 各只能存在一个，Custom 可以创建多个；
+4. Custom Profile 使用独立 ID，例如 `zcode`、`agy`，并配置对应 Adapter；
+5. 选择一个已启用 Profile 作为默认 Profile，确认界面显示 Adapter 可用后保存设置。
 
 macOS Desktop 会根据预设自动解析实际 Adapter 路径和参数，原子更新 AgentDock 的运行环境并重启 Core。模型如果有真实桌面操作能力，应直接完成这些操作，而不是让用户代做。
 
 ### Windows Desktop
 
-优先使用 AgentDock 控制面板选择 Codex、Claude 或 Grok Build。Windows Desktop 会在 PATH、用户 npm 目录、WinGet 链接、Grok 安装目录等位置解析 Adapter；Codex / Claude 也会识别对应 npm package 的 Node.js 入口。
+优先使用 AgentDock 控制面板管理 ACP Profiles。内置 Codex、Claude、Grok Build 使用固定 Profile ID 且各只能存在一个；Custom 可以创建多个独立 ID。Windows Desktop 会在 PATH、用户 npm 目录、WinGet 链接、Grok 安装目录等位置解析 Adapter；Codex / Claude 也会识别对应 npm package 的 Node.js 入口。
 
 如果必须使用 `agentdock config update`，先读取当前完整控制面板配置，再把端口、日志、浏览器、MCP Apps 等现有设置连同 ACP 设置一起提交；不要只传 ACP 参数导致其他桌面设置被默认值覆盖。
 
@@ -121,6 +121,21 @@ AGENTDOCK_ACP_ARGS_JSON=["agent","stdio"]
 
 自定义 Adapter 使用自己的绝对命令和参数。配置写入哪个文件、Compose 环境或进程管理器，继续按本 Skill 对应平台 reference 的“真实配置事实源”处理，不要发明统一 `agentdock.yaml`。
 
+需要同时启用多个 ACP 时，改用 Profiles 配置：
+
+```text
+AGENTDOCK_ACP_ENABLED=true
+AGENTDOCK_ACP_PROFILES_JSON=[{"id":"codex","kind":"codex","command":"/absolute/path/to/codex-acp","enabled":true},{"id":"zcode","kind":"custom","command":"/absolute/path/to/node","args":["/absolute/path/to/zcode-acp-server.js"],"enabled":true}]
+AGENTDOCK_ACP_DEFAULT_PROFILE=zcode
+```
+
+Profile 规则：
+
+- `codex`、`claude`、`grok` 是内置类型的固定 ID，因此天然保持单实例；
+- `custom` 可以配置多个，但每个 Profile ID 必须唯一；
+- 每个启用 Profile 使用独立 ACP Manager 和持久会话 identity，session/run/interaction 不跨 Profile 混用；
+- 配置了 `AGENTDOCK_ACP_PROFILES_JSON` 后，Core 以 Profiles 为准；旧 `AGENTDOCK_ACP_AGENT/COMMAND/ARGS_JSON/ENV_FROM_ENV_JSON` 只作为单 ACP 兼容入口。
+
 保存后重启或重建真正承载 AgentDock Core 的运行单元，让新环境重新加载。
 
 ## 验证 ACP 真的可用
@@ -129,9 +144,11 @@ AGENTDOCK_ACP_ARGS_JSON=["agent","stdio"]
 
 1. **Adapter 层**：解析到的命令真实存在，并且由 AgentDock 的运行用户可执行；Codex / Claude 的 npm Adapter 还要确认 Node.js 入口真实存在。
 2. **Core 层**：Core 重启后健康检查正常。
-3. **上下文层**：重新读取 `agentdock_context`，确认出现 ACP 信息、`enabled=true`，且 `agent` 是预期值。
+3. **上下文层**：重新读取 `agentdock_context`，确认出现 ACP 信息、`enabled=true`，并检查 `default_profile` 与 `profiles`；兼容字段 `agent` 等于默认 Profile ID。
 4. **工具层**：当前 MCP 连接的 `tools/list` 应包含 `acp_session`、`acp_prompt` 和 `acp_interaction`。
 5. **Adapter 启动层**：工具已可见时优先调用 `acp_session info`，确认 Adapter 能启动并返回实际能力 / 认证状态；需要登录时再按 Adapter 暴露的认证方式处理。
+
+多 Profile 下，`acp_session`、`acp_prompt`、`acp_interaction` 都接受可选 `profile_id`。省略时走默认 Profile；成功响应会回显实际处理请求的 `profile_id`。对非默认 Profile 的后续 session/prompt/interaction 操作应持续传同一个 `profile_id`。
 
 如果当前客户端是 ChatGPT，启用 ACP 会改变工具 Schema。Core 已正确启用后，还要到 GPT 的 AgentDock 插件页面点击**刷新**，再**新开会话**，否则旧会话可能继续使用不包含 ACP 工具的缓存 Schema。
 

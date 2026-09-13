@@ -12,7 +12,7 @@ private struct ACPNodePackage {
     let binName: String
 }
 
-enum ACPAgentPreset: String, CaseIterable {
+enum ACPAgentPreset: String, CaseIterable, Codable {
     case codex
     case claude
     case grok
@@ -350,7 +350,44 @@ enum ACPAgentPreset: String, CaseIterable {
     }
 }
 
+struct ACPProfileConfiguration: Codable, Equatable {
+    var id: String
+    var kind: ACPAgentPreset
+    var command: String
+    var args: [String]
+    var envFromEnv: [String: String]?
+    var enabled: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case command
+        case args
+        case envFromEnv = "env_from_env"
+        case enabled
+    }
+}
+
 struct ACPDesktopConfiguration {
+    static func encodeProfiles(_ profiles: [ACPProfileConfiguration]) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(profiles)
+        guard let value = String(data: data, encoding: .utf8) else {
+            throw ValidationError(L10n.text("Unable to encode Coding Agent profiles."))
+        }
+        return value
+    }
+
+    static func decodeProfiles(_ raw: String?) throws -> [ACPProfileConfiguration] {
+        guard let raw,
+              !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return []
+        }
+        let data = Data(raw.utf8)
+        return try JSONDecoder().decode([ACPProfileConfiguration].self, from: data)
+    }
+
     static func encodeArguments(_ arguments: [String]) throws -> String {
         let data = try JSONEncoder().encode(arguments)
         guard let value = String(data: data, encoding: .utf8) else {

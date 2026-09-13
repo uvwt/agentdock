@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -106,5 +107,88 @@ func TestFromEnvRejectsInvalidACPEnvironmentMapping(t *testing.T) {
 	t.Setenv("AGENTDOCK_ACP_ENV_FROM_ENV_JSON", `{"BAD-NAME":"HOST_KEY"}`)
 	if _, err := FromEnv(); err == nil {
 		t.Fatal("invalid ACP environment mapping was accepted")
+	}
+}
+
+func TestFromEnvParsesMultipleACPProfiles(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := json.Marshal([]ACPProfile{
+		{ID: "codex", Kind: "codex", Command: executable, Enabled: true},
+		{ID: "zcode", Kind: "custom", Command: executable, Args: []string{"zcode.js"}, Enabled: true},
+		{ID: "agy", Kind: "custom", Command: executable, Enabled: false},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AGENTDOCK_ACP_ENABLED", "true")
+	t.Setenv("AGENTDOCK_ACP_PROFILES_JSON", string(profiles))
+	t.Setenv("AGENTDOCK_ACP_DEFAULT_PROFILE", "zcode")
+
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.AgentDockHome = t.TempDir()
+	cfg.AgentDockDefaultDir = t.TempDir()
+	if err := cfg.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ACPDefaultProfile != "zcode" || cfg.ACPAgentName != "zcode" {
+		t.Fatalf("default ACP profile = %q, legacy agent = %q", cfg.ACPDefaultProfile, cfg.ACPAgentName)
+	}
+	active := cfg.EffectiveACPProfiles()
+	if len(active) != 2 || active[0].ID != "codex" || active[1].ID != "zcode" {
+		t.Fatalf("active ACP profiles = %#v", active)
+	}
+}
+
+func TestNormalizeACPProfilesAllowsMultipleCustomButBuiltinUsesFixedID(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{
+		AgentDockHome: t.TempDir(), AgentDockDefaultDir: t.TempDir(), ACPEnabled: true,
+		ACPProfiles: []ACPProfile{
+			{ID: "codex", Kind: "codex", Command: executable, Enabled: true},
+			{ID: "zcode", Kind: "custom", Command: executable, Enabled: true},
+			{ID: "agy", Kind: "custom", Command: executable, Enabled: true},
+		},
+		ACPDefaultProfile: "zcode",
+	}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.EffectiveACPProfiles()) != 3 {
+		t.Fatalf("active ACP profiles = %#v", cfg.EffectiveACPProfiles())
+	}
+
+	cfg.ACPProfiles[0].ID = "codex-work"
+	if err := cfg.Normalize(); err == nil || !strings.Contains(err.Error(), "must use id") {
+		t.Fatalf("renamed built-in ACP profile error = %v", err)
+	}
+}
+
+func TestEffectiveACPProfilesPreservesLegacyIdentity(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{
+		AgentDockHome: t.TempDir(), AgentDockDefaultDir: t.TempDir(),
+		ACPEnabled: true, ACPAgentName: "custom", ACPCommand: executable,
+	}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	profiles := cfg.EffectiveACPProfiles()
+	if len(profiles) != 1 || profiles[0].ID != "custom" || profiles[0].Kind != "custom" {
+		t.Fatalf("legacy ACP profiles = %#v", profiles)
+	}
+	if cfg.EffectiveACPDefaultProfile() != "custom" {
+		t.Fatalf("legacy default ACP profile = %q", cfg.EffectiveACPDefaultProfile())
 	}
 }

@@ -12,6 +12,36 @@ struct EditableServiceSettings {
     let acpAgent: ACPAgentPreset
     let acpCommand: String
     let acpArgs: [String]
+    let acpProfiles: [ACPProfileConfiguration]
+    let acpDefaultProfile: String
+
+    init(
+        port: Int,
+        logLevel: String,
+        mcpAppsEnabled: Bool,
+        browserEnabled: Bool,
+        browserCDPURL: String,
+        browserReuseExistingCDP: Bool,
+        acpEnabled: Bool,
+        acpAgent: ACPAgentPreset,
+        acpCommand: String,
+        acpArgs: [String],
+        acpProfiles: [ACPProfileConfiguration] = [],
+        acpDefaultProfile: String = ""
+    ) {
+        self.port = port
+        self.logLevel = logLevel
+        self.mcpAppsEnabled = mcpAppsEnabled
+        self.browserEnabled = browserEnabled
+        self.browserCDPURL = browserCDPURL
+        self.browserReuseExistingCDP = browserReuseExistingCDP
+        self.acpEnabled = acpEnabled
+        self.acpAgent = acpAgent
+        self.acpCommand = acpCommand
+        self.acpArgs = acpArgs
+        self.acpProfiles = acpProfiles
+        self.acpDefaultProfile = acpDefaultProfile
+    }
 
     func validated() throws -> EditableServiceSettings {
         try ServicePortValidation.validate(port)
@@ -23,6 +53,10 @@ struct EditableServiceSettings {
         let browserCDPURL = try Self.normalizeBrowserCDPURL(browserCDPURL)
         if browserEnabled, browserCDPURL.isEmpty, !browserReuseExistingCDP, BrowserSupportController.detectExecutable() == nil {
             throw ValidationError(L10n.text("No supported Chrome, Chromium, or Microsoft Edge was detected and no external CDP is configured."))
+        }
+
+        if !acpProfiles.isEmpty {
+            return try validatedWithProfiles(normalizedLogLevel: normalizedLogLevel, browserCDPURL: browserCDPURL)
         }
 
         var command = acpAgent == .custom
@@ -51,8 +85,90 @@ struct EditableServiceSettings {
             acpEnabled: acpEnabled,
             acpAgent: acpAgent,
             acpCommand: command,
-            acpArgs: arguments
+            acpArgs: arguments,
+            acpProfiles: [],
+            acpDefaultProfile: ""
         )
+    }
+
+    private func validatedWithProfiles(normalizedLogLevel: String, browserCDPURL: String) throws -> EditableServiceSettings {
+        var seen = Set<String>()
+        var profiles: [ACPProfileConfiguration] = []
+        profiles.reserveCapacity(acpProfiles.count)
+
+        for rawProfile in acpProfiles {
+            var profile = rawProfile
+            profile.id = profile.id.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard Self.validProfileID(profile.id) else {
+                throw ValidationError(L10n.format("Invalid Coding Agent profile ID: %@", profile.id))
+            }
+            guard seen.insert(profile.id).inserted else {
+                throw ValidationError(L10n.format("Duplicate Coding Agent profile ID: %@", profile.id))
+            }
+            switch profile.kind {
+            case .codex, .claude, .grok:
+                guard profile.id == profile.kind.rawValue else {
+                    throw ValidationError(L10n.format("Built-in Coding Agent %@ must use profile ID %@.", profile.kind.title, profile.kind.rawValue))
+                }
+            case .custom:
+                guard !["codex", "claude", "grok"].contains(profile.id) else {
+                    throw ValidationError(L10n.format("Custom Coding Agent profile ID %@ is reserved.", profile.id))
+                }
+            }
+
+            if acpEnabled, profile.enabled {
+                let resolution = profile.kind.resolveAdapter(
+                    configuredCommand: profile.command,
+                    configuredArguments: profile.args
+                )
+                guard resolution.available else {
+                    throw ValidationError(L10n.format("%@ is unavailable: %@.", profile.id, profile.kind.missingAdapterMessage))
+                }
+                profile.command = resolution.command
+                profile.args = resolution.arguments
+            }
+            profiles.append(profile)
+        }
+
+        let enabledProfiles = profiles.filter(\.enabled)
+        if acpEnabled, enabledProfiles.isEmpty {
+            throw ValidationError(L10n.text("Enable at least one Coding Agent profile."))
+        }
+        let defaultProfileID = acpDefaultProfile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? enabledProfiles.first?.id ?? profiles.first?.id ?? ""
+            : acpDefaultProfile.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let defaultProfile = profiles.first(where: { $0.id == defaultProfileID }),
+              !acpEnabled || defaultProfile.enabled else {
+            throw ValidationError(L10n.text("The default Coding Agent profile must reference an enabled profile."))
+        }
+
+        return EditableServiceSettings(
+            port: port,
+            logLevel: normalizedLogLevel,
+            mcpAppsEnabled: mcpAppsEnabled,
+            browserEnabled: browserEnabled,
+            browserCDPURL: browserCDPURL,
+            browserReuseExistingCDP: browserReuseExistingCDP,
+            acpEnabled: acpEnabled,
+            acpAgent: defaultProfile.kind,
+            acpCommand: defaultProfile.command,
+            acpArgs: defaultProfile.args,
+            acpProfiles: profiles,
+            acpDefaultProfile: defaultProfileID
+        )
+    }
+
+    private static func validProfileID(_ value: String) -> Bool {
+        guard !value.isEmpty, value.utf8.count <= 64 else { return false }
+        return value.unicodeScalars.allSatisfy { scalar in
+            let value = scalar.value
+            return (65...90).contains(value)
+                || (97...122).contains(value)
+                || (48...57).contains(value)
+                || value == 46
+                || value == 95
+                || value == 45
+        }
     }
 
     private static func normalizeBrowserCDPURL(_ raw: String) throws -> String {
@@ -98,6 +214,13 @@ final class ServiceConfigurationController {
             "AGENTDOCK_ACP_COMMAND": settings.acpCommand,
             "AGENTDOCK_ACP_ARGS_JSON": try ACPDesktopConfiguration.encodeArguments(settings.acpArgs),
         ]
+        if !settings.acpProfiles.isEmpty {
+            replacements["AGENTDOCK_ACP_PROFILES_JSON"] = try ACPDesktopConfiguration.encodeProfiles(settings.acpProfiles)
+            replacements["AGENTDOCK_ACP_DEFAULT_PROFILE"] = settings.acpDefaultProfile
+        } else {
+            replacements["AGENTDOCK_ACP_PROFILES_JSON"] = ""
+            replacements["AGENTDOCK_ACP_DEFAULT_PROFILE"] = ""
+        }
         if settings.acpEnabled {
             // 桌面预设依赖各 Agent 自己的登录状态，不继承上一个 Agent 的密钥映射。
             replacements["AGENTDOCK_ACP_ENV_FROM_ENV_JSON"] = "{}"

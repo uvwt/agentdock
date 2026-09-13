@@ -43,6 +43,8 @@ struct ServiceConfiguration: Equatable {
         "AGENTDOCK_BROWSER_CDP_URL",
         "AGENTDOCK_BROWSER_REUSE_EXISTING_CDP",
         "AGENTDOCK_ACP_ENABLED",
+        "AGENTDOCK_ACP_PROFILES_JSON",
+        "AGENTDOCK_ACP_DEFAULT_PROFILE",
         "AGENTDOCK_ACP_AGENT",
         "AGENTDOCK_ACP_COMMAND",
         "AGENTDOCK_ACP_ARGS_JSON",
@@ -66,6 +68,8 @@ struct ServiceConfiguration: Equatable {
     let browserCDPURL: String
     let browserReuseExistingCDP: Bool
     let acpEnabled: Bool
+    let acpProfiles: [ACPProfileConfiguration]
+    let acpDefaultProfile: String
     let acpAgent: ACPAgentPreset
     let acpCommand: String
     let acpArgs: [String]
@@ -101,7 +105,33 @@ struct ServiceConfiguration: Equatable {
         let host = values["AGENTDOCK_HOST"] ?? "127.0.0.1"
         guard let port = Int(values["AGENTDOCK_PORT"] ?? "8765"), (1...65535).contains(port) else { return nil }
         let publicURL = values["AGENTDOCK_SERVER_URL"].flatMap { $0.isEmpty ? nil : $0 }
-        guard let acpAgent = ACPAgentPreset.parse(values["AGENTDOCK_ACP_AGENT"] ?? "codex") else {
+        guard let legacyAgent = ACPAgentPreset.parse(values["AGENTDOCK_ACP_AGENT"] ?? "codex") else {
+            return nil
+        }
+        let acpEnabled = parseBool(values["AGENTDOCK_ACP_ENABLED"])
+        let legacyCommand = values["AGENTDOCK_ACP_COMMAND"] ?? ""
+        let legacyArgs = decodeStringArray(values["AGENTDOCK_ACP_ARGS_JSON"])
+        guard var acpProfiles = try? ACPDesktopConfiguration.decodeProfiles(values["AGENTDOCK_ACP_PROFILES_JSON"]) else {
+            return nil
+        }
+        var acpDefaultProfile = values["AGENTDOCK_ACP_DEFAULT_PROFILE"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if acpProfiles.isEmpty {
+            // 旧版单 ACP 配置在内存中映射成一个 Profile；保存前仍可继续走兼容路径。
+            acpProfiles = [ACPProfileConfiguration(
+                id: legacyAgent.rawValue,
+                kind: legacyAgent,
+                command: legacyCommand,
+                args: legacyArgs,
+                envFromEnv: nil,
+                // 旧单 ACP 没有 Profile 级开关；迁移后保持“已配置”，只由全局开关控制是否启用。
+                enabled: true
+            )]
+            acpDefaultProfile = legacyAgent.rawValue
+        } else if acpDefaultProfile.isEmpty {
+            acpDefaultProfile = acpProfiles.first(where: \.enabled)?.id ?? acpProfiles[0].id
+        }
+        guard let selectedProfile = acpProfiles.first(where: { $0.id == acpDefaultProfile }) else {
             return nil
         }
         return ServiceConfiguration(
@@ -115,10 +145,12 @@ struct ServiceConfiguration: Equatable {
             browserEnabled: parseBool(values["AGENTDOCK_BROWSER_ENABLED"]),
             browserCDPURL: values["AGENTDOCK_BROWSER_CDP_URL"] ?? "",
             browserReuseExistingCDP: parseBool(values["AGENTDOCK_BROWSER_REUSE_EXISTING_CDP"]),
-            acpEnabled: parseBool(values["AGENTDOCK_ACP_ENABLED"]),
-            acpAgent: acpAgent,
-            acpCommand: values["AGENTDOCK_ACP_COMMAND"] ?? "",
-            acpArgs: decodeStringArray(values["AGENTDOCK_ACP_ARGS_JSON"])
+            acpEnabled: acpEnabled,
+            acpProfiles: acpProfiles,
+            acpDefaultProfile: acpDefaultProfile,
+            acpAgent: selectedProfile.kind,
+            acpCommand: selectedProfile.command,
+            acpArgs: selectedProfile.args
         )
     }
 

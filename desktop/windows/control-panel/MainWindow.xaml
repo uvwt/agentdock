@@ -245,21 +245,46 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <CheckBox x:Name="AcpEnabledCheckBox" Grid.ColumnSpan="3" Content="{local:Loc EnableCodingAgent}" Margin="0,4,0,12" Checked="AcpSetting_Changed" Unchecked="AcpSetting_Changed" />
-                <TextBlock Grid.Row="1" Text="Agent" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <ComboBox x:Name="AcpAgentComboBox" Grid.Row="1" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10" SelectionChanged="AcpSetting_Changed">
+
+                <TextBlock Grid.Row="1" Text="Profile" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <ComboBox x:Name="AcpProfileComboBox" Grid.Row="1" Grid.Column="1" Width="260" HorizontalAlignment="Left" Margin="0,0,0,10" SelectionChanged="AcpProfile_Changed" />
+                <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal" Margin="8,0,0,10">
+                  <ComboBox x:Name="AcpAddProfileComboBox" Width="110" SelectionChanged="AcpAddProfile_Changed">
+                    <ComboBoxItem Content="Add…" Tag="" />
+                    <ComboBoxItem Content="Codex" Tag="codex" />
+                    <ComboBoxItem Content="Claude" Tag="claude" />
+                    <ComboBoxItem Content="Grok Build" Tag="grok" />
+                    <ComboBoxItem Content="{local:Loc Custom}" Tag="custom" />
+                  </ComboBox>
+                  <Button x:Name="AcpRemoveProfileButton" Content="Remove" Margin="8,0,0,0" Padding="10,2" Click="AcpRemoveProfile_Click" />
+                </StackPanel>
+
+                <TextBlock Grid.Row="2" Text="Profile ID" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <TextBox x:Name="AcpProfileIdTextBox" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" TextChanged="AcpSetting_Changed" />
+
+                <StackPanel Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,10">
+                  <CheckBox x:Name="AcpProfileEnabledCheckBox" Content="Enabled" Margin="0,0,18,0" Checked="AcpProfileFlag_Changed" Unchecked="AcpProfileFlag_Changed" />
+                  <CheckBox x:Name="AcpProfileDefaultCheckBox" Content="Default" Checked="AcpProfileFlag_Changed" Unchecked="AcpProfileFlag_Changed" />
+                </StackPanel>
+
+                <TextBlock Grid.Row="4" Text="Type" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <ComboBox x:Name="AcpAgentComboBox" Grid.Row="4" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10" SelectionChanged="AcpSetting_Changed" IsEnabled="False">
                   <ComboBoxItem Content="Codex" Tag="codex" />
                   <ComboBoxItem Content="Claude" Tag="claude" />
                   <ComboBoxItem Content="Grok Build" Tag="grok" />
                   <ComboBoxItem Content="{local:Loc Custom}" Tag="custom" />
                 </ComboBox>
-                <TextBlock x:Name="AcpCommandLabel" Grid.Row="2" Text="Command" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="AcpCommandTextBox" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" TextChanged="AcpSetting_Changed" ToolTip="{local:Loc AcpCommandTooltip}" />
-                <TextBlock x:Name="AcpArgsLabel" Grid.Row="3" Text="Args JSON" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="AcpArgsTextBox" Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" Text="[]" TextChanged="AcpSetting_Changed" ToolTip="{local:Loc AcpArgsTooltip}" />
-                <TextBlock Grid.Row="4" Text="{local:Loc Status}" VerticalAlignment="Top" />
-                <TextBlock x:Name="AcpStatusText" Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Foreground="#667085" Text="{local:Loc Disabled}" TextWrapping="Wrap" />
+                <TextBlock x:Name="AcpCommandLabel" Grid.Row="5" Text="Command" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <TextBox x:Name="AcpCommandTextBox" Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" TextChanged="AcpSetting_Changed" ToolTip="{local:Loc AcpCommandTooltip}" />
+                <TextBlock x:Name="AcpArgsLabel" Grid.Row="6" Text="Args JSON" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <TextBox x:Name="AcpArgsTextBox" Grid.Row="6" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" Text="[]" TextChanged="AcpSetting_Changed" ToolTip="{local:Loc AcpArgsTooltip}" />
+                <TextBlock Grid.Row="7" Text="{local:Loc Status}" VerticalAlignment="Top" />
+                <TextBlock x:Name="AcpStatusText" Grid.Row="7" Grid.Column="1" Grid.ColumnSpan="2" Foreground="#667085" Text="{local:Loc Disabled}" TextWrapping="Wrap" />
               </Grid>
             </GroupBox>
 

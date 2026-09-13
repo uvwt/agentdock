@@ -30,6 +30,8 @@ var managedCoreEnvironment = []string{
 	"AGENTDOCK_BROWSER_CDP_URL",
 	"AGENTDOCK_BROWSER_REUSE_EXISTING_CDP",
 	"AGENTDOCK_ACP_ENABLED",
+	"AGENTDOCK_ACP_PROFILES_JSON",
+	"AGENTDOCK_ACP_DEFAULT_PROFILE",
 	"AGENTDOCK_ACP_AGENT",
 	"AGENTDOCK_ACP_COMMAND",
 	"AGENTDOCK_ACP_ARGS_JSON",
@@ -45,17 +47,19 @@ var managedCoreEnvironment = []string{
 }
 
 type controlPanelSettings struct {
-	Port                    int      `json:"port"`
-	LogLevel                string   `json:"log_level"`
-	OAuthAccessTokenTTL     string   `json:"oauth_access_token_ttl,omitempty"`
-	MCPAppsEnabled          bool     `json:"mcp_apps_enabled"`
-	BrowserEnabled          bool     `json:"browser_enabled"`
-	BrowserCDPURL           string   `json:"browser_cdp_url"`
-	BrowserReuseExistingCDP bool     `json:"browser_reuse_existing_cdp"`
-	ACPEnabled              bool     `json:"acp_enabled"`
-	ACPAgent                string   `json:"acp_agent"`
-	ACPCommand              string   `json:"acp_command"`
-	ACPArgs                 []string `json:"acp_args"`
+	Port                    int                      `json:"port"`
+	LogLevel                string                   `json:"log_level"`
+	OAuthAccessTokenTTL     string                   `json:"oauth_access_token_ttl,omitempty"`
+	MCPAppsEnabled          bool                     `json:"mcp_apps_enabled"`
+	BrowserEnabled          bool                     `json:"browser_enabled"`
+	BrowserCDPURL           string                   `json:"browser_cdp_url"`
+	BrowserReuseExistingCDP bool                     `json:"browser_reuse_existing_cdp"`
+	ACPEnabled              bool                     `json:"acp_enabled"`
+	ACPProfiles             []agentconfig.ACPProfile `json:"acp_profiles,omitempty"`
+	ACPDefaultProfile       string                   `json:"acp_default_profile,omitempty"`
+	ACPAgent                string                   `json:"acp_agent"`
+	ACPCommand              string                   `json:"acp_command"`
+	ACPArgs                 []string                 `json:"acp_args"`
 }
 
 func platformPrepareCoreEnvironment(runtimeRoot string) error {
@@ -107,7 +111,26 @@ func platformPrepareCoreEnvironment(runtimeRoot string) error {
 	if settings.BrowserCDPURL != "" {
 		managed["AGENTDOCK_BROWSER_CDP_URL"] = settings.BrowserCDPURL
 	}
-	if settings.ACPEnabled {
+	if settings.ACPEnabled && len(settings.ACPProfiles) > 0 {
+		for _, profile := range settings.ACPProfiles {
+			if !profile.Enabled {
+				continue
+			}
+			info, statErr := os.Stat(profile.Command)
+			if statErr != nil {
+				return fmt.Errorf("读取 ACP Profile %s 命令失败 %s: %w", profile.ID, profile.Command, statErr)
+			}
+			if !info.Mode().IsRegular() {
+				return fmt.Errorf("ACP Profile %s 命令不是普通文件: %s", profile.ID, profile.Command)
+			}
+		}
+		profilesJSON, marshalErr := json.Marshal(settings.ACPProfiles)
+		if marshalErr != nil {
+			return fmt.Errorf("编码 ACP Profiles 失败: %w", marshalErr)
+		}
+		managed["AGENTDOCK_ACP_PROFILES_JSON"] = string(profilesJSON)
+		managed["AGENTDOCK_ACP_DEFAULT_PROFILE"] = settings.ACPDefaultProfile
+	} else if settings.ACPEnabled {
 		info, statErr := os.Stat(settings.ACPCommand)
 		if statErr != nil {
 			return fmt.Errorf("读取 Coding Agent 命令失败 %s: %w", settings.ACPCommand, statErr)
@@ -197,6 +220,47 @@ func loadControlPanelSettings(runtimeRoot string, fallbackPort int) (controlPane
 	settings.ACPCommand = strings.TrimSpace(settings.ACPCommand)
 	if settings.ACPCommand != "" {
 		settings.ACPCommand = filepath.Clean(settings.ACPCommand)
+	}
+	if len(settings.ACPProfiles) > 0 {
+		firstEnabled := ""
+		for index := range settings.ACPProfiles {
+			profile := &settings.ACPProfiles[index]
+			profile.ID = strings.TrimSpace(profile.ID)
+			profile.Kind = strings.ToLower(strings.TrimSpace(profile.Kind))
+			profile.Command = strings.TrimSpace(profile.Command)
+			if profile.Command != "" {
+				profile.Command = filepath.Clean(profile.Command)
+			}
+			if profile.Enabled && firstEnabled == "" {
+				firstEnabled = profile.ID
+			}
+		}
+		settings.ACPDefaultProfile = strings.TrimSpace(settings.ACPDefaultProfile)
+		if settings.ACPDefaultProfile == "" {
+			settings.ACPDefaultProfile = firstEnabled
+		}
+		request := ConfigUpdateRequest{
+			RuntimeRoot:       runtimeRoot,
+			Port:              settings.Port,
+			LogLevel:          settings.LogLevel,
+			ACPEnabled:        settings.ACPEnabled,
+			ACPProfiles:       settings.ACPProfiles,
+			ACPDefaultProfile: settings.ACPDefaultProfile,
+		}
+		if err := validateConfigACPProfiles(request); err != nil {
+			return controlPanelSettings{}, err
+		}
+		// 旧控制面板字段保留为默认 Profile 的兼容镜像，直到所有旧版 UI 都迁移完成。
+		for _, profile := range settings.ACPProfiles {
+			if profile.ID != settings.ACPDefaultProfile {
+				continue
+			}
+			settings.ACPAgent = profile.Kind
+			settings.ACPCommand = profile.Command
+			settings.ACPArgs = append([]string(nil), profile.Args...)
+			break
+		}
+		return settings, nil
 	}
 	switch settings.ACPAgent {
 	case "codex", "claude", "grok", "custom":

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	agentconfig "github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/fs/atomicfile"
 	toolbrowser "github.com/uvwt/agentdock/internal/tool/browser"
 )
@@ -68,7 +69,21 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 		return err
 	}
 	var acpAdapter desktopACPAdapter
-	if request.ACPEnabled {
+	useProfiles := len(request.ACPProfiles) > 0
+	if request.ACPEnabled && useProfiles {
+		for _, profile := range request.ACPProfiles {
+			if !profile.Enabled {
+				continue
+			}
+			info, statErr := os.Stat(profile.Command)
+			if statErr != nil {
+				return fmt.Errorf("读取 ACP Profile %s 命令失败 %s: %w", profile.ID, profile.Command, statErr)
+			}
+			if !info.Mode().IsRegular() {
+				return fmt.Errorf("ACP Profile %s 命令不是普通文件: %s", profile.ID, profile.Command)
+			}
+		}
+	} else if request.ACPEnabled {
 		configuredCommand := request.ACPCommand
 		configuredArgs := request.ACPArgs
 		if request.ACPAgent != "custom" {
@@ -120,7 +135,28 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 
 	acpCommand := acpAdapter.Command
 	acpArgs := append([]string(nil), acpAdapter.Args...)
-	if !request.ACPEnabled && request.ACPAgent == "custom" {
+	acpAgent := request.ACPAgent
+	acpProfiles := append([]agentconfig.ACPProfile(nil), request.ACPProfiles...)
+	acpDefaultProfile := request.ACPDefaultProfile
+	if useProfiles {
+		if acpDefaultProfile == "" {
+			for _, profile := range acpProfiles {
+				if profile.Enabled {
+					acpDefaultProfile = profile.ID
+					break
+				}
+			}
+		}
+		for _, profile := range acpProfiles {
+			if profile.ID != acpDefaultProfile {
+				continue
+			}
+			acpAgent = profile.Kind
+			acpCommand = profile.Command
+			acpArgs = append([]string(nil), profile.Args...)
+			break
+		}
+	} else if !request.ACPEnabled && request.ACPAgent == "custom" {
 		acpCommand = request.ACPCommand
 		acpArgs = append([]string(nil), request.ACPArgs...)
 	}
@@ -133,7 +169,9 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 		BrowserCDPURL:           request.BrowserCDPURL,
 		BrowserReuseExistingCDP: request.BrowserReuseExistingCDP,
 		ACPEnabled:              request.ACPEnabled,
-		ACPAgent:                request.ACPAgent,
+		ACPProfiles:             acpProfiles,
+		ACPDefaultProfile:       acpDefaultProfile,
+		ACPAgent:                acpAgent,
 		ACPCommand:              acpCommand,
 		ACPArgs:                 acpArgs,
 	}

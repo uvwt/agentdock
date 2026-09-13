@@ -53,6 +53,27 @@ public sealed class RuntimeManifest
     public string CloudflaredStartupValueName { get; set; } = "AgentDockCloudflared";
 }
 
+public sealed class AcpProfileSettings
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = "";
+
+    [JsonPropertyName("kind")]
+    public string Kind { get; set; } = "custom";
+
+    [JsonPropertyName("command")]
+    public string Command { get; set; } = "";
+
+    [JsonPropertyName("args")]
+    public List<string> Args { get; set; } = [];
+
+    [JsonPropertyName("env_from_env")]
+    public Dictionary<string, string>? EnvFromEnv { get; set; }
+
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; } = true;
+}
+
 public sealed class ControlPanelSettings
 {
     [JsonPropertyName("port")]
@@ -78,6 +99,12 @@ public sealed class ControlPanelSettings
 
     [JsonPropertyName("acp_enabled")]
     public bool AcpEnabled { get; set; }
+
+    [JsonPropertyName("acp_profiles")]
+    public List<AcpProfileSettings> AcpProfiles { get; set; } = [];
+
+    [JsonPropertyName("acp_default_profile")]
+    public string AcpDefaultProfile { get; set; } = "";
 
     [JsonPropertyName("acp_agent")]
     public string AcpAgent { get; set; } = "codex";

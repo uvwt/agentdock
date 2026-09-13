@@ -64,6 +64,43 @@ public sealed class RuntimeService : IDisposable
         settings.AcpAgent = NormalizeAcpAgent(settings.AcpAgent);
         settings.AcpCommand ??= "";
         settings.AcpArgs ??= [];
+        settings.AcpProfiles ??= [];
+        if (settings.AcpProfiles.Count == 0)
+        {
+            settings.AcpProfiles.Add(new AcpProfileSettings
+            {
+                Id = settings.AcpAgent,
+                Kind = settings.AcpAgent,
+                Command = settings.AcpCommand,
+                Args = [.. settings.AcpArgs],
+                // 旧单 ACP 没有 Profile 级开关；迁移后保持“已配置”，只由全局开关控制是否启用。
+                Enabled = true
+            });
+            settings.AcpDefaultProfile = settings.AcpAgent;
+        }
+        else
+        {
+            foreach (var profile in settings.AcpProfiles)
+            {
+                profile.Id = (profile.Id ?? "").Trim();
+                profile.Kind = NormalizeAcpAgent(profile.Kind);
+                profile.Command = (profile.Command ?? "").Trim();
+                profile.Args ??= [];
+            }
+            settings.AcpDefaultProfile = (settings.AcpDefaultProfile ?? "").Trim();
+            if (settings.AcpDefaultProfile.Length == 0)
+            {
+                settings.AcpDefaultProfile = settings.AcpProfiles.FirstOrDefault(profile => profile.Enabled)?.Id
+                    ?? settings.AcpProfiles[0].Id;
+            }
+            var defaultProfile = settings.AcpProfiles.FirstOrDefault(profile => profile.Id == settings.AcpDefaultProfile);
+            if (defaultProfile is not null)
+            {
+                settings.AcpAgent = defaultProfile.Kind;
+                settings.AcpCommand = defaultProfile.Command;
+                settings.AcpArgs = [.. defaultProfile.Args];
+            }
+        }
 
         var localOrigin = $"http://127.0.0.1:{settings.Port}";
         var localMcpUrl = localOrigin + "/mcp";
@@ -362,6 +399,8 @@ public sealed class RuntimeService : IDisposable
             "--browser-cdp-url", settings.BrowserCdpUrl ?? "",
             $"--browser-reuse-existing-cdp={settings.BrowserReuseExistingCdp.ToString().ToLowerInvariant()}",
             $"--acp-enabled={settings.AcpEnabled.ToString().ToLowerInvariant()}",
+            "--acp-profiles-json", JsonSerializer.Serialize(settings.AcpProfiles ?? []),
+            "--acp-default-profile", settings.AcpDefaultProfile ?? "",
             "--acp-agent", NormalizeAcpAgent(settings.AcpAgent),
             "--acp-command", settings.AcpCommand ?? "",
             "--acp-args-json", JsonSerializer.Serialize(settings.AcpArgs ?? [])

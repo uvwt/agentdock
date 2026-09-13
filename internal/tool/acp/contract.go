@@ -17,6 +17,7 @@ func InputSchema(name string) (map[string]any, bool) {
 
 	switch name {
 	case ToolSession:
+		props["profile_id"] = stringProp("Configured ACP profile id. Omit to use the default profile.")
 		props["action"] = map[string]any{"type": "string", "description": "ACP session action.", "enum": []string{"info", "authenticate", "new", "load", "resume", "fork", "set_mode", "set_config", "list", "inspect", "close", "delete"}}
 		props["auth_method_id"] = stringProp("Authentication method id advertised by initialize, required for authenticate.")
 		props["session_id"] = stringProp("AgentDock ACP session id for load, resume, fork, set_mode, set_config, inspect, close, or delete.")
@@ -27,6 +28,7 @@ func InputSchema(name string) (map[string]any, bool) {
 		props["config_value"] = map[string]any{"description": "String value id or boolean value for set_config.", "oneOf": []map[string]any{{"type": "string"}, {"type": "boolean"}}}
 		required = []string{"action"}
 	case ToolPrompt:
+		props["profile_id"] = stringProp("Configured ACP profile id. Omit to use the default profile.")
 		props["action"] = map[string]any{"type": "string", "description": "ACP prompt action.", "enum": []string{"start", "events", "steer", "cancel"}}
 		props["session_id"] = stringProp("AgentDock ACP session id for start, steer, or cancel.")
 		props["run_id"] = stringProp("ACP prompt run id for events or cancel.")
@@ -36,6 +38,7 @@ func InputSchema(name string) (map[string]any, bool) {
 		props["wait_ms"] = boundedIntProp("Bounded long-poll duration for events. Defaults to 0 and is capped at 25000 milliseconds.", 0, 25000)
 		required = []string{"action"}
 	case ToolInteraction:
+		props["profile_id"] = stringProp("Configured ACP profile id. Omit to use the default profile.")
 		props["action"] = map[string]any{"type": "string", "description": "ACP interaction action.", "enum": []string{"list", "inspect", "respond", "cancel"}}
 		props["session_id"] = stringProp("Optional ACP session filter for list.")
 		props["interaction_id"] = stringProp("Pending ACP interaction id for inspect, respond, or cancel.")
@@ -58,6 +61,7 @@ func OutputSchema(name string) (map[string]any, bool) {
 
 	switch name {
 	case ToolSession:
+		props["profile_id"] = stringProp("ACP profile id that handled the request.")
 		props["action"] = stringProp("Completed ACP session action.")
 		props["protocol_version"] = intProp("Negotiated ACP protocol version for info.")
 		props["auth_method_id"] = stringProp("Authentication method selected by authenticate.")
@@ -80,6 +84,7 @@ func OutputSchema(name string) (map[string]any, bool) {
 		props["count"] = intProp("Returned ACP session count.")
 		props["deleted"] = boolProp("Whether the persistent ACP session was deleted.")
 	case ToolPrompt:
+		props["profile_id"] = stringProp("ACP profile id that handled the request.")
 		props["action"] = stringProp("Completed ACP prompt action.")
 		props["run_id"] = stringProp("AgentDock ACP prompt run id.")
 		props["session_id"] = stringProp("AgentDock ACP session id.")
@@ -99,6 +104,7 @@ func OutputSchema(name string) (map[string]any, bool) {
 		props["steering"] = objectProp("ACP steering outcome.")
 		props["cancel_requested"] = boolProp("Whether cancellation was requested.")
 	case ToolInteraction:
+		props["profile_id"] = stringProp("ACP profile id that handled the request.")
 		props["action"] = stringProp("Completed ACP interaction action.")
 		props["interaction"] = objectProp("ACP permission interaction state.")
 		props["interactions"] = arrayProp("ACP permission interactions.")

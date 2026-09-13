@@ -3,6 +3,7 @@ package acp
 // SessionRequest 是 acp_session 进入 ACP capability 后的稳定输入契约。
 // ConfigValue 只保留协议明确允许的 string/bool 动态叶子。
 type SessionRequest struct {
+	ProfileID             string   `json:"profile_id,omitempty"`
 	Action                string   `json:"action"`
 	AuthMethodID          string   `json:"auth_method_id,omitempty"`
 	SessionID             string   `json:"session_id,omitempty"`
@@ -15,6 +16,7 @@ type SessionRequest struct {
 
 // PromptRequest 是 acp_prompt 的强类型输入。
 type PromptRequest struct {
+	ProfileID string `json:"profile_id,omitempty"`
 	Action    string `json:"action"`
 	SessionID string `json:"session_id,omitempty"`
 	RunID     string `json:"run_id,omitempty"`
@@ -26,6 +28,7 @@ type PromptRequest struct {
 
 // InteractionRequest 是 acp_interaction 的强类型输入。
 type InteractionRequest struct {
+	ProfileID     string `json:"profile_id,omitempty"`
 	Action        string `json:"action"`
 	SessionID     string `json:"session_id,omitempty"`
 	InteractionID string `json:"interaction_id,omitempty"`

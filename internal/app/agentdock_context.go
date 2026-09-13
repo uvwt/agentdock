@@ -54,9 +54,15 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool) (Re
 	}
 
 	if requiresACP(r.cfg) {
+		profiles := make([]capabilityACPProfileContext, 0, len(r.cfg.EffectiveACPProfiles()))
+		for _, profile := range r.cfg.EffectiveACPProfiles() {
+			profiles = append(profiles, capabilityACPProfileContext{ID: profile.ID, Kind: profile.Kind})
+		}
 		contextResult.ACP = &capabilityACPContext{
-			Enabled: true,
-			Agent:   r.cfg.ACPAgentName,
+			Enabled:        true,
+			Agent:          r.cfg.EffectiveACPDefaultProfile(),
+			DefaultProfile: r.cfg.EffectiveACPDefaultProfile(),
+			Profiles:       profiles,
 			Description: "本机 Coding Agent 通道（Agent Client Protocol）。仅当用户明确要求时使用，可用来获取独特见解与编排任务；" +
 				"不是动态 MCP，不要用 mcp_tool_*。",
 		}
@@ -149,9 +155,16 @@ type capabilityDynamicMCPItem struct {
 }
 
 type capabilityACPContext struct {
-	Enabled     bool   `json:"enabled"`
-	Agent       string `json:"agent"`
-	Description string `json:"description"`
+	Enabled        bool                          `json:"enabled"`
+	Agent          string                        `json:"agent"`
+	DefaultProfile string                        `json:"default_profile"`
+	Profiles       []capabilityACPProfileContext `json:"profiles"`
+	Description    string                        `json:"description"`
+}
+
+type capabilityACPProfileContext struct {
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
 }
 
 type capabilityTemplateItem struct {
