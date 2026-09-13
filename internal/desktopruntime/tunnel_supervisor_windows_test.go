@@ -14,6 +14,13 @@ import (
 	"time"
 )
 
+func TestQuickTunnelStartTimeoutCoversRetryAndCoreRestart(t *testing.T) {
+	minimum := 2*quickTunnelProvisionAttemptTimeout + tunnelRetryInitialDelay + windowsCoreStartTimeout
+	if quickTunnelStartTimeout <= minimum {
+		t.Fatalf("Quick Tunnel start timeout=%s must exceed retry+restart minimum=%s", quickTunnelStartTimeout, minimum)
+	}
+}
+
 func TestTunnelSupervisorKernelLifecycle(t *testing.T) {
 	runtimeRoot := t.TempDir()
 	readyPath := filepath.Join(runtimeRoot, "helper-ready")

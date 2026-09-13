@@ -17,6 +17,15 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+const (
+	quickTunnelProvisionAttemptTimeout = 35 * time.Second
+	// Quick Tunnel supervisor 会在 provisioning 失败后自动重试。启动命令的总预算必须覆盖
+	// 至少两次 provisioning、第一次退避，以及拿到公网地址后 Core 最坏一次完整重启，再留 10s 调度余量。
+	// ready 文件仍然最后写入，不能为了缩短等待而提前暴露尚未被 Core 采用的公网地址。
+	quickTunnelStartTimeout = 2*quickTunnelProvisionAttemptTimeout + tunnelRetryInitialDelay + windowsCoreStartTimeout + 10*time.Second
+	namedTunnelStartTimeout = 45 * time.Second
+)
+
 func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
 	// Win32 mutex 的 owner 是线程而不是进程。supervisor 持有 mutex 的整个生命周期固定在
 	// 同一个 OS thread，确保最终 ReleaseMutex 一定由 owner thread 执行。
@@ -126,7 +135,7 @@ func runCloudflaredOnce(ctx context.Context, runtime tunnelRuntime, logs *proces
 	}
 
 	if runtime.mode == "quick" {
-		publicURL, readyErr := waitQuickTunnelURL(ctx, runtime, logCursors, 35*time.Second)
+		publicURL, readyErr := waitQuickTunnelURL(ctx, runtime, logCursors, quickTunnelProvisionAttemptTimeout)
 		if readyErr != nil {
 			_ = command.Process.Kill()
 			_ = command.Wait()
@@ -237,7 +246,7 @@ func startTunnel(ctx context.Context, runtime tunnelRuntime) error {
 	}
 	if running && supervisorPID != 0 {
 		if runtime.mode == "quick" {
-			return waitQuickTunnelReady(ctx, runtime, 45*time.Second)
+			return waitQuickTunnelReady(ctx, runtime, quickTunnelStartTimeout)
 		}
 		return nil
 	}
@@ -282,9 +291,9 @@ func startTunnel(ctx context.Context, runtime tunnelRuntime) error {
 		return err
 	}
 	if runtime.mode == "quick" {
-		return waitQuickTunnelReady(ctx, runtime, 45*time.Second)
+		return waitQuickTunnelReady(ctx, runtime, quickTunnelStartTimeout)
 	}
-	return waitNamedTunnelReady(ctx, runtime, namedLogCursors, 45*time.Second)
+	return waitNamedTunnelReady(ctx, runtime, namedLogCursors, namedTunnelStartTimeout)
 }
 
 func stopTunnel(ctx context.Context, runtime tunnelRuntime) error {

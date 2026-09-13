@@ -16,6 +16,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+const windowsCoreStartTimeout = 45 * time.Second
+
 func platformServiceStatus(ctx context.Context, runtimeRoot string) (ServiceStatus, error) {
 	manifest, _, err := loadDesktopManifest(runtimeRoot)
 	if err != nil {
@@ -78,7 +80,7 @@ func startCore(ctx context.Context, manifest Manifest, runtimeRoot string) error
 	} else if err := startDetachedCore(manifest, runtimeRoot); err != nil {
 		return err
 	}
-	return waitForHealth(ctx, manifest.HealthURL(), 45*time.Second)
+	return waitForHealth(ctx, manifest.HealthURL(), windowsCoreStartTimeout)
 }
 
 func stopCore(ctx context.Context, manifest Manifest, runtimeRoot string) error {
