@@ -386,7 +386,7 @@ func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
 		"Remove-DirectoryWithRetry -Path $InstallDir",
 		"Remove-DirectoryWithRetry -Path $versionsDir",
 		"Remove-DirectoryWithRetry -Path $updateDir",
-		"Remove-Item -LiteralPath $activeVersionPath",
+		"Remove-FileIfPresent -Path $activeVersionPath",
 		"Stop-ProcessByPath -ProcessName 'agentdock-core'",
 		"Stop-ProcessByPath -ProcessName 'agentdock-arbiter'",
 		"Stop-ProcessByPath -ProcessName 'cloudflared'",
