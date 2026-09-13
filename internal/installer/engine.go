@@ -518,8 +518,18 @@ func (engine Engine) abandon(store *Store, request Request) (Result, error) {
 		if err := releaseWindowsTrialPointer(transaction.InstallRoot, transaction.TransactionID); err != nil {
 			return seal(updateengine.StateFailed, FailureRollbackFailed, "release windows trial pointer: "+err.Error(), false)
 		}
+		// Engine 自己可能已经完成文件回滚，但 Windows 外层 adapter 随后还会恢复
+		// Registry/runtime 文件并重新拉起 source。外层确认成功后再次 abandon 时，
+		// 必须用最终 runtime 刷新 Result，不能把 Engine 内层回滚时的旧 Quick URL 留成权威结果。
+		current = projectRestoredResult(current, transaction, request, true)
+		transaction.ActiveVersion = current.ActiveVersion
+		transaction.FallbackVersion = current.FallbackVersion
+		completed, err := store.Complete(transaction, updateengine.StateRolledBack, current)
+		if err != nil {
+			return current, err
+		}
 		discardJournal(store.Root(), transaction.TransactionID)
-		return current, nil
+		return completed, nil
 	}
 	if current.TransactionID == transaction.TransactionID && current.State == updateengine.StateFailed {
 		if isExternalRollbackFailure(transaction) {

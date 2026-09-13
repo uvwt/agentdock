@@ -28,6 +28,9 @@ func runInstallCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 	if len(args) > 0 && args[0] == "commit" {
 		return runInstallCommit(ctx, args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "prepare-windows-legacy" {
+		return runInstallPrepareWindowsLegacy(ctx, args[1:], stdout, stderr)
+	}
 
 	flags := flag.NewFlagSet("agentdock install", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -39,6 +42,7 @@ func runInstallCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 		fmt.Fprintln(stderr, "  agentdock install abandon --install-root <目录> [--transaction-id <ID>] [--rollback-failed]")
 		fmt.Fprintln(stderr, "  --rollback-failed 表示 OS adapter 回滚失败，写入 failed/external_rollback_failed 并阻断后续自动 install")
 		fmt.Fprintln(stderr, "  agentdock install commit --install-root <目录> [--transaction-id <ID>]")
+		fmt.Fprintln(stderr, "  agentdock install prepare-windows-legacy --install-root <目录> --legacy-version <版本> --legacy-core <文件> --legacy-tray <文件> --payload-dir <目录>")
 		fmt.Fprintln(stderr, "  agentdock install --engine-ready")
 	}
 

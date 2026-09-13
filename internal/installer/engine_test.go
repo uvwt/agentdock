@@ -867,6 +867,105 @@ func TestAbandonRewritesCommittedStateToRolledBack(t *testing.T) {
 	}
 }
 
+func TestNormalizeRequestRejectsUnsafeVersionPath(t *testing.T) {
+	_, err := normalizeRequest(Request{InstallRoot: t.TempDir(), Version: `0.8.3\\..\\evil`})
+	if err == nil {
+		t.Fatal("unsafe version path must be rejected before generation path construction")
+	}
+}
+
+func TestAbandonRefreshesAlreadyRolledBackProjection(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("result reprojection is exercised on Unix CI")
+	}
+	root := t.TempDir()
+	installRoot := filepath.Join(root, "opt")
+	runtimeRoot := filepath.Join(root, "etc")
+	if err := os.MkdirAll(runtimeRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimeRoot, "agentdock.env"), []byte(
+		"AGENTDOCK_HOST=127.0.0.1\n"+
+			"AGENTDOCK_PORT=8765\n"+
+			"AGENTDOCK_SERVER_URL=https://new-quick.example.test\n",
+	), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := NewStore(runtimeRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	txID := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	completedAt := now
+	transaction := Transaction{
+		SchemaVersion:   SchemaVersion,
+		TransactionID:   txID,
+		Platform:        "linux",
+		Action:          ActionInstall,
+		SourceVersion:   "v1.0.0",
+		TargetVersion:   "v2.0.0",
+		ActiveVersion:   "v1.0.0",
+		FallbackVersion: "v1.0.0",
+		State:           updateengine.StateRolledBack,
+		Phase:           PhaseRollback,
+		InstallRoot:     installRoot,
+		RuntimeRoot:     runtimeRoot,
+		StartedAt:       now,
+		UpdatedAt:       now,
+		CompletedAt:     &completedAt,
+		Failure:         &updateengine.Failure{Code: "activate_failed", Message: "target failed", At: now},
+	}
+	if err := store.WriteTransaction(transaction); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WriteResult(Result{
+		SchemaVersion:   SchemaVersion,
+		TransactionID:   txID,
+		Platform:        "linux",
+		Action:          ActionInstall,
+		State:           updateengine.StateRolledBack,
+		Phase:           PhaseRollback,
+		Version:         "v2.0.0",
+		ActiveVersion:   "v1.0.0",
+		FallbackVersion: "v1.0.0",
+		PublicURL:       "https://old-quick.example.test",
+		LocalMCPURL:     "http://127.0.0.1:9999/mcp",
+		Failure:         transaction.Failure,
+		StartedAt:       now,
+		CompletedAt:     now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	refreshed, err := (Engine{}).Run(context.Background(), Request{
+		Action:        ActionAbandon,
+		InstallRoot:   installRoot,
+		RuntimeRoot:   runtimeRoot,
+		TransactionID: txID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.PublicURL != "https://new-quick.example.test" {
+		t.Fatalf("public_url=%q, want final restored runtime", refreshed.PublicURL)
+	}
+	if refreshed.LocalMCPURL != "http://127.0.0.1:8765/mcp" {
+		t.Fatalf("local_mcp_url=%q", refreshed.LocalMCPURL)
+	}
+	if refreshed.Failure == nil || refreshed.Failure.Code != "activate_failed" {
+		t.Fatalf("rollback failure provenance changed: %#v", refreshed.Failure)
+	}
+	current, err := store.ReadCurrentResult()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.PublicURL != refreshed.PublicURL || current.LocalMCPURL != refreshed.LocalMCPURL {
+		t.Fatalf("persisted result not refreshed: %#v", current)
+	}
+}
+
 func TestDeferCommitStaysTrialUntilCommit(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("two-phase commit is exercised on Unix CI")

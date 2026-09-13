@@ -1232,6 +1232,8 @@ $generationBootstrapDirectory = ''
 $generationRepairBackupDirectory = ''
 $generationBootstrapPublished = $false
 $activeVersionCreatedByBootstrap = $false
+$legacyBootstrapPrepared = $false
+$legacyBootstrapVersion = ''
 
 $managedRuntimeFiles = @(
     @{ Path = $managerScriptPath; Name = 'manage-windows.ps1' },
@@ -1509,8 +1511,15 @@ try {
         $existingGenerationDirectory = Join-Path $versionsDir $existingActiveVersion
         $existingGenerationCore = Join-Path $existingGenerationDirectory 'agentdock-core.exe'
         $existingGenerationTray = Join-Path $existingGenerationDirectory 'agentdock-tray.exe'
-        $processWasRunning = @(Get-AgentDockProcesses -BinaryPath $existingGenerationCore).Count -gt 0
-        $trayProcessWasRunning = @(Get-AgentDockTrayProcesses -BinaryPath $existingGenerationTray).Count -gt 0
+        # A crash during one-time legacy migration can commit the source pointer before stable
+        # Core/Tray have been replaced by shims. Probe both exact paths so retry never misses
+        # a still-running legacy process just because active-version.json already exists.
+        $processWasRunning =
+            (@(Get-AgentDockProcesses -BinaryPath $existingGenerationCore).Count -gt 0) -or
+            (@(Get-AgentDockProcesses -BinaryPath $destinationBinary).Count -gt 0)
+        $trayProcessWasRunning =
+            (@(Get-AgentDockTrayProcesses -BinaryPath $existingGenerationTray).Count -gt 0) -or
+            (@(Get-AgentDockTrayProcesses -BinaryPath $destinationTrayBinary).Count -gt 0)
     }
 
     # Setup upgrades and fresh installs share one Installer transaction. Do not pre-commit
@@ -1519,6 +1528,49 @@ try {
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     if (-not $generationLayoutDetected) {
         $processWasRunning = @(Get-AgentDockProcesses -BinaryPath $destinationBinary).Count -gt 0
+    }
+
+    # One-time pre-generation migration must establish a real known-good source before
+    # the old stable binaries are replaced by shims. Until this command commits the source
+    # pointer the legacy binaries remain authoritative; after it commits, a new shim can
+    # always route back to the copied source generation even if Setup is interrupted.
+    if ($engineReady -and -not $generationLayoutDetected -and $existingInstallDetected -and
+        -not (Test-Path -LiteralPath $activeVersionPath -PathType Leaf)) {
+        if (-not (Test-Path -LiteralPath $destinationBinary -PathType Leaf) -or
+            -not (Test-Path -LiteralPath $destinationTrayBinary -PathType Leaf)) {
+            throw 'Existing legacy AgentDock installation is incomplete; Core and Tray are required for generation migration.'
+        }
+        $legacyVersionOutput = @(& $destinationBinary version --json 2>&1)
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to read the existing legacy AgentDock version before generation migration.'
+        }
+        try {
+            $legacyVersionInfo = ($legacyVersionOutput | Out-String) | ConvertFrom-Json
+            if ($null -eq $legacyVersionInfo -or [string]::IsNullOrWhiteSpace([string] $legacyVersionInfo.version)) {
+                throw 'legacy version metadata is empty'
+            }
+            $legacyBootstrapVersion = 'v' + ([string] $legacyVersionInfo.version).TrimStart('v')
+        } catch {
+            throw "Existing legacy AgentDock returned invalid version metadata: $($_.Exception.Message)"
+        }
+        $legacyBootstrapJson = (& $sourceBinary install prepare-windows-legacy `
+            --install-root $runtimeDir `
+            --legacy-version $legacyBootstrapVersion `
+            --legacy-core $destinationBinary `
+            --legacy-tray $destinationTrayBinary `
+            --payload-dir $extractDir 2>$null | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Installer Engine could not establish the legacy known-good generation.'
+        }
+        try {
+            $legacyBootstrapResult = $legacyBootstrapJson | ConvertFrom-Json
+        } catch {
+            throw "Installer Engine returned invalid legacy migration JSON: $($_.Exception.Message)"
+        }
+        if (-not [string]::Equals([string] $legacyBootstrapResult.version, $legacyBootstrapVersion, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Installer Engine legacy migration returned a different source version.'
+        }
+        $legacyBootstrapPrepared = $true
     }
     if ($effectivePrivilegeMode -eq 'elevated' -or $taskState.Exists) {
         $taskAction = if ($effectivePrivilegeMode -eq 'elevated') { 'prepare-elevated' } else { 'prepare-standard' }
@@ -1551,8 +1603,13 @@ try {
         }
     }
     $agentDockStopAttempted = $true
-    $coreToStop = $(if ($generationLayoutDetected) { $existingGenerationCore } else { $destinationBinary })
-    [void] (Stop-AgentDockForUpgrade -BinaryPath $coreToStop)
+    if ($generationLayoutDetected) {
+        [void] (Stop-AgentDockForUpgrade -BinaryPath $existingGenerationCore)
+        # Also stop a legacy stable Core left by a crash between source-pointer commit and shim install.
+        [void] (Stop-AgentDockForUpgrade -BinaryPath $destinationBinary)
+    } else {
+        [void] (Stop-AgentDockForUpgrade -BinaryPath $destinationBinary)
+    }
 
     # Stable entries remain the rollback boundary for both legacy bootstrap and same-version repair.
     # Preserve them before replacement even when active-version.json already exists.
@@ -1568,10 +1625,24 @@ try {
     }
 
     $trayStopAttempted = $true
-    $trayToStop = $(if ($generationLayoutDetected) { $existingGenerationTray } else { $destinationTrayBinary })
-    [void] (Stop-AgentDockTrayForUpgrade -BinaryPath $trayToStop)
+    if ($generationLayoutDetected) {
+        [void] (Stop-AgentDockTrayForUpgrade -BinaryPath $existingGenerationTray)
+        [void] (Stop-AgentDockTrayForUpgrade -BinaryPath $destinationTrayBinary)
+    } else {
+        [void] (Stop-AgentDockTrayForUpgrade -BinaryPath $destinationTrayBinary)
+    }
     if (Test-Path -LiteralPath $destinationTrayIcon -PathType Leaf) {
         Copy-Item -LiteralPath $destinationTrayIcon -Destination $trayIconBackup -Force
+    }
+
+    if ($legacyBootstrapPrepared) {
+        # Core/Tray were observed and stopped through their legacy stable paths above. From this
+        # point onward the prepared source generation is the known-good generation boundary.
+        $existingActiveVersion = $legacyBootstrapVersion
+        $existingGenerationDirectory = Join-Path $versionsDir $existingActiveVersion
+        $existingGenerationCore = Join-Path $existingGenerationDirectory 'agentdock-core.exe'
+        $existingGenerationTray = Join-Path $existingGenerationDirectory 'agentdock-tray.exe'
+        $generationLayoutDetected = $true
     }
 
     # Engine-ready fresh installs and cross-version upgrades have one generation owner: Go Installer Engine.
@@ -2251,12 +2322,46 @@ exit `$LASTEXITCODE
                 -ExpectedUserSid $taskUser.Sid
             $taskWillRestartAgentDock = $true
         }
-        if ($processWasRunning -and -not $taskWillRestartAgentDock -and
-            (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
-            Start-AgentDockLauncher -LauncherPath $launcherPath
+        if ($processWasRunning -and -not $taskWillRestartAgentDock) {
+            if ($engineReady -and (Test-Path -LiteralPath $destinationBinary -PathType Leaf)) {
+                # The Engine transaction has restored the committed source generation. Wait for the
+                # source Core to become healthy before confirming the outer adapter rollback.
+                if ($InstallChannel -eq 'setup') {
+                    Invoke-SetupRuntimeProcess `
+                        -FilePath $destinationBinary `
+                        -Arguments "service start --runtime-root `"$runtimeDir`"" `
+                        -WaitForExit
+                } else {
+                    & $destinationBinary service start --runtime-root $runtimeDir
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "AgentDock rollback service start failed with exit code $LASTEXITCODE."
+                    }
+                }
+                Wait-AgentDockHealth -HealthPort $Port
+            } elseif (Test-Path -LiteralPath $launcherPath -PathType Leaf) {
+                Start-AgentDockLauncher -LauncherPath $launcherPath
+            }
+        } elseif ($taskWillRestartAgentDock) {
+            Wait-AgentDockHealth -HealthPort $Port
         }
-        if ($cloudflaredProcessWasRunning -and (Test-Path -LiteralPath $cloudflaredLauncherPath -PathType Leaf)) {
-            Start-CloudflaredLauncher -LauncherPath $cloudflaredLauncherPath
+        if ($cloudflaredProcessWasRunning) {
+            if ($engineReady -and (Test-Path -LiteralPath $destinationBinary -PathType Leaf)) {
+                # Native tunnel start has authoritative Quick/Named readiness. Wait for it before
+                # abandon so a regenerated Quick URL is projected into the final rollback result.
+                if ($InstallChannel -eq 'setup') {
+                    Invoke-SetupRuntimeProcess `
+                        -FilePath $destinationBinary `
+                        -Arguments "tunnel start --runtime-root `"$runtimeDir`"" `
+                        -WaitForExit
+                } else {
+                    & $destinationBinary tunnel start --runtime-root $runtimeDir
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "AgentDock rollback Tunnel start failed with exit code $LASTEXITCODE."
+                    }
+                }
+            } elseif (Test-Path -LiteralPath $cloudflaredLauncherPath -PathType Leaf) {
+                Start-CloudflaredLauncher -LauncherPath $cloudflaredLauncherPath
+            }
         }
         if ($trayProcessWasRunning -and (Test-Path -LiteralPath $destinationTrayBinary -PathType Leaf)) {
             Start-AgentDockTray -BinaryPath $destinationTrayBinary

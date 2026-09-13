@@ -170,14 +170,15 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	if strings.Contains(script, "Stop-ProcessesForUpgrade -ProcessName 'agentdock' -BinaryPath $BinaryPath") {
 		t.Fatal("generation Core stop logic must derive the process name from agentdock-core.exe instead of assuming agentdock.exe")
 	}
-	stopCall := strings.Index(script, "Stop-AgentDockForUpgrade -BinaryPath $coreToStop")
+	legacyPrepareCall := strings.Index(script, "install prepare-windows-legacy")
+	stopCall := strings.Index(script, "Stop-AgentDockForUpgrade -BinaryPath $destinationBinary")
 	replaceCall := strings.Index(script, "Install-AgentDockBinary -SourceBinary $sourceCoreShim -DestinationBinary $destinationBinary")
-	if stopCall < 0 || replaceCall < 0 || stopCall > replaceCall {
-		t.Fatal("install.ps1 must stop the active Core before installing the stable CUI shim")
+	if legacyPrepareCall < 0 || stopCall < 0 || replaceCall < 0 || legacyPrepareCall > stopCall || stopCall > replaceCall {
+		t.Fatal("legacy source generation must be committed before the old Core is stopped, and the stable CUI shim may only replace it afterwards")
 	}
 	backupCall := strings.Index(script, "Copy-Item -LiteralPath $destinationBinary -Destination $binaryBackup -Force")
 	if backupCall < stopCall || backupCall > replaceCall {
-		t.Fatal("install.ps1 must back up the stable Core entry before replacing it with the CUI shim")
+		t.Fatal("install.ps1 must back up the stable Core entry after it stops and before replacing it with the CUI shim")
 	}
 	stageCall := strings.Index(script, "Move-Item -LiteralPath $generationStagingDirectory -Destination $generationBootstrapDirectory")
 	if stageCall < 0 || stageCall > replaceCall {
@@ -189,6 +190,17 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	}
 	if !strings.Contains(script, "$engineOwnsTargetGeneration = $engineReady -and (") {
 		t.Fatal("fresh and cross-version target generations must be owned by the Installer Engine")
+	}
+	if !strings.Contains(script, "install prepare-windows-legacy") {
+		t.Fatal("pre-generation Windows installs must seed a committed legacy source before stable shims replace old binaries")
+	}
+	if !strings.Contains(script, "Get-AgentDockProcesses -BinaryPath $existingGenerationCore") ||
+		!strings.Contains(script, "Get-AgentDockProcesses -BinaryPath $destinationBinary") {
+		t.Fatal("generation retries must probe both source generation and legacy stable Core paths")
+	}
+	if !strings.Contains(script, "Stop-AgentDockForUpgrade -BinaryPath $existingGenerationCore") ||
+		strings.Count(script, "Stop-AgentDockForUpgrade -BinaryPath $destinationBinary") < 2 {
+		t.Fatal("generation retries must stop both source generation and crash-left legacy stable Core paths")
 	}
 	if !strings.Contains(script, "if (-not $engineOwnsTargetGeneration)") {
 		t.Fatal("legacy/same-version PowerShell generation publish must be isolated from Installer-owned targets")
@@ -248,6 +260,15 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	abandonCall := strings.LastIndex(script, "install', 'abandon'")
 	if rollbackRestore < 0 || abandonCall < 0 || abandonCall < rollbackRestore {
 		t.Fatal("install abandon must run after real file/registry rollback")
+	}
+	rollbackServiceStart := strings.LastIndex(script, "& $destinationBinary service start --runtime-root $runtimeDir")
+	rollbackHealthWait := strings.LastIndex(script, "Wait-AgentDockHealth -HealthPort $Port")
+	rollbackTunnelStart := strings.LastIndex(script, "& $destinationBinary tunnel start --runtime-root $runtimeDir")
+	if rollbackServiceStart < rollbackRestore || rollbackHealthWait < rollbackServiceStart || rollbackTunnelStart < rollbackHealthWait {
+		t.Fatal("Engine rollback must synchronously restore source Core health and Tunnel readiness after adapter state restoration")
+	}
+	if abandonCall < rollbackTunnelStart {
+		t.Fatal("install abandon must run only after restored Tunnel readiness is confirmed")
 	}
 	if !strings.Contains(script, "--rollback-failed") {
 		t.Fatal("adapter rollback failure must be recorded as failed/rollback_failed, not rolled_back")

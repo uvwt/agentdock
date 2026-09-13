@@ -228,6 +228,9 @@ func normalizeRequest(request Request) (Request, error) {
 		request.Channel = "official"
 	}
 	if request.Version != "" {
+		if err := updateengine.ValidateVersion(request.Version); err != nil {
+			return Request{}, fmt.Errorf("版本无效：%w", err)
+		}
 		request.Version = updateengine.NormalizeVersion(request.Version)
 	}
 	return request, nil

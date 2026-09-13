@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const SchemaVersion = 1
@@ -130,6 +131,12 @@ func NewTransaction(platform, sourceVersion, targetVersion string) (Transaction,
 	if transaction.SourceVersion == "" || transaction.TargetVersion == "" {
 		return Transaction{}, errors.New("update transaction source and target versions are required")
 	}
+	if err := ValidateVersion(transaction.SourceVersion); err != nil {
+		return Transaction{}, fmt.Errorf("invalid source version: %w", err)
+	}
+	if err := ValidateVersion(transaction.TargetVersion); err != nil {
+		return Transaction{}, fmt.Errorf("invalid target version: %w", err)
+	}
 	return transaction, nil
 }
 
@@ -150,6 +157,30 @@ func NormalizeVersion(value string) string {
 	return "v" + value
 }
 
+// ValidateVersion keeps version strings safe as a single generation-directory name on all supported platforms.
+// NormalizeVersion intentionally remains comparison-only; callers that persist or join a version into a path must validate it.
+func ValidateVersion(value string) error {
+	normalized := NormalizeVersion(value)
+	if normalized == "" {
+		return errors.New("version is required")
+	}
+	segment := strings.TrimPrefix(normalized, "v")
+	if strings.ContainsAny(segment, `/\<>:"|?*`) {
+		return fmt.Errorf("version contains path-unsafe characters: %q", value)
+	}
+	for _, r := range segment {
+		if unicode.IsControl(r) || unicode.IsSpace(r) {
+			return fmt.Errorf("version contains whitespace or control characters: %q", value)
+		}
+	}
+	// Windows normalizes trailing dots/spaces in path components. Spaces are rejected above;
+	// reject a trailing dot explicitly so two textual versions cannot alias one directory.
+	if strings.HasSuffix(segment, ".") {
+		return fmt.Errorf("version cannot end with a dot: %q", value)
+	}
+	return nil
+}
+
 func (transaction Transaction) Validate() error {
 	if transaction.SchemaVersion != SchemaVersion {
 		return fmt.Errorf("unsupported update transaction schema: %d", transaction.SchemaVersion)
@@ -160,8 +191,21 @@ func (transaction Transaction) Validate() error {
 	if transaction.Platform != "windows" && transaction.Platform != "darwin" {
 		return fmt.Errorf("unsupported update transaction platform: %s", transaction.Platform)
 	}
-	if NormalizeVersion(transaction.SourceVersion) == "" || NormalizeVersion(transaction.TargetVersion) == "" {
-		return errors.New("update transaction source and target versions are required")
+	if err := ValidateVersion(transaction.SourceVersion); err != nil {
+		return fmt.Errorf("invalid transaction source version: %w", err)
+	}
+	if err := ValidateVersion(transaction.TargetVersion); err != nil {
+		return fmt.Errorf("invalid transaction target version: %w", err)
+	}
+	if strings.TrimSpace(transaction.ActiveVersion) != "" {
+		if err := ValidateVersion(transaction.ActiveVersion); err != nil {
+			return fmt.Errorf("invalid transaction active version: %w", err)
+		}
+	}
+	if strings.TrimSpace(transaction.FallbackVersion) != "" {
+		if err := ValidateVersion(transaction.FallbackVersion); err != nil {
+			return fmt.Errorf("invalid transaction fallback version: %w", err)
+		}
 	}
 	if !validState(transaction.State) {
 		return fmt.Errorf("unsupported update transaction state: %s", transaction.State)
@@ -191,8 +235,21 @@ func (result Result) Validate() error {
 	if result.Platform != "windows" && result.Platform != "darwin" {
 		return fmt.Errorf("unsupported update result platform: %s", result.Platform)
 	}
-	if NormalizeVersion(result.SourceVersion) == "" || NormalizeVersion(result.TargetVersion) == "" {
-		return errors.New("update result source and target versions are required")
+	if err := ValidateVersion(result.SourceVersion); err != nil {
+		return fmt.Errorf("invalid result source version: %w", err)
+	}
+	if err := ValidateVersion(result.TargetVersion); err != nil {
+		return fmt.Errorf("invalid result target version: %w", err)
+	}
+	if strings.TrimSpace(result.ActiveVersion) != "" {
+		if err := ValidateVersion(result.ActiveVersion); err != nil {
+			return fmt.Errorf("invalid result active version: %w", err)
+		}
+	}
+	if strings.TrimSpace(result.FallbackVersion) != "" {
+		if err := ValidateVersion(result.FallbackVersion); err != nil {
+			return fmt.Errorf("invalid result fallback version: %w", err)
+		}
 	}
 	if result.State != StateCommitted && result.State != StateRolledBack && result.State != StateFailed {
 		return fmt.Errorf("update result is not terminal: %s", result.State)
@@ -207,8 +264,13 @@ func (active ActiveVersion) Validate() error {
 	if active.SchemaVersion != SchemaVersion {
 		return fmt.Errorf("unsupported active-version schema: %d", active.SchemaVersion)
 	}
-	if NormalizeVersion(active.ActiveVersion) == "" {
-		return errors.New("active version is required")
+	if err := ValidateVersion(active.ActiveVersion); err != nil {
+		return fmt.Errorf("invalid active version: %w", err)
+	}
+	if strings.TrimSpace(active.FallbackVersion) != "" {
+		if err := ValidateVersion(active.FallbackVersion); err != nil {
+			return fmt.Errorf("invalid fallback version: %w", err)
+		}
 	}
 	if active.State != StateCommitted && active.State != StateTrial {
 		return fmt.Errorf("unsupported active-version state: %s", active.State)
