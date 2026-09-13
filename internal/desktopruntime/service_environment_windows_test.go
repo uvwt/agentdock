@@ -108,6 +108,20 @@ func TestPlatformPrepareCoreEnvironmentRecoversCorruptGeneratedCredentialsConsis
 		if runtimeValue := os.Getenv(credential.envName); runtimeValue != persisted {
 			t.Fatalf("%s runtime value differs from persisted DPAPI value", credential.envName)
 		}
+		backups, err := filepath.Glob(filepath.Join(root, credential.path+".unreadable-*.bak"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(backups) != 1 {
+			t.Fatalf("%s unreadable backup count = %d, want 1", credential.path, len(backups))
+		}
+		backupData, err := os.ReadFile(backups[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(backupData) != garbage {
+			t.Fatalf("%s unreadable backup did not preserve original ciphertext", credential.path)
+		}
 	}
 	if got := os.Getenv("AGENTDOCK_OAUTH_ENABLED"); got != "true" {
 		t.Fatalf("AGENTDOCK_OAUTH_ENABLED = %q, want true", got)

@@ -170,18 +170,48 @@ function Read-ProtectedText {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         return ''
     }
-    try {
-        $protectedBytes = [Convert]::FromBase64String([IO.File]::ReadAllText($Path).Trim())
-        $plainBytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
-            $protectedBytes,
-            [Text.Encoding]::UTF8.GetBytes($Entropy),
-            [System.Security.Cryptography.DataProtectionScope]::CurrentUser
-        )
-        return [Text.Encoding]::UTF8.GetString($plainBytes)
-    } catch {
-        # Treat an existing but undecryptable DPAPI value as missing. Auto-generated
-        # credentials can then be recreated, while external credentials are requested again.
-        return ''
+    for ($attempt = 0; $attempt -lt 3; $attempt++) {
+        try {
+            $protectedBytes = [Convert]::FromBase64String([IO.File]::ReadAllText($Path).Trim())
+            $plainBytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
+                $protectedBytes,
+                [Text.Encoding]::UTF8.GetBytes($Entropy),
+                [System.Security.Cryptography.DataProtectionScope]::CurrentUser
+            )
+            $value = [Text.Encoding]::UTF8.GetString($plainBytes)
+            if (-not [string]::IsNullOrWhiteSpace($value)) {
+                return $value
+            }
+        } catch {
+            # Retry below before treating the DPAPI value as unreadable.
+        }
+        if ($attempt -lt 2) {
+            Start-Sleep -Milliseconds 50
+        }
+    }
+    return ''
+}
+
+function Backup-UnreadableProtectedText {
+    param([string] $Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return
+    }
+    $data = [IO.File]::ReadAllBytes($Path)
+    if ($data.Length -eq 0) {
+        return
+    }
+    $stamp = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffffffZ', [Globalization.CultureInfo]::InvariantCulture)
+    $backupPath = $Path + '.unreadable-' + $stamp + '-' + [Guid]::NewGuid().ToString('N') + '.bak'
+    [IO.File]::WriteAllBytes($backupPath, $data)
+
+    $directory = Split-Path -Parent $Path
+    $pattern = (Split-Path -Leaf $Path) + '.unreadable-*.bak'
+    $backups = @(Get-ChildItem -LiteralPath $directory -Filter $pattern -File | Sort-Object Name)
+    while ($backups.Count -gt 3) {
+        Remove-Item -LiteralPath $backups[0].FullName -Force
+        $backups = @($backups | Select-Object -Skip 1)
     }
 }
 
@@ -333,6 +363,9 @@ function Initialize-OAuthCredentials {
         throw 'OAuth password must contain at least 12 characters.'
     }
     if (-not [string]::Equals($password, $existingPassword, [StringComparison]::Ordinal)) {
+        if ([string]::IsNullOrWhiteSpace($existingPassword)) {
+            Backup-UnreadableProtectedText -Path $PasswordPath
+        }
         Write-ProtectedText -Path $PasswordPath -Value $password -Entropy 'agentdock.oauth.password.v1'
     }
 
@@ -351,6 +384,9 @@ function Initialize-OAuthCredentials {
         throw 'OAuth token secret must contain at least 32 bytes.'
     }
     if (-not [string]::Equals($tokenSecret, $existingTokenSecret, [StringComparison]::Ordinal)) {
+        if ([string]::IsNullOrWhiteSpace($existingTokenSecret)) {
+            Backup-UnreadableProtectedText -Path $TokenSecretPath
+        }
         Write-ProtectedText -Path $TokenSecretPath -Value $tokenSecret -Entropy 'agentdock.oauth.secret.v1'
     }
 
@@ -1186,6 +1222,7 @@ $cloudflaredLauncherPath = Join-Path $runtimeDir 'start-cloudflared.ps1'
 $tokenPath = Join-Path $runtimeDir 'auth-token.dpapi'
 $oauthPasswordPath = Join-Path $runtimeDir 'oauth-password.dpapi'
 $oauthTokenSecretPath = Join-Path $runtimeDir 'oauth-token-secret.dpapi'
+$credentialOwnerSidPath = Join-Path $runtimeDir 'credential-owner-sid.txt'
 $serverUrlPath = Join-Path $runtimeDir 'server-url.txt'
 $namedServerUrlPath = Join-Path $runtimeDir 'named-server-url.txt'
 $controlPanelSettingsPath = Join-Path $runtimeDir 'control-panel-settings.json'
@@ -1265,6 +1302,7 @@ $managedRuntimeFiles = @(
     @{ Path = $tokenPath; Name = 'auth-token.dpapi' },
     @{ Path = $oauthPasswordPath; Name = 'oauth-password.dpapi' },
     @{ Path = $oauthTokenSecretPath; Name = 'oauth-token-secret.dpapi' },
+    @{ Path = $credentialOwnerSidPath; Name = 'credential-owner-sid.txt' },
     @{ Path = $serverUrlPath; Name = 'server-url.txt' },
     @{ Path = $namedServerUrlPath; Name = 'named-server-url.txt' },
     @{ Path = $controlPanelSettingsPath; Name = 'control-panel-settings.json' },
@@ -1333,6 +1371,13 @@ try {
             $installErrorCode = 'setup-elevated-context'
             throw "AgentDock Setup is running as $($taskUser.Name), but the signed-in desktop user is $($interactiveUser.Name). Start Setup normally under the signed-in account; it requests administrator approval only for scheduled-task operations."
         }
+    }
+
+    $credentialOwnerSid = Read-TextFile -Path $credentialOwnerSidPath
+    if (-not [string]::IsNullOrWhiteSpace($credentialOwnerSid) -and
+        -not [string]::Equals($credentialOwnerSid, $taskUser.Sid, [StringComparison]::OrdinalIgnoreCase)) {
+        $installErrorCode = 'credential-user-mismatch'
+        throw 'AgentDock credentials belong to a different Windows user. Run Setup from the original user account or perform a clean reinstall.'
     }
 
     # Setup is non-interactive. Resolve external Tunnel credentials only after confirming the
@@ -1718,6 +1763,9 @@ try {
             $AuthToken = New-AgentDockToken
         }
         if (-not [string]::Equals($AuthToken, $existingAuthToken, [StringComparison]::Ordinal)) {
+            if ([string]::IsNullOrWhiteSpace($existingAuthToken)) {
+                Backup-UnreadableProtectedText -Path $tokenPath
+            }
             Write-ProtectedText -Path $tokenPath -Value $AuthToken -Entropy 'agentdock.startup.v1'
         }
 
@@ -1728,6 +1776,7 @@ try {
             -RequestedTokenSecret $OAuthTokenSecret
         $OAuthPassword = $oauthCredentials.Password
         $OAuthTokenSecret = $oauthCredentials.TokenSecret
+        Write-TextFile -Path $credentialOwnerSidPath -Value $taskUser.Sid
 
         if ($resolvedTunnelMode -ne 'none') {
             $existingServerUrl = Read-TextFile -Path $serverUrlPath

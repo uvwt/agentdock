@@ -6,8 +6,10 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestNormalizeHTTPSOriginAcceptsMCPURL(t *testing.T) {
@@ -54,8 +56,10 @@ func TestReadOrCreateProtectedTextRegeneratesUndecryptable(t *testing.T) {
 		t.Fatalf("read-back token changed: got %q, want %q", same, first)
 	}
 
-	// 写入“可解析但不是 DPAPI 密文”的内容，模拟跨机器/跨用户迁移后的损坏凭据，
-	// 应被视为缺失并重新生成，而不是返回错误。
+	// 模拟旧安装：没有 SID marker，但凭据文件 ACL 仍明确属于当前用户。
+	if err := os.Remove(filepath.Join(root, credentialOwnerSIDFile)); err != nil {
+		t.Fatal(err)
+	}
 	garbage := base64.StdEncoding.EncodeToString([]byte("garbage-not-a-dpapi-blob"))
 	if err := os.WriteFile(path, []byte(garbage), 0o600); err != nil {
 		t.Fatal(err)
@@ -69,6 +73,122 @@ func TestReadOrCreateProtectedTextRegeneratesUndecryptable(t *testing.T) {
 	}
 	if len(regenerated) != 64 {
 		t.Fatalf("regenerated token length = %d, want 64", len(regenerated))
+	}
+	backups, err := filepath.Glob(path + ".unreadable-*.bak")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(backups) != 1 {
+		t.Fatalf("unreadable backup count = %d, want 1", len(backups))
+	}
+	backupData, err := os.ReadFile(backups[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(backupData) != garbage {
+		t.Fatal("unreadable backup does not preserve the original ciphertext")
+	}
+	if marker, err := os.ReadFile(filepath.Join(root, credentialOwnerSIDFile)); err != nil || strings.TrimSpace(string(marker)) == "" {
+		t.Fatalf("credential owner SID marker missing after recovery: %v", err)
+	}
+}
+
+func TestReadOrCreateProtectedTextRejectsCredentialOwnerSIDMismatch(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "auth-token.dpapi")
+	const entropy = "agentdock.startup.v1"
+
+	if _, err := readOrCreateProtectedText(path, entropy, 32, "Bearer Token"); err != nil {
+		t.Fatal(err)
+	}
+	garbage := base64.StdEncoding.EncodeToString([]byte("garbage-not-a-dpapi-blob"))
+	if err := os.WriteFile(path, []byte(garbage), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, credentialOwnerSIDFile), []byte("S-1-5-21-1-2-3-424242"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := readOrCreateProtectedText(path, entropy, 32, "Bearer Token"); err == nil || !strings.Contains(err.Error(), "SID 不一致") {
+		t.Fatalf("readOrCreateProtectedText() error = %v, want SID mismatch", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != garbage {
+		t.Fatal("credential changed despite SID mismatch")
+	}
+	backups, err := filepath.Glob(path + ".unreadable-*.bak")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(backups) != 0 {
+		t.Fatalf("unexpected backup count after rejected recovery = %d", len(backups))
+	}
+}
+
+func TestReadOrCreateProtectedTextRetriesBeforeRecovery(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "auth-token.dpapi")
+	const entropy = "agentdock.startup.v1"
+	const existing = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+	if err := writeProtectedText(path, existing, entropy); err != nil {
+		t.Fatal(err)
+	}
+	validData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	garbage := base64.StdEncoding.EncodeToString([]byte("temporary-invalid-dpapi"))
+	if err := os.WriteFile(path, []byte(garbage), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		_ = os.WriteFile(path, validData, 0o600)
+	}()
+
+	value, err := readOrCreateProtectedText(path, entropy, 32, "Bearer Token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != existing {
+		t.Fatalf("readOrCreateProtectedText() = %q, want existing value", value)
+	}
+	backups, err := filepath.Glob(path + ".unreadable-*.bak")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(backups) != 0 {
+		t.Fatalf("transient decrypt failure created %d backup(s), want 0", len(backups))
+	}
+}
+
+func TestReadOrCreateProtectedTextBoundsUnreadableBackups(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "auth-token.dpapi")
+	const entropy = "agentdock.startup.v1"
+
+	if _, err := readOrCreateProtectedText(path, entropy, 32, "Bearer Token"); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < generatedCredentialBackupLimit+2; i++ {
+		garbage := base64.StdEncoding.EncodeToString([]byte("garbage-not-a-dpapi-blob-" + string(rune('a'+i))))
+		if err := os.WriteFile(path, []byte(garbage), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := readOrCreateProtectedText(path, entropy, 32, "Bearer Token"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	backups, err := filepath.Glob(path + ".unreadable-*.bak")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(backups) != generatedCredentialBackupLimit {
+		t.Fatalf("unreadable backup count = %d, want %d", len(backups), generatedCredentialBackupLimit)
 	}
 }
 

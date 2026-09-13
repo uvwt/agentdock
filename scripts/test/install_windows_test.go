@@ -599,6 +599,43 @@ func TestWindowsSetupRepromptsUnreadableNamedTunnelToken(t *testing.T) {
 	}
 }
 
+func TestWindowsGeneratedCredentialRecoveryPreservesUnreadableCiphertext(t *testing.T) {
+	installData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "install", "install.ps1"))
+	if err != nil {
+		t.Fatalf("read install.ps1: %v", err)
+	}
+	codeData, err := os.ReadFile(filepath.Join("..", "..", "packaging", "windows", "includes", "code.iss"))
+	if err != nil {
+		t.Fatalf("read code.iss: %v", err)
+	}
+	messagesData, err := os.ReadFile(filepath.Join("..", "..", "packaging", "windows", "includes", "messages.iss"))
+	if err != nil {
+		t.Fatalf("read messages.iss: %v", err)
+	}
+
+	install := string(installData)
+	for _, want := range []string{
+		"function Backup-UnreadableProtectedText",
+		"for ($attempt = 0; $attempt -lt 3; $attempt++)",
+		"Start-Sleep -Milliseconds 50",
+		".unreadable-",
+		"while ($backups.Count -gt 3)",
+		"credential-owner-sid.txt",
+		"$installErrorCode = 'credential-user-mismatch'",
+		"Write-TextFile -Path $credentialOwnerSidPath -Value $taskUser.Sid",
+	} {
+		if !strings.Contains(install, want) {
+			t.Fatalf("install.ps1 missing generated credential recovery guard %q", want)
+		}
+	}
+	if strings.Count(install, "Backup-UnreadableProtectedText -Path") < 3 {
+		t.Fatal("install.ps1 must preserve unreadable auth, OAuth password, and OAuth signing secret before replacement")
+	}
+	if !strings.Contains(string(codeData), "CredentialUserMismatch") || !strings.Contains(string(messagesData), "CredentialUserMismatch") {
+		t.Fatal("Windows Setup must localize credential-user-mismatch failures")
+	}
+}
+
 func TestWindowsSetupLaunchesRuntimeOutsideRedirectionGuardTree(t *testing.T) {
 	installData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "install", "install.ps1"))
 	if err != nil {

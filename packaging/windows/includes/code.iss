@@ -582,6 +582,8 @@ begin
         ErrorMessage := GetLocalizedMessage('ElevatedSetupUnsupported');
       if ErrorCode = 'tunnel-token-required' then
         ErrorMessage := GetLocalizedMessage('TokenRecoveryRequired');
+      if ErrorCode = 'credential-user-mismatch' then
+        ErrorMessage := GetLocalizedMessage('CredentialUserMismatch');
       if ErrorMessage = '' then
         ErrorMessage := GetLocalizedMessage('InstallerExitCode') + ' ' + IntToStr(ExitCode);
       Result := GetLocalizedMessage('InstallFailed') + ' ' + ErrorMessage;
