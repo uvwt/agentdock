@@ -51,19 +51,48 @@ func TestMultiServiceRoutesDefaultAndExplicitProfiles(t *testing.T) {
 		t.Fatalf("explicit route = manager %p profile %q", manager, profileID)
 	}
 
-	defaultResult, err := service.Session(context.Background(), SessionRequest{Action: "list"})
+	defaultResult, err := service.Interaction(context.Background(), InteractionRequest{Action: "list"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if defaultResult["profile_id"] != "zcode" {
-		t.Fatalf("default response profile_id = %#v", defaultResult["profile_id"])
+		t.Fatalf("default interaction profile_id = %#v", defaultResult["profile_id"])
 	}
-	explicitResult, err := service.Session(context.Background(), SessionRequest{ProfileID: "agy", Action: "list"})
+	explicitResult, err := service.Interaction(context.Background(), InteractionRequest{ProfileID: "agy", Action: "list"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if explicitResult["profile_id"] != "agy" {
-		t.Fatalf("explicit response profile_id = %#v", explicitResult["profile_id"])
+		t.Fatalf("explicit interaction profile_id = %#v", explicitResult["profile_id"])
+	}
+
+	for _, request := range []SessionRequest{
+		{Action: "update", SessionID: "acps_missing"},
+		{Action: "update", SessionID: "acps_missing", ModeID: "code", ConfigID: "safe", ConfigValue: true},
+	} {
+		_, callErr := service.Session(context.Background(), request)
+		var toolErr *ToolError
+		if !errors.As(callErr, &toolErr) || toolErr.Code != "ACP_SESSION_UPDATE_INVALID" {
+			t.Fatalf("invalid update error = %#v", callErr)
+		}
+	}
+
+	_, callErr := service.Session(context.Background(), SessionRequest{Action: "future_action", AuthMethodID: "would-start-adapter"})
+	var invalidActionErr *ToolError
+	if !errors.As(callErr, &invalidActionErr) || invalidActionErr.Code != "ACP_ACTION_INVALID" {
+		t.Fatalf("invalid action error = %#v", callErr)
+	}
+
+	for _, request := range []InteractionRequest{
+		{Action: "respond", InteractionID: "acpi_missing"},
+		{Action: "respond", InteractionID: "acpi_missing", Response: InteractionResponseInput{Action: "cancel", OptionID: "allow_once"}},
+		{Action: "respond", InteractionID: "acpi_missing", Response: InteractionResponseInput{Action: "accept"}},
+	} {
+		_, callErr := service.Interaction(context.Background(), request)
+		var toolErr *ToolError
+		if !errors.As(callErr, &toolErr) || toolErr.Code != "ACP_INTERACTION_RESPONSE_INVALID" {
+			t.Fatalf("invalid interaction response error = %#v", callErr)
+		}
 	}
 
 	_, _, err = service.managerFor("missing")

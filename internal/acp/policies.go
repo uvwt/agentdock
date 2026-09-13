@@ -11,19 +11,21 @@ type RuntimePolicies struct {
 }
 
 type ContextPolicy struct {
-	HistoryOwner                string `json:"history_owner"`
-	AgentDockPersistsTranscript bool   `json:"agentdock_persists_transcript"`
-	AgentDockReplaysTranscript  bool   `json:"agentdock_replays_transcript"`
-	RestartRequiresExplicitLoad bool   `json:"restart_requires_explicit_load"`
+	HistoryOwner                  string `json:"history_owner"`
+	AgentDockPersistsTranscript   bool   `json:"agentdock_persists_transcript"`
+	AgentDockReplaysTranscript    bool   `json:"agentdock_replays_transcript"`
+	ManagedSessionAutoReactivates bool   `json:"managed_session_auto_reactivates"`
+	HistoryReadUsesAdapterLoad    bool   `json:"history_read_uses_adapter_load"`
 }
 
 type EventPolicy struct {
-	Incremental       bool   `json:"incremental"`
-	Cursor            string `json:"cursor"`
-	MaxEventsPerPage  int    `json:"max_events_per_page"`
-	MaxRetainedEvents int    `json:"max_retained_events"`
-	MaxRetainedBytes  int    `json:"max_retained_bytes"`
-	MaxUpdateBytes    int    `json:"max_update_bytes"`
+	Incremental              bool   `json:"incremental"`
+	Cursor                   string `json:"cursor"`
+	MaxEventsPerPage         int    `json:"max_events_per_page"`
+	MaxRetainedEvents        int    `json:"max_retained_events"`
+	MaxRetainedBytes         int    `json:"max_retained_bytes"`
+	MaxUpdateBytes           int    `json:"max_update_bytes"`
+	PrivateReasoningFiltered bool   `json:"private_reasoning_filtered"`
 }
 
 type InteractionPolicy struct {
@@ -33,6 +35,7 @@ type InteractionPolicy struct {
 	MaxPendingGlobal      int  `json:"max_pending_global"`
 	MaxPendingPerSession  int  `json:"max_pending_per_session"`
 	AlwaysOptionsFiltered bool `json:"always_options_filtered"`
+	ElicitationAdvertised bool `json:"elicitation_advertised"`
 }
 
 type SteeringPolicy struct {
@@ -45,12 +48,13 @@ func CurrentPolicies() RuntimePolicies {
 	return RuntimePolicies{
 		Context: ContextPolicy{
 			HistoryOwner: "adapter", AgentDockPersistsTranscript: false,
-			AgentDockReplaysTranscript: false, RestartRequiresExplicitLoad: true,
+			AgentDockReplaysTranscript: false, ManagedSessionAutoReactivates: true,
+			HistoryReadUsesAdapterLoad: true,
 		},
 		Events: EventPolicy{
 			Incremental: true, Cursor: "next_seq", MaxEventsPerPage: 200,
 			MaxRetainedEvents: maxEventCount, MaxRetainedBytes: maxEventBytes,
-			MaxUpdateBytes: maxEventUpdateBytes,
+			MaxUpdateBytes: maxEventUpdateBytes, PrivateReasoningFiltered: true,
 		},
 		Interactions: InteractionPolicy{
 			MemoryOnly: true, MaxOptions: maxPermissionOptions,
@@ -58,6 +62,7 @@ func CurrentPolicies() RuntimePolicies {
 			MaxPendingGlobal:      maxPendingInteractions,
 			MaxPendingPerSession:  maxPendingInteractionsPerSession,
 			AlwaysOptionsFiltered: true,
+			ElicitationAdvertised: false,
 		},
 		Steering: SteeringPolicy{
 			NativeWhenSupported: true, IdlePromptRequiredStartsRun: true,

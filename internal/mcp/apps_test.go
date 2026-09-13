@@ -651,15 +651,6 @@ func TestMCPAppsExposeACPViewOnlyWhenACPEnabled(t *testing.T) {
 	}
 	assertResourceUIMeta(t, read.Contents[0].Meta, "")
 
-	sessionList, err := harness.session.CallTool(t.Context(), &mcpsdk.CallToolParams{Name: "acp_session", Arguments: map[string]any{"action": "list"}})
-	if err != nil || sessionList.IsError {
-		t.Fatalf("acp_session list result=%#v err=%v", sessionList, err)
-	}
-	sessionStructured, ok := sessionList.StructuredContent.(map[string]any)
-	if !ok || sessionStructured["action"] != "list" || sessionStructured["sessions"] == nil || sessionStructured["view"] != nil {
-		t.Fatalf("acp_session list structuredContent = %#v", sessionList.StructuredContent)
-	}
-
 }
 
 func TestAppWidgetDomainRequiresHTTPSOrigin(t *testing.T) {

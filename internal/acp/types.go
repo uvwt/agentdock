@@ -119,6 +119,7 @@ const (
 
 type Event struct {
 	Seq                 uint64          `json:"seq"`
+	Source              string          `json:"source"`
 	Type                string          `json:"type"`
 	SessionID           string          `json:"session_id"`
 	RunID               string          `json:"run_id,omitempty"`
@@ -144,12 +145,12 @@ type eventPage struct {
 type Run struct {
 	ID                    string
 	SessionID             string
-	userText              string
 	Status                RunStatus
 	StartedAt             time.Time
 	EndedAt               *time.Time
 	StopReason            string
 	Err                   error
+	CancelRequested       bool
 	cancel                func()
 	eventsMu              sync.Mutex
 	events                []Event
@@ -264,6 +265,9 @@ func (r *Run) appendEvent(event Event) {
 func (r *Run) appendEventLocked(event Event) {
 	event.Seq = r.nextSeq
 	r.nextSeq++
+	if event.Source == "" {
+		event.Source = "agentdock"
+	}
 	event.SessionID = r.SessionID
 	event.RunID = r.ID
 	if event.CreatedAt.IsZero() {

@@ -71,7 +71,7 @@ func TestACPToolsAreFeatureGatedAndUseStrictSchemas(t *testing.T) {
 
 	sessionProperties := testInputSchema("acp_session")["properties"].(map[string]any)
 	actions := sessionProperties["action"].(map[string]any)["enum"].([]string)
-	expectedActions := []string{"info", "authenticate", "new", "load", "resume", "fork", "set_mode", "set_config", "list", "inspect", "close", "delete"}
+	expectedActions := []string{"info", "new", "list", "inspect", "open", "update", "close", "delete"}
 	if !reflect.DeepEqual(actions, expectedActions) {
 		t.Fatalf("acp_session actions = %#v, want %#v", actions, expectedActions)
 	}
@@ -93,13 +93,6 @@ func TestACPToolsAreFeatureGatedAndUseStrictSchemas(t *testing.T) {
 		t.Fatal("acp_interaction output schema missing profile_id")
 	}
 
-	result, err := runtime.Call(context.Background(), "acp_session", map[string]any{"action": "list"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result["count"] != 0 {
-		t.Fatalf("empty ACP session count = %#v", result["count"])
-	}
 	contextResult, err := runtime.Call(context.Background(), "agentdock_context", nil)
 	if err != nil {
 		t.Fatal(err)

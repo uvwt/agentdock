@@ -7,8 +7,12 @@ type SessionRequest struct {
 	Action                string   `json:"action"`
 	AuthMethodID          string   `json:"auth_method_id,omitempty"`
 	SessionID             string   `json:"session_id,omitempty"`
+	RemoteSessionID       string   `json:"remote_session_id,omitempty"`
+	FromSessionID         string   `json:"from_session_id,omitempty"`
 	CWD                   string   `json:"cwd,omitempty"`
 	AdditionalDirectories []string `json:"additional_directories,omitempty"`
+	Cursor                string   `json:"cursor,omitempty"`
+	IncludeHistory        *bool    `json:"include_history,omitempty"`
 	ModeID                string   `json:"mode_id,omitempty"`
 	ConfigID              string   `json:"config_id,omitempty"`
 	ConfigValue           any      `json:"config_value,omitempty"`
@@ -16,24 +20,29 @@ type SessionRequest struct {
 
 // PromptRequest 是 acp_prompt 的强类型输入。
 type PromptRequest struct {
-	ProfileID string `json:"profile_id,omitempty"`
-	Action    string `json:"action"`
-	SessionID string `json:"session_id,omitempty"`
-	RunID     string `json:"run_id,omitempty"`
-	Text      string `json:"text,omitempty"`
-	AfterSeq  *int   `json:"after_seq,omitempty"`
-	Limit     *int   `json:"limit,omitempty"`
-	WaitMS    *int   `json:"wait_ms,omitempty"`
+	ProfileID string           `json:"profile_id,omitempty"`
+	Action    string           `json:"action"`
+	SessionID string           `json:"session_id,omitempty"`
+	RunID     string           `json:"run_id,omitempty"`
+	Prompt    []map[string]any `json:"prompt,omitempty"`
+	AfterSeq  *int             `json:"after_seq,omitempty"`
+	Limit     *int             `json:"limit,omitempty"`
+	WaitMS    *int             `json:"wait_ms,omitempty"`
+}
+
+type InteractionResponseInput struct {
+	Action   string `json:"action,omitempty"`
+	OptionID string `json:"option_id,omitempty"`
 }
 
 // InteractionRequest 是 acp_interaction 的强类型输入。
 type InteractionRequest struct {
-	ProfileID     string `json:"profile_id,omitempty"`
-	Action        string `json:"action"`
-	SessionID     string `json:"session_id,omitempty"`
-	InteractionID string `json:"interaction_id,omitempty"`
-	OptionID      string `json:"option_id,omitempty"`
-	PendingOnly   *bool  `json:"pending_only,omitempty"`
+	ProfileID     string                   `json:"profile_id,omitempty"`
+	Action        string                   `json:"action"`
+	SessionID     string                   `json:"session_id,omitempty"`
+	InteractionID string                   `json:"interaction_id,omitempty"`
+	Response      InteractionResponseInput `json:"response,omitempty"`
+	PendingOnly   *bool                    `json:"pending_only,omitempty"`
 }
 
 func intValue(value *int, fallback int) int {

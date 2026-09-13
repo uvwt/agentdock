@@ -29,6 +29,18 @@ func (p *agentProcess) supportsSessionCapability(name string) bool {
 	return object
 }
 
+func (p *agentProcess) supportsPromptCapability(name string) bool {
+	if p == nil || strings.TrimSpace(name) == "" {
+		return false
+	}
+	prompt, ok := p.initialize.AgentCapabilities["promptCapabilities"].(map[string]any)
+	if !ok {
+		return false
+	}
+	enabled, _ := prompt[name].(bool)
+	return enabled
+}
+
 func (p *agentProcess) supportsSteering() bool {
 	if p == nil {
 		return false

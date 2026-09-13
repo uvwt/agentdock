@@ -280,6 +280,9 @@ func TestRuntimeOutputContractACPOptionalFields(t *testing.T) {
 	if !ok || len(sessions) != 0 {
 		t.Fatalf("empty ACP sessions = %#v, want []", normalizedListed["sessions"])
 	}
+	if normalizedListed["count"] != float64(0) || normalizedListed["managed_count"] != float64(0) || normalizedListed["remote_count"] != float64(0) {
+		t.Fatalf("empty ACP session counts = %#v", normalizedListed)
+	}
 
 	interactions, err := runtime.Call(context.Background(), "acp_interaction", map[string]any{"action": "list"})
 	if err != nil {
@@ -301,22 +304,20 @@ func TestRuntimeOutputContractACPOptionalFields(t *testing.T) {
 		t.Fatalf("created session = %#v", created["session"])
 	}
 
-	for _, action := range []string{"load", "resume"} {
-		result, callErr := runtime.Call(context.Background(), "acp_session", map[string]any{"action": action, "session_id": session.ID})
-		if callErr != nil {
-			t.Fatalf("%s: %v", action, callErr)
-		}
-		assertACPOptionalSessionFieldsAbsent(t, result)
+	opened, err := runtime.Call(context.Background(), "acp_session", map[string]any{"action": "open", "session_id": session.ID})
+	if err != nil {
+		t.Fatal(err)
 	}
+	assertACPOptionalSessionFieldsAbsent(t, opened)
 
-	forked, err := runtime.Call(context.Background(), "acp_session", map[string]any{"action": "fork", "session_id": session.ID})
+	forked, err := runtime.Call(context.Background(), "acp_session", map[string]any{"action": "new", "from_session_id": session.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertACPOptionalSessionFieldsAbsent(t, forked)
 
 	configured, err := runtime.Call(context.Background(), "acp_session", map[string]any{
-		"action": "set_config", "session_id": session.ID, "config_id": "safe", "config_value": false,
+		"action": "update", "session_id": session.ID, "config_id": "safe", "config_value": false,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -324,10 +325,13 @@ func TestRuntimeOutputContractACPOptionalFields(t *testing.T) {
 	normalizedConfigured := assertToolResultMatchestestOutputSchema(t, "acp_session", configured)
 	configOptions, ok := normalizedConfigured["config_options"].([]any)
 	if !ok || len(configOptions) != 0 {
-		t.Fatalf("set_config config_options = %#v, want []", normalizedConfigured["config_options"])
+		t.Fatalf("update config_options = %#v, want []", normalizedConfigured["config_options"])
 	}
 
-	started, err := runtime.Call(context.Background(), "acp_prompt", map[string]any{"action": "start", "session_id": session.ID, "text": "hold"})
+	started, err := runtime.Call(context.Background(), "acp_prompt", map[string]any{
+		"action": "start", "session_id": session.ID,
+		"prompt": []map[string]any{{"type": "text", "text": "hold"}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -404,9 +408,10 @@ func TestOutputContractACPHelper(t *testing.T) {
 			}
 			if os.Getenv("GO_OUTPUT_CONTRACT_ACP_OMIT_CAPABILITIES") != "1" {
 				initialize["agentCapabilities"] = map[string]any{
-					"loadSession": true,
+					"loadSession":        true,
+					"promptCapabilities": map[string]any{"image": true, "embeddedContext": true},
 					"sessionCapabilities": map[string]any{
-						"resume": map[string]any{}, "fork": map[string]any{},
+						"resume": map[string]any{}, "fork": map[string]any{}, "list": map[string]any{},
 					},
 				}
 			}
@@ -414,6 +419,13 @@ func TestOutputContractACPHelper(t *testing.T) {
 		case "session/new", "session/fork":
 			remoteSession++
 			result = map[string]any{"sessionId": "remote-" + strconv.Itoa(remoteSession)}
+		case "session/list":
+			cwd, _ := os.Getwd()
+			sessions := make([]map[string]any, 0, remoteSession)
+			for index := 1; index <= remoteSession; index++ {
+				sessions = append(sessions, map[string]any{"sessionId": "remote-" + strconv.Itoa(index), "cwd": cwd})
+			}
+			result = map[string]any{"sessions": sessions}
 		case "session/load", "session/resume":
 			result = map[string]any{}
 		case "session/set_config_option":

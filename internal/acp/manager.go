@@ -19,8 +19,10 @@ type Manager struct {
 	sessions           map[string]SessionRecord
 	remoteToLocal      map[string]string
 	loaded             map[string]sessionLifecycleResponse
+	projections        map[string]SessionProjection
 	runs               map[string]*Run
 	activeRunBySession map[string]string
+	historyCollectors  map[string]*historyCollector
 	interactions       map[string]*Interaction
 	terminalSessions   map[string]SessionStatus
 	sessionOperations  map[string]int
@@ -60,8 +62,10 @@ func NewManager(opts Options) (*Manager, error) {
 		sessions:           make(map[string]SessionRecord),
 		remoteToLocal:      make(map[string]string),
 		loaded:             make(map[string]sessionLifecycleResponse),
+		projections:        make(map[string]SessionProjection),
 		runs:               make(map[string]*Run),
 		activeRunBySession: make(map[string]string),
+		historyCollectors:  make(map[string]*historyCollector),
 		interactions:       make(map[string]*Interaction),
 		terminalSessions:   make(map[string]SessionStatus),
 		sessionOperations:  make(map[string]int),
@@ -116,6 +120,7 @@ func (m *Manager) Close() error {
 		process := m.process
 		m.process = nil
 		m.loaded = make(map[string]sessionLifecycleResponse)
+		m.projections = make(map[string]SessionProjection)
 		m.mu.Unlock()
 		for _, run := range activeRuns {
 			if runStatus(run) != RunRunning {
@@ -183,6 +188,7 @@ func (m *Manager) ensureProcess(ctx context.Context) (*agentProcess, error) {
 	old := m.process
 	m.process = started
 	m.loaded = make(map[string]sessionLifecycleResponse)
+	m.projections = make(map[string]SessionProjection)
 	m.mu.Unlock()
 	if old != nil && old != started {
 		_ = old.Close()

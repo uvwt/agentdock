@@ -132,6 +132,30 @@ Profile 规则：
 
 保存后重启或重建真正承载 AgentDock Core 的运行单元，让新环境重新加载。
 
+## ACP 工具模型
+
+AgentDock 对外保留稳定的管理语义，不把 ACP 协议的每个底层方法直接暴露成一个 action：
+
+| 工具 | 公开 action | 语义 |
+| --- | --- | --- |
+| `acp_session` | `info`、`new`、`list`、`inspect`、`open`、`update`、`close`、`delete` | 管理 AgentDock session 与 Adapter 原生 session |
+| `acp_prompt` | `start`、`events`、`cancel` | 启动异步 Run、增量读取 Run 事件、请求取消 |
+| `acp_interaction` | `list`、`respond` | 处理需要用户参与的交互；当前稳定支持 permission |
+
+关键规则：
+
+- `acp_session list` 返回一个统一的 `sessions[]`。AgentDock 已管理的会话保留 `session_id=acps_*` 并标记 `managed=true`；只有 Adapter 原生存在、尚未纳管的会话以 `source=remote` 返回。原生发现来自标准 ACP `session/list`，相同 `remote_session_id` 只保留一行；Adapter 不支持时会明确返回 `remote_available=false`，不会伪造远端结果。
+- `open` 可以接收 `session_id` 或 `remote_session_id`。打开原生 session 时只建立 `acps_* -> remote_session_id` 的轻量映射，不复制 transcript；后续自动优先使用 `session/resume`，必要时才使用 `session/load`。
+- `new(from_session_id=...)` 表达 fork；只有 Adapter 广告 fork capability 时才执行。`update` 统一承载 session mode / config option 修改。
+- `inspect(include_history=true)` 才显式读取历史。历史唯一事实源是 Adapter；AgentDock 通过标准 `session/load` 收集 Adapter replay 的公开 `session/update`，不把 Run 事件拼成第二份 transcript，也不暴露 `agent_thought_chunk`。
+- `close` 释放 Adapter 侧资源但保持 AgentDock 映射可再次 `open`；`delete` 是真正删除，必须由 Adapter 广告 delete capability，不支持时不得静默退化成本地解绑。
+- `acp_prompt start` 接收 ACP ContentBlock 数组。`text` 与 `resource_link` 是基线类型；`image`、`audio`、embedded `resource` 按 Adapter 的 `promptCapabilities` 校验。若当前 session 已有 active Run，AgentDock 只在 Adapter 支持 steering 时内部处理 steering，不再公开单独的 `steer` action。
+- `cancel` 是取消请求而不是“立即把本地 Run 标成完成”。AgentDock 会先发送 ACP cancel，继续接收 Adapter 的尾部 `session/update`，等原 prompt 以 `stopReason=cancelled` 收敛后再把 Run 标记为 cancelled。
+- Run 事件中的 ACP 原生更新标记 `source=acp`，AgentDock 自己生成的生命周期事件标记 `source=agentdock`，便于调用方区分协议事实和宿主编排事件。
+- `acp_interaction respond` 的 permission 只能选择 Adapter 当前提供且本地策略允许的 option；取消使用 `response.action=cancel`。在完整的结构化 elicitation 生命周期实现之前，AgentDock 不向 Adapter 广告 elicitation capability。
+
+如果 `info` 返回认证方法，可以直接调用 `info(auth_method_id=...)` 完成独立认证，也可以在其他 session action 上同时提供 `auth_method_id`，让 AgentDock 先认证再执行操作；认证仍由 Adapter / Provider 管理，AgentDock 不保存 Provider 密码。
+
 ## 验证 ACP 真的可用
 
 至少完成下面几层验证：

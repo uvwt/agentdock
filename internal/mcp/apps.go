@@ -82,8 +82,8 @@ func (s *Server) appResourceDefinitions() []appResourceDefinition {
 		definitions = append(definitions, appResourceDefinition{
 			URI:         protocol.ACPStatusUIResourceURI,
 			Name:        "agentdock-acp-status",
-			Title:       "AgentDock ACP conversation",
-			Description: "Read-only ACP session view with concise user and assistant conversation output.",
+			Title:       "AgentDock ACP status",
+			Description: "Read-only ACP session and runtime status view.",
 			HTML:        mcpapps.HTML("acp_status", "ACP status"),
 		})
 	}

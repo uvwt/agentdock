@@ -12,6 +12,7 @@ type SessionResult struct {
 	Session       SessionRecord `json:"session"`
 	Modes         any           `json:"modes,omitempty"`
 	ConfigOptions any           `json:"config_options,omitempty"`
+	History       HistoryReplay `json:"history,omitempty"`
 	Agent         AgentInfo     `json:"agent"`
 }
 
@@ -99,6 +100,7 @@ func (m *Manager) LoadSession(ctx context.Context, id string) (SessionResult, er
 	m.mu.RLock()
 	response, alreadyLoaded := m.loaded[id]
 	m.mu.RUnlock()
+	history := HistoryReplay{}
 	if !alreadyLoaded {
 		if !process.supportsLoadSession() {
 			return SessionResult{}, capabilityError("loadSession")
@@ -106,9 +108,16 @@ func (m *Manager) LoadSession(ctx context.Context, id string) (SessionResult, er
 		if len(record.AdditionalDirectories) > 0 && !process.supportsSessionCapability("additionalDirectories") {
 			return SessionResult{}, capabilityError("sessionCapabilities.additionalDirectories")
 		}
+		collector, finish, err := m.beginHistoryReplay(record.RemoteSessionID)
+		if err != nil {
+			return SessionResult{}, err
+		}
 		params := sessionActivationParams(record)
-		if err := process.connection.Request(ctx, "session/load", params, &response); err != nil {
-			wrapped := process.wrapError("load ACP session", err)
+		requestErr := process.connection.Request(ctx, "session/load", params, &response)
+		history = collector.snapshot()
+		finish()
+		if requestErr != nil {
+			wrapped := process.wrapError("load ACP session", requestErr)
 			if isCodexNoRolloutError(process.initialize.AgentInfo, wrapped) {
 				return SessionResult{}, newError("ACP_SESSION_NOT_PERSISTED", "ACP session has no persisted remote turn to load", false, map[string]any{"session_id": id}, wrapped)
 			}
@@ -122,7 +131,7 @@ func (m *Manager) LoadSession(ctx context.Context, id string) (SessionResult, er
 	if err != nil {
 		return SessionResult{}, err
 	}
-	return SessionResult{Session: record, Modes: response.Modes, ConfigOptions: response.ConfigOptions, Agent: process.initialize.AgentInfo}, nil
+	return SessionResult{Session: record, Modes: response.Modes, ConfigOptions: response.ConfigOptions, History: history, Agent: process.initialize.AgentInfo}, nil
 }
 
 func (m *Manager) ResumeSession(ctx context.Context, id string) (SessionResult, error) {
@@ -234,7 +243,7 @@ func (m *Manager) SetSessionMode(ctx context.Context, id, modeID string) error {
 	if modeID == "" {
 		return newError("ACP_MODE_INVALID", "ACP session mode id is required", false, nil, nil)
 	}
-	loaded, err := m.LoadSession(ctx, id)
+	loaded, err := m.EnsureSessionActive(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -273,7 +282,7 @@ func (m *Manager) SetSessionConfigOption(ctx context.Context, id, configID strin
 	if configID == "" {
 		return nil, newError("ACP_CONFIG_OPTION_INVALID", "ACP session config id is required", false, nil, nil)
 	}
-	loaded, err := m.LoadSession(ctx, id)
+	loaded, err := m.EnsureSessionActive(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -320,10 +329,6 @@ func (m *Manager) SetSessionConfigOption(ctx context.Context, id, configID strin
 	return response.ConfigOptions, nil
 }
 
-func (m *Manager) ListSessions() ([]SessionRecord, error) {
-	return m.store.List()
-}
-
 func (m *Manager) InspectSession(id string) (SessionRecord, error) {
 	return m.session(id)
 }
@@ -336,6 +341,13 @@ func (m *Manager) CloseSession(ctx context.Context, id string) (SessionRecord, e
 	if record.Status == SessionClosed {
 		return record, nil
 	}
+	process, err := m.ensureProcess(ctx)
+	if err != nil {
+		return SessionRecord{}, err
+	}
+	if !process.supportsSessionCapability("close") {
+		return SessionRecord{}, capabilityError("sessionCapabilities.close")
+	}
 	previousTerminal, hadPreviousTerminal, err := m.beginTerminalTransition(ctx, id, SessionClosed)
 	if err != nil {
 		return SessionRecord{}, err
@@ -346,16 +358,15 @@ func (m *Manager) CloseSession(ctx context.Context, id string) (SessionRecord, e
 			m.rollbackTerminalTransition(id, SessionClosed, previousTerminal, hadPreviousTerminal)
 		}
 	}()
+
 	_ = m.CancelPrompt(ctx, id, "")
-	process, err := m.ensureProcess(ctx)
-	if err != nil {
-		return SessionRecord{}, err
+	if err := process.connection.Request(ctx, "session/close", map[string]any{"sessionId": record.RemoteSessionID}, nil); err != nil {
+		return SessionRecord{}, process.wrapError("close ACP session", err)
 	}
-	if process.supportsSessionCapability("close") {
-		if err := process.connection.Request(ctx, "session/close", map[string]any{"sessionId": record.RemoteSessionID}, nil); err != nil {
-			return SessionRecord{}, process.wrapError("close ACP session", err)
-		}
-	}
+
+	// session/close 已确认远端工作停止，此时才能强制收敛仍未返回的本地 Run。
+	m.settleRunAfterRemoteClose(id)
+
 	now := time.Now().UTC()
 	record.Status = SessionClosed
 	record.UpdatedAt = now
@@ -367,6 +378,10 @@ func (m *Manager) CloseSession(ctx context.Context, id string) (SessionRecord, e
 	m.mu.Lock()
 	m.sessions[id] = record
 	delete(m.loaded, id)
+	delete(m.projections, id)
+	// closed 是可恢复状态，不是终态。这里只用 terminal marker 串行化 close 过程，
+	// 成功后必须移除，后续 open 才能 resume/load 同一 remote session。
+	delete(m.terminalSessions, id)
 	m.mu.Unlock()
 	succeeded = true
 	return record, nil
@@ -376,6 +391,13 @@ func (m *Manager) DeleteSession(ctx context.Context, id string) error {
 	record, err := m.session(id)
 	if err != nil {
 		return err
+	}
+	process, err := m.ensureProcess(ctx)
+	if err != nil {
+		return err
+	}
+	if !process.supportsSessionCapability("delete") {
+		return capabilityError("sessionCapabilities.delete")
 	}
 	previousTerminal, hadPreviousTerminal, err := m.beginTerminalTransition(ctx, id, sessionDeleted)
 	if err != nil {
@@ -388,25 +410,22 @@ func (m *Manager) DeleteSession(ctx context.Context, id string) error {
 		}
 	}()
 	_ = m.CancelPrompt(ctx, id, "")
-	process, err := m.ensureProcess(ctx)
-	if err != nil {
-		return err
-	}
-	if process.supportsSessionCapability("delete") {
-		if err := process.connection.Request(ctx, "session/delete", map[string]any{"sessionId": record.RemoteSessionID}, nil); err != nil {
-			wrapped := process.wrapError("delete ACP session", err)
-			if !isCodexNoRolloutError(process.initialize.AgentInfo, wrapped) {
-				return wrapped
-			}
+	if err := process.connection.Request(ctx, "session/delete", map[string]any{"sessionId": record.RemoteSessionID}, nil); err != nil {
+		wrapped := process.wrapError("delete ACP session", err)
+		if !isCodexNoRolloutError(process.initialize.AgentInfo, wrapped) {
+			return wrapped
 		}
 	}
 	if err := m.store.Delete(id); err != nil {
 		return err
 	}
+	m.settleRunAfterRemoteClose(id)
 	m.mu.Lock()
 	delete(m.sessions, id)
 	delete(m.remoteToLocal, record.RemoteSessionID)
 	delete(m.loaded, id)
+	delete(m.projections, id)
+	delete(m.terminalSessions, id)
 	m.mu.Unlock()
 	succeeded = true
 	return nil
@@ -457,10 +476,7 @@ func (m *Manager) sessionForActivation(id string) (SessionRecord, error) {
 		if terminal == sessionDeleted {
 			return SessionRecord{}, newError("ACP_SESSION_NOT_FOUND", "ACP session was deleted", false, map[string]any{"session_id": id}, nil)
 		}
-		return SessionRecord{}, newError("ACP_SESSION_CLOSED", "ACP session is closing or closed", false, map[string]any{"session_id": id}, nil)
-	}
-	if record.Status == SessionClosed {
-		return SessionRecord{}, newError("ACP_SESSION_CLOSED", "ACP session is closed", false, map[string]any{"session_id": id}, nil)
+		return SessionRecord{}, newError("ACP_SESSION_BUSY", "ACP session is closing", true, map[string]any{"session_id": id}, nil)
 	}
 	if _, err := m.resolveCWD(record.CWD); err != nil {
 		return SessionRecord{}, err
@@ -522,6 +538,7 @@ func (m *Manager) restoreSessionMode(ctx context.Context, process *agentProcess,
 func (m *Manager) markSessionReady(record SessionRecord, state sessionLifecycleResponse) (SessionRecord, error) {
 	record.Status = SessionReady
 	record.LastStopReason = ""
+	record.ClosedAt = nil
 	record.UpdatedAt = time.Now().UTC()
 	m.mu.Lock()
 	if m.closed {

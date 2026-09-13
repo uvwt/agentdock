@@ -70,15 +70,6 @@ func TestManagerPromptEventsPermissionAndPersistence(t *testing.T) {
 		_ = manager.Close()
 		t.Fatalf("policy did not filter always option: %#v", permission.Options)
 	}
-	runningMessages, err := manager.SessionMessages(created.Session.ID)
-	if err != nil {
-		_ = manager.Close()
-		t.Fatal(err)
-	}
-	if len(runningMessages) != 1 || runningMessages[0].Role != "user" || runningMessages[0].Content != "exercise permission" {
-		_ = manager.Close()
-		t.Fatalf("running conversation messages = %#v", runningMessages)
-	}
 	if _, err := manager.RespondInteraction(permission.ID, "allow-always", false); err == nil {
 		_ = manager.Close()
 		t.Fatal("always option was accepted")
@@ -110,15 +101,6 @@ func TestManagerPromptEventsPermissionAndPersistence(t *testing.T) {
 		t.Fatalf("prompt did not complete; events=%#v", allEvents)
 	}
 	assertEventTypes(t, allEvents, "agent_message_chunk", "permission_request", "completed")
-	messages, err := manager.SessionMessages(created.Session.ID)
-	if err != nil {
-		_ = manager.Close()
-		t.Fatal(err)
-	}
-	if len(messages) != 2 || messages[0].Role != "user" || messages[0].Content != "exercise permission" || messages[1].Role != "assistant" || messages[1].Content != "working" {
-		_ = manager.Close()
-		t.Fatalf("conversation messages = %#v", messages)
-	}
 
 	if err := manager.Close(); err != nil {
 		t.Fatal(err)
@@ -143,12 +125,9 @@ func TestManagerPromptEventsPermissionAndPersistence(t *testing.T) {
 	if loaded.Session.Status != SessionReady {
 		t.Fatalf("loaded status = %s", loaded.Session.Status)
 	}
-	reloadedMessages, err := reloaded.SessionMessages(created.Session.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(reloadedMessages) != 0 {
-		t.Fatalf("conversation unexpectedly persisted = %#v", reloadedMessages)
+	if len(loaded.History.Events) != 1 || loaded.History.Events[0].Type != "agent_message_chunk" ||
+		!strings.Contains(string(loaded.History.Events[0].Update), "history") {
+		t.Fatalf("adapter history replay = %#v", loaded.History)
 	}
 }
 
@@ -444,7 +423,7 @@ func TestConnectionCancelsInboundRequest(t *testing.T) {
 	}
 }
 
-func TestCancelThenDeleteDoesNotRecreateSessionState(t *testing.T) {
+func TestCancelDrainsTailUpdatesAndDeleteRequiresCapability(t *testing.T) {
 	home := t.TempDir()
 	workspace := t.TempDir()
 	manager, err := newTestManager(home, workspace)
@@ -477,12 +456,19 @@ func TestCancelThenDeleteDoesNotRecreateSessionState(t *testing.T) {
 	if err := manager.CancelPrompt(context.Background(), created.Session.ID, started.RunID); err != nil {
 		t.Fatal(err)
 	}
-	events, err := manager.PromptEvents(context.Background(), started.RunID, 0, 100, 0)
-	if err != nil {
-		t.Fatal(err)
+	settled := waitForSettledRun(t, manager, started.RunID)
+	if settled.Status != RunCancelled || settled.StopReason != "cancelled" {
+		t.Fatalf("cancelled run = %#v", settled)
 	}
-	if events.Status != RunCancelled {
-		t.Fatalf("cancelled run status = %s", events.Status)
+	assertEventTypes(t, settled.Events, "cancel_requested", "agent_message_chunk", "cancelled")
+	foundTail := false
+	for _, event := range settled.Events {
+		if event.Type == "agent_message_chunk" && strings.Contains(string(event.Update), "cancel-tail") {
+			foundTail = true
+		}
+	}
+	if !foundTail {
+		t.Fatalf("cancel tail update was lost: %#v", settled.Events)
 	}
 
 	manager.mu.Lock()
@@ -493,18 +479,11 @@ func TestCancelThenDeleteDoesNotRecreateSessionState(t *testing.T) {
 	sessionCapabilities := manager.process.initialize.AgentCapabilities["sessionCapabilities"].(map[string]any)
 	delete(sessionCapabilities, "delete")
 	manager.mu.Unlock()
-	if err := manager.DeleteSession(context.Background(), created.Session.ID); err != nil {
-		t.Fatal(err)
+	if err := manager.DeleteSession(context.Background(), created.Session.ID); errorCode(err) != "ACP_CAPABILITY_UNSUPPORTED" {
+		t.Fatalf("delete without capability error = %#v", err)
 	}
-	deleteDeadline := time.Now().Add(3 * time.Second)
-	for {
-		if _, err := manager.store.Get(created.Session.ID); err != nil {
-			break
-		}
-		if time.Now().After(deleteDeadline) {
-			t.Fatal("cancelled prompt recreated deleted session state")
-		}
-		time.Sleep(10 * time.Millisecond)
+	if _, err := manager.InspectSession(created.Session.ID); err != nil {
+		t.Fatalf("unsupported delete removed local session: %v", err)
 	}
 }
 
@@ -730,6 +709,7 @@ func TestACPHelperProcess(t *testing.T) {
 	}
 	promptMode := os.Getenv("GO_ACP_HELPER_PROMPT_MODE")
 	promptCount := 0
+	helperCWD, _ := os.Getwd()
 	for scanner.Scan() {
 		var message rpcMessage
 		if err := json.Unmarshal(scanner.Bytes(), &message); err != nil {
@@ -743,10 +723,11 @@ func TestACPHelperProcess(t *testing.T) {
 			}
 			if os.Getenv("GO_ACP_HELPER_OMIT_AGENT_CAPABILITIES") != "1" {
 				result["agentCapabilities"] = map[string]any{
-					"loadSession": true,
+					"loadSession":        true,
+					"promptCapabilities": map[string]any{"image": true, "audio": false, "embeddedContext": true},
 					"sessionCapabilities": map[string]any{
 						"close": map[string]any{}, "delete": map[string]any{}, "resume": map[string]any{},
-						"fork": map[string]any{}, "additionalDirectories": map[string]any{},
+						"fork": map[string]any{}, "list": map[string]any{}, "additionalDirectories": map[string]any{},
 					},
 				}
 			}
@@ -766,7 +747,49 @@ func TestACPHelperProcess(t *testing.T) {
 				"modes":         map[string]any{"currentModeId": "code", "availableModes": []any{}},
 				"configOptions": []map[string]any{{"id": "safe", "name": "Safe", "type": "boolean", "currentValue": true}},
 			})
-		case "session/load", "session/resume":
+		case "session/list":
+			if promptMode == "session_list_pagination" {
+				var params struct {
+					Cursor string `json:"cursor"`
+				}
+				_ = json.Unmarshal(message.Params, &params)
+				if params.Cursor == "page-2" {
+					writeHelperResult(encoder, message.ID, map[string]any{"sessions": []map[string]any{{"sessionId": "native-2", "cwd": helperCWD, "title": "Native 2"}}})
+				} else {
+					writeHelperResult(encoder, message.ID, map[string]any{"sessions": []map[string]any{{"sessionId": "native-1", "cwd": helperCWD, "title": "Native 1"}}, "nextCursor": "page-2"})
+				}
+				break
+			}
+			sessions := make([]map[string]any, 0, remoteCount)
+			for index := 1; index <= remoteCount; index++ {
+				sessions = append(sessions, map[string]any{
+					"sessionId": "remote-" + strconv.Itoa(index),
+					"cwd":       helperCWD,
+					"title":     "Remote " + strconv.Itoa(index),
+				})
+			}
+			writeHelperResult(encoder, message.ID, map[string]any{"sessions": sessions})
+		case "session/load":
+			if promptMode == "codex_no_rollout" || promptMode == "codex_no_rollout_steer" {
+				_ = encoder.Encode(rpcMessage{JSONRPC: "2.0", ID: message.ID, Error: &rpcError{Code: -32603, Message: "Internal error", Data: testMarshalRaw(map[string]any{"details": "no rollout found for thread id remote"})}})
+			} else {
+				var params struct {
+					SessionID string `json:"sessionId"`
+				}
+				_ = json.Unmarshal(message.Params, &params)
+				_ = encoder.Encode(rpcMessage{
+					JSONRPC: "2.0", Method: "session/update",
+					Params: testMarshalRaw(map[string]any{
+						"sessionId": params.SessionID,
+						"update":    map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "history"}},
+					}),
+				})
+				writeHelperResult(encoder, message.ID, map[string]any{
+					"modes":         map[string]any{"currentModeId": "code", "availableModes": []any{}},
+					"configOptions": []map[string]any{{"id": "safe", "name": "Safe", "type": "boolean", "currentValue": true}},
+				})
+			}
+		case "session/resume":
 			if promptMode == "codex_no_rollout" || promptMode == "codex_no_rollout_steer" {
 				_ = encoder.Encode(rpcMessage{JSONRPC: "2.0", ID: message.ID, Error: &rpcError{Code: -32603, Message: "Internal error", Data: testMarshalRaw(map[string]any{"details": "no rollout found for thread id remote"})}})
 			} else {
@@ -879,7 +902,21 @@ func handleHelperPrompt(scanner *bufio.Scanner, encoder *json.Encoder, prompt rp
 				OptionID string `json:"optionId"`
 			} `json:"outcome"`
 		}
-		if json.Unmarshal(response.Result, &result) != nil || result.Outcome.Outcome != "selected" || result.Outcome.OptionID != "allow-once" {
+		if json.Unmarshal(response.Result, &result) != nil {
+			os.Exit(4)
+		}
+		if result.Outcome.Outcome == "cancelled" {
+			_ = encoder.Encode(rpcMessage{
+				JSONRPC: "2.0", Method: "session/update",
+				Params: testMarshalRaw(map[string]any{
+					"sessionId": promptParams.SessionID,
+					"update":    map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "cancel-tail"}},
+				}),
+			})
+			writeHelperResult(encoder, prompt.ID, map[string]any{"stopReason": "cancelled"})
+			return
+		}
+		if result.Outcome.Outcome != "selected" || result.Outcome.OptionID != "allow-once" {
 			os.Exit(4)
 		}
 		writeHelperResult(encoder, prompt.ID, map[string]any{"stopReason": "end_turn"})
@@ -896,6 +933,7 @@ func handleSteeringFallbackPrompt(scanner *bufio.Scanner, encoder *json.Encoder,
 				os.Exit(6)
 			}
 			if message.Method == "session/cancel" || message.Method == "$/cancel_request" {
+				writeHelperResult(encoder, prompt.ID, map[string]any{"stopReason": "cancelled"})
 				return
 			}
 		}

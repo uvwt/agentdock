@@ -165,7 +165,7 @@ func (m *Manager) handlePermission(ctx context.Context, params json.RawMessage) 
 	m.mu.Unlock()
 	if run != nil {
 		visible, _ := json.Marshal(publicInteraction)
-		run.appendEvent(Event{Type: "permission_request", Update: visible})
+		run.appendEvent(Event{Source: "acp", Type: "permission_request", Update: visible})
 	}
 
 	timer := time.NewTimer(m.opts.InteractionTimeout)
