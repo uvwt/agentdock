@@ -1463,13 +1463,14 @@ func TestLinuxUnitsKeepManagedLogging(t *testing.T) {
 }
 
 func TestUninstallStopsUnitsThenPurgesWithoutRecreatingState(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		binDir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(binDir, "systemctl"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if runtime.GOOS == "windows" {
+		t.Skip("systemd 卸载语义只在 Unix 上验证；Windows 不能触碰宿主计划任务")
 	}
+	binDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(binDir, "systemctl"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	root := t.TempDir()
 	installRoot := filepath.Join(root, "opt")
 	runtimeRoot := filepath.Join(root, "etc")
