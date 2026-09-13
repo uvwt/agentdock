@@ -327,7 +327,10 @@ func launchCloudflared(runtime tunnelRuntime) error {
 }
 
 func cloudflaredCommand(ctx context.Context, runtime tunnelRuntime) (*exec.Cmd, error) {
-	arguments := []string{"tunnel", "--no-autoupdate"}
+	arguments, err := prepareCloudflaredTunnelArgs(runtime.root)
+	if err != nil {
+		return nil, err
+	}
 	environment := environmentWithout(os.Environ(), "TUNNEL_TOKEN")
 	if runtime.mode == "quick" {
 		arguments = append(arguments, "--url", fmt.Sprintf("http://127.0.0.1:%d", runtime.settings.Port))

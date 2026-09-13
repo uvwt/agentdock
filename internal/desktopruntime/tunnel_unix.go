@@ -216,7 +216,11 @@ func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
 				return err
 			}
 		}
-		command := exec.CommandContext(ctx, manifest.CloudflaredBinary, "tunnel", "--no-autoupdate", "run")
+		arguments, err := prepareCloudflaredTunnelArgs(root, "run")
+		if err != nil {
+			return err
+		}
+		command := exec.CommandContext(ctx, manifest.CloudflaredBinary, arguments...)
 		command.Env = append(os.Environ(), "TUNNEL_TOKEN="+token)
 		command.Stdout = stdout
 		command.Stderr = stderr
@@ -227,7 +231,11 @@ func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
 }
 
 func runQuickTunnel(ctx context.Context, manifest unixRuntimeManifest, root, runtimeRoot, target string, logOutput io.Writer) error {
-	command := exec.CommandContext(ctx, manifest.CloudflaredBinary, "tunnel", "--no-autoupdate", "--url", target)
+	arguments, err := prepareCloudflaredTunnelArgs(root, "--url", target)
+	if err != nil {
+		return err
+	}
+	command := exec.CommandContext(ctx, manifest.CloudflaredBinary, arguments...)
 	reader, writer := io.Pipe()
 	command.Stdout = writer
 	command.Stderr = writer

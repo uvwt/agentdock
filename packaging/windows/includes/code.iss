@@ -12,6 +12,7 @@ var
   ExistingInstallDetected: Boolean;
   ExistingInstallVersion: String;
   ExistingInstallSource: String;
+  ExistingTunnelTokenUsable: Boolean;
   ResolvedInstallRoot: String;
   InstallProgressPage: TOutputProgressWizardPage;
   InstallWarningCode: String;
@@ -137,12 +138,46 @@ begin
   Result := Pos('"privilege_mode":"elevated"', Normalized) > 0;
 end;
 
+function ProtectedTextCanBeRead(Path: String; Entropy: String): Boolean;
+var
+  ExitCode: Integer;
+  Parameters: String;
+  ScriptPath: String;
+begin
+  Result := False;
+  if not FileExists(Path) then
+    Exit;
+
+  ExtractTemporaryFile('probe-protected-text.ps1');
+  ScriptPath := ExpandConstant('{tmp}\probe-protected-text.ps1');
+  Parameters :=
+    '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + ScriptPath + '"' +
+    ' -Path "' + Path + '"' +
+    ' -Entropy "' + Entropy + '"';
+  if not Exec(
+    ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    Parameters,
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ExitCode) then
+  begin
+    Log('AgentDock could not start the DPAPI credential probe.');
+    Exit;
+  end;
+
+  Result := ExitCode = 0;
+  if not Result then
+    Log('AgentDock saved Cloudflare Tunnel Token is missing or unreadable for the current user.');
+end;
+
 procedure LoadExistingSettings();
 var
   Mode: String;
   URL: String;
   RunKey: String;
 begin
+  ExistingTunnelTokenUsable := False;
   if not ExistingInstallDetected then
     Exit;
 
@@ -157,7 +192,12 @@ begin
   if Mode = 'quick' then
     ConnectionPage.SelectedValueIndex := 1
   else if Mode = 'named' then
-    ConnectionPage.SelectedValueIndex := 2
+  begin
+    ConnectionPage.SelectedValueIndex := 2;
+    ExistingTunnelTokenUsable := ProtectedTextCanBeRead(
+      AddBackslash(ExistingInstallRoot()) + 'cloudflared-token.dpapi',
+      'agentdock.cloudflare.tunnel.v1');
+  end
   else
     ConnectionPage.SelectedValueIndex := 0;
 
@@ -334,7 +374,8 @@ begin
   Result :=
     ((PageID = UpgradeModePage.ID) and (not ExistingInstallDetected)) or
     (PreserveExisting and
-      ((PageID = StartupPage.ID) or (PageID = ConnectionPage.ID) or (PageID = FixedTunnelPage.ID))) or
+      ((PageID = StartupPage.ID) or (PageID = ConnectionPage.ID) or
+       ((PageID = FixedTunnelPage.ID) and ExistingTunnelTokenUsable))) or
     ((PageID = FixedTunnelPage.ID) and (SelectedTunnelMode() <> 'named'));
 end;
 
@@ -397,12 +438,22 @@ begin
       Exit;
     end;
     if (Trim(FixedTunnelPage.Values[1]) = '') and
-      (ExpandConstant('{param:TUNNELTOKENFILE|}') = '') and
-      (not FileExists(AddBackslash(ExistingInstallRoot()) + 'cloudflared-token.dpapi')) then
+      (ExpandConstant('{param:TUNNELTOKENFILE|}') = '') then
     begin
-      MsgBox(GetLocalizedMessage('TokenRequired'), mbError, MB_OK);
-      Result := False;
-      Exit;
+      ExistingTunnelTokenUsable := ProtectedTextCanBeRead(
+        AddBackslash(ExistingInstallRoot()) + 'cloudflared-token.dpapi',
+        'agentdock.cloudflare.tunnel.v1');
+      if not ExistingTunnelTokenUsable then
+      begin
+        if WizardSilent then
+        begin
+          Log('AgentDock silent Setup will report the missing or unreadable Tunnel Token through the installer result.');
+          Exit;
+        end;
+        MsgBox(GetLocalizedMessage('TokenRequired'), mbError, MB_OK);
+        Result := False;
+        Exit;
+      end;
     end;
   end;
 end;
@@ -529,6 +580,10 @@ begin
         Log('AgentDock installation stack: ' + ErrorStack);
       if ErrorCode = 'setup-elevated-context' then
         ErrorMessage := GetLocalizedMessage('ElevatedSetupUnsupported');
+      if ErrorCode = 'tunnel-token-required' then
+        ErrorMessage := GetLocalizedMessage('TokenRecoveryRequired');
+      if ErrorCode = 'credential-user-mismatch' then
+        ErrorMessage := GetLocalizedMessage('CredentialUserMismatch');
       if ErrorMessage = '' then
         ErrorMessage := GetLocalizedMessage('InstallerExitCode') + ' ' + IntToStr(ExitCode);
       Result := GetLocalizedMessage('InstallFailed') + ' ' + ErrorMessage;

@@ -208,6 +208,7 @@ foreach ($name in @(
     'auth-token.dpapi',
     'oauth-password.dpapi',
     'oauth-token-secret.dpapi',
+    'credential-owner-sid.txt',
     'oauth-access-token-ttl.txt',
     'server-url.txt',
     'named-server-url.txt',
@@ -221,6 +222,14 @@ foreach ($name in @(
     'desktop-version.txt'
 )) {
     Remove-Item -LiteralPath (Join-Path $runtimeDir $name) -Force -ErrorAction SilentlyContinue
+}
+foreach ($pattern in @(
+    'auth-token.dpapi.unreadable-*.bak',
+    'oauth-password.dpapi.unreadable-*.bak',
+    'oauth-token-secret.dpapi.unreadable-*.bak'
+)) {
+    Get-ChildItem -LiteralPath $runtimeDir -Filter $pattern -File -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')

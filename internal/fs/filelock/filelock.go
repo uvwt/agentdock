@@ -17,13 +17,15 @@ import (
 )
 
 const (
-	ownerPrefix       = "owner-"
-	pollDelay         = 25 * time.Millisecond
-	staleAfter        = 10 * time.Minute
-	heartbeatInterval = staleAfter / 3
-	emptyLockGrace    = 250 * time.Millisecond
-	removeRetryDelay  = 10 * time.Millisecond
-	removeRetryCount  = 50
+	ownerPrefix          = "owner-"
+	pollDelay            = 25 * time.Millisecond
+	staleAfter           = 10 * time.Minute
+	heartbeatInterval    = staleAfter / 3
+	emptyLockGrace       = 2 * time.Second
+	ownerWriteRetryDelay = 10 * time.Millisecond
+	ownerWriteRetryCount = 100
+	removeRetryDelay     = 10 * time.Millisecond
+	removeRetryCount     = 50
 )
 
 // Acquire uses an owner-tagged directory as a portable cross-process lock.
@@ -43,26 +45,54 @@ func Acquire(ctx context.Context, path string) (func(), error) {
 
 	ticker := time.NewTicker(pollDelay)
 	defer ticker.Stop()
+acquireLoop:
 	for {
 		err := os.Mkdir(path, 0o700)
 		if err == nil {
-			ownerPath := filepath.Join(path, ownerPrefix+owner)
-			if err := os.WriteFile(ownerPath, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600); err != nil {
-				cleanupErr := cleanupInitialization(path, ownerPath)
-				// 竞争者可能刚好清理了一个没有 owner 的残留目录；重新抢锁即可。
-				if errors.Is(err, os.ErrNotExist) && cleanupErr == nil {
+			// Windows may keep a just-removed directory in a transient delete-pending state.
+			// Capture the directory identity so owner creation can retry without ever claiming
+			// a different lock directory that another contender recreated at the same path.
+			lockInfo, statErr := os.Stat(path)
+			if statErr != nil {
+				if errors.Is(statErr, os.ErrNotExist) {
 					continue
 				}
-				return nil, errors.Join(fmt.Errorf("write file lock owner: %w", err), cleanupErr)
+				return nil, fmt.Errorf("stat initialized file lock: %w", statErr)
 			}
-			stopHeartbeat := maintainHeartbeat(ownerPath)
-			var releaseOnce sync.Once
-			return func() {
-				releaseOnce.Do(func() {
-					stopHeartbeat()
-					release(path, owner)
-				})
-			}, nil
+			ownerPath := filepath.Join(path, ownerPrefix+owner)
+			ownerData := []byte(strconv.Itoa(os.Getpid()) + "\n")
+			var ownerErr error
+			for attempt := 0; attempt < ownerWriteRetryCount; attempt++ {
+				ownerErr = os.WriteFile(ownerPath, ownerData, 0o600)
+				currentInfo, identityErr := os.Stat(path)
+				if identityErr != nil {
+					if errors.Is(identityErr, os.ErrNotExist) {
+						_ = os.Remove(ownerPath)
+						continue acquireLoop
+					}
+					_ = os.Remove(ownerPath)
+					return nil, fmt.Errorf("verify initialized file lock: %w", identityErr)
+				}
+				if !os.SameFile(lockInfo, currentInfo) {
+					_ = os.Remove(ownerPath)
+					continue acquireLoop
+				}
+				if ownerErr == nil {
+					stopHeartbeat := maintainHeartbeat(ownerPath)
+					var releaseOnce sync.Once
+					return func() {
+						releaseOnce.Do(func() {
+							stopHeartbeat()
+							release(path, owner)
+						})
+					}, nil
+				}
+				if attempt+1 < ownerWriteRetryCount {
+					time.Sleep(ownerWriteRetryDelay)
+				}
+			}
+			cleanupErr := cleanupInitialization(ownerPath)
+			return nil, errors.Join(fmt.Errorf("write file lock owner: %w", ownerErr), cleanupErr)
 		}
 		if !retryableLockCreationError(err) {
 			return nil, fmt.Errorf("acquire file lock %s: %w", path, err)
@@ -113,19 +143,22 @@ func newOwner() (string, error) {
 	return hex.EncodeToString(raw), nil
 }
 
-func cleanupInitialization(lockPath, ownerPath string) error {
-	var cleanupErrors []error
+func cleanupInitialization(ownerPath string) error {
 	if err := os.Remove(ownerPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		cleanupErrors = append(cleanupErrors, fmt.Errorf("remove incomplete lock owner: %w", err))
+		return fmt.Errorf("remove incomplete lock owner: %w", err)
 	}
-	if !removeLockDirectory(lockPath) {
-		cleanupErrors = append(cleanupErrors, fmt.Errorf("remove incomplete lock directory %s", lockPath))
-	}
-	return errors.Join(cleanupErrors...)
+	// Do not remove the directory here. Another contender may have recreated the same
+	// pathname between the failed owner write and cleanup. Empty directories are reclaimed
+	// by removeSafeStale after emptyLockGrace without risking deletion of a new lock.
+	return nil
 }
 
 func release(lockPath, owner string) {
 	ownerPath := filepath.Join(lockPath, ownerPrefix+owner)
+	// 空目录是可恢复状态，但正常释放也会短暂经过这个状态。先刷新目录时间，
+	// 避免等待者在 owner 刚删除、目录尚未删除时把它误判为陈旧空锁。
+	now := time.Now()
+	_ = os.Chtimes(lockPath, now, now)
 	if err := os.Remove(ownerPath); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			slog.Warn("remove file lock owner failed", "path", ownerPath, "error", err)

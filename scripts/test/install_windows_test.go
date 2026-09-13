@@ -317,6 +317,10 @@ func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
 		"'control-panel-settings.json'",
 		"'oauth-password.dpapi'",
 		"'oauth-token-secret.dpapi'",
+		"'credential-owner-sid.txt'",
+		"'auth-token.dpapi.unreadable-*.bak'",
+		"'oauth-password.dpapi.unreadable-*.bak'",
+		"'oauth-token-secret.dpapi.unreadable-*.bak'",
 		"'oauth-access-token-ttl.txt'",
 		"'cloudflared-token.dpapi'",
 		"'cloudflared.out.log'",
@@ -527,6 +531,115 @@ func TestWindowsSetupKeepsPublicAccessExplicitAndSecretsOffCommandLine(t *testin
 		}
 	}
 }
+
+func TestWindowsSetupRepromptsUnreadableNamedTunnelToken(t *testing.T) {
+	codeData, err := os.ReadFile(filepath.Join("..", "..", "packaging", "windows", "includes", "code.iss"))
+	if err != nil {
+		t.Fatalf("read code.iss: %v", err)
+	}
+	setupData, err := os.ReadFile(filepath.Join("..", "..", "packaging", "windows", "AgentDock.iss"))
+	if err != nil {
+		t.Fatalf("read AgentDock.iss: %v", err)
+	}
+	installData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "install", "install.ps1"))
+	if err != nil {
+		t.Fatalf("read install.ps1: %v", err)
+	}
+	probeData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "install", "probe-protected-text.ps1"))
+	if err != nil {
+		t.Fatalf("read probe-protected-text.ps1: %v", err)
+	}
+
+	setup := string(setupData) + "\n" + string(codeData)
+	for _, want := range []string{
+		"probe-protected-text.ps1",
+		"ProtectedTextCanBeRead",
+		"ExistingTunnelTokenUsable",
+		"agentdock.cloudflare.tunnel.v1",
+		"TokenRecoveryRequired",
+		"WizardSilent",
+		"silent Setup will report the missing or unreadable Tunnel Token through the installer result",
+	} {
+		if !strings.Contains(setup, want) {
+			t.Fatalf("Windows Setup missing tunnel credential recovery contract %q", want)
+		}
+	}
+	if strings.Contains(setup, "not FileExists(AddBackslash(ExistingInstallRoot()) + 'cloudflared-token.dpapi')") {
+		t.Fatal("Windows Setup must validate the saved Tunnel Token instead of trusting file existence")
+	}
+
+	install := string(installData)
+	guard := strings.Index(install, "if ($InstallChannel -eq 'setup' -and $resolvedTunnelMode -eq 'named')")
+	contextCheck := strings.Index(install, "$interactiveUser = Get-InteractiveDesktopUser")
+	preflight := strings.Index(install, "$setupTunnelTokenState = Resolve-AvailableTunnelToken")
+	payloadMutation := strings.Index(install, "New-Item -ItemType Directory -Path $tempRoot -Force")
+	prompt := strings.Index(install, "Read-Host 'Cloudflare Tunnel Token' -AsSecureString")
+	if guard < 0 || prompt < 0 || guard > prompt {
+		t.Fatal("install.ps1 must reject a missing/unreadable Setup Tunnel Token before the interactive Read-Host fallback")
+	}
+	if preflight < 0 || payloadMutation < 0 || preflight > payloadMutation {
+		t.Fatal("install.ps1 must validate the Setup Tunnel Token before payload extraction or runtime mutation")
+	}
+	if contextCheck < 0 || contextCheck > preflight {
+		t.Fatal("install.ps1 must validate the signed-in user context before attempting current-user DPAPI recovery")
+	}
+	if strings.Count(install, "Resolve-AvailableTunnelToken") < 3 {
+		t.Fatal("install.ps1 must reuse one Tunnel Token resolution path for Setup preflight and final persistence")
+	}
+	if !strings.Contains(install, "$installErrorCode = 'tunnel-token-required'") {
+		t.Fatal("install.ps1 must report the tunnel-token-required structured error")
+	}
+
+	probe := string(probeData)
+	for _, want := range []string{
+		"ProtectedData]::Unprotect",
+		"DataProtectionScope]::CurrentUser",
+		"exit 0",
+		"exit 3",
+	} {
+		if !strings.Contains(probe, want) {
+			t.Fatalf("probe-protected-text.ps1 missing %q", want)
+		}
+	}
+}
+
+func TestWindowsGeneratedCredentialRecoveryPreservesUnreadableCiphertext(t *testing.T) {
+	installData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "install", "install.ps1"))
+	if err != nil {
+		t.Fatalf("read install.ps1: %v", err)
+	}
+	codeData, err := os.ReadFile(filepath.Join("..", "..", "packaging", "windows", "includes", "code.iss"))
+	if err != nil {
+		t.Fatalf("read code.iss: %v", err)
+	}
+	messagesData, err := os.ReadFile(filepath.Join("..", "..", "packaging", "windows", "includes", "messages.iss"))
+	if err != nil {
+		t.Fatalf("read messages.iss: %v", err)
+	}
+
+	install := string(installData)
+	for _, want := range []string{
+		"function Backup-UnreadableProtectedText",
+		"for ($attempt = 0; $attempt -lt 3; $attempt++)",
+		"Start-Sleep -Milliseconds 50",
+		".unreadable-",
+		"while ($backups.Count -gt 3)",
+		"credential-owner-sid.txt",
+		"$installErrorCode = 'credential-user-mismatch'",
+		"Write-TextFile -Path $credentialOwnerSidPath -Value $taskUser.Sid",
+	} {
+		if !strings.Contains(install, want) {
+			t.Fatalf("install.ps1 missing generated credential recovery guard %q", want)
+		}
+	}
+	if strings.Count(install, "Backup-UnreadableProtectedText -Path") < 3 {
+		t.Fatal("install.ps1 must preserve unreadable auth, OAuth password, and OAuth signing secret before replacement")
+	}
+	if !strings.Contains(string(codeData), "CredentialUserMismatch") || !strings.Contains(string(messagesData), "CredentialUserMismatch") {
+		t.Fatal("Windows Setup must localize credential-user-mismatch failures")
+	}
+}
+
 func TestWindowsSetupLaunchesRuntimeOutsideRedirectionGuardTree(t *testing.T) {
 	installData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "install", "install.ps1"))
 	if err != nil {
