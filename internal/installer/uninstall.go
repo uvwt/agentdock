@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/uvwt/agentdock/internal/desktopruntime"
 )
 
 func uninstallPlatform(ctx context.Context, request Request) error {
@@ -96,16 +98,15 @@ func launchctlJobLoaded(ctx context.Context, spec string) (bool, error) {
 }
 
 func uninstallWindows(ctx context.Context, request Request) error {
-	taskName := strings.TrimSpace(request.TaskName)
-	if taskName == "" {
-		taskName = "AgentDock"
-	}
+	taskName := windowsManagedTaskName(request)
 	var failures []error
-	if err := runOptionalCmd(ctx, "schtasks", "/End", "/TN", taskName); err != nil {
-		failures = append(failures, fmt.Errorf("停止计划任务 %s: %w", taskName, err))
-	}
-	if err := runOptionalCmd(ctx, "schtasks", "/Change", "/TN", taskName, "/DISABLE"); err != nil {
-		failures = append(failures, fmt.Errorf("禁用计划任务 %s: %w", taskName, err))
+	if taskName != "" {
+		if err := runOptionalCmd(ctx, "schtasks", "/End", "/TN", taskName); err != nil {
+			failures = append(failures, fmt.Errorf("停止计划任务 %s: %w", taskName, err))
+		}
+		if err := runOptionalCmd(ctx, "schtasks", "/Change", "/TN", taskName, "/DISABLE"); err != nil {
+			failures = append(failures, fmt.Errorf("禁用计划任务 %s: %w", taskName, err))
+		}
 	}
 	if binary := windowsServiceBinary(request); binary != "" {
 		if err := runOptionalCmd(ctx, binary, "service", "stop", "--runtime-root", request.RuntimeRoot); err != nil {
@@ -116,6 +117,22 @@ func uninstallWindows(ctx context.Context, request Request) error {
 		}
 	}
 	return errors.Join(failures...)
+}
+
+func windowsManagedTaskName(request Request) string {
+	if taskName := strings.TrimSpace(request.TaskName); taskName != "" {
+		return taskName
+	}
+	if strings.TrimSpace(request.RuntimeRoot) == "" {
+		return ""
+	}
+	manifest, err := desktopruntime.Load(filepath.Join(request.RuntimeRoot, "runtime.json"))
+	if err != nil || !strings.EqualFold(strings.TrimSpace(manifest.PrivilegeMode), "elevated") {
+		// 空 TaskName 代表“当前安装不拥有计划任务”。legacy 无 manifest 的固定任务迁移
+		// 由 Windows adapter 在确认默认启动标识属于当前安装后显式传 --task-name。
+		return ""
+	}
+	return strings.TrimSpace(manifest.AgentDockTaskName)
 }
 
 func stopManagedServices(ctx context.Context, request Request, manager string) error {

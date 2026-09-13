@@ -7,8 +7,70 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/uvwt/agentdock/internal/desktopruntime"
 	"github.com/uvwt/agentdock/internal/updateengine"
 )
+
+func TestWindowsManagedTaskNameRequiresOwnedElevatedManifest(t *testing.T) {
+	root := t.TempDir()
+	manifestPath := filepath.Join(root, "runtime.json")
+	manifest := desktopruntime.Manifest{
+		SchemaVersion:     1,
+		AgentDockBinary:   filepath.Join(root, "agentdock.exe"),
+		PrivilegeMode:     "standard",
+		AgentDockTaskName: "AgentDock",
+		Host:              "127.0.0.1",
+		Port:              8765,
+		LocalMCPURL:       "http://127.0.0.1:8765/mcp",
+		TunnelMode:        "none",
+	}
+	if err := desktopruntime.Save(manifestPath, manifest); err != nil {
+		t.Fatal(err)
+	}
+	request := Request{RuntimeRoot: root}
+	if got := windowsManagedTaskName(request); got != "" {
+		t.Fatalf("standard install unexpectedly owns scheduled task %q", got)
+	}
+
+	manifest.PrivilegeMode = "elevated"
+	manifest.AgentDockTaskName = "AgentDock-E2E"
+	if err := desktopruntime.Save(manifestPath, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if got := windowsManagedTaskName(request); got != "AgentDock-E2E" {
+		t.Fatalf("elevated manifest task=%q, want AgentDock-E2E", got)
+	}
+
+	request.TaskName = "Explicit-Task"
+	if got := windowsManagedTaskName(request); got != "Explicit-Task" {
+		t.Fatalf("explicit task=%q, want Explicit-Task", got)
+	}
+}
+
+func TestUninstallWindowsWithoutOwnedTaskDoesNotTouchTaskScheduler(t *testing.T) {
+	stub := "exit 23"
+	if runtime.GOOS == "windows" {
+		stub = "exit /b 23"
+	}
+	withStubCommands(t, map[string]string{"schtasks": stub})
+	root := t.TempDir()
+	manifest := desktopruntime.Manifest{
+		SchemaVersion:     1,
+		AgentDockBinary:   filepath.Join(root, "agentdock.exe"),
+		PrivilegeMode:     "standard",
+		AgentDockTaskName: "AgentDock",
+		Host:              "127.0.0.1",
+		Port:              8765,
+		LocalMCPURL:       "http://127.0.0.1:8765/mcp",
+		TunnelMode:        "none",
+	}
+	if err := desktopruntime.Save(filepath.Join(root, "runtime.json"), manifest); err != nil {
+		t.Fatal(err)
+	}
+	if err := uninstallWindows(context.Background(), Request{InstallRoot: root, RuntimeRoot: root}); err != nil {
+		t.Fatalf("standard uninstall touched Task Scheduler: %v", err)
+	}
+}
 
 func TestUninstallSystemctlDisableFailureIsNotCommitted(t *testing.T) {
 	if runtime.GOOS == "windows" {
