@@ -105,9 +105,13 @@ public sealed class ControlPanelSettings
 
     [JsonPropertyName("acp_default_profile")]
     public string AcpDefaultProfile { get; set; } = "";
+}
 
+
+internal sealed class LegacyAcpControlPanelSettings
+{
     [JsonPropertyName("acp_agent")]
-    public string AcpAgent { get; set; } = "codex";
+    public string AcpAgent { get; set; } = "";
 
     [JsonPropertyName("acp_command")]
     public string AcpCommand { get; set; } = "";

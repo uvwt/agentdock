@@ -202,13 +202,12 @@ func TestRuntimeOutputContractACPInfoNormalizesOmittedInitializeFields(t *testin
 		AgentDockHome:       filepath.Join(root, ".agentdock"),
 		AgentDockDefaultDir: root,
 		ACPEnabled:          true,
-		ACPAgentName:        "output-contract-helper",
-		ACPCommand:          executable,
-		ACPArgs:             []string{"-test.run=^TestOutputContractACPHelper$"},
-		ACPEnvFromEnv: map[string]string{
-			helperEnv:           helperEnv,
-			omitCapabilitiesEnv: omitCapabilitiesEnv,
-		},
+		ACPProfiles: []config.ACPProfile{{
+			ID: "output-contract-helper", Kind: "custom", Command: executable,
+			Args:       []string{"-test.run=^TestOutputContractACPHelper$"},
+			EnvFromEnv: map[string]string{helperEnv: helperEnv, omitCapabilitiesEnv: omitCapabilitiesEnv}, Enabled: true,
+		}},
+		ACPDefaultProfile: "output-contract-helper",
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
@@ -246,10 +245,12 @@ func TestRuntimeOutputContractACPOptionalFields(t *testing.T) {
 		AgentDockHome:       filepath.Join(root, ".agentdock"),
 		AgentDockDefaultDir: root,
 		ACPEnabled:          true,
-		ACPAgentName:        "output-contract-helper",
-		ACPCommand:          executable,
-		ACPArgs:             []string{"-test.run=^TestOutputContractACPHelper$"},
-		ACPEnvFromEnv:       map[string]string{helperEnv: helperEnv},
+		ACPProfiles: []config.ACPProfile{{
+			ID: "output-contract-helper", Kind: "custom", Command: executable,
+			Args:       []string{"-test.run=^TestOutputContractACPHelper$"},
+			EnvFromEnv: map[string]string{helperEnv: helperEnv}, Enabled: true,
+		}},
+		ACPDefaultProfile: "output-contract-helper",
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)

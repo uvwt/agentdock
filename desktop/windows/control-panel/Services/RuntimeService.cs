@@ -61,22 +61,23 @@ public sealed class RuntimeService : IDisposable
         {
             settings.LogLevel = "info";
         }
-        settings.AcpAgent = NormalizeAcpAgent(settings.AcpAgent);
-        settings.AcpCommand ??= "";
-        settings.AcpArgs ??= [];
         settings.AcpProfiles ??= [];
         if (settings.AcpProfiles.Count == 0)
         {
+            // 旧 control-panel-settings.json 只在读取边界迁移；保存后只保留 Profiles。
+            var legacy = await ReadJsonAsync<LegacyAcpControlPanelSettings>(SettingsPath, cancellationToken);
+            var legacyKind = string.IsNullOrWhiteSpace(legacy?.AcpAgent)
+                ? "codex"
+                : NormalizeAcpAgent(legacy.AcpAgent);
             settings.AcpProfiles.Add(new AcpProfileSettings
             {
-                Id = settings.AcpAgent,
-                Kind = settings.AcpAgent,
-                Command = settings.AcpCommand,
-                Args = [.. settings.AcpArgs],
-                // 旧单 ACP 没有 Profile 级开关；迁移后保持“已配置”，只由全局开关控制是否启用。
+                Id = legacyKind,
+                Kind = legacyKind,
+                Command = legacy?.AcpCommand?.Trim() ?? "",
+                Args = legacy?.AcpArgs is null ? [] : [.. legacy.AcpArgs],
                 Enabled = true
             });
-            settings.AcpDefaultProfile = settings.AcpAgent;
+            settings.AcpDefaultProfile = legacyKind;
         }
         else
         {
@@ -92,13 +93,6 @@ public sealed class RuntimeService : IDisposable
             {
                 settings.AcpDefaultProfile = settings.AcpProfiles.FirstOrDefault(profile => profile.Enabled)?.Id
                     ?? settings.AcpProfiles[0].Id;
-            }
-            var defaultProfile = settings.AcpProfiles.FirstOrDefault(profile => profile.Id == settings.AcpDefaultProfile);
-            if (defaultProfile is not null)
-            {
-                settings.AcpAgent = defaultProfile.Kind;
-                settings.AcpCommand = defaultProfile.Command;
-                settings.AcpArgs = [.. defaultProfile.Args];
             }
         }
 
@@ -400,10 +394,7 @@ public sealed class RuntimeService : IDisposable
             $"--browser-reuse-existing-cdp={settings.BrowserReuseExistingCdp.ToString().ToLowerInvariant()}",
             $"--acp-enabled={settings.AcpEnabled.ToString().ToLowerInvariant()}",
             "--acp-profiles-json", JsonSerializer.Serialize(settings.AcpProfiles ?? []),
-            "--acp-default-profile", settings.AcpDefaultProfile ?? "",
-            "--acp-agent", NormalizeAcpAgent(settings.AcpAgent),
-            "--acp-command", settings.AcpCommand ?? "",
-            "--acp-args-json", JsonSerializer.Serialize(settings.AcpArgs ?? [])
+            "--acp-default-profile", settings.AcpDefaultProfile ?? ""
         };
         await RunNativeAgentDockAsync("config", arguments, cancellationToken);
     }

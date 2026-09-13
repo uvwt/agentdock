@@ -60,7 +60,6 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool) (Re
 		}
 		contextResult.ACP = &capabilityACPContext{
 			Enabled:        true,
-			Agent:          r.cfg.EffectiveACPDefaultProfile(),
 			DefaultProfile: r.cfg.EffectiveACPDefaultProfile(),
 			Profiles:       profiles,
 			Description: "本机 Coding Agent 通道（Agent Client Protocol）。仅当用户明确要求时使用，可用来获取独特见解与编排任务；" +
@@ -156,7 +155,6 @@ type capabilityDynamicMCPItem struct {
 
 type capabilityACPContext struct {
 	Enabled        bool                          `json:"enabled"`
-	Agent          string                        `json:"agent"`
 	DefaultProfile string                        `json:"default_profile"`
 	Profiles       []capabilityACPProfileContext `json:"profiles"`
 	Description    string                        `json:"description"`

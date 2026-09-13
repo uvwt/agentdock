@@ -25,9 +25,8 @@ func TestDisabledACPIgnoresResidualEnvironment(t *testing.T) {
 func TestNormalizeDisabledACPClearsProgrammaticResiduals(t *testing.T) {
 	setTestUserHome(t, t.TempDir())
 	cfg := Config{
-		ACPAgentName: "bad\nname", ACPCommand: "relative", ACPArgs: []string{"stale"},
-		ACPEnvFromEnv: map[string]string{"BAD-NAME": "HOST"},
-		ACPMaxPrompts: 99, ACPInteractionMS: -1,
+		ACPProfiles:       []ACPProfile{{ID: "stale", Kind: "custom", Command: "relative", Enabled: true}},
+		ACPDefaultProfile: "stale", ACPMaxPrompts: 99, ACPInteractionMS: -1,
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("disabled programmatic ACP config failed: %v", err)
@@ -37,8 +36,8 @@ func TestNormalizeDisabledACPClearsProgrammaticResiduals(t *testing.T) {
 
 func assertDisabledACPDefaults(t *testing.T, cfg Config) {
 	t.Helper()
-	if cfg.ACPEnabled || cfg.ACPAgentName != "claude" || cfg.ACPCommand != "" || cfg.ACPArgs != nil ||
-		cfg.ACPEnvFromEnv != nil || cfg.ACPMaxPrompts != 2 || cfg.ACPInteractionMS != 300000 {
+	if cfg.ACPEnabled || cfg.ACPProfiles != nil || cfg.ACPDefaultProfile != "" ||
+		cfg.ACPMaxPrompts != 2 || cfg.ACPInteractionMS != 300000 {
 		t.Fatalf("disabled ACP defaults = %#v", cfg)
 	}
 }

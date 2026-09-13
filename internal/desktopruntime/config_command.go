@@ -27,9 +27,6 @@ type ConfigUpdateRequest struct {
 	ACPEnabled              bool
 	ACPProfiles             []agentconfig.ACPProfile
 	ACPDefaultProfile       string
-	ACPAgent                string
-	ACPCommand              string
-	ACPArgs                 []string
 }
 
 func RunConfigCommand(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -60,14 +57,23 @@ func RunConfigCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		if flags.NArg() != 0 {
 			return configCommandUsageError()
 		}
-		var acpArgs []string
-		if err := json.Unmarshal([]byte(*acpArgsJSON), &acpArgs); err != nil {
-			return fmt.Errorf("解析 Coding Agent 参数失败: %w", err)
-		}
 		var acpProfiles []agentconfig.ACPProfile
 		if raw := strings.TrimSpace(*acpProfilesJSON); raw != "" {
 			if err := json.Unmarshal([]byte(raw), &acpProfiles); err != nil {
 				return fmt.Errorf("解析 ACP Profiles 失败: %w", err)
+			}
+		} else {
+			// 旧 CLI 参数只在命令入口兼容，立即转换成 Profile，后续不再保留单 ACP 字段。
+			var legacyArgs []string
+			if err := json.Unmarshal([]byte(*acpArgsJSON), &legacyArgs); err != nil {
+				return fmt.Errorf("解析 Coding Agent 参数失败: %w", err)
+			}
+			legacyKind := strings.ToLower(strings.TrimSpace(*acpAgent))
+			acpProfiles = []agentconfig.ACPProfile{{
+				ID: legacyKind, Kind: legacyKind, Command: strings.TrimSpace(*acpCommand), Args: legacyArgs, Enabled: true,
+			}}
+			if strings.TrimSpace(*acpDefaultProfile) == "" {
+				*acpDefaultProfile = legacyKind
 			}
 		}
 		request := ConfigUpdateRequest{
@@ -82,9 +88,6 @@ func RunConfigCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 			ACPEnabled:              *acpEnabled,
 			ACPProfiles:             acpProfiles,
 			ACPDefaultProfile:       strings.TrimSpace(*acpDefaultProfile),
-			ACPAgent:                strings.ToLower(strings.TrimSpace(*acpAgent)),
-			ACPCommand:              strings.TrimSpace(*acpCommand),
-			ACPArgs:                 acpArgs,
 		}
 		if err := validateConfigUpdate(request); err != nil {
 			return err
@@ -130,19 +133,13 @@ func validateConfigUpdate(request ConfigUpdateRequest) error {
 			return errors.New("浏览器 CDP 地址必须使用 http、https、ws 或 wss")
 		}
 	}
-	if len(request.ACPProfiles) > 0 {
-		return validateConfigACPProfiles(request)
-	}
-	switch request.ACPAgent {
-	case "codex", "claude", "grok":
-	case "custom":
-		if request.ACPEnabled && request.ACPCommand == "" {
-			return errors.New("自定义 Coding Agent 必须填写 ACP Adapter 命令")
+	if len(request.ACPProfiles) == 0 {
+		if request.ACPEnabled {
+			return errors.New("启用 Coding Agent 时至少需要一个 ACP Profile")
 		}
-	default:
-		return fmt.Errorf("不支持的 Coding Agent: %s", request.ACPAgent)
+		return nil
 	}
-	return nil
+	return validateConfigACPProfiles(request)
 }
 
 func validateConfigACPProfiles(request ConfigUpdateRequest) error {
@@ -176,8 +173,11 @@ func validateConfigACPProfiles(request ConfigUpdateRequest) error {
 		enabled[id] = struct{}{}
 		if request.ACPEnabled {
 			command := strings.TrimSpace(raw.Command)
-			if command == "" || !filepath.IsAbs(command) {
-				return fmt.Errorf("启用的 ACP Profile %s 必须配置绝对路径命令", id)
+			if kind == "custom" && (command == "" || !filepath.IsAbs(command)) {
+				return fmt.Errorf("启用的自定义 ACP Profile %s 必须配置绝对路径命令", id)
+			}
+			if command != "" && !filepath.IsAbs(command) {
+				return fmt.Errorf("ACP Profile %s 命令必须是绝对路径", id)
 			}
 		}
 	}

@@ -612,8 +612,10 @@ func TestMCPAppsExposeACPViewOnlyWhenACPEnabled(t *testing.T) {
 		AgentDockDefaultDir: root,
 		AgentDockHome:       filepath.Join(root, ".agentdock"),
 		ACPEnabled:          true,
-		ACPAgentName:        "helper",
-		ACPCommand:          executable,
+		ACPProfiles: []config.ACPProfile{
+			{ID: "helper", Kind: "custom", Command: executable, Enabled: true},
+		},
+		ACPDefaultProfile: "helper",
 	})
 
 	tools := map[string]*mcpsdk.Tool{}

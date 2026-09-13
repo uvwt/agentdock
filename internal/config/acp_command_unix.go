@@ -9,7 +9,7 @@ import (
 
 func validateACPCommandPlatform(path string, info os.FileInfo) error {
 	if info.Mode().Perm()&0o111 == 0 {
-		return fmt.Errorf("AGENTDOCK_ACP_COMMAND is not executable: %s", path)
+		return fmt.Errorf("ACP command is not executable: %s", path)
 	}
 	return nil
 }

@@ -675,7 +675,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         guard !isUpdateInProgress else { return }
         guard currentConfiguration != nil else { return }
         guard saveActiveACPProfileFromControls(showErrors: true) else { return }
-        guard let defaultProfile = acpProfiles.first(where: { $0.id == acpDefaultProfile }) else {
+        guard acpProfiles.contains(where: { $0.id == acpDefaultProfile }) else {
             showStatus(L10n.text("Choose a default Coding Agent profile."), isError: true)
             return
         }
@@ -693,9 +693,6 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
             browserCDPURL: browserMode == .specifiedCDP ? configuredCDP : "",
             browserReuseExistingCDP: browserMode == .reuseExisting,
             acpEnabled: acpEnabled.state == .on,
-            acpAgent: defaultProfile.kind,
-            acpCommand: defaultProfile.command,
-            acpArgs: defaultProfile.args,
             acpProfiles: acpProfiles,
             acpDefaultProfile: acpDefaultProfile
         )

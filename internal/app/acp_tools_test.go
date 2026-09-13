@@ -35,7 +35,9 @@ func TestACPToolsAreFeatureGatedAndUseStrictSchemas(t *testing.T) {
 	root := t.TempDir()
 	enabled := config.Config{
 		AgentDockHome: t.TempDir(), AgentDockDefaultDir: root,
-		ACPEnabled: true, ACPAgentName: "helper", ACPCommand: executable,
+		ACPEnabled:        true,
+		ACPProfiles:       []config.ACPProfile{{ID: "helper", Kind: "custom", Command: executable, Enabled: true}},
+		ACPDefaultProfile: "helper",
 	}
 	if err := enabled.Normalize(); err != nil {
 		t.Fatal(err)
@@ -106,7 +108,7 @@ func TestACPToolsAreFeatureGatedAndUseStrictSchemas(t *testing.T) {
 	if err := remarshal(contextResult, &contextData); err != nil {
 		t.Fatal(err)
 	}
-	if contextData.ACP == nil || !contextData.ACP.Enabled || contextData.ACP.Agent != "helper" {
+	if contextData.ACP == nil || !contextData.ACP.Enabled || contextData.ACP.DefaultProfile != "helper" {
 		t.Fatalf("context ACP metadata = %#v", contextData.ACP)
 	}
 }
@@ -141,8 +143,13 @@ func TestACPContextListsConfiguredProfiles(t *testing.T) {
 	if err := remarshal(contextResult, &contextData); err != nil {
 		t.Fatal(err)
 	}
-	if contextData.ACP == nil || contextData.ACP.DefaultProfile != "zcode" || contextData.ACP.Agent != "zcode" {
+	if contextData.ACP == nil || contextData.ACP.DefaultProfile != "zcode" {
 		t.Fatalf("context ACP metadata = %#v", contextData.ACP)
+	}
+	if acpData, ok := contextResult["acp"].(map[string]any); ok {
+		if _, exists := acpData["agent"]; exists {
+			t.Fatalf("context ACP metadata still contains legacy agent alias: %#v", acpData)
+		}
 	}
 	if len(contextData.ACP.Profiles) != 2 || contextData.ACP.Profiles[0].ID != "zcode" || contextData.ACP.Profiles[1].ID != "agy" {
 		t.Fatalf("context ACP profiles = %#v", contextData.ACP.Profiles)

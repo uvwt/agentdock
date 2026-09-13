@@ -118,8 +118,10 @@ func TestAgentDockContextExposesShortACPOrientationWhenEnabled(t *testing.T) {
 		AgentDockDefaultDir: root,
 		AgentDockHome:       filepath.Join(t.TempDir(), ".agentdock"),
 		ACPEnabled:          true,
-		ACPAgentName:        "helper",
-		ACPCommand:          executable,
+		ACPProfiles: []config.ACPProfile{
+			{ID: "helper", Kind: "custom", Command: executable, Enabled: true},
+		},
+		ACPDefaultProfile: "helper",
 	}
 	if err := enabled.Normalize(); err != nil {
 		t.Fatal(err)
@@ -138,8 +140,11 @@ func TestAgentDockContextExposesShortACPOrientationWhenEnabled(t *testing.T) {
 	if err := remarshal(enabledResult, &enabledContext); err != nil {
 		t.Fatal(err)
 	}
-	if enabledContext.ACP == nil || !enabledContext.ACP.Enabled || enabledContext.ACP.Agent != "helper" {
+	if enabledContext.ACP == nil || !enabledContext.ACP.Enabled || enabledContext.ACP.DefaultProfile != "helper" {
 		t.Fatalf("ACP context = %#v", enabledContext.ACP)
+	}
+	if len(enabledContext.ACP.Profiles) != 1 || enabledContext.ACP.Profiles[0].ID != "helper" || enabledContext.ACP.Profiles[0].Kind != "custom" {
+		t.Fatalf("ACP profiles = %#v", enabledContext.ACP.Profiles)
 	}
 	for _, want := range []string{"Agent Client Protocol", "仅当用户明确要求时使用", "独特见解", "编排任务", "不是动态 MCP", "mcp_tool_*"} {
 		if !strings.Contains(enabledContext.ACP.Description, want) {

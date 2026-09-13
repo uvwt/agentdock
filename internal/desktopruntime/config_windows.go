@@ -68,35 +68,28 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 	if err != nil {
 		return err
 	}
-	var acpAdapter desktopACPAdapter
-	useProfiles := len(request.ACPProfiles) > 0
-	if request.ACPEnabled && useProfiles {
-		for _, profile := range request.ACPProfiles {
+	acpProfiles := append([]agentconfig.ACPProfile(nil), request.ACPProfiles...)
+	if request.ACPEnabled {
+		for index := range acpProfiles {
+			profile := &acpProfiles[index]
 			if !profile.Enabled {
 				continue
 			}
-			info, statErr := os.Stat(profile.Command)
-			if statErr != nil {
-				return fmt.Errorf("读取 ACP Profile %s 命令失败 %s: %w", profile.ID, profile.Command, statErr)
+			adapter, resolveErr := resolveDesktopACPAdapter(profile.Kind, runtime.root, profile.Command, profile.Args)
+			if resolveErr != nil {
+				return fmt.Errorf("解析 ACP Profile %s Adapter 失败: %w", profile.ID, resolveErr)
 			}
-			if !info.Mode().IsRegular() {
-				return fmt.Errorf("ACP Profile %s 命令不是普通文件: %s", profile.ID, profile.Command)
-			}
+			profile.Command = adapter.Command
+			profile.Args = append([]string(nil), adapter.Args...)
 		}
-	} else if request.ACPEnabled {
-		configuredCommand := request.ACPCommand
-		configuredArgs := request.ACPArgs
-		if request.ACPAgent != "custom" {
-			configuredCommand = ""
-			configuredArgs = nil
-			if runtime.settings.ACPAgent == request.ACPAgent {
-				configuredCommand = runtime.settings.ACPCommand
-				configuredArgs = runtime.settings.ACPArgs
+	}
+	acpDefaultProfile := request.ACPDefaultProfile
+	if acpDefaultProfile == "" {
+		for _, profile := range acpProfiles {
+			if profile.Enabled {
+				acpDefaultProfile = profile.ID
+				break
 			}
-		}
-		acpAdapter, err = resolveDesktopACPAdapter(request.ACPAgent, runtime.root, configuredCommand, configuredArgs)
-		if err != nil {
-			return err
 		}
 	}
 	settingsPath := filepath.Join(runtime.root, "control-panel-settings.json")
@@ -133,33 +126,6 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 		return cause
 	}
 
-	acpCommand := acpAdapter.Command
-	acpArgs := append([]string(nil), acpAdapter.Args...)
-	acpAgent := request.ACPAgent
-	acpProfiles := append([]agentconfig.ACPProfile(nil), request.ACPProfiles...)
-	acpDefaultProfile := request.ACPDefaultProfile
-	if useProfiles {
-		if acpDefaultProfile == "" {
-			for _, profile := range acpProfiles {
-				if profile.Enabled {
-					acpDefaultProfile = profile.ID
-					break
-				}
-			}
-		}
-		for _, profile := range acpProfiles {
-			if profile.ID != acpDefaultProfile {
-				continue
-			}
-			acpAgent = profile.Kind
-			acpCommand = profile.Command
-			acpArgs = append([]string(nil), profile.Args...)
-			break
-		}
-	} else if !request.ACPEnabled && request.ACPAgent == "custom" {
-		acpCommand = request.ACPCommand
-		acpArgs = append([]string(nil), request.ACPArgs...)
-	}
 	settings := controlPanelSettings{
 		Port:                    request.Port,
 		LogLevel:                request.LogLevel,
@@ -171,9 +137,6 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 		ACPEnabled:              request.ACPEnabled,
 		ACPProfiles:             acpProfiles,
 		ACPDefaultProfile:       acpDefaultProfile,
-		ACPAgent:                acpAgent,
-		ACPCommand:              acpCommand,
-		ACPArgs:                 acpArgs,
 	}
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {

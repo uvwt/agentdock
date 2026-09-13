@@ -14,15 +14,6 @@ type Service struct {
 	defaultID string
 }
 
-// New 保留旧单 ACP 构造方式，便于已有测试和内部调用平滑迁移。
-func New(manager *acpruntime.Manager) *Service {
-	if manager == nil {
-		return &Service{}
-	}
-	id := manager.AgentName()
-	return NewMulti(id, map[string]*acpruntime.Manager{id: manager})
-}
-
 func NewMulti(defaultID string, managers map[string]*acpruntime.Manager) *Service {
 	copied := make(map[string]*acpruntime.Manager, len(managers))
 	for id, manager := range managers {

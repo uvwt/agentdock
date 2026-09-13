@@ -81,7 +81,7 @@ grok agent stdio
 
 因此只需确认 `grok` 可执行文件真实存在、当前 AgentDock 运行用户可以执行，并且 Grok 自己的登录 / 授权状态已经可用。
 
-不要在聊天、日志或配置文件中回显 Provider Token。Codex、Claude、Grok 的账号登录由对应 Provider 自己管理；AgentDock 只负责启动 Adapter。只有确实需要把宿主环境变量映射给自定义 Adapter 时才使用 `AGENTDOCK_ACP_ENV_FROM_ENV_JSON`，并且只保存变量名映射，不写入 secret 值。
+不要在聊天、日志或配置文件中回显 Provider Token。Codex、Claude、Grok 的账号登录由对应 Provider 自己管理；AgentDock 只负责启动 Adapter。只有确实需要把宿主环境变量映射给自定义 Adapter 时，才在对应 Profile 的 `env_from_env` 中声明变量名映射，并且只保存变量名，不写入 secret 值；旧 `AGENTDOCK_ACP_ENV_FROM_ENV_JSON` 仅用于单 ACP 配置升级兼容。
 
 ## 配置 AgentDock
 
@@ -105,36 +105,30 @@ macOS Desktop 会根据预设自动解析实际 Adapter 路径和参数，原子
 
 ### Linux、Docker 和直接运行二进制
 
-无桌面控制器时，ACP 属于 Core 启动环境。至少需要：
+无桌面控制器时，ACP 属于 Core 启动环境。当前正式配置统一使用 Profiles，即使只启用一个 ACP 也使用同一模型：
 
 ```text
 AGENTDOCK_ACP_ENABLED=true
-AGENTDOCK_ACP_AGENT=<codex|claude|grok|custom>
-AGENTDOCK_ACP_COMMAND=<Adapter 的绝对可执行路径>
+AGENTDOCK_ACP_PROFILES_JSON=[{"id":"zcode","kind":"custom","command":"/absolute/path/to/node","args":["/absolute/path/to/zcode-acp-server.js"],"enabled":true}]
+AGENTDOCK_ACP_DEFAULT_PROFILE=zcode
 ```
 
-Codex / Claude 通常把 `AGENTDOCK_ACP_COMMAND` 指向真实可执行的 `codex-acp` / `claude-agent-acp`。Grok 还需要：
+同时启用多个 ACP 时只需继续向 `AGENTDOCK_ACP_PROFILES_JSON` 增加 Profile。例如 Codex + ZCode：
 
 ```text
-AGENTDOCK_ACP_ARGS_JSON=["agent","stdio"]
-```
-
-自定义 Adapter 使用自己的绝对命令和参数。配置写入哪个文件、Compose 环境或进程管理器，继续按本 Skill 对应平台 reference 的“真实配置事实源”处理，不要发明统一 `agentdock.yaml`。
-
-需要同时启用多个 ACP 时，改用 Profiles 配置：
-
-```text
-AGENTDOCK_ACP_ENABLED=true
 AGENTDOCK_ACP_PROFILES_JSON=[{"id":"codex","kind":"codex","command":"/absolute/path/to/codex-acp","enabled":true},{"id":"zcode","kind":"custom","command":"/absolute/path/to/node","args":["/absolute/path/to/zcode-acp-server.js"],"enabled":true}]
 AGENTDOCK_ACP_DEFAULT_PROFILE=zcode
 ```
+
+配置写入哪个文件、Compose environment 或进程管理器，继续按本 Skill 对应平台 reference 的“真实配置事实源”处理，不要发明统一 `agentdock.yaml`。
+
+旧 `AGENTDOCK_ACP_AGENT/COMMAND/ARGS_JSON/ENV_FROM_ENV_JSON` 仅作为升级兼容入口：Core 读取后会立即转换成一个 Profile；新版 macOS/Windows Desktop 不再写这些字段。旧 `custom` 会迁移为 `id=custom`，因此原持久会话 identity 保持不变。
 
 Profile 规则：
 
 - `codex`、`claude`、`grok` 是内置类型的固定 ID，因此天然保持单实例；
 - `custom` 可以配置多个，但每个 Profile ID 必须唯一；
 - 每个启用 Profile 使用独立 ACP Manager 和持久会话 identity，session/run/interaction 不跨 Profile 混用；
-- 配置了 `AGENTDOCK_ACP_PROFILES_JSON` 后，Core 以 Profiles 为准；旧 `AGENTDOCK_ACP_AGENT/COMMAND/ARGS_JSON/ENV_FROM_ENV_JSON` 只作为单 ACP 兼容入口。
 
 保存后重启或重建真正承载 AgentDock Core 的运行单元，让新环境重新加载。
 
@@ -144,7 +138,7 @@ Profile 规则：
 
 1. **Adapter 层**：解析到的命令真实存在，并且由 AgentDock 的运行用户可执行；Codex / Claude 的 npm Adapter 还要确认 Node.js 入口真实存在。
 2. **Core 层**：Core 重启后健康检查正常。
-3. **上下文层**：重新读取 `agentdock_context`，确认出现 ACP 信息、`enabled=true`，并检查 `default_profile` 与 `profiles`；兼容字段 `agent` 等于默认 Profile ID。
+3. **上下文层**：重新读取 `agentdock_context`，确认出现 ACP 信息、`enabled=true`，并检查 `default_profile` 与 `profiles`。
 4. **工具层**：当前 MCP 连接的 `tools/list` 应包含 `acp_session`、`acp_prompt` 和 `acp_interaction`。
 5. **Adapter 启动层**：工具已可见时优先调用 `acp_session info`，确认 Adapter 能启动并返回实际能力 / 认证状态；需要登录时再按 Adapter 暴露的认证方式处理。
 

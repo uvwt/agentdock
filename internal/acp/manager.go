@@ -83,8 +83,6 @@ func NewManager(opts Options) (*Manager, error) {
 	return manager, nil
 }
 
-func (m *Manager) AgentName() string { return m.opts.Agent.Name }
-
 func (m *Manager) AgentInfo(ctx context.Context) (InitializeResult, error) {
 	process, err := m.ensureProcess(ctx)
 	if err != nil {

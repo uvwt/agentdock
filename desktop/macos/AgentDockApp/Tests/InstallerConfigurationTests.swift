@@ -76,15 +76,41 @@ struct InstallerConfigurationTests {
         precondition(nexusStatus.nodeID == "node_test")
         precondition(nexusStatus.deviceTokenStored)
 
-        let acpEnvironmentData = try environment.dataByUpdating([
+        let legacyACPEnvironmentURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("agentdock-legacy-acp-\(UUID().uuidString).env")
+        defer { try? FileManager.default.removeItem(at: legacyACPEnvironmentURL) }
+        try Data("""
+        AGENTDOCK_PORT=8765
+        AGENTDOCK_ACP_ENABLED=true
+        AGENTDOCK_ACP_AGENT=grok
+        AGENTDOCK_ACP_COMMAND=/Users/test/.local/bin/grok
+        AGENTDOCK_ACP_ARGS_JSON='["agent","stdio"]'
+        AGENTDOCK_ACP_ENV_FROM_ENV_JSON='{"ZCODE_API_KEY":"HOST_ZCODE_API_KEY"}'
+        """.utf8).write(to: legacyACPEnvironmentURL)
+        let migratedACP = ServiceConfiguration.load(from: legacyACPEnvironmentURL)
+        precondition(migratedACP?.acpDefaultProfile == "grok")
+        precondition(migratedACP?.acpProfiles == [ACPProfileConfiguration(
+            id: "grok",
+            kind: .grok,
+            command: "/Users/test/.local/bin/grok",
+            args: ["agent", "stdio"],
+            envFromEnv: ["ZCODE_API_KEY": "HOST_ZCODE_API_KEY"],
+            enabled: true
+        )])
+
+        let legacyEnvironment = try ManagedEnvironment.load(from: legacyACPEnvironmentURL)
+        let migratedProfilesJSON = try ACPDesktopConfiguration.encodeProfiles(migratedACP?.acpProfiles ?? [])
+        let upgradedACPData = try legacyEnvironment.dataByUpdating([
             "AGENTDOCK_ACP_ENABLED": "true",
-            "AGENTDOCK_ACP_AGENT": "grok",
-            "AGENTDOCK_ACP_COMMAND": "/Users/test/.local/bin/grok",
-            "AGENTDOCK_ACP_ARGS_JSON": "[\"agent\",\"stdio\"]",
+            "AGENTDOCK_ACP_PROFILES_JSON": migratedProfilesJSON,
+            "AGENTDOCK_ACP_DEFAULT_PROFILE": "grok",
         ], removing: ServiceConfiguration.removableLegacyKeys)
-        let acpValues = ManagedEnvironment.parseValues(String(decoding: acpEnvironmentData, as: UTF8.self))
-        precondition(acpValues["AGENTDOCK_ACP_AGENT"] == "grok")
-        precondition(acpValues["AGENTDOCK_ACP_ARGS_JSON"] == "[\"agent\",\"stdio\"]")
+        let acpValues = ManagedEnvironment.parseValues(String(decoding: upgradedACPData, as: UTF8.self))
+        precondition(acpValues["AGENTDOCK_ACP_PROFILES_JSON"] == migratedProfilesJSON)
+        precondition(acpValues["AGENTDOCK_ACP_AGENT"] == nil)
+        precondition(acpValues["AGENTDOCK_ACP_COMMAND"] == nil)
+        precondition(acpValues["AGENTDOCK_ACP_ARGS_JSON"] == nil)
+        precondition(acpValues["AGENTDOCK_ACP_ENV_FROM_ENV_JSON"] == nil)
         precondition(acpValues["AGENTDOCK_ACP_ALLOWED_ROOTS"] == nil)
         precondition(ACPAgentPreset.grok.arguments == ["agent", "stdio"])
         precondition(ACPAgentPreset.parse("GROK") == .grok)

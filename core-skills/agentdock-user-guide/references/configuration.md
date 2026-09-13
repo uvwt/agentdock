@@ -19,10 +19,10 @@
 | `AGENTDOCK_ACP_ENABLED` | 是否启用 ACP Client | Desktop 设置或启动环境 |
 | `AGENTDOCK_ACP_PROFILES_JSON` | 多 ACP Profile JSON 数组；每项包含 `id/kind/command/args/env_from_env/enabled` | Desktop 设置或高级启动环境 |
 | `AGENTDOCK_ACP_DEFAULT_PROFILE` | 未显式传 `profile_id` 时使用的默认 ACP Profile ID | Desktop 设置或高级启动环境 |
-| `AGENTDOCK_ACP_AGENT` | 旧单 ACP Agent 名称；未配置 Profiles 时继续兼容 | 旧版 Desktop/启动环境 |
-| `AGENTDOCK_ACP_COMMAND` | 旧单 ACP Adapter 命令；未配置 Profiles 时继续兼容 | 旧版自定义/高级 ACP 配置 |
-| `AGENTDOCK_ACP_ARGS_JSON` | 旧单 ACP Adapter 参数 JSON 数组 | 旧版自定义/高级 ACP 配置 |
-| `AGENTDOCK_ACP_ENV_FROM_ENV_JSON` | 旧单 ACP 子进程环境映射 | 旧版高级 ACP 配置 |
+| `AGENTDOCK_ACP_AGENT` | 旧单 ACP Agent 名称；仅用于升级读取兼容，新配置不再写入 | 旧版 Desktop/启动环境 |
+| `AGENTDOCK_ACP_COMMAND` | 旧单 ACP Adapter 命令；仅用于升级读取兼容，新配置不再写入 | 旧版自定义/高级 ACP 配置 |
+| `AGENTDOCK_ACP_ARGS_JSON` | 旧单 ACP Adapter 参数；仅用于升级读取兼容，新配置不再写入 | 旧版自定义/高级 ACP 配置 |
+| `AGENTDOCK_ACP_ENV_FROM_ENV_JSON` | 旧单 ACP 环境映射；仅用于升级读取兼容，新配置不再写入 | 旧版高级 ACP 配置 |
 | `AGENTDOCK_ACP_MAX_CONCURRENT_PROMPTS` | ACP 并发 prompt 上限 | 高级 ACP 配置 |
 | `AGENTDOCK_ACP_INTERACTION_TIMEOUT_MS` | ACP 交互超时 | 高级 ACP 配置 |
 | `AGENTDOCK_SERVER_URL` | 对外服务 Origin | 公网/OAuth 安装流程 |

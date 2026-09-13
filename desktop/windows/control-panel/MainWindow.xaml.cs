@@ -825,10 +825,7 @@ public partial class MainWindow : Window
             BrowserReuseExistingCdp = browserConnectionMode == BrowserConnectionReuse,
             AcpEnabled = acpEnabled,
             AcpProfiles = _acpProfiles.Select(CloneAcpProfile).ToList(),
-            AcpDefaultProfile = _acpDefaultProfile,
-            AcpAgent = defaultProfile.Kind,
-            AcpCommand = defaultProfile.Command,
-            AcpArgs = [.. defaultProfile.Args]
+            AcpDefaultProfile = _acpDefaultProfile
         };
         var saved = await ExecuteActionAsync(
             UiText.Get("SavingAndRestarting"),

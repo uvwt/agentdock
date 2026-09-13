@@ -9,9 +9,6 @@ struct EditableServiceSettings {
     let browserCDPURL: String
     let browserReuseExistingCDP: Bool
     let acpEnabled: Bool
-    let acpAgent: ACPAgentPreset
-    let acpCommand: String
-    let acpArgs: [String]
     let acpProfiles: [ACPProfileConfiguration]
     let acpDefaultProfile: String
 
@@ -23,9 +20,6 @@ struct EditableServiceSettings {
         browserCDPURL: String,
         browserReuseExistingCDP: Bool,
         acpEnabled: Bool,
-        acpAgent: ACPAgentPreset,
-        acpCommand: String,
-        acpArgs: [String],
         acpProfiles: [ACPProfileConfiguration] = [],
         acpDefaultProfile: String = ""
     ) {
@@ -36,9 +30,6 @@ struct EditableServiceSettings {
         self.browserCDPURL = browserCDPURL
         self.browserReuseExistingCDP = browserReuseExistingCDP
         self.acpEnabled = acpEnabled
-        self.acpAgent = acpAgent
-        self.acpCommand = acpCommand
-        self.acpArgs = acpArgs
         self.acpProfiles = acpProfiles
         self.acpDefaultProfile = acpDefaultProfile
     }
@@ -55,40 +46,7 @@ struct EditableServiceSettings {
             throw ValidationError(L10n.text("No supported Chrome, Chromium, or Microsoft Edge was detected and no external CDP is configured."))
         }
 
-        if !acpProfiles.isEmpty {
-            return try validatedWithProfiles(normalizedLogLevel: normalizedLogLevel, browserCDPURL: browserCDPURL)
-        }
-
-        var command = acpAgent == .custom
-            ? acpCommand.trimmingCharacters(in: .whitespacesAndNewlines)
-            : ""
-        var arguments = acpAgent == .custom ? acpArgs : []
-        if acpEnabled {
-            let resolution = acpAgent.resolveAdapter(
-                configuredCommand: acpCommand,
-                configuredArguments: acpArgs
-            )
-            guard resolution.available else {
-                throw ValidationError(L10n.format("%@ is unavailable: %@.", acpAgent.title, acpAgent.missingAdapterMessage))
-            }
-            command = resolution.command
-            arguments = resolution.arguments
-        }
-
-        return EditableServiceSettings(
-            port: port,
-            logLevel: normalizedLogLevel,
-            mcpAppsEnabled: mcpAppsEnabled,
-            browserEnabled: browserEnabled,
-            browserCDPURL: browserCDPURL,
-            browserReuseExistingCDP: browserReuseExistingCDP,
-            acpEnabled: acpEnabled,
-            acpAgent: acpAgent,
-            acpCommand: command,
-            acpArgs: arguments,
-            acpProfiles: [],
-            acpDefaultProfile: ""
-        )
+        return try validatedWithProfiles(normalizedLogLevel: normalizedLogLevel, browserCDPURL: browserCDPURL)
     }
 
     private func validatedWithProfiles(normalizedLogLevel: String, browserCDPURL: String) throws -> EditableServiceSettings {
@@ -150,9 +108,6 @@ struct EditableServiceSettings {
             browserCDPURL: browserCDPURL,
             browserReuseExistingCDP: browserReuseExistingCDP,
             acpEnabled: acpEnabled,
-            acpAgent: defaultProfile.kind,
-            acpCommand: defaultProfile.command,
-            acpArgs: defaultProfile.args,
             acpProfiles: profiles,
             acpDefaultProfile: defaultProfileID
         )
@@ -202,7 +157,7 @@ final class ServiceConfigurationController {
         let environmentURL = service.paths.environment
         let originalData = try readPrivateRegularFile(environmentURL)
         let environment = try ManagedEnvironment.load(from: environmentURL)
-        var replacements = [
+        let replacements = [
             "AGENTDOCK_PORT": String(settings.port),
             "AGENTDOCK_LOG_LEVEL": settings.logLevel,
             "AGENTDOCK_MCP_APPS_ENABLED": settings.mcpAppsEnabled ? "true" : "false",
@@ -210,21 +165,9 @@ final class ServiceConfigurationController {
             "AGENTDOCK_BROWSER_CDP_URL": settings.browserCDPURL,
             "AGENTDOCK_BROWSER_REUSE_EXISTING_CDP": settings.browserReuseExistingCDP ? "true" : "false",
             "AGENTDOCK_ACP_ENABLED": settings.acpEnabled ? "true" : "false",
-            "AGENTDOCK_ACP_AGENT": settings.acpAgent.rawValue,
-            "AGENTDOCK_ACP_COMMAND": settings.acpCommand,
-            "AGENTDOCK_ACP_ARGS_JSON": try ACPDesktopConfiguration.encodeArguments(settings.acpArgs),
+            "AGENTDOCK_ACP_PROFILES_JSON": try ACPDesktopConfiguration.encodeProfiles(settings.acpProfiles),
+            "AGENTDOCK_ACP_DEFAULT_PROFILE": settings.acpDefaultProfile,
         ]
-        if !settings.acpProfiles.isEmpty {
-            replacements["AGENTDOCK_ACP_PROFILES_JSON"] = try ACPDesktopConfiguration.encodeProfiles(settings.acpProfiles)
-            replacements["AGENTDOCK_ACP_DEFAULT_PROFILE"] = settings.acpDefaultProfile
-        } else {
-            replacements["AGENTDOCK_ACP_PROFILES_JSON"] = ""
-            replacements["AGENTDOCK_ACP_DEFAULT_PROFILE"] = ""
-        }
-        if settings.acpEnabled {
-            // 桌面预设依赖各 Agent 自己的登录状态，不继承上一个 Agent 的密钥映射。
-            replacements["AGENTDOCK_ACP_ENV_FROM_ENV_JSON"] = "{}"
-        }
         let updatedData = try environment.dataByUpdating(replacements, removing: ServiceConfiguration.removableLegacyKeys)
         let wasLoaded = service.isLoaded()
 

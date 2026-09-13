@@ -9,12 +9,16 @@ import (
 	"testing"
 )
 
-func TestFromEnvParsesACPProfile(t *testing.T) {
+func TestFromEnvMigratesLegacyACPToProfile(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("AGENTDOCK_ACP_ENABLED", "true")
-	t.Setenv("AGENTDOCK_ACP_AGENT", "claude")
-	t.Setenv("AGENTDOCK_ACP_COMMAND", filepath.Join(t.TempDir(), "agent"))
+	t.Setenv("AGENTDOCK_ACP_AGENT", "custom")
+	t.Setenv("AGENTDOCK_ACP_COMMAND", executable)
 	t.Setenv("AGENTDOCK_ACP_ARGS_JSON", `["adapter.js","--flag"]`)
-	t.Setenv("AGENTDOCK_ACP_ENV_FROM_ENV_JSON", `{"ANTHROPIC_API_KEY":"HOST_ANTHROPIC_KEY"}`)
+	t.Setenv("AGENTDOCK_ACP_ENV_FROM_ENV_JSON", `{"API_KEY":"HOST_API_KEY"}`)
 	t.Setenv("AGENTDOCK_ACP_MAX_CONCURRENT_PROMPTS", "3")
 	t.Setenv("AGENTDOCK_ACP_INTERACTION_TIMEOUT_MS", "45000")
 
@@ -22,14 +26,21 @@ func TestFromEnvParsesACPProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.ACPEnabled || cfg.ACPAgentName != "claude" || cfg.ACPMaxPrompts != 3 || cfg.ACPInteractionMS != 45000 {
+	if !cfg.ACPEnabled || cfg.ACPDefaultProfile != "custom" || cfg.ACPMaxPrompts != 3 || cfg.ACPInteractionMS != 45000 {
 		t.Fatalf("ACP config = %#v", cfg)
 	}
-	if !reflect.DeepEqual(cfg.ACPArgs, []string{"adapter.js", "--flag"}) {
-		t.Fatalf("ACP args = %#v", cfg.ACPArgs)
+	if len(cfg.ACPProfiles) != 1 {
+		t.Fatalf("ACP profiles = %#v", cfg.ACPProfiles)
 	}
-	if cfg.ACPEnvFromEnv["ANTHROPIC_API_KEY"] != "HOST_ANTHROPIC_KEY" {
-		t.Fatalf("ACP env mapping = %#v", cfg.ACPEnvFromEnv)
+	profile := cfg.ACPProfiles[0]
+	if profile.ID != "custom" || profile.Kind != "custom" || profile.Command != executable || !profile.Enabled {
+		t.Fatalf("legacy ACP profile = %#v", profile)
+	}
+	if !reflect.DeepEqual(profile.Args, []string{"adapter.js", "--flag"}) {
+		t.Fatalf("ACP args = %#v", profile.Args)
+	}
+	if profile.EnvFromEnv["API_KEY"] != "HOST_API_KEY" {
+		t.Fatalf("ACP env mapping = %#v", profile.EnvFromEnv)
 	}
 }
 
@@ -39,8 +50,9 @@ func TestNormalizeACPProfileDoesNotRequireAllowedRoots(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := Config{
-		AgentDockHome: t.TempDir(), AgentDockDefaultDir: t.TempDir(),
-		ACPEnabled: true, ACPAgentName: "helper", ACPCommand: executable,
+		AgentDockHome: t.TempDir(), AgentDockDefaultDir: t.TempDir(), ACPEnabled: true,
+		ACPProfiles:       []ACPProfile{{ID: "helper", Kind: "custom", Command: executable, Enabled: true}},
+		ACPDefaultProfile: "helper",
 	}
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
@@ -51,33 +63,32 @@ func TestNormalizeACPProfileDoesNotRequireAllowedRoots(t *testing.T) {
 }
 
 func TestNormalizeACPRejectsUnsafeConfiguration(t *testing.T) {
-	base := Config{AgentDockHome: t.TempDir(), AgentDockDefaultDir: t.TempDir(), ACPEnabled: true}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := Config{
+		AgentDockHome: t.TempDir(), AgentDockDefaultDir: t.TempDir(), ACPEnabled: true,
+		ACPProfiles:       []ACPProfile{{ID: "helper", Kind: "custom", Command: executable, Enabled: true}},
+		ACPDefaultProfile: "helper",
+	}
 	tests := []struct {
 		name   string
 		want   string
 		mutate func(*Config)
 	}{
-		{name: "invalid agent name", want: "AGENTDOCK_ACP_AGENT", mutate: func(cfg *Config) {
-			cfg.ACPAgentName = "bad\nname"
-			cfg.ACPCommand, _ = os.Executable()
+		{name: "invalid profile id", want: "profile id", mutate: func(cfg *Config) { cfg.ACPProfiles[0].ID = "bad\nname" }},
+		{name: "relative command", want: "absolute executable path", mutate: func(cfg *Config) { cfg.ACPProfiles[0].Command = "agent" }},
+		{name: "invalid env mapping", want: "env_from_env", mutate: func(cfg *Config) {
+			cfg.ACPProfiles[0].EnvFromEnv = map[string]string{"BAD-NAME": "HOST_KEY"}
 		}},
-		{name: "relative command", want: "AGENTDOCK_ACP_COMMAND", mutate: func(cfg *Config) { cfg.ACPCommand = "agent" }},
-		{name: "invalid direct env mapping", want: "AGENTDOCK_ACP_ENV_FROM_ENV_JSON", mutate: func(cfg *Config) {
-			cfg.ACPCommand, _ = os.Executable()
-			cfg.ACPEnvFromEnv = map[string]string{"BAD-NAME": "HOST_KEY"}
-		}},
-		{name: "too many direct args", want: "AGENTDOCK_ACP_ARGS_JSON", mutate: func(cfg *Config) {
-			cfg.ACPCommand, _ = os.Executable()
-			cfg.ACPArgs = make([]string, 129)
-		}},
-		{name: "too many prompts", want: "AGENTDOCK_ACP_MAX_CONCURRENT_PROMPTS", mutate: func(cfg *Config) {
-			cfg.ACPCommand, _ = os.Executable()
-			cfg.ACPMaxPrompts = 9
-		}},
+		{name: "too many args", want: "args", mutate: func(cfg *Config) { cfg.ACPProfiles[0].Args = make([]string, 129) }},
+		{name: "too many prompts", want: "AGENTDOCK_ACP_MAX_CONCURRENT_PROMPTS", mutate: func(cfg *Config) { cfg.ACPMaxPrompts = 9 }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			cfg := base
+			cfg.ACPProfiles = append([]ACPProfile(nil), base.ACPProfiles...)
 			test.mutate(&cfg)
 			err := cfg.Normalize()
 			if err == nil {
@@ -90,23 +101,29 @@ func TestNormalizeACPRejectsUnsafeConfiguration(t *testing.T) {
 	}
 }
 
-func TestFromEnvPreservesACPArgumentBytes(t *testing.T) {
+func TestFromEnvPreservesLegacyACPArgumentBytes(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("AGENTDOCK_ACP_ENABLED", "true")
+	t.Setenv("AGENTDOCK_ACP_AGENT", "custom")
+	t.Setenv("AGENTDOCK_ACP_COMMAND", executable)
 	t.Setenv("AGENTDOCK_ACP_ARGS_JSON", `["  spaced value  ",""]`)
 	cfg, err := FromEnv()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(cfg.ACPArgs, []string{"  spaced value  ", ""}) {
-		t.Fatalf("ACP args were modified: %#v", cfg.ACPArgs)
+	if len(cfg.ACPProfiles) != 1 || !reflect.DeepEqual(cfg.ACPProfiles[0].Args, []string{"  spaced value  ", ""}) {
+		t.Fatalf("ACP args were modified: %#v", cfg.ACPProfiles)
 	}
 }
 
-func TestFromEnvRejectsInvalidACPEnvironmentMapping(t *testing.T) {
+func TestFromEnvRejectsInvalidLegacyACPEnvironmentMapping(t *testing.T) {
 	t.Setenv("AGENTDOCK_ACP_ENABLED", "true")
 	t.Setenv("AGENTDOCK_ACP_ENV_FROM_ENV_JSON", `{"BAD-NAME":"HOST_KEY"}`)
 	if _, err := FromEnv(); err == nil {
-		t.Fatal("invalid ACP environment mapping was accepted")
+		t.Fatal("invalid legacy ACP environment mapping was accepted")
 	}
 }
 
@@ -136,8 +153,8 @@ func TestFromEnvParsesMultipleACPProfiles(t *testing.T) {
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ACPDefaultProfile != "zcode" || cfg.ACPAgentName != "zcode" {
-		t.Fatalf("default ACP profile = %q, legacy agent = %q", cfg.ACPDefaultProfile, cfg.ACPAgentName)
+	if cfg.ACPDefaultProfile != "zcode" {
+		t.Fatalf("default ACP profile = %q", cfg.ACPDefaultProfile)
 	}
 	active := cfg.EffectiveACPProfiles()
 	if len(active) != 2 || active[0].ID != "codex" || active[1].ID != "zcode" {
@@ -172,23 +189,41 @@ func TestNormalizeACPProfilesAllowsMultipleCustomButBuiltinUsesFixedID(t *testin
 	}
 }
 
-func TestEffectiveACPProfilesPreservesLegacyIdentity(t *testing.T) {
+func TestLegacyCustomMigrationPreservesSessionIdentity(t *testing.T) {
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{
-		AgentDockHome: t.TempDir(), AgentDockDefaultDir: t.TempDir(),
-		ACPEnabled: true, ACPAgentName: "custom", ACPCommand: executable,
-	}
-	if err := cfg.Normalize(); err != nil {
+	t.Setenv("AGENTDOCK_ACP_ENABLED", "true")
+	t.Setenv("AGENTDOCK_ACP_AGENT", "custom")
+	t.Setenv("AGENTDOCK_ACP_COMMAND", executable)
+
+	cfg, err := FromEnv()
+	if err != nil {
 		t.Fatal(err)
 	}
-	profiles := cfg.EffectiveACPProfiles()
-	if len(profiles) != 1 || profiles[0].ID != "custom" || profiles[0].Kind != "custom" {
-		t.Fatalf("legacy ACP profiles = %#v", profiles)
+	if len(cfg.ACPProfiles) != 1 || cfg.ACPProfiles[0].ID != "custom" || cfg.ACPProfiles[0].Kind != "custom" {
+		t.Fatalf("legacy custom migration = %#v", cfg.ACPProfiles)
 	}
-	if cfg.EffectiveACPDefaultProfile() != "custom" {
-		t.Fatalf("legacy default ACP profile = %q", cfg.EffectiveACPDefaultProfile())
+	if cfg.ACPDefaultProfile != "custom" {
+		t.Fatalf("legacy default ACP profile = %q", cfg.ACPDefaultProfile)
+	}
+}
+
+func TestLegacyACPProfileUsesBuiltinKindForBuiltinAgent(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AGENTDOCK_ACP_ENABLED", "true")
+	t.Setenv("AGENTDOCK_ACP_AGENT", "claude")
+	t.Setenv("AGENTDOCK_ACP_COMMAND", filepath.Clean(executable))
+
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.ACPProfiles) != 1 || cfg.ACPProfiles[0].ID != "claude" || cfg.ACPProfiles[0].Kind != "claude" {
+		t.Fatalf("legacy builtin migration = %#v", cfg.ACPProfiles)
 	}
 }
