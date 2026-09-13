@@ -100,12 +100,20 @@ func parsePowerShellValidateSetActions(script string) []string {
 	}
 	var actions []string
 	for _, line := range strings.Split(rest[:end], "\n") {
-		line = strings.TrimSpace(strings.Trim(line, ","))
+		line = strings.Trim(strings.TrimSpace(line), ",")
 		if strings.HasPrefix(line, "'") && strings.HasSuffix(line, "'") {
 			actions = append(actions, strings.Trim(line, "'"))
 		}
 	}
 	return actions
+}
+
+func TestParsePowerShellValidateSetActionsHandlesCRLF(t *testing.T) {
+	script := "[ValidateSet(\r\n    'start',\r\n    'stop'\r\n)]\r\n[string] $Action"
+	want := []string{"start", "stop"}
+	if got := parsePowerShellValidateSetActions(script); !sameStringSet(got, want) {
+		t.Fatalf("CRLF ValidateSet actions=%v, want %v", got, want)
+	}
 }
 
 func sameStringSet(left, right []string) bool {
