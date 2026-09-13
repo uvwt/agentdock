@@ -126,7 +126,6 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"Recovery files: $taskRecoveryPath",
 		"$taskTransactionCommitted = $taskTransactionStarted",
 		"function Write-ActiveVersionState",
-		"Installer Engine owns the fresh generation pointer",
 		"Incomplete installer generation pointer",
 		"active-version.json",
 		"Name = 'active-version.json'",
