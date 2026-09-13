@@ -37,7 +37,7 @@ func Inspect(stateRoot string) (Inspection, error) {
 	if _, err := os.Stat(store.TransactionPath()); err == nil {
 		inspection.HasTransaction = true
 	}
-	result, err := store.ReadCurrentResult()
+	result, err := store.ReadAuthoritativeResult()
 	if err == nil {
 		inspection.HasResult = true
 		inspection.State = string(result.State)

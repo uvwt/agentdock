@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
@@ -75,34 +76,64 @@ func (store *Store) ReadCurrentResult() (Result, error) {
 	return result, nil
 }
 
+// ReadAuthoritativeResult 返回当前权威事务对应的结果。terminal transaction 是 durable commit point；
+// 即使进程死在 transaction.json 与 result projection 两次原子写之间，读取也必须收敛到终态。
+func (store *Store) ReadAuthoritativeResult() (Result, error) {
+	transaction, err := store.ReadTransaction()
+	if err == nil && isTerminalInstallState(transaction.State) {
+		return store.ReadResult(transaction.TransactionID)
+	}
+	return store.ReadCurrentResult()
+}
+
 func (store *Store) ReadResult(transactionID string) (Result, error) {
 	transactionID = strings.TrimSpace(transactionID)
 	if transactionID == "" {
 		return Result{}, errors.New("install result transaction id is required")
 	}
-	var result Result
-	if err := readJSON(store.ResultPath(transactionID), &result); err == nil {
-		if result.TransactionID != transactionID {
-			return Result{}, fmt.Errorf("install result transaction changed: got %s, want %s", result.TransactionID, transactionID)
+
+	var persisted Result
+	persistedErr := readJSON(store.ResultPath(transactionID), &persisted)
+	if persistedErr == nil && persisted.TransactionID != transactionID {
+		return Result{}, fmt.Errorf("install result transaction changed: got %s, want %s", persisted.TransactionID, transactionID)
+	}
+
+	transaction, transactionErr := store.ReadTransaction()
+	if transactionErr == nil && transaction.TransactionID == transactionID && isTerminalInstallState(transaction.State) {
+		// terminal transaction 已经对外生效；projection 只能从它向前收敛，不能继续相信同事务的 trial 结果。
+		result := resultFromTransaction(transaction)
+		if persistedErr == nil && transaction.State == updateengine.StateCommitted && transaction.Action != ActionUninstall {
+			// commit 前的 trial 已完成健康检查，保留这些非状态机展示字段；rollback/failed 则故意清空，
+			// 防止失败 target 的 URL/健康状态重新泄漏到最终 projection。
+			result.LocalMCPURL = persisted.LocalMCPURL
+			result.PublicURL = persisted.PublicURL
+			result.Healthy = persisted.Healthy
+			result.PrivilegeMode = persisted.PrivilegeMode
 		}
-		if err := store.repairCurrentResultProjection(result); err != nil {
+		if persistedErr != nil || !reflect.DeepEqual(persisted, result) {
+			if err := store.WriteResult(result); err != nil {
+				return Result{}, fmt.Errorf("repair terminal install result: %w", err)
+			}
+		} else if err := store.repairCurrentResultProjection(result); err != nil {
 			return Result{}, err
 		}
 		return result, nil
 	}
 
-	// transaction.json 是权威事务。崩溃可能发生在 per-id result 或 current projection 写完之前。
-	transaction, err := store.ReadTransaction()
-	if err != nil || transaction.TransactionID != transactionID {
+	if persistedErr == nil {
+		if err := store.repairCurrentResultProjection(persisted); err != nil {
+			return Result{}, err
+		}
+		return persisted, nil
+	}
+	if transactionErr != nil || transaction.TransactionID != transactionID {
 		return Result{}, fmt.Errorf("install result %s 不存在", transactionID)
 	}
-	result = resultFromTransaction(transaction)
-	if transaction.State == updateengine.StateCommitted || transaction.State == updateengine.StateRolledBack || transaction.State == updateengine.StateFailed {
-		if err := store.WriteResult(result); err != nil {
-			return Result{}, fmt.Errorf("repair terminal install result: %w", err)
-		}
-	}
-	return result, nil
+	return resultFromTransaction(transaction), nil
+}
+
+func isTerminalInstallState(state updateengine.State) bool {
+	return state == updateengine.StateCommitted || state == updateengine.StateRolledBack || state == updateengine.StateFailed
 }
 
 func resultFromTransaction(transaction Transaction) Result {
@@ -132,7 +163,7 @@ func (store *Store) repairCurrentResultProjection(result Result) error {
 		return nil
 	}
 	var current Result
-	if err := readJSON(store.CurrentResultPath(), &current); err == nil && current.TransactionID == result.TransactionID {
+	if err := readJSON(store.CurrentResultPath(), &current); err == nil && reflect.DeepEqual(current, result) {
 		return nil
 	}
 	if err := writeJSON(store.CurrentResultPath(), result); err != nil {

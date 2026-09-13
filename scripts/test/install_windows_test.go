@@ -452,6 +452,26 @@ func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
 	if strings.Contains(script, "Copy-Item -LiteralPath $agentDockBinary -Destination $engineCommitBinary") {
 		t.Fatal("uninstall must not copy the stable shim as its detached Engine helper")
 	}
+	transactionRead := strings.Index(script, "$pendingUninstall = $null")
+	resumeTrial := strings.Index(script, "[string] $pendingUninstall.state, 'trial'")
+	stableBinaryBranch := strings.Index(script, "} elseif (Test-Path -LiteralPath $agentDockBinary -PathType Leaf) {")
+	if transactionRead < 0 || resumeTrial < transactionRead || stableBinaryBranch < resumeTrial {
+		t.Fatal("uninstall must resume a pending Engine trial before deciding that a missing stable binary means there is nothing left to commit")
+	}
+	if !strings.Contains(script, "'agentdock-uninstall-' + $engineUninstallTransactionId + '.exe'") {
+		t.Fatal("detached uninstall Engine helper must use a deterministic transaction-id path so retries can find it")
+	}
+	if strings.Contains(script, "[Guid]::NewGuid().ToString('N')") {
+		t.Fatal("uninstall helper path must not be random; retries need the same transaction-scoped helper")
+	}
+	if !strings.Contains(script, "both the stable binary and detached Engine helper are missing") {
+		t.Fatal("pending uninstall must fail explicitly when neither stable nor detached Engine can resume it")
+	}
+	commitFailure := strings.Index(script, "if ($engineCommitExitCode -ne 0)")
+	helperRemoval := strings.Index(script, "Remove-Item -LiteralPath $engineCommitBinary -Force -ErrorAction SilentlyContinue")
+	if commitFailure < 0 || helperRemoval < commitFailure {
+		t.Fatal("failed uninstall commit must retain the detached Engine helper for a later retry")
+	}
 }
 func TestWindowsTaskAdminUsesNativeAgentDockHelper(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "TaskAdminService.cs"))

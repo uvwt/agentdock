@@ -103,6 +103,7 @@ scripts:
     owner: installer
     public_contract: true
     deletable: false
+    oversize_justification: Windows 公开卸载入口，需要在 stable binary 删除后继续完成可重入 Installer transaction 与 Task/Registry/文件清理。
 
   - path: scripts/install/manage-windows.ps1
     class: legacy
