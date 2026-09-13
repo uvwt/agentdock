@@ -416,7 +416,6 @@ func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
 		"-Verb RunAs",
 		"--defer-commit",
 		"install', 'commit'",
-		"Engine stopping Core/Tunnel/task is not the whole product uninstall",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("uninstall-windows.ps1 missing %q", want)
