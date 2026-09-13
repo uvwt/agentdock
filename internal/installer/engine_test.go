@@ -1435,6 +1435,9 @@ func TestWaitWindowsQuickTunnelReadyUsesRuntimeFiles(t *testing.T) {
 }
 
 func TestWaitQuickTunnelReadyRequiresURLAndOAuth(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows Quick readiness uses server-url.txt/runtime.json and is covered separately")
+	}
 	root := t.TempDir()
 	ctx := context.Background()
 	request := Request{RuntimeRoot: root, TunnelMode: "quick"}

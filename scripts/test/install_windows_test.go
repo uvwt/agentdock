@@ -445,7 +445,7 @@ func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
 	if !strings.Contains(script, "$engineCommitBinary") || !strings.Contains(script, "install detach-engine --output $engineCommitBinary") {
 		t.Fatal("uninstall must detach a real Engine executable so product files can be removed before commit")
 	}
-	detachCall := strings.Index(script, "install detach-engine --output $engineCommitBinary")
+	detachCall := strings.LastIndex(script, "install detach-engine --output $engineCommitBinary")
 	if detachCall < engineRunCall || detachCall > taskCall || detachCall > fileCall {
 		t.Fatal("detached Engine helper must be prepared after the uninstall trial and before destructive adapter cleanup")
 	}
