@@ -443,8 +443,15 @@ func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
 	if strings.Contains(script, "--purge-data") {
 		t.Fatal("Windows adapter must not let Engine purge state/commit before Task/Registry/file cleanup")
 	}
-	if !strings.Contains(script, "$engineCommitBinary") {
-		t.Fatal("uninstall must preserve an ephemeral Engine executable so product files can be removed before commit")
+	if !strings.Contains(script, "$engineCommitBinary") || !strings.Contains(script, "install detach-engine --output $engineCommitBinary") {
+		t.Fatal("uninstall must detach a real Engine executable so product files can be removed before commit")
+	}
+	detachCall := strings.Index(script, "install detach-engine --output $engineCommitBinary")
+	if detachCall < uninstallCall || detachCall > taskCall || detachCall > fileCall {
+		t.Fatal("detached Engine helper must be prepared after the uninstall trial and before destructive adapter cleanup")
+	}
+	if strings.Contains(script, "Copy-Item -LiteralPath $agentDockBinary -Destination $engineCommitBinary") {
+		t.Fatal("uninstall must not copy the stable shim as its detached Engine helper")
 	}
 }
 func TestWindowsTaskAdminUsesNativeAgentDockHelper(t *testing.T) {

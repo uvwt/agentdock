@@ -88,6 +88,16 @@ func TestPrepareWindowsLegacyIsRejectedOffWindows(t *testing.T) {
 	}
 }
 
+func TestDetachEngineIsRejectedOffWindows(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows implementation has its own native tests")
+	}
+	err := run(context.Background(), []string{"install", "detach-engine"}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "仅支持 Windows") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRunRejectsUnknownCommand(t *testing.T) {
 	err := run(context.Background(), []string{"unknown"}, &bytes.Buffer{}, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "未知命令或参数") {

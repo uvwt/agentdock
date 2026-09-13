@@ -213,7 +213,8 @@ if (Test-Path -LiteralPath $agentDockBinary -PathType Leaf) {
         }
         # Commit from outside the product tree after the installed binary is deleted.
         $engineCommitBinary = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-uninstall-' + [Guid]::NewGuid().ToString('N') + '.exe')
-        Copy-Item -LiteralPath $agentDockBinary -Destination $engineCommitBinary -Force -ErrorAction Stop
+        & $agentDockBinary install detach-engine --output $engineCommitBinary 1>$null
+        if ($LASTEXITCODE -ne 0) { throw "Unable to prepare detached Installer Engine (exit $LASTEXITCODE)." }
     }
 }
 # Stop the scheduled task before touching the elevated process. New installs
