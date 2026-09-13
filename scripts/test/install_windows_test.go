@@ -421,13 +421,13 @@ func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
 			t.Fatalf("uninstall-windows.ps1 missing %q", want)
 		}
 	}
-	uninstallCall := strings.Index(script, "'uninstall'")
-	taskCall := strings.Index(script, "Remove-AgentDockScheduledTask")
+	engineRunCall := strings.Index(script, "$engineUninstallJson =")
+	taskCall := strings.Index(script, "Remove-AgentDockScheduledTask -AdminLauncherPath $trayBinary")
 	registryCall := strings.LastIndex(script, "Remove-RegistryValueIfPresent -Path $runKey")
 	commitCall := strings.Index(script, "install', 'commit'")
 	fileCall := strings.Index(script, "Remove-DirectoryWithRetry -Path $InstallDir")
 	purgeCall := strings.Index(script, "Remove-DirectoryWithRetry -Path (Join-Path $userHome '.agentdock')")
-	if uninstallCall < 0 || taskCall < 0 || uninstallCall > taskCall {
+	if engineRunCall < 0 || taskCall < 0 || engineRunCall > taskCall {
 		t.Fatal("Engine uninstall must run before Task/Registry adapter work")
 	}
 	if commitCall < 0 || registryCall < 0 || commitCall < registryCall {
@@ -446,7 +446,7 @@ func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
 		t.Fatal("uninstall must detach a real Engine executable so product files can be removed before commit")
 	}
 	detachCall := strings.Index(script, "install detach-engine --output $engineCommitBinary")
-	if detachCall < uninstallCall || detachCall > taskCall || detachCall > fileCall {
+	if detachCall < engineRunCall || detachCall > taskCall || detachCall > fileCall {
 		t.Fatal("detached Engine helper must be prepared after the uninstall trial and before destructive adapter cleanup")
 	}
 	if strings.Contains(script, "Copy-Item -LiteralPath $agentDockBinary -Destination $engineCommitBinary") {
