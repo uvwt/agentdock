@@ -434,6 +434,10 @@ func activateWindows(ctx context.Context, request Request, staged stagedInstall)
 	privilege := request.PrivilegeMode
 	home := request.AgentDockHome
 	defaultDir := request.AgentDockDefaultDir
+	taskName := request.TaskName
+	startupValueName := request.StartupValueName
+	trayStartupValueName := request.TrayStartupValueName
+	cloudflaredStartupValueName := request.CloudflaredStartupValueName
 	channel := request.Channel
 	// repair / 省略标志时必须保留已有 runtime.json，不能把 host/port/tunnel 重置成默认值。
 	if existing, err := desktopruntime.Load(filepath.Join(request.InstallRoot, "runtime.json")); err == nil {
@@ -458,6 +462,18 @@ func activateWindows(ctx context.Context, request Request, staged stagedInstall)
 		if defaultDir == "" {
 			defaultDir = existing.AgentDockDefaultDir
 		}
+		if taskName == "" {
+			taskName = existing.AgentDockTaskName
+		}
+		if startupValueName == "" {
+			startupValueName = existing.StartupValueName
+		}
+		if trayStartupValueName == "" {
+			trayStartupValueName = existing.TrayStartupValueName
+		}
+		if cloudflaredStartupValueName == "" {
+			cloudflaredStartupValueName = existing.CloudflaredStartupValueName
+		}
 		if channel == "" {
 			channel = existing.InstallChannel
 		}
@@ -465,6 +481,15 @@ func activateWindows(ctx context.Context, request Request, staged stagedInstall)
 	if privilege == "" {
 		privilege = "standard"
 	}
+	if privilege == "elevated" {
+		taskName = defaultString(taskName, "AgentDock")
+	} else {
+		// standard 模式由 HKCU Run 管理生命周期，不能留下一个看似有效的默认 Task 名称。
+		taskName = ""
+	}
+	startupValueName = defaultString(startupValueName, "AgentDock")
+	trayStartupValueName = defaultString(trayStartupValueName, "AgentDockTray")
+	cloudflaredStartupValueName = defaultString(cloudflaredStartupValueName, "AgentDockCloudflared")
 	if host == "" {
 		host = "127.0.0.1"
 	}
@@ -513,13 +538,13 @@ func activateWindows(ctx context.Context, request Request, staged stagedInstall)
 		AgentDockBinary:             layout.CoreShim(),
 		TrayBinary:                  layout.TrayShim(),
 		AgentDockLauncher:           filepath.Join(request.InstallRoot, "start-agentdock.ps1"),
-		AgentDockTaskName:           defaultString(request.TaskName, "AgentDock"),
+		AgentDockTaskName:           taskName,
 		PrivilegeMode:               privilege,
 		CloudflaredBinary:           filepath.Join(binDir, "cloudflared.exe"),
 		CloudflaredLauncher:         filepath.Join(request.InstallRoot, "start-cloudflared.ps1"),
-		StartupValueName:            "AgentDock",
-		TrayStartupValueName:        "AgentDockTray",
-		CloudflaredStartupValueName: "AgentDockCloudflared",
+		StartupValueName:            startupValueName,
+		TrayStartupValueName:        trayStartupValueName,
+		CloudflaredStartupValueName: cloudflaredStartupValueName,
 		Host:                        host,
 		Port:                        port,
 		LocalMCPURL:                 localMCPURL(host, port),

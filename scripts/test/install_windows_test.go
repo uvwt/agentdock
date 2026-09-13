@@ -217,6 +217,18 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	if !strings.Contains(script, "'--tunnel-mode', $resolvedTunnelMode") {
 		t.Fatal("Engine must receive the real resolved tunnel mode, including quick")
 	}
+	for _, identity := range []string{
+		"'--startup-value-name', $runValueName",
+		"'--tray-startup-value-name', $trayRunValueName",
+		"'--cloudflared-startup-value-name', $cloudflaredRunValueName",
+	} {
+		if !strings.Contains(script, identity) {
+			t.Fatalf("Installer Engine must receive the adapter's exact Windows startup identity: %s", identity)
+		}
+	}
+	if !strings.Contains(script, "$engineArgs += @('--task-name', 'AgentDock')") {
+		t.Fatal("elevated Engine installs must receive the real AgentDock scheduled task name")
+	}
 	if strings.Contains(script, "Write-ActiveVersionState -Path $activeVersionPath") {
 		t.Fatal("fresh bootstrap must not write committed active-version.json before Installer commit")
 	}

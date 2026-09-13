@@ -1837,9 +1837,15 @@ exit `$LASTEXITCODE
             '--privilege-mode', $effectivePrivilegeMode,
             '--agentdock-home', $runtimeAgentDockHome,
             '--agentdock-default-dir', $runtimeAgentDockDefaultDir,
+            '--startup-value-name', $runValueName,
+            '--tray-startup-value-name', $trayRunValueName,
+            '--cloudflared-startup-value-name', $cloudflaredRunValueName,
             '--channel', $InstallChannel,
             '--defer-commit'
         )
+        if ($effectivePrivilegeMode -eq 'elevated') {
+            $engineArgs += @('--task-name', 'AgentDock')
+        }
         if ((-not $RegisterStartup) -or ($InstallChannel -eq 'setup' -and -not $existingInstallDetected)) {
             $engineArgs += @('--no-start', '--skip-health')
         }

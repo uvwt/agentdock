@@ -480,17 +480,22 @@ func TestWindowsGenerationLayoutAndManifest(t *testing.T) {
 		}
 	}
 	request := Request{
-		InstallRoot:         filepath.Join(root, "runtime"),
-		RuntimeRoot:         filepath.Join(root, "runtime"),
-		PayloadDir:          payload,
-		Version:             "v0.9.0",
-		Host:                "127.0.0.1",
-		Port:                8765,
-		TunnelMode:          "none",
-		AgentDockHome:       filepath.Join(root, "home", ".agentdock"),
-		AgentDockDefaultDir: filepath.Join(root, "home", "AgentDock"),
-		SkipHealth:          true,
-		StartService:        false,
+		InstallRoot:                 filepath.Join(root, "runtime"),
+		RuntimeRoot:                 filepath.Join(root, "runtime"),
+		PayloadDir:                  payload,
+		Version:                     "v0.9.0",
+		Host:                        "127.0.0.1",
+		Port:                        8765,
+		TunnelMode:                  "none",
+		AgentDockHome:               filepath.Join(root, "home", ".agentdock"),
+		AgentDockDefaultDir:         filepath.Join(root, "home", "AgentDock"),
+		PrivilegeMode:               "standard",
+		TaskName:                    "AgentDockMustNotLeak",
+		StartupValueName:            "AgentDockE2E",
+		TrayStartupValueName:        "AgentDockTrayE2E",
+		CloudflaredStartupValueName: "AgentDockCloudflaredE2E",
+		SkipHealth:                  true,
+		StartService:                false,
 	}
 	journal := newJournal(request.InstallRoot, "windows-test")
 	staged, err := stageWindowsPayload(request, journal)
@@ -511,8 +516,17 @@ func TestWindowsGenerationLayoutAndManifest(t *testing.T) {
 	if !fileExists(layout.GenerationCore("v0.9.0")) {
 		t.Fatal("generation core missing")
 	}
-	if !fileExists(filepath.Join(request.InstallRoot, "runtime.json")) {
-		t.Fatal("runtime.json missing")
+	manifest, err := desktopruntime.Load(filepath.Join(request.InstallRoot, "runtime.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.AgentDockTaskName != "" {
+		t.Fatalf("standard install leaked scheduled task name: %q", manifest.AgentDockTaskName)
+	}
+	if manifest.StartupValueName != "AgentDockE2E" ||
+		manifest.TrayStartupValueName != "AgentDockTrayE2E" ||
+		manifest.CloudflaredStartupValueName != "AgentDockCloudflaredE2E" {
+		t.Fatalf("custom Windows startup identity was not preserved: %+v", manifest)
 	}
 	store, err := updateengine.NewStore(request.InstallRoot)
 	if err != nil {
@@ -537,6 +551,33 @@ func TestWindowsGenerationLayoutAndManifest(t *testing.T) {
 	}
 	if active.ActiveVersion != "v0.9.0" || active.State != updateengine.StateCommitted {
 		t.Fatalf("commit pointer active=%s state=%s", active.ActiveVersion, active.State)
+	}
+
+	repair := request
+	repair.PrivilegeMode = ""
+	repair.TaskName = ""
+	repair.StartupValueName = ""
+	repair.TrayStartupValueName = ""
+	repair.CloudflaredStartupValueName = ""
+	repairJournal := newJournal(repair.InstallRoot, "windows-repair")
+	repairStaged, err := stageWindowsPayload(repair, repairJournal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := activateWindows(context.Background(), repair, repairStaged); err != nil {
+		t.Fatal(err)
+	}
+	manifest, err = desktopruntime.Load(filepath.Join(request.InstallRoot, "runtime.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.AgentDockTaskName != "" || manifest.PrivilegeMode != "standard" {
+		t.Fatalf("standard repair restored a scheduled task identity: task=%q privilege=%q", manifest.AgentDockTaskName, manifest.PrivilegeMode)
+	}
+	if manifest.StartupValueName != "AgentDockE2E" ||
+		manifest.TrayStartupValueName != "AgentDockTrayE2E" ||
+		manifest.CloudflaredStartupValueName != "AgentDockCloudflaredE2E" {
+		t.Fatalf("repair lost custom Windows startup identity: %+v", manifest)
 	}
 }
 

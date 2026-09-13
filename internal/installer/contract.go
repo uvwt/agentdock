@@ -113,10 +113,13 @@ type Request struct {
 	PurgeConfig bool
 	PurgeData   bool
 
-	PrivilegeMode       string
-	AgentDockHome       string
-	AgentDockDefaultDir string
-	TaskName            string
+	PrivilegeMode               string
+	AgentDockHome               string
+	AgentDockDefaultDir         string
+	TaskName                    string
+	StartupValueName            string
+	TrayStartupValueName        string
+	CloudflaredStartupValueName string
 
 	SkipHealth      bool
 	SkipSkills      bool
