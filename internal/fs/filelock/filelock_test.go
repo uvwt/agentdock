@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -140,5 +141,42 @@ func TestAcquireDoesNotRemoveStaleLockWithInvalidOwnerPID(t *testing.T) {
 	content, err := os.ReadFile(ownerPath)
 	if err != nil || string(content) != "not-a-pid\n" {
 		t.Fatalf("invalid owner content = %q, err=%v", content, err)
+	}
+}
+
+func TestAcquireSurvivesHighContention(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.lock")
+	const (
+		workers = 64
+		rounds  = 4
+	)
+	start := make(chan struct{})
+	errs := make(chan error, workers)
+	var group sync.WaitGroup
+	for range workers {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			<-start
+			for range rounds {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				release, err := Acquire(ctx, path)
+				cancel()
+				if err != nil {
+					errs <- err
+					return
+				}
+				release()
+			}
+		}()
+	}
+	close(start)
+	group.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("Acquire() under contention: %v", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("lock path remains after contention: %v", err)
 	}
 }
