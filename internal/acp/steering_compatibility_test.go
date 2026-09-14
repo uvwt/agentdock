@@ -2,8 +2,95 @@ package acp
 
 import (
 	"context"
+	"io"
+	"sync"
 	"testing"
+	"time"
 )
+
+type gatedACPWriter struct {
+	io.WriteCloser
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (w *gatedACPWriter) Write(data []byte) (int, error) {
+	w.once.Do(func() { close(w.started) })
+	<-w.release
+	return w.WriteCloser.Write(data)
+}
+
+func TestStartPromptWaitsForPromptDispatchBeforeSteering(t *testing.T) {
+	workspace := t.TempDir()
+	manager, err := newTestManagerWithAgent(t.TempDir(), workspace, claudeAgentACPName, "0.64.2", "claude_steer_fallback")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = manager.Close() }()
+
+	created, err := manager.NewSession(context.Background(), workspace, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	manager.mu.RLock()
+	connection := manager.process.connection
+	manager.mu.RUnlock()
+	connection.writeMu.Lock()
+	gate := &gatedACPWriter{
+		WriteCloser: connection.writer,
+		started:     make(chan struct{}),
+		release:     make(chan struct{}),
+	}
+	connection.writer = gate
+	connection.writeMu.Unlock()
+
+	type startResult struct {
+		result PromptStartResult
+		err    error
+	}
+	started := make(chan startResult, 1)
+	go func() {
+		result, startErr := manager.StartPrompt(context.Background(), created.Session.ID, "original")
+		started <- startResult{result: result, err: startErr}
+	}()
+
+	select {
+	case <-gate.started:
+	case <-time.After(5 * time.Second):
+		close(gate.release)
+		t.Fatal("session/prompt write did not start")
+	}
+	select {
+	case result := <-started:
+		close(gate.release)
+		t.Fatalf("StartPrompt returned before session/prompt was dispatched: result=%#v err=%v", result.result, result.err)
+	default:
+	}
+	close(gate.release)
+
+	var original PromptStartResult
+	select {
+	case result := <-started:
+		if result.err != nil {
+			t.Fatal(result.err)
+		}
+		original = result.result
+	case <-time.After(5 * time.Second):
+		t.Fatal("StartPrompt did not return after session/prompt dispatch")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	steering, err := manager.Steer(ctx, created.Session.ID, "STEERED")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if steering["cancelledRunId"] != original.RunID {
+		t.Fatalf("steering cancelled run = %#v, want %q", steering["cancelledRunId"], original.RunID)
+	}
+}
 
 func TestClaudeSteeringCompatibilityVersionBoundary(t *testing.T) {
 	tests := []struct {

@@ -71,6 +71,10 @@ func NewConnection(reader io.ReadCloser, writer io.WriteCloser, requestHandler R
 }
 
 func (c *Connection) Request(ctx context.Context, method string, params any, result any) error {
+	return c.request(ctx, method, params, result, nil)
+}
+
+func (c *Connection) request(ctx context.Context, method string, params any, result any, dispatched func()) error {
 	if c == nil {
 		return errors.New("ACP connection is nil")
 	}
@@ -101,6 +105,9 @@ func (c *Connection) Request(ctx context.Context, method string, params any, res
 	}); err != nil {
 		c.removePending(key)
 		return err
+	}
+	if dispatched != nil {
+		dispatched()
 	}
 
 	select {

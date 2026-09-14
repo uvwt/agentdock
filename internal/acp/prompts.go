@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -148,7 +149,14 @@ func (m *Manager) StartPromptBlocks(ctx context.Context, sessionID string, block
 		m.finishRun(run, RunFailed, "", err)
 		return PromptStartResult{}, err
 	}
-	go m.runPrompt(runCtx, run, record, blocks)
+	// StartPrompt 返回 started 后，调用方可能立即 Cancel/Steer。必须先保证
+	// session/prompt 已写入 ACP 连接，否则 cancel notification 可能抢在 prompt
+	// 前面到达 Adapter，被当成“当前没有 turn”直接消费，随后原 prompt 永久等待。
+	dispatched := make(chan struct{})
+	var dispatchOnce sync.Once
+	markDispatched := func() { dispatchOnce.Do(func() { close(dispatched) }) }
+	go m.runPrompt(runCtx, run, record, blocks, markDispatched)
+	<-dispatched
 	return PromptStartResult{RunID: run.ID, SessionID: sessionID, Status: RunRunning, Disposition: "started", StartedAt: run.StartedAt}, nil
 }
 
@@ -428,7 +436,8 @@ func (m *Manager) markSessionInterrupted(record SessionRecord, reason string) {
 	}
 }
 
-func (m *Manager) runPrompt(ctx context.Context, run *Run, record SessionRecord, blocks []ContentBlock) {
+func (m *Manager) runPrompt(ctx context.Context, run *Run, record SessionRecord, blocks []ContentBlock, markDispatched func()) {
+	defer markDispatched()
 	m.mu.RLock()
 	process := m.process
 	m.mu.RUnlock()
@@ -439,10 +448,10 @@ func (m *Manager) runPrompt(ctx context.Context, run *Run, record SessionRecord,
 	var response struct {
 		StopReason string `json:"stopReason"`
 	}
-	err := process.connection.Request(ctx, "session/prompt", map[string]any{
+	err := process.connection.request(ctx, "session/prompt", map[string]any{
 		"sessionId": record.RemoteSessionID,
 		"prompt":    blocks,
-	}, &response)
+	}, &response, markDispatched)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
 			m.finishRun(run, RunCancelled, "cancelled", nil)
