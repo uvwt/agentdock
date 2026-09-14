@@ -342,34 +342,6 @@ test "$(plutil -extract ProgramArguments.4 raw -o - "$tunnel_plist")" = "$app_su
 test "$(plutil -extract StandardOutPath raw -o - "$tunnel_plist")" = "/dev/null"
 test "$(plutil -extract StandardErrorPath raw -o - "$tunnel_plist")" = "/dev/null"
 
-# 原生 Tunnel LaunchAgent 的 PID 对应 agentdock wrapper，而不是它启动的 cloudflared 子进程。
-# Named Tunnel 的启动与回滚验证都必须接受 plist 中实际运行的命令。
-env -i \
-  HOME="$home_dir" \
-  PATH="$TEST_PATH" \
-  zsh -c '
-    set -euo pipefail
-    source "$1"
-    TARGET="$2"
-    CLOUDFLARED_TARGET="$3"
-    TUNNEL_START_SCRIPT="$4"
-    TUNNEL_STDERR_LOG="$5"
-    APP_SUPPORT_DIR="$6"
-    TUNNEL_MODE=named
-    tunnel_launchd_pid() { print -r -- 4321; }
-    ps() { print -r -- "$TARGET tunnel launch --runtime-root $APP_SUPPORT_DIR"; }
-    sleep() { :; }
-
-    test "$(wait_for_tunnel "gui/501")" = 4321
-    wait_for_tunnel_process "gui/501"
-  ' _ \
-  "$ROOT_DIR/scripts/install/install-macos-platform.sh" \
-  "$binary" \
-  "$home_dir/.local/bin/cloudflared" \
-  "$tunnel_start" \
-  "$log_dir/cloudflared.err.log" \
-  "$app_support"
-
 named_oauth_password="$(read_env_key "$agentdock_env" AGENTDOCK_OAUTH_PASSWORD)"
 named_oauth_secret="$(read_env_key "$agentdock_env" AGENTDOCK_OAUTH_TOKEN_SECRET)"
 (( ${#named_oauth_password} >= 12 ))
@@ -536,46 +508,8 @@ assert_file_contains "$agentdock_env" "AGENTDOCK_SERVER_URL=''"
 assert_file_not_contains "$agentdock_env" 'https://broken.example.test'
 assert_file_not_contains "$tunnel_env" 'must-not-survive'
 
-# 模拟 Quick Tunnel 刷新：新地址必须回写并重启 AgentDock，已有双认证凭据不得轮换。
-quick_refresh_home="$TMP_ROOT/quick refresh home"
-quick_refresh_state="$TMP_ROOT/quick refresh state"
-mkdir -p "$quick_refresh_home/Library/Application Support/AgentDock" "$quick_refresh_state"
-quick_refresh_env="$quick_refresh_home/Library/Application Support/AgentDock/agentdock.env"
-cat > "$quick_refresh_env" <<'ENV'
-AGENTDOCK_HOST=127.0.0.1
-AGENTDOCK_PORT=18766
-AGENTDOCK_AUTH_TOKEN=stable-bearer-token
-AGENTDOCK_SERVER_URL=https://old.trycloudflare.com
-AGENTDOCK_OAUTH_ENABLED=true
-AGENTDOCK_OAUTH_PASSWORD=stable-oauth-password
-AGENTDOCK_OAUTH_TOKEN_SECRET=stable-oauth-secret-0123456789abcdef
-ENV
-chmod 0600 "$quick_refresh_env"
-env -i \
-  HOME="$quick_refresh_home" \
-  PATH="$TEST_PATH" \
-  TEST_QUICK_REFRESH_STATE="$quick_refresh_state" \
-  zsh -c '
-    set -euo pipefail
-    source "$1"
-    TUNNEL_MODE=quick
-    NO_START=false
-    PUBLIC_AUTH_CONFIGURE=true
-    SERVER_URL=https://old.trycloudflare.com
-    snapshot_tunnel_state() { :; }
-    install_cloudflared() { :; }
-    write_tunnel_env() { :; }
-    write_tunnel_launch_agent() { :; }
-    register_and_start_tunnel() { TUNNEL_PUBLIC_URL=https://fresh.trycloudflare.com; }
-    register_and_start_service() { print -- restarted >> "$TEST_QUICK_REFRESH_STATE/restarts"; }
-    configure_tunnel
-  ' _ "$ROOT_DIR/scripts/install/install-macos-platform.sh"
-assert_file_contains "$quick_refresh_env" 'AGENTDOCK_SERVER_URL=https://fresh.trycloudflare.com'
-assert_file_contains "$quick_refresh_env" 'AGENTDOCK_OAUTH_ENABLED=true'
-assert_file_contains "$quick_refresh_env" 'AGENTDOCK_AUTH_TOKEN=stable-bearer-token'
-assert_file_contains "$quick_refresh_env" 'AGENTDOCK_OAUTH_PASSWORD=stable-oauth-password'
-assert_file_contains "$quick_refresh_env" 'AGENTDOCK_OAUTH_TOKEN_SECRET=stable-oauth-secret-0123456789abcdef'
-test "$(wc -l < "$quick_refresh_state/restarts" | tr -d ' ')" = "1"
+# Quick Tunnel 刷新（新地址回写 env、重启 Core、凭据保持稳定）由原生 runQuickTunnel
+# 拥有，回归覆盖在 internal/desktopruntime/tunnel_quick_unix_test.go。
 
 # 注册服务必须坚持标准二进制目标，不能把 plist 指向一处、二进制装到另一处。
 if run_installer --register-service --no-start --install-dir "$TMP_ROOT/nonstandard" >/dev/null 2>&1; then
@@ -611,7 +545,10 @@ set -euo pipefail
 print -r -- "$*" >> "$TEST_LAUNCHCTL_STATE/calls.log"
 case "$1" in
   print)
-    [[ -f "$TEST_LAUNCHCTL_STATE/loaded" || -f "$TEST_LAUNCHCTL_STATE/pid" ]] || exit 1
+    [[ -f "$TEST_LAUNCHCTL_STATE/loaded" || -f "$TEST_LAUNCHCTL_STATE/pid" ]] || {
+      print -u2 -- 'Could not find specified service'
+      exit 1
+    }
     if [[ -f "$TEST_LAUNCHCTL_STATE/pid" ]]; then
       print -- "  pid = $(cat "$TEST_LAUNCHCTL_STATE/pid")"
     else
@@ -726,37 +663,10 @@ assert_file_contains "$fake_state/curl.calls" 'http://127.0.0.1:18767/healthz'
 assert_file_not_contains "$fake_state/curl.calls" 'http://127.0.0.1:8765/healthz'
 test -f "$fake_state/pid"
 
-# 已有服务升级时，bootstrap 失败必须恢复旧二进制、env、启动脚本、plist 和旧 LaunchAgent。
-rollback_release_dir="$TMP_ROOT/rollback release"
-rollback_build_dir="$TMP_ROOT/rollback build"
-mkdir -p "$rollback_release_dir" "$rollback_build_dir/bin" "$rollback_build_dir/share/agentdock"
-cp -R "$build_dir/share/agentdock/core-skills" "$rollback_build_dir/share/agentdock/core-skills"
-cat > "$rollback_build_dir/bin/agentdock" <<'SCRIPT'
-#!/bin/zsh
-case "${1:-}" in
-  --version)
-    print -- "AgentDock v9.9.9"
-    print -- "commit: rollback-test"
-    ;;
-  --help) ;;
-  *)
-    # 不能伪装成 Go Installer Engine；未知子命令必须失败。
-    exit 2
-    ;;
-esac
-SCRIPT
-chmod 0755 "$rollback_build_dir/bin/agentdock"
-tar -C "$rollback_build_dir" -czf "$rollback_release_dir/$asset" bin/agentdock share/agentdock/core-skills
-(
-  cd "$rollback_release_dir"
-  shasum -a 256 "$asset" > "$asset.sha256"
-)
-rollback_release_url="$(python3 - "$rollback_release_dir" <<'PYURI'
-from pathlib import Path
-import sys
-print(Path(sys.argv[1]).resolve().as_uri())
-PYURI
-)"
+# 已有服务升级时，bootstrap 失败必须恢复旧二进制、env、plist 和旧 LaunchAgent。
+# 故障注入必须继续使用真实 Engine-ready payload；旧测试用不支持 Installer Engine 的 shell 假二进制，
+# 会在进入 launchd 事务前被拒绝，无法验证当前架构的 bootstrap/bootout 回滚。
+rollback_release_url="$release_url"
 service_binary="$service_home/.local/bin/agentdock"
 service_env="$service_home/Library/Application Support/AgentDock/agentdock.env"
 service_plist="$service_home/Library/LaunchAgents/com.uvwt.agentdock.plist"
@@ -808,7 +718,8 @@ test "$(sha256_of "$service_binary")" = "$old_binary_sha"
 test "$(sha256_of "$service_env")" = "$old_env_sha"
 test ! -e "$service_home/Library/Application Support/AgentDock/start-agentdock.sh"
 test "$(sha256_of "$service_plist")" = "$old_plist_sha"
-assert_file_contains "$fake_state/curl.calls" 'http://127.0.0.1:18767/healthz'
+# bootout 本身失败时旧服务从未被停止；rollback 不应重启或重复探测它。
+# PID 不变已经证明旧服务连续运行，这里只禁止误探测目标配置。
 assert_file_not_contains "$fake_state/curl.calls" 'http://127.0.0.8:18888/healthz'
 
 # App-managed 布局必须先调用 Bundle 自己的 SMAppService 注销入口；失败时不能先删配置。

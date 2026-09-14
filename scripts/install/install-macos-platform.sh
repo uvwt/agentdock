@@ -58,17 +58,7 @@ STATE_DIR="$HOME/.agentdock"
 TARGET="$INSTALL_DIR/agentdock"
 CLOUDFLARED_TARGET="$INSTALL_DIR/cloudflared"
 SERVICE_WAS_LOADED=false
-PREVIOUS_SERVICE_PID=""
-PREVIOUS_SERVICE_STOPPED=false
 SERVICE_BACKUP_DIR=""
-TUNNEL_BACKUP_DIR=""
-TUNNEL_SERVICE_WAS_LOADED=false
-TUNNEL_PREVIOUS_SERVICE_STOPPED=false
-PREVIOUS_SERVER_URL=""
-PREVIOUS_SERVER_URL_PRESENT=false
-PREVIOUS_OAUTH_ENABLED=""
-PREVIOUS_OAUTH_ENABLED_PRESENT=false
-TUNNEL_PUBLIC_URL=""
 
 usage() {
   cat <<'USAGE'
@@ -284,53 +274,6 @@ read_existing_tunnel_token() {
   ' _ "$TUNNEL_ENV"
 }
 
-capture_previous_public_auth() {
-  local server_pattern="^[[:space:]]*(export[[:space:]]+)?AGENTDOCK_SERVER_URL[[:space:]]*="
-  local oauth_pattern="^[[:space:]]*(export[[:space:]]+)?AGENTDOCK_OAUTH_ENABLED[[:space:]]*="
-  if [[ -f "$AGENTDOCK_ENV" && ! -L "$AGENTDOCK_ENV" ]] && grep -Eq "$server_pattern" "$AGENTDOCK_ENV"; then
-    PREVIOUS_SERVER_URL="$(read_agentdock_env_key AGENTDOCK_SERVER_URL)"
-    PREVIOUS_SERVER_URL_PRESENT=true
-  fi
-  if [[ -f "$AGENTDOCK_ENV" && ! -L "$AGENTDOCK_ENV" ]] && grep -Eq "$oauth_pattern" "$AGENTDOCK_ENV"; then
-    PREVIOUS_OAUTH_ENABLED="$(read_agentdock_env_key AGENTDOCK_OAUTH_ENABLED)"
-    PREVIOUS_OAUTH_ENABLED_PRESENT=true
-  fi
-}
-
-remove_agentdock_env_key() {
-  local key="$1"
-  local pattern="^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*="
-  [[ -f "$AGENTDOCK_ENV" && ! -L "$AGENTDOCK_ENV" ]] || return 0
-
-  local tmp_file="$AGENTDOCK_ENV.tmp.$$"
-  local line
-  : > "$tmp_file"
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    if ! print -r -- "$line" | grep -Eq "$pattern"; then
-      printf '%s\n' "$line" >> "$tmp_file"
-    fi
-  done < "$AGENTDOCK_ENV"
-  chmod 0600 "$tmp_file"
-  mv -f "$tmp_file" "$AGENTDOCK_ENV"
-}
-
-restore_previous_public_auth() {
-  if [[ "$PREVIOUS_SERVER_URL_PRESENT" == true ]]; then
-    write_env_key AGENTDOCK_SERVER_URL "$PREVIOUS_SERVER_URL" true
-  else
-    remove_agentdock_env_key AGENTDOCK_SERVER_URL
-  fi
-  if [[ "$PREVIOUS_OAUTH_ENABLED_PRESENT" == true ]]; then
-    write_env_key AGENTDOCK_OAUTH_ENABLED "$PREVIOUS_OAUTH_ENABLED" true
-  else
-    remove_agentdock_env_key AGENTDOCK_OAUTH_ENABLED
-  fi
-}
-
-restart_agentdock_after_server_url_restore() {
-  [[ "$NO_START" == false ]] || return 0
-  register_and_start_service
-}
 
 ensure_public_auth() {
   local current_token="$(read_agentdock_env_key AGENTDOCK_AUTH_TOKEN)"
@@ -410,63 +353,6 @@ next_backup_path() {
   print -r -- "$candidate"
 }
 
-write_env_key() {
-  local key="$1"
-  local value="$2"
-  local replace_existing="$3"
-  local quoted
-  local pattern="^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*="
-  printf -v quoted '%q' "$value"
-
-  if grep -Eq "$pattern" "$AGENTDOCK_ENV"; then
-    local match_count="$(grep -Ec "$pattern" "$AGENTDOCK_ENV")"
-    if [[ "$replace_existing" == false && "$match_count" == 1 ]]; then
-      return 0
-    fi
-
-    # 兼容用户已有的 `export KEY=...` 和重复定义。显式替换时写入规范键；
-    # 仅去重时保留最后一条原始定义，维持 shell source 的既有效果和行序。
-    local tmp_file="$AGENTDOCK_ENV.tmp.$$"
-    local line
-    local written=false
-    local remaining="$match_count"
-    : > "$tmp_file"
-    while IFS= read -r line || [[ -n "$line" ]]; do
-      if print -r -- "$line" | grep -Eq "$pattern"; then
-        remaining=$(( remaining - 1 ))
-        if [[ "$replace_existing" == true && "$written" == false ]]; then
-          printf '%s=%s\n' "$key" "$quoted" >> "$tmp_file"
-          written=true
-        elif [[ "$replace_existing" == false && "$remaining" == 0 ]]; then
-          printf '%s\n' "$line" >> "$tmp_file"
-        fi
-      else
-        printf '%s\n' "$line" >> "$tmp_file"
-      fi
-    done < "$AGENTDOCK_ENV"
-    chmod 0600 "$tmp_file"
-    mv -f "$tmp_file" "$AGENTDOCK_ENV"
-    return 0
-  fi
-
-  printf '%s=%s\n' "$key" "$quoted" >> "$AGENTDOCK_ENV"
-}
-
-remove_env_key() {
-  local key="$1"
-  local pattern="^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*="
-  local tmp_file="$AGENTDOCK_ENV.tmp.$$"
-  if grep -Ev "$pattern" "$AGENTDOCK_ENV" > "$tmp_file"; then
-    :
-  else
-    local status="$?"
-    # grep 在所有行都被移除时返回 1，此时空文件正是期望结果；真正的读取失败必须返回。
-    [[ "$status" -eq 1 ]] || return "$status"
-  fi
-  chmod 0600 "$tmp_file"
-  mv -f "$tmp_file" "$AGENTDOCK_ENV"
-}
-
 snapshot_service_file() {
   local name="$1"
   local file_path="$2"
@@ -502,109 +388,6 @@ restore_service_files() {
   restore_service_file agentdock.env "$AGENTDOCK_ENV" || return 1
   restore_service_file start-agentdock.sh "$START_SCRIPT" || return 1
   restore_service_file launch-agent.plist "$PLIST_PATH" || return 1
-}
-
-write_service_env() {
-  if [[ -e "$APP_SUPPORT_DIR" || -L "$APP_SUPPORT_DIR" ]]; then
-    [[ -d "$APP_SUPPORT_DIR" && ! -L "$APP_SUPPORT_DIR" ]] || die "服务配置目录必须是普通目录：$APP_SUPPORT_DIR"
-  fi
-  mkdir -p "$APP_SUPPORT_DIR"
-  chmod 0700 "$APP_SUPPORT_DIR"
-  if [[ ! -f "$AGENTDOCK_ENV" ]]; then
-    umask 077
-    cat > "$AGENTDOCK_ENV" <<'ENV'
-# AgentDock macOS LaunchAgent 的唯一服务配置文件。
-# 修改后执行 launchctl kickstart -k "gui/$(id -u)/com.uvwt.agentdock" 使配置生效。
-ENV
-  fi
-  [[ -f "$AGENTDOCK_ENV" && ! -L "$AGENTDOCK_ENV" ]] || die "agentdock.env 必须是普通文件：$AGENTDOCK_ENV"
-  chmod 0600 "$AGENTDOCK_ENV"
-
-  write_env_key AGENTDOCK_HOST "$SERVICE_HOST" "$HOST_EXPLICIT"
-  write_env_key AGENTDOCK_PORT "$SERVICE_PORT" "$PORT_EXPLICIT"
-  write_env_key AGENTDOCK_LOG_LEVEL "$SERVICE_LOG_LEVEL" false
-  write_env_key AGENTDOCK_AUTH_TOKEN "$AUTH_TOKEN_ARG" "$AUTH_TOKEN_REPLACE"
-  write_env_key AGENTDOCK_SERVER_URL "$SERVER_URL" "$SERVER_URL_EXPLICIT"
-  if [[ "$PUBLIC_AUTH_CONFIGURE" == true ]]; then
-    write_env_key AGENTDOCK_OAUTH_ENABLED "$OAUTH_ENABLED_VALUE" true
-    write_env_key AGENTDOCK_OAUTH_PASSWORD "$OAUTH_PASSWORD_VALUE" false
-    write_env_key AGENTDOCK_OAUTH_TOKEN_SECRET "$OAUTH_TOKEN_SECRET_VALUE" false
-  fi
-  # NexusDock 身份只保存在配对文件中，安装时清除旧环境凭据，避免废弃密钥继续落盘。
-  remove_env_key AGENTDOCK_NEXUS_ENDPOINT
-  remove_env_key AGENTDOCK_NEXUS_TOKEN
-
-  # 稳定签名参数只在调用方明确提供时写入，避免把任何本机证书路径写死进安装器。
-  if [[ -n "${AGENTDOCK_CODESIGN_IDENTITY:-}" ]]; then
-    write_env_key AGENTDOCK_CODESIGN_IDENTITY "$AGENTDOCK_CODESIGN_IDENTITY" false
-  fi
-  if [[ -n "${AGENTDOCK_CODESIGN_KEYCHAIN:-}" ]]; then
-    write_env_key AGENTDOCK_CODESIGN_KEYCHAIN "$AGENTDOCK_CODESIGN_KEYCHAIN" false
-  fi
-  if [[ -n "${AGENTDOCK_CODESIGN_KEYCHAIN_PASSWORD:-}" ]]; then
-    write_env_key AGENTDOCK_CODESIGN_KEYCHAIN_PASSWORD "$AGENTDOCK_CODESIGN_KEYCHAIN_PASSWORD" false
-  fi
-  if [[ -n "${AGENTDOCK_CODESIGN_IDENTIFIER:-}" ]]; then
-    write_env_key AGENTDOCK_CODESIGN_IDENTIFIER "$AGENTDOCK_CODESIGN_IDENTIFIER" false
-  fi
-  if [[ -n "${AGENTDOCK_CODESIGN_HOME:-}" ]]; then
-    write_env_key AGENTDOCK_CODESIGN_HOME "$AGENTDOCK_CODESIGN_HOME" false
-  fi
-  chmod 0600 "$AGENTDOCK_ENV"
-}
-
-xml_escape() {
-  print -nr -- "$1" | sed \
-    -e 's/&/\&amp;/g' \
-    -e 's/</\&lt;/g' \
-    -e 's/>/\&gt;/g' \
-    -e 's/"/\&quot;/g' \
-    -e "s/'/\&apos;/g"
-}
-
-write_launch_agent() {
-  mkdir -p "$LAUNCH_AGENTS_DIR" "$LOG_DIR" "$WORK_DIR" "$STATE_DIR"
-  chmod 0700 "$LOG_DIR" "$WORK_DIR" "$STATE_DIR"
-  touch "$STDOUT_LOG" "$STDERR_LOG"
-  chmod 0600 "$STDOUT_LOG" "$STDERR_LOG"
-
-  local plist_tmp="$PLIST_PATH.tmp.$$"
-  local binary_xml="$(xml_escape "$TARGET")"
-  local runtime_root_xml="$(xml_escape "$APP_SUPPORT_DIR")"
-  local work_dir_xml="$(xml_escape "$WORK_DIR")"
-  cat > "$plist_tmp" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>$LABEL</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>$binary_xml</string>
-    <string>service</string>
-    <string>launch-core</string>
-    <string>--runtime-root</string>
-    <string>$runtime_root_xml</string>
-  </array>
-  <key>WorkingDirectory</key>
-  <string>$work_dir_xml</string>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
-  <key>StandardOutPath</key>
-  <string>/dev/null</string>
-  <key>StandardErrorPath</key>
-  <string>/dev/null</string>
-</dict>
-</plist>
-PLIST
-  plutil -lint "$plist_tmp" >/dev/null
-  chmod 0600 "$plist_tmp"
-  mv -f "$plist_tmp" "$PLIST_PATH"
-  # 新版本直接启动二进制；旧 launcher 只在回滚快照中保留。
-  rm -f "$START_SCRIPT"
 }
 
 resolve_cloudflared_binary() {
@@ -712,369 +495,6 @@ install_cloudflared() {
   "$CLOUDFLARED_TARGET" --version >/dev/null
 }
 
-write_tunnel_env() {
-  local mode="$1"
-  local target_url="$2"
-  local mode_quoted target_quoted token_quoted
-  printf -v mode_quoted '%q' "$mode"
-  printf -v target_quoted '%q' "$target_url"
-  printf -v token_quoted '%q' "$TUNNEL_TOKEN"
-
-  local tmp_file="$TUNNEL_ENV.tmp.$$"
-  umask 077
-  cat > "$tmp_file" <<ENV
-# 仅供 cloudflared LaunchAgent 使用；AgentDock 进程不会读取此文件。
-AGENTDOCK_TUNNEL_MODE=$mode_quoted
-AGENTDOCK_TUNNEL_TARGET=$target_quoted
-TUNNEL_TOKEN=$token_quoted
-ENV
-  chmod 0600 "$tmp_file"
-  mv -f "$tmp_file" "$TUNNEL_ENV"
-}
-
-write_tunnel_launch_agent() {
-  mkdir -p "$LAUNCH_AGENTS_DIR" "$LOG_DIR"
-  touch "$TUNNEL_STDOUT_LOG" "$TUNNEL_STDERR_LOG"
-  chmod 0600 "$TUNNEL_STDOUT_LOG" "$TUNNEL_STDERR_LOG"
-
-  local plist_tmp="$TUNNEL_PLIST_PATH.tmp.$$"
-  local binary_xml="$(xml_escape "$TARGET")"
-  local runtime_root_xml="$(xml_escape "$APP_SUPPORT_DIR")"
-  local work_dir_xml="$(xml_escape "$WORK_DIR")"
-  cat > "$plist_tmp" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>$TUNNEL_LABEL</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>$binary_xml</string>
-    <string>tunnel</string>
-    <string>launch</string>
-    <string>--runtime-root</string>
-    <string>$runtime_root_xml</string>
-  </array>
-  <key>WorkingDirectory</key>
-  <string>$work_dir_xml</string>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
-  <key>ThrottleInterval</key>
-  <integer>5</integer>
-  <key>StandardOutPath</key>
-  <string>/dev/null</string>
-  <key>StandardErrorPath</key>
-  <string>/dev/null</string>
-</dict>
-</plist>
-PLIST
-  plutil -lint "$plist_tmp" >/dev/null
-  chmod 0600 "$plist_tmp"
-  mv -f "$plist_tmp" "$TUNNEL_PLIST_PATH"
-  rm -f "$TUNNEL_START_SCRIPT"
-}
-
-snapshot_tunnel_file() {
-  local name="$1"
-  local file_path="$2"
-  if [[ -e "$file_path" || -L "$file_path" ]]; then
-    [[ -f "$file_path" && ! -L "$file_path" ]] || die "Tunnel 文件必须是普通文件：$file_path"
-    cp -p "$file_path" "$TUNNEL_BACKUP_DIR/$name"
-    : > "$TUNNEL_BACKUP_DIR/$name.present"
-  fi
-}
-
-snapshot_tunnel_state() {
-  local domain="gui/$(id -u)"
-  TUNNEL_BACKUP_DIR="$tmp_dir/tunnel-state"
-  mkdir -p "$TUNNEL_BACKUP_DIR"
-  snapshot_tunnel_file cloudflared.env "$TUNNEL_ENV"
-  snapshot_tunnel_file start-cloudflared.sh "$TUNNEL_START_SCRIPT"
-  snapshot_tunnel_file launch-agent.plist "$TUNNEL_PLIST_PATH"
-  snapshot_tunnel_file cloudflared "$CLOUDFLARED_TARGET"
-  if launchctl print "$domain/$TUNNEL_LABEL" >/dev/null 2>&1; then
-    TUNNEL_SERVICE_WAS_LOADED=true
-  fi
-}
-
-restore_tunnel_file() {
-  local name="$1"
-  local file_path="$2"
-  if [[ -f "$TUNNEL_BACKUP_DIR/$name.present" ]]; then
-    mkdir -p "${file_path:h}"
-    local restore_tmp="$file_path.restore.$$"
-    cp -p "$TUNNEL_BACKUP_DIR/$name" "$restore_tmp"
-    mv -f "$restore_tmp" "$file_path"
-  else
-    rm -f "$file_path"
-  fi
-}
-
-restore_tunnel_state() {
-  restore_tunnel_file cloudflared.env "$TUNNEL_ENV"
-  restore_tunnel_file start-cloudflared.sh "$TUNNEL_START_SCRIPT"
-  restore_tunnel_file launch-agent.plist "$TUNNEL_PLIST_PATH"
-  restore_tunnel_file cloudflared "$CLOUDFLARED_TARGET"
-}
-
-tunnel_launchd_pid() {
-  local domain="$1"
-  local output
-  output="$(launchctl print "$domain/$TUNNEL_LABEL" 2>/dev/null)" || return 1
-  print -r -- "$output" | sed -n 's/^[[:space:]]*pid = \([0-9][0-9]*\).*$/\1/p' | head -n 1
-}
-
-stop_tunnel_if_loaded() {
-  local domain="$1"
-  local bootout_output
-  if ! launchctl print "$domain/$TUNNEL_LABEL" >/dev/null 2>&1; then
-    return 0
-  fi
-  if ! bootout_output="$(launchctl bootout "$domain/$TUNNEL_LABEL" 2>&1)"; then
-    print -u2 -- "停止 cloudflared LaunchAgent 失败：${bootout_output:-unknown error}"
-    return 1
-  fi
-  ! launchctl print "$domain/$TUNNEL_LABEL" >/dev/null 2>&1
-}
-
-quick_tunnel_url_from_log() {
-  local log_path="$1"
-  [[ -f "$log_path" && ! -L "$log_path" ]] || return 1
-  # provisioning 失败日志也会出现 trycloudflare.com API 地址，必须先确认 cloudflared 已报告创建成功。
-  awk '
-    /Your quick Tunnel has been created! Visit it at/ { created = 1 }
-    created && match($0, /https:\/\/[[:alnum:]-]+\.trycloudflare\.com/) {
-      print substr($0, RSTART, RLENGTH)
-      exit
-    }
-  ' "$log_path" 2>/dev/null
-}
-
-quick_tunnel_url() {
-  if [[ -f "$QUICK_TUNNEL_URL_FILE" && ! -L "$QUICK_TUNNEL_URL_FILE" ]]; then
-    tail -n 1 "$QUICK_TUNNEL_URL_FILE"
-    return
-  fi
-
-  local log_path public_url
-  for log_path in "$QUICK_TUNNEL_RUNTIME_LOG" "$TUNNEL_STDOUT_LOG" "$TUNNEL_STDERR_LOG"; do
-    public_url="$(quick_tunnel_url_from_log "$log_path" || true)"
-    if [[ -n "$public_url" ]]; then
-      print -r -- "$public_url"
-      return 0
-    fi
-  done
-  return 1
-}
-
-tunnel_launch_process_matches() {
-  local process_command="$1"
-
-  # 当前 LaunchAgent 运行 agentdock wrapper，由它托管 cloudflared 子进程；
-  # 同时保留旧版直接运行 cloudflared 和 shell 启动脚本的回滚兼容。
-  [[ "$process_command" == "$TARGET tunnel launch --runtime-root "* || \
-     "$process_command" == "$CLOUDFLARED_TARGET" || "$process_command" == "$CLOUDFLARED_TARGET "* || \
-     "$process_command" == "$TUNNEL_START_SCRIPT" || "$process_command" == "$TUNNEL_START_SCRIPT "* ]]
-}
-
-wait_for_tunnel() {
-  local domain="$1"
-  local attempts=60
-  local pid=""
-  local stable_checks=0
-
-  while (( attempts-- > 0 )); do
-    pid="$(tunnel_launchd_pid "$domain" || true)"
-    if [[ -n "$pid" && "$pid" != "0" ]]; then
-      local process_command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-      if [[ "$TUNNEL_MODE" == quick ]]; then
-        local public_url="$(quick_tunnel_url || true)"
-        if [[ -n "$public_url" ]]; then
-          print -r -- "$public_url"
-          return 0
-        fi
-      elif tunnel_launch_process_matches "$process_command"; then
-        stable_checks=$(( stable_checks + 1 ))
-        if (( stable_checks >= 10 )); then
-          print -r -- "$pid"
-          return 0
-        fi
-      fi
-    else
-      stable_checks=0
-    fi
-    sleep 0.5
-  done
-
-  print -u2 -- "cloudflared 启动验证失败，请检查 $TUNNEL_STDERR_LOG"
-  return 1
-}
-
-wait_for_tunnel_process() {
-  local domain="$1"
-  local attempts=60
-  while (( attempts-- > 0 )); do
-    local pid="$(tunnel_launchd_pid "$domain" || true)"
-    if [[ -n "$pid" && "$pid" != "0" ]]; then
-      local process_command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-      if tunnel_launch_process_matches "$process_command"; then
-        return 0
-      fi
-    fi
-    sleep 0.5
-  done
-  return 1
-}
-
-restart_previous_tunnel() {
-  local domain="gui/$(id -u)"
-  [[ "$TUNNEL_SERVICE_WAS_LOADED" == true ]] || return 0
-  [[ -f "$TUNNEL_PLIST_PATH" && ! -L "$TUNNEL_PLIST_PATH" ]] || return 1
-  [[ -x "$CLOUDFLARED_TARGET" && ! -L "$CLOUDFLARED_TARGET" ]] || return 1
-  launchctl bootstrap "$domain" "$TUNNEL_PLIST_PATH" || return 1
-  launchctl kickstart -k "$domain/$TUNNEL_LABEL" || return 1
-  wait_for_tunnel_process "$domain"
-}
-
-register_and_start_tunnel() {
-  local domain="gui/$(id -u)"
-  stop_tunnel_if_loaded "$domain" || return 1
-  if [[ "$TUNNEL_SERVICE_WAS_LOADED" == true ]]; then
-    TUNNEL_PREVIOUS_SERVICE_STOPPED=true
-  fi
-  : > "$TUNNEL_STDOUT_LOG"
-  : > "$TUNNEL_STDERR_LOG"
-  if [[ "$TUNNEL_MODE" == quick ]]; then
-    rm -f "$QUICK_TUNNEL_URL_FILE" "$QUICK_TUNNEL_RUNTIME_LOG"
-  fi
-  launchctl bootstrap "$domain" "$TUNNEL_PLIST_PATH" || return 1
-  if ! launchctl kickstart -k "$domain/$TUNNEL_LABEL"; then
-    stop_tunnel_if_loaded "$domain" || true
-    return 1
-  fi
-
-  local tunnel_result
-  if ! tunnel_result="$(wait_for_tunnel "$domain")"; then
-    stop_tunnel_if_loaded "$domain" || true
-    return 1
-  fi
-  if [[ "$TUNNEL_MODE" == quick ]]; then
-    TUNNEL_PUBLIC_URL="$tunnel_result"
-    print -- "==> 临时公网地址已连接：$tunnel_result/mcp"
-  else
-    print -- "==> Named Tunnel 已启动：$SERVER_URL/mcp"
-  fi
-}
-
-rollback_tunnel_start() {
-  local domain="gui/$(id -u)"
-
-  # 第一次停止旧 Tunnel 失败时，旧进程仍在运行；直接恢复磁盘文件，避免二次中断。
-  if [[ "$TUNNEL_SERVICE_WAS_LOADED" == true && "$TUNNEL_PREVIOUS_SERVICE_STOPPED" == false ]]; then
-    restore_tunnel_state || return 1
-  else
-    stop_tunnel_if_loaded "$domain" || return 1
-    restore_tunnel_state || return 1
-  fi
-
-  restore_previous_public_auth || return 1
-  restart_agentdock_after_server_url_restore || return 1
-  if [[ "$TUNNEL_SERVICE_WAS_LOADED" == true && "$TUNNEL_PREVIOUS_SERVICE_STOPPED" == true ]]; then
-    restart_previous_tunnel || return 1
-  fi
-}
-
-remove_tunnel_service() {
-  local domain="gui/$(id -u)"
-  stop_tunnel_if_loaded "$domain" || die "无法停止现有 cloudflared LaunchAgent"
-  rm -f "$TUNNEL_PLIST_PATH" "$TUNNEL_ENV" "$TUNNEL_START_SCRIPT" \
-    "$TUNNEL_STDOUT_LOG" "$TUNNEL_STDERR_LOG" \
-    "$QUICK_TUNNEL_URL_FILE" "$QUICK_TUNNEL_RUNTIME_LOG"
-  print -- "==> 已停用 Cloudflare Tunnel"
-}
-
-configure_tunnel() {
-  local service_address service_host service_port target_url
-  service_address="$(read_service_address "$AGENTDOCK_ENV")" || die "无法读取 AgentDock 最终监听地址"
-  service_host="${service_address%%$'\t'*}"
-  service_port="${service_address#*$'\t'}"
-  target_url="http://$(health_host "$service_host"):$service_port"
-
-  snapshot_tunnel_state
-  if ! (
-    install_cloudflared
-    write_tunnel_env "$TUNNEL_MODE" "$target_url"
-    write_tunnel_launch_agent
-  ); then
-    restore_tunnel_state || die "生成 Tunnel 服务文件失败，且旧 Tunnel 配置恢复失败"
-    restore_previous_public_auth || die "生成 Tunnel 服务文件失败，且旧公网认证配置恢复失败"
-    restart_agentdock_after_server_url_restore || die "旧公网地址已恢复，但 AgentDock 重启验证失败"
-    die "生成 Tunnel 服务文件失败；已恢复安装前 Tunnel 和公网地址"
-  fi
-
-  if [[ "$NO_START" == true ]]; then
-    print -- "==> 已生成 $TUNNEL_MODE Tunnel 服务文件，按 --no-start 要求未启动"
-  elif ! register_and_start_tunnel; then
-    rollback_tunnel_start || die "新 Tunnel 启动失败，且安装前 Tunnel 恢复失败"
-    die "新 Tunnel 启动失败；已恢复安装前 Tunnel 和公网认证配置"
-  fi
-  if [[ "$TUNNEL_MODE" == quick && "$NO_START" == false ]]; then
-    SERVER_URL="$TUNNEL_PUBLIC_URL"
-    SERVER_URL_EXPLICIT=true
-    OAUTH_ENABLED_VALUE="true"
-    if [[ "$(read_agentdock_env_key AGENTDOCK_SERVER_URL)" != "$SERVER_URL" ]]; then
-      write_env_key AGENTDOCK_SERVER_URL "$SERVER_URL" true
-      write_env_key AGENTDOCK_OAUTH_ENABLED true true
-      chmod 0600 "$AGENTDOCK_ENV"
-      print -- "==> 已将临时公网地址写入 AgentDock OAuth 配置并重启服务"
-      if ! register_and_start_service; then
-        rollback_tunnel_start || die "OAuth 地址更新失败，且安装前 Tunnel 或认证配置恢复失败"
-        die "OAuth 地址更新失败；已恢复安装前 Tunnel 和公网认证配置"
-      fi
-    else
-      print -- "==> Quick Tunnel 已同步临时公网地址并重启 AgentDock"
-    fi
-  fi
-  if [[ "$TUNNEL_MODE" == named ]]; then
-    print -- "==> Cloudflare Public Hostname 的 Service 目标：$target_url"
-  fi
-}
-
-launchd_pid() {
-  local domain="$1"
-  local output
-  output="$(launchctl print "$domain/$LABEL" 2>/dev/null)" || return 1
-  print -r -- "$output" | sed -n 's/^[[:space:]]*pid = \([0-9][0-9]*\).*$/\1/p' | head -n 1
-}
-
-stop_service_if_loaded() {
-  local domain="$1"
-  local bootout_output
-  if ! launchctl print "$domain/$LABEL" >/dev/null 2>&1; then
-    return 0
-  fi
-  if ! bootout_output="$(launchctl bootout "$domain/$LABEL" 2>&1)"; then
-    print -u2 -- "停止 LaunchAgent 失败：$LABEL ${bootout_output:-unknown error}"
-    return 1
-  fi
-  if launchctl print "$domain/$LABEL" >/dev/null 2>&1; then
-    print -u2 -- "LaunchAgent 在 bootout 后仍处于加载状态：$LABEL"
-    return 1
-  fi
-}
-
-prepare_service_rollback() {
-  local domain="$1"
-  if [[ "$SERVICE_WAS_LOADED" == true && "$PREVIOUS_SERVICE_STOPPED" == false ]]; then
-    # 原服务从未成功停止，保持它继续运行；磁盘文件恢复后再按旧地址验证。
-    return 0
-  fi
-  stop_service_if_loaded "$domain"
-}
-
 read_service_address() {
   local env_file="$1"
   [[ -f "$env_file" && ! -L "$env_file" ]] || return 1
@@ -1093,133 +513,6 @@ health_host() {
     *:*) print -r -- "[$service_host]" ;;
     *) print -r -- "$service_host" ;;
   esac
-}
-
-normalize_version() {
-  print -r -- "${1#v}"
-}
-
-wait_for_service() {
-  local domain="$1"
-  local previous_pid="$2"
-  local expected_version="$3"
-  local service_host="$4"
-  local service_port="$5"
-  local pid=""
-  local host="$(health_host "$service_host")"
-  local health_url="http://$host:$service_port/healthz"
-  local attempts=60
-
-  while (( attempts-- > 0 )); do
-    pid="$(launchd_pid "$domain" || true)"
-    if [[ -n "$pid" && "$pid" != "0" && "$pid" != "$previous_pid" ]]; then
-      local process_command
-      local listeners
-      process_command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-      listeners="$(lsof -nP -iTCP:"$service_port" -sTCP:LISTEN -t 2>/dev/null || true)"
-      if [[ "$process_command" == "$TARGET" || "$process_command" == "$TARGET "* ]] && print -r -- "$listeners" | grep -qx "$pid"; then
-        local health_body
-        health_body="$(curl -fsS --max-time 2 "$health_url" 2>/dev/null || true)"
-        local health_ok=false
-        local health_version
-        if print -r -- "$health_body" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'; then
-          health_ok=true
-        fi
-        health_version="$(print -r -- "$health_body" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
-        if [[ "$health_ok" == true && "$(normalize_version "$health_version")" == "$(normalize_version "$expected_version")" ]]; then
-          print -r -- "$pid"
-          return 0
-        fi
-      fi
-    fi
-    sleep 0.5
-  done
-
-  print -u2 -- "LaunchAgent 验证失败：未确认新 PID、端口监听和目标版本 healthz"
-  return 1
-}
-
-register_and_start_service() {
-  local domain="gui/$(id -u)"
-  local previous_pid="$PREVIOUS_SERVICE_PID"
-  local expected_version service_address service_host service_port
-  expected_version="$("$TARGET" --version | sed -n '1s/^AgentDock[[:space:]][[:space:]]*//p')"
-  [[ -n "$expected_version" ]] || { print -u2 -- "无法读取目标二进制版本"; return 1; }
-  service_address="$(read_service_address "$AGENTDOCK_ENV")" || { print -u2 -- "无法读取新服务监听地址：$AGENTDOCK_ENV"; return 1; }
-  service_host="${service_address%%$'\t'*}"
-  service_port="${service_address#*$'\t'}"
-  [[ "$service_port" == <1-65535> ]] || { print -u2 -- "新服务端口无效：$service_port"; return 1; }
-
-  stop_service_if_loaded "$domain" || return 1
-  if [[ "$SERVICE_WAS_LOADED" == true ]]; then
-    PREVIOUS_SERVICE_STOPPED=true
-  fi
-  if ! launchctl bootstrap "$domain" "$PLIST_PATH"; then
-    print -u2 -- "无法加载新 LaunchAgent：$PLIST_PATH"
-    return 1
-  fi
-  if ! launchctl kickstart -k "$domain/$LABEL"; then
-    print -u2 -- "无法启动新 LaunchAgent：$LABEL"
-    return 1
-  fi
-
-  local new_pid
-  new_pid="$(wait_for_service "$domain" "$previous_pid" "$expected_version" "$service_host" "$service_port")" || return 1
-  print -- "==> LaunchAgent 已启动：label=$LABEL pid=$new_pid port=$service_port version=$expected_version"
-}
-
-restore_previous_service() {
-  local old_version="$1"
-  local failed_pid="$2"
-  local domain="gui/$(id -u)"
-  local old_address old_host old_port
-
-  if [[ "$SERVICE_WAS_LOADED" == false ]]; then
-    return 0
-  fi
-  [[ -f "$PLIST_PATH" && ! -L "$PLIST_PATH" ]] || return 1
-  [[ -f "$AGENTDOCK_ENV" && ! -L "$AGENTDOCK_ENV" ]] || return 1
-  [[ -n "$old_version" ]] || return 1
-
-  # 回滚验证必须使用旧 env 的监听地址，不能沿用本次安装请求的新 host/port。
-  old_address="$(read_service_address "$AGENTDOCK_ENV")" || return 1
-  old_host="${old_address%%$'\t'*}"
-  old_port="${old_address#*$'\t'}"
-  [[ "$old_port" == <1-65535> ]] || return 1
-
-  if [[ "$PREVIOUS_SERVICE_STOPPED" == false ]]; then
-    # 第一次 bootout 已失败时，旧进程仍在运行；恢复磁盘文件后直接验证，避免二次中断。
-    wait_for_service "$domain" "" "$old_version" "$old_host" "$old_port" >/dev/null
-    return
-  fi
-
-  launchctl bootstrap "$domain" "$PLIST_PATH" || return 1
-  launchctl kickstart -k "$domain/$LABEL" || return 1
-  wait_for_service "$domain" "$failed_pid" "$old_version" "$old_host" "$old_port" >/dev/null
-}
-
-rollback_release_install() {
-  local domain="gui/$(id -u)"
-  local failed_pid=""
-
-  if [[ "$REGISTER_SERVICE" == true ]]; then
-    if [[ "$NO_START" == false ]]; then
-      failed_pid="$(launchd_pid "$domain" || true)"
-      prepare_service_rollback "$domain" || return 1
-    fi
-    restore_service_files || return 1
-  fi
-
-  if [[ -n "$backup" && -f "$backup" ]]; then
-    cp -p "$backup" "$staged_target" || return 1
-    mv -f "$staged_target" "$TARGET" || return 1
-  else
-    rm -f "$TARGET" || return 1
-  fi
-
-  if [[ "$REGISTER_SERVICE" == true && "$NO_START" == false && "$SERVICE_WAS_LOADED" == true && "$PREVIOUS_SERVICE_STOPPED" == true ]]; then
-    restore_previous_service "$old_version" "$failed_pid" || return 1
-  fi
 }
 
 main() {
@@ -1426,7 +719,6 @@ if [[ "$REGISTER_SERVICE" == true ]]; then
     domain="gui/$(id -u)"
     if launchctl print "$domain/$LABEL" >/dev/null 2>&1; then
       SERVICE_WAS_LOADED=true
-      PREVIOUS_SERVICE_PID="$(launchd_pid "$domain" || true)"
       [[ -f "$PLIST_PATH" && ! -L "$PLIST_PATH" ]] || die "已有 LaunchAgent 正在加载，但标准 plist 不可用：$PLIST_PATH"
       [[ -x "$TARGET" && ! -L "$TARGET" ]] || die "已有 LaunchAgent 正在加载，但当前生产二进制不可用：$TARGET"
     fi
@@ -1451,7 +743,6 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ "$REGISTER_SERVICE" == true ]]; then
-  capture_previous_public_auth
   snapshot_service_files
 fi
 
@@ -1497,7 +788,6 @@ fi
 
 "$source_binary" --help >/dev/null 2>&1
 staged_target="$INSTALL_DIR/.agentdock.install.$$"
-engine_applied=false
 
 restore_install_files() {
   if ! restore_service_files; then
@@ -1518,10 +808,13 @@ install_live_binary_from_payload() {
 }
 
 if [[ "$REGISTER_SERVICE" == true ]]; then
-  # 二进制一旦支持 Engine，产品状态机只能由 Go 执行。
-  # fallback 只允许发生在 --engine-ready 之前，即旧 binary 根本没有 Engine。
-  if [[ "$("$source_binary" install --engine-ready 2>/dev/null || true)" == *agentdock-installer-engine* ]]; then
-    if [[ "$TUNNEL_MODE" != none ]]; then
+  # 安装脚本与 payload 来自同一 release：binary 必然支持 Engine。旧版本请使用
+  # 对应旧 release 的安装脚本，本脚本不再保留 legacy 安装状态机（env/plist/
+  # LaunchAgent/tunnel/rollback 全部由 Go Installer Engine 拥有，重复实现会腐烂）。
+  if [[ "$("$source_binary" install --engine-ready 2>/dev/null || true)" != *agentdock-installer-engine* ]]; then
+    die "payload 不支持 Go Installer Engine；安装脚本与 payload 必须来自同一 release"
+  fi
+  if [[ "$TUNNEL_MODE" != none ]]; then
       install_cloudflared
     fi
     install_args=(
@@ -1569,65 +862,14 @@ if [[ "$REGISTER_SERVICE" == true ]]; then
       restore_install_files
       die "Go Installer Engine 失败，已禁止回退 legacy 实现"
     fi
-    engine_applied=true
-  else
-    install_live_binary_from_payload
-    if ! write_service_env || ! write_launch_agent; then
-      restore_install_files
-      die "生成服务文件失败；已恢复安装前状态"
-    fi
-  fi
 
   if [[ "$NO_START" == true ]]; then
     print -- "==> 已生成服务文件和 plist，按 --no-start 要求未加载 LaunchAgent"
-  elif [[ "$engine_applied" == true ]]; then
+  else
     print -- "==> 已由 Go Installer Engine 完成 LaunchAgent 启动与健康检查"
-  elif ! register_and_start_service; then
-      print -u2 -- "==> 新服务验证失败，恢复安装前状态"
-      domain="gui/$(id -u)"
-      failed_pid="$(launchd_pid "$domain" || true)"
-
-      # 若新服务已部分加载，必须先确认它停止，再恢复或删除磁盘文件。
-      # 原服务从未停止时则保持运行，只恢复安装过程中改写的文件。
-      if ! prepare_service_rollback "$domain"; then
-        die "新服务验证失败，且无法安全停止部分加载的 LaunchAgent；已保留当前运行文件"
-      fi
-      if ! restore_service_files; then
-        die "新服务验证失败，且旧服务文件恢复失败"
-      fi
-      if [[ -n "$backup" && -f "$backup" ]]; then
-        cp -p "$backup" "$staged_target" || die "新服务验证失败，且旧二进制复制失败；备份保留在 $backup"
-        mv -f "$staged_target" "$TARGET" || die "新服务验证失败，且旧二进制恢复失败；备份保留在 $backup"
-        if ! restore_previous_service "$old_version" "$failed_pid"; then
-          die "新服务验证失败；旧文件已恢复，但旧 LaunchAgent 恢复验证失败，备份保留在 $backup"
-        fi
-        print -u2 -- "==> 已恢复安装前二进制、服务文件和 LaunchAgent"
-      else
-        rm -f "$TARGET"
-      fi
-      exit 1
   fi
 else
   install_live_binary_from_payload
-fi
-
-if [[ "$engine_applied" != true ]]; then
-  print -- "==> 安装官方核心 Skill"
-  if ! "$TARGET" skill bootstrap --bundle "$core_skill_bundle"; then
-    print -u2 -- "==> 核心 Skill 初始化失败，恢复安装前状态"
-    if ! rollback_release_install; then
-      die "核心 Skill 初始化失败，且安装回滚失败；二进制备份保留在 ${backup:-无}"
-    fi
-    die "核心 Skill 初始化失败；已恢复安装前状态"
-  fi
-fi
-
-if [[ "$engine_applied" != true && "$TUNNEL_MODE_EXPLICIT" == true ]]; then
-  if [[ "$TUNNEL_MODE" == none ]]; then
-    remove_tunnel_service
-  else
-    configure_tunnel
-  fi
 fi
 
 write_result_file
@@ -1654,8 +896,14 @@ LaunchAgent：
   $LOG_DIR
 STATUS
   if [[ "$TUNNEL_MODE_EXPLICIT" == true && "$TUNNEL_MODE" != none ]]; then
-    local_public_url="$SERVER_URL"
-    local_mcp_url="${SERVER_URL%/}/mcp"
+    # 公网地址的最终投影属于 Engine（quick 地址由 tunnel 运行时回写 env）。
+    # 终端摘要必须消费最终 env 值，不能沿用调用 Engine 之前的旧 shell 变量。
+    final_server_url="$(read_agentdock_env_key AGENTDOCK_SERVER_URL 2>/dev/null || true)"
+    if [[ -z "$final_server_url" ]]; then
+      final_server_url="$SERVER_URL"
+    fi
+    local_public_url="$final_server_url"
+    local_mcp_url="${final_server_url%/}/mcp"
     if [[ "$TUNNEL_MODE" == quick && "$NO_START" == true ]]; then
       local_public_url="启动 Tunnel 后生成"
       local_mcp_url="启动 Tunnel 后生成"

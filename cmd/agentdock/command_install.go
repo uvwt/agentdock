@@ -114,6 +114,28 @@ func runInstallCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 	if specified["oauth-token-secret"] {
 		request.OAuthTokenSecret = installer.Specified(*oauthSecret)
 	}
+	// Secrets 支持环境变量回退：Linux wrapper 以 root 执行 Engine 时通过 env
+	// 传给子进程，避免 token/密码进入进程 argv（/proc cmdline 对同机用户可见）。
+	if !specified["auth-token"] {
+		if value := strings.TrimSpace(os.Getenv("AGENTDOCK_AUTH_TOKEN")); value != "" {
+			request.AuthToken = installer.Specified(value)
+		}
+	}
+	if !specified["tunnel-token"] && request.TunnelTokenFile == "" {
+		if value := strings.TrimSpace(os.Getenv("AGENTDOCK_CLOUDFLARE_TUNNEL_TOKEN")); value != "" {
+			request.TunnelToken = value
+		}
+	}
+	if !specified["oauth-password"] {
+		if value := strings.TrimSpace(os.Getenv("AGENTDOCK_OAUTH_PASSWORD")); value != "" {
+			request.OAuthPassword = installer.Specified(value)
+		}
+	}
+	if !specified["oauth-token-secret"] {
+		if value := strings.TrimSpace(os.Getenv("AGENTDOCK_OAUTH_TOKEN_SECRET")); value != "" {
+			request.OAuthTokenSecret = installer.Specified(value)
+		}
+	}
 	request.RotateOAuth = *rotateOAuth
 	request.StartService = !*noStart
 	request.SkipHealth = *skipHealth

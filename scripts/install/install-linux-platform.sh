@@ -24,7 +24,6 @@ CLOUDFLARED_SOURCE_BINARY="${AGENTDOCK_CLOUDFLARED_BINARY:-}"
 CORE_SKILL_BUNDLE=""
 CORE_SKILL_TEMP_DIR=""
 PREBUILT_BINARY=""
-TUNNEL_PUBLIC_URL=""
 
 cleanup_core_skill_bundle() {
   if [[ -n "$CORE_SKILL_TEMP_DIR" ]]; then
@@ -111,21 +110,6 @@ prompt() {
   fi
 }
 
-prompt_secret() {
-  local label="$1"
-  local answer=""
-  if noninteractive_enabled; then
-    printf ''
-    return
-  fi
-  printf '%s（输入不回显，留空自动生成）: ' "$label" >"$TTY_OUT"
-  stty -echo <"$TTY_IN" 2>/dev/null || true
-  IFS= read -r answer <"$TTY_IN" || true
-  stty echo <"$TTY_IN" 2>/dev/null || true
-  printf '\n' >"$TTY_OUT"
-  printf '%s' "$answer"
-}
-
 prompt_required_secret() {
   local label="$1"
   local answer=""
@@ -201,58 +185,12 @@ detect_service_manager() {
   fi
 }
 
-is_alpine() {
-  [[ -f /etc/alpine-release ]]
-}
-
 run_root() {
   if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
     "$@"
   else
     sudo "$@"
   fi
-}
-
-run_as_service_user() {
-  local user="$1"
-  local home_dir="$2"
-  shift 2
-
-  # 安装器可能由另一个 AgentDock 实例启动，不能让父进程的实例目录泄漏到新实例。
-  # 核心 Skill 必须始终写入本次部署选择的数据目录。
-  if [[ "$(id -u)" == "$(id -u "$user")" ]]; then
-    env HOME="$home_dir" \
-      AGENTDOCK_HOME="$home_dir/.agentdock" \
-      AGENTDOCK_DEFAULT_DIR="$home_dir/AgentDock" \
-      "$@"
-  elif command -v runuser >/dev/null 2>&1; then
-    run_root runuser -u "$user" -- env HOME="$home_dir" \
-      AGENTDOCK_HOME="$home_dir/.agentdock" \
-      AGENTDOCK_DEFAULT_DIR="$home_dir/AgentDock" \
-      "$@"
-  elif command -v su >/dev/null 2>&1; then
-    # 单引号中的位置参数由 su 启动的 /bin/sh 展开。
-    # shellcheck disable=SC2016
-    run_root su -s /bin/sh "$user" -c 'HOME="$1"; AGENTDOCK_HOME="$1/.agentdock"; AGENTDOCK_DEFAULT_DIR="$1/AgentDock"; export HOME AGENTDOCK_HOME AGENTDOCK_DEFAULT_DIR; shift; exec "$@"' sh "$home_dir" "$@"
-  else
-    die "缺少 runuser 或 su，无法以运行用户初始化核心 Skill：$user"
-  fi
-}
-
-make_core_skill_bundle_readable() {
-  local path
-  [[ -n "$CORE_SKILL_TEMP_DIR" && -n "$CORE_SKILL_BUNDLE" ]] || die "核心 Skill Bundle 尚未准备"
-
-  # mktemp 默认创建 0700 目录。Bundle 需要由服务用户读取，但临时目录中的
-  # Release 压缩包和校验文件不需要写权限，因此只开放目录穿越和包只读权限。
-  run_root chmod 0755 "$CORE_SKILL_TEMP_DIR"
-  path="$(dirname "$CORE_SKILL_BUNDLE")"
-  while [[ "$path" != "$CORE_SKILL_TEMP_DIR" && "$path" != "/" ]]; do
-    run_root chmod 0755 "$path"
-    path="$(dirname "$path")"
-  done
-  run_root find "$CORE_SKILL_BUNDLE" -type d -exec chmod 0755 {} +
-  run_root find "$CORE_SKILL_BUNDLE" -type f -exec chmod 0644 {} +
 }
 
 validate_no_space() {
@@ -578,165 +516,6 @@ clone_or_update_source() {
   fi
 }
 
-write_env_file() {
-  local env_file="$1"
-  local host="$2"
-  local port="$3"
-  local token="$4"
-  local log_level="$5"
-  local server_url="$6"
-  local configure_oauth="$7"
-  local oauth_enabled="$8"
-  local oauth_password="$9"
-  local oauth_token_secret="${10}"
-
-  local env_dir tmp_file managed_keys
-  env_dir="$(dirname "$env_file")"
-  tmp_file="$(mktemp)"
-  managed_keys='AGENTDOCK_HOST|AGENTDOCK_PORT|AGENTDOCK_AUTH_TOKEN|AGENTDOCK_LOG_LEVEL|AGENTDOCK_NEXUS_ENDPOINT|AGENTDOCK_NEXUS_TOKEN|AGENTDOCK_SERVER_URL'
-  if [[ "$configure_oauth" == "yes" ]]; then
-    managed_keys+='|AGENTDOCK_OAUTH_ENABLED|AGENTDOCK_OAUTH_PASSWORD|AGENTDOCK_OAUTH_TOKEN_SECRET'
-  fi
-
-  # 重跑安装器时保留浏览器、代理和其他高级配置，只替换本次安装器负责的键。
-  # 同时兼容用户手工写入的 `export KEY=...` 形式，避免重复定义。
-  if [[ -f "$env_file" ]]; then
-    # shellcheck disable=SC2016
-    run_root awk -v keys="$managed_keys"       '$0 !~ "^[[:space:]]*(export[[:space:]]+)?(" keys ")[[:space:]]*="'       "$env_file" >"$tmp_file"
-  fi
-
-  {
-    cat <<ENV
-AGENTDOCK_HOST=$host
-AGENTDOCK_PORT=$port
-AGENTDOCK_AUTH_TOKEN=$token
-AGENTDOCK_LOG_LEVEL=$log_level
-ENV
-    if [[ -n "$server_url" ]]; then
-      printf 'AGENTDOCK_SERVER_URL=%s\n' "$server_url"
-    fi
-    if [[ "$configure_oauth" == "yes" ]]; then
-      printf 'AGENTDOCK_OAUTH_ENABLED=%s\n' "$oauth_enabled"
-      printf 'AGENTDOCK_OAUTH_PASSWORD=%s\n' "$oauth_password"
-      printf 'AGENTDOCK_OAUTH_TOKEN_SECRET=%s\n' "$oauth_token_secret"
-    fi
-  } >>"$tmp_file"
-
-  run_root mkdir -p "$env_dir"
-  run_root install -m 600 -o root -g root "$tmp_file" "$env_file"
-  rm -f "$tmp_file"
-}
-
-write_systemd_unit() {
-  local service_name="$1"
-  local service_user="$2"
-  local service_group="$3"
-  local source_dir="$4"
-  local env_file="$5"
-  local runtime_root
-  runtime_root="$(dirname "$env_file")"
-  local unit_file="/etc/systemd/system/${service_name}.service"
-  local tmp_file
-  tmp_file="$(mktemp)"
-  cat >"$tmp_file" <<UNIT
-[Unit]
-Description=AgentDock MCP server
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=$service_user
-Group=$service_group
-WorkingDirectory=$source_dir
-EnvironmentFile=$env_file
-ExecStart=$source_dir/bin/agentdock service launch-core --runtime-root $runtime_root
-Restart=on-failure
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-  run_root install -m 644 -o root -g root "$tmp_file" "$unit_file"
-  rm -f "$tmp_file"
-}
-
-write_openrc_service() {
-  local service_name="$1"
-  local service_user="$2"
-  local service_group="$3"
-  local source_dir="$4"
-  local env_file="$5"
-  local runtime_root
-  runtime_root="$(dirname "$env_file")"
-  local init_file="/etc/init.d/${service_name}"
-  local tmp_file
-  tmp_file="$(mktemp)"
-  cat >"$tmp_file" <<OPENRC
-#!/sbin/openrc-run
-name="AgentDock MCP server"
-description="AgentDock MCP server"
-command="$source_dir/bin/agentdock"
-command_args="service launch-core --runtime-root $runtime_root"
-command_user="$service_user:$service_group"
-directory="$source_dir"
-pidfile="/run/${service_name}.pid"
-command_background="yes"
-log_dir="/var/log/${service_name}"
-output_log="/dev/null"
-error_log="/dev/null"
-
-agentdock_env_file="$env_file"
-
-start_pre() {
-  checkpath -d -m 0750 -o "$service_user:$service_group" "\$log_dir"
-  if [ -r "\$agentdock_env_file" ]; then
-    set -a
-    . "\$agentdock_env_file"
-    set +a
-  else
-    eerror "env file not readable: \$agentdock_env_file"
-    return 1
-  fi
-}
-
-depend() {
-  need net
-  after firewall
-}
-OPENRC
-  run_root install -m 755 -o root -g root "$tmp_file" "$init_file"
-  rm -f "$tmp_file"
-}
-
-write_runtime_manifest() {
-  local service_manager="$1"
-  local service_name="$2"
-  local tunnel_service_name="$3"
-  local source_dir="$4"
-  local env_file="$5"
-  local cloudflared_binary="$6"
-  local cloudflared_env_file="$7"
-  local runtime_root tmp_file
-  runtime_root="$(dirname "$env_file")"
-  tmp_file="$(mktemp)"
-  cat >"$tmp_file" <<JSON
-{
-  "schema_version": 1,
-  "service_manager": "$service_manager",
-  "service_name": "$service_name",
-  "tunnel_service_name": "$tunnel_service_name",
-  "agentdock_binary": "$source_dir/bin/agentdock",
-  "cloudflared_binary": "$cloudflared_binary",
-  "environment_file": "$env_file",
-  "tunnel_environment": "$cloudflared_env_file"
-}
-JSON
-  run_root mkdir -p "$runtime_root"
-  run_root install -m 0644 -o root -g root "$tmp_file" "$runtime_root/desktop-runtime.json"
-  rm -f "$tmp_file"
-}
-
 go_installer_engine_ready() {
   local binary="$1"
   local output
@@ -763,7 +542,6 @@ apply_linux_with_go_installer() {
     --service-group "$service_group"
     --service-manager "$service_manager"
     --data-dir "$data_dir"
-    --auth-token "$token"
   )
   if [[ -n "${CORE_SKILL_BUNDLE:-}" ]]; then
     args+=(--skill-bundle "$CORE_SKILL_BUNDLE")
@@ -774,17 +552,8 @@ apply_linux_with_go_installer() {
   if [[ -n "$server_url" ]]; then
     args+=(--server-url "$server_url")
   fi
-  if [[ -n "${tunnel_token:-}" ]]; then
-    args+=(--tunnel-token "$tunnel_token")
-  fi
   if [[ -n "${cloudflared_binary:-}" ]]; then
     args+=(--cloudflared "$cloudflared_binary")
-  fi
-  if [[ -n "${oauth_password:-}" ]]; then
-    args+=(--oauth-password "$oauth_password")
-  fi
-  if [[ -n "${oauth_token_secret:-}" ]]; then
-    args+=(--oauth-token-secret "$oauth_token_secret")
   fi
   if [[ -n "${AGENTDOCK_SYSTEMD_DIR:-}" ]]; then
     args+=(--systemd-dir "$AGENTDOCK_SYSTEMD_DIR")
@@ -798,7 +567,25 @@ apply_linux_with_go_installer() {
   if [[ "$service_manager" == "none" ]]; then
     args+=(--no-start --skip-health)
   fi
-  "$binary" "${args[@]}" >/dev/null
+  # Engine 需要 root 才能写 /opt、/etc 与 systemd/OpenRC unit；skill bootstrap
+  # 的 service-user 身份由 Engine 内部降权处理（root 检测 + credential drop），
+  # 不能整体以 service user 跑 Engine，也不能把 root 的 skill state 留在服务目录。
+  # Secrets 只通过真实进程环境传递，不能写进 argv。非 root 时让 sudo 只保留这四个
+  # 明确列出的变量；值本身不会出现在 sudo/env 的命令行中。
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    AGENTDOCK_AUTH_TOKEN="$token" \
+    AGENTDOCK_CLOUDFLARE_TUNNEL_TOKEN="${tunnel_token:-}" \
+    AGENTDOCK_OAUTH_PASSWORD="${oauth_password:-}" \
+    AGENTDOCK_OAUTH_TOKEN_SECRET="${oauth_token_secret:-}" \
+      "$binary" "${args[@]}" >/dev/null
+  else
+    AGENTDOCK_AUTH_TOKEN="$token" \
+    AGENTDOCK_CLOUDFLARE_TUNNEL_TOKEN="${tunnel_token:-}" \
+    AGENTDOCK_OAUTH_PASSWORD="${oauth_password:-}" \
+    AGENTDOCK_OAUTH_TOKEN_SECRET="${oauth_token_secret:-}" \
+      sudo --preserve-env=AGENTDOCK_AUTH_TOKEN,AGENTDOCK_CLOUDFLARE_TUNNEL_TOKEN,AGENTDOCK_OAUTH_PASSWORD,AGENTDOCK_OAUTH_TOKEN_SECRET \
+        "$binary" "${args[@]}" >/dev/null
+  fi
 }
 
 resolve_cloudflared_binary() {
@@ -909,296 +696,6 @@ install_cloudflared() {
   run_root "$target_binary" --version >/dev/null
 }
 
-write_cloudflared_env() {
-  local env_file="$1"
-  local mode="$2"
-  local target_url="$3"
-  local token="$4"
-  local tmp_file
-  tmp_file="$(mktemp)"
-  cat >"$tmp_file" <<ENV
-# 仅供 cloudflared 服务使用；AgentDock 服务不会读取此文件。
-AGENTDOCK_TUNNEL_MODE=$mode
-AGENTDOCK_TUNNEL_TARGET=$target_url
-TUNNEL_TOKEN=$token
-ENV
-  run_root mkdir -p "$(dirname "$env_file")"
-  run_root install -m 0600 -o root -g root "$tmp_file" "$env_file"
-  rm -f "$tmp_file"
-}
-
-write_cloudflared_systemd_unit() {
-  local tunnel_service_name="$1"
-  local service_user="$2"
-  local service_group="$3"
-  local data_dir="$4"
-  local cloudflared_binary="$5"
-  local cloudflared_env_file="$6"
-  local mode="$7"
-  local target_url="$8"
-  local agentdock_binary="$9"
-  local runtime_root="${10}"
-  local unit_file="/etc/systemd/system/${tunnel_service_name}.service"
-  local tmp_file
-  tmp_file="$(mktemp)"
-  cat >"$tmp_file" <<UNIT
-[Unit]
-Description=AgentDock Cloudflare Tunnel
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=$service_user
-Group=$service_group
-WorkingDirectory=$data_dir
-EnvironmentFile=$cloudflared_env_file
-ExecStart=$agentdock_binary tunnel launch --runtime-root $runtime_root
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-  run_root install -m 0644 -o root -g root "$tmp_file" "$unit_file"
-  rm -f "$tmp_file"
-}
-
-write_cloudflared_openrc_service() {
-  local tunnel_service_name="$1"
-  local service_user="$2"
-  local service_group="$3"
-  local data_dir="$4"
-  local cloudflared_binary="$5"
-  local cloudflared_env_file="$6"
-  local mode="$7"
-  local target_url="$8"
-  local agentdock_binary="$9"
-  local runtime_root="${10}"
-  local init_file="/etc/init.d/${tunnel_service_name}"
-  local tmp_file
-  tmp_file="$(mktemp)"
-  cat >"$tmp_file" <<OPENRC
-#!/sbin/openrc-run
-name="AgentDock Cloudflare Tunnel"
-description="AgentDock Cloudflare Tunnel"
-command="$agentdock_binary"
-command_args="tunnel launch --runtime-root $runtime_root"
-command_user="$service_user:$service_group"
-directory="$data_dir"
-pidfile="/run/${tunnel_service_name}.pid"
-command_background="yes"
-log_dir="/var/log/${tunnel_service_name}"
-output_log="/dev/null"
-error_log="/dev/null"
-cloudflared_env_file="$cloudflared_env_file"
-
-start_pre() {
-  checkpath -d -m 0750 -o "$service_user:$service_group" "\$log_dir"
-  if [ -r "\$cloudflared_env_file" ]; then
-    set -a
-    . "\$cloudflared_env_file"
-    set +a
-  else
-    eerror "env file not readable: \$cloudflared_env_file"
-    return 1
-  fi
-}
-
-depend() {
-  need net
-  after firewall
-}
-OPENRC
-  run_root install -m 0755 -o root -g root "$tmp_file" "$init_file"
-  rm -f "$tmp_file"
-}
-
-cloudflared_service_active() {
-  local service_manager="$1"
-  local tunnel_service_name="$2"
-  case "$service_manager" in
-    systemd) run_root systemctl is-active --quiet "$tunnel_service_name" ;;
-    openrc) run_root rc-service "$tunnel_service_name" status >/dev/null 2>&1 ;;
-    *) return 1 ;;
-  esac
-}
-
-cloudflared_quick_url() {
-  local service_manager="$1"
-  local tunnel_service_name="$2"
-  local started_at="$3"
-  local output
-  case "$service_manager" in
-    systemd) output="$(run_root journalctl -u "$tunnel_service_name" --since "$started_at" --no-pager 2>/dev/null || true)" ;;
-    openrc) output="$(run_root tail -n 200 "/var/log/${tunnel_service_name}/cloudflared.out.log" "/var/log/${tunnel_service_name}/cloudflared.err.log" 2>/dev/null || true)" ;;
-    *) return 1 ;;
-  esac
-  # provisioning 失败日志也会出现 trycloudflare.com API 地址，必须先确认 cloudflared 已报告创建成功。
-  printf '%s\n' "$output" | awk '
-    /Your quick Tunnel has been created! Visit it at/ { created = 1 }
-    created && match($0, /https:\/\/[[:alnum:]-]+\.trycloudflare\.com/) {
-      print substr($0, RSTART, RLENGTH)
-      exit
-    }
-  '
-}
-
-wait_for_cloudflared() {
-  local service_manager="$1"
-  local tunnel_service_name="$2"
-  local mode="$3"
-  local started_at="$4"
-  local attempts=60
-  local stable_checks=0
-
-  while (( attempts-- > 0 )); do
-    if cloudflared_service_active "$service_manager" "$tunnel_service_name"; then
-      if [[ "$mode" == quick ]]; then
-        local public_url
-        public_url="$(cloudflared_quick_url "$service_manager" "$tunnel_service_name" "$started_at" || true)"
-        if [[ -n "$public_url" ]]; then
-          printf '%s' "$public_url"
-          return 0
-        fi
-      else
-        (( stable_checks += 1 ))
-        if (( stable_checks >= 10 )); then
-          printf 'active'
-          return 0
-        fi
-      fi
-    else
-      stable_checks=0
-    fi
-    sleep 0.5
-  done
-  return 1
-}
-
-start_cloudflared_service() {
-  local service_manager="$1"
-  local tunnel_service_name="$2"
-  local mode="$3"
-  local server_url="$4"
-  local started_at
-  started_at="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-
-  case "$service_manager" in
-    systemd)
-      run_root systemctl daemon-reload
-      run_root systemctl enable --now "$tunnel_service_name"
-      run_root systemctl restart "$tunnel_service_name"
-      ;;
-    openrc)
-      # 兼容升级：删除旧版 OpenRC 直接追加的平铺日志，再由 AgentDock 创建受限轮转目录。
-      run_root rm -f "/var/log/${tunnel_service_name}.log" "/var/log/${tunnel_service_name}.err"
-      run_root rm -rf "/var/log/${tunnel_service_name}"
-      run_root rc-update add "$tunnel_service_name" default
-      run_root rc-service "$tunnel_service_name" restart
-      ;;
-    *) die "Cloudflare Tunnel 需要 systemd 或 OpenRC" ;;
-  esac
-
-  local result
-  if ! result="$(wait_for_cloudflared "$service_manager" "$tunnel_service_name" "$mode" "$started_at")"; then
-    die "AgentDock 已安装，但 Cloudflare Tunnel 启动失败，请检查服务日志"
-  fi
-  if [[ "$mode" == quick ]]; then
-    TUNNEL_PUBLIC_URL="$result"
-    log "临时公网地址已连接：$result/mcp"
-  else
-    log "Named Tunnel 已启动：$server_url/mcp"
-  fi
-}
-
-remove_cloudflared_service() {
-  local service_manager="$1"
-  local tunnel_service_name="$2"
-  local cloudflared_env_file="$3"
-  case "$service_manager" in
-    systemd)
-      if [[ -f "/etc/systemd/system/${tunnel_service_name}.service" ]]; then
-        run_root systemctl disable --now "$tunnel_service_name" >/dev/null 2>&1 || true
-        run_root rm -f "/etc/systemd/system/${tunnel_service_name}.service"
-        run_root systemctl daemon-reload
-      fi
-      ;;
-    openrc)
-      if [[ -f "/etc/init.d/${tunnel_service_name}" ]]; then
-        run_root rc-service "$tunnel_service_name" stop >/dev/null 2>&1 || true
-        run_root rc-update del "$tunnel_service_name" default >/dev/null 2>&1 || true
-        run_root rm -f "/etc/init.d/${tunnel_service_name}"
-      fi
-      run_root rm -rf "/var/log/${tunnel_service_name}"
-      ;;
-  esac
-  run_root rm -f "$cloudflared_env_file"
-}
-
-configure_cloudflared() {
-  local service_manager="$1"
-  local tunnel_service_name="$2"
-  local service_user="$3"
-  local service_group="$4"
-  local data_dir="$5"
-  local cloudflared_binary="$6"
-  local cloudflared_env_file="$7"
-  local mode="$8"
-  local target_url="$9"
-  local token="${10}"
-  local server_url="${11}"
-  local agentdock_binary="${12}"
-  local runtime_root="${13}"
-
-  install_cloudflared "$cloudflared_binary"
-  write_cloudflared_env "$cloudflared_env_file" "$mode" "$target_url" "$token"
-  run_root chown "$service_user:$service_group" "$cloudflared_env_file"
-  case "$service_manager" in
-    systemd)
-      write_cloudflared_systemd_unit "$tunnel_service_name" "$service_user" "$service_group" \
-        "$data_dir" "$cloudflared_binary" "$cloudflared_env_file" "$mode" "$target_url" \
-        "$agentdock_binary" "$runtime_root"
-      ;;
-    openrc)
-      write_cloudflared_openrc_service "$tunnel_service_name" "$service_user" "$service_group" \
-        "$data_dir" "$cloudflared_binary" "$cloudflared_env_file" "$mode" "$target_url" \
-        "$agentdock_binary" "$runtime_root"
-      ;;
-    *) die "Cloudflare Tunnel 需要 systemd 或 OpenRC" ;;
-  esac
-  start_cloudflared_service "$service_manager" "$tunnel_service_name" "$mode" "$server_url"
-}
-
-start_service() {
-  local service_manager="$1"
-  local service_name="$2"
-  case "$service_manager" in
-    systemd)
-      log "启动 systemd 服务：$service_name"
-      run_root systemctl daemon-reload
-      run_root systemctl enable --now "$service_name"
-      run_root systemctl restart "$service_name"
-      sleep 2
-      run_root systemctl --no-pager --full status "$service_name" || true
-      run_root systemctl is-active --quiet "$service_name"
-      ;;
-    openrc)
-      log "启动 OpenRC 服务：$service_name"
-      # 升级旧版本时清理曾由 OpenRC 直接追加的平铺日志，后续改由 AgentDock 自己轮转。
-      run_root rm -f "/var/log/${service_name}.log" "/var/log/${service_name}.err"
-      run_root rc-update add "$service_name" default
-      run_root rc-service "$service_name" restart
-      sleep 2
-      run_root rc-service "$service_name" status
-      ;;
-    none)
-      warn "未配置系统服务；仅完成构建和 env 写入。可手动运行：source 环境变量后执行 bin/agentdock。"
-      ;;
-    *) die "未知服务管理器：$service_manager" ;;
-  esac
-}
-
 service_status_command() {
   local service_manager="$1"
   local service_name="$2"
@@ -1283,11 +780,11 @@ main() {
   local detected_root source_default repo_url branch source_dir data_dir env_file
   local service_name service_user service_group service_manager service_manager_prompt host port token log_level
   local install_mode release_version update_existing run_full_check install_deps
-  local oauth_password oauth_token_secret oauth_enabled configure_oauth
+  local oauth_password oauth_token_secret configure_oauth
   local go_version public_domain smoke_url health_host build_from_source
   local tunnel_mode tunnel_default tunnel_token server_url existing_server_url existing_tunnel_token
   local existing_host existing_port existing_log_level existing_token existing_oauth_password existing_oauth_secret
-  local cloudflared_binary cloudflared_env_file tunnel_service_name tunnel_target_url
+  local cloudflared_binary cloudflared_env_file tunnel_service_name
 
   detected_root="$(repo_root_from_script || true)"
   if [[ -n "$detected_root" ]]; then
@@ -1369,7 +866,6 @@ INTRO
   server_url=""
   tunnel_token=""
   configure_oauth="no"
-  oauth_enabled="false"
   case "$tunnel_mode" in
     quick)
       configure_oauth="yes"
@@ -1378,14 +874,10 @@ INTRO
         existing_server_url="$(read_env_assignment "$env_file" AGENTDOCK_SERVER_URL)"
       fi
       server_url="$existing_server_url"
-      if [[ -n "$server_url" ]]; then
-        oauth_enabled="true"
-      fi
       warn "临时地址在 Tunnel 重启后可能变化；重新运行同一安装脚本即可刷新。"
       ;;
     named)
       configure_oauth="yes"
-      oauth_enabled="true"
       existing_server_url="$DEFAULT_SERVER_URL"
       if [[ -z "$existing_server_url" ]]; then
         existing_server_url="$(read_env_assignment "$env_file" AGENTDOCK_SERVER_URL)"
@@ -1552,27 +1044,25 @@ SUMMARY
     payload_binary="$source_dir/bin/agentdock"
   fi
   [[ -n "$payload_binary" ]] || die "找不到待安装的 AgentDock 二进制"
-
-  engine_applied=false
-  if go_installer_engine_ready "$payload_binary"; then
-    if [[ "$tunnel_mode" != none ]]; then
-      install_cloudflared "$cloudflared_binary"
+  # 安装脚本与 payload 来自同一 release：binary 必然支持 Engine。旧版本请使用
+  # 对应旧 release 的安装脚本，本脚本不再保留 legacy 安装状态机（env/units/manifest/
+  # tunnel/skill 全部由 Go Installer Engine 拥有，重复实现会腐烂成第二套权威）。
+  if ! go_installer_engine_ready "$payload_binary"; then
+    die "payload 不支持 Go Installer Engine；安装脚本与 payload 必须来自同一 release"
+  fi
+  if [[ "$tunnel_mode" != none ]]; then
+    install_cloudflared "$cloudflared_binary"
+  fi
+  apply_linux_with_go_installer "$payload_binary" ||
+    die "Go Installer Engine 失败，已禁止回退 legacy 实现"
+  log "已由 Go Installer Engine 完成安装事务"
+  # 公网地址的最终投影属于 Engine（quick 地址由 tunnel 运行时回写 env）。
+  # 终端摘要必须消费最终值，不能沿用调用 Engine 之前的旧 shell 变量。
+  if [[ "$tunnel_mode" != none ]]; then
+    final_server_url="$(read_env_assignment "$env_file" AGENTDOCK_SERVER_URL || true)"
+    if [[ -n "$final_server_url" ]]; then
+      server_url="$final_server_url"
     fi
-    apply_linux_with_go_installer "$payload_binary" ||
-      die "Go Installer Engine 失败，已禁止回退 legacy 实现"
-    engine_applied=true
-    log "已由 Go Installer Engine 完成安装事务"
-  else
-    run_root install -m 755 "$payload_binary" "$source_dir/bin/agentdock"
-    write_env_file "$env_file" "$host" "$port" "$token" "$log_level" \
-      "$server_url" "$configure_oauth" "$oauth_enabled" "$oauth_password" "$oauth_token_secret"
-    write_runtime_manifest "$service_manager" "$service_name" "$tunnel_service_name" \
-      "$source_dir" "$env_file" "$cloudflared_binary" "$cloudflared_env_file"
-    case "$service_manager" in
-      systemd) write_systemd_unit "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
-      openrc) write_openrc_service "$service_name" "$service_user" "$service_group" "$source_dir" "$env_file" ;;
-      none) warn "跳过系统服务写入。" ;;
-    esac
   fi
   if [[ -x "$source_dir/bin/agentdock" ]]; then
     run_root chmod 0755 "$source_dir/bin/agentdock"
@@ -1584,48 +1074,6 @@ SUMMARY
 
   health_host="$(local_health_host "$host")"
   smoke_url="http://$health_host:$port"
-  if [[ "$engine_applied" != true ]]; then
-    start_service "$service_manager" "$service_name"
-    if [[ "$service_manager" != "none" ]]; then
-      log "验证 healthz"
-      curl -fsS "$smoke_url/healthz"
-      printf '\n'
-      if [[ -x "$source_dir/packaging/docker/smoke-docker.sh" ]]; then
-        log "验证 MCP smoke"
-        AGENTDOCK_SMOKE_URL="$smoke_url" AGENTDOCK_AUTH_TOKEN="$token" "$source_dir/packaging/docker/smoke-docker.sh"
-      else
-        warn "未找到 smoke 脚本，跳过 MCP smoke：$source_dir/packaging/docker/smoke-docker.sh"
-      fi
-    else
-      log "未配置系统服务，跳过运行时健康检查。"
-    fi
-
-    [[ -n "$CORE_SKILL_BUNDLE" ]] || die "未准备核心 Skill Bundle"
-    make_core_skill_bundle_readable
-    log "安装官方核心 Skill"
-    run_as_service_user "$service_user" "$data_dir" \
-      "$source_dir/bin/agentdock" skill bootstrap --bundle "$CORE_SKILL_BUNDLE"
-
-    if [[ "$tunnel_mode" == none ]]; then
-      remove_cloudflared_service "$service_manager" "$tunnel_service_name" "$cloudflared_env_file"
-    else
-      tunnel_target_url="http://$health_host:$port"
-      configure_cloudflared "$service_manager" "$tunnel_service_name" "$service_user" "$service_group" \
-        "$data_dir" "$cloudflared_binary" "$cloudflared_env_file" "$tunnel_mode" \
-        "$tunnel_target_url" "$tunnel_token" "$server_url" "$source_dir/bin/agentdock" "$(dirname "$env_file")"
-      if [[ "$tunnel_mode" == quick ]]; then
-        server_url="$TUNNEL_PUBLIC_URL"
-        oauth_enabled="true"
-        write_env_file "$env_file" "$host" "$port" "$token" "$log_level" \
-          "$server_url" yes true "$oauth_password" "$oauth_token_secret"
-        run_root chown "$service_user:$service_group" "$env_file"
-        log "已将临时公网地址写入 AgentDock OAuth 配置并重启服务"
-        start_service "$service_manager" "$service_name"
-        curl -fsS "$smoke_url/healthz" >/dev/null
-      fi
-    fi
-  fi
-
   cat >"$TTY_OUT" <<DONE
 
 AgentDock Linux 部署完成。
@@ -1668,7 +1116,7 @@ TUNNEL_DONE
     if [[ "$tunnel_mode" == named ]]; then
       cat >"$TTY_OUT" <<NAMED_DONE
   公网 MCP URL：$server_url/mcp
-  Cloudflare Public Hostname 的 Service 目标应为：$tunnel_target_url
+  Cloudflare Public Hostname 的 Service 目标应为：$smoke_url
 
 NAMED_DONE
     else

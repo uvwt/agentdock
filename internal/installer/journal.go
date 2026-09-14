@@ -24,15 +24,17 @@ type rollbackJournal struct {
 
 // journalService 记住安装前服务是否在跑，以及本次事务有没有动过它。
 type journalService struct {
-	Manager     string `json:"manager"`
-	Name        string `json:"name"`
-	Domain      string `json:"domain,omitempty"`
-	Plist       string `json:"plist,omitempty"`
-	WasActive   bool   `json:"was_active"`
-	WasEnabled  bool   `json:"was_enabled"`
-	StoppedByUs bool   `json:"stopped_by_us"`
-	LoadedByUs  bool   `json:"loaded_by_us"`
-	StartedByUs bool   `json:"started_by_us"`
+	Manager       string `json:"manager"`
+	Name          string `json:"name"`
+	Domain        string `json:"domain,omitempty"`
+	Plist         string `json:"plist,omitempty"`
+	WasActive     bool   `json:"was_active"`
+	WasEnabled    bool   `json:"was_enabled"`
+	StopAttempted bool   `json:"stop_attempted,omitempty"`
+	StoppedByUs   bool   `json:"stopped_by_us"`
+	LoadAttempted bool   `json:"load_attempted,omitempty"`
+	LoadedByUs    bool   `json:"loaded_by_us"`
+	StartedByUs   bool   `json:"started_by_us"`
 }
 
 type journalBackup struct {

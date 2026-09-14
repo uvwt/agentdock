@@ -1,149 +1,154 @@
-# Installer 脚本职责盘点（第二阶段收口基线）
+# Installer 脚本职责盘点（第二阶段收口）
 
-基线：`fix/installer-engine-mini-20260913` @ `449adba`，对照 `origin/main` @ `f1dde3a`。
+基线：`fix/installer-engine-mini-20260913`，起点 `449adba`，对照 `origin/main` @ `f1dde3a`。
 
-本文是 Installer Engine 第二阶段收口（脚本瘦身）的工作地图。它记录：
+本文是 Installer Engine 第二阶段收口（脚本瘦身）的工作地图与最终记录。它包含：
 
 1. 各脚本的职责分类与真实调用图；
 2. Go Installer Engine 已经拥有的决策；
-3. 仍留在脚本里的产品业务决策（迁移目标）；
+3. 本次收口迁移/删除的内容与理由；
 4. `manage-windows.ps1` 逐 Action 处置与删除条件；
-5. 不允许回归的语义清单。
+5. install.ps1 剩余大块的去留说明；
+6. 不允许回归的语义清单。
 
-行号以基线 `449adba` 为准。行号会随迁移漂移，函数名是稳定锚点。
+文档开头的行号以起点 `449adba` 为准，函数名是稳定锚点。
 
-## 1. 脚本规模与分类（449adba）
+## 1. 脚本规模变化
 
-| 脚本 | 行数 | 治理分类 | 说明 |
+| 脚本 | 起点（449adba） | 收口后 | 变化 |
 |---|---|---|---|
-| `scripts/install/install.ps1` | 2431 | runtime-adapter（公开契约） | Windows Setup / 自更新安装入口 |
-| `scripts/install/manage-windows.ps1` | 1017 | legacy（公开契约） | 旧 launcher/runtime 兼容垫片，action 集被治理测试冻结 |
-| `scripts/install/uninstall-windows.ps1` | 336 | runtime-adapter（公开契约） | Windows 公开卸载入口 |
-| `scripts/install/launch-windows-process.ps1` | 220 | runtime-adapter（公开契约） | Setup 进程树到用户 session 的薄 broker，保留 |
-| `scripts/install/install.sh` | 685 | bootstrap（公开契约） | Unix 公开安装入口 |
-| `scripts/install/install-linux-platform.sh` | 1702 | runtime-adapter（公开契约） | Linux 平台安装器（新路径已委托 `agentdock install`） |
-| `scripts/install/install-macos-platform.sh` | 1701 | runtime-adapter（公开契约） | macOS 平台安装器（新路径已委托 `agentdock install`） |
-| `scripts/install/uninstall-linux.sh` | 401 | runtime-adapter（公开契约） | Linux 公开卸载入口 |
-| `scripts/install/uninstall-macos.sh` | 125 | runtime-adapter（公开契约） | macOS 公开卸载入口 |
+| `scripts/install/install.ps1` | 2431 | ~2373 | 决策迁引擎；manifest 兜底收敛 |
+| `scripts/install/manage-windows.ps1` | 1017 | ~875 | restart 委托原生；孤儿函数删除 |
+| `scripts/install/uninstall-windows.ps1` | 336 | ~358 | resume 决策迁引擎（结构化恢复 bootstrap） |
+| `scripts/install/launch-windows-process.ps1` | 220 | 220 | 不变（薄 broker，保留） |
+| `scripts/install/probe-protected-text.ps1` | — | 35 | 最新 main 新增的只读 DPAPI 可用性探针，纳入脚本治理 |
+| `scripts/install/install.sh` | 685 | 685 | 不变（公开 bootstrap） |
+| `scripts/install/install-linux-platform.sh` | 1702 | ~1138 | 删除 legacy 安装状态机 |
+| `scripts/install/install-macos-platform.sh` | 1701 | ~947 | 删除 legacy 安装状态机 |
+| `scripts/install/uninstall-linux.sh` | 401 | 401 | 不变（已委托 engine） |
+| `scripts/install/uninstall-macos.sh` | 125 | 125 | 不变（已委托 engine） |
 
 治理基线见 `scripts/governance/inventory.yaml` 与 `scripts/test/script_governance_test.go`：
+manage-windows.ps1 的 ValidateSet action 集保持冻结，未新增调用方。
 
-- `TestManageWindowsActionsStayFrozen` 冻结 `manage-windows.ps1` 的 ValidateSet action 集；
-- `TestNewCodeMustNotAddManageWindowsCallers` 禁止新增调用方；
-- 超过 300 行的脚本必须声明 `legacy_oversize` 或 `oversize_justification`。
-
-## 2. 调用图（真实调用方，449adba）
+## 2. 调用图（真实调用方）
 
 ### install.ps1
 - `packaging/windows/AgentDock.iss:69,75`：随 Setup 打包（`{app}\installer`）。
-- `packaging/windows/includes/code.iss:461-502`：Inno `PrepareToInstall` 以
-  `-Version -OfflineArchive -InstallDir -TunnelMode -InstallChannel setup -CorePrivilegeMode -ResultFile` 等参数调用；`:513-542` 解析结果 INI。
-- `.github/workflows/release.yml:426`：发布到 `dist/install.ps1`（公开下载入口，release smoke 做字节对比）。
+- `packaging/windows/includes/code.iss:461-502`：Inno `PrepareToInstall` 调用；`:513-542` 解析结果 INI。
+- `.github/workflows/release.yml:426`：发布到 `dist/install.ps1`（公开下载入口，release smoke 字节对比）。
 - `.github/workflows/windows-installer.yml:70-74,238,249`：CI E2E。
-- `scripts/test/test-install-windows-e2e.ps1:205-222`、`test-windows-quick-tunnel-lifecycle.ps1:155-170`、`test-windows-setup-activation-deferred.ps1:71-88`：测试调用。
+- `scripts/test/test-install-windows-e2e.ps1:205-222`、`test-windows-quick-tunnel-lifecycle.ps1:155-170`、`test-windows-setup-activation-deferred.ps1:71-88`。
 
 ### manage-windows.ps1
-- 随 release zip 发布（`.github/workflows/release.yml:311-312`）与 Setup payload 打包（`AgentDock.iss:71`、`code.iss:441`）。
-- Go 侧发布：`internal/installer/apply.go:516-518`（→ `{install-root}\installer\`）、`internal/selfupdate/desktop_apply_windows.go:24,183`（自更新 staging）。**因此该文件是运行时 payload 的一部分，不能删除，只能逐 Action 退役。**
-- 脚本调用点：`install.ps1:751-755`（`task-run-session`）、`launch-windows-process.ps1:176-180`（`task-run-session`）、生成的 start-cloudflared.ps1 兼容 launcher（`manage-windows.ps1:783` 写入 `launch-tunnel`）。
-- 测试调用：`test-install-windows-e2e.ps1:150,179-181`（`restart`）、`test-windows-task-scheduler.ps1:12`（`task-run-session`）、`test-windows-setup-e2e.ps1:163`。
+- 随 release zip 发布（`release.yml:311-312`）与 Setup payload 打包（`AgentDock.iss:71`、`code.iss:441`）。
+- Go 侧发布：`internal/installer/apply.go`（→ `{install-root}\installer\`）、`internal/selfupdate/desktop_apply_windows.go`（自更新 staging）。**它是运行时 payload 的一部分，不能删除，只能逐 Action 退役。**
+- 脚本调用点：`install.ps1`（`task-run-session`）、`launch-windows-process.ps1`（`task-run-session`）、生成的 start-cloudflared.ps1 兼容 launcher。
+- 测试调用：`test-install-windows-e2e.ps1`（`restart`）、`test-windows-task-scheduler.ps1`（`task-run-session`）、`test-windows-setup-e2e.ps1`。
 
 ### uninstall-windows.ps1
-- `packaging/windows/includes/code.iss:582-617`：Inno 卸载步骤调用（`-KeepInstallDir` / `-PurgeState`）。
-- `.github/workflows/release.yml:427`：dist 发布。
-- `scripts/test/test-windows-quick-tunnel-lifecycle.ps1:358-362`。
+- `packaging/windows/includes/code.iss:582-617`（`-KeepInstallDir` / `-PurgeState`）。
+- `.github/workflows/release.yml:427`；`test-windows-quick-tunnel-lifecycle.ps1:358-362`。
 
 ### install.sh / 平台脚本 / 卸载脚本
 - `install.sh`：`Makefile:50`、release 流程（`release.yml:421,602-615,729-743`）、`test-install-entry.sh`。
-- `install-linux-platform.sh`：由 `install.sh:608,641,650,659,674,680` 选择并下载执行；`install-macos-platform.sh` 由 `install.sh:612,642` 以 zsh 执行。
-- `uninstall-linux.sh`：由 `install.sh:147-148,630-637` 下载/转发。
-- `uninstall-macos.sh`：`Makefile:58-59`、`test-install-macos.sh:843-905`。
+- `install-linux-platform.sh` / `install-macos-platform.sh`：由 `install.sh` 选择并下载执行。
+- `uninstall-linux.sh`：由 `install.sh` 下载/转发；`uninstall-macos.sh`：`Makefile:58-59`、`test-install-macos.sh`。
 
-## 3. Go Installer Engine 已拥有的决策（不再迁移，禁止在脚本重复实现）
+## 3. Go Installer Engine 拥有的决策（单一权威，禁止脚本重复实现）
 
-`internal/installer/`（非测试约 5000 行）：
+`internal/installer/`：
 
 | 能力 | 位置 |
 |---|---|
 | install/repair/uninstall/commit/abandon 事务与中断恢复 | `engine.go` |
-| Windows generation 发布 / attach / active-version.json 两阶段 pointer | `apply.go:570-841` |
-| runtime.json manifest 生成（engine-ready 路径） | `apply.go:443-557` |
+| Windows generation 发布 / attach / same-version repair 重建 / active-version.json 两阶段 pointer | `apply.go` |
+| runtime.json manifest 生成（engine-ready 路径） | `apply.go` |
+| desktop-version.txt 版本投影（engine-ready 路径） | `apply.go activateWindows` |
 | legacy → generation 一次性迁移 | `legacy_windows.go`（CLI：`install prepare-windows-legacy`） |
 | rollback journal 与有序恢复 | `journal.go` |
 | 服务/tunnel 生命周期（systemd/OpenRC/launchd/Windows native CLI） | `service.go` |
-| uninstall defer-commit + detach-engine 辅助 | `engine.go:611-630`、`cmd/agentdock/command_install_windows.go:43-92` |
-| inspect 权威投影 + AssertCommitted | `inspect.go` |
-| known-good 判定 / Windows pointer 对账 | `engine.go:95-137,799-809` |
+| uninstall defer-commit + trial 重绑定 + detach-engine 辅助 | `engine.go`、`cmd/agentdock/command_install_windows.go` |
+| inspect 权威投影 + pointer/pending-update 评估 | `inspect.go` |
+| known-good 判定 / Windows pointer 对账 | `engine.go` |
+| systemd/OpenRC/launchd 单元模板与日志治理 | `units.go` |
+| Quick Tunnel 地址回写（unix） | `internal/desktopruntime/tunnel_unix.go runQuickTunnel` |
 
-脚本侧引擎调用合同（现状）：`install --engine-ready` 探针、`install --defer-commit ...`、`install commit/abandon`、`install inspect`、`uninstall --defer-commit`、`install detach-engine`、`install prepare-windows-legacy`。
+脚本侧引擎调用合同：`install --engine-ready` 探针、`install inspect`、`install --defer-commit ...`、
+`install commit/abandon`、`uninstall --defer-commit`、`install detach-engine`、`install prepare-windows-legacy`。
 
-## 4. 仍留在脚本里的产品业务决策（迁移目标）
+## 4. 本次收口迁移/删除记录
 
-### install.ps1（Commit 2 / 3 靶子）
+### install.ps1
 
-| 位置（函数/代码段） | 决策 | 迁移方向 | 状态 |
-|---|---|---|---|
-| 主流程 1460-1508 | 手工解析 `active-version.json`，自行判断 pointer state 是否 committed、是否要先跑 update-engine 恢复 | 扩展 `install inspect`（新增 transaction/action/generation layout/pointer state 字段），脚本只消费结构化结果；触发恢复的"运行 stable binary"保留在脚本（那是执行动作，不是状态判断） | ✅ Commit 2：`inspect` 新增 `pointer_state` / `pointer_active_version` / `pointer_fallback_version` / `pending_update_transaction` / `transaction_id` / `action`，脚本改为消费 inspect |
-| 主流程 1537-1574 | 判定"当前是不是 legacy、是否需要 bootstrap source generation"，并自己读 legacy 版本 | `inspect` 返回 layout=legacy；legacy 版本探测并入引擎（`prepare-windows-legacy` 无 `--legacy-version` 时自行读取），脚本只转发 | ✅ Commit 2：legacy 门改用 `pointer_state -eq 'missing'`；legacy 版本探测保留在脚本（对已安装 binary 的 payload 探测，属 OS bridge 邻接动作） |
-| 主流程 1650-1653 | `$engineOwnsTargetGeneration = engineReady && (fresh layout ‖ version differs)` —— generation 归属决策 | 引擎返回结构化判定（inspect 或 install Result 字段），脚本不再组合布尔决策 | ✅ Commit 2：归属决策全部在 `stageWindowsPayload` 内部；脚本只剩 `-not $engineReady` 能力判断 |
-| 主流程 1654-1687 | PowerShell 侧 generation staging（same-version repair `.repair-backup` 移动 + crashed-bootstrap 清理） | 收口进 `apply.go`（引擎接管 same-version repair 的 generation 替换），脚本仅保留非 engine-ready 的旧 payload 兜底 | ✅ Commit 2：引擎新增 `repairWindowsGeneration`（journal Snapshot 提供旧内容恢复，pointer 保持 committed）；PS staging 仅剩非 engine-ready 兜底。注意：adapter 回滚路径上 same-version repair 的 generation 内容不再由脚本恢复——同版本内容等价 + 崩溃恢复由 journal 覆盖，这是有意取舍 |
-| `Write-RuntimeManifest`（334-380）+ 调用点 1873-1893、1949-1977 | 非 engine-ready 兜底 manifest 写入（runtime.json schema、tunnel/URL/startup 投影） | 保留为非 engine-ready 兜底，但确保 engine-ready 时绝不执行（现状已如此），并把二次调用收敛为一处 | ⏳ Commit 3 |
-| `Write-ActiveVersionState`（381-416） | active-version.json 写入 —— **死代码**（引擎已接管 pointer） | Commit 2 直接删除 | ✅ Commit 2：已删除，并有测试禁止回归 |
-| 主流程 1707-1721 | `desktop-version.txt` 按 engineOwnsTargetGeneration 分叉写入 | 引擎在 Windows apply 内写入（payload 版本已验证）；脚本仅非 engine-ready 路径保留 | ✅ Commit 2：`activateWindows` 写入并纳入 journal snapshot |
-| 主流程 1748-1893 | token 复用/生成策略、OAuth 凭据策略、server URL / named token 解析链、HKCU Run 内容投影 | 内容策略逐步收口引擎；DPAPI/HKCU 写入属 OS bridge 保留。Commit 3 仅做低风险收敛（去重、单一入口），大迁移留待后续阶段 | ⏳ Commit 3 |
-| catch 块 2175-2425 | 脚本侧回滚事务（备份/恢复文件、Run value、Task、进程、generation 删除、engine abandon 编排） | 短期保留：这是 OS adapter 回滚（engine journal 覆盖不到 HKCU/Task/UAC 状态）。但 abandon 的调用必须已由引擎的 `--rollback-failed` 分类语义收口（现状满足）；后续把可引擎化的文件恢复并入 journal | ⏳ Commit 3（整理） |
-| `Test-AgentDockTaskEligible`（577）+ 1272-1292 task conflict 门 | Task 归属/冲突判断 | 属 OS bridge（ScheduledTasks API），但归属判定规则与引擎 `windowsManagedTaskName` 保持单一来源；Commit 3 复核一致性 | ⏳ Commit 3 |
-
-### uninstall-windows.ps1（Commit 4 靶子）
-
-| 位置 | 决策 | 迁移方向 |
+| 决策点 | 处置 | 理由 |
 |---|---|---|
-| 154-183 | 从 `runtime.json` 自行推导 managed task name（含 legacy 固定名回退） | 与引擎 `uninstall.go:122-136 windowsManagedTaskName` 统一：引擎在 uninstall Result 返回 task name，或脚本改用 inspect 提供的 manifest 投影 |
-| 189-208 | 自读 `install\transaction.json` 判断"是否有待续 uninstall trial"，手工校验 transaction id | 扩展 `install inspect`（transaction_id/action/state），脚本改为调用 inspect 判断 resume；不再手工解析 transaction JSON |
-| 318-335 | commit 时机判断（cleanup 全部成功后 commit） | 保留：这正是 defer-commit 合同的正确用法；引擎已拥有状态机 |
+| 手工解析 `active-version.json` + update-transaction 门 | ✅ 迁 Go | `install inspect` 新增 `pointer_state` / `pointer_active_version` / `pointer_fallback_version` / `pending_update_transaction` / `transaction_id` / `action`；脚本消费结构化结论，仅在非 committed 时执行"运行 stable binary 触发恢复"这一 OS 动作后重新 inspect |
+| legacy 判定（是否需要 bootstrap source generation） | ✅ 迁 Go | legacy 门改用 `pointer_state -eq 'missing'`；`prepare-windows-legacy` 幂等（`already_ready`），脚本不再自行判定 |
+| `$engineOwnsTargetGeneration` 布尔组合 | ✅ 删除 | generation 归属决策全部在 `stageWindowsPayload` 内部；脚本只剩 `-not $engineReady` 能力判断 |
+| PowerShell 侧 same-version repair staging（`.repair-backup`） | ✅ 迁 Go | 引擎新增 `repairWindowsGeneration`：journal Snapshot 提供旧内容恢复，pointer 保持 committed；脚本 staging 仅剩非 engine-ready 旧 payload 兜底 |
+| `Write-ActiveVersionState` | ✅ 删除 | 死代码；active-version.json 由引擎唯一拥有（测试禁止回归） |
+| `desktop-version.txt` 双路径写入 | ✅ 迁 Go | `activateWindows` 统一写入并纳入 journal；脚本仅非 engine-ready 路径保留 |
+| 两处 `Write-RuntimeManifest` 兜底调用 | ✅ 收敛为一处 | 唯一 `-not $engineReady` 入口；engine-ready 时 runtime.json 由引擎生成 |
 
-### install.sh（Commit 5 顺带）
+### uninstall-windows.ps1
 
-- `backup_public_config`/`restore_public_config`/`commit_public_config`/`restart_restored_services`（267-323, 422-447）：env 文件级回滚事务 —— 保留（bootstrap 层最小回滚，引擎事务之外的 OS 状态）。
-- `install_quick_tunnel_retry_guard`/`quick_tunnel_rate_limited`/`stop_rate_limited_tunnel`（324-432）：quick tunnel 429 限流分类与 systemd drop-in —— 属 OS bridge + 少量分类逻辑，保留但注释边界。
+| 决策点 | 处置 | 理由 |
+|---|---|---|
+| 自读 `install\transaction.json` 判断 resume | ✅ 迁 Go（主体） | 引擎 `uninstall` 按 transaction id 重绑定 pending trial；stable binary 存在时脚本完全不再判断 resume |
+| managed task name 解析 | ✅ 单一来源化 | uninstall Result 新增 `task_name`（引擎解析后返回）；脚本 manifest 读取仅作引擎未运行时 fallback，legacy 固定名认领规则保留在 adapter（Task 归属判断） |
+| 无 stable binary 的恢复路径 | ✅ 保留（最小化） | durable transaction 是定位 txid-scoped helper 的唯一恢复线索（irreducible bootstrap）：trial 必须找到 helper（丢失不得假成功）、committed 幂等清理、其余状态由引擎在 commit 时拒绝。状态变更决策仍全部在引擎 |
+| cleanup 全部成功后 commit | 保留 | defer-commit 合同的正确用法 |
 
-### install-linux-platform.sh / install-macos-platform.sh（Commit 5 / 6 靶子)
+### install-linux-platform.sh / install-macos-platform.sh
 
-- 两个平台脚本各有 **engine 分支 + legacy fallback 分支**：
-  - Linux：engine 路径 `apply_linux_with_go_installer`（750-802），legacy 路径 1565-1626（write_env_file/write_runtime_manifest/units/health/skill bootstrap/tunnel 配置）。engine 失败已 `die`（禁止回退 legacy），legacy 路径仅在非 engine-ready 旧 payload 时可达。
-  - macOS：engine 分支 1520-1612，legacy 分支 1573-1631 + `skill bootstrap`（1614-1623）+ `configure_tunnel`（1625-1631）。
-- 迁移方向：legacy fallback 是旧 payload 兼容路径，**公开入口和旧版升级路径必须有真实证据才能删**。Commit 5/6 先做：确认 legacy 分支的可达条件（非 engine-ready 的旧 payload 是否仍是受支持的升级起点），有证据后删除不可达代码；保留 launchd/systemd unit 生成、用户/权限 bootstrap、下载校验。
-- macOS 脚本里的 tunnel rollback 状态机（`rollback_tunnel_start`/`restore_previous_public_auth` 等，932-1040）：engine 分支下这些只服务 legacy 路径；随 legacy 判定一起收口。
+- **删除全部 legacy 安装状态机**（env/manifest/unit/tunnel 编排/health/skill bootstrap/rollback）。
+- **可达性证据**：平台脚本与 payload 永远来自同一 release（install.sh 按同一版本下载平台脚本与二进制；source 模式构建当前分支），当前 release 的脚本执行的 binary 必然支持 `install --engine-ready`。legacy 分支唯一可达场景是 source 模式显式安装旧分支——那是降级而非升级路径，旧版本本来就应使用旧 release 自己的安装脚本。预编译路径下 probe 失败意味着 payload 损坏，legacy 分支用同一损坏 binary 也无法成功。
+- 保留：下载与 SHA-256 校验、用户/权限 bootstrap、cloudflared staging、安装后信息摘要、（macOS）LaunchAgent 预态安全检查与结果文件输出。
+- 配套：OpenRC/plist 日志治理断言改指引擎 `internal/installer/units.go` 权威模板；Quick Tunnel 地址回写由原生 `runQuickTunnel` 拥有，新增 `internal/desktopruntime/tunnel_quick_unix_test.go` 回归覆盖（fake cloudflared + fake launchctl + httptest 健康端点）。
 
-### manage-windows.ps1（Commit 7 靶子）
+### install.sh
+- `backup_public_config`/`restore_public_config`/`commit_public_config`/`restart_restored_services`：env 文件级回滚事务 —— 保留（bootstrap 层最小回滚，引擎事务之外的 OS 状态）。
+- `install_quick_tunnel_retry_guard`/`quick_tunnel_rate_limited`/`stop_rate_limited_tunnel`：quick tunnel 429 限流分类与 systemd drop-in —— OS bridge + 少量分类逻辑，保留。
 
-Action 盘点（native 等价物与处置）：
+### manage-windows.ps1
 
-| Action | 现状 | native 等价 | 处置 |
-|---|---|---|---|
-| `start`/`stop`/`start-tunnel`/`stop-tunnel` | 转发 native | `service/tunnel start|stop` | 保留薄转发 |
-| `restart` | `Restart-AgentDockRuntime`（933）残留 quick-mode URL 清理 + manifest 投影 | `service restart` + `tunnel restart` | Commit 7 收敛：quick 模式投影走 native，脚本只做组合调用 |
-| `update` | 转发 `agentdock update` | 有 | 保留薄转发 |
-| `set-mode` | 转发 `tunnel configure` | 有 | 保留薄转发 |
-| `regenerate-quick` | 转发 `tunnel regenerate` | 有 | 保留薄转发 |
-| `set-startup` | 转发 `service autostart` | 有 | 保留薄转发 |
-| `launch-core` | Ensure-Credentials（DPAPI 生成策略）+ `service launch-core` | `service launch-core` | 保留：launcher 场景的 DPAPI 凭据兜底是 OS bridge |
-| `launch-tunnel` | 转发 `tunnel start` | `tunnel launch` | 保留薄转发（兼容 launcher 契约） |
-| `set-task-startup` | Enable/Disable Task + UAC tray `--task-admin set-enabled` | 无 CLI 等价 | 保留：Task/UAC 是 OS bridge |
-| `task-run-session` | COM Schedule.Service RunEx | 无 | 保留：Setup broker 契约（launch-windows-process.ps1 依赖） |
-| `task-start` | Start-TaskPreservingStartupState | 无 | 保留：OS bridge |
-| `task-stop` | Stop-ScheduledTask + `service stop` | 部分 | 保留：OS bridge |
+Action 处置：
 
-**删除条件**：某个 action 的所有调用方（含旧版本升级路径与兼容 launcher）确认不存在后，才能从 ValidateSet 冻结集中移除。当前全部保留。
+| Action | 处置 |
+|---|---|
+| `start`/`stop`/`start-tunnel`/`stop-tunnel`/`update`/`set-mode`/`regenerate-quick`/`set-startup`/`launch-tunnel` | 保留薄转发（native 等价命令存在） |
+| `restart` | ✅ Commit 7：quick 模式委托原生 `tunnel restart`（`regenerateQuickTunnel` 内部已含清地址/manifest 投影/Core 重启），脚本只做组合调用与就绪等待 |
+| `launch-core` | 保留：DPAPI 凭据兜底是 OS bridge |
+| `set-task-startup`/`task-run-session`/`task-start`/`task-stop` | 保留：Task/UAC/session 是 OS bridge，无 CLI 等价 |
 
-## 5. 不允许回归的语义（与任务书 14 条一一对应）
+已删除函数（全部无调用方，旧版本使用它们自己的脚本副本）：`Write-Launchers`、`Update-RuntimeManifest`、
+`Clear-ActivePublicUrl`、`Set-ObjectProperty`、`Write-JsonAtomically`、`Read-ProtectedText`、
+`Read-SecretFile`、`Restart-Core`、`Stop-ProcessesAtPath`。
 
-1. Windows uninstall 任一关键失败不得 rc=0 假成功 —— `uninstall-windows.ps1` 保持"全部 adapter 清理成功才 commit"。
-2. uninstall destructive cleanup 后失败可安全重跑 —— trial resume + transaction-id scoped retry。
-3. detached helper 用 transaction id 可重入 —— `install detach-engine` + `install commit --transaction-id`。
-4. helper 丢失不得假成功 —— detach 验证失败必须失败退出。
+## 5. install.ps1 剩余大块说明（为什么必须留在 PowerShell）
+
+当前约 2370 行，剩余每一大块的归属理由：
+
+1. **参数解析与校验（~150 行）**：Setup/独立入口的公开参数契约（Inno 传参），入参验证是 adapter 入口职责。
+2. **下载/离线 payload bootstrap（~250 行）**：release 下载、SHA-256 校验、离线 archive 解包、cloudflared staging——引擎运行之前的 bootstrap。
+3. **payload 完整性预检（~100 行）**：解包后、停止旧进程前验证 payload（WSL helper manifest、per-arch hash、preflight version）。这一步必须在停进程之前做，属于 adapter 安全属性。
+4. **进程/Task/Registry OS bridge（~500 行）**：Win32_Process 按路径找进程、优雅停止（15s deadline）、HKCU Run 读写、ScheduledTask 状态/冲突/UAC（`--task-admin`）、session 身份。这些是真正的 OS 操作，Go 引擎通过 native CLI 只覆盖进程生命周期，不覆盖 Task/Registry/UAC。
+5. **DPAPI 凭据与 tunnel 模式解析（~250 行）**：auth token / OAuth password / tunnel token 的 DPAPI 持久化与复用（arg > env > DPAPI > 生成）、named server URL 策略。内容策略与 DPAPI 边界强耦合；后续若引擎原生接管 DPAPI（Windows CDPAPI）可再迁，本阶段保留。
+6. **generation 状态消费与恢复执行（~150 行）**：消费 `install inspect` 结构化结论；触发 self-update 恢复（运行 stable binary）是执行动作不是状态判断。
+7. **引擎调用与 commit/abandon 编排（~150 行）**：`--defer-commit` 安装、事务 id 握手、成功 commit、失败 abandon（含 `--rollback-failed` 分类）——defer-commit 合同的 adapter 侧。
+8. **激活阶段（~150 行）**：非 engine-ready 兜底的 native service/tunnel 启动 + 健康等待 + Quick URL 读取；engine-ready 时只读 quick-tunnel-url.txt。setup 通道经 launch-windows-process broker 启动，保持 Setup 进程树与长驻运行时隔离。
+9. **catch 回滚块（~250 行）**：adapter 外部状态回滚（文件备份恢复、Run value、Task restore + 恢复材料保全、进程重启、健康等待），然后 abandon。engine journal 覆盖不到 HKCU/Task/UAC 状态；这是 OS adapter 回滚的正当职责。可引擎化的文件恢复已随 generation 修复迁入 journal。
+10. **结果 INI 与输出（~150 行）**：Inno 结果文件（UTF-16 INI）与用户输出——公开契约。
+
+## 6. 不允许回归的语义（与任务书 14 条一一对应）
+
+1. Windows uninstall 任一关键失败不得 rc=0 假成功 —— 保持"全部 adapter 清理成功才 commit"。
+2. uninstall destructive cleanup 后失败可安全重跑 —— 引擎 trial 重绑定 + transaction-id scoped retry。
+3. detached helper 用 transaction id 可重入 —— `install detach-engine` + `install commit --transaction-id`，helper 路径确定性。
+4. helper 丢失不得假成功 —— detach 验证失败/恢复路径 helper 缺失必须显式失败。
 5. external rollback_failed 阻塞下一次安装 —— `install abandon --rollback-failed` 语义。
-6. generation pointer two-phase crash safe —— `apply.go:752-841`。
+6. generation pointer two-phase crash safe —— `apply.go` pointer trial/commit/release。
 7. failed/rolled_back 不泄漏失败 target projection —— store 投影规则。
 8. terminal transaction durable authoritative —— `store.go Complete()`。
 9. inspect 能修复 stale result projection —— `inspect.go RequireInspection`。
@@ -153,17 +158,39 @@ Action 盘点（native 等价物与处置）：
 13. Windows Task ownership 不误伤别的安装/生产 Task —— 默认 startup value names 才允许动 Task。
 14. production Task 在测试期间不得被污染。
 
-新增/修改 Go API 时，每条语义必须有对应测试或真机验证覆盖。
+## 7. 收口提交序列与真机验证
 
-## 6. Commit 规划
+| Commit | 内容 |
+|---|---|
+| 1 | 本盘点文档（不改行为） |
+| 2 | Windows generation/manifest 决策迁 Go：inspect 扩展、same-version repair 收口、死代码删除、desktop-version.txt 引擎化 |
+| 3 | install.ps1 兜底 manifest 收敛 |
+| 4 | Windows uninstall：trial 重绑定 + task_name 单一来源 |
+| 5 | Linux 平台脚本 legacy 状态机删除 |
+| 6 | macOS 平台脚本 legacy 状态机删除 + runQuickTunnel Go 回归 |
+| 7 | manage-windows.ps1 restart 委托原生 + 孤儿删除 |
+| 8 | 残留死代码清扫与本文档定稿 |
+| 9 | 三个真机验证修复（见下） |
 
-| Commit | 范围 | 本文对应 |
-|---|---|---|
-| 1 | 本盘点文档（不改行为） | 全文 |
-| 2 | Windows generation/manifest 剩余决策迁 Go：inspect 扩展、same-version repair staging 收口、死代码删除、desktop-version.txt 引擎化 | §4 install.ps1 前 4 行 |
-| 3 | install.ps1 瘦身（消费新 inspect、收敛 manifest 兜底、回滚块整理） | §4 install.ps1 其余 |
-| 4 | Windows uninstall 收口：inspect 化 resume 判断、task name 单一来源 | §4 uninstall-windows.ps1 |
-| 5 | Linux installer 收口：legacy 分支可达性证据与删除、保留 systemd/OpenRC bridge | §4 Linux |
-| 6 | macOS installer 收口：同上 + tunnel rollback 状态机收口 | §4 macOS |
-| 7 | manage-windows.ps1 legacy actions 清理 | §4 manage-windows 表 |
-| 8 | 死代码与确认无调用兼容代码删除 | 全文复核 |
+### 真机验证（天翼云电脑，中文 Windows Server 2022，2026-09-13）
+
+构建：分支源码经 file_publish 传至天翼本机构建（Go 1.27 + dotnet 8 + wsl-helper payload + core-skills bundle），payload zip 90MB。
+
+| 验证 | 结果 |
+|---|---|
+| PowerShell 5.1 Parser::ParseFile × 4 脚本 | 全部通过（发现并修复 install.ps1 解析失败，见修复 1） |
+| Windows 专属契约测试（`go test ./scripts/test` 在真机） | 全部通过（ASCII 扫描、内容断言、治理冻结） |
+| E2E fresh install（隔离 root、自定义启动标识、18765） | committed + healthy 200 + 启动标识正确 + inspect 新字段生效 |
+| E2E same-version repair | committed + 无 .repair-backup/.bootstrap 残留 + pointer committed |
+| E2E 卸载失败回滚 | start_failed → rolled_back，versions/bin/runtime.json 全净，无失败目标泄漏 |
+| E2E 卸载矩阵：正常卸载 | committed，binary/Run 值清理干净 |
+| E2E 卸载矩阵：重装 source_version | v0.8.3（非 unknown） |
+| E2E 卸载矩阵：trial 重入（binary 已删） | 同一 transaction 重绑定 → committed → helper 清理 |
+| E2E 卸载矩阵：helper 丢失 | 响亮失败，trial 保留待恢复，无假成功 |
+| 生产保护 | healthz 8765 / \AgentDock Task XML SHA256（UTF-16LE=cf3042fd… 与任务书一致）/ 其余 3 Task / HKCU Run / service status 前后完全一致 |
+
+### 真机验证发现并修复的问题
+
+1. **无 BOM 脚本的中文注释破坏 PS 5.1 解析**：install.ps1/uninstall-windows.ps1 按约定为 BOM-less，PS 5.1 按 ANSI/GBK 解码，行尾中文字符的 UTF-8 尾字节与换行配对，可吞掉换行或结构字符。install.ps1 直接解析失败（Parser::ParseFile 发现），uninstall-windows.ps1 静默吞掉一行赋值（GBK 区域设置专属，英文区域 CI 不触发）。修复：两文件新增注释全部转英文，保持 BOM-less ASCII 约定（d3141dc、e40e533）。
+2. **uninstall Result `task_name` omitempty + Set-StrictMode**：standard 模式卸载时引擎 Result 不含 task_name 字段，直接属性访问抛异常导致卸载失败。改为 PSObject.Properties 安全访问（d5ae5fe）。
+3. **同机并行安装的启动竞态（观察项，未在本分支修复）**：既有安装的 core 被停止后、新 core 绑定同端口前的窗口期与引擎 45s 健康等待存在竞争，重复安装偶发 start_failed（回滚路径正确）。E2E 通过安装前预清理 + 独立 `AGENTDOCK_HOME` 隔离规避。该竞态位于未改动的 OS bridge 停止逻辑，留待后续阶段评估（如把 Windows adapter 的停止等待与引擎健康窗口拉通）。

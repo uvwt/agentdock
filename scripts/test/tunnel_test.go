@@ -15,8 +15,7 @@ func TestQuickTunnelParsersRequireCloudflaredSuccessMarker(t *testing.T) {
 	}{
 		// Windows 兼容 launcher 已委托原生 desktopruntime，不再维护第二份 Quick URL parser。
 		{path: "../install/install.ps1", wantCount: 1},
-		{path: "../install/install-macos-platform.sh", wantCount: 1},
-		{path: "../install/install-linux-platform.sh", wantCount: 1},
+		// Linux/macOS 平台脚本已删除 legacy Quick URL parser；解析权威在 desktopruntime。
 		// Windows 当前运行链路由原生 desktopruntime 解析，manage-windows 只保留委托入口。
 		{path: "../../internal/desktopruntime/quick_tunnel_log.go", wantCount: 1},
 	}

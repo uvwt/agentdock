@@ -323,7 +323,7 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 		if err := store.WriteTransaction(transaction); err != nil {
 			return fail(PhaseSkills, err, staged)
 		}
-		if err := bootstrapSkills(ctx, request, staged.SkillBundle); err != nil {
+		if err := bootstrapSkills(ctx, request, staged.LiveBinary, staged.SkillBundle); err != nil {
 			return fail(PhaseSkills, err, staged)
 		}
 	}
@@ -550,14 +550,29 @@ func (engine Engine) abandon(store *Store, request Request) (Result, error) {
 func (engine Engine) uninstall(ctx context.Context, store *Store, request Request) (Result, error) {
 	platform := currentPlatform()
 	sourceVersion := existingVersion(request)
-	transaction, err := newTransaction(request, platform, sourceVersion)
-	if err != nil {
-		return Result{}, err
+	transaction, err := store.ReadTransaction()
+	if err == nil && transaction.Action == ActionUninstall && transaction.State == updateengine.StateTrial {
+		// uninstall 事务按 transaction id 可重入：pending trial 必须重绑定同一事务。
+		// destructive cleanup 失败重跑时 stable binary 可能已被清理，新建事务会让
+		// 旧 detached helper 的 commit 因事务改写而永远失败。
+		// 但重入只允许参数完全一致：roots 与 purge 意图漂移必须拒绝，
+		// 否则同一 transaction 会在第二次请求下执行不同的清理语义。
+		if err := ensureUninstallIntentMatches(transaction, request); err != nil {
+			return Result{}, err
+		}
+	} else {
+		transaction, err = newTransaction(request, platform, sourceVersion)
+		if err != nil {
+			return Result{}, err
+		}
 	}
 	transaction.Phase = PhaseRollback
 	if err := store.WriteTransaction(transaction); err != nil {
 		return Result{}, err
 	}
+	// adapter 依赖 engine 解析后的任务名删除计划任务；每次运行都重新解析，
+	// 保证 retry 与首次运行得到同一个 adapter 契约。
+	uninstallTaskName := windowsManagedTaskName(request)
 
 	fail := func(err error) (Result, error) {
 		result := Result{
@@ -597,6 +612,7 @@ func (engine Engine) uninstall(ctx context.Context, store *Store, request Reques
 			Version:       request.Version,
 			ActiveVersion: sourceVersion,
 			Healthy:       false,
+			TaskName:      uninstallTaskName,
 			StartedAt:     transaction.StartedAt,
 			CompletedAt:   now,
 		}, nil
@@ -606,6 +622,7 @@ func (engine Engine) uninstall(ctx context.Context, store *Store, request Reques
 		Version:       request.Version,
 		ActiveVersion: sourceVersion,
 		Healthy:       false,
+		TaskName:      uninstallTaskName,
 		Warnings:      windowsUninstallAdapterWarnings(request),
 	}
 	if request.DeferCommit {
@@ -641,13 +658,20 @@ func runtimeGOOS() string {
 	return currentPlatform()
 }
 
-func bootstrapSkills(ctx context.Context, request Request, bundleDir string) error {
+func bootstrapSkills(ctx context.Context, request Request, executable, bundleDir string) error {
 	home := strings.TrimSpace(request.AgentDockHome)
 	if home == "" && request.DataDir != "" {
 		home = filepath.Join(request.DataDir, ".agentdock")
 	}
 	if home == "" {
 		return nil
+	}
+	// Linux 上 Engine 由 wrapper 以 root 执行；skill state 必须以 service user
+	// 身份落盘，root 写入会让运行时无法读写自己的状态目录。降权路径见
+	// skill_bootstrap_linux.go；非 Linux 或非 root 时走进程内路径。
+	handled, err := tryBootstrapAsServiceUser(ctx, request, executable, home, bundleDir)
+	if handled || err != nil {
+		return err
 	}
 	if err := os.Setenv("AGENTDOCK_HOME", home); err != nil {
 		return err

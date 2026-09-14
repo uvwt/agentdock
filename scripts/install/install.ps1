@@ -1510,9 +1510,10 @@ try {
     $generationArbiterPath = Join-Path $generationBootstrapDirectory 'agentdock-arbiter.exe'
     $generationSkillsPath = Join-Path $generationBootstrapDirectory 'core-skills'
 
-    # generation pointer 与 self-update 事务的权威状态由 Installer Engine 的 inspect 评估。
-    # Setup 不再手工解析 active-version.json；这里只消费结构化结论，并在引擎指向
-    # 未收敛状态时执行必要的恢复动作（运行 stable binary 触发 self-update 恢复）。
+    # The authoritative generation pointer and self-update transaction state are evaluated
+    # by the Installer Engine's inspect command. Setup no longer parses active-version.json
+    # itself; it only consumes the structured verdict and performs the required recovery
+    # action (running the stable binary to trigger self-update recovery) when unresolved.
     $existingActiveVersion = ''
     $pointerState = 'missing'
     $inspectJson = (& $sourceBinary install inspect --state-root $runtimeDir 2>$null | Out-String).Trim()
@@ -1547,7 +1548,7 @@ try {
                 $recoveryText = (($recoveryOutput | Out-String).Trim())
                 throw "AgentDock generation recovery failed with exit code $recoveryExitCode. $recoveryText"
             }
-            # 恢复动作完成后重新 inspect；pointer 收敛为 committed 之前 Setup 不得修改 generation。
+            # Re-inspect after the recovery action; Setup must not touch the generation until the pointer converges to committed.
             $reinspectJson = (& $sourceBinary install inspect --state-root $runtimeDir 2>$null | Out-String).Trim()
             if ($LASTEXITCODE -ne 0) {
                 throw 'AgentDock install inspect failed after generation recovery.'
@@ -1595,7 +1596,7 @@ try {
     # the old stable binaries are replaced by shims. Until this command commits the source
     # pointer the legacy binaries remain authoritative; after it commits, a new shim can
     # always route back to the copied source generation even if Setup is interrupted.
-    # pointer_state 由引擎 inspect 给出；只有 pointer 完全缺失时才可能是 legacy 布局。
+    # pointer_state comes from the engine's inspect; a legacy layout is only possible when the pointer is missing entirely.
     if ($engineReady -and -not $generationLayoutDetected -and $existingInstallDetected -and
         $pointerState -eq 'missing') {
         if (-not (Test-Path -LiteralPath $destinationBinary -PathType Leaf) -or
@@ -1707,9 +1708,9 @@ try {
         $generationLayoutDetected = $true
     }
 
-    # Engine-ready 时 generation 的发布、same-version repair 内容重建与 pointer 归属
-    # 全部由 Installer Engine 拥有（stageWindowsPayload 内部决策）。PowerShell 只在
-    # 非 engine-ready 的旧 payload 兜底路径自己 staging immutable generation。
+    # When the engine is ready, generation publish, same-version repair restage and pointer
+    # ownership all belong to the Installer Engine (decided inside stageWindowsPayload).
+    # PowerShell only stages the immutable generation itself for the non-engine-ready fallback path.
     if (-not $engineReady) {
         # Stage the complete immutable generation first. The stable entries are only replaced after
         # core/tray/arbiter/skills are all present, so bootstrap never points at a partial generation.
@@ -1764,8 +1765,9 @@ try {
     Copy-Item -LiteralPath $sourceManagerScript -Destination $managerScriptPath -Force
 
     if (-not $engineReady) {
-        # 非 engine-ready 兜底：shim 已就位，可以直接读安装后的版本。engine-ready 路径的
-        # desktop-version.txt 由 Installer Engine 在 activate 阶段按已验证 payload 版本写入。
+        # Non-engine-ready fallback: the shim is in place, so the installed version can be read
+        # directly. For engine-ready installs desktop-version.txt is written by the Installer
+        # Engine during activation from the verified payload version.
         $installedVersionJson = & $destinationBinary version --json
         if ($LASTEXITCODE -ne 0) {
             throw 'Unable to read the installed AgentDock version after replacing the Windows payload.'
@@ -1889,13 +1891,11 @@ exit `$LASTEXITCODE
 "@
         [IO.File]::WriteAllText($launcherPath, $launcher, $Utf8NoBom)
 
-        $manifestTunnelMode = $resolvedTunnelMode
         $manifestPublicUrl = ''
         if ($resolvedTunnelMode -eq 'named') {
             $manifestPublicUrl = $ServerUrl
         }
         $publicUrl = $manifestPublicUrl
-        $localMCPUrl = "http://127.0.0.1:$Port/mcp"
         if ($effectivePrivilegeMode -eq 'elevated') {
             Remove-ItemProperty -LiteralPath $runKey -Name $runValueName -ErrorAction SilentlyContinue
             Enable-AgentDockTask
@@ -1929,28 +1929,6 @@ exit `$LASTEXITCODE
             Write-TextFile -Path $tunnelModePath -Value 'none'
             Write-TextFile -Path $serverUrlPath -Value ''
             Remove-Item -LiteralPath $quickTunnelUrlPath -Force -ErrorAction SilentlyContinue
-        }
-
-        if (-not $engineReady) {
-            Write-RuntimeManifest `
-                -Path $runtimeManifestPath `
-                -InstallRoot $runtimeDir `
-                -AgentDockHome $runtimeAgentDockHome `
-                -AgentDockDefaultDir $runtimeAgentDockDefaultDir `
-                -AgentDockBinary $destinationBinary `
-                -TrayBinary $destinationTrayBinary `
-                -AgentDockLauncher $launcherPath `
-                -AgentDockTaskName $(if ($effectivePrivilegeMode -eq 'elevated') { 'AgentDock' } else { '' }) `
-                -PrivilegeMode $effectivePrivilegeMode `
-                -CloudflaredBinary $cloudflaredBinary `
-                -CloudflaredLauncher $cloudflaredLauncherPath `
-                -CoreStartupValueName $runValueName `
-                -TrayStartupValueName $trayRunValueName `
-                -TunnelStartupValueName $cloudflaredRunValueName `
-                -RuntimePort $Port `
-                -RuntimeTunnelMode $manifestTunnelMode `
-                -RuntimePublicUrl $manifestPublicUrl `
-                -Channel $InstallChannel
         }
     }
 
@@ -2015,7 +1993,10 @@ exit `$LASTEXITCODE
     $mustRestartExistingProcess = (-not $RegisterStartup) -and $processWasRunning
 
     $localMCPUrl = "http://127.0.0.1:$Port/mcp"
-    if ((-not $RegisterStartup) -and (-not $engineReady)) {
+    if (-not $engineReady) {
+        # The single non-engine-ready fallback manifest write site: for engine-ready installs
+        # runtime.json is generated by the Installer Engine during activation and must never
+        # be overwritten here.
         Write-RuntimeManifest `
             -Path $runtimeManifestPath `
             -InstallRoot $runtimeDir `

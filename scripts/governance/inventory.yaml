@@ -122,6 +122,13 @@ scripts:
     deletable: false
     notes: Setup 进程树到用户 session 的薄 broker，必须保留。
 
+  - path: scripts/install/probe-protected-text.ps1
+    class: runtime-adapter
+    owner: installer
+    public_contract: false
+    deletable: false
+    notes: Windows Setup 的只读 DPAPI 可用性探针；只返回状态码，不输出凭据明文。
+
   - path: scripts/dev/deploy-macos-source.sh
     class: dev
     owner: desktop
@@ -167,6 +174,13 @@ scripts:
     deletable: false
     legacy_oversize: true
     oversize_justification: macOS 安装器平台 E2E，负责 VM/权限之外的环境编排。
+
+  - path: scripts/test/linux-installer-e2e-vps.sh
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+    oversize_justification: Linux Installer Engine VPS E2E（非 root + sudo + systemd + 身份/属主断言），URL 经 env 注入。
 
   - path: scripts/test/test-macos-app.sh
     class: test

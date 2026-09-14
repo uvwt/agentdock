@@ -172,33 +172,6 @@ if command -v setsid >/dev/null 2>&1; then
   grep -Fq 'AgentDock 已卸载' "$NO_TTY_ROOT/stderr.log"
 fi
 
-# 安装器由其他 AgentDock 实例启动时，父进程的实例目录不能泄漏到新部署的 Skill bootstrap。
-SERVICE_HOME_ROOT="$TMP_ROOT/service-user-home"
-SERVICE_ENV_OUTPUT="$TMP_ROOT/service-user-env"
-mkdir -p "$SERVICE_HOME_ROOT"
-cat >"$FAKE_BIN/capture-service-env" <<'SH'
-#!/bin/sh
-set -eu
-: "${TEST_SERVICE_ENV_OUTPUT:?}"
-{
-  printf 'HOME=%s\n' "${HOME:-}"
-  printf 'AGENTDOCK_HOME=%s\n' "${AGENTDOCK_HOME:-}"
-  printf 'AGENTDOCK_DEFAULT_DIR=%s\n' "${AGENTDOCK_DEFAULT_DIR:-}"
-} >"$TEST_SERVICE_ENV_OUTPUT"
-SH
-chmod +x "$FAKE_BIN/capture-service-env"
-TEST_SERVICE_ENV_OUTPUT="$SERVICE_ENV_OUTPUT" \
-  AGENTDOCK_HOME="$TMP_ROOT/inherited/.agentdock" \
-  AGENTDOCK_DEFAULT_DIR="$TMP_ROOT/inherited/AgentDock" \
-  bash -c '
-    set -Eeuo pipefail
-    source "$1"
-    run_as_service_user "$(id -un)" "$2" "$3"
-  ' bash "$ROOT_DIR/scripts/install/install-linux-platform.sh" "$SERVICE_HOME_ROOT" "$FAKE_BIN/capture-service-env"
-assert_line "HOME=$SERVICE_HOME_ROOT" "$SERVICE_ENV_OUTPUT"
-assert_line "AGENTDOCK_HOME=$SERVICE_HOME_ROOT/.agentdock" "$SERVICE_ENV_OUTPUT"
-assert_line "AGENTDOCK_DEFAULT_DIR=$SERVICE_HOME_ROOT/AgentDock" "$SERVICE_ENV_OUTPUT"
-
 # 首次安装默认只需选择公网模式，并完整保留平台参数。
 LINUX_OUTPUT="$TMP_ROOT/linux.args"
 LINUX_ENV_OUTPUT="$TMP_ROOT/linux.env"

@@ -329,7 +329,10 @@ func regenerateQuickTunnel(ctx context.Context, runtime tunnelRuntime) error {
 func launchCloudflared(runtime tunnelRuntime) error {
 	// Windows 不能把轮转 writer 直接交给脱离父进程的 cloudflared；因此先启动一个
 	// 长驻的 AgentDock tunnel launch 监督进程，由它持有 cloudflared 并实时轮转日志。
-	command := exec.Command(runtime.manifest.AgentDockBinary, "tunnel", "launch", "--runtime-root", runtime.root)
+	// Installer trial 期间 stable shim 会拒绝未提交 generation，因此和 Core 启动一样，
+	// 直接绑定当前 active generation，避免 supervisor 在 commit 前绕回 shim 失败。
+	supervisorBinary := ActiveCoreBinary(runtime.root, runtime.manifest)
+	command := exec.Command(supervisorBinary, "tunnel", "launch", "--runtime-root", runtime.root)
 	command.Dir = runtime.root
 	command.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow:    true,

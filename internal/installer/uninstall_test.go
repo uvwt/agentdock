@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/uvwt/agentdock/internal/desktopruntime"
@@ -395,6 +396,198 @@ func TestUninstallDeferCommitIsNotProductUninstalled(t *testing.T) {
 	}
 	if committed.State != updateengine.StateCommitted || committed.Action != ActionUninstall {
 		t.Fatalf("adapter commit state=%s action=%s", committed.State, committed.Action)
+	}
+}
+
+// destructive cleanup 失败重跑时 stable binary 可能已被清理：uninstall 必须重绑定
+// 同一个 trial 事务，让 txid-scoped detached helper 的 commit 仍然有效。
+func TestUninstallRebindsPendingTrialTransaction(t *testing.T) {
+	withStubCommands(t, map[string]string{"systemctl": "exit 0"})
+	root := t.TempDir()
+	installRoot := filepath.Join(root, "opt")
+	runtimeRoot := filepath.Join(root, "etc")
+	if err := os.MkdirAll(installRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(runtimeRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	uninstallRequest := Request{
+		Action:          ActionUninstall,
+		InstallRoot:     installRoot,
+		RuntimeRoot:     runtimeRoot,
+		ServiceManager:  "none",
+		LaunchAgentsDir: filepath.Join(root, "agents"),
+		DeferCommit:     true,
+	}
+	first, err := (Engine{}).Run(context.Background(), uninstallRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := (Engine{}).Run(context.Background(), uninstallRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.TransactionID != first.TransactionID {
+		t.Fatalf("pending uninstall trial was replaced: %s -> %s", first.TransactionID, second.TransactionID)
+	}
+	committed, err := (Engine{}).Run(context.Background(), Request{
+		Action:        ActionCommit,
+		InstallRoot:   installRoot,
+		RuntimeRoot:   runtimeRoot,
+		TransactionID: first.TransactionID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed.State != updateengine.StateCommitted {
+		t.Fatalf("rebound trial commit state=%s", committed.State)
+	}
+}
+
+// 计划任务名必须由 engine Result 单一来源返回，adapter 不得再自行解析 runtime.json 判定。
+func TestUninstallResultCarriesManagedTaskName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows manifest resolution is exercised on Windows CI")
+	}
+	withStubCommands(t, map[string]string{"systemctl": "exit 0"})
+	root := t.TempDir()
+	installRoot := filepath.Join(root, "opt")
+	runtimeRoot := filepath.Join(root, "etc")
+	if err := os.MkdirAll(installRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(runtimeRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := desktopruntime.Manifest{
+		SchemaVersion:     1,
+		InstallRoot:       installRoot,
+		AgentDockBinary:   filepath.Join(installRoot, "agentdock.exe"),
+		PrivilegeMode:     "elevated",
+		AgentDockTaskName: "AgentDock",
+		Host:              "127.0.0.1",
+		Port:              8765,
+		LocalMCPURL:       "http://127.0.0.1:8765/mcp",
+		TunnelMode:        "none",
+	}
+	if err := desktopruntime.Save(filepath.Join(runtimeRoot, "runtime.json"), manifest); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (Engine{}).Run(context.Background(), Request{
+		Action:          ActionUninstall,
+		InstallRoot:     installRoot,
+		RuntimeRoot:     runtimeRoot,
+		ServiceManager:  "none",
+		LaunchAgentsDir: filepath.Join(root, "agents"),
+		DeferCommit:     true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TaskName != "AgentDock" {
+		t.Fatalf("uninstall result task_name=%q, want AgentDock", result.TaskName)
+	}
+}
+
+// uninstall trial 重入必须冻结事务意图：purge 标志漂移必须拒绝，
+// 不能在旧事务上执行比首次承诺更强或更弱的清理。
+func TestUninstallRebindRejectsPurgeIntentDrift(t *testing.T) {
+	withStubCommands(t, map[string]string{"systemctl": "exit 0"})
+	root := t.TempDir()
+	installRoot := filepath.Join(root, "opt")
+	runtimeRoot := filepath.Join(root, "etc")
+	if err := os.MkdirAll(installRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(runtimeRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	uninstallRequest := Request{
+		Action:          ActionUninstall,
+		InstallRoot:     installRoot,
+		RuntimeRoot:     runtimeRoot,
+		ServiceManager:  "none",
+		LaunchAgentsDir: filepath.Join(root, "agents"),
+		DeferCommit:     true,
+	}
+	first, err := (Engine{}).Run(context.Background(), uninstallRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// purge-data 升级：同一 runtime root 下第二次请求要求更强清理，必须拒绝。
+	drifted := uninstallRequest
+	drifted.PurgeData = true
+	if _, err := (Engine{}).Run(context.Background(), drifted); err == nil {
+		t.Fatal("purge-data drift must be rejected on a pending uninstall trial")
+	} else if !strings.Contains(err.Error(), "清理意图不匹配") {
+		t.Fatalf("drift error should name the intent mismatch: %v", err)
+	}
+
+	store, err := NewStore(runtimeRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := store.ReadTransaction()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tx.State != updateengine.StateTrial || tx.TransactionID != first.TransactionID {
+		t.Fatalf("rejected drift must leave the original trial untouched: state=%s tx=%s", tx.State, tx.TransactionID)
+	}
+
+	// 参数一致的 retry 仍然重入并提交。
+	second, err := (Engine{}).Run(context.Background(), uninstallRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.TransactionID != first.TransactionID {
+		t.Fatalf("matching retry must rebind: %s -> %s", first.TransactionID, second.TransactionID)
+	}
+}
+
+// install-root 漂移同样是意图漂移：不允许在同一 runtime root 下换一个目录执行清理。
+func TestUninstallRebindRejectsInstallRootDrift(t *testing.T) {
+	withStubCommands(t, map[string]string{"systemctl": "exit 0"})
+	root := t.TempDir()
+	runtimeRoot := filepath.Join(root, "etc")
+	installRootA := filepath.Join(root, "opt-a")
+	installRootB := filepath.Join(root, "opt-b")
+	if err := os.MkdirAll(runtimeRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	base := Request{
+		Action:          ActionUninstall,
+		RuntimeRoot:     runtimeRoot,
+		ServiceManager:  "none",
+		LaunchAgentsDir: filepath.Join(root, "agents"),
+		DeferCommit:     true,
+	}
+	firstRequest := base
+	firstRequest.InstallRoot = installRootA
+	if _, err := (Engine{}).Run(context.Background(), firstRequest); err != nil {
+		t.Fatal(err)
+	}
+
+	drifted := base
+	drifted.InstallRoot = installRootB
+	if _, err := (Engine{}).Run(context.Background(), drifted); err == nil {
+		t.Fatal("install-root drift must be rejected on a pending uninstall trial")
+	} else if !strings.Contains(err.Error(), "install-root 意图不匹配") {
+		t.Fatalf("drift error should name install-root mismatch: %v", err)
+	}
+
+	store, err := NewStore(runtimeRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := store.ReadTransaction()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tx.State != updateengine.StateTrial || tx.InstallRoot != installRootA {
+		t.Fatalf("rejected drift must keep the original trial: state=%s install_root=%s", tx.State, tx.InstallRoot)
 	}
 }
 

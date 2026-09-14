@@ -365,20 +365,6 @@ function Get-ObjectProperty {
     return $property.Value
 }
 
-function Set-ObjectProperty {
-    param(
-        [object] $Object,
-        [string] $Name,
-        [object] $Value
-    )
-
-    if ($null -ne $Object.PSObject.Properties[$Name]) {
-        $Object.$Name = $Value
-        return
-    }
-    $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value
-}
-
 function Test-SameFullPath {
     param(
         [string] $Left,
@@ -486,15 +472,6 @@ function Write-TextAtomically {
     Move-Item -LiteralPath $temporaryPath -Destination $Path -Force
 }
 
-function Write-JsonAtomically {
-    param(
-        [string] $Path,
-        [object] $Value
-    )
-
-    Write-TextAtomically -Path $Path -Value ($Value | ConvertTo-Json -Depth 8)
-}
-
 function Read-TextFile {
     param([string] $Path)
 
@@ -523,28 +500,6 @@ function Write-ProtectedText {
     Write-TextAtomically -Path $Path -Value ([Convert]::ToBase64String($protectedBytes))
 }
 
-function Read-ProtectedText {
-    param(
-        [string] $Path,
-        [string] $Entropy
-    )
-
-    $encoded = Read-TextFile -Path $Path
-    if ([string]::IsNullOrWhiteSpace($encoded)) {
-        return ''
-    }
-    try {
-        $plainBytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
-            [Convert]::FromBase64String($encoded),
-            [Text.Encoding]::UTF8.GetBytes($Entropy),
-            [System.Security.Cryptography.DataProtectionScope]::CurrentUser
-        )
-        return [Text.Encoding]::UTF8.GetString($plainBytes)
-    } catch {
-        throw "无法读取当前 Windows 用户保存的凭据：$Path"
-    }
-}
-
 function New-RandomHex {
     param([int] $ByteCount)
 
@@ -556,22 +511,6 @@ function New-RandomHex {
         $generator.Dispose()
     }
     return -join ($bytes | ForEach-Object { $_.ToString('x2') })
-}
-
-function Read-SecretFile {
-    param([string] $Path)
-
-    if ([string]::IsNullOrWhiteSpace($Path)) {
-        return ''
-    }
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        throw "找不到临时凭据文件：$Path"
-    }
-    $value = (Get-Content -LiteralPath $Path -Raw -Encoding UTF8).Trim()
-    if ([string]::IsNullOrWhiteSpace($value)) {
-        throw "临时凭据文件为空：$Path"
-    }
-    return $value
 }
 
 if ([string]::IsNullOrWhiteSpace($RuntimeRoot)) {
@@ -652,32 +591,6 @@ function Get-ControlPanelSettings {
     }
 }
 
-function Update-RuntimeManifest {
-    param(
-        [int] $RuntimePort,
-        [string] $RuntimeMode,
-        [string] $PublicUrl
-    )
-
-    # 版本由 agentdock.exe BuildInfo 唯一提供；清理旧清单残留，避免再次形成第二版本真值。
-    $Manifest.PSObject.Properties.Remove('version')
-    Set-ObjectProperty -Object $Manifest -Name 'schema_version' -Value 1
-    Set-ObjectProperty -Object $Manifest -Name 'install_root' -Value $RuntimeRoot
-    Set-ObjectProperty -Object $Manifest -Name 'agentdock_binary' -Value $AgentDockBinary
-    Set-ObjectProperty -Object $Manifest -Name 'tray_binary' -Value $TrayBinary
-    Set-ObjectProperty -Object $Manifest -Name 'agentdock_launcher' -Value $AgentDockLauncher
-    Set-ObjectProperty -Object $Manifest -Name 'cloudflared_binary' -Value $CloudflaredBinary
-    Set-ObjectProperty -Object $Manifest -Name 'cloudflared_launcher' -Value $CloudflaredLauncher
-    Set-ObjectProperty -Object $Manifest -Name 'startup_value_name' -Value $CoreStartupValueName
-    Set-ObjectProperty -Object $Manifest -Name 'tray_startup_value_name' -Value $TrayStartupValueName
-    Set-ObjectProperty -Object $Manifest -Name 'cloudflared_startup_value_name' -Value $CloudflaredStartupValueName
-    Set-ObjectProperty -Object $Manifest -Name 'host' -Value '127.0.0.1'
-    Set-ObjectProperty -Object $Manifest -Name 'port' -Value $RuntimePort
-    Set-ObjectProperty -Object $Manifest -Name 'local_mcp_url' -Value "http://127.0.0.1:$RuntimePort/mcp"
-    Set-ObjectProperty -Object $Manifest -Name 'tunnel_mode' -Value $RuntimeMode
-    Set-ObjectProperty -Object $Manifest -Name 'public_url' -Value $PublicUrl
-    Write-JsonAtomically -Path $ManifestPath -Value $Manifest
-}
 
 function Ensure-Credentials {
     if ([string]::IsNullOrWhiteSpace((Read-TextFile -Path $AuthTokenPath))) {
@@ -711,26 +624,6 @@ function Get-ProcessesAtPath {
     })
 }
 
-function Stop-ProcessesAtPath {
-    param(
-        [string] $ProcessName,
-        [string] $BinaryPath
-    )
-
-    $deadline = [DateTime]::UtcNow.AddSeconds(15)
-    do {
-        $processes = @(Get-ProcessesAtPath -ProcessName $ProcessName -BinaryPath $BinaryPath)
-        foreach ($process in $processes) {
-            Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
-        }
-        if ($processes.Count -eq 0) {
-            return
-        }
-        Start-Sleep -Milliseconds 250
-    } while ([DateTime]::UtcNow -lt $deadline)
-    throw "无法停止 $ProcessName：$BinaryPath"
-}
-
 function Escape-SingleQuoted {
     param([string] $Value)
     return $Value.Replace("'", "''")
@@ -759,31 +652,6 @@ function Invoke-ElevatedManagerAction {
     if ($process.ExitCode -ne 0) {
         throw "需要管理员权限的操作失败，退出码：$($process.ExitCode)"
     }
-}
-
-function Write-Launchers {
-    $settings = Get-ControlPanelSettings
-    $escapedManager = Escape-SingleQuoted -Value $ManagerPath
-    $escapedRoot = Escape-SingleQuoted -Value $RuntimeRoot
-    $escapedAgentDockBinary = Escape-SingleQuoted -Value $AgentDockBinary
-
-    # 旧版本升级仍可能由自更新逻辑识别该文件，因此暂时保留兼容启动器。
-    # 新安装和桌面端均直接调用 agentdock service；支持的旧版本淘汰后可删除此文件。
-    $coreLauncher = @"
-`$ErrorActionPreference = 'Stop'
-`$env:AGENTDOCK_PORT = '$($settings.port)'
-`$agentDockBinary = '$escapedAgentDockBinary'
-& '$escapedAgentDockBinary' service launch-core --runtime-root '$escapedRoot'
-exit `$LASTEXITCODE
-"@
-    Write-TextAtomically -Path $AgentDockLauncher -Value $coreLauncher
-
-    $tunnelLauncher = @"
-`$ErrorActionPreference = 'Stop'
-& '$escapedManager' -Action launch-tunnel -RuntimeRoot '$escapedRoot'
-exit `$LASTEXITCODE
-"@
-    Write-TextAtomically -Path $CloudflaredLauncher -Value $tunnelLauncher
 }
 
 function Start-TaskPreservingStartupState {
@@ -843,10 +711,6 @@ function Stop-Core {
     Invoke-NativeCoreCommand -Command stop
 }
 
-function Restart-Core {
-    Invoke-NativeCoreCommand -Command restart
-}
-
 function Invoke-LaunchTunnel {
     # 兼容启动器也只进入原生 Tunnel 生命周期；cloudflared 输出由 AgentDock 监督进程轮转。
     & $AgentDockBinary tunnel start --runtime-root $RuntimeRoot
@@ -873,10 +737,6 @@ function Wait-QuickTunnelReady {
     throw '新的 Quick Tunnel 地址未在 45 秒内准备完成。'
 }
 
-function Clear-ActivePublicUrl {
-    Write-TextAtomically -Path $ServerUrlPath -Value ''
-    Remove-Item -LiteralPath $QuickTunnelUrlPath -Force -ErrorAction SilentlyContinue
-}
 
 function Set-TunnelMode {
     param(
@@ -931,18 +791,16 @@ function Stop-AgentDockRuntime {
 }
 
 function Restart-AgentDockRuntime {
+    # 产品状态机由原生命令拥有：quick 模式的 tunnel restart 内部会清旧地址、
+    # 投影 manifest 并重启 Core（regenerateQuickTunnel），这里只做组合调用与就绪等待。
     $modeValue = (Read-TextFile -Path $TunnelModePath).ToLowerInvariant()
-    Stop-Tunnel
-    Stop-Core
     if ($modeValue -eq 'quick') {
-        Clear-ActivePublicUrl
-        $settings = Get-ControlPanelSettings
-        Update-RuntimeManifest -RuntimePort $settings.port -RuntimeMode 'none' -PublicUrl ''
-    }
-    Start-Core
-    Start-Tunnel
-    if ($modeValue -eq 'quick') {
+        Invoke-NativeTunnelCommand -Command restart
         [void] (Wait-QuickTunnelReady)
+    } else {
+        Stop-Tunnel
+        Invoke-NativeCoreCommand -Command restart
+        Start-Tunnel
     }
 }
 

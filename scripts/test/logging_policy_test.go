@@ -21,31 +21,29 @@ func TestDockerComposeBoundsAgentDockAndTunnelLogs(t *testing.T) {
 }
 
 func TestLinuxOpenRCUsesAgentDockManagedRotatingLogs(t *testing.T) {
-	data, err := os.ReadFile("../install/install-linux-platform.sh")
+	// OpenRC unit 由 Go Installer Engine 生成（internal/installer/units.go），
+	// 平台脚本不再保留第二份单元模板；日志治理策略断言跟着权威实现走。
+	data, err := os.ReadFile("../../internal/installer/units.go")
 	if err != nil {
-		t.Fatalf("read install-linux-platform.sh: %v", err)
+		t.Fatalf("read internal/installer/units.go: %v", err)
 	}
-	script := string(data)
+	template := string(data)
+	// core 与 tunnel 两个 OpenRC unit 都必须走托管日志目录，直接输出到 /dev/null。
 	for _, want := range []string{
-		`log_dir="/var/log/${service_name}"`,
-		`log_dir="/var/log/${tunnel_service_name}"`,
+		`log_dir="/var/log/%s"`,
 		`output_log="/dev/null"`,
 		`error_log="/dev/null"`,
-		`/var/log/%s/agentdock.err.log`,
-		`/var/log/%s/cloudflared.out.log`,
-		`/var/log/%s/cloudflared.err.log`,
+		`checkpath -d -m 0750`,
 	} {
-		if !strings.Contains(script, want) {
-			t.Fatalf("OpenRC logging policy missing %q", want)
+		if got := strings.Count(template, want); got != 2 {
+			t.Fatalf("OpenRC template policy %q occurrences=%d, want 2 (core+tunnel)", want, got)
 		}
 	}
 	for _, legacy := range []string{
-		`output_log="/var/log/${service_name}.log"`,
-		`error_log="/var/log/${service_name}.err"`,
-		`output_log="/var/log/${tunnel_service_name}.log"`,
-		`error_log="/var/log/${tunnel_service_name}.err"`,
+		`output_log="/var/log/`,
+		`error_log="/var/log/`,
 	} {
-		if strings.Contains(script, legacy) {
+		if strings.Contains(template, legacy) {
 			t.Fatalf("OpenRC still writes unbounded legacy log directly: %s", legacy)
 		}
 	}
@@ -102,11 +100,13 @@ func TestDesktopHostsDoNotBypassManagedRotation(t *testing.T) {
 		t.Fatal("Windows compatibility tunnel launcher must delegate to native tunnel lifecycle")
 	}
 
-	macInstaller, err := os.ReadFile("../install/install-macos-platform.sh")
+	// macOS LaunchAgent 由 Go Installer Engine 生成（internal/installer/units.go）；
+	// core 与 tunnel 两个 plist 各自把 stdout/stderr 重定向到 /dev/null。
+	plistTemplate, err := os.ReadFile("../../internal/installer/units.go")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("read internal/installer/units.go: %v", err)
 	}
-	if got := strings.Count(string(macInstaller), `<string>/dev/null</string>`); got != 4 {
-		t.Fatalf("macOS LaunchAgent null redirections=%d, want 4", got)
+	if got := strings.Count(string(plistTemplate), `<string>/dev/null</string>`); got != 4 {
+		t.Fatalf("macOS LaunchAgent null redirections in engine template=%d, want 4", got)
 	}
 }

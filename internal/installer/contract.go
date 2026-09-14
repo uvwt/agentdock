@@ -136,43 +136,84 @@ type Request struct {
 }
 
 type Result struct {
-	SchemaVersion   int                   `json:"schema_version"`
-	TransactionID   string                `json:"transaction_id"`
-	Platform        string                `json:"platform"`
-	Action          Action                `json:"action"`
-	State           updateengine.State    `json:"state"`
-	Phase           Phase                 `json:"phase"`
-	Version         string                `json:"version"`
-	ActiveVersion   string                `json:"active_version,omitempty"`
-	FallbackVersion string                `json:"fallback_version,omitempty"`
-	LocalMCPURL     string                `json:"local_mcp_url,omitempty"`
-	PublicURL       string                `json:"public_url,omitempty"`
-	Healthy         bool                  `json:"healthy"`
-	PrivilegeMode   string                `json:"privilege_mode,omitempty"`
-	Failure         *updateengine.Failure `json:"failure,omitempty"`
-	Warnings        []string              `json:"warnings,omitempty"`
-	StartedAt       time.Time             `json:"started_at"`
-	CompletedAt     time.Time             `json:"completed_at"`
+	SchemaVersion   int                `json:"schema_version"`
+	TransactionID   string             `json:"transaction_id"`
+	Platform        string             `json:"platform"`
+	Action          Action             `json:"action"`
+	State           updateengine.State `json:"state"`
+	Phase           Phase              `json:"phase"`
+	Version         string             `json:"version"`
+	ActiveVersion   string             `json:"active_version,omitempty"`
+	FallbackVersion string             `json:"fallback_version,omitempty"`
+	LocalMCPURL     string             `json:"local_mcp_url,omitempty"`
+	PublicURL       string             `json:"public_url,omitempty"`
+	Healthy         bool               `json:"healthy"`
+	PrivilegeMode   string             `json:"privilege_mode,omitempty"`
+	// TaskName 只在 uninstall Result 里返回：engine 解析后的计划任务名是 Windows
+	// adapter 删除任务的单一来源，脚本不得再自行解析 runtime.json 重复判定。
+	TaskName    string                `json:"task_name,omitempty"`
+	Failure     *updateengine.Failure `json:"failure,omitempty"`
+	Warnings    []string              `json:"warnings,omitempty"`
+	StartedAt   time.Time             `json:"started_at"`
+	CompletedAt time.Time             `json:"completed_at"`
 }
 
 type Transaction struct {
-	SchemaVersion   int                   `json:"schema_version"`
-	TransactionID   string                `json:"transaction_id"`
-	Platform        string                `json:"platform"`
-	Action          Action                `json:"action"`
-	SourceVersion   string                `json:"source_version,omitempty"`
-	TargetVersion   string                `json:"target_version"`
-	ActiveVersion   string                `json:"active_version,omitempty"`
-	FallbackVersion string                `json:"fallback_version,omitempty"`
-	State           updateengine.State    `json:"state"`
-	Phase           Phase                 `json:"phase"`
-	InstallRoot     string                `json:"install_root"`
-	RuntimeRoot     string                `json:"runtime_root"`
-	StartedAt       time.Time             `json:"started_at"`
-	UpdatedAt       time.Time             `json:"updated_at"`
-	CompletedAt     *time.Time            `json:"completed_at,omitempty"`
-	Failure         *updateengine.Failure `json:"failure,omitempty"`
-	Warnings        []string              `json:"warnings,omitempty"`
+	SchemaVersion   int                `json:"schema_version"`
+	TransactionID   string             `json:"transaction_id"`
+	Platform        string             `json:"platform"`
+	Action          Action             `json:"action"`
+	SourceVersion   string             `json:"source_version,omitempty"`
+	TargetVersion   string             `json:"target_version"`
+	ActiveVersion   string             `json:"active_version,omitempty"`
+	FallbackVersion string             `json:"fallback_version,omitempty"`
+	State           updateengine.State `json:"state"`
+	Phase           Phase              `json:"phase"`
+	InstallRoot     string             `json:"install_root"`
+	RuntimeRoot     string             `json:"runtime_root"`
+	// PurgeConfig / PurgeData 是 uninstall 的事务意图。trial 重入必须逐项匹配，
+	// 否则同一 transaction 会在第二次请求下执行比首次承诺更强或更弱的清理。
+	PurgeConfig bool                  `json:"purge_config,omitempty"`
+	PurgeData   bool                  `json:"purge_data,omitempty"`
+	StartedAt   time.Time             `json:"started_at"`
+	UpdatedAt   time.Time             `json:"updated_at"`
+	CompletedAt *time.Time            `json:"completed_at,omitempty"`
+	Failure     *updateengine.Failure `json:"failure,omitempty"`
+	Warnings    []string              `json:"warnings,omitempty"`
+}
+
+// ensureUninstallIntentMatches 冻结 uninstall trial 的事务意图：retry 的
+// install-root 与 purge 标志必须与首次创建时完全一致。任何漂移都要明确拒绝，
+// 让操作者用原始参数恢复，而不是在旧事务上执行新的清理语义。
+func ensureUninstallIntentMatches(transaction Transaction, request Request) error {
+	if !sameInstallPath(transaction.InstallRoot, request.InstallRoot) {
+		return fmt.Errorf(
+			"uninstall 事务 %s 的 install-root 意图不匹配：事务=%s，本次=%s；请用原始 install-root 恢复该 trial",
+			transaction.TransactionID, transaction.InstallRoot, request.InstallRoot)
+	}
+	if !sameInstallPath(transaction.RuntimeRoot, request.RuntimeRoot) {
+		return fmt.Errorf(
+			"uninstall 事务 %s 的 runtime-root 意图不匹配：事务=%s，本次=%s；请用原始 runtime-root 恢复该 trial",
+			transaction.TransactionID, transaction.RuntimeRoot, request.RuntimeRoot)
+	}
+	if transaction.PurgeConfig != request.PurgeConfig || transaction.PurgeData != request.PurgeData {
+		return fmt.Errorf(
+			"uninstall 事务 %s 的清理意图不匹配：事务 purge-config=%t purge-data=%t，本次 purge-config=%t purge-data=%t；请用与首次卸载相同的清理标志重跑",
+			transaction.TransactionID,
+			transaction.PurgeConfig, transaction.PurgeData,
+			request.PurgeConfig, request.PurgeData)
+	}
+	return nil
+}
+
+// sameInstallPath 比较安装路径。Windows 文件系统大小写不敏感，其余平台逐字节比较。
+func sameInstallPath(left, right string) bool {
+	left = filepath.Clean(strings.TrimSpace(left))
+	right = filepath.Clean(strings.TrimSpace(right))
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(left, right)
+	}
+	return left == right
 }
 
 func (request Request) StateRoot() string {
@@ -227,6 +268,11 @@ func normalizeRequest(request Request) (Request, error) {
 	if request.Channel == "" {
 		request.Channel = "official"
 	}
+	// purge-data 蕴含 purge-config（CLI 层同样蕴含）；在引擎层归一化，
+	// 保证 uninstall 事务意图无论从哪个入口进来都是同一份。
+	if request.PurgeData {
+		request.PurgeConfig = true
+	}
 	if request.Version != "" {
 		if err := updateengine.ValidateVersion(request.Version); err != nil {
 			return Request{}, fmt.Errorf("版本无效：%w", err)
@@ -257,6 +303,8 @@ func newTransaction(request Request, platform, sourceVersion string) (Transactio
 		Phase:         PhasePrepare,
 		InstallRoot:   request.InstallRoot,
 		RuntimeRoot:   request.RuntimeRoot,
+		PurgeConfig:   request.PurgeConfig,
+		PurgeData:     request.PurgeData,
 		StartedAt:     now,
 		UpdatedAt:     now,
 	}, nil

@@ -185,43 +185,13 @@ if (Test-Path -LiteralPath $runtimeManifestPath -PathType Leaf) {
 $engineUninstallPrepared = $false
 $engineUninstallTransactionId = ''
 $engineCommitBinary = ''
-$pendingUninstall = $null
-if (Test-Path -LiteralPath $installTransactionPath -PathType Leaf) {
-    try {
-        $candidate = Get-Content -LiteralPath $installTransactionPath -Raw | ConvertFrom-Json
-        if ([string]::Equals([string] $candidate.action, 'uninstall', [StringComparison]::OrdinalIgnoreCase)) {
-            $pendingUninstall = $candidate
-        }
-    } catch {
-        throw "Unable to read Installer Engine transaction while resuming uninstall: $($_.Exception.Message)"
-    }
-}
-
-if ($null -ne $pendingUninstall -and [string]::Equals([string] $pendingUninstall.state, 'trial', [StringComparison]::OrdinalIgnoreCase)) {
-    # destructive cleanup 可能已经删掉 stable binary。trial uninstall 必须按 transaction id 可重入，
-    # 不能因为 agentdock.exe 不存在就跳过 Engine 并把残留 trial 误报成成功。
-    $engineUninstallTransactionId = ([string] $pendingUninstall.transaction_id).Trim()
-    if ([string]::IsNullOrWhiteSpace($engineUninstallTransactionId) -or $engineUninstallTransactionId -notmatch '^[0-9a-fA-F]{32}$') {
-        throw 'Pending Installer Engine uninstall transaction has an invalid transaction id.'
-    }
-    $engineUninstallPrepared = $true
-    $engineCommitBinary = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-uninstall-' + $engineUninstallTransactionId + '.exe')
-
-    if (-not (Test-Path -LiteralPath $engineCommitBinary -PathType Leaf)) {
-        if (-not (Test-Path -LiteralPath $agentDockBinary -PathType Leaf)) {
-            throw "Pending uninstall transaction $engineUninstallTransactionId cannot resume because both the stable binary and detached Engine helper are missing."
-        }
-        & $agentDockBinary install detach-engine --output $engineCommitBinary 1>$null
-        if ($LASTEXITCODE -ne 0) { throw "Unable to rebuild detached Installer Engine for pending uninstall (exit $LASTEXITCODE)." }
-    }
-    $resumeReadyOutput = & $engineCommitBinary install --engine-ready 2>$null
-    if ($LASTEXITCODE -ne 0 -or ("$resumeReadyOutput" -notlike '*agentdock-installer-engine*')) {
-        throw "Detached Installer Engine is not usable for pending uninstall transaction $engineUninstallTransactionId."
-    }
-} elseif (Test-Path -LiteralPath $agentDockBinary -PathType Leaf) {
+if (Test-Path -LiteralPath $agentDockBinary -PathType Leaf) {
     $engineReadyOutput = & $agentDockBinary install --engine-ready 2>$null
     if ($LASTEXITCODE -eq 0 -and ("$engineReadyOutput" -like '*agentdock-installer-engine*')) {
         # Keep uninstall trial until every OS-adapter removal succeeds, including PurgeState.
+        # The engine keeps uninstall transactions reentrant by transaction id: a pending trial
+        # rebinds to the same transaction, terminal states start a new one. The script no longer
+        # decides resume itself; the managed task name comes from the engine result.
         $engineUninstall = @(
             'uninstall',
             '--install-root', $runtimeDir,
@@ -239,19 +209,59 @@ if ($null -ne $pendingUninstall -and [string]::Equals([string] $pendingUninstall
         try {
             $engineUninstallResult = $engineUninstallJson | ConvertFrom-Json
             $engineUninstallTransactionId = [string] $engineUninstallResult.transaction_id
+            # task_name carries omitempty: standard-mode installs leave it out of the JSON,
+            # and Set-StrictMode makes direct property access on a missing member throw.
+            $engineTaskNameProperty = $engineUninstallResult.PSObject.Properties['task_name']
+            if ($null -ne $engineTaskNameProperty -and
+                -not [string]::IsNullOrWhiteSpace([string] $engineTaskNameProperty.Value)) {
+                $managedTaskName = ([string] $engineTaskNameProperty.Value).Trim()
+            }
         } catch {
             throw "Installer Engine returned invalid uninstall JSON: $($_.Exception.Message)"
         }
         if ([string]::IsNullOrWhiteSpace($engineUninstallTransactionId)) {
             throw 'Installer Engine uninstall did not return a transaction id.'
         }
-        # transaction id 决定 helper 路径，后续失败重跑可以找到同一个 Engine 继续 commit。
+        # The transaction id determines the helper path so a failed rerun can find the same Engine to continue the commit.
         $engineCommitBinary = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-uninstall-' + $engineUninstallTransactionId + '.exe')
         & $agentDockBinary install detach-engine --output $engineCommitBinary 1>$null
         if ($LASTEXITCODE -ne 0) { throw "Unable to prepare detached Installer Engine (exit $LASTEXITCODE)." }
     }
-} elseif ($null -ne $pendingUninstall -and -not [string]::Equals([string] $pendingUninstall.state, 'committed', [StringComparison]::OrdinalIgnoreCase)) {
-    throw "Installer Engine uninstall is $($pendingUninstall.state), but no stable binary exists to start a safe new uninstall."
+} elseif (Test-Path -LiteralPath $installTransactionPath -PathType Leaf) {
+    # The stable binary was already cleaned up by a previous uninstall run. The durable
+    # transaction is the only recovery clue for locating the txid-scoped helper, so this is
+    # a pure recovery bootstrap: a trial must find its helper to continue the commit (a
+    # missing helper must fail loudly), a committed transaction is an idempotent rerun, and
+    # every other state is rejected by the engine at commit time. State decisions stay in
+    # the engine; the script never produces a fake-success path.
+    try {
+        $pendingTransaction = Get-Content -LiteralPath $installTransactionPath -Raw | ConvertFrom-Json
+    } catch {
+        throw "Unable to read Installer Engine transaction while resuming uninstall: $($_.Exception.Message)"
+    }
+    if ([string]::Equals([string] $pendingTransaction.action, 'uninstall', [StringComparison]::OrdinalIgnoreCase)) {
+        $pendingState = ([string] $pendingTransaction.state).Trim().ToLowerInvariant()
+        $pendingTransactionId = ([string] $pendingTransaction.transaction_id).Trim()
+        if ($pendingState -eq 'committed') {
+            Write-Host 'Previous AgentDock uninstall transaction is already committed; running idempotent cleanup.'
+        } elseif ($pendingState -ne 'trial') {
+            throw "Installer Engine uninstall is $pendingState, but no stable binary exists to start a safe new uninstall."
+        } else {
+            if ($pendingTransactionId -notmatch '^[0-9a-fA-F]{32}$') {
+                throw 'Pending Installer Engine uninstall transaction has an invalid transaction id.'
+            }
+            $engineUninstallTransactionId = $pendingTransactionId
+            $engineCommitBinary = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-uninstall-' + $pendingTransactionId + '.exe')
+            if (-not (Test-Path -LiteralPath $engineCommitBinary -PathType Leaf)) {
+                throw "Pending uninstall transaction $pendingTransactionId cannot resume because both the stable binary and detached Engine helper are missing."
+            }
+            $resumeReadyOutput = & $engineCommitBinary install --engine-ready 2>$null
+            if ($LASTEXITCODE -ne 0 -or ("$resumeReadyOutput" -notlike '*agentdock-installer-engine*')) {
+                throw "Detached Installer Engine is not usable for pending uninstall transaction $pendingTransactionId."
+            }
+            $engineUninstallPrepared = $true
+        }
+    }
 }
 # Stop the scheduled task before touching the elevated process. New installs
 # grant the desktop user task control; older administrator-owned tasks use a
@@ -337,7 +347,7 @@ if ($engineUninstallPrepared) {
     & $engineCommitBinary @engineCommit 1>$null
     $engineCommitExitCode = $LASTEXITCODE
     if ($engineCommitExitCode -ne 0) {
-        # 保留确定路径 helper；重跑卸载时可继续同一个 transaction，而不是因为 stable binary 已删就假成功。
+        # Keep the deterministic helper: a rerun can continue the same transaction instead of faking success after the stable binary was deleted.
         throw "Installer Engine failed to commit uninstall after adapter cleanup (exit $engineCommitExitCode)."
     }
     Remove-Item -LiteralPath $engineCommitBinary -Force -ErrorAction SilentlyContinue

@@ -58,6 +58,25 @@ function Get-ProcessIdsByPath {
     return @($processIds | Sort-Object -Unique)
 }
 
+function Get-ActiveCoreBinary {
+    param([string] $RuntimeDir)
+
+    $activePath = Join-Path $RuntimeDir 'active-version.json'
+    if (-not (Test-Path -LiteralPath $activePath -PathType Leaf)) {
+        throw "Active generation pointer is missing: $activePath"
+    }
+    $active = Get-Content -LiteralPath $activePath -Raw | ConvertFrom-Json
+    $version = [string] $active.active_version
+    if ([string]::IsNullOrWhiteSpace($version)) {
+        throw "Active generation pointer has no active_version: $activePath"
+    }
+    $coreBinary = Join-Path $RuntimeDir "versions\$version\agentdock-core.exe"
+    if (-not (Test-Path -LiteralPath $coreBinary -PathType Leaf)) {
+        throw "Active generation Core is missing: $coreBinary"
+    }
+    return $coreBinary
+}
+
 function Stop-ProcessByPath {
     param([string] $ProcessName, [string] $BinaryPath)
 
@@ -147,6 +166,7 @@ $recoveredUrl = 'https://recovered-agentdock-test.trycloudflare.com'
 $secondUrl = 'https://second-agentdock-test.trycloudflare.com'
 $thirdUrl = 'https://third-agentdock-test.trycloudflare.com'
 $oldUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$activeCoreBinary = ''
 
 try {
     New-Item -ItemType Directory -Path $installDir -Force | Out-Null
@@ -209,7 +229,8 @@ try {
         throw "Initial runtime manifest did not contain the Quick Tunnel URL: $($firstManifest | ConvertTo-Json -Compress)"
     }
     Wait-TextFileValue -Path $startCountPath -ExpectedValue '1'
-    $firstAgentDockIds = @(Get-ProcessIdsByPath -ProcessName 'agentdock' -BinaryPath $agentDockBinary)
+    $activeCoreBinary = Get-ActiveCoreBinary -RuntimeDir $runtimeDir
+    $firstAgentDockIds = @(Get-ProcessIdsByPath -ProcessName 'agentdock-core' -BinaryPath $activeCoreBinary)
     if ($firstAgentDockIds.Count -ne 2) {
         throw "Expected Core + Tunnel supervisor after Quick Tunnel install; got $($firstAgentDockIds.Count) AgentDock processes."
     }
@@ -251,7 +272,7 @@ try {
     if ($recoveredSupervisorId -ne $firstSupervisorId) {
         throw "Tunnel supervisor restarted instead of supervising cloudflared: $firstSupervisorId -> $recoveredSupervisorId"
     }
-    $recoveredAgentDockIds = @(Get-ProcessIdsByPath -ProcessName 'agentdock' -BinaryPath $agentDockBinary)
+    $recoveredAgentDockIds = @(Get-ProcessIdsByPath -ProcessName 'agentdock-core' -BinaryPath $activeCoreBinary)
     if ($recoveredAgentDockIds.Count -ne 2) {
         throw "Expected Core + Tunnel supervisor after automatic recovery; got $($recoveredAgentDockIds.Count)."
     }
@@ -284,7 +305,7 @@ try {
     if ($secondManifest.public_url -ne $secondUrl) {
         throw "Runtime manifest was not refreshed: $($secondManifest | ConvertTo-Json -Compress)"
     }
-    $secondAgentDockIds = @(Get-ProcessIdsByPath -ProcessName 'agentdock' -BinaryPath $agentDockBinary)
+    $secondAgentDockIds = @(Get-ProcessIdsByPath -ProcessName 'agentdock-core' -BinaryPath $activeCoreBinary)
     if ($secondAgentDockIds.Count -ne 2) {
         throw "Expected Core + Tunnel supervisor after Quick Tunnel refresh; got $($secondAgentDockIds.Count)."
     }
@@ -322,7 +343,7 @@ try {
     if (Test-Path -LiteralPath $supervisorPidPath -PathType Leaf) {
         throw 'Switching to local-only mode left the Tunnel supervisor running.'
     }
-    if (@(Get-ProcessIdsByPath -ProcessName 'agentdock' -BinaryPath $agentDockBinary).Count -ne 1) {
+    if (@(Get-ProcessIdsByPath -ProcessName 'agentdock-core' -BinaryPath $activeCoreBinary).Count -ne 1) {
         throw 'Switching to local-only mode should leave only the Core AgentDock process.'
     }
     if ((Get-FileHash -LiteralPath $authPath -Algorithm SHA256).Hash -ne $authHash -or
@@ -344,7 +365,7 @@ try {
         throw "Quick Tunnel mode was not restored: $($thirdManifest | ConvertTo-Json -Compress)"
     }
     if (-not (Test-Path -LiteralPath $supervisorPidPath -PathType Leaf) -or
-        @(Get-ProcessIdsByPath -ProcessName 'agentdock' -BinaryPath $agentDockBinary).Count -ne 2) {
+        @(Get-ProcessIdsByPath -ProcessName 'agentdock-core' -BinaryPath $activeCoreBinary).Count -ne 2) {
         throw 'Restoring Quick Tunnel mode did not restore Core + Tunnel supervisor.'
     }
     if ((Get-FileHash -LiteralPath $authPath -Algorithm SHA256).Hash -ne $authHash -or
@@ -384,6 +405,9 @@ try {
 } finally {
     Stop-ProcessByPath -ProcessName 'agentdock-tray' -BinaryPath $trayBinary
     Stop-ProcessByPath -ProcessName 'cloudflared' -BinaryPath $cloudflaredBinary
+    if (-not [string]::IsNullOrWhiteSpace($activeCoreBinary)) {
+        Stop-ProcessByPath -ProcessName 'agentdock-core' -BinaryPath $activeCoreBinary
+    }
     Stop-ProcessByPath -ProcessName 'agentdock' -BinaryPath $agentDockBinary
     foreach ($name in @($startupName, $cloudflaredStartupName, $trayStartupName)) {
         Remove-ItemProperty -LiteralPath $runKey -Name $name -ErrorAction SilentlyContinue

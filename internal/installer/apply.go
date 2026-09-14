@@ -260,6 +260,13 @@ func activateLinux(ctx context.Context, request Request, staged stagedInstall) (
 		}
 	}
 
+	// systemd/OpenRC 以 service user 执行 live binary 并读取 runtime root 下的
+	// manifest/env；quick 回写也要写 runtime root。Engine 常以 root 运行且调用方
+	// 可能带 umask 077，共享产物的 mode/owner 必须在启动服务前显式收敛。
+	if err := applyLinuxRuntimeOwnership(request, staged); err != nil {
+		return activatedInstall{}, err
+	}
+
 	return resultFromEnv(envFile, request)
 }
 

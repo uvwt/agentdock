@@ -203,7 +203,7 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		strings.Count(script, "Stop-AgentDockForUpgrade -BinaryPath $destinationBinary") < 2 {
 		t.Fatal("generation retries must stop both source generation and crash-left legacy stable Core paths")
 	}
-	if !strings.Contains(script, "non-engine-ready 的旧 payload 兜底路径自己 staging immutable generation") {
+	if !strings.Contains(script, "only stages the immutable generation itself for the non-engine-ready fallback path") {
 		t.Fatal("PowerShell generation staging must only run for non-engine payloads; engine-ready installs own generation publish and same-version repair")
 	}
 	if !strings.Contains(script, "PowerShell does not pre-commit it") {
@@ -218,7 +218,7 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	if strings.Contains(script, "-not $generationUpgradeHandled -and $generationLayoutDetected") {
 		t.Fatal("Setup rollback must stop the target generation even after Update Engine committed")
 	}
-	manifestCall := strings.Index(script, "$manifestTunnelMode = $resolvedTunnelMode")
+	manifestCall := strings.Index(script, "-RuntimeTunnelMode $resolvedTunnelMode")
 	coreStartCall := strings.Index(script, "& $destinationBinary service start --runtime-root $runtimeDir")
 	tunnelStartCall := strings.Index(script, "& $destinationBinary tunnel start --runtime-root $runtimeDir")
 	if manifestCall < 0 || coreStartCall < 0 || tunnelStartCall < 0 || manifestCall > coreStartCall || manifestCall > tunnelStartCall {
@@ -342,11 +342,8 @@ func TestWindowsManagerKeepsTunnelTransitionsAndManualTaskStartValid(t *testing.
 		"function Start-TaskPreservingStartupState",
 		"Enable-ScheduledTask -TaskName $TaskName",
 		"Disable-ScheduledTask -TaskName $TaskName",
-		"Update-RuntimeManifest -RuntimePort $settings.port -RuntimeMode 'none' -PublicUrl ''",
-		"$Manifest.PSObject.Properties.Remove('version')",
 		"function Resolve-RuntimeManagedPath",
 		"-RecordedRuntimeRoot $RecordedInstallRoot",
-		"Set-ObjectProperty -Object $Manifest -Name 'install_root' -Value $RuntimeRoot",
 		"named-server-url.txt",
 		"quick-tunnel-url.txt",
 		"'regenerate-quick'",
@@ -356,6 +353,8 @@ func TestWindowsManagerKeepsTunnelTransitionsAndManualTaskStartValid(t *testing.
 		"'start-tunnel'",
 		"'stop-tunnel'",
 		"& $AgentDockBinary service launch-core --runtime-root $RuntimeRoot",
+		// quick 模式 restart 完全委托原生 regenerateQuickTunnel，脚本不再自行投影 manifest。
+		"Invoke-NativeTunnelCommand -Command restart",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("manage-windows.ps1 missing %q", want)
@@ -458,11 +457,18 @@ func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
 	if strings.Contains(script, "Copy-Item -LiteralPath $agentDockBinary -Destination $engineCommitBinary") {
 		t.Fatal("uninstall must not copy the stable shim as its detached Engine helper")
 	}
-	transactionRead := strings.Index(script, "$pendingUninstall = $null")
-	resumeTrial := strings.Index(script, "[string] $pendingUninstall.state, 'trial'")
-	stableBinaryBranch := strings.Index(script, "} elseif (Test-Path -LiteralPath $agentDockBinary -PathType Leaf) {")
-	if transactionRead < 0 || resumeTrial < transactionRead || stableBinaryBranch < resumeTrial {
-		t.Fatal("uninstall must resume a pending Engine trial before deciding that a missing stable binary means there is nothing left to commit")
+	stableBinaryBranch := strings.Index(script, "if (Test-Path -LiteralPath $agentDockBinary -PathType Leaf) {")
+	transactionRead := strings.Index(script, "$pendingTransaction = Get-Content -LiteralPath $installTransactionPath")
+	pendingTrialGate := strings.Index(script, "$pendingState -ne 'trial'")
+	if stableBinaryBranch < 0 || transactionRead < stableBinaryBranch || pendingTrialGate < transactionRead {
+		t.Fatal("stable-binary uninstalls must delegate resume to the Engine transaction rebind; the durable transaction read is only the no-binary recovery bootstrap")
+	}
+	if !strings.Contains(script, "$engineUninstallResult.PSObject.Properties['task_name']") ||
+		!strings.Contains(script, "$engineTaskNameProperty.Value") {
+		t.Fatal("Windows adapter must take the managed task name from the Installer Engine uninstall result without breaking StrictMode when task_name is omitted")
+	}
+	if strings.Contains(script, "$engineUninstallResult.task_name") {
+		t.Fatal("Windows adapter must not directly read optional task_name under Set-StrictMode")
 	}
 	if !strings.Contains(script, "'agentdock-uninstall-' + $engineUninstallTransactionId + '.exe'") {
 		t.Fatal("detached uninstall Engine helper must use a deterministic transaction-id path so retries can find it")

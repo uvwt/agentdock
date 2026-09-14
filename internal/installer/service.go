@@ -202,6 +202,11 @@ func startDarwinServices(ctx context.Context, request Request, journal *rollback
 		return err
 	}
 	if loaded {
+		if err := journal.updateService(label, func(service *journalService) {
+			service.StopAttempted = true
+		}); err != nil {
+			return err
+		}
 		if err := runCmd(ctx, "launchctl", "bootout", domain+"/"+label); err != nil {
 			return err
 		}
@@ -210,6 +215,11 @@ func startDarwinServices(ctx context.Context, request Request, journal *rollback
 		}); err != nil {
 			return err
 		}
+	}
+	if err := journal.updateService(label, func(service *journalService) {
+		service.LoadAttempted = true
+	}); err != nil {
+		return err
 	}
 	if err := runCmd(ctx, "launchctl", "bootstrap", domain, plist); err != nil {
 		return err
@@ -245,6 +255,11 @@ func startDarwinTunnel(ctx context.Context, request Request, journal *rollbackJo
 		return err
 	}
 	if loaded {
+		if err := journal.updateService(label, func(service *journalService) {
+			service.StopAttempted = true
+		}); err != nil {
+			return err
+		}
 		if err := runCmd(ctx, "launchctl", "bootout", domain+"/"+label); err != nil {
 			return err
 		}
@@ -253,6 +268,11 @@ func startDarwinTunnel(ctx context.Context, request Request, journal *rollbackJo
 		}); err != nil {
 			return err
 		}
+	}
+	if err := journal.updateService(label, func(service *journalService) {
+		service.LoadAttempted = true
+	}); err != nil {
+		return err
 	}
 	if err := runCmd(ctx, "launchctl", "bootstrap", domain, plist); err != nil {
 		return err
@@ -389,9 +409,18 @@ func stopJournalService(ctx context.Context, request Request, service journalSer
 	case "openrc":
 		return runCmd(ctx, "rc-service", service.Name, "stop")
 	case "launchd":
-		if service.Domain != "" {
-			return runCmd(ctx, "launchctl", "bootout", service.Domain+"/"+service.Name)
+		if service.Domain == "" || (!service.LoadAttempted && !service.LoadedByUs && !service.StartedByUs) {
+			return nil
 		}
+		spec := service.Domain + "/" + service.Name
+		loaded, err := launchctlJobLoaded(ctx, spec)
+		if err != nil {
+			return err
+		}
+		if !loaded {
+			return nil
+		}
+		return runCmd(ctx, "launchctl", "bootout", spec)
 	case "windows":
 		binary := windowsServiceBinary(request)
 		if binary == "" {
@@ -435,12 +464,21 @@ func restoreJournalService(ctx context.Context, request Request, service journal
 			return runCmd(ctx, "rc-service", service.Name, "start")
 		}
 	case "launchd":
-		if service.WasActive && service.Plist != "" && service.Domain != "" {
-			if err := runCmd(ctx, "launchctl", "bootstrap", service.Domain, service.Plist); err != nil {
-				return err
-			}
-			return runCmd(ctx, "launchctl", "kickstart", "-k", service.Domain+"/"+service.Name)
+		if !service.WasActive || service.Plist == "" || service.Domain == "" || (!service.StopAttempted && !service.StoppedByUs) {
+			return nil
 		}
+		spec := service.Domain + "/" + service.Name
+		loaded, err := launchctlJobLoaded(ctx, spec)
+		if err != nil {
+			return err
+		}
+		if loaded {
+			return nil
+		}
+		if err := runCmd(ctx, "launchctl", "bootstrap", service.Domain, service.Plist); err != nil {
+			return err
+		}
+		return runCmd(ctx, "launchctl", "kickstart", "-k", spec)
 	case "windows":
 		if service.WasActive {
 			if binary := windowsServiceBinary(request); binary != "" {
@@ -633,12 +671,7 @@ func cloudflaredProcessRunning(ctx context.Context, request Request) bool {
 			}
 		}
 	}
-	base := filepath.Base(path)
-	if path != base {
-		// 有绝对路径时不要退回 pgrep -x 进程名，避免命中别人的 cloudflared。
-		return cmdOK(ctx, "pgrep", "-f", path)
-	}
-	return cmdOK(ctx, "pgrep", "-x", base)
+	return cloudflaredProcessRunningAtPath(ctx, path)
 }
 
 func waitUnixQuickTunnelReady(ctx context.Context, request Request, timeout time.Duration) error {
