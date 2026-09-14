@@ -16,6 +16,36 @@ func readWorkflow(t *testing.T, name string) string {
 	return strings.ReplaceAll(string(data), "\r\n", "\n")
 }
 
+func TestWorkflowsUseCurrentActionMajors(t *testing.T) {
+	expected := map[string]string{
+		"uses: actions/checkout@":               "uses: actions/checkout@v5",
+		"uses: actions/setup-go@":               "uses: actions/setup-go@v6",
+		"uses: actions/setup-dotnet@":           "uses: actions/setup-dotnet@v5",
+		"uses: github/codeql-action/init@":      "uses: github/codeql-action/init@v4",
+		"uses: github/codeql-action/autobuild@": "uses: github/codeql-action/autobuild@v4",
+		"uses: github/codeql-action/analyze@":   "uses: github/codeql-action/analyze@v4",
+	}
+	foundManagedAction := false
+	for _, name := range []string{"ci.yml", "codeql.yml", "release.yml", "windows-installer.yml"} {
+		workflow := readWorkflow(t, name)
+		for _, line := range strings.Split(workflow, "\n") {
+			trimmed := strings.TrimSpace(line)
+			for prefix, want := range expected {
+				if !strings.HasPrefix(trimmed, prefix) {
+					continue
+				}
+				foundManagedAction = true
+				if trimmed != want {
+					t.Fatalf("workflow %s must use %q, got %q", name, want, trimmed)
+				}
+			}
+		}
+	}
+	if !foundManagedAction {
+		t.Fatal("expected workflows to use managed GitHub Actions")
+	}
+}
+
 func TestCIWorkflowUsesFreshBoundedGoTests(t *testing.T) {
 	workflow := readWorkflow(t, "ci.yml")
 	for _, want := range []string{
