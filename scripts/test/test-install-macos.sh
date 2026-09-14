@@ -190,9 +190,9 @@ for key in ("AGENTDOCK_HOST", "AGENTDOCK_PORT", "AGENTDOCK_AUTH_TOKEN"):
 path.write_text(text)
 PY
 run_installer --version latest --register-service --no-start
-assert_file_contains "$agentdock_env" 'export AGENTDOCK_HOST=127.0.0.2'
-assert_file_contains "$agentdock_env" 'export AGENTDOCK_PORT=18888'
-assert_file_contains "$agentdock_env" 'export AGENTDOCK_AUTH_TOKEN=initial\ token\ with\ spaces'
+test "$(read_env_key "$agentdock_env" AGENTDOCK_HOST)" = "127.0.0.2"
+test "$(read_env_key "$agentdock_env" AGENTDOCK_PORT)" = "18888"
+test "$(read_env_key "$agentdock_env" AGENTDOCK_AUTH_TOKEN)" = "initial token with spaces"
 test "$(count_env_key "$agentdock_env" AGENTDOCK_HOST)" = "1"
 test "$(count_env_key "$agentdock_env" AGENTDOCK_PORT)" = "1"
 test "$(count_env_key "$agentdock_env" AGENTDOCK_AUTH_TOKEN)" = "1"
@@ -739,7 +739,10 @@ case "${1:-}" in
     print -- "commit: rollback-test"
     ;;
   --help) ;;
-  *) ;;
+  *)
+    # 不能伪装成 Go Installer Engine；未知子命令必须失败。
+    exit 2
+    ;;
 esac
 SCRIPT
 chmod 0755 "$rollback_build_dir/bin/agentdock"

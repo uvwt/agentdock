@@ -27,6 +27,7 @@ test:
 
 test-scripts:
 	./scripts/test/check-scripts.sh
+	go test ./scripts/test -run TestScriptGovernance -count=1
 
 test-scripts-macos:
 	./scripts/test/check-scripts.sh --macos

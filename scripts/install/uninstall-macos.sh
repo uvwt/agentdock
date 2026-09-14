@@ -96,6 +96,14 @@ stop_launch_agent() {
 
 domain="gui/$(id -u)"
 unregister_app_background_services
+if [[ -x "$BINARY_PATH" && "$("$BINARY_PATH" install --engine-ready 2>/dev/null || true)" == *agentdock-installer-engine* ]]; then
+  # 不传 --purge-data：install-root 是 ~/.local/bin，不能整目录删掉。
+  "$BINARY_PATH" uninstall \
+    --install-root "$(dirname "$BINARY_PATH")" \
+    --runtime-root "$APP_SUPPORT_DIR" \
+    --launch-agents-dir "$(dirname "$PLIST_PATH")" >/dev/null || \
+    die "Go Installer Engine 卸载失败"
+fi
 stop_launch_agent "$domain" "$TUNNEL_LABEL"
 stop_launch_agent "$domain" "$LABEL"
 rm -f "$PLIST_PATH" "$TUNNEL_PLIST_PATH"

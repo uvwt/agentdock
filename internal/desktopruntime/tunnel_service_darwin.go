@@ -19,8 +19,12 @@ func platformTunnelServiceEnabled(ctx context.Context, manifest unixRuntimeManif
 func platformTunnelServiceAction(ctx context.Context, manifest unixRuntimeManifest, action string) error {
 	switch action {
 	case "start", "restart":
-		return kickstartRegisteredLaunchAgent(ctx, manifest.TunnelServiceName)
+		return kickstartRegisteredLaunchAgent(ctx, manifest.TunnelServiceName, manifest.ServiceManager)
 	case "stop":
+		if manifest.ServiceManager == "launchd" {
+			_, err := runCommand(ctx, launchctlBinary(), "bootout", launchdTarget(manifest.TunnelServiceName))
+			return err
+		}
 		return errors.New("macOS Tunnel 停用由 AgentDock.app 的 SMAppService 管理")
 	default:
 		return errors.New("不支持的 Tunnel 服务操作")

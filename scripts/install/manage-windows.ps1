@@ -1,4 +1,7 @@
-﻿[CmdletBinding()]
+﻿# Compatibility shim / 兼容垫片。
+# 禁止新增 Action 或产品状态机。服务、Tunnel、更新必须调用 agentdock.exe。
+# task-run-session 仅保留给 Setup broker（launch-windows-process.ps1）。
+[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
     [ValidateSet(

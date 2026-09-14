@@ -1,6 +1,10 @@
 #!/bin/sh
 set -eu
 
+# 公开 Unix bootstrap。下载并校验受信任安装器后交给平台适配层。
+# 产品事务、manifest、rollback 的权威实现是 `agentdock install`（Installer Engine）。
+# 不得改名删除本入口；平台脚本只是兼容适配，不再新增第二套状态机。
+
 umask 077
 
 DEFAULT_BASE_URL="https://github.com/uvwt/agentdock/releases/latest/download"

@@ -7,6 +7,22 @@ import (
 	"time"
 )
 
+func TestValidateVersionRejectsUnsafeGenerationNames(t *testing.T) {
+	valid := []string{"0.8.3", "v0.8.4-e2e", "1.2.3+build.7", "development", "2026-01-26"}
+	for _, version := range valid {
+		if err := ValidateVersion(version); err != nil {
+			t.Fatalf("ValidateVersion(%q) unexpected error: %v", version, err)
+		}
+	}
+
+	invalid := []string{"", "../0.8.3", `0.8.3\\..\\evil`, "0.8.3/next", "0.8.3:next", "0.8.3*", "0.8.3 next", "0.8.3."}
+	for _, version := range invalid {
+		if err := ValidateVersion(version); err == nil {
+			t.Fatalf("ValidateVersion(%q) unexpectedly succeeded", version)
+		}
+	}
+}
+
 func TestStorePersistsTransactionActiveAndResult(t *testing.T) {
 	root := t.TempDir()
 	store, err := NewStore(root)

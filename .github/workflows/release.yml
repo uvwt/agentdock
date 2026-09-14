@@ -425,6 +425,7 @@ jobs:
           cp scripts/install/uninstall-macos.sh dist/uninstall-macos.sh
           cp scripts/install/install.ps1 dist/install.ps1
           cp scripts/install/uninstall-windows.ps1 dist/uninstall-windows.ps1
+          go run ./tools/release verify-version "$RELEASE_TAG"
           python3 - <<'PY'
           import os
           import re
@@ -466,6 +467,7 @@ jobs:
               shasum -a 256 "$file" > "$file.sha256"
             done
           )
+          go run ./tools/release verify-dist dist
 
       - name: Validate macOS release assets
         shell: bash

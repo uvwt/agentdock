@@ -239,6 +239,20 @@ func TestLoadKeepsMissingExternalCloudflaredPath(t *testing.T) {
 	}
 }
 
+func TestManifestAllowsQuickModeWithoutPublicURL(t *testing.T) {
+	manifest := Manifest{
+		SchemaVersion:   SchemaVersion,
+		AgentDockBinary: filepath.Join(t.TempDir(), "agentdock.exe"),
+		Host:            "127.0.0.1",
+		Port:            8765,
+		LocalMCPURL:     "http://127.0.0.1:8765/mcp",
+		TunnelMode:      "quick",
+	}
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("quick mode must allow an empty public URL before cloudflared is ready: %v", err)
+	}
+}
+
 func TestManifestRejectsPublicURLInLocalMode(t *testing.T) {
 	manifest := Manifest{
 		SchemaVersion:   SchemaVersion,

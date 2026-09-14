@@ -55,7 +55,7 @@ func TestReadQuickTunnelLogSinceSkipsPreviousGeneration(t *testing.T) {
 	if err := os.WriteFile(path, []byte(oldLog), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cursor, err := captureQuickTunnelLogCursor(path)
+	cursor, err := captureTunnelLogCursor(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestReadQuickTunnelLogSinceSkipsPreviousGeneration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, err := readQuickTunnelLogSince(path, cursor)
+	data, err := readTunnelLogSince(path, cursor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestReadQuickTunnelLogSinceReadsResetLogFromStart(t *testing.T) {
 	if err := os.WriteFile(path, []byte(strings.Repeat("x", 1024)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cursor, err := captureQuickTunnelLogCursor(path)
+	cursor, err := captureTunnelLogCursor(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,11 +100,43 @@ func TestReadQuickTunnelLogSinceReadsResetLogFromStart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, err := readQuickTunnelLogSince(path, cursor)
+	data, err := readTunnelLogSince(path, cursor)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := findQuickTunnelURL(data); got != "https://rotated.trycloudflare.com" {
 		t.Fatalf("findQuickTunnelURL(rotated generation) = %q", got)
+	}
+}
+
+func TestTunnelLogCursorExcludesOldNamedConnection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cloudflared.err.log")
+	if err := os.WriteFile(path, []byte("INF Registered tunnel connection old\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cursor, err := captureTunnelLogCursor(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString("Provided Tunnel token is not valid.\n"); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := readTunnelLogSince(path, cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "Registered tunnel connection old") {
+		t.Fatalf("cursor leaked old Named connection evidence: %q", data)
+	}
+	if !strings.Contains(string(data), "Provided Tunnel token is not valid.") {
+		t.Fatalf("cursor missed new failure evidence: %q", data)
 	}
 }
