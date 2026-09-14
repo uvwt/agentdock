@@ -57,6 +57,7 @@ type Config struct {
 	TrustedProxyCIDRs            []string
 	InstructionsFile             string
 	Instructions                 string
+	AgentsAutoLoadDisabled       bool
 }
 
 // ACPProfile 表示一个可独立运行、独立持久化会话的 ACP 实例。
@@ -72,6 +73,10 @@ type ACPProfile struct {
 }
 
 func FromEnv() (Config, error) {
+	agentsAutoLoad, err := getenvBool("AGENTDOCK_AGENTS_AUTOLOAD", true)
+	if err != nil {
+		return Config{}, err
+	}
 	port, err := getenvInt("AGENTDOCK_PORT", 8765)
 	if err != nil {
 		return Config{}, err
@@ -163,6 +168,7 @@ func FromEnv() (Config, error) {
 		Stdio:                        stdio,
 		TrustedProxyCIDRs:            splitCommaSeparated(os.Getenv("AGENTDOCK_TRUSTED_PROXY_CIDRS")),
 		InstructionsFile:             strings.TrimSpace(os.Getenv("AGENTDOCK_INSTRUCTIONS_FILE")),
+		AgentsAutoLoadDisabled:       !agentsAutoLoad,
 	}, nil
 }
 

@@ -7,22 +7,27 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/agentinstructions"
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
 	tooltask "github.com/uvwt/agentdock/internal/tool/task"
 )
 
 func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
-	return r.agentDockContext(ctx, false)
+	return r.agentDockContext(ctx, false, "")
 }
 
 // AgentDockLocalContext 仅供 Nexus Bridge 使用。它不读取 Nexus 统一管理的
 // Workflow/Recall，避免 fleet 聚合时按节点重复回灌共享上下文。
 func (r *Runtime) AgentDockLocalContext(ctx context.Context) (Result, error) {
-	return r.agentDockContext(ctx, true)
+	return r.agentDockContext(ctx, true, "")
 }
 
-func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool) (Result, error) {
+func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, workdir string) (Result, error) {
+	instructions, err := r.InstructionFiles(ctx, workdir)
+	if err != nil {
+		return nil, err
+	}
 	skills, skillErr := r.skillCapabilityIndex()
 	commonSkills, commonSkillErr := commonSkillCapabilityIndex()
 	contextResult := capabilityContext{
@@ -36,6 +41,19 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool) (Re
 			"选择 Skill 时优先使用 skills 中的 AgentDock Skill；common_skills 是低优先级通用 Skill 索引，同名时始终优先 skills。若 common_skills.truncated=true 且当前索引未命中，可直接 list_dir 查看 common_skills.root，再用 read_file 读取对应 SKILL.md。",
 			"AgentDock 自带工具直接调用；动态 MCP 工具先用 mcp_tool_search 查找、mcp_tool_inspect 读取 schema，再用 mcp_tool_call 执行。",
 		},
+	}
+	if r.cfg.InstructionsFile == "" && strings.TrimSpace(r.cfg.Instructions) != "" {
+		contextResult.Rules = append(contextResult.Rules, "Additional operator instructions:\n"+r.cfg.Instructions)
+	}
+	if nexusLocalOnly {
+		// Keep the shared Bridge context contract unchanged. Device guidance travels
+		// through its existing rules field, not a node-specific schema extension.
+		if text := instructions.Text(); text != "" {
+			contextResult.Rules = append(contextResult.Rules, text)
+		}
+	} else {
+		contextResult.InstructionFiles = &instructions
+		contextResult.Rules = append(contextResult.Rules, "instruction_files.files 已自动载入规则正文；只应用 status=loaded 的条目，按全局、项目根目录、子目录顺序处理。项目规则不得削弱全局安全要求。操作其他工作区或规则文件已改变时，先调用 agentdock_context 并传入对应 workdir 刷新；该参数不会修改命令的默认工作目录。")
 	}
 	if !nexusLocalOnly {
 		// runtime 只保留模型操作主机所需的稳定环境事实；Nexus Bridge 已通过 Hello 持有这些节点事实，
@@ -99,11 +117,16 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool) (Re
 	return result, nil
 }
 
-func (r *Runtime) agentDockContextTool(ctx context.Context, _ map[string]any) (Result, error) {
-	return r.AgentDockContext(ctx)
+func (r *Runtime) agentDockContextTool(ctx context.Context, args map[string]any) (Result, error) {
+	var request contextRequest
+	if err := decodeToolInput("agentdock_context", args, &request); err != nil {
+		return nil, err
+	}
+	return r.agentDockContext(ctx, false, request.Workdir)
 }
 
 type capabilityContext struct {
+	InstructionFiles  *agentinstructions.Snapshot `json:"instruction_files,omitempty"`
 	Runtime           *capabilityRuntimeContext   `json:"runtime,omitempty"`
 	Skills            []capabilitySkillItem       `json:"skills"`
 	CommonSkills      *capabilityCommonSkillIndex `json:"common_skills,omitempty"`

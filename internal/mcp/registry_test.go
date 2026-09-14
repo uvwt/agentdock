@@ -104,15 +104,18 @@ func TestAgentDockContextSchemaIsStructuredEntrypoint(t *testing.T) {
 	}
 
 	inputProps := schemaProperties(t, "agentdock_context")
-	if len(inputProps) != 0 {
-		t.Fatalf("agentdock_context input schema should not expose node-local selectors: %#v", inputProps)
+	if len(inputProps) != 1 || inputProps["workdir"] == nil {
+		t.Fatalf("agentdock_context should expose only the optional request-local workdir selector: %#v", inputProps)
+	}
+	if required, _ := inputSchema("agentdock_context")["required"].([]string); len(required) != 0 {
+		t.Fatalf("agentdock_context must still accept empty arguments: %#v", required)
 	}
 	output := outputSchema("agentdock_context")
 	outputProps, ok := output["properties"].(map[string]any)
 	if !ok {
 		t.Fatal("agentdock_context output schema properties missing")
 	}
-	for _, name := range []string{"runtime", "skills", "dynamic_mcp", "acp", "workflow_templates", "recall", "rules", "warnings"} {
+	for _, name := range []string{"runtime", "skills", "dynamic_mcp", "acp", "workflow_templates", "recall", "rules", "warnings", "instruction_files"} {
 		if _, ok := outputProps[name]; !ok {
 			t.Fatalf("agentdock_context output schema missing %q: %#v", name, outputProps)
 		}

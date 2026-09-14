@@ -29,7 +29,7 @@ func NewServer(runtime *app.Runtime, cfg config.Config) *Server {
 	server := &Server{runtime: runtime, cfg: cfg}
 	serverOptions := &mcpsdk.ServerOptions{
 		Capabilities: &mcpsdk.ServerCapabilities{},
-		Instructions: serverInstructions(cfg.NexusEndpoint != "", cfg.Instructions),
+		Instructions: initialServerInstructions(runtime, cfg),
 	}
 	server.sdk = mcpsdk.NewServer(
 		&mcpsdk.Implementation{Name: config.ServerName, Version: buildinfo.Version},
