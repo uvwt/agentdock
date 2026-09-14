@@ -2,6 +2,10 @@
 param(
     [Parameter(Mandatory = $true)]
     [string] $SetupPath,
+    [Parameter(Mandatory = $true)]
+    [string] $LegacyCorePath,
+    [Parameter(Mandatory = $true)]
+    [string] $LegacyTrayPath,
     [string] $InstallRoot = '',
     [int] $Port = 8765,
     [switch] $AllowLegacyTaskMutation
@@ -256,6 +260,8 @@ function Stop-ProcessByPath {
 }
 
 $resolvedSetup = (Resolve-Path -LiteralPath $SetupPath).Path
+$resolvedLegacyCore = (Resolve-Path -LiteralPath $LegacyCorePath).Path
+$resolvedLegacyTray = (Resolve-Path -LiteralPath $LegacyTrayPath).Path
 $binaryPath = Join-Path $InstallRoot 'bin\agentdock.exe'
 $trayPath = Join-Path $InstallRoot 'bin\agentdock-tray.exe'
 $trayIconPath = Join-Path $InstallRoot 'bin\agentdock.ico'
@@ -284,7 +290,12 @@ $oldCloudflaredReleaseBaseUrl = $env:AGENTDOCK_CLOUDFLARED_RELEASE_BASE_URL
 try {
     Unregister-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -Confirm:$false -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $InstallRoot -Recurse -Force -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $InstallRoot 'bin') -Force | Out-Null
+    # Legacy migration only applies to a real pre-generation install. Keep the fixture
+    # complete so the test exercises source-generation seeding instead of an invalid
+    # marker-only layout that production correctly rejects.
+    Copy-Item -LiteralPath $resolvedLegacyCore -Destination $binaryPath -Force
+    Copy-Item -LiteralPath $resolvedLegacyTray -Destination $trayPath -Force
     [IO.File]::WriteAllText(
         (Join-Path $InstallRoot 'start-agentdock.ps1'),
         '# legacy PowerShell install marker',

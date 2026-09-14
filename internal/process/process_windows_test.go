@@ -68,3 +68,28 @@ func TestWindowsJobObjectTerminatesAttachedProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestWindowsJobObjectCloseTerminatesAttachedProcess(t *testing.T) {
+	cmd := exec.Command("powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 30")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	controller, err := Attach(cmd)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		t.Fatal(err)
+	}
+	if err := controller.Close(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case <-done:
+		// JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE only guarantees termination. Windows may
+		// report a zero process exit code, so the contract here is bounded exit, not status.
+	case <-time.After(5 * time.Second):
+		t.Fatal("closing Windows Job Object did not terminate the process")
+	}
+}

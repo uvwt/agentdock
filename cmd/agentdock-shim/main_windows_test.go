@@ -27,3 +27,25 @@ func TestTrayRequiresWaitOnlyDetachesNormalBackgroundLaunches(t *testing.T) {
 		})
 	}
 }
+
+func TestCoreLaunchRequiresParentLifetimeOnlyForServiceHost(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "service host", args: []string{"service", "launch-core", "--runtime-root", `C:\AgentDock`}, want: true},
+		{name: "service host case insensitive", args: []string{" SERVICE ", " LAUNCH-CORE "}, want: true},
+		{name: "service status", args: []string{"service", "status"}},
+		{name: "version", args: []string{"version", "--json"}},
+		{name: "empty"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := coreLaunchRequiresParentLifetime(test.args); got != test.want {
+				t.Fatalf("coreLaunchRequiresParentLifetime(%q) = %v, want %v", test.args, got, test.want)
+			}
+		})
+	}
+}

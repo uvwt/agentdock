@@ -18,7 +18,7 @@ var (
 	procCoInitializeEx   = modOle32.NewProc("CoInitializeEx")
 	procCoUninitialize   = modOle32.NewProc("CoUninitialize")
 	procCoCreateInstance = modOle32.NewProc("CoCreateInstance")
-	procCLSIDFromProgID  = modOleaut32.NewProc("CLSIDFromProgID")
+	procCLSIDFromProgID  = modOle32.NewProc("CLSIDFromProgID")
 	procSysAllocString   = modOleaut32.NewProc("SysAllocString")
 	procSysFreeString    = modOleaut32.NewProc("SysFreeString")
 )

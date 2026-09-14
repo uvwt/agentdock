@@ -52,8 +52,14 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
+          $runtimeTestAgentDockBinary = Join-Path $env:RUNNER_TEMP 'agentdock-runtime-launch-test.exe'
+          $env:CGO_ENABLED = '0'
+          $env:GOOS = 'windows'
+          $env:GOARCH = 'amd64'
+          go build -trimpath -o $runtimeTestAgentDockBinary .\cmd\agentdock
           & .\scripts\test\test-windows-runtime-launch-diagnostics.ps1 `
-            -LauncherPath .\scripts\install\launch-windows-process.ps1
+            -LauncherPath .\scripts\install\launch-windows-process.ps1 `
+            -AgentDockBinary $runtimeTestAgentDockBinary
 
       - name: Test Task Scheduler session selection
         shell: powershell
@@ -286,6 +292,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           & .\scripts\test\test-windows-setup-e2e.ps1 `
             -SetupPath (Join-Path $env:RUNNER_TEMP 'agentdock-setup\AgentDockSetup-amd64.exe') `
+            -LegacyCorePath .\dist\agentdock.exe `
+            -LegacyTrayPath .\dist\agentdock-tray.exe `
             -AllowLegacyTaskMutation
 
       - name: Smoke test current binary as standard user

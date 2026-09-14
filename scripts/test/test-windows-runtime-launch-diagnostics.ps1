@@ -1,12 +1,16 @@
 [CmdletBinding()]
 param(
-    [string] $LauncherPath = (Join-Path $PSScriptRoot '..\install\launch-windows-process.ps1')
+    [string] $LauncherPath = (Join-Path $PSScriptRoot '..\install\launch-windows-process.ps1'),
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string] $AgentDockBinary
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $resolvedLauncher = (Resolve-Path -LiteralPath $LauncherPath).Path
+$resolvedAgentDockBinary = (Resolve-Path -LiteralPath $AgentDockBinary).Path
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('agentdock runtime diagnostics test ' + [Guid]::NewGuid().ToString('N'))
 $childScript = Join-Path $testRoot 'child.ps1'
 $taskPrefix = 'AgentDock Setup Runtime '
@@ -29,6 +33,7 @@ try {
     try {
         & $resolvedLauncher `
             -FilePath (Join-Path $PSHOME 'powershell.exe') `
+            -AgentDockBinary $resolvedAgentDockBinary `
             -Arguments $arguments `
             -WaitForExit `
             -TimeoutSeconds 30
@@ -57,6 +62,7 @@ try {
     )
     & $resolvedLauncher `
         -FilePath (Join-Path $PSHOME 'powershell.exe') `
+        -AgentDockBinary $resolvedAgentDockBinary `
         -Arguments $arguments `
         -WaitForExit `
         -TimeoutSeconds 30

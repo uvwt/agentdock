@@ -3,7 +3,8 @@ param(
     [string] $InstallerPath = '',
     [string] $Version = 'latest',
     [string] $ReleaseBaseUrl = '',
-    [int] $Port = 18765
+    [int] $Port = 18765,
+    [string] $CompletionFile = ''
 )
 
 Set-StrictMode -Version Latest
@@ -234,4 +235,8 @@ finally {
     Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
     [Environment]::SetEnvironmentVariable('Path', $originalUserPath, 'User')
     $env:AGENTDOCK_RELEASE_BASE_URL = $originalReleaseBaseUrl
+}
+
+if ($CompletionFile) {
+    New-Item -ItemType File -Path $CompletionFile -Force | Out-Null
 }

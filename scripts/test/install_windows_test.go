@@ -844,6 +844,114 @@ func TestWindowsSetupLaunchesRuntimeOutsideRedirectionGuardTree(t *testing.T) {
 		t.Fatal("Setup finish page must not launch the long-lived tray directly from the RedirectionGuard process tree")
 	}
 }
+
+func TestWindowsRuntimeDiagnosticsPassesNativeTaskLauncher(t *testing.T) {
+	diagnosticsData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "test", "test-windows-runtime-launch-diagnostics.ps1"))
+	if err != nil {
+		t.Fatalf("read runtime diagnostics test: %v", err)
+	}
+	workflowData, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "windows-installer.yml"))
+	if err != nil {
+		t.Fatalf("read Windows Installer workflow: %v", err)
+	}
+
+	diagnostics := strings.ReplaceAll(string(diagnosticsData), "\r\n", "\n")
+	workflow := strings.ReplaceAll(string(workflowData), "\r\n", "\n")
+	for _, want := range []string{
+		"[string] $AgentDockBinary",
+		"$resolvedAgentDockBinary = (Resolve-Path -LiteralPath $AgentDockBinary).Path",
+		"-AgentDockBinary $resolvedAgentDockBinary",
+	} {
+		if !strings.Contains(diagnostics, want) {
+			t.Fatalf("runtime diagnostics test must pass the native task launcher; missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		"$runtimeTestAgentDockBinary = Join-Path $env:RUNNER_TEMP 'agentdock-runtime-launch-test.exe'",
+		"go build -trimpath -o $runtimeTestAgentDockBinary .\\cmd\\agentdock",
+		"-AgentDockBinary $runtimeTestAgentDockBinary",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("Windows Installer workflow must build and pass the native task launcher; missing %q", want)
+		}
+	}
+}
+
+func TestWindowsStandardUserE2EWaitsForDirectProcessWithTimeout(t *testing.T) {
+	launcherData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "test", "run-windows-installer-e2e-as-standard-user.ps1"))
+	if err != nil {
+		t.Fatalf("read Windows standard-user E2E launcher: %v", err)
+	}
+	childData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "test", "test-install-windows-e2e.ps1"))
+	if err != nil {
+		t.Fatalf("read Windows standard-user E2E child: %v", err)
+	}
+	launcher := strings.ReplaceAll(string(launcherData), "\r\n", "\n")
+	child := strings.ReplaceAll(string(childData), "\r\n", "\n")
+
+	for _, want := range []string{
+		"$childProcessTimeoutSeconds = 600",
+		"function Wait-TestProcess {",
+		"$Process.WaitForExit($TimeoutSeconds * 1000)",
+		"Stop-Process -Id $Process.Id -Force",
+		"-Description 'Windows installer standard-user E2E'",
+		"-Description 'Windows Setup user-context guard'",
+		"-CompletionFile `\"$completionPath`\"",
+		"Test-Path -LiteralPath $completionPath -PathType Leaf",
+		"$contextSuccess -ne 'Success=false'",
+	} {
+		if !strings.Contains(launcher, want) {
+			t.Fatalf("Windows standard-user E2E must use bounded direct-process waits; missing %q", want)
+		}
+	}
+	if strings.Contains(launcher, "$process.ExitCode") || strings.Contains(launcher, "$contextProcess.ExitCode") {
+		t.Fatal("Windows standard-user E2E must not rely on ExitCode from Start-Process -Credential under Windows PowerShell 5.1")
+	}
+	if strings.Contains(launcher, "-Wait `\n        -PassThru") {
+		t.Fatal("Windows standard-user E2E must not use Start-Process -Wait because installer descendants are long-lived")
+	}
+	for _, want := range []string{
+		"[string] $CompletionFile = ''",
+		"New-Item -ItemType File -Path $CompletionFile -Force",
+	} {
+		if !strings.Contains(child, want) {
+			t.Fatalf("Windows standard-user E2E child must report completion explicitly; missing %q", want)
+		}
+	}
+}
+
+func TestWindowsSetupE2EStagesCompleteLegacyFixture(t *testing.T) {
+	testScriptData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "test", "test-windows-setup-e2e.ps1"))
+	if err != nil {
+		t.Fatalf("read Setup E2E script: %v", err)
+	}
+	testScript := strings.ReplaceAll(string(testScriptData), "\r\n", "\n")
+	for _, want := range []string{
+		"[string] $LegacyCorePath",
+		"[string] $LegacyTrayPath",
+		"Copy-Item -LiteralPath $resolvedLegacyCore -Destination $binaryPath -Force",
+		"Copy-Item -LiteralPath $resolvedLegacyTray -Destination $trayPath -Force",
+	} {
+		if !strings.Contains(testScript, want) {
+			t.Fatalf("Setup E2E must stage a complete migratable legacy installation; missing %q", want)
+		}
+	}
+
+	workflowData, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "windows-installer.yml"))
+	if err != nil {
+		t.Fatalf("read Windows Installer workflow: %v", err)
+	}
+	workflow := strings.ReplaceAll(string(workflowData), "\r\n", "\n")
+	for _, want := range []string{
+		"-LegacyCorePath .\\dist\\agentdock.exe",
+		"-LegacyTrayPath .\\dist\\agentdock-tray.exe",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("Windows Installer workflow must pass a real legacy fixture binary; missing %q", want)
+		}
+	}
+}
+
 func TestWindowsSetupIncludesSimplifiedChineseBaseMessages(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "packaging", "windows", "languages", "ChineseSimplified.isl"))
 	if err != nil {

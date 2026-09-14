@@ -12,11 +12,10 @@ import (
 )
 
 var (
-	modWtsapi32                      = windows.NewLazySystemDLL("wtsapi32.dll")
-	procWTSEnumerateSessionsW        = modWtsapi32.NewProc("WTSEnumerateSessionsW")
-	procWTSQuerySessionInformationW  = modWtsapi32.NewProc("WTSQuerySessionInformationW")
-	procWTSFreeMemory                = modWtsapi32.NewProc("WTSFreeMemory")
-	procWTSGetActiveConsoleSessionId = modWtsapi32.NewProc("WTSGetActiveConsoleSessionId")
+	modWtsapi32                     = windows.NewLazySystemDLL("wtsapi32.dll")
+	procWTSEnumerateSessionsW       = modWtsapi32.NewProc("WTSEnumerateSessionsW")
+	procWTSQuerySessionInformationW = modWtsapi32.NewProc("WTSQuerySessionInformationW")
+	procWTSFreeMemory               = modWtsapi32.NewProc("WTSFreeMemory")
 )
 
 const (
@@ -84,8 +83,9 @@ func querySessionText(sessionID uint32, infoClass int) string {
 }
 
 func activeConsoleSessionID() uint32 {
-	id, _, _ := procWTSGetActiveConsoleSessionId.Call()
-	return uint32(id)
+	// 与上面的 WTS 查询 API 不同，这个入口实际由 kernel32.dll 导出。
+	// 使用 x/sys 的生成绑定，避免在这里重复维护易错的 DLL/符号映射。
+	return windows.WTSGetActiveConsoleSessionId()
 }
 
 func windowsUserSID(account string) (string, error) {
