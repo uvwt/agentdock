@@ -294,7 +294,6 @@ Remove-FileIfPresent -Path $activeVersionPath
 foreach ($name in @(
     'start-agentdock.ps1',
     'start-cloudflared.ps1',
-    'installer\manage-windows.ps1',
     'auth-token.dpapi',
     'oauth-password.dpapi',
     'oauth-token-secret.dpapi',

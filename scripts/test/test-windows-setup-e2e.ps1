@@ -156,11 +156,14 @@ function Assert-CoreRunsWithoutConsole {
 }
 
 function Start-AgentDockScheduledTask {
-    $managerPath = Join-Path $InstallRoot 'installer\manage-windows.ps1'
-    if (-not (Test-Path -LiteralPath $managerPath -PathType Leaf)) {
-        throw "Installed Windows manager is missing: $managerPath"
+    $agentDockBinary = Join-Path $InstallRoot 'bin\agentdock.exe'
+    if (-not (Test-Path -LiteralPath $agentDockBinary -PathType Leaf)) {
+        throw "Installed AgentDock stable binary is missing: $agentDockBinary"
     }
-    & $managerPath -Action task-run-session -ScheduledTaskName 'AgentDock' -ScheduledTaskPath '\'
+    & $agentDockBinary service task-start --task-name 'AgentDock' | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "AgentDock native task-start failed with exit code $LASTEXITCODE."
+    }
 }
 
 function Assert-TaskStopKillsCore {

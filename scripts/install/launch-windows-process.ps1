@@ -3,6 +3,9 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
     [string] $FilePath,
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string] $AgentDockBinary,
     [string] $Arguments = '',
     [switch] $WaitForExit,
     [ValidateRange(1, 120)]
@@ -72,9 +75,8 @@ $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 if ($null -eq $identity -or $null -eq $identity.User -or [string]::IsNullOrWhiteSpace($identity.Name)) {
     throw 'Unable to resolve the current Windows identity for runtime launch.'
 }
-$managerScriptPath = Join-Path $PSScriptRoot 'manage-windows.ps1'
-if (-not (Test-Path -LiteralPath $managerScriptPath -PathType Leaf)) {
-    throw "Windows manager was not found: $managerScriptPath"
+if (-not (Test-Path -LiteralPath $AgentDockBinary -PathType Leaf)) {
+    throw "AgentDock native task launcher was not found: $AgentDockBinary"
 }
 
 $taskName = 'AgentDock Setup Runtime ' + [Guid]::NewGuid().ToString('N')
@@ -173,11 +175,12 @@ try {
         -Settings $settings `
         -Force | Out-Null
     $registered = $true
-    & $managerScriptPath `
-        -Action task-run-session `
-        -ScheduledTaskName $taskName `
-        -ScheduledTaskPath '\' `
-        -ExpectedUserSid $identity.User.Value
+    & $AgentDockBinary service task-start `
+        --task-name $taskName `
+        --expected-user-sid $identity.User.Value | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "AgentDock native task-start failed with exit code $LASTEXITCODE."
+    }
 
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     do {

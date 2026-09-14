@@ -15,7 +15,11 @@ def tracked_shell_scripts() -> list[Path]:
         ["git", "-C", str(ROOT), "ls-files", "*.sh"],
         text=True,
     )
-    return [ROOT / relative for relative in output.splitlines() if relative]
+    return [
+        ROOT / relative
+        for relative in output.splitlines()
+        if relative and (ROOT / relative).is_file()
+    ]
 
 
 def unsafe_boundaries(path: Path) -> list[str]:

@@ -24,7 +24,6 @@ const (
 var windowsDesktopArchiveFiles = map[string]os.FileMode{
 	"agentdock-tray.exe": 0o755,
 	"agentdock.ico":      0o644,
-	"manage-windows.ps1": 0o644,
 }
 
 // 新 generation 架构在同一 Release ZIP 中附带稳定入口和 Arbiter。

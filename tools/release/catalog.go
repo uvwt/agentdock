@@ -66,11 +66,6 @@ func ReleaseCatalog() []Artifact {
 	scripts := []Artifact{
 		{Name: "install.sh", Kind: "bootstrap", Platform: "unix", PublicContract: true, Required: true},
 		{Name: "install.ps1", Kind: "bootstrap", Platform: "windows", PublicContract: true, Required: true},
-		{Name: "install-linux-platform.sh", Kind: "runtime-adapter", Platform: "linux", PublicContract: true, Required: true},
-		{Name: "install-macos-platform.sh", Kind: "runtime-adapter", Platform: "darwin", PublicContract: true, Required: true},
-		{Name: "uninstall-linux.sh", Kind: "runtime-adapter", Platform: "linux", PublicContract: true, Required: true},
-		{Name: "uninstall-macos.sh", Kind: "runtime-adapter", Platform: "darwin", PublicContract: true, Required: true},
-		{Name: "uninstall-windows.ps1", Kind: "runtime-adapter", Platform: "windows", PublicContract: true, Required: true},
 	}
 	var catalog []Artifact
 	catalog = append(catalog, archives...)

@@ -144,7 +144,6 @@ $agentDockBinary = Join-Path $installDir 'agentdock.exe'
 $trayBinary = Join-Path $installDir 'agentdock-tray.exe'
 $cloudflaredBinary = Join-Path $installDir 'cloudflared.exe'
 $cloudflaredLauncher = Join-Path $runtimeDir 'start-cloudflared.ps1'
-$managerPath = Join-Path $runtimeDir 'installer\manage-windows.ps1'
 $urlSourcePath = Join-Path $installDir 'quick-url-source.txt'
 $quickUrlPath = Join-Path $runtimeDir 'quick-tunnel-url.txt'
 $serverUrlPath = Join-Path $runtimeDir 'server-url.txt'
@@ -194,7 +193,6 @@ try {
         $trayBinary,
         $cloudflaredBinary,
         $cloudflaredLauncher,
-        $managerPath,
         $quickUrlPath,
         $serverUrlPath,
         $manifestPath,

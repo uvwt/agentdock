@@ -14,8 +14,6 @@ func TestReleaseCatalogKeepsPublicInstallerEntries(t *testing.T) {
 	required := map[string]bool{
 		"install.sh":                   false,
 		"install.ps1":                  false,
-		"install-linux-platform.sh":    false,
-		"install-macos-platform.sh":    false,
 		"agentdock_linux_amd64.tar.gz": false,
 		"AgentDockSetup-amd64.exe":     false,
 	}
@@ -40,6 +38,18 @@ func TestReleaseCatalogKeepsPublicInstallerEntries(t *testing.T) {
 		if !seen {
 			t.Fatalf("release catalog missing %s", name)
 		}
+	}
+	var publicScripts []string
+	for _, artifact := range catalog {
+		if artifact.PublicContract && artifact.Kind == "bootstrap" {
+			publicScripts = append(publicScripts, artifact.Name)
+		}
+		if artifact.PublicContract && artifact.Kind == "runtime-adapter" {
+			t.Fatalf("runtime adapter must not be a public Release contract: %s", artifact.Name)
+		}
+	}
+	if strings.Join(publicScripts, ",") != "install.sh,install.ps1" {
+		t.Fatalf("public bootstrap scripts = %v, want [install.sh install.ps1]", publicScripts)
 	}
 }
 

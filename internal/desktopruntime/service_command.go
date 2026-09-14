@@ -84,6 +84,21 @@ func RunServiceCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 			return err
 		}
 		return json.NewEncoder(stdout).Encode(serviceCommandResult{Action: "autostart", Completed: true})
+	case "task-start":
+		flags := flag.NewFlagSet("agentdock service task-start", flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		taskName := flags.String("task-name", "", "Windows Scheduled Task 名称")
+		expectedUserSID := flags.String("expected-user-sid", "", "期望的 InteractiveToken 用户 SID")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || strings.TrimSpace(*taskName) == "" {
+			return errors.New("用法：agentdock service task-start --task-name <名称> [--expected-user-sid <SID>]")
+		}
+		if err := platformStartScheduledTask(ctx, *taskName, *expectedUserSID); err != nil {
+			return err
+		}
+		return json.NewEncoder(stdout).Encode(serviceCommandResult{Action: "task-start", Completed: true})
 	default:
 		return serviceCommandUsageError()
 	}
@@ -110,5 +125,5 @@ func parseRuntimeRoot(name string, args []string, stderr io.Writer) (string, err
 }
 
 func serviceCommandUsageError() error {
-	return errors.New("用法：agentdock service <status|start|stop|restart|autostart> --runtime-root <目录>")
+	return errors.New("用法：agentdock service <status|start|stop|restart|autostart|task-start> ...")
 }

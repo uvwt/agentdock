@@ -507,22 +507,21 @@ func activateWindows(ctx context.Context, request Request, staged stagedInstall)
 		tunnelMode = "none"
 	}
 	binDir := layout.BinDir()
-	coreShim := filepath.Join(request.PayloadDir, "agentdock-shim.exe")
-	trayShim := filepath.Join(request.PayloadDir, "agentdock-tray-shim.exe")
 	if request.PayloadDir != "" {
-		if fileExists(coreShim) {
-			if err := copyTree(coreShim, layout.CoreShim(), 0o755); err != nil {
-				return activatedInstall{}, err
-			}
+		stableFiles := []struct {
+			source string
+			target string
+			mode   os.FileMode
+		}{
+			{source: filepath.Join(request.PayloadDir, "agentdock-shim.exe"), target: layout.CoreShim(), mode: 0o755},
+			{source: filepath.Join(request.PayloadDir, "agentdock-tray-shim.exe"), target: layout.TrayShim(), mode: 0o755},
+			{source: filepath.Join(request.PayloadDir, "agentdock.ico"), target: filepath.Join(binDir, "agentdock.ico"), mode: 0o644},
 		}
-		if fileExists(trayShim) {
-			if err := copyTree(trayShim, layout.TrayShim(), 0o755); err != nil {
-				return activatedInstall{}, err
+		for _, file := range stableFiles {
+			if !fileExists(file.source) {
+				return activatedInstall{}, fmt.Errorf("payload 缺少 %s", filepath.Base(file.source))
 			}
-		}
-		managerSrc := filepath.Join(request.PayloadDir, "manage-windows.ps1")
-		if fileExists(managerSrc) {
-			if err := copyTree(managerSrc, filepath.Join(request.InstallRoot, "installer", "manage-windows.ps1"), 0o644); err != nil {
+			if err := copyTree(file.source, file.target, file.mode); err != nil {
 				return activatedInstall{}, err
 			}
 		}

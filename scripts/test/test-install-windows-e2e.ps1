@@ -147,9 +147,9 @@ function Assert-AgentDockHealthy {
 }
 
 function Assert-RedirectedManifestRecovery {
-    $managerPath = Join-Path $testRoot 'installer\manage-windows.ps1'
-    if (-not (Test-Path -LiteralPath $managerPath -PathType Leaf)) {
-        throw "AgentDock Windows manager was not installed: $managerPath"
+    $stableBinary = Join-Path $installDir 'agentdock.exe'
+    if (-not (Test-Path -LiteralPath $stableBinary -PathType Leaf)) {
+        throw "AgentDock stable binary was not installed: $stableBinary"
     }
 
     $manifest = Get-Content -LiteralPath $runtimeManifestPath -Raw | ConvertFrom-Json
@@ -174,12 +174,9 @@ function Assert-RedirectedManifestRecovery {
     if (Test-Path -LiteralPath $manifest.agentdock_binary -PathType Leaf) {
         throw 'Issue #22 fixture is invalid: stale core path unexpectedly exists.'
     }
-    & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
-        -File $managerPath `
-        -Action restart `
-        -RuntimeRoot $testRoot
+    & $stableBinary service restart --runtime-root $testRoot | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        throw "AgentDock manager could not recover a redirected runtime manifest: $LASTEXITCODE"
+        throw "AgentDock native service restart could not recover a redirected runtime manifest: $LASTEXITCODE"
     }
 
     $response = Invoke-WebRequest -UseBasicParsing -Uri $healthUrl -TimeoutSec 5

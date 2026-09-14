@@ -46,9 +46,6 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"[switch] $ConfigurePublicAccess",
 		"[string] $TunnelTokenFile = ''",
 		"[switch] $DeleteTunnelTokenFile",
-		"Write-RuntimeManifest",
-		"agentdock_home = $AgentDockHome",
-		"agentdock_default_dir = $AgentDockDefaultDir",
 		"$runtimeAgentDockHome = [Environment]::GetEnvironmentVariable('AGENTDOCK_HOME', 'Process')",
 		"$runtimeAgentDockDefaultDir = [Environment]::GetEnvironmentVariable('AGENTDOCK_DEFAULT_DIR', 'Process')",
 		"Write-InstallResult",
@@ -115,7 +112,6 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"& '$escapedBinaryPath' tunnel launch --runtime-root '$escapedRuntimeDir'",
 		"RuntimeInformation]::OSArchitecture",
 		"Authentication: Bearer Token and OAuth are both enabled.",
-		"$coreSkillOutput = @(& $destinationBinary skill bootstrap --bundle $coreSkillBundle 2>&1)",
 		"-ErrorCode $resultErrorCode",
 		"$resultErrorCode = 'elevated-task-rollback-failed'",
 		"$resultErrorCode = 'rollback-failed'",
@@ -131,17 +127,13 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"Name = 'update-transaction.json'",
 		"Name = 'update-result.json'",
 		"$versionsDir = Join-Path $runtimeDir 'versions'",
-		"Copy-Item -LiteralPath $sourceWSLHelperDir -Destination (Join-Path $generationStagingDirectory 'wsl-helper') -Recurse -Force",
 		"Resolving pending AgentDock generation transaction before Setup continues",
 		"$recoveryOutput = @(& $destinationBinary version --json 2>&1)",
 		"Setup will not modify an unresolved generation",
-		"Install-AgentDockBinary -SourceBinary $sourceCoreShim -DestinationBinary $destinationBinary",
-		"Install-AgentDockBinary -SourceBinary $sourceTrayShim -DestinationBinary $destinationTrayBinary",
-		".repair-backup-",
-		"$generationBootstrapPublished = $true",
-		"$activeVersionCreatedByBootstrap -or $generationBootstrapPublished",
-		"$activeVersionCreatedByBootstrap = $true",
 		"AgentDock payload preflight failed with exit code",
+		"Release archive does not contain an Installer Engine capable AgentDock binary.",
+		"'--payload-dir', $extractDir",
+		"$stableFilesMayBeReplaced = $true",
 		"http://127.0.0.1:$HealthPort/healthz",
 	} {
 		if !strings.Contains(script, want) {
@@ -170,21 +162,15 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	}
 	legacyPrepareCall := strings.Index(script, "install prepare-windows-legacy")
 	stopCall := strings.Index(script, "Stop-AgentDockForUpgrade -BinaryPath $destinationBinary")
-	replaceCall := strings.Index(script, "Install-AgentDockBinary -SourceBinary $sourceCoreShim -DestinationBinary $destinationBinary")
-	if legacyPrepareCall < 0 || stopCall < 0 || replaceCall < 0 || legacyPrepareCall > stopCall || stopCall > replaceCall {
-		t.Fatal("legacy source generation must be committed before the old Core is stopped, and the stable CUI shim may only replace it afterwards")
-	}
 	backupCall := strings.Index(script, "Copy-Item -LiteralPath $destinationBinary -Destination $binaryBackup -Force")
-	if backupCall < stopCall || backupCall > replaceCall {
-		t.Fatal("install.ps1 must back up the stable Core entry after it stops and before replacing it with the CUI shim")
-	}
-	stageCall := strings.Index(script, "Move-Item -LiteralPath $generationStagingDirectory -Destination $generationBootstrapDirectory")
-	if stageCall < 0 || stageCall > replaceCall {
-		t.Fatal("install.ps1 must publish the complete generation before installing stable shims")
+	engineCall := strings.Index(script, "$engineJson = (& $sourceBinary @engineArgs")
+	if legacyPrepareCall < 0 || stopCall < 0 || backupCall < 0 || engineCall < 0 ||
+		legacyPrepareCall > stopCall || stopCall > backupCall || backupCall > engineCall {
+		t.Fatal("legacy source generation must be prepared before old Core stop; stable backup must precede the Installer Engine payload publish")
 	}
 	probeCall := strings.Index(script, "install --engine-ready")
-	if probeCall < 0 || probeCall > stageCall {
-		t.Fatal("Engine readiness must be known before any generation Move-Item")
+	if probeCall < 0 || probeCall > legacyPrepareCall {
+		t.Fatal("Release payload must be proven Engine-ready before legacy migration or process mutation")
 	}
 	if strings.Contains(script, "$engineOwnsTargetGeneration") {
 		t.Fatal("generation ownership must be decided by the Installer Engine, not by a PowerShell boolean")
@@ -193,7 +179,7 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		t.Fatal("Setup must read the generation pointer state through the Installer Engine inspect, not by parsing active-version.json")
 	}
 	if !strings.Contains(script, "install prepare-windows-legacy") {
-		t.Fatal("pre-generation Windows installs must seed a committed legacy source before stable shims replace old binaries")
+		t.Fatal("pre-generation Windows installs must seed a committed legacy source before the current Engine publishes target files")
 	}
 	if !strings.Contains(script, "Get-AgentDockProcesses -BinaryPath $existingGenerationCore") ||
 		!strings.Contains(script, "Get-AgentDockProcesses -BinaryPath $destinationBinary") {
@@ -203,11 +189,20 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		strings.Count(script, "Stop-AgentDockForUpgrade -BinaryPath $destinationBinary") < 2 {
 		t.Fatal("generation retries must stop both source generation and crash-left legacy stable Core paths")
 	}
-	if !strings.Contains(script, "only stages the immutable generation itself for the non-engine-ready fallback path") {
-		t.Fatal("PowerShell generation staging must only run for non-engine payloads; engine-ready installs own generation publish and same-version repair")
+	for _, forbidden := range []string{
+		"function Write-RuntimeManifest",
+		"generationStagingDirectory",
+		"generationRepairBackupDirectory",
+		"Install-AgentDockBinary",
+		"$coreSkillOutput =",
+		"$engineReady =",
+	} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("PowerShell must not reintroduce an Installer Engine-owned state machine: %q", forbidden)
+		}
 	}
-	if !strings.Contains(script, "PowerShell does not pre-commit it") {
-		t.Fatal("Engine --payload-dir must be the sole fresh/cross-version generation source")
+	if !strings.Contains(script, "'--payload-dir', $extractDir") {
+		t.Fatal("Installer Engine must be the sole payload publisher through --payload-dir")
 	}
 	if strings.Contains(script, "update --local-archive") || strings.Contains(script, "Delegating Setup upgrade to the AgentDock Update Engine") {
 		t.Fatal("Setup must not commit a target generation through Update Engine before Installer/OS adapter commit")
@@ -218,11 +213,11 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	if strings.Contains(script, "-not $generationUpgradeHandled -and $generationLayoutDetected") {
 		t.Fatal("Setup rollback must stop the target generation even after Update Engine committed")
 	}
-	manifestCall := strings.Index(script, "-RuntimeTunnelMode $resolvedTunnelMode")
+	tunnelArg := strings.Index(script, "'--tunnel-mode', $resolvedTunnelMode")
 	coreStartCall := strings.Index(script, "& $destinationBinary service start --runtime-root $runtimeDir")
 	tunnelStartCall := strings.Index(script, "& $destinationBinary tunnel start --runtime-root $runtimeDir")
-	if manifestCall < 0 || coreStartCall < 0 || tunnelStartCall < 0 || manifestCall > coreStartCall || manifestCall > tunnelStartCall {
-		t.Fatal("install.ps1 must write the runtime manifest before native core and Tunnel startup")
+	if tunnelArg < 0 || coreStartCall < 0 || tunnelStartCall < 0 || tunnelArg > coreStartCall || tunnelArg > tunnelStartCall {
+		t.Fatal("Installer Engine must receive the resolved tunnel mode before any adapter fallback activation")
 	}
 	if strings.Contains(script, "$manifestTunnelMode = 'none'") {
 		t.Fatal("Quick Tunnel must not rewrite Engine tunnel-mode to none")
@@ -252,10 +247,8 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	if commitCall < 0 {
 		t.Fatal("Windows installer must finalize a deferred Engine trial with install commit bound to the trial transaction id")
 	}
-	engineInvoke := strings.Index(script, "if ($engineReady) {")
-	registerBlock := strings.Index(script, "if ($RegisterStartup) {")
-	if engineInvoke < 0 || registerBlock < 0 || engineInvoke < registerBlock {
-		t.Fatal("Installer Engine must run even when RegisterStartup is false")
+	if strings.Contains(script, "if ($engineReady)") || strings.Contains(script, "if (-not $engineReady)") {
+		t.Fatal("current Windows Release must require the Installer Engine instead of branching to a legacy payload fallback")
 	}
 	rollbackRestore := strings.LastIndex(script, "Restore-FileState")
 	abandonCall := strings.LastIndex(script, "install', 'abandon'")
@@ -328,49 +321,32 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		}
 	}
 }
-func TestWindowsManagerKeepsTunnelTransitionsAndManualTaskStartValid(t *testing.T) {
-	data, err := os.ReadFile("../install/manage-windows.ps1")
+func TestWindowsInstallerUsesNativeTaskStartBridge(t *testing.T) {
+	installData, err := os.ReadFile("../install/install.ps1")
 	if err != nil {
-		t.Fatalf("read manage-windows.ps1: %v", err)
+		t.Fatal(err)
 	}
-	if len(data) < 3 || data[0] != 0xef || data[1] != 0xbb || data[2] != 0xbf {
-		t.Fatal("manage-windows.ps1 must use UTF-8 with BOM for Windows PowerShell 5.1")
+	brokerData, err := os.ReadFile("../install/launch-windows-process.ps1")
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	script := string(data)
+	combined := string(installData) + "\n" + string(brokerData)
 	for _, want := range []string{
-		"function Start-TaskPreservingStartupState",
-		"Enable-ScheduledTask -TaskName $TaskName",
-		"Disable-ScheduledTask -TaskName $TaskName",
-		"function Resolve-RuntimeManagedPath",
-		"-RecordedRuntimeRoot $RecordedInstallRoot",
-		"named-server-url.txt",
-		"quick-tunnel-url.txt",
-		"'regenerate-quick'",
-		"'set-startup'",
-		"--task-admin set-enabled",
-		"-FilePath $TrayBinary",
-		"'start-tunnel'",
-		"'stop-tunnel'",
-		"& $AgentDockBinary service launch-core --runtime-root $RuntimeRoot",
-		// quick 模式 restart 完全委托原生 regenerateQuickTunnel，脚本不再自行投影 manifest。
-		"Invoke-NativeTunnelCommand -Command restart",
+		"service task-start",
+		"--task-name",
+		"--expected-user-sid",
+		"-AgentDockBinary $destinationBinary",
 	} {
-		if !strings.Contains(script, want) {
-			t.Fatalf("manage-windows.ps1 missing %q", want)
+		if !strings.Contains(combined, want) {
+			t.Fatalf("Windows native task bridge missing %q", want)
 		}
 	}
-	if strings.Contains(script, "RuntimeMode 'quick' -PublicUrl ''") {
-		t.Fatal("Quick Tunnel transition must not write an invalid quick manifest without public_url")
+	if strings.Contains(string(brokerData), "manage-windows.ps1") || strings.Contains(combined, "task-run-session") {
+		t.Fatal("Windows runtime launch paths must not depend on the removed manage-windows compatibility shim")
 	}
-	for _, want := range []string{
-		"& $AgentDockBinary tunnel $Command --runtime-root $RuntimeRoot",
-		"'tunnel', 'configure'",
-		"& $AgentDockBinary service stop --runtime-root $RuntimeRoot",
-	} {
-		if !strings.Contains(script, want) {
-			t.Fatalf("manage-windows.ps1 must delegate Tunnel operations to native commands: %q", want)
-		}
+	if !strings.Contains(string(installData), "$legacyManagerPath = Join-Path $runtimeDir 'installer\\manage-windows.ps1'") ||
+		!strings.Contains(string(installData), "Remove-Item -LiteralPath $legacyManagerPath -Force") {
+		t.Fatal("install.ps1 must retain rollback-safe cleanup for manage-windows.ps1 left by older installs")
 	}
 }
 func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
@@ -396,7 +372,6 @@ func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
 		"'desktop-version.txt'",
 		"Remove-RegistryValueIfPresent -Path $runKey -Name $CloudflaredStartupValueName",
 		"'start-cloudflared.ps1'",
-		"'installer\\manage-windows.ps1'",
 		"'named-server-url.txt'",
 		"'control-panel-settings.json'",
 		"'oauth-password.dpapi'",
@@ -826,9 +801,9 @@ func TestWindowsSetupLaunchesRuntimeOutsideRedirectionGuardTree(t *testing.T) {
 		"-LogonType Interactive",
 		"-RunLevel Limited",
 		"Register-ScheduledTask",
-		"$managerScriptPath = Join-Path $PSScriptRoot 'manage-windows.ps1'",
-		"-Action task-run-session",
-		"-ScheduledTaskName $taskName",
+		"& $AgentDockBinary service task-start",
+		"--task-name $taskName",
+		"--expected-user-sid $identity.User.Value",
 		"if ($WaitForExit) {",
 		"$process.WaitForExit()",
 		"RedirectStandardOutput = $true",
@@ -852,9 +827,8 @@ func TestWindowsSetupLaunchesRuntimeOutsideRedirectionGuardTree(t *testing.T) {
 
 	for _, want := range []string{
 		"Source: \"..\\..\\scripts\\install\\launch-windows-process.ps1\"; Flags: dontcopy",
-		"Source: \"..\\..\\scripts\\install\\manage-windows.ps1\"; Flags: dontcopy",
 		"ExtractTemporaryFile('launch-windows-process.ps1')",
-		"ExtractTemporaryFile('manage-windows.ps1')",
+		"-AgentDockBinary ",
 		"function LaunchRuntimeProcess(",
 		"LaunchRuntimeProcess(ExpandConstant('{app}\\bin\\agentdock-tray.exe'), '')",
 	} {

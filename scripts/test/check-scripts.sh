@@ -28,6 +28,7 @@ if [ "$macos" = true ]; then
   }
   while IFS= read -r rel; do
     [ -n "$rel" ] || continue
+    [ -f "$rel" ] || continue
     case "$(sed -n '1p' "$rel")" in
       *zsh*) syntax zsh "$rel" ;;
     esac
@@ -60,6 +61,7 @@ fi
 
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
+  [ -f "$rel" ] || continue
   case "$(sed -n '1p' "$rel")" in
     *zsh*) continue ;;
     *bash*) syntax bash "$rel" ;;

@@ -50,17 +50,14 @@ func TestLinuxOpenRCUsesAgentDockManagedRotatingLogs(t *testing.T) {
 }
 
 func TestLinuxSystemdKeepsJournaldLogging(t *testing.T) {
-	data, err := os.ReadFile("../install/install-linux-platform.sh")
+	data, err := os.ReadFile("../../internal/installer/units.go")
 	if err != nil {
-		t.Fatalf("read install-linux-platform.sh: %v", err)
+		t.Fatalf("read internal/installer/units.go: %v", err)
 	}
-	script := string(data)
-	if !strings.Contains(script, `systemd) printf 'sudo journalctl -u %s -n 100 --no-pager'`) {
-		t.Fatal("systemd log command must continue to use journald")
-	}
+	template := string(data)
 	for _, forbidden := range []string{"StandardOutput=append:", "StandardError=append:"} {
-		if strings.Contains(script, forbidden) {
-			t.Fatalf("systemd must not add duplicate file logging: %s", forbidden)
+		if strings.Contains(template, forbidden) {
+			t.Fatalf("systemd must keep journald ownership instead of duplicate file logging: %s", forbidden)
 		}
 	}
 }
@@ -75,10 +72,6 @@ func TestDesktopHostsDoNotBypassManagedRotation(t *testing.T) {
 			`FileMode.Append`,
 			`Path.Combine(LogsDirectory, "agentdock.err.log")`,
 		},
-		"../install/manage-windows.ps1": {
-			`RedirectStandardOutput $CloudflaredStdoutPath`,
-			`RedirectStandardError $CloudflaredStderrPath`,
-		},
 	}
 	for path, forbidden := range files {
 		data, err := os.ReadFile(path)
@@ -90,14 +83,6 @@ func TestDesktopHostsDoNotBypassManagedRotation(t *testing.T) {
 				t.Fatalf("%s still bypasses managed log rotation with %q", path, value)
 			}
 		}
-	}
-
-	manager, err := os.ReadFile("../install/manage-windows.ps1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(manager), `& $AgentDockBinary tunnel start --runtime-root $RuntimeRoot`) {
-		t.Fatal("Windows compatibility tunnel launcher must delegate to native tunnel lifecycle")
 	}
 
 	// macOS LaunchAgent 由 Go Installer Engine 生成（internal/installer/units.go）；

@@ -308,8 +308,7 @@ jobs:
           $asset = "agentdock_windows_$env:GOARCH.zip"
           python .\packaging\build-core-skill-bundle.py --output dist\share\agentdock\core-skills
           Copy-Item .\packaging\windows\assets\agentdock.ico dist\agentdock.ico -Force
-          Copy-Item .\scripts\install\manage-windows.ps1 dist\manage-windows.ps1 -Force
-          Compress-Archive -Path dist\agentdock.exe, dist\agentdock-tray.exe, dist\agentdock-arbiter.exe, dist\agentdock-shim.exe, dist\agentdock-tray-shim.exe, dist\agentdock.ico, dist\manage-windows.ps1, dist\share, dist\wsl-helper -DestinationPath $asset -Force
+          Compress-Archive -Path dist\agentdock.exe, dist\agentdock-tray.exe, dist\agentdock-arbiter.exe, dist\agentdock-shim.exe, dist\agentdock-tray-shim.exe, dist\agentdock.ico, dist\share, dist\wsl-helper -DestinationPath $asset -Force
           $hash = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
           [IO.File]::WriteAllText("$asset.sha256", "$hash  $asset`n", [Text.UTF8Encoding]::new($false))
 
@@ -419,12 +418,7 @@ jobs:
         run: |
           set -euo pipefail
           cp scripts/install/install.sh dist/install.sh
-          cp scripts/install/install-linux-platform.sh dist/install-linux-platform.sh
-          cp scripts/install/uninstall-linux.sh dist/uninstall-linux.sh
-          cp scripts/install/install-macos-platform.sh dist/install-macos-platform.sh
-          cp scripts/install/uninstall-macos.sh dist/uninstall-macos.sh
           cp scripts/install/install.ps1 dist/install.ps1
-          cp scripts/install/uninstall-windows.ps1 dist/uninstall-windows.ps1
           go run ./tools/release verify-version "$RELEASE_TAG"
           python3 - <<'PY'
           import os
@@ -456,12 +450,7 @@ jobs:
             cd dist
             for file in \
               install.sh \
-              install-linux-platform.sh \
-              uninstall-linux.sh \
-              install-macos-platform.sh \
-              uninstall-macos.sh \
               install.ps1 \
-              uninstall-windows.ps1 \
               AgentDockSetup-amd64.exe \
               AgentDockSetup-arm64.exe; do
               shasum -a 256 "$file" > "$file.sha256"
@@ -656,7 +645,6 @@ jobs:
           tag='${{ github.event.inputs.tag || github.ref_name }}'
           release_base="https://github.com/${{ github.repository }}/releases/download/$tag"
           installer="$RUNNER_TEMP/install.sh"
-          uninstaller="$RUNNER_TEMP/uninstall-macos.sh"
           dmg="$RUNNER_TEMP/AgentDock-macos-universal.dmg"
           zip="$RUNNER_TEMP/AgentDock-macos-universal.zip"
           zip_dir="$RUNNER_TEMP/agentdock-zip"
@@ -728,13 +716,11 @@ jobs:
 
           curl -fL "$release_base/install.sh" -o "$installer"
           curl -fL "$release_base/install.sh.sha256" -o "$installer.sha256"
-          curl -fL "$release_base/uninstall-macos.sh" -o "$uninstaller"
           (
             cd "$RUNNER_TEMP"
             shasum -a 256 -c install.sh.sha256
           )
           sh -n "$installer"
-          zsh -n "$uninstaller"
           HOME="$RUNNER_TEMP/home" \
           AGENTDOCK_INSTALLER_BASE_URL="$release_base" \
           AGENTDOCK_INSTALL_DIR="$RUNNER_TEMP/bin" \
@@ -746,6 +732,14 @@ jobs:
             version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["active_version"])' "$state")"
             test -f "$RUNNER_TEMP/home/.agentdock/skill-store/installed/$skill/$version/SKILL.md"
           done
+          HOME="$RUNNER_TEMP/home" \
+          AGENTDOCK_INSTALLER_BASE_URL="$release_base" \
+          AGENTDOCK_INSTALL_DIR="$RUNNER_TEMP/bin" \
+            sh "$installer" --uninstall --purge-data \
+              --agentdock-home "$RUNNER_TEMP/home/.agentdock" \
+              --agentdock-default-dir "$RUNNER_TEMP/home/AgentDock"
+          test ! -e "$RUNNER_TEMP/bin/agentdock"
+          test ! -e "$RUNNER_TEMP/home/.agentdock"
 
   verify-windows-release:
     name: Verify published Windows installer

@@ -15,23 +15,17 @@ import (
 func TestWindowsDesktopUpdateInstallRestoreAndCommit(t *testing.T) {
 	runtimeRoot := t.TempDir()
 	binDir := filepath.Join(runtimeRoot, "bin")
-	installerDir := filepath.Join(runtimeRoot, "installer")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(installerDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	corePath := filepath.Join(binDir, "agentdock.exe")
 	trayPath := filepath.Join(binDir, "agentdock-tray.exe")
 	iconPath := filepath.Join(binDir, "agentdock.ico")
-	managerPath := filepath.Join(installerDir, "manage-windows.ps1")
 	for path, content := range map[string]string{
-		corePath:    "core",
-		trayPath:    "tray-old",
-		iconPath:    "icon-old",
-		managerPath: "manager-old",
+		corePath: "core",
+		trayPath: "tray-old",
+		iconPath: "icon-old",
 	} {
 		if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
 			t.Fatal(err)
@@ -59,7 +53,6 @@ func TestWindowsDesktopUpdateInstallRestoreAndCommit(t *testing.T) {
 	for name, content := range map[string]string{
 		"agentdock-tray.exe":      "tray-new",
 		"agentdock.ico":           "icon-new",
-		"manage-windows.ps1":      "manager-new",
 		windowsDesktopVersionFile: "v0.7.5\n",
 	} {
 		if err := os.WriteFile(filepath.Join(stagedRoot, name), []byte(content), 0o755); err != nil {
@@ -76,7 +69,6 @@ func TestWindowsDesktopUpdateInstallRestoreAndCommit(t *testing.T) {
 	}
 	assertWindowsFileContent(t, trayPath, "tray-new")
 	assertWindowsFileContent(t, iconPath, "icon-new")
-	assertWindowsFileContent(t, managerPath, "manager-new")
 	assertWindowsFileContent(t, filepath.Join(runtimeRoot, windowsDesktopVersionFile), "v0.7.5\n")
 
 	if err := update.Restore(); err != nil {
@@ -84,7 +76,6 @@ func TestWindowsDesktopUpdateInstallRestoreAndCommit(t *testing.T) {
 	}
 	assertWindowsFileContent(t, trayPath, "tray-old")
 	assertWindowsFileContent(t, iconPath, "icon-old")
-	assertWindowsFileContent(t, managerPath, "manager-old")
 	if _, err := os.Stat(filepath.Join(runtimeRoot, windowsDesktopVersionFile)); !os.IsNotExist(err) {
 		t.Fatalf("desktop version marker survived rollback: %v", err)
 	}
@@ -96,11 +87,7 @@ func TestWindowsDesktopUpdateInstallRestoreAndCommit(t *testing.T) {
 func TestApplyWindowsDesktopOnlyWritesVersionMarker(t *testing.T) {
 	runtimeRoot := t.TempDir()
 	binDir := filepath.Join(runtimeRoot, "bin")
-	installerDir := filepath.Join(runtimeRoot, "installer")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(installerDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	corePath := filepath.Join(binDir, "agentdock.exe")
@@ -109,7 +96,6 @@ func TestApplyWindowsDesktopOnlyWritesVersionMarker(t *testing.T) {
 		corePath:                               "core",
 		trayPath:                               "tray-old",
 		filepath.Join(binDir, "agentdock.ico"): "icon-old",
-		filepath.Join(installerDir, "manage-windows.ps1"): "manager-old",
 	} {
 		if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
 			t.Fatal(err)
@@ -135,7 +121,6 @@ func TestApplyWindowsDesktopOnlyWritesVersionMarker(t *testing.T) {
 	for name, content := range map[string]string{
 		"agentdock-tray.exe":      "tray-new",
 		"agentdock.ico":           "icon-new",
-		"manage-windows.ps1":      "manager-new",
 		windowsDesktopVersionFile: "v0.7.5\n",
 	} {
 		if err := os.WriteFile(filepath.Join(stagedRoot, name), []byte(content), 0o755); err != nil {

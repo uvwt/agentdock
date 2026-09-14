@@ -64,105 +64,8 @@ func TestScriptGovernanceInventoryCoversTrackedScripts(t *testing.T) {
 	}
 }
 
-func TestManageWindowsActionsStayFrozen(t *testing.T) {
-	root := filepath.Join("..", "..")
-	inventory, err := parseGovernanceInventory(filepath.Join(root, "scripts", "governance", "inventory.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	frozen := inventory.Frozen["manage-windows.ps1"]
-	if len(frozen) == 0 {
-		t.Fatal("frozen manage-windows.ps1 actions are required")
-	}
-	data, err := os.ReadFile(filepath.Join(root, "scripts", "install", "manage-windows.ps1"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := string(data)
-	actual := parsePowerShellValidateSetActions(script)
-	if !sameStringSet(actual, frozen) {
-		t.Fatalf("manage-windows.ps1 ValidateSet actions %v must equal frozen set %v", actual, frozen)
-	}
-	if !strings.Contains(script, "Compatibility shim") && !strings.Contains(script, "兼容垫片") {
-		t.Fatal("manage-windows.ps1 must declare itself as a compatibility shim")
-	}
-}
-
-func parsePowerShellValidateSetActions(script string) []string {
-	start := strings.Index(script, "ValidateSet(")
-	if start < 0 {
-		return nil
-	}
-	rest := script[start:]
-	end := strings.Index(rest, ")")
-	if end < 0 {
-		return nil
-	}
-	var actions []string
-	for _, line := range strings.Split(rest[:end], "\n") {
-		line = strings.Trim(strings.TrimSpace(line), ",")
-		if strings.HasPrefix(line, "'") && strings.HasSuffix(line, "'") {
-			actions = append(actions, strings.Trim(line, "'"))
-		}
-	}
-	return actions
-}
-
-func TestParsePowerShellValidateSetActionsHandlesCRLF(t *testing.T) {
-	script := "[ValidateSet(\r\n    'start',\r\n    'stop'\r\n)]\r\n[string] $Action"
-	want := []string{"start", "stop"}
-	if got := parsePowerShellValidateSetActions(script); !sameStringSet(got, want) {
-		t.Fatalf("CRLF ValidateSet actions=%v, want %v", got, want)
-	}
-}
-
-func sameStringSet(left, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	count := map[string]int{}
-	for _, value := range left {
-		count[value]++
-	}
-	for _, value := range right {
-		if count[value] == 0 {
-			return false
-		}
-		count[value]--
-	}
-	return true
-}
-
-func TestNewCodeMustNotAddManageWindowsCallers(t *testing.T) {
-	root := filepath.Join("..", "..")
-	inventory, err := parseGovernanceInventory(filepath.Join(root, "scripts", "governance", "inventory.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	allow := map[string]struct{}{}
-	for _, path := range inventory.Allowlist {
-		allow[filepath.ToSlash(path)] = struct{}{}
-	}
-	cmd := exec.Command("git", "-C", root, "grep", "-l", "manage-windows.ps1")
-	output, err := cmd.Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
-		path := filepath.ToSlash(strings.TrimSpace(line))
-		if path == "" || strings.HasSuffix(path, "_test.go") {
-			continue
-		}
-		if _, ok := allow[path]; !ok {
-			t.Fatalf("new manage-windows.ps1 caller is forbidden: %s", path)
-		}
-	}
-}
-
 type governanceInventory struct {
 	Threshold int
-	Frozen    map[string][]string
-	Allowlist []string
 	Scripts   []governanceScript
 }
 
@@ -180,7 +83,7 @@ func parseGovernanceInventory(path string) (governanceInventory, error) {
 	}
 	defer file.Close()
 
-	inventory := governanceInventory{Frozen: map[string][]string{}}
+	inventory := governanceInventory{}
 	scanner := bufio.NewScanner(file)
 	section := ""
 	current := governanceScript{}
@@ -199,22 +102,9 @@ func parseGovernanceInventory(path string) (governanceInventory, error) {
 		case strings.HasPrefix(line, "review_threshold_lines:"):
 			inventory.Threshold, _ = strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "review_threshold_lines:")))
 			section = ""
-		case line == "frozen_legacy_actions:":
-			flush()
-			section = "frozen"
-		case line == "manage_windows_allowlist:":
-			flush()
-			section = "allow"
 		case line == "scripts:":
 			flush()
 			section = "scripts"
-		case section == "frozen" && strings.HasSuffix(line, ":"):
-			section = "frozen-item:" + strings.TrimSuffix(line, ":")
-		case strings.HasPrefix(section, "frozen-item:") && strings.HasPrefix(line, "- "):
-			key := strings.TrimPrefix(section, "frozen-item:")
-			inventory.Frozen[key] = append(inventory.Frozen[key], strings.Trim(strings.TrimPrefix(line, "- "), `"'`))
-		case section == "allow" && strings.HasPrefix(line, "- "):
-			inventory.Allowlist = append(inventory.Allowlist, strings.Trim(strings.TrimPrefix(line, "- "), `"'`))
 		case section == "scripts" && strings.HasPrefix(line, "- path:"):
 			flush()
 			current.Path = strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, "- path:")), `"'`)
@@ -241,6 +131,11 @@ func gitTrackedScripts(root string) ([]string, error) {
 		path := filepath.ToSlash(strings.TrimSpace(line))
 		if path == "" {
 			continue
+		}
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(path))); os.IsNotExist(err) {
+			continue
+		} else if err != nil {
+			return nil, err
 		}
 		if strings.HasPrefix(path, "scripts/") || strings.HasPrefix(path, "packaging/") || path == "docker-entrypoint.sh" {
 			paths = append(paths, path)

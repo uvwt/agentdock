@@ -10,9 +10,6 @@ import (
 func TestUnifiedInstallerEntryOwnsUnixBootstrap(t *testing.T) {
 	for _, path := range []string{
 		"../install/install.sh",
-		"../install/install-linux-platform.sh",
-		"../install/uninstall-linux.sh",
-		"../install/install-macos-platform.sh",
 		"../install/install.ps1",
 	} {
 		if info, err := os.Stat(path); err != nil {
@@ -23,6 +20,10 @@ func TestUnifiedInstallerEntryOwnsUnixBootstrap(t *testing.T) {
 	}
 
 	for _, legacyPath := range []string{
+		"../install/install-linux-platform.sh",
+		"../install/install-macos-platform.sh",
+		"../install/uninstall-linux.sh",
+		"../install/uninstall-macos.sh",
 		"install-linux.sh",
 		"install-linux-bootstrap.sh",
 		"install-macos.sh",

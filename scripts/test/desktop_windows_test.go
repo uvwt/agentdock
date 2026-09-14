@@ -342,10 +342,6 @@ func TestWindowsUpdateFeedbackUsesUTF8AndImmediateStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read UpdateProgressWindow.xaml.cs: %v", err)
 	}
-	scriptData, err := os.ReadFile(filepath.Join("..", "install", "manage-windows.ps1"))
-	if err != nil {
-		t.Fatalf("read manage-windows.ps1: %v", err)
-	}
 
 	app := string(appData)
 	window := string(windowData)
@@ -353,7 +349,6 @@ func TestWindowsUpdateFeedbackUsesUTF8AndImmediateStatus(t *testing.T) {
 	runtimeService := string(runtimeData)
 	progressXAML := string(progressXAMLData)
 	progressCode := string(progressCodeData)
-	script := string(scriptData)
 
 	for _, want := range []string{
 		`_updateInProgress ? UiText.Get("CheckingForUpdates") : UiText.Get("CheckForUpdates")`,
@@ -418,16 +413,6 @@ func TestWindowsUpdateFeedbackUsesUTF8AndImmediateStatus(t *testing.T) {
 	} {
 		if !strings.Contains(progressXAML, want) && !strings.Contains(progressCode, want) {
 			t.Fatalf("Windows update progress window missing %q", want)
-		}
-	}
-
-	for _, want := range []string{
-		`[Console]::InputEncoding = $Utf8NoBom`,
-		`[Console]::OutputEncoding = $Utf8NoBom`,
-		`$global:OutputEncoding = $Utf8NoBom`,
-	} {
-		if !strings.Contains(script, want) {
-			t.Fatalf("Windows management script missing UTF-8 output setup %q", want)
 		}
 	}
 

@@ -5,51 +5,6 @@
 
 review_threshold_lines: 300
 
-frozen_legacy_actions:
-  manage-windows.ps1:
-    - start
-    - stop
-    - restart
-    - start-tunnel
-    - stop-tunnel
-    - update
-    - set-mode
-    - regenerate-quick
-    - set-startup
-    - launch-core
-    - launch-tunnel
-    - set-task-startup
-    - task-run-session
-    - task-start
-    - task-stop
-
-manage_windows_allowlist:
-  - scripts/install/manage-windows.ps1
-  - scripts/install/launch-windows-process.ps1
-  - scripts/install/install.ps1
-  - scripts/install/uninstall-windows.ps1
-  - scripts/test/install_windows_test.go
-  - scripts/test/desktop_windows_test.go
-  - scripts/test/logging_policy_test.go
-  - scripts/test/script_governance_test.go
-  - scripts/test/test-windows-task-scheduler.ps1
-  - scripts/test/test-install-windows.ps1
-  - scripts/test/test-install-windows-e2e.ps1
-  - scripts/test/test-windows-setup-e2e.ps1
-  - scripts/test/test-windows-quick-tunnel-lifecycle.ps1
-  - scripts/governance/inventory.yaml
-  - docs/installer-script-inventory.md
-  - packaging/windows/AgentDock.iss
-  - packaging/windows/build-windows-offline-setup.ps1
-  - packaging/windows/includes/code.iss
-  - internal/selfupdate/desktop_apply_windows.go
-  - internal/selfupdate/desktop_apply_windows_test.go
-  - internal/selfupdate/desktop_update_windows.go
-  - internal/selfupdate/desktop_update_windows_test.go
-  - internal/installer/apply.go
-  - .github/workflows/release.yml
-  - .github/workflows/windows-installer.yml
-
 scripts:
   - path: scripts/install/install.sh
     class: bootstrap
@@ -58,7 +13,7 @@ scripts:
     deletable: false
     legacy_oversize: true
     oversize_justification: 公开 Unix bootstrap，包含 Linux 交互菜单、校验下载和卸载转发；不得改名。
-    notes: Unix 公开安装入口。只负责平台检测、交互、下载校验，再调用平台适配或 Go Installer Engine。
+    notes: Unix 公开安装入口。只负责平台检测、交互、下载校验和 bootstrap，再调用 Go Installer Engine。
 
   - path: scripts/install/install.ps1
     class: runtime-adapter
@@ -66,61 +21,22 @@ scripts:
     public_contract: true
     deletable: false
     legacy_oversize: true
-    oversize_justification: Windows Setup / 自更新公开契约，正在把 generation、manifest、事务迁入 Go Installer Engine。
+    oversize_justification: Windows 公开 bootstrap / Setup 契约；generation、stable shim、manifest 与事务由 Go Installer Engine 拥有，脚本保留 UAC/DPAPI/Registry/session 外层适配。
     notes: 公开 Windows 安装入口。UAC、DPAPI、Inno 结果文件和用户 session broker 仍留在脚本。
-
-  - path: scripts/install/install-linux-platform.sh
-    class: runtime-adapter
-    owner: installer
-    public_contract: true
-    deletable: false
-    legacy_oversize: true
-    oversize_justification: 历史 Linux 安装器，仍被旧版 install.sh 下载。新路径委托 agentdock install。
-
-  - path: scripts/install/install-macos-platform.sh
-    class: runtime-adapter
-    owner: installer
-    public_contract: true
-    deletable: false
-    legacy_oversize: true
-    oversize_justification: 历史 macOS CLI/LaunchAgent 安装器，仍被旧版 install.sh 下载。新路径委托 agentdock install。
-
-  - path: scripts/install/uninstall-linux.sh
-    class: runtime-adapter
-    owner: installer
-    public_contract: true
-    deletable: false
-    legacy_oversize: true
-    oversize_justification: Linux 公开卸载入口，逐步委托 agentdock uninstall。
-
-  - path: scripts/install/uninstall-macos.sh
-    class: runtime-adapter
-    owner: installer
-    public_contract: true
-    deletable: false
 
   - path: scripts/install/uninstall-windows.ps1
     class: runtime-adapter
     owner: installer
-    public_contract: true
+    public_contract: false
     deletable: false
-    oversize_justification: Windows 公开卸载入口，需要在 stable binary 删除后继续完成可重入 Installer transaction 与 Task/Registry/文件清理。
-
-  - path: scripts/install/manage-windows.ps1
-    class: legacy
-    owner: installer
-    public_contract: true
-    deletable: false
-    legacy_oversize: true
-    oversize_justification: 旧 launcher/runtime 兼容垫片。禁止新增 Action；产品逻辑必须走 agentdock service/tunnel/update。
-    notes: 仅保留旧入口、task-run-session 兼容，以及 Setup 解包契约。
+    oversize_justification: Windows Setup 内部卸载适配器；stable binary 删除后仍需完成可重入 Installer transaction、Task/Registry 和进程占用文件清理。
 
   - path: scripts/install/launch-windows-process.ps1
     class: runtime-adapter
     owner: installer
-    public_contract: true
+    public_contract: false
     deletable: false
-    notes: Setup 进程树到用户 session 的薄 broker，必须保留。
+    notes: Setup RedirectionGuard 进程树到当前用户 interactive session 的内部薄 broker；通过原生 service task-start 选择 RunEx session。
 
   - path: scripts/install/probe-protected-text.ps1
     class: runtime-adapter
@@ -236,11 +152,6 @@ scripts:
     legacy_oversize: true
     oversize_justification: Windows Quick Tunnel 生命周期，依赖真实 Task Scheduler/进程。
 
-  - path: scripts/test/test-windows-task-scheduler.ps1
-    class: test
-    owner: installer
-    public_contract: false
-    deletable: false
 
   - path: scripts/test/test-windows-runtime-launch-diagnostics.ps1
     class: test

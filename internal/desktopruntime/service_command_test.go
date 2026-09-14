@@ -48,6 +48,13 @@ func TestRunServiceCommandValidatesAutostartArgumentsBeforePlatformAccess(t *tes
 	}
 }
 
+func TestRunServiceCommandTaskStartRequiresTaskName(t *testing.T) {
+	err := RunServiceCommand(context.Background(), []string{"task-start"}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "--task-name") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestServiceStatusJSONIncludesNexusConnection(t *testing.T) {
 	data, err := json.Marshal(ServiceStatus{NexusConnected: true})
 	if err != nil {

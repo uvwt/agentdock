@@ -467,7 +467,7 @@ func TestWindowsGenerationLayoutAndManifest(t *testing.T) {
 		"agentdock-arbiter.exe":                     "arbiter",
 		"agentdock-shim.exe":                        "shim",
 		"agentdock-tray-shim.exe":                   "tray-shim",
-		"manage-windows.ps1":                        "manager",
+		"agentdock.ico":                             "icon",
 		"share/agentdock/core-skills/manifest.json": "{}",
 		"wsl-helper/manifest.json":                  "{}",
 	} {
@@ -723,7 +723,7 @@ func TestActivateWindowsDoesNotRewriteActiveVersion(t *testing.T) {
 	if err := os.MkdirAll(payload, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"agentdock.exe", "agentdock-tray.exe", "agentdock-arbiter.exe"} {
+	for _, name := range []string{"agentdock.exe", "agentdock-tray.exe", "agentdock-arbiter.exe", "agentdock-shim.exe", "agentdock-tray-shim.exe", "agentdock.ico"} {
 		if err := os.WriteFile(filepath.Join(payload, name), []byte(name), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -781,7 +781,7 @@ func TestActivateWindowsWritesDesktopVersionFile(t *testing.T) {
 	if err := os.MkdirAll(payload, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"agentdock.exe", "agentdock-tray.exe", "agentdock-arbiter.exe"} {
+	for _, name := range []string{"agentdock.exe", "agentdock-tray.exe", "agentdock-arbiter.exe", "agentdock-shim.exe", "agentdock-tray-shim.exe", "agentdock.ico"} {
 		if err := os.WriteFile(filepath.Join(payload, name), []byte(name), 0o644); err != nil {
 			t.Fatal(err)
 		}

@@ -21,7 +21,6 @@ import (
 var windowsDesktopStagedFiles = []string{
 	"agentdock-tray.exe",
 	"agentdock.ico",
-	"manage-windows.ps1",
 	windowsDesktopVersionFile,
 }
 
@@ -180,7 +179,6 @@ func prepareWindowsDesktopUpdate(currentCorePath, runtimeRoot, stagedRoot string
 	targets := map[string]string{
 		"agentdock-tray.exe":      expectedTrayPath,
 		"agentdock.ico":           filepath.Join(filepath.Dir(currentCorePath), "agentdock.ico"),
-		"manage-windows.ps1":      filepath.Join(runtimeRoot, "installer", "manage-windows.ps1"),
 		windowsDesktopVersionFile: filepath.Join(runtimeRoot, windowsDesktopVersionFile),
 	}
 	files := make([]windowsDesktopFileState, 0, len(windowsDesktopStagedFiles))

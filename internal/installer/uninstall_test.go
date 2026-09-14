@@ -672,7 +672,7 @@ func TestNormalizeRequestRejectsDangerousPurgeDataTarget(t *testing.T) {
 		InstallRoot:   filepath.Join(root, "install"),
 		RuntimeRoot:   filepath.Join(root, "runtime"),
 		PurgeData:     true,
-		AgentDockHome: string(filepath.Separator),
+		AgentDockHome: filesystemRoot,
 	})
 	if err == nil || !strings.Contains(err.Error(), "根目录") {
 		t.Fatalf("filesystem root purge target must be rejected, got %v", err)

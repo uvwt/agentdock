@@ -56,7 +56,7 @@ install-macos:
 	./scripts/install/install.sh
 
 uninstall-macos:
-	./scripts/install/uninstall-macos.sh
+	./scripts/install/install.sh --uninstall
 
 test-install-macos:
 	./scripts/test/test-install-macos.sh

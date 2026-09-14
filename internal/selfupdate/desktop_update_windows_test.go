@@ -17,7 +17,6 @@ func TestExtractWindowsDesktopUpdateArchive(t *testing.T) {
 		"agentdock.exe":      []byte("core"),
 		"agentdock-tray.exe": []byte("tray-new"),
 		"agentdock.ico":      []byte("icon-new"),
-		"manage-windows.ps1": []byte("manager-new"),
 	})
 
 	root, err := extractDesktopUpdateArchive(context.Background(), archive, t.TempDir(), "0.7.5")
@@ -27,7 +26,6 @@ func TestExtractWindowsDesktopUpdateArchive(t *testing.T) {
 	for name, expected := range map[string]string{
 		"agentdock-tray.exe":      "tray-new",
 		"agentdock.ico":           "icon-new",
-		"manage-windows.ps1":      "manager-new",
 		windowsDesktopVersionFile: "v0.7.5\n",
 	} {
 		data, err := os.ReadFile(filepath.Join(root, name))
@@ -43,10 +41,9 @@ func TestExtractWindowsDesktopUpdateArchive(t *testing.T) {
 func TestExtractWindowsDesktopUpdateArchiveRequiresWholeDesktopPayload(t *testing.T) {
 	archive := makeWindowsDesktopArchive(t, map[string][]byte{
 		"agentdock-tray.exe": []byte("tray"),
-		"agentdock.ico":      []byte("icon"),
 	})
 	_, err := extractDesktopUpdateArchive(context.Background(), archive, t.TempDir(), "0.7.5")
-	if err == nil || !strings.Contains(err.Error(), "manage-windows.ps1") {
+	if err == nil || !strings.Contains(err.Error(), "agentdock.ico") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -55,7 +52,6 @@ func TestExtractWindowsDesktopUpdateArchiveKeepsGenerationWSLHelper(t *testing.T
 	archive := makeWindowsDesktopArchive(t, map[string][]byte{
 		"agentdock-tray.exe":                          []byte("tray"),
 		"agentdock.ico":                               []byte("icon"),
-		"manage-windows.ps1":                          []byte("manager"),
 		"agentdock-arbiter.exe":                       []byte("arbiter"),
 		"agentdock-shim.exe":                          []byte("shim"),
 		"agentdock-tray-shim.exe":                     []byte("tray-shim"),
