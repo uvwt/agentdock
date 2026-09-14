@@ -204,7 +204,29 @@ func purgeInstallConfig(request Request) error {
 }
 
 func purgeInstallData(request Request) error {
+	// destructive helper 自己再守一次边界，避免未来新增内部调用方绕过
+	// normalizeRequest 后直接把危险 root 交给 os.RemoveAll。
+	if err := validatePurgeDataTargets(request); err != nil {
+		return err
+	}
+
 	var failures []error
+	// 用户状态和默认工作目录只接受 Request 中显式冻结的路径。Engine 不读取
+	// AGENTDOCK_HOME/HOME 等宿主环境，避免隔离安装继承生产进程环境后越界清理。
+	for _, target := range []struct {
+		name string
+		path string
+	}{
+		{name: "agentdock-home", path: request.AgentDockHome},
+		{name: "agentdock-default-dir", path: request.AgentDockDefaultDir},
+	} {
+		if strings.TrimSpace(target.path) == "" {
+			continue
+		}
+		if err := removeAllExisting(target.path); err != nil {
+			failures = append(failures, fmt.Errorf("purge %s: %w", target.name, err))
+		}
+	}
 	if request.InstallRoot != request.RuntimeRoot {
 		if err := removeAllExisting(request.InstallRoot); err != nil {
 			failures = append(failures, fmt.Errorf("purge install-root: %w", err))

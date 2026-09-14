@@ -47,13 +47,13 @@ run:
 	go run ./cmd/agentdock --host $(HOST) --port $(PORT) --log-level $(LOG_LEVEL)
 
 install:
-	AGENTDOCK_USE_LOCAL_PLATFORM_INSTALLER=true ./scripts/install/install.sh
+	./scripts/install/install.sh
 
 install-linux:
-	./scripts/install/install-linux-platform.sh
+	./scripts/install/install.sh
 
 install-macos:
-	./scripts/install/install-macos-platform.sh
+	./scripts/install/install.sh
 
 uninstall-macos:
 	./scripts/install/uninstall-macos.sh

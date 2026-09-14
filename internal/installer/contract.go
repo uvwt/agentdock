@@ -173,13 +173,15 @@ type Transaction struct {
 	RuntimeRoot     string             `json:"runtime_root"`
 	// PurgeConfig / PurgeData 是 uninstall 的事务意图。trial 重入必须逐项匹配，
 	// 否则同一 transaction 会在第二次请求下执行比首次承诺更强或更弱的清理。
-	PurgeConfig bool                  `json:"purge_config,omitempty"`
-	PurgeData   bool                  `json:"purge_data,omitempty"`
-	StartedAt   time.Time             `json:"started_at"`
-	UpdatedAt   time.Time             `json:"updated_at"`
-	CompletedAt *time.Time            `json:"completed_at,omitempty"`
-	Failure     *updateengine.Failure `json:"failure,omitempty"`
-	Warnings    []string              `json:"warnings,omitempty"`
+	PurgeConfig         bool                  `json:"purge_config,omitempty"`
+	PurgeData           bool                  `json:"purge_data,omitempty"`
+	AgentDockHome       string                `json:"agentdock_home,omitempty"`
+	AgentDockDefaultDir string                `json:"agentdock_default_dir,omitempty"`
+	StartedAt           time.Time             `json:"started_at"`
+	UpdatedAt           time.Time             `json:"updated_at"`
+	CompletedAt         *time.Time            `json:"completed_at,omitempty"`
+	Failure             *updateengine.Failure `json:"failure,omitempty"`
+	Warnings            []string              `json:"warnings,omitempty"`
 }
 
 // ensureUninstallIntentMatches 冻结 uninstall trial 的事务意图：retry 的
@@ -202,6 +204,18 @@ func ensureUninstallIntentMatches(transaction Transaction, request Request) erro
 			transaction.TransactionID,
 			transaction.PurgeConfig, transaction.PurgeData,
 			request.PurgeConfig, request.PurgeData)
+	}
+	if transaction.PurgeData {
+		if !sameInstallPath(transaction.AgentDockHome, request.AgentDockHome) {
+			return fmt.Errorf(
+				"uninstall 事务 %s 的 agentdock-home 清理目标不匹配：事务=%s，本次=%s；请用原始清理路径恢复该 trial",
+				transaction.TransactionID, transaction.AgentDockHome, request.AgentDockHome)
+		}
+		if !sameInstallPath(transaction.AgentDockDefaultDir, request.AgentDockDefaultDir) {
+			return fmt.Errorf(
+				"uninstall 事务 %s 的 agentdock-default-dir 清理目标不匹配：事务=%s，本次=%s；请用原始清理路径恢复该 trial",
+				transaction.TransactionID, transaction.AgentDockDefaultDir, request.AgentDockDefaultDir)
+		}
 	}
 	return nil
 }
@@ -234,6 +248,8 @@ func normalizeRequest(request Request) (Request, error) {
 	}
 	request.InstallRoot = strings.TrimSpace(request.InstallRoot)
 	request.RuntimeRoot = strings.TrimSpace(request.RuntimeRoot)
+	request.AgentDockHome = strings.TrimSpace(request.AgentDockHome)
+	request.AgentDockDefaultDir = strings.TrimSpace(request.AgentDockDefaultDir)
 	if request.InstallRoot == "" {
 		return Request{}, errors.New("install-root 不能为空")
 	}
@@ -272,6 +288,9 @@ func normalizeRequest(request Request) (Request, error) {
 	// 保证 uninstall 事务意图无论从哪个入口进来都是同一份。
 	if request.PurgeData {
 		request.PurgeConfig = true
+		if err := validatePurgeDataTargets(request); err != nil {
+			return Request{}, err
+		}
 	}
 	if request.Version != "" {
 		if err := updateengine.ValidateVersion(request.Version); err != nil {
@@ -280,6 +299,88 @@ func normalizeRequest(request Request) (Request, error) {
 		request.Version = updateengine.NormalizeVersion(request.Version)
 	}
 	return request, nil
+}
+
+// validatePurgeDataTargets 是所有递归删除目标的统一安全边界。
+// install/runtime root 同样会进入 os.RemoveAll，不能只保护用户数据目录。
+func validatePurgeDataTargets(request Request) error {
+	for _, target := range []struct {
+		name string
+		path string
+	}{
+		{name: "install-root", path: request.InstallRoot},
+		{name: "runtime-root", path: request.RuntimeRoot},
+	} {
+		if err := validatePurgeDataTarget(target.name, target.path); err != nil {
+			return err
+		}
+	}
+	for _, target := range []struct {
+		name string
+		path string
+	}{
+		{name: "agentdock-home", path: request.AgentDockHome},
+		{name: "agentdock-default-dir", path: request.AgentDockDefaultDir},
+	} {
+		if err := validatePurgeDataTarget(target.name, target.path, request.InstallRoot, request.RuntimeRoot); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validatePurgeDataTarget(name, target string, protected ...string) error {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return nil
+	}
+	if !filepath.IsAbs(target) {
+		return fmt.Errorf("%s 清理目标必须是绝对路径：%s", name, target)
+	}
+	clean := filepath.Clean(target)
+	root := filepath.VolumeName(clean) + string(filepath.Separator)
+	if sameInstallPath(clean, root) {
+		return fmt.Errorf("%s 清理目标不能是文件系统根目录：%s", name, clean)
+	}
+	if isDangerousPurgeDataRoot(clean) {
+		return fmt.Errorf("%s 清理目标过于宽泛，拒绝递归删除危险路径：%s", name, clean)
+	}
+	for _, guarded := range protected {
+		guarded = strings.TrimSpace(guarded)
+		if guarded == "" {
+			continue
+		}
+		rel, err := filepath.Rel(clean, filepath.Clean(guarded))
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("%s 清理目标不能包含 installer root %s：%s", name, guarded, clean)
+		}
+	}
+	return nil
+}
+
+// isDangerousPurgeDataRoot 拒绝把系统顶层目录或整个用户主目录当成
+// AgentDock 的 user-data 清理目标。允许的目标应当至少是主目录下的具体
+// AgentDock 子目录（例如 ~/.agentdock），而不是 /Users/alice 本身。
+func isDangerousPurgeDataRoot(path string) bool {
+	root := filepath.VolumeName(path) + string(filepath.Separator)
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == "." {
+		return true
+	}
+	parts := strings.FieldsFunc(rel, func(r rune) bool { return r == '/' || r == '\\' })
+	if len(parts) == 1 {
+		switch strings.ToLower(parts[0]) {
+		case "applications", "bin", "boot", "dev", "etc", "home", "lib", "lib64", "library", "opt", "private", "proc", "program files", "programdata", "root", "run", "sbin", "srv", "system", "sys", "tmp", "users", "usr", "var", "volumes", "windows":
+			return true
+		}
+	}
+	if len(parts) == 2 {
+		switch strings.ToLower(parts[0]) {
+		case "home", "users":
+			return true
+		}
+	}
+	return false
 }
 
 func newTransaction(request Request, platform, sourceVersion string) (Transaction, error) {
@@ -293,20 +394,22 @@ func newTransaction(request Request, platform, sourceVersion string) (Transactio
 		target = "unknown"
 	}
 	return Transaction{
-		SchemaVersion: SchemaVersion,
-		TransactionID: transactionID,
-		Platform:      platform,
-		Action:        request.Action,
-		SourceVersion: sourceVersion,
-		TargetVersion: target,
-		State:         updateengine.StateStaged,
-		Phase:         PhasePrepare,
-		InstallRoot:   request.InstallRoot,
-		RuntimeRoot:   request.RuntimeRoot,
-		PurgeConfig:   request.PurgeConfig,
-		PurgeData:     request.PurgeData,
-		StartedAt:     now,
-		UpdatedAt:     now,
+		SchemaVersion:       SchemaVersion,
+		TransactionID:       transactionID,
+		Platform:            platform,
+		Action:              request.Action,
+		SourceVersion:       sourceVersion,
+		TargetVersion:       target,
+		State:               updateengine.StateStaged,
+		Phase:               PhasePrepare,
+		InstallRoot:         request.InstallRoot,
+		RuntimeRoot:         request.RuntimeRoot,
+		PurgeConfig:         request.PurgeConfig,
+		PurgeData:           request.PurgeData,
+		AgentDockHome:       request.AgentDockHome,
+		AgentDockDefaultDir: request.AgentDockDefaultDir,
+		StartedAt:           now,
+		UpdatedAt:           now,
 	}, nil
 }
 

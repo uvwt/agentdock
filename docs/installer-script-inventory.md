@@ -1,8 +1,8 @@
-# Installer 脚本职责盘点（第二阶段收口）
+# Installer 脚本职责盘点（第二、三阶段收口）
 
 基线：`fix/installer-engine-mini-20260913`，起点 `449adba`，对照 `origin/main` @ `f1dde3a`。
 
-本文是 Installer Engine 第二阶段收口（脚本瘦身）的工作地图与最终记录。它包含：
+本文记录 Installer Engine 第二阶段脚本瘦身，以及第三阶段 Unix 公开入口去平台脚本依赖的收口结果。它包含：
 
 1. 各脚本的职责分类与真实调用图；
 2. Go Installer Engine 已经拥有的决策；
@@ -22,9 +22,9 @@
 | `scripts/install/uninstall-windows.ps1` | 336 | ~358 | resume 决策迁引擎（结构化恢复 bootstrap） |
 | `scripts/install/launch-windows-process.ps1` | 220 | 220 | 不变（薄 broker，保留） |
 | `scripts/install/probe-protected-text.ps1` | — | 35 | 最新 main 新增的只读 DPAPI 可用性探针，纳入脚本治理 |
-| `scripts/install/install.sh` | 685 | 685 | 不变（公开 bootstrap） |
-| `scripts/install/install-linux-platform.sh` | 1702 | ~1138 | 删除 legacy 安装状态机 |
-| `scripts/install/install-macos-platform.sh` | 1701 | ~947 | 删除 legacy 安装状态机 |
+| `scripts/install/install.sh` | 685 | 634 | 第三阶段改为直接下载 Release payload 并调用 Go Engine，不再下载/执行 platform installer |
+| `scripts/install/install-linux-platform.sh` | 1702 | 1150 | 删除 legacy 安装状态机 |
+| `scripts/install/install-macos-platform.sh` | 1701 | 949 | 删除 legacy 安装状态机 |
 | `scripts/install/uninstall-linux.sh` | 401 | 401 | 不变（已委托 engine） |
 | `scripts/install/uninstall-macos.sh` | 125 | 125 | 不变（已委托 engine） |
 
@@ -51,9 +51,9 @@ manage-windows.ps1 的 ValidateSet action 集保持冻结，未新增调用方�
 - `.github/workflows/release.yml:427`；`test-windows-quick-tunnel-lifecycle.ps1:358-362`。
 
 ### install.sh / 平台脚本 / 卸载脚本
-- `install.sh`：`Makefile:50`、release 流程（`release.yml:421,602-615,729-743`）、`test-install-entry.sh`。
-- `install-linux-platform.sh` / `install-macos-platform.sh`：由 `install.sh` 选择并下载执行。
-- `uninstall-linux.sh`：由 `install.sh` 下载/转发；`uninstall-macos.sh`：`Makefile:58-59`、`test-install-macos.sh`。
+- `install.sh`：Unix 唯一公开 bootstrap；Makefile 的 `install` / `install-linux` / `install-macos` 都指向它，release 与真实 E2E 也走同一入口。
+- `install-linux-platform.sh` / `install-macos-platform.sh`：保留为已经发布的独立 adapter 契约，但 `install.sh`、Makefile 和新 E2E 不再调用它们。
+- `uninstall-linux.sh` / `uninstall-macos.sh`：保留独立卸载契约；统一入口的 `--uninstall` 已直接调用 Go Installer Engine，不再下载/转发这些脚本。
 
 ## 3. Go Installer Engine 拥有的决策（单一权威，禁止脚本重复实现）
 
@@ -103,13 +103,17 @@ manage-windows.ps1 的 ValidateSet action 集保持冻结，未新增调用方�
 ### install-linux-platform.sh / install-macos-platform.sh
 
 - **删除全部 legacy 安装状态机**（env/manifest/unit/tunnel 编排/health/skill bootstrap/rollback）。
-- **可达性证据**：平台脚本与 payload 永远来自同一 release（install.sh 按同一版本下载平台脚本与二进制；source 模式构建当前分支），当前 release 的脚本执行的 binary 必然支持 `install --engine-ready`。legacy 分支唯一可达场景是 source 模式显式安装旧分支——那是降级而非升级路径，旧版本本来就应使用旧 release 自己的安装脚本。预编译路径下 probe 失败意味着 payload 损坏，legacy 分支用同一损坏 binary 也无法成功。
+- **第二阶段可达性结论仍成立**：platform adapter 已只支持 Engine-ready payload。第三阶段进一步移除了统一入口到这些 adapter 的运行时依赖；`install.sh` 直接下载同一 Release 的 `agentdock_<os>_<arch>.tar.gz`，校验后执行其中的 `install --engine-ready` / `install` / `uninstall`。
 - 保留：下载与 SHA-256 校验、用户/权限 bootstrap、cloudflared staging、安装后信息摘要、（macOS）LaunchAgent 预态安全检查与结果文件输出。
 - 配套：OpenRC/plist 日志治理断言改指引擎 `internal/installer/units.go` 权威模板；Quick Tunnel 地址回写由原生 `runQuickTunnel` 拥有，新增 `internal/desktopruntime/tunnel_quick_unix_test.go` 回归覆盖（fake cloudflared + fake launchctl + httptest 健康端点）。
 
-### install.sh
-- `backup_public_config`/`restore_public_config`/`commit_public_config`/`restart_restored_services`：env 文件级回滚事务 —— 保留（bootstrap 层最小回滚，引擎事务之外的 OS 状态）。
-- `install_quick_tunnel_retry_guard`/`quick_tunnel_rate_limited`/`stop_rate_limited_tunnel`：quick tunnel 429 限流分类与 systemd drop-in —— OS bridge + 少量分类逻辑，保留。
+### install.sh（第三阶段）
+- 删除平台 installer 下载、checksum、dispatch 与旧 shell 状态机；统一入口只做平台/架构识别、Release payload + cloudflared bootstrap、必要的 service-user/权限前置，然后直接调用 Go Installer Engine。
+- install/repair 的既有 Tunnel 配置保留由 `hydrateExistingRuntime` 在 Engine 内完成，shell 不再重复解析/决定。
+- `--uninstall` 直接调用 Engine；Linux purge-data 的 `AGENTDOCK_HOME`/默认工作目录由隔离 `DATA_DIR` 确定性派生并作为事务意图冻结，不再由 shell `rm -rf`。
+- macOS 保持既有“卸载 App/运行支持文件、默认保留用户状态”的产品语义。自定义或继承运行时环境执行 `--purge-data` 时必须显式给出 installer cleanup 路径，禁止把宿主 `AGENTDOCK_HOME` / `AGENTDOCK_DEFAULT_DIR` 自动升级为递归删除目标；普通卸载的 install/runtime/log/App 递归删除目标也必须先通过安全路径校验，App 必须是 `.app`。
+- Engine 对 `purge-data` 的用户态清理路径做第二层保护：拒绝文件系统根、系统顶层目录、整个用户主目录以及包含 install/runtime root 的目标，并把清理路径冻结进 uninstall transaction，retry 不允许漂移。
+- `test-install-entry.sh` 的 fake release 只提供 tarball，不提供任何 platform installer/uninstaller 资产，以此证明统一入口不存在隐式依赖。
 
 ### manage-windows.ps1
 

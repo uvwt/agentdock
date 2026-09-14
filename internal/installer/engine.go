@@ -39,6 +39,12 @@ func (engine Engine) Run(ctx context.Context, request Request) (Result, error) {
 	}
 	request.InstallRoot = installRoot
 	request.RuntimeRoot = runtimeRoot
+	if request.Action == ActionInstall || request.Action == ActionRepair {
+		request, err = hydrateExistingRuntime(request)
+		if err != nil {
+			return Result{}, err
+		}
+	}
 
 	store, err := NewStore(request.StateRoot())
 	if err != nil {

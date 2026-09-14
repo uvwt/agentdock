@@ -84,3 +84,50 @@ func TestWriteTunnelEnvironmentKeepsTokenOutOfArgv(t *testing.T) {
 		}
 	}
 }
+
+func TestHydrateExistingRuntimePreservesNamedTunnelWhenOmitted(t *testing.T) {
+	runtimeRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(runtimeRoot, "agentdock.env"), []byte("AGENTDOCK_SERVER_URL=https://named.example.test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimeRoot, "cloudflared.env"), []byte("AGENTDOCK_TUNNEL_MODE=named\nTUNNEL_TOKEN=stable-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	request, err := hydrateExistingRuntime(Request{RuntimeRoot: runtimeRoot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.TunnelMode != "named" || request.ServerURL != "https://named.example.test" || request.TunnelToken != "stable-token" {
+		t.Fatalf("named runtime was not preserved: %+v", request)
+	}
+}
+
+func TestHydrateExistingRuntimeExplicitModeWins(t *testing.T) {
+	runtimeRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(runtimeRoot, "agentdock.env"), []byte("AGENTDOCK_SERVER_URL=https://named.example.test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimeRoot, "cloudflared.env"), []byte("AGENTDOCK_TUNNEL_MODE=named\nTUNNEL_TOKEN=stable-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	request, err := hydrateExistingRuntime(Request{RuntimeRoot: runtimeRoot, TunnelMode: "quick"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.TunnelMode != "quick" || request.ServerURL != "" || request.TunnelToken != "" {
+		t.Fatalf("explicit tunnel mode must not inherit named-only values: %+v", request)
+	}
+}
+
+func TestHydrateExistingRuntimeRejectsInvalidPersistedMode(t *testing.T) {
+	runtimeRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(runtimeRoot, "cloudflared.env"), []byte("AGENTDOCK_TUNNEL_MODE=broken\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := hydrateExistingRuntime(Request{RuntimeRoot: runtimeRoot}); err == nil || !strings.Contains(err.Error(), "已有 Tunnel 模式无效") {
+		t.Fatalf("expected invalid persisted tunnel mode error, got %v", err)
+	}
+}

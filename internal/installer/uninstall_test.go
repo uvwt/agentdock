@@ -596,3 +596,149 @@ type stubExitError struct{ code int }
 func (err stubExitError) Error() string { return "exit status 1" }
 
 func errExit(code int) error { return stubExitError{code: code} }
+
+// purge-data 的用户目录只能来自 Request；宿主进程里的 AGENTDOCK_HOME 不能成为隐式删除目标。
+func TestPurgeInstallDataIgnoresAmbientAgentDockHome(t *testing.T) {
+	root := t.TempDir()
+	installRoot := filepath.Join(root, "install")
+	runtimeRoot := filepath.Join(root, "runtime")
+	agentDockHome := filepath.Join(root, "isolated", ".agentdock")
+	defaultDir := filepath.Join(root, "isolated", "AgentDock")
+	hostHome := filepath.Join(root, "production", ".agentdock")
+	for _, dir := range []string{installRoot, runtimeRoot, agentDockHome, defaultDir, hostHome} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	marker := filepath.Join(hostHome, "must-survive")
+	if err := os.WriteFile(marker, []byte("production"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AGENTDOCK_HOME", hostHome)
+
+	request, err := normalizeRequest(Request{
+		Action:              ActionUninstall,
+		InstallRoot:         installRoot,
+		RuntimeRoot:         runtimeRoot,
+		PurgeData:           true,
+		AgentDockHome:       agentDockHome,
+		AgentDockDefaultDir: defaultDir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := purgeInstallData(request); err != nil {
+		t.Fatal(err)
+	}
+	for _, removed := range []string{installRoot, runtimeRoot, agentDockHome, defaultDir} {
+		if _, err := os.Stat(removed); !os.IsNotExist(err) {
+			t.Fatalf("purge-data should remove explicit target %s, stat err=%v", removed, err)
+		}
+	}
+	if data, err := os.ReadFile(marker); err != nil || string(data) != "production" {
+		t.Fatalf("ambient AGENTDOCK_HOME was touched: data=%q err=%v", data, err)
+	}
+}
+
+func TestNormalizeRequestRejectsDangerousPurgeDataTarget(t *testing.T) {
+	root := t.TempDir()
+	filesystemRoot := string(filepath.Separator)
+	if runtime.GOOS == "windows" {
+		filesystemRoot = filepath.VolumeName(root) + string(filepath.Separator)
+	}
+	for _, test := range []struct {
+		name        string
+		installRoot string
+		runtimeRoot string
+	}{
+		{name: "install root", installRoot: filesystemRoot, runtimeRoot: filepath.Join(root, "runtime")},
+		{name: "runtime root", installRoot: filepath.Join(root, "install"), runtimeRoot: filesystemRoot},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := normalizeRequest(Request{
+				Action:      ActionUninstall,
+				InstallRoot: test.installRoot,
+				RuntimeRoot: test.runtimeRoot,
+				PurgeData:   true,
+			})
+			if err == nil || !strings.Contains(err.Error(), "根目录") {
+				t.Fatalf("dangerous managed purge root must be rejected, got %v", err)
+			}
+		})
+	}
+
+	_, err := normalizeRequest(Request{
+		Action:        ActionUninstall,
+		InstallRoot:   filepath.Join(root, "install"),
+		RuntimeRoot:   filepath.Join(root, "runtime"),
+		PurgeData:     true,
+		AgentDockHome: string(filepath.Separator),
+	})
+	if err == nil || !strings.Contains(err.Error(), "根目录") {
+		t.Fatalf("filesystem root purge target must be rejected, got %v", err)
+	}
+
+	accountHome := "/Users/example"
+	if runtime.GOOS == "linux" {
+		accountHome = "/home/example"
+	} else if runtime.GOOS == "windows" {
+		accountHome = `C:\Users\example`
+	}
+	_, err = normalizeRequest(Request{
+		Action:        ActionUninstall,
+		InstallRoot:   filepath.Join(root, "install"),
+		RuntimeRoot:   filepath.Join(root, "runtime"),
+		PurgeData:     true,
+		AgentDockHome: accountHome,
+	})
+	if err == nil || !strings.Contains(err.Error(), "危险路径") {
+		t.Fatalf("whole account home purge target must be rejected, got %v", err)
+	}
+
+	_, err = normalizeRequest(Request{
+		Action:              ActionUninstall,
+		InstallRoot:         filepath.Join(root, "install"),
+		RuntimeRoot:         filepath.Join(root, "runtime"),
+		PurgeData:           true,
+		AgentDockDefaultDir: root,
+	})
+	if err == nil || !strings.Contains(err.Error(), "installer root") {
+		t.Fatalf("purge target containing installer roots must be rejected, got %v", err)
+	}
+}
+
+func TestUninstallIntentFreezesPurgeDataPaths(t *testing.T) {
+	root := t.TempDir()
+	transaction := Transaction{
+		TransactionID:       "0123456789abcdef0123456789abcdef",
+		InstallRoot:         filepath.Join(root, "install"),
+		RuntimeRoot:         filepath.Join(root, "runtime"),
+		PurgeConfig:         true,
+		PurgeData:           true,
+		AgentDockHome:       filepath.Join(root, "state"),
+		AgentDockDefaultDir: filepath.Join(root, "workspace"),
+	}
+	request := Request{
+		InstallRoot:         transaction.InstallRoot,
+		RuntimeRoot:         transaction.RuntimeRoot,
+		PurgeConfig:         true,
+		PurgeData:           true,
+		AgentDockHome:       transaction.AgentDockHome,
+		AgentDockDefaultDir: transaction.AgentDockDefaultDir,
+	}
+	if err := ensureUninstallIntentMatches(transaction, request); err != nil {
+		t.Fatalf("matching cleanup intent rejected: %v", err)
+	}
+
+	drifted := request
+	drifted.AgentDockHome = filepath.Join(root, "other-state")
+	if err := ensureUninstallIntentMatches(transaction, drifted); err == nil || !strings.Contains(err.Error(), "agentdock-home") {
+		t.Fatalf("agentdock-home drift must be rejected, got %v", err)
+	}
+
+	drifted = request
+	drifted.AgentDockDefaultDir = filepath.Join(root, "other-workspace")
+	if err := ensureUninstallIntentMatches(transaction, drifted); err == nil || !strings.Contains(err.Error(), "agentdock-default-dir") {
+		t.Fatalf("agentdock-default-dir drift must be rejected, got %v", err)
+	}
+}

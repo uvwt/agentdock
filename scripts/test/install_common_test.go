@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestUnifiedInstallerEntriesReplaceLegacyNames(t *testing.T) {
+func TestUnifiedInstallerEntryOwnsUnixBootstrap(t *testing.T) {
 	for _, path := range []string{
 		"../install/install.sh",
 		"../install/install-linux-platform.sh",
@@ -39,9 +39,8 @@ func TestUnifiedInstallerEntriesReplaceLegacyNames(t *testing.T) {
 	}
 	entry := string(data)
 	for _, want := range []string{
-		"install-linux-platform.sh",
-		"uninstall-linux.sh",
-		"install-macos-platform.sh",
+		`agentdock_${PLATFORM}_${ARCH}.tar.gz`,
+		"install --engine-ready",
 		"AGENTDOCK_INSTALLER_BASE_URL",
 		"verify_checksum",
 	} {
@@ -49,7 +48,19 @@ func TestUnifiedInstallerEntriesReplaceLegacyNames(t *testing.T) {
 			t.Fatalf("install.sh missing %q", want)
 		}
 	}
+	for _, forbidden := range []string{
+		"install-linux-platform.sh",
+		"install-macos-platform.sh",
+		"uninstall-linux.sh",
+		"uninstall-macos.sh",
+		"AGENTDOCK_USE_LOCAL_PLATFORM_INSTALLER",
+	} {
+		if strings.Contains(entry, forbidden) {
+			t.Fatalf("install.sh still depends on platform installer asset %q", forbidden)
+		}
+	}
 }
+
 func TestDesktopRuntimeSurfacesDoNotUseLegacyLaunchers(t *testing.T) {
 	trayData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "tray", "app_windows.go"))
 	if err != nil {

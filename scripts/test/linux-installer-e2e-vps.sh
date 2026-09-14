@@ -60,8 +60,6 @@ curl -fsSL "$AGENTDOCK_E2E_BUNDLE_URL" -o "$ROOT/bundle.zip"
 printf '%s  %s\n' "$AGENTDOCK_E2E_BUNDLE_SHA256" "$ROOT/bundle.zip" | sha256sum -c - >/dev/null || fail "bundle sha mismatch"
 python3 -m zipfile -e "$ROOT/bundle.zip" "$ROOT"
 [[ -f "$ROOT/scripts-install/install.sh" ]] || fail "install.sh missing from bundle"
-[[ -f "$ROOT/scripts-install/install-linux-platform.sh" ]] || fail "install-linux-platform.sh missing from bundle"
-[[ -f "$ROOT/scripts-install/uninstall-linux.sh" ]] || fail "uninstall-linux.sh missing from bundle"
 
 curl -fsSL "$AGENTDOCK_E2E_TARBALL_URL" -o "$ROOT/dist/agentdock_linux_amd64.tar.gz"
 curl -fsSL "$AGENTDOCK_E2E_SHA_URL" -o "$ROOT/dist/agentdock_linux_amd64.tar.gz.sha256"
@@ -78,10 +76,8 @@ curl -sf -m 5 "http://127.0.0.1:$HTTP_PORT/agentdock_linux_amd64.tar.gz.sha256" 
 
 run_e2e_install() {
   env \
-    AGENTDOCK_RELEASE_BASE_URL="http://127.0.0.1:$HTTP_PORT" \
+    AGENTDOCK_INSTALLER_BASE_URL="http://127.0.0.1:$HTTP_PORT" \
     AGENTDOCK_NONINTERACTIVE=true \
-    AGENTDOCK_INSTALL_MODE=binary \
-    AGENTDOCK_USE_LOCAL_PLATFORM_INSTALLER=true \
     AGENTDOCK_SOURCE_DIR="$INSTALL_ROOT" \
     AGENTDOCK_DATA_DIR="$DATA_ROOT" \
     AGENTDOCK_ENV_FILE="$RUNTIME_ROOT/agentdock.env" \
@@ -99,7 +95,8 @@ run_e2e_uninstall() {
     AGENTDOCK_ENV_FILE="$RUNTIME_ROOT/agentdock.env" \
     AGENTDOCK_SERVICE_NAME="$SERVICE_NAME" \
     AGENTDOCK_SERVICE_USER="$E2E_USER" \
-    bash "$ROOT/scripts-install/uninstall-linux.sh" "$@"
+    AGENTDOCK_SERVICE_MANAGER=systemd \
+    bash "$ROOT/scripts-install/install.sh" --uninstall "$@"
 }
 
 assert_ownership() {
@@ -142,7 +139,7 @@ assert_ownership
 pass "same-version repair committed without staging residue"
 
 log "STEP 5: services-only uninstall then reinstall"
-run_e2e_uninstall --services-only || fail "services-only uninstall failed"
+run_e2e_uninstall || fail "services-only uninstall failed"
 systemctl is-active "$SERVICE_NAME" >/dev/null 2>&1 && fail "service still active after uninstall"
 run_e2e_install || fail "reinstall failed"
 assert_committed_and_healthy

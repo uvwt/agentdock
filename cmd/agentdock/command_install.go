@@ -171,6 +171,8 @@ func runUninstallCommand(ctx context.Context, args []string, stdout, stderr io.W
 	flags.StringVar(&request.SystemdDir, "systemd-dir", "", "systemd unit 目录")
 	flags.StringVar(&request.OpenRCDir, "openrc-dir", "", "OpenRC 脚本目录")
 	flags.StringVar(&request.LaunchAgentsDir, "launch-agents-dir", "", "LaunchAgents 目录")
+	flags.StringVar(&request.AgentDockHome, "agentdock-home", "", "purge-data 时删除的 AGENTDOCK_HOME；必须显式传入")
+	flags.StringVar(&request.AgentDockDefaultDir, "agentdock-default-dir", "", "purge-data 时删除的默认工作目录；必须显式传入")
 	flags.StringVar(&request.TaskName, "task-name", "", "Windows Scheduled Task 名称")
 	purgeConfig := flags.Bool("purge-config", false, "同时删除配置")
 	purgeData := flags.Bool("purge-data", false, "删除程序、配置和数据")
@@ -179,7 +181,7 @@ func runUninstallCommand(ctx context.Context, args []string, stdout, stderr io.W
 		return err
 	}
 	if flags.NArg() != 0 || strings.TrimSpace(request.InstallRoot) == "" {
-		return errors.New("用法：agentdock uninstall --install-root <目录> [--purge-config|--purge-data] [--defer-commit]")
+		return errors.New("用法：agentdock uninstall --install-root <目录> [--purge-config|--purge-data] [--agentdock-home <目录>] [--agentdock-default-dir <目录>] [--defer-commit]")
 	}
 	request.PurgeConfig = *purgeConfig
 	request.PurgeData = *purgeData
