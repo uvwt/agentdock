@@ -13,6 +13,9 @@ on:
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/windows-installer.yml'
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       test_tag:
@@ -24,9 +27,54 @@ permissions:
   contents: write
 
 jobs:
+  changes:
+    name: Detect Windows installer changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether installer validation is required
+        id: filter
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            echo 'relevant=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_paths="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- \
+            scripts \
+            packaging \
+            desktop/windows \
+            cmd \
+            internal \
+            go.mod \
+            go.sum \
+            .github/workflows/windows-installer.yml)"
+          if [[ -n "$changed_paths" ]]; then
+            printf 'Windows installer validation required by:\n%s\n' "$changed_paths"
+            echo 'relevant=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'No Windows installer-relevant changes detected.'
+            echo 'relevant=false' >> "$GITHUB_OUTPUT"
+          fi
+
   validate:
     name: Validate installer on Windows PowerShell 5.1
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -305,7 +353,7 @@ jobs:
 
 
       - name: Build and publish signed Windows test package
-        if: ${{ inputs.test_tag != '' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_tag != '' }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -393,3 +441,35 @@ jobs:
             --prerelease `
             --title "AgentDock Windows test $env:TEST_TAG" `
             --notes "Temporary Windows test build from commit $env:GITHUB_SHA. Uses the existing AgentDock self-signed Authenticode certificate."
+
+  gate:
+    name: Windows Installer gate
+    needs: [changes, validate]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify installer validation result
+        shell: bash
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          RELEVANT: ${{ needs.changes.outputs.relevant }}
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+        run: |
+          if [[ "$CHANGES_RESULT" != "success" ]]; then
+            echo "Windows installer change detection failed: $CHANGES_RESULT" >&2
+            exit 1
+          fi
+          if [[ "$RELEVANT" == "true" ]]; then
+            if [[ "$VALIDATE_RESULT" != "success" ]]; then
+              echo "Windows installer validation did not pass: $VALIDATE_RESULT" >&2
+              exit 1
+            fi
+            echo 'Windows installer-relevant changes passed full validation.'
+            exit 0
+          fi
+          if [[ "$VALIDATE_RESULT" != "skipped" ]]; then
+            echo "Unexpected Windows installer validation result for an unrelated change: $VALIDATE_RESULT" >&2
+            exit 1
+          fi
+          echo 'Windows installer validation not required for this change.'

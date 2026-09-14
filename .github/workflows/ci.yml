@@ -13,6 +13,7 @@ jobs:
   go:
     name: Go check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -37,7 +38,7 @@ jobs:
           fi
 
       - name: Test
-        run: go test ./...
+        run: go test ./... -count=1 -timeout=3m
 
       - name: Check Windows test tree cleanliness
         if: runner.os == 'Windows'
@@ -49,9 +50,19 @@ jobs:
             exit 1
           fi
 
+      - name: ACP prompt and steering race regression
+        if: runner.os == 'Linux'
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          go test -race ./internal/acp \
+            -run 'Test(StartPromptWaitsForPromptDispatchBeforeSteering|ClaudeSteeringFallbackCancelsOldRunAndStartsObservableTurn|CodexSteeringFallbackCancelsOldRunAndStartsObservableTurn)$' \
+            -count=20 \
+            -timeout=90s
+
       - name: Race
         if: runner.os == 'Linux'
-        run: go test -race ./...
+        run: go test -race ./... -count=1 -timeout=3m
 
       - name: Vet
         run: go vet ./...
@@ -103,6 +114,7 @@ jobs:
   browser-integration:
     name: Native browser integration
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -123,12 +135,13 @@ jobs:
         run: |
           browser_path="$(command -v google-chrome-stable || command -v google-chrome || command -v chromium-browser || command -v chromium || true)"
           test -n "$browser_path"
-          xvfb-run -a env AGENTDOCK_BROWSER_EXECUTABLE_PATH="$browser_path" go test -race -tags browser_integration ./internal/tool/browser ./internal/app -count=1
+          xvfb-run -a env AGENTDOCK_BROWSER_EXECUTABLE_PATH="$browser_path" go test -race -tags browser_integration ./internal/tool/browser ./internal/app -count=1 -timeout=3m
 
 
   container:
     name: Container check
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
