@@ -877,6 +877,63 @@ func TestWindowsRuntimeDiagnosticsPassesNativeTaskLauncher(t *testing.T) {
 	}
 }
 
+func TestWindowsNamedTunnelLifecycleCoversPreservationAndRollback(t *testing.T) {
+	lifecycleData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "test", "test-windows-named-tunnel-lifecycle.ps1"))
+	if err != nil {
+		t.Fatalf("read Windows Named Tunnel lifecycle test: %v", err)
+	}
+	fakeData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "test", "testdata", "fake-cloudflared", "main.go"))
+	if err != nil {
+		t.Fatalf("read fake cloudflared: %v", err)
+	}
+	workflowData, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "windows-installer.yml"))
+	if err != nil {
+		t.Fatalf("read Windows Installer workflow: %v", err)
+	}
+
+	lifecycle := strings.ReplaceAll(string(lifecycleData), "\r\n", "\n")
+	for _, want := range []string{
+		"-TunnelTokenFile $stableTokenFile",
+		"Invoke-Installer -Archive $sourcePayload.Archive -Checksum $sourcePayload.Checksum",
+		"Invoke-Installer -Archive $TargetAgentDockArchive -Checksum $TargetAgentDockChecksumFile",
+		"'-OfflineArchive', $trialPayload.Archive",
+		"'-TunnelTokenFile', $invalidTokenFile",
+		"Assert-NoTunnelTokenInProcessArguments",
+		"(Get-FileHash -LiteralPath $tunnelTokenPath -Algorithm SHA256).Hash -ne $ExpectedTokenHash",
+		"-ExpectedVersion $targetVersion",
+		"versions\\$trialVersion",
+	} {
+		if !strings.Contains(lifecycle, want) {
+			t.Fatalf("Named Tunnel lifecycle test must cover install/repair/update/rollback preservation; missing %q", want)
+		}
+	}
+
+	fake := strings.ReplaceAll(string(fakeData), "\r\n", "\n")
+	for _, want := range []string{
+		`os.Getenv("TUNNEL_TOKEN")`,
+		`strings.Contains(argument, token)`,
+		`agentdock-test-invalid-named-token`,
+		`Provided Tunnel token is not valid.`,
+		`Registered tunnel connection`,
+	} {
+		if !strings.Contains(fake, want) {
+			t.Fatalf("fake cloudflared must model Named Tunnel environment/readiness without exposing the Token; missing %q", want)
+		}
+	}
+
+	workflow := strings.ReplaceAll(string(workflowData), "\r\n", "\n")
+	for _, want := range []string{
+		"Test Named Tunnel install update and rollback lifecycle",
+		"Build-VersionedAgentDock -Version '0.0.0-named-source-e2e'",
+		"Build-VersionedAgentDock -Version '999.0.0-named-trial-e2e'",
+		".\\scripts\\test\\test-windows-named-tunnel-lifecycle.ps1",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("Windows Installer workflow must run the full Named Tunnel lifecycle; missing %q", want)
+		}
+	}
+}
+
 func TestWindowsStandardUserE2EWaitsForDirectProcessWithTimeout(t *testing.T) {
 	launcherData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "test", "run-windows-installer-e2e-as-standard-user.ps1"))
 	if err != nil {

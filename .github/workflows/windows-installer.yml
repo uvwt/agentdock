@@ -291,6 +291,59 @@ jobs:
             -AgentDockChecksumFile $env:AMD64_CHECKSUM `
             -FakeCloudflaredBinary $fakeCloudflared
 
+      - name: Test Named Tunnel install update and rollback lifecycle
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:CGO_ENABLED = '0'
+          $env:GOOS = 'windows'
+          $env:GOARCH = 'amd64'
+
+          $fakeCloudflared = Join-Path $env:RUNNER_TEMP 'fake-cloudflared-named.exe'
+          go build -trimpath -o $fakeCloudflared .\scripts\test\testdata\fake-cloudflared
+
+          function Build-VersionedAgentDock {
+            param([string] $Version, [string] $OutputPath)
+
+            $sourcePath = (Resolve-Path '.\internal\buildinfo\buildinfo.go').Path
+            $source = Get-Content -LiteralPath $sourcePath -Raw
+            $replacement = [regex]::Replace(
+              $source,
+              'const Version = "[^"]+"',
+              "const Version = `"$Version`"",
+              1
+            )
+            if ($replacement -eq $source) {
+              throw 'Could not replace buildinfo.Version for Named Tunnel E2E.'
+            }
+
+            $replacementPath = Join-Path $env:RUNNER_TEMP "buildinfo-$Version.go"
+            $overlayPath = Join-Path $env:RUNNER_TEMP "buildinfo-$Version-overlay.json"
+            [IO.File]::WriteAllText($replacementPath, $replacement, [Text.UTF8Encoding]::new($false))
+            $replacements = @{}
+            $replacements[$sourcePath] = $replacementPath
+            [IO.File]::WriteAllText(
+              $overlayPath,
+              (@{ Replace = $replacements } | ConvertTo-Json -Depth 4),
+              [Text.UTF8Encoding]::new($false)
+            )
+            go build -trimpath -overlay $overlayPath -o $OutputPath .\cmd\agentdock
+          }
+
+          $sourceCore = Join-Path $env:RUNNER_TEMP 'agentdock-named-source.exe'
+          $trialCore = Join-Path $env:RUNNER_TEMP 'agentdock-named-trial.exe'
+          Build-VersionedAgentDock -Version '0.0.0-named-source-e2e' -OutputPath $sourceCore
+          Build-VersionedAgentDock -Version '999.0.0-named-trial-e2e' -OutputPath $trialCore
+
+          & .\scripts\test\test-windows-named-tunnel-lifecycle.ps1 `
+            -InstallerPath .\scripts\install\install.ps1 `
+            -UninstallerPath .\scripts\install\uninstall-windows.ps1 `
+            -TargetAgentDockArchive $env:AMD64_ARCHIVE `
+            -TargetAgentDockChecksumFile $env:AMD64_CHECKSUM `
+            -SourceCoreBinary $sourceCore `
+            -TrialCoreBinary $trialCore `
+            -FakeCloudflaredBinary $fakeCloudflared
+
       - name: Test Setup activation deferral
         shell: powershell
         run: |

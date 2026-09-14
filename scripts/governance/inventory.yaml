@@ -140,6 +140,13 @@ scripts:
     legacy_oversize: true
     oversize_justification: Windows Quick Tunnel 生命周期，依赖真实 Task Scheduler/进程。
 
+  - path: scripts/test/test-windows-named-tunnel-lifecycle.ps1
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+    oversize_justification: Windows Named Tunnel 三代生命周期 E2E，覆盖安装、同版 repair、升级、DPAPI/固定地址保持与认证失败回滚，需要真实 Windows 进程和 Installer Engine 编排。
+
 
   - path: scripts/test/test-windows-runtime-launch-diagnostics.ps1
     class: test
