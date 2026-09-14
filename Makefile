@@ -61,12 +61,6 @@ uninstall-macos:
 test-install-macos:
 	./scripts/test/test-install-macos.sh
 
-deploy-macos-source:
-	./scripts/dev/deploy-macos-source.sh
-
-restart-macos:
-	./scripts/dev/restart-macos.sh
-
 docker-build:
 	docker build $(DOCKER_BUILD_ARGS) --target runtime -t $(IMAGE) .
 
