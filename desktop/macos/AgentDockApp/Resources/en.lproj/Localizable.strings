@@ -346,3 +346,14 @@
 "Change interface language?" = "Change interface language?";
 "Changing the interface language restarts the AgentDock interface. Any unsaved changes in this window will be lost." = "Changing the interface language restarts the AgentDock interface. Any unsaved changes in this window will be lost.";
 "Continue" = "Continue";
+"Add" = "Add";
+"Add custom ACP" = "Add custom ACP";
+"Agent name" = "ACP name";
+"Agent name cannot be empty." = "ACP name cannot be empty.";
+"Default ACP" = "Default ACP";
+"Delete" = "Delete";
+"Edit custom ACP" = "Edit custom ACP";
+"Name" = "Name";
+"Command" = "Command";
+"Args JSON" = "Args JSON";
+"Save" = "Save";

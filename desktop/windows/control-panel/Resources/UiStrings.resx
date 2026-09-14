@@ -183,6 +183,39 @@
   <data name="EnableCodingAgent" xml:space="preserve">
     <value>Enable Coding Agent</value>
   </data>
+  <data name="DefaultAcp" xml:space="preserve">
+    <value>Default ACP</value>
+  </data>
+  <data name="AddCustomAcp" xml:space="preserve">
+    <value>+ Add custom ACP</value>
+  </data>
+  <data name="AddCustomAcpTitle" xml:space="preserve">
+    <value>Add custom ACP</value>
+  </data>
+  <data name="EditCustomAcpTitle" xml:space="preserve">
+    <value>Edit custom ACP</value>
+  </data>
+  <data name="Name" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="Command" xml:space="preserve">
+    <value>Command</value>
+  </data>
+  <data name="ArgsJson" xml:space="preserve">
+    <value>Args JSON</value>
+  </data>
+  <data name="Add" xml:space="preserve">
+    <value>Add</value>
+  </data>
+  <data name="Save" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Delete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
   <data name="Custom" xml:space="preserve">
     <value>Custom</value>
   </data>

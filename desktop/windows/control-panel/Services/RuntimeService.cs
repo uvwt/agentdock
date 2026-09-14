@@ -84,7 +84,12 @@ public sealed class RuntimeService : IDisposable
             foreach (var profile in settings.AcpProfiles)
             {
                 profile.Id = (profile.Id ?? "").Trim();
+                profile.DisplayName = (profile.DisplayName ?? "").Trim();
                 profile.Kind = NormalizeAcpAgent(profile.Kind);
+                if (profile.Kind == "custom" && profile.DisplayName.Length == 0)
+                {
+                    profile.DisplayName = profile.Id;
+                }
                 profile.Command = (profile.Command ?? "").Trim();
                 profile.Args ??= [];
             }

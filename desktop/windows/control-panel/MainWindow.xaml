@@ -167,22 +167,22 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <TextBlock Text="{local:Loc Port}" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="PortTextBox" Grid.Column="1" Width="130" HorizontalAlignment="Left" Margin="0,0,0,10" />
-                <TextBlock Text="{local:Loc LogLevel}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <ComboBox x:Name="LogLevelComboBox" Grid.Row="1" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10">
+                <CheckBox x:Name="McpAppsEnabledCheckBox" Grid.Row="0" Grid.ColumnSpan="2" Content="{local:Loc EnableMcpAppsUi}" Margin="0,4,0,12" />
+                <TextBlock Text="{local:Loc Port}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <TextBox x:Name="PortTextBox" Grid.Row="1" Grid.Column="1" Width="130" HorizontalAlignment="Left" Margin="0,0,0,10" />
+                <TextBlock Text="{local:Loc LogLevel}" Grid.Row="2" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <ComboBox x:Name="LogLevelComboBox" Grid.Row="2" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10">
                   <ComboBoxItem Content="debug" />
                   <ComboBoxItem Content="info" />
                   <ComboBoxItem Content="warn" />
                   <ComboBoxItem Content="error" />
                 </ComboBox>
-                <TextBlock Text="{local:Loc InterfaceLanguage}" Grid.Row="2" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <ComboBox x:Name="LanguageComboBox" Grid.Row="2" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10" SelectionChanged="LanguageComboBox_SelectionChanged">
+                <TextBlock Text="{local:Loc InterfaceLanguage}" Grid.Row="3" VerticalAlignment="Center" Margin="0,0,0,4" />
+                <ComboBox x:Name="LanguageComboBox" Grid.Row="3" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,4" SelectionChanged="LanguageComboBox_SelectionChanged">
                   <ComboBoxItem Content="{local:Loc FollowSystem}" Tag="system" />
                   <ComboBoxItem Content="{local:Loc SimplifiedChinese}" Tag="zh-CN" />
                   <ComboBoxItem Content="{local:Loc EnglishLanguage}" Tag="en" />
                 </ComboBox>
-                <CheckBox x:Name="McpAppsEnabledCheckBox" Grid.Row="3" Grid.ColumnSpan="2" Content="{local:Loc EnableMcpAppsUi}" Margin="0,4,0,4" />
               </Grid>
             </GroupBox>
 
@@ -233,59 +233,27 @@
             </GroupBox>
 
             <GroupBox Header="{local:Loc CodingAgentAcp}">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="150" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <CheckBox x:Name="AcpEnabledCheckBox" Grid.ColumnSpan="3" Content="{local:Loc EnableCodingAgent}" Margin="0,4,0,12" Checked="AcpSetting_Changed" Unchecked="AcpSetting_Changed" />
-
-                <TextBlock Grid.Row="1" Text="Profile" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <ComboBox x:Name="AcpProfileComboBox" Grid.Row="1" Grid.Column="1" Width="260" HorizontalAlignment="Left" Margin="0,0,0,10" SelectionChanged="AcpProfile_Changed" />
-                <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal" Margin="8,0,0,10">
-                  <ComboBox x:Name="AcpAddProfileComboBox" Width="110" SelectionChanged="AcpAddProfile_Changed">
-                    <ComboBoxItem Content="Add…" Tag="" />
-                    <ComboBoxItem Content="Codex" Tag="codex" />
-                    <ComboBoxItem Content="Claude" Tag="claude" />
-                    <ComboBoxItem Content="Grok Build" Tag="grok" />
-                    <ComboBoxItem Content="{local:Loc Custom}" Tag="custom" />
-                  </ComboBox>
-                  <Button x:Name="AcpRemoveProfileButton" Content="Remove" Margin="8,0,0,0" Padding="10,2" Click="AcpRemoveProfile_Click" />
-                </StackPanel>
-
-                <TextBlock Grid.Row="2" Text="Profile ID" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="AcpProfileIdTextBox" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" TextChanged="AcpSetting_Changed" />
-
-                <StackPanel Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,10">
-                  <CheckBox x:Name="AcpProfileEnabledCheckBox" Content="Enabled" Margin="0,0,18,0" Checked="AcpProfileFlag_Changed" Unchecked="AcpProfileFlag_Changed" />
-                  <CheckBox x:Name="AcpProfileDefaultCheckBox" Content="Default" Checked="AcpProfileFlag_Changed" Unchecked="AcpProfileFlag_Changed" />
-                </StackPanel>
-
-                <TextBlock Grid.Row="4" Text="Type" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <ComboBox x:Name="AcpAgentComboBox" Grid.Row="4" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10" SelectionChanged="AcpSetting_Changed" IsEnabled="False">
-                  <ComboBoxItem Content="Codex" Tag="codex" />
-                  <ComboBoxItem Content="Claude" Tag="claude" />
-                  <ComboBoxItem Content="Grok Build" Tag="grok" />
-                  <ComboBoxItem Content="{local:Loc Custom}" Tag="custom" />
-                </ComboBox>
-                <TextBlock x:Name="AcpCommandLabel" Grid.Row="5" Text="Command" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="AcpCommandTextBox" Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" TextChanged="AcpSetting_Changed" ToolTip="{local:Loc AcpCommandTooltip}" />
-                <TextBlock x:Name="AcpArgsLabel" Grid.Row="6" Text="Args JSON" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="AcpArgsTextBox" Grid.Row="6" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" Text="[]" TextChanged="AcpSetting_Changed" ToolTip="{local:Loc AcpArgsTooltip}" />
-                <TextBlock Grid.Row="7" Text="{local:Loc Status}" VerticalAlignment="Top" />
-                <TextBlock x:Name="AcpStatusText" Grid.Row="7" Grid.Column="1" Grid.ColumnSpan="2" Foreground="#667085" Text="{local:Loc Disabled}" TextWrapping="Wrap" />
-              </Grid>
+              <StackPanel>
+                <CheckBox x:Name="AcpEnabledCheckBox" Content="{local:Loc EnableCodingAgent}" Margin="0,4,0,14" />
+                <Grid Margin="0,0,0,12">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="{local:Loc DefaultAcp}" VerticalAlignment="Center" Margin="0,0,12,0" />
+                  <ComboBox x:Name="AcpDefaultProfileComboBox"
+                            Grid.Column="1"
+                            Width="240"
+                            SelectionChanged="AcpDefaultProfile_SelectionChanged" />
+                </Grid>
+                <StackPanel x:Name="AcpProfileListPanel" />
+                <Button x:Name="AcpAddCustomProfileButton"
+                        Content="{local:Loc AddCustomAcp}"
+                        HorizontalAlignment="Left"
+                        Margin="0,10,0,0"
+                        Padding="10,4"
+                        Click="AcpAddCustomProfile_Click" />
+              </StackPanel>
             </GroupBox>
 
             <GroupBox Header="{local:Loc RuntimePermissions}">

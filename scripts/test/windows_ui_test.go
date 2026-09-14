@@ -164,3 +164,71 @@ func TestWindowsControlPanelShowsLiveNexusStatusInsideRuntimeStatus(t *testing.T
 		}
 	}
 }
+
+func TestWindowsACPSettingsUseSinglePageRowsDefaultDropdownAndCustomDialog(t *testing.T) {
+	root := filepath.Join("..", "..", "desktop", "windows", "control-panel")
+	xamlData, err := os.ReadFile(filepath.Join(root, "MainWindow.xaml"))
+	if err != nil {
+		t.Fatalf("read MainWindow.xaml: %v", err)
+	}
+	codeData, err := os.ReadFile(filepath.Join(root, "MainWindow.xaml.cs"))
+	if err != nil {
+		t.Fatalf("read MainWindow.xaml.cs: %v", err)
+	}
+	xaml := string(xamlData)
+	code := string(codeData)
+	for _, want := range []string{
+		`x:Name="AcpProfileListPanel"`,
+		`x:Name="AcpDefaultProfileComboBox"`,
+		`SelectionChanged="AcpDefaultProfile_SelectionChanged"`,
+		`Content="{local:Loc AddCustomAcp}"`,
+	} {
+		if !strings.Contains(xaml, want) {
+			t.Fatalf("Windows ACP single-page contract missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		`ShowCustomAcpProfileDialog`,
+		`AcpCustomProfileEdit_Click`,
+		`nameView.MouseLeftButtonUp += AcpCustomProfileEdit_Click`,
+		`HorizontalAlignment = HorizontalAlignment.Stretch`,
+		`AcpDefaultProfile_SelectionChanged`,
+		`UniqueCustomAcpProfileId(result.Name)`,
+		`profile.DisplayName = result.Name`,
+		`profile.Command = result.Command`,
+		`profile.Args = result.Arguments`,
+		`profile.Id`,
+	} {
+		if !strings.Contains(code, want) {
+			t.Fatalf("Windows ACP behavior contract missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		`Text="Profile ID"`,
+		`AcpProfileIdTextBox`,
+		`AcpAgentComboBox`,
+		`AcpDetailPanel`,
+		`AcpOverviewPanel`,
+		`AcpProfileNameTextBox`,
+		`AcpProfileDefaultCheckBox`,
+		`AcpStatusText`,
+		`ShowAcpDetail`,
+		`ShowAcpOverview`,
+		`Not configured`,
+		`★ Default`,
+		`Text = "›"`,
+		`BUILT-IN AGENTS`,
+		`CUSTOM AGENTS`,
+		`var edit = new Button`,
+	} {
+		if strings.Contains(xaml, forbidden) || strings.Contains(code, forbidden) {
+			t.Fatalf("Windows ACP UI still exposes old detail/status/group contract %q", forbidden)
+		}
+	}
+
+	mcpAppsIndex := strings.Index(xaml, `x:Name="McpAppsEnabledCheckBox" Grid.Row="0"`)
+	portIndex := strings.Index(xaml, `x:Name="PortTextBox" Grid.Row="1"`)
+	if mcpAppsIndex < 0 || portIndex < 0 || mcpAppsIndex > portIndex {
+		t.Fatal("Windows basic settings must place MCP Apps UI above the service port")
+	}
+}

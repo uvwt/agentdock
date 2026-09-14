@@ -6,9 +6,15 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using Application = System.Windows.Application;
+using Brushes = System.Windows.Media.Brushes;
+using Button = System.Windows.Controls.Button;
+using CheckBox = System.Windows.Controls.CheckBox;
 using Clipboard = System.Windows.Clipboard;
 using Color = System.Windows.Media.Color;
+using HorizontalAlignment = System.Windows.HorizontalAlignment;
 using MessageBox = System.Windows.MessageBox;
+using Orientation = System.Windows.Controls.Orientation;
+using TextBox = System.Windows.Controls.TextBox;
 using Forms = System.Windows.Forms;
 
 namespace AgentDock.ControlPanel;
@@ -31,7 +37,6 @@ public partial class MainWindow : Window
     private bool _settingsLoaded;
     private List<AcpProfileSettings> _acpProfiles = [];
     private string _acpDefaultProfile = "";
-    private string _activeAcpProfileId = "";
     private string _lastAutoTestOrigin = "";
     private DateTimeOffset _lastAutoTestAt = DateTimeOffset.MinValue;
 
@@ -144,18 +149,12 @@ public partial class MainWindow : Window
                 AcpEnabledCheckBox.IsChecked = snapshot.Settings.AcpEnabled;
                 _acpProfiles = snapshot.Settings.AcpProfiles.Select(CloneAcpProfile).ToList();
                 _acpDefaultProfile = snapshot.Settings.AcpDefaultProfile;
-                _activeAcpProfileId = _acpProfiles.Any(profile => profile.Id == _acpDefaultProfile)
-                    ? _acpDefaultProfile
-                    : _acpProfiles.FirstOrDefault()?.Id ?? "";
-                RefreshAcpProfileSelector(_activeAcpProfileId);
-                LoadAcpProfileControls(_activeAcpProfileId);
-                AcpAddProfileComboBox.SelectedIndex = 0;
+                RefreshAcpProfileOverview();
                 _settingsLoaded = true;
             }
 
             UpdateTunnelModeUi();
             RefreshBrowserConnectionUi();
-            RefreshAcpUi();
         }
         finally
         {
@@ -319,145 +318,255 @@ public partial class MainWindow : Window
             TunnelActionStatusText);
     }
 
-    private void AcpSetting_Changed(object sender, RoutedEventArgs e)
+    private void AcpOverviewToggle_Changed(object sender, RoutedEventArgs e)
     {
-        if (!IsInitialized || _updatingUi)
+        if (_updatingUi || sender is not CheckBox toggle || toggle.Tag is not string key)
         {
-            return;
-        }
-        RefreshAcpUi();
-    }
-
-    private void AcpProfile_Changed(object sender, SelectionChangedEventArgs e)
-    {
-        if (!IsInitialized || _updatingUi)
-        {
-            return;
-        }
-        var selectedId = (AcpProfileComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "";
-        if (selectedId.Length == 0 || selectedId == _activeAcpProfileId)
-        {
-            return;
-        }
-        if (!SaveActiveAcpProfile(showErrors: true))
-        {
-            RefreshAcpProfileSelector(_activeAcpProfileId);
-            return;
-        }
-        RefreshAcpProfileSelector(selectedId);
-        _activeAcpProfileId = selectedId;
-        LoadAcpProfileControls(selectedId);
-        RefreshAcpUi();
-    }
-
-    private void AcpProfileFlag_Changed(object sender, RoutedEventArgs e)
-    {
-        if (!IsInitialized || _updatingUi || _activeAcpProfileId.Length == 0)
-        {
-            return;
-        }
-        if (AcpProfileDefaultCheckBox.IsChecked != true && _acpDefaultProfile == _activeAcpProfileId)
-        {
-            _updatingUi = true;
-            AcpProfileDefaultCheckBox.IsChecked = true;
-            _updatingUi = false;
-        }
-        else if (AcpProfileDefaultCheckBox.IsChecked == true)
-        {
-            _acpDefaultProfile = _activeAcpProfileId;
-        }
-        if (AcpProfileDefaultCheckBox.IsChecked == true && AcpProfileEnabledCheckBox.IsChecked != true)
-        {
-            _updatingUi = true;
-            AcpProfileEnabledCheckBox.IsChecked = true;
-            _updatingUi = false;
-        }
-        _ = SaveActiveAcpProfile(showErrors: false);
-        RefreshAcpProfileSelector(_activeAcpProfileId);
-        RefreshAcpUi();
-    }
-
-    private void AcpAddProfile_Changed(object sender, SelectionChangedEventArgs e)
-    {
-        if (!IsInitialized || _updatingUi)
-        {
-            return;
-        }
-        var kind = (AcpAddProfileComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "";
-        if (kind.Length == 0)
-        {
-            return;
-        }
-        if (!SaveActiveAcpProfile(showErrors: true))
-        {
-            ResetAcpAddProfileSelector();
             return;
         }
 
-        string id;
-        if (kind == "custom")
+        if (key.StartsWith("builtin:", StringComparison.Ordinal))
         {
-            id = "custom";
-            var suffix = 2;
-            while (_acpProfiles.Any(profile => string.Equals(profile.Id, id, StringComparison.Ordinal)))
+            var kind = key["builtin:".Length..];
+            var index = _acpProfiles.FindIndex(profile => profile.Kind == kind);
+            if (index >= 0)
             {
-                id = $"custom-{suffix++}";
+                UpdateAcpProfileEnabled(index, toggle.IsChecked == true);
+            }
+            else if (toggle.IsChecked == true)
+            {
+                var resolution = _runtime.ResolveAcpAdapter(kind);
+                _acpProfiles.Add(new AcpProfileSettings
+                {
+                    Id = kind,
+                    Kind = kind,
+                    Command = resolution.Command,
+                    Args = resolution.Arguments.ToList(),
+                    Enabled = true
+                });
+                if (_acpDefaultProfile.Length == 0)
+                {
+                    _acpDefaultProfile = kind;
+                }
+            }
+        }
+        else if (key.StartsWith("profile:", StringComparison.Ordinal))
+        {
+            var profileId = key["profile:".Length..];
+            var index = _acpProfiles.FindIndex(profile => profile.Id == profileId);
+            if (index >= 0)
+            {
+                UpdateAcpProfileEnabled(index, toggle.IsChecked == true);
+            }
+        }
+        RefreshAcpProfileOverview();
+    }
+
+    private void UpdateAcpProfileEnabled(int index, bool enabled)
+    {
+        var profileId = _acpProfiles[index].Id;
+        _acpProfiles[index].Enabled = enabled;
+        if (!enabled && _acpDefaultProfile == profileId)
+        {
+            var replacement = _acpProfiles.FirstOrDefault(profile => profile.Id != profileId && profile.Enabled);
+            _acpDefaultProfile = replacement?.Id ?? "";
+        }
+        if (enabled && _acpDefaultProfile.Length == 0)
+        {
+            _acpDefaultProfile = profileId;
+        }
+    }
+
+    private void AcpDefaultProfile_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsInitialized || _updatingUi || AcpDefaultProfileComboBox.SelectedItem is not ComboBoxItem item || item.Tag is not string profileId)
+        {
+            return;
+        }
+        if (_acpProfiles.Any(profile => profile.Id == profileId && profile.Enabled))
+        {
+            _acpDefaultProfile = profileId;
+        }
+    }
+
+    private void AcpAddCustomProfile_Click(object sender, RoutedEventArgs e)
+    {
+        if (_updatingUi)
+        {
+            return;
+        }
+        var result = ShowCustomAcpProfileDialog(null);
+        if (result is null)
+        {
+            return;
+        }
+        var id = UniqueCustomAcpProfileId(result.Name);
+        _acpProfiles.Add(new AcpProfileSettings
+        {
+            Id = id,
+            DisplayName = result.Name,
+            Kind = "custom",
+            Command = result.Command,
+            Args = result.Arguments,
+            Enabled = false
+        });
+        RefreshAcpProfileOverview();
+    }
+
+    private void AcpCustomProfileEdit_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (_updatingUi || sender is not TextBlock label || label.Tag is not string profileId)
+        {
+            return;
+        }
+        var index = _acpProfiles.FindIndex(profile => profile.Id == profileId);
+        if (index < 0 || _acpProfiles[index].Kind != "custom")
+        {
+            return;
+        }
+        var result = ShowCustomAcpProfileDialog(_acpProfiles[index]);
+        if (result is null)
+        {
+            return;
+        }
+        if (result.DeleteRequested)
+        {
+            var removedId = _acpProfiles[index].Id;
+            _acpProfiles.RemoveAt(index);
+            if (_acpDefaultProfile == removedId)
+            {
+                _acpDefaultProfile = _acpProfiles.FirstOrDefault(profile => profile.Enabled)?.Id ?? "";
             }
         }
         else
         {
-            id = kind;
-            if (_acpProfiles.Any(profile => string.Equals(profile.Id, id, StringComparison.Ordinal)))
-            {
-                _activeAcpProfileId = id;
-                RefreshAcpProfileSelector(id);
-                LoadAcpProfileControls(id);
-                ResetAcpAddProfileSelector();
-                return;
-            }
+            // 自定义 Agent 的内部 ID 是已有 Session 身份的一部分；编辑只更新用户可见配置，绝不重生成 ID。
+            var profile = _acpProfiles[index];
+            profile.DisplayName = result.Name;
+            profile.Command = result.Command;
+            profile.Args = result.Arguments;
+            _acpProfiles[index] = profile;
         }
-
-        var resolution = kind == "custom" ? null : _runtime.ResolveAcpAdapter(kind);
-        _acpProfiles.Add(new AcpProfileSettings
-        {
-            Id = id,
-            Kind = kind,
-            Command = resolution?.Command ?? "",
-            Args = resolution?.Arguments?.ToList() ?? [],
-            Enabled = true
-        });
-        if (_acpDefaultProfile.Length == 0)
-        {
-            _acpDefaultProfile = id;
-        }
-        _activeAcpProfileId = id;
-        RefreshAcpProfileSelector(id);
-        LoadAcpProfileControls(id);
-        ResetAcpAddProfileSelector();
-        RefreshAcpUi();
+        RefreshAcpProfileOverview();
     }
 
-    private void AcpRemoveProfile_Click(object sender, RoutedEventArgs e)
+    private CustomAcpProfileDialogResult? ShowCustomAcpProfileDialog(AcpProfileSettings? existing)
     {
-        if (_updatingUi || _acpProfiles.Count <= 1)
+        var editing = existing is not null;
+        var dialog = new Window
         {
-            return;
-        }
-        var index = _acpProfiles.FindIndex(profile => profile.Id == _activeAcpProfileId);
-        if (index < 0)
+            Title = UiText.Get(editing ? "EditCustomAcpTitle" : "AddCustomAcpTitle"),
+            Owner = this,
+            Width = 520,
+            SizeToContent = SizeToContent.Height,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false
+        };
+        var nameInput = new TextBox { Text = existing is null ? "" : AcpDisplayName(existing), Margin = new Thickness(0, 5, 0, 10) };
+        var commandInput = new TextBox { Text = existing?.Command ?? "", Margin = new Thickness(0, 5, 0, 10) };
+        var argsInput = new TextBox
         {
-            return;
-        }
-        var removedId = _acpProfiles[index].Id;
-        _acpProfiles.RemoveAt(index);
-        if (_acpDefaultProfile == removedId)
+            Text = JsonSerializer.Serialize(existing?.Args ?? []),
+            Margin = new Thickness(0, 5, 0, 14)
+        };
+        var save = new Button { Content = UiText.Get(editing ? "Save" : "Add"), IsDefault = true, MinWidth = 88, Height = 32, Margin = new Thickness(8, 0, 0, 0) };
+        var cancel = new Button { Content = UiText.Get("Cancel"), IsCancel = true, MinWidth = 88, Height = 32, Margin = new Thickness(8, 0, 0, 0) };
+        var delete = new Button { Content = UiText.Get("Delete"), MinWidth = 88, Height = 32 };
+        var deleteRequested = false;
+        save.Click += (_, _) =>
         {
-            _acpDefaultProfile = _acpProfiles.FirstOrDefault(profile => profile.Enabled)?.Id ?? _acpProfiles[0].Id;
+            if (nameInput.Text.Trim().Length == 0)
+            {
+                nameInput.Focus();
+                return;
+            }
+            if (!TryReadAcpArguments(argsInput.Text, out _))
+            {
+                MessageBox.Show(dialog, UiText.Get("ArgsJsonInvalid"), "AgentDock", MessageBoxButton.OK, MessageBoxImage.Warning);
+                argsInput.Focus();
+                return;
+            }
+            dialog.DialogResult = true;
+        };
+        delete.Click += (_, _) =>
+        {
+            deleteRequested = true;
+            dialog.DialogResult = true;
+        };
+        var buttons = new Grid { Margin = new Thickness(0, 4, 0, 0) };
+        buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var rightButtons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        if (editing)
+        {
+            Grid.SetColumn(delete, 0);
+            buttons.Children.Add(delete);
         }
-        _activeAcpProfileId = _acpProfiles[Math.Min(index, _acpProfiles.Count - 1)].Id;
-        RefreshAcpProfileSelector(_activeAcpProfileId);
-        LoadAcpProfileControls(_activeAcpProfileId);
-        RefreshAcpUi();
+        rightButtons.Children.Add(save);
+        rightButtons.Children.Add(cancel);
+        Grid.SetColumn(rightButtons, 2);
+        buttons.Children.Add(rightButtons);
+        var content = new StackPanel { Margin = new Thickness(18) };
+        content.Children.Add(new TextBlock { Text = UiText.Get("Name"), FontWeight = FontWeights.SemiBold });
+        content.Children.Add(nameInput);
+        content.Children.Add(new TextBlock { Text = UiText.Get("Command"), FontWeight = FontWeights.SemiBold });
+        content.Children.Add(commandInput);
+        content.Children.Add(new TextBlock { Text = UiText.Get("ArgsJson"), FontWeight = FontWeights.SemiBold });
+        content.Children.Add(argsInput);
+        content.Children.Add(buttons);
+        dialog.Content = content;
+        dialog.Loaded += (_, _) => nameInput.Focus();
+        if (dialog.ShowDialog() != true)
+        {
+            return null;
+        }
+        if (deleteRequested)
+        {
+            return new CustomAcpProfileDialogResult("", "", [], true);
+        }
+        _ = TryReadAcpArguments(argsInput.Text, out var arguments);
+        return new CustomAcpProfileDialogResult(
+            nameInput.Text.Trim(),
+            commandInput.Text.Trim(),
+            arguments,
+            false);
+    }
+
+    private string UniqueCustomAcpProfileId(string name)
+    {
+        var chars = name.ToLowerInvariant().Select(character =>
+            character is >= 'a' and <= 'z' or >= '0' and <= '9' ? character : '-').ToArray();
+        var baseId = new string(chars);
+        while (baseId.Contains("--", StringComparison.Ordinal))
+        {
+            baseId = baseId.Replace("--", "-", StringComparison.Ordinal);
+        }
+        baseId = baseId.Trim('-');
+        if (baseId.Length == 0)
+        {
+            baseId = "custom";
+        }
+        if (baseId is "codex" or "claude" or "grok")
+        {
+            baseId += "-custom";
+        }
+        if (baseId.Length > 48)
+        {
+            baseId = baseId[..48].TrimEnd('-');
+        }
+        var existing = _acpProfiles.Select(profile => profile.Id).ToHashSet(StringComparer.Ordinal);
+        if (!existing.Contains(baseId))
+        {
+            return baseId;
+        }
+        var suffix = 2;
+        while (existing.Contains($"{baseId}-{suffix}"))
+        {
+            suffix++;
+        }
+        return $"{baseId}-{suffix}";
     }
 
     private void BrowserConnection_Changed(object sender, RoutedEventArgs e)
@@ -510,6 +619,7 @@ public partial class MainWindow : Window
     private static AcpProfileSettings CloneAcpProfile(AcpProfileSettings profile) => new()
     {
         Id = profile.Id,
+        DisplayName = profile.DisplayName,
         Kind = profile.Kind,
         Command = profile.Command,
         Args = [.. profile.Args],
@@ -517,32 +627,23 @@ public partial class MainWindow : Window
         Enabled = profile.Enabled
     };
 
-    private void RefreshAcpProfileSelector(string selectedId)
+    private void RefreshAcpProfileOverview()
     {
         var previous = _updatingUi;
         _updatingUi = true;
         try
         {
-            AcpProfileComboBox.Items.Clear();
-            foreach (var profile in _acpProfiles)
+            AcpProfileListPanel.Children.Clear();
+            foreach (var kind in new[] { "codex", "claude", "grok" })
             {
-                var suffix = profile.Id == _acpDefaultProfile ? " · Default" : "";
-                AcpProfileComboBox.Items.Add(new ComboBoxItem
-                {
-                    Content = $"{profile.Id} · {AgentDisplayName(profile.Kind)}{suffix}",
-                    Tag = profile.Id
-                });
+                var profile = _acpProfiles.FirstOrDefault(item => item.Kind == kind);
+                AcpProfileListPanel.Children.Add(BuildAcpOverviewRow(kind, profile));
             }
-            var selected = AcpProfileComboBox.Items.OfType<ComboBoxItem>()
-                .FirstOrDefault(item => string.Equals(item.Tag?.ToString(), selectedId, StringComparison.Ordinal));
-            if (selected is not null)
+            foreach (var profile in _acpProfiles.Where(profile => profile.Kind == "custom"))
             {
-                AcpProfileComboBox.SelectedItem = selected;
+                AcpProfileListPanel.Children.Add(BuildAcpOverviewRow("custom", profile));
             }
-            else if (AcpProfileComboBox.Items.Count > 0)
-            {
-                AcpProfileComboBox.SelectedIndex = 0;
-            }
+            RefreshAcpDefaultProfileOptions();
         }
         finally
         {
@@ -550,79 +651,77 @@ public partial class MainWindow : Window
         }
     }
 
-    private void LoadAcpProfileControls(string profileId)
+    private void RefreshAcpDefaultProfileOptions()
     {
-        var profile = _acpProfiles.FirstOrDefault(item => item.Id == profileId);
-        if (profile is null)
+        var enabledProfiles = _acpProfiles.Where(profile => profile.Enabled).ToList();
+        if (!enabledProfiles.Any(profile => profile.Id == _acpDefaultProfile))
         {
-            return;
+            _acpDefaultProfile = enabledProfiles.FirstOrDefault()?.Id ?? "";
         }
-        var previous = _updatingUi;
-        _updatingUi = true;
-        try
+
+        AcpDefaultProfileComboBox.Items.Clear();
+        foreach (var profile in enabledProfiles)
         {
-            _activeAcpProfileId = profile.Id;
-            AcpProfileIdTextBox.Text = profile.Id;
-            AcpProfileEnabledCheckBox.IsChecked = profile.Enabled;
-            AcpProfileDefaultCheckBox.IsChecked = profile.Id == _acpDefaultProfile;
-            SelectAcpAgent(profile.Kind);
-            AcpCommandTextBox.Text = profile.Kind == "custom" ? profile.Command : "";
-            AcpArgsTextBox.Text = profile.Kind == "custom" ? JsonSerializer.Serialize(profile.Args) : "[]";
+            var item = new ComboBoxItem { Content = AcpDisplayName(profile), Tag = profile.Id };
+            AcpDefaultProfileComboBox.Items.Add(item);
+            if (profile.Id == _acpDefaultProfile)
+            {
+                AcpDefaultProfileComboBox.SelectedItem = item;
+            }
         }
-        finally
-        {
-            _updatingUi = previous;
-        }
+        AcpDefaultProfileComboBox.IsEnabled = enabledProfiles.Count > 0;
     }
 
-    private void ResetAcpAddProfileSelector()
+    private Border BuildAcpOverviewRow(string kind, AcpProfileSettings? profile)
     {
-        var previous = _updatingUi;
-        _updatingUi = true;
-        AcpAddProfileComboBox.SelectedIndex = 0;
-        _updatingUi = previous;
+        var name = profile is not null ? AcpDisplayName(profile) : AgentDisplayName(kind);
+        var nameView = new TextBlock
+        {
+            Text = name,
+            FontWeight = FontWeights.Medium,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        if (profile?.Kind == "custom")
+        {
+            nameView.Tag = profile.Id;
+            nameView.Cursor = System.Windows.Input.Cursors.Hand;
+            nameView.MouseLeftButtonUp += AcpCustomProfileEdit_Click;
+        }
+        var toggle = new CheckBox
+        {
+            IsChecked = profile?.Enabled == true,
+            Tag = profile is null ? $"builtin:{kind}" : $"profile:{profile.Id}",
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        toggle.Checked += AcpOverviewToggle_Changed;
+        toggle.Unchecked += AcpOverviewToggle_Changed;
+
+        var row = new Grid();
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(nameView, 0);
+        Grid.SetColumn(toggle, 1);
+        row.Children.Add(nameView);
+        row.Children.Add(toggle);
+
+        return new Border
+        {
+            Child = row,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            BorderBrush = new SolidColorBrush(Color.FromRgb(234, 236, 240)),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Padding = new Thickness(8, 8, 8, 8)
+        };
     }
 
-    private bool SaveActiveAcpProfile(bool showErrors)
+    private static string AcpDisplayName(AcpProfileSettings profile)
     {
-        var index = _acpProfiles.FindIndex(profile => profile.Id == _activeAcpProfileId);
-        if (index < 0)
+        if (profile.Kind != "custom")
         {
-            return _acpProfiles.Count == 0;
+            return AgentDisplayName(profile.Kind);
         }
-        var profile = _acpProfiles[index];
-        var oldId = profile.Id;
-        var newId = profile.Kind == "custom" ? AcpProfileIdTextBox.Text.Trim() : profile.Kind;
-        if (!IsValidAcpProfileId(newId) || _acpProfiles.Where((_, candidateIndex) => candidateIndex != index).Any(item => item.Id == newId))
-        {
-            if (showErrors)
-            {
-                MessageBox.Show(this, "Coding Agent profile IDs must be unique and use only letters, numbers, '.', '_' or '-'.", "AgentDock", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
-            return false;
-        }
-        if (profile.Kind == "custom")
-        {
-            if (!TryReadAcpArguments(AcpArgsTextBox.Text, out var arguments))
-            {
-                if (showErrors)
-                {
-                    MessageBox.Show(this, UiText.Get("ArgsJsonInvalid"), "AgentDock", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
-                return false;
-            }
-            profile.Command = AcpCommandTextBox.Text.Trim();
-            profile.Args = arguments;
-        }
-        profile.Id = newId;
-        profile.Enabled = AcpProfileEnabledCheckBox.IsChecked == true;
-        _acpProfiles[index] = profile;
-        if (_acpDefaultProfile == oldId)
-        {
-            _acpDefaultProfile = newId;
-        }
-        _activeAcpProfileId = newId;
-        return true;
+        var name = (profile.DisplayName ?? "").Trim();
+        return name.Length == 0 ? profile.Id : name;
     }
 
     private static bool IsValidAcpProfileId(string value) =>
@@ -631,63 +730,6 @@ public partial class MainWindow : Window
             or >= 'A' and <= 'Z'
             or >= '0' and <= '9'
             or '.' or '_' or '-');
-
-    private void RefreshAcpUi()
-    {
-        var profile = _acpProfiles.FirstOrDefault(item => item.Id == _activeAcpProfileId);
-        if (profile is null)
-        {
-            AcpStatusText.Text = "Add a Coding Agent profile to continue.";
-            return;
-        }
-
-        var globallyEnabled = AcpEnabledCheckBox.IsChecked == true;
-        var profileEnabled = AcpProfileEnabledCheckBox.IsChecked == true;
-        var effectiveEnabled = globallyEnabled && profileEnabled;
-        var isCustom = profile.Kind == "custom";
-        var customVisibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
-        AcpCommandLabel.Visibility = customVisibility;
-        AcpCommandTextBox.Visibility = customVisibility;
-        AcpArgsLabel.Visibility = customVisibility;
-        AcpArgsTextBox.Visibility = customVisibility;
-        AcpAgentComboBox.IsEnabled = false;
-        AcpProfileComboBox.IsEnabled = true;
-        AcpProfileIdTextBox.IsEnabled = isCustom;
-        AcpProfileEnabledCheckBox.IsEnabled = true;
-        AcpProfileDefaultCheckBox.IsEnabled = true;
-        AcpRemoveProfileButton.IsEnabled = _acpProfiles.Count > 1;
-        AcpCommandTextBox.IsEnabled = isCustom;
-        AcpArgsTextBox.IsEnabled = isCustom;
-
-        IReadOnlyList<string>? configuredArguments;
-        string configuredCommand;
-        if (isCustom)
-        {
-            configuredCommand = AcpCommandTextBox.Text.Trim();
-            if (!TryReadAcpArguments(AcpArgsTextBox.Text, out var customArguments))
-            {
-                AcpStatusText.Text = UiText.Get("ArgsJsonInvalid");
-                AcpStatusText.Foreground = effectiveEnabled
-                    ? new SolidColorBrush(Color.FromRgb(217, 45, 32))
-                    : new SolidColorBrush(Color.FromRgb(102, 112, 133));
-                return;
-            }
-            configuredArguments = customArguments;
-        }
-        else
-        {
-            configuredCommand = profile.Command;
-            configuredArguments = profile.Args;
-        }
-
-        var resolution = _runtime.ResolveAcpAdapter(profile.Kind, configuredCommand, configuredArguments);
-        AcpStatusText.Text = effectiveEnabled
-            ? resolution.Message
-            : resolution.Available ? $"Configured {profile.Id} · takes effect when enabled" : resolution.Message;
-        AcpStatusText.Foreground = effectiveEnabled && !resolution.Available
-            ? new SolidColorBrush(Color.FromRgb(217, 45, 32))
-            : new SolidColorBrush(Color.FromRgb(102, 112, 133));
-    }
 
     private async void LanguageComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -755,10 +797,6 @@ public partial class MainWindow : Window
         }
 
         var acpEnabled = AcpEnabledCheckBox.IsChecked == true;
-        if (!SaveActiveAcpProfile(showErrors: true))
-        {
-            return;
-        }
         if (acpEnabled && !_acpProfiles.Any(profile => profile.Enabled))
         {
             MessageBox.Show(this, "Enable at least one Coding Agent profile.", "AgentDock", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -800,7 +838,7 @@ public partial class MainWindow : Window
             profile.Args = resolution.Arguments.ToList();
         }
         var defaultProfile = _acpProfiles.FirstOrDefault(profile => profile.Id == _acpDefaultProfile);
-        if (defaultProfile is null || acpEnabled && !defaultProfile.Enabled)
+        if (acpEnabled && (defaultProfile is null || !defaultProfile.Enabled))
         {
             MessageBox.Show(this, "The default Coding Agent profile must reference an enabled profile.", "AgentDock", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
@@ -835,16 +873,10 @@ public partial class MainWindow : Window
         {
             _acpProfiles = settings.AcpProfiles.Select(CloneAcpProfile).ToList();
             _acpDefaultProfile = settings.AcpDefaultProfile;
-            if (!_acpProfiles.Any(profile => profile.Id == _activeAcpProfileId))
-            {
-                _activeAcpProfileId = _acpDefaultProfile;
-            }
-            RefreshAcpProfileSelector(_activeAcpProfileId);
-            LoadAcpProfileControls(_activeAcpProfileId);
+            RefreshAcpProfileOverview();
             BrowserCdpUrlTextBox.Text = settings.BrowserCdpUrl;
             SelectBrowserConnectionMode(settings);
             RefreshBrowserConnectionUi();
-            RefreshAcpUi();
         }
     }
 
@@ -918,19 +950,6 @@ public partial class MainWindow : Window
             SettingsStatusText);
     }
 
-    private void SelectAcpAgent(string value)
-    {
-        foreach (var item in AcpAgentComboBox.Items.OfType<ComboBoxItem>())
-        {
-            if (string.Equals(item.Tag?.ToString(), value, StringComparison.OrdinalIgnoreCase))
-            {
-                AcpAgentComboBox.SelectedItem = item;
-                return;
-            }
-        }
-        AcpAgentComboBox.SelectedIndex = 0;
-    }
-
     private static string AgentDisplayName(string agent) => agent switch
     {
         "codex" => "Codex",
@@ -963,6 +982,12 @@ public partial class MainWindow : Window
             return false;
         }
     }
+
+    private sealed record CustomAcpProfileDialogResult(
+        string Name,
+        string Command,
+        List<string> Arguments,
+        bool DeleteRequested);
 
     private void SelectLogLevel(string value)
     {

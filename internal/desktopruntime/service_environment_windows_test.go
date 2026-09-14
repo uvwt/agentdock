@@ -92,7 +92,7 @@ func TestLoadControlPanelSettingsPrefersProfilesOverLegacyACPFields(t *testing.T
 	command := filepath.Join(root, "zcode.exe")
 	content, err := json.Marshal(map[string]any{
 		"port": 8765, "log_level": "info", "acp_enabled": true,
-		"acp_profiles":        []map[string]any{{"id": "zcode", "kind": "custom", "command": command, "enabled": true}},
+		"acp_profiles":        []map[string]any{{"id": "zcode", "display_name": "ZCode", "kind": "custom", "command": command, "enabled": true}},
 		"acp_default_profile": "zcode", "acp_agent": "custom", "acp_command": `C:\legacy.exe`,
 	})
 	if err != nil {
@@ -108,6 +108,9 @@ func TestLoadControlPanelSettingsPrefersProfilesOverLegacyACPFields(t *testing.T
 	}
 	if settings.ACPDefaultProfile != "zcode" || len(settings.ACPProfiles) != 1 || settings.ACPProfiles[0].ID != "zcode" {
 		t.Fatalf("profile config did not win over legacy fields: %#v", settings)
+	}
+	if settings.ACPProfiles[0].DisplayName != "ZCode" {
+		t.Fatalf("profile display name = %q", settings.ACPProfiles[0].DisplayName)
 	}
 }
 

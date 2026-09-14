@@ -27,7 +27,7 @@ private enum BrowserConnectionMode: CaseIterable {
 }
 
 @MainActor
-final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDelegate {
+final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDelegate, NSWindowDelegate {
     private let service: ServiceController
     private let configurationController: ServiceConfigurationController
     private let menuLoginAgent: MenuLoginAgentController
@@ -44,16 +44,10 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     private let browserCDPURL = NSTextField(string: "")
     private let browserStatus = NSTextField(wrappingLabelWithString: "")
     private let acpEnabled = NSButton(checkboxWithTitle: L10n.text("Enable Coding Agent"), target: nil, action: nil)
-    private let acpProfile = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let acpProfileID = NSTextField(string: "")
-    private let acpProfileEnabled = NSButton(checkboxWithTitle: L10n.text("Enable this profile"), target: nil, action: nil)
-    private let acpProfileDefault = NSButton(checkboxWithTitle: L10n.text("Use as default"), target: nil, action: nil)
-    private let acpAddProfile = NSPopUpButton(frame: .zero, pullsDown: true)
-    private let acpRemoveProfile = NSButton(title: L10n.text("Remove profile"), target: nil, action: nil)
-    private let acpAgent = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let acpCommand = NSTextField(string: "")
-    private let acpArgsJSON = NSTextField(string: "[]")
-    private let acpStatus = NSTextField(wrappingLabelWithString: "")
+    private let acpProfileList = NSStackView()
+    private let acpOverviewContainer = NSStackView()
+    private let acpDefaultProfileMenu = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let acpAddCustomProfile = NSButton(title: "+ " + L10n.text("Add custom ACP"), target: nil, action: nil)
     private let nexusEndpoint = NSTextField(string: "")
     private let nexusPairingCode = NSSecureTextField(string: "")
     private let nexusPairButton = NSButton(title: L10n.text("Pair and restart"), target: nil, action: nil)
@@ -62,6 +56,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
     private let applyButton = NSButton(title: L10n.text("Apply and restart"), target: nil, action: nil)
     private let cancelButton = NSButton(title: L10n.text("Cancel"), target: nil, action: nil)
+    private weak var activeCustomACPDialog: NSPanel?
 
     private var currentConfiguration: ServiceConfiguration?
     private var initialServiceAutostart = true
@@ -77,12 +72,16 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     private var initialACPDefaultProfile = ""
     private var acpProfiles: [ACPProfileConfiguration] = []
     private var acpDefaultProfile = ""
-    private var activeACPProfileID = ""
     private var isBusy = false
     private var isUpdateInProgress = false
     private var browserCDPRow: NSView?
-    private var acpCommandRow: NSView?
-    private var acpArgsRow: NSView?
+
+    private struct CustomACPProfileDialogResult {
+        let name: String
+        let command: String
+        let arguments: [String]
+        let deleteRequested: Bool
+    }
 
     private var controlsLocked: Bool {
         isBusy || isUpdateInProgress
@@ -102,14 +101,14 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         self.menuLoginAgent = menuLoginAgent
         self.onChanged = onChanged
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 680, height: 760),
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 760),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = L10n.text("AgentDock Advanced Settings")
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 620, height: 520)
+        window.minSize = NSSize(width: 700, height: 560)
         window.center()
         super.init(window: window)
         configureUI()
@@ -138,7 +137,6 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         initialACPDefaultProfile = configuration.acpDefaultProfile
         acpProfiles = configuration.acpProfiles
         acpDefaultProfile = configuration.acpDefaultProfile
-        activeACPProfileID = configuration.acpDefaultProfile
 
         serviceAutostart.state = status.autostartEnabled ? .on : .off
         menuAutostart.state = initialMenuAutostart ? .on : .off
@@ -149,12 +147,10 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         browserCDPURL.stringValue = initialBrowserCDPURL
         selectBrowserConnectionMode(initialBrowserConnectionMode)
         acpEnabled.state = initialACPEnabled ? .on : .off
-        refreshACPProfileMenu(selecting: activeACPProfileID)
-        loadACPProfileIntoControls(activeACPProfileID)
+        refreshACPProfileOverview()
         nexusPairingCode.stringValue = ""
         refreshNexusStatus()
         refreshBrowserStatus()
-        refreshACPStatus()
         showStatus("", isError: false)
         setBusy(false)
         refreshApplyState()
@@ -177,6 +173,12 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     private func configureUI() {
         guard let contentView = window?.contentView else { return }
 
+        // 同类下拉框使用统一宽度；连接方式文案更长，单独保留一档较宽尺寸。
+        let compactPopUpWidth: CGFloat = 110
+        let widePopUpWidth: CGFloat = 220
+        let acpChildIndent: CGFloat = 18
+        let acpListWidth: CGFloat = 250
+
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
@@ -193,7 +195,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
             languagePreference.lastItem?.representedObject = preference.rawValue
         }
         selectLanguagePreference(L10n.languagePreference())
-        languagePreference.widthAnchor.constraint(equalToConstant: 220).isActive = true
+        languagePreference.widthAnchor.constraint(equalToConstant: compactPopUpWidth).isActive = true
         languagePreference.target = self
         languagePreference.action = #selector(languageChanged)
 
@@ -217,7 +219,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         portField.delegate = self
 
         logLevel.addItems(withTitles: ["debug", "info", "warn", "error"])
-        logLevel.widthAnchor.constraint(equalToConstant: 120).isActive = true
+        logLevel.widthAnchor.constraint(equalToConstant: compactPopUpWidth).isActive = true
         logLevel.target = self
         logLevel.action = #selector(markChanged)
 
@@ -227,7 +229,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         browserEnabled.target = self
         browserEnabled.action = #selector(browserToggled)
         browserConnectionMode.addItems(withTitles: BrowserConnectionMode.allCases.map(\.title))
-        browserConnectionMode.widthAnchor.constraint(equalToConstant: 360).isActive = true
+        browserConnectionMode.widthAnchor.constraint(equalToConstant: widePopUpWidth).isActive = true
         browserConnectionMode.target = self
         browserConnectionMode.action = #selector(browserConnectionChanged)
         browserCDPURL.placeholderString = L10n.text("For example: http://127.0.0.1:9222")
@@ -240,41 +242,15 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         acpEnabled.target = self
         acpEnabled.action = #selector(acpChanged)
 
-        acpProfile.widthAnchor.constraint(equalToConstant: 220).isActive = true
-        acpProfile.target = self
-        acpProfile.action = #selector(acpProfileChanged)
-        acpProfileID.placeholderString = "zcode"
-        acpProfileID.target = self
-        acpProfileID.action = #selector(markChanged)
-        acpProfileID.delegate = self
-        acpProfileEnabled.target = self
-        acpProfileEnabled.action = #selector(acpProfileFlagsChanged)
-        acpProfileDefault.target = self
-        acpProfileDefault.action = #selector(acpProfileFlagsChanged)
-        acpAddProfile.addItem(withTitle: L10n.text("Add profile…"))
-        for preset in ACPAgentPreset.allCases {
-            acpAddProfile.addItem(withTitle: preset.title)
-            acpAddProfile.lastItem?.representedObject = preset.rawValue
-        }
-        acpAddProfile.target = self
-        acpAddProfile.action = #selector(addACPProfile)
-        acpRemoveProfile.target = self
-        acpRemoveProfile.action = #selector(removeACPProfile)
-
-        acpAgent.addItems(withTitles: ACPAgentPreset.allCases.map(\.title))
-        acpAgent.widthAnchor.constraint(equalToConstant: 220).isActive = true
-        acpAgent.target = self
-        acpAgent.action = #selector(acpChanged)
-        acpCommand.placeholderString = "/absolute/path/to/acp-adapter"
-        acpCommand.target = self
-        acpCommand.action = #selector(markChanged)
-        acpCommand.delegate = self
-        acpArgsJSON.placeholderString = "[]"
-        acpArgsJSON.target = self
-        acpArgsJSON.action = #selector(markChanged)
-        acpArgsJSON.delegate = self
-        acpStatus.textColor = .secondaryLabelColor
-        acpStatus.font = .systemFont(ofSize: 12)
+        acpProfileList.orientation = .vertical
+        acpProfileList.alignment = .leading
+        acpProfileList.spacing = 0
+        acpAddCustomProfile.bezelStyle = .inline
+        acpAddCustomProfile.target = self
+        acpAddCustomProfile.action = #selector(addCustomACPProfile)
+        acpDefaultProfileMenu.target = self
+        acpDefaultProfileMenu.action = #selector(defaultACPProfileChanged)
+        acpDefaultProfileMenu.widthAnchor.constraint(equalToConstant: compactPopUpWidth).isActive = true
 
         nexusEndpoint.placeholderString = "https://nexus.example.com"
         nexusEndpoint.target = self
@@ -292,7 +268,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         nexusDeviceTokenStatus.maximumNumberOfLines = 2
         nexusDeviceTokenStatus.heightAnchor.constraint(equalToConstant: 34).isActive = true
 
-        for flexibleView in [browserCDPURL, browserStatus, acpProfileID, acpCommand, acpArgsJSON, acpStatus, nexusEndpoint, nexusPairingCode, nexusDeviceTokenStatus] {
+        for flexibleView in [browserCDPURL, browserStatus, nexusEndpoint, nexusPairingCode, nexusDeviceTokenStatus] {
             flexibleView.setContentHuggingPriority(.defaultLow, for: .horizontal)
             flexibleView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         }
@@ -319,7 +295,6 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         let startupStack = NSStackView(views: [
             serviceAutostart,
             menuAutostart,
-            formRow(title: L10n.text("Interface language"), control: languagePreference),
         ])
         startupStack.orientation = .vertical
         startupStack.alignment = .leading
@@ -329,6 +304,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
             mcpAppsEnabled,
             formRow(title: L10n.text("Service port"), control: portField),
             formRow(title: L10n.text("Log level"), control: logLevel),
+            formRow(title: L10n.text("Interface language"), control: languagePreference),
         ])
         serviceForm.orientation = .vertical
         serviceForm.alignment = .leading
@@ -348,31 +324,21 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         cdpRow.widthAnchor.constraint(equalTo: browserStack.widthAnchor).isActive = true
         browserStatus.widthAnchor.constraint(equalTo: browserStack.widthAnchor).isActive = true
 
-        let commandRow = formRow(title: "Command", control: acpCommand, fillsAvailableWidth: true)
-        let argsRow = formRow(title: "Args JSON", control: acpArgsJSON, fillsAvailableWidth: true)
-        let profileIDRow = formRow(title: "Profile ID", control: acpProfileID, fillsAvailableWidth: true)
-        let profileActions = NSStackView(views: [acpProfileEnabled, acpProfileDefault, acpAddProfile, acpRemoveProfile])
-        profileActions.orientation = .horizontal
-        profileActions.spacing = 8
-        acpCommandRow = commandRow
-        acpArgsRow = argsRow
-        let acpStack = NSStackView(views: [
-            acpEnabled,
-            formRow(title: L10n.text("Profile"), control: acpProfile),
-            profileIDRow,
-            profileActions,
-            formRow(title: L10n.text("Type"), control: acpAgent),
-            commandRow,
-            argsRow,
-            acpStatus,
-        ])
+        let defaultProfileRow = formRow(title: L10n.text("Default ACP"), control: acpDefaultProfileMenu)
+        acpOverviewContainer.setViews([defaultProfileRow, acpProfileList, acpAddCustomProfile], in: .top)
+        acpOverviewContainer.orientation = .vertical
+        acpOverviewContainer.alignment = .leading
+        acpOverviewContainer.spacing = 8
+        // 总开关保持一级；默认项、Agent 列表和新增入口整体缩进，形成清晰的父子层级。
+        acpOverviewContainer.edgeInsets = NSEdgeInsets(top: 0, left: acpChildIndent, bottom: 0, right: 0)
+        // 列表与默认 ACP 表单保持接近的内容宽度，让复选框落在下拉框右缘附近。
+        acpProfileList.widthAnchor.constraint(equalToConstant: acpListWidth).isActive = true
+
+        let acpStack = NSStackView(views: [acpEnabled, acpOverviewContainer])
         acpStack.orientation = .vertical
         acpStack.alignment = .leading
-        acpStack.spacing = 8
-        commandRow.widthAnchor.constraint(equalTo: acpStack.widthAnchor).isActive = true
-        argsRow.widthAnchor.constraint(equalTo: acpStack.widthAnchor).isActive = true
-        profileIDRow.widthAnchor.constraint(equalTo: acpStack.widthAnchor).isActive = true
-        acpStatus.widthAnchor.constraint(equalTo: acpStack.widthAnchor).isActive = true
+        acpStack.spacing = 10
+        acpOverviewContainer.widthAnchor.constraint(equalTo: acpStack.widthAnchor).isActive = true
 
         let nexusEndpointRow = formRow(title: "Endpoint", control: nexusEndpoint, fillsAvailableWidth: true)
         let nexusPairingCodeRow = formRow(title: L10n.text("Pairing code"), control: nexusPairingCode, fillsAvailableWidth: true)
@@ -552,107 +518,241 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         if obj.object as? NSTextField === browserCDPURL {
             refreshBrowserStatus()
         }
-        if obj.object as? NSTextField === acpProfileID
-            || obj.object as? NSTextField === acpCommand
-            || obj.object as? NSTextField === acpArgsJSON {
-            refreshACPStatus()
-        }
         refreshApplyState()
     }
 
     @objc private func acpChanged() {
-        refreshACPStatus()
         refreshApplyState()
     }
 
-    @objc private func acpProfileChanged() {
-        guard let selectedID = acpProfile.selectedItem?.representedObject as? String,
-              selectedID != activeACPProfileID else { return }
-        guard saveActiveACPProfileFromControls(showErrors: true) else {
-            refreshACPProfileMenu(selecting: activeACPProfileID)
-            return
-        }
-        refreshACPProfileMenu(selecting: selectedID)
-        activeACPProfileID = selectedID
-        loadACPProfileIntoControls(selectedID)
-        refreshACPStatus()
-        refreshApplyState()
-    }
-
-    @objc private func acpProfileFlagsChanged() {
-        guard !activeACPProfileID.isEmpty else { return }
-        if acpProfileDefault.state == .off, acpDefaultProfile == activeACPProfileID {
-            acpProfileDefault.state = .on
-        } else if acpProfileDefault.state == .on {
-            acpDefaultProfile = activeACPProfileID
-        }
-        if acpProfileDefault.state == .on, acpProfileEnabled.state == .off {
-            acpProfileEnabled.state = .on
-        }
-        _ = saveActiveACPProfileFromControls(showErrors: false)
-        refreshACPProfileMenu(selecting: activeACPProfileID)
-        refreshACPStatus()
-        refreshApplyState()
-    }
-
-    @objc private func addACPProfile() {
-        defer { acpAddProfile.selectItem(at: 0) }
-        guard let raw = acpAddProfile.selectedItem?.representedObject as? String,
-              let preset = ACPAgentPreset(rawValue: raw) else { return }
-        guard saveActiveACPProfileFromControls(showErrors: true) else { return }
-
-        let id: String
-        if preset == .custom {
-            var candidate = "custom"
-            var suffix = 2
-            let existing = Set(acpProfiles.map(\.id))
-            while existing.contains(candidate) {
-                candidate = "custom-\(suffix)"
-                suffix += 1
+    @objc private func acpOverviewToggleChanged(_ sender: NSButton) {
+        guard !controlsLocked, let key = sender.identifier?.rawValue else { return }
+        if key.hasPrefix("builtin:") {
+            let rawKind = String(key.dropFirst("builtin:".count))
+            guard let preset = ACPAgentPreset(rawValue: rawKind), preset != .custom else { return }
+            if let index = acpProfiles.firstIndex(where: { $0.kind == preset }) {
+                updateACPProfileEnabled(at: index, enabled: sender.state == .on)
+            } else if sender.state == .on {
+                let resolution = preset.resolveAdapter()
+                acpProfiles.append(ACPProfileConfiguration(
+                    id: preset.rawValue,
+                    displayName: nil,
+                    kind: preset,
+                    command: resolution.command,
+                    args: resolution.arguments,
+                    envFromEnv: nil,
+                    enabled: true
+                ))
+                if acpDefaultProfile.isEmpty {
+                    acpDefaultProfile = preset.rawValue
+                }
             }
-            id = candidate
+        } else if key.hasPrefix("profile:") {
+            let profileID = String(key.dropFirst("profile:".count))
+            guard let index = acpProfiles.firstIndex(where: { $0.id == profileID }) else { return }
+            updateACPProfileEnabled(at: index, enabled: sender.state == .on)
+        }
+        refreshACPProfileOverview()
+        refreshApplyState()
+    }
+
+    private func updateACPProfileEnabled(at index: Int, enabled: Bool) {
+        let profileID = acpProfiles[index].id
+        acpProfiles[index].enabled = enabled
+        if !enabled, acpDefaultProfile == profileID {
+            acpDefaultProfile = acpProfiles.first(where: { $0.id != profileID && $0.enabled })?.id ?? ""
+        }
+        if enabled, acpDefaultProfile.isEmpty {
+            acpDefaultProfile = profileID
+        }
+    }
+
+    @objc private func defaultACPProfileChanged() {
+        guard !controlsLocked,
+              let profileID = acpDefaultProfileMenu.selectedItem?.representedObject as? String,
+              acpProfiles.contains(where: { $0.id == profileID && $0.enabled }) else { return }
+        acpDefaultProfile = profileID
+        refreshApplyState()
+    }
+
+    @objc private func editCustomACPProfile(_ sender: NSClickGestureRecognizer) {
+        guard !controlsLocked,
+              let key = sender.view?.identifier?.rawValue,
+              key.hasPrefix("profile:") else { return }
+        let profileID = String(key.dropFirst("profile:".count))
+        guard let index = acpProfiles.firstIndex(where: { $0.id == profileID && $0.kind == .custom }),
+              let result = showCustomACPProfileDialog(existing: acpProfiles[index]) else { return }
+        if result.deleteRequested {
+            let removedID = acpProfiles[index].id
+            acpProfiles.remove(at: index)
+            if acpDefaultProfile == removedID {
+                acpDefaultProfile = acpProfiles.first(where: \.enabled)?.id ?? ""
+            }
         } else {
-            id = preset.rawValue
-            if acpProfiles.contains(where: { $0.id == id }) {
-                activeACPProfileID = id
-                refreshACPProfileMenu(selecting: id)
-                loadACPProfileIntoControls(id)
-                return
-            }
+            // profile.id 是已有 Session 的稳定身份；重命名或修改命令时只更新可见配置。
+            acpProfiles[index].displayName = result.name
+            acpProfiles[index].command = result.command
+            acpProfiles[index].args = result.arguments
         }
+        refreshACPProfileOverview()
+        refreshApplyState()
+    }
 
-        let resolution = preset == .custom ? nil : preset.resolveAdapter()
+    @objc private func addCustomACPProfile() {
+        guard !controlsLocked, let result = showCustomACPProfileDialog(existing: nil) else { return }
+        let id = uniqueCustomACPProfileID(for: result.name)
         acpProfiles.append(ACPProfileConfiguration(
             id: id,
-            kind: preset,
-            command: resolution?.command ?? "",
-            args: resolution?.arguments ?? [],
+            displayName: result.name,
+            kind: .custom,
+            command: result.command,
+            args: result.arguments,
             envFromEnv: nil,
-            enabled: true
+            enabled: false
         ))
-        if acpDefaultProfile.isEmpty {
-            acpDefaultProfile = id
-        }
-        activeACPProfileID = id
-        refreshACPProfileMenu(selecting: id)
-        loadACPProfileIntoControls(id)
-        refreshACPStatus()
+        refreshACPProfileOverview()
         refreshApplyState()
     }
 
-    @objc private func removeACPProfile() {
-        guard acpProfiles.count > 1,
-              let index = acpProfiles.firstIndex(where: { $0.id == activeACPProfileID }) else { return }
-        let removedID = acpProfiles[index].id
-        acpProfiles.remove(at: index)
-        if acpDefaultProfile == removedID {
-            acpDefaultProfile = acpProfiles.first(where: \.enabled)?.id ?? acpProfiles[0].id
+    private func showCustomACPProfileDialog(existing: ACPProfileConfiguration?) -> CustomACPProfileDialogResult? {
+        let editing = existing != nil
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 252),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = L10n.text(editing ? "Edit custom ACP" : "Add custom ACP")
+        panel.isReleasedWhenClosed = false
+
+        let nameField = NSTextField(string: existing.map(acpDisplayName) ?? "")
+        nameField.placeholderString = L10n.text("Agent name")
+        let commandField = NSTextField(string: existing?.command ?? "")
+        commandField.placeholderString = "/absolute/path/to/acp-adapter"
+        let argsField = NSTextField(string: (try? ACPDesktopConfiguration.encodeArguments(existing?.args ?? [])) ?? "[]")
+        argsField.placeholderString = "[]"
+
+        let form = NSGridView(views: [
+            [NSTextField(labelWithString: L10n.text("Name")), nameField],
+            [NSTextField(labelWithString: L10n.text("Command")), commandField],
+            [NSTextField(labelWithString: L10n.text("Args JSON")), argsField],
+        ])
+        form.rowSpacing = 10
+        form.columnSpacing = 12
+        form.column(at: 0).xPlacement = .leading
+        form.column(at: 0).width = 72
+        form.column(at: 1).xPlacement = .fill
+        for field in [nameField, commandField, argsField] {
+            field.widthAnchor.constraint(equalToConstant: 360).isActive = true
         }
-        activeACPProfileID = acpProfiles[min(index, acpProfiles.count - 1)].id
-        refreshACPProfileMenu(selecting: activeACPProfileID)
-        loadACPProfileIntoControls(activeACPProfileID)
-        refreshACPStatus()
-        refreshApplyState()
+
+        let confirmButton = NSButton(title: L10n.text(editing ? "Save" : "Add"), target: nil, action: nil)
+        confirmButton.bezelStyle = .rounded
+        confirmButton.keyEquivalent = "\r"
+        let dialogCancelButton = NSButton(title: L10n.text("Cancel"), target: nil, action: nil)
+        dialogCancelButton.bezelStyle = .rounded
+        dialogCancelButton.keyEquivalent = "\u{1b}"
+        let deleteButton = editing ? NSButton(title: L10n.text("Delete"), target: nil, action: nil) : nil
+        deleteButton?.bezelStyle = .rounded
+
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let buttons = NSStackView()
+        buttons.orientation = .horizontal
+        buttons.alignment = .centerY
+        buttons.spacing = 8
+        if let deleteButton {
+            buttons.addArrangedSubview(deleteButton)
+        }
+        buttons.addArrangedSubview(spacer)
+        buttons.addArrangedSubview(dialogCancelButton)
+        buttons.addArrangedSubview(confirmButton)
+
+        form.translatesAutoresizingMaskIntoConstraints = false
+        buttons.translatesAutoresizingMaskIntoConstraints = false
+        guard let contentView = panel.contentView else { return nil }
+        contentView.addSubview(form)
+        contentView.addSubview(buttons)
+        NSLayoutConstraint.activate([
+            form.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
+            form.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 24),
+            form.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -24),
+            buttons.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
+            buttons.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24),
+            buttons.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -18),
+        ])
+
+        let deleteResponse = NSApplication.ModalResponse(rawValue: 1001)
+        confirmButton.target = self
+        confirmButton.action = #selector(confirmCustomACPDialog(_:))
+        dialogCancelButton.target = self
+        dialogCancelButton.action = #selector(cancelCustomACPDialog(_:))
+        if let deleteButton {
+            deleteButton.target = self
+            deleteButton.action = #selector(deleteCustomACPDialog(_:))
+        }
+        activeCustomACPDialog = panel
+        panel.delegate = self
+
+        if let parentWindow = window {
+            let parentFrame = parentWindow.frame
+            let panelFrame = panel.frame
+            panel.setFrameOrigin(NSPoint(
+                x: parentFrame.midX - panelFrame.width / 2,
+                y: parentFrame.midY - panelFrame.height / 2
+            ))
+        } else {
+            panel.center()
+        }
+        panel.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        let response = NSApp.runModal(for: panel)
+        activeCustomACPDialog = nil
+        panel.delegate = nil
+        panel.orderOut(nil)
+
+        if editing, response == deleteResponse {
+            return CustomACPProfileDialogResult(name: "", command: "", arguments: [], deleteRequested: true)
+        }
+        guard response == .OK else { return nil }
+
+        let name = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            showStatus(L10n.text("Agent name cannot be empty."), isError: true)
+            return nil
+        }
+        let arguments: [String]
+        do {
+            arguments = try ACPDesktopConfiguration.decodeArguments(argsField.stringValue)
+        } catch {
+            showStatus(error.localizedDescription, isError: true)
+            return nil
+        }
+        return CustomACPProfileDialogResult(
+            name: name,
+            command: commandField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
+            arguments: arguments,
+            deleteRequested: false
+        )
+    }
+
+    @objc private func confirmCustomACPDialog(_ sender: Any?) {
+        NSApp.stopModal(withCode: .OK)
+    }
+
+    @objc private func cancelCustomACPDialog(_ sender: Any?) {
+        NSApp.stopModal(withCode: .cancel)
+    }
+
+    @objc private func deleteCustomACPDialog(_ sender: Any?) {
+        NSApp.stopModal(withCode: NSApplication.ModalResponse(rawValue: 1001))
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard sender === activeCustomACPDialog else { return true }
+        NSApp.stopModal(withCode: .cancel)
+        return false
     }
 
     @objc private func browserConnectionChanged() {
@@ -674,8 +774,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     @objc private func applyPressed() {
         guard !isUpdateInProgress else { return }
         guard currentConfiguration != nil else { return }
-        guard saveActiveACPProfileFromControls(showErrors: true) else { return }
-        guard acpProfiles.contains(where: { $0.id == acpDefaultProfile }) else {
+        if acpEnabled.state == .on, !acpProfiles.contains(where: { $0.id == acpDefaultProfile && $0.enabled }) {
             showStatus(L10n.text("Choose a default Coding Agent profile."), isError: true)
             return
         }
@@ -726,11 +825,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
                 initialACPDefaultProfile = validatedSettings.acpDefaultProfile
                 acpProfiles = validatedSettings.acpProfiles
                 acpDefaultProfile = validatedSettings.acpDefaultProfile
-                if !acpProfiles.contains(where: { $0.id == activeACPProfileID }) {
-                    activeACPProfileID = acpDefaultProfile
-                }
-                refreshACPProfileMenu(selecting: activeACPProfileID)
-                loadACPProfileIntoControls(activeACPProfileID)
+                refreshACPProfileOverview()
                 portField.integerValue = initialPort
                 logLevel.selectItem(withTitle: initialLogLevel)
                 mcpAppsEnabled.state = initialMCPAppsEnabled ? .on : .off
@@ -740,7 +835,6 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
                     currentConfiguration = updatedConfiguration
                 }
                 refreshBrowserStatus()
-                refreshACPStatus()
                 showStatus(L10n.text("Settings saved."), isError: false)
                 setBusy(false)
                 refreshApplyState()
@@ -798,94 +892,104 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         languagePreference.selectItem(at: 0)
     }
 
-    private func refreshACPProfileMenu(selecting profileID: String) {
-        acpProfile.removeAllItems()
-        for profile in acpProfiles {
-            let suffix = profile.id == acpDefaultProfile ? " · Default" : ""
-            acpProfile.addItem(withTitle: "\(profile.id) · \(profile.kind.title)\(suffix)")
-            acpProfile.lastItem?.representedObject = profile.id
+    private func refreshACPProfileOverview() {
+        for view in acpProfileList.arrangedSubviews {
+            acpProfileList.removeArrangedSubview(view)
+            view.removeFromSuperview()
         }
-        if let item = acpProfile.itemArray.first(where: { ($0.representedObject as? String) == profileID }) {
-            acpProfile.select(item)
-        } else if !acpProfiles.isEmpty {
-            acpProfile.selectItem(at: 0)
+
+        for preset in [ACPAgentPreset.codex, .claude, .grok] {
+            let profile = acpProfiles.first(where: { $0.kind == preset })
+            addACPOverviewRow(acpOverviewRow(preset: preset, profile: profile))
         }
+        for profile in acpProfiles where profile.kind == .custom {
+            addACPOverviewRow(acpOverviewRow(preset: .custom, profile: profile))
+        }
+        refreshACPDefaultProfileMenu()
+        acpAddCustomProfile.isEnabled = !controlsLocked
     }
 
-    private func loadACPProfileIntoControls(_ profileID: String) {
-        guard let profile = acpProfiles.first(where: { $0.id == profileID }) else {
-            acpProfileID.stringValue = ""
-            acpProfileEnabled.state = .off
-            acpProfileDefault.state = .off
-            acpAgent.selectItem(withTitle: ACPAgentPreset.custom.title)
-            acpCommand.stringValue = ""
-            acpArgsJSON.stringValue = "[]"
-            return
+    private func refreshACPDefaultProfileMenu() {
+        let enabledProfiles = acpProfiles.filter(\.enabled)
+        if !enabledProfiles.contains(where: { $0.id == acpDefaultProfile }) {
+            acpDefaultProfile = enabledProfiles.first?.id ?? ""
         }
-        activeACPProfileID = profile.id
-        acpProfileID.stringValue = profile.id
-        acpProfileEnabled.state = profile.enabled ? .on : .off
-        acpProfileDefault.state = profile.id == acpDefaultProfile ? .on : .off
-        acpAgent.selectItem(withTitle: profile.kind.title)
-        acpCommand.stringValue = profile.kind == .custom ? profile.command : ""
-        acpArgsJSON.stringValue = (try? ACPDesktopConfiguration.encodeArguments(
-            profile.kind == .custom ? profile.args : []
-        )) ?? "[]"
+        acpDefaultProfileMenu.removeAllItems()
+        for profile in enabledProfiles {
+            acpDefaultProfileMenu.addItem(withTitle: acpDisplayName(profile))
+            acpDefaultProfileMenu.lastItem?.representedObject = profile.id
+        }
+        if let index = enabledProfiles.firstIndex(where: { $0.id == acpDefaultProfile }) {
+            acpDefaultProfileMenu.selectItem(at: index)
+        }
+        acpDefaultProfileMenu.isEnabled = !controlsLocked && !enabledProfiles.isEmpty
     }
 
-    @discardableResult
-    private func saveActiveACPProfileFromControls(showErrors: Bool) -> Bool {
-        guard let index = acpProfiles.firstIndex(where: { $0.id == activeACPProfileID }) else {
-            return acpProfiles.isEmpty
+    private func addACPOverviewRow(_ row: NSView) {
+        // 必须先把行加入 StackView 层级，再激活跨视图宽度约束；
+        // 否则 AppKit 会因为两边尚无共同祖先直接抛出 NSGenericException。
+        acpProfileList.addArrangedSubview(row)
+        row.widthAnchor.constraint(equalTo: acpProfileList.widthAnchor).isActive = true
+    }
+
+    private func acpOverviewRow(preset: ACPAgentPreset, profile: ACPProfileConfiguration?) -> NSView {
+        let title = profile.map(acpDisplayName) ?? preset.title
+        let key = profile.map { "profile:\($0.id)" } ?? "builtin:\(preset.rawValue)"
+        let nameView = NSTextField(labelWithString: title)
+        nameView.font = .systemFont(ofSize: 13, weight: .medium)
+        if profile?.kind == .custom {
+            nameView.identifier = NSUserInterfaceItemIdentifier(key)
+            let editGesture = NSClickGestureRecognizer(target: self, action: #selector(editCustomACPProfile(_:)))
+            nameView.addGestureRecognizer(editGesture)
         }
-        var profile = acpProfiles[index]
-        let oldID = profile.id
-        let newID = profile.kind == .custom
-            ? acpProfileID.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            : profile.kind.rawValue
-        if newID.isEmpty || acpProfiles.enumerated().contains(where: { $0.offset != index && $0.element.id == newID }) {
-            if showErrors {
-                showStatus(L10n.text("Coding Agent profile IDs must be non-empty and unique."), isError: true)
+
+        let toggle = NSButton(checkboxWithTitle: "", target: self, action: #selector(acpOverviewToggleChanged(_:)))
+        toggle.identifier = NSUserInterfaceItemIdentifier(key)
+        toggle.state = profile?.enabled == true ? .on : .off
+        toggle.isEnabled = !controlsLocked
+
+        let row = NSView()
+        for view in [nameView, toggle] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            row.addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            row.heightAnchor.constraint(equalToConstant: 28),
+            nameView.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 4),
+            nameView.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            nameView.trailingAnchor.constraint(lessThanOrEqualTo: toggle.leadingAnchor, constant: -12),
+            toggle.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -6),
+            toggle.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+        ])
+        return row
+    }
+
+    private func acpDisplayName(_ profile: ACPProfileConfiguration) -> String {
+        guard profile.kind == .custom else { return profile.kind.title }
+        let name = profile.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? profile.id : name
+    }
+
+    private func uniqueCustomACPProfileID(for name: String) -> String {
+        let latin = name.applyingTransform(.toLatin, reverse: false) ?? name
+        var base = latin.lowercased().unicodeScalars.map { scalar -> Character in
+            let value = scalar.value
+            if (48...57).contains(value) || (97...122).contains(value) {
+                return Character(String(scalar))
             }
-            return false
-        }
+            return "-"
+        }.reduce(into: "") { $0.append($1) }
+        while base.contains("--") { base = base.replacingOccurrences(of: "--", with: "-") }
+        base = base.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        if base.isEmpty { base = "custom" }
+        if ["codex", "claude", "grok"].contains(base) { base += "-custom" }
+        if base.count > 48 { base = String(base.prefix(48)).trimmingCharacters(in: CharacterSet(charactersIn: "-")) }
 
-        if profile.kind == .custom {
-            do {
-                profile.args = try ACPDesktopConfiguration.decodeArguments(acpArgsJSON.stringValue)
-            } catch {
-                if showErrors {
-                    showStatus(error.localizedDescription, isError: true)
-                }
-                return false
-            }
-            profile.command = acpCommand.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        profile.id = newID
-        profile.enabled = acpProfileEnabled.state == .on
-        acpProfiles[index] = profile
-        if acpDefaultProfile == oldID {
-            acpDefaultProfile = newID
-        }
-        activeACPProfileID = newID
-        return true
-    }
-
-    private func acpControlDiffersFromModel() -> Bool {
-        guard let profile = acpProfiles.first(where: { $0.id == activeACPProfileID }) else { return false }
-        let displayedID = acpProfileID.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if displayedID != profile.id || (acpProfileEnabled.state == .on) != profile.enabled {
-            return true
-        }
-        if (acpProfileDefault.state == .on) != (profile.id == acpDefaultProfile) {
-            return true
-        }
-        guard profile.kind == .custom else { return false }
-        if acpCommand.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) != profile.command {
-            return true
-        }
-        let encoded = (try? ACPDesktopConfiguration.encodeArguments(profile.args)) ?? "[]"
-        return acpArgsJSON.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) != encoded
+        let existing = Set(acpProfiles.map(\.id))
+        if !existing.contains(base) { return base }
+        var suffix = 2
+        while existing.contains("\(base)-\(suffix)") { suffix += 1 }
+        return "\(base)-\(suffix)"
     }
 
     private func selectedBrowserConnectionMode() -> BrowserConnectionMode {
@@ -895,64 +999,6 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
 
     private func selectBrowserConnectionMode(_ mode: BrowserConnectionMode) {
         browserConnectionMode.selectItem(withTitle: mode.title)
-    }
-
-    private func refreshACPStatus() {
-        guard let profile = acpProfiles.first(where: { $0.id == activeACPProfileID }) else {
-            acpStatus.stringValue = L10n.text("Add a Coding Agent profile to continue.")
-            acpStatus.textColor = .secondaryLabelColor
-            for control in [acpProfile, acpProfileID, acpProfileEnabled, acpProfileDefault, acpAgent, acpCommand, acpArgsJSON, acpRemoveProfile] {
-                control.isEnabled = false
-            }
-            acpAddProfile.isEnabled = !controlsLocked
-            return
-        }
-
-        let preset = profile.kind
-        let isCustom = preset == .custom
-        let globallyEnabled = acpEnabled.state == .on
-        let profileEnabled = acpProfileEnabled.state == .on
-        let effectiveEnabled = globallyEnabled && profileEnabled
-        acpCommandRow?.isHidden = !isCustom
-        acpArgsRow?.isHidden = !isCustom
-
-        acpProfile.isEnabled = !controlsLocked
-        acpProfileID.isEnabled = !controlsLocked && isCustom
-        acpProfileEnabled.isEnabled = !controlsLocked
-        acpProfileDefault.isEnabled = !controlsLocked
-        acpAddProfile.isEnabled = !controlsLocked
-        acpRemoveProfile.isEnabled = !controlsLocked && acpProfiles.count > 1
-        acpAgent.isEnabled = false
-        acpCommand.isEnabled = !controlsLocked && isCustom
-        acpArgsJSON.isEnabled = !controlsLocked && isCustom
-
-        let configuredCommand = isCustom
-            ? acpCommand.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            : profile.command
-        let configuredArguments: [String]
-        if isCustom {
-            guard let arguments = try? ACPDesktopConfiguration.decodeArguments(acpArgsJSON.stringValue) else {
-                acpStatus.stringValue = L10n.text("Args JSON must be a JSON string array.")
-                acpStatus.textColor = effectiveEnabled ? .systemRed : .secondaryLabelColor
-                return
-            }
-            configuredArguments = arguments
-        } else {
-            configuredArguments = profile.args
-        }
-        let resolution = preset.resolveAdapter(
-            configuredCommand: configuredCommand,
-            configuredArguments: configuredArguments
-        )
-        if resolution.available {
-            acpStatus.stringValue = effectiveEnabled
-                ? resolution.message
-                : L10n.format("Configured %@ · takes effect when enabled", profile.id)
-            acpStatus.textColor = .secondaryLabelColor
-        } else {
-            acpStatus.stringValue = resolution.message
-            acpStatus.textColor = effectiveEnabled ? .systemRed : .secondaryLabelColor
-        }
     }
 
     private func refreshBrowserStatus() {
@@ -1007,7 +1053,6 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         let acpSettingsChanged = acpIsEnabled != initialACPEnabled
             || acpProfiles != initialACPProfiles
             || acpDefaultProfile != initialACPDefaultProfile
-            || acpControlDiffersFromModel()
         let browserMode = selectedBrowserConnectionMode()
         let browserCDP = browserMode == .specifiedCDP
             ? browserCDPURL.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1030,11 +1075,11 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
     private func setBusy(_ busy: Bool) {
         isBusy = busy
         let locked = controlsLocked
-        for control in [languagePreference, serviceAutostart, menuAutostart, portField, logLevel, mcpAppsEnabled, browserEnabled, browserConnectionMode, browserCDPURL, acpEnabled, acpProfile, acpProfileID, acpProfileEnabled, acpProfileDefault, acpAddProfile, acpRemoveProfile, acpAgent, acpCommand, acpArgsJSON, nexusEndpoint, nexusPairingCode, nexusPairButton] {
+        for control in [languagePreference, serviceAutostart, menuAutostart, portField, logLevel, mcpAppsEnabled, browserEnabled, browserConnectionMode, browserCDPURL, acpEnabled, acpDefaultProfileMenu, acpAddCustomProfile, nexusEndpoint, nexusPairingCode, nexusPairButton] {
             control.isEnabled = !locked
         }
+        refreshACPProfileOverview()
         refreshBrowserStatus()
-        refreshACPStatus()
         cancelButton.isEnabled = !busy
         if busy {
             applyButton.isEnabled = false

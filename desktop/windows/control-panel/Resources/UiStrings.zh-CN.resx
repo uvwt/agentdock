@@ -183,6 +183,39 @@
   <data name="EnableCodingAgent" xml:space="preserve">
     <value>启用 Coding Agent</value>
   </data>
+  <data name="DefaultAcp" xml:space="preserve">
+    <value>默认 ACP</value>
+  </data>
+  <data name="AddCustomAcp" xml:space="preserve">
+    <value>+ 添加自定义ACP</value>
+  </data>
+  <data name="AddCustomAcpTitle" xml:space="preserve">
+    <value>添加自定义ACP</value>
+  </data>
+  <data name="EditCustomAcpTitle" xml:space="preserve">
+    <value>编辑自定义ACP</value>
+  </data>
+  <data name="Name" xml:space="preserve">
+    <value>名称</value>
+  </data>
+  <data name="Command" xml:space="preserve">
+    <value>命令</value>
+  </data>
+  <data name="ArgsJson" xml:space="preserve">
+    <value>参数 JSON</value>
+  </data>
+  <data name="Add" xml:space="preserve">
+    <value>添加</value>
+  </data>
+  <data name="Save" xml:space="preserve">
+    <value>保存</value>
+  </data>
+  <data name="Cancel" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="Delete" xml:space="preserve">
+    <value>删除</value>
+  </data>
   <data name="Custom" xml:space="preserve">
     <value>自定义</value>
   </data>

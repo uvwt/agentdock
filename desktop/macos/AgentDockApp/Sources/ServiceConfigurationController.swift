@@ -63,6 +63,12 @@ struct EditableServiceSettings {
             guard seen.insert(profile.id).inserted else {
                 throw ValidationError(L10n.format("Duplicate Coding Agent profile ID: %@", profile.id))
             }
+            if profile.kind == .custom {
+                let displayName = profile.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                profile.displayName = displayName.isEmpty ? profile.id : displayName
+            } else {
+                profile.displayName = nil
+            }
             switch profile.kind {
             case .codex, .claude, .grok:
                 guard profile.id == profile.kind.rawValue else {

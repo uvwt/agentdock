@@ -346,3 +346,14 @@
 "Change interface language?" = "切换界面语言？";
 "Changing the interface language restarts the AgentDock interface. Any unsaved changes in this window will be lost." = "切换界面语言会重启 AgentDock 界面，此窗口中未保存的更改将会丢失。";
 "Continue" = "继续";
+"Add" = "添加";
+"Add custom ACP" = "添加自定义ACP";
+"Agent name" = "ACP 名称";
+"Agent name cannot be empty." = "ACP 名称不能为空。";
+"Default ACP" = "默认 ACP";
+"Delete" = "删除";
+"Edit custom ACP" = "编辑自定义ACP";
+"Name" = "名称";
+"Command" = "命令";
+"Args JSON" = "参数 JSON";
+"Save" = "保存";

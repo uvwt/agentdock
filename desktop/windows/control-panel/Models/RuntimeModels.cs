@@ -58,6 +58,9 @@ public sealed class AcpProfileSettings
     [JsonPropertyName("id")]
     public string Id { get; set; } = "";
 
+    [JsonPropertyName("display_name")]
+    public string DisplayName { get; set; } = "";
+
     [JsonPropertyName("kind")]
     public string Kind { get; set; } = "custom";
 

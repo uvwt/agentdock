@@ -134,7 +134,7 @@ func TestFromEnvParsesMultipleACPProfiles(t *testing.T) {
 	}
 	profiles, err := json.Marshal([]ACPProfile{
 		{ID: "codex", Kind: "codex", Command: executable, Enabled: true},
-		{ID: "zcode", Kind: "custom", Command: executable, Args: []string{"zcode.js"}, Enabled: true},
+		{ID: "zcode", DisplayName: "ZCode", Kind: "custom", Command: executable, Args: []string{"zcode.js"}, Enabled: true},
 		{ID: "agy", Kind: "custom", Command: executable, Enabled: false},
 	})
 	if err != nil {
@@ -155,6 +155,9 @@ func TestFromEnvParsesMultipleACPProfiles(t *testing.T) {
 	}
 	if cfg.ACPDefaultProfile != "zcode" {
 		t.Fatalf("default ACP profile = %q", cfg.ACPDefaultProfile)
+	}
+	if cfg.ACPProfiles[1].DisplayName != "ZCode" {
+		t.Fatalf("custom ACP display name = %q", cfg.ACPProfiles[1].DisplayName)
 	}
 	active := cfg.EffectiveACPProfiles()
 	if len(active) != 2 || active[0].ID != "codex" || active[1].ID != "zcode" {

@@ -62,12 +62,13 @@ type Config struct {
 // ACPProfile 表示一个可独立运行、独立持久化会话的 ACP 实例。
 // 内置类型使用固定 ID（codex/claude/grok）保持单实例；custom 使用自定义 ID 支持多个实例。
 type ACPProfile struct {
-	ID         string            `json:"id"`
-	Kind       string            `json:"kind"`
-	Command    string            `json:"command"`
-	Args       []string          `json:"args,omitempty"`
-	EnvFromEnv map[string]string `json:"env_from_env,omitempty"`
-	Enabled    bool              `json:"enabled"`
+	ID          string            `json:"id"`
+	DisplayName string            `json:"display_name,omitempty"`
+	Kind        string            `json:"kind"`
+	Command     string            `json:"command"`
+	Args        []string          `json:"args,omitempty"`
+	EnvFromEnv  map[string]string `json:"env_from_env,omitempty"`
+	Enabled     bool              `json:"enabled"`
 }
 
 func FromEnv() (Config, error) {
