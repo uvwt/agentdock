@@ -81,9 +81,16 @@ func TestWindowsInstallerWorkflowHasAlwaysPresentPullRequestGate(t *testing.T) {
 		"CHANGES_RESULT: ${{ needs.changes.result }}",
 		"VALIDATE_RESULT: ${{ needs.validate.result }}",
 		"github.event_name == 'workflow_dispatch' && inputs.test_tag != ''",
+		"-InstallerPath .\\scripts\\install\\install.ps1",
+		"name: Download and verify cloudflared compatibility payload",
+		"for ($attempt = 1; $attempt -le 5; $attempt++)",
+		"Get-AuthenticodeSignature -LiteralPath $cloudflaredPath",
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("Windows Installer workflow must keep a safe pull-request gate; missing %q", want)
 		}
+	}
+	if strings.Contains(workflow, "raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/scripts/install/install.ps1") {
+		t.Fatal("routine Windows installer validation must use the checked-out installer instead of refetching it over the network")
 	}
 }

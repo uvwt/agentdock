@@ -115,18 +115,6 @@ jobs:
           $ErrorActionPreference = 'Stop'
           go test ./internal/desktopruntime -run TestSelectInteractiveTaskSessionID -count=1
 
-      - name: Download and validate exact installer bytes
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $downloadedInstaller = Join-Path $env:RUNNER_TEMP 'install-downloaded.ps1'
-          $installerUrl = 'https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/scripts/install/install.ps1'
-          & .\scripts\test\test-install-windows-download.ps1 `
-            -Url $installerUrl `
-            -ExpectedInstallerPath .\scripts\install\install.ps1 `
-            -OutputPath $downloadedInstaller
-          "DOWNLOADED_INSTALLER=$downloadedInstaller" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
-
       - name: Run full install and in-place upgrade as standard user
         shell: powershell
         run: |
@@ -190,7 +178,7 @@ jobs:
             } while ($true)
 
             & .\scripts\test\run-windows-installer-e2e-as-standard-user.ps1 `
-              -InstallerPath $env:DOWNLOADED_INSTALLER `
+              -InstallerPath .\scripts\install\install.ps1 `
               -Version latest `
               -ReleaseBaseUrl $releaseBaseUrl
           } finally {
@@ -262,18 +250,29 @@ jobs:
           $checksumPath = "$archivePath.sha256"
           [IO.File]::WriteAllText($checksumPath, "$hash  agentdock_windows_amd64.zip`n", [Text.UTF8Encoding]::new($false))
 
-          $cloudflaredPath = Join-Path $payloadRoot 'cloudflared-windows-amd64.exe'
-          Invoke-WebRequest `
-            -UseBasicParsing `
-            -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' `
-            -OutFile $cloudflaredPath
+          "AMD64_ARCHIVE=$archivePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
+          "AMD64_CHECKSUM=$checksumPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
+
+      - name: Download and verify cloudflared compatibility payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $cloudflaredPath = Join-Path $env:RUNNER_TEMP 'cloudflared-windows-amd64.exe'
+          $cloudflaredUrl = 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe'
+          for ($attempt = 1; $attempt -le 5; $attempt++) {
+            try {
+              Invoke-WebRequest -UseBasicParsing -Uri $cloudflaredUrl -OutFile $cloudflaredPath
+              break
+            } catch {
+              if ($attempt -eq 5) { throw }
+              Start-Sleep -Seconds 2
+            }
+          }
           $cloudflaredSignature = Get-AuthenticodeSignature -LiteralPath $cloudflaredPath
           if ($cloudflaredSignature.Status -ne [Management.Automation.SignatureStatus]::Valid) {
             throw "cloudflared Authenticode signature is invalid: $($cloudflaredSignature.StatusMessage)"
           }
-
-          "AMD64_ARCHIVE=$archivePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
-          "AMD64_CHECKSUM=$checksumPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
           "AMD64_CLOUDFLARED=$cloudflaredPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
 
       - name: Test Quick Tunnel restart lifecycle
