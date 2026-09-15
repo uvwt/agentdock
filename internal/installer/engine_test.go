@@ -1505,6 +1505,27 @@ func TestExistingVersionReadsCommittedGenerationPointer(t *testing.T) {
 	}
 }
 
+func TestShouldStartTunnelInTransaction(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		req  Request
+		want bool
+	}{
+		{name: "quick direct", req: Request{StartService: true, TunnelMode: "quick"}, want: true},
+		{name: "named direct", req: Request{StartService: true, TunnelMode: "named"}, want: true},
+		{name: "deferred quick belongs to adapter", req: Request{StartService: true, TunnelMode: "quick", DeferCommit: true}, want: false},
+		{name: "deferred named belongs to adapter", req: Request{StartService: true, TunnelMode: "named", DeferCommit: true}, want: false},
+		{name: "core only", req: Request{StartService: true, TunnelMode: "none"}, want: false},
+		{name: "service not started", req: Request{TunnelMode: "quick"}, want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := shouldStartTunnelInTransaction(test.req); got != test.want {
+				t.Fatalf("shouldStartTunnelInTransaction()=%v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
 func TestWaitNamedTunnelReadyRequiresRunningProcess(t *testing.T) {
 	root := t.TempDir()
 	request := Request{

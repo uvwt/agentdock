@@ -82,15 +82,12 @@ final class InstallerRunner {
 
             try await service.start()
             if request.mode != .local {
-                try service.setTunnelEnabled(true)
-                if !(await service.waitForTunnelProcess()) {
-                    // App Bundle 被原子替换后，SMAppService 可能仍显示已注册，
-                    // 但实际的 Tunnel job 没有随之启动。对 Quick Tunnel 也
-                    // 需要与 Named Tunnel 相同的自愈，否则会一直等到 URL 超时。
-                    try service.restartTunnel()
-                    guard await service.waitForTunnelProcess() else {
-                        throw ValidationError(L10n.text("AgentDock Tunnel was re-registered, but cloudflared did not run reliably."))
-                    }
+                do {
+                    try service.setTunnelEnabled(true)
+                } catch {
+                    // Core health is the install boundary. Tunnel/public access depends on
+                    // ServiceManagement policy and external network state, so keep it best-effort.
+                    NSLog("AgentDock Tunnel registration did not complete during install: %@", error.localizedDescription)
                 }
             }
 
@@ -101,11 +98,9 @@ final class InstallerRunner {
             case .named:
                 publicURL = serverURL ?? ""
             case .quick:
-                publicURL = try await waitForQuickTunnelURL(timeout: 35)
-                guard let configuration = ServiceConfiguration.load(from: paths.environment),
-                      await service.waitForHealth(configuration: configuration) else {
-                    throw ValidationError(L10n.text("A temporary public address was generated, but AgentDock Core did not recover to a healthy state."))
-                }
+                // Quick Tunnel readiness is asynchronous. Do not hold install completion open for
+                // Cloudflare provisioning; the control panel will expose the URL when it appears.
+                publicURL = currentQuickTunnelURL()
             }
 
             let finalConfiguration = ServiceConfiguration.load(from: paths.environment)
@@ -338,21 +333,15 @@ final class InstallerRunner {
         return Data(text.utf8)
     }
 
-    private func waitForQuickTunnelURL(timeout: TimeInterval) async throws -> String {
-        try await service.runInBackground {
-            let deadline = Date().addingTimeInterval(timeout)
-            while Date() < deadline {
-                if let data = try? Data(contentsOf: self.paths.quickTunnelURL),
-                   let value = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                   let url = URL(string: value),
-                   url.scheme == "https",
-                   url.host?.hasSuffix(".trycloudflare.com") == true {
-                    return value
-                }
-                Thread.sleep(forTimeInterval: 0.25)
-            }
-            throw ValidationError(L10n.text("cloudflared did not generate a temporary public address before the timeout."))
+    private func currentQuickTunnelURL() -> String {
+        guard let data = try? Data(contentsOf: paths.quickTunnelURL),
+              let value = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              let url = URL(string: value),
+              url.scheme == "https",
+              url.host?.hasSuffix(".trycloudflare.com") == true else {
+            return ""
         }
+        return value
     }
 
     private func validPort(_ value: String?) -> Int? {

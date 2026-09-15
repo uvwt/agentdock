@@ -64,12 +64,15 @@ type iDispatch struct {
 	lpVtbl *iDispatchVtbl
 }
 
+// Windows x64 VARIANT 的 value union 必须保留 16 字节，因为 BRECORD 含两个指针；
+// 因此完整结构为 24 字节，不能按只容纳 int64 的 16 字节结构传给 COM。
 type variant struct {
 	VT         uint16
 	wReserved1 uint16
 	wReserved2 uint16
 	wReserved3 uint16
 	Val        int64
+	unionTail  int64
 }
 
 type dispParams struct {

@@ -138,6 +138,7 @@ func TestWindowsControlPanelCanSwitchCorePrivilegeMode(t *testing.T) {
 			"prepare-elevated",
 			"prepare-standard",
 			"RunTaskAdminTransitionAsync(\"restore\"",
+			`"--launcher-path", trayBinary`,
 			"WritePrivilegeModeAsync",
 			"SetStandardCoreStartup",
 			"snapshot.CoreStartupEnabled",
@@ -475,5 +476,33 @@ func TestWindowsControlPanelResolvesRuntimeRootFromExecutableDirectory(t *testin
 	}
 	if strings.Contains(service, "Directory.GetParent(baseDirectory)?.FullName") {
 		t.Fatal("RuntimeService must not resolve the parent from a trailing AppContext.BaseDirectory string")
+	}
+}
+
+func TestWindowsBackgroundTrayStartupDoesNotShowExistingControlPanel(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml.cs"))
+	if err != nil {
+		t.Fatalf("read App.xaml.cs: %v", err)
+	}
+	app := strings.ReplaceAll(string(data), "\r\n", "\n")
+	backgroundDeclaration := `var background = e.Args.Any(arg => string.Equals(arg, "--background", StringComparison.OrdinalIgnoreCase));`
+	backgroundIndex := strings.Index(app, backgroundDeclaration)
+	singletonIndex := strings.Index(app, "if (!createdNew)")
+	if backgroundIndex < 0 || singletonIndex < 0 || backgroundIndex > singletonIndex {
+		t.Fatal("Windows tray must resolve --background before handling the singleton instance")
+	}
+	branchEnd := strings.Index(app[singletonIndex:], "Shutdown();")
+	if branchEnd < 0 {
+		t.Fatal("Windows tray singleton branch is incomplete")
+	}
+	singletonBranch := app[singletonIndex : singletonIndex+branchEnd]
+	if !strings.Contains(singletonBranch, "if (!background)") || !strings.Contains(singletonBranch, "existingEvent.Set();") {
+		t.Fatal("only an explicit foreground launch may ask an existing tray instance to show the control panel")
+	}
+	if strings.Count(app, backgroundDeclaration) != 1 {
+		t.Fatal("Windows tray should have one authoritative --background startup decision")
+	}
+	if !strings.Contains(app, "if (!background)\n        {\n            ShowControlPanel();") {
+		t.Fatal("an explicit foreground launch must still show the control panel")
 	}
 }

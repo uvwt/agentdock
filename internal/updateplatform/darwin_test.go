@@ -79,13 +79,9 @@ func TestDarwinVerifyTrialTreatsRequiresApprovalAsWarning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VerifyTrial() error = %v", err)
 	}
-	for _, want := range []string{
-		"AgentDock Core requires background-item approval in System Settings.",
-		"AgentDock Tunnel requires background-item approval in System Settings.",
-	} {
-		if !slices.Contains(warnings, want) {
-			t.Fatalf("VerifyTrial() warnings = %q, want %q", warnings, want)
-		}
+	want := []string{"AgentDock Core requires background-item approval in System Settings."}
+	if !slices.Equal(warnings, want) {
+		t.Fatalf("VerifyTrial() warnings = %q, want only Core warning %q", warnings, want)
 	}
 }
 
@@ -114,7 +110,7 @@ func TestMacOSDesignatedRequirementClassification(t *testing.T) {
 	}
 }
 
-func TestDarwinVerifyTrialTreatsUnavailableTunnelAsWarning(t *testing.T) {
+func TestDarwinVerifyTrialDoesNotWarnForUnavailableTunnel(t *testing.T) {
 	root := t.TempDir()
 	driver, err := NewDarwinDriver(root)
 	if err != nil {
@@ -146,9 +142,8 @@ func TestDarwinVerifyTrialTreatsUnavailableTunnelAsWarning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VerifyTrial() error = %v", err)
 	}
-	want := "AgentDock Tunnel registration was not ready after update: unavailable"
-	if !slices.Contains(warnings, want) {
-		t.Fatalf("VerifyTrial() warnings = %q, want %q", warnings, want)
+	if len(warnings) != 0 {
+		t.Fatalf("VerifyTrial() warnings = %q, Tunnel/public readiness must not decorate update completion", warnings)
 	}
 }
 

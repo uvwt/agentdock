@@ -446,7 +446,7 @@ internal static class TaskAdminService
 
         dynamic action = definition.Actions.Create(TaskActionExec);
         action.Path = Path.GetFullPath(request.LauncherPath);
-        action.Arguments = $"service launch-core --runtime-root \"{Path.GetFullPath(request.RuntimeRoot)}\"";
+        action.Arguments = $"--task-core-host --runtime-root \"{Path.GetFullPath(request.RuntimeRoot)}\"";
 
         dynamic task = root.RegisterTaskDefinition(
             request.TaskName,

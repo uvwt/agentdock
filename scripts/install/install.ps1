@@ -50,7 +50,8 @@ function Invoke-SetupRuntimeProcess {
     # while Setup keeps RedirectionGuard enabled for install-time filesystem work.
     & $setupRuntimeLauncherPath `
         -FilePath $FilePath `
-        -AgentDockBinary $destinationBinary `
+        -AgentDockBinary $sourceBinary `
+        -HiddenHostBinary $destinationTrayBinary `
         -Arguments $Arguments `
         -WaitForExit:$WaitForExit
 }
@@ -900,69 +901,6 @@ function Wait-AgentDockHealth {
     throw "AgentDock was installed, but health check failed at $healthUrl"
 }
 
-function Wait-CloudflaredRunning {
-    param([string] $BinaryPath)
-
-    $deadline = [DateTime]::UtcNow.AddSeconds(20)
-    do {
-        Start-Sleep -Milliseconds 500
-        if (@(Get-CloudflaredProcesses -BinaryPath $BinaryPath).Count -gt 0) {
-            return
-        }
-    } while ([DateTime]::UtcNow -lt $deadline)
-    throw "cloudflared did not stay running: $BinaryPath"
-}
-
-function Wait-QuickTunnelUrl {
-    param([string[]] $LogPaths)
-
-    $deadline = [DateTime]::UtcNow.AddSeconds(30)
-    do {
-        Start-Sleep -Milliseconds 500
-        foreach ($logPath in $LogPaths) {
-            try {
-                if (Test-Path -LiteralPath $logPath -PathType Leaf) {
-                    $content = Get-Content -LiteralPath $logPath -Raw -ErrorAction Stop
-                    # Provisioning failures also print the trycloudflare API URL; require the creation marker first.
-                    $match = [Regex]::Match(
-                        $content,
-                        '(?s)Your quick Tunnel has been created! Visit it at.*?(https://[A-Za-z0-9-]+\.trycloudflare\.com)'
-                    )
-                    if ($match.Success) {
-                        return $match.Groups[1].Value
-                    }
-                }
-            } catch {
-            }
-        }
-    } while ([DateTime]::UtcNow -lt $deadline)
-    throw "cloudflared started, but no temporary trycloudflare.com URL appeared in: $($LogPaths -join ', ')"
-}
-
-function Wait-QuickTunnelReady {
-    param(
-        [string] $Path,
-        [string] $ExpectedUrl
-    )
-
-    $deadline = [DateTime]::UtcNow.AddSeconds(35)
-    do {
-        Start-Sleep -Milliseconds 500
-        try {
-            if ((Test-Path -LiteralPath $Path -PathType Leaf) -and
-                [string]::Equals(
-                    [IO.File]::ReadAllText($Path).Trim(),
-                    $ExpectedUrl,
-                    [StringComparison]::OrdinalIgnoreCase
-                )) {
-                return
-            }
-        } catch {
-        }
-    } while ([DateTime]::UtcNow -lt $deadline)
-    throw "Quick Tunnel generated $ExpectedUrl, but AgentDock did not finish adopting it."
-}
-
 function Backup-FileState {
     param(
         [string] $Path,
@@ -1565,7 +1503,7 @@ try {
             -Action $taskAction `
             -BackupDirectory $taskBackupDirectory `
             -AdminLauncherPath $sourceTrayBinary `
-            -LauncherPath $destinationBinary `
+            -LauncherPath $destinationTrayBinary `
             -RuntimeRoot $runtimeDir `
             -TaskUser $taskUser
         if (-not $taskActionResult.Started) {
@@ -1877,10 +1815,9 @@ exit `$LASTEXITCODE
         if ($engineOwnsActivation -and $RegisterStartup) {
             $healthStatus = 'healthy'
             if ($resolvedTunnelMode -eq 'quick') {
+                # Tunnel/public readiness is a soft dependency. Record a URL only if it is already
+                # available; the control panel will show eventual readiness after install/update.
                 $publicUrl = Read-TextFile -Path $quickTunnelUrlPath
-                if ([string]::IsNullOrWhiteSpace($publicUrl)) {
-                    throw 'Installer Engine finished trial without a Quick Tunnel public address.'
-                }
             } elseif ($resolvedTunnelMode -eq 'named') {
                 $publicUrl = $ServerUrl
             }
@@ -1901,29 +1838,10 @@ exit `$LASTEXITCODE
             Wait-AgentDockHealth -HealthPort $Port
             $healthStatus = 'healthy'
 
-            if ($resolvedTunnelMode -ne 'none') {
-                if ($InstallChannel -eq 'setup') {
-                    Invoke-SetupRuntimeProcess `
-                        -FilePath $destinationBinary `
-                        -Arguments "tunnel start --runtime-root `"$runtimeDir`"" `
-                        -WaitForExit
-                } else {
-                    & $destinationBinary tunnel start --runtime-root $runtimeDir
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "AgentDock native Tunnel start failed with exit code $LASTEXITCODE."
-                    }
-                }
-
-                if ($resolvedTunnelMode -eq 'quick') {
-                    $publicUrl = Read-TextFile -Path $quickTunnelUrlPath
-                    if ([string]::IsNullOrWhiteSpace($publicUrl)) {
-                        $publicUrl = Wait-QuickTunnelUrl -LogPaths @($cloudflaredStdoutLogPath, $cloudflaredStderrLogPath)
-                    }
-                    Wait-QuickTunnelReady -Path $quickTunnelUrlPath -ExpectedUrl $publicUrl
-                } else {
-                    $publicUrl = $ServerUrl
-                    Wait-CloudflaredRunning -BinaryPath $cloudflaredBinary
-                }
+            if ($resolvedTunnelMode -eq 'quick') {
+                $publicUrl = Read-TextFile -Path $quickTunnelUrlPath
+            } elseif ($resolvedTunnelMode -eq 'named') {
+                $publicUrl = $ServerUrl
             }
         } elseif ($mustRestartExistingProcess) {
             if ($InstallChannel -eq 'setup') {
@@ -1974,6 +1892,33 @@ exit `$LASTEXITCODE
             throw 'Installer Engine failed to commit the install transaction.'
         }
         $engineCommitted = $true
+    }
+
+    # Core is authoritative for install/update success. Start Tunnel only after commit and do it
+    # asynchronously through the existing WinExe startup proxy so Cloudflare/network readiness
+    # cannot hold the transaction or its success UI open.
+    if ($RegisterStartup -and $resolvedTunnelMode -ne 'none') {
+        try {
+            $tunnelStartupArguments = "--start-tunnel --runtime-root `"$runtimeDir`""
+            if ($InstallChannel -eq 'setup') {
+                Invoke-SetupRuntimeProcess `
+                    -FilePath $destinationTrayBinary `
+                    -Arguments $tunnelStartupArguments
+            } else {
+                Start-Process `
+                    -FilePath $destinationTrayBinary `
+                    -ArgumentList $tunnelStartupArguments `
+                    -WindowStyle Hidden | Out-Null
+            }
+        } catch {
+            # Tunnel/public readiness is shown by the control panel and retained in Tunnel logs.
+            # Do not turn this soft dependency into an install/update warning or rollback.
+        }
+        if ($resolvedTunnelMode -eq 'quick') {
+            $publicUrl = Read-TextFile -Path $quickTunnelUrlPath
+        } elseif ($resolvedTunnelMode -eq 'named') {
+            $publicUrl = $ServerUrl
+        }
     }
 
     $taskTransactionCommitted = $taskTransactionStarted
@@ -2171,22 +2116,30 @@ exit `$LASTEXITCODE
             Wait-AgentDockHealth -HealthPort $Port
         }
         if ($cloudflaredProcessWasRunning) {
-            if (Test-Path -LiteralPath $destinationBinary -PathType Leaf) {
-                # Native tunnel start has authoritative Quick/Named readiness. Wait for it before
-                # abandon so a regenerated Quick URL is projected into the final rollback result.
-                if ($InstallChannel -eq 'setup') {
-                    Invoke-SetupRuntimeProcess `
-                        -FilePath $destinationBinary `
-                        -Arguments "tunnel start --runtime-root `"$runtimeDir`"" `
-                        -WaitForExit
-                } else {
-                    & $destinationBinary tunnel start --runtime-root $runtimeDir
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "AgentDock rollback Tunnel start failed with exit code $LASTEXITCODE."
+            # Rollback success is anchored to the restored source Core + local health. Tunnel/public
+            # recovery is best-effort and must not turn Cloudflare/network delay into rollback_failed.
+            if (Test-Path -LiteralPath $destinationTrayBinary -PathType Leaf) {
+                try {
+                    $rollbackTunnelArguments = "--start-tunnel --runtime-root `"$runtimeDir`""
+                    if ($InstallChannel -eq 'setup') {
+                        Invoke-SetupRuntimeProcess `
+                            -FilePath $destinationTrayBinary `
+                            -Arguments $rollbackTunnelArguments
+                    } else {
+                        Start-Process `
+                            -FilePath $destinationTrayBinary `
+                            -ArgumentList $rollbackTunnelArguments `
+                            -WindowStyle Hidden | Out-Null
                     }
+                } catch {
+                    # Tunnel diagnostics remain available through panel/runtime logs.
                 }
             } elseif (Test-Path -LiteralPath $cloudflaredLauncherPath -PathType Leaf) {
-                Start-CloudflaredLauncher -LauncherPath $cloudflaredLauncherPath
+                try {
+                    Start-CloudflaredLauncher -LauncherPath $cloudflaredLauncherPath
+                } catch {
+                    # Legacy launcher recovery is also a soft dependency.
+                }
             }
         }
         if ($trayProcessWasRunning -and (Test-Path -LiteralPath $destinationTrayBinary -PathType Leaf)) {

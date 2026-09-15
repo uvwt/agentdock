@@ -124,16 +124,9 @@ func (driver *DarwinDriver) VerifyTrial(ctx context.Context, transaction updatee
 			return nil, fmt.Errorf("target Core registration did not become usable: %s", handoff.CoreRegistration)
 		}
 	}
-	if plan.TunnelEnabled {
-		switch handoff.TunnelRegistration {
-		case "requires_approval":
-			warnings = append(warnings, "AgentDock Tunnel requires background-item approval in System Settings.")
-		case "enabled":
-			// Tunnel readiness depends on credentials/network/external Cloudflare state and is intentionally soft.
-		default:
-			warnings = append(warnings, "AgentDock Tunnel registration was not ready after update: "+handoff.TunnelRegistration)
-		}
-	}
+	// Tunnel/public access is intentionally outside the update result boundary. Handoff records
+	// its registration state for recovery/diagnostics, but Cloudflare/network/background-item
+	// readiness must not decorate or block a successful Core update.
 	return warnings, nil
 }
 

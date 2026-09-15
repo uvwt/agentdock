@@ -160,13 +160,14 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         updateWindowHeight()
     }
 
-    func setUpdateInProgress(_ inProgress: Bool) {
+    func setUpdateInProgress(_ inProgress: Bool, status: String? = nil) {
         isUpdateInProgress = inProgress
         setBusy(isBusy)
         advancedSettings?.setUpdateInProgress(inProgress)
         if inProgress {
-            showStatus(L10n.text("Updating AgentDock…"), isError: false)
-        } else if statusLabel.stringValue == L10n.text("Updating AgentDock…") {
+            showStatus(status ?? L10n.text("Updating AgentDock…"), isError: false)
+        } else if statusLabel.stringValue == L10n.text("Updating AgentDock…") ||
+                    statusLabel.stringValue == L10n.text("Checking for updates…") {
             statusLabel.isHidden = true
         }
     }

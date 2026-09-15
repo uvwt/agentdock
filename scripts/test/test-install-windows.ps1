@@ -120,7 +120,7 @@ foreach ($required in @(
     '--user-sid',
     '--user-name',
     '-AdminLauncherPath $sourceTrayBinary',
-    '-LauncherPath $destinationBinary',
+    '-LauncherPath $destinationTrayBinary',
     '$effectivePrivilegeMode -eq ''elevated'' -and -not $taskState.Exists',
     '$installWarningCode = ''elevated-mode-fallback''',
     '$installWarningCode = "$installWarningCode,runtime-launch-deferred"',
@@ -144,8 +144,9 @@ foreach ($required in @(
     'Initialize-OAuthCredentials',
     'named-server-url.txt',
     'cloudflared-windows-$Architecture.exe',
-    'Wait-QuickTunnelUrl -LogPaths @($cloudflaredStdoutLogPath, $cloudflaredStderrLogPath)',
-    'Wait-QuickTunnelReady -Path $quickTunnelUrlPath -ExpectedUrl $publicUrl',
+    '$tunnelStartupArguments = "--start-tunnel --runtime-root',
+    '-FilePath $destinationTrayBinary',
+    '-Arguments $tunnelStartupArguments',
     'quick-tunnel-url.txt',
     '& ''$escapedBinaryPath'' tunnel launch --runtime-root ''$escapedRuntimeDir''',
     'Write-ProtectedText -Path $PasswordPath',
@@ -178,6 +179,17 @@ foreach ($forbidden in @(
 )) {
     if ($content.Contains($forbidden)) {
         throw "$InstallerPath must route current-user startup writes through Set-RunValue instead of: $forbidden"
+    }
+}
+foreach ($forbidden in @(
+    'Wait-CloudflaredRunning',
+    'Wait-QuickTunnelUrl',
+    'Wait-QuickTunnelReady',
+    'Installer Engine finished trial without a Quick Tunnel public address.',
+    '& $destinationBinary tunnel start --runtime-root $runtimeDir'
+)) {
+    if ($content.Contains($forbidden)) {
+        throw "$InstallerPath must not gate install/update/rollback completion on Tunnel/public readiness: $forbidden"
     }
 }
 $setRunValueCallCount = [regex]::Matches(
@@ -522,7 +534,7 @@ foreach ($required in @(
     'EnsureSameWindowsUser(request.UserSid)',
     'RegisterTaskDefinition(',
     'SetSecurityDescriptor(',
-    'service launch-core --runtime-root',
+    '--task-core-host --runtime-root',
     'prepare-elevated',
     'prepare-standard',
     'restore',
