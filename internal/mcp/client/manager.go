@@ -277,6 +277,35 @@ func (m *Manager) Refresh(ctx context.Context, name string) (ServerSummary, []To
 }
 
 func (m *Manager) Search(ctx context.Context, query, server string, limit int) ([]ToolSummary, error) {
+	return m.SearchFiltered(ctx, query, server, limit, nil)
+}
+
+// ListTools resolves one enabled server and returns its complete lazy-loaded
+// tool index. Heavy plugins use this only after their first-level description
+// has been selected, so MCP tool descriptions stay out of the root context.
+func (m *Manager) ListTools(ctx context.Context, server string) ([]ToolSummary, error) {
+	if err := m.syncRegistry(); err != nil {
+		return nil, err
+	}
+	server = strings.TrimSpace(server)
+	configs, err := m.searchServers(server)
+	if err != nil {
+		return nil, err
+	}
+	if len(configs) != 1 {
+		return nil, newError("MCP_SERVER_REQUIRED", "one dynamic MCP server is required", false, map[string]any{"server": server}, nil)
+	}
+	tools, err := m.ensureTools(ctx, configs[0].Name)
+	if err != nil {
+		return nil, err
+	}
+	return summarizeTools(configs[0].Name, tools), nil
+}
+
+// SearchFiltered applies an optional server predicate before any connection or
+// tools/list request. It lets higher-level capability containers hide members
+// until their container is explicitly loaded without changing MCP persistence.
+func (m *Manager) SearchFiltered(ctx context.Context, query, server string, limit int, allow func(string) bool) ([]ToolSummary, error) {
 	if err := m.syncRegistry(); err != nil {
 		return nil, err
 	}
@@ -295,6 +324,18 @@ func (m *Manager) Search(ctx context.Context, query, server string, limit int) (
 	configs, err := m.searchServers(server)
 	if err != nil {
 		return nil, err
+	}
+	if allow != nil {
+		filtered := configs[:0]
+		for _, cfg := range configs {
+			if allow(cfg.Name) {
+				filtered = append(filtered, cfg)
+			}
+		}
+		configs = filtered
+		if server != "" && len(configs) == 0 {
+			return nil, newError("MCP_SERVER_HIDDEN", "dynamic MCP server is hidden by its capability container", false, map[string]any{"server": server}, nil)
+		}
 	}
 	type scoredTool struct {
 		score int

@@ -232,3 +232,63 @@ func TestWindowsACPSettingsUseSinglePageRowsDefaultDropdownAndCustomDialog(t *te
 		t.Fatal("Windows basic settings must place MCP Apps UI above the service port")
 	}
 }
+
+func TestWindowsControlPanelManagesHeavyPluginsWithoutDuplicateTopLevelRows(t *testing.T) {
+	root := filepath.Join("..", "..", "desktop", "windows", "control-panel")
+	checks := map[string][]string{
+		"MainWindow.xaml": {
+			`Header="{local:Loc Capabilities}"`,
+			`Click="AddPluginButton_Click"`,
+			`x:Name="PluginListPanel"`,
+			`x:Name="StandaloneSkillListPanel"`,
+			`x:Name="StandaloneMcpListPanel"`,
+		},
+		"MainWindow.Capabilities.cs": {
+			`SetPluginEnabledAsync`,
+			`SetSkillEnabledAsync`,
+			`SetMcpEnabledAsync`,
+			`ownedSkills.Contains(skill.Identifier)`,
+			`ownedMcpServers.Contains(server.Name)`,
+			`ShowPluginDialog`,
+		},
+		filepath.Join("Services", "RuntimeService.cs"): {
+			`"/internal/runtime/plugins"`,
+			`"/internal/runtime/skills"`,
+			`"/internal/runtime/mcp"`,
+		},
+		filepath.Join("Models", "RuntimeModels.cs"): {
+			`class PluginCapabilityInfo`,
+			`JsonPropertyName("mcp_servers")`,
+			`class CapabilityInventory`,
+		},
+	}
+
+	for relativePath, wants := range checks {
+		data, err := os.ReadFile(filepath.Join(root, relativePath))
+		if err != nil {
+			t.Fatalf("read %s: %v", relativePath, err)
+		}
+		content := string(data)
+		for _, want := range wants {
+			if !strings.Contains(content, want) {
+				t.Fatalf("Windows heavy-plugin UI contract missing %q in %s", want, relativePath)
+			}
+		}
+	}
+
+	for _, resourceFile := range []string{
+		filepath.Join(root, "Resources", "UiStrings.resx"),
+		filepath.Join(root, "Resources", "UiStrings.zh-CN.resx"),
+	} {
+		data, err := os.ReadFile(resourceFile)
+		if err != nil {
+			t.Fatalf("read %s: %v", resourceFile, err)
+		}
+		content := string(data)
+		for _, key := range []string{"Capabilities", "CapabilitiesDescription", "AddPlugin", "PluginMemberSelectionHelp"} {
+			if !strings.Contains(content, `name="`+key+`"`) {
+				t.Fatalf("Windows heavy-plugin localization missing %q in %s", key, resourceFile)
+			}
+		}
+	}
+}

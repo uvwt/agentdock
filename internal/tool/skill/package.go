@@ -56,6 +56,8 @@ func (s *Service) Package(ctx context.Context, request PackageRequest) (Result, 
 		return s.skillUninstall(ctx, input)
 	case "activate":
 		return s.skillActivate(ctx, input)
+	case "enable", "disable":
+		return s.skillSetEnabled(ctx, input, input.Action == "enable")
 	case "rollback":
 		return s.skillRollback(ctx, input)
 	case "env_set", "env_unset", "env_list":
@@ -67,7 +69,7 @@ func (s *Service) Package(ctx context.Context, request PackageRequest) (Result, 
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported skill_package action", "validation", map[string]any{
 			"action":  input.Action,
-			"allowed": []string{"validate", "install", "uninstall", "activate", "rollback", "env_set", "env_unset", "env_list"},
+			"allowed": []string{"validate", "install", "uninstall", "activate", "enable", "disable", "rollback", "env_set", "env_unset", "env_list"},
 		})
 	}
 }
@@ -100,6 +102,7 @@ func (s *Service) list() (Result, error) {
 			"skill":          name,
 			"versions":       versions,
 			"active_version": selection.ActiveVersion,
+			"enabled":        !selection.Disabled,
 			"bundled":        isBundled,
 			"updated_at":     selection.UpdatedAt,
 		})
@@ -134,6 +137,7 @@ func (s *Service) inspect(request InspectRequest) (Result, error) {
 		"skill":     skill,
 		"versions":  versions,
 		"selection": selection,
+		"enabled":   !selection.Disabled,
 		"bundled":   bundled,
 	}
 	if selected == "" {
@@ -224,6 +228,22 @@ func (s *Service) skillActivate(ctx context.Context, input skillToolInput) (Resu
 		return nil, skillToolError(err)
 	}
 	return Result{"action": "activate", "result": result}, nil
+}
+
+func (s *Service) skillSetEnabled(ctx context.Context, input skillToolInput, enabled bool) (Result, error) {
+	skill, err := input.requiredSkill()
+	if err != nil {
+		return nil, err
+	}
+	selection, err := s.state.SetEnabled(ctx, skill, enabled)
+	if err != nil {
+		return nil, skillToolError(err)
+	}
+	action := "disable"
+	if enabled {
+		action = "enable"
+	}
+	return Result{"action": action, "skill": skill, "enabled": !selection.Disabled, "selection": selection}, nil
 }
 
 func (s *Service) skillRollback(ctx context.Context, input skillToolInput) (Result, error) {

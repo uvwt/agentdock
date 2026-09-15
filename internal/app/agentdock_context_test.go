@@ -400,7 +400,7 @@ spec:
 		t.Fatal(err)
 	}
 
-	items, err := rt.skillCapabilityIndex()
+	items, err := rt.skillCapabilityIndex(false)
 	if err != nil {
 		t.Fatalf("skillCapabilityIndex error = %v", err)
 	}

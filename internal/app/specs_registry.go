@@ -11,6 +11,7 @@ func buildToolSpecs() []ToolSpec {
 	specs = append(specs, evolutionToolSpecs()...)
 	specs = append(specs, acpToolSpecs()...)
 	specs = append(specs, workflowToolSpecs()...)
+	specs = append(specs, pluginToolSpecs()...)
 	specs = append(specs, skillToolSpecs()...)
 	specs = append(specs, dynamicMCPToolSpecs()...)
 	specs = append(specs, imageToolSpecs()...)

@@ -71,6 +71,7 @@ public partial class MainWindow : Window
             _bearerToken = _runtime.ReadBearerToken();
             _oauthPassword = _runtime.ReadOAuthPassword();
             ApplySnapshot(snapshot);
+            await RefreshCapabilitiesAsync(snapshot.Healthy, showErrors: false);
             FooterStatusText.Text = UiText.Format("LastRefresh", snapshot.CheckedAt);
             await AutoTestPublicAsync(snapshot);
         }

@@ -14,6 +14,7 @@ type Runtime interface {
 	RuntimeStatus() app.Result
 	RuntimeSkills() (app.Result, error)
 	RuntimeSkill(skill string) (app.Result, error)
+	RuntimeSkillManage(context.Context, map[string]any) (app.Result, error)
 	RuntimeSkillFiles(skill string) (app.Result, error)
 	RuntimeSkillFile(skill, path string) (app.Result, error)
 	RuntimeTasks(status string, limit int) (app.Result, error)
@@ -23,6 +24,9 @@ type Runtime interface {
 	RuntimeMCPServers(context.Context) (app.Result, error)
 	RuntimeMCPServer(context.Context, string) (app.Result, error)
 	RuntimeMCPManage(context.Context, map[string]any) (app.Result, error)
+	RuntimePlugins(context.Context) (app.Result, error)
+	RuntimePlugin(context.Context, string) (app.Result, error)
+	RuntimePluginManage(context.Context, map[string]any) (app.Result, error)
 	RuntimeEvolve(context.Context, map[string]any) (app.Result, error)
 }
 

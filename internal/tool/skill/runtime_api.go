@@ -11,6 +11,7 @@ type CapabilityItem struct {
 	Description string
 	File        string
 	Bundled     bool
+	Enabled     bool
 }
 
 func (s *Service) CapabilityItems() ([]CapabilityItem, error) {
@@ -18,28 +19,47 @@ func (s *Service) CapabilityItems() ([]CapabilityItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	bundledNames, err := s.state.BundledSkills()
-	if err != nil {
-		return nil, err
-	}
-	bundled := make(map[string]struct{}, len(bundledNames))
-	for _, name := range bundledNames {
-		bundled[name] = struct{}{}
-	}
 	items := make([]CapabilityItem, 0, len(names))
 	for _, name := range names {
-		packageDir, resolveErr := s.state.Resolve(name, "")
-		if resolveErr != nil || skills.ValidatePackage(packageDir) != nil {
+		item, found, itemErr := s.CapabilityItem(name)
+		if itemErr != nil {
+			return nil, itemErr
+		}
+		if !found || !item.Enabled {
 			continue
 		}
-		doc, loadErr := skills.LoadSkillDocument(packageDir)
-		if loadErr != nil {
+		if err := s.ensureAvailable(name); err != nil {
 			continue
 		}
-		_, isBundled := bundled[name]
-		items = append(items, CapabilityItem{Name: name, Description: strings.TrimSpace(doc.Description), File: "skill://" + name + "/SKILL.md", Bundled: isBundled})
+		items = append(items, item)
 	}
 	return items, nil
+}
+
+// CapabilityItem returns one installed document Skill without applying the
+// plugin-level overlay. plugin_load calls it only after validating the plugin.
+func (s *Service) CapabilityItem(name string) (CapabilityItem, bool, error) {
+	name = strings.TrimSpace(name)
+	packageDir, resolveErr := s.state.Resolve(name, "")
+	if resolveErr != nil || skills.ValidatePackage(packageDir) != nil {
+		return CapabilityItem{}, false, nil
+	}
+	doc, loadErr := skills.LoadSkillDocument(packageDir)
+	if loadErr != nil {
+		return CapabilityItem{}, false, nil
+	}
+	bundled, err := s.state.IsBundled(name)
+	if err != nil {
+		return CapabilityItem{}, false, err
+	}
+	enabled, err := s.baseEnabled(name)
+	if err != nil {
+		return CapabilityItem{}, false, err
+	}
+	return CapabilityItem{
+		Name: name, Description: strings.TrimSpace(doc.Description), File: "skill://" + name + "/SKILL.md",
+		Bundled: bundled, Enabled: enabled,
+	}, true, nil
 }
 
 func (s *Service) RuntimeSkills() (Result, error) {
@@ -69,6 +89,11 @@ func (s *Service) RuntimeSkills() (Result, error) {
 		item["name"] = document.Name
 		item["description"] = document.Description
 		item["file_count"] = len(files)
+		selection, selectionErr := s.state.Snapshot(skill)
+		if selectionErr != nil {
+			return nil, skillToolError(selectionErr)
+		}
+		item["enabled"] = !selection.Disabled
 	}
 	result["source"] = runtimeAPISource
 	return result, nil

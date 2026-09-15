@@ -7,6 +7,8 @@ import (
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
 	toolmcp "github.com/uvwt/agentdock/internal/tool/mcp"
+	toolplugin "github.com/uvwt/agentdock/internal/tool/plugin"
+	toolskill "github.com/uvwt/agentdock/internal/tool/skill"
 )
 
 const runtimeAPISource = "agentdock-api"
@@ -36,6 +38,23 @@ func (r *Runtime) RuntimeSkills() (Result, error) {
 
 func (r *Runtime) RuntimeSkill(skill string) (Result, error) {
 	return r.skills.RuntimeSkill(skill)
+}
+
+func (r *Runtime) RuntimeSkillManage(ctx context.Context, args map[string]any) (Result, error) {
+	if err := r.validateToolArguments(toolskill.ToolPackage, args); err != nil {
+		return nil, err
+	}
+	var request toolskill.PackageRequest
+	if err := decodeToolInput(toolskill.ToolPackage, args, &request); err != nil {
+		return nil, err
+	}
+	result, err := r.skills.Package(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	result["ok"] = true
+	result["source"] = runtimeAPISource
+	return result, nil
 }
 
 func (r *Runtime) RuntimeSkillFiles(skill string) (Result, error) {
@@ -77,6 +96,35 @@ func (r *Runtime) RuntimeMCPServer(ctx context.Context, name string) (Result, er
 
 func (r *Runtime) RuntimeMCPManage(ctx context.Context, args map[string]any) (Result, error) {
 	return r.runtimeMCPManage(ctx, args)
+}
+
+func (r *Runtime) RuntimePlugins(ctx context.Context) (Result, error) {
+	return r.runtimePluginManage(ctx, map[string]any{"action": "list"})
+}
+
+func (r *Runtime) RuntimePlugin(ctx context.Context, name string) (Result, error) {
+	return r.runtimePluginManage(ctx, map[string]any{"action": "inspect", "name": name})
+}
+
+func (r *Runtime) RuntimePluginManage(ctx context.Context, args map[string]any) (Result, error) {
+	return r.runtimePluginManage(ctx, args)
+}
+
+func (r *Runtime) runtimePluginManage(ctx context.Context, args map[string]any) (Result, error) {
+	if err := r.validateToolArguments(toolplugin.ToolManage, args); err != nil {
+		return nil, err
+	}
+	var request toolplugin.ManageRequest
+	if err := decodeToolInput(toolplugin.ToolManage, args, &request); err != nil {
+		return nil, err
+	}
+	result, err := r.plugins.Manage(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	result["ok"] = true
+	result["source"] = runtimeAPISource
+	return result, nil
 }
 
 func (r *Runtime) runtimeMCPManage(ctx context.Context, args map[string]any) (Result, error) {

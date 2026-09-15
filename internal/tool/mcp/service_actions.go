@@ -83,9 +83,25 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 
 func (s *Service) Search(ctx context.Context, request SearchRequest) (Result, error) {
 	query := request.Query
-	server := request.Server
+	server := strings.TrimSpace(request.Server)
 	limit := boundedInt(intValue(request.Limit, 10), 10, 1, 100)
-	tools, err := s.mcpClients.Search(ctx, query, server, limit)
+	var allow func(string) bool
+	if server == "" {
+		pluginOwned := make(map[string]bool)
+		if s.pluginMembership != nil {
+			for _, item := range s.mcpClients.EnabledIndex() {
+				_, _, owned, lookupErr := s.pluginMembership(item.Name)
+				if lookupErr != nil {
+					return nil, toolErrorCause("PLUGIN_STATE_INVALID", "read MCP plugin ownership", "runtime", map[string]any{"server": item.Name}, lookupErr)
+				}
+				pluginOwned[item.Name] = owned
+			}
+		}
+		allow = func(name string) bool { return !pluginOwned[name] }
+	} else if err := s.ensureAvailable(server); err != nil {
+		return nil, err
+	}
+	tools, err := s.mcpClients.SearchFiltered(ctx, query, server, limit, allow)
 	if err != nil {
 		return nil, dynamicMCPToolError(err)
 	}
@@ -94,6 +110,13 @@ func (s *Service) Search(ctx context.Context, request SearchRequest) (Result, er
 
 func (s *Service) Inspect(ctx context.Context, request InspectRequest) (Result, error) {
 	qualifiedName := request.Name
+	serverName, _, ok := strings.Cut(strings.TrimSpace(qualifiedName), ":")
+	if !ok || strings.TrimSpace(serverName) == "" {
+		return nil, toolErrorDetails("MCP_TOOL_NAME_INVALID", "MCP tool name must use <server>:<tool>", "validation", map[string]any{"tool": qualifiedName})
+	}
+	if err := s.ensureAvailable(serverName); err != nil {
+		return nil, err
+	}
 	server, tool, err := s.mcpClients.InspectTool(ctx, qualifiedName)
 	if err != nil {
 		return nil, dynamicMCPToolError(err)
@@ -117,6 +140,13 @@ func (s *Service) Inspect(ctx context.Context, request InspectRequest) (Result, 
 
 func (s *Service) Call(ctx context.Context, request CallRequest) (Result, error) {
 	qualifiedName := request.Name
+	serverName, _, ok := strings.Cut(strings.TrimSpace(qualifiedName), ":")
+	if !ok || strings.TrimSpace(serverName) == "" {
+		return nil, toolErrorDetails("MCP_TOOL_NAME_INVALID", "MCP tool name must use <server>:<tool>", "validation", map[string]any{"tool": qualifiedName})
+	}
+	if err := s.ensureAvailable(serverName); err != nil {
+		return nil, err
+	}
 	arguments := request.Arguments
 	if arguments == nil {
 		arguments = map[string]any{}

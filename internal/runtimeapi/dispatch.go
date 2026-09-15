@@ -24,7 +24,7 @@ func MethodAllowed(method, path string) bool {
 		_, ok := runtimeTaskID(cleanPath)
 		return ok
 	}
-	return method == http.MethodPost && (cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/mcp" || cleanPath == "/internal/runtime/evolve")
+	return method == http.MethodPost && (cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/skills" || cleanPath == "/internal/runtime/plugins" || cleanPath == "/internal/runtime/mcp" || cleanPath == "/internal/runtime/evolve")
 }
 
 func AllowHeader(path string) string {
@@ -32,7 +32,7 @@ func AllowHeader(path string) string {
 	if _, ok := runtimeTaskID(cleanPath); ok {
 		return "GET, DELETE"
 	}
-	if cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/mcp" {
+	if cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/skills" || cleanPath == "/internal/runtime/plugins" || cleanPath == "/internal/runtime/mcp" {
 		return "GET, POST"
 	}
 	if cleanPath == "/internal/runtime/evolve" {
@@ -56,6 +56,13 @@ func Dispatch(ctx context.Context, runtime Runtime, request Request) (map[string
 	case path == "/internal/runtime/capabilities":
 		refresh := strings.EqualFold(request.queryValue("refresh"), "true") || method == http.MethodPost
 		result, err := runtime.RuntimeCapabilities(ctx, refresh)
+		return map[string]any(result), err
+	case path == "/internal/runtime/skills" && method == http.MethodPost:
+		args, err := decodeRuntimeSkillRequest(request.Body)
+		if err != nil {
+			return nil, err
+		}
+		result, err := runtime.RuntimeSkillManage(ctx, args)
 		return map[string]any(result), err
 	case path == "/internal/runtime/skills":
 		result, err := runtime.RuntimeSkills()
@@ -101,6 +108,23 @@ func Dispatch(ctx context.Context, runtime Runtime, request Request) (map[string
 			return nil, &app.ToolError{Code: "MCP_NAME_REQUIRED", Message: "dynamic MCP server name is required", Category: "validation"}
 		}
 		result, err := runtime.RuntimeMCPServer(ctx, name)
+		return map[string]any(result), err
+	case path == "/internal/runtime/plugins" && method == http.MethodPost:
+		args, err := decodeRuntimePluginRequest(request.Body)
+		if err != nil {
+			return nil, err
+		}
+		result, err := runtime.RuntimePluginManage(ctx, args)
+		return map[string]any(result), err
+	case path == "/internal/runtime/plugins":
+		result, err := runtime.RuntimePlugins(ctx)
+		return map[string]any(result), err
+	case strings.HasPrefix(path, "/internal/runtime/plugins/"):
+		name, ok := runtimePluginName(path)
+		if !ok {
+			return nil, &app.ToolError{Code: "PLUGIN_NAME_REQUIRED", Message: "plugin name is required", Category: "validation"}
+		}
+		result, err := runtime.RuntimePlugin(ctx, name)
 		return map[string]any(result), err
 	case path == "/internal/runtime/tasks":
 		limit, err := parseRuntimeTaskLimit(request.queryValue("limit"))

@@ -152,6 +152,38 @@
         </ScrollViewer>
       </TabItem>
 
+      <TabItem Header="{local:Loc Capabilities}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="18">
+            <TextBlock Text="{local:Loc CapabilitiesDescription}"
+                       Foreground="#667085"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,14" />
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+              <Button Content="{local:Loc AddPlugin}" Click="AddPluginButton_Click" />
+              <Button Content="{local:Loc RefreshCapabilities}" Click="RefreshCapabilitiesButton_Click" />
+            </StackPanel>
+            <TextBlock x:Name="CapabilityStatusText"
+                       Foreground="#475467"
+                       TextWrapping="Wrap"
+                       MinHeight="22"
+                       Margin="0,0,0,8" />
+
+            <GroupBox Header="{local:Loc Plugins}">
+              <StackPanel x:Name="PluginListPanel" />
+            </GroupBox>
+
+            <GroupBox Header="{local:Loc StandaloneSkills}">
+              <StackPanel x:Name="StandaloneSkillListPanel" />
+            </GroupBox>
+
+            <GroupBox Header="{local:Loc StandaloneMcpServers}">
+              <StackPanel x:Name="StandaloneMcpListPanel" />
+            </GroupBox>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
       <TabItem Header="{local:Loc AdvancedSettings}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="18">

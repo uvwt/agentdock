@@ -14,12 +14,18 @@ import (
 type runtimeStub struct {
 	taskStatus string
 	taskLimit  int
+	skillArgs  map[string]any
+	pluginArgs map[string]any
 	mcpArgs    map[string]any
 }
 
-func (r *runtimeStub) RuntimeStatus() app.Result                           { return app.Result{"status": "ok"} }
-func (r *runtimeStub) RuntimeSkills() (app.Result, error)                  { return app.Result{}, nil }
-func (r *runtimeStub) RuntimeSkill(string) (app.Result, error)             { return app.Result{}, nil }
+func (r *runtimeStub) RuntimeStatus() app.Result               { return app.Result{"status": "ok"} }
+func (r *runtimeStub) RuntimeSkills() (app.Result, error)      { return app.Result{}, nil }
+func (r *runtimeStub) RuntimeSkill(string) (app.Result, error) { return app.Result{}, nil }
+func (r *runtimeStub) RuntimeSkillManage(_ context.Context, args map[string]any) (app.Result, error) {
+	r.skillArgs = args
+	return app.Result{"changed": true}, nil
+}
 func (r *runtimeStub) RuntimeSkillFiles(string) (app.Result, error)        { return app.Result{}, nil }
 func (r *runtimeStub) RuntimeSkillFile(string, string) (app.Result, error) { return app.Result{}, nil }
 func (r *runtimeStub) RuntimeTasks(status string, limit int) (app.Result, error) {
@@ -41,6 +47,16 @@ func (r *runtimeStub) RuntimeMCPManage(_ context.Context, args map[string]any) (
 	r.mcpArgs = args
 	return app.Result{"changed": true}, nil
 }
+func (r *runtimeStub) RuntimePlugins(context.Context) (app.Result, error) {
+	return app.Result{}, nil
+}
+func (r *runtimeStub) RuntimePlugin(context.Context, string) (app.Result, error) {
+	return app.Result{}, nil
+}
+func (r *runtimeStub) RuntimePluginManage(_ context.Context, args map[string]any) (app.Result, error) {
+	r.pluginArgs = args
+	return app.Result{"changed": true}, nil
+}
 func (r *runtimeStub) RuntimeEvolve(context.Context, map[string]any) (app.Result, error) {
 	return app.Result{}, nil
 }
@@ -54,6 +70,9 @@ func TestMethodContract(t *testing.T) {
 	}{
 		{"GET", "/internal/runtime/status", "GET", true},
 		{"POST", "/internal/runtime/capabilities", "GET, POST", true},
+		{"POST", "/internal/runtime/skills", "GET, POST", true},
+		{"POST", "/internal/runtime/plugins", "GET, POST", true},
+		{"GET", "/internal/runtime/plugins/pcb", "GET", true},
 		{"DELETE", "/internal/runtime/tasks/task-1", "GET, DELETE", true},
 		{"POST", "/internal/runtime/tasks/task-1", "GET, DELETE", false},
 		{"GET", "/internal/runtime/evolve", "POST", true},
@@ -88,6 +107,33 @@ func TestDispatchParsesTaskQuery(t *testing.T) {
 	}
 }
 
+func TestDispatchCapabilityManagementRequests(t *testing.T) {
+	runtime := &runtimeStub{}
+	if _, err := Dispatch(context.Background(), runtime, Request{
+		Method: "POST", Path: "/internal/runtime/skills",
+		Body: []byte(`{"action":"disable","skill":"layout"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]any{"action": "disable", "skill": "layout"}; !reflect.DeepEqual(runtime.skillArgs, want) {
+		t.Fatalf("Skill args = %#v, want %#v", runtime.skillArgs, want)
+	}
+
+	if _, err := Dispatch(context.Background(), runtime, Request{
+		Method: "POST", Path: "/internal/runtime/plugins",
+		Body: []byte(`{"action":"upsert","name":"pcb","description":"PCB tools","enabled":true,"skills":["layout"],"mcp_servers":["easyeda"]}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	wantPlugin := map[string]any{
+		"action": "upsert", "name": "pcb", "description": "PCB tools", "enabled": true,
+		"skills": []string{"layout"}, "mcp_servers": []string{"easyeda"},
+	}
+	if !reflect.DeepEqual(runtime.pluginArgs, wantPlugin) {
+		t.Fatalf("plugin args = %#v, want %#v", runtime.pluginArgs, wantPlugin)
+	}
+}
+
 func TestDispatchMCPManagePreservesOnlyProvidedFields(t *testing.T) {
 	runtime := &runtimeStub{}
 	_, err := Dispatch(context.Background(), runtime, Request{
@@ -119,6 +165,16 @@ func TestDispatchKeepsRouteSpecificValidationErrors(t *testing.T) {
 			name: "MCP body limit",
 			req:  Request{Method: "POST", Path: "/internal/runtime/mcp", Body: []byte(strings.Repeat("x", 64*1024+1))},
 			code: "INVALID_MCP_REQUEST",
+		},
+		{
+			name: "Skill unsupported action",
+			req:  Request{Method: "POST", Path: "/internal/runtime/skills", Body: []byte(`{"action":"install","skill":"demo"}`)},
+			code: "SKILL_ACTION_UNSUPPORTED",
+		},
+		{
+			name: "plugin unknown field",
+			req:  Request{Method: "POST", Path: "/internal/runtime/plugins", Body: []byte(`{"action":"enable","name":"demo","unknown":true}`)},
+			code: "INVALID_PLUGIN_REQUEST",
 		},
 		{
 			name: "evolve unknown field",

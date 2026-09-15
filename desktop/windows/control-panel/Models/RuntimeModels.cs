@@ -157,6 +157,97 @@ public sealed record RuntimeSnapshot(
     bool NexusConnected,
     DateTimeOffset CheckedAt);
 
+public sealed class CapabilityInventory
+{
+    public List<PluginCapabilityInfo> Plugins { get; set; } = [];
+    public List<SkillCapabilityInfo> Skills { get; set; } = [];
+    public List<McpCapabilityInfo> McpServers { get; set; } = [];
+}
+
+public sealed class PluginCapabilityInfo
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = "";
+
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; } = true;
+
+    [JsonPropertyName("skills")]
+    public List<string> Skills { get; set; } = [];
+
+    [JsonPropertyName("mcp_servers")]
+    public List<string> McpServers { get; set; } = [];
+}
+
+public sealed class SkillCapabilityInfo
+{
+    [JsonPropertyName("skill")]
+    public string Skill { get; set; } = "";
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = "";
+
+    [JsonPropertyName("active_version")]
+    public string ActiveVersion { get; set; } = "";
+
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; } = true;
+
+    [JsonPropertyName("bundled")]
+    public bool Bundled { get; set; }
+
+    public string Identifier => string.IsNullOrWhiteSpace(Skill) ? Name : Skill;
+    public string DisplayName => string.IsNullOrWhiteSpace(Name) ? Identifier : Name;
+}
+
+public sealed class McpCapabilityInfo
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = "";
+
+    [JsonPropertyName("transport")]
+    public string Transport { get; set; } = "";
+
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; } = true;
+
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = "";
+
+    [JsonPropertyName("tool_count")]
+    public int ToolCount { get; set; }
+
+    [JsonPropertyName("last_error_code")]
+    public string LastErrorCode { get; set; } = "";
+}
+
+internal sealed class RuntimePluginsResponse
+{
+    [JsonPropertyName("plugins")]
+    public List<PluginCapabilityInfo> Plugins { get; set; } = [];
+}
+
+internal sealed class RuntimeSkillsResponse
+{
+    [JsonPropertyName("skills")]
+    public List<SkillCapabilityInfo> Skills { get; set; } = [];
+}
+
+internal sealed class RuntimeMcpResponse
+{
+    [JsonPropertyName("servers")]
+    public List<McpCapabilityInfo> Servers { get; set; } = [];
+}
+
 public sealed record NexusDeviceStatus(
     bool Paired,
     string Endpoint,

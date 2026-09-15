@@ -134,6 +134,13 @@ func TestManagerStreamableHTTPFlowAndPersistence(t *testing.T) {
 	if refreshed.Status != "ready" || refreshed.ToolCount != 1 || len(tools) != 1 {
 		t.Fatalf("unexpected refresh: summary=%#v tools=%#v", refreshed, tools)
 	}
+	listedTools, err := manager.ListTools(context.Background(), "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listedTools) != 1 || listedTools[0].QualifiedName != "demo:echo" || listedTools[0].Description != "Echo supplied text" {
+		t.Fatalf("unexpected complete tool index: %#v", listedTools)
+	}
 
 	matches, err := manager.Search(context.Background(), "echo text", "demo", 10)
 	if err != nil {

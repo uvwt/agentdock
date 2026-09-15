@@ -692,4 +692,127 @@ Update now?</value>
   <data name="LanguageChangeDiscardWarning" xml:space="preserve">
     <value>Changing the interface language reloads this window. Any unsaved changes will be lost. Continue?</value>
   </data>
+  <data name="Capabilities" xml:space="preserve">
+    <value>Capabilities</value>
+  </data>
+  <data name="CapabilitiesDescription" xml:space="preserve">
+    <value>Enable or disable individual Skills and MCP servers. Heavy plugins group related capabilities behind one description; plugin members are revealed to the model only after the plugin is loaded.</value>
+  </data>
+  <data name="AddPlugin" xml:space="preserve">
+    <value>Add plugin</value>
+  </data>
+  <data name="RefreshCapabilities" xml:space="preserve">
+    <value>Refresh capabilities</value>
+  </data>
+  <data name="Plugins" xml:space="preserve">
+    <value>Plugins</value>
+  </data>
+  <data name="StandaloneSkills" xml:space="preserve">
+    <value>Standalone Skills</value>
+  </data>
+  <data name="StandaloneMcpServers" xml:space="preserve">
+    <value>Standalone MCP servers</value>
+  </data>
+  <data name="CapabilitiesRequireRunningCore" xml:space="preserve">
+    <value>Start AgentDock Core to manage capabilities.</value>
+  </data>
+  <data name="LoadingCapabilities" xml:space="preserve">
+    <value>Loading capability configuration…</value>
+  </data>
+  <data name="CapabilitiesLoaded" xml:space="preserve">
+    <value>Loaded {0} plugins, {1} Skills, and {2} MCP servers.</value>
+  </data>
+  <data name="NoPlugins" xml:space="preserve">
+    <value>No plugins are configured.</value>
+  </data>
+  <data name="NoStandaloneSkills" xml:space="preserve">
+    <value>No standalone Skills are available.</value>
+  </data>
+  <data name="NoStandaloneMcpServers" xml:space="preserve">
+    <value>No standalone MCP servers are available.</value>
+  </data>
+  <data name="Enabled" xml:space="preserve">
+    <value>Enabled</value>
+  </data>
+  <data name="Edit" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="Bundled" xml:space="preserve">
+    <value>bundled</value>
+  </data>
+  <data name="PluginSkills" xml:space="preserve">
+    <value>Skills</value>
+  </data>
+  <data name="PluginMcpServers" xml:space="preserve">
+    <value>MCP servers</value>
+  </data>
+  <data name="McpStatusSummary" xml:space="preserve">
+    <value>{0} · {1} tools</value>
+  </data>
+  <data name="DisableCapability" xml:space="preserve">
+    <value>Disable this capability</value>
+  </data>
+  <data name="EnableCapability" xml:space="preserve">
+    <value>Enable this capability</value>
+  </data>
+  <data name="UnavailablePluginMember" xml:space="preserve">
+    <value>{0} member “{1}” is missing.</value>
+  </data>
+  <data name="EnablingPlugin" xml:space="preserve">
+    <value>Enabling plugin {0}…</value>
+  </data>
+  <data name="DisablingPlugin" xml:space="preserve">
+    <value>Disabling plugin {0}…</value>
+  </data>
+  <data name="EnablingCapability" xml:space="preserve">
+    <value>Enabling {0}…</value>
+  </data>
+  <data name="DisablingCapability" xml:space="preserve">
+    <value>Disabling {0}…</value>
+  </data>
+  <data name="SavingPlugin" xml:space="preserve">
+    <value>Saving plugin {0}…</value>
+  </data>
+  <data name="ConfirmRemovePlugin" xml:space="preserve">
+    <value>Remove plugin {0}? Its member Skills and MCP servers remain installed and return to the standalone lists.</value>
+  </data>
+  <data name="RemovingPlugin" xml:space="preserve">
+    <value>Removing plugin {0}…</value>
+  </data>
+  <data name="EditPlugin" xml:space="preserve">
+    <value>Edit plugin</value>
+  </data>
+  <data name="EnablePluginAfterSaving" xml:space="preserve">
+    <value>Enable this plugin after saving</value>
+  </data>
+  <data name="PluginMemberSelectionHelp" xml:space="preserve">
+    <value>Select the Skills and MCP servers owned by this plugin. A member can belong to only one plugin.</value>
+  </data>
+  <data name="PluginName" xml:space="preserve">
+    <value>Plugin identifier</value>
+  </data>
+  <data name="PluginDescription" xml:space="preserve">
+    <value>Plugin description</value>
+  </data>
+  <data name="PluginNameInvalid" xml:space="preserve">
+    <value>Use 1–64 letters, numbers, dots, underscores, plus signs, or hyphens; the first character must be a letter or number.</value>
+  </data>
+  <data name="PluginNameExists" xml:space="preserve">
+    <value>A plugin with this identifier already exists.</value>
+  </data>
+  <data name="PluginDescriptionRequired" xml:space="preserve">
+    <value>A plugin description is required.</value>
+  </data>
+  <data name="PluginMemberRequired" xml:space="preserve">
+    <value>Select at least one Skill or MCP server.</value>
+  </data>
+  <data name="RuntimeApiEmptyResponse" xml:space="preserve">
+    <value>The AgentDock Runtime API returned an empty response.</value>
+  </data>
+  <data name="RuntimeApiInvalidResponse" xml:space="preserve">
+    <value>The AgentDock Runtime API returned an invalid response.</value>
+  </data>
+  <data name="RuntimeApiRequestFailed" xml:space="preserve">
+    <value>The AgentDock Runtime API request failed with HTTP status {0}.</value>
+  </data>
 </root>

@@ -7,8 +7,8 @@ const ToolPackage = "skill_package"
 func PackageInputSchema() map[string]any {
 	stringProp := toolcontract.String
 	return toolcontract.InputObject(map[string]any{
-		"action":    map[string]any{"type": "string", "description": "Skill package or isolated environment action.", "enum": []string{"validate", "install", "uninstall", "activate", "rollback", "env_set", "env_unset", "env_list"}},
-		"skill":     stringProp("Skill name for uninstall, activate, rollback, or environment management."),
+		"action":    map[string]any{"type": "string", "description": "Skill package, availability, or isolated environment action.", "enum": []string{"validate", "install", "uninstall", "activate", "enable", "disable", "rollback", "env_set", "env_unset", "env_list"}},
+		"skill":     stringProp("Skill name for uninstall, activate, enable, disable, rollback, or environment management."),
 		"version":   stringProp("Installed Skill version for uninstall or activate. Omit for uninstall to remove the whole Skill."),
 		"key":       stringProp("Environment variable name for env_set/env_unset."),
 		"value":     stringProp("Environment variable value for env_set. Secret values are never returned."),
@@ -32,6 +32,7 @@ func PackageOutputSchema() map[string]any {
 		"key":        stringProp("Environment variable name. Secret values are never returned."),
 		"configured": boolProp("Whether the environment variable has a non-empty configured value."),
 		"removed":    boolProp("Whether the environment variable was removed."),
+		"enabled":    boolProp("Whether the Skill is enabled at its base level."),
 		"items":      arrayProp("Environment variable names and configured status without values."),
 		"count":      intProp("Returned environment variable count."),
 		"valid":      boolProp("Whether a Skill source passed validation."),

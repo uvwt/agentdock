@@ -692,4 +692,127 @@
   <data name="LanguageChangeDiscardWarning" xml:space="preserve">
     <value>切换界面语言会重新加载此窗口，未保存的更改将会丢失。是否继续？</value>
   </data>
+  <data name="Capabilities" xml:space="preserve">
+    <value>功能与插件</value>
+  </data>
+  <data name="CapabilitiesDescription" xml:space="preserve">
+    <value>可独立启用或停用 Skill 与 MCP 服务。重插件把同一领域的能力收拢到一层描述下，模型加载插件后才会看到其中成员的说明。</value>
+  </data>
+  <data name="AddPlugin" xml:space="preserve">
+    <value>添加插件</value>
+  </data>
+  <data name="RefreshCapabilities" xml:space="preserve">
+    <value>刷新功能列表</value>
+  </data>
+  <data name="Plugins" xml:space="preserve">
+    <value>插件</value>
+  </data>
+  <data name="StandaloneSkills" xml:space="preserve">
+    <value>独立 Skill</value>
+  </data>
+  <data name="StandaloneMcpServers" xml:space="preserve">
+    <value>独立 MCP 服务</value>
+  </data>
+  <data name="CapabilitiesRequireRunningCore" xml:space="preserve">
+    <value>启动 AgentDock Core 后才能管理功能。</value>
+  </data>
+  <data name="LoadingCapabilities" xml:space="preserve">
+    <value>正在读取功能配置…</value>
+  </data>
+  <data name="CapabilitiesLoaded" xml:space="preserve">
+    <value>已载入 {0} 个插件、{1} 个 Skill 和 {2} 个 MCP 服务。</value>
+  </data>
+  <data name="NoPlugins" xml:space="preserve">
+    <value>尚未配置插件。</value>
+  </data>
+  <data name="NoStandaloneSkills" xml:space="preserve">
+    <value>没有独立 Skill。</value>
+  </data>
+  <data name="NoStandaloneMcpServers" xml:space="preserve">
+    <value>没有独立 MCP 服务。</value>
+  </data>
+  <data name="Enabled" xml:space="preserve">
+    <value>启用</value>
+  </data>
+  <data name="Edit" xml:space="preserve">
+    <value>编辑</value>
+  </data>
+  <data name="Bundled" xml:space="preserve">
+    <value>内置</value>
+  </data>
+  <data name="PluginSkills" xml:space="preserve">
+    <value>Skill</value>
+  </data>
+  <data name="PluginMcpServers" xml:space="preserve">
+    <value>MCP 服务</value>
+  </data>
+  <data name="McpStatusSummary" xml:space="preserve">
+    <value>{0} · {1} 个工具</value>
+  </data>
+  <data name="DisableCapability" xml:space="preserve">
+    <value>停用此功能</value>
+  </data>
+  <data name="EnableCapability" xml:space="preserve">
+    <value>启用此功能</value>
+  </data>
+  <data name="UnavailablePluginMember" xml:space="preserve">
+    <value>{0} 成员“{1}”已缺失。</value>
+  </data>
+  <data name="EnablingPlugin" xml:space="preserve">
+    <value>正在启用插件 {0}…</value>
+  </data>
+  <data name="DisablingPlugin" xml:space="preserve">
+    <value>正在停用插件 {0}…</value>
+  </data>
+  <data name="EnablingCapability" xml:space="preserve">
+    <value>正在启用 {0}…</value>
+  </data>
+  <data name="DisablingCapability" xml:space="preserve">
+    <value>正在停用 {0}…</value>
+  </data>
+  <data name="SavingPlugin" xml:space="preserve">
+    <value>正在保存插件 {0}…</value>
+  </data>
+  <data name="ConfirmRemovePlugin" xml:space="preserve">
+    <value>删除插件 {0}？其中的 Skill 与 MCP 服务会保留，并重新显示在独立功能列表中。</value>
+  </data>
+  <data name="RemovingPlugin" xml:space="preserve">
+    <value>正在删除插件 {0}…</value>
+  </data>
+  <data name="EditPlugin" xml:space="preserve">
+    <value>编辑插件</value>
+  </data>
+  <data name="EnablePluginAfterSaving" xml:space="preserve">
+    <value>保存后启用此插件</value>
+  </data>
+  <data name="PluginMemberSelectionHelp" xml:space="preserve">
+    <value>选择归属于此插件的 Skill 与 MCP 服务。每个成员只能归属于一个插件。</value>
+  </data>
+  <data name="PluginName" xml:space="preserve">
+    <value>插件标识符</value>
+  </data>
+  <data name="PluginDescription" xml:space="preserve">
+    <value>插件描述</value>
+  </data>
+  <data name="PluginNameInvalid" xml:space="preserve">
+    <value>标识符长度须为 1—64 个字符，可使用字母、数字、点、下划线、加号和连字符，首字符必须为字母或数字。</value>
+  </data>
+  <data name="PluginNameExists" xml:space="preserve">
+    <value>该插件标识符已经存在。</value>
+  </data>
+  <data name="PluginDescriptionRequired" xml:space="preserve">
+    <value>必须填写插件描述。</value>
+  </data>
+  <data name="PluginMemberRequired" xml:space="preserve">
+    <value>至少选择一个 Skill 或 MCP 服务。</value>
+  </data>
+  <data name="RuntimeApiEmptyResponse" xml:space="preserve">
+    <value>AgentDock Runtime API 返回了空响应。</value>
+  </data>
+  <data name="RuntimeApiInvalidResponse" xml:space="preserve">
+    <value>AgentDock Runtime API 返回的数据格式无效。</value>
+  </data>
+  <data name="RuntimeApiRequestFailed" xml:space="preserve">
+    <value>AgentDock Runtime API 请求失败，HTTP 状态码为 {0}。</value>
+  </data>
 </root>

@@ -14,6 +14,7 @@ import (
 	"github.com/uvwt/agentdock/internal/envstore"
 	"github.com/uvwt/agentdock/internal/evolution"
 	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
+	pluginregistry "github.com/uvwt/agentdock/internal/plugin"
 	"github.com/uvwt/agentdock/internal/taskstate"
 	toolacp "github.com/uvwt/agentdock/internal/tool/acp"
 	toolbrowser "github.com/uvwt/agentdock/internal/tool/browser"
@@ -23,6 +24,7 @@ import (
 	toolfile "github.com/uvwt/agentdock/internal/tool/file"
 	toolmcp "github.com/uvwt/agentdock/internal/tool/mcp"
 	toolmedia "github.com/uvwt/agentdock/internal/tool/media"
+	toolplugin "github.com/uvwt/agentdock/internal/tool/plugin"
 	toolrecall "github.com/uvwt/agentdock/internal/tool/recall"
 	toolskill "github.com/uvwt/agentdock/internal/tool/skill"
 	tooltask "github.com/uvwt/agentdock/internal/tool/task"
@@ -40,6 +42,7 @@ type Runtime struct {
 	command        *toolcommand.Service
 	files          *toolfile.Service
 	dynamicMCP     *toolmcp.Service
+	plugins        *toolplugin.Service
 	media          *toolmedia.Service
 	browser        *toolbrowser.Service
 	recall         *toolrecall.Service
@@ -71,6 +74,10 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	pluginStore, err := pluginregistry.New(cfg.AgentDockHome)
+	if err != nil {
+		return nil, err
+	}
 	mcpClients, err := mcpclient.NewManager(cfg.AgentDockHome, envs)
 	if err != nil {
 		return nil, err
@@ -89,6 +96,47 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	runtime.command = toolcommand.New(func() config.Config { return runtime.cfg }, ws, envs, skills.ResolveActive, runtime.commandExecutionContext)
 	runtime.files = toolfile.New(ws, skills.ResolveResource, runtime.command.CommandEnv)
 	runtime.dynamicMCP = toolmcp.New(mcpClients, envs)
+	runtime.plugins = toolplugin.New(
+		pluginStore,
+		func(name string) (toolplugin.SkillItem, bool, error) {
+			item, found, lookupErr := runtime.skills.CapabilityItem(name)
+			return toolplugin.SkillItem{
+				Name: item.Name, Description: item.Description, File: item.File,
+				Bundled: item.Bundled, Enabled: item.Enabled,
+			}, found, lookupErr
+		},
+		func(ctx context.Context, name string, expand bool) (toolplugin.MCPItem, bool, error) {
+			var item toolmcp.CapabilityItem
+			var tools []toolmcp.CapabilityToolItem
+			var found bool
+			var lookupErr error
+			if expand {
+				item, tools, found, lookupErr = runtime.dynamicMCP.PluginCapabilityItem(ctx, name)
+			} else {
+				item, found, lookupErr = runtime.dynamicMCP.CapabilityItem(name)
+			}
+			mappedTools := make([]toolplugin.MCPToolItem, 0, len(tools))
+			for _, tool := range tools {
+				mappedTools = append(mappedTools, toolplugin.MCPToolItem{
+					Name: tool.Name, QualifiedName: tool.QualifiedName, Title: tool.Title,
+					Description: tool.Description, Server: tool.Server,
+				})
+			}
+			return toolplugin.MCPItem{
+				Name: item.Name, Description: item.Description, Status: item.Status,
+				ToolCount: item.ToolCount, LastErrorCode: item.LastErrorCode,
+				ToolLoadError: item.ToolLoadError, Enabled: item.Enabled, Tools: mappedTools,
+			}, found, lookupErr
+		},
+	)
+	runtime.skills.SetPluginMembershipLookup(func(name string) (string, bool, bool, error) {
+		membership, owned, lookupErr := runtime.plugins.SkillMembership(name)
+		return membership.Plugin, membership.Enabled, owned, lookupErr
+	})
+	runtime.dynamicMCP.SetPluginMembershipLookup(func(name string) (string, bool, bool, error) {
+		membership, owned, lookupErr := runtime.plugins.MCPMembership(name)
+		return membership.Plugin, membership.Enabled, owned, lookupErr
+	})
 	runtime.media = toolmedia.New(cfg, ws, runtime.command.InternalCommandEnv)
 	runtime.browser = toolbrowser.New(
 		toolbrowser.Config{AgentDockHome: cfg.AgentDockHome, ExecutablePath: cfg.BrowserExecutablePath, CDPURL: cfg.BrowserCDPURL, ReuseExistingCDP: cfg.BrowserReuseExistingCDP},

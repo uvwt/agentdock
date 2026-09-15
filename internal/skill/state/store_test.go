@@ -327,3 +327,57 @@ func TestStoreRejectsRemovingActiveVersion(t *testing.T) {
 		t.Fatal("RemoveVersion accepted the active version")
 	}
 }
+
+func TestSkillEnabledDefaultsTrueAndPersists(t *testing.T) {
+	root := t.TempDir()
+	store, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := store.InstalledPath("demo", "1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Activate(context.Background(), "demo", "1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	enabled, err := store.Enabled("demo")
+	if err != nil || !enabled {
+		t.Fatalf("legacy enabled=%v err=%v", enabled, err)
+	}
+	selection, err := store.SetEnabled(context.Background(), "demo", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !selection.Disabled || selection.ActiveVersion != "1.0.0" {
+		t.Fatalf("disabled selection = %#v", selection)
+	}
+	reopened, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled, err = reopened.Enabled("demo")
+	if err != nil || enabled {
+		t.Fatalf("persisted enabled=%v err=%v", enabled, err)
+	}
+	selection, err = reopened.SetEnabled(context.Background(), "demo", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selection.Disabled || selection.ActiveVersion != "1.0.0" {
+		t.Fatalf("re-enabled selection = %#v", selection)
+	}
+}
+
+func TestSetEnabledRequiresInstalledSkill(t *testing.T) {
+	store, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetEnabled(context.Background(), "missing", false); err == nil || !strings.Contains(err.Error(), "not installed") {
+		t.Fatalf("SetEnabled missing error = %v", err)
+	}
+}

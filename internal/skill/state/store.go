@@ -27,6 +27,7 @@ const (
 type Selection struct {
 	ActiveVersion string    `json:"active_version,omitempty"`
 	History       []string  `json:"history,omitempty"`
+	Disabled      bool      `json:"disabled,omitempty"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
@@ -194,7 +195,7 @@ func (s *Store) RestoreSelection(ctx context.Context, skill string, selection Se
 			return fmt.Errorf("skill %s version %s is not installed", skill, selection.ActiveVersion)
 		}
 	}
-	if selection.ActiveVersion == "" && len(selection.History) == 0 && selection.UpdatedAt.IsZero() {
+	if selection.ActiveVersion == "" && len(selection.History) == 0 && !selection.Disabled && selection.UpdatedAt.IsZero() {
 		path := filepath.Join(s.root, "state", skill+".json")
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("remove skill state: %w", err)
@@ -255,6 +256,48 @@ func (s *Store) Activate(ctx context.Context, skill, version string) error {
 		return err
 	}
 	return nil
+}
+
+// SetEnabled persists the Skill's base availability without changing its active
+// version. Plugin-level availability is an independent runtime overlay.
+func (s *Store) SetEnabled(ctx context.Context, skill string, enabled bool) (Selection, error) {
+	if err := validateIdentifier("skill", skill); err != nil {
+		return Selection{}, err
+	}
+	release, err := s.acquire(ctx, skill)
+	if err != nil {
+		return Selection{}, err
+	}
+	defer release()
+
+	versions, err := s.ListVersions(skill)
+	if err != nil {
+		return Selection{}, err
+	}
+	if len(versions) == 0 {
+		return Selection{}, fmt.Errorf("skill %s is not installed", skill)
+	}
+	selection, err := s.load(skill)
+	if err != nil {
+		return Selection{}, err
+	}
+	if selection.Disabled == !enabled {
+		return selection, nil
+	}
+	selection.Disabled = !enabled
+	selection.UpdatedAt = time.Now().UTC()
+	if err := s.save(skill, selection); err != nil {
+		return Selection{}, err
+	}
+	return selection, nil
+}
+
+func (s *Store) Enabled(skill string) (bool, error) {
+	selection, err := s.Snapshot(skill)
+	if err != nil {
+		return false, err
+	}
+	return !selection.Disabled, nil
 }
 
 func (s *Store) PreviousVersion(skill string) (string, error) {

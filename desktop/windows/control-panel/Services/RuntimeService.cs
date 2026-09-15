@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
@@ -164,6 +165,62 @@ public sealed class RuntimeService : IDisposable
         string configuredCommand = "",
         IReadOnlyList<string>? configuredArguments = null) =>
         AcpAdapterResolver.Resolve(agent, RuntimeRoot, configuredCommand, configuredArguments);
+
+    public async Task<CapabilityInventory> GetCapabilityInventoryAsync(CancellationToken cancellationToken = default)
+    {
+        var plugins = await SendRuntimeApiAsync<RuntimePluginsResponse>(HttpMethod.Get, "/internal/runtime/plugins", null, cancellationToken);
+        var skills = await SendRuntimeApiAsync<RuntimeSkillsResponse>(HttpMethod.Get, "/internal/runtime/skills", null, cancellationToken);
+        var mcp = await SendRuntimeApiAsync<RuntimeMcpResponse>(HttpMethod.Get, "/internal/runtime/mcp", null, cancellationToken);
+        return new CapabilityInventory
+        {
+            Plugins = plugins.Plugins ?? [],
+            Skills = skills.Skills ?? [],
+            McpServers = mcp.Servers ?? []
+        };
+    }
+
+    public async Task SetSkillEnabledAsync(string skill, bool enabled, CancellationToken cancellationToken = default) =>
+        _ = await SendRuntimeApiAsync<JsonElement>(
+            HttpMethod.Post,
+            "/internal/runtime/skills",
+            new { action = enabled ? "enable" : "disable", skill },
+            cancellationToken);
+
+    public async Task SetMcpEnabledAsync(string name, bool enabled, CancellationToken cancellationToken = default) =>
+        _ = await SendRuntimeApiAsync<JsonElement>(
+            HttpMethod.Post,
+            "/internal/runtime/mcp",
+            new { action = enabled ? "enable" : "disable", name },
+            cancellationToken);
+
+    public async Task SetPluginEnabledAsync(string name, bool enabled, CancellationToken cancellationToken = default) =>
+        _ = await SendRuntimeApiAsync<JsonElement>(
+            HttpMethod.Post,
+            "/internal/runtime/plugins",
+            new { action = enabled ? "enable" : "disable", name },
+            cancellationToken);
+
+    public async Task UpsertPluginAsync(PluginCapabilityInfo plugin, CancellationToken cancellationToken = default) =>
+        _ = await SendRuntimeApiAsync<JsonElement>(
+            HttpMethod.Post,
+            "/internal/runtime/plugins",
+            new
+            {
+                action = "upsert",
+                name = plugin.Name,
+                description = plugin.Description,
+                enabled = plugin.Enabled,
+                skills = plugin.Skills,
+                mcp_servers = plugin.McpServers
+            },
+            cancellationToken);
+
+    public async Task RemovePluginAsync(string name, CancellationToken cancellationToken = default) =>
+        _ = await SendRuntimeApiAsync<JsonElement>(
+            HttpMethod.Post,
+            "/internal/runtime/plugins",
+            new { action = "remove", name },
+            cancellationToken);
 
     public async Task RunActionAsync(string action, CancellationToken cancellationToken = default)
     {
@@ -555,6 +612,83 @@ public sealed class RuntimeService : IDisposable
 
     public void OpenLogsDirectory() => OpenDirectory(LogsDirectory);
     public void OpenConfigDirectory() => OpenDirectory(ConfigDirectory);
+
+    private async Task<T> SendRuntimeApiAsync<T>(
+        HttpMethod method,
+        string path,
+        object? body,
+        CancellationToken cancellationToken)
+    {
+        var origin = await ResolveLocalRuntimeOriginAsync(cancellationToken);
+        using var request = new HttpRequestMessage(method, origin + path);
+        var token = ReadBearerToken();
+        if (!string.IsNullOrWhiteSpace(token))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+        if (body is not null)
+        {
+            request.Content = new StringContent(
+                JsonSerializer.Serialize(body, JsonOptions),
+                Encoding.UTF8,
+                "application/json");
+        }
+
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(RuntimeApiErrorMessage(responseBody, (int)response.StatusCode));
+        }
+        try
+        {
+            return JsonSerializer.Deserialize<T>(responseBody, JsonOptions)
+                ?? throw new JsonException(UiText.Get("RuntimeApiEmptyResponse"));
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException(UiText.Get("RuntimeApiInvalidResponse"), ex);
+        }
+    }
+
+    private async Task<string> ResolveLocalRuntimeOriginAsync(CancellationToken cancellationToken)
+    {
+        var manifest = await ReadRuntimeManifestAsync(cancellationToken) ?? new RuntimeManifest();
+        var manifestPort = manifest.ListenPort is >= 1 and <= 65535 ? manifest.ListenPort : 8765;
+        var settings = await ReadJsonAsync<ControlPanelSettings>(SettingsPath, cancellationToken);
+        var port = settings?.Port is >= 1 and <= 65535 ? settings.Port : manifestPort;
+        return $"http://127.0.0.1:{port}";
+    }
+
+    private static string RuntimeApiErrorMessage(string body, int statusCode)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+            if (root.TryGetProperty("error", out var error))
+            {
+                if (error.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(error.GetString()))
+                {
+                    return error.GetString()!;
+                }
+                if (error.ValueKind == JsonValueKind.Object &&
+                    error.TryGetProperty("message", out var errorMessage) &&
+                    !string.IsNullOrWhiteSpace(errorMessage.GetString()))
+                {
+                    return errorMessage.GetString()!;
+                }
+            }
+            if (root.TryGetProperty("message", out var message) && !string.IsNullOrWhiteSpace(message.GetString()))
+            {
+                return message.GetString()!;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+        return UiText.Format("RuntimeApiRequestFailed", statusCode);
+    }
 
     private async Task<RuntimeManifest?> ReadRuntimeManifestAsync(CancellationToken cancellationToken)
     {
