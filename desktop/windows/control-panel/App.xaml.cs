@@ -74,12 +74,18 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        var background = e.Args.Any(arg => string.Equals(arg, "--background", StringComparison.OrdinalIgnoreCase));
         _singleInstanceMutex = new Mutex(true, MutexName, out var createdNew);
         _ownsSingleInstanceMutex = createdNew;
         if (!createdNew)
         {
-            using var existingEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
-            existingEvent.Set();
+            // 后台启动只保证 Tray 常驻，不能把已经运行的控制面板主动弹到前台。
+            // 用户从开始菜单、快捷方式或安装完成页显式打开时才发送 ShowEvent。
+            if (!background)
+            {
+                using var existingEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
+                existingEvent.Set();
+            }
             Shutdown();
             return;
         }
@@ -92,7 +98,6 @@ public partial class App : System.Windows.Application
         CreateNotifyIcon();
         StartShowEventListener();
 
-        var background = e.Args.Any(arg => string.Equals(arg, "--background", StringComparison.OrdinalIgnoreCase));
         if (!background)
         {
             ShowControlPanel();

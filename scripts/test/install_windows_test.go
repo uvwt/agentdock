@@ -100,14 +100,14 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"service launch-core --runtime-root",
 		"--start-core --runtime-root",
 		"& $destinationBinary service start --runtime-root $runtimeDir",
-		"& $destinationBinary tunnel start --runtime-root $runtimeDir",
 		"--start-tunnel --runtime-root",
+		"$tunnelStartupArguments = \"--start-tunnel --runtime-root",
+		"-FilePath $destinationTrayBinary",
+		"-Arguments $tunnelStartupArguments",
 		"-AdminLauncherPath $sourceTrayBinary",
-		"-LauncherPath $destinationBinary",
+		"-LauncherPath $destinationTrayBinary",
 		"-FilePath $AdminLauncherPath",
 		"Start-CloudflaredLauncher -LauncherPath $cloudflaredLauncherPath",
-		"Wait-QuickTunnelUrl -LogPaths @($cloudflaredStdoutLogPath, $cloudflaredStderrLogPath)",
-		"Wait-QuickTunnelReady -Path $quickTunnelUrlPath -ExpectedUrl $publicUrl",
 		"quick-tunnel-url.txt",
 		"& '$escapedBinaryPath' tunnel launch --runtime-root '$escapedRuntimeDir'",
 		"RuntimeInformation]::OSArchitecture",
@@ -138,6 +138,17 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("install.ps1 missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"Wait-CloudflaredRunning",
+		"Wait-QuickTunnelUrl",
+		"Wait-QuickTunnelReady",
+		"Installer Engine finished trial without a Quick Tunnel public address.",
+		"& $destinationBinary tunnel start --runtime-root $runtimeDir",
+	} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("install.ps1 must not gate install/update completion on Tunnel/public readiness: %q", forbidden)
 		}
 	}
 	for _, forbidden := range []string{"[string] $RuntimeVersion", "version = $RuntimeVersion"} {
@@ -215,9 +226,10 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	}
 	tunnelArg := strings.Index(script, "'--tunnel-mode', $resolvedTunnelMode")
 	coreStartCall := strings.Index(script, "& $destinationBinary service start --runtime-root $runtimeDir")
-	tunnelStartCall := strings.Index(script, "& $destinationBinary tunnel start --runtime-root $runtimeDir")
-	if tunnelArg < 0 || coreStartCall < 0 || tunnelStartCall < 0 || tunnelArg > coreStartCall || tunnelArg > tunnelStartCall {
-		t.Fatal("Installer Engine must receive the resolved tunnel mode before any adapter fallback activation")
+	tunnelProxyCall := strings.Index(script, "$tunnelStartupArguments = \"--start-tunnel --runtime-root")
+	tunnelCommitCall := strings.LastIndex(script, "install commit --install-root $runtimeDir --runtime-root $runtimeDir --transaction-id $engineTransactionId")
+	if tunnelArg < 0 || coreStartCall < 0 || tunnelProxyCall < 0 || tunnelCommitCall < 0 || tunnelArg > coreStartCall || tunnelCommitCall > tunnelProxyCall {
+		t.Fatal("Installer must pass tunnel intent to the Engine, commit the Core transaction, then launch Tunnel asynchronously")
 	}
 	if strings.Contains(script, "$manifestTunnelMode = 'none'") {
 		t.Fatal("Quick Tunnel must not rewrite Engine tunnel-mode to none")
@@ -257,12 +269,12 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	}
 	rollbackServiceStart := strings.LastIndex(script, "& $destinationBinary service start --runtime-root $runtimeDir")
 	rollbackHealthWait := strings.LastIndex(script, "Wait-AgentDockHealth -HealthPort $Port")
-	rollbackTunnelStart := strings.LastIndex(script, "& $destinationBinary tunnel start --runtime-root $runtimeDir")
-	if rollbackServiceStart < rollbackRestore || rollbackHealthWait < rollbackServiceStart || rollbackTunnelStart < rollbackHealthWait {
-		t.Fatal("Engine rollback must synchronously restore source Core health and Tunnel readiness after adapter state restoration")
+	rollbackTunnelProxy := strings.LastIndex(script, "$rollbackTunnelArguments = \"--start-tunnel --runtime-root")
+	if rollbackServiceStart < rollbackRestore || rollbackHealthWait < rollbackServiceStart || rollbackTunnelProxy < rollbackHealthWait {
+		t.Fatal("Engine rollback must restore source Core health before scheduling best-effort Tunnel recovery")
 	}
-	if abandonCall < rollbackTunnelStart {
-		t.Fatal("install abandon must run only after restored Tunnel readiness is confirmed")
+	if abandonCall < rollbackTunnelProxy {
+		t.Fatal("install abandon must run after best-effort Tunnel recovery is scheduled")
 	}
 	if !strings.Contains(script, "--rollback-failed") {
 		t.Fatal("adapter rollback failure must be recorded as failed/rollback_failed, not rolled_back")
@@ -335,11 +347,21 @@ func TestWindowsInstallerUsesNativeTaskStartBridge(t *testing.T) {
 		"service task-start",
 		"--task-name",
 		"--expected-user-sid",
-		"-AgentDockBinary $destinationBinary",
+		"-AgentDockBinary $sourceBinary",
 	} {
 		if !strings.Contains(combined, want) {
 			t.Fatalf("Windows native task bridge missing %q", want)
 		}
+	}
+	installScript := strings.ReplaceAll(string(installData), "\r\n", "\n")
+	bridgeStart := strings.Index(installScript, "function Invoke-SetupRuntimeProcess")
+	bridgeEnd := strings.Index(installScript, "function Get-AgentDockArchitecture")
+	if bridgeStart < 0 || bridgeEnd <= bridgeStart {
+		t.Fatal("Setup runtime task-start bridge function boundary is missing")
+	}
+	bridge := installScript[bridgeStart:bridgeEnd]
+	if !strings.Contains(bridge, "-AgentDockBinary $sourceBinary") || strings.Contains(bridge, "-AgentDockBinary $destinationBinary") {
+		t.Fatal("Setup runtime task-start bridge must use the verified payload Core instead of the stable shim while Installer commit is deferred")
 	}
 	if strings.Contains(string(brokerData), "manage-windows.ps1") || strings.Contains(combined, "task-run-session") {
 		t.Fatal("Windows runtime launch paths must not depend on the removed manage-windows compatibility shim")
@@ -471,7 +493,7 @@ func TestWindowsTaskAdminUsesNativeAgentDockHelper(t *testing.T) {
 		"Schedule.Service",
 		"TaskRunLevelHighest",
 		"TaskLogonInteractiveToken",
-		"service launch-core --runtime-root",
+		"--task-core-host --runtime-root",
 		"SetSecurityDescriptor",
 		"prepare-elevated",
 		"prepare-standard",
@@ -495,6 +517,7 @@ func TestWindowsTaskAdminUsesNativeAgentDockHelper(t *testing.T) {
 	for _, forbidden := range []string{
 		"powershell.exe",
 		"File.Exists(request.LauncherPath)",
+		"service launch-core --runtime-root",
 	} {
 		if strings.Contains(source, forbidden) {
 			t.Fatalf("TaskAdminService.cs must not depend on %q", forbidden)
@@ -786,9 +809,12 @@ func TestWindowsSetupLaunchesRuntimeOutsideRedirectionGuardTree(t *testing.T) {
 		"$setupRuntimeLauncherPath = Join-Path $PSScriptRoot 'launch-windows-process.ps1'",
 		"function Invoke-SetupRuntimeProcess",
 		"-Arguments \"service start --runtime-root",
-		"-Arguments \"tunnel start --runtime-root",
+		"$tunnelStartupArguments = \"--start-tunnel --runtime-root",
+		"-FilePath $destinationTrayBinary",
+		"-Arguments $tunnelStartupArguments",
 		"Invoke-SetupRuntimeProcess -FilePath $BinaryPath -Arguments '--background'",
 		"Invoke-SetupRuntimeProcess -FilePath (Join-Path $PSHOME 'powershell.exe') -Arguments $arguments",
+		"-HiddenHostBinary $destinationTrayBinary",
 	} {
 		if !strings.Contains(installScript, want) {
 			t.Fatalf("install.ps1 must route Setup-owned long-lived launches through the runtime broker; missing %q", want)
@@ -804,15 +830,21 @@ func TestWindowsSetupLaunchesRuntimeOutsideRedirectionGuardTree(t *testing.T) {
 		"& $AgentDockBinary service task-start",
 		"--task-name $taskName",
 		"--expected-user-sid $identity.User.Value",
+		"[string] $HiddenHostBinary",
 		"if ($WaitForExit) {",
-		"$process.WaitForExit()",
-		"RedirectStandardOutput = $true",
-		"RedirectStandardError = $true",
+		"ConvertTo-RuntimeHostArgument",
+		"--setup-runtime-host",
+		"--file-b64",
+		"--wait",
+		"--stdout-b64",
+		"--stderr-b64",
+		"--error-b64",
+		"-Execute $HiddenHostBinary",
+		"-Argument ($hostArguments -join ' ')",
 		"Get-RuntimeFailureMessage",
 		"Task Scheduler result: $rawResult",
 		"Read-RuntimeDiagnosticTail",
 		"Remove-Item -LiteralPath $diagnosticRoot -Recurse -Force",
-		"$wrapperLines += 'exit 0'",
 		"Unregister-ScheduledTask",
 		"AGENTDOCK_HOME",
 		"AGENTDOCK_DEFAULT_DIR",
@@ -824,11 +856,17 @@ func TestWindowsSetupLaunchesRuntimeOutsideRedirectionGuardTree(t *testing.T) {
 	if !strings.Contains(brokerScript, "finally {") || !strings.Contains(brokerScript, "Unregister-ScheduledTask") {
 		t.Fatal("runtime launch broker must remove its temporary task even when launch fails")
 	}
+	for _, forbidden := range []string{"-Execute $powerShellPath", "-EncodedCommand $encodedCommand"} {
+		if strings.Contains(brokerScript, forbidden) {
+			t.Fatalf("runtime launch broker must not use a console-subsystem PowerShell task action: %q", forbidden)
+		}
+	}
 
 	for _, want := range []string{
 		"Source: \"..\\..\\scripts\\install\\launch-windows-process.ps1\"; Flags: dontcopy",
 		"ExtractTemporaryFile('launch-windows-process.ps1')",
 		"-AgentDockBinary ",
+		"-HiddenHostBinary ",
 		"function LaunchRuntimeProcess(",
 		"LaunchRuntimeProcess(ExpandConstant('{app}\\bin\\agentdock-tray.exe'), '')",
 	} {
@@ -859,8 +897,11 @@ func TestWindowsRuntimeDiagnosticsPassesNativeTaskLauncher(t *testing.T) {
 	workflow := strings.ReplaceAll(string(workflowData), "\r\n", "\n")
 	for _, want := range []string{
 		"[string] $AgentDockBinary",
+		"[string] $HiddenHostBinary",
 		"$resolvedAgentDockBinary = (Resolve-Path -LiteralPath $AgentDockBinary).Path",
+		"$resolvedHiddenHostBinary = (Resolve-Path -LiteralPath $HiddenHostBinary).Path",
 		"-AgentDockBinary $resolvedAgentDockBinary",
+		"-HiddenHostBinary $resolvedHiddenHostBinary",
 	} {
 		if !strings.Contains(diagnostics, want) {
 			t.Fatalf("runtime diagnostics test must pass the native task launcher; missing %q", want)
@@ -868,8 +909,11 @@ func TestWindowsRuntimeDiagnosticsPassesNativeTaskLauncher(t *testing.T) {
 	}
 	for _, want := range []string{
 		"$runtimeTestAgentDockBinary = Join-Path $env:RUNNER_TEMP 'agentdock-runtime-launch-test.exe'",
+		"$runtimeTestHiddenHostBinary = Join-Path $env:RUNNER_TEMP 'agentdock-runtime-host-test.exe'",
 		"go build -trimpath -o $runtimeTestAgentDockBinary .\\cmd\\agentdock",
+		"go build -trimpath -ldflags '-H=windowsgui' -o $runtimeTestHiddenHostBinary .\\cmd\\agentdock-shim",
 		"-AgentDockBinary $runtimeTestAgentDockBinary",
+		"-HiddenHostBinary $runtimeTestHiddenHostBinary",
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("Windows Installer workflow must build and pass the native task launcher; missing %q", want)

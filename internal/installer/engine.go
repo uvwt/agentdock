@@ -334,18 +334,17 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 		}
 	}
 
-	if request.StartService && (request.TunnelMode == "quick" || request.TunnelMode == "named") {
+	if shouldStartTunnelInTransaction(request) {
 		transaction.Phase = PhaseTunnel
 		if err := store.WriteTransaction(transaction); err != nil {
 			return fail(PhaseTunnel, err, staged)
 		}
-		if err := startTunnelServices(ctx, request, staged.Journal); err != nil {
-			return fail(PhaseTunnel, err, staged)
-		}
-		if err := waitTunnelReady(ctx, request, 45*time.Second); err != nil {
-			return fail(PhaseTunnel, err, staged)
-		}
-		if request.TunnelMode == "quick" {
+		// Core health is the install/update commit boundary. Tunnel/public access depends on
+		// external network state and Cloudflare policy, so readiness must never roll back a
+		// healthy Core installation. Start Tunnel best-effort but do not add a second readiness
+		// wait to the transaction; the control panel reports eventual state and Tunnel logs retain
+		// the concrete failure evidence.
+		if err := startTunnelServices(ctx, request, staged.Journal); err == nil && request.TunnelMode == "quick" {
 			if publicURL := readQuickTunnelURL(request.RuntimeRoot); publicURL != "" {
 				result.PublicURL = publicURL
 			}
@@ -378,6 +377,13 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 		return fail(PhaseCommit, err, staged)
 	}
 	return commitPreparedInstall(store, transaction, result)
+}
+
+func shouldStartTunnelInTransaction(request Request) bool {
+	if !request.StartService || request.DeferCommit {
+		return false
+	}
+	return request.TunnelMode == "quick" || request.TunnelMode == "named"
 }
 
 func installPhaseMayHaveMutatedFiles(phase Phase) bool {

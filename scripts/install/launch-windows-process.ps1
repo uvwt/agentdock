@@ -6,6 +6,9 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
     [string] $AgentDockBinary,
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string] $HiddenHostBinary,
     [string] $Arguments = '',
     [switch] $WaitForExit,
     [ValidateRange(1, 120)]
@@ -78,6 +81,9 @@ if ($null -eq $identity -or $null -eq $identity.User -or [string]::IsNullOrWhite
 if (-not (Test-Path -LiteralPath $AgentDockBinary -PathType Leaf)) {
     throw "AgentDock native task launcher was not found: $AgentDockBinary"
 }
+if (-not (Test-Path -LiteralPath $HiddenHostBinary -PathType Leaf)) {
+    throw "AgentDock hidden runtime host was not found: $HiddenHostBinary"
+}
 
 $taskName = 'AgentDock Setup Runtime ' + [Guid]::NewGuid().ToString('N')
 $diagnosticRoot = ''
@@ -92,71 +98,41 @@ if ($WaitForExit) {
     New-Item -ItemType Directory -Path $diagnosticRoot -Force | Out-Null
 }
 
-$wrapperLines = @("`$ErrorActionPreference = 'Stop'")
-foreach ($name in @('AGENTDOCK_HOME', 'AGENTDOCK_DEFAULT_DIR')) {
-    $value = [Environment]::GetEnvironmentVariable($name, 'Process')
-    if ($null -ne $value) {
-        $encodedValue = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($value))
-        $wrapperLines += "`$env:$name = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$encodedValue'))"
-    }
+function ConvertTo-RuntimeHostArgument {
+    param([AllowEmptyString()][string] $Value)
+    return [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Value))
 }
-$encodedFilePath = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($FilePath))
-$wrapperLines += "`$filePath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$encodedFilePath'))"
+
+# The scheduled task itself must be a GUI-subsystem process. Starting powershell.exe as the
+# interactive task action can create a console before -WindowStyle Hidden takes effect.
+# The WinExe tray shim is therefore a narrow host that creates the real child with CREATE_NO_WINDOW.
+$hostArguments = @(
+    '--setup-runtime-host',
+    '--file-b64', (ConvertTo-RuntimeHostArgument -Value $FilePath)
+)
 if (-not [string]::IsNullOrWhiteSpace($Arguments)) {
-    $encodedArguments = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Arguments))
-    $wrapperLines += "`$arguments = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$encodedArguments'))"
+    $hostArguments += @('--args-b64', (ConvertTo-RuntimeHostArgument -Value $Arguments))
+}
+foreach ($environment in @(
+    @{ Name = 'AGENTDOCK_HOME'; Flag = '--agentdock-home-b64' },
+    @{ Name = 'AGENTDOCK_DEFAULT_DIR'; Flag = '--agentdock-default-dir-b64' }
+)) {
+    $value = [Environment]::GetEnvironmentVariable($environment.Name, 'Process')
+    if ($null -ne $value) {
+        $hostArguments += @($environment.Flag, (ConvertTo-RuntimeHostArgument -Value $value))
+    }
 }
 if ($WaitForExit) {
-    $encodedStdoutPath = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($stdoutPath))
-    $encodedStderrPath = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($stderrPath))
-    $encodedWrapperErrorPath = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($wrapperErrorPath))
-    $wrapperLines += "`$stdoutPath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$encodedStdoutPath'))"
-    $wrapperLines += "`$stderrPath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$encodedStderrPath'))"
-    $wrapperLines += "`$wrapperErrorPath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$encodedWrapperErrorPath'))"
-    $wrapperLines += 'try {'
-
-    # Windows PowerShell 5.1 loses ExitCode when Start-Process combines PassThru with redirected streams
-    # unless -Wait is used. -Wait can also follow descendant processes, which would change the runtime lifecycle.
-    # ProcessStartInfo keeps the original direct-child wait semantics while capturing both diagnostic streams.
-    $wrapperLines += '    $startInfo = New-Object Diagnostics.ProcessStartInfo'
-    $wrapperLines += '    $startInfo.FileName = $filePath'
-    if (-not [string]::IsNullOrWhiteSpace($Arguments)) {
-        $wrapperLines += '    $startInfo.Arguments = $arguments'
-    }
-    $wrapperLines += '    $startInfo.UseShellExecute = $false'
-    $wrapperLines += '    $startInfo.CreateNoWindow = $true'
-    $wrapperLines += '    $startInfo.RedirectStandardOutput = $true'
-    $wrapperLines += '    $startInfo.RedirectStandardError = $true'
-    $wrapperLines += '    $process = New-Object Diagnostics.Process'
-    $wrapperLines += '    $process.StartInfo = $startInfo'
-    $wrapperLines += "    if (-not `$process.Start()) { throw 'Runtime process could not be started.' }"
-    $wrapperLines += '    $stdoutTask = $process.StandardOutput.ReadToEndAsync()'
-    $wrapperLines += '    $stderrTask = $process.StandardError.ReadToEndAsync()'
-    $wrapperLines += '    $process.WaitForExit()'
-    $wrapperLines += '    $stdout = $stdoutTask.GetAwaiter().GetResult()'
-    $wrapperLines += '    $stderr = $stderrTask.GetAwaiter().GetResult()'
-    $wrapperLines += '    [IO.File]::WriteAllText($stdoutPath, $stdout, (New-Object Text.UTF8Encoding($false)))'
-    $wrapperLines += '    [IO.File]::WriteAllText($stderrPath, $stderr, (New-Object Text.UTF8Encoding($false)))'
-    $wrapperLines += '    exit $process.ExitCode'
-    $wrapperLines += '} catch {'
-    $wrapperLines += '    [IO.File]::WriteAllText($wrapperErrorPath, ($_ | Out-String), (New-Object Text.UTF8Encoding($false)))'
-    $wrapperLines += '    exit 1'
-    $wrapperLines += '}'
-} else {
-    if ([string]::IsNullOrWhiteSpace($Arguments)) {
-        $wrapperLines += '$process = Start-Process -FilePath $filePath -PassThru'
-    } else {
-        $wrapperLines += '$process = Start-Process -FilePath $filePath -ArgumentList $arguments -PassThru'
-    }
-    $wrapperLines += 'exit 0'
+    $hostArguments += @(
+        '--wait',
+        '--stdout-b64', (ConvertTo-RuntimeHostArgument -Value $stdoutPath),
+        '--stderr-b64', (ConvertTo-RuntimeHostArgument -Value $stderrPath),
+        '--error-b64', (ConvertTo-RuntimeHostArgument -Value $wrapperErrorPath)
+    )
 }
-$encodedCommand = [Convert]::ToBase64String(
-    [Text.Encoding]::Unicode.GetBytes(($wrapperLines -join "`r`n"))
-)
-$powerShellPath = Join-Path $PSHOME 'powershell.exe'
 $action = New-ScheduledTaskAction `
-    -Execute $powerShellPath `
-    -Argument "-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand $encodedCommand"
+    -Execute $HiddenHostBinary `
+    -Argument ($hostArguments -join ' ')
 $principal = New-ScheduledTaskPrincipal `
     -UserId $identity.Name `
     -LogonType Interactive `

@@ -206,14 +206,26 @@ func validateMacOSDesktopRuntime(ctx context.Context, appPath, targetVersion str
 	menuHelper := filepath.Join(appPath, "Contents", "Helpers", "AgentDockLoginHelper")
 	menuAgent := filepath.Join(appPath, "Contents", "Library", "LaunchAgents", "com.uvwt.agentdock.menu-login.plist")
 	skillManifest := filepath.Join(appPath, "Contents", "Resources", "core-skills", "manifest.json")
-	for _, path := range []string{core, cloudflared, arbiter, menuHelper, menuAgent, skillManifest} {
+	for _, path := range []string{core, cloudflared, menuHelper, menuAgent, skillManifest} {
 		info, err := os.Lstat(path)
 		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("macOS App 缺少有效运行组件: %s", path)
 		}
 	}
-	if !executableRegularFile(core) || !executableRegularFile(cloudflared) || !executableRegularFile(arbiter) || !executableRegularFile(menuHelper) {
-		return errors.New("macOS App 内置 Core、cloudflared、Arbiter 或菜单栏登录组件不可执行")
+	if !executableRegularFile(core) || !executableRegularFile(cloudflared) || !executableRegularFile(menuHelper) {
+		return errors.New("macOS App 内置 Core、cloudflared 或菜单栏登录组件不可执行")
+	}
+	if info, err := os.Lstat(arbiter); err == nil {
+		// 早期已发布的 0.8.x App 没有 Arbiter，可以作为 legacy 更新目标；但新格式
+		// 一旦声明了这个能力，就必须提供可执行、非符号链接且签名有效的 helper。
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o111 == 0 {
+			return fmt.Errorf("macOS App 内置 Arbiter 无效: %s", arbiter)
+		}
+		if output, verifyErr := exec.CommandContext(ctx, "codesign", "--verify", "--strict", "--verbose=2", arbiter).CombinedOutput(); verifyErr != nil {
+			return fmt.Errorf("macOS App 内置 Arbiter 签名验证失败: %w: %s", verifyErr, strings.TrimSpace(string(output)))
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("检查 macOS App 内置 Arbiter 失败: %w", err)
 	}
 	for _, expected := range []struct {
 		key   string
@@ -240,9 +252,6 @@ func validateMacOSDesktopRuntime(ctx context.Context, appPath, targetVersion str
 	}
 	if err := verifyBinaryVersion(ctx, core, targetVersion); err != nil {
 		return fmt.Errorf("macOS App 内置 Core 版本不匹配: %w", err)
-	}
-	if output, err := exec.CommandContext(ctx, "codesign", "--verify", "--strict", "--verbose=2", arbiter).CombinedOutput(); err != nil {
-		return fmt.Errorf("macOS App 内置 Arbiter 签名验证失败: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	if output, err := exec.CommandContext(ctx, cloudflared, "--version").CombinedOutput(); err != nil {
 		return fmt.Errorf("macOS App 内置 cloudflared 无法运行: %w: %s", err, strings.TrimSpace(string(output)))

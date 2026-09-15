@@ -739,7 +739,7 @@ public sealed class RuntimeService : IDisposable
                 throw new InvalidOperationException(UiText.Get("CurrentWindowsIdentityUnavailable"));
             }
             arguments.AddRange([
-                "--launcher-path", stableCoreEntry,
+                "--launcher-path", trayBinary,
                 "--user-sid", userSid,
                 "--user-name", identity.Name
             ]);

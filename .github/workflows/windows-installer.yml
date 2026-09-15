@@ -101,13 +101,16 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $runtimeTestAgentDockBinary = Join-Path $env:RUNNER_TEMP 'agentdock-runtime-launch-test.exe'
+          $runtimeTestHiddenHostBinary = Join-Path $env:RUNNER_TEMP 'agentdock-runtime-host-test.exe'
           $env:CGO_ENABLED = '0'
           $env:GOOS = 'windows'
           $env:GOARCH = 'amd64'
           go build -trimpath -o $runtimeTestAgentDockBinary .\cmd\agentdock
+          go build -trimpath -ldflags '-H=windowsgui' -o $runtimeTestHiddenHostBinary .\cmd\agentdock-shim
           & .\scripts\test\test-windows-runtime-launch-diagnostics.ps1 `
             -LauncherPath .\scripts\install\launch-windows-process.ps1 `
-            -AgentDockBinary $runtimeTestAgentDockBinary
+            -AgentDockBinary $runtimeTestAgentDockBinary `
+            -HiddenHostBinary $runtimeTestHiddenHostBinary
 
       - name: Test Task Scheduler session selection
         shell: powershell

@@ -2,7 +2,10 @@
 
 package desktopruntime
 
-import "testing"
+import (
+	"testing"
+	"unsafe"
+)
 
 func TestTaskCOMProceduresResolve(t *testing.T) {
 	for _, test := range []struct {
@@ -21,5 +24,14 @@ func TestTaskCOMProceduresResolve(t *testing.T) {
 				t.Fatalf("resolve Windows COM procedure %s: %v", test.name, err)
 			}
 		})
+	}
+}
+
+func TestVariantMatchesWindows64BitABI(t *testing.T) {
+	if got := unsafe.Sizeof(variant{}); got != 24 {
+		t.Fatalf("VARIANT size = %d, want 24 bytes on 64-bit Windows", got)
+	}
+	if got := unsafe.Offsetof(variant{}.Val); got != 8 {
+		t.Fatalf("VARIANT value union offset = %d, want 8", got)
 	}
 }

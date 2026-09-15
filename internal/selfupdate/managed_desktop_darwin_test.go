@@ -3,12 +3,48 @@
 package selfupdate
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/uvwt/agentdock/internal/updateengine"
 )
+
+func TestManagedDesktopUpdateFallsBackForPreArbiterTarget(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	coordinationDir := filepath.Join(home, "Library", "Application Support", "AgentDock")
+	if err := os.MkdirAll(coordinationDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(coordinationDir, "update-services.json"), []byte(`{"schema_version":1,"core_enabled":false,"tunnel_enabled":false}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	sourceApp := filepath.Join(t.TempDir(), "AgentDock.app")
+	targetApp := filepath.Join(t.TempDir(), "AgentDock.app")
+	for _, app := range []string{sourceApp, targetApp} {
+		if err := os.MkdirAll(filepath.Join(app, "Contents", "Helpers"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sourceArbiter := filepath.Join(sourceApp, "Contents", "Helpers", "agentdock-arbiter")
+	if err := os.WriteFile(sourceArbiter, []byte("source arbiter"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	_, handled, err := applyManagedDesktopOnlyUpdate(context.Background(), applyRequest{
+		DesktopTargetPath: sourceApp,
+		DesktopStagedPath: targetApp,
+	})
+	if err != nil {
+		t.Fatalf("capability fallback returned an error: %v", err)
+	}
+	if handled {
+		t.Fatal("pre-Arbiter target unexpectedly entered the managed transaction engine")
+	}
+}
 
 func TestCleanupMacOSUpdateArtifactsKeepsDurableTerminalResult(t *testing.T) {
 	root := t.TempDir()

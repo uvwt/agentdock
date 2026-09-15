@@ -179,7 +179,6 @@
 "Saved securely · node_id=%@" = "Saved securely · node_id=%@";
 "AgentDock update is missing background service recovery state." = "AgentDock update is missing background service recovery state.";
 "AgentDock update result was lost while restoring background services." = "AgentDock update result was lost while restoring background services.";
-"Tunnel could not be restored for the current public access mode: %@" = "Tunnel could not be restored for the current public access mode: %@";
 "Background services have not been restored yet. AgentDock will try again at the next launch: %@" = "Background services have not been restored yet. AgentDock will try again at the next launch: %@";
 "AgentDock recovery failed" = "AgentDock recovery failed";
 "Menu bar launch at sign-in will be reconciled at the next launch because the update transaction is still in progress." = "Menu bar launch at sign-in will be reconciled at the next launch because the update transaction is still in progress.";
@@ -217,6 +216,7 @@
 "%@ / %@" = "%@ / %@";
 "Version %@ → %@" = "Version %@ → %@";
 "Updated to %@" = "Updated to %@";
+"A new AgentDock version is available.\n\nCurrent version: %@\nLatest version: %@\n\nUpdate now?" = "A new AgentDock version is available.\n\nCurrent version: %@\nLatest version: %@\n\nUpdate now?";
 "AgentDock is up to date" = "AgentDock is up to date";
 "Done" = "Done";
 "AgentDock is busy" = "AgentDock is busy";
@@ -321,7 +321,6 @@
 "Failed to start the new configuration, and validation after restoring the old configuration also failed: %@" = "Failed to start the new configuration, and validation after restoring the old configuration also failed: %@";
 "Failed to start the new configuration; restored the previous configuration: %@" = "Failed to start the new configuration; restored the previous configuration: %@";
 "Unable to atomically replace AgentDock configuration: %@" = "Unable to atomically replace AgentDock configuration: %@";
-"AgentDock Core background registration was restored, but automatic restart still failed the health check: %@" = "AgentDock Core background registration was restored, but automatic restart still failed the health check: %@";
 "%@ background registration did not become available after the update." = "%@ background registration did not become available after the update.";
 "%@ background registration returned an unknown state after the update." = "%@ background registration returned an unknown state after the update.";
 "AgentDock Core needs background-item approval in System Settings." = "AgentDock Core needs background-item approval in System Settings.";

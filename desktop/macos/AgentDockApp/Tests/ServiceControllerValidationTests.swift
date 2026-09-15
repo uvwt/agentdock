@@ -63,6 +63,7 @@ struct ServiceControllerValidationTests {
         testServiceRegistrationStatusClassification()
         try testNexusConnectionStateResolution(root: root)
         try testDesktopUpdateCheckDecoding()
+        testStatusItemVisibilityPolicy()
         try testUpdateProgressEventDecoding()
         try testStreamingUpdateProcess(root: root)
 
@@ -210,13 +211,21 @@ struct ServiceControllerValidationTests {
         precondition(current.latestVersion == "v0.7.2")
 
         let available = try DesktopUpdateCheck.decode(
-            #"{"update_available":true,"message":"发现 AgentDock App 更新"}"#
+            #"{"current_version":"v0.8.2","latest_version":"v0.8.3","update_available":true,"message":"发现 AgentDock App 更新"}"#
         )
         precondition(available.updateAvailable)
+        precondition(available.currentVersion == "v0.8.2")
+        precondition(available.latestVersion == "v0.8.3")
 
         expectFailure(L10n.text("Unable to parse the AgentDock update check result.")) {
             _ = try DesktopUpdateCheck.decode("not-json")
         }
+    }
+
+    private static func testStatusItemVisibilityPolicy() {
+        precondition(UpdateStatusItemVisibility.shouldShow(isUpdating: false, isCheckingForUpdate: false))
+        precondition(UpdateStatusItemVisibility.shouldShow(isUpdating: true, isCheckingForUpdate: true))
+        precondition(!UpdateStatusItemVisibility.shouldShow(isUpdating: true, isCheckingForUpdate: false))
     }
 
     private static func testUpdateProgressEventDecoding() throws {

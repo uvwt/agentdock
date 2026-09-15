@@ -241,7 +241,8 @@ begin
     '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
     QuoteArgument(ExpandConstant('{tmp}\launch-windows-process.ps1')) +
     ' -FilePath ' + QuoteArgument(Filename) +
-    ' -AgentDockBinary ' + QuoteArgument(ExpandConstant('{app}\bin\agentdock.exe'));
+    ' -AgentDockBinary ' + QuoteArgument(ExpandConstant('{app}\bin\agentdock.exe')) +
+    ' -HiddenHostBinary ' + QuoteArgument(ExpandConstant('{app}\bin\agentdock-tray.exe'));
   if Arguments <> '' then
     Parameters := Parameters + ' -Arguments ' + QuoteArgument(Arguments);
 

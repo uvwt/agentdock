@@ -179,7 +179,6 @@
 "Saved securely · node_id=%@" = "已安全保存 · node_id=%@";
 "AgentDock update is missing background service recovery state." = "AgentDock 更新缺少后台服务恢复状态。";
 "AgentDock update result was lost while restoring background services." = "AgentDock 更新结果在服务恢复过程中丢失。";
-"Tunnel could not be restored for the current public access mode: %@" = "Tunnel 未能按当前公网模式恢复：%@";
 "Background services have not been restored yet. AgentDock will try again at the next launch: %@" = "后台服务尚未恢复，将在下次启动继续尝试：%@";
 "AgentDock recovery failed" = "AgentDock 恢复失败";
 "Menu bar launch at sign-in will be reconciled at the next launch because the update transaction is still in progress." = "菜单栏登录启动将在下次启动时重新收敛：更新事务尚未完成。";
@@ -217,6 +216,7 @@
 "%@ / %@" = "%@ / %@";
 "Version %@ → %@" = "版本 %@ → %@";
 "Updated to %@" = "已更新到 %@";
+"A new AgentDock version is available.\n\nCurrent version: %@\nLatest version: %@\n\nUpdate now?" = "发现 AgentDock 新版本。\n\n当前版本：%@\n最新版本：%@\n\n是否立即更新？";
 "AgentDock is up to date" = "AgentDock 已是最新版本";
 "Done" = "完成";
 "AgentDock is busy" = "AgentDock 正忙";
@@ -321,7 +321,6 @@
 "Failed to start the new configuration, and validation after restoring the old configuration also failed: %@" = "新配置启动失败，而且旧配置恢复验证也失败：%@";
 "Failed to start the new configuration; restored the previous configuration: %@" = "新配置启动失败，已恢复旧配置：%@";
 "Unable to atomically replace AgentDock configuration: %@" = "无法原子替换 AgentDock 配置：%@";
-"AgentDock Core background registration was restored, but automatic restart still failed the health check: %@" = "AgentDock Core 已恢复后台注册，但自动重启仍未通过健康检查：%@";
 "%@ background registration did not become available after the update." = "更新后 %@ 的后台注册没有变为可用状态。";
 "%@ background registration returned an unknown state after the update." = "更新后 %@ 的后台注册返回了未知状态。";
 "AgentDock Core needs background-item approval in System Settings." = "AgentDock Core 需要在系统设置中批准后台运行。";

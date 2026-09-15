@@ -227,25 +227,17 @@ final class ServiceController: @unchecked Sendable {
         return TunnelMode(rawValue: rawMode) ?? .local
     }
 
-    func reconcileTunnelRegistrationFromConfiguration() async throws {
+    func reconcileTunnelRegistrationFromConfiguration() throws {
         // 旧结构仍存在时必须先走迁移事务，不能在旁边提前注册第二套 Tunnel。
         guard !LegacyDesktopRuntimeMigration.isPresent(paths: paths) else { return }
 
+        // 这里只收敛“是否应注册”的长期配置，不等待 cloudflared 或公网 ready。
+        // 更新 handoff 已负责重新绑定目标 App；普通启动也不应因短暂网络状态重建 SMAppService。
         switch try configuredTunnelMode() {
         case .local:
             try setTunnelEnabled(false)
         case .quick, .named:
             try setTunnelEnabled(true)
-            if tunnelService.status == .enabled, !(await waitForTunnelProcess()) {
-                // App Bundle 被原子替换后，macOS 偶尔仍把旧 SMAppService 注册显示为 enabled，
-                // 但 launchd 保存的 Bundle 关联已经失效。此时单纯再次 register 会直接 no-op；
-                // 必须完整注销并重新注册，效果等同于用户手动“仅本地 → 公网”但无需人工介入。
-                NSLog("AgentDock Tunnel 注册显示 enabled 但进程未稳定，开始自动重新注册。")
-                try restartTunnel()
-                guard await waitForTunnelProcess() else {
-                    throw ValidationError(L10n.text("AgentDock Tunnel was re-registered, but the background process did not start reliably."))
-                }
-            }
         }
     }
 
@@ -259,10 +251,6 @@ final class ServiceController: @unchecked Sendable {
         } else {
             try unregister(service: tunnelService, label: Self.tunnelLabel)
         }
-    }
-
-    func restartTunnel() throws {
-        try reregister(service: tunnelService, label: Self.tunnelLabel, displayName: "AgentDock Tunnel")
     }
 
     func restoreBackgroundServiceRegistrations(coreEnabled: Bool, tunnelEnabled: Bool) throws {
@@ -298,9 +286,8 @@ final class ServiceController: @unchecked Sendable {
             )
         } catch {
             // Tunnel availability depends on ServiceManagement policy plus external/network state.
-            // A broken Tunnel must not turn an otherwise healthy App/Core update into a rollback.
-            // Report an explicit non-ready state to the Arbiter; it commits with a warning, then
-            // AppDelegate's post-handoff reconciliation gets one more bounded recovery attempt.
+            // Record the handoff state for diagnostics, but do not turn it into an update gate or
+            // completion warning; the control panel owns eventual Tunnel/public readiness.
             NSLog("AgentDock Tunnel registration could not be restored during update handoff: %@", error.localizedDescription)
             tunnelState = "unavailable"
         }
@@ -308,31 +295,15 @@ final class ServiceController: @unchecked Sendable {
     }
 
     func recoverBackgroundServicesAfterUpdate(coreEnabled: Bool, tunnelEnabled: Bool) async -> [String] {
-        // App Bundle 刚替换后，SMAppService 的注册状态可能已经生效，但 launchd 真正拉起
-        // Core/Tunnel 仍需要更长时间。先给系统一个正常传播窗口，再做一次有界自愈；
-        // 自愈仍失败时只提示，不把已经完成 handoff 的 App 更新回滚掉。
+        // Legacy 更新没有 Arbiter 的 Core health/version gate，因此这里只对 Core 做一次有界等待。
+        // Tunnel/public readiness 是外部 soft dependency，只由面板和日志展示，不阻塞更新收尾。
         var warnings: [String] = []
-        if tunnelEnabled,
-           tunnelService.status == .enabled,
-           !(await waitForTunnelProcess()) {
-            warnings.append(L10n.text("AgentDock Tunnel background registration was restored, but the process is still starting."))
-        }
+        _ = tunnelEnabled
         if coreEnabled,
            coreService.status == .enabled,
            let configuration = ServiceConfiguration.load(from: paths.environment),
            !(await waitForHealth(configuration: configuration, timeout: 10)) {
-            // 实机更新后可能出现“SMAppService 显示 enabled，但 Core 进程没有真正拉起”的状态。
-            // 控制面板“重启”之所以能恢复，是因为它会完整 unregister/register；这里复用同一路径，
-            // 避免用户在每次 App 更新后手动点击重启。
-            NSLog("AgentDock Core 注册显示 enabled 但健康检查未通过，开始自动重新注册。")
-            do {
-                try await restart()
-            } catch {
-                warnings.append(L10n.format(
-                    "AgentDock Core background registration was restored, but automatic restart still failed the health check: %@",
-                    error.localizedDescription
-                ))
-            }
+            warnings.append(L10n.text("AgentDock background service is enabled, but the health check did not pass."))
         }
         return warnings
     }
@@ -344,17 +315,6 @@ final class ServiceController: @unchecked Sendable {
 
     func openBackgroundItemsSettings() {
         SMAppService.openSystemSettingsLoginItems()
-    }
-
-    func waitForTunnelProcess(timeout: TimeInterval = 10) async -> Bool {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: self.waitForStableLaunchdProcess(
-                    label: Self.tunnelLabel,
-                    timeout: timeout
-                ))
-            }
-        }
     }
 
     func isLoaded() -> Bool {
@@ -369,10 +329,8 @@ final class ServiceController: @unchecked Sendable {
         }
     }
 
-    func update(onProgress: @escaping (UpdateProgressEvent) -> Void) async throws -> String {
-        try validateServiceManagementReadiness()
-
-        let check = try await runInBackground {
+    func checkForUpdates() async throws -> DesktopUpdateCheck {
+        try await runInBackground {
             let result = try runProcess(
                 executable: self.paths.binary.path,
                 arguments: ["update", "--check"],
@@ -383,16 +341,12 @@ final class ServiceController: @unchecked Sendable {
             }
             return try DesktopUpdateCheck.decode(result.output)
         }
-        guard check.updateAvailable else {
-            // 没有 pending update result 时这只能是上一次未完成流程留下的临时状态。
-            DesktopUpdateServiceState.remove(at: paths.updateServiceState)
-            onProgress(.local(
-                type: .completed,
-                currentVersion: check.currentVersion,
-                targetVersion: check.latestVersion
-            ))
-            return check.message
-        }
+    }
+
+    func applyUpdate(onProgress: @escaping (UpdateProgressEvent) -> Void) async throws -> String {
+        // 用户确认之后才检查后台服务写入能力并进入停服/替换阶段。
+        // 纯版本检查不应该产生任何服务状态或更新事务副作用。
+        try validateServiceManagementReadiness()
 
         let currentStatus = await status()
         let serviceState = DesktopUpdateServiceState(
@@ -618,43 +572,6 @@ final class ServiceController: @unchecked Sendable {
             executable: "/bin/launchctl",
             arguments: ["print", "\(serviceDomain)/\(label)"]
         ).status) == 0
-    }
-
-    private func launchdProcessID(label: String) -> Int? {
-        guard let result = try? runProcess(
-            executable: "/bin/launchctl",
-            arguments: ["print", "\(serviceDomain)/\(label)"]
-        ), result.status == 0 else { return nil }
-        for rawLine in result.output.split(whereSeparator: \.isNewline) {
-            let line = rawLine.trimmingCharacters(in: .whitespaces)
-            guard line.hasPrefix("pid = "),
-                  let pid = Int(line.dropFirst("pid = ".count)),
-                  pid > 0 else { continue }
-            return pid
-        }
-        return nil
-    }
-
-    private func waitForStableLaunchdProcess(label: String, timeout: TimeInterval) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        var previousPID: Int?
-        var stableChecks = 0
-        while Date() < deadline {
-            if let pid = launchdProcessID(label: label) {
-                if pid == previousPID {
-                    stableChecks += 1
-                } else {
-                    previousPID = pid
-                    stableChecks = 1
-                }
-                if stableChecks >= 4 { return true }
-            } else {
-                previousPID = nil
-                stableChecks = 0
-            }
-            Thread.sleep(forTimeInterval: 0.25)
-        }
-        return false
     }
 
     private func waitUntilUnregistered(service: SMAppService, label: String, timeout: TimeInterval) -> Bool {

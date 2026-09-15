@@ -42,6 +42,43 @@ func TestExtractDesktopUpdateArchiveValidatesSignedApp(t *testing.T) {
 	}
 }
 
+func TestExtractDesktopUpdateArchiveAcceptsPreArbiterApp(t *testing.T) {
+	dir := t.TempDir()
+	appPath := writeSignedMacOSAppWithArbiter(t, filepath.Join(dir, "source"), "0.7.1", false)
+	archivePath := filepath.Join(dir, macOSDesktopArchiveName)
+	runTestCommand(t, "/usr/bin/ditto", "-c", "-k", "--keepParent", appPath, archivePath)
+	archiveData, err := os.ReadFile(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	extracted, err := extractDesktopUpdateArchive(
+		context.Background(),
+		archiveData,
+		filepath.Join(dir, "extract"),
+		"v0.7.1",
+	)
+	if err != nil {
+		t.Fatalf("pre-Arbiter App was rejected as an update target: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(extracted, "Contents", "Helpers", "agentdock-arbiter")); !os.IsNotExist(err) {
+		t.Fatalf("pre-Arbiter fixture unexpectedly contains Arbiter: %v", err)
+	}
+}
+
+func TestValidateMacOSDesktopRuntimeRejectsInvalidPresentArbiter(t *testing.T) {
+	appPath := writeSignedMacOSApp(t, t.TempDir(), "0.7.1")
+	arbiter := filepath.Join(appPath, "Contents", "Helpers", "agentdock-arbiter")
+	if err := os.Chmod(arbiter, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := validateMacOSDesktopRuntime(context.Background(), appPath, "v0.7.1")
+	if err == nil || !strings.Contains(err.Error(), "内置 Arbiter 无效") {
+		t.Fatalf("invalid present Arbiter was not rejected: %v", err)
+	}
+}
+
 func TestValidateMacOSDesktopRuntimeRejectsUnsafeMenuAgent(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -276,6 +313,11 @@ func writeHandoffTestMacOSApp(t *testing.T, root string) string {
 
 func writeSignedMacOSApp(t *testing.T, root, version string) string {
 	t.Helper()
+	return writeSignedMacOSAppWithArbiter(t, root, version, true)
+}
+
+func writeSignedMacOSAppWithArbiter(t *testing.T, root, version string, includeArbiter bool) string {
+	t.Helper()
 	appPath := filepath.Join(root, "AgentDock.app")
 	contents := filepath.Join(appPath, "Contents")
 	macOSDir := filepath.Join(contents, "MacOS")
@@ -308,8 +350,10 @@ func writeSignedMacOSApp(t *testing.T, root, version string) string {
 	if err := os.WriteFile(filepath.Join(helpersDir, "cloudflared"), cloudflaredBinary, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(helpersDir, "agentdock-arbiter"), cloudflaredBinary, 0o755); err != nil {
-		t.Fatal(err)
+	if includeArbiter {
+		if err := os.WriteFile(filepath.Join(helpersDir, "agentdock-arbiter"), cloudflaredBinary, 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := os.WriteFile(filepath.Join(helpersDir, "AgentDockLoginHelper"), cloudflaredBinary, 0o755); err != nil {
 		t.Fatal(err)
@@ -347,7 +391,9 @@ func writeSignedMacOSApp(t *testing.T, root, version string) string {
 	runTestCommand(t, "/usr/bin/codesign", "--force", "--sign", "-", "--identifier", "com.uvwt.agentdock.login-helper", filepath.Join(helpersDir, "AgentDockLoginHelper"))
 	runTestCommand(t, "/usr/bin/codesign", "--force", "--sign", "-", "--identifier", "com.uvwt.agentdock.core", filepath.Join(helpersDir, "agentdock"))
 	runTestCommand(t, "/usr/bin/codesign", "--force", "--sign", "-", "--identifier", "com.uvwt.agentdock.cloudflared", filepath.Join(helpersDir, "cloudflared"))
-	runTestCommand(t, "/usr/bin/codesign", "--force", "--sign", "-", "--identifier", "com.uvwt.agentdock.arbiter", filepath.Join(helpersDir, "agentdock-arbiter"))
+	if includeArbiter {
+		runTestCommand(t, "/usr/bin/codesign", "--force", "--sign", "-", "--identifier", "com.uvwt.agentdock.arbiter", filepath.Join(helpersDir, "agentdock-arbiter"))
+	}
 	runTestCommand(t, "/usr/bin/codesign", "--force", "--deep", "--sign", "-", "--identifier", "com.uvwt.agentdock", appPath)
 	if err := validateMacOSDesktopRuntime(context.Background(), appPath, version); err != nil {
 		t.Fatal(err)
