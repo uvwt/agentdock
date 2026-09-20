@@ -25,6 +25,13 @@ func (s *Server) appResourceDefinitions() []appResourceDefinition {
 	}
 	definitions := []appResourceDefinition{
 		{
+			URI:         protocol.ImageUIResourceURI,
+			Name:        "agentdock-image",
+			Title:       "AgentDock image",
+			Description: "Display the requested image and attach it to a ChatGPT follow-up.",
+			HTML:        mcpapps.HTML("view_image", "Image"),
+		},
+		{
 			URI:         protocol.ContextUIResourceURI,
 			Name:        "agentdock-context",
 			Title:       "AgentDock context",

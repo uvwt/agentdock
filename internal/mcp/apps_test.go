@@ -112,8 +112,8 @@ func TestUIResourcesMatchServedResourceRegistry(t *testing.T) {
 	server := &Server{cfg: config.Config{NexusEndpoint: "https://nexus.example.test", ACPEnabled: true, MCPAppsEnabled: true}}
 	definitions := server.appResourceDefinitions()
 	resources := server.UIResources()
-	if len(definitions) != 8 || len(resources) != len(definitions) {
-		t.Fatalf("resource registry=%d bridge capabilities=%d, want 8", len(definitions), len(resources))
+	if len(definitions) != 9 || len(resources) != len(definitions) {
+		t.Fatalf("resource registry=%d bridge capabilities=%d, want 9", len(definitions), len(resources))
 	}
 	byURI := make(map[string]protocol.UIResourceCapability, len(resources))
 	for _, resource := range resources {
@@ -251,8 +251,8 @@ func TestMCPAppsBindResourcesDirectlyToBusinessTools(t *testing.T) {
 		}
 		resources[resource.URI] = resource
 	}
-	if len(resources) != 5 {
-		t.Fatalf("resources/list count = %d, want 5", len(resources))
+	if len(resources) != 6 {
+		t.Fatalf("resources/list count = %d, want 6", len(resources))
 	}
 	for _, uri := range []string{
 		protocol.ContextUIResourceURI,
@@ -534,8 +534,8 @@ func TestMCPAppsExposeNexusViewsWhenNexusEnabled(t *testing.T) {
 		}
 		resources[resource.URI] = resource
 	}
-	if len(resources) != 7 {
-		t.Fatalf("resources/list count = %d, want 7", len(resources))
+	if len(resources) != 8 {
+		t.Fatalf("resources/list count = %d, want 8", len(resources))
 	}
 	for _, tc := range []struct {
 		uri      string

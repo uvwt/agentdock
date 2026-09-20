@@ -13,6 +13,7 @@ import (
 
 	sdkjsonrpc "github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/uvwt/agentdock-protocol/mcpapps"
 	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
@@ -171,6 +172,16 @@ func (s *Server) callTool(ctx context.Context, name string, request *mcpsdk.Call
 		if meta := toolResultMetadata(def, arguments, s.cfg.MCPAppsEnabled); len(meta) > 0 {
 			response.Meta = meta
 		}
+		if name == "view_image" && s.cfg.MCPAppsEnabled && !response.IsError {
+			for _, content := range response.Content {
+				if _, ok := content.(*mcpsdk.ImageContent); ok {
+					// 图像宿主需在结果上获得展示绑定；原图字节和结构化协议保持不变。
+					response.Meta = mcpsdk.Meta(toolMetadata(def, true))
+					response.Content = append(response.Content, &mcpsdk.TextContent{Text: mcpapps.ImageResultText})
+					break
+				}
+			}
+		}
 	}
 	return &response, nil
 }
@@ -179,6 +190,9 @@ func toolMetadata(def ToolDefinition, mcpAppsEnabled bool) map[string]any {
 	meta := map[string]any{}
 	if mcpAppsEnabled && def.UIBinding != nil && def.UIBinding.Action == "" {
 		meta["ui"] = map[string]any{"resourceUri": def.UIBinding.ResourceURI}
+		if def.Name == "view_image" {
+			meta["openai/outputTemplate"] = def.UIBinding.ResourceURI
+		}
 	}
 	if len(def.FileArgRewritePaths) > 0 {
 		paths := append([]string(nil), def.FileArgRewritePaths...)

@@ -10,6 +10,7 @@ type UIBinding struct {
 }
 
 var toolUIBindings = map[string]UIBinding{
+	"view_image":               {ResourceURI: protocol.ImageUIResourceURI},
 	"agentdock_context":        {ResourceURI: protocol.ContextUIResourceURI},
 	"file_edit":                {ResourceURI: protocol.FileChangeUIResourceURI},
 	"task_manage":              {ResourceURI: protocol.TaskProgressUIResourceURI},
