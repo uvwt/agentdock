@@ -165,11 +165,15 @@ $recoveredUrl = 'https://recovered-agentdock-test.trycloudflare.com'
 $secondUrl = 'https://second-agentdock-test.trycloudflare.com'
 $thirdUrl = 'https://third-agentdock-test.trycloudflare.com'
 $oldUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$oldHome = $env:AGENTDOCK_HOME
+$oldDefaultDir = $env:AGENTDOCK_DEFAULT_DIR
 $activeCoreBinary = ''
 
 try {
     New-Item -ItemType Directory -Path $installDir -Force | Out-Null
     [IO.File]::WriteAllText($urlSourcePath, $firstUrl, [Text.UTF8Encoding]::new($false))
+    $env:AGENTDOCK_HOME = Join-Path $root '.agentdock'
+    $env:AGENTDOCK_DEFAULT_DIR = Join-Path $root 'workspace'
 
     & $InstallerPath `
         -Version 'v0.0.0-test' `
@@ -188,16 +192,14 @@ try {
         -CloudflaredStartupValueName $cloudflaredStartupName `
         -TrayStartupValueName $trayStartupName
 
+    # Provision 文件是同步完成的；Tunnel readiness 文件故意不在这里做即时断言：
+    # Installer 先提交 Core，再由 detached tray proxy 异步发布公网 ready 状态。
     foreach ($path in @(
         $agentDockBinary,
         $trayBinary,
         $cloudflaredBinary,
         $cloudflaredLauncher,
-        $quickUrlPath,
-        $serverUrlPath,
         $manifestPath,
-        $supervisorPidPath,
-        $startCountPath,
         $authPath,
         $oauthPasswordPath,
         $oauthSecretPath
@@ -208,7 +210,11 @@ try {
     }
     Wait-TextFileValue -Path $quickUrlPath -ExpectedValue $firstUrl
     Wait-TextFileValue -Path $serverUrlPath -ExpectedValue $firstUrl
+    Wait-TextFileValue -Path $startCountPath -ExpectedValue '1'
     Wait-Healthy -Url $healthUrl
+    if (-not (Test-Path -LiteralPath $supervisorPidPath -PathType Leaf)) {
+        throw "Quick Tunnel became ready without a supervisor PID file: $supervisorPidPath"
+    }
 
     $coreStartupCommand = Get-ItemPropertyValue -LiteralPath $runKey -Name $startupName
     $tunnelStartupCommand = Get-ItemPropertyValue -LiteralPath $runKey -Name $cloudflaredStartupName
@@ -226,7 +232,6 @@ try {
     if ($firstManifest.tunnel_mode -ne 'quick' -or $firstManifest.public_url -ne $firstUrl) {
         throw "Initial runtime manifest did not contain the Quick Tunnel URL: $($firstManifest | ConvertTo-Json -Compress)"
     }
-    Wait-TextFileValue -Path $startCountPath -ExpectedValue '1'
     $activeCoreBinary = Get-ActiveCoreBinary -RuntimeDir $runtimeDir
     $firstAgentDockIds = @(Get-ProcessIdsByPath -ProcessName 'agentdock-core' -BinaryPath $activeCoreBinary)
     if ($firstAgentDockIds.Count -ne 2) {
@@ -411,5 +416,7 @@ try {
         Remove-ItemProperty -LiteralPath $runKey -Name $name -ErrorAction SilentlyContinue
     }
     [Environment]::SetEnvironmentVariable('Path', $oldUserPath, 'User')
+    $env:AGENTDOCK_HOME = $oldHome
+    $env:AGENTDOCK_DEFAULT_DIR = $oldDefaultDir
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }

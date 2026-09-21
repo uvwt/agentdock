@@ -1582,6 +1582,21 @@ try {
         New-Item -ItemType Directory -Path $directory -Force | Out-Null
     }
 
+    # Windows Tunnel has a long-lived supervisor that will immediately restart cloudflared after
+    # an external process kill. Stop that supervisor through the currently committed generation
+    # before replacing cloudflared or changing its protected Token. Legacy installs without a
+    # supervisor PID keep the old process-only migration path below.
+    $tunnelSupervisorPidPath = Join-Path $runtimeDir 'tunnel-supervisor.pid'
+    if ($generationLayoutDetected -and
+        (Test-Path -LiteralPath $tunnelSupervisorPidPath -PathType Leaf) -and
+        (Test-Path -LiteralPath $existingGenerationCore -PathType Leaf)) {
+        $tunnelStopOutput = @(& $existingGenerationCore tunnel stop --runtime-root $runtimeDir 2>&1)
+        if ($LASTEXITCODE -ne 0) {
+            $tunnelStopDetail = ($tunnelStopOutput | Out-String).Trim()
+            throw "Unable to stop the existing AgentDock Tunnel supervisor before update. $tunnelStopDetail"
+        }
+    }
+
     $cloudflaredProcessWasRunning = @(Get-CloudflaredProcesses -BinaryPath $cloudflaredBinary).Count -gt 0
     $cloudflaredStopAttempted = $true
     [void] (Stop-CloudflaredForUpgrade -BinaryPath $cloudflaredBinary)
@@ -1911,8 +1926,20 @@ exit `$LASTEXITCODE
                     -WindowStyle Hidden | Out-Null
             }
         } catch {
-            # Tunnel/public readiness is shown by the control panel and retained in Tunnel logs.
-            # Do not turn this soft dependency into an install/update warning or rollback.
+            # Network/public readiness stays a soft dependency, but failure to schedule the local
+            # Tunnel host is actionable. Keep Core committed and surface the degraded public state.
+            $tunnelWarningMessage = 'AgentDock was installed successfully, but public access could not be started in the background. Open the control panel or sign in again to retry.'
+            if ([string]::IsNullOrWhiteSpace($installWarningMessage)) {
+                $installWarningMessage = $tunnelWarningMessage
+            } else {
+                $installWarningMessage = ($installWarningMessage + ' ' + $tunnelWarningMessage).Trim()
+            }
+            if ([string]::IsNullOrWhiteSpace($installWarningCode)) {
+                $installWarningCode = 'tunnel-start-deferred'
+            } else {
+                $installWarningCode = "$installWarningCode,tunnel-start-deferred"
+            }
+            Write-Warning "$tunnelWarningMessage Details: $($_.Exception.Message)"
         }
         if ($resolvedTunnelMode -eq 'quick') {
             $publicUrl = Read-TextFile -Path $quickTunnelUrlPath
@@ -1948,10 +1975,15 @@ exit `$LASTEXITCODE
     }
     if ($resolvedTunnelMode -ne 'none') {
         Write-Host ''
-        Write-Host 'AgentDock public installation complete'
+        Write-Host 'AgentDock public access configured'
         Write-Host "Public mode: $resolvedTunnelMode"
-        Write-Host "Public address: $publicUrl"
-        Write-Host "MCP address: $publicUrl/mcp"
+        if (-not [string]::IsNullOrWhiteSpace($publicUrl)) {
+            Write-Host "Public address: $publicUrl"
+            Write-Host "MCP address: $publicUrl/mcp"
+        } else {
+            Write-Host 'Public access is starting in the background.'
+            Write-Host 'Open the AgentDock control panel to view the public address when it is ready.'
+        }
         Write-Host "Bearer Token: $AuthToken"
         Write-Host "OAuth login password: $OAuthPassword"
         Write-Host 'Authentication: Bearer Token and OAuth are both enabled.'
@@ -1959,9 +1991,9 @@ exit `$LASTEXITCODE
         Write-Host "cloudflared stderr log: $cloudflaredStderrLogPath"
         if ($resolvedTunnelMode -eq 'quick') {
             Write-Host 'The temporary address changes after cloudflared restarts.'
-            Write-Host 'Run the same installer command again to refresh the address; credentials are preserved.'
-            Write-Host 'Then replace the MCP URL in the client and complete OAuth again.'
+            Write-Host 'The control panel reports the current address after background startup completes.'
         } else {
+            Write-Host 'Tunnel startup continues in the background; readiness is shown in the control panel and logs.'
             Write-Host "Cloudflare Public Hostname service target: http://127.0.0.1:$Port"
         }
     }

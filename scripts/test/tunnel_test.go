@@ -31,6 +31,34 @@ func TestQuickTunnelParsingStaysInRuntime(t *testing.T) {
 		})
 	}
 }
+
+func TestWindowsTunnelLifecycleTestsIsolateAgentDockHome(t *testing.T) {
+	for _, name := range []string{
+		"test-windows-quick-tunnel-lifecycle.ps1",
+		"test-windows-named-tunnel-lifecycle.ps1",
+	} {
+		t.Run(name, func(t *testing.T) {
+			data, err := os.ReadFile(name)
+			if err != nil {
+				t.Fatalf("read %s: %v", name, err)
+			}
+			content := string(data)
+			for _, want := range []string{
+				"$oldHome = $env:AGENTDOCK_HOME",
+				"$oldDefaultDir = $env:AGENTDOCK_DEFAULT_DIR",
+				"$env:AGENTDOCK_HOME = Join-Path $root '.agentdock'",
+				"$env:AGENTDOCK_DEFAULT_DIR = Join-Path $root 'workspace'",
+				"$env:AGENTDOCK_HOME = $oldHome",
+				"$env:AGENTDOCK_DEFAULT_DIR = $oldDefaultDir",
+			} {
+				if !strings.Contains(content, want) {
+					t.Fatalf("%s must isolate the lifecycle fixture from the developer's AgentDock state; missing %q", name, want)
+				}
+			}
+		})
+	}
+}
+
 func TestDesktopControlSurfacesCanRefreshQuickTunnel(t *testing.T) {
 	checks := map[string][]string{
 		filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml.cs"): {

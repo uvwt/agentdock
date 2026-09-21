@@ -151,6 +151,62 @@ function Assert-TextFile {
     }
 }
 
+function Wait-FileExists {
+    param([string] $Path, [int] $TimeoutSeconds = 45)
+
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    do {
+        Start-Sleep -Milliseconds 250
+        if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            return
+        }
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw "Timed out waiting for runtime file: $Path"
+}
+
+function Wait-TextFileContains {
+    param([string] $Path, [string] $Expected, [int] $TimeoutSeconds = 45)
+
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $lastReadError = ''
+    do {
+        Start-Sleep -Milliseconds 250
+        if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            try {
+                # Windows 上 Go 日志 writer 会持续持有活动文件；Get-Content 可以共享读取实时日志，
+                # 而 File.ReadAllText 会因 sharing violation 失败，导致测试错误地等待到超时。
+                $text = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
+                if ($text.IndexOf($Expected, [StringComparison]::Ordinal) -ge 0) {
+                    return
+                }
+            } catch {
+                $lastReadError = $_.Exception.Message
+            }
+        }
+    } while ([DateTime]::UtcNow -lt $deadline)
+    $detail = if ([string]::IsNullOrWhiteSpace($lastReadError)) { '' } else { " Last read error: $lastReadError" }
+    throw "Timed out waiting for '$Expected' in $Path.$detail"
+}
+
+function Wait-ProcessCountByPath {
+    param(
+        [string] $ProcessName,
+        [string] $BinaryPath,
+        [int] $ExpectedCount,
+        [int] $TimeoutSeconds = 45
+    )
+
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    do {
+        Start-Sleep -Milliseconds 250
+        $count = @(Get-ProcessIdsByPath -ProcessName $ProcessName -BinaryPath $BinaryPath).Count
+        if ($count -eq $ExpectedCount) {
+            return
+        }
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw "Timed out waiting for $ProcessName process count $ExpectedCount for $BinaryPath"
+}
+
 function Assert-NoTunnelTokenInProcessArguments {
     param([string[]] $Tokens)
 
@@ -184,9 +240,7 @@ function Assert-NamedRuntime {
     if (Test-Path -LiteralPath $quickUrlPath -PathType Leaf) {
         throw 'Named Tunnel runtime unexpectedly contains a Quick Tunnel ready URL.'
     }
-    if (-not (Test-Path -LiteralPath $namedTokenEnvMarker -PathType Leaf)) {
-        throw 'Fake cloudflared did not observe the Named Tunnel Token through its environment.'
-    }
+    Wait-FileExists -Path $namedTokenEnvMarker
 
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     if ($manifest.tunnel_mode -ne 'named' -or $manifest.public_url -ne $fixedUrl) {
@@ -213,10 +267,7 @@ function Assert-NamedRuntime {
         throw 'Named Tunnel install/update rotated existing AgentDock credentials.'
     }
 
-    $cloudflaredIds = @(Get-ProcessIdsByPath -ProcessName 'cloudflared' -BinaryPath $cloudflaredBinary)
-    if ($cloudflaredIds.Count -ne 1) {
-        throw "Expected exactly one Named Tunnel cloudflared process; got $($cloudflaredIds.Count)."
-    }
+    Wait-ProcessCountByPath -ProcessName 'cloudflared' -BinaryPath $cloudflaredBinary -ExpectedCount 1
     $tunnelStartupCommand = Get-ItemPropertyValue -LiteralPath $runKey -Name $cloudflaredStartupName
     if (-not $tunnelStartupCommand.Contains($trayBinary) -or -not $tunnelStartupCommand.Contains('--start-tunnel')) {
         throw "Named Tunnel startup entry is not native: $tunnelStartupCommand"
@@ -250,6 +301,9 @@ function Invoke-Installer {
     if (-not [string]::IsNullOrWhiteSpace($TunnelTokenFile)) {
         $arguments['TunnelTokenFile'] = $TunnelTokenFile
     }
+    # 上一次健康启动会留下 fixture marker。每次安装前清掉它，确保 Assert-NamedRuntime
+    # 验证的是本轮异步 Tunnel generation 真正达到 ready，而不是复用旧标记。
+    Remove-Item -LiteralPath $namedTokenEnvMarker -Force -ErrorAction SilentlyContinue
     & $InstallerPath @arguments
 }
 
@@ -370,59 +424,55 @@ try {
         -ExpectedOAuthPasswordHash $oauthPasswordHash `
         -ExpectedOAuthSecretHash $oauthSecretHash
 
-    # A replacement Token that cloudflared rejects must fail the new generation trial. The installer
-    # then has to restore the known-good generation plus the exact previous DPAPI/runtime bytes and
-    # prove the restored Named Tunnel is ready before reporting rollback complete.
-    $failureArgs = @(
-        '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-        '-File', $InstallerPath,
-        '-Version', 'latest',
-        '-OfflineArchive', $trialPayload.Archive,
-        '-OfflineChecksumFile', $trialPayload.Checksum,
-        '-OfflineCloudflaredBinary', $FakeCloudflaredBinary,
-        '-InstallDir', $installDir,
-        '-RegisterStartup',
-        '-TunnelMode', 'named',
-        '-ServerUrl', $fixedUrl,
-        '-TunnelTokenFile', $invalidTokenFile,
-        '-CorePrivilegeMode', 'standard',
-        '-Port', "$port",
-        '-StartupValueName', $startupName,
-        '-CloudflaredStartupValueName', $cloudflaredStartupName,
-        '-TrayStartupValueName', $trayStartupName
-    )
-    $previousErrorActionPreference = $ErrorActionPreference
-    try {
-        # Windows PowerShell 5.1 turns child-process stderr into NativeCommandError records.
-        # This child is expected to fail, so collect the diagnostics without converting them
-        # into a terminating error before we can inspect the real process exit code.
-        $ErrorActionPreference = 'Continue'
-        $failureOutput = @(& powershell.exe @failureArgs 2>&1)
-        $failureExitCode = $LASTEXITCODE
-    } finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-        # The failed child is the fixture. Do not leak its native exit code into the parent CI step.
-        $global:LASTEXITCODE = 0
-    }
-    if ($failureExitCode -eq 0) {
-        throw 'Named Tunnel invalid-Token upgrade unexpectedly succeeded.'
-    }
-    $failureText = $failureOutput | Out-String
-    if ($failureText.Contains($stableTunnelToken) -or $failureText.Contains($invalidTunnelToken)) {
-        throw 'Named Tunnel failure diagnostics leaked a Tunnel Token.'
-    }
+    # 公网 Tunnel readiness 是 soft dependency。无效的新 Token 不能回滚已经健康的 Core generation。
+    # 这里先证明 trial generation 已提交且 Tunnel 确实尝试启动但未 ready，再恢复有效 Token，
+    # 并要求 Core generation 保持不变。
+    Remove-Item -LiteralPath $namedTokenEnvMarker -Force -ErrorAction SilentlyContinue
+    Invoke-Installer `
+        -Archive $trialPayload.Archive `
+        -Checksum $trialPayload.Checksum `
+        -TunnelTokenFile $invalidTokenFile
 
+    Wait-Healthy -Url $healthUrl
+    $invalidActive = Get-Content -LiteralPath $activeVersionPath -Raw | ConvertFrom-Json
+    if ($invalidActive.state -ne 'committed' -or $invalidActive.active_version -ne $trialVersion) {
+        throw "Invalid Named Token must not roll back a healthy Core generation: $($invalidActive | ConvertTo-Json -Compress)"
+    }
+    $invalidCore = Join-Path $runtimeDir "versions\$trialVersion\agentdock-core.exe"
+    if ((Get-AgentDockVersion -BinaryPath $invalidCore) -ne $trialVersion) {
+        throw "Committed Core does not report the expected trial version: $trialVersion"
+    }
+    Wait-TextFileContains `
+        -Path (Join-Path $runtimeDir 'cloudflared.err.log') `
+        -Expected 'Provided Tunnel token is not valid.'
+    if (Test-Path -LiteralPath $namedTokenEnvMarker -PathType Leaf) {
+        throw 'Invalid Named Token unexpectedly reached Tunnel ready state.'
+    }
+    if ((Get-FileHash -LiteralPath $tunnelTokenPath -Algorithm SHA256).Hash -eq $tokenHash) {
+        throw 'Invalid Named Token update did not replace the protected Tunnel credential.'
+    }
+    if ((Get-FileHash -LiteralPath $authPath -Algorithm SHA256).Hash -ne $authHash -or
+        (Get-FileHash -LiteralPath $oauthPasswordPath -Algorithm SHA256).Hash -ne $oauthPasswordHash -or
+        (Get-FileHash -LiteralPath $oauthSecretPath -Algorithm SHA256).Hash -ne $oauthSecretHash) {
+        throw 'Invalid Named Token update rotated unrelated AgentDock credentials.'
+    }
+    Assert-NoTunnelTokenInProcessArguments -Tokens @($stableTunnelToken, $invalidTunnelToken)
+
+    # 把有效 Token 重新应用到已提交的 generation；同一个 Core 必须恢复公网 ready，
+    # 不能发生 rollback 或再次切换版本。
+    Invoke-Installer `
+        -Archive $trialPayload.Archive `
+        -Checksum $trialPayload.Checksum `
+        -TunnelTokenFile $stableTokenFile
+    $restoredTokenHash = (Get-FileHash -LiteralPath $tunnelTokenPath -Algorithm SHA256).Hash
     Assert-NamedRuntime `
-        -ExpectedVersion $targetVersion `
-        -ExpectedTokenHash $tokenHash `
+        -ExpectedVersion $trialVersion `
+        -ExpectedTokenHash $restoredTokenHash `
         -ExpectedAuthHash $authHash `
         -ExpectedOAuthPasswordHash $oauthPasswordHash `
         -ExpectedOAuthSecretHash $oauthSecretHash
-    if (Test-Path -LiteralPath (Join-Path $runtimeDir "versions\$trialVersion")) {
-        throw "Failed Named Tunnel trial generation was not removed: $trialVersion"
-    }
 
-    Write-Host "Windows Named Tunnel lifecycle passed: $sourceVersion repair -> $targetVersion upgrade -> $trialVersion rollback"
+    Write-Host "Windows Named Tunnel lifecycle passed: $sourceVersion repair -> $targetVersion upgrade -> $trialVersion soft-failure recovery"
 
     & $UninstallerPath `
         -InstallDir $installDir `
@@ -433,7 +483,15 @@ try {
         throw 'Named Tunnel lifecycle uninstaller did not remove the install directory.'
     }
 } catch {
-    foreach ($path in @($manifestPath, $activeVersionPath, $serverUrlPath, $namedServerUrlPath, $tunnelModePath)) {
+    foreach ($path in @(
+        $manifestPath,
+        $activeVersionPath,
+        $serverUrlPath,
+        $namedServerUrlPath,
+        $tunnelModePath,
+        (Join-Path $runtimeDir 'cloudflared.err.log'),
+        (Join-Path $runtimeDir 'logs\control-panel.err.log')
+    )) {
         Write-Host "----- diagnostic: $path -----"
         if (Test-Path -LiteralPath $path -PathType Leaf) {
             Get-Content -LiteralPath $path -Raw | Write-Host

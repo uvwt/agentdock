@@ -339,12 +339,12 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 		if err := store.WriteTransaction(transaction); err != nil {
 			return fail(PhaseTunnel, err, staged)
 		}
-		// Core health is the install/update commit boundary. Tunnel/public access depends on
-		// external network state and Cloudflare policy, so readiness must never roll back a
-		// healthy Core installation. Start Tunnel best-effort but do not add a second readiness
-		// wait to the transaction; the control panel reports eventual state and Tunnel logs retain
-		// the concrete failure evidence.
-		if err := startTunnelServices(ctx, request, staged.Journal); err == nil && request.TunnelMode == "quick" {
+		// Core health 是安装/更新的提交边界。Tunnel 公网就绪依赖外部网络和 Cloudflare 状态，
+		// 不能因此回滚健康的 Core；但启动本地 Tunnel 宿主仍属于可控步骤，如果连宿主都无法
+		// 调度，应保留 warning，避免把“公网尚未真正启动”误报成完整成功。
+		if err := startTunnelServices(ctx, request, staged.Journal); err != nil {
+			result.Warnings = append(result.Warnings, "Tunnel startup could not be scheduled: "+err.Error())
+		} else if request.TunnelMode == "quick" {
 			if publicURL := readQuickTunnelURL(request.RuntimeRoot); publicURL != "" {
 				result.PublicURL = publicURL
 			}

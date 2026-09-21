@@ -86,6 +86,8 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"prepare-elevated",
 		"setup-elevated-context",
 		"Start Setup normally under the signed-in account",
+		"$tunnelSupervisorPidPath = Join-Path $runtimeDir 'tunnel-supervisor.pid'",
+		"$tunnelStopOutput = @(& $existingGenerationCore tunnel stop --runtime-root $runtimeDir 2>&1)",
 		"Stop-CloudflaredForUpgrade -BinaryPath $cloudflaredBinary",
 		"Copy-Item -LiteralPath $destinationBinary -Destination $binaryBackup -Force",
 		"Write-ProtectedText -Path $tokenPath",
@@ -117,6 +119,10 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"$resultErrorCode = 'rollback-failed'",
 		"$installWarningCode = 'runtime-launch-deferred'",
 		"$installWarningCode = \"$installWarningCode,runtime-launch-deferred\"",
+		"$installWarningCode = 'tunnel-start-deferred'",
+		"$installWarningCode = \"$installWarningCode,tunnel-start-deferred\"",
+		"Public access is starting in the background.",
+		"Tunnel startup continues in the background; readiness is shown in the control panel and logs.",
 		"-ErrorCode 'install-validation-failed'",
 		"scheduled-task-recovery-",
 		"Recovery files: $taskRecoveryPath",
@@ -182,6 +188,13 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	probeCall := strings.Index(script, "install --engine-ready")
 	if probeCall < 0 || probeCall > legacyPrepareCall {
 		t.Fatal("Release payload must be proven Engine-ready before legacy migration or process mutation")
+	}
+	supervisorStopCall := strings.Index(script, "$tunnelStopOutput = @(& $existingGenerationCore tunnel stop --runtime-root $runtimeDir 2>&1)")
+	cloudflaredStopCall := strings.Index(script, "[void] (Stop-CloudflaredForUpgrade -BinaryPath $cloudflaredBinary)")
+	tunnelTokenWriteCall := strings.Index(script, "Write-ProtectedText -Path $tunnelTokenPath -Value $TunnelToken")
+	if supervisorStopCall < 0 || cloudflaredStopCall < 0 || tunnelTokenWriteCall < 0 ||
+		supervisorStopCall > cloudflaredStopCall || cloudflaredStopCall > tunnelTokenWriteCall {
+		t.Fatal("managed Tunnel supervisor must stop before cloudflared replacement and protected Token mutation")
 	}
 	if strings.Contains(script, "$engineOwnsTargetGeneration") {
 		t.Fatal("generation ownership must be decided by the Installer Engine, not by a PowerShell boolean")
@@ -921,7 +934,7 @@ func TestWindowsRuntimeDiagnosticsPassesNativeTaskLauncher(t *testing.T) {
 	}
 }
 
-func TestWindowsNamedTunnelLifecycleCoversPreservationAndRollback(t *testing.T) {
+func TestWindowsNamedTunnelLifecycleCoversSoftFailureRecovery(t *testing.T) {
 	lifecycleData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "test", "test-windows-named-tunnel-lifecycle.ps1"))
 	if err != nil {
 		t.Fatalf("read Windows Named Tunnel lifecycle test: %v", err)
@@ -940,15 +953,19 @@ func TestWindowsNamedTunnelLifecycleCoversPreservationAndRollback(t *testing.T) 
 		"-TunnelTokenFile $stableTokenFile",
 		"Invoke-Installer -Archive $sourcePayload.Archive -Checksum $sourcePayload.Checksum",
 		"Invoke-Installer -Archive $TargetAgentDockArchive -Checksum $TargetAgentDockChecksumFile",
-		"'-OfflineArchive', $trialPayload.Archive",
-		"'-TunnelTokenFile', $invalidTokenFile",
+		"-Archive $trialPayload.Archive",
+		"-TunnelTokenFile $invalidTokenFile",
+		"Invalid Named Token must not roll back a healthy Core generation",
+		"Wait-TextFileContains",
+		"Get-Content -LiteralPath $Path -Raw -ErrorAction Stop",
+		"Provided Tunnel token is not valid.",
 		"Assert-NoTunnelTokenInProcessArguments",
 		"(Get-FileHash -LiteralPath $tunnelTokenPath -Algorithm SHA256).Hash -ne $ExpectedTokenHash",
-		"-ExpectedVersion $targetVersion",
-		"versions\\$trialVersion",
+		"-ExpectedVersion $trialVersion",
+		"soft-failure recovery",
 	} {
 		if !strings.Contains(lifecycle, want) {
-			t.Fatalf("Named Tunnel lifecycle test must cover install/repair/update/rollback preservation; missing %q", want)
+			t.Fatalf("Named Tunnel lifecycle test must cover install/repair/update/soft-failure recovery; missing %q", want)
 		}
 	}
 
@@ -967,7 +984,7 @@ func TestWindowsNamedTunnelLifecycleCoversPreservationAndRollback(t *testing.T) 
 
 	workflow := strings.ReplaceAll(string(workflowData), "\r\n", "\n")
 	for _, want := range []string{
-		"Test Named Tunnel install update and rollback lifecycle",
+		"Test Named Tunnel install update and soft-failure recovery lifecycle",
 		"Build-VersionedAgentDock -Version '0.0.0-named-source-e2e'",
 		"Build-VersionedAgentDock -Version '999.0.0-named-trial-e2e'",
 		".\\scripts\\test\\test-windows-named-tunnel-lifecycle.ps1",

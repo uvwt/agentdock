@@ -294,7 +294,7 @@ jobs:
             -AgentDockChecksumFile $env:AMD64_CHECKSUM `
             -FakeCloudflaredBinary $fakeCloudflared
 
-      - name: Test Named Tunnel install update and rollback lifecycle
+      - name: Test Named Tunnel install update and soft-failure recovery lifecycle
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
