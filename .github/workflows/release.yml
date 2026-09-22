@@ -308,7 +308,10 @@ jobs:
           $asset = "agentdock_windows_$env:GOARCH.zip"
           python .\packaging\build-core-skill-bundle.py --output dist\share\agentdock\core-skills
           Copy-Item .\packaging\windows\assets\agentdock.ico dist\agentdock.ico -Force
-          Compress-Archive -Path dist\agentdock.exe, dist\agentdock-tray.exe, dist\agentdock-arbiter.exe, dist\agentdock-shim.exe, dist\agentdock-tray-shim.exe, dist\agentdock.ico, dist\share, dist\wsl-helper -DestinationPath $asset -Force
+          # v0.8.2/v0.8.3 updater 将 manage-windows.ps1 视为桌面归档必需项。
+          # 当前运行时不再调用它；这里只保留 Release 契约，迁移成功后会从安装目录清理。
+          Copy-Item .\packaging\windows\compat\manage-windows.ps1 dist\manage-windows.ps1 -Force
+          Compress-Archive -Path dist\agentdock.exe, dist\agentdock-tray.exe, dist\agentdock-arbiter.exe, dist\agentdock-shim.exe, dist\agentdock-tray-shim.exe, dist\agentdock.ico, dist\manage-windows.ps1, dist\share, dist\wsl-helper -DestinationPath $asset -Force
           $hash = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
           [IO.File]::WriteAllText("$asset.sha256", "$hash  $asset`n", [Text.UTF8Encoding]::new($false))
 

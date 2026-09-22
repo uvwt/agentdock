@@ -1157,6 +1157,46 @@ func TestWindowsSetupE2EStagesCompleteLegacyFixture(t *testing.T) {
 	}
 }
 
+func TestWindowsReleaseKeepsPublishedUpdaterCompatibilityAsset(t *testing.T) {
+	compatPath := filepath.Join("..", "..", "packaging", "windows", "compat", "manage-windows.ps1")
+	compatData, err := os.ReadFile(compatPath)
+	if err != nil {
+		t.Fatalf("read legacy Release compatibility manager: %v", err)
+	}
+	if len(compatData) < 3 || compatData[0] != 0xef || compatData[1] != 0xbb || compatData[2] != 0xbf {
+		t.Fatal("legacy Release compatibility manager must preserve the UTF-8 BOM required by Windows PowerShell 5.1")
+	}
+
+	releaseData, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "release.yml"))
+	if err != nil {
+		t.Fatalf("read Release workflow: %v", err)
+	}
+	releaseWorkflow := strings.ReplaceAll(string(releaseData), "\r\n", "\n")
+	for _, want := range []string{
+		"Copy-Item .\\packaging\\windows\\compat\\manage-windows.ps1 dist\\manage-windows.ps1 -Force",
+		"dist\\manage-windows.ps1, dist\\share, dist\\wsl-helper",
+	} {
+		if !strings.Contains(releaseWorkflow, want) {
+			t.Fatalf("formal Windows Release must preserve the v0.8.2/v0.8.3 updater contract; missing %q", want)
+		}
+	}
+
+	installerWorkflowData, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "windows-installer.yml"))
+	if err != nil {
+		t.Fatalf("read Windows Installer workflow: %v", err)
+	}
+	installerWorkflow := strings.ReplaceAll(string(installerWorkflowData), "\r\n", "\n")
+	for _, want := range []string{
+		"test-windows-release-backcompat.ps1 -ArchivePath $archivePath",
+		"test-windows-legacy-online-migration.ps1",
+		"fetch-depth: 0",
+	} {
+		if !strings.Contains(installerWorkflow, want) {
+			t.Fatalf("Windows Installer gate must exercise the published updater and migration bridge; missing %q", want)
+		}
+	}
+}
+
 func TestWindowsSetupIncludesSimplifiedChineseBaseMessages(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "packaging", "windows", "languages", "ChineseSimplified.isl"))
 	if err != nil {

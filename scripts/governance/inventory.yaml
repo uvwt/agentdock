@@ -160,6 +160,20 @@ scripts:
     public_contract: false
     deletable: false
 
+  - path: scripts/test/test-windows-release-backcompat.ps1
+    class: test
+    owner: release
+    public_contract: false
+    deletable: false
+    notes: 用真实 v0.8.2/v0.8.3 selfupdate 源码验证当前 Windows Release ZIP 仍满足已发布 updater 契约。
+
+  - path: scripts/test/test-windows-legacy-online-migration.ps1
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+    notes: 在隔离 runtime 中验证旧 flat Windows 安装可一次性迁移到 committed generation，且不触碰宿主生产实例。
+
   - path: scripts/test/run-windows-installer-e2e-as-standard-user.ps1
     class: test
     owner: installer
@@ -192,6 +206,15 @@ scripts:
     public_contract: false
     deletable: false
     notes: 调用 Authenticode 签名工具，保留为薄适配。
+
+  - path: packaging/windows/compat/manage-windows.ps1
+    class: legacy
+    owner: release
+    public_contract: false
+    deletable: false
+    legacy_oversize: true
+    oversize_justification: v0.8.2/v0.8.3 已发布 updater 会安装并可能在恢复路径调用该脚本；这里保留 v0.8.3 原始字节作为跨版本 Release 兼容资产，禁止新增产品能力。
+    notes: 仅进入 Windows Release ZIP 兼容旧 updater；generation 迁移成功后从安装目录删除，旧版本退出支持窗口后可整体移除。
 
   - path: packaging/windows/AgentDock.iss
     class: packaging

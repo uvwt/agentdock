@@ -138,6 +138,9 @@ func HandleInternalCommand(ctx context.Context, args []string) (bool, error) {
 	if handled, err := handleWindowsDesktopRepairCommand(ctx, args); handled {
 		return true, err
 	}
+	if handled, err := handleWindowsLegacyMigrationCommand(ctx, args); handled {
+		return true, err
+	}
 	if len(args) == 0 || args[0] != "__update-finalize" {
 		return false, nil
 	}
