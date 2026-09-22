@@ -14,7 +14,7 @@ import (
 	"github.com/uvwt/agentdock/internal/auth"
 )
 
-func TestRuntimeAPISkillFilesStayInsideActivePackage(t *testing.T) {
+func TestRuntimeAPISkillFilesStayInsideCurrentManagedPackage(t *testing.T) {
 	cfg := testConfig(t)
 	runtime, err := app.NewRuntime(cfg)
 	if err != nil {
@@ -25,19 +25,17 @@ func TestRuntimeAPISkillFilesStayInsideActivePackage(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(sourceDir, "references"), 0o755); err != nil {
 		t.Fatalf("mkdir source: %v", err)
 	}
-	writeTestFile(t, filepath.Join(sourceDir, "SKILL.md"), "---\nname: demo-skill\ndescription: Demo Skill\nversion: 0.1.0\n---\n\n# Demo Skill\n")
+	writeTestFile(t, filepath.Join(sourceDir, "SKILL.md"), "---\nname: demo-skill\ndescription: Demo Skill\n---\n\n# Demo Skill\n")
 	writeTestFile(t, filepath.Join(sourceDir, "references", "guide.md"), "# Guide\n\nSafe guide content.\n")
-	if _, err := runtime.Call(context.Background(), "skill_package", map[string]any{
-		"action": "install", "source": sourceDir, "activate": true,
+	if _, err := runtime.Call(context.Background(), "skill_manage", map[string]any{
+		"action": "install", "source": sourceDir,
 	}); err != nil {
 		t.Fatalf("install skill: %v", err)
 	}
 
-	installedDir := filepath.Join(cfg.AgentDockHome, "skill-store", "installed", "demo-skill", "0.1.0")
+	installedDir := filepath.Join(cfg.AgentDockHome, "skills", "demo-skill")
 	outside := filepath.Join(t.TempDir(), "outside-secret.txt")
 	writeTestFile(t, outside, "must not be exposed")
-	symlinkCreated := os.Symlink(outside, filepath.Join(installedDir, "outside-link.txt")) == nil
-	insideSymlinkCreated := os.Symlink(filepath.Join(installedDir, "references", "guide.md"), filepath.Join(installedDir, "inside-link.txt")) == nil
 
 	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
 
@@ -72,7 +70,7 @@ func TestRuntimeAPISkillFilesStayInsideActivePackage(t *testing.T) {
 	}
 
 	list := requestRuntimeAPI(t, handler, "/internal/runtime/skills/demo-skill/files")
-	if !strings.Contains(list.Body.String(), `"count":2`) || strings.Contains(list.Body.String(), ".agentdock-install.json") || strings.Contains(list.Body.String(), "outside-link.txt") || strings.Contains(list.Body.String(), "inside-link.txt") {
+	if !strings.Contains(list.Body.String(), `"count":2`) || strings.Contains(list.Body.String(), ".agentdock-install.json") {
 		t.Fatalf("unsafe or incomplete file list: %s", list.Body.String())
 	}
 
@@ -80,6 +78,9 @@ func TestRuntimeAPISkillFilesStayInsideActivePackage(t *testing.T) {
 	if !strings.Contains(file.Body.String(), "Safe guide content.") || !strings.Contains(file.Body.String(), `"truncated":false`) {
 		t.Fatalf("unexpected file response: %s", file.Body.String())
 	}
+
+	symlinkCreated := os.Symlink(outside, filepath.Join(installedDir, "outside-link.txt")) == nil
+	insideSymlinkCreated := os.Symlink(filepath.Join(installedDir, "references", "guide.md"), filepath.Join(installedDir, "inside-link.txt")) == nil
 
 	privateMetadata := httptest.NewRecorder()
 	handler.ServeHTTP(privateMetadata, httptest.NewRequest(http.MethodGet, "/internal/runtime/skills/demo-skill/files/.agentdock-install.json", nil))

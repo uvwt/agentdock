@@ -7,10 +7,9 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-VERSION = "1.1.3"
+LINT_VERSION = "2"
 MAX_FILES = 500
 MAX_TEXT_BYTES = 1 << 20
-HOST_METADATA_FILES = {".agentdock-install.json"}
 TEXT_SUFFIXES = {
     ".bash", ".css", ".go", ".html", ".ini", ".js", ".json", ".jsx", ".md",
     ".py", ".rs", ".sh", ".toml", ".ts", ".tsx", ".txt", ".yaml", ".yml", ".zsh",
@@ -29,16 +28,16 @@ class Rule:
 
 RULES = (
     Rule(
-        "HARDCODED_AGENTDOCK_INSTALL_PATH",
+        "HARDCODED_AGENTDOCK_MANAGED_PATH",
         "error",
         re.compile(
             r"(?:"
             r"(?:~|\$HOME|\$\{HOME\}|/[A-Za-z0-9._-]+)?/?\.agentdock"
             r"|\$AGENTDOCK_HOME|\$\{AGENTDOCK_HOME\}"
-            r")/skill-store/installed/[a-z][a-z0-9-]*/v?\d+\.\d+\.\d+",
+            r")/(?:skills/[a-z][a-z0-9-]*|skill-store/installed/[a-z][a-z0-9-]*/v?\d+\.\d+\.\d+)",
             re.I,
         ),
-        "不应硬编码 AgentDock 已安装版本目录。",
+        "不应硬编码 AgentDock managed Skill 目录。",
         "改为从 Skill 包根目录执行相对命令，例如 `python3 run.py`。",
     ),
     Rule(
@@ -70,11 +69,19 @@ RULES = (
         "改用包内相对路径、用户输入或明确的业务环境变量。",
     ),
     Rule(
-        "AGENTDOCK_SKILL_ENV_USAGE",
+        "AGENTDOCK_SKILL_REF_USAGE",
         "warning",
-        re.compile(r"\bskill_env\b"),
-        "SKILL.md 出现 AgentDock 专属 `skill_env`。",
+        re.compile(r"\bskill_ref\b"),
+        "SKILL.md 出现 AgentDock 专属 `skill_ref`。",
         "把通用运行契约写成宿主注入环境；AgentDock 适配仅作为可选说明。",
+        skill_md_only=True,
+    ),
+    Rule(
+        "AGENTDOCK_SKILL_DATA_DIR_USAGE",
+        "warning",
+        re.compile(r"\bSKILL_DATA_DIR\b"),
+        "SKILL.md 出现 AgentDock managed Skill 专属的 `SKILL_DATA_DIR`。",
+        "仅把它放在 AgentDock 可选适配说明中，不要作为可移植核心或用户必填配置。",
         skill_md_only=True,
     ),
     Rule(
@@ -125,8 +132,6 @@ def text_files(source: Path) -> list[Path]:
     files: list[Path] = []
     for path in sorted(source.rglob("*")):
         if path.is_symlink() or not path.is_file():
-            continue
-        if path.parent == source and path.name in HOST_METADATA_FILES:
             continue
         if path.name == "SKILL.md" or path.suffix.lower() in TEXT_SUFFIXES:
             files.append(path)
@@ -287,7 +292,7 @@ def lint(source_value: object) -> dict[str, object]:
         "warning_count": warning_count,
         "issues": issues,
         "checked_files": len(files),
-        "skill_version": VERSION,
+        "lint_version": LINT_VERSION,
     }
 
 
@@ -298,7 +303,7 @@ def main() -> None:
         emit({
             "ok": True,
             "action": "status",
-            "skill_version": VERSION,
+            "lint_version": LINT_VERSION,
             "lint_rule_count": len(RULES) + 1,
             "environment_required": False,
         })

@@ -18,7 +18,7 @@ import (
 func TestAgentDockContextToolReturnsStructuredRuntimeIndex(t *testing.T) {
 	home := t.TempDir()
 	setUserHomeForTest(t, home)
-	writeCommonSkillForTest(t, filepath.Join(home, ".agents", "skills"), "demo-common", "demo-skill", "Lower-priority common Skill.")
+	writeCommonSkillForTest(t, filepath.Join(home, ".agents", "skills"), "demo-skill", "demo-skill", "Lower-priority common Skill.")
 
 	cfg := config.Config{
 		AgentDockDefaultDir: t.TempDir(),
@@ -51,14 +51,18 @@ func TestAgentDockContextToolReturnsStructuredRuntimeIndex(t *testing.T) {
 			break
 		}
 	}
-	if demo == nil || demo.Description != "Use this Skill for context index tests." || demo.File != "skill://demo-skill/SKILL.md" {
+	if demo == nil || demo.Description != "Use this Skill for context index tests." ||
+		demo.File != "skill://managed/demo-skill/SKILL.md" || demo.SkillRef != "skill://managed/demo-skill" ||
+		demo.SourceType != "managed" || demo.ContentDigest == "" {
 		t.Fatalf("structured Skill index missing demo-skill: %#v", got.Skills)
 	}
 	if got.CommonSkills == nil || got.CommonSkills.Total != 1 || len(got.CommonSkills.Items) != 1 {
 		t.Fatalf("common Skill index = %#v", got.CommonSkills)
 	}
 	commonDemo := got.CommonSkills.Items[0]
-	if commonDemo.Name != "demo-skill" || commonDemo.Description != "Lower-priority common Skill." || commonDemo.File != filepath.Join(home, ".agents", "skills", "demo-common", "SKILL.md") {
+	if commonDemo.Name != "demo-skill" || commonDemo.Description != "Lower-priority common Skill." ||
+		commonDemo.File != "skill://shared/demo-skill/SKILL.md" || commonDemo.SkillRef != "skill://shared/demo-skill" ||
+		commonDemo.SourceType != "shared" {
 		t.Fatalf("common Skill index missing duplicate demo-skill: %#v", got.CommonSkills)
 	}
 	if got.DynamicMCP == nil || got.WorkflowTemplates == nil || got.Rules == nil {
@@ -71,7 +75,7 @@ func TestAgentDockContextToolReturnsStructuredRuntimeIndex(t *testing.T) {
 		t.Fatalf("runtime paths = %#v", got.Runtime)
 	}
 	rules := strings.Join(got.Rules, "\n")
-	for _, want := range []string{"AgentDock 自带工具直接调用", "同名优先级为 workspace Skill > skills", "common_skills.truncated=true", "task_manage checkpoint"} {
+	for _, want := range []string{"AgentDock 自带工具直接调用", "同名项是不同来源候选", "skill_ref", "common_skills.truncated=true", "task_manage checkpoint"} {
 		if !strings.Contains(rules, want) {
 			t.Fatalf("context rules missing %q: %s", want, rules)
 		}
@@ -285,21 +289,24 @@ func TestAgentDockLocalContextSkipsSharedNexusLookups(t *testing.T) {
 
 func TestCapabilitySkillItemExposesOnlyLightweightIndexFields(t *testing.T) {
 	data, err := json.Marshal(capabilitySkillItem{
-		Name:        "desktop",
-		Description: "Desktop automation.",
-		File:        "skill://desktop/SKILL.md",
-		Bundled:     true,
+		Name:          "desktop",
+		Description:   "Desktop automation.",
+		File:          "skill://managed/desktop/SKILL.md",
+		SkillRef:      "skill://managed/desktop",
+		SourceType:    "managed",
+		SourceID:      "desktop",
+		ContentDigest: "abc123",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, want := range []string{`"name"`, `"description"`, `"file"`, `"bundled"`} {
+	for _, want := range []string{`"name"`, `"description"`, `"file"`, `"skill_ref"`, `"source_type"`, `"source_id"`, `"content_digest"`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("Skill index JSON missing %s: %s", want, text)
 		}
 	}
-	for _, unwanted := range []string{`"active_version"`, `"updated_at"`, `"operation_count"`, `"version"`, `"path"`, `"manifest"`} {
+	for _, unwanted := range []string{`"active_version"`, `"updated_at"`, `"operation_count"`, `"version"`, `"path"`, `"manifest"`, `"bundled"`} {
 		if strings.Contains(text, unwanted) {
 			t.Fatalf("Skill index JSON should not expose %s: %s", unwanted, text)
 		}
@@ -308,26 +315,19 @@ func TestCapabilitySkillItemExposesOnlyLightweightIndexFields(t *testing.T) {
 
 func installDocumentSkillForTest(t *testing.T, rt *Runtime, name, version, description string) string {
 	t.Helper()
-	stateDir, err := config.SkillStateDir(rt.cfg)
+	state, err := skillstate.New(config.SkillDir(rt.cfg))
 	if err != nil {
 		t.Fatal(err)
 	}
-	state, err := skillstate.New(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	packageDir, err := state.InstalledPath(name, version)
+	packageDir, err := state.SkillPath(name)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(packageDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	doc := "---\nname: " + name + "\ndescription: " + description + "\nversion: " + version + "\n---\n\n# Test Skill\n\nFollow the workflow.\n"
+	doc := "---\nname: " + name + "\ndescription: " + description + "\nmetadata:\n  source_version: " + version + "\n---\n\n# Test Skill\n\nFollow the workflow.\n"
 	if err := os.WriteFile(filepath.Join(packageDir, "SKILL.md"), []byte(doc), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := state.Activate(context.Background(), name, version); err != nil {
 		t.Fatal(err)
 	}
 	return packageDir
@@ -347,15 +347,11 @@ func TestSkillCapabilityIndexOmitsLegacyExecutableSkills(t *testing.T) {
 	}
 	installDocumentSkillForTest(t, rt, "document-skill", "1.0.0", "A document-only Skill.")
 
-	stateDir, err := config.SkillStateDir(rt.cfg)
+	state, err := skillstate.New(config.SkillDir(rt.cfg))
 	if err != nil {
 		t.Fatal(err)
 	}
-	state, err := skillstate.New(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacyDir, err := state.InstalledPath("legacy-skill", "1.0.0")
+	legacyDir, err := state.SkillPath("legacy-skill")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,10 +392,6 @@ spec:
 	if err := os.WriteFile(filepath.Join(legacyDir, "run.sh"), []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := state.Activate(context.Background(), "legacy-skill", "1.0.0"); err != nil {
-		t.Fatal(err)
-	}
-
 	items, err := rt.skillCapabilityIndex()
 	if err != nil {
 		t.Fatalf("skillCapabilityIndex error = %v", err)

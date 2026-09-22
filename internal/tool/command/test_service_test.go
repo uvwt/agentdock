@@ -83,7 +83,7 @@ func (s *Service) prepareCommandInvocationArgs(args map[string]any, command stri
 		return commandInvocation{}, err
 	}
 	request.Cmd = command
-	return s.prepareCommandInvocation(request)
+	return s.prepareCommandInvocation(context.Background(), request)
 }
 
 func (s *Service) killSessionArgs(args map[string]any) (Result, error) {

@@ -1,6 +1,7 @@
 package file
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,8 +16,8 @@ func newCodeToolsRuntime(t *testing.T) (*Service, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := New(ws, func(string) (string, string, error) {
-		return "", "", os.ErrNotExist
+	service := New(ws, func(context.Context, string) (string, string, func(), error) {
+		return "", "", nil, os.ErrNotExist
 	}, func(string, map[string]string) ([]string, error) {
 		return os.Environ(), nil
 	})

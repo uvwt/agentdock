@@ -703,16 +703,15 @@ func bootstrapSkills(ctx context.Context, request Request, executable, bundleDir
 	if err := cfg.Normalize(); err != nil {
 		return err
 	}
-	stateDir, err := config.SkillStateDir(cfg)
-	if err != nil {
-		return err
-	}
-	state, err := skillstate.New(stateDir)
+	state, err := skillstate.New(config.SkillDir(cfg))
 	if err != nil {
 		return err
 	}
 	manager, err := skills.New(state)
 	if err != nil {
+		return err
+	}
+	if _, err := skills.MigrateLegacyLayout(ctx, cfg.AgentDockHome, manager); err != nil {
 		return err
 	}
 	_, err = skillbundle.Bootstrap(ctx, state, manager, bundleDir)

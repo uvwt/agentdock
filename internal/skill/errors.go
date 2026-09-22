@@ -23,20 +23,17 @@ func packageError(code, stage string, err error) error {
 
 type ErrDocumentIdentityMismatch struct {
 	Skill    string
-	Version  string
 	Document SkillDocument
 }
 
 func (e ErrDocumentIdentityMismatch) Error() string {
-	return "SKILL.md name/version do not match installed package identity"
+	return "SKILL.md name does not match managed Skill identity"
 }
 
 const (
-	ErrInvalidPackage      = "INVALID_SKILL_PACKAGE"
-	ErrDigestMismatch      = "SKILL_DIGEST_MISMATCH"
-	ErrDocumentInvalid     = "SKILL_DOCUMENT_INVALID"
-	ErrInstallFailed       = "SKILL_INSTALL_FAILED"
-	ErrUninstallFailed     = "SKILL_UNINSTALL_FAILED"
-	ErrActivateFailed      = "SKILL_ACTIVATE_FAILED"
-	ErrRollbackUnavailable = "SKILL_ROLLBACK_UNAVAILABLE"
+	ErrInvalidPackage  = "INVALID_SKILL_PACKAGE"
+	ErrDigestMismatch  = "SKILL_DIGEST_MISMATCH"
+	ErrDocumentInvalid = "SKILL_DOCUMENT_INVALID"
+	ErrInstallFailed   = "SKILL_INSTALL_FAILED"
+	ErrUninstallFailed = "SKILL_UNINSTALL_FAILED"
 )

@@ -8,234 +8,63 @@ import (
 
 	"github.com/uvwt/agentdock/internal/envstore"
 	skills "github.com/uvwt/agentdock/internal/skill"
-	skillstate "github.com/uvwt/agentdock/internal/skill/state"
 )
 
-type skillManager struct {
-	manager *skills.Manager
-	state   *skillstate.Store
-}
-
-type skillToolInput struct {
-	Action   string
-	Skill    string
-	Version  string
-	Source   string
-	Digest   string
-	MaxBytes int64
-	Activate bool
-}
-
-func normalizePackageRequest(request PackageRequest) skillToolInput {
-	return skillToolInput{
-		Action:   strings.ToLower(strings.TrimSpace(request.Action)),
-		Skill:    strings.TrimSpace(request.Skill),
-		Version:  strings.TrimSpace(request.Version),
-		Source:   strings.TrimSpace(request.Source),
-		Digest:   strings.TrimSpace(request.Digest),
-		MaxBytes: int64(intValue(request.MaxBytes, 0)),
-		Activate: boolValue(request.Activate, true),
-	}
-}
-
-func (input skillToolInput) requiredSkill() (string, error) {
-	if input.Skill == "" {
-		return "", toolErrorDetails("VALIDATION_ERROR", "skill is required", "validation", map[string]any{"field": "skill"})
-	}
-	return input.Skill, nil
-}
-
-func (s *Service) Package(ctx context.Context, request PackageRequest) (Result, error) {
-	input := normalizePackageRequest(request)
-	switch input.Action {
-	case "validate":
-		return s.skillValidate(ctx, input)
+func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, error) {
+	action := strings.ToLower(strings.TrimSpace(request.Action))
+	switch action {
 	case "install":
-		return s.skillInstall(ctx, input)
-	case "uninstall":
-		return s.skillUninstall(ctx, input)
-	case "activate":
-		return s.skillActivate(ctx, input)
-	case "rollback":
-		return s.skillRollback(ctx, input)
+		return s.install(ctx, request)
+	case "remove":
+		return s.remove(ctx, request)
 	case "env_set", "env_unset", "env_list":
-		skill, err := input.requiredSkill()
-		if err != nil {
-			return nil, err
+		skill := strings.TrimSpace(request.Skill)
+		if skill == "" {
+			return nil, toolErrorDetails("VALIDATION_ERROR", "skill is required", "validation", map[string]any{"field": "skill"})
 		}
-		return s.scopedEnvAction(envstore.ScopeSkill, skill, input.Action, request)
+		return s.scopedEnvAction(skill, action, request)
 	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported skill_package action", "validation", map[string]any{
-			"action":  input.Action,
-			"allowed": []string{"validate", "install", "uninstall", "activate", "rollback", "env_set", "env_unset", "env_list"},
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported skill_manage action", "validation", map[string]any{
+			"action": action, "allowed": []string{"install", "remove", "env_set", "env_unset", "env_list"},
 		})
 	}
 }
 
-func (s *Service) list() (Result, error) {
-	names, err := s.state.ListSkills()
-	if err != nil {
-		return nil, skillToolError(err)
-	}
-	bundledNames, err := s.state.BundledSkills()
-	if err != nil {
-		return nil, skillToolError(err)
-	}
-	bundled := make(map[string]struct{}, len(bundledNames))
-	for _, name := range bundledNames {
-		bundled[name] = struct{}{}
-	}
-	items := make([]map[string]any, 0, len(names))
-	for _, name := range names {
-		versions, err := s.state.ListVersions(name)
-		if err != nil {
-			return nil, skillToolError(err)
-		}
-		selection, err := s.state.Snapshot(name)
-		if err != nil {
-			return nil, skillToolError(err)
-		}
-		_, isBundled := bundled[name]
-		items = append(items, map[string]any{
-			"skill":          name,
-			"versions":       versions,
-			"active_version": selection.ActiveVersion,
-			"bundled":        isBundled,
-			"updated_at":     selection.UpdatedAt,
-		})
-	}
-	return Result{"action": "list", "count": len(items), "skills": items}, nil
-}
-
-func (s *Service) inspect(request InspectRequest) (Result, error) {
-	input := skillToolInput{Skill: strings.TrimSpace(request.Skill), Version: strings.TrimSpace(request.Version)}
-	skill, err := input.requiredSkill()
-	if err != nil {
-		return nil, err
-	}
-	versions, err := s.state.ListVersions(skill)
-	if err != nil {
-		return nil, skillToolError(err)
-	}
-	selection, err := s.state.Snapshot(skill)
-	if err != nil {
-		return nil, skillToolError(err)
-	}
-	bundled, err := s.state.IsBundled(skill)
-	if err != nil {
-		return nil, skillToolError(err)
-	}
-	selected := input.Version
-	if selected == "" {
-		selected = selection.ActiveVersion
-	}
-	result := Result{
-		"action":    "inspect",
-		"skill":     skill,
-		"versions":  versions,
-		"selection": selection,
-		"bundled":   bundled,
-	}
-	if selected == "" {
-		return result, nil
-	}
-	packageDir, err := s.state.InstalledPath(skill, selected)
-	if err != nil {
-		return nil, skillToolError(err)
-	}
-	doc, err := skills.LoadSkillDocument(packageDir)
-	if err != nil {
-		return nil, skillToolError(err)
-	}
-	result["version"] = selected
-	result["document"] = doc
-	return result, nil
-}
-
-func (s *Service) skillValidate(ctx context.Context, input skillToolInput) (Result, error) {
-	if input.Source == "" {
-		return nil, toolErrorDetails("VALIDATION_ERROR", "source is required for skill validate", "validation", map[string]any{"field": "source"})
-	}
-	resolved, err := s.resolveSkillSource(input.Source)
-	if err != nil {
-		return nil, err
-	}
-	result, err := s.manager.Validate(ctx, skills.ValidateRequest{
-		Source:       resolved,
-		DigestSHA256: input.Digest,
-		MaxBytes:     input.MaxBytes,
-	})
-	if err != nil {
-		return nil, skillToolError(err)
-	}
-	response := Result{
-		"action":   "validate",
-		"valid":    result.Valid,
-		"source":   result.Source,
-		"digest":   result.Digest,
-		"document": result.Document,
-		"issues":   result.Issues,
-	}
-	return response, nil
-}
-
-func (s *Service) skillInstall(ctx context.Context, input skillToolInput) (Result, error) {
-	if input.Source == "" {
+func (s *Service) install(ctx context.Context, request ManageRequest) (Result, error) {
+	source := strings.TrimSpace(request.Source)
+	if source == "" {
 		return nil, toolErrorDetails("VALIDATION_ERROR", "source is required for skill install", "validation", map[string]any{"field": "source"})
 	}
-	resolved, err := s.resolveSkillSource(input.Source)
+	resolved, err := s.resolveSkillSource(source)
 	if err != nil {
 		return nil, err
 	}
 	result, err := s.manager.Install(ctx, skills.InstallRequest{
-		Source:       resolved,
-		DigestSHA256: input.Digest,
-		Activate:     input.Activate,
-		MaxBytes:     input.MaxBytes,
+		Source: resolved, DigestSHA256: strings.TrimSpace(request.Digest), MaxBytes: int64(intValue(request.MaxBytes, 0)),
 	})
 	if err != nil {
 		return nil, skillToolError(err)
 	}
-	return Result{"action": "install", "result": result}, nil
+	return Result{"action": "install", "skill": result.Skill, "content_digest": result.ContentDigest, "changed": result.Changed, "result": result}, nil
 }
 
-func (s *Service) skillUninstall(ctx context.Context, input skillToolInput) (Result, error) {
-	skill, err := input.requiredSkill()
-	if err != nil {
-		return nil, err
+func (s *Service) remove(ctx context.Context, request ManageRequest) (Result, error) {
+	skill := strings.TrimSpace(request.Skill)
+	if skill == "" {
+		return nil, toolErrorDetails("VALIDATION_ERROR", "skill is required for remove", "validation", map[string]any{"field": "skill"})
 	}
-	result, err := s.manager.Uninstall(ctx, skill, input.Version)
+	result, err := s.manager.Remove(ctx, skill)
 	if err != nil {
 		return nil, skillToolError(err)
 	}
-	return Result{"action": "uninstall", "result": result}, nil
-}
-
-func (s *Service) skillActivate(ctx context.Context, input skillToolInput) (Result, error) {
-	skill, err := input.requiredSkill()
-	if err != nil {
-		return nil, err
+	response := Result{"action": "remove", "skill": skill, "removed": result.Removed, "purged": false, "result": result}
+	if request.Purge {
+		if err := s.purgeManagedSkillState(skill); err != nil {
+			return nil, toolErrorDetails("SKILL_PURGE_FAILED", "managed Skill package was removed but preserved environment/data could not be fully purged", "runtime", map[string]any{"skill": skill, "reason": err.Error()})
+		}
+		response["purged"] = true
 	}
-	if input.Version == "" {
-		return nil, toolErrorDetails("VALIDATION_ERROR", "version is required for skill activate", "validation", map[string]any{"field": "version"})
-	}
-	result, err := s.manager.Activate(ctx, skill, input.Version)
-	if err != nil {
-		return nil, skillToolError(err)
-	}
-	return Result{"action": "activate", "result": result}, nil
-}
-
-func (s *Service) skillRollback(ctx context.Context, input skillToolInput) (Result, error) {
-	skill, err := input.requiredSkill()
-	if err != nil {
-		return nil, err
-	}
-	result, err := s.manager.Rollback(ctx, skill)
-	if err != nil {
-		return nil, skillToolError(err)
-	}
-	return Result{"action": "rollback", "result": result}, nil
+	return response, nil
 }
 
 func (s *Service) resolveSkillSource(source string) (string, error) {
@@ -254,5 +83,7 @@ func skillToolError(err error) error {
 	if errors.As(err, &runtimeErr) {
 		return toolErrorDetails(runtimeErr.Code, runtimeErr.Error(), "runtime", map[string]any{"stage": runtimeErr.Stage})
 	}
-	return toolErrorDetails("SKILL_PACKAGE_FAILED", err.Error(), "runtime", nil)
+	return toolErrorDetails("SKILL_MANAGE_FAILED", err.Error(), "runtime", nil)
 }
+
+var _ = envstore.ScopeSkill

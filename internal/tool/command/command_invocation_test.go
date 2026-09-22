@@ -4,6 +4,8 @@ import (
 	"context"
 	"reflect"
 	"testing"
+
+	"github.com/uvwt/agentdock/internal/config"
 )
 
 func TestBuildWSLCommandArgsKeepsCommandAsOneArgument(t *testing.T) {
@@ -42,6 +44,25 @@ func TestBuildWSLProcessEnvForwardsValuesWithoutPuttingThemInArgs(t *testing.T) 
 		"SYSTEMDRIVE=C:",
 		"TOKEN=forwarded value",
 		"WSLENV=EXISTING/p:TOKEN",
+	}
+	if !reflect.DeepEqual(env, want) {
+		t.Fatalf("buildWSLProcessEnv() = %#v, want %#v", env, want)
+	}
+}
+
+func TestBuildWSLProcessEnvForwardsConvertedSkillDataDir(t *testing.T) {
+	converted, ok := windowsPathToWSL(`C:\Users\a\.agentdock\data\skills\demo-skill`)
+	if !ok {
+		t.Fatal("Skill data Host path did not convert to WSL")
+	}
+	env := buildWSLProcessEnv(
+		[]string{"PATH=C:\\Windows\\System32"},
+		map[string]string{config.SkillDataDirEnvKey: converted},
+	)
+	want := []string{
+		"PATH=C:\\Windows\\System32",
+		"SKILL_DATA_DIR=/mnt/c/Users/a/.agentdock/data/skills/demo-skill",
+		"WSLENV=SKILL_DATA_DIR",
 	}
 	if !reflect.DeepEqual(env, want) {
 		t.Fatalf("buildWSLProcessEnv() = %#v, want %#v", env, want)

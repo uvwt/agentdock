@@ -21,9 +21,13 @@ type workspaceContextResult struct {
 }
 
 type workspaceSkillItem struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	File        string `json:"file"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	File          string `json:"file"`
+	SkillRef      string `json:"skill_ref"`
+	SourceType    string `json:"source_type"`
+	SourceID      string `json:"source_id"`
+	ContentDigest string `json:"content_digest,omitempty"`
 }
 
 // workspaceContext 每次调用都从磁盘重新读取当前工作区规则与本地 Skill 索引。
@@ -63,8 +67,15 @@ func (r *Runtime) workspaceContext(ctx context.Context, workdir string) (Result,
 	} else {
 		workspaceSkills = make([]workspaceSkillItem, 0, len(skillIndex.Items))
 		for _, item := range skillIndex.Items {
+			skillRef, sourceID, refErr := r.skills.WorkspaceSkillRef(instructions.WorkspaceRoot, item.Name)
+			if refErr != nil {
+				warnings = append(warnings, capabilityWarning{Source: "workspace_skills", Message: "工作区 Skill 引用生成失败：" + item.Name})
+				continue
+			}
 			workspaceSkills = append(workspaceSkills, workspaceSkillItem{
-				Name: item.Name, Description: item.Description, File: item.File,
+				Name: item.Name, Description: item.Description,
+				File: skillRef + "/SKILL.md", SkillRef: skillRef,
+				SourceType: "workspace", SourceID: sourceID,
 			})
 		}
 		if skillIndex.Truncated {

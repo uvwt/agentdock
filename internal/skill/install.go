@@ -2,7 +2,6 @@ package skill
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -24,7 +23,7 @@ type Manager struct {
 
 func New(state *skillstate.Store) (*Manager, error) {
 	if state == nil {
-		return nil, errors.New("skill state store is required")
+		return nil, errors.New("managed Skill store is required")
 	}
 	return &Manager{
 		State:       state,
@@ -41,6 +40,7 @@ func (m *Manager) Install(ctx context.Context, req InstallRequest) (InstallResul
 	if maxBytes <= 0 {
 		maxBytes = m.MaxDownload
 	}
+
 	work, err := m.State.TempPath("install")
 	if err != nil {
 		return InstallResult{}, packageError(ErrInstallFailed, "temp", err)
@@ -65,62 +65,88 @@ func (m *Manager) Install(ctx context.Context, req InstallRequest) (InstallResul
 	if err != nil {
 		return InstallResult{}, packageError(ErrInstallFailed, "content_digest", err)
 	}
-	destination, err := m.State.InstalledPath(doc.Name, doc.Version)
+
+	staged, err := m.State.TempPath("candidate-" + doc.Name)
+	if err != nil {
+		return InstallResult{}, packageError(ErrInstallFailed, "stage", err)
+	}
+	defer os.RemoveAll(staged)
+	if err := copyPackage(packageDir, staged); err != nil {
+		return InstallResult{}, packageError(ErrInstallFailed, "stage", err)
+	}
+
+	release, err := m.State.AcquireWrite(ctx, doc.Name)
+	if err != nil {
+		return InstallResult{}, packageError(ErrInstallFailed, "lock", err)
+	}
+	defer release()
+
+	destination, err := m.State.SkillPath(doc.Name)
 	if err != nil {
 		return InstallResult{}, packageError(ErrInstallFailed, "destination", err)
 	}
-	if _, err := os.Stat(destination); err == nil {
-		existingDigest, digestErr := digestPackageContent(destination)
-		if digestErr == nil && existingDigest == contentDigest {
-			return m.finishInstall(ctx, req, doc, destination, sourceDigest)
+	if currentDigest, exists, err := installedContentDigest(destination); err != nil {
+		return InstallResult{}, packageError(ErrInstallFailed, "current_digest", err)
+	} else if exists && currentDigest == contentDigest {
+		return InstallResult{Skill: doc.Name, ContentDigest: contentDigest, Path: destination, Changed: false}, nil
+	}
+
+	backup := ""
+	if _, err := os.Lstat(destination); err == nil {
+		backup, err = m.State.TempPath("replace-" + doc.Name)
+		if err != nil {
+			return InstallResult{}, packageError(ErrInstallFailed, "backup", err)
 		}
-		return InstallResult{}, packageError(ErrInstallFailed, "install", errors.New("version already exists with different content"))
-	} else if !os.IsNotExist(err) {
-		return InstallResult{}, packageError(ErrInstallFailed, "install", err)
+		if err := os.Remove(backup); err != nil {
+			return InstallResult{}, packageError(ErrInstallFailed, "backup", err)
+		}
+		if err := os.Rename(destination, backup); err != nil {
+			return InstallResult{}, packageError(ErrInstallFailed, "backup", err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return InstallResult{}, packageError(ErrInstallFailed, "destination", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
-		return InstallResult{}, packageError(ErrInstallFailed, "install", err)
-	}
-	staged := destination + fmt.Sprintf(".tmp-%d", time.Now().UnixNano())
-	if err := copyPackage(packageDir, staged); err != nil {
-		_ = os.RemoveAll(staged)
-		return InstallResult{}, packageError(ErrInstallFailed, "copy", err)
-	}
-	metadata := struct {
-		Digest      string    `json:"digest"`
-		InstalledAt time.Time `json:"installed_at"`
-	}{Digest: contentDigest, InstalledAt: time.Now().UTC()}
-	metaData, err := json.MarshalIndent(metadata, "", "  ")
-	if err != nil {
-		_ = os.RemoveAll(staged)
-		return InstallResult{}, packageError(ErrInstallFailed, "metadata", err)
-	}
-	if err := os.WriteFile(filepath.Join(staged, ".agentdock-install.json"), metaData, 0o600); err != nil {
-		_ = os.RemoveAll(staged)
-		return InstallResult{}, packageError(ErrInstallFailed, "metadata", err)
-	}
+
 	if err := os.Rename(staged, destination); err != nil {
-		_ = os.RemoveAll(staged)
-		return InstallResult{}, packageError(ErrInstallFailed, "install", err)
+		restoreErr := restoreReplacedSkill(backup, destination)
+		return InstallResult{}, packageError(ErrInstallFailed, "commit", errors.Join(err, restoreErr))
 	}
-	return m.finishInstall(ctx, req, doc, destination, sourceDigest)
+	if backup != "" {
+		_ = os.RemoveAll(backup)
+	}
+	return InstallResult{Skill: doc.Name, ContentDigest: contentDigest, Path: destination, Changed: true}, nil
 }
 
-func (m *Manager) finishInstall(ctx context.Context, req InstallRequest, doc SkillDocument, destination, digest string) (InstallResult, error) {
-	result := InstallResult{
-		Skill:       doc.Name,
-		Version:     doc.Version,
-		Digest:      digest,
-		InstalledAt: time.Now().UTC(),
-		Path:        destination,
+func installedContentDigest(destination string) (string, bool, error) {
+	info, err := os.Lstat(destination)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", false, nil
 	}
-	if req.Activate {
-		if err := m.State.Activate(ctx, doc.Name, doc.Version); err != nil {
-			return InstallResult{}, packageError(ErrInstallFailed, "activate", err)
+	if err != nil {
+		return "", false, err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return "", true, errors.New("managed Skill destination is not a regular directory")
+	}
+	digest, err := digestPackageContent(destination)
+	return digest, true, err
+}
+
+func restoreReplacedSkill(backup, destination string) error {
+	if backup == "" {
+		return nil
+	}
+	if _, err := os.Lstat(destination); err == nil {
+		if removeErr := os.RemoveAll(destination); removeErr != nil {
+			return fmt.Errorf("remove incomplete replacement: %w", removeErr)
 		}
-		result.Activated = true
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect incomplete replacement: %w", err)
 	}
-	return result, nil
+	if err := os.Rename(backup, destination); err != nil {
+		return fmt.Errorf("restore previous Skill content: %w", err)
+	}
+	return nil
 }
 
 func (m *Manager) prepareSource(ctx context.Context, source, work string, maxBytes int64) (string, string, error) {
@@ -156,11 +182,18 @@ func (m *Manager) prepareSource(ctx context.Context, source, work string, maxByt
 		}
 		return m.prepareArchive(archive, work, maxBytes)
 	}
+
 	info, err := os.Stat(source)
 	if err != nil {
 		return "", "", packageError(ErrInvalidPackage, "source", err)
 	}
 	if info.IsDir() {
+		// Reject symlinks and special files before hashing a local directory.
+		// In particular, opening a FIFO while computing a digest could block the
+		// installer before package validation gets a chance to reject it.
+		if err := ValidatePackage(source); err != nil {
+			return "", "", err
+		}
 		digest, err := DigestDirectory(source)
 		if err != nil {
 			return "", "", packageError(ErrInvalidPackage, "digest", err)
@@ -209,9 +242,6 @@ func copyPackage(source, destination string) error {
 		rel, err := filepath.Rel(source, path)
 		if err != nil {
 			return err
-		}
-		if filepath.ToSlash(rel) == ".agentdock-install.json" {
-			return nil
 		}
 		target := filepath.Join(destination, rel)
 		if entry.IsDir() {

@@ -38,6 +38,7 @@ class SkillAuthoringLintTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertTrue(result["ok"])
         self.assertGreater(result["lint_rule_count"], 0)
+        self.assertEqual(result["lint_version"], "2")
 
     def test_linter_does_not_report_its_own_rule_definitions(self):
         source = pathlib.Path(__file__).resolve().parents[1]
@@ -55,7 +56,6 @@ class SkillAuthoringLintTests(unittest.TestCase):
         temp, root = self.make_skill("""---
 name: demo-skill
 description: Demo.
-version: 1.0.0
 ---
 
 # Demo
@@ -71,57 +71,13 @@ version: 1.0.0
         self.assertEqual(result["error_count"], 0)
         self.assertEqual(result["warning_count"], 0)
 
-    def test_root_install_receipt_is_ignored(self):
-        temp, root = self.make_skill("""---
-name: demo-skill
-description: Demo.
-version: 1.0.0
----
-
-在 Skill 包根目录执行 `python3 run.py`。
-""")
-        self.addCleanup(temp.cleanup)
-        (root / ".agentdock-install.json").write_text(
-            json.dumps({"source": "/Users/alice/agentdock-skills/skills/demo-skill"}),
-            encoding="utf-8",
-        )
-
-        _, result = self.run_skill({"skill_action": "lint", "source": str(root)})
-
-        self.assertTrue(result["portable"])
-        self.assertEqual(result["error_count"], 0)
-        self.assertEqual(result["checked_files"], 2)
-
-    def test_nested_install_receipt_name_is_still_scanned(self):
-        temp, root = self.make_skill("""---
-name: demo-skill
-description: Demo.
-version: 1.0.0
----
-
-在 Skill 包根目录执行 `python3 run.py`。
-""")
-        self.addCleanup(temp.cleanup)
-        references = root / "references"
-        references.mkdir()
-        (references / ".agentdock-install.json").write_text(
-            json.dumps({"source": "/Users/alice/private/demo-skill"}),
-            encoding="utf-8",
-        )
-
-        _, result = self.run_skill({"skill_action": "lint", "source": str(root)})
-
-        self.assertFalse(result["portable"])
-        self.assertIn("FIXED_USER_ABSOLUTE_PATH", {issue["code"] for issue in result["issues"]})
-
     def test_hardcoded_install_path_and_env_file_access_fail(self):
         temp, root = self.make_skill("""---
 name: demo-skill
 description: Demo.
-version: 1.0.0
 ---
 
-运行 `python3 ~/.agentdock/skill-store/installed/demo-skill/1.0.0/run.py`。
+运行 `python3 ~/.agentdock/skills/demo-skill/run.py`。
 """, "from pathlib import Path\nPath('~/.agentdock/env/skill/demo-skill.env').expanduser().read_text()\n")
         self.addCleanup(temp.cleanup)
 
@@ -129,18 +85,17 @@ version: 1.0.0
 
         codes = {issue["code"] for issue in result["issues"]}
         self.assertFalse(result["portable"])
-        self.assertIn("HARDCODED_AGENTDOCK_INSTALL_PATH", codes)
+        self.assertIn("HARDCODED_AGENTDOCK_MANAGED_PATH", codes)
         self.assertIn("AGENTDOCK_ENV_FILE_ACCESS", codes)
 
     def test_agentdock_home_installed_path_fails(self):
         temp, root = self.make_skill("""---
 name: demo-skill
 description: Demo.
-version: 1.0.0
 ---
 
 ```bash
-SKILL_DIR="$AGENTDOCK_HOME/skill-store/installed/demo-skill/1.0.0"
+SKILL_DIR="$AGENTDOCK_HOME/skills/demo-skill"
 python3 "$SKILL_DIR/run.py"
 ```
 """)
@@ -149,13 +104,12 @@ python3 "$SKILL_DIR/run.py"
         _, result = self.run_skill({"skill_action": "lint", "source": str(root)})
 
         self.assertFalse(result["portable"])
-        self.assertIn("HARDCODED_AGENTDOCK_INSTALL_PATH", {issue["code"] for issue in result["issues"]})
+        self.assertIn("HARDCODED_AGENTDOCK_MANAGED_PATH", {issue["code"] for issue in result["issues"]})
 
     def test_agentdock_private_directory_dependency_fails(self):
         temp, root = self.make_skill("""---
 name: demo-skill
 description: Demo.
-version: 1.0.0
 ---
 
 在 Skill 包根目录执行 `python3 run.py`。
@@ -171,7 +125,6 @@ version: 1.0.0
         temp, root = self.make_skill("""---
 name: demo-skill
 description: Demo.
-version: 1.0.0
 ---
 
 在 Skill 包根目录执行 `python3 run.py`。
@@ -180,7 +133,7 @@ version: 1.0.0
 
 - `AGENTDOCK_SKILL_DIR`
 - `AGENTDOCK_DIR`
-- `~/.agentdock/skill-store/installed/demo-skill/1.0.0`
+- `~/.agentdock/skills/demo-skill`
 """)
         self.addCleanup(temp.cleanup)
 
@@ -193,7 +146,6 @@ version: 1.0.0
         temp, root = self.make_skill("""---
 name: demo-skill
 description: Demo.
-version: 1.0.0
 ---
 
 不要泄露密钥。
@@ -211,11 +163,10 @@ version: 1.0.0
         temp, root = self.make_skill("""---
 name: demo-skill
 description: Demo.
-version: 1.0.0
 ---
 
 通用执行：`python3 run.py`。
-AgentDock 可用 exec_command、skill_env 和 skill://demo-skill/references/api.md 验证。
+AgentDock 可用 exec_command、skill_ref、SKILL_DATA_DIR 和 skill://managed/demo-skill/references/api.md 验证。
 """)
         self.addCleanup(temp.cleanup)
 
@@ -223,10 +174,11 @@ AgentDock 可用 exec_command、skill_env 和 skill://demo-skill/references/api.
 
         codes = {issue["code"] for issue in result["issues"]}
         self.assertTrue(result["portable"])
-        self.assertEqual(result["warning_count"], 3)
+        self.assertEqual(result["warning_count"], 4)
         self.assertEqual(codes, {
             "AGENTDOCK_EXEC_COMMAND_USAGE",
-            "AGENTDOCK_SKILL_ENV_USAGE",
+            "AGENTDOCK_SKILL_REF_USAGE",
+            "AGENTDOCK_SKILL_DATA_DIR_USAGE",
             "AGENTDOCK_SKILL_URI_USAGE",
         })
 
@@ -234,7 +186,6 @@ AgentDock 可用 exec_command、skill_env 和 skill://demo-skill/references/api.
         temp, root = self.make_skill("""---
 name: demo-skill
 description: Demo.
-version: 1.0.0
 ---
 
 # Demo

@@ -48,17 +48,11 @@ func decodeSkillTestRequest[T any](input any) (T, error) {
 	}
 	return request, json.Unmarshal(data, &request)
 }
-func (s *Service) packageTest(ctx context.Context, input any) (Result, error) {
-	request, err := decodeSkillTestRequest[PackageRequest](input)
+
+func (s *Service) manageTest(ctx context.Context, input any) (Result, error) {
+	request, err := decodeSkillTestRequest[ManageRequest](input)
 	if err != nil {
 		return nil, err
 	}
-	return s.Package(ctx, request)
-}
-func (s *Service) inspectTest(input any) (Result, error) {
-	request, err := decodeSkillTestRequest[InspectRequest](input)
-	if err != nil {
-		return nil, err
-	}
-	return s.inspect(request)
+	return s.Manage(ctx, request)
 }

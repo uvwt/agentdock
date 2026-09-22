@@ -35,11 +35,7 @@ func runSkillCommand(ctx context.Context, args []string, stdout, stderr io.Write
 	if err := cfg.Normalize(); err != nil {
 		return err
 	}
-	stateDir, err := config.SkillStateDir(cfg)
-	if err != nil {
-		return err
-	}
-	state, err := skillstate.New(stateDir)
+	state, err := skillstate.New(config.SkillDir(cfg))
 	if err != nil {
 		return err
 	}
@@ -47,12 +43,15 @@ func runSkillCommand(ctx context.Context, args []string, stdout, stderr io.Write
 	if err != nil {
 		return err
 	}
+	if _, err := skills.MigrateLegacyLayout(ctx, cfg.AgentDockHome, manager); err != nil {
+		return err
+	}
 	result, err := skillbundle.Bootstrap(ctx, state, manager, *bundleDir)
 	if err != nil {
 		return err
 	}
 	for _, item := range result.Skills {
-		fmt.Fprintf(stdout, "bundled skill installed: %s %s\n", item.Name, item.Version)
+		fmt.Fprintf(stdout, "bundled skill installed: %s %s\n", item.Name, item.ContentDigest)
 	}
 	return nil
 }

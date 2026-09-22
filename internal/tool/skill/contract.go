@@ -2,57 +2,54 @@ package skill
 
 import toolcontract "github.com/uvwt/agentdock/internal/tool/contract"
 
-const ToolPackage = "skill_package"
+const ToolManage = "skill_manage"
 
-func PackageInputSchema() map[string]any {
+func ManageInputSchema() map[string]any {
 	stringProp := toolcontract.String
 	return toolcontract.InputObject(map[string]any{
-		"action":    map[string]any{"type": "string", "description": "Skill package or isolated environment action.", "enum": []string{"validate", "install", "uninstall", "activate", "rollback", "env_set", "env_unset", "env_list"}},
-		"skill":     stringProp("Skill name for uninstall, activate, rollback, or environment management."),
-		"version":   stringProp("Installed Skill version for uninstall or activate. Omit for uninstall to remove the whole Skill."),
-		"key":       stringProp("Environment variable name for env_set/env_unset."),
+		"action":    map[string]any{"type": "string", "description": "Managed standalone Skill action.", "enum": []string{"install", "remove", "env_set", "env_unset", "env_list"}},
+		"skill":     stringProp("Managed Skill name for remove or environment management."),
+		"key":       stringProp("Environment variable name for env_set/env_unset. SKILL_DATA_DIR is reserved by the managed Skill runtime and cannot be configured."),
 		"value":     stringProp("Environment variable value for env_set. Secret values are never returned."),
-		"source":    stringProp("Host path or HTTP(S) URL for validate/install."),
-		"digest":    stringProp("Optional expected SHA-256 digest for validate/install."),
-		"activate":  toolcontract.Boolean("Activate the installed version. Defaults to true."),
-		"max_bytes": toolcontract.Integer("Maximum validate/install package bytes."),
+		"source":    stringProp("Host path or HTTP(S) URL for install. Reinstalling the same name updates current content."),
+		"digest":    stringProp("Optional expected SHA-256 source digest for install integrity checking."),
+		"purge":     toolcontract.Boolean("For remove, also delete the managed Skill environment and persistent data."),
+		"max_bytes": toolcontract.Integer("Maximum install package bytes."),
 	}, "action")
 }
 
-func PackageOutputSchema() map[string]any {
+func ManageOutputSchema() map[string]any {
 	stringProp := toolcontract.String
 	intProp := toolcontract.Integer
 	boolProp := toolcontract.Boolean
 	arrayProp := toolcontract.ObjectArray
 	objectProp := toolcontract.OpenObject
 	return toolcontract.OutputObject(map[string]any{
-		"action":     stringProp("Completed Skill package action."),
-		"skill":      stringProp("Skill name."),
-		"name":       stringProp("Skill name for environment actions."),
-		"key":        stringProp("Environment variable name. Secret values are never returned."),
-		"configured": boolProp("Whether the environment variable has a non-empty configured value."),
-		"removed":    boolProp("Whether the environment variable was removed."),
-		"items":      arrayProp("Environment variable names and configured status without values."),
-		"count":      intProp("Returned environment variable count."),
-		"valid":      boolProp("Whether a Skill source passed validation."),
-		"source":     stringProp("Resolved Skill source label."),
-		"digest":     stringProp("Computed Skill package digest."),
-		"issues":     arrayProp("Structured validation issues."),
-		"document":   objectProp("Parsed SKILL.md frontmatter and body metadata."),
-		"result":     objectProp("Install, uninstall, activate, or rollback result."),
+		"action":         stringProp("Completed managed Skill action."),
+		"skill":          stringProp("Managed Skill name."),
+		"name":           stringProp("Managed Skill name for environment actions."),
+		"key":            stringProp("Environment variable name. Secret values are never returned."),
+		"configured":     boolProp("Whether the environment variable has a non-empty configured value."),
+		"removed":        boolProp("Whether the requested content or environment variable was removed."),
+		"purged":         boolProp("Whether preserved managed Skill environment and data were also removed."),
+		"items":          arrayProp("Environment variable names and configured status without values."),
+		"count":          intProp("Returned environment variable count."),
+		"content_digest": stringProp("Current managed Skill package content digest."),
+		"changed":        boolProp("Whether install changed the current managed Skill content."),
+		"result":         objectProp("Managed Skill install or remove result."),
 	})
 }
 
 func InputSchema(name string) (map[string]any, bool) {
-	if name != ToolPackage {
+	if name != ToolManage {
 		return nil, false
 	}
-	return PackageInputSchema(), true
+	return ManageInputSchema(), true
 }
 
 func OutputSchema(name string) (map[string]any, bool) {
-	if name != ToolPackage {
+	if name != ToolManage {
 		return nil, false
 	}
-	return PackageOutputSchema(), true
+	return ManageOutputSchema(), true
 }

@@ -117,6 +117,35 @@ func TestCommandEnvPriorityKeepsSkillAndExplicitOverrides(t *testing.T) {
 	}
 }
 
+func TestCommandEnvRejectsReservedSkillDataDirOverrides(t *testing.T) {
+	svc, cfg := newCommandTestService(t)
+
+	for _, key := range []string{"SKILL_DATA_DIR", "skill_data_dir"} {
+		t.Run("request-"+key, func(t *testing.T) {
+			if _, err := svc.CommandEnv("demo-skill", map[string]string{key: "/tmp/override"}); err == nil || !strings.Contains(err.Error(), "reserved") {
+				t.Fatalf("request env error = %v, want reserved variable rejection", err)
+			}
+		})
+	}
+
+	if err := svc.envs.Set(envstore.Scope{Kind: envstore.ScopeSkill, Name: "demo-skill"}, "SKILL_DATA_DIR", "/tmp/manual"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CommandEnv("demo-skill", nil); err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("stored Skill env error = %v, want reserved variable rejection", err)
+	}
+
+	t.Setenv("AGENTDOCK_TEST_RESERVED_DATA", "/tmp/host")
+	cfg.CommandEnvFromEnv = map[string]string{"SKILL_DATA_DIR": "AGENTDOCK_TEST_RESERVED_DATA"}
+	hostEnv, err := svc.CommandEnv("", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := commandEnvValues(hostEnv)["SKILL_DATA_DIR"]; ok {
+		t.Fatal("reserved SKILL_DATA_DIR leaked through unnormalized host mapping")
+	}
+}
+
 func TestCommandEnvStillBlocksUnconfiguredHostInjectionVariables(t *testing.T) {
 	svc, _ := newCommandTestService(t)
 	for _, key := range []string{"NODE_OPTIONS", "PYTHONPATH", "JAVA_TOOL_OPTIONS"} {

@@ -82,7 +82,7 @@ func TestRuntimeExposesSingleToolSet(t *testing.T) {
 	for _, name := range rt.ToolNames() {
 		seen[name] = true
 	}
-	for _, name := range []string{"agentdock_context", "workspace_context", "session_observe", "session_act", "recall_read", "recall_write", "skill_package", "mcp_manage", "mcp_tool_search", "mcp_tool_inspect", "mcp_tool_call"} {
+	for _, name := range []string{"agentdock_context", "workspace_context", "session_observe", "session_act", "recall_read", "recall_write", "skill_manage", "mcp_manage", "mcp_tool_search", "mcp_tool_inspect", "mcp_tool_call"} {
 		if !seen[name] {
 			t.Fatalf("single tool set missing %s: %#v", name, seen)
 		}
@@ -210,12 +210,17 @@ func TestRecallBootstrapIsNotModelFacing(t *testing.T) {
 	}
 }
 
-func TestSkillPackageSchemaAndRemovedRuntimeTools(t *testing.T) {
-	packageProps := schemaProperties(t, "skill_package")
-	assertSameStrings(t, enumStrings(t, packageProps["action"]), []string{"validate", "install", "uninstall", "activate", "rollback", "env_set", "env_unset", "env_list"})
-	for _, name := range []string{"source", "digest", "activate", "max_bytes", "skill", "version", "key", "value"} {
-		if _, ok := packageProps[name]; !ok {
-			t.Fatalf("skill_package input schema missing %q", name)
+func TestSkillManageSchemaAndRemovedRuntimeTools(t *testing.T) {
+	manageProps := schemaProperties(t, "skill_manage")
+	assertSameStrings(t, enumStrings(t, manageProps["action"]), []string{"install", "remove", "env_set", "env_unset", "env_list"})
+	for _, name := range []string{"source", "digest", "max_bytes", "skill", "purge", "key", "value"} {
+		if _, ok := manageProps[name]; !ok {
+			t.Fatalf("skill_manage input schema missing %q", name)
+		}
+	}
+	for _, removed := range []string{"activate", "version"} {
+		if _, ok := manageProps[removed]; ok {
+			t.Fatalf("skill_manage input schema still exposes removed %q", removed)
 		}
 	}
 
@@ -225,13 +230,13 @@ func TestSkillPackageSchemaAndRemovedRuntimeTools(t *testing.T) {
 		}
 	}
 
-	packageOutputProps, ok := outputSchema("skill_package")["properties"].(map[string]any)
+	manageOutputProps, ok := outputSchema("skill_manage")["properties"].(map[string]any)
 	if !ok {
-		t.Fatal("skill_package output schema properties missing")
+		t.Fatal("skill_manage output schema properties missing")
 	}
-	for _, name := range []string{"valid", "source", "digest", "document", "issues"} {
-		if _, ok := packageOutputProps[name]; !ok {
-			t.Fatalf("skill_package output schema missing %q", name)
+	for _, name := range []string{"action", "skill", "content_digest", "changed", "removed", "purged", "items"} {
+		if _, ok := manageOutputProps[name]; !ok {
+			t.Fatalf("skill_manage output schema missing %q", name)
 		}
 	}
 }

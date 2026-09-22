@@ -26,9 +26,6 @@
 __pycache__/
 *.py[cod]
 
-# Runtime Skill state and artifacts
-skill-data/
-
 # 本地部署密钥文件。
 /.env
 /agentdock.env

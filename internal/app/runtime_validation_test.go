@@ -28,7 +28,7 @@ func TestRuntimeCallRejectsUnknownArgumentsForFormerlyPermissiveTools(t *testing
 		{tool: "read_file", args: map[string]any{"path": "missing.txt", "future_field": true}},
 		{tool: "file_edit", args: map[string]any{"action": "replace", "future_field": true}},
 		{tool: "task_manage", args: map[string]any{"action": "list", "future_field": true}},
-		{tool: "skill_package", args: map[string]any{"action": "env_list", "future_field": true}},
+		{tool: "skill_manage", args: map[string]any{"action": "env_list", "future_field": true}},
 		{tool: "view_image", args: map[string]any{"path": "missing.png", "future_field": true}},
 		{tool: "file_publish", args: map[string]any{"path": "missing.txt", "future_field": true}},
 	} {

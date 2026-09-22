@@ -79,6 +79,18 @@ func TestCommandEnvironmentMappingRejectsInvalidNames(t *testing.T) {
 	}
 }
 
+func TestCommandEnvironmentMappingRejectsSkillDataDir(t *testing.T) {
+	setTestUserHome(t, t.TempDir())
+	for _, key := range []string{"SKILL_DATA_DIR", "skill_data_dir"} {
+		t.Run(key, func(t *testing.T) {
+			cfg := Config{CommandEnvFromEnv: map[string]string{key: "HOST_DATA_DIR"}}
+			if err := cfg.Normalize(); err == nil || !strings.Contains(err.Error(), "reserved") {
+				t.Fatalf("Normalize() error = %v, want reserved Skill runtime variable error", err)
+			}
+		})
+	}
+}
+
 func TestFromEnvIgnoresOldDirectoryConfig(t *testing.T) {
 	home := t.TempDir()
 	setTestUserHome(t, home)
@@ -162,16 +174,43 @@ func TestFromEnvRejectsRelativeAgentDockDirectories(t *testing.T) {
 	}
 }
 
-func TestSkillStateDirUsesAgentDockHome(t *testing.T) {
+func TestSkillDirUsesAgentDockHome(t *testing.T) {
 	home := t.TempDir()
 	cfg := Config{AgentDockHome: filepath.Join(home, ".agentdock")}
-	got, err := SkillStateDir(cfg)
-	if err != nil {
-		t.Fatalf("SkillStateDir() error = %v", err)
-	}
-	want := filepath.Join(cfg.AgentDockHome, "skill-store")
+	got := SkillDir(cfg)
+	want := filepath.Join(cfg.AgentDockHome, "skills")
 	if got != want {
-		t.Fatalf("SkillStateDir() = %q, want %q", got, want)
+		t.Fatalf("SkillDir() = %q, want %q", got, want)
+	}
+}
+
+func TestSkillDataDirUsesManagedPrivateRoot(t *testing.T) {
+	home := t.TempDir()
+	cfg := Config{AgentDockHome: filepath.Join(home, ".agentdock")}
+	got, err := SkillDataDir(cfg, "demo-skill")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(cfg.AgentDockHome, "data", "skills", "demo-skill")
+	if got != want {
+		t.Fatalf("SkillDataDir() = %q, want %q", got, want)
+	}
+}
+
+func TestSkillDataDirRejectsUnsafeIdentity(t *testing.T) {
+	cfg := Config{AgentDockHome: filepath.Join(t.TempDir(), ".agentdock")}
+	for _, skill := range []string{
+		"", "a", "../demo", "demo/child", `demo\child`, "/tmp/demo",
+		"Demo-skill", "demo_skill", " demo-skill", "demo-skill ",
+	} {
+		t.Run(skill, func(t *testing.T) {
+			if got, err := SkillDataDir(cfg, skill); err == nil {
+				t.Fatalf("SkillDataDir(%q) = %q, want validation error", skill, got)
+			}
+		})
+	}
+	if _, err := SkillDataDir(Config{AgentDockHome: "relative"}, "demo-skill"); err == nil {
+		t.Fatal("SkillDataDir accepted relative AgentDockHome")
 	}
 }
 

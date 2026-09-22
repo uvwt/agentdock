@@ -20,8 +20,8 @@ func TestCommonSkillCapabilityIndexListsValidSkillsInStableOrder(t *testing.T) {
 	home := t.TempDir()
 	setUserHomeForTest(t, home)
 	root := filepath.Join(home, ".agents", "skills")
-	writeCommonSkillForTest(t, root, "z-dir", "z-skill", "Z skill description.")
-	writeCommonSkillForTest(t, root, "a-dir", "a-skill", strings.Repeat("A", filesystemSkillDescriptionBytes+40))
+	writeCommonSkillForTest(t, root, "z-skill", "z-skill", "Z skill description.")
+	writeCommonSkillForTest(t, root, "a-skill", "a-skill", strings.Repeat("A", filesystemSkillDescriptionBytes+40))
 	writeCommonSkillFileForTest(t, filepath.Join(root, "invalid", "SKILL.md"), "---\nname: invalid\ndescription:\n---\n\n# Invalid\n")
 
 	index, err := commonSkillCapabilityIndex()
@@ -34,7 +34,9 @@ func TestCommonSkillCapabilityIndexListsValidSkillsInStableOrder(t *testing.T) {
 	if index.Items[0].Name != "a-skill" || index.Items[1].Name != "z-skill" {
 		t.Fatalf("common Skills are not stably sorted: %#v", index.Items)
 	}
-	if index.Items[0].File != filepath.Join(root, "a-dir", "SKILL.md") {
+	if index.Items[0].File != "skill://shared/a-skill/SKILL.md" ||
+		index.Items[0].SkillRef != "skill://shared/a-skill" ||
+		index.Items[0].SourceType != "shared" {
 		t.Fatalf("common Skill file path = %q", index.Items[0].File)
 	}
 	if len(index.Items[0].Description) > filesystemSkillDescriptionBytes {
@@ -102,7 +104,7 @@ func TestCommonSkillCapabilityIndexKeepsPackageDirectorySymlink(t *testing.T) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(target, filepath.Join(root, "linked")); err != nil {
+	if err := os.Symlink(target, filepath.Join(root, "linked-skill")); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 

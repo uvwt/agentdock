@@ -37,7 +37,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def read_identity(skill_root: Path, expected_name: str) -> tuple[str, str]:
+def read_identity(skill_root: Path, expected_name: str) -> str:
     document = (skill_root / "SKILL.md").read_text(encoding="utf-8")
     match = re.match(r"^---\s*\n(.*?)\n---\s*\n", document, re.DOTALL)
     if match is None:
@@ -49,12 +49,9 @@ def read_identity(skill_root: Path, expected_name: str) -> tuple[str, str]:
         if separator:
             fields[key.strip()] = value.strip()
     name = fields.get("name", "")
-    version = fields.get("version", "")
     if name != expected_name:
         raise ValueError(f"expected Skill name {expected_name!r}, got {name!r}")
-    if not version:
-        raise ValueError(f"{expected_name} has no version")
-    return name, version
+    return name
 
 
 def package_skill(skill_root: Path, archive_path: Path) -> str:
@@ -95,13 +92,12 @@ def build_bundle(repo_root: Path, output: Path) -> None:
     entries: list[dict[str, str]] = []
     for expected_name in CORE_SKILLS:
         skill_root = repo_root / "core-skills" / expected_name
-        name, version = read_identity(skill_root, expected_name)
+        name = read_identity(skill_root, expected_name)
         relative_archive = Path("packages") / f"{name}.zip"
         digest = package_skill(skill_root, output / relative_archive)
         entries.append(
             {
                 "name": name,
-                "version": version,
                 "path": relative_archive.as_posix(),
                 "digest": digest,
             }

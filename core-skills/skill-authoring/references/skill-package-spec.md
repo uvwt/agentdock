@@ -1,68 +1,31 @@
 # AgentDock Skill 包规范
 
-本规范供 `skill-authoring` 创建或升级第一方 Skill。当前架构是纯文档 Skill，并明确区分可移植核心与 AgentDock 宿主适配。
+本规范供 `skill-authoring` 创建或升级 Skill。AgentDock 采用文档型 Agent Skills 模型，不再为 Skill 建立独立版本、激活或回滚体系。
 
-## 1. 架构边界
-
-标准链路：
+## 1. 标准链路
 
 ```text
-宿主发现并读取 SKILL.md
+宿主发现候选 Skill 与来源
+→ 返回 name / description / source_type / source_id / skill_ref / file
+→ 模型选择一个精确候选
+→ read_file 读取宿主返回的 file
 → 模型理解流程和约束
-→ 宿主选择真实工具
-→ 必要时在 Skill 包根目录执行辅助脚本
+→ exec_command 等真实工具使用同一 skill_ref
 ```
 
-Skill 负责说明“应该怎样做”；工具负责真实执行。包内脚本只是模型可选择调用的资源。
+Skill 负责说明“应该怎样做”；工具负责真实执行。
 
-AgentDock 的适配链路是：
+## 2. 最小包
 
 ```text
-agentdock_context
-→ read_file skill://<name>/SKILL.md
-→ 模型理解流程
-→ exec_command skill=<name> / file_edit / 浏览器 / MCP 等真实工具
-```
-
-AgentDock 适配不是目标 Skill 的核心运行依赖。
-
-## 2. 可移植核心契约
-
-目标 Skill 默认只依赖：
-
-- `SKILL.md`；
-- 包内相对路径；
-- 当前进程环境变量；
-- 运行宿主提供的命令、文件、浏览器或远端工具能力。
-
-有根目录脚本时，执行示例应使用：
-
-```bash
-python3 run.py
-```
-
-禁止把以下内容作为核心契约：
-
-- AgentDock 已安装版本绝对路径；
-- 固定版本号才能定位脚本；
-- `AGENTDOCK_HOME` 或 `AGENTDOCK_SKILL_DIR`；
-- `skill_env`、`exec_command`、`skill://`；
-- 固定用户绝对路径；
-- 主动读取宿主私有环境文件。
-
-这些 AgentDock 术语只能出现在独立、可删除的宿主适配或验证说明中。
-
-## 3. 最小包结构
-
-```text
-skills/<skill-name>/
+<skill-name>/
 └── SKILL.md
 ```
 
 按需扩展：
 
 ```text
-skills/<skill-name>/
+<skill-name>/
 ├── SKILL.md
 ├── references/
 ├── scripts/
@@ -70,174 +33,193 @@ skills/<skill-name>/
 └── tests/
 ```
 
-不要创建空目录。
+禁止空目录、symlink、`.env`、运行缓存和宿主安装回执。
 
-## 4. SKILL.md Schema
+## 3. SKILL.md
 
-当前必填 Frontmatter：
+必填：
 
 ```yaml
 ---
 name: example-skill
 description: 清楚说明何时使用、解决什么问题
-version: 1.0.0
 ---
+
+# Example Skill
+```
+
+可选 Agent Skills 字段：
+
+```yaml
+license: Apache-2.0
+compatibility: Requires Python 3.11 or later.
+metadata:
+  owner: example-team
+allowed-tools:
+  - exec_command
 ```
 
 规则：
 
 - `name` 匹配 `^[a-z][a-z0-9-]{1,62}$`；
-- `description` 非空，并支持模型稳定选择；
-- `version` 是语义化版本；
+- 目录身份与 `name` 一致；
+- `description` 非空；
 - Markdown 正文非空；
-- 当前解析器只读取 `name`、`description`、`version`；
-- 不把未经支持的字段当作正式契约。
+- `metadata.version` 若存在只是普通作者元数据；
+- AgentDock 不读取任何 version 字段来选择安装内容，也不存在 active version。
 
-## 5. 版本和不可变性
+## 4. 内容身份
 
-正文、描述、引用、脚本、测试代表的行为契约、依赖或平台要求发生变化时必须递增版本。
+AgentDock managed Skill 的事实目录：
 
-同名同版本安装包内容必须相同。AgentDock 拒绝用不同内容覆盖已安装的同一版本。
-
-## 6. 环境变量契约
-
-需要配置时，目标 `SKILL.md` 声明：
-
-```markdown
-## 环境变量
-
-| 变量 | 类型 | 必填 | 说明 |
-|---|---|---:|---|
-| EXAMPLE_BASE_URL | config | 是 | 服务地址 |
-| EXAMPLE_API_KEY | secret | 是 | API Key |
+```text
+~/.agentdock/skills/<name>/
 ```
 
-Skill 包只包含变量名称、类型、必填性、用途和缺失行为。脚本只从当前进程环境读取变量，不读取宿主环境文件。
+每个 managed Skill 只有当前内容。
 
-AgentDock 将环境值保存在独立私有目录，通过 `skill_package env_*` 管理；执行时由 `exec_command skill=<name>` 只注入本次子进程。该保存方式不属于目标 Skill 的通用契约。
+`content_digest` 是包内容摘要，用于：
 
-## 7. 私有状态边界
+- 判断重复安装；
+- 判断内容是否变化；
+- 审计和验证；
+- 安装事务 no-op。
 
-运行状态、缓存、会话、数据库、下载文件和其他设备私有数据不得被打包。
+它不是产品版本号，也不产生版本选择 UI/API。
 
-在 AgentDock 中它们位于独立的 Skill 数据目录，但目标 Skill 应通过业务变量、用户输入或宿主提供的工作目录获得必要路径，不硬编码 AgentDock 私有目录。
+相同 `content_digest` 重复安装应为 no-op；同名但 digest 不同的内容通过事务替换当前目录。
 
-## 8. 包内禁止项
+## 5. 可移植核心
+
+目标 Skill 默认只依赖：
+
+- `SKILL.md`；
+- 包内相对路径；
+- 当前进程环境；
+- 宿主提供的通用工具能力。
+
+不要在核心契约中依赖：
+
+- `~/.agentdock/skills/<name>`；
+- `AGENTDOCK_HOME` 或其他私有目录；
+- `skill_ref`、`exec_command`、`skill://`；
+- 固定用户绝对路径；
+- 主动读取宿主私有环境文件。
+
+AgentDock 适配说明必须可独立删除而不破坏核心流程。
+
+## 6. 环境和数据
+
+Skill 包只声明环境变量名称、类型、必填性、用途和缺失行为，不保存真实值。
+
+AgentDock managed Skill 环境：
+
+```text
+~/.agentdock/env/skill/<name>.env
+```
+
+持久数据：
+
+```text
+~/.agentdock/data/skills/<name>/
+```
+
+managed Skill 通过 `exec_command` 运行时，AgentDock 把这个目录作为保留环境变量 `SKILL_DATA_DIR` 注入子进程。目录按私有权限创建；Windows 原生命令得到 Host 路径，WSL 得到转换后的 Linux 路径。`SKILL_DATA_DIR` 不能由 Skill 环境、宿主变量映射或请求级 `env` 覆盖。
+
+`SKILL_DATA_DIR` 只属于 managed 候选。shared/workspace 同名 Skill 不继承 managed 环境或数据目录。
+
+环境和数据均独立于包内容。普通更新、remove 不删除；只有显式 purge 才删除。目标 Skill 不应硬编码 `~/.agentdock/data/...`，而应把 `SKILL_DATA_DIR` 作为 AgentDock 可选适配。
+
+## 7. skill_ref 与来源
+
+AgentDock 至少发现：
+
+- `managed`
+- `shared`
+- `workspace`
+
+同名不同来源不能静默覆盖。宿主返回的 `skill_ref` 是当前发现结果的精确引用，保证后续调用不会误切到同名其他来源。
+
+`skill_ref` 不要求跨卸载、工作区迁移或重新发现长期稳定。
+
+模型不得自己用裸名称重建来源优先级。
+
+## 8. 并发与事务
+
+managed Skill 的并发粒度是单个 Skill：
+
+- read lease：读取资源和命令执行期间持有；
+- write lease：安装、更新、remove 持有；
+- 不使用全局粗锁。
+
+更新流程：
+
+```text
+prepare candidate
+→ validate
+→ compute content_digest
+→ acquire component write lock
+→ compare current digest
+→ same digest: no-op
+→ different digest: atomic replace
+→ failure: restore old current content
+```
+
+临时备份只为本次事务服务，不是历史版本库。
+
+## 9. 禁止项
 
 禁止：
 
 - `agentdock.yaml`；
-- `.env` 或其他真实环境值文件；
-- 密码、Token、Cookie、私钥；
-- `__pycache__`、`*.pyc`、`node_modules`；
-- 编译产物和大体积生成文件；
-- 符号链接；
+- `.env`；
+- secret、Cookie、私钥；
+- `__pycache__`、`node_modules`、数据库、下载结果；
+- symlink、特殊文件、路径逃逸；
 - 固定用户绝对路径；
-- 隐蔽下载并执行；
-- 未说明的数据上传、删除或权限修改；
 - `skill_run`、`skill_env_manage`、`AGENTDOCK_OPERATION`、`PLUGIN_*`；
-- 旧式 `operation`、`entrypoint` 清单和旧 Skill Runtime。
+- 旧式 operation / entrypoint 清单；
+- Skill 自有 version / active_version / activate / rollback / revision store。
 
-## 9. 辅助脚本契约
+## 10. AgentDock 管理 API
 
-推荐输入：
+安装或更新：
 
-```json
-{
-  "skill_action": "status"
-}
+```text
+skill_manage
+  action: install
+  source: <path|zip|https>
+  digest: <optional source sha256>
 ```
 
-要求：
+环境：
 
-- stdin 是 JSON 对象；
-- 顶层动作字段为 `skill_action`；
-- 秘密只从当前进程环境读取；
-- 不把秘密放入命令行参数、输出或日志；
-- stdout 返回结构化 JSON；
-- 错误包含稳定 `code` 和可读 `message`；
-- `status` 默认只读；
-- 破坏性动作需要显式确认；
-- 网络超时、依赖缺失和平台不支持必须可诊断；
-- 包内文件通过相对路径或脚本自身目录定位。
-
-## 10. skill-authoring lint
-
-第一方 Skill 在安装前必须运行：
-
-```json
-{
-  "skill_action": "lint",
-  "source": "/path/to/skill-source"
-}
+```text
+skill_manage action=env_list  skill=<name>
+skill_manage action=env_set   skill=<name> key=<key> value=<value>
+skill_manage action=env_unset skill=<name> key=<key>
 ```
 
-硬错误包括：
+移除：
 
-- 硬编码 AgentDock 已安装版本路径；
-- 依赖 AgentDock 专属目录变量；
-- 主动读取 AgentDock 环境文件；
-- 固定用户绝对路径。
+```text
+skill_manage action=remove skill=<name>
+skill_manage action=remove skill=<name> purge=true
+```
 
-警告包括：
-
-- 目标 `SKILL.md` 出现 AgentDock 专属工具或 URI；
-- 包内有 `run.py`，但文档缺少相对执行说明；
-- 候选文本文件过大或不是 UTF-8。
-
-第一方 Skill 要求 `portable=true`，warning 必须修复或确认只属于独立宿主适配。
-
-`skill_package validate` 仍只负责包级合法性和安装门槛，不承担创作质量 lint。
+没有 validate/list/inspect/update/activate/rollback/uninstall 等旧 Skill package action。发现与读取通过 context + `skill_ref` / `file` 完成。
 
 ## 11. 验证矩阵
 
-### 文档和目录
-
-- 根目录存在 `SKILL.md`；
-- Frontmatter 可解析；
-- 正文非空；
-- 引用使用包内相对路径且真实存在；
-- 无空目录、符号链接和路径逃逸。
-
-### 可移植性
-
-- `skill-authoring lint` 返回 `portable=true`；
-- 脚本从 Skill 根目录以相对命令运行；
-- 环境只从当前进程读取；
-- 移除宿主适配说明后核心流程仍完整。
-
-### 安全
-
-- 搜索密钥、Cookie、Authorization 头和私钥标记；
-- 检查网络目标、Shell、文件写入、删除、上传和权限修改；
-- 检查依赖安装、下载后执行和混淆代码；
-- 检查包内二进制和生成文件；
-- 旧架构术语只允许出现在明确禁止或迁移说明中。
-
-### 脚本和测试
-
-- 运行语言语法检查；
-- 运行包内测试；
-- 运行只读 `status`；
-- 验证错误不会泄露环境值。
-
-### AgentDock 生命周期
-
-- `skill_package validate` 返回 `valid: true`；
-- `skill_package install` 成功并激活预期版本；
-- `agentdock_context` 出现正确名称和描述；
-- `read_file skill://<name>/SKILL.md` 返回当前正文；
-- 当前激活包引用可读取；
-- `exec_command skill=<name>` 能从激活包根目录运行只读检查。
-
-## 12. 作者交付摘要
-
-交付时至少说明：
-
-- Skill 名称和新版本；
-- 触发场景和不负责范围；
-- 新增或修改文件；
-- 环境变量名称，不包含值；
-- lint、测试和包校验结果；
-- 当前激活版本；
-- 真实限制或风险。
+- Frontmatter 可解析，正文非空；
+- 目录身份与 `name` 一致；
+- 无禁止文件与 symlink；
+- lint `portable=true`；
+- 脚本语法与测试通过；
+- `skill_manage install` 返回有效 `content_digest`；
+- 同内容重装 `changed=false`；
+- 修改内容重装 `changed=true`；
+- `agentdock_context` 暴露正确 provenance；
+- `read_file` 使用宿主返回的 `file`；
+- `exec_command` 使用同一候选 `skill_ref`；
+- 更新/移除不误删环境和数据。

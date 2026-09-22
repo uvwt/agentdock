@@ -122,6 +122,9 @@ func indexFilesystemSkills(entries []os.DirEntry, load func(os.DirEntry) (string
 		if parseErr != nil {
 			continue
 		}
+		if metadata.Name != entry.Name() {
+			continue
+		}
 		items = append(items, filesystemSkillItem{
 			Name:        metadata.Name,
 			Description: truncateString(strings.TrimSpace(metadata.Description), filesystemSkillDescriptionBytes),

@@ -613,12 +613,8 @@ jobs:
 
           "$install_dir/bin/agentdock" --help >/dev/null 2>&1
 
-          test -f "$data_dir/.agentdock/skill-store/bundled-skills.json"
-          for skill in skill-authoring skill-installation; do
-            state="$data_dir/.agentdock/skill-store/state/$skill.json"
-            version="$(jq -r .active_version "$state")"
-            test -n "$version"
-            test -f "$data_dir/.agentdock/skill-store/installed/$skill/$version/SKILL.md"
+          for skill in agentdock-user-guide skill-authoring skill-installation; do
+            test -f "$data_dir/.agentdock/skills/$skill/SKILL.md"
           done
 
           systemd_dir="$RUNNER_TEMP/systemd"
@@ -729,11 +725,8 @@ jobs:
           AGENTDOCK_INSTALL_DIR="$RUNNER_TEMP/bin" \
             sh "$installer" --version "$tag"
           "$RUNNER_TEMP/bin/agentdock" --help >/dev/null 2>&1
-          test -f "$RUNNER_TEMP/home/.agentdock/skill-store/bundled-skills.json"
-          for skill in skill-authoring skill-installation; do
-            state="$RUNNER_TEMP/home/.agentdock/skill-store/state/$skill.json"
-            version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["active_version"])' "$state")"
-            test -f "$RUNNER_TEMP/home/.agentdock/skill-store/installed/$skill/$version/SKILL.md"
+          for skill in agentdock-user-guide skill-authoring skill-installation; do
+            test -f "$RUNNER_TEMP/home/.agentdock/skills/$skill/SKILL.md"
           done
           HOME="$RUNNER_TEMP/home" \
           AGENTDOCK_INSTALLER_BASE_URL="$release_base" \

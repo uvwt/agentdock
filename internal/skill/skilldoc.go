@@ -1,17 +1,27 @@
 package skill
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
-var (
-	skillNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,62}$`)
-	semverPattern    = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$`)
-)
+var skillNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,62}$`)
+
+type skillFrontmatter struct {
+	Name          string         `yaml:"name"`
+	Description   string         `yaml:"description"`
+	License       string         `yaml:"license"`
+	Compatibility string         `yaml:"compatibility"`
+	Metadata      map[string]any `yaml:"metadata"`
+	AllowedTools  any            `yaml:"allowed-tools"`
+}
 
 func LoadSkillDocument(packageDir string) (SkillDocument, error) {
 	data, err := os.ReadFile(filepath.Join(packageDir, "SKILL.md"))
@@ -26,40 +36,33 @@ func LoadSkillDocument(packageDir string) (SkillDocument, error) {
 }
 
 func ParseSkillMetadata(data []byte) (SkillMetadata, error) {
-	fields, body, err := parseSkillDocumentParts(data)
+	doc, err := ParseSkillDocument(data)
 	if err != nil {
 		return SkillMetadata{}, err
 	}
-	metadata := SkillMetadata{
-		Name:        strings.TrimSpace(fields["name"]),
-		Description: strings.TrimSpace(fields["description"]),
-	}
-	var issues []string
-	if !skillNamePattern.MatchString(metadata.Name) {
-		issues = append(issues, "name is required and must match ^[a-z][a-z0-9-]{1,62}$")
-	}
-	if metadata.Description == "" {
-		issues = append(issues, "description is required")
-	}
-	if body == "" {
-		issues = append(issues, "markdown body is required")
-	}
-	if len(issues) > 0 {
-		return SkillMetadata{}, errors.New(strings.Join(issues, "; "))
-	}
-	return metadata, nil
+	return SkillMetadata{Name: doc.Name, Description: doc.Description}, nil
 }
 
 func ParseSkillDocument(data []byte) (SkillDocument, error) {
-	fields, body, err := parseSkillDocumentParts(data)
+	frontmatter, body, err := splitSkillDocument(data)
 	if err != nil {
 		return SkillDocument{}, err
 	}
+
+	var fields skillFrontmatter
+	decoder := yaml.NewDecoder(bytes.NewReader(frontmatter))
+	if err := decoder.Decode(&fields); err != nil {
+		return SkillDocument{}, fmt.Errorf("decode SKILL.md frontmatter: %w", err)
+	}
+
 	doc := SkillDocument{
-		Name:        strings.TrimSpace(fields["name"]),
-		Description: strings.TrimSpace(fields["description"]),
-		Version:     strings.TrimSpace(fields["version"]),
-		Body:        body,
+		Name:          strings.TrimSpace(fields.Name),
+		Description:   strings.TrimSpace(fields.Description),
+		License:       strings.TrimSpace(fields.License),
+		Compatibility: strings.TrimSpace(fields.Compatibility),
+		Metadata:      fields.Metadata,
+		AllowedTools:  fields.AllowedTools,
+		Body:          body,
 	}
 	var issues []string
 	if !skillNamePattern.MatchString(doc.Name) {
@@ -67,9 +70,6 @@ func ParseSkillDocument(data []byte) (SkillDocument, error) {
 	}
 	if doc.Description == "" {
 		issues = append(issues, "description is required")
-	}
-	if !semverPattern.MatchString(doc.Version) {
-		issues = append(issues, "version is required and must be semantic version")
 	}
 	if doc.Body == "" {
 		issues = append(issues, "markdown body is required")
@@ -80,7 +80,7 @@ func ParseSkillDocument(data []byte) (SkillDocument, error) {
 	return doc, nil
 }
 
-func parseSkillDocumentParts(data []byte) (map[string]string, string, error) {
+func splitSkillDocument(data []byte) ([]byte, string, error) {
 	text := strings.ReplaceAll(string(data), "\r\n", "\n")
 	lines := strings.Split(text, "\n")
 	if len(lines) < 3 || strings.TrimSpace(lines[0]) != "---" {
@@ -96,51 +96,9 @@ func parseSkillDocumentParts(data []byte) (map[string]string, string, error) {
 	if endLine < 0 {
 		return nil, "", errors.New("SKILL.md frontmatter must be closed by ---")
 	}
-	fields := parseSkillDocumentFrontmatter(strings.Join(lines[1:endLine], "\n"))
+	frontmatter := []byte(strings.Join(lines[1:endLine], "\n"))
 	body := strings.TrimSpace(strings.Join(lines[endLine+1:], "\n"))
-	return fields, body, nil
-}
-
-func parseSkillDocumentFrontmatter(frontmatter string) map[string]string {
-	fields := map[string]string{}
-	lines := strings.Split(frontmatter, "\n")
-	for index := 0; index < len(lines); index++ {
-		raw := lines[index]
-		line := strings.TrimSpace(raw)
-		if line == "" || strings.HasPrefix(line, "#") || hasLeadingWhitespace(raw) {
-			continue
-		}
-		key, value, ok := strings.Cut(line, ":")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		if key != "name" && key != "description" && key != "version" {
-			continue
-		}
-		value = strings.TrimSpace(value)
-		if value != "|" && value != ">" {
-			fields[key] = strings.Trim(value, `"'`)
-			continue
-		}
-
-		style := value
-		parts := make([]string, 0)
-		for index+1 < len(lines) && (strings.TrimSpace(lines[index+1]) == "" || hasLeadingWhitespace(lines[index+1])) {
-			index++
-			parts = append(parts, strings.TrimSpace(lines[index]))
-		}
-		if style == ">" {
-			fields[key] = strings.TrimSpace(strings.Join(parts, " "))
-		} else {
-			fields[key] = strings.TrimSpace(strings.Join(parts, "\n"))
-		}
-	}
-	return fields
-}
-
-func hasLeadingWhitespace(value string) bool {
-	return value != "" && (value[0] == ' ' || value[0] == '\t')
+	return frontmatter, body, nil
 }
 
 func ValidatePackage(packageDir string) error {
@@ -156,8 +114,20 @@ func ValidatePackage(packageDir string) error {
 		if entry.Type()&os.ModeSymlink != 0 {
 			return packageError(ErrInvalidPackage, "package.symlink", errors.New("symlinks are not allowed in Skill packages"))
 		}
+		if !entry.IsDir() {
+			info, err := entry.Info()
+			if err != nil {
+				return packageError(ErrInvalidPackage, "package.file_type", err)
+			}
+			if !info.Mode().IsRegular() {
+				return packageError(ErrInvalidPackage, "package.file_type", errors.New("special files are not allowed in Skill packages"))
+			}
+		}
 		if !entry.IsDir() && entry.Name() == ".env" {
-			return packageError(ErrInvalidPackage, "package.secret_file", errors.New(".env files are not allowed in Skill packages; store credentials under skill-data"))
+			return packageError(ErrInvalidPackage, "package.secret_file", errors.New(".env files are not allowed in Skill packages; store credentials in the managed Skill environment"))
+		}
+		if !entry.IsDir() && entry.Name() == ".agentdock-install.json" {
+			return packageError(ErrInvalidPackage, "package.reserved_file", errors.New(".agentdock-install.json is reserved legacy AgentDock metadata and is not valid Skill package content"))
 		}
 		return nil
 	})

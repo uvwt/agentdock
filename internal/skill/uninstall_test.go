@@ -2,40 +2,63 @@ package skill
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
-
-	skillstate "github.com/uvwt/agentdock/internal/skill/state"
 )
 
-func TestUninstallRejectsBundledSkill(t *testing.T) {
-	state, err := skillstate.New(filepath.Join(t.TempDir(), "skills"))
+func TestRemoveDeletesCurrentManagedPackage(t *testing.T) {
+	manager := newManagerForTest(t)
+	source := writeSkillSource(t, "demo-skill", "Demo", nil)
+	installed, err := manager.Install(context.Background(), InstallRequest{Source: source})
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := New(state)
+	result, err := manager.Remove(context.Background(), "demo-skill")
 	if err != nil {
 		t.Fatal(err)
 	}
-	packagePath, err := state.InstalledPath("demo", "1.0.0")
-	if err != nil {
-		t.Fatal(err)
+	if !result.Removed || !result.PreservedEnvironment || !result.PreservedData {
+		t.Fatalf("unexpected remove result: %#v", result)
 	}
-	if err := os.MkdirAll(packagePath, 0o700); err != nil {
-		t.Fatal(err)
+	if _, err := os.Stat(installed.Path); !os.IsNotExist(err) {
+		t.Fatalf("managed package still exists after remove: %v", err)
 	}
-	if err := state.ReplaceBundledSkills(context.Background(), []string{"demo"}); err != nil {
-		t.Fatal(err)
-	}
+}
 
-	_, err = manager.Uninstall(context.Background(), "demo", "")
-	var packageErr *Error
-	if !errors.As(err, &packageErr) || packageErr.Code != ErrUninstallFailed || packageErr.Stage != "uninstall.bundled" {
-		t.Fatalf("bundled uninstall error = %#v", err)
+func TestRemoveMissingSkillFails(t *testing.T) {
+	manager := newManagerForTest(t)
+	if _, err := manager.Remove(context.Background(), "missing-skill"); err == nil {
+		t.Fatal("Remove() succeeded for missing Skill")
 	}
-	if installed, checkErr := state.IsInstalled("demo", "1.0.0"); checkErr != nil || !installed {
-		t.Fatalf("bundled Skill changed after rejected uninstall: installed=%v err=%v", installed, checkErr)
+}
+
+func TestRemoveWaitsForActiveReader(t *testing.T) {
+	manager := newManagerForTest(t)
+	source := writeSkillSource(t, "demo-skill", "Demo", nil)
+	if _, err := manager.Install(context.Background(), InstallRequest{Source: source}); err != nil {
+		t.Fatal(err)
+	}
+	release, err := manager.State.AcquireRead(context.Background(), "demo-skill")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := manager.Remove(context.Background(), "demo-skill")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		release()
+		t.Fatalf("remove completed while reader was active: %v", err)
+	default:
+	}
+	release()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(manager.State.Root(), "demo-skill")); !os.IsNotExist(err) {
+		t.Fatalf("Skill remained after reader release: %v", err)
 	}
 }

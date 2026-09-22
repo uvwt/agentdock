@@ -3,6 +3,8 @@ package app
 import (
 	"os"
 	"path/filepath"
+
+	toolskill "github.com/uvwt/agentdock/internal/tool/skill"
 )
 
 func commonSkillCapabilityIndex() (*capabilityCommonSkillIndex, error) {
@@ -17,8 +19,11 @@ func commonSkillCapabilityIndex() (*capabilityCommonSkillIndex, error) {
 	}
 	items := make([]capabilityCommonSkillItem, 0, len(index.Items))
 	for _, item := range index.Items {
+		skillRef := toolskill.SharedSkillRef(item.Name)
 		items = append(items, capabilityCommonSkillItem{
-			Name: item.Name, Description: item.Description, File: item.File,
+			Name: item.Name, Description: item.Description,
+			File: skillRef + "/SKILL.md", SkillRef: skillRef,
+			SourceType: "shared", SourceID: "global",
 		})
 	}
 	return &capabilityCommonSkillIndex{Root: root, Total: index.Total, Truncated: index.Truncated, Items: items}, nil

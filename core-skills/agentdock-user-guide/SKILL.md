@@ -1,7 +1,6 @@
 ---
 name: agentdock-user-guide
 description: 当用户询问 AgentDock 是什么、如何使用、配置在哪里、不同平台或安装方式怎样修改配置并生效、如何重启或验证配置、如何发现并配置 Codex/Claude/Grok 等 Coding Agent 的 ACP，以及常见运行问题时使用；覆盖 macOS Desktop、Windows Desktop、Linux 服务、Docker 和直接运行二进制，不用于源码开发与贡献流程。
-version: 1.3.0
 ---
 
 # AgentDock User Guide
@@ -49,7 +48,7 @@ AgentDock 的用户文档独立维护在 [uvwt/agentdock-docs](https://github.co
 
 ### AgentDock Skills
 
-[AgentDock Skills](https://github.com/uvwt/agentdock-skills) 是 AgentDock 官方与社区 Skill 的源码、测试和发布仓库。普通业务集成、个人效率工具和社区 Skill 在这里独立维护和版本化，避免与 AgentDock Core 版本强耦合。
+[AgentDock Skills](https://github.com/uvwt/agentdock-skills) 是 AgentDock 官方与社区 Skill 的源码与测试仓库。普通业务集成、个人效率工具和社区 Skill 在这里独立维护，内容演进由 Git 历史追踪，避免与 AgentDock Core 版本强耦合。
 
 AgentDock 主仓库的 `core-skills/` 只保留必须随 AgentDock 运行时一起安装和升级的内置核心 Skill；需要查找、阅读、贡献或发布其他 Skill 时，应优先查看 AgentDock Skills 仓库。安装第三方或社区 Skill 前仍应进行来源和安全审查。
 

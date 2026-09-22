@@ -86,7 +86,17 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 		toolNames: toolNames, toolValidators: toolValidators,
 		commandCtx: commandCtx, commandCancel: commandCancel,
 	}
-	runtime.command = toolcommand.New(func() config.Config { return runtime.cfg }, ws, envs, skills.ResolveActive, runtime.commandExecutionContext)
+	runtime.command = toolcommand.New(func() config.Config { return runtime.cfg }, ws, envs, func(ctx context.Context, skillRef string) (toolcommand.SkillLease, error) {
+		resolved, release, err := skills.Acquire(ctx, skillRef)
+		if err != nil {
+			return toolcommand.SkillLease{}, err
+		}
+		envName := ""
+		if resolved.SourceType == "managed" {
+			envName = resolved.Name
+		}
+		return toolcommand.SkillLease{Name: resolved.Name, Root: resolved.Root, EnvName: envName, Release: release}, nil
+	}, runtime.commandExecutionContext)
 	runtime.files = toolfile.New(ws, skills.ResolveResource, runtime.command.CommandEnv)
 	runtime.dynamicMCP = toolmcp.New(mcpClients, envs)
 	runtime.media = toolmedia.New(cfg, ws, runtime.command.InternalCommandEnv)

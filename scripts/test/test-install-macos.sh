@@ -46,7 +46,9 @@ print -- '[macos] fresh'
 run_install
 assert_committed
 [[ -x "$install_dir/agentdock" ]]
-[[ -f "$state_dir/skill-store/bundled-skills.json" ]]
+for skill in agentdock-user-guide skill-authoring skill-installation; do
+  [[ -f "$state_dir/skills/$skill/SKILL.md" ]]
+done
 
 print -- '[macos] repair'
 run_install

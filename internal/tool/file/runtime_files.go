@@ -29,12 +29,17 @@ func (svc *Service) ReadFile(ctx context.Context, request ReadRequest) (Result, 
 	rawPath := request.Path
 	absPath := ""
 	displayPath := ""
+	releaseSkill := func() {}
 	if strings.HasPrefix(rawPath, "skill://") {
 		var err error
-		absPath, displayPath, err = svc.resolveSkillResource(rawPath)
+		absPath, displayPath, releaseSkill, err = svc.resolveSkillResource(ctx, rawPath)
 		if err != nil {
 			return nil, err
 		}
+		if releaseSkill == nil {
+			releaseSkill = func() {}
+		}
+		defer releaseSkill()
 	} else {
 		p, err := svc.ws.ResolveExisting(rawPath)
 		if err != nil {

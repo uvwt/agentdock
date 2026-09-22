@@ -10,7 +10,15 @@ import (
 )
 
 type ConfigProvider func() config.Config
-type SkillResolver func(skill string) (string, error)
+
+type SkillLease struct {
+	Name    string
+	Root    string
+	EnvName string
+	Release func()
+}
+
+type SkillResolver func(ctx context.Context, skillRef string) (SkillLease, error)
 type CommandContext func() (context.Context, error)
 
 type Service struct {

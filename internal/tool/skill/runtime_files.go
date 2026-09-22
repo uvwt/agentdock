@@ -2,6 +2,7 @@ package skill
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"io/fs"
 	"os"
@@ -25,30 +26,36 @@ type runtimeSkillFile struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
-// RuntimeSkillFiles 返回当前激活 Skill 包的安全文件清单。
-// 隐藏文件、安装元数据和符号链接不会暴露给控制面。
+// RuntimeSkillFiles returns the current managed Skill package file list.
 func (s *Service) RuntimeSkillFiles(skill string) (Result, error) {
-	packageDir, version, err := s.runtimeSkillPackageDir(skill)
+	resolved, release, err := s.Acquire(context.Background(), ManagedSkillRef(strings.TrimSpace(skill)))
 	if err != nil {
 		return nil, err
 	}
-	files, err := collectRuntimeSkillFiles(packageDir)
+	defer release()
+	files, err := collectRuntimeSkillFiles(resolved.Root)
+	if err != nil {
+		return nil, err
+	}
+	digest, err := managedContentDigest(resolved.Root)
 	if err != nil {
 		return nil, err
 	}
 	return Result{
-		"action": "files", "skill": skill, "version": version,
-		"files": files, "count": len(files), "source": runtimeAPISource,
+		"action": "files", "skill": resolved.Name, "skill_ref": resolved.SkillRef,
+		"content_digest": digest,
+		"files":          files, "count": len(files), "source": runtimeAPISource,
 	}, nil
 }
 
-// RuntimeSkillFile 只读取当前激活 Skill 包内的普通 UTF-8 文本文件。
-// 路径解析和符号链接校验都在 AgentDock 内完成，调用方无需挂载宿主机目录。
+// RuntimeSkillFile only reads regular UTF-8 text files inside current managed Skill content.
 func (s *Service) RuntimeSkillFile(skill, relativePath string) (Result, error) {
-	packageDir, version, err := s.runtimeSkillPackageDir(skill)
+	resolved, release, err := s.Acquire(context.Background(), ManagedSkillRef(strings.TrimSpace(skill)))
 	if err != nil {
 		return nil, err
 	}
+	defer release()
+
 	cleanPath, err := cleanRuntimeSkillFilePath(relativePath)
 	if err != nil {
 		return nil, err
@@ -57,9 +64,9 @@ func (s *Service) RuntimeSkillFile(skill, relativePath string) (Result, error) {
 		return nil, toolErrorDetails("SKILL_FILE_NOT_FOUND", "skill file not found", "not_found", nil)
 	}
 
-	resolvedRoot, err := filepath.EvalSymlinks(packageDir)
+	resolvedRoot, err := filepath.EvalSymlinks(resolved.Root)
 	if err != nil {
-		return nil, toolErrorDetails("SKILL_PACKAGE_UNAVAILABLE", "skill package directory is unavailable", "runtime", map[string]any{"skill": skill, "version": version})
+		return nil, toolErrorDetails("SKILL_PACKAGE_UNAVAILABLE", "managed Skill package directory is unavailable", "runtime", map[string]any{"skill_ref": resolved.SkillRef})
 	}
 	if err := rejectRuntimeSkillSymlinkPath(resolvedRoot, cleanPath); err != nil {
 		return nil, err
@@ -71,7 +78,7 @@ func (s *Service) RuntimeSkillFile(skill, relativePath string) (Result, error) {
 	}
 	inside, err := filepath.Rel(resolvedRoot, resolvedTarget)
 	if err != nil || inside == ".." || strings.HasPrefix(inside, ".."+string(os.PathSeparator)) {
-		return nil, toolErrorDetails("INVALID_SKILL_FILE", "skill file path escapes the installed package", "validation", map[string]any{"path": cleanPath})
+		return nil, toolErrorDetails("INVALID_SKILL_FILE", "skill file path escapes the managed package", "validation", map[string]any{"path": cleanPath})
 	}
 	info, err := os.Stat(resolvedTarget)
 	if err != nil || !info.Mode().IsRegular() {
@@ -83,7 +90,6 @@ func (s *Service) RuntimeSkillFile(skill, relativePath string) (Result, error) {
 		return nil, toolErrorDetails("SKILL_FILE_READ_FAILED", "failed to read skill file", "runtime", map[string]any{"path": cleanPath})
 	}
 	defer file.Close()
-
 	limit := int64(runtimeSkillFilePreviewSize)
 	buffer, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
@@ -96,9 +102,13 @@ func (s *Service) RuntimeSkillFile(skill, relativePath string) (Result, error) {
 	if bytes.IndexByte(buffer, 0) >= 0 || !utf8.Valid(buffer) {
 		return nil, toolErrorDetails("SKILL_FILE_NOT_TEXT", "skill file is not UTF-8 text", "validation", map[string]any{"path": cleanPath})
 	}
-
+	digest, err := managedContentDigest(resolved.Root)
+	if err != nil {
+		return nil, err
+	}
 	return Result{
-		"action": "file", "skill": skill, "version": version,
+		"action": "file", "skill": resolved.Name, "skill_ref": resolved.SkillRef,
+		"content_digest": digest,
 		"file": map[string]any{
 			"path": cleanPath, "kind": runtimeSkillFileKind(cleanPath),
 			"size_bytes": info.Size(), "updated_at": info.ModTime().UTC().Format(time.RFC3339Nano),
@@ -106,26 +116,6 @@ func (s *Service) RuntimeSkillFile(skill, relativePath string) (Result, error) {
 		},
 		"source": runtimeAPISource,
 	}, nil
-}
-
-func (s *Service) runtimeSkillPackageDir(skill string) (string, string, error) {
-	skill = strings.TrimSpace(skill)
-	if skill == "" || filepath.Base(skill) != skill || strings.ContainsAny(skill, `/\\`) || strings.Contains(skill, "..") {
-		return "", "", toolErrorDetails("INVALID_SKILL", "invalid skill name", "validation", map[string]any{"skill": skill})
-	}
-	selection, err := s.state.Snapshot(skill)
-	if err != nil {
-		return "", "", skillToolError(err)
-	}
-	version := strings.TrimSpace(selection.ActiveVersion)
-	if version == "" {
-		return "", "", toolErrorDetails("SKILL_NOT_ACTIVE", "skill has no active version", "not_found", map[string]any{"skill": skill})
-	}
-	packageDir, err := s.state.InstalledPath(skill, version)
-	if err != nil {
-		return "", "", skillToolError(err)
-	}
-	return packageDir, version, nil
 }
 
 func collectRuntimeSkillFiles(root string) ([]runtimeSkillFile, error) {

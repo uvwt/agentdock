@@ -1,8 +1,12 @@
 package file
 
-import "github.com/uvwt/agentdock/internal/workspace"
+import (
+	"context"
 
-type SkillResourceResolver func(raw string) (absolutePath, displayPath string, err error)
+	"github.com/uvwt/agentdock/internal/workspace"
+)
+
+type SkillResourceResolver func(ctx context.Context, raw string) (absolutePath, displayPath string, release func(), err error)
 type CommandEnv func(skillName string, extra map[string]string) ([]string, error)
 
 type Service struct {

@@ -5,11 +5,17 @@ import (
 	"testing"
 )
 
-func TestParseSkillDocumentRequiresNameDescriptionVersionAndBody(t *testing.T) {
+func TestParseSkillDocumentAcceptsAgentSkillsFieldsWithoutVersion(t *testing.T) {
 	doc, err := ParseSkillDocument([]byte(`---
 name: demo-skill
 description: Use this Skill for a demo workflow.
-version: 1.2.3
+license: Apache-2.0
+compatibility: Requires git.
+metadata:
+  version: "1.2.3"
+  owner: example
+allowed-tools:
+  - exec_command
 ---
 
 # Demo Skill
@@ -19,21 +25,39 @@ Use existing tools to complete the workflow.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if doc.Name != "demo-skill" || doc.Version != "1.2.3" || !strings.Contains(doc.Body, "Demo Skill") {
-		t.Fatalf("unexpected document: %#v", doc)
+	if doc.Name != "demo-skill" || doc.Description != "Use this Skill for a demo workflow." {
+		t.Fatalf("unexpected identity: %#v", doc)
+	}
+	if doc.License != "Apache-2.0" || doc.Compatibility != "Requires git." {
+		t.Fatalf("optional Agent Skills fields lost: %#v", doc)
+	}
+	if got := doc.Metadata["version"]; got != "1.2.3" {
+		t.Fatalf("metadata.version = %#v, want ordinary author metadata", got)
+	}
+	if !strings.Contains(doc.Body, "Demo Skill") {
+		t.Fatalf("markdown body missing: %#v", doc)
 	}
 }
 
-func TestParseSkillDocumentRejectsMissingVersion(t *testing.T) {
-	_, err := ParseSkillDocument([]byte(`---
+func TestParseSkillDocumentIgnoresTopLevelVersionAsInstallIdentity(t *testing.T) {
+	doc, err := ParseSkillDocument([]byte(`---
 name: demo-skill
 description: Demo.
+version: 9.9.9
 ---
 
 # Demo
 `))
-	if err == nil || !strings.Contains(err.Error(), "version is required") {
-		t.Fatalf("expected version error, got %v", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Name != "demo-skill" || doc.Description != "Demo." {
+		t.Fatalf("unexpected document: %#v", doc)
+	}
+	if doc.Metadata != nil {
+		if _, ok := doc.Metadata["version"]; ok {
+			t.Fatalf("top-level version leaked into metadata: %#v", doc.Metadata)
+		}
 	}
 }
 
@@ -43,7 +67,6 @@ name: folded-skill
 description: >
   First sentence.
   Second sentence.
-version: 1.0.0
 ---
 
 # Folded
@@ -56,45 +79,46 @@ version: 1.0.0
 	}
 }
 
-func TestParseSkillDocumentRejectsEmptyBlockDescription(t *testing.T) {
-	_, err := ParseSkillDocument([]byte(`---
-name: empty-description
-description: |
-version: 1.0.0
+func TestParseSkillDocumentRejectsMissingRequiredFieldsOrBody(t *testing.T) {
+	for name, document := range map[string]string{
+		"missing name": `---
+description: Demo.
 ---
 
-# Empty
-`))
-	if err == nil || !strings.Contains(err.Error(), "description is required") {
-		t.Fatalf("expected empty description error, got %v", err)
+# Demo
+`,
+		"missing description": `---
+name: demo-skill
+---
+
+# Demo
+`,
+		"missing body": `---
+name: demo-skill
+description: Demo.
+---
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParseSkillDocument([]byte(document)); err == nil {
+				t.Fatal("ParseSkillDocument() succeeded for invalid document")
+			}
+		})
 	}
 }
 
 func TestParseSkillMetadataAcceptsCommonSkillWithoutVersion(t *testing.T) {
 	metadata, err := ParseSkillMetadata([]byte(`---
 name: common-skill
-description: Common Agent Skill without AgentDock package version.
+description: Common Agent Skill without package version.
 ---
 
 # Common Skill
-
-Follow the documented workflow.
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if metadata.Name != "common-skill" || metadata.Description != "Common Agent Skill without AgentDock package version." {
+	if metadata.Name != "common-skill" || metadata.Description != "Common Agent Skill without package version." {
 		t.Fatalf("unexpected metadata: %#v", metadata)
-	}
-}
-
-func TestParseSkillMetadataRejectsEmptyBody(t *testing.T) {
-	_, err := ParseSkillMetadata([]byte(`---
-name: common-skill
-description: Common Agent Skill.
----
-`))
-	if err == nil || !strings.Contains(err.Error(), "markdown body is required") {
-		t.Fatalf("expected body error, got %v", err)
 	}
 }

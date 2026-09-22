@@ -86,8 +86,8 @@ func TestWorkspaceContextLoadsFixedGlobalNestedRulesAndLocalSkills(t *testing.T)
 	writeWorkspaceInstruction(t, root, "workspace-root")
 	writeWorkspaceInstruction(t, filepath.Dir(child), "workspace-service")
 	writeWorkspaceInstruction(t, child, "workspace-child")
-	writeCommonSkillForTest(t, filepath.Join(root, ".agents", "skills"), "z-dir", "z-skill", "Z workspace skill")
-	writeCommonSkillForTest(t, filepath.Join(root, ".agents", "skills"), "a-dir", "a-skill", "A workspace skill")
+	writeCommonSkillForTest(t, filepath.Join(root, ".agents", "skills"), "z-skill", "z-skill", "Z workspace skill")
+	writeCommonSkillForTest(t, filepath.Join(root, ".agents", "skills"), "a-skill", "a-skill", "A workspace skill")
 	writeCommonSkillFileForTest(t, filepath.Join(root, ".agents", "skills", "bad", "SKILL.md"), "not frontmatter")
 
 	got := callWorkspaceContext(t, rt, map[string]any{"workdir": child})
@@ -100,7 +100,10 @@ func TestWorkspaceContextLoadsFixedGlobalNestedRulesAndLocalSkills(t *testing.T)
 	if len(got.WorkspaceSkills) != 2 || got.WorkspaceSkills[0].Name != "a-skill" || got.WorkspaceSkills[1].Name != "z-skill" {
 		t.Fatalf("workspace Skill index = %#v", got.WorkspaceSkills)
 	}
-	if got.WorkspaceSkills[0].File != filepath.Join(root, ".agents", "skills", "a-dir", "SKILL.md") {
+	if !strings.HasPrefix(got.WorkspaceSkills[0].File, "skill://workspace/") ||
+		!strings.HasSuffix(got.WorkspaceSkills[0].File, "/a-skill/SKILL.md") ||
+		got.WorkspaceSkills[0].SkillRef == "" || got.WorkspaceSkills[0].SourceType != "workspace" ||
+		got.WorkspaceSkills[0].SourceID == "" {
 		t.Fatalf("workspace Skill file = %q", got.WorkspaceSkills[0].File)
 	}
 	encoded, err := json.Marshal(got)

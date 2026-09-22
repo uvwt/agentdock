@@ -116,7 +116,7 @@ assert_ownership() {
 
   bad="$(sudo find "$DATA_ROOT" -not -user "$E2E_USER" -print -quit)"
   [[ -z "$bad" ]] || fail "data tree contains non-service-user entry: $bad"
-  sudo test -d "$DATA_ROOT/.agentdock/skill-store" || fail "skill store missing"
+  sudo test -d "$DATA_ROOT/.agentdock/skills" || fail "managed Skill root missing"
 }
 
 assert_committed_and_healthy() {

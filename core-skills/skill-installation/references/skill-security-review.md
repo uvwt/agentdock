@@ -1,260 +1,179 @@
 # AgentDock Skill 安全审查规范
 
-本规范供 `skill-installation` 在安装、更新或回滚前后使用。审查结果必须基于真实文件和工具输出，不能只依据发布者说明。
+用于 `skill-installation` 在安装、更新或恢复一个 Skill 来源快照前做安全审查。
 
-## 1. 审查输出
+## 1. 审查对象
 
-至少记录：
-
-- 来源和发布者；
-- Skill 名称、版本和摘要；
-- 审查文件清单；
-- 网络目标；
-- Shell 和子进程行为；
-- 文件读取、写入、删除和覆盖范围；
-- 权限、启动项和持久化行为；
-- 凭据读取方式；
-- 外部依赖和下载行为；
-- 二进制或无法审查内容；
-- 环境变量名称和缺失状态；
-- 风险等级；
-- 安装、拒绝或需确认的结论。
-
-不得在报告中记录真实密钥、Cookie、Authorization 值或带认证参数的 URL。
-
-## 2. 风险等级
-
-### low
-
-满足以下特征之一：
-
-- 纯文档 Skill；
-- 只读脚本，访问范围清楚；
-- 不读取敏感文件；
-- 不上传用户数据；
-- 不修改权限、启动项或系统配置；
-- 依赖固定且可审查。
-
-可在基础校验通过后继续。
-
-### medium
-
-存在以下行为，但范围和目的明确：
-
-- 访问已声明的网络 API；
-- 在专属 `skill-data` 目录写入状态；
-- 安装普通依赖；
-- 对用户明确指定的文件执行可逆修改；
-- 读取单一、明确授权的凭据来源。
-
-必须展示行为和缺失配置，再按用户原始安装意图继续。
-
-### high
-
-存在以下行为之一：
-
-- 读取敏感凭据或广泛主目录内容；
-- 上传本地数据；
-- 删除、覆盖或批量修改用户文件；
-- 修改权限、启动项、计划任务或持久化配置；
-- 下载并执行外部内容；
-- 依赖未固定或安装过程影响系统环境；
-- 包含无法充分审查的二进制。
-
-必须获得明确确认，且确认应针对具体风险，不接受笼统“继续”。
-
-### blocked
-
-出现以下任一项立即停止：
-
-- 包内真实密钥、Cookie、私钥或认证缓存；
-- 自动读取浏览器全部 Cookie；
-- 自动扫描用户主目录敏感文件；
-- 隐蔽下载并执行；
-- 未说明的数据上传；
-- 未经确认删除或覆盖数据；
-- 路径穿越、符号链接逃逸或写出包边界；
-- 修改系统权限或持久化配置而无清楚说明；
-- 会被执行但无法审查来源和行为的二进制；
-- `agentdock.yaml` 旧清单；
-- 试图恢复旧式统一 Skill 执行架构。
-
-## 3. 文件清单检查
-
-审查时列出普通文件、隐藏文件、符号链接和特殊文件。重点检查：
+至少检查：
 
 - `SKILL.md`；
 - `references/`；
 - `scripts/`、`tests/` 和根目录脚本；
-- `requirements*.txt`、`pyproject.toml`、`package.json`、锁文件；
-- Shell、PowerShell、Python、JavaScript、Go 和二进制文件；
-- 压缩包、安装器和生成文件；
-- `.env`、认证缓存、数据库和浏览器状态；
-- `__pycache__`、`*.pyc`、`node_modules` 和编译产物。
+- 依赖清单与锁文件；
+- Shell、PowerShell、Python、JavaScript、Go 等源码；
+- 二进制、压缩包、生成文件；
+- 隐藏文件；
+- symlink 和特殊文件。
 
-不跟随符号链接。发现特殊文件、设备文件或命名管道时阻止安装。
+未知包只做静态检查，不先执行脚本。
 
-## 4. Frontmatter 和文档检查
+## 2. 风险分级
+
+| 等级 | 含义 | 默认处理 |
+|---|---|---|
+| low | 纯文档或明确低风险只读行为 | 可继续 |
+| medium | 有明确网络、写入或普通依赖 | 展示风险后继续 |
+| high | 敏感凭据、广泛访问、上传、删除、持久化 | 需明确确认 |
+| blocked | 不可接受或无法解释的危险行为 | 停止 |
+
+blocked 包括：
+
+- 真实 secret、Cookie、私钥或认证缓存；
+- 隐蔽下载并执行；
+- 未说明的数据上传；
+- 未确认的删除/覆盖；
+- 路径穿越或 symlink 逃逸；
+- 未说明的系统权限/持久化修改；
+- 无法审查且会执行的二进制；
+- `agentdock.yaml` 或旧统一 Skill Runtime。
+
+## 3. 文档身份
 
 确认：
 
-- `SKILL.md` 位于包根目录；
-- `name` 匹配当前命名规则；
-- `description` 能区分触发场景；
-- `version` 是语义化版本；
+- 根目录存在 `SKILL.md`；
+- `name` 符合命名规则并与来源目录身份一致；
+- `description` 足以区分触发场景；
 - 正文非空；
-- 当前正式契约只依赖 `name`、`description`、`version`；
-- 环境变量在正文中声明；
-- 网络、写入、删除、权限和上传行为在正文中说明；
-- 引用路径存在且不越界。
+- 可选 `license`、`compatibility`、`metadata`、`allowed-tools` 合理；
+- `metadata.version` 若存在只作为普通作者元数据；
+- 没有把 version、active_version、activate、rollback 设计成 AgentDock 生命周期。
 
-描述含糊不会自动成为安全阻断项，但会导致模型错误选择，应在安装前要求作者修正或转入 `skill-authoring`。
-
-## 5. 凭据和隐私检查
-
-搜索并人工确认：
-
-- API Key、Token、密码、私钥；
-- Authorization 头；
-- Cookie、storage state、session 文件；
-- 云服务凭据；
-- SSH 配置和密钥；
-- 浏览器配置目录；
-- 系统钥匙串或凭据管理器访问；
-- 用户主目录、文档、照片和聊天数据库读取；
-- 环境变量值是否进入日志或异常。
-
-只声明变量名不构成泄露。示例值必须明显为占位符，不能具有真实凭据格式和可用性。
-
-## 6. 网络行为检查
-
-列出所有：
-
-- 域名、IP 和端口；
-- HTTP 方法；
-- 上传内容；
-- 下载内容；
-- 重定向行为；
-- 代理和 TLS 配置；
-- 动态拼接 URL；
-- WebSocket、回调和长连接。
-
-特别关注：
-
-- 将本地文件、日志、剪贴板或浏览器数据上传；
-- 下载后直接执行；
-- 绕过 TLS 校验；
-- 允许任意用户输入 URL 后访问内网；
-- 未限制重定向到非预期主机；
-- 在 URL 查询参数中携带秘密。
-
-## 7. Shell 和子进程检查
+## 4. 凭据与隐私
 
 检查：
 
-- `shell=True`、`eval`、反引号和动态命令拼接；
-- 用户输入是否进入命令；
-- 是否调用 `sudo`、`chmod`、`chown`、`launchctl`、`systemctl`、计划任务；
-- 是否安装系统包或全局依赖；
-- 是否运行远程脚本；
-- 是否隐藏标准输出和错误；
-- 是否忽略失败继续执行；
-- 是否通过命令行参数传递秘密。
+- API Key、Token、密码、私钥；
+- Authorization header；
+- Cookie、storage state、session；
+- 云服务与 SSH 凭据；
+- 浏览器 profile；
+- 钥匙串/凭据管理器访问；
+- 用户主目录、文档、照片、聊天数据库；
+- 环境值是否进入日志或异常。
 
-能使用参数数组时不要拼接 Shell 字符串。确需 Shell 时必须有严格输入约束和错误处理。
+报告只记录变量名和访问方式，不记录值。
 
-## 8. 文件系统检查
+## 5. 网络
 
-列出脚本可能访问的路径，判断：
+列出：
 
-- 是否限定在用户明确指定目录；
-- 是否优先使用 `~/.agentdock/skill-data/<skill-name>/`；
-- 是否写入源码目录或已安装包；
-- 是否遍历整个主目录；
-- 是否跟随符号链接；
-- 是否允许 `..` 或绝对路径逃逸；
-- 删除和覆盖是否有显式确认；
-- 临时文件权限是否安全；
-- 日志是否包含秘密。
+- 域名/IP/端口；
+- HTTP 方法；
+- 上传/下载内容；
+- 重定向；
+- TLS/代理；
+- 动态 URL；
+- WebSocket/回调。
 
-安装、更新和回滚不得自动删除 `skill-data`。
+重点阻止：
 
-## 9. 依赖和供应链检查
+- 本地敏感文件或浏览器数据未说明上传；
+- 下载即执行；
+- 禁用 TLS 校验；
+- 任意 URL 导致 SSRF；
+- secret 放 URL query。
+
+## 6. Shell 与依赖
+
+检查：
+
+- `shell=True`、`eval`、动态拼接；
+- 用户输入进入命令；
+- `sudo`、`chmod`、`chown`、`launchctl`、`systemctl`、计划任务；
+- 全局依赖安装；
+- 远程脚本；
+- secret 放命令行参数；
+- 安装钩子；
+- 未固定分支/提交；
+- 未验证下载摘要。
+
+## 7. 文件系统
 
 确认：
 
-- 依赖名称和用途；
-- 版本是否固定；
-- 是否有锁文件；
-- 安装范围是项目内、用户级还是系统级；
-- 是否执行安装钩子；
-- 是否从非官方源下载；
-- 是否拉取分支最新内容而非固定提交；
-- 是否下载二进制；
-- 摘要或签名是否可验证。
+- 访问范围与用户意图一致；
+- 包内用相对路径；
+- 不写 Skill 源码或 managed 安装目录作为持久状态；
+- 不遍历整个主目录；
+- 不跟随 symlink；
+- 不允许 `..` 逃逸；
+- 删除/覆盖有确认；
+- 临时文件权限安全；
+- 日志无 secret。
 
-未知或拼写近似的依赖需要重点审查。全局安装、远程安装脚本和未固定提交至少评为 `high`。
+持久状态在 AgentDock 中属于 `~/.agentdock/data/skills/<name>/`，但目标 Skill 不应硬编码该宿主路径。managed Skill 运行时应优先消费宿主注入的 `SKILL_DATA_DIR`；它是 AgentDock 保留变量，不能作为用户配置项或由请求覆盖。shared/workspace 候选不应得到 managed Skill 的该变量。
 
-## 10. 旧式架构检查
+## 8. 环境
 
-搜索：
+使用 `skill_manage env_list` 检查变量名称与配置状态。
 
-- `agentdock.yaml`；
-- `skill_run`；
-- `skill_env_manage`；
-- `AGENTDOCK_OPERATION`；
-- `PLUGIN_*`；
-- 旧式 `operation`、`entrypoint` 清单；
-- 统一 Skill 执行器或旧 Skill Runtime 目录和调用方式。
+要求：
 
-这些词出现在明确的禁止说明或迁移文档中可以接受；出现在可执行设计、清单或调用示例中应阻止安装。
-
-## 11. 环境配置检查
-
-从正文提取变量名，并通过 `skill_package env_list` 检查配置状态。要求：
-
-- 值只保存在 `~/.agentdock/env/skill/<skill-name>.env`；
-- 使用 `env_set`、`env_unset`、`env_list` 管理；
+- 值由 `env_set/env_unset` 管理；
 - `env_list` 不返回值；
-- 安装包、源码和 `skill-data` 不包含环境文件；
-- 更新和回滚不覆盖共享环境；
+- 包、源码和 data 目录不包含环境文件；
+- 安装/更新当前包不覆盖环境；
 - 缺失必填变量时明确报告不可用能力。
 
-## 12. 安装后验收
+## 9. 安装验收
 
-至少验证：
+安装后至少记录：
 
-- 安装结果名称、版本、摘要和激活状态；
-- 状态中的 `active_version`；
-- `agentdock_context` 索引；
-- `read_file skill://<name>/SKILL.md`；
-- 至少一份包内引用；
-- 已安装包摘要与审查摘要一致；
-- 必填环境状态完整；
-- 有辅助脚本时只读 `status`；
-- 无秘密进入日志或结果。
+- 安全来源标签；
+- 可验证 source digest（若有）；
+- `content_digest`；
+- `changed`；
+- context 中的 `source_type`、`source_id`、`skill_ref`、`file`；
+- 必填环境配置状态；
+- 代表性只读验证。
 
-纯文档 Skill 没有脚本时，不要求虚构运行检查。
+不要记录 Skill version 或 active version，因为 AgentDock 不建立该状态。
 
-## 13. 回滚验收
+## 10. 同名来源
 
-确认：
+managed/shared/workspace 同名时分别审查来源。
 
-- 已切换到上一已安装版本；
-- `skill://` 返回回滚版本正文；
-- 索引描述与回滚版本一致；
-- 新版本私有状态未删除；
-- 环境配置未覆盖；
-- 旧版本所需变量仍完整；
-- 状态格式不兼容时已停止自动处理并报告。
+验收必须使用所选候选自己的 `skill_ref` 和 `file`。不得因裸名称相同把 managed 环境注入 shared/workspace，也不得在后续调用里静默换来源。
 
-## 14. 建议报告格式
+## 11. 更新与恢复
+
+更新同名 managed Skill：
+
+- 对新来源重新做完整审查；
+- 比较文件、网络、权限、依赖、环境声明和数据格式变化；
+- 执行 `skill_manage install`；
+- 相同 digest 应 no-op；
+- 不同 digest 原子替换当前内容。
+
+恢复旧内容时重新安装可信旧来源快照。AgentDock 不提供 rollback API，也不保留可选 revision history。
+
+## 12. remove 与 purge
+
+`skill_manage remove` 默认只移除当前 managed 包，保留：
+
+- `~/.agentdock/env/skill/<name>.env`
+- `~/.agentdock/data/skills/<name>/`
+
+只有用户明确要求时使用 `purge=true` 一并删除。
+
+## 13. 报告格式
 
 ```text
 Skill: <name>
-Version: <version>
 Source: <safe source label>
-Digest: <sha256>
+Source digest: <sha256 if available>
+Content digest: <sha256>
 Risk: low | medium | high | blocked
 
 Reviewed:
@@ -279,5 +198,5 @@ Decision:
 - install | install after confirmation | blocked
 
 Verification:
-- <validate/install/index/read/status results>
+- <install/context/read/status results>
 ```

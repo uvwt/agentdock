@@ -32,8 +32,8 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool) (Re
 		WorkflowTemplates: []capabilityTemplateItem{},
 		Rules: []string{
 			"需要真实执行命令或检查环境时，先用 exec_command 查看现状，再修改，修改后真实验证。",
-			"先根据 Skill 索引的 name 和 description 选择相关 Skill，再用 read_file 读取其 file 指向的 SKILL.md；Skill 只提供流程与约束，实际操作使用命令、文件、浏览器或 MCP 工具。",
-			"选择 Skill 时，已调用 workspace_context 的当前项目优先使用其 workspace_skills；同名优先级为 workspace Skill > skills 中的 AgentDock Skill > common_skills 中的全局通用 Skill。若 common_skills.truncated=true 且当前索引未命中，可直接 list_dir 查看 common_skills.root，再用 read_file 读取对应 SKILL.md。",
+			"先根据 Skill 索引的 name、description 和来源选择相关 Skill，再用 read_file 读取宿主返回的 file；需要绑定命令时直接使用宿主返回的 skill_ref，不自行按名称拼接或重新解析。",
+			"workspace_skills、skills 和 common_skills 中的同名项是不同来源候选，不静默覆盖；当前项目通常优先考虑 workspace Skill，但必须使用所选候选自己的 skill_ref/file。若 common_skills.truncated=true 且当前索引未命中，可 list_dir 查看 common_skills.root 后再通过 workspace/共享 Skill 索引取得精确引用。",
 			"AgentDock 自带工具直接调用；动态 MCP 工具先用 mcp_tool_search 查找、mcp_tool_inspect 读取 schema，再用 mcp_tool_call 执行。",
 			"操作具体项目、切换工作区或工作区规则可能变化时，先调用 workspace_context 获取当前工作区上下文。",
 		},
@@ -133,10 +133,13 @@ type capabilityRuntimeContext struct {
 }
 
 type capabilitySkillItem struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	File        string `json:"file"`
-	Bundled     bool   `json:"bundled,omitempty"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	File          string `json:"file"`
+	SkillRef      string `json:"skill_ref"`
+	SourceType    string `json:"source_type"`
+	SourceID      string `json:"source_id"`
+	ContentDigest string `json:"content_digest,omitempty"`
 }
 
 type capabilityCommonSkillIndex struct {
@@ -147,9 +150,13 @@ type capabilityCommonSkillIndex struct {
 }
 
 type capabilityCommonSkillItem struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	File        string `json:"file"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	File          string `json:"file"`
+	SkillRef      string `json:"skill_ref"`
+	SourceType    string `json:"source_type"`
+	SourceID      string `json:"source_id"`
+	ContentDigest string `json:"content_digest,omitempty"`
 }
 
 type capabilityDynamicMCPItem struct {
@@ -244,10 +251,13 @@ func (r *Runtime) skillCapabilityIndex() ([]capabilitySkillItem, error) {
 	items := make([]capabilitySkillItem, 0, len(skillItems))
 	for _, skill := range skillItems {
 		items = append(items, capabilitySkillItem{
-			Name:        skill.Name,
-			Description: truncateString(strings.TrimSpace(skill.Description), 160),
-			File:        skill.File,
-			Bundled:     skill.Bundled,
+			Name:          skill.Name,
+			Description:   truncateString(strings.TrimSpace(skill.Description), 160),
+			File:          skill.File,
+			SkillRef:      skill.SkillRef,
+			SourceType:    skill.SourceType,
+			SourceID:      skill.SourceID,
+			ContentDigest: skill.ContentDigest,
 		})
 	}
 	return items, nil

@@ -7,7 +7,12 @@ import (
 )
 
 func skillToolSpecs() []ToolSpec {
-	return []ToolSpec{{Name: "skill_package", Contract: skillToolContract, Title: "Manage Skill packages", Description: "Validate, install, uninstall, activate, or roll back AgentDock Skill packages and manage each Skill's isolated environment without returning secret values.", Annotations: mutatingToolAnnotations(true, true), Handler: typedToolHandler("skill_package", func(ctx context.Context, r *Runtime, request toolskill.PackageRequest) (Result, error) {
-		return r.skills.Package(ctx, request)
-	})}}
+	return []ToolSpec{{
+		Name: "skill_manage", Contract: skillToolContract, Title: "Manage standalone Skills",
+		Description: "Install or update current managed Skill content, remove it, and manage its isolated environment without exposing secret values.",
+		Annotations: mutatingToolAnnotations(true, true),
+		Handler: typedToolHandler("skill_manage", func(ctx context.Context, r *Runtime, request toolskill.ManageRequest) (Result, error) {
+			return r.skills.Manage(ctx, request)
+		}),
+	}}
 }

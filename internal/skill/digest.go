@@ -29,11 +29,16 @@ func DigestDirectory(root string) (string, error) {
 	return digestDirectory(root, false)
 }
 
-// digestPackageContent 计算安装后的稳定内容摘要。
-// 传输层 ZIP 摘要用于校验下载来源；版本冲突判断必须只看最终包内容，
-// 并忽略 AgentDock 自己写入的安装元数据。
+// digestPackageContent computes the stable digest of the effective Skill
+// package content after transport-specific permission normalization.
 func digestPackageContent(root string) (string, error) {
 	return digestDirectory(root, true)
+}
+
+// DigestPackageContent returns the stable digest of the effective Skill package
+// content.
+func DigestPackageContent(root string) (string, error) {
+	return digestPackageContent(root)
 }
 
 func digestDirectory(root string, packageContent bool) (string, error) {
@@ -60,9 +65,6 @@ func digestDirectory(root string, packageContent bool) (string, error) {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		if packageContent && rel == ".agentdock-install.json" {
-			return nil
-		}
 		paths = append(paths, rel)
 		return nil
 	})
