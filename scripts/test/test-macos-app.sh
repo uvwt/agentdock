@@ -16,6 +16,15 @@ trap cleanup EXIT
 
 python3 "$ROOT_DIR/scripts/test/check-macos-i18n.py"
 
+APP_DELEGATE="$ROOT_DIR/desktop/macos/AgentDockApp/Sources/AppDelegate.swift"
+grep -Fq 'item.autosaveName = "AgentDockMenuBarItem"' "$APP_DELEGATE"
+grep -Fq 'item.isVisible = true' "$APP_DELEGATE"
+grep -Fq 'NSStatusBar.system.removeStatusItem(item)' "$APP_DELEGATE"
+if grep -Fq 'isVisible = false' "$APP_DELEGATE"; then
+  print -u2 -- "macOS menu bar update flow must not persist a temporary hidden NSStatusItem"
+  exit 1
+fi
+
 swiftc \
   -swift-version 5 \
   -parse-as-library \

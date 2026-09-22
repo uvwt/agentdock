@@ -6,13 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let service = ServiceController()
     private let menuLoginAgent = MenuLoginAgentController()
     private let launchedInBackground = CommandLine.arguments.contains("--background")
-    private let statusItem: NSStatusItem = {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        // Keep the tray hidden until launch state has been classified. A replacement App may
-        // start with currentStatus=.missing while it is still finishing an update transaction.
-        item.isVisible = false
-        return item
-    }()
+    private var statusItem: NSStatusItem?
     private var currentStatus = ServiceStatus.missing
     private var timer: Timer?
     private var isUpdating = false
@@ -52,7 +46,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             updateResultExists = false
         }
 
-        configureStatusItem()
         if !recoveryReady {
             // Do not acknowledge or clear any pending transaction when crash recovery itself
             // could not establish a safe state. The journal remains intact for repair/retry.
@@ -110,10 +103,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setUpdateInProgress(_ inProgress: Bool, checking: Bool = false) {
         isUpdating = inProgress
         isCheckingForUpdate = inProgress && checking
-        statusItem.isVisible = UpdateStatusItemVisibility.shouldShow(
+        setStatusItemVisible(UpdateStatusItemVisibility.shouldShow(
             isUpdating: isUpdating,
             isCheckingForUpdate: isCheckingForUpdate
-        )
+        ))
         ApplicationMenu.setQuitEnabled(!inProgress)
         setupWindow.setUpdateInProgress(
             inProgress,
@@ -407,12 +400,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func configureStatusItem() {
-        if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "shippingbox.fill", accessibilityDescription: "AgentDock")
-            button.image?.isTemplate = true
+    private func setStatusItemVisible(_ visible: Bool) {
+        if visible {
+            guard statusItem == nil else { return }
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            // NSStatusItem.visible 会按 autosaveName 持久化。更新阶段不能用 visible=false
+            // 做临时隐藏，否则 App 在替换期间退出时会把“临时隐藏”永久写进用户偏好。
+            item.autosaveName = "AgentDockMenuBarItem"
+            item.isVisible = true
+            if let button = item.button {
+                button.image = NSImage(systemSymbolName: "shippingbox.fill", accessibilityDescription: "AgentDock")
+                button.image?.isTemplate = true
+            }
+            statusItem = item
+            return
         }
-        rebuildMenu()
+
+        guard let item = statusItem else { return }
+        NSStatusBar.system.removeStatusItem(item)
+        statusItem = nil
     }
 
     private func refreshStatus(showWindow: Bool = false) {
@@ -461,7 +467,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if currentStatus.installed {
                 menu.addItem(item(L10n.text("Open logs folder"), #selector(openLogs)))
             }
-            statusItem.menu = menu
+            statusItem?.menu = menu
             return
         }
 
@@ -511,7 +517,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(item(L10n.text("Open documentation"), #selector(openDocumentation)))
         menu.addItem(.separator())
         menu.addItem(item(L10n.text("Exit menu bar app"), #selector(quit)))
-        statusItem.menu = menu
+        statusItem?.menu = menu
     }
 
     private func item(_ title: String, _ action: Selector) -> NSMenuItem {
