@@ -129,6 +129,9 @@ type Request struct {
 	// DeferCommit 让 install/repair 在 verify 完成后停在 trial。
 	// Windows 脚本还要写 HKCU/Task/tray；那些完成之前不能出现 committed。
 	DeferCommit bool
+	// MarkHealthy 只给外层 OS adapter 的 commit 使用：adapter 已经完成自己的 health-check，
+	// Engine 不重复探测，只把这个已验证事实投影到权威 Result。
+	MarkHealthy bool
 	// RollbackFailed 只给 abandon 用：外部 rollback 没做完，禁止宣称 rolled_back。
 	RollbackFailed bool
 	// TransactionID 绑定 commit/abandon 到明确的 install 事务，不能拿上一笔 result.json 冒充成功。

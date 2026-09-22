@@ -44,7 +44,7 @@ func runInstallCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 		fmt.Fprintln(stderr, "  agentdock install inspect --state-root <目录> [--require-committed] [--require-version <版本>]")
 		fmt.Fprintln(stderr, "  agentdock install abandon --install-root <目录> [--transaction-id <ID>] [--rollback-failed]")
 		fmt.Fprintln(stderr, "  --rollback-failed 表示 OS adapter 回滚失败，写入 failed/external_rollback_failed 并阻断后续自动 install")
-		fmt.Fprintln(stderr, "  agentdock install commit --install-root <目录> [--transaction-id <ID>]")
+		fmt.Fprintln(stderr, "  agentdock install commit --install-root <目录> [--transaction-id <ID>] [--healthy]")
 		fmt.Fprintln(stderr, "  agentdock install prepare-windows-legacy --install-root <目录> --legacy-version <版本> --legacy-core <文件> --legacy-tray <文件> --payload-dir <目录>")
 		fmt.Fprintln(stderr, "  agentdock install detach-engine --output <临时文件>")
 		fmt.Fprintln(stderr, "  agentdock install --engine-ready")
@@ -257,11 +257,12 @@ func runInstallCommit(ctx context.Context, args []string, stdout, stderr io.Writ
 	flags.StringVar(&request.InstallRoot, "install-root", "", "安装根目录")
 	flags.StringVar(&request.RuntimeRoot, "runtime-root", "", "运行配置目录")
 	flags.StringVar(&request.TransactionID, "transaction-id", "", "要提交的 install 事务 ID")
+	flags.BoolVar(&request.MarkHealthy, "healthy", false, "OS adapter 已完成健康检查；提交时把 Result 标记为 healthy")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 || strings.TrimSpace(request.InstallRoot) == "" {
-		return errors.New("用法：agentdock install commit --install-root <目录> [--transaction-id <ID>]")
+		return errors.New("用法：agentdock install commit --install-root <目录> [--transaction-id <ID>] [--healthy]")
 	}
 	result, err := installer.Engine{}.Run(ctx, request)
 	if err != nil {

@@ -1140,6 +1140,70 @@ func TestDeferCommitStaysTrialUntilCommit(t *testing.T) {
 	}
 }
 
+func TestCommitCanProjectAdapterHealthAfterTransactionAlreadyCommitted(t *testing.T) {
+	root := t.TempDir()
+	installRoot := filepath.Join(root, "install")
+	runtimeRoot := filepath.Join(root, "runtime")
+	store, err := NewStore(runtimeRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	transaction := Transaction{
+		SchemaVersion: SchemaVersion,
+		TransactionID: "adapter-health-commit",
+		Platform:      runtime.GOOS,
+		Action:        ActionInstall,
+		TargetVersion: "v1.0.0",
+		ActiveVersion: "v1.0.0",
+		State:         updateengine.StateCommitted,
+		Phase:         PhaseCommit,
+		InstallRoot:   installRoot,
+		RuntimeRoot:   runtimeRoot,
+		StartedAt:     now,
+		UpdatedAt:     now,
+		CompletedAt:   &now,
+	}
+	if err := store.WriteTransaction(transaction); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WriteResult(Result{
+		SchemaVersion: SchemaVersion,
+		TransactionID: transaction.TransactionID,
+		Platform:      transaction.Platform,
+		Action:        ActionInstall,
+		State:         updateengine.StateCommitted,
+		Phase:         PhaseCommit,
+		Version:       "v1.0.0",
+		ActiveVersion: "v1.0.0",
+		Healthy:       false,
+		StartedAt:     now,
+		CompletedAt:   now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := (Engine{}).Run(context.Background(), Request{
+		Action:        ActionCommit,
+		InstallRoot:   installRoot,
+		RuntimeRoot:   runtimeRoot,
+		TransactionID: transaction.TransactionID,
+		MarkHealthy:   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Healthy || result.State != updateengine.StateCommitted {
+		t.Fatalf("commit result=%#v, want committed healthy result", result)
+	}
+	persisted, err := store.ReadResult(transaction.TransactionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !persisted.Healthy {
+		t.Fatal("adapter-confirmed health was not persisted after committed transaction")
+	}
+}
 func TestAbandonTrialAndRollbackFailed(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("abandon is exercised on Unix CI")

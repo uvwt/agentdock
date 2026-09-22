@@ -494,6 +494,75 @@ function Write-InstallResult {
     [IO.File]::WriteAllLines($Path, $lines, [Text.Encoding]::Unicode)
 }
 
+function Get-InstallerEngineFailureMessage {
+    param(
+        [string] $RuntimeRoot,
+        [string] $FallbackMessage,
+        [DateTime] $NotBeforeUtc = [DateTime]::MinValue
+    )
+
+    $engineResultPath = Join-Path $RuntimeRoot 'install\result.json'
+    if (-not (Test-Path -LiteralPath $engineResultPath -PathType Leaf)) {
+        return $FallbackMessage
+    }
+
+    try {
+        $engineResultInfo = Get-Item -LiteralPath $engineResultPath -ErrorAction Stop
+        if ($NotBeforeUtc -ne [DateTime]::MinValue -and
+            $engineResultInfo.LastWriteTimeUtc -lt $NotBeforeUtc) {
+            return $FallbackMessage
+        }
+
+        # Engine results are UTF-8 JSON. Read failure text from the structured file instead of
+        # letting Windows PowerShell 5.1 reinterpret native UTF-8 stderr through an OEM code page.
+        $engineResultText = [IO.File]::ReadAllText($engineResultPath, [Text.Encoding]::UTF8)
+        $engineResult = $engineResultText | ConvertFrom-Json
+        if ($null -ne $engineResult.failure -and
+            -not [string]::IsNullOrWhiteSpace([string] $engineResult.failure.message)) {
+            return [string] $engineResult.failure.message
+        }
+    } catch {
+        Write-Warning "Unable to read Installer Engine failure result: $($_.Exception.Message)"
+    }
+    return $FallbackMessage
+}
+
+function Enter-InstallerTransactionLease {
+    param(
+        [string] $RuntimeRoot,
+        [int] $TimeoutMilliseconds = 5000
+    )
+
+    $lockPath = Join-Path $RuntimeRoot 'install\transaction.lock'
+    $lockDirectory = Split-Path -Parent $lockPath
+    New-Item -ItemType Directory -Path $lockDirectory -Force | Out-Null
+    $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMilliseconds)
+    do {
+        try {
+            # Match Go processlock on Windows: an open handle with FileShare.None is the lease.
+            return [IO.File]::Open(
+                $lockPath,
+                [IO.FileMode]::OpenOrCreate,
+                [IO.FileAccess]::ReadWrite,
+                [IO.FileShare]::None
+            )
+        } catch [IO.IOException] {
+            if ([DateTime]::UtcNow -ge $deadline) {
+                throw "Timed out taking over the Installer transaction lease: $lockPath"
+            }
+            Start-Sleep -Milliseconds 25
+        }
+    } while ($true)
+}
+
+function Exit-InstallerTransactionLease {
+    param([IO.FileStream] $Lease)
+
+    if ($null -ne $Lease) {
+        $Lease.Dispose()
+    }
+}
+
 function Get-ProcessesByPath {
     param(
         [string] $ProcessName,
@@ -1120,6 +1189,7 @@ $rollbackStateCaptured = $false
 $engineCommitted = $false
 $enginePrepared = $false
 $engineTransactionId = ''
+$installerTransactionLease = $null
 $stableFilesMayBeReplaced = $false
 $cloudflaredReplacementStarted = $false
 $startupRegistrationChanged = $false
@@ -1766,7 +1836,9 @@ exit `$LASTEXITCODE
         if ($effectivePrivilegeMode -eq 'elevated') {
             $engineArgs += @('--task-name', 'AgentDock')
         }
-        if ((-not $RegisterStartup) -or ($InstallChannel -eq 'setup' -and -not $existingInstallDetected)) {
+        if ((-not $RegisterStartup) -or ($InstallChannel -eq 'setup')) {
+            # Setup always leaves Core activation to the Windows adapter below so fresh, repair,
+            # and upgrade launches all happen outside the Inno RedirectionGuard process tree.
             $engineArgs += @('--no-start', '--skip-health')
         }
         if (-not [string]::IsNullOrWhiteSpace($payloadVersion)) {
@@ -1780,9 +1852,14 @@ exit `$LASTEXITCODE
         }
         # Engine may replace stable shim/icon before returning an error; mark this before invocation so catch can restore them.
         $stableFilesMayBeReplaced = $true
+        $engineInvocationStartedAt = [DateTime]::UtcNow
         $engineJson = (& $sourceBinary @engineArgs 2>$null | Out-String).Trim()
         if ($LASTEXITCODE -ne 0) {
-            throw 'Installer Engine failed to write the runtime generation and manifest.'
+            $engineFailureMessage = Get-InstallerEngineFailureMessage `
+                -RuntimeRoot $runtimeDir `
+                -FallbackMessage 'Installer Engine failed to write the runtime generation and manifest.' `
+                -NotBeforeUtc $engineInvocationStartedAt
+            throw $engineFailureMessage
         }
         # Engine already left a trial. Catch must abandon even if the JSON handshake is unreadable.
         $enginePrepared = $true
@@ -1795,6 +1872,11 @@ exit `$LASTEXITCODE
         if ([string]::IsNullOrWhiteSpace($engineTransactionId)) {
             throw 'Installer Engine did not return a transaction id.'
         }
+        if ($InstallChannel -eq 'setup') {
+            # Engine releases its process lock before returning. Setup takes over the same exclusive
+            # file lease so stable shims can route a live Installer trial during activation/health.
+            $installerTransactionLease = Enter-InstallerTransactionLease -RuntimeRoot $runtimeDir
+        }
 
     if (-not $RegisterStartup) {
         Remove-ItemProperty -LiteralPath $runKey -Name $trayRunValueName -ErrorAction SilentlyContinue
@@ -1806,21 +1888,10 @@ exit `$LASTEXITCODE
     $localMCPUrl = "http://127.0.0.1:$Port/mcp"
     Write-Host 'Core Skills were installed by the Installer Engine.'
 
-    # Provision is complete here. A fresh Installer-owned generation must become committed before
-    # the stable shim can be used for optional immediate activation; outer rollback can still abandon
-    # this transaction because the committed pointer keeps the Installer transaction id.
-    if ($enginePrepared -and -not $existingInstallDetected) {
-        & $sourceBinary install commit --install-root $runtimeDir --runtime-root $runtimeDir --transaction-id $engineTransactionId 1>$null
-        if ($LASTEXITCODE -ne 0) {
-            throw 'Installer Engine failed to commit the fresh install transaction.'
-        }
-        $engineCommitted = $true
-    }
-
     # Immediate activation is a separate phase; only a fresh standard install may defer activation,
     # because an upgrade must still be able to roll back to its prior runtime.
     $healthStatus = 'not-started'
-    $engineOwnsActivation = -not ($InstallChannel -eq 'setup' -and -not $existingInstallDetected)
+    $engineOwnsActivation = $InstallChannel -ne 'setup'
     try {
         if ($InstallChannel -eq 'setup' -and -not $taskState.SchedulerAvailable -and
             ($RegisterStartup -or $mustRestartExistingProcess -or $trayProcessWasRunning)) {
@@ -1901,8 +1972,21 @@ exit `$LASTEXITCODE
         Remove-Item -LiteralPath $legacyManagerPath -Force
     }
 
-    if ($enginePrepared -and -not $engineCommitted) {
-        & $sourceBinary install commit --install-root $runtimeDir --runtime-root $runtimeDir --transaction-id $engineTransactionId 1>$null
+    if ($enginePrepared -and (-not $engineCommitted -or $healthStatus -eq 'healthy')) {
+        if ($null -ne $installerTransactionLease) {
+            Exit-InstallerTransactionLease -Lease $installerTransactionLease
+            $installerTransactionLease = $null
+        }
+        $commitArgs = @(
+            'install', 'commit',
+            '--install-root', $runtimeDir,
+            '--runtime-root', $runtimeDir,
+            '--transaction-id', $engineTransactionId
+        )
+        if ($healthStatus -eq 'healthy') {
+            $commitArgs += '--healthy'
+        }
+        & $sourceBinary @commitArgs 1>$null
         if ($LASTEXITCODE -ne 0) {
             throw 'Installer Engine failed to commit the install transaction.'
         }
@@ -1999,6 +2083,10 @@ exit `$LASTEXITCODE
     }
 } catch {
     $installError = $_
+    if ($null -ne $installerTransactionLease) {
+        Exit-InstallerTransactionLease -Lease $installerTransactionLease
+        $installerTransactionLease = $null
+    }
     $taskRollbackError = $null
     $rollbackError = $null
     $taskRecoveryPath = ''
@@ -2235,6 +2323,10 @@ exit `$LASTEXITCODE
         -ErrorRecord $resultErrorRecord
     throw $installError
 } finally {
+    if ($null -ne $installerTransactionLease) {
+        Exit-InstallerTransactionLease -Lease $installerTransactionLease
+        $installerTransactionLease = $null
+    }
     if ($DeleteTunnelTokenFile -and -not [string]::IsNullOrWhiteSpace($TunnelTokenFile)) {
         Remove-Item -LiteralPath $TunnelTokenFile -Force -ErrorAction SilentlyContinue
     }

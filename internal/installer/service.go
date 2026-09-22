@@ -382,7 +382,9 @@ func windowsServiceBinary(request Request) string {
 		filepath.Join(request.InstallRoot, "bin", "agentdock.exe"),
 	}
 	if request.PayloadDir != "" {
-		candidates = append([]string{filepath.Join(request.PayloadDir, "agentdock.exe")}, candidates...)
+		// stable entry 已存在时必须优先走它，让 service/task 解析 active generation；
+		// payload 只用于首次发布尚未建立 stable entry 的兜底。
+		candidates = append(candidates, filepath.Join(request.PayloadDir, "agentdock.exe"))
 	}
 	for _, candidate := range candidates {
 		if fileExists(candidate) {

@@ -54,10 +54,16 @@ $beforeTempDirs = @(Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Direc
 
 try {
     New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
+    $localizedDiagnosticBase64 = 'QWdlbnREb2NrIOWBpeW6t+ajgOafpeWksei0pQ=='
+    $localizedDiagnostic = [Text.Encoding]::UTF8.GetString(
+        [Convert]::FromBase64String($localizedDiagnosticBase64)
+    )
     [IO.File]::WriteAllText(
         $childScript,
-        "[Console]::Out.WriteLine('runtime-diagnostic-stdout')`r`n" +
-            "[Console]::Error.WriteLine('runtime-diagnostic-stderr')`r`n" +
+        "[Console]::OutputEncoding = [Text.UTF8Encoding]::new(`$false)`r`n" +
+            "`$localizedDiagnostic = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$localizedDiagnosticBase64'))`r`n" +
+            "[Console]::Out.WriteLine('runtime-diagnostic-stdout')`r`n" +
+            "[Console]::Error.WriteLine(`$localizedDiagnostic)`r`n" +
             "exit -1`r`n",
         [Text.UTF8Encoding]::new($false)
     )
@@ -82,7 +88,7 @@ try {
     foreach ($expected in @(
         'Runtime process exited with exit code -1',
         'Task Scheduler result: 4294967295',
-        'stderr: runtime-diagnostic-stderr',
+        "stderr: $localizedDiagnostic",
         'stdout: runtime-diagnostic-stdout'
     )) {
         if (-not $failureMessage.Contains($expected)) {

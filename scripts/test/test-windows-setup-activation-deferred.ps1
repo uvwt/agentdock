@@ -105,6 +105,19 @@ try {
         }
     }
 
+    $runtimeRoot = Split-Path -Parent $installDir
+    $activePointer = Get-Content -LiteralPath (Join-Path $runtimeRoot 'active-version.json') -Raw | ConvertFrom-Json
+    if (-not [string]::Equals([string] $activePointer.state, 'committed', [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Fresh deferred Setup left a non-committed generation: $($activePointer.state)"
+    }
+    $engineResult = Get-Content -LiteralPath (Join-Path $runtimeRoot 'install\result.json') -Raw | ConvertFrom-Json
+    if (-not [string]::Equals([string] $engineResult.state, 'committed', [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Fresh deferred Setup Engine result is not committed: $($engineResult.state)"
+    }
+    if ([bool] $engineResult.healthy) {
+        throw 'Fresh deferred Setup must not mark Engine result healthy before a successful activation check.'
+    }
+
     foreach ($path in @(
         (Join-Path $installDir 'agentdock.exe'),
         (Join-Path $installDir 'agentdock-tray.exe'),

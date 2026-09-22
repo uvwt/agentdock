@@ -108,9 +108,129 @@ try {
     Remove-Item -LiteralPath $earlyResultPath -Force -ErrorAction SilentlyContinue
 }
 
+$extractedFunctions = @{}
+foreach ($functionName in @(
+    'ConvertTo-InstallResultValue',
+    'Write-InstallResult',
+    'Get-InstallerEngineFailureMessage',
+    'Enter-InstallerTransactionLease',
+    'Exit-InstallerTransactionLease'
+)) {
+    $matches = @($installerAst.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+            $node.Name -eq $functionName
+    }, $true))
+    if ($matches.Count -ne 1) {
+        throw "Expected exactly one $functionName function in $InstallerPath, found $($matches.Count)"
+    }
+    Invoke-Expression $matches[0].Extent.Text
+    $extractedFunctions[$functionName] = $true
+}
+
+$encodingProbeRoot = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-install-encoding-' + [Guid]::NewGuid().ToString('N'))
+$engineResultDirectory = Join-Path $encodingProbeRoot 'install'
+$engineResultPath = Join-Path $engineResultDirectory 'result.json'
+$encodingResultPath = Join-Path $encodingProbeRoot 'result.ini'
+try {
+    New-Item -ItemType Directory -Path $engineResultDirectory -Force | Out-Null
+    $localizedMessage = [Text.Encoding]::UTF8.GetString(
+        [Convert]::FromBase64String('QWdlbnREb2NrIOWBpeW6t+ajgOafpeWksei0pQ==')
+    )
+    $engineResultJson = @{
+        failure = @{
+            message = $localizedMessage
+        }
+    } | ConvertTo-Json -Depth 4
+    [IO.File]::WriteAllText($engineResultPath, $engineResultJson, [Text.UTF8Encoding]::new($false))
+
+    $engineFailure = Get-InstallerEngineFailureMessage `
+        -RuntimeRoot $encodingProbeRoot `
+        -FallbackMessage 'fallback' `
+        -NotBeforeUtc ([DateTime]::UtcNow.AddSeconds(-5))
+    if ($engineFailure -ne $localizedMessage) {
+        throw "Structured UTF-8 Engine failure was not preserved: $engineFailure"
+    }
+
+    Write-InstallResult `
+        -Path $encodingResultPath `
+        -Success $false `
+        -Message $engineFailure `
+        -InstalledVersion '' `
+        -LocalMCPUrl '' `
+        -PublicMCPUrl '' `
+        -BearerToken '' `
+        -OAuthLoginPassword '' `
+        -HealthStatus 'failed' `
+        -PrivilegeMode 'standard' `
+        -ErrorCode 'encoding-probe'
+    $unicodeResult = [IO.File]::ReadAllText($encodingResultPath, [Text.Encoding]::Unicode)
+    if (-not $unicodeResult.Contains("Message=$localizedMessage")) {
+        throw "UTF-16 Setup ResultFile did not preserve the structured Engine failure: $unicodeResult"
+    }
+
+    [IO.File]::SetLastWriteTimeUtc($engineResultPath, [DateTime]::UtcNow.AddMinutes(-5))
+    $staleFailure = Get-InstallerEngineFailureMessage `
+        -RuntimeRoot $encodingProbeRoot `
+        -FallbackMessage 'fallback' `
+        -NotBeforeUtc ([DateTime]::UtcNow)
+    if ($staleFailure -ne 'fallback') {
+        throw "A stale install/result.json must not be reused for a new Engine failure: $staleFailure"
+    }
+} finally {
+    Remove-Item -LiteralPath $encodingProbeRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+$leaseProbeRoot = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-install-lease-' + [Guid]::NewGuid().ToString('N'))
+$lease = $null
+$contender = $null
+try {
+    $lease = Enter-InstallerTransactionLease -RuntimeRoot $leaseProbeRoot -TimeoutMilliseconds 500
+    $lockPath = Join-Path $leaseProbeRoot 'install\transaction.lock'
+    $blocked = $false
+    try {
+        $contender = [IO.File]::Open(
+            $lockPath,
+            [IO.FileMode]::OpenOrCreate,
+            [IO.FileAccess]::ReadWrite,
+            [IO.FileShare]::None
+        )
+    } catch [IO.IOException] {
+        $blocked = $true
+    }
+    if (-not $blocked) {
+        throw 'Installer transaction lease did not exclude a competing Windows file handle.'
+    }
+    Exit-InstallerTransactionLease -Lease $lease
+    $lease = $null
+    $contender = [IO.File]::Open(
+        $lockPath,
+        [IO.FileMode]::OpenOrCreate,
+        [IO.FileAccess]::ReadWrite,
+        [IO.FileShare]::None
+    )
+} finally {
+    if ($null -ne $contender) {
+        $contender.Dispose()
+    }
+    if ($null -ne $lease) {
+        Exit-InstallerTransactionLease -Lease $lease
+    }
+    Remove-Item -LiteralPath $leaseProbeRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 foreach ($required in @(
     'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run',
     'Get-AgentDockTaskState',
+    'Get-InstallerEngineFailureMessage',
+    'Enter-InstallerTransactionLease',
+    '$installerTransactionLease = Enter-InstallerTransactionLease -RuntimeRoot $runtimeDir',
+    'Exit-InstallerTransactionLease -Lease $installerTransactionLease',
+    '[IO.FileShare]::None',
+    '[IO.File]::ReadAllText($engineResultPath, [Text.Encoding]::UTF8)',
+    'if ((-not $RegisterStartup) -or ($InstallChannel -eq ''setup''))',
+    '$engineOwnsActivation = $InstallChannel -ne ''setup''',
+    '$commitArgs += ''--healthy''',
     'Get-InteractiveDesktopUser',
     'Start-ElevatedAgentDockTaskAction',
     '--task-admin $Action',

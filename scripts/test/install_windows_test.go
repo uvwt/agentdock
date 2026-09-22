@@ -3,6 +3,7 @@ package scripts
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -240,7 +241,7 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	tunnelArg := strings.Index(script, "'--tunnel-mode', $resolvedTunnelMode")
 	coreStartCall := strings.Index(script, "& $destinationBinary service start --runtime-root $runtimeDir")
 	tunnelProxyCall := strings.Index(script, "$tunnelStartupArguments = \"--start-tunnel --runtime-root")
-	tunnelCommitCall := strings.LastIndex(script, "install commit --install-root $runtimeDir --runtime-root $runtimeDir --transaction-id $engineTransactionId")
+	tunnelCommitCall := strings.LastIndex(script, "$commitArgs = @(")
 	if tunnelArg < 0 || coreStartCall < 0 || tunnelProxyCall < 0 || tunnelCommitCall < 0 || tunnelArg > coreStartCall || tunnelCommitCall > tunnelProxyCall {
 		t.Fatal("Installer must pass tunnel intent to the Engine, commit the Core transaction, then launch Tunnel asynchronously")
 	}
@@ -268,8 +269,10 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	if !strings.Contains(script, "'--defer-commit'") {
 		t.Fatal("Windows Engine install must defer commit until the adapter finishes")
 	}
-	commitCall := strings.Index(script, "install commit --install-root $runtimeDir --runtime-root $runtimeDir --transaction-id $engineTransactionId")
-	if commitCall < 0 {
+	commitCall := strings.Index(script, "$commitArgs = @(")
+	if commitCall < 0 ||
+		!strings.Contains(script, "'--transaction-id', $engineTransactionId") ||
+		!strings.Contains(script, "& $sourceBinary @commitArgs") {
 		t.Fatal("Windows installer must finalize a deferred Engine trial with install commit bound to the trial transaction id")
 	}
 	if strings.Contains(script, "if ($engineReady)") || strings.Contains(script, "if (-not $engineReady)") {
@@ -792,6 +795,90 @@ func TestWindowsGeneratedCredentialRecoveryPreservesUnreadableCiphertext(t *test
 	}
 	if !strings.Contains(string(codeData), "CredentialUserMismatch") || !strings.Contains(string(messagesData), "CredentialUserMismatch") {
 		t.Fatal("Windows Setup must localize credential-user-mismatch failures")
+	}
+}
+
+func TestWindowsSetupOwnsCoreActivationAndReadsStructuredFailure(t *testing.T) {
+	installData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "install", "install.ps1"))
+	if err != nil {
+		t.Fatalf("read install.ps1: %v", err)
+	}
+	install := strings.ReplaceAll(string(installData), "\r\n", "\n")
+	for _, want := range []string{
+		"if ((-not $RegisterStartup) -or ($InstallChannel -eq 'setup')) {",
+		"$engineOwnsActivation = $InstallChannel -ne 'setup'",
+		"$commitArgs += '--healthy'",
+		"function Get-InstallerEngineFailureMessage",
+		"function Enter-InstallerTransactionLease",
+		"[IO.FileShare]::None",
+		"$installerTransactionLease = Enter-InstallerTransactionLease -RuntimeRoot $runtimeDir",
+		"[IO.File]::ReadAllText($engineResultPath, [Text.Encoding]::UTF8)",
+		"$engineResult.failure.message",
+		"[IO.File]::WriteAllLines($Path, $lines, [Text.Encoding]::Unicode)",
+	} {
+		if !strings.Contains(install, want) {
+			t.Fatalf("install.ps1 must keep Setup activation and structured failure handling at the adapter boundary; missing %q", want)
+		}
+	}
+	if strings.Contains(install, "$InstallChannel -eq 'setup' -and -not $existingInstallDetected") {
+		t.Fatal("existing Setup installs must not let Installer Engine start Core inside the Inno process tree")
+	}
+	if strings.Contains(install, "if ($enginePrepared -and -not $existingInstallDetected)") {
+		t.Fatal("fresh Setup must stay in trial until adapter activation completes")
+	}
+	if !strings.Contains(install, "$enginePrepared -and (-not $engineCommitted -or $healthStatus -eq 'healthy')") {
+		t.Fatal("Setup must commit only after adapter activation/deferred handling finishes")
+	}
+	leaseAcquire := strings.Index(install, "$installerTransactionLease = Enter-InstallerTransactionLease -RuntimeRoot $runtimeDir")
+	leaseRelease := strings.Index(install, "Exit-InstallerTransactionLease -Lease $installerTransactionLease")
+	commitCall := strings.Index(install, "$commitArgs = @(")
+	if leaseAcquire < 0 || leaseRelease < 0 || commitCall < 0 || leaseAcquire > leaseRelease || leaseRelease > commitCall {
+		t.Fatal("Setup must hold the Installer transaction lease through activation and release it immediately before commit")
+	}
+
+	brokerData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "install", "launch-windows-process.ps1"))
+	if err != nil {
+		t.Fatalf("read launch-windows-process.ps1: %v", err)
+	}
+	if !strings.Contains(string(brokerData), "[int] $TimeoutSeconds = 60") {
+		t.Fatal("Setup runtime broker timeout must exceed the 45-second Windows Core health timeout")
+	}
+}
+func TestWindowsSetupRuntimeBrokerTimeoutExceedsCoreStartTimeout(t *testing.T) {
+	brokerData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "install", "launch-windows-process.ps1"))
+	if err != nil {
+		t.Fatalf("read launch-windows-process.ps1: %v", err)
+	}
+	coreData, err := os.ReadFile(filepath.Join("..", "..", "internal", "desktopruntime", "service_windows.go"))
+	if err != nil {
+		t.Fatalf("read service_windows.go: %v", err)
+	}
+
+	parseSeconds := func(content, prefix string) int {
+		t.Helper()
+		for _, line := range strings.Split(string(content), "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, prefix) {
+				continue
+			}
+			fields := strings.Fields(line)
+			if len(fields) < 4 {
+				t.Fatalf("invalid timeout declaration %q", line)
+			}
+			seconds, err := strconv.Atoi(fields[3])
+			if err != nil {
+				t.Fatalf("parse timeout declaration %q: %v", line, err)
+			}
+			return seconds
+		}
+		t.Fatalf("timeout declaration with prefix %q was not found", prefix)
+		return 0
+	}
+
+	brokerSeconds := parseSeconds(string(brokerData), "[int] $TimeoutSeconds =")
+	coreSeconds := parseSeconds(string(coreData), "const windowsCoreStartTimeout =")
+	if brokerSeconds <= coreSeconds {
+		t.Fatalf("Setup runtime broker timeout=%ds must exceed Windows Core start timeout=%ds", brokerSeconds, coreSeconds)
 	}
 }
 

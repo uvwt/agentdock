@@ -136,3 +136,32 @@ func TestDarwinRollbackRestoresOldJobAfterSuccessfulStop(t *testing.T) {
 		t.Fatalf("rollback did not restore the old launchd job: %q", calls)
 	}
 }
+
+func TestWindowsServiceBinaryPrefersStableEntry(t *testing.T) {
+	root := t.TempDir()
+	installRoot := filepath.Join(root, "install")
+	payloadDir := filepath.Join(root, "payload")
+	stableBinary := filepath.Join(installRoot, "bin", "agentdock.exe")
+	payloadBinary := filepath.Join(payloadDir, "agentdock.exe")
+
+	for _, path := range []string{stableBinary, payloadBinary} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("test"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	request := Request{InstallRoot: installRoot, PayloadDir: payloadDir}
+	if got := windowsServiceBinary(request); got != stableBinary {
+		t.Fatalf("stable entry must be preferred when available: got=%s want=%s", got, stableBinary)
+	}
+
+	if err := os.Remove(stableBinary); err != nil {
+		t.Fatal(err)
+	}
+	if got := windowsServiceBinary(request); got != payloadBinary {
+		t.Fatalf("payload binary must remain the fresh-install fallback: got=%s want=%s", got, payloadBinary)
+	}
+}

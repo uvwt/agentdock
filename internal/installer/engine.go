@@ -488,11 +488,19 @@ func (engine Engine) commit(store *Store, request Request) (Result, error) {
 	if transaction.Action == ActionUninstall {
 		current.Warnings = removeWarning(current.Warnings, "windows_adapter_pending")
 	}
+	if request.MarkHealthy {
+		current.Healthy = true
+	}
 	if transaction.State == updateengine.StateCommitted && current.TransactionID == transaction.TransactionID {
 		if err := commitWindowsActivePointer(transaction.InstallRoot, transaction.TransactionID); err != nil {
 			return current, err
 		}
 		discardJournal(store.Root(), transaction.TransactionID)
+		if request.MarkHealthy {
+			if err := store.WriteResult(current); err != nil {
+				return current, err
+			}
+		}
 		return current, nil
 	}
 	if transaction.State != updateengine.StateTrial {
