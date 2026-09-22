@@ -64,6 +64,32 @@ func TestCIWorkflowUsesFreshBoundedGoTests(t *testing.T) {
 	}
 }
 
+func TestWindowsInstallerWorkflowHasManualSignPathSmokeTest(t *testing.T) {
+	workflow := readWorkflow(t, "windows-installer.yml")
+	for _, want := range []string{
+		"signpath_test:",
+		"actions: read",
+		"github.event_name == 'workflow_dispatch' && inputs.signpath_test",
+		"uses: actions/upload-artifact@v7",
+		"archive: false",
+		"uses: signpath/github-action-submit-signing-request@v3",
+		"api-token: ${{ secrets.SIGNPATH_API_TOKEN }}",
+		"organization-id: '2060dca2-f271-4d29-b2b3-1618dd7ac409'",
+		"project-slug: agentdock",
+		"signing-policy-slug: test-signing",
+		"github-artifact-id: ${{ steps.upload-signpath-test.outputs.artifact-id }}",
+		"skip-decompress: true",
+		"Get-AuthenticodeSignature -LiteralPath $signedFiles[0].FullName",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("Windows Installer workflow must keep the manual SignPath smoke test; missing %q", want)
+		}
+	}
+	if strings.Contains(workflow, "signing-policy-slug: release-signing") {
+		t.Fatal("Windows Installer smoke test must not use the release signing policy")
+	}
+}
+
 func TestWindowsInstallerWorkflowHasAlwaysPresentPullRequestGate(t *testing.T) {
 	workflow := readWorkflow(t, "windows-installer.yml")
 	for _, want := range []string{

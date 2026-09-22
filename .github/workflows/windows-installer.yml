@@ -22,8 +22,14 @@ on:
         description: 'Optional temporary prerelease tag, for example v0.5.4-windows-test-20260802-1'
         required: false
         type: string
+      signpath_test:
+        description: 'Run a SignPath test-signing smoke test for agentdock.exe'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
+  actions: read
   contents: write
 
 jobs:
@@ -207,6 +213,50 @@ jobs:
             -o dist\control-panel
           Copy-Item .\dist\control-panel\agentdock-tray.exe .\dist\agentdock-tray.exe -Force
           & .\packaging\windows\build-wsl-helper-payload.ps1 -OutputDirectory .\dist\wsl-helper
+
+      - name: Upload unsigned AgentDock binary for SignPath test signing
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.signpath_test }}
+        id: upload-signpath-test
+        uses: actions/upload-artifact@v7
+        with:
+          name: signpath-agentdock-test
+          path: dist/agentdock.exe
+          archive: false
+          if-no-files-found: error
+
+      - name: Submit SignPath test signing request
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.signpath_test }}
+        id: signpath-test
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: '2060dca2-f271-4d29-b2b3-1618dd7ac409'
+          project-slug: agentdock
+          signing-policy-slug: test-signing
+          github-artifact-id: ${{ steps.upload-signpath-test.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: ${{ runner.temp }}\signpath-test
+          skip-decompress: true
+
+      - name: Verify SignPath test signature
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.signpath_test }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $signedFiles = @(Get-ChildItem -LiteralPath (Join-Path $env:RUNNER_TEMP 'signpath-test') -Filter '*.exe' -File)
+          if ($signedFiles.Count -ne 1) {
+            throw "Expected exactly one signed SignPath artifact, found $($signedFiles.Count)."
+          }
+
+          $signature = Get-AuthenticodeSignature -LiteralPath $signedFiles[0].FullName
+          if (-not $signature.SignerCertificate) {
+            throw 'SignPath output is missing an Authenticode signer certificate.'
+          }
+          if ($signature.Status -in @('NotSigned', 'HashMismatch', 'NotSupported', 'Incompatible')) {
+            throw "SignPath output has an invalid Authenticode status: $($signature.Status)."
+          }
+          Write-Host "SignPath test signer: $($signature.SignerCertificate.Subject)"
+          Write-Host "SignPath test signature status: $($signature.Status)"
 
       - name: Test configured Authenticode certificate
         shell: pwsh
