@@ -318,6 +318,45 @@ func TestDesktopTrayMenusUseNativeDismissalAndOmitCopyActions(t *testing.T) {
 		}
 	}
 }
+func TestWindowsUpdateProgressUsesCoreByteFields(t *testing.T) {
+	modelData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Models", "RuntimeModels.cs"))
+	if err != nil {
+		t.Fatalf("read RuntimeModels.cs: %v", err)
+	}
+	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"))
+	if err != nil {
+		t.Fatalf("read RuntimeService.cs: %v", err)
+	}
+
+	models := string(modelData)
+	runtimeService := string(runtimeData)
+
+	// Core 的进度协议字段是 bytes/total_bytes；Windows 必须与 macOS 共用同一契约。
+	for _, want := range []string{
+		"[JsonPropertyName(\"bytes\")]",
+		"public long? Bytes",
+		"[JsonPropertyName(\"total_bytes\")]",
+		"public long? TotalBytes",
+	} {
+		if !strings.Contains(models, want) {
+			t.Fatalf("Windows update progress model missing %q", want)
+		}
+	}
+	if strings.Contains(models, "[JsonPropertyName(\"bytes_read\")]") {
+		t.Fatal("Windows update progress must not use the obsolete bytes_read field")
+	}
+
+	for _, want := range []string{
+		"updateEvent.Bytes is long bytesRead",
+		"UpdateDownloadingProgress",
+		"UpdateDownloadingUnknownSize",
+		"bytesRead * 100 / totalBytes",
+	} {
+		if !strings.Contains(runtimeService, want) {
+			t.Fatalf("Windows download progress rendering missing %q", want)
+		}
+	}
+}
 func TestWindowsUpdateFeedbackUsesUTF8AndImmediateStatus(t *testing.T) {
 	appData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml.cs"))
 	if err != nil {

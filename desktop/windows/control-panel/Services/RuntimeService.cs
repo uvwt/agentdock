@@ -1079,7 +1079,7 @@ public sealed class RuntimeService : IDisposable
         {
             return new UpdateProgress(null, false, string.IsNullOrWhiteSpace(updateEvent.Error) ? UiText.Get("UpdateFailed") : updateEvent.Error);
         }
-        if (string.Equals(updateEvent.Stage, "downloading", StringComparison.Ordinal) && updateEvent.BytesRead is long bytesRead)
+        if (string.Equals(updateEvent.Stage, "downloading", StringComparison.Ordinal) && updateEvent.Bytes is long bytesRead)
         {
             var totalBytes = updateEvent.TotalBytes.GetValueOrDefault(-1);
             if (totalBytes > 0)

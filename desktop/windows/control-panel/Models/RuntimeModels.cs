@@ -213,8 +213,8 @@ internal sealed class UpdateProgressEvent
     [JsonPropertyName("asset")]
     public string Asset { get; set; } = "";
 
-    [JsonPropertyName("bytes_read")]
-    public long? BytesRead { get; set; }
+    [JsonPropertyName("bytes")]
+    public long? Bytes { get; set; }
 
     [JsonPropertyName("total_bytes")]
     public long? TotalBytes { get; set; }
