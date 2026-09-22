@@ -49,14 +49,34 @@ func windowsLegacyMigrationNeeded(opts options) bool {
 		normalizeVersion(opts.CurrentVersion) == "vdev" {
 		return false
 	}
-	if _, _, generationAware := windowsGenerationInstall(opts.ExecutablePath); generationAware {
-		return false
-	}
 	layout, err := updateengine.NewWindowsLayout(opts.DesktopTargetPath)
 	if err != nil {
 		return false
 	}
-	return sameWindowsPath(opts.ExecutablePath, layout.CoreShim())
+	if sameWindowsPath(opts.ExecutablePath, layout.CoreShim()) {
+		return true
+	}
+
+	// Crash-safe retry boundary: PrepareWindowsLegacyGeneration intentionally commits the
+	// source pointer before stable entries are replaced. If the helper dies after replacing
+	// only Core (or after replacing both shims but before cleanup), the next Core process is
+	// already the generation binary. The legacy compatibility manager is the durable marker
+	// left by every published flat updater, so keep re-entering the bridge until the migration
+	// reaches its terminal state and removes that marker.
+	root, version, generationAware := windowsGenerationInstall(opts.ExecutablePath)
+	if !generationAware ||
+		!sameWindowsPath(root, opts.DesktopTargetPath) ||
+		normalizeVersion(version) != normalizeVersion(opts.CurrentVersion) {
+		return false
+	}
+	manager := filepath.Join(opts.DesktopTargetPath, "installer", "manage-windows.ps1")
+	info, err := os.Stat(manager)
+	return err == nil && info.Mode().IsRegular()
+}
+
+func windowsLegacyMigrationReady(opts options) bool {
+	return windowsLegacyMigrationNeeded(opts) &&
+		normalizeVersion(opts.DesktopCurrentVersion) == normalizeVersion(opts.CurrentVersion)
 }
 
 // runWindowsLegacyLayoutMigration 是旧 updater -> 新架构的一次性桥。
@@ -179,6 +199,10 @@ func runWindowsLegacyLayoutMigration(
 	if err != nil {
 		return fmt.Errorf("检查 legacy Tunnel 运行状态失败: %w", err)
 	}
+	layout, err := updateengine.NewWindowsLayout(opts.DesktopTargetPath)
+	if err != nil {
+		return err
+	}
 
 	helperPath := filepath.Join(tempRoot, "agentdock-legacy-migration-helper.exe")
 	if err := copyFileWindows(opts.ExecutablePath, helperPath); err != nil {
@@ -187,8 +211,8 @@ func runWindowsLegacyLayoutMigration(
 	plan := windowsLegacyMigrationPlan{
 		ParentPID:        os.Getpid(),
 		RuntimeRoot:      opts.DesktopTargetPath,
-		CorePath:         opts.ExecutablePath,
-		TrayPath:         manifest.TrayBinary,
+		CorePath:         layout.CoreShim(),
+		TrayPath:         layout.TrayShim(),
 		PayloadDir:       payloadDir,
 		Version:          currentVersion,
 		CoreWasRunning:   coreWasRunning,

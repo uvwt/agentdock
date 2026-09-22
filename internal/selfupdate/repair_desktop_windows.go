@@ -51,15 +51,28 @@ func runDesktopRepair(ctx context.Context, output io.Writer, localArchivePath, l
 	if err != nil {
 		return err
 	}
-	if windowsLegacyMigrationNeeded(opts) {
+	if normalizeVersion(opts.DesktopCurrentVersion) != normalizeVersion(opts.CurrentVersion) {
+		// Older published updaters could replace Core without replacing Tray. Never freeze
+		// that mixed-version flat state into a source generation: repair the desktop payload
+		// first, then re-read runtime state and only migrate when Core/Tray are aligned.
+		inspection, inspectErr := inspectDesktopRepairWithOptions(ctx, opts)
+		if inspectErr != nil {
+			return inspectErr
+		}
+		if opts.DesktopTargetPath != "" && inspection.Result.DesktopUpdateAvailable {
+			if err := runDesktopOnlyUpdate(ctx, opts, inspection); err != nil {
+				return err
+			}
+			opts, err = runtimeOptions(output)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if windowsLegacyMigrationReady(opts) {
 		return runWindowsLegacyLayoutMigration(ctx, opts, output, localArchivePath, localChecksumPath)
 	}
-
-	inspection, err := inspectDesktopRepairWithOptions(ctx, opts)
-	if err != nil || opts.DesktopTargetPath == "" || !inspection.Result.DesktopUpdateAvailable {
-		return err
-	}
-	return runDesktopOnlyUpdate(ctx, opts, inspection)
+	return nil
 }
 
 func inspectDesktopRepair(ctx context.Context, output io.Writer) (options, updateInspection, error) {

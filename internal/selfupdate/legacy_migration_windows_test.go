@@ -18,12 +18,34 @@ func TestWindowsLegacyMigrationNeededOnlyForManagedFlatCore(t *testing.T) {
 	if !windowsLegacyMigrationNeeded(opts) {
 		t.Fatal("managed flat Core must require one-time generation migration")
 	}
+	opts.DesktopCurrentVersion = "0.8.3"
+	if windowsLegacyMigrationReady(opts) {
+		t.Fatal("mixed-version flat Core/Tray must repair the desktop payload before migration")
+	}
+	opts.DesktopCurrentVersion = "0.8.4"
+	if !windowsLegacyMigrationReady(opts) {
+		t.Fatal("aligned flat Core/Tray must be ready for generation migration")
+	}
 
 	opts.ExecutablePath = filepath.Join(root, "versions", "v0.8.4", "agentdock-core.exe")
 	if windowsLegacyMigrationNeeded(opts) {
-		t.Fatal("generation Core must not re-enter legacy migration")
+		t.Fatal("clean generation Core must not re-enter legacy migration")
 	}
 
+	compatManager := filepath.Join(root, "installer", "manage-windows.ps1")
+	if err := os.MkdirAll(filepath.Dir(compatManager), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(compatManager, []byte("legacy bridge marker"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !windowsLegacyMigrationNeeded(opts) {
+		t.Fatal("generation Core must resume a partially completed legacy migration while the compatibility marker remains")
+	}
+
+	if err := os.Remove(compatManager); err != nil {
+		t.Fatal(err)
+	}
 	opts.ExecutablePath = filepath.Join(root, "portable", "agentdock.exe")
 	if windowsLegacyMigrationNeeded(opts) {
 		t.Fatal("portable Core must stay outside managed desktop migration")
