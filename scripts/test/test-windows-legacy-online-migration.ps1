@@ -140,9 +140,10 @@ try {
     $trayLock = $null
     try {
         if ($InjectTrayReplaceFailure) {
-            # FileShare.None forces MoveFileEx(REPLACE_EXISTING) to fail only after the
-            # migration has prepared its committed source generation and replaced Core.
-            $trayLock = [IO.File]::Open($tray, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
+            # Allow PrepareWindowsLegacyGeneration to read the flat Tray into the committed
+            # source generation, but deny delete/write sharing so MoveFileEx(REPLACE_EXISTING)
+            # fails only after Core shim replacement has started.
+            $trayLock = [IO.File]::Open($tray, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
         }
         & $core __repair-desktop-runtime --local-archive $archive --checksum $checksum
         if ($LASTEXITCODE -ne 0) {
@@ -193,7 +194,17 @@ try {
                 }
             }
             Write-Host "Windows legacy migration rollback E2E passed on v$Version."
-            return
+
+            # The recovery Core starts while the first helper still owns the named migration
+            # mutex, so it must not recursively schedule another migration. Release the injected
+            # file lock only after recovery is stable, then explicitly exercise the next retry.
+            $trayLock.Dispose()
+            $trayLock = $null
+            & $core __repair-desktop-runtime --local-archive $archive --checksum $checksum
+            if ($LASTEXITCODE -ne 0) {
+                throw "legacy migration retry entrypoint failed with exit code $LASTEXITCODE"
+            }
+            Write-Host "Windows legacy migration retry scheduled after rollback."
         }
     } finally {
         if ($null -ne $trayLock) {

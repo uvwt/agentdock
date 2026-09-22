@@ -33,6 +33,17 @@ func RepairDesktopRuntimeIfNeeded(_ context.Context, output io.Writer) error {
 	}
 	desktopRepairNeeded := normalizeVersion(opts.DesktopCurrentVersion) != normalizeVersion(opts.CurrentVersion)
 	legacyMigrationNeeded := windowsLegacyMigrationNeeded(opts)
+	if legacyMigrationNeeded {
+		migrationInProgress, probeErr := windowsLegacyMigrationInProgress()
+		if probeErr != nil {
+			return probeErr
+		}
+		if migrationInProgress {
+			// 失败恢复会在 helper 仍持有迁移 mutex 时重启 known-good Core。
+			// 当前启动只负责恢复服务，不立即递归发起另一轮迁移。
+			return nil
+		}
+	}
 	if !desktopRepairNeeded && !legacyMigrationNeeded {
 		return nil
 	}

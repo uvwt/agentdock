@@ -79,6 +79,27 @@ func windowsLegacyMigrationReady(opts options) bool {
 		normalizeVersion(opts.DesktopCurrentVersion) == normalizeVersion(opts.CurrentVersion)
 }
 
+// windowsLegacyMigrationInProgress 只探测当前登录会话里是否已有迁移 helper。
+// helper 在失败恢复并重启 Core 的整个过程都持有该 mutex，因此新 Core 可以据此
+// 避免在同一次恢复过程中立刻再发起第二轮迁移；helper 退出后下次启动仍可正常重试。
+func windowsLegacyMigrationInProgress() (bool, error) {
+	mutexName, err := windows.UTF16PtrFromString(windowsLegacyMigrationMutexName)
+	if err != nil {
+		return false, err
+	}
+	mutex, err := windows.CreateMutex(nil, false, mutexName)
+	if mutex != 0 {
+		defer windows.CloseHandle(mutex)
+	}
+	if err == windows.ERROR_ALREADY_EXISTS {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("探测 Windows legacy migration 互斥锁失败: %w", err)
+	}
+	return false, nil
+}
+
 // runWindowsLegacyLayoutMigration 是旧 updater -> 新架构的一次性桥。
 // 旧 0.8.2/0.8.3 updater 会先把新 Core/Tray 按 flat 布局落盘并通过健康检查；
 // 新 Core 启动后再在后台下载“与自身同版本”的正式 Release，只取 migration

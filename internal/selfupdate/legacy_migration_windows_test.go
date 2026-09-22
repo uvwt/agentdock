@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"golang.org/x/sys/windows"
 )
 
 func TestWindowsLegacyMigrationNeededOnlyForManagedFlatCore(t *testing.T) {
@@ -102,5 +104,32 @@ func TestValidateWindowsLegacyMigrationPayloadRequiresGenerationInfrastructure(t
 	}
 	if err := validateWindowsLegacyMigrationPayload(root); err == nil {
 		t.Fatal("payload without arbiter must be rejected before stable entries are changed")
+	}
+}
+
+func TestWindowsLegacyMigrationInProgressDetectsHeldMutex(t *testing.T) {
+	mutexName, err := windows.UTF16PtrFromString(windowsLegacyMigrationMutexName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutex, err := windows.CreateMutex(nil, true, mutexName)
+	if err != nil && err != windows.ERROR_ALREADY_EXISTS {
+		t.Fatal(err)
+	}
+	if err == windows.ERROR_ALREADY_EXISTS {
+		_ = windows.CloseHandle(mutex)
+		t.Skip("another legacy migration mutex is already active in this Windows session")
+	}
+	defer func() {
+		_ = windows.ReleaseMutex(mutex)
+		_ = windows.CloseHandle(mutex)
+	}()
+
+	inProgress, err := windowsLegacyMigrationInProgress()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !inProgress {
+		t.Fatal("held migration mutex must suppress immediate recursive migration")
 	}
 }
