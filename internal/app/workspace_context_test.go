@@ -276,3 +276,30 @@ func TestWorkspaceContextDoesNotFollowWorkspaceSkillDocumentSymlink(t *testing.T
 		t.Fatalf("workspace Skill index followed SKILL.md symlink outside workspace: %#v", got.WorkspaceSkills)
 	}
 }
+
+func TestWorkspaceContextDoesNotFollowAgentsDirectoryLinkOutsideWorkspace(t *testing.T) {
+	rt, _ := newWorkspaceContextRuntime(t)
+	outsideAgents := filepath.Join(t.TempDir(), ".agents")
+	writeCommonSkillForTest(t, filepath.Join(outsideAgents, "skills"), "outside", "outside-skill", "Outside workspace skill.")
+	createWorkspaceDirectoryLinkForTest(t, outsideAgents, filepath.Join(rt.ws.Root(), ".agents"))
+
+	got := callWorkspaceContext(t, rt, nil)
+	if len(got.WorkspaceSkills) != 0 {
+		t.Fatalf("workspace Skill index escaped through .agents directory link: %#v", got.WorkspaceSkills)
+	}
+}
+
+func TestWorkspaceContextDoesNotFollowSkillsDirectoryLinkOutsideWorkspace(t *testing.T) {
+	rt, _ := newWorkspaceContextRuntime(t)
+	outsideSkills := t.TempDir()
+	writeCommonSkillForTest(t, outsideSkills, "outside", "outside-skill", "Outside workspace skill.")
+	if err := os.MkdirAll(filepath.Join(rt.ws.Root(), ".agents"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	createWorkspaceDirectoryLinkForTest(t, outsideSkills, filepath.Join(rt.ws.Root(), ".agents", "skills"))
+
+	got := callWorkspaceContext(t, rt, nil)
+	if len(got.WorkspaceSkills) != 0 {
+		t.Fatalf("workspace Skill index escaped through .agents/skills directory link: %#v", got.WorkspaceSkills)
+	}
+}

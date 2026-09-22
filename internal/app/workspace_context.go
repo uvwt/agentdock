@@ -57,8 +57,7 @@ func (r *Runtime) workspaceContext(ctx context.Context, workdir string) (Result,
 
 	warnings := []capabilityWarning{}
 	workspaceSkills := []workspaceSkillItem{}
-	skillRoot := filepath.Join(instructions.WorkspaceRoot, ".agents", "skills")
-	skillIndex, skillErr := scanFilesystemSkills(skillRoot, filesystemSkillScanOptions{})
+	skillIndex, skillErr := scanWorkspaceFilesystemSkills(instructions.WorkspaceRoot)
 	if skillErr != nil {
 		warnings = append(warnings, capabilityWarning{Source: "workspace_skills", Message: "工作区 Skill 索引暂不可用。"})
 	} else {

@@ -16,13 +16,6 @@ const (
 	filesystemSkillDocumentMaxBytes = 1 << 20
 )
 
-type filesystemSkillScanOptions struct {
-	// common Skills historically allow package directories to be symlinks.
-	// workspace-local Skills do not follow package-directory symlinks outside
-	// the selected workspace root.
-	AllowPackageSymlinks bool
-}
-
 type filesystemSkillItem struct {
 	Name        string
 	Description string
@@ -35,10 +28,9 @@ type filesystemSkillIndex struct {
 	Truncated bool
 }
 
-// scanFilesystemSkills shares metadata parsing, stable ordering, and truncation.
-// The caller chooses only the package-directory symlink policy so existing
-// common Skill behavior is preserved without weakening workspace isolation.
-func scanFilesystemSkills(root string, options filesystemSkillScanOptions) (filesystemSkillIndex, error) {
+// scanCommonFilesystemSkills 保留全局 common Skill 的历史行为：
+// package 目录和 SKILL.md 都允许通过 symlink 访问。
+func scanCommonFilesystemSkills(root string) (filesystemSkillIndex, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -47,22 +39,83 @@ func scanFilesystemSkills(root string, options filesystemSkillScanOptions) (file
 		return filesystemSkillIndex{}, err
 	}
 
-	items := make([]filesystemSkillItem, 0, len(entries))
-	for _, entry := range entries {
+	return indexFilesystemSkills(entries, func(entry os.DirEntry) (string, []byte, error) {
 		packageDir := filepath.Join(root, entry.Name())
-		var info os.FileInfo
-		var statErr error
-		if options.AllowPackageSymlinks {
-			info, statErr = os.Stat(packageDir)
-		} else {
-			info, statErr = os.Lstat(packageDir)
-		}
-		if statErr != nil || !info.IsDir() {
-			continue
+		info, err := os.Stat(packageDir)
+		if err != nil || !info.IsDir() {
+			return "", nil, os.ErrInvalid
 		}
 		documentPath := filepath.Join(packageDir, "SKILL.md")
-		data, readErr := readFilesystemSkillDocument(packageDir, options.AllowPackageSymlinks)
+		data, readErr := readCommonFilesystemSkillDocument(packageDir)
 		if readErr != nil {
+			return "", nil, readErr
+		}
+		return documentPath, data, nil
+	})
+}
+
+// scanWorkspaceFilesystemSkills 在扫描 .agents/skills 期间始终持有 workspace Root。
+// 所有路径都从该 Root 相对解析，因此父目录 symlink 或 Windows reparse point
+// 不能把扫描重定向到所选 workspace 之外。common Skill 继续走独立的历史兼容入口。
+func scanWorkspaceFilesystemSkills(workspaceRoot string) (filesystemSkillIndex, error) {
+	root, err := os.OpenRoot(workspaceRoot)
+	if err != nil {
+		return filesystemSkillIndex{}, err
+	}
+	defer root.Close()
+
+	const skillRoot = ".agents/skills"
+	dir, err := root.Open(filepath.FromSlash(skillRoot))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return filesystemSkillIndex{Items: []filesystemSkillItem{}}, nil
+		}
+		return filesystemSkillIndex{}, err
+	}
+	entries, err := dir.ReadDir(-1)
+	closeErr := dir.Close()
+	if err != nil {
+		return filesystemSkillIndex{}, err
+	}
+	if closeErr != nil {
+		return filesystemSkillIndex{}, closeErr
+	}
+
+	relativeSkillRoot := filepath.FromSlash(skillRoot)
+	return indexFilesystemSkills(entries, func(entry os.DirEntry) (string, []byte, error) {
+		packagePath := filepath.Join(relativeSkillRoot, entry.Name())
+		info, err := root.Lstat(packagePath)
+		if err != nil || !info.IsDir() {
+			return "", nil, os.ErrInvalid
+		}
+
+		documentPath := filepath.Join(packagePath, "SKILL.md")
+		before, err := root.Lstat(documentPath)
+		if err != nil || !before.Mode().IsRegular() {
+			return "", nil, os.ErrInvalid
+		}
+		file, err := root.Open(documentPath)
+		if err != nil {
+			return "", nil, err
+		}
+		defer file.Close()
+		after, err := file.Stat()
+		if err != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) {
+			return "", nil, os.ErrInvalid
+		}
+		data, err := readBoundedSkillDocument(file)
+		if err != nil {
+			return "", nil, err
+		}
+		return filepath.Join(workspaceRoot, documentPath), data, nil
+	})
+}
+
+func indexFilesystemSkills(entries []os.DirEntry, load func(os.DirEntry) (string, []byte, error)) (filesystemSkillIndex, error) {
+	items := make([]filesystemSkillItem, 0, len(entries))
+	for _, entry := range entries {
+		documentPath, data, err := load(entry)
+		if err != nil {
 			continue
 		}
 		metadata, parseErr := skills.ParseSkillMetadata(data)
@@ -90,38 +143,12 @@ func scanFilesystemSkills(root string, options filesystemSkillScanOptions) (file
 	return index, nil
 }
 
-func readFilesystemSkillDocument(packageDir string, allowSymlinks bool) ([]byte, error) {
-	if allowSymlinks {
-		// Preserve the historical common-Skill behavior: package/document
-		// symlinks are allowed, but reads are still bounded for indexing.
-		file, err := os.Open(filepath.Join(packageDir, "SKILL.md"))
-		if err != nil {
-			return nil, err
-		}
-		defer file.Close()
-		return readBoundedSkillDocument(file)
-	}
-
-	// Workspace-local Skills are indexes for the selected repository, so do
-	// not let a leaf symlink escape the package directory.
-	root, err := os.OpenRoot(packageDir)
-	if err != nil {
-		return nil, err
-	}
-	defer root.Close()
-	before, err := root.Lstat("SKILL.md")
-	if err != nil || !before.Mode().IsRegular() {
-		return nil, os.ErrInvalid
-	}
-	file, err := root.Open("SKILL.md")
+func readCommonFilesystemSkillDocument(packageDir string) ([]byte, error) {
+	file, err := os.Open(filepath.Join(packageDir, "SKILL.md"))
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-	after, err := file.Stat()
-	if err != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) {
-		return nil, os.ErrInvalid
-	}
 	return readBoundedSkillDocument(file)
 }
 

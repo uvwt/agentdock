@@ -11,7 +11,7 @@ func commonSkillCapabilityIndex() (*capabilityCommonSkillIndex, error) {
 		return nil, err
 	}
 	root := filepath.Join(home, ".agents", "skills")
-	index, err := scanFilesystemSkills(root, filesystemSkillScanOptions{AllowPackageSymlinks: true})
+	index, err := scanCommonFilesystemSkills(root)
 	if err != nil {
 		return nil, err
 	}
