@@ -41,8 +41,9 @@ type windowsLegacyMigrationPlan struct {
 	CleanupRoot      string `json:"cleanup_root"`
 }
 
-// windowsLegacyMigrationNeeded 只识别受管桌面安装的 flat Core。
-// portable CLI 继续沿用原有 flat updater，不会被静默改造成桌面 generation 布局。
+// windowsLegacyMigrationNeeded 识别受管桌面安装仍未完成的一次性 legacy bridge。
+// 正常入口是 flat stable Core；如果进程在 stable entry 切换中途退出，generation Core
+// 也会凭已安装的 compatibility manager 重新进入迁移。portable CLI 始终不参与。
 func windowsLegacyMigrationNeeded(opts options) bool {
 	if strings.TrimSpace(opts.DesktopTargetPath) == "" ||
 		normalizeVersion(opts.CurrentVersion) == "" ||
@@ -57,12 +58,10 @@ func windowsLegacyMigrationNeeded(opts options) bool {
 		return true
 	}
 
-	// Crash-safe retry boundary: PrepareWindowsLegacyGeneration intentionally commits the
-	// source pointer before stable entries are replaced. If the helper dies after replacing
-	// only Core (or after replacing both shims but before cleanup), the next Core process is
-	// already the generation binary. The legacy compatibility manager is the durable marker
-	// left by every published flat updater, so keep re-entering the bridge until the migration
-	// reaches its terminal state and removes that marker.
+	// PrepareWindowsLegacyGeneration 会先提交 source pointer，再替换 stable entry。
+	// 如果 helper 在只替换 Core，或两个 shim 都替换但尚未清理时退出，下一次运行的
+	// Core 已经来自 generation。旧 updater 安装的 compatibility manager 因此兼作
+	// 持久完成标记：只有迁移到达终态并删除它后，bridge 才算真正结束。
 	root, version, generationAware := windowsGenerationInstall(opts.ExecutablePath)
 	if !generationAware ||
 		!sameWindowsPath(root, opts.DesktopTargetPath) ||

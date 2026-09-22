@@ -63,9 +63,9 @@ func runDesktopRepair(ctx context.Context, output io.Writer, localArchivePath, l
 		return err
 	}
 	if normalizeVersion(opts.DesktopCurrentVersion) != normalizeVersion(opts.CurrentVersion) {
-		// Older published updaters could replace Core without replacing Tray. Never freeze
-		// that mixed-version flat state into a source generation: repair the desktop payload
-		// first, then re-read runtime state and only migrate when Core/Tray are aligned.
+		// 更老的已发布 updater 可能只替换 Core、没有同步 Tray。不能把这种混合版本
+		// flat 状态固化成 source generation；先补齐同版本桌面组件，再重新读取运行态，
+		// 只有 Core/Tray 对齐后才进入一次性 generation 迁移。
 		inspection, inspectErr := inspectDesktopRepairWithOptions(ctx, opts)
 		if inspectErr != nil {
 			return inspectErr
