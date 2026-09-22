@@ -112,6 +112,8 @@ $manifest = [ordered]@{
     ("v$Version" + [Environment]::NewLine),
     $utf8NoBom
 )
+# 真实安装会绑定凭据用户 SID；RUNNER_TEMP 的继承 ACL 不保证显式包含 runner 用户。
+[IO.File]::WriteAllText((Join-Path $runtimeRoot 'credential-owner-sid.txt'), ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value + [Environment]::NewLine), $utf8NoBom)
 
 try {
     if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch [regex]::Escape("AgentDock v$Version")) {
@@ -123,6 +125,11 @@ try {
     # the migration helper against a stopped fixture.
     & $core service start --runtime-root $runtimeRoot
     if ($LASTEXITCODE -ne 0) {
+        $coreLog = Join-Path $runtimeRoot 'logs\agentdock.err.log'
+        if (Test-Path -LiteralPath $coreLog -PathType Leaf) {
+            Write-Host '=== flat Core startup log ==='
+            Get-Content -LiteralPath $coreLog -Raw -ErrorAction SilentlyContinue | Write-Host
+        }
         throw "flat Core start failed with exit code $LASTEXITCODE"
     }
     $flatHealth = Invoke-RestMethod -UseBasicParsing -Uri "http://127.0.0.1:$port/healthz" -TimeoutSec 3
