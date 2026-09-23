@@ -74,6 +74,21 @@ func TestPortableManifestRejectsInvalidProvenance(t *testing.T) {
 			provenance: map[string]any{"origin": "https://example.com/repo", "subdir": "../escape"},
 			want:       "provenance.subdir",
 		},
+		{
+			name:       "HTTP userinfo",
+			provenance: map[string]any{"origin": "https://token@example.com/plugins"},
+			want:       "must not contain userinfo",
+		},
+		{
+			name:       "HTTP query",
+			provenance: map[string]any{"origin": "https://example.com/plugins?token=secret"},
+			want:       "must not contain query parameters",
+		},
+		{
+			name:       "control character",
+			provenance: map[string]any{"origin": "https://example.com/plugins", "revision": "abc\ndef"},
+			want:       "must not contain control characters",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

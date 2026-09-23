@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -307,8 +308,32 @@ func validateProvenance(provenance *Provenance) error {
 	provenance.Revision = strings.TrimSpace(provenance.Revision)
 	provenance.Subdir = strings.TrimSpace(strings.ReplaceAll(provenance.Subdir, "\\", "/"))
 	provenance.Format = strings.TrimSpace(provenance.Format)
+	for field, value := range map[string]string{
+		"origin": provenance.Origin, "revision": provenance.Revision,
+		"subdir": provenance.Subdir, "format": provenance.Format,
+	} {
+		if containsControlCharacter(value) {
+			return fmt.Errorf("provenance.%s must not contain control characters", field)
+		}
+	}
 	if provenance.Origin == "" {
 		return errors.New("provenance.origin is required")
+	}
+	parsedOrigin, err := url.Parse(provenance.Origin)
+	if err != nil {
+		return fmt.Errorf("provenance.origin is invalid: %w", err)
+	}
+	if parsedOrigin.Scheme == "http" || parsedOrigin.Scheme == "https" {
+		if parsedOrigin.User != nil {
+			return errors.New("provenance.origin HTTP(S) URL must not contain userinfo")
+		}
+		if parsedOrigin.RawQuery != "" || parsedOrigin.Fragment != "" {
+			return errors.New("provenance.origin HTTP(S) URL must not contain query parameters or fragments")
+		}
+	} else if parsedOrigin.User != nil {
+		if _, hasPassword := parsedOrigin.User.Password(); hasPassword {
+			return errors.New("provenance.origin must not contain a password")
+		}
 	}
 	if provenance.Subdir != "" {
 		clean, err := cleanPluginRelativePath(provenance.Subdir)
@@ -318,6 +343,15 @@ func validateProvenance(provenance *Provenance) error {
 		provenance.Subdir = clean
 	}
 	return nil
+}
+
+func containsControlCharacter(value string) bool {
+	for _, char := range value {
+		if char < 0x20 || char == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 func validatePackageTree(root string) ([]string, error) {

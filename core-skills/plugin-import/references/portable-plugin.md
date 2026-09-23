@@ -63,6 +63,11 @@ https://agent-plugins.org/schemas/1.0.0/plugin.schema.json
 
 不要把临时目录、临时 ZIP 路径或 secret 写进 provenance。
 
+对于 HTTP/HTTPS `origin`，使用稳定、无凭据的来源 URL：
+- 不要包含 `user:password@host` 或 token/userinfo；
+- 不要包含 query 参数或 fragment；
+- 不要把临时签名下载 URL 当作长期 origin；应记录其稳定上游身份。
+
 ## Skills
 
 每个 `skills/<name>/` 必须是有效 Agent Skill，且 SKILL.md 的 `name` 与目录名一致。
