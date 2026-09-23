@@ -11,6 +11,23 @@ import (
 	"github.com/uvwt/agentdock/internal/config"
 )
 
+func TestReadFileDescriptionUsesHostIssuedSkillURI(t *testing.T) {
+	definition, ok := toolDefinitionForConfig("read_file", config.Config{})
+	if !ok {
+		t.Fatal("read_file definition is missing")
+	}
+	for _, want := range []string{"host-issued skill://", "agentdock_context", "workspace_context", "do not construct"} {
+		if !strings.Contains(definition.Description, want) {
+			t.Fatalf("read_file description missing %q: %s", want, definition.Description)
+		}
+	}
+	for _, stale := range []string{"skill://<name>", "active Skill version"} {
+		if strings.Contains(definition.Description, stale) {
+			t.Fatalf("read_file description still contains stale Skill lifecycle text %q: %s", stale, definition.Description)
+		}
+	}
+}
+
 func TestReadFileSupportsSkillURI(t *testing.T) {
 	cfg := config.Config{
 		AgentDockDefaultDir: t.TempDir(),
