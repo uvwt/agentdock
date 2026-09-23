@@ -308,10 +308,7 @@ final class ServiceController: @unchecked Sendable {
             do {
                 try await restart()
             } catch {
-                warnings.append(L10n.format(
-                    "AgentDock Core was re-registered after the update, but the health check still failed: %@",
-                    error.localizedDescription
-                ))
+                warnings.append(error.localizedDescription)
             }
         }
         return warnings
