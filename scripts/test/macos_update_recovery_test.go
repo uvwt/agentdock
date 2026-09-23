@@ -46,12 +46,26 @@ func TestMacOSUpdateRecoversCoreBeforeTransactionHandoff(t *testing.T) {
 		"waitForHealth(configuration: configuration, timeout: 10)",
 		"try await restart()",
 		"warnings.append(error.localizedDescription)",
+		"waitForTunnelProcess()",
+		"try restartTunnel()",
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("bounded Core update recovery missing %q", want)
+			t.Fatalf("bounded background-service update recovery missing %q", want)
 		}
 	}
 	if strings.Count(body, "try await restart()") != 1 {
 		t.Fatal("Core update recovery must attempt at most one automatic re-registration")
+	}
+	if strings.Count(body, "try restartTunnel()") != 1 {
+		t.Fatal("Tunnel update recovery must attempt at most one automatic re-registration")
+	}
+	for _, want := range []string{
+		"func restartTunnel() throws",
+		"func waitForTunnelProcess(timeout: TimeInterval = 10) async -> Bool",
+		"func waitForStableLaunchdProcess(label: String, timeout: TimeInterval) -> Bool",
+	} {
+		if !strings.Contains(service, want) {
+			t.Fatalf("Tunnel process recovery contract missing %q", want)
+		}
 	}
 }
