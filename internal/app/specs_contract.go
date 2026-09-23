@@ -10,6 +10,7 @@ import (
 	toolfile "github.com/uvwt/agentdock/internal/tool/file"
 	toolmcp "github.com/uvwt/agentdock/internal/tool/mcp"
 	toolmedia "github.com/uvwt/agentdock/internal/tool/media"
+	toolplugin "github.com/uvwt/agentdock/internal/tool/plugin"
 	toolskill "github.com/uvwt/agentdock/internal/tool/skill"
 	tooltask "github.com/uvwt/agentdock/internal/tool/task"
 )
@@ -75,6 +76,10 @@ func acpToolContract(name string, _ config.Config) (ToolContract, bool) {
 
 func skillToolContract(name string, _ config.Config) (ToolContract, bool) {
 	return staticToolContract(name, toolskill.InputSchema, toolskill.OutputSchema)
+}
+
+func pluginToolContract(name string, _ config.Config) (ToolContract, bool) {
+	return staticToolContract(name, toolplugin.InputSchema, toolplugin.OutputSchema)
 }
 
 func mcpToolContract(name string, _ config.Config) (ToolContract, bool) {

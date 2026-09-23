@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/uvwt/agentdock/internal/envstore"
 )
 
 func TestManagerStreamableHTTPFlowAndPersistence(t *testing.T) {
@@ -300,12 +302,16 @@ func TestMCPStdioHelperProcess(t *testing.T) {
 			})
 		case "tools/call":
 			arguments, _ := request.Params["arguments"].(map[string]any)
+			echo := arguments["text"]
+			if envName, ok := arguments["readEnv"].(string); ok && envName != "" {
+				echo = os.Getenv(envName)
+			}
 			_ = encoder.Encode(map[string]any{
 				"jsonrpc": "2.0",
 				"id":      request.ID,
 				"result": map[string]any{
-					"content":           []map[string]any{{"type": "text", "text": arguments["text"]}},
-					"structuredContent": map[string]any{"echo": arguments["text"]},
+					"content":           []map[string]any{{"type": "text", "text": echo}},
+					"structuredContent": map[string]any{"echo": echo},
 				},
 			})
 		}
@@ -516,5 +522,96 @@ func TestLockServerRejectsCloseRace(t *testing.T) {
 	var mcpErr *Error
 	if !errors.As(err, &mcpErr) || mcpErr.Code != "MCP_MANAGER_CLOSED" {
 		t.Fatalf("lockServer() error = %#v, want MCP_MANAGER_CLOSED", err)
+	}
+}
+
+func TestPluginOwnedStdioUsesStableEnvAndRuntimeProvenance(t *testing.T) {
+	home := t.TempDir()
+	envs, err := envstore.New(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const storageKey = "plugin.demo.plugin.local"
+	if err := envs.Set(envstore.Scope{Kind: envstore.ScopeMCP, Name: storageKey}, "DEMO_TOKEN", "stored-secret"); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := NewManager(home, envs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+
+	pluginRoot := t.TempDir()
+	pluginData := t.TempDir()
+	runtimeName := "plugin.demo.plugin.local"
+	if err := manager.SetOwnedServers([]ServerConfig{{
+		Name: runtimeName, DisplayName: "local", Description: "Plugin stdio MCP",
+		Transport: TransportStdio, Command: os.Args[0],
+		Args:        []string{"-test.run=TestMCPStdioHelperProcess"},
+		StaticEnv:   map[string]string{"GO_WANT_MCP_HELPER": "1", "MODE": "package-default"},
+		EnvBindings: map[string]string{"TOKEN": "DEMO_TOKEN"},
+		StorageKey:  storageKey, SourceType: "plugin", PluginName: "demo.plugin",
+		PluginRoot: pluginRoot, PluginDataDir: pluginData, Enabled: true,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	refreshed, tools, err := manager.Refresh(context.Background(), runtimeName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.SourceType != "plugin" || refreshed.PluginName != "demo.plugin" ||
+		refreshed.DisplayName != "local" || len(tools) != 1 {
+		t.Fatalf("Plugin MCP refresh = %#v tools=%#v", refreshed, tools)
+	}
+	if tools[0].SourceType != "plugin" || tools[0].PluginName != "demo.plugin" {
+		t.Fatalf("Plugin MCP tool provenance = %#v", tools[0])
+	}
+
+	readEnv := func(name string) string {
+		t.Helper()
+		result, err := manager.Call(context.Background(), runtimeName+":echo", map[string]any{
+			"text": "unused", "readEnv": name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		structured, _ := result["structuredContent"].(map[string]any)
+		value, _ := structured["echo"].(string)
+		return value
+	}
+	if got := readEnv("TOKEN"); got != "stored-secret" {
+		t.Fatalf("Plugin MCP env binding TOKEN = %q", got)
+	}
+	if got := readEnv("MODE"); got != "package-default" {
+		t.Fatalf("Plugin MCP package default MODE = %q", got)
+	}
+	if got := readEnv("PLUGIN_ROOT"); got != "" {
+		t.Fatalf("internal PLUGIN_ROOT placeholder leaked into child environment: %q", got)
+	}
+	if got := readEnv("PLUGIN_DATA"); got != "" {
+		t.Fatalf("internal PLUGIN_DATA placeholder leaked into child environment: %q", got)
+	}
+	if got := readEnv("PLUGIN_DATA_DIR"); got != pluginData {
+		t.Fatalf("PLUGIN_DATA_DIR = %q, want %q", got, pluginData)
+	}
+
+	searched, err := manager.Search(context.Background(), "echo", runtimeName, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(searched) != 1 || searched[0].SourceType != "plugin" || searched[0].PluginName != "demo.plugin" {
+		t.Fatalf("Plugin MCP search provenance = %#v", searched)
+	}
+
+	reloaded, err := NewManager(home, envs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reloaded.Close()
+	for _, item := range reloaded.List() {
+		if item.Name == runtimeName {
+			t.Fatalf("Plugin-owned MCP leaked into standalone servers.json: %#v", item)
+		}
 	}
 }

@@ -18,7 +18,10 @@ func New(manager *mcpclient.Manager, envs *envstore.Store) *Service {
 
 type CapabilityItem struct {
 	Name          string
+	DisplayName   string
 	Description   string
+	SourceType    string
+	PluginName    string
 	Status        string
 	ToolCount     int
 	LastErrorCode string
@@ -29,7 +32,8 @@ func (s *Service) CapabilityItems() []CapabilityItem {
 	items := make([]CapabilityItem, 0, len(servers))
 	for _, server := range servers {
 		items = append(items, CapabilityItem{
-			Name: server.Name, Description: server.Description, Status: server.Status,
+			Name: server.Name, DisplayName: server.DisplayName, Description: server.Description,
+			SourceType: server.SourceType, PluginName: server.PluginName, Status: server.Status,
 			ToolCount: server.ToolCount, LastErrorCode: server.LastErrorCode,
 		})
 	}

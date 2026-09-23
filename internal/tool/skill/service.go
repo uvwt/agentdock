@@ -15,6 +15,7 @@ import (
 
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envstore"
+	plugins "github.com/uvwt/agentdock/internal/plugin"
 	skills "github.com/uvwt/agentdock/internal/skill"
 	skillstate "github.com/uvwt/agentdock/internal/skill/state"
 	"github.com/uvwt/agentdock/internal/workspace"
@@ -25,6 +26,7 @@ const (
 	managedSourceType   = "managed"
 	sharedSourceType    = "shared"
 	workspaceSourceType = "workspace"
+	pluginSourceType    = "plugin"
 	sharedSourceID      = "global"
 )
 
@@ -33,6 +35,7 @@ type ResolvedSkill struct {
 	SkillRef      string
 	SourceType    string
 	SourceID      string
+	PluginName    string
 	Root          string
 	ContentDigest string
 }
@@ -43,13 +46,14 @@ type Service struct {
 	state             *skillstate.Store
 	ws                *workspace.Workspace
 	envs              *envstore.Store
+	plugins           *plugins.Manager
 	workspaceMu       sync.RWMutex
 	workspaceByID     map[string]string
 	workspaceIDByRoot map[string]string
 	workspaceIssued   map[string]map[string]struct{}
 }
 
-func New(cfg config.Config, ws *workspace.Workspace, envs *envstore.Store) (*Service, error) {
+func New(cfg config.Config, ws *workspace.Workspace, envs *envstore.Store, pluginManagers ...*plugins.Manager) (*Service, error) {
 	state, err := skillstate.New(config.SkillDir(cfg))
 	if err != nil {
 		return nil, err
@@ -61,8 +65,12 @@ func New(cfg config.Config, ws *workspace.Workspace, envs *envstore.Store) (*Ser
 	if _, err := skills.MigrateLegacyLayout(context.Background(), cfg.AgentDockHome, manager); err != nil {
 		return nil, fmt.Errorf("migrate legacy Skill layout: %w", err)
 	}
+	var pluginManager *plugins.Manager
+	if len(pluginManagers) > 0 {
+		pluginManager = pluginManagers[0]
+	}
 	return &Service{
-		cfg: cfg, manager: manager, state: state, ws: ws, envs: envs,
+		cfg: cfg, manager: manager, state: state, ws: ws, envs: envs, plugins: pluginManager,
 		workspaceByID: make(map[string]string), workspaceIDByRoot: make(map[string]string),
 		workspaceIssued: make(map[string]map[string]struct{}),
 	}, nil
@@ -74,6 +82,10 @@ func ManagedSkillRef(name string) string {
 
 func SharedSkillRef(name string) string {
 	return "skill://shared/" + name
+}
+
+func PluginSkillRef(pluginName, name string) string {
+	return "skill://plugin/" + pluginName + "/" + name
 }
 
 func (s *Service) WorkspaceSkillRef(workspaceRoot, name string) (skillRef, sourceID string, err error) {
@@ -122,6 +134,8 @@ func (s *Service) Acquire(ctx context.Context, skillRef string) (ResolvedSkill, 
 		return s.acquireShared(ctx, ref)
 	case workspaceSourceType:
 		return s.acquireWorkspace(ctx, ref)
+	case pluginSourceType:
+		return s.acquirePlugin(ctx, ref)
 	default:
 		return ResolvedSkill{}, nil, toolErrorDetails("INVALID_SKILL_REF", "unsupported Skill source type", "validation", map[string]any{"skill_ref": skillRef})
 	}
@@ -170,6 +184,11 @@ func parseSkillRef(raw string) (parsedSkillRef, error) {
 			return parsedSkillRef{}, invalidSkillRef(raw)
 		}
 		return parsedSkillRef{SourceType: workspaceSourceType, SourceID: parts[0], Name: parts[1]}, nil
+	case pluginSourceType:
+		if len(parts) != 2 || plugins.ValidateName(parts[0]) != nil || !validSkillRefName(parts[1]) {
+			return parsedSkillRef{}, invalidSkillRef(raw)
+		}
+		return parsedSkillRef{SourceType: pluginSourceType, SourceID: parts[0], Name: parts[1]}, nil
 	default:
 		return parsedSkillRef{}, invalidSkillRef(raw)
 	}
@@ -279,6 +298,63 @@ func (s *Service) acquireWorkspace(ctx context.Context, ref parsedSkillRef) (Res
 		Name: ref.Name, SkillRef: skillRef, SourceType: workspaceSourceType,
 		SourceID: ref.SourceID, Root: realPackageRoot,
 	}, func() {}, nil
+}
+
+func (s *Service) acquirePlugin(ctx context.Context, ref parsedSkillRef) (ResolvedSkill, func(), error) {
+	if s.plugins == nil {
+		return ResolvedSkill{}, nil, toolErrorDetails("SKILL_NOT_AVAILABLE", "Plugin Skill runtime is unavailable", "not_found", map[string]any{
+			"skill_ref": PluginSkillRef(ref.SourceID, ref.Name),
+		})
+	}
+	installed, release, err := s.plugins.Acquire(ctx, ref.SourceID)
+	if err != nil {
+		return ResolvedSkill{}, nil, toolErrorDetails("SKILL_NOT_AVAILABLE", "Plugin Skill source is unavailable", "not_found", map[string]any{
+			"skill_ref": PluginSkillRef(ref.SourceID, ref.Name), "reason": err.Error(),
+		})
+	}
+	ok := false
+	defer func() {
+		if !ok {
+			release()
+		}
+	}()
+
+	var component *plugins.SkillComponent
+	for index := range installed.Components.Skills {
+		candidate := &installed.Components.Skills[index]
+		if candidate.Name == ref.Name {
+			component = candidate
+			break
+		}
+	}
+	if component == nil {
+		return ResolvedSkill{}, nil, toolErrorDetails("SKILL_NOT_AVAILABLE", "Plugin does not provide the requested Skill", "not_found", map[string]any{
+			"skill_ref": PluginSkillRef(ref.SourceID, ref.Name),
+		})
+	}
+	root := filepath.Join(installed.Root, filepath.FromSlash(component.RelativePath))
+	relative, relErr := filepath.Rel(installed.Root, root)
+	if relErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return ResolvedSkill{}, nil, toolErrorDetails("SKILL_PATH_ESCAPE", "Plugin Skill path escapes the installed Plugin package", "validation", map[string]any{
+			"skill_ref": PluginSkillRef(ref.SourceID, ref.Name),
+		})
+	}
+	info, statErr := os.Lstat(root)
+	if statErr != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return ResolvedSkill{}, nil, toolErrorDetails("SKILL_NOT_AVAILABLE", "Plugin Skill is not available as a regular directory", "not_found", map[string]any{
+			"skill_ref": PluginSkillRef(ref.SourceID, ref.Name),
+		})
+	}
+	if err := verifyResolvedSkillDocument(root, ref.Name); err != nil {
+		return ResolvedSkill{}, nil, err
+	}
+	ok = true
+	skillRef := PluginSkillRef(ref.SourceID, ref.Name)
+	return ResolvedSkill{
+		Name: ref.Name, SkillRef: skillRef, SourceType: pluginSourceType,
+		SourceID: ref.SourceID, PluginName: ref.SourceID, Root: root,
+		ContentDigest: component.ContentDigest,
+	}, release, nil
 }
 
 func verifyResolvedSkillDocument(root, expectedName string) error {

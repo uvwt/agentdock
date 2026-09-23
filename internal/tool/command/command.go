@@ -523,7 +523,7 @@ func (svc *Service) baseCommandEnv() (map[string]string, error) {
 // applyHostEnvMapping 只复制部署者显式声明的宿主变量；未配置的宿主环境继续保持隔离。
 func (svc *Service) applyHostEnvMapping(env map[string]string) {
 	for childKey, hostKey := range svc.config().CommandEnvFromEnv {
-		if config.IsReservedSkillEnvironmentKey(childKey) {
+		if config.IsReservedCommandEnvironmentKey(childKey) {
 			continue
 		}
 		if value, ok := os.LookupEnv(hostKey); ok {

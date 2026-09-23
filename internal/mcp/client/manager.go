@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envstore"
 )
 
@@ -22,6 +23,7 @@ type Manager struct {
 	store      *store
 	envs       *envstore.Store
 	servers    map[string]ServerConfig
+	owned      map[string]ServerConfig
 	states     map[string]*serverState
 }
 
@@ -50,15 +52,126 @@ func NewManager(agentDockHome string, provided ...*envstore.Store) (*Manager, er
 			return nil, err
 		}
 	}
+	servers = standaloneServerConfigs(servers)
 	states := make(map[string]*serverState, len(servers))
 	for name := range servers {
 		states[name] = &serverState{}
 	}
-	return &Manager{store: registry, envs: envs, servers: servers, states: states}, nil
+	return &Manager{
+		store: registry, envs: envs, servers: servers,
+		owned: make(map[string]ServerConfig), states: states,
+	}, nil
+}
+
+func standaloneServerConfigs(input map[string]ServerConfig) map[string]ServerConfig {
+	out := make(map[string]ServerConfig, len(input))
+	for name, raw := range input {
+		cfg := normalizeServerConfig(raw)
+		cfg.SourceType = "standalone"
+		cfg.PluginName = ""
+		cfg.DisplayName = cfg.Name
+		cfg.StorageKey = cfg.Name
+		cfg.PluginDataDir = ""
+		cfg.EnvBindings = nil
+		out[name] = cfg
+	}
+	return out
+}
+
+// ValidateOwnedServers checks a complete Plugin-owned MCP overlay without
+// mutating the currently running registry.
+func (m *Manager) ValidateOwnedServers(configs []ServerConfig) error {
+	m.registryMu.Lock()
+	defer m.registryMu.Unlock()
+	if err := m.ensureOpenLocked(); err != nil {
+		return err
+	}
+	standalone, err := m.store.load()
+	if err != nil {
+		return newError("MCP_REGISTRY_READ_FAILED", "read dynamic MCP registry", true, nil, err)
+	}
+	_, _, err = buildOwnedRegistry(standalone, configs)
+	return err
+}
+
+// SetOwnedServers replaces the in-memory Plugin-owned MCP overlay. Owned
+// servers reuse the normal MCP runtime but are never persisted to servers.json.
+func (m *Manager) SetOwnedServers(configs []ServerConfig) error {
+	m.registryMu.Lock()
+	defer m.registryMu.Unlock()
+	if err := m.ensureOpenLocked(); err != nil {
+		return err
+	}
+	standalone, err := m.store.load()
+	if err != nil {
+		return newError("MCP_REGISTRY_READ_FAILED", "read dynamic MCP registry", true, nil, err)
+	}
+	owned, merged, err := buildOwnedRegistry(standalone, configs)
+	if err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	m.owned = owned
+	staleStates := m.replaceRegistryLocked(merged)
+	m.mu.Unlock()
+	return closeServerStates(staleStates)
+}
+
+func buildOwnedRegistry(standalone map[string]ServerConfig, configs []ServerConfig) (map[string]ServerConfig, map[string]ServerConfig, error) {
+	standalone = standaloneServerConfigs(standalone)
+	owned := make(map[string]ServerConfig, len(configs))
+	for _, raw := range configs {
+		cfg := normalizeServerConfig(raw)
+		if cfg.SourceType != "plugin" || cfg.PluginName == "" {
+			return nil, nil, newError("MCP_CONFIG_INVALID", "owned MCP server requires Plugin provenance", false, map[string]any{"server": cfg.Name}, nil)
+		}
+		if cfg.StorageKey == "" {
+			return nil, nil, newError("MCP_CONFIG_INVALID", "owned MCP server requires a stable storage key", false, map[string]any{"server": cfg.Name}, nil)
+		}
+		if cfg.PluginRoot == "" || cfg.PluginDataDir == "" {
+			return nil, nil, newError("MCP_CONFIG_INVALID", "owned MCP server requires Plugin root and data directories", false, map[string]any{"server": cfg.Name}, nil)
+		}
+		if err := validateServerConfig(cfg); err != nil {
+			return nil, nil, newError("MCP_CONFIG_INVALID", err.Error(), false, map[string]any{"server": cfg.Name}, err)
+		}
+		if _, exists := standalone[cfg.Name]; exists {
+			return nil, nil, newError("MCP_SERVER_COLLISION", "Plugin MCP runtime name conflicts with a standalone MCP server", false, map[string]any{"server": cfg.Name, "plugin_name": cfg.PluginName}, nil)
+		}
+		if _, exists := owned[cfg.Name]; exists {
+			return nil, nil, newError("MCP_SERVER_COLLISION", "duplicate Plugin MCP runtime name", false, map[string]any{"server": cfg.Name, "plugin_name": cfg.PluginName}, nil)
+		}
+		owned[cfg.Name] = cfg
+	}
+
+	merged := make(map[string]ServerConfig, len(standalone)+len(owned))
+	for name, cfg := range standalone {
+		merged[name] = cfg
+	}
+	for name, cfg := range owned {
+		merged[name] = cfg
+	}
+	return owned, merged, nil
+}
+
+func (m *Manager) mergeOwned(standalone map[string]ServerConfig) (map[string]ServerConfig, error) {
+	merged := standaloneServerConfigs(standalone)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for name, cfg := range m.owned {
+		if _, exists := merged[name]; exists {
+			return nil, newError("MCP_SERVER_COLLISION", "Plugin MCP runtime name conflicts with a standalone MCP server", false, map[string]any{"server": name, "plugin_name": cfg.PluginName}, nil)
+		}
+		merged[name] = cfg
+	}
+	return merged, nil
 }
 
 func (m *Manager) Add(cfg ServerConfig) (ServerSummary, error) {
 	cfg = normalizeServerConfig(cfg)
+	cfg.SourceType = "standalone"
+	cfg.DisplayName = cfg.Name
+	cfg.StorageKey = cfg.Name
 	if err := validateServerConfig(cfg); err != nil {
 		return ServerSummary{}, newError("MCP_CONFIG_INVALID", err.Error(), false, map[string]any{"server": cfg.Name}, err)
 	}
@@ -66,6 +179,12 @@ func (m *Manager) Add(cfg ServerConfig) (ServerSummary, error) {
 	defer m.registryMu.Unlock()
 	if err := m.ensureOpenLocked(); err != nil {
 		return ServerSummary{}, err
+	}
+	m.mu.RLock()
+	_, ownedCollision := m.owned[cfg.Name]
+	m.mu.RUnlock()
+	if ownedCollision {
+		return ServerSummary{}, newError("MCP_SERVER_COLLISION", "standalone MCP name conflicts with a Plugin-owned MCP server", false, map[string]any{"server": cfg.Name}, nil)
 	}
 	servers, err := m.store.update(func(servers map[string]ServerConfig) error {
 		if _, exists := servers[cfg.Name]; exists {
@@ -80,6 +199,10 @@ func (m *Manager) Add(cfg ServerConfig) (ServerSummary, error) {
 			return ServerSummary{}, err
 		}
 		return ServerSummary{}, newError("MCP_REGISTRY_WRITE_FAILED", "persist dynamic MCP server", false, map[string]any{"server": cfg.Name}, err)
+	}
+	servers, err = m.mergeOwned(servers)
+	if err != nil {
+		return ServerSummary{}, err
 	}
 
 	m.mu.Lock()
@@ -97,6 +220,12 @@ func (m *Manager) Remove(name string) error {
 	if err := m.ensureOpenLocked(); err != nil {
 		return err
 	}
+	m.mu.RLock()
+	ownedCfg, owned := m.owned[name]
+	m.mu.RUnlock()
+	if owned {
+		return newError("MCP_OWNED_BY_PLUGIN", "Plugin-owned MCP lifecycle is managed by plugin_manage", false, map[string]any{"server": name, "plugin_name": ownedCfg.PluginName}, nil)
+	}
 	servers, err := m.store.update(func(servers map[string]ServerConfig) error {
 		if _, exists := servers[name]; !exists {
 			return newError("MCP_SERVER_NOT_FOUND", "dynamic MCP server not found", false, map[string]any{"server": name}, nil)
@@ -111,6 +240,10 @@ func (m *Manager) Remove(name string) error {
 		}
 		return newError("MCP_REGISTRY_WRITE_FAILED", "remove dynamic MCP server", false, map[string]any{"server": name}, err)
 	}
+	servers, err = m.mergeOwned(servers)
+	if err != nil {
+		return err
+	}
 
 	m.mu.Lock()
 	staleStates := m.replaceRegistryLocked(servers)
@@ -124,6 +257,12 @@ func (m *Manager) SetEnabled(name string, enabled bool) (ServerSummary, error) {
 	defer m.registryMu.Unlock()
 	if err := m.ensureOpenLocked(); err != nil {
 		return ServerSummary{}, err
+	}
+	m.mu.RLock()
+	ownedCfg, owned := m.owned[name]
+	m.mu.RUnlock()
+	if owned {
+		return ServerSummary{}, newError("MCP_OWNED_BY_PLUGIN", "Plugin-owned MCP lifecycle is managed by plugin_manage", false, map[string]any{"server": name, "plugin_name": ownedCfg.PluginName}, nil)
 	}
 	var selected ServerConfig
 	servers, err := m.store.update(func(servers map[string]ServerConfig) error {
@@ -142,6 +281,10 @@ func (m *Manager) SetEnabled(name string, enabled bool) (ServerSummary, error) {
 			return ServerSummary{}, err
 		}
 		return ServerSummary{}, newError("MCP_REGISTRY_WRITE_FAILED", "persist dynamic MCP server state", false, map[string]any{"server": name}, err)
+	}
+	servers, err = m.mergeOwned(servers)
+	if err != nil {
+		return ServerSummary{}, err
 	}
 
 	m.mu.Lock()
@@ -199,6 +342,10 @@ func (m *Manager) syncRegistry() error {
 	servers, err := m.store.load()
 	if err != nil {
 		return newError("MCP_REGISTRY_READ_FAILED", "read dynamic MCP registry", true, nil, err)
+	}
+	servers, err = m.mergeOwned(servers)
+	if err != nil {
+		return err
 	}
 	m.mu.Lock()
 	staleStates := m.replaceRegistryLocked(servers)
@@ -273,7 +420,7 @@ func (m *Manager) Refresh(ctx context.Context, name string) (ServerSummary, []To
 	if err != nil {
 		return summary, nil, err
 	}
-	return summary, summarizeTools(cfg.Name, tools), nil
+	return summary, summarizeTools(cfg, tools), nil
 }
 
 func (m *Manager) Search(ctx context.Context, query, server string, limit int) ([]ToolSummary, error) {
@@ -318,7 +465,7 @@ func (m *Manager) Search(ctx context.Context, query, server string, limit int) (
 			if score == 0 {
 				continue
 			}
-			matches = append(matches, scoredTool{score: score, item: toolSummary(cfg.Name, tool)})
+			matches = append(matches, scoredTool{score: score, item: toolSummary(cfg, tool)})
 		}
 	}
 	if len(matches) == 0 && firstErr != nil {
@@ -450,7 +597,11 @@ func (m *Manager) ensureOpenLocked() error {
 }
 
 func (m *Manager) runtimeConfig(cfg ServerConfig) (ServerConfig, error) {
-	values, err := m.envs.Load(envstore.Scope{Kind: envstore.ScopeMCP, Name: cfg.Name})
+	storageKey := cfg.StorageKey
+	if storageKey == "" {
+		storageKey = cfg.Name
+	}
+	values, err := m.envs.Load(envstore.Scope{Kind: envstore.ScopeMCP, Name: storageKey})
 	if err != nil {
 		return ServerConfig{}, newError(
 			"MCP_ENV_READ_FAILED",
@@ -460,7 +611,57 @@ func (m *Manager) runtimeConfig(cfg ServerConfig) (ServerConfig, error) {
 			err,
 		)
 	}
-	cfg.RuntimeEnv = values
+	if cfg.SourceType != "plugin" {
+		cfg.RuntimeEnv = values
+		return cfg, nil
+	}
+
+	for key := range values {
+		if config.IsReservedPluginEnvironmentKey(key) {
+			return ServerConfig{}, newError(
+				"MCP_ENV_READ_FAILED",
+				"Plugin MCP environment contains a runtime-reserved variable",
+				false,
+				map[string]any{"server": cfg.Name, "key": key},
+				nil,
+			)
+		}
+	}
+	// env/mcp/<storage-key>.env 是用户运行时覆盖层；portable package 中的
+	// env 是公开默认值，由 stdioEnvironment 在它之前注入。P3 adapter 的
+	// credential bindings 也从这里取值，但永远不会落入 Plugin state。
+	runtimeValues := make(map[string]string, len(values)+len(cfg.EnvBindings)+len(cfg.HeaderEnv)+3)
+	for key, value := range values {
+		runtimeValues[key] = value
+	}
+	for header, envName := range cfg.HeaderEnv {
+		value, ok := values[envName]
+		if !ok || value == "" {
+			return ServerConfig{}, newError(
+				"MCP_AUTH_REQUIRED",
+				"required Plugin MCP environment variable is missing",
+				false,
+				map[string]any{"server": cfg.Name, "header": header, "env": envName},
+				nil,
+			)
+		}
+		runtimeValues[envName] = value
+	}
+	for childName, envName := range cfg.EnvBindings {
+		value, ok := values[envName]
+		if !ok || value == "" {
+			return ServerConfig{}, newError(
+				"MCP_AUTH_REQUIRED",
+				"required Plugin MCP environment variable is missing",
+				false,
+				map[string]any{"server": cfg.Name, "env": envName},
+				nil,
+			)
+		}
+		runtimeValues[childName] = value
+	}
+	runtimeValues[config.PluginDataDirEnvKey] = cfg.PluginDataDir
+	cfg.RuntimeEnv = runtimeValues
 	return cfg, nil
 }
 
@@ -617,10 +818,21 @@ func summaryForLocked(cfg ServerConfig, state *serverState) ServerSummary {
 	} else if state.client != nil {
 		status = "ready"
 	}
+	sourceType := cfg.SourceType
+	if sourceType == "" {
+		sourceType = "standalone"
+	}
+	displayName := cfg.DisplayName
+	if displayName == "" {
+		displayName = cfg.Name
+	}
 	item := ServerSummary{
 		Name:          cfg.Name,
+		DisplayName:   displayName,
 		Description:   cfg.Description,
 		Transport:     cfg.Transport,
+		SourceType:    sourceType,
+		PluginName:    cfg.PluginName,
 		Enabled:       cfg.Enabled,
 		Status:        status,
 		ToolCount:     len(state.tools),
@@ -642,22 +854,28 @@ func recordStateError(state *serverState, err error) {
 	}
 }
 
-func summarizeTools(server string, tools map[string]Tool) []ToolSummary {
+func summarizeTools(cfg ServerConfig, tools map[string]Tool) []ToolSummary {
 	items := make([]ToolSummary, 0, len(tools))
 	for _, tool := range tools {
-		items = append(items, toolSummary(server, tool))
+		items = append(items, toolSummary(cfg, tool))
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].QualifiedName < items[j].QualifiedName })
 	return items
 }
 
-func toolSummary(server string, tool Tool) ToolSummary {
+func toolSummary(cfg ServerConfig, tool Tool) ToolSummary {
+	sourceType := cfg.SourceType
+	if sourceType == "" {
+		sourceType = "standalone"
+	}
 	return ToolSummary{
 		Name:          tool.Name,
-		QualifiedName: qualifiedToolName(server, tool.Name),
+		QualifiedName: qualifiedToolName(cfg.Name, tool.Name),
 		Title:         tool.Title,
 		Description:   tool.Description,
-		Server:        server,
+		Server:        cfg.Name,
+		SourceType:    sourceType,
+		PluginName:    cfg.PluginName,
 	}
 }
 

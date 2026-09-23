@@ -178,6 +178,22 @@ func validateServerConfig(cfg ServerConfig) error {
 			return fmt.Errorf("invalid environment variable mapping %q -> %q", childName, hostName)
 		}
 	}
+	for key := range cfg.StaticEnv {
+		if !envNamePattern.MatchString(key) {
+			return fmt.Errorf("invalid static environment variable name %q", key)
+		}
+	}
+	for header, value := range cfg.StaticHeaders {
+		if !headerNamePattern.MatchString(header) || strings.TrimSpace(header) == "" {
+			return fmt.Errorf("invalid HTTP header name %q", header)
+		}
+		if isReservedMCPHeader(header) {
+			return fmt.Errorf("static headers may not override reserved HTTP header %q", header)
+		}
+		if strings.ContainsAny(value, "\r\n") {
+			return fmt.Errorf("static HTTP header %q contains a newline", header)
+		}
+	}
 
 	switch cfg.Transport {
 	case TransportStreamableHTTP:
@@ -201,7 +217,7 @@ func validateServerConfig(cfg ServerConfig) error {
 		if cfg.Command == "" {
 			return errors.New("command is required for stdio")
 		}
-		if cfg.URL != "" || len(cfg.HeaderEnv) > 0 {
+		if cfg.URL != "" || len(cfg.HeaderEnv) > 0 || len(cfg.StaticHeaders) > 0 {
 			return errors.New("HTTP-only fields are not allowed for stdio")
 		}
 		if cfg.Cwd != "" && !filepath.IsAbs(cfg.Cwd) {

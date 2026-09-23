@@ -202,8 +202,8 @@ func TestMCPAppsBindResourcesDirectlyToBusinessTools(t *testing.T) {
 		}
 		tools[tool.Name] = tool
 	}
-	if len(tools) != 17 {
-		t.Fatalf("tools/list count = %d, want 17", len(tools))
+	if want := len(harness.server.ToolNames()); len(tools) != want {
+		t.Fatalf("tools/list count = %d, want runtime registry count %d", len(tools), want)
 	}
 	contextTool := tools["agentdock_context"]
 	if contextTool == nil {
@@ -625,8 +625,8 @@ func TestMCPAppsExposeACPViewOnlyWhenACPEnabled(t *testing.T) {
 		}
 		tools[tool.Name] = tool
 	}
-	if len(tools) != 20 {
-		t.Fatalf("tools/list count = %d, want 20", len(tools))
+	if want := len(harness.server.ToolNames()); len(tools) != want {
+		t.Fatalf("tools/list count = %d, want runtime registry count %d", len(tools), want)
 	}
 	assertToolUIResource(t, tools["acp_session"], protocol.ACPStatusUIResourceURI)
 	for _, name := range []string{"acp_prompt", "acp_interaction"} {

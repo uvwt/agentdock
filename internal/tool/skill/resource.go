@@ -44,6 +44,12 @@ func (s *Service) ResolveResource(ctx context.Context, raw string) (string, stri
 		}
 		skillRef = "skill://workspace/" + parts[0] + "/" + parts[1]
 		relativeParts = parts[2:]
+	case pluginSourceType:
+		if len(parts) < 3 {
+			return "", "", nil, invalidSkillResourceURI(raw)
+		}
+		skillRef = PluginSkillRef(parts[0], parts[1])
+		relativeParts = parts[2:]
 	default:
 		return "", "", nil, invalidSkillResourceURI(raw)
 	}

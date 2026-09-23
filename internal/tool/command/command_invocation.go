@@ -75,7 +75,7 @@ func (svc *Service) newHostCommandInvocation(ctx context.Context, request ExecRe
 	if !info.IsDir() {
 		return commandInvocation{}, toolError("NOT_A_DIRECTORY", "workdir is not a directory", "validation")
 	}
-	runtimeEnv := map[string]string(nil)
+	runtimeEnv := cloneRuntimeEnv(lease.RuntimeEnv)
 	expectedDataDir := ""
 	if lease.EnvName != "" {
 		expectedDataDir, err = config.SkillDataDir(svc.config(), lease.EnvName)
@@ -84,7 +84,10 @@ func (svc *Service) newHostCommandInvocation(ctx context.Context, request ExecRe
 				"skill": lease.EnvName, "reason": err.Error(),
 			})
 		}
-		runtimeEnv = map[string]string{config.SkillDataDirEnvKey: expectedDataDir}
+		if runtimeEnv == nil {
+			runtimeEnv = map[string]string{}
+		}
+		runtimeEnv[config.SkillDataDirEnvKey] = expectedDataDir
 	}
 	commandEnv, err := svc.commandEnvWithRuntime(lease.EnvName, request.Env, runtimeEnv)
 	if err != nil {
@@ -127,7 +130,7 @@ func (svc *Service) commandEnvOverrides(skillName string, extra map[string]strin
 			return nil, toolErrorDetails("SKILL_ENV_INVALID", "load Skill environment", "validation", map[string]any{"skill": skillName, "reason": err.Error()})
 		}
 		for key, value := range values {
-			if config.IsReservedSkillEnvironmentKey(key) {
+			if config.IsReservedCommandEnvironmentKey(key) {
 				return nil, toolErrorDetails("SKILL_ENV_INVALID", reservedSkillEnvironmentError(key).Error(), "validation", map[string]any{"skill": skillName, "key": key})
 			}
 			setPlatformCommandEnv(overrides, key, value)
@@ -137,7 +140,7 @@ func (svc *Service) commandEnvOverrides(skillName string, extra map[string]strin
 		if err := envstore.ValidateKey(key); err != nil {
 			return nil, toolErrorDetails("INVALID_ENV_NAME", err.Error(), "validation", map[string]any{"key": key})
 		}
-		if config.IsReservedSkillEnvironmentKey(key) {
+		if config.IsReservedCommandEnvironmentKey(key) {
 			return nil, toolErrorDetails("INVALID_ENV_NAME", reservedSkillEnvironmentError(key).Error(), "validation", map[string]any{"key": key})
 		}
 		setPlatformCommandEnv(overrides, key, value)

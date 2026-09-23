@@ -274,7 +274,11 @@ func stdioEnvironment(cfg ServerConfig) ([]string, error) {
 		}
 		environment[childName] = value
 	}
-	// 独立 MCP 环境文件属于该服务的明确配置，覆盖最小系统环境和 env_from_env 映射。
+	// portable Plugin mcp.json 中的 env 是包内公开默认值。用户的
+	// env/mcp/<storage-key>.env 以及宿主保留变量在 RuntimeEnv 中最后覆盖。
+	for key, value := range cfg.StaticEnv {
+		environment[key] = value
+	}
 	for key, value := range cfg.RuntimeEnv {
 		environment[key] = value
 	}
@@ -282,11 +286,14 @@ func stdioEnvironment(cfg ServerConfig) ([]string, error) {
 }
 
 func resolveHTTPHeaders(cfg ServerConfig) (http.Header, error) {
-	headers := make(http.Header, len(cfg.HeaderEnv)+1)
+	headers := make(http.Header, len(cfg.StaticHeaders)+len(cfg.HeaderEnv)+1)
+	for name, value := range cfg.StaticHeaders {
+		headers.Set(name, value)
+	}
 	headers.Set("User-Agent", config.ServerName+"/"+buildinfo.Version)
 	for header, envName := range cfg.HeaderEnv {
 		value, ok := cfg.RuntimeEnv[envName]
-		if !ok {
+		if !ok && cfg.SourceType != "plugin" {
 			value, ok = os.LookupEnv(envName)
 		}
 		if !ok || value == "" {

@@ -54,6 +54,19 @@ func (svc *Service) prepareCommandInvocation(ctx context.Context, request ExecRe
 		if err != nil {
 			return commandInvocation{}, err
 		}
+		for key, value := range lease.RuntimeEnv {
+			runtimeValue := value
+			if config.IsReservedPluginEnvironmentKey(key) {
+				converted, ok := windowsPathToWSL(value)
+				if !ok {
+					return commandInvocation{}, toolErrorDetails("PLUGIN_DATA_DIR_INVALID", "Plugin data directory could not be mapped into WSL", "validation", map[string]any{
+						"path": value,
+					})
+				}
+				runtimeValue = converted
+			}
+			linuxEnv[key] = runtimeValue
+		}
 		expectedDataDir := ""
 		if lease.EnvName != "" {
 			expectedDataDir, err = config.SkillDataDir(svc.config(), lease.EnvName)

@@ -65,15 +65,19 @@ func Dispatch(ctx context.Context, runtime Runtime, request Request) (map[string
 		if !ok {
 			return nil, &app.ToolError{Code: "NOT_FOUND", Message: "runtime Skill API route not found", Category: "not_found"}
 		}
+		target := skill
+		if exact := strings.TrimSpace(request.queryValue("skill_ref")); exact != "" {
+			target = exact
+		}
 		switch action {
 		case "detail":
-			result, err := runtime.RuntimeSkill(skill)
+			result, err := runtime.RuntimeSkill(target)
 			return map[string]any(result), err
 		case "files":
-			result, err := runtime.RuntimeSkillFiles(skill)
+			result, err := runtime.RuntimeSkillFiles(target)
 			return map[string]any(result), err
 		case "file":
-			result, err := runtime.RuntimeSkillFile(skill, filePath)
+			result, err := runtime.RuntimeSkillFile(target, filePath)
 			return map[string]any(result), err
 		default:
 			return nil, &app.ToolError{Code: "NOT_FOUND", Message: "runtime Skill API route not found", Category: "not_found"}

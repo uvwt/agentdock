@@ -139,6 +139,7 @@ type capabilitySkillItem struct {
 	SkillRef      string `json:"skill_ref"`
 	SourceType    string `json:"source_type"`
 	SourceID      string `json:"source_id"`
+	PluginName    string `json:"plugin_name,omitempty"`
 	ContentDigest string `json:"content_digest,omitempty"`
 }
 
@@ -161,7 +162,10 @@ type capabilityCommonSkillItem struct {
 
 type capabilityDynamicMCPItem struct {
 	Name          string `json:"name"`
+	DisplayName   string `json:"display_name,omitempty"`
 	Description   string `json:"description"`
+	SourceType    string `json:"source_type"`
+	PluginName    string `json:"plugin_name,omitempty"`
 	Status        string `json:"status"`
 	ToolCount     int    `json:"tool_count"`
 	LastErrorCode string `json:"last_error_code,omitempty"`
@@ -234,7 +238,10 @@ func (r *Runtime) dynamicMCPCapabilityIndex() []capabilityDynamicMCPItem {
 	for _, server := range servers {
 		items = append(items, capabilityDynamicMCPItem{
 			Name:          server.Name,
+			DisplayName:   server.DisplayName,
 			Description:   truncateString(strings.TrimSpace(server.Description), 160),
+			SourceType:    server.SourceType,
+			PluginName:    server.PluginName,
 			Status:        server.Status,
 			ToolCount:     server.ToolCount,
 			LastErrorCode: server.LastErrorCode,
@@ -257,6 +264,7 @@ func (r *Runtime) skillCapabilityIndex() ([]capabilitySkillItem, error) {
 			SkillRef:      skill.SkillRef,
 			SourceType:    skill.SourceType,
 			SourceID:      skill.SourceID,
+			PluginName:    skill.PluginName,
 			ContentDigest: skill.ContentDigest,
 		})
 	}

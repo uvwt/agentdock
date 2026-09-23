@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envstore"
 	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
 )
@@ -63,7 +64,20 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 		if err != nil {
 			return nil, dynamicMCPToolError(err)
 		}
-		return s.envAction(envstore.ScopeMCP, cfg.Name, action, request)
+		storageKey := cfg.StorageKey
+		if storageKey == "" {
+			storageKey = cfg.Name
+		}
+		if cfg.SourceType == "plugin" && (action == "env_set" || action == "env_unset") &&
+			config.IsReservedPluginEnvironmentKey(strings.TrimSpace(request.Key)) {
+			return nil, toolErrorDetails(
+				"VALIDATION_ERROR",
+				"PLUGIN_DATA_DIR is reserved by the Plugin runtime",
+				"validation",
+				map[string]any{"name": cfg.Name, "plugin_name": cfg.PluginName, "key": strings.TrimSpace(request.Key)},
+			)
+		}
+		return s.envAction(envstore.ScopeMCP, storageKey, action, request)
 	case "refresh":
 		name := request.Name
 		server, tools, err := s.mcpClients.Refresh(ctx, name)
@@ -134,7 +148,10 @@ func dynamicMCPToolError(err error) error {
 		return toolErrorCause("MCP_ERROR", err.Error(), "external", nil, err)
 	}
 	category := "external"
-	if strings.Contains(mcpErr.Code, "INVALID") || strings.Contains(mcpErr.Code, "NOT_FOUND") || strings.Contains(mcpErr.Code, "EXISTS") || strings.Contains(mcpErr.Code, "DISABLED") || strings.Contains(mcpErr.Code, "REQUIRED") {
+	if strings.Contains(mcpErr.Code, "INVALID") || strings.Contains(mcpErr.Code, "NOT_FOUND") ||
+		strings.Contains(mcpErr.Code, "EXISTS") || strings.Contains(mcpErr.Code, "DISABLED") ||
+		strings.Contains(mcpErr.Code, "REQUIRED") || strings.Contains(mcpErr.Code, "OWNED") ||
+		strings.Contains(mcpErr.Code, "COLLISION") {
 		category = "validation"
 	}
 	if mcpErr.Code == "MCP_AUTH_REQUIRED" {

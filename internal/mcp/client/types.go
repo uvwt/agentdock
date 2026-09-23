@@ -20,18 +20,27 @@ var (
 )
 
 type ServerConfig struct {
-	Name        string            `json:"name"`
-	Description string            `json:"description"`
-	Transport   string            `json:"transport"`
-	URL         string            `json:"url,omitempty"`
-	Command     string            `json:"command,omitempty"`
-	Args        []string          `json:"args,omitempty"`
-	Cwd         string            `json:"cwd,omitempty"`
-	HeaderEnv   map[string]string `json:"header_env,omitempty"`
-	EnvFromEnv  map[string]string `json:"env_from_env,omitempty"`
-	RuntimeEnv  map[string]string `json:"-"`
-	Enabled     bool              `json:"enabled"`
-	TimeoutMS   int               `json:"timeout_ms,omitempty"`
+	Name          string            `json:"name"`
+	Description   string            `json:"description"`
+	Transport     string            `json:"transport"`
+	URL           string            `json:"url,omitempty"`
+	Command       string            `json:"command,omitempty"`
+	Args          []string          `json:"args,omitempty"`
+	Cwd           string            `json:"cwd,omitempty"`
+	HeaderEnv     map[string]string `json:"header_env,omitempty"`
+	EnvFromEnv    map[string]string `json:"env_from_env,omitempty"`
+	RuntimeEnv    map[string]string `json:"-"`
+	StaticEnv     map[string]string `json:"-"`
+	StaticHeaders map[string]string `json:"-"`
+	EnvBindings   map[string]string `json:"-"`
+	DisplayName   string            `json:"-"`
+	StorageKey    string            `json:"-"`
+	SourceType    string            `json:"-"`
+	PluginName    string            `json:"-"`
+	PluginRoot    string            `json:"-"`
+	PluginDataDir string            `json:"-"`
+	Enabled       bool              `json:"enabled"`
+	TimeoutMS     int               `json:"timeout_ms,omitempty"`
 }
 
 type Tool struct {
@@ -50,12 +59,17 @@ type ToolSummary struct {
 	Title         string `json:"title,omitempty"`
 	Description   string `json:"description,omitempty"`
 	Server        string `json:"server"`
+	SourceType    string `json:"source_type"`
+	PluginName    string `json:"plugin_name,omitempty"`
 }
 
 type ServerSummary struct {
 	Name          string `json:"name"`
+	DisplayName   string `json:"display_name,omitempty"`
 	Description   string `json:"description"`
 	Transport     string `json:"transport"`
+	SourceType    string `json:"source_type"`
+	PluginName    string `json:"plugin_name,omitempty"`
 	Enabled       bool   `json:"enabled"`
 	Status        string `json:"status"`
 	ToolCount     int    `json:"tool_count"`
@@ -96,6 +110,15 @@ func normalizeServerConfig(cfg ServerConfig) ServerConfig {
 	cfg.HeaderEnv = cloneStringMap(cfg.HeaderEnv)
 	cfg.EnvFromEnv = cloneStringMap(cfg.EnvFromEnv)
 	cfg.RuntimeEnv = cloneStringMap(cfg.RuntimeEnv)
+	cfg.StaticEnv = cloneStringMap(cfg.StaticEnv)
+	cfg.StaticHeaders = cloneStringMap(cfg.StaticHeaders)
+	cfg.EnvBindings = cloneStringMap(cfg.EnvBindings)
+	cfg.DisplayName = strings.TrimSpace(cfg.DisplayName)
+	cfg.StorageKey = strings.TrimSpace(cfg.StorageKey)
+	cfg.SourceType = strings.TrimSpace(cfg.SourceType)
+	cfg.PluginName = strings.TrimSpace(cfg.PluginName)
+	cfg.PluginRoot = strings.TrimSpace(cfg.PluginRoot)
+	cfg.PluginDataDir = strings.TrimSpace(cfg.PluginDataDir)
 	return cfg
 }
 

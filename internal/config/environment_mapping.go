@@ -32,7 +32,7 @@ func validateEnvironmentMapping(values map[string]string) error {
 		if child != rawChild || host != rawHost || !validEnvName(child) || !validEnvName(host) {
 			return fmt.Errorf("contains an invalid environment variable mapping %q -> %q", rawChild, rawHost)
 		}
-		if IsReservedSkillEnvironmentKey(child) {
+		if IsReservedCommandEnvironmentKey(child) {
 			return fmt.Errorf("environment variable %q is reserved by the Skill runtime", rawChild)
 		}
 	}

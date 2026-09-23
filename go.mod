@@ -12,7 +12,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/rogpeppe/go-internal v1.15.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
-	github.com/uvwt/agentdock-protocol v0.8.2-0.20260922234214-93e7239a624f
+	github.com/uvwt/agentdock-protocol v0.8.2-0.20260923043320-26915ee97188
 	golang.org/x/sys v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
 )
