@@ -46,7 +46,7 @@ print -- '[macos] fresh'
 run_install
 assert_committed
 [[ -x "$install_dir/agentdock" ]]
-for skill in agentdock-user-guide skill-authoring skill-installation; do
+for skill in agentdock-user-guide skill-authoring skill-installation plugin-import; do
   [[ -f "$state_dir/skills/$skill/SKILL.md" ]]
 done
 

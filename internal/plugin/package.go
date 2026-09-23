@@ -109,9 +109,26 @@ func LoadPackage(root string) (Package, error) {
 	unsupported = append(unsupported, treeUnsupported...)
 	sort.Strings(unsupported)
 	unsupported = uniqueStrings(unsupported)
+	sort.Strings(warnings)
+	warnings = uniqueStrings(warnings)
+
+	supported := []string{"metadata"}
+	if len(components.Skills) > 0 {
+		supported = append(supported, "skills")
+	}
+	if len(components.MCP) > 0 {
+		supported = append(supported, "mcp")
+	}
+	sort.Strings(supported)
+	compatibility := Compatibility{
+		Format: "portable", Supported: supported,
+		Unsupported: append([]string(nil), unsupported...),
+		Warnings:    append([]string(nil), warnings...),
+	}
 	return Package{
 		Root: root, Manifest: manifest, PackageDigest: digest,
 		Components: components, Unsupported: unsupported, Warnings: warnings, Executables: executables,
+		Compatibility: compatibility,
 	}, nil
 }
 
@@ -173,7 +190,7 @@ func loadManifest(path string) (Manifest, []string, []string, error) {
 	warnings := make([]string, 0)
 	if version == "" {
 		version = VersionLocal
-		warnings = append(warnings, "plugin.json omits version; local portable source is treated as version=local")
+		warnings = append(warnings, "plugin.json omits version; Portable Plugin is treated as version=local")
 	}
 	if err := ValidateVersion(version); err != nil {
 		return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.version", err)
@@ -220,6 +237,25 @@ func loadManifest(path string) (Manifest, []string, []string, error) {
 		}
 		manifest.Author = author
 	}
+	if value, ok := raw["provenance"]; ok && !isJSONEmpty(value) {
+		var provenance Provenance
+		decoder := json.NewDecoder(bytes.NewReader(value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&provenance); err != nil {
+			return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.provenance", fmt.Errorf("invalid provenance: %w", err))
+		}
+		var trailing any
+		if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+			if err == nil {
+				err = errors.New("provenance contains trailing JSON")
+			}
+			return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.provenance", err)
+		}
+		if err := validateProvenance(&provenance); err != nil {
+			return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.provenance", err)
+		}
+		manifest.Provenance = &provenance
+	}
 	extensionUnsupported := make([]string, 0)
 	if value, ok := raw["extensions"]; ok {
 		var extensions map[string]json.RawMessage
@@ -240,7 +276,7 @@ func loadManifest(path string) (Manifest, []string, []string, error) {
 
 	known := map[string]struct{}{
 		"$schema": {}, "name": {}, "version": {}, "description": {}, "author": {},
-		"homepage": {}, "repository": {}, "license": {}, "keywords": {}, "extensions": {},
+		"homepage": {}, "repository": {}, "license": {}, "keywords": {}, "provenance": {}, "extensions": {},
 	}
 	unsupported := append([]string(nil), extensionUnsupported...)
 	for key, value := range raw {
@@ -261,6 +297,27 @@ func loadManifest(path string) (Manifest, []string, []string, error) {
 	unsupported = uniqueStrings(unsupported)
 	sort.Strings(warnings)
 	return manifest, unsupported, warnings, nil
+}
+
+func validateProvenance(provenance *Provenance) error {
+	if provenance == nil {
+		return nil
+	}
+	provenance.Origin = strings.TrimSpace(provenance.Origin)
+	provenance.Revision = strings.TrimSpace(provenance.Revision)
+	provenance.Subdir = strings.TrimSpace(strings.ReplaceAll(provenance.Subdir, "\\", "/"))
+	provenance.Format = strings.TrimSpace(provenance.Format)
+	if provenance.Origin == "" {
+		return errors.New("provenance.origin is required")
+	}
+	if provenance.Subdir != "" {
+		clean, err := cleanPluginRelativePath(provenance.Subdir)
+		if err != nil {
+			return fmt.Errorf("provenance.subdir: %w", err)
+		}
+		provenance.Subdir = clean
+	}
+	return nil
 }
 
 func validatePackageTree(root string) ([]string, error) {

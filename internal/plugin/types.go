@@ -6,44 +6,25 @@ import (
 )
 
 const (
-	StateSchemaVersion = 1
+	StateSchemaVersion = 2
 	VersionLocal       = "local"
 )
 
-type Source struct {
-	Type             string `json:"type"`
-	Ref              string `json:"ref,omitempty"`
-	Revision         string `json:"revision,omitempty"`
-	Selector         string `json:"selector,omitempty"`
-	Subdir           string `json:"subdir,omitempty"`
-	Adapter          string `json:"adapter,omitempty"`
-	Catalog          string `json:"catalog,omitempty"`
-	CatalogItem      string `json:"catalog_item,omitempty"`
-	ResolvedType     string `json:"resolved_type,omitempty"`
-	ResolvedRef      string `json:"resolved_ref,omitempty"`
-	ResolvedRevision string `json:"resolved_revision,omitempty"`
-	ResolvedSubdir   string `json:"resolved_subdir,omitempty"`
-}
-
-type SourceRequest struct {
-	Type        string `json:"type,omitempty"`
-	Ref         string `json:"ref,omitempty"`
-	GitRef      string `json:"git_ref,omitempty"`
-	GitCommit   string `json:"git_commit,omitempty"`
-	Subdir      string `json:"subdir,omitempty"`
-	SHA256      string `json:"sha256,omitempty"`
-	Adapter     string `json:"adapter,omitempty"`
-	Version     string `json:"version,omitempty"`
-	Catalog     string `json:"catalog,omitempty"`
-	CatalogItem string `json:"catalog_item,omitempty"`
+// Provenance records where an imported Portable Plugin originally came from.
+// It is part of plugin.json, so it is covered by the package digest and review token.
+type Provenance struct {
+	Origin   string `json:"origin"`
+	Revision string `json:"revision,omitempty"`
+	Subdir   string `json:"subdir,omitempty"`
+	Format   string `json:"format,omitempty"`
+	Adapted  bool   `json:"adapted,omitempty"`
 }
 
 type Compatibility struct {
-	DetectedFormat string   `json:"detected_format"`
-	Adapter        string   `json:"adapter"`
-	Supported      []string `json:"supported"`
-	Unsupported    []string `json:"unsupported"`
-	Warnings       []string `json:"warnings"`
+	Format      string   `json:"format"`
+	Supported   []string `json:"supported"`
+	Unsupported []string `json:"unsupported"`
+	Warnings    []string `json:"warnings"`
 }
 
 type ManifestAuthor struct {
@@ -62,6 +43,7 @@ type Manifest struct {
 	Repository  string                     `json:"repository,omitempty"`
 	License     string                     `json:"license,omitempty"`
 	Keywords    []string                   `json:"keywords,omitempty"`
+	Provenance  *Provenance                `json:"provenance,omitempty"`
 	Extensions  map[string]json.RawMessage `json:"extensions,omitempty"`
 }
 
@@ -114,7 +96,7 @@ type State struct {
 	Name           string         `json:"name"`
 	Version        string         `json:"version"`
 	PackageDigest  string         `json:"package_digest"`
-	Source         Source         `json:"source"`
+	Provenance     *Provenance    `json:"provenance,omitempty"`
 	Enabled        bool           `json:"enabled"`
 	InstalledAt    time.Time      `json:"installed_at"`
 	Components     ComponentIndex `json:"components"`
@@ -154,7 +136,7 @@ type Review struct {
 	Description   string           `json:"description,omitempty"`
 	PackageDigest string           `json:"package_digest,omitempty"`
 	ReviewToken   string           `json:"review_token,omitempty"`
-	Source        Source           `json:"source"`
+	Provenance    *Provenance      `json:"provenance,omitempty"`
 	Skills        []SkillComponent `json:"skills"`
 	MCP           []MCPReview      `json:"mcp"`
 	Unsupported   []string         `json:"unsupported"`
@@ -162,28 +144,6 @@ type Review struct {
 	Executables   []string         `json:"executables"`
 	Issues        []string         `json:"issues"`
 	Compatibility Compatibility    `json:"compatibility"`
-}
-
-type CatalogEntry struct {
-	Name           string         `json:"name"`
-	Description    string         `json:"description,omitempty"`
-	Version        string         `json:"version,omitempty"`
-	Category       string         `json:"category,omitempty"`
-	Adapter        string         `json:"adapter"`
-	Catalog        string         `json:"catalog"`
-	Source         SourceRequest  `json:"source"`
-	ResolvedSource *SourceRequest `json:"resolved_source,omitempty"`
-	Strict         *bool          `json:"strict,omitempty"`
-	Skills         []string       `json:"skills,omitempty"`
-	Unsupported    []string       `json:"unsupported,omitempty"`
-	Warnings       []string       `json:"warnings,omitempty"`
-}
-
-type Catalog struct {
-	Name    string         `json:"name"`
-	Adapter string         `json:"adapter"`
-	Source  string         `json:"source"`
-	Entries []CatalogEntry `json:"entries"`
 }
 
 type Installed struct {

@@ -39,8 +39,7 @@ func TestPluginLocalUpdateDeactivatesRuntimeBeforeWaitingForVersionReaders(t *te
 	defer cancel()
 	updated, err := rt.Call(ctx, "plugin_manage", map[string]any{
 		"action": "update", "source": sourceV2,
-		"review_token":            pluginReviewTokenForTest(t, rt, sourceV2),
-		"confirmed_source_change": true,
+		"review_token": pluginReviewTokenForTest(t, rt, sourceV2),
 	})
 	if err != nil {
 		t.Fatal(err)

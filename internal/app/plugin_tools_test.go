@@ -521,7 +521,7 @@ func TestPluginUpdateRuntimeActivationFailureRestoresPreviousPackageAndStandalon
 	}
 	sourceV2 := writeAppPluginForTest(t, v2Root, "2.0.0")
 	_, err = rt.Call(context.Background(), "plugin_manage", map[string]any{
-		"action": "update", "source": sourceV2, "review_token": pluginReviewTokenForTest(t, rt, sourceV2), "confirmed_source_change": true,
+		"action": "update", "source": sourceV2, "review_token": pluginReviewTokenForTest(t, rt, sourceV2),
 	})
 	assertToolErrorCode(t, err, "PLUGIN_RUNTIME_ACTIVATION_FAILED")
 
@@ -586,7 +586,7 @@ func TestPluginPurgeRemovesEnvironmentFromMCPRemovedByUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
-		"action": "update", "source": sourceV2, "review_token": pluginReviewTokenForTest(t, rt, sourceV2), "confirmed_source_change": true,
+		"action": "update", "source": sourceV2, "review_token": pluginReviewTokenForTest(t, rt, sourceV2),
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -5,15 +5,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"sync/atomic"
+	"os"
+	"path/filepath"
 	"testing"
 
 	pluginruntime "github.com/uvwt/agentdock/internal/plugin"
 )
 
-func TestPluginUpdateUsesOneReviewedArchiveSnapshot(t *testing.T) {
+func TestPluginUpdateReviewTokenBindsLocalArchiveContent(t *testing.T) {
 	rt, root := newPluginTestRuntime(t)
 	current := writeAppPluginForTest(t, root, "1.0.0")
 	if _, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
@@ -23,26 +22,14 @@ func TestPluginUpdateUsesOneReviewedArchiveSnapshot(t *testing.T) {
 	}
 
 	reviewedArchive := portablePluginArchiveBytes(t, "demo.plugin", "2.0.0", "reviewed candidate")
-	differentArchive := portablePluginArchiveBytes(t, "demo.plugin", "3.0.0", "different second fetch")
-	var updatePhase atomic.Bool
-	var updateRequests atomic.Int32
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		payload := reviewedArchive
-		if updatePhase.Load() && updateRequests.Add(1) > 1 {
-			payload = differentArchive
-		}
-		w.Header().Set("Content-Type", "application/zip")
-		_, _ = w.Write(payload)
-	}))
-	defer server.Close()
-
-	oldTransport := http.DefaultTransport
-	http.DefaultTransport = server.Client().Transport
-	t.Cleanup(func() { http.DefaultTransport = oldTransport })
-	source := server.URL + "/plugin.zip"
+	differentArchive := portablePluginArchiveBytes(t, "demo.plugin", "3.0.0", "different candidate")
+	source := filepath.Join(root, "candidate.zip")
+	if err := os.WriteFile(source, reviewedArchive, 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	validated, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
-		"action": "validate", "source": source, "source_type": "archive",
+		"action": "validate", "source": source,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -52,16 +39,23 @@ func TestPluginUpdateUsesOneReviewedArchiveSnapshot(t *testing.T) {
 		t.Fatalf("archive review = %#v", validated)
 	}
 
-	updatePhase.Store(true)
+	if err := os.WriteFile(source, differentArchive, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
+		"action": "update", "source": source, "review_token": review.ReviewToken,
+	}); err == nil {
+		t.Fatal("update accepted archive content that changed after review")
+	}
+
+	if err := os.WriteFile(source, reviewedArchive, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	updated, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
-		"action": "update", "source": source, "source_type": "archive",
-		"review_token": review.ReviewToken, "confirmed_source_change": true,
+		"action": "update", "source": source, "review_token": review.ReviewToken,
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if got := updateRequests.Load(); got != 1 {
-		t.Fatalf("Plugin update fetched/staged source %d times, want exactly 1", got)
 	}
 	if updated["version"] != "2.0.0" {
 		t.Fatalf("updated Plugin = %#v", updated)
@@ -73,7 +67,7 @@ func TestPluginUpdateUsesOneReviewedArchiveSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	if inspected["version"] != "2.0.0" || inspected["package_digest"] != review.PackageDigest {
-		t.Fatalf("installed candidate differs from reviewed snapshot: %#v review=%#v", inspected, review)
+		t.Fatalf("installed candidate differs from reviewed archive: %#v review=%#v", inspected, review)
 	}
 }
 

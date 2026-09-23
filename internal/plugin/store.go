@@ -918,18 +918,8 @@ func validateState(state State) error {
 	if !strings.HasPrefix(state.PackageDigest, "sha256:") {
 		return errors.New("Plugin package digest is required")
 	}
-	if state.Source.Type == "" {
-		return errors.New("Plugin source type is required")
-	}
-	if state.Source.Type == "git" {
-		if err := validateStoredGitSourceCredentials(state.Source.Ref); err != nil {
-			return err
-		}
-	}
-	if state.Source.ResolvedType == "git" {
-		if err := validateStoredGitSourceCredentials(state.Source.ResolvedRef); err != nil {
-			return err
-		}
+	if err := validateProvenance(state.Provenance); err != nil {
+		return fmt.Errorf("invalid Plugin provenance: %w", err)
 	}
 	if state.InstalledAt.IsZero() {
 		return errors.New("Plugin installed_at is required")

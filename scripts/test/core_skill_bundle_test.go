@@ -38,7 +38,7 @@ func TestCoreSkillBundleNormalizesTextLineEndings(t *testing.T) {
 	build := func(lineEnding string) string {
 		t.Helper()
 		repoRoot := t.TempDir()
-		for _, name := range []string{"agentdock-user-guide", "skill-authoring", "skill-installation"} {
+		for _, name := range []string{"agentdock-user-guide", "skill-authoring", "skill-installation", "plugin-import"} {
 			skillRoot := filepath.Join(repoRoot, "core-skills", name)
 			if err := os.MkdirAll(skillRoot, 0o700); err != nil {
 				t.Fatal(err)
@@ -69,6 +69,7 @@ func TestCoreSkillBundleNormalizesTextLineEndings(t *testing.T) {
 		filepath.Join("packages", "agentdock-user-guide.zip"),
 		filepath.Join("packages", "skill-authoring.zip"),
 		filepath.Join("packages", "skill-installation.zip"),
+		filepath.Join("packages", "plugin-import.zip"),
 	} {
 		lfData, err := os.ReadFile(filepath.Join(lfBundle, relative))
 		if err != nil {

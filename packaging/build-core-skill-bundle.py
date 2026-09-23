@@ -15,6 +15,7 @@ CORE_SKILLS = (
     "agentdock-user-guide",
     "skill-authoring",
     "skill-installation",
+    "plugin-import",
 )
 FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 TEXT_FILE_SUFFIXES = {

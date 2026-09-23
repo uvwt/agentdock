@@ -126,7 +126,7 @@ function Assert-AgentDockHealthy {
 
     $userHome = [Environment]::GetFolderPath('UserProfile')
     $skillRoot = Join-Path $userHome '.agentdock\skills'
-    foreach ($skill in @('agentdock-user-guide', 'skill-authoring', 'skill-installation')) {
+    foreach ($skill in @('agentdock-user-guide', 'skill-authoring', 'skill-installation', 'plugin-import')) {
         $documentPath = Join-Path $skillRoot "$skill\SKILL.md"
         if (-not (Test-Path -LiteralPath $documentPath -PathType Leaf)) {
             throw "Core Skill current content was not installed: $documentPath"

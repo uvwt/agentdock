@@ -173,7 +173,7 @@ runtime_container="$(docker run -d --rm -e AGENTDOCK_AUTH_TOKEN=runtime-health-v
 wait_for_healthy "$runtime_container" runtime
 docker exec "$runtime_container" sh -c 'curl -fsS http://127.0.0.1:8765/healthz >/dev/null'
 docker exec "$runtime_container" sh -c '
-  for skill in agentdock-user-guide skill-authoring skill-installation; do
+  for skill in agentdock-user-guide skill-authoring skill-installation plugin-import; do
     test -f "$HOME/.agentdock/skills/$skill/SKILL.md"
   done
 '

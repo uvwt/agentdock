@@ -43,18 +43,18 @@ func NewManager(agentDockHome string) (*Manager, error) {
 func (m *Manager) Store() *Store { return m.store }
 
 func (m *Manager) Validate(source string) Review {
-	return m.ValidateSource(context.Background(), legacyLocalSourceRequest(source))
+	return m.ValidateSource(context.Background(), source)
 }
 
-func (m *Manager) ValidateSource(ctx context.Context, request SourceRequest) Review {
+func (m *Manager) ValidateSource(_ context.Context, source string) Review {
 	review := emptyReview()
-	_, pkg, source, cleanup, err := m.prepareCandidateSource(ctx, request)
+	_, pkg, cleanup, err := m.prepareCandidateSource(source)
 	if err != nil {
 		review.Issues = append(review.Issues, err.Error())
 		return review
 	}
 	defer cleanup()
-	return buildReview(pkg, source)
+	return buildReview(pkg)
 }
 
 func (m *Manager) List() ([]Installed, error) {
@@ -164,19 +164,19 @@ func (m *Manager) rejectRemovalInProgress(name, stage string) error {
 
 // InstallReviewedSource stages the source once, verifies that the exact staged
 // candidate matches a prior security review, and commits that same snapshot.
-func (m *Manager) InstallReviewedSource(ctx context.Context, request SourceRequest, enabled bool, reviewToken string) (ChangeResult, error) {
-	stage, pkg, src, cleanup, err := m.prepareCandidateSource(ctx, request)
+func (m *Manager) InstallReviewedSource(ctx context.Context, source string, enabled bool, reviewToken string) (ChangeResult, error) {
+	stage, pkg, cleanup, err := m.prepareCandidateSource(source)
 	if err != nil {
 		return ChangeResult{}, err
 	}
 	defer cleanup()
-	if err := verifyReviewToken(pkg, src, reviewToken); err != nil {
+	if err := verifyReviewToken(pkg, reviewToken); err != nil {
 		return ChangeResult{}, err
 	}
-	return m.installPreparedCandidate(ctx, stage, pkg, src, enabled)
+	return m.installPreparedCandidate(ctx, stage, pkg, enabled)
 }
 
-func (m *Manager) installPreparedCandidate(ctx context.Context, stage string, pkg Package, src Source, enabled bool) (result ChangeResult, err error) {
+func (m *Manager) installPreparedCandidate(ctx context.Context, stage string, pkg Package, enabled bool) (result ChangeResult, err error) {
 	if len(pkg.Unsupported) > 0 {
 		return ChangeResult{}, pluginError("PLUGIN_UNSUPPORTED_COMPONENT", "install.validate", fmt.Errorf("unsupported components: %s", strings.Join(pkg.Unsupported, ", ")))
 	}
@@ -213,7 +213,7 @@ func (m *Manager) installPreparedCandidate(ctx context.Context, stage string, pk
 
 	state := State{
 		SchemaVersion: StateSchemaVersion, Name: pkg.Manifest.Name, Version: pkg.Manifest.Version,
-		PackageDigest: pkg.PackageDigest, Source: src, Enabled: enabled, InstalledAt: time.Now().UTC(),
+		PackageDigest: pkg.PackageDigest, Provenance: pkg.Manifest.Provenance, Enabled: enabled, InstalledAt: time.Now().UTC(),
 		Components: stateComponentIndex(pkg.Components), MCPStorageKeys: pluginMCPStorageKeys(pkg.Components.MCP),
 		Compatibility: pkg.Compatibility,
 	}
@@ -243,23 +243,22 @@ func (m *Manager) installPreparedCandidate(ctx context.Context, stage string, pk
 	return ChangeResult{Action: "install", Name: state.Name, Version: state.Version, PackageDigest: state.PackageDigest, Enabled: state.Enabled, Changed: true}, nil
 }
 
-// UpdateReviewedSource verifies and commits one staged snapshot. beforeSwitch is
-// called only after all review/source/version checks pass and before package/state
-// mutation, allowing the runtime layer to stop the old owned MCP without a
-// second source read or download.
-func (m *Manager) UpdateReviewedSource(ctx context.Context, request SourceRequest, confirmSourceChange bool, reviewToken string, beforeSwitch func(State) error) (ChangeResult, error) {
-	stage, pkg, src, cleanup, err := m.prepareCandidateSource(ctx, request)
+// UpdateReviewedSource verifies and commits one staged Portable Plugin snapshot.
+// beforeSwitch runs only after package/version checks pass, so the runtime layer
+// can stop the current owned MCP immediately before the atomic switch.
+func (m *Manager) UpdateReviewedSource(ctx context.Context, source string, reviewToken string, beforeSwitch func(State) error) (ChangeResult, error) {
+	stage, pkg, cleanup, err := m.prepareCandidateSource(source)
 	if err != nil {
 		return ChangeResult{}, err
 	}
 	defer cleanup()
-	if err := verifyReviewToken(pkg, src, reviewToken); err != nil {
+	if err := verifyReviewToken(pkg, reviewToken); err != nil {
 		return ChangeResult{}, err
 	}
-	return m.updatePreparedCandidate(ctx, stage, pkg, src, confirmSourceChange, beforeSwitch)
+	return m.updatePreparedCandidate(ctx, stage, pkg, beforeSwitch)
 }
 
-func (m *Manager) updatePreparedCandidate(ctx context.Context, stage string, pkg Package, src Source, confirmSourceChange bool, beforeSwitch func(State) error) (result ChangeResult, err error) {
+func (m *Manager) updatePreparedCandidate(ctx context.Context, stage string, pkg Package, beforeSwitch func(State) error) (result ChangeResult, err error) {
 	if len(pkg.Unsupported) > 0 {
 		return ChangeResult{}, pluginError("PLUGIN_UNSUPPORTED_COMPONENT", "update.validate", fmt.Errorf("unsupported components: %s", strings.Join(pkg.Unsupported, ", ")))
 	}
@@ -290,16 +289,7 @@ func (m *Manager) updatePreparedCandidate(ctx context.Context, stage string, pkg
 		}
 		return ChangeResult{}, err
 	}
-	if !samePluginSourceBinding(current.Source, src) && !confirmSourceChange {
-		return ChangeResult{}, pluginError("PLUGIN_SOURCE_CHANGE_CONFIRMATION_REQUIRED", "update.source", errors.New("Plugin source binding changed; set confirmed_source_change=true to rebind the installed Plugin"))
-	}
 	if current.Version == pkg.Manifest.Version && current.PackageDigest == pkg.PackageDigest {
-		if current.Source != src {
-			current.Source = src
-			if err := m.store.Save(current); err != nil {
-				return ChangeResult{}, err
-			}
-		}
 		return ChangeResult{Action: "update", Name: current.Name, Version: current.Version, PreviousVersion: current.Version, PackageDigest: current.PackageDigest, Enabled: current.Enabled, Changed: false}, nil
 	}
 	if current.Version == pkg.Manifest.Version && current.Version != VersionLocal {
@@ -326,7 +316,7 @@ func (m *Manager) updatePreparedCandidate(ctx context.Context, stage string, pkg
 	candidate := current
 	candidate.Version = pkg.Manifest.Version
 	candidate.PackageDigest = pkg.PackageDigest
-	candidate.Source = src
+	candidate.Provenance = pkg.Manifest.Provenance
 	candidate.Components = stateComponentIndex(pkg.Components)
 	candidate.MCPStorageKeys = mergeSortedStrings(candidate.MCPStorageKeys, pluginMCPStorageKeys(pkg.Components.MCP))
 	candidate.Compatibility = pkg.Compatibility
@@ -581,30 +571,6 @@ func (m *Manager) RemoveWithLifecycle(ctx context.Context, name, dataPolicy stri
 	return result, nil
 }
 
-func samePluginSourceBinding(left, right Source) bool {
-	leftAdapter := strings.TrimSpace(left.Adapter)
-	rightAdapter := strings.TrimSpace(right.Adapter)
-	// P2 persisted only portable Plugins and had no adapter field. Treat an
-	// empty historical adapter as portable so P2 -> P3 does not create a
-	// false source-rebind prompt.
-	if leftAdapter == "" {
-		leftAdapter = "portable"
-	}
-	if rightAdapter == "" {
-		rightAdapter = "portable"
-	}
-	return left.Type == right.Type &&
-		left.Ref == right.Ref &&
-		left.Selector == right.Selector &&
-		left.Subdir == right.Subdir &&
-		leftAdapter == rightAdapter &&
-		left.Catalog == right.Catalog &&
-		left.CatalogItem == right.CatalogItem &&
-		left.ResolvedType == right.ResolvedType &&
-		left.ResolvedRef == right.ResolvedRef &&
-		left.ResolvedSubdir == right.ResolvedSubdir
-}
-
 func pluginMCPStorageKeys(components []MCPComponent) []string {
 	keys := make([]string, 0, len(components))
 	for _, component := range components {
@@ -674,44 +640,17 @@ func reviewMCPComponents(components []MCPComponent) []MCPReview {
 	return items
 }
 
-func (m *Manager) prepareCandidateSource(ctx context.Context, request SourceRequest) (stage string, pkg Package, src Source, cleanup func(), err error) {
-	staged, err := m.stagePluginSource(ctx, request)
+func (m *Manager) prepareCandidateSource(source string) (stage string, pkg Package, cleanup func(), err error) {
+	staged, err := m.stagePluginSource(source)
 	if err != nil {
-		return "", Package{}, Source{}, func() {}, err
+		return "", Package{}, func() {}, err
 	}
-	adaptedRoot, adapted, cleanupAdapter, err := m.adaptStagedSource(staged, request)
+	pkg, err = LoadPackage(staged.Root)
 	if err != nil {
 		staged.Cleanup()
-		return "", Package{}, Source{}, func() {}, err
+		return "", Package{}, func() {}, err
 	}
-	stage, err = m.store.TempPath("candidate")
-	if err != nil {
-		cleanupAdapter()
-		staged.Cleanup()
-		return "", Package{}, Source{}, func() {}, err
-	}
-	cleanup = func() {
-		_ = os.RemoveAll(stage)
-		cleanupAdapter()
-		staged.Cleanup()
-	}
-	if err := copyPluginTree(adaptedRoot, stage); err != nil {
-		cleanup()
-		return "", Package{}, Source{}, func() {}, pluginError("PLUGIN_SOURCE_INVALID", "source.copy", err)
-	}
-	pkg, err = LoadPackage(stage)
-	if err != nil {
-		cleanup()
-		return "", Package{}, Source{}, func() {}, err
-	}
-	pkg.Unsupported = uniqueSortedStrings(append(pkg.Unsupported, adapted.Unsupported...))
-	pkg.Warnings = uniqueSortedStrings(append(pkg.Warnings, adapted.Warnings...))
-	pkg.Compatibility = adapted.Compatibility
-	pkg.Compatibility.Unsupported = append([]string(nil), pkg.Unsupported...)
-	pkg.Compatibility.Warnings = append([]string(nil), pkg.Warnings...)
-	src = staged.Source
-	src.Adapter = pkg.Compatibility.Adapter
-	return stage, pkg, src, cleanup, nil
+	return staged.Root, pkg, staged.Cleanup, nil
 }
 
 type candidateCommit struct {
@@ -1317,10 +1256,6 @@ func verifyInstalledPackage(installed Installed) error {
 		return pluginError("PLUGIN_PACKAGE_DRIFT", "runtime.package", errors.New("installed Plugin package does not match persisted state"))
 	}
 	return nil
-}
-
-func copyPluginTree(source, destination string) error {
-	return snapshotPluginTree(source, destination, maxPluginExtractedBytes, maxPluginArchiveFiles)
 }
 
 func removeRegularDirectory(path string) error {

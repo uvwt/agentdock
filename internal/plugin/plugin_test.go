@@ -31,12 +31,8 @@ func simulatePluginActivationCrashForTest(t *testing.T, manager *Manager, name s
 }
 
 func installLocalPluginForTest(manager *Manager, ctx context.Context, source string, enabled bool) (ChangeResult, error) {
-	return installPluginSourceForTest(manager, ctx, legacyLocalSourceRequest(source), enabled)
-}
-
-func installPluginSourceForTest(manager *Manager, ctx context.Context, request SourceRequest, enabled bool) (ChangeResult, error) {
-	review := manager.ValidateSource(ctx, request)
-	result, err := manager.InstallReviewedSource(ctx, request, enabled, review.ReviewToken)
+	review := manager.ValidateSource(ctx, source)
+	result, err := manager.InstallReviewedSource(ctx, source, enabled, review.ReviewToken)
 	if err != nil || !result.Changed {
 		return result, err
 	}
@@ -46,13 +42,9 @@ func installPluginSourceForTest(manager *Manager, ctx context.Context, request S
 	return result, nil
 }
 
-func updateLocalPluginForTest(manager *Manager, ctx context.Context, source string, confirmSourceChange bool) (ChangeResult, error) {
-	return updatePluginSourceForTest(manager, ctx, legacyLocalSourceRequest(source), confirmSourceChange)
-}
-
-func updatePluginSourceForTest(manager *Manager, ctx context.Context, request SourceRequest, confirmSourceChange bool) (ChangeResult, error) {
-	review := manager.ValidateSource(ctx, request)
-	return manager.UpdateReviewedSource(ctx, request, confirmSourceChange, review.ReviewToken, nil)
+func updateLocalPluginForTest(manager *Manager, ctx context.Context, source string, _ bool) (ChangeResult, error) {
+	review := manager.ValidateSource(ctx, source)
+	return manager.UpdateReviewedSource(ctx, source, review.ReviewToken, nil)
 }
 
 func writeTestPlugin(t *testing.T, root, name, version string, withMCP bool) {
@@ -706,8 +698,8 @@ func TestInstallCandidateStaysHiddenUntilActivationFinalize(t *testing.T) {
 	}
 	source := filepath.Join(t.TempDir(), "plugin")
 	writeTestPlugin(t, source, "demo.plugin", "1.0.0", true)
-	review := manager.ValidateSource(context.Background(), legacyLocalSourceRequest(source))
-	result, err := manager.InstallReviewedSource(context.Background(), legacyLocalSourceRequest(source), true, review.ReviewToken)
+	review := manager.ValidateSource(context.Background(), source)
+	result, err := manager.InstallReviewedSource(context.Background(), source, true, review.ReviewToken)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -757,8 +749,8 @@ func TestManagerRestartRollsBackUnfinalizedInstallJournal(t *testing.T) {
 	}
 	source := filepath.Join(t.TempDir(), "plugin")
 	writeTestPlugin(t, source, "demo.plugin", "1.0.0", false)
-	review := manager.ValidateSource(context.Background(), legacyLocalSourceRequest(source))
-	if _, err := manager.InstallReviewedSource(context.Background(), legacyLocalSourceRequest(source), true, review.ReviewToken); err != nil {
+	review := manager.ValidateSource(context.Background(), source)
+	if _, err := manager.InstallReviewedSource(context.Background(), source, true, review.ReviewToken); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := manager.Store().LoadActivationTransaction("demo.plugin"); err != nil {
@@ -793,8 +785,8 @@ func TestManagerRestartFinishesInstallPublishedBeforeJournalCommit(t *testing.T)
 	}
 	source := filepath.Join(t.TempDir(), "plugin")
 	writeTestPlugin(t, source, "demo.plugin", "1.0.0", false)
-	review := manager.ValidateSource(context.Background(), legacyLocalSourceRequest(source))
-	if _, err := manager.InstallReviewedSource(context.Background(), legacyLocalSourceRequest(source), true, review.ReviewToken); err != nil {
+	review := manager.ValidateSource(context.Background(), source)
+	if _, err := manager.InstallReviewedSource(context.Background(), source, true, review.ReviewToken); err != nil {
 		t.Fatal(err)
 	}
 	transaction, err := manager.Store().LoadActivationTransaction("demo.plugin")
