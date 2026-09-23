@@ -4,6 +4,7 @@ package selfupdate
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,6 +89,71 @@ esac
 	assertVersionScript(t, target, "v0.4.4")
 }
 
+func TestApplyPlatformUpdateFinalizesSkillMigrationOnlyAfterSuccessfulBootstrap(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		bootstrapExit int
+		wantErr       bool
+		wantFinalize  bool
+	}{
+		{name: "success", bootstrapExit: 0, wantFinalize: true},
+		{name: "bootstrap failure", bootstrapExit: 1, wantErr: true, wantFinalize: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			target := filepath.Join(dir, "agentdock")
+			staged := filepath.Join(dir, "staged-agentdock")
+			bundle := writeCoreSkillBundle(t, dir)
+			prepared := filepath.Join(dir, "migration-prepared")
+			finalized := filepath.Join(dir, "migration-finalized")
+			writeVersionScript(t, target, "v0.8.4")
+			content := fmt.Sprintf(`#!/bin/sh
+case "${1:-}" in
+  --version) printf 'AgentDock v0.8.9\n' ;;
+  skill)
+    case "${2:-}" in
+      bootstrap)
+        : > %q
+        exit %d
+        ;;
+      finalize-migration)
+        : > %q
+        ;;
+      *) exit 2 ;;
+    esac
+    ;;
+  *) exit 2 ;;
+esac
+`, prepared, test.bootstrapExit, finalized)
+			if err := os.WriteFile(staged, []byte(content), 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err := applyPlatformUpdate(context.Background(), applyRequest{
+				CurrentPath:    target,
+				CurrentVersion: "v0.8.4",
+				StagedPath:     staged,
+				BundlePath:     bundle,
+				TargetVersion:  "v0.8.9",
+				Output:         os.Stdout,
+			})
+			if test.wantErr != (err != nil) {
+				t.Fatalf("error=%v wantErr=%t", err, test.wantErr)
+			}
+			if _, statErr := os.Stat(prepared); statErr != nil {
+				t.Fatalf("bootstrap marker missing: %v", statErr)
+			}
+			_, finalizeErr := os.Stat(finalized)
+			if test.wantFinalize && finalizeErr != nil {
+				t.Fatalf("finalize marker missing: %v", finalizeErr)
+			}
+			if !test.wantFinalize && !os.IsNotExist(finalizeErr) {
+				t.Fatalf("finalize ran before outer update committed: %v", finalizeErr)
+			}
+		})
+	}
+}
+
 func TestValidateDesktopUpdateCoordinationRequiresPrivateState(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -119,7 +185,11 @@ func writeVersionScript(t *testing.T, path, version string) {
 case "${1:-}" in
   --version) printf 'AgentDock ` + version + `\n' ;;
   skill)
-    [ "${2:-}" = bootstrap ] && [ "${3:-}" = --bundle ] && [ -f "${4:-}/manifest.json" ] || exit 2
+    case "${2:-}" in
+      bootstrap) [ "${3:-}" = --bundle ] && [ -f "${4:-}/manifest.json" ] || exit 2 ;;
+      finalize-migration) : ;;
+      *) exit 2 ;;
+    esac
     ;;
   *) exit 2 ;;
 esac

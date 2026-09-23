@@ -9,3 +9,7 @@ import "context"
 func tryBootstrapAsServiceUser(ctx context.Context, request Request, executable, home, bundleDir string) (bool, error) {
 	return false, nil
 }
+
+func tryFinalizeSkillMigrationAsServiceUser(ctx context.Context, request Request, executable, home string) (bool, error) {
+	return false, nil
+}

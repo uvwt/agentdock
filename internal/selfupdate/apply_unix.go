@@ -138,6 +138,10 @@ func applyPlatformUpdate(ctx context.Context, request applyRequest) (applyResult
 			fmt.Fprintf(request.Output, "警告：清理 macOS 控制面板更新备份失败: %v\n", err)
 		}
 	}
+	// 到这里二进制、服务与桌面端都已越过 rollback point，才允许归档旧 Skill roots。
+	if err := finalizeLegacySkillMigration(ctx, request.CurrentPath, request.Output); err != nil {
+		fmt.Fprintf(request.Output, "警告：legacy Skill migration 暂未收口，旧目录将继续保留用于回滚: %v\n", err)
+	}
 	return applyResult{Restarted: service != nil}, nil
 }
 
@@ -207,6 +211,9 @@ func applyDesktopOnlyUpdate(ctx context.Context, request applyRequest) (applyRes
 	}
 	if err := desktopUpdate.Commit(); err != nil {
 		fmt.Fprintf(request.Output, "警告：清理 AgentDock.app 更新备份失败: %v\n", err)
+	}
+	if err := finalizeLegacySkillMigration(ctx, installedCore, request.Output); err != nil {
+		fmt.Fprintf(request.Output, "警告：legacy Skill migration 暂未收口，旧目录将继续保留用于回滚: %v\n", err)
 	}
 	return applyResult{}, nil
 }

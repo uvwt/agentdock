@@ -168,6 +168,10 @@ func applyManagedDesktopOnlyUpdate(ctx context.Context, request applyRequest) (a
 		return applyResult{}, true, errors.New(message)
 	}
 
+	targetCore := filepath.Join(request.DesktopTargetPath, "Contents", "Helpers", "agentdock")
+	if err := finalizeLegacySkillMigration(ctx, targetCore, request.Output); err != nil {
+		fmt.Fprintf(request.Output, "警告：legacy Skill migration 暂未收口，旧目录将继续保留用于回滚: %v\n", err)
+	}
 	fmt.Fprintf(request.Output, "macOS App 原子更新已提交：%s → %s\n", normalizeVersion(request.CurrentVersion), normalizeVersion(request.TargetVersion))
 	return applyResult{}, true, nil
 }

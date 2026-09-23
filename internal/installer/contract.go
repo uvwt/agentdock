@@ -178,6 +178,7 @@ type Transaction struct {
 	// 否则同一 transaction 会在第二次请求下执行比首次承诺更强或更弱的清理。
 	PurgeConfig         bool                  `json:"purge_config,omitempty"`
 	PurgeData           bool                  `json:"purge_data,omitempty"`
+	ServiceUser         string                `json:"service_user,omitempty"`
 	AgentDockHome       string                `json:"agentdock_home,omitempty"`
 	AgentDockDefaultDir string                `json:"agentdock_default_dir,omitempty"`
 	StartedAt           time.Time             `json:"started_at"`
@@ -409,6 +410,7 @@ func newTransaction(request Request, platform, sourceVersion string) (Transactio
 		RuntimeRoot:         request.RuntimeRoot,
 		PurgeConfig:         request.PurgeConfig,
 		PurgeData:           request.PurgeData,
+		ServiceUser:         request.ServiceUser,
 		AgentDockHome:       request.AgentDockHome,
 		AgentDockDefaultDir: request.AgentDockDefaultDir,
 		StartedAt:           now,

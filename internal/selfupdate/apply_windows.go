@@ -307,6 +307,9 @@ func finalizeWindowsUpdate(ctx context.Context, plan windowsUpdatePlan) error {
 			fmt.Printf("警告：清理 Windows 控制面板更新备份失败: %v\n", err)
 		}
 	}
+	if err := finalizeLegacySkillMigration(ctx, plan.TargetPath, os.Stdout); err != nil {
+		fmt.Printf("警告：legacy Skill migration 暂未收口，旧目录将继续保留用于回滚: %v\n", err)
+	}
 	recoveryPending = false
 	if plan.RestartMode == "none" {
 		fmt.Printf("Windows 更新完成到 %s；当前未检测到托管服务，请重新启动 AgentDock。\n", plan.TargetVersion)
