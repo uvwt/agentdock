@@ -147,7 +147,7 @@
 
     .capabilities {
       display: grid;
-      grid-template-columns: repeat(6, 1fr);
+      grid-template-columns: repeat(7, 1fr);
       border-top: 1px solid var(--border-soft);
       border-bottom: 1px solid var(--border-soft);
     }
@@ -346,14 +346,14 @@
       }
 
       .capabilities {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(4, 1fr);
       }
 
-      .capability:nth-child(3) {
+      .capability:nth-child(4) {
         border-right: 0;
       }
 
-      .capability:nth-child(-n + 3) {
+      .capability:nth-child(-n + 4) {
         border-bottom: 1px solid var(--border-soft);
       }
 
@@ -381,7 +381,7 @@
         grid-template-columns: repeat(2, 1fr);
       }
 
-      .capability:nth-child(3) {
+      .capability:nth-child(4) {
         border-right: 1px solid var(--border-soft);
       }
 
@@ -389,7 +389,7 @@
         border-right: 0;
       }
 
-      .capability:nth-child(-n + 4) {
+      .capability:nth-child(-n + 6) {
         border-bottom: 1px solid var(--border-soft);
       }
 
@@ -430,6 +430,7 @@
       <h2 class="section-title" id="capabilities-title">{{.Text.Capabilities}}</h2>
       <div class="capabilities">
         <div class="capability"><strong>{{.Text.Tools}}</strong><span class="state-count">{{.ToolCount}}</span></div>
+        <div class="capability"><strong>{{.Text.Plugins}}</strong><span class="state-count">{{.PluginCount}}</span></div>
         <div class="capability"><strong>MCP</strong><span class="state-ready">{{.Text.MCPReady}}</span></div>
         <div class="capability"><strong>ACP</strong><span class="{{if .ACPEnabled}}state-enabled{{else}}state-disabled{{end}}">{{.ACPStatus}}</span></div>
         <div class="capability"><strong>Recall</strong><span class="{{if .RecallEnabled}}state-enabled{{else}}state-disabled{{end}}">{{.RecallStatus}}</span></div>

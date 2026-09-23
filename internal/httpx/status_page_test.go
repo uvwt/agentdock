@@ -16,7 +16,7 @@ func TestStatusPageRendersConnectionAndResourceLinks(t *testing.T) {
 	cfg.NexusEndpoint = "http://127.0.0.1:18777"
 
 	response := httptest.NewRecorder()
-	statusPageHandler(nil, cfg).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	statusPageHandler(nil, nil, cfg).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
@@ -48,6 +48,7 @@ func TestStatusPageRendersConnectionAndResourceLinks(t *testing.T) {
 		`class="resource resource-documentation"`,
 		">OAuth<",
 		">Enabled<",
+		">Plugins<",
 		"navigator.clipboard.writeText",
 	} {
 		if !strings.Contains(body, expected) {
@@ -62,7 +63,7 @@ func TestStatusPageUsesChineseForChineseBrowserLanguage(t *testing.T) {
 	request.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
 	response := httptest.NewRecorder()
 
-	statusPageHandler(nil, cfg).ServeHTTP(response, request)
+	statusPageHandler(nil, nil, cfg).ServeHTTP(response, request)
 
 	body := response.Body.String()
 	for _, expected := range []string{
@@ -73,6 +74,7 @@ func TestStatusPageUsesChineseForChineseBrowserLanguage(t *testing.T) {
 		`data-copied="已复制"`,
 		"GitHub 仓库",
 		"安装、配置与使用指南。",
+		">插件<",
 		`href="https://uvwt.github.io/agentdock-docs/zh-CN/"`,
 	} {
 		if !strings.Contains(body, expected) {
@@ -138,7 +140,7 @@ func TestStatusPageUsesRequestOriginWithoutConfiguredPublicURL(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "https://dock.example/", nil)
 	response := httptest.NewRecorder()
 
-	statusPageHandler(nil, cfg).ServeHTTP(response, request)
+	statusPageHandler(nil, nil, cfg).ServeHTTP(response, request)
 
 	if !strings.Contains(response.Body.String(), "https://dock.example/mcp") {
 		t.Fatalf("status page endpoint = %s", response.Body.String())
@@ -149,7 +151,7 @@ func TestStatusPageOnlyHandlesExactRoot(t *testing.T) {
 	cfg := testConfig(t)
 	response := httptest.NewRecorder()
 
-	statusPageHandler(nil, cfg).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/missing", nil))
+	statusPageHandler(nil, nil, cfg).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/missing", nil))
 
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
@@ -160,7 +162,7 @@ func TestStatusPageRejectsUnsupportedMethods(t *testing.T) {
 	cfg := testConfig(t)
 	response := httptest.NewRecorder()
 
-	statusPageHandler(nil, cfg).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/", nil))
+	statusPageHandler(nil, nil, cfg).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/", nil))
 
 	if response.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusMethodNotAllowed)

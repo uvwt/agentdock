@@ -82,6 +82,16 @@ func Dispatch(ctx context.Context, runtime Runtime, request Request) (map[string
 		default:
 			return nil, &app.ToolError{Code: "NOT_FOUND", Message: "runtime Skill API route not found", Category: "not_found"}
 		}
+	case path == "/internal/runtime/plugins":
+		result, err := runtime.RuntimePlugins(ctx)
+		return map[string]any(result), err
+	case strings.HasPrefix(path, "/internal/runtime/plugins/"):
+		name, ok := runtimePluginName(path)
+		if !ok {
+			return nil, &app.ToolError{Code: "PLUGIN_NAME_REQUIRED", Message: "Plugin name is required", Category: "validation"}
+		}
+		result, err := runtime.RuntimePlugin(ctx, name)
+		return map[string]any(result), err
 	case path == "/internal/runtime/evolve" && method == http.MethodPost:
 		args, err := decodeRuntimeEvolutionRequest(request.Body)
 		if err != nil {
@@ -241,6 +251,18 @@ func runtimeSkillRoute(path string) (skill, filePath, action string, ok bool) {
 	default:
 		return "", "", "", false
 	}
+}
+
+func runtimePluginName(path string) (string, bool) {
+	const prefix = "/internal/runtime/plugins/"
+	if !strings.HasPrefix(path, prefix) {
+		return "", false
+	}
+	name := strings.TrimSpace(strings.TrimPrefix(path, prefix))
+	if name == "" || strings.Contains(name, "/") {
+		return "", false
+	}
+	return name, true
 }
 
 func runtimeMCPName(path string) (string, bool) {

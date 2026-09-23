@@ -7,6 +7,7 @@ import (
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
 	toolmcp "github.com/uvwt/agentdock/internal/tool/mcp"
+	toolplugin "github.com/uvwt/agentdock/internal/tool/plugin"
 )
 
 const runtimeAPISource = "agentdock-api"
@@ -44,6 +45,33 @@ func (r *Runtime) RuntimeSkillFiles(skill string) (Result, error) {
 
 func (r *Runtime) RuntimeSkillFile(skill, relativePath string) (Result, error) {
 	return r.skills.RuntimeSkillFile(skill, relativePath)
+}
+
+func (r *Runtime) RuntimePlugins(ctx context.Context) (Result, error) {
+	return r.runtimePluginManage(ctx, map[string]any{"action": "list"})
+}
+
+func (r *Runtime) RuntimePlugin(ctx context.Context, name string) (Result, error) {
+	return r.runtimePluginManage(ctx, map[string]any{"action": "inspect", "name": name})
+}
+
+// Runtime Plugin API 只暴露 list/inspect；安装、更新、启停和删除仍由 plugin_manage
+// 的确认与事务语义负责，避免面向 UI 的只读接口形成第二套生命周期入口。
+func (r *Runtime) runtimePluginManage(ctx context.Context, args map[string]any) (Result, error) {
+	if err := r.validateToolArguments(toolplugin.ToolManage, args); err != nil {
+		return nil, err
+	}
+	var request toolplugin.ManageRequest
+	if err := decodeToolInput(toolplugin.ToolManage, args, &request); err != nil {
+		return nil, err
+	}
+	result, err := r.plugins.Manage(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	result["ok"] = true
+	result["source"] = runtimeAPISource
+	return result, nil
 }
 
 func (r *Runtime) RuntimeTasks(status string, limit int) (Result, error) {

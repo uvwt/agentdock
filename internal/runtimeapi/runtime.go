@@ -16,6 +16,8 @@ type Runtime interface {
 	RuntimeSkill(skill string) (app.Result, error)
 	RuntimeSkillFiles(skill string) (app.Result, error)
 	RuntimeSkillFile(skill, path string) (app.Result, error)
+	RuntimePlugins(context.Context) (app.Result, error)
+	RuntimePlugin(context.Context, string) (app.Result, error)
 	RuntimeTasks(status string, limit int) (app.Result, error)
 	RuntimeTask(id string) (app.Result, error)
 	RuntimeTaskDelete(id string) (app.Result, error)

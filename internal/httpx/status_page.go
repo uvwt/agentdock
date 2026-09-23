@@ -11,6 +11,7 @@ import (
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/mcp"
+	"github.com/uvwt/agentdock/internal/runtimeapi"
 )
 
 const (
@@ -38,6 +39,7 @@ type statusPageText struct {
 	System            string
 	Capabilities      string
 	Tools             string
+	Plugins           string
 	MCPReady          string
 	Browser           string
 	Auth              string
@@ -73,6 +75,7 @@ var statusPageEnglish = statusPageText{
 	System:            "System",
 	Capabilities:      "Capabilities",
 	Tools:             "Tools",
+	Plugins:           "Plugins",
 	MCPReady:          "Ready",
 	Browser:           "Browser",
 	Auth:              "Auth",
@@ -108,6 +111,7 @@ var statusPageChinese = statusPageText{
 	System:            "系统",
 	Capabilities:      "能力",
 	Tools:             "工具",
+	Plugins:           "插件",
 	MCPReady:          "就绪",
 	Browser:           "浏览器",
 	Auth:              "鉴权",
@@ -138,6 +142,7 @@ type statusPageData struct {
 	Version          string
 	Platform         string
 	ToolCount        int
+	PluginCount      string
 	MCPEndpoint      string
 	ACPEnabled       bool
 	ACPStatus        string
@@ -153,7 +158,7 @@ type statusPageData struct {
 	QQGroupURL       string
 }
 
-func statusPageHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc {
+func statusPageHandler(server *mcp.Server, runtime runtimeapi.Runtime, cfg config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -169,11 +174,21 @@ func statusPageHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc {
 		build := buildinfo.Current()
 		recallEnabled := strings.TrimSpace(cfg.NexusEndpoint) != ""
 		authEnabled := cfg.AuthRequired()
+		pluginCount := "—"
+		if runtime != nil {
+			plugins, pluginErr := runtime.RuntimePlugins(r.Context())
+			if pluginErr != nil {
+				slog.Warn("read Plugin count for status page failed", "error", pluginErr)
+			} else if count, ok := plugins["count"].(int); ok {
+				pluginCount = strconv.Itoa(count)
+			}
+		}
 		data := statusPageData{
 			Text:             text,
 			Version:          build.Version,
 			Platform:         build.Platform,
 			ToolCount:        len(server.ToolNames()),
+			PluginCount:      pluginCount,
 			MCPEndpoint:      issuerFor(cfg, r) + "/mcp",
 			ACPEnabled:       cfg.ACPEnabled,
 			ACPStatus:        enabledLabel(text, cfg.ACPEnabled),

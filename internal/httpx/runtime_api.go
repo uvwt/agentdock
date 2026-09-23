@@ -22,6 +22,8 @@ func registerRuntimeAPI(mux *http.ServeMux, runtime runtimeapi.Runtime, cfg conf
 	mux.HandleFunc("/internal/runtime/capabilities", h)
 	mux.HandleFunc("/internal/runtime/skills", h)
 	mux.HandleFunc("/internal/runtime/skills/", h)
+	mux.HandleFunc("/internal/runtime/plugins", h)
+	mux.HandleFunc("/internal/runtime/plugins/", h)
 	mux.HandleFunc("/internal/runtime/tasks", h)
 	mux.HandleFunc("/internal/runtime/tasks/", h)
 	mux.HandleFunc("/internal/runtime/evolve", h)

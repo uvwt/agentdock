@@ -17,6 +17,7 @@ type runtimeStub struct {
 	mcpArgs       map[string]any
 	skillTarget   string
 	skillFilePath string
+	pluginName    string
 }
 
 func (r *runtimeStub) RuntimeStatus() app.Result          { return app.Result{"status": "ok"} }
@@ -32,6 +33,13 @@ func (r *runtimeStub) RuntimeSkillFiles(skill string) (app.Result, error) {
 func (r *runtimeStub) RuntimeSkillFile(skill, filePath string) (app.Result, error) {
 	r.skillTarget, r.skillFilePath = skill, filePath
 	return app.Result{}, nil
+}
+func (r *runtimeStub) RuntimePlugins(context.Context) (app.Result, error) {
+	return app.Result{"plugins": []any{}, "count": 0}, nil
+}
+func (r *runtimeStub) RuntimePlugin(_ context.Context, name string) (app.Result, error) {
+	r.pluginName = name
+	return app.Result{"name": name}, nil
 }
 func (r *runtimeStub) RuntimeTasks(status string, limit int) (app.Result, error) {
 	r.taskStatus, r.taskLimit = status, limit
@@ -124,6 +132,20 @@ func TestDispatchSkillRefQueryUsesExactRuntimeReference(t *testing.T) {
 	}
 	if runtime.skillTarget != "demo-skill" {
 		t.Fatalf("legacy Skill target = %q", runtime.skillTarget)
+	}
+}
+
+func TestDispatchPluginRoutesAreReadOnly(t *testing.T) {
+	runtime := &runtimeStub{}
+	result, err := Dispatch(context.Background(), runtime, Request{Method: "GET", Path: "/internal/runtime/plugins/demo.plugin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.pluginName != "demo.plugin" || result["name"] != "demo.plugin" {
+		t.Fatalf("Plugin detail route = name %q result %#v", runtime.pluginName, result)
+	}
+	if MethodAllowed("POST", "/internal/runtime/plugins") {
+		t.Fatal("Plugin Runtime API must remain read-only")
 	}
 }
 
