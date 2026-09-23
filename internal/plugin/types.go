@@ -11,8 +11,39 @@ const (
 )
 
 type Source struct {
-	Type string `json:"type"`
-	Ref  string `json:"ref,omitempty"`
+	Type             string `json:"type"`
+	Ref              string `json:"ref,omitempty"`
+	Revision         string `json:"revision,omitempty"`
+	Selector         string `json:"selector,omitempty"`
+	Subdir           string `json:"subdir,omitempty"`
+	Adapter          string `json:"adapter,omitempty"`
+	Catalog          string `json:"catalog,omitempty"`
+	CatalogItem      string `json:"catalog_item,omitempty"`
+	ResolvedType     string `json:"resolved_type,omitempty"`
+	ResolvedRef      string `json:"resolved_ref,omitempty"`
+	ResolvedRevision string `json:"resolved_revision,omitempty"`
+	ResolvedSubdir   string `json:"resolved_subdir,omitempty"`
+}
+
+type SourceRequest struct {
+	Type        string `json:"type,omitempty"`
+	Ref         string `json:"ref,omitempty"`
+	GitRef      string `json:"git_ref,omitempty"`
+	GitCommit   string `json:"git_commit,omitempty"`
+	Subdir      string `json:"subdir,omitempty"`
+	SHA256      string `json:"sha256,omitempty"`
+	Adapter     string `json:"adapter,omitempty"`
+	Version     string `json:"version,omitempty"`
+	Catalog     string `json:"catalog,omitempty"`
+	CatalogItem string `json:"catalog_item,omitempty"`
+}
+
+type Compatibility struct {
+	DetectedFormat string   `json:"detected_format"`
+	Adapter        string   `json:"adapter"`
+	Supported      []string `json:"supported"`
+	Unsupported    []string `json:"unsupported"`
+	Warnings       []string `json:"warnings"`
 }
 
 type ManifestAuthor struct {
@@ -88,6 +119,7 @@ type State struct {
 	InstalledAt    time.Time      `json:"installed_at"`
 	Components     ComponentIndex `json:"components"`
 	MCPStorageKeys []string       `json:"mcp_storage_keys,omitempty"`
+	Compatibility  Compatibility  `json:"compatibility,omitempty"`
 }
 
 type Package struct {
@@ -98,6 +130,7 @@ type Package struct {
 	Unsupported   []string
 	Warnings      []string
 	Executables   []string
+	Compatibility Compatibility
 }
 
 type Review struct {
@@ -113,6 +146,29 @@ type Review struct {
 	Warnings      []string         `json:"warnings"`
 	Executables   []string         `json:"executables"`
 	Issues        []string         `json:"issues"`
+	Compatibility Compatibility    `json:"compatibility"`
+}
+
+type CatalogEntry struct {
+	Name           string         `json:"name"`
+	Description    string         `json:"description,omitempty"`
+	Version        string         `json:"version,omitempty"`
+	Category       string         `json:"category,omitempty"`
+	Adapter        string         `json:"adapter"`
+	Catalog        string         `json:"catalog"`
+	Source         SourceRequest  `json:"source"`
+	ResolvedSource *SourceRequest `json:"resolved_source,omitempty"`
+	Strict         *bool          `json:"strict,omitempty"`
+	Skills         []string       `json:"skills,omitempty"`
+	Unsupported    []string       `json:"unsupported,omitempty"`
+	Warnings       []string       `json:"warnings,omitempty"`
+}
+
+type Catalog struct {
+	Name    string         `json:"name"`
+	Adapter string         `json:"adapter"`
+	Source  string         `json:"source"`
+	Entries []CatalogEntry `json:"entries"`
 }
 
 type Installed struct {

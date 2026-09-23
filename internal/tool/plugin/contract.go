@@ -12,10 +12,28 @@ func InputSchema(name string) (map[string]any, bool) {
 		"action": map[string]any{
 			"type":        "string",
 			"description": "Plugin lifecycle action.",
-			"enum":        []string{"list", "inspect", "validate", "install", "update", "enable", "disable", "remove"},
+			"enum":        []string{"list", "inspect", "validate", "install", "update", "enable", "disable", "remove", "catalog"},
 		},
-		"name":                    toolcontract.String("Installed Plugin name for inspect/enable/disable/remove."),
-		"source":                  toolcontract.String("Plugin source. P2 accepts a local portable Plugin directory; P3 adds external adapters and Git/archive sources."),
+		"name":   toolcontract.String("Installed Plugin name for inspect/enable/disable/remove."),
+		"source": toolcontract.String("Plugin or external catalog source. Local paths are resolved against the workspace; Git and archive sources are staged before validation."),
+		"source_type": map[string]any{
+			"type": "string", "description": "Source transport. auto detects local/Git/ZIP; catalog resolves one read-only catalog entry.",
+			"enum": []string{"auto", "local", "git", "archive", "catalog"},
+		},
+		"source_adapter": map[string]any{
+			"type": "string", "description": "Plugin format adapter. auto detects portable/OpenAI/Claude.",
+			"enum": []string{"auto", "portable", "openai", "claude"},
+		},
+		"source_version": toolcontract.String("SemVer fallback for an external manifest that omits version."),
+		"git_ref":        toolcontract.String("Optional Git branch/tag to resolve. A full git_commit pin takes precedence for identity verification."),
+		"git_commit":     toolcontract.String("Optional full 40-character Git commit pin."),
+		"subdir":         toolcontract.String("Optional safe subdirectory inside a Git/archive source."),
+		"sha256":         toolcontract.String("Optional expected SHA-256 pin for an HTTPS ZIP archive."),
+		"catalog": map[string]any{
+			"type": "string", "description": "Catalog format for action=catalog or source_type=catalog.",
+			"enum": []string{"auto", "openai", "claude"},
+		},
+		"catalog_item":            toolcontract.String("Catalog entry name when source_type=catalog."),
 		"enabled":                 toolcontract.Boolean("Initial enabled state for install. Defaults to true."),
 		"confirmed":               toolcontract.Boolean("Required for install/update after reviewing plugin_manage validate output."),
 		"confirmed_source_change": toolcontract.Boolean("For update, explicitly confirm rebinding an installed Plugin to a different source."),
@@ -41,7 +59,8 @@ func OutputSchema(name string) (map[string]any, bool) {
 		"data_policy":    toolcontract.String("Applied removal data policy."),
 		"plugin":         toolcontract.OpenObject("Installed Plugin details and component provenance."),
 		"plugins":        toolcontract.ObjectArray("Installed Plugin lightweight states."),
-		"review":         toolcontract.OpenObject("Static Plugin validation and security review."),
-		"count":          toolcontract.Integer("Installed Plugin count."),
+		"review":         toolcontract.OpenObject("Static Plugin validation, compatibility, source-pin and security review."),
+		"catalog":        toolcontract.OpenObject("Read-only external marketplace catalog and stable install source descriptors."),
+		"count":          toolcontract.Integer("Installed Plugin or catalog entry count."),
 	}), true
 }

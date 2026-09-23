@@ -37,15 +37,30 @@ func NewManager(agentDockHome string) (*Manager, error) {
 func (m *Manager) Store() *Store { return m.store }
 
 func (m *Manager) Validate(source string) Review {
+	return m.ValidateSource(context.Background(), legacyLocalSourceRequest(source))
+}
+
+func (m *Manager) ValidateSource(ctx context.Context, request SourceRequest) Review {
 	review := Review{
-		Source: Source{Type: "local", Ref: strings.TrimSpace(source)},
 		Skills: []SkillComponent{}, MCP: []MCPReview{}, Unsupported: []string{}, Warnings: []string{}, Executables: []string{}, Issues: []string{},
+		Compatibility: Compatibility{Supported: []string{}, Unsupported: []string{}, Warnings: []string{}},
 	}
-	pkg, err := m.prepareReadOnlySource(source)
+	staged, err := m.stagePluginSource(ctx, request)
 	if err != nil {
 		review.Issues = append(review.Issues, err.Error())
 		return review
 	}
+	defer staged.Cleanup()
+	adaptedRoot, pkg, cleanup, err := m.adaptStagedSource(staged, request)
+	_ = adaptedRoot
+	if err != nil {
+		review.Source = staged.Source
+		review.Issues = append(review.Issues, err.Error())
+		return review
+	}
+	defer cleanup()
+	review.Source = staged.Source
+	review.Source.Adapter = pkg.Compatibility.Adapter
 	review.Name = pkg.Manifest.Name
 	review.Version = pkg.Manifest.Version
 	review.Description = pkg.Manifest.Description
@@ -55,8 +70,9 @@ func (m *Manager) Validate(source string) Review {
 	review.Unsupported = append([]string(nil), pkg.Unsupported...)
 	review.Warnings = append([]string(nil), pkg.Warnings...)
 	review.Executables = append([]string(nil), pkg.Executables...)
+	review.Compatibility = pkg.Compatibility
 	if len(pkg.Unsupported) > 0 {
-		review.Issues = append(review.Issues, "Plugin contains unsupported v1 components: "+strings.Join(pkg.Unsupported, ", "))
+		review.Issues = append(review.Issues, "Plugin contains unsupported components: "+strings.Join(pkg.Unsupported, ", "))
 	}
 	review.Valid = len(review.Issues) == 0
 	return review
@@ -128,7 +144,11 @@ func (m *Manager) EnsureDataDir(name string) (string, error) {
 }
 
 func (m *Manager) Install(ctx context.Context, source string, enabled bool) (ChangeResult, error) {
-	stage, pkg, src, cleanup, err := m.prepareCandidate(source)
+	return m.InstallSource(ctx, legacyLocalSourceRequest(source), enabled)
+}
+
+func (m *Manager) InstallSource(ctx context.Context, request SourceRequest, enabled bool) (ChangeResult, error) {
+	stage, pkg, src, cleanup, err := m.prepareCandidateSource(ctx, request)
 	if err != nil {
 		return ChangeResult{}, err
 	}
@@ -161,6 +181,7 @@ func (m *Manager) Install(ctx context.Context, source string, enabled bool) (Cha
 		SchemaVersion: StateSchemaVersion, Name: pkg.Manifest.Name, Version: pkg.Manifest.Version,
 		PackageDigest: pkg.PackageDigest, Source: src, Enabled: enabled, InstalledAt: time.Now().UTC(),
 		Components: stateComponentIndex(pkg.Components), MCPStorageKeys: pluginMCPStorageKeys(pkg.Components.MCP),
+		Compatibility: pkg.Compatibility,
 	}
 	if err := m.store.Save(state); err != nil {
 		rollbackErr := commit.rollback()
@@ -171,7 +192,11 @@ func (m *Manager) Install(ctx context.Context, source string, enabled bool) (Cha
 }
 
 func (m *Manager) Update(ctx context.Context, source string, confirmSourceChange bool) (ChangeResult, error) {
-	stage, pkg, src, cleanup, err := m.prepareCandidate(source)
+	return m.UpdateSource(ctx, legacyLocalSourceRequest(source), confirmSourceChange)
+}
+
+func (m *Manager) UpdateSource(ctx context.Context, request SourceRequest, confirmSourceChange bool) (ChangeResult, error) {
+	stage, pkg, src, cleanup, err := m.prepareCandidateSource(ctx, request)
 	if err != nil {
 		return ChangeResult{}, err
 	}
@@ -195,8 +220,8 @@ func (m *Manager) Update(ctx context.Context, source string, confirmSourceChange
 	if m.hasPendingUpdate(pkg.Manifest.Name) {
 		return ChangeResult{}, pluginError("PLUGIN_UPDATE_PENDING", "update", fmt.Errorf("Plugin %q still has an unfinalized update transaction", pkg.Manifest.Name))
 	}
-	if (current.Source.Type != src.Type || current.Source.Ref != src.Ref) && !confirmSourceChange {
-		return ChangeResult{}, pluginError("PLUGIN_SOURCE_CHANGE_CONFIRMATION_REQUIRED", "update.source", errors.New("Plugin source changed; set confirmed_source_change=true to rebind the installed Plugin"))
+	if !samePluginSourceBinding(current.Source, src) && !confirmSourceChange {
+		return ChangeResult{}, pluginError("PLUGIN_SOURCE_CHANGE_CONFIRMATION_REQUIRED", "update.source", errors.New("Plugin source binding changed; set confirmed_source_change=true to rebind the installed Plugin"))
 	}
 	if current.Version == pkg.Manifest.Version && current.PackageDigest == pkg.PackageDigest {
 		if current.Source != src {
@@ -228,6 +253,7 @@ func (m *Manager) Update(ctx context.Context, source string, confirmSourceChange
 	current.Source = src
 	current.Components = stateComponentIndex(pkg.Components)
 	current.MCPStorageKeys = mergeSortedStrings(current.MCPStorageKeys, pluginMCPStorageKeys(pkg.Components.MCP))
+	current.Compatibility = pkg.Compatibility
 	current.InstalledAt = time.Now().UTC()
 	if err := m.store.Save(current); err != nil {
 		rollbackErr := commit.rollback()
@@ -302,6 +328,30 @@ func (m *Manager) Remove(ctx context.Context, name, dataPolicy string) (ChangeRe
 	return ChangeResult{Action: "remove", Name: state.Name, Version: state.Version, PackageDigest: state.PackageDigest, Enabled: false, Changed: true, DataPolicy: dataPolicy}, nil
 }
 
+func samePluginSourceBinding(left, right Source) bool {
+	leftAdapter := strings.TrimSpace(left.Adapter)
+	rightAdapter := strings.TrimSpace(right.Adapter)
+	// P2 persisted only portable Plugins and had no adapter field. Treat an
+	// empty historical adapter as portable so P2 -> P3 does not create a
+	// false source-rebind prompt.
+	if leftAdapter == "" {
+		leftAdapter = "portable"
+	}
+	if rightAdapter == "" {
+		rightAdapter = "portable"
+	}
+	return left.Type == right.Type &&
+		left.Ref == right.Ref &&
+		left.Selector == right.Selector &&
+		left.Subdir == right.Subdir &&
+		leftAdapter == rightAdapter &&
+		left.Catalog == right.Catalog &&
+		left.CatalogItem == right.CatalogItem &&
+		left.ResolvedType == right.ResolvedType &&
+		left.ResolvedRef == right.ResolvedRef &&
+		left.ResolvedSubdir == right.ResolvedSubdir
+}
+
 func pluginMCPStorageKeys(components []MCPComponent) []string {
 	keys := make([]string, 0, len(components))
 	for _, component := range components {
@@ -371,43 +421,28 @@ func reviewMCPComponents(components []MCPComponent) []MCPReview {
 	return items
 }
 
-func (m *Manager) prepareReadOnlySource(source string) (Package, error) {
-	source = strings.TrimSpace(source)
-	if source == "" {
-		return Package{}, pluginError("PLUGIN_SOURCE_INVALID", "source", errors.New("source is required"))
-	}
-	info, err := os.Lstat(source)
-	if err != nil {
-		return Package{}, pluginError("PLUGIN_SOURCE_INVALID", "source", err)
-	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return Package{}, pluginError("PLUGIN_SOURCE_INVALID", "source", errors.New("P2 portable Plugin source must be a regular local directory"))
-	}
-	return LoadPackage(source)
-}
-
-func (m *Manager) prepareCandidate(source string) (stage string, pkg Package, src Source, cleanup func(), err error) {
-	source = strings.TrimSpace(source)
-	if source == "" {
-		return "", Package{}, Source{}, func() {}, pluginError("PLUGIN_SOURCE_INVALID", "source", errors.New("source is required"))
-	}
-	absolute, err := filepath.Abs(source)
+func (m *Manager) prepareCandidateSource(ctx context.Context, request SourceRequest) (stage string, pkg Package, src Source, cleanup func(), err error) {
+	staged, err := m.stagePluginSource(ctx, request)
 	if err != nil {
 		return "", Package{}, Source{}, func() {}, err
 	}
-	info, err := os.Lstat(absolute)
+	adaptedRoot, adapted, cleanupAdapter, err := m.adaptStagedSource(staged, request)
 	if err != nil {
-		return "", Package{}, Source{}, func() {}, pluginError("PLUGIN_SOURCE_INVALID", "source", err)
-	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return "", Package{}, Source{}, func() {}, pluginError("PLUGIN_SOURCE_INVALID", "source", errors.New("P2 portable Plugin source must be a regular local directory"))
+		staged.Cleanup()
+		return "", Package{}, Source{}, func() {}, err
 	}
 	stage, err = m.store.TempPath("candidate")
 	if err != nil {
+		cleanupAdapter()
+		staged.Cleanup()
 		return "", Package{}, Source{}, func() {}, err
 	}
-	cleanup = func() { _ = os.RemoveAll(stage) }
-	if err := copyPluginTree(absolute, stage); err != nil {
+	cleanup = func() {
+		_ = os.RemoveAll(stage)
+		cleanupAdapter()
+		staged.Cleanup()
+	}
+	if err := copyPluginTree(adaptedRoot, stage); err != nil {
 		cleanup()
 		return "", Package{}, Source{}, func() {}, pluginError("PLUGIN_SOURCE_INVALID", "source.copy", err)
 	}
@@ -416,7 +451,13 @@ func (m *Manager) prepareCandidate(source string) (stage string, pkg Package, sr
 		cleanup()
 		return "", Package{}, Source{}, func() {}, err
 	}
-	src = Source{Type: "local", Ref: absolute}
+	pkg.Unsupported = uniqueSortedStrings(append(pkg.Unsupported, adapted.Unsupported...))
+	pkg.Warnings = uniqueSortedStrings(append(pkg.Warnings, adapted.Warnings...))
+	pkg.Compatibility = adapted.Compatibility
+	pkg.Compatibility.Unsupported = append([]string(nil), pkg.Unsupported...)
+	pkg.Compatibility.Warnings = append([]string(nil), pkg.Warnings...)
+	src = staged.Source
+	src.Adapter = pkg.Compatibility.Adapter
 	return stage, pkg, src, cleanup, nil
 }
 
