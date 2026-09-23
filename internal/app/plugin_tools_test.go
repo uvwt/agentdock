@@ -439,6 +439,52 @@ func contextHasMap(value any, match func(map[string]any) bool) bool {
 	return false
 }
 
+func TestPluginInstallRuntimeActivationFailureNeverPublishesPluginOrSkill(t *testing.T) {
+	rt, root := newPluginTestRuntime(t)
+	collision := pluginruntime.RuntimeMCPName("demo.plugin", "remote")
+	if _, err := rt.Call(context.Background(), "mcp_manage", map[string]any{
+		"action": "add", "name": collision, "description": "Standalone collision",
+		"transport": "streamable_http", "url": "http://127.0.0.1:1/mcp",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	source := writeAppPluginForTest(t, root, "1.0.0")
+	_, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
+		"action": "install", "source": source, "review_token": pluginReviewTokenForTest(t, rt, source),
+	})
+	assertToolErrorCode(t, err, "PLUGIN_RUNTIME_ACTIVATION_FAILED")
+
+	if _, inspectErr := rt.Call(context.Background(), "plugin_manage", map[string]any{
+		"action": "inspect", "name": "demo.plugin",
+	}); inspectErr == nil {
+		t.Fatal("failed install became visible as an installed Plugin")
+	}
+	contextResult, err := rt.AgentDockContext(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contextHasMap(contextResult["skills"], func(item map[string]any) bool {
+		return item["plugin_name"] == "demo.plugin"
+	}) {
+		t.Fatalf("failed install exposed Plugin Skill through agentdock_context: %#v", contextResult["skills"])
+	}
+	packagePath := filepath.Join(rt.cfg.AgentDockHome, "plugins", "demo.plugin", "1.0.0")
+	if _, statErr := os.Stat(packagePath); !os.IsNotExist(statErr) {
+		t.Fatalf("failed install left candidate package at %s: %v", packagePath, statErr)
+	}
+	listed, err := rt.Call(context.Background(), "mcp_manage", map[string]any{"action": "list"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	standalone := findContextMap(t, listed["servers"], func(item map[string]any) bool {
+		return item["name"] == collision
+	})
+	if standalone["source_type"] != "standalone" {
+		t.Fatalf("failed Plugin install replaced standalone MCP ownership: %#v", standalone)
+	}
+}
+
 func TestPluginUpdateRuntimeActivationFailureRestoresPreviousPackageAndStandaloneMCP(t *testing.T) {
 	rt, root := newPluginTestRuntime(t)
 

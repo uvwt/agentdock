@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -24,9 +25,13 @@ type PurgeOwnership struct {
 }
 
 type removalRecord struct {
-	SchemaVersion int `json:"schema_version"`
+	SchemaVersion int    `json:"schema_version"`
+	Phase         string `json:"phase,omitempty"`
 	PurgeOwnership
+	RemovedState *State `json:"removed_state,omitempty"`
 }
+
+const removalPhasePurging = "purging"
 
 func purgeOwnershipFromState(state State) PurgeOwnership {
 	return PurgeOwnership{Name: state.Name, MCPStorageKeys: append([]string(nil), state.MCPStorageKeys...)}
@@ -76,7 +81,10 @@ func (s *Store) removalRecordPath(name string) (string, error) {
 }
 
 func (s *Store) SaveRemovalOwnership(ownership PurgeOwnership) error {
-	record := removalRecord{SchemaVersion: removalRecordSchemaVersion, PurgeOwnership: ownership}
+	return s.SaveRemovalRecord(removalRecord{SchemaVersion: removalRecordSchemaVersion, PurgeOwnership: ownership})
+}
+
+func (s *Store) SaveRemovalRecord(record removalRecord) error {
 	if err := validateRemovalRecord(record); err != nil {
 		return err
 	}
@@ -96,32 +104,66 @@ func (s *Store) SaveRemovalOwnership(ownership PurgeOwnership) error {
 }
 
 func (s *Store) LoadRemovalOwnership(name string) (PurgeOwnership, error) {
-	path, err := s.removalRecordPath(name)
+	record, err := s.LoadRemovalRecord(name)
 	if err != nil {
-		return PurgeOwnership{}, err
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return PurgeOwnership{}, err
-	}
-	var record removalRecord
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&record); err != nil {
-		return PurgeOwnership{}, fmt.Errorf("decode Plugin removal record: %w", err)
-	}
-	if err := validateRemovalRecord(record); err != nil {
 		return PurgeOwnership{}, err
 	}
 	return record.PurgeOwnership, nil
 }
 
+func (s *Store) LoadRemovalRecord(name string) (removalRecord, error) {
+	name, err := pluginNamePathSegment(name)
+	if err != nil {
+		return removalRecord{}, err
+	}
+	rootPath, err := s.removalRecordRoot()
+	if err != nil {
+		return removalRecord{}, err
+	}
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		return removalRecord{}, err
+	}
+	defer root.Close()
+	file, err := root.Open(name + ".json")
+	if err != nil {
+		return removalRecord{}, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, int64(maxStateBytes)+1))
+	if err != nil {
+		return removalRecord{}, err
+	}
+	if len(data) > maxStateBytes {
+		return removalRecord{}, fmt.Errorf("Plugin removal record exceeds %d bytes", maxStateBytes)
+	}
+	var record removalRecord
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&record); err != nil {
+		return removalRecord{}, fmt.Errorf("decode Plugin removal record: %w", err)
+	}
+	if err := validateRemovalRecord(record); err != nil {
+		return removalRecord{}, err
+	}
+	return record, nil
+}
+
 func (s *Store) DeleteRemovalOwnership(name string) error {
-	path, err := s.removalRecordPath(name)
+	name, err := pluginNamePathSegment(name)
 	if err != nil {
 		return err
 	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+	rootPath, err := s.removalRecordRoot()
+	if err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if err := root.Remove(name + ".json"); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return nil
@@ -138,6 +180,23 @@ func validateRemovalRecord(record removalRecord) error {
 		if strings.TrimSpace(key) == "" || strings.ContainsAny(key, `/\\`) {
 			return errors.New("Plugin removal record contains invalid MCP storage key")
 		}
+	}
+	switch record.Phase {
+	case "":
+		if record.RemovedState != nil {
+			return errors.New("Plugin ownership-only removal record cannot contain removed state")
+		}
+	case removalPhasePurging:
+		if record.RemovedState != nil {
+			if err := validateState(*record.RemovedState); err != nil {
+				return fmt.Errorf("invalid removed Plugin state: %w", err)
+			}
+			if record.RemovedState.Name != record.Name {
+				return errors.New("Plugin removal record state identity mismatch")
+			}
+		}
+	default:
+		return fmt.Errorf("invalid Plugin removal phase %q", record.Phase)
 	}
 	return nil
 }

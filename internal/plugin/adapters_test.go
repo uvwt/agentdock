@@ -502,7 +502,7 @@ func TestCatalogUnderlyingSourceChangeRequiresExplicitRebind(t *testing.T) {
 	if _, err := updatePluginSourceForTest(manager, context.Background(), request, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.FinalizeUpdate("catalog-demo"); err != nil {
+	if err := manager.FinalizeActivation("catalog-demo"); err != nil {
 		t.Fatal(err)
 	}
 	installed, err := manager.Inspect("catalog-demo")

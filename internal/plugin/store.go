@@ -276,7 +276,7 @@ func (s *Store) Delete(name string) error {
 	return nil
 }
 
-func (s *Store) updateTransactionPath(name string) (string, error) {
+func (s *Store) activationTransactionPath(name string) (string, error) {
 	name, err := pluginNamePathSegment(name)
 	if err != nil {
 		return "", err
@@ -284,11 +284,11 @@ func (s *Store) updateTransactionPath(name string) (string, error) {
 	return filepath.Join(s.transactionRoot, name+".json"), nil
 }
 
-func (s *Store) SaveUpdateTransaction(transaction UpdateTransaction) error {
-	if err := validateUpdateTransaction(transaction); err != nil {
+func (s *Store) SaveActivationTransaction(transaction ActivationTransaction) error {
+	if err := validateActivationTransaction(transaction); err != nil {
 		return err
 	}
-	path, err := s.updateTransactionPath(transaction.Name)
+	path, err := s.activationTransactionPath(transaction.Name)
 	if err != nil {
 		return err
 	}
@@ -298,44 +298,44 @@ func (s *Store) SaveUpdateTransaction(transaction UpdateTransaction) error {
 	}
 	data = append(data, '\n')
 	if len(data) > maxStateBytes {
-		return fmt.Errorf("Plugin update transaction exceeds %d bytes", maxStateBytes)
+		return fmt.Errorf("Plugin activation transaction exceeds %d bytes", maxStateBytes)
 	}
 	return atomicfile.Write(path, data, 0o600)
 }
 
-func (s *Store) LoadUpdateTransaction(name string) (UpdateTransaction, error) {
-	path, err := s.updateTransactionPath(name)
+func (s *Store) LoadActivationTransaction(name string) (ActivationTransaction, error) {
+	path, err := s.activationTransactionPath(name)
 	if err != nil {
-		return UpdateTransaction{}, err
+		return ActivationTransaction{}, err
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return UpdateTransaction{}, err
+		return ActivationTransaction{}, err
 	}
-	var transaction UpdateTransaction
+	var transaction ActivationTransaction
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&transaction); err != nil {
-		return UpdateTransaction{}, fmt.Errorf("decode Plugin update transaction: %w", err)
+		return ActivationTransaction{}, fmt.Errorf("decode Plugin activation transaction: %w", err)
 	}
-	if err := validateUpdateTransaction(transaction); err != nil {
-		return UpdateTransaction{}, err
+	if err := validateActivationTransaction(transaction); err != nil {
+		return ActivationTransaction{}, err
 	}
 	return transaction, nil
 }
 
-func (s *Store) ListUpdateTransactions() ([]UpdateTransaction, error) {
+func (s *Store) ListActivationTransactions() ([]ActivationTransaction, error) {
 	entries, err := os.ReadDir(s.transactionRoot)
 	if err != nil {
 		return nil, err
 	}
-	transactions := make([]UpdateTransaction, 0, len(entries))
+	transactions := make([]ActivationTransaction, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
 		name := strings.TrimSuffix(entry.Name(), ".json")
-		transaction, err := s.LoadUpdateTransaction(name)
+		transaction, err := s.LoadActivationTransaction(name)
 		if err != nil {
 			return nil, err
 		}
@@ -344,8 +344,8 @@ func (s *Store) ListUpdateTransactions() ([]UpdateTransaction, error) {
 	return transactions, nil
 }
 
-func (s *Store) DeleteUpdateTransaction(name string) error {
-	path, err := s.updateTransactionPath(name)
+func (s *Store) DeleteActivationTransaction(name string) error {
+	path, err := s.activationTransactionPath(name)
 	if err != nil {
 		return err
 	}
@@ -369,41 +369,53 @@ func (s *Store) UpdateCandidatePath(name, ownerID string) (string, error) {
 		return "", err
 	}
 	if len(ownerID) != 32 {
-		return "", errors.New("Plugin update owner_id is invalid")
+		return "", errors.New("Plugin activation owner_id is invalid")
 	}
 	if _, err := hex.DecodeString(ownerID); err != nil {
-		return "", errors.New("Plugin update owner_id is invalid")
+		return "", errors.New("Plugin activation owner_id is invalid")
 	}
 	return filepath.Join(parent, ".update-candidate-"+ownerID), nil
 }
 
-func validateUpdateTransaction(transaction UpdateTransaction) error {
-	if transaction.SchemaVersion != UpdateTransactionSchemaVersion {
-		return fmt.Errorf("unsupported Plugin update transaction schema %d", transaction.SchemaVersion)
+func validateActivationTransaction(transaction ActivationTransaction) error {
+	if transaction.SchemaVersion != ActivationTransactionSchemaVersion {
+		return fmt.Errorf("unsupported Plugin activation transaction schema %d", transaction.SchemaVersion)
 	}
 	if err := ValidateName(transaction.Name); err != nil {
 		return err
 	}
 	if len(transaction.OwnerID) != 32 {
-		return errors.New("Plugin update transaction owner_id is invalid")
+		return errors.New("Plugin activation transaction owner_id is invalid")
 	}
 	if _, err := hex.DecodeString(transaction.OwnerID); err != nil {
-		return errors.New("Plugin update transaction owner_id is invalid")
+		return errors.New("Plugin activation transaction owner_id is invalid")
 	}
-	if transaction.Previous.Name != transaction.Name || transaction.Candidate.Name != transaction.Name {
-		return errors.New("Plugin update transaction identity mismatch")
+	if transaction.Candidate.Name != transaction.Name {
+		return errors.New("Plugin activation transaction candidate identity mismatch")
 	}
-	if err := validateState(transaction.Previous); err != nil {
-		return fmt.Errorf("invalid previous Plugin state: %w", err)
+	switch transaction.Kind {
+	case "install":
+		if transaction.Previous != nil || transaction.LocalReplacement {
+			return errors.New("Plugin install activation transaction cannot contain previous state")
+		}
+	case "update":
+		if transaction.Previous == nil || transaction.Previous.Name != transaction.Name {
+			return errors.New("Plugin update activation transaction previous state is invalid")
+		}
+		if err := validateState(*transaction.Previous); err != nil {
+			return fmt.Errorf("invalid previous Plugin state: %w", err)
+		}
+	default:
+		return fmt.Errorf("invalid Plugin activation transaction kind %q", transaction.Kind)
 	}
 	if err := validateState(transaction.Candidate); err != nil {
 		return fmt.Errorf("invalid candidate Plugin state: %w", err)
 	}
 	if transaction.Phase != "pending" && transaction.Phase != "committed" {
-		return fmt.Errorf("invalid Plugin update transaction phase %q", transaction.Phase)
+		return fmt.Errorf("invalid Plugin activation transaction phase %q", transaction.Phase)
 	}
 	if transaction.CreatedAt.IsZero() {
-		return errors.New("Plugin update transaction created_at is required")
+		return errors.New("Plugin activation transaction created_at is required")
 	}
 	return nil
 }

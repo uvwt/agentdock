@@ -187,18 +187,39 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 		if err != nil {
 			return nil, pluginToolError(err)
 		}
-		if err := s.ReconcileMCP(); err != nil {
-			var rollbackErr error
-			if result.Changed {
-				_, rollbackErr = s.manager.Remove(ctx, result.Name, "keep")
-				_ = s.ReconcileMCP()
+		if !result.Changed {
+			if err := s.ReconcileMCP(); err != nil {
+				return nil, toolcore.NewErrorCause(
+					"PLUGIN_RUNTIME_ACTIVATION_FAILED",
+					"Plugin runtime reconciliation failed",
+					"runtime",
+					map[string]any{"plugin_name": result.Name},
+					err,
+				)
 			}
+			return changeResult(result), nil
+		}
+		if err := s.reconcileMCPActivation(result.Name); err != nil {
+			abortErr := s.manager.AbortActivation(ctx, result.Name)
+			reconcileErr := s.ReconcileMCP()
 			return nil, toolcore.NewErrorCause(
 				"PLUGIN_RUNTIME_ACTIVATION_FAILED",
-				"Plugin package installed but runtime activation failed; installation was rolled back",
+				"Plugin install candidate could not activate its runtime; installation was aborted",
 				"runtime",
 				map[string]any{"plugin_name": result.Name},
-				errors.Join(err, rollbackErr),
+				errors.Join(err, abortErr, reconcileErr),
+			)
+		}
+		if err := s.manager.FinalizeActivation(result.Name); err != nil {
+			deactivateErr := s.reconcileMCPExcluding(result.Name)
+			abortErr := s.manager.AbortActivation(ctx, result.Name)
+			reconcileErr := s.ReconcileMCP()
+			return nil, toolcore.NewErrorCause(
+				"PLUGIN_INSTALL_FINALIZE_FAILED",
+				"Plugin runtime activated but durable install finalization failed; installation was aborted",
+				"runtime",
+				map[string]any{"plugin_name": result.Name, "version": result.Version},
+				errors.Join(err, deactivateErr, abortErr, reconcileErr),
 			)
 		}
 		return changeResult(result), nil
@@ -248,7 +269,7 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 			return nil, pluginToolError(err)
 		}
 		if err := s.reconcileMCPActivation(result.Name); err != nil {
-			restoreErr := s.manager.RestoreState(ctx, previous)
+			restoreErr := s.manager.AbortActivation(ctx, result.Name)
 			reconcileErr := s.ReconcileMCP()
 			return nil, toolcore.NewErrorCause(
 				"PLUGIN_RUNTIME_ACTIVATION_FAILED",
@@ -258,9 +279,9 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 				errors.Join(err, restoreErr, reconcileErr),
 			)
 		}
-		if err := s.manager.FinalizeUpdate(result.Name); err != nil {
+		if err := s.manager.FinalizeActivation(result.Name); err != nil {
 			deactivateErr := s.reconcileMCPExcluding(result.Name)
-			restoreErr := s.manager.RestoreState(ctx, previous)
+			restoreErr := s.manager.AbortActivation(ctx, result.Name)
 			reconcileErr := s.ReconcileMCP()
 			return nil, toolcore.NewErrorCause(
 				"PLUGIN_UPDATE_FINALIZE_FAILED",

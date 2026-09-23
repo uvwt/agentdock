@@ -122,14 +122,15 @@ type State struct {
 	Compatibility  Compatibility  `json:"compatibility,omitempty"`
 }
 
-const UpdateTransactionSchemaVersion = 2
+const ActivationTransactionSchemaVersion = 2
 
-type UpdateTransaction struct {
+type ActivationTransaction struct {
 	SchemaVersion    int       `json:"schema_version"`
 	Name             string    `json:"name"`
 	OwnerID          string    `json:"owner_id"`
+	Kind             string    `json:"kind"`
 	Phase            string    `json:"phase"`
-	Previous         State     `json:"previous"`
+	Previous         *State    `json:"previous,omitempty"`
 	Candidate        State     `json:"candidate"`
 	LocalReplacement bool      `json:"local_replacement,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`

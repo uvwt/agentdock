@@ -18,11 +18,11 @@ type Manager struct {
 	store *Store
 
 	pendingMu sync.Mutex
-	pending   map[string]pendingUpdate
+	pending   map[string]pendingActivation
 }
 
-type pendingUpdate struct {
-	transaction UpdateTransaction
+type pendingActivation struct {
+	transaction ActivationTransaction
 	commit      candidateCommit
 	release     func()
 }
@@ -32,8 +32,8 @@ func NewManager(agentDockHome string) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	manager := &Manager{store: store, pending: make(map[string]pendingUpdate)}
-	if err := manager.recoverInterruptedUpdates(); err != nil {
+	manager := &Manager{store: store, pending: make(map[string]pendingActivation)}
+	if err := manager.recoverInterruptedActivations(); err != nil {
 		return nil, err
 	}
 	manager.cleanupStartupObsoleteVersions()
@@ -64,6 +64,13 @@ func (m *Manager) List() ([]Installed, error) {
 	}
 	items := make([]Installed, 0, len(states))
 	for _, state := range states {
+		purging, err := m.removalInProgress(state.Name)
+		if err != nil {
+			return nil, err
+		}
+		if purging {
+			continue
+		}
 		root, err := m.store.PackagePath(state.Name, state.Version)
 		if err != nil {
 			return nil, err
@@ -74,7 +81,15 @@ func (m *Manager) List() ([]Installed, error) {
 }
 
 func (m *Manager) Inspect(name string) (Installed, error) {
-	state, err := m.store.Load(strings.TrimSpace(name))
+	name = strings.TrimSpace(name)
+	purging, err := m.removalInProgress(name)
+	if err != nil {
+		return Installed{}, err
+	}
+	if purging {
+		return Installed{}, pluginError("PLUGIN_NOT_FOUND", "inspect", fmt.Errorf("Plugin %q is being purged", name))
+	}
+	state, err := m.store.Load(name)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return Installed{}, pluginError("PLUGIN_NOT_FOUND", "inspect", fmt.Errorf("Plugin %q is not installed", name))
@@ -90,7 +105,7 @@ func (m *Manager) Inspect(name string) (Installed, error) {
 
 func (m *Manager) Acquire(ctx context.Context, name string) (Installed, func(), error) {
 	name = strings.TrimSpace(name)
-	if _, active := m.pendingUpdate(name); active {
+	if _, active := m.pendingActivation(name); active {
 		return Installed{}, nil, pluginError("PLUGIN_ACTIVATION_IN_PROGRESS", "resolve", fmt.Errorf("Plugin %q is being activated", name))
 	}
 	releaseBinding, err := m.store.AcquireBinding(ctx, name)
@@ -125,6 +140,28 @@ func (m *Manager) EnsureDataDir(name string) (string, error) {
 	return m.store.EnsureDataDir(name)
 }
 
+func (m *Manager) removalInProgress(name string) (bool, error) {
+	record, err := m.store.LoadRemovalRecord(strings.TrimSpace(name))
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return record.Phase == removalPhasePurging, nil
+}
+
+func (m *Manager) rejectRemovalInProgress(name, stage string) error {
+	purging, err := m.removalInProgress(name)
+	if err != nil {
+		return err
+	}
+	if purging {
+		return pluginError("PLUGIN_REMOVAL_IN_PROGRESS", stage, fmt.Errorf("Plugin %q purge is already committed and must finish before another lifecycle change", name))
+	}
+	return nil
+}
+
 // InstallReviewedSource stages the source once, verifies that the exact staged
 // candidate matches a prior security review, and commits that same snapshot.
 func (m *Manager) InstallReviewedSource(ctx context.Context, request SourceRequest, enabled bool, reviewToken string) (ChangeResult, error) {
@@ -139,19 +176,27 @@ func (m *Manager) InstallReviewedSource(ctx context.Context, request SourceReque
 	return m.installPreparedCandidate(ctx, stage, pkg, src, enabled)
 }
 
-func (m *Manager) installPreparedCandidate(ctx context.Context, stage string, pkg Package, src Source, enabled bool) (ChangeResult, error) {
+func (m *Manager) installPreparedCandidate(ctx context.Context, stage string, pkg Package, src Source, enabled bool) (result ChangeResult, err error) {
 	if len(pkg.Unsupported) > 0 {
 		return ChangeResult{}, pluginError("PLUGIN_UNSUPPORTED_COMPONENT", "install.validate", fmt.Errorf("unsupported components: %s", strings.Join(pkg.Unsupported, ", ")))
 	}
-	if _, active := m.pendingUpdate(pkg.Manifest.Name); active {
+	if _, active := m.pendingActivation(pkg.Manifest.Name); active {
 		return ChangeResult{}, pluginError("PLUGIN_ACTIVATION_IN_PROGRESS", "install", fmt.Errorf("Plugin %q is being activated", pkg.Manifest.Name))
 	}
 	release, err := m.store.AcquireWrite(ctx, pkg.Manifest.Name)
 	if err != nil {
 		return ChangeResult{}, err
 	}
-	defer release()
-	if err := m.recoverUpdateLocked(pkg.Manifest.Name); err != nil {
+	keepLock := false
+	defer func() {
+		if !keepLock {
+			release()
+		}
+	}()
+	if err := m.recoverActivationLocked(pkg.Manifest.Name); err != nil {
+		return ChangeResult{}, err
+	}
+	if err := m.rejectRemovalInProgress(pkg.Manifest.Name, "install"); err != nil {
 		return ChangeResult{}, err
 	}
 
@@ -166,21 +211,35 @@ func (m *Manager) installPreparedCandidate(ctx context.Context, stage string, pk
 		return ChangeResult{}, currentErr
 	}
 
-	commit, err := m.commitCandidate(stage, pkg)
-	if err != nil {
-		return ChangeResult{}, err
-	}
 	state := State{
 		SchemaVersion: StateSchemaVersion, Name: pkg.Manifest.Name, Version: pkg.Manifest.Version,
 		PackageDigest: pkg.PackageDigest, Source: src, Enabled: enabled, InstalledAt: time.Now().UTC(),
 		Components: stateComponentIndex(pkg.Components), MCPStorageKeys: pluginMCPStorageKeys(pkg.Components.MCP),
 		Compatibility: pkg.Compatibility,
 	}
-	if err := m.store.Save(state); err != nil {
-		rollbackErr := commit.rollback()
-		return ChangeResult{}, pluginError("PLUGIN_INSTALL_FAILED", "install.state", errors.Join(err, rollbackErr))
+	ownerID, err := newReaderOwner()
+	if err != nil {
+		return ChangeResult{}, pluginError("PLUGIN_INSTALL_FAILED", "install.owner", err)
 	}
-	commit.finish()
+	transaction := ActivationTransaction{
+		SchemaVersion: ActivationTransactionSchemaVersion,
+		Name:          state.Name, OwnerID: ownerID, Kind: "install", Phase: "pending", Candidate: state,
+		CreatedAt: time.Now().UTC(),
+	}
+	// 首次安装也必须先落 durable activation journal，再准备 candidate package。
+	// 正式 state 只在 runtime activation 成功后的 FinalizeActivation 中发布。
+	if err := m.store.SaveActivationTransaction(transaction); err != nil {
+		return ChangeResult{}, pluginError("PLUGIN_INSTALL_FAILED", "install.journal", err)
+	}
+	commit, err := m.commitActivationCandidate(stage, pkg, transaction)
+	if err != nil {
+		_ = m.store.DeleteActivationTransaction(transaction.Name)
+		return ChangeResult{}, err
+	}
+	m.pendingMu.Lock()
+	m.pending[state.Name] = pendingActivation{transaction: transaction, commit: commit, release: release}
+	m.pendingMu.Unlock()
+	keepLock = true
 	return ChangeResult{Action: "install", Name: state.Name, Version: state.Version, PackageDigest: state.PackageDigest, Enabled: state.Enabled, Changed: true}, nil
 }
 
@@ -204,7 +263,7 @@ func (m *Manager) updatePreparedCandidate(ctx context.Context, stage string, pkg
 	if len(pkg.Unsupported) > 0 {
 		return ChangeResult{}, pluginError("PLUGIN_UNSUPPORTED_COMPONENT", "update.validate", fmt.Errorf("unsupported components: %s", strings.Join(pkg.Unsupported, ", ")))
 	}
-	if _, active := m.pendingUpdate(pkg.Manifest.Name); active {
+	if _, active := m.pendingActivation(pkg.Manifest.Name); active {
 		return ChangeResult{}, pluginError("PLUGIN_ACTIVATION_IN_PROGRESS", "update", fmt.Errorf("Plugin %q is being activated", pkg.Manifest.Name))
 	}
 	release, err := m.store.AcquireWrite(ctx, pkg.Manifest.Name)
@@ -218,7 +277,10 @@ func (m *Manager) updatePreparedCandidate(ctx context.Context, stage string, pkg
 		}
 	}()
 
-	if err := m.recoverUpdateLocked(pkg.Manifest.Name); err != nil {
+	if err := m.recoverActivationLocked(pkg.Manifest.Name); err != nil {
+		return ChangeResult{}, err
+	}
+	if err := m.rejectRemovalInProgress(pkg.Manifest.Name, "update"); err != nil {
 		return ChangeResult{}, err
 	}
 	current, err := m.store.Load(pkg.Manifest.Name)
@@ -269,26 +331,26 @@ func (m *Manager) updatePreparedCandidate(ctx context.Context, stage string, pkg
 	candidate.MCPStorageKeys = mergeSortedStrings(candidate.MCPStorageKeys, pluginMCPStorageKeys(pkg.Components.MCP))
 	candidate.Compatibility = pkg.Compatibility
 	candidate.InstalledAt = time.Now().UTC()
-	transaction := UpdateTransaction{
-		SchemaVersion: UpdateTransactionSchemaVersion,
-		Name:          candidate.Name, OwnerID: ownerID, Phase: "pending", Previous: current, Candidate: candidate,
+	transaction := ActivationTransaction{
+		SchemaVersion: ActivationTransactionSchemaVersion,
+		Name:          candidate.Name, OwnerID: ownerID, Kind: "update", Phase: "pending", Previous: &current, Candidate: candidate,
 		LocalReplacement: current.Version == VersionLocal && candidate.Version == VersionLocal,
 		CreatedAt:        time.Now().UTC(),
 	}
 	// 激活事务先持久化，再准备 candidate package。正式 state 在 Finalize 前
 	// 始终保持 Previous，因此普通 resolver 永远不会看到 pending candidate。
-	if err := m.store.SaveUpdateTransaction(transaction); err != nil {
+	if err := m.store.SaveActivationTransaction(transaction); err != nil {
 		return ChangeResult{}, pluginError("PLUGIN_UPDATE_FAILED", "update.journal", err)
 	}
-	commit, err := m.commitUpdateCandidate(stage, pkg, transaction)
+	commit, err := m.commitActivationCandidate(stage, pkg, transaction)
 	if err != nil {
-		_ = m.store.DeleteUpdateTransaction(transaction.Name)
+		_ = m.store.DeleteActivationTransaction(transaction.Name)
 		return ChangeResult{}, err
 	}
 	if transaction.LocalReplacement {
 		if err := m.promoteLocalCandidate(transaction); err != nil {
 			rollbackErr := commit.rollback()
-			journalErr := m.store.DeleteUpdateTransaction(transaction.Name)
+			journalErr := m.store.DeleteActivationTransaction(transaction.Name)
 			return ChangeResult{}, pluginError(
 				"PLUGIN_UPDATE_FAILED",
 				"update.local_promote",
@@ -297,7 +359,7 @@ func (m *Manager) updatePreparedCandidate(ctx context.Context, stage string, pkg
 		}
 	}
 	m.pendingMu.Lock()
-	m.pending[candidate.Name] = pendingUpdate{transaction: transaction, commit: commit, release: release}
+	m.pending[candidate.Name] = pendingActivation{transaction: transaction, commit: commit, release: release}
 	m.pendingMu.Unlock()
 	keepLock = true
 	return ChangeResult{
@@ -316,7 +378,7 @@ func (m *Manager) SetEnabled(ctx context.Context, name string, enabled bool) (Ch
 // previous state before the lease is released.
 func (m *Manager) SetEnabledWithLifecycle(ctx context.Context, name string, enabled bool, reconcile func(State) error) (ChangeResult, error) {
 	name = strings.TrimSpace(name)
-	if _, active := m.pendingUpdate(name); active {
+	if _, active := m.pendingActivation(name); active {
 		return ChangeResult{}, pluginError("PLUGIN_ACTIVATION_IN_PROGRESS", "enable", fmt.Errorf("Plugin %q is being activated", name))
 	}
 	release, err := m.store.AcquireWrite(ctx, name)
@@ -324,7 +386,10 @@ func (m *Manager) SetEnabledWithLifecycle(ctx context.Context, name string, enab
 		return ChangeResult{}, err
 	}
 	defer release()
-	if err := m.recoverUpdateLocked(name); err != nil {
+	if err := m.recoverActivationLocked(name); err != nil {
+		return ChangeResult{}, err
+	}
+	if err := m.rejectRemovalInProgress(name, "enable"); err != nil {
 		return ChangeResult{}, err
 	}
 	previous, err := m.store.Load(name)
@@ -383,8 +448,8 @@ func (m *Manager) Remove(ctx context.Context, name, dataPolicy string) (ChangeRe
 }
 
 // RemoveWithLifecycle 把正式 state、package ownership、Plugin data 和外部 owned
-// state 的清理放在同一个 Plugin writer lease 中。purge 对 missing package 也是
-// 幂等的，因此 keep 后或上一次 purge 失败后都能用同一个 API 重试。
+// state 的清理放在同一个 Plugin writer lease 中。purge 先持久化 tombstone 再进入
+// 不可逆清理，因此失败后只允许向前重试，不会重新暴露为 installed。
 func (m *Manager) RemoveWithLifecycle(ctx context.Context, name, dataPolicy string, lifecycle RemoveLifecycle) (ChangeResult, error) {
 	name = strings.TrimSpace(name)
 	dataPolicy = strings.ToLower(strings.TrimSpace(dataPolicy))
@@ -394,7 +459,7 @@ func (m *Manager) RemoveWithLifecycle(ctx context.Context, name, dataPolicy stri
 	if dataPolicy == "purge" && lifecycle.Purge == nil {
 		return ChangeResult{}, pluginError("PLUGIN_PURGE_FAILED", "remove.purge", errors.New("purge lifecycle callback is required"))
 	}
-	if _, active := m.pendingUpdate(name); active {
+	if _, active := m.pendingActivation(name); active {
 		return ChangeResult{}, pluginError("PLUGIN_ACTIVATION_IN_PROGRESS", "remove", fmt.Errorf("Plugin %q is being activated", name))
 	}
 
@@ -403,8 +468,18 @@ func (m *Manager) RemoveWithLifecycle(ctx context.Context, name, dataPolicy stri
 		return ChangeResult{}, err
 	}
 	defer release()
-	if err := m.recoverUpdateLocked(name); err != nil {
+	if err := m.recoverActivationLocked(name); err != nil {
 		return ChangeResult{}, err
+	}
+
+	record, recordErr := m.store.LoadRemovalRecord(name)
+	hasRecord := recordErr == nil
+	if recordErr != nil && !errors.Is(recordErr, os.ErrNotExist) {
+		return ChangeResult{}, pluginError("PLUGIN_REMOVE_FAILED", "remove.ownership", recordErr)
+	}
+	purging := hasRecord && record.Phase == removalPhasePurging
+	if purging && dataPolicy != "purge" {
+		return ChangeResult{}, pluginError("PLUGIN_REMOVAL_IN_PROGRESS", "remove", fmt.Errorf("Plugin %q purge is already committed", name))
 	}
 
 	state, loadErr := m.store.Load(name)
@@ -417,16 +492,25 @@ func (m *Manager) RemoveWithLifecycle(ctx context.Context, name, dataPolicy stri
 	}
 
 	previousOwnership := PurgeOwnership{Name: name}
-	if recorded, err := m.store.LoadRemovalOwnership(name); err == nil {
-		previousOwnership = recorded
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return ChangeResult{}, pluginError("PLUGIN_REMOVE_FAILED", "remove.ownership", err)
+	if hasRecord {
+		previousOwnership = record.PurgeOwnership
 	}
 	currentOwnership := PurgeOwnership{Name: name}
 	if !missing {
 		currentOwnership = purgeOwnershipFromState(state)
 	}
 	ownership := mergePurgeOwnership(name, previousOwnership, currentOwnership)
+
+	removedState := State{}
+	hasRemovedState := false
+	if record.RemovedState != nil {
+		removedState = *record.RemovedState
+		hasRemovedState = true
+	}
+	if !missing {
+		removedState = state
+		hasRemovedState = true
+	}
 
 	if !missing && lifecycle.BeforeDelete != nil {
 		if err := lifecycle.BeforeDelete(state); err != nil {
@@ -454,25 +538,47 @@ func (m *Manager) RemoveWithLifecycle(ctx context.Context, name, dataPolicy stri
 		}, nil
 	}
 
+	if !purging {
+		// purging tombstone 是不可逆删除的 durable commit point。它必须先于
+		// formal state 和任何 data/env 清理落盘；从这里开始失败只能向前重试。
+		tombstone := removalRecord{
+			SchemaVersion:  removalRecordSchemaVersion,
+			Phase:          removalPhasePurging,
+			PurgeOwnership: ownership,
+		}
+		if hasRemovedState {
+			stateCopy := removedState
+			tombstone.RemovedState = &stateCopy
+		}
+		if err := m.store.SaveRemovalRecord(tombstone); err != nil {
+			return ChangeResult{}, pluginError("PLUGIN_REMOVE_FAILED", "remove.tombstone", restoreRuntime(err))
+		}
+		purging = true
+	}
+
+	// tombstone 已经承诺删除，因此 state 删除失败也不能恢复 runtime/state。
+	// Inspect/List/Acquire 会把这个 Plugin 视为不存在，重试继续同一 purge。
+	if !missing {
+		if err := m.store.Delete(name); err != nil {
+			return ChangeResult{}, pluginError("PLUGIN_REMOVE_FAILED", "remove.state", err)
+		}
+	}
 	purgeErr := m.store.RemoveData(name)
 	purgeErr = errors.Join(purgeErr, lifecycle.Purge(ownership))
 	if purgeErr != nil {
-		return ChangeResult{}, pluginError("PLUGIN_PURGE_FAILED", "remove.purge", restoreRuntime(purgeErr))
+		return ChangeResult{}, pluginError("PLUGIN_PURGE_FAILED", "remove.purge", purgeErr)
 	}
 	if err := m.store.DeleteRemovalOwnership(name); err != nil {
-		return ChangeResult{}, pluginError("PLUGIN_PURGE_FAILED", "remove.ownership", restoreRuntime(err))
-	}
-	if !missing {
-		if err := m.store.Delete(name); err != nil {
-			recordErr := m.store.SaveRemovalOwnership(ownership)
-			return ChangeResult{}, pluginError("PLUGIN_REMOVE_FAILED", "remove.state", restoreRuntime(errors.Join(err, recordErr)))
-		}
+		return ChangeResult{}, pluginError("PLUGIN_PURGE_FAILED", "remove.tombstone", err)
 	}
 	m.cleanupObsoleteVersions(name, "")
-	return ChangeResult{
-		Action: "remove", Name: name, Version: state.Version, PackageDigest: state.PackageDigest,
-		Enabled: false, Changed: !missing, DataPolicy: dataPolicy,
-	}, nil
+
+	result := ChangeResult{Action: "remove", Name: name, Enabled: false, Changed: !missing, DataPolicy: dataPolicy}
+	if hasRemovedState {
+		result.Version = removedState.Version
+		result.PackageDigest = removedState.PackageDigest
+	}
+	return result, nil
 }
 
 func samePluginSourceBinding(left, right Source) bool {
@@ -687,7 +793,7 @@ func (m *Manager) commitCandidate(stage string, pkg Package) (candidateCommit, e
 	}, nil
 }
 
-func (m *Manager) commitUpdateCandidate(stage string, pkg Package, transaction UpdateTransaction) (candidateCommit, error) {
+func (m *Manager) commitActivationCandidate(stage string, pkg Package, transaction ActivationTransaction) (candidateCommit, error) {
 	if !transaction.LocalReplacement {
 		return m.commitCandidate(stage, pkg)
 	}
@@ -738,7 +844,7 @@ func (m *Manager) commitUpdateCandidate(stage string, pkg Package, transaction U
 	}, nil
 }
 
-func (m *Manager) promoteLocalCandidate(transaction UpdateTransaction) error {
+func (m *Manager) promoteLocalCandidate(transaction ActivationTransaction) error {
 	if !transaction.LocalReplacement {
 		return nil
 	}
@@ -769,7 +875,7 @@ func (m *Manager) promoteLocalCandidate(transaction UpdateTransaction) error {
 	return nil
 }
 
-func (m *Manager) updateCandidateRoot(transaction UpdateTransaction) (string, error) {
+func (m *Manager) activationCandidateRoot(transaction ActivationTransaction) (string, error) {
 	if transaction.LocalReplacement && transaction.Phase == "pending" {
 		candidatePath, err := m.store.UpdateCandidatePath(transaction.Name, transaction.OwnerID)
 		if err != nil {
@@ -784,14 +890,14 @@ func (m *Manager) updateCandidateRoot(transaction UpdateTransaction) (string, er
 	return m.store.PackagePath(transaction.Candidate.Name, transaction.Candidate.Version)
 }
 
-func (m *Manager) pendingUpdate(name string) (pendingUpdate, bool) {
+func (m *Manager) pendingActivation(name string) (pendingActivation, bool) {
 	m.pendingMu.Lock()
 	defer m.pendingMu.Unlock()
 	pending, ok := m.pending[name]
 	return pending, ok
 }
 
-func (m *Manager) finishPendingUpdate(name, ownerID string) {
+func (m *Manager) finishPendingActivation(name, ownerID string) {
 	m.pendingMu.Lock()
 	pending, ok := m.pending[name]
 	if ok && pending.transaction.OwnerID == ownerID {
@@ -805,21 +911,21 @@ func (m *Manager) finishPendingUpdate(name, ownerID string) {
 
 // AcquireActivationCandidate 是唯一允许读取 pending candidate 的入口。
 // 普通 Acquire 会被 activation writer lease 阻塞，因此正式 resolver 在
-// Finalize 前始终只能看到 Previous。
+// Finalize 前 update 只能看到 Previous，首次 install 则仍表现为未安装。
 func (m *Manager) AcquireActivationCandidate(name string) (Installed, func(), error) {
 	name = strings.TrimSpace(name)
-	pending, ok := m.pendingUpdate(name)
+	pending, ok := m.pendingActivation(name)
 	if !ok {
 		return Installed{}, nil, pluginError("PLUGIN_UPDATE_NOT_OWNER", "activation", fmt.Errorf("Plugin %q has no activation owned by this Manager", name))
 	}
-	transaction, err := m.store.LoadUpdateTransaction(name)
+	transaction, err := m.store.LoadActivationTransaction(name)
 	if err != nil {
 		return Installed{}, nil, err
 	}
 	if transaction.Phase != "pending" || transaction.OwnerID != pending.transaction.OwnerID {
 		return Installed{}, nil, pluginError("PLUGIN_UPDATE_NOT_OWNER", "activation", errors.New("Plugin activation journal owner changed"))
 	}
-	root, err := m.updateCandidateRoot(transaction)
+	root, err := m.activationCandidateRoot(transaction)
 	if err != nil {
 		return Installed{}, nil, err
 	}
@@ -834,54 +940,76 @@ func (m *Manager) AcquireActivationCandidate(name string) (Installed, func(), er
 	return installed, release, nil
 }
 
-// FinalizeUpdate 在 runtime activation 成功后才发布 candidate。整个过程
-// 仍持有跨进程 writer lease，并对 journal owner 与正式 Previous state
-// 做 CAS 校验，旧 owner 无法 finalize 别人的事务。
-func (m *Manager) FinalizeUpdate(name string) error {
+// FinalizeActivation 在 runtime activation 成功后才发布 candidate。整个过程
+// 仍持有跨进程 writer lease，并对 journal owner 与正式 state 做 CAS 校验；
+// install 要求正式 state 仍不存在，update 则要求它仍等于 Previous。
+func (m *Manager) FinalizeActivation(name string) error {
 	name = strings.TrimSpace(name)
-	pending, ok := m.pendingUpdate(name)
+	pending, ok := m.pendingActivation(name)
 	if !ok {
 		return pluginError("PLUGIN_UPDATE_NOT_OWNER", "finalize", fmt.Errorf("Plugin %q activation is no longer owned by this Manager", name))
 	}
-	transaction, err := m.store.LoadUpdateTransaction(name)
+	transaction, err := m.store.LoadActivationTransaction(name)
 	if err != nil {
 		return pluginError("PLUGIN_UPDATE_NOT_OWNER", "finalize.journal", err)
 	}
 	if transaction.Phase != "pending" || transaction.OwnerID != pending.transaction.OwnerID {
 		return pluginError("PLUGIN_UPDATE_NOT_OWNER", "finalize.owner", errors.New("Plugin activation journal owner changed"))
 	}
-	current, err := m.store.Load(name)
-	if err != nil {
+	if err := m.verifyActivationCAS(transaction); err != nil {
 		return pluginError("PLUGIN_UPDATE_CAS_FAILED", "finalize.state", err)
 	}
-	if !reflect.DeepEqual(current, transaction.Previous) {
-		return pluginError("PLUGIN_UPDATE_CAS_FAILED", "finalize.state", errors.New("formal Plugin state changed during activation"))
-	}
-	candidatePath, err := m.updateCandidateRoot(transaction)
+	candidatePath, err := m.activationCandidateRoot(transaction)
 	if err != nil {
 		return err
 	}
 	if err := verifyInstalledPackage(Installed{State: transaction.Candidate, Root: candidatePath}); err != nil {
 		return err
 	}
-	// state 是正式 resolver 的 commit point。若随后 committed marker 落盘失败，
-	// 在同一 lease 内恢复 Previous，避免留下一个未决定的可见状态。
+
+	// 正式 state 是唯一 publish commit point。journal 紧接着写 committed；如果
+	// committed marker 落盘失败，仍在同一 writer lease 内恢复 publish 前状态。
 	if err := m.store.Save(transaction.Candidate); err != nil {
 		return pluginError("PLUGIN_UPDATE_FINALIZE_FAILED", "finalize.state", err)
 	}
 	transaction.Phase = "committed"
-	if err := m.store.SaveUpdateTransaction(transaction); err != nil {
-		restoreErr := m.store.Save(transaction.Previous)
+	if err := m.store.SaveActivationTransaction(transaction); err != nil {
+		var restoreErr error
+		if transaction.Previous == nil {
+			restoreErr = m.store.Delete(name)
+		} else {
+			restoreErr = m.store.Save(*transaction.Previous)
+		}
 		return pluginError("PLUGIN_UPDATE_FINALIZE_FAILED", "finalize.journal", errors.Join(err, restoreErr))
 	}
 	pending.commit.finish()
-	if err := m.store.DeleteUpdateTransaction(name); err != nil {
+	if err := m.store.DeleteActivationTransaction(name); err != nil {
 		// committed marker 已经是 durable decision；删除 journal 失败只影响清理，
-		// 重启时 recoverUpdateLocked 会幂等向前收口。
-		slog.Warn("remove committed Plugin update journal failed", "plugin", name, "error", err)
+		// 重启时 recoverActivationLocked 会幂等向前收口。
+		slog.Warn("remove committed Plugin activation journal failed", "plugin", name, "error", err)
 	}
-	m.finishPendingUpdate(name, transaction.OwnerID)
+	m.finishPendingActivation(name, transaction.OwnerID)
 	m.CleanupObsoleteVersions(name)
+	return nil
+}
+
+func (m *Manager) verifyActivationCAS(transaction ActivationTransaction) error {
+	current, err := m.store.Load(transaction.Name)
+	if transaction.Previous == nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		return errors.New("formal Plugin state appeared during install activation")
+	}
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(current, *transaction.Previous) {
+		return errors.New("formal Plugin state changed during activation")
+	}
 	return nil
 }
 
@@ -898,43 +1026,47 @@ func (m *Manager) CleanupObsoleteVersions(name string) {
 	m.cleanupObsoleteVersions(name, current)
 }
 
-// RestoreState aborts this Manager's live activation. If there is no in-memory
-// owner it may also recover a persisted pending transaction while holding the
-// normal writer lock.
-func (m *Manager) RestoreState(ctx context.Context, previous State) error {
-	if pending, ok := m.pendingUpdate(previous.Name); ok {
-		transaction, err := m.store.LoadUpdateTransaction(previous.Name)
+// AbortActivation 回滚当前 Manager 拥有的 live activation。若当前进程没有
+// owner，则在取得 writer lease 后恢复持久化的 pending transaction。
+func (m *Manager) AbortActivation(ctx context.Context, name string) error {
+	name = strings.TrimSpace(name)
+	if pending, ok := m.pendingActivation(name); ok {
+		transaction, err := m.store.LoadActivationTransaction(name)
 		if err != nil {
 			return pluginError("PLUGIN_UPDATE_NOT_OWNER", "restore.journal", err)
 		}
-		if transaction.Phase != "pending" || transaction.OwnerID != pending.transaction.OwnerID ||
-			!samePluginStateIdentity(transaction.Previous, previous) {
-			return pluginError("PLUGIN_UPDATE_NOT_OWNER", "restore.owner", errors.New("pending Plugin activation does not match requested restore state"))
+		if transaction.Phase != "pending" || transaction.OwnerID != pending.transaction.OwnerID {
+			return pluginError("PLUGIN_UPDATE_NOT_OWNER", "restore.owner", errors.New("pending Plugin activation owner changed"))
 		}
 		rollbackErr := pending.commit.rollback()
-		stateErr := m.store.Save(transaction.Previous)
-		journalErr := m.store.DeleteUpdateTransaction(previous.Name)
-		m.finishPendingUpdate(previous.Name, transaction.OwnerID)
-		m.CleanupObsoleteVersions(previous.Name)
+		var stateErr error
+		if transaction.Previous == nil {
+			stateErr = m.store.Delete(name)
+		} else {
+			stateErr = m.store.Save(*transaction.Previous)
+		}
+		journalErr := m.store.DeleteActivationTransaction(name)
+		m.finishPendingActivation(name, transaction.OwnerID)
+		m.CleanupObsoleteVersions(name)
 		return errors.Join(rollbackErr, stateErr, journalErr)
 	}
 
-	release, err := m.store.AcquireWrite(ctx, previous.Name)
+	release, err := m.store.AcquireWrite(ctx, name)
 	if err != nil {
 		return err
 	}
 	defer release()
-	transaction, err := m.store.LoadUpdateTransaction(previous.Name)
+	transaction, err := m.store.LoadActivationTransaction(name)
 	if err != nil {
 		return err
 	}
-	if transaction.Phase != "pending" || !samePluginStateIdentity(transaction.Previous, previous) {
-		return errors.New("pending Plugin update does not match requested restore state")
+	if transaction.Phase != "pending" {
+		return errors.New("Plugin activation is not pending")
 	}
-	if err := m.rollbackUpdateTransaction(transaction); err != nil {
+	if err := m.rollbackActivationTransaction(transaction); err != nil {
 		return err
 	}
-	m.cleanupObsoleteVersions(previous.Name, previous.Version)
+	m.cleanupObsoleteVersions(name, "")
 	return nil
 }
 
@@ -942,10 +1074,10 @@ func samePluginStateIdentity(left, right State) bool {
 	return left.Name == right.Name && left.Version == right.Version && left.PackageDigest == right.PackageDigest
 }
 
-func (m *Manager) recoverInterruptedUpdates() error {
-	transactions, err := m.store.ListUpdateTransactions()
+func (m *Manager) recoverInterruptedActivations() error {
+	transactions, err := m.store.ListActivationTransactions()
 	if err != nil {
-		return fmt.Errorf("load Plugin update transactions: %w", err)
+		return fmt.Errorf("load Plugin activation transactions: %w", err)
 	}
 	for _, transaction := range transactions {
 		ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
@@ -957,21 +1089,21 @@ func (m *Manager) recoverInterruptedUpdates() error {
 				// 当前 Manager 可以正常启动，但绝不能抢占或回滚它的事务。
 				continue
 			}
-			return fmt.Errorf("lock Plugin update transaction %s: %w", transaction.Name, lockErr)
+			return fmt.Errorf("lock Plugin activation transaction %s: %w", transaction.Name, lockErr)
 		}
-		recoverErr := m.recoverUpdateLocked(transaction.Name)
+		recoverErr := m.recoverActivationLocked(transaction.Name)
 		release()
 		if recoverErr != nil {
-			return fmt.Errorf("recover Plugin update %s: %w", transaction.Name, recoverErr)
+			return fmt.Errorf("recover Plugin activation %s: %w", transaction.Name, recoverErr)
 		}
 	}
 	return nil
 }
 
-// recoverUpdateLocked 只能在持有 Plugin writer lease 时调用。能拿到 lease
+// recoverActivationLocked 只能在持有 Plugin writer lease 时调用。能拿到 lease
 // 就证明没有活 activation owner；pending 可以安全回滚，committed 则向前完成。
-func (m *Manager) recoverUpdateLocked(name string) error {
-	transaction, err := m.store.LoadUpdateTransaction(name)
+func (m *Manager) recoverActivationLocked(name string) error {
+	transaction, err := m.store.LoadActivationTransaction(name)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -980,16 +1112,34 @@ func (m *Manager) recoverUpdateLocked(name string) error {
 	}
 	switch transaction.Phase {
 	case "pending":
-		return m.rollbackUpdateTransaction(transaction)
+		return m.rollbackActivationTransaction(transaction)
 	case "committed":
-		return m.finalizeUpdateTransaction(transaction)
+		return m.finalizeActivationTransaction(transaction)
 	default:
-		return fmt.Errorf("Plugin update %s has invalid transaction phase %q", transaction.Name, transaction.Phase)
+		return fmt.Errorf("Plugin activation %s has invalid transaction phase %q", transaction.Name, transaction.Phase)
 	}
 }
 
-func (m *Manager) rollbackUpdateTransaction(transaction UpdateTransaction) error {
-	previousPath, err := m.store.PackagePath(transaction.Previous.Name, transaction.Previous.Version)
+func (m *Manager) rollbackActivationTransaction(transaction ActivationTransaction) error {
+	if transaction.Previous == nil {
+		// 首次 install 在 pending 阶段没有正式 state；即使 candidate package 已经
+		// 准备好，也只需撤销可能意外出现的同一 candidate state 并删除 journal。
+		current, err := m.store.Load(transaction.Name)
+		if err == nil {
+			if !samePluginStateIdentity(current, transaction.Candidate) {
+				return errors.New("formal Plugin state changed during install activation recovery")
+			}
+			if err := m.store.Delete(transaction.Name); err != nil {
+				return err
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return m.store.DeleteActivationTransaction(transaction.Name)
+	}
+
+	previous := *transaction.Previous
+	previousPath, err := m.store.PackagePath(previous.Name, previous.Version)
 	if err != nil {
 		return err
 	}
@@ -1020,17 +1170,17 @@ func (m *Manager) rollbackUpdateTransaction(transaction UpdateTransaction) error
 			return fmt.Errorf("remove pending local Plugin candidate: %w", err)
 		}
 	}
-	installed := Installed{State: transaction.Previous, Root: previousPath}
+	installed := Installed{State: previous, Root: previousPath}
 	if err := verifyInstalledPackage(installed); err != nil {
 		return fmt.Errorf("verify previous Plugin package during recovery: %w", err)
 	}
-	if err := m.store.Save(transaction.Previous); err != nil {
+	if err := m.store.Save(previous); err != nil {
 		return fmt.Errorf("restore previous Plugin state: %w", err)
 	}
-	return m.store.DeleteUpdateTransaction(transaction.Name)
+	return m.store.DeleteActivationTransaction(transaction.Name)
 }
 
-func (m *Manager) finalizeUpdateTransaction(transaction UpdateTransaction) error {
+func (m *Manager) finalizeActivationTransaction(transaction ActivationTransaction) error {
 	candidatePath, err := m.store.PackagePath(transaction.Candidate.Name, transaction.Candidate.Version)
 	if err != nil {
 		return err
@@ -1051,11 +1201,11 @@ func (m *Manager) finalizeUpdateTransaction(transaction UpdateTransaction) error
 			return fmt.Errorf("remove committed Plugin rollback backup: %w", err)
 		}
 	}
-	return m.store.DeleteUpdateTransaction(transaction.Name)
+	return m.store.DeleteActivationTransaction(transaction.Name)
 }
 
 func (m *Manager) cleanupStartupObsoleteVersions() {
-	transactions, err := m.store.ListUpdateTransactions()
+	transactions, err := m.store.ListActivationTransactions()
 	if err != nil {
 		return
 	}
@@ -1096,8 +1246,8 @@ func (m *Manager) cleanupObsoleteVersions(name, current string) {
 	if current != "" {
 		protected[current] = struct{}{}
 	}
-	if transaction, err := m.store.LoadUpdateTransaction(name); err == nil {
-		if transaction.Previous.Version != "" {
+	if transaction, err := m.store.LoadActivationTransaction(name); err == nil {
+		if transaction.Previous != nil && transaction.Previous.Version != "" {
 			protected[transaction.Previous.Version] = struct{}{}
 		}
 		if transaction.Candidate.Version != "" {
