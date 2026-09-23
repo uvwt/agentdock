@@ -967,25 +967,20 @@ func (m *Manager) FinalizeActivation(name string) error {
 		return err
 	}
 
-	// 正式 state 是唯一 publish commit point。journal 紧接着写 committed；如果
-	// committed marker 落盘失败，仍在同一 writer lease 内恢复 publish 前状态。
+	// 正式 state 是唯一 publish commit point。它一旦持久化就不能因为随后
+	// journal 清理失败而回滚；若进程在两次 durable write 之间退出，恢复逻辑
+	// 会识别 formal state == Candidate，并继续向前完成。
 	if err := m.store.Save(transaction.Candidate); err != nil {
 		return pluginError("PLUGIN_UPDATE_FINALIZE_FAILED", "finalize.state", err)
 	}
+	pending.commit.finish()
 	transaction.Phase = "committed"
 	if err := m.store.SaveActivationTransaction(transaction); err != nil {
-		var restoreErr error
-		if transaction.Previous == nil {
-			restoreErr = m.store.Delete(name)
-		} else {
-			restoreErr = m.store.Save(*transaction.Previous)
-		}
-		return pluginError("PLUGIN_UPDATE_FINALIZE_FAILED", "finalize.journal", errors.Join(err, restoreErr))
+		// state 已经是 durable commit point；这里降级为清理告警而不是回滚。
+		// 若 journal 仍为 pending，下一次 recovery 会从 formal Candidate 向前收口。
+		slog.Warn("mark Plugin activation journal committed failed after publish", "plugin", name, "error", err)
 	}
-	pending.commit.finish()
 	if err := m.store.DeleteActivationTransaction(name); err != nil {
-		// committed marker 已经是 durable decision；删除 journal 失败只影响清理，
-		// 重启时 recoverActivationLocked 会幂等向前收口。
 		slog.Warn("remove committed Plugin activation journal failed", "plugin", name, "error", err)
 	}
 	m.finishPendingActivation(name, transaction.OwnerID)
@@ -1101,7 +1096,8 @@ func (m *Manager) recoverInterruptedActivations() error {
 }
 
 // recoverActivationLocked 只能在持有 Plugin writer lease 时调用。能拿到 lease
-// 就证明没有活 activation owner；pending 可以安全回滚，committed 则向前完成。
+// 就证明没有活 activation owner。pending 通常回滚，但正式 state 若已经等于
+// Candidate，说明 publish commit point 已经持久化，必须向前完成而不能反悔。
 func (m *Manager) recoverActivationLocked(name string) error {
 	transaction, err := m.store.LoadActivationTransaction(name)
 	if errors.Is(err, os.ErrNotExist) {
@@ -1112,12 +1108,39 @@ func (m *Manager) recoverActivationLocked(name string) error {
 	}
 	switch transaction.Phase {
 	case "pending":
+		published, err := m.activationCandidatePublished(transaction)
+		if err != nil {
+			return err
+		}
+		if published {
+			return m.finalizeActivationTransaction(transaction)
+		}
 		return m.rollbackActivationTransaction(transaction)
 	case "committed":
 		return m.finalizeActivationTransaction(transaction)
 	default:
 		return fmt.Errorf("Plugin activation %s has invalid transaction phase %q", transaction.Name, transaction.Phase)
 	}
+}
+
+func (m *Manager) activationCandidatePublished(transaction ActivationTransaction) (bool, error) {
+	current, err := m.store.Load(transaction.Name)
+	if errors.Is(err, os.ErrNotExist) {
+		if transaction.Previous == nil {
+			return false, nil
+		}
+		return false, errors.New("formal Plugin state disappeared during update activation recovery")
+	}
+	if err != nil {
+		return false, err
+	}
+	if reflect.DeepEqual(current, transaction.Candidate) {
+		return true, nil
+	}
+	if transaction.Previous != nil && reflect.DeepEqual(current, *transaction.Previous) {
+		return false, nil
+	}
+	return false, errors.New("formal Plugin state does not match activation transaction during recovery")
 }
 
 func (m *Manager) rollbackActivationTransaction(transaction ActivationTransaction) error {

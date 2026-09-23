@@ -785,6 +785,49 @@ func TestManagerRestartRollsBackUnfinalizedInstallJournal(t *testing.T) {
 	}
 }
 
+func TestManagerRestartFinishesInstallPublishedBeforeJournalCommit(t *testing.T) {
+	home := filepath.Join(t.TempDir(), ".agentdock")
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(t.TempDir(), "plugin")
+	writeTestPlugin(t, source, "demo.plugin", "1.0.0", false)
+	review := manager.ValidateSource(context.Background(), legacyLocalSourceRequest(source))
+	if _, err := manager.InstallReviewedSource(context.Background(), legacyLocalSourceRequest(source), true, review.ReviewToken); err != nil {
+		t.Fatal(err)
+	}
+	transaction, err := manager.Store().LoadActivationTransaction("demo.plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if transaction.Phase != "pending" {
+		t.Fatalf("activation phase = %q", transaction.Phase)
+	}
+
+	// 模拟 FinalizeActivation 已持久化正式 state，但还没来得及把 journal
+	// 标成 committed 就崩溃。正式 state 是 publish commit point，重启只能向前。
+	if err := manager.Store().Save(transaction.Candidate); err != nil {
+		t.Fatal(err)
+	}
+	simulatePluginActivationCrashForTest(t, manager, "demo.plugin")
+
+	restarted, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed, err := restarted.Inspect("demo.plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if installed.Version != transaction.Candidate.Version || installed.PackageDigest != transaction.Candidate.PackageDigest {
+		t.Fatalf("published install was rolled back during recovery: %#v", installed.State)
+	}
+	if _, err := restarted.Store().LoadActivationTransaction("demo.plugin"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("published install recovery left activation journal: %v", err)
+	}
+}
+
 func TestManagerRestartRollsBackUnfinalizedUpdateJournal(t *testing.T) {
 	home := filepath.Join(t.TempDir(), ".agentdock")
 	manager, err := NewManager(home)
