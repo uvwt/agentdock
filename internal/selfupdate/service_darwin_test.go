@@ -61,6 +61,10 @@ func TestPlatformHealthCandidatesReadsMacOSAgentDockEnv(t *testing.T) {
 	if !slices.Contains(candidates, want) {
 		t.Fatalf("health candidates %v do not contain %s", candidates, want)
 	}
+	desktopCandidates := macOSConfiguredHealthCandidates()
+	if !slices.Contains(desktopCandidates, want) {
+		t.Fatalf("desktop health candidates %v do not contain %s", desktopCandidates, want)
+	}
 }
 
 func TestParseLaunchdPID(t *testing.T) {

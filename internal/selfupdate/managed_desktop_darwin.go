@@ -104,7 +104,7 @@ func applyManagedDesktopOnlyUpdate(ctx context.Context, request applyRequest) (a
 	}
 	var healthURL string
 	if serviceState.CoreEnabled {
-		if candidates := platformHealthCandidates(ctx, request.CurrentPath); len(candidates) > 0 {
+		if candidates := macOSConfiguredHealthCandidates(); len(candidates) > 0 {
 			healthURL = candidates[0]
 		}
 	}

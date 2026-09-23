@@ -257,7 +257,19 @@ func platformHealthCandidates(_ context.Context, targetPath string) []string {
 	if filepath.Clean(targetPath) != paths.binary {
 		return nil
 	}
-	host, port := macOSServiceAddress(paths.serviceEnv)
+	return macOSHealthCandidatesFromEnv(paths.serviceEnv)
+}
+
+func macOSConfiguredHealthCandidates() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	return macOSHealthCandidatesFromEnv(standardMacOSPaths(home).serviceEnv)
+}
+
+func macOSHealthCandidatesFromEnv(serviceEnv string) []string {
+	host, port := macOSServiceAddress(serviceEnv)
 	if port == 0 {
 		return nil
 	}
