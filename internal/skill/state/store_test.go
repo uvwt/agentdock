@@ -103,33 +103,3 @@ func TestBlockedWriterRespectsContextCancellation(t *testing.T) {
 		t.Fatalf("AcquireWrite() error = %v, want deadline exceeded", err)
 	}
 }
-
-func TestRefreshOwnedLockKeepsActiveWriterFresh(t *testing.T) {
-	root := t.TempDir()
-	lockPath := filepath.Join(root, "writer.lock")
-	if err := os.Mkdir(lockPath, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	owner := "test-owner"
-	if err := os.WriteFile(filepath.Join(lockPath, lockOwnerPrefix+owner), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	old := time.Now().Add(-2 * writerStaleAfter)
-	if err := os.Chtimes(lockPath, old, old); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := refreshOwnedLock(lockPath, owner); err != nil {
-		t.Fatal(err)
-	}
-	info, err := os.Stat(lockPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if time.Since(info.ModTime()) >= writerStaleAfter {
-		t.Fatalf("writer lock heartbeat remained stale: %s", info.ModTime())
-	}
-	if err := refreshOwnedLock(lockPath, "other-owner"); err == nil {
-		t.Fatal("writer heartbeat accepted a non-owner token")
-	}
-}

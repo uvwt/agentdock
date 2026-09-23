@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -26,12 +27,16 @@ func New(state *skillstate.Store) (*Manager, error) {
 	if state == nil {
 		return nil, errors.New("managed Skill store is required")
 	}
-	return &Manager{
+	manager := &Manager{
 		State:       state,
 		HTTPClient:  &http.Client{Timeout: 2 * time.Minute},
 		MaxDownload: 128 << 20,
 		MaxFiles:    10000,
-	}, nil
+	}
+	if err := manager.recoverInterruptedSwaps(); err != nil {
+		return nil, err
+	}
+	return manager, nil
 }
 
 func (m *Manager) Install(ctx context.Context, req InstallRequest) (InstallResult, error) {
@@ -79,39 +84,65 @@ func (m *Manager) Install(ctx context.Context, req InstallRequest) (InstallResul
 		return InstallResult{}, packageError(ErrInstallFailed, "lock", err)
 	}
 	defer release()
+	if err := m.recoverSwapLocked(doc.Name); err != nil {
+		return InstallResult{}, packageError(ErrInstallFailed, "recover", err)
+	}
 
 	destination, err := m.State.SkillPath(doc.Name)
 	if err != nil {
 		return InstallResult{}, packageError(ErrInstallFailed, "destination", err)
 	}
-	if currentDigest, exists, err := installedContentDigest(destination); err != nil {
+	currentDigest, exists, err := installedContentDigest(destination)
+	if err != nil {
 		return InstallResult{}, packageError(ErrInstallFailed, "current_digest", err)
-	} else if exists && currentDigest == contentDigest {
+	}
+	if exists && currentDigest == contentDigest {
 		return InstallResult{Skill: doc.Name, ContentDigest: contentDigest, Path: destination, Changed: false}, nil
 	}
 
 	backup := ""
-	if _, err := os.Lstat(destination); err == nil {
-		backup, err = m.State.TempPath("replace-" + doc.Name)
+	var transaction skillstate.SwapTransaction
+	if exists {
+		backup, err = m.State.SwapBackupPath(doc.Name)
 		if err != nil {
 			return InstallResult{}, packageError(ErrInstallFailed, "backup", err)
 		}
-		if err := os.Remove(backup); err != nil {
+		if _, err := os.Lstat(backup); err == nil {
+			return InstallResult{}, packageError(ErrInstallFailed, "backup", errors.New("stale Skill swap backup remains after recovery"))
+		} else if !errors.Is(err, os.ErrNotExist) {
 			return InstallResult{}, packageError(ErrInstallFailed, "backup", err)
+		}
+		transaction = newSkillSwapTransaction(doc.Name, currentDigest, contentDigest)
+		if err := m.State.SaveSwapTransaction(transaction); err != nil {
+			return InstallResult{}, packageError(ErrInstallFailed, "journal", err)
 		}
 		if err := os.Rename(destination, backup); err != nil {
+			_ = m.State.DeleteSwapTransaction(doc.Name)
 			return InstallResult{}, packageError(ErrInstallFailed, "backup", err)
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return InstallResult{}, packageError(ErrInstallFailed, "destination", err)
 	}
 
 	if err := os.Rename(staged, destination); err != nil {
 		restoreErr := restoreReplacedSkill(backup, destination)
+		if backup != "" && restoreErr == nil {
+			_ = m.State.DeleteSwapTransaction(doc.Name)
+		}
 		return InstallResult{}, packageError(ErrInstallFailed, "commit", errors.Join(err, restoreErr))
 	}
 	if backup != "" {
-		_ = os.RemoveAll(backup)
+		transaction.Phase = "candidate_published"
+		if err := m.State.SaveSwapTransaction(transaction); err != nil {
+			restoreErr := restoreReplacedSkill(backup, destination)
+			if restoreErr == nil {
+				_ = m.State.DeleteSwapTransaction(doc.Name)
+			}
+			return InstallResult{}, packageError(ErrInstallFailed, "journal_commit", errors.Join(err, restoreErr))
+		}
+		if err := os.RemoveAll(backup); err != nil {
+			slog.Warn("cleanup committed Skill swap backup failed", "skill", doc.Name, "path", backup, "error", err)
+		} else if err := m.State.DeleteSwapTransaction(doc.Name); err != nil {
+			slog.Warn("cleanup committed Skill swap journal failed", "skill", doc.Name, "error", err)
+		}
 	}
 	return InstallResult{Skill: doc.Name, ContentDigest: contentDigest, Path: destination, Changed: true}, nil
 }
@@ -203,7 +234,11 @@ func (m *Manager) prepareSource(ctx context.Context, source, work string, maxByt
 	if !info.Mode().IsRegular() {
 		return "", "", packageError(ErrInvalidPackage, "source", errors.New("local Skill source must be a regular directory or ZIP file"))
 	}
-	return m.prepareArchive(source, work, maxBytes, maxFiles)
+	archive := filepath.Join(work, "local-package.zip")
+	if err := snapshotLocalFile(source, archive, maxBytes); err != nil {
+		return "", "", packageError(ErrInvalidPackage, "snapshot", err)
+	}
+	return m.prepareArchive(archive, work, maxBytes, maxFiles)
 }
 
 func (m *Manager) prepareArchive(archive, work string, maxBytes int64, maxFiles int) (string, string, error) {
@@ -283,6 +318,60 @@ func snapshotLocalDirectory(source, destination string, maxBytes int64, maxFiles
 		}
 		return nil
 	})
+}
+
+func snapshotLocalFile(source, destination string, maxBytes int64) error {
+	absolute, err := filepath.Abs(source)
+	if err != nil {
+		return err
+	}
+	before, err := os.Lstat(absolute)
+	if err != nil {
+		return err
+	}
+	if !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 {
+		return errors.New("local Skill archive must be a regular file")
+	}
+	in, err := os.Open(absolute)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	opened, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(before, opened) {
+		return errors.New("local Skill archive changed while opening snapshot")
+	}
+	out, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	copied, copyErr := io.Copy(out, io.LimitReader(in, maxBytes+1))
+	closeErr := out.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if copied > maxBytes {
+		return fmt.Errorf("package exceeds %d bytes", maxBytes)
+	}
+	afterOpen, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	afterPath, err := os.Lstat(absolute)
+	if err != nil {
+		return err
+	}
+	if !afterPath.Mode().IsRegular() || !os.SameFile(opened, afterOpen) || !os.SameFile(opened, afterPath) ||
+		opened.Size() != afterOpen.Size() || opened.ModTime() != afterOpen.ModTime() || opened.Mode() != afterOpen.Mode() {
+		return errors.New("local Skill archive changed while creating snapshot")
+	}
+	return nil
 }
 
 // validateSnapshotSourcePath rejects symlink/reparse-style path substitution

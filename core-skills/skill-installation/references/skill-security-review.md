@@ -114,7 +114,7 @@ blocked 包括：
 - 临时文件权限安全；
 - 日志无 secret。
 
-持久状态在 AgentDock 中属于 `~/.agentdock/data/skills/<name>/`，但目标 Skill 不应硬编码该宿主路径。managed Skill 运行时应优先消费宿主注入的 `SKILL_DATA_DIR`；它是 AgentDock 保留变量，不能作为用户配置项或由请求覆盖。shared/workspace 候选不应得到 managed Skill 的该变量。
+持久状态在 AgentDock 中属于宿主管理的数据目录，但目标 Skill 不应硬编码这些路径。standalone managed Skill 使用 `~/.agentdock/data/skills/<name>/`；Plugin-owned Skill 使用独立 `~/.agentdock/data/skills/.plugin/<plugin>/<skill>/` 作为 `SKILL_DATA_DIR`，并可额外获得共享 `PLUGIN_DATA_DIR=~/.agentdock/data/plugins/<plugin>/`。两个运行时变量都属于 AgentDock 保留变量，不能作为用户配置项或由请求覆盖。shared/workspace 候选不应得到这两个变量。
 
 ## 8. 环境
 

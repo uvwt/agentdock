@@ -4,6 +4,7 @@ package skill
 type ManageRequest struct {
 	Action   string  `json:"action"`
 	Skill    string  `json:"skill,omitempty"`
+	SkillRef string  `json:"skill_ref,omitempty"`
 	Key      string  `json:"key,omitempty"`
 	Value    *string `json:"value,omitempty"`
 	Source   string  `json:"source,omitempty"`

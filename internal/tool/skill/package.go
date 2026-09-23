@@ -19,10 +19,14 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 		return s.remove(ctx, request)
 	case "env_set", "env_unset", "env_list":
 		skill := strings.TrimSpace(request.Skill)
-		if skill == "" {
-			return nil, toolErrorDetails("VALIDATION_ERROR", "skill is required", "validation", map[string]any{"field": "skill"})
+		skillRef := strings.TrimSpace(request.SkillRef)
+		if skillRef == "" {
+			if skill == "" {
+				return nil, toolErrorDetails("VALIDATION_ERROR", "skill or skill_ref is required", "validation", map[string]any{"field": "skill_ref"})
+			}
+			skillRef = ManagedSkillRef(skill)
 		}
-		return s.scopedEnvAction(ctx, skill, action, request)
+		return s.scopedEnvAction(ctx, skillRef, action, request)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported skill_manage action", "validation", map[string]any{
 			"action": action, "allowed": []string{"install", "remove", "env_set", "env_unset", "env_list"},

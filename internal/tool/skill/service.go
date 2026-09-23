@@ -369,31 +369,70 @@ func verifyResolvedSkillDocument(root, expectedName string) error {
 	return nil
 }
 
-func (s *Service) scopedEnvAction(ctx context.Context, name, action string, request ManageRequest) (Result, error) {
-	name = strings.TrimSpace(name)
-	release, err := s.state.AcquireRead(ctx, name)
+func (s *Service) scopedEnvAction(ctx context.Context, skillRef, action string, request ManageRequest) (Result, error) {
+	ref, err := parseSkillRef(strings.TrimSpace(skillRef))
 	if err != nil {
-		return nil, toolErrorDetails("SKILL_CONTEXT_INVALID", "acquire managed Skill lifecycle lock: "+err.Error(), "runtime", map[string]any{"skill": name})
+		return nil, err
+	}
+	var (
+		scope   envstore.Scope
+		release func()
+	)
+	switch ref.SourceType {
+	case managedSourceType:
+		release, err = s.state.AcquireRead(ctx, ref.Name)
+		if err != nil {
+			return nil, toolErrorDetails("SKILL_CONTEXT_INVALID", "acquire managed Skill lifecycle lock: "+err.Error(), "runtime", map[string]any{"skill_ref": skillRef})
+		}
+		if _, err := s.state.Resolve(ref.Name); err != nil {
+			release()
+			return nil, toolErrorDetails("SKILL_NOT_AVAILABLE", "managed Skill is not installed", "not_found", map[string]any{"skill_ref": skillRef})
+		}
+		scope = envstore.Scope{Kind: envstore.ScopeSkill, Name: ref.Name}
+	case pluginSourceType:
+		if s.plugins == nil {
+			return nil, toolErrorDetails("SKILL_NOT_AVAILABLE", "Plugin Skill runtime is unavailable", "not_found", map[string]any{"skill_ref": skillRef})
+		}
+		release, err = s.plugins.Store().AcquireBinding(ctx, ref.SourceID)
+		if err != nil {
+			return nil, toolErrorDetails("SKILL_CONTEXT_INVALID", "acquire Plugin Skill lifecycle lock: "+err.Error(), "runtime", map[string]any{"skill_ref": skillRef})
+		}
+		installed, inspectErr := s.plugins.Inspect(ref.SourceID)
+		if inspectErr != nil {
+			release()
+			return nil, toolErrorDetails("SKILL_NOT_AVAILABLE", "Plugin Skill source is unavailable", "not_found", map[string]any{"skill_ref": skillRef, "reason": inspectErr.Error()})
+		}
+		found := false
+		for _, component := range installed.Components.Skills {
+			if component.Name == ref.Name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			release()
+			return nil, toolErrorDetails("SKILL_NOT_AVAILABLE", "Plugin does not provide the requested Skill", "not_found", map[string]any{"skill_ref": skillRef})
+		}
+		scope = envstore.Scope{Kind: envstore.ScopePluginSkill, Plugin: ref.SourceID, Name: ref.Name}
+	default:
+		return nil, toolErrorDetails("SKILL_ENV_UNSUPPORTED", "environment management is only available for managed and Plugin Skills", "validation", map[string]any{"skill_ref": skillRef})
 	}
 	defer release()
-	if _, err := s.state.Resolve(name); err != nil {
-		return nil, toolErrorDetails("SKILL_NOT_AVAILABLE", "managed Skill is not installed", "not_found", map[string]any{"skill": name})
-	}
-	scope := envstore.Scope{Kind: envstore.ScopeSkill, Name: name}
+
 	switch action {
 	case "env_set":
 		key := strings.TrimSpace(request.Key)
 		if key == "" || request.Value == nil {
 			return nil, toolErrorDetails("VALIDATION_ERROR", "key and value are required for env_set", "validation", map[string]any{"scope": scope.Name})
 		}
-		if config.IsReservedSkillEnvironmentKey(key) {
+		if config.IsReservedCommandEnvironmentKey(key) {
 			return nil, toolErrorDetails("VALIDATION_ERROR", "environment variable is reserved by the Skill runtime", "validation", map[string]any{"scope": scope.Name, "key": key})
 		}
 		text := *request.Value
 		if err := s.envs.Set(scope, key, text); err != nil {
 			return nil, skillEnvError(scope, err)
 		}
-		return Result{"action": action, "name": scope.Name, "key": key, "configured": text != ""}, nil
+		return Result{"action": action, "name": scope.Name, "skill_ref": skillRef, "key": key, "configured": text != ""}, nil
 	case "env_unset":
 		key := strings.TrimSpace(request.Key)
 		if key == "" {
@@ -403,13 +442,13 @@ func (s *Service) scopedEnvAction(ctx context.Context, name, action string, requ
 		if err != nil {
 			return nil, skillEnvError(scope, err)
 		}
-		return Result{"action": action, "name": scope.Name, "key": key, "removed": removed}, nil
+		return Result{"action": action, "name": scope.Name, "skill_ref": skillRef, "key": key, "removed": removed}, nil
 	case "env_list":
 		items, err := s.envs.List(scope)
 		if err != nil {
 			return nil, skillEnvError(scope, err)
 		}
-		return Result{"action": action, "name": scope.Name, "items": items, "count": len(items)}, nil
+		return Result{"action": action, "name": scope.Name, "skill_ref": skillRef, "items": items, "count": len(items)}, nil
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported environment action", "validation", map[string]any{"action": action})
 	}

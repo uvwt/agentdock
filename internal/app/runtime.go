@@ -98,22 +98,36 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 		if err != nil {
 			return toolcommand.SkillLease{}, err
 		}
-		envName := ""
+		var envScope *envstore.Scope
+		skillDataDir := ""
 		runtimeEnv := map[string]string(nil)
-		if resolved.SourceType == "managed" {
-			envName = resolved.Name
-		}
-		if resolved.SourceType == "plugin" {
-			dataDir, dataErr := pluginManager.EnsureDataDir(resolved.PluginName)
+		switch resolved.SourceType {
+		case "managed":
+			scope := envstore.Scope{Kind: envstore.ScopeSkill, Name: resolved.Name}
+			envScope = &scope
+			skillDataDir, err = config.SkillDataDir(cfg, resolved.Name)
+			if err != nil {
+				release()
+				return toolcommand.SkillLease{}, fmt.Errorf("resolve managed Skill data directory: %w", err)
+			}
+		case "plugin":
+			scope := envstore.Scope{Kind: envstore.ScopePluginSkill, Plugin: resolved.PluginName, Name: resolved.Name}
+			envScope = &scope
+			skillDataDir, err = config.PluginSkillDataDir(cfg, resolved.PluginName, resolved.Name)
+			if err != nil {
+				release()
+				return toolcommand.SkillLease{}, fmt.Errorf("resolve Plugin Skill data directory: %w", err)
+			}
+			pluginDataDir, dataErr := pluginManager.EnsureDataDir(resolved.PluginName)
 			if dataErr != nil {
 				release()
 				return toolcommand.SkillLease{}, fmt.Errorf("prepare Plugin data directory: %w", dataErr)
 			}
-			runtimeEnv = map[string]string{config.PluginDataDirEnvKey: dataDir}
+			runtimeEnv = map[string]string{config.PluginDataDirEnvKey: pluginDataDir}
 		}
 		return toolcommand.SkillLease{
-			Name: resolved.Name, Root: resolved.Root, EnvName: envName,
-			RuntimeEnv: runtimeEnv, Release: release,
+			Name: resolved.Name, Root: resolved.Root, EnvScope: envScope,
+			SkillDataDir: skillDataDir, RuntimeEnv: runtimeEnv, Release: release,
 		}, nil
 	}, runtime.commandExecutionContext)
 	runtime.files = toolfile.New(ws, skills.ResolveResource, runtime.command.CommandEnv)

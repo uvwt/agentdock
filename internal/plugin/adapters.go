@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	skills "github.com/uvwt/agentdock/internal/skill"
 )
 
 type adapterHints struct {
@@ -202,7 +204,11 @@ func normalizeClaudePlugin(sourceRoot, normalizedRoot string, request SourceRequ
 	compat.Unsupported = append(compat.Unsupported, manifestUnsupported...)
 	compat.Warnings = append(compat.Warnings, warnings...)
 
-	if err := normalizeSkillPaths(sourceRoot, normalizedRoot, raw["skills"], staged.Hints.Skills); err != nil {
+	skillHints := append([]string(nil), staged.Hints.Skills...)
+	if regularFileExists(filepath.Join(sourceRoot, "SKILL.md")) {
+		skillHints = append(skillHints, ".")
+	}
+	if err := normalizeSkillPaths(sourceRoot, normalizedRoot, raw["skills"], skillHints); err != nil {
 		return Compatibility{}, err
 	}
 	mcpValues, err := collectExternalMCPValues(sourceRoot, raw["mcpServers"], ".mcp.json")
@@ -264,7 +270,7 @@ func normalizeExternalManifest(raw map[string]json.RawMessage, request SourceReq
 			version = candidate
 			warnings = append(warnings, "external Plugin version derived from SemVer git_ref")
 		} else {
-			return Manifest{}, nil, nil, errors.New("external Plugin has no SemVer version; provide source_version or a SemVer git_ref")
+			return Manifest{}, nil, nil, errors.New("external Plugin has no SemVer version; AgentDock portable v1 does not yet use Git commit/archive digest as the Plugin version, so provide source_version or a SemVer git_ref")
 		}
 	}
 	if err := ValidateVersion(version); err != nil {
@@ -367,12 +373,19 @@ func normalizeSkillPaths(sourceRoot, normalizedRoot string, manifestRaw json.Raw
 		if relative == "skills" || relative == "skills/" {
 			continue
 		}
-		source, err := resolvePluginSourcePath(sourceRoot, relative, true)
-		if err != nil {
-			return fmt.Errorf("skills path %q must stay inside the Plugin source as a regular directory: %w", rawPath, err)
+		source := sourceRoot
+		if relative != "." {
+			source, err = resolvePluginSourcePath(sourceRoot, relative, true)
+			if err != nil {
+				return fmt.Errorf("skills path %q must stay inside the Plugin source as a regular directory: %w", rawPath, err)
+			}
 		}
 		if regularFileExists(filepath.Join(source, "SKILL.md")) {
-			if err := copyExternalSkillDirectory(source, filepath.Join(normalizedRoot, "skills", filepath.Base(source))); err != nil {
+			doc, err := skills.LoadSkillDocument(source)
+			if err != nil {
+				return fmt.Errorf("load external Skill %q: %w", rawPath, err)
+			}
+			if err := copyExternalSkillDirectory(source, filepath.Join(normalizedRoot, "skills", doc.Name)); err != nil {
 				return err
 			}
 			continue
@@ -410,6 +423,9 @@ func copyExternalSkillDirectory(source, destination string) error {
 
 func normalizeExternalComponentPath(value string) (string, error) {
 	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
+	if value == "." || value == "./" {
+		return ".", nil
+	}
 	value = strings.TrimPrefix(value, "./")
 	return cleanPluginRelativePath(value)
 }
@@ -652,6 +668,8 @@ func detectExternalRootUnsupported(root, adapter string) []string {
 		paths["workflows"] = "workflows"
 		paths["output-styles"] = "output styles"
 		paths["themes"] = "themes"
+		paths["bin"] = "bin PATH executables"
+		paths["settings.json"] = "settings"
 	}
 	if adapter == "openai" {
 		paths[".app.json"] = "apps"

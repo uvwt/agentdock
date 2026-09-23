@@ -34,6 +34,9 @@ func (m *Manager) remove(ctx context.Context, skill string, allowMissing bool, p
 		return RemoveResult{}, packageError(ErrUninstallFailed, "remove.lock", err)
 	}
 	defer release()
+	if err := m.recoverSwapLocked(skill); err != nil {
+		return RemoveResult{}, packageError(ErrUninstallFailed, "remove.recover", err)
+	}
 
 	result := RemoveResult{
 		Skill:                skill,

@@ -39,11 +39,31 @@ func New(cfg config.Config, manager *pluginruntime.Manager, mcpClients *mcpclien
 }
 
 func (s *Service) ReconcileMCP() error {
-	return s.reconcileMCPExcluding("")
+	return s.reconcileMCP("", "", nil)
 }
 
 func (s *Service) reconcileMCPExcluding(pluginName string) error {
-	configs, leases, err := s.ownedMCPConfigs(pluginName)
+	return s.reconcileMCP(pluginName, "", nil)
+}
+
+func (s *Service) reconcileMCPActivation(pluginName string) error {
+	return s.reconcileMCP(pluginName, pluginName, nil)
+}
+
+func (s *Service) reconcileMCPState(state pluginruntime.State) error {
+	if !state.Enabled || len(state.Components.MCP) == 0 {
+		return s.reconcileMCP(state.Name, "", nil)
+	}
+	root, err := s.manager.Store().PackagePath(state.Name, state.Version)
+	if err != nil {
+		return err
+	}
+	override := &pluginruntime.Installed{State: state, Root: root}
+	return s.reconcileMCP(state.Name, "", override)
+}
+
+func (s *Service) reconcileMCP(excludedPlugin, activationPlugin string, override *pluginruntime.Installed) error {
+	configs, leases, err := s.ownedMCPConfigs(excludedPlugin, activationPlugin, override)
 	if err != nil {
 		return err
 	}
@@ -227,7 +247,7 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 			}
 			return nil, pluginToolError(err)
 		}
-		if err := s.ReconcileMCP(); err != nil {
+		if err := s.reconcileMCPActivation(result.Name); err != nil {
 			restoreErr := s.manager.RestoreState(ctx, previous)
 			reconcileErr := s.ReconcileMCP()
 			return nil, toolcore.NewErrorCause(
@@ -239,12 +259,15 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 			)
 		}
 		if err := s.manager.FinalizeUpdate(result.Name); err != nil {
+			deactivateErr := s.reconcileMCPExcluding(result.Name)
+			restoreErr := s.manager.RestoreState(ctx, previous)
+			reconcileErr := s.ReconcileMCP()
 			return nil, toolcore.NewErrorCause(
 				"PLUGIN_UPDATE_FINALIZE_FAILED",
-				"Plugin runtime activated but durable update finalization failed; the persisted journal will be recovered on restart",
+				"Plugin runtime activated but durable update finalization failed; the candidate was rolled back",
 				"runtime",
 				map[string]any{"plugin_name": result.Name, "version": result.Version},
-				err,
+				errors.Join(err, deactivateErr, restoreErr, reconcileErr),
 			)
 		}
 		return changeResult(result), nil
@@ -254,39 +277,11 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 		if name == "" {
 			return nil, validationError("name is required for enable/disable", "name")
 		}
-		previous, err := s.manager.Inspect(name)
+		result, err := s.manager.SetEnabledWithLifecycle(ctx, name, action == "enable", func(target pluginruntime.State) error {
+			return s.reconcileMCPState(target)
+		})
 		if err != nil {
 			return nil, pluginToolError(err)
-		}
-		if action == "disable" && previous.Enabled {
-			if err := s.reconcileMCPExcluding(name); err != nil {
-				return nil, toolcore.NewErrorCause(
-					"PLUGIN_RUNTIME_DEACTIVATION_FAILED",
-					"could not stop the Plugin MCP runtime before disabling it",
-					"runtime",
-					map[string]any{"plugin_name": name},
-					err,
-				)
-			}
-		}
-		result, err := s.manager.SetEnabled(ctx, name, action == "enable")
-		if err != nil {
-			_ = s.ReconcileMCP()
-			return nil, pluginToolError(err)
-		}
-		if err := s.ReconcileMCP(); err != nil {
-			if action == "enable" {
-				_ = s.reconcileMCPExcluding(name)
-			}
-			_, restoreErr := s.manager.SetEnabled(ctx, name, previous.Enabled)
-			reconcileErr := s.ReconcileMCP()
-			return nil, toolcore.NewErrorCause(
-				"PLUGIN_RUNTIME_ACTIVATION_FAILED",
-				"Plugin runtime state change failed; the previous enabled state was restored",
-				"runtime",
-				map[string]any{"plugin_name": name},
-				errors.Join(err, restoreErr, reconcileErr),
-			)
 		}
 		return changeResult(result), nil
 
@@ -299,41 +294,22 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 		if policy != "keep" && policy != "purge" {
 			return nil, validationError("data_policy must be keep or purge for remove", "data_policy")
 		}
-		previous, err := s.manager.Inspect(name)
+		result, err := s.manager.RemoveWithLifecycle(ctx, name, policy, pluginruntime.RemoveLifecycle{
+			BeforeDelete: func(state pluginruntime.State) error {
+				if err := s.reconcileMCPExcluding(name); err != nil {
+					return fmt.Errorf("deactivate Plugin runtime before remove: %w", err)
+				}
+				return nil
+			},
+			Restore: func(state pluginruntime.State) error {
+				return s.reconcileMCPState(state)
+			},
+			Purge: func(ownership pluginruntime.PurgeOwnership) error {
+				return s.purgePluginOwnedState(ownership)
+			},
+		})
 		if err != nil {
 			return nil, pluginToolError(err)
-		}
-
-		// 先从新请求的运行时索引中撤下 Plugin，并关闭 owned MCP，再删除包。
-		// 如果删除失败，可以恢复原 enabled 状态而不会丢失 package。
-		if previous.Enabled {
-			if err := s.reconcileMCPExcluding(name); err != nil {
-				return nil, toolcore.NewErrorCause("PLUGIN_RUNTIME_DEACTIVATION_FAILED", "disable Plugin runtime before remove", "runtime", map[string]any{"plugin_name": name}, err)
-			}
-			if _, err := s.manager.SetEnabled(ctx, name, false); err != nil {
-				_ = s.ReconcileMCP()
-				return nil, pluginToolError(err)
-			}
-		}
-		result, err := s.manager.Remove(ctx, name, policy)
-		if err != nil {
-			if previous.Enabled {
-				_, _ = s.manager.SetEnabled(ctx, name, true)
-				_ = s.ReconcileMCP()
-			}
-			return nil, pluginToolError(err)
-		}
-		if err := s.ReconcileMCP(); err != nil {
-			return nil, toolcore.NewErrorCause("PLUGIN_RUNTIME_RECONCILE_FAILED", "Plugin was removed but MCP runtime reconciliation failed", "runtime", map[string]any{"plugin_name": name}, err)
-		}
-		if policy == "purge" {
-			keys := previous.MCPStorageKeys
-			if len(keys) == 0 {
-				keys = pluginStorageKeys(previous.Components.MCP)
-			}
-			if err := s.purgeMCPEnvironment(keys); err != nil {
-				return nil, toolcore.NewErrorCause("PLUGIN_PURGE_FAILED", "Plugin was removed but Plugin-owned MCP environment could not be fully purged", "runtime", map[string]any{"plugin_name": name}, err)
-			}
 		}
 		return changeResult(result), nil
 
@@ -360,7 +336,7 @@ func (s *Service) sourceRequest(request ManageRequest) (pluginruntime.SourceRequ
 		sourceType = "catalog"
 	}
 	if (sourceType == "local" || sourceType == "catalog" || sourceType == "git" || sourceType == "archive" || sourceType == "auto") &&
-		!strings.Contains(source, "://") {
+		!strings.Contains(source, "://") && !pluginruntime.IsSCPLikeGitSource(source) {
 		resolved, err := s.ws.ResolveExisting(source)
 		if err != nil {
 			if sourceType == "git" {
@@ -396,7 +372,7 @@ func (s *Service) sourceRequest(request ManageRequest) (pluginruntime.SourceRequ
 	}, nil
 }
 
-func (s *Service) ownedMCPConfigs(excludedPlugin string) ([]mcpclient.ServerConfig, map[string]func(), error) {
+func (s *Service) ownedMCPConfigs(excludedPlugin, activationPlugin string, override *pluginruntime.Installed) ([]mcpclient.ServerConfig, map[string]func(), error) {
 	installed, err := s.manager.List()
 	if err != nil {
 		return nil, nil, err
@@ -407,6 +383,17 @@ func (s *Service) ownedMCPConfigs(excludedPlugin string) ([]mcpclient.ServerConf
 		releasePluginLeases(leases)
 		return nil, nil, err
 	}
+	add := func(item pluginruntime.Installed, release func()) error {
+		pluginConfigs, err := s.mcpConfigsForInstalled(item)
+		if err != nil {
+			release()
+			return err
+		}
+		leases[item.Name] = release
+		configs = append(configs, pluginConfigs...)
+		return nil
+	}
+
 	for _, listed := range installed {
 		if listed.Name == excludedPlugin || !listed.Enabled || len(listed.Components.MCP) == 0 {
 			continue
@@ -417,56 +404,82 @@ func (s *Service) ownedMCPConfigs(excludedPlugin string) ([]mcpclient.ServerConf
 		if err != nil {
 			return fail(fmt.Errorf("acquire Plugin %s for MCP runtime: %w", listed.Name, err))
 		}
-		leases[item.Name] = release
-		if len(item.Components.MCP) == 0 {
-			continue
+		if err := add(item, release); err != nil {
+			return fail(err)
 		}
-		dataDir, err := s.manager.EnsureDataDir(item.Name)
+	}
+
+	if activationPlugin != "" {
+		item, release, err := s.manager.AcquireActivationCandidate(activationPlugin)
 		if err != nil {
-			return fail(fmt.Errorf("prepare Plugin data directory for %s: %w", item.Name, err))
+			return fail(fmt.Errorf("acquire Plugin %s activation candidate: %w", activationPlugin, err))
 		}
-		pkg, err := pluginruntime.LoadPackage(item.Root)
+		if !item.Enabled || len(item.Components.MCP) == 0 {
+			release()
+		} else if err := add(item, release); err != nil {
+			return fail(err)
+		}
+	}
+	if override != nil && override.Enabled && len(override.Components.MCP) > 0 {
+		release, err := s.manager.Store().AcquireVersionRead(override.Name, override.Version)
 		if err != nil {
-			return fail(fmt.Errorf("load installed Plugin %s MCP config: %w", item.Name, err))
+			return fail(fmt.Errorf("acquire Plugin %s state override: %w", override.Name, err))
 		}
-		if pkg.Manifest.Name != item.Name || pkg.Manifest.Version != item.Version || pkg.PackageDigest != item.PackageDigest {
-			return fail(fmt.Errorf("installed Plugin %s package drifted from persisted state", item.Name))
-		}
-		for _, component := range pkg.Components.MCP {
-			command := component.Command
-			if strings.HasPrefix(filepath.ToSlash(command), "./") {
-				command = filepath.Join(item.Root, filepath.FromSlash(strings.TrimPrefix(filepath.ToSlash(command), "./")))
-			}
-			args := make([]string, len(component.Args))
-			for index, value := range component.Args {
-				args[index] = expandPortablePluginValue(value, item.Root, dataDir)
-			}
-			staticEnv := make(map[string]string, len(component.Environment))
-			for key, value := range component.Environment {
-				staticEnv[key] = expandPortablePluginValue(value, item.Root, dataDir)
-			}
-			cwd := ""
-			if component.Transport == mcpclient.TransportStdio {
-				cwd = item.Root
-				if component.CWD != "" {
-					cwd = expandPortablePluginValue(component.CWD, item.Root, dataDir)
-				}
-				if err := validateActivatedPluginCWD(cwd, component.CWD, item.Root, dataDir); err != nil {
-					return fail(fmt.Errorf("activate Plugin MCP %s/%s cwd: %w", item.Name, component.Name, err))
-				}
-			}
-			configs = append(configs, mcpclient.ServerConfig{
-				Name: component.RuntimeName, DisplayName: component.Name,
-				Description: component.Description, Transport: component.Transport,
-				URL: component.URL, Command: command, Args: args, Cwd: cwd,
-				StaticEnv: staticEnv, StaticHeaders: cloneMap(component.Headers),
-				HeaderEnv: cloneMap(component.HeaderEnv), EnvBindings: cloneMap(component.EnvBindings),
-				StorageKey: component.StorageKey, SourceType: "plugin", PluginName: item.Name,
-				PluginRoot: item.Root, PluginDataDir: dataDir, Enabled: true, TimeoutMS: component.TimeoutMS,
-			})
+		if err := add(*override, release); err != nil {
+			return fail(err)
 		}
 	}
 	return configs, leases, nil
+}
+
+func (s *Service) mcpConfigsForInstalled(item pluginruntime.Installed) ([]mcpclient.ServerConfig, error) {
+	dataDir, err := s.manager.EnsureDataDir(item.Name)
+	if err != nil {
+		return nil, fmt.Errorf("prepare Plugin data directory for %s: %w", item.Name, err)
+	}
+	pkg, err := pluginruntime.LoadPackage(item.Root)
+	if err != nil {
+		return nil, fmt.Errorf("load installed Plugin %s MCP config: %w", item.Name, err)
+	}
+	if pkg.Manifest.Name != item.Name || pkg.Manifest.Version != item.Version || pkg.PackageDigest != item.PackageDigest {
+		return nil, fmt.Errorf("installed Plugin %s package drifted from persisted state", item.Name)
+	}
+
+	configs := make([]mcpclient.ServerConfig, 0, len(pkg.Components.MCP))
+	for _, component := range pkg.Components.MCP {
+		command := component.Command
+		if strings.HasPrefix(filepath.ToSlash(command), "./") {
+			command = filepath.Join(item.Root, filepath.FromSlash(strings.TrimPrefix(filepath.ToSlash(command), "./")))
+		}
+		args := make([]string, len(component.Args))
+		for index, value := range component.Args {
+			args[index] = expandPortablePluginValue(value, item.Root, dataDir)
+		}
+		staticEnv := make(map[string]string, len(component.Environment))
+		for key, value := range component.Environment {
+			staticEnv[key] = expandPortablePluginValue(value, item.Root, dataDir)
+		}
+		cwd := ""
+		if component.Transport == mcpclient.TransportStdio {
+			cwd = item.Root
+			if component.CWD != "" {
+				cwd = expandPortablePluginValue(component.CWD, item.Root, dataDir)
+			}
+			if err := validateActivatedPluginCWD(cwd, component.CWD, item.Root, dataDir); err != nil {
+				return nil, fmt.Errorf("activate Plugin MCP %s/%s cwd: %w", item.Name, component.Name, err)
+			}
+		}
+		configs = append(configs, mcpclient.ServerConfig{
+			Name: component.RuntimeName, DisplayName: component.Name,
+			Description: component.Description, Transport: component.Transport,
+			URL: component.URL, Command: command, Args: args, Cwd: cwd,
+			StaticEnv: staticEnv, StaticHeaders: cloneMap(component.Headers),
+			HeaderEnv: cloneMap(component.HeaderEnv), EnvBindings: cloneMap(component.EnvBindings),
+			StorageKey: component.StorageKey, SourceType: "plugin", PluginName: item.Name,
+			PluginRoot: item.Root, PluginDataDir: dataDir, Enabled: true, TimeoutMS: component.TimeoutMS,
+		})
+	}
+	return configs, nil
 }
 
 func expandPortablePluginValue(value, pluginRoot, pluginData string) string {
@@ -523,6 +536,50 @@ func (s *Service) purgeMCPEnvironment(storageKeys []string) error {
 		}
 	}
 	return result
+}
+
+func (s *Service) purgePluginOwnedState(ownership pluginruntime.PurgeOwnership) error {
+	var result error
+	result = errors.Join(result, s.purgeMCPEnvironment(ownership.MCPStorageKeys))
+	result = errors.Join(result, s.envs.RemovePluginSkillScopes(ownership.Name))
+	dataRoot, err := config.PluginSkillDataRoot(s.cfg, ownership.Name)
+	if err != nil {
+		result = errors.Join(result, err)
+	} else {
+		result = errors.Join(result, removePluginSkillData(s.cfg.AgentDockHome, dataRoot))
+	}
+	return result
+}
+
+func removePluginSkillData(agentDockHome, dataRoot string) error {
+	root, err := os.OpenRoot(agentDockHome)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+
+	relative, err := filepath.Rel(agentDockHome, dataRoot)
+	if err != nil || relative == "." || relative == ".." || filepath.IsAbs(relative) || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
+		return errors.New("Plugin Skill data root escapes AgentDockHome")
+	}
+	for _, item := range []string{
+		"data",
+		filepath.Join("data", "skills"),
+		filepath.Join("data", "skills", ".plugin"),
+		relative,
+	} {
+		info, statErr := root.Lstat(item)
+		if errors.Is(statErr, os.ErrNotExist) {
+			return nil
+		}
+		if statErr != nil {
+			return statErr
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return fmt.Errorf("Plugin Skill data path contains a symlink or non-directory component: %s", item)
+		}
+	}
+	return root.RemoveAll(relative)
 }
 
 func changeResult(result pluginruntime.ChangeResult) Result {

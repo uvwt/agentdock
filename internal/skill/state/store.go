@@ -13,23 +13,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/fs/filelock"
 	"github.com/uvwt/agentdock/internal/fs/securepath"
 )
 
 const (
-	lockRetryInterval           = 25 * time.Millisecond
-	transientLockErrorRetryTime = 500 * time.Millisecond
-	writerStaleAfter            = 30 * time.Minute
-	writerHeartbeatInterval     = 1 * time.Minute
-	readerStaleAfter            = 25 * time.Hour
-	lockOwnerPrefix             = "owner-"
-	readerOwnerPrefix           = "reader-"
+	lockRetryInterval = 25 * time.Millisecond
+	readerStaleAfter  = 25 * time.Hour
+	readerOwnerPrefix = "reader-"
 )
 
 type Store struct {
-	root     string
-	lockRoot string
-	tempRoot string
+	root            string
+	lockRoot        string
+	tempRoot        string
+	transactionRoot string
 }
 
 func New(root string) (*Store, error) {
@@ -42,9 +40,10 @@ func New(root string) (*Store, error) {
 	}
 	home := filepath.Dir(abs)
 	store := &Store{
-		root:     abs,
-		lockRoot: filepath.Join(home, "locks", "skills"),
-		tempRoot: filepath.Join(home, "tmp", "skills"),
+		root:            abs,
+		lockRoot:        filepath.Join(home, "locks", "skills"),
+		tempRoot:        filepath.Join(home, "tmp", "skills"),
+		transactionRoot: filepath.Join(home, "state", "skills", "transactions"),
 	}
 	if err := store.EnsureLayout(); err != nil {
 		return nil, err
@@ -62,6 +61,7 @@ func (s *Store) EnsureLayout() error {
 		{name: "managed Skills", path: s.root},
 		{name: "Skill locks", path: s.lockRoot},
 		{name: "Skill temporary files", path: s.tempRoot},
+		{name: "Skill replacement transactions", path: s.transactionRoot},
 	} {
 		if err := os.MkdirAll(item.path, 0o700); err != nil {
 			return fmt.Errorf("create %s directory: %w", item.name, err)
@@ -218,50 +218,13 @@ func (s *Store) acquireWrite(ctx context.Context, skill string) (func(), error) 
 	if err != nil {
 		return nil, err
 	}
-	owner, err := newLockOwner()
+	release, err := filelock.Acquire(ctx, writer)
 	if err != nil {
-		return nil, fmt.Errorf("create Skill writer owner: %w", err)
+		return nil, fmt.Errorf("acquire Skill writer lock: %w", err)
 	}
+
 	ticker := time.NewTicker(lockRetryInterval)
 	defer ticker.Stop()
-	var transientErrorSince time.Time
-
-	for {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("acquire Skill write lock: %w", err)
-		}
-		err := os.Mkdir(writer, 0o700)
-		if err == nil {
-			ownerPath := filepath.Join(writer, lockOwnerPrefix+owner)
-			if err := os.WriteFile(ownerPath, nil, 0o600); err != nil {
-				_ = os.Remove(writer)
-				return nil, fmt.Errorf("write Skill writer owner: %w", err)
-			}
-			break
-		}
-		if errors.Is(err, os.ErrExist) {
-			transientErrorSince = time.Time{}
-			if info, statErr := os.Stat(writer); statErr == nil && time.Since(info.ModTime()) > writerStaleAfter {
-				if removeStaleOwnedLock(writer) {
-					continue
-				}
-			}
-		} else if isTransientLockContention(err) {
-			if transientErrorSince.IsZero() {
-				transientErrorSince = time.Now()
-			} else if time.Since(transientErrorSince) >= transientLockErrorRetryTime {
-				return nil, fmt.Errorf("acquire Skill writer lock: %w", err)
-			}
-		} else {
-			return nil, fmt.Errorf("acquire Skill writer lock: %w", err)
-		}
-		if err := waitForLockRetry(ctx, ticker); err != nil {
-			return nil, err
-		}
-	}
-
-	release := func() { releaseOwnedLock(writer, owner) }
-	nextHeartbeat := time.Now().Add(writerHeartbeatInterval)
 	for {
 		empty, err := readersEmpty(readers)
 		if err != nil {
@@ -274,13 +237,6 @@ func (s *Store) acquireWrite(ctx context.Context, skill string) (func(), error) 
 				return nil, fmt.Errorf("acquire Skill write lock: %w", ctxErr)
 			}
 			return release, nil
-		}
-		if !time.Now().Before(nextHeartbeat) {
-			if err := refreshOwnedLock(writer, owner); err != nil {
-				release()
-				return nil, fmt.Errorf("refresh Skill writer lock: %w", err)
-			}
-			nextHeartbeat = time.Now().Add(writerHeartbeatInterval)
 		}
 		cleanupStaleReaders(readers)
 		if err := waitForLockRetry(ctx, ticker); err != nil {
@@ -350,54 +306,6 @@ func newLockOwner() (string, error) {
 	return hex.EncodeToString(raw), nil
 }
 
-func refreshOwnedLock(lockPath, owner string) error {
-	ownerPath := filepath.Join(lockPath, lockOwnerPrefix+owner)
-	info, err := os.Lstat(ownerPath)
-	if err != nil {
-		return err
-	}
-	if !info.Mode().IsRegular() {
-		return errors.New("Skill lock owner is not a regular file")
-	}
-	now := time.Now()
-	return os.Chtimes(lockPath, now, now)
-}
-
-func releaseOwnedLock(lockPath, owner string) {
-	ownerPath := filepath.Join(lockPath, lockOwnerPrefix+owner)
-	if err := os.Remove(ownerPath); err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			slog.Warn("remove Skill lock owner failed", "path", ownerPath, "error", err)
-		}
-		return
-	}
-	if err := os.Remove(lockPath); err != nil &&
-		!errors.Is(err, os.ErrNotExist) &&
-		!isDirectoryBusy(err) {
-		slog.Warn("release Skill writer lock failed", "path", lockPath, "error", err)
-	}
-}
-
-func removeStaleOwnedLock(lockPath string) bool {
-	entries, err := os.ReadDir(lockPath)
-	if err != nil {
-		return errors.Is(err, os.ErrNotExist)
-	}
-	if len(entries) == 0 {
-		err := os.Remove(lockPath)
-		return err == nil || errors.Is(err, os.ErrNotExist)
-	}
-	if len(entries) != 1 || entries[0].IsDir() || !strings.HasPrefix(entries[0].Name(), lockOwnerPrefix) {
-		return false
-	}
-	ownerPath := filepath.Join(lockPath, entries[0].Name())
-	if err := os.Remove(ownerPath); err != nil {
-		return errors.Is(err, os.ErrNotExist)
-	}
-	err = os.Remove(lockPath)
-	return err == nil || errors.Is(err, os.ErrNotExist)
-}
-
 func validateIdentifier(label, value string) error {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -405,7 +313,7 @@ func validateIdentifier(label, value string) error {
 	}
 	if value == "." || value == ".." || filepath.IsAbs(value) ||
 		strings.ContainsAny(value, `/\\`) || filepath.Base(value) != value {
-		return fmt.Errorf("%s contains an invalid path segment", label)
+		return fmt.Errorf("%s %q contains an invalid path segment", label, value)
 	}
 	return nil
 }

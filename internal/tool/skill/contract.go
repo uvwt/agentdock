@@ -7,8 +7,9 @@ const ToolManage = "skill_manage"
 func ManageInputSchema() map[string]any {
 	stringProp := toolcontract.String
 	return toolcontract.InputObject(map[string]any{
-		"action":    map[string]any{"type": "string", "description": "Managed standalone Skill action.", "enum": []string{"install", "remove", "env_set", "env_unset", "env_list"}},
-		"skill":     stringProp("Managed Skill name for remove or environment management."),
+		"action":    map[string]any{"type": "string", "description": "Managed Skill action. Environment actions also support Plugin-owned Skills through exact skill_ref.", "enum": []string{"install", "remove", "env_set", "env_unset", "env_list"}},
+		"skill":     stringProp("Standalone managed Skill name for remove or environment management."),
+		"skill_ref": stringProp("Exact managed/plugin Skill reference returned by AgentDock for environment management. When omitted, skill refers to a standalone managed Skill."),
 		"key":       stringProp("Environment variable name for env_set/env_unset. SKILL_DATA_DIR is reserved by the managed Skill runtime and cannot be configured."),
 		"value":     stringProp("Environment variable value for env_set. Secret values are never returned."),
 		"source":    stringProp("Host path or HTTP(S) URL for install. Reinstalling the same name updates current content."),
@@ -28,6 +29,7 @@ func ManageOutputSchema() map[string]any {
 	return toolcontract.OutputObject(map[string]any{
 		"action":         stringProp("Completed managed Skill action."),
 		"skill":          stringProp("Managed Skill name."),
+		"skill_ref":      stringProp("Exact managed/plugin Skill reference for environment actions."),
 		"name":           stringProp("Managed Skill name for environment actions."),
 		"key":            stringProp("Environment variable name. Secret values are never returned."),
 		"configured":     boolProp("Whether the environment variable has a non-empty configured value."),

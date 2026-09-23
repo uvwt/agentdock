@@ -50,7 +50,7 @@ func (svc *Service) prepareCommandInvocation(ctx context.Context, request ExecRe
 		if err != nil {
 			return commandInvocation{}, err
 		}
-		linuxEnv, err := svc.commandEnvOverrides(lease.EnvName, request.Env)
+		linuxEnv, err := svc.commandEnvOverridesScope(lease.EnvScope, request.Env)
 		if err != nil {
 			return commandInvocation{}, err
 		}
@@ -67,18 +67,12 @@ func (svc *Service) prepareCommandInvocation(ctx context.Context, request ExecRe
 			}
 			linuxEnv[key] = runtimeValue
 		}
-		expectedDataDir := ""
-		if lease.EnvName != "" {
-			expectedDataDir, err = config.SkillDataDir(svc.config(), lease.EnvName)
-			if err != nil {
-				return commandInvocation{}, toolErrorDetails("SKILL_DATA_DIR_INVALID", "resolve managed Skill data directory", "runtime", map[string]any{
-					"skill": lease.EnvName, "reason": err.Error(),
-				})
-			}
+		expectedDataDir := strings.TrimSpace(lease.SkillDataDir)
+		if expectedDataDir != "" {
 			wslDataDir, ok := windowsPathToWSL(expectedDataDir)
 			if !ok {
 				return commandInvocation{}, toolErrorDetails("SKILL_DATA_DIR_INVALID", "managed Skill data directory could not be mapped into WSL", "validation", map[string]any{
-					"skill": lease.EnvName, "path": expectedDataDir,
+					"skill": lease.Name, "path": expectedDataDir,
 				})
 			}
 			linuxEnv[config.SkillDataDirEnvKey] = wslDataDir
@@ -88,7 +82,7 @@ func (svc *Service) prepareCommandInvocation(ctx context.Context, request ExecRe
 			return commandInvocation{}, err
 		}
 		if expectedDataDir != "" {
-			if _, err := svc.ensureManagedSkillDataDir(lease.EnvName); err != nil {
+			if _, err := svc.ensureSkillDataDirPath(expectedDataDir, lease.Name); err != nil {
 				return commandInvocation{}, err
 			}
 		}

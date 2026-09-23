@@ -122,11 +122,12 @@ type State struct {
 	Compatibility  Compatibility  `json:"compatibility,omitempty"`
 }
 
-const UpdateTransactionSchemaVersion = 1
+const UpdateTransactionSchemaVersion = 2
 
 type UpdateTransaction struct {
 	SchemaVersion    int       `json:"schema_version"`
 	Name             string    `json:"name"`
+	OwnerID          string    `json:"owner_id"`
 	Phase            string    `json:"phase"`
 	Previous         State     `json:"previous"`
 	Candidate        State     `json:"candidate"`

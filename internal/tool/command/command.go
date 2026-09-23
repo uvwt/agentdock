@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/envstore"
 	"github.com/uvwt/agentdock/internal/tool/command/session"
 )
 
@@ -460,11 +461,19 @@ func (svc *Service) commandEnv(skillName string, extra map[string]string) ([]str
 }
 
 func (svc *Service) commandEnvWithRuntime(skillName string, extra, runtime map[string]string) ([]string, error) {
+	var scope *envstore.Scope
+	if skillName != "" {
+		scope = &envstore.Scope{Kind: envstore.ScopeSkill, Name: skillName}
+	}
+	return svc.commandEnvWithRuntimeScope(scope, extra, runtime)
+}
+
+func (svc *Service) commandEnvWithRuntimeScope(scope *envstore.Scope, extra, runtime map[string]string) ([]string, error) {
 	env, err := svc.baseCommandEnv()
 	if err != nil {
 		return nil, err
 	}
-	overrides, err := svc.commandEnvOverrides(skillName, extra)
+	overrides, err := svc.commandEnvOverridesScope(scope, extra)
 	if err != nil {
 		return nil, err
 	}

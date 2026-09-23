@@ -502,6 +502,9 @@ func TestCatalogUnderlyingSourceChangeRequiresExplicitRebind(t *testing.T) {
 	if _, err := updatePluginSourceForTest(manager, context.Background(), request, true); err != nil {
 		t.Fatal(err)
 	}
+	if err := manager.FinalizeUpdate("catalog-demo"); err != nil {
+		t.Fatal(err)
+	}
 	installed, err := manager.Inspect("catalog-demo")
 	if err != nil {
 		t.Fatal(err)
@@ -654,6 +657,132 @@ func TestGitSSHSourceRejectsEmbeddedPassword(t *testing.T) {
 	}
 	if err := validateGitSourceRef("ssh://alice@example.com/repo.git"); err != nil {
 		t.Fatalf("SSH username-only source rejected: %v", err)
+	}
+	if err := validateGitSourceRef("git@example.com:owner/repo.git"); err != nil {
+		t.Fatalf("SCP-like SSH source rejected: %v", err)
+	}
+}
+
+func TestClaudeAdapterDiscoversRootSkill(t *testing.T) {
+	manager, err := NewManager(filepath.Join(t.TempDir(), ".agentdock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	writeJSONTestFile(t, filepath.Join(root, ".claude-plugin", "plugin.json"), map[string]any{
+		"name": "claude-root-skill", "version": "1.0.0", "description": "Root Skill fixture",
+	})
+	writeAdapterSkill(t, root, "root-skill")
+
+	review := manager.ValidateSource(context.Background(), SourceRequest{Type: "local", Ref: root, Adapter: "claude"})
+	if !review.Valid {
+		t.Fatalf("root SKILL.md review invalid: %#v", review)
+	}
+	if len(review.Skills) != 1 || review.Skills[0].Name != "root-skill" {
+		t.Fatalf("root SKILL.md not normalized: %#v", review.Skills)
+	}
+}
+
+func TestClaudeSkillsDotNormalizesRootSkill(t *testing.T) {
+	source := t.TempDir()
+	normalized := t.TempDir()
+	writeAdapterSkill(t, source, "dot-skill")
+	raw, err := json.Marshal(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := normalizeSkillPaths(source, normalized, raw, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(normalized, "skills", "dot-skill", "SKILL.md")); err != nil {
+		t.Fatalf("skills='.' did not normalize root Skill: %v", err)
+	}
+}
+
+func TestClaudeAdapterRejectsBinAndSettingsWithoutRuntimeSemantics(t *testing.T) {
+	manager, err := NewManager(filepath.Join(t.TempDir(), ".agentdock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	writeJSONTestFile(t, filepath.Join(root, ".claude-plugin", "plugin.json"), map[string]any{
+		"name": "claude-runtime-gaps", "version": "1.0.0", "description": "Runtime gap fixture",
+	})
+	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "bin", "hello"), []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeJSONTestFile(t, filepath.Join(root, "settings.json"), map[string]any{"env": map[string]any{"DEMO": "1"}})
+
+	review := manager.ValidateSource(context.Background(), SourceRequest{Type: "local", Ref: root, Adapter: "claude"})
+	if review.Valid {
+		t.Fatalf("Claude Plugin with unsupported bin/settings was accepted: %#v", review)
+	}
+	if !sliceContainsSubstring(review.Unsupported, "bin PATH executables") {
+		t.Fatalf("bin/ capability was silently ignored: %#v", review.Unsupported)
+	}
+	if !sliceContainsSubstring(review.Unsupported, "settings") {
+		t.Fatalf("settings.json capability was silently ignored: %#v", review.Unsupported)
+	}
+}
+
+func TestClaudeMissingVersionReportsRevisionVersionGap(t *testing.T) {
+	manager, err := NewManager(filepath.Join(t.TempDir(), ".agentdock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	writeJSONTestFile(t, filepath.Join(root, ".claude-plugin", "plugin.json"), map[string]any{
+		"name": "claude-no-version", "description": "No version fixture",
+	})
+	review := manager.ValidateSource(context.Background(), SourceRequest{
+		Type: "local", Ref: root, Adapter: "claude",
+	})
+	if !review.Valid || review.Version != VersionLocal {
+		t.Fatalf("local Claude Plugin without version should remain version=local: %#v", review)
+	}
+
+	_, _, _, err = normalizeExternalManifest(
+		map[string]json.RawMessage{
+			"name":        json.RawMessage(`"claude-no-version"`),
+			"description": json.RawMessage(`"No version fixture"`),
+		},
+		SourceRequest{Type: "git", GitRef: "main"},
+		Source{Type: "git", Ref: "https://example.invalid/repo.git", Revision: strings.Repeat("a", 40)},
+		adapterHints{},
+		"claude",
+	)
+	if err == nil || !strings.Contains(err.Error(), "does not yet use Git commit/archive digest") {
+		t.Fatalf("missing-version compatibility gap was not explicit: %v", err)
+	}
+}
+
+func TestLocalPluginSourceEnforcesFileLimit(t *testing.T) {
+	manager, err := NewManager(filepath.Join(t.TempDir(), ".agentdock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	writeJSONTestFile(t, filepath.Join(root, "plugin.json"), map[string]any{
+		"$schema": pluginSchemaURI, "name": "many-files", "version": "1.0.0", "description": "Many files",
+	})
+	files := filepath.Join(root, "assets")
+	if err := os.MkdirAll(files, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// plugin.json plus these files exceeds the same 10,000-file boundary used
+	// for archives.
+	for index := 0; index < maxPluginArchiveFiles; index++ {
+		path := filepath.Join(files, fmt.Sprintf("%05d.txt", index))
+		if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	review := manager.ValidateSource(context.Background(), SourceRequest{Type: "local", Ref: root, Adapter: "portable"})
+	if review.Valid || !sliceContainsSubstring(review.Issues, "exceeds 10000") {
+		t.Fatalf("local Plugin file limit not enforced: %#v", review)
 	}
 }
 

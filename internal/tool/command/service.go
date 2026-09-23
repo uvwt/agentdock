@@ -12,11 +12,12 @@ import (
 type ConfigProvider func() config.Config
 
 type SkillLease struct {
-	Name       string
-	Root       string
-	EnvName    string
-	RuntimeEnv map[string]string
-	Release    func()
+	Name         string
+	Root         string
+	EnvScope     *envstore.Scope
+	SkillDataDir string
+	RuntimeEnv   map[string]string
+	Release      func()
 }
 
 type SkillResolver func(ctx context.Context, skillRef string) (SkillLease, error)

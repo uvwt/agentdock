@@ -82,29 +82,25 @@ Skill 的文档身份由 `SKILL.md.name` 给出。managed 安装目标是：
 
 从正文提取变量名、类型、必填性与用途。
 
-AgentDock 使用：
+standalone managed Skill 使用：
 
 ```text
 ~/.agentdock/env/skill/<skill-name>.env
-```
-
-通过：
-
-- `skill_manage env_list`
-- `skill_manage env_set`
-- `skill_manage env_unset`
-
-管理环境。工具不会返回真实值。
-
-持久数据与包分离，当前约定目录为：
-
-```text
 ~/.agentdock/data/skills/<skill-name>/
 ```
 
-managed Skill 通过 `exec_command` 运行时，AgentDock 自动创建这个私有目录并注入保留变量 `SKILL_DATA_DIR`。Windows 原生命令收到 Host 路径，WSL 收到已转换的 Linux 路径。该变量不能通过 `skill_manage env_set`、宿主 env mapping 或请求级 `env` 覆盖。
+Plugin-owned Skill 使用精确 `skill_ref` 管理独立环境和数据：
 
-shared/workspace 候选不会收到 managed Skill 的 `SKILL_DATA_DIR`，即使名称相同。
+```text
+~/.agentdock/env/skill/plugin/<plugin>/<skill>.env
+~/.agentdock/data/skills/.plugin/<plugin>/<skill>/
+```
+
+通过 `skill_manage env_list/env_set/env_unset` 管理环境；工具不会返回真实值。
+
+standalone managed 和 Plugin-owned Skill 执行时都会获得独立 `SKILL_DATA_DIR`。Plugin-owned Skill 另外获得共享 `PLUGIN_DATA_DIR=~/.agentdock/data/plugins/<plugin>/`。Windows 原生命令收到 Host 路径，WSL 收到已转换的 Linux 路径；两个变量都不能通过 `skill_manage env_set`、宿主 env mapping 或请求级 `env` 覆盖。
+
+shared/workspace 候选不会收到 `SKILL_DATA_DIR` 或 `PLUGIN_DATA_DIR`，即使名称相同。
 
 普通 remove 默认保留环境和数据；只有用户明确要求 purge 时才一起删除。内容更新也不得清空或重建该目录。
 

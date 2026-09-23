@@ -13,6 +13,23 @@ import (
 	"time"
 )
 
+func hasPendingPluginUpdateForTest(manager *Manager, name string) bool {
+	_, ok := manager.pendingUpdate(name)
+	return ok
+}
+
+func simulatePluginActivationCrashForTest(t *testing.T, manager *Manager, name string) {
+	t.Helper()
+	pending, ok := manager.pendingUpdate(name)
+	if !ok {
+		t.Fatalf("Plugin %s has no pending activation", name)
+	}
+	pending.release()
+	manager.pendingMu.Lock()
+	delete(manager.pending, name)
+	manager.pendingMu.Unlock()
+}
+
 func installLocalPluginForTest(manager *Manager, ctx context.Context, source string, enabled bool) (ChangeResult, error) {
 	return installPluginSourceForTest(manager, ctx, legacyLocalSourceRequest(source), enabled)
 }
@@ -308,7 +325,9 @@ func TestManagerLifecyclePreservesCurrentOnFailedUpdateAndDataPolicy(t *testing.
 	if _, err := manager.EnsureDataDir("demo.plugin"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := manager.Remove(context.Background(), "demo.plugin", "purge"); err != nil {
+	if _, err := manager.RemoveWithLifecycle(context.Background(), "demo.plugin", "purge", RemoveLifecycle{
+		Purge: func(PurgeOwnership) error { return nil },
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(dataDir); !errors.Is(err, os.ErrNotExist) {
@@ -410,9 +429,18 @@ func TestLocalUpdateRestoreStateRestoresPreviousPackageContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.PackageDigest == previous.PackageDigest {
-		t.Fatalf("local update digest did not change: %q", current.PackageDigest)
+	if current.PackageDigest != previous.PackageDigest {
+		t.Fatalf("pending local update became formal state: got %q want %q", current.PackageDigest, previous.PackageDigest)
 	}
+	candidate, releaseCandidate, err := manager.AcquireActivationCandidate("demo.plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidate.PackageDigest == previous.PackageDigest {
+		releaseCandidate()
+		t.Fatalf("activation candidate digest did not change: %q", candidate.PackageDigest)
+	}
+	releaseCandidate()
 
 	if err := manager.RestoreState(context.Background(), previous.State); err != nil {
 		t.Fatal(err)
@@ -431,7 +459,7 @@ func TestLocalUpdateRestoreStateRestoresPreviousPackageContent(t *testing.T) {
 	if string(restoredDoc) != string(oldDoc) {
 		t.Fatalf("restored local package content changed:\n%s", restoredDoc)
 	}
-	if manager.hasPendingUpdate("demo.plugin") {
+	if hasPendingPluginUpdateForTest(manager, "demo.plugin") {
 		t.Fatal("rollback left a pending Plugin update")
 	}
 }
@@ -469,7 +497,7 @@ func TestFinalizeUpdateKeepsInFlightOldVersionUntilReaderRelease(t *testing.T) {
 		releaseOld()
 		t.Fatalf("old version removed before runtime activation finalized: %v", err)
 	}
-	if !manager.hasPendingUpdate("demo.plugin") {
+	if !hasPendingPluginUpdateForTest(manager, "demo.plugin") {
 		releaseOld()
 		t.Fatal("update did not retain a pending activation transaction")
 	}
@@ -477,7 +505,7 @@ func TestFinalizeUpdateKeepsInFlightOldVersionUntilReaderRelease(t *testing.T) {
 	if err := manager.FinalizeUpdate("demo.plugin"); err != nil {
 		t.Fatal(err)
 	}
-	if manager.hasPendingUpdate("demo.plugin") {
+	if hasPendingPluginUpdateForTest(manager, "demo.plugin") {
 		releaseOld()
 		t.Fatal("finalized update remained pending")
 	}
@@ -687,12 +715,13 @@ func TestManagerRestartRollsBackUnfinalizedUpdateJournal(t *testing.T) {
 	if _, err := manager.Store().LoadUpdateTransaction("demo.plugin"); err != nil {
 		t.Fatalf("update transaction was not persisted: %v", err)
 	}
-	if current, err := manager.Inspect("demo.plugin"); err != nil || current.Version != "2.0.0" {
-		t.Fatalf("candidate state before simulated crash = %#v err=%v", current, err)
+	if current, err := manager.Inspect("demo.plugin"); err != nil || current.Version != "1.0.0" {
+		t.Fatalf("formal state exposed candidate before activation finalize = %#v err=%v", current, err)
 	}
 
-	// Simulate process termination after state switch but before runtime
-	// activation calls FinalizeUpdate: all in-memory pending state is lost.
+	// Simulate process termination after candidate package+journal are durable:
+	// the OS releases the writer lease, but no in-process rollback runs.
+	simulatePluginActivationCrashForTest(t, manager, "demo.plugin")
 	restarted, err := NewManager(home)
 	if err != nil {
 		t.Fatal(err)
@@ -748,8 +777,27 @@ func TestManagerRestartRestoresLocalPackageBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(backup); err != nil {
-		t.Fatalf("local update rollback backup missing: %v", err)
+		t.Fatalf("pending local activation did not preserve Previous backup: %v", err)
 	}
+	transaction, err := manager.Store().LoadUpdateTransaction("demo.plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := manager.Store().UpdateCandidatePath("demo.plugin", transaction.OwnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(candidate); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("promoted local candidate still exists in temporary activation path: %v", err)
+	}
+	formal, err := manager.Inspect("demo.plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if formal.PackageDigest != previous.PackageDigest || formal.Version != previous.Version {
+		t.Fatalf("pending local activation published candidate formal state: %#v", formal.State)
+	}
+	simulatePluginActivationCrashForTest(t, manager, "demo.plugin")
 
 	restarted, err := NewManager(home)
 	if err != nil {
@@ -768,6 +816,9 @@ func TestManagerRestartRestoresLocalPackageBackup(t *testing.T) {
 	}
 	if _, err := os.Stat(backup); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("local restart recovery left backup: %v", err)
+	}
+	if _, err := os.Stat(candidate); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("local restart recovery left pending candidate: %v", err)
 	}
 }
 
@@ -793,6 +844,7 @@ func TestManagerRestartRecoversJournalBeforeCandidatePackageCommit(t *testing.T)
 	transaction := UpdateTransaction{
 		SchemaVersion: UpdateTransactionSchemaVersion,
 		Name:          previous.Name,
+		OwnerID:       strings.Repeat("a", 32),
 		Phase:         "pending",
 		Previous:      previous.State,
 		Candidate:     candidate,
@@ -846,6 +898,7 @@ func TestManagerRestartFinishesCommittedUpdateJournal(t *testing.T) {
 	if err := manager.Store().SaveUpdateTransaction(transaction); err != nil {
 		t.Fatal(err)
 	}
+	simulatePluginActivationCrashForTest(t, manager, "demo.plugin")
 
 	restarted, err := NewManager(home)
 	if err != nil {
@@ -930,5 +983,343 @@ func TestUpdateRollbackPreservesPreexistingCandidateWithActiveReader(t *testing.
 	releaseV2()
 	if _, err := os.Stat(oldV2.Root); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("released obsolete v2 package was not cleaned: %v", err)
+	}
+}
+
+func TestActivationTransactionHidesCandidateAndRejectsConflictingOperations(t *testing.T) {
+	home := filepath.Join(t.TempDir(), ".agentdock")
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceV1 := filepath.Join(t.TempDir(), "plugin-v1")
+	sourceV2 := filepath.Join(t.TempDir(), "plugin-v2")
+	writeTestPlugin(t, sourceV1, "demo.plugin", "1.0.0", false)
+	writeTestPlugin(t, sourceV2, "demo.plugin", "2.0.0", false)
+	if _, err := installLocalPluginForTest(manager, context.Background(), sourceV1, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := updateLocalPluginForTest(manager, context.Background(), sourceV2, true); err != nil {
+		t.Fatal(err)
+	}
+
+	current, err := manager.Inspect("demo.plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Version != "1.0.0" {
+		t.Fatalf("formal state exposed pending candidate version %q", current.Version)
+	}
+	assertActivationBlocked := func(stage string, err error) {
+		t.Helper()
+		var pluginErr *Error
+		if !errors.As(err, &pluginErr) || pluginErr.Code != "PLUGIN_ACTIVATION_IN_PROGRESS" {
+			t.Fatalf("%s error = %#v, want PLUGIN_ACTIVATION_IN_PROGRESS", stage, err)
+		}
+	}
+	_, _, err = manager.Acquire(context.Background(), "demo.plugin")
+	assertActivationBlocked("acquire", err)
+	_, err = manager.SetEnabled(context.Background(), "demo.plugin", false)
+	assertActivationBlocked("disable", err)
+	_, err = manager.Remove(context.Background(), "demo.plugin", "keep")
+	assertActivationBlocked("remove", err)
+
+	current, err = manager.Inspect("demo.plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !current.Enabled || current.Version != "1.0.0" {
+		t.Fatalf("conflicting operation changed formal state: %#v", current.State)
+	}
+
+	if err := manager.FinalizeUpdate("demo.plugin"); err != nil {
+		t.Fatal(err)
+	}
+	current, err = manager.Inspect("demo.plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Version != "2.0.0" || !current.Enabled {
+		t.Fatalf("finalized state = %#v", current.State)
+	}
+	if _, err := manager.SetEnabled(context.Background(), "demo.plugin", false); err != nil {
+		t.Fatal(err)
+	}
+	current, err = manager.Inspect("demo.plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Enabled {
+		t.Fatal("disable after finalize was lost")
+	}
+}
+
+func TestSecondManagerDoesNotRecoverLiveActivationOwner(t *testing.T) {
+	home := filepath.Join(t.TempDir(), ".agentdock")
+	first, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceV1 := filepath.Join(t.TempDir(), "plugin-v1")
+	sourceV2 := filepath.Join(t.TempDir(), "plugin-v2")
+	writeTestPlugin(t, sourceV1, "demo.plugin", "1.0.0", false)
+	writeTestPlugin(t, sourceV2, "demo.plugin", "2.0.0", false)
+	if _, err := installLocalPluginForTest(first, context.Background(), sourceV1, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := updateLocalPluginForTest(first, context.Background(), sourceV2, true); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := second.Inspect("demo.plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Version != "1.0.0" {
+		t.Fatalf("second Manager changed formal state during live activation: %#v", current.State)
+	}
+	if _, err := second.Store().LoadUpdateTransaction("demo.plugin"); err != nil {
+		t.Fatalf("second Manager removed live activation journal: %v", err)
+	}
+	acquireCtx, cancelAcquire := context.WithTimeout(context.Background(), 120*time.Millisecond)
+	_, _, acquireErr := second.Acquire(acquireCtx, "demo.plugin")
+	cancelAcquire()
+	if acquireErr == nil || !errors.Is(acquireErr, context.DeadlineExceeded) {
+		t.Fatalf("second Manager Acquire during live activation = %#v, want deadline exceeded", acquireErr)
+	}
+	var ownerErr *Error
+	if err := second.FinalizeUpdate("demo.plugin"); !errors.As(err, &ownerErr) || ownerErr.Code != "PLUGIN_UPDATE_NOT_OWNER" {
+		t.Fatalf("non-owner FinalizeUpdate error = %#v", err)
+	}
+
+	if err := first.FinalizeUpdate("demo.plugin"); err != nil {
+		t.Fatalf("live owner FinalizeUpdate failed after second Manager startup: %v", err)
+	}
+	current, err = second.Inspect("demo.plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Version != "2.0.0" {
+		t.Fatalf("finalized state not visible to second Manager: %#v", current.State)
+	}
+	acquired, release, err := second.Acquire(context.Background(), "demo.plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acquired.Version != "2.0.0" {
+		release()
+		t.Fatalf("post-finalize Acquire version = %q, want 2.0.0", acquired.Version)
+	}
+	release()
+}
+
+func TestFinalizeUpdateCASRejectsMutatedFormalState(t *testing.T) {
+	home := filepath.Join(t.TempDir(), ".agentdock")
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceV1 := filepath.Join(t.TempDir(), "plugin-v1")
+	sourceV2 := filepath.Join(t.TempDir(), "plugin-v2")
+	writeTestPlugin(t, sourceV1, "demo.plugin", "1.0.0", false)
+	writeTestPlugin(t, sourceV2, "demo.plugin", "2.0.0", false)
+	if _, err := installLocalPluginForTest(manager, context.Background(), sourceV1, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := updateLocalPluginForTest(manager, context.Background(), sourceV2, true); err != nil {
+		t.Fatal(err)
+	}
+
+	mutated, err := manager.Store().Load("demo.plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutated.Enabled = false
+	if err := manager.Store().Save(mutated); err != nil {
+		t.Fatal(err)
+	}
+	var pluginErr *Error
+	if err := manager.FinalizeUpdate("demo.plugin"); !errors.As(err, &pluginErr) || pluginErr.Code != "PLUGIN_UPDATE_CAS_FAILED" {
+		t.Fatalf("FinalizeUpdate CAS error = %#v", err)
+	}
+	pending, ok := manager.pendingUpdate("demo.plugin")
+	if !ok {
+		t.Fatal("CAS failure lost activation owner")
+	}
+	if err := manager.RestoreState(context.Background(), pending.transaction.Previous); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := manager.Inspect("demo.plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.Version != "1.0.0" || !restored.Enabled {
+		t.Fatalf("CAS rollback did not restore previous state: %#v", restored.State)
+	}
+}
+
+func TestPluginPurgeFailureKeepsStateForIdempotentRetry(t *testing.T) {
+	home := filepath.Join(t.TempDir(), ".agentdock")
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(t.TempDir(), "plugin")
+	writeTestPlugin(t, source, "demo.plugin", "1.0.0", false)
+	if _, err := installLocalPluginForTest(manager, context.Background(), source, true); err != nil {
+		t.Fatal(err)
+	}
+	dataDir, err := manager.EnsureDataDir("demo.plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(dataDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dataDir, []byte("not-a-directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = manager.RemoveWithLifecycle(context.Background(), "demo.plugin", "purge", RemoveLifecycle{
+		Purge: func(PurgeOwnership) error { return nil },
+	})
+	var pluginErr *Error
+	if !errors.As(err, &pluginErr) || pluginErr.Code != "PLUGIN_PURGE_FAILED" {
+		t.Fatalf("first purge error = %#v", err)
+	}
+	if current, err := manager.Inspect("demo.plugin"); err != nil || current.Version != "1.0.0" {
+		t.Fatalf("failed purge removed formal Plugin state: %#v err=%v", current, err)
+	}
+
+	if err := os.Remove(dataDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	result, err := manager.RemoveWithLifecycle(context.Background(), "demo.plugin", "purge", RemoveLifecycle{
+		Purge: func(PurgeOwnership) error { return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Changed {
+		t.Fatalf("retry purge result = %#v", result)
+	}
+	if _, err := manager.Inspect("demo.plugin"); err == nil {
+		t.Fatal("retry purge left Plugin installed")
+	}
+}
+
+func TestPluginKeepThenMissingPackagePurgeUsesRemovalOwnership(t *testing.T) {
+	home := filepath.Join(t.TempDir(), ".agentdock")
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(t.TempDir(), "plugin")
+	writeTestPlugin(t, source, "demo.plugin", "1.0.0", true)
+	if _, err := installLocalPluginForTest(manager, context.Background(), source, true); err != nil {
+		t.Fatal(err)
+	}
+	installed, err := manager.Inspect("demo.plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dataDir, err := manager.EnsureDataDir("demo.plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "state.db"), []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Remove(context.Background(), "demo.plugin", "keep"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Inspect("demo.plugin"); err == nil {
+		t.Fatal("keep removal left Plugin formally installed")
+	}
+
+	var gotOwnership PurgeOwnership
+	result, err := manager.RemoveWithLifecycle(context.Background(), "demo.plugin", "purge", RemoveLifecycle{
+		Purge: func(ownership PurgeOwnership) error {
+			gotOwnership = ownership
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Changed {
+		t.Fatalf("missing-package purge should be idempotent cleanup only: %#v", result)
+	}
+	if len(gotOwnership.MCPStorageKeys) != len(installed.MCPStorageKeys) {
+		t.Fatalf("purge ownership = %#v, want keys %#v", gotOwnership, installed.MCPStorageKeys)
+	}
+	if _, err := os.Stat(dataDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing-package purge left Plugin data: %v", err)
+	}
+	if _, err := manager.Store().LoadRemovalOwnership("demo.plugin"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("purge left removal ownership record: %v", err)
+	}
+}
+
+func TestPluginPurgeLifecycleLockBlocksSameNameReinstall(t *testing.T) {
+	home := filepath.Join(t.TempDir(), ".agentdock")
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceV1 := filepath.Join(t.TempDir(), "plugin-v1")
+	sourceV2 := filepath.Join(t.TempDir(), "plugin-v2")
+	writeTestPlugin(t, sourceV1, "demo.plugin", "1.0.0", false)
+	writeTestPlugin(t, sourceV2, "demo.plugin", "2.0.0", false)
+	if _, err := installLocalPluginForTest(manager, context.Background(), sourceV1, true); err != nil {
+		t.Fatal(err)
+	}
+
+	purgeEntered := make(chan struct{})
+	releasePurge := make(chan struct{})
+	removeDone := make(chan error, 1)
+	go func() {
+		_, err := manager.RemoveWithLifecycle(context.Background(), "demo.plugin", "purge", RemoveLifecycle{
+			Purge: func(PurgeOwnership) error {
+				close(purgeEntered)
+				<-releasePurge
+				return nil
+			},
+		})
+		removeDone <- err
+	}()
+	<-purgeEntered
+
+	installDone := make(chan error, 1)
+	go func() {
+		_, err := installLocalPluginForTest(manager, context.Background(), sourceV2, true)
+		installDone <- err
+	}()
+	select {
+	case err := <-installDone:
+		close(releasePurge)
+		t.Fatalf("same-name reinstall completed while old purge held lifecycle lock: %v", err)
+	case <-time.After(120 * time.Millisecond):
+	}
+	close(releasePurge)
+	if err := <-removeDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-installDone; err != nil {
+		t.Fatal(err)
+	}
+	current, err := manager.Inspect("demo.plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Version != "2.0.0" {
+		t.Fatalf("reinstall after purge = %#v", current.State)
 	}
 }

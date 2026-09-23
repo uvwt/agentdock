@@ -363,12 +363,32 @@ func (s *Store) UpdateBackupPath(name string) (string, error) {
 	return filepath.Join(parent, ".update-backup"), nil
 }
 
+func (s *Store) UpdateCandidatePath(name, ownerID string) (string, error) {
+	parent, err := s.EnsurePackageParent(name)
+	if err != nil {
+		return "", err
+	}
+	if len(ownerID) != 32 {
+		return "", errors.New("Plugin update owner_id is invalid")
+	}
+	if _, err := hex.DecodeString(ownerID); err != nil {
+		return "", errors.New("Plugin update owner_id is invalid")
+	}
+	return filepath.Join(parent, ".update-candidate-"+ownerID), nil
+}
+
 func validateUpdateTransaction(transaction UpdateTransaction) error {
 	if transaction.SchemaVersion != UpdateTransactionSchemaVersion {
 		return fmt.Errorf("unsupported Plugin update transaction schema %d", transaction.SchemaVersion)
 	}
 	if err := ValidateName(transaction.Name); err != nil {
 		return err
+	}
+	if len(transaction.OwnerID) != 32 {
+		return errors.New("Plugin update transaction owner_id is invalid")
+	}
+	if _, err := hex.DecodeString(transaction.OwnerID); err != nil {
+		return errors.New("Plugin update transaction owner_id is invalid")
 	}
 	if transaction.Previous.Name != transaction.Name || transaction.Candidate.Name != transaction.Name {
 		return errors.New("Plugin update transaction identity mismatch")

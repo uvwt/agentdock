@@ -159,15 +159,30 @@ func release(lockPath, owner string) {
 	// 避免等待者在 owner 刚删除、目录尚未删除时把它误判为陈旧空锁。
 	now := time.Now()
 	_ = os.Chtimes(lockPath, now, now)
-	if err := os.Remove(ownerPath); err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			slog.Warn("remove file lock owner failed", "path", ownerPath, "error", err)
-		}
+	if !removeOwnerFile(ownerPath) {
+		slog.Warn("remove file lock owner failed", "path", ownerPath)
 		return
 	}
 	if !removeLockDirectory(lockPath) {
 		slog.Warn("release file lock failed", "path", lockPath)
 	}
+}
+
+// removeOwnerFile tolerates short-lived Windows sharing violations caused by
+// another contender inspecting the owner PID. The owner pathname is unique to
+// this lock acquisition, so retrying its deletion cannot release another
+// contender's lock.
+func removeOwnerFile(path string) bool {
+	for attempt := 0; attempt < removeRetryCount; attempt++ {
+		err := os.Remove(path)
+		if err == nil || errors.Is(err, os.ErrNotExist) {
+			return true
+		}
+		if attempt+1 < removeRetryCount {
+			time.Sleep(removeRetryDelay)
+		}
+	}
+	return false
 }
 
 func removeSafeStale(lockPath string, now time.Time) bool {
@@ -189,6 +204,16 @@ func removeSafeStale(lockPath string, now time.Time) bool {
 	if len(entries) != 1 || entries[0].IsDir() || !validOwnerName(entries[0].Name()) {
 		return false
 	}
+	ownerPath := filepath.Join(lockPath, entries[0].Name())
+	// owner 文件里记录了持锁进程 PID。只要可以确定该进程已经退出，就可以
+	// 立即回收锁；heartbeat 的 staleAfter 只用于 PID 仍存活或无法确认的情况。
+	// 这让崩溃恢复不必额外等待一个完整 stale window，同时不会抢占活进程。
+	if !ownerPIDAlive(ownerPath) {
+		if err := os.Remove(ownerPath); err != nil {
+			return errors.Is(err, os.ErrNotExist)
+		}
+		return removeLockDirectory(lockPath)
+	}
 	info, err := entries[0].Info()
 	if err != nil {
 		return errors.Is(err, os.ErrNotExist)
@@ -196,14 +221,9 @@ func removeSafeStale(lockPath string, now time.Time) bool {
 	if now.Sub(info.ModTime()) <= staleAfter {
 		return false
 	}
-	ownerPath := filepath.Join(lockPath, entries[0].Name())
-	if ownerPIDAlive(ownerPath) {
-		return false
-	}
-	if err := os.Remove(ownerPath); err != nil {
-		return errors.Is(err, os.ErrNotExist)
-	}
-	return removeLockDirectory(lockPath)
+	// 活进程即使 heartbeat 很旧也不能被抢占；未知 PID/读取失败在
+	// ownerPIDAlive 中同样按存活处理，保持 fail-closed。
+	return false
 }
 
 func ownerPIDAlive(ownerPath string) bool {
@@ -211,9 +231,9 @@ func ownerPIDAlive(ownerPath string) bool {
 	if err != nil {
 		return !errors.Is(err, os.ErrNotExist)
 	}
-	defer file.Close()
 	data, err := io.ReadAll(io.LimitReader(file, 65))
-	if err != nil || len(data) > 64 {
+	closeErr := file.Close()
+	if err != nil || closeErr != nil || len(data) > 64 {
 		return true
 	}
 	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))

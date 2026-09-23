@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,15 +19,17 @@ import (
 type ScopeKind string
 
 const (
-	ScopeSkill ScopeKind = "skill"
-	ScopeMCP   ScopeKind = "mcp"
+	ScopeSkill       ScopeKind = "skill"
+	ScopePluginSkill ScopeKind = "plugin_skill"
+	ScopeMCP         ScopeKind = "mcp"
 
 	maxEnvironmentFileBytes = 1 << 20
 )
 
 type Scope struct {
-	Kind ScopeKind
-	Name string
+	Kind   ScopeKind
+	Name   string
+	Plugin string
 }
 
 type Entry struct {
@@ -71,7 +74,34 @@ func (s *Store) Path(scope Scope) (string, error) {
 	if err := validateScope(scope); err != nil {
 		return "", err
 	}
+	if scope.Kind == ScopePluginSkill {
+		return filepath.Join(s.root, "skill", "plugin", scope.Plugin, scope.Name+".env"), nil
+	}
 	return filepath.Join(s.root, string(scope.Kind), scope.Name+".env"), nil
+}
+
+func (s *Store) RemovePluginSkillScopes(plugin string) error {
+	probe := Scope{Kind: ScopePluginSkill, Plugin: strings.TrimSpace(plugin), Name: "probe"}
+	if err := validateScope(probe); err != nil {
+		return err
+	}
+	release, err := s.acquireStoreLock()
+	if err != nil {
+		return err
+	}
+	defer release()
+	root := filepath.Join(s.root, "skill", "plugin", probe.Plugin)
+	info, err := os.Lstat(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("Plugin Skill environment root is not a regular directory: %s", root)
+	}
+	return os.RemoveAll(root)
 }
 
 func (s *Store) Set(scope Scope, key, value string) error {
@@ -206,6 +236,13 @@ func (s *Store) writeLocked(scope Scope, values map[string]string) error {
 	data := marshal(values)
 	if len(data) > maxEnvironmentFileBytes {
 		return fmt.Errorf("%s environment exceeds %d bytes", scope.Kind, maxEnvironmentFileBytes)
+	}
+	parent := filepath.Dir(path)
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return fmt.Errorf("create %s environment directory: %w", scope.Kind, err)
+	}
+	if err := secureDirectory(parent); err != nil {
+		return err
 	}
 	if err := atomicfile.Write(path, data, 0o600); err != nil {
 		return fmt.Errorf("write %s environment: %w", scope.Kind, err)

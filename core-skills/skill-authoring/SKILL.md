@@ -128,16 +128,18 @@ AgentDock 本地验证时：
 
 环境值不写入 AgentDock 主进程或系统全局环境。
 
-需要持久可变状态时，不要写 Skill 包目录。AgentDock 对 **managed** Skill 的 `exec_command` 会提供运行时保留变量 `SKILL_DATA_DIR`：
+需要持久可变状态时，不要写 Skill 包目录。AgentDock 对 **standalone managed** 与 **Plugin-owned** Skill 的 `exec_command` 都会提供独立运行时保留变量 `SKILL_DATA_DIR`：
 
-- 指向 `~/.agentdock/data/skills/<name>/` 对应的私有持久目录；
-- 目录只在 managed Skill 真正执行时创建；
+- standalone managed 指向 `~/.agentdock/data/skills/<name>/`；
+- Plugin-owned 指向 `~/.agentdock/data/skills/.plugin/<plugin>/<skill>/`，并额外获得 Plugin 共享兼容目录 `PLUGIN_DATA_DIR=~/.agentdock/data/plugins/<plugin>/`；
+- 数据目录只在对应 Skill / Plugin 运行时真正需要时创建；
 - Unix 权限收紧为 `0700`，Windows 使用当前用户私有 ACL；
 - Windows 原生命令收到 Host 路径；WSL 命令收到已转换的 Linux 路径；
-- `skill_manage env_set`、宿主 env mapping 和 `request.env` 都不能覆盖；
-- shared/workspace 同名候选不会得到 managed Skill 的 `SKILL_DATA_DIR`。
+- `skill_manage env_set`、宿主 env mapping 和 `request.env` 都不能覆盖运行时保留变量；
+- Plugin-owned Skill 的用户环境隔离在 `~/.agentdock/env/skill/plugin/<plugin>/<skill>.env`；standalone 仍使用 `~/.agentdock/env/skill/<name>.env`；
+- shared/workspace 候选不会得到 `SKILL_DATA_DIR` 或 `PLUGIN_DATA_DIR`。
 
-`SKILL_DATA_DIR` 是 AgentDock 可选适配，不是 Agent Skills 通用前提。可移植 Skill 不应把它列为用户必填配置；需要状态目录的辅助脚本可以在检测到它时优先使用，并在其他宿主下采用自己明确声明的可移植策略。
+`SKILL_DATA_DIR` / `PLUGIN_DATA_DIR` 是 AgentDock 可选适配，不是 Agent Skills 通用前提。可移植 Skill 不应把它们列为用户必填配置；需要状态目录的辅助脚本可以在检测到它们时优先使用，并在其他宿主下采用自己明确声明的可移植策略。
 
 ## 引用与辅助脚本
 
