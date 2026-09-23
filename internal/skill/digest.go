@@ -57,14 +57,20 @@ func digestDirectory(root string, packageContent bool) (string, error) {
 		if entry.Type()&os.ModeSymlink != 0 {
 			return fmt.Errorf("symlink is not allowed in skill package: %s", path)
 		}
-		if entry.IsDir() {
-			return nil
-		}
 		rel, err := filepath.Rel(rootAbs, path)
 		if err != nil {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
+		if packageContent && IsIgnoredPackageMetadataPath(rel) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() {
+			return nil
+		}
 		paths = append(paths, rel)
 		return nil
 	})

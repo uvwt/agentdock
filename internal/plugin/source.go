@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	skills "github.com/uvwt/agentdock/internal/skill"
 )
 
 const (
@@ -120,6 +122,9 @@ func extractPluginZip(path, destination string) error {
 		if entry.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("Plugin archive contains symlink %q", entry.Name)
 		}
+		if skills.IsIgnoredPackageMetadataPath(relative) {
+			continue
+		}
 		target := filepath.Join(destination, archivePath)
 		if entry.FileInfo().IsDir() {
 			if err := os.MkdirAll(target, 0o700); err != nil {
@@ -200,13 +205,19 @@ func snapshotPluginTree(source, destination string, maxBytes int64, maxFiles int
 		if err != nil || !filepath.IsLocal(relative) || relative == "." {
 			return fmt.Errorf("invalid Plugin source path %q", path)
 		}
-		entries++
-		if entries > maxFiles {
-			return fmt.Errorf("Plugin source exceeds %d entries", maxFiles)
-		}
 		info, err := validatePluginSnapshotPath(root, relative, entry.IsDir())
 		if err != nil {
 			return fmt.Errorf("unsafe Plugin source path %q: %w", path, err)
+		}
+		if skills.IsIgnoredPackageMetadataPath(filepath.ToSlash(relative)) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		entries++
+		if entries > maxFiles {
+			return fmt.Errorf("Plugin source exceeds %d entries", maxFiles)
 		}
 		target := filepath.Join(destination, relative)
 		if info.IsDir() {
@@ -326,6 +337,9 @@ func selectPluginSourceRoot(root string) (string, error) {
 	}
 	var onlyDir string
 	for _, entry := range entries {
+		if skills.IsIgnoredPackageMetadataPath(entry.Name()) {
+			continue
+		}
 		if strings.HasPrefix(entry.Name(), ".") && !entry.IsDir() {
 			continue
 		}

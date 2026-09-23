@@ -58,6 +58,9 @@ func LoadPackage(root string) (Package, error) {
 	skillRoot := filepath.Join(root, "skills")
 	if entries, readErr := os.ReadDir(skillRoot); readErr == nil {
 		for _, entry := range entries {
+			if skills.IsIgnoredPackageMetadataPath(entry.Name()) {
+				continue
+			}
 			if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
 				return Package{}, pluginError("PLUGIN_PACKAGE_INVALID", "skills", fmt.Errorf("skills/%s must be a regular directory", entry.Name()))
 			}
@@ -373,6 +376,13 @@ func validatePackageTree(root string) ([]string, error) {
 		if err != nil {
 			return pluginError("PLUGIN_PACKAGE_INVALID", "package.path", err)
 		}
+		relative = filepath.ToSlash(relative)
+		if skills.IsIgnoredPackageMetadataPath(relative) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if entry.IsDir() {
 			if label, exists := unsupportedRoots[filepath.ToSlash(relative)]; exists {
 				unsupported = append(unsupported, label)
@@ -405,11 +415,25 @@ func collectExecutableFiles(root string) ([]string, error) {
 		if walkErr != nil {
 			return walkErr
 		}
-		if path == root || entry.IsDir() {
+		if path == root {
 			return nil
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
 			return fmt.Errorf("symlink is not allowed: %s", path)
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		relative = filepath.ToSlash(relative)
+		if skills.IsIgnoredPackageMetadataPath(relative) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() {
+			return nil
 		}
 		info, err := entry.Info()
 		if err != nil {
@@ -418,13 +442,9 @@ func collectExecutableFiles(root string) ([]string, error) {
 		if !info.Mode().IsRegular() {
 			return nil
 		}
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
 		if info.Mode().Perm()&0o111 != 0 || ext == ".exe" || ext == ".cmd" || ext == ".bat" || ext == ".ps1" {
-			items = append(items, filepath.ToSlash(relative))
+			items = append(items, relative)
 		}
 		return nil
 	})

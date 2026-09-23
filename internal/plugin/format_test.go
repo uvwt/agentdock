@@ -302,6 +302,13 @@ func writeWrappedPluginZip(t *testing.T, archivePath, prefix, root string) {
 		t.Fatal(err)
 	}
 	writer := zip.NewWriter(file)
+	meta, err := writer.Create("__MACOSX/._plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := meta.Write([]byte("macOS ZIP metadata")); err != nil {
+		t.Fatal(err)
+	}
 	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
