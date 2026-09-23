@@ -15,7 +15,7 @@ func InputSchema(name string) (map[string]any, bool) {
 			"enum":        []string{"list", "inspect", "validate", "install", "update", "enable", "disable", "remove"},
 		},
 		"name":         toolcontract.String("Installed Plugin name for inspect/enable/disable/remove."),
-		"source":       toolcontract.String("Local AgentDock Portable Plugin directory or ZIP archive. Relative paths are resolved against the workspace."),
+		"source":       toolcontract.String("Local Plugin directory or ZIP archive. AgentDock auto-detects Portable, OpenAI and Claude Plugin formats and converts supported external formats to a canonical Portable package before review. Relative paths are resolved against the workspace."),
 		"enabled":      toolcontract.Boolean("Initial enabled state for install. Defaults to true."),
 		"review_token": toolcontract.String("Required for install/update. Copy the exact review_token returned by plugin_manage validate; it binds confirmation to the reviewed package content."),
 		"data_policy": map[string]any{
@@ -41,7 +41,7 @@ func OutputSchema(name string) (map[string]any, bool) {
 		"data_policy":    toolcontract.String("Applied removal data policy."),
 		"plugin":         toolcontract.OpenObject("Installed Plugin details and component provenance."),
 		"plugins":        toolcontract.ObjectArray("Installed Plugin lightweight states."),
-		"review":         toolcontract.OpenObject("Static Portable Plugin validation and security review."),
+		"review":         toolcontract.OpenObject("Canonical Plugin validation, detected-format compatibility and security review."),
 		"count":          toolcontract.Integer("Installed Plugin count."),
 	}), true
 }

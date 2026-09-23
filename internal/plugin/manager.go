@@ -645,12 +645,16 @@ func (m *Manager) prepareCandidateSource(source string) (stage string, pkg Packa
 	if err != nil {
 		return "", Package{}, func() {}, err
 	}
-	pkg, err = LoadPackage(staged.Root)
+	normalizedRoot, pkg, cleanupNormalized, err := m.normalizeStagedPlugin(staged)
 	if err != nil {
 		staged.Cleanup()
 		return "", Package{}, func() {}, err
 	}
-	return staged.Root, pkg, staged.Cleanup, nil
+	cleanup = func() {
+		cleanupNormalized()
+		staged.Cleanup()
+	}
+	return normalizedRoot, pkg, cleanup, nil
 }
 
 type candidateCommit struct {

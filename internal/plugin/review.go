@@ -12,7 +12,7 @@ import (
 func emptyReview() Review {
 	return Review{
 		Skills: []SkillComponent{}, MCP: []MCPReview{}, Unsupported: []string{}, Warnings: []string{}, Executables: []string{}, Issues: []string{},
-		Compatibility: Compatibility{Format: "portable", Supported: []string{}, Unsupported: []string{}, Warnings: []string{}},
+		Compatibility: Compatibility{Format: "unknown", Supported: []string{}, Unsupported: []string{}, Warnings: []string{}},
 	}
 }
 

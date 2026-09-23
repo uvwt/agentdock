@@ -144,8 +144,8 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 				"provenance": installed.Provenance, "enabled": installed.Enabled, "installed_at": installed.InstalledAt,
 				"package_digest": installed.PackageDigest, "skills": review.Skills,
 				"mcp": review.MCP, "executables": review.Executables,
-				"warnings": review.Warnings, "unsupported": review.Unsupported,
-				"compatibility": review.Compatibility,
+				"warnings": installed.Compatibility.Warnings, "unsupported": installed.Compatibility.Unsupported,
+				"compatibility": installed.Compatibility,
 			},
 		}, nil
 
@@ -336,7 +336,7 @@ func (s *Service) sourcePath(raw string) (string, error) {
 		return "", validationError("source is required", "source")
 	}
 	if strings.Contains(source, "://") {
-		return "", validationError("source must be a local Portable Plugin directory or ZIP archive", "source")
+		return "", validationError("source must be a local Plugin directory or ZIP archive", "source")
 	}
 	resolved, err := s.ws.ResolveExisting(source)
 	if err != nil {

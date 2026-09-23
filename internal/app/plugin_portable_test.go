@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	pluginruntime "github.com/uvwt/agentdock/internal/plugin"
@@ -74,11 +75,27 @@ func TestPluginManagePortableZIPAndRejectsLegacySourceFeatures(t *testing.T) {
 		}
 	})
 
-	t.Run("legacy-source-parameter-removed", func(t *testing.T) {
-		if _, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
-			"action": "validate", "source": ".", "source_type": "git",
-		}); err == nil {
-			t.Fatal("legacy source_type parameter was accepted")
+	t.Run("legacy-source-parameters-removed", func(t *testing.T) {
+		legacy := map[string]any{
+			"source_type":             "git",
+			"source_adapter":          "openai",
+			"source_version":          "1.0.0",
+			"git_ref":                 "main",
+			"git_commit":              "deadbeef",
+			"subdir":                  "plugins/demo",
+			"sha256":                  "deadbeef",
+			"catalog":                 "openai",
+			"catalog_item":            "demo",
+			"confirmed_source_change": true,
+		}
+		for name, value := range legacy {
+			t.Run(name, func(t *testing.T) {
+				if _, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
+					"action": "validate", "source": ".", name: value,
+				}); err == nil {
+					t.Fatalf("legacy %s parameter was accepted", name)
+				}
+			})
 		}
 	})
 
@@ -91,25 +108,28 @@ func TestPluginManagePortableZIPAndRejectsLegacySourceFeatures(t *testing.T) {
 	})
 }
 
-func TestPluginManageImportedCloudflareShape(t *testing.T) {
+func TestPluginManageAutoConvertsOpenAICloudflareShape(t *testing.T) {
 	rt, root := newPluginTestRuntime(t)
-	source := filepath.Join(root, "cloudflare-import")
+	source := filepath.Join(root, "cloudflare-openai")
+	if err := os.MkdirAll(filepath.Join(source, ".codex-plugin"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(filepath.Join(source, "skills"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(source, "commands"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 
-	writeAppPluginJSON(t, filepath.Join(source, "plugin.json"), map[string]any{
-		"$schema":     testPluginSchema,
+	writeAppPluginJSON(t, filepath.Join(source, ".codex-plugin", "plugin.json"), map[string]any{
 		"name":        "cloudflare",
 		"version":     "0.1.2",
-		"description": "Imported Cloudflare Plugin fixture.",
-		"provenance": map[string]any{
-			"origin":   "https://github.com/openai/plugins",
-			"revision": "1dc195897af4161d039b80d8471ec0a10c9bbc89",
-			"subdir":   "plugins/cloudflare",
-			"format":   "openai",
-			"adapted":  true,
-		},
+		"description": "OpenAI Cloudflare-shaped fixture.",
+		"repository":  "https://github.com/openai/plugins",
+		"skills":      "./skills/",
+		"mcpServers":  "./.mcp.json",
+		"commands":    map[string]any{"deploy": "./commands/deploy.md"},
+		"interface":   map[string]any{"displayName": "Cloudflare"},
 	})
 
 	skills := []string{
@@ -133,12 +153,15 @@ func TestPluginManageImportedCloudflareShape(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	writeAppPluginJSON(t, filepath.Join(source, "mcp.json"), map[string]any{
-		"$schema": testMCPSchema,
+	if err := os.WriteFile(filepath.Join(source, "commands", "deploy.md"), []byte("# Deploy\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeAppPluginJSON(t, filepath.Join(source, ".mcp.json"), map[string]any{
 		"mcpServers": map[string]any{
 			"cloudflare-api": map[string]any{
-				"type": "streamable-http",
+				"type": "http",
 				"url":  "https://mcp.cloudflare.com/mcp",
+				"note": "Official Cloudflare API MCP server.",
 			},
 		},
 	})
@@ -151,17 +174,20 @@ func TestPluginManageImportedCloudflareShape(t *testing.T) {
 	}
 	review, ok := validated["review"].(pluginruntime.Review)
 	if !ok || !review.Valid {
-		t.Fatalf("Cloudflare import review = %#v", validated)
+		t.Fatalf("Cloudflare OpenAI review = %#v", validated)
 	}
-	if len(review.Skills) != 9 || len(review.MCP) != 1 {
-		t.Fatalf("Cloudflare components = skills:%d mcp:%d", len(review.Skills), len(review.MCP))
+	if review.Compatibility.Format != "openai" || len(review.Skills) != 9 || len(review.MCP) != 1 {
+		t.Fatalf("Cloudflare normalized review = %#v", review)
 	}
 	if review.Provenance == nil ||
 		review.Provenance.Origin != "https://github.com/openai/plugins" ||
-		review.Provenance.Subdir != "plugins/cloudflare" ||
+		!strings.HasPrefix(review.Provenance.Revision, "sha256:") ||
 		review.Provenance.Format != "openai" ||
 		!review.Provenance.Adapted {
 		t.Fatalf("Cloudflare provenance = %#v", review.Provenance)
+	}
+	if len(review.Unsupported) != 0 || len(review.Warnings) == 0 {
+		t.Fatalf("Cloudflare compatibility = warnings:%#v unsupported:%#v", review.Warnings, review.Unsupported)
 	}
 
 	installed, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
@@ -181,5 +207,13 @@ func TestPluginManageImportedCloudflareShape(t *testing.T) {
 	}
 	if inspected["package_digest"] != review.PackageDigest {
 		t.Fatalf("Cloudflare inspect = %#v review=%#v", inspected, review)
+	}
+	plugin, ok := inspected["plugin"].(map[string]any)
+	if !ok {
+		t.Fatalf("Cloudflare inspect plugin = %#v", inspected["plugin"])
+	}
+	compatibility, ok := plugin["compatibility"].(pluginruntime.Compatibility)
+	if !ok || compatibility.Format != "openai" {
+		t.Fatalf("Cloudflare inspect compatibility = %#v", plugin["compatibility"])
 	}
 }

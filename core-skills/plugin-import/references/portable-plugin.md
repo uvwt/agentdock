@@ -1,6 +1,18 @@
 # AgentDock Portable Plugin
 
-AgentDock Plugin Core 只理解 Portable Plugin。外部生态格式必须先转换成此格式。
+AgentDock Plugin Core 的最终运行格式是 Portable Plugin。对本地目录或 ZIP，`plugin_manage` 会先自动识别 AgentDock Portable、OpenAI 和 Claude 格式；OpenAI/Claude 会在审核前由 Core 转成 canonical Portable snapshot，不需要模型预先改写。
+
+## 自动识别
+
+`plugin_manage(source=...)` 只接收本地目录或 ZIP，不需要额外的 format/adapter 参数：
+
+- 根目录 `plugin.json`：按 AgentDock Portable 处理；
+- `.codex-plugin/plugin.json`：按 OpenAI Plugin 处理；
+- `.claude-plugin/plugin.json`：按 Claude Plugin 处理；
+- OpenAI 与 Claude manifest 同时存在且没有 Portable manifest：作为歧义格式拒绝；
+- Portable manifest 存在时具有最高优先级；若其内容无效，按 Portable 校验失败，不静默 fallback。
+
+OpenAI/Claude 转换后生成的 canonical snapshot 才参与 `package_digest` 和 `review_token`。原包中无法安全映射的认证/行为字段继续作为 unsupported 阻塞；已知的说明元数据和可安全省略组件会明确出现在 warnings。
 
 ## 最小目录
 
@@ -55,7 +67,7 @@ https://agent-plugins.org/schemas/1.0.0/plugin.schema.json
 
 字段含义：
 
-- `origin`：原始上游身份，例如仓库 URL；
+- `origin`：原始上游身份，例如仓库 URL；自动转换拿不到稳定上游地址时使用原始本地包内容的 `sha256:...` 摘要，不记录临时本地路径；
 - `revision`：具体 commit、tag 对应不可变 revision 或来源摘要；
 - `subdir`：原始仓库内的 Plugin 相对目录；
 - `format`：原始格式标签，仅用于 provenance，不改变 Core 解析行为；

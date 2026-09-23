@@ -21,9 +21,10 @@ type stagedPluginSource struct {
 	Cleanup func()
 }
 
-// stagePluginSource snapshots a local Portable Plugin directory or extracts a
-// local ZIP into AgentDock-owned temporary storage. Network acquisition and
-// foreign Plugin format conversion intentionally live outside Plugin Core.
+// stagePluginSource snapshots a local Plugin directory or extracts a local
+// ZIP into AgentDock-owned temporary storage. Network acquisition stays outside
+// Plugin Core; local Portable/OpenAI/Claude format normalization runs after this
+// transport-level safety boundary.
 func (m *Manager) stagePluginSource(source string) (stagedPluginSource, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
@@ -346,6 +347,15 @@ func selectPluginSourceRoot(root string) (string, error) {
 }
 
 func hasPluginLayoutMarker(root string) bool {
-	info, err := os.Lstat(filepath.Join(root, "plugin.json"))
-	return err == nil && info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0
+	for _, path := range []string{
+		"plugin.json",
+		filepath.Join(".codex-plugin", "plugin.json"),
+		filepath.Join(".claude-plugin", "plugin.json"),
+	} {
+		info, err := os.Lstat(filepath.Join(root, path))
+		if err == nil && info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
+			return true
+		}
+	}
+	return false
 }
