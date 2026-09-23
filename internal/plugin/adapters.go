@@ -319,8 +319,9 @@ func normalizeExternalManifest(raw map[string]json.RawMessage, request SourceReq
 		}
 		unsupportedLabels = map[string]string{
 			"commands": "commands", "agents": "agents", "workflows": "workflows", "hooks": "hooks",
-			"outputStyles": "output styles", "lspServers": "lsp", "experimental": "experimental components",
-			"userConfig": "user config", "channels": "channels", "dependencies": "plugin dependencies",
+			"outputStyles": "output styles", "output-styles": "output styles", "themes": "themes", "monitors": "monitors",
+			"lspServers": "lsp", "experimental": "experimental components", "userConfig": "user config",
+			"channels": "channels", "dependencies": "plugin dependencies",
 		}
 	}
 	unsupported := make([]string, 0)
@@ -644,8 +645,13 @@ func writePortableManifest(root string, manifest Manifest) error {
 
 func detectExternalRootUnsupported(root, adapter string) []string {
 	paths := map[string]string{
-		"agents": "agents", "commands": "commands", "hooks.json": "hooks",
-		".lsp.json": "lsp", "monitors.json": "monitors",
+		"agents": "agents", "commands": "commands", "hooks": "hooks", "hooks.json": "hooks",
+		".lsp.json": "lsp", "monitors": "monitors", "monitors.json": "monitors",
+	}
+	if adapter == "claude" {
+		paths["workflows"] = "workflows"
+		paths["output-styles"] = "output styles"
+		paths["themes"] = "themes"
 	}
 	if adapter == "openai" {
 		paths[".app.json"] = "apps"

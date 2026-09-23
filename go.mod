@@ -3,6 +3,7 @@ module github.com/uvwt/agentdock
 go 1.26.5
 
 require (
+	github.com/Masterminds/semver/v3 v3.3.0
 	github.com/UserExistsError/conpty v0.1.4
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/chromedp/cdproto v0.0.0-20250724212937-08a3db8b4327

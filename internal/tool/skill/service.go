@@ -18,6 +18,7 @@ import (
 	plugins "github.com/uvwt/agentdock/internal/plugin"
 	skills "github.com/uvwt/agentdock/internal/skill"
 	skillstate "github.com/uvwt/agentdock/internal/skill/state"
+	"github.com/uvwt/agentdock/internal/skillspec"
 	"github.com/uvwt/agentdock/internal/workspace"
 )
 
@@ -207,7 +208,7 @@ func splitSkillURIPath(value string) []string {
 }
 
 func validSkillRefName(name string) bool {
-	return name != "" && name == path.Base(name) && !strings.ContainsAny(name, `/\\?#`) && name != "." && name != ".."
+	return name == path.Base(name) && !strings.ContainsAny(name, "/\\?#") && skillspec.ValidateName(name) == nil
 }
 
 func (s *Service) acquireManaged(ctx context.Context, ref parsedSkillRef) (ResolvedSkill, func(), error) {
@@ -368,11 +369,17 @@ func verifyResolvedSkillDocument(root, expectedName string) error {
 	return nil
 }
 
-func (s *Service) scopedEnvAction(name, action string, request ManageRequest) (Result, error) {
-	if _, err := s.state.Resolve(strings.TrimSpace(name)); err != nil {
+func (s *Service) scopedEnvAction(ctx context.Context, name, action string, request ManageRequest) (Result, error) {
+	name = strings.TrimSpace(name)
+	release, err := s.state.AcquireRead(ctx, name)
+	if err != nil {
+		return nil, toolErrorDetails("SKILL_CONTEXT_INVALID", "acquire managed Skill lifecycle lock: "+err.Error(), "runtime", map[string]any{"skill": name})
+	}
+	defer release()
+	if _, err := s.state.Resolve(name); err != nil {
 		return nil, toolErrorDetails("SKILL_NOT_AVAILABLE", "managed Skill is not installed", "not_found", map[string]any{"skill": name})
 	}
-	scope := envstore.Scope{Kind: envstore.ScopeSkill, Name: strings.TrimSpace(name)}
+	scope := envstore.Scope{Kind: envstore.ScopeSkill, Name: name}
 	switch action {
 	case "env_set":
 		key := strings.TrimSpace(request.Key)

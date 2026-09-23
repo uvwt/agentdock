@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	semver "github.com/Masterminds/semver/v3"
 )
 
 var (
-	semverPattern     = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
 	envNamePattern    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	componentPattern  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 	headerNamePattern = regexp.MustCompile(`^[!#$%&'*+.^_` + "`" + `|~0-9A-Za-z-]+$`)
@@ -43,8 +44,9 @@ func ValidateVersion(version string) error {
 	if version == VersionLocal {
 		return nil
 	}
-	if !semverPattern.MatchString(version) {
-		return fmt.Errorf("Plugin version must be SemVer or %q", VersionLocal)
+	parsed, err := semver.StrictNewVersion(version)
+	if err != nil || parsed.String() != version {
+		return fmt.Errorf("Plugin version must be valid canonical SemVer or %q", VersionLocal)
 	}
 	return nil
 }

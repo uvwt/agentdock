@@ -122,6 +122,18 @@ type State struct {
 	Compatibility  Compatibility  `json:"compatibility,omitempty"`
 }
 
+const UpdateTransactionSchemaVersion = 1
+
+type UpdateTransaction struct {
+	SchemaVersion    int       `json:"schema_version"`
+	Name             string    `json:"name"`
+	Phase            string    `json:"phase"`
+	Previous         State     `json:"previous"`
+	Candidate        State     `json:"candidate"`
+	LocalReplacement bool      `json:"local_replacement,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
 type Package struct {
 	Root          string
 	Manifest      Manifest
@@ -139,6 +151,7 @@ type Review struct {
 	Version       string           `json:"version,omitempty"`
 	Description   string           `json:"description,omitempty"`
 	PackageDigest string           `json:"package_digest,omitempty"`
+	ReviewToken   string           `json:"review_token,omitempty"`
 	Source        Source           `json:"source"`
 	Skills        []SkillComponent `json:"skills"`
 	MCP           []MCPReview      `json:"mcp"`

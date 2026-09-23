@@ -32,12 +32,13 @@ const (
 )
 
 type Store struct {
-	home       string
-	pluginRoot string
-	stateRoot  string
-	dataRoot   string
-	tempRoot   string
-	lockRoot   string
+	home            string
+	pluginRoot      string
+	stateRoot       string
+	transactionRoot string
+	dataRoot        string
+	tempRoot        string
+	lockRoot        string
 
 	mu    sync.Mutex
 	locks map[string]*sync.RWMutex
@@ -65,13 +66,14 @@ func NewStore(agentDockHome string) (*Store, error) {
 		return nil, err
 	}
 	store := &Store{
-		home:       home,
-		pluginRoot: filepath.Join(home, "plugins"),
-		stateRoot:  filepath.Join(home, "state", "plugins"),
-		dataRoot:   filepath.Join(home, "data", "plugins"),
-		tempRoot:   filepath.Join(home, "tmp", "plugins"),
-		lockRoot:   filepath.Join(home, "locks", "plugins"),
-		locks:      make(map[string]*sync.RWMutex),
+		home:            home,
+		pluginRoot:      filepath.Join(home, "plugins"),
+		stateRoot:       filepath.Join(home, "state", "plugins"),
+		transactionRoot: filepath.Join(home, "state", "plugins", "transactions"),
+		dataRoot:        filepath.Join(home, "data", "plugins"),
+		tempRoot:        filepath.Join(home, "tmp", "plugins"),
+		lockRoot:        filepath.Join(home, "locks", "plugins"),
+		locks:           make(map[string]*sync.RWMutex),
 	}
 	if err := store.ensureLayout(); err != nil {
 		return nil, err
@@ -87,7 +89,7 @@ func (s *Store) ensureLayout() error {
 	defer root.Close()
 	for _, relative := range []string{
 		"plugins",
-		"state", filepath.Join("state", "plugins"),
+		"state", filepath.Join("state", "plugins"), filepath.Join("state", "plugins", "transactions"),
 		"data", filepath.Join("data", "plugins"),
 		"tmp", filepath.Join("tmp", "plugins"),
 		"locks", filepath.Join("locks", "plugins"),
@@ -270,6 +272,118 @@ func (s *Store) Delete(name string) error {
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
+	}
+	return nil
+}
+
+func (s *Store) updateTransactionPath(name string) (string, error) {
+	name, err := pluginNamePathSegment(name)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(s.transactionRoot, name+".json"), nil
+}
+
+func (s *Store) SaveUpdateTransaction(transaction UpdateTransaction) error {
+	if err := validateUpdateTransaction(transaction); err != nil {
+		return err
+	}
+	path, err := s.updateTransactionPath(transaction.Name)
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(transaction, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	if len(data) > maxStateBytes {
+		return fmt.Errorf("Plugin update transaction exceeds %d bytes", maxStateBytes)
+	}
+	return atomicfile.Write(path, data, 0o600)
+}
+
+func (s *Store) LoadUpdateTransaction(name string) (UpdateTransaction, error) {
+	path, err := s.updateTransactionPath(name)
+	if err != nil {
+		return UpdateTransaction{}, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return UpdateTransaction{}, err
+	}
+	var transaction UpdateTransaction
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&transaction); err != nil {
+		return UpdateTransaction{}, fmt.Errorf("decode Plugin update transaction: %w", err)
+	}
+	if err := validateUpdateTransaction(transaction); err != nil {
+		return UpdateTransaction{}, err
+	}
+	return transaction, nil
+}
+
+func (s *Store) ListUpdateTransactions() ([]UpdateTransaction, error) {
+	entries, err := os.ReadDir(s.transactionRoot)
+	if err != nil {
+		return nil, err
+	}
+	transactions := make([]UpdateTransaction, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		name := strings.TrimSuffix(entry.Name(), ".json")
+		transaction, err := s.LoadUpdateTransaction(name)
+		if err != nil {
+			return nil, err
+		}
+		transactions = append(transactions, transaction)
+	}
+	return transactions, nil
+}
+
+func (s *Store) DeleteUpdateTransaction(name string) error {
+	path, err := s.updateTransactionPath(name)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+func (s *Store) UpdateBackupPath(name string) (string, error) {
+	parent, err := s.EnsurePackageParent(name)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(parent, ".update-backup"), nil
+}
+
+func validateUpdateTransaction(transaction UpdateTransaction) error {
+	if transaction.SchemaVersion != UpdateTransactionSchemaVersion {
+		return fmt.Errorf("unsupported Plugin update transaction schema %d", transaction.SchemaVersion)
+	}
+	if err := ValidateName(transaction.Name); err != nil {
+		return err
+	}
+	if transaction.Previous.Name != transaction.Name || transaction.Candidate.Name != transaction.Name {
+		return errors.New("Plugin update transaction identity mismatch")
+	}
+	if err := validateState(transaction.Previous); err != nil {
+		return fmt.Errorf("invalid previous Plugin state: %w", err)
+	}
+	if err := validateState(transaction.Candidate); err != nil {
+		return fmt.Errorf("invalid candidate Plugin state: %w", err)
+	}
+	if transaction.Phase != "pending" && transaction.Phase != "committed" {
+		return fmt.Errorf("invalid Plugin update transaction phase %q", transaction.Phase)
+	}
+	if transaction.CreatedAt.IsZero() {
+		return errors.New("Plugin update transaction created_at is required")
 	}
 	return nil
 }
@@ -774,6 +888,16 @@ func validateState(state State) error {
 	}
 	if state.Source.Type == "" {
 		return errors.New("Plugin source type is required")
+	}
+	if state.Source.Type == "git" {
+		if err := validateStoredGitSourceCredentials(state.Source.Ref); err != nil {
+			return err
+		}
+	}
+	if state.Source.ResolvedType == "git" {
+		if err := validateStoredGitSourceCredentials(state.Source.ResolvedRef); err != nil {
+			return err
+		}
 	}
 	if state.InstalledAt.IsZero() {
 		return errors.New("Plugin installed_at is required")

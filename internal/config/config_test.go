@@ -200,7 +200,7 @@ func TestSkillDataDirUsesManagedPrivateRoot(t *testing.T) {
 func TestSkillDataDirRejectsUnsafeIdentity(t *testing.T) {
 	cfg := Config{AgentDockHome: filepath.Join(t.TempDir(), ".agentdock")}
 	for _, skill := range []string{
-		"", "a", "../demo", "demo/child", `demo\child`, "/tmp/demo",
+		"", "../demo", "demo/child", `demo\child`, "/tmp/demo",
 		"Demo-skill", "demo_skill", " demo-skill", "demo-skill ",
 	} {
 		t.Run(skill, func(t *testing.T) {

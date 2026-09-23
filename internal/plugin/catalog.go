@@ -293,6 +293,9 @@ func parseClaudeCatalog(path string, request SourceRequest) (catalogDefinition, 
 		if err := ValidateName(entryName); err != nil {
 			return catalogDefinition{}, pluginError("PLUGIN_CATALOG_INVALID", fmt.Sprintf("catalog.plugins[%d].name", index), err)
 		}
+		if _, exists := definition.entries[entryName]; exists {
+			return catalogDefinition{}, pluginError("PLUGIN_CATALOG_INVALID", fmt.Sprintf("catalog.plugins[%d].name", index), fmt.Errorf("duplicate catalog entry %q", entryName))
+		}
 		sourceRaw, ok := rawEntry["source"]
 		if !ok || isJSONEmpty(sourceRaw) {
 			return catalogDefinition{}, pluginError("PLUGIN_CATALOG_INVALID", fmt.Sprintf("catalog.plugins[%d].source", index), errors.New("source is required"))
@@ -328,7 +331,7 @@ func parseClaudeCatalog(path string, request SourceRequest) (catalogDefinition, 
 			"metadata": true, "category": true, "tags": true, "strict": true, "relevance": true,
 			"defaultEnabled": true, "skills": true, "mcpServers": true,
 		}, "Claude catalog component ")
-		for _, behavior := range []string{"commands", "agents", "hooks", "lspServers"} {
+		for _, behavior := range []string{"commands", "agents", "hooks", "workflows", "outputStyles", "output-styles", "themes", "monitors", "lspServers"} {
 			if value, ok := rawEntry[behavior]; ok && !isJSONEmpty(value) {
 				unsupported = append(unsupported, "Claude catalog component "+behavior)
 			}

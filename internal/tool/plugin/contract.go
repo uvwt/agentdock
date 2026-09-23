@@ -35,7 +35,7 @@ func InputSchema(name string) (map[string]any, bool) {
 		},
 		"catalog_item":            toolcontract.String("Catalog entry name when source_type=catalog."),
 		"enabled":                 toolcontract.Boolean("Initial enabled state for install. Defaults to true."),
-		"confirmed":               toolcontract.Boolean("Required for install/update after reviewing plugin_manage validate output."),
+		"review_token":            toolcontract.String("Required for install/update. Copy the exact review_token returned by plugin_manage validate; it binds confirmation to the staged package digest and security review."),
 		"confirmed_source_change": toolcontract.Boolean("For update, explicitly confirm rebinding an installed Plugin to a different source."),
 		"data_policy": map[string]any{
 			"type":        "string",
@@ -55,7 +55,8 @@ func OutputSchema(name string) (map[string]any, bool) {
 		"version":        toolcontract.String("Current Plugin version."),
 		"enabled":        toolcontract.Boolean("Whether the Plugin is enabled."),
 		"changed":        toolcontract.Boolean("Whether the operation changed installed state."),
-		"package_digest": toolcontract.String("Plugin package content digest."),
+		"package_digest": toolcontract.String("Plugin package content digest; validate returns the digest bound by review_token."),
+		"review_token":   toolcontract.String("Exact security-review token returned by validate and required unchanged for install/update."),
 		"data_policy":    toolcontract.String("Applied removal data policy."),
 		"plugin":         toolcontract.OpenObject("Installed Plugin details and component provenance."),
 		"plugins":        toolcontract.ObjectArray("Installed Plugin lightweight states."),

@@ -6,13 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
+
+	"github.com/uvwt/agentdock/internal/skillspec"
 
 	"gopkg.in/yaml.v3"
 )
-
-var skillNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,62}$`)
 
 type skillFrontmatter struct {
 	Name          string         `yaml:"name"`
@@ -55,21 +54,32 @@ func ParseSkillDocument(data []byte) (SkillDocument, error) {
 		return SkillDocument{}, fmt.Errorf("decode SKILL.md frontmatter: %w", err)
 	}
 
+	metadata, metadataErr := skillspec.NormalizeMetadata(fields.Metadata)
+	allowedTools, toolsErr := skillspec.NormalizeAllowedTools(fields.AllowedTools)
 	doc := SkillDocument{
 		Name:          strings.TrimSpace(fields.Name),
 		Description:   strings.TrimSpace(fields.Description),
 		License:       strings.TrimSpace(fields.License),
 		Compatibility: strings.TrimSpace(fields.Compatibility),
-		Metadata:      fields.Metadata,
-		AllowedTools:  fields.AllowedTools,
+		Metadata:      metadata,
+		AllowedTools:  allowedTools,
 		Body:          body,
 	}
 	var issues []string
-	if !skillNamePattern.MatchString(doc.Name) {
-		issues = append(issues, "name is required and must match ^[a-z][a-z0-9-]{1,62}$")
+	if err := skillspec.ValidateName(doc.Name); err != nil {
+		issues = append(issues, err.Error())
 	}
-	if doc.Description == "" {
-		issues = append(issues, "description is required")
+	if err := skillspec.ValidateDescription(doc.Description); err != nil {
+		issues = append(issues, err.Error())
+	}
+	if err := skillspec.ValidateCompatibility(doc.Compatibility); err != nil {
+		issues = append(issues, err.Error())
+	}
+	if metadataErr != nil {
+		issues = append(issues, metadataErr.Error())
+	}
+	if toolsErr != nil {
+		issues = append(issues, toolsErr.Error())
 	}
 	if doc.Body == "" {
 		issues = append(issues, "markdown body is required")

@@ -22,7 +22,7 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 		if skill == "" {
 			return nil, toolErrorDetails("VALIDATION_ERROR", "skill is required", "validation", map[string]any{"field": "skill"})
 		}
-		return s.scopedEnvAction(skill, action, request)
+		return s.scopedEnvAction(ctx, skill, action, request)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported skill_manage action", "validation", map[string]any{
 			"action": action, "allowed": []string{"install", "remove", "env_set", "env_unset", "env_list"},
@@ -40,7 +40,7 @@ func (s *Service) install(ctx context.Context, request ManageRequest) (Result, e
 		return nil, err
 	}
 	result, err := s.manager.Install(ctx, skills.InstallRequest{
-		Source: resolved, DigestSHA256: strings.TrimSpace(request.Digest), MaxBytes: int64(intValue(request.MaxBytes, 0)),
+		Source: resolved, DigestSHA256: strings.TrimSpace(request.Digest), MaxBytes: int64(intValue(request.MaxBytes, 0)), MaxFiles: intValue(request.MaxFiles, 0),
 	})
 	if err != nil {
 		return nil, skillToolError(err)
@@ -53,18 +53,24 @@ func (s *Service) remove(ctx context.Context, request ManageRequest) (Result, er
 	if skill == "" {
 		return nil, toolErrorDetails("VALIDATION_ERROR", "skill is required for remove", "validation", map[string]any{"field": "skill"})
 	}
-	result, err := s.manager.Remove(ctx, skill)
+	var (
+		result skills.RemoveResult
+		err    error
+	)
+	if request.Purge {
+		result, err = s.manager.RemoveWithPurge(ctx, skill, func() error {
+			return s.purgeManagedSkillState(skill)
+		})
+	} else {
+		result, err = s.manager.Remove(ctx, skill)
+	}
 	if err != nil {
 		return nil, skillToolError(err)
 	}
-	response := Result{"action": "remove", "skill": skill, "removed": result.Removed, "purged": false, "result": result}
-	if request.Purge {
-		if err := s.purgeManagedSkillState(skill); err != nil {
-			return nil, toolErrorDetails("SKILL_PURGE_FAILED", "managed Skill package was removed but preserved environment/data could not be fully purged", "runtime", map[string]any{"skill": skill, "reason": err.Error()})
-		}
-		response["purged"] = true
-	}
-	return response, nil
+	return Result{
+		"action": "remove", "skill": skill, "removed": result.Removed,
+		"purged": request.Purge, "result": result,
+	}, nil
 }
 
 func (s *Service) resolveSkillSource(source string) (string, error) {

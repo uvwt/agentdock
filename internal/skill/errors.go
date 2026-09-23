@@ -36,4 +36,5 @@ const (
 	ErrDocumentInvalid = "SKILL_DOCUMENT_INVALID"
 	ErrInstallFailed   = "SKILL_INSTALL_FAILED"
 	ErrUninstallFailed = "SKILL_UNINSTALL_FAILED"
+	ErrPurgeFailed     = "SKILL_PURGE_FAILED"
 )

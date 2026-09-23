@@ -94,3 +94,51 @@ func TestSkillManageRemovePurgeDeletesEnvironmentAndData(t *testing.T) {
 		t.Fatalf("Skill data survived purge: %v", err)
 	}
 }
+
+func TestSkillManagePurgeAfterKeepRemovalIsIdempotent(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "demo-skill")
+	writeToolSkillPackage(t, source, "Demo")
+	runtime, _ := newSkillTestServiceAtRoot(t, root)
+	if _, err := runtime.manageTest(context.Background(), map[string]any{"action": "install", "source": "demo-skill"}); err != nil {
+		t.Fatal(err)
+	}
+	value := "secret"
+	if _, err := runtime.manageTest(context.Background(), map[string]any{
+		"action": "env_set", "skill": "demo-skill", "key": "TOKEN", "value": value,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dataPath := filepath.Join(root, ".agentdock", "data", "skills", "demo-skill")
+	if err := os.MkdirAll(dataPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataPath, "state.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.manageTest(context.Background(), map[string]any{
+		"action": "remove", "skill": "demo-skill",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	response, err := runtime.manageTest(context.Background(), map[string]any{
+		"action": "remove", "skill": "demo-skill", "purge": true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response["removed"] != false || response["purged"] != true {
+		t.Fatalf("idempotent purge result = %#v", response)
+	}
+	envPath, err := runtime.envs.Path(envstore.Scope{Kind: envstore.ScopeSkill, Name: "demo-skill"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(envPath); !os.IsNotExist(err) {
+		t.Fatalf("Skill environment survived delayed purge: %v", err)
+	}
+	if _, err := os.Stat(dataPath); !os.IsNotExist(err) {
+		t.Fatalf("Skill data survived delayed purge: %v", err)
+	}
+}

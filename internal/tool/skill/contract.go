@@ -15,6 +15,7 @@ func ManageInputSchema() map[string]any {
 		"digest":    stringProp("Optional expected SHA-256 source digest for install integrity checking."),
 		"purge":     toolcontract.Boolean("For remove, also delete the managed Skill environment and persistent data."),
 		"max_bytes": toolcontract.Integer("Maximum install package bytes."),
+		"max_files": toolcontract.Integer("Maximum install package regular files."),
 	}, "action")
 }
 

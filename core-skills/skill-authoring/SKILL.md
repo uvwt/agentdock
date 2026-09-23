@@ -61,8 +61,7 @@ license: Apache-2.0
 compatibility: Requires Python 3.11 or later.
 metadata:
   owner: example-team
-allowed-tools:
-  - exec_command
+allowed-tools: exec_command
 ---
 
 # Example Skill
@@ -70,10 +69,13 @@ allowed-tools:
 
 要求：
 
-- `name` 必填，匹配 `^[a-z][a-z0-9-]{1,62}$`；
-- `description` 必填，并能让模型稳定判断何时使用；
+- `name` 必填，长度 1–64，只允许小写 ASCII 字母、数字和 `-`，不能以 `-` 开头/结尾，也不能包含连续 `--`；
+- `description` 必填，最长 1024 个字符，并能让模型稳定判断何时使用；
 - Markdown 正文必须非空；
-- `license`、`compatibility`、`metadata`、`allowed-tools` 为可选；
+- `compatibility` 可选，最长 500 个字符；
+- `metadata` 可选，键值都使用字符串；
+- `allowed-tools` 可选，使用单行、空格分隔的字符串；
+- `license` 为可选；
 - `metadata.version` 若作者需要可以作为普通元数据存在，但 AgentDock 不把它当安装身份、升级依据或运行时版本；
 - 不设计 AgentDock 私有的 `version`、`active_version`、revision 或 rollback 契约。
 

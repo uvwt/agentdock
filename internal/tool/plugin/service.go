@@ -137,7 +137,10 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 			return nil, err
 		}
 		review := s.manager.ValidateSource(ctx, sourceRequest)
-		return Result{"action": action, "review": review}, nil
+		return Result{
+			"action": action, "review": review,
+			"package_digest": review.PackageDigest, "review_token": review.ReviewToken,
+		}, nil
 
 	case "catalog":
 		sourceRequest, err := s.sourceRequest(request)
@@ -152,14 +155,6 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 		return Result{"action": action, "catalog": catalog, "count": len(catalog.Entries)}, nil
 
 	case "install":
-		if !request.Confirmed {
-			return nil, toolcore.NewErrorDetails(
-				"PLUGIN_CONFIRMATION_REQUIRED",
-				"validate the Plugin security review, then repeat install with confirmed=true",
-				"validation",
-				map[string]any{"next_action": "plugin_manage validate"},
-			)
-		}
 		sourceRequest, err := s.sourceRequest(request)
 		if err != nil {
 			return nil, err
@@ -168,7 +163,7 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 		if request.Enabled != nil {
 			enabled = *request.Enabled
 		}
-		result, err := s.manager.InstallSource(ctx, sourceRequest, enabled)
+		result, err := s.manager.InstallReviewedSource(ctx, sourceRequest, enabled, request.ReviewToken)
 		if err != nil {
 			return nil, pluginToolError(err)
 		}
@@ -189,58 +184,51 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 		return changeResult(result), nil
 
 	case "update":
-		if !request.Confirmed {
-			return nil, toolcore.NewErrorDetails(
-				"PLUGIN_CONFIRMATION_REQUIRED",
-				"validate the Plugin security review, then repeat update with confirmed=true",
-				"validation",
-				map[string]any{"next_action": "plugin_manage validate"},
-			)
-		}
 		sourceRequest, err := s.sourceRequest(request)
 		if err != nil {
 			return nil, err
 		}
-		review := s.manager.ValidateSource(ctx, sourceRequest)
-		if !review.Valid || review.Name == "" {
-			return nil, toolcore.NewErrorDetails(
-				"PLUGIN_VALIDATION_FAILED",
-				"Plugin candidate failed validation; current Plugin remains unchanged",
-				"validation",
-				map[string]any{"issues": review.Issues, "unsupported": review.Unsupported},
-			)
-		}
-		previous, err := s.manager.Inspect(review.Name)
-		if err != nil {
-			return nil, pluginToolError(err)
-		}
-		if previous.Enabled {
-			if err := s.reconcileMCPExcluding(previous.Name); err != nil {
-				return nil, toolcore.NewErrorCause(
+		var previous pluginruntime.State
+		deactivated := false
+		var deactivationErr error
+		result, err := s.manager.UpdateReviewedSource(ctx, sourceRequest, request.ConfirmedSourceChange, request.ReviewToken, func(state pluginruntime.State) error {
+			previous = state
+			if !state.Enabled {
+				return nil
+			}
+			if reconcileErr := s.reconcileMCPExcluding(state.Name); reconcileErr != nil {
+				deactivationErr = toolcore.NewErrorCause(
 					"PLUGIN_RUNTIME_DEACTIVATION_FAILED",
 					"could not stop the current Plugin MCP runtime before update",
 					"runtime",
-					map[string]any{"plugin_name": previous.Name, "previous_version": previous.Version},
-					err,
+					map[string]any{"plugin_name": state.Name, "previous_version": state.Version},
+					reconcileErr,
 				)
+				return deactivationErr
 			}
-		}
-		result, err := s.manager.UpdateSource(ctx, sourceRequest, request.ConfirmedSourceChange)
+			deactivated = true
+			return nil
+		})
 		if err != nil {
-			reconcileErr := s.ReconcileMCP()
-			if reconcileErr != nil {
-				return nil, toolcore.NewErrorCause(
-					"PLUGIN_UPDATE_FAILED",
-					"Plugin update failed and the previous MCP runtime could not be fully restored",
-					"runtime",
-					map[string]any{"plugin_name": previous.Name, "previous_version": previous.Version},
-					errors.Join(err, reconcileErr),
-				)
+			if deactivationErr != nil {
+				return nil, deactivationErr
+			}
+			if deactivated {
+				reconcileErr := s.ReconcileMCP()
+				if reconcileErr != nil {
+					return nil, toolcore.NewErrorCause(
+						"PLUGIN_UPDATE_FAILED",
+						"Plugin update failed and the previous MCP runtime could not be fully restored",
+						"runtime",
+						map[string]any{"plugin_name": previous.Name, "previous_version": previous.Version},
+						errors.Join(err, reconcileErr),
+					)
+				}
 			}
 			return nil, pluginToolError(err)
 		}
 		if err := s.ReconcileMCP(); err != nil {
-			restoreErr := s.manager.RestoreState(ctx, previous.State)
+			restoreErr := s.manager.RestoreState(ctx, previous)
 			reconcileErr := s.ReconcileMCP()
 			return nil, toolcore.NewErrorCause(
 				"PLUGIN_RUNTIME_ACTIVATION_FAILED",
@@ -250,7 +238,15 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 				errors.Join(err, restoreErr, reconcileErr),
 			)
 		}
-		s.manager.FinalizeUpdate(result.Name)
+		if err := s.manager.FinalizeUpdate(result.Name); err != nil {
+			return nil, toolcore.NewErrorCause(
+				"PLUGIN_UPDATE_FINALIZE_FAILED",
+				"Plugin runtime activated but durable update finalization failed; the persisted journal will be recovered on restart",
+				"runtime",
+				map[string]any{"plugin_name": result.Name, "version": result.Version},
+				err,
+			)
+		}
 		return changeResult(result), nil
 
 	case "enable", "disable":

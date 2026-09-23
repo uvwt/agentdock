@@ -82,6 +82,24 @@ func newPluginTestRuntime(t *testing.T) (*Runtime, string) {
 	return runtime, root
 }
 
+func pluginReviewTokenForTest(t *testing.T, rt *Runtime, source string) string {
+	t.Helper()
+	validated, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
+		"action": "validate", "source": source,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	review, ok := validated["review"].(pluginruntime.Review)
+	if !ok || !review.Valid || review.ReviewToken == "" {
+		t.Fatalf("Plugin validate did not return a usable review token: %#v", validated)
+	}
+	if validated["review_token"] != review.ReviewToken || validated["package_digest"] != review.PackageDigest {
+		t.Fatalf("Plugin validate top-level confirmation binding = %#v, review=%#v", validated, review)
+	}
+	return review.ReviewToken
+}
+
 func TestPluginComponentsEnterExistingRuntimeAndSkillExecUsesPluginData(t *testing.T) {
 	rt, root := newPluginTestRuntime(t)
 	source := writeAppPluginForTest(t, root, "1.0.0")
@@ -98,7 +116,7 @@ func TestPluginComponentsEnterExistingRuntimeAndSkillExecUsesPluginData(t *testi
 	}
 
 	installed, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
-		"action": "install", "source": source, "confirmed": true,
+		"action": "install", "source": source, "review_token": pluginReviewTokenForTest(t, rt, source),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -210,7 +228,7 @@ func TestPluginLifecycleKeepsStandaloneMCPAndOwnsMCPEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
-		"action": "install", "source": source, "confirmed": true,
+		"action": "install", "source": source, "review_token": pluginReviewTokenForTest(t, rt, source),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +307,7 @@ func TestPluginLifecycleKeepsStandaloneMCPAndOwnsMCPEnvironment(t *testing.T) {
 	}
 
 	if _, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
-		"action": "install", "source": source, "confirmed": true,
+		"action": "install", "source": source, "review_token": pluginReviewTokenForTest(t, rt, source),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -369,7 +387,7 @@ func TestPluginUpdateRuntimeActivationFailureRestoresPreviousPackageAndStandalon
 		t.Fatal(err)
 	}
 	if _, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
-		"action": "install", "source": sourceV1, "confirmed": true,
+		"action": "install", "source": sourceV1, "review_token": pluginReviewTokenForTest(t, rt, sourceV1),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -393,7 +411,7 @@ func TestPluginUpdateRuntimeActivationFailureRestoresPreviousPackageAndStandalon
 	}
 	sourceV2 := writeAppPluginForTest(t, v2Root, "2.0.0")
 	_, err = rt.Call(context.Background(), "plugin_manage", map[string]any{
-		"action": "update", "source": sourceV2, "confirmed": true, "confirmed_source_change": true,
+		"action": "update", "source": sourceV2, "review_token": pluginReviewTokenForTest(t, rt, sourceV2), "confirmed_source_change": true,
 	})
 	assertToolErrorCode(t, err, "PLUGIN_RUNTIME_ACTIVATION_FAILED")
 
@@ -434,7 +452,7 @@ func TestPluginPurgeRemovesEnvironmentFromMCPRemovedByUpdate(t *testing.T) {
 	}
 	sourceV1 := writeAppPluginForTest(t, v1Root, "1.0.0")
 	if _, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
-		"action": "install", "source": sourceV1, "confirmed": true,
+		"action": "install", "source": sourceV1, "review_token": pluginReviewTokenForTest(t, rt, sourceV1),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -458,7 +476,7 @@ func TestPluginPurgeRemovesEnvironmentFromMCPRemovedByUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
-		"action": "update", "source": sourceV2, "confirmed": true, "confirmed_source_change": true,
+		"action": "update", "source": sourceV2, "review_token": pluginReviewTokenForTest(t, rt, sourceV2), "confirmed_source_change": true,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -473,5 +491,38 @@ func TestPluginPurgeRemovesEnvironmentFromMCPRemovedByUpdate(t *testing.T) {
 	}
 	if _, err := os.Stat(envPath); !os.IsNotExist(err) {
 		t.Fatalf("purge left environment for MCP removed by a prior Plugin update: %v", err)
+	}
+}
+
+func TestPluginInstallReviewTokenRejectsChangedCandidate(t *testing.T) {
+	rt, root := newPluginTestRuntime(t)
+	source := writeAppPluginForTest(t, root, "1.0.0")
+	token := pluginReviewTokenForTest(t, rt, source)
+
+	manifestPath := filepath.Join(source, "plugin.json")
+	writeAppPluginJSON(t, manifestPath, map[string]any{
+		"$schema": testPluginSchema, "name": "demo.plugin", "version": "1.0.0",
+		"description": "mutated after security review",
+	})
+
+	_, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
+		"action": "install", "source": source, "review_token": token,
+	})
+	assertToolErrorCode(t, err, "PLUGIN_REVIEW_CHANGED")
+	if _, inspectErr := rt.Call(context.Background(), "plugin_manage", map[string]any{
+		"action": "inspect", "name": "demo.plugin",
+	}); inspectErr == nil {
+		t.Fatal("candidate changed after review but was installed")
+	}
+
+	newToken := pluginReviewTokenForTest(t, rt, source)
+	installed, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
+		"action": "install", "source": source, "review_token": newToken,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if installed["changed"] != true {
+		t.Fatalf("re-reviewed candidate was not installed: %#v", installed)
 	}
 }

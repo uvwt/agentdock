@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,7 +45,7 @@ func TestOpenAIAdapterNormalizesCodexPluginIntoP2Model(t *testing.T) {
 		t.Fatalf("normalized review = %#v", review)
 	}
 
-	result, err := manager.InstallSource(context.Background(), SourceRequest{Type: "local", Ref: root}, true)
+	result, err := installPluginSourceForTest(manager, context.Background(), SourceRequest{Type: "local", Ref: root}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +89,7 @@ func TestOpenAIAdapterReportsUnsupportedMCPAuthInsteadOfDroppingIt(t *testing.T)
 	if !sliceContainsSubstring(review.Unsupported, "oauth_resource") {
 		t.Fatalf("unsupported report = %#v", review.Unsupported)
 	}
-	if _, err := manager.InstallSource(context.Background(), SourceRequest{Type: "local", Ref: root}, true); err == nil {
+	if _, err := installPluginSourceForTest(manager, context.Background(), SourceRequest{Type: "local", Ref: root}, true); err == nil {
 		t.Fatal("install accepted Plugin with unsupported MCP OAuth behavior")
 	}
 }
@@ -127,7 +128,7 @@ func TestClaudeAdapterNormalizesManifestMCPAndPersistentPlaceholders(t *testing.
 	if !review.Valid || review.Compatibility.Adapter != "claude" {
 		t.Fatalf("Claude review = %#v", review)
 	}
-	if _, err := manager.InstallSource(context.Background(), SourceRequest{Type: "local", Ref: root}, true); err != nil {
+	if _, err := installPluginSourceForTest(manager, context.Background(), SourceRequest{Type: "local", Ref: root}, true); err != nil {
 		t.Fatal(err)
 	}
 	installed, err := manager.Inspect("claude-demo")
@@ -172,7 +173,7 @@ func TestGitSourcePinsResolvedCommitWithoutRunningWorktreeHooks(t *testing.T) {
 	if !review.Valid || review.Source.Revision != commit {
 		t.Fatalf("Git review = %#v", review)
 	}
-	if _, err := manager.InstallSource(context.Background(), SourceRequest{
+	if _, err := installPluginSourceForTest(manager, context.Background(), SourceRequest{
 		Type: "git", Ref: repo, GitCommit: commit, Adapter: "portable",
 	}, true); err != nil {
 		t.Fatal(err)
@@ -344,7 +345,7 @@ func TestLocalZIPArchiveSourceAutoDetectionAndPin(t *testing.T) {
 		!strings.HasPrefix(review.Source.Revision, "sha256:") {
 		t.Fatalf("local ZIP source provenance = %#v", review.Source)
 	}
-	if _, err := manager.InstallSource(context.Background(), SourceRequest{
+	if _, err := installPluginSourceForTest(manager, context.Background(), SourceRequest{
 		Type: "archive", Ref: archive, Adapter: "portable", SHA256: review.Source.Revision,
 	}, true); err != nil {
 		t.Fatal(err)
@@ -385,19 +386,19 @@ func TestGitSourceSelectorChangeRequiresExplicitRebind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := manager.InstallSource(context.Background(), SourceRequest{
+	if _, err := installPluginSourceForTest(manager, context.Background(), SourceRequest{
 		Type: "git", Ref: repo, GitRef: "track-a", Adapter: "portable",
 	}, true); err != nil {
 		t.Fatal(err)
 	}
-	_, err = manager.UpdateSource(context.Background(), SourceRequest{
+	_, err = updatePluginSourceForTest(manager, context.Background(), SourceRequest{
 		Type: "git", Ref: repo, GitRef: "track-b", Adapter: "portable",
 	}, false)
 	var pluginErr *Error
 	if !errors.As(err, &pluginErr) || pluginErr.Code != "PLUGIN_SOURCE_CHANGE_CONFIRMATION_REQUIRED" {
 		t.Fatalf("Git selector change error = %#v", err)
 	}
-	result, err := manager.UpdateSource(context.Background(), SourceRequest{
+	result, err := updatePluginSourceForTest(manager, context.Background(), SourceRequest{
 		Type: "git", Ref: repo, GitRef: "track-b", Adapter: "portable",
 	}, true)
 	if err != nil {
@@ -488,17 +489,17 @@ func TestCatalogUnderlyingSourceChangeRequiresExplicitRebind(t *testing.T) {
 	}
 	writeCatalog("one")
 	request := SourceRequest{Type: "catalog", Ref: root, Catalog: "openai", CatalogItem: "catalog-demo"}
-	if _, err := manager.InstallSource(context.Background(), request, true); err != nil {
+	if _, err := installPluginSourceForTest(manager, context.Background(), request, true); err != nil {
 		t.Fatal(err)
 	}
 
 	writeCatalog("two")
-	_, err = manager.UpdateSource(context.Background(), request, false)
+	_, err = updatePluginSourceForTest(manager, context.Background(), request, false)
 	var pluginErr *Error
 	if !errors.As(err, &pluginErr) || pluginErr.Code != "PLUGIN_SOURCE_CHANGE_CONFIRMATION_REQUIRED" {
 		t.Fatalf("catalog source move error = %#v", err)
 	}
-	if _, err := manager.UpdateSource(context.Background(), request, true); err != nil {
+	if _, err := updatePluginSourceForTest(manager, context.Background(), request, true); err != nil {
 		t.Fatal(err)
 	}
 	installed, err := manager.Inspect("catalog-demo")
@@ -641,4 +642,169 @@ func sliceContainsSubstring(values []string, substring string) bool {
 		}
 	}
 	return false
+}
+
+func TestGitSSHSourceRejectsEmbeddedPassword(t *testing.T) {
+	err := validateGitSourceRef("ssh://alice:super-secret@example.com/repo.git")
+	if err == nil || !strings.Contains(err.Error(), "must not embed a password") {
+		t.Fatalf("SSH password URL validation error = %v", err)
+	}
+	if strings.Contains(fmt.Sprint(err), "super-secret") {
+		t.Fatalf("SSH password leaked in validation error: %v", err)
+	}
+	if err := validateGitSourceRef("ssh://alice@example.com/repo.git"); err != nil {
+		t.Fatalf("SSH username-only source rejected: %v", err)
+	}
+}
+
+func TestValidateVersionUsesFullSemVerRules(t *testing.T) {
+	for _, valid := range []string{"0.0.0", "1.2.3", "1.0.0-alpha.1", "1.0.0+build.7", VersionLocal} {
+		if err := ValidateVersion(valid); err != nil {
+			t.Fatalf("ValidateVersion(%q) = %v", valid, err)
+		}
+	}
+	for _, invalid := range []string{"1.0.0-01", "01.0.0", "1.0", "v1.0.0", "1.0.0+"} {
+		if err := ValidateVersion(invalid); err == nil {
+			t.Fatalf("ValidateVersion(%q) unexpectedly succeeded", invalid)
+		}
+	}
+}
+
+func TestClaudeAdapterRejectsAutoDiscoveredUnsupportedRoots(t *testing.T) {
+	manager, err := NewManager(filepath.Join(t.TempDir(), ".agentdock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	writeJSONTestFile(t, filepath.Join(root, ".claude-plugin", "plugin.json"), map[string]any{
+		"name": "claude-unsupported", "version": "1.0.0", "description": "Claude unsupported roots",
+	})
+	if err := os.MkdirAll(filepath.Join(root, "output-styles"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "output-styles", "terse.md"), []byte("# Terse\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	review := manager.ValidateSource(context.Background(), SourceRequest{Type: "local", Ref: root, Adapter: "claude"})
+	if review.Valid {
+		t.Fatalf("Claude Plugin with unsupported output-styles was accepted: %#v", review)
+	}
+	joined := strings.Join(review.Unsupported, " | ")
+	if !strings.Contains(joined, "output styles") {
+		t.Fatalf("Claude output-styles not reported unsupported: %#v", review.Unsupported)
+	}
+}
+
+func TestClaudeCatalogRejectsDuplicateNames(t *testing.T) {
+	manager, err := NewManager(filepath.Join(t.TempDir(), ".agentdock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	writeJSONTestFile(t, filepath.Join(root, ".claude-plugin", "marketplace.json"), map[string]any{
+		"name": "duplicate-claude",
+		"plugins": []any{
+			map[string]any{"name": "demo", "source": "./plugins/one"},
+			map[string]any{"name": "demo", "source": "./plugins/two"},
+		},
+	})
+	if _, err := manager.LoadCatalog(context.Background(), SourceRequest{Ref: root, Catalog: "claude"}); err == nil {
+		t.Fatal("Claude catalog accepted duplicate Plugin names")
+	}
+}
+
+func TestClaudeAdapterRejectsUnsupportedDefaultComponentMatrix(t *testing.T) {
+	rootComponents := []struct {
+		path  string
+		label string
+	}{
+		{path: "workflows", label: "workflows"},
+		{path: "output-styles", label: "output styles"},
+		{path: "themes", label: "themes"},
+		{path: "monitors", label: "monitors"},
+		{path: "hooks", label: "hooks"},
+	}
+	for _, component := range rootComponents {
+		t.Run("root-"+component.path, func(t *testing.T) {
+			manager, err := NewManager(filepath.Join(t.TempDir(), ".agentdock"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			root := t.TempDir()
+			writeJSONTestFile(t, filepath.Join(root, ".claude-plugin", "plugin.json"), map[string]any{
+				"name": "claude-unsupported", "version": "1.0.0", "description": "Claude unsupported root",
+			})
+			if err := os.MkdirAll(filepath.Join(root, component.path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, component.path, "fixture.md"), []byte("# Fixture\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			review := manager.ValidateSource(context.Background(), SourceRequest{Type: "local", Ref: root, Adapter: "claude"})
+			if review.Valid || !sliceContainsSubstring(review.Unsupported, component.label) {
+				t.Fatalf("Claude root %s was not rejected: %#v", component.path, review)
+			}
+		})
+	}
+
+	manifestComponents := []struct {
+		field string
+		label string
+	}{
+		{field: "workflows", label: "workflows"},
+		{field: "outputStyles", label: "output styles"},
+		{field: "themes", label: "themes"},
+		{field: "monitors", label: "monitors"},
+		{field: "hooks", label: "hooks"},
+	}
+	for _, component := range manifestComponents {
+		t.Run("manifest-"+component.field, func(t *testing.T) {
+			manager, err := NewManager(filepath.Join(t.TempDir(), ".agentdock"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			root := t.TempDir()
+			manifest := map[string]any{
+				"name": "claude-unsupported", "version": "1.0.0", "description": "Claude unsupported field",
+				component.field: map[string]any{"fixture": true},
+			}
+			writeJSONTestFile(t, filepath.Join(root, ".claude-plugin", "plugin.json"), manifest)
+			review := manager.ValidateSource(context.Background(), SourceRequest{Type: "local", Ref: root, Adapter: "claude"})
+			if review.Valid || !sliceContainsSubstring(review.Unsupported, component.label) {
+				t.Fatalf("Claude manifest field %s was not rejected: %#v", component.field, review)
+			}
+		})
+	}
+}
+
+func TestPluginStateRejectsGitSourcePassword(t *testing.T) {
+	home := filepath.Join(t.TempDir(), ".agentdock")
+	manager, err := NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	writePortableAdapterPlugin(t, root, "secret-state", "1.0.0")
+	if _, err := installLocalPluginForTest(manager, context.Background(), root, true); err != nil {
+		t.Fatal(err)
+	}
+	state, err := manager.Store().Load("secret-state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Source = Source{Type: "git", Ref: "ssh://alice:super-secret@example.com/repo.git"}
+	err = manager.Store().Save(state)
+	if err == nil || !strings.Contains(err.Error(), "must not embed a password") {
+		t.Fatalf("state accepted Git SSH password: %v", err)
+	}
+	if strings.Contains(err.Error(), "super-secret") {
+		t.Fatalf("state validation leaked password: %v", err)
+	}
+	persisted, err := manager.Store().Load("secret-state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(persisted.Source.Ref, "super-secret") {
+		t.Fatalf("state persisted Git SSH password: %#v", persisted.Source)
+	}
 }

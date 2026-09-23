@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/uvwt/agentdock/internal/skillspec"
 )
 
 const (
@@ -25,7 +27,7 @@ func SkillDataDir(cfg Config, skill string) (string, error) {
 	if home == "." || !filepath.IsAbs(home) {
 		return "", fmt.Errorf("AgentDockHome must be an absolute path")
 	}
-	if !validSkillDataName(skill) {
+	if err := skillspec.ValidateName(skill); err != nil {
 		return "", fmt.Errorf("invalid Skill name %q", skill)
 	}
 	root := filepath.Join(home, "data", "skills")
@@ -71,20 +73,6 @@ func IsReservedPluginEnvironmentKey(key string) bool {
 // IsReservedCommandEnvironmentKey covers every runtime-owned command variable.
 func IsReservedCommandEnvironmentKey(key string) bool {
 	return IsReservedSkillEnvironmentKey(key) || IsReservedPluginEnvironmentKey(key)
-}
-
-func validSkillDataName(value string) bool {
-	if len(value) < 2 || len(value) > 63 || value[0] < 'a' || value[0] > 'z' {
-		return false
-	}
-	for index := 1; index < len(value); index++ {
-		char := value[index]
-		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '-' {
-			continue
-		}
-		return false
-	}
-	return true
 }
 
 func validPluginDataName(value string) bool {

@@ -187,7 +187,7 @@ func TestExtractZipRejectsPathTraversal(t *testing.T) {
 	if err := os.MkdirAll(destination, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := extractZip(archivePath, destination, 1<<20); err == nil || !strings.Contains(err.Error(), "escapes package root") {
+	if err := extractZip(archivePath, destination, 1<<20, 10000); err == nil || !strings.Contains(err.Error(), "escapes package root") {
 		t.Fatalf("path traversal ZIP should be rejected: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "escape.txt")); !os.IsNotExist(err) {
@@ -281,4 +281,74 @@ func writeSkillArchive(t *testing.T, source, archivePath string) {
 	if err := archive.Close(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestPrepareLocalSourceUsesPrivateSnapshot(t *testing.T) {
+	manager := newManagerForTest(t)
+	source := writeSkillSource(t, "snapshot-skill", "Before", map[string]string{"notes.txt": "before\n"})
+	work, err := manager.State.TempPath("snapshot-proof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(work)
+
+	candidate, sourceDigest, err := manager.prepareSource(context.Background(), source, work, manager.MaxDownload, manager.MaxFiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Clean(candidate) == filepath.Clean(source) {
+		t.Fatal("local source was returned directly instead of being snapshotted")
+	}
+	before, err := os.ReadFile(filepath.Join(candidate, "notes.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "notes.txt"), []byte("mutated-after-snapshot\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(filepath.Join(candidate, "notes.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("private snapshot changed with source: before=%q after=%q", before, after)
+	}
+	digest, err := DigestDirectory(candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if digest != sourceDigest {
+		t.Fatalf("snapshot digest drifted: got %s want %s", digest, sourceDigest)
+	}
+}
+
+func TestLocalAndArchiveInstallEnforceFileAndByteLimits(t *testing.T) {
+	t.Run("local-files", func(t *testing.T) {
+		manager := newManagerForTest(t)
+		source := writeSkillSource(t, "limited-skill", "Demo", map[string]string{"extra.txt": "x"})
+		_, err := manager.Install(context.Background(), InstallRequest{Source: source, MaxFiles: 1})
+		if err == nil || !strings.Contains(err.Error(), "exceeds 1 files") {
+			t.Fatalf("local MaxFiles error = %v", err)
+		}
+	})
+
+	t.Run("local-bytes", func(t *testing.T) {
+		manager := newManagerForTest(t)
+		source := writeSkillSource(t, "limited-skill", "Demo", map[string]string{"large.bin": strings.Repeat("x", 4096)})
+		_, err := manager.Install(context.Background(), InstallRequest{Source: source, MaxBytes: 512, MaxFiles: 100})
+		if err == nil || !strings.Contains(err.Error(), "byte") {
+			t.Fatalf("local MaxBytes error = %v", err)
+		}
+	})
+
+	t.Run("zip-files", func(t *testing.T) {
+		manager := newManagerForTest(t)
+		source := writeSkillSource(t, "limited-skill", "Demo", map[string]string{"extra.txt": "x"})
+		archive := filepath.Join(t.TempDir(), "skill.zip")
+		writeSkillArchive(t, source, archive)
+		_, err := manager.Install(context.Background(), InstallRequest{Source: archive, MaxFiles: 1})
+		if err == nil || !strings.Contains(err.Error(), "exceeds 1 files") {
+			t.Fatalf("ZIP MaxFiles error = %v", err)
+		}
+	})
 }

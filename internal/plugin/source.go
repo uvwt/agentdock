@@ -218,6 +218,25 @@ func (m *Manager) stageGitSource(ctx context.Context, request SourceRequest) (st
 	}, nil
 }
 
+func validateStoredGitSourceCredentials(ref string) error {
+	parsed, err := url.Parse(strings.TrimSpace(ref))
+	if err != nil || parsed.Scheme == "" {
+		return nil
+	}
+	if parsed.Scheme != "https" && parsed.Scheme != "ssh" {
+		return nil
+	}
+	if parsed.User != nil {
+		if _, hasPassword := parsed.User.Password(); hasPassword {
+			return errors.New("Git source URL must not embed a password")
+		}
+		if parsed.Scheme == "https" {
+			return errors.New("Git HTTPS source must not embed credentials")
+		}
+	}
+	return nil
+}
+
 func validateGitSourceRef(ref string) error {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
@@ -236,10 +255,7 @@ func validateGitSourceRef(ref string) error {
 	if parsed.Host == "" || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return errors.New("Git source URL must not contain query parameters or fragments")
 	}
-	if parsed.Scheme == "https" && parsed.User != nil {
-		return errors.New("Git HTTPS source must not embed credentials")
-	}
-	return nil
+	return validateStoredGitSourceCredentials(ref)
 }
 
 func runPluginGit(ctx context.Context, gitDir string, args ...string) (string, error) {

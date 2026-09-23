@@ -21,7 +21,6 @@ type Manager struct {
 
 type pendingUpdate struct {
 	previous State
-	commit   candidateCommit
 }
 
 func NewManager(agentDockHome string) (*Manager, error) {
@@ -30,6 +29,9 @@ func NewManager(agentDockHome string) (*Manager, error) {
 		return nil, err
 	}
 	manager := &Manager{store: store, pending: make(map[string]pendingUpdate)}
+	if err := manager.recoverInterruptedUpdates(); err != nil {
+		return nil, err
+	}
 	manager.cleanupStartupObsoleteVersions()
 	return manager, nil
 }
@@ -41,41 +43,14 @@ func (m *Manager) Validate(source string) Review {
 }
 
 func (m *Manager) ValidateSource(ctx context.Context, request SourceRequest) Review {
-	review := Review{
-		Skills: []SkillComponent{}, MCP: []MCPReview{}, Unsupported: []string{}, Warnings: []string{}, Executables: []string{}, Issues: []string{},
-		Compatibility: Compatibility{Supported: []string{}, Unsupported: []string{}, Warnings: []string{}},
-	}
-	staged, err := m.stagePluginSource(ctx, request)
+	review := emptyReview()
+	_, pkg, source, cleanup, err := m.prepareCandidateSource(ctx, request)
 	if err != nil {
-		review.Issues = append(review.Issues, err.Error())
-		return review
-	}
-	defer staged.Cleanup()
-	adaptedRoot, pkg, cleanup, err := m.adaptStagedSource(staged, request)
-	_ = adaptedRoot
-	if err != nil {
-		review.Source = staged.Source
 		review.Issues = append(review.Issues, err.Error())
 		return review
 	}
 	defer cleanup()
-	review.Source = staged.Source
-	review.Source.Adapter = pkg.Compatibility.Adapter
-	review.Name = pkg.Manifest.Name
-	review.Version = pkg.Manifest.Version
-	review.Description = pkg.Manifest.Description
-	review.PackageDigest = pkg.PackageDigest
-	review.Skills = append([]SkillComponent(nil), pkg.Components.Skills...)
-	review.MCP = reviewMCPComponents(pkg.Components.MCP)
-	review.Unsupported = append([]string(nil), pkg.Unsupported...)
-	review.Warnings = append([]string(nil), pkg.Warnings...)
-	review.Executables = append([]string(nil), pkg.Executables...)
-	review.Compatibility = pkg.Compatibility
-	if len(pkg.Unsupported) > 0 {
-		review.Issues = append(review.Issues, "Plugin contains unsupported components: "+strings.Join(pkg.Unsupported, ", "))
-	}
-	review.Valid = len(review.Issues) == 0
-	return review
+	return buildReview(pkg, source)
 }
 
 func (m *Manager) List() ([]Installed, error) {
@@ -143,16 +118,21 @@ func (m *Manager) EnsureDataDir(name string) (string, error) {
 	return m.store.EnsureDataDir(name)
 }
 
-func (m *Manager) Install(ctx context.Context, source string, enabled bool) (ChangeResult, error) {
-	return m.InstallSource(ctx, legacyLocalSourceRequest(source), enabled)
-}
-
-func (m *Manager) InstallSource(ctx context.Context, request SourceRequest, enabled bool) (ChangeResult, error) {
+// InstallReviewedSource stages the source once, verifies that the exact staged
+// candidate matches a prior security review, and commits that same snapshot.
+func (m *Manager) InstallReviewedSource(ctx context.Context, request SourceRequest, enabled bool, reviewToken string) (ChangeResult, error) {
 	stage, pkg, src, cleanup, err := m.prepareCandidateSource(ctx, request)
 	if err != nil {
 		return ChangeResult{}, err
 	}
 	defer cleanup()
+	if err := verifyReviewToken(pkg, src, reviewToken); err != nil {
+		return ChangeResult{}, err
+	}
+	return m.installPreparedCandidate(ctx, stage, pkg, src, enabled)
+}
+
+func (m *Manager) installPreparedCandidate(ctx context.Context, stage string, pkg Package, src Source, enabled bool) (ChangeResult, error) {
 	if len(pkg.Unsupported) > 0 {
 		return ChangeResult{}, pluginError("PLUGIN_UNSUPPORTED_COMPONENT", "install.validate", fmt.Errorf("unsupported components: %s", strings.Join(pkg.Unsupported, ", ")))
 	}
@@ -191,16 +171,23 @@ func (m *Manager) InstallSource(ctx context.Context, request SourceRequest, enab
 	return ChangeResult{Action: "install", Name: state.Name, Version: state.Version, PackageDigest: state.PackageDigest, Enabled: state.Enabled, Changed: true}, nil
 }
 
-func (m *Manager) Update(ctx context.Context, source string, confirmSourceChange bool) (ChangeResult, error) {
-	return m.UpdateSource(ctx, legacyLocalSourceRequest(source), confirmSourceChange)
-}
-
-func (m *Manager) UpdateSource(ctx context.Context, request SourceRequest, confirmSourceChange bool) (ChangeResult, error) {
+// UpdateReviewedSource verifies and commits one staged snapshot. beforeSwitch is
+// called only after all review/source/version checks pass and before package/state
+// mutation, allowing the runtime layer to stop the old owned MCP without a
+// second source read or download.
+func (m *Manager) UpdateReviewedSource(ctx context.Context, request SourceRequest, confirmSourceChange bool, reviewToken string, beforeSwitch func(State) error) (ChangeResult, error) {
 	stage, pkg, src, cleanup, err := m.prepareCandidateSource(ctx, request)
 	if err != nil {
 		return ChangeResult{}, err
 	}
 	defer cleanup()
+	if err := verifyReviewToken(pkg, src, reviewToken); err != nil {
+		return ChangeResult{}, err
+	}
+	return m.updatePreparedCandidate(ctx, stage, pkg, src, confirmSourceChange, beforeSwitch)
+}
+
+func (m *Manager) updatePreparedCandidate(ctx context.Context, stage string, pkg Package, src Source, confirmSourceChange bool, beforeSwitch func(State) error) (ChangeResult, error) {
 	if len(pkg.Unsupported) > 0 {
 		return ChangeResult{}, pluginError("PLUGIN_UNSUPPORTED_COMPONENT", "update.validate", fmt.Errorf("unsupported components: %s", strings.Join(pkg.Unsupported, ", ")))
 	}
@@ -236,35 +223,53 @@ func (m *Manager) UpdateSource(ctx context.Context, request SourceRequest, confi
 		return ChangeResult{}, pluginError("PLUGIN_VERSION_DIGEST_CONFLICT", "update.digest", fmt.Errorf("Plugin %s %s is already installed with a different package digest", current.Name, current.Version))
 	}
 	if current.Version == VersionLocal && pkg.Manifest.Version == VersionLocal {
-		// local is the only mutable logical version and therefore reuses one
-		// package path. Keep the mutation gate closed while old readers drain.
 		if err := m.store.WaitVersionIdle(ctx, current.Name, current.Version); err != nil {
 			return ChangeResult{}, err
 		}
 	}
+	if beforeSwitch != nil {
+		if err := beforeSwitch(current); err != nil {
+			return ChangeResult{}, err
+		}
+	}
 
-	commit, err := m.commitCandidate(stage, pkg)
-	if err != nil {
+	previous := current
+	candidate := current
+	candidate.Version = pkg.Manifest.Version
+	candidate.PackageDigest = pkg.PackageDigest
+	candidate.Source = src
+	candidate.Components = stateComponentIndex(pkg.Components)
+	candidate.MCPStorageKeys = mergeSortedStrings(candidate.MCPStorageKeys, pluginMCPStorageKeys(pkg.Components.MCP))
+	candidate.Compatibility = pkg.Compatibility
+	candidate.InstalledAt = time.Now().UTC()
+	transaction := UpdateTransaction{
+		SchemaVersion: UpdateTransactionSchemaVersion,
+		Name:          candidate.Name, Phase: "pending", Previous: previous, Candidate: candidate,
+		LocalReplacement: previous.Version == VersionLocal && candidate.Version == VersionLocal,
+		CreatedAt:        time.Now().UTC(),
+	}
+	// Journal first: after this point every package/state mutation is recoverable
+	// across process termination before runtime activation is finalized.
+	if err := m.store.SaveUpdateTransaction(transaction); err != nil {
+		return ChangeResult{}, pluginError("PLUGIN_UPDATE_FAILED", "update.journal", err)
+	}
+	if _, err := m.commitCandidate(stage, pkg); err != nil {
+		_ = m.store.DeleteUpdateTransaction(transaction.Name)
 		return ChangeResult{}, err
 	}
-	previous := current
-	current.Version = pkg.Manifest.Version
-	current.PackageDigest = pkg.PackageDigest
-	current.Source = src
-	current.Components = stateComponentIndex(pkg.Components)
-	current.MCPStorageKeys = mergeSortedStrings(current.MCPStorageKeys, pluginMCPStorageKeys(pkg.Components.MCP))
-	current.Compatibility = pkg.Compatibility
-	current.InstalledAt = time.Now().UTC()
-	if err := m.store.Save(current); err != nil {
-		rollbackErr := commit.rollback()
+	if err := m.store.Save(candidate); err != nil {
+		rollbackErr := m.rollbackUpdateTransaction(transaction)
+		if rollbackErr == nil {
+			m.cleanupObsoleteVersions(previous.Name, previous.Version)
+		}
 		return ChangeResult{}, pluginError("PLUGIN_UPDATE_FAILED", "update.state", errors.Join(err, rollbackErr))
 	}
 	m.pendingMu.Lock()
-	m.pending[current.Name] = pendingUpdate{previous: previous, commit: commit}
+	m.pending[candidate.Name] = pendingUpdate{previous: previous}
 	m.pendingMu.Unlock()
 	return ChangeResult{
-		Action: "update", Name: current.Name, Version: current.Version, PreviousVersion: previous.Version,
-		PackageDigest: current.PackageDigest, Enabled: current.Enabled, Changed: true,
+		Action: "update", Name: candidate.Name, Version: candidate.Version, PreviousVersion: previous.Version,
+		PackageDigest: candidate.PackageDigest, Enabled: candidate.Enabled, Changed: true,
 	}, nil
 }
 
@@ -499,11 +504,13 @@ func (m *Manager) commitCandidate(stage string, pkg Package) (candidateCommit, e
 			return candidateCommit{}, pluginError("PLUGIN_VERSION_DIGEST_CONFLICT", "package.destination", fmt.Errorf("Plugin %s %s already exists with a different digest", pkg.Manifest.Name, pkg.Manifest.Version))
 		}
 
-		backup, err := m.store.TempPath("replace-" + pkg.Manifest.Name)
+		backup, err := m.store.UpdateBackupPath(pkg.Manifest.Name)
 		if err != nil {
 			return candidateCommit{}, err
 		}
-		if err := os.Remove(backup); err != nil {
+		if _, err := os.Lstat(backup); err == nil {
+			return candidateCommit{}, pluginError("PLUGIN_UPDATE_PENDING", "package.backup", errors.New("Plugin update backup already exists"))
+		} else if !errors.Is(err, os.ErrNotExist) {
 			return candidateCommit{}, err
 		}
 		if err := os.Rename(destination, backup); err != nil {
@@ -545,20 +552,31 @@ func (m *Manager) hasPendingUpdate(name string) bool {
 	return ok
 }
 
-// FinalizeUpdate commits the runtime-activation phase of a Plugin update.
-// Package rollback material and obsolete versions are removed only after this.
-func (m *Manager) FinalizeUpdate(name string) {
+// FinalizeUpdate durably decides the update after runtime activation succeeds.
+// The committed phase is persisted before rollback material is destroyed so a
+// crash during finalization resumes forward instead of attempting rollback.
+func (m *Manager) FinalizeUpdate(name string) error {
 	name = strings.TrimSpace(name)
+	transaction, err := m.store.LoadUpdateTransaction(name)
+	if errors.Is(err, os.ErrNotExist) {
+		m.CleanupObsoleteVersions(name)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	transaction.Phase = "committed"
+	if err := m.store.SaveUpdateTransaction(transaction); err != nil {
+		return err
+	}
+	if err := m.finalizeUpdateTransaction(transaction); err != nil {
+		return err
+	}
 	m.pendingMu.Lock()
-	pending, ok := m.pending[name]
-	if ok {
-		delete(m.pending, name)
-	}
+	delete(m.pending, name)
 	m.pendingMu.Unlock()
-	if ok {
-		pending.commit.finish()
-	}
 	m.CleanupObsoleteVersions(name)
+	return nil
 }
 
 // CleanupObsoleteVersions removes package versions that are no longer selected.
@@ -574,8 +592,8 @@ func (m *Manager) CleanupObsoleteVersions(name string) {
 	m.cleanupObsoleteVersions(name, current)
 }
 
-// RestoreState re-selects a previously committed Plugin state. The caller uses
-// this only to compensate a runtime activation failure after an update commit.
+// RestoreState rolls back an unfinalized update using the persisted journal.
+// previous is still supplied by the runtime layer as an identity assertion.
 func (m *Manager) RestoreState(ctx context.Context, previous State) error {
 	release, err := m.store.AcquireWrite(ctx, previous.Name)
 	if err != nil {
@@ -583,37 +601,105 @@ func (m *Manager) RestoreState(ctx context.Context, previous State) error {
 	}
 	defer release()
 
-	m.pendingMu.Lock()
-	pending, hasPending := m.pending[previous.Name]
-	m.pendingMu.Unlock()
-	if hasPending {
-		if pending.previous.Name != previous.Name ||
-			pending.previous.Version != previous.Version ||
-			pending.previous.PackageDigest != previous.PackageDigest {
-			return errors.New("pending Plugin update does not match requested restore state")
-		}
-		if err := pending.commit.rollback(); err != nil {
-			return fmt.Errorf("restore Plugin package: %w", err)
-		}
-	}
-
-	root, err := m.store.PackagePath(previous.Name, previous.Version)
+	transaction, err := m.store.LoadUpdateTransaction(previous.Name)
 	if err != nil {
 		return err
 	}
-	installed := Installed{State: previous, Root: root}
-	if err := verifyInstalledPackage(installed); err != nil {
+	if transaction.Phase != "pending" || transaction.Previous.Name != previous.Name ||
+		transaction.Previous.Version != previous.Version || transaction.Previous.PackageDigest != previous.PackageDigest {
+		return errors.New("pending Plugin update does not match requested restore state")
+	}
+	if err := m.rollbackUpdateTransaction(transaction); err != nil {
 		return err
 	}
-	if err := m.store.Save(previous); err != nil {
-		return err
+	m.pendingMu.Lock()
+	delete(m.pending, previous.Name)
+	m.pendingMu.Unlock()
+	// Non-local candidates are removed only through the version-lease-aware
+	// cleanup path. An old candidate may still be serving an in-flight reader.
+	m.CleanupObsoleteVersions(previous.Name)
+	return nil
+}
+
+func (m *Manager) recoverInterruptedUpdates() error {
+	transactions, err := m.store.ListUpdateTransactions()
+	if err != nil {
+		return fmt.Errorf("load Plugin update transactions: %w", err)
 	}
-	if hasPending {
-		m.pendingMu.Lock()
-		delete(m.pending, previous.Name)
-		m.pendingMu.Unlock()
+	for _, transaction := range transactions {
+		switch transaction.Phase {
+		case "pending":
+			if err := m.rollbackUpdateTransaction(transaction); err != nil {
+				return fmt.Errorf("recover pending Plugin update %s: %w", transaction.Name, err)
+			}
+		case "committed":
+			if err := m.finalizeUpdateTransaction(transaction); err != nil {
+				return fmt.Errorf("finish committed Plugin update %s: %w", transaction.Name, err)
+			}
+		default:
+			return fmt.Errorf("Plugin update %s has invalid transaction phase %q", transaction.Name, transaction.Phase)
+		}
 	}
 	return nil
+}
+
+func (m *Manager) rollbackUpdateTransaction(transaction UpdateTransaction) error {
+	previousPath, err := m.store.PackagePath(transaction.Previous.Name, transaction.Previous.Version)
+	if err != nil {
+		return err
+	}
+	if transaction.LocalReplacement {
+		candidatePath, err := m.store.PackagePath(transaction.Candidate.Name, transaction.Candidate.Version)
+		if err != nil {
+			return err
+		}
+		backup, err := m.store.UpdateBackupPath(transaction.Name)
+		if err != nil {
+			return err
+		}
+		if _, backupErr := os.Lstat(backup); backupErr == nil {
+			if err := os.RemoveAll(candidatePath); err != nil {
+				return fmt.Errorf("remove interrupted local Plugin candidate: %w", err)
+			}
+			if err := os.Rename(backup, previousPath); err != nil {
+				return fmt.Errorf("restore local Plugin backup: %w", err)
+			}
+		} else if !errors.Is(backupErr, os.ErrNotExist) {
+			return backupErr
+		}
+	}
+	installed := Installed{State: transaction.Previous, Root: previousPath}
+	if err := verifyInstalledPackage(installed); err != nil {
+		return fmt.Errorf("verify previous Plugin package during recovery: %w", err)
+	}
+	if err := m.store.Save(transaction.Previous); err != nil {
+		return fmt.Errorf("restore previous Plugin state: %w", err)
+	}
+	return m.store.DeleteUpdateTransaction(transaction.Name)
+}
+
+func (m *Manager) finalizeUpdateTransaction(transaction UpdateTransaction) error {
+	candidatePath, err := m.store.PackagePath(transaction.Candidate.Name, transaction.Candidate.Version)
+	if err != nil {
+		return err
+	}
+	installed := Installed{State: transaction.Candidate, Root: candidatePath}
+	if err := verifyInstalledPackage(installed); err != nil {
+		return fmt.Errorf("verify committed Plugin candidate: %w", err)
+	}
+	if err := m.store.Save(transaction.Candidate); err != nil {
+		return fmt.Errorf("persist committed Plugin state: %w", err)
+	}
+	if transaction.LocalReplacement {
+		backup, err := m.store.UpdateBackupPath(transaction.Name)
+		if err != nil {
+			return err
+		}
+		if err := os.RemoveAll(backup); err != nil {
+			return fmt.Errorf("remove committed Plugin rollback backup: %w", err)
+		}
+	}
+	return m.store.DeleteUpdateTransaction(transaction.Name)
 }
 
 func (m *Manager) cleanupStartupObsoleteVersions() {

@@ -14,8 +14,7 @@ compatibility: Requires git.
 metadata:
   version: "1.2.3"
   owner: example
-allowed-tools:
-  - exec_command
+allowed-tools: exec_command read_file
 ---
 
 # Demo Skill

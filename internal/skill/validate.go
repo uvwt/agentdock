@@ -17,6 +17,10 @@ func (m *Manager) Validate(ctx context.Context, req ValidateRequest) (ValidateRe
 	if maxBytes <= 0 {
 		maxBytes = m.MaxDownload
 	}
+	maxFiles := req.MaxFiles
+	if maxFiles <= 0 {
+		maxFiles = m.MaxFiles
+	}
 	work, err := m.State.TempPath("validate")
 	if err != nil {
 		return ValidateResult{}, packageError(ErrInstallFailed, "temp", err)
@@ -24,7 +28,7 @@ func (m *Manager) Validate(ctx context.Context, req ValidateRequest) (ValidateRe
 	defer cleanupWorkingDirectory(work)
 
 	result := ValidateResult{Source: safeSourceLabel(req.Source), Issues: make([]ValidateIssue, 0)}
-	packageDir, sourceDigest, err := m.prepareSource(ctx, req.Source, work, maxBytes)
+	packageDir, sourceDigest, err := m.prepareSource(ctx, req.Source, work, maxBytes, maxFiles)
 	if err != nil {
 		result.addIssue(err)
 		return result, nil

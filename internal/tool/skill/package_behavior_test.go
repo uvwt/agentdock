@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/uvwt/agentdock/internal/envstore"
 	skills "github.com/uvwt/agentdock/internal/skill"
@@ -211,5 +212,42 @@ func writeToolSkillPackage(t *testing.T, root, heading string) {
 	}
 	if err := os.WriteFile(filepath.Join(root, "references", "guide.md"), []byte("# Guide\n"), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSkillEnvironmentUsesLifecycleReadLock(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "demo-skill")
+	writeToolSkillPackage(t, source, "Demo")
+	runtime, _ := newSkillTestServiceAtRoot(t, root)
+	if _, err := runtime.manageTest(context.Background(), map[string]any{"action": "install", "source": "demo-skill"}); err != nil {
+		t.Fatal(err)
+	}
+
+	release, err := runtime.state.AcquireWrite(context.Background(), "demo-skill")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := runtime.manageTest(context.Background(), map[string]any{
+			"action": "env_set", "skill": "demo-skill", "key": "TOKEN", "value": "value",
+		})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		release()
+		t.Fatalf("env_set completed while Skill lifecycle writer lock was held: %v", err)
+	case <-time.After(120 * time.Millisecond):
+	}
+	release()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("env_set did not resume after Skill lifecycle writer lock release")
 	}
 }

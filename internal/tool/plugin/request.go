@@ -14,7 +14,7 @@ type ManageRequest struct {
 	Catalog               string `json:"catalog,omitempty"`
 	CatalogItem           string `json:"catalog_item,omitempty"`
 	Enabled               *bool  `json:"enabled,omitempty"`
-	Confirmed             bool   `json:"confirmed,omitempty"`
+	ReviewToken           string `json:"review_token,omitempty"`
 	ConfirmedSourceChange bool   `json:"confirmed_source_change,omitempty"`
 	DataPolicy            string `json:"data_policy,omitempty"`
 }

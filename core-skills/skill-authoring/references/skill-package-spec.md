@@ -55,15 +55,17 @@ license: Apache-2.0
 compatibility: Requires Python 3.11 or later.
 metadata:
   owner: example-team
-allowed-tools:
-  - exec_command
+allowed-tools: exec_command
 ```
 
 规则：
 
-- `name` 匹配 `^[a-z][a-z0-9-]{1,62}$`；
+- `name` 长度 1–64，只允许小写 ASCII 字母、数字和 `-`，不能以 `-` 开头/结尾，也不能包含连续 `--`；
 - 目录身份与 `name` 一致；
-- `description` 非空；
+- `description` 非空且最长 1024 个字符；
+- `compatibility` 可选且最长 500 个字符；
+- `metadata` 若存在，键值都必须是字符串；
+- `allowed-tools` 若存在，必须是单行、空格分隔的字符串；
 - Markdown 正文非空；
 - `metadata.version` 若存在只是普通作者元数据；
 - AgentDock 不读取任何 version 字段来选择安装内容，也不存在 active version。

@@ -46,7 +46,9 @@ Skill 的文档身份由 `SKILL.md.name` 给出。managed 安装目标是：
 - `name` 存在并符合命名规则；
 - `description` 非空且能表达触发场景；
 - 正文非空；
-- 可选 `license`、`compatibility`、`metadata`、`allowed-tools` 字段语义合理；
+- `name` 遵守 1–64 字符、仅小写 ASCII 字母/数字/`-`、不首尾 `-`、不含连续 `--`；
+- `description` 最长 1024 字符，`compatibility` 最长 500 字符；
+- 可选 `license` 字段语义合理，`metadata` 必须是 string→string，`allowed-tools` 必须是单行空格分隔字符串；
 - `metadata.version` 若存在只作为作者元数据，不参与 AgentDock 安装或运行；
 - 未把 `version`、`active_version`、activate、rollback 当作 AgentDock Skill 生命周期。
 

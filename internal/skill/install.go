@@ -19,6 +19,7 @@ type Manager struct {
 	State       *skillstate.Store
 	HTTPClient  *http.Client
 	MaxDownload int64
+	MaxFiles    int
 }
 
 func New(state *skillstate.Store) (*Manager, error) {
@@ -29,6 +30,7 @@ func New(state *skillstate.Store) (*Manager, error) {
 		State:       state,
 		HTTPClient:  &http.Client{Timeout: 2 * time.Minute},
 		MaxDownload: 128 << 20,
+		MaxFiles:    10000,
 	}, nil
 }
 
@@ -40,6 +42,10 @@ func (m *Manager) Install(ctx context.Context, req InstallRequest) (InstallResul
 	if maxBytes <= 0 {
 		maxBytes = m.MaxDownload
 	}
+	maxFiles := req.MaxFiles
+	if maxFiles <= 0 {
+		maxFiles = m.MaxFiles
+	}
 
 	work, err := m.State.TempPath("install")
 	if err != nil {
@@ -47,7 +53,7 @@ func (m *Manager) Install(ctx context.Context, req InstallRequest) (InstallResul
 	}
 	defer os.RemoveAll(work)
 
-	packageDir, sourceDigest, err := m.prepareSource(ctx, req.Source, work, maxBytes)
+	packageDir, sourceDigest, err := m.prepareSource(ctx, req.Source, work, maxBytes, maxFiles)
 	if err != nil {
 		return InstallResult{}, err
 	}
@@ -66,14 +72,7 @@ func (m *Manager) Install(ctx context.Context, req InstallRequest) (InstallResul
 		return InstallResult{}, packageError(ErrInstallFailed, "content_digest", err)
 	}
 
-	staged, err := m.State.TempPath("candidate-" + doc.Name)
-	if err != nil {
-		return InstallResult{}, packageError(ErrInstallFailed, "stage", err)
-	}
-	defer os.RemoveAll(staged)
-	if err := copyPackage(packageDir, staged); err != nil {
-		return InstallResult{}, packageError(ErrInstallFailed, "stage", err)
-	}
+	staged := packageDir
 
 	release, err := m.State.AcquireWrite(ctx, doc.Name)
 	if err != nil {
@@ -149,7 +148,7 @@ func restoreReplacedSkill(backup, destination string) error {
 	return nil
 }
 
-func (m *Manager) prepareSource(ctx context.Context, source, work string, maxBytes int64) (string, string, error) {
+func (m *Manager) prepareSource(ctx context.Context, source, work string, maxBytes int64, maxFiles int) (string, string, error) {
 	parsed, parseErr := url.Parse(source)
 	if parseErr == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") {
 		archive := filepath.Join(work, "package.zip")
@@ -180,30 +179,34 @@ func (m *Manager) prepareSource(ctx context.Context, source, work string, maxByt
 		if written > maxBytes {
 			return "", "", packageError(ErrInvalidPackage, "download", fmt.Errorf("package exceeds %d bytes", maxBytes))
 		}
-		return m.prepareArchive(archive, work, maxBytes)
+		return m.prepareArchive(archive, work, maxBytes, maxFiles)
 	}
 
-	info, err := os.Stat(source)
+	info, err := os.Lstat(source)
 	if err != nil {
 		return "", "", packageError(ErrInvalidPackage, "source", err)
 	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", "", packageError(ErrInvalidPackage, "source", errors.New("local Skill source cannot be a symlink"))
+	}
 	if info.IsDir() {
-		// Reject symlinks and special files before hashing a local directory.
-		// In particular, opening a FIFO while computing a digest could block the
-		// installer before package validation gets a chance to reject it.
-		if err := ValidatePackage(source); err != nil {
-			return "", "", err
+		candidate := filepath.Join(work, "snapshot")
+		if err := snapshotLocalDirectory(source, candidate, maxBytes, maxFiles); err != nil {
+			return "", "", packageError(ErrInvalidPackage, "snapshot", err)
 		}
-		digest, err := DigestDirectory(source)
+		digest, err := DigestDirectory(candidate)
 		if err != nil {
 			return "", "", packageError(ErrInvalidPackage, "digest", err)
 		}
-		return source, digest, nil
+		return candidate, digest, nil
 	}
-	return m.prepareArchive(source, work, maxBytes)
+	if !info.Mode().IsRegular() {
+		return "", "", packageError(ErrInvalidPackage, "source", errors.New("local Skill source must be a regular directory or ZIP file"))
+	}
+	return m.prepareArchive(source, work, maxBytes, maxFiles)
 }
 
-func (m *Manager) prepareArchive(archive, work string, maxBytes int64) (string, string, error) {
+func (m *Manager) prepareArchive(archive, work string, maxBytes int64, maxFiles int) (string, string, error) {
 	digest, err := DigestFile(archive)
 	if err != nil {
 		return "", "", packageError(ErrInvalidPackage, "digest", err)
@@ -212,7 +215,7 @@ func (m *Manager) prepareArchive(archive, work string, maxBytes int64) (string, 
 	if err := os.MkdirAll(packageDir, 0o700); err != nil {
 		return "", "", packageError(ErrInvalidPackage, "extract", err)
 	}
-	if err := extractZip(archive, packageDir, maxBytes); err != nil {
+	if err := extractZip(archive, packageDir, maxBytes, maxFiles); err != nil {
 		return "", "", packageError(ErrInvalidPackage, "extract", err)
 	}
 	entries, err := os.ReadDir(packageDir)
@@ -225,10 +228,19 @@ func (m *Manager) prepareArchive(archive, work string, maxBytes int64) (string, 
 	return packageDir, digest, nil
 }
 
-func copyPackage(source, destination string) error {
+func snapshotLocalDirectory(source, destination string, maxBytes int64, maxFiles int) error {
+	source = filepath.Clean(source)
+	root, err := os.OpenRoot(source)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	if err := os.MkdirAll(destination, 0o700); err != nil {
 		return err
 	}
+
+	var total int64
+	files := 0
 	return filepath.WalkDir(source, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -236,27 +248,130 @@ func copyPackage(source, destination string) error {
 		if path == source {
 			return nil
 		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("symlink is not allowed: %s", path)
-		}
 		rel, err := filepath.Rel(source, path)
+		if err != nil || !filepath.IsLocal(rel) || rel == "." {
+			return fmt.Errorf("invalid local Skill source path %q", path)
+		}
+		info, err := validateSnapshotSourcePath(root, rel, entry.IsDir())
 		if err != nil {
-			return err
+			return fmt.Errorf("unsafe local Skill source path %q: %w", path, err)
 		}
 		target := filepath.Join(destination, rel)
-		if entry.IsDir() {
+		if info.IsDir() {
 			return os.MkdirAll(target, 0o700)
 		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
+
+		files++
+		if files > maxFiles {
+			return fmt.Errorf("package exceeds %d files", maxFiles)
+		}
+		remaining := maxBytes - total
+		if remaining < 0 {
+			return fmt.Errorf("package exceeds %d bytes", maxBytes)
 		}
 		mode := info.Mode().Perm() & 0o755
 		if mode == 0 {
 			mode = 0o600
 		}
-		return copyRegularFile(path, target, mode)
+		copied, err := snapshotRegularFile(root, rel, target, mode, remaining)
+		if err != nil {
+			return err
+		}
+		total += copied
+		if total > maxBytes {
+			return fmt.Errorf("package exceeds %d bytes", maxBytes)
+		}
+		return nil
 	})
+}
+
+// validateSnapshotSourcePath rejects symlink/reparse-style path substitution
+// one segment at a time. os.Root supplies the containment boundary; this
+// stricter check additionally requires every observed component to remain an
+// ordinary directory or regular file throughout the snapshot.
+func validateSnapshotSourcePath(root *os.Root, relative string, wantDirectory bool) (os.FileInfo, error) {
+	clean := filepath.Clean(relative)
+	if !filepath.IsLocal(clean) || clean == "." {
+		return nil, errors.New("path is not local to the Skill source")
+	}
+	parts := strings.Split(clean, string(filepath.Separator))
+	current := ""
+	var info os.FileInfo
+	for index, part := range parts {
+		if current == "" {
+			current = part
+		} else {
+			current = filepath.Join(current, part)
+		}
+		var err error
+		info, err = root.Lstat(current)
+		if err != nil {
+			return nil, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("path contains symlink component %q", filepath.ToSlash(current))
+		}
+		if index < len(parts)-1 && !info.IsDir() {
+			return nil, fmt.Errorf("path component %q is not a directory", filepath.ToSlash(current))
+		}
+	}
+	if wantDirectory {
+		if info == nil || !info.IsDir() {
+			return nil, errors.New("path is not a directory")
+		}
+	} else if info == nil || !info.Mode().IsRegular() {
+		return nil, errors.New("path is not a regular file")
+	}
+	return info, nil
+}
+
+func snapshotRegularFile(root *os.Root, relative, destination string, mode os.FileMode, remaining int64) (int64, error) {
+	before, err := validateSnapshotSourcePath(root, relative, false)
+	if err != nil {
+		return 0, err
+	}
+	in, err := root.Open(relative)
+	if err != nil {
+		return 0, err
+	}
+	defer in.Close()
+	opened, err := in.Stat()
+	if err != nil {
+		return 0, err
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(before, opened) {
+		return 0, errors.New("source file changed while opening snapshot")
+	}
+
+	out, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+	if err != nil {
+		return 0, err
+	}
+	copied, copyErr := io.Copy(out, io.LimitReader(in, remaining+1))
+	closeErr := out.Close()
+	if copyErr != nil {
+		return copied, copyErr
+	}
+	if closeErr != nil {
+		return copied, closeErr
+	}
+	if copied > remaining {
+		return copied, fmt.Errorf("package exceeds byte limit")
+	}
+
+	afterOpen, err := in.Stat()
+	if err != nil {
+		return copied, err
+	}
+	afterPath, err := validateSnapshotSourcePath(root, relative, false)
+	if err != nil {
+		return copied, err
+	}
+	if !os.SameFile(opened, afterOpen) || !os.SameFile(opened, afterPath) ||
+		opened.Size() != afterOpen.Size() || opened.ModTime() != afterOpen.ModTime() || opened.Mode() != afterOpen.Mode() {
+		return copied, errors.New("source file changed while creating snapshot")
+	}
+	return copied, nil
 }
 
 func copyRegularFile(source, destination string, mode os.FileMode) error {
