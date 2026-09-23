@@ -139,6 +139,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     coreEnabled: serviceState.coreEnabled,
                     tunnelEnabled: serviceState.tunnelEnabled
                 )
+                // SMAppService.status == enabled does not prove launchd has actually started Core.
+                // Perform one bounded health/self-heal pass before publishing the handoff so the
+                // Arbiter only starts its final health/version gate after registration has settled.
+                var warnings = await service.recoverBackgroundServicesAfterUpdate(
+                    coreEnabled: serviceState.coreEnabled,
+                    tunnelEnabled: serviceState.tunnelEnabled
+                )
                 if pendingResult.ok {
                     try DesktopUpdateHandoff(
                         targetVersion: pendingResult.targetVersion,
@@ -160,18 +167,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     handoffAcknowledged = true
                 }
 
-                let hasTransaction = !(transactionID?.isEmpty ?? true)
-                // Transaction-aware updates already gate commit on Core health + target version in
-                // the Arbiter. Repeating a shorter GUI health probe can only create stale warnings
-                // after a transaction that has already proved Core healthy. The legacy path keeps
-                // its bounded Core readiness warning because it has no external Arbiter.
-                var warnings: [String] = []
-                if !hasTransaction {
-                    warnings = await service.recoverBackgroundServicesAfterUpdate(
-                        coreEnabled: serviceState.coreEnabled,
-                        tunnelEnabled: serviceState.tunnelEnabled
-                    )
-                }
                 if registration.core == "requires_approval" {
                     warnings.append(L10n.text("AgentDock Core needs background-item approval in System Settings."))
                 }

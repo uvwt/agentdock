@@ -295,15 +295,24 @@ final class ServiceController: @unchecked Sendable {
     }
 
     func recoverBackgroundServicesAfterUpdate(coreEnabled: Bool, tunnelEnabled: Bool) async -> [String] {
-        // Legacy 更新没有 Arbiter 的 Core health/version gate，因此这里只对 Core 做一次有界等待。
-        // Tunnel/public readiness 是外部 soft dependency，只由面板和日志展示，不阻塞更新收尾。
+        // App Bundle 替换后，SMAppService 可能已经返回 enabled，但 launchd 尚未真正启动 Core。
+        // 先给系统一个正常传播窗口；仍不健康时只做一次完整 unregister/register 自愈。
+        // 最终更新是否提交仍由外部 Arbiter 的 Core health/version gate 决定。
         var warnings: [String] = []
         _ = tunnelEnabled
         if coreEnabled,
            coreService.status == .enabled,
            let configuration = ServiceConfiguration.load(from: paths.environment),
            !(await waitForHealth(configuration: configuration, timeout: 10)) {
-            warnings.append(L10n.text("AgentDock background service is enabled, but the health check did not pass."))
+            NSLog("AgentDock Core 注册显示 enabled 但健康检查未通过，开始自动重新注册。")
+            do {
+                try await restart()
+            } catch {
+                warnings.append(L10n.format(
+                    "AgentDock Core was re-registered after the update, but the health check still failed: %@",
+                    error.localizedDescription
+                ))
+            }
         }
         return warnings
     }
