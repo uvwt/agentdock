@@ -95,6 +95,7 @@ type State struct {
 	SchemaVersion  int            `json:"schema_version"`
 	Name           string         `json:"name"`
 	Version        string         `json:"version"`
+	Description    string         `json:"description,omitempty"`
 	PackageDigest  string         `json:"package_digest"`
 	Provenance     *Provenance    `json:"provenance,omitempty"`
 	Enabled        bool           `json:"enabled"`

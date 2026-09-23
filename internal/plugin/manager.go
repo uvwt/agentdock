@@ -212,7 +212,7 @@ func (m *Manager) installPreparedCandidate(ctx context.Context, stage string, pk
 	}
 
 	state := State{
-		SchemaVersion: StateSchemaVersion, Name: pkg.Manifest.Name, Version: pkg.Manifest.Version,
+		SchemaVersion: StateSchemaVersion, Name: pkg.Manifest.Name, Version: pkg.Manifest.Version, Description: pkg.Manifest.Description,
 		PackageDigest: pkg.PackageDigest, Provenance: pkg.Manifest.Provenance, Enabled: enabled, InstalledAt: time.Now().UTC(),
 		Components: stateComponentIndex(pkg.Components), MCPStorageKeys: pluginMCPStorageKeys(pkg.Components.MCP),
 		Compatibility: pkg.Compatibility,
@@ -315,6 +315,7 @@ func (m *Manager) updatePreparedCandidate(ctx context.Context, stage string, pkg
 	}
 	candidate := current
 	candidate.Version = pkg.Manifest.Version
+	candidate.Description = pkg.Manifest.Description
 	candidate.PackageDigest = pkg.PackageDigest
 	candidate.Provenance = pkg.Manifest.Provenance
 	candidate.Components = stateComponentIndex(pkg.Components)

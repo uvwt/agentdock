@@ -65,7 +65,7 @@ func TestAgentDockContextToolReturnsStructuredRuntimeIndex(t *testing.T) {
 		commonDemo.SourceType != "shared" {
 		t.Fatalf("common Skill index missing duplicate demo-skill: %#v", got.CommonSkills)
 	}
-	if got.DynamicMCP == nil || got.WorkflowTemplates == nil || got.Rules == nil {
+	if got.Plugins == nil || got.DynamicMCP == nil || got.WorkflowTemplates == nil || got.Rules == nil {
 		t.Fatalf("required structured context fields must be arrays: %#v", got)
 	}
 	if got.Runtime == nil || got.Runtime.Version == "" || got.Runtime.OS == "" || got.Runtime.Arch == "" || got.Runtime.PathModel != config.PathModel {

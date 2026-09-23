@@ -129,6 +129,16 @@ func TestPluginComponentsEnterExistingRuntimeAndSkillExecUsesPluginData(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
+	plugin := findContextMap(t, contextResult["plugins"], func(item map[string]any) bool {
+		return item["name"] == "demo.plugin"
+	})
+	if plugin["version"] != "1.0.0" || plugin["enabled"] != true ||
+		plugin["description"] != "Plugin integration test." ||
+		plugin["skills_count"] != float64(1) || plugin["mcp_count"] != float64(1) ||
+		plugin["format"] != "portable" || plugin["adapted"] != false {
+		t.Fatalf("Plugin context summary = %#v", plugin)
+	}
+
 	skill := findContextMap(t, contextResult["skills"], func(item map[string]any) bool {
 		return item["name"] == "plugin-skill" && item["source_type"] == "plugin"
 	})
@@ -346,6 +356,12 @@ func TestPluginLifecycleKeepsStandaloneMCPAndOwnsMCPEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	disabledPlugin := findContextMap(t, contextResult["plugins"], func(item map[string]any) bool {
+		return item["name"] == "demo.plugin"
+	})
+	if disabledPlugin["enabled"] != false {
+		t.Fatalf("disabled Plugin disappeared or stayed enabled in Plugin index: %#v", disabledPlugin)
+	}
 	if contextHasMap(contextResult["skills"], func(item map[string]any) bool { return item["source_type"] == "plugin" }) {
 		t.Fatalf("disabled Plugin Skill remained in context: %#v", contextResult["skills"])
 	}
@@ -400,6 +416,9 @@ func TestPluginLifecycleKeepsStandaloneMCPAndOwnsMCPEnvironment(t *testing.T) {
 	}
 	if !contextHasMap(finalContext["dynamic_mcp"], func(item map[string]any) bool { return item["name"] == "standalone" }) {
 		t.Fatalf("Plugin remove affected standalone MCP: %#v", finalContext["dynamic_mcp"])
+	}
+	if contextHasMap(finalContext["plugins"], func(item map[string]any) bool { return item["name"] == "demo.plugin" }) {
+		t.Fatalf("removed Plugin remained in Plugin context index: %#v", finalContext["plugins"])
 	}
 }
 

@@ -25,9 +25,11 @@ func (r *Runtime) AgentDockLocalContext(ctx context.Context) (Result, error) {
 func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool) (Result, error) {
 	skills, skillErr := r.skillCapabilityIndex()
 	commonSkills, commonSkillErr := commonSkillCapabilityIndex()
+	plugins, pluginErr := r.pluginCapabilityIndex()
 	contextResult := capabilityContext{
 		Skills:            skills,
 		CommonSkills:      commonSkills,
+		Plugins:           plugins,
 		DynamicMCP:        r.dynamicMCPCapabilityIndex(),
 		WorkflowTemplates: []capabilityTemplateItem{},
 		Rules: []string{
@@ -52,6 +54,9 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool) (Re
 	}
 	if commonSkillErr != nil {
 		contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "common_skills", Message: "通用 Skill 索引暂不可用；需要时可直接检查 ~/.agents/skills。"})
+	}
+	if pluginErr != nil {
+		contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "plugins", Message: "Plugin 索引暂不可用。"})
 	}
 
 	if requiresACP(r.cfg) {
@@ -114,6 +119,7 @@ type capabilityContext struct {
 	Runtime           *capabilityRuntimeContext   `json:"runtime,omitempty"`
 	Skills            []capabilitySkillItem       `json:"skills"`
 	CommonSkills      *capabilityCommonSkillIndex `json:"common_skills,omitempty"`
+	Plugins           []capabilityPluginItem      `json:"plugins"`
 	DynamicMCP        []capabilityDynamicMCPItem  `json:"dynamic_mcp"`
 	ACP               *capabilityACPContext       `json:"acp,omitempty"`
 	WorkflowTemplates []capabilityTemplateItem    `json:"workflow_templates"`
@@ -158,6 +164,17 @@ type capabilityCommonSkillItem struct {
 	SourceType    string `json:"source_type"`
 	SourceID      string `json:"source_id"`
 	ContentDigest string `json:"content_digest,omitempty"`
+}
+
+type capabilityPluginItem struct {
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Enabled     bool   `json:"enabled"`
+	Description string `json:"description"`
+	SkillsCount int    `json:"skills_count"`
+	MCPCount    int    `json:"mcp_count"`
+	Format      string `json:"format"`
+	Adapted     bool   `json:"adapted"`
 }
 
 type capabilityDynamicMCPItem struct {
@@ -230,6 +247,24 @@ type capabilityRecallIndexItem struct {
 	Aliases  []string `json:"aliases"`
 	Tags     []string `json:"tags"`
 	CardType string   `json:"card_type"`
+}
+
+func (r *Runtime) pluginCapabilityIndex() ([]capabilityPluginItem, error) {
+	pluginItems, err := r.plugins.CapabilityItems()
+	if err != nil {
+		return []capabilityPluginItem{}, err
+	}
+	items := make([]capabilityPluginItem, 0, len(pluginItems))
+	for _, plugin := range pluginItems {
+		items = append(items, capabilityPluginItem{
+			Name: plugin.Name, Version: plugin.Version, Enabled: plugin.Enabled,
+			Description: truncateString(strings.TrimSpace(plugin.Description), 160),
+			SkillsCount: plugin.SkillsCount, MCPCount: plugin.MCPCount,
+			Format: plugin.Format, Adapted: plugin.Adapted,
+		})
+	}
+	sort.SliceStable(items, func(i, j int) bool { return items[i].Name < items[j].Name })
+	return items, nil
 }
 
 func (r *Runtime) dynamicMCPCapabilityIndex() []capabilityDynamicMCPItem {

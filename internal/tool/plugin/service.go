@@ -31,6 +31,38 @@ type Service struct {
 	mcpLeases  map[string]func()
 }
 
+type CapabilityItem struct {
+	Name        string
+	Version     string
+	Enabled     bool
+	Description string
+	SkillsCount int
+	MCPCount    int
+	Format      string
+	Adapted     bool
+}
+
+func (s *Service) CapabilityItems() ([]CapabilityItem, error) {
+	installed, err := s.manager.List()
+	if err != nil {
+		return []CapabilityItem{}, err
+	}
+	items := make([]CapabilityItem, 0, len(installed))
+	for _, item := range installed {
+		format := strings.TrimSpace(item.Compatibility.Format)
+		if format == "" {
+			format = "portable"
+		}
+		items = append(items, CapabilityItem{
+			Name: item.Name, Version: item.Version, Enabled: item.Enabled,
+			Description: item.Description,
+			SkillsCount: len(item.Components.Skills), MCPCount: len(item.Components.MCP),
+			Format: format, Adapted: item.Provenance != nil && item.Provenance.Adapted,
+		})
+	}
+	return items, nil
+}
+
 func New(cfg config.Config, manager *pluginruntime.Manager, mcpClients *mcpclient.Manager, envs *envstore.Store, ws *workspace.Workspace) *Service {
 	return &Service{
 		cfg: cfg, manager: manager, mcpClients: mcpClients, envs: envs, ws: ws,
