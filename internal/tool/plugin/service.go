@@ -495,7 +495,8 @@ func (s *Service) mcpConfigsForInstalled(item pluginruntime.Installed) ([]mcpcli
 			URL: component.URL, Command: command, Args: args, Cwd: cwd,
 			StaticEnv: staticEnv, StaticHeaders: cloneMap(component.Headers),
 			HeaderEnv: cloneMap(component.HeaderEnv), EnvBindings: cloneMap(component.EnvBindings),
-			StorageKey: component.StorageKey, SourceType: "plugin", PluginName: item.Name,
+			RequiredEnv: append([]string(nil), component.RequiredEnv...),
+			StorageKey:  component.StorageKey, SourceType: "plugin", PluginName: item.Name,
 			PluginRoot: item.Root, PluginDataDir: dataDir, Enabled: true, TimeoutMS: component.TimeoutMS,
 		})
 	}

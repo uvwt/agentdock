@@ -80,6 +80,33 @@ func TestHTTPHeaderUsesScopedEnvironmentBeforeHost(t *testing.T) {
 	}
 }
 
+func TestPluginHTTPHeaderOptionalBindingIsOmittedWhenUnset(t *testing.T) {
+	headers, err := resolveHTTPHeaders(ServerConfig{
+		Name:       "context7",
+		SourceType: "plugin",
+		HeaderEnv:  map[string]string{"Authorization": "CONTEXT7_API_KEY"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := headers["Authorization"]; exists {
+		t.Fatalf("optional Authorization header was sent without a value: %#v", headers)
+	}
+}
+
+func TestPluginHTTPHeaderRequiredBindingRejectsMissingValue(t *testing.T) {
+	_, err := resolveHTTPHeaders(ServerConfig{
+		Name:        "required",
+		SourceType:  "plugin",
+		HeaderEnv:   map[string]string{"Authorization": "REQUIRED_TOKEN"},
+		RequiredEnv: []string{"REQUIRED_TOKEN"},
+	})
+	mcpErr, ok := err.(*Error)
+	if !ok || mcpErr.Code != "MCP_AUTH_REQUIRED" {
+		t.Fatalf("resolveHTTPHeaders() error = %T %v, want MCP_AUTH_REQUIRED", err, err)
+	}
+}
+
 func formattedEnvironmentMap(environment []string) map[string]string {
 	values := make(map[string]string, len(environment))
 	for _, item := range environment {

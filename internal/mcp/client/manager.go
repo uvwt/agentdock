@@ -631,32 +631,43 @@ func (m *Manager) runtimeConfig(cfg ServerConfig) (ServerConfig, error) {
 	// env 是公开默认值，由 stdioEnvironment 在它之前注入。P3 adapter 的
 	// credential bindings 也从这里取值，但永远不会落入 Plugin state。
 	runtimeValues := make(map[string]string, len(values)+len(cfg.EnvBindings)+len(cfg.HeaderEnv)+3)
+	// HeaderEnv/EnvBindings 只描述映射；是否缺失即失败由 RequiredEnv 单独决定。
+	requiredEnv := make(map[string]struct{}, len(cfg.RequiredEnv))
+	for _, envName := range cfg.RequiredEnv {
+		requiredEnv[envName] = struct{}{}
+	}
 	for key, value := range values {
 		runtimeValues[key] = value
 	}
 	for header, envName := range cfg.HeaderEnv {
 		value, ok := values[envName]
 		if !ok || value == "" {
-			return ServerConfig{}, newError(
-				"MCP_AUTH_REQUIRED",
-				"required Plugin MCP environment variable is missing",
-				false,
-				map[string]any{"server": cfg.Name, "header": header, "env": envName},
-				nil,
-			)
+			if _, required := requiredEnv[envName]; required {
+				return ServerConfig{}, newError(
+					"MCP_AUTH_REQUIRED",
+					"required Plugin MCP environment variable is missing",
+					false,
+					map[string]any{"server": cfg.Name, "header": header, "env": envName},
+					nil,
+				)
+			}
+			continue
 		}
 		runtimeValues[envName] = value
 	}
 	for childName, envName := range cfg.EnvBindings {
 		value, ok := values[envName]
 		if !ok || value == "" {
-			return ServerConfig{}, newError(
-				"MCP_AUTH_REQUIRED",
-				"required Plugin MCP environment variable is missing",
-				false,
-				map[string]any{"server": cfg.Name, "env": envName},
-				nil,
-			)
+			if _, required := requiredEnv[envName]; required {
+				return ServerConfig{}, newError(
+					"MCP_AUTH_REQUIRED",
+					"required Plugin MCP environment variable is missing",
+					false,
+					map[string]any{"server": cfg.Name, "env": envName},
+					nil,
+				)
+			}
+			continue
 		}
 		runtimeValues[childName] = value
 	}

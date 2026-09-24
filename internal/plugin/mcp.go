@@ -229,8 +229,8 @@ func validatePortableRemoteURL(value string) error {
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return errors.New("remote MCP url must use http or https")
 	}
-	if parsed.User != nil || parsed.Fragment != "" || parsed.RawQuery != "" {
-		return errors.New("remote MCP url must not contain credentials, query parameters, or fragments; use env-backed headers for credentials")
+	if parsed.User != nil || parsed.Fragment != "" {
+		return errors.New("remote MCP url must not contain user info or fragments; use env-backed headers for credentials")
 	}
 	if parsed.Scheme == "http" && !isLoopbackHost(parsed.Hostname()) {
 		return errors.New("non-loopback remote MCP endpoints must use https")
@@ -257,13 +257,15 @@ func normalizePortableEnvironment(component *MCPComponent) error {
 		if config.IsReservedPluginEnvironmentKey(key) {
 			return fmt.Errorf("environment variable %s is reserved by the Plugin runtime", key)
 		}
-		if envName, ok := exactEnvironmentReference(value); ok && !config.IsReservedPluginEnvironmentKey(envName) {
+		if envName, requiredBinding, ok := exactEnvironmentReference(value); ok && !config.IsReservedPluginEnvironmentKey(envName) {
 			bindings[key] = envName
-			required = append(required, envName)
+			if requiredBinding {
+				required = append(required, envName)
+			}
 			continue
 		}
 		if sensitiveEnvironmentName(key) {
-			return fmt.Errorf("sensitive environment variable %s must use a ${ENV_NAME} binding instead of a literal value", key)
+			return fmt.Errorf("sensitive environment variable %s must use a ${ENV_NAME} binding (or ${ENV_NAME:-} when optional) instead of a literal value", key)
 		}
 		static[key] = value
 	}
@@ -292,14 +294,16 @@ func normalizePortableHeaders(component *MCPComponent) error {
 		if strings.ContainsRune(value, '\r') || strings.ContainsRune(value, '\n') {
 			return fmt.Errorf("HTTP header %q contains a newline", name)
 		}
-		if envName, ok := exactEnvironmentReference(value); ok && !config.IsReservedPluginEnvironmentKey(envName) {
+		if envName, requiredBinding, ok := exactEnvironmentReference(value); ok && !config.IsReservedPluginEnvironmentKey(envName) {
 			bindings[name] = envName
-			required = append(required, envName)
+			if requiredBinding {
+				required = append(required, envName)
+			}
 			continue
 		}
 		switch strings.ToLower(name) {
 		case "authorization", "proxy-authorization", "cookie", "set-cookie":
-			return fmt.Errorf("credential header %q must use a ${ENV_NAME} binding instead of a literal value", name)
+			return fmt.Errorf("credential header %q must use a ${ENV_NAME} binding (or ${ENV_NAME:-} when optional) instead of a literal value", name)
 		}
 		static[name] = value
 	}
@@ -316,16 +320,22 @@ func normalizePortableHeaders(component *MCPComponent) error {
 	return nil
 }
 
-func exactEnvironmentReference(value string) (string, bool) {
+func exactEnvironmentReference(value string) (string, bool, bool) {
 	value = strings.TrimSpace(value)
 	if len(value) < 4 || !strings.HasPrefix(value, "${") || !strings.HasSuffix(value, "}") {
-		return "", false
+		return "", false, false
 	}
 	name := value[2 : len(value)-1]
-	if strings.ContainsAny(name, "${}/\\") || validateEnvName(name) != nil {
-		return "", false
+	// ${ENV} 是必填绑定；${ENV:-} 表示可选绑定，未配置时不注入对应 env/header。
+	required := true
+	if strings.HasSuffix(name, ":-") {
+		name = strings.TrimSuffix(name, ":-")
+		required = false
 	}
-	return name, true
+	if strings.ContainsAny(name, "${}/\\") || validateEnvName(name) != nil {
+		return "", false, false
+	}
+	return name, required, true
 }
 
 func sensitiveEnvironmentName(name string) bool {

@@ -525,6 +525,55 @@ func TestLockServerRejectsCloseRace(t *testing.T) {
 	}
 }
 
+func TestPluginRuntimeConfigDistinguishesRequiredAndOptionalHeaderBindings(t *testing.T) {
+	home := t.TempDir()
+	envs, err := envstore.New(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const storageKey = "plugin.demo.plugin.remote"
+	scope := envstore.Scope{Kind: envstore.ScopeMCP, Name: storageKey}
+	if err := envs.Set(scope, "REQUIRED_TOKEN", "required-value"); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := NewManager(home, envs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+
+	cfg := ServerConfig{
+		Name: storageKey, Description: "Plugin remote MCP", Transport: TransportStreamableHTTP,
+		URL: "https://example.com/mcp",
+		HeaderEnv: map[string]string{
+			"Authorization": "OPTIONAL_TOKEN",
+			"X-Required":    "REQUIRED_TOKEN",
+		},
+		RequiredEnv: []string{"REQUIRED_TOKEN"},
+		StorageKey:  storageKey, SourceType: "plugin", PluginName: "demo.plugin",
+		PluginDataDir: t.TempDir(), Enabled: true,
+	}
+	runtimeCfg, err := manager.runtimeConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := runtimeCfg.RuntimeEnv["OPTIONAL_TOKEN"]; exists {
+		t.Fatalf("optional missing binding leaked into runtime env: %#v", runtimeCfg.RuntimeEnv)
+	}
+	if runtimeCfg.RuntimeEnv["REQUIRED_TOKEN"] != "required-value" {
+		t.Fatalf("required runtime binding = %#v", runtimeCfg.RuntimeEnv)
+	}
+
+	if _, err := envs.Unset(scope, "REQUIRED_TOKEN"); err != nil {
+		t.Fatal(err)
+	}
+	_, err = manager.runtimeConfig(cfg)
+	var mcpErr *Error
+	if !errors.As(err, &mcpErr) || mcpErr.Code != "MCP_AUTH_REQUIRED" {
+		t.Fatalf("runtimeConfig() error = %#v, want MCP_AUTH_REQUIRED", err)
+	}
+}
+
 func TestPluginOwnedStdioUsesStableEnvAndRuntimeProvenance(t *testing.T) {
 	home := t.TempDir()
 	envs, err := envstore.New(home)

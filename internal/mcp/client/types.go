@@ -33,6 +33,7 @@ type ServerConfig struct {
 	StaticEnv     map[string]string `json:"-"`
 	StaticHeaders map[string]string `json:"-"`
 	EnvBindings   map[string]string `json:"-"`
+	RequiredEnv   []string          `json:"-"`
 	DisplayName   string            `json:"-"`
 	StorageKey    string            `json:"-"`
 	SourceType    string            `json:"-"`
@@ -113,6 +114,7 @@ func normalizeServerConfig(cfg ServerConfig) ServerConfig {
 	cfg.StaticEnv = cloneStringMap(cfg.StaticEnv)
 	cfg.StaticHeaders = cloneStringMap(cfg.StaticHeaders)
 	cfg.EnvBindings = cloneStringMap(cfg.EnvBindings)
+	cfg.RequiredEnv = append([]string(nil), cfg.RequiredEnv...)
 	cfg.DisplayName = strings.TrimSpace(cfg.DisplayName)
 	cfg.StorageKey = strings.TrimSpace(cfg.StorageKey)
 	cfg.SourceType = strings.TrimSpace(cfg.SourceType)

@@ -291,12 +291,21 @@ func resolveHTTPHeaders(cfg ServerConfig) (http.Header, error) {
 		headers.Set(name, value)
 	}
 	headers.Set("User-Agent", config.ServerName+"/"+buildinfo.Version)
+	requiredEnv := make(map[string]struct{}, len(cfg.RequiredEnv))
+	for _, envName := range cfg.RequiredEnv {
+		requiredEnv[envName] = struct{}{}
+	}
 	for header, envName := range cfg.HeaderEnv {
 		value, ok := cfg.RuntimeEnv[envName]
 		if !ok && cfg.SourceType != "plugin" {
 			value, ok = os.LookupEnv(envName)
 		}
 		if !ok || value == "" {
+			if cfg.SourceType == "plugin" {
+				if _, required := requiredEnv[envName]; !required {
+					continue
+				}
+			}
 			return nil, newError(
 				"MCP_AUTH_REQUIRED",
 				"required MCP HTTP header environment variable is missing",

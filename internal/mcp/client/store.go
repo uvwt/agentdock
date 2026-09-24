@@ -178,6 +178,11 @@ func validateServerConfig(cfg ServerConfig) error {
 			return fmt.Errorf("invalid environment variable mapping %q -> %q", childName, hostName)
 		}
 	}
+	for _, envName := range cfg.RequiredEnv {
+		if !envNamePattern.MatchString(envName) {
+			return fmt.Errorf("invalid required environment variable name %q", envName)
+		}
+	}
 	for key := range cfg.StaticEnv {
 		if !envNamePattern.MatchString(key) {
 			return fmt.Errorf("invalid static environment variable name %q", key)

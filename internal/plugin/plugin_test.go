@@ -215,6 +215,16 @@ func TestLoadPackageRejectsUnsafePortableMCP(t *testing.T) {
 			want:   "credential header",
 		},
 		{
+			name:   "URL userinfo",
+			server: map[string]any{"type": "streamable-http", "url": "https://user:pass@example.com/mcp"},
+			want:   "user info",
+		},
+		{
+			name:   "URL fragment",
+			server: map[string]any{"type": "streamable-http", "url": "https://example.com/mcp#fragment"},
+			want:   "fragments",
+		},
+		{
 			name:   "command traversal",
 			server: map[string]any{"type": "stdio", "command": "../outside"},
 			want:   "begin with ./",
@@ -593,14 +603,16 @@ func TestLoadPackageNormalizesSecretEnvironmentBindingsWithoutPersistingValues(t
 			"local": map[string]any{
 				"type": "stdio", "command": "node",
 				"env": map[string]string{
-					"TOKEN":  "${DEMO_TOKEN}",
-					"CONFIG": "${PLUGIN_ROOT}/config.json",
+					"TOKEN":    "${DEMO_TOKEN}",
+					"OPTIONAL": "${OPTIONAL_TOKEN:-}",
+					"CONFIG":   "${PLUGIN_ROOT}/config.json",
 				},
 			},
 			"remote": map[string]any{
-				"type": "streamable-http", "url": "https://example.com/mcp",
+				"type": "streamable-http", "url": "https://example.com/mcp?client=claude-code-plugin",
 				"headers": map[string]string{
-					"Authorization": "${REMOTE_TOKEN}",
+					"Authorization": "${CONTEXT7_API_KEY:-}",
+					"X-Required":    "${REMOTE_TOKEN}",
 					"X-Tenant":      "public",
 				},
 			},
@@ -614,14 +626,19 @@ func TestLoadPackageNormalizesSecretEnvironmentBindingsWithoutPersistingValues(t
 		t.Fatalf("MCP components = %+v", pkg.Components.MCP)
 	}
 	local := pkg.Components.MCP[0]
-	if local.EnvBindings["TOKEN"] != "DEMO_TOKEN" || local.Environment["CONFIG"] != "${PLUGIN_ROOT}/config.json" {
+	if local.EnvBindings["TOKEN"] != "DEMO_TOKEN" || local.EnvBindings["OPTIONAL"] != "OPTIONAL_TOKEN" ||
+		local.Environment["CONFIG"] != "${PLUGIN_ROOT}/config.json" {
 		t.Fatalf("stdio env normalization = %+v bindings=%+v", local.Environment, local.EnvBindings)
 	}
 	if _, ok := local.Environment["TOKEN"]; ok {
 		t.Fatalf("secret env reference remained a static value: %+v", local.Environment)
 	}
 	remote := pkg.Components.MCP[1]
-	if remote.HeaderEnv["Authorization"] != "REMOTE_TOKEN" || remote.Headers["X-Tenant"] != "public" {
+	if remote.URL != "https://example.com/mcp?client=claude-code-plugin" {
+		t.Fatalf("remote URL = %q", remote.URL)
+	}
+	if remote.HeaderEnv["Authorization"] != "CONTEXT7_API_KEY" || remote.HeaderEnv["X-Required"] != "REMOTE_TOKEN" ||
+		remote.Headers["X-Tenant"] != "public" {
 		t.Fatalf("HTTP header normalization = headers=%+v env=%+v", remote.Headers, remote.HeaderEnv)
 	}
 	if _, ok := remote.Headers["Authorization"]; ok {
@@ -630,6 +647,9 @@ func TestLoadPackageNormalizesSecretEnvironmentBindingsWithoutPersistingValues(t
 	required := strings.Join(append(append([]string{}, local.RequiredEnv...), remote.RequiredEnv...), ",")
 	if !strings.Contains(required, "DEMO_TOKEN") || !strings.Contains(required, "REMOTE_TOKEN") {
 		t.Fatalf("required env names = %q", required)
+	}
+	if strings.Contains(required, "OPTIONAL_TOKEN") || strings.Contains(required, "CONTEXT7_API_KEY") {
+		t.Fatalf("optional bindings were marked required: %q", required)
 	}
 
 	manager, err := NewManager(filepath.Join(t.TempDir(), ".agentdock"))
@@ -652,41 +672,21 @@ func TestLoadPackageNormalizesSecretEnvironmentBindingsWithoutPersistingValues(t
 	}
 }
 
-func TestLoadPackageRejectsSensitiveLiteralEnvAndCredentialQuery(t *testing.T) {
-	tests := []struct {
-		name   string
-		server map[string]any
-		want   string
-	}{
-		{
-			name: "sensitive literal env",
-			server: map[string]any{
+func TestLoadPackageRejectsSensitiveLiteralEnv(t *testing.T) {
+	root := t.TempDir()
+	writeTestPlugin(t, root, "demo.plugin", "1.0.0", false)
+	writeJSONFile(t, filepath.Join(root, "mcp.json"), map[string]any{
+		"$schema": mcpSchemaURI,
+		"mcpServers": map[string]any{
+			"bad": map[string]any{
 				"type": "stdio", "command": "node",
 				"env": map[string]string{"API_KEY": "literal-secret"},
 			},
-			want: "must use a ${ENV_NAME} binding",
 		},
-		{
-			name: "credential query",
-			server: map[string]any{
-				"type": "streamable-http", "url": "https://example.com/mcp?token=literal-secret",
-			},
-			want: "query parameters",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
-			writeTestPlugin(t, root, "demo.plugin", "1.0.0", false)
-			writeJSONFile(t, filepath.Join(root, "mcp.json"), map[string]any{
-				"$schema":    mcpSchemaURI,
-				"mcpServers": map[string]any{"bad": test.server},
-			})
-			_, err := LoadPackage(root)
-			if err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("LoadPackage() error = %v, want %q", err, test.want)
-			}
-		})
+	})
+	_, err := LoadPackage(root)
+	if err == nil || !strings.Contains(err.Error(), "must use a ${ENV_NAME} binding") {
+		t.Fatalf("LoadPackage() error = %v, want sensitive literal rejection", err)
 	}
 }
 

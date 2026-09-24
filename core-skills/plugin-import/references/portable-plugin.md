@@ -90,7 +90,9 @@ https://agent-plugins.org/schemas/1.0.0/plugin.schema.json
 
 根目录 `mcp.json` 使用 AgentDock Portable MCP 配置。只写 AgentDock Core 明确定义且能保持语义的 transport、URL/command、args、cwd、env/header 绑定等字段。
 
-如果外部 MCP 配置带有 AgentDock 无法等价表达的认证或 transport 语义，不要静默丢弃后继续安装；在导入报告中明确指出。
+- Remote MCP URL 可以保留普通 query 参数；仍禁止 URL userinfo 和 fragment，凭据应放在 env-backed header 中。
+- `${ENV_NAME}` 表示必填绑定；`${ENV_NAME:-}` 表示可选绑定。可选 header 在对应环境变量未配置或为空时不会发送该 Header。
+- 如果外部 MCP 配置带有 AgentDock 无法等价表达的认证或 transport 语义，不要静默丢弃后继续安装；在导入报告中明确指出。
 
 ## Review
 
