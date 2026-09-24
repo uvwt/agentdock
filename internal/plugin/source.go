@@ -182,6 +182,28 @@ func cleanPluginRelativePath(value string) (string, error) {
 	return clean, nil
 }
 
+// SnapshotRuntimePackage copies one already-installed Plugin package into
+// AgentDock-owned temporary storage for writable stdio runtime use. The
+// reviewed package itself remains immutable, so runtime-generated files do not
+// invalidate the persisted package digest.
+func (s *Store) SnapshotRuntimePackage(packageRoot string) (string, error) {
+	packageRoot = filepath.Clean(strings.TrimSpace(packageRoot))
+	relative, err := filepath.Rel(s.pluginRoot, packageRoot)
+	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return "", errors.New("Plugin runtime source must be inside installed Plugin storage")
+	}
+
+	runtimeRoot, err := s.TempPath("mcp-runtime")
+	if err != nil {
+		return "", err
+	}
+	if err := snapshotPluginTree(packageRoot, runtimeRoot, maxPluginExtractedBytes, maxPluginArchiveFiles); err != nil {
+		_ = os.RemoveAll(runtimeRoot)
+		return "", err
+	}
+	return runtimeRoot, nil
+}
+
 func snapshotPluginTree(source, destination string, maxBytes int64, maxFiles int) error {
 	source = filepath.Clean(source)
 	root, err := os.OpenRoot(source)

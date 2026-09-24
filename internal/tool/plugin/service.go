@@ -404,12 +404,15 @@ func (s *Service) ownedMCPConfigs(excludedPlugin, activationPlugin string, overr
 		return nil, nil, err
 	}
 	add := func(item pluginruntime.Installed, release func()) error {
-		pluginConfigs, err := s.mcpConfigsForInstalled(item)
+		pluginConfigs, cleanup, err := s.mcpConfigsForInstalled(item)
 		if err != nil {
 			release()
 			return err
 		}
-		leases[item.Name] = release
+		leases[item.Name] = func() {
+			cleanup()
+			release()
+		}
 		configs = append(configs, pluginConfigs...)
 		return nil
 	}
@@ -452,41 +455,56 @@ func (s *Service) ownedMCPConfigs(excludedPlugin, activationPlugin string, overr
 	return configs, leases, nil
 }
 
-func (s *Service) mcpConfigsForInstalled(item pluginruntime.Installed) ([]mcpclient.ServerConfig, error) {
+func (s *Service) mcpConfigsForInstalled(item pluginruntime.Installed) ([]mcpclient.ServerConfig, func(), error) {
 	dataDir, err := s.manager.EnsureDataDir(item.Name)
 	if err != nil {
-		return nil, fmt.Errorf("prepare Plugin data directory for %s: %w", item.Name, err)
+		return nil, nil, fmt.Errorf("prepare Plugin data directory for %s: %w", item.Name, err)
 	}
 	pkg, err := pluginruntime.LoadPackage(item.Root)
 	if err != nil {
-		return nil, fmt.Errorf("load installed Plugin %s MCP config: %w", item.Name, err)
+		return nil, nil, fmt.Errorf("load installed Plugin %s MCP config: %w", item.Name, err)
 	}
 	if pkg.Manifest.Name != item.Name || pkg.Manifest.Version != item.Version || pkg.PackageDigest != item.PackageDigest {
-		return nil, fmt.Errorf("installed Plugin %s package drifted from persisted state", item.Name)
+		return nil, nil, fmt.Errorf("installed Plugin %s package drifted from persisted state", item.Name)
+	}
+
+	runtimeRoot := item.Root
+	cleanup := func() {}
+	for _, component := range pkg.Components.MCP {
+		if component.Transport != mcpclient.TransportStdio {
+			continue
+		}
+		runtimeRoot, err = s.manager.Store().SnapshotRuntimePackage(item.Root)
+		if err != nil {
+			return nil, nil, fmt.Errorf("snapshot Plugin %s stdio runtime: %w", item.Name, err)
+		}
+		cleanup = func() { _ = os.RemoveAll(runtimeRoot) }
+		break
 	}
 
 	configs := make([]mcpclient.ServerConfig, 0, len(pkg.Components.MCP))
 	for _, component := range pkg.Components.MCP {
 		command := component.Command
 		if strings.HasPrefix(filepath.ToSlash(command), "./") {
-			command = filepath.Join(item.Root, filepath.FromSlash(strings.TrimPrefix(filepath.ToSlash(command), "./")))
+			command = filepath.Join(runtimeRoot, filepath.FromSlash(strings.TrimPrefix(filepath.ToSlash(command), "./")))
 		}
 		args := make([]string, len(component.Args))
 		for index, value := range component.Args {
-			args[index] = expandPortablePluginValue(value, item.Root, dataDir)
+			args[index] = expandPortablePluginValue(value, runtimeRoot, dataDir)
 		}
 		staticEnv := make(map[string]string, len(component.Environment))
 		for key, value := range component.Environment {
-			staticEnv[key] = expandPortablePluginValue(value, item.Root, dataDir)
+			staticEnv[key] = expandPortablePluginValue(value, runtimeRoot, dataDir)
 		}
 		cwd := ""
 		if component.Transport == mcpclient.TransportStdio {
-			cwd = item.Root
+			cwd = runtimeRoot
 			if component.CWD != "" {
-				cwd = expandPortablePluginValue(component.CWD, item.Root, dataDir)
+				cwd = expandPortablePluginValue(component.CWD, runtimeRoot, dataDir)
 			}
-			if err := validateActivatedPluginCWD(cwd, component.CWD, item.Root, dataDir); err != nil {
-				return nil, fmt.Errorf("activate Plugin MCP %s/%s cwd: %w", item.Name, component.Name, err)
+			if err := validateActivatedPluginCWD(cwd, component.CWD, runtimeRoot, dataDir); err != nil {
+				cleanup()
+				return nil, nil, fmt.Errorf("activate Plugin MCP %s/%s cwd: %w", item.Name, component.Name, err)
 			}
 		}
 		configs = append(configs, mcpclient.ServerConfig{
@@ -497,10 +515,10 @@ func (s *Service) mcpConfigsForInstalled(item pluginruntime.Installed) ([]mcpcli
 			HeaderEnv: cloneMap(component.HeaderEnv), EnvBindings: cloneMap(component.EnvBindings),
 			RequiredEnv: append([]string(nil), component.RequiredEnv...),
 			StorageKey:  component.StorageKey, SourceType: "plugin", PluginName: item.Name,
-			PluginRoot: item.Root, PluginDataDir: dataDir, Enabled: true, TimeoutMS: component.TimeoutMS,
+			PluginRoot: runtimeRoot, PluginDataDir: dataDir, Enabled: true, TimeoutMS: component.TimeoutMS,
 		})
 	}
-	return configs, nil
+	return configs, cleanup, nil
 }
 
 func expandPortablePluginValue(value, pluginRoot, pluginData string) string {
