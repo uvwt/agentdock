@@ -57,6 +57,7 @@ https://agent-plugins.org/schemas/1.0.0/plugin.schema.json
 {
   "provenance": {
     "origin": "https://github.com/example/plugins",
+    "ref": "main",
     "revision": "0123456789abcdef0123456789abcdef01234567",
     "subdir": "plugins/example",
     "format": "openai",
@@ -68,12 +69,28 @@ https://agent-plugins.org/schemas/1.0.0/plugin.schema.json
 字段含义：
 
 - `origin`：原始上游身份，例如仓库 URL；自动转换拿不到稳定上游地址时使用原始本地包内容的 `sha256:...` 摘要，不记录临时本地路径；
+- `ref`：可选的可跟踪 ref，例如用户明确指定或实际确认的 branch/tag；不要猜默认分支；
 - `revision`：具体 commit、tag 对应不可变 revision 或来源摘要；
 - `subdir`：原始仓库内的 Plugin 相对目录；
 - `format`：原始格式标签，仅用于 provenance，不改变 Core 解析行为；
 - `adapted`：内容是否经过导入转换。
 
 不要把临时目录、临时 ZIP 路径或 secret 写进 provenance。
+
+### `.agentdock-import.json`
+
+远程导入时，模型可在准备好的 Plugin 根目录写一个临时来源 sidecar，把对话和获取阶段已经确认的来源信息交给 Core：
+
+```json
+{
+  "origin": "https://github.com/example/plugins",
+  "ref": "main",
+  "revision": "0123456789abcdef0123456789abcdef01234567",
+  "subdir": "plugins/example"
+}
+```
+
+sidecar 只允许 `origin/ref/revision/subdir`。Core 会严格校验这些字段，在 AgentDock 自己的 staging snapshot 中消费并删除它，再根据真实 Plugin 格式补充 `format/adapted` 并写入最终 canonical provenance。用户只提供匿名本地目录或 ZIP 时不要创建 sidecar。
 
 对于 HTTP/HTTPS `origin`，使用稳定、无凭据的来源 URL：
 - 不要包含 `user:password@host` 或 token/userinfo；

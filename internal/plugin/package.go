@@ -308,11 +308,12 @@ func validateProvenance(provenance *Provenance) error {
 		return nil
 	}
 	provenance.Origin = strings.TrimSpace(provenance.Origin)
+	provenance.Ref = strings.TrimSpace(provenance.Ref)
 	provenance.Revision = strings.TrimSpace(provenance.Revision)
 	provenance.Subdir = strings.TrimSpace(strings.ReplaceAll(provenance.Subdir, "\\", "/"))
 	provenance.Format = strings.TrimSpace(provenance.Format)
 	for field, value := range map[string]string{
-		"origin": provenance.Origin, "revision": provenance.Revision,
+		"origin": provenance.Origin, "ref": provenance.Ref, "revision": provenance.Revision,
 		"subdir": provenance.Subdir, "format": provenance.Format,
 	} {
 		if containsControlCharacter(value) {

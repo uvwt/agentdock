@@ -34,6 +34,27 @@ func (m *Manager) normalizeStagedPlugin(staged stagedPluginSource) (string, Pack
 		return "", Package{}, func() {}, err
 	}
 	if format == pluginFormatPortable {
+		if staged.ImportProvenance != nil {
+			canonical, err := m.store.TempPath("portable-canonical")
+			if err != nil {
+				return "", Package{}, func() {}, err
+			}
+			cleanup := func() { _ = os.RemoveAll(canonical) }
+			if err := snapshotPluginTree(staged.Root, canonical, maxPluginExtractedBytes, maxPluginArchiveFiles); err != nil {
+				cleanup()
+				return "", Package{}, func() {}, pluginError("PLUGIN_FORMAT_CONVERSION_FAILED", "format.portable_snapshot", err)
+			}
+			if err := writePortableImportProvenance(canonical, staged.ImportProvenance); err != nil {
+				cleanup()
+				return "", Package{}, func() {}, pluginError("PLUGIN_FORMAT_CONVERSION_FAILED", "format.portable_provenance", err)
+			}
+			pkg, err := LoadPackage(canonical)
+			if err != nil {
+				cleanup()
+				return "", Package{}, func() {}, err
+			}
+			return canonical, pkg, cleanup, nil
+		}
 		pkg, err := LoadPackage(staged.Root)
 		if err != nil {
 			return "", Package{}, func() {}, err
@@ -58,9 +79,9 @@ func (m *Manager) normalizeStagedPlugin(staged stagedPluginSource) (string, Pack
 	var compatibility Compatibility
 	switch format {
 	case pluginFormatOpenAI:
-		compatibility, err = normalizeOpenAIPlugin(staged.Root, working, sourceDigest)
+		compatibility, err = normalizeOpenAIPlugin(staged.Root, working, sourceDigest, staged.ImportProvenance)
 	case pluginFormatClaude:
-		compatibility, err = normalizeClaudePlugin(staged.Root, working, sourceDigest)
+		compatibility, err = normalizeClaudePlugin(staged.Root, working, sourceDigest, staged.ImportProvenance)
 	default:
 		err = fmt.Errorf("unsupported Plugin format %q", format)
 	}
@@ -132,7 +153,7 @@ func detectPluginFormat(root string) (string, error) {
 	}
 }
 
-func normalizeOpenAIPlugin(sourceRoot, normalizedRoot, sourceDigest string) (Compatibility, error) {
+func normalizeOpenAIPlugin(sourceRoot, normalizedRoot, sourceDigest string, importProvenance *Provenance) (Compatibility, error) {
 	raw, err := readJSONObject(filepath.Join(sourceRoot, ".codex-plugin", "plugin.json"), maxManifestBytes)
 	if err != nil {
 		return Compatibility{}, err
@@ -141,7 +162,7 @@ func normalizeOpenAIPlugin(sourceRoot, normalizedRoot, sourceDigest string) (Com
 		Format:    pluginFormatOpenAI,
 		Supported: []string{"metadata", "skills", "mcp"},
 	}
-	manifest, unsupported, warnings, err := normalizeExternalManifest(raw, pluginFormatOpenAI, sourceDigest)
+	manifest, unsupported, warnings, err := normalizeExternalManifest(raw, pluginFormatOpenAI, sourceDigest, importProvenance)
 	if err != nil {
 		return Compatibility{}, err
 	}
@@ -175,7 +196,7 @@ func normalizeOpenAIPlugin(sourceRoot, normalizedRoot, sourceDigest string) (Com
 	return compatibility, nil
 }
 
-func normalizeClaudePlugin(sourceRoot, normalizedRoot, sourceDigest string) (Compatibility, error) {
+func normalizeClaudePlugin(sourceRoot, normalizedRoot, sourceDigest string, importProvenance *Provenance) (Compatibility, error) {
 	raw, err := readJSONObject(filepath.Join(sourceRoot, ".claude-plugin", "plugin.json"), maxManifestBytes)
 	if err != nil {
 		return Compatibility{}, err
@@ -184,7 +205,7 @@ func normalizeClaudePlugin(sourceRoot, normalizedRoot, sourceDigest string) (Com
 		Format:    pluginFormatClaude,
 		Supported: []string{"metadata", "skills", "mcp"},
 	}
-	manifest, unsupported, warnings, err := normalizeExternalManifest(raw, pluginFormatClaude, sourceDigest)
+	manifest, unsupported, warnings, err := normalizeExternalManifest(raw, pluginFormatClaude, sourceDigest, importProvenance)
 	if err != nil {
 		return Compatibility{}, err
 	}
@@ -225,7 +246,7 @@ func normalizeClaudePlugin(sourceRoot, normalizedRoot, sourceDigest string) (Com
 	return compatibility, nil
 }
 
-func normalizeExternalManifest(raw map[string]json.RawMessage, format, sourceDigest string) (Manifest, []string, []string, error) {
+func normalizeExternalManifest(raw map[string]json.RawMessage, format, sourceDigest string, importProvenance *Provenance) (Manifest, []string, []string, error) {
 	readString := func(name string) (string, error) {
 		value, ok := raw[name]
 		if !ok || isJSONEmpty(value) {
@@ -293,22 +314,29 @@ func normalizeExternalManifest(raw map[string]json.RawMessage, format, sourceDig
 		manifest.Author = &author
 	}
 
-	origin := strings.TrimSpace(manifest.Repository)
-	if origin == "" {
-		origin = strings.TrimSpace(manifest.Homepage)
-	}
-	if origin == "" {
-		origin = strings.TrimSpace(sourceDigest)
-	}
-	revision := ""
-	if origin != sourceDigest {
-		revision = sourceDigest
-	}
-	manifest.Provenance = &Provenance{
-		Origin:   origin,
-		Revision: revision,
-		Format:   format,
-		Adapted:  true,
+	if importProvenance != nil {
+		provenance := *importProvenance
+		provenance.Format = format
+		provenance.Adapted = true
+		manifest.Provenance = &provenance
+	} else {
+		origin := strings.TrimSpace(manifest.Repository)
+		if origin == "" {
+			origin = strings.TrimSpace(manifest.Homepage)
+		}
+		if origin == "" {
+			origin = strings.TrimSpace(sourceDigest)
+		}
+		revision := ""
+		if origin != sourceDigest {
+			revision = sourceDigest
+		}
+		manifest.Provenance = &Provenance{
+			Origin:   origin,
+			Revision: revision,
+			Format:   format,
+			Adapted:  true,
+		}
 	}
 
 	metadataFields := map[string]bool{
@@ -783,6 +811,27 @@ func replaceClaudePlaceholdersValue(value any) any {
 
 func writePortableManifest(root string, manifest Manifest) error {
 	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(filepath.Join(root, "plugin.json"), data, 0o600)
+}
+
+func writePortableImportProvenance(root string, imported *Provenance) error {
+	raw, err := readJSONObject(filepath.Join(root, "plugin.json"), maxManifestBytes)
+	if err != nil {
+		return err
+	}
+	provenance := *imported
+	provenance.Format = pluginFormatPortable
+	provenance.Adapted = false
+	encoded, err := json.Marshal(provenance)
+	if err != nil {
+		return err
+	}
+	raw["provenance"] = encoded
+	data, err := json.MarshalIndent(raw, "", "  ")
 	if err != nil {
 		return err
 	}

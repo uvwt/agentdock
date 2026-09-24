@@ -25,10 +25,11 @@ description: 当用户要安装或更新来自 Git、GitHub、外部插件市场
 本 Skill 负责：
 
 1. 获取外部内容并尽量固定可追踪的 revision/digest；
-2. 把目标 Plugin 目录或 ZIP 准备到本地；
-3. 对 Core 尚不认识的其他格式，才由模型做显式转换；
-4. 调用 `plugin_manage validate`，检查自动识别结果、warnings、unsupported、provenance；
-5. 使用 validate 返回的 review token 安装或更新。
+2. 对明确的远程来源生成根目录 `.agentdock-import.json`，把用户给出的来源和已验证的 revision/ref/subdir 交给 Core；
+3. 把目标 Plugin 目录或 ZIP 准备到本地；
+4. 对 Core 尚不认识的其他格式，才由模型做显式转换；
+5. 调用 `plugin_manage validate`，检查自动识别结果、warnings、unsupported、provenance；
+6. 使用 validate 返回的 review token 安装或更新。
 
 本 Skill 不负责绕过 Core 校验，也不要对 OpenAI/Claude 包做重复转换。
 
@@ -44,12 +45,21 @@ description: 当用户要安装或更新来自 Git、GitHub、外部插件市场
    - OpenAI `.codex-plugin/plugin.json`、Claude `.claude-plugin/plugin.json` 和 AgentDock `plugin.json` 都交给 Core 自动识别。
    - 不要为了“兼容”先删除 commands/note 等字段；让 Core 在 review 中区分可忽略 warning 与必须阻塞的 unsupported 语义。
 
-3. **仅在 Core 不认识格式时显式转换**
+3. **交接远程来源**
+   - 只有当来源是用户明确给出的远程地址，或本次获取流程能够可靠证明远程来源时，才在目标 Plugin 根目录写 `.agentdock-import.json`。
+   - sidecar 只允许 `origin`、`ref`、`revision`、`subdir`；不要写 `format`、`adapted`，这两个字段由 Core 根据真实格式生成。
+   - `origin` 使用稳定、无凭据的上游地址；Git 来源的 `revision` 优先填写实际解析到的 commit SHA，`ref` 只在用户输入或实际仓库状态能确认时填写，`subdir` 只在来源明确指向仓库子目录时填写。
+   - GitHub/GitLab 的 tree/blob 子目录 URL 要拆成稳定仓库 `origin` + 已确认的 `ref` + Plugin `subdir`，不要把浏览器页面 URL 整体当作长期 `origin`。
+   - 不确定的字段留空，不要根据仓库名、默认分支或 URL 习惯猜测。
+   - 用户只给本地目录或本地 ZIP，且无法证明其远程来源时，不创建 sidecar；Core 会使用内容摘要作为匿名本地 provenance。
+   - Core 只在自己的 staging snapshot 中读取并移除 sidecar；它不会修改原始来源，也不会把 sidecar 安装进最终 Plugin。
+
+4. **仅在 Core 不认识格式时显式转换**
    - 对其他生态格式，模型才建立 Portable 目录并写 `plugin.json` / `mcp.json`。
    - 对认证、执行权限、hook、agent 等存在语义差异的能力，不要臆造等价行为。
    - 不把未知字段原样塞进 Portable manifest 企图绕过校验。
 
-4. **验证并安装**
+5. **验证并安装**
    - 先调用 `plugin_manage(action="validate", source=<本地目录或ZIP>)`。
    - 检查 `valid`、warnings、unsupported、executables、Skills、MCP、provenance。
    - 安装使用 validate 返回的原样 `review_token`。
@@ -66,7 +76,7 @@ description: 当用户要安装或更新来自 Git、GitHub、外部插件市场
 ## 安全要求
 
 - 最终安装输入只能是本地目录或本地 ZIP；Core 自动识别 Portable/OpenAI/Claude，不接受远程 URL。
-- 不把 secret 写进 `plugin.json`、Skill、MCP 配置或 provenance。
+- 不把 secret 写进 `plugin.json`、`.agentdock-import.json`、Skill、MCP 配置或 provenance。
 - 不保留来源仓库中的符号链接、路径逃逸结构或特殊文件。
 - 不静默改变 MCP 认证、安全或网络语义。
 - 不执行来源仓库的安装脚本、hook 或未知二进制来完成“导入”。

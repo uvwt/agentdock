@@ -14,6 +14,7 @@ const (
 // It is part of plugin.json, so it is covered by the package digest and review token.
 type Provenance struct {
 	Origin   string `json:"origin"`
+	Ref      string `json:"ref,omitempty"`
 	Revision string `json:"revision,omitempty"`
 	Subdir   string `json:"subdir,omitempty"`
 	Format   string `json:"format,omitempty"`

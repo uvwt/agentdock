@@ -2,6 +2,8 @@ package plugin
 
 import (
 	"archive/zip"
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,14 +15,24 @@ import (
 )
 
 const (
-	maxPluginArchiveBytes   = int64(64 << 20)
-	maxPluginExtractedBytes = int64(256 << 20)
-	maxPluginArchiveFiles   = 10000
+	maxPluginArchiveBytes        = int64(64 << 20)
+	maxPluginExtractedBytes      = int64(256 << 20)
+	maxPluginArchiveFiles        = 10000
+	maxPluginImportMetadataBytes = int64(16 << 10)
+	pluginImportMetadataFile     = ".agentdock-import.json"
 )
 
 type stagedPluginSource struct {
-	Root    string
-	Cleanup func()
+	Root             string
+	ImportProvenance *Provenance
+	Cleanup          func()
+}
+
+type pluginImportMetadata struct {
+	Origin   string `json:"origin"`
+	Ref      string `json:"ref,omitempty"`
+	Revision string `json:"revision,omitempty"`
+	Subdir   string `json:"subdir,omitempty"`
 }
 
 // stagePluginSource snapshots a local Plugin directory or extracts a local
@@ -64,7 +76,12 @@ func (m *Manager) stagePluginDirectory(source string) (stagedPluginSource, error
 		cleanup()
 		return stagedPluginSource{}, pluginError("PLUGIN_SOURCE_INVALID", "source.snapshot", err)
 	}
-	return stagedPluginSource{Root: snapshot, Cleanup: cleanup}, nil
+	provenance, err := consumePluginImportMetadata(snapshot)
+	if err != nil {
+		cleanup()
+		return stagedPluginSource{}, pluginError("PLUGIN_SOURCE_INVALID", "source.import_metadata", err)
+	}
+	return stagedPluginSource{Root: snapshot, ImportProvenance: provenance, Cleanup: cleanup}, nil
 }
 
 func (m *Manager) stagePluginArchive(source string, size int64) (stagedPluginSource, error) {
@@ -90,7 +107,61 @@ func (m *Manager) stagePluginArchive(source string, size int64) (stagedPluginSou
 		cleanup()
 		return stagedPluginSource{}, pluginError("PLUGIN_SOURCE_INVALID", "source.archive.root", err)
 	}
-	return stagedPluginSource{Root: root, Cleanup: cleanup}, nil
+	provenance, err := consumePluginImportMetadata(root)
+	if err != nil {
+		cleanup()
+		return stagedPluginSource{}, pluginError("PLUGIN_SOURCE_INVALID", "source.import_metadata", err)
+	}
+	return stagedPluginSource{Root: root, ImportProvenance: provenance, Cleanup: cleanup}, nil
+}
+
+// consumePluginImportMetadata reads acquisition metadata only from the
+// AgentDock-owned staging snapshot, then removes the sidecar before format
+// detection and package hashing. The source package is never mutated and the
+// transport metadata cannot become installed Plugin content.
+func consumePluginImportMetadata(root string) (*Provenance, error) {
+	path := filepath.Join(root, pluginImportMetadataFile)
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, errors.New(".agentdock-import.json must be a regular file")
+	}
+	if info.Size() > maxPluginImportMetadataBytes {
+		return nil, fmt.Errorf(".agentdock-import.json exceeds %d bytes", maxPluginImportMetadataBytes)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var metadata pluginImportMetadata
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&metadata); err != nil {
+		return nil, fmt.Errorf("invalid .agentdock-import.json: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = errors.New("contains trailing JSON")
+		}
+		return nil, fmt.Errorf("invalid .agentdock-import.json: %w", err)
+	}
+	provenance := &Provenance{
+		Origin: metadata.Origin, Ref: metadata.Ref,
+		Revision: metadata.Revision, Subdir: metadata.Subdir,
+	}
+	if err := validateProvenance(provenance); err != nil {
+		return nil, fmt.Errorf("invalid .agentdock-import.json: %w", err)
+	}
+	if err := os.Remove(path); err != nil {
+		return nil, fmt.Errorf("consume .agentdock-import.json: %w", err)
+	}
+	return provenance, nil
 }
 
 func extractPluginZip(path, destination string) error {
