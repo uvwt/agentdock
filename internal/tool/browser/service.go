@@ -33,6 +33,20 @@ type Service struct {
 	discoverCDP       func(context.Context) ([]cdpCandidate, error)
 }
 
+func localExecAllocatorOptions(executablePath, profileDir string, req StartRequest) []chromedp.ExecAllocatorOption {
+	options := append([]chromedp.ExecAllocatorOption{}, chromedp.DefaultExecAllocatorOptions[:]...)
+	return append(options,
+		chromedp.ExecPath(executablePath),
+		chromedp.UserDataDir(profileDir),
+		chromedp.WindowSize(req.Viewport.Width, req.Viewport.Height),
+		chromedp.Flag("headless", req.Headless),
+		chromedp.Flag("disable-features", "site-per-process,Translate,BlinkGenPropertyTrees,BackForwardCache"),
+		chromedp.Flag("no-first-run", true),
+		chromedp.Flag("no-default-browser-check", true),
+		chromedp.WSURLReadTimeout(req.Timeout),
+	)
+}
+
 func New(cfg Config, publishScreenshot ScreenshotPublisher) *Service {
 	return &Service{
 		cfg:               cfg,
@@ -147,16 +161,7 @@ func (s *Service) start(ctx context.Context, req StartRequest) (StartResult, err
 			return StartResult{}, browserError(ErrLaunchFailed, "create browser profile", "browser_launch", &ErrorDetails{ProfileID: profileID}, err)
 		}
 
-		allocatorOptions := append([]chromedp.ExecAllocatorOption{}, chromedp.DefaultExecAllocatorOptions[:]...)
-		allocatorOptions = append(allocatorOptions,
-			chromedp.ExecPath(executable.Path),
-			chromedp.UserDataDir(profileDir),
-			chromedp.WindowSize(req.Viewport.Width, req.Viewport.Height),
-			chromedp.Flag("headless", req.Headless),
-			chromedp.Flag("disable-features", "site-per-process,Translate,BlinkGenPropertyTrees,BackForwardCache"),
-			chromedp.Flag("no-first-run", true),
-			chromedp.Flag("no-default-browser-check", true),
-		)
+		allocatorOptions := localExecAllocatorOptions(executable.Path, profileDir, req)
 		allocatorCtx, allocatorCancel := chromedp.NewExecAllocator(context.Background(), allocatorOptions...)
 		browserCtx, browserCancel := chromedp.NewContext(allocatorCtx)
 		sess = &session{
