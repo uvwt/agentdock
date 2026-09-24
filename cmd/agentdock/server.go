@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/uvwt/agentdock/cmd/agentdock/internal/logx"
 	"github.com/uvwt/agentdock/internal/app"
@@ -21,9 +22,11 @@ import (
 	"github.com/uvwt/agentdock/internal/nexusbridge"
 	"github.com/uvwt/agentdock/internal/publicartifacts"
 	"github.com/uvwt/agentdock/internal/selfupdate"
+	"github.com/uvwt/agentdock/internal/startupdiag"
 )
 
 func runServer(ctx context.Context, args []string, stderr io.Writer) error {
+	serverConfigStartedAt := time.Now()
 	// 旧 Nexus 环境凭据已被配对身份取代。启动前主动清除，避免废弃密钥
 	// 继续留在进程环境并被后续启动的本地工具继承。
 	_ = os.Unsetenv("AGENTDOCK_NEXUS_ENDPOINT")
@@ -84,16 +87,26 @@ func runServer(ctx context.Context, args []string, stderr io.Writer) error {
 		slog.Error("NexusDock device identity ignored", "error", identityErr)
 	}
 	logx.Setup(cfg.LogLevel, stderr)
-	if err := selfupdate.RepairDesktopRuntimeIfNeeded(ctx, stderr); err != nil {
+	startupdiag.Log(slog.Default(), "core", "server_config", serverConfigStartedAt)
+
+	repairStartedAt := time.Now()
+	repairErr := selfupdate.RepairDesktopRuntimeIfNeeded(ctx, stderr)
+	if repairErr != nil {
+		startupdiag.Log(slog.Default(), "core", "desktop_runtime_repair", repairStartedAt, slog.String("result", "skipped"))
 		// Windows v0.7.4 及更早版本只会替换 core。新版 core 启动时尝试补齐同版本控制面板，
 		// 失败不应阻断 MCP 服务启动；保留明确日志并在下次启动继续重试。
-		slog.Warn("desktop runtime repair skipped", "error", err)
+		slog.Warn("desktop runtime repair skipped", "error", repairErr)
+	} else {
+		startupdiag.Log(slog.Default(), "core", "desktop_runtime_repair", repairStartedAt, slog.String("result", "ok"))
 	}
 	slog.Info("server starting", "agentdock_home", cfg.AgentDockHome, "agentdock_default_dir", cfg.AgentDockDefaultDir, "path_model", config.PathModel, "host", cfg.Host, "port", cfg.Port, "stdio", cfg.Stdio, "log_level", cfg.LogLevel, "recall_enabled", cfg.NexusEndpoint != "", "nexus_enabled", cfg.NexusEndpoint != "", "mcp_apps_enabled", cfg.MCPAppsEnabled, "browser_enabled", cfg.BrowserEnabled)
+	runtimeInitStartedAt := time.Now()
 	runtime, err := app.NewRuntime(cfg)
 	if err != nil {
+		startupdiag.Log(slog.Default(), "core", "runtime_init", runtimeInitStartedAt, slog.String("result", "error"))
 		return err
 	}
+	startupdiag.Log(slog.Default(), "core", "runtime_init", runtimeInitStartedAt, slog.String("result", "ok"))
 	defer func() {
 		if err := runtime.Close(); err != nil {
 			slog.Warn("runtime close failed", "error", err)

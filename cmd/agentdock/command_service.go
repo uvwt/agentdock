@@ -6,13 +6,17 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/uvwt/agentdock/internal/desktopruntime"
+	"github.com/uvwt/agentdock/internal/startupdiag"
 )
 
 func runServiceCommand(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) > 0 && args[0] == "launch-core" {
+		launchStartedAt := time.Now()
 		flags := flag.NewFlagSet("agentdock service launch-core", flag.ContinueOnError)
 		flags.SetOutput(stderr)
 		runtimeRoot := flags.String("runtime-root", desktopruntime.DefaultRuntimeRoot(), "AgentDock 桌面运行目录")
@@ -32,12 +36,18 @@ func runServiceCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 			defer logOutput.Close()
 			stderr = logOutput
 		}
+		startupLogger := slog.New(slog.NewJSONHandler(stderr, nil))
+		startupdiag.Log(startupLogger, "core", "entry", launchStartedAt)
+
+		prepareStartedAt := time.Now()
 		if err := desktopruntime.PrepareCoreEnvironment(*runtimeRoot); err != nil {
+			startupdiag.Log(startupLogger, "core", "prepare_core_environment", prepareStartedAt, slog.String("result", "error"))
 			if logOutput != nil {
 				fmt.Fprintf(stderr, "agentdock: %v\n", err)
 			}
 			return err
 		}
+		startupdiag.Log(startupLogger, "core", "prepare_core_environment", prepareStartedAt, slog.String("result", "ok"))
 		err = runServer(ctx, nil, stderr)
 		if err != nil && logOutput != nil {
 			fmt.Fprintf(stderr, "agentdock: %v\n", err)

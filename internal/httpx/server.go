@@ -15,9 +15,11 @@ import (
 	"github.com/uvwt/agentdock/internal/mcp"
 	"github.com/uvwt/agentdock/internal/publicartifacts"
 	"github.com/uvwt/agentdock/internal/runtimeapi"
+	"github.com/uvwt/agentdock/internal/startupdiag"
 )
 
 func Serve(ctx context.Context, server *mcp.Server, runtime runtimeapi.Runtime, cfg config.Config) error {
+	listenStartedAt := time.Now()
 	authRequired := cfg.AuthRequired()
 	oauthStore := auth.NewOAuthStore()
 	if cfg.OAuthEnabled {
@@ -57,6 +59,7 @@ func Serve(ctx context.Context, server *mcp.Server, runtime runtimeapi.Runtime, 
 
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 	httpServer := newHTTPServer(addr, loggingMiddleware(mux))
+	startupdiag.Log(slog.Default(), "core", "http_listen", listenStartedAt, slog.String("addr", addr))
 	slog.Info("http server listening", "addr", addr)
 	return serveHTTP(ctx, httpServer)
 }
