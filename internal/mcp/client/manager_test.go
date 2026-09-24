@@ -594,7 +594,7 @@ func TestPluginOwnedStdioUsesStableEnvAndRuntimeProvenance(t *testing.T) {
 	}
 	defer manager.Close()
 
-	pluginRoot := t.TempDir()
+	pluginRuntimeRoot := t.TempDir()
 	pluginData := t.TempDir()
 	runtimeName := "plugin.demo.plugin.local"
 	if err := manager.SetOwnedServers([]ServerConfig{{
@@ -604,7 +604,7 @@ func TestPluginOwnedStdioUsesStableEnvAndRuntimeProvenance(t *testing.T) {
 		StaticEnv:   map[string]string{"GO_WANT_MCP_HELPER": "1", "MODE": "package-default"},
 		EnvBindings: map[string]string{"TOKEN": "DEMO_TOKEN"},
 		StorageKey:  storageKey, SourceType: "plugin", PluginName: "demo.plugin",
-		PluginRoot: pluginRoot, PluginDataDir: pluginData, Enabled: true,
+		PluginRuntimeRoot: pluginRuntimeRoot, PluginDataDir: pluginData, Enabled: true,
 	}}); err != nil {
 		t.Fatal(err)
 	}

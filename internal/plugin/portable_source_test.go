@@ -159,13 +159,13 @@ func TestPortableZIPRejectsTraversalAndSymlink(t *testing.T) {
 	}
 }
 
-func TestSnapshotRuntimePackageRejectsSourceOutsidePluginStorage(t *testing.T) {
+func TestCreateRuntimeSnapshotRejectsMismatchedInstalledPackage(t *testing.T) {
 	manager, err := NewManager(filepath.Join(t.TempDir(), ".agentdock"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	outside := t.TempDir()
-	if _, err := manager.Store().SnapshotRuntimePackage(outside); err == nil || !strings.Contains(err.Error(), "inside installed Plugin storage") {
-		t.Fatalf("SnapshotRuntimePackage(%q) error = %v", outside, err)
+	if _, err := manager.Store().CreateRuntimeSnapshot("demo.plugin", "1.0.0", outside); err == nil || !strings.Contains(err.Error(), "does not match installed Plugin package") {
+		t.Fatalf("CreateRuntimeSnapshot(%q) error = %v", outside, err)
 	}
 }

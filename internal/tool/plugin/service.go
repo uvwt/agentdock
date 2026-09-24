@@ -473,7 +473,7 @@ func (s *Service) mcpConfigsForInstalled(item pluginruntime.Installed) ([]mcpcli
 		if component.Transport != mcpclient.TransportStdio {
 			continue
 		}
-		runtimeRoot, err = s.manager.Store().SnapshotRuntimePackage(item.Root)
+		runtimeRoot, err = s.manager.Store().CreateRuntimeSnapshot(item.Name, item.Version, item.Root)
 		if err != nil {
 			return nil, nil, fmt.Errorf("snapshot Plugin %s stdio runtime: %w", item.Name, err)
 		}
@@ -514,7 +514,7 @@ func (s *Service) mcpConfigsForInstalled(item pluginruntime.Installed) ([]mcpcli
 			HeaderEnv: cloneMap(component.HeaderEnv), EnvBindings: cloneMap(component.EnvBindings),
 			RequiredEnv: append([]string(nil), component.RequiredEnv...),
 			StorageKey:  component.StorageKey, SourceType: "plugin", PluginName: item.Name,
-			PluginRoot: runtimeRoot, PluginDataDir: dataDir, Enabled: true, TimeoutMS: component.TimeoutMS,
+			PluginRuntimeRoot: runtimeRoot, PluginDataDir: dataDir, Enabled: true, TimeoutMS: component.TimeoutMS,
 		})
 	}
 	return configs, cleanup, nil

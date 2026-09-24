@@ -253,19 +253,34 @@ func cleanPluginRelativePath(value string) (string, error) {
 	return clean, nil
 }
 
-// SnapshotRuntimePackage copies one already-installed Plugin package into
-// AgentDock-owned temporary storage for writable stdio runtime use. The
-// reviewed package itself remains immutable, so runtime-generated files do not
-// invalidate the persisted package digest.
-func (s *Store) SnapshotRuntimePackage(packageRoot string) (string, error) {
+// CreateRuntimeSnapshot copies one already-installed Plugin package into a
+// writable runtime generation. The reviewed package itself remains immutable,
+// so runtime-generated files do not invalidate the persisted package digest.
+func (s *Store) CreateRuntimeSnapshot(name, version, packageRoot string) (string, error) {
+	name, err := pluginNamePathSegment(name)
+	if err != nil {
+		return "", err
+	}
+	version, err = pluginVersionPathSegment(version)
+	if err != nil {
+		return "", err
+	}
 	packageRoot = filepath.Clean(strings.TrimSpace(packageRoot))
-	relative, err := filepath.Rel(s.pluginRoot, packageRoot)
-	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
-		return "", errors.New("Plugin runtime source must be inside installed Plugin storage")
+	expectedRoot := filepath.Join(s.pluginRoot, name, version)
+	if packageRoot != expectedRoot {
+		return "", errors.New("Plugin runtime source does not match installed Plugin package")
 	}
 
-	runtimeRoot, err := s.TempPath("mcp-runtime")
+	runtimeParent := filepath.Join(s.runRoot, name, version)
+	if err := ensurePrivateDirectoryPath(s.runRoot, runtimeParent); err != nil {
+		return "", err
+	}
+	runtimeRoot, err := os.MkdirTemp(runtimeParent, "generation-")
 	if err != nil {
+		return "", err
+	}
+	if err := ensurePrivateDirectoryPath(s.runRoot, runtimeRoot); err != nil {
+		_ = os.RemoveAll(runtimeRoot)
 		return "", err
 	}
 	if err := snapshotPluginTree(packageRoot, runtimeRoot, maxPluginExtractedBytes, maxPluginArchiveFiles); err != nil {

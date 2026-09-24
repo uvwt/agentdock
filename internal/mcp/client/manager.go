@@ -129,8 +129,8 @@ func buildOwnedRegistry(standalone map[string]ServerConfig, configs []ServerConf
 		if cfg.StorageKey == "" {
 			return nil, nil, newError("MCP_CONFIG_INVALID", "owned MCP server requires a stable storage key", false, map[string]any{"server": cfg.Name}, nil)
 		}
-		if cfg.PluginRoot == "" || cfg.PluginDataDir == "" {
-			return nil, nil, newError("MCP_CONFIG_INVALID", "owned MCP server requires Plugin root and data directories", false, map[string]any{"server": cfg.Name}, nil)
+		if cfg.PluginRuntimeRoot == "" || cfg.PluginDataDir == "" {
+			return nil, nil, newError("MCP_CONFIG_INVALID", "owned MCP server requires Plugin runtime root and data directory", false, map[string]any{"server": cfg.Name}, nil)
 		}
 		if err := validateServerConfig(cfg); err != nil {
 			return nil, nil, newError("MCP_CONFIG_INVALID", err.Error(), false, map[string]any{"server": cfg.Name}, err)

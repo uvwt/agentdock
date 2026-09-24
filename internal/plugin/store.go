@@ -37,6 +37,7 @@ type Store struct {
 	stateRoot       string
 	transactionRoot string
 	dataRoot        string
+	runRoot         string
 	tempRoot        string
 	lockRoot        string
 
@@ -71,6 +72,7 @@ func NewStore(agentDockHome string) (*Store, error) {
 		stateRoot:       filepath.Join(home, "state", "plugins"),
 		transactionRoot: filepath.Join(home, "state", "plugins", "transactions"),
 		dataRoot:        filepath.Join(home, "data", "plugins"),
+		runRoot:         filepath.Join(home, "run", "plugins"),
 		tempRoot:        filepath.Join(home, "tmp", "plugins"),
 		lockRoot:        filepath.Join(home, "locks", "plugins"),
 		locks:           make(map[string]*sync.RWMutex),
@@ -91,6 +93,7 @@ func (s *Store) ensureLayout() error {
 		"plugins",
 		"state", filepath.Join("state", "plugins"), filepath.Join("state", "plugins", "transactions"),
 		"data", filepath.Join("data", "plugins"),
+		"run", filepath.Join("run", "plugins"),
 		"tmp", filepath.Join("tmp", "plugins"),
 		"locks", filepath.Join("locks", "plugins"),
 	} {
@@ -937,7 +940,7 @@ func ensurePrivateDirectoryPath(root, target string) error {
 	target = filepath.Clean(target)
 	relative, err := filepath.Rel(root, target)
 	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
-		return errors.New("Plugin data path escapes data root")
+		return errors.New("Plugin managed path escapes root")
 	}
 	current := root
 	for _, part := range strings.Split(relative, string(filepath.Separator)) {
@@ -956,7 +959,7 @@ func ensurePrivateDirectoryPath(root, target string) error {
 			return err
 		}
 		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("Plugin data path component is not a regular directory: %s", current)
+			return fmt.Errorf("Plugin managed path component is not a regular directory: %s", current)
 		}
 		if err := securepath.EnsurePrivate(current); err != nil {
 			return err

@@ -20,28 +20,28 @@ var (
 )
 
 type ServerConfig struct {
-	Name          string            `json:"name"`
-	Description   string            `json:"description"`
-	Transport     string            `json:"transport"`
-	URL           string            `json:"url,omitempty"`
-	Command       string            `json:"command,omitempty"`
-	Args          []string          `json:"args,omitempty"`
-	Cwd           string            `json:"cwd,omitempty"`
-	HeaderEnv     map[string]string `json:"header_env,omitempty"`
-	EnvFromEnv    map[string]string `json:"env_from_env,omitempty"`
-	RuntimeEnv    map[string]string `json:"-"`
-	StaticEnv     map[string]string `json:"-"`
-	StaticHeaders map[string]string `json:"-"`
-	EnvBindings   map[string]string `json:"-"`
-	RequiredEnv   []string          `json:"-"`
-	DisplayName   string            `json:"-"`
-	StorageKey    string            `json:"-"`
-	SourceType    string            `json:"-"`
-	PluginName    string            `json:"-"`
-	PluginRoot    string            `json:"-"`
-	PluginDataDir string            `json:"-"`
-	Enabled       bool              `json:"enabled"`
-	TimeoutMS     int               `json:"timeout_ms,omitempty"`
+	Name              string            `json:"name"`
+	Description       string            `json:"description"`
+	Transport         string            `json:"transport"`
+	URL               string            `json:"url,omitempty"`
+	Command           string            `json:"command,omitempty"`
+	Args              []string          `json:"args,omitempty"`
+	Cwd               string            `json:"cwd,omitempty"`
+	HeaderEnv         map[string]string `json:"header_env,omitempty"`
+	EnvFromEnv        map[string]string `json:"env_from_env,omitempty"`
+	RuntimeEnv        map[string]string `json:"-"`
+	StaticEnv         map[string]string `json:"-"`
+	StaticHeaders     map[string]string `json:"-"`
+	EnvBindings       map[string]string `json:"-"`
+	RequiredEnv       []string          `json:"-"`
+	DisplayName       string            `json:"-"`
+	StorageKey        string            `json:"-"`
+	SourceType        string            `json:"-"`
+	PluginName        string            `json:"-"`
+	PluginRuntimeRoot string            `json:"-"`
+	PluginDataDir     string            `json:"-"`
+	Enabled           bool              `json:"enabled"`
+	TimeoutMS         int               `json:"timeout_ms,omitempty"`
 }
 
 type Tool struct {
@@ -119,7 +119,7 @@ func normalizeServerConfig(cfg ServerConfig) ServerConfig {
 	cfg.StorageKey = strings.TrimSpace(cfg.StorageKey)
 	cfg.SourceType = strings.TrimSpace(cfg.SourceType)
 	cfg.PluginName = strings.TrimSpace(cfg.PluginName)
-	cfg.PluginRoot = strings.TrimSpace(cfg.PluginRoot)
+	cfg.PluginRuntimeRoot = strings.TrimSpace(cfg.PluginRuntimeRoot)
 	cfg.PluginDataDir = strings.TrimSpace(cfg.PluginDataDir)
 	return cfg
 }

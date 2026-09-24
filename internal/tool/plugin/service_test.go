@@ -86,13 +86,16 @@ func TestStdioMCPUsesWritableRuntimeSnapshot(t *testing.T) {
 		t.Fatalf("MCP configs = %#v", configs)
 	}
 	cfg := configs[0]
-	runtimeRoot := cfg.PluginRoot
+	runtimeRoot := cfg.PluginRuntimeRoot
 	if runtimeRoot == installed.Root {
 		t.Fatalf("stdio MCP still runs from immutable package root %q", installed.Root)
 	}
-	tempPrefix := filepath.Join(home, "tmp", "plugins") + string(filepath.Separator)
-	if !strings.HasPrefix(runtimeRoot, tempPrefix) {
-		t.Fatalf("runtime root %q is outside %q", runtimeRoot, tempPrefix)
+	runtimePrefix := filepath.Join(home, "run", "plugins", result.Name, result.Version) + string(filepath.Separator)
+	if !strings.HasPrefix(runtimeRoot, runtimePrefix) {
+		t.Fatalf("runtime root %q is outside %q", runtimeRoot, runtimePrefix)
+	}
+	if !strings.HasPrefix(filepath.Base(runtimeRoot), "generation-") {
+		t.Fatalf("runtime generation %q does not use generation-* naming", runtimeRoot)
 	}
 	if cfg.Command != filepath.Join(runtimeRoot, "runner") || cfg.Cwd != runtimeRoot {
 		t.Fatalf("stdio command/cwd = %q / %q, runtime root = %q", cfg.Command, cfg.Cwd, runtimeRoot)
