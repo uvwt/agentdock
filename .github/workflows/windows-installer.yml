@@ -1,18 +1,6 @@
 name: Windows Installer
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'scripts/**'
-      - 'packaging/**'
-      - 'desktop/windows/**'
-      - 'cmd/**'
-      - 'internal/**'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/windows-installer.yml'
   pull_request:
     branches:
       - main
@@ -22,6 +10,10 @@ on:
         description: 'Optional temporary prerelease tag, for example v0.5.4-windows-test-20260802-1'
         required: false
         type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -53,14 +45,28 @@ jobs:
           fi
 
           changed_paths="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- \
-            scripts \
-            packaging \
+            scripts/install \
+            ':(glob)scripts/test/*windows*.ps1' \
+            packaging/windows \
+            packaging/build-core-skill-bundle.py \
             desktop/windows \
-            cmd \
-            internal \
+            cmd/agentdock \
+            cmd/agentdock-arbiter \
+            cmd/agentdock-shim \
+            internal/auth \
+            internal/buildinfo \
+            internal/config \
+            internal/desktopruntime \
+            internal/envstore \
+            internal/fs/securepath \
+            internal/installer \
+            internal/selfupdate \
+            internal/updateengine \
+            internal/updateplatform \
             go.mod \
             go.sum \
-            .github/workflows/windows-installer.yml)"
+            .github/workflows/windows-installer.yml \
+            .github/workflows/release.yml)"
           if [[ -n "$changed_paths" ]]; then
             printf 'Windows installer validation required by:\n%s\n' "$changed_paths"
             echo 'relevant=true' >> "$GITHUB_OUTPUT"
@@ -93,12 +99,6 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Test Windows private storage
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          go test ./internal/envstore ./internal/fs/securepath
-
       - name: Test Setup runtime diagnostics
         shell: powershell
         run: |
@@ -114,12 +114,6 @@ jobs:
             -LauncherPath .\scripts\install\launch-windows-process.ps1 `
             -AgentDockBinary $runtimeTestAgentDockBinary `
             -HiddenHostBinary $runtimeTestHiddenHostBinary
-
-      - name: Test Task Scheduler session selection
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          go test ./internal/desktopruntime -run TestSelectInteractiveTaskSessionID -count=1
 
       - name: Run full install and in-place upgrade as standard user
         shell: powershell

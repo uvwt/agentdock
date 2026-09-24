@@ -1,10 +1,13 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -29,6 +32,7 @@ jobs:
           cache: true
 
       - name: Format check
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           unformatted="$(git ls-files '*.go' | while IFS= read -r file; do gofmt -l "$file"; done)"
@@ -65,6 +69,7 @@ jobs:
         run: go test -race ./... -count=1 -timeout=3m
 
       - name: Vet
+        if: runner.os == 'Linux'
         run: go vet ./...
 
       - name: Build
@@ -77,13 +82,6 @@ jobs:
       - name: Test macOS scripts
         if: runner.os == 'macOS'
         run: make test-scripts-macos
-
-      - name: Check Windows PowerShell installer
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          & .\scripts\test\test-install-windows.ps1
 
       - name: Test Windows PowerShell DPAPI round trip
         if: runner.os == 'Windows'
@@ -149,6 +147,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect container-relevant changes
+        id: changes
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            echo 'relevant=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed_paths="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- Dockerfile docker-entrypoint.sh core-skills cmd internal packaging/docker packaging/build-core-skill-bundle.py scripts/test/test-docker-images.sh go.mod go.sum .github/workflows/ci.yml)"
+          if [[ -n "$changed_paths" ]]; then
+            printf 'Container validation required by:\n%s\n' "$changed_paths"
+            echo 'relevant=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'No container-relevant changes detected.'
+            echo 'relevant=false' >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build and verify images
+        if: steps.changes.outputs.relevant == 'true'
         run: ./scripts/test/test-docker-images.sh

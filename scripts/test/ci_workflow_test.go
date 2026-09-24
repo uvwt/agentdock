@@ -57,6 +57,8 @@ func TestCIWorkflowUsesFreshBoundedGoTests(t *testing.T) {
 		"go test -race ./... -count=1 -timeout=3m",
 		"go test -race -tags browser_integration ./internal/tool/browser ./internal/app -count=1 -timeout=3m",
 		"timeout-minutes: 15",
+		"name: Detect container-relevant changes",
+		"if: steps.changes.outputs.relevant == 'true'",
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("CI workflow must keep bounded non-cached validation; missing %q", want)
@@ -92,5 +94,97 @@ func TestWindowsInstallerWorkflowHasAlwaysPresentPullRequestGate(t *testing.T) {
 	}
 	if strings.Contains(workflow, "raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/scripts/install/install.ps1") {
 		t.Fatal("routine Windows installer validation must use the checked-out installer instead of refetching it over the network")
+	}
+}
+
+func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
+	workflow := readWorkflow(t, "release.yml")
+	for _, want := range []string{
+		"name: Validate release source",
+		"name: Prepare release candidate",
+		"name: Verify staged Linux release",
+		"name: Verify staged macOS release",
+		"name: Verify staged Windows release",
+		"name: Release pre-publication gate",
+		"name: Stage draft GitHub Release",
+		"draft: true",
+		"name: Publish containers",
+		"org.opencontainers.image.revision=${{ needs.source.outputs.commit }}",
+		"name: Publish GitHub Release",
+		"needs: [stage-release, publish-container]",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("Release workflow must gate public resources behind staged validation; missing %q", want)
+		}
+	}
+
+	order := []string{
+		"  prepare-release:",
+		"  verify-windows-release:",
+		"  release-gate:",
+		"  stage-release:",
+		"  publish-container:",
+		"  publish-release:",
+	}
+	last := -1
+	for _, marker := range order {
+		index := strings.Index(workflow, marker)
+		if index <= last {
+			t.Fatalf("Release workflow has unsafe publication order around %q", marker)
+		}
+		last = index
+	}
+
+	if strings.Contains(workflow, "Verify published Windows installer") ||
+		strings.Contains(workflow, "Verify published containers") {
+		t.Fatal("deep release validation must happen before public publication, not after it")
+	}
+}
+
+func TestRoutineCIOnlyRunsPreMergeAndCancelsSupersededRuns(t *testing.T) {
+	for _, name := range []string{"ci.yml", "windows-installer.yml"} {
+		workflow := readWorkflow(t, name)
+		if strings.Contains(workflow, "push:\n    branches: [main]") ||
+			strings.Contains(workflow, "push:\n    branches:\n      - main") {
+			t.Fatalf("workflow %s must not repeat the protected PR gate after merge", name)
+		}
+		if !strings.Contains(workflow, "cancel-in-progress: true") {
+			t.Fatalf("workflow %s must cancel superseded PR runs", name)
+		}
+	}
+}
+
+func TestWindowsLegacyMigrationE2EIsIndependentFromPublishedLatest(t *testing.T) {
+	data, err := os.ReadFile("test-windows-legacy-online-migration.ps1")
+	if err != nil {
+		t.Fatalf("read Windows legacy migration E2E: %v", err)
+	}
+	script := strings.ReplaceAll(string(data), "\r\n", "\n")
+	for _, want := range []string{
+		"AgentDockLegacyMigration",
+		"[Threading.Mutex]::new(",
+		"$migrationGate.ReleaseMutex()",
+		"__repair-desktop-runtime --local-archive",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("legacy migration E2E must isolate automatic latest-version repair; missing %q", want)
+		}
+	}
+	if strings.Contains(script, "Wait-NoDesktopRepairProcess") {
+		t.Fatal("legacy migration E2E must not depend on GitHub latest making background repair exit")
+	}
+}
+
+func TestCodeQLKeepsDefaultBranchAndScheduledScanning(t *testing.T) {
+	workflow := readWorkflow(t, "codeql.yml")
+	for _, want := range []string{
+		"push:\n    branches: [main]",
+		"pull_request:\n    branches: [main]",
+		"schedule:",
+		"name: Analyze Go",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("CodeQL must keep default-branch security coverage; missing %q", want)
+		}
 	}
 }

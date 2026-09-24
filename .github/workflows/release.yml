@@ -11,12 +11,64 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   packages: write
 
 jobs:
+  source:
+    name: Validate release source
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
+      tag: ${{ steps.source.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate immutable release source
+        id: source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          source_commit="$(git rev-parse HEAD)"
+          tag_commit="$(git rev-parse "$RELEASE_TAG^{commit}")"
+          test "$source_commit" = "$tag_commit"
+
+          # 正式发布只允许来自 main 的已合并提交，避免手工 tag 绕过主分支门禁。
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$source_commit" origin/main
+
+          go run ./tools/release verify-version "$RELEASE_TAG"
+
+          # 已公开 Release 视为不可变；失败的 draft 可以原 tag 重跑并继续完成。
+          release_draft="$(gh api "repos/${{ github.repository }}/releases/tags/$RELEASE_TAG" --jq .draft 2>/dev/null || true)"
+          if [[ "$release_draft" == "false" ]]; then
+            echo "Release $RELEASE_TAG is already published; published releases are immutable." >&2
+            exit 1
+          fi
+
+          echo "commit=$source_commit" >> "$GITHUB_OUTPUT"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
   build-linux:
+    needs: source
     name: Build Linux ${{ matrix.goarch }}
     runs-on: ubuntu-latest
     strategy:
@@ -63,6 +115,7 @@ jobs:
           if-no-files-found: error
 
   build-macos:
+    needs: source
     name: Build macOS ${{ matrix.goarch }}
     runs-on: macos-latest
     strategy:
@@ -110,7 +163,7 @@ jobs:
 
   build-macos-app:
     name: Build macOS offline DMG
-    needs: build-macos
+    needs: [source, build-macos]
     runs-on: macos-latest
     steps:
       - name: Checkout
@@ -192,6 +245,7 @@ jobs:
           if-no-files-found: error
 
   build-windows:
+    needs: source
     name: Build Windows ${{ matrix.goarch }}
     runs-on: windows-latest
     strategy:
@@ -214,30 +268,6 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
-
-      - name: Test Windows private storage
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          go test ./internal/envstore ./internal/fs/securepath
-
-      - name: Download and validate exact installer bytes
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $downloadedInstaller = Join-Path $env:RUNNER_TEMP 'install-downloaded.ps1'
-          $installerUrl = 'https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/scripts/install/install.ps1'
-          & .\scripts\test\test-install-windows-download.ps1 `
-            -Url $installerUrl `
-            -ExpectedInstallerPath .\scripts\install\install.ps1 `
-            -OutputPath $downloadedInstaller
-          "DOWNLOADED_INSTALLER=$downloadedInstaller" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
-
-      - name: Validate downloaded installer
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          & .\scripts\test\test-install-windows.ps1 -InstallerPath $env:DOWNLOADED_INSTALLER
 
       - name: Require Authenticode configuration
         shell: pwsh
@@ -276,14 +306,6 @@ jobs:
             --self-contained true `
             -o dist\control-panel
           Copy-Item .\dist\control-panel\agentdock-tray.exe .\dist\agentdock-tray.exe -Force
-
-      - name: Smoke test current binary as standard user
-        if: matrix.goarch == 'amd64'
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          & .\scripts\test\test-windows-current-binary-as-standard-user.ps1 `
-            -BinaryPath .\dist\agentdock.exe
 
       - name: Authenticode sign and verify
         shell: pwsh
@@ -326,7 +348,7 @@ jobs:
 
   build-windows-setup:
     name: Build signed Windows offline Setup ${{ matrix.goarch }}
-    needs: build-windows
+    needs: [source, build-windows]
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -397,8 +419,8 @@ jobs:
           path: dist/AgentDockSetup-${{ matrix.goarch }}.exe
           if-no-files-found: error
 
-  publish:
-    name: Publish GitHub Release
+  prepare-release:
+    name: Prepare release candidate
     needs: [build-linux, build-macos, build-macos-app, build-windows, build-windows-setup]
     runs-on: ubuntu-latest
     steps:
@@ -406,6 +428,12 @@ jobs:
         uses: actions/checkout@v5
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -471,133 +499,76 @@ jobs:
           test -f dist/AgentDock-macos-universal.zip.sha256
           (cd dist && shasum -a 256 -c AgentDock-macos-universal.zip.sha256)
 
-      - name: Publish release
-        uses: softprops/action-gh-release@v2
+      - name: Upload prepared release candidate
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          files: |
-            dist/*.tar.gz
-            dist/*.tar.gz.sha256
-            dist/*.dmg
-            dist/*.dmg.sha256
-            dist/*.zip
-            dist/*.zip.sha256
-            dist/*.sh
-            dist/*.sh.sha256
-            dist/*.ps1
-            dist/*.ps1.sha256
-            dist/*.exe
-            dist/*.exe.sha256
-          generate_release_notes: true
-
-  publish-container:
-    name: Publish container (${{ matrix.variant }})
-    needs: publish
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      # 三个多架构镜像并发推送会触发 GHCR secondary rate limit，发布阶段串行执行。
-      max-parallel: 1
-      matrix:
-        include:
-          - variant: runtime
-            target: runtime
-            latest_tag: latest
-            tag_prefix: ''
-          - variant: dev
-            target: dev
-            latest_tag: dev-latest
-            tag_prefix: dev-
-          - variant: browser
-            target: browser
-            latest_tag: browser-latest
-            tag_prefix: browser-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
-
-      - name: Setup QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Prepare image metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ghcr.io/${{ github.repository }}
-            agentdockio/agentdock
-          flavor: latest=false
-          tags: |
-            type=raw,value=${{ matrix.tag_prefix }}${{ github.event.inputs.tag || github.ref_name }},priority=1000
-            type=raw,value=${{ matrix.latest_tag }},priority=100
-
-      - name: Prepare image build metadata
-        id: build
-        shell: bash
-        run: |
-          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
-          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile
-          target: ${{ matrix.target }}
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            BUILD_COMMIT=${{ steps.build.outputs.commit }}
-            BUILD_DATE=${{ steps.build.outputs.date }}
-          cache-from: type=gha,scope=${{ matrix.variant }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.variant }},ignore-error=true
+          name: agentdock-release-dist
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
 
   verify-linux-release:
-    name: Verify published unified installer on Linux
-    needs: publish
+    name: Verify staged Linux release
+    needs: prepare-release
     runs-on: ubuntu-latest
     steps:
-      - name: Download and run published installer
+      - name: Download prepared release
+        uses: actions/download-artifact@v4
+        with:
+          name: agentdock-release-dist
+          path: ${{ runner.temp }}/staged-release
+
+      - name: Verify prepared checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="$RUNNER_TEMP/staged-release"
+          (
+            cd "$release_dir"
+            sha256sum -c install.sh.sha256
+            sha256sum -c agentdock_linux_amd64.tar.gz.sha256
+          )
+          echo "STAGED_RELEASE_DIR=$release_dir" >> "$GITHUB_ENV"
+
+      - name: Install and uninstall staged assets
         shell: bash
         env:
           RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          release_base="https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG"
-          installer="$RUNNER_TEMP/install.sh"
+          installer="$STAGED_RELEASE_DIR/install.sh"
           installer_tmp="$RUNNER_TEMP/installer"
           install_dir="$RUNNER_TEMP/agentdock-install"
           data_dir="$RUNNER_TEMP/agentdock-data"
           env_file="$RUNNER_TEMP/agentdock.env"
+          port="$(python3 - <<'PORTPY'
+          import socket
+          sock = socket.socket()
+          sock.bind(("127.0.0.1", 0))
+          print(sock.getsockname()[1])
+          sock.close()
+          PORTPY
+          )"
+          release_base="http://127.0.0.1:$port"
+          python3 -m http.server "$port" --bind 127.0.0.1 --directory "$STAGED_RELEASE_DIR" \
+            >"$RUNNER_TEMP/staged-release-http.log" 2>&1 &
+          server_pid=$!
+          cleanup() {
+            kill "$server_pid" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS "$release_base/install.sh" >/dev/null; then
+              break
+            fi
+            if [[ "$attempt" -eq 30 ]]; then
+              cat "$RUNNER_TEMP/staged-release-http.log"
+              exit 1
+            fi
+            sleep 0.2
+          done
 
           mkdir -p "$installer_tmp"
-          curl -fL "$release_base/install.sh" -o "$installer"
-          curl -fL "$release_base/install.sh.sha256" -o "$installer.sha256"
-          (
-            cd "$RUNNER_TEMP"
-            sha256sum -c install.sh.sha256
-          )
-
           TMPDIR="$installer_tmp" \
           AGENTDOCK_INSTALLER_BASE_URL="$release_base" \
           AGENTDOCK_NONINTERACTIVE=true \
@@ -612,7 +583,6 @@ jobs:
             sh "$installer"
 
           "$install_dir/bin/agentdock" --help >/dev/null 2>&1
-
           for skill in agentdock-user-guide skill-authoring skill-installation; do
             test -f "$data_dir/.agentdock/skills/$skill/SKILL.md"
           done
@@ -633,38 +603,60 @@ jobs:
           test ! -e "$env_file"
 
   verify-macos-release:
-    name: Verify published unified installer on macOS
-    needs: publish
+    name: Verify staged macOS release
+    needs: prepare-release
     runs-on: macos-latest
     steps:
-      - name: Download and run published installer
+      - name: Download prepared release
+        uses: actions/download-artifact@v4
+        with:
+          name: agentdock-release-dist
+          path: ${{ runner.temp }}/staged-release
+
+      - name: Prepare staged asset paths
         shell: zsh {0}
         run: |
+          echo "STAGED_RELEASE_DIR=$RUNNER_TEMP/staged-release" >> "$GITHUB_ENV"
+
+      - name: Verify staged app and unified installer
+        shell: zsh {0}
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
           set -euo pipefail
-          tag='${{ github.event.inputs.tag || github.ref_name }}'
-          release_base="https://github.com/${{ github.repository }}/releases/download/$tag"
-          installer="$RUNNER_TEMP/install.sh"
-          dmg="$RUNNER_TEMP/AgentDock-macos-universal.dmg"
-          zip="$RUNNER_TEMP/AgentDock-macos-universal.zip"
+          installer="$STAGED_RELEASE_DIR/install.sh"
+          dmg="$STAGED_RELEASE_DIR/AgentDock-macos-universal.dmg"
+          zip="$STAGED_RELEASE_DIR/AgentDock-macos-universal.zip"
           zip_dir="$RUNNER_TEMP/agentdock-zip"
           mount_dir="$RUNNER_TEMP/agentdock-dmg"
+          port="$(python3 - <<'PORTPY'
+          import socket
+          sock = socket.socket()
+          sock.bind(("127.0.0.1", 0))
+          print(sock.getsockname()[1])
+          sock.close()
+          PORTPY
+          )"
+          release_base="http://127.0.0.1:$port"
+          python3 -m http.server "$port" --bind 127.0.0.1 --directory "$STAGED_RELEASE_DIR" \
+            >"$RUNNER_TEMP/staged-release-http.log" 2>&1 &
+          server_pid=$!
           dmg_mounted=false
           cleanup() {
+            kill "$server_pid" >/dev/null 2>&1 || true
             if [[ "$dmg_mounted" == true ]]; then
               hdiutil detach "$mount_dir" -force >/dev/null 2>&1 || true
             fi
           }
           trap cleanup EXIT
 
-          curl -fL "$release_base/AgentDock-macos-universal.dmg" -o "$dmg"
-          curl -fL "$release_base/AgentDock-macos-universal.dmg.sha256" -o "$dmg.sha256"
-          curl -fL "$release_base/AgentDock-macos-universal.zip" -o "$zip"
-          curl -fL "$release_base/AgentDock-macos-universal.zip.sha256" -o "$zip.sha256"
           (
-            cd "$RUNNER_TEMP"
+            cd "$STAGED_RELEASE_DIR"
             shasum -a 256 -c AgentDock-macos-universal.dmg.sha256
             shasum -a 256 -c AgentDock-macos-universal.zip.sha256
+            shasum -a 256 -c install.sh.sha256
           )
+
           mkdir -p "$zip_dir"
           ditto -x -k "$zip" "$zip_dir"
           test -d "$zip_dir/AgentDock.app"
@@ -678,6 +670,7 @@ jobs:
           test -L "$mount_dir/Applications"
           test "$(readlink "$mount_dir/Applications")" = "/Applications"
           codesign --verify --deep --strict --verbose=2 "$mount_dir/AgentDock.app"
+
           app_arches="$(lipo -archs "$mount_dir/AgentDock.app/Contents/MacOS/AgentDock")"
           helper_arches="$(lipo -archs "$mount_dir/AgentDock.app/Contents/Helpers/AgentDockLoginHelper")"
           core_arches="$(lipo -archs "$mount_dir/AgentDock.app/Contents/Helpers/agentdock")"
@@ -686,19 +679,12 @@ jobs:
           [[ "$helper_arches" == *arm64* && "$helper_arches" == *x86_64* ]]
           [[ "$core_arches" == *arm64* && "$core_arches" == *x86_64* ]]
           [[ "$cloudflared_arches" == *arm64* && "$cloudflared_arches" == *x86_64* ]]
-          cmp \
-            "$zip_dir/AgentDock.app/Contents/MacOS/AgentDock" \
-            "$mount_dir/AgentDock.app/Contents/MacOS/AgentDock"
-          cmp \
-            "$zip_dir/AgentDock.app/Contents/Helpers/AgentDockLoginHelper" \
-            "$mount_dir/AgentDock.app/Contents/Helpers/AgentDockLoginHelper"
-          cmp \
-            "$zip_dir/AgentDock.app/Contents/Helpers/agentdock" \
-            "$mount_dir/AgentDock.app/Contents/Helpers/agentdock"
-          cmp \
-            "$zip_dir/AgentDock.app/Contents/Helpers/cloudflared" \
-            "$mount_dir/AgentDock.app/Contents/Helpers/cloudflared"
+          cmp "$zip_dir/AgentDock.app/Contents/MacOS/AgentDock" "$mount_dir/AgentDock.app/Contents/MacOS/AgentDock"
+          cmp "$zip_dir/AgentDock.app/Contents/Helpers/AgentDockLoginHelper" "$mount_dir/AgentDock.app/Contents/Helpers/AgentDockLoginHelper"
+          cmp "$zip_dir/AgentDock.app/Contents/Helpers/agentdock" "$mount_dir/AgentDock.app/Contents/Helpers/agentdock"
+          cmp "$zip_dir/AgentDock.app/Contents/Helpers/cloudflared" "$mount_dir/AgentDock.app/Contents/Helpers/cloudflared"
           test -f "$mount_dir/AgentDock.app/Contents/Resources/core-skills/manifest.json"
+
           core_plist="$mount_dir/AgentDock.app/Contents/Library/LaunchAgents/com.uvwt.agentdock.core.plist"
           tunnel_plist="$mount_dir/AgentDock.app/Contents/Library/LaunchAgents/com.uvwt.agentdock.tunnel.plist"
           plutil -lint "$core_plist" >/dev/null
@@ -708,22 +694,27 @@ jobs:
           codesign --verify --strict --verbose=2 "$mount_dir/AgentDock.app/Contents/Helpers/agentdock"
           codesign --verify --strict --verbose=2 "$mount_dir/AgentDock.app/Contents/Helpers/cloudflared"
           mounted_core_version="$("$mount_dir/AgentDock.app/Contents/Helpers/agentdock" --version)"
-          [[ "$mounted_core_version" == *"AgentDock $tag"* ]]
+          [[ "$mounted_core_version" == *"AgentDock $RELEASE_TAG"* ]]
           "$mount_dir/AgentDock.app/Contents/Helpers/cloudflared" --version >/dev/null
           hdiutil detach "$mount_dir" >/dev/null
           dmg_mounted=false
 
-          curl -fL "$release_base/install.sh" -o "$installer"
-          curl -fL "$release_base/install.sh.sha256" -o "$installer.sha256"
-          (
-            cd "$RUNNER_TEMP"
-            shasum -a 256 -c install.sh.sha256
-          )
+          for attempt in $(seq 1 30); do
+            if curl -fsS "$release_base/install.sh" >/dev/null; then
+              break
+            fi
+            if [[ "$attempt" -eq 30 ]]; then
+              cat "$RUNNER_TEMP/staged-release-http.log"
+              exit 1
+            fi
+            sleep 0.2
+          done
+
           sh -n "$installer"
           HOME="$RUNNER_TEMP/home" \
           AGENTDOCK_INSTALLER_BASE_URL="$release_base" \
           AGENTDOCK_INSTALL_DIR="$RUNNER_TEMP/bin" \
-            sh "$installer" --version "$tag"
+            sh "$installer" --version "$RELEASE_TAG"
           "$RUNNER_TEMP/bin/agentdock" --help >/dev/null 2>&1
           for skill in agentdock-user-guide skill-authoring skill-installation; do
             test -f "$RUNNER_TEMP/home/.agentdock/skills/$skill/SKILL.md"
@@ -738,8 +729,8 @@ jobs:
           test ! -e "$RUNNER_TEMP/home/.agentdock"
 
   verify-windows-release:
-    name: Verify published Windows installer
-    needs: publish
+    name: Verify staged Windows release
+    needs: prepare-release
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -747,80 +738,193 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
-      - name: Download published installer
+      - name: Download prepared release
+        uses: actions/download-artifact@v4
+        with:
+          name: agentdock-release-dist
+          path: ${{ runner.temp }}/staged-release
+
+      - name: Prepare staged assets
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $tag = '${{ github.event.inputs.tag || github.ref_name }}'
-          $downloadedInstaller = Join-Path $env:RUNNER_TEMP 'install-release.ps1'
-          $installerUrl = "https://github.com/${{ github.repository }}/releases/download/$tag/install.ps1"
-          & .\scripts\test\test-install-windows-download.ps1 `
-            -Url $installerUrl `
-            -ExpectedInstallerPath .\scripts\install\install.ps1 `
-            -OutputPath $downloadedInstaller
-          "DOWNLOADED_INSTALLER=$downloadedInstaller" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
-          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
-          $setup = Join-Path $env:RUNNER_TEMP 'AgentDockSetup-amd64.exe'
-          Invoke-WebRequest `
-            -UseBasicParsing `
-            -Uri "https://github.com/${{ github.repository }}/releases/download/$tag/AgentDockSetup-amd64.exe" `
-            -OutFile $setup
-          "PUBLISHED_SETUP=$setup" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
+          $releaseRoot = Join-Path $env:RUNNER_TEMP 'staged-release'
+          $installer = Join-Path $releaseRoot 'install.ps1'
+          $setup = Join-Path $releaseRoot 'AgentDockSetup-amd64.exe'
+          $legacyArchive = Join-Path $releaseRoot 'agentdock_windows_amd64.zip'
+          foreach ($path in @($installer, $setup, $legacyArchive)) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Staged release asset is missing: $path"
+            }
+          }
 
-          # Setup E2E 会先构造真实的 pre-generation flat 安装，再验证迁移。
-          # 直接复用本次 Release 已发布的 Windows 二进制，确保 fixture 与正式产物同源。
-          $legacyArchive = Join-Path $env:RUNNER_TEMP 'agentdock_windows_amd64.zip'
+          # 候选产物中的 install.ps1 必须与 tag 源码完全一致，防止 workflow/source SHA 混用。
+          if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ne
+              (Get-FileHash -LiteralPath '.\scripts\install\install.ps1' -Algorithm SHA256).Hash) {
+            throw 'Staged install.ps1 does not match the tagged source.'
+          }
+
+          foreach ($asset in @('install.ps1', 'AgentDockSetup-amd64.exe', 'agentdock_windows_amd64.zip')) {
+            $assetPath = Join-Path $releaseRoot $asset
+            $checksumPath = "$assetPath.sha256"
+            $expected = ((Get-Content -LiteralPath $checksumPath -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+            $actual = (Get-FileHash -LiteralPath $assetPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $expected) {
+              throw "Staged checksum mismatch: $asset"
+            }
+          }
+
           $legacyRoot = Join-Path $env:RUNNER_TEMP 'agentdock-release-legacy-fixture'
-          Invoke-WebRequest `
-            -UseBasicParsing `
-            -Uri "https://github.com/${{ github.repository }}/releases/download/$tag/agentdock_windows_amd64.zip" `
-            -OutFile $legacyArchive
           Remove-Item -LiteralPath $legacyRoot -Recurse -Force -ErrorAction SilentlyContinue
           Expand-Archive -LiteralPath $legacyArchive -DestinationPath $legacyRoot -Force
           $legacyCore = Join-Path $legacyRoot 'agentdock.exe'
           $legacyTray = Join-Path $legacyRoot 'agentdock-tray.exe'
           if (-not (Test-Path -LiteralPath $legacyCore -PathType Leaf) -or
               -not (Test-Path -LiteralPath $legacyTray -PathType Leaf)) {
-            throw 'Published Windows archive is missing the legacy migration fixture binaries.'
+            throw 'Staged Windows archive is missing the legacy migration fixture binaries.'
           }
+
+          "STAGED_RELEASE_ROOT=$releaseRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
+          "STAGED_INSTALLER=$installer" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
+          "STAGED_SETUP=$setup" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
           "LEGACY_CORE_PATH=$legacyCore" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
           "LEGACY_TRAY_PATH=$legacyTray" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
 
-      - name: Verify published Setup signature
+      - name: Verify staged Setup signature
         shell: pwsh
         env:
           WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
           WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
         run: |
-          .\packaging\windows\sign-windows.ps1 -Path $env:PUBLISHED_SETUP -VerifyOnly
+          .\packaging\windows\sign-windows.ps1 -Path $env:STAGED_SETUP -VerifyOnly
 
-      - name: Install and uninstall published Setup
+      - name: Install and uninstall staged Setup
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           & .\scripts\test\test-windows-setup-e2e.ps1 `
-            -SetupPath $env:PUBLISHED_SETUP `
+            -SetupPath $env:STAGED_SETUP `
             -LegacyCorePath $env:LEGACY_CORE_PATH `
             -LegacyTrayPath $env:LEGACY_TRAY_PATH `
             -AllowLegacyTaskMutation
 
-      - name: Install and upgrade published version as standard user
+      - name: Install and upgrade staged version as standard user
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          & .\scripts\test\run-windows-installer-e2e-as-standard-user.ps1 `
-            -InstallerPath $env:DOWNLOADED_INSTALLER `
-            -Version $env:RELEASE_TAG
+          $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+          $listener.Start()
+          $port = ([Net.IPEndPoint] $listener.LocalEndpoint).Port
+          $listener.Stop()
+          $releaseBaseUrl = "http://127.0.0.1:$port"
+          $server = Start-Process `
+            -FilePath 'python' `
+            -ArgumentList @('-m', 'http.server', $port, '--bind', '127.0.0.1', '--directory', $env:STAGED_RELEASE_ROOT) `
+            -WindowStyle Hidden `
+            -PassThru
+          try {
+            $deadline = [DateTime]::UtcNow.AddSeconds(15)
+            do {
+              Start-Sleep -Milliseconds 250
+              try {
+                Invoke-WebRequest -UseBasicParsing -Uri "$releaseBaseUrl/install.ps1" -TimeoutSec 2 | Out-Null
+                break
+              } catch {
+                if ([DateTime]::UtcNow -ge $deadline) { throw }
+              }
+            } while ($true)
 
-  verify-container:
-    name: Verify published containers
-    needs: publish-container
+            & .\scripts\test\run-windows-installer-e2e-as-standard-user.ps1 `
+              -InstallerPath $env:STAGED_INSTALLER `
+              -Version $env:RELEASE_TAG `
+              -ReleaseBaseUrl $releaseBaseUrl
+          } finally {
+            Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+          }
+
+  release-gate:
+    name: Release pre-publication gate
+    if: always()
+    needs: [prepare-release, verify-linux-release, verify-macos-release, verify-windows-release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all staged release checks
+        shell: bash
+        env:
+          PREPARE_RESULT: ${{ needs.prepare-release.result }}
+          LINUX_RESULT: ${{ needs.verify-linux-release.result }}
+          MACOS_RESULT: ${{ needs.verify-macos-release.result }}
+          WINDOWS_RESULT: ${{ needs.verify-windows-release.result }}
+        run: |
+          set -euo pipefail
+          for result in "$PREPARE_RESULT" "$LINUX_RESULT" "$MACOS_RESULT" "$WINDOWS_RESULT"; do
+            test "$result" = success
+          done
+
+  stage-release:
+    name: Stage draft GitHub Release
+    needs: [prepare-release, release-gate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download validated release candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: agentdock-release-dist
+          path: dist
+
+      - name: Reset previous draft for this tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Draft 不能稳定通过 releases/tags/<tag> 查询；按 releases 列表清理同 tag 草稿，
+          # 让失败后的同 tag 重跑始终从唯一、干净的 staging release 开始。
+          gh api "repos/${{ github.repository }}/releases?per_page=100"             --paginate             --jq ".[] | select(.draft and .tag_name == \"$RELEASE_TAG\") | .id"             > "$RUNNER_TEMP/stale-draft-ids"
+          while IFS= read -r release_id; do
+            [[ -z "$release_id" ]] && continue
+            gh api --method DELETE "repos/${{ github.repository }}/releases/$release_id"
+          done < "$RUNNER_TEMP/stale-draft-ids"
+
+      - name: Upload validated draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          overwrite_files: true
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+            dist/*.dmg
+            dist/*.dmg.sha256
+            dist/*.zip
+            dist/*.zip.sha256
+            dist/*.sh
+            dist/*.sh.sha256
+            dist/*.ps1
+            dist/*.ps1.sha256
+            dist/*.exe
+            dist/*.exe.sha256
+          generate_release_notes: true
+
+  publish-container:
+    name: Publish containers
+    needs: [source, stage-release]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.source.outputs.tag }}
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -835,22 +939,119 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Run published GHCR images
-        env:
-          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
-          AGENTDOCK_TEST_BUILD: "false"
-          AGENTDOCK_TEST_RUNTIME_IMAGE: ghcr.io/${{ github.repository }}:${{ github.event.inputs.tag || github.ref_name }}
-          AGENTDOCK_TEST_DEV_IMAGE: ghcr.io/${{ github.repository }}:dev-${{ github.event.inputs.tag || github.ref_name }}
-          AGENTDOCK_TEST_BROWSER_IMAGE: ghcr.io/${{ github.repository }}:browser-${{ github.event.inputs.tag || github.ref_name }}
-          AGENTDOCK_EXPECT_IMAGE_VERSION: ${{ github.event.inputs.tag || github.ref_name }}
-        run: ./scripts/test/test-docker-images.sh
+      - name: Prepare image build metadata
+        id: build
+        shell: bash
+        run: |
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-      - name: Run published Docker Hub images
+      - name: Prepare runtime image metadata
+        id: meta-runtime
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository }}
+            agentdockio/agentdock
+          flavor: latest=false
+          tags: |
+            type=raw,value=${{ needs.source.outputs.tag }},priority=1000
+            type=raw,value=latest,priority=100
+          labels: |
+            org.opencontainers.image.revision=${{ needs.source.outputs.commit }}
+
+      - name: Build and push runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          target: runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-runtime.outputs.tags }}
+          labels: ${{ steps.meta-runtime.outputs.labels }}
+          build-args: |
+            BUILD_COMMIT=${{ needs.source.outputs.commit }}
+            BUILD_DATE=${{ steps.build.outputs.date }}
+          cache-from: type=gha,scope=runtime
+          cache-to: type=gha,mode=max,scope=runtime,ignore-error=true
+
+      - name: Prepare dev image metadata
+        id: meta-dev
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository }}
+            agentdockio/agentdock
+          flavor: latest=false
+          tags: |
+            type=raw,value=dev-${{ needs.source.outputs.tag }},priority=1000
+            type=raw,value=dev-latest,priority=100
+          labels: |
+            org.opencontainers.image.revision=${{ needs.source.outputs.commit }}
+
+      - name: Build and push dev image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          target: dev
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-dev.outputs.tags }}
+          labels: ${{ steps.meta-dev.outputs.labels }}
+          build-args: |
+            BUILD_COMMIT=${{ needs.source.outputs.commit }}
+            BUILD_DATE=${{ steps.build.outputs.date }}
+          cache-from: |
+            type=gha,scope=runtime
+            type=gha,scope=dev
+          cache-to: type=gha,mode=max,scope=dev,ignore-error=true
+
+      - name: Prepare browser image metadata
+        id: meta-browser
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository }}
+            agentdockio/agentdock
+          flavor: latest=false
+          tags: |
+            type=raw,value=browser-${{ needs.source.outputs.tag }},priority=1000
+            type=raw,value=browser-latest,priority=100
+          labels: |
+            org.opencontainers.image.revision=${{ needs.source.outputs.commit }}
+
+      - name: Build and push browser image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          target: browser
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-browser.outputs.tags }}
+          labels: ${{ steps.meta-browser.outputs.labels }}
+          build-args: |
+            BUILD_COMMIT=${{ needs.source.outputs.commit }}
+            BUILD_DATE=${{ steps.build.outputs.date }}
+          cache-from: |
+            type=gha,scope=runtime
+            type=gha,scope=browser
+          cache-to: type=gha,mode=max,scope=browser,ignore-error=true
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [stage-release, publish-container]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish validated draft
+        shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
-          AGENTDOCK_TEST_BUILD: "false"
-          AGENTDOCK_TEST_RUNTIME_IMAGE: agentdockio/agentdock:${{ github.event.inputs.tag || github.ref_name }}
-          AGENTDOCK_TEST_DEV_IMAGE: agentdockio/agentdock:dev-${{ github.event.inputs.tag || github.ref_name }}
-          AGENTDOCK_TEST_BROWSER_IMAGE: agentdockio/agentdock:browser-${{ github.event.inputs.tag || github.ref_name }}
-          AGENTDOCK_EXPECT_IMAGE_VERSION: ${{ github.event.inputs.tag || github.ref_name }}
-        run: ./scripts/test/test-docker-images.sh
+        run: |
+          set -euo pipefail
+          gh release edit "$RELEASE_TAG" \
+            --repo "${{ github.repository }}" \
+            --draft=false \
+            --latest

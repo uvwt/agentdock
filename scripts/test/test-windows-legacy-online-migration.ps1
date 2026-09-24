@@ -22,30 +22,6 @@ $homeRoot = Join-Path $testRoot 'home'
 $defaultRoot = Join-Path $testRoot 'workspace'
 $utf8NoBom = [Text.UTF8Encoding]::new($false)
 
-function Wait-NoDesktopRepairProcess {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string] $ExecutablePath,
-        [int] $TimeoutSeconds = 30
-    )
-
-    $resolvedExecutable = (Resolve-Path -LiteralPath $ExecutablePath).Path
-    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
-    do {
-        $repair = Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
-            $_.ExecutablePath -and
-            [string]::Equals($_.ExecutablePath, $resolvedExecutable, [StringComparison]::OrdinalIgnoreCase) -and
-            $_.CommandLine -and
-            $_.CommandLine.Contains('__repair-desktop-runtime')
-        }
-        if ($null -eq $repair) {
-            return
-        }
-        Start-Sleep -Milliseconds 250
-    } while ([DateTime]::UtcNow -lt $deadline)
-    throw 'automatic desktop repair did not exit before the explicit migration E2E'
-}
-
 function Test-InternalAgentDockProcess {
     param(
         [Parameter(Mandatory = $true)]
@@ -120,30 +96,43 @@ try {
         throw "flat Core version mismatch: $versionOutput"
     }
 
-    # Published v0.8.2/v0.8.3 updater starts the new flat Core and waits for this health
-    # endpoint before it finishes its own commit. Reproduce that state rather than invoking
-    # the migration helper against a stopped fixture.
-    & $core service start --runtime-root $runtimeRoot
-    if ($LASTEXITCODE -ne 0) {
-        $coreLog = Join-Path $runtimeRoot 'logs\agentdock.err.log'
-        if (Test-Path -LiteralPath $coreLog -PathType Leaf) {
-            Write-Host '=== flat Core startup log ==='
-            Get-Content -LiteralPath $coreLog -Raw -ErrorAction SilentlyContinue | Write-Host
+    # v0.8.2/v0.8.3 的旧 updater 会先启动新 flat Core 并等待健康检查，再提交自己的更新。
+    # 这里复现真实运行状态，而不是对停止的 fixture 直接调用迁移 helper。
+    #
+    # 只在 flat Core 启动阶段持有生产同名 migration mutex，隔离 GitHub latest 的外部状态。
+    # 即使当前测试版本已经正式发布，Core 启动也不会抢先触发自动 migration；
+    # RepairDesktopRuntimeIfNeeded 会在服务进入 healthy 前检查这个 mutex。
+    $migrationGateCreated = $false
+    $migrationGate = [Threading.Mutex]::new(
+        $true,
+        'Local\AgentDockLegacyMigration',
+        [ref] $migrationGateCreated
+    )
+    if (-not $migrationGateCreated) {
+        $migrationGate.Dispose()
+        throw 'legacy migration E2E could not acquire the startup isolation mutex'
+    }
+    try {
+        & $core service start --runtime-root $runtimeRoot
+        if ($LASTEXITCODE -ne 0) {
+            $coreLog = Join-Path $runtimeRoot 'logs\agentdock.err.log'
+            if (Test-Path -LiteralPath $coreLog -PathType Leaf) {
+                Write-Host '=== flat Core startup log ==='
+                Get-Content -LiteralPath $coreLog -Raw -ErrorAction SilentlyContinue | Write-Host
+            }
+            throw "flat Core start failed with exit code $LASTEXITCODE"
         }
-        throw "flat Core start failed with exit code $LASTEXITCODE"
-    }
-    $flatHealth = Invoke-RestMethod -UseBasicParsing -Uri "http://127.0.0.1:$port/healthz" -TimeoutSec 3
-    if ($flatHealth.ok -ne $true -or $flatHealth.version -ne $Version) {
-        throw "flat Core health mismatch before migration: $($flatHealth | ConvertTo-Json -Compress)"
+        $flatHealth = Invoke-RestMethod -UseBasicParsing -Uri "http://127.0.0.1:$port/healthz" -TimeoutSec 3
+        if ($flatHealth.ok -ne $true -or $flatHealth.version -ne $Version) {
+            throw "flat Core health mismatch before migration: $($flatHealth | ConvertTo-Json -Compress)"
+        }
+    } finally {
+        $migrationGate.ReleaseMutex()
+        $migrationGate.Dispose()
     }
 
-    # The Core startup also launches the normal same-version background repair. On this
-    # unreleased E2E build it exits after observing that GitHub latest is a different
-    # version. Wait for it so the explicit local-archive repair owns the migration mutex.
-    Wait-NoDesktopRepairProcess -ExecutablePath $core
-
-    # The hidden repair entrypoint is the same one launched automatically by Core startup;
-    # local archive flags only make the test independent from an already-published Release.
+    # 隐藏 repair 入口与 Core 自动启动的入口完全相同；local archive 只用于让 E2E
+    # 不依赖当前 GitHub Release 内容，并确保这一轮 migration 由测试显式控制。
     $trayLock = $null
     try {
         if ($InjectTrayReplaceFailure) {
