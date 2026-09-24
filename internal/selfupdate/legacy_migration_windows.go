@@ -291,18 +291,68 @@ func handleWindowsLegacyMigrationCommand(ctx context.Context, args []string) (bo
 	if len(args) != 2 {
 		return true, errors.New("Windows legacy migration helper 参数无效")
 	}
-	data, err := os.ReadFile(args[1])
+	helperPath, err := os.Executable()
 	if err != nil {
-		return true, fmt.Errorf("读取 Windows legacy migration plan 失败: %w", err)
+		return true, fmt.Errorf("解析 Windows legacy migration helper 路径失败: %w", err)
+	}
+	return true, runWindowsLegacyMigrationHelper(ctx, helperPath, args[1])
+}
+
+func runWindowsLegacyMigrationHelper(ctx context.Context, helperPath, planPath string) error {
+	// 只有正在本轮 migration Temp 目录里运行的固定 helper 才能取得清理所有权。
+	// 这样 plan 尚未成功解析时也可以安全回收，而不能仅凭用户可构造的目录名删目录。
+	cleanupRoot, cleanupOwned := windowsLegacyMigrationCleanupRootForHelper(helperPath, planPath)
+	if !cleanupOwned {
+		return errors.New("Windows legacy migration helper 与 plan 不属于同一临时目录")
+	}
+	defer func() {
+		if cleanupOwned {
+			scheduleWindowsCleanup(cleanupRoot)
+		}
+	}()
+
+	data, err := os.ReadFile(planPath)
+	if err != nil {
+		return fmt.Errorf("读取 Windows legacy migration plan 失败: %w", err)
 	}
 	var plan windowsLegacyMigrationPlan
 	if err := json.Unmarshal(data, &plan); err != nil {
-		return true, fmt.Errorf("解析 Windows legacy migration plan 失败: %w", err)
+		return fmt.Errorf("解析 Windows legacy migration plan 失败: %w", err)
 	}
-	return true, finalizeWindowsLegacyMigration(ctx, plan)
+	if !sameWindowsPath(cleanupRoot, plan.CleanupRoot) {
+		return errors.New("Windows legacy migration plan 不属于当前临时目录")
+	}
+	if err := validateWindowsLegacyMigrationCleanupRoot(plan.CleanupRoot); err != nil {
+		return err
+	}
+
+	// plan 的 cleanup root 已单独验证；从这里开始由 finalize 接管目录生命周期。
+	cleanupOwned = false
+	return finalizeWindowsLegacyMigration(ctx, plan)
 }
 
 func finalizeWindowsLegacyMigration(ctx context.Context, plan windowsLegacyMigrationPlan) error {
+	// cleanup root 是唯一允许在 plan 完整校验前使用的字段：先证明它确实是本轮
+	// 系统 Temp 子目录，再接管生命周期。这样其余 plan 字段损坏也不会泄漏 Release。
+	if err := validateWindowsLegacyMigrationCleanupRoot(plan.CleanupRoot); err != nil {
+		return err
+	}
+	preserveCleanupRoot := false
+	var mutex windows.Handle
+	mutexOwned := false
+	defer func() {
+		// cleanup 的同步 RemoveAll 必须发生在释放 migration mutex 之前。
+		// 这样即使同一 plan 被异常重复启动，也不存在“先放锁、后删活跃目录”的窗口。
+		if !preserveCleanupRoot {
+			scheduleWindowsCleanup(plan.CleanupRoot)
+		}
+		if mutexOwned {
+			_ = windows.ReleaseMutex(mutex)
+		}
+		if mutex != 0 {
+			_ = windows.CloseHandle(mutex)
+		}
+	}()
 	if err := validateWindowsLegacyMigrationPlan(plan); err != nil {
 		return err
 	}
@@ -310,20 +360,35 @@ func finalizeWindowsLegacyMigration(ctx context.Context, plan windowsLegacyMigra
 	if err != nil {
 		return err
 	}
-	mutex, err := windows.CreateMutex(nil, true, mutexName)
+	mutex, err = windows.CreateMutex(nil, true, mutexName)
 	if err == windows.ERROR_ALREADY_EXISTS {
-		if mutex != 0 {
-			_ = windows.CloseHandle(mutex)
+		if mutex == 0 {
+			preserveCleanupRoot = true
+			return errors.New("Windows legacy migration 互斥锁已存在但句柄不可用；保留临时目录")
 		}
+
+		// 另一 helper 可能来自独立 Temp，也可能极端情况下是同一 plan 被重复启动。
+		// 只有等现有持有者释放并由本 helper 接管 mutex，才允许清理本轮目录。
+		status, waitErr := windows.WaitForSingleObject(mutex, uint32((5*time.Minute)/time.Millisecond))
+		if waitErr != nil {
+			preserveCleanupRoot = true
+			return fmt.Errorf("等待 Windows legacy migration 互斥锁失败: %w；保留临时目录", waitErr)
+		}
+		if status == uint32(windows.WAIT_TIMEOUT) {
+			preserveCleanupRoot = true
+			return errors.New("等待 Windows legacy migration 互斥锁超时；保留临时目录")
+		}
+		if status != windows.WAIT_OBJECT_0 && status != windows.WAIT_ABANDONED {
+			preserveCleanupRoot = true
+			return fmt.Errorf("等待 Windows legacy migration 互斥锁返回未知状态 %d；保留临时目录", status)
+		}
+		mutexOwned = true
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("创建 Windows legacy migration 互斥锁失败: %w", err)
 	}
-	defer func() {
-		_ = windows.ReleaseMutex(mutex)
-		_ = windows.CloseHandle(mutex)
-	}()
+	mutexOwned = true
 
 	if err := waitForWindowsProcessExit(plan.ParentPID, 30*time.Second); err != nil {
 		return err
@@ -397,9 +462,10 @@ func finalizeWindowsLegacyMigration(ctx context.Context, plan windowsLegacyMigra
 			}
 		}
 		if len(failures) > 0 {
+			// 只有恢复不完整时保留 stable-backup，供人工或后续修复使用。
+			preserveCleanupRoot = true
 			return fmt.Errorf("%v；Windows legacy migration 恢复不完整: %s；保留恢复目录 %s", cause, strings.Join(failures, "；"), plan.CleanupRoot)
 		}
-		scheduleWindowsCleanup(plan.CleanupRoot)
 		return fmt.Errorf("%v；已恢复 legacy 稳定入口，source generation 保留供下次重试", cause)
 	}
 
@@ -438,7 +504,6 @@ func finalizeWindowsLegacyMigration(ctx context.Context, plan windowsLegacyMigra
 	compatManager := filepath.Join(plan.RuntimeRoot, "installer", "manage-windows.ps1")
 	_ = os.Remove(compatManager)
 	_ = os.Remove(filepath.Dir(compatManager))
-	scheduleWindowsCleanup(plan.CleanupRoot)
 	return nil
 }
 
@@ -490,6 +555,37 @@ func windowsProcessNameRunning(name string) (bool, error) {
 	}
 }
 
+func windowsLegacyMigrationCleanupRootForHelper(helperPath, planPath string) (string, bool) {
+	if !strings.EqualFold(filepath.Base(helperPath), "agentdock-legacy-migration-helper.exe") ||
+		!strings.EqualFold(filepath.Base(planPath), "migration-plan.json") {
+		return "", false
+	}
+	helperRoot := filepath.Clean(filepath.Dir(helperPath))
+	planRoot := filepath.Clean(filepath.Dir(planPath))
+	if !sameWindowsPath(helperRoot, planRoot) {
+		return "", false
+	}
+	if err := validateWindowsLegacyMigrationCleanupRoot(helperRoot); err != nil {
+		return "", false
+	}
+	return helperRoot, true
+}
+
+func validateWindowsLegacyMigrationCleanupRoot(root string) error {
+	root = filepath.Clean(strings.TrimSpace(root))
+	tempRoot := filepath.Clean(os.TempDir())
+	relative, err := filepath.Rel(tempRoot, root)
+	if err != nil ||
+		relative == "." ||
+		relative == ".." ||
+		filepath.IsAbs(relative) ||
+		strings.HasPrefix(relative, ".."+string(os.PathSeparator)) ||
+		!strings.HasPrefix(filepath.Base(root), "agentdock-legacy-migration-") {
+		return errors.New("Windows legacy migration cleanup root 必须位于系统 Temp")
+	}
+	return nil
+}
+
 func validateWindowsLegacyMigrationPlan(plan windowsLegacyMigrationPlan) error {
 	if plan.ParentPID <= 0 ||
 		strings.TrimSpace(plan.RuntimeRoot) == "" ||
@@ -501,6 +597,9 @@ func validateWindowsLegacyMigrationPlan(plan windowsLegacyMigrationPlan) error {
 	}
 	if err := updateengine.ValidateVersion(plan.Version); err != nil {
 		return fmt.Errorf("Windows legacy migration version 无效: %w", err)
+	}
+	if err := validateWindowsLegacyMigrationCleanupRoot(plan.CleanupRoot); err != nil {
+		return err
 	}
 	layout, err := updateengine.NewWindowsLayout(plan.RuntimeRoot)
 	if err != nil {

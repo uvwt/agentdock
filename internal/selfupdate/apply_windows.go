@@ -575,15 +575,26 @@ func moveFileReplace(sourcePath, targetPath string) error {
 }
 
 func scheduleWindowsCleanup(directory string) {
+	// helper 自身仍可能占用目录中的 exe，Windows 不一定能立刻删掉根目录。
+	// 先同步 RemoveAll 尽可能释放大 payload；即使后续 PowerShell 无法启动，
+	// 也不会因为清理进程本身失败而继续留下整份 Release。
+	_ = os.RemoveAll(directory)
+	if _, err := os.Stat(directory); errors.Is(err, os.ErrNotExist) {
+		return
+	}
+
 	command := exec.Command(
 		"powershell.exe",
 		"-NoLogo",
 		"-NoProfile",
 		"-NonInteractive",
 		"-WindowStyle", "Hidden",
-		"-Command", "Start-Sleep -Seconds 2; Remove-Item -LiteralPath $env:AGENTDOCK_UPDATE_CLEANUP_DIR -Recurse -Force -ErrorAction SilentlyContinue",
+		"-Command",
+		"$path=$env:AGENTDOCK_UPDATE_CLEANUP_DIR; for ($attempt=0; $attempt -lt 12; $attempt++) { Start-Sleep -Milliseconds 500; Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue; if (-not (Test-Path -LiteralPath $path)) { exit 0 } }",
 	)
 	command.Env = append(os.Environ(), "AGENTDOCK_UPDATE_CLEANUP_DIR="+directory)
 	command.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS}
-	_ = command.Start()
+	if err := command.Start(); err == nil {
+		_ = command.Process.Release()
+	}
 }
