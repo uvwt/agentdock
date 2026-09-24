@@ -162,7 +162,7 @@ jobs:
             echo 'relevant=true' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          changed_paths="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- Dockerfile docker-entrypoint.sh core-skills cmd internal packaging/docker packaging/build-core-skill-bundle.py scripts/test/test-docker-images.sh go.mod go.sum .github/workflows/ci.yml)"
+          changed_paths="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- Dockerfile .dockerignore docker-entrypoint.sh docker-compose.yml core-skills cmd internal packaging/docker packaging/build-core-skill-bundle.py scripts/test/test-docker-images.sh go.mod go.sum .github/workflows/ci.yml)"
           if [[ -n "$changed_paths" ]]; then
             printf 'Container validation required by:\n%s\n' "$changed_paths"
             echo 'relevant=true' >> "$GITHUB_OUTPUT"

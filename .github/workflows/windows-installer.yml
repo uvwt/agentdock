@@ -53,6 +53,7 @@ jobs:
             cmd/agentdock \
             cmd/agentdock-arbiter \
             cmd/agentdock-shim \
+            cmd/agentdock-wsl-helper \
             internal/auth \
             internal/buildinfo \
             internal/config \
@@ -63,6 +64,8 @@ jobs:
             internal/selfupdate \
             internal/updateengine \
             internal/updateplatform \
+            internal/wslfilehelper \
+            scripts/test/testdata/fake-cloudflared \
             go.mod \
             go.sum \
             .github/workflows/windows-installer.yml \

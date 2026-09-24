@@ -59,6 +59,8 @@ func TestCIWorkflowUsesFreshBoundedGoTests(t *testing.T) {
 		"timeout-minutes: 15",
 		"name: Detect container-relevant changes",
 		"if: steps.changes.outputs.relevant == 'true'",
+		".dockerignore",
+		"docker-compose.yml",
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("CI workflow must keep bounded non-cached validation; missing %q", want)
@@ -87,6 +89,9 @@ func TestWindowsInstallerWorkflowHasAlwaysPresentPullRequestGate(t *testing.T) {
 		"name: Download and verify cloudflared compatibility payload",
 		"for ($attempt = 1; $attempt -le 5; $attempt++)",
 		"Get-AuthenticodeSignature -LiteralPath $cloudflaredPath",
+		"cmd/agentdock-wsl-helper",
+		"internal/wslfilehelper",
+		"scripts/test/testdata/fake-cloudflared",
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("Windows Installer workflow must keep a safe pull-request gate; missing %q", want)
@@ -110,8 +115,16 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 		"draft: true",
 		"name: Publish containers",
 		"org.opencontainers.image.revision=${{ needs.source.outputs.commit }}",
-		"name: Publish GitHub Release",
-		"needs: [stage-release, publish-container]",
+		"name: Verify versioned containers",
+		"name: Run versioned GHCR images",
+		"name: Run versioned Docker Hub images",
+		"name: Promote aliases and publish GitHub Release",
+		"name: Promote validated mutable aliases",
+		"docker buildx imagetools create --tag",
+		"needs: [source, stage-release, verify-container]",
+		"group: release-publication",
+		"release_api_error=\"$RUNNER_TEMP/release-api-error.log\"",
+		"HTTP 404",
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("Release workflow must gate public resources behind staged validation; missing %q", want)
@@ -124,6 +137,7 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 		"  release-gate:",
 		"  stage-release:",
 		"  publish-container:",
+		"  verify-container:",
 		"  publish-release:",
 	}
 	last := -1
@@ -135,9 +149,19 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 		last = index
 	}
 
-	if strings.Contains(workflow, "Verify published Windows installer") ||
-		strings.Contains(workflow, "Verify published containers") {
-		t.Fatal("deep release validation must happen before public publication, not after it")
+	if strings.Contains(workflow, "type=raw,value=latest") ||
+		strings.Contains(workflow, "type=raw,value=dev-latest") ||
+		strings.Contains(workflow, "type=raw,value=browser-latest") {
+		t.Fatal("container build/push must not move mutable aliases before versioned registry images pass verification")
+	}
+	if strings.Contains(workflow, "releases/tags/$RELEASE_TAG\" --jq .draft 2>/dev/null || true") {
+		t.Fatal("published-release immutability check must fail closed on API, auth, and network errors")
+	}
+	if count := strings.Count(workflow, "ref: ${{ github.event.inputs.tag || github.ref }}"); count != 1 {
+		t.Fatalf("only the source validator may resolve the release tag directly; got %d tag checkouts", count)
+	}
+	if !strings.Contains(workflow, "ref: ${{ needs.source.outputs.commit }}") {
+		t.Fatal("release jobs after source validation must pin checkout to the validated commit")
 	}
 }
 

@@ -12,7 +12,7 @@ on:
         type: string
 
 concurrency:
-  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  group: release-publication
   cancel-in-progress: false
 
 permissions:
@@ -57,10 +57,17 @@ jobs:
 
           go run ./tools/release verify-version "$RELEASE_TAG"
 
-          # 已公开 Release 视为不可变；失败的 draft 可以原 tag 重跑并继续完成。
-          release_draft="$(gh api "repos/${{ github.repository }}/releases/tags/$RELEASE_TAG" --jq .draft 2>/dev/null || true)"
-          if [[ "$release_draft" == "false" ]]; then
-            echo "Release $RELEASE_TAG is already published; published releases are immutable." >&2
+          # 已公开 Release 视为不可变；只有明确的 HTTP 404 才表示尚未发布。
+          release_api_error="$RUNNER_TEMP/release-api-error.log"
+          if release_draft="$(gh api "repos/${{ github.repository }}/releases/tags/$RELEASE_TAG" --jq .draft 2>"$release_api_error")"; then
+            if [[ "$release_draft" == "false" ]]; then
+              echo "Release $RELEASE_TAG is already published; published releases are immutable." >&2
+              exit 1
+            fi
+          elif grep -Eq '\(HTTP 404\)$' "$release_api_error"; then
+            :
+          else
+            cat "$release_api_error" >&2
             exit 1
           fi
 
@@ -79,7 +86,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.source.outputs.commit }}
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -126,7 +133,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.source.outputs.commit }}
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -169,7 +176,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.source.outputs.commit }}
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -256,7 +263,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.source.outputs.commit }}
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -358,7 +365,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.source.outputs.commit }}
 
       - name: Download Windows payload
         uses: actions/download-artifact@v4
@@ -421,13 +428,13 @@ jobs:
 
   prepare-release:
     name: Prepare release candidate
-    needs: [build-linux, build-macos, build-macos-app, build-windows, build-windows-setup]
+    needs: [source, build-linux, build-macos, build-macos-app, build-windows, build-windows-setup]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.source.outputs.commit }}
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -730,13 +737,13 @@ jobs:
 
   verify-windows-release:
     name: Verify staged Windows release
-    needs: prepare-release
+    needs: [source, prepare-release]
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.source.outputs.commit }}
 
       - name: Download prepared release
         uses: actions/download-artifact@v4
@@ -883,7 +890,10 @@ jobs:
           set -euo pipefail
           # Draft 不能稳定通过 releases/tags/<tag> 查询；按 releases 列表清理同 tag 草稿，
           # 让失败后的同 tag 重跑始终从唯一、干净的 staging release 开始。
-          gh api "repos/${{ github.repository }}/releases?per_page=100"             --paginate             --jq ".[] | select(.draft and .tag_name == \"$RELEASE_TAG\") | .id"             > "$RUNNER_TEMP/stale-draft-ids"
+          gh api "repos/${{ github.repository }}/releases?per_page=100" \
+            --paginate \
+            --jq ".[] | select(.draft and .tag_name == \"$RELEASE_TAG\") | .id" \
+            > "$RUNNER_TEMP/stale-draft-ids"
           while IFS= read -r release_id; do
             [[ -z "$release_id" ]] && continue
             gh api --method DELETE "repos/${{ github.repository }}/releases/$release_id"
@@ -918,7 +928,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ needs.source.outputs.tag }}
+          ref: ${{ needs.source.outputs.commit }}
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v3
@@ -955,7 +965,6 @@ jobs:
           flavor: latest=false
           tags: |
             type=raw,value=${{ needs.source.outputs.tag }},priority=1000
-            type=raw,value=latest,priority=100
           labels: |
             org.opencontainers.image.revision=${{ needs.source.outputs.commit }}
 
@@ -985,7 +994,6 @@ jobs:
           flavor: latest=false
           tags: |
             type=raw,value=dev-${{ needs.source.outputs.tag }},priority=1000
-            type=raw,value=dev-latest,priority=100
           labels: |
             org.opencontainers.image.revision=${{ needs.source.outputs.commit }}
 
@@ -1017,7 +1025,6 @@ jobs:
           flavor: latest=false
           tags: |
             type=raw,value=browser-${{ needs.source.outputs.tag }},priority=1000
-            type=raw,value=browser-latest,priority=100
           labels: |
             org.opencontainers.image.revision=${{ needs.source.outputs.commit }}
 
@@ -1039,16 +1046,105 @@ jobs:
             type=gha,scope=browser
           cache-to: type=gha,mode=max,scope=browser,ignore-error=true
 
-  publish-release:
-    name: Publish GitHub Release
-    needs: [stage-release, publish-container]
+  verify-container:
+    name: Verify versioned containers
+    needs: [source, publish-container]
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout validated source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.source.outputs.commit }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Run versioned GHCR images
+        env:
+          AGENTDOCK_TEST_BUILD: "false"
+          AGENTDOCK_TEST_RUNTIME_IMAGE: ghcr.io/${{ github.repository }}:${{ needs.source.outputs.tag }}
+          AGENTDOCK_TEST_DEV_IMAGE: ghcr.io/${{ github.repository }}:dev-${{ needs.source.outputs.tag }}
+          AGENTDOCK_TEST_BROWSER_IMAGE: ghcr.io/${{ github.repository }}:browser-${{ needs.source.outputs.tag }}
+          AGENTDOCK_EXPECT_IMAGE_VERSION: ${{ needs.source.outputs.tag }}
+        run: ./scripts/test/test-docker-images.sh
+
+      - name: Run versioned Docker Hub images
+        env:
+          AGENTDOCK_TEST_BUILD: "false"
+          AGENTDOCK_TEST_RUNTIME_IMAGE: agentdockio/agentdock:${{ needs.source.outputs.tag }}
+          AGENTDOCK_TEST_DEV_IMAGE: agentdockio/agentdock:dev-${{ needs.source.outputs.tag }}
+          AGENTDOCK_TEST_BROWSER_IMAGE: agentdockio/agentdock:browser-${{ needs.source.outputs.tag }}
+          AGENTDOCK_EXPECT_IMAGE_VERSION: ${{ needs.source.outputs.tag }}
+        run: ./scripts/test/test-docker-images.sh
+
+  publish-release:
+    name: Promote aliases and publish GitHub Release
+    needs: [source, stage-release, verify-container]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Promote validated mutable aliases
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.source.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          digest_of() {
+            docker buildx imagetools inspect "$1" --format '{{json .Manifest.Digest}}' | tr -d '"'
+          }
+
+          promote() {
+            local source_ref="$1"
+            local target_ref="$2"
+            local source_digest
+            local target_digest
+
+            source_digest="$(digest_of "$source_ref")"
+            test -n "$source_digest"
+            docker buildx imagetools create --tag "$target_ref" "$source_ref"
+            target_digest="$(digest_of "$target_ref")"
+            test "$target_digest" = "$source_digest"
+          }
+
+          promote "ghcr.io/${{ github.repository }}:$RELEASE_TAG" "ghcr.io/${{ github.repository }}:latest"
+          promote "ghcr.io/${{ github.repository }}:dev-$RELEASE_TAG" "ghcr.io/${{ github.repository }}:dev-latest"
+          promote "ghcr.io/${{ github.repository }}:browser-$RELEASE_TAG" "ghcr.io/${{ github.repository }}:browser-latest"
+
+          promote "agentdockio/agentdock:$RELEASE_TAG" "agentdockio/agentdock:latest"
+          promote "agentdockio/agentdock:dev-$RELEASE_TAG" "agentdockio/agentdock:dev-latest"
+          promote "agentdockio/agentdock:browser-$RELEASE_TAG" "agentdockio/agentdock:browser-latest"
+
       - name: Publish validated draft
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ needs.source.outputs.tag }}
         run: |
           set -euo pipefail
           gh release edit "$RELEASE_TAG" \
