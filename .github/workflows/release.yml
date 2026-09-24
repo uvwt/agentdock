@@ -767,6 +767,25 @@ jobs:
             -OutFile $setup
           "PUBLISHED_SETUP=$setup" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
 
+          # Setup E2E 会先构造真实的 pre-generation flat 安装，再验证迁移。
+          # 直接复用本次 Release 已发布的 Windows 二进制，确保 fixture 与正式产物同源。
+          $legacyArchive = Join-Path $env:RUNNER_TEMP 'agentdock_windows_amd64.zip'
+          $legacyRoot = Join-Path $env:RUNNER_TEMP 'agentdock-release-legacy-fixture'
+          Invoke-WebRequest `
+            -UseBasicParsing `
+            -Uri "https://github.com/${{ github.repository }}/releases/download/$tag/agentdock_windows_amd64.zip" `
+            -OutFile $legacyArchive
+          Remove-Item -LiteralPath $legacyRoot -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive -LiteralPath $legacyArchive -DestinationPath $legacyRoot -Force
+          $legacyCore = Join-Path $legacyRoot 'agentdock.exe'
+          $legacyTray = Join-Path $legacyRoot 'agentdock-tray.exe'
+          if (-not (Test-Path -LiteralPath $legacyCore -PathType Leaf) -or
+              -not (Test-Path -LiteralPath $legacyTray -PathType Leaf)) {
+            throw 'Published Windows archive is missing the legacy migration fixture binaries.'
+          }
+          "LEGACY_CORE_PATH=$legacyCore" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
+          "LEGACY_TRAY_PATH=$legacyTray" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
+
       - name: Verify published Setup signature
         shell: pwsh
         env:
@@ -781,6 +800,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           & .\scripts\test\test-windows-setup-e2e.ps1 `
             -SetupPath $env:PUBLISHED_SETUP `
+            -LegacyCorePath $env:LEGACY_CORE_PATH `
+            -LegacyTrayPath $env:LEGACY_TRAY_PATH `
             -AllowLegacyTaskMutation
 
       - name: Install and upgrade published version as standard user

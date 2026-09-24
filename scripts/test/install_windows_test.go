@@ -1155,6 +1155,22 @@ func TestWindowsSetupE2EStagesCompleteLegacyFixture(t *testing.T) {
 			t.Fatalf("Windows Installer workflow must pass a real legacy fixture binary; missing %q", want)
 		}
 	}
+
+	releaseWorkflowData, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "release.yml"))
+	if err != nil {
+		t.Fatalf("read Release workflow: %v", err)
+	}
+	releaseWorkflow := strings.ReplaceAll(string(releaseWorkflowData), "\r\n", "\n")
+	for _, want := range []string{
+		"agentdock_windows_amd64.zip",
+		"-LegacyCorePath $env:LEGACY_CORE_PATH",
+		"-LegacyTrayPath $env:LEGACY_TRAY_PATH",
+	} {
+		if !strings.Contains(releaseWorkflow, want) {
+			t.Fatalf("Release workflow must stage and pass a published legacy fixture binary; missing %q", want)
+		}
+	}
+
 }
 
 func TestWindowsReleaseKeepsPublishedUpdaterCompatibilityAsset(t *testing.T) {
