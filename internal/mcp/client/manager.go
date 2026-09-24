@@ -651,6 +651,8 @@ func (m *Manager) runtimeConfig(cfg ServerConfig) (ServerConfig, error) {
 					nil,
 				)
 			}
+			// ${ENV:-} 保留字段本身，只把缺失/空值展开成空字符串。
+			runtimeValues[envName] = ""
 			continue
 		}
 		runtimeValues[envName] = value
@@ -667,6 +669,8 @@ func (m *Manager) runtimeConfig(cfg ServerConfig) (ServerConfig, error) {
 					nil,
 				)
 			}
+			// stdio env 与 HTTP header 使用同一套 optional binding 语义。
+			runtimeValues[childName] = ""
 			continue
 		}
 		runtimeValues[childName] = value

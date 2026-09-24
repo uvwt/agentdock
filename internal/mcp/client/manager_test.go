@@ -549,6 +549,7 @@ func TestPluginRuntimeConfigDistinguishesRequiredAndOptionalHeaderBindings(t *te
 			"Authorization": "OPTIONAL_TOKEN",
 			"X-Required":    "REQUIRED_TOKEN",
 		},
+		EnvBindings: map[string]string{"OPTIONAL_CHILD": "OPTIONAL_CHILD_TOKEN"},
 		RequiredEnv: []string{"REQUIRED_TOKEN"},
 		StorageKey:  storageKey, SourceType: "plugin", PluginName: "demo.plugin",
 		PluginDataDir: t.TempDir(), Enabled: true,
@@ -557,8 +558,11 @@ func TestPluginRuntimeConfigDistinguishesRequiredAndOptionalHeaderBindings(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, exists := runtimeCfg.RuntimeEnv["OPTIONAL_TOKEN"]; exists {
-		t.Fatalf("optional missing binding leaked into runtime env: %#v", runtimeCfg.RuntimeEnv)
+	if value, exists := runtimeCfg.RuntimeEnv["OPTIONAL_TOKEN"]; !exists || value != "" {
+		t.Fatalf("optional header binding = %#v, want OPTIONAL_TOKEN empty", runtimeCfg.RuntimeEnv)
+	}
+	if value, exists := runtimeCfg.RuntimeEnv["OPTIONAL_CHILD"]; !exists || value != "" {
+		t.Fatalf("optional stdio binding = %#v, want OPTIONAL_CHILD empty", runtimeCfg.RuntimeEnv)
 	}
 	if runtimeCfg.RuntimeEnv["REQUIRED_TOKEN"] != "required-value" {
 		t.Fatalf("required runtime binding = %#v", runtimeCfg.RuntimeEnv)

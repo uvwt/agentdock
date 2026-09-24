@@ -326,7 +326,7 @@ func exactEnvironmentReference(value string) (string, bool, bool) {
 		return "", false, false
 	}
 	name := value[2 : len(value)-1]
-	// ${ENV} 是必填绑定；${ENV:-} 表示可选绑定，未配置时不注入对应 env/header。
+	// ${ENV} 是必填绑定；${ENV:-} 表示可选绑定，未配置或为空时展开为空字符串。
 	required := true
 	if strings.HasSuffix(name, ":-") {
 		name = strings.TrimSuffix(name, ":-")

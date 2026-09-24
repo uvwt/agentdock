@@ -303,6 +303,7 @@ func resolveHTTPHeaders(cfg ServerConfig) (http.Header, error) {
 		if !ok || value == "" {
 			if cfg.SourceType == "plugin" {
 				if _, required := requiredEnv[envName]; !required {
+					headers.Set(header, "")
 					continue
 				}
 			}

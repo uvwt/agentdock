@@ -80,7 +80,7 @@ func TestHTTPHeaderUsesScopedEnvironmentBeforeHost(t *testing.T) {
 	}
 }
 
-func TestPluginHTTPHeaderOptionalBindingIsOmittedWhenUnset(t *testing.T) {
+func TestPluginHTTPHeaderOptionalBindingExpandsToEmptyWhenUnset(t *testing.T) {
 	headers, err := resolveHTTPHeaders(ServerConfig{
 		Name:       "context7",
 		SourceType: "plugin",
@@ -89,8 +89,24 @@ func TestPluginHTTPHeaderOptionalBindingIsOmittedWhenUnset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, exists := headers["Authorization"]; exists {
-		t.Fatalf("optional Authorization header was sent without a value: %#v", headers)
+	values, exists := headers["Authorization"]
+	if !exists || len(values) != 1 || values[0] != "" {
+		t.Fatalf("optional Authorization header = %#v, want one empty value", headers)
+	}
+}
+
+func TestPluginStdioOptionalBindingExpandsToEmptyEnvironment(t *testing.T) {
+	environment, err := stdioEnvironment(ServerConfig{
+		Name:       "demo",
+		SourceType: "plugin",
+		RuntimeEnv: map[string]string{"OPTIONAL": ""},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := formattedEnvironmentMap(environment)
+	if value, exists := values["OPTIONAL"]; !exists || value != "" {
+		t.Fatalf("optional stdio environment = %#v, want OPTIONAL=", values)
 	}
 }
 
