@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	skills "github.com/uvwt/agentdock/internal/skill"
 )
 
 func TestOpenAIPluginAutoConvertsWithoutAdapterParameter(t *testing.T) {
@@ -197,6 +199,55 @@ func TestClaudePluginAutoConvertsRuntimePlaceholders(t *testing.T) {
 		if _, err := os.Lstat(filepath.Join(installed.Root, consumed)); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("canonical Claude package retained consumed artifact %s: %v", consumed, err)
 		}
+	}
+}
+
+func TestClaudePluginAutoConvertsSkillAllowedToolsArray(t *testing.T) {
+	manager, err := NewManager(filepath.Join(t.TempDir(), ".agentdock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	writeExternalJSONFile(t, filepath.Join(root, ".claude-plugin", "plugin.json"), map[string]any{
+		"name": "claude-allowed-tools", "version": "1.0.0", "description": "Claude allowed-tools fixture.",
+	})
+	skillRoot := filepath.Join(root, "skills", "access")
+	if err := os.MkdirAll(skillRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sourceSkill := "---\nname: access\ndescription: Manage access.\nuser-invocable: true\nallowed-tools:\n  - Read\n  - Write\n  - Bash(ls *)\n---\n\n# Access\n"
+	if err := os.WriteFile(filepath.Join(skillRoot, "SKILL.md"), []byte(sourceSkill), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	review := manager.Validate(root)
+	if !review.Valid || review.Compatibility.Format != pluginFormatClaude {
+		t.Fatalf("Claude allowed-tools review = %#v", review)
+	}
+	result, err := manager.InstallReviewedSource(context.Background(), root, true, review.ReviewToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.FinalizeActivation(result.Name); err != nil {
+		t.Fatal(err)
+	}
+	installed, err := manager.Inspect("claude-allowed-tools")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := skills.LoadSkillDocument(filepath.Join(installed.Root, "skills", "access"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.AllowedTools != "Read Write Bash(ls *)" {
+		t.Fatalf("normalized allowed-tools = %q", doc.AllowedTools)
+	}
+	original, err := os.ReadFile(filepath.Join(skillRoot, "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(original) != sourceSkill {
+		t.Fatalf("Claude source Skill was modified:\n%s", original)
 	}
 }
 

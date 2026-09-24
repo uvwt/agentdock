@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	skills "github.com/uvwt/agentdock/internal/skill"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -195,6 +196,9 @@ func normalizeClaudePlugin(sourceRoot, normalizedRoot, sourceDigest string) (Com
 		skillHints = append(skillHints, ".")
 	}
 	if err := normalizeSkillPaths(sourceRoot, normalizedRoot, raw["skills"], skillHints); err != nil {
+		return Compatibility{}, err
+	}
+	if err := normalizeClaudeSkillDocuments(normalizedRoot); err != nil {
 		return Compatibility{}, err
 	}
 	mcpValues, err := collectExternalMCPValues(sourceRoot, raw["mcpServers"], ".mcp.json")
@@ -430,6 +434,105 @@ func copyExternalSkillDirectory(source, destination string) error {
 		return err
 	}
 	return snapshotPluginTree(source, destination, maxPluginExtractedBytes, maxPluginArchiveFiles)
+}
+
+func normalizeClaudeSkillDocuments(root string) error {
+	skillsRoot := filepath.Join(root, "skills")
+	entries, err := os.ReadDir(skillsRoot)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		path := filepath.Join(skillsRoot, entry.Name(), "SKILL.md")
+		if !regularFileExists(path) {
+			continue
+		}
+		if err := normalizeClaudeSkillAllowedTools(path); err != nil {
+			return fmt.Errorf("normalize Claude Skill %q: %w", entry.Name(), err)
+		}
+	}
+	return nil
+}
+
+func normalizeClaudeSkillAllowedTools(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	lines := strings.Split(text, "\n")
+	if len(lines) < 3 || strings.TrimSpace(lines[0]) != "---" {
+		return errors.New("SKILL.md must start with YAML frontmatter")
+	}
+	endLine := -1
+	for index := 1; index < len(lines); index++ {
+		if strings.TrimSpace(lines[index]) == "---" {
+			endLine = index
+			break
+		}
+	}
+	if endLine < 0 {
+		return errors.New("SKILL.md frontmatter must be closed by ---")
+	}
+
+	var document yaml.Node
+	if err := yaml.Unmarshal([]byte(strings.Join(lines[1:endLine], "\n")), &document); err != nil {
+		return fmt.Errorf("decode SKILL.md frontmatter: %w", err)
+	}
+	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
+		return errors.New("SKILL.md frontmatter must be a YAML mapping")
+	}
+
+	frontmatter := document.Content[0]
+	changed := false
+	for index := 0; index+1 < len(frontmatter.Content); index += 2 {
+		if frontmatter.Content[index].Value != "allowed-tools" {
+			continue
+		}
+		value := frontmatter.Content[index+1]
+		if value.Kind != yaml.SequenceNode {
+			continue
+		}
+		tools := make([]string, 0, len(value.Content))
+		for _, item := range value.Content {
+			if item.Kind != yaml.ScalarNode || item.Tag != "!!str" {
+				return errors.New("allowed-tools array items must be strings")
+			}
+			tool := strings.TrimSpace(item.Value)
+			if tool == "" {
+				return errors.New("allowed-tools array items must be non-empty strings")
+			}
+			tools = append(tools, tool)
+		}
+
+		// Claude Plugin 允许 YAML 数组；AgentDock 内部 Portable Skill 统一保存为单行字符串。
+		value.Kind = yaml.ScalarNode
+		value.Tag = "!!str"
+		value.Value = strings.Join(tools, " ")
+		value.Content = nil
+		value.Style = 0
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+
+	normalizedFrontmatter, err := yaml.Marshal(&document)
+	if err != nil {
+		return err
+	}
+	output := "---\n" + string(normalizedFrontmatter) + "---\n" + strings.Join(lines[endLine+1:], "\n")
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(output), info.Mode().Perm())
 }
 
 func normalizeExternalComponentPath(value string) (string, error) {
