@@ -16,7 +16,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const windowsCoreStartTimeout = 45 * time.Second
+// Windows 冷启动可能同时经过 InteractiveToken 计划任务、DPAPI 配置恢复和 Runtime/Plugin 重建。
+// 更新 trial 也复用 service start 等待目标 Core；45 秒在真实云主机冷启动中已经出现边界误回滚。
+// 这里给冷启动增加 15 秒余量，同时保留明确失败上界；上层 Update Arbiter 仍有独立的总事务预算。
+const windowsCoreStartTimeout = 60 * time.Second
 
 func platformServiceStatus(ctx context.Context, runtimeRoot string) (ServiceStatus, error) {
 	manifest, _, err := loadDesktopManifest(runtimeRoot)

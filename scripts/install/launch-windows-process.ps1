@@ -12,7 +12,7 @@ param(
     [string] $Arguments = '',
     [switch] $WaitForExit,
     [ValidateRange(1, 120)]
-    [int] $TimeoutSeconds = 60
+    [int] $TimeoutSeconds = 75
 )
 
 Set-StrictMode -Version Latest

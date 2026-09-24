@@ -840,8 +840,8 @@ func TestWindowsSetupOwnsCoreActivationAndReadsStructuredFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read launch-windows-process.ps1: %v", err)
 	}
-	if !strings.Contains(string(brokerData), "[int] $TimeoutSeconds = 60") {
-		t.Fatal("Setup runtime broker timeout must exceed the 45-second Windows Core health timeout")
+	if !strings.Contains(string(brokerData), "[int] $TimeoutSeconds = 75") {
+		t.Fatal("Setup runtime broker must preserve launch headroom beyond the Windows Core health timeout")
 	}
 }
 func TestWindowsSetupRuntimeBrokerTimeoutExceedsCoreStartTimeout(t *testing.T) {
