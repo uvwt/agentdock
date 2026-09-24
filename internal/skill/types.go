@@ -1,13 +1,9 @@
 package skill
 
 type SkillDocument struct {
-	Name          string            `json:"name"`
-	Description   string            `json:"description"`
-	License       string            `json:"license,omitempty"`
-	Compatibility string            `json:"compatibility,omitempty"`
-	Metadata      map[string]string `json:"metadata,omitempty"`
-	AllowedTools  string            `json:"allowed_tools,omitempty"`
-	Body          string            `json:"body,omitempty"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Body        string `json:"body,omitempty"`
 }
 
 type SkillMetadata struct {
@@ -18,8 +14,6 @@ type SkillMetadata struct {
 type InstallRequest struct {
 	Source       string
 	DigestSHA256 string
-	MaxBytes     int64
-	MaxFiles     int
 }
 
 type InstallResult struct {
@@ -39,8 +33,6 @@ type RemoveResult struct {
 type ValidateRequest struct {
 	Source       string
 	DigestSHA256 string
-	MaxBytes     int64
-	MaxFiles     int
 }
 
 type ValidateIssue struct {

@@ -96,8 +96,11 @@ func pluginReviewTokenForTest(t *testing.T, rt *Runtime, source string) string {
 	if !ok || !review.Valid || review.ReviewToken == "" {
 		t.Fatalf("Plugin validate did not return a usable review token: %#v", validated)
 	}
-	if validated["review_token"] != review.ReviewToken || validated["package_digest"] != review.PackageDigest {
-		t.Fatalf("Plugin validate top-level confirmation binding = %#v, review=%#v", validated, review)
+	if _, exists := validated["review_token"]; exists {
+		t.Fatalf("Plugin validate still duplicates review_token at top level: %#v", validated)
+	}
+	if _, exists := validated["package_digest"]; exists {
+		t.Fatalf("Plugin validate still duplicates package_digest at top level: %#v", validated)
 	}
 	return review.ReviewToken
 }
@@ -222,7 +225,7 @@ func TestPluginComponentsEnterExistingRuntimeAndSkillExecUsesPluginData(t *testi
 	if plugin["version"] != "1.0.0" || plugin["enabled"] != true ||
 		plugin["description"] != "Plugin integration test." ||
 		plugin["skills_count"] != float64(1) || plugin["mcp_count"] != float64(1) ||
-		plugin["format"] != "portable" || plugin["adapted"] != false {
+		plugin["format"] != "portable" {
 		t.Fatalf("Plugin context summary = %#v", plugin)
 	}
 

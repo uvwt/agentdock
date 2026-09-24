@@ -12,6 +12,7 @@ import (
 
 	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/auth"
+	pluginruntime "github.com/uvwt/agentdock/internal/plugin"
 )
 
 func TestRuntimePluginAPIIsReadOnlyAuthenticatedAndPathSafe(t *testing.T) {
@@ -32,11 +33,10 @@ func TestRuntimePluginAPIIsReadOnlyAuthenticatedAndPathSafe(t *testing.T) {
 		"version":     "1.0.0",
 		"description": "Runtime API Plugin fixture.",
 		"provenance": map[string]any{
-			"origin":   "https://github.com/example/plugins",
-			"revision": "abc123",
-			"subdir":   "plugins/runtime-demo",
-			"format":   "external",
-			"adapted":  true,
+			"origin":      "https://github.com/example/plugins",
+			"revision":    "abc123",
+			"subdir":      "plugins/runtime-demo",
+			"vendor_note": "opaque metadata",
 		},
 	}
 	data, err := json.Marshal(manifest)
@@ -53,12 +53,12 @@ func TestRuntimePluginAPIIsReadOnlyAuthenticatedAndPathSafe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	token, _ := validated["review_token"].(string)
-	if token == "" {
+	review, ok := validated["review"].(pluginruntime.Review)
+	if !ok || review.ReviewToken == "" {
 		t.Fatalf("validate result has no review_token: %#v", validated)
 	}
 	if _, err := runtime.Call(context.Background(), "plugin_manage", map[string]any{
-		"action": "install", "source": source, "review_token": token,
+		"action": "install", "source": source, "review_token": review.ReviewToken,
 	}); err != nil {
 		t.Fatal(err)
 	}

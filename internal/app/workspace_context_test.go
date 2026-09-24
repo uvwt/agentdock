@@ -102,8 +102,7 @@ func TestWorkspaceContextLoadsFixedGlobalNestedRulesAndLocalSkills(t *testing.T)
 	}
 	if !strings.HasPrefix(got.WorkspaceSkills[0].File, "skill://workspace/") ||
 		!strings.HasSuffix(got.WorkspaceSkills[0].File, "/a-skill/SKILL.md") ||
-		got.WorkspaceSkills[0].SkillRef == "" || got.WorkspaceSkills[0].SourceType != "workspace" ||
-		got.WorkspaceSkills[0].SourceID == "" {
+		got.WorkspaceSkills[0].SkillRef == "" || got.WorkspaceSkills[0].SourceType != "workspace" {
 		t.Fatalf("workspace Skill file = %q", got.WorkspaceSkills[0].File)
 	}
 	encoded, err := json.Marshal(got)

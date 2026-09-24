@@ -19,11 +19,10 @@ func TestPortableProvenanceChangesDigestAndReviewToken(t *testing.T) {
 			"name":    "provenance-demo",
 			"version": "1.0.0",
 			"provenance": map[string]any{
-				"origin":   "https://github.com/example/plugins",
-				"revision": revision,
-				"subdir":   "plugins/demo",
-				"format":   "external",
-				"adapted":  true,
+				"origin":      "https://github.com/example/plugins",
+				"revision":    revision,
+				"subdir":      "plugins/demo",
+				"vendor_note": map[string]any{"preserved": true},
 			},
 		})
 	}
@@ -61,13 +60,8 @@ func TestPortableManifestRejectsInvalidProvenance(t *testing.T) {
 	}{
 		{
 			name:       "missing origin",
-			provenance: map[string]any{"revision": "rev-a", "adapted": true},
+			provenance: map[string]any{"revision": "rev-a", "vendor_note": true},
 			want:       "provenance.origin is required",
-		},
-		{
-			name:       "unknown field",
-			provenance: map[string]any{"origin": "https://example.com/repo", "unexpected": true},
-			want:       "unknown field",
 		},
 		{
 			name:       "escaping subdir",

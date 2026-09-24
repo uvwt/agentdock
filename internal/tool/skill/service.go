@@ -272,7 +272,7 @@ func (s *Service) acquireWorkspace(ctx context.Context, ref parsedSkillRef) (Res
 	_, nameIssued := s.workspaceIssued[ref.SourceID][ref.Name]
 	s.workspaceMu.RUnlock()
 	if !issued || !nameIssued {
-		return ResolvedSkill{}, nil, toolErrorDetails("INVALID_SKILL_REF", "workspace skill_ref was not issued by this AgentDock runtime", "validation", map[string]any{"source_id": ref.SourceID})
+		return ResolvedSkill{}, nil, toolErrorDetails("INVALID_SKILL_REF", "workspace skill_ref was not issued by this AgentDock runtime", "validation", nil)
 	}
 	realWorkspaceRoot, err := filepath.EvalSymlinks(workspaceRoot)
 	if err != nil {
@@ -432,7 +432,7 @@ func (s *Service) scopedEnvAction(ctx context.Context, skillRef, action string, 
 		if err := s.envs.Set(scope, key, text); err != nil {
 			return nil, skillEnvError(scope, err)
 		}
-		return Result{"action": action, "name": scope.Name, "skill_ref": skillRef, "key": key, "configured": text != ""}, nil
+		return Result{"action": action, "skill": scope.Name, "skill_ref": skillRef, "key": key, "configured": text != ""}, nil
 	case "env_unset":
 		key := strings.TrimSpace(request.Key)
 		if key == "" {
@@ -442,13 +442,13 @@ func (s *Service) scopedEnvAction(ctx context.Context, skillRef, action string, 
 		if err != nil {
 			return nil, skillEnvError(scope, err)
 		}
-		return Result{"action": action, "name": scope.Name, "skill_ref": skillRef, "key": key, "removed": removed}, nil
+		return Result{"action": action, "skill": scope.Name, "skill_ref": skillRef, "key": key, "removed": removed}, nil
 	case "env_list":
 		items, err := s.envs.List(scope)
 		if err != nil {
 			return nil, skillEnvError(scope, err)
 		}
-		return Result{"action": action, "name": scope.Name, "skill_ref": skillRef, "items": items, "count": len(items)}, nil
+		return Result{"action": action, "skill": scope.Name, "skill_ref": skillRef, "items": items}, nil
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported environment action", "validation", map[string]any{"action": action})
 	}

@@ -28,11 +28,10 @@ func TestPluginManagePortableZIPAndRejectsLegacySourceFeatures(t *testing.T) {
 			"version":     "1.0.0",
 			"description": "ZIP Plugin",
 			"provenance": map[string]any{
-				"origin":   "https://github.com/example/plugins",
-				"revision": "abc123",
-				"subdir":   "plugins/zip",
-				"format":   "example",
-				"adapted":  true,
+				"origin":      "https://github.com/example/plugins",
+				"revision":    "abc123",
+				"subdir":      "plugins/zip",
+				"vendor_note": map[string]any{"preserved": true},
 			},
 		})
 		if err != nil {
@@ -59,10 +58,10 @@ func TestPluginManagePortableZIPAndRejectsLegacySourceFeatures(t *testing.T) {
 			t.Fatal(err)
 		}
 		review, ok := result["review"].(pluginruntime.Review)
-		if !ok || !review.Valid || review.Name != "zip.plugin" || review.Compatibility.Format != "portable" {
+		if !ok || !review.Valid || review.Name != "zip.plugin" || review.Format != "portable" {
 			t.Fatalf("ZIP validate = %#v", result)
 		}
-		if review.Provenance == nil || review.Provenance.Origin != "https://github.com/example/plugins" || !review.Provenance.Adapted {
+		if review.Provenance == nil || review.Provenance.Origin != "https://github.com/example/plugins" {
 			t.Fatalf("ZIP provenance = %#v", review.Provenance)
 		}
 	})
@@ -176,18 +175,17 @@ func TestPluginManageAutoConvertsOpenAICloudflareShape(t *testing.T) {
 	if !ok || !review.Valid {
 		t.Fatalf("Cloudflare OpenAI review = %#v", validated)
 	}
-	if review.Compatibility.Format != "openai" || len(review.Skills) != 9 || len(review.MCP) != 1 {
+	if review.Format != "openai" || len(review.Skills) != 9 || len(review.MCP) != 1 {
 		t.Fatalf("Cloudflare normalized review = %#v", review)
 	}
 	if review.Provenance == nil ||
 		review.Provenance.Origin != "https://github.com/openai/plugins" ||
 		!strings.HasPrefix(review.Provenance.Revision, "sha256:") ||
-		review.Provenance.Format != "openai" ||
-		!review.Provenance.Adapted {
+		review.Format != "openai" {
 		t.Fatalf("Cloudflare provenance = %#v", review.Provenance)
 	}
-	if len(review.Unsupported) != 0 || len(review.Warnings) == 0 {
-		t.Fatalf("Cloudflare compatibility = warnings:%#v unsupported:%#v", review.Warnings, review.Unsupported)
+	if len(review.Warnings) == 0 {
+		t.Fatalf("Cloudflare conversion warnings = %#v", review.Warnings)
 	}
 
 	installed, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
@@ -212,8 +210,7 @@ func TestPluginManageAutoConvertsOpenAICloudflareShape(t *testing.T) {
 	if !ok {
 		t.Fatalf("Cloudflare inspect plugin = %#v", inspected["plugin"])
 	}
-	compatibility, ok := plugin["compatibility"].(pluginruntime.Compatibility)
-	if !ok || compatibility.Format != "openai" {
-		t.Fatalf("Cloudflare inspect compatibility = %#v", plugin["compatibility"])
+	if plugin["format"] != "openai" {
+		t.Fatalf("Cloudflare inspect format = %#v", plugin["format"])
 	}
 }

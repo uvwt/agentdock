@@ -921,6 +921,11 @@ func validateState(state State) error {
 	if err := validateProvenance(state.Provenance); err != nil {
 		return fmt.Errorf("invalid Plugin provenance: %w", err)
 	}
+	switch strings.TrimSpace(state.Format) {
+	case pluginFormatPortable, pluginFormatOpenAI, pluginFormatClaude:
+	default:
+		return fmt.Errorf("invalid Plugin format %q", state.Format)
+	}
 	if state.InstalledAt.IsZero() {
 		return errors.New("Plugin installed_at is required")
 	}

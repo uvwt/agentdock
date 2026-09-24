@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	skills "github.com/uvwt/agentdock/internal/skill"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -76,12 +75,12 @@ func (m *Manager) normalizeStagedPlugin(staged stagedPluginSource) (string, Pack
 		return "", Package{}, func() {}, pluginError("PLUGIN_FORMAT_CONVERSION_FAILED", "format.snapshot", err)
 	}
 
-	var compatibility Compatibility
+	var conversionWarnings []string
 	switch format {
 	case pluginFormatOpenAI:
-		compatibility, err = normalizeOpenAIPlugin(staged.Root, working, sourceDigest, staged.ImportProvenance)
+		conversionWarnings, err = normalizeOpenAIPlugin(staged.Root, working, sourceDigest, staged.ImportProvenance)
 	case pluginFormatClaude:
-		compatibility, err = normalizeClaudePlugin(staged.Root, working, sourceDigest, staged.ImportProvenance)
+		conversionWarnings, err = normalizeClaudePlugin(staged.Root, working, sourceDigest, staged.ImportProvenance)
 	default:
 		err = fmt.Errorf("unsupported Plugin format %q", format)
 	}
@@ -112,12 +111,8 @@ func (m *Manager) normalizeStagedPlugin(staged stagedPluginSource) (string, Pack
 		cleanup()
 		return "", Package{}, func() {}, err
 	}
-	pkg.Unsupported = uniqueSortedStrings(append(pkg.Unsupported, compatibility.Unsupported...))
-	pkg.Warnings = uniqueSortedStrings(append(pkg.Warnings, compatibility.Warnings...))
-	compatibility.Unsupported = append([]string(nil), pkg.Unsupported...)
-	compatibility.Warnings = append([]string(nil), pkg.Warnings...)
-	normalizeCompatibility(&compatibility)
-	pkg.Compatibility = compatibility
+	pkg.Warnings = uniqueSortedStrings(append(pkg.Warnings, conversionWarnings...))
+	pkg.Format = format
 	return canonical, pkg, cleanup, nil
 }
 
@@ -153,100 +148,71 @@ func detectPluginFormat(root string) (string, error) {
 	}
 }
 
-func normalizeOpenAIPlugin(sourceRoot, normalizedRoot, sourceDigest string, importProvenance *Provenance) (Compatibility, error) {
+func normalizeOpenAIPlugin(sourceRoot, normalizedRoot, sourceDigest string, importProvenance *Provenance) ([]string, error) {
 	raw, err := readJSONObject(filepath.Join(sourceRoot, ".codex-plugin", "plugin.json"), maxManifestBytes)
 	if err != nil {
-		return Compatibility{}, err
+		return nil, err
 	}
-	compatibility := Compatibility{
-		Format:    pluginFormatOpenAI,
-		Supported: []string{"metadata", "skills", "mcp"},
-	}
-	manifest, unsupported, warnings, err := normalizeExternalManifest(raw, pluginFormatOpenAI, sourceDigest, importProvenance)
+	manifest, warnings, err := normalizeExternalManifest(raw, pluginFormatOpenAI, sourceDigest, importProvenance)
 	if err != nil {
-		return Compatibility{}, err
+		return nil, err
 	}
-	compatibility.Unsupported = append(compatibility.Unsupported, unsupported...)
-	compatibility.Warnings = append(compatibility.Warnings, warnings...)
 
 	if err := normalizeSkillPaths(sourceRoot, normalizedRoot, raw["skills"], nil); err != nil {
-		return Compatibility{}, err
+		return nil, err
 	}
 	mcpValues, err := collectExternalMCPValues(sourceRoot, raw["mcpServers"], ".mcp.json")
 	if err != nil {
-		return Compatibility{}, err
+		return nil, err
 	}
-	mcpUnsupported, mcpWarnings, err := writeNormalizedMCP(normalizedRoot, mcpValues, pluginFormatOpenAI)
+	mcpWarnings, err := writeNormalizedMCP(normalizedRoot, mcpValues, pluginFormatOpenAI)
 	if err != nil {
-		return Compatibility{}, err
+		return nil, err
 	}
-	compatibility.Unsupported = append(compatibility.Unsupported, mcpUnsupported...)
-	compatibility.Warnings = append(compatibility.Warnings, mcpWarnings...)
+	warnings = append(warnings, mcpWarnings...)
 
-	rootUnsupported, rootWarnings := detectExternalRootIssues(sourceRoot, pluginFormatOpenAI)
-	compatibility.Unsupported = append(compatibility.Unsupported, rootUnsupported...)
-	compatibility.Warnings = append(compatibility.Warnings, rootWarnings...)
+	warnings = append(warnings, detectExternalRootIssues(sourceRoot, pluginFormatOpenAI)...)
 	if err := writePortableManifest(normalizedRoot, manifest); err != nil {
-		return Compatibility{}, err
+		return nil, err
 	}
-	if err := removeConsumedExternalArtifacts(normalizedRoot, pluginFormatOpenAI); err != nil {
-		return Compatibility{}, err
-	}
-	normalizeCompatibility(&compatibility)
-	return compatibility, nil
+	return uniqueSortedStrings(warnings), nil
 }
 
-func normalizeClaudePlugin(sourceRoot, normalizedRoot, sourceDigest string, importProvenance *Provenance) (Compatibility, error) {
+func normalizeClaudePlugin(sourceRoot, normalizedRoot, sourceDigest string, importProvenance *Provenance) ([]string, error) {
 	raw, err := readJSONObject(filepath.Join(sourceRoot, ".claude-plugin", "plugin.json"), maxManifestBytes)
 	if err != nil {
-		return Compatibility{}, err
+		return nil, err
 	}
-	compatibility := Compatibility{
-		Format:    pluginFormatClaude,
-		Supported: []string{"metadata", "skills", "mcp"},
-	}
-	manifest, unsupported, warnings, err := normalizeExternalManifest(raw, pluginFormatClaude, sourceDigest, importProvenance)
+	manifest, warnings, err := normalizeExternalManifest(raw, pluginFormatClaude, sourceDigest, importProvenance)
 	if err != nil {
-		return Compatibility{}, err
+		return nil, err
 	}
-	compatibility.Unsupported = append(compatibility.Unsupported, unsupported...)
-	compatibility.Warnings = append(compatibility.Warnings, warnings...)
 
 	skillHints := []string(nil)
 	if regularFileExists(filepath.Join(sourceRoot, "SKILL.md")) {
 		skillHints = append(skillHints, ".")
 	}
 	if err := normalizeSkillPaths(sourceRoot, normalizedRoot, raw["skills"], skillHints); err != nil {
-		return Compatibility{}, err
-	}
-	if err := normalizeClaudeSkillDocuments(normalizedRoot); err != nil {
-		return Compatibility{}, err
+		return nil, err
 	}
 	mcpValues, err := collectExternalMCPValues(sourceRoot, raw["mcpServers"], ".mcp.json")
 	if err != nil {
-		return Compatibility{}, err
+		return nil, err
 	}
-	mcpUnsupported, mcpWarnings, err := writeNormalizedMCP(normalizedRoot, mcpValues, pluginFormatClaude)
+	mcpWarnings, err := writeNormalizedMCP(normalizedRoot, mcpValues, pluginFormatClaude)
 	if err != nil {
-		return Compatibility{}, err
+		return nil, err
 	}
-	compatibility.Unsupported = append(compatibility.Unsupported, mcpUnsupported...)
-	compatibility.Warnings = append(compatibility.Warnings, mcpWarnings...)
+	warnings = append(warnings, mcpWarnings...)
 
-	rootUnsupported, rootWarnings := detectExternalRootIssues(sourceRoot, pluginFormatClaude)
-	compatibility.Unsupported = append(compatibility.Unsupported, rootUnsupported...)
-	compatibility.Warnings = append(compatibility.Warnings, rootWarnings...)
+	warnings = append(warnings, detectExternalRootIssues(sourceRoot, pluginFormatClaude)...)
 	if err := writePortableManifest(normalizedRoot, manifest); err != nil {
-		return Compatibility{}, err
+		return nil, err
 	}
-	if err := removeConsumedExternalArtifacts(normalizedRoot, pluginFormatClaude); err != nil {
-		return Compatibility{}, err
-	}
-	normalizeCompatibility(&compatibility)
-	return compatibility, nil
+	return uniqueSortedStrings(warnings), nil
 }
 
-func normalizeExternalManifest(raw map[string]json.RawMessage, format, sourceDigest string, importProvenance *Provenance) (Manifest, []string, []string, error) {
+func normalizeExternalManifest(raw map[string]json.RawMessage, format, sourceDigest string, importProvenance *Provenance) (Manifest, []string, error) {
 	readString := func(name string) (string, error) {
 		value, ok := raw[name]
 		if !ok || isJSONEmpty(value) {
@@ -261,68 +227,37 @@ func normalizeExternalManifest(raw map[string]json.RawMessage, format, sourceDig
 
 	name, err := readString("name")
 	if err != nil {
-		return Manifest{}, nil, nil, err
+		return Manifest{}, nil, err
 	}
 	if err := ValidateName(name); err != nil {
-		return Manifest{}, nil, nil, fmt.Errorf("external Plugin name: %w", err)
+		return Manifest{}, nil, fmt.Errorf("external Plugin name: %w", err)
 	}
 	version, err := readString("version")
 	if err != nil {
-		return Manifest{}, nil, nil, err
+		return Manifest{}, nil, err
 	}
-	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
 	warnings := make([]string, 0)
 	if version == "" {
 		version = VersionLocal
 		warnings = append(warnings, format+" Plugin omits version; AgentDock treats it as version=local")
 	}
 	if err := ValidateVersion(version); err != nil {
-		return Manifest{}, nil, nil, err
+		return Manifest{}, nil, err
 	}
 	description, err := readString("description")
 	if err != nil {
-		return Manifest{}, nil, nil, err
+		return Manifest{}, nil, err
 	}
 
-	manifest := Manifest{
-		Schema:      pluginSchemaURI,
-		Name:        name,
-		Version:     version,
-		Description: description,
-	}
-	for field, target := range map[string]*string{
-		"homepage":   &manifest.Homepage,
-		"repository": &manifest.Repository,
-		"license":    &manifest.License,
-	} {
-		value, err := readString(field)
-		if err != nil {
-			return Manifest{}, nil, nil, err
-		}
-		*target = value
-	}
-	if value, ok := raw["keywords"]; ok && !isJSONEmpty(value) {
-		if err := json.Unmarshal(value, &manifest.Keywords); err != nil {
-			return Manifest{}, nil, nil, errors.New("keywords must be an array of strings")
-		}
-	}
-	if value, ok := raw["author"]; ok && !isJSONEmpty(value) {
-		var author ManifestAuthor
-		if err := json.Unmarshal(value, &author); err != nil {
-			return Manifest{}, nil, nil, errors.New("author must contain string name/email/url fields")
-		}
-		manifest.Author = &author
-	}
+	manifest := Manifest{Name: name, Version: version, Description: description}
 
 	if importProvenance != nil {
 		provenance := *importProvenance
-		provenance.Format = format
-		provenance.Adapted = true
 		manifest.Provenance = &provenance
 	} else {
-		origin := strings.TrimSpace(manifest.Repository)
+		origin := optionalJSONString(raw["repository"])
 		if origin == "" {
-			origin = strings.TrimSpace(manifest.Homepage)
+			origin = optionalJSONString(raw["homepage"])
 		}
 		if origin == "" {
 			origin = strings.TrimSpace(sourceDigest)
@@ -334,33 +269,21 @@ func normalizeExternalManifest(raw map[string]json.RawMessage, format, sourceDig
 		manifest.Provenance = &Provenance{
 			Origin:   origin,
 			Revision: revision,
-			Format:   format,
-			Adapted:  true,
 		}
 	}
 
-	metadataFields := map[string]bool{
-		"name": true, "version": true, "description": true, "author": true,
-		"homepage": true, "repository": true, "license": true, "keywords": true,
-		"$schema": true,
-	}
-	componentSupported := map[string]bool{"skills": true, "mcpServers": true}
-	metadataIgnored := map[string]bool{}
-	omittedWithWarning := map[string]string{"commands": "commands"}
-	unsupportedLabels := map[string]string{}
+	inert := map[string]string{"commands": "commands"}
 	if format == pluginFormatOpenAI {
-		metadataIgnored = map[string]bool{"interface": true}
-		unsupportedLabels = map[string]string{
-			"hooks": "hooks", "agents": "agents", "apps": "apps",
+		inert = map[string]string{
+			"commands": "commands",
+			"hooks":    "hooks", "agents": "agents", "apps": "apps",
 			"lspServers": "lsp", "monitors": "monitors",
 			"dependencies": "plugin dependencies",
 		}
 	} else {
-		metadataIgnored = map[string]bool{
-			"displayName": true, "metadata": true, "defaultEnabled": true,
-		}
-		unsupportedLabels = map[string]string{
-			"agents": "agents", "workflows": "workflows", "hooks": "hooks",
+		inert = map[string]string{
+			"commands": "commands",
+			"agents":   "agents", "workflows": "workflows", "hooks": "hooks",
 			"outputStyles": "output styles", "output-styles": "output styles",
 			"themes": "themes", "monitors": "monitors", "lspServers": "lsp",
 			"experimental": "experimental components", "userConfig": "user config",
@@ -368,26 +291,20 @@ func normalizeExternalManifest(raw map[string]json.RawMessage, format, sourceDig
 		}
 	}
 
-	unsupported := make([]string, 0)
 	for key, value := range raw {
-		if isJSONEmpty(value) || metadataFields[key] || componentSupported[key] {
-			continue
+		if label, ok := inert[key]; ok && !isJSONEmpty(value) {
+			warnings = append(warnings, fmt.Sprintf("%s component %s is preserved but not executed by AgentDock", format, label))
 		}
-		if metadataIgnored[key] {
-			warnings = append(warnings, fmt.Sprintf("%s manifest metadata field %s is not used by AgentDock runtime", format, key))
-			continue
-		}
-		if label, ok := omittedWithWarning[key]; ok {
-			warnings = append(warnings, fmt.Sprintf("%s component %s is not supported and was omitted during conversion", format, label))
-			continue
-		}
-		if label, ok := unsupportedLabels[key]; ok {
-			unsupported = append(unsupported, label)
-			continue
-		}
-		unsupported = append(unsupported, "unrecognized "+format+" manifest field "+key)
 	}
-	return manifest, uniqueSortedStrings(unsupported), uniqueSortedStrings(warnings), nil
+	return manifest, uniqueSortedStrings(warnings), nil
+}
+
+func optionalJSONString(raw json.RawMessage) string {
+	var value string
+	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
+		return ""
+	}
+	return strings.TrimSpace(value)
 }
 
 func normalizeSkillPaths(sourceRoot, normalizedRoot string, manifestRaw json.RawMessage, hinted []string) error {
@@ -462,105 +379,6 @@ func copyExternalSkillDirectory(source, destination string) error {
 		return err
 	}
 	return snapshotPluginTree(source, destination, maxPluginExtractedBytes, maxPluginArchiveFiles)
-}
-
-func normalizeClaudeSkillDocuments(root string) error {
-	skillsRoot := filepath.Join(root, "skills")
-	entries, err := os.ReadDir(skillsRoot)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
-			continue
-		}
-		path := filepath.Join(skillsRoot, entry.Name(), "SKILL.md")
-		if !regularFileExists(path) {
-			continue
-		}
-		if err := normalizeClaudeSkillAllowedTools(path); err != nil {
-			return fmt.Errorf("normalize Claude Skill %q: %w", entry.Name(), err)
-		}
-	}
-	return nil
-}
-
-func normalizeClaudeSkillAllowedTools(path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	text := strings.ReplaceAll(string(data), "\r\n", "\n")
-	lines := strings.Split(text, "\n")
-	if len(lines) < 3 || strings.TrimSpace(lines[0]) != "---" {
-		return errors.New("SKILL.md must start with YAML frontmatter")
-	}
-	endLine := -1
-	for index := 1; index < len(lines); index++ {
-		if strings.TrimSpace(lines[index]) == "---" {
-			endLine = index
-			break
-		}
-	}
-	if endLine < 0 {
-		return errors.New("SKILL.md frontmatter must be closed by ---")
-	}
-
-	var document yaml.Node
-	if err := yaml.Unmarshal([]byte(strings.Join(lines[1:endLine], "\n")), &document); err != nil {
-		return fmt.Errorf("decode SKILL.md frontmatter: %w", err)
-	}
-	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
-		return errors.New("SKILL.md frontmatter must be a YAML mapping")
-	}
-
-	frontmatter := document.Content[0]
-	changed := false
-	for index := 0; index+1 < len(frontmatter.Content); index += 2 {
-		if frontmatter.Content[index].Value != "allowed-tools" {
-			continue
-		}
-		value := frontmatter.Content[index+1]
-		if value.Kind != yaml.SequenceNode {
-			continue
-		}
-		tools := make([]string, 0, len(value.Content))
-		for _, item := range value.Content {
-			if item.Kind != yaml.ScalarNode || item.Tag != "!!str" {
-				return errors.New("allowed-tools array items must be strings")
-			}
-			tool := strings.TrimSpace(item.Value)
-			if tool == "" {
-				return errors.New("allowed-tools array items must be non-empty strings")
-			}
-			tools = append(tools, tool)
-		}
-
-		// Claude Plugin 允许 YAML 数组；AgentDock 内部 Portable Skill 统一保存为单行字符串。
-		value.Kind = yaml.ScalarNode
-		value.Tag = "!!str"
-		value.Value = strings.Join(tools, " ")
-		value.Content = nil
-		value.Style = 0
-		changed = true
-	}
-	if !changed {
-		return nil
-	}
-
-	normalizedFrontmatter, err := yaml.Marshal(&document)
-	if err != nil {
-		return err
-	}
-	output := "---\n" + string(normalizedFrontmatter) + "---\n" + strings.Join(lines[endLine+1:], "\n")
-	info, err := os.Stat(path)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte(output), info.Mode().Perm())
 }
 
 func normalizeExternalComponentPath(value string) (string, error) {
@@ -641,24 +459,23 @@ func collectExternalMCPValues(root string, field json.RawMessage, defaultPath st
 	return values, nil
 }
 
-func writeNormalizedMCP(root string, values []json.RawMessage, format string) ([]string, []string, error) {
+func writeNormalizedMCP(root string, values []json.RawMessage, format string) ([]string, error) {
 	if len(values) == 0 {
 		_ = os.Remove(filepath.Join(root, "mcp.json"))
-		return nil, nil, nil
+		return nil, nil
 	}
 	servers := map[string]json.RawMessage{}
-	unsupported := make([]string, 0)
 	warnings := make([]string, 0)
 	for _, raw := range values {
 		var object map[string]json.RawMessage
 		if err := json.Unmarshal(raw, &object); err != nil {
-			return nil, nil, errors.New("external MCP configuration must be a JSON object")
+			return nil, errors.New("external MCP configuration must be a JSON object")
 		}
 		container := object
 		if value, ok := object["mcpServers"]; ok {
 			container = map[string]json.RawMessage{}
 			if err := json.Unmarshal(value, &container); err != nil {
-				return nil, nil, errors.New("mcpServers must be an object")
+				return nil, errors.New("mcpServers must be an object")
 			}
 		}
 		for name, configRaw := range container {
@@ -666,15 +483,16 @@ func writeNormalizedMCP(root string, values []json.RawMessage, format string) ([
 				continue
 			}
 			if _, exists := servers[name]; exists {
-				return nil, nil, fmt.Errorf("duplicate external MCP server %q", name)
+				return nil, fmt.Errorf("duplicate external MCP server %q", name)
 			}
-			normalized, itemUnsupported, itemWarnings, err := normalizeExternalMCPServer(name, configRaw, format)
+			normalized, itemWarnings, err := normalizeExternalMCPServer(name, configRaw, format)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
-			servers[name] = normalized
-			unsupported = append(unsupported, itemUnsupported...)
 			warnings = append(warnings, itemWarnings...)
+			if len(normalized) > 0 {
+				servers[name] = normalized
+			}
 		}
 	}
 
@@ -688,29 +506,29 @@ func writeNormalizedMCP(root string, values []json.RawMessage, format string) ([
 	for _, name := range names {
 		var value any
 		if err := json.Unmarshal(servers[name], &value); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		serverOutput[name] = value
 	}
 	if len(serverOutput) == 0 {
 		_ = os.Remove(filepath.Join(root, "mcp.json"))
-		return uniqueSortedStrings(unsupported), uniqueSortedStrings(warnings), nil
+		return uniqueSortedStrings(warnings), nil
 	}
 	data, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	data = append(data, '\n')
 	if err := os.WriteFile(filepath.Join(root, "mcp.json"), data, 0o600); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return uniqueSortedStrings(unsupported), uniqueSortedStrings(warnings), nil
+	return uniqueSortedStrings(warnings), nil
 }
 
-func normalizeExternalMCPServer(name string, raw json.RawMessage, format string) (json.RawMessage, []string, []string, error) {
+func normalizeExternalMCPServer(name string, raw json.RawMessage, format string) (json.RawMessage, []string, error) {
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &object); err != nil {
-		return nil, nil, nil, fmt.Errorf("MCP server %s must be an object", name)
+		return nil, []string{fmt.Sprintf("%s MCP server %s is preserved but not activated because its configuration is not an object", format, name)}, nil
 	}
 	if format == pluginFormatClaude {
 		object = replaceClaudePlaceholdersInObject(object)
@@ -721,8 +539,8 @@ func normalizeExternalMCPServer(name string, raw json.RawMessage, format string)
 		"cwd": true, "env": true, "headers": true,
 	}
 	metadata := map[string]bool{"note": true, "description": true}
-	unsupported := make([]string, 0)
 	warnings := make([]string, 0)
+	unknownRuntime := make([]string, 0)
 	for key, value := range object {
 		if known[key] || isJSONEmpty(value) {
 			continue
@@ -732,14 +550,18 @@ func normalizeExternalMCPServer(name string, raw json.RawMessage, format string)
 			delete(object, key)
 			continue
 		}
-		unsupported = append(unsupported, fmt.Sprintf("MCP server %s field %s", name, key))
-		delete(object, key)
+		unknownRuntime = append(unknownRuntime, key)
+	}
+	if len(unknownRuntime) > 0 {
+		sort.Strings(unknownRuntime)
+		warnings = append(warnings, fmt.Sprintf("%s MCP server %s is preserved but not activated because AgentDock does not interpret fields: %s", format, name, strings.Join(unknownRuntime, ", ")))
+		return nil, uniqueSortedStrings(warnings), nil
 	}
 
 	var transport string
 	if value, ok := object["type"]; ok && !isJSONEmpty(value) {
 		if err := json.Unmarshal(value, &transport); err != nil {
-			return nil, nil, nil, fmt.Errorf("MCP server %s type must be a string", name)
+			return nil, []string{fmt.Sprintf("%s MCP server %s is preserved but not activated because type is not a string", format, name)}, nil
 		}
 	}
 	transport = strings.ToLower(strings.TrimSpace(transport))
@@ -755,16 +577,16 @@ func normalizeExternalMCPServer(name string, raw json.RawMessage, format string)
 		transport = "streamable-http"
 	case "stdio":
 	case "sse":
-		unsupported = append(unsupported, "MCP server "+name+" uses unsupported sse transport")
+		return nil, []string{fmt.Sprintf("%s MCP server %s is preserved but not activated because SSE transport is not supported", format, name)}, nil
 	default:
-		return nil, nil, nil, fmt.Errorf("MCP server %s uses unsupported transport %q", name, transport)
+		return nil, []string{fmt.Sprintf("%s MCP server %s is preserved but not activated because transport %q is not supported", format, name, transport)}, nil
 	}
 	object["type"], _ = json.Marshal(transport)
 	data, err := json.Marshal(object)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	return data, uniqueSortedStrings(unsupported), uniqueSortedStrings(warnings), nil
+	return data, uniqueSortedStrings(warnings), nil
 }
 
 func replaceClaudePlaceholdersInObject(input map[string]json.RawMessage) map[string]json.RawMessage {
@@ -824,8 +646,6 @@ func writePortableImportProvenance(root string, imported *Provenance) error {
 		return err
 	}
 	provenance := *imported
-	provenance.Format = pluginFormatPortable
-	provenance.Adapted = false
 	encoded, err := json.Marshal(provenance)
 	if err != nil {
 		return err
@@ -839,59 +659,30 @@ func writePortableImportProvenance(root string, imported *Provenance) error {
 	return os.WriteFile(filepath.Join(root, "plugin.json"), data, 0o600)
 }
 
-// removeConsumedExternalArtifacts keeps the reviewed snapshot canonical: vendor
-// manifests/configs that were already translated must not survive as inert
-// second sources of truth. commands/ is deliberately omitted from runtime
-// semantics, so it is removed after the conversion warning is recorded.
-func removeConsumedExternalArtifacts(root, format string) error {
-	paths := []string{".mcp.json", "commands"}
-	switch format {
-	case pluginFormatOpenAI:
-		paths = append(paths, ".codex-plugin")
-	case pluginFormatClaude:
-		paths = append(paths, ".claude-plugin")
-	default:
-		return fmt.Errorf("cannot clean artifacts for unsupported Plugin format %q", format)
-	}
-	for _, relative := range paths {
-		path := filepath.Join(root, filepath.FromSlash(relative))
-		if err := os.RemoveAll(path); err != nil {
-			return fmt.Errorf("remove converted Plugin artifact %s: %w", relative, err)
-		}
-	}
-	return nil
-}
-
-func detectExternalRootIssues(root, format string) ([]string, []string) {
-	unsupportedPaths := map[string]string{
+func detectExternalRootIssues(root, format string) []string {
+	inertPaths := map[string]string{
 		"agents": "agents", "hooks": "hooks", "hooks.json": "hooks",
 		".lsp.json": "lsp", "monitors": "monitors", "monitors.json": "monitors",
+		"commands": "commands",
 	}
-	warningPaths := map[string]string{"commands": "commands"}
 	if format == pluginFormatClaude {
-		unsupportedPaths["workflows"] = "workflows"
-		unsupportedPaths["output-styles"] = "output styles"
-		unsupportedPaths["themes"] = "themes"
-		unsupportedPaths["bin"] = "bin PATH executables"
-		unsupportedPaths["settings.json"] = "settings"
+		inertPaths["workflows"] = "workflows"
+		inertPaths["output-styles"] = "output styles"
+		inertPaths["themes"] = "themes"
+		inertPaths["bin"] = "bin PATH executables"
+		inertPaths["settings.json"] = "settings"
 	}
 	if format == pluginFormatOpenAI {
-		unsupportedPaths[".app.json"] = "apps"
+		inertPaths[".app.json"] = "apps"
 	}
 
-	unsupported := make([]string, 0)
 	warnings := make([]string, 0)
-	for path, label := range unsupportedPaths {
+	for path, label := range inertPaths {
 		if _, err := os.Lstat(filepath.Join(root, path)); err == nil {
-			unsupported = append(unsupported, label)
+			warnings = append(warnings, fmt.Sprintf("%s component %s is preserved but not executed by AgentDock", format, label))
 		}
 	}
-	for path, label := range warningPaths {
-		if _, err := os.Lstat(filepath.Join(root, path)); err == nil {
-			warnings = append(warnings, fmt.Sprintf("%s component %s is not supported and was omitted during conversion", format, label))
-		}
-	}
-	return uniqueSortedStrings(unsupported), uniqueSortedStrings(warnings)
+	return uniqueSortedStrings(warnings)
 }
 
 func resolvePluginSourcePath(root, relative string, wantDirectory bool) (string, error) {
@@ -984,13 +775,4 @@ func regularFileExists(path string) bool {
 func uniqueSortedStrings(values []string) []string {
 	sort.Strings(values)
 	return uniqueStrings(values)
-}
-
-func normalizeCompatibility(compatibility *Compatibility) {
-	if compatibility == nil {
-		return
-	}
-	compatibility.Supported = uniqueSortedStrings(compatibility.Supported)
-	compatibility.Unsupported = uniqueSortedStrings(compatibility.Unsupported)
-	compatibility.Warnings = uniqueSortedStrings(compatibility.Warnings)
 }

@@ -10,11 +10,16 @@ func TestParseSkillDocumentAcceptsAgentSkillsFieldsWithoutVersion(t *testing.T) 
 name: demo-skill
 description: Use this Skill for a demo workflow.
 license: Apache-2.0
-compatibility: Requires git.
+compatibility:
+  requires: git
 metadata:
-  version: "1.2.3"
+  version: 1.2
   owner: example
-allowed-tools: exec_command read_file
+allowed-tools:
+  - exec_command
+  - read_file
+vendor-field:
+  nested: true
 ---
 
 # Demo Skill
@@ -26,12 +31,6 @@ Use existing tools to complete the workflow.
 	}
 	if doc.Name != "demo-skill" || doc.Description != "Use this Skill for a demo workflow." {
 		t.Fatalf("unexpected identity: %#v", doc)
-	}
-	if doc.License != "Apache-2.0" || doc.Compatibility != "Requires git." {
-		t.Fatalf("optional Agent Skills fields lost: %#v", doc)
-	}
-	if got := doc.Metadata["version"]; got != "1.2.3" {
-		t.Fatalf("metadata.version = %#v, want ordinary author metadata", got)
 	}
 	if !strings.Contains(doc.Body, "Demo Skill") {
 		t.Fatalf("markdown body missing: %#v", doc)
@@ -52,11 +51,6 @@ version: 9.9.9
 	}
 	if doc.Name != "demo-skill" || doc.Description != "Demo." {
 		t.Fatalf("unexpected document: %#v", doc)
-	}
-	if doc.Metadata != nil {
-		if _, ok := doc.Metadata["version"]; ok {
-			t.Fatalf("top-level version leaked into metadata: %#v", doc.Metadata)
-		}
 	}
 }
 

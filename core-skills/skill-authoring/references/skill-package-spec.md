@@ -6,7 +6,7 @@
 
 ```text
 宿主发现候选 Skill 与来源
-→ 返回 name / description / source_type / source_id / skill_ref / file
+→ 返回 name / description / source_type / skill_ref / file
 → 模型选择一个精确候选
 → read_file 读取宿主返回的 file
 → 模型理解流程和约束
@@ -48,7 +48,7 @@ description: 清楚说明何时使用、解决什么问题
 # Example Skill
 ```
 
-可选 Agent Skills 字段：
+第三方或 Agent Skills frontmatter 可以继续存在，例如：
 
 ```yaml
 license: Apache-2.0
@@ -58,16 +58,13 @@ metadata:
 allowed-tools: exec_command
 ```
 
-规则：
+AgentDock Core 只对自己真正依赖的字段做约束：
 
 - `name` 长度 1–64，只允许小写 ASCII 字母、数字和 `-`，不能以 `-` 开头/结尾，也不能包含连续 `--`；
 - 目录身份与 `name` 一致；
 - `description` 非空且最长 1024 个字符；
-- `compatibility` 可选且最长 500 个字符；
-- `metadata` 若存在，键值都必须是字符串；
-- `allowed-tools` 若存在，必须是单行、空格分隔的字符串；
 - Markdown 正文非空；
-- `metadata.version` 若存在只是普通作者元数据；
+- 其他 frontmatter 字段不进入 AgentDock 强类型运行契约；它们会随原始 `SKILL.md` 保留，即使字段形状来自第三方规范；
 - AgentDock 不读取任何 version 字段来选择安装内容，也不存在 active version。
 
 ## 4. 内容身份

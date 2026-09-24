@@ -213,7 +213,7 @@ func TestRecallBootstrapIsNotModelFacing(t *testing.T) {
 func TestSkillManageSchemaAndRemovedRuntimeTools(t *testing.T) {
 	manageProps := schemaProperties(t, "skill_manage")
 	assertSameStrings(t, enumStrings(t, manageProps["action"]), []string{"install", "remove", "env_set", "env_unset", "env_list"})
-	for _, name := range []string{"source", "digest", "max_bytes", "skill", "purge", "key", "value"} {
+	for _, name := range []string{"source", "digest", "skill", "skill_ref", "purge", "key", "value"} {
 		if _, ok := manageProps[name]; !ok {
 			t.Fatalf("skill_manage input schema missing %q", name)
 		}

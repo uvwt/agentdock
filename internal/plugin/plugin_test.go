@@ -96,6 +96,7 @@ func writeTestPlugin(t *testing.T, root, name, version string, withMCP bool) {
 				"type":    "streamable-http",
 				"url":     "https://example.com/mcp",
 				"headers": map[string]string{"X-Tenant": "public"},
+				"note":    "Descriptive metadata only.",
 			},
 		},
 	})
@@ -121,7 +122,7 @@ func TestLoadPackageParsesPortableAgentPlugin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pkg.Manifest.Schema != pluginSchemaURI || pkg.Manifest.Name != "demo.plugin" || pkg.Manifest.Version != "1.2.3" {
+	if pkg.Manifest.Name != "demo.plugin" || pkg.Manifest.Version != "1.2.3" {
 		t.Fatalf("manifest = %+v", pkg.Manifest)
 	}
 	if len(pkg.Components.Skills) != 1 || pkg.Components.Skills[0].Name != "demo-skill" {
@@ -137,8 +138,8 @@ func TestLoadPackageParsesPortableAgentPlugin(t *testing.T) {
 	if local.Environment["CONFIG"] != "${PLUGIN_ROOT}/config.json" {
 		t.Fatalf("portable env was not preserved: %+v", local.Environment)
 	}
-	if pkg.PackageDigest == "" || len(pkg.Unsupported) != 0 {
-		t.Fatalf("digest/unsupported = %q / %+v", pkg.PackageDigest, pkg.Unsupported)
+	if pkg.PackageDigest == "" {
+		t.Fatal("package digest is empty")
 	}
 }
 
@@ -157,7 +158,7 @@ func TestLoadPackageDefaultsMissingVersionToLocal(t *testing.T) {
 	}
 }
 
-func TestLoadPackageReportsUnsupportedWithoutPartialAcceptance(t *testing.T) {
+func TestLoadPackagePreservesUnknownMetadataAndIsolatesUnsupportedRuntime(t *testing.T) {
 	root := t.TempDir()
 	writeTestPlugin(t, root, "demo.plugin", "1.0.0", false)
 	writeJSONFile(t, filepath.Join(root, "plugin.json"), map[string]any{
@@ -182,23 +183,40 @@ func TestLoadPackageReportsUnsupportedWithoutPartialAcceptance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := strings.Join(pkg.Unsupported, " | ")
-	if !strings.Contains(got, "hooks") ||
-		!strings.Contains(got, "unsupported sse transport") ||
-		!strings.Contains(got, "unknown plugin.json field future_capability") ||
-		!strings.Contains(got, "extension example.vendor/future") {
-		t.Fatalf("unsupported = %+v", pkg.Unsupported)
+	got := strings.Join(pkg.Warnings, " | ")
+	if !strings.Contains(got, "hooks") || !strings.Contains(got, "sse transport") || !strings.Contains(got, "not activated") {
+		t.Fatalf("warnings = %+v", pkg.Warnings)
+	}
+	if len(pkg.Components.MCP) != 0 {
+		t.Fatalf("unsupported MCP was activated: %+v", pkg.Components.MCP)
 	}
 	manager, err := NewManager(filepath.Join(t.TempDir(), ".agentdock"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := installLocalPluginForTest(manager, context.Background(), root, true); err == nil || !strings.Contains(err.Error(), "unsupported") {
-		t.Fatalf("install error = %v, want unsupported rejection", err)
+	installed, err := installLocalPluginForTest(manager, context.Background(), root, true)
+	if err != nil {
+		t.Fatalf("install should preserve inert fields: %v", err)
+	}
+	detail, err := manager.Inspect(installed.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(detail.Root, "plugin.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"future_capability", "example.vendor/future"} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("installed plugin.json lost %q: %s", want, raw)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(detail.Root, "hooks", "hook.json")); err != nil {
+		t.Fatalf("inert hook source was not preserved: %v", err)
 	}
 }
 
-func TestLoadPackageRejectsUnsafePortableMCP(t *testing.T) {
+func TestLoadPackagePreservesUnsafePortableMCPWithoutActivation(t *testing.T) {
 	tests := []struct {
 		name   string
 		server map[string]any
@@ -243,11 +261,30 @@ func TestLoadPackageRejectsUnsafePortableMCP(t *testing.T) {
 				"$schema":    mcpSchemaURI,
 				"mcpServers": map[string]any{"bad": test.server},
 			})
-			_, err := LoadPackage(root)
-			if err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("LoadPackage() error = %v, want %q", err, test.want)
+			pkg, err := LoadPackage(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(pkg.Components.MCP) != 0 || !strings.Contains(strings.Join(pkg.Warnings, " "), test.want) {
+				t.Fatalf("unsafe MCP was not isolated: components=%+v warnings=%+v", pkg.Components.MCP, pkg.Warnings)
 			}
 		})
+	}
+}
+
+func TestLoadPackageAcceptsOpaqueSafeVersionAndForeignSchema(t *testing.T) {
+	root := t.TempDir()
+	writeJSONFile(t, filepath.Join(root, "plugin.json"), map[string]any{
+		"$schema": "https://example.com/vendor/plugin.schema.json",
+		"name":    "demo.plugin", "version": "nightly-2026.09",
+		"author": map[string]any{"id": 42, "profile": map[string]any{"team": "demo"}},
+	})
+	pkg, err := LoadPackage(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pkg.Manifest.Version != "nightly-2026.09" {
+		t.Fatalf("version = %q", pkg.Manifest.Version)
 	}
 }
 
@@ -672,7 +709,7 @@ func TestLoadPackageNormalizesSecretEnvironmentBindingsWithoutPersistingValues(t
 	}
 }
 
-func TestLoadPackageRejectsSensitiveLiteralEnv(t *testing.T) {
+func TestLoadPackagePreservesSensitiveLiteralEnvWithoutActivation(t *testing.T) {
 	root := t.TempDir()
 	writeTestPlugin(t, root, "demo.plugin", "1.0.0", false)
 	writeJSONFile(t, filepath.Join(root, "mcp.json"), map[string]any{
@@ -684,9 +721,12 @@ func TestLoadPackageRejectsSensitiveLiteralEnv(t *testing.T) {
 			},
 		},
 	})
-	_, err := LoadPackage(root)
-	if err == nil || !strings.Contains(err.Error(), "must use a ${ENV_NAME} binding") {
-		t.Fatalf("LoadPackage() error = %v, want sensitive literal rejection", err)
+	pkg, err := LoadPackage(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pkg.Components.MCP) != 0 || !strings.Contains(strings.Join(pkg.Warnings, " "), "must use a ${ENV_NAME} binding") {
+		t.Fatalf("sensitive literal MCP was not isolated: components=%+v warnings=%+v", pkg.Components.MCP, pkg.Warnings)
 	}
 }
 

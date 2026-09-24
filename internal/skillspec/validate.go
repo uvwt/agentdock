@@ -8,9 +8,8 @@ import (
 )
 
 const (
-	MaxNameLength          = 64
-	MaxDescriptionLength   = 1024
-	MaxCompatibilityLength = 500
+	MaxNameLength        = 64
+	MaxDescriptionLength = 1024
 )
 
 func ValidateName(name string) error {
@@ -40,40 +39,4 @@ func ValidateDescription(value string) error {
 		return fmt.Errorf("description exceeds %d characters", MaxDescriptionLength)
 	}
 	return nil
-}
-
-func ValidateCompatibility(value string) error {
-	if utf8.RuneCountInString(value) > MaxCompatibilityLength {
-		return fmt.Errorf("compatibility exceeds %d characters", MaxCompatibilityLength)
-	}
-	return nil
-}
-
-func NormalizeMetadata(value map[string]any) (map[string]string, error) {
-	if value == nil {
-		return nil, nil
-	}
-	out := make(map[string]string, len(value))
-	for key, raw := range value {
-		text, ok := raw.(string)
-		if !ok {
-			return nil, fmt.Errorf("metadata.%s must be a string", key)
-		}
-		out[key] = text
-	}
-	return out, nil
-}
-
-func NormalizeAllowedTools(value any) (string, error) {
-	if value == nil {
-		return "", nil
-	}
-	text, ok := value.(string)
-	if !ok {
-		return "", errors.New("allowed-tools must be a space-separated string")
-	}
-	if strings.ContainsAny(text, "\r\n\t") {
-		return "", errors.New("allowed-tools must be a single-line space-separated string")
-	}
-	return strings.TrimSpace(text), nil
 }

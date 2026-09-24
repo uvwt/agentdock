@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-
-	semver "github.com/Masterminds/semver/v3"
 )
 
 var (
@@ -41,12 +39,14 @@ func isLowerAlphaNumeric(char byte) bool {
 
 func ValidateVersion(version string) error {
 	version = strings.TrimSpace(version)
-	if version == VersionLocal {
-		return nil
+	if version == "" {
+		return errors.New("Plugin version is required")
 	}
-	parsed, err := semver.StrictNewVersion(version)
-	if err != nil || parsed.String() != version {
-		return fmt.Errorf("Plugin version must be valid canonical SemVer or %q", VersionLocal)
+	if len(version) > 128 {
+		return errors.New("Plugin version exceeds 128 characters")
+	}
+	if version == "." || version == ".." || strings.ContainsAny(version, "/\\") || containsControlCharacter(version) {
+		return errors.New("Plugin version must be a safe filesystem segment")
 	}
 	return nil
 }

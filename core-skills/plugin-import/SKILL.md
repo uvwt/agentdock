@@ -28,7 +28,7 @@ description: 当用户要安装或更新来自 Git、GitHub、外部插件市场
 2. 对明确的远程来源生成根目录 `.agentdock-import.json`，把用户给出的来源和已验证的 revision/ref/subdir 交给 Core；
 3. 把目标 Plugin 目录或 ZIP 准备到本地；
 4. 对 Core 尚不认识的其他格式，才由模型做显式转换；
-5. 调用 `plugin_manage validate`，检查自动识别结果、warnings、unsupported、provenance；
+5. 调用 `plugin_manage validate`，检查自动识别结果、format、warnings、provenance；
 6. 使用 validate 返回的 review token 安装或更新。
 
 本 Skill 不负责绕过 Core 校验，也不要对 OpenAI/Claude 包做重复转换。
@@ -43,11 +43,11 @@ description: 当用户要安装或更新来自 Git、GitHub、外部插件市场
 2. **准备本地输入**
    - 如果目标已经是一个本地目录或 ZIP，直接保留原样。
    - OpenAI `.codex-plugin/plugin.json`、Claude `.claude-plugin/plugin.json` 和 AgentDock `plugin.json` 都交给 Core 自动识别。
-   - 不要为了“兼容”先删除 commands/note 等字段；让 Core 在 review 中区分可忽略 warning 与必须阻塞的 unsupported 语义。
+   - 不要为了“兼容”先删除 commands/note 或第三方扩展字段；Core 会保留未知内容，只对自己真正执行的语义做严格判断。
 
 3. **交接远程来源**
    - 只有当来源是用户明确给出的远程地址，或本次获取流程能够可靠证明远程来源时，才在目标 Plugin 根目录写 `.agentdock-import.json`。
-   - sidecar 只允许 `origin`、`ref`、`revision`、`subdir`；不要写 `format`、`adapted`，这两个字段由 Core 根据真实格式生成。
+   - sidecar 只允许 `origin`、`ref`、`revision`、`subdir`。
    - `origin` 使用稳定、无凭据的上游地址；Git 来源的 `revision` 优先填写实际解析到的 commit SHA，`ref` 只在用户输入或实际仓库状态能确认时填写，`subdir` 只在来源明确指向仓库子目录时填写。
    - GitHub/GitLab 的 tree/blob 子目录 URL 要拆成稳定仓库 `origin` + 已确认的 `ref` + Plugin `subdir`，不要把浏览器页面 URL 整体当作长期 `origin`。
    - 不确定的字段留空，不要根据仓库名、默认分支或 URL 习惯猜测。
@@ -57,11 +57,12 @@ description: 当用户要安装或更新来自 Git、GitHub、外部插件市场
 4. **仅在 Core 不认识格式时显式转换**
    - 对其他生态格式，模型才建立 Portable 目录并写 `plugin.json` / `mcp.json`。
    - 对认证、执行权限、hook、agent 等存在语义差异的能力，不要臆造等价行为。
-   - 不把未知字段原样塞进 Portable manifest 企图绕过校验。
+   - 第三方未知元数据无需人工删除或改写；只在需要把完全陌生格式转换成 Portable 时生成 AgentDock 真正使用的运行字段。
 
 5. **验证并安装**
    - 先调用 `plugin_manage(action="validate", source=<本地目录或ZIP>)`。
-   - 检查 `valid`、warnings、unsupported、executables、Skills、MCP、provenance。
+   - 检查 `valid`、`format`、warnings、executables、Skills、MCP、provenance。
+   - warning 中若说明某个 MCP/执行能力“preserved but not activated”，表示原内容已保留，但 AgentDock 不会执行它。
    - 安装使用 validate 返回的原样 `review_token`。
    - validate 后如果修改了任何包内容，必须重新 validate；不要复用旧 token。
 

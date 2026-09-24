@@ -177,9 +177,6 @@ func (m *Manager) InstallReviewedSource(ctx context.Context, source string, enab
 }
 
 func (m *Manager) installPreparedCandidate(ctx context.Context, stage string, pkg Package, enabled bool) (result ChangeResult, err error) {
-	if len(pkg.Unsupported) > 0 {
-		return ChangeResult{}, pluginError("PLUGIN_UNSUPPORTED_COMPONENT", "install.validate", fmt.Errorf("unsupported components: %s", strings.Join(pkg.Unsupported, ", ")))
-	}
 	if _, active := m.pendingActivation(pkg.Manifest.Name); active {
 		return ChangeResult{}, pluginError("PLUGIN_ACTIVATION_IN_PROGRESS", "install", fmt.Errorf("Plugin %q is being activated", pkg.Manifest.Name))
 	}
@@ -215,7 +212,7 @@ func (m *Manager) installPreparedCandidate(ctx context.Context, stage string, pk
 		SchemaVersion: StateSchemaVersion, Name: pkg.Manifest.Name, Version: pkg.Manifest.Version, Description: pkg.Manifest.Description,
 		PackageDigest: pkg.PackageDigest, Provenance: pkg.Manifest.Provenance, Enabled: enabled, InstalledAt: time.Now().UTC(),
 		Components: stateComponentIndex(pkg.Components), MCPStorageKeys: pluginMCPStorageKeys(pkg.Components.MCP),
-		Compatibility: pkg.Compatibility,
+		Format: pkg.Format, Warnings: append([]string(nil), pkg.Warnings...),
 	}
 	ownerID, err := newReaderOwner()
 	if err != nil {
@@ -259,9 +256,6 @@ func (m *Manager) UpdateReviewedSource(ctx context.Context, source string, revie
 }
 
 func (m *Manager) updatePreparedCandidate(ctx context.Context, stage string, pkg Package, beforeSwitch func(State) error) (result ChangeResult, err error) {
-	if len(pkg.Unsupported) > 0 {
-		return ChangeResult{}, pluginError("PLUGIN_UNSUPPORTED_COMPONENT", "update.validate", fmt.Errorf("unsupported components: %s", strings.Join(pkg.Unsupported, ", ")))
-	}
 	if _, active := m.pendingActivation(pkg.Manifest.Name); active {
 		return ChangeResult{}, pluginError("PLUGIN_ACTIVATION_IN_PROGRESS", "update", fmt.Errorf("Plugin %q is being activated", pkg.Manifest.Name))
 	}
@@ -290,7 +284,7 @@ func (m *Manager) updatePreparedCandidate(ctx context.Context, stage string, pkg
 		return ChangeResult{}, err
 	}
 	if current.Version == pkg.Manifest.Version && current.PackageDigest == pkg.PackageDigest {
-		return ChangeResult{Action: "update", Name: current.Name, Version: current.Version, PreviousVersion: current.Version, PackageDigest: current.PackageDigest, Enabled: current.Enabled, Changed: false}, nil
+		return ChangeResult{Action: "update", Name: current.Name, Version: current.Version, PackageDigest: current.PackageDigest, Enabled: current.Enabled, Changed: false}, nil
 	}
 	if current.Version == pkg.Manifest.Version && current.Version != VersionLocal {
 		return ChangeResult{}, pluginError("PLUGIN_VERSION_DIGEST_CONFLICT", "update.digest", fmt.Errorf("Plugin %s %s is already installed with a different package digest", current.Name, current.Version))
@@ -320,7 +314,8 @@ func (m *Manager) updatePreparedCandidate(ctx context.Context, stage string, pkg
 	candidate.Provenance = pkg.Manifest.Provenance
 	candidate.Components = stateComponentIndex(pkg.Components)
 	candidate.MCPStorageKeys = mergeSortedStrings(candidate.MCPStorageKeys, pluginMCPStorageKeys(pkg.Components.MCP))
-	candidate.Compatibility = pkg.Compatibility
+	candidate.Format = pkg.Format
+	candidate.Warnings = append([]string(nil), pkg.Warnings...)
 	candidate.InstalledAt = time.Now().UTC()
 	transaction := ActivationTransaction{
 		SchemaVersion: ActivationTransactionSchemaVersion,
@@ -354,7 +349,7 @@ func (m *Manager) updatePreparedCandidate(ctx context.Context, stage string, pkg
 	m.pendingMu.Unlock()
 	keepLock = true
 	return ChangeResult{
-		Action: "update", Name: candidate.Name, Version: candidate.Version, PreviousVersion: current.Version,
+		Action: "update", Name: candidate.Name, Version: candidate.Version,
 		PackageDigest: candidate.PackageDigest, Enabled: candidate.Enabled, Changed: true,
 	}, nil
 }
@@ -525,7 +520,7 @@ func (m *Manager) RemoveWithLifecycle(ctx context.Context, name, dataPolicy stri
 		m.cleanupObsoleteVersions(name, "")
 		return ChangeResult{
 			Action: "remove", Name: state.Name, Version: state.Version, PackageDigest: state.PackageDigest,
-			Enabled: false, Changed: true, DataPolicy: dataPolicy,
+			Enabled: false, Changed: true,
 		}, nil
 	}
 
@@ -564,7 +559,7 @@ func (m *Manager) RemoveWithLifecycle(ctx context.Context, name, dataPolicy stri
 	}
 	m.cleanupObsoleteVersions(name, "")
 
-	result := ChangeResult{Action: "remove", Name: name, Enabled: false, Changed: !missing, DataPolicy: dataPolicy}
+	result := ChangeResult{Action: "remove", Name: name, Enabled: false, Changed: !missing}
 	if hasRemovedState {
 		result.Version = removedState.Version
 		result.PackageDigest = removedState.PackageDigest
@@ -635,7 +630,7 @@ func reviewMCPComponents(components []MCPComponent) []MCPReview {
 			Name: component.Name, Description: component.Description, Transport: component.Transport,
 			URL: component.URL, Command: component.Command, CWD: component.CWD,
 			EnvironmentNames: envNames, HeaderNames: headerNames,
-			RuntimeName: component.RuntimeName, StorageKey: component.StorageKey,
+			RuntimeName: component.RuntimeName,
 		})
 	}
 	return items

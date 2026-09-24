@@ -24,11 +24,6 @@ const (
 
 var portableHeaderNamePattern = regexp.MustCompile(`^[!#$%&'*+.^_` + "`" + `|~0-9A-Za-z-]+$`)
 
-type rawMCPFile struct {
-	Schema     string                  `json:"$schema"`
-	MCPServers map[string]rawMCPServer `json:"mcpServers"`
-}
-
 type rawMCPServer struct {
 	Type    string            `json:"type"`
 	URL     string            `json:"url,omitempty"`
@@ -53,44 +48,71 @@ func loadMCPFile(path, packageRoot, pluginName string) ([]MCPComponent, []string
 		return nil, nil, pluginError("PLUGIN_MCP_INVALID", "mcp.read", fmt.Errorf("mcp.json exceeds %d bytes", maxMCPFileBytes))
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	var raw rawMCPFile
+	var raw map[string]json.RawMessage
 	if err := decoder.Decode(&raw); err != nil {
-		return nil, nil, pluginError("PLUGIN_MCP_INVALID", "mcp.decode", err)
+		return []MCPComponent{}, []string{"mcp.json is preserved but not activated because it is not valid JSON"}, nil
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		if err == nil {
-			return nil, nil, pluginError("PLUGIN_MCP_INVALID", "mcp.decode", errors.New("mcp.json contains trailing JSON"))
+			return []MCPComponent{}, []string{"mcp.json is preserved but not activated because it contains trailing JSON values"}, nil
 		}
-		return nil, nil, pluginError("PLUGIN_MCP_INVALID", "mcp.decode", err)
+		return []MCPComponent{}, []string{"mcp.json is preserved but not activated because it contains trailing JSON values"}, nil
 	}
-	if raw.Schema != mcpSchemaURI {
-		return nil, nil, pluginError("PLUGIN_MCP_INVALID", "mcp.schema", fmt.Errorf("$schema must equal %s", mcpSchemaURI))
-	}
-	if raw.MCPServers == nil {
-		return nil, nil, pluginError("PLUGIN_MCP_INVALID", "mcp.decode", errors.New("mcpServers object is required"))
+	var servers map[string]json.RawMessage
+	if value, ok := raw["mcpServers"]; !ok || isJSONEmpty(value) {
+		return []MCPComponent{}, []string{"mcp.json is preserved but not activated because mcpServers is missing"}, nil
+	} else if err := json.Unmarshal(value, &servers); err != nil || servers == nil {
+		return []MCPComponent{}, []string{"mcp.json is preserved but not activated because mcpServers is not an object"}, nil
 	}
 
-	names := make([]string, 0, len(raw.MCPServers))
-	for name := range raw.MCPServers {
+	names := make([]string, 0, len(servers))
+	for name := range servers {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	components := make([]MCPComponent, 0, len(names))
-	unsupported := make([]string, 0)
+	warnings := make([]string, 0)
+	knownFields := map[string]bool{
+		"type": true, "url": true, "command": true, "args": true,
+		"cwd": true, "env": true, "headers": true,
+		"description": true, "note": true,
+	}
 	for _, name := range names {
-		component, unsupportedReason, err := normalizeMCPComponent(packageRoot, pluginName, name, raw.MCPServers[name])
+		var object map[string]json.RawMessage
+		if err := json.Unmarshal(servers[name], &object); err != nil || object == nil {
+			warnings = append(warnings, fmt.Sprintf("MCP server %s is preserved but not activated because its configuration is not an object", name))
+			continue
+		}
+		unknown := make([]string, 0)
+		for key, value := range object {
+			if !knownFields[key] && !isJSONEmpty(value) {
+				unknown = append(unknown, key)
+			}
+		}
+		if len(unknown) > 0 {
+			sort.Strings(unknown)
+			warnings = append(warnings, fmt.Sprintf("MCP server %s is preserved but not activated because AgentDock does not interpret fields: %s", name, strings.Join(unknown, ", ")))
+			continue
+		}
+		var server rawMCPServer
+		if err := json.Unmarshal(servers[name], &server); err != nil {
+			warnings = append(warnings, fmt.Sprintf("MCP server %s is preserved but not activated because its supported fields have invalid types", name))
+			continue
+		}
+		component, unsupportedReason, err := normalizeMCPComponent(packageRoot, pluginName, name, server)
 		if err != nil {
-			return nil, nil, pluginError("PLUGIN_MCP_INVALID", "mcp."+name, err)
+			warnings = append(warnings, fmt.Sprintf("MCP server %s is preserved but not activated: %v", name, err))
+			continue
 		}
 		if unsupportedReason != "" {
-			unsupported = append(unsupported, unsupportedReason)
+			warnings = append(warnings, unsupportedReason+"; server is preserved but not activated")
+			continue
 		}
 		components = append(components, component)
 	}
-	sort.Strings(unsupported)
-	return components, uniqueStrings(unsupported), nil
+	sort.Strings(warnings)
+	return components, uniqueStrings(warnings), nil
 }
 
 func normalizeMCPComponent(packageRoot, pluginName, name string, raw rawMCPServer) (MCPComponent, string, error) {

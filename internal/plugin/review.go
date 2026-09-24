@@ -11,17 +11,15 @@ import (
 
 func emptyReview() Review {
 	return Review{
-		Skills: []SkillComponent{}, MCP: []MCPReview{}, Unsupported: []string{}, Warnings: []string{}, Executables: []string{}, Issues: []string{},
-		Compatibility: Compatibility{Format: "unknown", Supported: []string{}, Unsupported: []string{}, Warnings: []string{}},
+		Skills: []SkillComponent{}, MCP: []MCPReview{}, Warnings: []string{}, Executables: []string{}, Issues: []string{}, Format: "unknown",
 	}
 }
 
 type reviewTokenMaterial struct {
-	PackageDigest string        `json:"package_digest"`
-	Compatibility Compatibility `json:"compatibility"`
-	Unsupported   []string      `json:"unsupported,omitempty"`
-	Warnings      []string      `json:"warnings,omitempty"`
-	Executables   []string      `json:"executables,omitempty"`
+	PackageDigest string   `json:"package_digest"`
+	Format        string   `json:"format"`
+	Warnings      []string `json:"warnings,omitempty"`
+	Executables   []string `json:"executables,omitempty"`
 }
 
 func buildReview(pkg Package) Review {
@@ -33,15 +31,11 @@ func buildReview(pkg Package) Review {
 		Provenance:    pkg.Manifest.Provenance,
 		Skills:        append([]SkillComponent(nil), pkg.Components.Skills...),
 		MCP:           reviewMCPComponents(pkg.Components.MCP),
-		Unsupported:   append([]string(nil), pkg.Unsupported...),
 		Warnings:      append([]string(nil), pkg.Warnings...),
 		Executables:   append([]string(nil), pkg.Executables...),
-		Compatibility: pkg.Compatibility,
+		Format:        pkg.Format,
 	}
 	review.ReviewToken = makeReviewToken(pkg)
-	if len(pkg.Unsupported) > 0 {
-		review.Issues = append(review.Issues, "Plugin contains unsupported components: "+strings.Join(pkg.Unsupported, ", "))
-	}
 	review.Valid = len(review.Issues) == 0
 	return review
 }
@@ -49,12 +43,10 @@ func buildReview(pkg Package) Review {
 func makeReviewToken(pkg Package) string {
 	material := reviewTokenMaterial{
 		PackageDigest: pkg.PackageDigest,
-		Compatibility: pkg.Compatibility,
-		Unsupported:   append([]string(nil), pkg.Unsupported...),
+		Format:        pkg.Format,
 		Warnings:      append([]string(nil), pkg.Warnings...),
 		Executables:   append([]string(nil), pkg.Executables...),
 	}
-	sort.Strings(material.Unsupported)
 	sort.Strings(material.Warnings)
 	sort.Strings(material.Executables)
 	data, _ := json.Marshal(material)

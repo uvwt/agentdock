@@ -23,7 +23,7 @@ func commonSkillCapabilityIndex() (*capabilityCommonSkillIndex, error) {
 		items = append(items, capabilityCommonSkillItem{
 			Name: item.Name, Description: item.Description,
 			File: skillRef + "/SKILL.md", SkillRef: skillRef,
-			SourceType: "shared", SourceID: "global",
+			SourceType: "shared",
 		})
 	}
 	return &capabilityCommonSkillIndex{Root: root, Total: index.Total, Truncated: index.Truncated, Items: items}, nil

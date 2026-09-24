@@ -18,13 +18,9 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 	case "remove":
 		return s.remove(ctx, request)
 	case "env_set", "env_unset", "env_list":
-		skill := strings.TrimSpace(request.Skill)
 		skillRef := strings.TrimSpace(request.SkillRef)
 		if skillRef == "" {
-			if skill == "" {
-				return nil, toolErrorDetails("VALIDATION_ERROR", "skill or skill_ref is required", "validation", map[string]any{"field": "skill_ref"})
-			}
-			skillRef = ManagedSkillRef(skill)
+			return nil, toolErrorDetails("VALIDATION_ERROR", "skill_ref is required for environment management", "validation", map[string]any{"field": "skill_ref"})
 		}
 		return s.scopedEnvAction(ctx, skillRef, action, request)
 	default:
@@ -44,12 +40,12 @@ func (s *Service) install(ctx context.Context, request ManageRequest) (Result, e
 		return nil, err
 	}
 	result, err := s.manager.Install(ctx, skills.InstallRequest{
-		Source: resolved, DigestSHA256: strings.TrimSpace(request.Digest), MaxBytes: int64(intValue(request.MaxBytes, 0)), MaxFiles: intValue(request.MaxFiles, 0),
+		Source: resolved, DigestSHA256: strings.TrimSpace(request.Digest),
 	})
 	if err != nil {
 		return nil, skillToolError(err)
 	}
-	return Result{"action": "install", "skill": result.Skill, "content_digest": result.ContentDigest, "changed": result.Changed, "result": result}, nil
+	return Result{"action": "install", "skill": result.Skill, "content_digest": result.ContentDigest, "changed": result.Changed}, nil
 }
 
 func (s *Service) remove(ctx context.Context, request ManageRequest) (Result, error) {
@@ -73,7 +69,7 @@ func (s *Service) remove(ctx context.Context, request ManageRequest) (Result, er
 	}
 	return Result{
 		"action": "remove", "skill": skill, "removed": result.Removed,
-		"purged": request.Purge, "result": result,
+		"purged": request.Purge,
 	}, nil
 }
 

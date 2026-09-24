@@ -53,7 +53,7 @@ func TestAgentDockContextToolReturnsStructuredRuntimeIndex(t *testing.T) {
 	}
 	if demo == nil || demo.Description != "Use this Skill for context index tests." ||
 		demo.File != "skill://managed/demo-skill/SKILL.md" || demo.SkillRef != "skill://managed/demo-skill" ||
-		demo.SourceType != "managed" || demo.ContentDigest == "" {
+		demo.SourceType != "managed" {
 		t.Fatalf("structured Skill index missing demo-skill: %#v", got.Skills)
 	}
 	if got.CommonSkills == nil || got.CommonSkills.Total != 1 || len(got.CommonSkills.Items) != 1 {
@@ -289,24 +289,22 @@ func TestAgentDockLocalContextSkipsSharedNexusLookups(t *testing.T) {
 
 func TestCapabilitySkillItemExposesOnlyLightweightIndexFields(t *testing.T) {
 	data, err := json.Marshal(capabilitySkillItem{
-		Name:          "desktop",
-		Description:   "Desktop automation.",
-		File:          "skill://managed/desktop/SKILL.md",
-		SkillRef:      "skill://managed/desktop",
-		SourceType:    "managed",
-		SourceID:      "desktop",
-		ContentDigest: "abc123",
+		Name:        "desktop",
+		Description: "Desktop automation.",
+		File:        "skill://managed/desktop/SKILL.md",
+		SkillRef:    "skill://managed/desktop",
+		SourceType:  "managed",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, want := range []string{`"name"`, `"description"`, `"file"`, `"skill_ref"`, `"source_type"`, `"source_id"`, `"content_digest"`} {
+	for _, want := range []string{`"name"`, `"description"`, `"file"`, `"skill_ref"`, `"source_type"`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("Skill index JSON missing %s: %s", want, text)
 		}
 	}
-	for _, unwanted := range []string{`"active_version"`, `"updated_at"`, `"operation_count"`, `"version"`, `"path"`, `"manifest"`, `"bundled"`} {
+	for _, unwanted := range []string{`"source_id"`, `"content_digest"`, `"active_version"`, `"updated_at"`, `"operation_count"`, `"version"`, `"path"`, `"manifest"`, `"bundled"`} {
 		if strings.Contains(text, unwanted) {
 			t.Fatalf("Skill index JSON should not expose %s: %s", unwanted, text)
 		}

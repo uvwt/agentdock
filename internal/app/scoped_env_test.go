@@ -19,10 +19,10 @@ func TestSkillEnvironmentActionsDoNotReturnValuesAndExecCommandUsesPriority(t *t
 
 	const secret = "skill-secret-value"
 	setResult, err := runtime.Call(context.Background(), "skill_manage", map[string]any{
-		"action": "env_set",
-		"skill":  "demo-skill",
-		"key":    "DEMO_SECRET",
-		"value":  secret,
+		"action":    "env_set",
+		"skill_ref": "skill://managed/demo-skill",
+		"key":       "DEMO_SECRET",
+		"value":     secret,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -32,8 +32,8 @@ func TestSkillEnvironmentActionsDoNotReturnValuesAndExecCommandUsesPriority(t *t
 	}
 
 	listResult, err := runtime.Call(context.Background(), "skill_manage", map[string]any{
-		"action": "env_list",
-		"skill":  "demo-skill",
+		"action":    "env_list",
+		"skill_ref": "skill://managed/demo-skill",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -41,8 +41,11 @@ func TestSkillEnvironmentActionsDoNotReturnValuesAndExecCommandUsesPriority(t *t
 	if strings.Contains(fmt.Sprint(listResult), secret) {
 		t.Fatalf("env_list returned secret value: %#v", listResult)
 	}
-	if listResult["count"] != 1 {
+	if listResult["items"] == nil {
 		t.Fatalf("unexpected env_list result: %#v", listResult)
+	}
+	if _, exists := listResult["count"]; exists {
+		t.Fatalf("env_list still returns redundant count: %#v", listResult)
 	}
 
 	loadedCommand := `test "$DEMO_SECRET" = "skill-secret-value" && printf loaded`
@@ -79,9 +82,9 @@ func TestSkillEnvironmentActionsDoNotReturnValuesAndExecCommandUsesPriority(t *t
 	}
 
 	unsetResult, err := runtime.Call(context.Background(), "skill_manage", map[string]any{
-		"action": "env_unset",
-		"skill":  "demo-skill",
-		"key":    "DEMO_SECRET",
+		"action":    "env_unset",
+		"skill_ref": "skill://managed/demo-skill",
+		"key":       "DEMO_SECRET",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -179,10 +182,10 @@ func TestExecCommandSkillRefBindsManagedRootAndEnvironment(t *testing.T) {
 
 	packageDir := installDocumentSkillForTest(t, runtime, "demo-skill", "legacy-metadata-only", "Demo Skill.")
 	_, err := runtime.Call(context.Background(), "skill_manage", map[string]any{
-		"action": "env_set",
-		"skill":  "demo-skill",
-		"key":    "DEMO_SECRET",
-		"value":  "skill-secret-value",
+		"action":    "env_set",
+		"skill_ref": "skill://managed/demo-skill",
+		"key":       "DEMO_SECRET",
+		"value":     "skill-secret-value",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -269,7 +272,7 @@ func TestManagedExecInjectsPrivateSkillDataDirAndRejectsOverrides(t *testing.T) 
 		t.Fatalf("request env override error = %v, want reserved variable rejection", err)
 	}
 	if _, err := runtime.Call(context.Background(), "skill_manage", map[string]any{
-		"action": "env_set", "skill": "demo-skill", "key": "SKILL_DATA_DIR", "value": t.TempDir(),
+		"action": "env_set", "skill_ref": "skill://managed/demo-skill", "key": "SKILL_DATA_DIR", "value": t.TempDir(),
 	}); err == nil || !strings.Contains(err.Error(), "reserved") {
 		t.Fatalf("skill env override error = %v, want reserved variable rejection", err)
 	}
@@ -310,7 +313,7 @@ func TestSharedSkillWithSameNameDoesNotReceiveManagedEnvironment(t *testing.T) {
 	installDocumentSkillForTest(t, runtime, "demo-skill", "metadata-only", "Managed duplicate.")
 	secret := "managed-only-secret"
 	if _, err := runtime.Call(context.Background(), "skill_manage", map[string]any{
-		"action": "env_set", "skill": "demo-skill", "key": "DEMO_SECRET", "value": secret,
+		"action": "env_set", "skill_ref": "skill://managed/demo-skill", "key": "DEMO_SECRET", "value": secret,
 	}); err != nil {
 		t.Fatal(err)
 	}

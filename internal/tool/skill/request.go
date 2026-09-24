@@ -10,13 +10,4 @@ type ManageRequest struct {
 	Source   string  `json:"source,omitempty"`
 	Digest   string  `json:"digest,omitempty"`
 	Purge    bool    `json:"purge,omitempty"`
-	MaxBytes *int    `json:"max_bytes,omitempty"`
-	MaxFiles *int    `json:"max_files,omitempty"`
-}
-
-func intValue(value *int, fallback int) int {
-	if value == nil {
-		return fallback
-	}
-	return *value
 }

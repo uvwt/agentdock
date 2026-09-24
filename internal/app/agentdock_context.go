@@ -139,14 +139,12 @@ type capabilityRuntimeContext struct {
 }
 
 type capabilitySkillItem struct {
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	File          string `json:"file"`
-	SkillRef      string `json:"skill_ref"`
-	SourceType    string `json:"source_type"`
-	SourceID      string `json:"source_id"`
-	PluginName    string `json:"plugin_name,omitempty"`
-	ContentDigest string `json:"content_digest,omitempty"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	File        string `json:"file"`
+	SkillRef    string `json:"skill_ref"`
+	SourceType  string `json:"source_type"`
+	PluginName  string `json:"plugin_name,omitempty"`
 }
 
 type capabilityCommonSkillIndex struct {
@@ -157,13 +155,11 @@ type capabilityCommonSkillIndex struct {
 }
 
 type capabilityCommonSkillItem struct {
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	File          string `json:"file"`
-	SkillRef      string `json:"skill_ref"`
-	SourceType    string `json:"source_type"`
-	SourceID      string `json:"source_id"`
-	ContentDigest string `json:"content_digest,omitempty"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	File        string `json:"file"`
+	SkillRef    string `json:"skill_ref"`
+	SourceType  string `json:"source_type"`
 }
 
 type capabilityPluginItem struct {
@@ -174,7 +170,6 @@ type capabilityPluginItem struct {
 	SkillsCount int    `json:"skills_count"`
 	MCPCount    int    `json:"mcp_count"`
 	Format      string `json:"format"`
-	Adapted     bool   `json:"adapted"`
 }
 
 type capabilityDynamicMCPItem struct {
@@ -260,7 +255,7 @@ func (r *Runtime) pluginCapabilityIndex() ([]capabilityPluginItem, error) {
 			Name: plugin.Name, Version: plugin.Version, Enabled: plugin.Enabled,
 			Description: truncateString(strings.TrimSpace(plugin.Description), 160),
 			SkillsCount: plugin.SkillsCount, MCPCount: plugin.MCPCount,
-			Format: plugin.Format, Adapted: plugin.Adapted,
+			Format: plugin.Format,
 		})
 	}
 	sort.SliceStable(items, func(i, j int) bool { return items[i].Name < items[j].Name })
@@ -293,14 +288,12 @@ func (r *Runtime) skillCapabilityIndex() ([]capabilitySkillItem, error) {
 	items := make([]capabilitySkillItem, 0, len(skillItems))
 	for _, skill := range skillItems {
 		items = append(items, capabilitySkillItem{
-			Name:          skill.Name,
-			Description:   truncateString(strings.TrimSpace(skill.Description), 160),
-			File:          skill.File,
-			SkillRef:      skill.SkillRef,
-			SourceType:    skill.SourceType,
-			SourceID:      skill.SourceID,
-			PluginName:    skill.PluginName,
-			ContentDigest: skill.ContentDigest,
+			Name:        skill.Name,
+			Description: truncateString(strings.TrimSpace(skill.Description), 160),
+			File:        skill.File,
+			SkillRef:    skill.SkillRef,
+			SourceType:  skill.SourceType,
+			PluginName:  skill.PluginName,
 		})
 	}
 	return items, nil

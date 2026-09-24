@@ -20,20 +20,11 @@ func TestValidateNameAgentSkillsBoundaries(t *testing.T) {
 	}
 }
 
-func TestNormalizeOfficialFrontmatterTypes(t *testing.T) {
-	if _, err := NormalizeMetadata(map[string]any{"owner": 42}); err == nil {
-		t.Fatal("numeric metadata value was accepted")
-	}
-	if _, err := NormalizeAllowedTools([]any{"exec_command"}); err == nil {
-		t.Fatal("allowed-tools array was accepted")
-	}
-	if got, err := NormalizeAllowedTools("exec_command read_file"); err != nil || got != "exec_command read_file" {
-		t.Fatalf("allowed-tools string = %q err=%v", got, err)
-	}
+func TestValidateDescriptionBoundaries(t *testing.T) {
 	if err := ValidateDescription(strings.Repeat("x", 1025)); err == nil {
 		t.Fatal("oversized description was accepted")
 	}
-	if err := ValidateCompatibility(strings.Repeat("x", 501)); err == nil {
-		t.Fatal("oversized compatibility was accepted")
+	if err := ValidateDescription("Demo"); err != nil {
+		t.Fatalf("valid description rejected: %v", err)
 	}
 }

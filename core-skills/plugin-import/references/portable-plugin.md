@@ -12,7 +12,7 @@ AgentDock Plugin Core 的最终运行格式是 Portable Plugin。对本地目录
 - OpenAI 与 Claude manifest 同时存在且没有 Portable manifest：作为歧义格式拒绝；
 - Portable manifest 存在时具有最高优先级；若其内容无效，按 Portable 校验失败，不静默 fallback。
 
-OpenAI/Claude 转换后生成的 canonical snapshot 才参与 `package_digest` 和 `review_token`。原包中无法安全映射的认证/行为字段继续作为 unsupported 阻塞；已知的说明元数据和可安全省略组件会明确出现在 warnings。
+OpenAI/Claude 转换后生成的 canonical snapshot 才参与 `package_digest` 和 `review_token`。第三方未知元数据和来源文件会保留；AgentDock 无法安全解释的执行/认证语义不会被激活，并明确出现在 warnings。
 
 ## 最小目录
 
@@ -34,20 +34,15 @@ plugin-root/
 
 ## plugin.json
 
-`$schema` 必须是：
-
-```text
-https://agent-plugins.org/schemas/1.0.0/plugin.schema.json
-```
+`$schema` 可作为作者工具提示存在，但 AgentDock 不要求固定 schema URI，也不会因为第三方使用自己的 schema 而拒绝安装。
 
 核心字段：
 
 - `name`：必填，Plugin 稳定名称；
-- `version`：建议提供 SemVer；省略时仅作为 `local` 开发版本处理；
+- `version`：可选展示身份；AgentDock 不要求 SemVer，省略时使用 `local`；
 - `description`：可选；
-- `author/homepage/repository/license/keywords`：可选元数据；
+- 其他第三方元数据可原样存在，AgentDock 不使用时不会因为字段未知或形状不同而拒绝安装；
 - `provenance`：导入外部来源时使用；
-- `extensions`：只有 Core 明确理解的扩展才可能被接受，未知非空扩展会进入 unsupported。
 
 ### provenance
 
@@ -59,9 +54,7 @@ https://agent-plugins.org/schemas/1.0.0/plugin.schema.json
     "origin": "https://github.com/example/plugins",
     "ref": "main",
     "revision": "0123456789abcdef0123456789abcdef01234567",
-    "subdir": "plugins/example",
-    "format": "openai",
-    "adapted": true
+    "subdir": "plugins/example"
   }
 }
 ```
@@ -72,8 +65,6 @@ https://agent-plugins.org/schemas/1.0.0/plugin.schema.json
 - `ref`：可选的可跟踪 ref，例如用户明确指定或实际确认的 branch/tag；不要猜默认分支；
 - `revision`：具体 commit、tag 对应不可变 revision 或来源摘要；
 - `subdir`：原始仓库内的 Plugin 相对目录；
-- `format`：原始格式标签，仅用于 provenance，不改变 Core 解析行为；
-- `adapted`：内容是否经过导入转换。
 
 不要把临时目录、临时 ZIP 路径或 secret 写进 provenance。
 
@@ -90,7 +81,7 @@ https://agent-plugins.org/schemas/1.0.0/plugin.schema.json
 }
 ```
 
-sidecar 只允许 `origin/ref/revision/subdir`。Core 会严格校验这些字段，在 AgentDock 自己的 staging snapshot 中消费并删除它，再根据真实 Plugin 格式补充 `format/adapted` 并写入最终 canonical provenance。用户只提供匿名本地目录或 ZIP 时不要创建 sidecar。
+sidecar 只允许 `origin/ref/revision/subdir`。Core 会严格校验这些字段，在 AgentDock 自己的 staging snapshot 中消费并删除它，再写入最终 canonical provenance。用户只提供匿名本地目录或 ZIP 时不要创建 sidecar。
 
 对于 HTTP/HTTPS `origin`，使用稳定、无凭据的来源 URL：
 - 不要包含 `user:password@host` 或 token/userinfo；
@@ -105,11 +96,11 @@ sidecar 只允许 `origin/ref/revision/subdir`。Core 会严格校验这些字�
 
 ## MCP
 
-根目录 `mcp.json` 使用 AgentDock Portable MCP 配置。只写 AgentDock Core 明确定义且能保持语义的 transport、URL/command、args、cwd、env/header 绑定等字段。
+根目录 `mcp.json` 可包含第三方额外字段。AgentDock 只会激活自己能够完整理解并安全校验的 server；有未知运行字段、未知 transport 或不安全命令/URL/env 的 server 会保留在源配置中，但不会进入活动 MCP 组件。
 
 - Remote MCP URL 可以保留普通 query 参数；仍禁止 URL userinfo 和 fragment，凭据应放在 env-backed header 中。
 - `${ENV_NAME}` 表示必填绑定；`${ENV_NAME:-}` 表示可选绑定。可选绑定在对应环境变量未配置或为空时展开为空字符串；header/env 字段本身仍会保留。
-- 如果外部 MCP 配置带有 AgentDock 无法等价表达的认证或 transport 语义，不要静默丢弃后继续安装；在导入报告中明确指出。
+- 如果外部 MCP 配置带有 AgentDock 无法等价表达的认证或 transport 语义，Plugin 本身仍可安装，但该 MCP 必须保持不激活并在 warnings 中明确指出。
 
 ## Review
 

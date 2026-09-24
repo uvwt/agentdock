@@ -325,8 +325,9 @@ func TestPrepareLocalSourceUsesPrivateSnapshot(t *testing.T) {
 func TestLocalAndArchiveInstallEnforceFileAndByteLimits(t *testing.T) {
 	t.Run("local-files", func(t *testing.T) {
 		manager := newManagerForTest(t)
+		manager.MaxFiles = 1
 		source := writeSkillSource(t, "limited-skill", "Demo", map[string]string{"extra.txt": "x"})
-		_, err := manager.Install(context.Background(), InstallRequest{Source: source, MaxFiles: 1})
+		_, err := manager.Install(context.Background(), InstallRequest{Source: source})
 		if err == nil || !strings.Contains(err.Error(), "exceeds 1 files") {
 			t.Fatalf("local MaxFiles error = %v", err)
 		}
@@ -334,8 +335,10 @@ func TestLocalAndArchiveInstallEnforceFileAndByteLimits(t *testing.T) {
 
 	t.Run("local-bytes", func(t *testing.T) {
 		manager := newManagerForTest(t)
+		manager.MaxDownload = 512
+		manager.MaxFiles = 100
 		source := writeSkillSource(t, "limited-skill", "Demo", map[string]string{"large.bin": strings.Repeat("x", 4096)})
-		_, err := manager.Install(context.Background(), InstallRequest{Source: source, MaxBytes: 512, MaxFiles: 100})
+		_, err := manager.Install(context.Background(), InstallRequest{Source: source})
 		if err == nil || !strings.Contains(err.Error(), "byte") {
 			t.Fatalf("local MaxBytes error = %v", err)
 		}
@@ -343,10 +346,11 @@ func TestLocalAndArchiveInstallEnforceFileAndByteLimits(t *testing.T) {
 
 	t.Run("zip-files", func(t *testing.T) {
 		manager := newManagerForTest(t)
+		manager.MaxFiles = 1
 		source := writeSkillSource(t, "limited-skill", "Demo", map[string]string{"extra.txt": "x"})
 		archive := filepath.Join(t.TempDir(), "skill.zip")
 		writeSkillArchive(t, source, archive)
-		_, err := manager.Install(context.Background(), InstallRequest{Source: archive, MaxFiles: 1})
+		_, err := manager.Install(context.Background(), InstallRequest{Source: archive})
 		if err == nil || !strings.Contains(err.Error(), "exceeds 1 files") {
 			t.Fatalf("ZIP MaxFiles error = %v", err)
 		}

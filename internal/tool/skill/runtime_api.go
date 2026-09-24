@@ -106,7 +106,7 @@ func (s *Service) RuntimeSkills() (Result, error) {
 		}
 		item := map[string]any{
 			"skill": resolved.Name, "name": capability.Name, "description": capability.Description,
-			"skill_ref": resolved.SkillRef, "source_type": resolved.SourceType, "source_id": resolved.SourceID,
+			"skill_ref": resolved.SkillRef, "source_type": resolved.SourceType,
 			"content_digest": capability.ContentDigest, "file_count": len(files),
 		}
 		if resolved.PluginName != "" {
@@ -138,7 +138,7 @@ func (s *Service) RuntimeSkill(skill string) (Result, error) {
 	}
 	result := Result{
 		"action": "inspect", "skill": resolved.Name, "name": doc.Name, "description": doc.Description,
-		"skill_ref": resolved.SkillRef, "source_type": resolved.SourceType, "source_id": resolved.SourceID,
+		"skill_ref": resolved.SkillRef, "source_type": resolved.SourceType,
 		"content_digest": digest, "document": doc, "files": files,
 		"file_count": len(files), "source": runtimeAPISource,
 	}

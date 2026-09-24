@@ -20,7 +20,7 @@ const (
 	pluginSchemaURI  = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 )
 
-var unsupportedManifestFields = map[string]string{
+var inertManifestFields = map[string]string{
 	"hooks":              "hooks",
 	"agents":             "agents",
 	"lsp":                "lsp",
@@ -30,6 +30,8 @@ var unsupportedManifestFields = map[string]string{
 	"installScripts":     "install scripts",
 	"dependencies":       "plugin dependencies",
 	"pluginDependencies": "plugin dependencies",
+	"secrets":            "secrets metadata",
+	"credentials":        "credentials metadata",
 }
 
 func LoadPackage(root string) (Package, error) {
@@ -44,12 +46,12 @@ func LoadPackage(root string) (Package, error) {
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return Package{}, pluginError("PLUGIN_PACKAGE_INVALID", "package.root", errors.New("Plugin package root must be a regular directory"))
 	}
-	treeUnsupported, err := validatePackageTree(root)
+	treeWarnings, err := validatePackageTree(root)
 	if err != nil {
 		return Package{}, err
 	}
 
-	manifest, unsupported, warnings, err := loadManifest(filepath.Join(root, "plugin.json"))
+	manifest, warnings, err := loadManifest(filepath.Join(root, "plugin.json"))
 	if err != nil {
 		return Package{}, err
 	}
@@ -92,12 +94,12 @@ func LoadPackage(root string) (Package, error) {
 
 	mcpPath := filepath.Join(root, "mcp.json")
 	if _, statErr := os.Lstat(mcpPath); statErr == nil {
-		mcp, mcpUnsupported, err := loadMCPFile(mcpPath, root, manifest.Name)
+		mcp, mcpWarnings, err := loadMCPFile(mcpPath, root, manifest.Name)
 		if err != nil {
 			return Package{}, err
 		}
 		components.MCP = mcp
-		unsupported = append(unsupported, mcpUnsupported...)
+		warnings = append(warnings, mcpWarnings...)
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return Package{}, pluginError("PLUGIN_MCP_INVALID", "mcp", statErr)
 	}
@@ -110,56 +112,40 @@ func LoadPackage(root string) (Package, error) {
 	if err != nil {
 		return Package{}, pluginError("PLUGIN_PACKAGE_INVALID", "package.digest", err)
 	}
-	unsupported = append(unsupported, treeUnsupported...)
-	sort.Strings(unsupported)
-	unsupported = uniqueStrings(unsupported)
+	warnings = append(warnings, treeWarnings...)
 	sort.Strings(warnings)
 	warnings = uniqueStrings(warnings)
 
-	supported := []string{"metadata"}
-	if len(components.Skills) > 0 {
-		supported = append(supported, "skills")
-	}
-	if len(components.MCP) > 0 {
-		supported = append(supported, "mcp")
-	}
-	sort.Strings(supported)
-	compatibility := Compatibility{
-		Format: "portable", Supported: supported,
-		Unsupported: append([]string(nil), unsupported...),
-		Warnings:    append([]string(nil), warnings...),
-	}
 	return Package{
 		Root: root, Manifest: manifest, PackageDigest: digest,
-		Components: components, Unsupported: unsupported, Warnings: warnings, Executables: executables,
-		Compatibility: compatibility,
+		Components: components, Warnings: warnings, Executables: executables, Format: pluginFormatPortable,
 	}, nil
 }
 
-func loadManifest(path string) (Manifest, []string, []string, error) {
+func loadManifest(path string) (Manifest, []string, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.read", err)
+		return Manifest{}, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.read", err)
 	}
 	defer file.Close()
 	data, err := io.ReadAll(io.LimitReader(file, maxManifestBytes+1))
 	if err != nil {
-		return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.read", err)
+		return Manifest{}, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.read", err)
 	}
 	if len(data) > maxManifestBytes {
-		return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.read", fmt.Errorf("plugin.json exceeds %d bytes", maxManifestBytes))
+		return Manifest{}, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.read", fmt.Errorf("plugin.json exceeds %d bytes", maxManifestBytes))
 	}
 	var raw map[string]json.RawMessage
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	if err := decoder.Decode(&raw); err != nil {
-		return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.decode", err)
+		return Manifest{}, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.decode", err)
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		if err == nil {
-			return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.decode", errors.New("plugin.json contains trailing JSON"))
+			return Manifest{}, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.decode", errors.New("plugin.json contains trailing JSON"))
 		}
-		return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.decode", err)
+		return Manifest{}, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.decode", err)
 	}
 
 	readString := func(name string) (string, error) {
@@ -173,23 +159,16 @@ func loadManifest(path string) (Manifest, []string, []string, error) {
 		}
 		return strings.TrimSpace(text), nil
 	}
-	schema, err := readString("$schema")
-	if err != nil || schema != pluginSchemaURI {
-		if err == nil {
-			err = fmt.Errorf("$schema must equal %s", pluginSchemaURI)
-		}
-		return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.schema", err)
-	}
 	name, err := readString("name")
 	if err != nil {
-		return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.name", err)
+		return Manifest{}, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.name", err)
 	}
 	if err := ValidateName(name); err != nil {
-		return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.name", err)
+		return Manifest{}, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.name", err)
 	}
 	version, err := readString("version")
 	if err != nil {
-		return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.version", err)
+		return Manifest{}, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.version", err)
 	}
 	warnings := make([]string, 0)
 	if version == "" {
@@ -197,110 +176,32 @@ func loadManifest(path string) (Manifest, []string, []string, error) {
 		warnings = append(warnings, "plugin.json omits version; Portable Plugin is treated as version=local")
 	}
 	if err := ValidateVersion(version); err != nil {
-		return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.version", err)
+		return Manifest{}, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.version", err)
 	}
 	description, err := readString("description")
 	if err != nil {
-		return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.description", err)
+		return Manifest{}, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.description", err)
 	}
 
-	manifest := Manifest{Schema: schema, Name: name, Version: version, Description: description}
-	if manifest.Homepage, err = readString("homepage"); err != nil {
-		return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.homepage", err)
-	}
-	if manifest.Repository, err = readString("repository"); err != nil {
-		return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.repository", err)
-	}
-	if manifest.License, err = readString("license"); err != nil {
-		return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.license", err)
-	}
-	if value, ok := raw["keywords"]; ok {
-		if err := json.Unmarshal(value, &manifest.Keywords); err != nil {
-			return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.keywords", errors.New("keywords must be an array of strings"))
-		}
-	}
-	if value, ok := raw["author"]; ok {
-		var authorRaw map[string]json.RawMessage
-		if err := json.Unmarshal(value, &authorRaw); err != nil {
-			return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.author", errors.New("author must be an object"))
-		}
-		author := &ManifestAuthor{}
-		for key, field := range map[string]*string{"name": &author.Name, "email": &author.Email, "url": &author.URL} {
-			value, exists := authorRaw[key]
-			if !exists {
-				continue
-			}
-			if err := json.Unmarshal(value, field); err != nil {
-				return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.author", fmt.Errorf("author.%s must be a string", key))
-			}
-		}
-		for key := range authorRaw {
-			if key != "name" && key != "email" && key != "url" {
-				return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.author", fmt.Errorf("unknown author field %q", key))
-			}
-		}
-		manifest.Author = author
-	}
+	manifest := Manifest{Name: name, Version: version, Description: description}
 	if value, ok := raw["provenance"]; ok && !isJSONEmpty(value) {
 		var provenance Provenance
-		decoder := json.NewDecoder(bytes.NewReader(value))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&provenance); err != nil {
-			return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.provenance", fmt.Errorf("invalid provenance: %w", err))
-		}
-		var trailing any
-		if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-			if err == nil {
-				err = errors.New("provenance contains trailing JSON")
-			}
-			return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.provenance", err)
+		if err := json.Unmarshal(value, &provenance); err != nil {
+			return Manifest{}, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.provenance", fmt.Errorf("invalid provenance: %w", err))
 		}
 		if err := validateProvenance(&provenance); err != nil {
-			return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.provenance", err)
+			return Manifest{}, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.provenance", err)
 		}
 		manifest.Provenance = &provenance
 	}
-	extensionUnsupported := make([]string, 0)
-	if value, ok := raw["extensions"]; ok {
-		var extensions map[string]json.RawMessage
-		if err := json.Unmarshal(value, &extensions); err != nil {
-			return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.extensions", errors.New("extensions must be an object"))
-		}
-		for namespace, value := range extensions {
-			var object map[string]any
-			if err := json.Unmarshal(value, &object); err != nil || object == nil {
-				return Manifest{}, nil, nil, pluginError("PLUGIN_MANIFEST_INVALID", "manifest.extensions", fmt.Errorf("extension %q must be an object", namespace))
-			}
-			if len(object) > 0 {
-				extensionUnsupported = append(extensionUnsupported, "extension "+namespace)
-			}
-		}
-		manifest.Extensions = extensions
-	}
 
-	known := map[string]struct{}{
-		"$schema": {}, "name": {}, "version": {}, "description": {}, "author": {},
-		"homepage": {}, "repository": {}, "license": {}, "keywords": {}, "provenance": {}, "extensions": {},
-	}
-	unsupported := append([]string(nil), extensionUnsupported...)
 	for key, value := range raw {
-		if _, ok := known[key]; ok {
-			continue
+		if label, ok := inertManifestFields[key]; ok && !isJSONEmpty(value) {
+			warnings = append(warnings, fmt.Sprintf("Plugin field %s is preserved but not executed by AgentDock", label))
 		}
-		if label, ok := unsupportedManifestFields[key]; ok && !isJSONEmpty(value) {
-			unsupported = append(unsupported, label)
-			continue
-		}
-		if (key == "secrets" || key == "credentials") && !isJSONEmpty(value) {
-			unsupported = append(unsupported, "manifest "+key)
-			continue
-		}
-		unsupported = append(unsupported, "unknown plugin.json field "+key)
 	}
-	sort.Strings(unsupported)
-	unsupported = uniqueStrings(unsupported)
 	sort.Strings(warnings)
-	return manifest, unsupported, warnings, nil
+	return manifest, uniqueStrings(warnings), nil
 }
 
 func validateProvenance(provenance *Provenance) error {
@@ -311,10 +212,9 @@ func validateProvenance(provenance *Provenance) error {
 	provenance.Ref = strings.TrimSpace(provenance.Ref)
 	provenance.Revision = strings.TrimSpace(provenance.Revision)
 	provenance.Subdir = strings.TrimSpace(strings.ReplaceAll(provenance.Subdir, "\\", "/"))
-	provenance.Format = strings.TrimSpace(provenance.Format)
 	for field, value := range map[string]string{
 		"origin": provenance.Origin, "ref": provenance.Ref, "revision": provenance.Revision,
-		"subdir": provenance.Subdir, "format": provenance.Format,
+		"subdir": provenance.Subdir,
 	} {
 		if containsControlCharacter(value) {
 			return fmt.Errorf("provenance.%s must not contain control characters", field)
@@ -359,10 +259,10 @@ func containsControlCharacter(value string) bool {
 }
 
 func validatePackageTree(root string) ([]string, error) {
-	unsupportedRoots := map[string]string{
+	inertRoots := map[string]string{
 		"hooks": "hooks", "agents": "agents", "lsp": "lsp", "monitors": "monitors",
 	}
-	unsupported := make([]string, 0)
+	warnings := make([]string, 0)
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return pluginError("PLUGIN_PACKAGE_INVALID", "package.walk", walkErr)
@@ -385,9 +285,8 @@ func validatePackageTree(root string) ([]string, error) {
 			return nil
 		}
 		if entry.IsDir() {
-			if label, exists := unsupportedRoots[filepath.ToSlash(relative)]; exists {
-				unsupported = append(unsupported, label)
-				return filepath.SkipDir
+			if label, exists := inertRoots[filepath.ToSlash(relative)]; exists {
+				warnings = append(warnings, fmt.Sprintf("Plugin directory %s is preserved but not executed by AgentDock", label))
 			}
 			return nil
 		}
@@ -406,8 +305,8 @@ func validatePackageTree(root string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	sort.Strings(unsupported)
-	return uniqueStrings(unsupported), nil
+	sort.Strings(warnings)
+	return uniqueStrings(warnings), nil
 }
 
 func collectExecutableFiles(root string) ([]string, error) {

@@ -39,7 +39,6 @@ type CapabilityItem struct {
 	SkillsCount int
 	MCPCount    int
 	Format      string
-	Adapted     bool
 }
 
 func (s *Service) CapabilityItems() ([]CapabilityItem, error) {
@@ -49,7 +48,7 @@ func (s *Service) CapabilityItems() ([]CapabilityItem, error) {
 	}
 	items := make([]CapabilityItem, 0, len(installed))
 	for _, item := range installed {
-		format := strings.TrimSpace(item.Compatibility.Format)
+		format := strings.TrimSpace(item.Format)
 		if format == "" {
 			format = "portable"
 		}
@@ -57,7 +56,7 @@ func (s *Service) CapabilityItems() ([]CapabilityItem, error) {
 			Name: item.Name, Version: item.Version, Enabled: item.Enabled,
 			Description: item.Description,
 			SkillsCount: len(item.Components.Skills), MCPCount: len(item.Components.MCP),
-			Format: format, Adapted: item.Provenance != nil && item.Provenance.Adapted,
+			Format: format,
 		})
 	}
 	return items, nil
@@ -135,21 +134,6 @@ func releasePluginLeases(leases map[string]func()) {
 func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, error) {
 	action := strings.ToLower(strings.TrimSpace(request.Action))
 	switch action {
-	case "list":
-		items, err := s.manager.List()
-		if err != nil {
-			return nil, pluginToolError(err)
-		}
-		plugins := make([]map[string]any, 0, len(items))
-		for _, item := range items {
-			plugins = append(plugins, map[string]any{
-				"name": item.Name, "version": item.Version, "enabled": item.Enabled,
-				"package_digest": item.PackageDigest, "provenance": item.Provenance,
-				"skill_count": len(item.Components.Skills), "mcp_count": len(item.Components.MCP),
-			})
-		}
-		return Result{"action": action, "plugins": plugins, "count": len(plugins)}, nil
-
 	case "inspect":
 		name := strings.TrimSpace(request.Name)
 		if name == "" {
@@ -176,8 +160,7 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 				"provenance": installed.Provenance, "enabled": installed.Enabled, "installed_at": installed.InstalledAt,
 				"package_digest": installed.PackageDigest, "skills": review.Skills,
 				"mcp": review.MCP, "executables": review.Executables,
-				"warnings": installed.Compatibility.Warnings, "unsupported": installed.Compatibility.Unsupported,
-				"compatibility": installed.Compatibility,
+				"warnings": installed.Warnings, "format": installed.Format,
 			},
 		}, nil
 
@@ -187,10 +170,7 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 			return nil, err
 		}
 		review := s.manager.ValidateSource(ctx, source)
-		return Result{
-			"action": action, "review": review,
-			"package_digest": review.PackageDigest, "review_token": review.ReviewToken,
-		}, nil
+		return Result{"action": action, "review": review}, nil
 
 	case "install":
 		source, err := s.sourcePath(request.Source)
@@ -357,9 +337,28 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 			"INVALID_ACTION",
 			"unsupported plugin_manage action",
 			"validation",
-			map[string]any{"action": action, "allowed": []string{"list", "inspect", "validate", "install", "update", "enable", "disable", "remove"}},
+			map[string]any{"action": action, "allowed": []string{"inspect", "validate", "install", "update", "enable", "disable", "remove"}},
 		)
 	}
+}
+
+// RuntimeList returns the read-only Plugin index used by the internal Runtime
+// API. It is intentionally not a plugin_manage action because agentdock_context
+// already provides the model-facing Plugin index.
+func (s *Service) RuntimeList() (Result, error) {
+	items, err := s.manager.List()
+	if err != nil {
+		return nil, pluginToolError(err)
+	}
+	plugins := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		plugins = append(plugins, map[string]any{
+			"name": item.Name, "version": item.Version, "enabled": item.Enabled,
+			"package_digest": item.PackageDigest, "provenance": item.Provenance,
+			"format": item.Format, "skill_count": len(item.Components.Skills), "mcp_count": len(item.Components.MCP),
+		})
+	}
+	return Result{"plugins": plugins, "count": len(plugins)}, nil
 }
 
 func (s *Service) sourcePath(raw string) (string, error) {
@@ -625,12 +624,6 @@ func changeResult(result pluginruntime.ChangeResult) Result {
 	out := Result{
 		"action": result.Action, "name": result.Name, "version": result.Version,
 		"enabled": result.Enabled, "changed": result.Changed, "package_digest": result.PackageDigest,
-	}
-	if result.DataPolicy != "" {
-		out["data_policy"] = result.DataPolicy
-	}
-	if result.PreviousVersion != "" {
-		out["previous_version"] = result.PreviousVersion
 	}
 	return out
 }

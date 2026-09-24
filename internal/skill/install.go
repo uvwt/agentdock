@@ -43,22 +43,13 @@ func (m *Manager) Install(ctx context.Context, req InstallRequest) (InstallResul
 	if strings.TrimSpace(req.Source) == "" {
 		return InstallResult{}, packageError(ErrInvalidPackage, "source", errors.New("source is required"))
 	}
-	maxBytes := req.MaxBytes
-	if maxBytes <= 0 {
-		maxBytes = m.MaxDownload
-	}
-	maxFiles := req.MaxFiles
-	if maxFiles <= 0 {
-		maxFiles = m.MaxFiles
-	}
-
 	work, err := m.State.TempPath("install")
 	if err != nil {
 		return InstallResult{}, packageError(ErrInstallFailed, "temp", err)
 	}
 	defer os.RemoveAll(work)
 
-	packageDir, sourceDigest, err := m.prepareSource(ctx, req.Source, work, maxBytes, maxFiles)
+	packageDir, sourceDigest, err := m.prepareSource(ctx, req.Source, work, m.MaxDownload, m.MaxFiles)
 	if err != nil {
 		return InstallResult{}, err
 	}

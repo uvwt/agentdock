@@ -48,15 +48,21 @@ func (r *Runtime) RuntimeSkillFile(skill, relativePath string) (Result, error) {
 }
 
 func (r *Runtime) RuntimePlugins(ctx context.Context) (Result, error) {
-	return r.runtimePluginManage(ctx, map[string]any{"action": "list"})
+	result, err := r.plugins.RuntimeList()
+	if err != nil {
+		return nil, err
+	}
+	result["ok"] = true
+	result["source"] = runtimeAPISource
+	return result, nil
 }
 
 func (r *Runtime) RuntimePlugin(ctx context.Context, name string) (Result, error) {
 	return r.runtimePluginManage(ctx, map[string]any{"action": "inspect", "name": name})
 }
 
-// Runtime Plugin API 只暴露 list/inspect；安装、更新、启停和删除仍由 plugin_manage
-// 的确认与事务语义负责，避免面向 UI 的只读接口形成第二套生命周期入口。
+// Runtime Plugin API 只暴露只读索引与 inspect；安装、更新、启停和删除仍由
+// plugin_manage 的确认与事务语义负责，避免面向 UI 的接口形成第二套生命周期入口。
 func (r *Runtime) runtimePluginManage(ctx context.Context, args map[string]any) (Result, error) {
 	if err := r.validateToolArguments(toolplugin.ToolManage, args); err != nil {
 		return nil, err

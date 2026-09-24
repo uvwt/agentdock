@@ -1,12 +1,9 @@
 package plugin
 
-import (
-	"encoding/json"
-	"time"
-)
+import "time"
 
 const (
-	StateSchemaVersion = 2
+	StateSchemaVersion = 3
 	VersionLocal       = "local"
 )
 
@@ -17,35 +14,13 @@ type Provenance struct {
 	Ref      string `json:"ref,omitempty"`
 	Revision string `json:"revision,omitempty"`
 	Subdir   string `json:"subdir,omitempty"`
-	Format   string `json:"format,omitempty"`
-	Adapted  bool   `json:"adapted,omitempty"`
-}
-
-type Compatibility struct {
-	Format      string   `json:"format"`
-	Supported   []string `json:"supported"`
-	Unsupported []string `json:"unsupported"`
-	Warnings    []string `json:"warnings"`
-}
-
-type ManifestAuthor struct {
-	Name  string `json:"name,omitempty"`
-	Email string `json:"email,omitempty"`
-	URL   string `json:"url,omitempty"`
 }
 
 type Manifest struct {
-	Schema      string                     `json:"$schema"`
-	Name        string                     `json:"name"`
-	Version     string                     `json:"version"`
-	Description string                     `json:"description,omitempty"`
-	Author      *ManifestAuthor            `json:"author,omitempty"`
-	Homepage    string                     `json:"homepage,omitempty"`
-	Repository  string                     `json:"repository,omitempty"`
-	License     string                     `json:"license,omitempty"`
-	Keywords    []string                   `json:"keywords,omitempty"`
-	Provenance  *Provenance                `json:"provenance,omitempty"`
-	Extensions  map[string]json.RawMessage `json:"extensions,omitempty"`
+	Name        string      `json:"name"`
+	Version     string      `json:"version"`
+	Description string      `json:"description,omitempty"`
+	Provenance  *Provenance `json:"provenance,omitempty"`
 }
 
 type SkillComponent struct {
@@ -89,7 +64,6 @@ type MCPReview struct {
 	EnvironmentNames []string `json:"environment_names,omitempty"`
 	HeaderNames      []string `json:"header_names,omitempty"`
 	RuntimeName      string   `json:"runtime_name"`
-	StorageKey       string   `json:"storage_key"`
 }
 
 type State struct {
@@ -103,10 +77,11 @@ type State struct {
 	InstalledAt    time.Time      `json:"installed_at"`
 	Components     ComponentIndex `json:"components"`
 	MCPStorageKeys []string       `json:"mcp_storage_keys,omitempty"`
-	Compatibility  Compatibility  `json:"compatibility,omitempty"`
+	Format         string         `json:"format"`
+	Warnings       []string       `json:"warnings,omitempty"`
 }
 
-const ActivationTransactionSchemaVersion = 2
+const ActivationTransactionSchemaVersion = 3
 
 type ActivationTransaction struct {
 	SchemaVersion    int       `json:"schema_version"`
@@ -125,10 +100,9 @@ type Package struct {
 	Manifest      Manifest
 	PackageDigest string
 	Components    ComponentIndex
-	Unsupported   []string
 	Warnings      []string
 	Executables   []string
-	Compatibility Compatibility
+	Format        string
 }
 
 type Review struct {
@@ -141,11 +115,10 @@ type Review struct {
 	Provenance    *Provenance      `json:"provenance,omitempty"`
 	Skills        []SkillComponent `json:"skills"`
 	MCP           []MCPReview      `json:"mcp"`
-	Unsupported   []string         `json:"unsupported"`
 	Warnings      []string         `json:"warnings"`
 	Executables   []string         `json:"executables"`
 	Issues        []string         `json:"issues"`
-	Compatibility Compatibility    `json:"compatibility"`
+	Format        string           `json:"format"`
 }
 
 type Installed struct {
@@ -154,12 +127,10 @@ type Installed struct {
 }
 
 type ChangeResult struct {
-	Action          string `json:"action"`
-	Name            string `json:"name"`
-	Version         string `json:"version,omitempty"`
-	PreviousVersion string `json:"previous_version,omitempty"`
-	PackageDigest   string `json:"package_digest,omitempty"`
-	Changed         bool   `json:"changed"`
-	Enabled         bool   `json:"enabled"`
-	DataPolicy      string `json:"data_policy,omitempty"`
+	Action        string `json:"action"`
+	Name          string `json:"name"`
+	Version       string `json:"version,omitempty"`
+	PackageDigest string `json:"package_digest,omitempty"`
+	Changed       bool   `json:"changed"`
+	Enabled       bool   `json:"enabled"`
 }

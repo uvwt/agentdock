@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/uvwt/agentdock/internal/envstore"
-	skills "github.com/uvwt/agentdock/internal/skill"
 )
 
 func TestSkillManageRemovePreservesEnvironmentAndDataByDefault(t *testing.T) {
@@ -20,7 +19,7 @@ func TestSkillManageRemovePreservesEnvironmentAndDataByDefault(t *testing.T) {
 	}
 	secret := "configured-value"
 	if _, err := runtime.manageTest(context.Background(), map[string]any{
-		"action": "env_set", "skill": "demo-skill", "key": "TOKEN", "value": secret,
+		"action": "env_set", "skill_ref": "skill://managed/demo-skill", "key": "TOKEN", "value": secret,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -36,8 +35,7 @@ func TestSkillManageRemovePreservesEnvironmentAndDataByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, ok := response["result"].(skills.RemoveResult)
-	if !ok || result.Skill != "demo-skill" || !result.Removed || !result.PreservedEnvironment || !result.PreservedData {
+	if response["skill"] != "demo-skill" || response["removed"] != true || response["purged"] != false {
 		t.Fatalf("unexpected remove result: %#v", response)
 	}
 	if names, err := runtime.state.ListSkills(); err != nil || len(names) != 0 {
@@ -62,7 +60,7 @@ func TestSkillManageRemovePurgeDeletesEnvironmentAndData(t *testing.T) {
 	}
 	value := "secret"
 	if _, err := runtime.manageTest(context.Background(), map[string]any{
-		"action": "env_set", "skill": "demo-skill", "key": "TOKEN", "value": value,
+		"action": "env_set", "skill_ref": "skill://managed/demo-skill", "key": "TOKEN", "value": value,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +103,7 @@ func TestSkillManagePurgeAfterKeepRemovalIsIdempotent(t *testing.T) {
 	}
 	value := "secret"
 	if _, err := runtime.manageTest(context.Background(), map[string]any{
-		"action": "env_set", "skill": "demo-skill", "key": "TOKEN", "value": value,
+		"action": "env_set", "skill_ref": "skill://managed/demo-skill", "key": "TOKEN", "value": value,
 	}); err != nil {
 		t.Fatal(err)
 	}

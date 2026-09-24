@@ -46,9 +46,8 @@ blocked 包括：
 - `description` 足以区分触发场景；
 - 正文非空；
 - `name` 遵守 1–64 字符、仅小写 ASCII 字母/数字/`-`、不首尾 `-`、不含连续 `--`；
-- `description` 最长 1024 字符，`compatibility` 最长 500 字符；
-- 可选 `license` 字段语义合理，`metadata` 必须是 string→string，`allowed-tools` 必须是单行空格分隔字符串；
-- `metadata.version` 若存在只作为普通作者元数据；
+- `description` 最长 1024 字符；
+- 其他第三方 frontmatter 只作为保留元数据，不因 AgentDock 不使用或字段形状不同而阻塞安装；
 - 没有把 version、active_version、activate、rollback 设计成 AgentDock 生命周期。
 
 ## 4. 凭据与隐私
@@ -136,7 +135,7 @@ blocked 包括：
 - 可验证 source digest（若有）；
 - `content_digest`；
 - `changed`；
-- context 中的 `source_type`、`source_id`、`skill_ref`、`file`；
+- context 中的 `source_type`、`skill_ref`、`file`；
 - 必填环境配置状态；
 - 代表性只读验证。
 

@@ -47,9 +47,8 @@ Skill 的文档身份由 `SKILL.md.name` 给出。managed 安装目标是：
 - `description` 非空且能表达触发场景；
 - 正文非空；
 - `name` 遵守 1–64 字符、仅小写 ASCII 字母/数字/`-`、不首尾 `-`、不含连续 `--`；
-- `description` 最长 1024 字符，`compatibility` 最长 500 字符；
-- 可选 `license` 字段语义合理，`metadata` 必须是 string→string，`allowed-tools` 必须是单行空格分隔字符串；
-- `metadata.version` 若存在只作为作者元数据，不参与 AgentDock 安装或运行；
+- `description` 最长 1024 字符；
+- 其他第三方 frontmatter 原样保留，不因 AgentDock 不认识字段或字段形状而拒绝安装；
 - 未把 `version`、`active_version`、activate、rollback 当作 AgentDock Skill 生命周期。
 
 发现 `agentdock.yaml`、旧统一执行协议或旧 Skill Runtime 设计时，停止安装并要求迁移。
@@ -141,10 +140,8 @@ skill_manage
 - `name`
 - `description`
 - `source_type`
-- `source_id`
 - `skill_ref`
 - `file`
-- managed 来源可包含 `content_digest`
 
 来源至少包括：
 

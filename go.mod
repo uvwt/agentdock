@@ -3,7 +3,6 @@ module github.com/uvwt/agentdock
 go 1.26.5
 
 require (
-	github.com/Masterminds/semver/v3 v3.3.0
 	github.com/UserExistsError/conpty v0.1.4
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/chromedp/cdproto v0.0.0-20250724212937-08a3db8b4327
@@ -13,7 +12,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/rogpeppe/go-internal v1.15.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
-	github.com/uvwt/agentdock-protocol v0.8.2-0.20260923185603-c9fda4f7dee9
+	github.com/uvwt/agentdock-protocol v0.8.2-0.20260924065732-5ba7c50166ae
 	golang.org/x/sys v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
 )
