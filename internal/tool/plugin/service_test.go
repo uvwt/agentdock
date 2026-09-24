@@ -102,10 +102,12 @@ func TestStdioMCPUsesWritableRuntimeSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantArgs := []string{filepath.Join(runtimeRoot, "server.js"), filepath.Join(dataDir, "state")}
-	if len(cfg.Args) != len(wantArgs) || cfg.Args[0] != wantArgs[0] || cfg.Args[1] != wantArgs[1] {
+	if len(cfg.Args) != len(wantArgs) ||
+		filepath.Clean(filepath.FromSlash(cfg.Args[0])) != wantArgs[0] ||
+		filepath.Clean(filepath.FromSlash(cfg.Args[1])) != wantArgs[1] {
 		t.Fatalf("stdio args = %#v, want %#v", cfg.Args, wantArgs)
 	}
-	if cfg.StaticEnv["CONFIG"] != filepath.Join(runtimeRoot, "config.json") {
+	if filepath.Clean(filepath.FromSlash(cfg.StaticEnv["CONFIG"])) != filepath.Join(runtimeRoot, "config.json") {
 		t.Fatalf("CONFIG = %q", cfg.StaticEnv["CONFIG"])
 	}
 
