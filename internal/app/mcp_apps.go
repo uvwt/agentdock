@@ -11,6 +11,7 @@ type UIBinding struct {
 
 var toolUIBindings = map[string]UIBinding{
 	"agentdock_context":        {ResourceURI: protocol.ContextUIResourceURI},
+	"workspace_context":        {ResourceURI: protocol.WorkspaceUIResourceURI},
 	"file_edit":                {ResourceURI: protocol.FileChangeUIResourceURI},
 	"task_manage":              {ResourceURI: protocol.TaskProgressUIResourceURI},
 	"acp_session":              {ResourceURI: protocol.ACPStatusUIResourceURI},
