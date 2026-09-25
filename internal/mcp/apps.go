@@ -32,6 +32,13 @@ func (s *Server) appResourceDefinitions() []appResourceDefinition {
 			HTML:        mcpapps.HTML("agentdock_context", "AgentDock context"),
 		},
 		{
+			URI:         protocol.WorkspaceUIResourceURI,
+			Name:        "agentdock-workspace-context",
+			Title:       "AgentDock workspace",
+			Description: "Compact read-only workspace rules and local Skill summary for workspace_context results.",
+			HTML:        mcpapps.HTML("workspace_context", "Workspace"),
+		},
+		{
 			URI:         protocol.TaskProgressUIResourceURI,
 			Name:        "agentdock-task-progress",
 			Title:       "AgentDock task",
