@@ -170,7 +170,7 @@ jobs:
                 $info.CompanyName -ne 'AgentDock' -or
                 $info.ProductVersion -ne $expectedVersion -or
                 $info.FileVersion -ne $expectedVersion -or
-                $info.OriginalFilename -ne $file.Name -or
+                $info.OriginalFilename -ne $(if ($file.Name -eq 'agentdock-tray.exe') { 'agentdock-tray.dll' } else { $file.Name }) -or
                 $info.LegalCopyright -ne 'Copyright AgentDock contributors') {
               throw "Signed VersionInfo mismatch for $($file.Name)."
             }

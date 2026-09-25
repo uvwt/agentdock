@@ -40,6 +40,9 @@ $descriptions = @{
     'agentdock-tray-shim.exe' = 'AgentDock Tray Shim'
 }
 $copyright = 'Copyright AgentDock contributors'
+$originalFilenames = @{
+    'agentdock-tray.exe' = 'agentdock-tray.dll'
+}
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-winres-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
 
@@ -56,11 +59,16 @@ try {
             throw "VersionInfo must be applied before Authenticode signing: $fileName ($($signature.Status))"
         }
 
+        $expectedOriginalFilename = if ($originalFilenames.ContainsKey($fileName)) {
+            $originalFilenames[$fileName]
+        } else {
+            $fileName
+        }
         $expected = @{
             CompanyName = 'AgentDock'
             FileVersion = $windowsVersion
             LegalCopyright = $copyright
-            OriginalFilename = $fileName
+            OriginalFilename = $expectedOriginalFilename
             ProductName = 'AgentDock'
             ProductVersion = $windowsVersion
         }
@@ -102,7 +110,7 @@ try {
                                 FileVersion = $windowsVersion
                                 InternalName = $internalName
                                 LegalCopyright = $copyright
-                                OriginalFilename = $fileName
+                                OriginalFilename = $expectedOriginalFilename
                                 ProductName = 'AgentDock'
                                 ProductVersion = $windowsVersion
                             }
