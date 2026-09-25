@@ -102,6 +102,109 @@ func TestWindowsInstallerWorkflowHasAlwaysPresentPullRequestGate(t *testing.T) {
 	}
 }
 
+func TestReleaseWorkflowHasSignPathFoundationReviewPath(t *testing.T) {
+	workflow := readWorkflow(t, "release.yml")
+	for _, want := range []string{
+		"signpath_review:",
+		"name: SignPath Foundation review build",
+		"actions: read",
+		"uses: actions/upload-artifact@v7",
+		"name: Submit SignPath test signing request",
+		"uses: signpath/github-action-submit-signing-request@v3",
+		"api-token: ${{ secrets.SIGNPATH_API_TOKEN }}",
+		"project-slug: agentdock",
+		"signing-policy-slug: test-signing",
+		"artifact-configuration-slug: windows-binaries",
+		"version: ${{ toJSON(steps.version.outputs.windows) }}",
+		"-p:FileVersion='${{ steps.version.outputs.windows }}'",
+		"-p:FileVersion=$windowsVersion",
+		"803C2EBAEE1907BF990CA761A57ADF31AD78AA12",
+		".\\packaging\\windows\\set-version-info.ps1",
+		"**Code signing policy:** https://github.com/${{ github.repository }}/blob/main/docs/code-signing-policy.md",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("Release workflow must keep the SignPath Foundation review path; missing %q", want)
+		}
+	}
+}
+
+func TestWindowsTrayCarriesSignPathMetadataFromMSBuild(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "AgentDock.ControlPanel.csproj"))
+	if err != nil {
+		t.Fatalf("read Windows control panel project: %v", err)
+	}
+	project := string(data)
+	for _, want := range []string{
+		"<Product>AgentDock</Product>",
+		"<Company>AgentDock</Company>",
+		"<Copyright>Copyright AgentDock contributors</Copyright>",
+		"<AssemblyName>agentdock-tray</AssemblyName>",
+		"<IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>",
+	} {
+		if !strings.Contains(project, want) {
+			t.Fatalf("Windows tray project must carry SignPath metadata; missing %q", want)
+		}
+	}
+}
+
+func TestWindowsVersionInfoScriptCoversSignPathMetadata(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "packaging", "windows", "set-version-info.ps1"))
+	if err != nil {
+		t.Fatalf("read Windows VersionInfo script: %v", err)
+	}
+	script := strings.ReplaceAll(string(data), "\r\n", "\n")
+	for _, want := range []string{
+		"github.com/tc-hib/go-winres@v0.3.3",
+		"CompanyName = 'AgentDock'",
+		"ProductName = 'AgentDock'",
+		"ProductVersion = $windowsVersion",
+		"FileVersion = $windowsVersion",
+		"LegalCopyright = $copyright",
+		"$originalFilenames = @{",
+		"'agentdock-tray.exe' = 'agentdock-tray.dll'",
+		"OriginalFilename = $expectedOriginalFilename",
+		"'agentdock.exe'",
+		"'agentdock-tray.exe'",
+		"'agentdock-arbiter.exe'",
+		"'agentdock-shim.exe'",
+		"'agentdock-tray-shim.exe'",
+		"VersionInfo must be applied before Authenticode signing",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("Windows VersionInfo script must enforce SignPath metadata; missing %q", want)
+		}
+	}
+}
+
+func TestCodeSigningPolicyMeetsFoundationDisclosureRequirements(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "code-signing-policy.md"))
+	if err != nil {
+		t.Fatalf("read code signing policy: %v", err)
+	}
+	policy := strings.ReplaceAll(string(data), "\r\n", "\n")
+	for _, want := range []string{
+		"# Code signing policy",
+		"Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).",
+		"**Authors / committers:**",
+		"**Reviewers:**",
+		"**Approvers:**",
+		"AgentDock does not include usage analytics or telemetry.",
+		"`cloudflared`",
+	} {
+		if !strings.Contains(policy, want) {
+			t.Fatalf("Code signing policy must keep SignPath Foundation disclosures; missing %q", want)
+		}
+	}
+
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatalf("read README: %v", err)
+	}
+	if !strings.Contains(string(readme), "[Code signing policy](./docs/code-signing-policy.md)") {
+		t.Fatal("README home page must link the Code signing policy")
+	}
+}
+
 func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 	workflow := readWorkflow(t, "release.yml")
 	for _, want := range []string{
