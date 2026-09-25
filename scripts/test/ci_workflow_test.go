@@ -116,12 +116,32 @@ func TestReleaseWorkflowHasSignPathFoundationReviewPath(t *testing.T) {
 		"signing-policy-slug: test-signing",
 		"artifact-configuration-slug: windows-binaries",
 		"version: ${{ toJSON(steps.version.outputs.windows) }}",
+		"-p:FileVersion='${{ steps.version.outputs.windows }}'",
+		"-p:FileVersion=$windowsVersion",
 		"803C2EBAEE1907BF990CA761A57ADF31AD78AA12",
 		".\\packaging\\windows\\set-version-info.ps1",
 		"**Code signing policy:** https://github.com/${{ github.repository }}/blob/main/docs/code-signing-policy.md",
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("Release workflow must keep the SignPath Foundation review path; missing %q", want)
+		}
+	}
+}
+
+func TestWindowsTrayCarriesSignPathMetadataFromMSBuild(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "AgentDock.ControlPanel.csproj"))
+	if err != nil {
+		t.Fatalf("read Windows control panel project: %v", err)
+	}
+	project := string(data)
+	for _, want := range []string{
+		"<Product>AgentDock</Product>",
+		"<Company>AgentDock</Company>",
+		"<Copyright>Copyright AgentDock contributors</Copyright>",
+		"<AssemblyName>agentdock-tray</AssemblyName>",
+	} {
+		if !strings.Contains(project, want) {
+			t.Fatalf("Windows tray project must carry SignPath metadata; missing %q", want)
 		}
 	}
 }

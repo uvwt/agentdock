@@ -200,6 +200,13 @@ scripts:
     public_contract: false
     deletable: false
 
+  - path: packaging/windows/set-version-info.ps1
+    class: packaging
+    owner: release
+    public_contract: false
+    deletable: true
+    notes: 为 AgentDock 自有 Windows 可执行文件写入/校验 SignPath Foundation 要求的 VersionInfo 元数据，必须在 Authenticode 签名前运行。
+
   - path: packaging/windows/sign-windows.ps1
     class: packaging
     owner: release

@@ -9,6 +9,8 @@
     <AssemblyName>agentdock-tray</AssemblyName>
     <AssemblyTitle>AgentDock</AssemblyTitle>
     <Product>AgentDock</Product>
+    <Company>AgentDock</Company>
+    <Copyright>Copyright AgentDock contributors</Copyright>
     <Description>AgentDock Control Panel</Description>
     <RootNamespace>AgentDock.ControlPanel</RootNamespace>
     <ApplicationIcon>..\..\..\packaging\windows\assets\agentdock.ico</ApplicationIcon>

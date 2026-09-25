@@ -79,6 +79,10 @@ jobs:
             -c Release `
             -r win-x64 `
             --self-contained true `
+            -p:Version='${{ steps.version.outputs.windows }}' `
+            -p:FileVersion='${{ steps.version.outputs.windows }}' `
+            -p:AssemblyVersion='${{ steps.version.outputs.windows }}' `
+            -p:InformationalVersion='${{ steps.version.outputs.windows }}' `
             -o dist\control-panel
           Copy-Item .\dist\control-panel\agentdock-tray.exe .\dist\agentdock-tray.exe -Force
 
@@ -454,6 +458,10 @@ jobs:
           $sourceCommit = (git rev-parse HEAD).Trim()
           $ldflags = "-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Commit=$sourceCommit -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=$buildDate"
           $runtimeIdentifier = if ($env:GOARCH -eq 'arm64') { 'win-arm64' } else { 'win-x64' }
+          $releaseVersion = '${{ needs.source.outputs.tag }}'.TrimStart('v')
+          $versionParts = @($releaseVersion.Split('.'))
+          while ($versionParts.Count -lt 4) { $versionParts += '0' }
+          $windowsVersion = $versionParts -join '.'
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           go build -trimpath -ldflags $ldflags -o dist/agentdock.exe ./cmd/agentdock
           go build -trimpath -ldflags '-s -w' -o dist/agentdock-arbiter.exe ./cmd/agentdock-arbiter
@@ -464,12 +472,15 @@ jobs:
             -c Release `
             -r $runtimeIdentifier `
             --self-contained true `
+            -p:Version=$windowsVersion `
+            -p:FileVersion=$windowsVersion `
+            -p:AssemblyVersion=$windowsVersion `
+            -p:InformationalVersion=$windowsVersion `
             -o dist\control-panel
           Copy-Item .\dist\control-panel\agentdock-tray.exe .\dist\agentdock-tray.exe -Force
 
-          $releaseVersion = '${{ needs.source.outputs.tag }}'.TrimStart('v')
           .\packaging\windows\set-version-info.ps1 `
-            -Version $releaseVersion `
+            -Version $windowsVersion `
             -Path @(
               '.\dist\agentdock.exe',
               '.\dist\agentdock-tray.exe',

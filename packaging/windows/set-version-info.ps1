@@ -56,6 +56,36 @@ try {
             throw "VersionInfo must be applied before Authenticode signing: $fileName ($($signature.Status))"
         }
 
+        $expected = @{
+            CompanyName = 'AgentDock'
+            FileVersion = $windowsVersion
+            LegalCopyright = $copyright
+            OriginalFilename = $fileName
+            ProductName = 'AgentDock'
+            ProductVersion = $windowsVersion
+        }
+
+        $existingInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($resolved)
+        $existingValues = @(
+            [string] $existingInfo.CompanyName,
+            [string] $existingInfo.FileVersion,
+            [string] $existingInfo.LegalCopyright,
+            [string] $existingInfo.OriginalFilename,
+            [string] $existingInfo.ProductName,
+            [string] $existingInfo.ProductVersion
+        )
+        $hasExistingVersionInfo = @($existingValues | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -gt 0
+        if ($hasExistingVersionInfo) {
+            foreach ($entry in $expected.GetEnumerator()) {
+                $actual = [string] $existingInfo.($entry.Key)
+                if ($actual -ne [string] $entry.Value) {
+                    throw "Existing VersionInfo mismatch for $fileName $($entry.Key): '$actual' != '$($entry.Value)'. Build this executable with the required metadata before signing."
+                }
+            }
+            Write-Host "Verified existing AgentDock Windows VersionInfo on $fileName."
+            continue
+        }
+
         $internalName = [IO.Path]::GetFileNameWithoutExtension($fileName)
         $resource = [ordered]@{
             RT_VERSION = [ordered]@{
@@ -97,14 +127,6 @@ try {
         }
 
         $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($resolved)
-        $expected = @{
-            CompanyName = 'AgentDock'
-            FileVersion = $windowsVersion
-            LegalCopyright = $copyright
-            OriginalFilename = $fileName
-            ProductName = 'AgentDock'
-            ProductVersion = $windowsVersion
-        }
         foreach ($entry in $expected.GetEnumerator()) {
             $actual = [string] $info.($entry.Key)
             if ($actual -ne [string] $entry.Value) {
