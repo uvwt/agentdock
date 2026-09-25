@@ -98,7 +98,7 @@ func stopCore(ctx context.Context, manifest Manifest, runtimeRoot string) error 
 	for processID := range ancestorPIDs {
 		excluded[processID] = struct{}{}
 	}
-	supervisorPID, err := activeTunnelSupervisorPID(runtimeRoot, coreBinary)
+	supervisorPID, err := activeTunnelSupervisorPIDForRuntime(runtimeRoot, manifest)
 	if err != nil {
 		return fmt.Errorf("识别 Tunnel supervisor 失败: %w", err)
 	}

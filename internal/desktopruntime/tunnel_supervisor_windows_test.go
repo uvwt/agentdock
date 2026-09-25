@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/uvwt/agentdock/internal/updateengine"
 )
 
 func TestQuickTunnelStartTimeoutCoversRetryAndCoreRestart(t *testing.T) {
@@ -23,8 +25,29 @@ func TestQuickTunnelStartTimeoutCoversRetryAndCoreRestart(t *testing.T) {
 
 func TestTunnelSupervisorKernelLifecycle(t *testing.T) {
 	runtimeRoot := t.TempDir()
+	layout, err := updateengine.NewWindowsLayout(runtimeRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const activeVersion = "v0.9.0"
+	generationCore := layout.GenerationCore(activeVersion)
+	copyTunnelSupervisorTestBinary(t, generationCore)
+
+	store, err := updateengine.NewStore(runtimeRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WriteActive(updateengine.ActiveVersion{
+		SchemaVersion: updateengine.SchemaVersion,
+		ActiveVersion: activeVersion,
+		State:         updateengine.StateCommitted,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manifest := Manifest{AgentDockBinary: layout.CoreShim()}
+
 	readyPath := filepath.Join(runtimeRoot, "helper-ready")
-	command := exec.Command(os.Args[0], "-test.run=^TestTunnelSupervisorHelperProcess$")
+	command := exec.Command(generationCore, "-test.run=^TestTunnelSupervisorHelperProcess$")
 	command.Env = append(os.Environ(),
 		"AGENTDOCK_TEST_TUNNEL_SUPERVISOR_HELPER=1",
 		"AGENTDOCK_TEST_TUNNEL_RUNTIME_ROOT="+runtimeRoot,
@@ -54,12 +77,16 @@ func TestTunnelSupervisorKernelLifecycle(t *testing.T) {
 		t.Fatalf("helper did not become ready: %v\n%s", err, output.String())
 	}
 
-	pid, err := activeTunnelSupervisorPID(runtimeRoot, os.Args[0])
+	pid, err := activeTunnelSupervisorPIDForRuntime(runtimeRoot, manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if pid != uint32(command.Process.Pid) {
 		t.Fatalf("active supervisor PID=%d, want %d", pid, command.Process.Pid)
+	}
+	if _, err := activeTunnelSupervisorPID(runtimeRoot, manifest.AgentDockBinary); err == nil ||
+		!strings.Contains(err.Error(), "指向意外程序") {
+		t.Fatalf("stable shim must not validate generation supervisor, got %v", err)
 	}
 	duplicate, err := acquireTunnelSupervisor(runtimeRoot)
 	if err != nil {
@@ -81,6 +108,20 @@ func TestTunnelSupervisorKernelLifecycle(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(runtimeRoot, tunnelSupervisorPIDFile)); !os.IsNotExist(err) {
 		t.Fatalf("supervisor PID file should be removed, err=%v", err)
+	}
+}
+
+func copyTunnelSupervisorTestBinary(t *testing.T, target string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, data, 0o755); err != nil {
+		t.Fatal(err)
 	}
 }
 

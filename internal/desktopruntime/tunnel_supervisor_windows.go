@@ -191,6 +191,12 @@ func waitTunnelSupervisorStopped(ctx context.Context, runtimeRoot string, timeou
 	return fmt.Errorf("Tunnel supervisor 未在 %s 内退出", timeout)
 }
 
+func activeTunnelSupervisorPIDForRuntime(runtimeRoot string, manifest Manifest) (uint32, error) {
+	// Tunnel supervisor 与当前 Core generation 使用同一个二进制；runtime.json 中的
+	// agentdock_binary 是稳定 shim，不能拿它校验 generation supervisor 的 PID。
+	return activeTunnelSupervisorPID(runtimeRoot, ActiveCoreBinary(runtimeRoot, manifest))
+}
+
 func activeTunnelSupervisorPID(runtimeRoot, binaryPath string) (uint32, error) {
 	name, err := windows.UTF16PtrFromString(tunnelSupervisorObjectName("mutex", runtimeRoot))
 	if err != nil {

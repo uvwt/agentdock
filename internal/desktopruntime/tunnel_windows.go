@@ -242,7 +242,7 @@ func startTunnel(ctx context.Context, runtime tunnelRuntime) error {
 	if err != nil {
 		return err
 	}
-	supervisorPID, err := activeTunnelSupervisorPID(runtime.root, runtime.manifest.AgentDockBinary)
+	supervisorPID, err := activeTunnelSupervisorPIDForRuntime(runtime.root, runtime.manifest)
 	if err != nil {
 		return err
 	}
