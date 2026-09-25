@@ -37,6 +37,12 @@ workspace root 优先使用离 `workdir` 最近的 Git / worktree 边界；在 A
 
 Workspace Skill 固定扫描 `<workspace>/.agents/skills/<skill-name>/SKILL.md`，只建立 metadata 索引。需要执行 Skill 时再用 `read_file` 读取返回的 `file`。选择同名能力时优先级为 workspace Skill → AgentDock Skill → `~/.agents/skills` common Skill。
 
+Skill 路由索引按来源采用不同预算：
+
+- `agentdock_context.skills`（standalone managed 与 Plugin-owned）返回 trim 后的完整 `description`；这两类 Skill 进入系统时已受 1024 个 Unicode 字符的规范上限约束。
+- `workspace_context.workspace_skills` 同样返回 trim 后的完整 `description`，但目录仍只返回稳定排序后的前 50 项。
+- `agentdock_context.common_skills` 面向数量不可控的低优先级 `~/.agents/skills`，继续保留最多 50 项、每项 `description` 最多 120 bytes 的紧凑索引预算。
+
 ## MCP 初始化
 
 MCP 初始化 instructions 只包含稳定的 AgentDock 使用说明，不注入任何全局或工作区 `AGENTS.md` 正文。这样同一 Core 切换项目时不会在初始化上下文里残留旧工作区规则。

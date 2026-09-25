@@ -193,6 +193,11 @@ func TestPluginRemoteOptionalHeaderAllowsAnonymousRuntime(t *testing.T) {
 func TestPluginComponentsEnterExistingRuntimeAndSkillExecUsesPluginData(t *testing.T) {
 	rt, root := newPluginTestRuntime(t)
 	source := writeAppPluginForTest(t, root, "1.0.0")
+	pluginDescription := strings.Repeat("plugin routing boundary; ", 12) + "final boundary"
+	pluginSkill := "---\nname: plugin-skill\ndescription: " + pluginDescription + "\n---\n\n# Plugin Skill\n"
+	if err := os.WriteFile(filepath.Join(source, "skills", "plugin-skill", "SKILL.md"), []byte(pluginSkill), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	validated, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
 		"action": "validate", "source": source,
@@ -234,6 +239,9 @@ func TestPluginComponentsEnterExistingRuntimeAndSkillExecUsesPluginData(t *testi
 	})
 	if skill["plugin_name"] != "demo.plugin" {
 		t.Fatalf("Plugin Skill provenance = %#v", skill)
+	}
+	if skill["description"] != pluginDescription {
+		t.Fatalf("Plugin Skill description was truncated: %#v", skill)
 	}
 	skillRef, _ := skill["skill_ref"].(string)
 	if skillRef != "skill://plugin/demo.plugin/plugin-skill" {

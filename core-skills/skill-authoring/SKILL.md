@@ -70,10 +70,20 @@ allowed-tools: exec_command
 AgentDock 真正依赖并严格校验的只有：
 
 - `name` 必填，长度 1–64，只允许小写 ASCII 字母、数字和 `-`，不能以 `-` 开头/结尾，也不能包含连续 `--`；
-- `description` 必填，最长 1024 个字符，并能让模型稳定判断何时使用；
+- `description` 必填，最长 1024 个 Unicode 字符，并能让模型稳定判断何时使用；重要的 Use when、Do not use 和相邻 Skill 边界条件不要依赖正文补充，因为模型会先用 description 做候选路由；
 - Markdown 正文必须非空；
 - 其他 frontmatter（包括 `license`、`compatibility`、`metadata`、`allowed-tools`、`version` 以及第三方扩展字段）由作者生态定义，AgentDock 原样保留但不作为安装/运行前提；
 - 不设计 AgentDock 私有的 `version`、`active_version`、revision 或 rollback 契约。
+
+## AgentDock 路由索引
+
+AgentDock 会先暴露轻量 description 索引，再按需读取完整 `SKILL.md`。不同来源的索引预算不同：
+
+- standalone managed 与 Plugin-owned Skill：`agentdock_context.skills` 返回 trim 后的完整 `description`；
+- workspace Skill：`workspace_context.workspace_skills` 返回 trim 后的完整 `description`，但最多列出 50 项；
+- shared/common Skill：`agentdock_context.common_skills` 面向数量不可控的 `~/.agents/skills`，最多列出 50 项，并把每项 `description` 限制在 120 bytes。
+
+因此 authoring 时应把 description 视为路由契约，而不是正文摘要的随意前缀。AgentDock 不提供可配置的 description 截断上限；如果未来 Skill 总量显著增长，应通过索引总预算或检索式路由解决，而不是静默裁掉每个已管理 Skill 的 description 后半段。
 
 ## 可移植核心
 

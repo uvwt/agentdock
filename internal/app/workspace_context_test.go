@@ -209,6 +209,18 @@ func TestWorkspaceContextReportsBoundedInvalidAndOversizedInstructions(t *testin
 	}
 }
 
+func TestWorkspaceContextSkillIndexKeepsFullDescription(t *testing.T) {
+	rt, _ := newWorkspaceContextRuntime(t)
+	root := filepath.Join(rt.ws.Root(), ".agents", "skills")
+	description := strings.Repeat("workspace routing boundary; ", 12) + "final boundary"
+	writeCommonSkillForTest(t, root, "workspace-long", "workspace-long", description)
+
+	got := callWorkspaceContext(t, rt, nil)
+	if len(got.WorkspaceSkills) != 1 || got.WorkspaceSkills[0].Description != description {
+		t.Fatalf("workspace Skill description was truncated: %#v", got.WorkspaceSkills)
+	}
+}
+
 func TestWorkspaceContextSkillIndexTruncatesWithWarning(t *testing.T) {
 	rt, _ := newWorkspaceContextRuntime(t)
 	root := filepath.Join(rt.ws.Root(), ".agents", "skills")

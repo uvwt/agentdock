@@ -289,7 +289,7 @@ func (r *Runtime) skillCapabilityIndex() ([]capabilitySkillItem, error) {
 	for _, skill := range skillItems {
 		items = append(items, capabilitySkillItem{
 			Name:        skill.Name,
-			Description: truncateString(strings.TrimSpace(skill.Description), 160),
+			Description: strings.TrimSpace(skill.Description),
 			File:        skill.File,
 			SkillRef:    skill.SkillRef,
 			SourceType:  skill.SourceType,

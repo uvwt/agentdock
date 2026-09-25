@@ -39,7 +39,7 @@ func scanCommonFilesystemSkills(root string) (filesystemSkillIndex, error) {
 		return filesystemSkillIndex{}, err
 	}
 
-	return indexFilesystemSkills(entries, func(entry os.DirEntry) (string, []byte, error) {
+	index, err := indexFilesystemSkills(entries, func(entry os.DirEntry) (string, []byte, error) {
 		packageDir := filepath.Join(root, entry.Name())
 		info, err := os.Stat(packageDir)
 		if err != nil || !info.IsDir() {
@@ -52,6 +52,14 @@ func scanCommonFilesystemSkills(root string) (filesystemSkillIndex, error) {
 		}
 		return documentPath, data, nil
 	})
+	if err != nil {
+		return filesystemSkillIndex{}, err
+	}
+	// common Skills 来自数量不可控的共享目录，继续保留历史的逐项 description 预算。
+	for i := range index.Items {
+		index.Items[i].Description = truncateString(index.Items[i].Description, filesystemSkillDescriptionBytes)
+	}
+	return index, nil
 }
 
 // scanWorkspaceFilesystemSkills 在扫描 .agents/skills 期间始终持有 workspace Root。
@@ -127,7 +135,7 @@ func indexFilesystemSkills(entries []os.DirEntry, load func(os.DirEntry) (string
 		}
 		items = append(items, filesystemSkillItem{
 			Name:        metadata.Name,
-			Description: truncateString(strings.TrimSpace(metadata.Description), filesystemSkillDescriptionBytes),
+			Description: strings.TrimSpace(metadata.Description),
 			File:        documentPath,
 		})
 	}

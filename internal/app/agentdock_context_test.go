@@ -311,6 +311,44 @@ func TestCapabilitySkillItemExposesOnlyLightweightIndexFields(t *testing.T) {
 	}
 }
 
+func TestSkillCapabilityIndexKeepsFullValidatedDescriptions(t *testing.T) {
+	cfg := config.Config{
+		AgentDockDefaultDir: t.TempDir(),
+		AgentDockHome:       filepath.Join(t.TempDir(), ".agentdock"),
+	}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	rt, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = rt.Close() })
+
+	descriptions := map[string]string{
+		"english-long":    strings.Repeat("routing boundary; ", 16) + "final boundary",
+		"chinese-long":    strings.Repeat("中文路由边界", 32),
+		"max-description": strings.Repeat("x", 1024),
+	}
+	for name, description := range descriptions {
+		installDocumentSkillForTest(t, rt, name, "1.0.0", description)
+	}
+
+	items, err := rt.skillCapabilityIndex()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(map[string]string, len(items))
+	for _, item := range items {
+		got[item.Name] = item.Description
+	}
+	for name, want := range descriptions {
+		if got[name] != want {
+			t.Fatalf("%s description length=%d, want full length=%d", name, len(got[name]), len(want))
+		}
+	}
+}
+
 func installDocumentSkillForTest(t *testing.T, rt *Runtime, name, version, description string) string {
 	t.Helper()
 	state, err := skillstate.New(config.SkillDir(rt.cfg))
