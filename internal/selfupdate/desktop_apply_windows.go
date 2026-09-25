@@ -16,6 +16,7 @@ import (
 	"golang.org/x/sys/windows"
 
 	"github.com/uvwt/agentdock/internal/desktopruntime"
+	processcontrol "github.com/uvwt/agentdock/internal/process"
 )
 
 var windowsDesktopStagedFiles = []string{
@@ -302,6 +303,7 @@ func (update *windowsDesktopUpdate) RestartTray(ctx context.Context) error {
 	}
 	command := exec.Command(update.trayPath, "--background")
 	command.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS}
+	processcontrol.Configure(command)
 	if err := command.Start(); err != nil {
 		return fmt.Errorf("重新启动 Windows 控制面板失败: %w", err)
 	}

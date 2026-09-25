@@ -13,6 +13,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	processcontrol "github.com/uvwt/agentdock/internal/process"
 )
 
 func extractCoreSkillBundle(archiveData []byte, goos, tempDir string) (string, error) {
@@ -129,6 +131,7 @@ func bootstrapBundledSkills(ctx context.Context, binaryPath, bundlePath string, 
 		return errors.New("核心 Skill Bundle 路径不能为空")
 	}
 	command := exec.CommandContext(ctx, binaryPath, "skill", "bootstrap", "--bundle", bundlePath)
+	processcontrol.ConfigureBackground(command)
 	combined, err := command.CombinedOutput()
 	if len(combined) > 0 && output != nil {
 		_, _ = output.Write(combined)
@@ -144,6 +147,7 @@ func bootstrapBundledSkills(ctx context.Context, binaryPath, bundlePath string, 
 // 仍可供旧二进制回滚读取；新版 updater 则在最终成功后显式收口迁移。
 func finalizeLegacySkillMigration(ctx context.Context, binaryPath string, output io.Writer) error {
 	command := exec.CommandContext(ctx, binaryPath, "skill", "finalize-migration")
+	processcontrol.ConfigureBackground(command)
 	combined, err := command.CombinedOutput()
 	if len(combined) > 0 && output != nil {
 		_, _ = output.Write(combined)

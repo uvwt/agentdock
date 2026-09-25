@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/windows"
+
+	processcontrol "github.com/uvwt/agentdock/internal/process"
 )
 
 // Windows 冷启动可能同时经过 InteractiveToken 计划任务、DPAPI 配置恢复和 Runtime/Plugin 重建。
@@ -135,6 +137,7 @@ func startDetachedCore(manifest Manifest, runtimeRoot string) error {
 		HideWindow:    true,
 		CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS,
 	}
+	processcontrol.Configure(command)
 	if err := command.Start(); err != nil {
 		return fmt.Errorf("启动 AgentDock 核心失败: %w", err)
 	}

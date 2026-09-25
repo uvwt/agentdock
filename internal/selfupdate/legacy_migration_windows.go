@@ -20,6 +20,7 @@ import (
 
 	"github.com/uvwt/agentdock/internal/desktopruntime"
 	"github.com/uvwt/agentdock/internal/installer"
+	processcontrol "github.com/uvwt/agentdock/internal/process"
 	"github.com/uvwt/agentdock/internal/updateengine"
 )
 
@@ -255,6 +256,7 @@ func runWindowsLegacyLayoutMigration(
 		HideWindow:    true,
 		CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS,
 	}
+	processcontrol.Configure(command)
 	if err := command.Start(); err != nil {
 		return fmt.Errorf("启动 Windows legacy migration helper 失败: %w", err)
 	}
@@ -640,6 +642,7 @@ func restartLegacyRuntimeAfterMigration(
 		if healthy := waitForVersion(ctx, []string{manifest.HealthURL()}, plan.Version, 2*time.Second); healthy != nil {
 			command := exec.CommandContext(ctx, corePath, "service", "start", "--runtime-root", plan.RuntimeRoot)
 			command.Dir = plan.RuntimeRoot
+			processcontrol.Configure(command)
 			if output, err := command.CombinedOutput(); err != nil {
 				return fmt.Errorf("重新启动 Windows Core 失败: %w: %s", err, strings.TrimSpace(string(output)))
 			}
@@ -660,6 +663,7 @@ func restartLegacyRuntimeAfterMigration(
 				HideWindow:    true,
 				CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS,
 			}
+			processcontrol.Configure(command)
 			if err := command.Start(); err != nil {
 				return fmt.Errorf("重新启动 Windows Tray 失败: %w", err)
 			}
@@ -673,6 +677,7 @@ func restartLegacyRuntimeAfterMigration(
 			HideWindow:    true,
 			CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS,
 		}
+		processcontrol.Configure(command)
 		if err := command.Start(); err != nil {
 			return fmt.Errorf("恢复 Windows Tunnel 失败: %w", err)
 		}

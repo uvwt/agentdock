@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/windows"
+
+	processcontrol "github.com/uvwt/agentdock/internal/process"
 )
 
 const (
@@ -338,6 +340,7 @@ func launchCloudflared(runtime tunnelRuntime) error {
 		HideWindow:    true,
 		CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS,
 	}
+	processcontrol.Configure(command)
 	if err := command.Start(); err != nil {
 		return fmt.Errorf("启动 cloudflared 监督进程失败: %w", err)
 	}
@@ -369,7 +372,7 @@ func cloudflaredCommand(ctx context.Context, runtime tunnelRuntime) (*exec.Cmd, 
 	command := exec.CommandContext(ctx, runtime.manifest.CloudflaredBinary, arguments...)
 	command.Env = environment
 	command.Dir = runtime.root
-	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	processcontrol.Configure(command)
 	return command, nil
 }
 

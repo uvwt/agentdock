@@ -19,6 +19,7 @@ import (
 	"golang.org/x/sys/windows"
 
 	"github.com/uvwt/agentdock/internal/desktopruntime"
+	processcontrol "github.com/uvwt/agentdock/internal/process"
 )
 
 const (
@@ -629,7 +630,7 @@ func runNativeAgentDock(manifest desktopruntime.Manifest, arguments ...string) e
 	}
 	arguments = append(arguments, "--runtime-root", runtimeRoot)
 	command := exec.Command(binary, arguments...)
-	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	processcontrol.Configure(command)
 	if output, err := command.CombinedOutput(); err != nil {
 		return fmt.Errorf(currentTrayText().NativeCommandFailed, err, strings.TrimSpace(string(output)))
 	}

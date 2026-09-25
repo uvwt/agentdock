@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/uvwt/agentdock/internal/buildinfo"
+	processcontrol "github.com/uvwt/agentdock/internal/process"
 )
 
 const (
@@ -654,6 +655,7 @@ func verifyBinaryVersion(ctx context.Context, binaryPath, targetVersion string) 
 	verifyCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	command := exec.CommandContext(verifyCtx, binaryPath, "--version")
+	processcontrol.ConfigureBackground(command)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("执行 --version 失败: %w: %s", err, strings.TrimSpace(string(output)))

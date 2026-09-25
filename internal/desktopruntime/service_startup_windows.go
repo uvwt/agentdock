@@ -14,6 +14,8 @@ import (
 	"unicode/utf16"
 
 	"golang.org/x/sys/windows/registry"
+
+	processcontrol "github.com/uvwt/agentdock/internal/process"
 )
 
 const windowsRunKey = `Software\Microsoft\Windows\CurrentVersion\Run`
@@ -60,7 +62,9 @@ func platformSetAutostart(ctx context.Context, runtimeRoot, component string, en
 
 func coreAutostartEnabled(ctx context.Context, manifest Manifest) (bool, error) {
 	if manifest.UsesScheduledTask() {
-		output, err := exec.CommandContext(ctx, "schtasks.exe", "/Query", "/TN", scheduledTaskPath(manifest.AgentDockTaskName), "/XML").Output()
+		command := exec.CommandContext(ctx, "schtasks.exe", "/Query", "/TN", scheduledTaskPath(manifest.AgentDockTaskName), "/XML")
+		processcontrol.Configure(command)
+		output, err := command.Output()
 		if err != nil {
 			return false, err
 		}
@@ -119,7 +123,9 @@ func decodeScheduledTaskXML(output []byte) ([]byte, error) {
 }
 
 func runScheduledTaskCommand(ctx context.Context, args ...string) error {
-	output, err := exec.CommandContext(ctx, "schtasks.exe", args...).CombinedOutput()
+	command := exec.CommandContext(ctx, "schtasks.exe", args...)
+	processcontrol.Configure(command)
+	output, err := command.CombinedOutput()
 	if err != nil {
 		message := strings.TrimSpace(string(output))
 		if message == "" {

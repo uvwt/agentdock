@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/uvwt/agentdock/internal/desktopruntime"
+	processcontrol "github.com/uvwt/agentdock/internal/process"
 	"github.com/uvwt/agentdock/internal/updateengine"
 	"golang.org/x/sys/windows"
 )
@@ -201,6 +202,7 @@ func (driver *WindowsDriver) verifyGeneration(version, generationRoot string) er
 func (driver *WindowsDriver) runStableCore(ctx context.Context, args ...string) error {
 	command := exec.CommandContext(ctx, driver.layout.CoreShim(), args...)
 	command.Dir = driver.root
+	processcontrol.Configure(command)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		message := strings.TrimSpace(string(output))
@@ -219,6 +221,7 @@ func (driver *WindowsDriver) startTunnelAfterCommit() error {
 		HideWindow:    true,
 		CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS,
 	}
+	processcontrol.Configure(command)
 	if err := command.Start(); err != nil {
 		return fmt.Errorf("start Tunnel recovery proxy: %w", err)
 	}
@@ -231,6 +234,7 @@ func (driver *WindowsDriver) startTunnelAfterCommit() error {
 func (driver *WindowsDriver) startStableTray(ctx context.Context) error {
 	command := exec.CommandContext(ctx, driver.layout.TrayShim(), "--background")
 	command.Dir = driver.root
+	processcontrol.Configure(command)
 	if output, err := command.CombinedOutput(); err != nil {
 		message := strings.TrimSpace(string(output))
 		if message == "" {

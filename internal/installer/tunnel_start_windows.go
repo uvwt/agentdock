@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/uvwt/agentdock/internal/desktopruntime"
+	processcontrol "github.com/uvwt/agentdock/internal/process"
 	"golang.org/x/sys/windows"
 )
 
@@ -28,6 +29,7 @@ func launchWindowsTunnelProxy(runtimeRoot string) error {
 		HideWindow:    true,
 		CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS,
 	}
+	processcontrol.Configure(command)
 	if err := command.Start(); err != nil {
 		return fmt.Errorf("start Windows Tunnel proxy: %w", err)
 	}

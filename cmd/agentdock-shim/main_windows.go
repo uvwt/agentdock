@@ -242,6 +242,7 @@ func resolveActiveWithRecovery(root string, store *updateengine.Store, layout up
 	arbiterPath := layout.GenerationArbiter(sourceVersion)
 	command := exec.Command(arbiterPath, "--root", root, "--transaction-id", transaction.TransactionID)
 	command.Dir = root
+	processctl.Configure(command)
 	var recoveryStdout, recoveryStderr bytes.Buffer
 	command.Stdout = &recoveryStdout
 	command.Stderr = &recoveryStderr

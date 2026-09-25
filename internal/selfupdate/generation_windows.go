@@ -17,6 +17,7 @@ import (
 
 	"github.com/uvwt/agentdock/internal/desktopruntime"
 	"github.com/uvwt/agentdock/internal/fs/atomicfile"
+	processcontrol "github.com/uvwt/agentdock/internal/process"
 	"github.com/uvwt/agentdock/internal/updateengine"
 )
 
@@ -111,6 +112,7 @@ func applyWindowsGenerationUpdate(ctx context.Context, request applyRequest) (ap
 	reportUpdateStage(request.Progress, UpdateStageRestarting, request.CurrentVersion, request.TargetVersion, "arbiter")
 	command := exec.CommandContext(ctx, sourceArbiter, "--root", root, "--transaction-id", transaction.TransactionID)
 	command.Dir = root
+	processcontrol.Configure(command)
 	output, runErr := command.CombinedOutput()
 	if len(bytes.TrimSpace(output)) > 0 {
 		fmt.Fprintf(request.Output, "%s\n", bytes.TrimSpace(output))

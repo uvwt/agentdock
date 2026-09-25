@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/windows"
+
+	processcontrol "github.com/uvwt/agentdock/internal/process"
 )
 
 const windowsDesktopRepairCommand = "__repair-desktop-runtime"
@@ -120,6 +122,7 @@ func launchWindowsDesktopRepair(executable string) error {
 	command.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS,
 	}
+	processcontrol.Configure(command)
 	if err := command.Start(); err != nil {
 		return errors.New("启动 Windows 控制面板修复进程失败: " + err.Error())
 	}
@@ -150,6 +153,7 @@ func launchWindowsDesktopRepairViaShell(executable string) error {
 		"AGENTDOCK_DESKTOP_REPAIR_ARGS="+windowsDesktopRepairCommand,
 	)
 	command.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
+	processcontrol.Configure(command)
 	if output, err := command.CombinedOutput(); err != nil {
 		return errors.New("通过 Windows Shell 启动标准权限控制面板修复失败: " + err.Error() + ": " + string(output))
 	}

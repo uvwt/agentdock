@@ -14,6 +14,7 @@ import (
 
 	"github.com/uvwt/agentdock/internal/desktopruntime"
 	"github.com/uvwt/agentdock/internal/envstore"
+	processcontrol "github.com/uvwt/agentdock/internal/process"
 )
 
 func startPlatformServices(ctx context.Context, request Request, journal *rollbackJournal) error {
@@ -320,6 +321,7 @@ func snapshotWindowsRuntimeState(request Request, journal *rollbackJournal) erro
 
 func probeWindowsComponentRunning(ctx context.Context, binary, component, runtimeRoot string) (bool, error) {
 	cmd := exec.CommandContext(ctx, binary, component, "status", "--runtime-root", runtimeRoot)
+	processcontrol.ConfigureBackground(cmd)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return false, fmt.Errorf("读取 Windows %s 安装前状态失败: %w: %s", component, err, strings.TrimSpace(string(out)))
@@ -494,6 +496,7 @@ func restoreJournalService(ctx context.Context, request Request, service journal
 
 func runCmd(ctx context.Context, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
+	processcontrol.ConfigureBackground(cmd)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
@@ -506,11 +509,15 @@ func runCmd(ctx context.Context, name string, args ...string) error {
 }
 
 func cmdOK(ctx context.Context, name string, args ...string) bool {
-	return exec.CommandContext(ctx, name, args...).Run() == nil
+	cmd := exec.CommandContext(ctx, name, args...)
+	processcontrol.ConfigureBackground(cmd)
+	return cmd.Run() == nil
 }
 
 func cmdOutput(ctx context.Context, name string, args ...string) []byte {
-	out, _ := exec.CommandContext(ctx, name, args...).Output()
+	cmd := exec.CommandContext(ctx, name, args...)
+	processcontrol.ConfigureBackground(cmd)
+	out, _ := cmd.Output()
 	return out
 }
 
@@ -642,6 +649,7 @@ func windowsNamedTunnelRunning(ctx context.Context, request Request) error {
 		return fmt.Errorf("Windows Named Tunnel 找不到 agentdock 二进制")
 	}
 	cmd := exec.CommandContext(ctx, binary, "tunnel", "status", "--runtime-root", request.RuntimeRoot)
+	processcontrol.ConfigureBackground(cmd)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("读取 Windows Named Tunnel 状态失败: %w: %s", err, strings.TrimSpace(string(out)))
