@@ -14,6 +14,7 @@ import (
 
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envstore"
+	"github.com/uvwt/agentdock/internal/mcp/oauthclient"
 )
 
 type Manager struct {
@@ -22,6 +23,7 @@ type Manager struct {
 	mu         sync.RWMutex
 	store      *store
 	envs       *envstore.Store
+	oauth      *oauthclient.Manager
 	servers    map[string]ServerConfig
 	owned      map[string]ServerConfig
 	states     map[string]*serverState
@@ -33,6 +35,7 @@ type serverState struct {
 	tools         map[string]Tool
 	lastError     string
 	lastErrorCode string
+	oauthStatus   string
 	refreshedAt   time.Time
 }
 
@@ -52,13 +55,17 @@ func NewManager(agentDockHome string, provided ...*envstore.Store) (*Manager, er
 			return nil, err
 		}
 	}
+	oauthManager, err := oauthclient.New(agentDockHome)
+	if err != nil {
+		return nil, fmt.Errorf("initialize MCP OAuth client: %w", err)
+	}
 	servers = standaloneServerConfigs(servers)
 	states := make(map[string]*serverState, len(servers))
 	for name := range servers {
 		states[name] = &serverState{}
 	}
 	return &Manager{
-		store: registry, envs: envs, servers: servers,
+		store: registry, envs: envs, oauth: oauthManager, servers: servers,
 		owned: make(map[string]ServerConfig), states: states,
 	}, nil
 }
@@ -248,7 +255,9 @@ func (m *Manager) Remove(name string) error {
 	m.mu.Lock()
 	staleStates := m.replaceRegistryLocked(servers)
 	m.mu.Unlock()
-	return closeServerStates(staleStates)
+	// Registry 删除成功后再清理 OAuth grant，避免持久化注册失败时留下“服务器还在、
+	// 授权却先丢了”的不可逆半状态。DCR client 是跨 MCP 共享状态，不在这里删除。
+	return errors.Join(closeServerStates(staleStates), m.oauth.RemoveGrant(name))
 }
 
 func (m *Manager) SetEnabled(name string, enabled bool) (ServerSummary, error) {
@@ -396,6 +405,145 @@ func (m *Manager) Inspect(name string) (ServerConfig, ServerSummary, error) {
 	return cfg, summaryFor(cfg, state), nil
 }
 
+func (m *Manager) SetOAuthCallback(option oauthclient.CallbackOption) error {
+	return m.oauth.SetCallback(option)
+}
+
+func (m *Manager) RemoveOAuthCallback(id string) {
+	m.oauth.RemoveCallback(id)
+}
+
+func (m *Manager) Authorize(ctx context.Context, name, callbackID string) (oauthclient.BeginResult, error) {
+	cfg, _, err := m.Inspect(name)
+	if err != nil {
+		return oauthclient.BeginResult{}, err
+	}
+	if !cfg.Enabled {
+		return oauthclient.BeginResult{}, newError("MCP_SERVER_DISABLED", "dynamic MCP server is disabled", false, map[string]any{"server": cfg.Name}, nil)
+	}
+	if cfg.Transport != TransportStreamableHTTP {
+		return oauthclient.BeginResult{}, newError("MCP_AUTH_UNSUPPORTED", "OAuth authorization is only available for streamable HTTP MCP servers", false, map[string]any{"server": cfg.Name}, nil)
+	}
+	storageKey := cfg.StorageKey
+	if storageKey == "" {
+		storageKey = cfg.Name
+	}
+	result, done, err := m.oauth.Begin(ctx, cfg.Name, storageKey, cfg.URL, callbackID)
+	if err != nil {
+		return oauthclient.BeginResult{}, oauthFlowError(cfg.Name, err)
+	}
+	if done == nil || result.AuthorizationURL == "" {
+		return result, nil
+	}
+	m.mu.RLock()
+	state := m.states[cfg.Name]
+	m.mu.RUnlock()
+	if state != nil {
+		state.mu.Lock()
+		state.oauthStatus = oauthclient.StatusAuthorizing
+		state.lastError = ""
+		state.lastErrorCode = ""
+		state.mu.Unlock()
+	}
+	go m.watchAuthorization(cfg.Name, done)
+	return result, nil
+}
+
+func (m *Manager) DeliverOAuthCallback(result oauthclient.CallbackResult) error {
+	if err := m.oauth.DeliverCallback(result); err != nil {
+		return oauthFlowError("", err)
+	}
+	return nil
+}
+
+func (m *Manager) ClearAuthorization(name string) error {
+	cfg, _, err := m.Inspect(name)
+	if err != nil {
+		return err
+	}
+	storageKey := cfg.StorageKey
+	if storageKey == "" {
+		storageKey = cfg.Name
+	}
+	if err := m.oauth.Clear(storageKey); err != nil {
+		return newError("MCP_AUTH_CLEAR_FAILED", "clear MCP OAuth authorization", false, map[string]any{"server": cfg.Name}, err)
+	}
+	m.mu.RLock()
+	state := m.states[cfg.Name]
+	m.mu.RUnlock()
+	return closeState(state)
+}
+
+func (m *Manager) RemoveOAuthGrant(storageKey string) error {
+	if err := m.oauth.RemoveGrant(strings.TrimSpace(storageKey)); err != nil {
+		return newError("MCP_AUTH_CLEAR_FAILED", "remove MCP OAuth authorization", false, map[string]any{"storage_key": strings.TrimSpace(storageKey)}, err)
+	}
+	return nil
+}
+
+func (m *Manager) watchAuthorization(name string, done <-chan error) {
+	err, ok := <-done
+	if !ok {
+		return
+	}
+	m.mu.RLock()
+	state := m.states[name]
+	m.mu.RUnlock()
+	if state == nil {
+		return
+	}
+	if err != nil {
+		var flowErr *oauthclient.FlowError
+		if errors.As(err, &flowErr) && flowErr.Code == "MCP_AUTH_CANCELLED" {
+			// auth_clear 会负责关闭 session 并把状态恢复为 idle；这里不能在它之后
+			// 又异步写回一个“取消失败”，否则状态会产生竞态回弹。
+			return
+		}
+		state.mu.Lock()
+		state.oauthStatus = ""
+		converted := oauthFlowError(name, err)
+		recordStateError(state, converted)
+		if errors.As(err, &flowErr) {
+			// Flow 失败后 grant 仍不可用。无论是用户拒绝、超时、token exchange、issuer
+			// 校验还是落盘失败，都让模型/UI 保留“可重新授权”的下一步；具体原因继续
+			// 通过 last_error_code 暴露。auth_clear 的 CANCELLED 已在上方单独吞掉。
+			state.oauthStatus = oauthclient.StatusAuthRequired
+		}
+		state.mu.Unlock()
+		return
+	}
+
+	state.mu.Lock()
+	state.lastError = ""
+	state.lastErrorCode = ""
+	// 保持 authorizing 直到 MCP 真正重新初始化完成，避免 callback 收到后 UI 短暂
+	// 回到 idle。refreshStateLocked 成功后会切到 authorized/ready。
+	state.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if _, _, refreshErr := m.Refresh(ctx, name); refreshErr != nil {
+		state.mu.Lock()
+		if state.oauthStatus == oauthclient.StatusAuthorizing {
+			state.oauthStatus = ""
+		}
+		state.mu.Unlock()
+		slog.Warn("refresh MCP after OAuth authorization failed", "server", name, "error", refreshErr)
+	}
+}
+
+func oauthFlowError(server string, err error) error {
+	var flowErr *oauthclient.FlowError
+	if errors.As(err, &flowErr) {
+		details := map[string]any{}
+		if strings.TrimSpace(server) != "" {
+			details["server"] = strings.TrimSpace(server)
+		}
+		return newError(flowErr.Code, flowErr.Message, false, details, err)
+	}
+	return newError("MCP_AUTH_FAILED", "MCP OAuth authorization failed", false, map[string]any{"server": strings.TrimSpace(server)}, err)
+}
+
 func (m *Manager) Refresh(ctx context.Context, name string) (ServerSummary, []ToolSummary, error) {
 	if err := m.syncRegistry(); err != nil {
 		return ServerSummary{}, nil, err
@@ -415,7 +563,7 @@ func (m *Manager) Refresh(ctx context.Context, name string) (ServerSummary, []To
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutMS)*time.Millisecond)
 	defer cancel()
-	tools, err := refreshStateLocked(ctx, runtimeCfg, state)
+	tools, err := m.refreshStateLocked(ctx, runtimeCfg, state)
 	summary := summaryForLocked(cfg, state)
 	if err != nil {
 		return summary, nil, err
@@ -530,7 +678,7 @@ func (m *Manager) Call(ctx context.Context, qualifiedName string, arguments map[
 			recordStateError(state, err)
 			return nil, err
 		}
-		if _, err := refreshStateLocked(ctx, runtimeCfg, state); err != nil {
+		if _, err := m.refreshStateLocked(ctx, runtimeCfg, state); err != nil {
 			return nil, err
 		}
 	}
@@ -644,7 +792,7 @@ func (m *Manager) runtimeConfig(cfg ServerConfig) (ServerConfig, error) {
 		if !ok || value == "" {
 			if _, required := requiredEnv[envName]; required {
 				return ServerConfig{}, newError(
-					"MCP_AUTH_REQUIRED",
+					"MCP_CREDENTIAL_REQUIRED",
 					"required Plugin MCP environment variable is missing",
 					false,
 					map[string]any{"server": cfg.Name, "header": header, "env": envName},
@@ -662,7 +810,7 @@ func (m *Manager) runtimeConfig(cfg ServerConfig) (ServerConfig, error) {
 		if !ok || value == "" {
 			if _, required := requiredEnv[envName]; required {
 				return ServerConfig{}, newError(
-					"MCP_AUTH_REQUIRED",
+					"MCP_CREDENTIAL_REQUIRED",
 					"required Plugin MCP environment variable is missing",
 					false,
 					map[string]any{"server": cfg.Name, "env": envName},
@@ -720,18 +868,18 @@ func (m *Manager) ensureTools(ctx context.Context, name string) (map[string]Tool
 			recordStateError(state, err)
 			return nil, err
 		}
-		return refreshStateLocked(ctx, runtimeCfg, state)
+		return m.refreshStateLocked(ctx, runtimeCfg, state)
 	}
 	return cloneTools(state.tools), nil
 }
 
-func refreshStateLocked(ctx context.Context, cfg ServerConfig, state *serverState) (map[string]Tool, error) {
+func (m *Manager) refreshStateLocked(ctx context.Context, cfg ServerConfig, state *serverState) (map[string]Tool, error) {
 	if state.client != nil {
 		_ = state.client.close()
 	}
 	state.client = nil
 	state.tools = nil
-	client, err := newProtocolClient(cfg)
+	client, err := m.newProtocolClient(cfg)
 	if err != nil {
 		recordStateError(state, err)
 		return nil, err
@@ -785,14 +933,19 @@ func refreshStateLocked(ctx context.Context, cfg ServerConfig, state *serverStat
 	state.tools = tools
 	state.lastError = ""
 	state.lastErrorCode = ""
+	state.oauthStatus = ""
 	state.refreshedAt = time.Now().UTC()
 	return cloneTools(tools), nil
 }
 
-func newProtocolClient(cfg ServerConfig) (protocolClient, error) {
+func (m *Manager) newProtocolClient(cfg ServerConfig) (protocolClient, error) {
 	switch cfg.Transport {
 	case TransportStreamableHTTP:
-		return newStreamableHTTPClient(cfg), nil
+		storageKey := cfg.StorageKey
+		if storageKey == "" {
+			storageKey = cfg.Name
+		}
+		return newStreamableHTTPClient(cfg, m.oauth.Handler(cfg.Name, storageKey, cfg.URL)), nil
 	case TransportStdio:
 		return newStdioClient(cfg), nil
 	default:
@@ -814,6 +967,7 @@ func closeState(state *serverState) error {
 	state.tools = nil
 	state.lastError = ""
 	state.lastErrorCode = ""
+	state.oauthStatus = ""
 	state.refreshedAt = time.Time{}
 	return err
 }
@@ -828,6 +982,10 @@ func summaryForLocked(cfg ServerConfig, state *serverState) ServerSummary {
 	status := "idle"
 	if !cfg.Enabled {
 		status = "disabled"
+	} else if state.oauthStatus == oauthclient.StatusAuthorizing {
+		status = "authorizing"
+	} else if state.oauthStatus == oauthclient.StatusAuthRequired {
+		status = "auth_required"
 	} else if state.lastError != "" {
 		status = "error"
 	} else if state.client != nil {
@@ -863,9 +1021,18 @@ func summaryForLocked(cfg ServerConfig, state *serverState) ServerSummary {
 func recordStateError(state *serverState, err error) {
 	state.lastError = err.Error()
 	state.lastErrorCode = "MCP_ERROR"
+	// 每次失败重新判断 OAuth 状态。上一次 401 留下的 auth_required 不能掩盖
+	// 后续真实的网络、协议或 schema 错误。
+	state.oauthStatus = ""
 	var mcpErr *Error
 	if errors.As(err, &mcpErr) {
 		state.lastErrorCode = mcpErr.Code
+		if mcpErr.Code == "MCP_AUTH_REQUIRED" {
+			var authRequired *oauthclient.AuthRequiredError
+			if errors.As(err, &authRequired) {
+				state.oauthStatus = oauthclient.StatusAuthRequired
+			}
+		}
 	}
 }
 

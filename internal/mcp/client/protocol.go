@@ -11,11 +11,13 @@ import (
 	"strings"
 	"sync"
 
+	sdkauth "github.com/modelcontextprotocol/go-sdk/auth"
 	sdkjsonrpc "github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envstore"
+	"github.com/uvwt/agentdock/internal/mcp/oauthclient"
 	processcontrol "github.com/uvwt/agentdock/internal/process"
 )
 
@@ -35,12 +37,13 @@ type sdkProtocolClient struct {
 	command    *exec.Cmd
 	controller *processcontrol.Controller
 	stderr     *tailBuffer
+	oauth      sdkauth.OAuthHandler
 	closeOnce  sync.Once
 	closeErr   error
 }
 
-func newStreamableHTTPClient(cfg ServerConfig) *sdkProtocolClient {
-	return &sdkProtocolClient{cfg: cfg}
+func newStreamableHTTPClient(cfg ServerConfig, oauth sdkauth.OAuthHandler) *sdkProtocolClient {
+	return &sdkProtocolClient{cfg: cfg, oauth: oauth}
 }
 
 func newStdioClient(cfg ServerConfig) *sdkProtocolClient {
@@ -78,9 +81,16 @@ func (c *sdkProtocolClient) transport() (mcpsdk.Transport, error) {
 		if err != nil {
 			return nil, err
 		}
+		oauth := c.oauth
+		if strings.TrimSpace(headers.Get("Authorization")) != "" {
+			// 显式 Authorization Header 始终优先于自动 OAuth；否则 SDK 即使拿到
+			// access token，也会在真正发请求前被静态 Header 覆盖。
+			oauth = nil
+		}
 		return &mcpsdk.StreamableClientTransport{
 			Endpoint:             c.cfg.URL,
 			HTTPClient:           &http.Client{Transport: headerRoundTripper{headers: headers}},
+			OAuthHandler:         oauth,
 			MaxRetries:           -1,
 			DisableStandaloneSSE: true,
 		}, nil
@@ -189,6 +199,10 @@ func (c *sdkProtocolClient) wrapSDKError(operation string, err error) error {
 		return nil
 	}
 	details := map[string]any{"server": c.cfg.Name}
+	var authRequired *oauthclient.AuthRequiredError
+	if errors.As(err, &authRequired) {
+		return newError("MCP_AUTH_REQUIRED", authRequired.Error(), false, details, err)
+	}
 	if c.stderr != nil && c.stderr.String() != "" {
 		details["stderr"] = c.stderr.String()
 	}
@@ -265,7 +279,7 @@ func stdioEnvironment(cfg ServerConfig) ([]string, error) {
 		value, ok := os.LookupEnv(hostName)
 		if !ok {
 			return nil, newError(
-				"MCP_AUTH_REQUIRED",
+				"MCP_CREDENTIAL_REQUIRED",
 				"required MCP stdio environment variable is missing",
 				false,
 				map[string]any{"server": cfg.Name, "env": hostName},
@@ -303,12 +317,13 @@ func resolveHTTPHeaders(cfg ServerConfig) (http.Header, error) {
 		if !ok || value == "" {
 			if cfg.SourceType == "plugin" {
 				if _, required := requiredEnv[envName]; !required {
-					headers.Set(header, "")
+					// optional HeaderEnv 缺失时不要发送空 Header。空 Authorization 会覆盖
+					// OAuthHandler 生成的 Bearer token，也会改变匿名服务的请求语义。
 					continue
 				}
 			}
 			return nil, newError(
-				"MCP_AUTH_REQUIRED",
+				"MCP_CREDENTIAL_REQUIRED",
 				"required MCP HTTP header environment variable is missing",
 				false,
 				map[string]any{"server": cfg.Name, "header": header, "env": envName},

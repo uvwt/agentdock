@@ -18,7 +18,7 @@ func InputSchema(name string) (map[string]any, bool) {
 
 	switch name {
 	case ToolManage:
-		props["action"] = map[string]any{"type": "string", "description": "Dynamic MCP server or isolated environment action.", "enum": []string{"list", "inspect", "add", "remove", "enable", "disable", "env_set", "env_unset", "env_list", "refresh"}}
+		props["action"] = map[string]any{"type": "string", "description": "Dynamic MCP server or isolated environment action.", "enum": []string{"list", "inspect", "add", "remove", "enable", "disable", "env_set", "env_unset", "env_list", "refresh", "authorize", "auth_clear"}}
 		props["name"] = stringProp("Dynamic MCP server name. Use a stable short identifier such as figma or github.")
 		props["description"] = stringProp("Short capability description shown in agentdock_context.")
 		props["transport"] = map[string]any{"type": "string", "description": "MCP transport for action=add.", "enum": []string{"streamable_http", "stdio"}}
@@ -32,6 +32,7 @@ func InputSchema(name string) (map[string]any, bool) {
 		props["value"] = stringProp("Environment variable value for env_set. Secret values are never returned.")
 		props["enabled"] = boolProp("Enable the server after registration. Defaults to true.")
 		props["timeout_ms"] = boundedIntProp("Per-request timeout. Defaults to 30000 and is capped at 300000.", 1, 300000)
+		props["callback_id"] = map[string]any{"type": "string", "description": "Callback route for action=authorize when more than one route is available.", "enum": []string{"local", "agentdock", "nexus"}}
 		required = []string{"action"}
 	case ToolSearch:
 		props["query"] = stringProp("Capability or tool query.")
@@ -74,6 +75,10 @@ func OutputSchema(name string) (map[string]any, bool) {
 		props["key"] = stringProp("Environment variable name. Secret values are never returned.")
 		props["configured"] = boolProp("Whether the environment variable has a non-empty configured value.")
 		props["items"] = arrayProp("Environment variable names and configured status without values.")
+		props["authorization_url"] = stringProp("Third-party OAuth authorization URL for the user to open.")
+		props["callback_id"] = stringProp("OAuth callback route selected for this authorization flow.")
+		props["expires_at"] = stringProp("Expiration time of the pending OAuth authorization flow.")
+		props["callback_options"] = arrayProp("Available OAuth callback routes when the user must choose one before authorization begins.")
 	case ToolSearch:
 		props["query"] = stringProp("Capability query used.")
 		props["server"] = stringProp("Optional server filter used.")

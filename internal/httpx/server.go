@@ -53,6 +53,7 @@ func Serve(ctx context.Context, server *mcp.Server, runtime runtimeapi.Runtime, 
 		publicArtifactStore.ServeHTTP(w, r, "/artifacts/public/")
 	})
 	registerOAuthRoutes(mux, cfg, oauthStore)
+	registerMCPOAuthCallback(mux, runtime)
 	mux.HandleFunc("/context", agentDockContextHandler(server, cfg, oauthStore))
 	registerRuntimeAPI(mux, runtime, cfg, oauthStore)
 	mux.HandleFunc("/mcp", mcpEndpointHandler(server, cfg, oauthStore))

@@ -482,7 +482,7 @@ func TestAutoConversionRejectsAmbiguousVendorManifests(t *testing.T) {
 	}
 }
 
-func TestAutoConversionPreservesUnknownMCPAuthWithoutActivation(t *testing.T) {
+func TestAutoConversionIgnoresOAuthResourceMetadataAndActivates(t *testing.T) {
 	manager, err := NewManager(filepath.Join(t.TempDir(), ".agentdock"))
 	if err != nil {
 		t.Fatal(err)
@@ -505,8 +505,8 @@ func TestAutoConversionPreservesUnknownMCPAuthWithoutActivation(t *testing.T) {
 	if !review.Valid {
 		t.Fatalf("unknown MCP auth should not invalidate package: %#v", review)
 	}
-	if len(review.MCP) != 0 || !containsText(review.Warnings, "oauth_resource") || !containsText(review.Warnings, "not activated") {
-		t.Fatalf("unknown MCP auth was not isolated: %#v", review)
+	if len(review.MCP) != 1 || !containsText(review.Warnings, "oauth_resource") || !containsText(review.Warnings, "not used") {
+		t.Fatalf("OAuth metadata was not safely ignored: %#v", review)
 	}
 	result, err := manager.InstallReviewedSource(context.Background(), root, true, review.ReviewToken)
 	if err != nil {
@@ -519,14 +519,49 @@ func TestAutoConversionPreservesUnknownMCPAuthWithoutActivation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(installed.Components.MCP) != 0 {
-		t.Fatalf("unknown MCP auth became active: %#v", installed.Components.MCP)
+	if len(installed.Components.MCP) != 1 {
+		t.Fatalf("OAuth metadata prevented MCP activation: %#v", installed.Components.MCP)
 	}
-	if !containsText(installed.Warnings, "oauth_resource") || !containsText(installed.Warnings, "not activated") {
-		t.Fatalf("installed state lost review warning: %#v", installed.Warnings)
+	if !containsText(installed.Warnings, "oauth_resource") || !containsText(installed.Warnings, "not used") {
+		t.Fatalf("installed state lost OAuth metadata warning: %#v", installed.Warnings)
 	}
 	if _, err := os.Stat(filepath.Join(installed.Root, ".mcp.json")); err != nil {
 		t.Fatalf("source MCP config was not preserved: %v", err)
+	}
+}
+
+func TestAutoConversionDoesNotActivateUnknownAuthRuntimeFields(t *testing.T) {
+	for _, field := range []string{"client_secret", "auth"} {
+		t.Run(field, func(t *testing.T) {
+			manager, err := NewManager(filepath.Join(t.TempDir(), ".agentdock"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			root := t.TempDir()
+			writeExternalJSONFile(t, filepath.Join(root, ".codex-plugin", "plugin.json"), map[string]any{
+				"name": "unknown-auth-" + strings.ReplaceAll(field, "_", "-"), "version": "1.0.0",
+			})
+			server := map[string]any{"type": "http", "url": "https://example.com/mcp"}
+			if field == "auth" {
+				server[field] = map[string]any{"type": "oauth"}
+			} else {
+				server[field] = "must-not-be-interpreted"
+			}
+			writeExternalJSONFile(t, filepath.Join(root, ".mcp.json"), map[string]any{
+				"mcpServers": map[string]any{"remote": server},
+			})
+
+			review := manager.Validate(root)
+			if !review.Valid {
+				t.Fatalf("review invalid: %#v", review)
+			}
+			if len(review.MCP) != 0 {
+				t.Fatalf("unknown runtime auth field %q was activated: %#v", field, review.MCP)
+			}
+			if !containsText(review.Warnings, field) || !containsText(review.Warnings, "not activated") {
+				t.Fatalf("review warning for %q = %#v", field, review.Warnings)
+			}
+		})
 	}
 }
 

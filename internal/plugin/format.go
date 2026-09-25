@@ -538,7 +538,7 @@ func normalizeExternalMCPServer(name string, raw json.RawMessage, format string)
 		"type": true, "url": true, "command": true, "args": true,
 		"cwd": true, "env": true, "headers": true,
 	}
-	metadata := map[string]bool{"note": true, "description": true}
+	metadata := map[string]bool{"note": true, "description": true, "oauth_resource": true}
 	warnings := make([]string, 0)
 	unknownRuntime := make([]string, 0)
 	for key, value := range object {

@@ -6,6 +6,7 @@ import (
 	"net/url"
 
 	"github.com/uvwt/agentdock/internal/app"
+	"github.com/uvwt/agentdock/internal/mcp/oauthclient"
 )
 
 // Runtime 定义 Runtime API 路由真正需要的应用能力。
@@ -26,6 +27,17 @@ type Runtime interface {
 	RuntimeMCPServer(context.Context, string) (app.Result, error)
 	RuntimeMCPManage(context.Context, map[string]any) (app.Result, error)
 	RuntimeEvolve(context.Context, map[string]any) (app.Result, error)
+}
+
+// MCPOAuthRuntime 是可选能力：只有支持 Remote MCP OAuth 的 Runtime 才实现。
+// 保持它独立于 Runtime 主接口，避免 callback relay 把所有测试替身和只读调用方一起扩展。
+type MCPOAuthRuntime interface {
+	RuntimeMCPOAuthCallback(context.Context, oauthclient.CallbackResult) error
+}
+
+// NexusOAuthCallbackRuntime 由节点 Bridge 在握手后提供 Nexus 公网 callback origin。
+type NexusOAuthCallbackRuntime interface {
+	SetNexusOAuthCallback(publicURL, nodeID string) error
 }
 
 // Request 是 HTTP 与 Nexus Bridge 共用的 Runtime API 请求表示。

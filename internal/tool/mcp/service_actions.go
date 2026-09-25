@@ -85,12 +85,32 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 			return nil, dynamicMCPToolError(err)
 		}
 		return Result{"action": action, "server": server, "tools": tools, "tool_count": len(tools)}, nil
+	case "authorize":
+		authorization, err := s.mcpClients.Authorize(ctx, request.Name, request.CallbackID)
+		if err != nil {
+			return nil, dynamicMCPToolError(err)
+		}
+		result := Result{"action": action, "name": strings.TrimSpace(request.Name)}
+		if authorization.AuthorizationURL != "" {
+			result["authorization_url"] = authorization.AuthorizationURL
+			result["callback_id"] = authorization.CallbackID
+			result["expires_at"] = authorization.ExpiresAt
+		}
+		if len(authorization.CallbackOptions) > 0 {
+			result["callback_options"] = authorization.CallbackOptions
+		}
+		return result, nil
+	case "auth_clear":
+		if err := s.mcpClients.ClearAuthorization(request.Name); err != nil {
+			return nil, dynamicMCPToolError(err)
+		}
+		return Result{"action": action, "name": strings.TrimSpace(request.Name), "removed": true}, nil
 	default:
 		return nil, toolErrorDetails(
 			"INVALID_ACTION",
 			"unsupported mcp_manage action",
 			"validation",
-			map[string]any{"action": action, "allowed": []string{"list", "inspect", "add", "remove", "enable", "disable", "env_set", "env_unset", "env_list", "refresh"}},
+			map[string]any{"action": action, "allowed": []string{"list", "inspect", "add", "remove", "enable", "disable", "env_set", "env_unset", "env_list", "refresh", "authorize", "auth_clear"}},
 		)
 	}
 }
@@ -154,7 +174,7 @@ func dynamicMCPToolError(err error) error {
 		strings.Contains(mcpErr.Code, "COLLISION") {
 		category = "validation"
 	}
-	if mcpErr.Code == "MCP_AUTH_REQUIRED" {
+	if strings.HasPrefix(mcpErr.Code, "MCP_AUTH_") {
 		category = "auth"
 	}
 	toolErr := toolErrorCause(mcpErr.Code, mcpErr.Message, category, mcpErr.Details, err)
