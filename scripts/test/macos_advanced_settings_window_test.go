@@ -71,7 +71,7 @@ func TestMacOSAdvancedSettingsUsesResponsiveScrollableLayout(t *testing.T) {
 		`let nexusPairRow = NSView()`,
 		`nexusDeviceTokenStatus.leadingAnchor.constraint(equalTo: nexusPairRow.leadingAnchor, constant: 140)`,
 		"let startupStack = NSStackView(views: [\n            serviceAutostart,\n            menuAutostart,",
-		"let serviceForm = NSStackView(views: [\n            formRow(title: L10n.text(\"Chat cards\"), control: mcpAppsMode),\n            formRow(title: L10n.text(\"Service port\"), control: portField),\n            formRow(title: L10n.text(\"Log level\"), control: logLevel),\n            formRow(title: L10n.text(\"Interface language\"), control: languagePreference),",
+		"let serviceForm = NSStackView(views: [\n            formRow(title: L10n.text(\"Service port\"), control: portField),\n            formRow(title: L10n.text(\"Log level\"), control: logLevel),\n            formRow(title: L10n.text(\"Interface language\"), control: languagePreference),\n            formRow(title: L10n.text(\"Chat cards\"), control: mcpAppsMode),",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("macOS advanced settings missing responsive layout contract %q", want)

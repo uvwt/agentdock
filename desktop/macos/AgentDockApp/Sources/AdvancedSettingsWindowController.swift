@@ -313,10 +313,10 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         startupStack.spacing = 8
 
         let serviceForm = NSStackView(views: [
-            formRow(title: L10n.text("Chat cards"), control: mcpAppsMode),
             formRow(title: L10n.text("Service port"), control: portField),
             formRow(title: L10n.text("Log level"), control: logLevel),
             formRow(title: L10n.text("Interface language"), control: languagePreference),
+            formRow(title: L10n.text("Chat cards"), control: mcpAppsMode),
         ])
         serviceForm.orientation = .vertical
         serviceForm.alignment = .leading

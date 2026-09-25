@@ -356,10 +356,13 @@ func TestWindowsACPSettingsUseSinglePageRowsDefaultDropdownAndCustomDialog(t *te
 		}
 	}
 
-	chatCardsIndex := strings.Index(xaml, `x:Name="McpAppsModeComboBox" Grid.Row="0"`)
-	portIndex := strings.Index(xaml, `x:Name="PortTextBox" Grid.Row="1"`)
-	if chatCardsIndex < 0 || portIndex < 0 || chatCardsIndex > portIndex {
-		t.Fatal("Windows basic settings must place the chat card mode above the service port")
+	portIndex := strings.Index(xaml, `x:Name="PortTextBox" Grid.Row="0"`)
+	logLevelIndex := strings.Index(xaml, `x:Name="LogLevelComboBox" Grid.Row="1"`)
+	languageIndex := strings.Index(xaml, `x:Name="LanguageComboBox" Grid.Row="2"`)
+	chatCardsIndex := strings.Index(xaml, `x:Name="McpAppsModeComboBox" Grid.Row="3"`)
+	if portIndex < 0 || logLevelIndex < 0 || languageIndex < 0 || chatCardsIndex < 0 ||
+		!(portIndex < logLevelIndex && logLevelIndex < languageIndex && languageIndex < chatCardsIndex) {
+		t.Fatal("Windows basic settings must place chat cards directly below the interface language")
 	}
 	for _, want := range []string{
 		`Text="{local:Loc ChatCards}"`,

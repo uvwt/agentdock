@@ -167,26 +167,26 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <TextBlock Text="{local:Loc ChatCards}" Grid.Row="0" VerticalAlignment="Center" Margin="0,0,0,12" />
-                <ComboBox x:Name="McpAppsModeComboBox" Grid.Row="0" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,12">
-                  <ComboBoxItem Content="{local:Loc ChatCardsFull}" Tag="full" />
-                  <ComboBoxItem Content="{local:Loc ChatCardsCompact}" Tag="compact" />
-                  <ComboBoxItem Content="{local:Loc ChatCardsOff}" Tag="off" />
-                </ComboBox>
-                <TextBlock Text="{local:Loc Port}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="PortTextBox" Grid.Row="1" Grid.Column="1" Width="130" HorizontalAlignment="Left" Margin="0,0,0,10" />
-                <TextBlock Text="{local:Loc LogLevel}" Grid.Row="2" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <ComboBox x:Name="LogLevelComboBox" Grid.Row="2" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10">
+                <TextBlock Text="{local:Loc Port}" Grid.Row="0" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <TextBox x:Name="PortTextBox" Grid.Row="0" Grid.Column="1" Width="130" HorizontalAlignment="Left" Margin="0,0,0,10" />
+                <TextBlock Text="{local:Loc LogLevel}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <ComboBox x:Name="LogLevelComboBox" Grid.Row="1" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10">
                   <ComboBoxItem Content="debug" />
                   <ComboBoxItem Content="info" />
                   <ComboBoxItem Content="warn" />
                   <ComboBoxItem Content="error" />
                 </ComboBox>
-                <TextBlock Text="{local:Loc InterfaceLanguage}" Grid.Row="3" VerticalAlignment="Center" Margin="0,0,0,4" />
-                <ComboBox x:Name="LanguageComboBox" Grid.Row="3" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,4" SelectionChanged="LanguageComboBox_SelectionChanged">
+                <TextBlock Text="{local:Loc InterfaceLanguage}" Grid.Row="2" VerticalAlignment="Center" Margin="0,0,0,10" />
+                <ComboBox x:Name="LanguageComboBox" Grid.Row="2" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10" SelectionChanged="LanguageComboBox_SelectionChanged">
                   <ComboBoxItem Content="{local:Loc FollowSystem}" Tag="system" />
                   <ComboBoxItem Content="{local:Loc SimplifiedChinese}" Tag="zh-CN" />
                   <ComboBoxItem Content="{local:Loc EnglishLanguage}" Tag="en" />
+                </ComboBox>
+                <TextBlock Text="{local:Loc ChatCards}" Grid.Row="3" VerticalAlignment="Center" Margin="0,0,0,4" />
+                <ComboBox x:Name="McpAppsModeComboBox" Grid.Row="3" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,4">
+                  <ComboBoxItem Content="{local:Loc ChatCardsFull}" Tag="full" />
+                  <ComboBoxItem Content="{local:Loc ChatCardsCompact}" Tag="compact" />
+                  <ComboBoxItem Content="{local:Loc ChatCardsOff}" Tag="off" />
                 </ComboBox>
               </Grid>
             </GroupBox>
