@@ -139,6 +139,7 @@ func TestWindowsTrayCarriesSignPathMetadataFromMSBuild(t *testing.T) {
 		"<Company>AgentDock</Company>",
 		"<Copyright>Copyright AgentDock contributors</Copyright>",
 		"<AssemblyName>agentdock-tray</AssemblyName>",
+		"<IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>",
 	} {
 		if !strings.Contains(project, want) {
 			t.Fatalf("Windows tray project must carry SignPath metadata; missing %q", want)
