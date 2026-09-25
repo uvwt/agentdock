@@ -331,7 +331,7 @@ func TestMCPAppsBindResourcesDirectlyToBusinessTools(t *testing.T) {
 		t.Fatalf("workspace context resource = %#v", workspaceRead.Contents)
 	}
 	workspaceHTML := workspaceRead.Contents[0].Text
-	for _, marker := range []string{`expectedView="workspace_context"`, "renderWorkspaceContext", "workspace-rule-list", `t("rules")`, `t("skills")`, `t("workdir")`, `t("root")`} {
+	for _, marker := range []string{`expectedView="workspace_context"`, "renderWorkspaceContext", "workspace-rule-list", `t("rules")`, `t("skills")`, `t("workdir")`, `t("workspaceRoot")`} {
 		if !strings.Contains(workspaceHTML, marker) {
 			t.Fatalf("workspace context resource missing marker %q", marker)
 		}

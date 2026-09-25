@@ -98,6 +98,8 @@ github.com/uvwt/agentdock-protocol v0.8.2-0.20260925113710-f07476a66b9c h1:0q31x
 github.com/uvwt/agentdock-protocol v0.8.2-0.20260925113710-f07476a66b9c/go.mod h1:yoFrGa/mNuAr3b8fupHCFT0b1Kf4Ni/00T4KnwuiFRk=
 github.com/uvwt/agentdock-protocol v0.8.2-0.20260925122715-954ed2adbebc h1:5FrSPP0zR8lhj0y02A9mvK2mGc8V8PnIFlJAG4uUjco=
 github.com/uvwt/agentdock-protocol v0.8.2-0.20260925122715-954ed2adbebc/go.mod h1:yoFrGa/mNuAr3b8fupHCFT0b1Kf4Ni/00T4KnwuiFRk=
+github.com/uvwt/agentdock-protocol v0.8.2-0.20260925125043-785ef191f5c2 h1:TpHY4RKCytnc5a9mxRlvH1wtHzcHcD287fktKvZJnD8=
+github.com/uvwt/agentdock-protocol v0.8.2-0.20260925125043-785ef191f5c2/go.mod h1:yoFrGa/mNuAr3b8fupHCFT0b1Kf4Ni/00T4KnwuiFRk=
 github.com/valyala/bytebufferpool v1.0.0 h1:GqA5TC/0021Y/b9FG4Oi9Mr3q7XYx6KllzawFIhcdPw=
 github.com/valyala/bytebufferpool v1.0.0/go.mod h1:6bBcMArwyJ5K/AmCkWv1jt77kVWyCJ6HpOuEn7z0Csc=
 github.com/valyala/fasthttp v1.34.0 h1:d3AAQJ2DRcxJYHm7OXNXtXt2as1vMDfxeIcFvhmGGm4=
