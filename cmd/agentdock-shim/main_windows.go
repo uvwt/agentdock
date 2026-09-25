@@ -85,10 +85,8 @@ func run() error {
 
 	command := exec.Command(target, os.Args[1:]...)
 	command.Dir = root
-	if !tray && !shimHasConsoleWindow() {
-		// stable shim 本身可能由后台 no-console 调用启动。创建标志不会自动传给下一跳，
-		// 因此这里继续把 generation Core 保持为无控制台；交互终端调用则保留原控制台语义。
-		processctl.Configure(command)
+	if !tray {
+		configureForwardedCoreCommand(command, shimHasConsoleWindow())
 	}
 	if !tray || trayRequiresWait(os.Args[1:]) {
 		command.Stdin = os.Stdin
@@ -131,6 +129,15 @@ func run() error {
 		return fmt.Errorf("start AgentDock tray generation: %w", err)
 	}
 	return command.Process.Release()
+}
+
+func configureForwardedCoreCommand(command *exec.Cmd, hasConsole bool) {
+	if hasConsole {
+		return
+	}
+	// stable shim 本身可能由后台 no-console 调用启动。创建标志不会自动传给下一跳，
+	// 因此这里继续把 generation Core 保持为无控制台；交互终端调用则保留原控制台语义。
+	processctl.Configure(command)
 }
 
 func shimHasConsoleWindow() bool {
