@@ -195,9 +195,14 @@ func TestMCPAppsCompactFiltersBindingsButKeepsResources(t *testing.T) {
 		}
 		tools[tool.Name] = tool
 	}
-	for _, name := range []string{"agentdock_context", "file_edit", "task_manage", "mcp_tool_call"} {
-		if ui := tools[name].Meta["ui"]; ui != nil {
-			t.Fatalf("%s should not attach descriptor UI in compact mode: %#v", name, ui)
+	assertToolUIResource(t, tools["view_image"], protocol.ImageUIResourceURI)
+	assertToolUIResource(t, tools["agentdock_context"], protocol.ContextUIResourceURI)
+	assertToolUIResource(t, tools["workspace_context"], protocol.WorkspaceUIResourceURI)
+	for _, name := range []string{"file_edit", "task_manage", "mcp_tool_call", "workflow_template_manage"} {
+		if tool := tools[name]; tool != nil {
+			if ui := tool.Meta["ui"]; ui != nil {
+				t.Fatalf("%s should not attach descriptor UI in compact mode: %#v", name, ui)
+			}
 		}
 	}
 	assertToolUIResource(t, tools["file_publish"], protocol.ArtifactUIResourceURI, "file_arg_rewrite_paths", "openai/fileParams")
@@ -206,12 +211,9 @@ func TestMCPAppsCompactFiltersBindingsButKeepsResources(t *testing.T) {
 	if !ok {
 		t.Fatal("task_manage definition missing")
 	}
-	if meta := toolResultMetadata(taskDef, map[string]any{"action": "create"}, config.MCPAppsModeCompact); meta["ui"] == nil {
-		t.Fatalf("task create should attach Task Progress UI in compact mode: %#v", meta)
-	}
-	for _, action := range []string{"checkpoint", "block", "resume", "final_review", "complete"} {
+	for _, action := range []string{"create", "list", "get", "checkpoint", "block", "resume", "final_review", "complete"} {
 		if meta := toolResultMetadata(taskDef, map[string]any{"action": action}, config.MCPAppsModeCompact); len(meta) != 0 {
-			t.Fatalf("task %s should not create a new UI card in compact mode: %#v", action, meta)
+			t.Fatalf("task %s should not attach UI in compact mode: %#v", action, meta)
 		}
 	}
 
@@ -219,11 +221,10 @@ func TestMCPAppsCompactFiltersBindingsButKeepsResources(t *testing.T) {
 	if !ok {
 		t.Fatal("workflow_template_manage definition missing")
 	}
-	if meta := toolResultMetadata(workflowDef, map[string]any{"action": "match"}, config.MCPAppsModeCompact); meta["ui"] == nil {
-		t.Fatalf("workflow match should attach UI in compact mode: %#v", meta)
-	}
-	if meta := toolResultMetadata(workflowDef, map[string]any{"action": "list"}, config.MCPAppsModeCompact); len(meta) != 0 {
-		t.Fatalf("workflow list should not attach UI in compact mode: %#v", meta)
+	for _, action := range []string{"match", "list"} {
+		if meta := toolResultMetadata(workflowDef, map[string]any{"action": action}, config.MCPAppsModeCompact); len(meta) != 0 {
+			t.Fatalf("workflow %s should not attach UI in compact mode: %#v", action, meta)
+		}
 	}
 
 	resources := map[string]bool{}
@@ -234,7 +235,9 @@ func TestMCPAppsCompactFiltersBindingsButKeepsResources(t *testing.T) {
 		resources[resource.URI] = true
 	}
 	for _, uri := range []string{
+		protocol.ImageUIResourceURI,
 		protocol.ContextUIResourceURI,
+		protocol.WorkspaceUIResourceURI,
 		protocol.TaskProgressUIResourceURI,
 		protocol.FileChangeUIResourceURI,
 		protocol.DynamicMCPUIResourceURI,

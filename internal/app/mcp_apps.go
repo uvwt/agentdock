@@ -34,19 +34,15 @@ func (binding UIBinding) Trigger(mode config.MCPAppsMode) (UITrigger, bool) {
 }
 
 var toolUIBindings = map[string]UIBinding{
-	"view_image":        {ResourceURI: protocol.ImageUIResourceURI},
-	"agentdock_context": {ResourceURI: protocol.ContextUIResourceURI},
-	"workspace_context": {ResourceURI: protocol.WorkspaceUIResourceURI},
+	"view_image":        {ResourceURI: protocol.ImageUIResourceURI, Compact: &UITrigger{}},
+	"agentdock_context": {ResourceURI: protocol.ContextUIResourceURI, Compact: &UITrigger{}},
+	"workspace_context": {ResourceURI: protocol.WorkspaceUIResourceURI, Compact: &UITrigger{}},
 	"file_edit":         {ResourceURI: protocol.FileChangeUIResourceURI},
-	"task_manage": {
-		ResourceURI: protocol.TaskProgressUIResourceURI,
-		Compact:     &UITrigger{Action: "create"},
-	},
-	"acp_session": {ResourceURI: protocol.ACPStatusUIResourceURI},
+	"task_manage":       {ResourceURI: protocol.TaskProgressUIResourceURI},
+	"acp_session":       {ResourceURI: protocol.ACPStatusUIResourceURI},
 	"workflow_template_manage": {
 		ResourceURI: protocol.WorkflowUIResourceURI,
 		Action:      "match",
-		Compact:     &UITrigger{Action: "match"},
 	},
 	"mcp_tool_call": {ResourceURI: protocol.DynamicMCPUIResourceURI},
 	"recall_write":  {ResourceURI: protocol.RecallUIResourceURI},
