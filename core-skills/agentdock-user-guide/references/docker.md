@@ -35,7 +35,7 @@ services:
     environment:
       AGENTDOCK_PORT: "8765"
       AGENTDOCK_LOG_LEVEL: info
-      AGENTDOCK_MCP_APPS_ENABLED: "true"
+      AGENTDOCK_MCP_APPS_MODE: "full"
 ```
 
 认证 Token、OAuth 密码和签名密钥不应提交到公开 Compose 文件；使用部署环境的 secret/env 管理方式，并避免在 `docker inspect`、日志或回复中回显真实值。

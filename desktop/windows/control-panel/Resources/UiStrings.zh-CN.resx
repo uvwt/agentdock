@@ -138,8 +138,17 @@
   <data name="LogLevel" xml:space="preserve">
     <value>日志级别</value>
   </data>
-  <data name="EnableMcpAppsUi" xml:space="preserve">
-    <value>启用 MCP Apps UI</value>
+  <data name="ChatCards" xml:space="preserve">
+    <value>聊天卡片</value>
+  </data>
+  <data name="ChatCardsFull" xml:space="preserve">
+    <value>完整</value>
+  </data>
+  <data name="ChatCardsCompact" xml:space="preserve">
+    <value>精简</value>
+  </data>
+  <data name="ChatCardsOff" xml:space="preserve">
+    <value>关闭</value>
   </data>
   <data name="Address" xml:space="preserve">
     <value>地址</value>

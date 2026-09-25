@@ -47,22 +47,40 @@ func TestFromEnvParsesCommandEnvironmentMapping(t *testing.T) {
 	}
 }
 
-func TestFromEnvMCPAppsEnabledDefaultsAndOverride(t *testing.T) {
+func TestFromEnvMCPAppsModeDefaultsAndMigratesLegacyBool(t *testing.T) {
+	t.Setenv("AGENTDOCK_MCP_APPS_MODE", "")
+	t.Setenv("AGENTDOCK_MCP_APPS_ENABLED", "")
 	cfg, err := FromEnv()
 	if err != nil {
 		t.Fatalf("FromEnv() error = %v", err)
 	}
-	if !cfg.MCPAppsEnabled {
-		t.Fatal("MCPAppsEnabled = false, want true by default")
+	if cfg.MCPAppsMode != MCPAppsModeFull {
+		t.Fatalf("MCPAppsMode = %q, want full by default", cfg.MCPAppsMode)
 	}
 
 	t.Setenv("AGENTDOCK_MCP_APPS_ENABLED", "false")
 	cfg, err = FromEnv()
 	if err != nil {
-		t.Fatalf("FromEnv() with override error = %v", err)
+		t.Fatalf("FromEnv() with legacy false error = %v", err)
 	}
-	if cfg.MCPAppsEnabled {
-		t.Fatal("MCPAppsEnabled = true, want false from environment override")
+	if cfg.MCPAppsMode != MCPAppsModeOff {
+		t.Fatalf("MCPAppsMode = %q, want off from legacy false", cfg.MCPAppsMode)
+	}
+
+	t.Setenv("AGENTDOCK_MCP_APPS_MODE", "compact")
+	cfg, err = FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() with mode error = %v", err)
+	}
+	if cfg.MCPAppsMode != MCPAppsModeCompact {
+		t.Fatalf("MCPAppsMode = %q, want compact; explicit mode must win over legacy bool", cfg.MCPAppsMode)
+	}
+}
+
+func TestFromEnvRejectsInvalidMCPAppsMode(t *testing.T) {
+	t.Setenv("AGENTDOCK_MCP_APPS_MODE", "custom")
+	if _, err := FromEnv(); err == nil || !strings.Contains(err.Error(), "AGENTDOCK_MCP_APPS_MODE") {
+		t.Fatalf("FromEnv() error = %v, want MCP Apps mode validation error", err)
 	}
 }
 

@@ -61,6 +61,10 @@ public sealed class RuntimeService : IDisposable
         {
             settings.LogLevel = "info";
         }
+        settings.McpAppsMode = string.IsNullOrWhiteSpace(settings.McpAppsMode)
+            ? settings.LegacyMcpAppsEnabled == false ? "off" : "full"
+            : settings.McpAppsMode.Trim().ToLowerInvariant();
+        settings.LegacyMcpAppsEnabled = null;
         settings.AcpProfiles ??= [];
         if (settings.AcpProfiles.Count == 0)
         {
@@ -415,7 +419,7 @@ public sealed class RuntimeService : IDisposable
             "--port", settings.Port.ToString(),
             "--log-level", settings.LogLevel,
             "--oauth-access-token-ttl", settings.OAuthAccessTokenTtl ?? "",
-            $"--mcp-apps-enabled={settings.McpAppsEnabled.ToString().ToLowerInvariant()}",
+            "--mcp-apps-mode", settings.McpAppsMode,
             $"--browser-enabled={settings.BrowserEnabled.ToString().ToLowerInvariant()}",
             "--browser-cdp-url", settings.BrowserCdpUrl ?? "",
             $"--browser-reuse-existing-cdp={settings.BrowserReuseExistingCdp.ToString().ToLowerInvariant()}",

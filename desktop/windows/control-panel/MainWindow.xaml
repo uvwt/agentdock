@@ -167,7 +167,12 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <CheckBox x:Name="McpAppsEnabledCheckBox" Grid.Row="0" Grid.ColumnSpan="2" Content="{local:Loc EnableMcpAppsUi}" Margin="0,4,0,12" />
+                <TextBlock Text="{local:Loc ChatCards}" Grid.Row="0" VerticalAlignment="Center" Margin="0,0,0,12" />
+                <ComboBox x:Name="McpAppsModeComboBox" Grid.Row="0" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,12">
+                  <ComboBoxItem Content="{local:Loc ChatCardsFull}" Tag="full" />
+                  <ComboBoxItem Content="{local:Loc ChatCardsCompact}" Tag="compact" />
+                  <ComboBoxItem Content="{local:Loc ChatCardsOff}" Tag="off" />
+                </ComboBox>
                 <TextBlock Text="{local:Loc Port}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
                 <TextBox x:Name="PortTextBox" Grid.Row="1" Grid.Column="1" Width="130" HorizontalAlignment="Left" Margin="0,0,0,10" />
                 <TextBlock Text="{local:Loc LogLevel}" Grid.Row="2" VerticalAlignment="Center" Margin="0,0,0,10" />

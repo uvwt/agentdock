@@ -64,12 +64,12 @@ func assertResourceUIMeta(t *testing.T, meta mcpsdk.Meta, domain string) {
 }
 
 func newMCPAppTestHarness(t *testing.T, cfg config.Config) *mcpAppTestHarness {
-	return newMCPAppTestHarnessWithApps(t, cfg, true)
+	return newMCPAppTestHarnessWithMode(t, cfg, config.MCPAppsModeFull)
 }
 
-func newMCPAppTestHarnessWithApps(t *testing.T, cfg config.Config, enabled bool) *mcpAppTestHarness {
+func newMCPAppTestHarnessWithMode(t *testing.T, cfg config.Config, mode config.MCPAppsMode) *mcpAppTestHarness {
 	t.Helper()
-	cfg.MCPAppsEnabled = enabled
+	cfg.MCPAppsMode = mode
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
 	}
@@ -109,7 +109,7 @@ func newMCPAppTestHarnessWithApps(t *testing.T, cfg config.Config, enabled bool)
 }
 
 func TestUIResourcesMatchServedResourceRegistry(t *testing.T) {
-	server := &Server{cfg: config.Config{NexusEndpoint: "https://nexus.example.test", ACPEnabled: true, MCPAppsEnabled: true}}
+	server := &Server{cfg: config.Config{NexusEndpoint: "https://nexus.example.test", ACPEnabled: true, MCPAppsMode: config.MCPAppsModeFull}}
 	definitions := server.appResourceDefinitions()
 	resources := server.UIResources()
 	if len(definitions) != 10 || len(resources) != len(definitions) {
@@ -139,10 +139,10 @@ func TestUIResourcesMatchServedResourceRegistry(t *testing.T) {
 
 func TestMCPAppsCanBeDisabledWithoutRemovingTools(t *testing.T) {
 	root := t.TempDir()
-	harness := newMCPAppTestHarnessWithApps(t, config.Config{
+	harness := newMCPAppTestHarnessWithMode(t, config.Config{
 		AgentDockDefaultDir: root,
 		AgentDockHome:       filepath.Join(root, ".agentdock"),
-	}, false)
+	}, config.MCPAppsModeOff)
 
 	tools := map[string]*mcpsdk.Tool{}
 	for tool, err := range harness.session.Tools(t.Context(), nil) {
@@ -178,6 +178,71 @@ func TestMCPAppsCanBeDisabledWithoutRemovingTools(t *testing.T) {
 	}
 	if _, err := harness.server.ReadAppResource(protocol.ContextUIResourceURI); err == nil {
 		t.Fatal("ReadAppResource() served an MCP App while disabled")
+	}
+}
+
+func TestMCPAppsCompactFiltersBindingsButKeepsResources(t *testing.T) {
+	root := t.TempDir()
+	harness := newMCPAppTestHarnessWithMode(t, config.Config{
+		AgentDockDefaultDir: root,
+		AgentDockHome:       filepath.Join(root, ".agentdock"),
+	}, config.MCPAppsModeCompact)
+
+	tools := map[string]*mcpsdk.Tool{}
+	for tool, err := range harness.session.Tools(t.Context(), nil) {
+		if err != nil {
+			t.Fatalf("Tools() error = %v", err)
+		}
+		tools[tool.Name] = tool
+	}
+	for _, name := range []string{"agentdock_context", "file_edit", "task_manage", "mcp_tool_call"} {
+		if ui := tools[name].Meta["ui"]; ui != nil {
+			t.Fatalf("%s should not attach descriptor UI in compact mode: %#v", name, ui)
+		}
+	}
+	assertToolUIResource(t, tools["file_publish"], protocol.ArtifactUIResourceURI, "file_arg_rewrite_paths", "openai/fileParams")
+
+	taskDef, ok := harness.runtime.ToolDefinition("task_manage")
+	if !ok {
+		t.Fatal("task_manage definition missing")
+	}
+	if meta := toolResultMetadata(taskDef, map[string]any{"action": "create"}, config.MCPAppsModeCompact); meta["ui"] == nil {
+		t.Fatalf("task create should attach Task Progress UI in compact mode: %#v", meta)
+	}
+	for _, action := range []string{"checkpoint", "block", "resume", "final_review", "complete"} {
+		if meta := toolResultMetadata(taskDef, map[string]any{"action": action}, config.MCPAppsModeCompact); len(meta) != 0 {
+			t.Fatalf("task %s should not create a new UI card in compact mode: %#v", action, meta)
+		}
+	}
+
+	workflowDef, ok := toolDefinition("workflow_template_manage")
+	if !ok {
+		t.Fatal("workflow_template_manage definition missing")
+	}
+	if meta := toolResultMetadata(workflowDef, map[string]any{"action": "match"}, config.MCPAppsModeCompact); meta["ui"] == nil {
+		t.Fatalf("workflow match should attach UI in compact mode: %#v", meta)
+	}
+	if meta := toolResultMetadata(workflowDef, map[string]any{"action": "list"}, config.MCPAppsModeCompact); len(meta) != 0 {
+		t.Fatalf("workflow list should not attach UI in compact mode: %#v", meta)
+	}
+
+	resources := map[string]bool{}
+	for resource, err := range harness.session.Resources(t.Context(), nil) {
+		if err != nil {
+			t.Fatalf("Resources() error = %v", err)
+		}
+		resources[resource.URI] = true
+	}
+	for _, uri := range []string{
+		protocol.ContextUIResourceURI,
+		protocol.TaskProgressUIResourceURI,
+		protocol.FileChangeUIResourceURI,
+		protocol.DynamicMCPUIResourceURI,
+		protocol.ArtifactUIResourceURI,
+	} {
+		if !resources[uri] {
+			t.Fatalf("compact mode removed readable resource %s: %#v", uri, resources)
+		}
 	}
 }
 
@@ -549,12 +614,12 @@ func TestMCPAppsExposeNexusViewsWhenNexusEnabled(t *testing.T) {
 	if !ok {
 		t.Fatal("workflow_template_manage definition missing")
 	}
-	matchMeta := toolResultMetadata(workflowDef, map[string]any{"action": "match"}, true)
+	matchMeta := toolResultMetadata(workflowDef, map[string]any{"action": "match"}, config.MCPAppsModeFull)
 	matchUI, ok := matchMeta["ui"].(map[string]any)
 	if !ok || matchUI["resourceUri"] != protocol.WorkflowUIResourceURI {
 		t.Fatalf("workflow match result UI metadata = %#v", matchMeta)
 	}
-	if meta := toolResultMetadata(workflowDef, map[string]any{"action": "list"}, true); len(meta) != 0 {
+	if meta := toolResultMetadata(workflowDef, map[string]any{"action": "list"}, config.MCPAppsModeFull); len(meta) != 0 {
 		t.Fatalf("workflow list should not bind result UI: %#v", meta)
 	}
 	if tool := tools["recall_bootstrap"]; tool != nil {

@@ -1,25 +1,59 @@
 package app
 
-import protocol "github.com/uvwt/agentdock-protocol"
+import (
+	protocol "github.com/uvwt/agentdock-protocol"
+	"github.com/uvwt/agentdock/internal/config"
+)
+
+// UITrigger describes whether a binding is descriptor-level or scoped to one tool action.
+type UITrigger struct {
+	Action string
+}
 
 // UIBinding describes when a tool should attach an MCP App resource to its descriptor or result.
-// It is deliberately separate from the resource registry: binding a result does not prove that a node can serve the resource.
+// Full preserves today's behavior. Compact is opt-in per binding so new high-frequency views
+// do not silently enter compact mode.
 type UIBinding struct {
 	ResourceURI string
 	Action      string
+	Compact     *UITrigger
+}
+
+func (binding UIBinding) Trigger(mode config.MCPAppsMode) (UITrigger, bool) {
+	switch mode {
+	case config.MCPAppsModeOff:
+		return UITrigger{}, false
+	case config.MCPAppsModeCompact:
+		if binding.Compact == nil {
+			return UITrigger{}, false
+		}
+		return *binding.Compact, true
+	default:
+		return UITrigger{Action: binding.Action}, true
+	}
 }
 
 var toolUIBindings = map[string]UIBinding{
-	"view_image":               {ResourceURI: protocol.ImageUIResourceURI},
-	"agentdock_context":        {ResourceURI: protocol.ContextUIResourceURI},
-	"workspace_context":        {ResourceURI: protocol.WorkspaceUIResourceURI},
-	"file_edit":                {ResourceURI: protocol.FileChangeUIResourceURI},
-	"task_manage":              {ResourceURI: protocol.TaskProgressUIResourceURI},
-	"acp_session":              {ResourceURI: protocol.ACPStatusUIResourceURI},
-	"workflow_template_manage": {ResourceURI: protocol.WorkflowUIResourceURI, Action: "match"},
-	"mcp_tool_call":            {ResourceURI: protocol.DynamicMCPUIResourceURI},
-	"recall_write":             {ResourceURI: protocol.RecallUIResourceURI},
-	"file_publish":             {ResourceURI: protocol.ArtifactUIResourceURI},
+	"view_image":        {ResourceURI: protocol.ImageUIResourceURI},
+	"agentdock_context": {ResourceURI: protocol.ContextUIResourceURI},
+	"workspace_context": {ResourceURI: protocol.WorkspaceUIResourceURI},
+	"file_edit":         {ResourceURI: protocol.FileChangeUIResourceURI},
+	"task_manage": {
+		ResourceURI: protocol.TaskProgressUIResourceURI,
+		Compact:     &UITrigger{Action: "create"},
+	},
+	"acp_session": {ResourceURI: protocol.ACPStatusUIResourceURI},
+	"workflow_template_manage": {
+		ResourceURI: protocol.WorkflowUIResourceURI,
+		Action:      "match",
+		Compact:     &UITrigger{Action: "match"},
+	},
+	"mcp_tool_call": {ResourceURI: protocol.DynamicMCPUIResourceURI},
+	"recall_write":  {ResourceURI: protocol.RecallUIResourceURI},
+	"file_publish": {
+		ResourceURI: protocol.ArtifactUIResourceURI,
+		Compact:     &UITrigger{},
+	},
 }
 
 func toolUIBinding(name string) *UIBinding {

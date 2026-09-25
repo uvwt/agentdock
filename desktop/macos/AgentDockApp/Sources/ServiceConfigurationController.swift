@@ -4,7 +4,7 @@ import Foundation
 struct EditableServiceSettings {
     let port: Int
     let logLevel: String
-    let mcpAppsEnabled: Bool
+    let mcpAppsMode: MCPAppsMode
     let browserEnabled: Bool
     let browserCDPURL: String
     let browserReuseExistingCDP: Bool
@@ -15,7 +15,7 @@ struct EditableServiceSettings {
     init(
         port: Int,
         logLevel: String,
-        mcpAppsEnabled: Bool,
+        mcpAppsMode: MCPAppsMode,
         browserEnabled: Bool,
         browserCDPURL: String,
         browserReuseExistingCDP: Bool,
@@ -25,7 +25,7 @@ struct EditableServiceSettings {
     ) {
         self.port = port
         self.logLevel = logLevel
-        self.mcpAppsEnabled = mcpAppsEnabled
+        self.mcpAppsMode = mcpAppsMode
         self.browserEnabled = browserEnabled
         self.browserCDPURL = browserCDPURL
         self.browserReuseExistingCDP = browserReuseExistingCDP
@@ -109,7 +109,7 @@ struct EditableServiceSettings {
         return EditableServiceSettings(
             port: port,
             logLevel: normalizedLogLevel,
-            mcpAppsEnabled: mcpAppsEnabled,
+            mcpAppsMode: mcpAppsMode,
             browserEnabled: browserEnabled,
             browserCDPURL: browserCDPURL,
             browserReuseExistingCDP: browserReuseExistingCDP,
@@ -166,7 +166,7 @@ final class ServiceConfigurationController {
         let replacements = [
             "AGENTDOCK_PORT": String(settings.port),
             "AGENTDOCK_LOG_LEVEL": settings.logLevel,
-            "AGENTDOCK_MCP_APPS_ENABLED": settings.mcpAppsEnabled ? "true" : "false",
+            "AGENTDOCK_MCP_APPS_MODE": settings.mcpAppsMode.rawValue,
             "AGENTDOCK_BROWSER_ENABLED": settings.browserEnabled ? "true" : "false",
             "AGENTDOCK_BROWSER_CDP_URL": settings.browserCDPURL,
             "AGENTDOCK_BROWSER_REUSE_EXISTING_CDP": settings.browserReuseExistingCDP ? "true" : "false",

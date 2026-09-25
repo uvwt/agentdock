@@ -61,9 +61,11 @@ struct InstallerConfigurationTests {
             .appendingPathComponent("agentdock-service-config-\(UUID().uuidString).env")
         defer { try? FileManager.default.removeItem(at: serviceEnvironmentURL) }
         try Data("AGENTDOCK_PORT=8765\n".utf8).write(to: serviceEnvironmentURL)
-        precondition(ServiceConfiguration.load(from: serviceEnvironmentURL)?.mcpAppsEnabled == true)
+        precondition(ServiceConfiguration.load(from: serviceEnvironmentURL)?.mcpAppsMode == .full)
         try Data("AGENTDOCK_PORT=8765\nAGENTDOCK_MCP_APPS_ENABLED=false\n".utf8).write(to: serviceEnvironmentURL)
-        precondition(ServiceConfiguration.load(from: serviceEnvironmentURL)?.mcpAppsEnabled == false)
+        precondition(ServiceConfiguration.load(from: serviceEnvironmentURL)?.mcpAppsMode == .off)
+        try Data("AGENTDOCK_PORT=8765\nAGENTDOCK_MCP_APPS_ENABLED=false\nAGENTDOCK_MCP_APPS_MODE=compact\n".utf8).write(to: serviceEnvironmentURL)
+        precondition(ServiceConfiguration.load(from: serviceEnvironmentURL)?.mcpAppsMode == .compact)
 
         let nexusIdentityURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("agentdock-nexus-\(UUID().uuidString).json")

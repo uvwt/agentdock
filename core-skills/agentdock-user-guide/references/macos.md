@@ -18,7 +18,7 @@ $HOME/Library/Application Support/AgentDock/agentdock.env
 
 AgentDock.app 的高级设置控制器会读取这份文件，校验配置后原子写回，并保持私有文件权限。保存成功且 Core 已加载时，App 会重启 Core；如果新配置启动失败，会尝试恢复旧配置并再次重启。
 
-常见可编辑项包括：端口、日志级别、MCP Apps UI、浏览器、已有 CDP、ACP Agent 与 ACP Adapter 参数。
+常见可编辑项包括：端口、日志级别、聊天卡片、浏览器、已有 CDP、ACP Agent 与 ACP Adapter 参数。
 
 ## 推荐修改方式
 

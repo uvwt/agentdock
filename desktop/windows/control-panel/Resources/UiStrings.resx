@@ -138,8 +138,17 @@
   <data name="LogLevel" xml:space="preserve">
     <value>Log level</value>
   </data>
-  <data name="EnableMcpAppsUi" xml:space="preserve">
-    <value>Enable MCP Apps UI</value>
+  <data name="ChatCards" xml:space="preserve">
+    <value>Chat cards</value>
+  </data>
+  <data name="ChatCardsFull" xml:space="preserve">
+    <value>Full</value>
+  </data>
+  <data name="ChatCardsCompact" xml:space="preserve">
+    <value>Compact</value>
+  </data>
+  <data name="ChatCardsOff" xml:space="preserve">
+    <value>Off</value>
   </data>
   <data name="Address" xml:space="preserve">
     <value>Address</value>

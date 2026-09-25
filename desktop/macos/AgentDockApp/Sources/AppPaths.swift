@@ -34,11 +34,17 @@ struct AppPaths {
     }
 }
 
+enum MCPAppsMode: String, CaseIterable {
+    case full
+    case compact
+    case off
+}
+
 struct ServiceConfiguration: Equatable {
     static let editableKeys = [
         "AGENTDOCK_PORT",
         "AGENTDOCK_LOG_LEVEL",
-        "AGENTDOCK_MCP_APPS_ENABLED",
+        "AGENTDOCK_MCP_APPS_MODE",
         "AGENTDOCK_BROWSER_ENABLED",
         "AGENTDOCK_BROWSER_CDP_URL",
         "AGENTDOCK_BROWSER_REUSE_EXISTING_CDP",
@@ -48,6 +54,7 @@ struct ServiceConfiguration: Equatable {
     ]
     // 旧配置键只用于读取迁移或已停止使用；新版保存时统一清除，避免继续形成双写状态。
     static let removableLegacyKeys: Set<String> = [
+        "AGENTDOCK_MCP_APPS_ENABLED",
         "AGENTDOCK_ACP_ALLOWED_ROOTS",
         "AGENTDOCK_ACP_AGENT",
         "AGENTDOCK_ACP_COMMAND",
@@ -63,7 +70,7 @@ struct ServiceConfiguration: Equatable {
     let authToken: String
     let oauthPassword: String
     let logLevel: String
-    let mcpAppsEnabled: Bool
+    let mcpAppsMode: MCPAppsMode
     let browserEnabled: Bool
     let browserCDPURL: String
     let browserReuseExistingCDP: Bool
@@ -103,6 +110,7 @@ struct ServiceConfiguration: Equatable {
         guard let port = Int(values["AGENTDOCK_PORT"] ?? "8765"), (1...65535).contains(port) else { return nil }
         let publicURL = values["AGENTDOCK_SERVER_URL"].flatMap { $0.isEmpty ? nil : $0 }
         let acpEnabled = parseBool(values["AGENTDOCK_ACP_ENABLED"])
+        guard let mcpAppsMode = parseMCPAppsMode(values) else { return nil }
         guard var acpProfiles = try? ACPDesktopConfiguration.decodeProfiles(values["AGENTDOCK_ACP_PROFILES_JSON"]) else {
             return nil
         }
@@ -136,7 +144,7 @@ struct ServiceConfiguration: Equatable {
             authToken: values["AGENTDOCK_AUTH_TOKEN"] ?? "",
             oauthPassword: values["AGENTDOCK_OAUTH_PASSWORD"] ?? "",
             logLevel: normalizedLogLevel(values["AGENTDOCK_LOG_LEVEL"] ?? "info"),
-            mcpAppsEnabled: parseBool(values["AGENTDOCK_MCP_APPS_ENABLED"], defaultValue: true),
+            mcpAppsMode: mcpAppsMode,
             browserEnabled: parseBool(values["AGENTDOCK_BROWSER_ENABLED"]),
             browserCDPURL: values["AGENTDOCK_BROWSER_CDP_URL"] ?? "",
             browserReuseExistingCDP: parseBool(values["AGENTDOCK_BROWSER_REUSE_EXISTING_CDP"]),
@@ -149,6 +157,14 @@ struct ServiceConfiguration: Equatable {
     static func normalizedLogLevel(_ raw: String) -> String {
         let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return value == "warning" ? "warn" : (value.isEmpty ? "info" : value)
+    }
+
+    private static func parseMCPAppsMode(_ values: [String: String]) -> MCPAppsMode? {
+        if let raw = values["AGENTDOCK_MCP_APPS_MODE"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !raw.isEmpty {
+            return MCPAppsMode(rawValue: raw.lowercased())
+        }
+        return parseBool(values["AGENTDOCK_MCP_APPS_ENABLED"], defaultValue: true) ? .full : .off
     }
 
     private static func decodeStringArray(_ raw: String?) -> [String] {

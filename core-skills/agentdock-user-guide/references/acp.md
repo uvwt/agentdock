@@ -101,7 +101,7 @@ macOS Desktop 会根据预设自动解析实际 Adapter 路径和参数，原子
 
 优先使用 AgentDock 控制面板管理 ACP Profiles。内置 Codex、Claude、Grok Build 使用固定 Profile ID 且各只能存在一个；Custom 可以创建多个独立 ID。Windows Desktop 会在 PATH、用户 npm 目录、WinGet 链接、Grok 安装目录等位置解析 Adapter；Codex / Claude 也会识别对应 npm package 的 Node.js 入口。
 
-如果必须使用 `agentdock config update`，先读取当前完整控制面板配置，再把端口、日志、浏览器、MCP Apps 等现有设置连同 ACP 设置一起提交；不要只传 ACP 参数导致其他桌面设置被默认值覆盖。
+如果必须使用 `agentdock config update`，先读取当前完整控制面板配置，再把端口、日志、浏览器、聊天卡片等现有设置连同 ACP 设置一起提交；不要只传 ACP 参数导致其他桌面设置被默认值覆盖。
 
 ### Linux、Docker 和直接运行二进制
 
