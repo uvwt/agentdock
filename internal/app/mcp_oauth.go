@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -107,7 +108,7 @@ func (r *Runtime) SetNexusOAuthCallback(publicURL, nodeID string) error {
 	})
 }
 
-func (r *Runtime) RuntimeMCPOAuthCallback(result oauthclient.CallbackResult) error {
+func (r *Runtime) RuntimeMCPOAuthCallback(_ context.Context, result oauthclient.CallbackResult) error {
 	if r == nil || r.dynamicMCP == nil {
 		return &ToolError{Code: "MCP_AUTH_UNSUPPORTED", Message: "Remote MCP OAuth is unavailable", Category: "not_found"}
 	}
