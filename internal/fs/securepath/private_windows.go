@@ -79,7 +79,7 @@ func privateDACLMatches(path string, desired *windows.ACL) bool {
 		return false
 	}
 	control, _, err := descriptor.Control()
-	if err != nil || control&windows.SE_DACL_PROTECTED == 0 {
+	if err != nil || control&windows.SE_DACL_PRESENT == 0 || control&windows.SE_DACL_PROTECTED == 0 {
 		return false
 	}
 	current, _, err := descriptor.DACL()
@@ -131,11 +131,34 @@ func readPrivateACE(acl *windows.ACL, index uint32) (privateACE, bool) {
 	if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
 		return privateACE{}, false
 	}
-	sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+
+	// ACCESS_ALLOWED_ACE 的 SID 从 SidStart（偏移 8）开始。先只读取固定 8 字节 SID
+	// 头里的 SubAuthorityCount，再用 AceSize 约束完整 SID 长度；不能直接把 ACL 内部指针
+	// 交给 Win32 SID API，否则损坏的 ACE 可能让 API 读过当前 ACE 边界。
+	const sidHeaderSize = 8
+	sidOffset := int(unsafe.Offsetof(ace.SidStart))
+	aceSize := int(ace.Header.AceSize)
+	if aceSize < sidOffset+sidHeaderSize {
+		return privateACE{}, false
+	}
+	sidBytes := unsafe.Slice((*byte)(unsafe.Pointer(&ace.SidStart)), aceSize-sidOffset)
+	sidLength := sidHeaderSize + int(sidBytes[1])*4
+	if sidLength > len(sidBytes) {
+		return privateACE{}, false
+	}
+	sidCopy := append([]byte(nil), sidBytes[:sidLength]...)
+	sid := (*windows.SID)(unsafe.Pointer(&sidCopy[0]))
+	if !sid.IsValid() || sid.Len() != sidLength {
+		return privateACE{}, false
+	}
+	sidText := sid.String()
+	if sidText == "" {
+		return privateACE{}, false
+	}
 	return privateACE{
 		typeID: ace.Header.AceType,
 		flags:  ace.Header.AceFlags,
 		mask:   ace.Mask,
-		sid:    sid.String(),
+		sid:    sidText,
 	}, true
 }
