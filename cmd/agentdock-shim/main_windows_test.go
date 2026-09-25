@@ -39,6 +39,20 @@ func TestTrayRequiresWaitOnlyDetachesNormalBackgroundLaunches(t *testing.T) {
 	}
 }
 
+func TestShimBackgroundCoreForwardingKeepsNoConsolePolicy(t *testing.T) {
+	source, err := os.ReadFile("main_windows.go")
+	if err != nil {
+		t.Fatalf("read main_windows.go: %v", err)
+	}
+	text := string(source)
+	if !strings.Contains(text, "if !tray && !shimHasConsoleWindow()") {
+		t.Fatal("background stable Core shim must distinguish no-console parent launches")
+	}
+	if !strings.Contains(text, "processctl.Configure(command)") {
+		t.Fatal("background stable Core shim must propagate the Windows no-console policy to the generation Core")
+	}
+}
+
 func TestCoreLaunchRequiresParentLifetimeOnlyForServiceHost(t *testing.T) {
 	tests := []struct {
 		name string

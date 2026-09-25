@@ -98,7 +98,7 @@ func stopCore(ctx context.Context, manifest Manifest, runtimeRoot string) error 
 		return fmt.Errorf("识别 Tunnel supervisor 失败: %w", err)
 	}
 	if supervisorPID != 0 {
-		// Core 与 Tunnel supervisor 共用 agentdock.exe。停止 Core 时必须保留 supervisor，
+		// Core 与 Tunnel supervisor 共用当前 generation Core 二进制。停止 Core 时必须保留 supervisor，
 		// 否则一次普通 Core 重启就会悄悄丢失 Tunnel 的后续自恢复能力。
 		excluded[supervisorPID] = struct{}{}
 	}
