@@ -7,21 +7,174 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag, for example v0.1.0'
-        required: true
+        description: 'Release tag, for example v0.1.0. Ignored when signpath_review is enabled.'
+        required: false
         type: string
+      signpath_review:
+        description: 'Run the SignPath Foundation production-shaped test-signing review path only'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: release-publication
   cancel-in-progress: false
 
 permissions:
+  actions: read
   contents: write
   packages: write
 
 jobs:
+  signpath-review:
+    name: SignPath Foundation review build
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.signpath_review }}
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Resolve Windows version
+        id: version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (go run ./tools/release version).Trim()
+          $parts = @($version.Split('.'))
+          if ($parts.Count -lt 1 -or $parts.Count -gt 4 -or @($parts | Where-Object { $_ -notmatch '^\d+$' }).Count -ne 0) {
+            throw "AgentDock release version cannot be represented as Windows VersionInfo: $version"
+          }
+          while ($parts.Count -lt 4) { $parts += '0' }
+          $windowsVersion = $parts -join '.'
+          "windows=$windowsVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding ascii -Append
+
+      - name: Build AgentDock Windows signing set
+        shell: pwsh
+        env:
+          CGO_ENABLED: '0'
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $buildDate = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+          $sourceCommit = (git rev-parse HEAD).Trim()
+          $ldflags = "-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Commit=$sourceCommit -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=$buildDate"
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          go build -trimpath -ldflags $ldflags -o dist/agentdock.exe ./cmd/agentdock
+          go build -trimpath -ldflags '-s -w' -o dist/agentdock-arbiter.exe ./cmd/agentdock-arbiter
+          go build -trimpath -ldflags '-s -w' -o dist/agentdock-shim.exe ./cmd/agentdock-shim
+          go build -trimpath -ldflags '-s -w -H=windowsgui' -o dist/agentdock-tray-shim.exe ./cmd/agentdock-shim
+          dotnet publish .\desktop\windows\control-panel\AgentDock.ControlPanel.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -o dist\control-panel
+          Copy-Item .\dist\control-panel\agentdock-tray.exe .\dist\agentdock-tray.exe -Force
+
+          .\packaging\windows\set-version-info.ps1 `
+            -Version '${{ steps.version.outputs.windows }}' `
+            -Path @(
+              '.\dist\agentdock.exe',
+              '.\dist\agentdock-tray.exe',
+              '.\dist\agentdock-arbiter.exe',
+              '.\dist\agentdock-shim.exe',
+              '.\dist\agentdock-tray-shim.exe'
+            )
+
+      - name: Upload unsigned SignPath review artifact
+        id: upload-signpath-review
+        uses: actions/upload-artifact@v7
+        with:
+          name: agentdock-signpath-review
+          path: |
+            dist/agentdock.exe
+            dist/agentdock-tray.exe
+            dist/agentdock-arbiter.exe
+            dist/agentdock-shim.exe
+            dist/agentdock-tray-shim.exe
+          if-no-files-found: error
+
+      - name: Submit SignPath test signing request
+        id: signpath-review
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: '2060dca2-f271-4d29-b2b3-1618dd7ac409'
+          project-slug: agentdock
+          signing-policy-slug: test-signing
+          artifact-configuration-slug: windows-binaries
+          github-artifact-id: ${{ steps.upload-signpath-review.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: ${{ runner.temp }}\signpath-signed
+          parameters: |
+            version: ${{ toJSON(steps.version.outputs.windows) }}
+
+      - name: Verify SignPath test-signed binaries
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $signedRoot = Join-Path $env:RUNNER_TEMP 'signpath-signed'
+          $expectedNames = @(
+            'agentdock.exe',
+            'agentdock-tray.exe',
+            'agentdock-arbiter.exe',
+            'agentdock-shim.exe',
+            'agentdock-tray-shim.exe'
+          )
+          $expectedThumbprint = '803C2EBAEE1907BF990CA761A57ADF31AD78AA12'
+          $expectedSubject = "CN=Test certificate for 'AgentDock [OSS]'"
+          $expectedVersion = '${{ steps.version.outputs.windows }}'
+
+          $signedFiles = @(Get-ChildItem -LiteralPath $signedRoot -Recurse -File -Filter '*.exe')
+          $actualNames = @($signedFiles | ForEach-Object Name | Sort-Object)
+          $wantedNames = @($expectedNames | Sort-Object)
+          if (($actualNames -join "`n") -ne ($wantedNames -join "`n")) {
+            throw "Unexpected SignPath output files. Expected: $($wantedNames -join ', '); actual: $($actualNames -join ', ')"
+          }
+
+          foreach ($file in $signedFiles) {
+            $signature = Get-AuthenticodeSignature -LiteralPath $file.FullName
+            if (-not $signature.SignerCertificate) {
+              throw "Missing Authenticode signer certificate: $($file.Name)"
+            }
+            if ($signature.SignerCertificate.Thumbprint -ne $expectedThumbprint) {
+              throw "Unexpected SignPath test signer thumbprint for $($file.Name): $($signature.SignerCertificate.Thumbprint)"
+            }
+            if ($signature.SignerCertificate.Subject -ne $expectedSubject) {
+              throw "Unexpected SignPath test signer subject for $($file.Name): $($signature.SignerCertificate.Subject)"
+            }
+            if ($signature.Status -notin @(
+              [Management.Automation.SignatureStatus]::Valid,
+              [Management.Automation.SignatureStatus]::UnknownError
+            )) {
+              throw "Invalid Authenticode status for $($file.Name): $($signature.Status) - $($signature.StatusMessage)"
+            }
+
+            $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($file.FullName)
+            if ($info.ProductName -ne 'AgentDock' -or
+                $info.CompanyName -ne 'AgentDock' -or
+                $info.ProductVersion -ne $expectedVersion -or
+                $info.FileVersion -ne $expectedVersion -or
+                $info.OriginalFilename -ne $file.Name -or
+                $info.LegalCopyright -ne 'Copyright AgentDock contributors') {
+              throw "Signed VersionInfo mismatch for $($file.Name)."
+            }
+          }
+
   source:
     name: Validate release source
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.signpath_review }}
     runs-on: ubuntu-latest
     outputs:
       commit: ${{ steps.source.outputs.commit }}
@@ -313,6 +466,17 @@ jobs:
             --self-contained true `
             -o dist\control-panel
           Copy-Item .\dist\control-panel\agentdock-tray.exe .\dist\agentdock-tray.exe -Force
+
+          $releaseVersion = '${{ needs.source.outputs.tag }}'.TrimStart('v')
+          .\packaging\windows\set-version-info.ps1 `
+            -Version $releaseVersion `
+            -Path @(
+              '.\dist\agentdock.exe',
+              '.\dist\agentdock-tray.exe',
+              '.\dist\agentdock-arbiter.exe',
+              '.\dist\agentdock-shim.exe',
+              '.\dist\agentdock-tray-shim.exe'
+            )
 
       - name: Authenticode sign and verify
         shell: pwsh
@@ -853,7 +1017,7 @@ jobs:
 
   release-gate:
     name: Release pre-publication gate
-    if: always()
+    if: ${{ always() && !(github.event_name == 'workflow_dispatch' && inputs.signpath_review) }}
     needs: [prepare-release, verify-linux-release, verify-macos-release, verify-windows-release]
     runs-on: ubuntu-latest
     steps:
@@ -905,6 +1069,8 @@ jobs:
           draft: true
           overwrite_files: true
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          body: |
+            **Code signing policy:** https://github.com/${{ github.repository }}/blob/main/docs/code-signing-policy.md
           files: |
             dist/*.tar.gz
             dist/*.tar.gz.sha256
