@@ -563,6 +563,30 @@
   <data name="ManagerFailedWithExitCode" xml:space="preserve">
     <value>AgentDock 管理程序执行失败，退出码：{0}。</value>
   </data>
+  <data name="ManagerFailedWithDetail" xml:space="preserve">
+    <value>AgentDock 提权执行 {0} {1} 失败，退出码：{2}。详情：{3}</value>
+  </data>
+  <data name="ManagerFailedResultMissing" xml:space="preserve">
+    <value>AgentDock 提权执行 {0} {1} 失败，退出码：{2}；未写入诊断结果。</value>
+  </data>
+  <data name="ManagerFailedResultInvalid" xml:space="preserve">
+    <value>AgentDock 提权执行 {0} {1} 的进程退出码为 {2}，但诊断结果与进程结果不一致。</value>
+  </data>
+  <data name="NoDiagnosticDetail" xml:space="preserve">
+    <value>未返回诊断详情。</value>
+  </data>
+  <data name="ElevatedCommandRequestMissing" xml:space="preserve">
+    <value>AgentDock 提权命令请求缺失或无效。</value>
+  </data>
+  <data name="ElevatedRetryFailed" xml:space="preserve">
+    <value>普通权限首次执行失败：{0}&#10;提权重试失败：{1}</value>
+  </data>
+  <data name="RuntimeActionStageFailed" xml:space="preserve">
+    <value>{0} {1} 执行失败：{2}</value>
+  </data>
+  <data name="UnsupportedElevatedCommand" xml:space="preserve">
+    <value>不支持的 AgentDock 提权命令：{0}</value>
+  </data>
   <data name="DeviceIdentityInvalid" xml:space="preserve">
     <value>设备身份文件无效，请重新配对。</value>
   </data>

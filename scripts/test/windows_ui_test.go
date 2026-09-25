@@ -71,6 +71,136 @@ func TestWindowsControlPanelSupportsPersistentLanguagePreference(t *testing.T) {
 	}
 }
 
+func TestWindowsControlPanelPersistsManagementFailureDiagnostics(t *testing.T) {
+	root := filepath.Join("..", "..", "desktop", "windows", "control-panel")
+	files := map[string]string{}
+	for _, relative := range []string{
+		"App.xaml.cs",
+		"MainWindow.xaml.cs",
+		filepath.Join("Services", "RuntimeService.cs"),
+		filepath.Join("Services", "TaskAdminService.cs"),
+		filepath.Join("Services", "ControlPanelDiagnostics.cs"),
+	} {
+		data, err := os.ReadFile(filepath.Join(root, relative))
+		if err != nil {
+			t.Fatalf("read %s: %v", relative, err)
+		}
+		files[relative] = string(data)
+	}
+
+	runtimeService := files[filepath.Join("Services", "RuntimeService.cs")]
+	for _, want := range []string{
+		`RunRuntimeStageAsync("core", "start"`,
+		`RunRuntimeStageAsync("tunnel", "start"`,
+		`RunRuntimeStageAsync("core", "restart"`,
+		`RunRuntimeStageAsync("tunnel", "stop"`,
+		`"--run-elevated-agentdock"`,
+		`"--operation-id", operationId`,
+		`"--request-sha256", requestLease.Sha256`,
+		`Environment.ProcessPath`,
+		`ControlPanelDiagnostics.CreateRequestLease(`,
+		`ControlPanelDiagnostics.ReadRequest(RuntimeRoot, operationId, requestSha256)`,
+		`ControlPanelDiagnostics.ReadResult(RuntimeRoot, operationId)`,
+		`"service" => action is "start" or "stop" or "restart" or "autostart"`,
+		`"tunnel" => action is "start" or "stop" or "restart" or "regenerate" or "configure"`,
+		`"config" => action == "update"`,
+		`"ManagerFailedResultMissing"`,
+		`"ManagerFailedResultInvalid"`,
+		`"ManagerFailedWithDetail"`,
+	} {
+		if !strings.Contains(runtimeService, want) {
+			t.Fatalf("RuntimeService.cs missing management diagnostic behavior %q", want)
+		}
+	}
+	for _, forbidden := range []string{`--result-file`, `--agentdock-command`, `--agentdock-argument`} {
+		if strings.Contains(runtimeService, forbidden) {
+			t.Fatalf("elevated management command line must not expose payload argument %q", forbidden)
+		}
+	}
+	readResult := strings.Index(runtimeService, `var result = ControlPanelDiagnostics.ReadResult(RuntimeRoot, operationId)`)
+	if readResult < 0 {
+		t.Fatal("elevated management result validation is missing")
+	}
+	successReturn := strings.Index(runtimeService[readResult:], `if (process.ExitCode == 0)`)
+	if successReturn < 0 {
+		t.Fatal("elevated management success must validate a diagnostic result before accepting exit code 0")
+	}
+	leaseDispose := strings.Index(runtimeService, `requestLease.Dispose()`)
+	deleteFiles := strings.Index(runtimeService, `ControlPanelDiagnostics.DeleteOperationFiles(RuntimeRoot, operationId)`)
+	if leaseDispose < 0 || deleteFiles < 0 || leaseDispose > deleteFiles {
+		t.Fatal("elevated request lease must be released before operation files are deleted")
+	}
+
+	app := files["App.xaml.cs"]
+	for _, want := range []string{
+		`e.Args.Any(argument => string.Equals(argument, "--run-elevated-agentdock"`,
+		`TryGetStartupRuntimeRoot(e.Args, "--run-elevated-agentdock"`,
+		`ControlPanelDiagnostics.IsValidOperationId(operationId)`,
+		`Environment.Exit(2)`,
+		`RunElevatedNativeCommandHostAsync(startupArguments)`,
+		`ControlPanelDiagnostics.RecordFailureExistingLog(`,
+		`Runtime.RecordControlPanelFailure("tray", action, ex)`,
+	} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("App.xaml.cs missing management diagnostic behavior %q", want)
+		}
+	}
+	elevatedMode := strings.Index(app, `"--run-elevated-agentdock"`)
+	singleInstance := strings.Index(app, `new Mutex(true, MutexName`)
+	if elevatedMode < 0 || singleInstance < 0 || elevatedMode > singleInstance {
+		t.Fatal("elevated command host must be handled before the control-panel single-instance mutex")
+	}
+
+	window := files["MainWindow.xaml.cs"]
+	for _, want := range []string{
+		`string.IsNullOrWhiteSpace(diagnosticAction) ? "manual-action" : diagnosticAction`,
+		`diagnosticAction: action`,
+		`"privilege-elevated"`,
+		`"privilege-standard"`,
+		`ControlPanelDiagnostics.LastNonEmptyLine(ex.Message)`,
+	} {
+		if !strings.Contains(window, want) {
+			t.Fatalf("MainWindow.xaml.cs missing manual action diagnostic behavior %q", want)
+		}
+	}
+
+	taskAdmin := files[filepath.Join("Services", "TaskAdminService.cs")]
+	for _, forbidden := range []string{`--operation-id`, `ControlPanelDiagnostics`} {
+		if strings.Contains(taskAdmin, forbidden) {
+			t.Fatalf("TaskAdminService.cs must keep its existing exit-code-only contract, found %q", forbidden)
+		}
+	}
+
+	diagnostics := files[filepath.Join("Services", "ControlPanelDiagnostics.cs")]
+	for _, want := range []string{
+		`Guid.TryParseExact(operationId, "N"`,
+		`ValidateOperationId(operationId) + ".request.json"`,
+		`ValidateOperationId(operationId) + ".result.json"`,
+		`FileMode.CreateNew`,
+		`FileAccess.ReadWrite`,
+		`FileShare.Read`,
+		`FileAccess.Read`,
+		`FileShare.ReadWrite`,
+		`SHA256.HashData(requestBytes)`,
+		`CryptographicOperations.FixedTimeEquals(actualHash, expectedHash)`,
+		`FileMode.Truncate`,
+		`RecordFailureCore(runtimeRoot, source, action, exception, createIfMissing: false)`,
+		`Path.Combine(logsDirectory, "control-panel.err.log")`,
+		`MaxResultDetailBytes = 8 * 1024`,
+		`MaxLogDetailBytes = 16 * 1024`,
+		`Encoding.UTF8.GetByteCount(detail)`,
+	} {
+		if !strings.Contains(diagnostics, want) {
+			t.Fatalf("ControlPanelDiagnostics.cs missing bounded diagnostic contract %q", want)
+		}
+	}
+	for _, forbidden := range []string{`WriteJsonAtomic(`, `File.Move(temporaryPath, path, overwrite: true)`} {
+		if strings.Contains(diagnostics, forbidden) {
+			t.Fatalf("elevated result must not replace the medium-integrity pre-created file, found %q", forbidden)
+		}
+	}
+}
+
 func TestWindowsControlPanelDynamicTextUsesSelectedResourceCulture(t *testing.T) {
 	path := filepath.Join("..", "..", "desktop", "windows", "control-panel", "Localization", "UiText.cs")
 	data, err := os.ReadFile(path)

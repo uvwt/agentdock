@@ -184,7 +184,11 @@ public partial class MainWindow : Window
         PublicTestStatusText.Text = result.Message;
     }
 
-    private async Task<bool> ExecuteActionAsync(string pendingText, Func<Task> action, TextBlock? statusTarget = null)
+    private async Task<bool> ExecuteActionAsync(
+        string pendingText,
+        Func<Task> action,
+        TextBlock? statusTarget = null,
+        string diagnosticAction = "")
     {
         statusTarget ??= FooterStatusText;
         statusTarget.Text = pendingText;
@@ -197,14 +201,19 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            statusTarget.Text = ex.Message;
-            MessageBox.Show(this, ex.Message, "AgentDock", MessageBoxButton.OK, MessageBoxImage.Error);
+            _runtime.RecordControlPanelFailure(
+                "window",
+                string.IsNullOrWhiteSpace(diagnosticAction) ? "manual-action" : diagnosticAction,
+                ex);
+            var displayMessage = ControlPanelDiagnostics.LastNonEmptyLine(ex.Message);
+            statusTarget.Text = displayMessage;
+            MessageBox.Show(this, displayMessage, "AgentDock", MessageBoxButton.OK, MessageBoxImage.Error);
             return false;
         }
     }
 
     private Task RunCoreActionAsync(string action, string pendingText) =>
-        ExecuteActionAsync(pendingText, () => _runtime.RunActionAsync(action));
+        ExecuteActionAsync(pendingText, () => _runtime.RunActionAsync(action), diagnosticAction: action);
 
     private async void StartButton_Click(object sender, RoutedEventArgs e) => await RunCoreActionAsync("start", UiText.Get("Starting"));
     private async void StopButton_Click(object sender, RoutedEventArgs e) => await RunCoreActionAsync("stop", UiText.Get("Stopping"));
@@ -302,7 +311,8 @@ public partial class MainWindow : Window
         await ExecuteActionAsync(
             UiText.Get("SwitchingPublicAccess"),
             () => _runtime.SetTunnelModeAsync(mode, ServerUrlTextBox.Text.Trim(), TunnelTokenPasswordBox.Password),
-            TunnelActionStatusText);
+            TunnelActionStatusText,
+            "tunnel-configure");
         TunnelTokenPasswordBox.Clear();
     }
 
@@ -315,7 +325,8 @@ public partial class MainWindow : Window
         await ExecuteActionAsync(
             UiText.Get("OldAddressHidden"),
             () => _runtime.RegenerateQuickTunnelAsync(),
-            TunnelActionStatusText);
+            TunnelActionStatusText,
+            "tunnel-regenerate");
     }
 
     private void AcpOverviewToggle_Changed(object sender, RoutedEventArgs e)
@@ -868,7 +879,8 @@ public partial class MainWindow : Window
         var saved = await ExecuteActionAsync(
             UiText.Get("SavingAndRestarting"),
             () => _runtime.SaveSettingsAsync(settings),
-            SettingsStatusText);
+            SettingsStatusText,
+            "settings-save");
         if (saved)
         {
             _acpProfiles = settings.AcpProfiles.Select(CloneAcpProfile).ToList();
@@ -892,7 +904,8 @@ public partial class MainWindow : Window
         var paired = await ExecuteActionAsync(
             UiText.Get("PairingAndRestarting"),
             () => _runtime.PairNexusAsync(endpoint, pairingCode),
-            NexusDeviceTokenStatusText);
+            NexusDeviceTokenStatusText,
+            "nexus-pair");
         if (paired)
         {
             NexusPairingCodePasswordBox.Clear();
@@ -916,8 +929,13 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            SettingsStatusText.Text = ex.Message;
-            MessageBox.Show(this, ex.Message, "AgentDock", MessageBoxButton.OK, MessageBoxImage.Error);
+            _runtime.RecordControlPanelFailure(
+                "window",
+                elevated ? "privilege-elevated" : "privilege-standard",
+                ex);
+            var displayMessage = ControlPanelDiagnostics.LastNonEmptyLine(ex.Message);
+            SettingsStatusText.Text = displayMessage;
+            MessageBox.Show(this, displayMessage, "AgentDock", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
@@ -935,7 +953,8 @@ public partial class MainWindow : Window
         await ExecuteActionAsync(
             UiText.Get("UpdatingCoreStartup"),
             () => _runtime.SetStartupAsync("core", CoreStartupCheckBox.IsChecked == true),
-            SettingsStatusText);
+            SettingsStatusText,
+            "core-autostart");
     }
 
     private async void TrayStartupCheckBox_Click(object sender, RoutedEventArgs e)
@@ -947,7 +966,8 @@ public partial class MainWindow : Window
         await ExecuteActionAsync(
             UiText.Get("UpdatingTrayStartup"),
             () => _runtime.SetStartupAsync("tray", TrayStartupCheckBox.IsChecked == true),
-            SettingsStatusText);
+            SettingsStatusText,
+            "tray-autostart");
     }
 
     private static string AgentDisplayName(string agent) => agent switch

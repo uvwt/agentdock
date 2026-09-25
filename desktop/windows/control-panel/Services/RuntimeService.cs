@@ -170,29 +170,51 @@ public sealed class RuntimeService : IDisposable
         switch (action)
         {
             case "start":
-                await RunCoreActionAsync("start", cancellationToken);
-                await RunTunnelActionAsync("start", cancellationToken);
+                await RunRuntimeStageAsync("core", "start", () => RunCoreActionAsync("start", cancellationToken));
+                await RunRuntimeStageAsync("tunnel", "start", () => RunTunnelActionAsync("start", cancellationToken));
                 break;
             case "stop":
-                await RunTunnelActionAsync("stop", cancellationToken);
-                await RunCoreActionAsync("stop", cancellationToken);
+                await RunRuntimeStageAsync("tunnel", "stop", () => RunTunnelActionAsync("stop", cancellationToken));
+                await RunRuntimeStageAsync("core", "stop", () => RunCoreActionAsync("stop", cancellationToken));
                 break;
             case "restart":
                 var mode = ReadText(Path.Combine(RuntimeRoot, "cloudflared-mode.txt")).ToLowerInvariant();
                 if (mode == "quick")
                 {
                     // Quick Tunnel 重建会清理旧地址、重启核心、等待新地址并再次应用 OAuth Origin。
-                    await RunTunnelActionAsync("regenerate", cancellationToken);
+                    await RunRuntimeStageAsync(
+                        "tunnel",
+                        "regenerate",
+                        () => RunTunnelActionAsync("regenerate", cancellationToken));
                 }
                 else
                 {
-                    await RunTunnelActionAsync("stop", cancellationToken);
-                    await RunCoreActionAsync("restart", cancellationToken);
-                    await RunTunnelActionAsync("start", cancellationToken);
+                    await RunRuntimeStageAsync("tunnel", "stop", () => RunTunnelActionAsync("stop", cancellationToken));
+                    await RunRuntimeStageAsync("core", "restart", () => RunCoreActionAsync("restart", cancellationToken));
+                    await RunRuntimeStageAsync("tunnel", "start", () => RunTunnelActionAsync("start", cancellationToken));
                 }
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action, UiText.Get("UnsupportedRuntimeAction"));
+        }
+    }
+
+    internal void RecordControlPanelFailure(string source, string action, Exception exception) =>
+        ControlPanelDiagnostics.RecordFailure(RuntimeRoot, source, action, exception);
+
+    private static async Task RunRuntimeStageAsync(string component, string stageAction, Func<Task> stage)
+    {
+        try
+        {
+            await stage();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new RuntimeActionStageException(component, stageAction, ex);
         }
     }
 
@@ -874,6 +896,78 @@ public sealed class RuntimeService : IDisposable
         return RunNativeAgentDockAsync("tunnel", [action], cancellationToken);
     }
 
+    internal async Task<int> RunElevatedNativeCommandHostAsync(
+        IReadOnlyList<string> startupArguments,
+        CancellationToken cancellationToken = default)
+    {
+        var operationId = ReadRequiredStartupArgument(startupArguments, "--operation-id");
+        var requestSha256 = ReadRequiredStartupArgument(startupArguments, "--request-sha256");
+        var request = ControlPanelDiagnostics.ReadRequest(RuntimeRoot, operationId, requestSha256)
+            ?? throw new InvalidOperationException(UiText.Get("ElevatedCommandRequestMissing"));
+        var command = request.Command.Trim().ToLowerInvariant();
+        var action = request.Arguments.FirstOrDefault()?.Trim().ToLowerInvariant() ?? "";
+        var exitCode = 1;
+        var detail = "";
+
+        try
+        {
+            if (!IsSupportedElevatedCommand(command, request.Arguments))
+            {
+                throw new InvalidOperationException(UiText.Format("UnsupportedElevatedCommand", $"{command} {action}".Trim()));
+            }
+
+            var binaryPath = await ResolveCoreBinaryAsync(cancellationToken);
+            var startInfo = CreateRedirectedProcessStartInfo(binaryPath);
+            startInfo.ArgumentList.Add(command);
+            foreach (var argument in request.Arguments)
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+            startInfo.ArgumentList.Add("--runtime-root");
+            startInfo.ArgumentList.Add(RuntimeRoot);
+
+            var result = await RunProcessResultAsync(startInfo, cancellationToken);
+            exitCode = result.ExitCode;
+            detail = result.ExitCode == 0
+                ? ""
+                : string.IsNullOrWhiteSpace(result.Error) ? result.Output : result.Error;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            detail = ex.Message;
+        }
+
+        _ = ControlPanelDiagnostics.TryWriteResult(
+            RuntimeRoot,
+            operationId,
+            command,
+            action,
+            exitCode,
+            detail);
+        return exitCode;
+    }
+
+    private static bool IsSupportedElevatedCommand(string command, IReadOnlyList<string> arguments)
+    {
+        if (arguments.Count == 0)
+        {
+            return false;
+        }
+
+        var action = arguments[0].Trim().ToLowerInvariant();
+        return command switch
+        {
+            "service" => action is "start" or "stop" or "restart" or "autostart",
+            "tunnel" => action is "start" or "stop" or "restart" or "regenerate" or "configure",
+            "config" => action == "update",
+            _ => false
+        };
+    }
+
     private async Task RunNativeAgentDockAsync(
         string command,
         IReadOnlyCollection<string> arguments,
@@ -896,14 +990,123 @@ public sealed class RuntimeService : IDisposable
         {
             _ = await RunProcessAsync(startInfo, cancellationToken);
         }
-        catch (InvalidOperationException) when (
+        catch (InvalidOperationException initialFailure) when (
             allowElevation &&
             string.Equals(manifest.PrivilegeMode, "elevated", StringComparison.OrdinalIgnoreCase))
         {
             // 最高权限计划任务启动的核心进程不能保证允许普通托盘终止。
             // 原生命令真正失败时才请求 UAC；命令设计为幂等，可安全重试已完成的前置状态变更。
-            await RunElevatedProcessAsync(binaryPath, commandArguments, cancellationToken);
+            // runas 无法重定向 stderr，因此复用当前 Tray 作为提权宿主，把真实 Core 结果写回诊断文件。
+            try
+            {
+                await RunElevatedNativeCommandAsync(command, arguments, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception elevatedFailure)
+            {
+                throw new InvalidOperationException(
+                    UiText.Format(
+                        "ElevatedRetryFailed",
+                        ControlPanelDiagnostics.LastNonEmptyLine(initialFailure.Message),
+                        elevatedFailure.Message),
+                    elevatedFailure);
+            }
         }
+    }
+
+    private async Task RunElevatedNativeCommandAsync(
+        string command,
+        IReadOnlyCollection<string> arguments,
+        CancellationToken cancellationToken)
+    {
+        // UAC 子进程必须与当前控制面板使用同一代代码。稳定 Tray shim 会重新解析 active
+        // generation；更新切代窗口内这可能把新内部参数转给另一代 Tray，造成诊断链自己失败。
+        var trayBinary = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(trayBinary) || !File.Exists(trayBinary))
+        {
+            throw new FileNotFoundException(UiText.Format("ManagementBinaryMissing", trayBinary ?? ""));
+        }
+
+        var operationId = ControlPanelDiagnostics.CreateOperationId();
+        var requestLease = ControlPanelDiagnostics.CreateRequestLease(
+            RuntimeRoot,
+            operationId,
+            command,
+            arguments);
+        var elevatedArguments = new[]
+        {
+            "--run-elevated-agentdock",
+            "--runtime-root", RuntimeRoot,
+            "--operation-id", operationId,
+            "--request-sha256", requestLease.Sha256
+        };
+
+        try
+        {
+            await RunElevatedCommandWithResultAsync(
+                trayBinary,
+                elevatedArguments,
+                command,
+                arguments.FirstOrDefault() ?? "",
+                operationId,
+                cancellationToken);
+        }
+        finally
+        {
+            requestLease.Dispose();
+            ControlPanelDiagnostics.DeleteOperationFiles(RuntimeRoot, operationId);
+        }
+    }
+
+    private async Task RunElevatedCommandWithResultAsync(
+        string binaryPath,
+        IReadOnlyCollection<string> arguments,
+        string command,
+        string action,
+        string operationId,
+        CancellationToken cancellationToken)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = binaryPath,
+            UseShellExecute = true,
+            Verb = "runas",
+            WindowStyle = ProcessWindowStyle.Hidden
+        };
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException(UiText.Get("ManagerStartFailed"));
+        await process.WaitForExitAsync(cancellationToken);
+
+        var result = ControlPanelDiagnostics.ReadResult(RuntimeRoot, operationId);
+        if (result is null)
+        {
+            throw new InvalidOperationException(
+                UiText.Format("ManagerFailedResultMissing", command, action, process.ExitCode));
+        }
+        if (!string.Equals(result.Command, command, StringComparison.Ordinal) ||
+            !string.Equals(result.Action, action, StringComparison.Ordinal) ||
+            result.ExitCode != process.ExitCode)
+        {
+            throw new InvalidOperationException(
+                UiText.Format("ManagerFailedResultInvalid", command, action, process.ExitCode));
+        }
+        if (process.ExitCode == 0)
+        {
+            return;
+        }
+
+        var detail = string.IsNullOrWhiteSpace(result.Detail)
+            ? UiText.Get("NoDiagnosticDetail")
+            : result.Detail;
+        throw new InvalidOperationException(
+            UiText.Format("ManagerFailedWithDetail", result.Command, result.Action, result.ExitCode, detail));
     }
 
     private static async Task RunElevatedProcessAsync(
@@ -929,6 +1132,24 @@ public sealed class RuntimeService : IDisposable
         {
             throw new InvalidOperationException(UiText.Format("ManagerFailedWithExitCode", process.ExitCode));
         }
+    }
+
+    private static string ReadRequiredStartupArgument(IReadOnlyList<string> arguments, string name)
+    {
+        for (var index = 0; index < arguments.Count - 1; index++)
+        {
+            if (!string.Equals(arguments[index], name, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            var value = arguments[index + 1];
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+            break;
+        }
+        throw new InvalidOperationException($"Missing control-panel argument: {name}");
     }
 
     private static ProcessStartInfo CreateRedirectedProcessStartInfo(string fileName)
@@ -992,7 +1213,9 @@ public sealed class RuntimeService : IDisposable
         }
     }
 
-    private static async Task<string> RunProcessAsync(ProcessStartInfo startInfo, CancellationToken cancellationToken)
+    private static async Task<ProcessResult> RunProcessResultAsync(
+        ProcessStartInfo startInfo,
+        CancellationToken cancellationToken)
     {
         using var process = Process.Start(startInfo) ?? throw new InvalidOperationException(UiText.Format("ProcessStartFailed", startInfo.FileName));
         var standardOutput = process.StandardOutput.ReadToEndAsync(cancellationToken);
@@ -1000,16 +1223,24 @@ public sealed class RuntimeService : IDisposable
         await process.WaitForExitAsync(cancellationToken);
         var output = (await standardOutput).Trim();
         var error = (await standardError).Trim();
-        if (process.ExitCode != 0)
+        return new ProcessResult(process.ExitCode, output, error);
+    }
+
+    private static async Task<string> RunProcessAsync(ProcessStartInfo startInfo, CancellationToken cancellationToken)
+    {
+        var result = await RunProcessResultAsync(startInfo, cancellationToken);
+        if (result.ExitCode != 0)
         {
-            throw new InvalidOperationException(string.IsNullOrWhiteSpace(error) ? output : error);
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(result.Error) ? result.Output : result.Error);
         }
 
-        if (string.IsNullOrWhiteSpace(output))
+        if (string.IsNullOrWhiteSpace(result.Output))
         {
-            return error;
+            return result.Error;
         }
-        return string.IsNullOrWhiteSpace(error) ? output : output + Environment.NewLine + error;
+        return string.IsNullOrWhiteSpace(result.Error)
+            ? result.Output
+            : result.Output + Environment.NewLine + result.Error;
     }
 
     private static async Task<string> RunUpdateProcessAsync(
@@ -1435,4 +1666,6 @@ public sealed class RuntimeService : IDisposable
     {
         _httpClient.Dispose();
     }
+
+    private sealed record ProcessResult(int ExitCode, string Output, string Error);
 }

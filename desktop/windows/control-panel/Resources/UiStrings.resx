@@ -563,6 +563,30 @@ Update now?</value>
   <data name="ManagerFailedWithExitCode" xml:space="preserve">
     <value>AgentDock management executable failed with exit code {0}.</value>
   </data>
+  <data name="ManagerFailedWithDetail" xml:space="preserve">
+    <value>AgentDock elevated {0} {1} failed with exit code {2}: {3}</value>
+  </data>
+  <data name="ManagerFailedResultMissing" xml:space="preserve">
+    <value>AgentDock elevated {0} {1} failed with exit code {2}; no diagnostic result was written.</value>
+  </data>
+  <data name="ManagerFailedResultInvalid" xml:space="preserve">
+    <value>AgentDock elevated {0} {1} exited with code {2}, but its diagnostic result did not match the process outcome.</value>
+  </data>
+  <data name="NoDiagnosticDetail" xml:space="preserve">
+    <value>No diagnostic detail was returned.</value>
+  </data>
+  <data name="ElevatedCommandRequestMissing" xml:space="preserve">
+    <value>The elevated AgentDock command request is missing or invalid.</value>
+  </data>
+  <data name="ElevatedRetryFailed" xml:space="preserve">
+    <value>Initial non-elevated attempt failed: {0}&#10;Elevated retry failed: {1}</value>
+  </data>
+  <data name="RuntimeActionStageFailed" xml:space="preserve">
+    <value>{0} {1} failed: {2}</value>
+  </data>
+  <data name="UnsupportedElevatedCommand" xml:space="preserve">
+    <value>Unsupported elevated AgentDock command: {0}</value>
+  </data>
   <data name="DeviceIdentityInvalid" xml:space="preserve">
     <value>Device identity file is invalid. Pair again.</value>
   </data>
