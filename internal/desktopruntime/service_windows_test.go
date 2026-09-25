@@ -11,8 +11,8 @@ import (
 )
 
 func TestWindowsCoreStartTimeoutKeepsColdStartHeadroom(t *testing.T) {
-	if windowsCoreStartTimeout != 60*time.Second {
-		t.Fatalf("windowsCoreStartTimeout = %s, want 1m", windowsCoreStartTimeout)
+	if WindowsCoreStartTimeout != 60*time.Second {
+		t.Fatalf("WindowsCoreStartTimeout = %s, want 1m", WindowsCoreStartTimeout)
 	}
 }
 

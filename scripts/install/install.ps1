@@ -30,6 +30,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+[int] $coreHealthTimeoutSeconds = 60
 
 function Invoke-SetupRuntimeProcess {
     param(
@@ -956,7 +957,7 @@ function Wait-AgentDockHealth {
     param([int] $HealthPort)
 
     $healthUrl = "http://127.0.0.1:$HealthPort/healthz"
-    $deadline = [DateTime]::UtcNow.AddSeconds(45)
+    $deadline = [DateTime]::UtcNow.AddSeconds($coreHealthTimeoutSeconds)
     do {
         Start-Sleep -Milliseconds 500
         try {

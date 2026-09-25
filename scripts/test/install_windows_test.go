@@ -849,9 +849,9 @@ func TestWindowsSetupRuntimeBrokerTimeoutExceedsCoreStartTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read launch-windows-process.ps1: %v", err)
 	}
-	coreData, err := os.ReadFile(filepath.Join("..", "..", "internal", "desktopruntime", "service_windows.go"))
+	coreData, err := os.ReadFile(filepath.Join("..", "..", "internal", "desktopruntime", "health_timeout.go"))
 	if err != nil {
-		t.Fatalf("read service_windows.go: %v", err)
+		t.Fatalf("read health_timeout.go: %v", err)
 	}
 
 	parseSeconds := func(content, prefix string) int {
@@ -875,8 +875,24 @@ func TestWindowsSetupRuntimeBrokerTimeoutExceedsCoreStartTimeout(t *testing.T) {
 		return 0
 	}
 
+	installData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "install", "install.ps1"))
+	if err != nil {
+		t.Fatalf("read install.ps1: %v", err)
+	}
+
 	brokerSeconds := parseSeconds(string(brokerData), "[int] $TimeoutSeconds =")
-	coreSeconds := parseSeconds(string(coreData), "const windowsCoreStartTimeout =")
+	coreSeconds := parseSeconds(string(coreData), "const WindowsCoreStartTimeout =")
+	setupHealthSeconds := parseSeconds(string(installData), "[int] $coreHealthTimeoutSeconds =")
+	if setupHealthSeconds != coreSeconds {
+		t.Fatalf(
+			"Setup health timeout=%ds must match Windows Core start timeout=%ds",
+			setupHealthSeconds,
+			coreSeconds,
+		)
+	}
+	if !strings.Contains(string(installData), "AddSeconds($coreHealthTimeoutSeconds)") {
+		t.Fatal("Setup health wait must use the shared Windows Core health budget")
+	}
 	const minimumHeadroomSeconds = 15
 	if brokerSeconds-coreSeconds < minimumHeadroomSeconds {
 		t.Fatalf(

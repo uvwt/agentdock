@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/uvwt/agentdock/internal/installer"
+	processcontrol "github.com/uvwt/agentdock/internal/process"
 )
 
 func runInstallPrepareWindowsLegacy(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -76,6 +77,7 @@ func runInstallDetachEngine(ctx context.Context, args []string, stdout, stderr i
 	verifyCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	command := exec.CommandContext(verifyCtx, destination, "install", "--engine-ready")
+	processcontrol.ConfigureBackground(command)
 	var ready bytes.Buffer
 	command.Stdout = &ready
 	command.Stderr = stderr

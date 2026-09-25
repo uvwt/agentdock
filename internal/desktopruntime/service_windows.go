@@ -18,11 +18,6 @@ import (
 	processcontrol "github.com/uvwt/agentdock/internal/process"
 )
 
-// Windows 冷启动可能同时经过 InteractiveToken 计划任务、DPAPI 配置恢复和 Runtime/Plugin 重建。
-// 更新 trial 也复用 service start 等待目标 Core；45 秒在真实云主机冷启动中已经出现边界误回滚。
-// 这里给冷启动增加 15 秒余量，同时保留明确失败上界；上层 Update Arbiter 仍有独立的总事务预算。
-const windowsCoreStartTimeout = 60 * time.Second
-
 func platformServiceStatus(ctx context.Context, runtimeRoot string) (ServiceStatus, error) {
 	manifest, _, err := loadDesktopManifest(runtimeRoot)
 	if err != nil {
@@ -85,7 +80,7 @@ func startCore(ctx context.Context, manifest Manifest, runtimeRoot string) error
 	} else if err := startDetachedCore(manifest, runtimeRoot); err != nil {
 		return err
 	}
-	return waitForHealth(ctx, manifest.HealthURL(), windowsCoreStartTimeout)
+	return waitForHealth(ctx, manifest.HealthURL(), WindowsCoreStartTimeout)
 }
 
 func stopCore(ctx context.Context, manifest Manifest, runtimeRoot string) error {

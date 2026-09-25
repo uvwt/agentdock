@@ -88,7 +88,7 @@ func (driver *WindowsDriver) VerifyTrial(ctx context.Context, transaction update
 		return nil, err
 	}
 	if plan.CoreWasRunning {
-		if err := updateengine.WaitForVersion(ctx, plan.HealthURLs, transaction.TargetVersion, 45*time.Second); err != nil {
+		if err := updateengine.WaitForVersion(ctx, plan.HealthURLs, transaction.TargetVersion, desktopruntime.WindowsCoreStartTimeout); err != nil {
 			return nil, fmt.Errorf("target core health/version check failed: %w", err)
 		}
 	}
@@ -154,7 +154,7 @@ func (driver *WindowsDriver) Rollback(ctx context.Context, transaction updateeng
 	if plan.CoreWasRunning {
 		if err := driver.runStableCore(ctx, "service", "start", "--runtime-root", driver.root); err != nil {
 			rollbackErrors = append(rollbackErrors, fmt.Errorf("restart source core: %w", err))
-		} else if err := updateengine.WaitForVersion(ctx, plan.HealthURLs, transaction.SourceVersion, 45*time.Second); err != nil {
+		} else if err := updateengine.WaitForVersion(ctx, plan.HealthURLs, transaction.SourceVersion, desktopruntime.WindowsCoreStartTimeout); err != nil {
 			rollbackErrors = append(rollbackErrors, fmt.Errorf("source core health/version check failed: %w", err))
 		}
 	}

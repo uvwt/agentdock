@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/desktopruntime"
 	"github.com/uvwt/agentdock/internal/fs/processlock"
 	skills "github.com/uvwt/agentdock/internal/skill"
 	skillbundle "github.com/uvwt/agentdock/internal/skill/bundle"
@@ -312,11 +313,15 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 			}
 			host, port := resolveListenAddress(request)
 			endpoint := healthURL(host, port)
+			healthTimeout := 45 * time.Second
+			if runtimeGOOS() == "windows" {
+				healthTimeout = desktopruntime.WindowsCoreStartTimeout
+			}
 			var healthErr error
 			if runtimeGOOS() != "darwin" && request.Version != "unknown" {
-				healthErr = updateengine.WaitForVersion(ctx, []string{endpoint}, strings.TrimPrefix(request.Version, "v"), 45*time.Second)
+				healthErr = updateengine.WaitForVersion(ctx, []string{endpoint}, strings.TrimPrefix(request.Version, "v"), healthTimeout)
 			}
-			if waitErr := waitHealthyWithProbe(ctx, request, endpoint, 45*time.Second); waitErr != nil {
+			if waitErr := waitHealthyWithProbe(ctx, request, endpoint, healthTimeout); waitErr != nil {
 				if healthErr != nil {
 					waitErr = errors.Join(healthErr, waitErr)
 				}

@@ -255,7 +255,7 @@ func finalizeWindowsUpdate(ctx context.Context, plan windowsUpdatePlan) error {
 			}
 		}
 		if len(rollbackErrors) == 0 && plan.RestartMode != "none" {
-			if err := waitForVersion(ctx, plan.HealthURLs, plan.CurrentVersion, 30*time.Second); err != nil {
+			if err := waitForVersion(ctx, plan.HealthURLs, plan.CurrentVersion, desktopruntime.WindowsCoreStartTimeout); err != nil {
 				rollbackErrors = append(rollbackErrors, "旧核心健康检查失败: "+err.Error())
 			}
 		}
@@ -289,7 +289,7 @@ func finalizeWindowsUpdate(ctx context.Context, plan windowsUpdatePlan) error {
 		if err := restartWindowsMode(ctx, plan); err != nil {
 			return rollback(fmt.Errorf("重新启动 Windows AgentDock 失败: %w", err))
 		}
-		if err := waitForVersion(ctx, plan.HealthURLs, plan.TargetVersion, 30*time.Second); err != nil {
+		if err := waitForVersion(ctx, plan.HealthURLs, plan.TargetVersion, desktopruntime.WindowsCoreStartTimeout); err != nil {
 			return rollback(fmt.Errorf("Windows 新版本健康检查失败: %w", err))
 		}
 		fmt.Println("健康检查通过")

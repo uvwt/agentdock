@@ -17,7 +17,7 @@ import (
 )
 
 func TestQuickTunnelStartTimeoutCoversRetryAndCoreRestart(t *testing.T) {
-	minimum := 2*quickTunnelProvisionAttemptTimeout + tunnelRetryInitialDelay + windowsCoreStartTimeout
+	minimum := 2*quickTunnelProvisionAttemptTimeout + tunnelRetryInitialDelay + WindowsCoreStartTimeout
 	if quickTunnelStartTimeout <= minimum {
 		t.Fatalf("Quick Tunnel start timeout=%s must exceed retry+restart minimum=%s", quickTunnelStartTimeout, minimum)
 	}

@@ -647,7 +647,7 @@ func restartLegacyRuntimeAfterMigration(
 				return fmt.Errorf("重新启动 Windows Core 失败: %w: %s", err, strings.TrimSpace(string(output)))
 			}
 		}
-		if err := waitForVersion(ctx, []string{manifest.HealthURL()}, plan.Version, 45*time.Second); err != nil {
+		if err := waitForVersion(ctx, []string{manifest.HealthURL()}, plan.Version, desktopruntime.WindowsCoreStartTimeout); err != nil {
 			return fmt.Errorf("Windows migration 健康检查失败: %w", err)
 		}
 	}
