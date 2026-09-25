@@ -16,6 +16,8 @@ import (
 	"github.com/uvwt/agentdock/internal/updateengine"
 )
 
+const arbiterRunTimeout = 4 * time.Minute
+
 func main() {
 	if err := run(context.Background(), os.Args[1:]); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
@@ -71,7 +73,9 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	arbiter := updateengine.Arbiter{Store: store, Driver: driver}
-	arbiterCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	// Windows trial 的停止、Core 冷启动和验证都有各自的有界等待。
+	// Core health grace 提升到 60s 后，最坏路径会超过 3 分钟；这里保留额外恢复余量。
+	arbiterCtx, cancel := context.WithTimeout(ctx, arbiterRunTimeout)
 	defer cancel()
 	result, runErr := arbiter.Run(arbiterCtx, transaction.TransactionID)
 	if result.TransactionID != "" {

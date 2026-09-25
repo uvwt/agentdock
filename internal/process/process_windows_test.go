@@ -41,7 +41,7 @@ func TestConfigureBackgroundUsesNoConsoleOnWindows(t *testing.T) {
 }
 
 func TestConfigurePreservesExistingCreationFlags(t *testing.T) {
-	existingFlags := uint32(windows.CREATE_NEW_PROCESS_GROUP)
+	existingFlags := uint32(windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS)
 	cmd := exec.Command("cmd.exe")
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: existingFlags}
 

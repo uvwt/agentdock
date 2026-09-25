@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/uvwt/agentdock/internal/desktopruntime"
+	processcontrol "github.com/uvwt/agentdock/internal/process"
 )
 
 func uninstallPlatform(ctx context.Context, request Request) error {
@@ -254,6 +255,7 @@ func removeAllExisting(path string) error {
 
 func runOptionalCmd(ctx context.Context, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
+	processcontrol.ConfigureBackground(cmd)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return nil

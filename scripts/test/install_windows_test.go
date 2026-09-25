@@ -877,8 +877,14 @@ func TestWindowsSetupRuntimeBrokerTimeoutExceedsCoreStartTimeout(t *testing.T) {
 
 	brokerSeconds := parseSeconds(string(brokerData), "[int] $TimeoutSeconds =")
 	coreSeconds := parseSeconds(string(coreData), "const windowsCoreStartTimeout =")
-	if brokerSeconds <= coreSeconds {
-		t.Fatalf("Setup runtime broker timeout=%ds must exceed Windows Core start timeout=%ds", brokerSeconds, coreSeconds)
+	const minimumHeadroomSeconds = 15
+	if brokerSeconds-coreSeconds < minimumHeadroomSeconds {
+		t.Fatalf(
+			"Setup runtime broker timeout=%ds must leave at least %ds beyond Windows Core start timeout=%ds",
+			brokerSeconds,
+			minimumHeadroomSeconds,
+			coreSeconds,
+		)
 	}
 }
 
