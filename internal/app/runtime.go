@@ -132,6 +132,11 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	}, runtime.commandExecutionContext)
 	runtime.files = toolfile.New(ws, skills.ResolveResource, runtime.command.CommandEnv)
 	runtime.dynamicMCP = toolmcp.New(mcpClients, envs)
+	if err := runtime.configureMCPOAuthCallbacks(); err != nil {
+		_ = runtime.dynamicMCP.Close()
+		commandCancel()
+		return nil, err
+	}
 	runtime.plugins = toolplugin.New(cfg, pluginManager, mcpClients, envs, ws)
 	if err := runtime.plugins.ReconcileMCP(); err != nil {
 		_ = runtime.dynamicMCP.Close()

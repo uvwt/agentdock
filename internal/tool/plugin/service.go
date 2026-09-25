@@ -579,6 +579,9 @@ func (s *Service) purgeMCPEnvironment(storageKeys []string) error {
 func (s *Service) purgePluginOwnedState(ownership pluginruntime.PurgeOwnership) error {
 	var result error
 	result = errors.Join(result, s.purgeMCPEnvironment(ownership.MCPStorageKeys))
+	for _, storageKey := range ownership.MCPStorageKeys {
+		result = errors.Join(result, s.mcpClients.RemoveOAuthGrant(storageKey))
+	}
 	result = errors.Join(result, s.envs.RemovePluginSkillScopes(ownership.Name))
 	dataRoot, err := config.PluginSkillDataRoot(s.cfg, ownership.Name)
 	if err != nil {

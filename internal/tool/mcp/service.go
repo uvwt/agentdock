@@ -5,6 +5,7 @@ import (
 
 	"github.com/uvwt/agentdock/internal/envstore"
 	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
+	"github.com/uvwt/agentdock/internal/mcp/oauthclient"
 )
 
 type Service struct {
@@ -25,6 +26,22 @@ type CapabilityItem struct {
 	Status        string
 	ToolCount     int
 	LastErrorCode string
+}
+
+func (s *Service) SetOAuthCallback(option oauthclient.CallbackOption) error {
+	return s.mcpClients.SetOAuthCallback(option)
+}
+
+func (s *Service) RemoveOAuthCallback(id string) {
+	s.mcpClients.RemoveOAuthCallback(id)
+}
+
+func (s *Service) DeliverOAuthCallback(result oauthclient.CallbackResult) error {
+	return s.mcpClients.DeliverOAuthCallback(result)
+}
+
+func (s *Service) RemoveOAuthGrant(storageKey string) error {
+	return s.mcpClients.RemoveOAuthGrant(storageKey)
 }
 
 func (s *Service) CapabilityItems() []CapabilityItem {

@@ -78,6 +78,10 @@ func loadMCPFile(path, packageRoot, pluginName string) ([]MCPComponent, []string
 		"cwd": true, "env": true, "headers": true,
 		"description": true, "note": true,
 	}
+	// oauth_resource 只是外部格式给 OAuth discovery 的提示，不包含凭据，也不改变
+	// AgentDock 的授权策略。真正的 resource/issuer 仍以 401 challenge 与 RFC 9728
+	// metadata 为准，因此可以安全忽略并继续激活；其他未知认证字段仍保持阻断。
+	safeOAuthMetadata := map[string]bool{"oauth_resource": true}
 	for _, name := range names {
 		var object map[string]json.RawMessage
 		if err := json.Unmarshal(servers[name], &object); err != nil || object == nil {
@@ -86,9 +90,14 @@ func loadMCPFile(path, packageRoot, pluginName string) ([]MCPComponent, []string
 		}
 		unknown := make([]string, 0)
 		for key, value := range object {
-			if !knownFields[key] && !isJSONEmpty(value) {
-				unknown = append(unknown, key)
+			if knownFields[key] || isJSONEmpty(value) {
+				continue
 			}
+			if safeOAuthMetadata[key] {
+				warnings = append(warnings, fmt.Sprintf("MCP server %s metadata field %s is not used by AgentDock runtime", name, key))
+				continue
+			}
+			unknown = append(unknown, key)
 		}
 		if len(unknown) > 0 {
 			sort.Strings(unknown)

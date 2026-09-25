@@ -573,8 +573,8 @@ func TestPluginRuntimeConfigDistinguishesRequiredAndOptionalHeaderBindings(t *te
 	}
 	_, err = manager.runtimeConfig(cfg)
 	var mcpErr *Error
-	if !errors.As(err, &mcpErr) || mcpErr.Code != "MCP_AUTH_REQUIRED" {
-		t.Fatalf("runtimeConfig() error = %#v, want MCP_AUTH_REQUIRED", err)
+	if !errors.As(err, &mcpErr) || mcpErr.Code != "MCP_CREDENTIAL_REQUIRED" {
+		t.Fatalf("runtimeConfig() error = %#v, want MCP_CREDENTIAL_REQUIRED", err)
 	}
 }
 

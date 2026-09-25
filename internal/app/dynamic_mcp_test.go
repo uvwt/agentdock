@@ -217,7 +217,7 @@ func TestAgentDockContextReportsDynamicMCPRefreshErrorCode(t *testing.T) {
 		t.Fatalf("dynamic MCP context = %#v", contextData.DynamicMCP)
 	}
 	item := contextData.DynamicMCP[0]
-	if item.Name != "broken" || item.Status != "error" || item.ToolCount != 0 || item.LastErrorCode != "MCP_AUTH_REQUIRED" {
+	if item.Name != "broken" || item.Status != "error" || item.ToolCount != 0 || item.LastErrorCode != "MCP_CREDENTIAL_REQUIRED" {
 		t.Fatalf("broken dynamic MCP context = %#v", item)
 	}
 }

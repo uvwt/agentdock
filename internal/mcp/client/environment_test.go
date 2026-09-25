@@ -43,7 +43,7 @@ func TestStdioEnvironmentRequiresMappedHostValue(t *testing.T) {
 		EnvFromEnv: map[string]string{"CHILD": "AGENTDOCK_MISSING_HOST_VALUE"},
 	})
 	mcpErr, ok := err.(*Error)
-	if !ok || mcpErr.Code != "MCP_AUTH_REQUIRED" {
+	if !ok || mcpErr.Code != "MCP_CREDENTIAL_REQUIRED" {
 		t.Fatalf("unexpected error: %T %v", err, err)
 	}
 }
@@ -80,7 +80,7 @@ func TestHTTPHeaderUsesScopedEnvironmentBeforeHost(t *testing.T) {
 	}
 }
 
-func TestPluginHTTPHeaderOptionalBindingExpandsToEmptyWhenUnset(t *testing.T) {
+func TestPluginHTTPHeaderOptionalBindingIsOmittedWhenUnset(t *testing.T) {
 	headers, err := resolveHTTPHeaders(ServerConfig{
 		Name:       "context7",
 		SourceType: "plugin",
@@ -89,9 +89,8 @@ func TestPluginHTTPHeaderOptionalBindingExpandsToEmptyWhenUnset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	values, exists := headers["Authorization"]
-	if !exists || len(values) != 1 || values[0] != "" {
-		t.Fatalf("optional Authorization header = %#v, want one empty value", headers)
+	if _, exists := headers["Authorization"]; exists {
+		t.Fatalf("optional Authorization header = %#v, want header omitted", headers)
 	}
 }
 
@@ -118,8 +117,8 @@ func TestPluginHTTPHeaderRequiredBindingRejectsMissingValue(t *testing.T) {
 		RequiredEnv: []string{"REQUIRED_TOKEN"},
 	})
 	mcpErr, ok := err.(*Error)
-	if !ok || mcpErr.Code != "MCP_AUTH_REQUIRED" {
-		t.Fatalf("resolveHTTPHeaders() error = %T %v, want MCP_AUTH_REQUIRED", err, err)
+	if !ok || mcpErr.Code != "MCP_CREDENTIAL_REQUIRED" {
+		t.Fatalf("resolveHTTPHeaders() error = %T %v, want MCP_CREDENTIAL_REQUIRED", err, err)
 	}
 }
 

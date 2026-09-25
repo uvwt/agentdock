@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/uvwt/agentdock/internal/app"
+	"github.com/uvwt/agentdock/internal/mcp/oauthclient"
 )
 
 // MethodAllowed 返回指定 Runtime API 路径允许当前方法与否。
@@ -24,7 +25,7 @@ func MethodAllowed(method, path string) bool {
 		_, ok := runtimeTaskID(cleanPath)
 		return ok
 	}
-	return method == http.MethodPost && (cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/mcp" || cleanPath == "/internal/runtime/evolve")
+	return method == http.MethodPost && (cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/mcp" || cleanPath == "/internal/runtime/mcp/oauth/callback" || cleanPath == "/internal/runtime/evolve")
 }
 
 func AllowHeader(path string) string {
@@ -35,7 +36,7 @@ func AllowHeader(path string) string {
 	if cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/mcp" {
 		return "GET, POST"
 	}
-	if cleanPath == "/internal/runtime/evolve" {
+	if cleanPath == "/internal/runtime/evolve" || cleanPath == "/internal/runtime/mcp/oauth/callback" {
 		return "POST"
 	}
 	return "GET"
@@ -99,6 +100,19 @@ func Dispatch(ctx context.Context, runtime Runtime, request Request) (map[string
 		}
 		result, err := runtime.RuntimeEvolve(ctx, args)
 		return map[string]any(result), err
+	case path == "/internal/runtime/mcp/oauth/callback" && method == http.MethodPost:
+		oauthRuntime, ok := runtime.(MCPOAuthRuntime)
+		if !ok {
+			return nil, &app.ToolError{Code: "MCP_AUTH_UNSUPPORTED", Message: "runtime does not support Remote MCP OAuth", Category: "not_found"}
+		}
+		callback, err := decodeMCPOAuthCallback(request.Body)
+		if err != nil {
+			return nil, err
+		}
+		if err := oauthRuntime.RuntimeMCPOAuthCallback(ctx, callback); err != nil {
+			return nil, err
+		}
+		return map[string]any{"accepted": true}, nil
 	case path == "/internal/runtime/mcp" && method == http.MethodPost:
 		args, err := decodeRuntimeMCPRequest(request.Body)
 		if err != nil {
@@ -149,11 +163,13 @@ type runtimeMCPRequest struct {
 	TimeoutMS   int               `json:"timeout_ms"`
 	Key         string            `json:"key"`
 	Value       *string           `json:"value"`
+	CallbackID  string            `json:"callback_id"`
 }
 
 var runtimeMCPManageActions = map[string]bool{
 	"add": true, "remove": true, "enable": true, "disable": true,
 	"env_set": true, "env_unset": true, "env_list": true, "refresh": true,
+	"authorize": true, "auth_clear": true,
 }
 
 func decodeRuntimeMCPRequest(body []byte) (map[string]any, error) {
@@ -219,7 +235,38 @@ func decodeRuntimeMCPRequest(body []byte) (map[string]any, error) {
 	if request.TimeoutMS > 0 {
 		args["timeout_ms"] = request.TimeoutMS
 	}
+	if request.CallbackID != "" {
+		args["callback_id"] = request.CallbackID
+	}
 	return args, nil
+}
+
+func decodeMCPOAuthCallback(body []byte) (oauthclient.CallbackResult, error) {
+	if len(body) > 16*1024 {
+		return oauthclient.CallbackResult{}, &app.ToolError{Code: "INVALID_MCP_AUTH_CALLBACK", Message: "OAuth callback body is too large", Category: "validation"}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	var callback oauthclient.CallbackResult
+	if err := decoder.Decode(&callback); err != nil {
+		return oauthclient.CallbackResult{}, &app.ToolError{Code: "INVALID_MCP_AUTH_CALLBACK", Message: "invalid OAuth callback body", Category: "validation"}
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return oauthclient.CallbackResult{}, &app.ToolError{Code: "INVALID_MCP_AUTH_CALLBACK", Message: "OAuth callback body must contain exactly one JSON value", Category: "validation"}
+	}
+	callback.State = strings.TrimSpace(callback.State)
+	callback.Code = strings.TrimSpace(callback.Code)
+	callback.Issuer = strings.TrimSpace(callback.Issuer)
+	callback.Error = strings.TrimSpace(callback.Error)
+	callback.ErrorDescription = strings.TrimSpace(callback.ErrorDescription)
+	if callback.State == "" {
+		return oauthclient.CallbackResult{}, &app.ToolError{Code: "INVALID_MCP_AUTH_CALLBACK", Message: "OAuth callback state is required", Category: "validation"}
+	}
+	if callback.Code == "" && callback.Error == "" {
+		return oauthclient.CallbackResult{}, &app.ToolError{Code: "INVALID_MCP_AUTH_CALLBACK", Message: "OAuth callback must contain code or error", Category: "validation"}
+	}
+	return callback, nil
 }
 
 func runtimeMCPRequestError(message string) error {

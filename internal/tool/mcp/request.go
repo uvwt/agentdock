@@ -16,6 +16,7 @@ type ManageRequest struct {
 	Value       *string           `json:"value,omitempty"`
 	Enabled     *bool             `json:"enabled,omitempty"`
 	TimeoutMS   *int              `json:"timeout_ms,omitempty"`
+	CallbackID  string            `json:"callback_id,omitempty"`
 }
 
 type SearchRequest struct {
