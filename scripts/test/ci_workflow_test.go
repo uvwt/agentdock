@@ -155,6 +155,10 @@ func TestWindowsVersionInfoScriptCoversSignPathMetadata(t *testing.T) {
 	script := strings.ReplaceAll(string(data), "\r\n", "\n")
 	for _, want := range []string{
 		"github.com/tc-hib/go-winres@v0.3.3",
+		"go env GOHOSTOS",
+		"go env GOHOSTARCH",
+		"$env:GOOS = $goHostOS",
+		"$env:GOARCH = $goHostArch",
 		"CompanyName = 'AgentDock'",
 		"ProductName = 'AgentDock'",
 		"ProductVersion = $windowsVersion",
