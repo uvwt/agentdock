@@ -25,6 +25,13 @@ func (s *Server) appResourceDefinitions() []appResourceDefinition {
 	}
 	definitions := []appResourceDefinition{
 		{
+			URI:         protocol.ImageUIResourceURI,
+			Name:        "agentdock-image",
+			Title:       "AgentDock image",
+			Description: "Display the requested image and, after user confirmation, provide it to the model when supported.",
+			HTML:        mcpapps.HTML("view_image", "Image"),
+		},
+		{
 			URI:         protocol.ContextUIResourceURI,
 			Name:        "agentdock-context",
 			Title:       "AgentDock context",
