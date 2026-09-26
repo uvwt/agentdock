@@ -198,7 +198,8 @@ func TestMCPAppsCompactFiltersBindingsButKeepsResources(t *testing.T) {
 	assertToolUIResource(t, tools["view_image"], protocol.ImageUIResourceURI)
 	assertToolUIResource(t, tools["agentdock_context"], protocol.ContextUIResourceURI)
 	assertToolUIResource(t, tools["workspace_context"], protocol.WorkspaceUIResourceURI)
-	for _, name := range []string{"file_edit", "task_manage", "mcp_tool_call", "workflow_template_manage"} {
+	assertToolUIResource(t, tools["task_manage"], protocol.TaskProgressUIResourceURI)
+	for _, name := range []string{"file_edit", "mcp_tool_call", "workflow_template_manage"} {
 		if tool := tools[name]; tool != nil {
 			if ui := tool.Meta["ui"]; ui != nil {
 				t.Fatalf("%s should not attach descriptor UI in compact mode: %#v", name, ui)
