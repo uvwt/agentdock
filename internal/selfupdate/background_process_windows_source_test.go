@@ -61,6 +61,30 @@ func TestWindowsSelfUpdateBackgroundCommandsUseNoConsoleConfigure(t *testing.T) 
 	}
 }
 
+func TestWindowsLegacyMigrationStopsTrayBeforeCore(t *testing.T) {
+	t.Parallel()
+
+	source, err := os.ReadFile("legacy_migration_windows.go")
+	if err != nil {
+		t.Fatalf("读取 legacy migration 源码失败: %v", err)
+	}
+	text := string(source)
+	start := strings.Index(text, "func finalizeWindowsLegacyMigration")
+	end := strings.Index(text, "func waitForLegacyWindowsUpdaterExit")
+	if start < 0 || end <= start {
+		t.Fatal("未找到 Windows legacy migration finalize 主流程")
+	}
+	body := text[start:end]
+	trayStop := strings.Index(body, "StopBinaryProcesses(ctx, plan.TrayPath")
+	coreStop := strings.Index(body, "StopBinaryProcesses(ctx, plan.CorePath")
+	if trayStop < 0 || coreStop < 0 {
+		t.Fatal("legacy migration 必须显式停止 stable Tray 与 Core")
+	}
+	if trayStop > coreStop {
+		t.Fatal("legacy migration 必须先停止 Tray，再停止 Core，避免 Tray 在迁移窗口重新拉起 stable Core")
+	}
+}
+
 func assertWindowsCommandConfiguredNearby(t *testing.T, fileName, anchor string) {
 	t.Helper()
 
