@@ -1052,6 +1052,8 @@ jobs:
     name: Stage draft GitHub Release
     needs: [prepare-release, release-gate]
     runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.release.outputs.id }}
     steps:
       - name: Download validated release candidate
         uses: actions/download-artifact@v4
@@ -1070,7 +1072,7 @@ jobs:
           # 让失败后的同 tag 重跑始终从唯一、干净的 staging release 开始。
           gh api "repos/${{ github.repository }}/releases?per_page=100" \
             --paginate \
-            --jq ".[] | select(.draft and .tag_name == \"$RELEASE_TAG\") | .id" \
+            --jq ".[] | select(.draft and ((.tag_name == \"$RELEASE_TAG\") or (.name == \"$RELEASE_TAG\"))) | .id" \
             > "$RUNNER_TEMP/stale-draft-ids"
           while IFS= read -r release_id; do
             [[ -z "$release_id" ]] && continue
@@ -1078,6 +1080,7 @@ jobs:
           done < "$RUNNER_TEMP/stale-draft-ids"
 
       - name: Upload validated draft release
+        id: release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
@@ -1324,10 +1327,21 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.stage-release.outputs.release_id }}
           RELEASE_TAG: ${{ needs.source.outputs.tag }}
+          SOURCE_COMMIT: ${{ needs.source.outputs.commit }}
         run: |
           set -euo pipefail
-          gh release edit "$RELEASE_TAG" \
-            --repo "${{ github.repository }}" \
-            --draft=false \
-            --latest
+          test -n "$RELEASE_ID"
+          published="$(gh api --method PATCH "repos/${{ github.repository }}/releases/$RELEASE_ID" \
+            -f tag_name="$RELEASE_TAG" \
+            -f target_commitish="$SOURCE_COMMIT" \
+            -f name="$RELEASE_TAG" \
+            -F draft=false \
+            -F prerelease=false \
+            -f make_latest='true' \
+            --jq '[.draft, .tag_name, .target_commitish] | @tsv')"
+          IFS=$'\t' read -r draft tag target <<<"$published"
+          test "$draft" = "false"
+          test "$tag" = "$RELEASE_TAG"
+          test "$target" = "$SOURCE_COMMIT"

@@ -145,6 +145,27 @@ func TestReleaseWorkflowComparesStagedPowerShellInstallerToGitBlob(t *testing.T)
 	}
 }
 
+func TestReleaseWorkflowPublishesDraftByReleaseID(t *testing.T) {
+	workflow := readWorkflow(t, "release.yml")
+	for _, want := range []string{
+		"release_id: ${{ steps.release.outputs.id }}",
+		"id: release",
+		`.name == \"$RELEASE_TAG\"`,
+		"RELEASE_ID: ${{ needs.stage-release.outputs.release_id }}",
+		`gh api --method PATCH "repos/${{ github.repository }}/releases/$RELEASE_ID"`,
+		`-f target_commitish="$SOURCE_COMMIT"`,
+		"-F draft=false",
+		"-f make_latest='true'",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("Release workflow must publish the validated draft by immutable release ID; missing %q", want)
+		}
+	}
+	if strings.Contains(workflow, `gh release edit "$RELEASE_TAG"`) {
+		t.Fatal("Release workflow must not publish a draft by tag because GitHub exposes draft releases as untagged")
+	}
+}
+
 func TestWindowsTrayCarriesSignPathMetadataFromMSBuild(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "AgentDock.ControlPanel.csproj"))
 	if err != nil {
