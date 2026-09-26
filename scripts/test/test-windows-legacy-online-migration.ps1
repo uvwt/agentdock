@@ -34,6 +34,11 @@ function Test-InternalAgentDockProcess {
     return $null -ne $process
 }
 
+$getProcessAtPath = {
+    param([string] $Path); $target = [IO.Path]::GetFullPath($Path)
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -and [string]::Equals([IO.Path]::GetFullPath($_.ExecutablePath), $target, [StringComparison]::OrdinalIgnoreCase) }
+}
+
 $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
 $listener.Start()
 $port = ([Net.IPEndPoint] $listener.LocalEndpoint).Port
@@ -126,6 +131,12 @@ try {
         if ($flatHealth.ok -ne $true -or $flatHealth.version -ne $Version) {
             throw "flat Core health mismatch before migration: $($flatHealth | ConvertTo-Json -Compress)"
         }
+
+        # 真实旧版 Tray 常驻并周期读取 Core；Issue #144 的迁移竞态只有这个进程源存在时才会暴露。
+        Start-Process -FilePath $tray -ArgumentList '--background' -WorkingDirectory $runtimeRoot -WindowStyle Hidden | Out-Null
+        $trayDeadline = [DateTime]::UtcNow.AddSeconds(10)
+        do { Start-Sleep -Milliseconds 100 } while (@(& $getProcessAtPath $tray).Count -eq 0 -and [DateTime]::UtcNow -lt $trayDeadline)
+        if (@(& $getProcessAtPath $tray).Count -eq 0) { throw 'legacy Tray did not stay running before migration' }
     } finally {
         $migrationGate.ReleaseMutex()
         $migrationGate.Dispose()
@@ -281,6 +292,8 @@ try {
         }
     } catch {
     }
+    & $getProcessAtPath $tray | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    if (-not [string]::IsNullOrWhiteSpace($Version)) { & $getProcessAtPath (Join-Path $runtimeRoot "versions\v$Version\agentdock-tray.exe") | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } }
     Start-Sleep -Milliseconds 500
     Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
 }

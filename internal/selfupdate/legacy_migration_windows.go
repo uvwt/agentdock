@@ -257,6 +257,20 @@ func runWindowsLegacyLayoutMigration(
 		CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS,
 	}
 	processcontrol.Configure(command)
+	logDir := filepath.Join(opts.DesktopTargetPath, "logs")
+	if err := os.MkdirAll(logDir, 0o700); err != nil {
+		return fmt.Errorf("创建 Windows legacy migration 日志目录失败: %w", err)
+	}
+	logFile, err := os.OpenFile(filepath.Join(logDir, "legacy-migration.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return fmt.Errorf("打开 Windows legacy migration 日志失败: %w", err)
+	}
+	defer logFile.Close()
+	if _, err := fmt.Fprintf(logFile, "%s start legacy migration helper version=%s\n", time.Now().UTC().Format(time.RFC3339), currentVersion); err != nil {
+		return fmt.Errorf("写入 Windows legacy migration 日志失败: %w", err)
+	}
+	command.Stdout = logFile
+	command.Stderr = logFile
 	if err := command.Start(); err != nil {
 		return fmt.Errorf("启动 Windows legacy migration helper 失败: %w", err)
 	}
@@ -479,11 +493,13 @@ func finalizeWindowsLegacyMigration(ctx context.Context, plan windowsLegacyMigra
 		_ = runWindowsCommand(ctx, "sc.exe", "stop", windowsServiceName)
 		_ = waitWindowsServiceState(ctx, windowsServiceName, "STOPPED", 20*time.Second)
 	}
-	if err := desktopruntime.StopBinaryProcesses(ctx, plan.CorePath, 15*time.Second); err != nil {
-		return restore(fmt.Errorf("停止 legacy Core 失败: %w", err))
-	}
+	// legacy Tray 会周期性调用 stable Core 读取状态。必须先终止 Tray，再等待 Core
+	// 收敛，否则 Tray 在迁移窗口里新拉起的 agentdock.exe 会让 stable entry 无法替换。
 	if err := desktopruntime.StopBinaryProcesses(ctx, plan.TrayPath, 15*time.Second); err != nil {
 		return restore(fmt.Errorf("停止 legacy Tray 失败: %w", err))
+	}
+	if err := desktopruntime.StopBinaryProcesses(ctx, plan.CorePath, 15*time.Second); err != nil {
+		return restore(fmt.Errorf("停止 legacy Core 失败: %w", err))
 	}
 
 	if err := replaceWindowsMigrationEntry(filepath.Join(plan.PayloadDir, "agentdock-shim.exe"), plan.CorePath); err != nil {

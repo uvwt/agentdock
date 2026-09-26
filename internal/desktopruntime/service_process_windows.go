@@ -16,6 +16,11 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+const (
+	binaryStopPollInterval = 50 * time.Millisecond
+	binaryStopQuietPeriod  = 500 * time.Millisecond
+)
+
 // BinaryProcessRunning 只按完整可执行文件路径判断进程是否正在运行。
 func BinaryProcessRunning(binaryPath string) (bool, error) {
 	processes, err := processIDsAtPath(binaryPath)
@@ -35,17 +40,48 @@ func StopBinaryProcesses(ctx context.Context, binaryPath string, timeout time.Du
 }
 
 func stopBinaryProcessesExcept(ctx context.Context, binaryPath string, excluded map[uint32]struct{}, timeout time.Duration) error {
-	if err := terminateProcessesAtPathExcept(binaryPath, excluded); err != nil {
-		return err
+	deadline := time.Now().Add(timeout)
+	var quietSince time.Time
+	sawProcess := false
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		processes, err := processIDsAtPathExcept(binaryPath, excluded)
+		if err != nil {
+			return err
+		}
+		if len(processes) > 0 {
+			// 不能只终止第一次快照。Tray、Task Scheduler 等外部宿主可能在等待窗口
+			// 内再次拉起同一路径进程；每轮重新扫描并终止，直到路径稳定为空。
+			sawProcess = true
+			quietSince = time.Time{}
+			if err := terminateProcessIDs(processes); err != nil {
+				return err
+			}
+		} else if !sawProcess {
+			return nil
+		} else if quietSince.IsZero() {
+			quietSince = time.Now()
+		} else if time.Since(quietSince) >= binaryStopQuietPeriod {
+			return nil
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return fmt.Errorf("进程未在 %s 内退出: %s", timeout, binaryPath)
+		}
+		wait := binaryStopPollInterval
+		if remaining < wait {
+			wait = remaining
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
 	}
-	stopped, err := waitBinaryStoppedExcept(ctx, binaryPath, excluded, timeout)
-	if err != nil {
-		return err
-	}
-	if !stopped {
-		return fmt.Errorf("进程未在 %s 内退出: %s", timeout, binaryPath)
-	}
-	return nil
 }
 
 // WaitBinaryStopped waits until no process with the exact binary path remains.
@@ -85,6 +121,10 @@ func terminateProcessesAtPathExcept(binaryPath string, excluded map[uint32]struc
 	if err != nil {
 		return err
 	}
+	return terminateProcessIDs(processIDs)
+}
+
+func terminateProcessIDs(processIDs []uint32) error {
 	var failures []string
 	for _, processID := range processIDs {
 		process, openErr := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, processID)
