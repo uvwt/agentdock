@@ -69,7 +69,7 @@ func (driver *DarwinDriver) PrepareTrial(ctx context.Context, transaction update
 		return fmt.Errorf("target App trial is not usable: %w", err)
 	}
 	if err := validateMacOSSigningContinuity(ctx, plan.TargetAppPath, plan.TrialAppPath); err != nil {
-		return fmt.Errorf("target App signing identity does not match the source App: %w", err)
+		return fmt.Errorf("target macOS signing identity does not match the source installation: %w", err)
 	}
 	if err := removeIfExists(plan.HandoffPath); err != nil {
 		return fmt.Errorf("remove stale macOS handoff: %w", err)
@@ -109,6 +109,11 @@ func (driver *DarwinDriver) VerifyTrial(ctx context.Context, transaction updatee
 		return nil, err
 	}
 	var warnings []string
+	// 未配置稳定证书的构建使用 ad-hoc 身份，App 或 Core 任一主体变化都可能让已有 TCC 授权失效。
+	// 连续性硬校验已经在 PrepareTrial 完成；这里仅补充更新成功后的迁移提示。
+	if macOSSigningIdentityNeedsReauthorizationWarning(ctx, plan.TrialAppPath, plan.TargetAppPath) {
+		warnings = append(warnings, "AgentDock was updated from an ad-hoc signed macOS build. Accessibility, Screen Recording, or Automation permissions may require reauthorization because the App or Core code identity changed.")
+	}
 	if plan.CoreWasEnabled {
 		switch handoff.CoreRegistration {
 		case "requires_approval":
@@ -293,16 +298,40 @@ func validateMacOSApp(ctx context.Context, appPath, expectedVersion string) erro
 	return nil
 }
 
+type macOSSigningTarget struct {
+	name   string
+	source string
+	target string
+}
+
+func macOSSigningTargets(sourceAppPath, targetAppPath string) []macOSSigningTarget {
+	return []macOSSigningTarget{
+		{name: "App", source: sourceAppPath, target: targetAppPath},
+		{
+			name:   "Core",
+			source: filepath.Join(sourceAppPath, "Contents", "Helpers", "agentdock"),
+			target: filepath.Join(targetAppPath, "Contents", "Helpers", "agentdock"),
+		},
+	}
+}
+
 func validateMacOSSigningContinuity(ctx context.Context, sourceAppPath, targetAppPath string) error {
-	requirement, err := macOSDesignatedRequirement(ctx, sourceAppPath)
+	for _, target := range macOSSigningTargets(sourceAppPath, targetAppPath) {
+		if err := validateMacOSCodeSigningContinuity(ctx, target.name, target.source, target.target); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateMacOSCodeSigningContinuity(ctx context.Context, component, sourcePath, targetPath string) error {
+	requirement, err := macOSDesignatedRequirement(ctx, sourcePath)
 	if err != nil {
-		return fmt.Errorf("read source App designated requirement: %w", err)
+		return fmt.Errorf("read source %s designated requirement: %w", component, err)
 	}
 	if isLegacyAdHocRequirement(requirement) {
-		// Existing 0.8.x desktop builds were ad-hoc signed, whose designated requirement is
-		// a per-build cdhash. Such a requirement can never match a different version. Allow
-		// this one compatibility boundary; once a certificate-signed App is active, every
-		// following update must satisfy the source certificate requirement below.
+		// 未配置稳定证书的构建使用 ad-hoc 签名，DR 绑定当前构建 cdhash。这里必须继续允许
+		// 旧用户升级；一旦迁移到稳定身份，后续更新会走下面的严格连续性校验。
 		return nil
 	}
 	output, err := exec.CommandContext(
@@ -311,12 +340,43 @@ func validateMacOSSigningContinuity(ctx context.Context, sourceAppPath, targetAp
 		"--verify",
 		"--strict",
 		"-R="+requirement,
-		targetAppPath,
+		targetPath,
 	).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("target App does not satisfy source signing requirement: %w: %s", err, strings.TrimSpace(string(output)))
+		targetRequirement, targetErr := macOSDesignatedRequirement(ctx, targetPath)
+		if targetErr == nil && isLegacyAdHocRequirement(targetRequirement) {
+			return fmt.Errorf(
+				"target %s is ad-hoc signed while the installed %s requires a stable signing identity (%s)",
+				component,
+				component,
+				requirement,
+			)
+		}
+		return fmt.Errorf("target %s does not satisfy source signing requirement: %w: %s", component, err, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+func macOSSigningIdentityNeedsReauthorizationWarning(ctx context.Context, sourceAppPath, targetAppPath string) bool {
+	for _, target := range macOSSigningTargets(sourceAppPath, targetAppPath) {
+		sourceRequirement, sourceErr := macOSDesignatedRequirement(ctx, target.source)
+		if sourceErr != nil {
+			continue
+		}
+		targetRequirement, targetErr := macOSDesignatedRequirement(ctx, target.target)
+		if targetErr != nil {
+			continue
+		}
+		if macOSAdHocSigningIdentityChanged(sourceRequirement, targetRequirement) {
+			return true
+		}
+	}
+	return false
+}
+
+func macOSAdHocSigningIdentityChanged(sourceRequirement, targetRequirement string) bool {
+	return strings.TrimSpace(sourceRequirement) != strings.TrimSpace(targetRequirement) &&
+		isLegacyAdHocRequirement(sourceRequirement)
 }
 
 func macOSDesignatedRequirement(ctx context.Context, appPath string) (string, error) {
