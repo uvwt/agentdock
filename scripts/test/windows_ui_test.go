@@ -1,6 +1,7 @@
 package scripts
 
 import (
+	"encoding/xml"
 	"os"
 	"path/filepath"
 	"strings"
@@ -245,10 +246,10 @@ func TestWindowsControlPanelShowsLiveNexusStatusInsideRuntimeStatus(t *testing.T
 	root := filepath.Join("..", "..", "desktop", "windows", "control-panel")
 	files := map[string][]string{
 		"MainWindow.xaml": {
-			`Text="{local:Loc HealthCheck}" Grid.Row="1"`,
-			`Text="Nexus" Grid.Row="2"`,
+			`Text="{local:Loc HealthCheck}"`,
+			`Text="Nexus"`,
 			`x:Name="NexusStatusText" Grid.Row="2" Grid.Column="1" Text="{local:Loc NotConfigured}"`,
-			`Text="{local:Loc Version}" Grid.Row="3"`,
+			`Text="{local:Loc Version}"`,
 		},
 		"MainWindow.xaml.cs": {
 			`NexusStatusText.Text`,
@@ -288,6 +289,9 @@ func TestWindowsControlPanelShowsLiveNexusStatusInsideRuntimeStatus(t *testing.T
 		t.Fatalf("read MainWindow.xaml: %v", err)
 	}
 	content := string(xaml)
+	// Labels may live in an icon/label StackPanel; assert the actual row
+	// structurally rather than requiring the row attribute on the TextBlock.
+	assertRuntimeLabelRows(t, xaml)
 	for _, forbidden := range []string{`NexusStatusDot`, `NexusHeaderStatusText`, `Nexus ·`} {
 		if strings.Contains(content, forbidden) {
 			t.Fatalf("Windows Nexus status must stay plain inside runtime status; found %q", forbidden)
@@ -376,5 +380,56 @@ func TestWindowsACPSettingsUseSinglePageRowsDefaultDropdownAndCustomDialog(t *te
 	}
 	if strings.Contains(xaml, `McpAppsEnabledCheckBox`) {
 		t.Fatal("Windows chat card mode must not keep the old MCP Apps checkbox")
+	}
+}
+
+// An icon and a label can share a grid cell without changing the runtime data row.
+func assertRuntimeLabelRows(t *testing.T, content []byte) {
+	t.Helper()
+	type node struct {
+		Name     xml.Name
+		Attr     []xml.Attr `xml:",any,attr"`
+		Children []node     `xml:",any"`
+	}
+	var root node
+	if err := xml.Unmarshal(content, &root); err != nil {
+		t.Fatal(err)
+	}
+	attr := func(n node, key string) string {
+		for _, a := range n.Attr {
+			if a.Name.Local == key {
+				return a.Value
+			}
+		}
+		return ""
+	}
+	expected := map[string]string{"{local:Loc HealthCheck}": "1", "Nexus": "2", "{local:Loc Version}": "3"}
+	found := map[string]int{}
+	var visit func(node, string, bool)
+	visit = func(n node, row string, runtimeCard bool) {
+		if attr(n, "Name") == "RuntimeCard" {
+			runtimeCard = true
+			row = "0"
+		}
+		if r := attr(n, "Grid.Row"); r != "" {
+			row = r
+		}
+		if runtimeCard {
+			if want, ok := expected[attr(n, "Text")]; ok {
+				if row != want {
+					t.Errorf("runtime label %q is in row %s, want %s", attr(n, "Text"), row, want)
+				}
+				found[attr(n, "Text")]++
+			}
+		}
+		for _, child := range n.Children {
+			visit(child, row, runtimeCard)
+		}
+	}
+	visit(root, "0", false)
+	for label := range expected {
+		if found[label] != 1 {
+			t.Errorf("runtime label %q count=%d, want 1", label, found[label])
+		}
 	}
 }
