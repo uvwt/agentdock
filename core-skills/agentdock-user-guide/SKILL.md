@@ -80,7 +80,7 @@ AgentDock 主仓库的 `core-skills/` 只保留必须随 AgentDock 运行时一�
 - “配置文件在哪里”“这个配置怎么改”“改完为什么没生效”；
 - macOS、Windows、Linux、Docker、直接运行二进制之间的配置差异；
 - Core 的启动、停止、重启、健康检查和配置生效验证；
-- 浏览器、MCP Apps UI、端口、日志、OAuth 等运行配置的入口；
+- 浏览器、聊天卡片、端口、日志、OAuth 等运行配置的入口；
 - 发现本机已有 Codex、Claude、Grok 等 Coding Agent，补齐缺失 ACP Adapter，并把 ACP 正确接入 AgentDock；
 - 多台 AgentDock 设备中，确认应该修改哪一台设备的运行配置。
 
@@ -165,7 +165,7 @@ AgentDock Core 在启动时从**进程环境**读取运行配置。不同发行�
 至少验证两层：
 
 1. **进程层**：Core 已运行，`/healthz` 正常，或平台 service status 显示 healthy；
-2. **行为层**：本次修改对应能力真的变化，例如端口、MCP Apps UI、browser、ACP 或子进程环境行为符合预期。
+2. **行为层**：本次修改对应能力真的变化，例如端口、聊天卡片、browser、ACP 或子进程环境行为符合预期。
 
 如果当前对话连接的就是被重启的 AgentDock，连接可能短暂中断；恢复后重新读取 `agentdock_context` 或实际状态，不要把“命令执行成功”当成“新配置已经生效”。
 

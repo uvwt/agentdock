@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	agentconfig "github.com/uvwt/agentdock/internal/config"
 )
 
 func TestEffectiveOAuthAccessTokenTTL(t *testing.T) {
@@ -43,8 +45,30 @@ func TestLoadControlPanelSettingsValidatesOAuthAccessTokenTTL(t *testing.T) {
 	if settings.OAuthAccessTokenTTL != "never" {
 		t.Fatalf("OAuthAccessTokenTTL = %q, want never", settings.OAuthAccessTokenTTL)
 	}
-	if !settings.MCPAppsEnabled {
-		t.Fatal("legacy settings without mcp_apps_enabled should default MCP Apps UI to enabled")
+	if settings.MCPAppsMode != agentconfig.MCPAppsModeFull {
+		t.Fatalf("legacy settings without MCP Apps fields mode = %q, want full", settings.MCPAppsMode)
+	}
+
+	if err := os.WriteFile(settingsPath, []byte(`{"port":8765,"log_level":"info","mcp_apps_enabled":false}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings, err = loadControlPanelSettings(root, 8765)
+	if err != nil {
+		t.Fatalf("loadControlPanelSettings() legacy MCP Apps error = %v", err)
+	}
+	if settings.MCPAppsMode != agentconfig.MCPAppsModeOff {
+		t.Fatalf("legacy mcp_apps_enabled=false mode = %q, want off", settings.MCPAppsMode)
+	}
+
+	if err := os.WriteFile(settingsPath, []byte(`{"port":8765,"log_level":"info","mcp_apps_enabled":false,"mcp_apps_mode":"compact"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings, err = loadControlPanelSettings(root, 8765)
+	if err != nil {
+		t.Fatalf("loadControlPanelSettings() explicit MCP Apps mode error = %v", err)
+	}
+	if settings.MCPAppsMode != agentconfig.MCPAppsModeCompact {
+		t.Fatalf("explicit mcp_apps_mode mode = %q, want compact", settings.MCPAppsMode)
 	}
 
 	if err := os.WriteFile(settingsPath, []byte(`{"port":8765,"log_level":"info","oauth_access_token_ttl":"59s"}`), 0o600); err != nil {

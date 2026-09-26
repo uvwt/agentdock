@@ -142,7 +142,7 @@ public partial class MainWindow : Window
             {
                 PortTextBox.Text = snapshot.Settings.Port.ToString();
                 SelectLogLevel(snapshot.Settings.LogLevel);
-                McpAppsEnabledCheckBox.IsChecked = snapshot.Settings.McpAppsEnabled;
+                SelectMcpAppsMode(snapshot.Settings.McpAppsMode);
                 BrowserEnabledCheckBox.IsChecked = snapshot.Settings.BrowserEnabled;
                 BrowserCdpUrlTextBox.Text = snapshot.Settings.BrowserCdpUrl;
                 SelectBrowserConnectionMode(snapshot.Settings);
@@ -868,7 +868,7 @@ public partial class MainWindow : Window
             Port = port,
             LogLevel = SelectedLogLevel(),
             OAuthAccessTokenTtl = _snapshot?.Settings.OAuthAccessTokenTtl ?? "",
-            McpAppsEnabled = McpAppsEnabledCheckBox.IsChecked == true,
+            McpAppsMode = SelectedMcpAppsMode(),
             BrowserEnabled = BrowserEnabledCheckBox.IsChecked == true,
             BrowserCdpUrl = browserConnectionMode == BrowserConnectionSpecified ? browserCdpUrl : "",
             BrowserReuseExistingCdp = browserConnectionMode == BrowserConnectionReuse,
@@ -1024,6 +1024,22 @@ public partial class MainWindow : Window
 
     private string SelectedLogLevel() =>
         (LogLevelComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "info";
+
+    private void SelectMcpAppsMode(string value)
+    {
+        foreach (var item in McpAppsModeComboBox.Items.OfType<ComboBoxItem>())
+        {
+            if (string.Equals(item.Tag?.ToString(), value, StringComparison.OrdinalIgnoreCase))
+            {
+                McpAppsModeComboBox.SelectedItem = item;
+                return;
+            }
+        }
+        McpAppsModeComboBox.SelectedIndex = 0;
+    }
+
+    private string SelectedMcpAppsMode() =>
+        (McpAppsModeComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "full";
 
     private void OpenLogsButton_Click(object sender, RoutedEventArgs e)
     {

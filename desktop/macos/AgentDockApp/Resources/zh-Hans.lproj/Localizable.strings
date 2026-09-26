@@ -59,7 +59,10 @@
 "Type" = "类型";
 "Unable to encode Coding Agent profiles." = "无法编码 Coding Agent 配置。";
 "Use as default" = "设为默认";
-"Enable MCP Apps UI" = "启用 MCP Apps UI";
+"Chat cards" = "聊天卡片";
+"Full" = "完整";
+"Compact" = "精简";
+"Off" = "关闭";
 "Enable browser CDP control" = "启用浏览器 CDP 控制";
 "Enter the CDP address to connect to." = "请输入要连接的 CDP 地址。";
 "Enter the NexusDock address and one-time pairing code." = "请填写 NexusDock 地址和一次性配对码。";

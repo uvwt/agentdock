@@ -25,6 +25,49 @@ const (
 	maxOAuthAccessTokenTTLSeconds     = int64(999999 * 24 * 60 * 60)
 )
 
+type MCPAppsMode string
+
+const (
+	MCPAppsModeFull    MCPAppsMode = "full"
+	MCPAppsModeCompact MCPAppsMode = "compact"
+	MCPAppsModeOff     MCPAppsMode = "off"
+)
+
+func ParseMCPAppsMode(value string) (MCPAppsMode, error) {
+	mode := MCPAppsMode(strings.ToLower(strings.TrimSpace(value)))
+	if mode == "" {
+		return MCPAppsModeFull, nil
+	}
+	switch mode {
+	case MCPAppsModeFull, MCPAppsModeCompact, MCPAppsModeOff:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("unsupported MCP Apps mode %q; expected full, compact, or off", value)
+	}
+}
+
+func mcpAppsModeFromEnv() (MCPAppsMode, error) {
+	if raw := strings.TrimSpace(os.Getenv("AGENTDOCK_MCP_APPS_MODE")); raw != "" {
+		mode, err := ParseMCPAppsMode(raw)
+		if err != nil {
+			return "", fmt.Errorf("AGENTDOCK_MCP_APPS_MODE: %w", err)
+		}
+		return mode, nil
+	}
+	legacy := strings.TrimSpace(os.Getenv("AGENTDOCK_MCP_APPS_ENABLED"))
+	if legacy == "" {
+		return MCPAppsModeFull, nil
+	}
+	enabled, err := strconv.ParseBool(legacy)
+	if err != nil {
+		return "", fmt.Errorf("parse AGENTDOCK_MCP_APPS_ENABLED as boolean: %w", err)
+	}
+	if !enabled {
+		return MCPAppsModeOff, nil
+	}
+	return MCPAppsModeFull, nil
+}
+
 type Config struct {
 	AgentDockHome                string
 	AgentDockDefaultDir          string
@@ -39,7 +82,7 @@ type Config struct {
 	LogLevel                     string
 	NexusEndpoint                string
 	NexusDeviceToken             string
-	MCPAppsEnabled               bool
+	MCPAppsMode                  MCPAppsMode
 	BrowserEnabled               bool
 	BrowserExecutablePath        string
 	BrowserCDPURL                string
@@ -90,7 +133,7 @@ func FromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	mcpAppsEnabled, err := getenvBool("AGENTDOCK_MCP_APPS_ENABLED", true)
+	mcpAppsMode, err := mcpAppsModeFromEnv()
 	if err != nil {
 		return Config{}, err
 	}
@@ -144,7 +187,7 @@ func FromEnv() (Config, error) {
 		OAuthAccessTokenTTLSeconds:   oauthAccessTokenTTLSeconds,
 		OAuthAccessTokenNeverExpires: oauthAccessTokenNeverExpires,
 		LogLevel:                     getenv("AGENTDOCK_LOG_LEVEL", "info"),
-		MCPAppsEnabled:               mcpAppsEnabled,
+		MCPAppsMode:                  mcpAppsMode,
 		BrowserEnabled:               browserEnabled,
 		BrowserExecutablePath:        os.Getenv("AGENTDOCK_BROWSER_EXECUTABLE_PATH"),
 		BrowserCDPURL:                strings.TrimSpace(os.Getenv("AGENTDOCK_BROWSER_CDP_URL")),
@@ -200,6 +243,11 @@ func (c *Config) Normalize() error {
 		}
 		*path.value = cleaned
 	}
+	mcpAppsMode, err := ParseMCPAppsMode(string(c.MCPAppsMode))
+	if err != nil {
+		return err
+	}
+	c.MCPAppsMode = mcpAppsMode
 	c.BrowserExecutablePath = strings.TrimSpace(c.BrowserExecutablePath)
 	if c.BrowserExecutablePath != "" {
 		c.BrowserExecutablePath = filepath.Clean(c.BrowserExecutablePath)

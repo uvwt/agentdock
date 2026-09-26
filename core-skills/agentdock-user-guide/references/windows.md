@@ -20,7 +20,7 @@
 
 Windows Desktop 的运行配置由多部分组成：
 
-- `control-panel-settings.json`：端口、日志、MCP Apps UI、浏览器、ACP 等普通设置；
+- `control-panel-settings.json`：端口、日志、聊天卡片、浏览器、ACP 等普通设置；
 - `runtime.json`：安装位置、Core、Tray、Tunnel 与启动方式等运行清单；
 - `auth-token.dpapi`、`oauth-password.dpapi`、`oauth-token-secret.dpapi`、`cloudflared-token.dpapi`：受当前 Windows 用户保护的秘密；
 - `server-url.txt`、Tunnel 状态文件等：公网/OAuth/Tunnel 运行状态。

@@ -72,7 +72,7 @@ func TestFilePublishDescriptorExposesFileRewritePath(t *testing.T) {
 
 func TestOpenAIFileMetadataMatchesDeclaredSchemas(t *testing.T) {
 	for _, def := range app.ToolDefinitions() {
-		meta := toolMetadata(def, true)
+		meta := toolMetadata(def, config.MCPAppsModeFull)
 		inputProps, _ := def.InputSchema["properties"].(map[string]any)
 		for _, path := range def.FileArgRewritePaths {
 			property, ok := inputProps[path].(map[string]any)
@@ -312,5 +312,5 @@ func toolDescriptorsForConfig(t *testing.T, names []string, cfg config.Config) [
 		}
 		definitions = append(definitions, definition)
 	}
-	return toolDescriptors(definitions, true)
+	return toolDescriptors(definitions, config.MCPAppsModeFull)
 }

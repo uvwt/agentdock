@@ -9,6 +9,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	protocol "github.com/uvwt/agentdock-protocol"
 	"github.com/uvwt/agentdock-protocol/mcpapps"
+	"github.com/uvwt/agentdock/internal/config"
 )
 
 type appResourceDefinition struct {
@@ -20,7 +21,7 @@ type appResourceDefinition struct {
 }
 
 func (s *Server) appResourceDefinitions() []appResourceDefinition {
-	if s == nil || !s.cfg.MCPAppsEnabled {
+	if s == nil || s.cfg.MCPAppsMode == config.MCPAppsModeOff {
 		return nil
 	}
 	definitions := []appResourceDefinition{

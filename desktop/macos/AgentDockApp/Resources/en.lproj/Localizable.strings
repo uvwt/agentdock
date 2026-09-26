@@ -59,7 +59,10 @@
 "Type" = "Type";
 "Unable to encode Coding Agent profiles." = "Unable to encode Coding Agent profiles.";
 "Use as default" = "Use as default";
-"Enable MCP Apps UI" = "Enable MCP Apps UI";
+"Chat cards" = "Chat cards";
+"Full" = "Full";
+"Compact" = "Compact";
+"Off" = "Off";
 "Enable browser CDP control" = "Enable browser CDP control";
 "Enter the CDP address to connect to." = "Enter the CDP address to connect to.";
 "Enter the NexusDock address and one-time pairing code." = "Enter the NexusDock address and one-time pairing code.";

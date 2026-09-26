@@ -356,9 +356,25 @@ func TestWindowsACPSettingsUseSinglePageRowsDefaultDropdownAndCustomDialog(t *te
 		}
 	}
 
-	mcpAppsIndex := strings.Index(xaml, `x:Name="McpAppsEnabledCheckBox" Grid.Row="0"`)
-	portIndex := strings.Index(xaml, `x:Name="PortTextBox" Grid.Row="1"`)
-	if mcpAppsIndex < 0 || portIndex < 0 || mcpAppsIndex > portIndex {
-		t.Fatal("Windows basic settings must place MCP Apps UI above the service port")
+	portIndex := strings.Index(xaml, `x:Name="PortTextBox" Grid.Row="0"`)
+	logLevelIndex := strings.Index(xaml, `x:Name="LogLevelComboBox" Grid.Row="1"`)
+	languageIndex := strings.Index(xaml, `x:Name="LanguageComboBox" Grid.Row="2"`)
+	chatCardsIndex := strings.Index(xaml, `x:Name="McpAppsModeComboBox" Grid.Row="3"`)
+	if portIndex < 0 || logLevelIndex < 0 || languageIndex < 0 || chatCardsIndex < 0 ||
+		!(portIndex < logLevelIndex && logLevelIndex < languageIndex && languageIndex < chatCardsIndex) {
+		t.Fatal("Windows basic settings must place chat cards directly below the interface language")
+	}
+	for _, want := range []string{
+		`Text="{local:Loc ChatCards}"`,
+		`Content="{local:Loc ChatCardsFull}" Tag="full"`,
+		`Content="{local:Loc ChatCardsCompact}" Tag="compact"`,
+		`Content="{local:Loc ChatCardsOff}" Tag="off"`,
+	} {
+		if !strings.Contains(xaml, want) {
+			t.Fatalf("Windows chat card mode dropdown missing %q", want)
+		}
+	}
+	if strings.Contains(xaml, `McpAppsEnabledCheckBox`) {
+		t.Fatal("Windows chat card mode must not keep the old MCP Apps checkbox")
 	}
 }
