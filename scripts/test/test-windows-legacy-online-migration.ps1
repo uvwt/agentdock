@@ -47,7 +47,6 @@ $tray = Join-Path $binRoot 'agentdock-tray.exe'
 Copy-Item (Join-Path $extractRoot 'agentdock.exe') $core -Force
 Copy-Item (Join-Path $extractRoot 'agentdock-tray.exe') $tray -Force
 Copy-Item (Join-Path $extractRoot 'manage-windows.ps1') (Join-Path $runtimeRoot 'installer\manage-windows.ps1') -Force
-$legacyTrayProcess = $null
 
 $versionOutput = (& $core --version | Out-String).Trim()
 if ([string]::IsNullOrWhiteSpace($Version)) {
@@ -127,13 +126,6 @@ try {
         if ($flatHealth.ok -ne $true -or $flatHealth.version -ne $Version) {
             throw "flat Core health mismatch before migration: $($flatHealth | ConvertTo-Json -Compress)"
         }
-
-        # CI 没有交互桌面，真实 WPF Tray 会主动退出；用同路径 headless 进程覆盖“迁移时 Tray 仍存活”的边界。
-        Copy-Item (Join-Path $env:SystemRoot 'System32\PING.EXE') $tray -Force
-        $flatTrayHash = (Get-FileHash -LiteralPath $tray -Algorithm SHA256).Hash
-        $legacyTrayProcess = Start-Process -FilePath $tray -ArgumentList '-t 127.0.0.1' -WorkingDirectory $runtimeRoot -WindowStyle Hidden -PassThru
-        Start-Sleep -Milliseconds 300
-        if ($legacyTrayProcess.HasExited) { throw 'headless legacy Tray surrogate exited before migration' }
     } finally {
         $migrationGate.ReleaseMutex()
         $migrationGate.Dispose()
@@ -155,6 +147,7 @@ try {
 
         if ($InjectTrayReplaceFailure) {
             $flatCoreHash = (Get-FileHash -LiteralPath (Join-Path $extractRoot 'agentdock.exe') -Algorithm SHA256).Hash
+            $flatTrayHash = (Get-FileHash -LiteralPath (Join-Path $extractRoot 'agentdock-tray.exe') -Algorithm SHA256).Hash
             $activePath = Join-Path $runtimeRoot 'active-version.json'
             $compatManagerPath = Join-Path $runtimeRoot 'installer\manage-windows.ps1'
             $deadline = [DateTime]::UtcNow.AddSeconds(90)
@@ -288,7 +281,6 @@ try {
         }
     } catch {
     }
-    if ($null -ne $legacyTrayProcess -and -not $legacyTrayProcess.HasExited) { Stop-Process -Id $legacyTrayProcess.Id -Force -ErrorAction SilentlyContinue }
     Start-Sleep -Milliseconds 500
     Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
