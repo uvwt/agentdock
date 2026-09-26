@@ -172,13 +172,17 @@ func (s *Server) callTool(ctx context.Context, name string, request *mcpsdk.Call
 		if meta := toolResultMetadata(def, arguments, s.cfg.MCPAppsMode); len(meta) > 0 {
 			response.Meta = meta
 		}
-		if name == "view_image" && s.cfg.MCPAppsEnabled && !response.IsError {
-			for _, content := range response.Content {
-				if _, ok := content.(*mcpsdk.ImageContent); ok {
-					// 图像宿主需在结果上获得展示绑定；原图字节和结构化协议保持不变。
-					response.Meta = mcpsdk.Meta(toolMetadata(def, true))
-					response.Content = append(response.Content, &mcpsdk.TextContent{Text: mcpapps.ImageResultText})
-					break
+		if name == "view_image" && !response.IsError {
+			meta := toolMetadata(def, s.cfg.MCPAppsMode)
+			if meta["ui"] != nil {
+				for _, content := range response.Content {
+					if _, ok := content.(*mcpsdk.ImageContent); ok {
+						// 只有当前模式实际启用 Image 卡片时才追加宿主确认提示；
+						// 原图字节和结构化协议始终保持不变。
+						response.Meta = mcpsdk.Meta(meta)
+						response.Content = append(response.Content, &mcpsdk.TextContent{Text: mcpapps.ImageResultText})
+						break
+					}
 				}
 			}
 		}
