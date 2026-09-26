@@ -128,6 +128,23 @@ func TestReleaseWorkflowHasSignPathFoundationReviewPath(t *testing.T) {
 	}
 }
 
+func TestReleaseWorkflowComparesStagedPowerShellInstallerToGitBlob(t *testing.T) {
+	workflow := readWorkflow(t, "release.yml")
+	for _, want := range []string{
+		"$sourceCommit = '${{ needs.source.outputs.commit }}'",
+		"git rev-parse \"${sourceCommit}:scripts/install/install.ps1\"",
+		"git hash-object --no-filters -- $installer",
+		"Staged install.ps1 does not match source blob",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("Release workflow must compare the staged PowerShell installer to the immutable Git blob; missing %q", want)
+		}
+	}
+	if strings.Contains(workflow, "Get-FileHash -LiteralPath '.\\\\scripts\\\\install\\\\install.ps1'") {
+		t.Fatal("Release workflow must not compare staged install.ps1 to a Windows checkout whose line endings may be rewritten")
+	}
+}
+
 func TestWindowsTrayCarriesSignPathMetadataFromMSBuild(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "AgentDock.ControlPanel.csproj"))
 	if err != nil {

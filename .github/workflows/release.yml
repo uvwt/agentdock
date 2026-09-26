@@ -941,10 +941,13 @@ jobs:
             }
           }
 
-          # 候选产物中的 install.ps1 必须与 tag 源码完全一致，防止 workflow/source SHA 混用。
-          if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ne
-              (Get-FileHash -LiteralPath '.\scripts\install\install.ps1' -Algorithm SHA256).Hash) {
-            throw 'Staged install.ps1 does not match the tagged source.'
+          # 候选产物中的 install.ps1 必须与已校验 source commit 的 Git blob 完全一致。
+          # 不和 Windows checkout 工作树比较，避免 core.autocrlf 把 LF 转成 CRLF 后制造假失败。
+          $sourceCommit = '${{ needs.source.outputs.commit }}'
+          $expectedInstallerBlob = (git rev-parse "${sourceCommit}:scripts/install/install.ps1").Trim()
+          $actualInstallerBlob = (git hash-object --no-filters -- $installer).Trim()
+          if ($actualInstallerBlob -ne $expectedInstallerBlob) {
+            throw "Staged install.ps1 does not match source blob $expectedInstallerBlob."
           }
 
           foreach ($asset in @('install.ps1', 'AgentDockSetup-amd64.exe', 'agentdock_windows_amd64.zip')) {
