@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	runtimecontract "github.com/uvwt/agentdock-protocol/runtimecontract"
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
 	toolmcp "github.com/uvwt/agentdock/internal/tool/mcp"
@@ -15,19 +16,20 @@ const runtimeAPISource = "agentdock-api"
 func (r *Runtime) RuntimeStatus() Result {
 	tools := r.ToolNames()
 	return Result{
-		"ok":                    true,
-		"source":                runtimeAPISource,
-		"service":               config.ServerName,
-		"version":               buildinfo.Version,
-		"agentdock_home":        r.cfg.AgentDockHome,
-		"agentdock_default_dir": r.cfg.AgentDockDefaultDir,
-		"path_model":            config.PathModel,
-		"auth_enabled":          r.cfg.AuthRequired(),
-		"browser_enabled":       r.cfg.BrowserEnabled,
-		"memory_enabled":        r.cfg.NexusEndpoint != "",
-		"nexus_enabled":         strings.TrimSpace(r.cfg.NexusEndpoint) != "",
-		"tool_count":            len(tools),
-		"tools":                 tools,
+		"ok":                       true,
+		"source":                   runtimeAPISource,
+		"service":                  config.ServerName,
+		"version":                  buildinfo.Version,
+		"runtime_contract_version": runtimecontract.CurrentVersion,
+		"agentdock_home":           r.cfg.AgentDockHome,
+		"agentdock_default_dir":    r.cfg.AgentDockDefaultDir,
+		"path_model":               config.PathModel,
+		"auth_enabled":             r.cfg.AuthRequired(),
+		"browser_enabled":          r.cfg.BrowserEnabled,
+		"memory_enabled":           r.cfg.NexusEndpoint != "",
+		"nexus_enabled":            strings.TrimSpace(r.cfg.NexusEndpoint) != "",
+		"tool_count":               len(tools),
+		"tools":                    tools,
 	}
 }
 

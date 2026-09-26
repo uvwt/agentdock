@@ -10,6 +10,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	protocol "github.com/uvwt/agentdock-protocol"
+	runtimecontract "github.com/uvwt/agentdock-protocol/runtimecontract"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/mcp"
 	"github.com/uvwt/agentdock/internal/publicartifacts"
@@ -46,6 +47,9 @@ func TestBridgeHelloSeparatesToolsFromBridgeCapabilities(t *testing.T) {
 	)
 	if !reflect.DeepEqual(hello.Capabilities, tools) {
 		t.Fatalf("capabilities = %#v, want tools %#v", hello.Capabilities, tools)
+	}
+	if hello.RuntimeContractVersion != runtimecontract.CurrentVersion {
+		t.Fatalf("runtime_contract_version = %d, want %d", hello.RuntimeContractVersion, runtimecontract.CurrentVersion)
 	}
 	if len(hello.BridgeCapabilities) != 1 || hello.BridgeCapabilities[0] != protocol.ArtifactReadCapability {
 		t.Fatalf("bridge_capabilities = %#v", hello.BridgeCapabilities)

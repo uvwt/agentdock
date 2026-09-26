@@ -17,6 +17,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	protocol "github.com/uvwt/agentdock-protocol"
+	runtimecontract "github.com/uvwt/agentdock-protocol/runtimecontract"
 	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/publicartifacts"
@@ -178,16 +179,17 @@ func (c *Client) connect(ctx context.Context) error {
 
 func bridgeHello(identity Identity, tools []string, descriptors []protocol.ToolDescriptor, uiResources []protocol.UIResourceCapability, toolContractHash string) *protocol.Hello {
 	return &protocol.Hello{
-		DeviceID:           identity.DeviceID,
-		Version:            buildinfo.Version,
-		ProtocolVersion:    protocol.ConnectionProtocolVersion,
-		OS:                 runtime.GOOS,
-		Arch:               runtime.GOARCH,
-		Capabilities:       append([]string(nil), tools...),
-		BridgeCapabilities: []string{protocol.ArtifactReadCapability},
-		ToolContractHash:   toolContractHash,
-		Tools:              descriptors,
-		UIResources:        uiResources,
+		DeviceID:               identity.DeviceID,
+		Version:                buildinfo.Version,
+		ProtocolVersion:        protocol.ConnectionProtocolVersion,
+		RuntimeContractVersion: runtimecontract.CurrentVersion,
+		OS:                     runtime.GOOS,
+		Arch:                   runtime.GOARCH,
+		Capabilities:           append([]string(nil), tools...),
+		BridgeCapabilities:     []string{protocol.ArtifactReadCapability},
+		ToolContractHash:       toolContractHash,
+		Tools:                  descriptors,
+		UIResources:            uiResources,
 	}
 }
 

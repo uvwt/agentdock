@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	runtimecontract "github.com/uvwt/agentdock-protocol/runtimecontract"
+	runtimecontractv1 "github.com/uvwt/agentdock-protocol/runtimecontract/v1"
 	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/auth"
 	"github.com/uvwt/agentdock/internal/config"
@@ -141,6 +143,13 @@ func TestRuntimeAPIStatusWithBearer(t *testing.T) {
 	body := recorder.Body.String()
 	if !strings.Contains(body, `"source":"agentdock-api"`) {
 		t.Fatalf("body missing source: %s", body)
+	}
+	var status runtimecontractv1.StatusResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &status); err != nil {
+		t.Fatalf("decode Runtime contract status: %v", err)
+	}
+	if status.RuntimeContractVersion != runtimecontract.CurrentVersion {
+		t.Fatalf("runtime_contract_version = %d, want %d", status.RuntimeContractVersion, runtimecontract.CurrentVersion)
 	}
 	if strings.Contains(body, "secret-token") {
 		t.Fatalf("status response leaked token: %s", body)
