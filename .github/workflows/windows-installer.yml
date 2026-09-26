@@ -97,6 +97,31 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Test cross-architecture VersionInfo tooling
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $hostArch = (go env GOHOSTARCH).Trim()
+          $targetArch = if ($hostArch -eq 'amd64') { 'arm64' } else { 'amd64' }
+          $testRoot = Join-Path $env:RUNNER_TEMP "agentdock-version-info-$targetArch"
+          $binary = Join-Path $testRoot 'agentdock.exe'
+          New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
+
+          $env:CGO_ENABLED = '0'
+          $env:GOOS = 'windows'
+          $env:GOARCH = $targetArch
+          go build -trimpath -o $binary .\cmd\agentdock
+
+          & .\packaging\windows\set-version-info.ps1 -Version '1.2.3' -Path $binary
+          if ($env:GOOS -ne 'windows' -or $env:GOARCH -ne $targetArch) {
+            throw 'set-version-info.ps1 did not restore the target Go environment.'
+          }
+
+          $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($binary)
+          if ($info.ProductVersion -ne '1.2.3.0' -or $info.FileVersion -ne '1.2.3.0') {
+            throw "Cross-architecture VersionInfo mismatch: ProductVersion=$($info.ProductVersion), FileVersion=$($info.FileVersion)"
+          }
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:

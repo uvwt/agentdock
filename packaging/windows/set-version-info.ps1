@@ -32,6 +32,15 @@ function Normalize-WindowsVersion {
 }
 
 $windowsVersion = Normalize-WindowsVersion -Value $Version
+$goHostOS = (& go env GOHOSTOS).Trim()
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($goHostOS)) {
+    throw 'Failed to resolve Go host OS for go-winres.'
+}
+$goHostArch = (& go env GOHOSTARCH).Trim()
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($goHostArch)) {
+    throw 'Failed to resolve Go host architecture for go-winres.'
+}
+
 $descriptions = @{
     'agentdock.exe' = 'AgentDock'
     'agentdock-tray.exe' = 'AgentDock Control Panel'
@@ -124,14 +133,33 @@ try {
         $json = $resource | ConvertTo-Json -Depth 12
         [IO.File]::WriteAllText($jsonPath, $json, [Text.UTF8Encoding]::new($false))
 
-        & go run github.com/tc-hib/go-winres@v0.3.3 patch `
-            --in $jsonPath `
-            --product-version $windowsVersion `
-            --file-version $windowsVersion `
-            --no-backup `
-            $resolved
-        if ($LASTEXITCODE -ne 0) {
-            throw "go-winres failed for ${fileName}: exit code $LASTEXITCODE"
+        $targetGOOS = $env:GOOS
+        $targetGOARCH = $env:GOARCH
+        try {
+            # go-winres is a build-time host tool. Keep the target binary architecture
+            # unchanged, but compile and execute go-winres for the GitHub runner itself.
+            $env:GOOS = $goHostOS
+            $env:GOARCH = $goHostArch
+            & go run github.com/tc-hib/go-winres@v0.3.3 patch `
+                --in $jsonPath `
+                --product-version $windowsVersion `
+                --file-version $windowsVersion `
+                --no-backup `
+                $resolved
+            if ($LASTEXITCODE -ne 0) {
+                throw "go-winres failed for ${fileName}: exit code $LASTEXITCODE"
+            }
+        } finally {
+            if ($null -eq $targetGOOS) {
+                Remove-Item Env:GOOS -ErrorAction SilentlyContinue
+            } else {
+                $env:GOOS = $targetGOOS
+            }
+            if ($null -eq $targetGOARCH) {
+                Remove-Item Env:GOARCH -ErrorAction SilentlyContinue
+            } else {
+                $env:GOARCH = $targetGOARCH
+            }
         }
 
         $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($resolved)
