@@ -34,11 +34,6 @@ function Test-InternalAgentDockProcess {
     return $null -ne $process
 }
 
-$getProcessAtPath = {
-    param([string] $Path); $target = [IO.Path]::GetFullPath($Path)
-    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -and [string]::Equals([IO.Path]::GetFullPath($_.ExecutablePath), $target, [StringComparison]::OrdinalIgnoreCase) }
-}
-
 $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
 $listener.Start()
 $port = ([Net.IPEndPoint] $listener.LocalEndpoint).Port
@@ -52,6 +47,7 @@ $tray = Join-Path $binRoot 'agentdock-tray.exe'
 Copy-Item (Join-Path $extractRoot 'agentdock.exe') $core -Force
 Copy-Item (Join-Path $extractRoot 'agentdock-tray.exe') $tray -Force
 Copy-Item (Join-Path $extractRoot 'manage-windows.ps1') (Join-Path $runtimeRoot 'installer\manage-windows.ps1') -Force
+$legacyTrayProcess = $null
 
 $versionOutput = (& $core --version | Out-String).Trim()
 if ([string]::IsNullOrWhiteSpace($Version)) {
@@ -132,11 +128,12 @@ try {
             throw "flat Core health mismatch before migration: $($flatHealth | ConvertTo-Json -Compress)"
         }
 
-        # 真实旧版 Tray 常驻并周期读取 Core；Issue #144 的迁移竞态只有这个进程源存在时才会暴露。
-        Start-Process -FilePath $tray -ArgumentList '--background' -WorkingDirectory $runtimeRoot -WindowStyle Hidden | Out-Null
-        $trayDeadline = [DateTime]::UtcNow.AddSeconds(10)
-        do { Start-Sleep -Milliseconds 100 } while (@(& $getProcessAtPath $tray).Count -eq 0 -and [DateTime]::UtcNow -lt $trayDeadline)
-        if (@(& $getProcessAtPath $tray).Count -eq 0) { throw 'legacy Tray did not stay running before migration' }
+        # CI 没有交互桌面，真实 WPF Tray 会主动退出；用同路径 headless 进程覆盖“迁移时 Tray 仍存活”的边界。
+        Copy-Item (Join-Path $env:SystemRoot 'System32\PING.EXE') $tray -Force
+        $flatTrayHash = (Get-FileHash -LiteralPath $tray -Algorithm SHA256).Hash
+        $legacyTrayProcess = Start-Process -FilePath $tray -ArgumentList '-t 127.0.0.1' -WorkingDirectory $runtimeRoot -WindowStyle Hidden -PassThru
+        Start-Sleep -Milliseconds 300
+        if ($legacyTrayProcess.HasExited) { throw 'headless legacy Tray surrogate exited before migration' }
     } finally {
         $migrationGate.ReleaseMutex()
         $migrationGate.Dispose()
@@ -158,7 +155,6 @@ try {
 
         if ($InjectTrayReplaceFailure) {
             $flatCoreHash = (Get-FileHash -LiteralPath (Join-Path $extractRoot 'agentdock.exe') -Algorithm SHA256).Hash
-            $flatTrayHash = (Get-FileHash -LiteralPath (Join-Path $extractRoot 'agentdock-tray.exe') -Algorithm SHA256).Hash
             $activePath = Join-Path $runtimeRoot 'active-version.json'
             $compatManagerPath = Join-Path $runtimeRoot 'installer\manage-windows.ps1'
             $deadline = [DateTime]::UtcNow.AddSeconds(90)
@@ -292,8 +288,7 @@ try {
         }
     } catch {
     }
-    & $getProcessAtPath $tray | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-    if (-not [string]::IsNullOrWhiteSpace($Version)) { & $getProcessAtPath (Join-Path $runtimeRoot "versions\v$Version\agentdock-tray.exe") | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } }
+    if ($null -ne $legacyTrayProcess -and -not $legacyTrayProcess.HasExited) { Stop-Process -Id $legacyTrayProcess.Id -Force -ErrorAction SilentlyContinue }
     Start-Sleep -Milliseconds 500
     Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
