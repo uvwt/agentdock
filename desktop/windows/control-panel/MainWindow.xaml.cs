@@ -134,9 +134,8 @@ public partial class MainWindow : Window
                 : snapshot.Nexus.Paired
                     ? UiText.Format("DeviceTokenSaved", snapshot.Nexus.NodeId)
                     : UiText.Get("DeviceNotPairedHelp");
-            NexusDeviceTokenStatusText.Foreground = snapshot.Nexus.Error.Length > 0
-                ? new SolidColorBrush(Color.FromRgb(217, 45, 32))
-                : new SolidColorBrush(Color.FromRgb(102, 112, 133));
+            NexusDeviceTokenStatusText.SetResourceReference(TextBlock.ForegroundProperty,
+                snapshot.Nexus.Error.Length > 0 ? "UiError" : "UiMuted");
 
             if (!_settingsLoaded)
             {
@@ -162,27 +161,8 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task AutoTestPublicAsync(RuntimeSnapshot snapshot)
-    {
-        if (string.IsNullOrWhiteSpace(snapshot.PublicOrigin))
-        {
-            PublicTestStatusText.Text = snapshot.TunnelMode == "quick" ? UiText.Get("WaitingTemporaryAddress") : UiText.Get("PublicAddressNotConfigured");
-            return;
-        }
-
-        var now = DateTimeOffset.UtcNow;
-        if (string.Equals(snapshot.PublicOrigin, _lastAutoTestOrigin, StringComparison.OrdinalIgnoreCase) &&
-            now - _lastAutoTestAt < TimeSpan.FromSeconds(15))
-        {
-            return;
-        }
-
-        _lastAutoTestOrigin = snapshot.PublicOrigin;
-        _lastAutoTestAt = now;
-        PublicTestStatusText.Text = UiText.Get("AutoDetectingPublicAddress");
-        var result = await _runtime.TestUrlAsync(snapshot.PublicOrigin);
-        PublicTestStatusText.Text = result.Message;
-    }
+    private Task AutoTestPublicAsync(RuntimeSnapshot snapshot) =>
+        RunPublicCheckAsync(snapshot.PublicOrigin, snapshot.TunnelMode, force: false);
 
     private async Task<bool> ExecuteActionAsync(
         string pendingText,
@@ -255,20 +235,10 @@ public partial class MainWindow : Window
         ToggleOAuthButton.Content = _showOAuth ? UiText.Get("Hide") : UiText.Get("Show");
     }
 
-    private static string MaskSecret(string value) => string.IsNullOrEmpty(value) ? UiText.Get("NotConfigured") : new string('●', Math.Clamp(value.Length, 8, 32));
+    private static string MaskSecret(string value) => string.IsNullOrEmpty(value) ? UiText.Get("NotConfigured") : "......";
 
-    private async void TestPublicButton_Click(object sender, RoutedEventArgs e)
-    {
-        var origin = _snapshot?.PublicOrigin ?? "";
-        if (string.IsNullOrWhiteSpace(origin))
-        {
-            PublicTestStatusText.Text = UiText.Get("CurrentNoPublicAddress");
-            return;
-        }
-        PublicTestStatusText.Text = UiText.Get("Testing");
-        var result = await _runtime.TestUrlAsync(origin);
-        PublicTestStatusText.Text = result.Message;
-    }
+    private async void TestPublicButton_Click(object sender, RoutedEventArgs e) =>
+        await RunPublicCheckAsync(_snapshot?.PublicOrigin ?? "", _snapshot?.TunnelMode ?? "none", force: true);
 
     private void TunnelModeRadio_Checked(object sender, RoutedEventArgs e)
     {
@@ -299,7 +269,11 @@ public partial class MainWindow : Window
         return "none";
     }
 
-    private async void ApplyTunnelModeButton_Click(object sender, RoutedEventArgs e)
+    private async void ApplyTunnelModeButton_Click(object sender, RoutedEventArgs e) =>
+        await ApplySelectedTunnelModeFromUiAsync();
+
+    // The original execution path is shared by homepage selection and fixed-domain save.
+    private async Task<bool> ApplySelectedTunnelModeCoreAsync()
     {
         var mode = SelectedTunnelMode();
         if (mode == "quick")
@@ -308,12 +282,13 @@ public partial class MainWindow : Window
             PublicTestStatusText.Text = UiText.Get("GeneratingTemporaryAddress");
             _lastAutoTestOrigin = "";
         }
-        await ExecuteActionAsync(
+        var applied = await ExecuteActionAsync(
             UiText.Get("SwitchingPublicAccess"),
             () => _runtime.SetTunnelModeAsync(mode, ServerUrlTextBox.Text.Trim(), TunnelTokenPasswordBox.Password),
             TunnelActionStatusText,
             "tunnel-configure");
         TunnelTokenPasswordBox.Clear();
+        return applied;
     }
 
     private async void RegenerateQuickButton_Click(object sender, RoutedEventArgs e)

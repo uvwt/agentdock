@@ -315,6 +315,8 @@ public partial class App : System.Windows.Application
 
     private void CreateNotifyIcon()
     {
+        _trayTheme = UiThemePreference.Read(System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AgentDock", "ui-theme"));
         _trayMenu = new Forms.ContextMenuStrip();
         PopulateTrayMenu(_trayMenu, null);
 
@@ -376,56 +378,19 @@ public partial class App : System.Windows.Application
 
     private void PopulateTrayMenu(Forms.ContextMenuStrip menu, RuntimeSnapshot? snapshot)
     {
-        while (menu.Items.Count > 0)
-        {
-            var oldItem = menu.Items[0];
-            menu.Items.RemoveAt(0);
-            oldItem.Dispose();
-        }
-
         var statusText = snapshot is null ? UiText.Get("LoadingStatus") : GetTrayStatusText(snapshot);
-        var status = new Forms.ToolStripMenuItem($"AgentDock: {statusText}") { Enabled = false };
-        menu.Items.Add(status);
-        menu.Items.Add(new Forms.ToolStripSeparator());
-
-        menu.Items.Add(CreateMenuItem(UiText.Get("OpenAgentDock"), (_, _) => ShowControlPanel()));
-        menu.Items.Add(new Forms.ToolStripSeparator());
-
-        if (snapshot?.CoreRunning == true)
-        {
-            menu.Items.Add(CreateMenuItem(UiText.Get("StopAgentDock"), async (_, _) => await RunTrayActionAsync("stop")));
-            menu.Items.Add(CreateMenuItem(UiText.Get("RestartAgentDock"), async (_, _) => await RunTrayActionAsync("restart")));
-        }
-        else
-        {
-            menu.Items.Add(CreateMenuItem(
-                UiText.Get("StartAgentDock"),
-                async (_, _) => await RunTrayActionAsync("start"),
-                snapshot is not null));
-        }
-        menu.Items.Add(CreateMenuItem(
-            _updateInProgress ? UiText.Get("CheckingForUpdates") : UiText.Get("CheckForUpdates"),
-            async (_, _) => await RunTrayUpdateAsync(),
-            snapshot is not null && !_updateInProgress));
-        menu.Items.Add(new Forms.ToolStripSeparator());
-
-        menu.Items.Add(CreateMenuItem(UiText.Get("OpenLogsFolder"), (_, _) => Runtime.OpenLogsDirectory()));
-        menu.Items.Add(CreateMenuItem(UiText.Get("OpenConfigFolder"), (_, _) => Runtime.OpenConfigDirectory()));
-        menu.Items.Add(CreateMenuItem(UiText.Get("OpenDocumentation"), (_, _) => OpenDocumentation()));
-        menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add(CreateMenuItem(UiText.Get("ExitTray"), (_, _) => Dispatcher.Invoke(RequestExit)));
-
+        TrayMenuPresentation.Populate(menu,
+            new TrayMenuState(statusText, snapshot?.CoreRunning, snapshot?.Healthy == true,
+                _updateInProgress, !string.IsNullOrWhiteSpace(snapshot?.PublicMcpUrl), _trayTheme),
+            new TrayMenuActions(
+                () => ShowTrayPage(0), () => ShowTrayPage(1),
+                CopyPublicFromTrayAsync, CheckPublicFromTrayAsync,
+                RunTrayActionAsync, RunTrayUpdateAsync,
+                () => Runtime.OpenLogsDirectory(), () => Runtime.OpenConfigDirectory(),
+                theme => ControlPanelWindow.SetThemeFromTray(theme),
+                OpenDocumentation, () => Dispatcher.Invoke(RequestExit)));
         if (_notifyIcon is not null)
-        {
             _notifyIcon.Text = TruncateNotifyIconText($"AgentDock: {statusText}");
-        }
-    }
-
-    private static Forms.ToolStripMenuItem CreateMenuItem(string text, EventHandler onClick, bool enabled = true)
-    {
-        var item = new Forms.ToolStripMenuItem(text) { Enabled = enabled };
-        item.Click += onClick;
-        return item;
     }
 
     private static string GetTrayStatusText(RuntimeSnapshot snapshot)
