@@ -25,6 +25,8 @@ type SessionObserveRequest struct {
 	Action         string `json:"action,omitempty"`
 	SessionID      string `json:"session_id,omitempty"`
 	MaxOutputBytes *int   `json:"max_output_bytes,omitempty"`
+	StdoutOffset   *int   `json:"stdout_offset,omitempty"`
+	StderrOffset   *int   `json:"stderr_offset,omitempty"`
 }
 
 type SessionActRequest struct {

@@ -7,13 +7,18 @@ func (s *Service) Observe(request SessionObserveRequest) (Result, error) {
 	if action == "" {
 		action = "list"
 	}
+	if action != "read" && (request.StdoutOffset != nil || request.StderrOffset != nil) {
+		return nil, toolError("INVALID_ARGUMENT", "output offsets require action=read", "validation")
+	}
 	switch action {
 	case "list":
 		return s.listSessions()
 	case "status":
 		return s.sessionStatus(request)
+	case "read":
+		return s.readSession(request)
 	default:
-		return nil, toolErrorDetails("INVALID_ACTION", "unsupported session_observe action", "validation", map[string]any{"action": request.Action, "allowed": []string{"list", "status"}})
+		return nil, toolErrorDetails("INVALID_ACTION", "unsupported session_observe action", "validation", map[string]any{"action": request.Action, "allowed": []string{"list", "status", "read"}})
 	}
 }
 

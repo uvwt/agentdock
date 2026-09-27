@@ -30,9 +30,11 @@ func InputSchema(name string) (map[string]any, bool) {
 		props["tty"] = boolProp("Keep stdin open.")
 		required = []string{"cmd"}
 	case ToolSessionObserve:
-		props["action"] = map[string]any{"type": "string", "description": "Read-only session action.", "enum": []string{"list", "status"}}
-		props["session_id"] = stringProp("Session id returned by exec_command, required for status.")
+		props["action"] = map[string]any{"type": "string", "description": "Session observation action. status consumes unread output and removes completed sessions. read returns replayable pages without consuming output or removing the session.", "enum": []string{"list", "status", "read"}}
+		props["session_id"] = stringProp("Session id returned by exec_command, required for status/read.")
 		props["max_output_bytes"] = boundedIntProp("Maximum output bytes. Defaults to 65536 and is capped at 4194304.", 1, MaxOutputBytes)
+		props["stdout_offset"] = map[string]any{"type": "integer", "minimum": 0, "description": "Absolute raw stdout byte offset for action=read, default 0. Resume with stdout_next_offset from the last received page; retry the same offset if a response is lost."}
+		props["stderr_offset"] = map[string]any{"type": "integer", "minimum": 0, "description": "Absolute raw stderr byte offset for action=read, default 0. Resume with stderr_next_offset. read requires max_output_bytes >= 4 to preserve UTF-8 page boundaries."}
 	case ToolSessionAct:
 		props["action"] = map[string]any{"type": "string", "description": "Mutating session action.", "enum": []string{"write", "kill", "kill_all"}}
 		props["session_id"] = stringProp("Session id returned by exec_command, required for write/kill.")
@@ -69,7 +71,13 @@ func OutputSchema(name string) (map[string]any, bool) {
 	case ToolExecCommand:
 		props["session_reason"] = stringProp("Why exec_command returned a session instead of a completed result.")
 		props["observe_after_ms"] = intProp("Suggested delay before inspecting the returned session.")
-	case ToolSessionObserve, ToolSessionAct:
+	case ToolSessionObserve:
+		for _, stream := range []string{"stdout", "stderr"} {
+			props[stream+"_offset"] = intProp("Absolute raw byte offset at the start of the returned page.")
+			props[stream+"_next_offset"] = intProp("Absolute raw byte offset to request for the next page.")
+			props[stream+"_missed_bytes"] = intProp("Bytes skipped because the requested offset was evicted or inside a UTF-8 character.")
+		}
+	case ToolSessionAct:
 	default:
 		return nil, false
 	}

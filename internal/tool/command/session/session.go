@@ -514,6 +514,10 @@ func (s *Session) Peek(status string, maxBytes int) Snapshot {
 func (s *Session) snapshot(status string, maxBytes int, advance bool) Snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.snapshotLocked(status, maxBytes, advance)
+}
+
+func (s *Session) snapshotLocked(status string, maxBytes int, advance bool) Snapshot {
 	stdoutFull := s.stdout.String()
 	stderrFull := s.stderr.String()
 	stdoutSegment := stdoutFull
