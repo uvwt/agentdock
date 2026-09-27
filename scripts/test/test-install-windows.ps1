@@ -38,6 +38,40 @@ foreach ($line in ($content -split "`n")) {
     }
 }
 
+if ($PSVersionTable.PSEdition -eq 'Desktop') {
+    # Reproduce the Issue #165 boundary without putting non-ASCII bytes in this test file.
+    $probeCharacter = [char]0x4E2D
+    $probePath = 'C:\Users\' + $probeCharacter + '\AppData\Local\AgentDock'
+    $probeJson = @{ state_root = $probePath } | ConvertTo-Json -Compress
+    $probePayload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($probeJson))
+    $probeWriter = '$bytes=[Convert]::FromBase64String(''' + $probePayload + ''');$stdout=[Console]::OpenStandardOutput();$stdout.Write($bytes,0,$bytes.Length);$stdout.Flush()'
+    $probeCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($probeWriter))
+    $previousConsoleOutputEncoding = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [Text.Encoding]::GetEncoding(936)
+        $corruptedJson = (& powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand $probeCommand 2>$null | Out-String).Trim()
+        $cp936Rejected = $false
+        try {
+            $null = $corruptedJson | ConvertFrom-Json
+        } catch {
+            $cp936Rejected = $true
+        }
+        if (-not $cp936Rejected) {
+            throw 'CP936 probe did not reproduce native UTF-8 JSON corruption.'
+        }
+
+        [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+        $preservedJson = (& powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand $probeCommand 2>$null | Out-String).Trim()
+        $preserved = $preservedJson | ConvertFrom-Json
+        if ([string] $preserved.state_root -ne $probePath) {
+            throw "UTF-8 native stdout did not preserve the Unicode state_root: $($preserved.state_root)"
+        }
+    } finally {
+        [Console]::OutputEncoding = $previousConsoleOutputEncoding
+        $global:LASTEXITCODE = 0
+    }
+}
+
 foreach ($forbidden in @(
     'Set-PrivateAcl',
     'Get-Acl',
@@ -228,6 +262,9 @@ foreach ($required in @(
     'Exit-InstallerTransactionLease -Lease $installerTransactionLease',
     '[IO.FileShare]::None',
     '[IO.File]::ReadAllText($engineResultPath, [Text.Encoding]::UTF8)',
+    '[Console]::OutputEncoding = $Utf8NoBom',
+    '[Console]::OutputEncoding = $previousConsoleOutputEncoding',
+    '$existingManifest = Get-Content -LiteralPath $runtimeManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json',
     'if ((-not $RegisterStartup) -or ($InstallChannel -eq ''setup''))',
     '$engineOwnsActivation = $InstallChannel -ne ''setup''',
     '$commitArgs += ''--healthy''',

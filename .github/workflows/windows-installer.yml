@@ -97,6 +97,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Validate installer encoding and PowerShell 5.1 syntax
+        shell: powershell
+        run: .\scripts\test\test-install-windows.ps1 -InstallerPath .\scripts\install\install.ps1
+
       - name: Test cross-architecture VersionInfo tooling
         shell: powershell
         run: |

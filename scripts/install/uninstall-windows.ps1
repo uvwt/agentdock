@@ -10,6 +10,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 function Get-ProcessIdsByPath {
     param(
@@ -166,7 +167,7 @@ $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $managedTaskName = ''
 if (Test-Path -LiteralPath $runtimeManifestPath -PathType Leaf) {
     try {
-        $runtimeManifest = Get-Content -LiteralPath $runtimeManifestPath -Raw | ConvertFrom-Json
+        $runtimeManifest = Get-Content -LiteralPath $runtimeManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
         if ([string]::Equals([string] $runtimeManifest.privilege_mode, 'elevated', [StringComparison]::OrdinalIgnoreCase) -and
             -not [string]::IsNullOrWhiteSpace([string] $runtimeManifest.agentdock_task_name)) {
             $managedTaskName = ([string] $runtimeManifest.agentdock_task_name).Trim()
@@ -201,9 +202,16 @@ if (Test-Path -LiteralPath $agentDockBinary -PathType Leaf) {
         if (-not [string]::IsNullOrWhiteSpace($managedTaskName)) {
             $engineUninstall += @('--task-name', $managedTaskName)
         }
-        $engineUninstallJson = (& $agentDockBinary @engineUninstall | Out-String).Trim()
-        if ($LASTEXITCODE -ne 0) {
-            throw "Installer Engine uninstall failed with exit code $LASTEXITCODE."
+        $previousConsoleOutputEncoding = [Console]::OutputEncoding
+        try {
+            [Console]::OutputEncoding = $Utf8NoBom
+            $engineUninstallJson = (& $agentDockBinary @engineUninstall | Out-String).Trim()
+            $engineUninstallExitCode = $LASTEXITCODE
+        } finally {
+            [Console]::OutputEncoding = $previousConsoleOutputEncoding
+        }
+        if ($engineUninstallExitCode -ne 0) {
+            throw "Installer Engine uninstall failed with exit code $engineUninstallExitCode."
         }
         $engineUninstallPrepared = $true
         try {
@@ -235,7 +243,7 @@ if (Test-Path -LiteralPath $agentDockBinary -PathType Leaf) {
     # every other state is rejected by the engine at commit time. State decisions stay in
     # the engine; the script never produces a fake-success path.
     try {
-        $pendingTransaction = Get-Content -LiteralPath $installTransactionPath -Raw | ConvertFrom-Json
+        $pendingTransaction = Get-Content -LiteralPath $installTransactionPath -Raw -Encoding UTF8 | ConvertFrom-Json
     } catch {
         throw "Unable to read Installer Engine transaction while resuming uninstall: $($_.Exception.Message)"
     }
