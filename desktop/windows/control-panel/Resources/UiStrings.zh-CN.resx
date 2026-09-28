@@ -725,4 +725,80 @@
   <data name="LanguageChangeDiscardWarning" xml:space="preserve">
     <value>切换界面语言会重新加载此窗口，未保存的更改将会丢失。是否继续？</value>
   </data>
+  <data name="UiHome" xml:space="preserve"><value>首页</value></data>
+  <data name="UiTasks" xml:space="preserve"><value>任务</value></data>
+  <data name="UiPlugins" xml:space="preserve"><value>插件</value></data>
+  <data name="UiConfiguration" xml:space="preserve"><value>配置</value></data>
+  <data name="UiSettings" xml:space="preserve"><value>设置</value></data>
+  <data name="UiTagline" xml:space="preserve"><value>让 AI 助手触手可及</value></data>
+  <data name="UiWelcome" xml:space="preserve"><value>欢迎使用 AgentDock</value></data>
+  <data name="UiTaskSubtitle" xml:space="preserve"><value>任务进度与执行记录</value></data>
+  <data name="UiPluginSubtitle" xml:space="preserve"><value>管理已连接的能力</value></data>
+  <data name="UiConfigSubtitle" xml:space="preserve"><value>公网访问与隧道配置</value></data>
+  <data name="UiSettingsSubtitle" xml:space="preserve"><value>运行偏好与高级设置</value></data>
+  <data name="UiConnections" xml:space="preserve"><value>连接与访问</value></data>
+  <data name="UiService" xml:space="preserve"><value>AgentDock 服务</value></data>
+  <data name="UiActivity" xml:space="preserve"><value>任务活动</value></data>
+  <data name="UiActivityPending" xml:space="preserve"><value>任务活动数据尚未接入</value></data>
+  <data name="UiNoActivityData" xml:space="preserve"><value>暂无已接入的活动数据</value></data>
+  <data name="UiPastYear" xml:space="preserve"><value>过去一年</value></data>
+  <data name="UiLess" xml:space="preserve"><value>少</value></data>
+  <data name="UiMore" xml:space="preserve"><value>多</value></data>
+  <data name="UiViewOnly" xml:space="preserve"><value>展示区域</value></data>
+  <data name="UiManageAccess" xml:space="preserve"><value>配置</value></data>
+  <data name="UiExternalManaged" xml:space="preserve"><value>外部管理</value></data>
+  <data name="UiCloudflare" xml:space="preserve"><value>Cloudflare 隧道</value></data>
+  <data name="UiProviderNote" xml:space="preserve"><value>访问配置</value></data>
+  <data name="UiTasksPending" xml:space="preserve"><value>桌面任务视图尚未接入</value></data>
+  <data name="UiTasksNote" xml:space="preserve"><value>现有任务工具保持不变；本版界面不新建、修改或删除任务。</value></data>
+  <data name="UiPluginsPending" xml:space="preserve"><value>桌面插件视图尚未接入</value></data>
+  <data name="UiPluginsNote" xml:space="preserve"><value>已安装插件与权限保持不变；本版界面不安装、禁用或移除插件。</value></data>
+  <data name="UiBackHome" xml:space="preserve"><value>返回首页</value></data>
+  <data name="UiCopyLocal" xml:space="preserve"><value>复制本地 MCP 地址</value></data>
+  <data name="UiCopyPublic" xml:space="preserve"><value>复制公网 MCP 地址</value></data>
+  <data name="UiShowPublic" xml:space="preserve"><value>显示或隐藏公网地址</value></data>
+  <data name="UiAddressCopied" xml:space="preserve"><value>地址已复制</value></data>
+  <data name="UiCopyFailed" xml:space="preserve"><value>无法写入剪贴板</value></data>
+  <data name="UiAddressEmpty" xml:space="preserve"><value>暂无可复制的地址</value></data>
+  <data name="UiPreviewOnly" xml:space="preserve"><value>仅界面预览，未执行操作</value></data>
+  <data name="UiPreviewTitle" xml:space="preserve"><value>AgentDock · UI 预览（只读）</value></data>
+  <data name="UiPreviewMode" xml:space="preserve"><value>只读界面预览</value></data>
+  <data name="UiFixedDomain" xml:space="preserve"><value>固定域名</value></data>
+  <data name="UiSaveFixedDomain" xml:space="preserve"><value>保存并应用固定域名</value></data>
+  <data name="UiModeClickHint" xml:space="preserve"><value>点击模式即可选择并应用</value></data>
+  <data name="UiModeManagedAtHome" xml:space="preserve"><value>访问模式在首页选择</value></data>
+  <data name="UiModeCurrent" xml:space="preserve"><value>当前模式：{0}</value></data>
+  <data name="UiModePending" xml:space="preserve"><value>请先填写固定域名与 Tunnel Token，再保存应用</value></data>
+  <data name="UiModeApplying" xml:space="preserve"><value>正在应用访问模式…</value></data>
+  <data name="UiModeFailed" xml:space="preserve"><value>模式未切换，已恢复原选择</value></data>
+  <data name="UiModePreview" xml:space="preserve"><value>预览选择：{0} · 未修改实际网络</value></data>
+  <data name="UiPreviewV2Title" xml:space="preserve"><value>AgentDock · UI 第二版预览</value></data>
+<data name="UiAppearance" xml:space="preserve"><value>外观</value></data>
+<data name="UiThemeDescription" xml:space="preserve"><value>选择控制面板的外观。</value></data>
+<data name="UiLightTheme" xml:space="preserve"><value>浅色主题</value></data>
+<data name="UiDarkTheme" xml:space="preserve"><value>深色主题</value></data>
+<data name="UiThemeImmediate" xml:space="preserve"><value>切换立即生效，下次打开自动沿用。</value></data>
+<data name="UiThemeSaved" xml:space="preserve"><value>主题已保存</value></data>
+<data name="UiThemeSaveFailed" xml:space="preserve"><value>主题已切换，但偏好保存失败。</value></data>
+<data name="UiCopyDone" xml:space="preserve"><value>已复制</value></data>
+<data name="UiCopyExampleDone" xml:space="preserve"><value>示例地址已复制</value></data>
+<data name="UiCopyBusy" xml:space="preserve"><value>正在复制…</value></data>
+<data name="UiCopyErrorRetry" xml:space="preserve"><value>复制失败，请重试。</value></data>
+  <data name="UiCheckAgain" xml:space="preserve"><value>重新检测</value></data>
+  <data name="UiCheckElapsed" xml:space="preserve"><value>响应耗时</value></data>
+  <data name="UiCheckTime" xml:space="preserve"><value>上次检测</value></data>
+  <data name="UiPublicCheckScope" xml:space="preserve"><value>检测当前公网地址的 /healthz，不会更改网络设置。</value></data>
+  <data name="UiPublicChecking" xml:space="preserve"><value>正在检测公网连通性…</value></data>
+  <data name="UiPublicReachable" xml:space="preserve"><value>公网可访问</value></data>
+  <data name="UiPublicUnreachable" xml:space="preserve"><value>公网暂不可达</value></data>
+  <data name="UiPublicCheckSuccess" xml:space="preserve"><value>公网健康检查接口已成功响应。</value></data>
+  <data name="UiPublicCheckHttpFailure" xml:space="preserve"><value>服务器已响应，但 HTTP 检测未通过。</value></data>
+  <data name="UiPublicCheckNetworkFailure" xml:space="preserve"><value>连接失败，请检查隧道或网络后重试。</value></data>
+  <data name="UiPublicCheckPreview" xml:space="preserve"><value>当前预览未执行真实公网检测。</value></data>
+  <data name="UiTrayDashboard" xml:space="preserve"><value>仪表盘</value></data>
+  <data name="UiTrayTaskCenter" xml:space="preserve"><value>任务活动中心</value></data>
+  <data name="UiTrayCopyPublic" xml:space="preserve"><value>复制公网 MCP 地址</value></data>
+  <data name="UiTrayFolders" xml:space="preserve"><value>打开目录</value></data>
+  <data name="UiTrayMore" xml:space="preserve"><value>更多</value></data>
+  <data name="UiTrayExitHint" xml:space="preserve"><value>仅退出托盘，服务继续运行。</value></data>
 </root>

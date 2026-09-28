@@ -1,302 +1,553 @@
-<Window x:Class="AgentDock.ControlPanel.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:local="clr-namespace:AgentDock.ControlPanel"
-        Title="{local:Loc MainWindowTitle}"
-        Width="860" Height="780" MinWidth="760" MinHeight="680"
-        WindowStartupLocation="CenterScreen"
-        Background="{StaticResource SurfaceBrush}">
-  <Grid>
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
-    </Grid.RowDefinitions>
-
-    <Border Grid.Row="0" Background="White" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="20,16">
-      <Grid>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <StackPanel>
-          <TextBlock Text="AgentDock" FontSize="24" FontWeight="SemiBold" />
-          <TextBlock Text="{local:Loc WindowsControlPanel}" Foreground="#667085" Margin="0,3,0,0" />
-        </StackPanel>
-        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-          <Ellipse x:Name="StatusDot" Width="10" Height="10" Fill="#98A2B3" Margin="0,0,8,0" />
-          <TextBlock x:Name="HeaderStatusText" Text="{local:Loc LoadingStatus}" VerticalAlignment="Center" />
-        </StackPanel>
-      </Grid>
-    </Border>
-
-    <TabControl Grid.Row="1" Margin="18">
-      <TabItem Header="{local:Loc Overview}">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <StackPanel Margin="18">
-            <GroupBox Header="{local:Loc RuntimeStatus}">
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:local="clr-namespace:AgentDock.ControlPanel" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="AgentDock.ControlPanel.MainWindow" Title="{local:Loc MainWindowTitle}" Width="1220" Height="780" MinWidth="640" MinHeight="520" WindowStartupLocation="CenterScreen" Background="{DynamicResource UiCanvas}" Foreground="{DynamicResource UiInk}" FontFamily="Microsoft YaHei UI, Segoe UI" FontSize="14" UseLayoutRounding="True" SnapsToDevicePixels="True" TextOptions.TextFormattingMode="Display" Loaded="Dashboard_Loaded">
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Themes/Light.xaml" />
+        <ResourceDictionary Source="Themes/Dashboard.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Window.Resources>
+  <Grid Background="{DynamicResource UiCanvas}">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="190" />
+      <ColumnDefinition Width="*" />
+    </Grid.ColumnDefinitions>
+    <Border Grid.Column="0" Background="{DynamicResource UiSidebar}" BorderBrush="{DynamicResource UiLine}" BorderThickness="0,0,1,0" />
+    <TabControl x:Name="MainTabs" Grid.ColumnSpan="2" Style="{StaticResource SideTabs}">
+      <TabItem Header="{local:Loc UiHome}" Tag="{StaticResource IconHome}" ToolTip="{local:Loc UiWelcome}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0" x:Name="HomeScrollViewer">
+          <local:ResponsiveDashboardPanel TwoColumnMinWidth="820" Gap="14" x:Name="HomeDashboard">
+            <Border Style="{StaticResource Card}" x:Name="RuntimeCard" MinHeight="244">
               <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="130" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="38" />
+                  <RowDefinition Height="10" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <TextBlock Text="{local:Loc Service}" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBlock x:Name="ServiceStatusText" Grid.Column="1" Text="{local:Loc Unknown}" FontWeight="SemiBold" Margin="0,0,0,10" />
-                <TextBlock Text="{local:Loc HealthCheck}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBlock x:Name="HealthStatusText" Grid.Row="1" Grid.Column="1" Text="{local:Loc Unknown}" Margin="0,0,0,10" />
-                <TextBlock Text="Nexus" Grid.Row="2" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBlock x:Name="NexusStatusText" Grid.Row="2" Grid.Column="1" Text="{local:Loc NotConfigured}" Margin="0,0,0,10" />
-                <TextBlock Text="{local:Loc Version}" Grid.Row="3" VerticalAlignment="Center" />
-                <TextBlock x:Name="VersionText" Grid.Row="3" Grid.Column="1" Text="{local:Loc Unknown}" />
-                <StackPanel Grid.Column="2" Grid.RowSpan="4" Orientation="Horizontal" VerticalAlignment="Center">
-                  <Button Content="{local:Loc Start}" Click="StartButton_Click" />
-                  <Button Content="{local:Loc Stop}" Click="StopButton_Click" />
-                  <Button Content="{local:Loc Restart}" Click="RestartButton_Click" />
-                  <Button x:Name="UpdateButton" Content="{local:Loc Update}" Click="UpdateButton_Click" />
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <StackPanel Orientation="Horizontal">
+                    <Border Style="{StaticResource BadgeIcon}" Background="{DynamicResource UiSuccessSoft}">
+                      <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconPulse}" Width="21" Height="21" Stroke="{DynamicResource UiSuccess}" />
+                    </Border>
+                    <TextBlock Style="{StaticResource CardTitle}" Text="{local:Loc RuntimeStatus}" />
+                  </StackPanel>
+                  <Border HorizontalAlignment="Right" VerticalAlignment="Center" CornerRadius="16" Background="{DynamicResource UiSuccessSoft}" Padding="10,5" Grid.Column="1">
+                    <StackPanel Orientation="Horizontal">
+                      <Ellipse x:Name="StatusDot" Width="9" Height="9" Fill="#98A2B3" Margin="0,0,6,0" />
+                      <TextBlock x:Name="HeaderStatusText" Text="{local:Loc LoadingStatus}" FontSize="12" MaxWidth="130" TextTrimming="CharacterEllipsis" Style="{StaticResource RuntimeStateText}" />
+                    </StackPanel>
+                  </Border>
+                </Grid>
+                <Border Grid.Row="2" Background="{DynamicResource UiInset}" CornerRadius="8" Padding="15,4">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="1.15*" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                      <RowDefinition Height="Auto" MinHeight="38" />
+                      <RowDefinition Height="Auto" MinHeight="38" />
+                      <RowDefinition Height="Auto" MinHeight="38" />
+                      <RowDefinition Height="Auto" MinHeight="38" />
+                    </Grid.RowDefinitions>
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center">
+                      <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconSettings}" Width="20" Height="20" Stroke="{DynamicResource UiIconMuted}" />
+                      <TextBlock Text="{local:Loc Service}" Margin="14,0,0,0" Style="{StaticResource RowLabel}" />
+                    </StackPanel>
+                    <TextBlock x:Name="ServiceStatusText" Grid.Row="0" Grid.Column="1" Text="{local:Loc Unknown}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Style="{StaticResource RuntimeStateText}" />
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Center">
+                      <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconShield}" Width="20" Height="20" Stroke="{DynamicResource UiIconMuted}" />
+                      <TextBlock Text="{local:Loc HealthCheck}" Margin="14,0,0,0" Style="{StaticResource RowLabel}" />
+                    </StackPanel>
+                    <TextBlock x:Name="HealthStatusText" Grid.Row="1" Grid.Column="1" Text="{local:Loc Unknown}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Style="{StaticResource RuntimeStateText}" />
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" VerticalAlignment="Center">
+                      <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconDatabase}" Width="20" Height="20" Stroke="{DynamicResource UiIconMuted}" />
+                      <TextBlock Text="Nexus" Margin="14,0,0,0" Style="{StaticResource RowLabel}" />
+                    </StackPanel>
+                    <TextBlock x:Name="NexusStatusText" Grid.Row="2" Grid.Column="1" Text="{local:Loc NotConfigured}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" VerticalAlignment="Center">
+                      <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconInfo}" Width="20" Height="20" Stroke="{DynamicResource UiIconMuted}" />
+                      <TextBlock Text="{local:Loc Version}" Margin="14,0,0,0" Style="{StaticResource RowLabel}" />
+                    </StackPanel>
+                    <TextBlock x:Name="VersionText" Grid.Row="3" Grid.Column="1" Text="{local:Loc Unknown}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                  </Grid>
+                </Border>
+              </Grid>
+            </Border>
+            <Border Style="{StaticResource Card}" x:Name="ConnectionCard" MinHeight="244">
+              <Grid>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="38" />
+                  <RowDefinition Height="10" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <StackPanel Orientation="Horizontal" Height="36">
+                  <Border Style="{StaticResource BadgeIcon}">
+                    <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconLink}" Width="20" Height="20" Stroke="{DynamicResource UiAccentInk}" />
+                  </Border>
+                  <TextBlock Style="{StaticResource CardTitle}" Text="{local:Loc UiConnections}" />
+                </StackPanel>
+                <local:ResponsiveFormPanel Grid.Row="2" StackBelowWidth="360" LabelWidth="130">
+                  <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconGlobe}" Width="20" Height="20" Stroke="{DynamicResource UiIconMuted}" />
+                    <TextBlock Text="{local:Loc LocalMCP}" Style="{StaticResource RowLabel}" Margin="12,0,0,0" />
+                  </StackPanel>
+                  <TextBox x:Name="LocalMcpTextBox" Grid.Row="0" Grid.Column="1" IsReadOnly="True" Margin="0,3" FontSize="13" />
+                  <Button Grid.Row="0" Grid.Column="2" Style="{StaticResource CopyFeedbackButton}" Click="CopyMcpButton_Click" Tag="local" ToolTip="{local:Loc UiCopyLocal}" AutomationProperties.Name="{local:Loc UiCopyLocal}" x:Name="CopyLocalButton">
+                    <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconCopy}" Width="17" Height="17" />
+                  </Button>
+                  <StackPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconGlobe}" Width="20" Height="20" Stroke="{DynamicResource UiIconMuted}" />
+                    <TextBlock Text="{local:Loc PublicMCP}" Style="{StaticResource RowLabel}" Margin="12,0,0,0" />
+                  </StackPanel>
+                  <TextBox x:Name="PublicMcpTextBox" Grid.Row="1" Grid.Column="1" IsReadOnly="True" Margin="0,3" FontSize="13">
+                    <TextBox.Template>
+                      <ControlTemplate TargetType="TextBox">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="7">
+                          <Grid>
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="0,0,26,0" Visibility="Collapsed" HorizontalScrollBarVisibility="Disabled" />
+                            <TextBlock x:Name="Mask" Text="https://••••••••/mcp" Margin="10,0,32,0" VerticalAlignment="Center" FontSize="13" />
+                            <ToggleButton x:Name="Reveal" Width="28" HorizontalAlignment="Right" Margin="2" ToolTip="{local:Loc UiShowPublic}" AutomationProperties.Name="{local:Loc UiShowPublic}" Background="Transparent" BorderThickness="0">
+                              <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                  <Border Background="Transparent" CornerRadius="5">
+                                    <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconEyeOff}" Width="16" Height="16" Stroke="{DynamicResource UiMuted}" />
+                                  </Border>
+                                </ControlTemplate>
+                              </ToggleButton.Template>
+                            </ToggleButton>
+                          </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                          <Trigger SourceName="Reveal" Property="IsChecked" Value="True">
+                            <Setter TargetName="PART_ContentHost" Property="Visibility" Value="Visible" />
+                            <Setter TargetName="Mask" Property="Visibility" Value="Collapsed" />
+                          </Trigger>
+                          <Trigger Property="Text" Value="">
+                            <Setter TargetName="Mask" Property="Text" Value="{local:Loc NotConfigured}" />
+                          </Trigger>
+                        </ControlTemplate.Triggers>
+                      </ControlTemplate>
+                    </TextBox.Template>
+                  </TextBox>
+                  <Button Grid.Row="1" Grid.Column="2" Style="{StaticResource CopyFeedbackButton}" Click="CopyMcpButton_Click" Tag="public" ToolTip="{local:Loc UiCopyPublic}" AutomationProperties.Name="{local:Loc UiCopyPublic}" x:Name="CopyPublicButton">
+                    <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconCopy}" Width="17" Height="17" />
+                  </Button>
+                  <StackPanel Grid.Row="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconKey}" Width="20" Height="20" Stroke="{DynamicResource UiIconMuted}" />
+                    <TextBlock Text="Bearer Token" Style="{StaticResource RowLabel}" Margin="12,0,0,0" />
+                  </StackPanel>
+                  <TextBox x:Name="BearerTokenTextBox" Grid.Row="2" Grid.Column="1" IsReadOnly="True" Margin="0,3" FontSize="13" />
+                  <Button x:Name="ToggleBearerButton" Grid.Row="2" Grid.Column="2" Style="{StaticResource SecretButton}" Content="{local:Loc Show}" Click="ToggleBearerButton_Click" />
+                  <StackPanel Grid.Row="3" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconLock}" Width="20" Height="20" Stroke="{DynamicResource UiIconMuted}" />
+                    <TextBlock Text="{local:Loc OAuthPassword}" Style="{StaticResource RowLabel}" Margin="12,0,0,0" />
+                  </StackPanel>
+                  <TextBox x:Name="OAuthPasswordTextBox" Grid.Row="3" Grid.Column="1" IsReadOnly="True" Margin="0,3" FontSize="13" />
+                  <Button x:Name="ToggleOAuthButton" Grid.Row="3" Grid.Column="2" Style="{StaticResource SecretButton}" Content="{local:Loc Show}" Click="ToggleOAuthButton_Click" />
+                </local:ResponsiveFormPanel>
+              </Grid>
+            </Border>
+            <Border Style="{StaticResource Card}" x:Name="ServiceCard" MinHeight="184">
+              <Grid>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="36" />
+                  <RowDefinition Height="8" />
+                  <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <StackPanel Orientation="Horizontal" Height="36">
+                  <Border Style="{StaticResource BadgeIcon}">
+                    <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconPower}" Width="20" Height="20" Stroke="{DynamicResource UiAccentInk}" />
+                  </Border>
+                  <TextBlock Style="{StaticResource CardTitle}" Text="{local:Loc UiService}" />
+                </StackPanel>
+                <Border Grid.Row="2" Background="{DynamicResource UiHover}" CornerRadius="8" Padding="14,9">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="54" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="64" />
+                    </Grid.ColumnDefinitions>
+                    <Border Width="48" Height="48" CornerRadius="24" Background="{DynamicResource UiAccent}">
+                      <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconPower}" Width="26" Height="26" Stroke="{DynamicResource UiOnAccent}" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center">
+                      <TextBlock Text="{Binding Text, ElementName=ServiceStatusText}" FontSize="18" FontWeight="SemiBold" />
+                    </StackPanel>
+                    <Grid Grid.Column="2" VerticalAlignment="Center">
+                      <Button Content="{local:Loc Start}" Click="StartButton_Click" ToolTip="{local:Loc Start}" AutomationProperties.Name="{local:Loc Start}" Background="{DynamicResource UiOff}" HorizontalContentAlignment="Left">
+                        <Button.Style>
+                          <Style TargetType="Button" BasedOn="{StaticResource ServiceSwitch}">
+                            <Style.Triggers>
+                              <DataTrigger Binding="{Binding Text, ElementName=ServiceStatusText}" Value="{local:Loc Running}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                              </DataTrigger>
+                            </Style.Triggers>
+                          </Style>
+                        </Button.Style>
+                      </Button>
+                      <Button Content="{local:Loc Stop}" Click="StopButton_Click" ToolTip="{local:Loc Stop}" AutomationProperties.Name="{local:Loc Stop}" Background="{DynamicResource UiAccent}" HorizontalContentAlignment="Right">
+                        <Button.Style>
+                          <Style TargetType="Button" BasedOn="{StaticResource ServiceSwitch}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                              <DataTrigger Binding="{Binding Text, ElementName=ServiceStatusText}" Value="{local:Loc Running}">
+                                <Setter Property="Visibility" Value="Visible" />
+                              </DataTrigger>
+                            </Style.Triggers>
+                          </Style>
+                        </Button.Style>
+                      </Button>
+                    </Grid>
+                  </Grid>
+                </Border>
+              </Grid>
+            </Border>
+            <Border Style="{StaticResource Card}" x:Name="PublicAccessCard" MinHeight="184">
+              <Grid>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="36" />
+                  <RowDefinition Height="8" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid>
+                  <StackPanel Orientation="Horizontal" Height="36">
+                    <Border Style="{StaticResource BadgeIcon}">
+                      <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconWifi}" Width="20" Height="20" Stroke="{DynamicResource UiAccentInk}" />
+                    </Border>
+                    <TextBlock Style="{StaticResource CardTitle}" Text="{local:Loc PublicAccess}" />
+                  </StackPanel>
+                  <Button x:Name="AccessConfigurationButton" HorizontalAlignment="Right" Content="{local:Loc UiManageAccess}" Click="OpenAccessConfiguration_Click" Tag="ui-nav" Margin="0" Padding="10,4" MinHeight="30" />
+                </Grid>
+                <StackPanel Grid.Row="2">
+                  <UniformGrid x:Name="HomeModesPanel" Rows="1" Columns="3">
+                    <RadioButton x:Name="LocalModeRadio" GroupName="TunnelMode" Tag="none" Margin="0,0,8,0" Checked="TunnelModeRadio_Checked" Style="{StaticResource HomeModeOption}" Click="HomeTunnelMode_Click" ToolTip="{local:Loc LocalOnlyDescription}" AutomationProperties.Name="{local:Loc LocalOnly}">
+                      <StackPanel>
+                        <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconDesktop}" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}" Width="22" Height="22" />
+                        <TextBlock Text="{local:Loc LocalOnly}" TextAlignment="Center" Margin="0,8,0,0" FontSize="13" TextWrapping="Wrap" />
+                      </StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="QuickModeRadio" GroupName="TunnelMode" Tag="quick" Margin="0,0,8,0" Checked="TunnelModeRadio_Checked" Style="{StaticResource HomeModeOption}" Click="HomeTunnelMode_Click" ToolTip="{local:Loc TemporaryAddressDescription}" AutomationProperties.Name="{local:Loc TemporaryAddress}">
+                      <StackPanel>
+                        <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconCloud}" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}" Width="22" Height="22" />
+                        <TextBlock Text="{local:Loc TemporaryAddress}" TextAlignment="Center" Margin="0,8,0,0" FontSize="13" TextWrapping="Wrap" />
+                      </StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="NamedModeRadio" GroupName="TunnelMode" Tag="named" Margin="0" Checked="TunnelModeRadio_Checked" Style="{StaticResource HomeModeOption}" Click="HomeTunnelMode_Click" ToolTip="{local:Loc CustomDomainDescription}" AutomationProperties.Name="{local:Loc UiFixedDomain}">
+                      <StackPanel>
+                        <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconGlobe}" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}" Width="22" Height="22" />
+                        <TextBlock Text="{local:Loc UiFixedDomain}" TextAlignment="Center" Margin="0,8,0,0" FontSize="13" TextWrapping="Wrap" />
+                      </StackPanel>
+                    </RadioButton>
+                  </UniformGrid>
+                  <TextBlock x:Name="HomeModeHintText" Text="{local:Loc UiModeClickHint}" Foreground="{DynamicResource UiMuted}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" />
+                  <TextBlock x:Name="TunnelActionStatusText" Foreground="{DynamicResource UiMuted}" TextWrapping="Wrap" Margin="0,6,0,0" FontSize="11">
+                    <TextBlock.Style>
+                      <Style TargetType="TextBlock">
+                        <Style.Triggers>
+                          <Trigger Property="Text" Value="">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                          </Trigger>
+                        </Style.Triggers>
+                      </Style>
+                    </TextBlock.Style>
+                  </TextBlock>
                 </StackPanel>
               </Grid>
-            </GroupBox>
-
-            <GroupBox Header="{local:Loc ConnectionAddresses}">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="130" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <TextBlock Text="{local:Loc LocalMCP}" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="LocalMcpTextBox" Grid.Column="1" Grid.ColumnSpan="2" IsReadOnly="True" Margin="0,0,0,10" />
-                <TextBlock Text="{local:Loc PublicMCP}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="PublicMcpTextBox" Grid.Row="1" Grid.Column="1" IsReadOnly="True" Margin="0,0,8,10" />
-                <Button Grid.Row="1" Grid.Column="2" Content="{local:Loc Test}" Click="TestPublicButton_Click" />
-                <TextBlock Text="{local:Loc PublicCheck}" Grid.Row="2" VerticalAlignment="Center" />
-                <TextBlock x:Name="PublicTestStatusText" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Text="{local:Loc NotChecked}" TextWrapping="Wrap" />
-              </Grid>
-            </GroupBox>
-
-            <GroupBox Header="{local:Loc AccessCredentials}">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="130" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <TextBlock Text="Bearer Token" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="BearerTokenTextBox" Grid.Column="1" IsReadOnly="True" Margin="0,0,8,10" />
-                <Button x:Name="ToggleBearerButton" Grid.Column="2" Content="{local:Loc Show}" Click="ToggleBearerButton_Click" />
-                <TextBlock Text="{local:Loc OAuthPassword}" Grid.Row="1" VerticalAlignment="Center" />
-                <TextBox x:Name="OAuthPasswordTextBox" Grid.Row="1" Grid.Column="1" IsReadOnly="True" Margin="0,0,8,0" />
-                <Button x:Name="ToggleOAuthButton" Grid.Row="1" Grid.Column="2" Content="{local:Loc Show}" Click="ToggleOAuthButton_Click" />
-              </Grid>
-            </GroupBox>
-          </StackPanel>
+            </Border>
+            <Border x:Name="PublicCheckCard" Style="{StaticResource Card}" MinHeight="154" local:ResponsiveDashboardPanel.FullWidth="True">
+              <StackPanel>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Style="{StaticResource BadgeIcon}">
+                      <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconGlobe}" Stroke="{DynamicResource UiAccentInk}" Width="20" Height="20" />
+                    </Border>
+                    <TextBlock Style="{StaticResource CardTitle}" Text="{local:Loc PublicCheck}" />
+                  </StackPanel>
+                  <Button x:Name="TestPublicButton" Grid.Column="1" Click="TestPublicButton_Click" ToolTip="{local:Loc UiPublicCheckScope}" AutomationProperties.Name="{local:Loc UiCheckAgain}" Margin="10,0,0,0" Padding="11,6">
+                    <StackPanel Orientation="Horizontal">
+                      <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconRefresh}" Width="15" Height="15" Margin="0,0,7,0" />
+                      <TextBlock Text="{local:Loc UiCheckAgain}" FontSize="12" VerticalAlignment="Center" />
+                    </StackPanel>
+                  </Button>
+                </Grid>
+                <Grid Margin="0,12,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="48" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <Border x:Name="PublicCheckStateBadge" Width="38" Height="38" CornerRadius="19" Background="{DynamicResource UiInset}" HorizontalAlignment="Left" VerticalAlignment="Center">
+                    <Path x:Name="PublicCheckStateIcon" Style="{StaticResource UiIcon}" Data="{StaticResource IconInfo}" Stroke="{DynamicResource UiMuted}" Width="19" Height="19" />
+                  </Border>
+                  <StackPanel Grid.Column="1">
+                    <TextBlock x:Name="PublicCheckSummaryText" Text="{local:Loc NotChecked}" FontSize="17" FontWeight="SemiBold" Foreground="{DynamicResource UiInk}" TextWrapping="Wrap" />
+                    <TextBlock x:Name="PublicTestStatusText" Text="{local:Loc UiPublicCheckScope}" Foreground="{DynamicResource UiMuted}" FontSize="12" TextWrapping="Wrap" Margin="0,3,0,0" />
+                  </StackPanel>
+                </Grid>
+                <WrapPanel Margin="0,11,0,0">
+                  <StackPanel Orientation="Horizontal" Margin="0,0,22,3">
+                    <TextBlock Text="HTTP" Foreground="{DynamicResource UiMuted}" FontSize="11" />
+                    <TextBlock x:Name="PublicCheckHttpText" Text="—" Margin="7,0,0,0" FontSize="11" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Margin="0,0,22,3">
+                    <TextBlock Text="{local:Loc UiCheckElapsed}" Foreground="{DynamicResource UiMuted}" FontSize="11" />
+                    <TextBlock x:Name="PublicCheckElapsedText" Text="—" Margin="7,0,0,0" FontSize="11" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Margin="0,0,0,3">
+                    <TextBlock Text="{local:Loc UiCheckTime}" Foreground="{DynamicResource UiMuted}" FontSize="11" />
+                    <TextBlock x:Name="PublicCheckTimeText" Text="—" Margin="7,0,0,0" FontSize="11" />
+                  </StackPanel>
+                </WrapPanel>
+              </StackPanel>
+            </Border>
+          </local:ResponsiveDashboardPanel>
         </ScrollViewer>
       </TabItem>
-
-      <TabItem Header="{local:Loc PublicAccess}">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <StackPanel Margin="18">
-            <GroupBox Header="{local:Loc AccessMode}">
+      <TabItem Header="{local:Loc UiTasks}" Tag="{StaticResource IconTasks}" ToolTip="{local:Loc UiTaskSubtitle}">
+        <Border Style="{StaticResource Card}" Padding="36">
+          <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="620">
+            <Border Background="{DynamicResource UiTint}" Width="72" Height="72" CornerRadius="22" HorizontalAlignment="Center" Margin="0,0,0,24">
+              <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconTasks}" Width="32" Height="32" Stroke="{DynamicResource UiAccentInk}" />
+            </Border>
+            <TextBlock Text="{local:Loc UiTasksPending}" FontSize="23" FontWeight="SemiBold" TextAlignment="Center" TextWrapping="Wrap" />
+            <TextBlock Text="{local:Loc UiTasksNote}" Foreground="{DynamicResource UiMuted}" Margin="0,14,0,26" TextAlignment="Center" TextWrapping="Wrap" LineHeight="25" />
+            <Button Content="{local:Loc UiBackHome}" Click="ReturnHome_Click" Tag="ui-nav" HorizontalAlignment="Center" Margin="0" Padding="20,9" />
+          </StackPanel>
+        </Border>
+      </TabItem>
+      <TabItem Header="{local:Loc UiPlugins}" Tag="{StaticResource IconPlugins}" ToolTip="{local:Loc UiPluginSubtitle}">
+        <Border Style="{StaticResource Card}" Padding="36">
+          <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="620">
+            <Border Background="{DynamicResource UiTint}" Width="72" Height="72" CornerRadius="22" HorizontalAlignment="Center" Margin="0,0,0,24">
+              <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconPlugins}" Width="32" Height="32" Stroke="{DynamicResource UiAccentInk}" />
+            </Border>
+            <TextBlock Text="{local:Loc UiPluginsPending}" FontSize="23" FontWeight="SemiBold" TextAlignment="Center" TextWrapping="Wrap" />
+            <TextBlock Text="{local:Loc UiPluginsNote}" Foreground="{DynamicResource UiMuted}" Margin="0,14,0,26" TextAlignment="Center" TextWrapping="Wrap" LineHeight="25" />
+            <Button Content="{local:Loc UiBackHome}" Click="ReturnHome_Click" Tag="ui-nav" HorizontalAlignment="Center" Margin="0" Padding="20,9" />
+          </StackPanel>
+        </Border>
+      </TabItem>
+      <TabItem Header="{local:Loc UiConfiguration}" Tag="{StaticResource IconConfig}" ToolTip="{local:Loc UiConfigSubtitle}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Margin="0,0,8,0" x:Name="ConfigurationContent">
+            <Border Style="{StaticResource Card}" Margin="0,0,0,14">
               <StackPanel>
-                <RadioButton x:Name="LocalModeRadio" GroupName="TunnelMode" Content="{local:Loc LocalOnly}" Tag="none" Margin="0,4,0,10" Checked="TunnelModeRadio_Checked" />
-                <TextBlock Text="{local:Loc LocalOnlyDescription}" Foreground="#667085" Margin="24,-8,0,14" TextWrapping="Wrap" />
-                <RadioButton x:Name="QuickModeRadio" GroupName="TunnelMode" Content="{local:Loc TemporaryAddress}" Tag="quick" Margin="0,0,0,10" Checked="TunnelModeRadio_Checked" />
-                <TextBlock Text="{local:Loc TemporaryAddressDescription}" Foreground="#667085" Margin="24,-8,0,14" TextWrapping="Wrap" />
-                <RadioButton x:Name="NamedModeRadio" GroupName="TunnelMode" Content="{local:Loc CustomDomain}" Tag="named" Margin="0,0,0,10" Checked="TunnelModeRadio_Checked" />
-                <TextBlock Text="{local:Loc CustomDomainDescription}" Foreground="#667085" Margin="24,-8,0,4" TextWrapping="Wrap" />
+                <TextBlock Text="{local:Loc UiModeManagedAtHome}" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding Text, ElementName=HomeModeHintText}" Foreground="{DynamicResource UiMuted}" TextWrapping="Wrap" Margin="0,7,0,10" />
+                <Button Content="{local:Loc UiBackHome}" Click="ReturnHome_Click" Tag="ui-nav" HorizontalAlignment="Left" Margin="0" />
               </StackPanel>
+            </Border>
+            <GroupBox Header="{local:Loc TemporaryAddress}">
+              <GroupBox.Style>
+                <Style TargetType="GroupBox" BasedOn="{StaticResource {x:Type GroupBox}}">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsChecked, ElementName=QuickModeRadio}" Value="True">
+                      <Setter Property="Visibility" Value="Visible" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </GroupBox.Style>
+              <TextBlock Text="{local:Loc TemporaryAddressDescription}" TextWrapping="Wrap" Foreground="{DynamicResource UiMuted}" />
             </GroupBox>
-
+            <GroupBox Header="{local:Loc LocalOnly}">
+              <GroupBox.Style>
+                <Style TargetType="GroupBox" BasedOn="{StaticResource {x:Type GroupBox}}">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsChecked, ElementName=LocalModeRadio}" Value="True">
+                      <Setter Property="Visibility" Value="Visible" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </GroupBox.Style>
+              <TextBlock Text="{local:Loc LocalOnlyDescription}" TextWrapping="Wrap" Foreground="{DynamicResource UiMuted}" />
+            </GroupBox>
             <GroupBox x:Name="NamedTunnelGroup" Header="{local:Loc CustomDomainConfiguration}">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="150" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
+              <GroupBox.Style>
+                <Style TargetType="GroupBox" BasedOn="{StaticResource {x:Type GroupBox}}">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsChecked, ElementName=NamedModeRadio}" Value="True">
+                      <Setter Property="Visibility" Value="Visible" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </GroupBox.Style>
+              <local:ResponsiveFormPanel StackBelowWidth="500" LabelWidth="150">
                 <TextBlock Text="{local:Loc PublicHTTPSAddress}" VerticalAlignment="Center" Margin="0,0,0,10" />
                 <TextBox x:Name="ServerUrlTextBox" Grid.Column="1" Margin="0,0,0,10" />
                 <TextBlock Text="Tunnel Token" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
                 <PasswordBox x:Name="TunnelTokenPasswordBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" PreviewKeyDown="PasswordBox_PreviewKeyDown" />
                 <TextBlock Text="{local:Loc SavedState}" Grid.Row="2" VerticalAlignment="Center" />
                 <TextBlock x:Name="TunnelTokenStoredText" Grid.Row="2" Grid.Column="1" Text="{local:Loc NotSaved}" />
-              </Grid>
+              </local:ResponsiveFormPanel>
             </GroupBox>
-
-            <StackPanel Orientation="Horizontal">
-              <Button Content="{local:Loc ApplyAccessMode}" Click="ApplyTunnelModeButton_Click" />
-              <Button x:Name="RegenerateQuickButton" Content="{local:Loc RegenerateTemporaryAddress}" Click="RegenerateQuickButton_Click" />
-            </StackPanel>
-            <TextBlock x:Name="TunnelActionStatusText" Foreground="#475467" TextWrapping="Wrap" Margin="0,6,0,0" />
+            <WrapPanel>
+              <Button Content="{local:Loc UiSaveFixedDomain}" Click="ApplyTunnelModeButton_Click" x:Name="AccessModeApplyButton">
+                <Button.Style>
+                  <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding IsChecked, ElementName=NamedModeRadio}" Value="True">
+                        <Setter Property="Visibility" Value="Visible" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </Button.Style>
+              </Button>
+              <Button x:Name="RegenerateQuickButton" Content="{local:Loc RegenerateTemporaryAddress}" Click="RegenerateQuickButton_Click">
+                <Button.Style>
+                  <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding IsChecked, ElementName=QuickModeRadio}" Value="True">
+                        <Setter Property="Visibility" Value="Visible" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </Button.Style>
+              </Button>
+            </WrapPanel>
           </StackPanel>
         </ScrollViewer>
       </TabItem>
-
-      <TabItem Header="{local:Loc AdvancedSettings}">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <StackPanel Margin="18">
+      <TabItem Header="{local:Loc UiSettings}" Tag="{StaticResource IconSettings}" ToolTip="{local:Loc UiSettingsSubtitle}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Margin="0,0,8,0">
+            <GroupBox x:Name="AppearanceGroup" Header="{local:Loc UiAppearance}">
+              <StackPanel>
+                <TextBlock Text="{local:Loc UiThemeDescription}" Foreground="{DynamicResource UiMuted}" TextWrapping="Wrap" Margin="0,0,0,14" />
+                <UniformGrid Rows="1" Columns="2" HorizontalAlignment="Left">
+                  <RadioButton x:Name="LightThemeRadio" GroupName="UiTheme" Tag="light" Style="{StaticResource HomeModeOption}" Margin="0,0,10,0" MinWidth="132" Content="{local:Loc UiLightTheme}" Checked="ThemeSelection_Changed" />
+                  <RadioButton x:Name="DarkThemeRadio" GroupName="UiTheme" Tag="dark" Style="{StaticResource HomeModeOption}" MinWidth="132" Content="{local:Loc UiDarkTheme}" Checked="ThemeSelection_Changed" />
+                </UniformGrid>
+                <TextBlock x:Name="ThemeStatusText" Text="{local:Loc UiThemeImmediate}" Foreground="{DynamicResource UiMuted}" Margin="0,10,0,0" TextWrapping="Wrap" />
+              </StackPanel>
+            </GroupBox>
             <GroupBox Header="{local:Loc BasicSettings}">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="150" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
+              <local:ResponsiveFormPanel StackBelowWidth="500" LabelWidth="150">
                 <TextBlock Text="{local:Loc Port}" Grid.Row="0" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="PortTextBox" Grid.Row="0" Grid.Column="1" Width="130" HorizontalAlignment="Left" Margin="0,0,0,10" />
+                <TextBox x:Name="PortTextBox" Grid.Row="0" Grid.Column="1" HorizontalAlignment="Left" Margin="0,0,0,10" Width="130" MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=local:ResponsiveFormPanel}}" />
                 <TextBlock Text="{local:Loc LogLevel}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <ComboBox x:Name="LogLevelComboBox" Grid.Row="1" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10">
+                <ComboBox x:Name="LogLevelComboBox" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Left" Margin="0,0,0,10" Width="180" MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=local:ResponsiveFormPanel}}">
                   <ComboBoxItem Content="debug" />
                   <ComboBoxItem Content="info" />
                   <ComboBoxItem Content="warn" />
                   <ComboBoxItem Content="error" />
                 </ComboBox>
                 <TextBlock Text="{local:Loc InterfaceLanguage}" Grid.Row="2" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <ComboBox x:Name="LanguageComboBox" Grid.Row="2" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10" SelectionChanged="LanguageComboBox_SelectionChanged">
+                <ComboBox x:Name="LanguageComboBox" Grid.Row="2" Grid.Column="1" HorizontalAlignment="Left" Margin="0,0,0,10" SelectionChanged="LanguageComboBox_SelectionChanged" Width="180" MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=local:ResponsiveFormPanel}}">
                   <ComboBoxItem Content="{local:Loc FollowSystem}" Tag="system" />
                   <ComboBoxItem Content="{local:Loc SimplifiedChinese}" Tag="zh-CN" />
                   <ComboBoxItem Content="{local:Loc EnglishLanguage}" Tag="en" />
                 </ComboBox>
                 <TextBlock Text="{local:Loc ChatCards}" Grid.Row="3" VerticalAlignment="Center" Margin="0,0,0,4" />
-                <ComboBox x:Name="McpAppsModeComboBox" Grid.Row="3" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,4">
+                <ComboBox x:Name="McpAppsModeComboBox" Grid.Row="3" Grid.Column="1" HorizontalAlignment="Left" Margin="0,0,0,4" Width="180" MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=local:ResponsiveFormPanel}}">
                   <ComboBoxItem Content="{local:Loc ChatCardsFull}" Tag="full" />
                   <ComboBoxItem Content="{local:Loc ChatCardsCompact}" Tag="compact" />
                   <ComboBoxItem Content="{local:Loc ChatCardsOff}" Tag="off" />
                 </ComboBox>
-              </Grid>
+              </local:ResponsiveFormPanel>
             </GroupBox>
-
             <GroupBox Header="Nexus">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="150" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
+              <local:ResponsiveFormPanel StackBelowWidth="500" LabelWidth="150">
                 <TextBlock Text="{local:Loc Address}" VerticalAlignment="Center" Margin="0,0,0,10" />
                 <TextBox x:Name="NexusEndpointTextBox" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" ToolTip="{local:Loc NexusPublicHttpsTooltip}" />
                 <TextBlock Text="{local:Loc OneTimePairingCode}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
                 <PasswordBox x:Name="NexusPairingCodePasswordBox" Grid.Row="1" Grid.Column="1" Margin="0,0,8,10" PreviewKeyDown="PasswordBox_PreviewKeyDown" />
                 <Button Grid.Row="1" Grid.Column="2" Content="{local:Loc PairAndRestart}" Click="PairNexusButton_Click" Margin="0,0,0,10" />
                 <TextBlock Text="Device Token" Grid.Row="2" VerticalAlignment="Center" />
-                <TextBlock x:Name="NexusDeviceTokenStatusText" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Text="{local:Loc NotPaired}" Foreground="#667085" TextWrapping="Wrap" />
-              </Grid>
+                <TextBlock x:Name="NexusDeviceTokenStatusText" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Text="{local:Loc NotPaired}" Foreground="{DynamicResource UiMuted}" TextWrapping="Wrap" />
+              </local:ResponsiveFormPanel>
             </GroupBox>
-
             <GroupBox Header="{local:Loc Browser}">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="150" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
+              <local:ResponsiveFormPanel StackBelowWidth="500" LabelWidth="150">
                 <CheckBox x:Name="BrowserEnabledCheckBox" Grid.ColumnSpan="2" Content="{local:Loc EnableBrowserCdp}" Margin="0,4,0,12" Checked="BrowserConnection_Changed" Unchecked="BrowserConnection_Changed" />
                 <TextBlock Text="{local:Loc ConnectionMode}" Grid.Row="1" VerticalAlignment="Top" Margin="0,5,0,10" />
                 <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,10">
-                  <ComboBox x:Name="BrowserConnectionModeComboBox" Width="320" HorizontalAlignment="Left" SelectionChanged="BrowserConnection_Changed">
+                  <ComboBox x:Name="BrowserConnectionModeComboBox" HorizontalAlignment="Left" SelectionChanged="BrowserConnection_Changed" Width="320" MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=local:ResponsiveFormPanel}}">
                     <ComboBoxItem Content="{local:Loc ManagedBrowser}" Tag="managed" />
                     <ComboBoxItem Content="{local:Loc ReuseExistingCdpBrowser}" Tag="reuse" />
                     <ComboBoxItem Content="{local:Loc SpecifiedCdpBrowser}" Tag="specified" />
                   </ComboBox>
                   <TextBox x:Name="BrowserCdpUrlTextBox" Margin="0,8,0,0" Visibility="Collapsed" ToolTip="{local:Loc CdpUrlExample}" />
-                  <TextBlock x:Name="BrowserConnectionHelpText" Margin="0,6,0,0" Foreground="#667085" TextWrapping="Wrap" />
+                  <TextBlock x:Name="BrowserConnectionHelpText" Margin="0,6,0,0" Foreground="{DynamicResource UiMuted}" TextWrapping="Wrap" />
                 </StackPanel>
-              </Grid>
+              </local:ResponsiveFormPanel>
             </GroupBox>
-
             <GroupBox Header="{local:Loc CodingAgentAcp}">
               <StackPanel>
                 <CheckBox x:Name="AcpEnabledCheckBox" Content="{local:Loc EnableCodingAgent}" Margin="0,4,0,14" />
-                <Grid Margin="0,0,0,12">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                  </Grid.ColumnDefinitions>
+                <local:ResponsiveFormPanel Margin="0,0,0,12" StackBelowWidth="500" LabelWidth="150">
                   <TextBlock Text="{local:Loc DefaultAcp}" VerticalAlignment="Center" Margin="0,0,12,0" />
-                  <ComboBox x:Name="AcpDefaultProfileComboBox"
-                            Grid.Column="1"
-                            Width="240"
-                            SelectionChanged="AcpDefaultProfile_SelectionChanged" />
-                </Grid>
+                  <ComboBox x:Name="AcpDefaultProfileComboBox" Grid.Column="1" SelectionChanged="AcpDefaultProfile_SelectionChanged" HorizontalAlignment="Left" Width="240" MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=local:ResponsiveFormPanel}}" />
+                </local:ResponsiveFormPanel>
                 <StackPanel x:Name="AcpProfileListPanel" />
-                <Button x:Name="AcpAddCustomProfileButton"
-                        Content="{local:Loc AddCustomAcp}"
-                        HorizontalAlignment="Left"
-                        Margin="0,10,0,0"
-                        Padding="10,4"
-                        Click="AcpAddCustomProfile_Click" />
+                <Button x:Name="AcpAddCustomProfileButton" Content="{local:Loc AddCustomAcp}" HorizontalAlignment="Left" Margin="0,10,0,0" Padding="10,4" Click="AcpAddCustomProfile_Click" />
               </StackPanel>
             </GroupBox>
-
             <GroupBox Header="{local:Loc RuntimePermissions}">
               <StackPanel>
-                <CheckBox x:Name="ElevatedCoreCheckBox"
-                          Content="{local:Loc RunCoreElevated}"
-                          Margin="0,4,0,8"
-                          Click="ElevatedCoreCheckBox_Click" />
+                <CheckBox x:Name="ElevatedCoreCheckBox" Content="{local:Loc RunCoreElevated}" Margin="0,4,0,8" Click="ElevatedCoreCheckBox_Click" />
               </StackPanel>
             </GroupBox>
-
             <GroupBox Header="{local:Loc Startup}">
               <StackPanel>
                 <CheckBox x:Name="CoreStartupCheckBox" Content="{local:Loc CoreStartup}" Margin="0,4,0,10" Click="CoreStartupCheckBox_Click" />
                 <CheckBox x:Name="TrayStartupCheckBox" Content="{local:Loc TrayStartup}" Margin="0,0,0,4" Click="TrayStartupCheckBox_Click" />
               </StackPanel>
             </GroupBox>
-
-            <TextBlock x:Name="SettingsStatusText"
-                       Foreground="#475467"
-                       TextWrapping="Wrap"
-                       MinHeight="22"
-                       Margin="0,0,0,8" />
-            <StackPanel Orientation="Horizontal">
+            <TextBlock x:Name="SettingsStatusText" Foreground="{DynamicResource UiMuted}" TextWrapping="Wrap" MinHeight="22" Margin="0,0,0,8" />
+            <WrapPanel>
               <Button Content="{local:Loc SaveAndRestart}" Click="SaveSettingsButton_Click" />
               <Button Content="{local:Loc OpenLogsFolder}" Click="OpenLogsButton_Click" />
               <Button Content="{local:Loc OpenConfigFolder}" Click="OpenConfigButton_Click" />
-            </StackPanel>
+            </WrapPanel>
           </StackPanel>
         </ScrollViewer>
       </TabItem>
     </TabControl>
-
-    <Border Grid.Row="2" Background="White" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="18,10">
-      <Grid>
-        <TextBlock x:Name="FooterStatusText" Text="{local:Loc Ready}" Foreground="#667085" VerticalAlignment="Center" />
-        <Button Content="{local:Loc Refresh}" HorizontalAlignment="Right" Margin="0" Click="RefreshButton_Click" />
-      </Grid>
-    </Border>
+    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Top" Margin="18,23,10,0">
+      <Image Source="{StaticResource UiLogo}" Width="37" Height="37" Margin="0,0,12,0" x:Name="BrandLogo" RenderOptions.BitmapScalingMode="HighQuality" />
+      <StackPanel>
+        <TextBlock Text="AgentDock" FontSize="19" FontWeight="SemiBold" />
+        <TextBlock Text="{local:Loc UiTagline}" FontSize="10" Foreground="{DynamicResource UiMuted}" Margin="0,3,0,0" />
+      </StackPanel>
+    </StackPanel>
+    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="24,0,10,22">
+      <Path Style="{StaticResource UiIcon}" Data="{StaticResource IconInfo}" Width="17" Height="17" Stroke="{DynamicResource UiIconMuted}" />
+      <TextBlock Text="{local:Loc Version}" Margin="9,0,5,0" Foreground="{DynamicResource UiMuted}" FontSize="12" />
+      <TextBlock Text="{Binding Text, ElementName=VersionText}" Foreground="{DynamicResource UiMuted}" FontSize="12" />
+    </StackPanel>
+    <Grid Grid.Column="1" VerticalAlignment="Top" Margin="24,16,20,0">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <StackPanel Margin="0,0,12,0">
+        <TextBlock Text="{Binding SelectedItem.Header, ElementName=MainTabs}" FontSize="27" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+        <TextBlock Text="{Binding SelectedItem.ToolTip, ElementName=MainTabs}" Foreground="{DynamicResource UiMuted}" Margin="0,4,0,0" FontSize="12" TextTrimming="CharacterEllipsis" />
+      </StackPanel>
+      <StackPanel x:Name="HeaderActionsPanel" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+        <Button Content="{local:Loc Restart}" Click="RestartButton_Click" Style="{StaticResource HeaderActionButton}" x:Name="RestartButton" />
+        <Button x:Name="UpdateButton" Content="{local:Loc Update}" Click="UpdateButton_Click" Style="{StaticResource HeaderActionButton}" />
+        <Button Content="{local:Loc Refresh}" Click="RefreshButton_Click" Tag="ui-refresh" x:Name="RefreshButton" Style="{StaticResource HeaderActionButton}" />
+      </StackPanel>
+    </Grid>
+    <TextBlock x:Name="FooterStatusText" Grid.Column="1" Text="{local:Loc Ready}" FontSize="10" Foreground="{DynamicResource UiMuted}" VerticalAlignment="Bottom" Margin="24,0,20,9" TextTrimming="CharacterEllipsis" />
+    <Popup x:Name="CopyToastPopup" Placement="Left" AllowsTransparency="True" StaysOpen="True" PopupAnimation="Fade" VerticalOffset="0" IsHitTestVisible="False" HorizontalOffset="-8">
+      <Border x:Name="CopyToastChrome" Background="{DynamicResource UiSuccessSoft}" BorderBrush="{DynamicResource UiSuccess}" BorderThickness="1" CornerRadius="8" Padding="12,8" MaxWidth="280">
+        <TextBlock x:Name="CopyToastText" Foreground="{DynamicResource UiSuccess}" FontSize="13" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+      </Border>
+    </Popup>
   </Grid>
 </Window>

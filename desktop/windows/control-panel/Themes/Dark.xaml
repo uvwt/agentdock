@@ -1,0 +1,30 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:local="clr-namespace:AgentDock.ControlPanel" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <SolidColorBrush x:Key="UiInk" Color="#F2F4FC" />
+  <SolidColorBrush x:Key="UiMuted" Color="#AEB8CC" />
+  <SolidColorBrush x:Key="UiAccent" Color="#0970E8" />
+  <SolidColorBrush x:Key="UiLine" Color="#3B3E4C" />
+  <SolidColorBrush x:Key="UiCanvas" Color="#1F2028" />
+  <SolidColorBrush x:Key="UiTint" Color="#233A54" />
+  <SolidColorBrush x:Key="UiSurface" Color="#282A36" />
+  <SolidColorBrush x:Key="UiSidebar" Color="#2E303D" />
+  <SolidColorBrush x:Key="UiInset" Color="#2D303E" />
+  <SolidColorBrush x:Key="UiField" Color="#252C3C" />
+  <SolidColorBrush x:Key="UiHover" Color="#353C50" />
+  <SolidColorBrush x:Key="UiPressed" Color="#3E4D68" />
+  <SolidColorBrush x:Key="UiSelected" Color="#224E82" />
+  <SolidColorBrush x:Key="UiSelectedInk" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="UiIconMuted" Color="#C2CBDD" />
+  <SolidColorBrush x:Key="UiSuccess" Color="#52D98A" />
+  <SolidColorBrush x:Key="UiSuccessSoft" Color="#203D36" />
+  <SolidColorBrush x:Key="UiError" Color="#FFAAA3" />
+  <SolidColorBrush x:Key="UiErrorSoft" Color="#4B2B31" />
+  <SolidColorBrush x:Key="UiOff" Color="#5D6579" />
+  <SolidColorBrush x:Key="UiOnAccent" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="UiScrollTrack" Color="#252731" />
+  <SolidColorBrush x:Key="UiScrollThumb" Color="#575D71" />
+  <SolidColorBrush x:Key="UiHeat0" Color="#363B4A" />
+  <SolidColorBrush x:Key="UiHeat1" Color="#294B6F" />
+  <SolidColorBrush x:Key="UiHeat2" Color="#286CA8" />
+  <SolidColorBrush x:Key="UiAccentInk" Color="#58A9FF" />
+  <SolidColorBrush x:Key="UiWarning" Color="#FFC06C" />
+</ResourceDictionary>

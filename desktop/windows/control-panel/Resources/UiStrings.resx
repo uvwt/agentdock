@@ -725,4 +725,80 @@ Update now?</value>
   <data name="LanguageChangeDiscardWarning" xml:space="preserve">
     <value>Changing the interface language reloads this window. Any unsaved changes will be lost. Continue?</value>
   </data>
+  <data name="UiHome" xml:space="preserve"><value>Home</value></data>
+  <data name="UiTasks" xml:space="preserve"><value>Tasks</value></data>
+  <data name="UiPlugins" xml:space="preserve"><value>Plugins</value></data>
+  <data name="UiConfiguration" xml:space="preserve"><value>Configuration</value></data>
+  <data name="UiSettings" xml:space="preserve"><value>Settings</value></data>
+  <data name="UiTagline" xml:space="preserve"><value>Your AI, within reach</value></data>
+  <data name="UiWelcome" xml:space="preserve"><value>Welcome to AgentDock</value></data>
+  <data name="UiTaskSubtitle" xml:space="preserve"><value>Task progress and execution history</value></data>
+  <data name="UiPluginSubtitle" xml:space="preserve"><value>Manage connected capabilities</value></data>
+  <data name="UiConfigSubtitle" xml:space="preserve"><value>Public access and tunnel configuration</value></data>
+  <data name="UiSettingsSubtitle" xml:space="preserve"><value>Runtime preferences and advanced settings</value></data>
+  <data name="UiConnections" xml:space="preserve"><value>Connections &amp; access</value></data>
+  <data name="UiService" xml:space="preserve"><value>AgentDock service</value></data>
+  <data name="UiActivity" xml:space="preserve"><value>Task activity</value></data>
+  <data name="UiActivityPending" xml:space="preserve"><value>Activity data not connected</value></data>
+  <data name="UiNoActivityData" xml:space="preserve"><value>No activity data connected</value></data>
+  <data name="UiPastYear" xml:space="preserve"><value>Past year</value></data>
+  <data name="UiLess" xml:space="preserve"><value>Less</value></data>
+  <data name="UiMore" xml:space="preserve"><value>More</value></data>
+  <data name="UiViewOnly" xml:space="preserve"><value>View only</value></data>
+  <data name="UiManageAccess" xml:space="preserve"><value>Configure</value></data>
+  <data name="UiExternalManaged" xml:space="preserve"><value>Externally managed</value></data>
+  <data name="UiCloudflare" xml:space="preserve"><value>Cloudflare tunnel</value></data>
+  <data name="UiProviderNote" xml:space="preserve"><value>Access configuration</value></data>
+  <data name="UiTasksPending" xml:space="preserve"><value>Desktop task view is not connected yet</value></data>
+  <data name="UiTasksNote" xml:space="preserve"><value>Existing task tools are unchanged. This layout does not create, edit or delete tasks.</value></data>
+  <data name="UiPluginsPending" xml:space="preserve"><value>Desktop plugin view is not connected yet</value></data>
+  <data name="UiPluginsNote" xml:space="preserve"><value>Installed plugins and permissions are unchanged. This layout does not install, disable or remove plugins.</value></data>
+  <data name="UiBackHome" xml:space="preserve"><value>Back to home</value></data>
+  <data name="UiCopyLocal" xml:space="preserve"><value>Copy local MCP address</value></data>
+  <data name="UiCopyPublic" xml:space="preserve"><value>Copy public MCP address</value></data>
+  <data name="UiShowPublic" xml:space="preserve"><value>Show or hide public address</value></data>
+  <data name="UiAddressCopied" xml:space="preserve"><value>Address copied</value></data>
+  <data name="UiCopyFailed" xml:space="preserve"><value>Could not copy to clipboard</value></data>
+  <data name="UiAddressEmpty" xml:space="preserve"><value>No address to copy</value></data>
+  <data name="UiPreviewOnly" xml:space="preserve"><value>UI preview only; no action was executed</value></data>
+  <data name="UiPreviewTitle" xml:space="preserve"><value>AgentDock · UI preview (read-only)</value></data>
+  <data name="UiPreviewMode" xml:space="preserve"><value>Read-only UI preview</value></data>
+  <data name="UiFixedDomain" xml:space="preserve"><value>Fixed domain</value></data>
+  <data name="UiSaveFixedDomain" xml:space="preserve"><value>Save &amp; apply fixed domain</value></data>
+  <data name="UiModeClickHint" xml:space="preserve"><value>Select a mode to apply it</value></data>
+  <data name="UiModeManagedAtHome" xml:space="preserve"><value>Select the access mode on Home</value></data>
+  <data name="UiModeCurrent" xml:space="preserve"><value>Current mode: {0}</value></data>
+  <data name="UiModePending" xml:space="preserve"><value>Complete the fixed-domain settings first</value></data>
+  <data name="UiModeApplying" xml:space="preserve"><value>Applying access mode…</value></data>
+  <data name="UiModeFailed" xml:space="preserve"><value>Mode was not changed; the previous selection was restored</value></data>
+  <data name="UiModePreview" xml:space="preserve"><value>Preview selection: {0} · no network changes</value></data>
+  <data name="UiPreviewV2Title" xml:space="preserve"><value>AgentDock · UI v2 preview</value></data>
+<data name="UiAppearance" xml:space="preserve"><value>Appearance</value></data>
+<data name="UiThemeDescription" xml:space="preserve"><value>Choose the appearance of your control panel.</value></data>
+<data name="UiLightTheme" xml:space="preserve"><value>Light</value></data>
+<data name="UiDarkTheme" xml:space="preserve"><value>Dark</value></data>
+<data name="UiThemeImmediate" xml:space="preserve"><value>Applies immediately. Your choice is remembered.</value></data>
+<data name="UiThemeSaved" xml:space="preserve"><value>Theme saved</value></data>
+<data name="UiThemeSaveFailed" xml:space="preserve"><value>Theme applied, but the preference could not be saved.</value></data>
+<data name="UiCopyDone" xml:space="preserve"><value>Copied</value></data>
+<data name="UiCopyExampleDone" xml:space="preserve"><value>Example address copied</value></data>
+<data name="UiCopyBusy" xml:space="preserve"><value>Copying...</value></data>
+<data name="UiCopyErrorRetry" xml:space="preserve"><value>Copy failed. Please try again.</value></data>
+  <data name="UiCheckAgain" xml:space="preserve"><value>Check again</value></data>
+  <data name="UiCheckElapsed" xml:space="preserve"><value>Response time</value></data>
+  <data name="UiCheckTime" xml:space="preserve"><value>Last checked</value></data>
+  <data name="UiPublicCheckScope" xml:space="preserve"><value>Checks /healthz at the configured public address; network settings stay unchanged.</value></data>
+  <data name="UiPublicChecking" xml:space="preserve"><value>Checking public access…</value></data>
+  <data name="UiPublicReachable" xml:space="preserve"><value>Public address is reachable</value></data>
+  <data name="UiPublicUnreachable" xml:space="preserve"><value>Public address is not reachable</value></data>
+  <data name="UiPublicCheckSuccess" xml:space="preserve"><value>The public HTTP health endpoint responded successfully.</value></data>
+  <data name="UiPublicCheckHttpFailure" xml:space="preserve"><value>The server responded, but the HTTP check did not pass.</value></data>
+  <data name="UiPublicCheckNetworkFailure" xml:space="preserve"><value>Connection failed. Check the tunnel or network, then retry.</value></data>
+  <data name="UiPublicCheckPreview" xml:space="preserve"><value>No live check has been run in this preview.</value></data>
+  <data name="UiTrayDashboard" xml:space="preserve"><value>Dashboard</value></data>
+  <data name="UiTrayTaskCenter" xml:space="preserve"><value>Task activity center</value></data>
+  <data name="UiTrayCopyPublic" xml:space="preserve"><value>Copy public MCP address</value></data>
+  <data name="UiTrayFolders" xml:space="preserve"><value>Open folder</value></data>
+  <data name="UiTrayMore" xml:space="preserve"><value>More</value></data>
+  <data name="UiTrayExitHint" xml:space="preserve"><value>Exit the tray only; the service keeps running.</value></data>
 </root>

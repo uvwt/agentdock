@@ -230,7 +230,7 @@ func TestWindowsControlPanelOmitsCopyButtons(t *testing.T) {
 		}
 	}
 }
-func TestDesktopTrayMenusUseNativeDismissalAndOmitCopyActions(t *testing.T) {
+func TestDesktopTrayMenusUseNativeDismissalAndSafePlatformActions(t *testing.T) {
 	windowsData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml.cs"))
 	if err != nil {
 		t.Fatalf("read App.xaml.cs: %v", err)
@@ -242,28 +242,46 @@ func TestDesktopTrayMenusUseNativeDismissalAndOmitCopyActions(t *testing.T) {
 	windowsApp := string(windowsData)
 	macApp := string(macData)
 
-	orderedItems := []string{
-		`AgentDock: {statusText}`,
-		`UiText.Get("OpenAgentDock")`,
-		`UiText.Get("StopAgentDock")`,
-		`UiText.Get("RestartAgentDock")`,
-		`UiText.Get("StartAgentDock")`,
-		`UiText.Get("CheckForUpdates")`,
-		`UiText.Get("OpenLogsFolder")`,
-		`UiText.Get("OpenConfigFolder")`,
-		`UiText.Get("OpenDocumentation")`,
-		`UiText.Get("ExitTray")`,
+	menuData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Controls", "TrayMenuPresentation.cs"))
+	if err != nil {
+		t.Fatal(err)
 	}
+	actionsData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.TrayAppearance.cs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	windowsMenu, windowsActions := string(menuData), string(actionsData)
+	// Windows intentionally uses grouped actions; macOS keeps its existing menu.
+	orderedItems := []string{"status", "dashboard", "tasks", "copy-public", "public-check", "service", "folders", "appearance", "more", "exit"}
 	lastIndex := -1
 	for _, item := range orderedItems {
-		index := strings.Index(windowsApp, item)
-		if index < 0 {
-			t.Fatalf("Windows tray menu missing macOS-aligned item %q", item)
-		}
-		if index <= lastIndex {
-			t.Fatalf("Windows tray menu item %q is out of order", item)
+		index := strings.Index(windowsMenu, `Add(menu.Items, "`+item+`"`)
+		if index < 0 || index <= lastIndex {
+			t.Fatalf("Windows tray group %q missing or out of order", item)
 		}
 		lastIndex = index
+	}
+	for _, want := range []string{
+		`actions.Service("stop")`, `actions.Service("restart")`, `actions.Service("start")`,
+		`actions.Update()`, `actions.Logs`, `actions.Config`, `actions.Docs`, `actions.Exit`,
+		`state.HasPublicAddress`, `state.Running.HasValue && !state.Updating`,
+	} {
+		if !strings.Contains(windowsMenu, want) {
+			t.Fatalf("Windows tray action contract missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		`string.IsNullOrWhiteSpace(address)`, `await UiClipboard.WriteAsync(address)`,
+		`UiText.Get("UiCopyDone")`, `UiText.Get("UiCopyErrorRetry")`,
+	} {
+		if !strings.Contains(windowsActions, want) {
+			t.Fatalf("Windows safe copy feedback missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{`Forms.Clipboard.SetText`, `ReadBearerToken(`, `ReadOAuthPassword(`, `"AgentDock", address,`, `ex.Message`} {
+		if strings.Contains(windowsActions, forbidden) {
+			t.Fatalf("Windows tray copy must not expose secrets or raw errors: %q", forbidden)
+		}
 	}
 
 	for _, want := range []string{
@@ -307,13 +325,13 @@ func TestDesktopTrayMenusUseNativeDismissalAndOmitCopyActions(t *testing.T) {
 		"Forms.Clipboard.SetText",
 		"NSPasteboard.general",
 	} {
-		if strings.Contains(windowsApp, forbidden) || strings.Contains(macApp, forbidden) {
-			t.Fatalf("desktop tray menus must not expose copy-address behavior %q", forbidden)
+		if strings.Contains(macApp, forbidden) {
+			t.Fatalf("unchanged macOS tray menu must not expose copy-address behavior %q", forbidden)
 		}
 	}
 
 	for _, forbidden := range []string{"NotifyIcon_MouseUp", "_trayMenu.Show("} {
-		if strings.Contains(windowsApp, forbidden) {
+		if strings.Contains(windowsApp+windowsMenu+windowsActions, forbidden) {
 			t.Fatalf("Windows tray menu must use native NotifyIcon dismissal instead of manual popup behavior %q", forbidden)
 		}
 	}
@@ -390,8 +408,20 @@ func TestWindowsUpdateFeedbackUsesUTF8AndImmediateStatus(t *testing.T) {
 	progressXAML := string(progressXAMLData)
 	progressCode := string(progressCodeData)
 
+	menuData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Controls", "TrayMenuPresentation.cs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`state.Updating ? "CheckingForUpdates" : "CheckForUpdates"`, `state.Running.HasValue && !state.Updating`} {
+		if !strings.Contains(string(menuData), want) {
+			t.Fatalf("Themed tray must retain immediate update feedback: %q", want)
+		}
+	}
+	if !strings.Contains(app, `_updateInProgress, !string.IsNullOrWhiteSpace(snapshot?.PublicMcpUrl), _trayTheme`) {
+		t.Fatal("App must forward update state to the menu renderer")
+	}
+
 	for _, want := range []string{
-		`_updateInProgress ? UiText.Get("CheckingForUpdates") : UiText.Get("CheckForUpdates")`,
 		`ControlPanelWindow.SetUpdateState(true, UiText.Get("PleaseWaitCheckingUpdates"))`,
 		`var check = await Runtime.CheckForUpdatesAsync()`,
 		`if (!check.UpdateAvailable)`,

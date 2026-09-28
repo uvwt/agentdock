@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>agentdock-ui-tests</AssemblyName>
+    <SelfContained>false</SelfContained>
+    <ControlPanelAssemblyDir Condition="'$(ControlPanelAssemblyDir)' == ''">$(MSBuildThisFileDirectory)../control-panel/bin/Release/net8.0-windows10.0.19041.0</ControlPanelAssemblyDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <Reference Include="agentdock-tray"><HintPath>$(ControlPanelAssemblyDir)/agentdock-tray.dll</HintPath><Private>true</Private></Reference>
+    <None Include="$(ControlPanelAssemblyDir)/zh-CN/*.dll" Link="zh-CN/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
