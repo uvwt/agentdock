@@ -61,10 +61,11 @@ function Get-ScheduledTaskInfo {
     [CmdletBinding()]
     param([string] $TaskName, [string] $TaskPath = '\')
     $info = & $realTaskInfoCommand @PSBoundParameters
-    if ($info.LastRunTime.Year -ge 2000) {
-        $info.LastRunTime = $info.LastRunTime.AddSeconds(-$SchedulerClockSkewSeconds)
+    $lastRunTime = $info.LastRunTime
+    if ($lastRunTime.Year -ge 2000) {
+        $lastRunTime = $lastRunTime.AddSeconds(-$SchedulerClockSkewSeconds)
     }
-    return $info
+    return [pscustomobject]@{ LastRunTime = $lastRunTime; LastTaskResult = $info.LastTaskResult }
 }
 
 function Stop-ScheduledTask {
