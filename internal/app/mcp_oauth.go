@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"path"
 	"strings"
 
+	protocol "github.com/uvwt/agentdock-protocol"
 	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
 	"github.com/uvwt/agentdock/internal/mcp/oauthclient"
 )
@@ -99,7 +99,7 @@ func (r *Runtime) SetNexusOAuthCallback(publicURL, nodeID string) error {
 	if err != nil || u == nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
 		return fmt.Errorf("Nexus public URL must be an HTTPS origin: %q", publicURL)
 	}
-	u.Path = path.Join("/oauth/mcp/nodes", nodeID, "callback")
+	u.Path = protocol.NodeOAuthCallbackPath(nodeID)
 	u.RawPath = ""
 	return r.dynamicMCP.SetOAuthCallback(oauthclient.CallbackOption{
 		ID:          oauthclient.CallbackNexus,

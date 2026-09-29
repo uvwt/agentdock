@@ -101,7 +101,7 @@ func (c *Client) connect(ctx context.Context) error {
 	} else {
 		endpoint.Scheme = "ws"
 	}
-	endpoint.Path = strings.TrimRight(endpoint.Path, "/") + "/v1/nodes/connect"
+	endpoint.Path = strings.TrimRight(endpoint.Path, "/") + protocol.NodeConnectPath
 	header := http.Header{"Authorization": []string{"Bearer " + c.identity.DeviceToken}}
 	socket, response, err := websocket.DefaultDialer.DialContext(ctx, endpoint.String(), header)
 	if err != nil {

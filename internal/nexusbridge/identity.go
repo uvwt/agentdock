@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	protocol "github.com/uvwt/agentdock-protocol"
 	"github.com/uvwt/agentdock/internal/fs/atomicfile"
 )
 
@@ -45,13 +46,6 @@ type PairOptions struct {
 	Name     string
 }
 
-type pairResponse struct {
-	Node struct {
-		ID string `json:"id"`
-	} `json:"node"`
-	DeviceToken string `json:"device_token"`
-}
-
 func Pair(ctx context.Context, agentDockHome string, options PairOptions) (Identity, error) {
 	endpoint, err := normalizeEndpoint(options.Endpoint)
 	if err != nil {
@@ -72,11 +66,11 @@ func Pair(ctx context.Context, agentDockHome string, options PairOptions) (Ident
 	if err != nil {
 		return Identity{}, err
 	}
-	body, err := json.Marshal(map[string]string{"code": code, "device_id": deviceID, "name": name})
+	body, err := json.Marshal(protocol.PairRequest{Code: code, DeviceID: deviceID, Name: name})
 	if err != nil {
 		return Identity{}, fmt.Errorf("编码 NexusDock 配对请求: %w", err)
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/v1/nodes/pair", bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+protocol.NodePairPath, bytes.NewReader(body))
 	if err != nil {
 		return Identity{}, fmt.Errorf("创建 NexusDock 配对请求: %w", err)
 	}
@@ -94,7 +88,7 @@ func Pair(ctx context.Context, agentDockHome string, options PairOptions) (Ident
 	if response.StatusCode != http.StatusCreated {
 		return Identity{}, fmt.Errorf("NexusDock 配对失败（HTTP %d）: %s", response.StatusCode, strings.TrimSpace(string(data)))
 	}
-	var paired pairResponse
+	var paired protocol.PairResponse
 	if err := json.Unmarshal(data, &paired); err != nil {
 		return Identity{}, fmt.Errorf("解析 NexusDock 配对响应: %w", err)
 	}
