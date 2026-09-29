@@ -176,6 +176,7 @@ try {
         [Text.UTF8Encoding]::new($false)
     )
     $timeoutMessage = ''
+    $timeoutChildSurvived = $false
     try {
         & $resolvedLauncher `
             -FilePath (Join-Path $PSHOME 'powershell.exe') `
@@ -190,6 +191,7 @@ try {
         # Task cancellation may leave a detached child; this fixture owns its PID.
         if (Test-Path -LiteralPath $timeoutPidPath -PathType Leaf) {
             $timeoutChildId = [int][IO.File]::ReadAllText($timeoutPidPath)
+            $timeoutChildSurvived = $null -ne (Get-Process -Id $timeoutChildId -ErrorAction SilentlyContinue)
             Stop-Process -Id $timeoutChildId -Force -ErrorAction SilentlyContinue
         }
     }
@@ -198,6 +200,9 @@ try {
     }
     if ($stopRequests.Count -le $stopsBeforeTimeout) {
         throw 'Timed-out runtime task was not stopped before unregistering.'
+    }
+    if ($timeoutChildSurvived) {
+        throw 'Timed-out wait-host child survived and could retain diagnostic file handles.'
     }
 
     $afterTasks = @(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName.StartsWith($taskPrefix) } | ForEach-Object TaskName)

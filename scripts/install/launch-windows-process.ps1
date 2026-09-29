@@ -199,6 +199,37 @@ try {
         if (-not $launchSucceeded) {
             # Unregistering alone leaves a running host alive and can keep the
             # stable tray entry locked while the installer restores its backup.
+            if ($WaitForExit -and -not [string]::IsNullOrWhiteSpace($stdoutPath)) {
+                try {
+                    # The per-launch stdout argument identifies only this wait
+                    # host. Stop its descendants before terminating the task so
+                    # inherited diagnostic handles are also released.
+                    $hostName = [IO.Path]::GetFileName($HiddenHostBinary).Replace("'", "''")
+                    $stdoutArgument = ConvertTo-RuntimeHostArgument -Value $stdoutPath
+                    $hosts = @(Get-CimInstance Win32_Process -Filter "Name = '$hostName'" -ErrorAction Stop | Where-Object {
+                        $_.ExecutablePath -and $_.CommandLine -and
+                        [string]::Equals([IO.Path]::GetFullPath($_.ExecutablePath), $HiddenHostBinary, [StringComparison]::OrdinalIgnoreCase) -and
+                        $_.CommandLine.Contains('--stdout-b64 ' + $stdoutArgument)
+                    })
+                    $processes = @(Get-CimInstance Win32_Process -ErrorAction Stop)
+                    foreach ($runtimeHost in $hosts) {
+                        $treeIds = New-Object 'System.Collections.Generic.List[int]'
+                        $treeIds.Add([int]$runtimeHost.ProcessId)
+                        for ($index = 0; $index -lt $treeIds.Count; $index++) {
+                            foreach ($child in @($processes | Where-Object { $_.ParentProcessId -eq $treeIds[$index] })) {
+                                if (-not $treeIds.Contains([int]$child.ProcessId)) {
+                                    $treeIds.Add([int]$child.ProcessId)
+                                }
+                            }
+                        }
+                        for ($index = $treeIds.Count - 1; $index -ge 0; $index--) {
+                            Stop-Process -Id $treeIds[$index] -Force -ErrorAction SilentlyContinue
+                        }
+                    }
+                } catch {
+                    Write-Warning "Unable to stop runtime wait-host descendants: $($_.Exception.Message)"
+                }
+            }
             Stop-ScheduledTask -TaskName $taskName -TaskPath '\' -ErrorAction SilentlyContinue
             $stopDeadline = [DateTime]::UtcNow.AddSeconds(5)
             do {
