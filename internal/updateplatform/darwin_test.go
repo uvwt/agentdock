@@ -6,8 +6,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/uvwt/agentdock/internal/updateengine"
@@ -107,6 +109,116 @@ func TestMacOSDesignatedRequirementClassification(t *testing.T) {
 
 	if _, err := parseMacOSDesignatedRequirement("Executable=/tmp/AgentDock.app\n"); err == nil {
 		t.Fatal("missing designated requirement unexpectedly parsed")
+	}
+}
+
+func TestMacOSSigningIdentityWarning(t *testing.T) {
+	adHocOld := "cdhash H\"52e5516b23b677349b172aac371d864180b9c37c\""
+	adHocNew := "cdhash H\"672587ba3924923108e8c491f5716a6cf2394bcd\""
+	certificate := "identifier \"com.uvwt.agentdock\" and certificate leaf = H\"62bdaeee2f8cda5d0d1de81438825b88ed97c988\""
+
+	if warning := macOSSigningIdentityWarning(adHocOld, adHocOld); warning != "" {
+		t.Fatalf("unchanged ad-hoc requirement warning = %q", warning)
+	}
+	if warning := macOSSigningIdentityWarning(certificate, certificate); warning != "" {
+		t.Fatalf("unchanged certificate requirement warning = %q", warning)
+	}
+	if warning := macOSSigningIdentityWarning(certificate, adHocNew); warning != "" {
+		t.Fatalf("certificate downgrade is blocked before VerifyTrial; warning = %q", warning)
+	}
+	if warning := macOSSigningIdentityWarning(adHocOld, adHocNew); warning == "" {
+		t.Fatal("changed ad-hoc requirement must warn about TCC reauthorization")
+	}
+	if warning := macOSSigningIdentityWarning(adHocOld, certificate); warning == "" {
+		t.Fatal("ad-hoc to certificate migration must warn about one-time TCC reauthorization")
+	}
+}
+
+func TestDarwinVerifyTrialWarnsWhenAdHocIdentityChanges(t *testing.T) {
+	root := t.TempDir()
+	driver, err := NewDarwinDriver(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transaction, err := updateengine.NewTransaction("darwin", "0.8.3", "0.8.4")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sourcePath := filepath.Join(root, "AgentDock.source")
+	targetPath := filepath.Join(root, "AgentDock.target")
+	writeAdHocSignedFixture(t, sourcePath, "/bin/echo")
+	writeAdHocSignedFixture(t, targetPath, "/bin/cat")
+
+	handoffPath := filepath.Join(root, "update-handoff.json")
+	transaction.MacOS = &updateengine.MacOSPlan{
+		TargetAppPath: targetPath,
+		TrialAppPath:  sourcePath,
+		HandoffPath:   handoffPath,
+		ResultPath:    filepath.Join(root, "update-result.json"),
+	}
+	data := []byte(fmt.Sprintf(
+		`{"schema_version":1,"transaction_id":%q,"target_version":%q,"core_registration":"disabled","tunnel_registration":"disabled"}`,
+		transaction.TransactionID,
+		transaction.TargetVersion,
+	))
+	if err := os.WriteFile(handoffPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	warnings, err := driver.VerifyTrial(context.Background(), transaction)
+	if err != nil {
+		t.Fatalf("VerifyTrial() error = %v", err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "ad-hoc signed macOS build") {
+		t.Fatalf("VerifyTrial() warnings = %q, want ad-hoc TCC reauthorization warning", warnings)
+	}
+}
+
+func TestValidateMacOSSigningContinuityAllowsAdHocMigrationAndWarns(t *testing.T) {
+	root := t.TempDir()
+	sourcePath := filepath.Join(root, "source")
+	targetPath := filepath.Join(root, "target")
+
+	writeAdHocSignedFixture(t, sourcePath, "/bin/echo")
+	writeAdHocSignedFixture(t, targetPath, "/bin/cat")
+
+	if err := validateMacOSSigningContinuity(context.Background(), sourcePath, targetPath); err != nil {
+		t.Fatalf("ad-hoc migration must remain update-compatible: %v", err)
+	}
+
+	sourceRequirement, err := macOSDesignatedRequirement(context.Background(), sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetRequirement, err := macOSDesignatedRequirement(context.Background(), targetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isLegacyAdHocRequirement(sourceRequirement) || !isLegacyAdHocRequirement(targetRequirement) {
+		t.Fatalf("expected ad-hoc requirements, source=%q target=%q", sourceRequirement, targetRequirement)
+	}
+	if sourceRequirement == targetRequirement {
+		t.Fatalf("fixtures unexpectedly share an ad-hoc requirement: %q", sourceRequirement)
+	}
+	if warning := macOSSigningIdentityWarning(sourceRequirement, targetRequirement); warning == "" {
+		t.Fatal("changed ad-hoc identity must warn about TCC reauthorization")
+	}
+}
+
+func writeAdHocSignedFixture(t *testing.T, path, binary string) {
+	t.Helper()
+	if output, err := exec.Command("/bin/cp", binary, path).CombinedOutput(); err != nil {
+		t.Fatalf("copy %s: %v: %s", binary, err, output)
+	}
+	if output, err := exec.Command(
+		"/usr/bin/codesign",
+		"--force",
+		"--sign", "-",
+		"--identifier", "com.uvwt.agentdock",
+		path,
+	).CombinedOutput(); err != nil {
+		t.Fatalf("ad-hoc sign %s: %v: %s", path, err, output)
 	}
 }
 

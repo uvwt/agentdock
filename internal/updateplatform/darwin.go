@@ -109,6 +109,15 @@ func (driver *DarwinDriver) VerifyTrial(ctx context.Context, transaction updatee
 		return nil, err
 	}
 	var warnings []string
+	// Ad-hoc 签名的 designated requirement 绑定每次构建的 cdhash。升级仍允许继续，
+	// 但只要身份发生变化，macOS 已授予的 TCC 权限就可能要求用户重新确认。
+	if sourceRequirement, sourceErr := macOSDesignatedRequirement(ctx, plan.TrialAppPath); sourceErr == nil {
+		if targetRequirement, targetErr := macOSDesignatedRequirement(ctx, plan.TargetAppPath); targetErr == nil {
+			if warning := macOSSigningIdentityWarning(sourceRequirement, targetRequirement); warning != "" {
+				warnings = append(warnings, warning)
+			}
+		}
+	}
 	if plan.CoreWasEnabled {
 		switch handoff.CoreRegistration {
 		case "requires_approval":
@@ -299,10 +308,9 @@ func validateMacOSSigningContinuity(ctx context.Context, sourceAppPath, targetAp
 		return fmt.Errorf("read source App designated requirement: %w", err)
 	}
 	if isLegacyAdHocRequirement(requirement) {
-		// Existing 0.8.x desktop builds were ad-hoc signed, whose designated requirement is
-		// a per-build cdhash. Such a requirement can never match a different version. Allow
-		// this one compatibility boundary; once a certificate-signed App is active, every
-		// following update must satisfy the source certificate requirement below.
+		// 历史及当前未配置证书的公开构建使用 ad-hoc 签名，DR 绑定每次构建的 cdhash。
+		// 这里继续允许升级，否则存量用户会被永久卡在旧版本；升级后的 TCC 风险由
+		// VerifyTrial 作为明确 warning 返回，而不是伪装成签名连续。
 		return nil
 	}
 	output, err := exec.CommandContext(
@@ -314,9 +322,26 @@ func validateMacOSSigningContinuity(ctx context.Context, sourceAppPath, targetAp
 		targetAppPath,
 	).CombinedOutput()
 	if err != nil {
+		targetRequirement, targetErr := macOSDesignatedRequirement(ctx, targetAppPath)
+		if targetErr == nil && isLegacyAdHocRequirement(targetRequirement) {
+			return fmt.Errorf(
+				"target App is ad-hoc signed while the installed App requires a stable signing identity (%s)",
+				requirement,
+			)
+		}
 		return fmt.Errorf("target App does not satisfy source signing requirement: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+func macOSSigningIdentityWarning(sourceRequirement, targetRequirement string) string {
+	if strings.TrimSpace(sourceRequirement) == strings.TrimSpace(targetRequirement) {
+		return ""
+	}
+	if !isLegacyAdHocRequirement(sourceRequirement) {
+		return ""
+	}
+	return "AgentDock was updated from an ad-hoc signed macOS build. Accessibility, Screen Recording, or Automation permissions may require reauthorization because ad-hoc code identity changes between builds."
 }
 
 func macOSDesignatedRequirement(ctx context.Context, appPath string) (string, error) {
