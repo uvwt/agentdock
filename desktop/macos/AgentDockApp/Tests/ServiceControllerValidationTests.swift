@@ -61,6 +61,7 @@ struct ServiceControllerValidationTests {
         try testLegacyRuntimeMigrationTransactions(root: root, appBundle: appBundle)
         testQuickTunnelBootstrap()
         testServiceRegistrationStatusClassification()
+        testBackgroundServiceLifecyclePolicy()
         try testNexusConnectionStateResolution(root: root)
         try testDesktopUpdateCheckDecoding()
         testStatusItemVisibilityPolicy()
@@ -175,6 +176,96 @@ struct ServiceControllerValidationTests {
         precondition(ServiceController.isUnregistered(.notFound))
         precondition(!ServiceController.isUnregistered(.enabled))
         precondition(!ServiceController.isUnregistered(.requiresApproval))
+    }
+
+    private static func testBackgroundServiceLifecyclePolicy() {
+        precondition(BackgroundServiceLifecyclePolicy.shouldKickstart(
+            registration: .enabled,
+            processID: nil
+        ))
+        precondition(!BackgroundServiceLifecyclePolicy.shouldKickstart(
+            registration: .enabled,
+            processID: 1234
+        ))
+        precondition(!BackgroundServiceLifecyclePolicy.shouldKickstart(
+            registration: .notRegistered,
+            processID: nil
+        ))
+
+        precondition(BackgroundServiceLifecyclePolicy.shouldUseFastStart(
+            coreHealthy: true,
+            tunnelMode: .named,
+            tunnelReady: true
+        ))
+        precondition(!BackgroundServiceLifecyclePolicy.shouldUseFastStart(
+            coreHealthy: true,
+            tunnelMode: .local,
+            tunnelReady: false
+        ))
+        precondition(BackgroundServiceLifecyclePolicy.shouldUseFastStart(
+            coreHealthy: true,
+            tunnelMode: .local,
+            tunnelReady: true
+        ))
+        precondition(!BackgroundServiceLifecyclePolicy.shouldUseFastStart(
+            coreHealthy: true,
+            tunnelMode: .named,
+            tunnelReady: false
+        ))
+        precondition(!BackgroundServiceLifecyclePolicy.shouldUseFastStart(
+            coreHealthy: false,
+            tunnelMode: .named,
+            tunnelReady: true
+        ))
+        precondition(BackgroundServiceLifecyclePolicy.shouldQuiesceTunnel(
+            coreHealthy: false,
+            tunnelRunning: true
+        ))
+        precondition(!BackgroundServiceLifecyclePolicy.shouldQuiesceTunnel(
+            coreHealthy: true,
+            tunnelRunning: true
+        ))
+        precondition(!BackgroundServiceLifecyclePolicy.shouldQuiesceTunnel(
+            coreHealthy: false,
+            tunnelRunning: false
+        ))
+
+        precondition(
+            BackgroundServiceLifecyclePolicy.kickstartArguments(
+                target: "gui/501/com.uvwt.agentdock.core",
+                killExisting: false
+            ) == ["kickstart", "gui/501/com.uvwt.agentdock.core"]
+        )
+        precondition(
+            BackgroundServiceLifecyclePolicy.kickstartArguments(
+                target: "gui/501/com.uvwt.agentdock.core",
+                killExisting: true
+            ) == ["kickstart", "-k", "gui/501/com.uvwt.agentdock.core"]
+        )
+
+        precondition(BackgroundServiceLifecyclePolicy.shouldRunTunnel(mode: .quick, coreHealthy: true))
+        precondition(BackgroundServiceLifecyclePolicy.shouldRunTunnel(mode: .named, coreHealthy: true))
+        precondition(!BackgroundServiceLifecyclePolicy.shouldRunTunnel(mode: .local, coreHealthy: true))
+        precondition(!BackgroundServiceLifecyclePolicy.shouldRunTunnel(mode: .named, coreHealthy: false))
+
+        let launchctlOutput = """
+        gui/501/com.uvwt.agentdock.tunnel = {
+            parent bundle identifier = com.uvwt.agentdock
+            parent bundle version = 0.8.3
+        }
+        """
+        precondition(ServiceController.parentBundleVersion(fromLaunchctlOutput: launchctlOutput) == "0.8.3")
+        precondition(ServiceController.parentBundleVersion(fromLaunchctlOutput: "state = running\n") == nil)
+
+        let runningLaunchctlOutput = """
+        gui/501/com.uvwt.agentdock.core = {
+            state = running
+            pid = 75598
+        }
+        """
+        precondition(ServiceController.processID(fromLaunchctlOutput: runningLaunchctlOutput) == 75598)
+        precondition(ServiceController.processID(fromLaunchctlOutput: "state = running\n") == nil)
+        precondition(ServiceController.processID(fromLaunchctlOutput: "pid = 0\n") == nil)
     }
 
     private static func testNexusConnectionStateResolution(root: URL) throws {

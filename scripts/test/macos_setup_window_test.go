@@ -7,6 +7,42 @@ import (
 	"testing"
 )
 
+func TestMacOSSetupWindowRechecksPublicMCPAfterServiceRecovery(t *testing.T) {
+	root := filepath.Join("..", "..", "desktop", "macos", "AgentDockApp")
+	setupData, err := os.ReadFile(filepath.Join(root, "Sources", "SetupWindowController.swift"))
+	if err != nil {
+		t.Fatalf("read SetupWindowController.swift: %v", err)
+	}
+	setup := string(setupData)
+	for _, want := range []string{
+		"func invalidatePublicEndpointCheck()",
+		"cancelPublicCheck(clearLastResult: true)",
+		"recheckPublicEndpointOnSuccess: starting",
+		"recheckPublicEndpointOnSuccess: true",
+		"if recheckPublicEndpointOnSuccess {",
+		"invalidatePublicEndpointCheck()",
+	} {
+		if !strings.Contains(setup, want) {
+			t.Fatalf("macOS setup window missing public MCP recovery recheck contract %q", want)
+		}
+	}
+
+	appDelegateData, err := os.ReadFile(filepath.Join(root, "Sources", "AppDelegate.swift"))
+	if err != nil {
+		t.Fatalf("read AppDelegate.swift: %v", err)
+	}
+	appDelegate := string(appDelegateData)
+	for _, want := range []string{
+		"performServiceAction(L10n.text(\"Start\"), recheckPublicEndpointOnSuccess: true)",
+		"performServiceAction(L10n.text(\"Restart\"), recheckPublicEndpointOnSuccess: true)",
+		"self.setupWindow.invalidatePublicEndpointCheck()",
+	} {
+		if !strings.Contains(appDelegate, want) {
+			t.Fatalf("macOS menu service action missing public MCP recovery recheck contract %q", want)
+		}
+	}
+}
+
 func TestMacOSSetupWindowUsesResponsiveScrollableLayout(t *testing.T) {
 	root := filepath.Join("..", "..", "desktop", "macos", "AgentDockApp")
 	setupData, err := os.ReadFile(filepath.Join(root, "Sources", "SetupWindowController.swift"))

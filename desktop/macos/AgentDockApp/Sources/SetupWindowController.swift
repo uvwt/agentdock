@@ -160,6 +160,10 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         updateWindowHeight()
     }
 
+    func invalidatePublicEndpointCheck() {
+        cancelPublicCheck(clearLastResult: true)
+    }
+
     func setUpdateInProgress(_ inProgress: Bool, status: String? = nil) {
         isUpdateInProgress = inProgress
         setBusy(isBusy)
@@ -678,19 +682,22 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             service.openBackgroundItemsSettings()
             return
         }
+        let starting = !currentStatus.loaded
         performServiceAction(
-            inProgress: currentStatus.loaded ? L10n.text("Stopping AgentDock…") : L10n.text("Starting AgentDock…"),
-            completed: currentStatus.loaded ? L10n.text("AgentDock stopped.") : L10n.text("AgentDock started.")
+            inProgress: starting ? L10n.text("Starting AgentDock…") : L10n.text("Stopping AgentDock…"),
+            completed: starting ? L10n.text("AgentDock started.") : L10n.text("AgentDock stopped."),
+            recheckPublicEndpointOnSuccess: starting
         ) {
-            if self.currentStatus.loaded { try await self.service.stop() }
-            else { try await self.service.start() }
+            if starting { try await self.service.start() }
+            else { try await self.service.stop() }
         }
     }
 
     @objc private func restartPressed() {
         performServiceAction(
             inProgress: L10n.text("Restarting AgentDock…"),
-            completed: L10n.text("AgentDock restarted.")
+            completed: L10n.text("AgentDock restarted."),
+            recheckPublicEndpointOnSuccess: true
         ) { try await self.service.restart() }
     }
 
@@ -702,6 +709,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private func performServiceAction(
         inProgress: String,
         completed: String,
+        recheckPublicEndpointOnSuccess: Bool = false,
         operation: @escaping () async throws -> Void
     ) {
         guard !isUpdateInProgress else { return }
@@ -712,10 +720,14 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
                 try await operation()
                 setBusy(false)
                 showStatus(completed, isError: false)
+                if recheckPublicEndpointOnSuccess {
+                    invalidatePublicEndpointCheck()
+                }
                 onChanged()
             } catch {
                 setBusy(false)
                 showStatus(error.localizedDescription, isError: true)
+                onChanged()
             }
         }
     }

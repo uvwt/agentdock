@@ -81,11 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DesktopUpdateHandoff.remove(at: service.paths.updateHandoff)
             refreshStatus(showWindow: !launchedInBackground)
             Task {
-                do {
-                    try service.reconcileTunnelRegistrationFromConfiguration()
-                } catch {
-                    NSLog("AgentDock 启动时 Tunnel 状态收敛失败：%@", error.localizedDescription)
-                }
+                await service.reconcileBackgroundServicesOnLaunch()
                 self.refreshStatus()
             }
         }
@@ -540,9 +536,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func startService() { performServiceAction(L10n.text("Start")) { try await self.service.start() } }
-    @objc private func stopService() { performServiceAction(L10n.text("Stop")) { try await self.service.stop() } }
-    @objc private func restartService() { performServiceAction(L10n.text("Restart")) { try await self.service.restart() } }
+    @objc private func startService() {
+        performServiceAction(L10n.text("Start"), recheckPublicEndpointOnSuccess: true) {
+            try await self.service.start()
+        }
+    }
+
+    @objc private func stopService() {
+        performServiceAction(L10n.text("Stop")) {
+            try await self.service.stop()
+        }
+    }
+
+    @objc private func restartService() {
+        performServiceAction(L10n.text("Restart"), recheckPublicEndpointOnSuccess: true) {
+            try await self.service.restart()
+        }
+    }
 
     @objc private func updateService() {
         startUpdate()
@@ -635,7 +645,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
-    private func performServiceAction(_ action: String, operation: @escaping () async throws -> Void) {
+    private func performServiceAction(
+        _ action: String,
+        recheckPublicEndpointOnSuccess: Bool = false,
+        operation: @escaping () async throws -> Void
+    ) {
         guard !isUpdating else {
             updateProgressWindow.present()
             return
@@ -648,6 +662,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? await Task.sleep(nanoseconds: 800_000_000)
                 await MainActor.run {
                     self.trayServiceActionInProgress = false
+                    if recheckPublicEndpointOnSuccess {
+                        self.setupWindow.invalidatePublicEndpointCheck()
+                    }
                     self.refreshStatus()
                 }
             } catch {
@@ -658,6 +675,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         message: error.localizedDescription,
                         style: .warning
                     )
+                    self.refreshStatus()
                 }
             }
         }
