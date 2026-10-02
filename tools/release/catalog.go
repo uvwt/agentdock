@@ -60,6 +60,7 @@ func ReleaseCatalog() []Artifact {
 		{Name: "agentdock_windows_amd64.zip", Kind: "binary-archive", Platform: "windows", Arch: "amd64", Required: true},
 		{Name: "agentdock_windows_arm64.zip", Kind: "binary-archive", Platform: "windows", Arch: "arm64", Required: true},
 		{Name: "AgentDock-macos-universal.dmg", Kind: "disk-image", Platform: "darwin", Arch: "universal", Required: true},
+		{Name: "AgentDock-macos-universal.zip", Kind: "desktop-archive", Platform: "darwin", Arch: "universal", Required: true},
 		{Name: "AgentDockSetup-amd64.exe", Kind: "setup", Platform: "windows", Arch: "amd64", Required: true, PublicContract: true},
 		{Name: "AgentDockSetup-arm64.exe", Kind: "setup", Platform: "windows", Arch: "arm64", Required: true, PublicContract: true},
 	}
@@ -79,5 +80,13 @@ func ReleaseCatalog() []Artifact {
 		})
 	}
 	catalog = append(catalog, scripts...)
+	for _, artifact := range scripts {
+		catalog = append(catalog, Artifact{
+			Name:     artifact.Name + ".sha256",
+			Kind:     "checksum",
+			Platform: artifact.Platform,
+			Required: artifact.Required,
+		})
+	}
 	return catalog
 }

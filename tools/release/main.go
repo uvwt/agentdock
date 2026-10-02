@@ -23,7 +23,7 @@ func main() {
 
 func run(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("用法：release <catalog|version|verify-version|verify-dist|checksum> [参数]")
+		return errors.New("用法：release <catalog|version|verify-version|verify-dist|checksum|mirror-manifest> [参数]")
 	}
 	switch args[0] {
 	case "version":
@@ -55,6 +55,11 @@ func run(args []string, stdout io.Writer) error {
 		}
 		fmt.Fprintf(stdout, "%s  %s\n", sum, filepath.Base(args[1]))
 		return nil
+	case "mirror-manifest":
+		if len(args) != 4 {
+			return errors.New("用法：release mirror-manifest <tag> <public-base-url> <dist-dir>")
+		}
+		return writeMirrorManifest(args[1], args[2], args[3], stdout)
 	default:
 		return fmt.Errorf("未知命令：%s", args[0])
 	}

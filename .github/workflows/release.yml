@@ -1345,3 +1345,127 @@ jobs:
           test "$draft" = "false"
           test "$tag" = "$RELEASE_TAG"
           test "$target" = "$SOURCE_COMMIT"
+
+  mirror-r2:
+    name: Mirror latest Release to R2
+    needs: [source, prepare-release, publish-release]
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      AWS_EC2_METADATA_DISABLED: "true"
+      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
+      RELEASE_TAG: ${{ needs.source.outputs.tag }}
+    steps:
+      - name: Checkout validated source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.source.outputs.commit }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download validated release candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: agentdock-release-dist
+          path: dist
+
+      - name: Validate R2 mirror configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in R2_ACCOUNT_ID R2_BUCKET R2_PUBLIC_BASE_URL AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "$name is required for the R2 release mirror." >&2
+              exit 1
+            fi
+          done
+          [[ "$R2_PUBLIC_BASE_URL" == https://* ]]
+          command -v aws >/dev/null
+          aws --version
+
+      - name: Generate latest mirror manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_base="${R2_PUBLIC_BASE_URL%/}/releases/$RELEASE_TAG"
+          go run ./tools/release mirror-manifest "$RELEASE_TAG" "$release_base" dist > dist/latest.json
+          jq -e --arg tag "$RELEASE_TAG" '.tag_name == $tag and (.assets | length > 0)' dist/latest.json >/dev/null
+
+      - name: Upload and verify versioned R2 assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          release_prefix="releases/$RELEASE_TAG"
+
+          while IFS= read -r asset; do
+            key="$release_prefix/$asset"
+            aws s3 cp "dist/$asset" "s3://$R2_BUCKET/$key" \
+              --endpoint-url "$endpoint" \
+              --cache-control "public, max-age=31536000, immutable" \
+              --only-show-errors
+            aws s3api head-object \
+              --bucket "$R2_BUCKET" \
+              --key "$key" \
+              --endpoint-url "$endpoint" >/dev/null
+          done < <(jq -r '.assets[].name' dist/latest.json)
+
+      - name: Verify public versioned assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r url; do
+            curl --fail --silent --show-error --location \
+              --retry 5 --retry-all-errors \
+              --head "$url" >/dev/null
+          done < <(jq -r '.assets[].browser_download_url' dist/latest.json)
+
+      - name: Publish latest.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          aws s3 cp dist/latest.json "s3://$R2_BUCKET/latest.json" \
+            --endpoint-url "$endpoint" \
+            --content-type "application/json; charset=utf-8" \
+            --cache-control "no-cache, max-age=0, must-revalidate" \
+            --only-show-errors
+
+          manifest_url="${R2_PUBLIC_BASE_URL%/}/latest.json?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          curl --fail --silent --show-error --location \
+            --retry 5 --retry-all-errors \
+            -H "Cache-Control: no-cache" \
+            "$manifest_url" \
+            -o "$RUNNER_TEMP/published-latest.json"
+          jq -e --arg tag "$RELEASE_TAG" '.tag_name == $tag and (.assets | length > 0)' \
+            "$RUNNER_TEMP/published-latest.json" >/dev/null
+
+      - name: Remove stale R2 release objects
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          current_prefix="releases/$RELEASE_TAG/"
+          aws s3api list-objects-v2 \
+            --bucket "$R2_BUCKET" \
+            --prefix "releases/" \
+            --endpoint-url "$endpoint" \
+            --output json \
+            | jq -r '.Contents[]?.Key' \
+            > "$RUNNER_TEMP/r2-release-keys"
+
+          while IFS= read -r key; do
+            [[ -z "$key" || "$key" == "$current_prefix"* ]] && continue
+            aws s3api delete-object \
+              --bucket "$R2_BUCKET" \
+              --key "$key" \
+              --endpoint-url "$endpoint" >/dev/null
+          done < "$RUNNER_TEMP/r2-release-keys"
