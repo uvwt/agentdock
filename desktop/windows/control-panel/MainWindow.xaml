@@ -453,68 +453,113 @@
 
             <TextBlock Text="{local:Loc Configure}" Style="{StaticResource SectionHeadingText}" />
 
-            <GroupBox Header="{local:Loc Browser}" Tag="&#xE774;">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="150" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <CheckBox x:Name="BrowserEnabledCheckBox" Grid.ColumnSpan="2"
-                          Content="{local:Loc EnableBrowserCdp}" Margin="0,4,0,12"
-                          Checked="BrowserConnection_Changed" Unchecked="BrowserConnection_Changed" />
-                <TextBlock Text="{local:Loc ConnectionMode}" Grid.Row="1" VerticalAlignment="Top" Margin="0,5,0,10" />
-                <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,10">
-                  <ComboBox x:Name="BrowserConnectionModeComboBox" Width="320" HorizontalAlignment="Left"
-                            SelectionChanged="BrowserConnection_Changed">
-                    <ComboBoxItem Content="{local:Loc ManagedBrowser}" Tag="managed" />
-                    <ComboBoxItem Content="{local:Loc ReuseExistingCdpBrowser}" Tag="reuse" />
-                    <ComboBoxItem Content="{local:Loc SpecifiedCdpBrowser}" Tag="specified" />
-                  </ComboBox>
-                  <TextBox x:Name="BrowserCdpUrlTextBox" Margin="0,8,0,0" Visibility="Collapsed"
-                           ToolTip="{local:Loc CdpUrlExample}" />
-                  <TextBlock x:Name="BrowserConnectionHelpText" Margin="0,6,0,0"
-                             Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" />
-                </StackPanel>
-              </Grid>
-            </GroupBox>
-
-            <GroupBox Header="{local:Loc CodingAgentAcp}" Tag="&#xE756;">
-              <StackPanel>
-                <CheckBox x:Name="AcpEnabledCheckBox" Content="{local:Loc EnableCodingAgent}" Margin="0,4,0,14" />
-                <Grid Margin="0,0,0,12">
+            <Border Style="{StaticResource SummaryTile}" MinHeight="0" Margin="0,0,0,10">
+              <Expander IsExpanded="False">
+                <Expander.Header>
+                  <StackPanel Orientation="Horizontal">
+                    <Border Style="{StaticResource IconChip}" Margin="0,0,9,0">
+                      <TextBlock Text="&#xE774;"
+                                 FontFamily="Segoe Fluent Icons"
+                                 FontSize="14"
+                                 Foreground="{StaticResource AccentBrush}"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="{local:Loc Browser}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Expander.Header>
+                <Grid Margin="0,14,0,0">
                   <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="150" />
+                    <ColumnDefinition Width="*" />
                   </Grid.ColumnDefinitions>
-                  <TextBlock Text="{local:Loc DefaultAcp}" VerticalAlignment="Center" Margin="0,0,12,0" />
-                  <ComboBox x:Name="AcpDefaultProfileComboBox" Grid.Column="1" Width="240"
-                            SelectionChanged="AcpDefaultProfile_SelectionChanged" />
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
+                  <CheckBox x:Name="BrowserEnabledCheckBox" Grid.ColumnSpan="2"
+                            Content="{local:Loc EnableBrowserCdp}" Margin="0,4,0,12"
+                            Checked="BrowserConnection_Changed" Unchecked="BrowserConnection_Changed" />
+                  <TextBlock Text="{local:Loc ConnectionMode}" Grid.Row="1" VerticalAlignment="Top" Margin="0,5,0,10" />
+                  <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,10">
+                    <ComboBox x:Name="BrowserConnectionModeComboBox" Width="320" HorizontalAlignment="Left"
+                              SelectionChanged="BrowserConnection_Changed">
+                      <ComboBoxItem Content="{local:Loc ManagedBrowser}" Tag="managed" />
+                      <ComboBoxItem Content="{local:Loc ReuseExistingCdpBrowser}" Tag="reuse" />
+                      <ComboBoxItem Content="{local:Loc SpecifiedCdpBrowser}" Tag="specified" />
+                    </ComboBox>
+                    <TextBox x:Name="BrowserCdpUrlTextBox" Margin="0,8,0,0" Visibility="Collapsed"
+                             ToolTip="{local:Loc CdpUrlExample}" />
+                    <TextBlock x:Name="BrowserConnectionHelpText" Margin="0,6,0,0"
+                               Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                  </StackPanel>
                 </Grid>
-                <StackPanel x:Name="AcpProfileListPanel" />
-                <Button x:Name="AcpAddCustomProfileButton"
-                        Content="{local:Loc AddCustomAcp}" HorizontalAlignment="Left"
-                        Margin="0,10,0,0" Padding="10,4" Click="AcpAddCustomProfile_Click" />
-              </StackPanel>
-            </GroupBox>
+              </Expander>
+            </Border>
 
-            <GroupBox Header="MCP" Tag="&#xE7F8;">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="150" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Text="{local:Loc ChatCards}" VerticalAlignment="Center" />
-                <ComboBox x:Name="McpAppsModeComboBox" Grid.Column="1" Width="220" HorizontalAlignment="Left">
-                  <ComboBoxItem Content="{local:Loc ChatCardsFull}" Tag="full" />
-                  <ComboBoxItem Content="{local:Loc ChatCardsCompact}" Tag="compact" />
-                  <ComboBoxItem Content="{local:Loc ChatCardsOff}" Tag="off" />
-                </ComboBox>
-              </Grid>
-            </GroupBox>
+            <Border Style="{StaticResource SummaryTile}" MinHeight="0" Margin="0,0,0,10">
+              <Expander IsExpanded="False">
+                <Expander.Header>
+                  <StackPanel Orientation="Horizontal">
+                    <Border Style="{StaticResource IconChip}" Margin="0,0,9,0">
+                      <TextBlock Text="&#xE756;"
+                                 FontFamily="Segoe Fluent Icons"
+                                 FontSize="14"
+                                 Foreground="{StaticResource AccentBrush}"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="{local:Loc CodingAgentAcp}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Expander.Header>
+                <StackPanel Margin="0,14,0,0">
+                  <CheckBox x:Name="AcpEnabledCheckBox" Content="{local:Loc EnableCodingAgent}" Margin="0,4,0,14" />
+                  <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{local:Loc DefaultAcp}" VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <ComboBox x:Name="AcpDefaultProfileComboBox" Grid.Column="1" Width="240"
+                              SelectionChanged="AcpDefaultProfile_SelectionChanged" />
+                  </Grid>
+                  <StackPanel x:Name="AcpProfileListPanel" />
+                  <Button x:Name="AcpAddCustomProfileButton"
+                          Content="{local:Loc AddCustomAcp}" HorizontalAlignment="Left"
+                          Margin="0,10,0,0" Padding="10,4" Click="AcpAddCustomProfile_Click" />
+                </StackPanel>
+              </Expander>
+            </Border>
+
+            <Border Style="{StaticResource SummaryTile}" MinHeight="0" Margin="0,0,0,12">
+              <Expander IsExpanded="False">
+                <Expander.Header>
+                  <StackPanel Orientation="Horizontal">
+                    <Border Style="{StaticResource IconChip}" Margin="0,0,9,0">
+                      <TextBlock Text="&#xE7F8;"
+                                 FontFamily="Segoe Fluent Icons"
+                                 FontSize="14"
+                                 Foreground="{StaticResource AccentBrush}"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="MCP" FontWeight="SemiBold" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Expander.Header>
+                <Grid Margin="0,14,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="150" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="{local:Loc ChatCards}" VerticalAlignment="Center" />
+                  <ComboBox x:Name="McpAppsModeComboBox" Grid.Column="1" Width="220" HorizontalAlignment="Left">
+                    <ComboBoxItem Content="{local:Loc ChatCardsFull}" Tag="full" />
+                    <ComboBoxItem Content="{local:Loc ChatCardsCompact}" Tag="compact" />
+                    <ComboBoxItem Content="{local:Loc ChatCardsOff}" Tag="off" />
+                  </ComboBox>
+                </Grid>
+              </Expander>
+            </Border>
 
             <Button Content="{local:Loc SaveAndRestart}" Style="{StaticResource PrimaryButton}"
                     HorizontalAlignment="Left" Click="SaveSettingsButton_Click" />
