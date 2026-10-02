@@ -476,10 +476,12 @@ func TestWindowsControlPanelUsesNativeSharedDesignSemantics(t *testing.T) {
 	app := string(data)
 
 	for _, want := range []string{
-		`x:Key="AccentBrush" Color="#1769AA"`,
+		`x:Key="AccentBrush" Color="#2F6FED"`,
+		`x:Key="AccentSoftBrush" Color="#E8F0FF"`,
 		`x:Key="SurfaceBrush" Color="#FFFFFF"`,
-		`x:Key="WindowBrush" Color="#F6F8FB"`,
-		`x:Key="BorderBrush" Color="#E1E6EE"`,
+		`x:Key="WindowBrush" Color="#F5F8FC"`,
+		`x:Key="SidebarBrush" Color="#EDF3F9"`,
+		`x:Key="BorderBrush" Color="#DDE5EF"`,
 		`x:Key="TextSecondaryBrush" Color="#667085"`,
 		`x:Key="PrimaryButton"`,
 		`x:Key="QuietButton"`,
