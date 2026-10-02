@@ -48,6 +48,26 @@ enum ApplicationMenu {
         editMenuItem.submenu = editMenu
         mainMenu.addItem(editMenuItem)
 
+        let windowMenuItem = NSMenuItem()
+        let windowMenu = NSMenu(title: L10n.text("Window"))
+        windowMenu.addItem(
+            item(
+                title: L10n.text("Close Window"),
+                action: #selector(NSWindow.performClose(_:)),
+                keyEquivalent: "w"
+            )
+        )
+        windowMenu.addItem(
+            item(
+                title: L10n.text("Minimize"),
+                action: #selector(NSWindow.performMiniaturize(_:)),
+                keyEquivalent: "m"
+            )
+        )
+        windowMenuItem.submenu = windowMenu
+        mainMenu.addItem(windowMenuItem)
+        NSApp.windowsMenu = windowMenu
+
         NSApp.mainMenu = mainMenu
     }
 

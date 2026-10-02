@@ -360,3 +360,6 @@
 "Command" = "Command";
 "Args JSON" = "Args JSON";
 "Save" = "Save";
+"Window" = "Window";
+"Close Window" = "Close Window";
+"Minimize" = "Minimize";

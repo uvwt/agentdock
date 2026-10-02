@@ -360,3 +360,6 @@
 "Command" = "命令";
 "Args JSON" = "参数 JSON";
 "Save" = "保存";
+"Window" = "窗口";
+"Close Window" = "关闭窗口";
+"Minimize" = "最小化";
