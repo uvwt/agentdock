@@ -36,6 +36,10 @@ releases/
 5. 最后更新根目录 `latest.json`，避免元数据提前指向未完成上传的版本。
 6. `latest.json` 验证成功后，删除 `releases/` 下其他版本对象。
 
+R2 中的 `install.sh` 会在镜像阶段把默认 Release 基础地址改写为同版本的
+`https://download.nexusdock.co/releases/<tag>`，并重新生成 `install.sh.sha256`。
+GitHub Release 中的原始 `install.sh` 不变，因此历史版本仍保持 GitHub 自身的可复现下载链路。
+
 任何步骤在更新 `latest.json` 前失败时，旧版下载入口保持不变；更新之后的清理失败只会留下旧对象，不会破坏当前最新版。
 
 ## GitHub Actions 配置

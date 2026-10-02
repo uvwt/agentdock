@@ -1391,6 +1391,14 @@ jobs:
           command -v aws >/dev/null
           aws --version
 
+      - name: Prepare R2 bootstrap assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_base="${R2_PUBLIC_BASE_URL%/}/releases/$RELEASE_TAG"
+          go run ./tools/release mirror-prepare "$release_base" dist
+          (cd dist && sha256sum -c install.sh.sha256)
+
       - name: Generate latest mirror manifest
         shell: bash
         run: |
