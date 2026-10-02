@@ -221,8 +221,8 @@
               </StackPanel>
             </GroupBox>
 
-            <GroupBox Header="{local:Loc NexusDockManagedAccess}">
-              <StackPanel>
+            <Expander Header="{local:Loc NexusDockManagedAccess}" IsExpanded="False" Margin="0,10,0,0">
+              <StackPanel Margin="0,12,0,0">
                 <TextBlock Text="{local:Loc NexusDockManagedAccessDescription}"
                            Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12" />
                 <TextBlock x:Name="NexusStatusText" Text="{local:Loc NotConfigured}"
@@ -252,7 +252,7 @@
                              TextWrapping="Wrap" />
                 </Grid>
               </StackPanel>
-            </GroupBox>
+            </Expander>
           </StackPanel>
         </ScrollViewer>
       </TabItem>
