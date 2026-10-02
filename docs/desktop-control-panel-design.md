@@ -57,17 +57,34 @@ Remote Access 的连接方式包括：
 
 ### 5.1 Token 语义
 
-Windows 当前基线：
+第二轮视觉收口后，macOS / Windows 的 Light Mode 使用同一组产品 Token；macOS 仅在 Dark Mode 下映射到对应动态色，不再使用另一套主色。
 
-- Accent：#1769AA
-- Window：#F6F8FB
-- Surface：#FFFFFF
-- Muted Surface：#F9FAFC
-- Border：#E1E6EE
-- Primary Text：#172033
-- Secondary Text：#667085
+- Accent：`#2F6FED`
+- Accent Hover：`#255FD4`
+- Accent Pressed：`#1F50B8`
+- Accent Soft：`#E8F0FF`
+- Canvas：`#F5F8FC`
+- Sidebar：`#EDF3F9`
+- Surface：`#FFFFFF`
+- Border：`#DDE5EF`
+- Control Border：`#CFD8E6`
+- Primary Text：`#101828`
+- Secondary Text：`#667085`
+- Success：`#12B76A`
+- Warning：`#F79009`
+- Danger：`#D92D20`
 
-macOS 使用对应的系统动态色，确保 Light / Dark Mode 和可访问性跟随系统；不硬编码 Windows 颜色值。
+圆角和间距也统一为语义层级，而不是由平台默认控件随意决定：
+
+- Hero：16–18 px
+- Section Card：14–15 px
+- Summary Tile：13–14 px
+- Button / Sidebar Item：8–9 px
+- Page horizontal inset：30 px 左右
+- Section gap：16–18 px
+- Card content inset：18–22 px
+
+两端允许字体栅格和原生窗口装饰不同，但不允许因此改变页面密度和主次层级。
 
 ### 5.2 组件语义
 
@@ -87,6 +104,14 @@ macOS 使用对应的系统动态色，确保 Light / Dark Mode 和可访问性�
 - InlineMessage
 
 这些是产品语义，不要求两端共享实现文件。
+
+第二轮视觉精修额外明确：
+
+- `StatusHero` 必须承担首页第一视觉焦点，展示 Runtime 状态和主要动作。
+- `SummaryTile` 用于首页能力摘要，不直接承载复杂配置。
+- `ConnectionSummary` 用于展示当前远程连接状态和地址；连接方式选择进入二级配置。
+- `SectionCard` 不使用厚重 GroupBox 观感，标题、图标、说明和内容应形成清晰层级。
+- `PrimaryButton` 只用于当前页面最主要动作；其它操作使用 Secondary / Quiet，避免满屏相同权重按钮。
 
 ### 5.3 图标
 
@@ -127,3 +152,23 @@ macOS 使用对应的系统动态色，确保 Light / Dark Mode 和可访问性�
 ## 8. 演进条件
 
 当桌面端出现大量表格、搜索、过滤、Command Palette、复杂导航、可插拔页面、虚拟列表等真实需求时，再重新评估 WinUI 3 / Avalonia 等框架。当前规模优先保持原生技术栈和轻量 Design System，避免为了未来假设提前付出迁移成本。
+
+## 9. 第二轮视觉精修验收基线
+
+视觉验收必须以真实 AppKit / WPF 截图为准，不以设计稿或代码结构代替。
+
+Home 在两个平台都应具备相同的信息节奏：
+
+1. Page Header。
+2. Runtime Status Hero。
+3. Browser / Coding Agent / MCP 三个能力摘要。
+4. Connection Summary。
+
+Connections 在两个平台都应具备相同的信息节奏：
+
+1. Page Header。
+2. 当前 Remote Access 状态与地址。
+3. 本地 MCP / 公网 MCP 的紧凑信息。
+4. “更改连接方式”与 NexusDock 作为二级展开内容。
+
+验收时重点比较：主色、背景层级、侧栏品牌区、选中态、圆角、阴影、标题字号、卡片间距、按钮权重和信息密度。平台原生差异只能体现在窗口 chrome、字体栅格、Focus Ring 等系统层细节上。

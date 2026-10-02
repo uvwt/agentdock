@@ -144,6 +144,10 @@
 "Saving configuration and validating AgentDock…" = "Saving configuration and validating AgentDock…";
 "Select All" = "Select All";
 "Service" = "Service";
+"Health check" = "Health check";
+"Healthy" = "Healthy";
+"Unavailable" = "Unavailable";
+"Version" = "Version";
 "Service port" = "Service port";
 "Set up AgentDock" = "Set up AgentDock";
 "Settings saved." = "Settings saved.";

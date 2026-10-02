@@ -4,28 +4,65 @@
              xmlns:local="clr-namespace:AgentDock.ControlPanel">
   <Application.Resources>
     <!--
-      控制面板只使用系统 WPF 控件与 Segoe 字体，不引入第三方 UI Runtime。
-      这些 token 与 macOS ControlPanelUI 保持相同的层级语义：背景、卡片、描边、强调色、正文与次要文字。
+      Windows 与 macOS 共用同一套产品级视觉语义。
+      WPF 只负责平台实现，不允许再使用另一套主色、圆角和内容密度。
     -->
-    <SolidColorBrush x:Key="AccentBrush" Color="#1769AA" />
-    <SolidColorBrush x:Key="AccentHoverBrush" Color="#125B95" />
-    <SolidColorBrush x:Key="AccentPressedBrush" Color="#0E4C7D" />
-    <SolidColorBrush x:Key="AccentSoftBrush" Color="#EAF3FA" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#2F6FED" />
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="#255FD4" />
+    <SolidColorBrush x:Key="AccentPressedBrush" Color="#1F50B8" />
+    <SolidColorBrush x:Key="AccentSoftBrush" Color="#E8F0FF" />
+    <SolidColorBrush x:Key="AccentSoftBorderBrush" Color="#D4E2FF" />
     <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
-    <SolidColorBrush x:Key="WindowBrush" Color="#F6F8FB" />
-    <SolidColorBrush x:Key="MutedSurfaceBrush" Color="#F9FAFC" />
-    <SolidColorBrush x:Key="BorderBrush" Color="#E1E6EE" />
-    <SolidColorBrush x:Key="ControlBorderBrush" Color="#D3D9E3" />
-    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#172033" />
+    <SolidColorBrush x:Key="WindowBrush" Color="#F5F8FC" />
+    <SolidColorBrush x:Key="SidebarBrush" Color="#EDF3F9" />
+    <SolidColorBrush x:Key="MutedSurfaceBrush" Color="#F7F9FC" />
+    <SolidColorBrush x:Key="BorderBrush" Color="#DDE5EF" />
+    <SolidColorBrush x:Key="ControlBorderBrush" Color="#CFD8E6" />
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#101828" />
     <SolidColorBrush x:Key="TextSecondaryBrush" Color="#667085" />
-    <SolidColorBrush x:Key="ButtonHoverBrush" Color="#F1F4F8" />
-    <SolidColorBrush x:Key="ButtonPressedBrush" Color="#E8EDF3" />
+    <SolidColorBrush x:Key="SuccessBrush" Color="#12B76A" />
+    <SolidColorBrush x:Key="WarningBrush" Color="#F79009" />
+    <SolidColorBrush x:Key="DangerBrush" Color="#D92D20" />
+    <SolidColorBrush x:Key="ButtonHoverBrush" Color="#F3F6FA" />
+    <SolidColorBrush x:Key="ButtonPressedBrush" Color="#E8EDF5" />
 
     <Style TargetType="Window">
       <Setter Property="FontFamily" Value="Segoe UI" />
-      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontSize" Value="13.5" />
       <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
       <Setter Property="Background" Value="{StaticResource WindowBrush}" />
+    </Style>
+
+    <Style x:Key="PageTitleText" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="28" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="PageDescriptionText" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="13.5" />
+      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="Margin" Value="0,5,0,22" />
+    </Style>
+
+    <Style x:Key="SectionHeadingText" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+      <Setter Property="Margin" Value="2,2,0,10" />
+    </Style>
+
+    <Style x:Key="MetricLabelText" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+    </Style>
+
+    <Style x:Key="MetricValueText" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="13.5" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+      <Setter Property="Margin" Value="0,4,0,0" />
     </Style>
 
     <Style TargetType="Button">
@@ -33,9 +70,9 @@
       <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
       <Setter Property="BorderBrush" Value="{StaticResource ControlBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="Padding" Value="13,7" />
-      <Setter Property="Margin" Value="0,0,8,8" />
-      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="Padding" Value="15,8" />
+      <Setter Property="Margin" Value="0,0,8,0" />
+      <Setter Property="MinHeight" Value="38" />
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -46,7 +83,7 @@
                     Background="{TemplateBinding Background}"
                     BorderBrush="{TemplateBinding BorderBrush}"
                     BorderThickness="{TemplateBinding BorderThickness}"
-                    CornerRadius="7"
+                    CornerRadius="9"
                     SnapsToDevicePixels="True">
               <ContentPresenter Margin="{TemplateBinding Padding}"
                                 HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
@@ -56,7 +93,7 @@
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
                 <Setter TargetName="ButtonBorder" Property="Background" Value="{StaticResource ButtonHoverBrush}" />
-                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#C5CDD9" />
+                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#BDC8D8" />
               </Trigger>
               <Trigger Property="IsPressed" Value="True">
                 <Setter TargetName="ButtonBorder" Property="Background" Value="{StaticResource ButtonPressedBrush}" />
@@ -100,9 +137,32 @@
       <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
       <Setter Property="BorderBrush" Value="{StaticResource ControlBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="Padding" Value="9,6" />
-      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="Padding" Value="10,7" />
+      <Setter Property="MinHeight" Value="38" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Border x:Name="TextBoxBorder"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="8">
+              <ScrollViewer x:Name="PART_ContentHost"
+                            Margin="{TemplateBinding Padding}" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="TextBoxBorder" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.55" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
     </Style>
 
     <Style TargetType="PasswordBox">
@@ -110,18 +170,19 @@
       <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
       <Setter Property="BorderBrush" Value="{StaticResource ControlBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="Padding" Value="9,6" />
-      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="Padding" Value="10,7" />
+      <Setter Property="MinHeight" Value="38" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
 
     <Style TargetType="ComboBox">
-      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="MinHeight" Value="36" />
+      <Setter Property="Padding" Value="8,4" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
 
     <Style TargetType="GroupBox">
-      <Setter Property="Margin" Value="0,0,0,14" />
+      <Setter Property="Margin" Value="0,0,0,16" />
       <Setter Property="Padding" Value="0" />
       <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
       <Setter Property="Template">
@@ -130,14 +191,21 @@
             <Border Background="{StaticResource SurfaceBrush}"
                     BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="1"
-                    CornerRadius="12"
-                    Padding="18">
+                    CornerRadius="14"
+                    Padding="20">
+              <Border.Effect>
+                <DropShadowEffect BlurRadius="16"
+                                  Direction="270"
+                                  ShadowDepth="2"
+                                  Opacity="0.07"
+                                  Color="#24334D" />
+              </Border.Effect>
               <DockPanel LastChildFill="True">
                 <ContentPresenter DockPanel.Dock="Top"
                                   ContentSource="Header"
-                                  Margin="0,0,0,14"
+                                  Margin="0,0,0,16"
                                   RecognizesAccessKey="True"
-                                  TextElement.FontSize="14"
+                                  TextElement.FontSize="15"
                                   TextElement.FontWeight="SemiBold"
                                   TextElement.Foreground="{StaticResource TextPrimaryBrush}" />
                 <ContentPresenter />
@@ -148,87 +216,50 @@
       </Setter>
     </Style>
 
-    <Style TargetType="TabControl">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="Template">
+    <Style x:Key="HeroCard" TargetType="Border">
+      <Setter Property="Background" Value="{StaticResource AccentSoftBrush}" />
+      <Setter Property="BorderBrush" Value="{StaticResource AccentSoftBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="17" />
+      <Setter Property="Padding" Value="22" />
+      <Setter Property="Margin" Value="0,0,0,18" />
+      <Setter Property="Effect">
         <Setter.Value>
-          <ControlTemplate TargetType="TabControl">
-            <Grid KeyboardNavigation.TabNavigation="Local" SnapsToDevicePixels="True">
-              <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-              </Grid.RowDefinitions>
-              <Border Grid.Row="0"
-                      HorizontalAlignment="Left"
-                      Background="{StaticResource MutedSurfaceBrush}"
-                      BorderBrush="{StaticResource BorderBrush}"
-                      BorderThickness="1"
-                      CornerRadius="10"
-                      Padding="4"
-                      Margin="0,0,0,14">
-                <TabPanel IsItemsHost="True"
-                          KeyboardNavigation.TabIndex="1"
-                          Panel.ZIndex="1" />
-              </Border>
-              <ContentPresenter x:Name="PART_SelectedContentHost"
-                                Grid.Row="1"
-                                ContentSource="SelectedContent"
-                                SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
-            </Grid>
-          </ControlTemplate>
+          <DropShadowEffect BlurRadius="20"
+                            Direction="270"
+                            ShadowDepth="3"
+                            Opacity="0.08"
+                            Color="#244A91" />
         </Setter.Value>
       </Setter>
     </Style>
 
-    <Style TargetType="TabItem">
-      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Padding" Value="14,8" />
-      <Setter Property="Margin" Value="0" />
-      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-      <Setter Property="Template">
+    <Style x:Key="SummaryTile" TargetType="Border">
+      <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="14" />
+      <Setter Property="Padding" Value="16" />
+      <Setter Property="MinHeight" Value="112" />
+      <Setter Property="Effect">
         <Setter.Value>
-          <ControlTemplate TargetType="TabItem">
-            <Border x:Name="TabBorder"
-                    Background="{TemplateBinding Background}"
-                    CornerRadius="7"
-                    Padding="{TemplateBinding Padding}">
-              <StackPanel Orientation="Horizontal">
-                <TextBlock Text="{TemplateBinding Tag}"
-                           FontFamily="Segoe Fluent Icons"
-                           FontSize="15"
-                           Margin="0,0,8,0"
-                           VerticalAlignment="Center" />
-                <ContentPresenter ContentSource="Header"
-                                  VerticalAlignment="Center"
-                                  RecognizesAccessKey="True" />
-              </StackPanel>
-            </Border>
-            <ControlTemplate.Triggers>
-              <MultiTrigger>
-                <MultiTrigger.Conditions>
-                  <Condition Property="IsMouseOver" Value="True" />
-                  <Condition Property="IsSelected" Value="False" />
-                </MultiTrigger.Conditions>
-                <Setter TargetName="TabBorder" Property="Background" Value="#F0F3F7" />
-                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
-              </MultiTrigger>
-              <Trigger Property="IsSelected" Value="True">
-                <Setter TargetName="TabBorder" Property="Background" Value="{StaticResource AccentSoftBrush}" />
-                <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
-                <Setter Property="FontWeight" Value="SemiBold" />
-              </Trigger>
-              <Trigger Property="IsEnabled" Value="False">
-                <Setter Property="Opacity" Value="0.48" />
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
+          <DropShadowEffect BlurRadius="14"
+                            Direction="270"
+                            ShadowDepth="2"
+                            Opacity="0.06"
+                            Color="#24334D" />
         </Setter.Value>
       </Setter>
     </Style>
-    <!-- 主窗口 App Shell：保留 WPF 原生 TabControl 的键盘与无障碍语义，只改变布局。 -->
+
+    <Style x:Key="IconChip" TargetType="Border">
+      <Setter Property="Width" Value="32" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Background" Value="{StaticResource AccentSoftBrush}" />
+      <Setter Property="CornerRadius" Value="9" />
+    </Style>
+
+    <!-- 主窗口保留原生 TabControl 的键盘/无障碍语义，视觉上表现为稳定的左侧 App Shell。 -->
     <Style x:Key="ShellTabControl" TargetType="TabControl">
       <Setter Property="TabStripPlacement" Value="Left" />
       <Setter Property="Background" Value="Transparent" />
@@ -239,28 +270,59 @@
           <ControlTemplate TargetType="TabControl">
             <Grid KeyboardNavigation.TabNavigation="Local" SnapsToDevicePixels="True">
               <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="208" />
+                <ColumnDefinition Width="202" />
                 <ColumnDefinition Width="*" />
               </Grid.ColumnDefinitions>
-              <Border Grid.Column="0" Background="#F1F5F9"
-                      BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+
+              <Border Grid.Column="0"
+                      Background="{StaticResource SidebarBrush}"
+                      BorderBrush="{StaticResource BorderBrush}"
+                      BorderThickness="0,0,1,0">
                 <Grid>
                   <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                   </Grid.RowDefinitions>
-                  <StackPanel Margin="18,22,14,16">
-                    <TextBlock Text="AgentDock" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Text="{local:Loc LocalAIRuntime}"
-                               Foreground="{StaticResource TextSecondaryBrush}"
-                               FontSize="11.5" Margin="0,4,0,0" />
-                  </StackPanel>
-                  <TabPanel Grid.Row="1" IsItemsHost="True" Margin="10,0,10,14"
-                            KeyboardNavigation.TabIndex="1" Panel.ZIndex="1" />
+
+                  <Grid Margin="16,24,14,20">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="36" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Width="36"
+                            Height="36"
+                            CornerRadius="10"
+                            Background="{StaticResource AccentBrush}">
+                      <TextBlock Text="&#xE7F8;"
+                                 FontFamily="Segoe Fluent Icons"
+                                 FontSize="17"
+                                 Foreground="White"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                      <TextBlock Text="AgentDock"
+                                 FontSize="18"
+                                 FontWeight="SemiBold"
+                                 Foreground="{StaticResource TextPrimaryBrush}" />
+                      <TextBlock Text="{local:Loc LocalAIRuntime}"
+                                 Foreground="{StaticResource TextSecondaryBrush}"
+                                 FontSize="11"
+                                 Margin="0,2,0,0" />
+                    </StackPanel>
+                  </Grid>
+
+                  <TabPanel Grid.Row="1"
+                            IsItemsHost="True"
+                            Margin="10,0,10,14"
+                            KeyboardNavigation.TabIndex="1"
+                            Panel.ZIndex="1" />
                 </Grid>
               </Border>
+
               <ContentPresenter x:Name="PART_SelectedContentHost"
-                                Grid.Column="1" Margin="28,24,28,18"
+                                Grid.Column="1"
+                                Margin="30,26,30,22"
                                 ContentSource="SelectedContent"
                                 SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
             </Grid>
@@ -268,19 +330,21 @@
         </Setter.Value>
       </Setter>
     </Style>
+
     <Style x:Key="ShellTabItem" TargetType="TabItem">
       <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Padding" Value="11,9" />
+      <Setter Property="Padding" Value="12,10" />
       <Setter Property="Margin" Value="0,2" />
-      <Setter Property="MinWidth" Value="188" />
+      <Setter Property="MinWidth" Value="182" />
+      <Setter Property="FontSize" Value="13.5" />
       <Setter Property="FocusVisualStyle" Value="{x:Null}" />
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="TabItem">
             <Border x:Name="TabBorder"
                     Background="{TemplateBinding Background}"
-                    CornerRadius="8"
+                    CornerRadius="9"
                     Padding="{TemplateBinding Padding}">
               <Grid>
                 <Grid.ColumnDefinitions>
@@ -293,7 +357,7 @@
                            VerticalAlignment="Center" />
                 <ContentPresenter Grid.Column="1"
                                   ContentSource="Header"
-                                  Margin="7,0,0,0"
+                                  Margin="8,0,0,0"
                                   VerticalAlignment="Center"
                                   RecognizesAccessKey="True" />
               </Grid>
@@ -304,7 +368,7 @@
                   <Condition Property="IsMouseOver" Value="True" />
                   <Condition Property="IsSelected" Value="False" />
                 </MultiTrigger.Conditions>
-                <Setter TargetName="TabBorder" Property="Background" Value="#E9EEF5" />
+                <Setter TargetName="TabBorder" Property="Background" Value="#E5ECF5" />
                 <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
               </MultiTrigger>
               <Trigger Property="IsSelected" Value="True">

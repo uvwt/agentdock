@@ -94,6 +94,12 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private let homeBrowserCapabilityStatus = NSTextField(labelWithString: L10n.text("Not configured"))
     private let homeCodingCapabilityStatus = NSTextField(labelWithString: L10n.text("Not configured"))
     private let homeMcpCapabilityStatus = NSTextField(labelWithString: L10n.text("Not configured"))
+    private let homeServiceMetric = NSTextField(labelWithString: L10n.text("Not configured"))
+    private let homeHealthMetric = NSTextField(labelWithString: L10n.text("Not configured"))
+    private let homePublicMetric = NSTextField(labelWithString: L10n.text("Not configured"))
+    private let homeVersionMetric = NSTextField(labelWithString: L10n.text("Not configured"))
+    private let homeLocalMcpSummary = NSTextField(labelWithString: L10n.text("Not configured"))
+    private let homePublicMcpSummary = NSTextField(labelWithString: L10n.text("Disabled"))
     private let activityRuntimeStatus = NSTextField(labelWithString: L10n.text("Not installed"))
     private let activityPublicStatus = NSTextField(wrappingLabelWithString: L10n.text("Not checked"))
     private var sidebarButtons: [ControlPanelPage: NSButton] = [:]
@@ -205,6 +211,12 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             select(mode: .local)
             activityRuntimeStatus.stringValue = L10n.text("Not configured")
             activityRuntimeStatus.textColor = .secondaryLabelColor
+            for metric in [homeServiceMetric, homeHealthMetric, homePublicMetric, homeVersionMetric] {
+                metric.stringValue = L10n.text("Not configured")
+                metric.textColor = .secondaryLabelColor
+            }
+            homeLocalMcpSummary.stringValue = L10n.text("Not configured")
+            homePublicMcpSummary.stringValue = L10n.text("Disabled")
         }
         updateNexusState(status.nexusConnection)
         updateCapabilityState(status)
@@ -368,11 +380,24 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         heroIcon.widthAnchor.constraint(equalToConstant: 46).isActive = true
         heroIcon.heightAnchor.constraint(equalToConstant: 46).isActive = true
 
-        let homeHeroContent = NSStackView(views: [heroIcon, homeRuntime])
-        homeHeroContent.orientation = .horizontal
-        homeHeroContent.alignment = .top
-        homeHeroContent.spacing = 16
-        let homeRuntimeCard = ControlPanelUI.hero(content: homeHeroContent)
+        let homeHeroTop = NSStackView(views: [heroIcon, homeRuntime])
+        homeHeroTop.orientation = .horizontal
+        homeHeroTop.alignment = .top
+        homeHeroTop.spacing = 16
+
+        let homeMetricStrip = ControlPanelUI.metricStrip([
+            (L10n.text("Service"), homeServiceMetric),
+            (L10n.text("Health check"), homeHealthMetric),
+            (L10n.text("Public access"), homePublicMetric),
+            (L10n.text("Version"), homeVersionMetric),
+        ])
+        let homeHeroStack = NSStackView(views: [homeHeroTop, homeMetricStrip])
+        homeHeroStack.orientation = .vertical
+        homeHeroStack.alignment = .leading
+        homeHeroStack.spacing = 18
+        homeHeroTop.widthAnchor.constraint(equalTo: homeHeroStack.widthAnchor).isActive = true
+        homeMetricStrip.widthAnchor.constraint(equalTo: homeHeroStack.widthAnchor).isActive = true
+        let homeRuntimeCard = ControlPanelUI.hero(content: homeHeroStack)
 
         for field in [localAddress, publicAddress, authToken, oauthPassword] {
             field.isSelectable = true
@@ -395,12 +420,12 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         publicCheckStatus.setContentHuggingPriority(.defaultLow, for: .horizontal)
         publicCheckStatus.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        publicTestButton.bezelStyle = .inline
         publicTestButton.target = self
         publicTestButton.action = #selector(testPublicAddressPressed)
-        publicCopyButton.bezelStyle = .inline
         publicCopyButton.target = self
         publicCopyButton.action = #selector(copyPublicAddress)
+        ControlPanelUI.configurePrimaryAction(publicTestButton)
+        ControlPanelUI.configureSecondaryAction(publicCopyButton, symbol: "doc.on.doc")
 
         nexusStateLabel.alignment = .left
         nexusStateLabel.font = .systemFont(ofSize: 12)
@@ -483,31 +508,51 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         remoteDescription.font = .systemFont(ofSize: 12)
         remoteDescription.textColor = .secondaryLabelColor
 
-        let remoteSummary = NSStackView()
-        remoteSummary.orientation = .vertical
-        remoteSummary.alignment = .leading
-        remoteSummary.spacing = 7
-        addFullWidth(valueRow(title: L10n.text("Public MCP"), field: publicAddress, actions: [publicTestButton, publicCopyButton]), to: remoteSummary)
-        addFullWidth(valueDetailRow(publicCheckStatus), to: remoteSummary)
-
         let remoteContent = NSStackView(views: [
             remoteDescription,
-            remoteSummary,
             remoteAccessToggleButton,
             remoteConfigurationStack,
         ])
         remoteContent.orientation = .vertical
         remoteContent.alignment = .leading
         remoteContent.spacing = 10
-        for child in [remoteDescription, remoteSummary, remoteConfigurationStack] {
+        for child in [remoteDescription, remoteConfigurationStack] {
             child.widthAnchor.constraint(equalTo: remoteContent.widthAnchor).isActive = true
         }
 
         let remoteCard = ControlPanelUI.card(
             title: L10n.text("Remote access"),
-            symbol: "network",
+            symbol: "slider.horizontal.3",
             content: remoteContent
         )
+
+        let remoteHeroIcon = NSImageView()
+        remoteHeroIcon.image = NSImage(
+            systemSymbolName: "network",
+            accessibilityDescription: L10n.text("Remote access")
+        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 28, weight: .medium))
+        remoteHeroIcon.contentTintColor = ControlPanelUI.accentColor
+        remoteHeroIcon.imageScaling = .scaleProportionallyDown
+        remoteHeroIcon.widthAnchor.constraint(equalToConstant: 46).isActive = true
+        remoteHeroIcon.heightAnchor.constraint(equalToConstant: 46).isActive = true
+
+        let remoteHeroTitle = NSTextField(labelWithString: L10n.text("Remote access"))
+        remoteHeroTitle.font = .systemFont(ofSize: 20, weight: .semibold)
+        let remoteHeroText = NSStackView(views: [remoteHeroTitle, publicAddress, publicCheckStatus])
+        remoteHeroText.orientation = .vertical
+        remoteHeroText.alignment = .leading
+        remoteHeroText.spacing = 6
+
+        let remoteHeroActions = NSStackView(views: [publicCopyButton, publicTestButton])
+        remoteHeroActions.orientation = .horizontal
+        remoteHeroActions.alignment = .centerY
+        remoteHeroActions.spacing = 8
+
+        let remoteHeroTop = NSStackView(views: [remoteHeroIcon, remoteHeroText, NSView(), remoteHeroActions])
+        remoteHeroTop.orientation = .horizontal
+        remoteHeroTop.alignment = .centerY
+        remoteHeroTop.spacing = 16
+        let remoteHero = ControlPanelUI.hero(content: remoteHeroTop)
 
         for label in [browserCapabilityStatus, codingCapabilityStatus, mcpCapabilityStatus] {
             label.font = .systemFont(ofSize: 12, weight: .medium)
@@ -638,16 +683,35 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         homeSummarySection.spacing = 10
         homeSummaryRow.widthAnchor.constraint(equalTo: homeSummarySection.widthAnchor).isActive = true
 
+        for field in [homeLocalMcpSummary, homePublicMcpSummary] {
+            field.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+            field.lineBreakMode = .byTruncatingMiddle
+            field.isSelectable = true
+            field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
+        let homeConnectionContent = NSStackView()
+        homeConnectionContent.orientation = .vertical
+        homeConnectionContent.alignment = .leading
+        homeConnectionContent.spacing = 10
+        addFullWidth(valueRow(title: L10n.text("Local MCP"), field: homeLocalMcpSummary, actions: []), to: homeConnectionContent)
+        addFullWidth(valueRow(title: L10n.text("Public MCP"), field: homePublicMcpSummary, actions: []), to: homeConnectionContent)
+        let homeConnectionCard = ControlPanelUI.card(
+            title: L10n.text("Connections"),
+            symbol: "link",
+            content: homeConnectionContent
+        )
+
         pageViews = [
             .home: makePage(
                 title: L10n.text("Home"),
                 subtitle: L10n.text("Runtime health, connection state, and the actions you use most."),
-                views: [homeRuntimeCard, homeSummarySection]
+                views: [homeRuntimeCard, homeSummarySection, homeConnectionCard]
             ),
             .connections: makePage(
                 title: L10n.text("Connections"),
                 subtitle: L10n.text("Manage how AI clients reach AgentDock locally and remotely."),
-                views: [connectionCard, remoteCard]
+                views: [remoteHero, connectionCard, remoteCard]
             ),
             .capabilities: makePage(
                 title: L10n.text("Capabilities"),
@@ -716,7 +780,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private func capabilityRow(title: String, symbol: String, status: NSTextField) -> NSView {
         let icon = NSImageView()
         icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
-        icon.contentTintColor = .controlAccentColor
+        icon.contentTintColor = ControlPanelUI.accentColor
         icon.imageScaling = .scaleProportionallyDown
         icon.widthAnchor.constraint(equalToConstant: 22).isActive = true
         icon.heightAnchor.constraint(equalToConstant: 22).isActive = true
@@ -793,6 +857,13 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
 
         let configuration = status.configuration
         localAddress.stringValue = configuration?.localMCPURL?.absoluteString ?? L10n.text("Configuration unavailable")
+        homeServiceMetric.stringValue = status.loaded ? L10n.text("Running normally") : L10n.text("Stopped")
+        homeServiceMetric.textColor = status.loaded ? .systemGreen : .secondaryLabelColor
+        homeHealthMetric.stringValue = status.healthy ? L10n.text("Healthy") : L10n.text("Unavailable")
+        homeHealthMetric.textColor = status.healthy ? .systemGreen : .systemRed
+        homeVersionMetric.stringValue = AppVersion.display(status.version)
+        homeVersionMetric.textColor = .labelColor
+        homeLocalMcpSummary.stringValue = localAddress.stringValue
         renderPublicAddress(configuration?.publicMCPURL, automaticallyCheck: true)
         authTokenValue = configuration?.authToken ?? ""
         oauthPasswordValue = configuration?.oauthPassword ?? ""
@@ -861,6 +932,9 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             publicCheckStatus.isHidden = false
             activityPublicStatus.stringValue = publicCheckStatus.stringValue
             activityPublicStatus.textColor = publicCheckStatus.textColor
+            homePublicMcpSummary.stringValue = publicAddress.stringValue
+            homePublicMetric.stringValue = L10n.text("Not configured")
+            homePublicMetric.textColor = .secondaryLabelColor
             refreshPublicActions()
         case .failed:
             cancelPublicCheck(clearLastResult: true)
@@ -871,6 +945,9 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             publicCheckStatus.isHidden = false
             activityPublicStatus.stringValue = publicCheckStatus.stringValue
             activityPublicStatus.textColor = publicCheckStatus.textColor
+            homePublicMcpSummary.stringValue = publicAddress.stringValue
+            homePublicMetric.stringValue = L10n.text("Not configured")
+            homePublicMetric.textColor = .systemRed
             refreshPublicActions()
         case .idle:
             setDisplayedPublicMCPURL(publicMCPURL, automaticallyCheck: automaticallyCheck)
@@ -886,6 +963,9 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         publicAddress.stringValue = publicMCPURL?.absoluteString ?? L10n.text("Disabled")
         activityPublicStatus.stringValue = publicAddress.stringValue
         activityPublicStatus.textColor = publicMCPURL == nil ? .secondaryLabelColor : .labelColor
+        homePublicMcpSummary.stringValue = publicAddress.stringValue
+        homePublicMetric.stringValue = publicMCPURL == nil ? L10n.text("Disabled") : L10n.text("Connected")
+        homePublicMetric.textColor = publicMCPURL == nil ? .secondaryLabelColor : .systemGreen
 
         guard let publicMCPURL else {
             publicCheckStatus.stringValue = ""

@@ -185,27 +185,19 @@ enum ControlPanelUI {
         tile.layer?.shadowRadius = 7
         tile.layer?.shadowOffset = NSSize(width: 0, height: -2)
 
-        let icon = symbolImageView(
-            symbol: symbol,
-            accessibilityDescription: title,
-            pointSize: 16,
-            weight: .semibold
-        )
-        icon.contentTintColor = accentColor
-        icon.widthAnchor.constraint(equalToConstant: 22).isActive = true
-        icon.heightAnchor.constraint(equalToConstant: 22).isActive = true
+        let iconContainer = iconChip(symbol: symbol, accessibilityDescription: title)
 
         let titleLabel = NSTextField(labelWithString: title)
-        titleLabel.font = .systemFont(ofSize: 12.5, weight: .semibold)
+        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
 
-        status.font = .systemFont(ofSize: 11.5, weight: .medium)
+        status.font = .systemFont(ofSize: 12, weight: .medium)
         status.textColor = .secondaryLabelColor
         status.lineBreakMode = .byTruncatingTail
 
-        let stack = NSStackView(views: [icon, titleLabel, status])
+        let stack = NSStackView(views: [iconContainer, titleLabel, status])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 7
+        stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         guard let tileContent = tile.contentView else { return tile }
@@ -218,6 +210,51 @@ enum ControlPanelUI {
             stack.bottomAnchor.constraint(lessThanOrEqualTo: tileContent.bottomAnchor, constant: -14),
         ])
         return tile
+    }
+
+    static func metricStrip(_ items: [(title: String, value: NSTextField)]) -> NSBox {
+        let container = NSBox()
+        container.boxType = .custom
+        container.titlePosition = .noTitle
+        container.borderColor = accentColor.withAlphaComponent(0.12)
+        container.borderWidth = 1
+        container.cornerRadius = 11
+        container.fillColor = dynamicColor(
+            light: NSColor(calibratedRed: 247 / 255, green: 250 / 255, blue: 1, alpha: 1),
+            dark: NSColor(calibratedRed: 31 / 255, green: 42 / 255, blue: 60 / 255, alpha: 1)
+        )
+
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.alignment = .top
+        row.distribution = .fillEqually
+        row.spacing = 12
+        row.translatesAutoresizingMaskIntoConstraints = false
+
+        for item in items {
+            let label = NSTextField(labelWithString: item.title)
+            label.font = .systemFont(ofSize: 11.5)
+            label.textColor = .secondaryLabelColor
+
+            item.value.font = .systemFont(ofSize: 12.5, weight: .semibold)
+            item.value.lineBreakMode = .byTruncatingTail
+
+            let column = NSStackView(views: [label, item.value])
+            column.orientation = .vertical
+            column.alignment = .leading
+            column.spacing = 4
+            row.addArrangedSubview(column)
+        }
+
+        guard let content = container.contentView else { return container }
+        content.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 15),
+            row.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -15),
+            row.topAnchor.constraint(equalTo: content.topAnchor, constant: 12),
+            row.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -12),
+        ])
+        return container
     }
 
     static func configureQuietAction(_ button: NSButton, symbol: String) {
@@ -307,6 +344,37 @@ enum ControlPanelUI {
         imageView.image = image
         imageView.imageScaling = .scaleProportionallyDown
         return imageView
+    }
+
+    private static func iconChip(symbol: String, accessibilityDescription: String) -> NSBox {
+        let icon = symbolImageView(
+            symbol: symbol,
+            accessibilityDescription: accessibilityDescription,
+            pointSize: 14,
+            weight: .semibold
+        )
+        icon.contentTintColor = accentColor
+        icon.translatesAutoresizingMaskIntoConstraints = false
+
+        let chip = NSBox()
+        chip.boxType = .custom
+        chip.titlePosition = .noTitle
+        chip.borderWidth = 0
+        chip.cornerRadius = 9
+        chip.fillColor = accentSoftColor
+        chip.translatesAutoresizingMaskIntoConstraints = false
+
+        guard let content = chip.contentView else { return chip }
+        content.addSubview(icon)
+        NSLayoutConstraint.activate([
+            chip.widthAnchor.constraint(equalToConstant: 32),
+            chip.heightAnchor.constraint(equalToConstant: 32),
+            icon.centerXAnchor.constraint(equalTo: content.centerXAnchor),
+            icon.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 17),
+            icon.heightAnchor.constraint(equalToConstant: 17),
+        ])
+        return chip
     }
 
     private static func dynamicColor(light: NSColor, dark: NSColor) -> NSColor {

@@ -144,6 +144,10 @@
 "Saving configuration and validating AgentDock…" = "正在保存配置并验证 AgentDock…";
 "Select All" = "全选";
 "Service" = "服务";
+"Health check" = "健康检查";
+"Healthy" = "正常";
+"Unavailable" = "不可用";
+"Version" = "版本";
 "Service port" = "服务端口";
 "Set up AgentDock" = "设置 AgentDock";
 "Settings saved." = "设置已保存。";

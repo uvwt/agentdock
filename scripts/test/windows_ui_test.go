@@ -342,7 +342,7 @@ func TestWindowsACPSettingsUseSinglePageRowsDefaultDropdownAndCustomDialog(t *te
 		`AcpOverviewPanel`,
 		`AcpProfileNameTextBox`,
 		`AcpProfileDefaultCheckBox`,
-		`AcpStatusText`,
+		`x:Name="AcpStatusText"`,
 		`ShowAcpDetail`,
 		`ShowAcpOverview`,
 		`Not configured`,
