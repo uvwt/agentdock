@@ -561,32 +561,34 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             label.setContentHuggingPriority(.required, for: .horizontal)
         }
 
-        let capabilityList = NSStackView(views: [
-            capabilityRow(title: L10n.text("Browser automation"), symbol: "safari", status: browserCapabilityStatus),
-            PermissionUI.separator(),
-            capabilityRow(title: L10n.text("Coding Agent"), symbol: "terminal", status: codingCapabilityStatus),
-            PermissionUI.separator(),
-            capabilityRow(title: L10n.text("MCP runtime"), symbol: "shippingbox", status: mcpCapabilityStatus),
-        ])
-        capabilityList.orientation = .vertical
-        capabilityList.alignment = .leading
-        capabilityList.spacing = 10
-
         ControlPanelUI.configureSecondaryAction(capabilitiesConfigureButton, symbol: "slider.horizontal.3")
         capabilitiesConfigureButton.target = self
         capabilitiesConfigureButton.action = #selector(openAdvancedPressed)
 
-        let capabilitiesContent = NSStackView(views: [capabilityList, capabilitiesConfigureButton])
-        capabilitiesContent.orientation = .vertical
-        capabilitiesContent.alignment = .leading
-        capabilitiesContent.spacing = 12
-        capabilityList.widthAnchor.constraint(equalTo: capabilitiesContent.widthAnchor).isActive = true
-
-        let capabilitiesCard = ControlPanelUI.card(
-            title: L10n.text("Capabilities"),
-            symbol: "square.grid.2x2",
-            content: capabilitiesContent
+        let browserCapabilityContent = capabilityCardContent(status: browserCapabilityStatus)
+        let browserCapabilityCard = ControlPanelUI.card(
+            title: L10n.text("Browser automation"),
+            symbol: "safari",
+            content: browserCapabilityContent
         )
+
+        let codingCapabilityContent = capabilityCardContent(status: codingCapabilityStatus)
+        let codingCapabilityCard = ControlPanelUI.card(
+            title: L10n.text("Coding Agent"),
+            symbol: "terminal",
+            content: codingCapabilityContent
+        )
+
+        let mcpCapabilityContent = capabilityCardContent(status: mcpCapabilityStatus)
+        let mcpCapabilityCard = ControlPanelUI.card(
+            title: L10n.text("MCP runtime"),
+            symbol: "shippingbox",
+            content: mcpCapabilityContent
+        )
+
+        let capabilityActions = NSStackView(views: [capabilitiesConfigureButton, NSView()])
+        capabilityActions.orientation = .horizontal
+        capabilityActions.alignment = .centerY
 
         activityRuntimeStatus.font = .systemFont(ofSize: 12, weight: .medium)
         activityPublicStatus.font = .systemFont(ofSize: 12)
@@ -599,20 +601,26 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         logsButton.target = self
         logsButton.action = #selector(openLogsPressed)
 
-        let activityContent = NSStackView()
-        activityContent.orientation = .vertical
-        activityContent.alignment = .leading
-        activityContent.spacing = 10
-        addFullWidth(valueRow(title: L10n.text("Service"), field: activityRuntimeStatus, actions: []), to: activityContent)
-        addFullWidth(valueRow(title: L10n.text("Public access"), field: activityPublicStatus, actions: [activityTestButton]), to: activityContent)
+        let diagnosticsContent = NSStackView()
+        diagnosticsContent.orientation = .vertical
+        diagnosticsContent.alignment = .leading
+        diagnosticsContent.spacing = 10
+        addFullWidth(valueRow(title: L10n.text("Service"), field: activityRuntimeStatus, actions: []), to: diagnosticsContent)
+        addFullWidth(valueRow(title: L10n.text("Public access"), field: activityPublicStatus, actions: [activityTestButton]), to: diagnosticsContent)
+
+        let diagnosticsCard = ControlPanelUI.card(
+            title: L10n.text("Diagnostics"),
+            symbol: "stethoscope",
+            content: diagnosticsContent
+        )
+
         let activityActions = NSStackView(views: [logsButton, NSView()])
         activityActions.orientation = .horizontal
-        addFullWidth(activityActions, to: activityContent)
 
         let activityCard = ControlPanelUI.card(
             title: L10n.text("Activity"),
             symbol: "clock.arrow.circlepath",
-            content: activityContent
+            content: activityActions
         )
 
         authReveal.bezelStyle = .inline
@@ -642,15 +650,22 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         advancedButton.target = self
         advancedButton.action = #selector(openAdvancedPressed)
 
-        let settingsActions = NSStackView(views: [permissionsButton, advancedButton, NSView()])
-        settingsActions.orientation = .horizontal
-        settingsActions.alignment = .centerY
-        settingsActions.spacing = 12
+        let permissionsActions = NSStackView(views: [permissionsButton, NSView()])
+        permissionsActions.orientation = .horizontal
+        permissionsActions.alignment = .centerY
+        let permissionsCard = ControlPanelUI.card(
+            title: L10n.text("Permissions"),
+            symbol: "checkmark.shield",
+            content: permissionsActions
+        )
 
-        let settingsCard = ControlPanelUI.card(
-            title: L10n.text("Settings"),
-            symbol: "gearshape",
-            content: settingsActions
+        let runtimeActions = NSStackView(views: [advancedButton, NSView()])
+        runtimeActions.orientation = .horizontal
+        runtimeActions.alignment = .centerY
+        let runtimeSettingsCard = ControlPanelUI.card(
+            title: L10n.text("Runtime"),
+            symbol: "gearshape.2",
+            content: runtimeActions
         )
 
         let homeSummaryRow = NSStackView(views: [
@@ -716,17 +731,17 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             .capabilities: makePage(
                 title: L10n.text("Capabilities"),
                 subtitle: L10n.text("Configure what AgentDock can do after a client connects."),
-                views: [capabilitiesCard]
+                views: [browserCapabilityCard, codingCapabilityCard, mcpCapabilityCard, capabilityActions]
             ),
             .activity: makePage(
                 title: L10n.text("Activity"),
                 subtitle: L10n.text("Inspect runtime health, reachability, and logs."),
-                views: [activityCard]
+                views: [diagnosticsCard, activityCard]
             ),
             .settings: makePage(
                 title: L10n.text("Settings"),
                 subtitle: L10n.text("Customize runtime behavior and desktop preferences."),
-                views: [credentialCard, settingsCard]
+                views: [credentialCard, permissionsCard, runtimeSettingsCard]
             ),
         ]
 
@@ -777,22 +792,18 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         return page
     }
 
-    private func capabilityRow(title: String, symbol: String, status: NSTextField) -> NSView {
-        let icon = NSImageView()
-        icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
-        icon.contentTintColor = ControlPanelUI.accentColor
-        icon.imageScaling = .scaleProportionallyDown
-        icon.widthAnchor.constraint(equalToConstant: 22).isActive = true
-        icon.heightAnchor.constraint(equalToConstant: 22).isActive = true
+    private func capabilityCardContent(status: NSTextField) -> NSView {
+        let label = NSTextField(labelWithString: L10n.text("Status"))
+        label.textColor = .secondaryLabelColor
+        label.font = .systemFont(ofSize: 12)
 
-        let titleLabel = NSTextField(labelWithString: title)
-        titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
-        titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        status.alignment = .right
+        status.setContentHuggingPriority(.required, for: .horizontal)
 
-        let row = NSStackView(views: [icon, titleLabel, NSView(), status])
+        let row = NSStackView(views: [label, NSView(), status])
         row.orientation = .horizontal
         row.alignment = .centerY
-        row.spacing = 9
+        row.spacing = 10
         return row
     }
 

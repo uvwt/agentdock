@@ -40,6 +40,8 @@
 "Custom domain" = "Custom domain";
 "Cut" = "Cut";
 "Disabled" = "Disabled";
+"Diagnostics" = "Diagnostics";
+"Status" = "Status";
 "Disconnected" = "Disconnected";
 "Edit" = "Edit";
 "Enable Coding Agent" = "Enable Coding Agent";
@@ -108,6 +110,8 @@
 "No supported Chromium-based browser was detected and no external CDP is configured." = "No supported Chromium-based browser was detected and no external CDP is configured.";
 "No supported Chromium-based browser was detected." = "No supported Chromium-based browser was detected.";
 "Not configured" = "Not configured";
+"Permissions" = "Permissions";
+"Runtime" = "Runtime";
 "Not generated" = "Not generated";
 "Not installed" = "Not installed";
 "Not paired yet; Device Token will be generated automatically during one-time pairing." = "Not paired yet; Device Token will be generated automatically during one-time pairing.";

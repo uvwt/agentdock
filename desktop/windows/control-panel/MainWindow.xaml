@@ -3,7 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:AgentDock.ControlPanel"
         Title="{local:Loc MainWindowTitle}"
-        Width="1000" Height="620" MinWidth="860" MinHeight="540"
+        Width="1000" Height="700" MinWidth="860" MinHeight="460"
+        MaxWidth="{Binding Source={x:Static SystemParameters.WorkArea}, Path=Width}"
+        MaxHeight="{Binding Source={x:Static SystemParameters.WorkArea}, Path=Height}"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource WindowBrush}">
   <Grid>
