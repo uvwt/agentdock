@@ -388,3 +388,8 @@
 "Command" = "命令";
 "Args JSON" = "参数 JSON";
 "Save" = "保存";
+"Connection addresses" = "连接地址";
+"Runtime status" = "运行状态";
+"Refreshing…" = "正在刷新…";
+"Access credentials" = "访问凭据";
+"Public check" = "公网检测";

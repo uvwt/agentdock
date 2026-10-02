@@ -172,3 +172,62 @@ Connections 在两个平台都应具备相同的信息节奏：
 4. “更改连接方式”与 NexusDock 作为二级展开内容。
 
 验收时重点比较：主色、背景层级、侧栏品牌区、选中态、圆角、阴影、标题字号、卡片间距、按钮权重和信息密度。平台原生差异只能体现在窗口 chrome、字体栅格、Focus Ring 等系统层细节上。
+
+## 10. 第三轮跨平台同构约束
+
+第二轮只统一 Token 和组件语义仍然不够。视觉验收时，用户必须能在不看窗口 chrome 的情况下，一眼识别 macOS / Windows 为同一个 AgentDock 控制面板。平台原生差异不能改变页面骨架。
+
+### 10.1 页面骨架
+
+Home 两端固定为：
+
+1. Page Header。
+2. Runtime Status Hero。
+3. 四项 Runtime 指标条。
+4. Browser / Coding Agent / MCP 三个能力摘要。
+5. Local MCP / Public MCP 连接摘要。
+
+Connections 两端固定为：
+
+1. Page Header。
+2. Remote Access Hero；即使未配置也保留 Hero，只显示“未配置/未启用”状态。
+3. Connection Addresses：Local MCP / Public MCP / Public Check。
+4. Remote Access 配置入口；默认不展开所有连接方式。
+5. NexusDock 作为独立的可选托管连接区，位于 Remote Access 之后。
+
+Capabilities 两端固定为：
+
+1. Page Header。
+2. Browser / Coding Agent / MCP 三个能力摘要。
+3. “配置”区域，详细配置默认折叠或下沉；不得一端用三张大状态卡、另一端用摘要 + 折叠配置。
+
+Activity 两端固定为：
+
+1. Page Header。
+2. Diagnostics 卡：Runtime 状态块 + 公网可达性。
+3. Activity 卡：日志/配置入口 + 刷新状态。
+
+Settings 两端先展示共同分组，再追加平台特有分组：
+
+1. Runtime。
+2. Permissions。
+3. Startup（平台支持时）。
+4. Access Credentials。
+5. 其它平台特有项。
+
+### 10.2 状态变化规则
+
+安装、未安装、已连接、未连接只允许改变文案、状态色、按钮可用性和详细内容，不允许让一级页面切换成另一套结构。尤其是 macOS 未安装状态不得隐藏 Connections 的地址卡，也不得把 Home Hero 从 Runtime 状态页变成另一套安装表单。
+
+### 10.3 视觉验收方法
+
+每轮同时生成 macOS / Windows 五个一级页面真实截图，逐页并排比较：
+
+- Page Header 的层级和留白。
+- Hero 的信息顺序、动作权重和高度。
+- 卡片数量、顺序、宽度和节奏。
+- Summary Tile 的排列方向。
+- 空状态是否保持完整骨架。
+- 平台特有能力是否只作为补充，而不是重排公共内容。
+
+如果同一页面需要先解释“因为平台不同所以长得不一样”，则视为尚未达到跨平台同构目标。

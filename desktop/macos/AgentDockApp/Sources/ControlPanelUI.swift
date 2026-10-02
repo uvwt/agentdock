@@ -35,37 +35,28 @@ enum ControlPanelUI {
         dark: NSColor(calibratedRed: 58.0 / 255.0, green: 68.0 / 255.0, blue: 82.0 / 255.0, alpha: 1)
     )
 
-    static func appMark(symbol: String = "shippingbox.fill") -> NSView {
-        let imageView = symbolImageView(
-            symbol: symbol,
-            accessibilityDescription: "AgentDock",
-            pointSize: 17,
-            weight: .semibold
-        )
-        imageView.contentTintColor = .white
+    static func appMark() -> NSView {
+        let imageView = NSImageView()
+        imageView.image = NSApplication.shared.applicationIconImage
+        imageView.imageScaling = .scaleProportionallyDown
         imageView.translatesAutoresizingMaskIntoConstraints = false
 
         let container = NSBox()
         container.boxType = .custom
         container.titlePosition = .noTitle
         container.borderWidth = 0
-        container.cornerRadius = 10
-        container.fillColor = accentColor
-        container.wantsLayer = true
-        container.layer?.shadowColor = NSColor.black.cgColor
-        container.layer?.shadowOpacity = 0.10
-        container.layer?.shadowRadius = 6
-        container.layer?.shadowOffset = NSSize(width: 0, height: -2)
+        container.fillColor = .clear
+        container.translatesAutoresizingMaskIntoConstraints = false
 
         guard let content = container.contentView else { return container }
         content.addSubview(imageView)
         NSLayoutConstraint.activate([
             container.widthAnchor.constraint(equalToConstant: 36),
             container.heightAnchor.constraint(equalToConstant: 36),
-            imageView.centerXAnchor.constraint(equalTo: content.centerXAnchor),
-            imageView.centerYAnchor.constraint(equalTo: content.centerYAnchor),
-            imageView.widthAnchor.constraint(equalToConstant: 20),
-            imageView.heightAnchor.constraint(equalToConstant: 20),
+            imageView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            imageView.topAnchor.constraint(equalTo: content.topAnchor),
+            imageView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
         ])
         return container
     }

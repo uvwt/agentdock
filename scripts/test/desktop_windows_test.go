@@ -491,6 +491,7 @@ func TestWindowsControlPanelUsesNativeSharedDesignSemantics(t *testing.T) {
 		`x:Key="ShellTabItem"`,
 		`FontFamily="Segoe Fluent Icons"`,
 		`x:Name="PART_SelectedContentHost"`,
+		`Source="Assets/agentdock.png"`,
 	} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("App.xaml missing native control-panel design semantic %q", want)
@@ -512,6 +513,9 @@ func TestWindowsControlPanelUsesNativeSharedDesignSemantics(t *testing.T) {
 		`Header="{local:Loc NexusDockManagedAccess}"`,
 		`Style="{StaticResource PrimaryButton}"`,
 		`Style="{StaticResource QuietButton}"`,
+		`x:Name="StartButton"`,
+		`x:Name="StopButton"`,
+		`Header="{local:Loc AdvancedSettings}" IsExpanded="False"`,
 	} {
 		if !strings.Contains(window, want) {
 			t.Fatalf("MainWindow.xaml missing native control-panel component use %q", want)

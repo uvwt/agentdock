@@ -388,3 +388,8 @@
 "Command" = "Command";
 "Args JSON" = "Args JSON";
 "Save" = "Save";
+"Connection addresses" = "Connection addresses";
+"Runtime status" = "Runtime status";
+"Refreshing…" = "Refreshing…";
+"Access credentials" = "Access credentials";
+"Public check" = "Public check";

@@ -114,6 +114,10 @@ public partial class MainWindow : Window
                     : Color.FromRgb(152, 162, 179));
 
             ServiceStatusText.Text = snapshot.CoreRunning ? UiText.Get("Running") : UiText.Get("Stopped");
+            // Home 与 macOS 使用同一个动态主操作：运行时只显示“停止”，停止时只显示“启动”。
+            // 保留两个既有事件处理器，不为了视觉统一改动 Runtime 行为。
+            StartButton.Visibility = snapshot.CoreRunning ? Visibility.Collapsed : Visibility.Visible;
+            StopButton.Visibility = snapshot.CoreRunning ? Visibility.Visible : Visibility.Collapsed;
             HealthStatusText.Text = snapshot.Healthy ? UiText.Get("Healthy") : UiText.Get("Unavailable");
             VersionText.Text = string.IsNullOrWhiteSpace(snapshot.Version) ? UiText.Get("Unknown") : snapshot.Version;
             HomeBrowserStatusText.Text = snapshot.Settings.BrowserEnabled ? UiText.Get("Ready") : UiText.Get("Disabled");

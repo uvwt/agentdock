@@ -320,14 +320,12 @@
                     </Grid.ColumnDefinitions>
                     <Border Width="36"
                             Height="36"
-                            CornerRadius="10"
-                            Background="{StaticResource AccentBrush}">
-                      <TextBlock Text="&#xE7F8;"
-                                 FontFamily="Segoe Fluent Icons"
-                                 FontSize="17"
-                                 Foreground="White"
-                                 HorizontalAlignment="Center"
-                                 VerticalAlignment="Center" />
+                            CornerRadius="10">
+                      <Image Source="Assets/agentdock.png"
+                             Width="36"
+                             Height="36"
+                             Stretch="Uniform"
+                             SnapsToDevicePixels="True" />
                     </Border>
                     <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
                       <TextBlock Text="AgentDock"
