@@ -168,6 +168,7 @@ struct InstallerConfigurationTests {
 
         try testTunnelTokenStore()
         try testDesktopUpdateResult()
+        try await testDesktopUpdateTransactionRecoveryState()
         try testDesktopUpdateTerminalResult()
         try testDesktopUpdateServiceState()
         try testDesktopUpdateHandoff()
@@ -192,6 +193,125 @@ struct InstallerConfigurationTests {
         precondition(result?.ok == true)
         precondition(result?.targetVersion == "v0.7.0")
         precondition(!FileManager.default.fileExists(atPath: path.path))
+
+        try Data("not-json".utf8).write(to: path)
+        precondition(DesktopUpdateResult.load(from: path) == nil)
+        precondition(DesktopUpdateResult.discard(from: path))
+        precondition(!FileManager.default.fileExists(atPath: path.path))
+
+        // Fault injection: consuming the one-shot trigger requires renaming it inside the
+        // parent directory. A read-only parent must leave the trigger in place and report
+        // failure instead of pretending it was acknowledged.
+        let lockedRoot = root.appendingPathComponent("locked", isDirectory: true)
+        try FileManager.default.createDirectory(at: lockedRoot, withIntermediateDirectories: true)
+        let lockedPath = lockedRoot.appendingPathComponent("update-result.json")
+        try Data(json.utf8).write(to: lockedPath)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: lockedRoot.path)
+        precondition(DesktopUpdateResult.consume(from: lockedPath) == nil)
+        precondition(FileManager.default.fileExists(atPath: lockedPath.path))
+        precondition(!DesktopUpdateResult.discard(from: lockedPath))
+        precondition(FileManager.default.fileExists(atPath: lockedPath.path))
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: lockedRoot.path)
+        precondition(DesktopUpdateResult.discard(from: lockedPath))
+        precondition(!FileManager.default.fileExists(atPath: lockedPath.path))
+    }
+
+    private static func testDesktopUpdateTransactionRecoveryState() async throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AgentDockUpdateRecoveryTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let appBundle = home.appendingPathComponent("Applications/AgentDock.app", isDirectory: true)
+        let paths = AppPaths(home: home, appBundle: appBundle)
+        try FileManager.default.createDirectory(
+            at: paths.updateTransaction.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        let active = """
+        {"schema_version":1,"transaction_id":"tx-active","state":"trial","macos":{"source_arbiter_path":"/tmp/missing-arbiter"}}
+        """
+        try Data(active.utf8).write(to: paths.updateTransaction)
+        precondition(DesktopUpdateTransactionRecovery.hasActiveTransaction(paths: paths))
+        precondition(DesktopUpdateTransactionRecovery.shouldPreserveResultTrigger(paths: paths))
+
+        let terminal = """
+        {"schema_version":1,"transaction_id":"tx-active","state":"failed","macos":{"source_arbiter_path":"/tmp/missing-arbiter"}}
+        """
+        try Data(terminal.utf8).write(to: paths.updateTransaction)
+        precondition(!DesktopUpdateTransactionRecovery.hasActiveTransaction(paths: paths))
+        precondition(!DesktopUpdateTransactionRecovery.shouldPreserveResultTrigger(paths: paths))
+
+        try Data("not-json".utf8).write(to: paths.updateTransaction)
+        precondition(!DesktopUpdateTransactionRecovery.hasActiveTransaction(paths: paths))
+        precondition(DesktopUpdateTransactionRecovery.shouldPreserveResultTrigger(paths: paths))
+        let malformedRecoveryReady = await DesktopUpdateTransactionRecovery.recoverIfNeeded(paths: paths)
+        precondition(!malformedRecoveryReady)
+
+        let arbiterRoot = paths.appSupport
+            .appendingPathComponent("update/arbiters", isDirectory: true)
+        try FileManager.default.createDirectory(at: arbiterRoot, withIntermediateDirectories: true)
+
+        func writeTransaction(id: String, state: String, arbiter: URL) throws {
+            let payload: [String: Any] = [
+                "schema_version": 1,
+                "transaction_id": id,
+                "state": state,
+                "macos": ["source_arbiter_path": arbiter.path],
+            ]
+            let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+            try data.write(to: paths.updateTransaction, options: .atomic)
+        }
+
+        func writeExecutable(_ body: String, name: String) throws -> URL {
+            let url = arbiterRoot.appendingPathComponent(name)
+            try Data(body.utf8).write(to: url, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+            return url
+        }
+
+        // An Arbiter that exits 0 without settling the durable journal must not be accepted.
+        let noopArbiter = try writeExecutable("#!/bin/sh\nexit 0\n", name: "noop-arbiter")
+        try writeTransaction(id: "tx-noop", state: "trial", arbiter: noopArbiter)
+        let unresolvedRecoveryReady = await DesktopUpdateTransactionRecovery.recoverIfNeeded(
+            paths: paths,
+            recoveryTimeout: 2,
+            journalSettleTimeout: 0.05
+        )
+        precondition(!unresolvedRecoveryReady)
+        precondition(DesktopUpdateTransactionRecovery.hasActiveTransaction(paths: paths))
+
+        // A successful recovery must make the durable journal terminal before returning true.
+        let terminalPayload = "{\"schema_version\":1,\"transaction_id\":\"tx-resolved\",\"state\":\"failed\"}"
+        let resolvedScript = """
+        #!/bin/sh
+        printf '%s' '\(terminalPayload)' > '\(paths.updateTransaction.path)'
+        exit 0
+        """
+        let resolvedArbiter = try writeExecutable(resolvedScript, name: "resolved-arbiter")
+        try writeTransaction(id: "tx-resolved", state: "trial", arbiter: resolvedArbiter)
+        let resolvedRecoveryReady = await DesktopUpdateTransactionRecovery.recoverIfNeeded(
+            paths: paths,
+            recoveryTimeout: 2,
+            journalSettleTimeout: 0.5
+        )
+        precondition(resolvedRecoveryReady)
+        precondition(!DesktopUpdateTransactionRecovery.hasActiveTransaction(paths: paths))
+
+        // A symlink inside the trusted directory must not allow execution outside it.
+        let escapedArbiter = arbiterRoot.appendingPathComponent("escaped-arbiter")
+        try? FileManager.default.removeItem(at: escapedArbiter)
+        try FileManager.default.createSymbolicLink(
+            at: escapedArbiter,
+            withDestinationURL: URL(fileURLWithPath: "/usr/bin/true")
+        )
+        try writeTransaction(id: "tx-escape", state: "trial", arbiter: escapedArbiter)
+        let escapedRecoveryReady = await DesktopUpdateTransactionRecovery.recoverIfNeeded(
+            paths: paths,
+            recoveryTimeout: 0.2,
+            journalSettleTimeout: 0.05
+        )
+        precondition(!escapedRecoveryReady)
+        precondition(DesktopUpdateTransactionRecovery.hasActiveTransaction(paths: paths))
     }
 
     private static func testDesktopUpdateTerminalResult() throws {

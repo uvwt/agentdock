@@ -25,7 +25,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let recoveryReady = DesktopUpdateTransactionRecovery.recoverIfNeeded(paths: service.paths)
+        if DesktopUpdateTransactionRecovery.hasActiveTransaction(paths: service.paths) {
+            let pending = DesktopUpdateResult.load(from: service.paths.updateResult)
+            setUpdateInProgress(true)
+            updateProgressWindow.presentFinishing(
+                currentVersion: pending?.currentVersion ?? AppVersion.current,
+                targetVersion: pending?.targetVersion ?? AppVersion.current
+            )
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            let recoveryReady = await DesktopUpdateTransactionRecovery.recoverIfNeeded(paths: self.service.paths)
+            self.finishLaunchingAfterUpdateRecovery(recoveryReady: recoveryReady)
+        }
+    }
+
+    private func finishLaunchingAfterUpdateRecovery(recoveryReady: Bool) {
         var pendingUpdateResult = DesktopUpdateResult.load(from: service.paths.updateResult)
         var updateResultExists = FileManager.default.fileExists(atPath: service.paths.updateResult.path)
 
@@ -39,10 +54,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog(
                 "AgentDock found a legacy update result that no longer matches the active App; reconciling the current installation."
             )
-            _ = DesktopUpdateResult.consume(from: service.paths.updateResult)
-            DesktopUpdateServiceState.remove(at: service.paths.updateServiceState)
-            DesktopUpdateHandoff.remove(at: service.paths.updateHandoff)
+            let discarded = DesktopUpdateResult.discard(from: service.paths.updateResult)
+            if discarded {
+                DesktopUpdateServiceState.remove(at: service.paths.updateServiceState)
+                DesktopUpdateHandoff.remove(at: service.paths.updateHandoff)
+            } else {
+                // The trigger could not be moved out of its well-known path. Keep the
+                // coordination files so the next launch can retry without losing evidence.
+                NSLog("AgentDock could not discard the stale legacy update trigger; preserving update coordination files.")
+            }
             pendingUpdateResult = nil
+            // This trigger is known stale for the active App. Ignore it for this launch even
+            // when the filesystem prevented cleanup; a future launch will retry the discard.
+            updateResultExists = false
+        }
+
+        if recoveryReady,
+           pendingUpdateResult == nil,
+           updateResultExists,
+           !DesktopUpdateTransactionRecovery.shouldPreserveResultTrigger(paths: service.paths) {
+            // update-result.json is only a one-shot desktop handoff trigger. If it cannot be
+            // parsed and no trial/rollback transaction is active, keeping it at the well-known
+            // path can only reopen the finishing window on every launch. Durable diagnostics live
+            // in update/transaction.json and update/result.json.
+            NSLog("AgentDock found a stale or malformed update result without an active transaction; discarding the boot trigger.")
+            let discarded = DesktopUpdateResult.discard(from: service.paths.updateResult)
+            if discarded {
+                DesktopUpdateServiceState.remove(at: service.paths.updateServiceState)
+                DesktopUpdateHandoff.remove(at: service.paths.updateHandoff)
+            } else {
+                NSLog("AgentDock could not discard the stale update trigger; preserving update coordination files for a later retry.")
+            }
+            // There is no active durable transaction, so a stale trigger must not lock the
+            // current launch in the finishing UI. Leave the file on disk when cleanup failed
+            // and retry on the next launch instead.
             updateResultExists = false
         }
 
@@ -89,15 +134,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.refreshStatus()
             }
         }
+        startStatusTimer()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        timer?.invalidate()
+    }
+
+    private func startStatusTimer() {
+        guard timer == nil else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshStatus()
             }
         }
-    }
-
-    func applicationWillTerminate(_ notification: Notification) {
-        timer?.invalidate()
     }
 
     private func setUpdateInProgress(_ inProgress: Bool, checking: Bool = false) {
@@ -236,12 +286,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             keepUpdateLocked: false
                         )
                     case "failed":
-                        // rollback 自身失败时保留 pending result/service-state；repair 仍需要这些证据。
+                        // Durable transaction/result journals keep the forensic evidence needed
+                        // for repair. The root update-result.json is only a one-shot boot trigger;
+                        // consume it so a terminal failure does not reopen the finishing UI on
+                        // every later launch.
+                        _ = DesktopUpdateResult.consume(from: service.paths.updateResult)
                         presentTerminalUpdateFailure(
                             pendingResult: pendingResult,
                             terminalResult: terminalResult,
                             warnings: warnings,
-                            keepUpdateLocked: true
+                            keepUpdateLocked: false
                         )
                     default:
                         return
@@ -318,15 +372,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             if Date() >= nextRecoveryProbe {
-                let paths = service.paths
-                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                    DispatchQueue.global(qos: .utility).async {
-                        // 正常更新时 source Arbiter 持有 transaction.lock，此探针立即无害返回；
-                        // 若 Arbiter 崩溃，则由同一 known-good source Arbiter 保守接管 rollback。
-                        _ = DesktopUpdateTransactionRecovery.recoverIfNeeded(paths: paths)
-                        continuation.resume()
-                    }
-                }
+                // 正常更新时 source Arbiter 持有 transaction.lock，此探针立即无害返回；
+                // 若 Arbiter 崩溃，则由同一 known-good source Arbiter 保守接管 rollback。
+                _ = await DesktopUpdateTransactionRecovery.recoverIfNeeded(paths: service.paths)
                 nextRecoveryProbe = Date().addingTimeInterval(5)
             }
             try? await Task.sleep(nanoseconds: 250_000_000)

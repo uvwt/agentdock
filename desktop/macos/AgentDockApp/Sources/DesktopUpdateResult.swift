@@ -28,8 +28,37 @@ struct DesktopUpdateResult: Decodable {
 
     static func consume(from path: URL) -> DesktopUpdateResult? {
         guard let result = load(from: path) else { return nil }
-        try? FileManager.default.removeItem(at: path)
+        guard consumeTriggerFile(at: path) else { return nil }
         return result
+    }
+
+    @discardableResult
+    static func discard(from path: URL) -> Bool {
+        consumeTriggerFile(at: path)
+    }
+
+    private static func consumeTriggerFile(at path: URL) -> Bool {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: path.path) else { return true }
+
+        // Move the boot-trigger file out of its well-known path before best-effort deletion.
+        // Even if deletion of the moved file later fails, a completed/stale result cannot
+        // retrigger the update finishing UI on every AgentDock launch.
+        let consumed = path.deletingLastPathComponent().appendingPathComponent(
+            ".\(path.lastPathComponent).consumed-\(UUID().uuidString)"
+        )
+        do {
+            try fileManager.moveItem(at: path, to: consumed)
+        } catch {
+            NSLog("AgentDock could not consume update result trigger %@: %@", path.path, error.localizedDescription)
+            return false
+        }
+        do {
+            try fileManager.removeItem(at: consumed)
+        } catch {
+            NSLog("AgentDock could not delete consumed update result %@: %@", consumed.path, error.localizedDescription)
+        }
+        return true
     }
 }
 
