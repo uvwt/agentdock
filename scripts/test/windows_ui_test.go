@@ -241,17 +241,18 @@ func TestWindowsUpdateProgressWindowSizesToContent(t *testing.T) {
 	}
 }
 
-func TestWindowsControlPanelShowsLiveNexusStatusInsideRuntimeStatus(t *testing.T) {
+func TestWindowsControlPanelShowsLiveNexusStatusInsideConnections(t *testing.T) {
 	root := filepath.Join("..", "..", "desktop", "windows", "control-panel")
 	files := map[string][]string{
 		"MainWindow.xaml": {
-			`Text="{local:Loc HealthCheck}" Grid.Row="1"`,
-			`Text="Nexus" Grid.Row="2"`,
-			`x:Name="NexusStatusText" Grid.Row="2" Grid.Column="1" Text="{local:Loc NotConfigured}"`,
-			`Text="{local:Loc Version}" Grid.Row="3"`,
+			`Header="{local:Loc Connections}" Tag="&#xE774;"`,
+			`Header="{local:Loc NexusDockManagedAccess}"`,
+			`x:Name="NexusStatusText" Text="{local:Loc NotConfigured}"`,
+			`x:Name="PublicAccessStatusText" Text="{local:Loc NotConfigured}"`,
 		},
 		"MainWindow.xaml.cs": {
 			`NexusStatusText.Text`,
+			`PublicAccessStatusText.Text`,
 			`UiText.Get("Connected")`,
 			`UiText.Get("NotConnected")`,
 			`UiText.Get("NotConfigured")`,
@@ -278,7 +279,7 @@ func TestWindowsControlPanelShowsLiveNexusStatusInsideRuntimeStatus(t *testing.T
 		content := string(data)
 		for _, want := range wants {
 			if !strings.Contains(content, want) {
-				t.Fatalf("Windows Nexus status contract missing %q in %s", want, relativePath)
+				t.Fatalf("Windows connection status contract missing %q in %s", want, relativePath)
 			}
 		}
 	}
@@ -290,7 +291,7 @@ func TestWindowsControlPanelShowsLiveNexusStatusInsideRuntimeStatus(t *testing.T
 	content := string(xaml)
 	for _, forbidden := range []string{`NexusStatusDot`, `NexusHeaderStatusText`, `Nexus ·`} {
 		if strings.Contains(content, forbidden) {
-			t.Fatalf("Windows Nexus status must stay plain inside runtime status; found %q", forbidden)
+			t.Fatalf("Windows Nexus status must stay a plain connection status; found %q", forbidden)
 		}
 	}
 }
@@ -356,13 +357,17 @@ func TestWindowsACPSettingsUseSinglePageRowsDefaultDropdownAndCustomDialog(t *te
 		}
 	}
 
-	portIndex := strings.Index(xaml, `x:Name="PortTextBox" Grid.Row="0"`)
-	logLevelIndex := strings.Index(xaml, `x:Name="LogLevelComboBox" Grid.Row="1"`)
-	languageIndex := strings.Index(xaml, `x:Name="LanguageComboBox" Grid.Row="2"`)
-	chatCardsIndex := strings.Index(xaml, `x:Name="McpAppsModeComboBox" Grid.Row="3"`)
-	if portIndex < 0 || logLevelIndex < 0 || languageIndex < 0 || chatCardsIndex < 0 ||
-		!(portIndex < logLevelIndex && logLevelIndex < languageIndex && languageIndex < chatCardsIndex) {
-		t.Fatal("Windows basic settings must place chat cards directly below the interface language")
+	portIndex := strings.Index(xaml, `x:Name="PortTextBox"`)
+	logLevelIndex := strings.Index(xaml, `x:Name="LogLevelComboBox"`)
+	languageIndex := strings.Index(xaml, `x:Name="LanguageComboBox"`)
+	capabilitiesIndex := strings.Index(xaml, `Header="{local:Loc Capabilities}"`)
+	chatCardsIndex := strings.Index(xaml, `x:Name="McpAppsModeComboBox"`)
+	settingsIndex := strings.Index(xaml, `Header="{local:Loc Settings}"`)
+	if portIndex < 0 || logLevelIndex < 0 || languageIndex < 0 || capabilitiesIndex < 0 ||
+		chatCardsIndex < 0 || settingsIndex < 0 ||
+		!(capabilitiesIndex < chatCardsIndex && chatCardsIndex < settingsIndex &&
+			settingsIndex < portIndex && portIndex < logLevelIndex && logLevelIndex < languageIndex) {
+		t.Fatal("Windows shell must keep chat cards under Capabilities and runtime preferences under Settings")
 	}
 	for _, want := range []string{
 		`Text="{local:Loc ChatCards}"`,

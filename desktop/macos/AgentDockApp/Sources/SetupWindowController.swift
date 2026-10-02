@@ -7,6 +7,34 @@ private enum QuickTunnelRefreshState {
     case failed
 }
 
+private enum ControlPanelPage: Int, CaseIterable {
+    case home
+    case connections
+    case capabilities
+    case activity
+    case settings
+
+    var title: String {
+        switch self {
+        case .home: return L10n.text("Home")
+        case .connections: return L10n.text("Connections")
+        case .capabilities: return L10n.text("Capabilities")
+        case .activity: return L10n.text("Activity")
+        case .settings: return L10n.text("Settings")
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .home: return "house"
+        case .connections: return "link"
+        case .capabilities: return "square.grid.2x2"
+        case .activity: return "clock.arrow.circlepath"
+        case .settings: return "gearshape"
+        }
+    }
+}
+
 @MainActor
 final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private lazy var installer = InstallerRunner(service: service)
@@ -25,6 +53,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private let scrollDocumentView = TopAlignedDocumentView()
     private let contentStack = TopAlignedStackView()
     private let serviceSection = NSStackView()
+    private var serviceCard: NSBox?
     private let localAddress = NSTextField(labelWithString: L10n.text("Not installed"))
     private let publicAddress = NSTextField(labelWithString: L10n.text("Disabled"))
     private let publicCheckStatus = NSTextField(labelWithString: "")
@@ -55,6 +84,18 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private let permissionsButton = NSButton(title: L10n.text("Check permissions"), target: nil, action: nil)
     private let advancedButton = NSButton(title: L10n.text("Advanced settings"), target: nil, action: nil)
     private let logsButton = NSButton(title: L10n.text("Open logs"), target: nil, action: nil)
+    private let capabilitiesConfigureButton = NSButton(title: L10n.text("Configure"), target: nil, action: nil)
+    private let nexusConfigureButton = NSButton(title: L10n.text("Configure"), target: nil, action: nil)
+    private let remoteAccessToggleButton = NSButton(title: L10n.text("Change connection method"), target: nil, action: nil)
+    private let remoteConfigurationStack = NSStackView()
+    private let browserCapabilityStatus = NSTextField(labelWithString: L10n.text("Not configured"))
+    private let codingCapabilityStatus = NSTextField(labelWithString: L10n.text("Not configured"))
+    private let mcpCapabilityStatus = NSTextField(labelWithString: L10n.text("Not configured"))
+    private let activityRuntimeStatus = NSTextField(labelWithString: L10n.text("Not installed"))
+    private let activityPublicStatus = NSTextField(wrappingLabelWithString: L10n.text("Not checked"))
+    private var sidebarButtons: [ControlPanelPage: NSButton] = [:]
+    private var pageViews: [ControlPanelPage: NSView] = [:]
+    private var selectedPage: ControlPanelPage = .home
 
     private var currentStatus = ServiceStatus.missing
     private var initialMode: TunnelMode = .local
@@ -97,14 +138,14 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         self.onChanged = onChanged
         self.onUpdateRequested = onUpdateRequested
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 700, height: 590),
+            contentRect: NSRect(x: 0, y: 0, width: 920, height: 700),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "AgentDock"
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 620, height: 420)
+        window.minSize = NSSize(width: 800, height: 540)
         window.center()
         super.init(window: window)
         window.delegate = self
@@ -133,11 +174,14 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
 
         if status.installed {
             titleLabel.stringValue = "AgentDock"
-            subtitleLabel.stringValue = L10n.text("Local MCP service and public access management")
+            subtitleLabel.stringValue = L10n.text("Your local AI runtime")
             applyButton.title = L10n.text("Apply changes")
             advancedButton.isEnabled = !controlsLocked
+            capabilitiesConfigureButton.isEnabled = !controlsLocked
+            nexusConfigureButton.isEnabled = !controlsLocked
             logsButton.isEnabled = true
             serviceSection.isHidden = false
+            serviceCard?.isHidden = false
             updateServiceSection(status)
             selectCurrentMode(configuration: status.configuration)
         } else {
@@ -148,13 +192,19 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             applyButton.title = L10n.text("Configure and enable")
             applyButton.isEnabled = true
             advancedButton.isEnabled = false
+            capabilitiesConfigureButton.isEnabled = false
+            nexusConfigureButton.isEnabled = false
             logsButton.isEnabled = false
             serviceSection.isHidden = true
+            serviceCard?.isHidden = true
             authTokenValue = ""
             oauthPasswordValue = ""
             select(mode: .local)
+            activityRuntimeStatus.stringValue = L10n.text("Not configured")
+            activityRuntimeStatus.textColor = .secondaryLabelColor
         }
         updateNexusState(status.nexusConnection)
+        updateCapabilityState(status)
         refreshCredentialFields()
         refreshChangeState()
         updateWindowHeight()
@@ -182,6 +232,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         guard status.installed else { return }
         updateServiceSection(status)
         updateNexusState(status.nexusConnection)
+        updateCapabilityState(status)
         refreshCredentialFields()
     }
 
@@ -198,6 +249,25 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private func configureUI() {
         guard let contentView = window?.contentView else { return }
 
+        let contentBackground = NSBox()
+        contentBackground.boxType = .custom
+        contentBackground.borderWidth = 0
+        contentBackground.fillColor = .windowBackgroundColor
+        contentBackground.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(contentBackground)
+
+        let sidebar = NSVisualEffectView()
+        sidebar.material = .sidebar
+        sidebar.blendingMode = .behindWindow
+        sidebar.state = .active
+        sidebar.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(sidebar)
+
+        let sidebarSeparator = NSBox()
+        sidebarSeparator.boxType = .separator
+        sidebarSeparator.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(sidebarSeparator)
+
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
@@ -210,28 +280,83 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
 
         contentStack.orientation = .vertical
         contentStack.alignment = .leading
-        contentStack.spacing = 12
+        contentStack.spacing = ControlPanelUI.sectionSpacing
         contentStack.translatesAutoresizingMaskIntoConstraints = false
         scrollDocumentView.addSubview(contentStack)
 
-        titleLabel.font = .systemFont(ofSize: 25, weight: .semibold)
+        let brandTitle = NSTextField(labelWithString: "AgentDock")
+        brandTitle.font = .systemFont(ofSize: 17, weight: .semibold)
+        let brandSubtitle = NSTextField(labelWithString: L10n.text("Your local AI runtime"))
+        brandSubtitle.font = .systemFont(ofSize: 10.5)
+        brandSubtitle.textColor = .secondaryLabelColor
+        let brandText = NSStackView(views: [brandTitle, brandSubtitle])
+        brandText.orientation = .vertical
+        brandText.alignment = .leading
+        brandText.spacing = 2
+        let brand = NSStackView(views: [ControlPanelUI.appMark(), brandText])
+        brand.orientation = .horizontal
+        brand.alignment = .centerY
+        brand.spacing = 9
+
+        let navigation = NSStackView()
+        navigation.orientation = .vertical
+        navigation.alignment = .leading
+        navigation.spacing = 4
+
+        for page in ControlPanelPage.allCases {
+            let button = ControlPanelUI.sidebarButton(
+                title: page.title,
+                symbol: page.symbol,
+                tag: page.rawValue,
+                target: self,
+                action: #selector(sidebarPressed)
+            )
+            sidebarButtons[page] = button
+            navigation.addArrangedSubview(button)
+            button.widthAnchor.constraint(equalTo: navigation.widthAnchor).isActive = true
+        }
+
+        let sidebarStack = NSStackView(views: [brand, navigation, NSView()])
+        sidebarStack.orientation = .vertical
+        sidebarStack.alignment = .leading
+        sidebarStack.spacing = 18
+        sidebarStack.edgeInsets = NSEdgeInsets(top: 22, left: 16, bottom: 18, right: 12)
+        sidebarStack.translatesAutoresizingMaskIntoConstraints = false
+        sidebar.addSubview(sidebarStack)
+
+        titleLabel.font = .systemFont(ofSize: 23, weight: .semibold)
+        subtitleLabel.stringValue = L10n.text("Your local AI runtime")
         subtitleLabel.textColor = .secondaryLabelColor
-        stateLabel.alignment = .right
+        stateLabel.alignment = .left
         stateLabel.font = .systemFont(ofSize: 13, weight: .medium)
         stateLabel.lineBreakMode = .byTruncatingMiddle
-        stateLabel.setContentCompressionResistancePriority(.fittingSizeCompression, for: .horizontal)
-        nexusStateLabel.alignment = .left
-        nexusStateLabel.font = .systemFont(ofSize: 12, weight: .regular)
-        nexusStateLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        nexusStateLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let headerText = NSStackView(views: [titleLabel, subtitleLabel])
-        headerText.orientation = .vertical
-        headerText.alignment = .leading
-        headerText.spacing = 3
-        let header = NSStackView(views: [headerText, NSView(), stateLabel])
-        header.orientation = .horizontal
-        header.alignment = .centerY
+        startStopButton.target = self
+        startStopButton.action = #selector(startStopPressed)
+        restartButton.target = self
+        restartButton.action = #selector(restartPressed)
+        updateButton.target = self
+        updateButton.action = #selector(updatePressed)
+        ControlPanelUI.configurePrimaryAction(startStopButton)
+        ControlPanelUI.configureQuietAction(restartButton, symbol: "arrow.clockwise")
+        ControlPanelUI.configureQuietAction(updateButton, symbol: "arrow.down.circle")
+
+        let serviceActions = NSStackView(views: [startStopButton, restartButton, updateButton, NSView()])
+        serviceActions.orientation = .horizontal
+        serviceActions.alignment = .centerY
+        serviceActions.spacing = 8
+
+        let homeRuntime = NSStackView(views: [titleLabel, subtitleLabel, stateLabel, serviceActions])
+        homeRuntime.orientation = .vertical
+        homeRuntime.alignment = .leading
+        homeRuntime.spacing = 8
+        serviceActions.widthAnchor.constraint(equalTo: homeRuntime.widthAnchor).isActive = true
+
+        let homeRuntimeCard = ControlPanelUI.card(
+            title: L10n.text("Service"),
+            symbol: "bolt.horizontal.circle",
+            content: homeRuntime
+        )
 
         for field in [localAddress, publicAddress, authToken, oauthPassword] {
             field.isSelectable = true
@@ -253,6 +378,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         publicCheckStatus.lineBreakMode = .byTruncatingTail
         publicCheckStatus.setContentHuggingPriority(.defaultLow, for: .horizontal)
         publicCheckStatus.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
         publicTestButton.bezelStyle = .inline
         publicTestButton.target = self
         publicTestButton.action = #selector(testPublicAddressPressed)
@@ -260,39 +386,32 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         publicCopyButton.target = self
         publicCopyButton.action = #selector(copyPublicAddress)
 
-        authReveal.bezelStyle = .inline
-        authReveal.target = self
-        authReveal.action = #selector(toggleAuthToken)
-        oauthReveal.bezelStyle = .inline
-        oauthReveal.target = self
-        oauthReveal.action = #selector(toggleOAuthPassword)
+        nexusStateLabel.alignment = .left
+        nexusStateLabel.font = .systemFont(ofSize: 12)
+        nexusStateLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        nexusStateLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        ControlPanelUI.configureQuietAction(nexusConfigureButton, symbol: "chevron.right")
+        nexusConfigureButton.target = self
+        nexusConfigureButton.action = #selector(openAdvancedPressed)
 
         serviceSection.orientation = .vertical
         serviceSection.alignment = .leading
         serviceSection.spacing = 8
-        serviceSection.addArrangedSubview(sectionTitle(L10n.text("Connection information")))
         addFullWidth(valueRow(title: L10n.text("Local MCP"), field: localAddress, actions: [copyButton(#selector(copyLocalAddress))]), to: serviceSection)
-        addFullWidth(valueRow(title: L10n.text("Public MCP"), field: publicAddress, actions: [publicTestButton, publicCopyButton]), to: serviceSection)
-        addFullWidth(valueDetailRow(publicCheckStatus), to: serviceSection)
-        addFullWidth(valueRow(title: "Nexus", field: nexusStateLabel, actions: []), to: serviceSection)
-        addFullWidth(valueRow(title: "Bearer Token", field: authToken, actions: [authReveal, copyButton(#selector(copyAuthToken))]), to: serviceSection)
-        addFullWidth(valueRow(title: L10n.text("OAuth password"), field: oauthPassword, actions: [oauthReveal, copyButton(#selector(copyOAuthPassword))]), to: serviceSection)
+        addFullWidth(valueRow(title: "NexusDock", field: nexusStateLabel, actions: [nexusConfigureButton]), to: serviceSection)
 
-        startStopButton.target = self
-        startStopButton.action = #selector(startStopPressed)
-        restartButton.target = self
-        restartButton.action = #selector(restartPressed)
-        updateButton.target = self
-        updateButton.action = #selector(updatePressed)
-        let serviceActions = NSStackView(views: [startStopButton, restartButton, updateButton, NSView()])
-        serviceActions.orientation = .horizontal
-        serviceActions.spacing = 8
-        addFullWidth(serviceActions, to: serviceSection)
+        let connectionCard = ControlPanelUI.card(
+            title: L10n.text("Connections"),
+            symbol: "link",
+            content: serviceSection
+        )
+        serviceCard = connectionCard
 
         publicMode.target = self
         publicMode.action = #selector(modeChanged)
         publicMode.segmentStyle = .rounded
         publicMode.widthAnchor.constraint(equalToConstant: 360).isActive = true
+
         modeDescription.textColor = .secondaryLabelColor
         modeDescription.font = .systemFont(ofSize: 12)
 
@@ -322,53 +441,280 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         statusLabel.isHidden = true
 
-        logsButton.bezelStyle = .inline
-        logsButton.target = self
-        logsButton.action = #selector(openLogsPressed)
-        permissionsButton.bezelStyle = .inline
-        permissionsButton.target = self
-        permissionsButton.action = #selector(openPermissionsPressed)
-        advancedButton.bezelStyle = .inline
-        advancedButton.target = self
-        advancedButton.action = #selector(openAdvancedPressed)
-        applyButton.bezelStyle = .rounded
-        applyButton.keyEquivalent = "\r"
+        ControlPanelUI.configurePrimaryAction(applyButton)
         applyButton.target = self
         applyButton.action = #selector(applyPressed)
 
-        let footer = NSStackView(views: [logsButton, permissionsButton, advancedButton, progress, statusLabel, NSView(), applyButton])
-        footer.orientation = .horizontal
-        footer.alignment = .centerY
-        footer.spacing = 10
+        let remoteActions = NSStackView(views: [progress, statusLabel, NSView(), applyButton])
+        remoteActions.orientation = .horizontal
+        remoteActions.alignment = .centerY
+        remoteActions.spacing = 8
 
-        // 给配置区和底部操作留出明确的呼吸空间；小窗口仍由外层滚动区承载。
-        let footerSpacer = NSView()
-        footerSpacer.heightAnchor.constraint(equalToConstant: 8).isActive = true
+        remoteConfigurationStack.orientation = .vertical
+        remoteConfigurationStack.alignment = .leading
+        remoteConfigurationStack.spacing = 9
+        remoteConfigurationStack.setViews([publicMode, modeDescription, namedFields, remoteActions], in: .top)
+        modeDescription.widthAnchor.constraint(equalTo: remoteConfigurationStack.widthAnchor).isActive = true
+        namedFields.widthAnchor.constraint(equalTo: remoteConfigurationStack.widthAnchor).isActive = true
+        remoteActions.widthAnchor.constraint(equalTo: remoteConfigurationStack.widthAnchor).isActive = true
+        remoteConfigurationStack.isHidden = true
 
-        addFullWidth(header, to: contentStack)
-        addFullWidth(separator(), to: contentStack)
-        addFullWidth(serviceSection, to: contentStack)
-        addFullWidth(separator(), to: contentStack)
-        contentStack.addArrangedSubview(sectionTitle(L10n.text("Public access")))
-        contentStack.addArrangedSubview(publicMode)
-        addFullWidth(modeDescription, to: contentStack)
-        addFullWidth(namedFields, to: contentStack)
-        addFullWidth(separator(), to: contentStack)
-        addFullWidth(footerSpacer, to: contentStack)
-        addFullWidth(footer, to: contentStack)
+        ControlPanelUI.configureSecondaryAction(remoteAccessToggleButton, symbol: "slider.horizontal.3")
+        remoteAccessToggleButton.target = self
+        remoteAccessToggleButton.action = #selector(toggleRemoteConfiguration)
+
+        let remoteDescription = NSTextField(wrappingLabelWithString: L10n.text("Access this AgentDock securely from outside this device."))
+        remoteDescription.font = .systemFont(ofSize: 12)
+        remoteDescription.textColor = .secondaryLabelColor
+
+        let remoteSummary = NSStackView()
+        remoteSummary.orientation = .vertical
+        remoteSummary.alignment = .leading
+        remoteSummary.spacing = 7
+        addFullWidth(valueRow(title: L10n.text("Public MCP"), field: publicAddress, actions: [publicTestButton, publicCopyButton]), to: remoteSummary)
+        addFullWidth(valueDetailRow(publicCheckStatus), to: remoteSummary)
+
+        let remoteContent = NSStackView(views: [
+            remoteDescription,
+            remoteSummary,
+            remoteAccessToggleButton,
+            remoteConfigurationStack,
+        ])
+        remoteContent.orientation = .vertical
+        remoteContent.alignment = .leading
+        remoteContent.spacing = 10
+        for child in [remoteDescription, remoteSummary, remoteConfigurationStack] {
+            child.widthAnchor.constraint(equalTo: remoteContent.widthAnchor).isActive = true
+        }
+
+        let remoteCard = ControlPanelUI.card(
+            title: L10n.text("Remote access"),
+            symbol: "network",
+            content: remoteContent
+        )
+
+        for label in [browserCapabilityStatus, codingCapabilityStatus, mcpCapabilityStatus] {
+            label.font = .systemFont(ofSize: 12, weight: .medium)
+            label.alignment = .right
+            label.textColor = .secondaryLabelColor
+            label.setContentHuggingPriority(.required, for: .horizontal)
+        }
+
+        let capabilityList = NSStackView(views: [
+            capabilityRow(title: L10n.text("Browser automation"), symbol: "safari", status: browserCapabilityStatus),
+            PermissionUI.separator(),
+            capabilityRow(title: L10n.text("Coding Agent"), symbol: "terminal", status: codingCapabilityStatus),
+            PermissionUI.separator(),
+            capabilityRow(title: L10n.text("MCP runtime"), symbol: "shippingbox", status: mcpCapabilityStatus),
+        ])
+        capabilityList.orientation = .vertical
+        capabilityList.alignment = .leading
+        capabilityList.spacing = 10
+
+        ControlPanelUI.configureQuietAction(capabilitiesConfigureButton, symbol: "slider.horizontal.3")
+        capabilitiesConfigureButton.target = self
+        capabilitiesConfigureButton.action = #selector(openAdvancedPressed)
+
+        let capabilitiesContent = NSStackView(views: [capabilityList, capabilitiesConfigureButton])
+        capabilitiesContent.orientation = .vertical
+        capabilitiesContent.alignment = .leading
+        capabilitiesContent.spacing = 12
+        capabilityList.widthAnchor.constraint(equalTo: capabilitiesContent.widthAnchor).isActive = true
+
+        let capabilitiesCard = ControlPanelUI.card(
+            title: L10n.text("Capabilities"),
+            symbol: "square.grid.2x2",
+            content: capabilitiesContent
+        )
+
+        activityRuntimeStatus.font = .systemFont(ofSize: 12, weight: .medium)
+        activityPublicStatus.font = .systemFont(ofSize: 12)
+        activityRuntimeStatus.textColor = .secondaryLabelColor
+        activityPublicStatus.textColor = .secondaryLabelColor
+
+        let activityTestButton = NSButton(title: L10n.text("Test"), target: self, action: #selector(testPublicAddressPressed))
+        ControlPanelUI.configureQuietAction(activityTestButton, symbol: "network.badge.shield.half.filled")
+        ControlPanelUI.configureQuietAction(logsButton, symbol: "doc.text")
+        logsButton.target = self
+        logsButton.action = #selector(openLogsPressed)
+
+        let activityContent = NSStackView()
+        activityContent.orientation = .vertical
+        activityContent.alignment = .leading
+        activityContent.spacing = 10
+        addFullWidth(valueRow(title: L10n.text("Service"), field: activityRuntimeStatus, actions: []), to: activityContent)
+        addFullWidth(valueRow(title: L10n.text("Public access"), field: activityPublicStatus, actions: [activityTestButton]), to: activityContent)
+        let activityActions = NSStackView(views: [logsButton, NSView()])
+        activityActions.orientation = .horizontal
+        addFullWidth(activityActions, to: activityContent)
+
+        let activityCard = ControlPanelUI.card(
+            title: L10n.text("Activity"),
+            symbol: "clock.arrow.circlepath",
+            content: activityContent
+        )
+
+        authReveal.bezelStyle = .inline
+        authReveal.target = self
+        authReveal.action = #selector(toggleAuthToken)
+        oauthReveal.bezelStyle = .inline
+        oauthReveal.target = self
+        oauthReveal.action = #selector(toggleOAuthPassword)
+
+        let credentialStack = NSStackView()
+        credentialStack.orientation = .vertical
+        credentialStack.alignment = .leading
+        credentialStack.spacing = 8
+        addFullWidth(valueRow(title: "Bearer Token", field: authToken, actions: [authReveal, copyButton(#selector(copyAuthToken))]), to: credentialStack)
+        addFullWidth(valueRow(title: L10n.text("OAuth password"), field: oauthPassword, actions: [oauthReveal, copyButton(#selector(copyOAuthPassword))]), to: credentialStack)
+
+        let credentialCard = ControlPanelUI.card(
+            title: L10n.text("Connection information"),
+            symbol: "key",
+            content: credentialStack
+        )
+
+        ControlPanelUI.configureQuietAction(permissionsButton, symbol: "checkmark.shield")
+        permissionsButton.target = self
+        permissionsButton.action = #selector(openPermissionsPressed)
+        ControlPanelUI.configureQuietAction(advancedButton, symbol: "slider.horizontal.3")
+        advancedButton.target = self
+        advancedButton.action = #selector(openAdvancedPressed)
+
+        let settingsActions = NSStackView(views: [permissionsButton, advancedButton, NSView()])
+        settingsActions.orientation = .horizontal
+        settingsActions.alignment = .centerY
+        settingsActions.spacing = 12
+
+        let settingsCard = ControlPanelUI.card(
+            title: L10n.text("Settings"),
+            symbol: "gearshape",
+            content: settingsActions
+        )
+
+        pageViews = [
+            .home: makePage(
+                title: L10n.text("Home"),
+                subtitle: L10n.text("Runtime health, connection state, and the actions you use most."),
+                views: [homeRuntimeCard]
+            ),
+            .connections: makePage(
+                title: L10n.text("Connections"),
+                subtitle: L10n.text("Manage how AI clients reach AgentDock locally and remotely."),
+                views: [connectionCard, remoteCard]
+            ),
+            .capabilities: makePage(
+                title: L10n.text("Capabilities"),
+                subtitle: L10n.text("Configure what AgentDock can do after a client connects."),
+                views: [capabilitiesCard]
+            ),
+            .activity: makePage(
+                title: L10n.text("Activity"),
+                subtitle: L10n.text("Inspect runtime health, reachability, and logs."),
+                views: [activityCard]
+            ),
+            .settings: makePage(
+                title: L10n.text("Settings"),
+                subtitle: L10n.text("Customize runtime behavior and desktop preferences."),
+                views: [credentialCard, settingsCard]
+            ),
+        ]
 
         NSLayoutConstraint.activate([
-            scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            contentBackground.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            contentBackground.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            contentBackground.topAnchor.constraint(equalTo: contentView.topAnchor),
+            contentBackground.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
+            sidebar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            sidebar.topAnchor.constraint(equalTo: contentView.topAnchor),
+            sidebar.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            sidebar.widthAnchor.constraint(equalToConstant: ControlPanelUI.sidebarWidth),
+
+            sidebarSeparator.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            sidebarSeparator.topAnchor.constraint(equalTo: contentView.topAnchor),
+            sidebarSeparator.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            sidebarSeparator.widthAnchor.constraint(equalToConstant: 1),
+
+            sidebarStack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
+            sidebarStack.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            sidebarStack.topAnchor.constraint(equalTo: sidebar.topAnchor),
+            sidebarStack.bottomAnchor.constraint(lessThanOrEqualTo: sidebar.bottomAnchor),
+
+            scrollView.leadingAnchor.constraint(equalTo: sidebarSeparator.trailingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             scrollView.topAnchor.constraint(equalTo: contentView.topAnchor),
             scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
             scrollDocumentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
             contentStack.leadingAnchor.constraint(equalTo: scrollDocumentView.leadingAnchor, constant: 28),
             contentStack.trailingAnchor.constraint(equalTo: scrollDocumentView.trailingAnchor, constant: -28),
             contentStack.topAnchor.constraint(equalTo: scrollDocumentView.topAnchor, constant: 24),
-            contentStack.bottomAnchor.constraint(equalTo: scrollDocumentView.bottomAnchor, constant: -22),
+            contentStack.bottomAnchor.constraint(equalTo: scrollDocumentView.bottomAnchor, constant: -24),
         ])
+
+        selectPage(.home)
     }
+
+    private func makePage(title: String, subtitle: String, views: [NSView]) -> NSStackView {
+        let page = NSStackView(views: [ControlPanelUI.pageHeader(title: title, subtitle: subtitle)] + views)
+        page.orientation = .vertical
+        page.alignment = .leading
+        page.spacing = ControlPanelUI.sectionSpacing
+        for view in page.arrangedSubviews {
+            view.widthAnchor.constraint(equalTo: page.widthAnchor).isActive = true
+        }
+        return page
+    }
+
+    private func capabilityRow(title: String, symbol: String, status: NSTextField) -> NSView {
+        let icon = NSImageView()
+        icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+        icon.contentTintColor = .controlAccentColor
+        icon.imageScaling = .scaleProportionallyDown
+        icon.widthAnchor.constraint(equalToConstant: 22).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 22).isActive = true
+
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let row = NSStackView(views: [icon, titleLabel, NSView(), status])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 9
+        return row
+    }
+
+    @objc private func sidebarPressed(_ sender: NSButton) {
+        guard let page = ControlPanelPage(rawValue: sender.tag) else { return }
+        selectPage(page)
+    }
+
+    private func selectPage(_ page: ControlPanelPage) {
+        guard let pageView = pageViews[page] else { return }
+        selectedPage = page
+
+        for view in contentStack.arrangedSubviews {
+            contentStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        addFullWidth(pageView, to: contentStack)
+
+        for (candidate, button) in sidebarButtons {
+            ControlPanelUI.setSidebarSelection(button, selected: candidate == page)
+        }
+        scrollDocumentView.scroll(.zero)
+    }
+
+    @objc private func toggleRemoteConfiguration() {
+        remoteConfigurationStack.isHidden.toggle()
+        remoteAccessToggleButton.title = remoteConfigurationStack.isHidden
+            ? L10n.text("Change connection method")
+            : L10n.text("Hide")
+        updateWindowHeight()
+    }
+
 
     private func updateServiceSection(_ status: ServiceStatus) {
         if migrationRequired {
@@ -396,6 +742,8 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             stateLabel.stringValue = L10n.text("● Stopped")
             stateLabel.textColor = .secondaryLabelColor
         }
+        activityRuntimeStatus.stringValue = stateLabel.stringValue
+        activityRuntimeStatus.textColor = stateLabel.textColor
 
         let configuration = status.configuration
         localAddress.stringValue = configuration?.localMCPURL?.absoluteString ?? L10n.text("Configuration unavailable")
@@ -425,6 +773,25 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    private func updateCapabilityState(_ status: ServiceStatus) {
+        guard let configuration = status.configuration else {
+            for label in [browserCapabilityStatus, codingCapabilityStatus, mcpCapabilityStatus] {
+                label.stringValue = L10n.text("Not configured")
+                label.textColor = .secondaryLabelColor
+            }
+            return
+        }
+
+        setCapabilityLabel(browserCapabilityStatus, enabled: configuration.browserEnabled)
+        setCapabilityLabel(codingCapabilityStatus, enabled: configuration.acpEnabled)
+        setCapabilityLabel(mcpCapabilityStatus, enabled: configuration.mcpAppsMode != .off)
+    }
+
+    private func setCapabilityLabel(_ label: NSTextField, enabled: Bool) {
+        label.stringValue = enabled ? L10n.text("Ready") : L10n.text("Disabled")
+        label.textColor = enabled ? .systemGreen : .secondaryLabelColor
+    }
+
     private func renderPublicAddress(_ publicMCPURL: URL?, automaticallyCheck: Bool) {
         switch quickTunnelRefreshState {
         case .refreshing:
@@ -434,6 +801,8 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             publicCheckStatus.stringValue = L10n.text("The old address is hidden; waiting for a new temporary public address")
             publicCheckStatus.textColor = .secondaryLabelColor
             publicCheckStatus.isHidden = false
+            activityPublicStatus.stringValue = publicCheckStatus.stringValue
+            activityPublicStatus.textColor = publicCheckStatus.textColor
             refreshPublicActions()
         case .failed:
             cancelPublicCheck(clearLastResult: true)
@@ -442,6 +811,8 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             publicCheckStatus.stringValue = L10n.text("Refresh failed; the old address is not shown as the new address")
             publicCheckStatus.textColor = .systemRed
             publicCheckStatus.isHidden = false
+            activityPublicStatus.stringValue = publicCheckStatus.stringValue
+            activityPublicStatus.textColor = publicCheckStatus.textColor
             refreshPublicActions()
         case .idle:
             setDisplayedPublicMCPURL(publicMCPURL, automaticallyCheck: automaticallyCheck)
@@ -455,6 +826,8 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         }
         displayedPublicMCPURL = publicMCPURL
         publicAddress.stringValue = publicMCPURL?.absoluteString ?? L10n.text("Disabled")
+        activityPublicStatus.stringValue = publicAddress.stringValue
+        activityPublicStatus.textColor = publicMCPURL == nil ? .secondaryLabelColor : .labelColor
 
         guard let publicMCPURL else {
             publicCheckStatus.stringValue = ""
@@ -531,6 +904,8 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         publicCheckStatus.stringValue = "● \(result.message)\(latency)"
         publicCheckStatus.textColor = result.isReachable ? .systemGreen : .systemRed
         publicCheckStatus.isHidden = false
+        activityPublicStatus.stringValue = publicCheckStatus.stringValue
+        activityPublicStatus.textColor = publicCheckStatus.textColor
         refreshPublicActions()
     }
 
@@ -835,37 +1210,20 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func updateWindowHeight() {
-        let installedHeight: CGFloat = selectedMode == .named ? 620 : 580
-        let installHeight: CGFloat = selectedMode == .named ? 455 : 360
-        let desiredHeight = currentStatus.installed ? installedHeight : installHeight
-        guard let window else { return }
-
-        let visibleFrame = (window.screen ?? NSScreen.main)?.visibleFrame
-        let verticalMargin: CGFloat = 12
-        let maximumHeight = visibleFrame.map { max(window.minSize.height, $0.height - verticalMargin * 2) }
-        let targetHeight = min(desiredHeight, maximumHeight ?? desiredHeight)
-
-        // 保持窗口顶部尽量不跳动，同时确保整个窗口始终位于菜单栏和 Dock 之间的可用区域。
-        var frame = window.frame
-        frame.origin.y = frame.maxY - targetHeight
-        frame.size.height = targetHeight
-        if let visibleFrame {
-            frame.origin.y = min(frame.origin.y, visibleFrame.maxY - verticalMargin - targetHeight)
-            frame.origin.y = max(frame.origin.y, visibleFrame.minY + verticalMargin)
+        guard let window,
+              let visibleFrame = (window.screen ?? NSScreen.main)?.visibleFrame else {
+            return
         }
+
+        let verticalMargin: CGFloat = 12
+        let maximumHeight = max(window.minSize.height, visibleFrame.height - verticalMargin * 2)
+        guard window.frame.height > maximumHeight else { return }
+
+        // 新控制面板使用可滚动 App Shell；切换连接方式不再改变窗口高度，只在小屏幕上做可见区域兜底。
+        var frame = window.frame
+        frame.origin.y = max(visibleFrame.minY + verticalMargin, frame.maxY - maximumHeight)
+        frame.size.height = maximumHeight
         window.setFrame(frame, display: true, animate: window.isVisible)
-    }
-
-    private func sectionTitle(_ title: String) -> NSTextField {
-        let label = NSTextField(labelWithString: title)
-        label.font = .systemFont(ofSize: 14, weight: .semibold)
-        return label
-    }
-
-    private func separator() -> NSBox {
-        let box = NSBox()
-        box.boxType = .separator
-        return box
     }
 
     private func formRow(title: String, control: NSView) -> NSView {

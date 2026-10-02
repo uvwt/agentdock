@@ -102,6 +102,11 @@ public partial class MainWindow : Window
                 : !snapshot.Nexus.Paired
                     ? UiText.Get("NotConfigured")
                     : snapshot.NexusConnected ? UiText.Get("Connected") : UiText.Get("NotConnected");
+            PublicAccessStatusText.Text = string.Equals(snapshot.TunnelMode, "none", StringComparison.OrdinalIgnoreCase)
+                ? UiText.Get("Disabled")
+                : string.IsNullOrWhiteSpace(snapshot.PublicOrigin)
+                    ? UiText.Get("NotConfigured")
+                    : UiText.Get("Connected");
 
             ServiceStatusText.Text = snapshot.CoreRunning ? UiText.Get("Running") : UiText.Get("Stopped");
             HealthStatusText.Text = snapshot.Healthy ? UiText.Get("Healthy") : UiText.Get("Unavailable");
