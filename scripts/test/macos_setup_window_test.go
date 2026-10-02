@@ -7,6 +7,47 @@ import (
 	"testing"
 )
 
+func TestMacOSUpdateCheckDoesNotLockUnrelatedControls(t *testing.T) {
+	root := filepath.Join("..", "..", "desktop", "macos", "AgentDockApp")
+	setupData, err := os.ReadFile(filepath.Join(root, "Sources", "SetupWindowController.swift"))
+	if err != nil {
+		t.Fatalf("read SetupWindowController.swift: %v", err)
+	}
+	setup := string(setupData)
+	for _, want := range []string{
+		"private var isCheckingForUpdate = false",
+		"func setUpdateActivity(isApplying: Bool, isChecking: Bool)",
+		"advancedSettings?.setUpdateInProgress(isApplying)",
+		"guard !isUpdateInProgress, !isCheckingForUpdate else { return }",
+		"updateButton.isEnabled = status.installed && !migrationRequired && !isCheckingForUpdate",
+	} {
+		if !strings.Contains(setup, want) {
+			t.Fatalf("macOS setup window missing non-blocking update-check contract %q", want)
+		}
+	}
+	if strings.Contains(setup, "private var controlsLocked: Bool {\n        isBusy || isUpdateInProgress || isCheckingForUpdate") {
+		t.Fatal("read-only update checks must not lock unrelated setup controls")
+	}
+
+	appDelegateData, err := os.ReadFile(filepath.Join(root, "Sources", "AppDelegate.swift"))
+	if err != nil {
+		t.Fatalf("read AppDelegate.swift: %v", err)
+	}
+	appDelegate := string(appDelegateData)
+	for _, want := range []string{
+		"isUpdating = false\n            isCheckingForUpdate = true",
+		"ApplicationMenu.setQuitEnabled(!isUpdating)",
+		"guard !isUpdating, !isCheckingForUpdate else {",
+		"updateMenuItem.isEnabled = !isCheckingForUpdate",
+		"guard !self.trayServiceActionInProgress,",
+		"!self.setupWindow.hasActiveServiceOperation else {",
+	} {
+		if !strings.Contains(appDelegate, want) {
+			t.Fatalf("macOS app delegate missing non-blocking update-check contract %q", want)
+		}
+	}
+}
+
 func TestMacOSSetupWindowUsesResponsiveScrollableLayout(t *testing.T) {
 	root := filepath.Join("..", "..", "desktop", "macos", "AgentDockApp")
 	setupData, err := os.ReadFile(filepath.Join(root, "Sources", "SetupWindowController.swift"))

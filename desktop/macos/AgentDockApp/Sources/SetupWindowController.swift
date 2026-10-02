@@ -65,6 +65,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private var oauthVisible = false
     private var isBusy = false
     private var isUpdateInProgress = false
+    private var isCheckingForUpdate = false
     private var quickTunnelRefreshState: QuickTunnelRefreshState = .idle
 
     private var migrationRequired: Bool {
@@ -160,14 +161,19 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         updateWindowHeight()
     }
 
-    func setUpdateInProgress(_ inProgress: Bool, status: String? = nil) {
-        isUpdateInProgress = inProgress
+    func setUpdateActivity(isApplying: Bool, isChecking: Bool) {
+        let wasUpdateActivity = isUpdateInProgress || isCheckingForUpdate
+        isUpdateInProgress = isApplying
+        isCheckingForUpdate = isChecking
         setBusy(isBusy)
-        advancedSettings?.setUpdateInProgress(inProgress)
-        if inProgress {
-            showStatus(status ?? L10n.text("Updating AgentDock…"), isError: false)
-        } else if statusLabel.stringValue == L10n.text("Updating AgentDock…") ||
-                    statusLabel.stringValue == L10n.text("Checking for updates…") {
+        advancedSettings?.setUpdateInProgress(isApplying)
+        if isApplying {
+            showStatus(L10n.text("Updating AgentDock…"), isError: false)
+        } else if isChecking {
+            showStatus(L10n.text("Checking for updates…"), isError: false)
+        } else if wasUpdateActivity,
+                  statusLabel.stringValue == L10n.text("Updating AgentDock…") ||
+                  statusLabel.stringValue == L10n.text("Checking for updates…") {
             statusLabel.isHidden = true
         }
     }
@@ -408,7 +414,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         if !controlsLocked {
             startStopButton.isEnabled = status.installed && !migrationRequired
             restartButton.isEnabled = status.installed && !status.requiresApproval && !migrationRequired
-            updateButton.isEnabled = status.installed && !migrationRequired
+            updateButton.isEnabled = status.installed && !migrationRequired && !isCheckingForUpdate
         }
     }
 
@@ -695,7 +701,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func updatePressed() {
-        guard !isUpdateInProgress else { return }
+        guard !isUpdateInProgress, !isCheckingForUpdate else { return }
         onUpdateRequested()
     }
 
@@ -814,6 +820,9 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         if !locked && migrationRequired {
             startStopButton.isEnabled = false
             restartButton.isEnabled = false
+            updateButton.isEnabled = false
+        }
+        if isCheckingForUpdate {
             updateButton.isEnabled = false
         }
         // 查看日志在更新期间仍然安全，保留给用户排查长时间操作。

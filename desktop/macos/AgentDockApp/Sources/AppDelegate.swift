@@ -101,16 +101,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setUpdateInProgress(_ inProgress: Bool, checking: Bool = false) {
-        isUpdating = inProgress
-        isCheckingForUpdate = inProgress && checking
+        if !inProgress {
+            isUpdating = false
+            isCheckingForUpdate = false
+        } else if checking {
+            // Checking is read-only. Keep unrelated service/configuration controls usable.
+            isUpdating = false
+            isCheckingForUpdate = true
+        } else {
+            isUpdating = true
+            isCheckingForUpdate = false
+        }
         setStatusItemVisible(UpdateStatusItemVisibility.shouldShow(
             isUpdating: isUpdating,
             isCheckingForUpdate: isCheckingForUpdate
         ))
-        ApplicationMenu.setQuitEnabled(!inProgress)
-        setupWindow.setUpdateInProgress(
-            inProgress,
-            status: checking ? L10n.text("Checking for updates…") : nil
+        ApplicationMenu.setQuitEnabled(!isUpdating)
+        setupWindow.setUpdateActivity(
+            isApplying: isUpdating,
+            isChecking: isCheckingForUpdate
         )
         rebuildMenu()
     }
@@ -447,18 +456,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func rebuildMenu() {
         let menu = NSMenu()
         if isUpdating {
-            let activity = isCheckingForUpdate ? L10n.text("Checking for updates…") : L10n.text("Updating…")
             let statusMenuItem = NSMenuItem(
-                title: L10n.format("AgentDock: %@", activity),
+                title: L10n.format("AgentDock: %@", L10n.text("Updating…")),
                 action: nil,
                 keyEquivalent: ""
             )
             statusMenuItem.isEnabled = false
             menu.addItem(statusMenuItem)
             menu.addItem(.separator())
-            if !isCheckingForUpdate {
-                menu.addItem(item(L10n.text("Show update progress"), #selector(showUpdateProgress)))
-            }
+            menu.addItem(item(L10n.text("Show update progress"), #selector(showUpdateProgress)))
             if currentStatus.installed {
                 menu.addItem(item(L10n.text("Open logs folder"), #selector(openLogs)))
             }
@@ -504,7 +510,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 menu.addItem(item(L10n.text("Start AgentDock"), #selector(startService)))
             }
-            menu.addItem(item(L10n.text("Check for updates…"), #selector(updateService)))
+            let updateMenuItem = item(
+                isCheckingForUpdate ? L10n.text("Checking for updates…") : L10n.text("Check for updates…"),
+                #selector(updateService)
+            )
+            updateMenuItem.isEnabled = !isCheckingForUpdate
+            menu.addItem(updateMenuItem)
             menu.addItem(.separator())
             if currentStatus.loaded {
                 menu.addItem(item(L10n.text("Open runtime analytics"), #selector(openRuntimeAnalytics)))
@@ -549,7 +560,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startUpdate() {
-        guard !isUpdating else {
+        guard !isUpdating, !isCheckingForUpdate else {
             if isCheckingForUpdate {
                 setupWindow.present(status: currentStatus)
             } else {
@@ -576,6 +587,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self.presentAlert(
                             title: L10n.text("AgentDock is up to date"),
                             message: check.message
+                        )
+                        self.refreshStatus()
+                        return false
+                    }
+                    guard !self.trayServiceActionInProgress,
+                          !self.setupWindow.hasActiveServiceOperation else {
+                        self.setUpdateInProgress(false)
+                        self.presentAlert(
+                            title: L10n.text("AgentDock is busy"),
+                            message: L10n.text("Wait for the current AgentDock operation to finish before starting an update.")
                         )
                         self.refreshStatus()
                         return false

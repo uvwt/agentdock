@@ -224,6 +224,7 @@ struct ServiceControllerValidationTests {
 
     private static func testStatusItemVisibilityPolicy() {
         precondition(UpdateStatusItemVisibility.shouldShow(isUpdating: false, isCheckingForUpdate: false))
+        precondition(UpdateStatusItemVisibility.shouldShow(isUpdating: false, isCheckingForUpdate: true))
         precondition(UpdateStatusItemVisibility.shouldShow(isUpdating: true, isCheckingForUpdate: true))
         precondition(!UpdateStatusItemVisibility.shouldShow(isUpdating: true, isCheckingForUpdate: false))
     }
