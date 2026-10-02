@@ -57,6 +57,10 @@ func (s *Service) CapabilityItems() []CapabilityItem {
 	return items
 }
 
+func (s *Service) RuntimeCount() int {
+	return len(s.mcpClients.List())
+}
+
 func (s *Service) Close() error {
 	if s == nil || s.mcpClients == nil {
 		return nil

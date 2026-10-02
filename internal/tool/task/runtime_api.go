@@ -2,9 +2,35 @@ package task
 
 import (
 	"strings"
+	"time"
 
 	"github.com/uvwt/agentdock/internal/taskstate"
 )
+
+const runtimeOverviewTaskLimit = 200
+
+// RuntimeOverview 返回控制面板需要的 Task 轻量统计，避免为了几个数字把完整
+// Task 列表跨 Nexus Bridge 传输。统计上限与既有 Runtime 概览保持一致。
+func (s *Service) RuntimeOverview() (map[string]int, error) {
+	tasks, err := s.tasks.List("", runtimeOverviewTaskLimit)
+	if err != nil {
+		return nil, taskToolError(err)
+	}
+	counts := map[string]int{
+		"active":            0,
+		"completed":         0,
+		"blocked":           0,
+		"active_recent_24h": 0,
+	}
+	recentCutoff := time.Now().UTC().Add(-24 * time.Hour)
+	for _, task := range tasks {
+		counts[string(task.Status)]++
+		if task.Status == taskstate.StatusActive && !task.UpdatedAt.Before(recentCutoff) {
+			counts["active_recent_24h"]++
+		}
+	}
+	return counts, nil
+}
 
 func (s *Service) RuntimeTasks(status string, limit int) (Result, error) {
 	statusFilter := taskstate.Status(strings.ToLower(strings.TrimSpace(status)))

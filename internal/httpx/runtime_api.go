@@ -20,6 +20,7 @@ func registerRuntimeAPI(mux *http.ServeMux, runtime runtimeapi.Runtime, cfg conf
 	h := runtimeAPIHandler(runtime, cfg, oauthStore)
 	mux.HandleFunc("/internal/runtime/status", h)
 	mux.HandleFunc("/internal/runtime/analytics", h)
+	mux.HandleFunc("/internal/runtime/overview", h)
 	mux.HandleFunc("/internal/runtime/diagnostics", h)
 	mux.HandleFunc("/internal/runtime/capabilities", h)
 	mux.HandleFunc("/internal/runtime/skills", h)

@@ -340,6 +340,7 @@ func TestRuntimeAPIMethodContract(t *testing.T) {
 		allow  string
 	}{
 		{method: http.MethodGet, path: "/internal/runtime/status", status: http.StatusOK},
+		{method: http.MethodGet, path: "/internal/runtime/overview", status: http.StatusOK},
 		{method: http.MethodGet, path: "/internal/runtime/diagnostics", status: http.StatusOK},
 		{method: http.MethodPost, path: "/internal/runtime/capabilities", status: http.StatusOK},
 		{method: http.MethodPost, path: "/internal/runtime/status", status: http.StatusMethodNotAllowed, allow: "GET"},

@@ -20,6 +20,29 @@ type CapabilityItem struct {
 	ContentDigest string
 }
 
+// RuntimeCount 只读取已安装索引，不校验 Skill 包、计算 digest 或遍历文件。
+// 概览只需要“已安装多少个”，完整可用性与文件信息仍由 RuntimeSkills 负责。
+func (s *Service) RuntimeCount() (int, error) {
+	names, err := s.state.ListSkills()
+	if err != nil {
+		return 0, err
+	}
+	count := len(names)
+	if s.plugins == nil {
+		return count, nil
+	}
+	installed, err := s.plugins.List()
+	if err != nil {
+		return 0, err
+	}
+	for _, plugin := range installed {
+		if plugin.Enabled {
+			count += len(plugin.Components.Skills)
+		}
+	}
+	return count, nil
+}
+
 func (s *Service) CapabilityItems() ([]CapabilityItem, error) {
 	names, err := s.state.ListSkills()
 	if err != nil {

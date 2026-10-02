@@ -56,6 +56,9 @@ func Dispatch(ctx context.Context, runtime Runtime, request Request) (map[string
 		return map[string]any(runtime.RuntimeStatus()), nil
 	case path == "/internal/runtime/analytics":
 		return map[string]any(runtime.RuntimeAnalytics()), nil
+	case path == "/internal/runtime/overview":
+		result, err := runtime.RuntimeOverview()
+		return map[string]any(result), err
 	case path == "/internal/runtime/diagnostics":
 		diagnostics, ok := runtime.(DiagnosticsRuntime)
 		if !ok {

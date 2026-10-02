@@ -59,6 +59,29 @@ func (r *Runtime) RuntimeDiagnostics() Result {
 	}
 }
 
+// RuntimeOverview 是 Nexus/NexusDock Cloud 的轻量控制面投影。
+// 这里直接统计本地索引，不能调用 RuntimeSkills 等明细接口，否则一个概览请求
+// 会重新触发 Skill 包校验、digest 和文件遍历，远程链路仍会被本地扫描拖慢。
+func (r *Runtime) RuntimeOverview() (Result, error) {
+	tasks, err := r.taskTools.RuntimeOverview()
+	if err != nil {
+		return nil, err
+	}
+	skillCount, err := r.skills.RuntimeCount()
+	if err != nil {
+		return nil, err
+	}
+	pluginCount, pluginErr := r.plugins.RuntimeCount()
+	return Result{
+		"ok":      true,
+		"source":  runtimeAPISource,
+		"tasks":   tasks,
+		"skills":  map[string]any{"count": skillCount},
+		"plugins": map[string]any{"count": pluginCount, "available": pluginErr == nil},
+		"mcp":     map[string]any{"count": r.dynamicMCP.RuntimeCount()},
+	}, nil
+}
+
 func (r *Runtime) RuntimeSkills() (Result, error) {
 	return r.skills.RuntimeSkills()
 }

@@ -14,6 +14,7 @@ import (
 type Runtime interface {
 	RuntimeStatus() app.Result
 	RuntimeAnalytics() app.Result
+	RuntimeOverview() (app.Result, error)
 	RuntimeSkills() (app.Result, error)
 	RuntimeSkill(skill string) (app.Result, error)
 	RuntimeSkillFiles(skill string) (app.Result, error)

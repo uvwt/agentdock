@@ -20,8 +20,16 @@ type runtimeStub struct {
 	pluginName    string
 }
 
-func (r *runtimeStub) RuntimeStatus() app.Result          { return app.Result{"status": "ok"} }
-func (r *runtimeStub) RuntimeAnalytics() app.Result       { return app.Result{"total_calls": 7} }
+func (r *runtimeStub) RuntimeStatus() app.Result    { return app.Result{"status": "ok"} }
+func (r *runtimeStub) RuntimeAnalytics() app.Result { return app.Result{"total_calls": 7} }
+func (r *runtimeStub) RuntimeOverview() (app.Result, error) {
+	return app.Result{
+		"tasks":   map[string]int{"active": 1, "active_recent_24h": 1},
+		"skills":  map[string]any{"count": 2},
+		"plugins": map[string]any{"count": 3, "available": true},
+		"mcp":     map[string]any{"count": 4},
+	}, nil
+}
 func (r *runtimeStub) RuntimeSkills() (app.Result, error) { return app.Result{}, nil }
 func (r *runtimeStub) RuntimeSkill(skill string) (app.Result, error) {
 	r.skillTarget = skill
@@ -108,6 +116,24 @@ func TestDispatchAnalytics(t *testing.T) {
 	}
 	if result["total_calls"] != 7 {
 		t.Fatalf("analytics result = %#v", result)
+	}
+}
+
+func TestDispatchOverviewUsesDedicatedProjection(t *testing.T) {
+	result, err := Dispatch(context.Background(), &runtimeStub{}, Request{
+		Method: "GET",
+		Path:   "/internal/runtime/overview",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, ok := result["tasks"].(map[string]int)
+	if !ok || tasks["active_recent_24h"] != 1 {
+		t.Fatalf("overview tasks = %#v", result["tasks"])
+	}
+	skills, ok := result["skills"].(map[string]any)
+	if !ok || skills["count"] != 2 {
+		t.Fatalf("overview skills = %#v", result["skills"])
 	}
 }
 

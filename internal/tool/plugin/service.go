@@ -361,6 +361,14 @@ func (s *Service) RuntimeList() (Result, error) {
 	return Result{"plugins": plugins, "count": len(plugins)}, nil
 }
 
+func (s *Service) RuntimeCount() (int, error) {
+	items, err := s.manager.List()
+	if err != nil {
+		return 0, pluginToolError(err)
+	}
+	return len(items), nil
+}
+
 func (s *Service) sourcePath(raw string) (string, error) {
 	source := strings.TrimSpace(raw)
 	if source == "" {
