@@ -201,13 +201,28 @@
                                   Color="#24334D" />
               </Border.Effect>
               <DockPanel LastChildFill="True">
-                <ContentPresenter DockPanel.Dock="Top"
-                                  ContentSource="Header"
-                                  Margin="0,0,0,16"
-                                  RecognizesAccessKey="True"
-                                  TextElement.FontSize="15"
-                                  TextElement.FontWeight="SemiBold"
-                                  TextElement.Foreground="{StaticResource TextPrimaryBrush}" />
+                <StackPanel DockPanel.Dock="Top"
+                            Orientation="Horizontal"
+                            Margin="0,0,0,16">
+                  <Border Width="30"
+                          Height="30"
+                          Background="{StaticResource AccentSoftBrush}"
+                          CornerRadius="8"
+                          Margin="0,0,9,0">
+                    <TextBlock Text="{TemplateBinding Tag}"
+                               FontFamily="Segoe Fluent Icons"
+                               FontSize="14"
+                               Foreground="{StaticResource AccentBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center" />
+                  </Border>
+                  <ContentPresenter ContentSource="Header"
+                                    VerticalAlignment="Center"
+                                    RecognizesAccessKey="True"
+                                    TextElement.FontSize="15"
+                                    TextElement.FontWeight="SemiBold"
+                                    TextElement.Foreground="{StaticResource TextPrimaryBrush}" />
+                </StackPanel>
                 <ContentPresenter />
               </DockPanel>
             </Border>

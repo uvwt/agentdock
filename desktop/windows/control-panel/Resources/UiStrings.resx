@@ -757,4 +757,5 @@ Update now?</value>
   <data name="Diagnostics" xml:space="preserve"><value>Diagnostics</value></data>
   <data name="Runtime" xml:space="preserve"><value>Runtime</value></data>
   <data name="Permissions" xml:space="preserve"><value>Permissions</value></data>
+  <data name="Configure" xml:space="preserve"><value>Configure</value></data>
 </root>

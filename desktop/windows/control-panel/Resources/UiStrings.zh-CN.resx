@@ -757,4 +757,5 @@
   <data name="Diagnostics" xml:space="preserve"><value>诊断</value></data>
   <data name="Runtime" xml:space="preserve"><value>Runtime</value></data>
   <data name="Permissions" xml:space="preserve"><value>权限</value></data>
+  <data name="Configure" xml:space="preserve"><value>配置</value></data>
 </root>
