@@ -651,33 +651,40 @@
 
             <GroupBox Header="{local:Loc Runtime}" Tag="&#xE7F8;">
               <Expander Header="{local:Loc AdvancedSettings}" IsExpanded="False">
-                <Grid Margin="0,12,0,0">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="150" />
-                    <ColumnDefinition Width="*" />
-                  </Grid.ColumnDefinitions>
-                  <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                  </Grid.RowDefinitions>
-                  <TextBlock Text="{local:Loc Port}" VerticalAlignment="Center" Margin="0,0,0,10" />
-                  <TextBox x:Name="PortTextBox" Grid.Column="1" Width="130" HorizontalAlignment="Left" Margin="0,0,0,10" />
-                  <TextBlock Text="{local:Loc LogLevel}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
-                  <ComboBox x:Name="LogLevelComboBox" Grid.Row="1" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10">
-                    <ComboBoxItem Content="debug" />
-                    <ComboBoxItem Content="info" />
-                    <ComboBoxItem Content="warn" />
-                    <ComboBoxItem Content="error" />
-                  </ComboBox>
-                  <TextBlock Text="{local:Loc InterfaceLanguage}" Grid.Row="2" VerticalAlignment="Center" />
-                  <ComboBox x:Name="LanguageComboBox" Grid.Row="2" Grid.Column="1" Width="180" HorizontalAlignment="Left"
-                            SelectionChanged="LanguageComboBox_SelectionChanged">
-                    <ComboBoxItem Content="{local:Loc FollowSystem}" Tag="system" />
-                    <ComboBoxItem Content="{local:Loc SimplifiedChinese}" Tag="zh-CN" />
-                    <ComboBoxItem Content="{local:Loc EnglishLanguage}" Tag="en" />
-                  </ComboBox>
-                </Grid>
+                <StackPanel Margin="0,12,0,0">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="150" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                      <RowDefinition Height="Auto" />
+                      <RowDefinition Height="Auto" />
+                      <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="{local:Loc Port}" VerticalAlignment="Center" Margin="0,0,0,10" />
+                    <TextBox x:Name="PortTextBox" Grid.Column="1" Width="130" HorizontalAlignment="Left" Margin="0,0,0,10" />
+                    <TextBlock Text="{local:Loc LogLevel}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
+                    <ComboBox x:Name="LogLevelComboBox" Grid.Row="1" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10">
+                      <ComboBoxItem Content="debug" />
+                      <ComboBoxItem Content="info" />
+                      <ComboBoxItem Content="warn" />
+                      <ComboBoxItem Content="error" />
+                    </ComboBox>
+                    <TextBlock Text="{local:Loc InterfaceLanguage}" Grid.Row="2" VerticalAlignment="Center" />
+                    <ComboBox x:Name="LanguageComboBox" Grid.Row="2" Grid.Column="1" Width="180" HorizontalAlignment="Left"
+                              SelectionChanged="LanguageComboBox_SelectionChanged">
+                      <ComboBoxItem Content="{local:Loc FollowSystem}" Tag="system" />
+                      <ComboBoxItem Content="{local:Loc SimplifiedChinese}" Tag="zh-CN" />
+                      <ComboBoxItem Content="{local:Loc EnglishLanguage}" Tag="en" />
+                    </ComboBox>
+                  </Grid>
+                  <Button Content="{local:Loc SaveAndRestart}"
+                          Style="{StaticResource PrimaryButton}"
+                          HorizontalAlignment="Left"
+                          Margin="0,12,0,0"
+                          Click="SaveSettingsButton_Click" />
+                </StackPanel>
               </Expander>
             </GroupBox>
 
@@ -697,7 +704,7 @@
               </Expander>
             </GroupBox>
 
-            <GroupBox Header="{local:Loc AccessCredentials}" Tag="&#xE8D7;">
+            <GroupBox Header="{local:Loc AccessCredentials}" Tag="&#xE8D7;" Margin="0">
               <Grid>
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="130" />
@@ -718,9 +725,6 @@
                         Click="ToggleOAuthButton_Click" />
               </Grid>
             </GroupBox>
-
-            <Button Content="{local:Loc SaveAndRestart}" Style="{StaticResource PrimaryButton}"
-                    HorizontalAlignment="Left" Click="SaveSettingsButton_Click" />
           </StackPanel>
         </ScrollViewer>
       </TabItem>

@@ -28,22 +28,22 @@
 
     <Style TargetType="Window">
       <Setter Property="FontFamily" Value="Segoe UI" />
-      <Setter Property="FontSize" Value="13.5" />
+      <Setter Property="FontSize" Value="13" />
       <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
       <Setter Property="Background" Value="{StaticResource WindowBrush}" />
     </Style>
 
     <Style x:Key="PageTitleText" TargetType="TextBlock">
-      <Setter Property="FontSize" Value="28" />
+      <Setter Property="FontSize" Value="27" />
       <Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
     </Style>
 
     <Style x:Key="PageDescriptionText" TargetType="TextBlock">
-      <Setter Property="FontSize" Value="13.5" />
+      <Setter Property="FontSize" Value="13" />
       <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
       <Setter Property="TextWrapping" Value="Wrap" />
-      <Setter Property="Margin" Value="0,5,0,22" />
+      <Setter Property="Margin" Value="0,4,0,16" />
     </Style>
 
     <Style x:Key="SectionHeadingText" TargetType="TextBlock">
@@ -59,7 +59,7 @@
     </Style>
 
     <Style x:Key="MetricValueText" TargetType="TextBlock">
-      <Setter Property="FontSize" Value="13.5" />
+      <Setter Property="FontSize" Value="13" />
       <Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
       <Setter Property="Margin" Value="0,4,0,0" />
@@ -70,9 +70,9 @@
       <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
       <Setter Property="BorderBrush" Value="{StaticResource ControlBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="Padding" Value="15,8" />
+      <Setter Property="Padding" Value="13,5" />
       <Setter Property="Margin" Value="0,0,8,0" />
-      <Setter Property="MinHeight" Value="38" />
+      <Setter Property="MinHeight" Value="32" />
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -137,8 +137,8 @@
       <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
       <Setter Property="BorderBrush" Value="{StaticResource ControlBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="Padding" Value="10,7" />
-      <Setter Property="MinHeight" Value="38" />
+      <Setter Property="Padding" Value="9,4" />
+      <Setter Property="MinHeight" Value="32" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="FocusVisualStyle" Value="{x:Null}" />
       <Setter Property="Template">
@@ -170,13 +170,13 @@
       <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
       <Setter Property="BorderBrush" Value="{StaticResource ControlBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="Padding" Value="10,7" />
-      <Setter Property="MinHeight" Value="38" />
+      <Setter Property="Padding" Value="9,4" />
+      <Setter Property="MinHeight" Value="32" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
 
     <Style TargetType="ComboBox">
-      <Setter Property="MinHeight" Value="36" />
+      <Setter Property="MinHeight" Value="32" />
       <Setter Property="Padding" Value="8,4" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
@@ -196,7 +196,7 @@
     </Style>
 
     <Style TargetType="GroupBox">
-      <Setter Property="Margin" Value="0,0,0,16" />
+      <Setter Property="Margin" Value="0,0,0,12" />
       <Setter Property="Padding" Value="0" />
       <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
       <Setter Property="Template">
@@ -205,19 +205,19 @@
             <Border Background="{StaticResource SurfaceBrush}"
                     BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="1"
-                    CornerRadius="14"
-                    Padding="20">
+                    CornerRadius="15"
+                    Padding="18,17,18,18">
               <Border.Effect>
-                <DropShadowEffect BlurRadius="16"
+                <DropShadowEffect BlurRadius="14"
                                   Direction="270"
                                   ShadowDepth="2"
-                                  Opacity="0.07"
+                                  Opacity="0.05"
                                   Color="#24334D" />
               </Border.Effect>
               <DockPanel LastChildFill="True">
                 <StackPanel DockPanel.Dock="Top"
                             Orientation="Horizontal"
-                            Margin="0,0,0,16">
+                            Margin="0,0,0,14">
                   <Border Width="30"
                           Height="30"
                           Background="{StaticResource AccentSoftBrush}"
@@ -233,7 +233,7 @@
                   <ContentPresenter ContentSource="Header"
                                     VerticalAlignment="Center"
                                     RecognizesAccessKey="True"
-                                    TextElement.FontSize="15"
+                                    TextElement.FontSize="14.5"
                                     TextElement.FontWeight="SemiBold"
                                     TextElement.Foreground="{StaticResource TextPrimaryBrush}" />
                 </StackPanel>
@@ -250,7 +250,7 @@
       <Setter Property="BorderBrush" Value="{StaticResource AccentSoftBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="17" />
-      <Setter Property="Padding" Value="22" />
+      <Setter Property="Padding" Value="22,20" />
       <Setter Property="Margin" Value="0,0,0,18" />
       <Setter Property="Effect">
         <Setter.Value>
@@ -268,7 +268,7 @@
       <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="14" />
-      <Setter Property="Padding" Value="16" />
+      <Setter Property="Padding" Value="15,14" />
       <Setter Property="MinHeight" Value="112" />
       <Setter Property="Effect">
         <Setter.Value>
@@ -349,7 +349,7 @@
 
               <ContentPresenter x:Name="PART_SelectedContentHost"
                                 Grid.Column="1"
-                                Margin="30,26,30,22"
+                                Margin="30,26,30,26"
                                 ContentSource="SelectedContent"
                                 SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
             </Grid>
@@ -361,10 +361,11 @@
     <Style x:Key="ShellTabItem" TargetType="TabItem">
       <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Padding" Value="12,10" />
+      <Setter Property="Padding" Value="12,8" />
       <Setter Property="Margin" Value="0,2" />
       <Setter Property="MinWidth" Value="182" />
-      <Setter Property="FontSize" Value="13.5" />
+      <Setter Property="MinHeight" Value="38" />
+      <Setter Property="FontSize" Value="13" />
       <Setter Property="FocusVisualStyle" Value="{x:Null}" />
       <Setter Property="Template">
         <Setter.Value>
@@ -380,7 +381,7 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="{TemplateBinding Tag}"
                            FontFamily="Segoe Fluent Icons"
-                           FontSize="15"
+                           FontSize="14"
                            VerticalAlignment="Center" />
                 <ContentPresenter Grid.Column="1"
                                   ContentSource="Header"
