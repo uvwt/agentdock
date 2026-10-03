@@ -98,8 +98,8 @@ func TestOpenAIFileMetadataMatchesDeclaredSchemas(t *testing.T) {
 			if !ok {
 				t.Fatalf("%s file input path %q missing from input schema", def.Name, path)
 			}
-			if property["type"] != "string" || property["format"] != "binary" {
-				t.Fatalf("%s file input %q must be string/binary: %#v", def.Name, path, property)
+			if property["type"] != "object" || property["additionalProperties"] != true {
+				t.Fatalf("%s file input %q must be an open object: %#v", def.Name, path, property)
 			}
 		}
 		if len(def.FileArgRewritePaths) > 0 {

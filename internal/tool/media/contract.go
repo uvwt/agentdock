@@ -52,7 +52,7 @@ func InputSchema(name string) (map[string]any, bool) {
 		}
 		return schema, true
 	case ToolFilePublish:
-		props["file"] = map[string]any{"type": "string", "format": "binary", "description": "Top-level file parameter. Connector runtimes should pass the mounted local path when available."}
+		props["file"] = toolcontract.OpenObject("Top-level connector file object. Connector runtimes may rewrite this object with mounted local-path metadata before the tool call reaches AgentDock.")
 		props["path"] = stringProp("Local file or directory path visible to this AgentDock instance. Relative paths resolve from ~/AgentDock.")
 		props["retention_seconds"] = boundedIntProp("Signed URL retention seconds. Zero uses the default 86400 and values are capped at 604800.", 0, int(publicartifacts.MaxRetention/time.Second))
 	default:
