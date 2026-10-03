@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -98,8 +99,21 @@ func TestOpenAIFileMetadataMatchesDeclaredSchemas(t *testing.T) {
 			if !ok {
 				t.Fatalf("%s file input path %q missing from input schema", def.Name, path)
 			}
-			if property["type"] != "object" || property["additionalProperties"] != true {
-				t.Fatalf("%s file input %q must be an open object: %#v", def.Name, path, property)
+			if property["type"] != "object" {
+				t.Fatalf("%s file input %q must be an object: %#v", def.Name, path, property)
+			}
+			properties, ok := property["properties"].(map[string]any)
+			if !ok {
+				t.Fatalf("%s file input %q properties = %#v", def.Name, path, property["properties"])
+			}
+			for _, key := range []string{"download_url", "file_id", "file_name", "mime_type"} {
+				if _, ok := properties[key]; !ok {
+					t.Fatalf("%s file input %q missing documented property %q", def.Name, path, key)
+				}
+			}
+			required, ok := property["required"].([]string)
+			if !ok || !slices.Contains(required, "download_url") || !slices.Contains(required, "file_id") {
+				t.Fatalf("%s file input %q required = %#v", def.Name, path, property["required"])
 			}
 		}
 		if len(def.FileArgRewritePaths) > 0 {

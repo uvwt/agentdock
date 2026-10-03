@@ -52,7 +52,18 @@ func InputSchema(name string) (map[string]any, bool) {
 		}
 		return schema, true
 	case ToolFilePublish:
-		props["file"] = toolcontract.OpenObject("Top-level connector file object. Connector runtimes may rewrite this object with mounted local-path metadata before the tool call reaches AgentDock.")
+		props["file"] = map[string]any{
+			"type":                 "object",
+			"description":          "OpenAI connector file object. download_url and file_id are required; file_name and mime_type are optional.",
+			"additionalProperties": true,
+			"properties": map[string]any{
+				"download_url": stringProp("Temporary URL used to download the connector-provided file."),
+				"file_id":      stringProp("Stable connector file identifier."),
+				"file_name":    stringProp("Optional original file name."),
+				"mime_type":    stringProp("Optional media type for the file."),
+			},
+			"required": []string{"download_url", "file_id"},
+		}
 		props["path"] = stringProp("Local file or directory path visible to this AgentDock instance. Relative paths resolve from ~/AgentDock.")
 		props["retention_seconds"] = boundedIntProp("Signed URL retention seconds. Zero uses the default 86400 and values are capped at 604800.", 0, int(publicartifacts.MaxRetention/time.Second))
 	default:
