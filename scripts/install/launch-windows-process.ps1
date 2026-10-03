@@ -142,7 +142,7 @@ $settings = New-ScheduledTaskSettingsSet `
     -DontStopIfGoingOnBatteries
 
 $registered = $false
-$startedAt = Get-Date
+$launchSucceeded = $false
 try {
     Register-ScheduledTask `
         -TaskName $taskName `
@@ -151,6 +151,9 @@ try {
         -Settings $settings `
         -Force | Out-Null
     $registered = $true
+    # Task Scheduler timestamps can lag the caller's wall clock. This task has a
+    # unique name, so compare its own before/after state instead of clock times.
+    $initialLastRunTime = (Get-ScheduledTaskInfo -TaskName $taskName -TaskPath '\' -ErrorAction Stop).LastRunTime
     & $AgentDockBinary service task-start `
         --task-name $taskName `
         --expected-user-sid $identity.User.Value | Out-Null
@@ -162,12 +165,13 @@ try {
     do {
         $task = Get-ScheduledTask -TaskName $taskName -TaskPath '\' -ErrorAction Stop
         $info = Get-ScheduledTaskInfo -TaskName $taskName -TaskPath '\' -ErrorAction Stop
-        $hasRun = $info.LastRunTime -ge $startedAt.AddSeconds(-1)
+        $hasRun = $task.State -eq 'Running' -or $info.LastRunTime -ne $initialLastRunTime
         if ($hasRun) {
             if (-not $WaitForExit) {
                 if ($task.State -eq 'Ready' -and $info.LastTaskResult -ne 0) {
                     throw "Runtime process failed to launch, Task Scheduler result: $($info.LastTaskResult)."
                 }
+                $launchSucceeded = $true
                 return
             }
             if ($task.State -notin @('Running', 'Queued')) {
@@ -179,6 +183,7 @@ try {
                         -StdoutPath $stdoutPath `
                         -StderrPath $stderrPath)
                 }
+                $launchSucceeded = $true
                 return
             }
         }
@@ -191,6 +196,50 @@ try {
     throw "Runtime process did not start within $TimeoutSeconds seconds."
 } finally {
     if ($registered) {
+        if (-not $launchSucceeded) {
+            # Unregistering alone leaves a running host alive and can keep the
+            # stable tray entry locked while the installer restores its backup.
+            if ($WaitForExit -and -not [string]::IsNullOrWhiteSpace($stdoutPath)) {
+                try {
+                    # The per-launch stdout argument identifies only this wait
+                    # host. Stop its descendants before terminating the task so
+                    # inherited diagnostic handles are also released.
+                    $hostName = [IO.Path]::GetFileName($HiddenHostBinary).Replace("'", "''")
+                    $stdoutArgument = ConvertTo-RuntimeHostArgument -Value $stdoutPath
+                    $hosts = @(Get-CimInstance Win32_Process -Filter "Name = '$hostName'" -ErrorAction Stop | Where-Object {
+                        $_.ExecutablePath -and $_.CommandLine -and
+                        [string]::Equals([IO.Path]::GetFullPath($_.ExecutablePath), $HiddenHostBinary, [StringComparison]::OrdinalIgnoreCase) -and
+                        $_.CommandLine.Contains('--stdout-b64 ' + $stdoutArgument)
+                    })
+                    $processes = @(Get-CimInstance Win32_Process -ErrorAction Stop)
+                    foreach ($runtimeHost in $hosts) {
+                        $treeIds = New-Object 'System.Collections.Generic.List[int]'
+                        $treeIds.Add([int]$runtimeHost.ProcessId)
+                        for ($index = 0; $index -lt $treeIds.Count; $index++) {
+                            foreach ($child in @($processes | Where-Object { $_.ParentProcessId -eq $treeIds[$index] })) {
+                                if (-not $treeIds.Contains([int]$child.ProcessId)) {
+                                    $treeIds.Add([int]$child.ProcessId)
+                                }
+                            }
+                        }
+                        for ($index = $treeIds.Count - 1; $index -ge 0; $index--) {
+                            Stop-Process -Id $treeIds[$index] -Force -ErrorAction SilentlyContinue
+                        }
+                    }
+                } catch {
+                    Write-Warning "Unable to stop runtime wait-host descendants: $($_.Exception.Message)"
+                }
+            }
+            Stop-ScheduledTask -TaskName $taskName -TaskPath '\' -ErrorAction SilentlyContinue
+            $stopDeadline = [DateTime]::UtcNow.AddSeconds(5)
+            do {
+                $remainingTask = Get-ScheduledTask -TaskName $taskName -TaskPath '\' -ErrorAction SilentlyContinue
+                if ($null -eq $remainingTask -or $remainingTask.State -notin @('Running', 'Queued')) {
+                    break
+                }
+                Start-Sleep -Milliseconds 100
+            } while ([DateTime]::UtcNow -lt $stopDeadline)
+        }
         Unregister-ScheduledTask -TaskName $taskName -TaskPath '\' -Confirm:$false -ErrorAction SilentlyContinue
     }
     if (-not [string]::IsNullOrWhiteSpace($diagnosticRoot)) {

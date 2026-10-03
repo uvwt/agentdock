@@ -2098,6 +2098,10 @@ exit `$LASTEXITCODE
     $rollbackError = $null
     $taskRecoveryPath = ''
     try {
+        if ($effectivePrivilegeMode -eq 'elevated') {
+            Stop-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 500
+        }
         if ($generationLayoutDetected -or $enginePrepared) {
             # Target Core runs as agentdock-core.exe after both bootstrap and Update Engine.
             # Stopping the CUI shim would miss the running generation and leave the new pointer live.
@@ -2105,6 +2109,10 @@ exit `$LASTEXITCODE
             $rollbackGenerationCore = Join-Path $generationBootstrapDirectory 'agentdock-core.exe'
             [void] (Stop-AgentDockTrayForUpgrade -BinaryPath $rollbackGenerationTray)
             [void] (Stop-AgentDockForUpgrade -BinaryPath $rollbackGenerationCore)
+            # Setup runtime hosts also execute the stable shims. Generation-only
+            # cleanup does not release those files before Copy-Item restores them.
+            [void] (Stop-AgentDockTrayForUpgrade -BinaryPath $destinationTrayBinary)
+            [void] (Stop-AgentDockForUpgrade -BinaryPath $destinationBinary)
         } else {
             if ($trayStopAttempted -or $stableFilesMayBeReplaced -or $trayStartupRegistrationChanged) {
                 [void] (Stop-AgentDockTrayForUpgrade -BinaryPath $destinationTrayBinary)
@@ -2116,11 +2124,6 @@ exit `$LASTEXITCODE
         if ($cloudflaredStopAttempted -or $cloudflaredReplacementStarted -or $tunnelStartupRegistrationChanged) {
             [void] (Stop-CloudflaredForUpgrade -BinaryPath $cloudflaredBinary)
         }
-        if ($effectivePrivilegeMode -eq 'elevated') {
-            Stop-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -ErrorAction SilentlyContinue
-            Start-Sleep -Milliseconds 500
-        }
-
         if ($cloudflaredReplacementStarted) {
             $cloudflaredBackupExists = Test-Path -LiteralPath $cloudflaredBackup -PathType Leaf
             if ($cloudflaredBackupExists) {

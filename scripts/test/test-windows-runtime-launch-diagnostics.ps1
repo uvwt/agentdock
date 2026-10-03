@@ -6,7 +6,9 @@ param(
     [string] $AgentDockBinary,
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
-    [string] $HiddenHostBinary
+    [string] $HiddenHostBinary,
+    [ValidateRange(0, 3600)]
+    [int] $SchedulerClockSkewSeconds = 60
 )
 
 Set-StrictMode -Version Latest
@@ -51,6 +53,27 @@ $taskPrefix = 'AgentDock Setup Runtime '
 $tempPrefix = 'agentdock-setup-runtime-'
 $beforeTasks = @(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName.StartsWith($taskPrefix) } | ForEach-Object TaskName)
 $beforeTempDirs = @(Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Directory -Filter "$tempPrefix*" -ErrorAction SilentlyContinue | ForEach-Object FullName)
+$realTaskInfoCommand = Get-Command Get-ScheduledTaskInfo
+$realStopTaskCommand = Get-Command Stop-ScheduledTask
+$stopRequests = New-Object 'System.Collections.Generic.List[string]'
+
+function Get-ScheduledTaskInfo {
+    [CmdletBinding()]
+    param([string] $TaskName, [string] $TaskPath = '\')
+    $info = & $realTaskInfoCommand @PSBoundParameters
+    $lastRunTime = $info.LastRunTime
+    if ($lastRunTime.Year -ge 2000) {
+        $lastRunTime = $lastRunTime.AddSeconds(-$SchedulerClockSkewSeconds)
+    }
+    return [pscustomobject]@{ LastRunTime = $lastRunTime; LastTaskResult = $info.LastTaskResult }
+}
+
+function Stop-ScheduledTask {
+    [CmdletBinding()]
+    param([string] $TaskName, [string] $TaskPath = '\')
+    $stopRequests.Add($TaskName)
+    & $realStopTaskCommand @PSBoundParameters
+}
 
 try {
     New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
@@ -139,6 +162,47 @@ try {
     $detachedState = (Get-Content -LiteralPath $detachedMarker -Raw).Trim()
     if ($detachedState -ne 'hidden') {
         throw "Detached runtime child unexpectedly owns a console window: $detachedState"
+    }
+
+    # A real wait timeout must cancel its task host; successful detached launches
+    # above must not be stopped as part of normal cleanup.
+    $stopsBeforeTimeout = $stopRequests.Count
+    $timeoutPidPath = Join-Path $testRoot 'timeout-child-pid.txt'
+    $encodedPidPath = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($timeoutPidPath))
+    [IO.File]::WriteAllText(
+        $childScript,
+        "`$pidPath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$encodedPidPath'))`r`n" +
+            "[IO.File]::WriteAllText(`$pidPath, [string]`$PID)`r`nStart-Sleep -Seconds 20`r`n",
+        [Text.UTF8Encoding]::new($false)
+    )
+    $timeoutMessage = ''
+    $timeoutChildSurvived = $false
+    try {
+        & $resolvedLauncher `
+            -FilePath (Join-Path $PSHOME 'powershell.exe') `
+            -AgentDockBinary $resolvedAgentDockBinary `
+            -HiddenHostBinary $resolvedHiddenHostBinary `
+            -Arguments $arguments `
+            -WaitForExit `
+            -TimeoutSeconds 2
+    } catch {
+        $timeoutMessage = $_.Exception.Message
+    } finally {
+        # Task cancellation may leave a detached child; this fixture owns its PID.
+        if (Test-Path -LiteralPath $timeoutPidPath -PathType Leaf) {
+            $timeoutChildId = [int][IO.File]::ReadAllText($timeoutPidPath)
+            $timeoutChildSurvived = $null -ne (Get-Process -Id $timeoutChildId -ErrorAction SilentlyContinue)
+            Stop-Process -Id $timeoutChildId -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if (-not $timeoutMessage.Contains('Runtime process did not finish within 2 seconds.')) {
+        throw "Expected a bounded wait timeout, got: $timeoutMessage"
+    }
+    if ($stopRequests.Count -le $stopsBeforeTimeout) {
+        throw 'Timed-out runtime task was not stopped before unregistering.'
+    }
+    if ($timeoutChildSurvived) {
+        throw 'Timed-out wait-host child survived and could retain diagnostic file handles.'
     }
 
     $afterTasks = @(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName.StartsWith($taskPrefix) } | ForEach-Object TaskName)
