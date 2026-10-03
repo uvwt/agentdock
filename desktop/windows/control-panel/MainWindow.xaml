@@ -3,83 +3,264 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:AgentDock.ControlPanel"
         Title="{local:Loc MainWindowTitle}"
-        Width="860" Height="780" MinWidth="760" MinHeight="680"
+        Width="920" Height="700" MinWidth="800" MinHeight="540"
+        MaxWidth="{Binding Source={x:Static SystemParameters.WorkArea}, Path=Width}"
+        MaxHeight="{Binding Source={x:Static SystemParameters.WorkArea}, Path=Height}"
         WindowStartupLocation="CenterScreen"
-        Background="{StaticResource SurfaceBrush}">
+        Background="{StaticResource WindowBrush}">
   <Grid>
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
-    </Grid.RowDefinitions>
-
-    <Border Grid.Row="0" Background="White" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="20,16">
-      <Grid>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <StackPanel>
-          <TextBlock Text="AgentDock" FontSize="24" FontWeight="SemiBold" />
-          <TextBlock Text="{local:Loc WindowsControlPanel}" Foreground="#667085" Margin="0,3,0,0" />
-        </StackPanel>
-        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-          <Ellipse x:Name="StatusDot" Width="10" Height="10" Fill="#98A2B3" Margin="0,0,8,0" />
-          <TextBlock x:Name="HeaderStatusText" Text="{local:Loc LoadingStatus}" VerticalAlignment="Center" />
-        </StackPanel>
-      </Grid>
-    </Border>
-
-    <TabControl Grid.Row="1" Margin="18">
-      <TabItem Header="{local:Loc Overview}">
+    <TabControl Style="{StaticResource ShellTabControl}">
+      <TabItem Header="{local:Loc Home}" Tag="&#xE80F;" Style="{StaticResource ShellTabItem}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <StackPanel Margin="18">
-            <GroupBox Header="{local:Loc RuntimeStatus}">
+          <StackPanel MaxWidth="900" HorizontalAlignment="Left">
+            <TextBlock Text="{local:Loc Home}" Style="{StaticResource PageTitleText}" />
+            <TextBlock Text="{local:Loc HomeDescription}" Style="{StaticResource PageDescriptionText}" />
+
+            <Border Style="{StaticResource HeroCard}">
+              <StackPanel>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+
+                  <Border Width="52" Height="52"
+                          CornerRadius="15"
+                          Background="#DCE8FF"
+                          Margin="0,0,16,0">
+                    <TextBlock Text="&#xE9D9;"
+                               FontFamily="Segoe Fluent Icons"
+                               FontSize="24"
+                               Foreground="{StaticResource AccentBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center" />
+                  </Border>
+
+                  <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="AgentDock"
+                               FontSize="24"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimaryBrush}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,7,0,0">
+                      <Ellipse x:Name="StatusDot"
+                               Width="9" Height="9"
+                               Fill="#98A2B3"
+                               Margin="0,4,8,0" />
+                      <TextBlock x:Name="HeaderStatusText"
+                                 Text="{local:Loc LoadingStatus}"
+                                 FontWeight="SemiBold" />
+                    </StackPanel>
+                    <TextBlock Text="{local:Loc LocalAIRuntime}"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="17,4,0,0" />
+                  </StackPanel>
+
+                  <WrapPanel Grid.Column="2"
+                             VerticalAlignment="Center"
+                             HorizontalAlignment="Right">
+                    <Button x:Name="StartButton"
+                            Content="{local:Loc Start}"
+                            Style="{StaticResource PrimaryButton}"
+                            Click="StartButton_Click" />
+                    <Button x:Name="StopButton"
+                            Content="{local:Loc Stop}"
+                            Style="{StaticResource PrimaryButton}"
+                            Click="StopButton_Click" />
+                    <Button Content="{local:Loc Restart}" Click="RestartButton_Click" />
+                    <Button x:Name="UpdateButton"
+                            Content="{local:Loc Update}"
+                            Click="UpdateButton_Click"
+                            Margin="0" />
+                  </WrapPanel>
+                </Grid>
+
+                <Border Background="#F7FAFF"
+                        BorderBrush="{StaticResource AccentSoftBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="11"
+                        Padding="15"
+                        Margin="0,18,0,0">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                      <TextBlock Text="{local:Loc Service}" Style="{StaticResource MetricLabelText}" />
+                      <TextBlock x:Name="ServiceStatusText" Text="{local:Loc Unknown}" Style="{StaticResource MetricValueText}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1">
+                      <TextBlock Text="{local:Loc HealthCheck}" Style="{StaticResource MetricLabelText}" />
+                      <TextBlock x:Name="HealthStatusText" Text="{local:Loc Unknown}" Style="{StaticResource MetricValueText}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                      <TextBlock Text="{local:Loc PublicAccess}" Style="{StaticResource MetricLabelText}" />
+                      <TextBlock x:Name="PublicAccessStatusText" Text="{local:Loc NotConfigured}" Style="{StaticResource MetricValueText}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="3">
+                      <TextBlock Text="{local:Loc Version}" Style="{StaticResource MetricLabelText}" />
+                      <TextBlock x:Name="VersionText" Text="{local:Loc Unknown}" Style="{StaticResource MetricValueText}" />
+                    </StackPanel>
+                  </Grid>
+                </Border>
+              </StackPanel>
+            </Border>
+
+            <TextBlock Text="{local:Loc Capabilities}" Style="{StaticResource SectionHeadingText}" />
+            <Grid Margin="0,0,0,18">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+
+              <Border Style="{StaticResource SummaryTile}">
+                <StackPanel>
+                  <Border Style="{StaticResource IconChip}">
+                    <TextBlock Text="&#xE774;"
+                               FontFamily="Segoe Fluent Icons"
+                               FontSize="15"
+                               Foreground="{StaticResource AccentBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center" />
+                  </Border>
+                  <TextBlock Text="{local:Loc Browser}" FontWeight="SemiBold" Margin="0,10,0,0" />
+                  <TextBlock x:Name="HomeBrowserStatusText"
+                             Text="{local:Loc NotConfigured}"
+                             Foreground="{StaticResource TextSecondaryBrush}"
+                             Margin="0,5,0,0" />
+                </StackPanel>
+              </Border>
+
+              <Border Grid.Column="2" Style="{StaticResource SummaryTile}">
+                <StackPanel>
+                  <Border Style="{StaticResource IconChip}">
+                    <TextBlock Text="&#xE756;"
+                               FontFamily="Segoe Fluent Icons"
+                               FontSize="15"
+                               Foreground="{StaticResource AccentBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center" />
+                  </Border>
+                  <TextBlock Text="{local:Loc CodingAgentAcp}" FontWeight="SemiBold" Margin="0,10,0,0" />
+                  <TextBlock x:Name="HomeAcpStatusText"
+                             Text="{local:Loc NotConfigured}"
+                             Foreground="{StaticResource TextSecondaryBrush}"
+                             Margin="0,5,0,0" />
+                </StackPanel>
+              </Border>
+
+              <Border Grid.Column="4" Style="{StaticResource SummaryTile}">
+                <StackPanel>
+                  <Border Style="{StaticResource IconChip}">
+                    <TextBlock Text="&#xE7F8;"
+                               FontFamily="Segoe Fluent Icons"
+                               FontSize="15"
+                               Foreground="{StaticResource AccentBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center" />
+                  </Border>
+                  <TextBlock Text="MCP" FontWeight="SemiBold" Margin="0,10,0,0" />
+                  <TextBlock x:Name="HomeMcpStatusText"
+                             Text="{local:Loc NotConfigured}"
+                             Foreground="{StaticResource TextSecondaryBrush}"
+                             Margin="0,5,0,0" />
+                </StackPanel>
+              </Border>
+            </Grid>
+
+            <TextBlock Text="{local:Loc Connections}" Style="{StaticResource SectionHeadingText}" />
+            <Border Style="{StaticResource SummaryTile}" MinHeight="96" Margin="0,0,0,6">
               <Grid>
                 <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="130" />
                   <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="1" />
+                  <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <TextBlock Text="{local:Loc Service}" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBlock x:Name="ServiceStatusText" Grid.Column="1" Text="{local:Loc Unknown}" FontWeight="SemiBold" Margin="0,0,0,10" />
-                <TextBlock Text="{local:Loc HealthCheck}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBlock x:Name="HealthStatusText" Grid.Row="1" Grid.Column="1" Text="{local:Loc Unknown}" Margin="0,0,0,10" />
-                <TextBlock Text="Nexus" Grid.Row="2" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBlock x:Name="NexusStatusText" Grid.Row="2" Grid.Column="1" Text="{local:Loc NotConfigured}" Margin="0,0,0,10" />
-                <TextBlock Text="{local:Loc Version}" Grid.Row="3" VerticalAlignment="Center" />
-                <TextBlock x:Name="VersionText" Grid.Row="3" Grid.Column="1" Text="{local:Loc Unknown}" />
-                <StackPanel Grid.Column="2" Grid.RowSpan="4" Orientation="Horizontal" VerticalAlignment="Center">
-                  <Button Content="{local:Loc Start}" Click="StartButton_Click" />
-                  <Button Content="{local:Loc Stop}" Click="StopButton_Click" />
-                  <Button Content="{local:Loc Restart}" Click="RestartButton_Click" />
-                  <Button x:Name="UpdateButton" Content="{local:Loc Update}" Click="UpdateButton_Click" />
+                <StackPanel>
+                  <TextBlock Text="{local:Loc LocalMCP}" Style="{StaticResource MetricLabelText}" />
+                  <TextBlock Text="{Binding Text, ElementName=LocalMcpTextBox}"
+                             FontFamily="Consolas"
+                             TextTrimming="CharacterEllipsis"
+                             Margin="0,6,16,0" />
+                </StackPanel>
+                <Border Grid.Column="1"
+                        Width="1"
+                        Background="{StaticResource BorderBrush}"
+                        Margin="0,0,16,0" />
+                <StackPanel Grid.Column="2">
+                  <TextBlock Text="{local:Loc PublicMCP}" Style="{StaticResource MetricLabelText}" />
+                  <TextBlock Text="{Binding Text, ElementName=PublicMcpTextBox}"
+                             FontFamily="Consolas"
+                             TextTrimming="CharacterEllipsis"
+                             Margin="0,6,0,0" />
                 </StackPanel>
               </Grid>
-            </GroupBox>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
 
-            <GroupBox Header="{local:Loc RuntimeAnalytics}">
+
+      <TabItem Header="{local:Loc Connections}" Tag="&#xE774;" Style="{StaticResource ShellTabItem}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel MaxWidth="900" HorizontalAlignment="Left">
+            <TextBlock Text="{local:Loc Connections}" Style="{StaticResource PageTitleText}" />
+            <TextBlock Text="{local:Loc ConnectionsDescription}" Style="{StaticResource PageDescriptionText}" />
+
+            <Border Style="{StaticResource HeroCard}">
               <Grid>
                 <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
                   <ColumnDefinition Width="*" />
                   <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="{local:Loc RuntimeAnalyticsDescription}" Foreground="#667085"
-                           VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,18,0" />
-                <Button x:Name="RuntimeAnalyticsButton" Grid.Column="1"
-                        Content="{local:Loc OpenRuntimeAnalytics}"
-                        Click="RuntimeAnalyticsButton_Click"
-                        IsEnabled="False" />
-              </Grid>
-            </GroupBox>
 
-            <GroupBox Header="{local:Loc ConnectionAddresses}">
+                <Border Width="52" Height="52"
+                        CornerRadius="15"
+                        Background="#DCE8FF"
+                        Margin="0,0,16,0">
+                  <TextBlock Text="&#xE774;"
+                             FontFamily="Segoe Fluent Icons"
+                             FontSize="22"
+                             Foreground="{StaticResource AccentBrush}"
+                             HorizontalAlignment="Center"
+                             VerticalAlignment="Center" />
+                </Border>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                  <TextBlock Text="{local:Loc RemoteAccess}"
+                             FontSize="20"
+                             FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding Text, ElementName=PublicMcpTextBox}"
+                             FontFamily="Consolas"
+                             TextTrimming="CharacterEllipsis"
+                             Margin="0,6,0,0" />
+                  <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <Ellipse x:Name="PublicAccessHeroDot"
+                             Width="8" Height="8"
+                             Fill="{StaticResource SuccessBrush}"
+                             Margin="0,4,7,0" />
+                    <TextBlock Text="{Binding Text, ElementName=PublicAccessStatusText}"
+                               Foreground="{StaticResource TextSecondaryBrush}" />
+                  </StackPanel>
+                </StackPanel>
+
+                <Button Grid.Column="2"
+                        Content="{local:Loc Test}"
+                        Style="{StaticResource PrimaryButton}"
+                        Click="TestPublicButton_Click"
+                        VerticalAlignment="Center"
+                        Margin="16,0,0,0" />
+              </Grid>
+            </Border>
+
+            <GroupBox Header="{local:Loc ConnectionAddresses}" Tag="&#xE71B;">
               <Grid>
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="130" />
@@ -92,16 +273,438 @@
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <TextBlock Text="{local:Loc LocalMCP}" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="LocalMcpTextBox" Grid.Column="1" Grid.ColumnSpan="2" IsReadOnly="True" Margin="0,0,0,10" />
+                <TextBox x:Name="LocalMcpTextBox" Grid.Column="1" Grid.ColumnSpan="2"
+                         IsReadOnly="True" Margin="0,0,0,10" />
                 <TextBlock Text="{local:Loc PublicMCP}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="PublicMcpTextBox" Grid.Row="1" Grid.Column="1" IsReadOnly="True" Margin="0,0,8,10" />
+                <TextBox x:Name="PublicMcpTextBox" Grid.Row="1" Grid.Column="1"
+                         IsReadOnly="True" Margin="0,0,8,10" />
                 <Button Grid.Row="1" Grid.Column="2" Content="{local:Loc Test}" Click="TestPublicButton_Click" />
                 <TextBlock Text="{local:Loc PublicCheck}" Grid.Row="2" VerticalAlignment="Center" />
-                <TextBlock x:Name="PublicTestStatusText" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Text="{local:Loc NotChecked}" TextWrapping="Wrap" />
+                <TextBlock x:Name="PublicTestStatusText" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
+                           Text="{local:Loc NotChecked}" TextWrapping="Wrap" />
               </Grid>
             </GroupBox>
 
-            <GroupBox Header="{local:Loc AccessCredentials}">
+            <GroupBox Header="{local:Loc RemoteAccess}" Tag="&#xE774;">
+              <StackPanel>
+                <TextBlock Text="{local:Loc RemoteAccessDescription}"
+                           Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12" />
+
+                <Expander Header="{local:Loc ChangeConnectionMethod}" IsExpanded="False">
+                  <StackPanel Margin="0,12,0,0">
+                    <RadioButton x:Name="LocalModeRadio" GroupName="TunnelMode"
+                                 Content="{local:Loc LocalOnly}" Tag="none"
+                                 Margin="0,2,0,8" Checked="TunnelModeRadio_Checked" />
+                    <TextBlock Text="{local:Loc LocalOnlyDescription}"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="24,-5,0,13" TextWrapping="Wrap" />
+
+                    <RadioButton x:Name="QuickModeRadio" GroupName="TunnelMode"
+                                 Content="{local:Loc TemporaryAddress}" Tag="quick"
+                                 Margin="0,0,0,8" Checked="TunnelModeRadio_Checked" />
+                    <TextBlock Text="{local:Loc TemporaryAddressDescription}"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="24,-5,0,13" TextWrapping="Wrap" />
+
+                    <RadioButton x:Name="NamedModeRadio" GroupName="TunnelMode"
+                                 Content="{local:Loc CustomDomain}" Tag="named"
+                                 Margin="0,0,0,8" Checked="TunnelModeRadio_Checked" />
+                    <TextBlock Text="{local:Loc CustomDomainDescription}"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="24,-5,0,13" TextWrapping="Wrap" />
+
+                    <GroupBox x:Name="NamedTunnelGroup" Header="{local:Loc CustomDomainConfiguration}">
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="150" />
+                          <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                          <RowDefinition Height="Auto" />
+                          <RowDefinition Height="Auto" />
+                          <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="{local:Loc PublicHTTPSAddress}" VerticalAlignment="Center" Margin="0,0,0,10" />
+                        <TextBox x:Name="ServerUrlTextBox" Grid.Column="1" Margin="0,0,0,10" />
+                        <TextBlock Text="Tunnel Token" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
+                        <PasswordBox x:Name="TunnelTokenPasswordBox" Grid.Row="1" Grid.Column="1"
+                                     Margin="0,0,0,10" PreviewKeyDown="PasswordBox_PreviewKeyDown" />
+                        <TextBlock Text="{local:Loc SavedState}" Grid.Row="2" VerticalAlignment="Center" />
+                        <TextBlock x:Name="TunnelTokenStoredText" Grid.Row="2" Grid.Column="1"
+                                   Text="{local:Loc NotSaved}" />
+                      </Grid>
+                    </GroupBox>
+
+                    <StackPanel Orientation="Horizontal">
+                      <Button Content="{local:Loc ApplyAccessMode}" Style="{StaticResource PrimaryButton}"
+                              Click="ApplyTunnelModeButton_Click" />
+                      <Button x:Name="RegenerateQuickButton"
+                              Content="{local:Loc RegenerateTemporaryAddress}"
+                              Click="RegenerateQuickButton_Click" />
+                    </StackPanel>
+                    <TextBlock x:Name="TunnelActionStatusText"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               TextWrapping="Wrap" Margin="0,4,0,0" />
+                  </StackPanel>
+                </Expander>
+              </StackPanel>
+            </GroupBox>
+
+            <Border Style="{StaticResource SummaryTile}" MinHeight="0" Margin="0,0,0,8">
+              <Expander Header="{local:Loc NexusDockManagedAccess}" IsExpanded="False">
+                <StackPanel Margin="0,14,0,0">
+                <TextBlock Text="{local:Loc NexusDockManagedAccessDescription}"
+                           Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12" />
+                <TextBlock x:Name="NexusStatusText" Text="{local:Loc NotConfigured}"
+                           FontWeight="SemiBold" Margin="0,0,0,12" />
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="150" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
+                  <TextBlock Text="{local:Loc Address}" VerticalAlignment="Center" Margin="0,0,0,10" />
+                  <TextBox x:Name="NexusEndpointTextBox" Grid.Column="1" Grid.ColumnSpan="2"
+                           Margin="0,0,0,10" ToolTip="{local:Loc NexusPublicHttpsTooltip}" />
+                  <TextBlock Text="{local:Loc OneTimePairingCode}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
+                  <PasswordBox x:Name="NexusPairingCodePasswordBox" Grid.Row="1" Grid.Column="1"
+                               Margin="0,0,8,10" PreviewKeyDown="PasswordBox_PreviewKeyDown" />
+                  <Button Grid.Row="1" Grid.Column="2" Content="{local:Loc PairAndRestart}"
+                          Click="PairNexusButton_Click" Margin="0,0,0,10" />
+                  <TextBlock Text="Device Token" Grid.Row="2" VerticalAlignment="Center" />
+                  <TextBlock x:Name="NexusDeviceTokenStatusText" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
+                             Text="{local:Loc NotPaired}" Foreground="{StaticResource TextSecondaryBrush}"
+                             TextWrapping="Wrap" />
+                </Grid>
+                </StackPanel>
+              </Expander>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="{local:Loc Capabilities}" Tag="&#xE950;" Style="{StaticResource ShellTabItem}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel MaxWidth="900" HorizontalAlignment="Left">
+            <TextBlock Text="{local:Loc Capabilities}" Style="{StaticResource PageTitleText}" />
+            <TextBlock Text="{local:Loc CapabilitiesDescription}" Style="{StaticResource PageDescriptionText}" />
+
+            <TextBlock Text="{local:Loc Capabilities}" Style="{StaticResource SectionHeadingText}" />
+            <Grid Margin="0,0,0,18">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+
+              <Border Style="{StaticResource SummaryTile}">
+                <StackPanel>
+                  <Border Style="{StaticResource IconChip}">
+                    <TextBlock Text="&#xE774;"
+                               FontFamily="Segoe Fluent Icons"
+                               FontSize="15"
+                               Foreground="{StaticResource AccentBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center" />
+                  </Border>
+                  <TextBlock Text="{local:Loc Browser}" FontWeight="SemiBold" Margin="0,10,0,0" />
+                  <TextBlock Text="{Binding Text, ElementName=HomeBrowserStatusText}"
+                             Foreground="{Binding Foreground, ElementName=HomeBrowserStatusText}"
+                             Margin="0,5,0,0" />
+                </StackPanel>
+              </Border>
+
+              <Border Grid.Column="2" Style="{StaticResource SummaryTile}">
+                <StackPanel>
+                  <Border Style="{StaticResource IconChip}">
+                    <TextBlock Text="&#xE756;"
+                               FontFamily="Segoe Fluent Icons"
+                               FontSize="15"
+                               Foreground="{StaticResource AccentBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center" />
+                  </Border>
+                  <TextBlock Text="{local:Loc CodingAgentAcp}" FontWeight="SemiBold" Margin="0,10,0,0" />
+                  <TextBlock Text="{Binding Text, ElementName=HomeAcpStatusText}"
+                             Foreground="{Binding Foreground, ElementName=HomeAcpStatusText}"
+                             Margin="0,5,0,0" />
+                </StackPanel>
+              </Border>
+
+              <Border Grid.Column="4" Style="{StaticResource SummaryTile}">
+                <StackPanel>
+                  <Border Style="{StaticResource IconChip}">
+                    <TextBlock Text="&#xE7F8;"
+                               FontFamily="Segoe Fluent Icons"
+                               FontSize="15"
+                               Foreground="{StaticResource AccentBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center" />
+                  </Border>
+                  <TextBlock Text="MCP" FontWeight="SemiBold" Margin="0,10,0,0" />
+                  <TextBlock Text="{Binding Text, ElementName=HomeMcpStatusText}"
+                             Foreground="{Binding Foreground, ElementName=HomeMcpStatusText}"
+                             Margin="0,5,0,0" />
+                </StackPanel>
+              </Border>
+            </Grid>
+
+            <TextBlock Text="{local:Loc Configure}" Style="{StaticResource SectionHeadingText}" />
+
+            <Border Style="{StaticResource SummaryTile}" MinHeight="0" Margin="0,0,0,10">
+              <Expander IsExpanded="False">
+                <Expander.Header>
+                  <StackPanel Orientation="Horizontal">
+                    <Border Style="{StaticResource IconChip}" Margin="0,0,9,0">
+                      <TextBlock Text="&#xE774;"
+                                 FontFamily="Segoe Fluent Icons"
+                                 FontSize="14"
+                                 Foreground="{StaticResource AccentBrush}"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="{local:Loc Browser}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Expander.Header>
+                <Grid Margin="0,14,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="150" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
+                  <CheckBox x:Name="BrowserEnabledCheckBox" Grid.ColumnSpan="2"
+                            Content="{local:Loc EnableBrowserCdp}" Margin="0,4,0,12"
+                            Checked="BrowserConnection_Changed" Unchecked="BrowserConnection_Changed" />
+                  <TextBlock Text="{local:Loc ConnectionMode}" Grid.Row="1" VerticalAlignment="Top" Margin="0,5,0,10" />
+                  <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,10">
+                    <ComboBox x:Name="BrowserConnectionModeComboBox" Width="320" HorizontalAlignment="Left"
+                              SelectionChanged="BrowserConnection_Changed">
+                      <ComboBoxItem Content="{local:Loc ManagedBrowser}" Tag="managed" />
+                      <ComboBoxItem Content="{local:Loc ReuseExistingCdpBrowser}" Tag="reuse" />
+                      <ComboBoxItem Content="{local:Loc SpecifiedCdpBrowser}" Tag="specified" />
+                    </ComboBox>
+                    <TextBox x:Name="BrowserCdpUrlTextBox" Margin="0,8,0,0" Visibility="Collapsed"
+                             ToolTip="{local:Loc CdpUrlExample}" />
+                    <TextBlock x:Name="BrowserConnectionHelpText" Margin="0,6,0,0"
+                               Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Grid>
+              </Expander>
+            </Border>
+
+            <Border Style="{StaticResource SummaryTile}" MinHeight="0" Margin="0,0,0,10">
+              <Expander IsExpanded="False">
+                <Expander.Header>
+                  <StackPanel Orientation="Horizontal">
+                    <Border Style="{StaticResource IconChip}" Margin="0,0,9,0">
+                      <TextBlock Text="&#xE756;"
+                                 FontFamily="Segoe Fluent Icons"
+                                 FontSize="14"
+                                 Foreground="{StaticResource AccentBrush}"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="{local:Loc CodingAgentAcp}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Expander.Header>
+                <StackPanel Margin="0,14,0,0">
+                  <CheckBox x:Name="AcpEnabledCheckBox" Content="{local:Loc EnableCodingAgent}" Margin="0,4,0,14" />
+                  <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{local:Loc DefaultAcp}" VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <ComboBox x:Name="AcpDefaultProfileComboBox" Grid.Column="1" Width="240"
+                              SelectionChanged="AcpDefaultProfile_SelectionChanged" />
+                  </Grid>
+                  <StackPanel x:Name="AcpProfileListPanel" />
+                  <Button x:Name="AcpAddCustomProfileButton"
+                          Content="{local:Loc AddCustomAcp}" HorizontalAlignment="Left"
+                          Margin="0,10,0,0" Padding="10,4" Click="AcpAddCustomProfile_Click" />
+                </StackPanel>
+              </Expander>
+            </Border>
+
+            <Border Style="{StaticResource SummaryTile}" MinHeight="0" Margin="0,0,0,12">
+              <Expander IsExpanded="False">
+                <Expander.Header>
+                  <StackPanel Orientation="Horizontal">
+                    <Border Style="{StaticResource IconChip}" Margin="0,0,9,0">
+                      <TextBlock Text="&#xE7F8;"
+                                 FontFamily="Segoe Fluent Icons"
+                                 FontSize="14"
+                                 Foreground="{StaticResource AccentBrush}"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="MCP" FontWeight="SemiBold" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Expander.Header>
+                <Grid Margin="0,14,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="150" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="{local:Loc ChatCards}" VerticalAlignment="Center" />
+                  <ComboBox x:Name="McpAppsModeComboBox" Grid.Column="1" Width="220" HorizontalAlignment="Left">
+                    <ComboBoxItem Content="{local:Loc ChatCardsFull}" Tag="full" />
+                    <ComboBoxItem Content="{local:Loc ChatCardsCompact}" Tag="compact" />
+                    <ComboBoxItem Content="{local:Loc ChatCardsOff}" Tag="off" />
+                  </ComboBox>
+                </Grid>
+              </Expander>
+            </Border>
+
+            <Button Content="{local:Loc SaveAndRestart}" Style="{StaticResource PrimaryButton}"
+                    HorizontalAlignment="Left" Click="SaveSettingsButton_Click" />
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="{local:Loc Activity}" Tag="&#xE81C;" Style="{StaticResource ShellTabItem}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel MaxWidth="900" HorizontalAlignment="Left">
+            <TextBlock Text="{local:Loc Activity}" Style="{StaticResource PageTitleText}" />
+            <TextBlock Text="{local:Loc ActivityDescription}" Style="{StaticResource PageDescriptionText}" />
+
+            <GroupBox Header="{local:Loc Diagnostics}" Tag="&#xE9D9;">
+              <StackPanel>
+                <Border Background="{StaticResource MutedSurfaceBrush}"
+                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="9" Padding="14" Margin="0,0,0,12">
+                  <StackPanel>
+                    <TextBlock Text="{local:Loc RuntimeStatus}" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding Text, ElementName=HeaderStatusText}"
+                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,5,0,0" />
+                  </StackPanel>
+                </Border>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="{local:Loc RuntimeAnalyticsDescription}"
+                             Foreground="{StaticResource TextSecondaryBrush}"
+                             TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,18,0" />
+                  <Button x:Name="RuntimeAnalyticsButton" Grid.Column="1"
+                          Content="{local:Loc OpenRuntimeAnalytics}"
+                          Click="RuntimeAnalyticsButton_Click" IsEnabled="False" />
+                </Grid>
+              </StackPanel>
+            </GroupBox>
+
+            <GroupBox Header="{local:Loc Activity}" Tag="&#xE81C;">
+              <StackPanel>
+                <TextBlock Text="{Binding Text, ElementName=PublicTestStatusText}"
+                           Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,10" />
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                  <Button Content="{local:Loc OpenLogsFolder}" Click="OpenLogsButton_Click" />
+                  <Button Content="{local:Loc OpenConfigFolder}" Click="OpenConfigButton_Click" />
+                </StackPanel>
+                <Border Background="{StaticResource MutedSurfaceBrush}"
+                        BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="10"
+                        Padding="12">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="FooterStatusText"
+                               Text="{local:Loc Ready}"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               VerticalAlignment="Center" />
+                    <Button Grid.Column="1"
+                            Content="{local:Loc Refresh}"
+                            Style="{StaticResource QuietButton}"
+                            Click="RefreshButton_Click"
+                            Margin="8,0,0,0" />
+                  </Grid>
+                </Border>
+              </StackPanel>
+            </GroupBox>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="{local:Loc Settings}" Tag="&#xE713;" Style="{StaticResource ShellTabItem}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel MaxWidth="900" HorizontalAlignment="Left">
+            <TextBlock Text="{local:Loc Settings}" Style="{StaticResource PageTitleText}" />
+            <TextBlock Text="{local:Loc SettingsDescription}" Style="{StaticResource PageDescriptionText}" />
+            <TextBlock x:Name="SettingsStatusText"
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       TextWrapping="Wrap"
+                       Margin="0,-10,0,14" />
+
+            <GroupBox Header="{local:Loc Runtime}" Tag="&#xE7F8;">
+              <Expander Header="{local:Loc AdvancedSettings}" IsExpanded="False">
+                <StackPanel Margin="0,12,0,0">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="150" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                      <RowDefinition Height="Auto" />
+                      <RowDefinition Height="Auto" />
+                      <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="{local:Loc Port}" VerticalAlignment="Center" Margin="0,0,0,10" />
+                    <TextBox x:Name="PortTextBox" Grid.Column="1" Width="130" HorizontalAlignment="Left" Margin="0,0,0,10" />
+                    <TextBlock Text="{local:Loc LogLevel}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
+                    <ComboBox x:Name="LogLevelComboBox" Grid.Row="1" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10">
+                      <ComboBoxItem Content="debug" />
+                      <ComboBoxItem Content="info" />
+                      <ComboBoxItem Content="warn" />
+                      <ComboBoxItem Content="error" />
+                    </ComboBox>
+                    <TextBlock Text="{local:Loc InterfaceLanguage}" Grid.Row="2" VerticalAlignment="Center" />
+                    <ComboBox x:Name="LanguageComboBox" Grid.Row="2" Grid.Column="1" Width="180" HorizontalAlignment="Left"
+                              SelectionChanged="LanguageComboBox_SelectionChanged">
+                      <ComboBoxItem Content="{local:Loc FollowSystem}" Tag="system" />
+                      <ComboBoxItem Content="{local:Loc SimplifiedChinese}" Tag="zh-CN" />
+                      <ComboBoxItem Content="{local:Loc EnglishLanguage}" Tag="en" />
+                    </ComboBox>
+                  </Grid>
+                  <Button Content="{local:Loc SaveAndRestart}"
+                          Style="{StaticResource PrimaryButton}"
+                          HorizontalAlignment="Left"
+                          Margin="0,12,0,0"
+                          Click="SaveSettingsButton_Click" />
+                </StackPanel>
+              </Expander>
+            </GroupBox>
+
+            <GroupBox Header="{local:Loc Permissions}" Tag="&#xE72E;">
+              <CheckBox x:Name="ElevatedCoreCheckBox" Content="{local:Loc RunCoreElevated}"
+                        Margin="0,4,0,4" Click="ElevatedCoreCheckBox_Click" />
+            </GroupBox>
+
+            <GroupBox Header="{local:Loc Startup}" Tag="&#xE768;">
+              <Expander Header="{local:Loc AdvancedSettings}" IsExpanded="False">
+                <StackPanel Margin="0,12,0,0">
+                  <CheckBox x:Name="CoreStartupCheckBox" Content="{local:Loc CoreStartup}"
+                            Margin="0,4,0,10" Click="CoreStartupCheckBox_Click" />
+                  <CheckBox x:Name="TrayStartupCheckBox" Content="{local:Loc TrayStartup}"
+                            Margin="0,0,0,4" Click="TrayStartupCheckBox_Click" />
+                </StackPanel>
+              </Expander>
+            </GroupBox>
+
+            <GroupBox Header="{local:Loc AccessCredentials}" Tag="&#xE8D7;" Margin="0">
               <Grid>
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="130" />
@@ -114,204 +717,17 @@
                 </Grid.RowDefinitions>
                 <TextBlock Text="Bearer Token" VerticalAlignment="Center" Margin="0,0,0,10" />
                 <TextBox x:Name="BearerTokenTextBox" Grid.Column="1" IsReadOnly="True" Margin="0,0,8,10" />
-                <Button x:Name="ToggleBearerButton" Grid.Column="2" Content="{local:Loc Show}" Click="ToggleBearerButton_Click" />
+                <Button x:Name="ToggleBearerButton" Grid.Column="2" Content="{local:Loc Show}"
+                        Click="ToggleBearerButton_Click" />
                 <TextBlock Text="{local:Loc OAuthPassword}" Grid.Row="1" VerticalAlignment="Center" />
                 <TextBox x:Name="OAuthPasswordTextBox" Grid.Row="1" Grid.Column="1" IsReadOnly="True" Margin="0,0,8,0" />
-                <Button x:Name="ToggleOAuthButton" Grid.Row="1" Grid.Column="2" Content="{local:Loc Show}" Click="ToggleOAuthButton_Click" />
+                <Button x:Name="ToggleOAuthButton" Grid.Row="1" Grid.Column="2" Content="{local:Loc Show}"
+                        Click="ToggleOAuthButton_Click" />
               </Grid>
             </GroupBox>
-          </StackPanel>
-        </ScrollViewer>
-      </TabItem>
-
-      <TabItem Header="{local:Loc PublicAccess}">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <StackPanel Margin="18">
-            <GroupBox Header="{local:Loc AccessMode}">
-              <StackPanel>
-                <RadioButton x:Name="LocalModeRadio" GroupName="TunnelMode" Content="{local:Loc LocalOnly}" Tag="none" Margin="0,4,0,10" Checked="TunnelModeRadio_Checked" />
-                <TextBlock Text="{local:Loc LocalOnlyDescription}" Foreground="#667085" Margin="24,-8,0,14" TextWrapping="Wrap" />
-                <RadioButton x:Name="QuickModeRadio" GroupName="TunnelMode" Content="{local:Loc TemporaryAddress}" Tag="quick" Margin="0,0,0,10" Checked="TunnelModeRadio_Checked" />
-                <TextBlock Text="{local:Loc TemporaryAddressDescription}" Foreground="#667085" Margin="24,-8,0,14" TextWrapping="Wrap" />
-                <RadioButton x:Name="NamedModeRadio" GroupName="TunnelMode" Content="{local:Loc CustomDomain}" Tag="named" Margin="0,0,0,10" Checked="TunnelModeRadio_Checked" />
-                <TextBlock Text="{local:Loc CustomDomainDescription}" Foreground="#667085" Margin="24,-8,0,4" TextWrapping="Wrap" />
-              </StackPanel>
-            </GroupBox>
-
-            <GroupBox x:Name="NamedTunnelGroup" Header="{local:Loc CustomDomainConfiguration}">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="150" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <TextBlock Text="{local:Loc PublicHTTPSAddress}" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="ServerUrlTextBox" Grid.Column="1" Margin="0,0,0,10" />
-                <TextBlock Text="Tunnel Token" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <PasswordBox x:Name="TunnelTokenPasswordBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" PreviewKeyDown="PasswordBox_PreviewKeyDown" />
-                <TextBlock Text="{local:Loc SavedState}" Grid.Row="2" VerticalAlignment="Center" />
-                <TextBlock x:Name="TunnelTokenStoredText" Grid.Row="2" Grid.Column="1" Text="{local:Loc NotSaved}" />
-              </Grid>
-            </GroupBox>
-
-            <StackPanel Orientation="Horizontal">
-              <Button Content="{local:Loc ApplyAccessMode}" Click="ApplyTunnelModeButton_Click" />
-              <Button x:Name="RegenerateQuickButton" Content="{local:Loc RegenerateTemporaryAddress}" Click="RegenerateQuickButton_Click" />
-            </StackPanel>
-            <TextBlock x:Name="TunnelActionStatusText" Foreground="#475467" TextWrapping="Wrap" Margin="0,6,0,0" />
-          </StackPanel>
-        </ScrollViewer>
-      </TabItem>
-
-      <TabItem Header="{local:Loc AdvancedSettings}">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <StackPanel Margin="18">
-            <GroupBox Header="{local:Loc BasicSettings}">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="150" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <TextBlock Text="{local:Loc Port}" Grid.Row="0" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="PortTextBox" Grid.Row="0" Grid.Column="1" Width="130" HorizontalAlignment="Left" Margin="0,0,0,10" />
-                <TextBlock Text="{local:Loc LogLevel}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <ComboBox x:Name="LogLevelComboBox" Grid.Row="1" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10">
-                  <ComboBoxItem Content="debug" />
-                  <ComboBoxItem Content="info" />
-                  <ComboBoxItem Content="warn" />
-                  <ComboBoxItem Content="error" />
-                </ComboBox>
-                <TextBlock Text="{local:Loc InterfaceLanguage}" Grid.Row="2" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <ComboBox x:Name="LanguageComboBox" Grid.Row="2" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,10" SelectionChanged="LanguageComboBox_SelectionChanged">
-                  <ComboBoxItem Content="{local:Loc FollowSystem}" Tag="system" />
-                  <ComboBoxItem Content="{local:Loc SimplifiedChinese}" Tag="zh-CN" />
-                  <ComboBoxItem Content="{local:Loc EnglishLanguage}" Tag="en" />
-                </ComboBox>
-                <TextBlock Text="{local:Loc ChatCards}" Grid.Row="3" VerticalAlignment="Center" Margin="0,0,0,4" />
-                <ComboBox x:Name="McpAppsModeComboBox" Grid.Row="3" Grid.Column="1" Width="180" HorizontalAlignment="Left" Margin="0,0,0,4">
-                  <ComboBoxItem Content="{local:Loc ChatCardsFull}" Tag="full" />
-                  <ComboBoxItem Content="{local:Loc ChatCardsCompact}" Tag="compact" />
-                  <ComboBoxItem Content="{local:Loc ChatCardsOff}" Tag="off" />
-                </ComboBox>
-              </Grid>
-            </GroupBox>
-
-            <GroupBox Header="Nexus">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="150" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <TextBlock Text="{local:Loc Address}" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="NexusEndpointTextBox" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" ToolTip="{local:Loc NexusPublicHttpsTooltip}" />
-                <TextBlock Text="{local:Loc OneTimePairingCode}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <PasswordBox x:Name="NexusPairingCodePasswordBox" Grid.Row="1" Grid.Column="1" Margin="0,0,8,10" PreviewKeyDown="PasswordBox_PreviewKeyDown" />
-                <Button Grid.Row="1" Grid.Column="2" Content="{local:Loc PairAndRestart}" Click="PairNexusButton_Click" Margin="0,0,0,10" />
-                <TextBlock Text="Device Token" Grid.Row="2" VerticalAlignment="Center" />
-                <TextBlock x:Name="NexusDeviceTokenStatusText" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Text="{local:Loc NotPaired}" Foreground="#667085" TextWrapping="Wrap" />
-              </Grid>
-            </GroupBox>
-
-            <GroupBox Header="{local:Loc Browser}">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="150" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <CheckBox x:Name="BrowserEnabledCheckBox" Grid.ColumnSpan="2" Content="{local:Loc EnableBrowserCdp}" Margin="0,4,0,12" Checked="BrowserConnection_Changed" Unchecked="BrowserConnection_Changed" />
-                <TextBlock Text="{local:Loc ConnectionMode}" Grid.Row="1" VerticalAlignment="Top" Margin="0,5,0,10" />
-                <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,10">
-                  <ComboBox x:Name="BrowserConnectionModeComboBox" Width="320" HorizontalAlignment="Left" SelectionChanged="BrowserConnection_Changed">
-                    <ComboBoxItem Content="{local:Loc ManagedBrowser}" Tag="managed" />
-                    <ComboBoxItem Content="{local:Loc ReuseExistingCdpBrowser}" Tag="reuse" />
-                    <ComboBoxItem Content="{local:Loc SpecifiedCdpBrowser}" Tag="specified" />
-                  </ComboBox>
-                  <TextBox x:Name="BrowserCdpUrlTextBox" Margin="0,8,0,0" Visibility="Collapsed" ToolTip="{local:Loc CdpUrlExample}" />
-                  <TextBlock x:Name="BrowserConnectionHelpText" Margin="0,6,0,0" Foreground="#667085" TextWrapping="Wrap" />
-                </StackPanel>
-              </Grid>
-            </GroupBox>
-
-            <GroupBox Header="{local:Loc CodingAgentAcp}">
-              <StackPanel>
-                <CheckBox x:Name="AcpEnabledCheckBox" Content="{local:Loc EnableCodingAgent}" Margin="0,4,0,14" />
-                <Grid Margin="0,0,0,12">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                  </Grid.ColumnDefinitions>
-                  <TextBlock Text="{local:Loc DefaultAcp}" VerticalAlignment="Center" Margin="0,0,12,0" />
-                  <ComboBox x:Name="AcpDefaultProfileComboBox"
-                            Grid.Column="1"
-                            Width="240"
-                            SelectionChanged="AcpDefaultProfile_SelectionChanged" />
-                </Grid>
-                <StackPanel x:Name="AcpProfileListPanel" />
-                <Button x:Name="AcpAddCustomProfileButton"
-                        Content="{local:Loc AddCustomAcp}"
-                        HorizontalAlignment="Left"
-                        Margin="0,10,0,0"
-                        Padding="10,4"
-                        Click="AcpAddCustomProfile_Click" />
-              </StackPanel>
-            </GroupBox>
-
-            <GroupBox Header="{local:Loc RuntimePermissions}">
-              <StackPanel>
-                <CheckBox x:Name="ElevatedCoreCheckBox"
-                          Content="{local:Loc RunCoreElevated}"
-                          Margin="0,4,0,8"
-                          Click="ElevatedCoreCheckBox_Click" />
-              </StackPanel>
-            </GroupBox>
-
-            <GroupBox Header="{local:Loc Startup}">
-              <StackPanel>
-                <CheckBox x:Name="CoreStartupCheckBox" Content="{local:Loc CoreStartup}" Margin="0,4,0,10" Click="CoreStartupCheckBox_Click" />
-                <CheckBox x:Name="TrayStartupCheckBox" Content="{local:Loc TrayStartup}" Margin="0,0,0,4" Click="TrayStartupCheckBox_Click" />
-              </StackPanel>
-            </GroupBox>
-
-            <TextBlock x:Name="SettingsStatusText"
-                       Foreground="#475467"
-                       TextWrapping="Wrap"
-                       MinHeight="22"
-                       Margin="0,0,0,8" />
-            <StackPanel Orientation="Horizontal">
-              <Button Content="{local:Loc SaveAndRestart}" Click="SaveSettingsButton_Click" />
-              <Button Content="{local:Loc OpenLogsFolder}" Click="OpenLogsButton_Click" />
-              <Button Content="{local:Loc OpenConfigFolder}" Click="OpenConfigButton_Click" />
-            </StackPanel>
           </StackPanel>
         </ScrollViewer>
       </TabItem>
     </TabControl>
-
-    <Border Grid.Row="2" Background="White" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="18,10">
-      <Grid>
-        <TextBlock x:Name="FooterStatusText" Text="{local:Loc Ready}" Foreground="#667085" VerticalAlignment="Center" />
-        <Button Content="{local:Loc Refresh}" HorizontalAlignment="Right" Margin="0" Click="RefreshButton_Click" />
-      </Grid>
-    </Border>
   </Grid>
 </Window>

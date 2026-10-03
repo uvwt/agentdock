@@ -16,7 +16,7 @@ func TestMacOSAdvancedSettingsUsesResponsiveScrollableLayout(t *testing.T) {
 	content := strings.ReplaceAll(string(data), "\r\n", "\n")
 
 	for _, want := range []string{
-		`contentRect: NSRect(x: 0, y: 0, width: 700, height: 760)`,
+		`contentRect: NSRect(x: 0, y: 0, width: 760, height: 760)`,
 		`styleMask: [.titled, .closable, .resizable]`,
 		`window.minSize = NSSize(width: 700, height: 560)`,
 		`private let acpOverviewContainer = NSStackView()`,
@@ -65,7 +65,7 @@ func TestMacOSAdvancedSettingsUsesResponsiveScrollableLayout(t *testing.T) {
 		`scrollView.hasVerticalScroller = true`,
 		`scrollView.documentView = scrollDocumentView`,
 		`scrollDocumentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor)`,
-		`root.bottomAnchor.constraint(equalTo: scrollDocumentView.bottomAnchor, constant: -22)`,
+		`root.bottomAnchor.constraint(equalTo: scrollDocumentView.bottomAnchor, constant: -24)`,
 		`label.widthAnchor.constraint(equalToConstant: 128)`,
 		`let visibleFrame = (window.screen ?? NSScreen.main)?.visibleFrame`,
 		`let nexusPairRow = NSView()`,

@@ -737,4 +737,25 @@
   <data name="LanguageChangeDiscardWarning" xml:space="preserve">
     <value>切换界面语言会重新加载此窗口，未保存的更改将会丢失。是否继续？</value>
   </data>
+  <data name="Home" xml:space="preserve"><value>主页</value></data>
+  <data name="Connections" xml:space="preserve"><value>连接</value></data>
+  <data name="Capabilities" xml:space="preserve"><value>能力</value></data>
+  <data name="Activity" xml:space="preserve"><value>活动</value></data>
+  <data name="Settings" xml:space="preserve"><value>设置</value></data>
+  <data name="LocalAIRuntime" xml:space="preserve"><value>本机 AI Runtime</value></data>
+  <data name="HomeDescription" xml:space="preserve"><value>查看运行状态、连接状态和常用操作。</value></data>
+  <data name="ConnectionsDescription" xml:space="preserve"><value>管理 AI 客户端如何在本机或远程连接 AgentDock。</value></data>
+  <data name="CapabilitiesDescription" xml:space="preserve"><value>配置客户端连接后可以使用的 AgentDock 能力。</value></data>
+  <data name="ActivityDescription" xml:space="preserve"><value>查看运行诊断、公网可达性和日志。</value></data>
+  <data name="SettingsDescription" xml:space="preserve"><value>调整 Runtime 行为和桌面端偏好。</value></data>
+  <data name="RemoteAccess" xml:space="preserve"><value>远程连接</value></data>
+  <data name="RemoteAccessDescription" xml:space="preserve"><value>让外部设备安全访问这台电脑上的 AgentDock。</value></data>
+  <data name="CurrentConnection" xml:space="preserve"><value>当前连接</value></data>
+  <data name="ChangeConnectionMethod" xml:space="preserve"><value>更改连接方式</value></data>
+  <data name="NexusDockManagedAccess" xml:space="preserve"><value>NexusDock 托管连接</value></data>
+  <data name="NexusDockManagedAccessDescription" xml:space="preserve"><value>可选的托管式远程连接；不连接 NexusDock 也可以完整使用 AgentDock。</value></data>
+  <data name="Diagnostics" xml:space="preserve"><value>诊断</value></data>
+  <data name="Runtime" xml:space="preserve"><value>Runtime</value></data>
+  <data name="Permissions" xml:space="preserve"><value>权限</value></data>
+  <data name="Configure" xml:space="preserve"><value>配置</value></data>
 </root>

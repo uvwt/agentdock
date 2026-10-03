@@ -467,34 +467,58 @@ func TestWindowsUpdateFeedbackUsesUTF8AndImmediateStatus(t *testing.T) {
 		}
 	}
 }
-func TestWindowsControlPanelKeepsExistingBackgroundAndStylesOnlyButtonsAndTabs(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml"))
+func TestWindowsControlPanelUsesNativeSharedDesignSemantics(t *testing.T) {
+	root := filepath.Join("..", "..", "desktop", "windows", "control-panel")
+	data, err := os.ReadFile(filepath.Join(root, "App.xaml"))
 	if err != nil {
 		t.Fatalf("read App.xaml: %v", err)
 	}
 	app := string(data)
 
 	for _, want := range []string{
-		`x:Key="SurfaceBrush" Color="#F5F7FA"`,
-		`x:Key="BorderBrush" Color="#D8DEE8"`,
+		`x:Key="AccentBrush" Color="#2F6FED"`,
+		`x:Key="AccentSoftBrush" Color="#E8F0FF"`,
+		`x:Key="SurfaceBrush" Color="#FFFFFF"`,
+		`x:Key="WindowBrush" Color="#F5F8FC"`,
+		`x:Key="SidebarBrush" Color="#EDF3F9"`,
+		`x:Key="BorderBrush" Color="#DDE5EF"`,
+		`x:Key="TextSecondaryBrush" Color="#667085"`,
+		`x:Key="PrimaryButton"`,
+		`x:Key="QuietButton"`,
 		`<Style TargetType="Button">`,
-		`<Style TargetType="TabControl">`,
-		`<Style TargetType="TabItem">`,
+		`<Style TargetType="GroupBox">`,
+		`x:Key="ShellTabControl"`,
+		`x:Key="ShellTabItem"`,
+		`FontFamily="Segoe Fluent Icons"`,
 		`x:Name="PART_SelectedContentHost"`,
-		`Background="White"`,
+		`Source="Assets/agentdock.png"`,
 	} {
 		if !strings.Contains(app, want) {
-			t.Fatalf("App.xaml missing restrained Windows style %q", want)
+			t.Fatalf("App.xaml missing native control-panel design semantic %q", want)
 		}
 	}
 
-	for _, forbidden := range []string{
-		`x:Key="PanelBrush"`,
-		`x:Key="ContentBrush"`,
-		`<Style TargetType="ComboBox">`,
+	windowData, err := os.ReadFile(filepath.Join(root, "MainWindow.xaml"))
+	if err != nil {
+		t.Fatalf("read MainWindow.xaml: %v", err)
+	}
+	window := string(windowData)
+	for _, want := range []string{
+		`Header="{local:Loc Home}" Tag="&#xE80F;"`,
+		`Header="{local:Loc Connections}" Tag="&#xE774;"`,
+		`Header="{local:Loc Capabilities}" Tag="&#xE950;"`,
+		`Header="{local:Loc Activity}" Tag="&#xE81C;"`,
+		`Header="{local:Loc Settings}" Tag="&#xE713;"`,
+		`<Expander Header="{local:Loc ChangeConnectionMethod}" IsExpanded="False">`,
+		`Header="{local:Loc NexusDockManagedAccess}"`,
+		`Style="{StaticResource PrimaryButton}"`,
+		`Style="{StaticResource QuietButton}"`,
+		`x:Name="StartButton"`,
+		`x:Name="StopButton"`,
+		`Header="{local:Loc AdvancedSettings}" IsExpanded="False"`,
 	} {
-		if strings.Contains(app, forbidden) {
-			t.Fatalf("button/tab styling must not change the existing window background or unrelated controls: %q", forbidden)
+		if !strings.Contains(window, want) {
+			t.Fatalf("MainWindow.xaml missing native control-panel component use %q", want)
 		}
 	}
 }

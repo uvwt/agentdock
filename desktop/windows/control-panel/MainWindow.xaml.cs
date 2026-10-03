@@ -102,10 +102,37 @@ public partial class MainWindow : Window
                 : !snapshot.Nexus.Paired
                     ? UiText.Get("NotConfigured")
                     : snapshot.NexusConnected ? UiText.Get("Connected") : UiText.Get("NotConnected");
+            PublicAccessStatusText.Text = string.Equals(snapshot.TunnelMode, "none", StringComparison.OrdinalIgnoreCase)
+                ? UiText.Get("Disabled")
+                : string.IsNullOrWhiteSpace(snapshot.PublicOrigin)
+                    ? UiText.Get("NotConfigured")
+                    : UiText.Get("Connected");
+            PublicAccessHeroDot.Fill = new SolidColorBrush(
+                !string.Equals(snapshot.TunnelMode, "none", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(snapshot.PublicOrigin)
+                    ? Color.FromRgb(18, 183, 106)
+                    : Color.FromRgb(152, 162, 179));
 
             ServiceStatusText.Text = snapshot.CoreRunning ? UiText.Get("Running") : UiText.Get("Stopped");
+            // Home 与 macOS 使用同一个动态主操作：运行时只显示“停止”，停止时只显示“启动”。
+            // 保留两个既有事件处理器，不为了视觉统一改动 Runtime 行为。
+            StartButton.Visibility = snapshot.CoreRunning ? Visibility.Collapsed : Visibility.Visible;
+            StopButton.Visibility = snapshot.CoreRunning ? Visibility.Visible : Visibility.Collapsed;
             HealthStatusText.Text = snapshot.Healthy ? UiText.Get("Healthy") : UiText.Get("Unavailable");
             VersionText.Text = string.IsNullOrWhiteSpace(snapshot.Version) ? UiText.Get("Unknown") : snapshot.Version;
+            HomeBrowserStatusText.Text = snapshot.Settings.BrowserEnabled ? UiText.Get("Ready") : UiText.Get("Disabled");
+            HomeBrowserStatusText.Foreground = new SolidColorBrush(snapshot.Settings.BrowserEnabled
+                ? Color.FromRgb(18, 183, 106)
+                : Color.FromRgb(102, 112, 133));
+            HomeAcpStatusText.Text = snapshot.Settings.AcpEnabled ? UiText.Get("Ready") : UiText.Get("Disabled");
+            HomeAcpStatusText.Foreground = new SolidColorBrush(snapshot.Settings.AcpEnabled
+                ? Color.FromRgb(18, 183, 106)
+                : Color.FromRgb(102, 112, 133));
+            var mcpAppsEnabled = !string.Equals(snapshot.Settings.McpAppsMode, "off", StringComparison.OrdinalIgnoreCase);
+            HomeMcpStatusText.Text = mcpAppsEnabled ? UiText.Get("Ready") : UiText.Get("Disabled");
+            HomeMcpStatusText.Foreground = new SolidColorBrush(mcpAppsEnabled
+                ? Color.FromRgb(18, 183, 106)
+                : Color.FromRgb(102, 112, 133));
             RuntimeAnalyticsButton.IsEnabled = snapshot.CoreRunning;
             LocalMcpTextBox.Text = snapshot.LocalMcpUrl;
             PublicMcpTextBox.Text = snapshot.PublicMcpUrl;

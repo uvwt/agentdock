@@ -737,4 +737,25 @@ Update now?</value>
   <data name="LanguageChangeDiscardWarning" xml:space="preserve">
     <value>Changing the interface language reloads this window. Any unsaved changes will be lost. Continue?</value>
   </data>
+  <data name="Home" xml:space="preserve"><value>Home</value></data>
+  <data name="Connections" xml:space="preserve"><value>Connections</value></data>
+  <data name="Capabilities" xml:space="preserve"><value>Capabilities</value></data>
+  <data name="Activity" xml:space="preserve"><value>Activity</value></data>
+  <data name="Settings" xml:space="preserve"><value>Settings</value></data>
+  <data name="LocalAIRuntime" xml:space="preserve"><value>Your local AI runtime</value></data>
+  <data name="HomeDescription" xml:space="preserve"><value>Runtime health, connection state, and the actions you use most.</value></data>
+  <data name="ConnectionsDescription" xml:space="preserve"><value>Manage how AI clients reach AgentDock locally and remotely.</value></data>
+  <data name="CapabilitiesDescription" xml:space="preserve"><value>Configure what AgentDock can do after a client connects.</value></data>
+  <data name="ActivityDescription" xml:space="preserve"><value>Inspect runtime diagnostics, reachability, and logs.</value></data>
+  <data name="SettingsDescription" xml:space="preserve"><value>Customize runtime behavior and desktop preferences.</value></data>
+  <data name="RemoteAccess" xml:space="preserve"><value>Remote access</value></data>
+  <data name="RemoteAccessDescription" xml:space="preserve"><value>Access this AgentDock securely from outside this device.</value></data>
+  <data name="CurrentConnection" xml:space="preserve"><value>Current connection</value></data>
+  <data name="ChangeConnectionMethod" xml:space="preserve"><value>Change connection method</value></data>
+  <data name="NexusDockManagedAccess" xml:space="preserve"><value>NexusDock managed access</value></data>
+  <data name="NexusDockManagedAccessDescription" xml:space="preserve"><value>Optional managed remote access. AgentDock remains fully usable without NexusDock.</value></data>
+  <data name="Diagnostics" xml:space="preserve"><value>Diagnostics</value></data>
+  <data name="Runtime" xml:space="preserve"><value>Runtime</value></data>
+  <data name="Permissions" xml:space="preserve"><value>Permissions</value></data>
+  <data name="Configure" xml:space="preserve"><value>Configure</value></data>
 </root>

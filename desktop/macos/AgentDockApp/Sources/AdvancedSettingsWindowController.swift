@@ -111,7 +111,7 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         self.menuLoginAgent = menuLoginAgent
         self.onChanged = onChanged
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 700, height: 760),
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 760),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
@@ -292,17 +292,16 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.isHidden = true
 
-        applyButton.bezelStyle = .rounded
-        applyButton.keyEquivalent = "\r"
+        ControlPanelUI.configurePrimaryAction(applyButton)
         applyButton.target = self
         applyButton.action = #selector(applyPressed)
         cancelButton.target = self
         cancelButton.action = #selector(cancelPressed)
 
         let openLogs = NSButton(title: L10n.text("Open logs"), target: self, action: #selector(openLogsPressed))
-        openLogs.bezelStyle = .inline
+        ControlPanelUI.configureQuietAction(openLogs, symbol: "doc.text")
         let openConfig = NSButton(title: L10n.text("Open configuration folder"), target: self, action: #selector(openConfigurationPressed))
-        openConfig.bezelStyle = .inline
+        ControlPanelUI.configureQuietAction(openConfig, symbol: "folder")
 
         let startupStack = NSStackView(views: [
             serviceAutostart,
@@ -390,35 +389,32 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
         statusLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
+        let cards = [
+            ControlPanelUI.card(title: L10n.text("Startup"), symbol: "power", content: startupStack),
+            ControlPanelUI.card(title: L10n.text("Service"), symbol: "bolt.horizontal.circle", content: serviceForm),
+            ControlPanelUI.card(title: "Coding Agent（ACP）", symbol: "chevron.left.forwardslash.chevron.right", content: acpStack),
+            ControlPanelUI.card(title: L10n.text("Browser"), symbol: "safari", content: browserStack),
+            ControlPanelUI.card(title: "Nexus", symbol: "link", content: nexusStack),
+        ]
         let root = NSStackView(views: [
-            sectionTitle(L10n.text("Startup")),
-            startupStack,
-            separator(),
-            sectionTitle(L10n.text("Service")),
-            serviceForm,
-            separator(),
-            sectionTitle("Coding Agent（ACP）"),
-            acpStack,
-            separator(),
-            sectionTitle(L10n.text("Browser")),
-            browserStack,
-            separator(),
-            sectionTitle("Nexus"),
-            nexusStack,
-            separator(),
+            cards[0],
+            cards[1],
+            cards[2],
+            cards[3],
+            cards[4],
             utilityRow,
             actionRow,
         ])
         root.orientation = .vertical
         root.alignment = .leading
-        root.spacing = 12
+        root.spacing = ControlPanelUI.sectionSpacing
         root.translatesAutoresizingMaskIntoConstraints = false
         scrollDocumentView.addSubview(root)
 
-        for separator in root.arrangedSubviews.compactMap({ $0 as? NSBox }) {
-            separator.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
+        for card in cards {
+            card.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
         }
-        for section in [startupStack, serviceForm, browserStack, acpStack, nexusStack, utilityRow, actionRow] {
+        for section in [utilityRow, actionRow] {
             section.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
         }
 
@@ -428,23 +424,11 @@ final class AdvancedSettingsWindowController: NSWindowController, NSTextFieldDel
             scrollView.topAnchor.constraint(equalTo: contentView.topAnchor),
             scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             scrollDocumentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
-            root.leadingAnchor.constraint(equalTo: scrollDocumentView.leadingAnchor, constant: 28),
-            root.trailingAnchor.constraint(equalTo: scrollDocumentView.trailingAnchor, constant: -28),
-            root.topAnchor.constraint(equalTo: scrollDocumentView.topAnchor, constant: 24),
-            root.bottomAnchor.constraint(equalTo: scrollDocumentView.bottomAnchor, constant: -22),
+            root.leadingAnchor.constraint(equalTo: scrollDocumentView.leadingAnchor, constant: 30),
+            root.trailingAnchor.constraint(equalTo: scrollDocumentView.trailingAnchor, constant: -30),
+            root.topAnchor.constraint(equalTo: scrollDocumentView.topAnchor, constant: 26),
+            root.bottomAnchor.constraint(equalTo: scrollDocumentView.bottomAnchor, constant: -24),
         ])
-    }
-
-    private func sectionTitle(_ title: String) -> NSTextField {
-        let label = NSTextField(labelWithString: title)
-        label.font = .systemFont(ofSize: 14, weight: .semibold)
-        return label
-    }
-
-    private func separator() -> NSBox {
-        let box = NSBox()
-        box.boxType = .separator
-        return box
     }
 
     private func formRow(title: String, control: NSView, fillsAvailableWidth: Bool = false) -> NSView {

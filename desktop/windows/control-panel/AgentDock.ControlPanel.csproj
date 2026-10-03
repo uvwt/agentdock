@@ -24,5 +24,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+    <Resource Include="..\..\..\packaging\assets\agentdock.png" Link="Assets\agentdock.png" />
   </ItemGroup>
 </Project>
