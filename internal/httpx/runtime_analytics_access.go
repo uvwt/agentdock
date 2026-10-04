@@ -7,7 +7,7 @@ import (
 )
 
 // analyticsProxyHeaders 是 Tunnel/反向代理常见的转发特征。
-// /analytics 面向本机浏览器直连：这些 Header 只用于拒绝代理流量，从不作为放行依据。
+// 未启用认证时，Runtime Analytics 只允许本机直连；这些 Header 只用于拒绝代理流量，从不作为放行依据。
 var analyticsProxyHeaders = []string{
 	"Forwarded",
 	"X-Forwarded-For",
@@ -56,14 +56,4 @@ func loopbackRequestHost(hostport string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
-}
-
-func loopbackOnly(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !isDirectLoopbackRequest(r) {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }

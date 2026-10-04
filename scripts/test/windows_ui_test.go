@@ -414,3 +414,34 @@ func TestWindowsNativePagesUseLiveRuntimeState(t *testing.T) {
 		}
 	}
 }
+
+func TestWindowsActivityOwnsRuntimeAnalytics(t *testing.T) {
+	activityXaml := readWindowsNativeFile(t, "winui", "ActivityPage.xaml")
+	activityCode := readWindowsNativeFile(t, "winui", "ActivityPage.xaml.cs")
+	runtime := readWindowsNativeFile(t, "shared", "Services", "RuntimeService.cs")
+
+	for _, want := range []string{
+		`x:Name="CallOverviewSection"`,
+		`x:Name="CallStatisticsPanel"`,
+		`x:Name="RecentCallsPanel"`,
+		`x:Name="ResourcesSection"`,
+		"GetRuntimeAnalyticsAsync(_snapshot)",
+		`"/internal/runtime/analytics"`,
+		"TimeSpan.FromSeconds(2)",
+		"CreateCallExpander",
+		"StageMcpRemoteCall",
+		"RecentCallsPrivacyHint",
+	} {
+		if !strings.Contains(activityXaml+activityCode+runtime, want) {
+			t.Fatalf("WinUI Activity analytics missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"OpenRuntimeAnalytics(",
+		`Path = "/analytics"`,
+	} {
+		if strings.Contains(activityCode+runtime, forbidden) {
+			t.Fatalf("WinUI Activity still opens retired analytics web UI %q", forbidden)
+		}
+	}
+}

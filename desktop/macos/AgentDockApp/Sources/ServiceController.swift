@@ -142,6 +142,104 @@ struct RuntimeDiagnosticsPayload: Decodable {
     }
 }
 
+struct RuntimeAnalyticsStage: Decodable, Identifiable {
+    let name: String
+    let startedOffsetMS: Double
+    let durationMS: Double
+    let success: Bool
+
+    var id: String { "\(name)-\(startedOffsetMS)-\(durationMS)" }
+
+    private enum CodingKeys: String, CodingKey {
+        case name, success
+        case startedOffsetMS = "started_offset_ms"
+        case durationMS = "duration_ms"
+    }
+}
+
+struct RuntimeAnalyticsCall: Decodable, Identifiable {
+    let id: UInt64
+    let tool: String
+    let source: String
+    let startedAt: String
+    let durationMS: Double
+    let success: Bool
+    let errorCode: String?
+    let errorCategory: String?
+    let stages: [RuntimeAnalyticsStage]
+
+    private enum CodingKeys: String, CodingKey {
+        case id, tool, source, success, stages
+        case startedAt = "started_at"
+        case durationMS = "duration_ms"
+        case errorCode = "error_code"
+        case errorCategory = "error_category"
+    }
+}
+
+struct RuntimeToolStats: Decodable, Identifiable {
+    let tool: String
+    let count: Int
+    let errorCount: Int
+    let errorRate: Double
+    let p50DurationMS: Double
+    let p95DurationMS: Double
+    let p99DurationMS: Double
+
+    var id: String { tool }
+
+    private enum CodingKeys: String, CodingKey {
+        case tool, count
+        case errorCount = "error_count"
+        case errorRate = "error_rate"
+        case p50DurationMS = "p50_duration_ms"
+        case p95DurationMS = "p95_duration_ms"
+        case p99DurationMS = "p99_duration_ms"
+    }
+}
+
+struct RuntimeProcessSnapshot: Decodable {
+    let goroutines: Int
+    let heapAllocBytes: UInt64
+    let heapInuseBytes: UInt64
+    let heapSysBytes: UInt64
+    let gcCycles: UInt32
+    let uptimeMS: Int64
+
+    private enum CodingKeys: String, CodingKey {
+        case goroutines
+        case heapAllocBytes = "heap_alloc_bytes"
+        case heapInuseBytes = "heap_inuse_bytes"
+        case heapSysBytes = "heap_sys_bytes"
+        case gcCycles = "gc_cycles"
+        case uptimeMS = "uptime_ms"
+    }
+}
+
+struct RuntimeAnalyticsPayload: Decodable {
+    let startedAt: String
+    let recentCapacity: Int
+    let windowCalls: Int
+    let totalCalls: UInt64
+    let totalErrors: UInt64
+    let activeCalls: Int
+    let toolStats: [RuntimeToolStats]
+    let recentCalls: [RuntimeAnalyticsCall]
+    let process: RuntimeProcessSnapshot
+
+    private enum CodingKeys: String, CodingKey {
+        case process
+        case startedAt = "started_at"
+        case recentCapacity = "recent_capacity"
+        case windowCalls = "window_calls"
+        case totalCalls = "total_calls"
+        case totalErrors = "total_errors"
+        case activeCalls = "active_calls"
+        case toolStats = "tool_stats"
+        case recentCalls = "recent_calls"
+    }
+}
+
 struct RuntimeDashboardSnapshot {
     let countsAvailable: Bool
     let diagnosticsAvailable: Bool
@@ -241,6 +339,15 @@ final class ServiceController: @unchecked Sendable {
             mcpCount: overviewPayload?.mcp.count ?? 0,
             pluginCount: overviewPayload?.plugins.count ?? 0,
             recentCalls: diagnosticsPayload?.recentCalls ?? []
+        )
+    }
+
+    func runtimeAnalytics(configuration: ServiceConfiguration?) async -> RuntimeAnalyticsPayload? {
+        guard let configuration else { return nil }
+        return await fetchRuntimePayload(
+            RuntimeAnalyticsPayload.self,
+            configuration: configuration,
+            path: "/internal/runtime/analytics"
         )
     }
 
@@ -587,20 +694,6 @@ final class ServiceController: @unchecked Sendable {
     func openConfiguration() {
         try? FileManager.default.createDirectory(at: paths.appSupport, withIntermediateDirectories: true)
         NSWorkspace.shared.open(paths.appSupport)
-    }
-
-    func openRuntimeAnalytics(configuration: ServiceConfiguration?) {
-        guard let localMCPURL = configuration?.localMCPURL,
-              var components = URLComponents(url: localMCPURL, resolvingAgainstBaseURL: false),
-              components.scheme == "http",
-              isLoopbackHost(components.host) else {
-            return
-        }
-        components.path = "/analytics"
-        components.query = nil
-        components.fragment = nil
-        guard let analyticsURL = components.url else { return }
-        NSWorkspace.shared.open(analyticsURL)
     }
 
     private func isLoopbackHost(_ host: String?) -> Bool {

@@ -8,7 +8,7 @@ import (
 
 func TestDirectLoopbackRequestAllowsLocalBrowser(t *testing.T) {
 	for _, host := range []string{"127.0.0.1:27123", "localhost:27123", "[::1]:27123"} {
-		req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:27123/analytics", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:27123/internal/runtime/analytics", nil)
 		req.RemoteAddr = "127.0.0.1:54321"
 		req.Host = host
 		req.Header.Set("Sec-Fetch-Site", "same-origin")
@@ -30,7 +30,7 @@ func TestDirectLoopbackRequestRejectsExternalPeerAndHost(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:27123/analytics", nil)
+			req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:27123/internal/runtime/analytics", nil)
 			req.RemoteAddr = test.remoteAddr
 			req.Host = test.host
 			if isDirectLoopbackRequest(req) {
@@ -43,7 +43,7 @@ func TestDirectLoopbackRequestRejectsExternalPeerAndHost(t *testing.T) {
 func TestDirectLoopbackRequestRejectsProxyHeaders(t *testing.T) {
 	for _, header := range analyticsProxyHeaders {
 		t.Run(header, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:27123/analytics", nil)
+			req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:27123/internal/runtime/analytics", nil)
 			req.RemoteAddr = "127.0.0.1:54321"
 			req.Host = "127.0.0.1:27123"
 			req.Header.Set(header, "proxy-value")
@@ -55,27 +55,11 @@ func TestDirectLoopbackRequestRejectsProxyHeaders(t *testing.T) {
 }
 
 func TestDirectLoopbackRequestRejectsCrossSiteBrowserRequest(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:27123/analytics", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:27123/internal/runtime/analytics", nil)
 	req.RemoteAddr = "127.0.0.1:54321"
 	req.Host = "127.0.0.1:27123"
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	if isDirectLoopbackRequest(req) {
 		t.Fatal("cross-site request unexpectedly accepted")
-	}
-}
-
-func TestLoopbackOnlyRejectsProxyTraffic(t *testing.T) {
-	handler := loopbackOnly(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:27123/analytics", nil)
-	req.RemoteAddr = "127.0.0.1:54321"
-	req.Host = "public.example"
-	req.Header.Set("CF-Ray", "abc")
-	recorder := httptest.NewRecorder()
-
-	handler.ServeHTTP(recorder, req)
-	if recorder.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusForbidden)
 	}
 }

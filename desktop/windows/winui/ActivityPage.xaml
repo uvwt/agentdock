@@ -10,6 +10,82 @@
                 <TextBlock x:Name="PageDetail" FontSize="12.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
             </StackPanel>
 
+            <local:SectionCard x:Name="CallOverviewSection">
+                <Grid Padding="13" ColumnSpacing="20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition/>
+                        <ColumnDefinition/>
+                        <ColumnDefinition/>
+                        <ColumnDefinition/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Spacing="3">
+                        <TextBlock x:Name="TotalCallsLabel" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <TextBlock x:Name="TotalCallsValue" FontSize="20" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="TotalCallsDetail" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="3">
+                        <TextBlock x:Name="FailedCallsLabel" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <TextBlock x:Name="FailedCallsValue" FontSize="20" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="FailedCallsDetail" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="3">
+                        <TextBlock x:Name="ActiveCallsLabel" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <TextBlock x:Name="ActiveCallsValue" FontSize="20" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="ActiveCallsDetail" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="3" Spacing="3">
+                        <TextBlock x:Name="StatsWindowLabel" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <TextBlock x:Name="StatsWindowValue" FontSize="20" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="StatsWindowDetail" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </StackPanel>
+                </Grid>
+            </local:SectionCard>
+
+            <local:SectionCard x:Name="CallStatisticsSection">
+                <StackPanel x:Name="CallStatisticsPanel"/>
+            </local:SectionCard>
+
+            <local:SectionCard x:Name="RecentCallsSection">
+                <StackPanel>
+                    <TextBlock x:Name="RecentCallsHint"
+                               Margin="13,10"
+                               FontSize="11.5"
+                               TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                    <StackPanel x:Name="RecentCallsPanel"/>
+                </StackPanel>
+            </local:SectionCard>
+
+            <local:SectionCard x:Name="ResourcesSection">
+                <StackPanel>
+                    <Grid Padding="13,0" Height="46">
+                        <TextBlock x:Name="GoHeapLabel" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="GoHeapValue" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </Grid>
+                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                    <Grid Padding="13,0" Height="46">
+                        <TextBlock x:Name="HeapInUseLabel" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="HeapInUseValue" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </Grid>
+                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                    <Grid Padding="13,0" Height="46">
+                        <TextBlock x:Name="GoroutinesLabel" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="GoroutinesValue" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </Grid>
+                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                    <Grid Padding="13,0" Height="46">
+                        <TextBlock x:Name="GcCyclesLabel" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="GcCyclesValue" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </Grid>
+                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                    <Grid Padding="13,0" Height="46">
+                        <TextBlock x:Name="UptimeLabel" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="UptimeValue" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </Grid>
+                </StackPanel>
+            </local:SectionCard>
+
             <local:SectionCard x:Name="RuntimeSection">
                 <StackPanel>
                     <Grid Padding="13,0" Height="46">

@@ -264,18 +264,6 @@
   <data name="OpenConfigFolder" xml:space="preserve">
     <value>打开配置目录</value>
   </data>
-  <data name="RuntimeAnalytics" xml:space="preserve">
-    <value>运行分析</value>
-  </data>
-  <data name="RuntimeAnalyticsDescription" xml:space="preserve">
-    <value>在浏览器中查看工具调用耗时、错误统计与运行资源。</value>
-  </data>
-  <data name="OpenRuntimeAnalytics" xml:space="preserve">
-    <value>打开运行分析</value>
-  </data>
-  <data name="RuntimeAnalyticsLocalUrlUnavailable" xml:space="preserve">
-    <value>本机运行分析地址不可用。</value>
-  </data>
   <data name="Ready" xml:space="preserve">
     <value>准备就绪</value>
   </data>
@@ -766,7 +754,32 @@
   <data name="Full" xml:space="preserve"><value>完整</value></data>
   <data name="Compact" xml:space="preserve"><value>紧凑</value></data>
   <data name="Off" xml:space="preserve"><value>关闭</value></data>
-  <data name="ActivityDetail" xml:space="preserve"><value>查看 Runtime 状态、诊断入口和本地文件。</value></data>
+  <data name="ActivityDetail" xml:space="preserve"><value>查看工具调用、耗时、错误与运行资源。</value></data>
+  <data name="CallOverview" xml:space="preserve"><value>调用概览</value></data>
+  <data name="TotalCalls" xml:space="preserve"><value>总调用</value></data>
+  <data name="FailedCalls" xml:space="preserve"><value>失败调用</value></data>
+  <data name="ActiveCalls" xml:space="preserve"><value>进行中调用</value></data>
+  <data name="StatsWindow" xml:space="preserve"><value>统计窗口</value></data>
+  <data name="CallStatistics" xml:space="preserve"><value>调用统计</value></data>
+  <data name="RecentCalls" xml:space="preserve"><value>最近调用</value></data>
+  <data name="RecentCallsPrivacyHint" xml:space="preserve"><value>仅保留工具名、来源、耗时、阶段、状态与错误码；不会保存参数、结果、命令或文件内容。</value></data>
+  <data name="RuntimeResources" xml:space="preserve"><value>运行资源</value></data>
+  <data name="GoHeap" xml:space="preserve"><value>Go 堆内存</value></data>
+  <data name="HeapInUse" xml:space="preserve"><value>使用中堆内存</value></data>
+  <data name="Goroutines" xml:space="preserve"><value>Goroutine</value></data>
+  <data name="GcCycles" xml:space="preserve"><value>GC 次数</value></data>
+  <data name="Uptime" xml:space="preserve"><value>本次运行</value></data>
+  <data name="SinceRuntimeStarted" xml:space="preserve"><value>本次运行累计</value></data>
+  <data name="CurrentlyRunning" xml:space="preserve"><value>当前正在执行</value></data>
+  <data name="UpToRetained" xml:space="preserve"><value>最多保留 {0} 条</value></data>
+  <data name="AnalyticsUnavailable" xml:space="preserve"><value>运行分析暂不可用。</value></data>
+  <data name="NoCallData" xml:space="preserve"><value>暂无调用数据。</value></data>
+  <data name="ActivityCallStatsDetail" xml:space="preserve"><value>{0} 次调用 · {1:F1}% 错误</value></data>
+  <data name="ErrorCode" xml:space="preserve"><value>错误码</value></data>
+  <data name="StageMcpRefresh" xml:space="preserve"><value>MCP 初始化与发现</value></data>
+  <data name="StageMcpRemoteCall" xml:space="preserve"><value>MCP 远端调用</value></data>
+  <data name="StageCommandStart" xml:space="preserve"><value>命令启动</value></data>
+  <data name="StageCommandForegroundWait" xml:space="preserve"><value>前台等待</value></data>
   <data name="LastStatusRefresh" xml:space="preserve"><value>状态刷新时间</value></data>
   <data name="Diagnostics" xml:space="preserve"><value>诊断</value></data>
   <data name="LogsDirectory" xml:space="preserve"><value>日志目录</value></data>

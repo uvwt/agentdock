@@ -179,3 +179,45 @@ func TestMacOSDashboardUsesRuntimeOverviewAsSingleCountSource(t *testing.T) {
 		t.Fatal("native macOS dashboard must render counts only when Runtime Overview is available")
 	}
 }
+
+func TestMacOSActivityOwnsRuntimeAnalytics(t *testing.T) {
+	base := filepath.Join("..", "..", "desktop", "macos", "AgentDockApp", "Sources")
+	controlPanelData, err := os.ReadFile(filepath.Join(base, "NativeControlPanelWindowController.swift"))
+	if err != nil {
+		t.Fatalf("read NativeControlPanelWindowController.swift: %v", err)
+	}
+	serviceData, err := os.ReadFile(filepath.Join(base, "ServiceController.swift"))
+	if err != nil {
+		t.Fatalf("read ServiceController.swift: %v", err)
+	}
+	appDelegateData, err := os.ReadFile(filepath.Join(base, "AppDelegate.swift"))
+	if err != nil {
+		t.Fatalf("read AppDelegate.swift: %v", err)
+	}
+	content := string(controlPanelData) + string(serviceData) + string(appDelegateData)
+
+	for _, want := range []string{
+		"presentActivity(status:",
+		"runtimeAnalytics(configuration:",
+		`path: "/internal/runtime/analytics"`,
+		"RuntimeActivityCallRow",
+		`SettingsSection(L10n.text("Call overview"))`,
+		`SettingsSection(L10n.text("Call statistics"))`,
+		`SettingsSection(L10n.text("Recent calls"))`,
+		`SettingsSection(L10n.text("Runtime resources"))`,
+		"2_000_000_000",
+		`L10n.text("View activity")`,
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("macOS Activity analytics missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"openRuntimeAnalytics",
+		`components.path = "/analytics"`,
+	} {
+		if strings.Contains(content, forbidden) {
+			t.Fatalf("macOS still opens retired analytics web UI %q", forbidden)
+		}
+	}
+}

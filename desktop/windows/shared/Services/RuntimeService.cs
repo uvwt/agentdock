@@ -187,6 +187,22 @@ public sealed class RuntimeService : IDisposable
             diagnostics?.RecentCalls ?? []);
     }
 
+    public async Task<RuntimeAnalyticsPayload?> GetRuntimeAnalyticsAsync(
+        RuntimeSnapshot snapshot,
+        CancellationToken cancellationToken = default)
+    {
+        if (!snapshot.CoreRunning || !snapshot.Healthy ||
+            !TryCreateLoopbackRuntimeUri(snapshot.LocalMcpUrl, "/internal/runtime/analytics", out var analyticsUri))
+        {
+            return null;
+        }
+
+        return await ReadRuntimeApiAsync<RuntimeAnalyticsPayload>(
+            analyticsUri,
+            ReadBearerToken(),
+            cancellationToken);
+    }
+
     public string ReadBearerToken() => ReadProtectedText(Path.Combine(RuntimeRoot, "auth-token.dpapi"), AuthEntropy);
     public string ReadOAuthPassword() => ReadProtectedText(Path.Combine(RuntimeRoot, "oauth-password.dpapi"), OAuthPasswordEntropy);
     public string ReadTunnelToken() => ReadProtectedText(Path.Combine(RuntimeRoot, "cloudflared-token.dpapi"), TunnelTokenEntropy);
@@ -669,27 +685,6 @@ public sealed class RuntimeService : IDisposable
 
     public void OpenLogsDirectory() => OpenDirectory(LogsDirectory);
     public void OpenConfigDirectory() => OpenDirectory(ConfigDirectory);
-
-    public void OpenRuntimeAnalytics(string localMcpUrl)
-    {
-        if (!Uri.TryCreate(localMcpUrl, UriKind.Absolute, out var localUri) ||
-            localUri.Scheme != Uri.UriSchemeHttp ||
-            !IsLoopbackHost(localUri.Host))
-        {
-            throw new InvalidOperationException(UiText.Get("RuntimeAnalyticsLocalUrlUnavailable"));
-        }
-
-        var analyticsUri = new UriBuilder(localUri)
-        {
-            Path = "/analytics",
-            Query = "",
-            Fragment = ""
-        }.Uri;
-        Process.Start(new ProcessStartInfo(analyticsUri.AbsoluteUri)
-        {
-            UseShellExecute = true
-        });
-    }
 
     private static bool IsLoopbackHost(string host) =>
         string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||

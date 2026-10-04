@@ -264,18 +264,6 @@
   <data name="OpenConfigFolder" xml:space="preserve">
     <value>Open config folder</value>
   </data>
-  <data name="RuntimeAnalytics" xml:space="preserve">
-    <value>Runtime analytics</value>
-  </data>
-  <data name="RuntimeAnalyticsDescription" xml:space="preserve">
-    <value>View tool call latency, error statistics, and runtime resources in your browser.</value>
-  </data>
-  <data name="OpenRuntimeAnalytics" xml:space="preserve">
-    <value>Open runtime analytics</value>
-  </data>
-  <data name="RuntimeAnalyticsLocalUrlUnavailable" xml:space="preserve">
-    <value>The local runtime analytics address is unavailable.</value>
-  </data>
   <data name="Ready" xml:space="preserve">
     <value>Ready</value>
   </data>
@@ -766,7 +754,32 @@ Update now?</value>
   <data name="Full" xml:space="preserve"><value>Full</value></data>
   <data name="Compact" xml:space="preserve"><value>Compact</value></data>
   <data name="Off" xml:space="preserve"><value>Off</value></data>
-  <data name="ActivityDetail" xml:space="preserve"><value>Runtime status, diagnostics, and local files.</value></data>
+  <data name="ActivityDetail" xml:space="preserve"><value>Tool calls, latency, errors, and runtime resources.</value></data>
+  <data name="CallOverview" xml:space="preserve"><value>Call overview</value></data>
+  <data name="TotalCalls" xml:space="preserve"><value>Total calls</value></data>
+  <data name="FailedCalls" xml:space="preserve"><value>Failed calls</value></data>
+  <data name="ActiveCalls" xml:space="preserve"><value>Active calls</value></data>
+  <data name="StatsWindow" xml:space="preserve"><value>Stats window</value></data>
+  <data name="CallStatistics" xml:space="preserve"><value>Call statistics</value></data>
+  <data name="RecentCalls" xml:space="preserve"><value>Recent calls</value></data>
+  <data name="RecentCallsPrivacyHint" xml:space="preserve"><value>Only tool name, source, latency, stages, status, and error code are retained. Arguments, results, commands, and file contents are never stored.</value></data>
+  <data name="RuntimeResources" xml:space="preserve"><value>Runtime resources</value></data>
+  <data name="GoHeap" xml:space="preserve"><value>Go heap</value></data>
+  <data name="HeapInUse" xml:space="preserve"><value>Heap in use</value></data>
+  <data name="Goroutines" xml:space="preserve"><value>Goroutines</value></data>
+  <data name="GcCycles" xml:space="preserve"><value>GC cycles</value></data>
+  <data name="Uptime" xml:space="preserve"><value>Uptime</value></data>
+  <data name="SinceRuntimeStarted" xml:space="preserve"><value>Since this runtime started</value></data>
+  <data name="CurrentlyRunning" xml:space="preserve"><value>Currently running</value></data>
+  <data name="UpToRetained" xml:space="preserve"><value>Up to {0} retained</value></data>
+  <data name="AnalyticsUnavailable" xml:space="preserve"><value>Runtime analytics are unavailable.</value></data>
+  <data name="NoCallData" xml:space="preserve"><value>No call data yet.</value></data>
+  <data name="ActivityCallStatsDetail" xml:space="preserve"><value>{0} calls · {1:F1}% errors</value></data>
+  <data name="ErrorCode" xml:space="preserve"><value>Error code</value></data>
+  <data name="StageMcpRefresh" xml:space="preserve"><value>MCP initialize &amp; discover</value></data>
+  <data name="StageMcpRemoteCall" xml:space="preserve"><value>MCP remote call</value></data>
+  <data name="StageCommandStart" xml:space="preserve"><value>Command start</value></data>
+  <data name="StageCommandForegroundWait" xml:space="preserve"><value>Foreground wait</value></data>
   <data name="LastStatusRefresh" xml:space="preserve"><value>Last status refresh</value></data>
   <data name="Diagnostics" xml:space="preserve"><value>Diagnostics</value></data>
   <data name="LogsDirectory" xml:space="preserve"><value>Logs directory</value></data>
