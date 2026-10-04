@@ -53,7 +53,6 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
     private let applyButton = NSButton(title: L10n.text("Configure and enable"), target: nil, action: nil)
     private let permissionsButton = NSButton(title: L10n.text("Check permissions"), target: nil, action: nil)
-    private let advancedButton = NSButton(title: L10n.text("Advanced settings"), target: nil, action: nil)
     private let logsButton = NSButton(title: L10n.text("Open logs"), target: nil, action: nil)
 
     private var currentStatus = ServiceStatus.missing
@@ -76,14 +75,13 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     }
 
     var hasActiveServiceOperation: Bool {
-        isBusy || (advancedSettings?.hasActiveServiceOperation ?? false)
+        isBusy
     }
     private var displayedPublicMCPURL: URL?
     private var lastCheckedPublicMCPURL: URL?
     private var activePublicCheckURL: URL?
     private var publicCheckTask: Task<Void, Never>?
 
-    private var advancedSettings: AdvancedSettingsWindowController?
     private lazy var permissionsWindow = DesktopPermissionsWindowController()
 
     init(
@@ -135,7 +133,6 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             titleLabel.stringValue = "AgentDock"
             subtitleLabel.stringValue = L10n.text("Local MCP service and public access management")
             applyButton.title = L10n.text("Apply changes")
-            advancedButton.isEnabled = !controlsLocked
             logsButton.isEnabled = true
             serviceSection.isHidden = false
             updateServiceSection(status)
@@ -147,7 +144,6 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             stateLabel.textColor = .secondaryLabelColor
             applyButton.title = L10n.text("Configure and enable")
             applyButton.isEnabled = true
-            advancedButton.isEnabled = false
             logsButton.isEnabled = false
             serviceSection.isHidden = true
             authTokenValue = ""
@@ -163,7 +159,6 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     func setUpdateInProgress(_ inProgress: Bool, status: String? = nil) {
         isUpdateInProgress = inProgress
         setBusy(isBusy)
-        advancedSettings?.setUpdateInProgress(inProgress)
         if inProgress {
             showStatus(status ?? L10n.text("Updating AgentDock…"), isError: false)
         } else if statusLabel.stringValue == L10n.text("Updating AgentDock…") ||
@@ -328,15 +323,12 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         permissionsButton.bezelStyle = .inline
         permissionsButton.target = self
         permissionsButton.action = #selector(openPermissionsPressed)
-        advancedButton.bezelStyle = .inline
-        advancedButton.target = self
-        advancedButton.action = #selector(openAdvancedPressed)
         applyButton.bezelStyle = .rounded
         applyButton.keyEquivalent = "\r"
         applyButton.target = self
         applyButton.action = #selector(applyPressed)
 
-        let footer = NSStackView(views: [logsButton, permissionsButton, advancedButton, progress, statusLabel, NSView(), applyButton])
+        let footer = NSStackView(views: [logsButton, permissionsButton, progress, statusLabel, NSView(), applyButton])
         footer.orientation = .horizontal
         footer.alignment = .centerY
         footer.spacing = 10
@@ -721,17 +713,6 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func openPermissionsPressed() { permissionsWindow.present() }
-    @objc private func openAdvancedPressed() {
-        guard !isUpdateInProgress else { return }
-        if advancedSettings == nil {
-            advancedSettings = AdvancedSettingsWindowController(
-                service: service,
-                menuLoginAgent: menuLoginAgent,
-                onChanged: onChanged
-            )
-        }
-        advancedSettings?.present(status: currentStatus)
-    }
     @objc private func openLogsPressed() { service.openLogs() }
 
     @objc private func testPublicAddressPressed() {
@@ -808,8 +789,8 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private func setBusy(_ busy: Bool) {
         isBusy = busy
         let locked = controlsLocked
-        for control in [publicMode, serverURLField, tunnelTokenField, startStopButton, restartButton, updateButton, advancedButton] {
-            control.isEnabled = !locked && (control !== advancedButton || currentStatus.installed)
+        for control in [publicMode, serverURLField, tunnelTokenField, startStopButton, restartButton, updateButton] {
+            control.isEnabled = !locked
         }
         if !locked && migrationRequired {
             startStopButton.isEnabled = false

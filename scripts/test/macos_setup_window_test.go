@@ -32,7 +32,6 @@ func TestMacOSSetupWindowUsesResponsiveScrollableLayout(t *testing.T) {
 		`publicAddress.lineBreakMode = .byCharWrapping`,
 		`publicAddress.maximumNumberOfLines = 2`,
 		`L10n.text("Check permissions")`,
-		`L10n.text("Advanced settings")`,
 	} {
 		if !strings.Contains(setup, want) {
 			t.Fatalf("macOS setup window missing responsive layout contract %q", want)
@@ -69,11 +68,9 @@ func TestMacOSSetupWindowUsesResponsiveScrollableLayout(t *testing.T) {
 	resources := map[string][]string{
 		filepath.Join("Resources", "en.lproj", "Localizable.strings"): {
 			`"Check permissions" = "Check permissions";`,
-			`"Advanced settings" = "Advanced settings";`,
 		},
 		filepath.Join("Resources", "zh-Hans.lproj", "Localizable.strings"): {
 			`"Check permissions" = "权限检查";`,
-			`"Advanced settings" = "高级设置";`,
 		},
 	}
 	for relativePath, wants := range resources {
@@ -87,7 +84,7 @@ func TestMacOSSetupWindowUsesResponsiveScrollableLayout(t *testing.T) {
 				t.Fatalf("macOS localization missing %q in %s", want, relativePath)
 			}
 		}
-		if strings.Contains(content, "Check permissions…") || strings.Contains(content, "Advanced settings…") {
+		if strings.Contains(content, "Check permissions…") {
 			t.Fatalf("macOS localization must not keep ellipsis in setup/menu button labels: %s", relativePath)
 		}
 	}

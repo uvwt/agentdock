@@ -68,7 +68,7 @@ func TestDesktopHostsDoNotBypassManagedRotation(t *testing.T) {
 			`os.O_APPEND`,
 			`agentdock.out.log`,
 		},
-		"../../desktop/windows/control-panel/Services/RuntimeService.cs": {
+		"../../desktop/windows/shared/Services/RuntimeService.cs": {
 			`FileMode.Append`,
 			`Path.Combine(LogsDirectory, "agentdock.err.log")`,
 		},

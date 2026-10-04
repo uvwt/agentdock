@@ -75,7 +75,7 @@ jobs:
           go build -trimpath -ldflags '-s -w' -o dist/agentdock-arbiter.exe ./cmd/agentdock-arbiter
           go build -trimpath -ldflags '-s -w' -o dist/agentdock-shim.exe ./cmd/agentdock-shim
           go build -trimpath -ldflags '-s -w -H=windowsgui' -o dist/agentdock-tray-shim.exe ./cmd/agentdock-shim
-          dotnet publish .\desktop\windows\control-panel\AgentDock.ControlPanel.csproj `
+          dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
             -r win-x64 `
             --self-contained true `
@@ -468,7 +468,7 @@ jobs:
           go build -trimpath -ldflags '-s -w' -o dist/agentdock-shim.exe ./cmd/agentdock-shim
           go build -trimpath -ldflags '-s -w -H=windowsgui' -o dist/agentdock-tray-shim.exe ./cmd/agentdock-shim
           & .\packaging\windows\build-wsl-helper-payload.ps1 -OutputDirectory .\dist\wsl-helper
-          dotnet publish .\desktop\windows\control-panel\AgentDock.ControlPanel.csproj `
+          dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
             -r $runtimeIdentifier `
             --self-contained true `

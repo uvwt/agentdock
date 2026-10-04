@@ -4,6 +4,11 @@
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>AgentDock.ControlPanel</RootNamespace>
+    <AssemblyName>agentdock-tray</AssemblyName>
+    <Product>AgentDock</Product>
+    <Company>AgentDock</Company>
+    <Copyright>Copyright AgentDock contributors</Copyright>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>../../../packaging/windows/assets/agentdock.ico</ApplicationIcon>
     <Platforms>x64;ARM64</Platforms>
@@ -13,6 +18,7 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <PublishSingleFile>false</PublishSingleFile>
     <SelfContained>true</SelfContained>
+    <GenerateSatelliteAssembliesForCore>true</GenerateSatelliteAssembliesForCore>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
@@ -21,14 +27,18 @@
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
   <ItemGroup>
-    <!-- 迁移期直接复用稳定业务实现；旧 WPF 与新 WinUI 不维护两套 Runtime 状态。 -->
-    <Compile Include="../control-panel/Localization/UiText.cs" Link="Shared/UiText.cs" />
-    <Compile Include="../control-panel/Models/RuntimeModels.cs" Link="Shared/RuntimeModels.cs" />
-    <Compile Include="../control-panel/Services/RuntimeService.cs" Link="Shared/RuntimeService.cs" />
-    <Compile Include="../control-panel/Services/AcpAdapterResolver.cs" Link="Shared/AcpAdapterResolver.cs" />
-    <Compile Include="../control-panel/Services/ControlPanelDiagnostics.cs" Link="Shared/ControlPanelDiagnostics.cs" />
-    <Compile Include="../control-panel/Services/KillOnCloseJob.cs" Link="Shared/KillOnCloseJob.cs" />
-    <EmbeddedResource Include="../control-panel/Resources/UiStrings.resx" Link="Resources/UiStrings.resx" />
-    <EmbeddedResource Include="../control-panel/Resources/UiStrings.zh-CN.resx" Link="Resources/UiStrings.zh-CN.resx" />
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- WinUI 直接复用平台无关的 Runtime / Model / 资源实现。 -->
+    <Compile Include="../shared/UiText.cs" Link="Shared/UiText.cs" />
+    <Compile Include="../shared/Models/RuntimeModels.cs" Link="Shared/RuntimeModels.cs" />
+    <Compile Include="../shared/Services/RuntimeService.cs" Link="Shared/RuntimeService.cs" />
+    <Compile Include="../shared/Services/AcpAdapterResolver.cs" Link="Shared/AcpAdapterResolver.cs" />
+    <Compile Include="../shared/Services/ControlPanelDiagnostics.cs" Link="Shared/ControlPanelDiagnostics.cs" />
+    <Compile Include="../shared/Services/KillOnCloseJob.cs" Link="Shared/KillOnCloseJob.cs" />
+    <Compile Include="../shared/Services/TaskAdminService.cs" Link="Shared/TaskAdminService.cs" />
+    <EmbeddedResource Include="../shared/Resources/UiStrings.resx" Link="Resources/UiStrings.resx" />
+    <EmbeddedResource Include="../shared/Resources/UiStrings.zh-CN.resx" Link="Resources/UiStrings.zh-CN.resx" />
   </ItemGroup>
 </Project>

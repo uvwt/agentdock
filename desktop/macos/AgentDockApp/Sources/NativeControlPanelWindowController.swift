@@ -114,6 +114,8 @@ private final class ControlPanelModel: ObservableObject {
     let menuLoginAgent: MenuLoginAgentController
     let onChanged: () -> Void
     let onUpdateRequested: () -> Void
+    private lazy var installer = InstallerRunner(service: service)
+    private lazy var configurationController = ServiceConfigurationController(service: service)
 
     init(service: ServiceController, menuLoginAgent: MenuLoginAgentController, onChanged: @escaping () -> Void, onUpdateRequested: @escaping () -> Void) {
         self.service = service
@@ -131,6 +133,48 @@ private final class ControlPanelModel: ObservableObject {
 
     func openLogs() { service.openLogs() }
     func openConfiguration() { service.openConfiguration() }
+
+    func refresh() async {
+        update(await service.status())
+    }
+
+    func applyTunnel(mode: TunnelMode, serverURL: String, tunnelToken: String) async {
+        await perform {
+            _ = try await self.installer.run(request: InstallRequest(mode: mode, serverURL: serverURL, tunnelToken: tunnelToken))
+        }
+    }
+
+    func pairNexus(endpoint: String, code: String) async {
+        await perform { try await self.service.pairNexus(endpoint: endpoint, pairingCode: code) }
+    }
+
+    func applySettings(_ settings: EditableServiceSettings) async {
+        await perform { try await self.configurationController.apply(settings) }
+    }
+
+    func setCoreAutostart(_ enabled: Bool) async {
+        await perform { try await self.service.setAutostart(enabled: enabled) }
+    }
+
+    func setMenuAutostart(_ enabled: Bool) async {
+        await perform { try self.menuLoginAgent.setEnabled(enabled) }
+    }
+
+    func requestUpdate() { onUpdateRequested() }
+
+    private func perform(_ operation: @escaping () async throws -> Void) async {
+        guard !isBusy, !isUpdateInProgress else { return }
+        isBusy = true
+        message = nil
+        do {
+            try await operation()
+            update(await service.status())
+            onChanged()
+        } catch {
+            message = error.localizedDescription
+        }
+        isBusy = false
+    }
 
     func toggleRuntime() {
         guard !isBusy, !isUpdateInProgress else { return }
@@ -326,6 +370,11 @@ private struct HomeView: View {
 
 private struct ConnectionsView: View {
     @ObservedObject var model: ControlPanelModel
+    @State private var tunnelMode: TunnelMode = .local
+    @State private var serverURL = ""
+    @State private var tunnelToken = ""
+    @State private var nexusEndpoint = "https://mcp.nexusdock.co"
+    @State private var pairingCode = ""
 
     private var configuration: ServiceConfiguration? { model.status.configuration }
     private var nexusDevice: NexusDeviceStatus { model.nexusDevice }
@@ -333,50 +382,64 @@ private struct ConnectionsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                PageHeader(
-                    title: L10n.text("Connections"),
-                    detail: L10n.text("Connect AI clients to this device.")
-                )
-
+                PageHeader(title: L10n.text("Connections"), detail: L10n.text("Connect AI clients to this device."))
                 SettingsSection(L10n.text("Local connection")) {
                     SettingsRow("Local MCP", detail: configuration?.localMCPURL?.absoluteString ?? "—") {
-                        Button(L10n.text("Copy")) {
-                            copy(configuration?.localMCPURL?.absoluteString)
-                        }
-                        .controlSize(.small)
-                        .disabled(configuration?.localMCPURL == nil)
+                        Button(L10n.text("Copy")) { copy(configuration?.localMCPURL?.absoluteString) }.controlSize(.small)
                     }
                     RowDivider()
                     SettingsRow("Public MCP", detail: configuration?.publicMCPURL?.absoluteString ?? L10n.text("Disabled")) {
-                        Button(L10n.text("Copy")) {
-                            copy(configuration?.publicMCPURL?.absoluteString)
-                        }
-                        .controlSize(.small)
-                        .disabled(configuration?.publicMCPURL == nil)
+                        Button(L10n.text("Copy")) { copy(configuration?.publicMCPURL?.absoluteString) }.controlSize(.small)
                     }
+                    RowDivider()
+                    VStack(alignment: .leading, spacing: 10) {
+                        Picker(L10n.text("Public MCP mode"), selection: $tunnelMode) {
+                            Text(L10n.text("Local only")).tag(TunnelMode.local)
+                            Text(L10n.text("Temporary public address")).tag(TunnelMode.quick)
+                            Text(L10n.text("Custom domain")).tag(TunnelMode.named)
+                        }.pickerStyle(.segmented)
+                        if tunnelMode == .named {
+                            TextField("https://mcp.example.com", text: $serverURL).textFieldStyle(.roundedBorder)
+                            SecureField(L10n.text("Cloudflare Tunnel Token"), text: $tunnelToken).textFieldStyle(.roundedBorder)
+                        }
+                        Button(L10n.text("Apply")) {
+                            Task {
+                                await model.applyTunnel(mode: tunnelMode, serverURL: serverURL, tunnelToken: tunnelToken)
+                                tunnelToken = ""
+                            }
+                        }.disabled(model.isBusy)
+                    }.padding(13)
                 }
 
                 SettingsSection(L10n.text("Remote connection")) {
-                    SettingsRow(
-                        "NexusDock",
-                        detail: nexusDevice.paired ? nexusDevice.endpoint : L10n.text("Not configured")
-                    ) {
+                    SettingsRow("NexusDock", detail: nexusDevice.paired ? nexusDevice.endpoint : L10n.text("Not configured")) {
                         StatusPill(text: nexusText, active: nexusActive)
                     }
+                    RowDivider()
+                    VStack(alignment: .leading, spacing: 10) {
+                        TextField(L10n.text("NexusDock address"), text: $nexusEndpoint).textFieldStyle(.roundedBorder)
+                        SecureField(L10n.text("One-time pairing code"), text: $pairingCode).textFieldStyle(.roundedBorder)
+                        Button(L10n.text("Pair")) {
+                            Task {
+                                await model.pairNexus(endpoint: nexusEndpoint, code: pairingCode)
+                                pairingCode = ""
+                            }
+                        }.disabled(model.isBusy || nexusEndpoint.isEmpty || pairingCode.isEmpty)
+                    }.padding(13)
                 }
+                if let message = model.message { Text(message).font(.system(size: 12)).foregroundStyle(.secondary) }
             }
-            .padding(.horizontal, 28)
-            .padding(.top, 24)
-            .padding(.bottom, 32)
+            .padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 32)
             .frame(maxWidth: 760, alignment: .leading)
+        }
+        .task(id: model.statusUpdatedAt) {
+            tunnelMode = (try? model.service.configuredTunnelMode()) ?? .local
+            serverURL = configuration?.publicURL ?? ""
+            nexusEndpoint = nexusDevice.paired ? nexusDevice.endpoint : "https://mcp.nexusdock.co"
         }
     }
 
-    private var nexusActive: Bool {
-        if case .connected = model.status.nexusConnection { return true }
-        return false
-    }
-
+    private var nexusActive: Bool { if case .connected = model.status.nexusConnection { return true }; return false }
     private var nexusText: String {
         switch model.status.nexusConnection {
         case .connected: return L10n.text("Connected")
@@ -385,7 +448,6 @@ private struct ConnectionsView: View {
         case .unconfigured: return L10n.text("Not configured")
         }
     }
-
     private func copy(_ value: String?) {
         guard let value, !value.isEmpty else { return }
         NSPasteboard.general.clearContents()
@@ -395,77 +457,150 @@ private struct ConnectionsView: View {
 
 private struct CapabilitiesView: View {
     @ObservedObject var model: ControlPanelModel
+    @State private var browserEnabled = false
+    @State private var browserMode = 0
+    @State private var browserCDPURL = ""
+    @State private var acpEnabled = false
+    @State private var profiles: [ACPProfileConfiguration] = []
+    @State private var defaultProfile = ""
+    @State private var selectedMCPAppsMode: MCPAppsMode = .full
+    @State private var customName = ""
+    @State private var customCommand = ""
+    @State private var customArguments = ""
 
     private var configuration: ServiceConfiguration? { model.status.configuration }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                PageHeader(
-                    title: L10n.text("Capabilities"),
-                    detail: L10n.text("Configure the capabilities AgentDock provides to AI.")
-                )
-
+                PageHeader(title: L10n.text("Capabilities"), detail: L10n.text("Configure the capabilities AgentDock provides to AI."))
                 SettingsSection(L10n.text("Available capabilities")) {
-                    SettingsRow(L10n.text("Browser"), detail: browserDetail) {
-                        StatusPill(
-                            text: capabilityState(configuration?.browserEnabled),
-                            active: configuration?.browserEnabled == true
-                        )
+                    SettingsRow(L10n.text("Browser"), detail: L10n.text("Browser automation and web operations")) {
+                        Toggle("", isOn: $browserEnabled).labelsHidden()
                     }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Picker(L10n.text("Browser connection"), selection: $browserMode) {
+                            Text(L10n.text("Isolated browser")).tag(0)
+                            Text(L10n.text("Reuse local browser")).tag(1)
+                            Text(L10n.text("Specified CDP")).tag(2)
+                        }.pickerStyle(.segmented)
+                        if browserMode == 2 {
+                            TextField("http://127.0.0.1:9222", text: $browserCDPURL).textFieldStyle(.roundedBorder)
+                        }
+                    }.padding(.horizontal, 13).padding(.bottom, 12)
                     RowDivider()
                     SettingsRow("Coding Agent", detail: codingAgentDetail) {
-                        StatusPill(
-                            text: capabilityState(configuration?.acpEnabled),
-                            active: configuration?.acpEnabled == true
-                        )
+                        Toggle("", isOn: $acpEnabled).labelsHidden()
                     }
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(profiles.indices, id: \.self) { index in
+                            Toggle(profileTitle(profiles[index]), isOn: $profiles[index].enabled)
+                        }
+                        if !enabledProfiles.isEmpty {
+                            Picker(L10n.text("Default Coding Agent"), selection: $defaultProfile) {
+                                ForEach(enabledProfiles, id: \.id) { profile in
+                                    Text(profileTitle(profile)).tag(profile.id)
+                                }
+                            }
+                        }
+                        DisclosureGroup(L10n.text("Add custom Coding Agent")) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                TextField(L10n.text("Name"), text: $customName).textFieldStyle(.roundedBorder)
+                                TextField(L10n.text("Command"), text: $customCommand).textFieldStyle(.roundedBorder)
+                                TextField(L10n.text("Args JSON"), text: $customArguments).textFieldStyle(.roundedBorder)
+                                Button(L10n.text("Add")) { addCustomProfile() }
+                                    .disabled(customName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            }.padding(.top, 8)
+                        }
+                    }.padding(.horizontal, 13).padding(.bottom, 12)
                     RowDivider()
                     SettingsRow("MCP Apps", detail: L10n.text("Interactive MCP app presentation")) {
-                        Text(mcpAppsMode)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                        Picker("", selection: $selectedMCPAppsMode) {
+                            Text(L10n.text("Full")).tag(MCPAppsMode.full)
+                            Text(L10n.text("Compact")).tag(MCPAppsMode.compact)
+                            Text(L10n.text("Off")).tag(MCPAppsMode.off)
+                        }.labelsHidden().frame(width: 120)
                     }
                 }
+                Button(L10n.text("Save and restart Runtime")) {
+                    let settings = EditableServiceSettings(
+                        port: configuration?.port ?? 8765,
+                        logLevel: configuration?.logLevel ?? "info",
+                        mcpAppsMode: selectedMCPAppsMode,
+                        browserEnabled: browserEnabled,
+                        browserCDPURL: browserMode == 2 ? browserCDPURL : "",
+                        browserReuseExistingCDP: browserMode == 1,
+                        acpEnabled: acpEnabled,
+                        acpProfiles: profiles,
+                        acpDefaultProfile: defaultProfile
+                    )
+                    Task { await model.applySettings(settings) }
+                }.disabled(model.isBusy)
+                if let message = model.message { Text(message).font(.system(size: 12)).foregroundStyle(.secondary) }
             }
-            .padding(.horizontal, 28)
-            .padding(.top, 24)
-            .padding(.bottom, 32)
+            .padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 32)
             .frame(maxWidth: 760, alignment: .leading)
         }
-    }
-
-    private func capabilityState(_ enabled: Bool?) -> String {
-        guard let enabled else { return L10n.text("Unavailable") }
-        return enabled ? L10n.text("Enabled") : L10n.text("Disabled")
-    }
-
-    private var browserDetail: String {
-        guard let configuration else { return L10n.text("Browser automation and web operations") }
-        guard configuration.browserEnabled else { return L10n.text("Browser automation and web operations") }
-        if configuration.browserReuseExistingCDP { return L10n.text("Prefer an existing local browser") }
-        if !configuration.browserCDPURL.isEmpty { return L10n.text("Use the configured CDP browser") }
-        return L10n.text("Use an isolated browser")
-    }
-
-    private var codingAgentDetail: String {
-        guard let configuration else { return L10n.text("No profiles configured") }
-        let enabledCount = configuration.acpProfiles.filter(\.enabled).count
-        guard enabledCount > 0 else { return L10n.text("No profiles configured") }
-        return L10n.format(
-            "%d enabled · default %@",
-            enabledCount,
-            configuration.acpDefaultProfile
-        )
-    }
-
-    private var mcpAppsMode: String {
-        guard let mode = configuration?.mcpAppsMode else { return "—" }
-        switch mode {
-        case .full: return L10n.text("Full")
-        case .compact: return L10n.text("Compact")
-        case .off: return L10n.text("Off")
+        .task(id: model.statusUpdatedAt) { loadConfiguration() }
+        .onChange(of: profiles.map(\.enabled)) { _ in
+            if !enabledProfiles.contains(where: { $0.id == defaultProfile }) {
+                defaultProfile = enabledProfiles.first?.id ?? ""
+            }
         }
+    }
+
+    private var enabledProfiles: [ACPProfileConfiguration] { profiles.filter(\.enabled) }
+    private var codingAgentDetail: String {
+        let enabledCount = profiles.filter(\.enabled).count
+        return enabledCount == 0 ? L10n.text("No profiles configured") : L10n.format("%d enabled · default %@", enabledCount, defaultProfile)
+    }
+    private func profileTitle(_ profile: ACPProfileConfiguration) -> String {
+        profile.displayName?.isEmpty == false ? profile.displayName! : profile.id
+    }
+    private func loadConfiguration() {
+        guard let configuration else { return }
+        browserEnabled = configuration.browserEnabled
+        browserCDPURL = configuration.browserCDPURL
+        browserMode = !configuration.browserCDPURL.isEmpty ? 2 : (configuration.browserReuseExistingCDP ? 1 : 0)
+        acpEnabled = configuration.acpEnabled
+        profiles = configuration.acpProfiles
+        for preset in [ACPAgentPreset.codex, .claude, .grok] where !profiles.contains(where: { $0.id == preset.rawValue }) {
+            profiles.append(ACPProfileConfiguration(
+                id: preset.rawValue,
+                kind: preset,
+                command: "",
+                args: [],
+                envFromEnv: nil,
+                enabled: false
+            ))
+        }
+        defaultProfile = configuration.acpDefaultProfile
+        selectedMCPAppsMode = configuration.mcpAppsMode
+    }
+
+    private func addCustomProfile() {
+        let name = customName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        let base = name.lowercased().map { character -> Character in
+            character.isLetter || character.isNumber || character == "." || character == "_" || character == "-" ? character : "-"
+        }
+        var id = String(base).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        if id.isEmpty { id = "custom" }
+        var suffix = 2
+        let original = id
+        while profiles.contains(where: { $0.id == id }) { id = "\(original)-\(suffix)"; suffix += 1 }
+        let args = (try? ACPDesktopConfiguration.decodeArguments(customArguments)) ?? []
+        profiles.append(ACPProfileConfiguration(
+            id: id,
+            displayName: name,
+            kind: .custom,
+            command: customCommand.trimmingCharacters(in: .whitespacesAndNewlines),
+            args: args,
+            envFromEnv: nil,
+            enabled: true
+        ))
+        if defaultProfile.isEmpty { defaultProfile = id }
+        customName = ""; customCommand = ""; customArguments = ""
     }
 }
 
@@ -525,6 +660,13 @@ private struct ActivityView: View {
 
 private struct SettingsView: View {
     @ObservedObject var model: ControlPanelModel
+    @State private var port = 8765
+    @State private var logLevel = "info"
+    @State private var languagePreference: UILanguagePreference = .system
+    @State private var coreAutostart = false
+    @State private var menuAutostart = false
+    @State private var showAuthToken = false
+    @State private var showOAuthPassword = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -547,6 +689,15 @@ private struct SettingsView: View {
                 }
             }
         }
+        .task(id: model.statusUpdatedAt) {
+            if let configuration = model.status.configuration {
+                port = configuration.port
+                logLevel = configuration.logLevel
+            }
+            languagePreference = L10n.languagePreference()
+            coreAutostart = model.status.autostartEnabled
+            menuAutostart = model.menuLoginAgent.isEnabled
+        }
     }
 
     @ViewBuilder private var settingsContent: some View {
@@ -562,7 +713,63 @@ private struct SettingsView: View {
                     SettingsRow(L10n.text("Service")) {
                         Button(model.status.loaded ? L10n.text("Stop") : L10n.text("Start")) { model.toggleRuntime() }.controlSize(.small)
                     }
+                    RowDivider()
+                    SettingsRow(L10n.text("Service port")) {
+                        TextField("", value: $port, format: .number).textFieldStyle(.roundedBorder).frame(width: 100)
+                    }
+                    RowDivider()
+                    SettingsRow(L10n.text("Log level")) {
+                        Picker("", selection: $logLevel) {
+                            ForEach(["debug", "info", "warn", "error"], id: \.self) { Text($0).tag($0) }
+                        }.labelsHidden().frame(width: 110)
+                    }
+                    RowDivider()
+                    SettingsRow(L10n.text("Interface language")) {
+                        Picker("", selection: $languagePreference) {
+                            ForEach(UILanguagePreference.allCases, id: \.rawValue) { preference in
+                                Text(preference.title).tag(preference)
+                            }
+                        }.labelsHidden().frame(width: 150)
+                    }
+                    RowDivider()
+                    SettingsRow(L10n.text("Runtime configuration")) {
+                        Button(L10n.text("Save and restart Runtime")) {
+                            guard let configuration = model.status.configuration else { return }
+                            let settings = EditableServiceSettings(
+                                port: port,
+                                logLevel: logLevel,
+                                mcpAppsMode: configuration.mcpAppsMode,
+                                browserEnabled: configuration.browserEnabled,
+                                browserCDPURL: configuration.browserCDPURL,
+                                browserReuseExistingCDP: configuration.browserReuseExistingCDP,
+                                acpEnabled: configuration.acpEnabled,
+                                acpProfiles: configuration.acpProfiles,
+                                acpDefaultProfile: configuration.acpDefaultProfile
+                            )
+                            Task {
+                                await model.applySettings(settings)
+                                if model.message == nil, languagePreference != L10n.languagePreference() {
+                                    let previous = L10n.languagePreference()
+                                    L10n.setLanguagePreference(languagePreference)
+                                    let relaunch = Process()
+                                    relaunch.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+                                    relaunch.arguments = ["-n", Bundle.main.bundlePath]
+                                    do {
+                                        try relaunch.run()
+                                        NSApp.terminate(nil)
+                                    } catch {
+                                        L10n.setLanguagePreference(previous)
+                                    }
+                                }
+                            }
+                        }.controlSize(.small)
+                    }
+                    RowDivider()
+                    SettingsRow(L10n.text("AgentDock update")) {
+                        Button(L10n.text("Check for updates")) { model.requestUpdate() }.controlSize(.small)
+                    }
                 }
+                if let message = model.message { Text(message).font(.system(size: 12)).foregroundStyle(.secondary) }
             }
         case .permissions:
             VStack(alignment: .leading, spacing: 20) {
@@ -579,18 +786,28 @@ private struct SettingsView: View {
             VStack(alignment: .leading, spacing: 20) {
                 PageHeader(title: "Startup", detail: L10n.text("Background service and menu bar startup behavior."))
                 SettingsSection(L10n.text("Startup")) {
-                    SettingsRow(L10n.text("Core background service")) { StatusPill(text: model.status.autostartEnabled ? L10n.text("Enabled") : L10n.text("Disabled"), active: model.status.autostartEnabled) }
+                    SettingsRow(L10n.text("Core background service")) {
+                        Toggle("", isOn: $coreAutostart).labelsHidden()
+                            .onChange(of: coreAutostart) { value in Task { await model.setCoreAutostart(value) } }
+                    }
                     RowDivider()
-                    SettingsRow(L10n.text("Menu bar app")) { Text(L10n.text("Managed by macOS")).font(.system(size: 12)).foregroundStyle(.secondary) }
+                    SettingsRow(L10n.text("Menu bar app")) {
+                        Toggle("", isOn: $menuAutostart).labelsHidden()
+                            .onChange(of: menuAutostart) { value in Task { await model.setMenuAutostart(value) } }
+                    }
                 }
             }
         case .credentials:
             VStack(alignment: .leading, spacing: 20) {
-                PageHeader(title: "Access Credentials", detail: L10n.text("Credentials remain managed by the existing AgentDock configuration."))
+                PageHeader(title: "Access Credentials", detail: L10n.text("Credentials are stored in the protected AgentDock configuration."))
                 SettingsSection(L10n.text("Credentials")) {
-                    SettingsRow(L10n.text("Authentication token")) { Text(L10n.text("Protected")).font(.system(size: 12)).foregroundStyle(.secondary) }
+                    SettingsRow(L10n.text("Authentication token"), detail: showAuthToken ? (model.status.configuration?.authToken ?? "—") : "••••••••••••") {
+                        Button(showAuthToken ? L10n.text("Hide") : L10n.text("Show")) { showAuthToken.toggle() }.controlSize(.small)
+                    }
                     RowDivider()
-                    SettingsRow(L10n.text("OAuth password")) { Text(L10n.text("Protected")).font(.system(size: 12)).foregroundStyle(.secondary) }
+                    SettingsRow(L10n.text("OAuth password"), detail: showOAuthPassword ? (model.status.configuration?.oauthPassword ?? "—") : "••••••••••••") {
+                        Button(showOAuthPassword ? L10n.text("Hide") : L10n.text("Show")) { showOAuthPassword.toggle() }.controlSize(.small)
+                    }
                 }
             }
         }

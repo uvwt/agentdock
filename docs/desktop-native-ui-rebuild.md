@@ -632,6 +632,35 @@ Phase 4 parity 初查：
 - 旧 WPF 仍独有 Public MCP 模式与 Named Tunnel 编辑、Nexus 配对、Browser / CDP 编辑、Coding Agent Profile 编辑、MCP Apps 模式修改、端口 / 日志级别 / 语言保存与重启、凭据明文查看、更新等操作。
 - 因此当前明确未达到删除旧 WPF 的条件；Phase 4 必须先完成这些可编辑能力和托盘 / 单实例 / 更新链路等行为对齐。
 
+### 15.3 2026-10-04 Phase 4/5 parity 与替换完成
+
+在 Phase 3 之后继续完成了原生控制面板的功能迁移，不再把旧 WPF / AppKit 高级设置作为功能兜底。
+
+macOS SwiftUI：
+
+- Connections 已覆盖 Local / Quick / Named Public MCP 模式、Named Tunnel 地址与 Token、NexusDock 配对。
+- Capabilities 已覆盖 Browser 开关与连接模式、CDP 地址、Coding Agent 全局开关、内置 Profile、自定义 Profile、默认 Profile、MCP Apps 模式。
+- Settings 已覆盖 Runtime 端口、日志级别、界面语言、更新入口、Core / 菜单栏 Startup、凭据显示。
+- 继续复用 InstallerRunner、ServiceConfigurationController、ServiceController、SMAppService 与既有更新链路。
+- 旧 AdvancedSettingsWindowController 已删除；SetupWindowController 只保留首次安装 / 修复所需流程，不再承载安装后的高级设置页。
+
+Windows WinUI 3：
+
+- Connections / Capabilities / Settings 已覆盖旧 WPF 的 Public MCP、Nexus 配对、Browser / CDP、Coding Agent Profile、MCP Apps、端口、日志、语言、Startup、管理员模式、凭据和更新能力。
+- WinUI App 已接管 tray、single-instance、background 启动、Core / Tunnel startup helper、管理员命令 host、更新 handoff 恢复。
+- 关闭主窗口时只隐藏窗口并保留 tray 进程；第二实例通过命名事件唤起已有窗口。
+- 发布工作流和 Windows Installer 工作流已切换为发布 WinUI AgentDock.WinUI.csproj，输出继续保持 agentdock-tray.exe 契约。
+- 旧 WPF UI 项目已删除；稳定的 Runtime / Models / Resources / Diagnostics 已移动到 desktop/windows/shared，由 WinUI 直接复用。
+
+TianYi parity 验证：
+
+- 最终 WinUI x64 Release 使用 Visual Studio Build Tools 2022 MSBuild 完整 Rebuild 通过；ARM64 使用 win-arm64 RID 的交叉 Rebuild 也通过。
+- 最终验证快照 SHA-256：1231c12c9bb5e027bb04c589957551f3c17a83c54425e6ce78c83db209e24123。
+- Session 1 真机启动得到 agentdock-tray.exe 原生窗口；关闭窗口后进程仍存在，再次启动第二实例后进程数保持 1，已有窗口重新显示。
+- UI Automation 已重新切换 Connections / Capabilities / Activity / Settings，并读取到 TianYi 当前真实 Runtime / Nexus / Browser / ACP 配置。
+
+到此，旧 WPF 已不再承担产品 UI，Windows 原生控制面板正式以 WinUI 3 为发布入口。
+
 视觉审查：
 
 - Mac / Windows 使用接近的窗口尺寸。

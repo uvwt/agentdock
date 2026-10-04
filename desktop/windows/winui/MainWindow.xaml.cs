@@ -13,12 +13,15 @@ public sealed partial class MainWindow : Window
     private const int MinimumWidth = 900;
     private const int MinimumHeight = 620;
 
-    private readonly RuntimeService _runtime = new();
+    private readonly RuntimeService _runtime;
     private readonly IntPtr _windowHandle;
     private bool _initialSizeApplied;
 
-    public MainWindow()
+    internal bool AllowClose { get; set; }
+
+    public MainWindow(RuntimeService runtime)
     {
+        _runtime = runtime;
         InitializeComponent();
 
         HomeNavigationItem.Content = UiText.Get("Home");
@@ -29,39 +32,44 @@ public sealed partial class MainWindow : Window
 
         _windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
         Navigation.Loaded += Navigation_Loaded;
-
         AppWindow.Changed += (_, args) =>
         {
             if (!args.DidSizeChange) return;
-
             var size = AppWindow.Size;
             var minimumWidth = LogicalToPixels(MinimumWidth);
             var minimumHeight = LogicalToPixels(MinimumHeight);
             if (size.Width < minimumWidth || size.Height < minimumHeight)
             {
-                AppWindow.Resize(new SizeInt32(
-                    Math.Max(size.Width, minimumWidth),
-                    Math.Max(size.Height, minimumHeight)));
+                AppWindow.Resize(new SizeInt32(Math.Max(size.Width, minimumWidth), Math.Max(size.Height, minimumHeight)));
             }
+        };
+        AppWindow.Closing += (_, args) =>
+        {
+            if (AllowClose) return;
+            args.Cancel = true;
+            AppWindow.Hide();
         };
         Navigation.SelectedItem = Navigation.MenuItems[0];
         ContentFrame.Navigate(typeof(HomePage), _runtime);
     }
 
+    internal void ShowAndActivate()
+    {
+        AppWindow.Show();
+        Activate();
+        _ = SetForegroundWindow(_windowHandle);
+    }
 
     private void Navigation_Loaded(object sender, RoutedEventArgs e)
     {
         if (_initialSizeApplied) return;
-
         _initialSizeApplied = true;
         Navigation.Loaded -= Navigation_Loaded;
         ResizeToLogicalSize(DefaultWidth, DefaultHeight);
     }
 
-    private void ResizeToLogicalSize(int width, int height)
-    {
+    private void ResizeToLogicalSize(int width, int height) =>
         AppWindow.Resize(new SizeInt32(LogicalToPixels(width), LogicalToPixels(height)));
-    }
 
     private int LogicalToPixels(int logicalSize)
     {
@@ -72,6 +80,9 @@ public sealed partial class MainWindow : Window
 
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hwnd);
 
     private void Navigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
