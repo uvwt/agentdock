@@ -157,7 +157,7 @@
     <value>NexusDock public HTTPS address</value>
   </data>
   <data name="OneTimePairingCode" xml:space="preserve">
-    <value>One-time pairing code</value>
+    <value>Pairing code</value>
   </data>
   <data name="PairAndRestart" xml:space="preserve">
     <value>Pair and restart</value>
@@ -856,6 +856,7 @@ Update now?</value>
   <data name="AdvancedConnectionSettings" xml:space="preserve"><value>Advanced connection settings</value></data>
   <data name="AdvancedConnectionDetail" xml:space="preserve"><value>Local MCP, access credentials, and direct public access.</value></data>
   <data name="PublicAddress" xml:space="preserve"><value>Public address</value></data>
+  <data name="TemporaryDomain" xml:space="preserve"><value>Temporary domain</value></data>
   <data name="TemporaryTunnelDetail" xml:space="preserve"><value>Generate a temporary public address without configuring a domain.</value></data>
   <data name="GenerateTemporaryAddress" xml:space="preserve"><value>Generate temporary address</value></data>
   <data name="FixedDomain" xml:space="preserve"><value>Fixed domain</value></data>
@@ -886,10 +887,11 @@ Update now?</value>
   <data name="SelfHostedService" xml:space="preserve"><value>Self-hosted service</value></data>
   <data name="OfficialServiceHint" xml:space="preserve"><value>The official service uses nexusdock.co by default.</value></data>
   <data name="ServiceAddress" xml:space="preserve"><value>Service address</value></data>
-  <data name="RemotePairingIntro" xml:space="preserve"><value>Enter the one-time pairing code to connect this device.</value></data>
+  <data name="RemotePairingIntro" xml:space="preserve"><value>Enter the pairing code to connect this device.</value></data>
   <data name="GetPairingCodeFromNexusDock" xml:space="preserve"><value>No pairing code? Get one from NexusDock ↗</value></data>
   <data name="ManageConnectedDevices" xml:space="preserve"><value>Manage connected devices ↗</value></data>
   <data name="Connect" xml:space="preserve"><value>Connect</value></data>
+  <data name="RePair" xml:space="preserve"><value>Re-pair</value></data>
   <data name="ServiceAddressRequired" xml:space="preserve"><value>Enter a self-hosted service address.</value></data>
 
   <data name="RuntimeSettings" xml:space="preserve"><value>Runtime settings</value></data>

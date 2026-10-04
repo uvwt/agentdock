@@ -491,7 +491,7 @@
 "Credentials are stored in the protected AgentDock configuration." = "Credentials are stored in the protected AgentDock configuration.";
 "Default Coding Agent" = "Default Coding Agent";
 "NexusDock address" = "NexusDock address";
-"One-time pairing code" = "One-time pairing code";
+"One-time pairing code" = "Pairing code";
 "Pair" = "Pair";
 "Public MCP mode" = "Public MCP mode";
 "Reuse local browser" = "Reuse local browser";
@@ -506,6 +506,7 @@
 "Pair once, then connect supported AI clients through NexusDock without configuring MCP addresses or tunnels." = "Pair once, then connect supported AI clients through NexusDock without configuring MCP addresses or tunnels.";
 "Advanced connection settings" = "Advanced connection settings";
 "Local MCP, access credentials, and direct public access." = "Local MCP, access credentials, and direct public access.";
+"Temporary domain" = "Temporary domain";
 "Generate a temporary public address without configuring a domain." = "Generate a temporary public address without configuring a domain.";
 "Generate temporary address" = "Generate temporary address";
 "Fixed domain" = "Fixed domain";
@@ -520,10 +521,12 @@
 "Done" = "Done";
 "Service address" = "Service address";
 "Official service uses nexusdock.co by default." = "Official service uses nexusdock.co by default.";
-"Enter the one-time pairing code to connect this device." = "Enter the one-time pairing code to connect this device.";
+"Enter the one-time pairing code to connect this device." = "Enter the pairing code to connect this device.";
+"Enter the pairing code to connect this device." = "Enter the pairing code to connect this device.";
 "No pairing code? Get one from NexusDock ↗" = "No pairing code? Get one from NexusDock ↗";
 "Manage connected devices ↗" = "Manage connected devices ↗";
 "Connect" = "Connect";
+"Re-pair" = "Re-pair";
 "Installed" = "Installed";
 "Configured" = "Configured";
 "Core capabilities" = "Core capabilities";

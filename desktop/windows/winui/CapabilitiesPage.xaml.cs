@@ -16,16 +16,9 @@ public sealed partial class CapabilitiesPage : Page
         PageTitle.Text = UiText.Get("Capabilities");
         PageDetail.Text = UiText.Get("CapabilitiesDetail");
         CapabilitiesSectionTitle.Text = UiText.Get("BuiltInCapabilities");
-        ExtensionsSection.Title = UiText.Get("Extensions");
         BrowserTitle.Text = UiText.Get("Browser");
-        SkillsTitle.Text = UiText.Get("Skills");
-        SkillsDetail.Text = UiText.Get("LoadedOnThisDevice");
-        PluginsTitle.Text = UiText.Get("Plugins");
-        PluginsDetail.Text = UiText.Get("InstalledOnThisDevice");
-        McpServersDetail.Text = UiText.Get("DynamicMcpServers");
-        SkillsValue.Text = "—";
-        PluginsValue.Text = "—";
-        McpServersValue.Text = "—";
+        CodingAgentTitle.Text = UiText.Get("CodingAgent");
+        McpAppsTitle.Text = UiText.Get("McpApps");
         ManagedBrowserModeItem.Content = UiText.Get("IsolatedBrowser");
         ReuseBrowserModeItem.Content = UiText.Get("ReuseLocalBrowser");
         SpecifiedBrowserModeItem.Content = UiText.Get("SpecifiedCdp");
@@ -41,7 +34,6 @@ public sealed partial class CapabilitiesPage : Page
         _runtime = e.Parameter as RuntimeService;
         if (_runtime is null) return;
         var snapshot = await _runtime.GetSnapshotAsync(includeNexusConnection: false);
-        var extensionOverview = await _runtime.GetRuntimeExtensionOverviewAsync(snapshot.LocalMcpUrl);
         _settings = snapshot.Settings;
         var settings = _settings;
         foreach (var kind in new[] { "codex", "claude", "grok" })
@@ -55,16 +47,8 @@ public sealed partial class CapabilitiesPage : Page
         SelectBrowserMode(settings);
         BrowserCdpUrlTextBox.Text = settings.BrowserCdpUrl;
         CodingAgentEnabledToggle.IsOn = settings.AcpEnabled;
-        var enabledProfiles = settings.AcpProfiles.Count(profile => profile.Enabled);
-        CodingAgentDetail.Text = enabledProfiles == 0
-            ? UiText.Get("NoProfilesConfigured")
-            : UiText.Format("ProfilesConfigured", enabledProfiles, settings.AcpDefaultProfile);
+        UpdateCodingAgentDetail(settings);
         McpAppsDetail.Text = UiText.Get("McpAppsDetail");
-        SkillsValue.Text = extensionOverview.Available ? extensionOverview.SkillCount.ToString() : "—";
-        PluginsValue.Text = extensionOverview.Available && extensionOverview.PluginsAvailable
-            ? extensionOverview.PluginCount.ToString()
-            : "—";
-        McpServersValue.Text = extensionOverview.Available ? extensionOverview.McpCount.ToString() : "—";
         SelectComboTag(McpAppsModeComboBox, string.IsNullOrWhiteSpace(settings.McpAppsMode) ? "full" : settings.McpAppsMode);
         RenderProfiles(settings);
         _updatingUi = false;
@@ -103,43 +87,94 @@ public sealed partial class CapabilitiesPage : Page
     private void RenderProfiles(ControlPanelSettings settings)
     {
         AcpProfilesPanel.Children.Clear();
-        foreach (var profile in settings.AcpProfiles)
-        {
-            var row = new Grid { ColumnSpacing = 12 };
-            row.ColumnDefinitions.Add(new ColumnDefinition());
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var title = string.IsNullOrWhiteSpace(profile.DisplayName) ? profile.Id : profile.DisplayName;
-            row.Children.Add(new TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center });
-            var toggle = new ToggleSwitch { IsOn = profile.Enabled, Tag = profile.Id };
-            toggle.Toggled += ProfileToggle_Toggled;
-            Grid.SetColumn(toggle, 1);
-            row.Children.Add(toggle);
-            AcpProfilesPanel.Children.Add(row);
-        }
 
         var enabled = settings.AcpProfiles.Where(profile => profile.Enabled).ToList();
-        if (enabled.Count == 0) return;
-        var defaults = new ComboBox { Header = UiText.Get("DefaultCodingAgent"), Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
-        foreach (var profile in enabled)
+        if (enabled.Count > 0)
         {
-            defaults.Items.Add(new ComboBoxItem
+            if (!enabled.Any(profile => string.Equals(profile.Id, settings.AcpDefaultProfile, StringComparison.OrdinalIgnoreCase)))
             {
-                Content = string.IsNullOrWhiteSpace(profile.DisplayName) ? profile.Id : profile.DisplayName,
-                Tag = profile.Id
-            });
+                settings.AcpDefaultProfile = enabled[0].Id;
+            }
+
+            var defaults = new ComboBox
+            {
+                Header = UiText.Get("DefaultCodingAgent"),
+                Width = 260,
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            foreach (var profile in enabled)
+            {
+                defaults.Items.Add(new ComboBoxItem
+                {
+                    Content = ProfileTitle(profile),
+                    Tag = profile.Id
+                });
+            }
+            SelectComboTag(defaults, settings.AcpDefaultProfile);
+            defaults.SelectionChanged += DefaultProfileChanged;
+            AcpProfilesPanel.Children.Add(defaults);
         }
-        SelectComboTag(defaults, settings.AcpDefaultProfile);
-        defaults.SelectionChanged += DefaultProfileChanged;
-        AcpProfilesPanel.Children.Add(defaults);
+
+        var checkBoxPanel = new StackPanel
+        {
+            Width = 260,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Spacing = 8
+        };
+        foreach (var profile in settings.AcpProfiles)
+        {
+            var checkBox = new CheckBox
+            {
+                Content = ProfileTitle(profile),
+                IsChecked = profile.Enabled,
+                Tag = profile.Id,
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            checkBox.Checked += ProfileCheckBox_Changed;
+            checkBox.Unchecked += ProfileCheckBox_Changed;
+            checkBoxPanel.Children.Add(checkBox);
+        }
+        AcpProfilesPanel.Children.Add(checkBoxPanel);
     }
 
-    private void ProfileToggle_Toggled(object sender, RoutedEventArgs e)
+    private void ProfileCheckBox_Changed(object sender, RoutedEventArgs e)
     {
-        if (_updatingUi || _settings is null || sender is not ToggleSwitch toggle || toggle.Tag is not string id) return;
+        if (_updatingUi || _settings is null || sender is not CheckBox checkBox || checkBox.Tag is not string id) return;
         var profile = _settings.AcpProfiles.FirstOrDefault(value => value.Id == id);
         if (profile is null) return;
-        profile.Enabled = toggle.IsOn;
+        profile.Enabled = checkBox.IsChecked == true;
         RenderProfiles(_settings);
+        UpdateCodingAgentDetail(_settings);
+    }
+
+    private void UpdateCodingAgentDetail(ControlPanelSettings settings)
+    {
+        var enabledProfiles = settings.AcpProfiles.Count(profile => profile.Enabled);
+        if (enabledProfiles == 0)
+        {
+            CodingAgentDetail.Text = UiText.Get("NoProfilesConfigured");
+            return;
+        }
+
+        var defaultProfile = settings.AcpProfiles.FirstOrDefault(profile =>
+            string.Equals(profile.Id, settings.AcpDefaultProfile, StringComparison.OrdinalIgnoreCase));
+        var defaultTitle = defaultProfile is null ? settings.AcpDefaultProfile : ProfileTitle(defaultProfile);
+        CodingAgentDetail.Text = UiText.Format("ProfilesConfigured", enabledProfiles, defaultTitle);
+    }
+
+    private static string ProfileTitle(AcpProfileSettings profile)
+    {
+        if (!string.IsNullOrWhiteSpace(profile.DisplayName)) return profile.DisplayName;
+        if (string.Equals(profile.Kind, "custom", StringComparison.OrdinalIgnoreCase)) return profile.Id;
+
+        return profile.Kind.ToLowerInvariant() switch
+        {
+            "codex" => "Codex",
+            "claude" => "Claude",
+            "grok" => "Grok Build",
+            _ when !string.IsNullOrEmpty(profile.Id) => char.ToUpperInvariant(profile.Id[0]) + profile.Id[1..],
+            _ => profile.Id
+        };
     }
 
     private void DefaultProfileChanged(object sender, SelectionChangedEventArgs e)
@@ -193,7 +228,11 @@ public sealed partial class CapabilitiesPage : Page
     private void UpdateBrowserControls()
     {
         var mode = (BrowserModeComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "managed";
-        BrowserCdpUrlTextBox.Visibility = mode == "specified" ? Visibility.Visible : Visibility.Collapsed;
+        var specified = mode == "specified";
+        BrowserCdpUrlTextBox.Visibility = Visibility.Visible;
+        BrowserCdpUrlTextBox.Opacity = specified ? 1 : 0;
+        BrowserCdpUrlTextBox.IsEnabled = specified;
+        BrowserCdpUrlTextBox.IsTabStop = specified;
     }
 
     private async void SaveButton_Click(object sender, RoutedEventArgs e)

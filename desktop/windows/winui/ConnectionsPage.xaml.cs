@@ -13,6 +13,7 @@ public sealed partial class ConnectionsPage : Page
     private RuntimeService? _runtime;
     private RuntimeSnapshot? _snapshot;
     private bool _updatingRemoteService;
+    private bool _rePairing;
 
     internal event EventHandler? AdvancedSettingsRequested;
 
@@ -52,8 +53,12 @@ public sealed partial class ConnectionsPage : Page
 
         _snapshot = await _runtime.GetSnapshotAsync(includeNexusConnection: true);
         RemoteState.Text = _snapshot.NexusConnected
-            ? UiText.Get("Connected") + " ●"
+            ? UiText.Get("Connected")
             : _snapshot.Nexus.Paired ? UiText.Get("NotConnected") : UiText.Get("NotConfigured");
+        RemoteStateDot.Fill = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+            _snapshot.NexusConnected
+                ? Microsoft.UI.Colors.Green
+                : _snapshot.Nexus.Paired ? Microsoft.UI.Colors.DarkOrange : Microsoft.UI.Colors.Gray);
 
         var endpoint = _snapshot.Nexus.Paired ? _snapshot.Nexus.Endpoint : OfficialEndpoint;
         var official = IsOfficialEndpoint(endpoint);
@@ -92,16 +97,23 @@ public sealed partial class ConnectionsPage : Page
         var selfHosted = SelectedRemoteService() == "self-hosted";
         SelfHostedEndpointTextBox.Visibility = selfHosted ? Visibility.Visible : Visibility.Collapsed;
         OfficialServiceHint.Visibility = selfHosted ? Visibility.Collapsed : Visibility.Visible;
-        UpdateNexusDevicesLink();
+        UpdatePairingControls();
         UpdateRemoteServiceValue();
     }
 
-    private void UpdateNexusDevicesLink()
+    private void UpdatePairingControls()
     {
+        var paired = _snapshot?.Nexus.Paired == true;
+        var showPairingInput = !paired || _rePairing;
+
+        PairingIntro.Visibility = showPairingInput ? Visibility.Visible : Visibility.Collapsed;
+        PairingCodeBox.Visibility = showPairingInput ? Visibility.Visible : Visibility.Collapsed;
+        ConnectButton.Content = paired && !_rePairing ? UiText.Get("RePair") : UiText.Get("Connect");
+
         NexusDevicesLink.Visibility = SelectedRemoteService() == "official"
             ? Visibility.Visible
             : Visibility.Collapsed;
-        NexusDevicesLink.Content = _snapshot?.Nexus.Paired == true && IsOfficialEndpoint(_snapshot.Nexus.Endpoint)
+        NexusDevicesLink.Content = paired && !_rePairing && IsOfficialEndpoint(_snapshot!.Nexus.Endpoint)
             ? UiText.Get("ManageConnectedDevices")
             : UiText.Get("GetPairingCodeFromNexusDock");
     }
@@ -142,6 +154,15 @@ public sealed partial class ConnectionsPage : Page
     {
         if (_runtime is null || sender is not Button button) return;
 
+        if (_snapshot?.Nexus.Paired == true && !_rePairing)
+        {
+            _rePairing = true;
+            PairingCodeBox.Password = "";
+            UpdatePairingControls();
+            PairingCodeBox.Focus(FocusState.Programmatic);
+            return;
+        }
+
         var endpoint = SelectedEndpoint();
         if (string.IsNullOrWhiteSpace(endpoint))
         {
@@ -157,6 +178,7 @@ public sealed partial class ConnectionsPage : Page
         {
             await _runtime.PairNexusAsync(endpoint, PairingCodeBox.Password);
             PairingCodeBox.Password = "";
+            _rePairing = false;
             RemoteServiceEditor.Visibility = Visibility.Collapsed;
             ChangeRemoteServiceButton.Content = UiText.Get("Change");
             await RefreshAsync();

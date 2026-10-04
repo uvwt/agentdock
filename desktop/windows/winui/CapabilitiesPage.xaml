@@ -17,14 +17,23 @@
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                         BorderThickness="1"
                         CornerRadius="10">
-                    <StackPanel>
-                    <Grid MinHeight="58" Padding="13,6" ColumnSpacing="16">
+                    <StackPanel HorizontalAlignment="Stretch">
+                    <Grid MinHeight="58"
+                          Padding="13,6"
+                          ColumnSpacing="16"
+                          HorizontalAlignment="Stretch">
                         <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <StackPanel Spacing="2" VerticalAlignment="Center">
                             <TextBlock x:Name="BrowserTitle" FontSize="13"/>
                             <TextBlock x:Name="BrowserDetail" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                         </StackPanel>
-                        <ToggleSwitch x:Name="BrowserEnabledToggle" Grid.Column="1" VerticalAlignment="Center"/>
+                        <ToggleSwitch x:Name="BrowserEnabledToggle"
+                                      Grid.Column="1"
+                                      HorizontalAlignment="Right"
+                                      VerticalAlignment="Center"
+                                      MinWidth="0"
+                                      OnContent=""
+                                      OffContent=""/>
                     </Grid>
                     <StackPanel Padding="13,0,13,12" Spacing="8">
                         <ComboBox x:Name="BrowserModeComboBox" Width="260" HorizontalAlignment="Left" SelectionChanged="BrowserModeChanged">
@@ -41,18 +50,33 @@
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                         BorderThickness="1"
                         CornerRadius="10">
-                    <StackPanel>
-                    <Grid MinHeight="58" Padding="13,6" ColumnSpacing="16">
+                    <StackPanel HorizontalAlignment="Stretch">
+                    <Grid MinHeight="58"
+                          Padding="13,6"
+                          ColumnSpacing="16"
+                          HorizontalAlignment="Stretch">
                         <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <StackPanel Spacing="2" VerticalAlignment="Center">
-                            <TextBlock Text="Coding Agent" FontSize="13"/>
+                            <TextBlock x:Name="CodingAgentTitle" FontSize="13"/>
                             <TextBlock x:Name="CodingAgentDetail" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                         </StackPanel>
-                        <ToggleSwitch x:Name="CodingAgentEnabledToggle" Grid.Column="1" VerticalAlignment="Center"/>
+                        <ToggleSwitch x:Name="CodingAgentEnabledToggle"
+                                      Grid.Column="1"
+                                      HorizontalAlignment="Right"
+                                      VerticalAlignment="Center"
+                                      MinWidth="0"
+                                      OnContent=""
+                                      OffContent=""/>
                     </Grid>
-                    <StackPanel x:Name="AcpProfilesPanel" Padding="13,0,13,12" Spacing="8"/>
+                    <StackPanel x:Name="AcpProfilesPanel"
+                                HorizontalAlignment="Stretch"
+                                Margin="13,0,13,0"
+                                Padding="0,0,0,12"
+                                Spacing="8"/>
                     <StackPanel Padding="13,0,13,12">
-                        <Button x:Name="AddCustomProfileButton" Click="AddCustomProfile_Click"/>
+                        <Button x:Name="AddCustomProfileButton"
+                                HorizontalAlignment="Left"
+                                Click="AddCustomProfile_Click"/>
                     </StackPanel>
                     </StackPanel>
                 </Border>
@@ -64,7 +88,7 @@
                     <Grid MinHeight="58" Padding="13,6" ColumnSpacing="16">
                         <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <StackPanel Spacing="2" VerticalAlignment="Center">
-                            <TextBlock Text="MCP Apps" FontSize="13"/>
+                            <TextBlock x:Name="McpAppsTitle" FontSize="13"/>
                             <TextBlock x:Name="McpAppsDetail" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                         </StackPanel>
                         <ComboBox x:Name="McpAppsModeComboBox" Grid.Column="1" Width="130">
@@ -76,41 +100,21 @@
                 </Border>
             </StackPanel>
 
-            <StackPanel Orientation="Horizontal" Spacing="10">
-                <Button x:Name="SaveButton" Click="SaveButton_Click"/>
-                <TextBlock x:Name="SaveStatus" VerticalAlignment="Center" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-            </StackPanel>
+            <Grid ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="SaveStatus"
+                           VerticalAlignment="Center"
+                           FontSize="11.5"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                <Button x:Name="SaveButton"
+                        Grid.Column="1"
+                        HorizontalAlignment="Right"
+                        Click="SaveButton_Click"/>
+            </Grid>
 
-            <local:SectionCard x:Name="ExtensionsSection">
-                <StackPanel>
-                    <Grid MinHeight="52" Padding="13,6" ColumnSpacing="16">
-                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <StackPanel Spacing="2" VerticalAlignment="Center">
-                            <TextBlock x:Name="SkillsTitle" FontSize="13"/>
-                            <TextBlock x:Name="SkillsDetail" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                        </StackPanel>
-                        <TextBlock x:Name="SkillsValue" Grid.Column="1" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                    </Grid>
-                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
-                    <Grid MinHeight="52" Padding="13,6" ColumnSpacing="16">
-                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <StackPanel Spacing="2" VerticalAlignment="Center">
-                            <TextBlock x:Name="PluginsTitle" FontSize="13"/>
-                            <TextBlock x:Name="PluginsDetail" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                        </StackPanel>
-                        <TextBlock x:Name="PluginsValue" Grid.Column="1" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                    </Grid>
-                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
-                    <Grid MinHeight="52" Padding="13,6" ColumnSpacing="16">
-                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <StackPanel Spacing="2" VerticalAlignment="Center">
-                            <TextBlock Text="MCP" FontSize="13"/>
-                            <TextBlock x:Name="McpServersDetail" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                        </StackPanel>
-                        <TextBlock x:Name="McpServersValue" Grid.Column="1" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                    </Grid>
-                </StackPanel>
-            </local:SectionCard>
         </StackPanel>
     </ScrollViewer>
 </Page>

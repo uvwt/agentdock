@@ -131,11 +131,7 @@ public sealed partial class SettingsPage : Page
 
         var save = new Button { Content = UiText.Get("ApplyChanges") };
         save.Click += SaveRuntimeSettings_Click;
-        rows.Children.Add(DetailActionRow(
-            UiText.Get("Configuration"),
-            UiText.Get("RuntimeRestartHint"),
-            save
-        ));
+        rows.Children.Add(TrailingActionRow(save));
         return rows;
     }
 
@@ -282,7 +278,10 @@ public sealed partial class SettingsPage : Page
         var toggle = new ToggleSwitch
         {
             IsOn = string.Equals(_snapshot?.Manifest.PrivilegeMode, "elevated", StringComparison.OrdinalIgnoreCase),
-            Tag = "elevated"
+            Tag = "elevated",
+            MinWidth = 0,
+            OnContent = "",
+            OffContent = ""
         };
         toggle.Toggled += PrivilegeToggle_Toggled;
         rows.Children.Add(ActionRow(UiText.Get("RunCoreElevated"), toggle));
@@ -292,11 +291,25 @@ public sealed partial class SettingsPage : Page
     private UIElement BuildStartup()
     {
         var rows = new StackPanel();
-        var core = new ToggleSwitch { IsOn = _snapshot?.CoreStartupEnabled == true, Tag = "core" };
+        var core = new ToggleSwitch
+        {
+            IsOn = _snapshot?.CoreStartupEnabled == true,
+            Tag = "core",
+            MinWidth = 0,
+            OnContent = "",
+            OffContent = ""
+        };
         core.Toggled += StartupToggle_Toggled;
         rows.Children.Add(ActionRow(UiText.Get("CoreBackgroundService"), core));
         rows.Children.Add(Divider());
-        var tray = new ToggleSwitch { IsOn = _snapshot?.TrayStartupEnabled == true, Tag = "tray" };
+        var tray = new ToggleSwitch
+        {
+            IsOn = _snapshot?.TrayStartupEnabled == true,
+            Tag = "tray",
+            MinWidth = 0,
+            OnContent = "",
+            OffContent = ""
+        };
         tray.Toggled += StartupToggle_Toggled;
         rows.Children.Add(ActionRow(UiText.Get("TrayApp"), tray));
         return rows;
@@ -457,7 +470,7 @@ public sealed partial class SettingsPage : Page
         };
         temporary.Click += TemporaryTunnelButton_Click;
         publicRows.Children.Add(DetailActionRow(
-            "Cloudflare Tunnel",
+            UiText.Get("TemporaryDomain"),
             UiText.Get("TemporaryTunnelDetail"),
             temporary
         ));
@@ -525,18 +538,14 @@ public sealed partial class SettingsPage : Page
 
     private Grid CredentialActionRow(string title, string kind)
     {
-        var value = new PasswordBox
-        {
-            Password = ReadCredential(kind),
-            IsPasswordRevealButtonEnabled = true,
-            Width = 300
-        };
-        var copy = new Button { Content = UiText.Get("Copy") };
-        copy.Click += (_, _) => CopyText(value.Password);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        actions.Children.Add(value);
-        actions.Children.Add(copy);
-        return ActionRow(title, actions);
+        var value = ReadCredential(kind);
+        var copy = new Button { Content = UiText.Get("Copy"), IsEnabled = !string.IsNullOrWhiteSpace(value) };
+        copy.Click += (_, _) => CopyText(value);
+        return DetailActionRow(
+            title,
+            string.IsNullOrWhiteSpace(value) ? "—" : "••••••••••••",
+            copy
+        );
     }
 
     private string ReadCredential(string kind)
@@ -891,8 +900,30 @@ public sealed partial class SettingsPage : Page
 
     private static Grid ActionRow(string left, UIElement trailing)
     {
-        var grid = new Grid { MinHeight = 46, Padding = new Thickness(13, 5, 13, 5), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var grid = new Grid
+        {
+            MinHeight = 46,
+            Padding = new Thickness(13, 5, 13, 5),
+            ColumnSpacing = 16,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        grid.ColumnDefinitions.Add(new ColumnDefinition());
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
         grid.Children.Add(new TextBlock { Text = left, VerticalAlignment = VerticalAlignment.Center });
+        if (trailing is FrameworkElement element)
+        {
+            element.HorizontalAlignment = HorizontalAlignment.Right;
+            element.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(element, 1);
+        }
+        grid.Children.Add(trailing);
+        return grid;
+    }
+
+    private static Grid TrailingActionRow(UIElement trailing)
+    {
+        var grid = new Grid { MinHeight = 46, Padding = new Thickness(13, 5, 13, 5) };
         if (trailing is FrameworkElement element)
         {
             element.HorizontalAlignment = HorizontalAlignment.Right;

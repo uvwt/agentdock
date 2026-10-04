@@ -518,10 +518,10 @@ private struct HomeView: View {
                     Spacer()
 
                     HStack(spacing: 10) {
-                        StatusPill(text: agentDockStatusText, active: serviceHealthy)
                         Button(serviceLoaded ? L10n.text("Stop") : L10n.text("Start")) { model.toggleRuntime() }
                             .controlSize(.small)
                             .disabled(model.isBusy || model.isUpdateInProgress)
+                        StatusPill(text: agentDockStatusText, active: serviceHealthy)
                     }
                 }
                 .padding(.horizontal, 18)
@@ -542,9 +542,11 @@ private struct HomeView: View {
                             value: nexusText,
                             detail: remoteConnectionDetail
                         )
-                        .frame(minWidth: 180)
+                        .frame(minWidth: 180, maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 
                     metricDivider
 
@@ -774,6 +776,7 @@ private struct ConnectionsView: View {
 
     @ObservedObject var model: ControlPanelModel
     @State private var pairingCode = ""
+    @State private var rePairing = false
     @State private var remoteService: RemoteServiceChoice = .official
     @State private var customEndpoint = ""
     @State private var editingRemoteService = false
@@ -824,27 +827,44 @@ private struct ConnectionsView: View {
 
                     RowDivider()
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(L10n.text("Enter the one-time pairing code to connect this device."))
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                        SecureField(L10n.text("One-time pairing code"), text: $pairingCode)
-                            .textFieldStyle(.roundedBorder)
-                        if remoteService == .official {
-                            Link(
-                                nexusDevice.paired && isOfficialEndpoint(nexusDevice.endpoint)
-                                    ? L10n.text("Manage connected devices ↗")
-                                    : L10n.text("No pairing code? Get one from NexusDock ↗"),
-                                destination: Self.officialDevicesURL
-                            )
-                            .font(.system(size: 12))
-                        }
-                        Button(L10n.text("Connect")) {
-                            Task {
-                                await model.pairNexus(endpoint: selectedEndpoint, code: pairingCode)
-                                pairingCode = ""
+                        if nexusDevice.paired && !rePairing {
+                            if remoteService == .official {
+                                Link(
+                                    L10n.text("Manage connected devices ↗"),
+                                    destination: Self.officialDevicesURL
+                                )
+                                .font(.system(size: 12))
                             }
+                            Button(L10n.text("Re-pair")) {
+                                pairingCode = ""
+                                rePairing = true
+                            }
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                        } else {
+                            Text(L10n.text("Enter the pairing code to connect this device."))
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                            SecureField(L10n.text("Pairing code"), text: $pairingCode)
+                                .textFieldStyle(.roundedBorder)
+                            if remoteService == .official {
+                                Link(
+                                    L10n.text("No pairing code? Get one from NexusDock ↗"),
+                                    destination: Self.officialDevicesURL
+                                )
+                                .font(.system(size: 12))
+                            }
+                            Button(L10n.text("Connect")) {
+                                Task {
+                                    await model.pairNexus(endpoint: selectedEndpoint, code: pairingCode)
+                                    if model.message == nil {
+                                        pairingCode = ""
+                                        rePairing = false
+                                    }
+                                }
+                            }
+                            .disabled(model.isBusy || selectedEndpoint.isEmpty || pairingCode.isEmpty)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                         }
-                        .disabled(model.isBusy || selectedEndpoint.isEmpty || pairingCode.isEmpty)
                     }
                     .padding(13)
                 }
@@ -949,7 +969,6 @@ private struct CapabilitiesView: View {
     @State private var customName = ""
     @State private var customCommand = ""
     @State private var customArguments = ""
-    @State private var extensionOverview = RuntimeExtensionOverview.unavailable
 
     private var configuration: ServiceConfiguration? { model.status.configuration }
 
@@ -973,31 +992,48 @@ private struct CapabilitiesView: View {
                                 Text(L10n.text("Isolated browser")).tag(0)
                                 Text(L10n.text("Reuse local browser")).tag(1)
                                 Text(L10n.text("Specified CDP")).tag(2)
-                            }.pickerStyle(.segmented)
-                            if browserMode == 2 {
-                                TextField("http://127.0.0.1:9222", text: $browserCDPURL).textFieldStyle(.roundedBorder)
                             }
-                        }.padding(.horizontal, 13).padding(.bottom, 12)
+                            .pickerStyle(.segmented)
+
+                            TextField("http://127.0.0.1:9222", text: $browserCDPURL)
+                                .textFieldStyle(.roundedBorder)
+                                .opacity(browserMode == 2 ? 1 : 0)
+                                .disabled(browserMode != 2)
+                                .allowsHitTesting(browserMode == 2)
+                                .accessibilityHidden(browserMode != 2)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 13)
+                        .padding(.bottom, 12)
                     }
 
                     SettingsCard {
-                        SettingsRow("Coding Agent", detail: codingAgentDetail) {
+                        SettingsRow(L10n.text("Coding Agent"), detail: codingAgentDetail) {
                             Toggle("", isOn: $acpEnabled)
                                 .labelsHidden()
                                 .toggleStyle(.switch)
                         }
                         VStack(alignment: .leading, spacing: 8) {
-                            ForEach(profiles.indices, id: \.self) { index in
-                                Toggle(profileTitle(profiles[index]), isOn: $profiles[index].enabled)
-                                    .toggleStyle(.switch)
-                            }
                             if !enabledProfiles.isEmpty {
                                 Picker(L10n.text("Default Coding Agent"), selection: $defaultProfile) {
                                     ForEach(enabledProfiles, id: \.id) { profile in
                                         Text(profileTitle(profile)).tag(profile.id)
                                     }
                                 }
+                                .frame(width: 260, alignment: .leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(profiles.indices, id: \.self) { index in
+                                    Toggle(profileTitle(profiles[index]), isOn: $profiles[index].enabled)
+                                        .toggleStyle(.checkbox)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
+                            .frame(width: 260, alignment: .leading)
+                            .frame(maxWidth: .infinity, alignment: .center)
+
                             DisclosureGroup(L10n.text("Add custom Coding Agent")) {
                                 VStack(alignment: .leading, spacing: 8) {
                                     TextField(L10n.text("Name"), text: $customName).textFieldStyle(.roundedBorder)
@@ -1005,13 +1041,19 @@ private struct CapabilitiesView: View {
                                     TextField(L10n.text("Args JSON"), text: $customArguments).textFieldStyle(.roundedBorder)
                                     Button(L10n.text("Add")) { addCustomProfile() }
                                         .disabled(customName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                        .frame(maxWidth: .infinity, alignment: .trailing)
                                 }.padding(.top, 8)
                             }
-                        }.padding(.horizontal, 13).padding(.bottom, 12)
+                            .frame(width: 260, alignment: .leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 13)
+                        .padding(.bottom, 12)
                     }
 
                     SettingsCard {
-                        SettingsRow("MCP Apps", detail: L10n.text("Interactive MCP app presentation")) {
+                        SettingsRow(L10n.text("MCP Apps"), detail: L10n.text("Interactive MCP app presentation")) {
                             Picker("", selection: $selectedMCPAppsMode) {
                                 Text(L10n.text("Full")).tag(MCPAppsMode.full)
                                 Text(L10n.text("Compact")).tag(MCPAppsMode.compact)
@@ -1034,38 +1076,17 @@ private struct CapabilitiesView: View {
                         acpDefaultProfile: defaultProfile
                     )
                     Task { await model.applySettings(settings) }
-                }.disabled(model.isBusy)
+                }
+                .disabled(model.isBusy)
+                .frame(maxWidth: .infinity, alignment: .trailing)
                 if let message = model.message { Text(message).font(.system(size: 12)).foregroundStyle(.secondary) }
 
-                SettingsSection(L10n.text("Extensions")) {
-                    SettingsRow(L10n.text("Skills"), detail: L10n.text("Loaded on this device")) {
-                        Text(extensionCount(extensionOverview.skillCount, available: extensionOverview.available))
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
-                    RowDivider()
-                    SettingsRow(L10n.text("Plugins"), detail: L10n.text("Installed on this device")) {
-                        Text(extensionCount(
-                            extensionOverview.pluginCount,
-                            available: extensionOverview.available && extensionOverview.pluginsAvailable
-                        ))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-                    }
-                    RowDivider()
-                    SettingsRow("MCP", detail: L10n.text("Dynamic MCP servers")) {
-                        Text(extensionCount(extensionOverview.mcpCount, available: extensionOverview.available))
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
-                }
             }
             .padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 32)
             .frame(maxWidth: 760, alignment: .leading)
         }
         .task(id: model.statusUpdatedAt) {
             loadConfiguration()
-            extensionOverview = await model.service.runtimeExtensionOverview(configuration: configuration)
         }
         .onChange(of: profiles.map(\.enabled)) { _ in
             if !enabledProfiles.contains(where: { $0.id == defaultProfile }) {
@@ -1077,13 +1098,18 @@ private struct CapabilitiesView: View {
     private var enabledProfiles: [ACPProfileConfiguration] { profiles.filter(\.enabled) }
     private var codingAgentDetail: String {
         let enabledCount = profiles.filter(\.enabled).count
-        return enabledCount == 0 ? L10n.text("No profiles configured") : L10n.format("%d enabled · default %@", enabledCount, defaultProfile)
-    }
-    private func extensionCount(_ count: Int, available: Bool) -> String {
-        available ? String(count) : "—"
+        guard enabledCount > 0 else { return L10n.text("No profiles configured") }
+        let defaultTitle = profiles.first(where: { $0.id == defaultProfile }).map(profileTitle) ?? defaultProfile
+        return L10n.format("%d enabled · default %@", enabledCount, defaultTitle)
     }
     private func profileTitle(_ profile: ACPProfileConfiguration) -> String {
-        profile.displayName?.isEmpty == false ? profile.displayName! : profile.id
+        if let displayName = profile.displayName, !displayName.isEmpty {
+            return displayName
+        }
+        if profile.kind != .custom {
+            return profile.kind.title
+        }
+        return profile.id
     }
     private func loadConfiguration() {
         guard let configuration else { return }
@@ -1355,8 +1381,6 @@ private struct SettingsView: View {
     @State private var tunnelMode: TunnelMode = .local
     @State private var serverURL = ""
     @State private var tunnelToken = ""
-    @State private var showAuthToken = false
-    @State private var showOAuthPassword = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -1364,14 +1388,38 @@ private struct SettingsView: View {
                 .padding(.horizontal, 28).padding(.top, 24)
 
             HStack(alignment: .top, spacing: 0) {
-                List(selection: $model.settingsPage) {
+                VStack(alignment: .leading, spacing: 4) {
                     ForEach(ControlPanelModel.SettingsPage.allCases) { item in
-                        Text(item.title).tag(item)
+                        Button {
+                            model.settingsPage = item
+                        } label: {
+                            Text(item.title)
+                                .font(.system(size: 13, weight: model.settingsPage == item ? .medium : .regular))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 10)
+                                .frame(height: 32)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.primary)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(
+                                    model.settingsPage == item
+                                        ? Color.accentColor.opacity(0.14)
+                                        : Color.clear
+                                )
+                        )
                     }
+                    Spacer(minLength: 0)
                 }
-                .listStyle(.sidebar)
-                .frame(width: 190)
+                .padding(.horizontal, 10)
+                .padding(.top, 4)
+                .frame(width: 190, alignment: .topLeading)
+                .frame(maxHeight: .infinity, alignment: .topLeading)
+
                 Divider()
+
                 ScrollView {
                     settingsContent
                         .padding(.horizontal, 28).padding(.vertical, 4).padding(.bottom, 32)
@@ -1411,10 +1459,8 @@ private struct SettingsView: View {
                         TextField("", value: $port, format: .number).textFieldStyle(.roundedBorder).frame(width: 100)
                     }
                     RowDivider()
-                    SettingsRow(
-                        L10n.text("Configuration"),
-                        detail: L10n.text("Changing runtime settings will automatically restart AgentDock.")
-                    ) {
+                    HStack {
+                        Spacer()
                         Button(L10n.text("Apply changes")) {
                             guard let configuration = model.status.configuration else { return }
                             let settings = EditableServiceSettings(
@@ -1429,8 +1475,11 @@ private struct SettingsView: View {
                                 acpDefaultProfile: configuration.acpDefaultProfile
                             )
                             Task { await model.applySettings(settings) }
-                        }.controlSize(.small)
+                        }
+                        .controlSize(.small)
                     }
+                    .padding(.horizontal, 13)
+                    .frame(minHeight: 44)
                 }
                 if let message = model.message { Text(message).font(.system(size: 12)).foregroundStyle(.secondary) }
             }
@@ -1682,30 +1731,20 @@ private struct SettingsView: View {
                 SettingsSection(L10n.text("Access Credentials")) {
                     SettingsRow(
                         L10n.text("Authentication token"),
-                        detail: displayedSecret(model.status.configuration?.authToken, visible: showAuthToken)
+                        detail: displayedSecret(model.status.configuration?.authToken)
                     ) {
-                        HStack(spacing: 6) {
-                            Button(showAuthToken ? L10n.text("Hide") : L10n.text("Show")) {
-                                showAuthToken.toggle()
-                            }
-                            Button(L10n.text("Copy")) {
-                                copy(model.status.configuration?.authToken)
-                            }
+                        Button(L10n.text("Copy")) {
+                            copy(model.status.configuration?.authToken)
                         }
                         .controlSize(.small)
                     }
                     RowDivider()
                     SettingsRow(
                         L10n.text("OAuth password"),
-                        detail: displayedSecret(model.status.configuration?.oauthPassword, visible: showOAuthPassword)
+                        detail: displayedSecret(model.status.configuration?.oauthPassword)
                     ) {
-                        HStack(spacing: 6) {
-                            Button(showOAuthPassword ? L10n.text("Hide") : L10n.text("Show")) {
-                                showOAuthPassword.toggle()
-                            }
-                            Button(L10n.text("Copy")) {
-                                copy(model.status.configuration?.oauthPassword)
-                            }
+                        Button(L10n.text("Copy")) {
+                            copy(model.status.configuration?.oauthPassword)
                         }
                         .controlSize(.small)
                     }
@@ -1724,7 +1763,7 @@ private struct SettingsView: View {
                     }
                     RowDivider()
                     SettingsRow(
-                        "Cloudflare Tunnel",
+                        L10n.text("Temporary domain"),
                         detail: L10n.text("Generate a temporary public address without configuring a domain.")
                     ) {
                         Button(
@@ -1822,10 +1861,9 @@ private struct SettingsView: View {
         NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
     }
 
-    private func displayedSecret(_ value: String?, visible: Bool) -> String {
-        guard visible else { return "••••••••••••" }
-        let value = value ?? ""
-        return value.isEmpty ? "—" : value
+    private func displayedSecret(_ value: String?) -> String {
+        guard let value, !value.isEmpty else { return "—" }
+        return "••••••••••••"
     }
 
     private func copy(_ value: String?) {

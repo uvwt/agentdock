@@ -49,10 +49,19 @@
                                 Spacing="10"
                                 VerticalAlignment="Center"
                                 HorizontalAlignment="Right">
-                        <TextBlock x:Name="AgentDockState" VerticalAlignment="Center"/>
                         <Button x:Name="RuntimeAction"
                                 Click="RuntimeAction_Click"
                                 VerticalAlignment="Center"/>
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="6"
+                                    VerticalAlignment="Center">
+                            <Ellipse x:Name="AgentDockStateDot"
+                                     Width="7"
+                                     Height="7"
+                                     VerticalAlignment="Center"/>
+                            <TextBlock x:Name="AgentDockState"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
                     </StackPanel>
                 </Grid>
             </Border>
@@ -75,7 +84,10 @@
                             Padding="10,3"
                             BorderThickness="0"
                             Background="Transparent"
-                            HorizontalContentAlignment="Stretch">
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Stretch"
+                            HorizontalContentAlignment="Stretch"
+                            VerticalContentAlignment="Stretch">
                         <StackPanel Spacing="3">
                             <TextBlock x:Name="RemoteConnectionLabel"
                                        FontSize="11.5"
@@ -143,21 +155,34 @@
                             Padding="13,6"
                             BorderThickness="0"
                             Background="Transparent"
-                            HorizontalContentAlignment="Stretch">
+                            HorizontalContentAlignment="Stretch"
+                            VerticalContentAlignment="Center">
                         <Grid ColumnSpacing="16">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <StackPanel Spacing="2">
+                            <StackPanel Spacing="2" VerticalAlignment="Center">
                                 <TextBlock x:Name="BrowserCapabilityTitle" FontSize="13"/>
                                 <TextBlock x:Name="BrowserCapabilityDetail"
                                            FontSize="11.5"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                             </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
-                                <TextBlock x:Name="BrowserCapabilityState" FontSize="12"/>
-                                <TextBlock Text="›" FontSize="20" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <StackPanel Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        VerticalAlignment="Center">
+                                <Ellipse x:Name="BrowserCapabilityDot"
+                                         Width="7"
+                                         Height="7"
+                                         VerticalAlignment="Center"/>
+                                <TextBlock x:Name="BrowserCapabilityState"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"/>
+                                <FontIcon Glyph="&#xE76C;"
+                                          FontSize="12"
+                                          VerticalAlignment="Center"
+                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                             </StackPanel>
                         </Grid>
                     </Button>
@@ -174,15 +199,27 @@
                                 <ColumnDefinition/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <StackPanel Spacing="2">
+                            <StackPanel Spacing="2" VerticalAlignment="Center">
                                 <TextBlock x:Name="CodingAgentCapabilityTitle" FontSize="13"/>
                                 <TextBlock x:Name="CodingAgentCapabilityDetail"
                                            FontSize="11.5"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                             </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
-                                <TextBlock x:Name="CodingAgentCapabilityState" FontSize="12"/>
-                                <TextBlock Text="›" FontSize="20" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <StackPanel Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        VerticalAlignment="Center">
+                                <Ellipse x:Name="CodingAgentCapabilityDot"
+                                         Width="7"
+                                         Height="7"
+                                         VerticalAlignment="Center"/>
+                                <TextBlock x:Name="CodingAgentCapabilityState"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"/>
+                                <FontIcon Glyph="&#xE76C;"
+                                          FontSize="12"
+                                          VerticalAlignment="Center"
+                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                             </StackPanel>
                         </Grid>
                     </Button>
@@ -199,15 +236,27 @@
                                 <ColumnDefinition/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <StackPanel Spacing="2">
+                            <StackPanel Spacing="2" VerticalAlignment="Center">
                                 <TextBlock x:Name="McpAppsCapabilityTitle" FontSize="13"/>
                                 <TextBlock x:Name="McpAppsCapabilityDetail"
                                            FontSize="11.5"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                             </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
-                                <TextBlock x:Name="McpAppsCapabilityState" FontSize="12"/>
-                                <TextBlock Text="›" FontSize="20" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <StackPanel Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        VerticalAlignment="Center">
+                                <Ellipse x:Name="McpAppsCapabilityDot"
+                                         Width="7"
+                                         Height="7"
+                                         VerticalAlignment="Center"/>
+                                <TextBlock x:Name="McpAppsCapabilityState"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"/>
+                                <FontIcon Glyph="&#xE76C;"
+                                          FontSize="12"
+                                          VerticalAlignment="Center"
+                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                             </StackPanel>
                         </Grid>
                     </Button>

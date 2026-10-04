@@ -15,7 +15,18 @@
                     <Grid MinHeight="54" Padding="13,6" ColumnSpacing="16">
                         <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <TextBlock x:Name="StatusLabel" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="RemoteState" Grid.Column="1" FontSize="12" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Column="1"
+                                    Orientation="Horizontal"
+                                    Spacing="6"
+                                    VerticalAlignment="Center">
+                            <Ellipse x:Name="RemoteStateDot"
+                                     Width="7"
+                                     Height="7"
+                                     VerticalAlignment="Center"/>
+                            <TextBlock x:Name="RemoteState"
+                                       FontSize="12"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
                     </Grid>
                     <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
                     <Grid MinHeight="60" Padding="13,6" ColumnSpacing="16">
@@ -43,10 +54,20 @@
                                          Padding="0"
                                          FontSize="11.5"
                                          Click="NexusDevicesLink_Click"/>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button x:Name="ConnectButton" Click="ConnectButton_Click"/>
-                            <TextBlock x:Name="ConnectionActionStatus" VerticalAlignment="Center" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                        </StackPanel>
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="ConnectionActionStatus"
+                                       VerticalAlignment="Center"
+                                       FontSize="11.5"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <Button x:Name="ConnectButton"
+                                    Grid.Column="1"
+                                    HorizontalAlignment="Right"
+                                    Click="ConnectButton_Click"/>
+                        </Grid>
                     </StackPanel>
                 </StackPanel>
             </local:SectionCard>

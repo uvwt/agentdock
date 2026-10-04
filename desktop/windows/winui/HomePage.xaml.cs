@@ -62,23 +62,23 @@ public sealed partial class HomePage : Page
         if (!serviceLoaded)
         {
             RuntimeDescription.Text = UiText.Get("StartAgentDockForClients");
-            AgentDockState.Text = UiText.Get("Stopped");
+            ApplyStatus(AgentDockStateDot, AgentDockState, UiText.Get("Stopped"), CapabilityState.Disabled);
         }
         else if (serviceHealthy)
         {
             RuntimeDescription.Text = UiText.Get("DeviceReadyForAI");
-            AgentDockState.Text = UiText.Get("Running") + " ●";
+            ApplyStatus(AgentDockStateDot, AgentDockState, UiText.Get("Running"), CapabilityState.Enabled);
         }
         else
         {
             RuntimeDescription.Text = UiText.Get("AgentDockNeedsAttentionDetail");
-            AgentDockState.Text = UiText.Get("NeedsAttention");
+            ApplyStatus(AgentDockStateDot, AgentDockState, UiText.Get("NeedsAttention"), CapabilityState.Attention);
         }
 
         RemoteConnectionState.Text = !string.IsNullOrWhiteSpace(_snapshot.Nexus.Error)
             ? UiText.Get("Unavailable")
             : _snapshot.NexusConnected
-                ? UiText.Get("Connected") + " ●"
+                ? UiText.Get("Connected")
                 : _snapshot.Nexus.Paired ? UiText.Get("NotConnected") : UiText.Get("NotConfigured");
         RemoteConnectionDetail.Text = RemoteServiceDetail(_snapshot);
         RuntimeAction.Content = serviceLoaded ? UiText.Get("Stop") : UiText.Get("Start");
@@ -105,7 +105,7 @@ public sealed partial class HomePage : Page
     {
         var browserState = settings.BrowserEnabled ? CapabilityState.Enabled : CapabilityState.Disabled;
         BrowserCapabilityDetail.Text = BrowserCapabilityDetailText(settings);
-        ApplyCapabilityState(BrowserCapabilityState, browserState);
+        ApplyCapabilityState(BrowserCapabilityDot, BrowserCapabilityState, browserState);
 
         var enabledProfiles = settings.AcpProfiles.Where(profile => profile.Enabled).ToList();
         var codingAgentState = !settings.AcpEnabled
@@ -115,7 +115,7 @@ public sealed partial class HomePage : Page
                 ? CapabilityState.Attention
                 : CapabilityState.Enabled;
         CodingAgentCapabilityDetail.Text = CodingAgentDetailText(settings, enabledProfiles, codingAgentState);
-        ApplyCapabilityState(CodingAgentCapabilityState, codingAgentState);
+        ApplyCapabilityState(CodingAgentCapabilityDot, CodingAgentCapabilityState, codingAgentState);
 
         var mode = (settings.McpAppsMode ?? "").Trim().ToLowerInvariant();
         var mcpAppsState = mode switch
@@ -131,7 +131,7 @@ public sealed partial class HomePage : Page
             "off" => UiText.Get("Off"),
             _ => UiText.Get("NeedsAttention")
         };
-        ApplyCapabilityState(McpAppsCapabilityState, mcpAppsState);
+        ApplyCapabilityState(McpAppsCapabilityDot, McpAppsCapabilityState, mcpAppsState);
     }
 
     private static string BrowserCapabilityDetailText(ControlPanelSettings settings)
@@ -157,16 +157,36 @@ public sealed partial class HomePage : Page
         return UiText.Format("DefaultProfileSummary", name);
     }
 
-    private static void ApplyCapabilityState(TextBlock target, CapabilityState state)
+    private static void ApplyCapabilityState(
+        Microsoft.UI.Xaml.Shapes.Ellipse dot,
+        TextBlock target,
+        CapabilityState state)
     {
-        target.Text = state switch
+        var text = state switch
         {
-            CapabilityState.Enabled => $"● {UiText.Get("Enabled")}",
+            CapabilityState.Enabled => UiText.Get("Enabled"),
             CapabilityState.Disabled => UiText.Get("Disabled"),
-            CapabilityState.Attention => $"! {UiText.Get("NeedsAttention")}",
+            CapabilityState.Attention => UiText.Get("NeedsAttention"),
             _ => UiText.Get("Unavailable")
         };
+        ApplyStatus(dot, target, text, state);
+    }
+
+    private static void ApplyStatus(
+        Microsoft.UI.Xaml.Shapes.Ellipse dot,
+        TextBlock target,
+        string text,
+        CapabilityState state)
+    {
+        target.Text = text;
         target.Opacity = state == CapabilityState.Disabled ? 0.62 : 1.0;
+        dot.Opacity = state == CapabilityState.Disabled ? 0.72 : 1.0;
+        dot.Fill = new SolidColorBrush(state switch
+        {
+            CapabilityState.Enabled => Microsoft.UI.Colors.Green,
+            CapabilityState.Attention => Microsoft.UI.Colors.DarkOrange,
+            _ => Microsoft.UI.Colors.Gray
+        });
     }
 
     private void RenderDashboard(RuntimeDashboardSnapshot dashboard)
@@ -239,12 +259,25 @@ public sealed partial class HomePage : Page
         });
         row.Children.Add(details);
 
-        var state = new TextBlock
+        var state = new StackPanel
         {
-            Text = call.Success ? $"● {UiText.Get("Succeeded")}" : $"! {UiText.Get("Failed")}",
-            FontSize = 12,
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
             VerticalAlignment = VerticalAlignment.Center
         };
+        state.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse
+        {
+            Width = 7,
+            Height = 7,
+            VerticalAlignment = VerticalAlignment.Center,
+            Fill = new SolidColorBrush(call.Success ? Microsoft.UI.Colors.Green : Microsoft.UI.Colors.DarkOrange)
+        });
+        state.Children.Add(new TextBlock
+        {
+            Text = call.Success ? UiText.Get("Succeeded") : UiText.Get("Failed"),
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center
+        });
         Grid.SetColumn(state, 1);
         row.Children.Add(state);
         return row;

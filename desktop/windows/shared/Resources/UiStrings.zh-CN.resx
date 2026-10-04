@@ -85,7 +85,7 @@
     <value>OAuth 密码</value>
   </data>
   <data name="PublicAccess" xml:space="preserve">
-    <value>公网访问</value>
+    <value>Cloudflare Tunnel</value>
   </data>
   <data name="AccessMode" xml:space="preserve">
     <value>访问模式</value>
@@ -157,7 +157,7 @@
     <value>NexusDock 公网 HTTPS 地址</value>
   </data>
   <data name="OneTimePairingCode" xml:space="preserve">
-    <value>一次性配对码</value>
+    <value>配对码</value>
   </data>
   <data name="PairAndRestart" xml:space="preserve">
     <value>配对并重启</value>
@@ -837,8 +837,8 @@
   <data name="IsolatedBrowser" xml:space="preserve"><value>隔离浏览器</value></data>
   <data name="ReuseLocalBrowser" xml:space="preserve"><value>复用本机浏览器</value></data>
   <data name="SpecifiedCdp" xml:space="preserve"><value>指定 CDP 地址</value></data>
-  <data name="AddCustomCodingAgent" xml:space="preserve"><value>添加自定义 Coding Agent</value></data>
-  <data name="DefaultCodingAgent" xml:space="preserve"><value>默认 Coding Agent</value></data>
+  <data name="AddCustomCodingAgent" xml:space="preserve"><value>连接自定义ACP</value></data>
+  <data name="DefaultCodingAgent" xml:space="preserve"><value>默认</value></data>
   <data name="ArgumentsOnePerLine" xml:space="preserve"><value>参数（每行一个）</value></data>
   <data name="SaveAndRestart" xml:space="preserve"><value>保存并重启</value></data>
   <data name="Saving" xml:space="preserve"><value>正在保存…</value></data>
@@ -856,6 +856,7 @@
   <data name="AdvancedConnectionSettings" xml:space="preserve"><value>高级连接设置</value></data>
   <data name="AdvancedConnectionDetail" xml:space="preserve"><value>本地 MCP、访问凭据与公网直连。</value></data>
   <data name="PublicAddress" xml:space="preserve"><value>公网地址</value></data>
+  <data name="TemporaryDomain" xml:space="preserve"><value>临时域名</value></data>
   <data name="TemporaryTunnelDetail" xml:space="preserve"><value>无需配置域名，直接生成一个临时公网地址。</value></data>
   <data name="GenerateTemporaryAddress" xml:space="preserve"><value>生成临时地址</value></data>
   <data name="FixedDomain" xml:space="preserve"><value>固定域名</value></data>
@@ -886,10 +887,11 @@
   <data name="SelfHostedService" xml:space="preserve"><value>自托管服务</value></data>
   <data name="OfficialServiceHint" xml:space="preserve"><value>官方服务默认使用 nexusdock.co。</value></data>
   <data name="ServiceAddress" xml:space="preserve"><value>服务地址</value></data>
-  <data name="RemotePairingIntro" xml:space="preserve"><value>输入一次性配对码以连接这台设备。</value></data>
+  <data name="RemotePairingIntro" xml:space="preserve"><value>输入配对码以连接这台设备。</value></data>
   <data name="GetPairingCodeFromNexusDock" xml:space="preserve"><value>没有配对码？前往 NexusDock 获取配对码 ↗</value></data>
   <data name="ManageConnectedDevices" xml:space="preserve"><value>管理已连接设备 ↗</value></data>
   <data name="Connect" xml:space="preserve"><value>连接</value></data>
+  <data name="RePair" xml:space="preserve"><value>重新配对</value></data>
   <data name="ServiceAddressRequired" xml:space="preserve"><value>请输入自托管服务地址。</value></data>
 
   <data name="RuntimeSettings" xml:space="preserve"><value>运行参数</value></data>
@@ -899,8 +901,8 @@
   <data name="RuntimeRestartHint" xml:space="preserve"><value>更改运行参数后将自动重启 AgentDock。</value></data>
   <data name="Connection" xml:space="preserve"><value>连接</value></data>
   <data name="DeviceReadyForAI" xml:space="preserve"><value>此设备已准备好供 AI 使用。</value></data>
-  <data name="CodingAgent" xml:space="preserve"><value>Coding Agent</value></data>
-  <data name="McpApps" xml:space="preserve"><value>MCP Apps</value></data>
+  <data name="CodingAgent" xml:space="preserve"><value>连接本机AI客户端</value></data>
+  <data name="McpApps" xml:space="preserve"><value>聊天卡片</value></data>
   <data name="AllAvailable" xml:space="preserve"><value>全部可用</value></data>
   <data name="NotEnabledYet" xml:space="preserve"><value>尚未启用</value></data>
   <data name="CapabilitiesAvailable" xml:space="preserve"><value>{0} / 3 可用</value></data>
