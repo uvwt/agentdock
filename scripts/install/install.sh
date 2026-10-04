@@ -1044,17 +1044,17 @@ if [ ! -x "$STABLE_BINARY" ]; then
 fi
 
 ONBOARDING_STAGE="$(read_onboarding_stage)"
-RESUMING_ONBOARDING=false
+RESTARTING_ONBOARDING=false
 if [ -n "$ONBOARDING_STAGE" ]; then
-  RESUMING_ONBOARDING=true
-elif [ "$FRESH_INSTALL" = true ]; then
-  # Core/Nexus/Tunnel 是一个可恢复的首次安装流程。Core 落盘后 stable binary 已存在，
-  # 不能仅凭二进制存在就把用户中断后的下一次运行误判成普通升级。
+  RESTARTING_ONBOARDING=true
+  log "检测到上次安装未完成，重新开始安装流程。"
   write_onboarding_stage core
   ONBOARDING_STAGE=core
-fi
-if [ "$RESUMING_ONBOARDING" = true ]; then
-  log "检测到未完成的安装流程，从 ${ONBOARDING_STAGE} 阶段继续。"
+elif [ "$FRESH_INSTALL" = true ]; then
+  # Core/Nexus/Tunnel 是一个完整的首次安装流程。中断后下次运行会重新从 Core 开始，
+  # 不能仅凭 stable binary 已存在就把它误判成普通升级。
+  write_onboarding_stage core
+  ONBOARDING_STAGE=core
 fi
 
 REQUESTED_TUNNEL_MODE="$TUNNEL_MODE"
@@ -1066,7 +1066,7 @@ fi
 
 validate_linux_cli_link
 
-# nexus/tunnel 阶段说明 Core 已经提交；恢复时不重复下载 Release、也不重装 Core。
+# 普通首次安装会从 Core 开始；只有当前这次执行已经推进到 nexus/tunnel 才跳过 Core。
 if [ "$ONBOARDING_STAGE" != nexus ] && [ "$ONBOARDING_STAGE" != tunnel ]; then
   prepare_payload
 fi
@@ -1108,18 +1108,8 @@ else
   install_linux_cli_link
 fi
 
-# Pairing Code 是一次性的。若上一次恰好在 pair 成功后中断，先识别已保存身份，
-# 避免再次要求用户输入已经消费掉的配对码。
 if [ "$ONBOARDING_STAGE" = nexus ]; then
-  existing_nexus_endpoint=""
-  if [ "$RESUMING_ONBOARDING" = true ]; then
-    existing_nexus_endpoint="$(read_nexus_endpoint)"
-  fi
-  if [ -n "$existing_nexus_endpoint" ]; then
-    log "检测到 NexusDock 已配对，继续 Cloudflare 配置。"
-  else
-    configure_nexus
-  fi
+  configure_nexus
   write_onboarding_stage tunnel
   ONBOARDING_STAGE=tunnel
 elif [ -n "$NEXUS_MODE" ]; then
@@ -1131,10 +1121,10 @@ if [ -n "$NEXUS_PAIR_CODE_FILE" ]; then rm -f "$NEXUS_PAIR_CODE_FILE"; fi
 if [ "$ONBOARDING_STAGE" = tunnel ]; then
   TUNNEL_MODE="$REQUESTED_TUNNEL_MODE"
 
-  # 若上一次已成功提交 Quick/Named Tunnel，只是来不及清除恢复状态，
-  # 直接沿用已提交配置，避免重复下载或再次索要 Named Tunnel Token。
+  # 普通同次执行里若 Tunnel 已成功提交、只差清状态，可以沿用；
+  # 但若这是中断后的重跑，必须重新进入 Tunnel 选择，保持“从头开始”的交互语义。
   existing_tunnel_mode="$(read_tunnel_mode)"
-  if [ -z "$TUNNEL_MODE" ] && { [ "$existing_tunnel_mode" = quick ] || [ "$existing_tunnel_mode" = named ]; }; then
+  if [ "$RESTARTING_ONBOARDING" != true ] && [ -z "$TUNNEL_MODE" ] && { [ "$existing_tunnel_mode" = quick ] || [ "$existing_tunnel_mode" = named ]; }; then
     TUNNEL_MODE="$existing_tunnel_mode"
     log "检测到 Cloudflare Tunnel 已配置，继续完成安装。"
   fi

@@ -206,9 +206,10 @@ fi
 [ ! -e "$LINUX_NEXUS/bin/cloudflared" ] || fail "Nexus-only install unexpectedly installed cloudflared"
 [ ! -e "$LINUX_NEXUS/runtime/.installer-onboarding" ] || fail "completed install left onboarding recovery state behind"
 
-# Interrupted onboarding must resume even though the stable binary already exists.
-# First run commits Core, then intentionally fails because non-interactive official
-# Nexus pairing has no code. The second run must resume from nexus without reinstalling Core.
+# Interrupted onboarding restarts the full first-install flow even though the stable
+# binary already exists. First run commits Core, then intentionally fails because
+# non-interactive official Nexus pairing has no code. The second run must install
+# Core again, then continue through Nexus and Tunnel from the beginning.
 LINUX_RESUME="$TMP_ROOT/linux-resume"
 mkdir -p "$LINUX_RESUME"
 if PATH="$FAKE_BIN:$PATH" \
@@ -243,11 +244,11 @@ PATH="$FAKE_BIN:$PATH" \
   AGENTDOCK_NEXUS_MODE=official AGENTDOCK_NEXUS_PAIR_CODE=resume-pair-code \
   sh "$ENTRY" >"$LINUX_RESUME/resume-output.log" 2>&1
 assert_arg nexus "$LINUX_RESUME/resume-engine.log"
-assert_no_arg install "$LINUX_RESUME/resume-engine.log"
-grep -Fq '检测到未完成的安装流程，从 nexus 阶段继续。' "$LINUX_RESUME/resume-output.log" || fail "resume path did not report nexus stage"
-grep -Fq 'Nexus：https://mcp.nexusdock.co' "$LINUX_RESUME/resume-output.log" || fail "resumed install did not finish Nexus pairing"
-[ ! -e "$LINUX_RESUME/runtime/.installer-onboarding" ] || fail "resumed install did not clear onboarding recovery state"
-[ ! -e "$LINUX_RESUME/bin/cloudflared" ] || fail "resumed no-tunnel install unexpectedly installed cloudflared"
+assert_arg install "$LINUX_RESUME/resume-engine.log"
+grep -Fq '检测到上次安装未完成，重新开始安装流程。' "$LINUX_RESUME/resume-output.log" || fail "restart path did not report full onboarding restart"
+grep -Fq 'Nexus：https://mcp.nexusdock.co' "$LINUX_RESUME/resume-output.log" || fail "restarted install did not finish Nexus pairing"
+[ ! -e "$LINUX_RESUME/runtime/.installer-onboarding" ] || fail "restarted install did not clear onboarding state"
+[ ! -e "$LINUX_RESUME/bin/cloudflared" ] || fail "restarted no-tunnel install unexpectedly installed cloudflared"
 
 # Cloudflare is a post-Core phase. Selecting Named Tunnel installs cloudflared,
 # repairs the runtime, pre-generates OAuth credentials, and prints public details.
