@@ -15,8 +15,17 @@ public sealed partial class CapabilitiesPage : Page
         InitializeComponent();
         PageTitle.Text = UiText.Get("Capabilities");
         PageDetail.Text = UiText.Get("CapabilitiesDetail");
-        CapabilitiesSection.Title = UiText.Get("AvailableCapabilities");
+        CapabilitiesSection.Title = UiText.Get("BuiltInCapabilities");
+        ExtensionsSection.Title = UiText.Get("Extensions");
         BrowserTitle.Text = UiText.Get("Browser");
+        SkillsTitle.Text = UiText.Get("Skills");
+        SkillsDetail.Text = UiText.Get("LoadedOnThisDevice");
+        PluginsTitle.Text = UiText.Get("Plugins");
+        PluginsDetail.Text = UiText.Get("InstalledOnThisDevice");
+        McpServersDetail.Text = UiText.Get("DynamicMcpServers");
+        SkillsValue.Text = "—";
+        PluginsValue.Text = "—";
+        McpServersValue.Text = "—";
         ManagedBrowserModeItem.Content = UiText.Get("IsolatedBrowser");
         ReuseBrowserModeItem.Content = UiText.Get("ReuseLocalBrowser");
         SpecifiedBrowserModeItem.Content = UiText.Get("SpecifiedCdp");
@@ -32,6 +41,7 @@ public sealed partial class CapabilitiesPage : Page
         _runtime = e.Parameter as RuntimeService;
         if (_runtime is null) return;
         var snapshot = await _runtime.GetSnapshotAsync(includeNexusConnection: false);
+        var extensionOverview = await _runtime.GetRuntimeExtensionOverviewAsync(snapshot.LocalMcpUrl);
         _settings = snapshot.Settings;
         var settings = _settings;
         foreach (var kind in new[] { "codex", "claude", "grok" })
@@ -50,6 +60,11 @@ public sealed partial class CapabilitiesPage : Page
             ? UiText.Get("NoProfilesConfigured")
             : UiText.Format("ProfilesConfigured", enabledProfiles, settings.AcpDefaultProfile);
         McpAppsDetail.Text = UiText.Get("McpAppsDetail");
+        SkillsValue.Text = extensionOverview.Available ? extensionOverview.SkillCount.ToString() : "—";
+        PluginsValue.Text = extensionOverview.Available && extensionOverview.PluginsAvailable
+            ? extensionOverview.PluginCount.ToString()
+            : "—";
+        McpServersValue.Text = extensionOverview.Available ? extensionOverview.McpCount.ToString() : "—";
         SelectComboTag(McpAppsModeComboBox, string.IsNullOrWhiteSpace(settings.McpAppsMode) ? "full" : settings.McpAppsMode);
         RenderProfiles(settings);
         _updatingUi = false;

@@ -748,6 +748,13 @@ Update now?</value>
   <data name="Copy" xml:space="preserve"><value>Copy</value></data>
   <data name="CapabilitiesDetail" xml:space="preserve"><value>Configure the capabilities AgentDock provides to AI.</value></data>
   <data name="AvailableCapabilities" xml:space="preserve"><value>Available capabilities</value></data>
+  <data name="BuiltInCapabilities" xml:space="preserve"><value>Built-in capabilities</value></data>
+  <data name="Extensions" xml:space="preserve"><value>Extensions</value></data>
+  <data name="Skills" xml:space="preserve"><value>Skills</value></data>
+  <data name="Plugins" xml:space="preserve"><value>Plugins</value></data>
+  <data name="LoadedOnThisDevice" xml:space="preserve"><value>Loaded on this device</value></data>
+  <data name="InstalledOnThisDevice" xml:space="preserve"><value>Installed on this device</value></data>
+  <data name="DynamicMcpServers" xml:space="preserve"><value>Dynamic MCP servers</value></data>
   <data name="Enabled" xml:space="preserve"><value>Enabled</value></data>
   <data name="BrowserCapabilityDetail" xml:space="preserve"><value>Browser automation and web operations</value></data>
   <data name="BrowserReuseMode" xml:space="preserve"><value>Prefer an existing local browser</value></data>
@@ -855,6 +862,8 @@ Update now?</value>
   <data name="OfficialServiceHint" xml:space="preserve"><value>The official service uses nexusdock.co by default.</value></data>
   <data name="ServiceAddress" xml:space="preserve"><value>Service address</value></data>
   <data name="RemotePairingIntro" xml:space="preserve"><value>Enter the one-time pairing code to connect this device.</value></data>
+  <data name="GetPairingCodeFromNexusDock" xml:space="preserve"><value>No pairing code? Get one from NexusDock ↗</value></data>
+  <data name="ManageConnectedDevices" xml:space="preserve"><value>Manage connected devices ↗</value></data>
   <data name="Connect" xml:space="preserve"><value>Connect</value></data>
   <data name="ServiceAddressRequired" xml:space="preserve"><value>Enter a self-hosted service address.</value></data>
 

@@ -38,6 +38,11 @@
                     <StackPanel Padding="13,12" Spacing="10">
                         <TextBlock x:Name="PairingIntro" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
                         <PasswordBox x:Name="PairingCodeBox"/>
+                        <HyperlinkButton x:Name="NexusDevicesLink"
+                                         HorizontalAlignment="Left"
+                                         Padding="0"
+                                         FontSize="11.5"
+                                         Click="NexusDevicesLink_Click"/>
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button x:Name="ConnectButton" Click="ConnectButton_Click"/>
                             <TextBlock x:Name="ConnectionActionStatus" VerticalAlignment="Center" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>

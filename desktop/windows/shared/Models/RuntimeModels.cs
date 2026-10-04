@@ -161,6 +161,43 @@ public sealed record RuntimeSnapshot(
     bool NexusConnected,
     DateTimeOffset CheckedAt);
 
+public sealed record RuntimeExtensionOverview(
+    bool Available,
+    int SkillCount,
+    int PluginCount,
+    bool PluginsAvailable,
+    int McpCount)
+{
+    public static RuntimeExtensionOverview Unavailable { get; } = new(false, 0, 0, false, 0);
+}
+
+internal sealed class RuntimeOverviewCountPayload
+{
+    [JsonPropertyName("count")]
+    public int Count { get; set; }
+}
+
+internal sealed class RuntimeOverviewPluginsPayload
+{
+    [JsonPropertyName("count")]
+    public int Count { get; set; }
+
+    [JsonPropertyName("available")]
+    public bool Available { get; set; }
+}
+
+internal sealed class RuntimeOverviewPayload
+{
+    [JsonPropertyName("skills")]
+    public RuntimeOverviewCountPayload Skills { get; set; } = new();
+
+    [JsonPropertyName("plugins")]
+    public RuntimeOverviewPluginsPayload Plugins { get; set; } = new();
+
+    [JsonPropertyName("mcp")]
+    public RuntimeOverviewCountPayload Mcp { get; set; } = new();
+}
+
 public sealed record NexusDeviceStatus(
     bool Paired,
     string Endpoint,

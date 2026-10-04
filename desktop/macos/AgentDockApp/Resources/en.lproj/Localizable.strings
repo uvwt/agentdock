@@ -424,6 +424,13 @@
 "Protected" = "Protected";
 "Remote connection" = "Remote connection";
 "Available capabilities" = "Available capabilities";
+"Built-in capabilities" = "Built-in capabilities";
+"Extensions" = "Extensions";
+"Skills" = "Skills";
+"Plugins" = "Plugins";
+"Loaded on this device" = "Loaded on this device";
+"Installed on this device" = "Installed on this device";
+"Dynamic MCP servers" = "Dynamic MCP servers";
 "Browser automation and web operations" = "Browser automation and web operations";
 "Prefer an existing local browser" = "Prefer an existing local browser";
 "Use the configured CDP browser" = "Use the configured CDP browser";
@@ -475,6 +482,8 @@
 "Service address" = "Service address";
 "Official service uses nexusdock.co by default." = "Official service uses nexusdock.co by default.";
 "Enter the one-time pairing code to connect this device." = "Enter the one-time pairing code to connect this device.";
+"No pairing code? Get one from NexusDock ↗" = "No pairing code? Get one from NexusDock ↗";
+"Manage connected devices ↗" = "Manage connected devices ↗";
 "Connect" = "Connect";
 "Skills" = "Skills";
 "Plugins" = "Plugins";

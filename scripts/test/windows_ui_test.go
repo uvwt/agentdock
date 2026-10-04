@@ -67,6 +67,11 @@ func TestWindowsNativeControlPanelCarriesSettingsParity(t *testing.T) {
 	for _, want := range []string{
 		"PairNexusAsync",
 		"GetSnapshotAsync(includeNexusConnection: true)",
+		"https://mcp.nexusdock.co/workspace/devices",
+		`UiText.Get("GetPairingCodeFromNexusDock")`,
+		`UiText.Get("ManageConnectedDevices")`,
+		`NexusDevicesLink.Visibility = SelectedRemoteService() == "official"`,
+		"IsOfficialEndpoint(_snapshot.Nexus.Endpoint)",
 	} {
 		if !strings.Contains(connections, want) {
 			t.Fatalf("WinUI connections parity missing %q", want)

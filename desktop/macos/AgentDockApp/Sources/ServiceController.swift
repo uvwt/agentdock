@@ -15,6 +15,37 @@ struct DesktopServiceStatusPayload: Decodable {
     }
 }
 
+struct RuntimeExtensionOverview: Equatable {
+    let available: Bool
+    let skillCount: Int
+    let pluginCount: Int
+    let pluginsAvailable: Bool
+    let mcpCount: Int
+
+    static let unavailable = RuntimeExtensionOverview(
+        available: false,
+        skillCount: 0,
+        pluginCount: 0,
+        pluginsAvailable: false,
+        mcpCount: 0
+    )
+}
+
+private struct RuntimeOverviewCountPayload: Decodable {
+    let count: Int
+}
+
+private struct RuntimeOverviewPluginsPayload: Decodable {
+    let count: Int
+    let available: Bool
+}
+
+private struct RuntimeOverviewPayload: Decodable {
+    let skills: RuntimeOverviewCountPayload
+    let plugins: RuntimeOverviewPluginsPayload
+    let mcp: RuntimeOverviewCountPayload
+}
+
 struct DesktopUpdateRegistrationState {
     let core: String
     let tunnel: String
@@ -298,6 +329,38 @@ final class ServiceController: @unchecked Sendable {
 
     func nexusDeviceStatus() -> NexusDeviceStatus {
         NexusDeviceStatus.load(from: paths.nexusDeviceIdentity)
+    }
+
+    func runtimeExtensionOverview(configuration: ServiceConfiguration?) async -> RuntimeExtensionOverview {
+        guard let configuration,
+              let healthURL = configuration.healthURL,
+              var components = URLComponents(url: healthURL, resolvingAgainstBaseURL: false) else {
+            return .unavailable
+        }
+        components.path = "/internal/runtime/overview"
+        components.query = nil
+        components.fragment = nil
+        guard let url = components.url else { return .unavailable }
+
+        do {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 2.5
+            if !configuration.authToken.isEmpty {
+                request.setValue("Bearer \(configuration.authToken)", forHTTPHeaderField: "Authorization")
+            }
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return .unavailable }
+            let payload = try JSONDecoder().decode(RuntimeOverviewPayload.self, from: data)
+            return RuntimeExtensionOverview(
+                available: true,
+                skillCount: max(0, payload.skills.count),
+                pluginCount: max(0, payload.plugins.count),
+                pluginsAvailable: payload.plugins.available,
+                mcpCount: max(0, payload.mcp.count)
+            )
+        } catch {
+            return .unavailable
+        }
     }
 
     func pairNexus(endpoint: String, pairingCode: String) async throws {

@@ -424,6 +424,13 @@
 "Protected" = "已保护";
 "Remote connection" = "远程连接";
 "Available capabilities" = "可用能力";
+"Built-in capabilities" = "内置能力";
+"Extensions" = "扩展";
+"Skills" = "Skills";
+"Plugins" = "插件";
+"Loaded on this device" = "已加载到这台设备";
+"Installed on this device" = "已安装到这台设备";
+"Dynamic MCP servers" = "动态 MCP 服务";
 "Browser automation and web operations" = "浏览器自动化与网页操作";
 "Prefer an existing local browser" = "优先复用本机已有浏览器";
 "Use the configured CDP browser" = "使用已配置的 CDP 浏览器";
@@ -475,6 +482,8 @@
 "Service address" = "服务地址";
 "Official service uses nexusdock.co by default." = "官方服务默认使用 nexusdock.co。";
 "Enter the one-time pairing code to connect this device." = "输入一次性配对码以连接这台设备。";
+"No pairing code? Get one from NexusDock ↗" = "没有配对码？前往 NexusDock 获取配对码 ↗";
+"Manage connected devices ↗" = "管理已连接设备 ↗";
 "Connect" = "连接";
 "Skills" = "Skill";
 "Plugins" = "插件";
