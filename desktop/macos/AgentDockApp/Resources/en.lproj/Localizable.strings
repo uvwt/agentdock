@@ -382,6 +382,7 @@
 "AgentDock lets AI clients securely use capabilities on this device." = "AgentDock lets AI clients securely use capabilities on this device.";
 "Application" = "Application";
 "Resources" = "Resources";
+"Website" = "Website";
 "Documentation" = "Documentation";
 "Connect AI clients to this device." = "Connect AI clients to this device.";
 "Configure the capabilities AgentDock provides to AI." = "Configure the capabilities AgentDock provides to AI.";

@@ -871,6 +871,7 @@ Update now?</value>
   <data name="AboutDescription" xml:space="preserve"><value>AgentDock lets AI clients securely use capabilities on this device.</value></data>
   <data name="Application" xml:space="preserve"><value>Application</value></data>
   <data name="Resources" xml:space="preserve"><value>Resources</value></data>
+  <data name="Website" xml:space="preserve"><value>Website</value></data>
   <data name="Documentation" xml:space="preserve"><value>Documentation</value></data>
   <data name="Appearance" xml:space="preserve"><value>Appearance</value></data>
   <data name="AppearanceDetail" xml:space="preserve"><value>Customize the theme and interface language.</value></data>

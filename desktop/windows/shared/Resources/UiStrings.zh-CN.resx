@@ -871,6 +871,7 @@
   <data name="AboutDescription" xml:space="preserve"><value>AgentDock 让 AI 客户端安全使用这台设备上的能力。</value></data>
   <data name="Application" xml:space="preserve"><value>应用</value></data>
   <data name="Resources" xml:space="preserve"><value>资源</value></data>
+  <data name="Website" xml:space="preserve"><value>官网</value></data>
   <data name="Documentation" xml:space="preserve"><value>文档</value></data>
   <data name="Appearance" xml:space="preserve"><value>外观</value></data>
   <data name="AppearanceDetail" xml:space="preserve"><value>自定义主题和界面语言。</value></data>

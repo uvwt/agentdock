@@ -97,6 +97,7 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 		"Text(AppVersion.current)",
 		"UIThemePreference.allCases",
 		"model.setThemePreference(preference)",
+		"https://nexusdock.co/",
 		"https://docs.nexusdock.co/agentdock/",
 		"https://github.com/uvwt/agentdock",
 		".toggleStyle(.switch)",

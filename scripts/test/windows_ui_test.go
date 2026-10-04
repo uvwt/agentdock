@@ -234,6 +234,7 @@ func TestWindowsAboutLivesInSettingsSidebarAndUsesExistingVersionSource(t *testi
 		`SettingsContent.Children.Add(BuildAbout())`,
 		`_snapshot.Version`,
 		`update.Click += CheckUpdate_Click`,
+		`https://nexusdock.co/`,
 		`https://docs.nexusdock.co/agentdock/`,
 		`https://github.com/uvwt/agentdock`,
 	} {

@@ -382,6 +382,7 @@
 "AgentDock lets AI clients securely use capabilities on this device." = "AgentDock 让 AI 客户端安全使用这台设备上的能力。";
 "Application" = "应用";
 "Resources" = "资源";
+"Website" = "官网";
 "Documentation" = "文档";
 "Connect AI clients to this device." = "让 AI 客户端连接这台设备。";
 "Configure the capabilities AgentDock provides to AI." = "配置 AgentDock 可以提供给 AI 的能力。";

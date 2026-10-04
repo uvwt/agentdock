@@ -1702,6 +1702,14 @@ private struct SettingsView: View {
                 }
 
                 SettingsSection(L10n.text("Resources")) {
+                    SettingsRow(L10n.text("Website")) {
+                        Link(
+                            L10n.text("Open"),
+                            destination: URL(string: "https://nexusdock.co/")!
+                        )
+                        .controlSize(.small)
+                    }
+                    RowDivider()
                     SettingsRow(L10n.text("Documentation")) {
                         Link(
                             L10n.text("Open"),
