@@ -706,7 +706,7 @@ foreach ($required in @(
         throw "$taskAdminSourcePath is missing native task administration behavior: $required"
     }
 }
-foreach ($required in @('--task-admin', 'TaskAdminService.Run(e.Args)', '--run-core-task')) {
+foreach ($required in @('--task-admin', 'TaskAdminService.Run(arguments)', '--run-core-task')) {
     if (-not $appSource.Contains($required)) {
         throw "$appSourcePath is missing AgentDock background helper behavior: $required"
     }
