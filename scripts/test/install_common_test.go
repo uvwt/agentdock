@@ -39,6 +39,10 @@ func TestUnifiedInstallerEntryOwnsUnixBootstrap(t *testing.T) {
 		t.Fatalf("read install.sh: %v", err)
 	}
 	entry := string(data)
+	menu := "NexusDock 远程连接：\n1) 官方服务（推荐）\n2) 自托管\n3) 暂不连接"
+	if !strings.Contains(entry, menu) {
+		t.Fatalf("install.sh missing exact NexusDock menu: %q", menu)
+	}
 	for _, want := range []string{
 		`agentdock_${PLATFORM}_${ARCH}.tar.gz`,
 		"install --engine-ready",
@@ -71,8 +75,8 @@ func TestUnifiedInstallerFreshFlowOrdersCoreNexusThenCloudflare(t *testing.T) {
 	for _, want := range []string{
 		`OFFICIAL_NEXUS_ENDPOINT="${AGENTDOCK_NEXUS_OFFICIAL_ENDPOINT:-https://mcp.nexusdock.co}"`,
 		`OFFICIAL_NEXUS_DEVICES_URL="${AGENTDOCK_NEXUS_OFFICIAL_DEVICES_URL:-https://mcp.nexusdock.co/workspace/devices}"`,
-		`prompt_value 'NexusDock 配对码'`,
-		`请打开 %s 获取 NexusDock 配对码。`,
+		`prompt_value '配对码'`,
+		`\n打开 %s 获取 NexusDock 配对码\n`,
 		`run_install_engine install "$CORE_TUNNEL_MODE"`,
 		`configure_nexus`,
 		`choose_tunnel_mode`,

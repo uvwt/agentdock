@@ -382,9 +382,9 @@ CHOICE
 choose_nexus_mode() {
   cat >>"$TTY_OUT" <<'CHOICE'
 
-远程连接：
-1) NexusDock 官方服务（推荐）
-2) 自托管 NexusDock
+NexusDock 远程连接：
+1) 官方服务（推荐）
+2) 自托管
 3) 暂不连接
 CHOICE
   choice="$(prompt_choice '选择' 1)"
@@ -497,9 +497,9 @@ configure_nexus() {
   if [ -z "$NEXUS_PAIR_CODE" ]; then
     is_true "$NONINTERACTIVE" && die "NexusDock 配对必须通过 AGENTDOCK_NEXUS_PAIR_CODE 或 --nexus-pair-code-file 提供配对码"
     if [ "$NEXUS_MODE" = official ]; then
-      printf '请打开 %s 获取 NexusDock 配对码。\n' "$OFFICIAL_NEXUS_DEVICES_URL" >>"$TTY_OUT"
+      printf '\n打开 %s 获取 NexusDock 配对码\n' "$OFFICIAL_NEXUS_DEVICES_URL" >>"$TTY_OUT"
     fi
-    NEXUS_PAIR_CODE="$(prompt_value 'NexusDock 配对码')"
+    NEXUS_PAIR_CODE="$(prompt_value '配对码')"
   fi
 
   while ! pair_nexus_once; do
@@ -508,7 +508,7 @@ configure_nexus() {
     fi
     retry="$(prompt_choice 'NexusDock 配对失败，重新输入配对码？(y/n)' y)"
     case "$retry" in
-      y|Y|yes|YES) NEXUS_PAIR_CODE="$(prompt_value 'NexusDock 配对码')" ;;
+      y|Y|yes|YES) NEXUS_PAIR_CODE="$(prompt_value '配对码')" ;;
       *)
         log "已跳过 Nexus 配对，AgentDock Core 保持可用。"
         NEXUS_MODE=none
