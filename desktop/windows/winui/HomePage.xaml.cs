@@ -40,8 +40,8 @@ public sealed partial class HomePage : Page
 
     private static BitmapImage? LoadProductLogo()
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "Assets", "agentdock.png");
-        return File.Exists(path) ? new BitmapImage(new Uri(path, UriKind.Absolute)) : null;
+        var path = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "agentdock.png");
+        return File.Exists(path) ? new BitmapImage(new System.Uri(path, System.UriKind.Absolute)) : null;
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)

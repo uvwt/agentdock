@@ -252,8 +252,8 @@ public sealed partial class SettingsPage : Page
 
     private static BitmapImage? LoadProductLogo()
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "Assets", "agentdock.png");
-        return File.Exists(path) ? new BitmapImage(new Uri(path, UriKind.Absolute)) : null;
+        var path = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "agentdock.png");
+        return File.Exists(path) ? new BitmapImage(new System.Uri(path, System.UriKind.Absolute)) : null;
     }
 
     private void ThemePreference_SelectionChanged(object sender, SelectionChangedEventArgs e)

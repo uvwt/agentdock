@@ -320,7 +320,7 @@ func TestWindowsHomeUsesProductStatusAndAdaptiveCapabilities(t *testing.T) {
 		`HorizontalScrollBarVisibility="Disabled"`,
 		`x:Name="ProductLogo"`,
 		"ProductLogo.Source = LoadProductLogo()",
-		`Path.Combine(AppContext.BaseDirectory, "Assets", "agentdock.png")`,
+		`System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "agentdock.png")`,
 		`x:Name="AgentDockState"`,
 		`x:Name="SkillCount"`,
 		`x:Name="McpCount"`,
