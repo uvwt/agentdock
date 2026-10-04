@@ -377,7 +377,7 @@ public sealed partial class SettingsPage : Page
         var resources = new SectionCard { Title = UiText.Get("Resources") };
         var resourceRows = new StackPanel();
         var documentation = new Button { Content = UiText.Get("Open") };
-        documentation.Click += (_, _) => OpenExternalUrl("https://uvwt.github.io/agentdock-docs/");
+        documentation.Click += (_, _) => OpenExternalUrl("https://docs.nexusdock.co/agentdock/");
         resourceRows.Children.Add(ActionRow(UiText.Get("Documentation"), documentation));
         resourceRows.Children.Add(Divider());
         var repository = new Button { Content = UiText.Get("Open") };

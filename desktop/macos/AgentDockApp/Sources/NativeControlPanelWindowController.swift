@@ -1705,7 +1705,7 @@ private struct SettingsView: View {
                     SettingsRow(L10n.text("Documentation")) {
                         Link(
                             L10n.text("Open"),
-                            destination: URL(string: "https://uvwt.github.io/agentdock-docs/")!
+                            destination: URL(string: "https://docs.nexusdock.co/agentdock/")!
                         )
                         .controlSize(.small)
                     }

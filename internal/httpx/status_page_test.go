@@ -75,7 +75,7 @@ func TestStatusPageUsesChineseForChineseBrowserLanguage(t *testing.T) {
 		"GitHub 仓库",
 		"安装、配置与使用指南。",
 		">插件<",
-		`href="https://uvwt.github.io/agentdock-docs/zh-CN/"`,
+		`href="https://docs.nexusdock.co/agentdock/"`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("Chinese status page missing %q", expected)

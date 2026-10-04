@@ -534,7 +534,7 @@ func (app *trayApp) notify(title, body string, failed bool) {
 }
 
 func (app *trayApp) openDocumentation() {
-	_ = exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", "https://uvwt.github.io/agentdock-docs/").Start()
+	_ = exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", "https://docs.nexusdock.co/agentdock/").Start()
 }
 
 func appendMenu(menu uintptr, flags uintptr, id uint16, text string) {
