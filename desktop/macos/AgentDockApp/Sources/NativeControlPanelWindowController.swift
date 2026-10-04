@@ -248,6 +248,7 @@ private struct ControlPanelRootView: View {
                             .tag(page)
                     }
                 }
+                .id(model.languageRevision)
                 .listStyle(.sidebar)
             }
             .navigationSplitViewColumnWidth(min: 160, ideal: 168, max: 180)
@@ -1449,6 +1450,7 @@ private struct SettingsView: View {
                     }
                     Spacer(minLength: 0)
                 }
+                .id(model.languageRevision)
                 .padding(.horizontal, 10)
                 .padding(.top, 4)
                 .frame(width: 190, alignment: .topLeading)
