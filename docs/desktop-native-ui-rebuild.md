@@ -162,8 +162,8 @@ Mac / Windows 必须统一：
 
 | Token | 基线 |
 |---|---:|
-| 默认窗口 | 1060 × 720 |
-| 最小窗口 | 900 × 620 |
+| 默认窗口 | 1060 × 720（逻辑尺寸：macOS point / WinUI DIP） |
+| 最小窗口 | 900 × 620（逻辑尺寸） |
 | 一级 Sidebar | 168 |
 | 页面水平 Padding | 28 |
 | 页面顶部 Padding | 24 |
@@ -458,6 +458,9 @@ AgentDock.ControlPanel
 - 不为了 WinUI 迁移改变 Runtime 协议和业务数据模型。
 - WinUI 页面只负责呈现和用户交互，系统能力继续保持清晰的服务边界。
 - 如果旧 WPF code-behind 混有业务逻辑，迁移时只抽取真正属于业务 / 平台服务的部分，不机械制造大量 interface。
+- 本轮 WinUI 3 基线固定使用 `Microsoft.WindowsAppSDK 2.3.1`。TianYi 上同机 CloudDrive2 也使用该版本，真实启动稳定；此前试用的 `1.6.250602001` 在 TianYi 上即使最小窗口也会触发 native heap corruption。
+- 新 WinUI 壳必须声明 `PerMonitorV2` DPI awareness。窗口设计尺寸按 DIP 处理，再根据 `GetDpiForWindow` 转换为物理像素；在工作区不足时允许 Windows 按系统规则压缩实际物理高度。
+- Settings 不在 XAML 中直接设置 `SelectedIndex` 触发初始化期 `SelectionChanged`。默认选中项在页面导航完成后设置，并对未完成绑定的内容区做初始化保护。
 
 ## 13. 从 PR #181 搬什么，不搬什么
 
@@ -575,12 +578,26 @@ macOS：
 
 Windows：
 
-- TianYi 真机 `dotnet publish`。
+- TianYi 使用 Visual Studio Build Tools 2022 的 MSBuild 做 WinUI 3 `Release x64` 真机构建。不要把裸 `dotnet build` 作为 WinUI 验证入口；TianYi 的 .NET SDK 路径缺少 `Microsoft.Build.Packaging.Pri.Tasks.dll`，会产生 `MSB4062`，而 VS MSBuild 可正常完成 PRI / XAML 构建。
 - 真机启动。
 - 五页 UI 截图。
 - Runtime start / stop。
 - 单实例 / 托盘 / 启动行为。
 - 安装器兼容性。
+
+### 15.1 2026-10-04 Phase 1/2 真机验证记录
+
+当前 Phase 0～2 已完成实现和第一轮真机验证，Phase 3 仍需等待视觉方向确认后再开始。
+
+已确认：
+
+- macOS 新 SwiftUI Shell 可编译，Home / Settings backing-store 快照均已生成，最终窗口外框为 `1060 × 720`。
+- Windows 新 WinUI 3 Shell 使用 `Microsoft.WindowsAppSDK 2.3.1`，TianYi `Release x64` 构建和 Home / Settings 启动验证均通过。
+- TianYi 上 AgentDock WinUI 已从 DPI-unaware 的 `96 DPI` 修正为 `PerMonitorV2 / 192 DPI`。
+- 同一窗口在 DPI-unaware 外部进程中看到的虚拟化矩形约为 `1060 × 667`，切换测量线程到 PerMonitorV2 后真实物理矩形为 `2120 × 1334`；宽度正确对应 1060 DIP，实际高度受当前 Windows 工作区限制而被系统压缩。
+- Windows `SettingsPage` 初始化期崩溃已定位为 XAML `SelectedIndex` 过早触发 `SelectionChanged`，修复后 Home / Settings 均可稳定启动。
+- Windows App SDK 1.6 在 TianYi 上最小 WinUI 窗口仍会 native crash，因此不再作为本轮基线。
+- 旧 WPF 控制面板仍保留，新 WinUI 仅作为迁移中的新前端，未删除旧系统能力。
 
 视觉审查：
 

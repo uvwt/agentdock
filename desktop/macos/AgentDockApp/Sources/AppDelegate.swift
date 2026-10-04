@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isCheckingForUpdate = false
     private var trayServiceActionInProgress = false
     private lazy var updateProgressWindow = UpdateProgressWindowController()
-    private lazy var setupWindow = SetupWindowController(
+    private lazy var setupWindow = NativeControlPanelWindowController(
         service: service,
         menuLoginAgent: menuLoginAgent,
         onChanged: { [weak self] in
