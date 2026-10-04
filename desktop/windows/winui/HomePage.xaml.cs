@@ -210,7 +210,7 @@ public sealed partial class HomePage : Page
         var row = new Grid
         {
             MinHeight = 54,
-            Padding = new Thickness(13, 7),
+            Padding = new Thickness(13, 7, 13, 7),
             ColumnSpacing = 16
         };
         row.ColumnDefinitions.Add(new ColumnDefinition());
