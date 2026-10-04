@@ -104,9 +104,9 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"--start-core --runtime-root",
 		"& $destinationBinary service start --runtime-root $runtimeDir",
 		"--start-tunnel --runtime-root",
-		"$tunnelStartupArguments = \"--start-tunnel --runtime-root",
-		"-FilePath $destinationTrayBinary",
-		"-Arguments $tunnelStartupArguments",
+		"$tunnelLaunchArguments = \"tunnel launch --runtime-root",
+		"-FilePath $destinationBinary",
+		"-Arguments $tunnelLaunchArguments",
 		"-AdminLauncherPath $sourceTrayBinary",
 		"-LauncherPath $destinationTrayBinary",
 		"-FilePath $AdminLauncherPath",
@@ -250,7 +250,7 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	}
 	tunnelArg := strings.Index(script, "'--tunnel-mode', $resolvedTunnelMode")
 	coreStartCall := strings.Index(script, "& $destinationBinary service start --runtime-root $runtimeDir")
-	tunnelProxyCall := strings.Index(script, "$tunnelStartupArguments = \"--start-tunnel --runtime-root")
+	tunnelProxyCall := strings.Index(script, "$tunnelLaunchArguments = \"tunnel launch --runtime-root")
 	tunnelCommitCall := strings.LastIndex(script, "$commitArgs = @(")
 	if tunnelArg < 0 || coreStartCall < 0 || tunnelProxyCall < 0 || tunnelCommitCall < 0 || tunnelArg > coreStartCall || tunnelCommitCall > tunnelProxyCall {
 		t.Fatal("Installer must pass tunnel intent to the Engine, commit the Core transaction, then launch Tunnel asynchronously")
@@ -960,9 +960,9 @@ func TestWindowsSetupLaunchesRuntimeOutsideRedirectionGuardTree(t *testing.T) {
 		"$setupRuntimeLauncherPath = Join-Path $PSScriptRoot 'launch-windows-process.ps1'",
 		"function Invoke-SetupRuntimeProcess",
 		"-Arguments \"service start --runtime-root",
-		"$tunnelStartupArguments = \"--start-tunnel --runtime-root",
-		"-FilePath $destinationTrayBinary",
-		"-Arguments $tunnelStartupArguments",
+		"$tunnelLaunchArguments = \"tunnel launch --runtime-root",
+		"-FilePath $destinationBinary",
+		"-Arguments $tunnelLaunchArguments",
 		"Invoke-SetupRuntimeProcess -FilePath $BinaryPath -Arguments '--background'",
 		"Invoke-SetupRuntimeProcess -FilePath (Join-Path $PSHOME 'powershell.exe') -Arguments $arguments",
 		"-HiddenHostBinary $destinationTrayBinary",

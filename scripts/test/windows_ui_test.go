@@ -151,6 +151,18 @@ func TestWindowsNativeLanguageAndShortcutsAreInteractive(t *testing.T) {
 			t.Fatalf("WinUI settings still hardcodes secondary navigation label %q", forbidden)
 		}
 	}
+	for _, item := range []string{
+		`x:Name="PermissionsNavigationItem"`,
+		`x:Name="StartupNavigationItem"`,
+		`x:Name="LogsNavigationItem"`,
+		`x:Name="AdvancedConnectionNavigationItem"`,
+		`x:Name="AppearanceNavigationItem"`,
+		`x:Name="AboutNavigationItem"`,
+	} {
+		if got := strings.Count(settingsXaml, item); got != 1 {
+			t.Fatalf("WinUI settings navigation %q appears %d times, want exactly once", item, got)
+		}
+	}
 	for _, want := range []string{
 		"Click=\"ConnectionsShortcut_Click\"",
 		"Click=\"CapabilitiesShortcut_Click\"",

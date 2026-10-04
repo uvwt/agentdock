@@ -118,21 +118,34 @@ public sealed partial class CapabilitiesPage : Page
         var checkBoxPanel = new StackPanel
         {
             Width = 260,
-            HorizontalAlignment = HorizontalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left,
             Spacing = 8
         };
         foreach (var profile in settings.AcpProfiles)
         {
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
             var checkBox = new CheckBox
             {
-                Content = ProfileTitle(profile),
                 IsChecked = profile.Enabled,
                 Tag = profile.Id,
-                HorizontalAlignment = HorizontalAlignment.Left
+                MinWidth = 20,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center
             };
             checkBox.Checked += ProfileCheckBox_Changed;
             checkBox.Unchecked += ProfileCheckBox_Changed;
-            checkBoxPanel.Children.Add(checkBox);
+            row.Children.Add(checkBox);
+            row.Children.Add(new TextBlock
+            {
+                Text = ProfileTitle(profile),
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            checkBoxPanel.Children.Add(row);
         }
         AcpProfilesPanel.Children.Add(checkBoxPanel);
     }
