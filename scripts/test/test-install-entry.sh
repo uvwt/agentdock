@@ -84,7 +84,7 @@ if [ "${1:-}" = nexus ] && [ "${2:-}" = pair ]; then
   done
   mkdir -p "${AGENTDOCK_HOME:?}/nexus"
   printf '%s\n' "$endpoint" >"${AGENTDOCK_HOME}/nexus/endpoint"
-  printf '%s\n' 'paired'
+  printf '%s\n' 'legacy-pair-success-output'
   exit 0
 fi
 if [ "${1:-}" = service ] && [ "${2:-}" = restart ]; then
@@ -200,6 +200,9 @@ core_line="$(grep -n '^arg=install$' "$LINUX_NEXUS/engine.log" | head -1 | cut -
 pair_line="$(grep -n '^arg=nexus$' "$LINUX_NEXUS/engine.log" | head -1 | cut -d: -f1)"
 [ -n "$core_line" ] && [ -n "$pair_line" ] && [ "$core_line" -lt "$pair_line" ] || fail "Nexus pairing ran before Core install"
 grep -Fq 'Nexus：https://mcp.nexusdock.co' "$LINUX_NEXUS/output.log" || fail "final summary missing official Nexus endpoint"
+if grep -Fq 'legacy-pair-success-output' "$LINUX_NEXUS/output.log"; then
+  fail "installer leaked nexus pair success output"
+fi
 [ ! -e "$LINUX_NEXUS/bin/cloudflared" ] || fail "Nexus-only install unexpectedly installed cloudflared"
 [ ! -e "$LINUX_NEXUS/runtime/.installer-onboarding" ] || fail "completed install left onboarding recovery state behind"
 

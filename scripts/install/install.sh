@@ -423,6 +423,10 @@ restart_core_after_pair() {
 }
 
 pair_nexus_once() {
+  pair_output="$TMP_ROOT/nexus-pair-output.log"
+  : >"$pair_output"
+  pair_status=0
+
   case "$PLATFORM" in
     linux)
       if [ "$SERVICE_MANAGER" = none ]; then
@@ -438,27 +442,34 @@ pair_nexus_once() {
       fi
       case "$pair_command" in
         current)
-          env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >>"$TTY_OUT" 2>&1 || return 1
+          env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >"$pair_output" 2>&1 || pair_status=$?
           ;;
         runuser)
-          run_root runuser -u "$SERVICE_USER" -- env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >>"$TTY_OUT" 2>&1 || return 1
+          run_root runuser -u "$SERVICE_USER" -- env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >"$pair_output" 2>&1 || pair_status=$?
           ;;
         setpriv)
           service_uid="$(id -u "$SERVICE_USER")"
           service_gid="$(id -g "$SERVICE_USER")"
-          run_root setpriv --reuid "$service_uid" --regid "$service_gid" --init-groups env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >>"$TTY_OUT" 2>&1 || return 1
+          run_root setpriv --reuid "$service_uid" --regid "$service_gid" --init-groups env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >"$pair_output" 2>&1 || pair_status=$?
           ;;
         sudo)
-          sudo -u "$SERVICE_USER" env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >>"$TTY_OUT" 2>&1 || return 1
+          sudo -u "$SERVICE_USER" env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >"$pair_output" 2>&1 || pair_status=$?
           ;;
       esac
       ;;
     darwin)
-      if ! env AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >>"$TTY_OUT" 2>&1; then
-        return 1
-      fi
+      env AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >"$pair_output" 2>&1 || pair_status=$?
       ;;
   esac
+
+  if [ "$pair_status" -ne 0 ]; then
+    cat "$pair_output" >>"$TTY_OUT"
+    rm -f "$pair_output"
+    return 1
+  fi
+  # Installer 自己会在配对后应用新配置并重启 Core，成功输出无需重复展示。
+  rm -f "$pair_output"
+
   if ! restart_core_after_pair; then
     log "Nexus 已配对，但 Core 自动重启失败；下次启动时会加载新的 Nexus 身份。"
   fi
