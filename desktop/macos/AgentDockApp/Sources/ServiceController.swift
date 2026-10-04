@@ -175,6 +175,19 @@ struct RuntimeAnalyticsCall: Decodable, Identifiable {
         case errorCode = "error_code"
         case errorCategory = "error_category"
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UInt64.self, forKey: .id)
+        tool = try container.decode(String.self, forKey: .tool)
+        source = try container.decode(String.self, forKey: .source)
+        startedAt = try container.decode(String.self, forKey: .startedAt)
+        durationMS = try container.decode(Double.self, forKey: .durationMS)
+        success = try container.decode(Bool.self, forKey: .success)
+        errorCode = try container.decodeIfPresent(String.self, forKey: .errorCode)
+        errorCategory = try container.decodeIfPresent(String.self, forKey: .errorCategory)
+        stages = try container.decodeIfPresent([RuntimeAnalyticsStage].self, forKey: .stages) ?? []
+    }
 }
 
 struct RuntimeToolStats: Decodable, Identifiable {

@@ -200,6 +200,7 @@ func TestMacOSActivityOwnsRuntimeAnalytics(t *testing.T) {
 		"presentActivity(status:",
 		"runtimeAnalytics(configuration:",
 		`path: "/internal/runtime/analytics"`,
+		`decodeIfPresent([RuntimeAnalyticsStage].self, forKey: .stages) ?? []`,
 		"RuntimeActivityCallRow",
 		`SettingsSection(L10n.text("Call overview"))`,
 		`SettingsSection(L10n.text("Call statistics"))`,
