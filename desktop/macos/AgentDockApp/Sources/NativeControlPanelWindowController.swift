@@ -719,6 +719,7 @@ private struct CapabilitiesView: View {
     @State private var customName = ""
     @State private var customCommand = ""
     @State private var customArguments = ""
+    @State private var extensionOverview = RuntimeExtensionOverview.unavailable
 
     private var configuration: ServiceConfiguration? { model.status.configuration }
 
@@ -726,7 +727,7 @@ private struct CapabilitiesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 PageHeader(title: L10n.text("Capabilities"), detail: L10n.text("Configure the capabilities AgentDock provides to AI."))
-                SettingsSection(L10n.text("Available capabilities")) {
+                SettingsSection(L10n.text("Built-in capabilities")) {
                     SettingsRow(L10n.text("Browser"), detail: L10n.text("Browser automation and web operations")) {
                         Toggle("", isOn: $browserEnabled)
                             .labelsHidden()
@@ -779,6 +780,30 @@ private struct CapabilitiesView: View {
                         }.labelsHidden().frame(width: 120)
                     }
                 }
+
+                SettingsSection(L10n.text("Extensions")) {
+                    SettingsRow(L10n.text("Skills"), detail: L10n.text("Loaded on this device")) {
+                        Text(extensionCount(extensionOverview.skillCount, available: extensionOverview.available))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    RowDivider()
+                    SettingsRow(L10n.text("Plugins"), detail: L10n.text("Installed on this device")) {
+                        Text(extensionCount(
+                            extensionOverview.pluginCount,
+                            available: extensionOverview.available && extensionOverview.pluginsAvailable
+                        ))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    }
+                    RowDivider()
+                    SettingsRow("MCP", detail: L10n.text("Dynamic MCP servers")) {
+                        Text(extensionCount(extensionOverview.mcpCount, available: extensionOverview.available))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Button(L10n.text("Save and restart Runtime")) {
                     let settings = EditableServiceSettings(
                         port: configuration?.port ?? 8765,
@@ -798,7 +823,10 @@ private struct CapabilitiesView: View {
             .padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 32)
             .frame(maxWidth: 760, alignment: .leading)
         }
-        .task(id: model.statusUpdatedAt) { loadConfiguration() }
+        .task(id: model.statusUpdatedAt) {
+            loadConfiguration()
+            extensionOverview = await model.service.runtimeExtensionOverview(configuration: configuration)
+        }
         .onChange(of: profiles.map(\.enabled)) { _ in
             if !enabledProfiles.contains(where: { $0.id == defaultProfile }) {
                 defaultProfile = enabledProfiles.first?.id ?? ""
@@ -810,6 +838,9 @@ private struct CapabilitiesView: View {
     private var codingAgentDetail: String {
         let enabledCount = profiles.filter(\.enabled).count
         return enabledCount == 0 ? L10n.text("No profiles configured") : L10n.format("%d enabled · default %@", enabledCount, defaultProfile)
+    }
+    private func extensionCount(_ count: Int, available: Bool) -> String {
+        available ? String(count) : "—"
     }
     private func profileTitle(_ profile: ACPProfileConfiguration) -> String {
         profile.displayName?.isEmpty == false ? profile.displayName! : profile.id

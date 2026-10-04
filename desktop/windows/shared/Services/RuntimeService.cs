@@ -163,6 +163,67 @@ public sealed class RuntimeService : IDisposable
     public string ReadBearerToken() => ReadProtectedText(Path.Combine(RuntimeRoot, "auth-token.dpapi"), AuthEntropy);
     public string ReadOAuthPassword() => ReadProtectedText(Path.Combine(RuntimeRoot, "oauth-password.dpapi"), OAuthPasswordEntropy);
     public string ReadTunnelToken() => ReadProtectedText(Path.Combine(RuntimeRoot, "cloudflared-token.dpapi"), TunnelTokenEntropy);
+
+    public async Task<RuntimeExtensionOverview> GetRuntimeExtensionOverviewAsync(
+        string localMcpUrl,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Uri.TryCreate(localMcpUrl, UriKind.Absolute, out var localUri) ||
+            localUri.Scheme != Uri.UriSchemeHttp ||
+            !IsLoopbackHost(localUri.Host))
+        {
+            return RuntimeExtensionOverview.Unavailable;
+        }
+
+        var overviewUri = new UriBuilder(localUri)
+        {
+            Path = "/internal/runtime/overview",
+            Query = "",
+            Fragment = ""
+        }.Uri;
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, overviewUri);
+            var bearer = ReadBearerToken();
+            if (!string.IsNullOrWhiteSpace(bearer))
+            {
+                request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + bearer);
+            }
+
+            using var response = await _httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return RuntimeExtensionOverview.Unavailable;
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            var payload = JsonSerializer.Deserialize<RuntimeOverviewPayload>(body, JsonOptions);
+            if (payload is null)
+            {
+                return RuntimeExtensionOverview.Unavailable;
+            }
+
+            return new RuntimeExtensionOverview(
+                true,
+                Math.Max(0, payload.Skills.Count),
+                Math.Max(0, payload.Plugins.Count),
+                payload.Plugins.Available,
+                Math.Max(0, payload.Mcp.Count));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or JsonException)
+        {
+            return RuntimeExtensionOverview.Unavailable;
+        }
+    }
+
     public AcpAdapterResolution ResolveAcpAdapter(
         string agent,
         string configuredCommand = "",

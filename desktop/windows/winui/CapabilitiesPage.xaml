@@ -54,6 +54,36 @@
                     </Grid>
                 </StackPanel>
             </local:SectionCard>
+            <local:SectionCard x:Name="ExtensionsSection">
+                <StackPanel>
+                    <Grid MinHeight="52" Padding="13,6" ColumnSpacing="16">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                            <TextBlock x:Name="SkillsTitle" FontSize="13"/>
+                            <TextBlock x:Name="SkillsDetail" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+                        <TextBlock x:Name="SkillsValue" Grid.Column="1" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </Grid>
+                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                    <Grid MinHeight="52" Padding="13,6" ColumnSpacing="16">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                            <TextBlock x:Name="PluginsTitle" FontSize="13"/>
+                            <TextBlock x:Name="PluginsDetail" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+                        <TextBlock x:Name="PluginsValue" Grid.Column="1" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </Grid>
+                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                    <Grid MinHeight="52" Padding="13,6" ColumnSpacing="16">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="MCP" FontSize="13"/>
+                            <TextBlock x:Name="McpServersDetail" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+                        <TextBlock x:Name="McpServersValue" Grid.Column="1" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </Grid>
+                </StackPanel>
+            </local:SectionCard>
             <StackPanel Orientation="Horizontal" Spacing="10">
                 <Button x:Name="SaveButton" Click="SaveButton_Click"/>
                 <TextBlock x:Name="SaveStatus" VerticalAlignment="Center" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>

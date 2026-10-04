@@ -780,6 +780,19 @@ Home 从“状态卡 + 快捷入口卡”的简单设置页形态，收敛为真
 - TianYi UI Automation 实测当前真实状态：AgentDock 正在运行、远程连接已连接到“官方服务 · nexusdock.co”、Browser / Coding Agent / MCP Apps 均为启用，摘要显示“全部可用”。
 - TianYi UI Automation 实测 Home 不再出现“运行时 / MCP / 快速入口”，底部保留“连接 / 能力 / 活动”轻量入口。
 
+### 15.10 2026-10-04 能力页扩展概要与产品边界
+
+长期职责按“AgentDock 是 Runtime，NexusDock 是多设备控制面”继续收敛，不新增一级“扩展”导航，也不在 SwiftUI / WinUI 复制 NexusDock 已有的 Skill / Plugin / MCP 完整管理中心：
+
+- “能力”页拆成“内置能力”和“扩展”两组。
+- 内置能力继续负责 Browser、Coding Agent、MCP Apps 的本机配置。
+- 扩展区只展示当前设备的 Skills、Plugins、动态 MCP 实时数量，不提供 Skill 文件浏览、Plugin 生命周期、MCP 增删改、环境变量或 OAuth 管理。
+- 扩展概要统一读取 Go Runtime 的 `/internal/runtime/overview`；macOS / Windows 不扫描 Skill、Plugin 或 MCP 配置目录，不形成第二套状态模型。
+- RuntimeOverview 不可用时只将概要显示为“—”，不影响 Browser / Coding Agent / MCP Apps 的本机配置。
+- 完整的 Skill / Plugin / MCP 列表、详情和管理继续由 NexusDock Runtime Web 按节点实时投影 AgentDock Runtime API；Cloud 不复制完整运行时状态到数据库。
+
+这样即使用户不使用 NexusDock，AgentDock 仍能回答“这台设备当前加载了多少扩展”；使用 NexusDock 时，则由统一 Web 控制面承担跨设备观察和管理。
+
 视觉审查：
 
 - Mac / Windows 使用接近的窗口尺寸。

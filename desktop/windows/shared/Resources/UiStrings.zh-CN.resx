@@ -748,6 +748,13 @@
   <data name="Copy" xml:space="preserve"><value>复制</value></data>
   <data name="CapabilitiesDetail" xml:space="preserve"><value>配置 AgentDock 可以提供给 AI 的能力。</value></data>
   <data name="AvailableCapabilities" xml:space="preserve"><value>可用能力</value></data>
+  <data name="BuiltInCapabilities" xml:space="preserve"><value>内置能力</value></data>
+  <data name="Extensions" xml:space="preserve"><value>扩展</value></data>
+  <data name="Skills" xml:space="preserve"><value>Skills</value></data>
+  <data name="Plugins" xml:space="preserve"><value>插件</value></data>
+  <data name="LoadedOnThisDevice" xml:space="preserve"><value>已加载到这台设备</value></data>
+  <data name="InstalledOnThisDevice" xml:space="preserve"><value>已安装到这台设备</value></data>
+  <data name="DynamicMcpServers" xml:space="preserve"><value>动态 MCP 服务</value></data>
   <data name="Enabled" xml:space="preserve"><value>已启用</value></data>
   <data name="BrowserCapabilityDetail" xml:space="preserve"><value>浏览器自动化与网页操作</value></data>
   <data name="BrowserReuseMode" xml:space="preserve"><value>优先复用本机已有浏览器</value></data>
