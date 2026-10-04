@@ -678,10 +678,10 @@ $elevationProbe = [scriptblock]::Create(
 & $elevationProbe
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$taskAdminSourcePath = Join-Path $repoRoot 'desktop\windows\control-panel\Services\TaskAdminService.cs'
-$appSourcePath = Join-Path $repoRoot 'desktop\windows\control-panel\App.xaml.cs'
-$runtimeSourcePath = Join-Path $repoRoot 'desktop\windows\control-panel\Services\RuntimeService.cs'
-$jobSourcePath = Join-Path $repoRoot 'desktop\windows\control-panel\Services\KillOnCloseJob.cs'
+$taskAdminSourcePath = Join-Path $repoRoot 'desktop\windows\shared\Services\TaskAdminService.cs'
+$appSourcePath = Join-Path $repoRoot 'desktop\windows\winui\App.xaml.cs'
+$runtimeSourcePath = Join-Path $repoRoot 'desktop\windows\shared\Services\RuntimeService.cs'
+$jobSourcePath = Join-Path $repoRoot 'desktop\windows\shared\Services\KillOnCloseJob.cs'
 $taskAdminSource = Get-Content -LiteralPath $taskAdminSourcePath -Raw
 $appSource = Get-Content -LiteralPath $appSourcePath -Raw
 $runtimeSource = Get-Content -LiteralPath $runtimeSourcePath -Raw

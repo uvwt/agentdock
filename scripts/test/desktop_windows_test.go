@@ -9,11 +9,11 @@ import (
 )
 
 func TestWindowsControlPanelUsesNativeTunnelCommands(t *testing.T) {
-	appData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml.cs"))
+	appData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "App.xaml.cs"))
 	if err != nil {
 		t.Fatalf("read App.xaml.cs: %v", err)
 	}
-	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"))
+	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "RuntimeService.cs"))
 	if err != nil {
 		t.Fatalf("read RuntimeService.cs: %v", err)
 	}
@@ -50,10 +50,10 @@ func TestWindowsControlPanelUsesNativeTunnelCommands(t *testing.T) {
 }
 func TestWindowsControlPanelPreservesOAuthAccessTokenTTLWithoutExposingIt(t *testing.T) {
 	files := []string{
-		filepath.Join("..", "..", "desktop", "windows", "control-panel", "Models", "RuntimeModels.cs"),
-		filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml"),
-		filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml.cs"),
-		filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"),
+		filepath.Join("..", "..", "desktop", "windows", "shared", "Models", "RuntimeModels.cs"),
+		filepath.Join("..", "..", "desktop", "windows", "winui", "MainWindow.xaml"),
+		filepath.Join("..", "..", "desktop", "windows", "winui", "MainWindow.xaml.cs"),
+		filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "RuntimeService.cs"),
 		filepath.Join("..", "..", "internal", "desktopruntime", "config_windows.go"),
 		filepath.Join("..", "..", "internal", "desktopruntime", "service_environment_windows.go"),
 	}
@@ -83,15 +83,15 @@ func TestWindowsControlPanelPreservesOAuthAccessTokenTTLWithoutExposingIt(t *tes
 	}
 }
 func TestWindowsControlPanelReadsVersionFromCoreBuildInfo(t *testing.T) {
-	appData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml.cs"))
+	appData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "App.xaml.cs"))
 	if err != nil {
 		t.Fatalf("read App.xaml.cs: %v", err)
 	}
-	windowData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml.cs"))
+	windowData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "MainWindow.xaml.cs"))
 	if err != nil {
 		t.Fatalf("read MainWindow.xaml.cs: %v", err)
 	}
-	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"))
+	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "RuntimeService.cs"))
 	if err != nil {
 		t.Fatalf("read RuntimeService.cs: %v", err)
 	}
@@ -123,17 +123,17 @@ func TestWindowsControlPanelReadsVersionFromCoreBuildInfo(t *testing.T) {
 }
 func TestWindowsControlPanelCanSwitchCorePrivilegeMode(t *testing.T) {
 	checks := map[string][]string{
-		filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml"): {
+		filepath.Join("..", "..", "desktop", "windows", "winui", "MainWindow.xaml"): {
 			"ElevatedCoreCheckBox",
 			`Content="{local:Loc RunCoreElevated}"`,
 			"ElevatedCoreCheckBox_Click",
 		},
-		filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml.cs"): {
+		filepath.Join("..", "..", "desktop", "windows", "winui", "MainWindow.xaml.cs"): {
 			"snapshot.Manifest.PrivilegeMode",
 			"_runtime.SetPrivilegeModeAsync(elevated)",
 			"await RefreshAsync()",
 		},
-		filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"): {
+		filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "RuntimeService.cs"): {
 			"SetPrivilegeModeAsync",
 			"prepare-elevated",
 			"prepare-standard",
@@ -183,7 +183,7 @@ func TestDesktopAppIconAssets(t *testing.T) {
 	}
 }
 func TestWindowsControlPanelUsesStableAppUserModelID(t *testing.T) {
-	appData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml.cs"))
+	appData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "App.xaml.cs"))
 	if err != nil {
 		t.Fatalf("read App.xaml.cs: %v", err)
 	}
@@ -207,11 +207,11 @@ func TestWindowsControlPanelUsesStableAppUserModelID(t *testing.T) {
 	}
 }
 func TestWindowsControlPanelOmitsCopyButtons(t *testing.T) {
-	xamlData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml"))
+	xamlData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "MainWindow.xaml"))
 	if err != nil {
 		t.Fatalf("read MainWindow.xaml: %v", err)
 	}
-	codeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml.cs"))
+	codeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "MainWindow.xaml.cs"))
 	if err != nil {
 		t.Fatalf("read MainWindow.xaml.cs: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestWindowsControlPanelOmitsCopyButtons(t *testing.T) {
 	}
 }
 func TestDesktopTrayMenusUseNativeDismissalAndOmitCopyActions(t *testing.T) {
-	windowsData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml.cs"))
+	windowsData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "App.xaml.cs"))
 	if err != nil {
 		t.Fatalf("read App.xaml.cs: %v", err)
 	}
@@ -319,11 +319,11 @@ func TestDesktopTrayMenusUseNativeDismissalAndOmitCopyActions(t *testing.T) {
 	}
 }
 func TestWindowsUpdateProgressUsesCoreByteFields(t *testing.T) {
-	modelData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Models", "RuntimeModels.cs"))
+	modelData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Models", "RuntimeModels.cs"))
 	if err != nil {
 		t.Fatalf("read RuntimeModels.cs: %v", err)
 	}
-	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"))
+	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "RuntimeService.cs"))
 	if err != nil {
 		t.Fatalf("read RuntimeService.cs: %v", err)
 	}
@@ -358,27 +358,27 @@ func TestWindowsUpdateProgressUsesCoreByteFields(t *testing.T) {
 	}
 }
 func TestWindowsUpdateFeedbackUsesUTF8AndImmediateStatus(t *testing.T) {
-	appData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml.cs"))
+	appData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "App.xaml.cs"))
 	if err != nil {
 		t.Fatalf("read App.xaml.cs: %v", err)
 	}
-	windowData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml.cs"))
+	windowData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "MainWindow.xaml.cs"))
 	if err != nil {
 		t.Fatalf("read MainWindow.xaml.cs: %v", err)
 	}
-	xamlData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml"))
+	xamlData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "MainWindow.xaml"))
 	if err != nil {
 		t.Fatalf("read MainWindow.xaml: %v", err)
 	}
-	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"))
+	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "RuntimeService.cs"))
 	if err != nil {
 		t.Fatalf("read RuntimeService.cs: %v", err)
 	}
-	progressXAMLData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "UpdateProgressWindow.xaml"))
+	progressXAMLData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "UpdateProgressWindow.xaml"))
 	if err != nil {
 		t.Fatalf("read UpdateProgressWindow.xaml: %v", err)
 	}
-	progressCodeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "UpdateProgressWindow.xaml.cs"))
+	progressCodeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "UpdateProgressWindow.xaml.cs"))
 	if err != nil {
 		t.Fatalf("read UpdateProgressWindow.xaml.cs: %v", err)
 	}
@@ -468,7 +468,7 @@ func TestWindowsUpdateFeedbackUsesUTF8AndImmediateStatus(t *testing.T) {
 	}
 }
 func TestWindowsControlPanelKeepsExistingBackgroundAndStylesOnlyButtonsAndTabs(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "App.xaml"))
 	if err != nil {
 		t.Fatalf("read App.xaml: %v", err)
 	}
@@ -499,7 +499,7 @@ func TestWindowsControlPanelKeepsExistingBackgroundAndStylesOnlyButtonsAndTabs(t
 	}
 }
 func TestWindowsControlPanelResolvesRuntimeRootFromExecutableDirectory(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "RuntimeService.cs"))
 	if err != nil {
 		t.Fatalf("read RuntimeService.cs: %v", err)
 	}
@@ -519,7 +519,7 @@ func TestWindowsControlPanelResolvesRuntimeRootFromExecutableDirectory(t *testin
 }
 
 func TestWindowsBackgroundTrayStartupDoesNotShowExistingControlPanel(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml.cs"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "App.xaml.cs"))
 	if err != nil {
 		t.Fatalf("read App.xaml.cs: %v", err)
 	}

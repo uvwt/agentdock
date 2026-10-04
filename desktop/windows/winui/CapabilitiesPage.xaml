@@ -8,8 +8,16 @@
                 <TextBlock x:Name="PageTitle" FontSize="20" FontWeight="SemiBold"/>
                 <TextBlock x:Name="PageDetail" FontSize="12.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
             </StackPanel>
-            <local:SectionCard x:Name="CapabilitiesSection">
-                <StackPanel>
+            <StackPanel Spacing="8">
+                <TextBlock x:Name="CapabilitiesSectionTitle"
+                           FontSize="12"
+                           FontWeight="SemiBold"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="10">
+                    <StackPanel>
                     <Grid MinHeight="58" Padding="13,6" ColumnSpacing="16">
                         <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <StackPanel Spacing="2" VerticalAlignment="Center">
@@ -26,7 +34,14 @@
                         </ComboBox>
                         <TextBox x:Name="BrowserCdpUrlTextBox" PlaceholderText="http://127.0.0.1:9222"/>
                     </StackPanel>
-                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="10">
+                    <StackPanel>
                     <Grid MinHeight="58" Padding="13,6" ColumnSpacing="16">
                         <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <StackPanel Spacing="2" VerticalAlignment="Center">
@@ -39,7 +54,13 @@
                     <StackPanel Padding="13,0,13,12">
                         <Button x:Name="AddCustomProfileButton" Click="AddCustomProfile_Click"/>
                     </StackPanel>
-                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="10">
                     <Grid MinHeight="58" Padding="13,6" ColumnSpacing="16">
                         <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <StackPanel Spacing="2" VerticalAlignment="Center">
@@ -52,8 +73,14 @@
                             <ComboBoxItem x:Name="McpAppsOffItem" Tag="off"/>
                         </ComboBox>
                     </Grid>
-                </StackPanel>
-            </local:SectionCard>
+                </Border>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <Button x:Name="SaveButton" Click="SaveButton_Click"/>
+                <TextBlock x:Name="SaveStatus" VerticalAlignment="Center" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+            </StackPanel>
+
             <local:SectionCard x:Name="ExtensionsSection">
                 <StackPanel>
                     <Grid MinHeight="52" Padding="13,6" ColumnSpacing="16">
@@ -84,10 +111,6 @@
                     </Grid>
                 </StackPanel>
             </local:SectionCard>
-            <StackPanel Orientation="Horizontal" Spacing="10">
-                <Button x:Name="SaveButton" Click="SaveButton_Click"/>
-                <TextBlock x:Name="SaveStatus" VerticalAlignment="Center" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-            </StackPanel>
         </StackPanel>
     </ScrollViewer>
 </Page>

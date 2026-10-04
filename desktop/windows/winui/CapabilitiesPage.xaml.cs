@@ -15,7 +15,7 @@ public sealed partial class CapabilitiesPage : Page
         InitializeComponent();
         PageTitle.Text = UiText.Get("Capabilities");
         PageDetail.Text = UiText.Get("CapabilitiesDetail");
-        CapabilitiesSection.Title = UiText.Get("BuiltInCapabilities");
+        CapabilitiesSectionTitle.Text = UiText.Get("BuiltInCapabilities");
         ExtensionsSection.Title = UiText.Get("Extensions");
         BrowserTitle.Text = UiText.Get("Browser");
         SkillsTitle.Text = UiText.Get("Skills");
@@ -33,7 +33,7 @@ public sealed partial class CapabilitiesPage : Page
         McpAppsFullItem.Content = UiText.Get("Full");
         McpAppsCompactItem.Content = UiText.Get("Compact");
         McpAppsOffItem.Content = UiText.Get("Off");
-        SaveButton.Content = UiText.Get("SaveAndRestartRuntime");
+        SaveButton.Content = UiText.Get("SaveAndRestart");
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)

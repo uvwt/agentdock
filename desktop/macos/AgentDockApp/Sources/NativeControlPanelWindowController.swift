@@ -300,11 +300,21 @@ private struct SettingsSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-            VStack(spacing: 0) { content }
-                .background(Color(nsColor: .controlBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+            SettingsCard { content }
         }
+    }
+}
+
+private struct SettingsCard<Content: View>: View {
+    @ViewBuilder let content: Content
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+    var body: some View {
+        VStack(spacing: 0) { content }
+            .background(Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 1))
     }
 }
 
@@ -501,7 +511,7 @@ private struct HomeView: View {
 
                     Spacer()
 
-                    VStack(alignment: .trailing, spacing: 9) {
+                    HStack(spacing: 10) {
                         StatusPill(text: agentDockStatusText, active: serviceHealthy)
                         Button(serviceLoaded ? L10n.text("Stop") : L10n.text("Start")) { model.toggleRuntime() }
                             .controlSize(.small)
@@ -936,59 +946,85 @@ private struct CapabilitiesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 PageHeader(title: L10n.text("Capabilities"), detail: L10n.text("Configure the capabilities AgentDock provides to AI."))
-                SettingsSection(L10n.text("Built-in capabilities")) {
-                    SettingsRow(L10n.text("Browser"), detail: L10n.text("Browser automation and web operations")) {
-                        Toggle("", isOn: $browserEnabled)
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Picker(L10n.text("Browser connection"), selection: $browserMode) {
-                            Text(L10n.text("Isolated browser")).tag(0)
-                            Text(L10n.text("Reuse local browser")).tag(1)
-                            Text(L10n.text("Specified CDP")).tag(2)
-                        }.pickerStyle(.segmented)
-                        if browserMode == 2 {
-                            TextField("http://127.0.0.1:9222", text: $browserCDPURL).textFieldStyle(.roundedBorder)
-                        }
-                    }.padding(.horizontal, 13).padding(.bottom, 12)
-                    RowDivider()
-                    SettingsRow("Coding Agent", detail: codingAgentDetail) {
-                        Toggle("", isOn: $acpEnabled)
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(profiles.indices, id: \.self) { index in
-                            Toggle(profileTitle(profiles[index]), isOn: $profiles[index].enabled)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L10n.text("Built-in capabilities"))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+
+                    SettingsCard {
+                        SettingsRow(L10n.text("Browser"), detail: L10n.text("Browser automation and web operations")) {
+                            Toggle("", isOn: $browserEnabled)
+                                .labelsHidden()
                                 .toggleStyle(.switch)
                         }
-                        if !enabledProfiles.isEmpty {
-                            Picker(L10n.text("Default Coding Agent"), selection: $defaultProfile) {
-                                ForEach(enabledProfiles, id: \.id) { profile in
-                                    Text(profileTitle(profile)).tag(profile.id)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Picker(L10n.text("Browser connection"), selection: $browserMode) {
+                                Text(L10n.text("Isolated browser")).tag(0)
+                                Text(L10n.text("Reuse local browser")).tag(1)
+                                Text(L10n.text("Specified CDP")).tag(2)
+                            }.pickerStyle(.segmented)
+                            if browserMode == 2 {
+                                TextField("http://127.0.0.1:9222", text: $browserCDPURL).textFieldStyle(.roundedBorder)
+                            }
+                        }.padding(.horizontal, 13).padding(.bottom, 12)
+                    }
+
+                    SettingsCard {
+                        SettingsRow("Coding Agent", detail: codingAgentDetail) {
+                            Toggle("", isOn: $acpEnabled)
+                                .labelsHidden()
+                                .toggleStyle(.switch)
+                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(profiles.indices, id: \.self) { index in
+                                Toggle(profileTitle(profiles[index]), isOn: $profiles[index].enabled)
+                                    .toggleStyle(.switch)
+                            }
+                            if !enabledProfiles.isEmpty {
+                                Picker(L10n.text("Default Coding Agent"), selection: $defaultProfile) {
+                                    ForEach(enabledProfiles, id: \.id) { profile in
+                                        Text(profileTitle(profile)).tag(profile.id)
+                                    }
                                 }
                             }
+                            DisclosureGroup(L10n.text("Add custom Coding Agent")) {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    TextField(L10n.text("Name"), text: $customName).textFieldStyle(.roundedBorder)
+                                    TextField(L10n.text("Command"), text: $customCommand).textFieldStyle(.roundedBorder)
+                                    TextField(L10n.text("Args JSON"), text: $customArguments).textFieldStyle(.roundedBorder)
+                                    Button(L10n.text("Add")) { addCustomProfile() }
+                                        .disabled(customName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                }.padding(.top, 8)
+                            }
+                        }.padding(.horizontal, 13).padding(.bottom, 12)
+                    }
+
+                    SettingsCard {
+                        SettingsRow("MCP Apps", detail: L10n.text("Interactive MCP app presentation")) {
+                            Picker("", selection: $selectedMCPAppsMode) {
+                                Text(L10n.text("Full")).tag(MCPAppsMode.full)
+                                Text(L10n.text("Compact")).tag(MCPAppsMode.compact)
+                                Text(L10n.text("Off")).tag(MCPAppsMode.off)
+                            }.labelsHidden().frame(width: 120)
                         }
-                        DisclosureGroup(L10n.text("Add custom Coding Agent")) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                TextField(L10n.text("Name"), text: $customName).textFieldStyle(.roundedBorder)
-                                TextField(L10n.text("Command"), text: $customCommand).textFieldStyle(.roundedBorder)
-                                TextField(L10n.text("Args JSON"), text: $customArguments).textFieldStyle(.roundedBorder)
-                                Button(L10n.text("Add")) { addCustomProfile() }
-                                    .disabled(customName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                            }.padding(.top, 8)
-                        }
-                    }.padding(.horizontal, 13).padding(.bottom, 12)
-                    RowDivider()
-                    SettingsRow("MCP Apps", detail: L10n.text("Interactive MCP app presentation")) {
-                        Picker("", selection: $selectedMCPAppsMode) {
-                            Text(L10n.text("Full")).tag(MCPAppsMode.full)
-                            Text(L10n.text("Compact")).tag(MCPAppsMode.compact)
-                            Text(L10n.text("Off")).tag(MCPAppsMode.off)
-                        }.labelsHidden().frame(width: 120)
                     }
                 }
+
+                Button(L10n.text("Save and restart")) {
+                    let settings = EditableServiceSettings(
+                        port: configuration?.port ?? 8765,
+                        logLevel: configuration?.logLevel ?? "info",
+                        mcpAppsMode: selectedMCPAppsMode,
+                        browserEnabled: browserEnabled,
+                        browserCDPURL: browserMode == 2 ? browserCDPURL : "",
+                        browserReuseExistingCDP: browserMode == 1,
+                        acpEnabled: acpEnabled,
+                        acpProfiles: profiles,
+                        acpDefaultProfile: defaultProfile
+                    )
+                    Task { await model.applySettings(settings) }
+                }.disabled(model.isBusy)
+                if let message = model.message { Text(message).font(.system(size: 12)).foregroundStyle(.secondary) }
 
                 SettingsSection(L10n.text("Extensions")) {
                     SettingsRow(L10n.text("Skills"), detail: L10n.text("Loaded on this device")) {
@@ -1012,22 +1048,6 @@ private struct CapabilitiesView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-
-                Button(L10n.text("Save and restart Runtime")) {
-                    let settings = EditableServiceSettings(
-                        port: configuration?.port ?? 8765,
-                        logLevel: configuration?.logLevel ?? "info",
-                        mcpAppsMode: selectedMCPAppsMode,
-                        browserEnabled: browserEnabled,
-                        browserCDPURL: browserMode == 2 ? browserCDPURL : "",
-                        browserReuseExistingCDP: browserMode == 1,
-                        acpEnabled: acpEnabled,
-                        acpProfiles: profiles,
-                        acpDefaultProfile: defaultProfile
-                    )
-                    Task { await model.applySettings(settings) }
-                }.disabled(model.isBusy)
-                if let message = model.message { Text(message).font(.system(size: 12)).foregroundStyle(.secondary) }
             }
             .padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 32)
             .frame(maxWidth: 760, alignment: .leading)
