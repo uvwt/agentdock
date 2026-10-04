@@ -20,7 +20,7 @@ public sealed partial class SettingsPage : Page
     {
         InitializeComponent();
         SettingsPageTitle.Text = UiText.Get("Settings");
-        RuntimeNavigationItem.Content = UiText.Get("Runtime");
+        RuntimeNavigationItem.Content = UiText.Get("General");
         PermissionsNavigationItem.Content = UiText.Get("Permissions");
         StartupNavigationItem.Content = UiText.Get("Startup");
         LogsNavigationItem.Content = UiText.Get("Logs");
@@ -845,7 +845,7 @@ public sealed partial class SettingsPage : Page
         "appearance" => UiText.Get("Appearance"),
         "about" => UiText.Get("About"),
 
-        _ => UiText.Get("Runtime")
+        _ => UiText.Get("General")
     };
 
     private static string PageDetail(string tag) => tag switch
@@ -859,7 +859,7 @@ public sealed partial class SettingsPage : Page
         "appearance" => UiText.Get("AppearanceDetail"),
         "about" => UiText.Get("AboutDetail"),
 
-        _ => UiText.Get("RuntimeSettingsDetail")
+        _ => UiText.Get("GeneralDetail")
     };
 
     private static string SectionTitle(string tag) => tag switch

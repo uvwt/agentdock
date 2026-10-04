@@ -799,6 +799,8 @@ Update now?</value>
   <data name="ConfigurationDirectory" xml:space="preserve"><value>Configuration directory</value></data>
   <data name="Open" xml:space="preserve"><value>Open</value></data>
   <data name="Runtime" xml:space="preserve"><value>Runtime</value></data>
+  <data name="General" xml:space="preserve"><value>General</value></data>
+  <data name="GeneralDetail" xml:space="preserve"><value>Adjust basic AgentDock settings.</value></data>
   <data name="Permissions" xml:space="preserve"><value>Permissions</value></data>
   <data name="Credentials" xml:space="preserve"><value>Access credentials</value></data>
   <data name="RuntimeDetail" xml:space="preserve"><value>Local AgentDock Runtime status, configuration, and updates.</value></data>

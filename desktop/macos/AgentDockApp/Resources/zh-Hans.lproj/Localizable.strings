@@ -446,6 +446,8 @@
 "Credentials remain managed by the existing AgentDock configuration." = "访问凭据继续由现有 AgentDock 配置安全管理。";
 "Credentials" = "访问凭据";
 "Runtime" = "运行时";
+"General" = "常规";
+"Adjust basic AgentDock settings." = "调整 AgentDock 的基本设置。";
 "Permissions" = "权限";
 "Access Credentials" = "访问凭据";
 "Authentication token" = "认证令牌";

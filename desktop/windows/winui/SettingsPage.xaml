@@ -10,13 +10,11 @@
             <Grid.ColumnDefinitions><ColumnDefinition Width="190"/><ColumnDefinition Width="1"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
             <ListView x:Name="SettingsNavigation" SelectionChanged="SettingsNavigation_SelectionChanged">
                 <ListViewItem x:Name="RuntimeNavigationItem" Tag="runtime"/>
-                <ListViewItem x:Name="PermissionsNavigationItem" Tag="permissions"/>
-                <ListViewItem x:Name="StartupNavigationItem" Tag="startup"/>
-                <ListViewItem x:Name="LogsNavigationItem" Tag="logs"/>
-
-                <ListViewItem x:Name="AdvancedConnectionNavigationItem" Tag="advancedConnection"/>
-
                 <ListViewItem x:Name="AppearanceNavigationItem" Tag="appearance"/>
+                <ListViewItem x:Name="StartupNavigationItem" Tag="startup"/>
+                <ListViewItem x:Name="PermissionsNavigationItem" Tag="permissions"/>
+                <ListViewItem x:Name="AdvancedConnectionNavigationItem" Tag="advancedConnection"/>
+                <ListViewItem x:Name="LogsNavigationItem" Tag="logs"/>
                 <ListViewItem x:Name="AboutNavigationItem" Tag="about"/>
 
             </ListView>

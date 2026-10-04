@@ -799,6 +799,8 @@
   <data name="ConfigurationDirectory" xml:space="preserve"><value>配置目录</value></data>
   <data name="Open" xml:space="preserve"><value>打开</value></data>
   <data name="Runtime" xml:space="preserve"><value>运行时</value></data>
+  <data name="General" xml:space="preserve"><value>常规</value></data>
+  <data name="GeneralDetail" xml:space="preserve"><value>调整 AgentDock 的基本设置。</value></data>
   <data name="Permissions" xml:space="preserve"><value>权限</value></data>
   <data name="Credentials" xml:space="preserve"><value>访问凭据</value></data>
   <data name="RuntimeDetail" xml:space="preserve"><value>本机 AgentDock Runtime 状态、配置与更新。</value></data>

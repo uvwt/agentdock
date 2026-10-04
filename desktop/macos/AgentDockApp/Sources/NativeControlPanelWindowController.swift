@@ -96,12 +96,12 @@ private final class ControlPanelModel: ObservableObject {
 
     enum SettingsPage: String, CaseIterable, Identifiable {
 
-        case runtime, permissions, startup, logs, advancedConnection, appearance, about
+        case runtime, appearance, startup, permissions, advancedConnection, logs, about
 
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .runtime: return L10n.text("Runtime")
+            case .runtime: return L10n.text("General")
             case .permissions: return L10n.text("Permissions")
             case .startup: return L10n.text("Startup")
             case .logs: return L10n.text("Logs")
@@ -319,6 +319,7 @@ private struct SettingsCard<Content: View>: View {
     }
     var body: some View {
         VStack(spacing: 0) { content }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(nsColor: .controlBackgroundColor))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 1))
@@ -333,16 +334,26 @@ private struct SettingsRow<Trailing: View>: View {
         self.title = title; self.detail = detail; self.trailing = trailing()
     }
     var body: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 13))
-                if let detail { Text(detail).font(.system(size: 11.5)).foregroundStyle(.secondary) }
+        GeometryReader { proxy in
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.system(size: 13))
+                    if let detail {
+                        Text(detail)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer(minLength: 20)
+
+                trailing
+                    .fixedSize(horizontal: true, vertical: false)
             }
-            Spacer(minLength: 20)
-            trailing
+            .frame(width: max(0, proxy.size.width - 26), height: proxy.size.height)
+            .padding(.horizontal, 13)
         }
-        .padding(.horizontal, 13)
-        .frame(minHeight: detail == nil ? 44 : 52)
+        .frame(height: detail == nil ? 44 : 52)
     }
 }
 
@@ -1020,13 +1031,20 @@ private struct CapabilitiesView: View {
 
                             VStack(alignment: .leading, spacing: 8) {
                                 ForEach(profiles.indices, id: \.self) { index in
-                                    Toggle(profileTitle(profiles[index]), isOn: $profiles[index].enabled)
-                                        .toggleStyle(.checkbox)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    HStack(spacing: 0) {
+                                        Toggle("", isOn: $profiles[index].enabled)
+                                            .labelsHidden()
+                                            .toggleStyle(.checkbox)
+                                            .frame(width: 18, alignment: .leading)
+                                        Text(profileTitle(profiles[index]))
+                                            .padding(.leading, 22)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                 }
                             }
                             .frame(width: 260, alignment: .leading)
-                            .frame(maxWidth: .infinity, alignment: .center)
+                            .frame(maxWidth: .infinity, alignment: .leading)
 
                             DisclosureGroup(L10n.text("Add custom Coding Agent")) {
                                 VStack(alignment: .leading, spacing: 8) {
@@ -1052,7 +1070,7 @@ private struct CapabilitiesView: View {
                                 Text(L10n.text("Full")).tag(MCPAppsMode.full)
                                 Text(L10n.text("Compact")).tag(MCPAppsMode.compact)
                                 Text(L10n.text("Off")).tag(MCPAppsMode.off)
-                            }.labelsHidden().frame(width: 120)
+                            }.labelsHidden().frame(width: 120, alignment: .trailing)
                         }
                     }
                 }
@@ -1414,7 +1432,8 @@ private struct SettingsView: View {
                             Text(item.title)
                                 .font(.system(size: 13, weight: model.settingsPage == item ? .medium : .regular))
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 10)
+                                .padding(.leading, 18)
+                                .padding(.trailing, 10)
                                 .frame(height: 32)
                                 .contentShape(Rectangle())
                         }
@@ -1471,7 +1490,7 @@ private struct SettingsView: View {
         switch model.settingsPage {
         case .runtime:
             VStack(alignment: .leading, spacing: 20) {
-                PageHeader(title: L10n.text("Runtime"), detail: L10n.text("Adjust local AgentDock runtime settings."))
+                PageHeader(title: L10n.text("General"), detail: L10n.text("Adjust basic AgentDock settings."))
                 SettingsSection(L10n.text("Runtime settings")) {
                     SettingsRow(L10n.text("Service port")) {
                         TextField("", value: $port, format: .number).textFieldStyle(.roundedBorder).frame(width: 100)
@@ -1515,7 +1534,7 @@ private struct SettingsView: View {
                             }
                         }
                         .labelsHidden()
-                        .frame(width: 120)
+                        .frame(width: 120, alignment: .trailing)
                         .onChange(of: logLevel) { value in
                             guard value != model.status.configuration?.logLevel else { return }
                             applyLogLevel(value)
@@ -1648,7 +1667,7 @@ private struct SettingsView: View {
                             }
                         }
                         .labelsHidden()
-                        .frame(width: 150)
+                        .frame(width: 150, alignment: .trailing)
                         .onChange(of: themePreference) { preference in
                             model.setThemePreference(preference)
                         }
@@ -1661,7 +1680,7 @@ private struct SettingsView: View {
                             }
                         }
                         .labelsHidden()
-                        .frame(width: 150)
+                        .frame(width: 150, alignment: .trailing)
                         .onChange(of: languagePreference) { preference in
                             model.setLanguagePreference(preference)
                         }

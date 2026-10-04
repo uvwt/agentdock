@@ -446,6 +446,8 @@
 "Credentials remain managed by the existing AgentDock configuration." = "Credentials remain managed by the existing AgentDock configuration.";
 "Credentials" = "Credentials";
 "Runtime" = "Runtime";
+"General" = "General";
+"Adjust basic AgentDock settings." = "Adjust basic AgentDock settings.";
 "Permissions" = "Permissions";
 "Access Credentials" = "Access Credentials";
 "Authentication token" = "Authentication token";
