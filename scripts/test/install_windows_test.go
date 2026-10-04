@@ -528,7 +528,7 @@ func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
 	}
 }
 func TestWindowsTaskAdminUsesNativeAgentDockHelper(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "TaskAdminService.cs"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "TaskAdminService.cs"))
 	if err != nil {
 		t.Fatalf("read TaskAdminService.cs: %v", err)
 	}
@@ -570,7 +570,7 @@ func TestWindowsTaskAdminUsesNativeAgentDockHelper(t *testing.T) {
 	}
 }
 func TestWindowsElevatedCoreHostUsesKillOnCloseJob(t *testing.T) {
-	jobData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "KillOnCloseJob.cs"))
+	jobData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "KillOnCloseJob.cs"))
 	if err != nil {
 		t.Fatalf("read KillOnCloseJob.cs: %v", err)
 	}
@@ -586,7 +586,7 @@ func TestWindowsElevatedCoreHostUsesKillOnCloseJob(t *testing.T) {
 		}
 	}
 
-	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"))
+	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "RuntimeService.cs"))
 	if err != nil {
 		t.Fatalf("read RuntimeService.cs: %v", err)
 	}

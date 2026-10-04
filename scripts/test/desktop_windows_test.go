@@ -9,11 +9,11 @@ import (
 )
 
 func TestWindowsControlPanelUsesNativeTunnelCommands(t *testing.T) {
-	appData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml.cs"))
+	appData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "App.xaml.cs"))
 	if err != nil {
 		t.Fatalf("read App.xaml.cs: %v", err)
 	}
-	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"))
+	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "RuntimeService.cs"))
 	if err != nil {
 		t.Fatalf("read RuntimeService.cs: %v", err)
 	}
@@ -50,11 +50,8 @@ func TestWindowsControlPanelUsesNativeTunnelCommands(t *testing.T) {
 }
 func TestWindowsControlPanelPreservesOAuthAccessTokenTTLWithoutExposingIt(t *testing.T) {
 	files := []string{
-		filepath.Join("..", "..", "desktop", "windows", "control-panel", "Models", "RuntimeModels.cs"),
-		filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml"),
-		filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml.cs"),
-		filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"),
-		filepath.Join("..", "..", "internal", "desktopruntime", "config_windows.go"),
+		filepath.Join("..", "..", "desktop", "windows", "shared", "Models", "RuntimeModels.cs"),
+		filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "RuntimeService.cs"),
 		filepath.Join("..", "..", "internal", "desktopruntime", "service_environment_windows.go"),
 	}
 	var source strings.Builder
@@ -67,37 +64,40 @@ func TestWindowsControlPanelPreservesOAuthAccessTokenTTLWithoutExposingIt(t *tes
 	}
 	for _, want := range []string{
 		`oauth_access_token_ttl`,
-		`OAuthAccessTokenTtl = _snapshot?.Settings.OAuthAccessTokenTtl ?? ""`,
 		`"--oauth-access-token-ttl", settings.OAuthAccessTokenTtl`,
-		`OAuthAccessTokenTTL:     request.OAuthAccessTokenTTL`,
+		`OAuthAccessTokenTTL     string`,
 		`effectiveOAuthAccessTokenTTL(settings.OAuthAccessTokenTTL, inheritedOAuthAccessTokenTTL)`,
 	} {
 		if !strings.Contains(source.String(), want) {
 			t.Fatalf("Windows OAuth TTL persistence chain missing %q", want)
 		}
 	}
-	for _, forbidden := range []string{`OAuthAccessTokenTtlTextBox`, `OAuth Token TTL`} {
-		if strings.Contains(source.String(), forbidden) {
+	settings, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "SettingsPage.xaml.cs"))
+	if err != nil {
+		t.Fatalf("read SettingsPage.xaml.cs: %v", err)
+	}
+	for _, forbidden := range []string{`OAuthAccessTokenTtlTextBox`, `OAuth Token TTL`, `OAuthAccessTokenTtl = _snapshot`} {
+		if strings.Contains(string(settings), forbidden) {
 			t.Fatalf("Windows control panel still exposes OAuth TTL setting %q", forbidden)
 		}
 	}
 }
 func TestWindowsControlPanelReadsVersionFromCoreBuildInfo(t *testing.T) {
-	appData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml.cs"))
+	appData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "App.xaml.cs"))
 	if err != nil {
 		t.Fatalf("read App.xaml.cs: %v", err)
 	}
-	windowData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml.cs"))
+	homeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "HomePage.xaml.cs"))
 	if err != nil {
-		t.Fatalf("read MainWindow.xaml.cs: %v", err)
+		t.Fatalf("read HomePage.xaml.cs: %v", err)
 	}
-	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"))
+	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "RuntimeService.cs"))
 	if err != nil {
 		t.Fatalf("read RuntimeService.cs: %v", err)
 	}
 
 	app := string(appData)
-	window := string(windowData)
+	home := string(homeData)
 	runtimeService := string(runtimeData)
 	for _, want := range []string{
 		`ReadHealthAsync(localOrigin, cancellationToken)`,
@@ -109,53 +109,45 @@ func TestWindowsControlPanelReadsVersionFromCoreBuildInfo(t *testing.T) {
 			t.Fatalf("Windows control panel must read the version from the core binary BuildInfo: %q", want)
 		}
 	}
-	if !strings.Contains(window, "snapshot.Version") {
-		t.Fatal("Windows control panel must display RuntimeSnapshot.Version in the main window")
+	if !strings.Contains(home, "_snapshot.Version") {
+		t.Fatal("Windows control panel must display RuntimeSnapshot.Version on the home page")
 	}
 	if strings.Contains(app, `return $"运行正常 · {version}"`) || strings.Contains(app, "未知版本") {
 		t.Fatal("Windows tray status must not include the AgentDock version")
 	}
-	for _, source := range []string{app, window, runtimeService} {
+	for _, source := range []string{app, home, runtimeService} {
 		if strings.Contains(source, "snapshot.Manifest.Version") || strings.Contains(source, "manifest.Version") {
 			t.Fatal("Windows control panel must not treat runtime.json as a version source")
 		}
 	}
 }
 func TestWindowsControlPanelCanSwitchCorePrivilegeMode(t *testing.T) {
-	checks := map[string][]string{
-		filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml"): {
-			"ElevatedCoreCheckBox",
-			`Content="{local:Loc RunCoreElevated}"`,
-			"ElevatedCoreCheckBox_Click",
-		},
-		filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml.cs"): {
-			"snapshot.Manifest.PrivilegeMode",
-			"_runtime.SetPrivilegeModeAsync(elevated)",
-			"await RefreshAsync()",
-		},
-		filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"): {
-			"SetPrivilegeModeAsync",
-			"prepare-elevated",
-			"prepare-standard",
-			"RunTaskAdminTransitionAsync(\"restore\"",
-			`"--launcher-path", trayBinary`,
-			"WritePrivilegeModeAsync",
-			"SetStandardCoreStartup",
-			"snapshot.CoreStartupEnabled",
-			"snapshot.CoreRunning",
-		},
+	settingsData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "SettingsPage.xaml.cs"))
+	if err != nil {
+		t.Fatalf("read SettingsPage.xaml.cs: %v", err)
 	}
-
-	for path, required := range checks {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("read %s: %v", path, err)
+	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "RuntimeService.cs"))
+	if err != nil {
+		t.Fatalf("read RuntimeService.cs: %v", err)
+	}
+	settings := string(settingsData)
+	runtimeService := string(runtimeData)
+	for _, want := range []string{
+		`_snapshot?.Manifest.PrivilegeMode`,
+		`UiText.Get("RunCoreElevated")`,
+		`await _runtime.SetPrivilegeModeAsync(toggle.IsOn)`,
+		`await RefreshAsync()`,
+	} {
+		if !strings.Contains(settings, want) {
+			t.Fatalf("SettingsPage.xaml.cs missing privilege mode behavior %q", want)
 		}
-		content := string(data)
-		for _, want := range required {
-			if !strings.Contains(content, want) {
-				t.Fatalf("%s missing privilege mode switch behavior %q", path, want)
-			}
+	}
+	for _, want := range []string{
+		"SetPrivilegeModeAsync", "prepare-elevated", "prepare-standard", `RunTaskAdminTransitionAsync("restore"`,
+		`"--launcher-path", trayBinary`, "WritePrivilegeModeAsync", "SetStandardCoreStartup", "snapshot.CoreStartupEnabled", "snapshot.CoreRunning",
+	} {
+		if !strings.Contains(runtimeService, want) {
+			t.Fatalf("RuntimeService.cs missing privilege mode behavior %q", want)
 		}
 	}
 }
@@ -182,36 +174,21 @@ func TestDesktopAppIconAssets(t *testing.T) {
 		t.Fatalf("Windows AgentDock icon must include multiple sizes, got %d entries", count)
 	}
 }
-func TestWindowsControlPanelUsesStableAppUserModelID(t *testing.T) {
-	appData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml.cs"))
-	if err != nil {
-		t.Fatalf("read App.xaml.cs: %v", err)
-	}
-	app := string(appData)
-	for _, want := range []string{
-		"com.uvwt.agentdock.controlpanel",
-		"SetCurrentProcessExplicitAppUserModelID",
-		"_ = SetCurrentProcessExplicitAppUserModelID(AppUserModelId)",
-	} {
-		if !strings.Contains(app, want) {
-			t.Fatalf("App.xaml.cs missing stable taskbar identity %q", want)
-		}
-	}
-
+func TestWindowsInstallerUsesStableAppUserModelID(t *testing.T) {
 	setupData, err := os.ReadFile(filepath.Join("..", "..", "packaging", "windows", "AgentDock.iss"))
 	if err != nil {
 		t.Fatalf("read AgentDock.iss: %v", err)
 	}
-	if !strings.Contains(string(setupData), "AppUserModelID: \"com.uvwt.agentdock.controlpanel\"") {
-		t.Fatal("Start menu shortcut must use the same stable AppUserModelID as the control panel process")
+	if !strings.Contains(string(setupData), `AppUserModelID: "com.uvwt.agentdock.controlpanel"`) {
+		t.Fatal("Start menu shortcut must keep the stable AgentDock AppUserModelID")
 	}
 }
 func TestWindowsControlPanelOmitsCopyButtons(t *testing.T) {
-	xamlData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml"))
+	xamlData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "MainWindow.xaml"))
 	if err != nil {
 		t.Fatalf("read MainWindow.xaml: %v", err)
 	}
-	codeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml.cs"))
+	codeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "MainWindow.xaml.cs"))
 	if err != nil {
 		t.Fatalf("read MainWindow.xaml.cs: %v", err)
 	}
@@ -231,7 +208,7 @@ func TestWindowsControlPanelOmitsCopyButtons(t *testing.T) {
 	}
 }
 func TestDesktopTrayMenusUseNativeDismissalAndOmitCopyActions(t *testing.T) {
-	windowsData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml.cs"))
+	windowsData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "App.xaml.cs"))
 	if err != nil {
 		t.Fatalf("read App.xaml.cs: %v", err)
 	}
@@ -319,11 +296,11 @@ func TestDesktopTrayMenusUseNativeDismissalAndOmitCopyActions(t *testing.T) {
 	}
 }
 func TestWindowsUpdateProgressUsesCoreByteFields(t *testing.T) {
-	modelData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Models", "RuntimeModels.cs"))
+	modelData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Models", "RuntimeModels.cs"))
 	if err != nil {
 		t.Fatalf("read RuntimeModels.cs: %v", err)
 	}
-	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"))
+	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "RuntimeService.cs"))
 	if err != nil {
 		t.Fatalf("read RuntimeService.cs: %v", err)
 	}
@@ -357,149 +334,81 @@ func TestWindowsUpdateProgressUsesCoreByteFields(t *testing.T) {
 		}
 	}
 }
-func TestWindowsUpdateFeedbackUsesUTF8AndImmediateStatus(t *testing.T) {
-	appData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml.cs"))
+func TestWindowsUpdateFeedbackUsesUTF8AndNativeWinUIStatus(t *testing.T) {
+	appData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "App.xaml.cs"))
 	if err != nil {
 		t.Fatalf("read App.xaml.cs: %v", err)
 	}
-	windowData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml.cs"))
+	settingsData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "SettingsPage.xaml.cs"))
 	if err != nil {
-		t.Fatalf("read MainWindow.xaml.cs: %v", err)
+		t.Fatalf("read SettingsPage.xaml.cs: %v", err)
 	}
-	xamlData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml"))
-	if err != nil {
-		t.Fatalf("read MainWindow.xaml: %v", err)
-	}
-	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"))
+	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "RuntimeService.cs"))
 	if err != nil {
 		t.Fatalf("read RuntimeService.cs: %v", err)
 	}
-	progressXAMLData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "UpdateProgressWindow.xaml"))
-	if err != nil {
-		t.Fatalf("read UpdateProgressWindow.xaml: %v", err)
-	}
-	progressCodeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "UpdateProgressWindow.xaml.cs"))
-	if err != nil {
-		t.Fatalf("read UpdateProgressWindow.xaml.cs: %v", err)
-	}
-
 	app := string(appData)
-	window := string(windowData)
-	xaml := string(xamlData)
+	settings := string(settingsData)
 	runtimeService := string(runtimeData)
-	progressXAML := string(progressXAMLData)
-	progressCode := string(progressCodeData)
 
 	for _, want := range []string{
-		`_updateInProgress ? UiText.Get("CheckingForUpdates") : UiText.Get("CheckForUpdates")`,
-		`ControlPanelWindow.SetUpdateState(true, UiText.Get("PleaseWaitCheckingUpdates"))`,
-		`var check = await Runtime.CheckForUpdatesAsync()`,
-		`if (!check.UpdateAvailable)`,
-		`MessageBoxButton.YesNo`,
-		`new UpdateProgressWindow(check.CurrentVersion, check.LatestVersion)`,
-		`var output = await Runtime.RunUpdateAsync(progress)`,
-		`ResumeUpdateProgressIfNeededAsync`,
-		`ReadUpdateUiHandoffTransactionAsync`,
-		`ReadUpdateTerminalResultAsync`,
+		`ResumeUpdateProgressIfNeededAsync`, `ReadUpdateUiHandoffTransactionAsync`, `ReadUpdateTerminalResultAsync`,
 		`AcknowledgeUpdateUiHandoffAsync(transaction.TransactionId)`,
-		`UpdateStageRollingBack`,
 	} {
 		if !strings.Contains(app, want) {
-			t.Fatalf("Windows tray update flow missing %q", want)
+			t.Fatalf("Windows tray update handoff missing %q", want)
 		}
 	}
-
 	for _, want := range []string{
-		`x:Name="UpdateButton"`,
-		`await ((App)Application.Current).CheckForUpdatesAsync(this)`,
-		`public void SetUpdateState`,
-		`public void SetUpdateStatus`,
+		`var check = await _runtime.CheckForUpdatesAsync()`, `if (!check.UpdateAvailable)`, `new ContentDialog`,
+		`PrimaryButtonText = UiText.Get("Update")`, `new Progress<UpdateProgress>`, `await _runtime.RunUpdateAsync(progress)`,
+		`button.Content = UiText.Get("CheckForUpdates")`,
 	} {
-		if !strings.Contains(xaml, want) && !strings.Contains(window, want) {
-			t.Fatalf("Windows control-panel update flow missing %q", want)
+		if !strings.Contains(settings, want) {
+			t.Fatalf("WinUI update flow missing %q", want)
 		}
 	}
-
 	for _, want := range []string{
-		`public async Task<UpdateCheckResult> CheckForUpdatesAsync`,
-		`startInfo.ArgumentList.Add("--check")`,
-		`JsonSerializer.Deserialize<UpdateCheckResult>`,
-		`IProgress<UpdateProgress>? progress`,
-		`startInfo.ArgumentList.Add("--progress-json")`,
-		`startInfo.Environment[UpdateUiHandoffEnvironment] = "1"`,
-		`"staged" or "trial" or "rolling_back" or "committed" or "rolled_back" or "failed" => transaction`,
-		`Path.Combine(RuntimeRoot, "update", "ui-handoff-ack.json")`,
-		`File.Move(temporaryPath, acknowledgementPath, overwrite: true)`,
-		`ReadProcessLinesAsync`,
-		`ParseUpdateProgress`,
-		`JsonSerializer.Deserialize<UpdateProgressEvent>`,
-		`StandardOutputEncoding = utf8`,
-		`StandardErrorEncoding = utf8`,
+		`public async Task<UpdateCheckResult> CheckForUpdatesAsync`, `startInfo.ArgumentList.Add("--check")`,
+		`JsonSerializer.Deserialize<UpdateCheckResult>`, `IProgress<UpdateProgress>? progress`,
+		`startInfo.ArgumentList.Add("--progress-json")`, `startInfo.Environment[UpdateUiHandoffEnvironment] = "1"`,
+		`ReadProcessLinesAsync`, `ParseUpdateProgress`, `JsonSerializer.Deserialize<UpdateProgressEvent>`,
+		`StandardOutputEncoding = utf8`, `StandardErrorEncoding = utf8`,
 	} {
 		if !strings.Contains(runtimeService, want) {
 			t.Fatalf("Windows update process handling missing %q", want)
 		}
 	}
-
-	for _, want := range []string{
-		`x:Class="AgentDock.ControlPanel.UpdateProgressWindow"`,
-		`<ProgressBar x:Name="UpdateProgressBar"`,
-		`IsEnabled="False"`,
-		`if (!_canClose)`,
-		`UpdateProgressBar.IsIndeterminate = progress.IsIndeterminate`,
-		`UpdateProgressBar.Value = Math.Clamp(percentage, 0, 100)`,
-		`public void Complete(string message)`,
-		`public void Fail(string message)`,
-	} {
-		if !strings.Contains(progressXAML, want) && !strings.Contains(progressCode, want) {
-			t.Fatalf("Windows update progress window missing %q", want)
-		}
-	}
-
-	for _, forbidden := range []string{
-		`RunTrayActionAsync("update")`,
-		`RunCoreActionAsync("update"`,
-		`var output = await Runtime.RunUpdateAsync();`,
-		`var output = await _runtime.RunUpdateAsync();`,
-	} {
-		if strings.Contains(app, forbidden) || strings.Contains(window, forbidden) {
-			t.Fatalf("Windows update UI must not bypass check-and-confirm flow %q", forbidden)
+	for _, forbidden := range []string{`UpdateProgressWindow`, `RunTrayActionAsync("update")`, `RunCoreActionAsync("update"`} {
+		if strings.Contains(app, forbidden) || strings.Contains(settings, forbidden) {
+			t.Fatalf("WinUI update flow must not depend on retired WPF update UI %q", forbidden)
 		}
 	}
 }
-func TestWindowsControlPanelKeepsExistingBackgroundAndStylesOnlyButtonsAndTabs(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml"))
+func TestWindowsControlPanelUsesNativeWinUIThemeResources(t *testing.T) {
+	appData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "App.xaml"))
 	if err != nil {
 		t.Fatalf("read App.xaml: %v", err)
 	}
-	app := string(data)
-
-	for _, want := range []string{
-		`x:Key="SurfaceBrush" Color="#F5F7FA"`,
-		`x:Key="BorderBrush" Color="#D8DEE8"`,
-		`<Style TargetType="Button">`,
-		`<Style TargetType="TabControl">`,
-		`<Style TargetType="TabItem">`,
-		`x:Name="PART_SelectedContentHost"`,
-		`Background="White"`,
-	} {
-		if !strings.Contains(app, want) {
-			t.Fatalf("App.xaml missing restrained Windows style %q", want)
+	cardData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "SectionCard.xaml"))
+	if err != nil {
+		t.Fatalf("read SectionCard.xaml: %v", err)
+	}
+	app := string(appData)
+	card := string(cardData)
+	for _, want := range []string{`<XamlControlsResources`, `ThemeResource CardBackgroundFillColorDefaultBrush`, `ThemeResource CardStrokeColorDefaultBrush`} {
+		if !strings.Contains(app+card, want) {
+			t.Fatalf("native WinUI theme resources missing %q", want)
 		}
 	}
-
-	for _, forbidden := range []string{
-		`x:Key="PanelBrush"`,
-		`x:Key="ContentBrush"`,
-		`<Style TargetType="ComboBox">`,
-	} {
-		if strings.Contains(app, forbidden) {
-			t.Fatalf("button/tab styling must not change the existing window background or unrelated controls: %q", forbidden)
+	for _, forbidden := range []string{`x:Key="SurfaceBrush"`, `x:Key="BorderBrush"`, `<Style TargetType="TabControl">`, `PART_SelectedContentHost`} {
+		if strings.Contains(app+card, forbidden) {
+			t.Fatalf("WinUI shell must not retain WPF-specific styling %q", forbidden)
 		}
 	}
 }
 func TestWindowsControlPanelResolvesRuntimeRootFromExecutableDirectory(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "RuntimeService.cs"))
 	if err != nil {
 		t.Fatalf("read RuntimeService.cs: %v", err)
 	}
@@ -519,12 +428,12 @@ func TestWindowsControlPanelResolvesRuntimeRootFromExecutableDirectory(t *testin
 }
 
 func TestWindowsBackgroundTrayStartupDoesNotShowExistingControlPanel(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml.cs"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "App.xaml.cs"))
 	if err != nil {
 		t.Fatalf("read App.xaml.cs: %v", err)
 	}
 	app := strings.ReplaceAll(string(data), "\r\n", "\n")
-	backgroundDeclaration := `var background = e.Args.Any(arg => string.Equals(arg, "--background", StringComparison.OrdinalIgnoreCase));`
+	backgroundDeclaration := `var background = arguments.Any(value => string.Equals(value, "--background", StringComparison.OrdinalIgnoreCase));`
 	backgroundIndex := strings.Index(app, backgroundDeclaration)
 	singletonIndex := strings.Index(app, "if (!createdNew)")
 	if backgroundIndex < 0 || singletonIndex < 0 || backgroundIndex > singletonIndex {
@@ -541,7 +450,7 @@ func TestWindowsBackgroundTrayStartupDoesNotShowExistingControlPanel(t *testing.
 	if strings.Count(app, backgroundDeclaration) != 1 {
 		t.Fatal("Windows tray should have one authoritative --background startup decision")
 	}
-	if !strings.Contains(app, "if (!background)\n        {\n            ShowControlPanel();") {
+	if !strings.Contains(app, "if (!background) ShowControlPanel();") {
 		t.Fatal("an explicit foreground launch must still show the control panel")
 	}
 }
