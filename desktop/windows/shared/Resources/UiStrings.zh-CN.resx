@@ -777,7 +777,6 @@
   <data name="AgentDockUpdate" xml:space="preserve"><value>AgentDock 更新</value></data>
   <data name="AgentDockPermissions" xml:space="preserve"><value>AgentDock 权限</value></data>
   <data name="ManagedByWindows" xml:space="preserve"><value>由 Windows 系统管理</value></data>
-  <data name="AdministratorMode" xml:space="preserve"><value>管理员模式</value></data>
   <data name="CoreBackgroundService" xml:space="preserve"><value>Core 后台服务</value></data>
   <data name="TrayApp" xml:space="preserve"><value>托盘应用</value></data>
   <data name="AuthenticationToken" xml:space="preserve"><value>认证令牌</value></data>

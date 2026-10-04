@@ -82,6 +82,30 @@ func TestWindowsNativeControlPanelCarriesSettingsParity(t *testing.T) {
 	}
 }
 
+func TestWindowsPermissionsAvoidDuplicateAdministratorStatus(t *testing.T) {
+	settings := readWindowsNativeFile(t, "winui", "SettingsPage.xaml.cs")
+	en := readWindowsNativeFile(t, "shared", "Resources", "UiStrings.resx")
+	zh := readWindowsNativeFile(t, "shared", "Resources", "UiStrings.zh-CN.resx")
+
+	for _, want := range []string{
+		`UiText.Get("RunCoreElevated")`,
+		"PrivilegeToggle_Toggled",
+		"SetPrivilegeModeAsync",
+	} {
+		if !strings.Contains(settings, want) {
+			t.Fatalf("WinUI Permissions elevated toggle missing %q", want)
+		}
+	}
+	if strings.Contains(settings, `UiText.Get("AdministratorMode")`) {
+		t.Fatal("WinUI Permissions must not repeat elevated state as a separate Administrator mode row")
+	}
+	for _, resource := range []string{en, zh} {
+		if strings.Contains(resource, `name="AdministratorMode"`) {
+			t.Fatal("retired AdministratorMode localization resource must be removed")
+		}
+	}
+}
+
 func TestWindowsNativeLanguageAndShortcutsAreInteractive(t *testing.T) {
 	app := readWindowsNativeFile(t, "winui", "App.xaml.cs")
 	window := readWindowsNativeFile(t, "winui", "MainWindow.xaml.cs")

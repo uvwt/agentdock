@@ -777,7 +777,6 @@ Update now?</value>
   <data name="AgentDockUpdate" xml:space="preserve"><value>AgentDock update</value></data>
   <data name="AgentDockPermissions" xml:space="preserve"><value>AgentDock permissions</value></data>
   <data name="ManagedByWindows" xml:space="preserve"><value>Managed by Windows</value></data>
-  <data name="AdministratorMode" xml:space="preserve"><value>Administrator mode</value></data>
   <data name="CoreBackgroundService" xml:space="preserve"><value>Core background service</value></data>
   <data name="TrayApp" xml:space="preserve"><value>Tray app</value></data>
   <data name="AuthenticationToken" xml:space="preserve"><value>Authentication token</value></data>

@@ -144,7 +144,6 @@ public sealed partial class SettingsPage : Page
         var rows = new StackPanel();
         rows.Children.Add(Row(UiText.Get("AgentDockPermissions"), UiText.Get("ManagedByWindows")));
         rows.Children.Add(Divider());
-        rows.Children.Add(Row(UiText.Get("AdministratorMode"), string.Equals(_snapshot?.Manifest.PrivilegeMode, "elevated", StringComparison.OrdinalIgnoreCase) ? UiText.Get("Enabled") : UiText.Get("Disabled")));
         var toggle = new ToggleSwitch
         {
             IsOn = string.Equals(_snapshot?.Manifest.PrivilegeMode, "elevated", StringComparison.OrdinalIgnoreCase),
