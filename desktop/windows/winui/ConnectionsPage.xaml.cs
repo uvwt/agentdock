@@ -9,28 +9,38 @@ public sealed partial class ConnectionsPage : Page
 {
     private RuntimeService? _runtime;
     private RuntimeSnapshot? _snapshot;
-    private bool _updatingUi;
 
     public ConnectionsPage()
     {
         InitializeComponent();
+
         PageTitle.Text = UiText.Get("Connections");
-        PageDetail.Text = UiText.Get("ConnectionsDetail");
-        LocalSection.Title = UiText.Get("LocalConnection");
-        RemoteSection.Title = UiText.Get("RemoteConnection");
-        CopyLocalButton.Content = UiText.Get("Copy");
-        CopyPublicButton.Content = UiText.Get("Copy");
-        PublicModeLabel.Text = UiText.Get("PublicMcpMode");
-        LocalOnlyModeItem.Content = UiText.Get("LocalOnlyNative");
-        QuickModeItem.Content = UiText.Get("TemporaryPublicAddress");
-        NamedModeItem.Content = UiText.Get("CustomDomain");
-        NamedServerUrlTextBox.Header = UiText.Get("HttpsAddress");
-        TunnelTokenPasswordBox.Header = "Cloudflare Tunnel Token";
-        ApplyTunnelButton.Content = UiText.Get("Apply");
-        RegenerateQuickButton.Content = UiText.Get("RegenerateTemporaryAddress");
+        PageDetail.Text = UiText.Get("ConnectionsRecommendedDetail");
+        NexusSection.Title = "NexusDock";
+        RecommendedConnectionLabel.Text = UiText.Get("RecommendedConnection");
+        NexusIntro.Text = UiText.Get("NexusRecommendedIntro");
         NexusEndpointTextBox.Header = UiText.Get("NexusAddress");
         NexusPairingCodeBox.Header = UiText.Get("OneTimePairingCode");
         PairNexusButton.Content = UiText.Get("Pair");
+
+        AdvancedConnectionTitle.Text = UiText.Get("AdvancedConnectionSettings");
+        AdvancedConnectionDetail.Text = UiText.Get("AdvancedConnectionDetail");
+        LocalMcpSection.Title = "Local MCP";
+        AuthTokenLabel.Text = UiText.Get("AuthenticationToken");
+        OAuthPasswordLabel.Text = UiText.Get("OAuthPassword");
+        CopyLocalButton.Content = UiText.Get("Copy");
+        CopyAuthTokenButton.Content = UiText.Get("Copy");
+        CopyOAuthPasswordButton.Content = UiText.Get("Copy");
+
+        PublicAccessSection.Title = UiText.Get("PublicAccess");
+        PublicAddressLabel.Text = UiText.Get("PublicAddress");
+        CopyPublicButton.Content = UiText.Get("Copy");
+        TemporaryTunnelDetail.Text = UiText.Get("TemporaryTunnelDetail");
+        FixedDomainTitle.Text = UiText.Get("FixedDomain");
+        FixedDomainDetail.Text = UiText.Get("FixedDomainDetail");
+        NamedServerUrlTextBox.Header = UiText.Get("HttpsAddress");
+        TunnelTokenPasswordBox.Header = "Cloudflare Tunnel Token";
+        ApplyFixedDomainButton.Content = UiText.Get("ApplyFixedDomain");
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -42,22 +52,47 @@ public sealed partial class ConnectionsPage : Page
     private async Task RefreshAsync()
     {
         if (_runtime is null) return;
+
         _snapshot = await _runtime.GetSnapshotAsync(includeNexusConnection: true);
-        _updatingUi = true;
         LocalAddress.Text = _snapshot.LocalMcpUrl;
+
         var hasPublicAddress = !string.IsNullOrWhiteSpace(_snapshot.PublicMcpUrl);
         PublicAddress.Text = hasPublicAddress ? _snapshot.PublicMcpUrl : UiText.Get("Disabled");
         CopyPublicButton.IsEnabled = hasPublicAddress;
-        NexusEndpoint.Text = _snapshot.Nexus.Paired ? _snapshot.Nexus.Endpoint : UiText.Get("NotConfigured");
+        TemporaryTunnelButton.Content = string.Equals(_snapshot.TunnelMode, "quick", StringComparison.OrdinalIgnoreCase)
+            ? UiText.Get("RegenerateTemporaryAddress")
+            : UiText.Get("GenerateTemporaryAddress");
+
+        NexusEndpoint.Text = _snapshot.Nexus.Paired
+            ? _snapshot.Nexus.Endpoint
+            : UiText.Get("ConnectThisDeviceToNexus");
         NexusState.Text = _snapshot.NexusConnected
             ? UiText.Get("Connected") + " ●"
             : _snapshot.Nexus.Paired ? UiText.Get("NotConnected") : UiText.Get("NotConfigured");
         NexusEndpointTextBox.Text = _snapshot.Nexus.Paired ? _snapshot.Nexus.Endpoint : "https://mcp.nexusdock.co";
-        SelectTunnelMode(_snapshot.TunnelMode);
-        NamedServerUrlTextBox.Text = _snapshot.SavedNamedOrigin;
-        TunnelTokenPasswordBox.PlaceholderText = _snapshot.TunnelTokenStored ? UiText.Get("TunnelTokenSavedPlaceholder") : "Cloudflare Tunnel Token";
-        _updatingUi = false;
-        UpdateTunnelControls();
+
+        NamedServerUrlTextBox.Text = string.Equals(_snapshot.TunnelMode, "named", StringComparison.OrdinalIgnoreCase)
+            ? _snapshot.SavedNamedOrigin
+            : "";
+        TunnelTokenPasswordBox.PlaceholderText = _snapshot.TunnelTokenStored
+            ? UiText.Get("TunnelTokenSavedPlaceholder")
+            : "Cloudflare Tunnel Token";
+
+        AuthTokenPasswordBox.Password = ReadCredential("bearer");
+        OAuthPasswordBox.Password = ReadCredential("oauth");
+    }
+
+    private string ReadCredential(string kind)
+    {
+        if (_runtime is null) return "";
+        try
+        {
+            return kind == "bearer" ? _runtime.ReadBearerToken() : _runtime.ReadOAuthPassword();
+        }
+        catch
+        {
+            return "";
+        }
     }
 
     private void CopyLocalButton_Click(object sender, RoutedEventArgs e)
@@ -67,75 +102,87 @@ public sealed partial class ConnectionsPage : Page
 
     private void CopyPublicButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_snapshot is not null && !string.IsNullOrWhiteSpace(_snapshot.PublicMcpUrl)) CopyText(_snapshot.PublicMcpUrl);
+        if (_snapshot is not null && !string.IsNullOrWhiteSpace(_snapshot.PublicMcpUrl))
+        {
+            CopyText(_snapshot.PublicMcpUrl);
+        }
     }
+
+    private void CopyAuthTokenButton_Click(object sender, RoutedEventArgs e) =>
+        CopyText(AuthTokenPasswordBox.Password);
+
+    private void CopyOAuthPasswordButton_Click(object sender, RoutedEventArgs e) =>
+        CopyText(OAuthPasswordBox.Password);
 
     private static void CopyText(string text)
     {
+        if (string.IsNullOrWhiteSpace(text)) return;
         var package = new DataPackage();
         package.SetText(text);
         Clipboard.SetContent(package);
     }
 
-    private void SelectTunnelMode(string mode)
+    private async void TemporaryTunnelButton_Click(object sender, RoutedEventArgs e)
     {
-        foreach (var item in TunnelModeComboBox.Items.OfType<ComboBoxItem>())
+        if (_runtime is null || sender is not Button button) return;
+
+        button.IsEnabled = false;
+        TunnelStatus.Text = UiText.Get("Generating");
+        try
         {
-            if (string.Equals(item.Tag?.ToString(), mode, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(_snapshot?.TunnelMode, "quick", StringComparison.OrdinalIgnoreCase))
             {
-                TunnelModeComboBox.SelectedItem = item;
-                return;
+                await _runtime.RegenerateQuickTunnelAsync();
             }
+            else
+            {
+                await _runtime.SetTunnelModeAsync("quick", "", "");
+            }
+
+            await RefreshAsync();
+            TunnelStatus.Text = UiText.Get("Generated");
         }
-        TunnelModeComboBox.SelectedIndex = 0;
+        catch (Exception ex)
+        {
+            TunnelStatus.Text = ex.Message;
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
     }
 
-    private string SelectedTunnelMode() =>
-        (TunnelModeComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "none";
-
-    private void TunnelModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void ApplyFixedDomainButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!_updatingUi) UpdateTunnelControls();
-    }
+        if (_runtime is null || sender is not Button button) return;
 
-    private void UpdateTunnelControls()
-    {
-        var mode = SelectedTunnelMode();
-        NamedServerUrlTextBox.Visibility = mode == "named" ? Visibility.Visible : Visibility.Collapsed;
-        TunnelTokenPasswordBox.Visibility = mode == "named" ? Visibility.Visible : Visibility.Collapsed;
-        RegenerateQuickButton.Visibility = mode == "quick" ? Visibility.Visible : Visibility.Collapsed;
-    }
+        var serverUrl = NamedServerUrlTextBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(serverUrl)) return;
 
-    private async void ApplyTunnelButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_runtime is null) return;
+        button.IsEnabled = false;
         TunnelStatus.Text = UiText.Get("Applying");
         try
         {
-            await _runtime.SetTunnelModeAsync(SelectedTunnelMode(), NamedServerUrlTextBox.Text.Trim(), TunnelTokenPasswordBox.Password);
+            await _runtime.SetTunnelModeAsync("named", serverUrl, TunnelTokenPasswordBox.Password);
             TunnelTokenPasswordBox.Password = "";
             await RefreshAsync();
             TunnelStatus.Text = UiText.Get("Applied");
         }
-        catch (Exception ex) { TunnelStatus.Text = ex.Message; }
-    }
-
-    private async void RegenerateQuickButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_runtime is null) return;
-        TunnelStatus.Text = UiText.Get("Generating");
-        try
+        catch (Exception ex)
         {
-            await _runtime.RegenerateQuickTunnelAsync();
-            await RefreshAsync();
-            TunnelStatus.Text = UiText.Get("Generated");
+            TunnelStatus.Text = ex.Message;
         }
-        catch (Exception ex) { TunnelStatus.Text = ex.Message; }
+        finally
+        {
+            button.IsEnabled = true;
+        }
     }
 
     private async void PairNexusButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_runtime is null) return;
+        if (_runtime is null || sender is not Button button) return;
+
+        button.IsEnabled = false;
         NexusActionStatus.Text = UiText.Get("Pairing");
         try
         {
@@ -144,6 +191,13 @@ public sealed partial class ConnectionsPage : Page
             await RefreshAsync();
             NexusActionStatus.Text = UiText.Get("PairingCompleted");
         }
-        catch (Exception ex) { NexusActionStatus.Text = ex.Message; }
+        catch (Exception ex)
+        {
+            NexusActionStatus.Text = ex.Message;
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
     }
 }

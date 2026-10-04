@@ -14,13 +14,17 @@
                 </StackPanel>
                 <Button x:Name="RuntimeAction" Grid.Column="1" Click="RuntimeAction_Click" VerticalAlignment="Center"/>
             </Grid>
-            <local:SectionCard x:Name="RuntimeSection">
+            <local:SectionCard x:Name="AgentDockSection">
                 <StackPanel>
-                    <Grid Padding="13,0" Height="46"><TextBlock Text="Runtime" VerticalAlignment="Center"/><TextBlock x:Name="RuntimeState" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
+                    <Grid Padding="13,0" Height="46">
+                        <TextBlock Text="AgentDock" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="AgentDockState" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    </Grid>
                     <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
-                    <Grid Padding="13,0" Height="46"><TextBlock Text="MCP" VerticalAlignment="Center"/><TextBlock x:Name="McpState" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
-                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
-                    <Grid Padding="13,0" Height="46"><TextBlock Text="NexusDock" VerticalAlignment="Center"/><TextBlock x:Name="NexusState" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
+                    <Grid Padding="13,0" Height="46">
+                        <TextBlock Text="NexusDock" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="NexusState" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    </Grid>
                 </StackPanel>
             </local:SectionCard>
             <local:SectionCard x:Name="QuickAccessSection">

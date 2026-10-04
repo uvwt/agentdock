@@ -372,6 +372,8 @@
 "The local service is ready for AI clients." = "The local service is ready for AI clients.";
 "Start AgentDock to accept AI client connections." = "Start AgentDock to accept AI client connections.";
 "Runtime status" = "Runtime status";
+"Needs attention" = "Needs attention";
+"AgentDock is running, but the connection service is not ready." = "AgentDock is running, but the connection service is not ready.";
 "Ready" = "Ready";
 "Unavailable" = "Unavailable";
 "Connecting" = "Connecting";
@@ -430,3 +432,14 @@
 "Specified CDP" = "Specified CDP";
 "Temporary public address" = "Temporary public address";
 "Add custom Coding Agent" = "Add custom Coding Agent";
+"Use NexusDock for the simplest connection experience. Advanced options are available when needed." = "Use NexusDock for the simplest connection experience. Advanced options are available when needed.";
+"Recommended connection" = "Recommended connection";
+"Connect this device to NexusDock." = "Connect this device to NexusDock.";
+"Pair once, then connect supported AI clients through NexusDock without configuring MCP addresses or tunnels." = "Pair once, then connect supported AI clients through NexusDock without configuring MCP addresses or tunnels.";
+"Advanced connection settings" = "Advanced connection settings";
+"Local MCP, access credentials, and direct public access." = "Local MCP, access credentials, and direct public access.";
+"Generate a temporary public address without configuring a domain." = "Generate a temporary public address without configuring a domain.";
+"Generate temporary address" = "Generate temporary address";
+"Fixed domain" = "Fixed domain";
+"Use your own HTTPS domain with a Cloudflare Tunnel token." = "Use your own HTTPS domain with a Cloudflare Tunnel token.";
+"Apply fixed domain" = "Apply fixed domain";

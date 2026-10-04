@@ -7,57 +7,22 @@
         <StackPanel Width="760" HorizontalAlignment="Left" Spacing="22" Padding="28,24,28,32">
             <StackPanel Spacing="5">
                 <TextBlock x:Name="PageTitle" FontSize="20" FontWeight="SemiBold"/>
-                <TextBlock x:Name="PageDetail" FontSize="12.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                <TextBlock x:Name="PageDetail" FontSize="12.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
             </StackPanel>
-            <local:SectionCard x:Name="LocalSection">
-                <StackPanel>
-                    <Grid MinHeight="56" Padding="13,6" ColumnSpacing="16">
-                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <StackPanel Spacing="2" VerticalAlignment="Center">
-                            <TextBlock Text="Local MCP" FontSize="13"/>
-                            <TextBlock x:Name="LocalAddress" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
-                        </StackPanel>
-                        <Button x:Name="CopyLocalButton" Grid.Column="1" Click="CopyLocalButton_Click" VerticalAlignment="Center"/>
-                    </Grid>
-                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
-                    <Grid MinHeight="56" Padding="13,6" ColumnSpacing="16">
-                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <StackPanel Spacing="2" VerticalAlignment="Center">
-                            <TextBlock Text="Public MCP" FontSize="13"/>
-                            <TextBlock x:Name="PublicAddress" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
-                        </StackPanel>
-                        <Button x:Name="CopyPublicButton" Grid.Column="1" Click="CopyPublicButton_Click" VerticalAlignment="Center"/>
-                    </Grid>
-                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
-                    <StackPanel Padding="13,12" Spacing="10">
-                        <TextBlock x:Name="PublicModeLabel" FontSize="13"/>
-                        <ComboBox x:Name="TunnelModeComboBox" Width="220" HorizontalAlignment="Left" SelectionChanged="TunnelModeComboBox_SelectionChanged">
-                            <ComboBoxItem x:Name="LocalOnlyModeItem" Tag="none"/>
-                            <ComboBoxItem x:Name="QuickModeItem" Tag="quick"/>
-                            <ComboBoxItem x:Name="NamedModeItem" Tag="named"/>
-                        </ComboBox>
-                        <TextBox x:Name="NamedServerUrlTextBox" PlaceholderText="https://mcp.example.com"/>
-                        <PasswordBox x:Name="TunnelTokenPasswordBox"/>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button x:Name="ApplyTunnelButton" Click="ApplyTunnelButton_Click"/>
-                            <Button x:Name="RegenerateQuickButton" Click="RegenerateQuickButton_Click"/>
-                            <TextBlock x:Name="TunnelStatus" VerticalAlignment="Center" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                        </StackPanel>
-                    </StackPanel>
-                </StackPanel>
-            </local:SectionCard>
-            <local:SectionCard x:Name="RemoteSection">
+
+            <local:SectionCard x:Name="NexusSection">
                 <StackPanel>
                     <Grid MinHeight="62" Padding="13,7" ColumnSpacing="16">
                         <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <StackPanel Spacing="2" VerticalAlignment="Center">
-                            <TextBlock Text="NexusDock" FontSize="13"/>
+                            <TextBlock x:Name="RecommendedConnectionLabel" FontSize="13"/>
                             <TextBlock x:Name="NexusEndpoint" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
                         <TextBlock x:Name="NexusState" Grid.Column="1" FontSize="12" VerticalAlignment="Center"/>
                     </Grid>
                     <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
                     <StackPanel Padding="13,12" Spacing="10">
+                        <TextBlock x:Name="NexusIntro" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
                         <TextBox x:Name="NexusEndpointTextBox" PlaceholderText="https://mcp.nexusdock.co"/>
                         <PasswordBox x:Name="NexusPairingCodeBox"/>
                         <StackPanel Orientation="Horizontal" Spacing="8">
@@ -67,6 +32,84 @@
                     </StackPanel>
                 </StackPanel>
             </local:SectionCard>
+
+            <Expander x:Name="AdvancedConnectionExpander"
+                      HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Stretch">
+                <Expander.Header>
+                    <StackPanel Spacing="2">
+                        <TextBlock x:Name="AdvancedConnectionTitle" FontSize="13" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="AdvancedConnectionDetail" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </StackPanel>
+                </Expander.Header>
+                <StackPanel Spacing="16" Padding="0,10,0,0">
+                    <local:SectionCard x:Name="LocalMcpSection">
+                        <StackPanel>
+                            <Grid MinHeight="56" Padding="13,6" ColumnSpacing="16">
+                                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock Text="Local MCP" FontSize="13"/>
+                                    <TextBlock x:Name="LocalAddress" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                                <Button x:Name="CopyLocalButton" Grid.Column="1" Click="CopyLocalButton_Click" VerticalAlignment="Center"/>
+                            </Grid>
+                            <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                            <Grid MinHeight="58" Padding="13,6" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <TextBlock x:Name="AuthTokenLabel" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                    <PasswordBox x:Name="AuthTokenPasswordBox" Width="300" IsPasswordRevealButtonEnabled="True"/>
+                                    <Button x:Name="CopyAuthTokenButton" Click="CopyAuthTokenButton_Click"/>
+                                </StackPanel>
+                            </Grid>
+                            <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                            <Grid MinHeight="58" Padding="13,6" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <TextBlock x:Name="OAuthPasswordLabel" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                    <PasswordBox x:Name="OAuthPasswordBox" Width="300" IsPasswordRevealButtonEnabled="True"/>
+                                    <Button x:Name="CopyOAuthPasswordButton" Click="CopyOAuthPasswordButton_Click"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </local:SectionCard>
+
+                    <local:SectionCard x:Name="PublicAccessSection">
+                        <StackPanel>
+                            <Grid MinHeight="56" Padding="13,6" ColumnSpacing="16">
+                                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock x:Name="PublicAddressLabel" FontSize="13"/>
+                                    <TextBlock x:Name="PublicAddress" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                                <Button x:Name="CopyPublicButton" Grid.Column="1" Click="CopyPublicButton_Click" VerticalAlignment="Center"/>
+                            </Grid>
+                            <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                            <Grid MinHeight="64" Padding="13,7" ColumnSpacing="16">
+                                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock Text="Cloudflare Tunnel" FontSize="13"/>
+                                    <TextBlock x:Name="TemporaryTunnelDetail" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <Button x:Name="TemporaryTunnelButton" Grid.Column="1" Click="TemporaryTunnelButton_Click" VerticalAlignment="Center"/>
+                            </Grid>
+                            <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                            <StackPanel Padding="13,12" Spacing="9">
+                                <TextBlock x:Name="FixedDomainTitle" FontSize="13" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="FixedDomainDetail" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                                <TextBox x:Name="NamedServerUrlTextBox" PlaceholderText="https://mcp.example.com"/>
+                                <PasswordBox x:Name="TunnelTokenPasswordBox"/>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button x:Name="ApplyFixedDomainButton" Click="ApplyFixedDomainButton_Click"/>
+                                    <TextBlock x:Name="TunnelStatus" VerticalAlignment="Center" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </StackPanel>
+                    </local:SectionCard>
+                </StackPanel>
+            </Expander>
+
+            <TextBlock x:Name="PageStatus" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
         </StackPanel>
     </ScrollViewer>
 </Page>

@@ -818,4 +818,19 @@ Update now?</value>
   <data name="PermissionSettingsFailed" xml:space="preserve"><value>Permission settings failed</value></data>
   <data name="NewVersionAvailable" xml:space="preserve"><value>New version available</value></data>
   <data name="Confirm" xml:space="preserve"><value>OK</value></data>
+  <data name="ConnectionsRecommendedDetail" xml:space="preserve"><value>Use NexusDock for the simplest connection experience. Advanced options are available when needed.</value></data>
+  <data name="RecommendedConnection" xml:space="preserve"><value>Recommended connection</value></data>
+  <data name="NexusRecommendedIntro" xml:space="preserve"><value>Pair once, then connect supported AI clients through NexusDock without configuring MCP addresses or tunnels.</value></data>
+  <data name="ConnectThisDeviceToNexus" xml:space="preserve"><value>Connect this device to NexusDock.</value></data>
+  <data name="AdvancedConnectionSettings" xml:space="preserve"><value>Advanced connection settings</value></data>
+  <data name="AdvancedConnectionDetail" xml:space="preserve"><value>Local MCP, access credentials, and direct public access.</value></data>
+  <data name="PublicAddress" xml:space="preserve"><value>Public address</value></data>
+  <data name="TemporaryTunnelDetail" xml:space="preserve"><value>Generate a temporary public address without configuring a domain.</value></data>
+  <data name="GenerateTemporaryAddress" xml:space="preserve"><value>Generate temporary address</value></data>
+  <data name="FixedDomain" xml:space="preserve"><value>Fixed domain</value></data>
+  <data name="FixedDomainDetail" xml:space="preserve"><value>Use your own HTTPS domain with a Cloudflare Tunnel token.</value></data>
+  <data name="ApplyFixedDomain" xml:space="preserve"><value>Apply fixed domain</value></data>
+  <data name="NeedsAttention" xml:space="preserve"><value>Needs attention</value></data>
+  <data name="AgentDockNeedsAttention" xml:space="preserve"><value>AgentDock needs attention</value></data>
+  <data name="AgentDockNeedsAttentionDetail" xml:space="preserve"><value>AgentDock is running, but the connection service is not ready.</value></data>
 </root>

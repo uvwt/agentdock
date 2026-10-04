@@ -372,6 +372,8 @@
 "The local service is ready for AI clients." = "本地服务已准备好，AI 客户端可以连接。";
 "Start AgentDock to accept AI client connections." = "启动 AgentDock 后即可接受 AI 客户端连接。";
 "Runtime status" = "运行状态";
+"Needs attention" = "运行异常";
+"AgentDock is running, but the connection service is not ready." = "AgentDock 已启动，但连接服务尚未就绪。";
 "Ready" = "已准备就绪";
 "Unavailable" = "不可用";
 "Connecting" = "正在连接";
@@ -430,3 +432,14 @@
 "Specified CDP" = "指定 CDP";
 "Temporary public address" = "临时公网地址";
 "Add custom Coding Agent" = "添加自定义 Coding Agent";
+"Use NexusDock for the simplest connection experience. Advanced options are available when needed." = "推荐通过 NexusDock 连接；需要时再使用高级连接选项。";
+"Recommended connection" = "推荐连接";
+"Connect this device to NexusDock." = "将这台设备连接到 NexusDock。";
+"Pair once, then connect supported AI clients through NexusDock without configuring MCP addresses or tunnels." = "完成一次配对后，支持的 AI 客户端即可通过 NexusDock 连接，无需手动配置 MCP 地址或隧道。";
+"Advanced connection settings" = "高级连接设置";
+"Local MCP, access credentials, and direct public access." = "本地 MCP、访问凭据与公网直连。";
+"Generate a temporary public address without configuring a domain." = "无需配置域名，直接生成一个临时公网地址。";
+"Generate temporary address" = "生成临时地址";
+"Fixed domain" = "固定域名";
+"Use your own HTTPS domain with a Cloudflare Tunnel token." = "使用自己的 HTTPS 域名和 Cloudflare Tunnel Token 建立固定公网入口。";
+"Apply fixed domain" = "应用固定域名";

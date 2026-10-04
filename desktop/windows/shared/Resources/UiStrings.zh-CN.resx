@@ -818,4 +818,19 @@
   <data name="PermissionSettingsFailed" xml:space="preserve"><value>权限设置失败</value></data>
   <data name="NewVersionAvailable" xml:space="preserve"><value>发现新版本</value></data>
   <data name="Confirm" xml:space="preserve"><value>确定</value></data>
+  <data name="ConnectionsRecommendedDetail" xml:space="preserve"><value>推荐通过 NexusDock 连接；需要时再使用高级连接选项。</value></data>
+  <data name="RecommendedConnection" xml:space="preserve"><value>推荐连接</value></data>
+  <data name="NexusRecommendedIntro" xml:space="preserve"><value>完成一次配对后，支持的 AI 客户端即可通过 NexusDock 连接，无需手动配置 MCP 地址或隧道。</value></data>
+  <data name="ConnectThisDeviceToNexus" xml:space="preserve"><value>将这台设备连接到 NexusDock。</value></data>
+  <data name="AdvancedConnectionSettings" xml:space="preserve"><value>高级连接设置</value></data>
+  <data name="AdvancedConnectionDetail" xml:space="preserve"><value>本地 MCP、访问凭据与公网直连。</value></data>
+  <data name="PublicAddress" xml:space="preserve"><value>公网地址</value></data>
+  <data name="TemporaryTunnelDetail" xml:space="preserve"><value>无需配置域名，直接生成一个临时公网地址。</value></data>
+  <data name="GenerateTemporaryAddress" xml:space="preserve"><value>生成临时地址</value></data>
+  <data name="FixedDomain" xml:space="preserve"><value>固定域名</value></data>
+  <data name="FixedDomainDetail" xml:space="preserve"><value>使用自己的 HTTPS 域名和 Cloudflare Tunnel Token 建立固定公网入口。</value></data>
+  <data name="ApplyFixedDomain" xml:space="preserve"><value>应用固定域名</value></data>
+  <data name="NeedsAttention" xml:space="preserve"><value>运行异常</value></data>
+  <data name="AgentDockNeedsAttention" xml:space="preserve"><value>AgentDock 运行异常</value></data>
+  <data name="AgentDockNeedsAttentionDetail" xml:space="preserve"><value>AgentDock 已启动，但连接服务尚未就绪。</value></data>
 </root>

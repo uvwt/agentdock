@@ -18,7 +18,6 @@ public sealed partial class SettingsPage : Page
         RuntimeNavigationItem.Content = UiText.Get("Runtime");
         PermissionsNavigationItem.Content = UiText.Get("Permissions");
         StartupNavigationItem.Content = UiText.Get("Startup");
-        CredentialsNavigationItem.Content = UiText.Get("AccessCredentials");
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -57,7 +56,6 @@ public sealed partial class SettingsPage : Page
         {
             "permissions" => BuildPermissions(),
             "startup" => BuildStartup(),
-            "credentials" => BuildCredentials(),
             _ => BuildRuntime()
         };
         SettingsContent.Children.Add(section);
@@ -67,8 +65,6 @@ public sealed partial class SettingsPage : Page
     {
         var rows = new StackPanel();
         rows.Children.Add(Row(UiText.Get("Status"), _snapshot?.CoreRunning == true ? UiText.Get("Running") + " ●" : UiText.Get("Stopped")));
-        rows.Children.Add(Divider());
-        rows.Children.Add(Row(UiText.Get("LocalAddress"), _snapshot?.LocalMcpUrl ?? "—"));
         rows.Children.Add(Divider());
 
         var action = new Button { Content = _snapshot?.CoreRunning == true ? UiText.Get("Stop") : UiText.Get("Start") };
@@ -135,15 +131,6 @@ public sealed partial class SettingsPage : Page
         return rows;
     }
 
-    private UIElement BuildCredentials()
-    {
-        var rows = new StackPanel();
-        rows.Children.Add(CredentialRow(UiText.Get("AuthenticationToken"), "bearer"));
-        rows.Children.Add(Divider());
-        rows.Children.Add(CredentialRow(UiText.Get("OAuthPassword"), "oauth"));
-        return rows;
-    }
-
     private void LanguagePreference_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (sender is not ComboBox combo || combo.SelectedItem is not ComboBoxItem item) return;
@@ -157,19 +144,6 @@ public sealed partial class SettingsPage : Page
         {
             _ = ShowMessageAsync(UiText.Get("Settings"), UiText.Format("LanguageChangeFailed", ex.Message));
         }
-    }
-
-    private Grid CredentialRow(string title, string kind)
-    {
-        var value = new PasswordBox { Password = ReadCredential(kind), IsPasswordRevealButtonEnabled = true, Width = 330 };
-        return ActionRow(title, value);
-    }
-
-    private string ReadCredential(string kind)
-    {
-        if (_runtime is null) return "";
-        try { return kind == "bearer" ? _runtime.ReadBearerToken() : _runtime.ReadOAuthPassword(); }
-        catch { return ""; }
     }
 
     private async void RuntimeAction_Click(object sender, RoutedEventArgs e)
@@ -307,7 +281,6 @@ public sealed partial class SettingsPage : Page
     {
         "permissions" => UiText.Get("Permissions"),
         "startup" => UiText.Get("Startup"),
-        "credentials" => UiText.Get("AccessCredentials"),
         _ => UiText.Get("Runtime")
     };
 
@@ -315,7 +288,6 @@ public sealed partial class SettingsPage : Page
     {
         "permissions" => UiText.Get("PermissionsDetail"),
         "startup" => UiText.Get("StartupDetail"),
-        "credentials" => UiText.Get("CredentialsDetail"),
         _ => UiText.Get("RuntimeDetail")
     };
 
@@ -323,7 +295,6 @@ public sealed partial class SettingsPage : Page
     {
         "permissions" => UiText.Get("RuntimePermissions"),
         "startup" => UiText.Get("Startup"),
-        "credentials" => UiText.Get("Credentials"),
         _ => "AgentDock Runtime"
     };
 

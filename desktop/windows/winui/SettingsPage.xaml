@@ -12,7 +12,6 @@
                 <ListViewItem x:Name="RuntimeNavigationItem" Tag="runtime"/>
                 <ListViewItem x:Name="PermissionsNavigationItem" Tag="permissions"/>
                 <ListViewItem x:Name="StartupNavigationItem" Tag="startup"/>
-                <ListViewItem x:Name="CredentialsNavigationItem" Tag="credentials"/>
             </ListView>
             <Rectangle Grid.Column="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}"/>
             <ScrollViewer Grid.Column="2">

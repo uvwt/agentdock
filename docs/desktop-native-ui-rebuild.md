@@ -680,6 +680,34 @@ TianYi parity 验证：
 - TianYi UI Automation 实际触发三个快速入口后，ConnectionsNavigationItem / CapabilitiesNavigationItem / ActivityNavigationItem 均成为选中状态。
 - macOS 完整 App / ZIP / DMG / 签名 / 挂载测试通过；最终 Preview App 已真实启动并出现 Layer 0 原生窗口。由于 Mini 当前仍未授予 Screen Recording / Accessibility，无法对新版 Mac 页面做截图或 AX 点击，因此不伪造视觉交互结论。
 
+### 15.5 2026-10-04 NexusDock 优先连接体验收敛
+
+本轮从 `f5cfad0` 新开独立 follow-up worktree，不继续污染已完成验收的原生 UI 分支：
+
+- worktree：`/Users/xx/Project/worktrees/agentdock-native-connection-ux-20261004`
+- branch：`refactor/desktop-native-connection-ux-20261004`
+- baseline：`f5cfad0 fix(desktop): 收口原生面板验收交互`
+
+产品信息架构按“普通用户优先 NexusDock，技术连接能力降级到高级设置”收敛：
+
+- Home 不再分别展示 Runtime / MCP。底层继续保留进程运行与健康检查两个信号，但概览只汇总为一个 AgentDock 状态，并单独保留 NexusDock 连接状态。
+- AgentDock 已启动但健康检查失败时，Home 显示“运行异常 / Needs attention”，启动/停止按钮仍按真实进程状态判断，避免误显示“启动”。
+- Connections 默认只突出 NexusDock 推荐连接路径。
+- Local MCP 地址、Authentication Token、OAuth Password 全部迁入“高级连接设置”。
+- Public MCP 的 Local / Quick / Named 模式选择从产品 UI 移除；底层枚举继续兼容已有配置。
+- 高级公网直连只向用户呈现 Cloudflare Tunnel 临时公网地址与固定域名两种操作；点击操作时直接写入 quick / named 底层模式。
+- Settings 二级导航收敛为 Runtime / Permissions / Startup，不再暴露 Access Credentials，也不再展示 Local MCP 地址。
+
+验证：
+
+- `python3 scripts/test/check-macos-i18n.py`、Windows UiText 资源覆盖检查、`go test ./scripts/test -count=1` 均通过。
+- `go test ./... -count=1 -timeout=3m` 全仓通过。
+- macOS `scripts/test/test-macos-app.sh` 完整通过 App / ZIP / DMG / 签名 / 挂载验证。
+- Windows 验证源码快照 SHA-256：`7fe2c360704f4013319868d9c97c7772e4d0c15c483fad9bd98b3ed89fb4289c`；TianYi x64 Release Rebuild 0 warning / 0 error，win-arm64 交叉 Rebuild 退出码 0。
+- TianYi UI Automation 实测 Home 只存在 AgentDock / NexusDock，不再出现 Runtime / MCP；当前真实状态显示 AgentDock 正在运行、NexusDock 已连接。
+- TianYi UI Automation 实测 Connections 的高级连接设置默认 `Collapsed`；展开后才出现 Local MCP、访问凭据、Cloudflare Tunnel、固定域名；`仅本地` / `Public MCP` 不再出现。
+- TianYi UI Automation 实测 Settings 只剩运行时 / 权限 / 开机启动，`CredentialsNavigationItem` 不存在。
+
 视觉审查：
 
 - Mac / Windows 使用接近的窗口尺寸。
@@ -710,9 +738,11 @@ TianYi parity 验证：
 
 ## 17. Git / PR 约束
 
-- 本轮开发 worktree：`/Users/xx/Project/worktrees/agentdock-native-desktop-ui-20261004`
-- 本轮分支：`refactor/desktop-native-ui-20261004`
-- 基线：`origin/main@2de2f3d`
+- 原生重构基线 worktree：`/Users/xx/Project/worktrees/agentdock-native-desktop-ui-20261004`
+- 当前连接体验 follow-up worktree：`/Users/xx/Project/worktrees/agentdock-native-connection-ux-20261004`
+- 当前分支：`refactor/desktop-native-connection-ux-20261004`
+- 当前 follow-up 基线：`f5cfad0`
+- 原始重构基线：`origin/main@2de2f3d`
 - 不在主工作区直接开发。
 - 不基于 PR #181 继续叠提交。
 - 不整体 cherry-pick PR #181。

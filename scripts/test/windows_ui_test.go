@@ -55,14 +55,17 @@ func TestWindowsNativeControlPanelCarriesSettingsParity(t *testing.T) {
 	connections := readWindowsNativeFile(t, "winui", "ConnectionsPage.xaml.cs")
 	capabilities := readWindowsNativeFile(t, "winui", "CapabilitiesPage.xaml.cs")
 	for _, want := range []string{
-		"SetPrivilegeModeAsync", "SetStartupAsync", "ReadBearerToken", "ReadOAuthPassword",
+		"SetPrivilegeModeAsync", "SetStartupAsync",
 		"CheckForUpdatesAsync", "RunUpdateAsync", "LanguagePreference_SelectionChanged", "SaveSettingsAsync",
 	} {
 		if !strings.Contains(settings, want) {
 			t.Fatalf("WinUI settings parity missing %q", want)
 		}
 	}
-	for _, want := range []string{"SetTunnelModeAsync", "RegenerateQuickTunnelAsync", "PairNexusAsync", "GetSnapshotAsync(includeNexusConnection: true)"} {
+	for _, want := range []string{
+		"SetTunnelModeAsync", "RegenerateQuickTunnelAsync", "PairNexusAsync",
+		"GetSnapshotAsync(includeNexusConnection: true)", "ReadBearerToken", "ReadOAuthPassword",
+	} {
 		if !strings.Contains(connections, want) {
 			t.Fatalf("WinUI connections parity missing %q", want)
 		}
@@ -98,7 +101,6 @@ func TestWindowsNativeLanguageAndShortcutsAreInteractive(t *testing.T) {
 		"RuntimeNavigationItem.Content = UiText.Get(\"Runtime\")",
 		"PermissionsNavigationItem.Content = UiText.Get(\"Permissions\")",
 		"StartupNavigationItem.Content = UiText.Get(\"Startup\")",
-		"CredentialsNavigationItem.Content = UiText.Get(\"AccessCredentials\")",
 		"LanguagePreference_SelectionChanged",
 	} {
 		if !strings.Contains(settingsCode, want) {
@@ -109,6 +111,7 @@ func TestWindowsNativeLanguageAndShortcutsAreInteractive(t *testing.T) {
 		"Content=\"Runtime\" Tag=\"runtime\"",
 		"Content=\"Permissions\" Tag=\"permissions\"",
 		"Content=\"Access Credentials\" Tag=\"credentials\"",
+		"CredentialsNavigationItem",
 	} {
 		if strings.Contains(settingsXaml, forbidden) {
 			t.Fatalf("WinUI settings still hardcodes secondary navigation label %q", forbidden)
@@ -135,6 +138,74 @@ func TestWindowsNativeLanguageAndShortcutsAreInteractive(t *testing.T) {
 	for _, want := range []string{"ContentFrame_Navigated", "home.ShortcutRequested", "NavigateTo(tag)"} {
 		if !strings.Contains(window, want) {
 			t.Fatalf("WinUI host shortcut routing missing %q", want)
+		}
+	}
+}
+
+func TestWindowsConnectionsPreferNexusDockAndHideTechnicalModes(t *testing.T) {
+	connectionsXaml := readWindowsNativeFile(t, "winui", "ConnectionsPage.xaml")
+	connectionsCode := readWindowsNativeFile(t, "winui", "ConnectionsPage.xaml.cs")
+	settingsXaml := readWindowsNativeFile(t, "winui", "SettingsPage.xaml")
+	settingsCode := readWindowsNativeFile(t, "winui", "SettingsPage.xaml.cs")
+
+	for _, want := range []string{
+		"AdvancedConnectionExpander",
+		"LocalMcpSection",
+		"AuthTokenPasswordBox",
+		"OAuthPasswordBox",
+		"TemporaryTunnelButton",
+		"ApplyFixedDomainButton",
+	} {
+		if !strings.Contains(connectionsXaml, want) {
+			t.Fatalf("WinUI advanced connection UI missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		"SetTunnelModeAsync(\"quick\", \"\", \"\")",
+		"SetTunnelModeAsync(\"named\", serverUrl, TunnelTokenPasswordBox.Password)",
+		"ReadBearerToken",
+		"ReadOAuthPassword",
+	} {
+		if !strings.Contains(connectionsCode, want) {
+			t.Fatalf("WinUI advanced connection behavior missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{"TunnelModeComboBox", "LocalOnlyModeItem", "PublicModeLabel"} {
+		if strings.Contains(connectionsXaml, forbidden) || strings.Contains(connectionsCode, forbidden) {
+			t.Fatalf("WinUI connection page still exposes legacy mode control %q", forbidden)
+		}
+	}
+	if strings.Contains(settingsXaml, "CredentialsNavigationItem") ||
+		strings.Contains(settingsCode, "BuildCredentials") ||
+		strings.Contains(settingsCode, "UiText.Get(\"LocalAddress\")") {
+		t.Fatal("WinUI Settings must not expose credentials or Local MCP address after connection-page consolidation")
+	}
+}
+
+func TestWindowsHomeMergesRuntimeAndMcpIntoAgentDockStatus(t *testing.T) {
+	homeXaml := readWindowsNativeFile(t, "winui", "HomePage.xaml")
+	homeCode := readWindowsNativeFile(t, "winui", "HomePage.xaml.cs")
+
+	for _, want := range []string{
+		`x:Name="AgentDockSection"`,
+		`x:Name="AgentDockState"`,
+		"var serviceLoaded = _snapshot.CoreRunning",
+		"var serviceHealthy = serviceLoaded && _snapshot.Healthy",
+		`UiText.Get("AgentDockNeedsAttention")`,
+		`RuntimeAction.Content = serviceLoaded ? UiText.Get("Stop") : UiText.Get("Start")`,
+	} {
+		if !strings.Contains(homeXaml+homeCode, want) {
+			t.Fatalf("WinUI Home missing merged AgentDock status contract %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		`x:Name="RuntimeState"`,
+		`x:Name="McpState"`,
+		`<TextBlock Text="Runtime"`,
+		`<TextBlock Text="MCP"`,
+	} {
+		if strings.Contains(homeXaml, forbidden) {
+			t.Fatalf("WinUI Home still exposes implementation status %q", forbidden)
 		}
 	}
 }

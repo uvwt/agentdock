@@ -90,14 +90,13 @@ private final class ControlPanelModel: ObservableObject {
     }
 
     enum SettingsPage: String, CaseIterable, Identifiable {
-        case runtime, permissions, startup, credentials
+        case runtime, permissions, startup
         var id: String { rawValue }
         var title: String {
             switch self {
             case .runtime: return L10n.text("Runtime")
             case .permissions: return L10n.text("Permissions")
             case .startup: return L10n.text("Startup")
-            case .credentials: return L10n.text("Access Credentials")
             }
         }
     }
@@ -313,7 +312,8 @@ private struct RowDivider: View {
 private struct HomeView: View {
     @ObservedObject var model: ControlPanelModel
 
-    private var running: Bool { model.status.loaded && model.status.healthy }
+    private var serviceLoaded: Bool { model.status.loaded }
+    private var serviceHealthy: Bool { model.status.loaded && model.status.healthy }
 
     var body: some View {
         ScrollView {
@@ -322,9 +322,9 @@ private struct HomeView: View {
 
                 HStack(alignment: .center, spacing: 16) {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("AgentDock \(running ? L10n.text("Running") : L10n.text("Stopped"))")
+                        Text("AgentDock \(agentDockStatusText)")
                             .font(.system(size: 14, weight: .semibold))
-                        Text(running ? L10n.text("The local service is ready for AI clients.") : L10n.text("Start AgentDock to accept AI client connections."))
+                        Text(agentDockDetailText)
                             .font(.system(size: 13))
                             .foregroundStyle(.secondary)
                         if let message = model.message {
@@ -332,15 +332,15 @@ private struct HomeView: View {
                         }
                     }
                     Spacer()
-                    Button(running ? L10n.text("Stop") : L10n.text("Start")) { model.toggleRuntime() }
+                    Button(serviceLoaded ? L10n.text("Stop") : L10n.text("Start")) { model.toggleRuntime() }
                         .controlSize(.regular)
                         .disabled(model.isBusy || model.isUpdateInProgress)
                 }
 
-                SettingsSection(L10n.text("Runtime status")) {
-                    SettingsRow("Runtime") { StatusPill(text: running ? L10n.text("Running") : L10n.text("Stopped"), active: running) }
-                    RowDivider()
-                    SettingsRow("MCP") { StatusPill(text: model.status.healthy ? L10n.text("Ready") : L10n.text("Unavailable"), active: model.status.healthy) }
+                SettingsSection("AgentDock") {
+                    SettingsRow("AgentDock") {
+                        StatusPill(text: agentDockStatusText, active: serviceHealthy)
+                    }
                     RowDivider()
                     SettingsRow("NexusDock") { StatusPill(text: nexusText, active: nexusActive) }
                 }
@@ -359,6 +359,18 @@ private struct HomeView: View {
             .padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 32)
             .frame(maxWidth: 760, alignment: .leading)
         }
+    }
+
+    private var agentDockStatusText: String {
+        if !serviceLoaded { return L10n.text("Stopped") }
+        return serviceHealthy ? L10n.text("Running") : L10n.text("Needs attention")
+    }
+
+    private var agentDockDetailText: String {
+        if !serviceLoaded { return L10n.text("Start AgentDock to accept AI client connections.") }
+        return serviceHealthy
+            ? L10n.text("The local service is ready for AI clients.")
+            : L10n.text("AgentDock is running, but the connection service is not ready.")
     }
 
     private var nexusActive: Bool {
@@ -382,6 +394,9 @@ private struct ConnectionsView: View {
     @State private var tunnelToken = ""
     @State private var nexusEndpoint = "https://mcp.nexusdock.co"
     @State private var pairingCode = ""
+    @State private var advancedExpanded = false
+    @State private var showAuthToken = false
+    @State private var showOAuthPassword = false
 
     private var configuration: ServiceConfiguration? { model.status.configuration }
     private var nexusDevice: NexusDeviceStatus { model.nexusDevice }
@@ -389,64 +404,170 @@ private struct ConnectionsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                PageHeader(title: L10n.text("Connections"), detail: L10n.text("Connect AI clients to this device."))
-                SettingsSection(L10n.text("Local connection")) {
-                    SettingsRow("Local MCP", detail: configuration?.localMCPURL?.absoluteString ?? "—") {
-                        Button(L10n.text("Copy")) { copy(configuration?.localMCPURL?.absoluteString) }.controlSize(.small)
-                    }
-                    RowDivider()
-                    SettingsRow("Public MCP", detail: configuration?.publicMCPURL?.absoluteString ?? L10n.text("Disabled")) {
-                        Button(L10n.text("Copy")) { copy(configuration?.publicMCPURL?.absoluteString) }.controlSize(.small)
-                    }
-                    RowDivider()
-                    VStack(alignment: .leading, spacing: 10) {
-                        Picker(L10n.text("Public MCP mode"), selection: $tunnelMode) {
-                            Text(L10n.text("Local only")).tag(TunnelMode.local)
-                            Text(L10n.text("Temporary public address")).tag(TunnelMode.quick)
-                            Text(L10n.text("Custom domain")).tag(TunnelMode.named)
-                        }.pickerStyle(.segmented)
-                        if tunnelMode == .named {
-                            TextField("https://mcp.example.com", text: $serverURL).textFieldStyle(.roundedBorder)
-                            SecureField(L10n.text("Cloudflare Tunnel Token"), text: $tunnelToken).textFieldStyle(.roundedBorder)
-                        }
-                        Button(L10n.text("Apply")) {
-                            Task {
-                                await model.applyTunnel(mode: tunnelMode, serverURL: serverURL, tunnelToken: tunnelToken)
-                                tunnelToken = ""
-                            }
-                        }.disabled(model.isBusy)
-                    }.padding(13)
-                }
+                PageHeader(
+                    title: L10n.text("Connections"),
+                    detail: L10n.text("Use NexusDock for the simplest connection experience. Advanced options are available when needed.")
+                )
 
-                SettingsSection(L10n.text("Remote connection")) {
-                    SettingsRow("NexusDock", detail: nexusDevice.paired ? nexusDevice.endpoint : L10n.text("Not configured")) {
+                SettingsSection("NexusDock") {
+                    SettingsRow(
+                        L10n.text("Recommended connection"),
+                        detail: nexusDevice.paired ? nexusDevice.endpoint : L10n.text("Connect this device to NexusDock.")
+                    ) {
                         StatusPill(text: nexusText, active: nexusActive)
                     }
                     RowDivider()
                     VStack(alignment: .leading, spacing: 10) {
-                        TextField(L10n.text("NexusDock address"), text: $nexusEndpoint).textFieldStyle(.roundedBorder)
-                        SecureField(L10n.text("One-time pairing code"), text: $pairingCode).textFieldStyle(.roundedBorder)
+                        Text(L10n.text("Pair once, then connect supported AI clients through NexusDock without configuring MCP addresses or tunnels."))
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                        TextField(L10n.text("NexusDock address"), text: $nexusEndpoint)
+                            .textFieldStyle(.roundedBorder)
+                        SecureField(L10n.text("One-time pairing code"), text: $pairingCode)
+                            .textFieldStyle(.roundedBorder)
                         Button(L10n.text("Pair")) {
                             Task {
                                 await model.pairNexus(endpoint: nexusEndpoint, code: pairingCode)
                                 pairingCode = ""
                             }
-                        }.disabled(model.isBusy || nexusEndpoint.isEmpty || pairingCode.isEmpty)
-                    }.padding(13)
+                        }
+                        .disabled(model.isBusy || nexusEndpoint.isEmpty || pairingCode.isEmpty)
+                    }
+                    .padding(13)
                 }
-                if let message = model.message { Text(message).font(.system(size: 12)).foregroundStyle(.secondary) }
+
+                SettingsSection(L10n.text("Advanced connection settings")) {
+                    DisclosureGroup(isExpanded: $advancedExpanded) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("Local MCP")
+                                .font(.system(size: 13, weight: .semibold))
+                                .padding(.top, 12)
+                                .padding(.bottom, 4)
+
+                            SettingsRow("Local MCP", detail: configuration?.localMCPURL?.absoluteString ?? "—") {
+                                Button(L10n.text("Copy")) {
+                                    copy(configuration?.localMCPURL?.absoluteString)
+                                }
+                                .controlSize(.small)
+                            }
+                            RowDivider()
+                            SettingsRow(
+                                L10n.text("Authentication token"),
+                                detail: displayedSecret(configuration?.authToken, visible: showAuthToken)
+                            ) {
+                                HStack(spacing: 6) {
+                                    Button(showAuthToken ? L10n.text("Hide") : L10n.text("Show")) {
+                                        showAuthToken.toggle()
+                                    }
+                                    Button(L10n.text("Copy")) { copy(configuration?.authToken) }
+                                }
+                                .controlSize(.small)
+                            }
+                            RowDivider()
+                            SettingsRow(
+                                L10n.text("OAuth password"),
+                                detail: displayedSecret(configuration?.oauthPassword, visible: showOAuthPassword)
+                            ) {
+                                HStack(spacing: 6) {
+                                    Button(showOAuthPassword ? L10n.text("Hide") : L10n.text("Show")) {
+                                        showOAuthPassword.toggle()
+                                    }
+                                    Button(L10n.text("Copy")) { copy(configuration?.oauthPassword) }
+                                }
+                                .controlSize(.small)
+                            }
+
+                            Divider().padding(.vertical, 12)
+
+                            Text(L10n.text("Public access"))
+                                .font(.system(size: 13, weight: .semibold))
+                                .padding(.bottom, 4)
+
+                            SettingsRow(
+                                L10n.text("Public address"),
+                                detail: configuration?.publicMCPURL?.absoluteString ?? L10n.text("Disabled")
+                            ) {
+                                Button(L10n.text("Copy")) {
+                                    copy(configuration?.publicMCPURL?.absoluteString)
+                                }
+                                .controlSize(.small)
+                                .disabled(configuration?.publicMCPURL == nil)
+                            }
+                            RowDivider()
+                            SettingsRow(
+                                "Cloudflare Tunnel",
+                                detail: L10n.text("Generate a temporary public address without configuring a domain.")
+                            ) {
+                                Button(
+                                    tunnelMode == .quick
+                                        ? L10n.text("Regenerate temporary address")
+                                        : L10n.text("Generate temporary address")
+                                ) {
+                                    Task {
+                                        await model.applyTunnel(mode: .quick, serverURL: "", tunnelToken: "")
+                                    }
+                                }
+                                .controlSize(.small)
+                                .disabled(model.isBusy)
+                            }
+                            RowDivider()
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(L10n.text("Fixed domain"))
+                                    .font(.system(size: 13, weight: .medium))
+                                Text(L10n.text("Use your own HTTPS domain with a Cloudflare Tunnel token."))
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                                TextField("https://mcp.example.com", text: $serverURL)
+                                    .textFieldStyle(.roundedBorder)
+                                SecureField(L10n.text("Cloudflare Tunnel Token"), text: $tunnelToken)
+                                    .textFieldStyle(.roundedBorder)
+                                Button(L10n.text("Apply fixed domain")) {
+                                    Task {
+                                        await model.applyTunnel(mode: .named, serverURL: serverURL, tunnelToken: tunnelToken)
+                                        tunnelToken = ""
+                                    }
+                                }
+                                .disabled(
+                                    model.isBusy
+                                        || serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                )
+                            }
+                            .padding(.horizontal, 13)
+                            .padding(.top, 10)
+                        }
+                    } label: {
+                        Text(L10n.text("Local MCP, access credentials, and direct public access."))
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(13)
+                }
+
+                if let message = model.message {
+                    Text(message)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
             }
-            .padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 32)
+            .padding(.horizontal, 28)
+            .padding(.top, 24)
+            .padding(.bottom, 32)
             .frame(maxWidth: 760, alignment: .leading)
         }
         .task(id: model.statusUpdatedAt) {
             tunnelMode = (try? model.service.configuredTunnelMode()) ?? .local
-            serverURL = configuration?.publicURL ?? ""
+            if tunnelMode == .named {
+                serverURL = configuration?.publicURL ?? ""
+            }
             nexusEndpoint = nexusDevice.paired ? nexusDevice.endpoint : "https://mcp.nexusdock.co"
         }
     }
 
-    private var nexusActive: Bool { if case .connected = model.status.nexusConnection { return true }; return false }
+    private var nexusActive: Bool {
+        if case .connected = model.status.nexusConnection { return true }
+        return false
+    }
+
     private var nexusText: String {
         switch model.status.nexusConnection {
         case .connected: return L10n.text("Connected")
@@ -455,6 +576,13 @@ private struct ConnectionsView: View {
         case .unconfigured: return L10n.text("Not configured")
         }
     }
+
+    private func displayedSecret(_ value: String?, visible: Bool) -> String {
+        let value = value ?? ""
+        guard !value.isEmpty else { return "—" }
+        return visible ? value : "••••••••••••"
+    }
+
     private func copy(_ value: String?) {
         guard let value, !value.isEmpty else { return }
         NSPasteboard.general.clearContents()
@@ -677,8 +805,6 @@ private struct SettingsView: View {
     @State private var languagePreference: UILanguagePreference = .system
     @State private var coreAutostart = false
     @State private var menuAutostart = false
-    @State private var showAuthToken = false
-    @State private var showOAuthPassword = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -719,8 +845,6 @@ private struct SettingsView: View {
                 PageHeader(title: L10n.text("Runtime"), detail: L10n.text("Local AgentDock runtime status and service controls."))
                 SettingsSection("AgentDock Runtime") {
                     SettingsRow(L10n.text("Status")) { StatusPill(text: model.status.healthy ? L10n.text("Running") : L10n.text("Stopped"), active: model.status.healthy) }
-                    RowDivider()
-                    SettingsRow(L10n.text("Local address")) { Text(model.status.configuration?.localMCPURL?.absoluteString ?? "—").font(.system(size: 12)).foregroundStyle(.secondary) }
                     RowDivider()
                     SettingsRow(L10n.text("Service")) {
                         Button(model.status.loaded ? L10n.text("Stop") : L10n.text("Start")) { model.toggleRuntime() }.controlSize(.small)
@@ -800,19 +924,6 @@ private struct SettingsView: View {
                             .labelsHidden()
                             .toggleStyle(.switch)
                             .onChange(of: menuAutostart) { value in Task { await model.setMenuAutostart(value) } }
-                    }
-                }
-            }
-        case .credentials:
-            VStack(alignment: .leading, spacing: 20) {
-                PageHeader(title: L10n.text("Access Credentials"), detail: L10n.text("Credentials are stored in the protected AgentDock configuration."))
-                SettingsSection(L10n.text("Credentials")) {
-                    SettingsRow(L10n.text("Authentication token"), detail: showAuthToken ? (model.status.configuration?.authToken ?? "—") : "••••••••••••") {
-                        Button(showAuthToken ? L10n.text("Hide") : L10n.text("Show")) { showAuthToken.toggle() }.controlSize(.small)
-                    }
-                    RowDivider()
-                    SettingsRow(L10n.text("OAuth password"), detail: showOAuthPassword ? (model.status.configuration?.oauthPassword ?? "—") : "••••••••••••") {
-                        Button(showOAuthPassword ? L10n.text("Hide") : L10n.text("Show")) { showOAuthPassword.toggle() }.controlSize(.small)
                     }
                 }
             }

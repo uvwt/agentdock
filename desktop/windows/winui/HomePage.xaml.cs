@@ -15,7 +15,7 @@ public sealed partial class HomePage : Page
     {
         InitializeComponent();
         PageTitle.Text = UiText.Get("Home");
-        RuntimeSection.Title = UiText.Get("RuntimeStatus");
+        AgentDockSection.Title = "AgentDock";
         QuickAccessSection.Title = UiText.Get("QuickAccess");
         ConnectionsShortcutLabel.Text = UiText.Get("ConnectAIClients");
         CapabilitiesShortcutLabel.Text = UiText.Get("ManageCapabilities");
@@ -31,26 +31,48 @@ public sealed partial class HomePage : Page
     private async Task RefreshAsync()
     {
         if (_runtime is null) return;
+
         _snapshot = await _runtime.GetSnapshotAsync(includeNexusConnection: true);
-        var running = _snapshot.CoreRunning;
-        RuntimeHeadline.Text = running ? UiText.Get("AgentDockRunning") : UiText.Get("AgentDockStopped");
-        RuntimeDescription.Text = running ? UiText.Get("LocalServiceReady") : UiText.Get("StartAgentDockForClients");
-        RuntimeState.Text = running ? UiText.Get("Running") + " ●" : UiText.Get("Stopped");
-        McpState.Text = _snapshot.Healthy ? UiText.Get("Ready") + " ●" : UiText.Get("Unavailable");
+        var serviceLoaded = _snapshot.CoreRunning;
+        var serviceHealthy = serviceLoaded && _snapshot.Healthy;
+
+        if (!serviceLoaded)
+        {
+            RuntimeHeadline.Text = UiText.Get("AgentDockStopped");
+            RuntimeDescription.Text = UiText.Get("StartAgentDockForClients");
+            AgentDockState.Text = UiText.Get("Stopped");
+        }
+        else if (serviceHealthy)
+        {
+            RuntimeHeadline.Text = UiText.Get("AgentDockRunning");
+            RuntimeDescription.Text = UiText.Get("LocalServiceReady");
+            AgentDockState.Text = UiText.Get("Running") + " ●";
+        }
+        else
+        {
+            RuntimeHeadline.Text = UiText.Get("AgentDockNeedsAttention");
+            RuntimeDescription.Text = UiText.Get("AgentDockNeedsAttentionDetail");
+            AgentDockState.Text = UiText.Get("NeedsAttention");
+        }
+
         NexusState.Text = _snapshot.NexusConnected ? UiText.Get("Connected") + " ●" : UiText.Get("NotConnected");
-        RuntimeAction.Content = running ? UiText.Get("Stop") : UiText.Get("Start");
+        RuntimeAction.Content = serviceLoaded ? UiText.Get("Stop") : UiText.Get("Start");
     }
 
     private async void RuntimeAction_Click(object sender, RoutedEventArgs e)
     {
         if (_runtime is null || _snapshot is null) return;
+
         RuntimeAction.IsEnabled = false;
         try
         {
             await _runtime.RunCoreActionAsync(_snapshot.CoreRunning ? "stop" : "start");
             await RefreshAsync();
         }
-        finally { RuntimeAction.IsEnabled = true; }
+        finally
+        {
+            RuntimeAction.IsEnabled = true;
+        }
     }
 
     private void ConnectionsShortcut_Click(object sender, RoutedEventArgs e) =>
