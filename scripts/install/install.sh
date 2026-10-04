@@ -381,9 +381,9 @@ CHOICE
 choose_nexus_mode() {
   cat >>"$TTY_OUT" <<'CHOICE'
 
-Nexus 连接：
+远程连接：
 1) NexusDock 官方服务（推荐）
-2) 自托管 Nexus
+2) 自托管 NexusDock
 3) 暂不连接
 CHOICE
   choice="$(prompt_choice '选择' 1)"
@@ -471,7 +471,7 @@ configure_nexus() {
       ;;
     self-hosted)
       if [ -z "$NEXUS_ENDPOINT" ]; then
-        is_true "$NONINTERACTIVE" && die "自托管 Nexus 必须提供 --nexus-endpoint"
+        is_true "$NONINTERACTIVE" && die "自托管 NexusDock 必须提供 --nexus-endpoint"
         NEXUS_ENDPOINT="$(prompt_value 'Nexus Endpoint')"
       fi
       ;;
