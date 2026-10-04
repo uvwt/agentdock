@@ -145,6 +145,33 @@ func TestWindowsNativeLanguageAndShortcutsAreInteractive(t *testing.T) {
 	}
 }
 
+func TestWindowsRuntimeSettingsAvoidDuplicateServiceStatus(t *testing.T) {
+	settings := readWindowsNativeFile(t, "winui", "SettingsPage.xaml.cs")
+
+	for _, want := range []string{
+		`UiText.Get("Port")`,
+		`UiText.Get("LogLevel")`,
+		`UiText.Get("ApplyChanges")`,
+		`UiText.Get("RuntimeRestartHint")`,
+		`await _runtime.SaveSettingsAsync(_snapshot.Settings)`,
+		`await _runtime.RunCoreActionAsync("restart")`,
+	} {
+		if !strings.Contains(settings, want) {
+			t.Fatalf("WinUI Runtime settings missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		`rows.Children.Add(Row(UiText.Get("Status")`,
+		`ActionRow(UiText.Get("Service")`,
+		"RuntimeAction_Click",
+		`UiText.Get("SaveAndRestart")`,
+	} {
+		if strings.Contains(settings, forbidden) {
+			t.Fatalf("WinUI Runtime settings still exposes duplicate service control %q", forbidden)
+		}
+	}
+}
+
 func TestWindowsThemePreferencePersistsAndAppliesLive(t *testing.T) {
 	app := readWindowsNativeFile(t, "winui", "App.xaml.cs")
 	window := readWindowsNativeFile(t, "winui", "MainWindow.xaml.cs")

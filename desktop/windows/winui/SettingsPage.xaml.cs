@@ -119,14 +119,6 @@ public sealed partial class SettingsPage : Page
     private UIElement BuildRuntime()
     {
         var rows = new StackPanel();
-        rows.Children.Add(Row(UiText.Get("Status"), _snapshot?.CoreRunning == true ? UiText.Get("Running") + " ●" : UiText.Get("Stopped")));
-        rows.Children.Add(Divider());
-
-        var action = new Button { Content = _snapshot?.CoreRunning == true ? UiText.Get("Stop") : UiText.Get("Start") };
-        action.Click += RuntimeAction_Click;
-        rows.Children.Add(ActionRow(UiText.Get("Service"), action));
-        rows.Children.Add(Divider());
-
         var port = new NumberBox { Value = _snapshot?.Settings.Port ?? 8765, Minimum = 1, Maximum = 65535, Width = 130, Tag = "port" };
         rows.Children.Add(ActionRow(UiText.Get("Port"), port));
         rows.Children.Add(Divider());
@@ -137,9 +129,13 @@ public sealed partial class SettingsPage : Page
         rows.Children.Add(ActionRow(UiText.Get("LogLevel"), log));
         rows.Children.Add(Divider());
 
-        var save = new Button { Content = UiText.Get("SaveAndRestart") };
+        var save = new Button { Content = UiText.Get("ApplyChanges") };
         save.Click += SaveRuntimeSettings_Click;
-        rows.Children.Add(ActionRow(UiText.Get("RuntimeConfiguration"), save));
+        rows.Children.Add(DetailActionRow(
+            UiText.Get("Configuration"),
+            UiText.Get("RuntimeRestartHint"),
+            save
+        ));
         return rows;
     }
 
@@ -485,19 +481,6 @@ public sealed partial class SettingsPage : Page
         }
     }
 
-    private async void RuntimeAction_Click(object sender, RoutedEventArgs e)
-    {
-        if (_runtime is null || sender is not Button button) return;
-        button.IsEnabled = false;
-        try
-        {
-            await _runtime.RunCoreActionAsync(_snapshot?.CoreRunning == true ? "stop" : "start");
-            await RefreshAsync();
-            Render("runtime");
-        }
-        finally { button.IsEnabled = true; }
-    }
-
     private async void SaveRuntimeSettings_Click(object sender, RoutedEventArgs e)
     {
         if (_runtime is null || _snapshot is null) return;
@@ -641,7 +624,7 @@ public sealed partial class SettingsPage : Page
         "appearance" => UiText.Get("AppearanceDetail"),
         "about" => UiText.Get("AboutDetail"),
 
-        _ => UiText.Get("RuntimeDetail")
+        _ => UiText.Get("RuntimeSettingsDetail")
     };
 
     private static string SectionTitle(string tag) => tag switch
@@ -649,7 +632,7 @@ public sealed partial class SettingsPage : Page
         "permissions" => UiText.Get("RuntimePermissions"),
         "startup" => UiText.Get("Startup"),
         "appearance" => UiText.Get("Appearance"),
-        _ => "AgentDock Runtime"
+        _ => UiText.Get("RuntimeSettings")
     };
 
     private static Grid DetailActionRow(string title, string detail, UIElement trailing)

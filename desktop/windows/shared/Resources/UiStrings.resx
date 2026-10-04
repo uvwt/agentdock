@@ -859,4 +859,9 @@ Update now?</value>
   <data name="Connect" xml:space="preserve"><value>Connect</value></data>
   <data name="ServiceAddressRequired" xml:space="preserve"><value>Enter a self-hosted service address.</value></data>
 
+  <data name="RuntimeSettings" xml:space="preserve"><value>Runtime settings</value></data>
+  <data name="RuntimeSettingsDetail" xml:space="preserve"><value>Adjust local AgentDock runtime settings.</value></data>
+  <data name="Configuration" xml:space="preserve"><value>Configuration</value></data>
+  <data name="ApplyChanges" xml:space="preserve"><value>Apply changes</value></data>
+  <data name="RuntimeRestartHint" xml:space="preserve"><value>Changing runtime settings will automatically restart AgentDock.</value></data>
 </root>

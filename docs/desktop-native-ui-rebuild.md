@@ -728,7 +728,7 @@ TianYi parity 验证：
 - TianYi UI Automation 实测主题依次切换到 Dark / Light 后偏好分别持久化为 `dark` / `light`，恢复 Follow system 后 `ui-theme` 偏好文件被移除。
 - TianYi UI Automation 实测中文切到 English 后仍停留在 Appearance，再切回简体中文后仍停留在外观；最终语言偏好恢复为 `zh-CN`，主题恢复 Follow system。
 
-### 15.6 2026-10-04 远程连接语义与高级设置分层
+### 15.7 2026-10-04 远程连接语义与高级设置分层
 
 在 15.5 的基础上继续减少普通用户需要理解的产品概念：
 
@@ -740,6 +740,23 @@ TianYi parity 验证：
 - Windows 最终验证源码快照 SHA-256：`cfcf558cc707cccbfd812ddb7211129426b1a04ce835672ea51206a8e8ddf917`；TianYi 使用指定 VS 2022 Build Tools MSBuild 完成 x64 与 win-arm64 Release Rebuild。
 - TianYi UI Automation 实测：连接页默认显示“官方服务 · nexusdock.co”；点击“更改”后可切到自托管并出现服务地址，输入测试地址后摘要即时更新；恢复官方服务后未执行配对，不修改现有设备身份。点击“高级连接设置”后，一级导航切到“设置”、二级导航选中“高级连接”，并真实出现 Local MCP、本地地址、认证令牌、OAuth 密码、公网访问、Cloudflare Tunnel 和固定域名。
 - macOS 完整 App / ZIP / DMG / 签名 / 解包 / 挂载验证通过；最终源码的 i18n 检查为 370 个引用 key、每个 locale 453 个条目。
+
+### 15.8 2026-10-04 Runtime 页面职责收敛
+
+首页已经负责 AgentDock 的运行健康与启动 / 停止入口，因此 Settings → Runtime 不再重复展示状态和服务控制：
+
+- Runtime 页面只保留服务端口、日志级别和“应用更改”。
+- “保存并重启 Runtime”改为“应用更改”，并明确提示“更改运行参数后将自动重启 AgentDock”。
+- 底层行为没有改变：保存端口 / 日志级别后仍会执行 Runtime restart，使新参数立即生效。
+- Windows 删除 Runtime 页面专用的 Start / Stop 事件处理；首页仍保留 AgentDock 启停入口。
+- macOS / Windows 都继续把应用级“检查更新”留在 About，把主题和语言留在 Appearance。
+
+验证：
+
+- macOS i18n、Windows UiText 资源覆盖和 `go test ./scripts/test -count=1` 通过。
+- macOS `scripts/test/test-macos-app.sh` 完整通过 App / ZIP / DMG / 签名 / 解包 / 挂载验证。
+- Windows 最终验证快照 SHA-256：`d606e5ba87d6308327d18e45a12a8da455121a03b4ad82ffc6d024363df72a7a`；TianYi x64 Release 与 win-arm64 交叉 Rebuild 均成功。
+- TianYi UI Automation 实测 Runtime 页面不存在“状态 / 服务 / 启动 / 停止”，存在“端口 / 日志级别 / 配置 / 应用更改”，并显示“更改运行参数后将自动重启 AgentDock。”。
 
 视觉审查：
 

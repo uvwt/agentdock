@@ -56,7 +56,9 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 		"Browser connection",
 		"Add custom Coding Agent",
 		"Default Coding Agent",
-		"Save and restart Runtime",
+		"Adjust local AgentDock runtime settings.",
+		"Changing runtime settings will automatically restart AgentDock.",
+		"Apply changes",
 		"Interface language",
 		"setCoreAutostart",
 		"setMenuAutostart",
@@ -91,6 +93,26 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 	} {
 		if strings.Contains(content, forbidden) {
 			t.Fatalf("native macOS control panel still exposes retired connection UI %q", forbidden)
+		}
+	}
+
+	runtimeStart := strings.Index(content, "case .runtime:")
+	if runtimeStart < 0 {
+		t.Fatal("native macOS Runtime settings block not found")
+	}
+	permissionsStart := strings.Index(content[runtimeStart:], "case .permissions:")
+	if permissionsStart < 0 {
+		t.Fatal("native macOS Permissions settings block not found")
+	}
+	runtimeBlock := content[runtimeStart : runtimeStart+permissionsStart]
+	for _, forbidden := range []string{
+		`SettingsRow(L10n.text("Status"))`,
+		`SettingsRow(L10n.text("Service"))`,
+		`Button(model.status.loaded ? L10n.text("Stop") : L10n.text("Start"))`,
+		"Save and restart Runtime",
+	} {
+		if strings.Contains(runtimeBlock, forbidden) {
+			t.Fatalf("native macOS Runtime settings still exposes duplicate service control %q", forbidden)
 		}
 	}
 

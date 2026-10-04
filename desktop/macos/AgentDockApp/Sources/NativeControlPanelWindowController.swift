@@ -826,14 +826,8 @@ private struct SettingsView: View {
         switch model.settingsPage {
         case .runtime:
             VStack(alignment: .leading, spacing: 20) {
-                PageHeader(title: L10n.text("Runtime"), detail: L10n.text("Local AgentDock runtime status and service controls."))
-                SettingsSection("AgentDock Runtime") {
-                    SettingsRow(L10n.text("Status")) { StatusPill(text: model.status.healthy ? L10n.text("Running") : L10n.text("Stopped"), active: model.status.healthy) }
-                    RowDivider()
-                    SettingsRow(L10n.text("Service")) {
-                        Button(model.status.loaded ? L10n.text("Stop") : L10n.text("Start")) { model.toggleRuntime() }.controlSize(.small)
-                    }
-                    RowDivider()
+                PageHeader(title: L10n.text("Runtime"), detail: L10n.text("Adjust local AgentDock runtime settings."))
+                SettingsSection(L10n.text("Runtime settings")) {
                     SettingsRow(L10n.text("Service port")) {
                         TextField("", value: $port, format: .number).textFieldStyle(.roundedBorder).frame(width: 100)
                     }
@@ -844,8 +838,11 @@ private struct SettingsView: View {
                         }.labelsHidden().frame(width: 110)
                     }
                     RowDivider()
-                    SettingsRow(L10n.text("Runtime configuration")) {
-                        Button(L10n.text("Save and restart Runtime")) {
+                    SettingsRow(
+                        L10n.text("Configuration"),
+                        detail: L10n.text("Changing runtime settings will automatically restart AgentDock.")
+                    ) {
+                        Button(L10n.text("Apply changes")) {
                             guard let configuration = model.status.configuration else { return }
                             let settings = EditableServiceSettings(
                                 port: port,

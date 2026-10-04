@@ -393,6 +393,10 @@
 "Manage capabilities" = "管理能力";
 "View activity" = "查看活动";
 "Local AgentDock runtime status and service controls." = "本机 AgentDock Runtime 状态与服务控制。";
+"Adjust local AgentDock runtime settings." = "调整 AgentDock 的本地运行参数。";
+"Runtime settings" = "运行参数";
+"Configuration" = "配置";
+"Changing runtime settings will automatically restart AgentDock." = "更改运行参数后将自动重启 AgentDock。";
 "Status" = "状态";
 "Local address" = "本地地址";
 "Review macOS permissions required by enabled capabilities." = "检查已启用能力所需的 macOS 系统权限。";
