@@ -39,6 +39,12 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 		`case .runtime: return L10n.text("Runtime")`,
 		`case .permissions: return L10n.text("Permissions")`,
 		"setLanguagePreference(_ preference:",
+		"case runtime, permissions, startup, about",
+		"case .about: return L10n.text(\"About\")",
+		"case .about:",
+		"Text(AppVersion.current)",
+		"https://uvwt.github.io/agentdock-docs/",
+		"https://github.com/uvwt/agentdock",
 		".toggleStyle(.switch)",
 	} {
 		if !strings.Contains(content, want) {

@@ -366,6 +366,12 @@
 "Capabilities" = "Capabilities";
 "Activity" = "Activity";
 "Settings" = "Settings";
+"About" = "About";
+"About AgentDock and useful project links." = "About AgentDock and useful project links.";
+"AgentDock lets AI clients securely use capabilities on this device." = "AgentDock lets AI clients securely use capabilities on this device.";
+"Application" = "Application";
+"Resources" = "Resources";
+"Documentation" = "Documentation";
 "Connect AI clients to this device." = "Connect AI clients to this device.";
 "Configure the capabilities AgentDock provides to AI." = "Configure the capabilities AgentDock provides to AI.";
 "Running" = "Running";

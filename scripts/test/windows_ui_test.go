@@ -142,6 +142,29 @@ func TestWindowsNativeLanguageAndShortcutsAreInteractive(t *testing.T) {
 	}
 }
 
+func TestWindowsAboutLivesInSettingsSidebarAndUsesExistingVersionSource(t *testing.T) {
+	mainWindowXaml := readWindowsNativeFile(t, "winui", "MainWindow.xaml")
+	settingsXaml := readWindowsNativeFile(t, "winui", "SettingsPage.xaml")
+	settingsCode := readWindowsNativeFile(t, "winui", "SettingsPage.xaml.cs")
+
+	for _, want := range []string{
+		`x:Name="AboutNavigationItem" Tag="about"`,
+		`AboutNavigationItem.Content = UiText.Get("About")`,
+		`if (tag == "about")`,
+		`SettingsContent.Children.Add(BuildAbout())`,
+		`_snapshot.Version`,
+		`https://uvwt.github.io/agentdock-docs/`,
+		`https://github.com/uvwt/agentdock`,
+	} {
+		if !strings.Contains(settingsXaml+settingsCode, want) {
+			t.Fatalf("WinUI Settings About page missing %q", want)
+		}
+	}
+	if strings.Contains(mainWindowXaml, `x:Name="AboutNavigationItem" Tag="about"`) {
+		t.Fatal("WinUI top-level navigation must not expose About")
+	}
+}
+
 func TestWindowsConnectionsPreferNexusDockAndHideTechnicalModes(t *testing.T) {
 	connectionsXaml := readWindowsNativeFile(t, "winui", "ConnectionsPage.xaml")
 	connectionsCode := readWindowsNativeFile(t, "winui", "ConnectionsPage.xaml.cs")

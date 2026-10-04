@@ -833,4 +833,10 @@
   <data name="NeedsAttention" xml:space="preserve"><value>运行异常</value></data>
   <data name="AgentDockNeedsAttention" xml:space="preserve"><value>AgentDock 运行异常</value></data>
   <data name="AgentDockNeedsAttentionDetail" xml:space="preserve"><value>AgentDock 已启动，但连接服务尚未就绪。</value></data>
+  <data name="About" xml:space="preserve"><value>关于</value></data>
+  <data name="AboutDetail" xml:space="preserve"><value>关于 AgentDock 与项目资源。</value></data>
+  <data name="AboutDescription" xml:space="preserve"><value>AgentDock 让 AI 客户端安全使用这台设备上的能力。</value></data>
+  <data name="Application" xml:space="preserve"><value>应用</value></data>
+  <data name="Resources" xml:space="preserve"><value>资源</value></data>
+  <data name="Documentation" xml:space="preserve"><value>文档</value></data>
 </root>

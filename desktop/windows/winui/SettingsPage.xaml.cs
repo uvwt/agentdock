@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
@@ -18,6 +19,7 @@ public sealed partial class SettingsPage : Page
         RuntimeNavigationItem.Content = UiText.Get("Runtime");
         PermissionsNavigationItem.Content = UiText.Get("Permissions");
         StartupNavigationItem.Content = UiText.Get("Startup");
+        AboutNavigationItem.Content = UiText.Get("About");
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -50,6 +52,12 @@ public sealed partial class SettingsPage : Page
         header.Children.Add(new TextBlock { Text = PageTitle(tag), FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         header.Children.Add(new TextBlock { Text = PageDetail(tag), FontSize = 12.5, Opacity = 0.62 });
         SettingsContent.Children.Add(header);
+
+        if (tag == "about")
+        {
+            SettingsContent.Children.Add(BuildAbout());
+            return;
+        }
 
         var section = new SectionCard { Title = SectionTitle(tag) };
         section.SectionContent = tag switch
@@ -129,6 +137,56 @@ public sealed partial class SettingsPage : Page
         tray.Toggled += StartupToggle_Toggled;
         rows.Children.Add(ActionRow(UiText.Get("TrayApp"), tray));
         return rows;
+    }
+
+    private UIElement BuildAbout()
+    {
+        var content = new StackPanel { Spacing = 20 };
+
+        var product = new StackPanel { Spacing = 8 };
+        product.Children.Add(new FontIcon
+        {
+            Glyph = "\uE946",
+            FontSize = 30,
+            HorizontalAlignment = HorizontalAlignment.Left
+        });
+        product.Children.Add(new TextBlock
+        {
+            Text = "AgentDock",
+            FontSize = 22,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+        });
+        product.Children.Add(new TextBlock
+        {
+            Text = UiText.Get("AboutDescription"),
+            FontSize = 13,
+            Opacity = 0.62,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 620,
+            HorizontalAlignment = HorizontalAlignment.Left
+        });
+        content.Children.Add(product);
+
+        var application = new SectionCard { Title = UiText.Get("Application") };
+        application.SectionContent = Row(
+            UiText.Get("Version"),
+            string.IsNullOrWhiteSpace(_snapshot?.Version) ? "—" : _snapshot.Version
+        );
+        content.Children.Add(application);
+
+        var resources = new SectionCard { Title = UiText.Get("Resources") };
+        var resourceRows = new StackPanel();
+        var documentation = new Button { Content = UiText.Get("Open") };
+        documentation.Click += (_, _) => OpenExternalUrl("https://uvwt.github.io/agentdock-docs/");
+        resourceRows.Children.Add(ActionRow(UiText.Get("Documentation"), documentation));
+        resourceRows.Children.Add(Divider());
+        var repository = new Button { Content = UiText.Get("Open") };
+        repository.Click += (_, _) => OpenExternalUrl("https://github.com/uvwt/agentdock");
+        resourceRows.Children.Add(ActionRow("GitHub", repository));
+        resources.SectionContent = resourceRows;
+        content.Children.Add(resources);
+
+        return content;
     }
 
     private void LanguagePreference_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -281,6 +339,7 @@ public sealed partial class SettingsPage : Page
     {
         "permissions" => UiText.Get("Permissions"),
         "startup" => UiText.Get("Startup"),
+        "about" => UiText.Get("About"),
         _ => UiText.Get("Runtime")
     };
 
@@ -288,6 +347,7 @@ public sealed partial class SettingsPage : Page
     {
         "permissions" => UiText.Get("PermissionsDetail"),
         "startup" => UiText.Get("StartupDetail"),
+        "about" => UiText.Get("AboutDetail"),
         _ => UiText.Get("RuntimeDetail")
     };
 
@@ -324,4 +384,7 @@ public sealed partial class SettingsPage : Page
         Height = 1, Margin = new Thickness(13, 0, 0, 0),
         Fill = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Gray), Opacity = 0.18
     };
+
+    private static void OpenExternalUrl(string url) =>
+        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
 }

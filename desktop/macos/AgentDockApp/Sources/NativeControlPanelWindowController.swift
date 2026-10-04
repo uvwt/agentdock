@@ -90,13 +90,14 @@ private final class ControlPanelModel: ObservableObject {
     }
 
     enum SettingsPage: String, CaseIterable, Identifiable {
-        case runtime, permissions, startup
+        case runtime, permissions, startup, about
         var id: String { rawValue }
         var title: String {
             switch self {
             case .runtime: return L10n.text("Runtime")
             case .permissions: return L10n.text("Permissions")
             case .startup: return L10n.text("Startup")
+            case .about: return L10n.text("About")
             }
         }
     }
@@ -924,6 +925,52 @@ private struct SettingsView: View {
                             .labelsHidden()
                             .toggleStyle(.switch)
                             .onChange(of: menuAutostart) { value in Task { await model.setMenuAutostart(value) } }
+                    }
+                }
+            }
+        case .about:
+            VStack(alignment: .leading, spacing: 20) {
+                PageHeader(
+                    title: L10n.text("About"),
+                    detail: L10n.text("About AgentDock and useful project links.")
+                )
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Image(systemName: "shippingbox.fill")
+                        .font(.system(size: 30))
+                        .foregroundStyle(.tint)
+                    Text("AgentDock")
+                        .font(.system(size: 22, weight: .semibold))
+                    Text(L10n.text("AgentDock lets AI clients securely use capabilities on this device."))
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 4)
+
+                SettingsSection(L10n.text("Application")) {
+                    SettingsRow(L10n.text("Version")) {
+                        Text(AppVersion.current)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                SettingsSection(L10n.text("Resources")) {
+                    SettingsRow(L10n.text("Documentation")) {
+                        Link(
+                            L10n.text("Open"),
+                            destination: URL(string: "https://uvwt.github.io/agentdock-docs/")!
+                        )
+                        .controlSize(.small)
+                    }
+                    RowDivider()
+                    SettingsRow("GitHub") {
+                        Link(
+                            L10n.text("Open"),
+                            destination: URL(string: "https://github.com/uvwt/agentdock")!
+                        )
+                        .controlSize(.small)
                     }
                 }
             }

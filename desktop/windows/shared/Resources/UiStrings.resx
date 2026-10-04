@@ -833,4 +833,10 @@ Update now?</value>
   <data name="NeedsAttention" xml:space="preserve"><value>Needs attention</value></data>
   <data name="AgentDockNeedsAttention" xml:space="preserve"><value>AgentDock needs attention</value></data>
   <data name="AgentDockNeedsAttentionDetail" xml:space="preserve"><value>AgentDock is running, but the connection service is not ready.</value></data>
+  <data name="About" xml:space="preserve"><value>About</value></data>
+  <data name="AboutDetail" xml:space="preserve"><value>About AgentDock and useful project links.</value></data>
+  <data name="AboutDescription" xml:space="preserve"><value>AgentDock lets AI clients securely use capabilities on this device.</value></data>
+  <data name="Application" xml:space="preserve"><value>Application</value></data>
+  <data name="Resources" xml:space="preserve"><value>Resources</value></data>
+  <data name="Documentation" xml:space="preserve"><value>Documentation</value></data>
 </root>
