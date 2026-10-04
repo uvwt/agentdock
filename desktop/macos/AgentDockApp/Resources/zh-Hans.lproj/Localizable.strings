@@ -365,9 +365,9 @@
 "Connections" = "连接";
 "Capabilities" = "能力";
 "Connection" = "连接";
-"Coding Agent" = "连接本机AI客户端";
+"Coding Agent" = "与本机AI通信";
 "MCP Apps" = "聊天卡片";
-"This device is ready for AI." = "此设备已准备好供 AI 使用。";
+"This device is ready for AI." = "让 AI 的双手，真正触达你的每一台设备。";
 "All available" = "全部可用";
 "%d / 3 available" = "%d / 3 可用";
 "Not enabled yet" = "尚未启用";
@@ -438,7 +438,7 @@
 "AgentDock permissions" = "AgentDock 权限";
 "Screen, accessibility and file access are managed by macOS." = "屏幕、辅助功能和文件访问权限由 macOS 管理。";
 "Background service and menu bar startup behavior." = "管理后台服务和菜单栏应用的启动行为。";
-"Core background service" = "Core 后台服务";
+"Core background service" = "核心服务";
 "Enabled" = "已启用";
 "Menu bar app" = "菜单栏应用";
 "Managed by macOS" = "由 macOS 管理";
@@ -500,7 +500,7 @@
 "Save and restart" = "保存并重启";
 "Specified CDP" = "指定 CDP";
 "Temporary public address" = "临时公网地址";
-"Add custom Coding Agent" = "连接自定义ACP";
+"Add custom Coding Agent" = "添加自定义ACP";
 "Use NexusDock for the simplest connection experience. Advanced options are available when needed." = "推荐通过 NexusDock 连接；需要时再使用高级连接选项。";
 "Recommended connection" = "推荐连接";
 "Connect this device to NexusDock." = "将这台设备连接到 NexusDock。";
@@ -539,6 +539,6 @@
 "Remote" = "远程";
 "Local" = "本机";
 "Just now" = "刚刚";
-"%@ · default" = "%@ · 默认";
+"%@ · default" = "默认 · %@";
 "%d min ago" = "%d 分钟前";
 "%d hr ago" = "%d 小时前";
