@@ -367,6 +367,11 @@
 "Activity" = "Activity";
 "Settings" = "Settings";
 "About" = "About";
+"Appearance" = "Appearance";
+"Customize the theme and interface language." = "Customize the theme and interface language.";
+"Theme" = "Theme";
+"Light" = "Light";
+"Dark" = "Dark";
 "About AgentDock and useful project links." = "About AgentDock and useful project links.";
 "AgentDock lets AI clients securely use capabilities on this device." = "AgentDock lets AI clients securely use capabilities on this device.";
 "Application" = "Application";

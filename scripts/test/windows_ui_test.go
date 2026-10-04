@@ -56,7 +56,7 @@ func TestWindowsNativeControlPanelCarriesSettingsParity(t *testing.T) {
 	capabilities := readWindowsNativeFile(t, "winui", "CapabilitiesPage.xaml.cs")
 	for _, want := range []string{
 		"SetPrivilegeModeAsync", "SetStartupAsync",
-		"CheckForUpdatesAsync", "RunUpdateAsync", "LanguagePreference_SelectionChanged", "SaveSettingsAsync",
+		"CheckForUpdatesAsync", "RunUpdateAsync", "LanguagePreference_SelectionChanged", "ThemePreference_SelectionChanged", "SaveSettingsAsync",
 	} {
 		if !strings.Contains(settings, want) {
 			t.Fatalf("WinUI settings parity missing %q", want)
@@ -91,7 +91,7 @@ func TestWindowsNativeLanguageAndShortcutsAreInteractive(t *testing.T) {
 	for _, want := range []string{
 		"ApplyLanguagePreference",
 		"UiText.SetPreference(preference)",
-		"new MainWindow(_runtime, \"settings\")",
+		`new MainWindow(_runtime, "settings", "appearance")`,
 	} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("WinUI language reload missing %q", want)
@@ -101,6 +101,7 @@ func TestWindowsNativeLanguageAndShortcutsAreInteractive(t *testing.T) {
 		"RuntimeNavigationItem.Content = UiText.Get(\"Runtime\")",
 		"PermissionsNavigationItem.Content = UiText.Get(\"Permissions\")",
 		"StartupNavigationItem.Content = UiText.Get(\"Startup\")",
+		"AppearanceNavigationItem.Content = UiText.Get(\"Appearance\")",
 		"LanguagePreference_SelectionChanged",
 	} {
 		if !strings.Contains(settingsCode, want) {
@@ -142,6 +143,28 @@ func TestWindowsNativeLanguageAndShortcutsAreInteractive(t *testing.T) {
 	}
 }
 
+func TestWindowsThemePreferencePersistsAndAppliesLive(t *testing.T) {
+	app := readWindowsNativeFile(t, "winui", "App.xaml.cs")
+	window := readWindowsNativeFile(t, "winui", "MainWindow.xaml.cs")
+	settings := readWindowsNativeFile(t, "winui", "SettingsPage.xaml.cs")
+	theme := readWindowsNativeFile(t, "winui", "UiThemePreference.cs")
+
+	for _, want := range []string{
+		"ThemePreference_SelectionChanged",
+		"UiThemePreference.ReadPreference()",
+		"UiThemePreference.SetPreference(preference)",
+		"Navigation.RequestedTheme = UiThemePreference.ToElementTheme(preference)",
+		"LightPreference = \"light\"",
+		"DarkPreference = \"dark\"",
+		"ElementTheme.Light",
+		"ElementTheme.Dark",
+	} {
+		if !strings.Contains(app+window+settings+theme, want) {
+			t.Fatalf("WinUI theme preference missing %q", want)
+		}
+	}
+}
+
 func TestWindowsAboutLivesInSettingsSidebarAndUsesExistingVersionSource(t *testing.T) {
 	mainWindowXaml := readWindowsNativeFile(t, "winui", "MainWindow.xaml")
 	settingsXaml := readWindowsNativeFile(t, "winui", "SettingsPage.xaml")
@@ -153,6 +176,7 @@ func TestWindowsAboutLivesInSettingsSidebarAndUsesExistingVersionSource(t *testi
 		`if (tag == "about")`,
 		`SettingsContent.Children.Add(BuildAbout())`,
 		`_snapshot.Version`,
+		`update.Click += CheckUpdate_Click`,
 		`https://uvwt.github.io/agentdock-docs/`,
 		`https://github.com/uvwt/agentdock`,
 	} {

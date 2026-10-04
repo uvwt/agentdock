@@ -26,6 +26,7 @@ if CommandLine.arguments.contains("--unregister-background-services") {
 
 MainActor.assumeIsolated {
     let application = NSApplication.shared
+    AppAppearance.applyStoredPreference()
     ApplicationMenu.install()
     let delegate = AppDelegate()
     application.delegate = delegate

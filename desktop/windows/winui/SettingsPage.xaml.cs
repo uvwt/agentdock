@@ -19,6 +19,7 @@ public sealed partial class SettingsPage : Page
         RuntimeNavigationItem.Content = UiText.Get("Runtime");
         PermissionsNavigationItem.Content = UiText.Get("Permissions");
         StartupNavigationItem.Content = UiText.Get("Startup");
+        AppearanceNavigationItem.Content = UiText.Get("Appearance");
         AboutNavigationItem.Content = UiText.Get("About");
     }
 
@@ -28,6 +29,21 @@ public sealed partial class SettingsPage : Page
         await RefreshAsync();
         if (SettingsNavigation.SelectedIndex < 0) SettingsNavigation.SelectedIndex = 0;
         else Render(_activeTag);
+    }
+
+    internal void SelectPage(string tag)
+    {
+        var item = SettingsNavigation.Items
+            .OfType<ListViewItem>()
+            .FirstOrDefault(candidate => string.Equals(candidate.Tag?.ToString(), tag, StringComparison.Ordinal));
+        if (item is null) return;
+        _activeTag = tag;
+        if (!ReferenceEquals(SettingsNavigation.SelectedItem, item))
+        {
+            SettingsNavigation.SelectedItem = item;
+            return;
+        }
+        Render(tag);
     }
 
     private async Task RefreshAsync()
@@ -64,6 +80,7 @@ public sealed partial class SettingsPage : Page
         {
             "permissions" => BuildPermissions(),
             "startup" => BuildStartup(),
+            "appearance" => BuildAppearance(),
             _ => BuildRuntime()
         };
         SettingsContent.Children.Add(section);
@@ -90,23 +107,9 @@ public sealed partial class SettingsPage : Page
         rows.Children.Add(ActionRow(UiText.Get("LogLevel"), log));
         rows.Children.Add(Divider());
 
-        var language = new ComboBox { Width = 150, Tag = "language" };
-        language.Items.Add(new ComboBoxItem { Content = UiText.Get("FollowSystem"), Tag = UiText.SystemPreference });
-        language.Items.Add(new ComboBoxItem { Content = UiText.Get("SimplifiedChinese"), Tag = UiText.SimplifiedChinesePreference });
-        language.Items.Add(new ComboBoxItem { Content = UiText.Get("EnglishLanguage"), Tag = UiText.EnglishPreference });
-        SelectComboTag(language, UiText.ReadPreference());
-        language.SelectionChanged += LanguagePreference_SelectionChanged;
-        rows.Children.Add(ActionRow(UiText.Get("InterfaceLanguage"), language));
-        rows.Children.Add(Divider());
-
         var save = new Button { Content = UiText.Get("SaveAndRestart") };
         save.Click += SaveRuntimeSettings_Click;
         rows.Children.Add(ActionRow(UiText.Get("RuntimeConfiguration"), save));
-        rows.Children.Add(Divider());
-
-        var update = new Button { Content = UiText.Get("CheckForUpdates") };
-        update.Click += CheckUpdate_Click;
-        rows.Children.Add(ActionRow(UiText.Get("AgentDockUpdate"), update));
         return rows;
     }
 
@@ -139,6 +142,29 @@ public sealed partial class SettingsPage : Page
         return rows;
     }
 
+    private UIElement BuildAppearance()
+    {
+        var rows = new StackPanel();
+
+        var theme = new ComboBox { Width = 150, Tag = "theme" };
+        theme.Items.Add(new ComboBoxItem { Content = UiText.Get("FollowSystem"), Tag = UiThemePreference.SystemPreference });
+        theme.Items.Add(new ComboBoxItem { Content = UiText.Get("LightTheme"), Tag = UiThemePreference.LightPreference });
+        theme.Items.Add(new ComboBoxItem { Content = UiText.Get("DarkTheme"), Tag = UiThemePreference.DarkPreference });
+        SelectComboTag(theme, UiThemePreference.ReadPreference());
+        theme.SelectionChanged += ThemePreference_SelectionChanged;
+        rows.Children.Add(ActionRow(UiText.Get("Theme"), theme));
+        rows.Children.Add(Divider());
+
+        var language = new ComboBox { Width = 150, Tag = "language" };
+        language.Items.Add(new ComboBoxItem { Content = UiText.Get("FollowSystem"), Tag = UiText.SystemPreference });
+        language.Items.Add(new ComboBoxItem { Content = UiText.Get("SimplifiedChinese"), Tag = UiText.SimplifiedChinesePreference });
+        language.Items.Add(new ComboBoxItem { Content = UiText.Get("EnglishLanguage"), Tag = UiText.EnglishPreference });
+        SelectComboTag(language, UiText.ReadPreference());
+        language.SelectionChanged += LanguagePreference_SelectionChanged;
+        rows.Children.Add(ActionRow(UiText.Get("InterfaceLanguage"), language));
+        return rows;
+    }
+
     private UIElement BuildAbout()
     {
         var content = new StackPanel { Spacing = 20 };
@@ -168,10 +194,16 @@ public sealed partial class SettingsPage : Page
         content.Children.Add(product);
 
         var application = new SectionCard { Title = UiText.Get("Application") };
-        application.SectionContent = Row(
+        var applicationRows = new StackPanel();
+        applicationRows.Children.Add(Row(
             UiText.Get("Version"),
             string.IsNullOrWhiteSpace(_snapshot?.Version) ? "—" : _snapshot.Version
-        );
+        ));
+        applicationRows.Children.Add(Divider());
+        var update = new Button { Content = UiText.Get("CheckForUpdates") };
+        update.Click += CheckUpdate_Click;
+        applicationRows.Children.Add(ActionRow(UiText.Get("AgentDockUpdate"), update));
+        application.SectionContent = applicationRows;
         content.Children.Add(application);
 
         var resources = new SectionCard { Title = UiText.Get("Resources") };
@@ -187,6 +219,21 @@ public sealed partial class SettingsPage : Page
         content.Children.Add(resources);
 
         return content;
+    }
+
+    private void ThemePreference_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not ComboBox combo || combo.SelectedItem is not ComboBoxItem item) return;
+        var preference = item.Tag?.ToString() ?? UiThemePreference.SystemPreference;
+        if (string.Equals(preference, UiThemePreference.ReadPreference(), StringComparison.Ordinal)) return;
+        try
+        {
+            (Application.Current as NativeApp)?.ApplyThemePreference(preference);
+        }
+        catch (Exception ex)
+        {
+            _ = ShowMessageAsync(UiText.Get("Settings"), ex.Message);
+        }
     }
 
     private void LanguagePreference_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -339,6 +386,7 @@ public sealed partial class SettingsPage : Page
     {
         "permissions" => UiText.Get("Permissions"),
         "startup" => UiText.Get("Startup"),
+        "appearance" => UiText.Get("Appearance"),
         "about" => UiText.Get("About"),
         _ => UiText.Get("Runtime")
     };
@@ -347,6 +395,7 @@ public sealed partial class SettingsPage : Page
     {
         "permissions" => UiText.Get("PermissionsDetail"),
         "startup" => UiText.Get("StartupDetail"),
+        "appearance" => UiText.Get("AppearanceDetail"),
         "about" => UiText.Get("AboutDetail"),
         _ => UiText.Get("RuntimeDetail")
     };
@@ -355,6 +404,7 @@ public sealed partial class SettingsPage : Page
     {
         "permissions" => UiText.Get("RuntimePermissions"),
         "startup" => UiText.Get("Startup"),
+        "appearance" => UiText.Get("Appearance"),
         _ => "AgentDock Runtime"
     };
 

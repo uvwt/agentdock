@@ -90,13 +90,14 @@ private final class ControlPanelModel: ObservableObject {
     }
 
     enum SettingsPage: String, CaseIterable, Identifiable {
-        case runtime, permissions, startup, about
+        case runtime, permissions, startup, appearance, about
         var id: String { rawValue }
         var title: String {
             switch self {
             case .runtime: return L10n.text("Runtime")
             case .permissions: return L10n.text("Permissions")
             case .startup: return L10n.text("Startup")
+            case .appearance: return L10n.text("Appearance")
             case .about: return L10n.text("About")
             }
         }
@@ -167,6 +168,11 @@ private final class ControlPanelModel: ObservableObject {
         guard preference != L10n.languagePreference() else { return }
         L10n.setLanguagePreference(preference)
         languageRevision += 1
+    }
+
+    func setThemePreference(_ preference: UIThemePreference) {
+        guard preference != AppAppearance.preference() else { return }
+        AppAppearance.setPreference(preference)
     }
 
     private func perform(_ operation: @escaping () async throws -> Void) async {
@@ -804,6 +810,7 @@ private struct SettingsView: View {
     @State private var port = 8765
     @State private var logLevel = "info"
     @State private var languagePreference: UILanguagePreference = .system
+    @State private var themePreference: UIThemePreference = .system
     @State private var coreAutostart = false
     @State private var menuAutostart = false
 
@@ -834,6 +841,7 @@ private struct SettingsView: View {
                 logLevel = configuration.logLevel
             }
             languagePreference = L10n.languagePreference()
+            themePreference = AppAppearance.preference()
             coreAutostart = model.status.autostartEnabled
             menuAutostart = model.menuLoginAgent.isEnabled
         }
@@ -861,19 +869,6 @@ private struct SettingsView: View {
                         }.labelsHidden().frame(width: 110)
                     }
                     RowDivider()
-                    SettingsRow(L10n.text("Interface language")) {
-                        Picker("", selection: $languagePreference) {
-                            ForEach(UILanguagePreference.allCases, id: \.rawValue) { preference in
-                                Text(preference.title).tag(preference)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 150)
-                        .onChange(of: languagePreference) { preference in
-                            model.setLanguagePreference(preference)
-                        }
-                    }
-                    RowDivider()
                     SettingsRow(L10n.text("Runtime configuration")) {
                         Button(L10n.text("Save and restart Runtime")) {
                             guard let configuration = model.status.configuration else { return }
@@ -890,10 +885,6 @@ private struct SettingsView: View {
                             )
                             Task { await model.applySettings(settings) }
                         }.controlSize(.small)
-                    }
-                    RowDivider()
-                    SettingsRow(L10n.text("AgentDock update")) {
-                        Button(L10n.text("Check for updates")) { model.requestUpdate() }.controlSize(.small)
                     }
                 }
                 if let message = model.message { Text(message).font(.system(size: 12)).foregroundStyle(.secondary) }
@@ -928,6 +919,40 @@ private struct SettingsView: View {
                     }
                 }
             }
+        case .appearance:
+            VStack(alignment: .leading, spacing: 20) {
+                PageHeader(
+                    title: L10n.text("Appearance"),
+                    detail: L10n.text("Customize the theme and interface language.")
+                )
+                SettingsSection(L10n.text("Appearance")) {
+                    SettingsRow(L10n.text("Theme")) {
+                        Picker("", selection: $themePreference) {
+                            ForEach(UIThemePreference.allCases, id: \.rawValue) { preference in
+                                Text(preference.title).tag(preference)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 150)
+                        .onChange(of: themePreference) { preference in
+                            model.setThemePreference(preference)
+                        }
+                    }
+                    RowDivider()
+                    SettingsRow(L10n.text("Interface language")) {
+                        Picker("", selection: $languagePreference) {
+                            ForEach(UILanguagePreference.allCases, id: \.rawValue) { preference in
+                                Text(preference.title).tag(preference)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 150)
+                        .onChange(of: languagePreference) { preference in
+                            model.setLanguagePreference(preference)
+                        }
+                    }
+                }
+            }
         case .about:
             VStack(alignment: .leading, spacing: 20) {
                 PageHeader(
@@ -953,6 +978,13 @@ private struct SettingsView: View {
                         Text(AppVersion.current)
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
+                    }
+                    RowDivider()
+                    SettingsRow(L10n.text("AgentDock update")) {
+                        Button(L10n.text("Check for updates")) {
+                            model.requestUpdate()
+                        }
+                        .controlSize(.small)
                     }
                 }
 

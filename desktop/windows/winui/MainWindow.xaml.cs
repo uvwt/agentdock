@@ -15,14 +15,17 @@ public sealed partial class MainWindow : Window
 
     private readonly RuntimeService _runtime;
     private readonly IntPtr _windowHandle;
+    private readonly string? _initialSettingsPage;
     private bool _initialSizeApplied;
 
     internal bool AllowClose { get; set; }
 
-    public MainWindow(RuntimeService runtime, string initialPage = "home")
+    public MainWindow(RuntimeService runtime, string initialPage = "home", string? initialSettingsPage = null)
     {
         _runtime = runtime;
+        _initialSettingsPage = initialSettingsPage;
         InitializeComponent();
+        ApplyThemePreference(UiThemePreference.ReadPreference());
 
         HomeNavigationItem.Content = UiText.Get("Home");
         ConnectionsNavigationItem.Content = UiText.Get("Connections");
@@ -96,6 +99,15 @@ public sealed partial class MainWindow : Window
         {
             home.ShortcutRequested += (_, tag) => NavigateTo(tag);
         }
+        if (e.Content is SettingsPage settings && !string.IsNullOrWhiteSpace(_initialSettingsPage))
+        {
+            settings.SelectPage(_initialSettingsPage);
+        }
+    }
+
+    internal void ApplyThemePreference(string preference)
+    {
+        Navigation.RequestedTheme = UiThemePreference.ToElementTheme(preference);
     }
 
     private void NavigateTo(string tag)

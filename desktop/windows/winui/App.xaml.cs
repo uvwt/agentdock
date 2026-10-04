@@ -169,7 +169,7 @@ public partial class NativeApp : Application
         if (_runtime is null) return;
 
         var previousWindow = _window;
-        _window = new MainWindow(_runtime, "settings");
+        _window = new MainWindow(_runtime, "settings", "appearance");
         if (previousWindow is not null)
         {
             previousWindow.AllowClose = true;
@@ -180,6 +180,12 @@ public partial class NativeApp : Application
         _trayMenu?.Dispose();
         CreateTray();
         _window.ShowAndActivate();
+    }
+
+    internal void ApplyThemePreference(string preference)
+    {
+        UiThemePreference.SetPreference(preference);
+        _window?.ApplyThemePreference(preference);
     }
 
     private async Task RunTrayActionAsync(string action)

@@ -7,6 +7,28 @@ import (
 	"testing"
 )
 
+func TestMacOSAppearancePreferenceSupportsSystemLightDark(t *testing.T) {
+	path := filepath.Join("..", "..", "desktop", "macos", "AgentDockApp", "Sources", "AppearancePreference.swift")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read AppearancePreference.swift: %v", err)
+	}
+	content := string(data)
+	for _, want := range []string{
+		"case system",
+		"case light",
+		"case dark",
+		"AgentDockUITheme",
+		"NSApp.appearance = nil",
+		"NSAppearance(named: .aqua)",
+		"NSAppearance(named: .darkAqua)",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("native macOS appearance preference missing %q", want)
+		}
+	}
+}
+
 func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 	path := filepath.Join("..", "..", "desktop", "macos", "AgentDockApp", "Sources", "NativeControlPanelWindowController.swift")
 	data, err := os.ReadFile(path)
@@ -39,10 +61,14 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 		`case .runtime: return L10n.text("Runtime")`,
 		`case .permissions: return L10n.text("Permissions")`,
 		"setLanguagePreference(_ preference:",
-		"case runtime, permissions, startup, about",
+		"case runtime, permissions, startup, appearance, about",
+		`case .appearance: return L10n.text("Appearance")`,
 		"case .about: return L10n.text(\"About\")",
+		"case .appearance:",
 		"case .about:",
 		"Text(AppVersion.current)",
+		"UIThemePreference.allCases",
+		"model.setThemePreference(preference)",
 		"https://uvwt.github.io/agentdock-docs/",
 		"https://github.com/uvwt/agentdock",
 		".toggleStyle(.switch)",

@@ -839,4 +839,9 @@ Update now?</value>
   <data name="Application" xml:space="preserve"><value>Application</value></data>
   <data name="Resources" xml:space="preserve"><value>Resources</value></data>
   <data name="Documentation" xml:space="preserve"><value>Documentation</value></data>
+  <data name="Appearance" xml:space="preserve"><value>Appearance</value></data>
+  <data name="AppearanceDetail" xml:space="preserve"><value>Customize the theme and interface language.</value></data>
+  <data name="Theme" xml:space="preserve"><value>Theme</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>Light</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>Dark</value></data>
 </root>

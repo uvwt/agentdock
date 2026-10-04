@@ -839,4 +839,9 @@
   <data name="Application" xml:space="preserve"><value>应用</value></data>
   <data name="Resources" xml:space="preserve"><value>资源</value></data>
   <data name="Documentation" xml:space="preserve"><value>文档</value></data>
+  <data name="Appearance" xml:space="preserve"><value>外观</value></data>
+  <data name="AppearanceDetail" xml:space="preserve"><value>自定义主题和界面语言。</value></data>
+  <data name="Theme" xml:space="preserve"><value>主题</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>浅色</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>深色</value></data>
 </root>

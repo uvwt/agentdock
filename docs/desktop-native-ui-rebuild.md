@@ -696,7 +696,7 @@ TianYi parity 验证：
 - Local MCP 地址、Authentication Token、OAuth Password 全部迁入“高级连接设置”。
 - Public MCP 的 Local / Quick / Named 模式选择从产品 UI 移除；底层枚举继续兼容已有配置。
 - 高级公网直连只向用户呈现 Cloudflare Tunnel 临时公网地址与固定域名两种操作；点击操作时直接写入 quick / named 底层模式。
-- Settings 二级导航收敛为 Runtime / Permissions / Startup，不再暴露 Access Credentials，也不再展示 Local MCP 地址。
+- Settings 二级导航不再暴露 Access Credentials，也不再展示 Local MCP 地址；后续扩展为 Runtime / Permissions / Startup / Appearance / About，其中 Appearance 负责主题与语言，About 负责版本、更新与项目资源。
 
 验证：
 
@@ -707,6 +707,26 @@ TianYi parity 验证：
 - TianYi UI Automation 实测 Home 只存在 AgentDock / NexusDock，不再出现 Runtime / MCP；当前真实状态显示 AgentDock 正在运行、NexusDock 已连接。
 - TianYi UI Automation 实测 Connections 的高级连接设置默认 `Collapsed`；展开后才出现 Local MCP、访问凭据、Cloudflare Tunnel、固定域名；`仅本地` / `Public MCP` 不再出现。
 - TianYi UI Automation 实测 Settings 只剩运行时 / 权限 / 开机启动，`CredentialsNavigationItem` 不存在。
+
+### 15.6 2026-10-04 Settings 外观与关于
+
+在 NexusDock 优先连接体验稳定后，进一步按桌面应用常规信息架构整理 Settings：
+
+- Settings 二级导航调整为 Runtime / Permissions / Startup / Appearance / About。
+- Interface language 从 Runtime 迁移到 Appearance。
+- Appearance 提供 Follow system / Light / Dark 三档主题；macOS 使用 NSAppearance 即时应用并通过 UserDefaults 持久化，Windows 使用 WinUI ElementTheme 即时应用并通过 LocalAppData 持久化。
+- Windows 切换语言后重建主窗口时保留 Settings → Appearance 当前页，不再跳回 Runtime。
+- Check for updates 从 Runtime 迁移到 About，避免运行时配置和应用级更新混在一起。
+- About 保留当前版本、文档、GitHub，并新增 Check for updates。
+
+验证：
+
+- macOS i18n 374 个引用均覆盖，Windows UiText 142 个引用均覆盖，`go test ./scripts/test -count=1` 通过。
+- macOS `scripts/test/test-macos-app.sh` 完整通过 App / ZIP / DMG / 签名 / 挂载验证。
+- Windows 最终验证快照 SHA-256：`f2f20ab5b42fdaaead9b0113552de362ddf5164cc8641ba4af905793772b4393`；TianYi x64 Release Rebuild 与 win-arm64 交叉 Rebuild 均成功。
+- TianYi UI Automation 实测 Runtime 页面不再出现界面语言和检查更新；Appearance 页面同时出现主题和界面语言；About 页面存在版本和“检查更新…”按钮。
+- TianYi UI Automation 实测主题依次切换到 Dark / Light 后偏好分别持久化为 `dark` / `light`，恢复 Follow system 后 `ui-theme` 偏好文件被移除。
+- TianYi UI Automation 实测中文切到 English 后仍停留在 Appearance，再切回简体中文后仍停留在外观；最终语言偏好恢复为 `zh-CN`，主题恢复 Follow system。
 
 视觉审查：
 
