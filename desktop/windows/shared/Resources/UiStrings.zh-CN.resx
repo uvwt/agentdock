@@ -750,7 +750,7 @@
   <data name="AvailableCapabilities" xml:space="preserve"><value>可用能力</value></data>
   <data name="BuiltInCapabilities" xml:space="preserve"><value>内置能力</value></data>
   <data name="Extensions" xml:space="preserve"><value>扩展</value></data>
-  <data name="Skills" xml:space="preserve"><value>Skills</value></data>
+  <data name="Skills" xml:space="preserve"><value>Skill</value></data>
   <data name="Plugins" xml:space="preserve"><value>插件</value></data>
   <data name="LoadedOnThisDevice" xml:space="preserve"><value>已加载到这台设备</value></data>
   <data name="InstalledOnThisDevice" xml:space="preserve"><value>已安装到这台设备</value></data>
@@ -880,8 +880,6 @@
   <data name="NotEnabledYet" xml:space="preserve"><value>尚未启用</value></data>
   <data name="CapabilitiesAvailable" xml:space="preserve"><value>{0} / 3 可用</value></data>
   <data name="CapabilitiesNeedAttention" xml:space="preserve"><value>{0} 项需要处理</value></data>
-  <data name="Skills" xml:space="preserve"><value>Skill</value></data>
-  <data name="Plugins" xml:space="preserve"><value>插件</value></data>
   <data name="CoreCapabilities" xml:space="preserve"><value>核心能力</value></data>
   <data name="DashboardInstalled" xml:space="preserve"><value>已安装</value></data>
   <data name="DashboardConfigured" xml:space="preserve"><value>已配置</value></data>

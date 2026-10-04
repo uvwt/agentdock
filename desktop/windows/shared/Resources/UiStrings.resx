@@ -880,8 +880,6 @@ Update now?</value>
   <data name="NotEnabledYet" xml:space="preserve"><value>Not enabled yet</value></data>
   <data name="CapabilitiesAvailable" xml:space="preserve"><value>{0} / 3 available</value></data>
   <data name="CapabilitiesNeedAttention" xml:space="preserve"><value>{0} need attention</value></data>
-  <data name="Skills" xml:space="preserve"><value>Skills</value></data>
-  <data name="Plugins" xml:space="preserve"><value>Plugins</value></data>
   <data name="CoreCapabilities" xml:space="preserve"><value>Core capabilities</value></data>
   <data name="DashboardInstalled" xml:space="preserve"><value>Installed</value></data>
   <data name="DashboardConfigured" xml:space="preserve"><value>Configured</value></data>

@@ -426,7 +426,7 @@
 "Available capabilities" = "可用能力";
 "Built-in capabilities" = "内置能力";
 "Extensions" = "扩展";
-"Skills" = "Skills";
+"Skills" = "Skill";
 "Plugins" = "插件";
 "Loaded on this device" = "已加载到这台设备";
 "Installed on this device" = "已安装到这台设备";
@@ -485,8 +485,6 @@
 "No pairing code? Get one from NexusDock ↗" = "没有配对码？前往 NexusDock 获取配对码 ↗";
 "Manage connected devices ↗" = "管理已连接设备 ↗";
 "Connect" = "连接";
-"Skills" = "Skill";
-"Plugins" = "插件";
 "Installed" = "已安装";
 "Configured" = "已配置";
 "Core capabilities" = "核心能力";
