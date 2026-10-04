@@ -206,24 +206,6 @@ public sealed record NexusDeviceStatus(
     bool DeviceTokenStored,
     string Error = "");
 
-public sealed class RuntimeCountMetric
-{
-    [JsonPropertyName("count")]
-    public int Count { get; set; }
-}
-
-public sealed class RuntimeOverviewPayload
-{
-    [JsonPropertyName("skills")]
-    public RuntimeCountMetric Skills { get; set; } = new();
-
-    [JsonPropertyName("mcp")]
-    public RuntimeCountMetric Mcp { get; set; } = new();
-
-    [JsonPropertyName("plugins")]
-    public RuntimeCountMetric Plugins { get; set; } = new();
-}
-
 public sealed class RuntimeListCountPayload
 {
     [JsonPropertyName("count")]

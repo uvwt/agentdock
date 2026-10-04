@@ -117,16 +117,6 @@ struct ServiceStatus {
     )
 }
 
-struct RuntimeCountMetric: Decodable {
-    let count: Int
-}
-
-struct RuntimeOverviewPayload: Decodable {
-    let skills: RuntimeCountMetric
-    let mcp: RuntimeCountMetric
-    let plugins: RuntimeCountMetric
-}
-
 struct RuntimeListCountPayload: Decodable {
     let count: Int
 }
