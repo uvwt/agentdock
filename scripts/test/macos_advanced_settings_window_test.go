@@ -37,11 +37,9 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 	}
 	content := string(data)
 	for _, want := range []string{
-		"private struct AgentDockLogo",
-		`Bundle.main.url(forResource: "AgentDockLogo", withExtension: "png")`,
-		"AgentDockLogo(size: 20)",
-		"AgentDockLogo(size: 48)",
-		"AgentDockLogo(size: 40)",
+		"AgentDockLogoView(size: 20)",
+		"AgentDockLogoView(size: 48)",
+		"AgentDockLogoView(size: 40)",
 		"private enum HomeCapabilityState",
 		"private struct HomeMetric",
 		"private struct HomeCapabilityRow",
@@ -242,5 +240,48 @@ func TestMacOSActivityOwnsRuntimeAnalytics(t *testing.T) {
 		if strings.Contains(content, forbidden) {
 			t.Fatalf("macOS retained retired analytics UI %q", forbidden)
 		}
+	}
+}
+
+func TestMacOSUsesVectorBrandLogoAndTemplateMenuBarIcon(t *testing.T) {
+	base := filepath.Join("..", "..", "desktop", "macos", "AgentDockApp", "Sources")
+	logoData, err := os.ReadFile(filepath.Join(base, "AgentDockLogoArtwork.swift"))
+	if err != nil {
+		t.Fatalf("read AgentDockLogoArtwork.swift: %v", err)
+	}
+	logo := string(logoData)
+	for _, want := range []string{
+		"enum AgentDockLogoArtwork",
+		"struct AgentDockLogoView: View",
+		"Canvas { context, canvasSize in",
+		"CGMutablePath()",
+		"static func menuBarImage() -> NSImage",
+		"image.isTemplate = true",
+		"green: 226.0 / 255.0",
+		"green: 142.0 / 255.0",
+	} {
+		if !strings.Contains(logo, want) {
+			t.Fatalf("macOS vector brand logo missing %q", want)
+		}
+	}
+
+	appDelegateData, err := os.ReadFile(filepath.Join(base, "AppDelegate.swift"))
+	if err != nil {
+		t.Fatalf("read AppDelegate.swift: %v", err)
+	}
+	appDelegate := string(appDelegateData)
+	if !strings.Contains(appDelegate, "button.image = AgentDockLogoArtwork.menuBarImage()") {
+		t.Fatal("macOS menu bar must use the AgentDock vector template image")
+	}
+	if strings.Contains(appDelegate, "shippingbox.fill") {
+		t.Fatal("macOS menu bar must not fall back to the generic shippingbox symbol")
+	}
+
+	buildScript, err := os.ReadFile(filepath.Join("..", "..", "packaging", "macos", "build-app.sh"))
+	if err != nil {
+		t.Fatalf("read build-app.sh: %v", err)
+	}
+	if strings.Contains(string(buildScript), "AgentDockLogo.png") {
+		t.Fatal("macOS control panel logo must not be packaged as a raster PNG")
 	}
 }

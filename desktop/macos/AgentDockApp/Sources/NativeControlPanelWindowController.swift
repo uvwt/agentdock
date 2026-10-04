@@ -229,33 +229,6 @@ private final class ControlPanelModel: ObservableObject {
     }
 }
 
-private struct AgentDockLogo: View {
-    let size: CGFloat
-
-    private static let image: NSImage? = {
-        guard let url = Bundle.main.url(forResource: "AgentDockLogo", withExtension: "png") else {
-            return nil
-        }
-        return NSImage(contentsOf: url)
-    }()
-
-    var body: some View {
-        Group {
-            if let image = Self.image {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                Image(systemName: "shippingbox.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundStyle(.tint)
-            }
-        }
-        .frame(width: size, height: size)
-    }
-}
-
 private struct ControlPanelRootView: View {
     @ObservedObject var model: ControlPanelModel
 
@@ -263,7 +236,7 @@ private struct ControlPanelRootView: View {
         NavigationSplitView {
             VStack(spacing: 0) {
                 HStack(spacing: 9) {
-                    AgentDockLogo(size: 20)
+                    AgentDockLogoView(size: 20)
                     Text("AgentDock").font(.system(size: 15, weight: .semibold))
                     Spacer()
                 }
@@ -516,7 +489,7 @@ private struct HomeView: View {
                 PageHeader(title: L10n.text("Home"))
 
                 HStack(alignment: .center, spacing: 16) {
-                    AgentDockLogo(size: 48)
+                    AgentDockLogoView(size: 48)
 
                     VStack(alignment: .leading, spacing: 5) {
                         HStack(spacing: 8) {
@@ -1703,7 +1676,7 @@ private struct SettingsView: View {
                 )
 
                 VStack(alignment: .leading, spacing: 8) {
-                    AgentDockLogo(size: 40)
+                    AgentDockLogoView(size: 40)
                     Text("AgentDock")
                         .font(.system(size: 22, weight: .semibold))
                     Text(L10n.text("AgentDock lets AI clients securely use capabilities on this device."))
