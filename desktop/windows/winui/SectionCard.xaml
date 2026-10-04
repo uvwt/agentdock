@@ -7,7 +7,8 @@
         <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                 BorderThickness="1" CornerRadius="10">
-            <ContentPresenter Content="{x:Bind SectionContent, Mode=OneWay}"/>
+            <ContentPresenter Content="{x:Bind SectionContent, Mode=OneWay}"
+                              HorizontalContentAlignment="Stretch"/>
         </Border>
     </StackPanel>
 </UserControl>

@@ -309,6 +309,7 @@ func TestWindowsHomeUsesProductStatusAndAdaptiveCapabilities(t *testing.T) {
 	homeXaml := readWindowsNativeFile(t, "winui", "HomePage.xaml")
 	homeCode := readWindowsNativeFile(t, "winui", "HomePage.xaml.cs")
 	runtime := readWindowsNativeFile(t, "shared", "Services", "RuntimeService.cs")
+	sectionCard := readWindowsNativeFile(t, "winui", "SectionCard.xaml")
 
 	for _, want := range []string{
 		`HorizontalScrollMode="Disabled"`,
@@ -347,8 +348,9 @@ func TestWindowsHomeUsesProductStatusAndAdaptiveCapabilities(t *testing.T) {
 		`"/internal/runtime/plugins"`,
 		"RuntimeListCountPayload",
 		"dashboard.CountsAvailable",
+		`HorizontalContentAlignment="Stretch"`,
 	} {
-		if !strings.Contains(homeXaml+homeCode+runtime, want) {
+		if !strings.Contains(homeXaml+homeCode+runtime+sectionCard, want) {
 			t.Fatalf("WinUI Home missing product status contract %q", want)
 		}
 	}
