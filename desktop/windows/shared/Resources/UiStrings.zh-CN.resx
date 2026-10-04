@@ -810,7 +810,7 @@
   <data name="AgentDockUpdate" xml:space="preserve"><value>AgentDock 更新</value></data>
   <data name="AgentDockPermissions" xml:space="preserve"><value>AgentDock 权限</value></data>
   <data name="ManagedByWindows" xml:space="preserve"><value>由 Windows 系统管理</value></data>
-  <data name="CoreBackgroundService" xml:space="preserve"><value>Core 后台服务</value></data>
+  <data name="CoreBackgroundService" xml:space="preserve"><value>核心服务</value></data>
   <data name="TrayApp" xml:space="preserve"><value>托盘应用</value></data>
   <data name="AuthenticationToken" xml:space="preserve"><value>认证令牌</value></data>
   <data name="QuickAccess" xml:space="preserve"><value>快速入口</value></data>
@@ -838,7 +838,7 @@
   <data name="IsolatedBrowser" xml:space="preserve"><value>隔离浏览器</value></data>
   <data name="ReuseLocalBrowser" xml:space="preserve"><value>复用本机浏览器</value></data>
   <data name="SpecifiedCdp" xml:space="preserve"><value>指定 CDP 地址</value></data>
-  <data name="AddCustomCodingAgent" xml:space="preserve"><value>连接自定义ACP</value></data>
+  <data name="AddCustomCodingAgent" xml:space="preserve"><value>添加自定义ACP</value></data>
   <data name="DefaultCodingAgent" xml:space="preserve"><value>默认</value></data>
   <data name="ArgumentsOnePerLine" xml:space="preserve"><value>参数（每行一个）</value></data>
   <data name="Saving" xml:space="preserve"><value>正在保存…</value></data>
@@ -902,8 +902,8 @@
   <data name="PortRestartHint" xml:space="preserve"><value>需要重启</value></data>
   <data name="PortRestartDetail" xml:space="preserve"><value>更改端口后将自动重启 AgentDock。</value></data>
   <data name="Connection" xml:space="preserve"><value>连接</value></data>
-  <data name="DeviceReadyForAI" xml:space="preserve"><value>此设备已准备好供 AI 使用。</value></data>
-  <data name="CodingAgent" xml:space="preserve"><value>连接本机AI客户端</value></data>
+  <data name="DeviceReadyForAI" xml:space="preserve"><value>让 AI 的双手，真正触达你的每一台设备。</value></data>
+  <data name="CodingAgent" xml:space="preserve"><value>与本机AI通信</value></data>
   <data name="McpApps" xml:space="preserve"><value>聊天卡片</value></data>
   <data name="AllAvailable" xml:space="preserve"><value>全部可用</value></data>
   <data name="NotEnabledYet" xml:space="preserve"><value>尚未启用</value></data>
@@ -912,7 +912,7 @@
   <data name="CoreCapabilities" xml:space="preserve"><value>核心能力</value></data>
   <data name="DashboardInstalled" xml:space="preserve"><value>已安装</value></data>
   <data name="DashboardConfigured" xml:space="preserve"><value>已配置</value></data>
-  <data name="DefaultProfileSummary" xml:space="preserve"><value>{0} · 默认</value></data>
+  <data name="DefaultProfileSummary" xml:space="preserve"><value>默认 · {0}</value></data>
   <data name="RecentActivity" xml:space="preserve"><value>最近活动</value></data>
   <data name="RecentActivityUnavailable" xml:space="preserve"><value>最近活动暂不可用。</value></data>
   <data name="NoRecentActivity" xml:space="preserve"><value>暂无最近活动。</value></data>

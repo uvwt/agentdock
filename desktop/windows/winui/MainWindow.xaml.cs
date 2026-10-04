@@ -42,6 +42,11 @@ public sealed partial class MainWindow : Window
         ActivityNavigationItem.Content = UiText.Get("Activity");
         SettingsNavigationItem.Content = UiText.Get("Settings");
 
+        var iconPath = System.IO.Path.Combine(AppContext.BaseDirectory, "agentdock.ico");
+        if (File.Exists(iconPath))
+        {
+            AppWindow.SetIcon(iconPath);
+        }
         Navigation.Loaded += Navigation_Loaded;
         ContentFrame.Navigated += ContentFrame_Navigated;
         AppWindow.Changed += (_, args) =>

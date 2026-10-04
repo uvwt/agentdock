@@ -253,8 +253,6 @@ public sealed partial class SettingsPage : Page
     private UIElement BuildPermissions()
     {
         var rows = new StackPanel();
-        rows.Children.Add(Row(UiText.Get("AgentDockPermissions"), UiText.Get("ManagedByWindows")));
-        rows.Children.Add(Divider());
         var toggle = new ToggleSwitch
         {
             IsOn = string.Equals(_snapshot?.Manifest.PrivilegeMode, "elevated", StringComparison.OrdinalIgnoreCase),

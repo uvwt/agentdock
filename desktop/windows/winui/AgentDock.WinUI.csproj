@@ -33,6 +33,9 @@
     <Content Include="../../../packaging/assets/agentdock.png"
              Link="Assets/agentdock.png"
              CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../../packaging/windows/assets/agentdock.ico"
+             Link="agentdock.ico"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <!-- WinUI 直接复用平台无关的 Runtime / Model / 资源实现。 -->
