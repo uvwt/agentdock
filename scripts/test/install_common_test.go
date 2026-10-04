@@ -44,6 +44,8 @@ func TestUnifiedInstallerEntryOwnsUnixBootstrap(t *testing.T) {
 		t.Fatalf("install.sh missing exact NexusDock menu: %q", menu)
 	}
 	for _, want := range []string{
+		`download_file_with_progress`,
+		`curl -fL --progress-bar`,
 		`agentdock_${PLATFORM}_${ARCH}.tar.gz`,
 		"install --engine-ready",
 		"AGENTDOCK_INSTALLER_BASE_URL",

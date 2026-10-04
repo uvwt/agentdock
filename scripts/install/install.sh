@@ -97,6 +97,20 @@ download_file() {
   die "缺少 curl 或 wget，无法下载 Release 载荷。"
 }
 
+download_file_with_progress() {
+  url="$1"
+  destination="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fL --progress-bar --retry 3 --retry-delay 1 "$url" -o "$destination"
+    return
+  fi
+  if command -v wget >/dev/null 2>&1; then
+    wget -O "$destination" "$url"
+    return
+  fi
+  die "缺少 curl 或 wget，无法下载 cloudflared。"
+}
+
 sha256_file() {
   file="$1"
   if command -v sha256sum >/dev/null 2>&1; then
@@ -294,28 +308,32 @@ install_cloudflared() {
   target="$1"
   source="${AGENTDOCK_CLOUDFLARED_BINARY:-}"
   if valid_cloudflared "$target"; then
+    log "复用已有 cloudflared：$target"
     printf '%s' "$target"
     return
   fi
   if [ -z "$source" ]; then
     discovered="$(command -v cloudflared 2>/dev/null || true)"
     if valid_cloudflared "$discovered"; then
+      log "复用已有 cloudflared：$discovered"
       source="$discovered"
     fi
+  elif valid_cloudflared "$source"; then
+    log "使用指定 cloudflared：$source"
   fi
   if [ -z "$source" ]; then
     case "$PLATFORM" in
       linux)
         source="$TMP_ROOT/cloudflared"
         log "下载 cloudflared-linux-$ARCH"
-        download_file "$CLOUDFLARED_BASE_URL/cloudflared-linux-$ARCH" "$source"
+        download_file_with_progress "$CLOUDFLARED_BASE_URL/cloudflared-linux-$ARCH" "$source"
         chmod 700 "$source"
         ;;
       darwin)
         archive="$TMP_ROOT/cloudflared.tgz"
         cloud_dir="$TMP_ROOT/cloudflared-extract"
         log "下载 cloudflared-darwin-$ARCH.tgz"
-        download_file "$CLOUDFLARED_BASE_URL/cloudflared-darwin-$ARCH.tgz" "$archive"
+        download_file_with_progress "$CLOUDFLARED_BASE_URL/cloudflared-darwin-$ARCH.tgz" "$archive"
         mkdir -p "$cloud_dir"
         tar -xzf "$archive" -C "$cloud_dir"
         source="$cloud_dir/cloudflared"
