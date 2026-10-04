@@ -347,10 +347,6 @@ func TestWindowsHomeUsesProductStatusAndAdaptiveCapabilities(t *testing.T) {
 		`RuntimeAction.Content = serviceLoaded ? UiText.Get("Stop") : UiText.Get("Start")`,
 		`"/internal/runtime/overview"`,
 		`"/internal/runtime/diagnostics"`,
-		`"/internal/runtime/skills"`,
-		`"/internal/runtime/mcp"`,
-		`"/internal/runtime/plugins"`,
-		"RuntimeListCountPayload",
 		"dashboard.CountsAvailable",
 		`HorizontalAlignment="Stretch"`,
 	} {
@@ -365,9 +361,13 @@ func TestWindowsHomeUsesProductStatusAndAdaptiveCapabilities(t *testing.T) {
 		`x:Name="CapabilitiesSummary"`,
 		"CapabilitiesAvailable",
 		"CapabilitiesNeedAttention",
+		`"/internal/runtime/skills"`,
+		`"/internal/runtime/mcp"`,
+		`"/internal/runtime/plugins"`,
+		"RuntimeListCountPayload",
 		`<TextBlock Text="Runtime"`,
 	} {
-		if strings.Contains(homeXaml+homeCode, forbidden) {
+		if strings.Contains(homeXaml+homeCode+runtime, forbidden) {
 			t.Fatalf("WinUI Home still exposes implementation status or old quick-access card %q", forbidden)
 		}
 	}

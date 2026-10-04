@@ -140,7 +140,7 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 	}
 }
 
-func TestMacOSDashboardFallsBackToRuntimeListCounts(t *testing.T) {
+func TestMacOSDashboardUsesRuntimeOverviewAsSingleCountSource(t *testing.T) {
 	root := filepath.Join("..", "..", "desktop", "macos", "AgentDockApp", "Sources")
 	serviceData, err := os.ReadFile(filepath.Join(root, "ServiceController.swift"))
 	if err != nil {
@@ -148,19 +148,25 @@ func TestMacOSDashboardFallsBackToRuntimeListCounts(t *testing.T) {
 	}
 	service := string(serviceData)
 	for _, want := range []string{
-		"RuntimeListCountPayload",
 		`path: "/internal/runtime/overview"`,
 		`path: "/internal/runtime/diagnostics"`,
+		"countsAvailable: overviewPayload != nil",
+		"skillCount: overviewPayload?.skills.count ?? 0",
+		"mcpCount: overviewPayload?.mcp.count ?? 0",
+		"pluginCount: overviewPayload?.plugins.count ?? 0",
+	} {
+		if !strings.Contains(service, want) {
+			t.Fatalf("native macOS dashboard missing Runtime Overview contract %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"RuntimeListCountPayload",
 		`path: "/internal/runtime/skills"`,
 		`path: "/internal/runtime/mcp"`,
 		`path: "/internal/runtime/plugins"`,
-		"countsAvailable = true",
-		"skillCount = skills.count",
-		"mcpCount = mcp.count",
-		"pluginCount = plugins.count",
 	} {
-		if !strings.Contains(service, want) {
-			t.Fatalf("native macOS dashboard missing runtime count fallback contract %q", want)
+		if strings.Contains(service, forbidden) {
+			t.Fatalf("native macOS dashboard still contains legacy count fallback %q", forbidden)
 		}
 	}
 
@@ -169,6 +175,6 @@ func TestMacOSDashboardFallsBackToRuntimeListCounts(t *testing.T) {
 		t.Fatalf("read NativeControlPanelWindowController.swift: %v", err)
 	}
 	if !strings.Contains(string(windowData), "model.dashboard.countsAvailable") {
-		t.Fatal("native macOS dashboard must render counts from the resolved runtime count availability")
+		t.Fatal("native macOS dashboard must render counts only when Runtime Overview is available")
 	}
 }

@@ -117,10 +117,6 @@ struct ServiceStatus {
     )
 }
 
-struct RuntimeListCountPayload: Decodable {
-    let count: Int
-}
-
 struct RuntimeDiagnosticCall: Decodable, Identifiable {
     let id: String
     let tool: String
@@ -237,45 +233,13 @@ final class ServiceController: @unchecked Sendable {
         )
         let overviewPayload = await overviewTask
 
-        var countsAvailable = overviewPayload != nil
-        var skillCount = overviewPayload?.skills.count ?? 0
-        var mcpCount = overviewPayload?.mcp.count ?? 0
-        var pluginCount = overviewPayload?.plugins.count ?? 0
-
-        // 升级期间桌面 App 可能先于 Core 生效。旧 Core 没有 overview，
-        // 但列表接口已经提供 count；回退仍由 Runtime 负责计数，不扫描本地目录。
-        if !countsAvailable {
-            async let skillsTask: RuntimeListCountPayload? = fetchRuntimePayload(
-                RuntimeListCountPayload.self,
-                configuration: configuration,
-                path: "/internal/runtime/skills"
-            )
-            async let mcpTask: RuntimeListCountPayload? = fetchRuntimePayload(
-                RuntimeListCountPayload.self,
-                configuration: configuration,
-                path: "/internal/runtime/mcp"
-            )
-            async let pluginsTask: RuntimeListCountPayload? = fetchRuntimePayload(
-                RuntimeListCountPayload.self,
-                configuration: configuration,
-                path: "/internal/runtime/plugins"
-            )
-            let (skills, mcp, plugins) = await (skillsTask, mcpTask, pluginsTask)
-            if let skills, let mcp, let plugins {
-                countsAvailable = true
-                skillCount = skills.count
-                mcpCount = mcp.count
-                pluginCount = plugins.count
-            }
-        }
-
         let diagnosticsPayload = await diagnosticsTask
         return RuntimeDashboardSnapshot(
-            countsAvailable: countsAvailable,
+            countsAvailable: overviewPayload != nil,
             diagnosticsAvailable: diagnosticsPayload != nil,
-            skillCount: skillCount,
-            mcpCount: mcpCount,
-            pluginCount: pluginCount,
+            skillCount: overviewPayload?.skills.count ?? 0,
+            mcpCount: overviewPayload?.mcp.count ?? 0,
+            pluginCount: overviewPayload?.plugins.count ?? 0,
             recentCalls: diagnosticsPayload?.recentCalls ?? []
         )
     }

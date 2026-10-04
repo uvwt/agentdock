@@ -178,41 +178,12 @@ public sealed class RuntimeService : IDisposable
 
         var overview = await overviewTask;
         var diagnostics = await diagnosticsTask;
-        var countsAvailable = overview is not null;
-        var skillCount = overview?.Skills.Count ?? 0;
-        var mcpCount = overview?.Mcp.Count ?? 0;
-        var pluginCount = overview?.Plugins.Count ?? 0;
-
-        // Desktop 与 Core 可能在升级窗口短暂跨版本运行。旧 Core 没有 overview，
-        // 但三个列表接口已经稳定返回 count；优先复用服务端计数，不在桌面端扫描目录。
-        if (!countsAvailable &&
-            TryCreateLoopbackRuntimeUri(snapshot.LocalMcpUrl, "/internal/runtime/skills", out var skillsUri) &&
-            TryCreateLoopbackRuntimeUri(snapshot.LocalMcpUrl, "/internal/runtime/mcp", out var mcpUri) &&
-            TryCreateLoopbackRuntimeUri(snapshot.LocalMcpUrl, "/internal/runtime/plugins", out var pluginsUri))
-        {
-            var skillsTask = ReadRuntimeApiAsync<RuntimeListCountPayload>(skillsUri, bearerToken, cancellationToken);
-            var mcpTask = ReadRuntimeApiAsync<RuntimeListCountPayload>(mcpUri, bearerToken, cancellationToken);
-            var pluginsTask = ReadRuntimeApiAsync<RuntimeListCountPayload>(pluginsUri, bearerToken, cancellationToken);
-            await Task.WhenAll(skillsTask, mcpTask, pluginsTask);
-
-            var skills = await skillsTask;
-            var mcp = await mcpTask;
-            var plugins = await pluginsTask;
-            countsAvailable = skills is not null && mcp is not null && plugins is not null;
-            if (countsAvailable)
-            {
-                skillCount = skills!.Count;
-                mcpCount = mcp!.Count;
-                pluginCount = plugins!.Count;
-            }
-        }
-
         return new RuntimeDashboardSnapshot(
-            countsAvailable,
+            overview is not null,
             diagnostics is not null,
-            skillCount,
-            mcpCount,
-            pluginCount,
+            overview?.Skills.Count ?? 0,
+            overview?.Mcp.Count ?? 0,
+            overview?.Plugins.Count ?? 0,
             diagnostics?.RecentCalls ?? []);
     }
 

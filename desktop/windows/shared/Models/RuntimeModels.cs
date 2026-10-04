@@ -206,12 +206,6 @@ public sealed record NexusDeviceStatus(
     bool DeviceTokenStored,
     string Error = "");
 
-public sealed class RuntimeListCountPayload
-{
-    [JsonPropertyName("count")]
-    public int Count { get; set; }
-}
-
 public sealed class RuntimeRecentCall
 {
     [JsonPropertyName("id")]
