@@ -65,22 +65,22 @@ public partial class NativeApp : Application
 
         if (TryGetRuntimeRoot(arguments, "--run-core-task", out var coreRoot))
         {
-            _ = RunHelperAsync(async runtime => await runtime.RunElevatedCoreTaskAsync(), coreRoot);
+            RunHelperAndExit(async runtime => await runtime.RunElevatedCoreTaskAsync(), coreRoot);
             return true;
         }
         if (TryGetRuntimeRoot(arguments, "--run-elevated-agentdock", out var elevatedRoot))
         {
-            _ = RunHelperAsync(runtime => runtime.RunElevatedNativeCommandHostAsync(arguments), elevatedRoot);
+            RunHelperAndExit(runtime => runtime.RunElevatedNativeCommandHostAsync(arguments), elevatedRoot);
             return true;
         }
         if (TryGetRuntimeRoot(arguments, "--start-core", out var startCoreRoot))
         {
-            _ = RunHelperAsync(async runtime => { await runtime.RunCoreStartupAsync(); return 0; }, startCoreRoot);
+            RunHelperAndExit(async runtime => { await runtime.RunCoreStartupAsync(); return 0; }, startCoreRoot);
             return true;
         }
         if (TryGetRuntimeRoot(arguments, "--start-tunnel", out var startTunnelRoot))
         {
-            _ = RunHelperAsync(async runtime => { await runtime.RunTunnelStartupAsync(); return 0; }, startTunnelRoot);
+            RunHelperAndExit(async runtime => { await runtime.RunTunnelStartupAsync(); return 0; }, startTunnelRoot);
             return true;
         }
         return false;
@@ -99,18 +99,32 @@ public partial class NativeApp : Application
         return false;
     }
 
-    private static async Task RunHelperAsync(Func<RuntimeService, Task<int>> operation, string runtimeRoot)
+    private static void RunHelperAndExit(Func<RuntimeService, Task<int>> operation, string runtimeRoot)
     {
-        var exitCode = 1;
-        try
+        // Helper 模式没有窗口、托盘或其他 WinUI 生命周期根。OnLaunched 返回后进程可能立即退出，
+        // 所以不能 fire-and-forget；改在线程池执行异步工作并同步等待，避免 UI SynchronizationContext
+        // 死锁，同时保证 Core/Tunnel helper 真正完成后宿主进程才退出。
+        var exitCode = Task.Run(async () =>
         {
-            using var runtime = new RuntimeService(runtimeRoot);
-            exitCode = await operation(runtime);
-        }
-        catch (Exception ex)
-        {
-            ControlPanelDiagnostics.RecordFailure(runtimeRoot, "winui-helper", "startup", ex);
-        }
+            try
+            {
+                using var runtime = new RuntimeService(runtimeRoot);
+                return await operation(runtime).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    ControlPanelDiagnostics.RecordFailure(runtimeRoot, "winui-helper", "startup", ex);
+                }
+                catch
+                {
+                    // 诊断写入失败不能覆盖原始 helper 失败；退出码仍保持失败。
+                }
+                return 1;
+            }
+        }).GetAwaiter().GetResult();
+
         Environment.Exit(exitCode);
     }
 
