@@ -160,6 +160,72 @@ public sealed class RuntimeService : IDisposable
             DateTimeOffset.Now);
     }
 
+    public async Task<PublicEndpointCheckResult> CheckPublicEndpointAsync(
+        string publicMcpUrl,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Uri.TryCreate(publicMcpUrl, UriKind.Absolute, out var publicUri) ||
+            !string.Equals(publicUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(publicUri.Host))
+        {
+            return new PublicEndpointCheckResult(false, UiText.Get("InvalidPublicAddress"), null);
+        }
+
+        var healthUri = new UriBuilder(publicUri)
+        {
+            Path = "/healthz",
+            Query = "",
+            Fragment = ""
+        }.Uri;
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, healthUri);
+        request.Headers.TryAddWithoutValidation("Accept", "application/json");
+        request.Headers.TryAddWithoutValidation("Cache-Control", "no-cache");
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(8));
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, timeout.Token);
+            stopwatch.Stop();
+            var latency = Math.Max(0, (long)Math.Round(stopwatch.Elapsed.TotalMilliseconds));
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return new PublicEndpointCheckResult(
+                    false,
+                    UiText.Format("AccessFailed", $"HTTP {(int)response.StatusCode}"),
+                    latency);
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token);
+            using var payload = await JsonDocument.ParseAsync(stream, cancellationToken: timeout.Token);
+            var healthy = payload.RootElement.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.True;
+            if (!healthy)
+            {
+                return new PublicEndpointCheckResult(
+                    false,
+                    UiText.Format("AccessFailed", "invalid health response"),
+                    latency);
+            }
+
+            return new PublicEndpointCheckResult(
+                true,
+                UiText.Format("AccessSuccess", healthUri.Host, latency),
+                latency);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new PublicEndpointCheckResult(false, UiText.Get("AccessTimeout"), null);
+        }
+        catch (Exception ex)
+        {
+            return new PublicEndpointCheckResult(false, UiText.Format("AccessFailed", ex.Message), null);
+        }
+    }
+
     public async Task<RuntimeDashboardSnapshot> GetDashboardAsync(
         RuntimeSnapshot snapshot,
         CancellationToken cancellationToken = default)

@@ -161,6 +161,11 @@ public sealed record RuntimeSnapshot(
     bool NexusConnected,
     DateTimeOffset CheckedAt);
 
+public sealed record PublicEndpointCheckResult(
+    bool IsReachable,
+    string Message,
+    long? LatencyMilliseconds);
+
 public sealed record RuntimeExtensionOverview(
     bool Available,
     int SkillCount,

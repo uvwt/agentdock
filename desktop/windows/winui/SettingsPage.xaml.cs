@@ -15,6 +15,9 @@ public sealed partial class SettingsPage : Page
     private RuntimeAnalyticsPayload? _analytics;
     private string _activeTag = "permissions";
     private string _advancedStatus = "";
+    private PublicEndpointCheckResult? _publicEndpointCheckResult;
+    private string _publicEndpointCheckUrl = "";
+    private bool _publicEndpointCheckInProgress;
 
     public SettingsPage()
     {
@@ -502,16 +505,50 @@ public sealed partial class SettingsPage : Page
 
         var publicRows = new StackPanel();
         var publicAddress = _snapshot?.PublicMcpUrl ?? "";
+        var publicActions = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        if (!_publicEndpointCheckInProgress &&
+            string.Equals(_publicEndpointCheckUrl, publicAddress, StringComparison.Ordinal) &&
+            _publicEndpointCheckResult is { } endpointResult)
+        {
+            publicActions.Children.Add(new TextBlock
+            {
+                Text = endpointResult.IsReachable && endpointResult.LatencyMilliseconds is { } latency
+                    ? $"{latency} ms"
+                    : UiText.Get("Failed"),
+                FontSize = 11.5,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Opacity = 0.72,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+        }
+
+        var testPublic = new Button
+        {
+            Content = _publicEndpointCheckInProgress ? UiText.Get("Testing") : UiText.Get("Test"),
+            IsEnabled = !string.IsNullOrWhiteSpace(publicAddress) && !_publicEndpointCheckInProgress,
+            Tag = publicAddress
+        };
+        testPublic.Click += TestPublicAddress_Click;
+        publicActions.Children.Add(testPublic);
+
         var copyPublic = new Button
         {
             Content = UiText.Get("Copy"),
             IsEnabled = !string.IsNullOrWhiteSpace(publicAddress)
         };
         copyPublic.Click += (_, _) => CopyText(publicAddress);
+        publicActions.Children.Add(copyPublic);
+
         publicRows.Children.Add(DetailActionRow(
             UiText.Get("PublicAddress"),
             string.IsNullOrWhiteSpace(publicAddress) ? UiText.Get("Disabled") : publicAddress,
-            copyPublic
+            publicActions
         ));
         publicRows.Children.Add(Divider());
 
@@ -611,6 +648,47 @@ public sealed partial class SettingsPage : Page
         catch
         {
             return "";
+        }
+    }
+
+    private async void TestPublicAddress_Click(object sender, RoutedEventArgs e)
+    {
+        if (_runtime is null ||
+            sender is not Button button ||
+            button.Tag is not string publicAddress ||
+            string.IsNullOrWhiteSpace(publicAddress) ||
+            _publicEndpointCheckInProgress)
+        {
+            return;
+        }
+
+        _publicEndpointCheckInProgress = true;
+        _publicEndpointCheckUrl = publicAddress;
+        _publicEndpointCheckResult = null;
+        Render("advancedConnection");
+
+        try
+        {
+            var result = await _runtime.CheckPublicEndpointAsync(publicAddress);
+            if (string.Equals(_snapshot?.PublicMcpUrl, publicAddress, StringComparison.Ordinal))
+            {
+                _publicEndpointCheckResult = result;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (string.Equals(_snapshot?.PublicMcpUrl, publicAddress, StringComparison.Ordinal))
+            {
+                _publicEndpointCheckResult = new PublicEndpointCheckResult(
+                    false,
+                    UiText.Format("AccessFailed", ex.Message),
+                    null);
+            }
+        }
+        finally
+        {
+            _publicEndpointCheckInProgress = false;
+            Render("advancedConnection");
         }
     }
 

@@ -1417,6 +1417,9 @@ private struct SettingsView: View {
     @State private var tunnelMode: TunnelMode = .local
     @State private var serverURL = ""
     @State private var tunnelToken = ""
+    @State private var publicEndpointCheckResult: PublicEndpointCheckResult?
+    @State private var testedPublicMCPURL: URL?
+    @State private var isTestingPublicEndpoint = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -1806,11 +1809,28 @@ private struct SettingsView: View {
                         L10n.text("Public address"),
                         detail: model.status.configuration?.publicMCPURL?.absoluteString ?? L10n.text("Disabled")
                     ) {
-                        Button(L10n.text("Copy")) {
-                            copy(model.status.configuration?.publicMCPURL?.absoluteString)
+                        HStack(spacing: 8) {
+                            if testedPublicMCPURL == model.status.configuration?.publicMCPURL,
+                               let result = publicEndpointCheckResult {
+                                Text(publicEndpointStatusText(result))
+                                    .font(.system(size: 11.5, weight: .medium))
+                                    .foregroundStyle(result.isReachable ? Color.green : Color.red)
+                                    .help(result.message)
+                            }
+
+                            Button(isTestingPublicEndpoint ? L10n.text("Checking") : L10n.text("Test")) {
+                                guard let publicMCPURL = model.status.configuration?.publicMCPURL else { return }
+                                Task { await testPublicEndpoint(publicMCPURL) }
+                            }
+                            .controlSize(.small)
+                            .disabled(model.status.configuration?.publicMCPURL == nil || isTestingPublicEndpoint)
+
+                            Button(L10n.text("Copy")) {
+                                copy(model.status.configuration?.publicMCPURL?.absoluteString)
+                            }
+                            .controlSize(.small)
+                            .disabled(model.status.configuration?.publicMCPURL == nil)
                         }
-                        .controlSize(.small)
-                        .disabled(model.status.configuration?.publicMCPURL == nil)
                     }
                     RowDivider()
                     SettingsRow(
@@ -1916,6 +1936,29 @@ private struct SettingsView: View {
     private func displayedSecret(_ value: String?) -> String {
         guard let value, !value.isEmpty else { return "—" }
         return "••••••••••••"
+    }
+
+    private func publicEndpointStatusText(_ result: PublicEndpointCheckResult) -> String {
+        guard result.isReachable else { return L10n.text("Failed") }
+        guard let latency = result.latencyMilliseconds else { return L10n.text("Reachable") }
+        return "\(latency) ms"
+    }
+
+    private func testPublicEndpoint(_ publicMCPURL: URL) async {
+        guard !isTestingPublicEndpoint else { return }
+        isTestingPublicEndpoint = true
+        publicEndpointCheckResult = nil
+        testedPublicMCPURL = nil
+
+        let result = await PublicEndpointChecker().check(publicMCPURL: publicMCPURL)
+        guard model.status.configuration?.publicMCPURL == publicMCPURL else {
+            isTestingPublicEndpoint = false
+            return
+        }
+
+        publicEndpointCheckResult = result
+        testedPublicMCPURL = publicMCPURL
+        isTestingPublicEndpoint = false
     }
 
     private func copy(_ value: String?) {
