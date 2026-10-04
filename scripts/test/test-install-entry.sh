@@ -59,10 +59,83 @@ if [ "${1:-}" = install ] && [ "${2:-}" = --engine-ready ]; then
   exit 0
 fi
 if [ -n "${TEST_ENGINE_LOG:-}" ]; then
-  : >"$TEST_ENGINE_LOG"
+  : >>"$TEST_ENGINE_LOG"
   for arg in "$@"; do printf 'arg=%s\n' "$arg" >>"$TEST_ENGINE_LOG"; done
 fi
-# The public bootstrap only requires a successful structured Engine call here.
+
+if [ "${1:-}" = nexus ] && [ "${2:-}" = status ]; then
+  if [ -f "${AGENTDOCK_HOME:-}/nexus/endpoint" ]; then
+    endpoint="$(cat "${AGENTDOCK_HOME}/nexus/endpoint")"
+    printf '{"paired":true,"endpoint":"%s","device_token_stored":true}\n' "$endpoint"
+  else
+    printf '%s\n' '{"paired":false,"device_token_stored":false}'
+  fi
+  exit 0
+fi
+if [ "${1:-}" = nexus ] && [ "${2:-}" = pair ]; then
+  endpoint=""
+  shift 2
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --endpoint) endpoint="$2"; shift 2 ;;
+      --code) shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  mkdir -p "${AGENTDOCK_HOME:?}/nexus"
+  printf '%s\n' "$endpoint" >"${AGENTDOCK_HOME}/nexus/endpoint"
+  printf '%s\n' 'legacy-pair-success-output'
+  exit 0
+fi
+if [ "${1:-}" = service ] && [ "${2:-}" = restart ]; then
+  exit 0
+fi
+
+install_root=""
+runtime_root=""
+tunnel_mode=""
+server_url=""
+rotate_oauth=false
+previous=""
+for arg in "$@"; do
+  case "$previous" in
+    install-root) install_root="$arg"; previous="" ;;
+    runtime-root) runtime_root="$arg"; previous="" ;;
+    tunnel-mode) tunnel_mode="$arg"; previous="" ;;
+    server-url) server_url="$arg"; previous="" ;;
+    *)
+      case "$arg" in
+        --install-root) previous=install-root ;;
+        --runtime-root) previous=runtime-root ;;
+        --tunnel-mode) previous=tunnel-mode ;;
+        --server-url) previous=server-url ;;
+        --rotate-oauth) rotate_oauth=true ;;
+      esac
+      ;;
+  esac
+done
+if [ "${1:-}" = install ] && [ -n "$install_root" ] && [ -n "$runtime_root" ]; then
+  mkdir -p "$install_root/bin" "$runtime_root"
+  stable="$install_root/bin/agentdock"
+  if [ "$0" != "$stable" ]; then cp "$0" "$stable"; fi
+  chmod +x "$stable"
+  cat >"$runtime_root/agentdock.env" <<ENV
+AGENTDOCK_HOST=127.0.0.1
+AGENTDOCK_PORT=8765
+AGENTDOCK_AUTH_TOKEN=test-access-token
+ENV
+  if [ -n "$tunnel_mode" ] && [ "$tunnel_mode" != none ]; then
+    printf 'AGENTDOCK_TUNNEL_MODE=%s\n' "$tunnel_mode" >"$runtime_root/cloudflared.env"
+    if [ "$rotate_oauth" = true ]; then
+      printf "%s\n" "AGENTDOCK_OAUTH_PASSWORD='test-oauth-password'" >>"$runtime_root/agentdock.env"
+    fi
+    if [ -n "$server_url" ]; then
+      printf 'AGENTDOCK_SERVER_URL=%s\n' "$server_url" >>"$runtime_root/agentdock.env"
+    fi
+  else
+    rm -f "$runtime_root/cloudflared.env"
+  fi
+fi
 printf '%s\n' '{"schema_version":1,"state":"committed"}'
 EOF
   chmod +x "$payload/bin/agentdock"
@@ -86,6 +159,8 @@ PATH="$FAKE_BIN:$PATH" \
   AGENTDOCK_SOURCE_DIR="$LINUX_ROOT/install" \
   AGENTDOCK_ENV_FILE="$LINUX_ROOT/runtime/agentdock.env" \
   AGENTDOCK_DATA_DIR="$LINUX_ROOT/data" \
+  AGENTDOCK_CLI_LINK_PATH="$LINUX_ROOT/bin/agentdock" \
+  AGENTDOCK_CLOUDFLARED_INSTALL_PATH="$LINUX_ROOT/bin/cloudflared" \
   AGENTDOCK_INSTALLER_BASE_URL="file://$RELEASE_DIR" \
   AGENTDOCK_NONINTERACTIVE=true AGENTDOCK_TUNNEL_MODE=none \
   sh "$ENTRY"
@@ -98,6 +173,120 @@ assert_arg --agentdock-home "$LINUX_ROOT/engine.log"
 assert_arg "$LINUX_ROOT/data/.agentdock" "$LINUX_ROOT/engine.log"
 assert_arg --agentdock-default-dir "$LINUX_ROOT/engine.log"
 assert_arg "$LINUX_ROOT/data/AgentDock" "$LINUX_ROOT/engine.log"
+[ -L "$LINUX_ROOT/bin/agentdock" ] || fail "Linux install did not expose agentdock through the CLI link"
+[ "$(readlink "$LINUX_ROOT/bin/agentdock")" = "$LINUX_ROOT/install/bin/agentdock" ] || fail "Linux CLI link points to the wrong binary"
+[ ! -e "$LINUX_ROOT/bin/cloudflared" ] || fail "local-only install unexpectedly installed cloudflared"
+
+# Fresh installs pair Nexus only after Core is installed. Official mode owns the
+# endpoint and deliberately omits --name so AgentDock can use its hostname default.
+LINUX_NEXUS="$TMP_ROOT/linux-nexus"
+mkdir -p "$LINUX_NEXUS"
+PATH="$FAKE_BIN:$PATH" \
+  TEST_UNAME_S=Linux TEST_UNAME_M=x86_64 \
+  TEST_ENGINE_LOG="$LINUX_NEXUS/engine.log" \
+  AGENTDOCK_NO_SUDO=true AGENTDOCK_SERVICE_MANAGER=none \
+  AGENTDOCK_SOURCE_DIR="$LINUX_NEXUS/install" \
+  AGENTDOCK_ENV_FILE="$LINUX_NEXUS/runtime/agentdock.env" \
+  AGENTDOCK_DATA_DIR="$LINUX_NEXUS/data" \
+  AGENTDOCK_CLI_LINK_PATH="$LINUX_NEXUS/bin/agentdock" \
+  AGENTDOCK_CLOUDFLARED_INSTALL_PATH="$LINUX_NEXUS/bin/cloudflared" \
+  AGENTDOCK_INSTALLER_BASE_URL="file://$RELEASE_DIR" \
+  AGENTDOCK_NONINTERACTIVE=true AGENTDOCK_TUNNEL_MODE=none \
+  AGENTDOCK_NEXUS_MODE=official AGENTDOCK_NEXUS_PAIR_CODE=test-pair-code \
+  sh "$ENTRY" >"$LINUX_NEXUS/output.log" 2>&1
+assert_arg https://mcp.nexusdock.co "$LINUX_NEXUS/engine.log"
+assert_no_arg --name "$LINUX_NEXUS/engine.log"
+core_line="$(grep -n '^arg=install$' "$LINUX_NEXUS/engine.log" | head -1 | cut -d: -f1)"
+pair_line="$(grep -n '^arg=nexus$' "$LINUX_NEXUS/engine.log" | head -1 | cut -d: -f1)"
+if [ -z "$core_line" ] || [ -z "$pair_line" ] || [ "$core_line" -ge "$pair_line" ]; then
+  fail "Nexus pairing ran before Core install"
+fi
+grep -Fq 'NexusDock：https://mcp.nexusdock.co' "$LINUX_NEXUS/output.log" || fail "final summary missing official Nexus endpoint"
+if grep -Fq 'legacy-pair-success-output' "$LINUX_NEXUS/output.log"; then
+  fail "installer leaked nexus pair success output"
+fi
+[ ! -e "$LINUX_NEXUS/bin/cloudflared" ] || fail "Nexus-only install unexpectedly installed cloudflared"
+[ ! -e "$LINUX_NEXUS/runtime/.installer-onboarding" ] || fail "completed install left onboarding recovery state behind"
+
+# Interrupted onboarding restarts the full first-install flow even though the stable
+# binary already exists. First run commits Core, then intentionally fails because
+# non-interactive official Nexus pairing has no code. The second run must install
+# Core again, then continue through Nexus and Tunnel from the beginning.
+LINUX_RESUME="$TMP_ROOT/linux-resume"
+mkdir -p "$LINUX_RESUME"
+if PATH="$FAKE_BIN:$PATH" \
+  TEST_UNAME_S=Linux TEST_UNAME_M=x86_64 \
+  TEST_ENGINE_LOG="$LINUX_RESUME/first-engine.log" \
+  AGENTDOCK_NO_SUDO=true AGENTDOCK_SERVICE_MANAGER=none \
+  AGENTDOCK_SOURCE_DIR="$LINUX_RESUME/install" \
+  AGENTDOCK_ENV_FILE="$LINUX_RESUME/runtime/agentdock.env" \
+  AGENTDOCK_DATA_DIR="$LINUX_RESUME/data" \
+  AGENTDOCK_CLI_LINK_PATH="$LINUX_RESUME/bin/agentdock" \
+  AGENTDOCK_CLOUDFLARED_INSTALL_PATH="$LINUX_RESUME/bin/cloudflared" \
+  AGENTDOCK_INSTALLER_BASE_URL="file://$RELEASE_DIR" \
+  AGENTDOCK_NONINTERACTIVE=true AGENTDOCK_TUNNEL_MODE=none \
+  AGENTDOCK_NEXUS_MODE=official \
+  sh "$ENTRY" >"$LINUX_RESUME/first-output.log" 2>&1; then
+  fail "interrupted onboarding fixture unexpectedly completed"
+fi
+[ -x "$LINUX_RESUME/install/bin/agentdock" ] || fail "interrupted onboarding did not commit Core"
+[ "$(cat "$LINUX_RESUME/runtime/.installer-onboarding")" = nexus ] || fail "interrupted onboarding did not persist nexus stage"
+
+PATH="$FAKE_BIN:$PATH" \
+  TEST_UNAME_S=Linux TEST_UNAME_M=x86_64 \
+  TEST_ENGINE_LOG="$LINUX_RESUME/resume-engine.log" \
+  AGENTDOCK_NO_SUDO=true AGENTDOCK_SERVICE_MANAGER=none \
+  AGENTDOCK_SOURCE_DIR="$LINUX_RESUME/install" \
+  AGENTDOCK_ENV_FILE="$LINUX_RESUME/runtime/agentdock.env" \
+  AGENTDOCK_DATA_DIR="$LINUX_RESUME/data" \
+  AGENTDOCK_CLI_LINK_PATH="$LINUX_RESUME/bin/agentdock" \
+  AGENTDOCK_CLOUDFLARED_INSTALL_PATH="$LINUX_RESUME/bin/cloudflared" \
+  AGENTDOCK_INSTALLER_BASE_URL="file://$RELEASE_DIR" \
+  AGENTDOCK_NONINTERACTIVE=true AGENTDOCK_TUNNEL_MODE=none \
+  AGENTDOCK_NEXUS_MODE=official AGENTDOCK_NEXUS_PAIR_CODE=resume-pair-code \
+  sh "$ENTRY" >"$LINUX_RESUME/resume-output.log" 2>&1
+assert_arg nexus "$LINUX_RESUME/resume-engine.log"
+assert_arg install "$LINUX_RESUME/resume-engine.log"
+grep -Fq '检测到上次安装未完成，重新开始安装流程。' "$LINUX_RESUME/resume-output.log" || fail "restart path did not report full onboarding restart"
+grep -Fq 'NexusDock：https://mcp.nexusdock.co' "$LINUX_RESUME/resume-output.log" || fail "restarted install did not finish Nexus pairing"
+[ ! -e "$LINUX_RESUME/runtime/.installer-onboarding" ] || fail "restarted install did not clear onboarding state"
+[ ! -e "$LINUX_RESUME/bin/cloudflared" ] || fail "restarted no-tunnel install unexpectedly installed cloudflared"
+
+# Cloudflare is a post-Core phase. Selecting Named Tunnel installs cloudflared,
+# repairs the runtime, pre-generates OAuth credentials, and prints public details.
+cat >"$FAKE_BIN/cloudflared" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = --version ]; then
+  printf '%s\n' 'cloudflared version test'
+  exit 0
+fi
+exit 0
+EOF
+chmod +x "$FAKE_BIN/cloudflared"
+
+LINUX_CF="$TMP_ROOT/linux-cloudflare"
+mkdir -p "$LINUX_CF"
+PATH="$FAKE_BIN:$PATH" \
+  TEST_UNAME_S=Linux TEST_UNAME_M=x86_64 \
+  TEST_ENGINE_LOG="$LINUX_CF/engine.log" \
+  AGENTDOCK_NO_SUDO=true AGENTDOCK_SERVICE_MANAGER=none \
+  AGENTDOCK_SOURCE_DIR="$LINUX_CF/install" \
+  AGENTDOCK_ENV_FILE="$LINUX_CF/runtime/agentdock.env" \
+  AGENTDOCK_DATA_DIR="$LINUX_CF/data" \
+  AGENTDOCK_CLI_LINK_PATH="$LINUX_CF/bin/agentdock" \
+  AGENTDOCK_CLOUDFLARED_INSTALL_PATH="$LINUX_CF/bin/cloudflared" \
+  AGENTDOCK_CLOUDFLARED_BINARY="$FAKE_BIN/cloudflared" \
+  AGENTDOCK_CLOUDFLARE_TUNNEL_TOKEN=test-tunnel-token \
+  AGENTDOCK_INSTALLER_BASE_URL="file://$RELEASE_DIR" \
+  AGENTDOCK_NONINTERACTIVE=true AGENTDOCK_NEXUS_MODE=none \
+  AGENTDOCK_TUNNEL_MODE=named AGENTDOCK_SERVER_URL=https://agent.example.test \
+  sh "$ENTRY" >"$LINUX_CF/output.log" 2>&1
+[ -x "$LINUX_CF/bin/cloudflared" ] || fail "Named Tunnel did not install cloudflared"
+assert_arg --repair "$LINUX_CF/engine.log"
+assert_arg --rotate-oauth "$LINUX_CF/engine.log"
+assert_arg named "$LINUX_CF/engine.log"
+grep -Fq '公网 MCP：https://agent.example.test/mcp' "$LINUX_CF/output.log" || fail "Named Tunnel summary missing public MCP URL"
+grep -Fq 'OAuth 密码：test-oauth-password' "$LINUX_CF/output.log" || fail "Named Tunnel summary missing OAuth password"
 
 # A checksum mismatch must fail before the Engine executes.
 cp "$RELEASE_DIR/agentdock_linux_amd64.tar.gz.sha256" "$TMP_ROOT/linux.sha.good"

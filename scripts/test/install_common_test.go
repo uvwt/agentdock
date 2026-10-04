@@ -39,7 +39,15 @@ func TestUnifiedInstallerEntryOwnsUnixBootstrap(t *testing.T) {
 		t.Fatalf("read install.sh: %v", err)
 	}
 	entry := string(data)
+	menu := "NexusDock 远程连接：\n1) 官方服务（推荐）\n2) 自托管\n3) 暂不连接"
+	if !strings.Contains(entry, menu) {
+		t.Fatalf("install.sh missing exact NexusDock menu: %q", menu)
+	}
 	for _, want := range []string{
+		`download_file_with_progress`,
+		`max_attempts=60`,
+		`正在获取 Quick Tunnel 公网地址...`,
+		`curl -fL --progress-bar`,
 		`agentdock_${PLATFORM}_${ARCH}.tar.gz`,
 		"install --engine-ready",
 		"AGENTDOCK_INSTALLER_BASE_URL",
@@ -59,6 +67,43 @@ func TestUnifiedInstallerEntryOwnsUnixBootstrap(t *testing.T) {
 		if strings.Contains(entry, forbidden) {
 			t.Fatalf("install.sh still depends on platform installer asset %q", forbidden)
 		}
+	}
+}
+
+func TestUnifiedInstallerFreshFlowOrdersCoreNexusThenCloudflare(t *testing.T) {
+	data, err := os.ReadFile("../install/install.sh")
+	if err != nil {
+		t.Fatalf("read install.sh: %v", err)
+	}
+	entry := string(data)
+	for _, want := range []string{
+		`OFFICIAL_NEXUS_ENDPOINT="${AGENTDOCK_NEXUS_OFFICIAL_ENDPOINT:-https://mcp.nexusdock.co}"`,
+		`OFFICIAL_NEXUS_DEVICES_URL="${AGENTDOCK_NEXUS_OFFICIAL_DEVICES_URL:-https://mcp.nexusdock.co/workspace/devices}"`,
+		`prompt_value '配对码'`,
+		`\n打开 %s 获取 NexusDock 配对码\n`,
+		`run_install_engine install "$CORE_TUNNEL_MODE"`,
+		`configure_nexus`,
+		`choose_tunnel_mode`,
+		`install_linux_cli_link`,
+		`.installer-onboarding`,
+		`write_onboarding_stage nexus`,
+		`write_onboarding_stage tunnel`,
+		`clear_onboarding_stage`,
+	} {
+		if !strings.Contains(entry, want) {
+			t.Fatalf("install.sh missing fresh-flow contract %q", want)
+		}
+	}
+
+	core := strings.Index(entry, `run_install_engine install "$CORE_TUNNEL_MODE"`)
+	nexus := strings.Index(entry[core:], "\n  configure_nexus\n")
+	tunnel := strings.Index(entry[core:], "\n      choose_tunnel_mode\n")
+	cloudflared := strings.Index(entry[core:], `CLOUDFLARED_PATH="$(install_cloudflared "$CLOUDFLARED_TARGET")"`)
+	if core < 0 || nexus < 0 || tunnel < 0 || cloudflared < 0 {
+		t.Fatal("fresh installer flow markers are incomplete")
+	}
+	if !(nexus < tunnel && tunnel < cloudflared) {
+		t.Fatalf("fresh installer order must be Core -> Nexus -> Tunnel choice -> cloudflared; offsets nexus=%d tunnel=%d cloudflared=%d", nexus, tunnel, cloudflared)
 	}
 }
 
