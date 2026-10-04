@@ -74,6 +74,10 @@ func TestUnifiedInstallerFreshFlowOrdersCoreNexusThenCloudflare(t *testing.T) {
 		`configure_nexus`,
 		`choose_tunnel_mode`,
 		`install_linux_cli_link`,
+		`.installer-onboarding`,
+		`write_onboarding_stage nexus`,
+		`write_onboarding_stage tunnel`,
+		`clear_onboarding_stage`,
 	} {
 		if !strings.Contains(entry, want) {
 			t.Fatalf("install.sh missing fresh-flow contract %q", want)

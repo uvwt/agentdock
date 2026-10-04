@@ -72,6 +72,7 @@ stable shim/icon 的职责也已去重：PowerShell 在调用 Engine 前只备�
 - Core 先以本地模式完成安装；Linux 同时把 stable binary 暴露到 `/usr/local/bin/agentdock`。
 - 远程连接随后选择 NexusDock 官方服务、自托管 NexusDock 或跳过；配对直接复用 `agentdock nexus pair`，不在 installer 中复制 Nexus 协议或设备命名逻辑。
 - Cloudflare Tunnel 最后可选；未选择时不下载 cloudflared。选择 Quick/Named 后通过一次 Installer Engine `repair` 写入 Tunnel/OAuth/service 状态，bootstrap 不自行维护第二套状态机。
+- 首次 onboarding 通过 runtime 下的 `.installer-onboarding` 记录 `core / nexus / tunnel` 阶段；若安装被中断，下一次运行从未完成阶段继续，而不是因为 stable binary 已存在就误判成普通升级。流程完成后删除该状态文件。
 - 完成页从已提交 runtime 状态读取本地 MCP、Nexus endpoint 和访问令牌；启用 Cloudflare 时额外输出公网 MCP 与 OAuth 密码。
 
 macOS Release smoke 直接使用 `install.sh --uninstall`；Linux VPS E2E 同样走统一入口。平台服务模板、Quick Tunnel 状态机与卸载事务均在 Go 实现。

@@ -746,6 +746,7 @@ case "$PLATFORM" in
     STABLE_BINARY="$INSTALL_ROOT/bin/agentdock"
     CLI_LINK_PATH="${AGENTDOCK_CLI_LINK_PATH:-/usr/local/bin/agentdock}"
     CLOUDFLARED_TARGET="${AGENTDOCK_CLOUDFLARED_INSTALL_PATH:-/usr/local/bin/cloudflared}"
+    ONBOARDING_STATE_FILE="${AGENTDOCK_ONBOARDING_STATE_FILE:-$RUNTIME_ROOT/.installer-onboarding}"
     ;;
   darwin)
     INSTALL_ROOT="${AGENTDOCK_INSTALL_DIR:-$HOME/.local/bin}"
@@ -756,6 +757,7 @@ case "$PLATFORM" in
     LAUNCH_AGENTS_DIR="${AGENTDOCK_LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}"
     STABLE_BINARY="$INSTALL_ROOT/agentdock"
     CLOUDFLARED_TARGET="${AGENTDOCK_CLOUDFLARED_INSTALL_PATH:-$INSTALL_ROOT/cloudflared}"
+    ONBOARDING_STATE_FILE="${AGENTDOCK_ONBOARDING_STATE_FILE:-$RUNTIME_ROOT/.installer-onboarding}"
     DARWIN_CUSTOM_LAYOUT=false
     if [ -n "${AGENTDOCK_INSTALL_DIR:-}${AGENTDOCK_RUNTIME_ROOT:-}${AGENTDOCK_DEFAULT_DIR:-}${AGENTDOCK_HOME:-}${AGENTDOCK_LAUNCH_AGENTS_DIR:-}" ]; then
       DARWIN_CUSTOM_LAYOUT=true
@@ -935,6 +937,48 @@ read_nexus_endpoint() {
   printf '%s' "$nexus_status" | sed -n 's/.*"endpoint":"\([^"]*\)".*/\1/p'
 }
 
+read_onboarding_stage() {
+  if [ "$PLATFORM" = linux ]; then
+    run_root test -f "$ONBOARDING_STATE_FILE" || return 0
+    stage="$(run_root sed -n '1p' "$ONBOARDING_STATE_FILE" 2>/dev/null || true)"
+  else
+    [ -f "$ONBOARDING_STATE_FILE" ] || return 0
+    stage="$(sed -n '1p' "$ONBOARDING_STATE_FILE" 2>/dev/null || true)"
+  fi
+  case "$stage" in
+    core|nexus|tunnel) printf '%s' "$stage" ;;
+    '') ;;
+    *) die "安装恢复状态无效：$stage" ;;
+  esac
+}
+
+write_onboarding_stage() {
+  stage="$1"
+  state_tmp="$TMP_ROOT/onboarding-state"
+  printf '%s\n' "$stage" >"$state_tmp"
+  case "$PLATFORM" in
+    linux)
+      if ! run_root test -d "$RUNTIME_ROOT"; then
+        run_root mkdir -m 0700 -p "$RUNTIME_ROOT"
+      fi
+      run_root install -m 0600 "$state_tmp" "$ONBOARDING_STATE_FILE"
+      ;;
+    darwin)
+      if [ ! -d "$RUNTIME_ROOT" ]; then
+        mkdir -m 0700 -p "$RUNTIME_ROOT"
+      fi
+      install -m 0600 "$state_tmp" "$ONBOARDING_STATE_FILE"
+      ;;
+  esac
+}
+
+clear_onboarding_stage() {
+  case "$PLATFORM" in
+    linux) run_root rm -f "$ONBOARDING_STATE_FILE" ;;
+    darwin) rm -f "$ONBOARDING_STATE_FILE" ;;
+  esac
+}
+
 case "$TUNNEL_MODE" in
   ''|none|quick|named) ;;
   *) die "Tunnel 模式必须是 none、quick 或 named。" ;;
@@ -944,15 +988,34 @@ FRESH_INSTALL=false
 if [ ! -x "$STABLE_BINARY" ]; then
   FRESH_INSTALL=true
 fi
+
+ONBOARDING_STAGE="$(read_onboarding_stage)"
+RESUMING_ONBOARDING=false
+if [ -n "$ONBOARDING_STAGE" ]; then
+  RESUMING_ONBOARDING=true
+elif [ "$FRESH_INSTALL" = true ]; then
+  # Core/Nexus/Tunnel 是一个可恢复的首次安装流程。Core 落盘后 stable binary 已存在，
+  # 不能仅凭二进制存在就把用户中断后的下一次运行误判成普通升级。
+  write_onboarding_stage core
+  ONBOARDING_STAGE=core
+fi
+if [ "$RESUMING_ONBOARDING" = true ]; then
+  log "检测到未完成的安装流程，从 ${ONBOARDING_STAGE} 阶段继续。"
+fi
+
 REQUESTED_TUNNEL_MODE="$TUNNEL_MODE"
 CORE_TUNNEL_MODE="$TUNNEL_MODE"
-if [ "$FRESH_INSTALL" = true ]; then
-  # 新装严格按 Core -> Nexus -> Cloudflare 的顺序执行；Core 阶段永远先保持本地模式。
+if [ -n "$ONBOARDING_STAGE" ]; then
+  # onboarding 的 Core 阶段始终保持本地模式，Cloudflare 只在最后一步按需安装。
   CORE_TUNNEL_MODE=none
 fi
 
 validate_linux_cli_link
-prepare_payload
+
+# nexus/tunnel 阶段说明 Core 已经提交；恢复时不重复下载 Release、也不重装 Core。
+if [ "$ONBOARDING_STAGE" != nexus ] && [ "$ONBOARDING_STAGE" != tunnel ]; then
+  prepare_payload
+fi
 
 if [ "$PLATFORM" = linux ]; then
   if [ "$SERVICE_MANAGER" != none ]; then
@@ -966,30 +1029,62 @@ if [ "$PLATFORM" = linux ]; then
 fi
 
 CLOUDFLARED_PATH=""
-if [ "$FRESH_INSTALL" != true ]; then
+if [ -z "$ONBOARDING_STAGE" ]; then
   if [ "$CORE_TUNNEL_MODE" = named ]; then
     prepare_named_tunnel
   fi
   if [ "$CORE_TUNNEL_MODE" = quick ] || [ "$CORE_TUNNEL_MODE" = named ]; then
     CLOUDFLARED_PATH="$(install_cloudflared "$CLOUDFLARED_TARGET")"
   elif [ -z "$CORE_TUNNEL_MODE" ] && valid_cloudflared "$CLOUDFLARED_TARGET"; then
-    # 升级时保留现有 cloudflared 路径，但绝不因为“可能会用”而下载。
+    # 普通升级保留现有 cloudflared 路径，但绝不因为“可能会用”而下载。
     CLOUDFLARED_PATH="$CLOUDFLARED_TARGET"
   fi
 fi
 
-CORE_RESULT_FILE="$TMP_ROOT/install-result.json"
-run_install_engine install "$CORE_TUNNEL_MODE" "$CLOUDFLARED_PATH" "$CORE_RESULT_FILE" false
-install_linux_cli_link
+if [ "$ONBOARDING_STAGE" != nexus ] && [ "$ONBOARDING_STAGE" != tunnel ]; then
+  CORE_RESULT_FILE="$TMP_ROOT/install-result.json"
+  run_install_engine install "$CORE_TUNNEL_MODE" "$CLOUDFLARED_PATH" "$CORE_RESULT_FILE" false
+  install_linux_cli_link
+  if [ "$ONBOARDING_STAGE" = core ]; then
+    write_onboarding_stage nexus
+    ONBOARDING_STAGE=nexus
+  fi
+else
+  # Core 已在上一次运行中提交；补齐可能恰好在中断点前尚未创建的 CLI 链接即可。
+  install_linux_cli_link
+fi
 
-# 新装默认进入 Nexus 选择；已有安装只有显式传入 --nexus/AGENTDOCK_NEXUS_MODE 才重新配对。
-if [ "$FRESH_INSTALL" = true ] || [ -n "$NEXUS_MODE" ]; then
+# Pairing Code 是一次性的。若上一次恰好在 pair 成功后中断，先识别已保存身份，
+# 避免再次要求用户输入已经消费掉的配对码。
+if [ "$ONBOARDING_STAGE" = nexus ]; then
+  existing_nexus_endpoint=""
+  if [ "$RESUMING_ONBOARDING" = true ]; then
+    existing_nexus_endpoint="$(read_nexus_endpoint)"
+  fi
+  if [ -n "$existing_nexus_endpoint" ]; then
+    log "检测到 NexusDock 已配对，继续 Cloudflare 配置。"
+  else
+    configure_nexus
+  fi
+  write_onboarding_stage tunnel
+  ONBOARDING_STAGE=tunnel
+elif [ -n "$NEXUS_MODE" ]; then
+  # 已完成 onboarding 的机器只有显式传入 --nexus/AGENTDOCK_NEXUS_MODE 才重新配对。
   configure_nexus
 fi
 if [ -n "$NEXUS_PAIR_CODE_FILE" ]; then rm -f "$NEXUS_PAIR_CODE_FILE"; fi
 
-if [ "$FRESH_INSTALL" = true ]; then
+if [ "$ONBOARDING_STAGE" = tunnel ]; then
   TUNNEL_MODE="$REQUESTED_TUNNEL_MODE"
+
+  # 若上一次已成功提交 Quick/Named Tunnel，只是来不及清除恢复状态，
+  # 直接沿用已提交配置，避免重复下载或再次索要 Named Tunnel Token。
+  existing_tunnel_mode="$(read_tunnel_mode)"
+  if [ -z "$TUNNEL_MODE" ] && { [ "$existing_tunnel_mode" = quick ] || [ "$existing_tunnel_mode" = named ]; }; then
+    TUNNEL_MODE="$existing_tunnel_mode"
+    log "检测到 Cloudflare Tunnel 已配置，继续完成安装。"
+  fi
+
   if [ -z "$TUNNEL_MODE" ]; then
     if is_true "$NONINTERACTIVE"; then
       TUNNEL_MODE=none
@@ -1001,15 +1096,20 @@ if [ "$FRESH_INSTALL" = true ]; then
   case "$TUNNEL_MODE" in
     none) ;;
     quick|named)
-      if [ "$TUNNEL_MODE" = named ]; then prepare_named_tunnel; fi
-      CLOUDFLARED_PATH="$(install_cloudflared "$CLOUDFLARED_TARGET")"
-      TUNNEL_RESULT_FILE="$TMP_ROOT/tunnel-result.json"
-      # 新装首次开启公网时预生成稳定 OAuth 凭据。Quick Tunnel 拿到随机域名后只切换
-      # OAuth enabled/Origin，不需要在后台进程里再生成或轮换凭据。
-      run_install_engine repair "$TUNNEL_MODE" "$CLOUDFLARED_PATH" "$TUNNEL_RESULT_FILE" true
+      if [ "$existing_tunnel_mode" != "$TUNNEL_MODE" ]; then
+        if [ "$TUNNEL_MODE" = named ]; then prepare_named_tunnel; fi
+        CLOUDFLARED_PATH="$(install_cloudflared "$CLOUDFLARED_TARGET")"
+        TUNNEL_RESULT_FILE="$TMP_ROOT/tunnel-result.json"
+        # 新装首次开启公网时预生成稳定 OAuth 凭据。Quick Tunnel 拿到随机域名后只切换
+        # OAuth enabled/Origin，不需要在后台进程里再生成或轮换凭据。
+        run_install_engine repair "$TUNNEL_MODE" "$CLOUDFLARED_PATH" "$TUNNEL_RESULT_FILE" true
+      fi
       ;;
     *) die "Tunnel 模式必须是 none、quick 或 named。" ;;
   esac
+
+  clear_onboarding_stage
+  ONBOARDING_STAGE=""
 else
   TUNNEL_MODE="$(read_tunnel_mode)"
 fi

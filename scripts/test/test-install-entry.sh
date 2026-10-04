@@ -201,6 +201,50 @@ pair_line="$(grep -n '^arg=nexus$' "$LINUX_NEXUS/engine.log" | head -1 | cut -d:
 [ -n "$core_line" ] && [ -n "$pair_line" ] && [ "$core_line" -lt "$pair_line" ] || fail "Nexus pairing ran before Core install"
 grep -Fq 'Nexus：https://mcp.nexusdock.co' "$LINUX_NEXUS/output.log" || fail "final summary missing official Nexus endpoint"
 [ ! -e "$LINUX_NEXUS/bin/cloudflared" ] || fail "Nexus-only install unexpectedly installed cloudflared"
+[ ! -e "$LINUX_NEXUS/runtime/.installer-onboarding" ] || fail "completed install left onboarding recovery state behind"
+
+# Interrupted onboarding must resume even though the stable binary already exists.
+# First run commits Core, then intentionally fails because non-interactive official
+# Nexus pairing has no code. The second run must resume from nexus without reinstalling Core.
+LINUX_RESUME="$TMP_ROOT/linux-resume"
+mkdir -p "$LINUX_RESUME"
+if PATH="$FAKE_BIN:$PATH" \
+  TEST_UNAME_S=Linux TEST_UNAME_M=x86_64 \
+  TEST_ENGINE_LOG="$LINUX_RESUME/first-engine.log" \
+  AGENTDOCK_NO_SUDO=true AGENTDOCK_SERVICE_MANAGER=none \
+  AGENTDOCK_SOURCE_DIR="$LINUX_RESUME/install" \
+  AGENTDOCK_ENV_FILE="$LINUX_RESUME/runtime/agentdock.env" \
+  AGENTDOCK_DATA_DIR="$LINUX_RESUME/data" \
+  AGENTDOCK_CLI_LINK_PATH="$LINUX_RESUME/bin/agentdock" \
+  AGENTDOCK_CLOUDFLARED_INSTALL_PATH="$LINUX_RESUME/bin/cloudflared" \
+  AGENTDOCK_INSTALLER_BASE_URL="file://$RELEASE_DIR" \
+  AGENTDOCK_NONINTERACTIVE=true AGENTDOCK_TUNNEL_MODE=none \
+  AGENTDOCK_NEXUS_MODE=official \
+  sh "$ENTRY" >"$LINUX_RESUME/first-output.log" 2>&1; then
+  fail "interrupted onboarding fixture unexpectedly completed"
+fi
+[ -x "$LINUX_RESUME/install/bin/agentdock" ] || fail "interrupted onboarding did not commit Core"
+[ "$(cat "$LINUX_RESUME/runtime/.installer-onboarding")" = nexus ] || fail "interrupted onboarding did not persist nexus stage"
+
+PATH="$FAKE_BIN:$PATH" \
+  TEST_UNAME_S=Linux TEST_UNAME_M=x86_64 \
+  TEST_ENGINE_LOG="$LINUX_RESUME/resume-engine.log" \
+  AGENTDOCK_NO_SUDO=true AGENTDOCK_SERVICE_MANAGER=none \
+  AGENTDOCK_SOURCE_DIR="$LINUX_RESUME/install" \
+  AGENTDOCK_ENV_FILE="$LINUX_RESUME/runtime/agentdock.env" \
+  AGENTDOCK_DATA_DIR="$LINUX_RESUME/data" \
+  AGENTDOCK_CLI_LINK_PATH="$LINUX_RESUME/bin/agentdock" \
+  AGENTDOCK_CLOUDFLARED_INSTALL_PATH="$LINUX_RESUME/bin/cloudflared" \
+  AGENTDOCK_INSTALLER_BASE_URL="file://$RELEASE_DIR" \
+  AGENTDOCK_NONINTERACTIVE=true AGENTDOCK_TUNNEL_MODE=none \
+  AGENTDOCK_NEXUS_MODE=official AGENTDOCK_NEXUS_PAIR_CODE=resume-pair-code \
+  sh "$ENTRY" >"$LINUX_RESUME/resume-output.log" 2>&1
+assert_arg nexus "$LINUX_RESUME/resume-engine.log"
+assert_no_arg install "$LINUX_RESUME/resume-engine.log"
+grep -Fq '检测到未完成的安装流程，从 nexus 阶段继续。' "$LINUX_RESUME/resume-output.log" || fail "resume path did not report nexus stage"
+grep -Fq 'Nexus：https://mcp.nexusdock.co' "$LINUX_RESUME/resume-output.log" || fail "resumed install did not finish Nexus pairing"
+[ ! -e "$LINUX_RESUME/runtime/.installer-onboarding" ] || fail "resumed install did not clear onboarding recovery state"
+[ ! -e "$LINUX_RESUME/bin/cloudflared" ] || fail "resumed no-tunnel install unexpectedly installed cloudflared"
 
 # Cloudflare is a post-Core phase. Selecting Named Tunnel installs cloudflared,
 # repairs the runtime, pre-generates OAuth credentials, and prints public details.
