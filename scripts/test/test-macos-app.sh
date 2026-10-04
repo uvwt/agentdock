@@ -205,6 +205,8 @@ test -f "$ZIP.sha256"
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
 test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist")" = "com.uvwt.agentdock"
 test "$(plutil -extract CFBundleIconFile raw -o - "$APP/Contents/Info.plist")" = "AgentDock.icns"
+test -f "$APP/Contents/Resources/AgentDockLogo.png"
+cmp -s "$APP/Contents/Resources/AgentDockLogo.png" "$ROOT_DIR/packaging/assets/agentdock.png"
 test "$(plutil -extract CFBundleDevelopmentRegion raw -o - "$APP/Contents/Info.plist")" = "en"
 test "$(plutil -extract LSUIElement raw -o - "$APP/Contents/Info.plist")" = "true"
 test -n "$(plutil -extract NSAppleEventsUsageDescription raw -o - "$APP/Contents/Info.plist")"

@@ -179,6 +179,11 @@ iconutil -c icns "$ICONSET_DIR" -o "$RESOURCES_DIR/AgentDock.icns"
 [[ -f "$RESOURCES_DIR/AgentDock.icns" && ! -L "$RESOURCES_DIR/AgentDock.icns" ]] || \
   die "macOS App 图标生成失败"
 
+# 控制面板里的品牌标志使用透明源图，不复用 App Icon，避免 macOS 图标语义带入底板。
+cp -p "$APP_ICON_SOURCE" "$RESOURCES_DIR/AgentDockLogo.png"
+[[ -f "$RESOURCES_DIR/AgentDockLogo.png" && ! -L "$RESOURCES_DIR/AgentDockLogo.png" ]] || \
+  die "macOS 控制面板 Logo 资源生成失败"
+
 # 桌面版把 Core、cloudflared 和官方核心 Skill 直接收进 App Bundle。
 # 版本更新因此只替换一个 AgentDock.app，不再维护 ~/.local/bin 的第二套生产文件。
 helper_core_binaries=()

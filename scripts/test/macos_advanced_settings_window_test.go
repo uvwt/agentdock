@@ -37,7 +37,11 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 	}
 	content := string(data)
 	for _, want := range []string{
-		"Image(nsImage: NSApp.applicationIconImage)",
+		"private struct AgentDockLogo",
+		`Bundle.main.url(forResource: "AgentDockLogo", withExtension: "png")`,
+		"AgentDockLogo(size: 20)",
+		"AgentDockLogo(size: 48)",
+		"AgentDockLogo(size: 40)",
 		"private enum HomeCapabilityState",
 		"private struct HomeMetric",
 		"private struct HomeCapabilityRow",
@@ -104,6 +108,7 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
+		"NSApp.applicationIconImage",
 		`L10n.format("%d / 3 available", enabled)`,
 		"capabilitySummary",
 		`SettingsSection(L10n.text("Runtime status"))`,
