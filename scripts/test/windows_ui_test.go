@@ -446,6 +446,8 @@ func TestWindowsActivityOwnsRuntimeAnalytics(t *testing.T) {
 		"RecentCallsPrivacyHint",
 		`x:Name="LogsNavigationItem" Tag="logs"`,
 		"BuildLogs()",
+		"log.SelectionChanged += LogLevel_SelectionChanged",
+		`await _runtime.RunCoreActionAsync("restart")`,
 		"AdvancedDiagnostics",
 		"diagnosticsContent.Visibility = Visibility.Collapsed",
 		"HorizontalAlignment = HorizontalAlignment.Stretch",
@@ -463,6 +465,8 @@ func TestWindowsActivityOwnsRuntimeAnalytics(t *testing.T) {
 		`x:Name="CallStatisticsPanel"`,
 		`x:Name="ResourcesSection"`,
 		`x:Name="DiagnosticsSection"`,
+		"SaveLogSettings_Click",
+		"LogLevelRestartHint",
 	} {
 		if strings.Contains(activityXaml+activityCode+runtime, forbidden) {
 			t.Fatalf("WinUI Activity retained retired analytics UI %q", forbidden)

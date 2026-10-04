@@ -148,16 +148,8 @@ public sealed partial class SettingsPage : Page
             log.Items.Add(new ComboBoxItem { Content = LogLevelLabel(value), Tag = value });
         }
         SelectComboTag(log, _snapshot?.Settings.LogLevel ?? "info");
+        log.SelectionChanged += LogLevel_SelectionChanged;
         rows.Children.Add(ActionRow(UiText.Get("LogLevel"), log));
-        rows.Children.Add(Divider());
-
-        var apply = new Button { Content = UiText.Get("ApplyChanges") };
-        apply.Click += SaveLogSettings_Click;
-        rows.Children.Add(DetailActionRow(
-            UiText.Get("Logging"),
-            UiText.Get("LogLevelRestartHint"),
-            apply
-        ));
         rows.Children.Add(Divider());
 
         var openLogs = new Button { Content = UiText.Get("Open") };
@@ -650,14 +642,21 @@ public sealed partial class SettingsPage : Page
         catch (Exception ex) { await ShowMessageAsync(UiText.Get("SaveFailed"), ex.Message); }
     }
 
-    private async void SaveLogSettings_Click(object sender, RoutedEventArgs e)
+    private async void LogLevel_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_runtime is null || _snapshot is null) return;
-        var rows = (sender as Button)?.Parent is Grid actionRow && actionRow.Parent is StackPanel panel ? panel : null;
-        if (rows is null) return;
-        var log = FindTagged<ComboBox>(rows, "log");
-        if (log?.SelectedItem is not ComboBoxItem logItem) return;
-        _snapshot.Settings.LogLevel = logItem.Tag?.ToString() ?? "info";
+        if (_runtime is null || _snapshot is null || sender is not ComboBox log ||
+            log.SelectedItem is not ComboBoxItem logItem)
+        {
+            return;
+        }
+
+        var value = logItem.Tag?.ToString() ?? "info";
+        if (string.Equals(value, _snapshot.Settings.LogLevel, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        _snapshot.Settings.LogLevel = value;
         try
         {
             await _runtime.SaveSettingsAsync(_snapshot.Settings);
@@ -665,7 +664,12 @@ public sealed partial class SettingsPage : Page
             await RefreshAsync();
             Render("logs");
         }
-        catch (Exception ex) { await ShowMessageAsync(UiText.Get("SaveFailed"), ex.Message); }
+        catch (Exception ex)
+        {
+            await ShowMessageAsync(UiText.Get("SaveFailed"), ex.Message);
+            await RefreshAsync();
+            Render("logs");
+        }
     }
 
     private async void StartupToggle_Toggled(object sender, RoutedEventArgs e)

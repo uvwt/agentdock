@@ -211,6 +211,8 @@ func TestMacOSActivityOwnsRuntimeAnalytics(t *testing.T) {
 		`case .logs:`,
 		`SettingsSection(L10n.text("Logs"))`,
 		`L10n.text("Log level")`,
+		`.onChange(of: logLevel)`,
+		`applyLogLevel(value)`,
 		`L10n.text("Advanced diagnostics")`,
 		`L10n.text("Copy diagnostics")`,
 		"recentP95(analytics)",
@@ -227,6 +229,7 @@ func TestMacOSActivityOwnsRuntimeAnalytics(t *testing.T) {
 		`SettingsSection(L10n.text("Call overview"))`,
 		`SettingsSection(L10n.text("Call statistics"))`,
 		`SettingsSection(L10n.text("Runtime resources"))`,
+		`Button(L10n.text("Apply changes")) { applyLogLevel`,
 	} {
 		if strings.Contains(content, forbidden) {
 			t.Fatalf("macOS retained retired analytics UI %q", forbidden)

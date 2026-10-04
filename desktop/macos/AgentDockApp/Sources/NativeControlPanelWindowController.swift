@@ -1498,14 +1498,10 @@ private struct SettingsView: View {
                         }
                         .labelsHidden()
                         .frame(width: 120)
-                    }
-                    RowDivider()
-                    SettingsRow(
-                        L10n.text("Logging"),
-                        detail: L10n.text("Changing the log level will restart AgentDock.")
-                    ) {
-                        Button(L10n.text("Apply changes")) { applyLogLevel() }
-                            .controlSize(.small)
+                        .onChange(of: logLevel) { value in
+                            guard value != model.status.configuration?.logLevel else { return }
+                            applyLogLevel(value)
+                        }
                     }
                     RowDivider()
                     SettingsRow(L10n.text("Logs directory")) {
@@ -1822,11 +1818,12 @@ private struct SettingsView: View {
         }
     }
 
-    private func applyLogLevel() {
-        guard let configuration = model.status.configuration else { return }
+    private func applyLogLevel(_ value: String) {
+        guard let configuration = model.status.configuration,
+              value != configuration.logLevel else { return }
         let settings = EditableServiceSettings(
             port: configuration.port,
-            logLevel: logLevel,
+            logLevel: value,
             mcpAppsMode: configuration.mcpAppsMode,
             browserEnabled: configuration.browserEnabled,
             browserCDPURL: configuration.browserCDPURL,
