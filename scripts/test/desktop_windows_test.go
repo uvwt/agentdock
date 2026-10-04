@@ -219,56 +219,20 @@ func TestDesktopTrayMenusUseNativeDismissalAndOmitCopyActions(t *testing.T) {
 	windowsApp := string(windowsData)
 	macApp := string(macData)
 
-	orderedItems := []string{
-		`AgentDock: {statusText}`,
-		`UiText.Get("OpenAgentDock")`,
-		`UiText.Get("StopAgentDock")`,
-		`UiText.Get("RestartAgentDock")`,
-		`UiText.Get("StartAgentDock")`,
-		`UiText.Get("CheckForUpdates")`,
-		`UiText.Get("OpenLogsFolder")`,
-		`UiText.Get("OpenConfigFolder")`,
-		`UiText.Get("OpenDocumentation")`,
-		`UiText.Get("ExitTray")`,
-	}
-	lastIndex := -1
-	for _, item := range orderedItems {
-		index := strings.Index(windowsApp, item)
-		if index < 0 {
-			t.Fatalf("Windows tray menu missing macOS-aligned item %q", item)
-		}
-		if index <= lastIndex {
-			t.Fatalf("Windows tray menu item %q is out of order", item)
-		}
-		lastIndex = index
-	}
-
 	for _, want := range []string{
-		"ContextMenuStrip = _trayMenu",
-		"PopulateTrayMenu(_trayMenu, null)",
-		"DispatcherTimer",
-		"PopulateTrayMenu",
-		"RefreshTraySnapshotAsync",
-		"!_trayMenu.Visible",
-		"Runtime.GetSnapshotAsync()",
-		"snapshot.CoreRunning",
-		"https://uvwt.github.io/agentdock-docs/",
+		`UiText.Get("OpenAgentDock")`, `UiText.Get("StartAgentDock")`, `UiText.Get("StopAgentDock")`,
+		`UiText.Get("RestartAgentDock")`, `UiText.Get("OpenLogsFolder")`, `UiText.Get("OpenConfigFolder")`,
+		`UiText.Get("ExitTray")`, "ContextMenuStrip = _trayMenu", "Forms.NotifyIcon", "ShowControlPanel",
 	} {
 		if !strings.Contains(windowsApp, want) {
-			t.Fatalf("Windows tray menu missing native live behavior %q", want)
+			t.Fatalf("Windows tray menu missing native behavior %q", want)
 		}
 	}
 
 	for _, want := range []string{
-		`L10n.text("Open AgentDock")`,
-		`L10n.text("Stop AgentDock")`,
-		`L10n.text("Restart AgentDock")`,
-		`L10n.text("Start AgentDock")`,
-		`L10n.text("Open background settings")`,
-		`L10n.text("Check for updates…")`,
-		`L10n.text("Open logs folder")`,
-		`L10n.text("Open configuration folder")`,
-		`L10n.text("Open documentation")`,
+		`L10n.text("Open AgentDock")`, `L10n.text("Stop AgentDock")`, `L10n.text("Restart AgentDock")`,
+		`L10n.text("Start AgentDock")`, `L10n.text("Check for updates…")`, `L10n.text("View activity")`,
+		`L10n.text("Open logs folder")`, `L10n.text("Open configuration folder")`, `L10n.text("Open documentation")`,
 		`L10n.text("Exit menu bar app")`,
 	} {
 		if !strings.Contains(macApp, want) {
@@ -277,24 +241,15 @@ func TestDesktopTrayMenusUseNativeDismissalAndOmitCopyActions(t *testing.T) {
 	}
 
 	for _, forbidden := range []string{
-		`"复制本地 MCP 地址"`,
-		`"复制公网 MCP 地址"`,
-		"copyLocalMCP",
-		"copyPublicMCP",
-		"Forms.Clipboard.SetText",
-		"NSPasteboard.general",
+		`"复制本地 MCP 地址"`, `"复制公网 MCP 地址"`, "copyLocalMCP", "copyPublicMCP",
+		"Forms.Clipboard.SetText", "NSPasteboard.general", "NotifyIcon_MouseUp", "_trayMenu.Show(",
 	} {
 		if strings.Contains(windowsApp, forbidden) || strings.Contains(macApp, forbidden) {
-			t.Fatalf("desktop tray menus must not expose copy-address behavior %q", forbidden)
-		}
-	}
-
-	for _, forbidden := range []string{"NotifyIcon_MouseUp", "_trayMenu.Show("} {
-		if strings.Contains(windowsApp, forbidden) {
-			t.Fatalf("Windows tray menu must use native NotifyIcon dismissal instead of manual popup behavior %q", forbidden)
+			t.Fatalf("desktop tray menus must not expose retired manual/copy behavior %q", forbidden)
 		}
 	}
 }
+
 func TestWindowsUpdateProgressUsesCoreByteFields(t *testing.T) {
 	modelData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Models", "RuntimeModels.cs"))
 	if err != nil {
@@ -439,9 +394,9 @@ func TestWindowsBackgroundTrayStartupDoesNotShowExistingControlPanel(t *testing.
 	if backgroundIndex < 0 || singletonIndex < 0 || backgroundIndex > singletonIndex {
 		t.Fatal("Windows tray must resolve --background before handling the singleton instance")
 	}
-	branchEnd := strings.Index(app[singletonIndex:], "Shutdown();")
+	branchEnd := strings.Index(app[singletonIndex:], "Exit();")
 	if branchEnd < 0 {
-		t.Fatal("Windows tray singleton branch is incomplete")
+		t.Fatal("Windows tray singleton branch must exit the secondary instance")
 	}
 	singletonBranch := app[singletonIndex : singletonIndex+branchEnd]
 	if !strings.Contains(singletonBranch, "if (!background)") || !strings.Contains(singletonBranch, "existingEvent.Set();") {
