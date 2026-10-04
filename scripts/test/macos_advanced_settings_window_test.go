@@ -90,7 +90,7 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 		"requestUpdate()",
 		`case .permissions: return L10n.text("Permissions")`,
 		"setLanguagePreference(_ preference:",
-		"case permissions, startup, logs, advancedConnection, appearance, about",
+		"case appearance, permissions, startup, logs, advancedConnection, about",
 		`case .logs: return L10n.text("Logs")`,
 		`case .appearance: return L10n.text("Appearance")`,
 		"case .about: return L10n.text(\"About\")",
