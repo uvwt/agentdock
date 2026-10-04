@@ -199,7 +199,7 @@ public sealed partial class SettingsPage : Page
         var product = new StackPanel { Spacing = 8 };
         product.Children.Add(new Image
         {
-            Source = new BitmapImage(new Uri("ms-appx:///Assets/agentdock.png")),
+            Source = LoadProductLogo(),
             Width = 40,
             Height = 40,
             Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform,
@@ -248,6 +248,12 @@ public sealed partial class SettingsPage : Page
         content.Children.Add(resources);
 
         return content;
+    }
+
+    private static BitmapImage? LoadProductLogo()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Assets", "agentdock.png");
+        return File.Exists(path) ? new BitmapImage(new Uri(path, UriKind.Absolute)) : null;
     }
 
     private void ThemePreference_SelectionChanged(object sender, SelectionChangedEventArgs e)

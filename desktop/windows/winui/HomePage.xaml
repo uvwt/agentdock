@@ -26,7 +26,7 @@
                             CornerRadius="13"
                             Background="Transparent"
                             VerticalAlignment="Center">
-                        <Image Source="Assets/agentdock.png"
+                        <Image x:Name="ProductLogo"
                                Width="48"
                                Height="48"
                                Stretch="Uniform"/>

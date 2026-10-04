@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Navigation;
 
 namespace AgentDock.ControlPanel;
@@ -22,6 +23,7 @@ public sealed partial class HomePage : Page
     public HomePage()
     {
         InitializeComponent();
+        ProductLogo.Source = LoadProductLogo();
         PageTitle.Text = UiText.Get("Home");
         RemoteConnectionLabel.Text = UiText.Get("RemoteConnection");
         SkillsLabel.Text = UiText.Get("Skills");
@@ -34,6 +36,12 @@ public sealed partial class HomePage : Page
         CodingAgentCapabilityTitle.Text = UiText.Get("CodingAgent");
         McpAppsCapabilityTitle.Text = UiText.Get("McpApps");
         RecentActivitySection.Title = UiText.Get("RecentActivity");
+    }
+
+    private static BitmapImage? LoadProductLogo()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Assets", "agentdock.png");
+        return File.Exists(path) ? new BitmapImage(new Uri(path, UriKind.Absolute)) : null;
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
