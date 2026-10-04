@@ -10,6 +10,7 @@ umask 077
 DEFAULT_BASE_URL="https://github.com/uvwt/agentdock/releases/latest/download"
 GITHUB_RELEASES_URL="https://github.com/uvwt/agentdock/releases"
 CLOUDFLARED_BASE_URL="${AGENTDOCK_CLOUDFLARED_RELEASE_BASE_URL:-https://github.com/cloudflare/cloudflared/releases/latest/download}"
+OFFICIAL_NEXUS_ENDPOINT="${AGENTDOCK_NEXUS_OFFICIAL_ENDPOINT:-https://mcp.nexusdock.co}"
 BASE_URL="${AGENTDOCK_INSTALLER_BASE_URL:-$DEFAULT_BASE_URL}"
 RELEASE_VERSION="${AGENTDOCK_RELEASE_VERSION:-latest}"
 TMP_ROOT=""
@@ -24,6 +25,10 @@ NO_START=false
 TUNNEL_MODE="${AGENTDOCK_TUNNEL_MODE:-}"
 SERVER_URL="${AGENTDOCK_SERVER_URL:-}"
 TUNNEL_TOKEN_FILE=""
+NEXUS_MODE="${AGENTDOCK_NEXUS_MODE:-}"
+NEXUS_ENDPOINT="${AGENTDOCK_NEXUS_ENDPOINT:-}"
+NEXUS_PAIR_CODE="${AGENTDOCK_NEXUS_PAIR_CODE:-}"
+NEXUS_PAIR_CODE_FILE=""
 HOST_VALUE="${AGENTDOCK_HOST:-}"
 PORT_VALUE="${AGENTDOCK_PORT:-}"
 LOG_LEVEL_VALUE="${AGENTDOCK_LOG_LEVEL:-}"
@@ -64,6 +69,7 @@ AgentDock Unix 安装与维护入口。
 
 用法：
   sh install.sh
+  sh install.sh --nexus official|self-hosted|none [--nexus-endpoint URL] [--nexus-pair-code-file FILE]
   sh install.sh --tunnel none|quick|named [--server-url URL] [--tunnel-token-file FILE]
   sh install.sh --register-service [--no-start]
   sh install.sh --version latest|vX.Y.Z
@@ -358,10 +364,10 @@ prepare_payload() {
 choose_tunnel_mode() {
   cat >>"$TTY_OUT" <<'CHOICE'
 
-公网访问：
-1) 仅本机
-2) 临时公网地址
-3) Cloudflare 固定地址
+Cloudflare Tunnel：
+1) 不配置
+2) 临时公网地址（Quick Tunnel）
+3) 固定公网地址（Named Tunnel）
 CHOICE
   choice="$(prompt_choice '选择' 1)"
   case "$choice" in
@@ -370,6 +376,271 @@ CHOICE
     3|named) TUNNEL_MODE=named ;;
     *) die "无效选择：$choice" ;;
   esac
+}
+
+choose_nexus_mode() {
+  cat >>"$TTY_OUT" <<'CHOICE'
+
+Nexus 连接：
+1) NexusDock 官方服务（推荐）
+2) 自托管 Nexus
+3) 暂不连接
+CHOICE
+  choice="$(prompt_choice '选择' 1)"
+  case "$choice" in
+    1|official) NEXUS_MODE=official ;;
+    2|self-hosted|selfhosted) NEXUS_MODE=self-hosted ;;
+    3|none) NEXUS_MODE=none ;;
+    *) die "无效选择：$choice" ;;
+  esac
+}
+
+restart_core_after_pair() {
+  [ "$NO_START" != true ] || return 0
+  case "$PLATFORM" in
+    linux)
+      [ "$SERVICE_MANAGER" != none ] || return 0
+      run_root "$STABLE_BINARY" service restart --runtime-root "$RUNTIME_ROOT" >/dev/null
+      ;;
+    darwin)
+      [ "$REGISTER_SERVICE" = true ] || return 0
+      "$STABLE_BINARY" service restart --runtime-root "$RUNTIME_ROOT" >/dev/null
+      ;;
+  esac
+}
+
+pair_nexus_once() {
+  case "$PLATFORM" in
+    linux)
+      if [ "$SERVICE_MANAGER" = none ]; then
+        pair_command="current"
+      elif command -v runuser >/dev/null 2>&1; then
+        pair_command="runuser"
+      elif command -v setpriv >/dev/null 2>&1; then
+        pair_command="setpriv"
+      elif command -v sudo >/dev/null 2>&1; then
+        pair_command="sudo"
+      else
+        die "缺少 runuser/setpriv/sudo，无法安全地以 $SERVICE_USER 身份写入 Nexus identity。"
+      fi
+      case "$pair_command" in
+        current)
+          env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >>"$TTY_OUT" 2>&1 || return 1
+          ;;
+        runuser)
+          run_root runuser -u "$SERVICE_USER" -- env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >>"$TTY_OUT" 2>&1 || return 1
+          ;;
+        setpriv)
+          service_uid="$(id -u "$SERVICE_USER")"
+          service_gid="$(id -g "$SERVICE_USER")"
+          run_root setpriv --reuid "$service_uid" --regid "$service_gid" --init-groups env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >>"$TTY_OUT" 2>&1 || return 1
+          ;;
+        sudo)
+          sudo -u "$SERVICE_USER" env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >>"$TTY_OUT" 2>&1 || return 1
+          ;;
+      esac
+      ;;
+    darwin)
+      if ! env AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >>"$TTY_OUT" 2>&1; then
+        return 1
+      fi
+      ;;
+  esac
+  if ! restart_core_after_pair; then
+    log "Nexus 已配对，但 Core 自动重启失败；下次启动时会加载新的 Nexus 身份。"
+  fi
+  return 0
+}
+
+configure_nexus() {
+  if [ -z "$NEXUS_MODE" ]; then
+    if is_true "$NONINTERACTIVE"; then
+      NEXUS_MODE=none
+    else
+      choose_nexus_mode
+    fi
+  fi
+
+  case "$NEXUS_MODE" in
+    none)
+      NEXUS_ENDPOINT=""
+      return
+      ;;
+    official)
+      NEXUS_ENDPOINT="$OFFICIAL_NEXUS_ENDPOINT"
+      ;;
+    self-hosted)
+      if [ -z "$NEXUS_ENDPOINT" ]; then
+        is_true "$NONINTERACTIVE" && die "自托管 Nexus 必须提供 --nexus-endpoint"
+        NEXUS_ENDPOINT="$(prompt_value 'Nexus Endpoint')"
+      fi
+      ;;
+  esac
+
+  if [ -n "$NEXUS_PAIR_CODE_FILE" ]; then
+    [ -f "$NEXUS_PAIR_CODE_FILE" ] || die "Nexus 配对码文件不存在：$NEXUS_PAIR_CODE_FILE"
+    NEXUS_PAIR_CODE="$(sed -n '1p' "$NEXUS_PAIR_CODE_FILE")"
+  fi
+  if [ -z "$NEXUS_PAIR_CODE" ]; then
+    is_true "$NONINTERACTIVE" && die "Nexus 配对必须通过 AGENTDOCK_NEXUS_PAIR_CODE 或 --nexus-pair-code-file 提供配对码"
+    NEXUS_PAIR_CODE="$(prompt_secret 'Nexus Pairing Code')"
+  fi
+
+  while ! pair_nexus_once; do
+    if is_true "$NONINTERACTIVE"; then
+      die "Nexus 配对失败。"
+    fi
+    retry="$(prompt_choice 'Nexus 配对失败，重新输入配对码？(y/n)' y)"
+    case "$retry" in
+      y|Y|yes|YES) NEXUS_PAIR_CODE="$(prompt_secret 'Nexus Pairing Code')" ;;
+      *)
+        log "已跳过 Nexus 配对，AgentDock Core 保持可用。"
+        NEXUS_MODE=none
+        NEXUS_ENDPOINT=""
+        return
+        ;;
+    esac
+  done
+}
+
+read_env_value() {
+  file="$1"
+  key="$2"
+
+  # Installer env 文件由 service user 运行时可读/写。这里只解析目标 KEY，绝不能
+  # source/eval 整个文件，否则再次以 root 运行安装器时会把配置内容升级成 shell 代码执行。
+  if [ "$PLATFORM" = linux ]; then
+    run_root awk -v key="$key" '
+      index($0, key "=") == 1 {
+        value = substr($0, length(key) + 2)
+        if (value == "\047\047") {
+          exit
+        }
+        output = ""
+        escaped = 0
+        for (i = 1; i <= length(value); i++) {
+          char = substr(value, i, 1)
+          if (escaped) {
+            output = output char
+            escaped = 0
+          } else if (char == "\\") {
+            escaped = 1
+          } else {
+            output = output char
+          }
+        }
+        if (escaped) {
+          output = output "\\"
+        }
+        printf "%s", output
+        exit
+      }
+    ' "$file" 2>/dev/null || true
+  else
+    awk -v key="$key" '
+      index($0, key "=") == 1 {
+        value = substr($0, length(key) + 2)
+        if (value == "\047\047") {
+          exit
+        }
+        output = ""
+        escaped = 0
+        for (i = 1; i <= length(value); i++) {
+          char = substr(value, i, 1)
+          if (escaped) {
+            output = output char
+            escaped = 0
+          } else if (char == "\\") {
+            escaped = 1
+          } else {
+            output = output char
+          }
+        }
+        if (escaped) {
+          output = output "\\"
+        }
+        printf "%s", output
+        exit
+      }
+    ' "$file" 2>/dev/null || true
+  fi
+}
+
+read_core_env_value() {
+  runtime_env="$RUNTIME_ROOT/agentdock.env"
+  [ "$PLATFORM" != linux ] || runtime_env="$ENV_FILE"
+  read_env_value "$runtime_env" "$1"
+}
+
+read_auth_token() {
+  read_core_env_value AGENTDOCK_AUTH_TOKEN
+}
+
+read_oauth_password() {
+  read_core_env_value AGENTDOCK_OAUTH_PASSWORD
+}
+
+read_local_mcp_url() {
+  host="$(read_core_env_value AGENTDOCK_HOST)"
+  port="$(read_core_env_value AGENTDOCK_PORT)"
+  [ -n "$host" ] || host=127.0.0.1
+  [ -n "$port" ] || port=8765
+  case "$host" in ""|0.0.0.0|::|"[::]") host=127.0.0.1 ;; esac
+  case "$host" in *:*) host="[$host]" ;; esac
+  printf 'http://%s:%s/mcp' "$host" "$port"
+}
+
+read_server_url() {
+  read_core_env_value AGENTDOCK_SERVER_URL
+}
+
+wait_quick_tunnel_url() {
+  quick_url_file="$RUNTIME_ROOT/quick-tunnel-url.txt"
+  attempts=0
+  while [ "$attempts" -lt 20 ]; do
+    if [ "$PLATFORM" = linux ]; then
+      if run_root test -f "$quick_url_file"; then
+        public_url="$(run_root sed -n '1p' "$quick_url_file" 2>/dev/null || true)"
+      else
+        public_url=""
+      fi
+    else
+      if [ -f "$quick_url_file" ]; then
+        public_url="$(sed -n '1p' "$quick_url_file" 2>/dev/null || true)"
+      else
+        public_url=""
+      fi
+    fi
+    if [ -n "$public_url" ]; then
+      printf '%s' "$public_url"
+      return 0
+    fi
+    attempts=$((attempts + 1))
+    sleep 1
+  done
+  return 1
+}
+
+validate_linux_cli_link() {
+  [ "$PLATFORM" = linux ] || return 0
+  if [ -L "$CLI_LINK_PATH" ]; then
+    [ "$(readlink "$CLI_LINK_PATH")" = "$STABLE_BINARY" ] || die "CLI 路径已被其他符号链接占用：$CLI_LINK_PATH"
+    return
+  fi
+  [ ! -e "$CLI_LINK_PATH" ] || die "CLI 路径已存在且不是 AgentDock 符号链接：$CLI_LINK_PATH"
+}
+
+install_linux_cli_link() {
+  [ "$PLATFORM" = linux ] || return 0
+  run_root mkdir -p "$(dirname "$CLI_LINK_PATH")"
+  run_root ln -sfn "$STABLE_BINARY" "$CLI_LINK_PATH"
+}
+
+remove_linux_cli_link() {
+  [ "$PLATFORM" = linux ] || return 0
+  [ -L "$CLI_LINK_PATH" ] || return 0
+  [ "$(readlink "$CLI_LINK_PATH")" = "$STABLE_BINARY" ] || return 0
+  run_root rm -f "$CLI_LINK_PATH"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -388,6 +659,15 @@ while [ "$#" -gt 0 ]; do
       INSTALLER_DEFAULT_DIR="$2"; INSTALLER_DEFAULT_DIR_EXPLICIT=true; shift 2 ;;
     --register-service) REGISTER_SERVICE=true; shift ;;
     --no-start) NO_START=true; shift ;;
+    --nexus)
+      [ "$#" -ge 2 ] || die "--nexus 缺少值"
+      NEXUS_MODE="$2"; shift 2 ;;
+    --nexus-endpoint)
+      [ "$#" -ge 2 ] || die "--nexus-endpoint 缺少值"
+      NEXUS_ENDPOINT="$2"; shift 2 ;;
+    --nexus-pair-code-file)
+      [ "$#" -ge 2 ] || die "--nexus-pair-code-file 缺少值"
+      NEXUS_PAIR_CODE_FILE="$2"; shift 2 ;;
     --tunnel)
       [ "$#" -ge 2 ] || die "--tunnel 缺少值"
       TUNNEL_MODE="$2"; shift 2 ;;
@@ -414,6 +694,11 @@ done
 if { [ "$PURGE_CONFIG" = true ] || [ "$PURGE_DATA" = true ]; } && [ "$UNINSTALL" != true ]; then
   die "--purge-config/--purge-data 必须与 --uninstall 一起使用。"
 fi
+
+case "$NEXUS_MODE" in
+  ''|official|self-hosted|none) ;;
+  *) die "Nexus 模式必须是 official、self-hosted 或 none。" ;;
+esac
 
 case "$RELEASE_VERSION" in
   latest|'') ;;
@@ -447,6 +732,7 @@ case "$PLATFORM" in
     SYSTEMD_DIR="${AGENTDOCK_SYSTEMD_DIR:-/etc/systemd/system}"
     OPENRC_DIR="${AGENTDOCK_OPENRC_DIR:-/etc/init.d}"
     STABLE_BINARY="$INSTALL_ROOT/bin/agentdock"
+    CLI_LINK_PATH="${AGENTDOCK_CLI_LINK_PATH:-/usr/local/bin/agentdock}"
     CLOUDFLARED_TARGET="${AGENTDOCK_CLOUDFLARED_INSTALL_PATH:-/usr/local/bin/cloudflared}"
     ;;
   darwin)
@@ -506,6 +792,7 @@ if [ "$UNINSTALL" = true ]; then
         set -- "$@" --purge-config
       fi
       run_engine_root "$STABLE_BINARY" "$@" >/dev/null
+      remove_linux_cli_link
       if [ "$PURGE_DATA" = true ]; then
         # Engine 已按 transaction 中冻结的两个显式子目录完成递归清理；父目录只在空时删除。
         run_root rmdir "$DATA_DIR" >/dev/null 2>&1 || true
@@ -533,104 +820,239 @@ if [ "$UNINSTALL" = true ]; then
   exit 0
 fi
 
-if [ -z "$TUNNEL_MODE" ] && [ ! -x "$STABLE_BINARY" ]; then
-  if is_true "$NONINTERACTIVE"; then
-    TUNNEL_MODE=none
-  else
-    choose_tunnel_mode
-  fi
-fi
-case "$TUNNEL_MODE" in
-  ''|none|quick|named) ;;
-  *) die "Tunnel 模式必须是 none、quick 或 named。" ;;
-esac
+run_install_engine() {
+  engine_action="$1"
+  engine_tunnel_mode="$2"
+  engine_cloudflared="$3"
+  result_file="$4"
+  rotate_oauth="${5:-false}"
 
-if [ "$TUNNEL_MODE" = named ]; then
+  case "$PLATFORM" in
+    linux)
+      set -- install --install-root "$INSTALL_ROOT" --runtime-root "$RUNTIME_ROOT" \
+        --service-name "$SERVICE_NAME" --service-user "$SERVICE_USER" --service-group "$SERVICE_GROUP" \
+        --service-manager "$SERVICE_MANAGER" --data-dir "$DATA_DIR" \
+        --agentdock-home "$AGENTDOCK_HOME_DIR" --agentdock-default-dir "$AGENTDOCK_DEFAULT_DIR_VALUE" \
+        --systemd-dir "$SYSTEMD_DIR" --openrc-dir "$OPENRC_DIR"
+      if [ "$SERVICE_MANAGER" = none ] || [ "$NO_START" = true ]; then
+        set -- "$@" --no-start --skip-health
+      fi
+      ;;
+    darwin)
+      set -- install --install-root "$INSTALL_ROOT" --runtime-root "$RUNTIME_ROOT" \
+        --live-binary "$STABLE_BINARY" --data-dir "$DATA_DIR" \
+        --agentdock-home "$AGENTDOCK_HOME_DIR" --agentdock-default-dir "$AGENTDOCK_DEFAULT_DIR_VALUE" \
+        --launch-agents-dir "$LAUNCH_AGENTS_DIR"
+      if [ "$REGISTER_SERVICE" = true ]; then
+        set -- "$@" --register-service
+        if [ "$NO_START" = true ]; then set -- "$@" --no-start --skip-health; fi
+      else
+        set -- "$@" --no-start --skip-health
+      fi
+      ;;
+  esac
+
+  if [ "$engine_action" = install ]; then
+    set -- "$@" --payload-dir "$PAYLOAD_DIR"
+    engine_binary="$ENGINE"
+  else
+    # Tunnel 是 Core 之后的第二阶段配置。repair 仍由 Installer Engine 写 env/unit、
+    # 执行 service lifecycle 和 rollback；bootstrap 脚本不复制这套状态机。
+    set -- "$@" --repair --skip-skills
+    engine_binary="$STABLE_BINARY"
+  fi
+
+  if [ -n "$HOST_VALUE" ]; then set -- "$@" --host "$HOST_VALUE"; fi
+  if [ -n "$PORT_VALUE" ]; then set -- "$@" --port "$PORT_VALUE"; fi
+  if [ -n "$LOG_LEVEL_VALUE" ]; then set -- "$@" --log-level "$LOG_LEVEL_VALUE"; fi
+  if [ -n "$engine_tunnel_mode" ]; then set -- "$@" --tunnel-mode "$engine_tunnel_mode"; fi
+  if [ "$engine_tunnel_mode" = named ]; then
+    set -- "$@" --server-url "$SERVER_URL"
+    if [ -n "$TUNNEL_TOKEN_FILE" ]; then set -- "$@" --token-file "$TUNNEL_TOKEN_FILE"; fi
+  fi
+  if [ -n "$engine_cloudflared" ]; then set -- "$@" --cloudflared "$engine_cloudflared"; fi
+  if [ "$rotate_oauth" = true ]; then set -- "$@" --rotate-oauth; fi
+
+  case "$PLATFORM" in
+    linux) run_engine_root "$engine_binary" "$@" >"$result_file" ;;
+    darwin) "$engine_binary" "$@" >"$result_file" ;;
+  esac
+}
+
+prepare_named_tunnel() {
   if [ -z "$SERVER_URL" ]; then
     is_true "$NONINTERACTIVE" && die "Named Tunnel 必须提供 --server-url"
     SERVER_URL="$(prompt_value 'HTTPS 公网地址')"
   fi
-  case "$SERVER_URL" in https://*) ;; *) die "Named Tunnel 公网地址必须是 https:// URL" ;; esac
+  case "$SERVER_URL" in
+    https://*) ;;
+    *) die "Named Tunnel 公网地址必须是 https:// URL" ;;
+  esac
+
   if [ -z "${AGENTDOCK_CLOUDFLARE_TUNNEL_TOKEN:-}" ] && [ -z "$TUNNEL_TOKEN_FILE" ]; then
     is_true "$NONINTERACTIVE" && die "Named Tunnel 必须通过环境变量或 --tunnel-token-file 提供 Token"
     AGENTDOCK_CLOUDFLARE_TUNNEL_TOKEN="$(prompt_secret 'Cloudflare Tunnel Token')"
     export AGENTDOCK_CLOUDFLARE_TUNNEL_TOKEN
   fi
+}
+
+read_tunnel_mode() {
+  tunnel_env="$RUNTIME_ROOT/cloudflared.env"
+  if [ "$PLATFORM" = linux ]; then
+    if ! run_root test -f "$tunnel_env"; then
+      printf 'none'
+      return
+    fi
+  else
+    if [ ! -f "$tunnel_env" ]; then
+      printf 'none'
+      return
+    fi
+  fi
+  mode="$(read_env_value "$tunnel_env" AGENTDOCK_TUNNEL_MODE)"
+  [ -n "$mode" ] || mode=none
+  printf '%s' "$mode"
+}
+
+read_nexus_endpoint() {
+  if [ "$PLATFORM" = linux ]; then
+    nexus_status="$(run_root env AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus status --json 2>/dev/null || true)"
+  else
+    nexus_status="$(env AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus status --json 2>/dev/null || true)"
+  fi
+  printf '%s' "$nexus_status" | sed -n 's/.*"endpoint":"\([^"]*\)".*/\1/p'
+}
+
+case "$TUNNEL_MODE" in
+  ''|none|quick|named) ;;
+  *) die "Tunnel 模式必须是 none、quick 或 named。" ;;
+esac
+
+FRESH_INSTALL=false
+if [ ! -x "$STABLE_BINARY" ]; then
+  FRESH_INSTALL=true
+fi
+REQUESTED_TUNNEL_MODE="$TUNNEL_MODE"
+CORE_TUNNEL_MODE="$TUNNEL_MODE"
+if [ "$FRESH_INSTALL" = true ]; then
+  # 新装严格按 Core -> Nexus -> Cloudflare 的顺序执行；Core 阶段永远先保持本地模式。
+  CORE_TUNNEL_MODE=none
 fi
 
+validate_linux_cli_link
 prepare_payload
-CLOUDFLARED_PATH=""
-if [ "$TUNNEL_MODE" = quick ] || [ "$TUNNEL_MODE" = named ]; then
-  CLOUDFLARED_PATH="$(install_cloudflared "$CLOUDFLARED_TARGET")"
-elif valid_cloudflared "$CLOUDFLARED_TARGET"; then
-  CLOUDFLARED_PATH="$CLOUDFLARED_TARGET"
+
+if [ "$PLATFORM" = linux ]; then
+  if [ "$SERVICE_MANAGER" != none ]; then
+    ensure_linux_service_user "$SERVICE_USER" "$DATA_DIR"
+    SERVICE_GROUP="${AGENTDOCK_SERVICE_GROUP:-$(id -gn "$SERVICE_USER")}"
+    run_root mkdir -p "$DATA_DIR"
+    run_root chown "$SERVICE_USER:$SERVICE_GROUP" "$DATA_DIR"
+  else
+    SERVICE_GROUP="${AGENTDOCK_SERVICE_GROUP:-$SERVICE_USER}"
+  fi
 fi
 
-case "$PLATFORM" in
-  linux)
-    if [ "$SERVICE_MANAGER" != none ]; then
-      ensure_linux_service_user "$SERVICE_USER" "$DATA_DIR"
-      SERVICE_GROUP="${AGENTDOCK_SERVICE_GROUP:-$(id -gn "$SERVICE_USER")}"
-      run_root mkdir -p "$DATA_DIR"
-      run_root chown "$SERVICE_USER:$SERVICE_GROUP" "$DATA_DIR"
-    else
-      SERVICE_GROUP="${AGENTDOCK_SERVICE_GROUP:-$SERVICE_USER}"
-    fi
-    set -- install --install-root "$INSTALL_ROOT" --runtime-root "$RUNTIME_ROOT" \
-      --payload-dir "$PAYLOAD_DIR" --service-name "$SERVICE_NAME" \
-      --service-user "$SERVICE_USER" --service-group "$SERVICE_GROUP" \
-      --service-manager "$SERVICE_MANAGER" --data-dir "$DATA_DIR" \
-      --agentdock-home "$AGENTDOCK_HOME_DIR" --agentdock-default-dir "$AGENTDOCK_DEFAULT_DIR_VALUE" \
-      --systemd-dir "$SYSTEMD_DIR" --openrc-dir "$OPENRC_DIR"
-    if [ "$SERVICE_MANAGER" = none ] || [ "$NO_START" = true ]; then set -- "$@" --no-start --skip-health; fi
-    ;;
-  darwin)
-    set -- install --install-root "$INSTALL_ROOT" --runtime-root "$RUNTIME_ROOT" \
-      --payload-dir "$PAYLOAD_DIR" --live-binary "$STABLE_BINARY" \
-      --data-dir "$DATA_DIR" --agentdock-home "$AGENTDOCK_HOME_DIR" \
-      --agentdock-default-dir "$AGENTDOCK_DEFAULT_DIR_VALUE" \
-      --launch-agents-dir "$LAUNCH_AGENTS_DIR"
-    if [ "$REGISTER_SERVICE" = true ]; then
-      set -- "$@" --register-service
-      if [ "$NO_START" = true ]; then set -- "$@" --no-start --skip-health; fi
-    else
-      set -- "$@" --no-start --skip-health
-    fi
-    ;;
-esac
-if [ -n "$HOST_VALUE" ]; then set -- "$@" --host "$HOST_VALUE"; fi
-if [ -n "$PORT_VALUE" ]; then set -- "$@" --port "$PORT_VALUE"; fi
-if [ -n "$LOG_LEVEL_VALUE" ]; then set -- "$@" --log-level "$LOG_LEVEL_VALUE"; fi
-if [ -n "$TUNNEL_MODE" ]; then set -- "$@" --tunnel-mode "$TUNNEL_MODE"; fi
-if [ -n "$SERVER_URL" ]; then set -- "$@" --server-url "$SERVER_URL"; fi
-if [ -n "$TUNNEL_TOKEN_FILE" ]; then set -- "$@" --token-file "$TUNNEL_TOKEN_FILE"; fi
-if [ -n "$CLOUDFLARED_PATH" ]; then set -- "$@" --cloudflared "$CLOUDFLARED_PATH"; fi
+CLOUDFLARED_PATH=""
+if [ "$FRESH_INSTALL" != true ]; then
+  if [ "$CORE_TUNNEL_MODE" = named ]; then
+    prepare_named_tunnel
+  fi
+  if [ "$CORE_TUNNEL_MODE" = quick ] || [ "$CORE_TUNNEL_MODE" = named ]; then
+    CLOUDFLARED_PATH="$(install_cloudflared "$CLOUDFLARED_TARGET")"
+  elif [ -z "$CORE_TUNNEL_MODE" ] && valid_cloudflared "$CLOUDFLARED_TARGET"; then
+    # 升级时保留现有 cloudflared 路径，但绝不因为“可能会用”而下载。
+    CLOUDFLARED_PATH="$CLOUDFLARED_TARGET"
+  fi
+fi
 
-RESULT_FILE="$TMP_ROOT/install-result.json"
-case "$PLATFORM" in
-  linux) run_engine_root "$ENGINE" "$@" >"$RESULT_FILE" ;;
-  darwin) "$ENGINE" "$@" >"$RESULT_FILE" ;;
-esac
+CORE_RESULT_FILE="$TMP_ROOT/install-result.json"
+run_install_engine install "$CORE_TUNNEL_MODE" "$CLOUDFLARED_PATH" "$CORE_RESULT_FILE" false
+install_linux_cli_link
+
+# 新装默认进入 Nexus 选择；已有安装只有显式传入 --nexus/AGENTDOCK_NEXUS_MODE 才重新配对。
+if [ "$FRESH_INSTALL" = true ] || [ -n "$NEXUS_MODE" ]; then
+  configure_nexus
+fi
+if [ -n "$NEXUS_PAIR_CODE_FILE" ]; then rm -f "$NEXUS_PAIR_CODE_FILE"; fi
+
+if [ "$FRESH_INSTALL" = true ]; then
+  TUNNEL_MODE="$REQUESTED_TUNNEL_MODE"
+  if [ -z "$TUNNEL_MODE" ]; then
+    if is_true "$NONINTERACTIVE"; then
+      TUNNEL_MODE=none
+    else
+      choose_tunnel_mode
+    fi
+  fi
+
+  case "$TUNNEL_MODE" in
+    none) ;;
+    quick|named)
+      if [ "$TUNNEL_MODE" = named ]; then prepare_named_tunnel; fi
+      CLOUDFLARED_PATH="$(install_cloudflared "$CLOUDFLARED_TARGET")"
+      TUNNEL_RESULT_FILE="$TMP_ROOT/tunnel-result.json"
+      # 新装首次开启公网时预生成稳定 OAuth 凭据。Quick Tunnel 拿到随机域名后只切换
+      # OAuth enabled/Origin，不需要在后台进程里再生成或轮换凭据。
+      run_install_engine repair "$TUNNEL_MODE" "$CLOUDFLARED_PATH" "$TUNNEL_RESULT_FILE" true
+      ;;
+    *) die "Tunnel 模式必须是 none、quick 或 named。" ;;
+  esac
+else
+  TUNNEL_MODE="$(read_tunnel_mode)"
+fi
 
 if [ -n "$TUNNEL_TOKEN_FILE" ]; then rm -f "$TUNNEL_TOKEN_FILE"; fi
+
+LOCAL_MCP_URL="$(read_local_mcp_url)"
+ACCESS_TOKEN="$(read_auth_token)"
+NEXUS_ENDPOINT="$(read_nexus_endpoint)"
+FINAL_TUNNEL_MODE="$(read_tunnel_mode)"
+PUBLIC_MCP_URL=""
+OAUTH_PASSWORD=""
+
+case "$FINAL_TUNNEL_MODE" in
+  named)
+    public_origin="$(read_server_url)"
+    if [ -n "$public_origin" ]; then PUBLIC_MCP_URL="${public_origin%/}/mcp"; fi
+    OAUTH_PASSWORD="$(read_oauth_password)"
+    ;;
+  quick)
+    quick_url="$(wait_quick_tunnel_url || true)"
+    if [ -n "$quick_url" ]; then PUBLIC_MCP_URL="${quick_url%/}/mcp"; fi
+    OAUTH_PASSWORD="$(read_oauth_password)"
+    ;;
+esac
 
 {
   printf '\nAgentDock 安装完成。\n'
   printf '安装目录：%s\n' "$INSTALL_ROOT"
   printf '运行配置：%s\n' "$RUNTIME_ROOT"
-  case "$PLATFORM" in
-    linux) printf '服务：%s（%s）\n' "$SERVICE_NAME" "$SERVICE_MANAGER" ;;
-    darwin)
-      if [ "$REGISTER_SERVICE" = true ]; then
-        printf 'LaunchAgent：已注册\n'
-      else
-        printf 'CLI：%s\n' "$STABLE_BINARY"
-      fi
-      ;;
-  esac
-  if [ "$TUNNEL_MODE" = quick ]; then
-    printf '临时公网地址由 Tunnel 启动后写入运行配置。\n'
-  elif [ "$TUNNEL_MODE" = named ]; then
-    printf '公网地址：%s/mcp\n' "${SERVER_URL%/}"
+  if [ "$PLATFORM" = linux ]; then
+    printf 'CLI：%s\n' "$CLI_LINK_PATH"
+    printf '服务：%s（%s）\n' "$SERVICE_NAME" "$SERVICE_MANAGER"
+  elif [ "$REGISTER_SERVICE" = true ]; then
+    printf 'LaunchAgent：已注册\n'
+  else
+    printf 'CLI：%s\n' "$STABLE_BINARY"
+  fi
+
+  printf '\n连接信息：\n'
+  printf '本地 MCP：%s\n' "$LOCAL_MCP_URL"
+  if [ -n "$NEXUS_ENDPOINT" ]; then
+    printf 'Nexus：%s\n' "$NEXUS_ENDPOINT"
+  else
+    printf 'Nexus：未配置\n'
+  fi
+  printf '访问令牌：%s\n' "$ACCESS_TOKEN"
+
+  if [ "$FINAL_TUNNEL_MODE" = quick ] || [ "$FINAL_TUNNEL_MODE" = named ]; then
+    printf '\nCloudflare Tunnel：%s\n' "$FINAL_TUNNEL_MODE"
+    if [ -n "$PUBLIC_MCP_URL" ]; then
+      printf '公网 MCP：%s\n' "$PUBLIC_MCP_URL"
+    else
+      printf '公网 MCP：Tunnel 启动后生成\n'
+    fi
+    printf 'OAuth 密码：%s\n' "$OAUTH_PASSWORD"
   fi
 } >>"$TTY_OUT"

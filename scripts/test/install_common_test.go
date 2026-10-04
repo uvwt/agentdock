@@ -62,6 +62,36 @@ func TestUnifiedInstallerEntryOwnsUnixBootstrap(t *testing.T) {
 	}
 }
 
+func TestUnifiedInstallerFreshFlowOrdersCoreNexusThenCloudflare(t *testing.T) {
+	data, err := os.ReadFile("../install/install.sh")
+	if err != nil {
+		t.Fatalf("read install.sh: %v", err)
+	}
+	entry := string(data)
+	for _, want := range []string{
+		`OFFICIAL_NEXUS_ENDPOINT="${AGENTDOCK_NEXUS_OFFICIAL_ENDPOINT:-https://mcp.nexusdock.co}"`,
+		`run_install_engine install "$CORE_TUNNEL_MODE"`,
+		`configure_nexus`,
+		`choose_tunnel_mode`,
+		`install_linux_cli_link`,
+	} {
+		if !strings.Contains(entry, want) {
+			t.Fatalf("install.sh missing fresh-flow contract %q", want)
+		}
+	}
+
+	core := strings.Index(entry, `run_install_engine install "$CORE_TUNNEL_MODE"`)
+	nexus := strings.Index(entry[core:], "\n  configure_nexus\n")
+	tunnel := strings.Index(entry[core:], "\n      choose_tunnel_mode\n")
+	cloudflared := strings.Index(entry[core:], `CLOUDFLARED_PATH="$(install_cloudflared "$CLOUDFLARED_TARGET")"`)
+	if core < 0 || nexus < 0 || tunnel < 0 || cloudflared < 0 {
+		t.Fatal("fresh installer flow markers are incomplete")
+	}
+	if !(nexus < tunnel && tunnel < cloudflared) {
+		t.Fatalf("fresh installer order must be Core -> Nexus -> Tunnel choice -> cloudflared; offsets nexus=%d tunnel=%d cloudflared=%d", nexus, tunnel, cloudflared)
+	}
+}
+
 func TestDesktopRuntimeSurfacesDoNotUseLegacyLaunchers(t *testing.T) {
 	trayData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "tray", "app_windows.go"))
 	if err != nil {
