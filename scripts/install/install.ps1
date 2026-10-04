@@ -1362,7 +1362,11 @@ try {
     if (-not (Test-Path -LiteralPath $sourceBinary -PathType Leaf)) {
         throw "Release archive does not contain agentdock.exe: $assetName"
     }
-    $sourceTrayBinary = Join-Path $extractDir 'agentdock-tray.exe'
+    $sourceTrayBinary = Join-Path $extractDir 'control-panel\agentdock-tray.exe'
+    if (-not (Test-Path -LiteralPath $sourceTrayBinary -PathType Leaf)) {
+        # Backward compatibility for older release archives that only carried the flat Tray executable.
+        $sourceTrayBinary = Join-Path $extractDir 'agentdock-tray.exe'
+    }
     $sourceTrayIcon = Join-Path $extractDir 'agentdock.ico'
     $sourceArbiter = Join-Path $extractDir 'agentdock-arbiter.exe'
     $sourceCoreShim = Join-Path $extractDir 'agentdock-shim.exe'

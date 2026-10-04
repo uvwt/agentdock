@@ -1241,7 +1241,8 @@ func TestWindowsReleaseKeepsPublishedUpdaterCompatibilityAsset(t *testing.T) {
 	releaseWorkflow := strings.ReplaceAll(string(releaseData), "\r\n", "\n")
 	for _, want := range []string{
 		"Copy-Item .\\packaging\\windows\\compat\\manage-windows.ps1 dist\\manage-windows.ps1 -Force",
-		"dist\\manage-windows.ps1, dist\\share, dist\\wsl-helper",
+		"Copy-Item .\\dist\\agentdock-tray.exe .\\dist\\control-panel\\agentdock-tray.exe -Force",
+		"dist\\manage-windows.ps1, dist\\control-panel, dist\\share, dist\\wsl-helper",
 	} {
 		if !strings.Contains(releaseWorkflow, want) {
 			t.Fatalf("formal Windows Release must preserve the v0.8.2/v0.8.3 updater contract; missing %q", want)
@@ -1256,6 +1257,8 @@ func TestWindowsReleaseKeepsPublishedUpdaterCompatibilityAsset(t *testing.T) {
 	for _, want := range []string{
 		"test-windows-release-backcompat.ps1 -ArchivePath $archivePath",
 		"test-windows-legacy-online-migration.ps1",
+		".\\dist\\control-panel",
+		"Join-Path $SourceDirectory 'control-panel'",
 		"fetch-depth: 0",
 	} {
 		if !strings.Contains(installerWorkflow, want) {

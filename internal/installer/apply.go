@@ -638,7 +638,6 @@ func repairWindowsRestageRequired(request Request) bool {
 func copyWindowsGenerationPayload(payload, staging string) error {
 	copies := []struct{ src, dst string }{
 		{filepath.Join(payload, "agentdock.exe"), filepath.Join(staging, updateengine.GenerationCoreName)},
-		{filepath.Join(payload, "agentdock-tray.exe"), filepath.Join(staging, updateengine.GenerationTrayName)},
 		{filepath.Join(payload, "agentdock-arbiter.exe"), filepath.Join(staging, updateengine.GenerationArbiterName)},
 	}
 	for _, item := range copies {
@@ -649,6 +648,30 @@ func copyWindowsGenerationPayload(payload, staging string) error {
 			return err
 		}
 	}
+
+	// New WinUI packages carry the complete self-contained control-panel publish directory.
+	// Copy its contents into the generation root so agentdock-tray.exe can resolve the
+	// Windows App SDK/.NET companion files beside it. Keep the legacy flat executable as a
+	// fallback so older release archives can still be migrated and repaired.
+	controlPanelSrc := filepath.Join(payload, "control-panel")
+	if dirExists(controlPanelSrc) {
+		controlPanelTray := filepath.Join(controlPanelSrc, updateengine.GenerationTrayName)
+		if !fileExists(controlPanelTray) {
+			return fmt.Errorf("payload control-panel 缺少 %s", updateengine.GenerationTrayName)
+		}
+		if err := copyTree(controlPanelSrc, staging, 0o755); err != nil {
+			return err
+		}
+	} else {
+		traySrc := filepath.Join(payload, "agentdock-tray.exe")
+		if !fileExists(traySrc) {
+			return fmt.Errorf("payload 缺少 %s", filepath.Base(traySrc))
+		}
+		if err := copyTree(traySrc, filepath.Join(staging, updateengine.GenerationTrayName), 0o755); err != nil {
+			return err
+		}
+	}
+
 	skillsSrc := filepath.Join(payload, "share", "agentdock", "core-skills")
 	if dirExists(skillsSrc) {
 		if err := copyTree(skillsSrc, filepath.Join(staging, "core-skills"), 0o644); err != nil {
