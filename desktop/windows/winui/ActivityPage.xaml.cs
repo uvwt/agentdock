@@ -109,18 +109,41 @@ public sealed partial class ActivityPage : Page
 
     private static UIElement CreateCallExpander(RuntimeAnalyticsCall call)
     {
+        var hasDetails = call.Stages.Count > 0 || !string.IsNullOrWhiteSpace(call.ErrorCode);
+        var root = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+
         var header = new Grid { MinHeight = 42, ColumnSpacing = 16 };
         header.ColumnDefinitions.Add(new ColumnDefinition());
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var labels = new StackPanel { Spacing = 2 };
-        labels.Children.Add(new TextBlock
+        var toolLine = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6
+        };
+        toolLine.Children.Add(new TextBlock
         {
             Text = call.Tool,
             FontSize = 13,
-            FontWeight = Microsoft.UI.Text.FontWeights.Medium
+            FontWeight = Microsoft.UI.Text.FontWeights.Medium,
+            VerticalAlignment = VerticalAlignment.Center
         });
+
+        var chevron = new TextBlock
+        {
+            Text = "›",
+            FontSize = 15,
+            Foreground = SecondaryBrush(),
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = hasDetails ? Visibility.Visible : Visibility.Collapsed
+        };
+        toolLine.Children.Add(chevron);
+        labels.Children.Add(toolLine);
         labels.Children.Add(new TextBlock
         {
             Text = $"{ActivitySource(call.Source)} · {RelativeTime(call.StartedAt)}",
@@ -148,7 +171,13 @@ public sealed partial class ActivityPage : Page
         Grid.SetColumn(status, 2);
         header.Children.Add(status);
 
-        var details = new StackPanel { Spacing = 7, Margin = new Thickness(0, 4, 0, 8) };
+        var details = new StackPanel
+        {
+            Spacing = 7,
+            Margin = new Thickness(13, 4, 13, 8),
+            Visibility = Visibility.Collapsed,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
         if (!string.IsNullOrWhiteSpace(call.ErrorCode))
         {
             details.Children.Add(new TextBlock
@@ -191,14 +220,35 @@ public sealed partial class ActivityPage : Page
             details.Children.Add(stageRow);
         }
 
-        return new Expander
+        if (hasDetails)
         {
-            Header = header,
-            Content = details,
-            Padding = new Thickness(13, 4, 13, 4),
-            HorizontalContentAlignment = HorizontalAlignment.Stretch,
-            IsEnabled = call.Stages.Count > 0 || !string.IsNullOrWhiteSpace(call.ErrorCode)
-        };
+            var headerButton = new Button
+            {
+                Content = header,
+                Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(13, 4, 13, 4),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                MinWidth = 0,
+                MinHeight = 0
+            };
+            headerButton.Click += (_, _) =>
+            {
+                var expanding = details.Visibility != Visibility.Visible;
+                details.Visibility = expanding ? Visibility.Visible : Visibility.Collapsed;
+                chevron.Text = expanding ? "⌄" : "›";
+            };
+            root.Children.Add(headerButton);
+            root.Children.Add(details);
+        }
+        else
+        {
+            header.Margin = new Thickness(13, 4, 13, 4);
+            root.Children.Add(header);
+        }
+
+        return root;
     }
 
     private static TextBlock CreateEmptyText(string text) =>

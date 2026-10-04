@@ -428,6 +428,8 @@ func TestWindowsActivityOwnsRuntimeAnalytics(t *testing.T) {
 		`"/internal/runtime/analytics"`,
 		"TimeSpan.FromSeconds(2)",
 		"CreateCallExpander",
+		`Text = "›"`,
+		`chevron.Text = expanding ? "⌄" : "›"`,
 		"StageMcpRemoteCall",
 		"RecentCallsPrivacyHint",
 		`x:Name="LogsNavigationItem" Tag="logs"`,

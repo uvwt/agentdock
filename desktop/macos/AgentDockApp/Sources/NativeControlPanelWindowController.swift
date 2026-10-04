@@ -1163,22 +1163,31 @@ private enum RuntimeActivityFormat {
 
 private struct RuntimeActivityCallRow: View {
     let call: RuntimeAnalyticsCall
+    @State private var isExpanded = false
 
     private var hasDetails: Bool {
         !(call.errorCode?.isEmpty ?? true) || !call.stages.isEmpty
     }
 
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 0) {
             if hasDetails {
-                DisclosureGroup {
-                    callDetails
-                        .padding(.top, 8)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        isExpanded.toggle()
+                    }
                 } label: {
                     callLabel
                 }
+                .buttonStyle(.plain)
             } else {
                 callLabel
+            }
+
+            if hasDetails && isExpanded {
+                callDetails
+                    .padding(.top, 8)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1189,7 +1198,15 @@ private struct RuntimeActivityCallRow: View {
     private var callLabel: some View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(call.tool).font(.system(size: 13, weight: .medium))
+                HStack(spacing: 6) {
+                    Text(call.tool)
+                        .font(.system(size: 13, weight: .medium))
+                    if hasDetails {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 Text("\(RuntimeActivityFormat.source(call.source)) · \(RuntimeActivityFormat.relativeTime(call.startedAt))")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
@@ -1204,6 +1221,7 @@ private struct RuntimeActivityCallRow: View {
                     .font(.system(size: 12, weight: .medium))
             }
         }
+        .contentShape(Rectangle())
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
