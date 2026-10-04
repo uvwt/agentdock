@@ -471,7 +471,9 @@ pair_nexus_once() {
           run_root setpriv --reuid "$service_uid" --regid "$service_gid" --init-groups env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >"$pair_output" 2>&1 || pair_status=$?
           ;;
         sudo)
-          sudo -u "$SERVICE_USER" env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >"$pair_output" 2>&1 || pair_status=$?
+          {
+            sudo -u "$SERVICE_USER" env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE"
+          } >"$pair_output" 2>&1 || pair_status=$?
           ;;
       esac
       ;;
@@ -555,6 +557,7 @@ read_env_value() {
   # Installer env 文件由 service user 运行时可读/写。这里只解析目标 KEY，绝不能
   # source/eval 整个文件，否则再次以 root 运行安装器时会把配置内容升级成 shell 代码执行。
   if [ "$PLATFORM" = linux ]; then
+    # shellcheck disable=SC2016
     run_root awk -v key="$key" '
       index($0, key "=") == 1 {
         value = substr($0, length(key) + 2)
@@ -589,6 +592,7 @@ read_env_value() {
       }
     ' "$file" 2>/dev/null || true
   else
+    # shellcheck disable=SC2016
     awk -v key="$key" '
       index($0, key "=") == 1 {
         value = substr($0, length(key) + 2)
@@ -1013,13 +1017,15 @@ write_onboarding_stage() {
   case "$PLATFORM" in
     linux)
       if ! run_root test -d "$RUNTIME_ROOT"; then
-        run_root mkdir -m 0700 -p "$RUNTIME_ROOT"
+        run_root mkdir -p "$RUNTIME_ROOT"
+        run_root chmod 0700 "$RUNTIME_ROOT"
       fi
       run_root install -m 0600 "$state_tmp" "$ONBOARDING_STATE_FILE"
       ;;
     darwin)
       if [ ! -d "$RUNTIME_ROOT" ]; then
-        mkdir -m 0700 -p "$RUNTIME_ROOT"
+        mkdir -p "$RUNTIME_ROOT"
+        chmod 0700 "$RUNTIME_ROOT"
       fi
       install -m 0600 "$state_tmp" "$ONBOARDING_STATE_FILE"
       ;;
