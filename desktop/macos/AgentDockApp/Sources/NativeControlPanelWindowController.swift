@@ -592,11 +592,16 @@ private struct HomeView: View {
                     } else {
                         ForEach(Array(model.dashboard.recentCalls.prefix(3).enumerated()), id: \.element.id) { index, call in
                             if index > 0 { RowDivider() }
-                            HomeRecentActivityRow(
-                                call: call,
-                                source: activitySource(call.source),
-                                time: relativeTime(call.startedAt)
-                            )
+                            Button {
+                                model.page = .activity
+                            } label: {
+                                HomeRecentActivityRow(
+                                    call: call,
+                                    source: activitySource(call.source),
+                                    time: relativeTime(call.startedAt)
+                                )
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }

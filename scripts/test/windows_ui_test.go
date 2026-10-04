@@ -313,6 +313,7 @@ func TestWindowsRemoteConnectionSupportsSelfHostedAndRoutesAdvancedSettings(t *t
 func TestWindowsHomeUsesProductStatusAndAdaptiveCapabilities(t *testing.T) {
 	homeXaml := readWindowsNativeFile(t, "winui", "HomePage.xaml")
 	homeCode := readWindowsNativeFile(t, "winui", "HomePage.xaml.cs")
+	sectionCard := readWindowsNativeFile(t, "winui", "SectionCard.xaml")
 	runtime := readWindowsNativeFile(t, "shared", "Services", "RuntimeService.cs")
 
 	for _, want := range []string{
@@ -340,6 +341,8 @@ func TestWindowsHomeUsesProductStatusAndAdaptiveCapabilities(t *testing.T) {
 		"RenderCapabilities(_snapshot.Settings)",
 		"GetDashboardAsync(_snapshot)",
 		"dashboard.RecentCalls.Take(3)",
+		`Click="ActivityShortcut_Click"`,
+		`ShortcutRequested?.Invoke(this, "activity")`,
 		"settings.BrowserEnabled",
 		"settings.AcpEnabled",
 		"settings.AcpProfiles.Where(profile => profile.Enabled)",
@@ -355,6 +358,14 @@ func TestWindowsHomeUsesProductStatusAndAdaptiveCapabilities(t *testing.T) {
 	} {
 		if !strings.Contains(homeXaml+homeCode+runtime, want) {
 			t.Fatalf("WinUI Home missing product status contract %q", want)
+		}
+	}
+	for _, want := range []string{
+		`HorizontalAlignment="Stretch"`,
+		`HorizontalContentAlignment="Stretch"`,
+	} {
+		if !strings.Contains(sectionCard, want) {
+			t.Fatalf("WinUI SectionCard must stretch content horizontally: missing %q", want)
 		}
 	}
 	for _, forbidden := range []string{

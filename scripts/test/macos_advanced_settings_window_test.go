@@ -52,6 +52,7 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 		"model.dashboard.mcpCount",
 		"model.dashboard.pluginCount",
 		"model.dashboard.recentCalls.prefix(3)",
+		"model.page = .activity",
 		"await model.refreshDashboard()",
 		"This device is ready for AI.",
 		"AgentDock is running, but the connection service is not ready.",

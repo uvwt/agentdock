@@ -214,7 +214,15 @@
             </local:SectionCard>
 
             <local:SectionCard x:Name="RecentActivitySection">
-                <StackPanel x:Name="RecentActivityPanel"/>
+                <Button Click="ActivityShortcut_Click"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Stretch"
+                        Padding="0"
+                        BorderThickness="0"
+                        Background="Transparent">
+                    <StackPanel x:Name="RecentActivityPanel"
+                                HorizontalAlignment="Stretch"/>
+                </Button>
             </local:SectionCard>
         </StackPanel>
     </ScrollViewer>

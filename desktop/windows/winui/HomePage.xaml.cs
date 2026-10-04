@@ -298,4 +298,7 @@ public sealed partial class HomePage : Page
 
     private void CapabilitiesShortcut_Click(object sender, RoutedEventArgs e) =>
         ShortcutRequested?.Invoke(this, "capabilities");
+
+    private void ActivityShortcut_Click(object sender, RoutedEventArgs e) =>
+        ShortcutRequested?.Invoke(this, "activity");
 }
