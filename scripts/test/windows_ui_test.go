@@ -446,6 +446,8 @@ func TestWindowsActivityOwnsRuntimeAnalytics(t *testing.T) {
 		`x:Name="LogsNavigationItem" Tag="logs"`,
 		"BuildLogs()",
 		"AdvancedDiagnostics",
+		"diagnosticsContent.Visibility = Visibility.Collapsed",
+		"HorizontalAlignment = HorizontalAlignment.Stretch",
 		"CopyDiagnostics",
 		"RecentP95",
 	} {

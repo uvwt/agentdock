@@ -141,7 +141,10 @@ public sealed partial class SettingsPage : Page
 
     private UIElement BuildLogs()
     {
-        var rows = new StackPanel();
+        var rows = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
 
         var log = new ComboBox { Width = 130, Tag = "log" };
         foreach (var value in new[] { "debug", "info", "warn", "error" })
@@ -171,26 +174,62 @@ public sealed partial class SettingsPage : Page
         rows.Children.Add(ActionRow(UiText.Get("ConfigurationDirectory"), openConfig));
         rows.Children.Add(Divider());
 
-        rows.Children.Add(new Expander
+        var diagnosticsRoot = new StackPanel
         {
-            Header = new TextBlock
-            {
-                Text = UiText.Get("AdvancedDiagnostics"),
-                FontSize = 13,
-                FontWeight = Microsoft.UI.Text.FontWeights.Medium
-            },
-            Content = BuildAdvancedDiagnostics(),
-            IsExpanded = false,
-            Padding = new Thickness(13, 5, 13, 5),
-            HorizontalContentAlignment = HorizontalAlignment.Stretch
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        var diagnosticsContent = BuildAdvancedDiagnostics();
+        diagnosticsContent.Visibility = Visibility.Collapsed;
+
+        var diagnosticsHeader = new Grid { ColumnSpacing = 10 };
+        diagnosticsHeader.ColumnDefinitions.Add(new ColumnDefinition());
+        diagnosticsHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        diagnosticsHeader.Children.Add(new TextBlock
+        {
+            Text = UiText.Get("AdvancedDiagnostics"),
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.Medium,
+            VerticalAlignment = VerticalAlignment.Center
         });
+        var diagnosticsChevron = new TextBlock
+        {
+            Text = "›",
+            FontSize = 15,
+            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(diagnosticsChevron, 1);
+        diagnosticsHeader.Children.Add(diagnosticsChevron);
+
+        var diagnosticsButton = new Button
+        {
+            Content = diagnosticsHeader,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Padding = new Thickness(13, 10, 13, 10),
+            BorderThickness = new Thickness(0),
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent)
+        };
+        diagnosticsButton.Click += (_, _) =>
+        {
+            var expanding = diagnosticsContent.Visibility != Visibility.Visible;
+            diagnosticsContent.Visibility = expanding ? Visibility.Visible : Visibility.Collapsed;
+            diagnosticsChevron.Text = expanding ? "⌄" : "›";
+        };
+
+        diagnosticsRoot.Children.Add(diagnosticsButton);
+        diagnosticsRoot.Children.Add(diagnosticsContent);
+        rows.Children.Add(diagnosticsRoot);
 
         return rows;
     }
 
-    private UIElement BuildAdvancedDiagnostics()
+    private FrameworkElement BuildAdvancedDiagnostics()
     {
-        var rows = new StackPanel();
+        var rows = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
         rows.Children.Add(Row(
             UiText.Get("Runtime"),
             _snapshot?.CoreRunning == true ? UiText.Get("Running") : UiText.Get("Stopped")));
@@ -844,7 +883,7 @@ public sealed partial class SettingsPage : Page
 
     private static Grid Row(string left, string right)
     {
-        var grid = new Grid { MinHeight = 46, Padding = new Thickness(13, 0, 13, 0) };
+        var grid = new Grid { MinHeight = 46, Padding = new Thickness(13, 0, 13, 0), HorizontalAlignment = HorizontalAlignment.Stretch };
         grid.Children.Add(new TextBlock { Text = left, VerticalAlignment = VerticalAlignment.Center });
         grid.Children.Add(new TextBlock { Text = right, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Opacity = 0.62 });
         return grid;
@@ -852,7 +891,7 @@ public sealed partial class SettingsPage : Page
 
     private static Grid ActionRow(string left, UIElement trailing)
     {
-        var grid = new Grid { MinHeight = 46, Padding = new Thickness(13, 5, 13, 5) };
+        var grid = new Grid { MinHeight = 46, Padding = new Thickness(13, 5, 13, 5), HorizontalAlignment = HorizontalAlignment.Stretch };
         grid.Children.Add(new TextBlock { Text = left, VerticalAlignment = VerticalAlignment.Center });
         if (trailing is FrameworkElement element)
         {
