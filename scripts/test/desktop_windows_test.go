@@ -23,6 +23,10 @@ func TestWindowsControlPanelUsesNativeTunnelCommands(t *testing.T) {
 		`"--start-tunnel"`,
 		`RunTunnelActionAsync("start",`,
 		`RunTunnelStartupAsync()`,
+		`RunHelperAndExit(`,
+		`Task.Run(async () =>`,
+		`ConfigureAwait(false)`,
+		`).GetAwaiter().GetResult()`,
 		`RunNativeAgentDockAsync("tunnel"`,
 		`allowElevation: false`,
 		`"configure"`,
@@ -36,6 +40,7 @@ func TestWindowsControlPanelUsesNativeTunnelCommands(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
+		`_ = RunHelperAsync(`,
 		`"--nexus-token-file"`,
 		`RunManagementScriptAsync(["-Action", "start-tunnel"]`,
 		`RunManagementScriptAsync(["-Action", "stop-tunnel"]`,
