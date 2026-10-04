@@ -95,7 +95,7 @@ private final class ControlPanelModel: ObservableObject {
     }
 
     enum SettingsPage: String, CaseIterable, Identifiable {
-        case permissions, startup, logs, advancedConnection, appearance, about
+        case appearance, permissions, startup, logs, advancedConnection, about
 
         var id: String { rawValue }
         var title: String {
@@ -113,7 +113,7 @@ private final class ControlPanelModel: ObservableObject {
     }
 
     @Published var page: Page = .home
-    @Published var settingsPage: SettingsPage = .permissions
+    @Published var settingsPage: SettingsPage = .appearance
     @Published var status: ServiceStatus = .missing
     @Published var dashboard = RuntimeDashboardSnapshot.empty
     @Published var statusUpdatedAt = Date()

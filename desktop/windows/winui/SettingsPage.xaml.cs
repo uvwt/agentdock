@@ -13,7 +13,7 @@ public sealed partial class SettingsPage : Page
     private RuntimeService? _runtime;
     private RuntimeSnapshot? _snapshot;
     private RuntimeAnalyticsPayload? _analytics;
-    private string _activeTag = "permissions";
+    private string _activeTag = "appearance";
     private string _advancedStatus = "";
     private PublicEndpointCheckResult? _publicEndpointCheckResult;
     private string _publicEndpointCheckUrl = "";
@@ -44,7 +44,7 @@ public sealed partial class SettingsPage : Page
         else
         {
             _runtime = e.Parameter as RuntimeService;
-            _activeTag = "permissions";
+            _activeTag = "appearance";
         }
         await RefreshAsync();
         SelectSettingsTag(_activeTag);
@@ -77,8 +77,8 @@ public sealed partial class SettingsPage : Page
         var item = SettingsNavigation.Items
             .OfType<ListViewItem>()
             .FirstOrDefault(candidate => string.Equals(candidate.Tag?.ToString(), tag, StringComparison.Ordinal));
-        var target = item ?? PermissionsNavigationItem;
-        _activeTag = target.Tag?.ToString() ?? "permissions";
+        var target = item ?? AppearanceNavigationItem;
+        _activeTag = target.Tag?.ToString() ?? "appearance";
         SettingsNavigation.SelectedItem = target;
     }
 
