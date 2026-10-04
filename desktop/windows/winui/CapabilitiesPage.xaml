@@ -20,9 +20,9 @@
                     </Grid>
                     <StackPanel Padding="13,0,13,12" Spacing="8">
                         <ComboBox x:Name="BrowserModeComboBox" Width="260" HorizontalAlignment="Left" SelectionChanged="BrowserModeChanged">
-                            <ComboBoxItem Content="隔离浏览器" Tag="managed"/>
-                            <ComboBoxItem Content="复用本机浏览器" Tag="reuse"/>
-                            <ComboBoxItem Content="指定 CDP 地址" Tag="specified"/>
+                            <ComboBoxItem x:Name="ManagedBrowserModeItem" Tag="managed"/>
+                            <ComboBoxItem x:Name="ReuseBrowserModeItem" Tag="reuse"/>
+                            <ComboBoxItem x:Name="SpecifiedBrowserModeItem" Tag="specified"/>
                         </ComboBox>
                         <TextBox x:Name="BrowserCdpUrlTextBox" PlaceholderText="http://127.0.0.1:9222"/>
                     </StackPanel>
@@ -37,7 +37,7 @@
                     </Grid>
                     <StackPanel x:Name="AcpProfilesPanel" Padding="13,0,13,12" Spacing="8"/>
                     <StackPanel Padding="13,0,13,12">
-                        <Button Content="添加自定义 Coding Agent" Click="AddCustomProfile_Click"/>
+                        <Button x:Name="AddCustomProfileButton" Click="AddCustomProfile_Click"/>
                     </StackPanel>
                     <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
                     <Grid MinHeight="58" Padding="13,6" ColumnSpacing="16">
@@ -47,15 +47,15 @@
                             <TextBlock x:Name="McpAppsDetail" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                         </StackPanel>
                         <ComboBox x:Name="McpAppsModeComboBox" Grid.Column="1" Width="130">
-                            <ComboBoxItem Content="完整" Tag="full"/>
-                            <ComboBoxItem Content="紧凑" Tag="compact"/>
-                            <ComboBoxItem Content="关闭" Tag="off"/>
+                            <ComboBoxItem x:Name="McpAppsFullItem" Tag="full"/>
+                            <ComboBoxItem x:Name="McpAppsCompactItem" Tag="compact"/>
+                            <ComboBoxItem x:Name="McpAppsOffItem" Tag="off"/>
                         </ComboBox>
                     </Grid>
                 </StackPanel>
             </local:SectionCard>
             <StackPanel Orientation="Horizontal" Spacing="10">
-                <Button Content="保存并重启 Runtime" Click="SaveButton_Click"/>
+                <Button x:Name="SaveButton" Click="SaveButton_Click"/>
                 <TextBlock x:Name="SaveStatus" VerticalAlignment="Center" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
             </StackPanel>
         </StackPanel>

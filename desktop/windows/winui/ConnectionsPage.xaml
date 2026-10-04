@@ -30,17 +30,17 @@
                     </Grid>
                     <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
                     <StackPanel Padding="13,12" Spacing="10">
-                        <TextBlock Text="Public MCP 模式" FontSize="13"/>
+                        <TextBlock x:Name="PublicModeLabel" FontSize="13"/>
                         <ComboBox x:Name="TunnelModeComboBox" Width="220" HorizontalAlignment="Left" SelectionChanged="TunnelModeComboBox_SelectionChanged">
-                            <ComboBoxItem Content="仅本机" Tag="none"/>
-                            <ComboBoxItem Content="临时公网地址" Tag="quick"/>
-                            <ComboBoxItem Content="固定域名" Tag="named"/>
+                            <ComboBoxItem x:Name="LocalOnlyModeItem" Tag="none"/>
+                            <ComboBoxItem x:Name="QuickModeItem" Tag="quick"/>
+                            <ComboBoxItem x:Name="NamedModeItem" Tag="named"/>
                         </ComboBox>
-                        <TextBox x:Name="NamedServerUrlTextBox" Header="HTTPS 地址" PlaceholderText="https://mcp.example.com"/>
-                        <PasswordBox x:Name="TunnelTokenPasswordBox" Header="Cloudflare Tunnel Token" PlaceholderText="留空保留已保存 Token"/>
+                        <TextBox x:Name="NamedServerUrlTextBox" PlaceholderText="https://mcp.example.com"/>
+                        <PasswordBox x:Name="TunnelTokenPasswordBox"/>
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Content="应用" Click="ApplyTunnelButton_Click"/>
-                            <Button x:Name="RegenerateQuickButton" Content="重新生成临时地址" Click="RegenerateQuickButton_Click"/>
+                            <Button x:Name="ApplyTunnelButton" Click="ApplyTunnelButton_Click"/>
+                            <Button x:Name="RegenerateQuickButton" Click="RegenerateQuickButton_Click"/>
                             <TextBlock x:Name="TunnelStatus" VerticalAlignment="Center" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                         </StackPanel>
                     </StackPanel>
@@ -58,10 +58,10 @@
                     </Grid>
                     <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
                     <StackPanel Padding="13,12" Spacing="10">
-                        <TextBox x:Name="NexusEndpointTextBox" Header="NexusDock 地址" PlaceholderText="https://mcp.nexusdock.co"/>
-                        <PasswordBox x:Name="NexusPairingCodeBox" Header="一次性配对码"/>
+                        <TextBox x:Name="NexusEndpointTextBox" PlaceholderText="https://mcp.nexusdock.co"/>
+                        <PasswordBox x:Name="NexusPairingCodeBox"/>
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Content="配对" Click="PairNexusButton_Click"/>
+                            <Button x:Name="PairNexusButton" Click="PairNexusButton_Click"/>
                             <TextBlock x:Name="NexusActionStatus" VerticalAlignment="Center" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                         </StackPanel>
                     </StackPanel>

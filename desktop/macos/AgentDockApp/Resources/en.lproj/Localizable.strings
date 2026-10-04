@@ -393,6 +393,9 @@
 "Managed by macOS" = "Managed by macOS";
 "Credentials remain managed by the existing AgentDock configuration." = "Credentials remain managed by the existing AgentDock configuration.";
 "Credentials" = "Credentials";
+"Runtime" = "Runtime";
+"Permissions" = "Permissions";
+"Access Credentials" = "Access Credentials";
 "Authentication token" = "Authentication token";
 "Protected" = "Protected";
 "Remote connection" = "Remote connection";

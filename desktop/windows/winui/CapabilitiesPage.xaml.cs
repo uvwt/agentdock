@@ -17,6 +17,14 @@ public sealed partial class CapabilitiesPage : Page
         PageDetail.Text = UiText.Get("CapabilitiesDetail");
         CapabilitiesSection.Title = UiText.Get("AvailableCapabilities");
         BrowserTitle.Text = UiText.Get("Browser");
+        ManagedBrowserModeItem.Content = UiText.Get("IsolatedBrowser");
+        ReuseBrowserModeItem.Content = UiText.Get("ReuseLocalBrowser");
+        SpecifiedBrowserModeItem.Content = UiText.Get("SpecifiedCdp");
+        AddCustomProfileButton.Content = UiText.Get("AddCustomCodingAgent");
+        McpAppsFullItem.Content = UiText.Get("Full");
+        McpAppsCompactItem.Content = UiText.Get("Compact");
+        McpAppsOffItem.Content = UiText.Get("Off");
+        SaveButton.Content = UiText.Get("SaveAndRestartRuntime");
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -96,7 +104,7 @@ public sealed partial class CapabilitiesPage : Page
 
         var enabled = settings.AcpProfiles.Where(profile => profile.Enabled).ToList();
         if (enabled.Count == 0) return;
-        var defaults = new ComboBox { Header = "默认 Coding Agent", Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
+        var defaults = new ComboBox { Header = UiText.Get("DefaultCodingAgent"), Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
         foreach (var profile in enabled)
         {
             defaults.Items.Add(new ComboBoxItem
@@ -128,18 +136,18 @@ public sealed partial class CapabilitiesPage : Page
     private async void AddCustomProfile_Click(object sender, RoutedEventArgs e)
     {
         if (_settings is null) return;
-        var name = new TextBox { Header = "名称" };
-        var command = new TextBox { Header = "命令" };
-        var arguments = new TextBox { Header = "参数（每行一个）", AcceptsReturn = true, MinHeight = 80 };
+        var name = new TextBox { Header = UiText.Get("Name") };
+        var command = new TextBox { Header = UiText.Get("Command") };
+        var arguments = new TextBox { Header = UiText.Get("ArgumentsOnePerLine"), AcceptsReturn = true, MinHeight = 80 };
         var form = new StackPanel { Spacing = 10 };
         form.Children.Add(name); form.Children.Add(command); form.Children.Add(arguments);
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            Title = "添加自定义 Coding Agent",
+            Title = UiText.Get("AddCustomCodingAgent"),
             Content = form,
-            PrimaryButtonText = "添加",
-            CloseButtonText = "取消"
+            PrimaryButtonText = UiText.Get("Add"),
+            CloseButtonText = UiText.Get("Cancel")
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
         var displayName = name.Text.Trim();
@@ -182,13 +190,13 @@ public sealed partial class CapabilitiesPage : Page
         _settings.BrowserReuseExistingCdp = browserMode == "reuse";
         _settings.AcpEnabled = CodingAgentEnabledToggle.IsOn;
         _settings.McpAppsMode = (McpAppsModeComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "full";
-        SaveStatus.Text = "正在保存…";
+        SaveStatus.Text = UiText.Get("Saving");
         try
         {
             if (_settings.AcpEnabled)
             {
                 var enabledProfiles = _settings.AcpProfiles.Where(profile => profile.Enabled).ToList();
-                if (enabledProfiles.Count == 0) throw new InvalidOperationException("至少启用一个 Coding Agent Profile。");
+                if (enabledProfiles.Count == 0) throw new InvalidOperationException(UiText.Get("AtLeastOneCodingAgent"));
                 foreach (var profile in enabledProfiles)
                 {
                     var resolution = _runtime.ResolveAcpAdapter(profile.Kind, profile.Command, profile.Args);
@@ -203,7 +211,7 @@ public sealed partial class CapabilitiesPage : Page
             }
             await _runtime.SaveSettingsAsync(_settings);
             await _runtime.RunCoreActionAsync("restart");
-            SaveStatus.Text = "已保存";
+            SaveStatus.Text = UiText.Get("Saved");
         }
         catch (Exception ex) { SaveStatus.Text = ex.Message; }
     }

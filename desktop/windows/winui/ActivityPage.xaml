@@ -10,7 +10,7 @@
                 <TextBlock x:Name="PageDetail" FontSize="12.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
             </StackPanel>
 
-            <local:SectionCard Title="Runtime">
+            <local:SectionCard x:Name="RuntimeSection">
                 <StackPanel>
                     <Grid Padding="13,0" Height="46">
                         <TextBlock x:Name="RuntimeLabel" VerticalAlignment="Center"/>

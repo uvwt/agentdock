@@ -661,6 +661,25 @@ TianYi parity 验证：
 
 到此，旧 WPF 已不再承担产品 UI，Windows 原生控制面板正式以 WinUI 3 为发布入口。
 
+### 15.4 2026-10-04 最终验收修复
+
+针对最终验收暴露出的本地化和交互问题继续收口：
+
+- macOS / Windows Settings 二级导航不再硬编码英文；中文模式下分别展示运行时、权限、启动 / 开机启动、访问凭据。
+- macOS 界面语言改为 Picker 选择后立即写入语言偏好并触发 SwiftUI 视图刷新，不再依赖 Runtime 保存或 App 重启。
+- Windows 界面语言改为进程内切换资源文化并重建当前 WinUI 主窗口，绕开 single-instance 对“启动第二实例再退出旧实例”方案的竞态。
+- Windows 原生页面剩余主要用户可见文案补齐 UiText 资源，确保语言切换后不仅一级导航变化，Settings / Home / Connections / Capabilities / Activity 也同步切换。
+- Windows Home 三个“快速入口”从纯展示 Grid 改为真实 Button，并通过主 NavigationView 路由到 Connections / Capabilities / Activity，保证页面内容与左侧选中项同步。
+- macOS SwiftUI 的 Browser、Coding Agent、Profile、Core Startup、Menu bar Startup 等布尔 Toggle 显式使用 switch 样式。
+
+验收证据：
+
+- Windows 最终源码快照 SHA-256：ad95eff497d118bf382df3431ff6b152f0c422fdb4160a694e65279323622abf。
+- TianYi x64 Release 使用指定 VS Build Tools MSBuild 完整 Rebuild 通过；win-arm64 交叉 Rebuild 也通过。
+- TianYi UI Automation 实测语言从中文切到 English 后，一级导航与 Settings 二级导航立即变为英文；再切回简体中文后立即恢复为“主页 / 连接 / 能力 / 活动 / 设置”和“运行时 / 权限 / 开机启动 / 访问凭据”，偏好最终保留为 zh-CN。
+- TianYi UI Automation 实际触发三个快速入口后，ConnectionsNavigationItem / CapabilitiesNavigationItem / ActivityNavigationItem 均成为选中状态。
+- macOS 完整 App / ZIP / DMG / 签名 / 挂载测试通过；最终 Preview App 已真实启动并出现 Layer 0 原生窗口。由于 Mini 当前仍未授予 Screen Recording / Accessibility，无法对新版 Mac 页面做截图或 AX 点击，因此不伪造视觉交互结论。
+
 视觉审查：
 
 - Mac / Windows 使用接近的窗口尺寸。

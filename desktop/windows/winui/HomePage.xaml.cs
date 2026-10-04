@@ -9,7 +9,18 @@ public sealed partial class HomePage : Page
     private RuntimeService? _runtime;
     private RuntimeSnapshot? _snapshot;
 
-    public HomePage() { InitializeComponent(); }
+    internal event EventHandler<string>? ShortcutRequested;
+
+    public HomePage()
+    {
+        InitializeComponent();
+        PageTitle.Text = UiText.Get("Home");
+        RuntimeSection.Title = UiText.Get("RuntimeStatus");
+        QuickAccessSection.Title = UiText.Get("QuickAccess");
+        ConnectionsShortcutLabel.Text = UiText.Get("ConnectAIClients");
+        CapabilitiesShortcutLabel.Text = UiText.Get("ManageCapabilities");
+        ActivityShortcutLabel.Text = UiText.Get("ViewActivity");
+    }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
@@ -22,12 +33,12 @@ public sealed partial class HomePage : Page
         if (_runtime is null) return;
         _snapshot = await _runtime.GetSnapshotAsync(includeNexusConnection: true);
         var running = _snapshot.CoreRunning;
-        RuntimeHeadline.Text = running ? "AgentDock 正在运行" : "AgentDock 已停止";
-        RuntimeDescription.Text = running ? "本地服务已准备好，AI 客户端可以连接。" : "启动 AgentDock 后即可接受 AI 客户端连接。";
-        RuntimeState.Text = running ? "正在运行 ●" : "已停止";
-        McpState.Text = _snapshot.Healthy ? "已准备就绪 ●" : "不可用";
-        NexusState.Text = _snapshot.NexusConnected ? "已连接 ●" : "未连接";
-        RuntimeAction.Content = running ? "停止" : "启动";
+        RuntimeHeadline.Text = running ? UiText.Get("AgentDockRunning") : UiText.Get("AgentDockStopped");
+        RuntimeDescription.Text = running ? UiText.Get("LocalServiceReady") : UiText.Get("StartAgentDockForClients");
+        RuntimeState.Text = running ? UiText.Get("Running") + " ●" : UiText.Get("Stopped");
+        McpState.Text = _snapshot.Healthy ? UiText.Get("Ready") + " ●" : UiText.Get("Unavailable");
+        NexusState.Text = _snapshot.NexusConnected ? UiText.Get("Connected") + " ●" : UiText.Get("NotConnected");
+        RuntimeAction.Content = running ? UiText.Get("Stop") : UiText.Get("Start");
     }
 
     private async void RuntimeAction_Click(object sender, RoutedEventArgs e)
@@ -41,4 +52,13 @@ public sealed partial class HomePage : Page
         }
         finally { RuntimeAction.IsEnabled = true; }
     }
+
+    private void ConnectionsShortcut_Click(object sender, RoutedEventArgs e) =>
+        ShortcutRequested?.Invoke(this, "connections");
+
+    private void CapabilitiesShortcut_Click(object sender, RoutedEventArgs e) =>
+        ShortcutRequested?.Invoke(this, "capabilities");
+
+    private void ActivityShortcut_Click(object sender, RoutedEventArgs e) =>
+        ShortcutRequested?.Invoke(this, "activity");
 }

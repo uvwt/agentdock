@@ -19,7 +19,7 @@ public sealed partial class MainWindow : Window
 
     internal bool AllowClose { get; set; }
 
-    public MainWindow(RuntimeService runtime)
+    public MainWindow(RuntimeService runtime, string initialPage = "home")
     {
         _runtime = runtime;
         InitializeComponent();
@@ -32,6 +32,7 @@ public sealed partial class MainWindow : Window
 
         _windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
         Navigation.Loaded += Navigation_Loaded;
+        ContentFrame.Navigated += ContentFrame_Navigated;
         AppWindow.Changed += (_, args) =>
         {
             if (!args.DidSizeChange) return;
@@ -49,8 +50,7 @@ public sealed partial class MainWindow : Window
             args.Cancel = true;
             AppWindow.Hide();
         };
-        Navigation.SelectedItem = Navigation.MenuItems[0];
-        ContentFrame.Navigate(typeof(HomePage), _runtime);
+        NavigateTo(initialPage);
     }
 
     internal void ShowAndActivate()
@@ -87,15 +87,37 @@ public sealed partial class MainWindow : Window
     private void Navigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         if (args.SelectedItemContainer?.Tag is not string tag) return;
-        var page = tag switch
-        {
-            "home" => typeof(HomePage),
-            "connections" => typeof(ConnectionsPage),
-            "capabilities" => typeof(CapabilitiesPage),
-            "activity" => typeof(ActivityPage),
-            "settings" => typeof(SettingsPage),
-            _ => typeof(HomePage)
-        };
-        ContentFrame.Navigate(page, _runtime);
+        ContentFrame.Navigate(PageForTag(tag), _runtime);
     }
+
+    private void ContentFrame_Navigated(object sender, Microsoft.UI.Xaml.Navigation.NavigationEventArgs e)
+    {
+        if (e.Content is HomePage home)
+        {
+            home.ShortcutRequested += (_, tag) => NavigateTo(tag);
+        }
+    }
+
+    private void NavigateTo(string tag)
+    {
+        var item = Navigation.MenuItems
+            .OfType<NavigationViewItem>()
+            .FirstOrDefault(candidate => string.Equals(candidate.Tag?.ToString(), tag, StringComparison.Ordinal));
+        if (item is null) return;
+        if (!ReferenceEquals(Navigation.SelectedItem, item))
+        {
+            Navigation.SelectedItem = item;
+            return;
+        }
+        ContentFrame.Navigate(PageForTag(tag), _runtime);
+    }
+
+    private static Type PageForTag(string tag) => tag switch
+    {
+        "connections" => typeof(ConnectionsPage),
+        "capabilities" => typeof(CapabilitiesPage),
+        "activity" => typeof(ActivityPage),
+        "settings" => typeof(SettingsPage),
+        _ => typeof(HomePage)
+    };
 }

@@ -20,6 +20,17 @@ public sealed partial class ConnectionsPage : Page
         RemoteSection.Title = UiText.Get("RemoteConnection");
         CopyLocalButton.Content = UiText.Get("Copy");
         CopyPublicButton.Content = UiText.Get("Copy");
+        PublicModeLabel.Text = UiText.Get("PublicMcpMode");
+        LocalOnlyModeItem.Content = UiText.Get("LocalOnlyNative");
+        QuickModeItem.Content = UiText.Get("TemporaryPublicAddress");
+        NamedModeItem.Content = UiText.Get("CustomDomain");
+        NamedServerUrlTextBox.Header = UiText.Get("HttpsAddress");
+        TunnelTokenPasswordBox.Header = "Cloudflare Tunnel Token";
+        ApplyTunnelButton.Content = UiText.Get("Apply");
+        RegenerateQuickButton.Content = UiText.Get("RegenerateTemporaryAddress");
+        NexusEndpointTextBox.Header = UiText.Get("NexusAddress");
+        NexusPairingCodeBox.Header = UiText.Get("OneTimePairingCode");
+        PairNexusButton.Content = UiText.Get("Pair");
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -44,7 +55,7 @@ public sealed partial class ConnectionsPage : Page
         NexusEndpointTextBox.Text = _snapshot.Nexus.Paired ? _snapshot.Nexus.Endpoint : "https://mcp.nexusdock.co";
         SelectTunnelMode(_snapshot.TunnelMode);
         NamedServerUrlTextBox.Text = _snapshot.SavedNamedOrigin;
-        TunnelTokenPasswordBox.PlaceholderText = _snapshot.TunnelTokenStored ? "已保存；留空保持不变" : "Cloudflare Tunnel Token";
+        TunnelTokenPasswordBox.PlaceholderText = _snapshot.TunnelTokenStored ? UiText.Get("TunnelTokenSavedPlaceholder") : "Cloudflare Tunnel Token";
         _updatingUi = false;
         UpdateTunnelControls();
     }
@@ -98,13 +109,13 @@ public sealed partial class ConnectionsPage : Page
     private async void ApplyTunnelButton_Click(object sender, RoutedEventArgs e)
     {
         if (_runtime is null) return;
-        TunnelStatus.Text = "正在应用…";
+        TunnelStatus.Text = UiText.Get("Applying");
         try
         {
             await _runtime.SetTunnelModeAsync(SelectedTunnelMode(), NamedServerUrlTextBox.Text.Trim(), TunnelTokenPasswordBox.Password);
             TunnelTokenPasswordBox.Password = "";
             await RefreshAsync();
-            TunnelStatus.Text = "已应用";
+            TunnelStatus.Text = UiText.Get("Applied");
         }
         catch (Exception ex) { TunnelStatus.Text = ex.Message; }
     }
@@ -112,12 +123,12 @@ public sealed partial class ConnectionsPage : Page
     private async void RegenerateQuickButton_Click(object sender, RoutedEventArgs e)
     {
         if (_runtime is null) return;
-        TunnelStatus.Text = "正在生成…";
+        TunnelStatus.Text = UiText.Get("Generating");
         try
         {
             await _runtime.RegenerateQuickTunnelAsync();
             await RefreshAsync();
-            TunnelStatus.Text = "已生成";
+            TunnelStatus.Text = UiText.Get("Generated");
         }
         catch (Exception ex) { TunnelStatus.Text = ex.Message; }
     }
@@ -125,13 +136,13 @@ public sealed partial class ConnectionsPage : Page
     private async void PairNexusButton_Click(object sender, RoutedEventArgs e)
     {
         if (_runtime is null) return;
-        NexusActionStatus.Text = "正在配对…";
+        NexusActionStatus.Text = UiText.Get("Pairing");
         try
         {
             await _runtime.PairNexusAsync(NexusEndpointTextBox.Text, NexusPairingCodeBox.Password);
             NexusPairingCodeBox.Password = "";
             await RefreshAsync();
-            NexusActionStatus.Text = "配对完成";
+            NexusActionStatus.Text = UiText.Get("PairingCompleted");
         }
         catch (Exception ex) { NexusActionStatus.Text = ex.Message; }
     }

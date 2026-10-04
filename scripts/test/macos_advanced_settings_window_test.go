@@ -28,6 +28,11 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 		"Authentication token",
 		"OAuth password",
 		"requestUpdate()",
+		`case .runtime: return L10n.text("Runtime")`,
+		`case .permissions: return L10n.text("Permissions")`,
+		`case .credentials: return L10n.text("Access Credentials")`,
+		"setLanguagePreference(_ preference:",
+		".toggleStyle(.switch)",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("native macOS control panel missing parity contract %q", want)

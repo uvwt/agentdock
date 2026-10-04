@@ -11,7 +11,15 @@ public sealed partial class SettingsPage : Page
     private RuntimeSnapshot? _snapshot;
     private string _activeTag = "runtime";
 
-    public SettingsPage() { InitializeComponent(); }
+    public SettingsPage()
+    {
+        InitializeComponent();
+        SettingsPageTitle.Text = UiText.Get("Settings");
+        RuntimeNavigationItem.Content = UiText.Get("Runtime");
+        PermissionsNavigationItem.Content = UiText.Get("Permissions");
+        StartupNavigationItem.Content = UiText.Get("Startup");
+        CredentialsNavigationItem.Content = UiText.Get("AccessCredentials");
+    }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
@@ -58,58 +66,59 @@ public sealed partial class SettingsPage : Page
     private UIElement BuildRuntime()
     {
         var rows = new StackPanel();
-        rows.Children.Add(Row("状态", _snapshot?.CoreRunning == true ? "正在运行 ●" : "已停止"));
+        rows.Children.Add(Row(UiText.Get("Status"), _snapshot?.CoreRunning == true ? UiText.Get("Running") + " ●" : UiText.Get("Stopped")));
         rows.Children.Add(Divider());
-        rows.Children.Add(Row("本地地址", _snapshot?.LocalMcpUrl ?? "—"));
+        rows.Children.Add(Row(UiText.Get("LocalAddress"), _snapshot?.LocalMcpUrl ?? "—"));
         rows.Children.Add(Divider());
 
-        var action = new Button { Content = _snapshot?.CoreRunning == true ? "停止" : "启动" };
+        var action = new Button { Content = _snapshot?.CoreRunning == true ? UiText.Get("Stop") : UiText.Get("Start") };
         action.Click += RuntimeAction_Click;
-        rows.Children.Add(ActionRow("服务", action));
+        rows.Children.Add(ActionRow(UiText.Get("Service"), action));
         rows.Children.Add(Divider());
 
         var port = new NumberBox { Value = _snapshot?.Settings.Port ?? 8765, Minimum = 1, Maximum = 65535, Width = 130, Tag = "port" };
-        rows.Children.Add(ActionRow("端口", port));
+        rows.Children.Add(ActionRow(UiText.Get("Port"), port));
         rows.Children.Add(Divider());
 
         var log = new ComboBox { Width = 130, Tag = "log" };
         foreach (var value in new[] { "debug", "info", "warn", "error" }) log.Items.Add(new ComboBoxItem { Content = value, Tag = value });
         SelectComboTag(log, _snapshot?.Settings.LogLevel ?? "info");
-        rows.Children.Add(ActionRow("日志级别", log));
+        rows.Children.Add(ActionRow(UiText.Get("LogLevel"), log));
         rows.Children.Add(Divider());
 
         var language = new ComboBox { Width = 150, Tag = "language" };
-        language.Items.Add(new ComboBoxItem { Content = "跟随系统", Tag = UiText.SystemPreference });
-        language.Items.Add(new ComboBoxItem { Content = "简体中文", Tag = UiText.SimplifiedChinesePreference });
-        language.Items.Add(new ComboBoxItem { Content = "English", Tag = UiText.EnglishPreference });
+        language.Items.Add(new ComboBoxItem { Content = UiText.Get("FollowSystem"), Tag = UiText.SystemPreference });
+        language.Items.Add(new ComboBoxItem { Content = UiText.Get("SimplifiedChinese"), Tag = UiText.SimplifiedChinesePreference });
+        language.Items.Add(new ComboBoxItem { Content = UiText.Get("EnglishLanguage"), Tag = UiText.EnglishPreference });
         SelectComboTag(language, UiText.ReadPreference());
-        rows.Children.Add(ActionRow("界面语言", language));
+        language.SelectionChanged += LanguagePreference_SelectionChanged;
+        rows.Children.Add(ActionRow(UiText.Get("InterfaceLanguage"), language));
         rows.Children.Add(Divider());
 
-        var save = new Button { Content = "保存并重启" };
+        var save = new Button { Content = UiText.Get("SaveAndRestart") };
         save.Click += SaveRuntimeSettings_Click;
-        rows.Children.Add(ActionRow("Runtime 配置", save));
+        rows.Children.Add(ActionRow(UiText.Get("RuntimeConfiguration"), save));
         rows.Children.Add(Divider());
 
-        var update = new Button { Content = "检查更新" };
+        var update = new Button { Content = UiText.Get("CheckForUpdates") };
         update.Click += CheckUpdate_Click;
-        rows.Children.Add(ActionRow("AgentDock 更新", update));
+        rows.Children.Add(ActionRow(UiText.Get("AgentDockUpdate"), update));
         return rows;
     }
 
     private UIElement BuildPermissions()
     {
         var rows = new StackPanel();
-        rows.Children.Add(Row("AgentDock 权限", "由 Windows 系统管理"));
+        rows.Children.Add(Row(UiText.Get("AgentDockPermissions"), UiText.Get("ManagedByWindows")));
         rows.Children.Add(Divider());
-        rows.Children.Add(Row("管理员模式", string.Equals(_snapshot?.Manifest.PrivilegeMode, "elevated", StringComparison.OrdinalIgnoreCase) ? "已启用" : "未启用"));
+        rows.Children.Add(Row(UiText.Get("AdministratorMode"), string.Equals(_snapshot?.Manifest.PrivilegeMode, "elevated", StringComparison.OrdinalIgnoreCase) ? UiText.Get("Enabled") : UiText.Get("Disabled")));
         var toggle = new ToggleSwitch
         {
             IsOn = string.Equals(_snapshot?.Manifest.PrivilegeMode, "elevated", StringComparison.OrdinalIgnoreCase),
             Tag = "elevated"
         };
         toggle.Toggled += PrivilegeToggle_Toggled;
-        rows.Children.Add(ActionRow("以管理员权限运行 Core", toggle));
+        rows.Children.Add(ActionRow(UiText.Get("RunCoreElevated"), toggle));
         return rows;
     }
 
@@ -118,21 +127,36 @@ public sealed partial class SettingsPage : Page
         var rows = new StackPanel();
         var core = new ToggleSwitch { IsOn = _snapshot?.CoreStartupEnabled == true, Tag = "core" };
         core.Toggled += StartupToggle_Toggled;
-        rows.Children.Add(ActionRow("Core 后台服务", core));
+        rows.Children.Add(ActionRow(UiText.Get("CoreBackgroundService"), core));
         rows.Children.Add(Divider());
         var tray = new ToggleSwitch { IsOn = _snapshot?.TrayStartupEnabled == true, Tag = "tray" };
         tray.Toggled += StartupToggle_Toggled;
-        rows.Children.Add(ActionRow("托盘应用", tray));
+        rows.Children.Add(ActionRow(UiText.Get("TrayApp"), tray));
         return rows;
     }
 
     private UIElement BuildCredentials()
     {
         var rows = new StackPanel();
-        rows.Children.Add(CredentialRow("认证令牌", "bearer"));
+        rows.Children.Add(CredentialRow(UiText.Get("AuthenticationToken"), "bearer"));
         rows.Children.Add(Divider());
-        rows.Children.Add(CredentialRow("OAuth 密码", "oauth"));
+        rows.Children.Add(CredentialRow(UiText.Get("OAuthPassword"), "oauth"));
         return rows;
+    }
+
+    private void LanguagePreference_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not ComboBox combo || combo.SelectedItem is not ComboBoxItem item) return;
+        var preference = item.Tag?.ToString() ?? UiText.SystemPreference;
+        if (string.Equals(preference, UiText.ReadPreference(), StringComparison.Ordinal)) return;
+        try
+        {
+            (Application.Current as NativeApp)?.ApplyLanguagePreference(preference);
+        }
+        catch (Exception ex)
+        {
+            _ = ShowMessageAsync(UiText.Get("Settings"), UiText.Format("LanguageChangeFailed", ex.Message));
+        }
     }
 
     private Grid CredentialRow(string title, string kind)
@@ -168,25 +192,17 @@ public sealed partial class SettingsPage : Page
         if (rows is null) return;
         var port = FindTagged<NumberBox>(rows, "port");
         var log = FindTagged<ComboBox>(rows, "log");
-        var language = FindTagged<ComboBox>(rows, "language");
-        if (port is null || log?.SelectedItem is not ComboBoxItem logItem || language?.SelectedItem is not ComboBoxItem languageItem) return;
+        if (port is null || log?.SelectedItem is not ComboBoxItem logItem) return;
         _snapshot.Settings.Port = (int)port.Value;
         _snapshot.Settings.LogLevel = logItem.Tag?.ToString() ?? "info";
         try
         {
             await _runtime.SaveSettingsAsync(_snapshot.Settings);
             await _runtime.RunCoreActionAsync("restart");
-            var languagePreference = languageItem.Tag?.ToString() ?? UiText.SystemPreference;
-            if (!string.Equals(languagePreference, UiText.ReadPreference(), StringComparison.Ordinal))
-            {
-                UiText.SetPreference(languagePreference);
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = true });
-                Environment.Exit(0);
-            }
             await RefreshAsync();
             Render("runtime");
         }
-        catch (Exception ex) { await ShowMessageAsync("保存失败", ex.Message); }
+        catch (Exception ex) { await ShowMessageAsync(UiText.Get("SaveFailed"), ex.Message); }
     }
 
     private async void StartupToggle_Toggled(object sender, RoutedEventArgs e)
@@ -199,7 +215,7 @@ public sealed partial class SettingsPage : Page
         }
         catch (Exception ex)
         {
-            await ShowMessageAsync("启动设置失败", ex.Message);
+            await ShowMessageAsync(UiText.Get("StartupSettingsFailed"), ex.Message);
             await RefreshAsync();
             Render("startup");
         }
@@ -215,7 +231,7 @@ public sealed partial class SettingsPage : Page
         }
         catch (Exception ex)
         {
-            await ShowMessageAsync("权限设置失败", ex.Message);
+            await ShowMessageAsync(UiText.Get("PermissionSettingsFailed"), ex.Message);
             await RefreshAsync();
             Render("permissions");
         }
@@ -230,29 +246,29 @@ public sealed partial class SettingsPage : Page
             var check = await _runtime.CheckForUpdatesAsync();
             if (!check.UpdateAvailable)
             {
-                await ShowMessageAsync("AgentDock 更新", check.Message);
+                await ShowMessageAsync(UiText.Get("AgentDockUpdate"), check.Message);
                 return;
             }
             var dialog = new ContentDialog
             {
                 XamlRoot = XamlRoot,
-                Title = "发现新版本",
+                Title = UiText.Get("NewVersionAvailable"),
                 Content = $"{check.CurrentVersion} → {check.LatestVersion}",
-                PrimaryButtonText = "更新",
-                CloseButtonText = "取消"
+                PrimaryButtonText = UiText.Get("Update"),
+                CloseButtonText = UiText.Get("Cancel")
             };
             if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-            var progress = new Progress<UpdateProgress>(value => button.Content = string.IsNullOrWhiteSpace(value.Message) ? "正在更新…" : value.Message);
+            var progress = new Progress<UpdateProgress>(value => button.Content = string.IsNullOrWhiteSpace(value.Message) ? UiText.Get("UpdatingAgentDock") : value.Message);
             var output = await _runtime.RunUpdateAsync(progress);
-            await ShowMessageAsync("AgentDock 更新", LastLine(output, "更新完成"));
+            await ShowMessageAsync(UiText.Get("AgentDockUpdate"), LastLine(output, UiText.Get("UpdateCompleted")));
         }
-        catch (Exception ex) { await ShowMessageAsync("更新失败", ex.Message); }
-        finally { button.Content = "检查更新"; button.IsEnabled = true; }
+        catch (Exception ex) { await ShowMessageAsync(UiText.Get("UpdateFailed"), ex.Message); }
+        finally { button.Content = UiText.Get("CheckForUpdates"); button.IsEnabled = true; }
     }
 
     private async Task ShowMessageAsync(string title, string message)
     {
-        var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = title, Content = message, CloseButtonText = "确定" };
+        var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = title, Content = message, CloseButtonText = UiText.Get("Confirm") };
         await dialog.ShowAsync();
     }
 
@@ -289,20 +305,26 @@ public sealed partial class SettingsPage : Page
 
     private static string PageTitle(string tag) => tag switch
     {
-        "permissions" => "Permissions", "startup" => "Startup", "credentials" => "Access Credentials", _ => "Runtime"
+        "permissions" => UiText.Get("Permissions"),
+        "startup" => UiText.Get("Startup"),
+        "credentials" => UiText.Get("AccessCredentials"),
+        _ => UiText.Get("Runtime")
     };
 
     private static string PageDetail(string tag) => tag switch
     {
-        "permissions" => "查看和调整 Windows Runtime 权限。",
-        "startup" => "后台服务和托盘应用的启动行为。",
-        "credentials" => "查看由 Windows DPAPI 保护的本机访问凭据。",
-        _ => "本机 AgentDock Runtime 状态、配置与更新。"
+        "permissions" => UiText.Get("PermissionsDetail"),
+        "startup" => UiText.Get("StartupDetail"),
+        "credentials" => UiText.Get("CredentialsDetail"),
+        _ => UiText.Get("RuntimeDetail")
     };
 
     private static string SectionTitle(string tag) => tag switch
     {
-        "permissions" => "系统权限", "startup" => "Startup", "credentials" => "Credentials", _ => "AgentDock Runtime"
+        "permissions" => UiText.Get("RuntimePermissions"),
+        "startup" => UiText.Get("Startup"),
+        "credentials" => UiText.Get("Credentials"),
+        _ => "AgentDock Runtime"
     };
 
     private static Grid Row(string left, string right)

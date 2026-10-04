@@ -5,14 +5,14 @@
     xmlns:local="using:AgentDock.ControlPanel">
     <Grid RowSpacing="18" Padding="28,24,0,0">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
-        <TextBlock Text="设置" FontSize="20" FontWeight="SemiBold"/>
+        <TextBlock x:Name="SettingsPageTitle" FontSize="20" FontWeight="SemiBold"/>
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions><ColumnDefinition Width="190"/><ColumnDefinition Width="1"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
             <ListView x:Name="SettingsNavigation" SelectionChanged="SettingsNavigation_SelectionChanged">
-                <ListViewItem Content="Runtime" Tag="runtime"/>
-                <ListViewItem Content="Permissions" Tag="permissions"/>
-                <ListViewItem Content="Startup" Tag="startup"/>
-                <ListViewItem Content="Access Credentials" Tag="credentials"/>
+                <ListViewItem x:Name="RuntimeNavigationItem" Tag="runtime"/>
+                <ListViewItem x:Name="PermissionsNavigationItem" Tag="permissions"/>
+                <ListViewItem x:Name="StartupNavigationItem" Tag="startup"/>
+                <ListViewItem x:Name="CredentialsNavigationItem" Tag="credentials"/>
             </ListView>
             <Rectangle Grid.Column="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}"/>
             <ScrollViewer Grid.Column="2">

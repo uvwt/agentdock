@@ -765,4 +765,57 @@ Update now?</value>
   <data name="LogsDirectory" xml:space="preserve"><value>Logs directory</value></data>
   <data name="ConfigurationDirectory" xml:space="preserve"><value>Configuration directory</value></data>
   <data name="Open" xml:space="preserve"><value>Open</value></data>
+  <data name="Runtime" xml:space="preserve"><value>Runtime</value></data>
+  <data name="Permissions" xml:space="preserve"><value>Permissions</value></data>
+  <data name="Credentials" xml:space="preserve"><value>Access credentials</value></data>
+  <data name="RuntimeDetail" xml:space="preserve"><value>Local AgentDock Runtime status, configuration, and updates.</value></data>
+  <data name="PermissionsDetail" xml:space="preserve"><value>Review and adjust Windows Runtime permissions.</value></data>
+  <data name="StartupDetail" xml:space="preserve"><value>Background service and tray app startup behavior.</value></data>
+  <data name="CredentialsDetail" xml:space="preserve"><value>View local access credentials protected by Windows DPAPI.</value></data>
+  <data name="LocalAddress" xml:space="preserve"><value>Local address</value></data>
+  <data name="RuntimeConfiguration" xml:space="preserve"><value>Runtime configuration</value></data>
+  <data name="AgentDockUpdate" xml:space="preserve"><value>AgentDock update</value></data>
+  <data name="AgentDockPermissions" xml:space="preserve"><value>AgentDock permissions</value></data>
+  <data name="ManagedByWindows" xml:space="preserve"><value>Managed by Windows</value></data>
+  <data name="AdministratorMode" xml:space="preserve"><value>Administrator mode</value></data>
+  <data name="CoreBackgroundService" xml:space="preserve"><value>Core background service</value></data>
+  <data name="TrayApp" xml:space="preserve"><value>Tray app</value></data>
+  <data name="AuthenticationToken" xml:space="preserve"><value>Authentication token</value></data>
+  <data name="QuickAccess" xml:space="preserve"><value>Quick access</value></data>
+  <data name="ConnectAIClients" xml:space="preserve"><value>Connect AI clients</value></data>
+  <data name="ManageCapabilities" xml:space="preserve"><value>Manage capabilities</value></data>
+  <data name="ViewActivity" xml:space="preserve"><value>View activity</value></data>
+  <data name="AgentDockRunning" xml:space="preserve"><value>AgentDock is running</value></data>
+  <data name="AgentDockStopped" xml:space="preserve"><value>AgentDock is stopped</value></data>
+  <data name="LocalServiceReady" xml:space="preserve"><value>The local service is ready for AI clients.</value></data>
+  <data name="StartAgentDockForClients" xml:space="preserve"><value>Start AgentDock to accept AI client connections.</value></data>
+  <data name="PublicMcpMode" xml:space="preserve"><value>Public MCP mode</value></data>
+  <data name="LocalOnlyNative" xml:space="preserve"><value>Local only</value></data>
+  <data name="TemporaryPublicAddress" xml:space="preserve"><value>Temporary public address</value></data>
+  <data name="HttpsAddress" xml:space="preserve"><value>HTTPS address</value></data>
+  <data name="TunnelTokenSavedPlaceholder" xml:space="preserve"><value>Saved; leave blank to keep the current token</value></data>
+  <data name="Apply" xml:space="preserve"><value>Apply</value></data>
+  <data name="NexusAddress" xml:space="preserve"><value>NexusDock address</value></data>
+  <data name="Pair" xml:space="preserve"><value>Pair</value></data>
+  <data name="Applying" xml:space="preserve"><value>Applying…</value></data>
+  <data name="Applied" xml:space="preserve"><value>Applied</value></data>
+  <data name="Generating" xml:space="preserve"><value>Generating…</value></data>
+  <data name="Generated" xml:space="preserve"><value>Generated</value></data>
+  <data name="Pairing" xml:space="preserve"><value>Pairing…</value></data>
+  <data name="PairingCompleted" xml:space="preserve"><value>Paired</value></data>
+  <data name="IsolatedBrowser" xml:space="preserve"><value>Isolated browser</value></data>
+  <data name="ReuseLocalBrowser" xml:space="preserve"><value>Reuse local browser</value></data>
+  <data name="SpecifiedCdp" xml:space="preserve"><value>Specified CDP address</value></data>
+  <data name="AddCustomCodingAgent" xml:space="preserve"><value>Add custom Coding Agent</value></data>
+  <data name="DefaultCodingAgent" xml:space="preserve"><value>Default Coding Agent</value></data>
+  <data name="ArgumentsOnePerLine" xml:space="preserve"><value>Arguments (one per line)</value></data>
+  <data name="SaveAndRestartRuntime" xml:space="preserve"><value>Save and restart Runtime</value></data>
+  <data name="Saving" xml:space="preserve"><value>Saving…</value></data>
+  <data name="Saved" xml:space="preserve"><value>Saved</value></data>
+  <data name="AtLeastOneCodingAgent" xml:space="preserve"><value>Enable at least one Coding Agent profile.</value></data>
+  <data name="SaveFailed" xml:space="preserve"><value>Save failed</value></data>
+  <data name="StartupSettingsFailed" xml:space="preserve"><value>Startup settings failed</value></data>
+  <data name="PermissionSettingsFailed" xml:space="preserve"><value>Permission settings failed</value></data>
+  <data name="NewVersionAvailable" xml:space="preserve"><value>New version available</value></data>
+  <data name="Confirm" xml:space="preserve"><value>OK</value></data>
 </root>

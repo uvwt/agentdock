@@ -94,10 +94,10 @@ private final class ControlPanelModel: ObservableObject {
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .runtime: return "Runtime"
-            case .permissions: return "Permissions"
-            case .startup: return "Startup"
-            case .credentials: return "Access Credentials"
+            case .runtime: return L10n.text("Runtime")
+            case .permissions: return L10n.text("Permissions")
+            case .startup: return L10n.text("Startup")
+            case .credentials: return L10n.text("Access Credentials")
             }
         }
     }
@@ -106,6 +106,7 @@ private final class ControlPanelModel: ObservableObject {
     @Published var settingsPage: SettingsPage = .runtime
     @Published var status: ServiceStatus = .missing
     @Published var statusUpdatedAt = Date()
+    @Published private(set) var languageRevision = 0
     @Published var isBusy = false
     @Published var isUpdateInProgress = false
     @Published var message: String?
@@ -161,6 +162,12 @@ private final class ControlPanelModel: ObservableObject {
     }
 
     func requestUpdate() { onUpdateRequested() }
+
+    func setLanguagePreference(_ preference: UILanguagePreference) {
+        guard preference != L10n.languagePreference() else { return }
+        L10n.setLanguagePreference(preference)
+        languageRevision += 1
+    }
 
     private func perform(_ operation: @escaping () async throws -> Void) async {
         guard !isBusy, !isUpdateInProgress else { return }
@@ -476,7 +483,9 @@ private struct CapabilitiesView: View {
                 PageHeader(title: L10n.text("Capabilities"), detail: L10n.text("Configure the capabilities AgentDock provides to AI."))
                 SettingsSection(L10n.text("Available capabilities")) {
                     SettingsRow(L10n.text("Browser"), detail: L10n.text("Browser automation and web operations")) {
-                        Toggle("", isOn: $browserEnabled).labelsHidden()
+                        Toggle("", isOn: $browserEnabled)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         Picker(L10n.text("Browser connection"), selection: $browserMode) {
@@ -490,11 +499,14 @@ private struct CapabilitiesView: View {
                     }.padding(.horizontal, 13).padding(.bottom, 12)
                     RowDivider()
                     SettingsRow("Coding Agent", detail: codingAgentDetail) {
-                        Toggle("", isOn: $acpEnabled).labelsHidden()
+                        Toggle("", isOn: $acpEnabled)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(profiles.indices, id: \.self) { index in
                             Toggle(profileTitle(profiles[index]), isOn: $profiles[index].enabled)
+                                .toggleStyle(.switch)
                         }
                         if !enabledProfiles.isEmpty {
                             Picker(L10n.text("Default Coding Agent"), selection: $defaultProfile) {
@@ -704,7 +716,7 @@ private struct SettingsView: View {
         switch model.settingsPage {
         case .runtime:
             VStack(alignment: .leading, spacing: 20) {
-                PageHeader(title: "Runtime", detail: L10n.text("Local AgentDock runtime status and service controls."))
+                PageHeader(title: L10n.text("Runtime"), detail: L10n.text("Local AgentDock runtime status and service controls."))
                 SettingsSection("AgentDock Runtime") {
                     SettingsRow(L10n.text("Status")) { StatusPill(text: model.status.healthy ? L10n.text("Running") : L10n.text("Stopped"), active: model.status.healthy) }
                     RowDivider()
@@ -729,7 +741,12 @@ private struct SettingsView: View {
                             ForEach(UILanguagePreference.allCases, id: \.rawValue) { preference in
                                 Text(preference.title).tag(preference)
                             }
-                        }.labelsHidden().frame(width: 150)
+                        }
+                        .labelsHidden()
+                        .frame(width: 150)
+                        .onChange(of: languagePreference) { preference in
+                            model.setLanguagePreference(preference)
+                        }
                     }
                     RowDivider()
                     SettingsRow(L10n.text("Runtime configuration")) {
@@ -746,22 +763,7 @@ private struct SettingsView: View {
                                 acpProfiles: configuration.acpProfiles,
                                 acpDefaultProfile: configuration.acpDefaultProfile
                             )
-                            Task {
-                                await model.applySettings(settings)
-                                if model.message == nil, languagePreference != L10n.languagePreference() {
-                                    let previous = L10n.languagePreference()
-                                    L10n.setLanguagePreference(languagePreference)
-                                    let relaunch = Process()
-                                    relaunch.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-                                    relaunch.arguments = ["-n", Bundle.main.bundlePath]
-                                    do {
-                                        try relaunch.run()
-                                        NSApp.terminate(nil)
-                                    } catch {
-                                        L10n.setLanguagePreference(previous)
-                                    }
-                                }
-                            }
+                            Task { await model.applySettings(settings) }
                         }.controlSize(.small)
                     }
                     RowDivider()
@@ -773,7 +775,7 @@ private struct SettingsView: View {
             }
         case .permissions:
             VStack(alignment: .leading, spacing: 20) {
-                PageHeader(title: "Permissions", detail: L10n.text("Review macOS permissions required by enabled capabilities."))
+                PageHeader(title: L10n.text("Permissions"), detail: L10n.text("Review macOS permissions required by enabled capabilities."))
                 SettingsSection(L10n.text("System permissions")) {
                     SettingsRow(L10n.text("AgentDock permissions"), detail: L10n.text("Screen, accessibility and file access are managed by macOS.")) {
                         Button(L10n.text("Check permissions")) {
@@ -784,22 +786,26 @@ private struct SettingsView: View {
             }
         case .startup:
             VStack(alignment: .leading, spacing: 20) {
-                PageHeader(title: "Startup", detail: L10n.text("Background service and menu bar startup behavior."))
+                PageHeader(title: L10n.text("Startup"), detail: L10n.text("Background service and menu bar startup behavior."))
                 SettingsSection(L10n.text("Startup")) {
                     SettingsRow(L10n.text("Core background service")) {
-                        Toggle("", isOn: $coreAutostart).labelsHidden()
+                        Toggle("", isOn: $coreAutostart)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
                             .onChange(of: coreAutostart) { value in Task { await model.setCoreAutostart(value) } }
                     }
                     RowDivider()
                     SettingsRow(L10n.text("Menu bar app")) {
-                        Toggle("", isOn: $menuAutostart).labelsHidden()
+                        Toggle("", isOn: $menuAutostart)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
                             .onChange(of: menuAutostart) { value in Task { await model.setMenuAutostart(value) } }
                     }
                 }
             }
         case .credentials:
             VStack(alignment: .leading, spacing: 20) {
-                PageHeader(title: "Access Credentials", detail: L10n.text("Credentials are stored in the protected AgentDock configuration."))
+                PageHeader(title: L10n.text("Access Credentials"), detail: L10n.text("Credentials are stored in the protected AgentDock configuration."))
                 SettingsSection(L10n.text("Credentials")) {
                     SettingsRow(L10n.text("Authentication token"), detail: showAuthToken ? (model.status.configuration?.authToken ?? "—") : "••••••••••••") {
                         Button(showAuthToken ? L10n.text("Hide") : L10n.text("Show")) { showAuthToken.toggle() }.controlSize(.small)

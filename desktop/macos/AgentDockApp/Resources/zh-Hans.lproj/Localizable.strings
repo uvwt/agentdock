@@ -393,6 +393,9 @@
 "Managed by macOS" = "由 macOS 管理";
 "Credentials remain managed by the existing AgentDock configuration." = "访问凭据继续由现有 AgentDock 配置安全管理。";
 "Credentials" = "访问凭据";
+"Runtime" = "运行时";
+"Permissions" = "权限";
+"Access Credentials" = "访问凭据";
 "Authentication token" = "认证令牌";
 "Protected" = "已保护";
 "Remote connection" = "远程连接";

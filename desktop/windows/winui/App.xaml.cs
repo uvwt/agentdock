@@ -142,16 +142,16 @@ public partial class NativeApp : Application
     private void CreateTray()
     {
         _trayMenu = new Forms.ContextMenuStrip();
-        _trayMenu.Items.Add("打开 AgentDock", null, (_, _) => _dispatcherQueue.TryEnqueue(ShowControlPanel));
+        _trayMenu.Items.Add(UiText.Get("OpenAgentDock"), null, (_, _) => _dispatcherQueue.TryEnqueue(ShowControlPanel));
         _trayMenu.Items.Add(new Forms.ToolStripSeparator());
-        _trayMenu.Items.Add("启动 Runtime", null, async (_, _) => await RunTrayActionAsync("start"));
-        _trayMenu.Items.Add("停止 Runtime", null, async (_, _) => await RunTrayActionAsync("stop"));
-        _trayMenu.Items.Add("重启 Runtime", null, async (_, _) => await RunTrayActionAsync("restart"));
+        _trayMenu.Items.Add(UiText.Get("StartAgentDock"), null, async (_, _) => await RunTrayActionAsync("start"));
+        _trayMenu.Items.Add(UiText.Get("StopAgentDock"), null, async (_, _) => await RunTrayActionAsync("stop"));
+        _trayMenu.Items.Add(UiText.Get("RestartAgentDock"), null, async (_, _) => await RunTrayActionAsync("restart"));
         _trayMenu.Items.Add(new Forms.ToolStripSeparator());
-        _trayMenu.Items.Add("打开日志目录", null, (_, _) => _runtime?.OpenLogsDirectory());
-        _trayMenu.Items.Add("打开配置目录", null, (_, _) => _runtime?.OpenConfigDirectory());
+        _trayMenu.Items.Add(UiText.Get("OpenLogsFolder"), null, (_, _) => _runtime?.OpenLogsDirectory());
+        _trayMenu.Items.Add(UiText.Get("OpenConfigFolder"), null, (_, _) => _runtime?.OpenConfigDirectory());
         _trayMenu.Items.Add(new Forms.ToolStripSeparator());
-        _trayMenu.Items.Add("退出", null, (_, _) => _dispatcherQueue.TryEnqueue(RequestExit));
+        _trayMenu.Items.Add(UiText.Get("ExitTray"), null, (_, _) => _dispatcherQueue.TryEnqueue(RequestExit));
 
         _notifyIcon = new Forms.NotifyIcon
         {
@@ -161,6 +161,25 @@ public partial class NativeApp : Application
             ContextMenuStrip = _trayMenu
         };
         _notifyIcon.DoubleClick += (_, _) => _dispatcherQueue.TryEnqueue(ShowControlPanel);
+    }
+
+    internal void ApplyLanguagePreference(string preference)
+    {
+        UiText.SetPreference(preference);
+        if (_runtime is null) return;
+
+        var previousWindow = _window;
+        _window = new MainWindow(_runtime, "settings");
+        if (previousWindow is not null)
+        {
+            previousWindow.AllowClose = true;
+            previousWindow.Close();
+        }
+
+        _notifyIcon?.Dispose();
+        _trayMenu?.Dispose();
+        CreateTray();
+        _window.ShowAndActivate();
     }
 
     private async Task RunTrayActionAsync(string action)

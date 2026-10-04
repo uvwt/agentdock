@@ -56,7 +56,7 @@ func TestWindowsNativeControlPanelCarriesSettingsParity(t *testing.T) {
 	capabilities := readWindowsNativeFile(t, "winui", "CapabilitiesPage.xaml.cs")
 	for _, want := range []string{
 		"SetPrivilegeModeAsync", "SetStartupAsync", "ReadBearerToken", "ReadOAuthPassword",
-		"CheckForUpdatesAsync", "RunUpdateAsync", "UiText.SetPreference", "SaveSettingsAsync",
+		"CheckForUpdatesAsync", "RunUpdateAsync", "LanguagePreference_SelectionChanged", "SaveSettingsAsync",
 	} {
 		if !strings.Contains(settings, want) {
 			t.Fatalf("WinUI settings parity missing %q", want)
@@ -73,6 +73,68 @@ func TestWindowsNativeControlPanelCarriesSettingsParity(t *testing.T) {
 	} {
 		if !strings.Contains(capabilities, want) {
 			t.Fatalf("WinUI capabilities parity missing %q", want)
+		}
+	}
+}
+
+func TestWindowsNativeLanguageAndShortcutsAreInteractive(t *testing.T) {
+	app := readWindowsNativeFile(t, "winui", "App.xaml.cs")
+	window := readWindowsNativeFile(t, "winui", "MainWindow.xaml.cs")
+	settingsXaml := readWindowsNativeFile(t, "winui", "SettingsPage.xaml")
+	settingsCode := readWindowsNativeFile(t, "winui", "SettingsPage.xaml.cs")
+	homeXaml := readWindowsNativeFile(t, "winui", "HomePage.xaml")
+	homeCode := readWindowsNativeFile(t, "winui", "HomePage.xaml.cs")
+
+	for _, want := range []string{
+		"ApplyLanguagePreference",
+		"UiText.SetPreference(preference)",
+		"new MainWindow(_runtime, \"settings\")",
+	} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("WinUI language reload missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		"RuntimeNavigationItem.Content = UiText.Get(\"Runtime\")",
+		"PermissionsNavigationItem.Content = UiText.Get(\"Permissions\")",
+		"StartupNavigationItem.Content = UiText.Get(\"Startup\")",
+		"CredentialsNavigationItem.Content = UiText.Get(\"AccessCredentials\")",
+		"LanguagePreference_SelectionChanged",
+	} {
+		if !strings.Contains(settingsCode, want) {
+			t.Fatalf("WinUI settings localization missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"Content=\"Runtime\" Tag=\"runtime\"",
+		"Content=\"Permissions\" Tag=\"permissions\"",
+		"Content=\"Access Credentials\" Tag=\"credentials\"",
+	} {
+		if strings.Contains(settingsXaml, forbidden) {
+			t.Fatalf("WinUI settings still hardcodes secondary navigation label %q", forbidden)
+		}
+	}
+	for _, want := range []string{
+		"Click=\"ConnectionsShortcut_Click\"",
+		"Click=\"CapabilitiesShortcut_Click\"",
+		"Click=\"ActivityShortcut_Click\"",
+	} {
+		if !strings.Contains(homeXaml, want) {
+			t.Fatalf("WinUI home shortcut missing click contract %q", want)
+		}
+	}
+	for _, want := range []string{
+		"ShortcutRequested?.Invoke(this, \"connections\")",
+		"ShortcutRequested?.Invoke(this, \"capabilities\")",
+		"ShortcutRequested?.Invoke(this, \"activity\")",
+	} {
+		if !strings.Contains(homeCode, want) {
+			t.Fatalf("WinUI home shortcut missing navigation request %q", want)
+		}
+	}
+	for _, want := range []string{"ContentFrame_Navigated", "home.ShortcutRequested", "NavigateTo(tag)"} {
+		if !strings.Contains(window, want) {
+			t.Fatalf("WinUI host shortcut routing missing %q", want)
 		}
 	}
 }

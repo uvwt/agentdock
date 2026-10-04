@@ -5,16 +5,16 @@
     xmlns:local="using:AgentDock.ControlPanel">
     <ScrollViewer>
         <StackPanel Width="760" HorizontalAlignment="Left" Spacing="22" Padding="28,24,28,32">
-            <TextBlock Text="主页" FontSize="20" FontWeight="SemiBold"/>
+            <TextBlock x:Name="PageTitle" FontSize="20" FontWeight="SemiBold"/>
             <Grid ColumnSpacing="16">
                 <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <StackPanel Spacing="5">
-                    <TextBlock x:Name="RuntimeHeadline" Text="正在读取 Runtime…" FontSize="14" FontWeight="SemiBold"/>
-                    <TextBlock x:Name="RuntimeDescription" Text="正在获取本机服务状态。" FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <TextBlock x:Name="RuntimeHeadline" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="RuntimeDescription" FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                 </StackPanel>
-                <Button x:Name="RuntimeAction" Grid.Column="1" Content="启动" Click="RuntimeAction_Click" VerticalAlignment="Center"/>
+                <Button x:Name="RuntimeAction" Grid.Column="1" Click="RuntimeAction_Click" VerticalAlignment="Center"/>
             </Grid>
-            <local:SectionCard Title="运行状态">
+            <local:SectionCard x:Name="RuntimeSection">
                 <StackPanel>
                     <Grid Padding="13,0" Height="46"><TextBlock Text="Runtime" VerticalAlignment="Center"/><TextBlock x:Name="RuntimeState" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
                     <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
@@ -23,13 +23,19 @@
                     <Grid Padding="13,0" Height="46"><TextBlock Text="NexusDock" VerticalAlignment="Center"/><TextBlock x:Name="NexusState" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
                 </StackPanel>
             </local:SectionCard>
-            <local:SectionCard Title="快速入口">
+            <local:SectionCard x:Name="QuickAccessSection">
                 <StackPanel>
-                    <Grid Padding="13,0" Height="46"><TextBlock Text="连接 AI 客户端" VerticalAlignment="Center"/><FontIcon Glyph="&#xE76C;" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
+                    <Button Click="ConnectionsShortcut_Click" Height="46" Padding="13,0" BorderThickness="0" Background="Transparent" HorizontalContentAlignment="Stretch">
+                        <Grid><TextBlock x:Name="ConnectionsShortcutLabel" VerticalAlignment="Center"/><FontIcon Glyph="&#xE76C;" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
+                    </Button>
                     <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
-                    <Grid Padding="13,0" Height="46"><TextBlock Text="管理能力" VerticalAlignment="Center"/><FontIcon Glyph="&#xE76C;" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
+                    <Button Click="CapabilitiesShortcut_Click" Height="46" Padding="13,0" BorderThickness="0" Background="Transparent" HorizontalContentAlignment="Stretch">
+                        <Grid><TextBlock x:Name="CapabilitiesShortcutLabel" VerticalAlignment="Center"/><FontIcon Glyph="&#xE76C;" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
+                    </Button>
                     <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
-                    <Grid Padding="13,0" Height="46"><TextBlock Text="查看活动" VerticalAlignment="Center"/><FontIcon Glyph="&#xE76C;" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
+                    <Button Click="ActivityShortcut_Click" Height="46" Padding="13,0" BorderThickness="0" Background="Transparent" HorizontalContentAlignment="Stretch">
+                        <Grid><TextBlock x:Name="ActivityShortcutLabel" VerticalAlignment="Center"/><FontIcon Glyph="&#xE76C;" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
+                    </Button>
                 </StackPanel>
             </local:SectionCard>
         </StackPanel>

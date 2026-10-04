@@ -765,4 +765,57 @@
   <data name="LogsDirectory" xml:space="preserve"><value>日志目录</value></data>
   <data name="ConfigurationDirectory" xml:space="preserve"><value>配置目录</value></data>
   <data name="Open" xml:space="preserve"><value>打开</value></data>
+  <data name="Runtime" xml:space="preserve"><value>运行时</value></data>
+  <data name="Permissions" xml:space="preserve"><value>权限</value></data>
+  <data name="Credentials" xml:space="preserve"><value>访问凭据</value></data>
+  <data name="RuntimeDetail" xml:space="preserve"><value>本机 AgentDock Runtime 状态、配置与更新。</value></data>
+  <data name="PermissionsDetail" xml:space="preserve"><value>查看和调整 Windows Runtime 权限。</value></data>
+  <data name="StartupDetail" xml:space="preserve"><value>后台服务和托盘应用的启动行为。</value></data>
+  <data name="CredentialsDetail" xml:space="preserve"><value>查看由 Windows DPAPI 保护的本机访问凭据。</value></data>
+  <data name="LocalAddress" xml:space="preserve"><value>本地地址</value></data>
+  <data name="RuntimeConfiguration" xml:space="preserve"><value>Runtime 配置</value></data>
+  <data name="AgentDockUpdate" xml:space="preserve"><value>AgentDock 更新</value></data>
+  <data name="AgentDockPermissions" xml:space="preserve"><value>AgentDock 权限</value></data>
+  <data name="ManagedByWindows" xml:space="preserve"><value>由 Windows 系统管理</value></data>
+  <data name="AdministratorMode" xml:space="preserve"><value>管理员模式</value></data>
+  <data name="CoreBackgroundService" xml:space="preserve"><value>Core 后台服务</value></data>
+  <data name="TrayApp" xml:space="preserve"><value>托盘应用</value></data>
+  <data name="AuthenticationToken" xml:space="preserve"><value>认证令牌</value></data>
+  <data name="QuickAccess" xml:space="preserve"><value>快速入口</value></data>
+  <data name="ConnectAIClients" xml:space="preserve"><value>连接 AI 客户端</value></data>
+  <data name="ManageCapabilities" xml:space="preserve"><value>管理能力</value></data>
+  <data name="ViewActivity" xml:space="preserve"><value>查看活动</value></data>
+  <data name="AgentDockRunning" xml:space="preserve"><value>AgentDock 正在运行</value></data>
+  <data name="AgentDockStopped" xml:space="preserve"><value>AgentDock 已停止</value></data>
+  <data name="LocalServiceReady" xml:space="preserve"><value>本地服务已准备好，AI 客户端可以连接。</value></data>
+  <data name="StartAgentDockForClients" xml:space="preserve"><value>启动 AgentDock 后即可接受 AI 客户端连接。</value></data>
+  <data name="PublicMcpMode" xml:space="preserve"><value>Public MCP 模式</value></data>
+  <data name="LocalOnlyNative" xml:space="preserve"><value>仅本机</value></data>
+  <data name="TemporaryPublicAddress" xml:space="preserve"><value>临时公网地址</value></data>
+  <data name="HttpsAddress" xml:space="preserve"><value>HTTPS 地址</value></data>
+  <data name="TunnelTokenSavedPlaceholder" xml:space="preserve"><value>已保存；留空保持当前 Token</value></data>
+  <data name="Apply" xml:space="preserve"><value>应用</value></data>
+  <data name="NexusAddress" xml:space="preserve"><value>NexusDock 地址</value></data>
+  <data name="Pair" xml:space="preserve"><value>配对</value></data>
+  <data name="Applying" xml:space="preserve"><value>正在应用…</value></data>
+  <data name="Applied" xml:space="preserve"><value>已应用</value></data>
+  <data name="Generating" xml:space="preserve"><value>正在生成…</value></data>
+  <data name="Generated" xml:space="preserve"><value>已生成</value></data>
+  <data name="Pairing" xml:space="preserve"><value>正在配对…</value></data>
+  <data name="PairingCompleted" xml:space="preserve"><value>配对完成</value></data>
+  <data name="IsolatedBrowser" xml:space="preserve"><value>隔离浏览器</value></data>
+  <data name="ReuseLocalBrowser" xml:space="preserve"><value>复用本机浏览器</value></data>
+  <data name="SpecifiedCdp" xml:space="preserve"><value>指定 CDP 地址</value></data>
+  <data name="AddCustomCodingAgent" xml:space="preserve"><value>添加自定义 Coding Agent</value></data>
+  <data name="DefaultCodingAgent" xml:space="preserve"><value>默认 Coding Agent</value></data>
+  <data name="ArgumentsOnePerLine" xml:space="preserve"><value>参数（每行一个）</value></data>
+  <data name="SaveAndRestartRuntime" xml:space="preserve"><value>保存并重启 Runtime</value></data>
+  <data name="Saving" xml:space="preserve"><value>正在保存…</value></data>
+  <data name="Saved" xml:space="preserve"><value>已保存</value></data>
+  <data name="AtLeastOneCodingAgent" xml:space="preserve"><value>至少启用一个 Coding Agent Profile。</value></data>
+  <data name="SaveFailed" xml:space="preserve"><value>保存失败</value></data>
+  <data name="StartupSettingsFailed" xml:space="preserve"><value>启动设置失败</value></data>
+  <data name="PermissionSettingsFailed" xml:space="preserve"><value>权限设置失败</value></data>
+  <data name="NewVersionAvailable" xml:space="preserve"><value>发现新版本</value></data>
+  <data name="Confirm" xml:space="preserve"><value>确定</value></data>
 </root>

@@ -13,7 +13,8 @@ public sealed partial class ActivityPage : Page
         InitializeComponent();
         PageTitle.Text = UiText.Get("Activity");
         PageDetail.Text = UiText.Get("ActivityDetail");
-        RuntimeLabel.Text = "Runtime";
+        RuntimeSection.Title = UiText.Get("Runtime");
+        RuntimeLabel.Text = UiText.Get("Runtime");
         VersionLabel.Text = UiText.Get("Version");
         RefreshLabel.Text = UiText.Get("LastStatusRefresh");
         DiagnosticsSection.Title = UiText.Get("Diagnostics");
