@@ -399,7 +399,7 @@ func TestWindowsBackgroundTrayStartupDoesNotShowExistingControlPanel(t *testing.
 		t.Fatal("Windows tray singleton branch must exit the secondary instance")
 	}
 	singletonBranch := app[singletonIndex : singletonIndex+branchEnd]
-	if !strings.Contains(singletonBranch, "if (!background)") || !strings.Contains(singletonBranch, "existingEvent.Set();") {
+	if !strings.Contains(singletonBranch, "if (!background)") || !strings.Contains(singletonBranch, "show.Set();") {
 		t.Fatal("only an explicit foreground launch may ask an existing tray instance to show the control panel")
 	}
 	if strings.Count(app, backgroundDeclaration) != 1 {
