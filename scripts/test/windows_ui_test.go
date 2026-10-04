@@ -56,15 +56,17 @@ func TestWindowsNativeControlPanelCarriesSettingsParity(t *testing.T) {
 	capabilities := readWindowsNativeFile(t, "winui", "CapabilitiesPage.xaml.cs")
 	for _, want := range []string{
 		"SetPrivilegeModeAsync", "SetStartupAsync",
+
 		"CheckForUpdatesAsync", "RunUpdateAsync", "LanguagePreference_SelectionChanged", "ThemePreference_SelectionChanged", "SaveSettingsAsync",
+		"SetTunnelModeAsync", "RegenerateQuickTunnelAsync", "ReadBearerToken", "ReadOAuthPassword",
 	} {
 		if !strings.Contains(settings, want) {
 			t.Fatalf("WinUI settings parity missing %q", want)
 		}
 	}
 	for _, want := range []string{
-		"SetTunnelModeAsync", "RegenerateQuickTunnelAsync", "PairNexusAsync",
-		"GetSnapshotAsync(includeNexusConnection: true)", "ReadBearerToken", "ReadOAuthPassword",
+		"PairNexusAsync",
+		"GetSnapshotAsync(includeNexusConnection: true)",
 	} {
 		if !strings.Contains(connections, want) {
 			t.Fatalf("WinUI connections parity missing %q", want)
@@ -189,43 +191,68 @@ func TestWindowsAboutLivesInSettingsSidebarAndUsesExistingVersionSource(t *testi
 	}
 }
 
-func TestWindowsConnectionsPreferNexusDockAndHideTechnicalModes(t *testing.T) {
+func TestWindowsRemoteConnectionSupportsSelfHostedAndRoutesAdvancedSettings(t *testing.T) {
+
 	connectionsXaml := readWindowsNativeFile(t, "winui", "ConnectionsPage.xaml")
 	connectionsCode := readWindowsNativeFile(t, "winui", "ConnectionsPage.xaml.cs")
+	windowCode := readWindowsNativeFile(t, "winui", "MainWindow.xaml.cs")
 	settingsXaml := readWindowsNativeFile(t, "winui", "SettingsPage.xaml")
 	settingsCode := readWindowsNativeFile(t, "winui", "SettingsPage.xaml.cs")
 
 	for _, want := range []string{
-		"AdvancedConnectionExpander",
-		"LocalMcpSection",
-		"AuthTokenPasswordBox",
-		"OAuthPasswordBox",
-		"TemporaryTunnelButton",
-		"ApplyFixedDomainButton",
+		"RemoteSection",
+		"RemoteServiceComboBox",
+		"OfficialServiceItem",
+		"SelfHostedServiceItem",
+		"SelfHostedEndpointTextBox",
+		"AdvancedSettingsButton",
 	} {
 		if !strings.Contains(connectionsXaml, want) {
-			t.Fatalf("WinUI advanced connection UI missing %q", want)
+			t.Fatalf("WinUI remote connection UI missing %q", want)
 		}
 	}
 	for _, want := range []string{
-		"SetTunnelModeAsync(\"quick\", \"\", \"\")",
-		"SetTunnelModeAsync(\"named\", serverUrl, TunnelTokenPasswordBox.Password)",
+		`OfficialEndpoint = "https://mcp.nexusdock.co"`,
+		`SelectedRemoteService() == "self-hosted"`,
+		"PairNexusAsync",
+		"AdvancedSettingsRequested?.Invoke",
+	} {
+		if !strings.Contains(connectionsCode, want) {
+			t.Fatalf("WinUI remote connection behavior missing %q", want)
+		}
+	}
+	if !strings.Contains(settingsXaml, "AdvancedConnectionNavigationItem") {
+		t.Fatal("WinUI Settings must expose the Advanced connection secondary navigation item")
+	}
+	for _, want := range []string{
+		"BuildAdvancedConnection",
+		`SetTunnelModeAsync("quick", "", "")`,
+		`SetTunnelModeAsync("named", serverUrl, token)`,
 		"ReadBearerToken",
 		"ReadOAuthPassword",
 	} {
-		if !strings.Contains(connectionsCode, want) {
-			t.Fatalf("WinUI advanced connection behavior missing %q", want)
+		if !strings.Contains(settingsCode, want) {
+			t.Fatalf("WinUI advanced connection settings behavior missing %q", want)
 		}
 	}
-	for _, forbidden := range []string{"TunnelModeComboBox", "LocalOnlyModeItem", "PublicModeLabel"} {
+	if !strings.Contains(windowCode, `NavigateToSettings("advancedConnection")`) {
+		t.Fatal("WinUI advanced connection entry must route directly to Settings advanced connection")
+	}
+	for _, forbidden := range []string{
+		"AdvancedConnectionExpander",
+		"TunnelModeComboBox",
+		"LocalOnlyModeItem",
+		"PublicModeLabel",
+		"Cloudflare Tunnel",
+		"ReadBearerToken",
+		"SetTunnelModeAsync",
+	} {
 		if strings.Contains(connectionsXaml, forbidden) || strings.Contains(connectionsCode, forbidden) {
-			t.Fatalf("WinUI connection page still exposes legacy mode control %q", forbidden)
+			t.Fatalf("WinUI connection page still exposes technical advanced configuration %q", forbidden)
 		}
 	}
-	if strings.Contains(settingsXaml, "CredentialsNavigationItem") ||
-		strings.Contains(settingsCode, "BuildCredentials") ||
-		strings.Contains(settingsCode, "UiText.Get(\"LocalAddress\")") {
-		t.Fatal("WinUI Settings must not expose credentials or Local MCP address after connection-page consolidation")
+	if strings.Contains(settingsXaml, "CredentialsNavigationItem") || strings.Contains(settingsCode, "BuildCredentials") {
+		t.Fatal("WinUI Settings must keep credentials inside Advanced connection instead of a standalone credentials page")
 	}
 }
 

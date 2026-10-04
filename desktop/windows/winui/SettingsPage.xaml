@@ -12,8 +12,12 @@
                 <ListViewItem x:Name="RuntimeNavigationItem" Tag="runtime"/>
                 <ListViewItem x:Name="PermissionsNavigationItem" Tag="permissions"/>
                 <ListViewItem x:Name="StartupNavigationItem" Tag="startup"/>
+
+                <ListViewItem x:Name="AdvancedConnectionNavigationItem" Tag="advancedConnection"/>
+
                 <ListViewItem x:Name="AppearanceNavigationItem" Tag="appearance"/>
                 <ListViewItem x:Name="AboutNavigationItem" Tag="about"/>
+
             </ListView>
             <Rectangle Grid.Column="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}"/>
             <ScrollViewer Grid.Column="2">

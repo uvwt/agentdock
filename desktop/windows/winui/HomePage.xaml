@@ -22,8 +22,8 @@
                     </Grid>
                     <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
                     <Grid Padding="13,0" Height="46">
-                        <TextBlock Text="NexusDock" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="NexusState" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="RemoteConnectionLabel" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="RemoteConnectionState" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
                 </StackPanel>
             </local:SectionCard>

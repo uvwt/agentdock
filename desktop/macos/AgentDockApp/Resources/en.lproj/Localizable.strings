@@ -223,7 +223,6 @@
 "Updated to %@" = "Updated to %@";
 "A new AgentDock version is available.\n\nCurrent version: %@\nLatest version: %@\n\nUpdate now?" = "A new AgentDock version is available.\n\nCurrent version: %@\nLatest version: %@\n\nUpdate now?";
 "AgentDock is up to date" = "AgentDock is up to date";
-"Done" = "Done";
 "AgentDock is busy" = "AgentDock is busy";
 "Wait for the current AgentDock operation to finish before starting an update." = "Wait for the current AgentDock operation to finish before starting an update.";
 "%@ failed" = "%@ failed";
@@ -454,3 +453,14 @@
 "Fixed domain" = "Fixed domain";
 "Use your own HTTPS domain with a Cloudflare Tunnel token." = "Use your own HTTPS domain with a Cloudflare Tunnel token.";
 "Apply fixed domain" = "Apply fixed domain";
+"Advanced connection" = "Advanced connection";
+"Connect AI clients to this device remotely." = "Connect AI clients to this device remotely.";
+"Remote service" = "Remote service";
+"Official service" = "Official service";
+"Self-hosted service" = "Self-hosted service";
+"Change" = "Change";
+"Done" = "Done";
+"Service address" = "Service address";
+"Official service uses nexusdock.co by default." = "Official service uses nexusdock.co by default.";
+"Enter the one-time pairing code to connect this device." = "Enter the one-time pairing code to connect this device.";
+"Connect" = "Connect";

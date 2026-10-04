@@ -830,6 +830,7 @@ Update now?</value>
   <data name="FixedDomain" xml:space="preserve"><value>Fixed domain</value></data>
   <data name="FixedDomainDetail" xml:space="preserve"><value>Use your own HTTPS domain with a Cloudflare Tunnel token.</value></data>
   <data name="ApplyFixedDomain" xml:space="preserve"><value>Apply fixed domain</value></data>
+
   <data name="NeedsAttention" xml:space="preserve"><value>Needs attention</value></data>
   <data name="AgentDockNeedsAttention" xml:space="preserve"><value>AgentDock needs attention</value></data>
   <data name="AgentDockNeedsAttentionDetail" xml:space="preserve"><value>AgentDock is running, but the connection service is not ready.</value></data>
@@ -844,4 +845,18 @@ Update now?</value>
   <data name="Theme" xml:space="preserve"><value>Theme</value></data>
   <data name="LightTheme" xml:space="preserve"><value>Light</value></data>
   <data name="DarkTheme" xml:space="preserve"><value>Dark</value></data>
+
+  <data name="AdvancedConnection" xml:space="preserve"><value>Advanced connection</value></data>
+  <data name="RemoteConnectionPageDetail" xml:space="preserve"><value>Connect AI clients to this device remotely.</value></data>
+  <data name="RemoteService" xml:space="preserve"><value>Remote service</value></data>
+  <data name="Change" xml:space="preserve"><value>Change</value></data>
+  <data name="Done" xml:space="preserve"><value>Done</value></data>
+  <data name="OfficialService" xml:space="preserve"><value>Official service</value></data>
+  <data name="SelfHostedService" xml:space="preserve"><value>Self-hosted service</value></data>
+  <data name="OfficialServiceHint" xml:space="preserve"><value>The official service uses nexusdock.co by default.</value></data>
+  <data name="ServiceAddress" xml:space="preserve"><value>Service address</value></data>
+  <data name="RemotePairingIntro" xml:space="preserve"><value>Enter the one-time pairing code to connect this device.</value></data>
+  <data name="Connect" xml:space="preserve"><value>Connect</value></data>
+  <data name="ServiceAddressRequired" xml:space="preserve"><value>Enter a self-hosted service address.</value></data>
+
 </root>

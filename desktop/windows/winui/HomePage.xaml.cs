@@ -16,6 +16,7 @@ public sealed partial class HomePage : Page
         InitializeComponent();
         PageTitle.Text = UiText.Get("Home");
         AgentDockSection.Title = "AgentDock";
+        RemoteConnectionLabel.Text = UiText.Get("RemoteConnection");
         QuickAccessSection.Title = UiText.Get("QuickAccess");
         ConnectionsShortcutLabel.Text = UiText.Get("ConnectAIClients");
         CapabilitiesShortcutLabel.Text = UiText.Get("ManageCapabilities");
@@ -55,7 +56,7 @@ public sealed partial class HomePage : Page
             AgentDockState.Text = UiText.Get("NeedsAttention");
         }
 
-        NexusState.Text = _snapshot.NexusConnected ? UiText.Get("Connected") + " ●" : UiText.Get("NotConnected");
+        RemoteConnectionState.Text = _snapshot.NexusConnected ? UiText.Get("Connected") + " ●" : UiText.Get("NotConnected");
         RuntimeAction.Content = serviceLoaded ? UiText.Get("Stop") : UiText.Get("Start");
     }
 

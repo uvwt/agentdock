@@ -830,6 +830,7 @@
   <data name="FixedDomain" xml:space="preserve"><value>固定域名</value></data>
   <data name="FixedDomainDetail" xml:space="preserve"><value>使用自己的 HTTPS 域名和 Cloudflare Tunnel Token 建立固定公网入口。</value></data>
   <data name="ApplyFixedDomain" xml:space="preserve"><value>应用固定域名</value></data>
+
   <data name="NeedsAttention" xml:space="preserve"><value>运行异常</value></data>
   <data name="AgentDockNeedsAttention" xml:space="preserve"><value>AgentDock 运行异常</value></data>
   <data name="AgentDockNeedsAttentionDetail" xml:space="preserve"><value>AgentDock 已启动，但连接服务尚未就绪。</value></data>
@@ -844,4 +845,18 @@
   <data name="Theme" xml:space="preserve"><value>主题</value></data>
   <data name="LightTheme" xml:space="preserve"><value>浅色</value></data>
   <data name="DarkTheme" xml:space="preserve"><value>深色</value></data>
+
+  <data name="AdvancedConnection" xml:space="preserve"><value>高级连接</value></data>
+  <data name="RemoteConnectionPageDetail" xml:space="preserve"><value>让 AI 客户端远程连接这台设备。</value></data>
+  <data name="RemoteService" xml:space="preserve"><value>远程服务</value></data>
+  <data name="Change" xml:space="preserve"><value>更改</value></data>
+  <data name="Done" xml:space="preserve"><value>完成</value></data>
+  <data name="OfficialService" xml:space="preserve"><value>官方服务</value></data>
+  <data name="SelfHostedService" xml:space="preserve"><value>自托管服务</value></data>
+  <data name="OfficialServiceHint" xml:space="preserve"><value>官方服务默认使用 nexusdock.co。</value></data>
+  <data name="ServiceAddress" xml:space="preserve"><value>服务地址</value></data>
+  <data name="RemotePairingIntro" xml:space="preserve"><value>输入一次性配对码以连接这台设备。</value></data>
+  <data name="Connect" xml:space="preserve"><value>连接</value></data>
+  <data name="ServiceAddressRequired" xml:space="preserve"><value>请输入自托管服务地址。</value></data>
+
 </root>

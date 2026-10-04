@@ -1,46 +1,40 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
-using Windows.ApplicationModel.DataTransfer;
 
 namespace AgentDock.ControlPanel;
 
 public sealed partial class ConnectionsPage : Page
 {
+    private const string OfficialEndpoint = "https://mcp.nexusdock.co";
+
     private RuntimeService? _runtime;
     private RuntimeSnapshot? _snapshot;
+    private bool _updatingRemoteService;
+
+    internal event EventHandler? AdvancedSettingsRequested;
 
     public ConnectionsPage()
     {
         InitializeComponent();
 
         PageTitle.Text = UiText.Get("Connections");
-        PageDetail.Text = UiText.Get("ConnectionsRecommendedDetail");
-        NexusSection.Title = "NexusDock";
-        RecommendedConnectionLabel.Text = UiText.Get("RecommendedConnection");
-        NexusIntro.Text = UiText.Get("NexusRecommendedIntro");
-        NexusEndpointTextBox.Header = UiText.Get("NexusAddress");
-        NexusPairingCodeBox.Header = UiText.Get("OneTimePairingCode");
-        PairNexusButton.Content = UiText.Get("Pair");
+        PageDetail.Text = UiText.Get("RemoteConnectionPageDetail");
+        RemoteSection.Title = UiText.Get("RemoteConnection");
+        StatusLabel.Text = UiText.Get("Status");
+        RemoteServiceLabel.Text = UiText.Get("RemoteService");
+        ChangeRemoteServiceButton.Content = UiText.Get("Change");
+        OfficialServiceItem.Content = UiText.Get("OfficialService");
+        SelfHostedServiceItem.Content = UiText.Get("SelfHostedService");
+        OfficialServiceHint.Text = UiText.Get("OfficialServiceHint");
+        SelfHostedEndpointTextBox.Header = UiText.Get("ServiceAddress");
+        PairingIntro.Text = UiText.Get("RemotePairingIntro");
+        PairingCodeBox.Header = UiText.Get("OneTimePairingCode");
+        ConnectButton.Content = UiText.Get("Connect");
 
-        AdvancedConnectionTitle.Text = UiText.Get("AdvancedConnectionSettings");
-        AdvancedConnectionDetail.Text = UiText.Get("AdvancedConnectionDetail");
-        LocalMcpSection.Title = "Local MCP";
-        AuthTokenLabel.Text = UiText.Get("AuthenticationToken");
-        OAuthPasswordLabel.Text = UiText.Get("OAuthPassword");
-        CopyLocalButton.Content = UiText.Get("Copy");
-        CopyAuthTokenButton.Content = UiText.Get("Copy");
-        CopyOAuthPasswordButton.Content = UiText.Get("Copy");
-
-        PublicAccessSection.Title = UiText.Get("PublicAccess");
-        PublicAddressLabel.Text = UiText.Get("PublicAddress");
-        CopyPublicButton.Content = UiText.Get("Copy");
-        TemporaryTunnelDetail.Text = UiText.Get("TemporaryTunnelDetail");
-        FixedDomainTitle.Text = UiText.Get("FixedDomain");
-        FixedDomainDetail.Text = UiText.Get("FixedDomainDetail");
-        NamedServerUrlTextBox.Header = UiText.Get("HttpsAddress");
-        TunnelTokenPasswordBox.Header = "Cloudflare Tunnel Token";
-        ApplyFixedDomainButton.Content = UiText.Get("ApplyFixedDomain");
+        AdvancedEntrySection.Title = UiText.Get("AdvancedConnectionSettings");
+        AdvancedEntryTitle.Text = UiText.Get("AdvancedConnectionSettings");
+        AdvancedEntryDetail.Text = UiText.Get("AdvancedConnectionDetail");
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -54,97 +48,109 @@ public sealed partial class ConnectionsPage : Page
         if (_runtime is null) return;
 
         _snapshot = await _runtime.GetSnapshotAsync(includeNexusConnection: true);
-        LocalAddress.Text = _snapshot.LocalMcpUrl;
-
-        var hasPublicAddress = !string.IsNullOrWhiteSpace(_snapshot.PublicMcpUrl);
-        PublicAddress.Text = hasPublicAddress ? _snapshot.PublicMcpUrl : UiText.Get("Disabled");
-        CopyPublicButton.IsEnabled = hasPublicAddress;
-        TemporaryTunnelButton.Content = string.Equals(_snapshot.TunnelMode, "quick", StringComparison.OrdinalIgnoreCase)
-            ? UiText.Get("RegenerateTemporaryAddress")
-            : UiText.Get("GenerateTemporaryAddress");
-
-        NexusEndpoint.Text = _snapshot.Nexus.Paired
-            ? _snapshot.Nexus.Endpoint
-            : UiText.Get("ConnectThisDeviceToNexus");
-        NexusState.Text = _snapshot.NexusConnected
+        RemoteState.Text = _snapshot.NexusConnected
             ? UiText.Get("Connected") + " ●"
             : _snapshot.Nexus.Paired ? UiText.Get("NotConnected") : UiText.Get("NotConfigured");
-        NexusEndpointTextBox.Text = _snapshot.Nexus.Paired ? _snapshot.Nexus.Endpoint : "https://mcp.nexusdock.co";
 
-        NamedServerUrlTextBox.Text = string.Equals(_snapshot.TunnelMode, "named", StringComparison.OrdinalIgnoreCase)
-            ? _snapshot.SavedNamedOrigin
-            : "";
-        TunnelTokenPasswordBox.PlaceholderText = _snapshot.TunnelTokenStored
-            ? UiText.Get("TunnelTokenSavedPlaceholder")
-            : "Cloudflare Tunnel Token";
+        var endpoint = _snapshot.Nexus.Paired ? _snapshot.Nexus.Endpoint : OfficialEndpoint;
+        var official = IsOfficialEndpoint(endpoint);
+        RemoteServiceValue.Text = official
+            ? UiText.Get("OfficialService") + " · nexusdock.co"
+            : UiText.Get("SelfHostedService") + " · " + endpoint;
 
-        AuthTokenPasswordBox.Password = ReadCredential("bearer");
-        OAuthPasswordBox.Password = ReadCredential("oauth");
+        _updatingRemoteService = true;
+        SelectRemoteService(official ? "official" : "self-hosted");
+        SelfHostedEndpointTextBox.Text = official ? "" : endpoint;
+        _updatingRemoteService = false;
+        UpdateRemoteServiceEditor();
     }
 
-    private string ReadCredential(string kind)
+    private void ChangeRemoteServiceButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_runtime is null) return "";
-        try
+        var editing = RemoteServiceEditor.Visibility != Visibility.Visible;
+        RemoteServiceEditor.Visibility = editing ? Visibility.Visible : Visibility.Collapsed;
+        ChangeRemoteServiceButton.Content = UiText.Get(editing ? "Done" : "Change");
+    }
+
+    private void RemoteServiceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingRemoteService) return;
+        UpdateRemoteServiceEditor();
+    }
+
+    private void SelfHostedEndpointTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_updatingRemoteService) return;
+        UpdateRemoteServiceValue();
+    }
+
+    private void UpdateRemoteServiceEditor()
+    {
+        var selfHosted = SelectedRemoteService() == "self-hosted";
+        SelfHostedEndpointTextBox.Visibility = selfHosted ? Visibility.Visible : Visibility.Collapsed;
+        OfficialServiceHint.Visibility = selfHosted ? Visibility.Collapsed : Visibility.Visible;
+        UpdateRemoteServiceValue();
+    }
+
+    private void UpdateRemoteServiceValue()
+    {
+        if (SelectedRemoteService() != "self-hosted")
         {
-            return kind == "bearer" ? _runtime.ReadBearerToken() : _runtime.ReadOAuthPassword();
+            RemoteServiceValue.Text = UiText.Get("OfficialService") + " · nexusdock.co";
+            return;
         }
-        catch
+        var endpoint = SelfHostedEndpointTextBox.Text.Trim();
+        RemoteServiceValue.Text = string.IsNullOrWhiteSpace(endpoint)
+            ? UiText.Get("SelfHostedService")
+            : UiText.Get("SelfHostedService") + " · " + endpoint;
+    }
+
+    private void SelectRemoteService(string service)
+    {
+        foreach (var item in RemoteServiceComboBox.Items.OfType<ComboBoxItem>())
         {
-            return "";
+            if (!string.Equals(item.Tag?.ToString(), service, StringComparison.OrdinalIgnoreCase)) continue;
+            RemoteServiceComboBox.SelectedItem = item;
+            return;
         }
+        RemoteServiceComboBox.SelectedItem = OfficialServiceItem;
     }
 
-    private void CopyLocalButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_snapshot is not null) CopyText(_snapshot.LocalMcpUrl);
-    }
+    private string SelectedRemoteService() =>
+        (RemoteServiceComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "official";
 
-    private void CopyPublicButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_snapshot is not null && !string.IsNullOrWhiteSpace(_snapshot.PublicMcpUrl))
-        {
-            CopyText(_snapshot.PublicMcpUrl);
-        }
-    }
+    private string SelectedEndpoint() =>
+        SelectedRemoteService() == "self-hosted"
+            ? SelfHostedEndpointTextBox.Text.Trim()
+            : OfficialEndpoint;
 
-    private void CopyAuthTokenButton_Click(object sender, RoutedEventArgs e) =>
-        CopyText(AuthTokenPasswordBox.Password);
-
-    private void CopyOAuthPasswordButton_Click(object sender, RoutedEventArgs e) =>
-        CopyText(OAuthPasswordBox.Password);
-
-    private static void CopyText(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return;
-        var package = new DataPackage();
-        package.SetText(text);
-        Clipboard.SetContent(package);
-    }
-
-    private async void TemporaryTunnelButton_Click(object sender, RoutedEventArgs e)
+    private async void ConnectButton_Click(object sender, RoutedEventArgs e)
     {
         if (_runtime is null || sender is not Button button) return;
 
+        var endpoint = SelectedEndpoint();
+        if (string.IsNullOrWhiteSpace(endpoint))
+        {
+            ConnectionActionStatus.Text = UiText.Get("ServiceAddressRequired");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(PairingCodeBox.Password)) return;
+
         button.IsEnabled = false;
-        TunnelStatus.Text = UiText.Get("Generating");
+        ConnectionActionStatus.Text = UiText.Get("Pairing");
         try
         {
-            if (string.Equals(_snapshot?.TunnelMode, "quick", StringComparison.OrdinalIgnoreCase))
-            {
-                await _runtime.RegenerateQuickTunnelAsync();
-            }
-            else
-            {
-                await _runtime.SetTunnelModeAsync("quick", "", "");
-            }
-
+            await _runtime.PairNexusAsync(endpoint, PairingCodeBox.Password);
+            PairingCodeBox.Password = "";
+            RemoteServiceEditor.Visibility = Visibility.Collapsed;
+            ChangeRemoteServiceButton.Content = UiText.Get("Change");
             await RefreshAsync();
-            TunnelStatus.Text = UiText.Get("Generated");
+            ConnectionActionStatus.Text = UiText.Get("PairingCompleted");
         }
         catch (Exception ex)
         {
-            TunnelStatus.Text = ex.Message;
+            ConnectionActionStatus.Text = ex.Message;
         }
         finally
         {
@@ -152,52 +158,9 @@ public sealed partial class ConnectionsPage : Page
         }
     }
 
-    private async void ApplyFixedDomainButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_runtime is null || sender is not Button button) return;
+    private void AdvancedSettingsButton_Click(object sender, RoutedEventArgs e) =>
+        AdvancedSettingsRequested?.Invoke(this, EventArgs.Empty);
 
-        var serverUrl = NamedServerUrlTextBox.Text.Trim();
-        if (string.IsNullOrWhiteSpace(serverUrl)) return;
-
-        button.IsEnabled = false;
-        TunnelStatus.Text = UiText.Get("Applying");
-        try
-        {
-            await _runtime.SetTunnelModeAsync("named", serverUrl, TunnelTokenPasswordBox.Password);
-            TunnelTokenPasswordBox.Password = "";
-            await RefreshAsync();
-            TunnelStatus.Text = UiText.Get("Applied");
-        }
-        catch (Exception ex)
-        {
-            TunnelStatus.Text = ex.Message;
-        }
-        finally
-        {
-            button.IsEnabled = true;
-        }
-    }
-
-    private async void PairNexusButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_runtime is null || sender is not Button button) return;
-
-        button.IsEnabled = false;
-        NexusActionStatus.Text = UiText.Get("Pairing");
-        try
-        {
-            await _runtime.PairNexusAsync(NexusEndpointTextBox.Text, NexusPairingCodeBox.Password);
-            NexusPairingCodeBox.Password = "";
-            await RefreshAsync();
-            NexusActionStatus.Text = UiText.Get("PairingCompleted");
-        }
-        catch (Exception ex)
-        {
-            NexusActionStatus.Text = ex.Message;
-        }
-        finally
-        {
-            button.IsEnabled = true;
-        }
-    }
+    private static bool IsOfficialEndpoint(string endpoint) =>
+        string.Equals(endpoint.Trim().TrimEnd('/'), OfficialEndpoint, StringComparison.OrdinalIgnoreCase);
 }

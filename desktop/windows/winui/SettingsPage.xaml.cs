@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using Microsoft.UI.Xaml.Shapes;
+using Windows.ApplicationModel.DataTransfer;
 
 namespace AgentDock.ControlPanel;
 
@@ -11,6 +12,7 @@ public sealed partial class SettingsPage : Page
     private RuntimeService? _runtime;
     private RuntimeSnapshot? _snapshot;
     private string _activeTag = "runtime";
+    private string _advancedStatus = "";
 
     public SettingsPage()
     {
@@ -19,16 +21,28 @@ public sealed partial class SettingsPage : Page
         RuntimeNavigationItem.Content = UiText.Get("Runtime");
         PermissionsNavigationItem.Content = UiText.Get("Permissions");
         StartupNavigationItem.Content = UiText.Get("Startup");
+
+        AdvancedConnectionNavigationItem.Content = UiText.Get("AdvancedConnection");
+
         AppearanceNavigationItem.Content = UiText.Get("Appearance");
         AboutNavigationItem.Content = UiText.Get("About");
+
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
-        _runtime = e.Parameter as RuntimeService;
+        if (e.Parameter is SettingsNavigationRequest request)
+        {
+            _runtime = request.Runtime;
+            _activeTag = request.Tag;
+        }
+        else
+        {
+            _runtime = e.Parameter as RuntimeService;
+            _activeTag = "runtime";
+        }
         await RefreshAsync();
-        if (SettingsNavigation.SelectedIndex < 0) SettingsNavigation.SelectedIndex = 0;
-        else Render(_activeTag);
+        SelectSettingsTag(_activeTag);
     }
 
     internal void SelectPage(string tag)
@@ -51,6 +65,14 @@ public sealed partial class SettingsPage : Page
         if (_runtime is not null) _snapshot = await _runtime.GetSnapshotAsync(includeNexusConnection: false);
     }
 
+    private void SelectSettingsTag(string tag)
+    {
+        var item = SettingsNavigation.Items
+            .OfType<ListViewItem>()
+            .FirstOrDefault(candidate => string.Equals(candidate.Tag?.ToString(), tag, StringComparison.Ordinal));
+        SettingsNavigation.SelectedItem = item ?? RuntimeNavigationItem;
+    }
+
     private void SettingsNavigation_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (SettingsContent is null) return;
@@ -69,9 +91,17 @@ public sealed partial class SettingsPage : Page
         header.Children.Add(new TextBlock { Text = PageDetail(tag), FontSize = 12.5, Opacity = 0.62 });
         SettingsContent.Children.Add(header);
 
+
+        if (tag == "advancedConnection")
+        {
+            SettingsContent.Children.Add(BuildAdvancedConnection());
+            return;
+        }
+
         if (tag == "about")
         {
             SettingsContent.Children.Add(BuildAbout());
+
             return;
         }
 
@@ -141,6 +171,7 @@ public sealed partial class SettingsPage : Page
         rows.Children.Add(ActionRow(UiText.Get("TrayApp"), tray));
         return rows;
     }
+
 
     private UIElement BuildAppearance()
     {
@@ -235,6 +266,209 @@ public sealed partial class SettingsPage : Page
             _ = ShowMessageAsync(UiText.Get("Settings"), ex.Message);
         }
     }
+
+
+    private UIElement BuildAdvancedConnection()
+    {
+        var content = new StackPanel { Spacing = 20 };
+
+        var localRows = new StackPanel();
+        var copyLocal = new Button { Content = UiText.Get("Copy") };
+        copyLocal.Click += (_, _) => CopyText(_snapshot?.LocalMcpUrl ?? "");
+        localRows.Children.Add(DetailActionRow(
+            UiText.Get("LocalAddress"),
+            _snapshot?.LocalMcpUrl ?? "—",
+            copyLocal
+        ));
+        content.Children.Add(new SectionCard
+        {
+            Title = "Local MCP",
+            SectionContent = localRows
+        });
+
+        var credentialRows = new StackPanel();
+        credentialRows.Children.Add(CredentialActionRow(UiText.Get("AuthenticationToken"), "bearer"));
+        credentialRows.Children.Add(Divider());
+        credentialRows.Children.Add(CredentialActionRow(UiText.Get("OAuthPassword"), "oauth"));
+        content.Children.Add(new SectionCard
+        {
+            Title = UiText.Get("AccessCredentials"),
+            SectionContent = credentialRows
+        });
+
+        var publicRows = new StackPanel();
+        var publicAddress = _snapshot?.PublicMcpUrl ?? "";
+        var copyPublic = new Button
+        {
+            Content = UiText.Get("Copy"),
+            IsEnabled = !string.IsNullOrWhiteSpace(publicAddress)
+        };
+        copyPublic.Click += (_, _) => CopyText(publicAddress);
+        publicRows.Children.Add(DetailActionRow(
+            UiText.Get("PublicAddress"),
+            string.IsNullOrWhiteSpace(publicAddress) ? UiText.Get("Disabled") : publicAddress,
+            copyPublic
+        ));
+        publicRows.Children.Add(Divider());
+
+        var temporary = new Button
+        {
+            Content = string.Equals(_snapshot?.TunnelMode, "quick", StringComparison.OrdinalIgnoreCase)
+                ? UiText.Get("RegenerateTemporaryAddress")
+                : UiText.Get("GenerateTemporaryAddress")
+        };
+        temporary.Click += TemporaryTunnelButton_Click;
+        publicRows.Children.Add(DetailActionRow(
+            "Cloudflare Tunnel",
+            UiText.Get("TemporaryTunnelDetail"),
+            temporary
+        ));
+        publicRows.Children.Add(Divider());
+
+        var fixedPanel = new StackPanel { Padding = new Thickness(13, 12, 13, 12), Spacing = 9 };
+        fixedPanel.Children.Add(new TextBlock
+        {
+            Text = UiText.Get("FixedDomain"),
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+        });
+        fixedPanel.Children.Add(new TextBlock
+        {
+            Text = UiText.Get("FixedDomainDetail"),
+            FontSize = 11.5,
+            Opacity = 0.62,
+            TextWrapping = TextWrapping.Wrap
+        });
+        var serverUrl = new TextBox
+        {
+            Header = UiText.Get("HttpsAddress"),
+            PlaceholderText = "https://mcp.example.com",
+            Text = string.Equals(_snapshot?.TunnelMode, "named", StringComparison.OrdinalIgnoreCase)
+                ? _snapshot?.SavedNamedOrigin ?? ""
+                : "",
+            Tag = "fixed-domain-url"
+        };
+        fixedPanel.Children.Add(serverUrl);
+        var token = new PasswordBox
+        {
+            Header = "Cloudflare Tunnel Token",
+            PlaceholderText = _snapshot?.TunnelTokenStored == true
+                ? UiText.Get("TunnelTokenSavedPlaceholder")
+                : "Cloudflare Tunnel Token",
+            Tag = "fixed-domain-token"
+        };
+        fixedPanel.Children.Add(token);
+        var apply = new Button
+        {
+            Content = UiText.Get("ApplyFixedDomain"),
+            Tag = fixedPanel
+        };
+        apply.Click += ApplyFixedDomainButton_Click;
+        fixedPanel.Children.Add(apply);
+        publicRows.Children.Add(fixedPanel);
+        content.Children.Add(new SectionCard
+        {
+            Title = UiText.Get("PublicAccess"),
+            SectionContent = publicRows
+        });
+
+        if (!string.IsNullOrWhiteSpace(_advancedStatus))
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = _advancedStatus,
+                FontSize = 11.5,
+                Opacity = 0.62,
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+        return content;
+    }
+
+    private Grid CredentialActionRow(string title, string kind)
+    {
+        var value = new PasswordBox
+        {
+            Password = ReadCredential(kind),
+            IsPasswordRevealButtonEnabled = true,
+            Width = 300
+        };
+        var copy = new Button { Content = UiText.Get("Copy") };
+        copy.Click += (_, _) => CopyText(value.Password);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        actions.Children.Add(value);
+        actions.Children.Add(copy);
+        return ActionRow(title, actions);
+    }
+
+    private string ReadCredential(string kind)
+    {
+        if (_runtime is null) return "";
+        try
+        {
+            return kind == "bearer" ? _runtime.ReadBearerToken() : _runtime.ReadOAuthPassword();
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
+    private async void TemporaryTunnelButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_runtime is null || sender is not Button button) return;
+        button.IsEnabled = false;
+        button.Content = UiText.Get("Generating");
+        try
+        {
+            if (string.Equals(_snapshot?.TunnelMode, "quick", StringComparison.OrdinalIgnoreCase))
+            {
+                await _runtime.RegenerateQuickTunnelAsync();
+            }
+            else
+            {
+                await _runtime.SetTunnelModeAsync("quick", "", "");
+            }
+            await RefreshAsync();
+            _advancedStatus = UiText.Get("Generated");
+        }
+        catch (Exception ex)
+        {
+            _advancedStatus = ex.Message;
+        }
+        Render("advancedConnection");
+    }
+
+    private async void ApplyFixedDomainButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_runtime is null || sender is not Button button || button.Tag is not Panel panel) return;
+        var serverUrl = FindTagged<TextBox>(panel, "fixed-domain-url")?.Text.Trim() ?? "";
+        var token = FindTagged<PasswordBox>(panel, "fixed-domain-token")?.Password ?? "";
+        if (string.IsNullOrWhiteSpace(serverUrl)) return;
+
+        button.IsEnabled = false;
+        button.Content = UiText.Get("Applying");
+        try
+        {
+            await _runtime.SetTunnelModeAsync("named", serverUrl, token);
+            await RefreshAsync();
+            _advancedStatus = UiText.Get("Applied");
+        }
+        catch (Exception ex)
+        {
+            _advancedStatus = ex.Message;
+        }
+        Render("advancedConnection");
+    }
+
+    private static void CopyText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        var package = new DataPackage();
+        package.SetText(text);
+        Clipboard.SetContent(package);
+    }
+
 
     private void LanguagePreference_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -355,12 +589,14 @@ public sealed partial class SettingsPage : Page
     {
         foreach (var child in panel.Children)
         {
-            if (child is Grid grid)
+            if (child is T element && string.Equals(element.Tag?.ToString(), tag, StringComparison.Ordinal))
             {
-                foreach (var item in grid.Children)
-                {
-                    if (item is T element && string.Equals(element.Tag?.ToString(), tag, StringComparison.Ordinal)) return element;
-                }
+                return element;
+            }
+            if (child is Panel nested)
+            {
+                var found = FindTagged<T>(nested, tag);
+                if (found is not null) return found;
             }
         }
         return null;
@@ -386,8 +622,12 @@ public sealed partial class SettingsPage : Page
     {
         "permissions" => UiText.Get("Permissions"),
         "startup" => UiText.Get("Startup"),
+
+        "advancedConnection" => UiText.Get("AdvancedConnection"),
+
         "appearance" => UiText.Get("Appearance"),
         "about" => UiText.Get("About"),
+
         _ => UiText.Get("Runtime")
     };
 
@@ -395,8 +635,12 @@ public sealed partial class SettingsPage : Page
     {
         "permissions" => UiText.Get("PermissionsDetail"),
         "startup" => UiText.Get("StartupDetail"),
+
+        "advancedConnection" => UiText.Get("AdvancedConnectionDetail"),
+
         "appearance" => UiText.Get("AppearanceDetail"),
         "about" => UiText.Get("AboutDetail"),
+
         _ => UiText.Get("RuntimeDetail")
     };
 
@@ -407,6 +651,33 @@ public sealed partial class SettingsPage : Page
         "appearance" => UiText.Get("Appearance"),
         _ => "AgentDock Runtime"
     };
+
+    private static Grid DetailActionRow(string title, string detail, UIElement trailing)
+    {
+        var grid = new Grid { MinHeight = 56, Padding = new Thickness(13, 6, 13, 6), ColumnSpacing = 16 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition());
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var labels = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+        labels.Children.Add(new TextBlock { Text = title, FontSize = 13 });
+        labels.Children.Add(new TextBlock
+        {
+            Text = detail,
+            FontSize = 11.5,
+            Opacity = 0.62,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        });
+        grid.Children.Add(labels);
+
+        if (trailing is FrameworkElement element)
+        {
+            element.HorizontalAlignment = HorizontalAlignment.Right;
+            element.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(element, 1);
+        }
+        grid.Children.Add(trailing);
+        return grid;
+    }
 
     private static Grid Row(string left, string right)
     {

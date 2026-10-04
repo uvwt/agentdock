@@ -223,7 +223,6 @@
 "Updated to %@" = "已更新到 %@";
 "A new AgentDock version is available.\n\nCurrent version: %@\nLatest version: %@\n\nUpdate now?" = "发现 AgentDock 新版本。\n\n当前版本：%@\n最新版本：%@\n\n是否立即更新？";
 "AgentDock is up to date" = "AgentDock 已是最新版本";
-"Done" = "完成";
 "AgentDock is busy" = "AgentDock 正忙";
 "Wait for the current AgentDock operation to finish before starting an update." = "请等待当前 AgentDock 操作完成后再开始更新。";
 "%@ failed" = "%@失败";
@@ -454,3 +453,14 @@
 "Fixed domain" = "固定域名";
 "Use your own HTTPS domain with a Cloudflare Tunnel token." = "使用自己的 HTTPS 域名和 Cloudflare Tunnel Token 建立固定公网入口。";
 "Apply fixed domain" = "应用固定域名";
+"Advanced connection" = "高级连接";
+"Connect AI clients to this device remotely." = "让 AI 客户端远程连接这台设备。";
+"Remote service" = "远程服务";
+"Official service" = "官方服务";
+"Self-hosted service" = "自托管服务";
+"Change" = "更改";
+"Done" = "完成";
+"Service address" = "服务地址";
+"Official service uses nexusdock.co by default." = "官方服务默认使用 nexusdock.co。";
+"Enter the one-time pairing code to connect this device." = "输入一次性配对码以连接这台设备。";
+"Connect" = "连接";

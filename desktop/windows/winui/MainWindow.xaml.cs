@@ -6,6 +6,8 @@ using Windows.Graphics;
 
 namespace AgentDock.ControlPanel;
 
+internal sealed record SettingsNavigationRequest(RuntimeService Runtime, string Tag);
+
 public sealed partial class MainWindow : Window
 {
     private const int DefaultWidth = 1060;
@@ -17,6 +19,7 @@ public sealed partial class MainWindow : Window
     private readonly IntPtr _windowHandle;
     private readonly string? _initialSettingsPage;
     private bool _initialSizeApplied;
+    private string? _pendingSettingsTag;
 
     internal bool AllowClose { get; set; }
 
@@ -90,7 +93,7 @@ public sealed partial class MainWindow : Window
     private void Navigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         if (args.SelectedItemContainer?.Tag is not string tag) return;
-        ContentFrame.Navigate(PageForTag(tag), _runtime);
+        ContentFrame.Navigate(PageForTag(tag), NavigationParameterForTag(tag));
     }
 
     private void ContentFrame_Navigated(object sender, Microsoft.UI.Xaml.Navigation.NavigationEventArgs e)
@@ -99,10 +102,21 @@ public sealed partial class MainWindow : Window
         {
             home.ShortcutRequested += (_, tag) => NavigateTo(tag);
         }
+        else if (e.Content is ConnectionsPage connections)
+        {
+            connections.AdvancedSettingsRequested += (_, _) => NavigateToSettings("advancedConnection");
+        }
+
         if (e.Content is SettingsPage settings && !string.IsNullOrWhiteSpace(_initialSettingsPage))
         {
             settings.SelectPage(_initialSettingsPage);
         }
+    }
+
+    private void NavigateToSettings(string tag)
+    {
+        _pendingSettingsTag = tag;
+        NavigateTo("settings");
     }
 
     internal void ApplyThemePreference(string preference)
@@ -121,7 +135,16 @@ public sealed partial class MainWindow : Window
             Navigation.SelectedItem = item;
             return;
         }
-        ContentFrame.Navigate(PageForTag(tag), _runtime);
+        ContentFrame.Navigate(PageForTag(tag), NavigationParameterForTag(tag));
+    }
+
+    private object NavigationParameterForTag(string tag)
+    {
+        if (!string.Equals(tag, "settings", StringComparison.Ordinal)) return _runtime;
+        if (_pendingSettingsTag is null) return _runtime;
+        var target = _pendingSettingsTag;
+        _pendingSettingsTag = null;
+        return new SettingsNavigationRequest(_runtime, target);
     }
 
     private static Type PageForTag(string tag) => tag switch

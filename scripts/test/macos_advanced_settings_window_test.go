@@ -43,6 +43,11 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 		"agentDockStatusText",
 		"AgentDock is running, but the connection service is not ready.",
 		"Advanced connection settings",
+		`case .advancedConnection: return L10n.text("Advanced connection")`,
+		"model.settingsPage = .advancedConnection",
+		`SettingsSection(L10n.text("Remote connection"))`,
+		`Self.officialEndpoint`,
+		`L10n.text("Self-hosted service")`,
 		"Local MCP, access credentials, and direct public access.",
 		"applyTunnel(mode:",
 		"model.applyTunnel(mode: .quick",
@@ -82,7 +87,7 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 		"case .credentials",
 		"L10n.text(\"Public MCP mode\")",
 		"L10n.text(\"Local only\")",
-		"SettingsRow(L10n.text(\"Local address\"))",
+		`SettingsSection("NexusDock")`,
 	} {
 		if strings.Contains(content, forbidden) {
 			t.Fatalf("native macOS control panel still exposes retired connection UI %q", forbidden)

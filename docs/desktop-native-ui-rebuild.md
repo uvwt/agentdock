@@ -728,6 +728,19 @@ TianYi parity 验证：
 - TianYi UI Automation 实测主题依次切换到 Dark / Light 后偏好分别持久化为 `dark` / `light`，恢复 Follow system 后 `ui-theme` 偏好文件被移除。
 - TianYi UI Automation 实测中文切到 English 后仍停留在 Appearance，再切回简体中文后仍停留在外观；最终语言偏好恢复为 `zh-CN`，主题恢复 Follow system。
 
+### 15.6 2026-10-04 远程连接语义与高级设置分层
+
+在 15.5 的基础上继续减少普通用户需要理解的产品概念：
+
+- 用户可见主概念从 NexusDock 收敛为“远程连接”；主页状态项同步改为“远程连接”，不再要求用户先理解 NexusDock 品牌名称。
+- 连接页负责“连接到哪里”和“完成配对”：默认使用官方服务 `https://mcp.nexusdock.co`，界面显示“官方服务 · nexusdock.co”；点击“更改”后才出现官方服务 / 自托管服务选择，自托管时显示服务地址输入框。
+- 连接页不再承载 Local MCP、访问凭据或 Cloudflare Tunnel 配置。“高级连接设置”改为单一跳转入口，直接进入“设置 → 高级连接”。
+- 设置二级导航调整为“运行时 / 权限 / 开机启动 / 高级连接”。高级连接统一承载 Local MCP、Authentication Token、OAuth Password、Cloudflare 临时公网地址与固定域名。
+- 底层仍复用现有 Nexus pairing 与 tunnel `none / quick / named` 配置，不为了 UI 命名变化改写稳定运行协议。
+- Windows 最终验证源码快照 SHA-256：`cfcf558cc707cccbfd812ddb7211129426b1a04ce835672ea51206a8e8ddf917`；TianYi 使用指定 VS 2022 Build Tools MSBuild 完成 x64 与 win-arm64 Release Rebuild。
+- TianYi UI Automation 实测：连接页默认显示“官方服务 · nexusdock.co”；点击“更改”后可切到自托管并出现服务地址，输入测试地址后摘要即时更新；恢复官方服务后未执行配对，不修改现有设备身份。点击“高级连接设置”后，一级导航切到“设置”、二级导航选中“高级连接”，并真实出现 Local MCP、本地地址、认证令牌、OAuth 密码、公网访问、Cloudflare Tunnel 和固定域名。
+- macOS 完整 App / ZIP / DMG / 签名 / 解包 / 挂载验证通过；最终源码的 i18n 检查为 370 个引用 key、每个 locale 453 个条目。
+
 视觉审查：
 
 - Mac / Windows 使用接近的窗口尺寸。

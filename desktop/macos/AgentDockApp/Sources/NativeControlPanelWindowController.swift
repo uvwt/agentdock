@@ -90,15 +90,20 @@ private final class ControlPanelModel: ObservableObject {
     }
 
     enum SettingsPage: String, CaseIterable, Identifiable {
-        case runtime, permissions, startup, appearance, about
+
+        case runtime, permissions, startup, advancedConnection, appearance, about
+
         var id: String { rawValue }
         var title: String {
             switch self {
             case .runtime: return L10n.text("Runtime")
             case .permissions: return L10n.text("Permissions")
             case .startup: return L10n.text("Startup")
+
+            case .advancedConnection: return L10n.text("Advanced connection")
             case .appearance: return L10n.text("Appearance")
             case .about: return L10n.text("About")
+
             }
         }
     }
@@ -349,7 +354,7 @@ private struct HomeView: View {
                         StatusPill(text: agentDockStatusText, active: serviceHealthy)
                     }
                     RowDivider()
-                    SettingsRow("NexusDock") { StatusPill(text: nexusText, active: nexusActive) }
+                    SettingsRow(L10n.text("Remote connection")) { StatusPill(text: nexusText, active: nexusActive) }
                 }
 
                 SettingsSection(L10n.text("Quick access")) {
@@ -395,17 +400,19 @@ private struct HomeView: View {
 }
 
 private struct ConnectionsView: View {
-    @ObservedObject var model: ControlPanelModel
-    @State private var tunnelMode: TunnelMode = .local
-    @State private var serverURL = ""
-    @State private var tunnelToken = ""
-    @State private var nexusEndpoint = "https://mcp.nexusdock.co"
-    @State private var pairingCode = ""
-    @State private var advancedExpanded = false
-    @State private var showAuthToken = false
-    @State private var showOAuthPassword = false
+    private enum RemoteServiceChoice: String, CaseIterable {
+        case official
+        case selfHosted
+    }
 
-    private var configuration: ServiceConfiguration? { model.status.configuration }
+    private static let officialEndpoint = "https://mcp.nexusdock.co"
+
+    @ObservedObject var model: ControlPanelModel
+    @State private var pairingCode = ""
+    @State private var remoteService: RemoteServiceChoice = .official
+    @State private var customEndpoint = ""
+    @State private var editingRemoteService = false
+
     private var nexusDevice: NexusDeviceStatus { model.nexusDevice }
 
     var body: some View {
@@ -413,141 +420,83 @@ private struct ConnectionsView: View {
             VStack(alignment: .leading, spacing: 22) {
                 PageHeader(
                     title: L10n.text("Connections"),
-                    detail: L10n.text("Use NexusDock for the simplest connection experience. Advanced options are available when needed.")
+                    detail: L10n.text("Connect AI clients to this device remotely.")
                 )
 
-                SettingsSection("NexusDock") {
-                    SettingsRow(
-                        L10n.text("Recommended connection"),
-                        detail: nexusDevice.paired ? nexusDevice.endpoint : L10n.text("Connect this device to NexusDock.")
-                    ) {
-                        StatusPill(text: nexusText, active: nexusActive)
+                SettingsSection(L10n.text("Remote connection")) {
+                    SettingsRow(L10n.text("Status")) {
+                        StatusPill(text: connectionText, active: connectionActive)
                     }
                     RowDivider()
+                    SettingsRow(L10n.text("Remote service"), detail: remoteServiceDetail) {
+                        Button(editingRemoteService ? L10n.text("Done") : L10n.text("Change")) {
+                            editingRemoteService.toggle()
+                        }
+                        .controlSize(.small)
+                    }
+
+                    if editingRemoteService {
+                        RowDivider()
+                        VStack(alignment: .leading, spacing: 9) {
+                            Picker("", selection: $remoteService) {
+                                Text(L10n.text("Official service")).tag(RemoteServiceChoice.official)
+                                Text(L10n.text("Self-hosted service")).tag(RemoteServiceChoice.selfHosted)
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.segmented)
+
+                            if remoteService == .selfHosted {
+                                TextField(L10n.text("Service address"), text: $customEndpoint)
+                                    .textFieldStyle(.roundedBorder)
+                            } else {
+                                Text(L10n.text("Official service uses nexusdock.co by default."))
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(13)
+                    }
+
+                    RowDivider()
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(L10n.text("Pair once, then connect supported AI clients through NexusDock without configuring MCP addresses or tunnels."))
+                        Text(L10n.text("Enter the one-time pairing code to connect this device."))
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
-                        TextField(L10n.text("NexusDock address"), text: $nexusEndpoint)
-                            .textFieldStyle(.roundedBorder)
                         SecureField(L10n.text("One-time pairing code"), text: $pairingCode)
                             .textFieldStyle(.roundedBorder)
-                        Button(L10n.text("Pair")) {
+                        Button(L10n.text("Connect")) {
                             Task {
-                                await model.pairNexus(endpoint: nexusEndpoint, code: pairingCode)
+                                await model.pairNexus(endpoint: selectedEndpoint, code: pairingCode)
                                 pairingCode = ""
                             }
                         }
-                        .disabled(model.isBusy || nexusEndpoint.isEmpty || pairingCode.isEmpty)
+                        .disabled(model.isBusy || selectedEndpoint.isEmpty || pairingCode.isEmpty)
                     }
                     .padding(13)
                 }
 
                 SettingsSection(L10n.text("Advanced connection settings")) {
-                    DisclosureGroup(isExpanded: $advancedExpanded) {
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text("Local MCP")
-                                .font(.system(size: 13, weight: .semibold))
-                                .padding(.top, 12)
-                                .padding(.bottom, 4)
-
-                            SettingsRow("Local MCP", detail: configuration?.localMCPURL?.absoluteString ?? "—") {
-                                Button(L10n.text("Copy")) {
-                                    copy(configuration?.localMCPURL?.absoluteString)
-                                }
-                                .controlSize(.small)
-                            }
-                            RowDivider()
-                            SettingsRow(
-                                L10n.text("Authentication token"),
-                                detail: displayedSecret(configuration?.authToken, visible: showAuthToken)
-                            ) {
-                                HStack(spacing: 6) {
-                                    Button(showAuthToken ? L10n.text("Hide") : L10n.text("Show")) {
-                                        showAuthToken.toggle()
-                                    }
-                                    Button(L10n.text("Copy")) { copy(configuration?.authToken) }
-                                }
-                                .controlSize(.small)
-                            }
-                            RowDivider()
-                            SettingsRow(
-                                L10n.text("OAuth password"),
-                                detail: displayedSecret(configuration?.oauthPassword, visible: showOAuthPassword)
-                            ) {
-                                HStack(spacing: 6) {
-                                    Button(showOAuthPassword ? L10n.text("Hide") : L10n.text("Show")) {
-                                        showOAuthPassword.toggle()
-                                    }
-                                    Button(L10n.text("Copy")) { copy(configuration?.oauthPassword) }
-                                }
-                                .controlSize(.small)
-                            }
-
-                            Divider().padding(.vertical, 12)
-
-                            Text(L10n.text("Public access"))
-                                .font(.system(size: 13, weight: .semibold))
-                                .padding(.bottom, 4)
-
-                            SettingsRow(
-                                L10n.text("Public address"),
-                                detail: configuration?.publicMCPURL?.absoluteString ?? L10n.text("Disabled")
-                            ) {
-                                Button(L10n.text("Copy")) {
-                                    copy(configuration?.publicMCPURL?.absoluteString)
-                                }
-                                .controlSize(.small)
-                                .disabled(configuration?.publicMCPURL == nil)
-                            }
-                            RowDivider()
-                            SettingsRow(
-                                "Cloudflare Tunnel",
-                                detail: L10n.text("Generate a temporary public address without configuring a domain.")
-                            ) {
-                                Button(
-                                    tunnelMode == .quick
-                                        ? L10n.text("Regenerate temporary address")
-                                        : L10n.text("Generate temporary address")
-                                ) {
-                                    Task {
-                                        await model.applyTunnel(mode: .quick, serverURL: "", tunnelToken: "")
-                                    }
-                                }
-                                .controlSize(.small)
-                                .disabled(model.isBusy)
-                            }
-                            RowDivider()
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(L10n.text("Fixed domain"))
+                    Button {
+                        model.settingsPage = .advancedConnection
+                        model.page = .settings
+                    } label: {
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(L10n.text("Advanced connection settings"))
                                     .font(.system(size: 13, weight: .medium))
-                                Text(L10n.text("Use your own HTTPS domain with a Cloudflare Tunnel token."))
+                                Text(L10n.text("Local MCP, access credentials, and direct public access."))
                                     .font(.system(size: 12))
                                     .foregroundStyle(.secondary)
-                                TextField("https://mcp.example.com", text: $serverURL)
-                                    .textFieldStyle(.roundedBorder)
-                                SecureField(L10n.text("Cloudflare Tunnel Token"), text: $tunnelToken)
-                                    .textFieldStyle(.roundedBorder)
-                                Button(L10n.text("Apply fixed domain")) {
-                                    Task {
-                                        await model.applyTunnel(mode: .named, serverURL: serverURL, tunnelToken: tunnelToken)
-                                        tunnelToken = ""
-                                    }
-                                }
-                                .disabled(
-                                    model.isBusy
-                                        || serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                )
                             }
-                            .padding(.horizontal, 13)
-                            .padding(.top, 10)
+                            Spacer(minLength: 20)
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(.tertiary)
                         }
-                    } label: {
-                        Text(L10n.text("Local MCP, access credentials, and direct public access."))
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                        .padding(.horizontal, 13)
+                        .frame(minHeight: 52)
+                        .contentShape(Rectangle())
                     }
-                    .padding(13)
+                    .buttonStyle(.plain)
                 }
 
                 if let message = model.message {
@@ -562,20 +511,42 @@ private struct ConnectionsView: View {
             .frame(maxWidth: 760, alignment: .leading)
         }
         .task(id: model.statusUpdatedAt) {
-            tunnelMode = (try? model.service.configuredTunnelMode()) ?? .local
-            if tunnelMode == .named {
-                serverURL = configuration?.publicURL ?? ""
+            let endpoint = nexusDevice.paired ? nexusDevice.endpoint : Self.officialEndpoint
+            if isOfficialEndpoint(endpoint) {
+                remoteService = .official
+                customEndpoint = ""
+            } else {
+                remoteService = .selfHosted
+                customEndpoint = endpoint
             }
-            nexusEndpoint = nexusDevice.paired ? nexusDevice.endpoint : "https://mcp.nexusdock.co"
         }
     }
 
-    private var nexusActive: Bool {
+    private var selectedEndpoint: String {
+        switch remoteService {
+        case .official:
+            return Self.officialEndpoint
+        case .selfHosted:
+            return customEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    private var remoteServiceDetail: String {
+        switch remoteService {
+        case .official:
+            return "\(L10n.text("Official service")) · nexusdock.co"
+        case .selfHosted:
+            let endpoint = customEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+            return endpoint.isEmpty ? L10n.text("Self-hosted service") : "\(L10n.text("Self-hosted service")) · \(endpoint)"
+        }
+    }
+
+    private var connectionActive: Bool {
         if case .connected = model.status.nexusConnection { return true }
         return false
     }
 
-    private var nexusText: String {
+    private var connectionText: String {
         switch model.status.nexusConnection {
         case .connected: return L10n.text("Connected")
         case .disconnected: return L10n.text("Disconnected")
@@ -584,16 +555,11 @@ private struct ConnectionsView: View {
         }
     }
 
-    private func displayedSecret(_ value: String?, visible: Bool) -> String {
-        let value = value ?? ""
-        guard !value.isEmpty else { return "—" }
-        return visible ? value : "••••••••••••"
-    }
 
-    private func copy(_ value: String?) {
-        guard let value, !value.isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
+    private func isOfficialEndpoint(_ endpoint: String) -> Bool {
+        endpoint.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            .caseInsensitiveCompare(Self.officialEndpoint) == .orderedSame
+
     }
 }
 
@@ -813,6 +779,11 @@ private struct SettingsView: View {
     @State private var themePreference: UIThemePreference = .system
     @State private var coreAutostart = false
     @State private var menuAutostart = false
+    @State private var tunnelMode: TunnelMode = .local
+    @State private var serverURL = ""
+    @State private var tunnelToken = ""
+    @State private var showAuthToken = false
+    @State private var showOAuthPassword = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -839,6 +810,10 @@ private struct SettingsView: View {
             if let configuration = model.status.configuration {
                 port = configuration.port
                 logLevel = configuration.logLevel
+            }
+            tunnelMode = (try? model.service.configuredTunnelMode()) ?? .local
+            if tunnelMode == .named {
+                serverURL = model.status.configuration?.publicURL ?? ""
             }
             languagePreference = L10n.languagePreference()
             themePreference = AppAppearance.preference()
@@ -919,6 +894,7 @@ private struct SettingsView: View {
                     }
                 }
             }
+
         case .appearance:
             VStack(alignment: .leading, spacing: 20) {
                 PageHeader(
@@ -1006,7 +982,131 @@ private struct SettingsView: View {
                     }
                 }
             }
+
+        case .advancedConnection:
+            VStack(alignment: .leading, spacing: 20) {
+                PageHeader(
+                    title: L10n.text("Advanced connection"),
+                    detail: L10n.text("Local MCP, access credentials, and direct public access.")
+                )
+
+                SettingsSection("Local MCP") {
+                    SettingsRow(
+                        L10n.text("Local address"),
+                        detail: model.status.configuration?.localMCPURL?.absoluteString ?? "—"
+                    ) {
+                        Button(L10n.text("Copy")) {
+                            copy(model.status.configuration?.localMCPURL?.absoluteString)
+                        }
+                        .controlSize(.small)
+                    }
+                }
+
+                SettingsSection(L10n.text("Access Credentials")) {
+                    SettingsRow(
+                        L10n.text("Authentication token"),
+                        detail: displayedSecret(model.status.configuration?.authToken, visible: showAuthToken)
+                    ) {
+                        HStack(spacing: 6) {
+                            Button(showAuthToken ? L10n.text("Hide") : L10n.text("Show")) {
+                                showAuthToken.toggle()
+                            }
+                            Button(L10n.text("Copy")) {
+                                copy(model.status.configuration?.authToken)
+                            }
+                        }
+                        .controlSize(.small)
+                    }
+                    RowDivider()
+                    SettingsRow(
+                        L10n.text("OAuth password"),
+                        detail: displayedSecret(model.status.configuration?.oauthPassword, visible: showOAuthPassword)
+                    ) {
+                        HStack(spacing: 6) {
+                            Button(showOAuthPassword ? L10n.text("Hide") : L10n.text("Show")) {
+                                showOAuthPassword.toggle()
+                            }
+                            Button(L10n.text("Copy")) {
+                                copy(model.status.configuration?.oauthPassword)
+                            }
+                        }
+                        .controlSize(.small)
+                    }
+                }
+
+                SettingsSection(L10n.text("Public access")) {
+                    SettingsRow(
+                        L10n.text("Public address"),
+                        detail: model.status.configuration?.publicMCPURL?.absoluteString ?? L10n.text("Disabled")
+                    ) {
+                        Button(L10n.text("Copy")) {
+                            copy(model.status.configuration?.publicMCPURL?.absoluteString)
+                        }
+                        .controlSize(.small)
+                        .disabled(model.status.configuration?.publicMCPURL == nil)
+                    }
+                    RowDivider()
+                    SettingsRow(
+                        "Cloudflare Tunnel",
+                        detail: L10n.text("Generate a temporary public address without configuring a domain.")
+                    ) {
+                        Button(
+                            tunnelMode == .quick
+                                ? L10n.text("Regenerate temporary address")
+                                : L10n.text("Generate temporary address")
+                        ) {
+                            Task {
+                                await model.applyTunnel(mode: .quick, serverURL: "", tunnelToken: "")
+                            }
+                        }
+                        .controlSize(.small)
+                        .disabled(model.isBusy)
+                    }
+                    RowDivider()
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(L10n.text("Fixed domain"))
+                            .font(.system(size: 13, weight: .medium))
+                        Text(L10n.text("Use your own HTTPS domain with a Cloudflare Tunnel token."))
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                        TextField("https://mcp.example.com", text: $serverURL)
+                            .textFieldStyle(.roundedBorder)
+                        SecureField(L10n.text("Cloudflare Tunnel Token"), text: $tunnelToken)
+                            .textFieldStyle(.roundedBorder)
+                        Button(L10n.text("Apply fixed domain")) {
+                            Task {
+                                await model.applyTunnel(mode: .named, serverURL: serverURL, tunnelToken: tunnelToken)
+                                tunnelToken = ""
+                            }
+                        }
+                        .disabled(
+                            model.isBusy
+                                || serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        )
+                    }
+                    .padding(13)
+                }
+
+                if let message = model.message {
+                    Text(message)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+
+                }
+            }
         }
+    }
+
+    private func displayedSecret(_ value: String?, visible: Bool) -> String {
+        guard visible else { return "••••••••••••" }
+        let value = value ?? ""
+        return value.isEmpty ? "—" : value
+    }
+
+    private func copy(_ value: String?) {
+        guard let value, !value.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
     }
 }
 
