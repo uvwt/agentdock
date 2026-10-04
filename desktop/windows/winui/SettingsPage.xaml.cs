@@ -522,8 +522,8 @@ public sealed partial class SettingsPage : Page
                     ? $"{latency} ms"
                     : endpointResult.HttpStatusCode is { } statusCode
                         ? endpointResult.LatencyMilliseconds is { } failedLatency
-                            ? $"HTTP {statusCode} · {failedLatency} ms"
-                            : $"HTTP {statusCode}"
+                            ? $"HTTP {statusCode} · {UiText.Get("Failed")} · {failedLatency} ms"
+                            : $"HTTP {statusCode} · {UiText.Get("Failed")}"
                         : UiText.Get("Failed"),
                 FontSize = 11.5,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,

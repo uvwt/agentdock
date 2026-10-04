@@ -1945,10 +1945,11 @@ private struct SettingsView: View {
         }
 
         if let statusCode = result.httpStatusCode {
+            let failed = L10n.text("Failed")
             if let latency = result.latencyMilliseconds {
-                return "HTTP \(statusCode) · \(latency) ms"
+                return "HTTP \(statusCode) · \(failed) · \(latency) ms"
             }
-            return "HTTP \(statusCode)"
+            return "HTTP \(statusCode) · \(failed)"
         }
 
         return L10n.text("Failed")
