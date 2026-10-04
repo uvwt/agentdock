@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.UI.Xaml;
 using Forms = System.Windows.Forms;
@@ -7,6 +8,7 @@ namespace AgentDock.ControlPanel;
 
 public partial class NativeApp : Application
 {
+    private const string AppUserModelId = "com.uvwt.agentdock.controlpanel";
     private const string MutexName = "Local\\AgentDock.ControlPanel.Singleton";
     private const string ShowEventName = "Local\\AgentDock.ControlPanel.Show";
 
@@ -31,6 +33,7 @@ public partial class NativeApp : Application
         var arguments = Environment.GetCommandLineArgs().Skip(1).ToArray();
         if (TryRunHelperMode(arguments)) return;
 
+        _ = SetCurrentProcessExplicitAppUserModelID(AppUserModelId);
         var background = arguments.Any(value => string.Equals(value, "--background", StringComparison.OrdinalIgnoreCase));
         _singleInstanceMutex = new Mutex(true, MutexName, out var createdNew);
         _ownsMutex = createdNew;
@@ -253,4 +256,7 @@ public partial class NativeApp : Application
         var path = Path.Combine(AppContext.BaseDirectory, "agentdock.ico");
         return File.Exists(path) ? new Icon(path) : SystemIcons.Application;
     }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SetCurrentProcessExplicitAppUserModelID(string AppID);
 }
