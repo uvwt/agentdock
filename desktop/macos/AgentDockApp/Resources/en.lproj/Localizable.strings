@@ -482,4 +482,6 @@
 "Service address" = "Service address";
 "Official service uses nexusdock.co by default." = "Official service uses nexusdock.co by default.";
 "Enter the one-time pairing code to connect this device." = "Enter the one-time pairing code to connect this device.";
+"No pairing code? Get one from NexusDock ↗" = "No pairing code? Get one from NexusDock ↗";
+"Manage connected devices ↗" = "Manage connected devices ↗";
 "Connect" = "Connect";

@@ -862,6 +862,8 @@ Update now?</value>
   <data name="OfficialServiceHint" xml:space="preserve"><value>The official service uses nexusdock.co by default.</value></data>
   <data name="ServiceAddress" xml:space="preserve"><value>Service address</value></data>
   <data name="RemotePairingIntro" xml:space="preserve"><value>Enter the one-time pairing code to connect this device.</value></data>
+  <data name="GetPairingCodeFromNexusDock" xml:space="preserve"><value>No pairing code? Get one from NexusDock ↗</value></data>
+  <data name="ManageConnectedDevices" xml:space="preserve"><value>Manage connected devices ↗</value></data>
   <data name="Connect" xml:space="preserve"><value>Connect</value></data>
   <data name="ServiceAddressRequired" xml:space="preserve"><value>Enter a self-hosted service address.</value></data>
 

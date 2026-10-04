@@ -482,4 +482,6 @@
 "Service address" = "服务地址";
 "Official service uses nexusdock.co by default." = "官方服务默认使用 nexusdock.co。";
 "Enter the one-time pairing code to connect this device." = "输入一次性配对码以连接这台设备。";
+"No pairing code? Get one from NexusDock ↗" = "没有配对码？前往 NexusDock 获取配对码 ↗";
+"Manage connected devices ↗" = "管理已连接设备 ↗";
 "Connect" = "连接";

@@ -862,6 +862,8 @@
   <data name="OfficialServiceHint" xml:space="preserve"><value>官方服务默认使用 nexusdock.co。</value></data>
   <data name="ServiceAddress" xml:space="preserve"><value>服务地址</value></data>
   <data name="RemotePairingIntro" xml:space="preserve"><value>输入一次性配对码以连接这台设备。</value></data>
+  <data name="GetPairingCodeFromNexusDock" xml:space="preserve"><value>没有配对码？前往 NexusDock 获取配对码 ↗</value></data>
+  <data name="ManageConnectedDevices" xml:space="preserve"><value>管理已连接设备 ↗</value></data>
   <data name="Connect" xml:space="preserve"><value>连接</value></data>
   <data name="ServiceAddressRequired" xml:space="preserve"><value>请输入自托管服务地址。</value></data>
 

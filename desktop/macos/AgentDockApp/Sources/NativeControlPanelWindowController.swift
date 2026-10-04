@@ -550,6 +550,7 @@ private struct ConnectionsView: View {
     }
 
     private static let officialEndpoint = "https://mcp.nexusdock.co"
+    private static let officialDevicesURL = URL(string: "https://mcp.nexusdock.co/workspace/devices")!
 
     @ObservedObject var model: ControlPanelModel
     @State private var pairingCode = ""
@@ -608,6 +609,15 @@ private struct ConnectionsView: View {
                             .foregroundStyle(.secondary)
                         SecureField(L10n.text("One-time pairing code"), text: $pairingCode)
                             .textFieldStyle(.roundedBorder)
+                        if remoteService == .official {
+                            Link(
+                                nexusDevice.paired && isOfficialEndpoint(nexusDevice.endpoint)
+                                    ? L10n.text("Manage connected devices ↗")
+                                    : L10n.text("No pairing code? Get one from NexusDock ↗"),
+                                destination: Self.officialDevicesURL
+                            )
+                            .font(.system(size: 12))
+                        }
                         Button(L10n.text("Connect")) {
                             Task {
                                 await model.pairNexus(endpoint: selectedEndpoint, code: pairingCode)

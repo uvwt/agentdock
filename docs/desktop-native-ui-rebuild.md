@@ -734,6 +734,7 @@ TianYi parity 验证：
 
 - 用户可见主概念从 NexusDock 收敛为“远程连接”；主页状态项同步改为“远程连接”，不再要求用户先理解 NexusDock 品牌名称。
 - 连接页负责“连接到哪里”和“完成配对”：默认使用官方服务 `https://mcp.nexusdock.co`，界面显示“官方服务 · nexusdock.co”；点击“更改”后才出现官方服务 / 自托管服务选择，自托管时显示服务地址输入框。
+- 官方服务下补充 NexusDock 设备页入口：未配对时提示用户前往 `https://mcp.nexusdock.co/workspace/devices` 获取配对码；已配对时改为“管理已连接设备”。自托管服务不显示该入口，避免把官方 SaaS 流程混入自托管配置。
 - 连接页不再承载 Local MCP、访问凭据或 Cloudflare Tunnel 配置。“高级连接设置”改为单一跳转入口，直接进入“设置 → 高级连接”。
 - 设置二级导航调整为“运行时 / 权限 / 开机启动 / 高级连接”。高级连接统一承载 Local MCP、Authentication Token、OAuth Password、Cloudflare 临时公网地址与固定域名。
 - 底层仍复用现有 Nexus pairing 与 tunnel `none / quick / named` 配置，不为了 UI 命名变化改写稳定运行协议。

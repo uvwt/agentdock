@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
@@ -7,6 +8,7 @@ namespace AgentDock.ControlPanel;
 public sealed partial class ConnectionsPage : Page
 {
     private const string OfficialEndpoint = "https://mcp.nexusdock.co";
+    private const string OfficialDevicesUrl = "https://mcp.nexusdock.co/workspace/devices";
 
     private RuntimeService? _runtime;
     private RuntimeSnapshot? _snapshot;
@@ -30,6 +32,7 @@ public sealed partial class ConnectionsPage : Page
         SelfHostedEndpointTextBox.Header = UiText.Get("ServiceAddress");
         PairingIntro.Text = UiText.Get("RemotePairingIntro");
         PairingCodeBox.Header = UiText.Get("OneTimePairingCode");
+        NexusDevicesLink.Content = UiText.Get("GetPairingCodeFromNexusDock");
         ConnectButton.Content = UiText.Get("Connect");
 
         AdvancedEntrySection.Title = UiText.Get("AdvancedConnectionSettings");
@@ -89,7 +92,18 @@ public sealed partial class ConnectionsPage : Page
         var selfHosted = SelectedRemoteService() == "self-hosted";
         SelfHostedEndpointTextBox.Visibility = selfHosted ? Visibility.Visible : Visibility.Collapsed;
         OfficialServiceHint.Visibility = selfHosted ? Visibility.Collapsed : Visibility.Visible;
+        UpdateNexusDevicesLink();
         UpdateRemoteServiceValue();
+    }
+
+    private void UpdateNexusDevicesLink()
+    {
+        NexusDevicesLink.Visibility = SelectedRemoteService() == "official"
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        NexusDevicesLink.Content = _snapshot?.Nexus.Paired == true && IsOfficialEndpoint(_snapshot.Nexus.Endpoint)
+            ? UiText.Get("ManageConnectedDevices")
+            : UiText.Get("GetPairingCodeFromNexusDock");
     }
 
     private void UpdateRemoteServiceValue()
@@ -160,6 +174,9 @@ public sealed partial class ConnectionsPage : Page
 
     private void AdvancedSettingsButton_Click(object sender, RoutedEventArgs e) =>
         AdvancedSettingsRequested?.Invoke(this, EventArgs.Empty);
+
+    private void NexusDevicesLink_Click(object sender, RoutedEventArgs e) =>
+        Process.Start(new ProcessStartInfo(OfficialDevicesUrl) { UseShellExecute = true });
 
     private static bool IsOfficialEndpoint(string endpoint) =>
         string.Equals(endpoint.Trim().TrimEnd('/'), OfficialEndpoint, StringComparison.OrdinalIgnoreCase);
