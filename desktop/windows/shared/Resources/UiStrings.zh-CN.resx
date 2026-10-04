@@ -871,4 +871,20 @@
   <data name="NotEnabledYet" xml:space="preserve"><value>尚未启用</value></data>
   <data name="CapabilitiesAvailable" xml:space="preserve"><value>{0} / 3 可用</value></data>
   <data name="CapabilitiesNeedAttention" xml:space="preserve"><value>{0} 项需要处理</value></data>
+  <data name="Skills" xml:space="preserve"><value>Skill</value></data>
+  <data name="Plugins" xml:space="preserve"><value>插件</value></data>
+  <data name="CoreCapabilities" xml:space="preserve"><value>核心能力</value></data>
+  <data name="DashboardInstalled" xml:space="preserve"><value>已安装</value></data>
+  <data name="DashboardConfigured" xml:space="preserve"><value>已配置</value></data>
+  <data name="DefaultProfileSummary" xml:space="preserve"><value>{0} · 默认</value></data>
+  <data name="RecentActivity" xml:space="preserve"><value>最近活动</value></data>
+  <data name="RecentActivityUnavailable" xml:space="preserve"><value>最近活动暂不可用。</value></data>
+  <data name="NoRecentActivity" xml:space="preserve"><value>暂无最近活动。</value></data>
+  <data name="Succeeded" xml:space="preserve"><value>成功</value></data>
+  <data name="Failed" xml:space="preserve"><value>失败</value></data>
+  <data name="ActivitySourceRemote" xml:space="preserve"><value>远程</value></data>
+  <data name="ActivitySourceLocal" xml:space="preserve"><value>本机</value></data>
+  <data name="JustNow" xml:space="preserve"><value>刚刚</value></data>
+  <data name="MinutesAgo" xml:space="preserve"><value>{0} 分钟前</value></data>
+  <data name="HoursAgo" xml:space="preserve"><value>{0} 小时前</value></data>
 </root>

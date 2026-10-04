@@ -871,4 +871,20 @@ Update now?</value>
   <data name="NotEnabledYet" xml:space="preserve"><value>Not enabled yet</value></data>
   <data name="CapabilitiesAvailable" xml:space="preserve"><value>{0} / 3 available</value></data>
   <data name="CapabilitiesNeedAttention" xml:space="preserve"><value>{0} need attention</value></data>
+  <data name="Skills" xml:space="preserve"><value>Skills</value></data>
+  <data name="Plugins" xml:space="preserve"><value>Plugins</value></data>
+  <data name="CoreCapabilities" xml:space="preserve"><value>Core capabilities</value></data>
+  <data name="DashboardInstalled" xml:space="preserve"><value>Installed</value></data>
+  <data name="DashboardConfigured" xml:space="preserve"><value>Configured</value></data>
+  <data name="DefaultProfileSummary" xml:space="preserve"><value>{0} · default</value></data>
+  <data name="RecentActivity" xml:space="preserve"><value>Recent activity</value></data>
+  <data name="RecentActivityUnavailable" xml:space="preserve"><value>Recent activity is unavailable.</value></data>
+  <data name="NoRecentActivity" xml:space="preserve"><value>No recent activity yet.</value></data>
+  <data name="Succeeded" xml:space="preserve"><value>Succeeded</value></data>
+  <data name="Failed" xml:space="preserve"><value>Failed</value></data>
+  <data name="ActivitySourceRemote" xml:space="preserve"><value>Remote</value></data>
+  <data name="ActivitySourceLocal" xml:space="preserve"><value>Local</value></data>
+  <data name="JustNow" xml:space="preserve"><value>Just now</value></data>
+  <data name="MinutesAgo" xml:space="preserve"><value>{0} min ago</value></data>
+  <data name="HoursAgo" xml:space="preserve"><value>{0} hr ago</value></data>
 </root>

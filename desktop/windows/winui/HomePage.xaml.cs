@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 
 namespace AgentDock.ControlPanel;
@@ -22,12 +23,17 @@ public sealed partial class HomePage : Page
     {
         InitializeComponent();
         PageTitle.Text = UiText.Get("Home");
-        ConnectionSection.Title = UiText.Get("Connection");
         RemoteConnectionLabel.Text = UiText.Get("RemoteConnection");
-        CapabilitiesSection.Title = UiText.Get("Capabilities");
-        ConnectionsShortcutLabel.Text = UiText.Get("Connections");
-        CapabilitiesShortcutLabel.Text = UiText.Get("Capabilities");
-        ActivityShortcutLabel.Text = UiText.Get("Activity");
+        SkillsLabel.Text = UiText.Get("Skills");
+        SkillsDetail.Text = UiText.Get("DashboardInstalled");
+        McpDetail.Text = UiText.Get("DashboardConfigured");
+        PluginsLabel.Text = UiText.Get("Plugins");
+        PluginsDetail.Text = UiText.Get("DashboardInstalled");
+        CoreCapabilitiesSection.Title = UiText.Get("CoreCapabilities");
+        BrowserCapabilityTitle.Text = UiText.Get("Browser");
+        CodingAgentCapabilityTitle.Text = UiText.Get("CodingAgent");
+        McpAppsCapabilityTitle.Text = UiText.Get("McpApps");
+        RecentActivitySection.Title = UiText.Get("RecentActivity");
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -44,6 +50,7 @@ public sealed partial class HomePage : Page
         var serviceLoaded = _snapshot.CoreRunning;
         var serviceHealthy = serviceLoaded && _snapshot.Healthy;
 
+        VersionText.Text = string.IsNullOrWhiteSpace(_snapshot.Version) ? "" : $"v{_snapshot.Version.TrimStart('v')}";
         if (!serviceLoaded)
         {
             RuntimeDescription.Text = UiText.Get("StartAgentDockForClients");
@@ -69,6 +76,8 @@ public sealed partial class HomePage : Page
         RuntimeAction.Content = serviceLoaded ? UiText.Get("Stop") : UiText.Get("Start");
 
         RenderCapabilities(_snapshot.Settings);
+        var dashboard = await _runtime.GetDashboardAsync(_snapshot);
+        RenderDashboard(dashboard);
     }
 
     private static string RemoteServiceDetail(RuntimeSnapshot snapshot)
@@ -86,9 +95,9 @@ public sealed partial class HomePage : Page
 
     private void RenderCapabilities(ControlPanelSettings settings)
     {
-        var browserState = settings.BrowserEnabled
-            ? CapabilityState.Enabled
-            : CapabilityState.Disabled;
+        var browserState = settings.BrowserEnabled ? CapabilityState.Enabled : CapabilityState.Disabled;
+        BrowserCapabilityDetail.Text = BrowserCapabilityDetailText(settings);
+        ApplyCapabilityState(BrowserCapabilityState, browserState);
 
         var enabledProfiles = settings.AcpProfiles.Where(profile => profile.Enabled).ToList();
         var codingAgentState = !settings.AcpEnabled
@@ -97,6 +106,8 @@ public sealed partial class HomePage : Page
               !enabledProfiles.Any(profile => string.Equals(profile.Id, settings.AcpDefaultProfile, StringComparison.Ordinal))
                 ? CapabilityState.Attention
                 : CapabilityState.Enabled;
+        CodingAgentCapabilityDetail.Text = CodingAgentDetailText(settings, enabledProfiles, codingAgentState);
+        ApplyCapabilityState(CodingAgentCapabilityState, codingAgentState);
 
         var mode = (settings.McpAppsMode ?? "").Trim().ToLowerInvariant();
         var mcpAppsState = mode switch
@@ -105,33 +116,157 @@ public sealed partial class HomePage : Page
             "full" or "compact" => CapabilityState.Enabled,
             _ => CapabilityState.Attention
         };
-
-        ApplyCapabilityState(BrowserCapabilityState, UiText.Get("Browser"), browserState);
-        ApplyCapabilityState(CodingAgentCapabilityState, UiText.Get("CodingAgent"), codingAgentState);
-        ApplyCapabilityState(McpAppsCapabilityState, UiText.Get("McpApps"), mcpAppsState);
-
-        var states = new[] { browserState, codingAgentState, mcpAppsState };
-        var enabledCount = states.Count(state => state == CapabilityState.Enabled);
-        var attentionCount = states.Count(state => state == CapabilityState.Attention);
-        CapabilitiesSummary.Text = attentionCount > 0
-            ? UiText.Format("CapabilitiesNeedAttention", attentionCount)
-            : enabledCount == states.Length
-                ? UiText.Get("AllAvailable")
-                : enabledCount == 0
-                    ? UiText.Get("NotEnabledYet")
-                    : UiText.Format("CapabilitiesAvailable", enabledCount);
+        McpAppsCapabilityDetail.Text = mode switch
+        {
+            "full" => UiText.Get("Full"),
+            "compact" => UiText.Get("Compact"),
+            "off" => UiText.Get("Off"),
+            _ => UiText.Get("NeedsAttention")
+        };
+        ApplyCapabilityState(McpAppsCapabilityState, mcpAppsState);
     }
 
-    private static void ApplyCapabilityState(TextBlock target, string title, CapabilityState state)
+    private static string BrowserCapabilityDetailText(ControlPanelSettings settings)
+    {
+        if (!settings.BrowserEnabled) return UiText.Get("NotEnabledYet");
+        if (!string.IsNullOrWhiteSpace(settings.BrowserCdpUrl)) return UiText.Get("SpecifiedCdp");
+        return settings.BrowserReuseExistingCdp
+            ? UiText.Get("ReuseLocalBrowser")
+            : UiText.Get("IsolatedBrowser");
+    }
+
+    private static string CodingAgentDetailText(
+        ControlPanelSettings settings,
+        IReadOnlyList<AcpProfileSettings> enabledProfiles,
+        CapabilityState state)
+    {
+        if (state == CapabilityState.Disabled) return UiText.Get("NotEnabledYet");
+        if (state == CapabilityState.Attention) return UiText.Get("NeedsAttention");
+
+        var profile = enabledProfiles.First(profile =>
+            string.Equals(profile.Id, settings.AcpDefaultProfile, StringComparison.Ordinal));
+        var name = string.IsNullOrWhiteSpace(profile.DisplayName) ? profile.Id : profile.DisplayName;
+        return UiText.Format("DefaultProfileSummary", name);
+    }
+
+    private static void ApplyCapabilityState(TextBlock target, CapabilityState state)
     {
         target.Text = state switch
         {
-            CapabilityState.Enabled => $"● {title}",
-            CapabilityState.Disabled => $"○ {title}",
-            CapabilityState.Attention => $"! {title}",
-            _ => title
+            CapabilityState.Enabled => $"● {UiText.Get("Enabled")}",
+            CapabilityState.Disabled => UiText.Get("Disabled"),
+            CapabilityState.Attention => $"! {UiText.Get("NeedsAttention")}",
+            _ => UiText.Get("Unavailable")
         };
         target.Opacity = state == CapabilityState.Disabled ? 0.62 : 1.0;
+    }
+
+    private void RenderDashboard(RuntimeDashboardSnapshot dashboard)
+    {
+        SkillCount.Text = dashboard.OverviewAvailable ? dashboard.SkillCount.ToString() : "—";
+        McpCount.Text = dashboard.OverviewAvailable ? dashboard.McpCount.ToString() : "—";
+        PluginCount.Text = dashboard.OverviewAvailable ? dashboard.PluginCount.ToString() : "—";
+
+        RecentActivityPanel.Children.Clear();
+        if (!dashboard.DiagnosticsAvailable)
+        {
+            RecentActivityPanel.Children.Add(CreateEmptyActivityText(UiText.Get("RecentActivityUnavailable")));
+            return;
+        }
+
+        var recentCalls = dashboard.RecentCalls.Take(3).ToList();
+        if (recentCalls.Count == 0)
+        {
+            RecentActivityPanel.Children.Add(CreateEmptyActivityText(UiText.Get("NoRecentActivity")));
+            return;
+        }
+
+        for (var index = 0; index < recentCalls.Count; index++)
+        {
+            if (index > 0)
+            {
+                RecentActivityPanel.Children.Add(new Border
+                {
+                    Height = 1,
+                    Margin = new Thickness(13, 0, 0, 0),
+                    Background = (Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"]
+                });
+            }
+            RecentActivityPanel.Children.Add(CreateActivityRow(recentCalls[index]));
+        }
+    }
+
+    private static TextBlock CreateEmptyActivityText(string text) =>
+        new()
+        {
+            Text = text,
+            FontSize = 12.5,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            Margin = new Thickness(13, 14, 13, 14)
+        };
+
+    private static Grid CreateActivityRow(RuntimeRecentCall call)
+    {
+        var row = new Grid
+        {
+            MinHeight = 54,
+            Padding = new Thickness(13, 7),
+            ColumnSpacing = 16
+        };
+        row.ColumnDefinitions.Add(new ColumnDefinition());
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var details = new StackPanel { Spacing = 2 };
+        details.Children.Add(new TextBlock
+        {
+            Text = call.Tool,
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.Medium
+        });
+        details.Children.Add(new TextBlock
+        {
+            Text = $"{ActivitySource(call.Source)} · {RelativeTime(call.StartedAt)}",
+            FontSize = 11.5,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
+        });
+        row.Children.Add(details);
+
+        var state = new TextBlock
+        {
+            Text = call.Success ? $"● {UiText.Get("Succeeded")}" : $"! {UiText.Get("Failed")}",
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(state, 1);
+        row.Children.Add(state);
+        return row;
+    }
+
+    private static string ActivitySource(string source) =>
+        source.Trim().ToLowerInvariant() switch
+        {
+            "nexus" => UiText.Get("ActivitySourceRemote"),
+            "internal" => UiText.Get("ActivitySourceLocal"),
+            "mcp" => "MCP",
+            _ => source
+        };
+
+    private static string RelativeTime(DateTimeOffset startedAt)
+    {
+        var elapsed = DateTimeOffset.Now - startedAt.ToLocalTime();
+        if (elapsed < TimeSpan.Zero || elapsed < TimeSpan.FromMinutes(1))
+        {
+            return UiText.Get("JustNow");
+        }
+        if (elapsed < TimeSpan.FromHours(1))
+        {
+            return UiText.Format("MinutesAgo", Math.Max(1, (int)elapsed.TotalMinutes));
+        }
+        if (elapsed < TimeSpan.FromDays(1))
+        {
+            return UiText.Format("HoursAgo", Math.Max(1, (int)elapsed.TotalHours));
+        }
+        return startedAt.ToLocalTime().ToString("g");
     }
 
     private async void RuntimeAction_Click(object sender, RoutedEventArgs e)
@@ -155,7 +290,4 @@ public sealed partial class HomePage : Page
 
     private void CapabilitiesShortcut_Click(object sender, RoutedEventArgs e) =>
         ShortcutRequested?.Invoke(this, "capabilities");
-
-    private void ActivityShortcut_Click(object sender, RoutedEventArgs e) =>
-        ShortcutRequested?.Invoke(this, "activity");
 }

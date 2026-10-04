@@ -4,136 +4,212 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:AgentDock.ControlPanel">
     <ScrollViewer>
-        <StackPanel Width="760" HorizontalAlignment="Left" Spacing="22" Padding="28,24,28,32">
+        <StackPanel MaxWidth="840"
+                    HorizontalAlignment="Stretch"
+                    Spacing="22"
+                    Padding="28,24,28,32">
             <TextBlock x:Name="PageTitle" FontSize="20" FontWeight="SemiBold"/>
 
-            <Grid ColumnSpacing="16">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <Border Width="44"
-                        Height="44"
-                        CornerRadius="12"
-                        Background="{ThemeResource AccentFillColorTertiaryBrush}"
-                        VerticalAlignment="Center">
-                    <FontIcon Glyph="&#xE7B8;" FontSize="20"/>
-                </Border>
-                <StackPanel Grid.Column="1" Spacing="5" VerticalAlignment="Center">
-                    <TextBlock Text="AgentDock" FontSize="18" FontWeight="SemiBold"/>
-                    <TextBlock x:Name="RuntimeDescription"
-                               FontSize="13"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                               TextWrapping="Wrap"/>
-                </StackPanel>
-                <StackPanel Grid.Column="2" Spacing="9" VerticalAlignment="Center" HorizontalAlignment="Right">
-                    <TextBlock x:Name="AgentDockState" HorizontalAlignment="Right"/>
-                    <Button x:Name="RuntimeAction"
-                            Click="RuntimeAction_Click"
-                            HorizontalAlignment="Right"/>
-                </StackPanel>
-            </Grid>
-
-            <local:SectionCard x:Name="ConnectionSection">
-                <Button Click="ConnectionsShortcut_Click"
-                        MinHeight="54"
-                        Padding="13,6"
-                        BorderThickness="0"
-                        Background="Transparent"
-                        HorizontalContentAlignment="Stretch">
-                    <Grid ColumnSpacing="16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Spacing="2" VerticalAlignment="Center">
-                            <TextBlock x:Name="RemoteConnectionLabel" FontSize="13"/>
-                            <TextBlock x:Name="RemoteConnectionDetail"
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="18,16">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Border Width="48"
+                            Height="48"
+                            CornerRadius="13"
+                            Background="{ThemeResource AccentFillColorTertiaryBrush}"
+                            VerticalAlignment="Center">
+                        <FontIcon Glyph="&#xE7B8;" FontSize="21"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" Spacing="5" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="AgentDock" FontSize="18" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="VersionText"
+                                       VerticalAlignment="Bottom"
                                        FontSize="11.5"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+                        <TextBlock x:Name="RuntimeDescription"
+                                   FontSize="13"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2"
+                                Spacing="9"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Right">
+                        <TextBlock x:Name="AgentDockState" HorizontalAlignment="Right"/>
+                        <Button x:Name="RuntimeAction"
+                                Click="RuntimeAction_Click"
+                                HorizontalAlignment="Right"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="10"
+                    Padding="0,12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.55*"/>
+                        <ColumnDefinition Width="1*"/>
+                        <ColumnDefinition Width="1*"/>
+                        <ColumnDefinition Width="1*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Button Click="ConnectionsShortcut_Click"
+                            Margin="8,0"
+                            Padding="10,3"
+                            BorderThickness="0"
+                            Background="Transparent"
+                            HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="3">
+                            <TextBlock x:Name="RemoteConnectionLabel"
+                                       FontSize="11.5"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <TextBlock x:Name="RemoteConnectionState" FontSize="16" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="RemoteConnectionDetail"
+                                       FontSize="11"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                        TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
-                        <StackPanel Grid.Column="1"
-                                    Orientation="Horizontal"
-                                    Spacing="9"
-                                    VerticalAlignment="Center">
-                            <TextBlock x:Name="RemoteConnectionState"/>
-                            <TextBlock Text="›"
-                                       FontSize="20"
+                    </Button>
+
+                    <Border Grid.Column="1"
+                            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                            BorderThickness="1,0,0,0"
+                            Padding="18,3,12,3">
+                        <StackPanel Spacing="3">
+                            <TextBlock x:Name="SkillsLabel"
+                                       FontSize="11.5"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <TextBlock x:Name="SkillCount" FontSize="20" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="SkillsDetail"
+                                       FontSize="11"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                         </StackPanel>
-                    </Grid>
-                </Button>
+                    </Border>
+
+                    <Border Grid.Column="2"
+                            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                            BorderThickness="1,0,0,0"
+                            Padding="18,3,12,3">
+                        <StackPanel Spacing="3">
+                            <TextBlock Text="MCP"
+                                       FontSize="11.5"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <TextBlock x:Name="McpCount" FontSize="20" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="McpDetail"
+                                       FontSize="11"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="3"
+                            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                            BorderThickness="1,0,0,0"
+                            Padding="18,3,12,3">
+                        <StackPanel Spacing="3">
+                            <TextBlock x:Name="PluginsLabel"
+                                       FontSize="11.5"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <TextBlock x:Name="PluginCount" FontSize="20" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="PluginsDetail"
+                                       FontSize="11"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <local:SectionCard x:Name="CoreCapabilitiesSection">
+                <StackPanel>
+                    <Button Click="CapabilitiesShortcut_Click"
+                            MinHeight="56"
+                            Padding="13,6"
+                            BorderThickness="0"
+                            Background="Transparent"
+                            HorizontalContentAlignment="Stretch">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock x:Name="BrowserCapabilityTitle" FontSize="13"/>
+                                <TextBlock x:Name="BrowserCapabilityDetail"
+                                           FontSize="11.5"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                <TextBlock x:Name="BrowserCapabilityState" FontSize="12"/>
+                                <TextBlock Text="›" FontSize="20" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+                        </Grid>
+                    </Button>
+                    <Rectangle Height="1" Margin="13,0,0,0" Fill="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+                    <Button Click="CapabilitiesShortcut_Click"
+                            MinHeight="56"
+                            Padding="13,6"
+                            BorderThickness="0"
+                            Background="Transparent"
+                            HorizontalContentAlignment="Stretch">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock x:Name="CodingAgentCapabilityTitle" FontSize="13"/>
+                                <TextBlock x:Name="CodingAgentCapabilityDetail"
+                                           FontSize="11.5"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                <TextBlock x:Name="CodingAgentCapabilityState" FontSize="12"/>
+                                <TextBlock Text="›" FontSize="20" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+                        </Grid>
+                    </Button>
+                    <Rectangle Height="1" Margin="13,0,0,0" Fill="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+                    <Button Click="CapabilitiesShortcut_Click"
+                            MinHeight="56"
+                            Padding="13,6"
+                            BorderThickness="0"
+                            Background="Transparent"
+                            HorizontalContentAlignment="Stretch">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock x:Name="McpAppsCapabilityTitle" FontSize="13"/>
+                                <TextBlock x:Name="McpAppsCapabilityDetail"
+                                           FontSize="11.5"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                <TextBlock x:Name="McpAppsCapabilityState" FontSize="12"/>
+                                <TextBlock Text="›" FontSize="20" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            </StackPanel>
+                        </Grid>
+                    </Button>
+                </StackPanel>
             </local:SectionCard>
 
-            <local:SectionCard x:Name="CapabilitiesSection">
-                <Button Click="CapabilitiesShortcut_Click"
-                        MinHeight="56"
-                        Padding="13,6"
-                        BorderThickness="0"
-                        Background="Transparent"
-                        HorizontalContentAlignment="Stretch">
-                    <Grid ColumnSpacing="16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Orientation="Horizontal"
-                                    Spacing="18"
-                                    VerticalAlignment="Center">
-                            <TextBlock x:Name="BrowserCapabilityState" FontSize="12.5"/>
-                            <TextBlock x:Name="CodingAgentCapabilityState" FontSize="12.5"/>
-                            <TextBlock x:Name="McpAppsCapabilityState" FontSize="12.5"/>
-                        </StackPanel>
-                        <StackPanel Grid.Column="1"
-                                    Orientation="Horizontal"
-                                    Spacing="9"
-                                    VerticalAlignment="Center">
-                            <TextBlock x:Name="CapabilitiesSummary"
-                                       FontSize="12"
-                                       FontWeight="SemiBold"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                            <TextBlock Text="›"
-                                       FontSize="20"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                        </StackPanel>
-                    </Grid>
-                </Button>
+            <local:SectionCard x:Name="RecentActivitySection">
+                <StackPanel x:Name="RecentActivityPanel"/>
             </local:SectionCard>
-
-            <Rectangle Height="1"
-                       Fill="{ThemeResource DividerStrokeColorDefaultBrush}"/>
-
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Button Click="ConnectionsShortcut_Click"
-                        Padding="8,4"
-                        BorderThickness="0"
-                        Background="Transparent">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <SymbolIcon Symbol="Link"/>
-                        <TextBlock x:Name="ConnectionsShortcutLabel"/>
-                    </StackPanel>
-                </Button>
-                <Button Click="CapabilitiesShortcut_Click"
-                        Padding="8,4"
-                        BorderThickness="0"
-                        Background="Transparent">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <FontIcon Glyph="&#xE80A;" FontSize="14"/>
-                        <TextBlock x:Name="CapabilitiesShortcutLabel"/>
-                    </StackPanel>
-                </Button>
-                <Button Click="ActivityShortcut_Click"
-                        Padding="8,4"
-                        BorderThickness="0"
-                        Background="Transparent">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <SymbolIcon Symbol="Clock"/>
-                        <TextBlock x:Name="ActivityShortcutLabel"/>
-                    </StackPanel>
-                </Button>
-            </StackPanel>
         </StackPanel>
     </ScrollViewer>
 </Page>

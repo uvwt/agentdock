@@ -169,6 +169,66 @@ public sealed record NexusDeviceStatus(
     bool DeviceTokenStored,
     string Error = "");
 
+public sealed class RuntimeCountMetric
+{
+    [JsonPropertyName("count")]
+    public int Count { get; set; }
+}
+
+public sealed class RuntimeOverviewPayload
+{
+    [JsonPropertyName("skills")]
+    public RuntimeCountMetric Skills { get; set; } = new();
+
+    [JsonPropertyName("mcp")]
+    public RuntimeCountMetric Mcp { get; set; } = new();
+
+    [JsonPropertyName("plugins")]
+    public RuntimeCountMetric Plugins { get; set; } = new();
+}
+
+public sealed class RuntimeRecentCall
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = "";
+
+    [JsonPropertyName("tool")]
+    public string Tool { get; set; } = "";
+
+    [JsonPropertyName("source")]
+    public string Source { get; set; } = "";
+
+    [JsonPropertyName("started_at")]
+    public DateTimeOffset StartedAt { get; set; }
+
+    [JsonPropertyName("duration_ms")]
+    public double DurationMs { get; set; }
+
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error_code")]
+    public string ErrorCode { get; set; } = "";
+}
+
+public sealed class RuntimeDiagnosticsPayload
+{
+    [JsonPropertyName("recent_calls")]
+    public List<RuntimeRecentCall> RecentCalls { get; set; } = [];
+}
+
+public sealed record RuntimeDashboardSnapshot(
+    bool OverviewAvailable,
+    bool DiagnosticsAvailable,
+    int SkillCount,
+    int McpCount,
+    int PluginCount,
+    IReadOnlyList<RuntimeRecentCall> RecentCalls)
+{
+    public static RuntimeDashboardSnapshot Empty { get; } =
+        new(false, false, 0, 0, 0, []);
+}
+
 internal sealed class NexusDeviceIdentity
 {
     [JsonPropertyName("endpoint")]

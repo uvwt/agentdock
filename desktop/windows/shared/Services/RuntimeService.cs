@@ -160,6 +160,33 @@ public sealed class RuntimeService : IDisposable
             DateTimeOffset.Now);
     }
 
+    public async Task<RuntimeDashboardSnapshot> GetDashboardAsync(
+        RuntimeSnapshot snapshot,
+        CancellationToken cancellationToken = default)
+    {
+        if (!snapshot.CoreRunning || !snapshot.Healthy ||
+            !TryCreateLoopbackRuntimeUri(snapshot.LocalMcpUrl, "/internal/runtime/overview", out var overviewUri) ||
+            !TryCreateLoopbackRuntimeUri(snapshot.LocalMcpUrl, "/internal/runtime/diagnostics", out var diagnosticsUri))
+        {
+            return RuntimeDashboardSnapshot.Empty;
+        }
+
+        var bearerToken = ReadBearerToken();
+        var overviewTask = ReadRuntimeApiAsync<RuntimeOverviewPayload>(overviewUri, bearerToken, cancellationToken);
+        var diagnosticsTask = ReadRuntimeApiAsync<RuntimeDiagnosticsPayload>(diagnosticsUri, bearerToken, cancellationToken);
+        await Task.WhenAll(overviewTask, diagnosticsTask);
+
+        var overview = await overviewTask;
+        var diagnostics = await diagnosticsTask;
+        return new RuntimeDashboardSnapshot(
+            overview is not null,
+            diagnostics is not null,
+            overview?.Skills.Count ?? 0,
+            overview?.Mcp.Count ?? 0,
+            overview?.Plugins.Count ?? 0,
+            diagnostics?.RecentCalls ?? []);
+    }
+
     public string ReadBearerToken() => ReadProtectedText(Path.Combine(RuntimeRoot, "auth-token.dpapi"), AuthEntropy);
     public string ReadOAuthPassword() => ReadProtectedText(Path.Combine(RuntimeRoot, "oauth-password.dpapi"), OAuthPasswordEntropy);
     public string ReadTunnelToken() => ReadProtectedText(Path.Combine(RuntimeRoot, "cloudflared-token.dpapi"), TunnelTokenEntropy);
@@ -607,6 +634,61 @@ public sealed class RuntimeService : IDisposable
         string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(host, "127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(host, "::1", StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryCreateLoopbackRuntimeUri(string localMcpUrl, string path, out Uri uri)
+    {
+        uri = null!;
+        if (!Uri.TryCreate(localMcpUrl, UriKind.Absolute, out var localUri) ||
+            localUri.Scheme != Uri.UriSchemeHttp ||
+            !IsLoopbackHost(localUri.Host))
+        {
+            return false;
+        }
+
+        uri = new UriBuilder(localUri)
+        {
+            Path = path,
+            Query = "",
+            Fragment = ""
+        }.Uri;
+        return true;
+    }
+
+    private async Task<T?> ReadRuntimeApiAsync<T>(
+        Uri uri,
+        string bearerToken,
+        CancellationToken cancellationToken)
+        where T : class
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            if (!string.IsNullOrWhiteSpace(bearerToken))
+            {
+                request.Headers.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", bearerToken);
+            }
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            return await JsonSerializer.DeserializeAsync<T>(stream, JsonOptions, cancellationToken);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private async Task<RuntimeManifest?> ReadRuntimeManifestAsync(CancellationToken cancellationToken)
     {

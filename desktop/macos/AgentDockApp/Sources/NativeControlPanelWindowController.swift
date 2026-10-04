@@ -111,6 +111,7 @@ private final class ControlPanelModel: ObservableObject {
     @Published var page: Page = .home
     @Published var settingsPage: SettingsPage = .runtime
     @Published var status: ServiceStatus = .missing
+    @Published var dashboard = RuntimeDashboardSnapshot.empty
     @Published var statusUpdatedAt = Date()
     @Published private(set) var languageRevision = 0
     @Published var isBusy = false
@@ -135,6 +136,9 @@ private final class ControlPanelModel: ObservableObject {
 
     func update(_ status: ServiceStatus) {
         self.status = status
+        if !status.loaded || !status.healthy {
+            dashboard = .empty
+        }
         statusUpdatedAt = Date()
     }
 
@@ -143,6 +147,14 @@ private final class ControlPanelModel: ObservableObject {
 
     func refresh() async {
         update(await service.status())
+    }
+
+    func refreshDashboard() async {
+        guard status.loaded, status.healthy else {
+            dashboard = .empty
+            return
+        }
+        dashboard = await service.dashboard(configuration: status.configuration)
     }
 
     func applyTunnel(mode: TunnelMode, serverURL: String, tunnelToken: String) async {
@@ -341,26 +353,115 @@ private enum HomeCapabilityState {
         case .attention: return .orange
         }
     }
+
+    var text: String {
+        switch self {
+        case .enabled: return L10n.text("Enabled")
+        case .disabled: return L10n.text("Disabled")
+        case .attention: return L10n.text("Needs attention")
+        }
+    }
 }
 
-private struct HomeCapabilityIndicator: View {
+private struct HomeCapabilityItem {
     let title: String
+    let detail: String
     let state: HomeCapabilityState
+}
+
+private struct HomeMetric: View {
+    let title: String
+    let value: String
+    let detail: String
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: state.symbol)
-                .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(state.color)
+        VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .font(.system(size: 12.5))
-                .foregroundStyle(state == .disabled ? .secondary : .primary)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 20, weight: .semibold))
+            Text(detail)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct HomeCapabilityRow: View {
+    let item: HomeCapabilityItem
+
+    var body: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title).font(.system(size: 13))
+                Text(item.detail).font(.system(size: 11.5)).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 20)
+            HStack(spacing: 9) {
+                HStack(spacing: 6) {
+                    Image(systemName: item.state.symbol)
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(item.state.color)
+                    Text(item.state.text)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(item.state == .disabled ? .secondary : .primary)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.horizontal, 13)
+        .frame(minHeight: 56)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct HomeRecentActivityRow: View {
+    let call: RuntimeDiagnosticCall
+    let source: String
+    let time: String
+
+    var body: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(call.tool)
+                    .font(.system(size: 13, weight: .medium))
+                Text("\(source) · \(time)")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 20)
+            HStack(spacing: 6) {
+                Image(systemName: call.success ? "circle.fill" : "exclamationmark.circle.fill")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(call.success ? Color.green : Color.orange)
+                Text(call.success ? L10n.text("Succeeded") : L10n.text("Failed"))
+                    .font(.system(size: 12, weight: .medium))
+            }
+        }
+        .padding(.horizontal, 13)
+        .frame(minHeight: 54)
     }
 }
 
 private struct HomeView: View {
     @ObservedObject var model: ControlPanelModel
+
+    private static let fractionalDateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let basicDateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 
     private var serviceLoaded: Bool { model.status.loaded }
     private var serviceHealthy: Bool { model.status.loaded && model.status.healthy }
@@ -372,17 +473,24 @@ private struct HomeView: View {
 
                 HStack(alignment: .center, spacing: 16) {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
                             .fill(Color.accentColor.opacity(0.10))
-                            .frame(width: 44, height: 44)
+                            .frame(width: 48, height: 48)
                         Image(systemName: "shippingbox.fill")
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.system(size: 21, weight: .semibold))
                             .foregroundStyle(Color.accentColor)
                     }
 
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("AgentDock")
-                            .font(.system(size: 18, weight: .semibold))
+                        HStack(spacing: 8) {
+                            Text("AgentDock")
+                                .font(.system(size: 18, weight: .semibold))
+                            if let version = model.status.version, !version.isEmpty {
+                                Text(version.hasPrefix("v") ? version : "v\(version)")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                         Text(agentDockDetailText)
                             .font(.system(size: 13))
                             .foregroundStyle(.secondary)
@@ -400,73 +508,122 @@ private struct HomeView: View {
                             .disabled(model.isBusy || model.isUpdateInProgress)
                     }
                 }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                )
 
-                SettingsSection(L10n.text("Connection")) {
-                    SettingsRow(
-                        L10n.text("Remote connection"),
-                        detail: remoteConnectionDetail
-                    ) {
-                        HStack(spacing: 9) {
-                            StatusPill(text: nexusText, active: nexusActive)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture { model.page = .connections }
-                }
-
-                SettingsSection(L10n.text("Capabilities")) {
-                    Button {
-                        model.page = .capabilities
-                    } label: {
-                        HStack(spacing: 18) {
-                            ForEach(Array(capabilityItems.enumerated()), id: \.offset) { _, item in
-                                HomeCapabilityIndicator(title: item.0, state: item.1)
-                            }
-                            Spacer(minLength: 12)
-                            Text(capabilitySummary)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.secondary)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.tertiary)
-                        }
-                        .padding(.horizontal, 13)
-                        .frame(minHeight: 52)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Divider()
-
-                HStack(spacing: 24) {
+                HStack(spacing: 0) {
                     Button {
                         model.page = .connections
                     } label: {
-                        Label(L10n.text("Connections"), systemImage: "link")
+                        HomeMetric(
+                            title: L10n.text("Remote connection"),
+                            value: nexusText,
+                            detail: remoteConnectionDetail
+                        )
+                        .frame(minWidth: 180)
                     }
-                    Button {
-                        model.page = .capabilities
-                    } label: {
-                        Label(L10n.text("Capabilities"), systemImage: "square.grid.2x2")
-                    }
-                    Button {
-                        model.page = .activity
-                    } label: {
-                        Label(L10n.text("Activity"), systemImage: "clock.arrow.circlepath")
+                    .buttonStyle(.plain)
+
+                    metricDivider
+
+                    HomeMetric(
+                        title: L10n.text("Skills"),
+                        value: dashboardCount(model.dashboard.skillCount),
+                        detail: L10n.text("Installed")
+                    )
+                    .frame(width: 120)
+
+                    metricDivider
+
+                    HomeMetric(
+                        title: "MCP",
+                        value: dashboardCount(model.dashboard.mcpCount),
+                        detail: L10n.text("Configured")
+                    )
+                    .frame(width: 120)
+
+                    metricDivider
+
+                    HomeMetric(
+                        title: L10n.text("Plugins"),
+                        value: dashboardCount(model.dashboard.pluginCount),
+                        detail: L10n.text("Installed")
+                    )
+                    .frame(width: 120)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                )
+
+                SettingsSection(L10n.text("Core capabilities")) {
+                    ForEach(Array(capabilityItems.enumerated()), id: \.offset) { index, item in
+                        if index > 0 { RowDivider() }
+                        Button {
+                            model.page = .capabilities
+                        } label: {
+                            HomeCapabilityRow(item: item)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
-                .buttonStyle(.plain)
-                .font(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 2)
+
+                SettingsSection(L10n.text("Recent activity")) {
+                    if !model.dashboard.diagnosticsAvailable {
+                        emptyActivity(L10n.text("Recent activity is unavailable."))
+                    } else if model.dashboard.recentCalls.isEmpty {
+                        emptyActivity(L10n.text("No recent activity yet."))
+                    } else {
+                        ForEach(Array(model.dashboard.recentCalls.prefix(3).enumerated()), id: \.element.id) { index, call in
+                            if index > 0 { RowDivider() }
+                            HomeRecentActivityRow(
+                                call: call,
+                                source: activitySource(call.source),
+                                time: relativeTime(call.startedAt)
+                            )
+                        }
+                    }
+                }
             }
-            .padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 32)
-            .frame(maxWidth: 760, alignment: .leading)
+            .padding(.horizontal, 28)
+            .padding(.top, 24)
+            .padding(.bottom, 32)
+            .frame(maxWidth: 840, alignment: .leading)
         }
+        .task(id: model.statusUpdatedAt) {
+            await model.refreshDashboard()
+        }
+    }
+
+    @ViewBuilder
+    private var metricDivider: some View {
+        Divider()
+            .frame(height: 56)
+            .padding(.horizontal, 18)
+    }
+
+    @ViewBuilder
+    private func emptyActivity(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 12.5))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 13)
+            .frame(minHeight: 52, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func dashboardCount(_ value: Int) -> String {
+        model.dashboard.overviewAvailable ? String(value) : "—"
     }
 
     private var agentDockStatusText: String {
@@ -479,11 +636,6 @@ private struct HomeView: View {
         return serviceHealthy
             ? L10n.text("This device is ready for AI.")
             : L10n.text("AgentDock is running, but the connection service is not ready.")
-    }
-
-    private var nexusActive: Bool {
-        if case .connected = model.status.nexusConnection { return true }
-        return false
     }
 
     private var nexusText: String {
@@ -506,40 +658,87 @@ private struct HomeView: View {
         return "\(L10n.text("Self-hosted service")) · \(device.endpoint)"
     }
 
-    private var capabilityItems: [(String, HomeCapabilityState)] {
+    private var capabilityItems: [HomeCapabilityItem] {
         guard let configuration = model.status.configuration else {
             return [
-                (L10n.text("Browser"), .disabled),
-                (L10n.text("Coding Agent"), .disabled),
-                (L10n.text("MCP Apps"), .disabled),
+                HomeCapabilityItem(title: L10n.text("Browser"), detail: L10n.text("Not enabled yet"), state: .disabled),
+                HomeCapabilityItem(title: L10n.text("Coding Agent"), detail: L10n.text("Not enabled yet"), state: .disabled),
+                HomeCapabilityItem(title: L10n.text("MCP Apps"), detail: L10n.text("Off"), state: .disabled),
             ]
+        }
+
+        let browserDetail: String
+        if !configuration.browserEnabled {
+            browserDetail = L10n.text("Not enabled yet")
+        } else if !configuration.browserCDPURL.isEmpty {
+            browserDetail = L10n.text("Use the configured CDP browser")
+        } else if configuration.browserReuseExistingCDP {
+            browserDetail = L10n.text("Prefer an existing local browser")
+        } else {
+            browserDetail = L10n.text("Use an isolated browser")
         }
 
         let enabledProfiles = configuration.acpProfiles.filter(\.enabled)
         let codingAgentState: HomeCapabilityState
+        let codingAgentDetail: String
         if !configuration.acpEnabled {
             codingAgentState = .disabled
-        } else if enabledProfiles.isEmpty ||
-                    !enabledProfiles.contains(where: { $0.id == configuration.acpDefaultProfile }) {
-            codingAgentState = .attention
-        } else {
+            codingAgentDetail = L10n.text("Not enabled yet")
+        } else if let defaultProfile = enabledProfiles.first(where: { $0.id == configuration.acpDefaultProfile }) {
             codingAgentState = .enabled
+            let name = defaultProfile.displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            codingAgentDetail = L10n.format("%@ · default", (name?.isEmpty == false ? name! : defaultProfile.id))
+        } else {
+            codingAgentState = .attention
+            codingAgentDetail = L10n.text("Needs attention")
+        }
+
+        let mcpAppsState: HomeCapabilityState = configuration.mcpAppsMode == .off ? .disabled : .enabled
+        let mcpAppsDetail: String
+        switch configuration.mcpAppsMode {
+        case .full: mcpAppsDetail = L10n.text("Full")
+        case .compact: mcpAppsDetail = L10n.text("Compact")
+        case .off: mcpAppsDetail = L10n.text("Off")
         }
 
         return [
-            (L10n.text("Browser"), configuration.browserEnabled ? .enabled : .disabled),
-            (L10n.text("Coding Agent"), codingAgentState),
-            (L10n.text("MCP Apps"), configuration.mcpAppsMode == .off ? .disabled : .enabled),
+            HomeCapabilityItem(
+                title: L10n.text("Browser"),
+                detail: browserDetail,
+                state: configuration.browserEnabled ? .enabled : .disabled
+            ),
+            HomeCapabilityItem(
+                title: L10n.text("Coding Agent"),
+                detail: codingAgentDetail,
+                state: codingAgentState
+            ),
+            HomeCapabilityItem(
+                title: L10n.text("MCP Apps"),
+                detail: mcpAppsDetail,
+                state: mcpAppsState
+            ),
         ]
     }
 
-    private var capabilitySummary: String {
-        let enabled = capabilityItems.filter { $0.1 == .enabled }.count
-        let attention = capabilityItems.filter { $0.1 == .attention }.count
-        if attention > 0 { return L10n.format("%d need attention", attention) }
-        if enabled == capabilityItems.count { return L10n.text("All available") }
-        if enabled == 0 { return L10n.text("Not enabled yet") }
-        return L10n.format("%d / 3 available", enabled)
+    private func activitySource(_ source: String) -> String {
+        switch source.lowercased() {
+        case "nexus": return L10n.text("Remote")
+        case "internal": return L10n.text("Local")
+        case "mcp": return "MCP"
+        default: return source
+        }
+    }
+
+    private func relativeTime(_ rawDate: String) -> String {
+        guard let date = Self.fractionalDateFormatter.date(from: rawDate)
+                ?? Self.basicDateFormatter.date(from: rawDate) else {
+            return rawDate
+        }
+        let elapsed = max(0, Date().timeIntervalSince(date))
+        if elapsed < 60 { return L10n.text("Just now") }
+        if elapsed < 3600 { return L10n.format("%d min ago", max(1, Int(elapsed / 60))) }
+        if elapsed < 86400 { return L10n.format("%d hr ago", max(1, Int(elapsed / 3600))) }
+        return DateFormatter.localizedString(from: date, dateStyle: .short, timeStyle: .short)
     }
 }
 

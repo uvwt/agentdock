@@ -147,7 +147,6 @@ func TestWindowsNativeLanguageAndShortcutsAreInteractive(t *testing.T) {
 	for _, want := range []string{
 		"Click=\"ConnectionsShortcut_Click\"",
 		"Click=\"CapabilitiesShortcut_Click\"",
-		"Click=\"ActivityShortcut_Click\"",
 	} {
 		if !strings.Contains(homeXaml, want) {
 			t.Fatalf("WinUI home shortcut missing click contract %q", want)
@@ -156,7 +155,6 @@ func TestWindowsNativeLanguageAndShortcutsAreInteractive(t *testing.T) {
 	for _, want := range []string{
 		"ShortcutRequested?.Invoke(this, \"connections\")",
 		"ShortcutRequested?.Invoke(this, \"capabilities\")",
-		"ShortcutRequested?.Invoke(this, \"activity\")",
 	} {
 		if !strings.Contains(homeCode, want) {
 			t.Fatalf("WinUI home shortcut missing navigation request %q", want)
@@ -310,33 +308,40 @@ func TestWindowsRemoteConnectionSupportsSelfHostedAndRoutesAdvancedSettings(t *t
 func TestWindowsHomeUsesProductStatusAndAdaptiveCapabilities(t *testing.T) {
 	homeXaml := readWindowsNativeFile(t, "winui", "HomePage.xaml")
 	homeCode := readWindowsNativeFile(t, "winui", "HomePage.xaml.cs")
+	runtime := readWindowsNativeFile(t, "shared", "Services", "RuntimeService.cs")
 
 	for _, want := range []string{
 		`x:Name="AgentDockState"`,
-		`x:Name="ConnectionSection"`,
-		`x:Name="CapabilitiesSection"`,
+		`x:Name="SkillCount"`,
+		`x:Name="McpCount"`,
+		`x:Name="PluginCount"`,
+		`x:Name="CoreCapabilitiesSection"`,
+		`x:Name="RecentActivitySection"`,
+		`x:Name="RecentActivityPanel"`,
+		`x:Name="BrowserCapabilityDetail"`,
 		`x:Name="BrowserCapabilityState"`,
+		`x:Name="CodingAgentCapabilityDetail"`,
 		`x:Name="CodingAgentCapabilityState"`,
+		`x:Name="McpAppsCapabilityDetail"`,
 		`x:Name="McpAppsCapabilityState"`,
-		`x:Name="CapabilitiesSummary"`,
 		"var serviceLoaded = _snapshot.CoreRunning",
 		"var serviceHealthy = serviceLoaded && _snapshot.Healthy",
 		`UiText.Get("DeviceReadyForAI")`,
 		"RenderCapabilities(_snapshot.Settings)",
+		"GetDashboardAsync(_snapshot)",
+		"dashboard.RecentCalls.Take(3)",
 		"settings.BrowserEnabled",
 		"settings.AcpEnabled",
 		"settings.AcpProfiles.Where(profile => profile.Enabled)",
 		`"off" => CapabilityState.Disabled`,
 		`"full" or "compact" => CapabilityState.Enabled`,
-		`UiText.Format("CapabilitiesAvailable", enabledCount)`,
-		`UiText.Format("CapabilitiesNeedAttention", attentionCount)`,
-		`UiText.Get("AllAvailable")`,
-		`UiText.Get("NotEnabledYet")`,
 		`!string.IsNullOrWhiteSpace(_snapshot.Nexus.Error)`,
 		`UiText.Get("Unavailable")`,
 		`RuntimeAction.Content = serviceLoaded ? UiText.Get("Stop") : UiText.Get("Start")`,
+		`"/internal/runtime/overview"`,
+		`"/internal/runtime/diagnostics"`,
 	} {
-		if !strings.Contains(homeXaml+homeCode, want) {
+		if !strings.Contains(homeXaml+homeCode+runtime, want) {
 			t.Fatalf("WinUI Home missing product status contract %q", want)
 		}
 	}
@@ -344,10 +349,12 @@ func TestWindowsHomeUsesProductStatusAndAdaptiveCapabilities(t *testing.T) {
 		`x:Name="RuntimeState"`,
 		`x:Name="McpState"`,
 		`x:Name="QuickAccessSection"`,
+		`x:Name="CapabilitiesSummary"`,
+		"CapabilitiesAvailable",
+		"CapabilitiesNeedAttention",
 		`<TextBlock Text="Runtime"`,
-		`<TextBlock Text="MCP"`,
 	} {
-		if strings.Contains(homeXaml, forbidden) {
+		if strings.Contains(homeXaml+homeCode, forbidden) {
 			t.Fatalf("WinUI Home still exposes implementation status or old quick-access card %q", forbidden)
 		}
 	}

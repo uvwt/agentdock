@@ -86,6 +86,59 @@ struct ServiceStatus {
     )
 }
 
+struct RuntimeCountMetric: Decodable {
+    let count: Int
+}
+
+struct RuntimeOverviewPayload: Decodable {
+    let skills: RuntimeCountMetric
+    let mcp: RuntimeCountMetric
+    let plugins: RuntimeCountMetric
+}
+
+struct RuntimeDiagnosticCall: Decodable, Identifiable {
+    let id: String
+    let tool: String
+    let source: String
+    let startedAt: String
+    let durationMS: Double
+    let success: Bool
+    let errorCode: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, tool, source, success
+        case startedAt = "started_at"
+        case durationMS = "duration_ms"
+        case errorCode = "error_code"
+    }
+}
+
+struct RuntimeDiagnosticsPayload: Decodable {
+    let recentCalls: [RuntimeDiagnosticCall]
+
+    private enum CodingKeys: String, CodingKey {
+        case recentCalls = "recent_calls"
+    }
+}
+
+struct RuntimeDashboardSnapshot {
+    let overviewAvailable: Bool
+    let diagnosticsAvailable: Bool
+    let skillCount: Int
+    let mcpCount: Int
+    let pluginCount: Int
+    let recentCalls: [RuntimeDiagnosticCall]
+
+    static let empty = RuntimeDashboardSnapshot(
+        overviewAvailable: false,
+        diagnosticsAvailable: false,
+        skillCount: 0,
+        mcpCount: 0,
+        pluginCount: 0,
+        recentCalls: []
+    )
+}
+
 final class ServiceController: @unchecked Sendable {
     static let coreLabel = "com.uvwt.agentdock.core"
     static let tunnelLabel = "com.uvwt.agentdock.tunnel"
@@ -141,6 +194,30 @@ final class ServiceController: @unchecked Sendable {
             requiresApproval: requiresApproval,
             migrationRequired: migrationRequired,
             nexusConnection: .resolve(device: nexusDevice, connected: nexusConnected)
+        )
+    }
+
+    func dashboard(configuration: ServiceConfiguration?) async -> RuntimeDashboardSnapshot {
+        guard let configuration else { return .empty }
+
+        async let overview: RuntimeOverviewPayload? = fetchRuntimePayload(
+            RuntimeOverviewPayload.self,
+            configuration: configuration,
+            path: "/internal/runtime/overview"
+        )
+        async let diagnostics: RuntimeDiagnosticsPayload? = fetchRuntimePayload(
+            RuntimeDiagnosticsPayload.self,
+            configuration: configuration,
+            path: "/internal/runtime/diagnostics"
+        )
+        let (overviewPayload, diagnosticsPayload) = await (overview, diagnostics)
+        return RuntimeDashboardSnapshot(
+            overviewAvailable: overviewPayload != nil,
+            diagnosticsAvailable: diagnosticsPayload != nil,
+            skillCount: overviewPayload?.skills.count ?? 0,
+            mcpCount: overviewPayload?.mcp.count ?? 0,
+            pluginCount: overviewPayload?.plugins.count ?? 0,
+            recentCalls: diagnosticsPayload?.recentCalls ?? []
         )
     }
 
@@ -725,6 +802,36 @@ final class ServiceController: @unchecked Sendable {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
             return try JSONDecoder().decode(HealthPayload.self, from: data)
+        } catch {
+            return nil
+        }
+    }
+
+    private func fetchRuntimePayload<T: Decodable>(
+        _ type: T.Type,
+        configuration: ServiceConfiguration,
+        path: String
+    ) async -> T? {
+        guard let localMCPURL = configuration.localMCPURL,
+              var components = URLComponents(url: localMCPURL, resolvingAgainstBaseURL: false),
+              components.scheme == "http",
+              isLoopbackHost(components.host) else {
+            return nil
+        }
+        components.path = path
+        components.query = nil
+        components.fragment = nil
+        guard let url = components.url else { return nil }
+
+        do {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 2.5
+            if !configuration.authToken.isEmpty {
+                request.setValue("Bearer \(configuration.authToken)", forHTTPHeaderField: "Authorization")
+            }
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+            return try JSONDecoder().decode(type, from: data)
         } catch {
             return nil
         }

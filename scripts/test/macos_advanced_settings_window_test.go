@@ -37,19 +37,21 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 	}
 	content := string(data)
 	for _, want := range []string{
-		`SettingsSection(L10n.text("Connection"))`,
-		`SettingsSection(L10n.text("Capabilities"))`,
 		"private enum HomeCapabilityState",
-		"private struct HomeCapabilityIndicator",
+		"private struct HomeMetric",
+		"private struct HomeCapabilityRow",
+		"private struct HomeRecentActivityRow",
 		"private var serviceLoaded:",
 		"private var serviceHealthy:",
 		"agentDockStatusText",
 		"capabilityItems",
-		"capabilitySummary",
-		`L10n.format("%d / 3 available", enabled)`,
-		`L10n.format("%d need attention", attention)`,
-		`L10n.text("All available")`,
-		`L10n.text("Not enabled yet")`,
+		`SettingsSection(L10n.text("Core capabilities"))`,
+		`SettingsSection(L10n.text("Recent activity"))`,
+		"model.dashboard.skillCount",
+		"model.dashboard.mcpCount",
+		"model.dashboard.pluginCount",
+		"model.dashboard.recentCalls.prefix(3)",
+		"await model.refreshDashboard()",
 		"This device is ready for AI.",
 		"AgentDock is running, but the connection service is not ready.",
 		"Advanced connection settings",
@@ -95,6 +97,8 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
+		`L10n.format("%d / 3 available", enabled)`,
+		"capabilitySummary",
 		`SettingsSection(L10n.text("Runtime status"))`,
 		"case .credentials",
 		"L10n.text(\"Public MCP mode\")",
