@@ -135,6 +135,7 @@
                 <StackPanel>
                     <Button Click="CapabilitiesShortcut_Click"
                             MinHeight="56"
+                            HorizontalAlignment="Stretch"
                             Padding="13,6"
                             BorderThickness="0"
                             Background="Transparent"
@@ -159,6 +160,7 @@
                     <Rectangle Height="1" Margin="13,0,0,0" Fill="{ThemeResource DividerStrokeColorDefaultBrush}"/>
                     <Button Click="CapabilitiesShortcut_Click"
                             MinHeight="56"
+                            HorizontalAlignment="Stretch"
                             Padding="13,6"
                             BorderThickness="0"
                             Background="Transparent"
@@ -183,6 +185,7 @@
                     <Rectangle Height="1" Margin="13,0,0,0" Fill="{ThemeResource DividerStrokeColorDefaultBrush}"/>
                     <Button Click="CapabilitiesShortcut_Click"
                             MinHeight="56"
+                            HorizontalAlignment="Stretch"
                             Padding="13,6"
                             BorderThickness="0"
                             Background="Transparent"
