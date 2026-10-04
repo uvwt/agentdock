@@ -1300,8 +1300,12 @@ private struct RuntimeActivityCallRow: View {
 }
 
 private struct ActivityView: View {
+    private static let pageSize = 20
+    private static let refreshIntervalNanoseconds: UInt64 = 5_000_000_000
+
     @ObservedObject var model: ControlPanelModel
     @State private var analytics: RuntimeAnalyticsPayload?
+    @State private var visibleCallCount = pageSize
 
     private var running: Bool { model.status.loaded && model.status.healthy }
 
@@ -1325,13 +1329,25 @@ private struct ActivityView: View {
                     .padding(.vertical, 10)
 
                     if let analytics {
-                        if !analytics.recentCalls.isEmpty { RowDivider() }
-                        ForEach(Array(analytics.recentCalls.enumerated()), id: \.element.id) { index, call in
+                        let visibleCalls = Array(analytics.recentCalls.prefix(visibleCallCount))
+                        if !visibleCalls.isEmpty { RowDivider() }
+                        ForEach(Array(visibleCalls.enumerated()), id: \.element.id) { index, call in
                             if index > 0 { RowDivider() }
                             RuntimeActivityCallRow(call: call)
                         }
                         if analytics.recentCalls.isEmpty {
                             emptyAnalytics(L10n.text("No call data yet."))
+                        } else if visibleCallCount < analytics.recentCalls.count {
+                            RowDivider()
+                            Button(L10n.text("Show more")) {
+                                visibleCallCount += Self.pageSize
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(.tint)
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     } else {
                         RowDivider()
@@ -1348,12 +1364,20 @@ private struct ActivityView: View {
             .padding(.bottom, 32)
             .frame(maxWidth: 760, alignment: .leading)
         }
-        .task(id: model.statusUpdatedAt) {
+        .task {
             while !Task.isCancelled {
-                analytics = running
-                    ? await model.service.runtimeAnalytics(configuration: model.status.configuration)
-                    : nil
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if running {
+                    let nextAnalytics = await model.service.runtimeAnalytics(configuration: model.status.configuration)
+                    let currentLatestID = analytics?.recentCalls.first?.id
+                    let nextLatestID = nextAnalytics?.recentCalls.first?.id
+                    if analytics == nil || nextLatestID != currentLatestID {
+                        analytics = nextAnalytics
+                    }
+                } else if analytics != nil {
+                    analytics = nil
+                }
+
+                try? await Task.sleep(nanoseconds: Self.refreshIntervalNanoseconds)
             }
         }
     }

@@ -762,6 +762,7 @@
   <data name="StatsWindow" xml:space="preserve"><value>统计窗口</value></data>
   <data name="CallStatistics" xml:space="preserve"><value>调用统计</value></data>
   <data name="RecentCalls" xml:space="preserve"><value>最近调用</value></data>
+  <data name="ShowMore" xml:space="preserve"><value>查看更多</value></data>
   <data name="RecentCallsPrivacyHint" xml:space="preserve"><value>仅保留工具名、来源、耗时、阶段、状态与错误码；不会保存参数、结果、命令或文件内容。</value></data>
   <data name="RuntimeResources" xml:space="preserve"><value>运行资源</value></data>
   <data name="GoHeap" xml:space="preserve"><value>Go 堆内存</value></data>

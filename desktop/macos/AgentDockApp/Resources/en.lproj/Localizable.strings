@@ -412,6 +412,7 @@
 "No call data yet." = "No call data yet.";
 "%d calls · %.1f%% errors" = "%d calls · %.1f%% errors";
 "Recent calls" = "Recent calls";
+"Show more" = "Show more";
 "Only tool name, source, latency, stages, status, and error code are retained. Arguments, results, commands, and file contents are never stored." = "Only tool name, source, latency, stages, status, and error code are retained. Arguments, results, commands, and file contents are never stored.";
 "Runtime resources" = "Runtime resources";
 "Go heap" = "Go heap";

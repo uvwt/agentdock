@@ -762,6 +762,7 @@ Update now?</value>
   <data name="StatsWindow" xml:space="preserve"><value>Stats window</value></data>
   <data name="CallStatistics" xml:space="preserve"><value>Call statistics</value></data>
   <data name="RecentCalls" xml:space="preserve"><value>Recent calls</value></data>
+  <data name="ShowMore" xml:space="preserve"><value>Show more</value></data>
   <data name="RecentCallsPrivacyHint" xml:space="preserve"><value>Only tool name, source, latency, stages, status, and error code are retained. Arguments, results, commands, and file contents are never stored.</value></data>
   <data name="RuntimeResources" xml:space="preserve"><value>Runtime resources</value></data>
   <data name="GoHeap" xml:space="preserve"><value>Go heap</value></data>

@@ -412,6 +412,7 @@
 "No call data yet." = "暂无调用数据。";
 "%d calls · %.1f%% errors" = "%d 次调用 · %.1f%% 错误";
 "Recent calls" = "最近调用";
+"Show more" = "查看更多";
 "Only tool name, source, latency, stages, status, and error code are retained. Arguments, results, commands, and file contents are never stored." = "仅保留工具名、来源、耗时、阶段、状态与错误码；不会保存参数、结果、命令或文件内容。";
 "Runtime resources" = "运行资源";
 "Go heap" = "Go 堆内存";
