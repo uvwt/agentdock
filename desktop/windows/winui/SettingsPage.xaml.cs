@@ -520,7 +520,11 @@ public sealed partial class SettingsPage : Page
             {
                 Text = endpointResult.IsReachable && endpointResult.LatencyMilliseconds is { } latency
                     ? $"{latency} ms"
-                    : UiText.Get("Failed"),
+                    : endpointResult.HttpStatusCode is { } statusCode
+                        ? endpointResult.LatencyMilliseconds is { } failedLatency
+                            ? $"HTTP {statusCode} · {failedLatency} ms"
+                            : $"HTTP {statusCode}"
+                        : UiText.Get("Failed"),
                 FontSize = 11.5,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 Opacity = 0.72,

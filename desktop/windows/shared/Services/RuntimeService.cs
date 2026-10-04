@@ -197,7 +197,8 @@ public sealed class RuntimeService : IDisposable
                 return new PublicEndpointCheckResult(
                     false,
                     UiText.Format("AccessFailed", $"HTTP {(int)response.StatusCode}"),
-                    latency);
+                    latency,
+                    (int)response.StatusCode);
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token);
@@ -208,13 +209,15 @@ public sealed class RuntimeService : IDisposable
                 return new PublicEndpointCheckResult(
                     false,
                     UiText.Format("AccessFailed", "invalid health response"),
-                    latency);
+                    latency,
+                    (int)response.StatusCode);
             }
 
             return new PublicEndpointCheckResult(
                 true,
                 UiText.Format("AccessSuccess", healthUri.Host, latency),
-                latency);
+                latency,
+                (int)response.StatusCode);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

@@ -1939,9 +1939,19 @@ private struct SettingsView: View {
     }
 
     private func publicEndpointStatusText(_ result: PublicEndpointCheckResult) -> String {
-        guard result.isReachable else { return L10n.text("Failed") }
-        guard let latency = result.latencyMilliseconds else { return L10n.text("Reachable") }
-        return "\(latency) ms"
+        if result.isReachable {
+            guard let latency = result.latencyMilliseconds else { return L10n.text("Reachable") }
+            return "\(latency) ms"
+        }
+
+        if let statusCode = result.httpStatusCode {
+            if let latency = result.latencyMilliseconds {
+                return "HTTP \(statusCode) · \(latency) ms"
+            }
+            return "HTTP \(statusCode)"
+        }
+
+        return L10n.text("Failed")
     }
 
     private func testPublicEndpoint(_ publicMCPURL: URL) async {

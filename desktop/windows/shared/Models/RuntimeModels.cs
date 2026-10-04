@@ -164,7 +164,8 @@ public sealed record RuntimeSnapshot(
 public sealed record PublicEndpointCheckResult(
     bool IsReachable,
     string Message,
-    long? LatencyMilliseconds);
+    long? LatencyMilliseconds,
+    int? HttpStatusCode = null);
 
 public sealed record RuntimeExtensionOverview(
     bool Available,
