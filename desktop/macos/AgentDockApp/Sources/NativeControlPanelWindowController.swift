@@ -482,14 +482,10 @@ private struct HomeView: View {
                 PageHeader(title: L10n.text("Home"))
 
                 HStack(alignment: .center, spacing: 16) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            .fill(Color.accentColor.opacity(0.10))
-                            .frame(width: 48, height: 48)
-                        Image(systemName: "shippingbox.fill")
-                            .font(.system(size: 21, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
-                    }
+                    Image(systemName: "shippingbox.fill")
+                        .font(.system(size: 21, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 48, height: 48)
 
                     VStack(alignment: .leading, spacing: 5) {
                         HStack(spacing: 8) {
