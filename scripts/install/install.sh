@@ -396,17 +396,29 @@ CHOICE
 }
 
 restart_core_after_pair() {
-  [ "$NO_START" != true ] || return 0
+  if [ "$NO_START" = true ]; then
+    log "Nexus 已配对；当前使用 --no-start，配置将在下次启动 AgentDock 时生效。"
+    return 0
+  fi
+
   case "$PLATFORM" in
     linux)
-      [ "$SERVICE_MANAGER" != none ] || return 0
+      if [ "$SERVICE_MANAGER" = none ]; then
+        log "Nexus 已配对；当前未使用服务管理器，配置将在下次启动 AgentDock 时生效。"
+        return 0
+      fi
       run_root "$STABLE_BINARY" service restart --runtime-root "$RUNTIME_ROOT" >/dev/null
       ;;
     darwin)
-      [ "$REGISTER_SERVICE" = true ] || return 0
+      if [ "$REGISTER_SERVICE" != true ]; then
+        log "Nexus 已配对；当前未注册 LaunchAgent，配置将在下次启动 AgentDock 时生效。"
+        return 0
+      fi
       "$STABLE_BINARY" service restart --runtime-root "$RUNTIME_ROOT" >/dev/null
       ;;
   esac
+
+  log "AgentDock 已自动重启并应用 Nexus 配置。"
 }
 
 pair_nexus_once() {
@@ -483,7 +495,7 @@ configure_nexus() {
   fi
   if [ -z "$NEXUS_PAIR_CODE" ]; then
     is_true "$NONINTERACTIVE" && die "Nexus 配对必须通过 AGENTDOCK_NEXUS_PAIR_CODE 或 --nexus-pair-code-file 提供配对码"
-    NEXUS_PAIR_CODE="$(prompt_secret 'Nexus Pairing Code')"
+    NEXUS_PAIR_CODE="$(prompt_secret '配对码')"
   fi
 
   while ! pair_nexus_once; do
@@ -492,7 +504,7 @@ configure_nexus() {
     fi
     retry="$(prompt_choice 'Nexus 配对失败，重新输入配对码？(y/n)' y)"
     case "$retry" in
-      y|Y|yes|YES) NEXUS_PAIR_CODE="$(prompt_secret 'Nexus Pairing Code')" ;;
+      y|Y|yes|YES) NEXUS_PAIR_CODE="$(prompt_secret '配对码')" ;;
       *)
         log "已跳过 Nexus 配对，AgentDock Core 保持可用。"
         NEXUS_MODE=none
