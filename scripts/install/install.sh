@@ -1196,9 +1196,9 @@ esac
   printf '\n连接信息：\n'
   printf '本地 MCP：%s\n' "$LOCAL_MCP_URL"
   if [ -n "$NEXUS_ENDPOINT" ]; then
-    printf 'Nexus：%s\n' "$NEXUS_ENDPOINT"
+    printf 'NexusDock：%s\n' "$NEXUS_ENDPOINT"
   else
-    printf 'Nexus：未配置\n'
+    printf 'NexusDock：未配置\n'
   fi
   printf '访问令牌：%s\n' "$ACCESS_TOKEN"
 

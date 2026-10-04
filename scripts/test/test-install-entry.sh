@@ -199,7 +199,7 @@ assert_no_arg --name "$LINUX_NEXUS/engine.log"
 core_line="$(grep -n '^arg=install$' "$LINUX_NEXUS/engine.log" | head -1 | cut -d: -f1)"
 pair_line="$(grep -n '^arg=nexus$' "$LINUX_NEXUS/engine.log" | head -1 | cut -d: -f1)"
 [ -n "$core_line" ] && [ -n "$pair_line" ] && [ "$core_line" -lt "$pair_line" ] || fail "Nexus pairing ran before Core install"
-grep -Fq 'Nexus：https://mcp.nexusdock.co' "$LINUX_NEXUS/output.log" || fail "final summary missing official Nexus endpoint"
+grep -Fq 'NexusDock：https://mcp.nexusdock.co' "$LINUX_NEXUS/output.log" || fail "final summary missing official Nexus endpoint"
 if grep -Fq 'legacy-pair-success-output' "$LINUX_NEXUS/output.log"; then
   fail "installer leaked nexus pair success output"
 fi
@@ -246,7 +246,7 @@ PATH="$FAKE_BIN:$PATH" \
 assert_arg nexus "$LINUX_RESUME/resume-engine.log"
 assert_arg install "$LINUX_RESUME/resume-engine.log"
 grep -Fq '检测到上次安装未完成，重新开始安装流程。' "$LINUX_RESUME/resume-output.log" || fail "restart path did not report full onboarding restart"
-grep -Fq 'Nexus：https://mcp.nexusdock.co' "$LINUX_RESUME/resume-output.log" || fail "restarted install did not finish Nexus pairing"
+grep -Fq 'NexusDock：https://mcp.nexusdock.co' "$LINUX_RESUME/resume-output.log" || fail "restarted install did not finish Nexus pairing"
 [ ! -e "$LINUX_RESUME/runtime/.installer-onboarding" ] || fail "restarted install did not clear onboarding state"
 [ ! -e "$LINUX_RESUME/bin/cloudflared" ] || fail "restarted no-tunnel install unexpectedly installed cloudflared"
 
