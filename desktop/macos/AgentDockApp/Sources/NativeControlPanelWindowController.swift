@@ -230,8 +230,10 @@ private struct ControlPanelRootView: View {
         NavigationSplitView {
             VStack(spacing: 0) {
                 HStack(spacing: 9) {
-                    Image(systemName: "shippingbox.fill")
-                        .foregroundStyle(.tint)
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
                     Text("AgentDock").font(.system(size: 15, weight: .semibold))
                     Spacer()
                 }
@@ -472,14 +474,10 @@ private struct HomeView: View {
                 PageHeader(title: L10n.text("Home"))
 
                 HStack(alignment: .center, spacing: 16) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            .fill(Color.accentColor.opacity(0.10))
-                            .frame(width: 48, height: 48)
-                        Image(systemName: "shippingbox.fill")
-                            .font(.system(size: 21, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
-                    }
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 48, height: 48)
 
                     VStack(alignment: .leading, spacing: 5) {
                         HStack(spacing: 8) {
@@ -1318,9 +1316,10 @@ private struct SettingsView: View {
                 )
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Image(systemName: "shippingbox.fill")
-                        .font(.system(size: 30))
-                        .foregroundStyle(.tint)
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 40, height: 40)
                     Text("AgentDock")
                         .font(.system(size: 22, weight: .semibold))
                     Text(L10n.text("AgentDock lets AI clients securely use capabilities on this device."))

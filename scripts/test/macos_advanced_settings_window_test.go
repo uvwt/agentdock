@@ -37,6 +37,7 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 	}
 	content := string(data)
 	for _, want := range []string{
+		"Image(nsImage: NSApp.applicationIconImage)",
 		"private enum HomeCapabilityState",
 		"private struct HomeMetric",
 		"private struct HomeCapabilityRow",

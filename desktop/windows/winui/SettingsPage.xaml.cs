@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Navigation;
 using Microsoft.UI.Xaml.Shapes;
 using Windows.ApplicationModel.DataTransfer;
@@ -196,10 +197,12 @@ public sealed partial class SettingsPage : Page
         var content = new StackPanel { Spacing = 20 };
 
         var product = new StackPanel { Spacing = 8 };
-        product.Children.Add(new FontIcon
+        product.Children.Add(new Image
         {
-            Glyph = "\uE946",
-            FontSize = 30,
+            Source = new BitmapImage(new Uri("ms-appx:///Assets/agentdock.png")),
+            Width = 40,
+            Height = 40,
+            Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform,
             HorizontalAlignment = HorizontalAlignment.Left
         });
         product.Children.Add(new TextBlock

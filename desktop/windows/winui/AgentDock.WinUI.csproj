@@ -30,6 +30,11 @@
     <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="../../../packaging/assets/agentdock.png"
+             Link="Assets/agentdock.png"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- WinUI 直接复用平台无关的 Runtime / Model / 资源实现。 -->
     <Compile Include="../shared/UiText.cs" Link="Shared/UiText.cs" />
     <Compile Include="../shared/Models/RuntimeModels.cs" Link="Shared/RuntimeModels.cs" />

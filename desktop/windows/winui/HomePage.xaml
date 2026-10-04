@@ -24,9 +24,12 @@
                     <Border Width="48"
                             Height="48"
                             CornerRadius="13"
-                            Background="{ThemeResource AccentFillColorTertiaryBrush}"
+                            Background="Transparent"
                             VerticalAlignment="Center">
-                        <FontIcon Glyph="&#xE7B8;" FontSize="21"/>
+                        <Image Source="Assets/agentdock.png"
+                               Width="48"
+                               Height="48"
+                               Stretch="Uniform"/>
                     </Border>
                     <StackPanel Grid.Column="1" Spacing="5" VerticalAlignment="Center">
                         <StackPanel Orientation="Horizontal" Spacing="8">

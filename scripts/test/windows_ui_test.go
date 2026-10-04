@@ -318,6 +318,7 @@ func TestWindowsHomeUsesProductStatusAndAdaptiveCapabilities(t *testing.T) {
 	for _, want := range []string{
 		`HorizontalScrollMode="Disabled"`,
 		`HorizontalScrollBarVisibility="Disabled"`,
+		`Source="Assets/agentdock.png"`,
 		`x:Name="AgentDockState"`,
 		`x:Name="SkillCount"`,
 		`x:Name="McpCount"`,
