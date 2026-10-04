@@ -840,7 +840,7 @@ Update now?</value>
   <data name="AddCustomCodingAgent" xml:space="preserve"><value>Add custom Coding Agent</value></data>
   <data name="DefaultCodingAgent" xml:space="preserve"><value>Default Coding Agent</value></data>
   <data name="ArgumentsOnePerLine" xml:space="preserve"><value>Arguments (one per line)</value></data>
-  <data name="SaveAndRestartRuntime" xml:space="preserve"><value>Save and restart Runtime</value></data>
+  <data name="SaveAndRestart" xml:space="preserve"><value>Save and restart</value></data>
   <data name="Saving" xml:space="preserve"><value>Saving…</value></data>
   <data name="Saved" xml:space="preserve"><value>Saved</value></data>
   <data name="AtLeastOneCodingAgent" xml:space="preserve"><value>Enable at least one Coding Agent profile.</value></data>

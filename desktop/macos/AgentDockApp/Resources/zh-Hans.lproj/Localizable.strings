@@ -496,7 +496,7 @@
 "Public MCP mode" = "Public MCP 模式";
 "Reuse local browser" = "复用本机浏览器";
 "Runtime configuration" = "Runtime 配置";
-"Save and restart Runtime" = "保存并重启 Runtime";
+"Save and restart" = "保存并重启";
 "Specified CDP" = "指定 CDP";
 "Temporary public address" = "临时公网地址";
 "Add custom Coding Agent" = "添加自定义 Coding Agent";

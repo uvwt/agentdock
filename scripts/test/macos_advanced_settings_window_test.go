@@ -130,7 +130,7 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 		`SettingsRow(L10n.text("Status"))`,
 		`SettingsRow(L10n.text("Service"))`,
 		`Button(model.status.loaded ? L10n.text("Stop") : L10n.text("Start"))`,
-		"Save and restart Runtime",
+		"Save and restart",
 	} {
 		if strings.Contains(runtimeBlock, forbidden) {
 			t.Fatalf("native macOS Runtime settings still exposes duplicate service control %q", forbidden)

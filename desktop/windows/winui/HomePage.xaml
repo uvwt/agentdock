@@ -45,13 +45,14 @@
                                    TextWrapping="Wrap"/>
                     </StackPanel>
                     <StackPanel Grid.Column="2"
-                                Spacing="9"
+                                Orientation="Horizontal"
+                                Spacing="10"
                                 VerticalAlignment="Center"
                                 HorizontalAlignment="Right">
-                        <TextBlock x:Name="AgentDockState" HorizontalAlignment="Right"/>
+                        <TextBlock x:Name="AgentDockState" VerticalAlignment="Center"/>
                         <Button x:Name="RuntimeAction"
                                 Click="RuntimeAction_Click"
-                                HorizontalAlignment="Right"/>
+                                VerticalAlignment="Center"/>
                     </StackPanel>
                 </Grid>
             </Border>

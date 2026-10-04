@@ -840,7 +840,7 @@
   <data name="AddCustomCodingAgent" xml:space="preserve"><value>添加自定义 Coding Agent</value></data>
   <data name="DefaultCodingAgent" xml:space="preserve"><value>默认 Coding Agent</value></data>
   <data name="ArgumentsOnePerLine" xml:space="preserve"><value>参数（每行一个）</value></data>
-  <data name="SaveAndRestartRuntime" xml:space="preserve"><value>保存并重启 Runtime</value></data>
+  <data name="SaveAndRestart" xml:space="preserve"><value>保存并重启</value></data>
   <data name="Saving" xml:space="preserve"><value>正在保存…</value></data>
   <data name="Saved" xml:space="preserve"><value>已保存</value></data>
   <data name="AtLeastOneCodingAgent" xml:space="preserve"><value>至少启用一个 Coding Agent Profile。</value></data>
