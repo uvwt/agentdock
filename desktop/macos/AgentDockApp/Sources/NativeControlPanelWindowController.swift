@@ -309,10 +309,12 @@ private struct SettingsSection<Content: View>: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
             VStack(spacing: 0) { content }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color(nsColor: .controlBackgroundColor))
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 1))
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1162,48 +1164,69 @@ private enum RuntimeActivityFormat {
 private struct RuntimeActivityCallRow: View {
     let call: RuntimeAnalyticsCall
 
+    private var hasDetails: Bool {
+        !(call.errorCode?.isEmpty ?? true) || !call.stages.isEmpty
+    }
+
     var body: some View {
-        DisclosureGroup {
-            VStack(alignment: .leading, spacing: 8) {
-                if let errorCode = call.errorCode, !errorCode.isEmpty {
-                    Text("\(L10n.text("Error code")): \(errorCode)")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.secondary)
+        Group {
+            if hasDetails {
+                DisclosureGroup {
+                    callDetails
+                        .padding(.top, 8)
+                } label: {
+                    callLabel
                 }
-                ForEach(call.stages) { stage in
-                    HStack(spacing: 10) {
-                        Text(RuntimeActivityFormat.stage(stage.name))
-                        Spacer()
-                        Text(RuntimeActivityFormat.duration(stage.durationMS))
-                            .foregroundStyle(.secondary)
-                        Image(systemName: stage.success ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                            .foregroundStyle(stage.success ? Color.green : Color.orange)
-                    }
-                    .font(.system(size: 11.5))
-                }
-            }
-            .padding(.top, 8)
-        } label: {
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(call.tool).font(.system(size: 13, weight: .medium))
-                    Text("\(RuntimeActivityFormat.source(call.source)) · \(RuntimeActivityFormat.relativeTime(call.startedAt))")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 16)
-                Text(RuntimeActivityFormat.duration(call.durationMS))
-                    .font(.system(size: 11.5, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 6) {
-                    Circle().fill(call.success ? Color.green : Color.orange).frame(width: 7, height: 7)
-                    Text(call.success ? L10n.text("Succeeded") : L10n.text("Failed"))
-                        .font(.system(size: 12, weight: .medium))
-                }
+            } else {
+                callLabel
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 13)
         .padding(.vertical, 8)
+    }
+
+    private var callLabel: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(call.tool).font(.system(size: 13, weight: .medium))
+                Text("\(RuntimeActivityFormat.source(call.source)) · \(RuntimeActivityFormat.relativeTime(call.startedAt))")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 16)
+            Text(RuntimeActivityFormat.duration(call.durationMS))
+                .font(.system(size: 11.5, design: .monospaced))
+                .foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Circle().fill(call.success ? Color.green : Color.orange).frame(width: 7, height: 7)
+                Text(call.success ? L10n.text("Succeeded") : L10n.text("Failed"))
+                    .font(.system(size: 12, weight: .medium))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var callDetails: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let errorCode = call.errorCode, !errorCode.isEmpty {
+                Text("\(L10n.text("Error code")): \(errorCode)")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(call.stages) { stage in
+                HStack(spacing: 10) {
+                    Text(RuntimeActivityFormat.stage(stage.name))
+                    Spacer()
+                    Text(RuntimeActivityFormat.duration(stage.durationMS))
+                        .foregroundStyle(.secondary)
+                    Image(systemName: stage.success ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                        .foregroundStyle(stage.success ? Color.green : Color.orange)
+                }
+                .font(.system(size: 11.5))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1459,11 +1482,13 @@ private struct SettingsView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 8)
                     } label: {
                         Text(L10n.text("Advanced diagnostics"))
                             .font(.system(size: 13, weight: .medium))
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 13)
                     .padding(.vertical, 12)
                 }

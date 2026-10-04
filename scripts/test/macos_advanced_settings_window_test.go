@@ -203,6 +203,8 @@ func TestMacOSActivityOwnsRuntimeAnalytics(t *testing.T) {
 		`path: "/internal/runtime/analytics"`,
 		`decodeIfPresent([RuntimeAnalyticsStage].self, forKey: .stages) ?? []`,
 		"RuntimeActivityCallRow",
+		"private var hasDetails: Bool",
+		".frame(maxWidth: .infinity, alignment: .leading)",
 		`SettingsSection(L10n.text("Recent calls"))`,
 		`case .logs:`,
 		`SettingsSection(L10n.text("Logs"))`,
