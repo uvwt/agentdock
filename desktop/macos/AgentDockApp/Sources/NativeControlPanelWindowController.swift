@@ -105,6 +105,7 @@ private final class ControlPanelModel: ObservableObject {
     @Published var page: Page = .home
     @Published var settingsPage: SettingsPage = .runtime
     @Published var status: ServiceStatus = .missing
+    @Published var statusUpdatedAt = Date()
     @Published var isBusy = false
     @Published var isUpdateInProgress = false
     @Published var message: String?
@@ -121,7 +122,15 @@ private final class ControlPanelModel: ObservableObject {
         self.onUpdateRequested = onUpdateRequested
     }
 
-    func update(_ status: ServiceStatus) { self.status = status }
+    var nexusDevice: NexusDeviceStatus { service.nexusDeviceStatus() }
+
+    func update(_ status: ServiceStatus) {
+        self.status = status
+        statusUpdatedAt = Date()
+    }
+
+    func openLogs() { service.openLogs() }
+    func openConfiguration() { service.openConfiguration() }
 
     func toggleRuntime() {
         guard !isBusy, !isUpdateInProgress else { return }
@@ -177,12 +186,9 @@ private struct ControlPanelRootView: View {
         switch model.page {
         case .home: HomeView(model: model)
         case .settings: SettingsView(model: model)
-        case .connections:
-            PlaceholderPage(title: L10n.text("Connections"), detail: L10n.text("Connect AI clients to this device."))
-        case .capabilities:
-            PlaceholderPage(title: L10n.text("Capabilities"), detail: L10n.text("Configure the capabilities AgentDock provides to AI."))
-        case .activity:
-            PlaceholderPage(title: L10n.text("Activity"), detail: L10n.text("Runtime status and recent activity appear here."))
+        case .connections: ConnectionsView(model: model)
+        case .capabilities: CapabilitiesView(model: model)
+        case .activity: ActivityView(model: model)
         }
     }
 }
@@ -318,6 +324,205 @@ private struct HomeView: View {
     }
 }
 
+private struct ConnectionsView: View {
+    @ObservedObject var model: ControlPanelModel
+
+    private var configuration: ServiceConfiguration? { model.status.configuration }
+    private var nexusDevice: NexusDeviceStatus { model.nexusDevice }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                PageHeader(
+                    title: L10n.text("Connections"),
+                    detail: L10n.text("Connect AI clients to this device.")
+                )
+
+                SettingsSection(L10n.text("Local connection")) {
+                    SettingsRow("Local MCP", detail: configuration?.localMCPURL?.absoluteString ?? "—") {
+                        Button(L10n.text("Copy")) {
+                            copy(configuration?.localMCPURL?.absoluteString)
+                        }
+                        .controlSize(.small)
+                        .disabled(configuration?.localMCPURL == nil)
+                    }
+                    RowDivider()
+                    SettingsRow("Public MCP", detail: configuration?.publicMCPURL?.absoluteString ?? L10n.text("Disabled")) {
+                        Button(L10n.text("Copy")) {
+                            copy(configuration?.publicMCPURL?.absoluteString)
+                        }
+                        .controlSize(.small)
+                        .disabled(configuration?.publicMCPURL == nil)
+                    }
+                }
+
+                SettingsSection(L10n.text("Remote connection")) {
+                    SettingsRow(
+                        "NexusDock",
+                        detail: nexusDevice.paired ? nexusDevice.endpoint : L10n.text("Not configured")
+                    ) {
+                        StatusPill(text: nexusText, active: nexusActive)
+                    }
+                }
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, 24)
+            .padding(.bottom, 32)
+            .frame(maxWidth: 760, alignment: .leading)
+        }
+    }
+
+    private var nexusActive: Bool {
+        if case .connected = model.status.nexusConnection { return true }
+        return false
+    }
+
+    private var nexusText: String {
+        switch model.status.nexusConnection {
+        case .connected: return L10n.text("Connected")
+        case .disconnected: return L10n.text("Disconnected")
+        case .configurationError: return L10n.text("Unavailable")
+        case .unconfigured: return L10n.text("Not configured")
+        }
+    }
+
+    private func copy(_ value: String?) {
+        guard let value, !value.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+}
+
+private struct CapabilitiesView: View {
+    @ObservedObject var model: ControlPanelModel
+
+    private var configuration: ServiceConfiguration? { model.status.configuration }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                PageHeader(
+                    title: L10n.text("Capabilities"),
+                    detail: L10n.text("Configure the capabilities AgentDock provides to AI.")
+                )
+
+                SettingsSection(L10n.text("Available capabilities")) {
+                    SettingsRow(L10n.text("Browser"), detail: browserDetail) {
+                        StatusPill(
+                            text: capabilityState(configuration?.browserEnabled),
+                            active: configuration?.browserEnabled == true
+                        )
+                    }
+                    RowDivider()
+                    SettingsRow("Coding Agent", detail: codingAgentDetail) {
+                        StatusPill(
+                            text: capabilityState(configuration?.acpEnabled),
+                            active: configuration?.acpEnabled == true
+                        )
+                    }
+                    RowDivider()
+                    SettingsRow("MCP Apps", detail: L10n.text("Interactive MCP app presentation")) {
+                        Text(mcpAppsMode)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, 24)
+            .padding(.bottom, 32)
+            .frame(maxWidth: 760, alignment: .leading)
+        }
+    }
+
+    private func capabilityState(_ enabled: Bool?) -> String {
+        guard let enabled else { return L10n.text("Unavailable") }
+        return enabled ? L10n.text("Enabled") : L10n.text("Disabled")
+    }
+
+    private var browserDetail: String {
+        guard let configuration else { return L10n.text("Browser automation and web operations") }
+        guard configuration.browserEnabled else { return L10n.text("Browser automation and web operations") }
+        if configuration.browserReuseExistingCDP { return L10n.text("Prefer an existing local browser") }
+        if !configuration.browserCDPURL.isEmpty { return L10n.text("Use the configured CDP browser") }
+        return L10n.text("Use an isolated browser")
+    }
+
+    private var codingAgentDetail: String {
+        guard let configuration else { return L10n.text("No profiles configured") }
+        let enabledCount = configuration.acpProfiles.filter(\.enabled).count
+        guard enabledCount > 0 else { return L10n.text("No profiles configured") }
+        return L10n.format(
+            "%d enabled · default %@",
+            enabledCount,
+            configuration.acpDefaultProfile
+        )
+    }
+
+    private var mcpAppsMode: String {
+        guard let mode = configuration?.mcpAppsMode else { return "—" }
+        switch mode {
+        case .full: return L10n.text("Full")
+        case .compact: return L10n.text("Compact")
+        case .off: return L10n.text("Off")
+        }
+    }
+}
+
+private struct ActivityView: View {
+    @ObservedObject var model: ControlPanelModel
+
+    private var running: Bool { model.status.loaded && model.status.healthy }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                PageHeader(
+                    title: L10n.text("Activity"),
+                    detail: L10n.text("Runtime status, diagnostics, and local files.")
+                )
+
+                SettingsSection("Runtime") {
+                    SettingsRow("Runtime") {
+                        StatusPill(
+                            text: running ? L10n.text("Running") : L10n.text("Stopped"),
+                            active: running
+                        )
+                    }
+                    RowDivider()
+                    SettingsRow(L10n.text("Version")) {
+                        Text(model.status.version ?? "—")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                    RowDivider()
+                    SettingsRow(L10n.text("Last status refresh")) {
+                        Text(model.statusUpdatedAt, style: .time)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                SettingsSection(L10n.text("Diagnostics")) {
+                    SettingsRow(L10n.text("Logs directory")) {
+                        Button(L10n.text("Open")) { model.openLogs() }
+                            .controlSize(.small)
+                    }
+                    RowDivider()
+                    SettingsRow(L10n.text("Configuration directory")) {
+                        Button(L10n.text("Open")) { model.openConfiguration() }
+                            .controlSize(.small)
+                    }
+                }
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, 24)
+            .padding(.bottom, 32)
+            .frame(maxWidth: 760, alignment: .leading)
+        }
+    }
+}
+
 private struct SettingsView: View {
     @ObservedObject var model: ControlPanelModel
 
@@ -389,21 +594,6 @@ private struct SettingsView: View {
                 }
             }
         }
-    }
-}
-
-private struct PlaceholderPage: View {
-    let title: String
-    let detail: String
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            PageHeader(title: title, detail: detail)
-            Divider()
-            Text(L10n.text("This page will be completed after the Home and Settings visual direction is confirmed."))
-                .font(.system(size: 13)).foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 28).padding(.top, 24)
-        .frame(maxWidth: 760, alignment: .leading)
     }
 }
 

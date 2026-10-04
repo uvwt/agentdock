@@ -737,4 +737,32 @@ Update now?</value>
   <data name="LanguageChangeDiscardWarning" xml:space="preserve">
     <value>Changing the interface language reloads this window. Any unsaved changes will be lost. Continue?</value>
   </data>
+  <data name="Home" xml:space="preserve"><value>Home</value></data>
+  <data name="Connections" xml:space="preserve"><value>Connections</value></data>
+  <data name="Capabilities" xml:space="preserve"><value>Capabilities</value></data>
+  <data name="Activity" xml:space="preserve"><value>Activity</value></data>
+  <data name="Settings" xml:space="preserve"><value>Settings</value></data>
+  <data name="ConnectionsDetail" xml:space="preserve"><value>Connect AI clients to this device.</value></data>
+  <data name="LocalConnection" xml:space="preserve"><value>Local connection</value></data>
+  <data name="RemoteConnection" xml:space="preserve"><value>Remote connection</value></data>
+  <data name="Copy" xml:space="preserve"><value>Copy</value></data>
+  <data name="CapabilitiesDetail" xml:space="preserve"><value>Configure the capabilities AgentDock provides to AI.</value></data>
+  <data name="AvailableCapabilities" xml:space="preserve"><value>Available capabilities</value></data>
+  <data name="Enabled" xml:space="preserve"><value>Enabled</value></data>
+  <data name="BrowserCapabilityDetail" xml:space="preserve"><value>Browser automation and web operations</value></data>
+  <data name="BrowserReuseMode" xml:space="preserve"><value>Prefer an existing local browser</value></data>
+  <data name="BrowserSpecifiedMode" xml:space="preserve"><value>Use the configured CDP browser</value></data>
+  <data name="BrowserIsolatedMode" xml:space="preserve"><value>Use an isolated browser</value></data>
+  <data name="NoProfilesConfigured" xml:space="preserve"><value>No profiles configured</value></data>
+  <data name="ProfilesConfigured" xml:space="preserve"><value>{0} enabled · default {1}</value></data>
+  <data name="McpAppsDetail" xml:space="preserve"><value>Interactive MCP app presentation</value></data>
+  <data name="Full" xml:space="preserve"><value>Full</value></data>
+  <data name="Compact" xml:space="preserve"><value>Compact</value></data>
+  <data name="Off" xml:space="preserve"><value>Off</value></data>
+  <data name="ActivityDetail" xml:space="preserve"><value>Runtime status, diagnostics, and local files.</value></data>
+  <data name="LastStatusRefresh" xml:space="preserve"><value>Last status refresh</value></data>
+  <data name="Diagnostics" xml:space="preserve"><value>Diagnostics</value></data>
+  <data name="LogsDirectory" xml:space="preserve"><value>Logs directory</value></data>
+  <data name="ConfigurationDirectory" xml:space="preserve"><value>Configuration directory</value></data>
+  <data name="Open" xml:space="preserve"><value>Open</value></data>
 </root>

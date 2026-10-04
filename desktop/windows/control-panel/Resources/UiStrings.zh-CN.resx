@@ -737,4 +737,32 @@
   <data name="LanguageChangeDiscardWarning" xml:space="preserve">
     <value>切换界面语言会重新加载此窗口，未保存的更改将会丢失。是否继续？</value>
   </data>
+  <data name="Home" xml:space="preserve"><value>主页</value></data>
+  <data name="Connections" xml:space="preserve"><value>连接</value></data>
+  <data name="Capabilities" xml:space="preserve"><value>能力</value></data>
+  <data name="Activity" xml:space="preserve"><value>活动</value></data>
+  <data name="Settings" xml:space="preserve"><value>设置</value></data>
+  <data name="ConnectionsDetail" xml:space="preserve"><value>让 AI 客户端连接这台设备。</value></data>
+  <data name="LocalConnection" xml:space="preserve"><value>本机连接</value></data>
+  <data name="RemoteConnection" xml:space="preserve"><value>远程连接</value></data>
+  <data name="Copy" xml:space="preserve"><value>复制</value></data>
+  <data name="CapabilitiesDetail" xml:space="preserve"><value>配置 AgentDock 可以提供给 AI 的能力。</value></data>
+  <data name="AvailableCapabilities" xml:space="preserve"><value>可用能力</value></data>
+  <data name="Enabled" xml:space="preserve"><value>已启用</value></data>
+  <data name="BrowserCapabilityDetail" xml:space="preserve"><value>浏览器自动化与网页操作</value></data>
+  <data name="BrowserReuseMode" xml:space="preserve"><value>优先复用本机已有浏览器</value></data>
+  <data name="BrowserSpecifiedMode" xml:space="preserve"><value>使用已配置的 CDP 浏览器</value></data>
+  <data name="BrowserIsolatedMode" xml:space="preserve"><value>使用隔离浏览器</value></data>
+  <data name="NoProfilesConfigured" xml:space="preserve"><value>尚未配置 Profile</value></data>
+  <data name="ProfilesConfigured" xml:space="preserve"><value>已启用 {0} 个 · 默认 {1}</value></data>
+  <data name="McpAppsDetail" xml:space="preserve"><value>交互式 MCP App 展示模式</value></data>
+  <data name="Full" xml:space="preserve"><value>完整</value></data>
+  <data name="Compact" xml:space="preserve"><value>紧凑</value></data>
+  <data name="Off" xml:space="preserve"><value>关闭</value></data>
+  <data name="ActivityDetail" xml:space="preserve"><value>查看 Runtime 状态、诊断入口和本地文件。</value></data>
+  <data name="LastStatusRefresh" xml:space="preserve"><value>状态刷新时间</value></data>
+  <data name="Diagnostics" xml:space="preserve"><value>诊断</value></data>
+  <data name="LogsDirectory" xml:space="preserve"><value>日志目录</value></data>
+  <data name="ConfigurationDirectory" xml:space="preserve"><value>配置目录</value></data>
+  <data name="Open" xml:space="preserve"><value>打开</value></data>
 </root>

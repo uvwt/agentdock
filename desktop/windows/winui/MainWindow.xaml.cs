@@ -21,6 +21,12 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
 
+        HomeNavigationItem.Content = UiText.Get("Home");
+        ConnectionsNavigationItem.Content = UiText.Get("Connections");
+        CapabilitiesNavigationItem.Content = UiText.Get("Capabilities");
+        ActivityNavigationItem.Content = UiText.Get("Activity");
+        SettingsNavigationItem.Content = UiText.Get("Settings");
+
         _windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
         Navigation.Loaded += Navigation_Loaded;
 
@@ -73,9 +79,12 @@ public sealed partial class MainWindow : Window
         var page = tag switch
         {
             "home" => typeof(HomePage),
+            "connections" => typeof(ConnectionsPage),
+            "capabilities" => typeof(CapabilitiesPage),
+            "activity" => typeof(ActivityPage),
             "settings" => typeof(SettingsPage),
-            _ => typeof(PlaceholderPage)
+            _ => typeof(HomePage)
         };
-        ContentFrame.Navigate(page, tag == "home" || tag == "settings" ? _runtime : tag);
+        ContentFrame.Navigate(page, _runtime);
     }
 }

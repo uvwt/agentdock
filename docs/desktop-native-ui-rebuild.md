@@ -530,6 +530,13 @@ AgentDock.ControlPanel
 
 在 Phase 2 视觉方向确认后，再继续剩余页面。
 
+2026-10-04：Home / Settings 视觉方向已由用户确认，Phase 3 已按同一视觉基线实现。
+
+- Connections：双端统一为本机连接（Local / Public MCP）与远程连接（NexusDock），不扩展为卡片墙。
+- Capabilities：双端统一展示 Browser、Coding Agent、MCP Apps 的真实配置状态。
+- Activity：双端统一展示 Runtime 状态、版本、最近状态刷新时间，以及日志 / 配置目录入口。
+- 页面继续读取现有 ServiceController / RuntimeService 与配置模型，没有建立第二套 Runtime 状态。
+
 ### Phase 4：功能完整性对齐
 
 核对旧控制面板已有行为：
@@ -587,7 +594,7 @@ Windows：
 
 ### 15.1 2026-10-04 Phase 1/2 真机验证记录
 
-当前 Phase 0～2 已完成实现和第一轮真机验证，Phase 3 仍需等待视觉方向确认后再开始。
+当前 Phase 0～2 已完成实现和第一轮真机验证，Home / Settings 视觉方向已经用户确认并作为 Phase 3 基线。
 
 已确认：
 
@@ -598,6 +605,32 @@ Windows：
 - Windows `SettingsPage` 初始化期崩溃已定位为 XAML `SelectedIndex` 过早触发 `SelectionChanged`，修复后 Home / Settings 均可稳定启动。
 - Windows App SDK 1.6 在 TianYi 上最小 WinUI 窗口仍会 native crash，因此不再作为本轮基线。
 - 旧 WPF 控制面板仍保留，新 WinUI 仅作为迁移中的新前端，未删除旧系统能力。
+
+### 15.2 2026-10-04 Phase 3 实现与真机验证记录
+
+Phase 3 的 Connections / Capabilities / Activity 已完成双端实现，信息架构保持一致。
+
+macOS：
+
+- SwiftUI 三页直接读取现有 ServiceStatus / ServiceConfiguration，并通过 ServiceController 复用日志与配置目录能力。
+- i18n 检查、Swift 编译、App 构建、ZIP、DMG、ad-hoc signing、ZIP 解包校验与 DMG mount 校验均通过。
+- 独立预览 App 已通过 LaunchServices 真机启动，并由 CGWindowList 确认存在真实 Layer 0 窗口。
+- 当前 AgentDock 进程没有 Screen Recording 与 Accessibility 权限，因此本轮无法对 Phase 3 三页完成新的 Mac 屏幕截图 / AX 自动切页；在权限恢复前不得把 Mac Phase 3 视觉截图审查标记为完成。
+
+Windows TianYi：
+
+- 使用 Visual Studio Build Tools 2022 的 MSBuild 对 WinUI 3 Release x64 完成真实 Rebuild，PRI / XAML / C# 均实际参与构建。
+- 通过当前 Administrator console session 1 的 InteractiveToken 启动 WinUI，跨命令确认窗口持续存活并取得真实 MainWindowHandle。
+- 通过 UI Automation 按 NavigationView AutomationId 真实切换 Connections / Capabilities / Activity，三页均读取到 TianYi 当前 Runtime 配置与状态。
+- Connections 实测读取 Local MCP、Public MCP、NexusDock endpoint 与连接状态；Capabilities 实测读取 Browser、Coding Agent 与 MCP Apps 配置；Activity 实测读取 Runtime、版本与诊断入口。
+- 三个 Phase 3 页面均完成 TianYi 真机截图。
+- 旧 WPF Release Rebuild 同机通过，迁移尚未破坏旧控制面板构建。
+
+Phase 4 parity 初查：
+
+- 新原生页面已经覆盖 Runtime start / stop、基础地址与状态、权限入口、Startup 状态、凭据保护状态、Nexus / Public MCP 状态、日志与配置目录入口。
+- 旧 WPF 仍独有 Public MCP 模式与 Named Tunnel 编辑、Nexus 配对、Browser / CDP 编辑、Coding Agent Profile 编辑、MCP Apps 模式修改、端口 / 日志级别 / 语言保存与重启、凭据明文查看、更新等操作。
+- 因此当前明确未达到删除旧 WPF 的条件；Phase 4 必须先完成这些可编辑能力和托盘 / 单实例 / 更新链路等行为对齐。
 
 视觉审查：
 

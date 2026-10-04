@@ -33,6 +33,7 @@
 "Connect to a specified CDP browser" = "Connect to a specified CDP browser";
 "Connected" = "Connected";
 "Connection information" = "Connection information";
+"Local connection" = "Local connection";
 "Connection mode" = "Connection mode";
 "Copied" = "Copied";
 "Copy" = "Copy";
@@ -367,7 +368,6 @@
 "Settings" = "Settings";
 "Connect AI clients to this device." = "Connect AI clients to this device.";
 "Configure the capabilities AgentDock provides to AI." = "Configure the capabilities AgentDock provides to AI.";
-"Runtime status and recent activity appear here." = "Runtime status and recent activity appear here.";
 "Running" = "Running";
 "The local service is ready for AI clients." = "The local service is ready for AI clients.";
 "Start AgentDock to accept AI client connections." = "Start AgentDock to accept AI client connections.";
@@ -395,4 +395,19 @@
 "Credentials" = "Credentials";
 "Authentication token" = "Authentication token";
 "Protected" = "Protected";
-"This page will be completed after the Home and Settings visual direction is confirmed." = "This page will be completed after the Home and Settings visual direction is confirmed.";
+"Remote connection" = "Remote connection";
+"Available capabilities" = "Available capabilities";
+"Browser automation and web operations" = "Browser automation and web operations";
+"Prefer an existing local browser" = "Prefer an existing local browser";
+"Use the configured CDP browser" = "Use the configured CDP browser";
+"Use an isolated browser" = "Use an isolated browser";
+"No profiles configured" = "No profiles configured";
+"%d enabled · default %@" = "%d enabled · default %@";
+"Interactive MCP app presentation" = "Interactive MCP app presentation";
+"Runtime status, diagnostics, and local files." = "Runtime status, diagnostics, and local files.";
+"Version" = "Version";
+"Last status refresh" = "Last status refresh";
+"Diagnostics" = "Diagnostics";
+"Logs directory" = "Logs directory";
+"Configuration directory" = "Configuration directory";
+"Open" = "Open";

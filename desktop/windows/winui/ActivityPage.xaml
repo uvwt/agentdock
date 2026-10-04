@@ -1,0 +1,55 @@
+<Page
+    x:Class="AgentDock.ControlPanel.ActivityPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:AgentDock.ControlPanel">
+    <ScrollViewer>
+        <StackPanel Width="760" HorizontalAlignment="Left" Spacing="22" Padding="28,24,28,32">
+            <StackPanel Spacing="5">
+                <TextBlock x:Name="PageTitle" FontSize="20" FontWeight="SemiBold"/>
+                <TextBlock x:Name="PageDetail" FontSize="12.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+            </StackPanel>
+
+            <local:SectionCard Title="Runtime">
+                <StackPanel>
+                    <Grid Padding="13,0" Height="46">
+                        <TextBlock x:Name="RuntimeLabel" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="RuntimeState" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                    <Grid Padding="13,0" Height="46">
+                        <TextBlock x:Name="VersionLabel" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="VersionValue" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </Grid>
+                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                    <Grid Padding="13,0" Height="46">
+                        <TextBlock x:Name="RefreshLabel" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="RefreshValue" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </Grid>
+                </StackPanel>
+            </local:SectionCard>
+
+            <local:SectionCard x:Name="DiagnosticsSection">
+                <StackPanel>
+                    <Grid MinHeight="48" Padding="13,5" ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="LogsLabel" VerticalAlignment="Center"/>
+                        <Button x:Name="OpenLogsButton" Grid.Column="1" Click="OpenLogsButton_Click"/>
+                    </Grid>
+                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                    <Grid MinHeight="48" Padding="13,5" ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="ConfigLabel" VerticalAlignment="Center"/>
+                        <Button x:Name="OpenConfigButton" Grid.Column="1" Click="OpenConfigButton_Click"/>
+                    </Grid>
+                </StackPanel>
+            </local:SectionCard>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

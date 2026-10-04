@@ -33,6 +33,7 @@
 "Connect to a specified CDP browser" = "连接指定 CDP 浏览器";
 "Connected" = "已连接";
 "Connection information" = "连接信息";
+"Local connection" = "本机连接";
 "Connection mode" = "连接方式";
 "Copied" = "已复制";
 "Copy" = "复制";
@@ -367,7 +368,6 @@
 "Settings" = "设置";
 "Connect AI clients to this device." = "让 AI 客户端连接这台设备。";
 "Configure the capabilities AgentDock provides to AI." = "配置 AgentDock 可以提供给 AI 的能力。";
-"Runtime status and recent activity appear here." = "查看 Runtime 状态和最近活动。";
 "Running" = "正在运行";
 "The local service is ready for AI clients." = "本地服务已准备好，AI 客户端可以连接。";
 "Start AgentDock to accept AI client connections." = "启动 AgentDock 后即可接受 AI 客户端连接。";
@@ -395,4 +395,19 @@
 "Credentials" = "访问凭据";
 "Authentication token" = "认证令牌";
 "Protected" = "已保护";
-"This page will be completed after the Home and Settings visual direction is confirmed." = "Home 与 Settings 视觉方向确认后再完成此页面。";
+"Remote connection" = "远程连接";
+"Available capabilities" = "可用能力";
+"Browser automation and web operations" = "浏览器自动化与网页操作";
+"Prefer an existing local browser" = "优先复用本机已有浏览器";
+"Use the configured CDP browser" = "使用已配置的 CDP 浏览器";
+"Use an isolated browser" = "使用隔离浏览器";
+"No profiles configured" = "尚未配置 Profile";
+"%d enabled · default %@" = "已启用 %d 个 · 默认 %@";
+"Interactive MCP app presentation" = "交互式 MCP App 展示模式";
+"Runtime status, diagnostics, and local files." = "查看 Runtime 状态、诊断入口和本地文件。";
+"Version" = "版本";
+"Last status refresh" = "状态刷新时间";
+"Diagnostics" = "诊断";
+"Logs directory" = "日志目录";
+"Configuration directory" = "配置目录";
+"Open" = "打开";

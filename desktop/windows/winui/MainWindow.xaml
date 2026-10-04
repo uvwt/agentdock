@@ -14,19 +14,19 @@
                         CompactPaneLength="48"
                         SelectionChanged="Navigation_SelectionChanged">
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="主页" Tag="home">
+                <NavigationViewItem x:Name="HomeNavigationItem" Tag="home">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Home"/></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="连接" Tag="connections">
+                <NavigationViewItem x:Name="ConnectionsNavigationItem" Tag="connections">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Link"/></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="能力" Tag="capabilities">
+                <NavigationViewItem x:Name="CapabilitiesNavigationItem" Tag="capabilities">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE80A;"/></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="活动" Tag="activity">
+                <NavigationViewItem x:Name="ActivityNavigationItem" Tag="activity">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Clock"/></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="设置" Tag="settings">
+                <NavigationViewItem x:Name="SettingsNavigationItem" Tag="settings">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Setting"/></NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.MenuItems>
