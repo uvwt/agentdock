@@ -12,6 +12,7 @@
                 <ListViewItem x:Name="RuntimeNavigationItem" Tag="runtime"/>
                 <ListViewItem x:Name="PermissionsNavigationItem" Tag="permissions"/>
                 <ListViewItem x:Name="StartupNavigationItem" Tag="startup"/>
+                <ListViewItem x:Name="LogsNavigationItem" Tag="logs"/>
 
                 <ListViewItem x:Name="AdvancedConnectionNavigationItem" Tag="advancedConnection"/>
 

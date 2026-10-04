@@ -12,6 +12,7 @@ public sealed partial class SettingsPage : Page
 {
     private RuntimeService? _runtime;
     private RuntimeSnapshot? _snapshot;
+    private RuntimeAnalyticsPayload? _analytics;
     private string _activeTag = "runtime";
     private string _advancedStatus = "";
 
@@ -22,6 +23,7 @@ public sealed partial class SettingsPage : Page
         RuntimeNavigationItem.Content = UiText.Get("Runtime");
         PermissionsNavigationItem.Content = UiText.Get("Permissions");
         StartupNavigationItem.Content = UiText.Get("Startup");
+        LogsNavigationItem.Content = UiText.Get("Logs");
 
         AdvancedConnectionNavigationItem.Content = UiText.Get("AdvancedConnection");
 
@@ -63,7 +65,9 @@ public sealed partial class SettingsPage : Page
 
     private async Task RefreshAsync()
     {
-        if (_runtime is not null) _snapshot = await _runtime.GetSnapshotAsync(includeNexusConnection: false);
+        if (_runtime is null) return;
+        _snapshot = await _runtime.GetSnapshotAsync(includeNexusConnection: false);
+        _analytics = _snapshot is null ? null : await _runtime.GetRuntimeAnalyticsAsync(_snapshot);
     }
 
     private void SelectSettingsTag(string tag)
@@ -111,6 +115,7 @@ public sealed partial class SettingsPage : Page
         {
             "permissions" => BuildPermissions(),
             "startup" => BuildStartup(),
+            "logs" => BuildLogs(),
             "appearance" => BuildAppearance(),
             _ => BuildRuntime()
         };
@@ -124,12 +129,6 @@ public sealed partial class SettingsPage : Page
         rows.Children.Add(ActionRow(UiText.Get("Port"), port));
         rows.Children.Add(Divider());
 
-        var log = new ComboBox { Width = 130, Tag = "log" };
-        foreach (var value in new[] { "debug", "info", "warn", "error" }) log.Items.Add(new ComboBoxItem { Content = value, Tag = value });
-        SelectComboTag(log, _snapshot?.Settings.LogLevel ?? "info");
-        rows.Children.Add(ActionRow(UiText.Get("LogLevel"), log));
-        rows.Children.Add(Divider());
-
         var save = new Button { Content = UiText.Get("ApplyChanges") };
         save.Click += SaveRuntimeSettings_Click;
         rows.Children.Add(DetailActionRow(
@@ -137,6 +136,102 @@ public sealed partial class SettingsPage : Page
             UiText.Get("RuntimeRestartHint"),
             save
         ));
+        return rows;
+    }
+
+    private UIElement BuildLogs()
+    {
+        var rows = new StackPanel();
+
+        var log = new ComboBox { Width = 130, Tag = "log" };
+        foreach (var value in new[] { "debug", "info", "warn", "error" })
+        {
+            log.Items.Add(new ComboBoxItem { Content = LogLevelLabel(value), Tag = value });
+        }
+        SelectComboTag(log, _snapshot?.Settings.LogLevel ?? "info");
+        rows.Children.Add(ActionRow(UiText.Get("LogLevel"), log));
+        rows.Children.Add(Divider());
+
+        var apply = new Button { Content = UiText.Get("ApplyChanges") };
+        apply.Click += SaveLogSettings_Click;
+        rows.Children.Add(DetailActionRow(
+            UiText.Get("Logging"),
+            UiText.Get("LogLevelRestartHint"),
+            apply
+        ));
+        rows.Children.Add(Divider());
+
+        var openLogs = new Button { Content = UiText.Get("Open") };
+        openLogs.Click += (_, _) => _runtime?.OpenLogsDirectory();
+        rows.Children.Add(ActionRow(UiText.Get("LogsDirectory"), openLogs));
+        rows.Children.Add(Divider());
+
+        var openConfig = new Button { Content = UiText.Get("Open") };
+        openConfig.Click += (_, _) => _runtime?.OpenConfigDirectory();
+        rows.Children.Add(ActionRow(UiText.Get("ConfigurationDirectory"), openConfig));
+        rows.Children.Add(Divider());
+
+        rows.Children.Add(new Expander
+        {
+            Header = new TextBlock
+            {
+                Text = UiText.Get("AdvancedDiagnostics"),
+                FontSize = 13,
+                FontWeight = Microsoft.UI.Text.FontWeights.Medium
+            },
+            Content = BuildAdvancedDiagnostics(),
+            IsExpanded = false,
+            Padding = new Thickness(13, 5, 13, 5),
+            HorizontalContentAlignment = HorizontalAlignment.Stretch
+        });
+
+        return rows;
+    }
+
+    private UIElement BuildAdvancedDiagnostics()
+    {
+        var rows = new StackPanel();
+        rows.Children.Add(Row(
+            UiText.Get("Runtime"),
+            _snapshot?.CoreRunning == true ? UiText.Get("Running") : UiText.Get("Stopped")));
+        rows.Children.Add(Divider());
+        rows.Children.Add(Row(
+            UiText.Get("Version"),
+            string.IsNullOrWhiteSpace(_snapshot?.Version) ? "—" : _snapshot.Version));
+
+        if (_analytics is null)
+        {
+            rows.Children.Add(Divider());
+            rows.Children.Add(new TextBlock
+            {
+                Text = UiText.Get("AnalyticsUnavailable"),
+                FontSize = 12.5,
+                Opacity = 0.62,
+                Margin = new Thickness(13, 12, 13, 12)
+            });
+            return rows;
+        }
+
+        rows.Children.Add(Divider());
+        rows.Children.Add(Row(UiText.Get("TotalCalls"), _analytics.TotalCalls.ToString()));
+        rows.Children.Add(Divider());
+        rows.Children.Add(Row(UiText.Get("FailedCalls"), _analytics.TotalErrors.ToString()));
+        rows.Children.Add(Divider());
+        rows.Children.Add(Row(UiText.Get("RecentP95Latency"), FormatDuration(RecentP95(_analytics))));
+        rows.Children.Add(Divider());
+        rows.Children.Add(Row(UiText.Get("GoHeap"), FormatBytes(_analytics.Process.HeapAllocBytes)));
+        rows.Children.Add(Divider());
+        rows.Children.Add(Row(UiText.Get("Goroutines"), _analytics.Process.Goroutines.ToString()));
+        rows.Children.Add(Divider());
+        rows.Children.Add(Row(UiText.Get("GcCycles"), _analytics.Process.GcCycles.ToString()));
+        rows.Children.Add(Divider());
+        rows.Children.Add(Row(UiText.Get("Uptime"), FormatUptime(_analytics.Process.UptimeMs)));
+        rows.Children.Add(Divider());
+
+        var copy = new Button { Content = UiText.Get("CopyDiagnostics") };
+        copy.Click += (_, _) => CopyDiagnostics(_analytics);
+        rows.Children.Add(ActionRow(UiText.Get("DiagnosticInformation"), copy));
+
         return rows;
     }
 
@@ -495,16 +590,32 @@ public sealed partial class SettingsPage : Page
         var rows = (sender as Button)?.Parent is Grid actionRow && actionRow.Parent is StackPanel panel ? panel : null;
         if (rows is null) return;
         var port = FindTagged<NumberBox>(rows, "port");
-        var log = FindTagged<ComboBox>(rows, "log");
-        if (port is null || log?.SelectedItem is not ComboBoxItem logItem) return;
+        if (port is null) return;
         _snapshot.Settings.Port = (int)port.Value;
-        _snapshot.Settings.LogLevel = logItem.Tag?.ToString() ?? "info";
         try
         {
             await _runtime.SaveSettingsAsync(_snapshot.Settings);
             await _runtime.RunCoreActionAsync("restart");
             await RefreshAsync();
             Render("runtime");
+        }
+        catch (Exception ex) { await ShowMessageAsync(UiText.Get("SaveFailed"), ex.Message); }
+    }
+
+    private async void SaveLogSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (_runtime is null || _snapshot is null) return;
+        var rows = (sender as Button)?.Parent is Grid actionRow && actionRow.Parent is StackPanel panel ? panel : null;
+        if (rows is null) return;
+        var log = FindTagged<ComboBox>(rows, "log");
+        if (log?.SelectedItem is not ComboBoxItem logItem) return;
+        _snapshot.Settings.LogLevel = logItem.Tag?.ToString() ?? "info";
+        try
+        {
+            await _runtime.SaveSettingsAsync(_snapshot.Settings);
+            await _runtime.RunCoreActionAsync("restart");
+            await RefreshAsync();
+            Render("logs");
         }
         catch (Exception ex) { await ShowMessageAsync(UiText.Get("SaveFailed"), ex.Message); }
     }
@@ -606,6 +717,64 @@ public sealed partial class SettingsPage : Page
         combo.SelectedIndex = 0;
     }
 
+    private static string LogLevelLabel(string value) =>
+        value switch
+        {
+            "debug" => UiText.Get("LogDebug"),
+            "warn" => UiText.Get("LogWarning"),
+            "error" => UiText.Get("LogError"),
+            _ => UiText.Get("LogInfo")
+        };
+
+    private static double RecentP95(RuntimeAnalyticsPayload analytics)
+    {
+        var values = analytics.RecentCalls.Select(call => call.DurationMs).OrderBy(value => value).ToArray();
+        if (values.Length == 0) return 0;
+        var index = Math.Max(0, Math.Min(values.Length - 1, (int)Math.Ceiling(values.Length * 0.95) - 1));
+        return values[index];
+    }
+
+    private static string FormatDuration(double milliseconds)
+    {
+        if (milliseconds < 1000) return $"{milliseconds:0} ms";
+        if (milliseconds < 60_000) return $"{milliseconds / 1000:0.00} s";
+        return $"{milliseconds / 60_000:0.0} min";
+    }
+
+    private static string FormatBytes(ulong bytes)
+    {
+        if (bytes >= 1UL << 30) return $"{bytes / (double)(1UL << 30):0.0} GB";
+        if (bytes >= 1UL << 20) return $"{bytes / (double)(1UL << 20):0.0} MB";
+        if (bytes >= 1UL << 10) return $"{bytes / (double)(1UL << 10):0.0} KB";
+        return $"{bytes} B";
+    }
+
+    private static string FormatUptime(long milliseconds)
+    {
+        var seconds = Math.Max(0, milliseconds / 1000);
+        if (seconds < 60) return $"{seconds} s";
+        if (seconds < 3600) return $"{seconds / 60} min";
+        if (seconds < 86_400) return $"{seconds / 3600} h";
+        return $"{seconds / 86_400} d";
+    }
+
+    private void CopyDiagnostics(RuntimeAnalyticsPayload analytics)
+    {
+        var lines = new[]
+        {
+            $"AgentDock {_snapshot?.Version ?? "unknown"}",
+            $"runtime={(_snapshot?.CoreRunning == true ? "running" : "stopped")}",
+            $"total_calls={analytics.TotalCalls}",
+            $"total_errors={analytics.TotalErrors}",
+            $"recent_p95={FormatDuration(RecentP95(analytics))}",
+            $"goroutines={analytics.Process.Goroutines}",
+            $"heap_alloc={FormatBytes(analytics.Process.HeapAllocBytes)}",
+            $"gc_cycles={analytics.Process.GcCycles}",
+            $"uptime={FormatUptime(analytics.Process.UptimeMs)}"
+        };
+        CopyText(string.Join(Environment.NewLine, lines));
+    }
+
     private static string LastLine(string value, string fallback) =>
         value.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).LastOrDefault() ?? fallback;
 
@@ -613,6 +782,7 @@ public sealed partial class SettingsPage : Page
     {
         "permissions" => UiText.Get("Permissions"),
         "startup" => UiText.Get("Startup"),
+        "logs" => UiText.Get("Logs"),
 
         "advancedConnection" => UiText.Get("AdvancedConnection"),
 
@@ -626,6 +796,7 @@ public sealed partial class SettingsPage : Page
     {
         "permissions" => UiText.Get("PermissionsDetail"),
         "startup" => UiText.Get("StartupDetail"),
+        "logs" => UiText.Get("LogsDetail"),
 
         "advancedConnection" => UiText.Get("AdvancedConnectionDetail"),
 
@@ -639,6 +810,7 @@ public sealed partial class SettingsPage : Page
     {
         "permissions" => UiText.Get("RuntimePermissions"),
         "startup" => UiText.Get("Startup"),
+        "logs" => UiText.Get("Logs"),
         "appearance" => UiText.Get("Appearance"),
         _ => UiText.Get("RuntimeSettings")
     };

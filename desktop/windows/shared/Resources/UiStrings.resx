@@ -754,7 +754,7 @@ Update now?</value>
   <data name="Full" xml:space="preserve"><value>Full</value></data>
   <data name="Compact" xml:space="preserve"><value>Compact</value></data>
   <data name="Off" xml:space="preserve"><value>Off</value></data>
-  <data name="ActivityDetail" xml:space="preserve"><value>Tool calls, latency, errors, and runtime resources.</value></data>
+  <data name="ActivityDetail" xml:space="preserve"><value>Recent tool calls and execution details.</value></data>
   <data name="CallOverview" xml:space="preserve"><value>Call overview</value></data>
   <data name="TotalCalls" xml:space="preserve"><value>Total calls</value></data>
   <data name="FailedCalls" xml:space="preserve"><value>Failed calls</value></data>
@@ -782,6 +782,18 @@ Update now?</value>
   <data name="StageCommandForegroundWait" xml:space="preserve"><value>Foreground wait</value></data>
   <data name="LastStatusRefresh" xml:space="preserve"><value>Last status refresh</value></data>
   <data name="Diagnostics" xml:space="preserve"><value>Diagnostics</value></data>
+  <data name="Logs" xml:space="preserve"><value>Logs</value></data>
+  <data name="LogsDetail" xml:space="preserve"><value>View logs and diagnostics for troubleshooting.</value></data>
+  <data name="Logging" xml:space="preserve"><value>Logging</value></data>
+  <data name="LogLevelRestartHint" xml:space="preserve"><value>Changing the log level will restart AgentDock.</value></data>
+  <data name="AdvancedDiagnostics" xml:space="preserve"><value>Advanced diagnostics</value></data>
+  <data name="RecentP95Latency" xml:space="preserve"><value>Recent P95 latency</value></data>
+  <data name="DiagnosticInformation" xml:space="preserve"><value>Diagnostic information</value></data>
+  <data name="CopyDiagnostics" xml:space="preserve"><value>Copy diagnostics</value></data>
+  <data name="LogDebug" xml:space="preserve"><value>Debug</value></data>
+  <data name="LogInfo" xml:space="preserve"><value>Info</value></data>
+  <data name="LogWarning" xml:space="preserve"><value>Warning</value></data>
+  <data name="LogError" xml:space="preserve"><value>Error</value></data>
   <data name="LogsDirectory" xml:space="preserve"><value>Logs directory</value></data>
   <data name="ConfigurationDirectory" xml:space="preserve"><value>Configuration directory</value></data>
   <data name="Open" xml:space="preserve"><value>Open</value></data>

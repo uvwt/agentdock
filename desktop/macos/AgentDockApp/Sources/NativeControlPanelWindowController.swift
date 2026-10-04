@@ -96,7 +96,7 @@ private final class ControlPanelModel: ObservableObject {
 
     enum SettingsPage: String, CaseIterable, Identifiable {
 
-        case runtime, permissions, startup, advancedConnection, appearance, about
+        case runtime, permissions, startup, logs, advancedConnection, appearance, about
 
         var id: String { rawValue }
         var title: String {
@@ -104,6 +104,7 @@ private final class ControlPanelModel: ObservableObject {
             case .runtime: return L10n.text("Runtime")
             case .permissions: return L10n.text("Permissions")
             case .startup: return L10n.text("Startup")
+            case .logs: return L10n.text("Logs")
 
             case .advancedConnection: return L10n.text("Advanced connection")
             case .appearance: return L10n.text("Appearance")
@@ -1217,69 +1218,21 @@ private struct ActivityView: View {
             VStack(alignment: .leading, spacing: 22) {
                 PageHeader(
                     title: L10n.text("Activity"),
-                    detail: L10n.text("Tool calls, latency, errors, and runtime resources.")
+                    detail: L10n.text("Recent tool calls and execution details.")
                 )
 
-                if let analytics {
-                    SettingsSection(L10n.text("Call overview")) {
-                        HStack(spacing: 20) {
-                            HomeMetric(
-                                title: L10n.text("Total calls"),
-                                value: "\(analytics.totalCalls)",
-                                detail: L10n.text("Since this runtime started")
-                            )
-                            HomeMetric(
-                                title: L10n.text("Failed calls"),
-                                value: "\(analytics.totalErrors)",
-                                detail: String(format: "%.1f%%", errorRate(analytics) * 100)
-                            )
-                            HomeMetric(
-                                title: L10n.text("Active calls"),
-                                value: "\(analytics.activeCalls)",
-                                detail: L10n.text("Currently running")
-                            )
-                            HomeMetric(
-                                title: L10n.text("Stats window"),
-                                value: "\(analytics.windowCalls)",
-                                detail: L10n.format("Up to %d retained", analytics.recentCapacity)
-                            )
-                        }
-                        .padding(13)
-                    }
-
-                    SettingsSection(L10n.text("Call statistics")) {
-                        if analytics.toolStats.isEmpty {
-                            emptyAnalytics(L10n.text("No call data yet."))
-                        } else {
-                            ForEach(Array(analytics.toolStats.enumerated()), id: \.element.id) { index, stat in
-                                if index > 0 { RowDivider() }
-                                SettingsRow(
-                                    stat.tool,
-                                    detail: L10n.format("%d calls · %.1f%% errors", stat.count, stat.errorRate * 100)
-                                ) {
-                                    Text(
-                                        "P50 \(RuntimeActivityFormat.duration(stat.p50DurationMS)) · " +
-                                        "P95 \(RuntimeActivityFormat.duration(stat.p95DurationMS)) · " +
-                                        "P99 \(RuntimeActivityFormat.duration(stat.p99DurationMS))"
-                                    )
-                                    .font(.system(size: 11.5, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-
-                    SettingsSection(L10n.text("Recent calls")) {
-                        Text(
-                            L10n.text(
-                                "Only tool name, source, latency, stages, status, and error code are retained. Arguments, results, commands, and file contents are never stored."
-                            )
+                SettingsSection(L10n.text("Recent calls")) {
+                    Text(
+                        L10n.text(
+                            "Only tool name, source, latency, stages, status, and error code are retained. Arguments, results, commands, and file contents are never stored."
                         )
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 10)
+                    )
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 10)
 
+                    if let analytics {
                         if !analytics.recentCalls.isEmpty { RowDivider() }
                         ForEach(Array(analytics.recentCalls.enumerated()), id: \.element.id) { index, call in
                             if index > 0 { RowDivider() }
@@ -1288,70 +1241,13 @@ private struct ActivityView: View {
                         if analytics.recentCalls.isEmpty {
                             emptyAnalytics(L10n.text("No call data yet."))
                         }
-                    }
-
-                    SettingsSection(L10n.text("Runtime resources")) {
-                        SettingsRow(L10n.text("Go heap")) {
-                            Text(RuntimeActivityFormat.bytes(analytics.process.heapAllocBytes))
-                                .foregroundStyle(.secondary)
-                        }
+                    } else {
                         RowDivider()
-                        SettingsRow(L10n.text("Heap in use")) {
-                            Text(RuntimeActivityFormat.bytes(analytics.process.heapInuseBytes))
-                                .foregroundStyle(.secondary)
-                        }
-                        RowDivider()
-                        SettingsRow(L10n.text("Goroutines")) {
-                            Text("\(analytics.process.goroutines)").foregroundStyle(.secondary)
-                        }
-                        RowDivider()
-                        SettingsRow(L10n.text("GC cycles")) {
-                            Text("\(analytics.process.gcCycles)").foregroundStyle(.secondary)
-                        }
-                        RowDivider()
-                        SettingsRow(L10n.text("Uptime")) {
-                            Text(RuntimeActivityFormat.uptime(analytics.process.uptimeMS))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                } else {
-                    SettingsSection(L10n.text("Call overview")) {
                         emptyAnalytics(
                             running
                                 ? L10n.text("Runtime analytics are unavailable.")
                                 : L10n.text("Start AgentDock to view runtime activity.")
                         )
-                    }
-                }
-
-                SettingsSection(L10n.text("Runtime")) {
-                    SettingsRow(L10n.text("Runtime")) {
-                        StatusPill(
-                            text: running ? L10n.text("Running") : L10n.text("Stopped"),
-                            active: running
-                        )
-                    }
-                    RowDivider()
-                    SettingsRow(L10n.text("Version")) {
-                        Text(model.status.version ?? "—")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-                    RowDivider()
-                    SettingsRow(L10n.text("Last status refresh")) {
-                        Text(model.statusUpdatedAt, style: .time)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                SettingsSection(L10n.text("Diagnostics")) {
-                    SettingsRow(L10n.text("Logs directory")) {
-                        Button(L10n.text("Open")) { model.openLogs() }.controlSize(.small)
-                    }
-                    RowDivider()
-                    SettingsRow(L10n.text("Configuration directory")) {
-                        Button(L10n.text("Open")) { model.openConfiguration() }.controlSize(.small)
                     }
                 }
             }
@@ -1370,10 +1266,6 @@ private struct ActivityView: View {
         }
     }
 
-    private func errorRate(_ analytics: RuntimeAnalyticsPayload) -> Double {
-        analytics.totalCalls == 0 ? 0 : Double(analytics.totalErrors) / Double(analytics.totalCalls)
-    }
-
     private func emptyAnalytics(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 12.5))
@@ -1388,6 +1280,8 @@ private struct SettingsView: View {
     @ObservedObject var model: ControlPanelModel
     @State private var port = 8765
     @State private var logLevel = "info"
+    @State private var analytics: RuntimeAnalyticsPayload?
+    @State private var showAdvancedDiagnostics = false
     @State private var languagePreference: UILanguagePreference = .system
     @State private var themePreference: UIThemePreference = .system
     @State private var coreAutostart = false
@@ -1433,6 +1327,12 @@ private struct SettingsView: View {
             coreAutostart = model.status.autostartEnabled
             menuAutostart = model.menuLoginAgent.isEnabled
         }
+        .task(id: model.settingsPage) {
+            guard model.settingsPage == .logs else { return }
+            analytics = model.status.loaded && model.status.healthy
+                ? await model.service.runtimeAnalytics(configuration: model.status.configuration)
+                : nil
+        }
     }
 
     @ViewBuilder private var settingsContent: some View {
@@ -1443,12 +1343,6 @@ private struct SettingsView: View {
                 SettingsSection(L10n.text("Runtime settings")) {
                     SettingsRow(L10n.text("Service port")) {
                         TextField("", value: $port, format: .number).textFieldStyle(.roundedBorder).frame(width: 100)
-                    }
-                    RowDivider()
-                    SettingsRow(L10n.text("Log level")) {
-                        Picker("", selection: $logLevel) {
-                            ForEach(["debug", "info", "warn", "error"], id: \.self) { Text($0).tag($0) }
-                        }.labelsHidden().frame(width: 110)
                     }
                     RowDivider()
                     SettingsRow(
@@ -1473,6 +1367,110 @@ private struct SettingsView: View {
                     }
                 }
                 if let message = model.message { Text(message).font(.system(size: 12)).foregroundStyle(.secondary) }
+            }
+        case .logs:
+            VStack(alignment: .leading, spacing: 20) {
+                PageHeader(
+                    title: L10n.text("Logs"),
+                    detail: L10n.text("View logs and diagnostics for troubleshooting.")
+                )
+                SettingsSection(L10n.text("Logs")) {
+                    SettingsRow(L10n.text("Log level")) {
+                        Picker("", selection: $logLevel) {
+                            ForEach(["debug", "info", "warn", "error"], id: \.self) { value in
+                                Text(logLevelTitle(value)).tag(value)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 120)
+                    }
+                    RowDivider()
+                    SettingsRow(
+                        L10n.text("Logging"),
+                        detail: L10n.text("Changing the log level will restart AgentDock.")
+                    ) {
+                        Button(L10n.text("Apply changes")) { applyLogLevel() }
+                            .controlSize(.small)
+                    }
+                    RowDivider()
+                    SettingsRow(L10n.text("Logs directory")) {
+                        Button(L10n.text("Open")) { model.openLogs() }.controlSize(.small)
+                    }
+                    RowDivider()
+                    SettingsRow(L10n.text("Configuration directory")) {
+                        Button(L10n.text("Open")) { model.openConfiguration() }.controlSize(.small)
+                    }
+                }
+
+                SettingsSection(L10n.text("Diagnostics")) {
+                    DisclosureGroup(isExpanded: $showAdvancedDiagnostics) {
+                        VStack(spacing: 0) {
+                            SettingsRow(L10n.text("Runtime")) {
+                                Text(model.status.loaded && model.status.healthy ? L10n.text("Running") : L10n.text("Stopped"))
+                                    .foregroundStyle(.secondary)
+                            }
+                            RowDivider()
+                            SettingsRow(L10n.text("Version")) {
+                                Text(model.status.version ?? "—").foregroundStyle(.secondary)
+                            }
+                            if let analytics {
+                                RowDivider()
+                                SettingsRow(L10n.text("Total calls")) {
+                                    Text("\(analytics.totalCalls)").foregroundStyle(.secondary)
+                                }
+                                RowDivider()
+                                SettingsRow(L10n.text("Failed calls")) {
+                                    Text("\(analytics.totalErrors)").foregroundStyle(.secondary)
+                                }
+                                RowDivider()
+                                SettingsRow(L10n.text("Recent P95 latency")) {
+                                    Text(RuntimeActivityFormat.duration(recentP95(analytics)))
+                                        .font(.system(size: 11.5, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                }
+                                RowDivider()
+                                SettingsRow(L10n.text("Go heap")) {
+                                    Text(RuntimeActivityFormat.bytes(analytics.process.heapAllocBytes)).foregroundStyle(.secondary)
+                                }
+                                RowDivider()
+                                SettingsRow(L10n.text("Goroutines")) {
+                                    Text("\(analytics.process.goroutines)").foregroundStyle(.secondary)
+                                }
+                                RowDivider()
+                                SettingsRow(L10n.text("GC cycles")) {
+                                    Text("\(analytics.process.gcCycles)").foregroundStyle(.secondary)
+                                }
+                                RowDivider()
+                                SettingsRow(L10n.text("Uptime")) {
+                                    Text(RuntimeActivityFormat.uptime(analytics.process.uptimeMS)).foregroundStyle(.secondary)
+                                }
+                                RowDivider()
+                                SettingsRow(L10n.text("Diagnostic information")) {
+                                    Button(L10n.text("Copy diagnostics")) { copyDiagnostics(analytics) }
+                                        .controlSize(.small)
+                                }
+                            } else {
+                                RowDivider()
+                                Text(L10n.text("Runtime analytics are unavailable."))
+                                    .font(.system(size: 12.5))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 13)
+                                    .padding(.vertical, 12)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .padding(.top, 8)
+                    } label: {
+                        Text(L10n.text("Advanced diagnostics"))
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 12)
+                }
+
+                if let message = model.message {
+                    Text(message).font(.system(size: 12)).foregroundStyle(.secondary)
+                }
             }
         case .permissions:
             VStack(alignment: .leading, spacing: 20) {
@@ -1706,6 +1704,54 @@ private struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private func logLevelTitle(_ value: String) -> String {
+        switch value {
+        case "debug": return L10n.text("Debug")
+        case "warn": return L10n.text("Warning")
+        case "error": return L10n.text("Error")
+        default: return L10n.text("Info")
+        }
+    }
+
+    private func applyLogLevel() {
+        guard let configuration = model.status.configuration else { return }
+        let settings = EditableServiceSettings(
+            port: configuration.port,
+            logLevel: logLevel,
+            mcpAppsMode: configuration.mcpAppsMode,
+            browserEnabled: configuration.browserEnabled,
+            browserCDPURL: configuration.browserCDPURL,
+            browserReuseExistingCDP: configuration.browserReuseExistingCDP,
+            acpEnabled: configuration.acpEnabled,
+            acpProfiles: configuration.acpProfiles,
+            acpDefaultProfile: configuration.acpDefaultProfile
+        )
+        Task { await model.applySettings(settings) }
+    }
+
+    private func recentP95(_ analytics: RuntimeAnalyticsPayload) -> Double {
+        let values = analytics.recentCalls.map(\.durationMS).sorted()
+        guard !values.isEmpty else { return 0 }
+        let index = max(0, min(values.count - 1, Int(ceil(Double(values.count) * 0.95)) - 1))
+        return values[index]
+    }
+
+    private func copyDiagnostics(_ analytics: RuntimeAnalyticsPayload) {
+        let lines = [
+            "AgentDock \(model.status.version ?? "unknown")",
+            "runtime=\(model.status.loaded && model.status.healthy ? "running" : "stopped")",
+            "total_calls=\(analytics.totalCalls)",
+            "total_errors=\(analytics.totalErrors)",
+            "recent_p95=\(RuntimeActivityFormat.duration(recentP95(analytics)))",
+            "goroutines=\(analytics.process.goroutines)",
+            "heap_alloc=\(RuntimeActivityFormat.bytes(analytics.process.heapAllocBytes))",
+            "gc_cycles=\(analytics.process.gcCycles)",
+            "uptime=\(RuntimeActivityFormat.uptime(analytics.process.uptimeMS))"
+        ]
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
     }
 
     private func displayedSecret(_ value: String?, visible: Bool) -> String {

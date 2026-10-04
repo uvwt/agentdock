@@ -754,7 +754,7 @@
   <data name="Full" xml:space="preserve"><value>完整</value></data>
   <data name="Compact" xml:space="preserve"><value>紧凑</value></data>
   <data name="Off" xml:space="preserve"><value>关闭</value></data>
-  <data name="ActivityDetail" xml:space="preserve"><value>查看工具调用、耗时、错误与运行资源。</value></data>
+  <data name="ActivityDetail" xml:space="preserve"><value>查看最近的工具调用和执行详情。</value></data>
   <data name="CallOverview" xml:space="preserve"><value>调用概览</value></data>
   <data name="TotalCalls" xml:space="preserve"><value>总调用</value></data>
   <data name="FailedCalls" xml:space="preserve"><value>失败调用</value></data>
@@ -782,6 +782,18 @@
   <data name="StageCommandForegroundWait" xml:space="preserve"><value>前台等待</value></data>
   <data name="LastStatusRefresh" xml:space="preserve"><value>状态刷新时间</value></data>
   <data name="Diagnostics" xml:space="preserve"><value>诊断</value></data>
+  <data name="Logs" xml:space="preserve"><value>日志</value></data>
+  <data name="LogsDetail" xml:space="preserve"><value>查看日志和诊断信息，用于排查问题。</value></data>
+  <data name="Logging" xml:space="preserve"><value>日志</value></data>
+  <data name="LogLevelRestartHint" xml:space="preserve"><value>修改日志级别后将重启 AgentDock。</value></data>
+  <data name="AdvancedDiagnostics" xml:space="preserve"><value>高级诊断</value></data>
+  <data name="RecentP95Latency" xml:space="preserve"><value>近期 P95 耗时</value></data>
+  <data name="DiagnosticInformation" xml:space="preserve"><value>诊断信息</value></data>
+  <data name="CopyDiagnostics" xml:space="preserve"><value>复制诊断信息</value></data>
+  <data name="LogDebug" xml:space="preserve"><value>调试</value></data>
+  <data name="LogInfo" xml:space="preserve"><value>信息</value></data>
+  <data name="LogWarning" xml:space="preserve"><value>警告</value></data>
+  <data name="LogError" xml:space="preserve"><value>错误</value></data>
   <data name="LogsDirectory" xml:space="preserve"><value>日志目录</value></data>
   <data name="ConfigurationDirectory" xml:space="preserve"><value>配置目录</value></data>
   <data name="Open" xml:space="preserve"><value>打开</value></data>

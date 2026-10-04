@@ -20,30 +20,8 @@ public sealed partial class ActivityPage : Page
 
         PageTitle.Text = UiText.Get("Activity");
         PageDetail.Text = UiText.Get("ActivityDetail");
-        CallOverviewSection.Title = UiText.Get("CallOverview");
-        TotalCallsLabel.Text = UiText.Get("TotalCalls");
-        FailedCallsLabel.Text = UiText.Get("FailedCalls");
-        ActiveCallsLabel.Text = UiText.Get("ActiveCalls");
-        StatsWindowLabel.Text = UiText.Get("StatsWindow");
-        CallStatisticsSection.Title = UiText.Get("CallStatistics");
         RecentCallsSection.Title = UiText.Get("RecentCalls");
         RecentCallsHint.Text = UiText.Get("RecentCallsPrivacyHint");
-        ResourcesSection.Title = UiText.Get("RuntimeResources");
-        GoHeapLabel.Text = UiText.Get("GoHeap");
-        HeapInUseLabel.Text = UiText.Get("HeapInUse");
-        GoroutinesLabel.Text = UiText.Get("Goroutines");
-        GcCyclesLabel.Text = UiText.Get("GcCycles");
-        UptimeLabel.Text = UiText.Get("Uptime");
-        RuntimeSection.Title = UiText.Get("Runtime");
-        RuntimeLabel.Text = UiText.Get("Runtime");
-        VersionLabel.Text = UiText.Get("Version");
-        RefreshLabel.Text = UiText.Get("LastStatusRefresh");
-        DiagnosticsSection.Title = UiText.Get("Diagnostics");
-        LogsLabel.Text = UiText.Get("LogsDirectory");
-        ConfigLabel.Text = UiText.Get("ConfigurationDirectory");
-        OpenLogsButton.Content = UiText.Get("Open");
-        OpenConfigButton.Content = UiText.Get("Open");
-
         _analyticsTimer.Tick += AnalyticsTimer_Tick;
     }
 
@@ -57,7 +35,6 @@ public sealed partial class ActivityPage : Page
         }
 
         _snapshot = await _runtime.GetSnapshotAsync(includeNexusConnection: false);
-        RenderRuntime(_snapshot);
         await RefreshAnalyticsAsync();
         _analyticsTimer.Start();
     }
@@ -87,7 +64,7 @@ public sealed partial class ActivityPage : Page
                 RenderAnalyticsUnavailable();
                 return;
             }
-            RenderAnalytics(analytics);
+            RenderRecentCalls(analytics.RecentCalls);
         }
         finally
         {
@@ -95,78 +72,12 @@ public sealed partial class ActivityPage : Page
         }
     }
 
-    private void RenderRuntime(RuntimeSnapshot snapshot)
-    {
-        RuntimeState.Text = snapshot.CoreRunning
-            ? UiText.Get("Running") + " ●"
-            : UiText.Get("Stopped");
-        VersionValue.Text = string.IsNullOrWhiteSpace(snapshot.Version) ? "—" : snapshot.Version;
-        RefreshValue.Text = snapshot.CheckedAt.ToLocalTime().ToString("HH:mm:ss");
-    }
-
-    private void RenderAnalytics(RuntimeAnalyticsPayload analytics)
-    {
-        TotalCallsValue.Text = analytics.TotalCalls.ToString();
-        TotalCallsDetail.Text = UiText.Get("SinceRuntimeStarted");
-        FailedCallsValue.Text = analytics.TotalErrors.ToString();
-        FailedCallsDetail.Text = analytics.TotalCalls == 0
-            ? "0.0%"
-            : $"{100.0 * analytics.TotalErrors / analytics.TotalCalls:0.0}%";
-        ActiveCallsValue.Text = analytics.ActiveCalls.ToString();
-        ActiveCallsDetail.Text = UiText.Get("CurrentlyRunning");
-        StatsWindowValue.Text = analytics.WindowCalls.ToString();
-        StatsWindowDetail.Text = UiText.Format("UpToRetained", analytics.RecentCapacity);
-
-        RenderToolStatistics(analytics.ToolStats);
-        RenderRecentCalls(analytics.RecentCalls);
-
-        GoHeapValue.Text = FormatBytes(analytics.Process.HeapAllocBytes);
-        HeapInUseValue.Text = FormatBytes(analytics.Process.HeapInuseBytes);
-        GoroutinesValue.Text = analytics.Process.Goroutines.ToString();
-        GcCyclesValue.Text = analytics.Process.GcCycles.ToString();
-        UptimeValue.Text = FormatUptime(analytics.Process.UptimeMs);
-    }
-
     private void RenderAnalyticsUnavailable()
     {
-        foreach (var value in new[]
-        {
-            TotalCallsValue, FailedCallsValue, ActiveCallsValue, StatsWindowValue,
-            GoHeapValue, HeapInUseValue, GoroutinesValue, GcCyclesValue, UptimeValue
-        })
-        {
-            value.Text = "—";
-        }
-
-        TotalCallsDetail.Text = "";
-        FailedCallsDetail.Text = "";
-        ActiveCallsDetail.Text = "";
-        StatsWindowDetail.Text = "";
-        CallStatisticsPanel.Children.Clear();
-        CallStatisticsPanel.Children.Add(CreateEmptyText(UiText.Get("AnalyticsUnavailable")));
         RecentCallsPanel.Children.Clear();
         RecentCallsPanel.Children.Add(CreateEmptyText(UiText.Get("AnalyticsUnavailable")));
         _renderedLatestCallId = null;
         _renderedCallCount = -1;
-    }
-
-    private void RenderToolStatistics(IReadOnlyList<RuntimeToolStats> stats)
-    {
-        CallStatisticsPanel.Children.Clear();
-        if (stats.Count == 0)
-        {
-            CallStatisticsPanel.Children.Add(CreateEmptyText(UiText.Get("NoCallData")));
-            return;
-        }
-
-        for (var index = 0; index < stats.Count; index++)
-        {
-            if (index > 0)
-            {
-                CallStatisticsPanel.Children.Add(CreateDivider());
-            }
-            CallStatisticsPanel.Children.Add(CreateToolStatRow(stats[index]));
-        }
     }
 
     private void RenderRecentCalls(IReadOnlyList<RuntimeAnalyticsCall> calls)
@@ -194,44 +105,6 @@ public sealed partial class ActivityPage : Page
             }
             RecentCallsPanel.Children.Add(CreateCallExpander(calls[index]));
         }
-    }
-
-    private static UIElement CreateToolStatRow(RuntimeToolStats stat)
-    {
-        var row = new Grid
-        {
-            MinHeight = 54,
-            Padding = new Thickness(13, 7, 13, 7),
-            ColumnSpacing = 16
-        };
-        row.ColumnDefinitions.Add(new ColumnDefinition());
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-        var labels = new StackPanel { Spacing = 2 };
-        labels.Children.Add(new TextBlock
-        {
-            Text = stat.Tool,
-            FontSize = 13,
-            FontWeight = Microsoft.UI.Text.FontWeights.Medium
-        });
-        labels.Children.Add(new TextBlock
-        {
-            Text = UiText.Format("ActivityCallStatsDetail", stat.Count, stat.ErrorRate * 100),
-            FontSize = 11.5,
-            Foreground = SecondaryBrush()
-        });
-        row.Children.Add(labels);
-
-        var latency = new TextBlock
-        {
-            Text = $"P50 {FormatDuration(stat.P50DurationMs)} · P95 {FormatDuration(stat.P95DurationMs)} · P99 {FormatDuration(stat.P99DurationMs)}",
-            FontSize = 11.5,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = SecondaryBrush()
-        };
-        Grid.SetColumn(latency, 1);
-        row.Children.Add(latency);
-        return row;
     }
 
     private static UIElement CreateCallExpander(RuntimeAnalyticsCall call)
@@ -397,27 +270,4 @@ public sealed partial class ActivityPage : Page
         }
         return $"{milliseconds / 60_000:0.0} min";
     }
-
-    private static string FormatBytes(ulong bytes)
-    {
-        if (bytes >= 1UL << 30) return $"{bytes / (double)(1UL << 30):0.0} GB";
-        if (bytes >= 1UL << 20) return $"{bytes / (double)(1UL << 20):0.0} MB";
-        if (bytes >= 1UL << 10) return $"{bytes / (double)(1UL << 10):0.0} KB";
-        return $"{bytes} B";
-    }
-
-    private static string FormatUptime(long milliseconds)
-    {
-        var seconds = Math.Max(0, milliseconds / 1000);
-        if (seconds < 60) return $"{seconds} s";
-        if (seconds < 3600) return $"{seconds / 60} min";
-        if (seconds < 86_400) return $"{seconds / 3600} h";
-        return $"{seconds / 86_400} d";
-    }
-
-    private void OpenLogsButton_Click(object sender, RoutedEventArgs e) =>
-        _runtime?.OpenLogsDirectory();
-
-    private void OpenConfigButton_Click(object sender, RoutedEventArgs e) =>
-        _runtime?.OpenConfigDirectory();
 }

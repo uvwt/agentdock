@@ -85,7 +85,8 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 		`case .runtime: return L10n.text("Runtime")`,
 		`case .permissions: return L10n.text("Permissions")`,
 		"setLanguagePreference(_ preference:",
-		"case runtime, permissions, startup, advancedConnection, appearance, about",
+		"case runtime, permissions, startup, logs, advancedConnection, appearance, about",
+		`case .logs: return L10n.text("Logs")`,
 		`case .appearance: return L10n.text("Appearance")`,
 		"case .about: return L10n.text(\"About\")",
 		"case .appearance:",
@@ -202,23 +203,29 @@ func TestMacOSActivityOwnsRuntimeAnalytics(t *testing.T) {
 		`path: "/internal/runtime/analytics"`,
 		`decodeIfPresent([RuntimeAnalyticsStage].self, forKey: .stages) ?? []`,
 		"RuntimeActivityCallRow",
-		`SettingsSection(L10n.text("Call overview"))`,
-		`SettingsSection(L10n.text("Call statistics"))`,
 		`SettingsSection(L10n.text("Recent calls"))`,
-		`SettingsSection(L10n.text("Runtime resources"))`,
+		`case .logs:`,
+		`SettingsSection(L10n.text("Logs"))`,
+		`L10n.text("Log level")`,
+		`L10n.text("Advanced diagnostics")`,
+		`L10n.text("Copy diagnostics")`,
+		"recentP95(analytics)",
 		"2_000_000_000",
 		`L10n.text("View activity")`,
 	} {
 		if !strings.Contains(content, want) {
-			t.Fatalf("macOS Activity analytics missing %q", want)
+			t.Fatalf("macOS Activity/logs integration missing %q", want)
 		}
 	}
 	for _, forbidden := range []string{
 		"openRuntimeAnalytics",
 		`components.path = "/analytics"`,
+		`SettingsSection(L10n.text("Call overview"))`,
+		`SettingsSection(L10n.text("Call statistics"))`,
+		`SettingsSection(L10n.text("Runtime resources"))`,
 	} {
 		if strings.Contains(content, forbidden) {
-			t.Fatalf("macOS still opens retired analytics web UI %q", forbidden)
+			t.Fatalf("macOS retained retired analytics UI %q", forbidden)
 		}
 	}
 }

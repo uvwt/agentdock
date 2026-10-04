@@ -418,30 +418,38 @@ func TestWindowsNativePagesUseLiveRuntimeState(t *testing.T) {
 func TestWindowsActivityOwnsRuntimeAnalytics(t *testing.T) {
 	activityXaml := readWindowsNativeFile(t, "winui", "ActivityPage.xaml")
 	activityCode := readWindowsNativeFile(t, "winui", "ActivityPage.xaml.cs")
+	settingsXaml := readWindowsNativeFile(t, "winui", "SettingsPage.xaml")
+	settingsCode := readWindowsNativeFile(t, "winui", "SettingsPage.xaml.cs")
 	runtime := readWindowsNativeFile(t, "shared", "Services", "RuntimeService.cs")
 
 	for _, want := range []string{
-		`x:Name="CallOverviewSection"`,
-		`x:Name="CallStatisticsPanel"`,
 		`x:Name="RecentCallsPanel"`,
-		`x:Name="ResourcesSection"`,
 		"GetRuntimeAnalyticsAsync(_snapshot)",
 		`"/internal/runtime/analytics"`,
 		"TimeSpan.FromSeconds(2)",
 		"CreateCallExpander",
 		"StageMcpRemoteCall",
 		"RecentCallsPrivacyHint",
+		`x:Name="LogsNavigationItem" Tag="logs"`,
+		"BuildLogs()",
+		"AdvancedDiagnostics",
+		"CopyDiagnostics",
+		"RecentP95",
 	} {
-		if !strings.Contains(activityXaml+activityCode+runtime, want) {
-			t.Fatalf("WinUI Activity analytics missing %q", want)
+		if !strings.Contains(activityXaml+activityCode+settingsXaml+settingsCode+runtime, want) {
+			t.Fatalf("WinUI Activity/logs integration missing %q", want)
 		}
 	}
 	for _, forbidden := range []string{
 		"OpenRuntimeAnalytics(",
 		`Path = "/analytics"`,
+		`x:Name="CallOverviewSection"`,
+		`x:Name="CallStatisticsPanel"`,
+		`x:Name="ResourcesSection"`,
+		`x:Name="DiagnosticsSection"`,
 	} {
-		if strings.Contains(activityCode+runtime, forbidden) {
-			t.Fatalf("WinUI Activity still opens retired analytics web UI %q", forbidden)
+		if strings.Contains(activityXaml+activityCode+runtime, forbidden) {
+			t.Fatalf("WinUI Activity retained retired analytics UI %q", forbidden)
 		}
 	}
 }
