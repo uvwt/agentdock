@@ -51,12 +51,21 @@ func TestBridgeHelloSeparatesToolsFromBridgeCapabilities(t *testing.T) {
 	if !reflect.DeepEqual(hello.Capabilities, tools) {
 		t.Fatalf("capabilities = %#v, want tools %#v", hello.Capabilities, tools)
 	}
-	if len(hello.BridgeCapabilities) != 1 || hello.BridgeCapabilities[0] != protocol.ArtifactReadCapability {
-		t.Fatalf("bridge_capabilities = %#v", hello.BridgeCapabilities)
+	wantBridgeCapabilities := []string{
+		protocol.CapabilitiesNegotiationCapability,
+		protocol.ContextLocalCapability,
+		protocol.RuntimeRequestCapability,
+		protocol.ResourceReadCapability,
+		protocol.ArtifactReadCapability,
+	}
+	if !reflect.DeepEqual(hello.BridgeCapabilities, wantBridgeCapabilities) {
+		t.Fatalf("bridge_capabilities = %#v, want %#v", hello.BridgeCapabilities, wantBridgeCapabilities)
 	}
 	for _, capability := range hello.Capabilities {
-		if capability == protocol.ArtifactReadCapability {
-			t.Fatal("Bridge capability leaked into model-facing tool capabilities")
+		for _, bridgeCapability := range wantBridgeCapabilities {
+			if capability == bridgeCapability {
+				t.Fatalf("Bridge capability %q leaked into model-facing tool capabilities", capability)
+			}
 		}
 	}
 }
