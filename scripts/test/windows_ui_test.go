@@ -311,6 +311,8 @@ func TestWindowsHomeUsesProductStatusAndAdaptiveCapabilities(t *testing.T) {
 	runtime := readWindowsNativeFile(t, "shared", "Services", "RuntimeService.cs")
 
 	for _, want := range []string{
+		`HorizontalScrollMode="Disabled"`,
+		`HorizontalScrollBarVisibility="Disabled"`,
 		`x:Name="AgentDockState"`,
 		`x:Name="SkillCount"`,
 		`x:Name="McpCount"`,
@@ -340,6 +342,11 @@ func TestWindowsHomeUsesProductStatusAndAdaptiveCapabilities(t *testing.T) {
 		`RuntimeAction.Content = serviceLoaded ? UiText.Get("Stop") : UiText.Get("Start")`,
 		`"/internal/runtime/overview"`,
 		`"/internal/runtime/diagnostics"`,
+		`"/internal/runtime/skills"`,
+		`"/internal/runtime/mcp"`,
+		`"/internal/runtime/plugins"`,
+		"RuntimeListCountPayload",
+		"dashboard.CountsAvailable",
 	} {
 		if !strings.Contains(homeXaml+homeCode+runtime, want) {
 			t.Fatalf("WinUI Home missing product status contract %q", want)

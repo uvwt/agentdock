@@ -163,9 +163,9 @@ public sealed partial class HomePage : Page
 
     private void RenderDashboard(RuntimeDashboardSnapshot dashboard)
     {
-        SkillCount.Text = dashboard.OverviewAvailable ? dashboard.SkillCount.ToString() : "—";
-        McpCount.Text = dashboard.OverviewAvailable ? dashboard.McpCount.ToString() : "—";
-        PluginCount.Text = dashboard.OverviewAvailable ? dashboard.PluginCount.ToString() : "—";
+        SkillCount.Text = dashboard.CountsAvailable ? dashboard.SkillCount.ToString() : "—";
+        McpCount.Text = dashboard.CountsAvailable ? dashboard.McpCount.ToString() : "—";
+        PluginCount.Text = dashboard.CountsAvailable ? dashboard.PluginCount.ToString() : "—";
 
         RecentActivityPanel.Children.Clear();
         if (!dashboard.DiagnosticsAvailable)

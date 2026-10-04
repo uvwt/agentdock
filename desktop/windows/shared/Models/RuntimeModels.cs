@@ -187,6 +187,12 @@ public sealed class RuntimeOverviewPayload
     public RuntimeCountMetric Plugins { get; set; } = new();
 }
 
+public sealed class RuntimeListCountPayload
+{
+    [JsonPropertyName("count")]
+    public int Count { get; set; }
+}
+
 public sealed class RuntimeRecentCall
 {
     [JsonPropertyName("id")]
@@ -218,7 +224,7 @@ public sealed class RuntimeDiagnosticsPayload
 }
 
 public sealed record RuntimeDashboardSnapshot(
-    bool OverviewAvailable,
+    bool CountsAvailable,
     bool DiagnosticsAvailable,
     int SkillCount,
     int McpCount,

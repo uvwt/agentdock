@@ -623,7 +623,7 @@ private struct HomeView: View {
     }
 
     private func dashboardCount(_ value: Int) -> String {
-        model.dashboard.overviewAvailable ? String(value) : "—"
+        model.dashboard.countsAvailable ? String(value) : "—"
     }
 
     private var agentDockStatusText: String {

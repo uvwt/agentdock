@@ -135,3 +135,36 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 		t.Fatal("legacy macOS advanced settings page must be removed after SwiftUI parity")
 	}
 }
+
+func TestMacOSDashboardFallsBackToRuntimeListCounts(t *testing.T) {
+	root := filepath.Join("..", "..", "desktop", "macos", "AgentDockApp", "Sources")
+	serviceData, err := os.ReadFile(filepath.Join(root, "ServiceController.swift"))
+	if err != nil {
+		t.Fatalf("read ServiceController.swift: %v", err)
+	}
+	service := string(serviceData)
+	for _, want := range []string{
+		"RuntimeListCountPayload",
+		`path: "/internal/runtime/overview"`,
+		`path: "/internal/runtime/diagnostics"`,
+		`path: "/internal/runtime/skills"`,
+		`path: "/internal/runtime/mcp"`,
+		`path: "/internal/runtime/plugins"`,
+		"countsAvailable = true",
+		"skillCount = skills.count",
+		"mcpCount = mcp.count",
+		"pluginCount = plugins.count",
+	} {
+		if !strings.Contains(service, want) {
+			t.Fatalf("native macOS dashboard missing runtime count fallback contract %q", want)
+		}
+	}
+
+	windowData, err := os.ReadFile(filepath.Join(root, "NativeControlPanelWindowController.swift"))
+	if err != nil {
+		t.Fatalf("read NativeControlPanelWindowController.swift: %v", err)
+	}
+	if !strings.Contains(string(windowData), "model.dashboard.countsAvailable") {
+		t.Fatal("native macOS dashboard must render counts from the resolved runtime count availability")
+	}
+}

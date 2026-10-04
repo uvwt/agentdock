@@ -96,6 +96,10 @@ struct RuntimeOverviewPayload: Decodable {
     let plugins: RuntimeCountMetric
 }
 
+struct RuntimeListCountPayload: Decodable {
+    let count: Int
+}
+
 struct RuntimeDiagnosticCall: Decodable, Identifiable {
     let id: String
     let tool: String
@@ -122,7 +126,7 @@ struct RuntimeDiagnosticsPayload: Decodable {
 }
 
 struct RuntimeDashboardSnapshot {
-    let overviewAvailable: Bool
+    let countsAvailable: Bool
     let diagnosticsAvailable: Bool
     let skillCount: Int
     let mcpCount: Int
@@ -130,7 +134,7 @@ struct RuntimeDashboardSnapshot {
     let recentCalls: [RuntimeDiagnosticCall]
 
     static let empty = RuntimeDashboardSnapshot(
-        overviewAvailable: false,
+        countsAvailable: false,
         diagnosticsAvailable: false,
         skillCount: 0,
         mcpCount: 0,
@@ -200,23 +204,57 @@ final class ServiceController: @unchecked Sendable {
     func dashboard(configuration: ServiceConfiguration?) async -> RuntimeDashboardSnapshot {
         guard let configuration else { return .empty }
 
-        async let overview: RuntimeOverviewPayload? = fetchRuntimePayload(
+        async let overviewTask: RuntimeOverviewPayload? = fetchRuntimePayload(
             RuntimeOverviewPayload.self,
             configuration: configuration,
             path: "/internal/runtime/overview"
         )
-        async let diagnostics: RuntimeDiagnosticsPayload? = fetchRuntimePayload(
+        async let diagnosticsTask: RuntimeDiagnosticsPayload? = fetchRuntimePayload(
             RuntimeDiagnosticsPayload.self,
             configuration: configuration,
             path: "/internal/runtime/diagnostics"
         )
-        let (overviewPayload, diagnosticsPayload) = await (overview, diagnostics)
+        let overviewPayload = await overviewTask
+
+        var countsAvailable = overviewPayload != nil
+        var skillCount = overviewPayload?.skills.count ?? 0
+        var mcpCount = overviewPayload?.mcp.count ?? 0
+        var pluginCount = overviewPayload?.plugins.count ?? 0
+
+        // 升级期间桌面 App 可能先于 Core 生效。旧 Core 没有 overview，
+        // 但列表接口已经提供 count；回退仍由 Runtime 负责计数，不扫描本地目录。
+        if !countsAvailable {
+            async let skillsTask: RuntimeListCountPayload? = fetchRuntimePayload(
+                RuntimeListCountPayload.self,
+                configuration: configuration,
+                path: "/internal/runtime/skills"
+            )
+            async let mcpTask: RuntimeListCountPayload? = fetchRuntimePayload(
+                RuntimeListCountPayload.self,
+                configuration: configuration,
+                path: "/internal/runtime/mcp"
+            )
+            async let pluginsTask: RuntimeListCountPayload? = fetchRuntimePayload(
+                RuntimeListCountPayload.self,
+                configuration: configuration,
+                path: "/internal/runtime/plugins"
+            )
+            let (skills, mcp, plugins) = await (skillsTask, mcpTask, pluginsTask)
+            if let skills, let mcp, let plugins {
+                countsAvailable = true
+                skillCount = skills.count
+                mcpCount = mcp.count
+                pluginCount = plugins.count
+            }
+        }
+
+        let diagnosticsPayload = await diagnosticsTask
         return RuntimeDashboardSnapshot(
-            overviewAvailable: overviewPayload != nil,
+            countsAvailable: countsAvailable,
             diagnosticsAvailable: diagnosticsPayload != nil,
-            skillCount: overviewPayload?.skills.count ?? 0,
-            mcpCount: overviewPayload?.mcp.count ?? 0,
-            pluginCount: overviewPayload?.plugins.count ?? 0,
+            skillCount: skillCount,
+            mcpCount: mcpCount,
+            pluginCount: pluginCount,
             recentCalls: diagnosticsPayload?.recentCalls ?? []
         )
     }
