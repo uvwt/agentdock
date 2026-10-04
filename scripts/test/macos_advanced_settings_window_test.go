@@ -65,7 +65,8 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 		"https://mcp.nexusdock.co/workspace/devices",
 		`L10n.text("No pairing code? Get one from NexusDock ↗")`,
 		`L10n.text("Manage connected devices ↗")`,
-		"nexusDevice.paired && isOfficialEndpoint(nexusDevice.endpoint)",
+		"nexusDevice.paired && !rePairing",
+		"L10n.text(\"Re-pair\")",
 		"Local MCP, access credentials, and direct public access.",
 		"applyTunnel(mode:",
 		"model.applyTunnel(mode: .quick",
@@ -75,7 +76,6 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 		"Add custom Coding Agent",
 		"Default Coding Agent",
 		"Adjust local AgentDock runtime settings.",
-		"Changing runtime settings will automatically restart AgentDock.",
 		"Apply changes",
 		"Interface language",
 		"setCoreAutostart",
@@ -131,6 +131,7 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 		`SettingsRow(L10n.text("Service"))`,
 		`Button(model.status.loaded ? L10n.text("Stop") : L10n.text("Start"))`,
 		"Save and restart",
+		"Changing runtime settings will automatically restart AgentDock.",
 	} {
 		if strings.Contains(runtimeBlock, forbidden) {
 			t.Fatalf("native macOS Runtime settings still exposes duplicate service control %q", forbidden)

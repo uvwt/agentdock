@@ -17,24 +17,40 @@ func readCapabilitySource(t *testing.T, parts ...string) string {
 	return string(data)
 }
 
-func TestDesktopCapabilitiesUseRuntimeOverviewForExtensionSummary(t *testing.T) {
+func TestDesktopCapabilitiesDoNotDuplicateExtensionSummary(t *testing.T) {
 	macView := readCapabilitySource(t, "desktop", "macos", "AgentDockApp", "Sources", "NativeControlPanelWindowController.swift")
 	macService := readCapabilitySource(t, "desktop", "macos", "AgentDockApp", "Sources", "ServiceController.swift")
 	winView := readCapabilitySource(t, "desktop", "windows", "winui", "CapabilitiesPage.xaml")
 	winCode := readCapabilitySource(t, "desktop", "windows", "winui", "CapabilitiesPage.xaml.cs")
 	winService := readCapabilitySource(t, "desktop", "windows", "shared", "Services", "RuntimeService.cs")
 
-	for _, want := range []string{
+	for _, forbidden := range []string{
 		"SettingsSection(L10n.text(\"Extensions\"))",
-		"L10n.text(\"Skills\")",
-		"L10n.text(\"Plugins\")",
-		"L10n.text(\"Dynamic MCP servers\")",
 		"runtimeExtensionOverview(configuration: configuration)",
 	} {
-		if !strings.Contains(macView, want) {
-			t.Fatalf("macOS capabilities extension summary missing %q", want)
+		if strings.Contains(macView, forbidden) {
+			t.Fatalf("macOS capabilities must not duplicate extension summary %q", forbidden)
 		}
 	}
+	for _, forbidden := range []string{
+		"x:Name=\"ExtensionsSection\"",
+		"x:Name=\"SkillsValue\"",
+		"x:Name=\"PluginsValue\"",
+		"x:Name=\"McpServersValue\"",
+	} {
+		if strings.Contains(winView, forbidden) {
+			t.Fatalf("WinUI capabilities must not duplicate extension summary %q", forbidden)
+		}
+	}
+	for _, forbidden := range []string{
+		"GetRuntimeExtensionOverviewAsync(snapshot.LocalMcpUrl)",
+		"UiText.Get(\"Extensions\")",
+	} {
+		if strings.Contains(winCode, forbidden) {
+			t.Fatalf("WinUI capabilities must not fetch extension summary %q", forbidden)
+		}
+	}
+
 	for _, want := range []string{
 		"components.path = \"/internal/runtime/overview\"",
 		"forHTTPHeaderField: \"Authorization\"",
@@ -42,26 +58,6 @@ func TestDesktopCapabilitiesUseRuntimeOverviewForExtensionSummary(t *testing.T) 
 	} {
 		if !strings.Contains(macService, want) {
 			t.Fatalf("macOS RuntimeOverview bridge missing %q", want)
-		}
-	}
-
-	for _, want := range []string{
-		"x:Name=\"ExtensionsSection\"",
-		"x:Name=\"SkillsValue\"",
-		"x:Name=\"PluginsValue\"",
-		"x:Name=\"McpServersValue\"",
-	} {
-		if !strings.Contains(winView, want) {
-			t.Fatalf("WinUI capabilities extension summary missing %q", want)
-		}
-	}
-	for _, want := range []string{
-		"GetRuntimeExtensionOverviewAsync(snapshot.LocalMcpUrl)",
-		"UiText.Get(\"BuiltInCapabilities\")",
-		"UiText.Get(\"Extensions\")",
-	} {
-		if !strings.Contains(winCode, want) {
-			t.Fatalf("WinUI capabilities RuntimeOverview binding missing %q", want)
 		}
 	}
 	for _, want := range []string{

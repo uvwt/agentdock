@@ -71,7 +71,8 @@ func TestWindowsNativeControlPanelCarriesSettingsParity(t *testing.T) {
 		`UiText.Get("GetPairingCodeFromNexusDock")`,
 		`UiText.Get("ManageConnectedDevices")`,
 		`NexusDevicesLink.Visibility = SelectedRemoteService() == "official"`,
-		"IsOfficialEndpoint(_snapshot.Nexus.Endpoint)",
+		"IsOfficialEndpoint(_snapshot!.Nexus.Endpoint)",
+		"UiText.Get(\"RePair\")",
 	} {
 		if !strings.Contains(connections, want) {
 			t.Fatalf("WinUI connections parity missing %q", want)
@@ -179,7 +180,6 @@ func TestWindowsRuntimeSettingsAvoidDuplicateServiceStatus(t *testing.T) {
 		`UiText.Get("Port")`,
 		`UiText.Get("LogLevel")`,
 		`UiText.Get("ApplyChanges")`,
-		`UiText.Get("RuntimeRestartHint")`,
 		`await _runtime.SaveSettingsAsync(_snapshot.Settings)`,
 		`await _runtime.RunCoreActionAsync("restart")`,
 	} {
@@ -192,6 +192,7 @@ func TestWindowsRuntimeSettingsAvoidDuplicateServiceStatus(t *testing.T) {
 		`ActionRow(UiText.Get("Service")`,
 		"RuntimeAction_Click",
 		`UiText.Get("SaveAndRestart")`,
+		`UiText.Get("RuntimeRestartHint")`,
 	} {
 		if strings.Contains(settings, forbidden) {
 			t.Fatalf("WinUI Runtime settings still exposes duplicate service control %q", forbidden)
