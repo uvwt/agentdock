@@ -516,6 +516,12 @@ public sealed partial class SettingsPage : Page
             string.Equals(_publicEndpointCheckUrl, publicAddress, StringComparison.Ordinal) &&
             _publicEndpointCheckResult is { } endpointResult)
         {
+            var endpointStatusColor = endpointResult.IsReachable
+                ? Microsoft.UI.Colors.Green
+                : endpointResult.HttpStatusCode is >= 400 and < 500
+                    ? Microsoft.UI.Colors.DarkOrange
+                    : Microsoft.UI.Colors.Red;
+
             publicActions.Children.Add(new TextBlock
             {
                 Text = endpointResult.IsReachable && endpointResult.LatencyMilliseconds is { } latency
@@ -527,7 +533,7 @@ public sealed partial class SettingsPage : Page
                         : UiText.Get("Failed"),
                 FontSize = 11.5,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                Opacity = 0.72,
+                Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(endpointStatusColor),
                 VerticalAlignment = VerticalAlignment.Center
             });
         }
