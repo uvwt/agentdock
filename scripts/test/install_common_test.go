@@ -70,6 +70,9 @@ func TestUnifiedInstallerFreshFlowOrdersCoreNexusThenCloudflare(t *testing.T) {
 	entry := string(data)
 	for _, want := range []string{
 		`OFFICIAL_NEXUS_ENDPOINT="${AGENTDOCK_NEXUS_OFFICIAL_ENDPOINT:-https://mcp.nexusdock.co}"`,
+		`OFFICIAL_NEXUS_DEVICES_URL="${AGENTDOCK_NEXUS_OFFICIAL_DEVICES_URL:-https://mcp.nexusdock.co/workspace/devices}"`,
+		`prompt_value 'NexusDock 配对码'`,
+		`请打开 %s 获取 NexusDock 配对码。`,
 		`run_install_engine install "$CORE_TUNNEL_MODE"`,
 		`configure_nexus`,
 		`choose_tunnel_mode`,

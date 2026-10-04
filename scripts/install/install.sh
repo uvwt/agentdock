@@ -11,6 +11,7 @@ DEFAULT_BASE_URL="https://github.com/uvwt/agentdock/releases/latest/download"
 GITHUB_RELEASES_URL="https://github.com/uvwt/agentdock/releases"
 CLOUDFLARED_BASE_URL="${AGENTDOCK_CLOUDFLARED_RELEASE_BASE_URL:-https://github.com/cloudflare/cloudflared/releases/latest/download}"
 OFFICIAL_NEXUS_ENDPOINT="${AGENTDOCK_NEXUS_OFFICIAL_ENDPOINT:-https://mcp.nexusdock.co}"
+OFFICIAL_NEXUS_DEVICES_URL="${AGENTDOCK_NEXUS_OFFICIAL_DEVICES_URL:-https://mcp.nexusdock.co/workspace/devices}"
 BASE_URL="${AGENTDOCK_INSTALLER_BASE_URL:-$DEFAULT_BASE_URL}"
 RELEASE_VERSION="${AGENTDOCK_RELEASE_VERSION:-latest}"
 TMP_ROOT=""
@@ -490,21 +491,24 @@ configure_nexus() {
   esac
 
   if [ -n "$NEXUS_PAIR_CODE_FILE" ]; then
-    [ -f "$NEXUS_PAIR_CODE_FILE" ] || die "Nexus 配对码文件不存在：$NEXUS_PAIR_CODE_FILE"
+    [ -f "$NEXUS_PAIR_CODE_FILE" ] || die "NexusDock 配对码文件不存在：$NEXUS_PAIR_CODE_FILE"
     NEXUS_PAIR_CODE="$(sed -n '1p' "$NEXUS_PAIR_CODE_FILE")"
   fi
   if [ -z "$NEXUS_PAIR_CODE" ]; then
-    is_true "$NONINTERACTIVE" && die "Nexus 配对必须通过 AGENTDOCK_NEXUS_PAIR_CODE 或 --nexus-pair-code-file 提供配对码"
-    NEXUS_PAIR_CODE="$(prompt_secret '配对码')"
+    is_true "$NONINTERACTIVE" && die "NexusDock 配对必须通过 AGENTDOCK_NEXUS_PAIR_CODE 或 --nexus-pair-code-file 提供配对码"
+    if [ "$NEXUS_MODE" = official ]; then
+      printf '请打开 %s 获取 NexusDock 配对码。\n' "$OFFICIAL_NEXUS_DEVICES_URL" >>"$TTY_OUT"
+    fi
+    NEXUS_PAIR_CODE="$(prompt_value 'NexusDock 配对码')"
   fi
 
   while ! pair_nexus_once; do
     if is_true "$NONINTERACTIVE"; then
       die "Nexus 配对失败。"
     fi
-    retry="$(prompt_choice 'Nexus 配对失败，重新输入配对码？(y/n)' y)"
+    retry="$(prompt_choice 'NexusDock 配对失败，重新输入配对码？(y/n)' y)"
     case "$retry" in
-      y|Y|yes|YES) NEXUS_PAIR_CODE="$(prompt_secret '配对码')" ;;
+      y|Y|yes|YES) NEXUS_PAIR_CODE="$(prompt_value 'NexusDock 配对码')" ;;
       *)
         log "已跳过 Nexus 配对，AgentDock Core 保持可用。"
         NEXUS_MODE=none
