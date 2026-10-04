@@ -45,6 +45,8 @@ func TestUnifiedInstallerEntryOwnsUnixBootstrap(t *testing.T) {
 	}
 	for _, want := range []string{
 		`download_file_with_progress`,
+		`max_attempts=60`,
+		`正在获取 Quick Tunnel 公网地址...`,
 		`curl -fL --progress-bar`,
 		`agentdock_${PLATFORM}_${ARCH}.tar.gz`,
 		"install --engine-ready",

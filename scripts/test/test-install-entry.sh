@@ -127,7 +127,7 @@ ENV
   if [ -n "$tunnel_mode" ] && [ "$tunnel_mode" != none ]; then
     printf 'AGENTDOCK_TUNNEL_MODE=%s\n' "$tunnel_mode" >"$runtime_root/cloudflared.env"
     if [ "$rotate_oauth" = true ]; then
-      printf '%s\n' 'AGENTDOCK_OAUTH_PASSWORD=test-oauth-password' >>"$runtime_root/agentdock.env"
+      printf "%s\n" "AGENTDOCK_OAUTH_PASSWORD='test-oauth-password'" >>"$runtime_root/agentdock.env"
     fi
     if [ -n "$server_url" ]; then
       printf 'AGENTDOCK_SERVER_URL=%s\n' "$server_url" >>"$runtime_root/agentdock.env"

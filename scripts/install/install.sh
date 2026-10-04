@@ -561,6 +561,13 @@ read_env_value() {
         if (value == "\047\047") {
           exit
         }
+        if (length(value) >= 2) {
+          first = substr(value, 1, 1)
+          last = substr(value, length(value), 1)
+          if ((first == "\047" && last == "\047") || (first == "\"" && last == "\"")) {
+            value = substr(value, 2, length(value) - 2)
+          }
+        }
         output = ""
         escaped = 0
         for (i = 1; i <= length(value); i++) {
@@ -587,6 +594,13 @@ read_env_value() {
         value = substr($0, length(key) + 2)
         if (value == "\047\047") {
           exit
+        }
+        if (length(value) >= 2) {
+          first = substr(value, 1, 1)
+          last = substr(value, length(value), 1)
+          if ((first == "\047" && last == "\047") || (first == "\"" && last == "\"")) {
+            value = substr(value, 2, length(value) - 2)
+          }
         }
         output = ""
         escaped = 0
@@ -642,7 +656,9 @@ read_server_url() {
 wait_quick_tunnel_url() {
   quick_url_file="$RUNTIME_ROOT/quick-tunnel-url.txt"
   attempts=0
-  while [ "$attempts" -lt 20 ]; do
+  max_attempts=60
+  log "正在获取 Quick Tunnel 公网地址..."
+  while [ "$attempts" -lt "$max_attempts" ]; do
     if [ "$PLATFORM" = linux ]; then
       if run_root test -f "$quick_url_file"; then
         public_url="$(run_root sed -n '1p' "$quick_url_file" 2>/dev/null || true)"
@@ -657,12 +673,17 @@ wait_quick_tunnel_url() {
       fi
     fi
     if [ -n "$public_url" ]; then
+      log "Quick Tunnel 公网地址已就绪。"
       printf '%s' "$public_url"
       return 0
     fi
     attempts=$((attempts + 1))
+    if [ $((attempts % 5)) -eq 0 ] && [ "$attempts" -lt "$max_attempts" ]; then
+      log "等待 Cloudflare 分配公网地址... ${attempts}s/${max_attempts}s"
+    fi
     sleep 1
   done
+  log "Quick Tunnel 已启动，但 60 秒内尚未获取到公网地址。"
   return 1
 }
 
