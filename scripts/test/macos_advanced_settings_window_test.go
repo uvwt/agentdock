@@ -37,10 +37,20 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 	}
 	content := string(data)
 	for _, want := range []string{
-		`SettingsSection("AgentDock")`,
+		`SettingsSection(L10n.text("Connection"))`,
+		`SettingsSection(L10n.text("Capabilities"))`,
+		"private enum HomeCapabilityState",
+		"private struct HomeCapabilityIndicator",
 		"private var serviceLoaded:",
 		"private var serviceHealthy:",
 		"agentDockStatusText",
+		"capabilityItems",
+		"capabilitySummary",
+		`L10n.format("%d / 3 available", enabled)`,
+		`L10n.format("%d need attention", attention)`,
+		`L10n.text("All available")`,
+		`L10n.text("Not enabled yet")`,
+		"This device is ready for AI.",
 		"AgentDock is running, but the connection service is not ready.",
 		"Advanced connection settings",
 		`case .advancedConnection: return L10n.text("Advanced connection")`,

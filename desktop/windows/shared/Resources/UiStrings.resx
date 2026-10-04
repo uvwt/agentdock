@@ -863,4 +863,12 @@ Update now?</value>
   <data name="Configuration" xml:space="preserve"><value>Configuration</value></data>
   <data name="ApplyChanges" xml:space="preserve"><value>Apply changes</value></data>
   <data name="RuntimeRestartHint" xml:space="preserve"><value>Changing runtime settings will automatically restart AgentDock.</value></data>
+  <data name="Connection" xml:space="preserve"><value>Connection</value></data>
+  <data name="DeviceReadyForAI" xml:space="preserve"><value>This device is ready for AI.</value></data>
+  <data name="CodingAgent" xml:space="preserve"><value>Coding Agent</value></data>
+  <data name="McpApps" xml:space="preserve"><value>MCP Apps</value></data>
+  <data name="AllAvailable" xml:space="preserve"><value>All available</value></data>
+  <data name="NotEnabledYet" xml:space="preserve"><value>Not enabled yet</value></data>
+  <data name="CapabilitiesAvailable" xml:space="preserve"><value>{0} / 3 available</value></data>
+  <data name="CapabilitiesNeedAttention" xml:space="preserve"><value>{0} need attention</value></data>
 </root>

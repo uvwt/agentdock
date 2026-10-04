@@ -307,30 +307,48 @@ func TestWindowsRemoteConnectionSupportsSelfHostedAndRoutesAdvancedSettings(t *t
 	}
 }
 
-func TestWindowsHomeMergesRuntimeAndMcpIntoAgentDockStatus(t *testing.T) {
+func TestWindowsHomeUsesProductStatusAndAdaptiveCapabilities(t *testing.T) {
 	homeXaml := readWindowsNativeFile(t, "winui", "HomePage.xaml")
 	homeCode := readWindowsNativeFile(t, "winui", "HomePage.xaml.cs")
 
 	for _, want := range []string{
-		`x:Name="AgentDockSection"`,
 		`x:Name="AgentDockState"`,
+		`x:Name="ConnectionSection"`,
+		`x:Name="CapabilitiesSection"`,
+		`x:Name="BrowserCapabilityState"`,
+		`x:Name="CodingAgentCapabilityState"`,
+		`x:Name="McpAppsCapabilityState"`,
+		`x:Name="CapabilitiesSummary"`,
 		"var serviceLoaded = _snapshot.CoreRunning",
 		"var serviceHealthy = serviceLoaded && _snapshot.Healthy",
-		`UiText.Get("AgentDockNeedsAttention")`,
+		`UiText.Get("DeviceReadyForAI")`,
+		"RenderCapabilities(_snapshot.Settings)",
+		"settings.BrowserEnabled",
+		"settings.AcpEnabled",
+		"settings.AcpProfiles.Where(profile => profile.Enabled)",
+		`"off" => CapabilityState.Disabled`,
+		`"full" or "compact" => CapabilityState.Enabled`,
+		`UiText.Format("CapabilitiesAvailable", enabledCount)`,
+		`UiText.Format("CapabilitiesNeedAttention", attentionCount)`,
+		`UiText.Get("AllAvailable")`,
+		`UiText.Get("NotEnabledYet")`,
+		`!string.IsNullOrWhiteSpace(_snapshot.Nexus.Error)`,
+		`UiText.Get("Unavailable")`,
 		`RuntimeAction.Content = serviceLoaded ? UiText.Get("Stop") : UiText.Get("Start")`,
 	} {
 		if !strings.Contains(homeXaml+homeCode, want) {
-			t.Fatalf("WinUI Home missing merged AgentDock status contract %q", want)
+			t.Fatalf("WinUI Home missing product status contract %q", want)
 		}
 	}
 	for _, forbidden := range []string{
 		`x:Name="RuntimeState"`,
 		`x:Name="McpState"`,
+		`x:Name="QuickAccessSection"`,
 		`<TextBlock Text="Runtime"`,
 		`<TextBlock Text="MCP"`,
 	} {
 		if strings.Contains(homeXaml, forbidden) {
-			t.Fatalf("WinUI Home still exposes implementation status %q", forbidden)
+			t.Fatalf("WinUI Home still exposes implementation status or old quick-access card %q", forbidden)
 		}
 	}
 }

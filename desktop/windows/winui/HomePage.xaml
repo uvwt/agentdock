@@ -6,42 +6,134 @@
     <ScrollViewer>
         <StackPanel Width="760" HorizontalAlignment="Left" Spacing="22" Padding="28,24,28,32">
             <TextBlock x:Name="PageTitle" FontSize="20" FontWeight="SemiBold"/>
+
             <Grid ColumnSpacing="16">
-                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <StackPanel Spacing="5">
-                    <TextBlock x:Name="RuntimeHeadline" FontSize="14" FontWeight="SemiBold"/>
-                    <TextBlock x:Name="RuntimeDescription" FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Border Width="44"
+                        Height="44"
+                        CornerRadius="12"
+                        Background="{ThemeResource AccentFillColorTertiaryBrush}"
+                        VerticalAlignment="Center">
+                    <FontIcon Glyph="&#xE7B8;" FontSize="20"/>
+                </Border>
+                <StackPanel Grid.Column="1" Spacing="5" VerticalAlignment="Center">
+                    <TextBlock Text="AgentDock" FontSize="18" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="RuntimeDescription"
+                               FontSize="13"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap"/>
                 </StackPanel>
-                <Button x:Name="RuntimeAction" Grid.Column="1" Click="RuntimeAction_Click" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="2" Spacing="9" VerticalAlignment="Center" HorizontalAlignment="Right">
+                    <TextBlock x:Name="AgentDockState" HorizontalAlignment="Right"/>
+                    <Button x:Name="RuntimeAction"
+                            Click="RuntimeAction_Click"
+                            HorizontalAlignment="Right"/>
+                </StackPanel>
             </Grid>
-            <local:SectionCard x:Name="AgentDockSection">
-                <StackPanel>
-                    <Grid Padding="13,0" Height="46">
-                        <TextBlock Text="AgentDock" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="AgentDockState" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+
+            <local:SectionCard x:Name="ConnectionSection">
+                <Button Click="ConnectionsShortcut_Click"
+                        MinHeight="54"
+                        Padding="13,6"
+                        BorderThickness="0"
+                        Background="Transparent"
+                        HorizontalContentAlignment="Stretch">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                            <TextBlock x:Name="RemoteConnectionLabel" FontSize="13"/>
+                            <TextBlock x:Name="RemoteConnectionDetail"
+                                       FontSize="11.5"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1"
+                                    Orientation="Horizontal"
+                                    Spacing="9"
+                                    VerticalAlignment="Center">
+                            <TextBlock x:Name="RemoteConnectionState"/>
+                            <TextBlock Text="›"
+                                       FontSize="20"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
                     </Grid>
-                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
-                    <Grid Padding="13,0" Height="46">
-                        <TextBlock x:Name="RemoteConnectionLabel" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="RemoteConnectionState" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                </Button>
+            </local:SectionCard>
+
+            <local:SectionCard x:Name="CapabilitiesSection">
+                <Button Click="CapabilitiesShortcut_Click"
+                        MinHeight="56"
+                        Padding="13,6"
+                        BorderThickness="0"
+                        Background="Transparent"
+                        HorizontalContentAlignment="Stretch">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="18"
+                                    VerticalAlignment="Center">
+                            <TextBlock x:Name="BrowserCapabilityState" FontSize="12.5"/>
+                            <TextBlock x:Name="CodingAgentCapabilityState" FontSize="12.5"/>
+                            <TextBlock x:Name="McpAppsCapabilityState" FontSize="12.5"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1"
+                                    Orientation="Horizontal"
+                                    Spacing="9"
+                                    VerticalAlignment="Center">
+                            <TextBlock x:Name="CapabilitiesSummary"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <TextBlock Text="›"
+                                       FontSize="20"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
                     </Grid>
-                </StackPanel>
+                </Button>
             </local:SectionCard>
-            <local:SectionCard x:Name="QuickAccessSection">
-                <StackPanel>
-                    <Button Click="ConnectionsShortcut_Click" Height="46" Padding="13,0" BorderThickness="0" Background="Transparent" HorizontalContentAlignment="Stretch">
-                        <Grid><TextBlock x:Name="ConnectionsShortcutLabel" VerticalAlignment="Center"/><FontIcon Glyph="&#xE76C;" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
-                    </Button>
-                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
-                    <Button Click="CapabilitiesShortcut_Click" Height="46" Padding="13,0" BorderThickness="0" Background="Transparent" HorizontalContentAlignment="Stretch">
-                        <Grid><TextBlock x:Name="CapabilitiesShortcutLabel" VerticalAlignment="Center"/><FontIcon Glyph="&#xE76C;" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
-                    </Button>
-                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
-                    <Button Click="ActivityShortcut_Click" Height="46" Padding="13,0" BorderThickness="0" Background="Transparent" HorizontalContentAlignment="Stretch">
-                        <Grid><TextBlock x:Name="ActivityShortcutLabel" VerticalAlignment="Center"/><FontIcon Glyph="&#xE76C;" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
-                    </Button>
-                </StackPanel>
-            </local:SectionCard>
+
+            <Rectangle Height="1"
+                       Fill="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Click="ConnectionsShortcut_Click"
+                        Padding="8,4"
+                        BorderThickness="0"
+                        Background="Transparent">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <SymbolIcon Symbol="Link"/>
+                        <TextBlock x:Name="ConnectionsShortcutLabel"/>
+                    </StackPanel>
+                </Button>
+                <Button Click="CapabilitiesShortcut_Click"
+                        Padding="8,4"
+                        BorderThickness="0"
+                        Background="Transparent">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE80A;" FontSize="14"/>
+                        <TextBlock x:Name="CapabilitiesShortcutLabel"/>
+                    </StackPanel>
+                </Button>
+                <Button Click="ActivityShortcut_Click"
+                        Padding="8,4"
+                        BorderThickness="0"
+                        Background="Transparent">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <SymbolIcon Symbol="Clock"/>
+                        <TextBlock x:Name="ActivityShortcutLabel"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
         </StackPanel>
     </ScrollViewer>
 </Page>

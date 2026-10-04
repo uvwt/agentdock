@@ -363,6 +363,14 @@
 "Home" = "主页";
 "Connections" = "连接";
 "Capabilities" = "能力";
+"Connection" = "连接";
+"Coding Agent" = "Coding Agent";
+"MCP Apps" = "MCP Apps";
+"This device is ready for AI." = "此设备已准备好供 AI 使用。";
+"All available" = "全部可用";
+"%d / 3 available" = "%d / 3 可用";
+"Not enabled yet" = "尚未启用";
+"%d need attention" = "%d 项需要处理";
 "Activity" = "活动";
 "Settings" = "设置";
 "About" = "关于";

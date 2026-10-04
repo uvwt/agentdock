@@ -758,6 +758,28 @@ TianYi parity 验证：
 - Windows 最终验证快照 SHA-256：`d606e5ba87d6308327d18e45a12a8da455121a03b4ad82ffc6d024363df72a7a`；TianYi x64 Release 与 win-arm64 交叉 Rebuild 均成功。
 - TianYi UI Automation 实测 Runtime 页面不存在“状态 / 服务 / 启动 / 停止”，存在“端口 / 日志级别 / 配置 / 应用更改”，并显示“更改运行参数后将自动重启 AgentDock。”。
 
+### 15.9 2026-10-04 Home 信息层级重构
+
+Home 从“状态卡 + 快捷入口卡”的简单设置页形态，收敛为真正的设备控制中心：
+
+- 顶部只表达 AgentDock 整体运行状态和启动 / 停止动作，不再重复 Runtime / MCP 实现层概念。
+- 远程连接独立成一行，显示真实连接状态和当前远程服务；官方服务显示“官方服务 · nexusdock.co”，自托管显示实际 Endpoint。
+- 能力区直接读取真实配置，不复制第二套状态：
+  - Browser 使用 `browser_enabled`。
+  - Coding Agent 同时要求 ACP 总开关开启、存在至少一个启用 Profile，并且默认 Profile 指向启用项；配置不完整时显示“需要处理”。
+  - MCP Apps 根据 `full / compact / off` 映射为启用 / 关闭；未知模式显示“需要处理”。
+- 能力摘要按真实状态自适应：全部启用显示“全部可用”，部分启用显示“x / 3 可用”，全部关闭显示“尚未启用”，存在异常显示“x 项需要处理”。
+- Home 底部只保留轻量的连接 / 能力 / 活动导航，不再使用三行 Quick access 卡片。
+- 当前 Runtime 没有可供 Home 安全消费的结构化“最近 AI 活动”接口，Activity 页面本身也仍是运行诊断，因此本轮不伪造最近活动。等后续有正式 Activity 数据源再接入 Home。
+
+验证：
+
+- macOS i18n 为 385 个引用 key、每个 locale 478 个条目；`go test ./scripts/test -count=1` 与 `go test ./... -count=1 -timeout=3m` 均通过。
+- macOS `scripts/test/test-macos-app.sh` 完整通过 App / ZIP / DMG / 签名 / 解包 / 挂载验证。
+- Windows 最终验证快照 SHA-256：`b685d12e3cc33d14ce2008e8f1fedc5516f7c565b2c9bf76f2fc5961a3af7c70`；TianYi x64 Release 与 win-arm64 交叉 Rebuild 均成功。
+- TianYi UI Automation 实测当前真实状态：AgentDock 正在运行、远程连接已连接到“官方服务 · nexusdock.co”、Browser / Coding Agent / MCP Apps 均为启用，摘要显示“全部可用”。
+- TianYi UI Automation 实测 Home 不再出现“运行时 / MCP / 快速入口”，底部保留“连接 / 能力 / 活动”轻量入口。
+
 视觉审查：
 
 - Mac / Windows 使用接近的窗口尺寸。

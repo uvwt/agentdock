@@ -363,6 +363,14 @@
 "Home" = "Home";
 "Connections" = "Connections";
 "Capabilities" = "Capabilities";
+"Connection" = "Connection";
+"Coding Agent" = "Coding Agent";
+"MCP Apps" = "MCP Apps";
+"This device is ready for AI." = "This device is ready for AI.";
+"All available" = "All available";
+"%d / 3 available" = "%d / 3 available";
+"Not enabled yet" = "Not enabled yet";
+"%d need attention" = "%d need attention";
 "Activity" = "Activity";
 "Settings" = "Settings";
 "About" = "About";

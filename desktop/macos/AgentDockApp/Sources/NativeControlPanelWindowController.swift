@@ -321,6 +321,44 @@ private struct RowDivider: View {
     var body: some View { Divider().padding(.leading, 13) }
 }
 
+private enum HomeCapabilityState {
+    case enabled
+    case disabled
+    case attention
+
+    var symbol: String {
+        switch self {
+        case .enabled: return "circle.fill"
+        case .disabled: return "circle"
+        case .attention: return "exclamationmark.circle.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .enabled: return .green
+        case .disabled: return .secondary
+        case .attention: return .orange
+        }
+    }
+}
+
+private struct HomeCapabilityIndicator: View {
+    let title: String
+    let state: HomeCapabilityState
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: state.symbol)
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(state.color)
+            Text(title)
+                .font(.system(size: 12.5))
+                .foregroundStyle(state == .disabled ? .secondary : .primary)
+        }
+    }
+}
+
 private struct HomeView: View {
     @ObservedObject var model: ControlPanelModel
 
@@ -333,9 +371,18 @@ private struct HomeView: View {
                 PageHeader(title: L10n.text("Home"))
 
                 HStack(alignment: .center, spacing: 16) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.10))
+                            .frame(width: 44, height: 44)
+                        Image(systemName: "shippingbox.fill")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
+                    }
+
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("AgentDock \(agentDockStatusText)")
-                            .font(.system(size: 14, weight: .semibold))
+                        Text("AgentDock")
+                            .font(.system(size: 18, weight: .semibold))
                         Text(agentDockDetailText)
                             .font(.system(size: 13))
                             .foregroundStyle(.secondary)
@@ -343,30 +390,79 @@ private struct HomeView: View {
                             Text(message).font(.system(size: 12)).foregroundStyle(.red)
                         }
                     }
+
                     Spacer()
-                    Button(serviceLoaded ? L10n.text("Stop") : L10n.text("Start")) { model.toggleRuntime() }
-                        .controlSize(.regular)
-                        .disabled(model.isBusy || model.isUpdateInProgress)
-                }
 
-                SettingsSection("AgentDock") {
-                    SettingsRow("AgentDock") {
+                    VStack(alignment: .trailing, spacing: 9) {
                         StatusPill(text: agentDockStatusText, active: serviceHealthy)
+                        Button(serviceLoaded ? L10n.text("Stop") : L10n.text("Start")) { model.toggleRuntime() }
+                            .controlSize(.small)
+                            .disabled(model.isBusy || model.isUpdateInProgress)
                     }
-                    RowDivider()
-                    SettingsRow(L10n.text("Remote connection")) { StatusPill(text: nexusText, active: nexusActive) }
                 }
 
-                SettingsSection(L10n.text("Quick access")) {
-                    SettingsRow(L10n.text("Connect AI clients")) { Image(systemName: "chevron.right").foregroundStyle(.tertiary) }
-                        .contentShape(Rectangle()).onTapGesture { model.page = .connections }
-                    RowDivider()
-                    SettingsRow(L10n.text("Manage capabilities")) { Image(systemName: "chevron.right").foregroundStyle(.tertiary) }
-                        .contentShape(Rectangle()).onTapGesture { model.page = .capabilities }
-                    RowDivider()
-                    SettingsRow(L10n.text("View activity")) { Image(systemName: "chevron.right").foregroundStyle(.tertiary) }
-                        .contentShape(Rectangle()).onTapGesture { model.page = .activity }
+                SettingsSection(L10n.text("Connection")) {
+                    SettingsRow(
+                        L10n.text("Remote connection"),
+                        detail: remoteConnectionDetail
+                    ) {
+                        HStack(spacing: 9) {
+                            StatusPill(text: nexusText, active: nexusActive)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture { model.page = .connections }
                 }
+
+                SettingsSection(L10n.text("Capabilities")) {
+                    Button {
+                        model.page = .capabilities
+                    } label: {
+                        HStack(spacing: 18) {
+                            ForEach(Array(capabilityItems.enumerated()), id: \.offset) { _, item in
+                                HomeCapabilityIndicator(title: item.0, state: item.1)
+                            }
+                            Spacer(minLength: 12)
+                            Text(capabilitySummary)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.secondary)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(.horizontal, 13)
+                        .frame(minHeight: 52)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Divider()
+
+                HStack(spacing: 24) {
+                    Button {
+                        model.page = .connections
+                    } label: {
+                        Label(L10n.text("Connections"), systemImage: "link")
+                    }
+                    Button {
+                        model.page = .capabilities
+                    } label: {
+                        Label(L10n.text("Capabilities"), systemImage: "square.grid.2x2")
+                    }
+                    Button {
+                        model.page = .activity
+                    } label: {
+                        Label(L10n.text("Activity"), systemImage: "clock.arrow.circlepath")
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 2)
             }
             .padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 32)
             .frame(maxWidth: 760, alignment: .leading)
@@ -381,7 +477,7 @@ private struct HomeView: View {
     private var agentDockDetailText: String {
         if !serviceLoaded { return L10n.text("Start AgentDock to accept AI client connections.") }
         return serviceHealthy
-            ? L10n.text("The local service is ready for AI clients.")
+            ? L10n.text("This device is ready for AI.")
             : L10n.text("AgentDock is running, but the connection service is not ready.")
     }
 
@@ -389,6 +485,7 @@ private struct HomeView: View {
         if case .connected = model.status.nexusConnection { return true }
         return false
     }
+
     private var nexusText: String {
         switch model.status.nexusConnection {
         case .connected: return L10n.text("Connected")
@@ -396,6 +493,53 @@ private struct HomeView: View {
         case .configurationError: return L10n.text("Unavailable")
         case .unconfigured: return L10n.text("Not configured")
         }
+    }
+
+    private var remoteConnectionDetail: String {
+        let device = model.nexusDevice
+        if device.error != nil { return L10n.text("Unavailable") }
+        guard device.paired else { return L10n.text("Not configured") }
+        let endpoint = device.endpoint.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if endpoint.caseInsensitiveCompare("https://mcp.nexusdock.co") == .orderedSame {
+            return "\(L10n.text("Official service")) · nexusdock.co"
+        }
+        return "\(L10n.text("Self-hosted service")) · \(device.endpoint)"
+    }
+
+    private var capabilityItems: [(String, HomeCapabilityState)] {
+        guard let configuration = model.status.configuration else {
+            return [
+                (L10n.text("Browser"), .disabled),
+                (L10n.text("Coding Agent"), .disabled),
+                (L10n.text("MCP Apps"), .disabled),
+            ]
+        }
+
+        let enabledProfiles = configuration.acpProfiles.filter(\.enabled)
+        let codingAgentState: HomeCapabilityState
+        if !configuration.acpEnabled {
+            codingAgentState = .disabled
+        } else if enabledProfiles.isEmpty ||
+                    !enabledProfiles.contains(where: { $0.id == configuration.acpDefaultProfile }) {
+            codingAgentState = .attention
+        } else {
+            codingAgentState = .enabled
+        }
+
+        return [
+            (L10n.text("Browser"), configuration.browserEnabled ? .enabled : .disabled),
+            (L10n.text("Coding Agent"), codingAgentState),
+            (L10n.text("MCP Apps"), configuration.mcpAppsMode == .off ? .disabled : .enabled),
+        ]
+    }
+
+    private var capabilitySummary: String {
+        let enabled = capabilityItems.filter { $0.1 == .enabled }.count
+        let attention = capabilityItems.filter { $0.1 == .attention }.count
+        if attention > 0 { return L10n.format("%d need attention", attention) }
+        if enabled == capabilityItems.count { return L10n.text("All available") }
+        if enabled == 0 { return L10n.text("Not enabled yet") }
+        return L10n.format("%d / 3 available", enabled)
     }
 }
 

@@ -863,4 +863,12 @@
   <data name="Configuration" xml:space="preserve"><value>配置</value></data>
   <data name="ApplyChanges" xml:space="preserve"><value>应用更改</value></data>
   <data name="RuntimeRestartHint" xml:space="preserve"><value>更改运行参数后将自动重启 AgentDock。</value></data>
+  <data name="Connection" xml:space="preserve"><value>连接</value></data>
+  <data name="DeviceReadyForAI" xml:space="preserve"><value>此设备已准备好供 AI 使用。</value></data>
+  <data name="CodingAgent" xml:space="preserve"><value>Coding Agent</value></data>
+  <data name="McpApps" xml:space="preserve"><value>MCP Apps</value></data>
+  <data name="AllAvailable" xml:space="preserve"><value>全部可用</value></data>
+  <data name="NotEnabledYet" xml:space="preserve"><value>尚未启用</value></data>
+  <data name="CapabilitiesAvailable" xml:space="preserve"><value>{0} / 3 可用</value></data>
+  <data name="CapabilitiesNeedAttention" xml:space="preserve"><value>{0} 项需要处理</value></data>
 </root>
