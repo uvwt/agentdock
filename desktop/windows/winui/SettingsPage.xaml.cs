@@ -13,14 +13,13 @@ public sealed partial class SettingsPage : Page
     private RuntimeService? _runtime;
     private RuntimeSnapshot? _snapshot;
     private RuntimeAnalyticsPayload? _analytics;
-    private string _activeTag = "runtime";
+    private string _activeTag = "permissions";
     private string _advancedStatus = "";
 
     public SettingsPage()
     {
         InitializeComponent();
         SettingsPageTitle.Text = UiText.Get("Settings");
-        RuntimeNavigationItem.Content = UiText.Get("Runtime");
         PermissionsNavigationItem.Content = UiText.Get("Permissions");
         StartupNavigationItem.Content = UiText.Get("Startup");
         LogsNavigationItem.Content = UiText.Get("Logs");
@@ -42,7 +41,7 @@ public sealed partial class SettingsPage : Page
         else
         {
             _runtime = e.Parameter as RuntimeService;
-            _activeTag = "runtime";
+            _activeTag = "permissions";
         }
         await RefreshAsync();
         SelectSettingsTag(_activeTag);
@@ -75,7 +74,9 @@ public sealed partial class SettingsPage : Page
         var item = SettingsNavigation.Items
             .OfType<ListViewItem>()
             .FirstOrDefault(candidate => string.Equals(candidate.Tag?.ToString(), tag, StringComparison.Ordinal));
-        SettingsNavigation.SelectedItem = item ?? RuntimeNavigationItem;
+        var target = item ?? PermissionsNavigationItem;
+        _activeTag = target.Tag?.ToString() ?? "permissions";
+        SettingsNavigation.SelectedItem = target;
     }
 
     private void SettingsNavigation_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -117,22 +118,9 @@ public sealed partial class SettingsPage : Page
             "startup" => BuildStartup(),
             "logs" => BuildLogs(),
             "appearance" => BuildAppearance(),
-            _ => BuildRuntime()
+            _ => BuildPermissions()
         };
         SettingsContent.Children.Add(section);
-    }
-
-    private UIElement BuildRuntime()
-    {
-        var rows = new StackPanel();
-        var port = new NumberBox { Value = _snapshot?.Settings.Port ?? 8765, Minimum = 1, Maximum = 65535, Width = 130, Tag = "port" };
-        rows.Children.Add(ActionRow(UiText.Get("Port"), port));
-        rows.Children.Add(Divider());
-
-        var save = new Button { Content = UiText.Get("ApplyChanges") };
-        save.Click += SaveRuntimeSettings_Click;
-        rows.Children.Add(TrailingActionRow(save));
-        return rows;
     }
 
     private UIElement BuildLogs()
@@ -427,6 +415,77 @@ public sealed partial class SettingsPage : Page
             _snapshot?.LocalMcpUrl ?? "—",
             copyLocal
         ));
+        localRows.Children.Add(Divider());
+
+        var customPortContent = new StackPanel
+        {
+            Visibility = Visibility.Collapsed,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        var port = new NumberBox
+        {
+            Value = _snapshot?.Settings.Port ?? 8765,
+            Minimum = 1,
+            Maximum = 65535,
+            Width = 130,
+            Tag = "port"
+        };
+        customPortContent.Children.Add(ActionRow(UiText.Get("ServicePort"), port));
+        customPortContent.Children.Add(Divider());
+        var applyPort = new Button
+        {
+            Content = UiText.Get("ApplyChanges"),
+            IsEnabled = false,
+            Tag = customPortContent
+        };
+        port.ValueChanged += (_, _) =>
+        {
+            applyPort.IsEnabled = !double.IsNaN(port.Value) &&
+                                  (int)port.Value != (_snapshot?.Settings.Port ?? 8765);
+        };
+        applyPort.Click += SavePortSettings_Click;
+        customPortContent.Children.Add(DetailActionRow(
+            UiText.Get("PortRestartHint"),
+            UiText.Get("PortRestartDetail"),
+            applyPort
+        ));
+
+        var customPortHeader = new Grid { ColumnSpacing = 10 };
+        customPortHeader.ColumnDefinitions.Add(new ColumnDefinition());
+        customPortHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        customPortHeader.Children.Add(new TextBlock
+        {
+            Text = UiText.Get("CustomPort"),
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.Medium,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        var customPortChevron = new TextBlock
+        {
+            Text = "›",
+            FontSize = 15,
+            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(customPortChevron, 1);
+        customPortHeader.Children.Add(customPortChevron);
+        var customPortButton = new Button
+        {
+            Content = customPortHeader,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Padding = new Thickness(13, 10, 13, 10),
+            BorderThickness = new Thickness(0),
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent)
+        };
+        customPortButton.Click += (_, _) =>
+        {
+            var expanding = customPortContent.Visibility != Visibility.Visible;
+            customPortContent.Visibility = expanding ? Visibility.Visible : Visibility.Collapsed;
+            customPortChevron.Text = expanding ? "⌄" : "›";
+        };
+        localRows.Children.Add(customPortButton);
+        localRows.Children.Add(customPortContent);
         content.Children.Add(new SectionCard
         {
             Title = "Local MCP",
@@ -628,22 +687,32 @@ public sealed partial class SettingsPage : Page
         }
     }
 
-    private async void SaveRuntimeSettings_Click(object sender, RoutedEventArgs e)
+    private async void SavePortSettings_Click(object sender, RoutedEventArgs e)
     {
-        if (_runtime is null || _snapshot is null) return;
-        var rows = (sender as Button)?.Parent is Grid actionRow && actionRow.Parent is StackPanel panel ? panel : null;
-        if (rows is null) return;
-        var port = FindTagged<NumberBox>(rows, "port");
-        if (port is null) return;
+        if (_runtime is null || _snapshot is null ||
+            sender is not Button button ||
+            button.Tag is not Panel panel)
+        {
+            return;
+        }
+
+        var port = FindTagged<NumberBox>(panel, "port");
+        if (port is null || double.IsNaN(port.Value)) return;
+
         _snapshot.Settings.Port = (int)port.Value;
         try
         {
             await _runtime.SaveSettingsAsync(_snapshot.Settings);
             await _runtime.RunCoreActionAsync("restart");
             await RefreshAsync();
-            Render("runtime");
+            Render("advancedConnection");
         }
-        catch (Exception ex) { await ShowMessageAsync(UiText.Get("SaveFailed"), ex.Message); }
+        catch (Exception ex)
+        {
+            await ShowMessageAsync(UiText.Get("SaveFailed"), ex.Message);
+            await RefreshAsync();
+            Render("advancedConnection");
+        }
     }
 
     private async void LogLevel_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -845,7 +914,7 @@ public sealed partial class SettingsPage : Page
         "appearance" => UiText.Get("Appearance"),
         "about" => UiText.Get("About"),
 
-        _ => UiText.Get("Runtime")
+        _ => UiText.Get("Permissions")
     };
 
     private static string PageDetail(string tag) => tag switch
@@ -859,7 +928,7 @@ public sealed partial class SettingsPage : Page
         "appearance" => UiText.Get("AppearanceDetail"),
         "about" => UiText.Get("AboutDetail"),
 
-        _ => UiText.Get("RuntimeSettingsDetail")
+        _ => UiText.Get("PermissionsDetail")
     };
 
     private static string SectionTitle(string tag) => tag switch
@@ -868,7 +937,7 @@ public sealed partial class SettingsPage : Page
         "startup" => UiText.Get("Startup"),
         "logs" => UiText.Get("Logs"),
         "appearance" => UiText.Get("Appearance"),
-        _ => UiText.Get("RuntimeSettings")
+        _ => UiText.Get("RuntimePermissions")
     };
 
     private static Grid DetailActionRow(string title, string detail, UIElement trailing)

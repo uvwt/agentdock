@@ -95,13 +95,11 @@ private final class ControlPanelModel: ObservableObject {
     }
 
     enum SettingsPage: String, CaseIterable, Identifiable {
-
-        case runtime, permissions, startup, logs, advancedConnection, appearance, about
+        case permissions, startup, logs, advancedConnection, appearance, about
 
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .runtime: return L10n.text("Runtime")
             case .permissions: return L10n.text("Permissions")
             case .startup: return L10n.text("Startup")
             case .logs: return L10n.text("Logs")
@@ -115,7 +113,7 @@ private final class ControlPanelModel: ObservableObject {
     }
 
     @Published var page: Page = .home
-    @Published var settingsPage: SettingsPage = .runtime
+    @Published var settingsPage: SettingsPage = .permissions
     @Published var status: ServiceStatus = .missing
     @Published var dashboard = RuntimeDashboardSnapshot.empty
     @Published var statusUpdatedAt = Date()
@@ -1392,6 +1390,7 @@ private struct SettingsView: View {
     @State private var logLevel = "info"
     @State private var analytics: RuntimeAnalyticsPayload?
     @State private var showAdvancedDiagnostics = false
+    @State private var showCustomPort = false
     @State private var languagePreference: UILanguagePreference = .system
     @State private var themePreference: UIThemePreference = .system
     @State private var coreAutostart = false
@@ -1469,38 +1468,6 @@ private struct SettingsView: View {
 
     @ViewBuilder private var settingsContent: some View {
         switch model.settingsPage {
-        case .runtime:
-            VStack(alignment: .leading, spacing: 20) {
-                PageHeader(title: L10n.text("Runtime"), detail: L10n.text("Adjust local AgentDock runtime settings."))
-                SettingsSection(L10n.text("Runtime settings")) {
-                    SettingsRow(L10n.text("Service port")) {
-                        TextField("", value: $port, format: .number).textFieldStyle(.roundedBorder).frame(width: 100)
-                    }
-                    RowDivider()
-                    HStack {
-                        Spacer()
-                        Button(L10n.text("Apply changes")) {
-                            guard let configuration = model.status.configuration else { return }
-                            let settings = EditableServiceSettings(
-                                port: port,
-                                logLevel: logLevel,
-                                mcpAppsMode: configuration.mcpAppsMode,
-                                browserEnabled: configuration.browserEnabled,
-                                browserCDPURL: configuration.browserCDPURL,
-                                browserReuseExistingCDP: configuration.browserReuseExistingCDP,
-                                acpEnabled: configuration.acpEnabled,
-                                acpProfiles: configuration.acpProfiles,
-                                acpDefaultProfile: configuration.acpDefaultProfile
-                            )
-                            Task { await model.applySettings(settings) }
-                        }
-                        .controlSize(.small)
-                    }
-                    .padding(.horizontal, 13)
-                    .frame(minHeight: 44)
-                }
-                if let message = model.message { Text(message).font(.system(size: 12)).foregroundStyle(.secondary) }
-            }
         case .logs:
             VStack(alignment: .leading, spacing: 20) {
                 PageHeader(
@@ -1745,6 +1712,50 @@ private struct SettingsView: View {
                         }
                         .controlSize(.small)
                     }
+                    RowDivider()
+                    DisclosureGroup(isExpanded: $showCustomPort) {
+                        VStack(spacing: 0) {
+                            SettingsRow(L10n.text("Service port")) {
+                                TextField("", value: $port, format: .number)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 100)
+                            }
+                            RowDivider()
+                            HStack(spacing: 16) {
+                                Text(L10n.text("Changing the service port will restart AgentDock."))
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button(L10n.text("Apply changes")) {
+                                    guard let configuration = model.status.configuration else { return }
+                                    let settings = EditableServiceSettings(
+                                        port: port,
+                                        logLevel: configuration.logLevel,
+                                        mcpAppsMode: configuration.mcpAppsMode,
+                                        browserEnabled: configuration.browserEnabled,
+                                        browserCDPURL: configuration.browserCDPURL,
+                                        browserReuseExistingCDP: configuration.browserReuseExistingCDP,
+                                        acpEnabled: configuration.acpEnabled,
+                                        acpProfiles: configuration.acpProfiles,
+                                        acpDefaultProfile: configuration.acpDefaultProfile
+                                    )
+                                    Task { await model.applySettings(settings) }
+                                }
+                                .controlSize(.small)
+                                .disabled(model.isBusy || port == model.status.configuration?.port)
+                            }
+                            .padding(.horizontal, 13)
+                            .frame(minHeight: 48)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 8)
+                    } label: {
+                        Text(L10n.text("Custom port"))
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 12)
                 }
 
                 SettingsSection(L10n.text("Access Credentials")) {

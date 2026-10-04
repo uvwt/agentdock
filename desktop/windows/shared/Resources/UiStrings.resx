@@ -895,11 +895,12 @@ Update now?</value>
   <data name="RePair" xml:space="preserve"><value>Re-pair</value></data>
   <data name="ServiceAddressRequired" xml:space="preserve"><value>Enter a self-hosted service address.</value></data>
 
-  <data name="RuntimeSettings" xml:space="preserve"><value>Runtime settings</value></data>
-  <data name="RuntimeSettingsDetail" xml:space="preserve"><value>Adjust local AgentDock runtime settings.</value></data>
   <data name="Configuration" xml:space="preserve"><value>Configuration</value></data>
   <data name="ApplyChanges" xml:space="preserve"><value>Apply changes</value></data>
-  <data name="RuntimeRestartHint" xml:space="preserve"><value>Changing runtime settings will automatically restart AgentDock.</value></data>
+  <data name="CustomPort" xml:space="preserve"><value>Custom port</value></data>
+  <data name="ServicePort" xml:space="preserve"><value>Service port</value></data>
+  <data name="PortRestartHint" xml:space="preserve"><value>Restart required</value></data>
+  <data name="PortRestartDetail" xml:space="preserve"><value>Changing the port will automatically restart AgentDock.</value></data>
   <data name="Connection" xml:space="preserve"><value>Connection</value></data>
   <data name="DeviceReadyForAI" xml:space="preserve"><value>This device is ready for AI.</value></data>
   <data name="CodingAgent" xml:space="preserve"><value>Coding Agent</value></data>

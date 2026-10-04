@@ -126,6 +126,8 @@
 "Select All" = "Select All";
 "Service" = "Service";
 "Service port" = "Service port";
+"Custom port" = "Custom port";
+"Changing the service port will restart AgentDock." = "Changing the service port will restart AgentDock.";
 "Set up AgentDock" = "Set up AgentDock";
 "Settings saved." = "Settings saved.";
 "Show" = "Show";
@@ -429,10 +431,7 @@
 "Command start" = "Command start";
 "Foreground wait" = "Foreground wait";
 "Local AgentDock runtime status and service controls." = "Local AgentDock runtime status and service controls.";
-"Adjust local AgentDock runtime settings." = "Adjust local AgentDock runtime settings.";
-"Runtime settings" = "Runtime settings";
 "Configuration" = "Configuration";
-"Changing runtime settings will automatically restart AgentDock." = "Changing runtime settings will automatically restart AgentDock.";
 "Status" = "Status";
 "Local address" = "Local address";
 "Review macOS permissions required by enabled capabilities." = "Review macOS permissions required by enabled capabilities.";

@@ -77,18 +77,20 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 		"Browser connection",
 		"Add custom Coding Agent",
 		"Default Coding Agent",
-		"Adjust local AgentDock runtime settings.",
 		"Apply changes",
+		"L10n.text(\"Custom port\")",
+		"L10n.text(\"Service port\")",
+		"Changing the service port will restart AgentDock.",
+		"DisclosureGroup(isExpanded: $showCustomPort)",
 		"Interface language",
 		"setCoreAutostart",
 		"setMenuAutostart",
 		"Authentication token",
 		"OAuth password",
 		"requestUpdate()",
-		`case .runtime: return L10n.text("Runtime")`,
 		`case .permissions: return L10n.text("Permissions")`,
 		"setLanguagePreference(_ preference:",
-		"case runtime, permissions, startup, logs, advancedConnection, appearance, about",
+		"case permissions, startup, logs, advancedConnection, appearance, about",
 		`case .logs: return L10n.text("Logs")`,
 		`case .appearance: return L10n.text("Appearance")`,
 		"case .about: return L10n.text(\"About\")",
@@ -108,6 +110,10 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		"NSApp.applicationIconImage",
+		"case .runtime:",
+		"settingsPage: SettingsPage = .runtime",
+		"Adjust local AgentDock runtime settings.",
+		`L10n.text("Runtime settings")`,
 		`L10n.format("%d / 3 available", enabled)`,
 		"capabilitySummary",
 		`SettingsSection(L10n.text("Runtime status"))`,
@@ -118,27 +124,6 @@ func TestMacOSNativeControlPanelCarriesAdvancedSettingsParity(t *testing.T) {
 	} {
 		if strings.Contains(content, forbidden) {
 			t.Fatalf("native macOS control panel still exposes retired connection UI %q", forbidden)
-		}
-	}
-
-	runtimeStart := strings.Index(content, "case .runtime:")
-	if runtimeStart < 0 {
-		t.Fatal("native macOS Runtime settings block not found")
-	}
-	permissionsStart := strings.Index(content[runtimeStart:], "case .permissions:")
-	if permissionsStart < 0 {
-		t.Fatal("native macOS Permissions settings block not found")
-	}
-	runtimeBlock := content[runtimeStart : runtimeStart+permissionsStart]
-	for _, forbidden := range []string{
-		`SettingsRow(L10n.text("Status"))`,
-		`SettingsRow(L10n.text("Service"))`,
-		`Button(model.status.loaded ? L10n.text("Stop") : L10n.text("Start"))`,
-		"Save and restart",
-		"Changing runtime settings will automatically restart AgentDock.",
-	} {
-		if strings.Contains(runtimeBlock, forbidden) {
-			t.Fatalf("native macOS Runtime settings still exposes duplicate service control %q", forbidden)
 		}
 	}
 

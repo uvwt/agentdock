@@ -130,7 +130,6 @@ func TestWindowsNativeLanguageAndShortcutsAreInteractive(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"RuntimeNavigationItem.Content = UiText.Get(\"Runtime\")",
 		"PermissionsNavigationItem.Content = UiText.Get(\"Permissions\")",
 		"StartupNavigationItem.Content = UiText.Get(\"Startup\")",
 		"AppearanceNavigationItem.Content = UiText.Get(\"Appearance\")",
@@ -141,6 +140,8 @@ func TestWindowsNativeLanguageAndShortcutsAreInteractive(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
+		"RuntimeNavigationItem",
+		"Tag=\"runtime\"",
 		"Content=\"Runtime\" Tag=\"runtime\"",
 		"Content=\"Permissions\" Tag=\"permissions\"",
 		"Content=\"Access Credentials\" Tag=\"credentials\"",
@@ -173,29 +174,32 @@ func TestWindowsNativeLanguageAndShortcutsAreInteractive(t *testing.T) {
 	}
 }
 
-func TestWindowsRuntimeSettingsAvoidDuplicateServiceStatus(t *testing.T) {
+func TestWindowsPortSettingsLiveUnderAdvancedConnection(t *testing.T) {
 	settings := readWindowsNativeFile(t, "winui", "SettingsPage.xaml.cs")
 
 	for _, want := range []string{
-		`UiText.Get("Port")`,
-		`UiText.Get("LogLevel")`,
+		`UiText.Get("CustomPort")`,
+		`UiText.Get("ServicePort")`,
+		`UiText.Get("PortRestartDetail")`,
 		`UiText.Get("ApplyChanges")`,
+		"SavePortSettings_Click",
 		`await _runtime.SaveSettingsAsync(_snapshot.Settings)`,
 		`await _runtime.RunCoreActionAsync("restart")`,
+		`Render("advancedConnection")`,
 	} {
 		if !strings.Contains(settings, want) {
-			t.Fatalf("WinUI Runtime settings missing %q", want)
+			t.Fatalf("WinUI advanced connection port settings missing %q", want)
 		}
 	}
 	for _, forbidden := range []string{
-		`rows.Children.Add(Row(UiText.Get("Status")`,
-		`ActionRow(UiText.Get("Service")`,
-		"RuntimeAction_Click",
-		`UiText.Get("SaveAndRestart")`,
-		`UiText.Get("RuntimeRestartHint")`,
+		"BuildRuntime()",
+		"SaveRuntimeSettings_Click",
+		`Render("runtime")`,
+		`UiText.Get("RuntimeSettings")`,
+		`UiText.Get("RuntimeSettingsDetail")`,
 	} {
 		if strings.Contains(settings, forbidden) {
-			t.Fatalf("WinUI Runtime settings still exposes duplicate service control %q", forbidden)
+			t.Fatalf("WinUI still exposes retired Runtime settings page %q", forbidden)
 		}
 	}
 }
