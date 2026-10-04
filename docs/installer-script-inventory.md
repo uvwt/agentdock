@@ -70,7 +70,7 @@ stable shim/icon 的职责也已去重：PowerShell 在调用 Engine 前只备�
 首次安装固定按 **Core → Nexus → Cloudflare Tunnel** 分阶段执行：
 
 - Core 先以本地模式完成安装；Linux 同时把 stable binary 暴露到 `/usr/local/bin/agentdock`。
-- Nexus 随后选择 NexusDock 官方服务、自托管 Nexus 或跳过；配对直接复用 `agentdock nexus pair`，不在 installer 中复制 Nexus 协议或设备命名逻辑。
+- 远程连接随后选择 NexusDock 官方服务、自托管 NexusDock 或跳过；配对直接复用 `agentdock nexus pair`，不在 installer 中复制 Nexus 协议或设备命名逻辑。
 - Cloudflare Tunnel 最后可选；未选择时不下载 cloudflared。选择 Quick/Named 后通过一次 Installer Engine `repair` 写入 Tunnel/OAuth/service 状态，bootstrap 不自行维护第二套状态机。
 - 完成页从已提交 runtime 状态读取本地 MCP、Nexus endpoint 和访问令牌；启用 Cloudflare 时额外输出公网 MCP 与 OAuth 密码。
 
