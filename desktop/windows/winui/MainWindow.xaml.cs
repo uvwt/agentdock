@@ -10,6 +10,8 @@ internal sealed record SettingsNavigationRequest(RuntimeService Runtime, string 
 
 public sealed partial class MainWindow : Window
 {
+    private const int DwmwaUseImmersiveDarkMode = 20;
+    private const int DwmwaUseImmersiveDarkModeBefore20H1 = 19;
     private const int DefaultWidth = 1060;
     private const int DefaultHeight = 720;
     private const int MinimumWidth = 900;
@@ -18,6 +20,7 @@ public sealed partial class MainWindow : Window
     private readonly RuntimeService _runtime;
     private readonly IntPtr _windowHandle;
     private readonly string? _initialSettingsPage;
+    private string _themePreference = UiThemePreference.SystemPreference;
     private bool _initialSizeApplied;
     private string? _pendingSettingsTag;
 
@@ -28,7 +31,10 @@ public sealed partial class MainWindow : Window
         _runtime = runtime;
         _initialSettingsPage = initialSettingsPage;
         InitializeComponent();
-        ApplyThemePreference(UiThemePreference.ReadPreference());
+        _windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        _themePreference = UiThemePreference.ReadPreference();
+        Root.Loaded += Root_Loaded;
+        Root.ActualThemeChanged += Root_ActualThemeChanged;
 
         HomeNavigationItem.Content = UiText.Get("Home");
         ConnectionsNavigationItem.Content = UiText.Get("Connections");
@@ -36,7 +42,6 @@ public sealed partial class MainWindow : Window
         ActivityNavigationItem.Content = UiText.Get("Activity");
         SettingsNavigationItem.Content = UiText.Get("Settings");
 
-        _windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
         Navigation.Loaded += Navigation_Loaded;
         ContentFrame.Navigated += ContentFrame_Navigated;
         AppWindow.Changed += (_, args) =>
@@ -90,6 +95,13 @@ public sealed partial class MainWindow : Window
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hwnd);
 
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(
+        IntPtr hwnd,
+        int attribute,
+        ref int attributeValue,
+        int attributeSize);
+
     private void Navigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         if (args.SelectedItemContainer?.Tag is not string tag) return;
@@ -119,9 +131,40 @@ public sealed partial class MainWindow : Window
         NavigateTo("settings");
     }
 
+    private void Root_Loaded(object sender, RoutedEventArgs e)
+    {
+        Root.Loaded -= Root_Loaded;
+        ApplyThemePreference(_themePreference);
+    }
+
     internal void ApplyThemePreference(string preference)
     {
-        Navigation.RequestedTheme = UiThemePreference.ToElementTheme(preference);
+        _themePreference = UiThemePreference.NormalizePreference(preference);
+        Root.RequestedTheme = UiThemePreference.ToElementTheme(_themePreference);
+        ApplyNativeTitleBarTheme();
+    }
+
+    private void Root_ActualThemeChanged(FrameworkElement sender, object args) =>
+        ApplyNativeTitleBarTheme();
+
+    private void ApplyNativeTitleBarTheme()
+    {
+        // XAML 主题只覆盖客户区；原生标题栏属于非客户区，需要同步 DWM。
+        // system 模式使用 ActualTheme，系统深浅色变化时也能实时跟随。
+        var enabled = Root.ActualTheme == ElementTheme.Dark ? 1 : 0;
+        var result = DwmSetWindowAttribute(
+            _windowHandle,
+            DwmwaUseImmersiveDarkMode,
+            ref enabled,
+            sizeof(int));
+        if (result < 0)
+        {
+            _ = DwmSetWindowAttribute(
+                _windowHandle,
+                DwmwaUseImmersiveDarkModeBefore20H1,
+                ref enabled,
+                sizeof(int));
+        }
     }
 
     private void NavigateTo(string tag)

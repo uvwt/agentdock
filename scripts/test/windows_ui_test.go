@@ -217,6 +217,7 @@ func TestWindowsPortSettingsLiveUnderAdvancedConnection(t *testing.T) {
 }
 
 func TestWindowsThemePreferencePersistsAndAppliesLive(t *testing.T) {
+	mainWindowXaml := readWindowsNativeFile(t, "winui", "MainWindow.xaml")
 	app := readWindowsNativeFile(t, "winui", "App.xaml.cs")
 	window := readWindowsNativeFile(t, "winui", "MainWindow.xaml.cs")
 	settings := readWindowsNativeFile(t, "winui", "SettingsPage.xaml.cs")
@@ -226,15 +227,26 @@ func TestWindowsThemePreferencePersistsAndAppliesLive(t *testing.T) {
 		"ThemePreference_SelectionChanged",
 		"UiThemePreference.ReadPreference()",
 		"UiThemePreference.SetPreference(preference)",
-		"Navigation.RequestedTheme = UiThemePreference.ToElementTheme(preference)",
+		`x:Name="Root"`,
+		`Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"`,
+		"Root.Loaded += Root_Loaded",
+		"ApplyThemePreference(_themePreference)",
+		"Root.RequestedTheme = UiThemePreference.ToElementTheme(_themePreference)",
+		"Root.ActualThemeChanged += Root_ActualThemeChanged",
+		"Root.ActualTheme == ElementTheme.Dark",
+		"DwmSetWindowAttribute",
+		"DwmwaUseImmersiveDarkMode = 20",
 		"LightPreference = \"light\"",
 		"DarkPreference = \"dark\"",
 		"ElementTheme.Light",
 		"ElementTheme.Dark",
 	} {
-		if !strings.Contains(app+window+settings+theme, want) {
+		if !strings.Contains(mainWindowXaml+app+window+settings+theme, want) {
 			t.Fatalf("WinUI theme preference missing %q", want)
 		}
+	}
+	if strings.Contains(window, "Navigation.RequestedTheme =") {
+		t.Fatal("WinUI theme must be applied at the root so transparent controls share the correct window background")
 	}
 }
 
