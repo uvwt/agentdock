@@ -198,7 +198,9 @@ assert_arg https://mcp.nexusdock.co "$LINUX_NEXUS/engine.log"
 assert_no_arg --name "$LINUX_NEXUS/engine.log"
 core_line="$(grep -n '^arg=install$' "$LINUX_NEXUS/engine.log" | head -1 | cut -d: -f1)"
 pair_line="$(grep -n '^arg=nexus$' "$LINUX_NEXUS/engine.log" | head -1 | cut -d: -f1)"
-[ -n "$core_line" ] && [ -n "$pair_line" ] && [ "$core_line" -lt "$pair_line" ] || fail "Nexus pairing ran before Core install"
+if [ -z "$core_line" ] || [ -z "$pair_line" ] || [ "$core_line" -ge "$pair_line" ]; then
+  fail "Nexus pairing ran before Core install"
+fi
 grep -Fq 'NexusDock：https://mcp.nexusdock.co' "$LINUX_NEXUS/output.log" || fail "final summary missing official Nexus endpoint"
 if grep -Fq 'legacy-pair-success-output' "$LINUX_NEXUS/output.log"; then
   fail "installer leaked nexus pair success output"
