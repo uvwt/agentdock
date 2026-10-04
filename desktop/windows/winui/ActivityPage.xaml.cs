@@ -7,12 +7,17 @@ namespace AgentDock.ControlPanel;
 
 public sealed partial class ActivityPage : Page
 {
-    private readonly DispatcherTimer _analyticsTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private const int PageSize = 20;
+
+    private readonly DispatcherTimer _analyticsTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     private RuntimeService? _runtime;
     private RuntimeSnapshot? _snapshot;
     private bool _refreshingAnalytics;
+    private bool _hasAnalyticsSnapshot;
+    private int _visibleCallCount = PageSize;
     private ulong? _renderedLatestCallId;
-    private int _renderedCallCount = -1;
+    private int _renderedVisibleCallCount = -1;
+    private IReadOnlyList<RuntimeAnalyticsCall> _latestCalls = Array.Empty<RuntimeAnalyticsCall>();
 
     public ActivityPage()
     {
@@ -27,6 +32,12 @@ public sealed partial class ActivityPage : Page
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
+        _visibleCallCount = PageSize;
+        _hasAnalyticsSnapshot = false;
+        _latestCalls = Array.Empty<RuntimeAnalyticsCall>();
+        _renderedLatestCallId = null;
+        _renderedVisibleCallCount = -1;
+
         _runtime = e.Parameter as RuntimeService;
         if (_runtime is null)
         {
@@ -64,7 +75,16 @@ public sealed partial class ActivityPage : Page
                 RenderAnalyticsUnavailable();
                 return;
             }
-            RenderRecentCalls(analytics.RecentCalls);
+
+            var latestId = analytics.RecentCalls.Count == 0 ? (ulong?)null : analytics.RecentCalls[0].Id;
+            if (_hasAnalyticsSnapshot && latestId == _renderedLatestCallId)
+            {
+                return;
+            }
+
+            _hasAnalyticsSnapshot = true;
+            _latestCalls = analytics.RecentCalls;
+            RenderRecentCalls(force: true);
         }
         finally
         {
@@ -76,34 +96,57 @@ public sealed partial class ActivityPage : Page
     {
         RecentCallsPanel.Children.Clear();
         RecentCallsPanel.Children.Add(CreateEmptyText(UiText.Get("AnalyticsUnavailable")));
+        _hasAnalyticsSnapshot = false;
+        _latestCalls = Array.Empty<RuntimeAnalyticsCall>();
         _renderedLatestCallId = null;
-        _renderedCallCount = -1;
+        _renderedVisibleCallCount = -1;
     }
 
-    private void RenderRecentCalls(IReadOnlyList<RuntimeAnalyticsCall> calls)
+    private void RenderRecentCalls(bool force = false)
     {
-        var latestId = calls.Count == 0 ? (ulong?)null : calls[0].Id;
-        if (_renderedLatestCallId == latestId && _renderedCallCount == calls.Count)
+        var latestId = _latestCalls.Count == 0 ? (ulong?)null : _latestCalls[0].Id;
+        var visibleCount = Math.Min(_visibleCallCount, _latestCalls.Count);
+        if (!force && _renderedLatestCallId == latestId && _renderedVisibleCallCount == visibleCount)
         {
             return;
         }
 
         _renderedLatestCallId = latestId;
-        _renderedCallCount = calls.Count;
+        _renderedVisibleCallCount = visibleCount;
         RecentCallsPanel.Children.Clear();
-        if (calls.Count == 0)
+        if (_latestCalls.Count == 0)
         {
             RecentCallsPanel.Children.Add(CreateEmptyText(UiText.Get("NoCallData")));
             return;
         }
 
-        for (var index = 0; index < calls.Count; index++)
+        for (var index = 0; index < visibleCount; index++)
         {
             if (index > 0)
             {
                 RecentCallsPanel.Children.Add(CreateDivider());
             }
-            RecentCallsPanel.Children.Add(CreateCallExpander(calls[index]));
+            RecentCallsPanel.Children.Add(CreateCallExpander(_latestCalls[index]));
+        }
+
+        if (visibleCount < _latestCalls.Count)
+        {
+            RecentCallsPanel.Children.Add(CreateDivider());
+            var showMore = new Button
+            {
+                Content = UiText.Get("ShowMore"),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Padding = new Thickness(13, 10, 13, 10),
+                BorderThickness = new Thickness(0),
+                Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent)
+            };
+            showMore.Click += (_, _) =>
+            {
+                _visibleCallCount += PageSize;
+                RenderRecentCalls(force: true);
+            };
+            RecentCallsPanel.Children.Add(showMore);
         }
     }
 

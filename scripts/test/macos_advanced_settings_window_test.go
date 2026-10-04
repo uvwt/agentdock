@@ -221,7 +221,10 @@ func TestMacOSActivityOwnsRuntimeAnalytics(t *testing.T) {
 		`L10n.text("Advanced diagnostics")`,
 		`L10n.text("Copy diagnostics")`,
 		"recentP95(analytics)",
-		"2_000_000_000",
+		"private static let pageSize = 20",
+		"5_000_000_000",
+		`L10n.text("Show more")`,
+		"nextLatestID != currentLatestID",
 		`L10n.text("View activity")`,
 	} {
 		if !strings.Contains(content, want) {
