@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>AgentDock.ControlPanel</RootNamespace>
+    <AssemblyName>agentdock-tray</AssemblyName>
+    <Product>AgentDock</Product>
+    <Company>AgentDock</Company>
+    <Copyright>Copyright AgentDock contributors</Copyright>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>../../../packaging/windows/assets/agentdock.ico</ApplicationIcon>
+    <Platforms>x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <GenerateSatelliteAssembliesForCore>true</GenerateSatelliteAssembliesForCore>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.3.1" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="../../../packaging/assets/agentdock.png"
+             Link="Assets/agentdock.png"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../../packaging/windows/assets/agentdock.ico"
+             Link="agentdock.ico"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- WinUI 直接复用平台无关的 Runtime / Model / 资源实现。 -->
+    <Compile Include="../shared/UiText.cs" Link="Shared/UiText.cs" />
+    <Compile Include="../shared/Models/RuntimeModels.cs" Link="Shared/RuntimeModels.cs" />
+    <Compile Include="../shared/Services/RuntimeService.cs" Link="Shared/RuntimeService.cs" />
+    <Compile Include="../shared/Services/AcpAdapterResolver.cs" Link="Shared/AcpAdapterResolver.cs" />
+    <Compile Include="../shared/Services/ControlPanelDiagnostics.cs" Link="Shared/ControlPanelDiagnostics.cs" />
+    <Compile Include="../shared/Services/KillOnCloseJob.cs" Link="Shared/KillOnCloseJob.cs" />
+    <Compile Include="../shared/Services/TaskAdminService.cs" Link="Shared/TaskAdminService.cs" />
+    <EmbeddedResource Include="../shared/Resources/UiStrings.resx" Link="Resources/UiStrings.resx" />
+    <EmbeddedResource Include="../shared/Resources/UiStrings.zh-CN.resx" Link="Resources/UiStrings.zh-CN.resx" />
+  </ItemGroup>
+</Project>

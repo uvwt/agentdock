@@ -42,7 +42,7 @@ NexusDock 不替代设备端 AgentDock：实际文件、命令、浏览器、Ski
 
 AgentDock 的用户文档独立维护在 [uvwt/agentdock-docs](https://github.com/uvwt/agentdock-docs)。安装、平台配置、部署、升级、工具和用户可见行为等说明应优先参考这里，而不是只依赖主仓库 README。
 
-在线文档：<https://uvwt.github.io/agentdock-docs/zh-CN/>
+在线文档：<https://docs.nexusdock.co/agentdock/>
 
 文档源码仓库：<https://github.com/uvwt/agentdock-docs>
 

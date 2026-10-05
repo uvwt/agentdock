@@ -75,7 +75,7 @@ jobs:
           go build -trimpath -ldflags '-s -w' -o dist/agentdock-arbiter.exe ./cmd/agentdock-arbiter
           go build -trimpath -ldflags '-s -w' -o dist/agentdock-shim.exe ./cmd/agentdock-shim
           go build -trimpath -ldflags '-s -w -H=windowsgui' -o dist/agentdock-tray-shim.exe ./cmd/agentdock-shim
-          dotnet publish .\desktop\windows\control-panel\AgentDock.ControlPanel.csproj `
+          dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
             -r win-x64 `
             --self-contained true `
@@ -468,7 +468,7 @@ jobs:
           go build -trimpath -ldflags '-s -w' -o dist/agentdock-shim.exe ./cmd/agentdock-shim
           go build -trimpath -ldflags '-s -w -H=windowsgui' -o dist/agentdock-tray-shim.exe ./cmd/agentdock-shim
           & .\packaging\windows\build-wsl-helper-payload.ps1 -OutputDirectory .\dist\wsl-helper
-          dotnet publish .\desktop\windows\control-panel\AgentDock.ControlPanel.csproj `
+          dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
             -r $runtimeIdentifier `
             --self-contained true `
@@ -515,7 +515,10 @@ jobs:
           # v0.8.2/v0.8.3 updater 将 manage-windows.ps1 视为桌面归档必需项。
           # 当前运行时不再调用它；这里只保留 Release 契约，迁移成功后会从安装目录清理。
           Copy-Item .\packaging\windows\compat\manage-windows.ps1 dist\manage-windows.ps1 -Force
-          Compress-Archive -Path dist\agentdock.exe, dist\agentdock-tray.exe, dist\agentdock-arbiter.exe, dist\agentdock-shim.exe, dist\agentdock-tray-shim.exe, dist\agentdock.ico, dist\manage-windows.ps1, dist\share, dist\wsl-helper -DestinationPath $asset -Force
+          # Keep the complete self-contained WinUI publish payload together. The root executable is
+          # the signed/backcompat copy; put that signed copy back beside its runtime dependencies.
+          Copy-Item .\dist\agentdock-tray.exe .\dist\control-panel\agentdock-tray.exe -Force
+          Compress-Archive -Path dist\agentdock.exe, dist\agentdock-tray.exe, dist\agentdock-arbiter.exe, dist\agentdock-shim.exe, dist\agentdock-tray-shim.exe, dist\agentdock.ico, dist\manage-windows.ps1, dist\control-panel, dist\share, dist\wsl-helper -DestinationPath $asset -Force
           $hash = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
           [IO.File]::WriteAllText("$asset.sha256", "$hash  $asset`n", [Text.UTF8Encoding]::new($false))
 

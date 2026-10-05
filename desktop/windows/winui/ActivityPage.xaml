@@ -1,0 +1,26 @@
+<Page
+    x:Class="AgentDock.ControlPanel.ActivityPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:AgentDock.ControlPanel">
+    <ScrollViewer>
+        <StackPanel Width="760" HorizontalAlignment="Left" Spacing="22" Padding="28,24,28,32">
+            <StackPanel Spacing="5">
+                <TextBlock x:Name="PageTitle" FontSize="20" FontWeight="SemiBold"/>
+                <TextBlock x:Name="PageDetail" FontSize="12.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+            </StackPanel>
+
+            <local:SectionCard x:Name="RecentCallsSection">
+                <StackPanel>
+                    <TextBlock x:Name="RecentCallsHint"
+                               Margin="13,10"
+                               FontSize="11.5"
+                               TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                    <StackPanel x:Name="RecentCallsPanel"/>
+                </StackPanel>
+            </local:SectionCard>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

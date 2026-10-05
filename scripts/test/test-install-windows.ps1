@@ -301,9 +301,9 @@ foreach ($required in @(
     'Initialize-OAuthCredentials',
     'named-server-url.txt',
     'cloudflared-windows-$Architecture.exe',
-    '$tunnelStartupArguments = "--start-tunnel --runtime-root',
-    '-FilePath $destinationTrayBinary',
-    '-Arguments $tunnelStartupArguments',
+    '$tunnelLaunchArguments = "tunnel launch --runtime-root',
+    '-FilePath $destinationBinary',
+    '-Arguments $tunnelLaunchArguments',
     'quick-tunnel-url.txt',
     '& ''$escapedBinaryPath'' tunnel launch --runtime-root ''$escapedRuntimeDir''',
     'Write-ProtectedText -Path $PasswordPath',
@@ -678,10 +678,10 @@ $elevationProbe = [scriptblock]::Create(
 & $elevationProbe
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$taskAdminSourcePath = Join-Path $repoRoot 'desktop\windows\control-panel\Services\TaskAdminService.cs'
-$appSourcePath = Join-Path $repoRoot 'desktop\windows\control-panel\App.xaml.cs'
-$runtimeSourcePath = Join-Path $repoRoot 'desktop\windows\control-panel\Services\RuntimeService.cs'
-$jobSourcePath = Join-Path $repoRoot 'desktop\windows\control-panel\Services\KillOnCloseJob.cs'
+$taskAdminSourcePath = Join-Path $repoRoot 'desktop\windows\shared\Services\TaskAdminService.cs'
+$appSourcePath = Join-Path $repoRoot 'desktop\windows\winui\App.xaml.cs'
+$runtimeSourcePath = Join-Path $repoRoot 'desktop\windows\shared\Services\RuntimeService.cs'
+$jobSourcePath = Join-Path $repoRoot 'desktop\windows\shared\Services\KillOnCloseJob.cs'
 $taskAdminSource = Get-Content -LiteralPath $taskAdminSourcePath -Raw
 $appSource = Get-Content -LiteralPath $appSourcePath -Raw
 $runtimeSource = Get-Content -LiteralPath $runtimeSourcePath -Raw
@@ -706,7 +706,7 @@ foreach ($required in @(
         throw "$taskAdminSourcePath is missing native task administration behavior: $required"
     }
 }
-foreach ($required in @('--task-admin', 'TaskAdminService.Run(e.Args)', '--run-core-task')) {
+foreach ($required in @('--task-admin', 'TaskAdminService.Run(arguments)', '--run-core-task')) {
     if (-not $appSource.Contains($required)) {
         throw "$appSourcePath is missing AgentDock background helper behavior: $required"
     }

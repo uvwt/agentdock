@@ -61,11 +61,11 @@ func TestWindowsTunnelLifecycleTestsIsolateAgentDockHome(t *testing.T) {
 
 func TestDesktopControlSurfacesCanRefreshQuickTunnel(t *testing.T) {
 	checks := map[string][]string{
-		filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml.cs"): {
-			"RegenerateQuickButton_Click",
+		filepath.Join("..", "..", "desktop", "windows", "winui", "SettingsPage.xaml.cs"): {
+			"TemporaryTunnelButton_Click",
 			"RegenerateQuickTunnelAsync",
-			`UiText.Get("OldAddressHidden")`,
-			"PublicMcpTextBox.Text = \"\"",
+			`SetTunnelModeAsync("quick", "", "")`,
+			"await RefreshAsync()",
 		},
 		filepath.Join("..", "..", "desktop", "macos", "AgentDockApp", "Sources", "SetupWindowController.swift"): {
 			"refreshingQuickTunnel",

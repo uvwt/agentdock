@@ -85,7 +85,7 @@
     <value>OAuth 密码</value>
   </data>
   <data name="PublicAccess" xml:space="preserve">
-    <value>公网访问</value>
+    <value>Cloudflare Tunnel</value>
   </data>
   <data name="AccessMode" xml:space="preserve">
     <value>访问模式</value>
@@ -157,7 +157,7 @@
     <value>NexusDock 公网 HTTPS 地址</value>
   </data>
   <data name="OneTimePairingCode" xml:space="preserve">
-    <value>一次性配对码</value>
+    <value>配对码</value>
   </data>
   <data name="PairAndRestart" xml:space="preserve">
     <value>配对并重启</value>
@@ -247,7 +247,7 @@
     <value>以管理员权限运行 AgentDock 核心</value>
   </data>
   <data name="Startup" xml:space="preserve">
-    <value>开机启动</value>
+    <value>启动</value>
   </data>
   <data name="CoreStartup" xml:space="preserve">
     <value>AgentDock 核心开机启动</value>
@@ -263,18 +263,6 @@
   </data>
   <data name="OpenConfigFolder" xml:space="preserve">
     <value>打开配置目录</value>
-  </data>
-  <data name="RuntimeAnalytics" xml:space="preserve">
-    <value>运行分析</value>
-  </data>
-  <data name="RuntimeAnalyticsDescription" xml:space="preserve">
-    <value>在浏览器中查看工具调用耗时、错误统计与运行资源。</value>
-  </data>
-  <data name="OpenRuntimeAnalytics" xml:space="preserve">
-    <value>打开运行分析</value>
-  </data>
-  <data name="RuntimeAnalyticsLocalUrlUnavailable" xml:space="preserve">
-    <value>本机运行分析地址不可用。</value>
   </data>
   <data name="Ready" xml:space="preserve">
     <value>准备就绪</value>
@@ -737,4 +725,202 @@
   <data name="LanguageChangeDiscardWarning" xml:space="preserve">
     <value>切换界面语言会重新加载此窗口，未保存的更改将会丢失。是否继续？</value>
   </data>
+  <data name="Home" xml:space="preserve"><value>主页</value></data>
+  <data name="Connections" xml:space="preserve"><value>连接</value></data>
+  <data name="Capabilities" xml:space="preserve"><value>能力</value></data>
+  <data name="Activity" xml:space="preserve"><value>活动</value></data>
+  <data name="Settings" xml:space="preserve"><value>设置</value></data>
+  <data name="ConnectionsDetail" xml:space="preserve"><value>让 AI 客户端连接这台设备。</value></data>
+  <data name="LocalConnection" xml:space="preserve"><value>本机连接</value></data>
+  <data name="RemoteConnection" xml:space="preserve"><value>远程连接</value></data>
+  <data name="Copy" xml:space="preserve"><value>复制</value></data>
+  <data name="CapabilitiesDetail" xml:space="preserve"><value>配置 AgentDock 可以提供给 AI 的能力。</value></data>
+  <data name="AvailableCapabilities" xml:space="preserve"><value>可用能力</value></data>
+  <data name="BuiltInCapabilities" xml:space="preserve"><value>内置能力</value></data>
+  <data name="Extensions" xml:space="preserve"><value>扩展</value></data>
+  <data name="Skills" xml:space="preserve"><value>Skill</value></data>
+  <data name="Plugins" xml:space="preserve"><value>插件</value></data>
+  <data name="LoadedOnThisDevice" xml:space="preserve"><value>已加载到这台设备</value></data>
+  <data name="InstalledOnThisDevice" xml:space="preserve"><value>已安装到这台设备</value></data>
+  <data name="DynamicMcpServers" xml:space="preserve"><value>动态 MCP 服务</value></data>
+  <data name="Enabled" xml:space="preserve"><value>已启用</value></data>
+  <data name="BrowserCapabilityDetail" xml:space="preserve"><value>浏览器自动化与网页操作</value></data>
+  <data name="BrowserReuseMode" xml:space="preserve"><value>优先复用本机已有浏览器</value></data>
+  <data name="BrowserSpecifiedMode" xml:space="preserve"><value>使用已配置的 CDP 浏览器</value></data>
+  <data name="BrowserIsolatedMode" xml:space="preserve"><value>使用隔离浏览器</value></data>
+  <data name="NoProfilesConfigured" xml:space="preserve"><value>尚未配置 Profile</value></data>
+  <data name="ProfilesConfigured" xml:space="preserve"><value>已启用 {0} 个 · 默认 {1}</value></data>
+  <data name="McpAppsDetail" xml:space="preserve"><value>交互式 MCP App 展示模式</value></data>
+  <data name="Full" xml:space="preserve"><value>完整</value></data>
+  <data name="Compact" xml:space="preserve"><value>紧凑</value></data>
+  <data name="Off" xml:space="preserve"><value>关闭</value></data>
+  <data name="ActivityDetail" xml:space="preserve"><value>查看最近的工具调用和执行详情。</value></data>
+  <data name="CallOverview" xml:space="preserve"><value>调用概览</value></data>
+  <data name="TotalCalls" xml:space="preserve"><value>总调用</value></data>
+  <data name="FailedCalls" xml:space="preserve"><value>失败调用</value></data>
+  <data name="ActiveCalls" xml:space="preserve"><value>进行中调用</value></data>
+  <data name="StatsWindow" xml:space="preserve"><value>统计窗口</value></data>
+  <data name="CallStatistics" xml:space="preserve"><value>调用统计</value></data>
+  <data name="RecentCalls" xml:space="preserve"><value>最近调用</value></data>
+  <data name="ShowMore" xml:space="preserve"><value>查看更多</value></data>
+  <data name="RecentCallsPrivacyHint" xml:space="preserve"><value>仅保留工具名、来源、耗时、阶段、状态与错误码；不会保存参数、结果、命令或文件内容。</value></data>
+  <data name="RuntimeResources" xml:space="preserve"><value>运行资源</value></data>
+  <data name="GoHeap" xml:space="preserve"><value>Go 堆内存</value></data>
+  <data name="HeapInUse" xml:space="preserve"><value>使用中堆内存</value></data>
+  <data name="Goroutines" xml:space="preserve"><value>Goroutine</value></data>
+  <data name="GcCycles" xml:space="preserve"><value>GC 次数</value></data>
+  <data name="Uptime" xml:space="preserve"><value>本次运行</value></data>
+  <data name="SinceRuntimeStarted" xml:space="preserve"><value>本次运行累计</value></data>
+  <data name="CurrentlyRunning" xml:space="preserve"><value>当前正在执行</value></data>
+  <data name="UpToRetained" xml:space="preserve"><value>最多保留 {0} 条</value></data>
+  <data name="AnalyticsUnavailable" xml:space="preserve"><value>运行分析暂不可用。</value></data>
+  <data name="NoCallData" xml:space="preserve"><value>暂无调用数据。</value></data>
+  <data name="ActivityCallStatsDetail" xml:space="preserve"><value>{0} 次调用 · {1:F1}% 错误</value></data>
+  <data name="ErrorCode" xml:space="preserve"><value>错误码</value></data>
+  <data name="StageMcpRefresh" xml:space="preserve"><value>MCP 初始化与发现</value></data>
+  <data name="StageMcpRemoteCall" xml:space="preserve"><value>MCP 远端调用</value></data>
+  <data name="StageCommandStart" xml:space="preserve"><value>命令启动</value></data>
+  <data name="StageCommandForegroundWait" xml:space="preserve"><value>前台等待</value></data>
+  <data name="LastStatusRefresh" xml:space="preserve"><value>状态刷新时间</value></data>
+  <data name="Diagnostics" xml:space="preserve"><value>诊断</value></data>
+  <data name="Logs" xml:space="preserve"><value>日志</value></data>
+  <data name="LogsDetail" xml:space="preserve"><value>查看日志和诊断信息，用于排查问题。</value></data>
+  <data name="Logging" xml:space="preserve"><value>日志</value></data>
+  <data name="LogLevelRestartHint" xml:space="preserve"><value>修改日志级别后将重启 AgentDock。</value></data>
+  <data name="AdvancedDiagnostics" xml:space="preserve"><value>高级诊断</value></data>
+  <data name="RecentP95Latency" xml:space="preserve"><value>近期 P95 耗时</value></data>
+  <data name="DiagnosticInformation" xml:space="preserve"><value>诊断信息</value></data>
+  <data name="CopyDiagnostics" xml:space="preserve"><value>复制诊断信息</value></data>
+  <data name="LogDebug" xml:space="preserve"><value>调试</value></data>
+  <data name="LogInfo" xml:space="preserve"><value>信息</value></data>
+  <data name="LogWarning" xml:space="preserve"><value>警告</value></data>
+  <data name="LogError" xml:space="preserve"><value>错误</value></data>
+  <data name="LogsDirectory" xml:space="preserve"><value>日志目录</value></data>
+  <data name="ConfigurationDirectory" xml:space="preserve"><value>配置目录</value></data>
+  <data name="Open" xml:space="preserve"><value>打开</value></data>
+  <data name="Runtime" xml:space="preserve"><value>运行时</value></data>
+  <data name="Permissions" xml:space="preserve"><value>权限</value></data>
+  <data name="Credentials" xml:space="preserve"><value>访问凭据</value></data>
+  <data name="RuntimeDetail" xml:space="preserve"><value>本机 AgentDock Runtime 状态、配置与更新。</value></data>
+  <data name="PermissionsDetail" xml:space="preserve"><value>查看和调整 Windows Runtime 权限。</value></data>
+  <data name="StartupDetail" xml:space="preserve"><value>后台服务和托盘应用的启动行为。</value></data>
+  <data name="CredentialsDetail" xml:space="preserve"><value>查看由 Windows DPAPI 保护的本机访问凭据。</value></data>
+  <data name="LocalAddress" xml:space="preserve"><value>本地地址</value></data>
+  <data name="RuntimeConfiguration" xml:space="preserve"><value>Runtime 配置</value></data>
+  <data name="AgentDockUpdate" xml:space="preserve"><value>AgentDock 更新</value></data>
+  <data name="AgentDockPermissions" xml:space="preserve"><value>AgentDock 权限</value></data>
+  <data name="ManagedByWindows" xml:space="preserve"><value>由 Windows 系统管理</value></data>
+  <data name="CoreBackgroundService" xml:space="preserve"><value>核心服务</value></data>
+  <data name="TrayApp" xml:space="preserve"><value>托盘应用</value></data>
+  <data name="AuthenticationToken" xml:space="preserve"><value>认证令牌</value></data>
+  <data name="QuickAccess" xml:space="preserve"><value>快速入口</value></data>
+  <data name="ConnectAIClients" xml:space="preserve"><value>连接 AI 客户端</value></data>
+  <data name="ManageCapabilities" xml:space="preserve"><value>管理能力</value></data>
+  <data name="ViewActivity" xml:space="preserve"><value>查看活动</value></data>
+  <data name="AgentDockRunning" xml:space="preserve"><value>AgentDock 正在运行</value></data>
+  <data name="AgentDockStopped" xml:space="preserve"><value>AgentDock 已停止</value></data>
+  <data name="LocalServiceReady" xml:space="preserve"><value>本地服务已准备好，AI 客户端可以连接。</value></data>
+  <data name="StartAgentDockForClients" xml:space="preserve"><value>启动 AgentDock 后即可接受 AI 客户端连接。</value></data>
+  <data name="PublicMcpMode" xml:space="preserve"><value>Public MCP 模式</value></data>
+  <data name="LocalOnlyNative" xml:space="preserve"><value>仅本机</value></data>
+  <data name="TemporaryPublicAddress" xml:space="preserve"><value>临时公网地址</value></data>
+  <data name="HttpsAddress" xml:space="preserve"><value>HTTPS 地址</value></data>
+  <data name="TunnelTokenSavedPlaceholder" xml:space="preserve"><value>已保存；留空保持当前 Token</value></data>
+  <data name="Apply" xml:space="preserve"><value>应用</value></data>
+  <data name="NexusAddress" xml:space="preserve"><value>NexusDock 地址</value></data>
+  <data name="Pair" xml:space="preserve"><value>配对</value></data>
+  <data name="Applying" xml:space="preserve"><value>正在应用…</value></data>
+  <data name="Applied" xml:space="preserve"><value>已应用</value></data>
+  <data name="Generating" xml:space="preserve"><value>正在生成…</value></data>
+  <data name="Generated" xml:space="preserve"><value>已生成</value></data>
+  <data name="Pairing" xml:space="preserve"><value>正在配对…</value></data>
+  <data name="PairingCompleted" xml:space="preserve"><value>配对完成</value></data>
+  <data name="IsolatedBrowser" xml:space="preserve"><value>隔离浏览器</value></data>
+  <data name="ReuseLocalBrowser" xml:space="preserve"><value>复用本机浏览器</value></data>
+  <data name="SpecifiedCdp" xml:space="preserve"><value>指定 CDP 地址</value></data>
+  <data name="AddCustomCodingAgent" xml:space="preserve"><value>添加自定义ACP</value></data>
+  <data name="DefaultCodingAgent" xml:space="preserve"><value>默认</value></data>
+  <data name="ArgumentsOnePerLine" xml:space="preserve"><value>参数（每行一个）</value></data>
+  <data name="Saving" xml:space="preserve"><value>正在保存…</value></data>
+  <data name="Saved" xml:space="preserve"><value>已保存</value></data>
+  <data name="AtLeastOneCodingAgent" xml:space="preserve"><value>至少启用一个 Coding Agent Profile。</value></data>
+  <data name="SaveFailed" xml:space="preserve"><value>保存失败</value></data>
+  <data name="StartupSettingsFailed" xml:space="preserve"><value>启动设置失败</value></data>
+  <data name="PermissionSettingsFailed" xml:space="preserve"><value>权限设置失败</value></data>
+  <data name="NewVersionAvailable" xml:space="preserve"><value>发现新版本</value></data>
+  <data name="Confirm" xml:space="preserve"><value>确定</value></data>
+  <data name="ConnectionsRecommendedDetail" xml:space="preserve"><value>推荐通过 NexusDock 连接；需要时再使用高级连接选项。</value></data>
+  <data name="RecommendedConnection" xml:space="preserve"><value>推荐连接</value></data>
+  <data name="NexusRecommendedIntro" xml:space="preserve"><value>完成一次配对后，支持的 AI 客户端即可通过 NexusDock 连接，无需手动配置 MCP 地址或隧道。</value></data>
+  <data name="ConnectThisDeviceToNexus" xml:space="preserve"><value>将这台设备连接到 NexusDock。</value></data>
+  <data name="AdvancedConnectionSettings" xml:space="preserve"><value>高级连接设置</value></data>
+  <data name="AdvancedConnectionDetail" xml:space="preserve"><value>本地 MCP、访问凭据与公网直连。</value></data>
+  <data name="PublicAddress" xml:space="preserve"><value>公网地址</value></data>
+  <data name="TemporaryDomain" xml:space="preserve"><value>临时域名</value></data>
+  <data name="TemporaryTunnelDetail" xml:space="preserve"><value>无需配置域名，直接生成一个临时公网地址。</value></data>
+  <data name="GenerateTemporaryAddress" xml:space="preserve"><value>生成临时地址</value></data>
+  <data name="FixedDomain" xml:space="preserve"><value>固定域名</value></data>
+  <data name="FixedDomainDetail" xml:space="preserve"><value>使用自己的 HTTPS 域名和 Cloudflare Tunnel Token 建立固定公网入口。</value></data>
+  <data name="ApplyFixedDomain" xml:space="preserve"><value>应用固定域名</value></data>
+
+  <data name="NeedsAttention" xml:space="preserve"><value>运行异常</value></data>
+  <data name="AgentDockNeedsAttention" xml:space="preserve"><value>AgentDock 运行异常</value></data>
+  <data name="AgentDockNeedsAttentionDetail" xml:space="preserve"><value>AgentDock 已启动，但连接服务尚未就绪。</value></data>
+  <data name="About" xml:space="preserve"><value>关于</value></data>
+  <data name="AboutDetail" xml:space="preserve"><value>关于 AgentDock 与项目资源。</value></data>
+  <data name="AboutDescription" xml:space="preserve"><value>AgentDock 让 AI 客户端安全使用这台设备上的能力。</value></data>
+  <data name="Application" xml:space="preserve"><value>应用</value></data>
+  <data name="Resources" xml:space="preserve"><value>资源</value></data>
+  <data name="Website" xml:space="preserve"><value>官网</value></data>
+  <data name="Documentation" xml:space="preserve"><value>文档</value></data>
+  <data name="Appearance" xml:space="preserve"><value>外观</value></data>
+  <data name="AppearanceDetail" xml:space="preserve"><value>自定义主题和界面语言。</value></data>
+  <data name="Theme" xml:space="preserve"><value>主题</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>浅色</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>深色</value></data>
+
+  <data name="AdvancedConnection" xml:space="preserve"><value>高级连接</value></data>
+  <data name="RemoteConnectionPageDetail" xml:space="preserve"><value>让 AI 客户端远程连接这台设备。</value></data>
+  <data name="RemoteService" xml:space="preserve"><value>远程服务</value></data>
+  <data name="Change" xml:space="preserve"><value>更改</value></data>
+  <data name="Done" xml:space="preserve"><value>完成</value></data>
+  <data name="OfficialService" xml:space="preserve"><value>官方服务</value></data>
+  <data name="SelfHostedService" xml:space="preserve"><value>自托管服务</value></data>
+  <data name="OfficialServiceHint" xml:space="preserve"><value>官方服务默认使用 nexusdock.co。</value></data>
+  <data name="ServiceAddress" xml:space="preserve"><value>服务地址</value></data>
+  <data name="RemotePairingIntro" xml:space="preserve"><value>输入配对码以连接这台设备。</value></data>
+  <data name="GetPairingCodeFromNexusDock" xml:space="preserve"><value>没有配对码？前往 NexusDock 获取配对码 ↗</value></data>
+  <data name="ManageConnectedDevices" xml:space="preserve"><value>管理已连接设备 ↗</value></data>
+  <data name="Connect" xml:space="preserve"><value>连接</value></data>
+  <data name="RePair" xml:space="preserve"><value>重新配对</value></data>
+  <data name="ServiceAddressRequired" xml:space="preserve"><value>请输入自托管服务地址。</value></data>
+
+  <data name="Configuration" xml:space="preserve"><value>配置</value></data>
+  <data name="ApplyChanges" xml:space="preserve"><value>应用更改</value></data>
+  <data name="CustomPort" xml:space="preserve"><value>自定义端口</value></data>
+  <data name="ServicePort" xml:space="preserve"><value>服务端口</value></data>
+  <data name="PortRestartHint" xml:space="preserve"><value>需要重启</value></data>
+  <data name="PortRestartDetail" xml:space="preserve"><value>更改端口后将自动重启 AgentDock。</value></data>
+  <data name="Connection" xml:space="preserve"><value>连接</value></data>
+  <data name="DeviceReadyForAI" xml:space="preserve"><value>让 AI 的双手，真正触达你的每一台设备。</value></data>
+  <data name="CodingAgent" xml:space="preserve"><value>与本机AI通信</value></data>
+  <data name="McpApps" xml:space="preserve"><value>聊天卡片</value></data>
+  <data name="AllAvailable" xml:space="preserve"><value>全部可用</value></data>
+  <data name="NotEnabledYet" xml:space="preserve"><value>尚未启用</value></data>
+  <data name="CapabilitiesAvailable" xml:space="preserve"><value>{0} / 3 可用</value></data>
+  <data name="CapabilitiesNeedAttention" xml:space="preserve"><value>{0} 项需要处理</value></data>
+  <data name="CoreCapabilities" xml:space="preserve"><value>核心能力</value></data>
+  <data name="DashboardInstalled" xml:space="preserve"><value>已安装</value></data>
+  <data name="DashboardConfigured" xml:space="preserve"><value>已配置</value></data>
+  <data name="DefaultProfileSummary" xml:space="preserve"><value>默认 · {0}</value></data>
+  <data name="RecentActivity" xml:space="preserve"><value>最近活动</value></data>
+  <data name="RecentActivityUnavailable" xml:space="preserve"><value>最近活动暂不可用。</value></data>
+  <data name="NoRecentActivity" xml:space="preserve"><value>暂无最近活动。</value></data>
+  <data name="Succeeded" xml:space="preserve"><value>成功</value></data>
+  <data name="Failed" xml:space="preserve"><value>失败</value></data>
+  <data name="ActivitySourceRemote" xml:space="preserve"><value>远程</value></data>
+  <data name="ActivitySourceLocal" xml:space="preserve"><value>本机</value></data>
+  <data name="JustNow" xml:space="preserve"><value>刚刚</value></data>
+  <data name="MinutesAgo" xml:space="preserve"><value>{0} 分钟前</value></data>
+  <data name="HoursAgo" xml:space="preserve"><value>{0} 小时前</value></data>
 </root>

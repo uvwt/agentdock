@@ -86,7 +86,7 @@ Type: files; Name: "{userdesktop}\{code:GetLocalizedMessage|DesktopShortcutName}
 
 [Icons]
 Name: "{group}\AgentDock"; Filename: "{app}\bin\agentdock-tray.exe"; WorkingDir: "{app}"; IconFilename: "{app}\installer\agentdock.ico"; AppUserModelID: "com.uvwt.agentdock.controlpanel"
-Name: "{group}\{code:GetLocalizedMessage|DocsShortcut}"; Filename: "https://uvwt.github.io/agentdock-docs/"
+Name: "{group}\{code:GetLocalizedMessage|DocsShortcut}"; Filename: "https://docs.nexusdock.co/agentdock/"
 Name: "{group}\{code:GetLocalizedMessage|UninstallShortcut}"; Filename: "{uninstallexe}"
 
 #include "includes\code.iss"

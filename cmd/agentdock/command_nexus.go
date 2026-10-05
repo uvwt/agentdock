@@ -48,7 +48,7 @@ func runNexusPairCommand(ctx context.Context, args []string, stdout, stderr io.W
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "AgentDock 已配对到 NexusDock，node_id=%s；重启 AgentDock 后自动连接。\n", identity.NodeID)
+	fmt.Fprintf(stdout, "AgentDock 已配对到 NexusDock，node_id=%s。\n", identity.NodeID)
 	return nil
 }
 func runNexusStatusCommand(args []string, stdout, stderr io.Writer) error {

@@ -1,0 +1,26 @@
+<Page
+    x:Class="AgentDock.ControlPanel.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:AgentDock.ControlPanel">
+    <Grid RowSpacing="18" Padding="28,24,0,0">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+        <TextBlock x:Name="SettingsPageTitle" FontSize="20" FontWeight="SemiBold"/>
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="190"/><ColumnDefinition Width="1"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <ListView x:Name="SettingsNavigation" SelectionChanged="SettingsNavigation_SelectionChanged">
+                <ListViewItem x:Name="AppearanceNavigationItem" Tag="appearance"/>
+                <ListViewItem x:Name="PermissionsNavigationItem" Tag="permissions"/>
+                <ListViewItem x:Name="StartupNavigationItem" Tag="startup"/>
+                <ListViewItem x:Name="LogsNavigationItem" Tag="logs"/>
+                <ListViewItem x:Name="AdvancedConnectionNavigationItem" Tag="advancedConnection"/>
+                <ListViewItem x:Name="AboutNavigationItem" Tag="about"/>
+
+            </ListView>
+            <Rectangle Grid.Column="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+            <ScrollViewer Grid.Column="2">
+                <StackPanel x:Name="SettingsContent" Width="650" HorizontalAlignment="Left" Spacing="20" Padding="28,4,28,32"/>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</Page>

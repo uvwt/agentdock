@@ -1,0 +1,37 @@
+<Window
+    x:Class="AgentDock.ControlPanel.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:AgentDock.ControlPanel"
+    Title="AgentDock">
+    <Grid x:Name="Root"
+          Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <NavigationView x:Name="Navigation"
+                        PaneTitle="AgentDock"
+                        PaneDisplayMode="Left"
+                        IsBackButtonVisible="Collapsed"
+                        IsSettingsVisible="False"
+                        OpenPaneLength="168"
+                        CompactPaneLength="48"
+                        SelectionChanged="Navigation_SelectionChanged">
+            <NavigationView.MenuItems>
+                <NavigationViewItem x:Name="HomeNavigationItem" Tag="home">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Home"/></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="ConnectionsNavigationItem" Tag="connections">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Link"/></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="CapabilitiesNavigationItem" Tag="capabilities">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE80A;"/></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="ActivityNavigationItem" Tag="activity">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Clock"/></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="SettingsNavigationItem" Tag="settings">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Setting"/></NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
+            <Frame x:Name="ContentFrame"/>
+        </NavigationView>
+    </Grid>
+</Window>

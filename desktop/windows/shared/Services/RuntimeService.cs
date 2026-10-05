@@ -160,9 +160,182 @@ public sealed class RuntimeService : IDisposable
             DateTimeOffset.Now);
     }
 
+    public async Task<PublicEndpointCheckResult> CheckPublicEndpointAsync(
+        string publicMcpUrl,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Uri.TryCreate(publicMcpUrl, UriKind.Absolute, out var publicUri) ||
+            !string.Equals(publicUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(publicUri.Host))
+        {
+            return new PublicEndpointCheckResult(false, UiText.Get("InvalidPublicAddress"), null);
+        }
+
+        var healthUri = new UriBuilder(publicUri)
+        {
+            Path = "/healthz",
+            Query = "",
+            Fragment = ""
+        }.Uri;
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, healthUri);
+        request.Headers.TryAddWithoutValidation("Accept", "application/json");
+        request.Headers.TryAddWithoutValidation("Cache-Control", "no-cache");
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(8));
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, timeout.Token);
+            stopwatch.Stop();
+            var latency = Math.Max(0, (long)Math.Round(stopwatch.Elapsed.TotalMilliseconds));
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return new PublicEndpointCheckResult(
+                    false,
+                    UiText.Format("AccessFailed", $"HTTP {(int)response.StatusCode}"),
+                    latency,
+                    (int)response.StatusCode);
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token);
+            using var payload = await JsonDocument.ParseAsync(stream, cancellationToken: timeout.Token);
+            var healthy = payload.RootElement.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.True;
+            if (!healthy)
+            {
+                return new PublicEndpointCheckResult(
+                    false,
+                    UiText.Format("AccessFailed", "invalid health response"),
+                    latency,
+                    (int)response.StatusCode);
+            }
+
+            return new PublicEndpointCheckResult(
+                true,
+                UiText.Format("AccessSuccess", healthUri.Host, latency),
+                latency,
+                (int)response.StatusCode);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new PublicEndpointCheckResult(false, UiText.Get("AccessTimeout"), null);
+        }
+        catch (Exception ex)
+        {
+            return new PublicEndpointCheckResult(false, UiText.Format("AccessFailed", ex.Message), null);
+        }
+    }
+
+    public async Task<RuntimeDashboardSnapshot> GetDashboardAsync(
+        RuntimeSnapshot snapshot,
+        CancellationToken cancellationToken = default)
+    {
+        if (!snapshot.CoreRunning || !snapshot.Healthy ||
+            !TryCreateLoopbackRuntimeUri(snapshot.LocalMcpUrl, "/internal/runtime/overview", out var overviewUri) ||
+            !TryCreateLoopbackRuntimeUri(snapshot.LocalMcpUrl, "/internal/runtime/diagnostics", out var diagnosticsUri))
+        {
+            return RuntimeDashboardSnapshot.Empty;
+        }
+
+        var bearerToken = ReadBearerToken();
+        var overviewTask = ReadRuntimeApiAsync<RuntimeOverviewPayload>(overviewUri, bearerToken, cancellationToken);
+        var diagnosticsTask = ReadRuntimeApiAsync<RuntimeDiagnosticsPayload>(diagnosticsUri, bearerToken, cancellationToken);
+        await Task.WhenAll(overviewTask, diagnosticsTask);
+
+        var overview = await overviewTask;
+        var diagnostics = await diagnosticsTask;
+        return new RuntimeDashboardSnapshot(
+            overview is not null,
+            diagnostics is not null,
+            overview?.Skills.Count ?? 0,
+            overview?.Mcp.Count ?? 0,
+            overview?.Plugins.Count ?? 0,
+            diagnostics?.RecentCalls ?? []);
+    }
+
+    public async Task<RuntimeAnalyticsPayload?> GetRuntimeAnalyticsAsync(
+        RuntimeSnapshot snapshot,
+        CancellationToken cancellationToken = default)
+    {
+        if (!snapshot.CoreRunning || !snapshot.Healthy ||
+            !TryCreateLoopbackRuntimeUri(snapshot.LocalMcpUrl, "/internal/runtime/analytics", out var analyticsUri))
+        {
+            return null;
+        }
+
+        return await ReadRuntimeApiAsync<RuntimeAnalyticsPayload>(
+            analyticsUri,
+            ReadBearerToken(),
+            cancellationToken);
+    }
+
     public string ReadBearerToken() => ReadProtectedText(Path.Combine(RuntimeRoot, "auth-token.dpapi"), AuthEntropy);
     public string ReadOAuthPassword() => ReadProtectedText(Path.Combine(RuntimeRoot, "oauth-password.dpapi"), OAuthPasswordEntropy);
     public string ReadTunnelToken() => ReadProtectedText(Path.Combine(RuntimeRoot, "cloudflared-token.dpapi"), TunnelTokenEntropy);
+
+    public async Task<RuntimeExtensionOverview> GetRuntimeExtensionOverviewAsync(
+        string localMcpUrl,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Uri.TryCreate(localMcpUrl, UriKind.Absolute, out var localUri) ||
+            localUri.Scheme != Uri.UriSchemeHttp ||
+            !IsLoopbackHost(localUri.Host))
+        {
+            return RuntimeExtensionOverview.Unavailable;
+        }
+
+        var overviewUri = new UriBuilder(localUri)
+        {
+            Path = "/internal/runtime/overview",
+            Query = "",
+            Fragment = ""
+        }.Uri;
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, overviewUri);
+            var bearer = ReadBearerToken();
+            if (!string.IsNullOrWhiteSpace(bearer))
+            {
+                request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + bearer);
+            }
+
+            using var response = await _httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return RuntimeExtensionOverview.Unavailable;
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            var payload = JsonSerializer.Deserialize<RuntimeOverviewPayload>(body, JsonOptions);
+            if (payload is null)
+            {
+                return RuntimeExtensionOverview.Unavailable;
+            }
+
+            return new RuntimeExtensionOverview(
+                true,
+                Math.Max(0, payload.Skills.Count),
+                Math.Max(0, payload.Plugins.Count),
+                payload.Plugins.Available,
+                Math.Max(0, payload.Mcp.Count));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or JsonException)
+        {
+            return RuntimeExtensionOverview.Unavailable;
+        }
+    }
+
     public AcpAdapterResolution ResolveAcpAdapter(
         string agent,
         string configuredCommand = "",
@@ -582,31 +755,65 @@ public sealed class RuntimeService : IDisposable
     public void OpenLogsDirectory() => OpenDirectory(LogsDirectory);
     public void OpenConfigDirectory() => OpenDirectory(ConfigDirectory);
 
-    public void OpenRuntimeAnalytics(string localMcpUrl)
-    {
-        if (!Uri.TryCreate(localMcpUrl, UriKind.Absolute, out var localUri) ||
-            localUri.Scheme != Uri.UriSchemeHttp ||
-            !IsLoopbackHost(localUri.Host))
-        {
-            throw new InvalidOperationException(UiText.Get("RuntimeAnalyticsLocalUrlUnavailable"));
-        }
-
-        var analyticsUri = new UriBuilder(localUri)
-        {
-            Path = "/analytics",
-            Query = "",
-            Fragment = ""
-        }.Uri;
-        Process.Start(new ProcessStartInfo(analyticsUri.AbsoluteUri)
-        {
-            UseShellExecute = true
-        });
-    }
-
     private static bool IsLoopbackHost(string host) =>
         string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(host, "127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(host, "::1", StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryCreateLoopbackRuntimeUri(string localMcpUrl, string path, out Uri uri)
+    {
+        uri = null!;
+        if (!Uri.TryCreate(localMcpUrl, UriKind.Absolute, out var localUri) ||
+            localUri.Scheme != Uri.UriSchemeHttp ||
+            !IsLoopbackHost(localUri.Host))
+        {
+            return false;
+        }
+
+        uri = new UriBuilder(localUri)
+        {
+            Path = path,
+            Query = "",
+            Fragment = ""
+        }.Uri;
+        return true;
+    }
+
+    private async Task<T?> ReadRuntimeApiAsync<T>(
+        Uri uri,
+        string bearerToken,
+        CancellationToken cancellationToken)
+        where T : class
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            if (!string.IsNullOrWhiteSpace(bearerToken))
+            {
+                request.Headers.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", bearerToken);
+            }
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            return await JsonSerializer.DeserializeAsync<T>(stream, JsonOptions, cancellationToken);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private async Task<RuntimeManifest?> ReadRuntimeManifestAsync(CancellationToken cancellationToken)
     {

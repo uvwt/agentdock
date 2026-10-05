@@ -167,7 +167,7 @@ func TestReleaseWorkflowPublishesDraftByReleaseID(t *testing.T) {
 }
 
 func TestWindowsTrayCarriesSignPathMetadataFromMSBuild(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "AgentDock.ControlPanel.csproj"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "AgentDock.WinUI.csproj"))
 	if err != nil {
 		t.Fatalf("read Windows control panel project: %v", err)
 	}

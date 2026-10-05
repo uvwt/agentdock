@@ -1,0 +1,93 @@
+<Page
+    x:Class="AgentDock.ControlPanel.ConnectionsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:AgentDock.ControlPanel">
+    <ScrollViewer>
+        <StackPanel Width="760" HorizontalAlignment="Left" Spacing="22" Padding="28,24,28,32">
+            <StackPanel Spacing="5">
+                <TextBlock x:Name="PageTitle" FontSize="20" FontWeight="SemiBold"/>
+                <TextBlock x:Name="PageDetail" FontSize="12.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <local:SectionCard x:Name="RemoteSection">
+                <StackPanel>
+                    <Grid MinHeight="54" Padding="13,6" ColumnSpacing="16">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock x:Name="StatusLabel" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Column="1"
+                                    Orientation="Horizontal"
+                                    Spacing="6"
+                                    VerticalAlignment="Center">
+                            <Ellipse x:Name="RemoteStateDot"
+                                     Width="7"
+                                     Height="7"
+                                     VerticalAlignment="Center"/>
+                            <TextBlock x:Name="RemoteState"
+                                       FontSize="12"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
+                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                    <Grid MinHeight="60" Padding="13,6" ColumnSpacing="16">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                            <TextBlock x:Name="RemoteServiceLabel" FontSize="13"/>
+                            <TextBlock x:Name="RemoteServiceValue" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                        <Button x:Name="ChangeRemoteServiceButton" Grid.Column="1" Click="ChangeRemoteServiceButton_Click" VerticalAlignment="Center"/>
+                    </Grid>
+                    <StackPanel x:Name="RemoteServiceEditor" Visibility="Collapsed" Padding="13,10" Spacing="9">
+                        <ComboBox x:Name="RemoteServiceComboBox" Width="220" HorizontalAlignment="Left" SelectionChanged="RemoteServiceComboBox_SelectionChanged">
+                            <ComboBoxItem x:Name="OfficialServiceItem" Tag="official"/>
+                            <ComboBoxItem x:Name="SelfHostedServiceItem" Tag="self-hosted"/>
+                        </ComboBox>
+                        <TextBlock x:Name="OfficialServiceHint" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <TextBox x:Name="SelfHostedEndpointTextBox" Visibility="Collapsed" PlaceholderText="https://nexus.example.com" TextChanged="SelfHostedEndpointTextBox_TextChanged"/>
+                    </StackPanel>
+                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" Margin="13,0,0,0"/>
+                    <StackPanel Padding="13,12" Spacing="10">
+                        <TextBlock x:Name="PairingIntro" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                        <PasswordBox x:Name="PairingCodeBox"/>
+                        <HyperlinkButton x:Name="NexusDevicesLink"
+                                         HorizontalAlignment="Left"
+                                         Padding="0"
+                                         FontSize="11.5"
+                                         Click="NexusDevicesLink_Click"/>
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="ConnectionActionStatus"
+                                       VerticalAlignment="Center"
+                                       FontSize="11.5"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <Button x:Name="ConnectButton"
+                                    Grid.Column="1"
+                                    HorizontalAlignment="Right"
+                                    Click="ConnectButton_Click"/>
+                        </Grid>
+                    </StackPanel>
+                </StackPanel>
+            </local:SectionCard>
+
+            <local:SectionCard x:Name="AdvancedEntrySection">
+                <Button x:Name="AdvancedSettingsButton"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Stretch"
+                        Padding="13,10"
+                        Click="AdvancedSettingsButton_Click">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock x:Name="AdvancedEntryTitle" FontSize="13" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="AdvancedEntryDetail" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <TextBlock Grid.Column="1" Text="›" FontSize="20" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"/>
+                    </Grid>
+                </Button>
+            </local:SectionCard>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

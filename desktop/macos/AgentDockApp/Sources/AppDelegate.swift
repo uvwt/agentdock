@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isCheckingForUpdate = false
     private var trayServiceActionInProgress = false
     private lazy var updateProgressWindow = UpdateProgressWindowController()
-    private lazy var setupWindow = SetupWindowController(
+    private lazy var setupWindow = NativeControlPanelWindowController(
         service: service,
         menuLoginAgent: menuLoginAgent,
         onChanged: { [weak self] in
@@ -404,8 +404,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item.autosaveName = "AgentDockMenuBarItem"
             item.isVisible = true
             if let button = item.button {
-                button.image = NSImage(systemSymbolName: "shippingbox.fill", accessibilityDescription: "AgentDock")
-                button.image?.isTemplate = true
+                button.image = AgentDockLogoArtwork.menuBarImage()
             }
             statusItem = item
             return
@@ -507,7 +506,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(item(L10n.text("Check for updates…"), #selector(updateService)))
             menu.addItem(.separator())
             if currentStatus.loaded {
-                menu.addItem(item(L10n.text("Open runtime analytics"), #selector(openRuntimeAnalytics)))
+                menu.addItem(item(L10n.text("View activity"), #selector(showActivity)))
             }
             menu.addItem(item(L10n.text("Open logs folder"), #selector(openLogs)))
             menu.addItem(item(L10n.text("Open configuration folder"), #selector(openConfiguration)))
@@ -527,15 +526,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showSetup() { setupWindow.present(status: currentStatus) }
     @objc private func showUpdateProgress() { updateProgressWindow.present() }
     @objc private func openPermissions() { setupWindow.presentPermissions() }
-    @objc private func openRuntimeAnalytics() {
-        service.openRuntimeAnalytics(configuration: currentStatus.configuration)
-    }
+    @objc private func showActivity() { setupWindow.presentActivity(status: currentStatus) }
     @objc private func openLogs() { service.openLogs() }
     @objc private func openConfiguration() { service.openConfiguration() }
     @objc private func openBackgroundSettings() { service.openBackgroundItemsSettings() }
 
     @objc private func openDocumentation() {
-        if let url = URL(string: "https://uvwt.github.io/agentdock-docs/") {
+        if let url = URL(string: "https://docs.nexusdock.co/agentdock/") {
             NSWorkspace.shared.open(url)
         }
     }

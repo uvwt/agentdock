@@ -164,7 +164,7 @@ jobs:
           go build -trimpath -ldflags '-s -w' -o (Join-Path $distRoot 'agentdock-shim.exe') .\cmd\agentdock-shim
           go build -trimpath -ldflags '-s -w -H=windowsgui' -o (Join-Path $distRoot 'agentdock-tray-shim.exe') .\cmd\agentdock-shim
           $controlPanelOutput = Join-Path $distRoot 'control-panel'
-          dotnet publish .\desktop\windows\control-panel\AgentDock.ControlPanel.csproj `
+          dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
             -r win-x64 `
             --self-contained true `
@@ -178,7 +178,7 @@ jobs:
           $assetName = 'agentdock_windows_amd64.zip'
           $archivePath = Join-Path $releaseRoot $assetName
           Compress-Archive `
-            -Path (Join-Path $distRoot 'agentdock.exe'), (Join-Path $distRoot 'agentdock-tray.exe'), (Join-Path $distRoot 'agentdock-arbiter.exe'), (Join-Path $distRoot 'agentdock-shim.exe'), (Join-Path $distRoot 'agentdock-tray-shim.exe'), (Join-Path $distRoot 'agentdock.ico'), (Join-Path $distRoot 'manage-windows.ps1'), (Join-Path $distRoot 'share'), (Join-Path $distRoot 'wsl-helper') `
+            -Path (Join-Path $distRoot 'agentdock.exe'), (Join-Path $distRoot 'agentdock-tray.exe'), (Join-Path $distRoot 'agentdock-arbiter.exe'), (Join-Path $distRoot 'agentdock-shim.exe'), (Join-Path $distRoot 'agentdock-tray-shim.exe'), (Join-Path $distRoot 'agentdock.ico'), (Join-Path $distRoot 'manage-windows.ps1'), (Join-Path $distRoot 'control-panel'), (Join-Path $distRoot 'share'), (Join-Path $distRoot 'wsl-helper') `
             -DestinationPath $archivePath `
             -Force
           $hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -232,7 +232,7 @@ jobs:
           go build -trimpath -ldflags '-s -w' -o dist\agentdock-arbiter.exe .\cmd\agentdock-arbiter
           go build -trimpath -ldflags '-s -w' -o dist\agentdock-shim.exe .\cmd\agentdock-shim
           go build -trimpath -ldflags '-s -w -H=windowsgui' -o dist\agentdock-tray-shim.exe .\cmd\agentdock-shim
-          dotnet publish .\desktop\windows\control-panel\AgentDock.ControlPanel.csproj `
+          dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
             -r win-x64 `
             --self-contained true `
@@ -265,6 +265,9 @@ jobs:
           )
           .\packaging\windows\sign-windows.ps1 -Path $paths
           .\packaging\windows\sign-windows.ps1 -Path $paths -VerifyOnly
+          if (Test-Path .\dist\control-panel\agentdock-tray.exe) {
+            Copy-Item .\dist\agentdock-tray.exe .\dist\control-panel\agentdock-tray.exe -Force
+          }
 
       - name: Prepare offline AMD64 payload
         shell: pwsh
@@ -279,7 +282,7 @@ jobs:
           Copy-Item .\packaging\windows\compat\manage-windows.ps1 .\dist\manage-windows.ps1 -Force
           $archivePath = Join-Path $payloadRoot 'agentdock_windows_amd64.zip'
           Compress-Archive `
-            -Path .\dist\agentdock.exe, .\dist\agentdock-tray.exe, .\dist\agentdock-arbiter.exe, .\dist\agentdock-shim.exe, .\dist\agentdock-tray-shim.exe, .\dist\agentdock.ico, .\dist\manage-windows.ps1, .\dist\share, .\dist\wsl-helper `
+            -Path .\dist\agentdock.exe, .\dist\agentdock-tray.exe, .\dist\agentdock-arbiter.exe, .\dist\agentdock-shim.exe, .\dist\agentdock-tray-shim.exe, .\dist\agentdock.ico, .\dist\manage-windows.ps1, .\dist\control-panel, .\dist\share, .\dist\wsl-helper `
             -DestinationPath $archivePath `
             -Force
           $hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -477,7 +480,7 @@ jobs:
             $assetPath = Join-Path $releaseDir $assetName
             Copy-Item .\packaging\windows\compat\manage-windows.ps1 (Join-Path $SourceDirectory 'manage-windows.ps1') -Force
             Compress-Archive `
-              -Path (Join-Path $SourceDirectory 'agentdock.exe'), (Join-Path $SourceDirectory 'agentdock-tray.exe'), (Join-Path $SourceDirectory 'agentdock-arbiter.exe'), (Join-Path $SourceDirectory 'agentdock-shim.exe'), (Join-Path $SourceDirectory 'agentdock-tray-shim.exe'), (Join-Path $SourceDirectory 'agentdock.ico'), (Join-Path $SourceDirectory 'manage-windows.ps1'), (Join-Path $SourceDirectory 'share'), (Join-Path $SourceDirectory 'wsl-helper') `
+              -Path (Join-Path $SourceDirectory 'agentdock.exe'), (Join-Path $SourceDirectory 'agentdock-tray.exe'), (Join-Path $SourceDirectory 'agentdock-arbiter.exe'), (Join-Path $SourceDirectory 'agentdock-shim.exe'), (Join-Path $SourceDirectory 'agentdock-tray-shim.exe'), (Join-Path $SourceDirectory 'agentdock.ico'), (Join-Path $SourceDirectory 'manage-windows.ps1'), (Join-Path $SourceDirectory 'control-panel'), (Join-Path $SourceDirectory 'share'), (Join-Path $SourceDirectory 'wsl-helper') `
               -DestinationPath $assetPath `
               -Force
             $hash = (Get-FileHash -LiteralPath $assetPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -494,7 +497,7 @@ jobs:
           go build -trimpath -ldflags '-s -w' -o (Join-Path $arm64Dir 'agentdock-shim.exe') .\cmd\agentdock-shim
           go build -trimpath -ldflags '-s -w -H=windowsgui' -o (Join-Path $arm64Dir 'agentdock-tray-shim.exe') .\cmd\agentdock-shim
           $arm64ControlPanelOutput = Join-Path $arm64Dir 'control-panel'
-          dotnet publish .\desktop\windows\control-panel\AgentDock.ControlPanel.csproj `
+          dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
             -r win-arm64 `
             --self-contained true `
@@ -507,6 +510,7 @@ jobs:
             (Join-Path $arm64Dir 'agentdock-shim.exe'),
             (Join-Path $arm64Dir 'agentdock-tray-shim.exe')
           )
+          Copy-Item (Join-Path $arm64Dir 'agentdock-tray.exe') (Join-Path $arm64ControlPanelOutput 'agentdock-tray.exe') -Force
           python .\packaging\build-core-skill-bundle.py --output (Join-Path $arm64Dir 'share\agentdock\core-skills')
           & .\packaging\windows\build-wsl-helper-payload.ps1 -OutputDirectory (Join-Path $arm64Dir 'wsl-helper')
           Copy-Item .\packaging\windows\assets\agentdock.ico (Join-Path $arm64Dir 'agentdock.ico') -Force

@@ -15,6 +15,37 @@ struct DesktopServiceStatusPayload: Decodable {
     }
 }
 
+struct RuntimeExtensionOverview: Equatable {
+    let available: Bool
+    let skillCount: Int
+    let pluginCount: Int
+    let pluginsAvailable: Bool
+    let mcpCount: Int
+
+    static let unavailable = RuntimeExtensionOverview(
+        available: false,
+        skillCount: 0,
+        pluginCount: 0,
+        pluginsAvailable: false,
+        mcpCount: 0
+    )
+}
+
+private struct RuntimeOverviewCountPayload: Decodable {
+    let count: Int
+}
+
+private struct RuntimeOverviewPluginsPayload: Decodable {
+    let count: Int
+    let available: Bool
+}
+
+private struct RuntimeOverviewPayload: Decodable {
+    let skills: RuntimeOverviewCountPayload
+    let plugins: RuntimeOverviewPluginsPayload
+    let mcp: RuntimeOverviewCountPayload
+}
+
 struct DesktopUpdateRegistrationState {
     let core: String
     let tunnel: String
@@ -86,6 +117,160 @@ struct ServiceStatus {
     )
 }
 
+struct RuntimeDiagnosticCall: Decodable, Identifiable {
+    let id: String
+    let tool: String
+    let source: String
+    let startedAt: String
+    let durationMS: Double
+    let success: Bool
+    let errorCode: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, tool, source, success
+        case startedAt = "started_at"
+        case durationMS = "duration_ms"
+        case errorCode = "error_code"
+    }
+}
+
+struct RuntimeDiagnosticsPayload: Decodable {
+    let recentCalls: [RuntimeDiagnosticCall]
+
+    private enum CodingKeys: String, CodingKey {
+        case recentCalls = "recent_calls"
+    }
+}
+
+struct RuntimeAnalyticsStage: Decodable, Identifiable {
+    let name: String
+    let startedOffsetMS: Double
+    let durationMS: Double
+    let success: Bool
+
+    var id: String { "\(name)-\(startedOffsetMS)-\(durationMS)" }
+
+    private enum CodingKeys: String, CodingKey {
+        case name, success
+        case startedOffsetMS = "started_offset_ms"
+        case durationMS = "duration_ms"
+    }
+}
+
+struct RuntimeAnalyticsCall: Decodable, Identifiable {
+    let id: UInt64
+    let tool: String
+    let source: String
+    let startedAt: String
+    let durationMS: Double
+    let success: Bool
+    let errorCode: String?
+    let errorCategory: String?
+    let stages: [RuntimeAnalyticsStage]
+
+    private enum CodingKeys: String, CodingKey {
+        case id, tool, source, success, stages
+        case startedAt = "started_at"
+        case durationMS = "duration_ms"
+        case errorCode = "error_code"
+        case errorCategory = "error_category"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UInt64.self, forKey: .id)
+        tool = try container.decode(String.self, forKey: .tool)
+        source = try container.decode(String.self, forKey: .source)
+        startedAt = try container.decode(String.self, forKey: .startedAt)
+        durationMS = try container.decode(Double.self, forKey: .durationMS)
+        success = try container.decode(Bool.self, forKey: .success)
+        errorCode = try container.decodeIfPresent(String.self, forKey: .errorCode)
+        errorCategory = try container.decodeIfPresent(String.self, forKey: .errorCategory)
+        stages = try container.decodeIfPresent([RuntimeAnalyticsStage].self, forKey: .stages) ?? []
+    }
+}
+
+struct RuntimeToolStats: Decodable, Identifiable {
+    let tool: String
+    let count: Int
+    let errorCount: Int
+    let errorRate: Double
+    let p50DurationMS: Double
+    let p95DurationMS: Double
+    let p99DurationMS: Double
+
+    var id: String { tool }
+
+    private enum CodingKeys: String, CodingKey {
+        case tool, count
+        case errorCount = "error_count"
+        case errorRate = "error_rate"
+        case p50DurationMS = "p50_duration_ms"
+        case p95DurationMS = "p95_duration_ms"
+        case p99DurationMS = "p99_duration_ms"
+    }
+}
+
+struct RuntimeProcessSnapshot: Decodable {
+    let goroutines: Int
+    let heapAllocBytes: UInt64
+    let heapInuseBytes: UInt64
+    let heapSysBytes: UInt64
+    let gcCycles: UInt32
+    let uptimeMS: Int64
+
+    private enum CodingKeys: String, CodingKey {
+        case goroutines
+        case heapAllocBytes = "heap_alloc_bytes"
+        case heapInuseBytes = "heap_inuse_bytes"
+        case heapSysBytes = "heap_sys_bytes"
+        case gcCycles = "gc_cycles"
+        case uptimeMS = "uptime_ms"
+    }
+}
+
+struct RuntimeAnalyticsPayload: Decodable {
+    let startedAt: String
+    let recentCapacity: Int
+    let windowCalls: Int
+    let totalCalls: UInt64
+    let totalErrors: UInt64
+    let activeCalls: Int
+    let toolStats: [RuntimeToolStats]
+    let recentCalls: [RuntimeAnalyticsCall]
+    let process: RuntimeProcessSnapshot
+
+    private enum CodingKeys: String, CodingKey {
+        case process
+        case startedAt = "started_at"
+        case recentCapacity = "recent_capacity"
+        case windowCalls = "window_calls"
+        case totalCalls = "total_calls"
+        case totalErrors = "total_errors"
+        case activeCalls = "active_calls"
+        case toolStats = "tool_stats"
+        case recentCalls = "recent_calls"
+    }
+}
+
+struct RuntimeDashboardSnapshot {
+    let countsAvailable: Bool
+    let diagnosticsAvailable: Bool
+    let skillCount: Int
+    let mcpCount: Int
+    let pluginCount: Int
+    let recentCalls: [RuntimeDiagnosticCall]
+
+    static let empty = RuntimeDashboardSnapshot(
+        countsAvailable: false,
+        diagnosticsAvailable: false,
+        skillCount: 0,
+        mcpCount: 0,
+        pluginCount: 0,
+        recentCalls: []
+    )
+}
+
 final class ServiceController: @unchecked Sendable {
     static let coreLabel = "com.uvwt.agentdock.core"
     static let tunnelLabel = "com.uvwt.agentdock.tunnel"
@@ -144,6 +329,41 @@ final class ServiceController: @unchecked Sendable {
         )
     }
 
+    func dashboard(configuration: ServiceConfiguration?) async -> RuntimeDashboardSnapshot {
+        guard let configuration else { return .empty }
+
+        async let overviewTask: RuntimeOverviewPayload? = fetchRuntimePayload(
+            RuntimeOverviewPayload.self,
+            configuration: configuration,
+            path: "/internal/runtime/overview"
+        )
+        async let diagnosticsTask: RuntimeDiagnosticsPayload? = fetchRuntimePayload(
+            RuntimeDiagnosticsPayload.self,
+            configuration: configuration,
+            path: "/internal/runtime/diagnostics"
+        )
+        let overviewPayload = await overviewTask
+
+        let diagnosticsPayload = await diagnosticsTask
+        return RuntimeDashboardSnapshot(
+            countsAvailable: overviewPayload != nil,
+            diagnosticsAvailable: diagnosticsPayload != nil,
+            skillCount: overviewPayload?.skills.count ?? 0,
+            mcpCount: overviewPayload?.mcp.count ?? 0,
+            pluginCount: overviewPayload?.plugins.count ?? 0,
+            recentCalls: diagnosticsPayload?.recentCalls ?? []
+        )
+    }
+
+    func runtimeAnalytics(configuration: ServiceConfiguration?) async -> RuntimeAnalyticsPayload? {
+        guard let configuration else { return nil }
+        return await fetchRuntimePayload(
+            RuntimeAnalyticsPayload.self,
+            configuration: configuration,
+            path: "/internal/runtime/analytics"
+        )
+    }
+
     func start() async throws {
         try registerCoreIfNeeded()
         guard let configuration = ServiceConfiguration.load(from: paths.environment),
@@ -183,6 +403,38 @@ final class ServiceController: @unchecked Sendable {
 
     func nexusDeviceStatus() -> NexusDeviceStatus {
         NexusDeviceStatus.load(from: paths.nexusDeviceIdentity)
+    }
+
+    func runtimeExtensionOverview(configuration: ServiceConfiguration?) async -> RuntimeExtensionOverview {
+        guard let configuration,
+              let healthURL = configuration.healthURL,
+              var components = URLComponents(url: healthURL, resolvingAgainstBaseURL: false) else {
+            return .unavailable
+        }
+        components.path = "/internal/runtime/overview"
+        components.query = nil
+        components.fragment = nil
+        guard let url = components.url else { return .unavailable }
+
+        do {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 2.5
+            if !configuration.authToken.isEmpty {
+                request.setValue("Bearer \(configuration.authToken)", forHTTPHeaderField: "Authorization")
+            }
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return .unavailable }
+            let payload = try JSONDecoder().decode(RuntimeOverviewPayload.self, from: data)
+            return RuntimeExtensionOverview(
+                available: true,
+                skillCount: max(0, payload.skills.count),
+                pluginCount: max(0, payload.plugins.count),
+                pluginsAvailable: payload.plugins.available,
+                mcpCount: max(0, payload.mcp.count)
+            )
+        } catch {
+            return .unavailable
+        }
     }
 
     func pairNexus(endpoint: String, pairingCode: String) async throws {
@@ -457,20 +709,6 @@ final class ServiceController: @unchecked Sendable {
         NSWorkspace.shared.open(paths.appSupport)
     }
 
-    func openRuntimeAnalytics(configuration: ServiceConfiguration?) {
-        guard let localMCPURL = configuration?.localMCPURL,
-              var components = URLComponents(url: localMCPURL, resolvingAgainstBaseURL: false),
-              components.scheme == "http",
-              isLoopbackHost(components.host) else {
-            return
-        }
-        components.path = "/analytics"
-        components.query = nil
-        components.fragment = nil
-        guard let analyticsURL = components.url else { return }
-        NSWorkspace.shared.open(analyticsURL)
-    }
-
     private func isLoopbackHost(_ host: String?) -> Bool {
         guard let normalized = host?.lowercased() else { return false }
         return normalized == "localhost" || normalized == "127.0.0.1" || normalized == "::1"
@@ -725,6 +963,36 @@ final class ServiceController: @unchecked Sendable {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
             return try JSONDecoder().decode(HealthPayload.self, from: data)
+        } catch {
+            return nil
+        }
+    }
+
+    private func fetchRuntimePayload<T: Decodable>(
+        _ type: T.Type,
+        configuration: ServiceConfiguration,
+        path: String
+    ) async -> T? {
+        guard let localMCPURL = configuration.localMCPURL,
+              var components = URLComponents(url: localMCPURL, resolvingAgainstBaseURL: false),
+              components.scheme == "http",
+              isLoopbackHost(components.host) else {
+            return nil
+        }
+        components.path = path
+        components.query = nil
+        components.fragment = nil
+        guard let url = components.url else { return nil }
+
+        do {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 2.5
+            if !configuration.authToken.isEmpty {
+                request.setValue("Bearer \(configuration.authToken)", forHTTPHeaderField: "Authorization")
+            }
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+            return try JSONDecoder().decode(type, from: data)
         } catch {
             return nil
         }

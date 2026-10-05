@@ -7,374 +7,501 @@ import (
 	"testing"
 )
 
-func TestWindowsControlPanelPrivilegeModeCopyStaysUserFacing(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "MainWindow.xaml"))
-	if err != nil {
-		t.Fatalf("read MainWindow.xaml: %v", err)
-	}
-	content := string(data)
-	for _, want := range []string{
-		`x:Name="ElevatedCoreCheckBox"`,
-		`Content="{local:Loc RunCoreElevated}"`,
-		`Click="ElevatedCoreCheckBox_Click"`,
-	} {
-		if !strings.Contains(content, want) {
-			t.Fatalf("Windows privilege mode control missing %q", want)
-		}
-	}
-	if strings.Contains(content, "开启时使用 Windows Highest") {
-		t.Fatal("Windows privilege mode control must not expose implementation details")
-	}
-}
-
-func TestWindowsControlPanelSupportsPersistentLanguagePreference(t *testing.T) {
-	root := filepath.Join("..", "..", "desktop", "windows", "control-panel")
-	checks := map[string][]string{
-		"MainWindow.xaml": {
-			`x:Name="LanguageComboBox"`,
-			`Tag="system"`,
-			`Tag="zh-CN"`,
-			`Tag="en"`,
-			`SelectionChanged="LanguageComboBox_SelectionChanged"`,
-		},
-		"MainWindow.xaml.cs": {
-			`UiText.ReadPreference()`,
-			`UiText.Get("LanguageChangeDiscardWarning")`,
-			`MessageBoxButton.YesNo`,
-			`SelectUiLanguage(UiText.ReadPreference())`,
-			`ApplyLanguagePreferenceAsync(preference)`,
-		},
-		"App.xaml.cs": {
-			`UiText.SetPreference(preference)`,
-			`new MainWindow(Runtime)`,
-			`previousWindow.CloseForReplacement()`,
-		},
-		filepath.Join("Localization", "UiText.cs"): {
-			`"AgentDock",`,
-			`"ui-language"`,
-			`File.Delete(PreferencePath)`,
-			`ResolveLocale(string preference, string systemCultureName)`,
-		},
-	}
-
-	for relativePath, wants := range checks {
-		data, err := os.ReadFile(filepath.Join(root, relativePath))
-		if err != nil {
-			t.Fatalf("read %s: %v", relativePath, err)
-		}
-		content := string(data)
-		for _, want := range wants {
-			if !strings.Contains(content, want) {
-				t.Fatalf("Windows language preference contract missing %q in %s", want, relativePath)
-			}
-		}
-	}
-}
-
-func TestWindowsControlPanelPersistsManagementFailureDiagnostics(t *testing.T) {
-	root := filepath.Join("..", "..", "desktop", "windows", "control-panel")
-	files := map[string]string{}
-	for _, relative := range []string{
-		"App.xaml.cs",
-		"MainWindow.xaml.cs",
-		filepath.Join("Services", "RuntimeService.cs"),
-		filepath.Join("Services", "TaskAdminService.cs"),
-		filepath.Join("Services", "ControlPanelDiagnostics.cs"),
-	} {
-		data, err := os.ReadFile(filepath.Join(root, relative))
-		if err != nil {
-			t.Fatalf("read %s: %v", relative, err)
-		}
-		files[relative] = string(data)
-	}
-
-	runtimeService := files[filepath.Join("Services", "RuntimeService.cs")]
-	for _, want := range []string{
-		`RunRuntimeStageAsync("core", "start"`,
-		`RunRuntimeStageAsync("tunnel", "start"`,
-		`RunRuntimeStageAsync("core", "restart"`,
-		`RunRuntimeStageAsync("tunnel", "stop"`,
-		`"--run-elevated-agentdock"`,
-		`"--operation-id", operationId`,
-		`"--request-sha256", requestLease.Sha256`,
-		`Environment.ProcessPath`,
-		`ControlPanelDiagnostics.CreateRequestLease(`,
-		`ControlPanelDiagnostics.ReadRequest(RuntimeRoot, operationId, requestSha256)`,
-		`ControlPanelDiagnostics.ReadResult(RuntimeRoot, operationId)`,
-		`"service" => action is "start" or "stop" or "restart" or "autostart"`,
-		`"tunnel" => action is "start" or "stop" or "restart" or "regenerate" or "configure"`,
-		`"config" => action == "update"`,
-		`"ManagerFailedResultMissing"`,
-		`"ManagerFailedResultInvalid"`,
-		`"ManagerFailedWithDetail"`,
-	} {
-		if !strings.Contains(runtimeService, want) {
-			t.Fatalf("RuntimeService.cs missing management diagnostic behavior %q", want)
-		}
-	}
-	for _, forbidden := range []string{`--result-file`, `--agentdock-command`, `--agentdock-argument`} {
-		if strings.Contains(runtimeService, forbidden) {
-			t.Fatalf("elevated management command line must not expose payload argument %q", forbidden)
-		}
-	}
-	readResult := strings.Index(runtimeService, `var result = ControlPanelDiagnostics.ReadResult(RuntimeRoot, operationId)`)
-	if readResult < 0 {
-		t.Fatal("elevated management result validation is missing")
-	}
-	successReturn := strings.Index(runtimeService[readResult:], `if (process.ExitCode == 0)`)
-	if successReturn < 0 {
-		t.Fatal("elevated management success must validate a diagnostic result before accepting exit code 0")
-	}
-	leaseDispose := strings.Index(runtimeService, `requestLease.Dispose()`)
-	deleteFiles := strings.Index(runtimeService, `ControlPanelDiagnostics.DeleteOperationFiles(RuntimeRoot, operationId)`)
-	if leaseDispose < 0 || deleteFiles < 0 || leaseDispose > deleteFiles {
-		t.Fatal("elevated request lease must be released before operation files are deleted")
-	}
-
-	app := files["App.xaml.cs"]
-	for _, want := range []string{
-		`e.Args.Any(argument => string.Equals(argument, "--run-elevated-agentdock"`,
-		`TryGetStartupRuntimeRoot(e.Args, "--run-elevated-agentdock"`,
-		`ControlPanelDiagnostics.IsValidOperationId(operationId)`,
-		`Environment.Exit(2)`,
-		`RunElevatedNativeCommandHostAsync(startupArguments)`,
-		`ControlPanelDiagnostics.RecordFailureExistingLog(`,
-		`Runtime.RecordControlPanelFailure("tray", action, ex)`,
-	} {
-		if !strings.Contains(app, want) {
-			t.Fatalf("App.xaml.cs missing management diagnostic behavior %q", want)
-		}
-	}
-	elevatedMode := strings.Index(app, `"--run-elevated-agentdock"`)
-	singleInstance := strings.Index(app, `new Mutex(true, MutexName`)
-	if elevatedMode < 0 || singleInstance < 0 || elevatedMode > singleInstance {
-		t.Fatal("elevated command host must be handled before the control-panel single-instance mutex")
-	}
-
-	window := files["MainWindow.xaml.cs"]
-	for _, want := range []string{
-		`string.IsNullOrWhiteSpace(diagnosticAction) ? "manual-action" : diagnosticAction`,
-		`diagnosticAction: action`,
-		`"privilege-elevated"`,
-		`"privilege-standard"`,
-		`ControlPanelDiagnostics.LastNonEmptyLine(ex.Message)`,
-	} {
-		if !strings.Contains(window, want) {
-			t.Fatalf("MainWindow.xaml.cs missing manual action diagnostic behavior %q", want)
-		}
-	}
-
-	taskAdmin := files[filepath.Join("Services", "TaskAdminService.cs")]
-	for _, forbidden := range []string{`--operation-id`, `ControlPanelDiagnostics`} {
-		if strings.Contains(taskAdmin, forbidden) {
-			t.Fatalf("TaskAdminService.cs must keep its existing exit-code-only contract, found %q", forbidden)
-		}
-	}
-
-	diagnostics := files[filepath.Join("Services", "ControlPanelDiagnostics.cs")]
-	for _, want := range []string{
-		`Guid.TryParseExact(operationId, "N"`,
-		`ValidateOperationId(operationId) + ".request.json"`,
-		`ValidateOperationId(operationId) + ".result.json"`,
-		`FileMode.CreateNew`,
-		`FileAccess.ReadWrite`,
-		`FileShare.Read`,
-		`FileAccess.Read`,
-		`FileShare.ReadWrite`,
-		`SHA256.HashData(requestBytes)`,
-		`CryptographicOperations.FixedTimeEquals(actualHash, expectedHash)`,
-		`FileMode.Truncate`,
-		`RecordFailureCore(runtimeRoot, source, action, exception, createIfMissing: false)`,
-		`Path.Combine(logsDirectory, "control-panel.err.log")`,
-		`MaxResultDetailBytes = 8 * 1024`,
-		`MaxLogDetailBytes = 16 * 1024`,
-		`Encoding.UTF8.GetByteCount(detail)`,
-	} {
-		if !strings.Contains(diagnostics, want) {
-			t.Fatalf("ControlPanelDiagnostics.cs missing bounded diagnostic contract %q", want)
-		}
-	}
-	for _, forbidden := range []string{`WriteJsonAtomic(`, `File.Move(temporaryPath, path, overwrite: true)`} {
-		if strings.Contains(diagnostics, forbidden) {
-			t.Fatalf("elevated result must not replace the medium-integrity pre-created file, found %q", forbidden)
-		}
-	}
-}
-
-func TestWindowsControlPanelDynamicTextUsesSelectedResourceCulture(t *testing.T) {
-	path := filepath.Join("..", "..", "desktop", "windows", "control-panel", "Localization", "UiText.cs")
+func readWindowsNativeFile(t *testing.T, parts ...string) string {
+	t.Helper()
+	path := filepath.Join(append([]string{"..", "..", "desktop", "windows"}, parts...)...)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read UiText.cs: %v", err)
+		t.Fatalf("read %s: %v", path, err)
 	}
-	content := string(data)
+	return string(data)
+}
+
+func TestWindowsNativeControlPanelReplacesWPFAndCarriesPlatformLifecycle(t *testing.T) {
+	app := readWindowsNativeFile(t, "winui", "App.xaml.cs")
+	window := readWindowsNativeFile(t, "winui", "MainWindow.xaml.cs")
+	project := readWindowsNativeFile(t, "winui", "AgentDock.WinUI.csproj")
 	for _, want := range []string{
-		`private static CultureInfo _resourceCulture`,
-		`Resources.GetString(key, _resourceCulture)`,
-		`_resourceCulture = culture;`,
+		"new Mutex(true, MutexName",
+		"EventWaitHandle",
+		"Forms.NotifyIcon",
+		"RunElevatedNativeCommandHostAsync",
+		"RunCoreStartupAsync",
+		"RunTunnelStartupAsync",
+		"ResumeUpdateProgressIfNeededAsync",
+		"AcknowledgeUpdateUiHandoffAsync",
 	} {
-		if !strings.Contains(content, want) {
-			t.Fatalf("Windows dynamic localization contract missing %q", want)
+		if !strings.Contains(app, want) {
+			t.Fatalf("WinUI app lifecycle missing %q", want)
 		}
 	}
-	if strings.Contains(content, `Resources.GetString(key, CultureInfo.CurrentUICulture)`) {
-		t.Fatal("Windows dynamic localization must not depend on ambient CurrentUICulture")
+	for _, want := range []string{"AppWindow.Closing", "args.Cancel = true", "AppWindow.Hide()", "ShowAndActivate", "SetForegroundWindow"} {
+		if !strings.Contains(window, want) {
+			t.Fatalf("WinUI window lifecycle missing %q", want)
+		}
+	}
+	for _, want := range []string{"<AssemblyName>agentdock-tray</AssemblyName>", "Microsoft.WindowsAppSDK", "../shared/Services/RuntimeService.cs"} {
+		if !strings.Contains(project, want) {
+			t.Fatalf("WinUI project missing %q", want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join("..", "..", "desktop", "windows", "control-panel")); !os.IsNotExist(err) {
+		t.Fatal("legacy WPF control-panel directory must be removed after WinUI parity")
 	}
 }
 
-func TestWindowsUpdateProgressWindowSizesToContent(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "UpdateProgressWindow.xaml"))
-	if err != nil {
-		t.Fatalf("read UpdateProgressWindow.xaml: %v", err)
-	}
-	content := string(data)
+func TestWindowsNativeControlPanelCarriesSettingsParity(t *testing.T) {
+	settings := readWindowsNativeFile(t, "winui", "SettingsPage.xaml.cs")
+	connections := readWindowsNativeFile(t, "winui", "ConnectionsPage.xaml.cs")
+	capabilities := readWindowsNativeFile(t, "winui", "CapabilitiesPage.xaml.cs")
 	for _, want := range []string{
-		`SizeToContent="Height"`,
-		`x:Name="CloseButton"`,
+		"SetPrivilegeModeAsync", "SetStartupAsync",
+
+		"CheckForUpdatesAsync", "RunUpdateAsync", "LanguagePreference_SelectionChanged", "ThemePreference_SelectionChanged", "SaveSettingsAsync",
+		"SetTunnelModeAsync", "RegenerateQuickTunnelAsync", "ReadBearerToken", "ReadOAuthPassword",
 	} {
-		if !strings.Contains(content, want) {
-			t.Fatalf("Windows update progress window missing %q", want)
+		if !strings.Contains(settings, want) {
+			t.Fatalf("WinUI settings parity missing %q", want)
 		}
 	}
-	if strings.Contains(content, `<RowDefinition Height="*" />`) {
-		t.Fatal("Windows update progress button row must size to its content")
-	}
-}
-
-func TestWindowsControlPanelShowsLiveNexusStatusInsideRuntimeStatus(t *testing.T) {
-	root := filepath.Join("..", "..", "desktop", "windows", "control-panel")
-	files := map[string][]string{
-		"MainWindow.xaml": {
-			`Text="{local:Loc HealthCheck}" Grid.Row="1"`,
-			`Text="Nexus" Grid.Row="2"`,
-			`x:Name="NexusStatusText" Grid.Row="2" Grid.Column="1" Text="{local:Loc NotConfigured}"`,
-			`Text="{local:Loc Version}" Grid.Row="3"`,
-		},
-		"MainWindow.xaml.cs": {
-			`NexusStatusText.Text`,
-			`UiText.Get("Connected")`,
-			`UiText.Get("NotConnected")`,
-			`UiText.Get("NotConfigured")`,
-			`UiText.Get("ConfigurationError")`,
-			`snapshot.NexusConnected`,
-			`GetSnapshotAsync(includeNexusConnection: true)`,
-		},
-		filepath.Join("Models", "RuntimeModels.cs"): {
-			`bool NexusConnected`,
-			`JsonPropertyName("nexus_connected")`,
-		},
-		filepath.Join("Services", "RuntimeService.cs"): {
-			`bool includeNexusConnection = false`,
-			`ReadNexusConnectionAsync`,
-			`"service", "status", "--runtime-root", RuntimeRoot`,
-		},
-	}
-
-	for relativePath, wants := range files {
-		data, err := os.ReadFile(filepath.Join(root, relativePath))
-		if err != nil {
-			t.Fatalf("read %s: %v", relativePath, err)
-		}
-		content := string(data)
-		for _, want := range wants {
-			if !strings.Contains(content, want) {
-				t.Fatalf("Windows Nexus status contract missing %q in %s", want, relativePath)
-			}
+	for _, want := range []string{
+		"PairNexusAsync",
+		"GetSnapshotAsync(includeNexusConnection: true)",
+		"https://mcp.nexusdock.co/workspace/devices",
+		`UiText.Get("GetPairingCodeFromNexusDock")`,
+		`UiText.Get("ManageConnectedDevices")`,
+		`NexusDevicesLink.Visibility = SelectedRemoteService() == "official"`,
+		"IsOfficialEndpoint(_snapshot!.Nexus.Endpoint)",
+		"UiText.Get(\"RePair\")",
+	} {
+		if !strings.Contains(connections, want) {
+			t.Fatalf("WinUI connections parity missing %q", want)
 		}
 	}
-
-	xaml, err := os.ReadFile(filepath.Join(root, "MainWindow.xaml"))
-	if err != nil {
-		t.Fatalf("read MainWindow.xaml: %v", err)
-	}
-	content := string(xaml)
-	for _, forbidden := range []string{`NexusStatusDot`, `NexusHeaderStatusText`, `Nexus ·`} {
-		if strings.Contains(content, forbidden) {
-			t.Fatalf("Windows Nexus status must stay plain inside runtime status; found %q", forbidden)
+	for _, want := range []string{
+		"BrowserEnabled", "BrowserReuseExistingCdp", "AcpEnabled", "AcpProfiles",
+		"ResolveAcpAdapter", "AddCustomProfile_Click", "AcpDefaultProfile", "McpAppsMode",
+	} {
+		if !strings.Contains(capabilities, want) {
+			t.Fatalf("WinUI capabilities parity missing %q", want)
 		}
 	}
 }
 
-func TestWindowsACPSettingsUseSinglePageRowsDefaultDropdownAndCustomDialog(t *testing.T) {
-	root := filepath.Join("..", "..", "desktop", "windows", "control-panel")
-	xamlData, err := os.ReadFile(filepath.Join(root, "MainWindow.xaml"))
-	if err != nil {
-		t.Fatalf("read MainWindow.xaml: %v", err)
-	}
-	codeData, err := os.ReadFile(filepath.Join(root, "MainWindow.xaml.cs"))
-	if err != nil {
-		t.Fatalf("read MainWindow.xaml.cs: %v", err)
-	}
-	xaml := string(xamlData)
-	code := string(codeData)
+func TestWindowsPermissionsAvoidDuplicateAdministratorStatus(t *testing.T) {
+	settings := readWindowsNativeFile(t, "winui", "SettingsPage.xaml.cs")
+	en := readWindowsNativeFile(t, "shared", "Resources", "UiStrings.resx")
+	zh := readWindowsNativeFile(t, "shared", "Resources", "UiStrings.zh-CN.resx")
+
 	for _, want := range []string{
-		`x:Name="AcpProfileListPanel"`,
-		`x:Name="AcpDefaultProfileComboBox"`,
-		`SelectionChanged="AcpDefaultProfile_SelectionChanged"`,
-		`Content="{local:Loc AddCustomAcp}"`,
+		`UiText.Get("RunCoreElevated")`,
+		"PrivilegeToggle_Toggled",
+		"SetPrivilegeModeAsync",
 	} {
-		if !strings.Contains(xaml, want) {
-			t.Fatalf("Windows ACP single-page contract missing %q", want)
+		if !strings.Contains(settings, want) {
+			t.Fatalf("WinUI Permissions elevated toggle missing %q", want)
+		}
+	}
+	if strings.Contains(settings, `UiText.Get("AdministratorMode")`) {
+		t.Fatal("WinUI Permissions must not repeat elevated state as a separate Administrator mode row")
+	}
+	for _, resource := range []string{en, zh} {
+		if strings.Contains(resource, `name="AdministratorMode"`) {
+			t.Fatal("retired AdministratorMode localization resource must be removed")
+		}
+	}
+}
+
+func TestWindowsNativeLanguageAndShortcutsAreInteractive(t *testing.T) {
+	app := readWindowsNativeFile(t, "winui", "App.xaml.cs")
+	window := readWindowsNativeFile(t, "winui", "MainWindow.xaml.cs")
+	settingsXaml := readWindowsNativeFile(t, "winui", "SettingsPage.xaml")
+	settingsCode := readWindowsNativeFile(t, "winui", "SettingsPage.xaml.cs")
+	homeXaml := readWindowsNativeFile(t, "winui", "HomePage.xaml")
+	homeCode := readWindowsNativeFile(t, "winui", "HomePage.xaml.cs")
+
+	for _, want := range []string{
+		"ApplyLanguagePreference",
+		"UiText.SetPreference(preference)",
+		`new MainWindow(_runtime, "settings", "appearance")`,
+	} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("WinUI language reload missing %q", want)
 		}
 	}
 	for _, want := range []string{
-		`ShowCustomAcpProfileDialog`,
-		`AcpCustomProfileEdit_Click`,
-		`nameView.MouseLeftButtonUp += AcpCustomProfileEdit_Click`,
-		`HorizontalAlignment = HorizontalAlignment.Stretch`,
-		`AcpDefaultProfile_SelectionChanged`,
-		`UniqueCustomAcpProfileId(result.Name)`,
-		`profile.DisplayName = result.Name`,
-		`profile.Command = result.Command`,
-		`profile.Args = result.Arguments`,
-		`profile.Id`,
+		"PermissionsNavigationItem.Content = UiText.Get(\"Permissions\")",
+		"StartupNavigationItem.Content = UiText.Get(\"Startup\")",
+		"AppearanceNavigationItem.Content = UiText.Get(\"Appearance\")",
+		"LanguagePreference_SelectionChanged",
 	} {
-		if !strings.Contains(code, want) {
-			t.Fatalf("Windows ACP behavior contract missing %q", want)
+		if !strings.Contains(settingsCode, want) {
+			t.Fatalf("WinUI settings localization missing %q", want)
 		}
 	}
 	for _, forbidden := range []string{
-		`Text="Profile ID"`,
-		`AcpProfileIdTextBox`,
-		`AcpAgentComboBox`,
-		`AcpDetailPanel`,
-		`AcpOverviewPanel`,
-		`AcpProfileNameTextBox`,
-		`AcpProfileDefaultCheckBox`,
-		`AcpStatusText`,
-		`ShowAcpDetail`,
-		`ShowAcpOverview`,
-		`Not configured`,
-		`★ Default`,
-		`Text = "›"`,
-		`BUILT-IN AGENTS`,
-		`CUSTOM AGENTS`,
-		`var edit = new Button`,
+		"RuntimeNavigationItem",
+		"Tag=\"runtime\"",
+		"Content=\"Runtime\" Tag=\"runtime\"",
+		"Content=\"Permissions\" Tag=\"permissions\"",
+		"Content=\"Access Credentials\" Tag=\"credentials\"",
+		"CredentialsNavigationItem",
 	} {
-		if strings.Contains(xaml, forbidden) || strings.Contains(code, forbidden) {
-			t.Fatalf("Windows ACP UI still exposes old detail/status/group contract %q", forbidden)
+		if strings.Contains(settingsXaml, forbidden) {
+			t.Fatalf("WinUI settings still hardcodes secondary navigation label %q", forbidden)
 		}
 	}
-
-	portIndex := strings.Index(xaml, `x:Name="PortTextBox" Grid.Row="0"`)
-	logLevelIndex := strings.Index(xaml, `x:Name="LogLevelComboBox" Grid.Row="1"`)
-	languageIndex := strings.Index(xaml, `x:Name="LanguageComboBox" Grid.Row="2"`)
-	chatCardsIndex := strings.Index(xaml, `x:Name="McpAppsModeComboBox" Grid.Row="3"`)
-	if portIndex < 0 || logLevelIndex < 0 || languageIndex < 0 || chatCardsIndex < 0 ||
-		!(portIndex < logLevelIndex && logLevelIndex < languageIndex && languageIndex < chatCardsIndex) {
-		t.Fatal("Windows basic settings must place chat cards directly below the interface language")
+	for _, item := range []string{
+		`x:Name="PermissionsNavigationItem"`,
+		`x:Name="StartupNavigationItem"`,
+		`x:Name="LogsNavigationItem"`,
+		`x:Name="AdvancedConnectionNavigationItem"`,
+		`x:Name="AppearanceNavigationItem"`,
+		`x:Name="AboutNavigationItem"`,
+	} {
+		if got := strings.Count(settingsXaml, item); got != 1 {
+			t.Fatalf("WinUI settings navigation %q appears %d times, want exactly once", item, got)
+		}
 	}
 	for _, want := range []string{
-		`Text="{local:Loc ChatCards}"`,
-		`Content="{local:Loc ChatCardsFull}" Tag="full"`,
-		`Content="{local:Loc ChatCardsCompact}" Tag="compact"`,
-		`Content="{local:Loc ChatCardsOff}" Tag="off"`,
+		"Click=\"ConnectionsShortcut_Click\"",
+		"Click=\"CapabilitiesShortcut_Click\"",
 	} {
-		if !strings.Contains(xaml, want) {
-			t.Fatalf("Windows chat card mode dropdown missing %q", want)
+		if !strings.Contains(homeXaml, want) {
+			t.Fatalf("WinUI home shortcut missing click contract %q", want)
 		}
 	}
-	if strings.Contains(xaml, `McpAppsEnabledCheckBox`) {
-		t.Fatal("Windows chat card mode must not keep the old MCP Apps checkbox")
+	for _, want := range []string{
+		"ShortcutRequested?.Invoke(this, \"connections\")",
+		"ShortcutRequested?.Invoke(this, \"capabilities\")",
+	} {
+		if !strings.Contains(homeCode, want) {
+			t.Fatalf("WinUI home shortcut missing navigation request %q", want)
+		}
+	}
+	for _, want := range []string{"ContentFrame_Navigated", "home.ShortcutRequested", "NavigateTo(tag)"} {
+		if !strings.Contains(window, want) {
+			t.Fatalf("WinUI host shortcut routing missing %q", want)
+		}
+	}
+}
+
+func TestWindowsPortSettingsLiveUnderAdvancedConnection(t *testing.T) {
+	settings := readWindowsNativeFile(t, "winui", "SettingsPage.xaml.cs")
+
+	for _, want := range []string{
+		`UiText.Get("CustomPort")`,
+		`UiText.Get("ServicePort")`,
+		`UiText.Get("PortRestartDetail")`,
+		`UiText.Get("ApplyChanges")`,
+		"SavePortSettings_Click",
+		`await _runtime.SaveSettingsAsync(_snapshot.Settings)`,
+		`await _runtime.RunCoreActionAsync("restart")`,
+		`Render("advancedConnection")`,
+	} {
+		if !strings.Contains(settings, want) {
+			t.Fatalf("WinUI advanced connection port settings missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"BuildRuntime()",
+		"SaveRuntimeSettings_Click",
+		`Render("runtime")`,
+		`UiText.Get("RuntimeSettings")`,
+		`UiText.Get("RuntimeSettingsDetail")`,
+	} {
+		if strings.Contains(settings, forbidden) {
+			t.Fatalf("WinUI still exposes retired Runtime settings page %q", forbidden)
+		}
+	}
+}
+
+func TestWindowsThemePreferencePersistsAndAppliesLive(t *testing.T) {
+	mainWindowXaml := readWindowsNativeFile(t, "winui", "MainWindow.xaml")
+	app := readWindowsNativeFile(t, "winui", "App.xaml.cs")
+	window := readWindowsNativeFile(t, "winui", "MainWindow.xaml.cs")
+	settings := readWindowsNativeFile(t, "winui", "SettingsPage.xaml.cs")
+	theme := readWindowsNativeFile(t, "winui", "UiThemePreference.cs")
+
+	for _, want := range []string{
+		"ThemePreference_SelectionChanged",
+		"UiThemePreference.ReadPreference()",
+		"UiThemePreference.SetPreference(preference)",
+		`x:Name="Root"`,
+		`Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"`,
+		"Root.Loaded += Root_Loaded",
+		"ApplyThemePreference(_themePreference)",
+		"Root.RequestedTheme = UiThemePreference.ToElementTheme(_themePreference)",
+		"Root.ActualThemeChanged += Root_ActualThemeChanged",
+		"Root.ActualTheme == ElementTheme.Dark",
+		"DwmSetWindowAttribute",
+		"DwmwaUseImmersiveDarkMode = 20",
+		"LightPreference = \"light\"",
+		"DarkPreference = \"dark\"",
+		"ElementTheme.Light",
+		"ElementTheme.Dark",
+	} {
+		if !strings.Contains(mainWindowXaml+app+window+settings+theme, want) {
+			t.Fatalf("WinUI theme preference missing %q", want)
+		}
+	}
+	if strings.Contains(window, "Navigation.RequestedTheme =") {
+		t.Fatal("WinUI theme must be applied at the root so transparent controls share the correct window background")
+	}
+}
+
+func TestWindowsAboutLivesInSettingsSidebarAndUsesExistingVersionSource(t *testing.T) {
+	mainWindowXaml := readWindowsNativeFile(t, "winui", "MainWindow.xaml")
+	settingsXaml := readWindowsNativeFile(t, "winui", "SettingsPage.xaml")
+	settingsCode := readWindowsNativeFile(t, "winui", "SettingsPage.xaml.cs")
+
+	for _, want := range []string{
+		`x:Name="AboutNavigationItem" Tag="about"`,
+		`AboutNavigationItem.Content = UiText.Get("About")`,
+		`if (tag == "about")`,
+		`SettingsContent.Children.Add(BuildAbout())`,
+		`_snapshot.Version`,
+		`update.Click += CheckUpdate_Click`,
+		`https://nexusdock.co/`,
+		`https://docs.nexusdock.co/agentdock/`,
+		`https://github.com/uvwt/agentdock`,
+	} {
+		if !strings.Contains(settingsXaml+settingsCode, want) {
+			t.Fatalf("WinUI Settings About page missing %q", want)
+		}
+	}
+	if strings.Contains(mainWindowXaml, `x:Name="AboutNavigationItem" Tag="about"`) {
+		t.Fatal("WinUI top-level navigation must not expose About")
+	}
+}
+
+func TestWindowsRemoteConnectionSupportsSelfHostedAndRoutesAdvancedSettings(t *testing.T) {
+
+	connectionsXaml := readWindowsNativeFile(t, "winui", "ConnectionsPage.xaml")
+	connectionsCode := readWindowsNativeFile(t, "winui", "ConnectionsPage.xaml.cs")
+	windowCode := readWindowsNativeFile(t, "winui", "MainWindow.xaml.cs")
+	settingsXaml := readWindowsNativeFile(t, "winui", "SettingsPage.xaml")
+	settingsCode := readWindowsNativeFile(t, "winui", "SettingsPage.xaml.cs")
+
+	for _, want := range []string{
+		"RemoteSection",
+		"RemoteServiceComboBox",
+		"OfficialServiceItem",
+		"SelfHostedServiceItem",
+		"SelfHostedEndpointTextBox",
+		"AdvancedSettingsButton",
+	} {
+		if !strings.Contains(connectionsXaml, want) {
+			t.Fatalf("WinUI remote connection UI missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		`OfficialEndpoint = "https://mcp.nexusdock.co"`,
+		`SelectedRemoteService() == "self-hosted"`,
+		"PairNexusAsync",
+		"AdvancedSettingsRequested?.Invoke",
+	} {
+		if !strings.Contains(connectionsCode, want) {
+			t.Fatalf("WinUI remote connection behavior missing %q", want)
+		}
+	}
+	if !strings.Contains(settingsXaml, "AdvancedConnectionNavigationItem") {
+		t.Fatal("WinUI Settings must expose the Advanced connection secondary navigation item")
+	}
+	for _, want := range []string{
+		"BuildAdvancedConnection",
+		`SetTunnelModeAsync("quick", "", "")`,
+		`SetTunnelModeAsync("named", serverUrl, token)`,
+		"ReadBearerToken",
+		"ReadOAuthPassword",
+	} {
+		if !strings.Contains(settingsCode, want) {
+			t.Fatalf("WinUI advanced connection settings behavior missing %q", want)
+		}
+	}
+	if !strings.Contains(windowCode, `NavigateToSettings("advancedConnection")`) {
+		t.Fatal("WinUI advanced connection entry must route directly to Settings advanced connection")
+	}
+	for _, forbidden := range []string{
+		"AdvancedConnectionExpander",
+		"TunnelModeComboBox",
+		"LocalOnlyModeItem",
+		"PublicModeLabel",
+		"Cloudflare Tunnel",
+		"ReadBearerToken",
+		"SetTunnelModeAsync",
+	} {
+		if strings.Contains(connectionsXaml, forbidden) || strings.Contains(connectionsCode, forbidden) {
+			t.Fatalf("WinUI connection page still exposes technical advanced configuration %q", forbidden)
+		}
+	}
+	if strings.Contains(settingsXaml, "CredentialsNavigationItem") || strings.Contains(settingsCode, "BuildCredentials") {
+		t.Fatal("WinUI Settings must keep credentials inside Advanced connection instead of a standalone credentials page")
+	}
+}
+
+func TestWindowsHomeUsesProductStatusAndAdaptiveCapabilities(t *testing.T) {
+	homeXaml := readWindowsNativeFile(t, "winui", "HomePage.xaml")
+	homeCode := readWindowsNativeFile(t, "winui", "HomePage.xaml.cs")
+	sectionCard := readWindowsNativeFile(t, "winui", "SectionCard.xaml")
+	runtime := readWindowsNativeFile(t, "shared", "Services", "RuntimeService.cs")
+
+	for _, want := range []string{
+		`HorizontalScrollMode="Disabled"`,
+		`HorizontalScrollBarVisibility="Disabled"`,
+		`x:Name="ProductLogo"`,
+		"ProductLogo.Source = LoadProductLogo()",
+		`System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "agentdock.png")`,
+		`x:Name="AgentDockState"`,
+		`x:Name="SkillCount"`,
+		`x:Name="McpCount"`,
+		`x:Name="PluginCount"`,
+		`x:Name="CoreCapabilitiesSection"`,
+		`x:Name="RecentActivitySection"`,
+		`x:Name="RecentActivityPanel"`,
+		`x:Name="BrowserCapabilityDetail"`,
+		`x:Name="BrowserCapabilityState"`,
+		`x:Name="CodingAgentCapabilityDetail"`,
+		`x:Name="CodingAgentCapabilityState"`,
+		`x:Name="McpAppsCapabilityDetail"`,
+		`x:Name="McpAppsCapabilityState"`,
+		"var serviceLoaded = _snapshot.CoreRunning",
+		"var serviceHealthy = serviceLoaded && _snapshot.Healthy",
+		`UiText.Get("DeviceReadyForAI")`,
+		"RenderCapabilities(_snapshot.Settings)",
+		"GetDashboardAsync(_snapshot)",
+		"dashboard.RecentCalls.Take(3)",
+		`Click="ActivityShortcut_Click"`,
+		`ShortcutRequested?.Invoke(this, "activity")`,
+		"settings.BrowserEnabled",
+		"settings.AcpEnabled",
+		"settings.AcpProfiles.Where(profile => profile.Enabled)",
+		`"off" => CapabilityState.Disabled`,
+		`"full" or "compact" => CapabilityState.Enabled`,
+		`!string.IsNullOrWhiteSpace(_snapshot.Nexus.Error)`,
+		`UiText.Get("Unavailable")`,
+		`RuntimeAction.Content = serviceLoaded ? UiText.Get("Stop") : UiText.Get("Start")`,
+		`"/internal/runtime/overview"`,
+		`"/internal/runtime/diagnostics"`,
+		"dashboard.CountsAvailable",
+		`HorizontalAlignment="Stretch"`,
+	} {
+		if !strings.Contains(homeXaml+homeCode+runtime, want) {
+			t.Fatalf("WinUI Home missing product status contract %q", want)
+		}
+	}
+	for _, want := range []string{
+		`HorizontalAlignment="Stretch"`,
+		`HorizontalContentAlignment="Stretch"`,
+	} {
+		if !strings.Contains(sectionCard, want) {
+			t.Fatalf("WinUI SectionCard must stretch content horizontally: missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		`x:Name="RuntimeState"`,
+		`x:Name="McpState"`,
+		`x:Name="QuickAccessSection"`,
+		`x:Name="CapabilitiesSummary"`,
+		"CapabilitiesAvailable",
+		"CapabilitiesNeedAttention",
+		`"/internal/runtime/skills"`,
+		`"/internal/runtime/mcp"`,
+		`"/internal/runtime/plugins"`,
+		"RuntimeListCountPayload",
+		`<TextBlock Text="Runtime"`,
+	} {
+		if strings.Contains(homeXaml+homeCode+runtime, forbidden) {
+			t.Fatalf("WinUI Home still exposes implementation status or old quick-access card %q", forbidden)
+		}
+	}
+}
+
+func TestWindowsSharedRuntimeKeepsDiagnosticsAndDynamicLocalization(t *testing.T) {
+	runtime := readWindowsNativeFile(t, "shared", "Services", "RuntimeService.cs")
+	diagnostics := readWindowsNativeFile(t, "shared", "Services", "ControlPanelDiagnostics.cs")
+	uiText := readWindowsNativeFile(t, "shared", "UiText.cs")
+	for _, want := range []string{
+		"RunRuntimeStageAsync", "--run-elevated-agentdock", "ControlPanelDiagnostics.CreateRequestLease",
+		"ControlPanelDiagnostics.ReadResult", "Environment.ProcessPath",
+	} {
+		if !strings.Contains(runtime, want) {
+			t.Fatalf("shared RuntimeService missing %q", want)
+		}
+	}
+	for _, want := range []string{"Guid.TryParseExact", "SHA256.HashData", "CryptographicOperations.FixedTimeEquals", "control-panel.err.log"} {
+		if !strings.Contains(diagnostics, want) {
+			t.Fatalf("shared diagnostics missing %q", want)
+		}
+	}
+	for _, want := range []string{"ui-language", "File.Delete(PreferencePath)", "Resources.GetString(key, _resourceCulture)"} {
+		if !strings.Contains(uiText, want) {
+			t.Fatalf("shared localization missing %q", want)
+		}
+	}
+}
+
+func TestWindowsNativePagesUseLiveRuntimeState(t *testing.T) {
+	home := readWindowsNativeFile(t, "winui", "HomePage.xaml.cs")
+	activity := readWindowsNativeFile(t, "winui", "ActivityPage.xaml.cs")
+	connections := readWindowsNativeFile(t, "winui", "ConnectionsPage.xaml.cs")
+	for _, pair := range []struct{ content, want string }{
+		{home, "GetSnapshotAsync"},
+		{activity, "GetSnapshotAsync"},
+		{connections, "NexusConnected"},
+	} {
+		if !strings.Contains(pair.content, pair.want) {
+			t.Fatalf("native page missing live Runtime contract %q", pair.want)
+		}
+	}
+}
+
+func TestWindowsActivityOwnsRuntimeAnalytics(t *testing.T) {
+	activityXaml := readWindowsNativeFile(t, "winui", "ActivityPage.xaml")
+	activityCode := readWindowsNativeFile(t, "winui", "ActivityPage.xaml.cs")
+	settingsXaml := readWindowsNativeFile(t, "winui", "SettingsPage.xaml")
+	settingsCode := readWindowsNativeFile(t, "winui", "SettingsPage.xaml.cs")
+	runtime := readWindowsNativeFile(t, "shared", "Services", "RuntimeService.cs")
+
+	for _, want := range []string{
+		`x:Name="RecentCallsPanel"`,
+		"GetRuntimeAnalyticsAsync(_snapshot)",
+		`"/internal/runtime/analytics"`,
+		"private const int PageSize = 20",
+		"TimeSpan.FromSeconds(5)",
+		"RenderRecentCalls(force: true)",
+		`Content = UiText.Get("ShowMore")`,
+		"CreateCallExpander",
+		`Text = "›"`,
+		`chevron.Text = expanding ? "⌄" : "›"`,
+		"StageMcpRemoteCall",
+		"RecentCallsPrivacyHint",
+		`x:Name="LogsNavigationItem" Tag="logs"`,
+		"BuildLogs()",
+		"log.SelectionChanged += LogLevel_SelectionChanged",
+		`await _runtime.RunCoreActionAsync("restart")`,
+		"AdvancedDiagnostics",
+		"diagnosticsContent.Visibility = Visibility.Collapsed",
+		"HorizontalAlignment = HorizontalAlignment.Stretch",
+		"CopyDiagnostics",
+		"RecentP95",
+	} {
+		if !strings.Contains(activityXaml+activityCode+settingsXaml+settingsCode+runtime, want) {
+			t.Fatalf("WinUI Activity/logs integration missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"OpenRuntimeAnalytics(",
+		`Path = "/analytics"`,
+		`x:Name="CallOverviewSection"`,
+		`x:Name="CallStatisticsPanel"`,
+		`x:Name="ResourcesSection"`,
+		`x:Name="DiagnosticsSection"`,
+		"SaveLogSettings_Click",
+		"LogLevelRestartHint",
+	} {
+		if strings.Contains(activityXaml+activityCode+runtime, forbidden) {
+			t.Fatalf("WinUI Activity retained retired analytics UI %q", forbidden)
+		}
 	}
 }

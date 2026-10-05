@@ -1,0 +1,120 @@
+<Page x:Class="AgentDock.ControlPanel.CapabilitiesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:AgentDock.ControlPanel">
+    <ScrollViewer>
+        <StackPanel Width="760" HorizontalAlignment="Left" Spacing="22" Padding="28,24,28,32">
+            <StackPanel Spacing="5">
+                <TextBlock x:Name="PageTitle" FontSize="20" FontWeight="SemiBold"/>
+                <TextBlock x:Name="PageDetail" FontSize="12.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+            </StackPanel>
+            <StackPanel Spacing="8">
+                <TextBlock x:Name="CapabilitiesSectionTitle"
+                           FontSize="12"
+                           FontWeight="SemiBold"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="10">
+                    <StackPanel HorizontalAlignment="Stretch">
+                    <Grid MinHeight="58"
+                          Padding="13,6"
+                          ColumnSpacing="16"
+                          HorizontalAlignment="Stretch">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                            <TextBlock x:Name="BrowserTitle" FontSize="13"/>
+                            <TextBlock x:Name="BrowserDetail" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+                        <ToggleSwitch x:Name="BrowserEnabledToggle"
+                                      Grid.Column="1"
+                                      HorizontalAlignment="Right"
+                                      VerticalAlignment="Center"
+                                      MinWidth="0"
+                                      OnContent=""
+                                      OffContent=""/>
+                    </Grid>
+                    <StackPanel Padding="13,0,13,12" Spacing="8">
+                        <ComboBox x:Name="BrowserModeComboBox" Width="260" HorizontalAlignment="Left" SelectionChanged="BrowserModeChanged">
+                            <ComboBoxItem x:Name="ManagedBrowserModeItem" Tag="managed"/>
+                            <ComboBoxItem x:Name="ReuseBrowserModeItem" Tag="reuse"/>
+                            <ComboBoxItem x:Name="SpecifiedBrowserModeItem" Tag="specified"/>
+                        </ComboBox>
+                        <TextBox x:Name="BrowserCdpUrlTextBox" PlaceholderText="http://127.0.0.1:9222"/>
+                    </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="10">
+                    <StackPanel HorizontalAlignment="Stretch">
+                    <Grid MinHeight="58"
+                          Padding="13,6"
+                          ColumnSpacing="16"
+                          HorizontalAlignment="Stretch">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                            <TextBlock x:Name="CodingAgentTitle" FontSize="13"/>
+                            <TextBlock x:Name="CodingAgentDetail" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+                        <ToggleSwitch x:Name="CodingAgentEnabledToggle"
+                                      Grid.Column="1"
+                                      HorizontalAlignment="Right"
+                                      VerticalAlignment="Center"
+                                      MinWidth="0"
+                                      OnContent=""
+                                      OffContent=""/>
+                    </Grid>
+                    <StackPanel x:Name="AcpProfilesPanel"
+                                HorizontalAlignment="Stretch"
+                                Margin="13,0,13,0"
+                                Padding="0,0,0,12"
+                                Spacing="8"/>
+                    <StackPanel Padding="13,0,13,12">
+                        <Button x:Name="AddCustomProfileButton"
+                                HorizontalAlignment="Left"
+                                Click="AddCustomProfile_Click"/>
+                    </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="10">
+                    <Grid MinHeight="58" Padding="13,6" ColumnSpacing="16">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                            <TextBlock x:Name="McpAppsTitle" FontSize="13"/>
+                            <TextBlock x:Name="McpAppsDetail" FontSize="11.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+                        <ComboBox x:Name="McpAppsModeComboBox" Grid.Column="1" Width="130">
+                            <ComboBoxItem x:Name="McpAppsFullItem" Tag="full"/>
+                            <ComboBoxItem x:Name="McpAppsCompactItem" Tag="compact"/>
+                            <ComboBoxItem x:Name="McpAppsOffItem" Tag="off"/>
+                        </ComboBox>
+                    </Grid>
+                </Border>
+            </StackPanel>
+
+            <Grid ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="SaveStatus"
+                           VerticalAlignment="Center"
+                           FontSize="11.5"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                <Button x:Name="SaveButton"
+                        Grid.Column="1"
+                        HorizontalAlignment="Right"
+                        Click="SaveButton_Click"/>
+            </Grid>
+
+        </StackPanel>
+    </ScrollViewer>
+</Page>

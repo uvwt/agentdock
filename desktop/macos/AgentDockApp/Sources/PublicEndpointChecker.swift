@@ -4,6 +4,19 @@ struct PublicEndpointCheckResult: Equatable, Sendable {
     let isReachable: Bool
     let message: String
     let latencyMilliseconds: Int?
+    let httpStatusCode: Int?
+
+    init(
+        isReachable: Bool,
+        message: String,
+        latencyMilliseconds: Int?,
+        httpStatusCode: Int? = nil
+    ) {
+        self.isReachable = isReachable
+        self.message = message
+        self.latencyMilliseconds = latencyMilliseconds
+        self.httpStatusCode = httpStatusCode
+    }
 }
 
 final class PublicEndpointChecker: @unchecked Sendable {
@@ -45,20 +58,23 @@ final class PublicEndpointChecker: @unchecked Sendable {
                 return PublicEndpointCheckResult(
                     isReachable: false,
                     message: L10n.format("Public address returned HTTP %d", response.statusCode),
-                    latencyMilliseconds: latency
+                    latencyMilliseconds: latency,
+                    httpStatusCode: response.statusCode
                 )
             }
             guard let payload = try? JSONDecoder().decode(PublicHealthPayload.self, from: data), payload.ok else {
                 return PublicEndpointCheckResult(
                     isReachable: false,
                     message: L10n.text("The public health check returned invalid data"),
-                    latencyMilliseconds: latency
+                    latencyMilliseconds: latency,
+                    httpStatusCode: response.statusCode
                 )
             }
             return PublicEndpointCheckResult(
                 isReachable: true,
                 message: L10n.text("Reachable"),
-                latencyMilliseconds: latency
+                latencyMilliseconds: latency,
+                httpStatusCode: response.statusCode
             )
         } catch {
             return PublicEndpointCheckResult(

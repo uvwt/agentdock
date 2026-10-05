@@ -104,9 +104,9 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"--start-core --runtime-root",
 		"& $destinationBinary service start --runtime-root $runtimeDir",
 		"--start-tunnel --runtime-root",
-		"$tunnelStartupArguments = \"--start-tunnel --runtime-root",
-		"-FilePath $destinationTrayBinary",
-		"-Arguments $tunnelStartupArguments",
+		"$tunnelLaunchArguments = \"tunnel launch --runtime-root",
+		"-FilePath $destinationBinary",
+		"-Arguments $tunnelLaunchArguments",
 		"-AdminLauncherPath $sourceTrayBinary",
 		"-LauncherPath $destinationTrayBinary",
 		"-FilePath $AdminLauncherPath",
@@ -250,7 +250,7 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	}
 	tunnelArg := strings.Index(script, "'--tunnel-mode', $resolvedTunnelMode")
 	coreStartCall := strings.Index(script, "& $destinationBinary service start --runtime-root $runtimeDir")
-	tunnelProxyCall := strings.Index(script, "$tunnelStartupArguments = \"--start-tunnel --runtime-root")
+	tunnelProxyCall := strings.Index(script, "$tunnelLaunchArguments = \"tunnel launch --runtime-root")
 	tunnelCommitCall := strings.LastIndex(script, "$commitArgs = @(")
 	if tunnelArg < 0 || coreStartCall < 0 || tunnelProxyCall < 0 || tunnelCommitCall < 0 || tunnelArg > coreStartCall || tunnelCommitCall > tunnelProxyCall {
 		t.Fatal("Installer must pass tunnel intent to the Engine, commit the Core transaction, then launch Tunnel asynchronously")
@@ -528,7 +528,7 @@ func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
 	}
 }
 func TestWindowsTaskAdminUsesNativeAgentDockHelper(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "TaskAdminService.cs"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "TaskAdminService.cs"))
 	if err != nil {
 		t.Fatalf("read TaskAdminService.cs: %v", err)
 	}
@@ -570,7 +570,7 @@ func TestWindowsTaskAdminUsesNativeAgentDockHelper(t *testing.T) {
 	}
 }
 func TestWindowsElevatedCoreHostUsesKillOnCloseJob(t *testing.T) {
-	jobData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "KillOnCloseJob.cs"))
+	jobData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "KillOnCloseJob.cs"))
 	if err != nil {
 		t.Fatalf("read KillOnCloseJob.cs: %v", err)
 	}
@@ -586,7 +586,7 @@ func TestWindowsElevatedCoreHostUsesKillOnCloseJob(t *testing.T) {
 		}
 	}
 
-	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"))
+	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Services", "RuntimeService.cs"))
 	if err != nil {
 		t.Fatalf("read RuntimeService.cs: %v", err)
 	}
@@ -960,9 +960,9 @@ func TestWindowsSetupLaunchesRuntimeOutsideRedirectionGuardTree(t *testing.T) {
 		"$setupRuntimeLauncherPath = Join-Path $PSScriptRoot 'launch-windows-process.ps1'",
 		"function Invoke-SetupRuntimeProcess",
 		"-Arguments \"service start --runtime-root",
-		"$tunnelStartupArguments = \"--start-tunnel --runtime-root",
-		"-FilePath $destinationTrayBinary",
-		"-Arguments $tunnelStartupArguments",
+		"$tunnelLaunchArguments = \"tunnel launch --runtime-root",
+		"-FilePath $destinationBinary",
+		"-Arguments $tunnelLaunchArguments",
 		"Invoke-SetupRuntimeProcess -FilePath $BinaryPath -Arguments '--background'",
 		"Invoke-SetupRuntimeProcess -FilePath (Join-Path $PSHOME 'powershell.exe') -Arguments $arguments",
 		"-HiddenHostBinary $destinationTrayBinary",
@@ -1241,7 +1241,8 @@ func TestWindowsReleaseKeepsPublishedUpdaterCompatibilityAsset(t *testing.T) {
 	releaseWorkflow := strings.ReplaceAll(string(releaseData), "\r\n", "\n")
 	for _, want := range []string{
 		"Copy-Item .\\packaging\\windows\\compat\\manage-windows.ps1 dist\\manage-windows.ps1 -Force",
-		"dist\\manage-windows.ps1, dist\\share, dist\\wsl-helper",
+		"Copy-Item .\\dist\\agentdock-tray.exe .\\dist\\control-panel\\agentdock-tray.exe -Force",
+		"dist\\manage-windows.ps1, dist\\control-panel, dist\\share, dist\\wsl-helper",
 	} {
 		if !strings.Contains(releaseWorkflow, want) {
 			t.Fatalf("formal Windows Release must preserve the v0.8.2/v0.8.3 updater contract; missing %q", want)
@@ -1256,6 +1257,8 @@ func TestWindowsReleaseKeepsPublishedUpdaterCompatibilityAsset(t *testing.T) {
 	for _, want := range []string{
 		"test-windows-release-backcompat.ps1 -ArchivePath $archivePath",
 		"test-windows-legacy-online-migration.ps1",
+		".\\dist\\control-panel",
+		"Join-Path $SourceDirectory 'control-panel'",
 		"fetch-depth: 0",
 	} {
 		if !strings.Contains(installerWorkflow, want) {

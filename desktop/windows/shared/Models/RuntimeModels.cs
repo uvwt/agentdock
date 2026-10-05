@@ -161,6 +161,49 @@ public sealed record RuntimeSnapshot(
     bool NexusConnected,
     DateTimeOffset CheckedAt);
 
+public sealed record PublicEndpointCheckResult(
+    bool IsReachable,
+    string Message,
+    long? LatencyMilliseconds,
+    int? HttpStatusCode = null);
+
+public sealed record RuntimeExtensionOverview(
+    bool Available,
+    int SkillCount,
+    int PluginCount,
+    bool PluginsAvailable,
+    int McpCount)
+{
+    public static RuntimeExtensionOverview Unavailable { get; } = new(false, 0, 0, false, 0);
+}
+
+internal sealed class RuntimeOverviewCountPayload
+{
+    [JsonPropertyName("count")]
+    public int Count { get; set; }
+}
+
+internal sealed class RuntimeOverviewPluginsPayload
+{
+    [JsonPropertyName("count")]
+    public int Count { get; set; }
+
+    [JsonPropertyName("available")]
+    public bool Available { get; set; }
+}
+
+internal sealed class RuntimeOverviewPayload
+{
+    [JsonPropertyName("skills")]
+    public RuntimeOverviewCountPayload Skills { get; set; } = new();
+
+    [JsonPropertyName("plugins")]
+    public RuntimeOverviewPluginsPayload Plugins { get; set; } = new();
+
+    [JsonPropertyName("mcp")]
+    public RuntimeOverviewCountPayload Mcp { get; set; } = new();
+}
+
 public sealed record NexusDeviceStatus(
     bool Paired,
     string Endpoint,
@@ -168,6 +211,165 @@ public sealed record NexusDeviceStatus(
     string DeviceId,
     bool DeviceTokenStored,
     string Error = "");
+
+public sealed class RuntimeRecentCall
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = "";
+
+    [JsonPropertyName("tool")]
+    public string Tool { get; set; } = "";
+
+    [JsonPropertyName("source")]
+    public string Source { get; set; } = "";
+
+    [JsonPropertyName("started_at")]
+    public DateTimeOffset StartedAt { get; set; }
+
+    [JsonPropertyName("duration_ms")]
+    public double DurationMs { get; set; }
+
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error_code")]
+    public string ErrorCode { get; set; } = "";
+}
+
+public sealed class RuntimeDiagnosticsPayload
+{
+    [JsonPropertyName("recent_calls")]
+    public List<RuntimeRecentCall> RecentCalls { get; set; } = [];
+}
+
+public sealed class RuntimeAnalyticsStage
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("started_offset_ms")]
+    public double StartedOffsetMs { get; set; }
+
+    [JsonPropertyName("duration_ms")]
+    public double DurationMs { get; set; }
+
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+}
+
+public sealed class RuntimeAnalyticsCall
+{
+    [JsonPropertyName("id")]
+    public ulong Id { get; set; }
+
+    [JsonPropertyName("tool")]
+    public string Tool { get; set; } = "";
+
+    [JsonPropertyName("source")]
+    public string Source { get; set; } = "";
+
+    [JsonPropertyName("started_at")]
+    public DateTimeOffset StartedAt { get; set; }
+
+    [JsonPropertyName("duration_ms")]
+    public double DurationMs { get; set; }
+
+    [JsonPropertyName("success")]
+    public bool Success { get; set; }
+
+    [JsonPropertyName("error_code")]
+    public string ErrorCode { get; set; } = "";
+
+    [JsonPropertyName("error_category")]
+    public string ErrorCategory { get; set; } = "";
+
+    [JsonPropertyName("stages")]
+    public List<RuntimeAnalyticsStage> Stages { get; set; } = [];
+}
+
+public sealed class RuntimeToolStats
+{
+    [JsonPropertyName("tool")]
+    public string Tool { get; set; } = "";
+
+    [JsonPropertyName("count")]
+    public int Count { get; set; }
+
+    [JsonPropertyName("error_count")]
+    public int ErrorCount { get; set; }
+
+    [JsonPropertyName("error_rate")]
+    public double ErrorRate { get; set; }
+
+    [JsonPropertyName("p50_duration_ms")]
+    public double P50DurationMs { get; set; }
+
+    [JsonPropertyName("p95_duration_ms")]
+    public double P95DurationMs { get; set; }
+
+    [JsonPropertyName("p99_duration_ms")]
+    public double P99DurationMs { get; set; }
+}
+
+public sealed class RuntimeProcessSnapshot
+{
+    [JsonPropertyName("goroutines")]
+    public int Goroutines { get; set; }
+
+    [JsonPropertyName("heap_alloc_bytes")]
+    public ulong HeapAllocBytes { get; set; }
+
+    [JsonPropertyName("heap_inuse_bytes")]
+    public ulong HeapInuseBytes { get; set; }
+
+    [JsonPropertyName("heap_sys_bytes")]
+    public ulong HeapSysBytes { get; set; }
+
+    [JsonPropertyName("gc_cycles")]
+    public uint GcCycles { get; set; }
+
+    [JsonPropertyName("uptime_ms")]
+    public long UptimeMs { get; set; }
+}
+
+public sealed class RuntimeAnalyticsPayload
+{
+    [JsonPropertyName("recent_capacity")]
+    public int RecentCapacity { get; set; }
+
+    [JsonPropertyName("window_calls")]
+    public int WindowCalls { get; set; }
+
+    [JsonPropertyName("total_calls")]
+    public ulong TotalCalls { get; set; }
+
+    [JsonPropertyName("total_errors")]
+    public ulong TotalErrors { get; set; }
+
+    [JsonPropertyName("active_calls")]
+    public int ActiveCalls { get; set; }
+
+    [JsonPropertyName("tool_stats")]
+    public List<RuntimeToolStats> ToolStats { get; set; } = [];
+
+    [JsonPropertyName("recent_calls")]
+    public List<RuntimeAnalyticsCall> RecentCalls { get; set; } = [];
+
+    [JsonPropertyName("process")]
+    public RuntimeProcessSnapshot Process { get; set; } = new();
+}
+
+public sealed record RuntimeDashboardSnapshot(
+    bool CountsAvailable,
+    bool DiagnosticsAvailable,
+    int SkillCount,
+    int McpCount,
+    int PluginCount,
+    IReadOnlyList<RuntimeRecentCall> RecentCalls)
+{
+    public static RuntimeDashboardSnapshot Empty { get; } =
+        new(false, false, 0, 0, 0, []);
+}
 
 internal sealed class NexusDeviceIdentity
 {

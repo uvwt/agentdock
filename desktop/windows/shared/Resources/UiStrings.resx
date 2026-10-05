@@ -157,7 +157,7 @@
     <value>NexusDock public HTTPS address</value>
   </data>
   <data name="OneTimePairingCode" xml:space="preserve">
-    <value>One-time pairing code</value>
+    <value>Pairing code</value>
   </data>
   <data name="PairAndRestart" xml:space="preserve">
     <value>Pair and restart</value>
@@ -263,18 +263,6 @@
   </data>
   <data name="OpenConfigFolder" xml:space="preserve">
     <value>Open config folder</value>
-  </data>
-  <data name="RuntimeAnalytics" xml:space="preserve">
-    <value>Runtime analytics</value>
-  </data>
-  <data name="RuntimeAnalyticsDescription" xml:space="preserve">
-    <value>View tool call latency, error statistics, and runtime resources in your browser.</value>
-  </data>
-  <data name="OpenRuntimeAnalytics" xml:space="preserve">
-    <value>Open runtime analytics</value>
-  </data>
-  <data name="RuntimeAnalyticsLocalUrlUnavailable" xml:space="preserve">
-    <value>The local runtime analytics address is unavailable.</value>
   </data>
   <data name="Ready" xml:space="preserve">
     <value>Ready</value>
@@ -737,4 +725,202 @@ Update now?</value>
   <data name="LanguageChangeDiscardWarning" xml:space="preserve">
     <value>Changing the interface language reloads this window. Any unsaved changes will be lost. Continue?</value>
   </data>
+  <data name="Home" xml:space="preserve"><value>Home</value></data>
+  <data name="Connections" xml:space="preserve"><value>Connections</value></data>
+  <data name="Capabilities" xml:space="preserve"><value>Capabilities</value></data>
+  <data name="Activity" xml:space="preserve"><value>Activity</value></data>
+  <data name="Settings" xml:space="preserve"><value>Settings</value></data>
+  <data name="ConnectionsDetail" xml:space="preserve"><value>Connect AI clients to this device.</value></data>
+  <data name="LocalConnection" xml:space="preserve"><value>Local connection</value></data>
+  <data name="RemoteConnection" xml:space="preserve"><value>Remote connection</value></data>
+  <data name="Copy" xml:space="preserve"><value>Copy</value></data>
+  <data name="CapabilitiesDetail" xml:space="preserve"><value>Configure the capabilities AgentDock provides to AI.</value></data>
+  <data name="AvailableCapabilities" xml:space="preserve"><value>Available capabilities</value></data>
+  <data name="BuiltInCapabilities" xml:space="preserve"><value>Built-in capabilities</value></data>
+  <data name="Extensions" xml:space="preserve"><value>Extensions</value></data>
+  <data name="Skills" xml:space="preserve"><value>Skills</value></data>
+  <data name="Plugins" xml:space="preserve"><value>Plugins</value></data>
+  <data name="LoadedOnThisDevice" xml:space="preserve"><value>Loaded on this device</value></data>
+  <data name="InstalledOnThisDevice" xml:space="preserve"><value>Installed on this device</value></data>
+  <data name="DynamicMcpServers" xml:space="preserve"><value>Dynamic MCP servers</value></data>
+  <data name="Enabled" xml:space="preserve"><value>Enabled</value></data>
+  <data name="BrowserCapabilityDetail" xml:space="preserve"><value>Browser automation and web operations</value></data>
+  <data name="BrowserReuseMode" xml:space="preserve"><value>Prefer an existing local browser</value></data>
+  <data name="BrowserSpecifiedMode" xml:space="preserve"><value>Use the configured CDP browser</value></data>
+  <data name="BrowserIsolatedMode" xml:space="preserve"><value>Use an isolated browser</value></data>
+  <data name="NoProfilesConfigured" xml:space="preserve"><value>No profiles configured</value></data>
+  <data name="ProfilesConfigured" xml:space="preserve"><value>{0} enabled · default {1}</value></data>
+  <data name="McpAppsDetail" xml:space="preserve"><value>Interactive MCP app presentation</value></data>
+  <data name="Full" xml:space="preserve"><value>Full</value></data>
+  <data name="Compact" xml:space="preserve"><value>Compact</value></data>
+  <data name="Off" xml:space="preserve"><value>Off</value></data>
+  <data name="ActivityDetail" xml:space="preserve"><value>Recent tool calls and execution details.</value></data>
+  <data name="CallOverview" xml:space="preserve"><value>Call overview</value></data>
+  <data name="TotalCalls" xml:space="preserve"><value>Total calls</value></data>
+  <data name="FailedCalls" xml:space="preserve"><value>Failed calls</value></data>
+  <data name="ActiveCalls" xml:space="preserve"><value>Active calls</value></data>
+  <data name="StatsWindow" xml:space="preserve"><value>Stats window</value></data>
+  <data name="CallStatistics" xml:space="preserve"><value>Call statistics</value></data>
+  <data name="RecentCalls" xml:space="preserve"><value>Recent calls</value></data>
+  <data name="ShowMore" xml:space="preserve"><value>Show more</value></data>
+  <data name="RecentCallsPrivacyHint" xml:space="preserve"><value>Only tool name, source, latency, stages, status, and error code are retained. Arguments, results, commands, and file contents are never stored.</value></data>
+  <data name="RuntimeResources" xml:space="preserve"><value>Runtime resources</value></data>
+  <data name="GoHeap" xml:space="preserve"><value>Go heap</value></data>
+  <data name="HeapInUse" xml:space="preserve"><value>Heap in use</value></data>
+  <data name="Goroutines" xml:space="preserve"><value>Goroutines</value></data>
+  <data name="GcCycles" xml:space="preserve"><value>GC cycles</value></data>
+  <data name="Uptime" xml:space="preserve"><value>Uptime</value></data>
+  <data name="SinceRuntimeStarted" xml:space="preserve"><value>Since this runtime started</value></data>
+  <data name="CurrentlyRunning" xml:space="preserve"><value>Currently running</value></data>
+  <data name="UpToRetained" xml:space="preserve"><value>Up to {0} retained</value></data>
+  <data name="AnalyticsUnavailable" xml:space="preserve"><value>Runtime analytics are unavailable.</value></data>
+  <data name="NoCallData" xml:space="preserve"><value>No call data yet.</value></data>
+  <data name="ActivityCallStatsDetail" xml:space="preserve"><value>{0} calls · {1:F1}% errors</value></data>
+  <data name="ErrorCode" xml:space="preserve"><value>Error code</value></data>
+  <data name="StageMcpRefresh" xml:space="preserve"><value>MCP initialize &amp; discover</value></data>
+  <data name="StageMcpRemoteCall" xml:space="preserve"><value>MCP remote call</value></data>
+  <data name="StageCommandStart" xml:space="preserve"><value>Command start</value></data>
+  <data name="StageCommandForegroundWait" xml:space="preserve"><value>Foreground wait</value></data>
+  <data name="LastStatusRefresh" xml:space="preserve"><value>Last status refresh</value></data>
+  <data name="Diagnostics" xml:space="preserve"><value>Diagnostics</value></data>
+  <data name="Logs" xml:space="preserve"><value>Logs</value></data>
+  <data name="LogsDetail" xml:space="preserve"><value>View logs and diagnostics for troubleshooting.</value></data>
+  <data name="Logging" xml:space="preserve"><value>Logging</value></data>
+  <data name="LogLevelRestartHint" xml:space="preserve"><value>Changing the log level will restart AgentDock.</value></data>
+  <data name="AdvancedDiagnostics" xml:space="preserve"><value>Advanced diagnostics</value></data>
+  <data name="RecentP95Latency" xml:space="preserve"><value>Recent P95 latency</value></data>
+  <data name="DiagnosticInformation" xml:space="preserve"><value>Diagnostic information</value></data>
+  <data name="CopyDiagnostics" xml:space="preserve"><value>Copy diagnostics</value></data>
+  <data name="LogDebug" xml:space="preserve"><value>Debug</value></data>
+  <data name="LogInfo" xml:space="preserve"><value>Info</value></data>
+  <data name="LogWarning" xml:space="preserve"><value>Warning</value></data>
+  <data name="LogError" xml:space="preserve"><value>Error</value></data>
+  <data name="LogsDirectory" xml:space="preserve"><value>Logs directory</value></data>
+  <data name="ConfigurationDirectory" xml:space="preserve"><value>Configuration directory</value></data>
+  <data name="Open" xml:space="preserve"><value>Open</value></data>
+  <data name="Runtime" xml:space="preserve"><value>Runtime</value></data>
+  <data name="Permissions" xml:space="preserve"><value>Permissions</value></data>
+  <data name="Credentials" xml:space="preserve"><value>Access credentials</value></data>
+  <data name="RuntimeDetail" xml:space="preserve"><value>Local AgentDock Runtime status, configuration, and updates.</value></data>
+  <data name="PermissionsDetail" xml:space="preserve"><value>Review and adjust Windows Runtime permissions.</value></data>
+  <data name="StartupDetail" xml:space="preserve"><value>Background service and tray app startup behavior.</value></data>
+  <data name="CredentialsDetail" xml:space="preserve"><value>View local access credentials protected by Windows DPAPI.</value></data>
+  <data name="LocalAddress" xml:space="preserve"><value>Local address</value></data>
+  <data name="RuntimeConfiguration" xml:space="preserve"><value>Runtime configuration</value></data>
+  <data name="AgentDockUpdate" xml:space="preserve"><value>AgentDock update</value></data>
+  <data name="AgentDockPermissions" xml:space="preserve"><value>AgentDock permissions</value></data>
+  <data name="ManagedByWindows" xml:space="preserve"><value>Managed by Windows</value></data>
+  <data name="CoreBackgroundService" xml:space="preserve"><value>Core background service</value></data>
+  <data name="TrayApp" xml:space="preserve"><value>Tray app</value></data>
+  <data name="AuthenticationToken" xml:space="preserve"><value>Authentication token</value></data>
+  <data name="QuickAccess" xml:space="preserve"><value>Quick access</value></data>
+  <data name="ConnectAIClients" xml:space="preserve"><value>Connect AI clients</value></data>
+  <data name="ManageCapabilities" xml:space="preserve"><value>Manage capabilities</value></data>
+  <data name="ViewActivity" xml:space="preserve"><value>View activity</value></data>
+  <data name="AgentDockRunning" xml:space="preserve"><value>AgentDock is running</value></data>
+  <data name="AgentDockStopped" xml:space="preserve"><value>AgentDock is stopped</value></data>
+  <data name="LocalServiceReady" xml:space="preserve"><value>The local service is ready for AI clients.</value></data>
+  <data name="StartAgentDockForClients" xml:space="preserve"><value>Start AgentDock to accept AI client connections.</value></data>
+  <data name="PublicMcpMode" xml:space="preserve"><value>Public MCP mode</value></data>
+  <data name="LocalOnlyNative" xml:space="preserve"><value>Local only</value></data>
+  <data name="TemporaryPublicAddress" xml:space="preserve"><value>Temporary public address</value></data>
+  <data name="HttpsAddress" xml:space="preserve"><value>HTTPS address</value></data>
+  <data name="TunnelTokenSavedPlaceholder" xml:space="preserve"><value>Saved; leave blank to keep the current token</value></data>
+  <data name="Apply" xml:space="preserve"><value>Apply</value></data>
+  <data name="NexusAddress" xml:space="preserve"><value>NexusDock address</value></data>
+  <data name="Pair" xml:space="preserve"><value>Pair</value></data>
+  <data name="Applying" xml:space="preserve"><value>Applying…</value></data>
+  <data name="Applied" xml:space="preserve"><value>Applied</value></data>
+  <data name="Generating" xml:space="preserve"><value>Generating…</value></data>
+  <data name="Generated" xml:space="preserve"><value>Generated</value></data>
+  <data name="Pairing" xml:space="preserve"><value>Pairing…</value></data>
+  <data name="PairingCompleted" xml:space="preserve"><value>Paired</value></data>
+  <data name="IsolatedBrowser" xml:space="preserve"><value>Isolated browser</value></data>
+  <data name="ReuseLocalBrowser" xml:space="preserve"><value>Reuse local browser</value></data>
+  <data name="SpecifiedCdp" xml:space="preserve"><value>Specified CDP address</value></data>
+  <data name="AddCustomCodingAgent" xml:space="preserve"><value>Add custom Coding Agent</value></data>
+  <data name="DefaultCodingAgent" xml:space="preserve"><value>Default Coding Agent</value></data>
+  <data name="ArgumentsOnePerLine" xml:space="preserve"><value>Arguments (one per line)</value></data>
+  <data name="Saving" xml:space="preserve"><value>Saving…</value></data>
+  <data name="Saved" xml:space="preserve"><value>Saved</value></data>
+  <data name="AtLeastOneCodingAgent" xml:space="preserve"><value>Enable at least one Coding Agent profile.</value></data>
+  <data name="SaveFailed" xml:space="preserve"><value>Save failed</value></data>
+  <data name="StartupSettingsFailed" xml:space="preserve"><value>Startup settings failed</value></data>
+  <data name="PermissionSettingsFailed" xml:space="preserve"><value>Permission settings failed</value></data>
+  <data name="NewVersionAvailable" xml:space="preserve"><value>New version available</value></data>
+  <data name="Confirm" xml:space="preserve"><value>OK</value></data>
+  <data name="ConnectionsRecommendedDetail" xml:space="preserve"><value>Use NexusDock for the simplest connection experience. Advanced options are available when needed.</value></data>
+  <data name="RecommendedConnection" xml:space="preserve"><value>Recommended connection</value></data>
+  <data name="NexusRecommendedIntro" xml:space="preserve"><value>Pair once, then connect supported AI clients through NexusDock without configuring MCP addresses or tunnels.</value></data>
+  <data name="ConnectThisDeviceToNexus" xml:space="preserve"><value>Connect this device to NexusDock.</value></data>
+  <data name="AdvancedConnectionSettings" xml:space="preserve"><value>Advanced connection settings</value></data>
+  <data name="AdvancedConnectionDetail" xml:space="preserve"><value>Local MCP, access credentials, and direct public access.</value></data>
+  <data name="PublicAddress" xml:space="preserve"><value>Public address</value></data>
+  <data name="TemporaryDomain" xml:space="preserve"><value>Temporary domain</value></data>
+  <data name="TemporaryTunnelDetail" xml:space="preserve"><value>Generate a temporary public address without configuring a domain.</value></data>
+  <data name="GenerateTemporaryAddress" xml:space="preserve"><value>Generate temporary address</value></data>
+  <data name="FixedDomain" xml:space="preserve"><value>Fixed domain</value></data>
+  <data name="FixedDomainDetail" xml:space="preserve"><value>Use your own HTTPS domain with a Cloudflare Tunnel token.</value></data>
+  <data name="ApplyFixedDomain" xml:space="preserve"><value>Apply fixed domain</value></data>
+
+  <data name="NeedsAttention" xml:space="preserve"><value>Needs attention</value></data>
+  <data name="AgentDockNeedsAttention" xml:space="preserve"><value>AgentDock needs attention</value></data>
+  <data name="AgentDockNeedsAttentionDetail" xml:space="preserve"><value>AgentDock is running, but the connection service is not ready.</value></data>
+  <data name="About" xml:space="preserve"><value>About</value></data>
+  <data name="AboutDetail" xml:space="preserve"><value>About AgentDock and useful project links.</value></data>
+  <data name="AboutDescription" xml:space="preserve"><value>AgentDock lets AI clients securely use capabilities on this device.</value></data>
+  <data name="Application" xml:space="preserve"><value>Application</value></data>
+  <data name="Resources" xml:space="preserve"><value>Resources</value></data>
+  <data name="Website" xml:space="preserve"><value>Website</value></data>
+  <data name="Documentation" xml:space="preserve"><value>Documentation</value></data>
+  <data name="Appearance" xml:space="preserve"><value>Appearance</value></data>
+  <data name="AppearanceDetail" xml:space="preserve"><value>Customize the theme and interface language.</value></data>
+  <data name="Theme" xml:space="preserve"><value>Theme</value></data>
+  <data name="LightTheme" xml:space="preserve"><value>Light</value></data>
+  <data name="DarkTheme" xml:space="preserve"><value>Dark</value></data>
+
+  <data name="AdvancedConnection" xml:space="preserve"><value>Advanced connection</value></data>
+  <data name="RemoteConnectionPageDetail" xml:space="preserve"><value>Connect AI clients to this device remotely.</value></data>
+  <data name="RemoteService" xml:space="preserve"><value>Remote service</value></data>
+  <data name="Change" xml:space="preserve"><value>Change</value></data>
+  <data name="Done" xml:space="preserve"><value>Done</value></data>
+  <data name="OfficialService" xml:space="preserve"><value>Official service</value></data>
+  <data name="SelfHostedService" xml:space="preserve"><value>Self-hosted service</value></data>
+  <data name="OfficialServiceHint" xml:space="preserve"><value>The official service uses nexusdock.co by default.</value></data>
+  <data name="ServiceAddress" xml:space="preserve"><value>Service address</value></data>
+  <data name="RemotePairingIntro" xml:space="preserve"><value>Enter the pairing code to connect this device.</value></data>
+  <data name="GetPairingCodeFromNexusDock" xml:space="preserve"><value>No pairing code? Get one from NexusDock ↗</value></data>
+  <data name="ManageConnectedDevices" xml:space="preserve"><value>Manage connected devices ↗</value></data>
+  <data name="Connect" xml:space="preserve"><value>Connect</value></data>
+  <data name="RePair" xml:space="preserve"><value>Re-pair</value></data>
+  <data name="ServiceAddressRequired" xml:space="preserve"><value>Enter a self-hosted service address.</value></data>
+
+  <data name="Configuration" xml:space="preserve"><value>Configuration</value></data>
+  <data name="ApplyChanges" xml:space="preserve"><value>Apply changes</value></data>
+  <data name="CustomPort" xml:space="preserve"><value>Custom port</value></data>
+  <data name="ServicePort" xml:space="preserve"><value>Service port</value></data>
+  <data name="PortRestartHint" xml:space="preserve"><value>Restart required</value></data>
+  <data name="PortRestartDetail" xml:space="preserve"><value>Changing the port will automatically restart AgentDock.</value></data>
+  <data name="Connection" xml:space="preserve"><value>Connection</value></data>
+  <data name="DeviceReadyForAI" xml:space="preserve"><value>This device is ready for AI.</value></data>
+  <data name="CodingAgent" xml:space="preserve"><value>Coding Agent</value></data>
+  <data name="McpApps" xml:space="preserve"><value>MCP Apps</value></data>
+  <data name="AllAvailable" xml:space="preserve"><value>All available</value></data>
+  <data name="NotEnabledYet" xml:space="preserve"><value>Not enabled yet</value></data>
+  <data name="CapabilitiesAvailable" xml:space="preserve"><value>{0} / 3 available</value></data>
+  <data name="CapabilitiesNeedAttention" xml:space="preserve"><value>{0} need attention</value></data>
+  <data name="CoreCapabilities" xml:space="preserve"><value>Core capabilities</value></data>
+  <data name="DashboardInstalled" xml:space="preserve"><value>Installed</value></data>
+  <data name="DashboardConfigured" xml:space="preserve"><value>Configured</value></data>
+  <data name="DefaultProfileSummary" xml:space="preserve"><value>{0} · default</value></data>
+  <data name="RecentActivity" xml:space="preserve"><value>Recent activity</value></data>
+  <data name="RecentActivityUnavailable" xml:space="preserve"><value>Recent activity is unavailable.</value></data>
+  <data name="NoRecentActivity" xml:space="preserve"><value>No recent activity yet.</value></data>
+  <data name="Succeeded" xml:space="preserve"><value>Succeeded</value></data>
+  <data name="Failed" xml:space="preserve"><value>Failed</value></data>
+  <data name="ActivitySourceRemote" xml:space="preserve"><value>Remote</value></data>
+  <data name="ActivitySourceLocal" xml:space="preserve"><value>Local</value></data>
+  <data name="JustNow" xml:space="preserve"><value>Just now</value></data>
+  <data name="MinutesAgo" xml:space="preserve"><value>{0} min ago</value></data>
+  <data name="HoursAgo" xml:space="preserve"><value>{0} hr ago</value></data>
 </root>

@@ -17,10 +17,10 @@ Release Catalog 由 `tools/release` 约束；测试禁止重新把 `runtime-adap
 
 | 文件 | 当前规模 | 契约 | 保留理由 |
 |---|---:|---|---|
-| `scripts/install/install.sh` | 634 | 公开 | Unix bootstrap：平台/架构识别、下载校验、必要权限/service-user 前置，再调用 Engine |
-| `scripts/install/install.ps1` | 2257 | 公开 | Windows bootstrap/外层 adapter：UAC、DPAPI、HKCU Run、Setup Result、Task 管理与 rollback |
-| `scripts/install/uninstall-windows.ps1` | 354 | 内部 | Windows 自删除、Task/Registry 清理、detached Engine commit；不作为 Release API |
-| `scripts/install/launch-windows-process.ps1` | 223 | 内部 | Inno RedirectionGuard 外启动当前用户 session 的临时 Scheduled Task broker |
+| `scripts/install/install.sh` | 1008 | 公开 | Unix bootstrap：平台/架构识别、下载校验、Core 安装、可选 Nexus 配对与 Cloudflare OS bridge，再调用 Engine |
+| `scripts/install/install.ps1` | 2344 | 公开 | Windows bootstrap/外层 adapter：UAC、DPAPI、HKCU Run、Setup Result、Task 管理与 rollback |
+| `scripts/install/uninstall-windows.ps1` | 362 | 内部 | Windows 自删除、Task/Registry 清理、detached Engine commit；不作为 Release API |
+| `scripts/install/launch-windows-process.ps1` | 199 | 内部 | Inno RedirectionGuard 外启动当前用户 session 的临时 Scheduled Task broker |
 | `scripts/install/probe-protected-text.ps1` | 35 | 内部 | 只读 DPAPI 可用性探针，不返回凭据明文 |
 
 `manage-windows.ps1` 已删除。它原来唯一仍有产品调用的 `task-run-session` 已迁到原生：
@@ -66,6 +66,14 @@ stable shim/icon 的职责也已去重：PowerShell 在调用 Engine 前只备�
 ## Unix 最终状态
 
 `install.sh` 是 Linux/macOS 唯一脚本入口。它不会下载或 dispatch platform installer/uninstaller 脚本。测试 fake Release 只提供 payload tarball 和必要依赖，以证明不存在隐藏依赖。
+
+首次安装固定按 **Core → Nexus → Cloudflare Tunnel** 分阶段执行：
+
+- Core 先以本地模式完成安装；Linux 同时把 stable binary 暴露到 `/usr/local/bin/agentdock`。
+- 远程连接随后选择 NexusDock 官方服务、自托管 NexusDock 或跳过；官方服务会引导用户打开 `https://mcp.nexusdock.co/workspace/devices` 获取 NexusDock 配对码，配对直接复用 `agentdock nexus pair`，不在 installer 中复制 Nexus 协议或设备命名逻辑。
+- Cloudflare Tunnel 最后可选；未选择时不下载 cloudflared。选择 Quick/Named 后通过一次 Installer Engine `repair` 写入 Tunnel/OAuth/service 状态，bootstrap 不自行维护第二套状态机。
+- 首次 onboarding 通过 runtime 下的 `.installer-onboarding` 标记“安装尚未完整结束”；若安装被中断，下一次运行会重新从 Core → NexusDock 远程连接 → Cloudflare Tunnel 整套流程开始，而不是从某个内部阶段继续，也不会因为 stable binary 已存在就误判成普通升级。流程完成后删除该状态文件。
+- 完成页从已提交 runtime 状态读取本地 MCP、Nexus endpoint 和访问令牌；启用 Cloudflare 时额外输出公网 MCP 与 OAuth 密码。
 
 macOS Release smoke 直接使用 `install.sh --uninstall`；Linux VPS E2E 同样走统一入口。平台服务模板、Quick Tunnel 状态机与卸载事务均在 Go 实现。
 

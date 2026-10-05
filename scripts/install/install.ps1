@@ -1362,7 +1362,11 @@ try {
     if (-not (Test-Path -LiteralPath $sourceBinary -PathType Leaf)) {
         throw "Release archive does not contain agentdock.exe: $assetName"
     }
-    $sourceTrayBinary = Join-Path $extractDir 'agentdock-tray.exe'
+    $sourceTrayBinary = Join-Path $extractDir 'control-panel\agentdock-tray.exe'
+    if (-not (Test-Path -LiteralPath $sourceTrayBinary -PathType Leaf)) {
+        # Backward compatibility for older release archives that only carried the flat Tray executable.
+        $sourceTrayBinary = Join-Path $extractDir 'agentdock-tray.exe'
+    }
     $sourceTrayIcon = Join-Path $extractDir 'agentdock.ico'
     $sourceArbiter = Join-Path $extractDir 'agentdock-arbiter.exe'
     $sourceCoreShim = Join-Path $extractDir 'agentdock-shim.exe'
@@ -2000,20 +2004,22 @@ exit `$LASTEXITCODE
         $engineCommitted = $true
     }
 
-    # Core is authoritative for install/update success. Start Tunnel only after commit and do it
-    # asynchronously through the existing WinExe startup proxy so Cloudflare/network readiness
-    # cannot hold the transaction or its success UI open.
+    # Core is authoritative for install/update success. Start Tunnel only after commit and keep
+    # Cloudflare/network readiness asynchronous. Use the headless agentdock CLI directly here:
+    # install-time startup must not depend on WinUI activation/session semantics (for example CI
+    # runners or non-interactive installer contexts). Normal login autostart still uses the native
+    # tray proxy registered above.
     if ($RegisterStartup -and $resolvedTunnelMode -ne 'none') {
         try {
-            $tunnelStartupArguments = "--start-tunnel --runtime-root `"$runtimeDir`""
+            $tunnelLaunchArguments = "tunnel launch --runtime-root `"$runtimeDir`""
             if ($InstallChannel -eq 'setup') {
                 Invoke-SetupRuntimeProcess `
-                    -FilePath $destinationTrayBinary `
-                    -Arguments $tunnelStartupArguments
+                    -FilePath $destinationBinary `
+                    -Arguments $tunnelLaunchArguments
             } else {
                 Start-Process `
-                    -FilePath $destinationTrayBinary `
-                    -ArgumentList $tunnelStartupArguments `
+                    -FilePath $destinationBinary `
+                    -ArgumentList $tunnelLaunchArguments `
                     -WindowStyle Hidden | Out-Null
             }
         } catch {
