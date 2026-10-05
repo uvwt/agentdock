@@ -285,7 +285,7 @@ begin
     ExpandConstant('{app}\bin\agentdock-tray.exe'),
     '',
     ExpandConstant('{app}'),
-    ExpandConstant('{app}\installer\agentdock.ico'),
+    ExpandConstant('{app}\bin\agentdock-tray.exe'),
     0,
     SW_SHOWNORMAL
   );

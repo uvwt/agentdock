@@ -679,6 +679,28 @@ func TestWindowsSetupKeepsPublicAccessExplicitAndSecretsOffCommandLine(t *testin
 			t.Fatalf("Setup must not show recommendation or privilege implementation details: %q", forbidden)
 		}
 	}
+
+	startMenuShortcut := `Name: "{group}\AgentDock"; Filename: "{app}\bin\agentdock-tray.exe"; WorkingDir: "{app}"; IconFilename: "{app}\bin\agentdock-tray.exe"; AppUserModelID: "com.uvwt.agentdock.controlpanel"`
+	if !strings.Contains(setup, startMenuShortcut) {
+		t.Fatal("Windows Start menu shortcut must use the control-panel executable's embedded icon")
+	}
+
+	shortcutStart := strings.Index(setup, "function ApplyDesktopControlPanelShortcut")
+	if shortcutStart < 0 {
+		t.Fatal("Windows desktop shortcut function is missing")
+	}
+	shortcutTail := setup[shortcutStart:]
+	shortcutEnd := strings.Index(shortcutTail, "function NextButtonClick")
+	if shortcutEnd < 0 {
+		t.Fatal("Windows desktop shortcut function boundary is missing")
+	}
+	desktopShortcut := shortcutTail[:shortcutEnd]
+	if strings.Contains(desktopShortcut, `{app}\installer\agentdock.ico`) {
+		t.Fatal("Windows desktop shortcut must not use the separately cached installer icon")
+	}
+	if strings.Count(desktopShortcut, `{app}\bin\agentdock-tray.exe`) < 2 {
+		t.Fatal("Windows desktop shortcut must use agentdock-tray.exe for both target and icon source")
+	}
 }
 
 func TestWindowsSetupDoesNotOwnCloudflareCredentialsOrPayload(t *testing.T) {

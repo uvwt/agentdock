@@ -83,7 +83,7 @@ Type: files; Name: "{app}\desktop-version.txt"
 Type: files; Name: "{userdesktop}\{code:GetLocalizedMessage|DesktopShortcutName}.lnk"
 
 [Icons]
-Name: "{group}\AgentDock"; Filename: "{app}\bin\agentdock-tray.exe"; WorkingDir: "{app}"; IconFilename: "{app}\installer\agentdock.ico"; AppUserModelID: "com.uvwt.agentdock.controlpanel"
+Name: "{group}\AgentDock"; Filename: "{app}\bin\agentdock-tray.exe"; WorkingDir: "{app}"; IconFilename: "{app}\bin\agentdock-tray.exe"; AppUserModelID: "com.uvwt.agentdock.controlpanel"
 Name: "{group}\{code:GetLocalizedMessage|DocsShortcut}"; Filename: "https://docs.nexusdock.co/agentdock/"
 Name: "{group}\{code:GetLocalizedMessage|UninstallShortcut}"; Filename: "{uninstallexe}"
 
