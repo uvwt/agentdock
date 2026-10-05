@@ -38,13 +38,19 @@ func TestWindowsControlPanelUsesFrameworkDependentRuntimes(t *testing.T) {
 		"<WindowsPackageType>None</WindowsPackageType>",
 		"<WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>",
 		"<SelfContained>false</SelfContained>",
-		`<PackageReference Include="Microsoft.WindowsAppSDK" Version="2.3.1" />`,
+		`<PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.3.0" />`,
+		`<PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.3.1" />`,
+		`<PackageReference Include="Microsoft.WindowsAppSDK.Foundation" Version="2.3.5" />`,
+		`<PackageReference Include="Microsoft.WindowsAppSDK.InteractiveExperiences" Version="2.1.3" />`,
 	} {
 		if !strings.Contains(project, want) {
 			t.Fatalf("framework-dependent WinUI contract missing %q", want)
 		}
 	}
 	for _, forbidden := range []string{
+		`<PackageReference Include="Microsoft.WindowsAppSDK" Version="2.3.1" />`,
+		`<PackageReference Include="Microsoft.WindowsAppSDK.AI"`,
+		`<PackageReference Include="Microsoft.WindowsAppSDK.ML"`,
 		"<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>",
 		"<SelfContained>true</SelfContained>",
 	} {

@@ -194,6 +194,12 @@ scripts:
     public_contract: false
     deletable: false
 
+  - path: packaging/windows/ensure-windows-runtimes.ps1
+    class: packaging
+    owner: installer
+    public_contract: false
+    deletable: false
+
   - path: packaging/windows/build-wsl-helper-payload.ps1
     class: packaging
     owner: release
