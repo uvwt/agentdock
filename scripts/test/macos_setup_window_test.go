@@ -85,3 +85,38 @@ func TestMacOSUpdateCheckDoesNotLockUnrelatedControls(t *testing.T) {
 		}
 	}
 }
+
+func TestMacOSPublicEndpointCheckInvalidatesAcrossLifecycleChanges(t *testing.T) {
+	root := filepath.Join("..", "..", "desktop", "macos", "AgentDockApp", "Sources")
+	controlPanelData, err := os.ReadFile(filepath.Join(root, "NativeControlPanelWindowController.swift"))
+	if err != nil {
+		t.Fatalf("read NativeControlPanelWindowController.swift: %v", err)
+	}
+	controlPanel := string(controlPanelData)
+	for _, want := range []string{
+		"publicEndpointCheckRevision",
+		"func invalidatePublicEndpointCheck()",
+		".onChange(of: model.publicEndpointCheckRevision)",
+		"let lifecycleRevision = model.publicEndpointCheckRevision",
+		"model.publicEndpointCheckRevision == lifecycleRevision",
+	} {
+		if !strings.Contains(controlPanel, want) {
+			t.Fatalf("macOS public endpoint lifecycle invalidation missing %q", want)
+		}
+	}
+
+	appDelegateData, err := os.ReadFile(filepath.Join(root, "AppDelegate.swift"))
+	if err != nil {
+		t.Fatalf("read AppDelegate.swift: %v", err)
+	}
+	appDelegate := string(appDelegateData)
+	for _, want := range []string{
+		"performServiceAction(L10n.text(\"Start\"), recheckPublicEndpointOnSuccess: true)",
+		"performServiceAction(L10n.text(\"Restart\"), recheckPublicEndpointOnSuccess: true)",
+		"self.setupWindow.invalidatePublicEndpointCheck()",
+	} {
+		if !strings.Contains(appDelegate, want) {
+			t.Fatalf("macOS lifecycle action missing public endpoint invalidation %q", want)
+		}
+	}
+}

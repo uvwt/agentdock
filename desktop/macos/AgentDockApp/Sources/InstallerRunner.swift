@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-struct InstallResult: Decodable {
+struct InstallResult: Decodable, Sendable {
     let schemaVersion: Int
     let ok: Bool
     let version: String
@@ -50,6 +50,23 @@ final class InstallerRunner {
         try validateBundledRuntime()
         try service.validatePersistentAppLocation()
 
+        return try await service.withLifecycleTransaction { lifecycle in
+            try await self.runWithinLifecycle(
+                request: request,
+                serverURL: serverURL,
+                providedTunnelToken: providedTunnelToken,
+                lifecycle: lifecycle
+            )
+        }
+    }
+
+    private func runWithinLifecycle(
+        request: InstallRequest,
+        serverURL: String?,
+        providedTunnelToken: String?,
+        lifecycle: ServiceController.LifecycleTransaction
+    ) async throws -> InstallResult {
+
         // 旧桌面版把 Named Tunnel Token 放在 cloudflared.env。先迁入独立 token store，
         // 后面的运行时清理只删除程序入口，不触碰用户凭据。
         try TunnelTokenStore(paths: paths).captureExistingTokenIfPresent()
@@ -63,9 +80,9 @@ final class InstallerRunner {
         do {
             // 配置切换前先停掉受 SMAppService 管理的进程，避免旧 Tunnel 或 Core
             // 在事务中途读取到一半新、一半旧的配置。
-            try service.setTunnelEnabled(false)
+            try lifecycle.setTunnelEnabled(false)
             if previousCoreEnabled {
-                try await service.stop()
+                try lifecycle.stop()
             }
 
             legacyMigration = try LegacyDesktopRuntimeMigration(paths: paths).begin()
@@ -80,10 +97,10 @@ final class InstallerRunner {
                 try self.bootstrapCoreSkills()
             }
 
-            try await service.start()
+            _ = try await lifecycle.start()
             if request.mode != .local {
                 do {
-                    try service.setTunnelEnabled(true)
+                    try lifecycle.setTunnelEnabled(true)
                 } catch {
                     // Core health is the install boundary. Tunnel/public access depends on
                     // ServiceManagement policy and external network state, so keep it best-effort.
@@ -125,15 +142,15 @@ final class InstallerRunner {
         } catch {
             let originalError = error
             do {
-                try service.setTunnelEnabled(false)
-                try await service.stop()
+                try lifecycle.setTunnelEnabled(false)
+                try lifecycle.stop()
                 try restoreManagedFiles(snapshots)
                 try legacyMigration?.rollback()
                 if previousCoreEnabled {
-                    try await service.start()
+                    _ = try await lifecycle.start()
                 }
                 if previousTunnelEnabled {
-                    try service.setTunnelEnabled(true)
+                    try lifecycle.setTunnelEnabled(true)
                 }
             } catch {
                 throw ValidationError(L10n.format(

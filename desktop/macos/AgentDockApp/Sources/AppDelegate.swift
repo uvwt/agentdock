@@ -185,11 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         refreshStatus(showWindow: !launchedInBackground)
         Task {
-            do {
-                try service.reconcileTunnelRegistrationFromConfiguration()
-            } catch {
-                NSLog("AgentDock 启动时 Tunnel 状态收敛失败：%@", error.localizedDescription)
-            }
+            _ = await service.reconcileBackgroundServicesOnLaunch()
             self.refreshStatus()
         }
     }
@@ -245,7 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
                 // Restore Bundle-owned SMAppService definitions first. requiresApproval is an
                 // explicit policy state and is reported to the Arbiter instead of failing the App.
-                let registration = try service.restoreBackgroundServiceRegistrationsForUpdate(
+                let registration = try await service.restoreBackgroundServiceRegistrationsForUpdate(
                     coreEnabled: serviceState.coreEnabled,
                     tunnelEnabled: serviceState.tunnelEnabled
                 )
@@ -284,11 +280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Tunnel/public access is a soft dependency. Reconcile it best-effort, but surface
                 // readiness only in logs and the control panel; it must not gate or decorate an
                 // otherwise successful install/update result.
-                do {
-                    try service.reconcileTunnelRegistrationFromConfiguration()
-                } catch {
-                    NSLog("AgentDock 更新后 Tunnel 状态收敛失败：%@", error.localizedDescription)
-                }
+                _ = await service.reconcileConfiguredTunnel()
 
                 if let transactionID, !transactionID.isEmpty {
                     guard let terminalResult = await waitForUpdateTerminalResult(transactionID: transactionID) else {
@@ -641,9 +633,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func startService() { performServiceAction(L10n.text("Start")) { try await self.service.start() } }
+    @objc private func startService() {
+        performServiceAction(L10n.text("Start"), recheckPublicEndpointOnSuccess: true) {
+            _ = try await self.service.start()
+        }
+    }
     @objc private func stopService() { performServiceAction(L10n.text("Stop")) { try await self.service.stop() } }
-    @objc private func restartService() { performServiceAction(L10n.text("Restart")) { try await self.service.restart() } }
+    @objc private func restartService() {
+        performServiceAction(L10n.text("Restart"), recheckPublicEndpointOnSuccess: true) {
+            _ = try await self.service.restart()
+        }
+    }
 
     @objc private func updateService() {
         startUpdate()
@@ -749,12 +749,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
-    private func performServiceAction(_ action: String, operation: @escaping () async throws -> Void) {
+    private func performServiceAction(
+        _ action: String,
+        recheckPublicEndpointOnSuccess: Bool = false,
+        operation: @escaping () async throws -> Void
+    ) {
         guard !updateActivity.locksApplication else {
             updateProgressWindow.present()
             return
         }
-        guard !trayServiceActionInProgress else { return }
+        guard !trayServiceActionInProgress, !setupWindow.hasActiveServiceOperation else { return }
         trayServiceActionInProgress = true
         Task {
             do {
@@ -762,6 +766,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? await Task.sleep(nanoseconds: 800_000_000)
                 await MainActor.run {
                     self.trayServiceActionInProgress = false
+                    if recheckPublicEndpointOnSuccess {
+                        self.setupWindow.invalidatePublicEndpointCheck()
+                    }
                     self.refreshStatus()
                 }
             } catch {
@@ -772,6 +779,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         message: error.localizedDescription,
                         style: .warning
                     )
+                    self.refreshStatus()
                 }
             }
         }

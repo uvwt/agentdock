@@ -1,9 +1,27 @@
 import Foundation
 import ServiceManagement
 
+private actor LifecycleConcurrencyProbe {
+    private var active = 0
+    private var maximum = 0
+
+    func enter() {
+        active += 1
+        maximum = max(maximum, active)
+    }
+
+    func leave() {
+        active -= 1
+    }
+
+    func maximumConcurrentOperations() -> Int {
+        maximum
+    }
+}
+
 @main
 struct ServiceControllerValidationTests {
-    static func main() throws {
+    static func main() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("AgentDockServiceValidationTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -61,6 +79,8 @@ struct ServiceControllerValidationTests {
         try testLegacyRuntimeMigrationTransactions(root: root, appBundle: appBundle)
         testQuickTunnelBootstrap()
         testServiceRegistrationStatusClassification()
+        testBackgroundServiceLifecyclePolicy()
+        try await testBackgroundServiceLifecycleCoordinatorSerializesMutations()
         try testNexusConnectionStateResolution(root: root)
         try testDesktopUpdateCheckDecoding()
         testUpdateActivityPolicy()
@@ -175,6 +195,72 @@ struct ServiceControllerValidationTests {
         precondition(ServiceController.isUnregistered(.notFound))
         precondition(!ServiceController.isUnregistered(.enabled))
         precondition(!ServiceController.isUnregistered(.requiresApproval))
+    }
+
+    private static func testBackgroundServiceLifecyclePolicy() {
+        precondition(BackgroundServiceLifecyclePolicy.shouldKickstart(
+            registrationEnabled: true,
+            processID: nil
+        ))
+        precondition(!BackgroundServiceLifecyclePolicy.shouldKickstart(
+            registrationEnabled: true,
+            processID: 1234
+        ))
+        precondition(!BackgroundServiceLifecyclePolicy.shouldKickstart(
+            registrationEnabled: false,
+            processID: nil
+        ))
+
+        precondition(BackgroundServiceLifecyclePolicy.shouldRunTunnel(
+            mode: .quick,
+            coreReady: true,
+            componentReady: true
+        ))
+        precondition(BackgroundServiceLifecyclePolicy.shouldRunTunnel(
+            mode: .named,
+            coreReady: true,
+            componentReady: true
+        ))
+        precondition(!BackgroundServiceLifecyclePolicy.shouldRunTunnel(
+            mode: .local,
+            coreReady: true,
+            componentReady: true
+        ))
+        precondition(!BackgroundServiceLifecyclePolicy.shouldRunTunnel(
+            mode: .quick,
+            coreReady: false,
+            componentReady: true
+        ))
+        precondition(!BackgroundServiceLifecyclePolicy.shouldRunTunnel(
+            mode: .quick,
+            coreReady: true,
+            componentReady: false
+        ))
+    }
+
+    private static func testBackgroundServiceLifecycleCoordinatorSerializesMutations() async throws {
+        let coordinator = BackgroundServiceLifecycleCoordinator()
+        let probe = LifecycleConcurrencyProbe()
+
+        async let first = coordinator.run {
+            await probe.enter()
+            try await Task.sleep(nanoseconds: 40_000_000)
+            await probe.leave()
+            return 1
+        }
+        async let second = coordinator.run {
+            await probe.enter()
+            try await Task.sleep(nanoseconds: 40_000_000)
+            await probe.leave()
+            return 2
+        }
+
+        _ = try await (first, second)
+        let maximumConcurrentOperations = await probe.maximumConcurrentOperations()
+        precondition(
+            maximumConcurrentOperations == 1,
+            "background service lifecycle mutations must be serialized"
+        )
     }
 
     private static func testNexusConnectionStateResolution(root: URL) throws {

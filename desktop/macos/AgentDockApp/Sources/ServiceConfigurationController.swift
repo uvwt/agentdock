@@ -160,6 +160,15 @@ final class ServiceConfigurationController {
 
     func apply(_ requested: EditableServiceSettings) async throws {
         let settings = try requested.validated()
+        try await service.withLifecycleTransaction { lifecycle in
+            try await self.applyWithinLifecycle(settings, lifecycle: lifecycle)
+        }
+    }
+
+    private func applyWithinLifecycle(
+        _ settings: EditableServiceSettings,
+        lifecycle: ServiceController.LifecycleTransaction
+    ) async throws {
         let environmentURL = service.paths.environment
         let originalData = try readPrivateRegularFile(environmentURL)
         let environment = try ManagedEnvironment.load(from: environmentURL)
@@ -183,14 +192,14 @@ final class ServiceConfigurationController {
         guard wasLoaded else { return }
 
         do {
-            try await service.restart()
+            _ = try await lifecycle.restart()
         } catch {
             let originalError = error
             do {
                 try await service.runInBackground {
                     try self.writePrivateAtomically(originalData, to: environmentURL)
                 }
-                try await service.restart()
+                _ = try await lifecycle.restart()
             } catch {
                 throw ValidationError(L10n.format(
                     "Failed to start the new configuration, and validation after restoring the old configuration also failed: %@",

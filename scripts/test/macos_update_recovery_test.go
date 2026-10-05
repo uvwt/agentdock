@@ -33,9 +33,9 @@ func TestMacOSUpdateRecoversCoreBeforeTransactionHandoff(t *testing.T) {
 		t.Fatalf("read ServiceController.swift: %v", err)
 	}
 	service := string(serviceData)
-	start := strings.Index(service, "func recoverBackgroundServicesAfterUpdate(")
+	start := strings.Index(service, "private func recoverBackgroundServicesAfterUpdateWithinLifecycle(")
 	if start < 0 {
-		t.Fatal("recoverBackgroundServicesAfterUpdate not found")
+		t.Fatal("recoverBackgroundServicesAfterUpdateWithinLifecycle not found")
 	}
 	end := strings.Index(service[start:], "func reregisterBackgroundServices(")
 	if end < 0 {
@@ -43,24 +43,24 @@ func TestMacOSUpdateRecoversCoreBeforeTransactionHandoff(t *testing.T) {
 	}
 	body := service[start : start+end]
 	for _, want := range []string{
-		"waitForHealth(configuration: configuration, timeout: 10)",
-		"try await restart()",
+		"coreReadyForCurrentApp(timeout: 10)",
+		"startWithinLifecycle(forceCoreRestart: true)",
 		"warnings.append(error.localizedDescription)",
 		"waitForTunnelProcess()",
-		"try restartTunnel()",
+		"restartTunnelWithinLifecycle()",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("bounded background-service update recovery missing %q", want)
 		}
 	}
-	if strings.Count(body, "try await restart()") != 1 {
+	if strings.Count(body, "startWithinLifecycle(forceCoreRestart: true)") != 1 {
 		t.Fatal("Core update recovery must attempt at most one automatic re-registration")
 	}
-	if strings.Count(body, "try restartTunnel()") != 1 {
+	if strings.Count(body, "restartTunnelWithinLifecycle()") != 1 {
 		t.Fatal("Tunnel update recovery must attempt at most one automatic re-registration")
 	}
 	for _, want := range []string{
-		"func restartTunnel() throws",
+		"private func restartTunnelWithinLifecycle() throws",
 		"func waitForTunnelProcess(timeout: TimeInterval = 10) async -> Bool",
 		"func waitForStableLaunchdProcess(label: String, timeout: TimeInterval) -> Bool",
 	} {

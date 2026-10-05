@@ -65,6 +65,10 @@ final class NativeControlPanelWindowController: NSWindowController, NSWindowDele
         model.updateActivity = activity
     }
 
+    func invalidatePublicEndpointCheck() {
+        model.invalidatePublicEndpointCheck()
+    }
+
     func presentPermissions() { permissionsWindow.present() }
 }
 
@@ -121,6 +125,7 @@ private final class ControlPanelModel: ObservableObject {
     @Published var isBusy = false
     @Published var updateActivity: DesktopUpdateActivity = .idle
     @Published var message: String?
+    @Published private(set) var publicEndpointCheckRevision = 0
 
     let service: ServiceController
     let menuLoginAgent: MenuLoginAgentController
@@ -166,15 +171,19 @@ private final class ControlPanelModel: ObservableObject {
         dashboard = await service.dashboard(configuration: status.configuration)
     }
 
+    func invalidatePublicEndpointCheck() {
+        publicEndpointCheckRevision &+= 1
+    }
+
     func applyTunnel(mode: TunnelMode, serverURL: String, tunnelToken: String) async {
-        await perform {
+        await perform(recheckPublicEndpointOnSuccess: true) {
             try await self.service.configureTunnel(mode: mode, serverURL: serverURL, tunnelToken: tunnelToken)
         }
         cloudflaredComponent = await service.cloudflaredComponentStatus()
     }
 
     func runCloudflaredComponentAction(_ action: String) async {
-        await perform {
+        await perform(recheckPublicEndpointOnSuccess: true) {
             switch action {
             case "update":
                 self.cloudflaredComponent = try await self.service.updateCloudflaredComponent()
@@ -188,15 +197,21 @@ private final class ControlPanelModel: ObservableObject {
     }
 
     func pairNexus(endpoint: String, code: String) async {
-        await perform { try await self.service.pairNexus(endpoint: endpoint, pairingCode: code) }
+        await perform(recheckPublicEndpointOnSuccess: true) {
+            try await self.service.pairNexus(endpoint: endpoint, pairingCode: code)
+        }
     }
 
     func applySettings(_ settings: EditableServiceSettings) async {
-        await perform { try await self.configurationController.apply(settings) }
+        await perform(recheckPublicEndpointOnSuccess: true) {
+            try await self.configurationController.apply(settings)
+        }
     }
 
     func setCoreAutostart(_ enabled: Bool) async {
-        await perform { try await self.service.setAutostart(enabled: enabled) }
+        await perform(recheckPublicEndpointOnSuccess: true) {
+            try await self.service.setAutostart(enabled: enabled)
+        }
     }
 
     func setMenuAutostart(_ enabled: Bool) async {
@@ -216,13 +231,19 @@ private final class ControlPanelModel: ObservableObject {
         AppAppearance.setPreference(preference)
     }
 
-    private func perform(_ operation: @escaping () async throws -> Void) async {
+    private func perform(
+        recheckPublicEndpointOnSuccess: Bool = false,
+        _ operation: @escaping () async throws -> Void
+    ) async {
         guard !isBusy, !updateActivity.locksApplication else { return }
         isBusy = true
         message = nil
         do {
             try await operation()
             update(await service.status())
+            if recheckPublicEndpointOnSuccess {
+                invalidatePublicEndpointCheck()
+            }
             onChanged()
         } catch {
             message = error.localizedDescription
@@ -241,10 +262,11 @@ private final class ControlPanelModel: ObservableObject {
                 } else if status.loaded {
                     try await service.stop()
                 } else {
-                    try await service.start()
+                    _ = try await service.start()
                 }
                 status = await service.status()
                 cloudflaredComponent = await service.cloudflaredComponentStatus()
+                invalidatePublicEndpointCheck()
                 onChanged()
             } catch {
                 message = error.localizedDescription
@@ -1522,6 +1544,11 @@ private struct SettingsView: View {
                 ? await model.service.runtimeAnalytics(configuration: model.status.configuration)
                 : nil
         }
+        .onChange(of: model.publicEndpointCheckRevision) { _ in
+            publicEndpointCheckResult = nil
+            testedPublicMCPURL = nil
+            isTestingPublicEndpoint = false
+        }
     }
 
     @ViewBuilder private var settingsContent: some View {
@@ -2048,13 +2075,17 @@ private struct SettingsView: View {
 
     private func testPublicEndpoint(_ publicMCPURL: URL) async {
         guard !isTestingPublicEndpoint else { return }
+        let lifecycleRevision = model.publicEndpointCheckRevision
         isTestingPublicEndpoint = true
         publicEndpointCheckResult = nil
         testedPublicMCPURL = nil
 
         let result = await PublicEndpointChecker().check(publicMCPURL: publicMCPURL)
-        guard model.status.configuration?.publicMCPURL == publicMCPURL else {
-            isTestingPublicEndpoint = false
+        guard model.publicEndpointCheckRevision == lifecycleRevision,
+              model.status.configuration?.publicMCPURL == publicMCPURL else {
+            if model.publicEndpointCheckRevision == lifecycleRevision {
+                isTestingPublicEndpoint = false
+            }
             return
         }
 
