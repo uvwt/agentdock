@@ -31,6 +31,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [int] $coreHealthTimeoutSeconds = 60
+$defaultReleaseBaseUrl = 'https://download.nexusdock.co/latest'
+$versionedReleaseBaseUrl = 'https://download.nexusdock.co/releases'
 
 function Invoke-SetupRuntimeProcess {
     param(
@@ -83,14 +85,14 @@ function Get-ReleaseBaseUrl {
     }
 
     if ($RequestedVersion -eq 'latest') {
-        return 'https://github.com/uvwt/agentdock/releases/latest/download'
+        return $defaultReleaseBaseUrl
     }
 
     $normalizedVersion = $RequestedVersion
     if (-not $normalizedVersion.StartsWith('v')) {
         $normalizedVersion = "v$normalizedVersion"
     }
-    return "https://github.com/uvwt/agentdock/releases/download/$normalizedVersion"
+    return "$versionedReleaseBaseUrl/$normalizedVersion"
 }
 
 function Get-Sha256Hex {

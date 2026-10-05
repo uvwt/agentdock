@@ -293,10 +293,14 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 		"name: Verify versioned containers",
 		"name: Run versioned GHCR images",
 		"name: Run versioned Docker Hub images",
+		"name: Publish immutable Release to R2",
 		"name: Promote aliases and publish GitHub Release",
 		"name: Promote validated mutable aliases",
 		"docker buildx imagetools create --tag",
-		"needs: [source, stage-release, verify-container]",
+		"needs: [source, prepare-release, stage-release, verify-container]",
+		"needs: [source, stage-release, mirror-r2]",
+		"--metadata \"sha256=$sha256\"",
+		"Immutable R2 object already exists with a different SHA-256",
 		"group: release-publication",
 		"release_api_error=\"$RUNNER_TEMP/release-api-error.log\"",
 		"HTTP 404",
@@ -314,6 +318,7 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 		"  publish-container:",
 		"  verify-container:",
 		"  publish-release:",
+		"  mirror-r2:",
 	}
 	last := -1
 	for _, marker := range order {
@@ -322,6 +327,9 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 			t.Fatalf("Release workflow has unsafe publication order around %q", marker)
 		}
 		last = index
+	}
+	if strings.Contains(workflow, "Remove stale R2 release objects") {
+		t.Fatal("published R2 release directories are immutable history and must not be deleted by later releases")
 	}
 
 	if strings.Contains(workflow, "type=raw,value=latest") ||

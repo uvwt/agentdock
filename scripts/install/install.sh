@@ -7,8 +7,8 @@ set -eu
 
 umask 077
 
-DEFAULT_BASE_URL="https://github.com/uvwt/agentdock/releases/latest/download"
-GITHUB_RELEASES_URL="https://github.com/uvwt/agentdock/releases"
+DEFAULT_BASE_URL="https://download.nexusdock.co/latest"
+VERSIONED_RELEASE_BASE_URL="https://download.nexusdock.co/releases"
 CLOUDFLARED_BASE_URL="${AGENTDOCK_CLOUDFLARED_RELEASE_BASE_URL:-https://github.com/cloudflare/cloudflared/releases/latest/download}"
 OFFICIAL_NEXUS_ENDPOINT="${AGENTDOCK_NEXUS_OFFICIAL_ENDPOINT:-https://mcp.nexusdock.co}"
 OFFICIAL_NEXUS_DEVICES_URL="${AGENTDOCK_NEXUS_OFFICIAL_DEVICES_URL:-https://mcp.nexusdock.co/workspace/devices}"
@@ -774,7 +774,7 @@ case "$RELEASE_VERSION" in
   latest|'') ;;
   v[0-9]*.[0-9]*.[0-9]*)
     if [ -z "${AGENTDOCK_INSTALLER_BASE_URL:-}" ]; then
-      BASE_URL="$GITHUB_RELEASES_URL/download/$RELEASE_VERSION"
+      BASE_URL="$VERSIONED_RELEASE_BASE_URL/$RELEASE_VERSION"
     fi
     ;;
   *) die "版本必须是 latest 或 vX.Y.Z：$RELEASE_VERSION" ;;

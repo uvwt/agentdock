@@ -70,6 +70,34 @@ func TestUnifiedInstallerEntryOwnsUnixBootstrap(t *testing.T) {
 	}
 }
 
+func TestInstallerDefaultsUseNexusDockDistribution(t *testing.T) {
+	unixData, err := os.ReadFile("../install/install.sh")
+	if err != nil {
+		t.Fatalf("read install.sh: %v", err)
+	}
+	for _, want := range []string{
+		`DEFAULT_BASE_URL="https://download.nexusdock.co/latest"`,
+		`VERSIONED_RELEASE_BASE_URL="https://download.nexusdock.co/releases"`,
+	} {
+		if !strings.Contains(string(unixData), want) {
+			t.Fatalf("install.sh missing canonical distribution URL %q", want)
+		}
+	}
+
+	windowsData, err := os.ReadFile("../install/install.ps1")
+	if err != nil {
+		t.Fatalf("read install.ps1: %v", err)
+	}
+	for _, want := range []string{
+		"$defaultReleaseBaseUrl = 'https://download.nexusdock.co/latest'",
+		"$versionedReleaseBaseUrl = 'https://download.nexusdock.co/releases'",
+	} {
+		if !strings.Contains(string(windowsData), want) {
+			t.Fatalf("install.ps1 missing canonical distribution URL %q", want)
+		}
+	}
+}
+
 func TestUnifiedInstallerFreshFlowOrdersCoreNexusThenCloudflare(t *testing.T) {
 	data, err := os.ReadFile("../install/install.sh")
 	if err != nil {

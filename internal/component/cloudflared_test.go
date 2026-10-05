@@ -15,6 +15,13 @@ import (
 	"testing"
 )
 
+func TestDefaultCatalogUsesNexusDockDistribution(t *testing.T) {
+	const want = "https://download.nexusdock.co/latest/agentdock-component-catalog.json"
+	if defaultCatalogURL != want {
+		t.Fatalf("default catalog URL = %q, want %q", defaultCatalogURL, want)
+	}
+}
+
 func TestStoreStatusDoesNotAdoptLegacyOrPath(t *testing.T) {
 	root := t.TempDir()
 	store, err := NewStore(root)

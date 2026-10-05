@@ -668,39 +668,13 @@ jobs:
         shell: bash
         env:
           RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
-          RELEASE_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           cp scripts/install/install.sh dist/install.sh
           cp scripts/install/install.ps1 dist/install.ps1
           go run ./tools/release verify-version "$RELEASE_TAG"
           go run ./tools/release component-catalog > dist/agentdock-component-catalog.json
-          python3 - <<'PY'
-          import os
-          import re
-          from pathlib import Path
-
-          tag = os.environ["RELEASE_TAG"]
-          repository = os.environ["RELEASE_REPOSITORY"].lower()
-          expected_version = tag.removeprefix("v")
-          buildinfo_source = Path("internal/buildinfo/buildinfo.go").read_text()
-          version_match = re.search(r'^\s*const\s+Version\s*=\s*"([^"]+)"', buildinfo_source, re.MULTILINE)
-          if version_match is None:
-              raise SystemExit("could not read buildinfo.Version from internal/buildinfo/buildinfo.go")
-          actual_version = version_match.group(1)
-          if actual_version != expected_version:
-              raise SystemExit(f"release tag {tag} does not match buildinfo.Version {actual_version}")
-
-          # Docker Compose / .env.example 不作为 Release 资产发布；
-          # 文档直接引用仓库 main 或对应 git tag 上的源文件。
-          installer_entry = Path("dist/install.sh")
-          installer_text = installer_entry.read_text()
-          default_base = "https://github.com/uvwt/agentdock/releases/latest/download"
-          release_base = f"https://github.com/{repository}/releases/download/{tag}"
-          if default_base not in installer_text:
-              raise SystemExit("install.sh default release base was not found")
-          installer_entry.write_text(installer_text.replace(default_base, release_base, 1))
-          PY
+          go run ./tools/release prepare-distribution "https://download.nexusdock.co/releases/$RELEASE_TAG" dist
           (
             cd dist
             for file in \
@@ -1368,7 +1342,7 @@ jobs:
 
   publish-release:
     name: Promote aliases and publish GitHub Release
-    needs: [source, stage-release, verify-container]
+    needs: [source, stage-release, mirror-r2]
     runs-on: ubuntu-latest
     steps:
       - name: Setup Docker Buildx
@@ -1443,8 +1417,8 @@ jobs:
           test "$target" = "$SOURCE_COMMIT"
 
   mirror-r2:
-    name: Mirror latest Release to R2
-    needs: [source, prepare-release, publish-release]
+    name: Publish immutable Release to R2
+    needs: [source, prepare-release, stage-release, verify-container]
     runs-on: ubuntu-latest
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -1483,17 +1457,9 @@ jobs:
               exit 1
             fi
           done
-          [[ "$R2_PUBLIC_BASE_URL" == https://* ]]
+          test "${R2_PUBLIC_BASE_URL%/}" = "https://download.nexusdock.co"
           command -v aws >/dev/null
           aws --version
-
-      - name: Prepare R2 bootstrap assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          release_base="${R2_PUBLIC_BASE_URL%/}/releases/$RELEASE_TAG"
-          go run ./tools/release mirror-prepare "$release_base" dist
-          (cd dist && sha256sum -c install.sh.sha256)
 
       - name: Generate latest mirror manifest
         shell: bash
@@ -1512,14 +1478,31 @@ jobs:
 
           while IFS= read -r asset; do
             key="$release_prefix/$asset"
+            sha256="$(sha256sum "dist/$asset" | awk '{print $1}')"
+            if existing_sha256="$(aws s3api head-object \
+              --bucket "$R2_BUCKET" \
+              --key "$key" \
+              --endpoint-url "$endpoint" \
+              --query 'Metadata.sha256' \
+              --output text 2>/dev/null)"; then
+              if [[ "$existing_sha256" != "$sha256" ]]; then
+                echo "Immutable R2 object already exists with a different SHA-256: $key" >&2
+                exit 1
+              fi
+              continue
+            fi
             aws s3 cp "dist/$asset" "s3://$R2_BUCKET/$key" \
               --endpoint-url "$endpoint" \
               --cache-control "public, max-age=31536000, immutable" \
+              --metadata "sha256=$sha256" \
               --only-show-errors
-            aws s3api head-object \
+            stored_sha256="$(aws s3api head-object \
               --bucket "$R2_BUCKET" \
               --key "$key" \
-              --endpoint-url "$endpoint" >/dev/null
+              --endpoint-url "$endpoint" \
+              --query 'Metadata.sha256' \
+              --output text)"
+            test "$stored_sha256" = "$sha256"
           done < <(jq -r '.assets[].name' dist/latest.json)
 
       - name: Verify public versioned assets
@@ -1551,25 +1534,3 @@ jobs:
             -o "$RUNNER_TEMP/published-latest.json"
           jq -e --arg tag "$RELEASE_TAG" '.tag_name == $tag and (.assets | length > 0)' \
             "$RUNNER_TEMP/published-latest.json" >/dev/null
-
-      - name: Remove stale R2 release objects
-        shell: bash
-        run: |
-          set -euo pipefail
-          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          current_prefix="releases/$RELEASE_TAG/"
-          aws s3api list-objects-v2 \
-            --bucket "$R2_BUCKET" \
-            --prefix "releases/" \
-            --endpoint-url "$endpoint" \
-            --output json \
-            | jq -r '.Contents[]?.Key' \
-            > "$RUNNER_TEMP/r2-release-keys"
-
-          while IFS= read -r key; do
-            [[ -z "$key" || "$key" == "$current_prefix"* ]] && continue
-            aws s3api delete-object \
-              --bucket "$R2_BUCKET" \
-              --key "$key" \
-              --endpoint-url "$endpoint" >/dev/null
-          done < "$RUNNER_TEMP/r2-release-keys"

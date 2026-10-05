@@ -27,7 +27,7 @@ const (
 	CloudflaredName            = "cloudflared"
 	activeSchemaVersion        = 1
 	catalogSchemaVersion       = 1
-	defaultCatalogURL          = "https://github.com/uvwt/agentdock/releases/latest/download/agentdock-component-catalog.json"
+	defaultCatalogURL          = "https://download.nexusdock.co/latest/agentdock-component-catalog.json"
 	maxCatalogBytes      int64 = 2 << 20
 	maxBinaryBytes       int64 = 256 << 20
 )
