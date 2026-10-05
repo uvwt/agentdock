@@ -1,7 +1,9 @@
 package scripts
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -175,8 +177,43 @@ func TestDesktopAppIconAssets(t *testing.T) {
 	if len(icoData) < 6 || binary.LittleEndian.Uint16(icoData[2:4]) != 1 {
 		t.Fatal("Windows AgentDock icon must be a valid ICO")
 	}
-	if count := binary.LittleEndian.Uint16(icoData[4:6]); count < 9 {
-		t.Fatalf("Windows AgentDock icon must include multiple sizes, got %d entries", count)
+	count := int(binary.LittleEndian.Uint16(icoData[4:6]))
+	expectedSizes := []int{16, 20, 24, 32, 40, 48, 64, 128, 256}
+	if count != len(expectedSizes) {
+		t.Fatalf("Windows AgentDock icon must include %d sizes, got %d entries", len(expectedSizes), count)
+	}
+	if len(icoData) < 6+16*count {
+		t.Fatal("Windows AgentDock icon directory is truncated")
+	}
+	var frame32 []byte
+	for index, expectedSize := range expectedSizes {
+		entry := icoData[6+16*index : 6+16*(index+1)]
+		width := int(entry[0])
+		if width == 0 {
+			width = 256
+		}
+		height := int(entry[1])
+		if height == 0 {
+			height = 256
+		}
+		if width != expectedSize || height != expectedSize {
+			t.Fatalf("Windows AgentDock icon entry %d must be %dx%d, got %dx%d", index, expectedSize, expectedSize, width, height)
+		}
+		size := int(binary.LittleEndian.Uint32(entry[8:12]))
+		offset := int(binary.LittleEndian.Uint32(entry[12:16]))
+		if size <= 0 || offset < 0 || offset+size > len(icoData) {
+			t.Fatalf("Windows AgentDock icon entry %d has invalid payload bounds", index)
+		}
+		if expectedSize == 32 {
+			frame32 = icoData[offset : offset+size]
+		}
+	}
+	if len(frame32) == 0 {
+		t.Fatal("Windows AgentDock icon is missing the 32px brand frame")
+	}
+	brand32 := sha256.Sum256(frame32)
+	if got := hex.EncodeToString(brand32[:]); got != "66eea195bdb87f69347e4c34d48e73c74f0cbd84a92733580587395fe67ab29d" {
+		t.Fatalf("Windows AgentDock 32px icon frame does not match the current brand asset: %s", got)
 	}
 }
 func TestWindowsInstallerUsesStableAppUserModelID(t *testing.T) {
