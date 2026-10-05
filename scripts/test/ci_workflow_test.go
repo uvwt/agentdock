@@ -76,6 +76,12 @@ func TestWindowsInstallerWorkflowHasAlwaysPresentPullRequestGate(t *testing.T) {
 		"fetch-depth: 0",
 		"git diff --name-only \"$BASE_SHA\" \"$HEAD_SHA\"",
 		"name: Validate installer on Windows PowerShell 5.1",
+		"name: Resolve current release version",
+		"$coreVersion = (& go run .\\tools\\release core-version $releaseVersion).Trim()",
+		"AGENTDOCK_RELEASE_VERSION=$releaseVersion",
+		"AGENTDOCK_WINDOWS_VERSION=$windowsVersion",
+		"set-version-info.ps1 -Version $env:AGENTDOCK_WINDOWS_VERSION",
+		"-p:InformationalVersion=$env:AGENTDOCK_RELEASE_VERSION",
 		"needs: changes",
 		"if: needs.changes.outputs.relevant == 'true'",
 		"timeout-minutes: 30",
@@ -411,6 +417,25 @@ func TestWindowsLegacyMigrationE2EIsIndependentFromPublishedLatest(t *testing.T)
 	}
 	if strings.Contains(script, "Wait-NoDesktopRepairProcess") {
 		t.Fatal("legacy migration E2E must not depend on GitHub latest making background repair exit")
+	}
+}
+
+func TestWindowsReleaseTestsReadMachineVersionMetadata(t *testing.T) {
+	for _, name := range []string{
+		"test-windows-legacy-online-migration.ps1",
+		"test-windows-release-backcompat.ps1",
+	} {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		script := strings.ReplaceAll(string(data), "\r\n", "\n")
+		if !strings.Contains(script, "version --json") {
+			t.Fatalf("%s must read the complete SemVer from machine-readable version metadata", name)
+		}
+		if strings.Contains(script, "^AgentDock v(?<version>[0-9]+\\.[0-9]+\\.[0-9]+)") {
+			t.Fatalf("%s must not truncate prerelease versions to the numeric SemVer core", name)
+		}
 	}
 }
 

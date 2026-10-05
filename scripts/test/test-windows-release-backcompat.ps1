@@ -16,11 +16,20 @@ if ([string]::IsNullOrWhiteSpace($TargetVersion)) {
     $versionProbeRoot = Join-Path $tempBase ('agentdock-backcompat-version-' + [Guid]::NewGuid().ToString('N'))
     try {
         Expand-Archive -LiteralPath $archive -DestinationPath $versionProbeRoot -Force
-        $versionOutput = (& (Join-Path $versionProbeRoot 'agentdock.exe') --version | Out-String).Trim()
-        if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch '^AgentDock v(?<version>[0-9]+\.[0-9]+\.[0-9]+)') {
-            throw "cannot derive Windows Release version from: $versionOutput"
+        $versionProbe = Join-Path $versionProbeRoot 'agentdock.exe'
+        $versionJson = (& $versionProbe version --json | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($versionJson)) {
+            throw "cannot derive Windows Release version metadata from: $versionJson"
         }
-        $TargetVersion = $Matches.version
+        try {
+            $versionMetadata = $versionJson | ConvertFrom-Json
+        } catch {
+            throw "cannot parse Windows Release version metadata: $versionJson"
+        }
+        $TargetVersion = ([string] $versionMetadata.version).Trim().TrimStart('v')
+        if ([string]::IsNullOrWhiteSpace($TargetVersion)) {
+            throw "Windows Release version metadata is missing version: $versionJson"
+        }
     } finally {
         Remove-Item -LiteralPath $versionProbeRoot -Recurse -Force -ErrorAction SilentlyContinue
     }

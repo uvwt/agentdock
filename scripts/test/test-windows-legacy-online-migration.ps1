@@ -50,10 +50,19 @@ Copy-Item (Join-Path $extractRoot 'manage-windows.ps1') (Join-Path $runtimeRoot 
 
 $versionOutput = (& $core --version | Out-String).Trim()
 if ([string]::IsNullOrWhiteSpace($Version)) {
-    if ($versionOutput -notmatch '^AgentDock v(?<version>[0-9]+\.[0-9]+\.[0-9]+)') {
-        throw "cannot derive Release version from: $versionOutput"
+    $versionJson = (& $core version --json | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($versionJson)) {
+        throw "cannot derive Release version metadata from: $versionOutput"
     }
-    $Version = $Matches.version
+    try {
+        $versionMetadata = $versionJson | ConvertFrom-Json
+    } catch {
+        throw "cannot parse Release version metadata: $versionJson"
+    }
+    $Version = ([string] $versionMetadata.version).Trim().TrimStart('v')
+    if ([string]::IsNullOrWhiteSpace($Version)) {
+        throw "Release version metadata is missing version: $versionJson"
+    }
 }
 
 $manifest = [ordered]@{

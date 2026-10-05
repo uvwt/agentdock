@@ -99,6 +99,16 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Resolve current release version
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $releaseVersion = (& go run .\tools\release version).Trim()
+          $coreVersion = (& go run .\tools\release core-version $releaseVersion).Trim()
+          $windowsVersion = "$coreVersion.0"
+          "AGENTDOCK_RELEASE_VERSION=$releaseVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
+          "AGENTDOCK_WINDOWS_VERSION=$windowsVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
+
       - name: Validate installer encoding and PowerShell 5.1 syntax
         shell: powershell
         run: .\scripts\test\test-install-windows.ps1 -InstallerPath .\scripts\install\install.ps1
@@ -165,13 +175,16 @@ jobs:
           go build -trimpath -ldflags '-s -w' -o (Join-Path $distRoot 'agentdock-arbiter.exe') .\cmd\agentdock-arbiter
           go build -trimpath -ldflags '-s -w' -o (Join-Path $distRoot 'agentdock-shim.exe') .\cmd\agentdock-shim
           go build -trimpath -ldflags '-s -w -H=windowsgui' -o (Join-Path $distRoot 'agentdock-tray-shim.exe') .\cmd\agentdock-shim
-          $windowsVersion = (& go run .\tools\release version).Trim()
-          & .\packaging\windows\set-version-info.ps1 -Version $windowsVersion -Path (Join-Path $distRoot 'agentdock-tray-shim.exe')
+          & .\packaging\windows\set-version-info.ps1 -Version $env:AGENTDOCK_WINDOWS_VERSION -Path (Join-Path $distRoot 'agentdock-tray-shim.exe')
           $controlPanelOutput = Join-Path $distRoot 'control-panel'
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
             -r win-x64 `
             --self-contained false `
+            -p:Version=$env:AGENTDOCK_WINDOWS_VERSION `
+            -p:FileVersion=$env:AGENTDOCK_WINDOWS_VERSION `
+            -p:AssemblyVersion=$env:AGENTDOCK_WINDOWS_VERSION `
+            -p:InformationalVersion=$env:AGENTDOCK_RELEASE_VERSION `
             -o $controlPanelOutput
           Copy-Item (Join-Path $controlPanelOutput 'agentdock-tray.exe') (Join-Path $distRoot 'agentdock-tray.exe') -Force
           Copy-Item .\packaging\windows\assets\agentdock.ico (Join-Path $distRoot 'agentdock.ico') -Force
@@ -235,12 +248,15 @@ jobs:
           go build -trimpath -ldflags '-s -w' -o dist\agentdock-arbiter.exe .\cmd\agentdock-arbiter
           go build -trimpath -ldflags '-s -w' -o dist\agentdock-shim.exe .\cmd\agentdock-shim
           go build -trimpath -ldflags '-s -w -H=windowsgui' -o dist\agentdock-tray-shim.exe .\cmd\agentdock-shim
-          $windowsVersion = (& go run .\tools\release version).Trim()
-          & .\packaging\windows\set-version-info.ps1 -Version $windowsVersion -Path .\dist\agentdock-tray-shim.exe
+          & .\packaging\windows\set-version-info.ps1 -Version $env:AGENTDOCK_WINDOWS_VERSION -Path .\dist\agentdock-tray-shim.exe
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
             -r win-x64 `
             --self-contained false `
+            -p:Version=$env:AGENTDOCK_WINDOWS_VERSION `
+            -p:FileVersion=$env:AGENTDOCK_WINDOWS_VERSION `
+            -p:AssemblyVersion=$env:AGENTDOCK_WINDOWS_VERSION `
+            -p:InformationalVersion=$env:AGENTDOCK_RELEASE_VERSION `
             -o dist\control-panel
           Copy-Item .\dist\control-panel\agentdock-tray.exe .\dist\agentdock-tray.exe -Force
           & .\packaging\windows\build-wsl-helper-payload.ps1 -OutputDirectory .\dist\wsl-helper
@@ -520,13 +536,16 @@ jobs:
           go build -trimpath -ldflags '-s -w' -o (Join-Path $arm64Dir 'agentdock-arbiter.exe') .\cmd\agentdock-arbiter
           go build -trimpath -ldflags '-s -w' -o (Join-Path $arm64Dir 'agentdock-shim.exe') .\cmd\agentdock-shim
           go build -trimpath -ldflags '-s -w -H=windowsgui' -o (Join-Path $arm64Dir 'agentdock-tray-shim.exe') .\cmd\agentdock-shim
-          $windowsVersion = (& go run .\tools\release version).Trim()
-          & .\packaging\windows\set-version-info.ps1 -Version $windowsVersion -Path (Join-Path $arm64Dir 'agentdock-tray-shim.exe')
+          & .\packaging\windows\set-version-info.ps1 -Version $env:AGENTDOCK_WINDOWS_VERSION -Path (Join-Path $arm64Dir 'agentdock-tray-shim.exe')
           $arm64ControlPanelOutput = Join-Path $arm64Dir 'control-panel'
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
             -r win-arm64 `
             --self-contained false `
+            -p:Version=$env:AGENTDOCK_WINDOWS_VERSION `
+            -p:FileVersion=$env:AGENTDOCK_WINDOWS_VERSION `
+            -p:AssemblyVersion=$env:AGENTDOCK_WINDOWS_VERSION `
+            -p:InformationalVersion=$env:AGENTDOCK_RELEASE_VERSION `
             -o $arm64ControlPanelOutput
           Copy-Item (Join-Path $arm64ControlPanelOutput 'agentdock-tray.exe') (Join-Path $arm64Dir 'agentdock-tray.exe') -Force
           .\packaging\windows\sign-windows.ps1 -Path @(
