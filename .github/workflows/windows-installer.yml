@@ -276,7 +276,7 @@ jobs:
             Copy-Item .\dist\agentdock-tray.exe .\dist\control-panel\agentdock-tray.exe -Force
           }
 
-      - name: Prepare offline AMD64 payload
+      - name: Prepare AMD64 Setup payload
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -425,7 +425,7 @@ jobs:
             -AgentDockArchive $env:AMD64_ARCHIVE `
             -AgentDockChecksumFile $env:AMD64_CHECKSUM
 
-      - name: Compile offline AMD64 Setup
+      - name: Compile AMD64 Setup
         shell: pwsh
         env:
           WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}

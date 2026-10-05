@@ -3,14 +3,11 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidateSet('amd64', 'arm64')]
     [string] $Architecture,
-
     [Parameter(Mandatory = $true)]
     [string] $MetadataPath,
-
     [Parameter(Mandatory = $true)]
     [string] $ResultFile
 )
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -21,12 +18,10 @@ function Write-AgentDockRuntimeResult {
         [string] $Dependency,
         [string] $Message
     )
-
     $directory = Split-Path -Parent $ResultFile
     if (-not [string]::IsNullOrWhiteSpace($directory)) {
         New-Item -ItemType Directory -Path $directory -Force | Out-Null
     }
-
     $safeMessage = ([string] $Message).Replace([char] 13, ' ').Replace([char] 10, ' ')
     @(
         '[AgentDockRuntime]'
@@ -35,55 +30,66 @@ function Write-AgentDockRuntimeResult {
         "Message=$safeMessage"
     ) | Set-Content -LiteralPath $ResultFile -Encoding Unicode
 }
-
 function Convert-ToVersion {
     param([string] $Value, [string] $Description)
-
     try {
         return [Version]::Parse($Value)
     } catch {
         throw "$Description has an invalid version: $Value"
     }
 }
-
 function Test-WindowsDesktopRuntime {
-    param([Version] $MinimumVersion)
-
-    $runtimeLines = @()
-    $dotnet = Get-Command 'dotnet.exe' -ErrorAction SilentlyContinue
-    if ($null -ne $dotnet) {
-        try {
-            $runtimeLines = @(& $dotnet.Source --list-runtimes 2>$null)
-        } catch {
-            $runtimeLines = @()
-        }
-    }
-
-    foreach ($line in $runtimeLines) {
-        if ($line -match '^Microsoft\.WindowsDesktop\.App\s+([0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?)\s+\[') {
-            $version = Convert-ToVersion -Value $Matches[1] -Description '.NET Windows Desktop Runtime'
-            if (($version.Major -eq $MinimumVersion.Major) -and ($version -ge $MinimumVersion)) {
-                return $true
-            }
-        }
-    }
-
-    # dotnet.exe 可能未进入当前用户 PATH；同时检查系统默认共享 Runtime 目录。
+    param(
+        [Version] $MinimumVersion,
+        [string] $TargetArchitecture
+    )
+    $dotnetArchitecture = if ($TargetArchitecture -eq 'arm64') { 'arm64' } else { 'x64' }
     $roots = @()
-    foreach ($programFilesPath in @($env:ProgramW6432, $env:ProgramFiles)) {
-        if (-not [string]::IsNullOrWhiteSpace($programFilesPath)) {
-            $candidate = Join-Path $programFilesPath 'dotnet\shared\Microsoft.WindowsDesktop.App'
-            if ($roots -notcontains $candidate) {
-                $roots += $candidate
+
+    # apphost 会优先读取架构专属 DOTNET_ROOT，再读取全局注册的架构专属安装位置。
+    # 不能用 PATH 中任意 dotnet.exe 判断，否则 ARM64 机器上的 x64 emulation runtime
+    # 会被误判成可供 arm64 agentdock-tray 使用的 Runtime。
+    $architectureRootName = 'DOTNET_ROOT_' + $dotnetArchitecture.ToUpperInvariant()
+    $architectureRoot = [Environment]::GetEnvironmentVariable($architectureRootName)
+    if (-not [string]::IsNullOrWhiteSpace($architectureRoot)) {
+        $roots += $architectureRoot
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:DOTNET_ROOT) -and
+        $roots -notcontains $env:DOTNET_ROOT) {
+        $roots += $env:DOTNET_ROOT
+    }
+    $baseKey = $null
+    $architectureKey = $null
+    try {
+        # Setup 可能由 32-bit Inno 进程启动，因此显式读取 64-bit registry view，
+        # 与 .NET 官方全局安装位置契约保持一致。
+        $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
+            [Microsoft.Win32.RegistryHive]::LocalMachine,
+            [Microsoft.Win32.RegistryView]::Registry64)
+        $architectureKey = $baseKey.OpenSubKey(
+            "SOFTWARE\dotnet\Setup\InstalledVersions\$dotnetArchitecture")
+        if ($null -ne $architectureKey) {
+            $installLocation = [string] $architectureKey.GetValue('InstallLocation')
+            if (-not [string]::IsNullOrWhiteSpace($installLocation) -and
+                $roots -notcontains $installLocation) {
+                $roots += $installLocation
             }
+        }
+    } finally {
+        if ($null -ne $architectureKey) {
+            $architectureKey.Dispose()
+        }
+        if ($null -ne $baseKey) {
+            $baseKey.Dispose()
         }
     }
 
     foreach ($root in $roots) {
-        if (-not (Test-Path -LiteralPath $root -PathType Container)) {
+        $sharedRoot = Join-Path $root 'shared\Microsoft.WindowsDesktop.App'
+        if (-not (Test-Path -LiteralPath $sharedRoot -PathType Container)) {
             continue
         }
-        foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue)) {
+        foreach ($directory in @(Get-ChildItem -LiteralPath $sharedRoot -Directory -ErrorAction SilentlyContinue)) {
             $version = $null
             if ([Version]::TryParse($directory.Name, [ref] $version) -and
                 ($version.Major -eq $MinimumVersion.Major) -and
@@ -260,11 +266,11 @@ try {
     $dotnetMinimum = Convert-ToVersion -Value ([string] $metadata.dotnet_windows_desktop.minimum_version) -Description '.NET minimum'
     $dotnetInstallVersion = [string] $metadata.dotnet_windows_desktop.install_version
     $activeDependency = '.NET Windows Desktop Runtime'
-    if (-not (Test-WindowsDesktopRuntime -MinimumVersion $dotnetMinimum)) {
+    if (-not (Test-WindowsDesktopRuntime -MinimumVersion $dotnetMinimum -TargetArchitecture $Architecture)) {
         $dotnetUri = Get-ArtifactUrl -Artifacts $metadata.dotnet_windows_desktop.artifacts -TargetArchitecture $Architecture -Dependency 'dotnet' -PinnedVersion $dotnetInstallVersion
         Install-Dependency -Uri $dotnetUri -Arguments @('/install', '/quiet', '/norestart') -Dependency $activeDependency
 
-        if (-not (Test-WindowsDesktopRuntime -MinimumVersion $dotnetMinimum)) {
+        if (-not (Test-WindowsDesktopRuntime -MinimumVersion $dotnetMinimum -TargetArchitecture $Architecture)) {
             throw "$activeDependency $dotnetMinimum or newer was not detected after installation."
         }
     }
