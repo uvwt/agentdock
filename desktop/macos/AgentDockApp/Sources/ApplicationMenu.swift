@@ -29,6 +29,18 @@ enum ApplicationMenu {
         applicationMenuItem.submenu = applicationMenu
         mainMenu.addItem(applicationMenuItem)
 
+        let fileMenuItem = NSMenuItem()
+        let fileMenu = NSMenu(title: L10n.text("File"))
+        fileMenu.addItem(
+            item(
+                title: L10n.text("Close Window"),
+                action: #selector(NSWindow.performClose(_:)),
+                keyEquivalent: "w"
+            )
+        )
+        fileMenuItem.submenu = fileMenu
+        mainMenu.addItem(fileMenuItem)
+
         let editMenuItem = NSMenuItem()
         let editMenu = NSMenu(title: L10n.text("Edit"))
         editMenu.addItem(item(title: L10n.text("Undo"), action: Selector(("undo:")), keyEquivalent: "z"))
@@ -47,6 +59,19 @@ enum ApplicationMenu {
         editMenu.addItem(item(title: L10n.text("Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
         editMenuItem.submenu = editMenu
         mainMenu.addItem(editMenuItem)
+
+        let windowMenuItem = NSMenuItem()
+        let windowMenu = NSMenu(title: L10n.text("Window"))
+        windowMenu.addItem(
+            item(
+                title: L10n.text("Minimize"),
+                action: #selector(NSWindow.performMiniaturize(_:)),
+                keyEquivalent: "m"
+            )
+        )
+        windowMenuItem.submenu = windowMenu
+        mainMenu.addItem(windowMenuItem)
+        NSApp.windowsMenu = windowMenu
 
         NSApp.mainMenu = mainMenu
     }

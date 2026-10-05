@@ -43,6 +43,10 @@
 "Disabled" = "Disabled";
 "Disconnected" = "Disconnected";
 "Edit" = "Edit";
+"File" = "File";
+"Close Window" = "Close Window";
+"Window" = "Window";
+"Minimize" = "Minimize";
 "Enable Coding Agent" = "Enable Coding Agent";
 "Add a Coding Agent profile to continue." = "Add a Coding Agent profile to continue.";
 "Add profile…" = "Add profile…";

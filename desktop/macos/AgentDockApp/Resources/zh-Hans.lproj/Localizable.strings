@@ -43,6 +43,10 @@
 "Disabled" = "未启用";
 "Disconnected" = "未连接";
 "Edit" = "编辑";
+"File" = "文件";
+"Close Window" = "关闭窗口";
+"Window" = "窗口";
+"Minimize" = "最小化";
 "Enable Coding Agent" = "启用 Coding Agent";
 "Add a Coding Agent profile to continue." = "请先添加一个 Coding Agent 配置。";
 "Add profile…" = "添加配置…";
