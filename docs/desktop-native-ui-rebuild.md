@@ -464,7 +464,7 @@ AgentDock.ControlPanel
 - 不为了 WinUI 迁移改变 Runtime 协议和业务数据模型。
 - WinUI 页面只负责呈现和用户交互，系统能力继续保持清晰的服务边界。
 - 如果旧 WPF code-behind 混有业务逻辑，迁移时只抽取真正属于业务 / 平台服务的部分，不机械制造大量 interface。
-- 本轮 WinUI 3 基线固定使用 `Microsoft.WindowsAppSDK 2.3.1`。TianYi 上同机 CloudDrive2 也使用该版本，真实启动稳定；此前试用的 `1.6.250602001` 在 TianYi 上即使最小窗口也会触发 native heap corruption。
+- 原生 UI 重构阶段曾以 `Microsoft.WindowsAppSDK 2.3.1` 完成 TianYi 真机视觉与稳定性验证；随后 Windows 发行架构收口时，为匹配 Microsoft 公开稳定 Runtime installer，发行基线调整为 Windows App SDK `2.1.3` 对应的精确组件组合。此前试用的 `1.6.250602001` 在 TianYi 上即使最小窗口也会触发 native heap corruption，因此仍不采用 1.6。
 - 新 WinUI 壳必须声明 `PerMonitorV2` DPI awareness。窗口设计尺寸按 DIP 处理，再根据 `GetDpiForWindow` 转换为物理像素；在工作区不足时允许 Windows 按系统规则压缩实际物理高度。
 - Settings 不在 XAML 中直接设置 `SelectedIndex` 触发初始化期 `SelectionChanged`。默认选中项在页面导航完成后设置，并对未完成绑定的内容区做初始化保护。
 
@@ -605,7 +605,7 @@ Windows：
 已确认：
 
 - macOS 新 SwiftUI Shell 可编译，Home / Settings backing-store 快照均已生成，最终窗口外框为 `1060 × 720`。
-- Windows 新 WinUI 3 Shell 使用 `Microsoft.WindowsAppSDK 2.3.1`，TianYi `Release x64` 构建和 Home / Settings 启动验证均通过。
+- Windows 新 WinUI 3 Shell 在原生 UI 重构阶段使用 `Microsoft.WindowsAppSDK 2.3.1` 完成 TianYi `Release x64` 构建和 Home / Settings 启动验证；后续发行基线改为公开稳定的 Windows App SDK `2.1.3` 组件组合，并重新执行双架构构建与安装链验证。
 - TianYi 上 AgentDock WinUI 已从 DPI-unaware 的 `96 DPI` 修正为 `PerMonitorV2 / 192 DPI`。
 - 同一窗口在 DPI-unaware 外部进程中看到的虚拟化矩形约为 `1060 × 667`，切换测量线程到 PerMonitorV2 后真实物理矩形为 `2120 × 1334`；宽度正确对应 1060 DIP，实际高度受当前 Windows 工作区限制而被系统压缩。
 - Windows `SettingsPage` 初始化期崩溃已定位为 XAML `SelectedIndex` 过早触发 `SelectionChanged`，修复后 Home / Settings 均可稳定启动。

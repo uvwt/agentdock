@@ -178,7 +178,7 @@ AgentDock Setup
 
 不要为缩包优先采用高风险 aggressive trimming、手工删除 Windows App SDK 文件或其他脆弱裁剪方式。先把 deployment model 做正确，再测最终体积。
 
-实现阶段进一步确认 `Microsoft.WindowsAppSDK` 2.3.1 元包会无条件引入 AgentDock 未使用的 AI / ML / Widgets 等组件。WinUI 控制面板因此改为显式引用同一官方发行系列中实际需要的模块：`Microsoft.WindowsAppSDK.WinUI`、`Runtime`、`Foundation` 与 `InteractiveExperiences`。这是从 NuGet 依赖源头收窄功能面，不是安装后手工删除文件；两种架构都必须继续验证 bootstrap DLL、WinUI 资源和 framework-dependent 启动链完整。
+实现阶段进一步确认 Windows App SDK 元包会无条件引入 AgentDock 未使用的 AI / ML / Widgets 等组件。最终发行基线固定到 Microsoft 官方下载页公开支持的稳定 `2.1.3`，并显式引用该元包对应的最低组件版本：`WinUI 2.1.0`、`Runtime 2.1.3`、`Foundation 2.0.21` 与 `InteractiveExperiences 2.0.13`。Runtime bootstrap 使用 Microsoft 文档给出的版本化 `aka.ms/windowsappsdk/2.1/2.1.3/...` 下载地址，并在执行前继续做 Authenticode Microsoft 签名校验。这是从 NuGet 依赖源头收窄功能面，不是安装后手工删除文件；两种架构都必须继续验证 bootstrap DLL、WinUI 资源和 framework-dependent 启动链完整。
 
 ## 5. WSL helper：继续随包
 

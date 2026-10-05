@@ -38,17 +38,17 @@ func TestWindowsControlPanelUsesFrameworkDependentRuntimes(t *testing.T) {
 		"<WindowsPackageType>None</WindowsPackageType>",
 		"<WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>",
 		"<SelfContained>false</SelfContained>",
-		`<PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.3.0" />`,
-		`<PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.3.1" />`,
-		`<PackageReference Include="Microsoft.WindowsAppSDK.Foundation" Version="2.3.5" />`,
-		`<PackageReference Include="Microsoft.WindowsAppSDK.InteractiveExperiences" Version="2.1.3" />`,
+		`<PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.1.0" />`,
+		`<PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.1.3" />`,
+		`<PackageReference Include="Microsoft.WindowsAppSDK.Foundation" Version="2.0.21" />`,
+		`<PackageReference Include="Microsoft.WindowsAppSDK.InteractiveExperiences" Version="2.0.13" />`,
 	} {
 		if !strings.Contains(project, want) {
 			t.Fatalf("framework-dependent WinUI contract missing %q", want)
 		}
 	}
 	for _, forbidden := range []string{
-		`<PackageReference Include="Microsoft.WindowsAppSDK" Version="2.3.1" />`,
+		`<PackageReference Include="Microsoft.WindowsAppSDK" `,
 		`<PackageReference Include="Microsoft.WindowsAppSDK.AI"`,
 		`<PackageReference Include="Microsoft.WindowsAppSDK.ML"`,
 		"<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>",
@@ -75,8 +75,8 @@ func TestWindowsRuntimeMetadataUsesPinnedMicrosoftSources(t *testing.T) {
 	if metadata.DotNet.MinimumVersion != "8.0.0" || metadata.DotNet.InstallVersion == "" {
 		t.Fatalf("unexpected .NET runtime contract: minimum=%q install=%q", metadata.DotNet.MinimumVersion, metadata.DotNet.InstallVersion)
 	}
-	if metadata.WindowsApp.MinimumVersion != "2.3.1.0" ||
-		metadata.WindowsApp.Release != "2.3.1" ||
+	if metadata.WindowsApp.MinimumVersion != "2.1.3.0" ||
+		metadata.WindowsApp.Release != "2.1.3" ||
 		metadata.WindowsApp.PackageName != "Microsoft.WindowsAppRuntime.2" {
 		t.Fatalf("unexpected Windows App Runtime contract: %+v", metadata.WindowsApp)
 	}
@@ -101,12 +101,13 @@ func TestWindowsRuntimeMetadataUsesPinnedMicrosoftSources(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse Windows App Runtime %s URL: %v", arch, err)
 		}
-		if u.Scheme != "https" || u.Host != "github.com" {
-			t.Fatalf("Windows App Runtime %s must use the Microsoft WindowsAppSDK release: %s", arch, artifact.URL)
+		if u.Scheme != "https" || u.Host != "aka.ms" {
+			t.Fatalf("Windows App Runtime %s must use Microsoft's documented aka.ms distribution: %s", arch, artifact.URL)
 		}
-		wantPrefix := "/microsoft/WindowsAppSDK/releases/download/v" + metadata.WindowsApp.Release + "/"
-		if !strings.HasPrefix(u.Path, wantPrefix) {
-			t.Fatalf("Windows App Runtime %s URL must pin release %s: %s", arch, metadata.WindowsApp.Release, artifact.URL)
+		assetArch := map[string]string{"amd64": "x64", "arm64": "arm64"}[arch]
+		wantPath := "/windowsappsdk/2.1/" + metadata.WindowsApp.Release + "/windowsappruntimeinstall-" + assetArch + ".exe"
+		if u.Path != wantPath || u.RawQuery != "" || u.Fragment != "" {
+			t.Fatalf("Windows App Runtime %s URL must exactly pin release %s: %s", arch, metadata.WindowsApp.Release, artifact.URL)
 		}
 		if strings.Contains(strings.ToLower(artifact.URL), "latest") ||
 			strings.Contains(artifact.URL, "download.nexusdock.co") ||
@@ -157,6 +158,9 @@ func TestWindowsRuntimeBootstrapVerifiesPlatformTrust(t *testing.T) {
 		"Get-AuthenticodeSignature",
 		"SignatureStatus]::Valid",
 		"Microsoft Corporation",
+		"aka.ms",
+		"windowsappruntimeinstall-$assetArchitecture.exe",
+		"-TargetArchitecture $TargetArchitecture",
 		"Get-AppxPackage -Name $PackageName",
 		"Microsoft.WindowsDesktop.App",
 		"InstalledVersions\\$dotnetArchitecture",

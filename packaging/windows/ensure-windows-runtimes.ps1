@@ -85,7 +85,6 @@ function Test-WindowsDesktopRuntime {
             $baseKey.Dispose()
         }
     }
-
     foreach ($root in $roots) {
         $sharedRoot = Join-Path $root 'shared\Microsoft.WindowsDesktop.App'
         if (-not (Test-Path -LiteralPath $sharedRoot -PathType Container)) {
@@ -100,17 +99,14 @@ function Test-WindowsDesktopRuntime {
             }
         }
     }
-
     return $false
 }
-
 function Test-WindowsAppRuntime {
     param(
         [string] $PackageName,
         [Version] $MinimumVersion,
         [string] $TargetArchitecture
     )
-
     $expectedArchitecture = if ($TargetArchitecture -eq 'arm64') { 'Arm64' } else { 'X64' }
     $packages = @(Get-AppxPackage -Name $PackageName -ErrorAction SilentlyContinue)
     foreach ($package in $packages) {
@@ -121,16 +117,15 @@ function Test-WindowsAppRuntime {
             return $true
         }
     }
-
     return $false
 }
-
 function Assert-MicrosoftDownloadUri {
     param(
         [Uri] $Uri,
         [ValidateSet('dotnet', 'windows-app-runtime')]
         [string] $Dependency,
-        [string] $PinnedVersion
+        [string] $PinnedVersion,
+        [string] $TargetArchitecture
     )
 
     if ($Uri.Scheme -ne 'https') {
@@ -149,10 +144,11 @@ function Assert-MicrosoftDownloadUri {
         return
     }
 
-    $expectedPrefix = "/microsoft/WindowsAppSDK/releases/download/v$PinnedVersion/"
-    if (($Uri.Host -ne 'github.com') -or
-        (-not $Uri.AbsolutePath.StartsWith($expectedPrefix, [StringComparison]::Ordinal))) {
-        throw "Windows App Runtime URL is not the pinned Microsoft WindowsAppSDK release source: $Uri"
+    $releaseVersion = Convert-ToVersion -Value $PinnedVersion -Description 'Windows App Runtime release'
+    $assetArchitecture = if ($TargetArchitecture -eq 'arm64') { 'arm64' } else { 'x64' }
+    $expectedPath = "/windowsappsdk/$($releaseVersion.Major).$($releaseVersion.Minor)/$PinnedVersion/windowsappruntimeinstall-$assetArchitecture.exe"
+    if (($Uri.Host -ne 'aka.ms') -or ($Uri.AbsolutePath -cne $expectedPath) -or $Uri.Query -or $Uri.Fragment) {
+        throw "Windows App Runtime URL is not the pinned Microsoft download source: $Uri"
     }
 }
 
@@ -175,7 +171,7 @@ function Get-ArtifactUrl {
     }
 
     $uri = [Uri] $url
-    Assert-MicrosoftDownloadUri -Uri $uri -Dependency $Dependency -PinnedVersion $PinnedVersion
+    Assert-MicrosoftDownloadUri -Uri $uri -Dependency $Dependency -PinnedVersion $PinnedVersion -TargetArchitecture $TargetArchitecture
     return $uri
 }
 
