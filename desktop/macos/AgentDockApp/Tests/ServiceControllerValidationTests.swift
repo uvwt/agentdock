@@ -63,7 +63,7 @@ struct ServiceControllerValidationTests {
         testServiceRegistrationStatusClassification()
         try testNexusConnectionStateResolution(root: root)
         try testDesktopUpdateCheckDecoding()
-        testStatusItemVisibilityPolicy()
+        testUpdateActivityPolicy()
         try testUpdateProgressEventDecoding()
         try testStreamingUpdateProcess(root: root)
 
@@ -222,10 +222,21 @@ struct ServiceControllerValidationTests {
         }
     }
 
-    private static func testStatusItemVisibilityPolicy() {
-        precondition(UpdateStatusItemVisibility.shouldShow(isUpdating: false, isCheckingForUpdate: false))
-        precondition(UpdateStatusItemVisibility.shouldShow(isUpdating: true, isCheckingForUpdate: true))
-        precondition(!UpdateStatusItemVisibility.shouldShow(isUpdating: true, isCheckingForUpdate: false))
+    private static func testUpdateActivityPolicy() {
+        let idle = DesktopUpdateActivity.idle
+        precondition(!idle.locksApplication)
+        precondition(idle.canCheckForUpdates)
+        precondition(idle.statusItemVisible)
+
+        let checking = DesktopUpdateActivity.checking
+        precondition(!checking.locksApplication)
+        precondition(!checking.canCheckForUpdates)
+        precondition(checking.statusItemVisible)
+
+        let applying = DesktopUpdateActivity.applying
+        precondition(applying.locksApplication)
+        precondition(!applying.canCheckForUpdates)
+        precondition(!applying.statusItemVisible)
     }
 
     private static func testUpdateProgressEventDecoding() throws {

@@ -9,8 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var currentStatus = ServiceStatus.missing
     private var timer: Timer?
-    private var isUpdating = false
-    private var isCheckingForUpdate = false
+    private var updateActivity: DesktopUpdateActivity = .idle
     private var trayServiceActionInProgress = false
     private lazy var updateProgressWindow = UpdateProgressWindowController()
     private lazy var setupWindow = NativeControlPanelWindowController(
@@ -28,7 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let recoveryInspection = DesktopUpdateTransactionRecovery.inspect(paths: service.paths)
         let pending = DesktopUpdateResult.load(from: service.paths.updateResult)
         if recoveryInspection.needsFinishingUI {
-            setUpdateInProgress(true)
+            setUpdateActivity(.applying)
             updateProgressWindow.presentFinishing(
                 currentVersion: pending?.currentVersion ?? AppVersion.current,
                 targetVersion: pending?.targetVersion ?? AppVersion.current
@@ -55,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if outcome == .blocked {
             // unreadable journal、helper 失败或 recovery 期间 transaction 被替换时，都不能猜测成功。
-            setUpdateInProgress(true)
+            setUpdateActivity(.applying)
             updateProgressWindow.presentFinishing(
                 currentVersion: pendingUpdateResult?.currentVersion ?? AppVersion.current,
                 targetVersion: pendingUpdateResult?.targetVersion ?? AppVersion.current
@@ -72,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if outcome.requiresUpdateLock {
                 // active transaction 遇到其他 transaction 的 trigger 时不能擅自清理，保留现场等待 repair。
                 NSLog("AgentDock update recovery: desktop trigger transaction does not match the active durable transaction.")
-                setUpdateInProgress(true)
+                setUpdateActivity(.applying)
                 updateProgressWindow.presentFinishing(
                     currentVersion: pendingUpdateResult?.currentVersion ?? AppVersion.current,
                     targetVersion: pendingUpdateResult?.targetVersion ?? AppVersion.current
@@ -99,7 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            !transactionID.isEmpty {
             // transaction-aware trigger 没有对应 durable journal 时不能降级成 legacy 0.8.x。
             NSLog("AgentDock update recovery: transaction-aware desktop trigger has no durable transaction journal.")
-            setUpdateInProgress(true)
+            setUpdateActivity(.applying)
             updateProgressWindow.presentFinishing(
                 currentVersion: pendingUpdateResult?.currentVersion ?? AppVersion.current,
                 targetVersion: pendingUpdateResult?.targetVersion ?? AppVersion.current
@@ -150,14 +149,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if outcome.requiresUpdateLock && pendingUpdateResult == nil {
             // staged/trial/rolling_back 仍由 live Arbiter 持有，但 trigger 尚未生成或已损坏。
             // 保留全部协调文件，不能把 active transaction 降级成普通启动。
-            setUpdateInProgress(true)
+            setUpdateActivity(.applying)
             updateProgressWindow.presentFinishing(
                 currentVersion: AppVersion.current,
                 targetVersion: AppVersion.current
             )
             refreshStatus()
         } else if let pendingUpdateResult {
-            setUpdateInProgress(true)
+            setUpdateActivity(.applying)
             updateProgressWindow.presentFinishing(
                 currentVersion: pendingUpdateResult.currentVersion,
                 targetVersion: pendingUpdateResult.targetVersion
@@ -166,7 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if updateResultExists {
             // 只有 recovery 风险仍存在时，无法解析的 trigger 才能继续锁住启动。
             NSLog("AgentDock 更新结果存在但无法解析，保留后台服务事务状态等待恢复。")
-            setUpdateInProgress(true)
+            setUpdateActivity(.applying)
             updateProgressWindow.presentFinishing(
                 currentVersion: AppVersion.current,
                 targetVersion: AppVersion.current
@@ -178,7 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func finishNormalLaunch(cleanCoordinationFiles: Bool) {
-        setUpdateInProgress(false)
+        setUpdateActivity(.idle)
         configureMenuLoginAgentIfNeeded()
         if cleanCoordinationFiles {
             DesktopUpdateServiceState.remove(at: service.paths.updateServiceState)
@@ -208,18 +207,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func setUpdateInProgress(_ inProgress: Bool, checking: Bool = false) {
-        isUpdating = inProgress
-        isCheckingForUpdate = inProgress && checking
-        setStatusItemVisible(UpdateStatusItemVisibility.shouldShow(
-            isUpdating: isUpdating,
-            isCheckingForUpdate: isCheckingForUpdate
-        ))
-        ApplicationMenu.setQuitEnabled(!inProgress)
-        setupWindow.setUpdateInProgress(
-            inProgress,
-            status: checking ? L10n.text("Checking for updates…") : nil
-        )
+    private func setUpdateActivity(_ activity: DesktopUpdateActivity) {
+        updateActivity = activity
+        setStatusItemVisible(activity.statusItemVisible)
+        ApplicationMenu.setQuitEnabled(!activity.locksApplication)
+        setupWindow.setUpdateActivity(activity)
         rebuildMenu()
     }
 
@@ -455,7 +447,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keepUpdateLocked: Bool
     ) {
         if !keepUpdateLocked {
-            setUpdateInProgress(false)
+            setUpdateActivity(.idle)
         }
         var messages: [String] = []
         if !pendingResult.ok, !pendingResult.message.isEmpty {
@@ -545,12 +537,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if isUpdating {
-            if isCheckingForUpdate {
-                setupWindow.present(status: currentStatus)
-            } else {
-                updateProgressWindow.present()
-            }
+        if updateActivity.locksApplication {
+            updateProgressWindow.present()
             return true
         }
         setupWindow.present(status: currentStatus)
@@ -559,19 +547,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func rebuildMenu() {
         let menu = NSMenu()
-        if isUpdating {
-            let activity = isCheckingForUpdate ? L10n.text("Checking for updates…") : L10n.text("Updating…")
+        if updateActivity.locksApplication {
             let statusMenuItem = NSMenuItem(
-                title: L10n.format("AgentDock: %@", activity),
+                title: L10n.format("AgentDock: %@", L10n.text("Updating…")),
                 action: nil,
                 keyEquivalent: ""
             )
             statusMenuItem.isEnabled = false
             menu.addItem(statusMenuItem)
             menu.addItem(.separator())
-            if !isCheckingForUpdate {
-                menu.addItem(item(L10n.text("Show update progress"), #selector(showUpdateProgress)))
-            }
+            menu.addItem(item(L10n.text("Show update progress"), #selector(showUpdateProgress)))
             if currentStatus.installed {
                 menu.addItem(item(L10n.text("Open logs folder"), #selector(openLogs)))
             }
@@ -617,7 +602,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 menu.addItem(item(L10n.text("Start AgentDock"), #selector(startService)))
             }
-            menu.addItem(item(L10n.text("Check for updates…"), #selector(updateService)))
+            let updateMenuItem = item(
+                updateActivity == .checking ? L10n.text("Checking for updates…") : L10n.text("Check for updates…"),
+                #selector(updateService)
+            )
+            updateMenuItem.isEnabled = updateActivity.canCheckForUpdates
+            menu.addItem(updateMenuItem)
             menu.addItem(.separator())
             if currentStatus.loaded {
                 menu.addItem(item(L10n.text("View activity"), #selector(showActivity)))
@@ -660,8 +650,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startUpdate() {
-        guard !isUpdating else {
-            if isCheckingForUpdate {
+        guard updateActivity.canCheckForUpdates else {
+            if updateActivity == .checking {
                 setupWindow.present(status: currentStatus)
             } else {
                 updateProgressWindow.present()
@@ -676,14 +666,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // “检查更新”只做版本检查。下载、停服务和 App 替换必须等用户明确确认。
-        setUpdateInProgress(true, checking: true)
+        // “检查更新”只是只读查询，不应冻结服务、配置或退出；这里只禁止重复发起检查。
+        setUpdateActivity(.checking)
         Task {
             do {
                 let check = try await service.checkForUpdates()
                 let shouldApply = await MainActor.run {
                     guard check.updateAvailable else {
-                        self.setUpdateInProgress(false)
+                        self.setUpdateActivity(.idle)
                         self.presentAlert(
                             title: L10n.text("AgentDock is up to date"),
                             message: check.message
@@ -692,11 +682,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         return false
                     }
                     guard self.confirmUpdate(check) else {
-                        self.setUpdateInProgress(false)
+                        self.setUpdateActivity(.idle)
                         self.refreshStatus()
                         return false
                     }
-                    self.setUpdateInProgress(true)
+
+                    // 检查期间允许服务和配置操作；真正进入更新事务前必须重新确认没有并发操作。
+                    guard !self.trayServiceActionInProgress,
+                          !self.setupWindow.hasActiveServiceOperation else {
+                        self.setUpdateActivity(.idle)
+                        self.presentAlert(
+                            title: L10n.text("AgentDock is busy"),
+                            message: L10n.text("Wait for the current AgentDock operation to finish before starting an update.")
+                        )
+                        self.refreshStatus()
+                        return false
+                    }
+
+                    self.setUpdateActivity(.applying)
                     self.updateProgressWindow.presentChecking()
                     return true
                 }
@@ -708,13 +711,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
                 await MainActor.run {
-                    self.setUpdateInProgress(false)
+                    self.setUpdateActivity(.idle)
                     self.refreshStatus()
                 }
             } catch {
                 await MainActor.run {
-                    let failedWhileChecking = self.isCheckingForUpdate
-                    self.setUpdateInProgress(false)
+                    let failedWhileChecking = self.updateActivity == .checking
+                    self.setUpdateActivity(.idle)
                     if failedWhileChecking {
                         self.presentAlert(
                             title: L10n.text("Check for updates"),
@@ -747,7 +750,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func performServiceAction(_ action: String, operation: @escaping () async throws -> Void) {
-        guard !isUpdating else {
+        guard !updateActivity.locksApplication else {
             updateProgressWindow.present()
             return
         }
@@ -775,7 +778,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func presentUpdateResult(_ result: DesktopUpdateResult, warning: String? = nil) {
-        setUpdateInProgress(false)
+        setUpdateActivity(.idle)
         if result.ok {
             updateProgressWindow.showCompletion(targetVersion: result.targetVersion, warning: warning)
         } else {
@@ -796,7 +799,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func quit() {
-        guard !isUpdating else {
+        guard !updateActivity.locksApplication else {
             updateProgressWindow.present()
             return
         }

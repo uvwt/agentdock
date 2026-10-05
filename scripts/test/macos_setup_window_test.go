@@ -47,3 +47,41 @@ func TestMacOSLegacySetupControllerRemoved(t *testing.T) {
 		t.Fatalf("legacy SetupWindowController must be removed; stat err=%v", err)
 	}
 }
+
+func TestMacOSUpdateCheckDoesNotLockUnrelatedControls(t *testing.T) {
+	root := filepath.Join("..", "..", "desktop", "macos", "AgentDockApp", "Sources")
+
+	appDelegateData, err := os.ReadFile(filepath.Join(root, "AppDelegate.swift"))
+	if err != nil {
+		t.Fatalf("read AppDelegate.swift: %v", err)
+	}
+	appDelegate := string(appDelegateData)
+	for _, want := range []string{
+		"private var updateActivity: DesktopUpdateActivity = .idle",
+		"ApplicationMenu.setQuitEnabled(!activity.locksApplication)",
+		"setUpdateActivity(.checking)",
+		"updateMenuItem.isEnabled = updateActivity.canCheckForUpdates",
+		"guard !self.trayServiceActionInProgress,",
+		"!self.setupWindow.hasActiveServiceOperation else {",
+	} {
+		if !strings.Contains(appDelegate, want) {
+			t.Fatalf("macOS app delegate missing update activity contract %q", want)
+		}
+	}
+
+	controlPanelData, err := os.ReadFile(filepath.Join(root, "NativeControlPanelWindowController.swift"))
+	if err != nil {
+		t.Fatalf("read NativeControlPanelWindowController.swift: %v", err)
+	}
+	controlPanel := string(controlPanelData)
+	for _, want := range []string{
+		"@Published var updateActivity: DesktopUpdateActivity = .idle",
+		"guard !isBusy, !updateActivity.locksApplication else { return }",
+		".disabled(model.isBusy || model.updateActivity.locksApplication)",
+		".disabled(!model.updateActivity.canCheckForUpdates)",
+	} {
+		if !strings.Contains(controlPanel, want) {
+			t.Fatalf("macOS control panel missing update activity contract %q", want)
+		}
+	}
+}

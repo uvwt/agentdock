@@ -61,9 +61,8 @@ final class NativeControlPanelWindowController: NSWindowController, NSWindowDele
         present(status: status)
     }
 
-    func setUpdateInProgress(_ inProgress: Bool, status: String? = nil) {
-        model.isUpdateInProgress = inProgress
-        model.message = inProgress ? (status ?? L10n.text("Updating AgentDock…")) : nil
+    func setUpdateActivity(_ activity: DesktopUpdateActivity) {
+        model.updateActivity = activity
     }
 
     func presentPermissions() { permissionsWindow.present() }
@@ -120,7 +119,7 @@ private final class ControlPanelModel: ObservableObject {
     @Published var statusUpdatedAt = Date()
     @Published private(set) var languageRevision = 0
     @Published var isBusy = false
-    @Published var isUpdateInProgress = false
+    @Published var updateActivity: DesktopUpdateActivity = .idle
     @Published var message: String?
 
     let service: ServiceController
@@ -218,7 +217,7 @@ private final class ControlPanelModel: ObservableObject {
     }
 
     private func perform(_ operation: @escaping () async throws -> Void) async {
-        guard !isBusy, !isUpdateInProgress else { return }
+        guard !isBusy, !updateActivity.locksApplication else { return }
         isBusy = true
         message = nil
         do {
@@ -232,7 +231,7 @@ private final class ControlPanelModel: ObservableObject {
     }
 
     func toggleRuntime() {
-        guard !isBusy, !isUpdateInProgress else { return }
+        guard !isBusy, !updateActivity.locksApplication else { return }
         isBusy = true
         message = nil
         Task {
@@ -552,7 +551,7 @@ private struct HomeView: View {
                     HStack(spacing: 10) {
                         Button(serviceLoaded ? L10n.text("Stop") : L10n.text("Start")) { model.toggleRuntime() }
                             .controlSize(.small)
-                            .disabled(model.isBusy || model.isUpdateInProgress)
+                            .disabled(model.isBusy || model.updateActivity.locksApplication)
                         StatusPill(text: agentDockStatusText, active: serviceHealthy)
                     }
                 }
@@ -1720,10 +1719,15 @@ private struct SettingsView: View {
                     }
                     RowDivider()
                     SettingsRow(L10n.text("AgentDock update")) {
-                        Button(L10n.text("Check for updates")) {
+                        Button(
+                            model.updateActivity == .checking
+                                ? L10n.text("Checking for updates…")
+                                : L10n.text("Check for updates")
+                        ) {
                             model.requestUpdate()
                         }
                         .controlSize(.small)
+                        .disabled(!model.updateActivity.canCheckForUpdates)
                     }
                 }
 

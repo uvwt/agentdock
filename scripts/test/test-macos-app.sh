@@ -71,7 +71,7 @@ swiftc \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/TunnelTokenStore.swift" \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/LegacyDesktopRuntimeMigration.swift" \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/UpdateProgressEvent.swift" \
-  "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/UpdateStatusItemVisibility.swift" \
+  "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/DesktopUpdateActivity.swift" \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/ServiceController.swift" \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/InstallerRunner.swift" \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Tests/ServiceControllerValidationTests.swift" \
