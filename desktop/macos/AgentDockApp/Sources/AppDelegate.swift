@@ -25,34 +25,135 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let recoveryReady = DesktopUpdateTransactionRecovery.recoverIfNeeded(paths: service.paths)
+        let recoveryInspection = DesktopUpdateTransactionRecovery.inspect(paths: service.paths)
+        let pending = DesktopUpdateResult.load(from: service.paths.updateResult)
+        if recoveryInspection.needsFinishingUI {
+            setUpdateInProgress(true)
+            updateProgressWindow.presentFinishing(
+                currentVersion: pending?.currentVersion ?? AppVersion.current,
+                targetVersion: pending?.targetVersion ?? AppVersion.current
+            )
+        }
+
+        startStatusTimer()
+        Task { [weak self] in
+            guard let self else { return }
+            let outcome = await DesktopUpdateTransactionRecovery.recoverIfNeeded(
+                paths: self.service.paths,
+                inspection: recoveryInspection
+            )
+            self.finishLaunchingAfterUpdateRecovery(outcome: outcome)
+        }
+    }
+
+    private func finishLaunchingAfterUpdateRecovery(
+        outcome: DesktopUpdateTransactionRecovery.Outcome
+    ) {
         var pendingUpdateResult = DesktopUpdateResult.load(from: service.paths.updateResult)
         var updateResultExists = FileManager.default.fileExists(atPath: service.paths.updateResult.path)
+        var cleanCoordinationFiles = outcome.allowsCoordinationCleanup
+
+        if outcome == .blocked {
+            // unreadable journal、helper 失败或 recovery 期间 transaction 被替换时，都不能猜测成功。
+            setUpdateInProgress(true)
+            updateProgressWindow.presentFinishing(
+                currentVersion: pendingUpdateResult?.currentVersion ?? AppVersion.current,
+                targetVersion: pendingUpdateResult?.targetVersion ?? AppVersion.current
+            )
+            refreshStatus()
+            return
+        }
+
+        if let currentTransactionID = outcome.transactionID,
+           let pendingTransactionID = pendingUpdateResult?.transactionID?
+               .trimmingCharacters(in: .whitespacesAndNewlines),
+           !pendingTransactionID.isEmpty,
+           pendingTransactionID != currentTransactionID {
+            if outcome.requiresUpdateLock {
+                // active transaction 遇到其他 transaction 的 trigger 时不能擅自清理，保留现场等待 repair。
+                NSLog("AgentDock update recovery: desktop trigger transaction does not match the active durable transaction.")
+                setUpdateInProgress(true)
+                updateProgressWindow.presentFinishing(
+                    currentVersion: pendingUpdateResult?.currentVersion ?? AppVersion.current,
+                    targetVersion: pendingUpdateResult?.targetVersion ?? AppVersion.current
+                )
+                refreshStatus()
+                return
+            }
+
+            NSLog("AgentDock found a stale desktop trigger for a different terminal transaction; discarding it.")
+            let discarded = DesktopUpdateResult.discard(from: service.paths.updateResult)
+            if discarded, cleanCoordinationFiles {
+                DesktopUpdateServiceState.remove(at: service.paths.updateServiceState)
+                DesktopUpdateHandoff.remove(at: service.paths.updateHandoff)
+            } else if !discarded {
+                cleanCoordinationFiles = false
+            }
+            pendingUpdateResult = nil
+            updateResultExists = false
+        }
+
+        if case .noTransaction = outcome,
+           let transactionID = pendingUpdateResult?.transactionID?
+               .trimmingCharacters(in: .whitespacesAndNewlines),
+           !transactionID.isEmpty {
+            // transaction-aware trigger 没有对应 durable journal 时不能降级成 legacy 0.8.x。
+            NSLog("AgentDock update recovery: transaction-aware desktop trigger has no durable transaction journal.")
+            setUpdateInProgress(true)
+            updateProgressWindow.presentFinishing(
+                currentVersion: pendingUpdateResult?.currentVersion ?? AppVersion.current,
+                targetVersion: pendingUpdateResult?.targetVersion ?? AppVersion.current
+            )
+            refreshStatus()
+            return
+        }
 
         // 旧 0.8.x 更新结果没有 transaction id。若用户在更新完成后又手动替换/恢复了 App，
         // 结果文件记录的 target 已不再代表当前磁盘状态；继续按“更新收尾”处理只会永久锁住 UI。
-        if recoveryReady,
-           let pendingResult = pendingUpdateResult,
+        if let pendingResult = pendingUpdateResult,
            pendingResult.ok,
            pendingResult.transactionID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true,
            AppVersion.display(pendingResult.targetVersion) != AppVersion.current {
             NSLog(
                 "AgentDock found a legacy update result that no longer matches the active App; reconciling the current installation."
             )
-            _ = DesktopUpdateResult.consume(from: service.paths.updateResult)
-            DesktopUpdateServiceState.remove(at: service.paths.updateServiceState)
-            DesktopUpdateHandoff.remove(at: service.paths.updateHandoff)
+            let discarded = DesktopUpdateResult.discard(from: service.paths.updateResult)
+            if discarded, cleanCoordinationFiles {
+                DesktopUpdateServiceState.remove(at: service.paths.updateServiceState)
+                DesktopUpdateHandoff.remove(at: service.paths.updateHandoff)
+            } else if !discarded {
+                cleanCoordinationFiles = false
+                NSLog("AgentDock could not discard the stale legacy update trigger; preserving update coordination files.")
+            }
             pendingUpdateResult = nil
+            // 当前 App 已明确不匹配 legacy target；即使文件系统暂时无法清理，也不能让旧 trigger 锁住本次启动。
             updateResultExists = false
         }
 
-        if !recoveryReady {
-            // Do not acknowledge or clear any pending transaction when crash recovery itself
-            // could not establish a safe state. The journal remains intact for repair/retry.
+        if pendingUpdateResult == nil,
+           updateResultExists,
+           outcome.allowsStaleTriggerCleanup {
+            // update-result.json 只是一次性启动触发器。durable transaction 已不存在恢复风险时，
+            // malformed/stale trigger 不应让每次启动都重新进入 finishing UI。
+            NSLog("AgentDock found a stale or malformed update result without recovery state; discarding the boot trigger.")
+            let discarded = DesktopUpdateResult.discard(from: service.paths.updateResult)
+            if discarded, cleanCoordinationFiles {
+                DesktopUpdateServiceState.remove(at: service.paths.updateServiceState)
+                DesktopUpdateHandoff.remove(at: service.paths.updateHandoff)
+            } else if !discarded {
+                cleanCoordinationFiles = false
+                NSLog("AgentDock could not discard the stale update trigger; preserving update coordination files for a later retry.")
+            }
+            updateResultExists = false
+        }
+
+        if outcome.requiresUpdateLock && pendingUpdateResult == nil {
+            // staged/trial/rolling_back 仍由 live Arbiter 持有，但 trigger 尚未生成或已损坏。
+            // 保留全部协调文件，不能把 active transaction 降级成普通启动。
             setUpdateInProgress(true)
             updateProgressWindow.presentFinishing(
-                currentVersion: pendingUpdateResult?.currentVersion ?? AppVersion.current,
-                targetVersion: pendingUpdateResult?.targetVersion ?? AppVersion.current
+                currentVersion: AppVersion.current,
+                targetVersion: AppVersion.current
             )
             refreshStatus()
         } else if let pendingUpdateResult {
@@ -63,9 +164,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             restoreBackgroundServicesAfterUpdate(pendingUpdateResult)
         } else if updateResultExists {
-            // 结果文件存在但无法解析时，外部更新事务仍可能在等待新版 App ACK。
-            // 保留 update-services.json，让外部更新器按超时路径恢复旧 App。
-            NSLog("AgentDock 更新结果存在但无法解析，保留后台服务事务状态等待回滚。")
+            // 只有 recovery 风险仍存在时，无法解析的 trigger 才能继续锁住启动。
+            NSLog("AgentDock 更新结果存在但无法解析，保留后台服务事务状态等待恢复。")
             setUpdateInProgress(true)
             updateProgressWindow.presentFinishing(
                 currentVersion: AppVersion.current,
@@ -73,31 +173,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             refreshStatus()
         } else {
-            // 没有 pending result 时，更新协调文件只能是上一次已结束流程留下的临时状态。
-            // 正常启动到这里才允许显示托盘；更新接管分支始终保持隐藏。
-            setUpdateInProgress(false)
-            configureMenuLoginAgentIfNeeded()
+            finishNormalLaunch(cleanCoordinationFiles: cleanCoordinationFiles)
+        }
+    }
+
+    private func finishNormalLaunch(cleanCoordinationFiles: Bool) {
+        setUpdateInProgress(false)
+        configureMenuLoginAgentIfNeeded()
+        if cleanCoordinationFiles {
             DesktopUpdateServiceState.remove(at: service.paths.updateServiceState)
             DesktopUpdateHandoff.remove(at: service.paths.updateHandoff)
-            refreshStatus(showWindow: !launchedInBackground)
-            Task {
-                do {
-                    try service.reconcileTunnelRegistrationFromConfiguration()
-                } catch {
-                    NSLog("AgentDock 启动时 Tunnel 状态收敛失败：%@", error.localizedDescription)
-                }
-                self.refreshStatus()
-            }
         }
-        timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.refreshStatus()
+        refreshStatus(showWindow: !launchedInBackground)
+        Task {
+            do {
+                try service.reconcileTunnelRegistrationFromConfiguration()
+            } catch {
+                NSLog("AgentDock 启动时 Tunnel 状态收敛失败：%@", error.localizedDescription)
             }
+            self.refreshStatus()
         }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         timer?.invalidate()
+    }
+
+    private func startStatusTimer() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshStatus()
+            }
+        }
     }
 
     private func setUpdateInProgress(_ inProgress: Bool, checking: Bool = false) {
@@ -246,12 +354,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             keepUpdateLocked: false
                         )
                     case "failed":
-                        // rollback 自身失败时保留 pending result/service-state；repair 仍需要这些证据。
+                        // failed 已经是 durable terminal state。保留 transaction/service-state
+                        // 等 repair evidence，但消费 one-shot trigger，不能让 UI 永久伪装成 Updating。
+                        _ = DesktopUpdateResult.discard(from: service.paths.updateResult)
                         presentTerminalUpdateFailure(
                             pendingResult: pendingResult,
                             terminalResult: terminalResult,
                             warnings: warnings,
-                            keepUpdateLocked: true
+                            keepUpdateLocked: false
                         )
                     default:
                         return
@@ -328,15 +438,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             if Date() >= nextRecoveryProbe {
-                let paths = service.paths
-                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                    DispatchQueue.global(qos: .utility).async {
-                        // 正常更新时 source Arbiter 持有 transaction.lock，此探针立即无害返回；
-                        // 若 Arbiter 崩溃，则由同一 known-good source Arbiter 保守接管 rollback。
-                        _ = DesktopUpdateTransactionRecovery.recoverIfNeeded(paths: paths)
-                        continuation.resume()
-                    }
-                }
+                // 正常更新时 source Arbiter 持有 transaction.lock，此探针立即无害返回；
+                // 若 Arbiter 崩溃，则由同一 known-good source Arbiter 保守接管 rollback。
+                _ = await DesktopUpdateTransactionRecovery.recoverIfNeeded(paths: service.paths)
                 nextRecoveryProbe = Date().addingTimeInterval(5)
             }
             try? await Task.sleep(nanoseconds: 250_000_000)

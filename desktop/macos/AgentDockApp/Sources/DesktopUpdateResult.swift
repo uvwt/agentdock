@@ -28,8 +28,36 @@ struct DesktopUpdateResult: Decodable {
 
     static func consume(from path: URL) -> DesktopUpdateResult? {
         guard let result = load(from: path) else { return nil }
-        try? FileManager.default.removeItem(at: path)
+        guard consumeTriggerFile(at: path) else { return nil }
         return result
+    }
+
+    @discardableResult
+    static func discard(from path: URL) -> Bool {
+        consumeTriggerFile(at: path)
+    }
+
+    private static func consumeTriggerFile(at path: URL) -> Bool {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: path.path) else { return true }
+
+        // 先把一次性启动触发器移出固定路径，再做 best-effort 删除。
+        // 即使删除临时文件失败，已处理结果也不会在每次启动时重复触发 finishing UI。
+        let consumed = path.deletingLastPathComponent().appendingPathComponent(
+            ".\(path.lastPathComponent).consumed-\(UUID().uuidString)"
+        )
+        do {
+            try fileManager.moveItem(at: path, to: consumed)
+        } catch {
+            NSLog("AgentDock could not consume update result trigger %@: %@", path.path, error.localizedDescription)
+            return false
+        }
+        do {
+            try fileManager.removeItem(at: consumed)
+        } catch {
+            NSLog("AgentDock could not delete consumed update result %@: %@", consumed.path, error.localizedDescription)
+        }
+        return true
     }
 }
 

@@ -168,6 +168,7 @@ struct InstallerConfigurationTests {
 
         try testTunnelTokenStore()
         try testDesktopUpdateResult()
+        try await testDesktopUpdateTransactionRecoveryState()
         try testDesktopUpdateTerminalResult()
         try testDesktopUpdateServiceState()
         try testDesktopUpdateHandoff()
@@ -192,6 +193,177 @@ struct InstallerConfigurationTests {
         precondition(result?.ok == true)
         precondition(result?.targetVersion == "v0.7.0")
         precondition(!FileManager.default.fileExists(atPath: path.path))
+
+        try Data("not-json".utf8).write(to: path)
+        precondition(DesktopUpdateResult.load(from: path) == nil)
+        precondition(DesktopUpdateResult.discard(from: path))
+        precondition(!FileManager.default.fileExists(atPath: path.path))
+
+        // consume/discard 必须先移出固定 trigger 路径。目录不可写时应明确失败并保留证据，
+        // 不能假装已经消费，否则下一次启动无法判断真实状态。
+        let lockedRoot = root.appendingPathComponent("locked", isDirectory: true)
+        try FileManager.default.createDirectory(at: lockedRoot, withIntermediateDirectories: true)
+        let lockedPath = lockedRoot.appendingPathComponent("update-result.json")
+        try Data(json.utf8).write(to: lockedPath)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: lockedRoot.path)
+        precondition(DesktopUpdateResult.consume(from: lockedPath) == nil)
+        precondition(FileManager.default.fileExists(atPath: lockedPath.path))
+        precondition(!DesktopUpdateResult.discard(from: lockedPath))
+        precondition(FileManager.default.fileExists(atPath: lockedPath.path))
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: lockedRoot.path)
+        precondition(DesktopUpdateResult.discard(from: lockedPath))
+        precondition(!FileManager.default.fileExists(atPath: lockedPath.path))
+    }
+
+    private static func testDesktopUpdateTransactionRecoveryState() async throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AgentDockUpdateRecoveryTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let appBundle = home.appendingPathComponent("Applications/AgentDock.app", isDirectory: true)
+        let paths = AppPaths(home: home, appBundle: appBundle)
+        try FileManager.default.createDirectory(
+            at: paths.updateTransaction.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        let active = """
+        {"schema_version":1,"transaction_id":"tx-active","platform":"darwin","state":"trial","macos":{"source_arbiter_path":"/tmp/missing-arbiter"}}
+        """
+        try Data(active.utf8).write(to: paths.updateTransaction)
+        precondition(DesktopUpdateTransactionRecovery.inspect(paths: paths).kind == .nonTerminal)
+
+        let safeTerminal = """
+        {"schema_version":1,"transaction_id":"tx-safe","platform":"darwin","state":"rolled_back"}
+        """
+        try Data(safeTerminal.utf8).write(to: paths.updateTransaction)
+        let safeTerminalOutcome = await DesktopUpdateTransactionRecovery.recoverIfNeeded(paths: paths)
+        precondition(safeTerminalOutcome == .terminal(transactionID: "tx-safe", state: .rolledBack))
+        precondition(!safeTerminalOutcome.requiresUpdateLock)
+
+        let failedTerminal = """
+        {"schema_version":1,"transaction_id":"tx-failed","platform":"darwin","state":"failed"}
+        """
+        try Data(failedTerminal.utf8).write(to: paths.updateTransaction)
+        let failedOutcome = await DesktopUpdateTransactionRecovery.recoverIfNeeded(paths: paths)
+        precondition(failedOutcome == .terminal(transactionID: "tx-failed", state: .failed))
+        precondition(!failedOutcome.requiresUpdateLock)
+        precondition(!failedOutcome.allowsCoordinationCleanup)
+
+        try Data("not-json".utf8).write(to: paths.updateTransaction)
+        precondition(DesktopUpdateTransactionRecovery.inspect(paths: paths).kind == .unreadable)
+        let malformedOutcome = await DesktopUpdateTransactionRecovery.recoverIfNeeded(paths: paths)
+        precondition(malformedOutcome == .blocked)
+
+        let arbiterRoot = paths.appSupport.appendingPathComponent("update/arbiters", isDirectory: true)
+        try FileManager.default.createDirectory(at: arbiterRoot, withIntermediateDirectories: true)
+
+        func writeTransaction(id: String, state: String, arbiter: URL) throws {
+            let payload: [String: Any] = [
+                "schema_version": 1,
+                "transaction_id": id,
+                "platform": "darwin",
+                "state": state,
+                "macos": ["source_arbiter_path": arbiter.path],
+            ]
+            let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+            try data.write(to: paths.updateTransaction, options: .atomic)
+        }
+
+        func writeExecutable(_ body: String, transactionID: String) throws -> URL {
+            let transactionRoot = arbiterRoot.appendingPathComponent(transactionID, isDirectory: true)
+            try FileManager.default.createDirectory(at: transactionRoot, withIntermediateDirectories: true)
+            let url = transactionRoot.appendingPathComponent("agentdock-arbiter")
+            try Data(body.utf8).write(to: url, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+            return url
+        }
+
+        // staged 已经是 durable non-terminal state；崩溃发生在 journal 写入和 Arbiter 启动之间时，
+        // 下一次启动必须继续 probe，而不是把它误判成“没有 active transaction”。
+        let stagedArbiter = try writeExecutable("#!/bin/sh\nexit 0\n", transactionID: "tx-staged")
+        try writeTransaction(id: "tx-staged", state: "staged", arbiter: stagedArbiter)
+        let stagedOutcome = await DesktopUpdateTransactionRecovery.recoverIfNeeded(
+            paths: paths,
+            recoveryTimeout: 2
+        )
+        precondition(stagedOutcome == .liveArbiter(transactionID: "tx-staged"))
+        precondition(stagedOutcome.requiresUpdateLock)
+
+        // 兼容当前 source Arbiter 契约：原 Arbiter 正常持有 transaction.lock 时，
+        // --recover-if-unlocked 会 exit 0，同时 durable journal 仍保持 trial。
+        let liveOwnerArbiter = try writeExecutable("#!/bin/sh\nexit 0\n", transactionID: "tx-live")
+        try writeTransaction(id: "tx-live", state: "trial", arbiter: liveOwnerArbiter)
+        let liveOwnerOutcome = await DesktopUpdateTransactionRecovery.recoverIfNeeded(
+            paths: paths,
+            recoveryTimeout: 2
+        )
+        precondition(liveOwnerOutcome == .liveArbiter(transactionID: "tx-live"))
+        precondition(liveOwnerOutcome.requiresUpdateLock)
+
+        // 非零退出且 journal 仍 active 才表示 recovery 未能建立安全状态。
+        let failingArbiter = try writeExecutable("#!/bin/sh\nexit 1\n", transactionID: "tx-failing")
+        try writeTransaction(id: "tx-failing", state: "trial", arbiter: failingArbiter)
+        let failingOutcome = await DesktopUpdateTransactionRecovery.recoverIfNeeded(
+            paths: paths,
+            recoveryTimeout: 2
+        )
+        precondition(failingOutcome == .blocked)
+
+        // orphaned trial 被接管后，成功 rollback 仍会返回原 trial error（进程非零退出）。
+        // 此时必须以 durable journal 的 rolled_back 为准，而不是只看 exit status。
+        let rolledBackPayload = "{\"schema_version\":1,\"transaction_id\":\"tx-recovered\",\"platform\":\"darwin\",\"state\":\"rolled_back\"}"
+        let recoveredScript = """
+        #!/bin/sh
+        printf '%s' '\(rolledBackPayload)' > '\(paths.updateTransaction.path)'
+        exit 1
+        """
+        let recoveredArbiter = try writeExecutable(recoveredScript, transactionID: "tx-recovered")
+        try writeTransaction(id: "tx-recovered", state: "trial", arbiter: recoveredArbiter)
+        let recoveredOutcome = await DesktopUpdateTransactionRecovery.recoverIfNeeded(
+            paths: paths,
+            recoveryTimeout: 2
+        )
+        precondition(recoveredOutcome == .recovered(transactionID: "tx-recovered", state: .rolledBack))
+        precondition(!recoveredOutcome.requiresUpdateLock)
+
+        // recovery 期间 transaction 被替换时不能把新事务误认为旧事务已经收敛。
+        let changedPayload = "{\"schema_version\":1,\"transaction_id\":\"tx-new\",\"platform\":\"darwin\",\"state\":\"trial\"}"
+        let changedScript = """
+        #!/bin/sh
+        printf '%s' '\(changedPayload)' > '\(paths.updateTransaction.path)'
+        exit 0
+        """
+        let changedArbiter = try writeExecutable(changedScript, transactionID: "tx-old")
+        try writeTransaction(id: "tx-old", state: "trial", arbiter: changedArbiter)
+        let changedOutcome = await DesktopUpdateTransactionRecovery.recoverIfNeeded(
+            paths: paths,
+            recoveryTimeout: 2
+        )
+        precondition(changedOutcome == .blocked)
+
+        // trusted 目录里的 symlink 不能借真实路径逃逸后执行目录外程序。
+        let escapedRoot = arbiterRoot.appendingPathComponent("tx-escape", isDirectory: true)
+        try FileManager.default.createDirectory(at: escapedRoot, withIntermediateDirectories: true)
+        let escapedArbiter = escapedRoot.appendingPathComponent("agentdock-arbiter")
+        try? FileManager.default.removeItem(at: escapedArbiter)
+        try FileManager.default.createSymbolicLink(
+            at: escapedArbiter,
+            withDestinationURL: URL(fileURLWithPath: "/usr/bin/true")
+        )
+        try writeTransaction(id: "tx-escape", state: "trial", arbiter: escapedArbiter)
+        let escapedOutcome = await DesktopUpdateTransactionRecovery.recoverIfNeeded(
+            paths: paths,
+            recoveryTimeout: 0.2
+        )
+        precondition(escapedOutcome == .blocked)
+
+        // 平台字段属于 durable contract；Windows journal 不能被 macOS Desktop 当成本地事务消费。
+        let foreignPlatform = """
+        {"schema_version":1,"transaction_id":"tx-windows","platform":"windows","state":"failed"}
+        """
+        try Data(foreignPlatform.utf8).write(to: paths.updateTransaction)
+        precondition(DesktopUpdateTransactionRecovery.inspect(paths: paths).kind == .unreadable)
     }
 
     private static func testDesktopUpdateTerminalResult() throws {
