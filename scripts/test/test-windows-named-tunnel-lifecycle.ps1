@@ -314,7 +314,6 @@ function Invoke-Installer {
     )
 
     $arguments = @{
-        Version = 'latest'
         OfflineArchive = $Archive
         OfflineChecksumFile = $Checksum
         InstallDir = $installDir

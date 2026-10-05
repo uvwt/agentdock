@@ -1081,6 +1081,9 @@ func TestWindowsNamedTunnelLifecycleCoversSoftFailureRecovery(t *testing.T) {
 	if strings.Contains(lifecycle, "OfflineCloudflaredBinary") {
 		t.Fatal("Named Tunnel lifecycle must provision its fake dependency through the component store, not the installer")
 	}
+	if strings.Contains(lifecycle, "Version = 'latest'") {
+		t.Fatal("Named Tunnel lifecycle must not pass the removed installer Version parameter through splatting")
+	}
 
 	fake := strings.ReplaceAll(string(fakeData), "\r\n", "\n")
 	for _, want := range []string{
