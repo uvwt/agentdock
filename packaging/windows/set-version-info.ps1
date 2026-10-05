@@ -129,6 +129,17 @@ try {
             }
         }
 
+        if ($fileName -eq 'agentdock-tray-shim.exe') {
+            $iconSource = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot 'assets\agentdock.ico')).Path
+            $iconResourceName = 'agentdock.ico'
+            Copy-Item -LiteralPath $iconSource -Destination (Join-Path $tempRoot $iconResourceName) -Force
+            $resource['RT_GROUP_ICON'] = [ordered]@{
+                '#1' = [ordered]@{
+                    '0000' = $iconResourceName
+                }
+            }
+        }
+
         $jsonPath = Join-Path $tempRoot ($internalName + '.winres.json')
         $json = $resource | ConvertTo-Json -Depth 12
         [IO.File]::WriteAllText($jsonPath, $json, [Text.UTF8Encoding]::new($false))

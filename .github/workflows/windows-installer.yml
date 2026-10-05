@@ -163,6 +163,8 @@ jobs:
           go build -trimpath -ldflags '-s -w' -o (Join-Path $distRoot 'agentdock-arbiter.exe') .\cmd\agentdock-arbiter
           go build -trimpath -ldflags '-s -w' -o (Join-Path $distRoot 'agentdock-shim.exe') .\cmd\agentdock-shim
           go build -trimpath -ldflags '-s -w -H=windowsgui' -o (Join-Path $distRoot 'agentdock-tray-shim.exe') .\cmd\agentdock-shim
+          $windowsVersion = (& go run .\tools\release version).Trim()
+          & .\packaging\windows\set-version-info.ps1 -Version $windowsVersion -Path (Join-Path $distRoot 'agentdock-tray-shim.exe')
           $controlPanelOutput = Join-Path $distRoot 'control-panel'
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
@@ -232,6 +234,8 @@ jobs:
           go build -trimpath -ldflags '-s -w' -o dist\agentdock-arbiter.exe .\cmd\agentdock-arbiter
           go build -trimpath -ldflags '-s -w' -o dist\agentdock-shim.exe .\cmd\agentdock-shim
           go build -trimpath -ldflags '-s -w -H=windowsgui' -o dist\agentdock-tray-shim.exe .\cmd\agentdock-shim
+          $windowsVersion = (& go run .\tools\release version).Trim()
+          & .\packaging\windows\set-version-info.ps1 -Version $windowsVersion -Path .\dist\agentdock-tray-shim.exe
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
             -r win-x64 `
@@ -498,6 +502,8 @@ jobs:
           go build -trimpath -ldflags '-s -w' -o (Join-Path $arm64Dir 'agentdock-arbiter.exe') .\cmd\agentdock-arbiter
           go build -trimpath -ldflags '-s -w' -o (Join-Path $arm64Dir 'agentdock-shim.exe') .\cmd\agentdock-shim
           go build -trimpath -ldflags '-s -w -H=windowsgui' -o (Join-Path $arm64Dir 'agentdock-tray-shim.exe') .\cmd\agentdock-shim
+          $windowsVersion = (& go run .\tools\release version).Trim()
+          & .\packaging\windows\set-version-info.ps1 -Version $windowsVersion -Path (Join-Path $arm64Dir 'agentdock-tray-shim.exe')
           $arm64ControlPanelOutput = Join-Path $arm64Dir 'control-panel'
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `

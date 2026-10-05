@@ -220,10 +220,25 @@ func TestWindowsVersionInfoScriptCoversSignPathMetadata(t *testing.T) {
 		"'agentdock-arbiter.exe'",
 		"'agentdock-shim.exe'",
 		"'agentdock-tray-shim.exe'",
+		"RT_GROUP_ICON",
+		"assets\\agentdock.ico",
 		"VersionInfo must be applied before Authenticode signing",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("Windows VersionInfo script must enforce SignPath metadata; missing %q", want)
+		}
+	}
+}
+
+func TestWindowsInstallerEmbedsBrandIconIntoStableTrayShim(t *testing.T) {
+	workflow := readWorkflow(t, "windows-installer.yml")
+	for _, want := range []string{
+		"-Path (Join-Path $distRoot 'agentdock-tray-shim.exe')",
+		"-Path .\\dist\\agentdock-tray-shim.exe",
+		"-Path (Join-Path $arm64Dir 'agentdock-tray-shim.exe')",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("Windows installer workflow must brand the stable Tray shim before packaging: %q", want)
 		}
 	}
 }
