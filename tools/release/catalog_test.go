@@ -80,12 +80,34 @@ func TestVerifyVersionMatchesBuildInfo(t *testing.T) {
 	}
 }
 
+func TestReleaseMetadataClassifiesPrereleaseAndStable(t *testing.T) {
+	rc, err := releaseMetadataForTag("v1.0.0-rc.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rc.Prerelease || rc.Core != "1.0.0" || rc.Version != "1.0.0-rc.2" {
+		t.Fatalf("unexpected prerelease metadata: %+v", rc)
+	}
+	stable, err := releaseMetadataForTag("v1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stable.Prerelease || stable.Core != "1.0.0" || stable.Version != "1.0.0" {
+		t.Fatalf("unexpected stable metadata: %+v", stable)
+	}
+	for _, invalid := range []string{"1.0.0", "v1.0", "v1.0.0-"} {
+		if _, err := releaseMetadataForTag(invalid); err == nil {
+			t.Fatalf("invalid release tag unexpectedly accepted: %s", invalid)
+		}
+	}
+}
+
 type discard struct{}
 
 func (discard) Write(p []byte) (int, error) { return len(p), nil }
 
 func TestCloudflaredComponentCatalogUsesPinnedOfficialMetadata(t *testing.T) {
-	metadata, err := loadPinnedCloudflaredMetadata()
+	entry, err := currentCloudflaredCatalogEntry()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,13 +117,17 @@ func TestCloudflaredComponentCatalogUsesPinnedOfficialMetadata(t *testing.T) {
 	}
 	text := output.String()
 	for _, want := range []string{
-		`"schema_version": 1`,
-		`"version": "` + metadata.Version + `"`,
-		`"upstream_source": "https://github.com/cloudflare/cloudflared/releases/tag/` + metadata.Version + `"`,
+		`"schema_version": 2`,
+		`"revision": 1`,
+		`"status": "supported"`,
+		`"min_version": "0.9.1"`,
+		`"max_version_exclusive": "2.0.0"`,
+		`"version": "` + entry.Version + `"`,
+		`"upstream_source": "https://github.com/cloudflare/cloudflared/releases/tag/` + entry.Version + `"`,
 		`"format": "binary"`,
 		`"format": "tgz"`,
-		`https://github.com/cloudflare/cloudflared/releases/download/` + metadata.Version + `/cloudflared-windows-amd64.exe`,
-		`https://github.com/cloudflare/cloudflared/releases/download/` + metadata.Version + `/cloudflared-darwin-arm64.tgz`,
+		`https://github.com/cloudflare/cloudflared/releases/download/` + entry.Version + `/cloudflared-windows-amd64.exe`,
+		`https://github.com/cloudflare/cloudflared/releases/download/` + entry.Version + `/cloudflared-darwin-arm64.tgz`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("catalog missing %q: %s", want, text)

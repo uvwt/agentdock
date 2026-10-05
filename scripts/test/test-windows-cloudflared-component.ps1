@@ -65,11 +65,17 @@ $catalogPath = Join-Path $catalogRoot 'agentdock-component-catalog.json'
 New-Item -ItemType Directory -Path $catalogRoot -Force | Out-Null
 
 $catalog = @{
-    schema_version = 1
+    schema_version = 2
+    revision = 1
     components = @(
         @{
             component = 'cloudflared'
             version = $version
+            status = 'supported'
+            agentdock = @{
+                min_version = '0.9.1'
+                max_version_exclusive = '2.0.0'
+            }
             upstream_version = $version
             upstream_source = "https://github.com/cloudflare/cloudflared/releases/tag/$version"
             artifacts = @(

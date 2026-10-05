@@ -18,6 +18,13 @@ func TestMacOSAppBuildPublishesDesktopUpdateArchive(t *testing.T) {
 		`unzip -tq "$ZIP_PATH"`,
 		`shasum -a 256 "${ZIP_PATH:t}" > "${ZIP_PATH:t}.sha256"`,
 		`go run "$ROOT_DIR/tools/release" version`,
+		`go run "$ROOT_DIR/tools/release" core-version "$VERSION"`,
+		`<key>CFBundleShortVersionString</key>`,
+		`<string>$MARKETING_VERSION</string>`,
+		`<key>CFBundleVersion</key>`,
+		`<string>$BUNDLE_VERSION</string>`,
+		`<key>AgentDockReleaseVersion</key>`,
+		`<string>$VERSION</string>`,
 	} {
 		if !strings.Contains(build, want) {
 			t.Fatalf("build-app.sh missing macOS desktop update archive behavior %q", want)

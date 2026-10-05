@@ -48,7 +48,6 @@ jobs:
             scripts/install \
             ':(glob)scripts/test/*windows*.ps1' \
             packaging/windows \
-            packaging/components \
             packaging/build-core-skill-bundle.py \
             desktop/windows \
             cmd/agentdock \
@@ -315,7 +314,14 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $ProgressPreference = 'SilentlyContinue'
-          $metadata = Get-Content -LiteralPath '.\packaging\components\cloudflared.json' -Raw | ConvertFrom-Json
+          $selectedVersion = (go run ./tools/release component-version).Trim()
+          $catalog = Get-Content -LiteralPath '.\internal\component\catalog-v1.json' -Raw | ConvertFrom-Json
+          $metadata = @($catalog.components | Where-Object {
+            $_.component -eq 'cloudflared' -and [string] $_.version -eq $selectedVersion
+          })[0]
+          if (-not $metadata) {
+            throw "Selected cloudflared metadata was not found: $selectedVersion"
+          }
           $artifact = @($metadata.artifacts | Where-Object { $_.os -eq 'windows' -and $_.arch -eq 'amd64' })[0]
           if (-not $artifact -or [string] $artifact.format -ne 'binary') {
             throw 'Pinned cloudflared metadata does not contain Windows amd64 binary.'

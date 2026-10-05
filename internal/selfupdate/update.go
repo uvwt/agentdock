@@ -18,12 +18,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	processcontrol "github.com/uvwt/agentdock/internal/process"
+	"github.com/uvwt/agentdock/internal/releaseversion"
 )
 
 const (
@@ -719,35 +719,5 @@ func normalizeVersion(version string) string {
 }
 
 func compareVersions(left, right string) (int, bool) {
-	parse := func(value string) ([3]int, bool) {
-		var parsed [3]int
-		value = strings.TrimPrefix(normalizeVersion(value), "v")
-		value = strings.SplitN(value, "-", 2)[0]
-		parts := strings.Split(value, ".")
-		if len(parts) != len(parsed) {
-			return parsed, false
-		}
-		for index, part := range parts {
-			number, err := strconv.Atoi(part)
-			if err != nil || number < 0 {
-				return parsed, false
-			}
-			parsed[index] = number
-		}
-		return parsed, true
-	}
-	leftVersion, leftOK := parse(left)
-	rightVersion, rightOK := parse(right)
-	if !leftOK || !rightOK {
-		return 0, false
-	}
-	for index := range leftVersion {
-		if leftVersion[index] < rightVersion[index] {
-			return -1, true
-		}
-		if leftVersion[index] > rightVersion[index] {
-			return 1, true
-		}
-	}
-	return 0, true
+	return releaseversion.Compare(left, right)
 }

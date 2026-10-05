@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -20,16 +21,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/fs/atomicfile"
+	"github.com/uvwt/agentdock/internal/releaseversion"
 )
 
 const (
-	CloudflaredName            = "cloudflared"
-	activeSchemaVersion        = 1
-	catalogSchemaVersion       = 1
-	defaultCatalogURL          = "https://download.nexusdock.co/latest/agentdock-component-catalog.json"
-	maxCatalogBytes      int64 = 2 << 20
-	maxBinaryBytes       int64 = 256 << 20
+	CloudflaredName                      = "cloudflared"
+	activeSchemaVersion                  = 1
+	catalogSchemaVersion                 = 2
+	componentRepositoryCatalogURL        = "https://download.nexusdock.co/components/v1/catalog.json"
+	componentReleaseCatalogBaseURL       = "https://download.nexusdock.co/releases"
+	maxCatalogBytes                int64 = 2 << 20
+	maxBinaryBytes                 int64 = 256 << 20
 )
 
 var (
@@ -40,6 +44,9 @@ var (
 	// 生产默认始终执行平台真实 trust verifier。
 	platformTrustVerifier = verifyPlatformTrust
 )
+
+//go:embed catalog-v1.json
+var baselineCatalogData []byte
 
 type Status struct {
 	Component string `json:"component"`
@@ -68,15 +75,23 @@ type activePointer struct {
 
 type Catalog struct {
 	SchemaVersion int                `json:"schema_version"`
+	Revision      int                `json:"revision"`
 	Components    []CatalogComponent `json:"components"`
 }
 
+type CatalogCompatibility struct {
+	MinVersion          string `json:"min_version"`
+	MaxVersionExclusive string `json:"max_version_exclusive"`
+}
+
 type CatalogComponent struct {
-	Component       string            `json:"component"`
-	Version         string            `json:"version"`
-	UpstreamVersion string            `json:"upstream_version"`
-	UpstreamSource  string            `json:"upstream_source"`
-	Artifacts       []CatalogArtifact `json:"artifacts"`
+	Component       string               `json:"component"`
+	Version         string               `json:"version"`
+	Status          string               `json:"status"`
+	AgentDock       CatalogCompatibility `json:"agentdock"`
+	UpstreamVersion string               `json:"upstream_version"`
+	UpstreamSource  string               `json:"upstream_source"`
+	Artifacts       []CatalogArtifact    `json:"artifacts"`
 }
 
 type CatalogArtifact struct {
@@ -88,13 +103,14 @@ type CatalogArtifact struct {
 }
 
 type InstallOptions struct {
-	RuntimeRoot string
-	CatalogURL  string
-	HTTPClient  *http.Client
-	GOOS        string
-	GOARCH      string
-	Progress    func(ProgressEvent)
-	LegacyPaths []string
+	RuntimeRoot      string
+	CatalogURL       string
+	AgentDockVersion string
+	HTTPClient       *http.Client
+	GOOS             string
+	GOARCH           string
+	Progress         func(ProgressEvent)
+	LegacyPaths      []string
 }
 
 type Store struct {
@@ -244,9 +260,13 @@ func (store *Store) installCatalogVersion(ctx context.Context, options InstallOp
 	if client == nil {
 		client = &http.Client{Timeout: 2 * time.Minute}
 	}
+	agentdockVersion := strings.TrimSpace(options.AgentDockVersion)
+	if agentdockVersion == "" {
+		agentdockVersion = buildinfo.Version
+	}
 	catalogURL := strings.TrimSpace(options.CatalogURL)
 	if catalogURL == "" {
-		catalogURL = defaultCatalogURL
+		catalogURL = defaultCatalogURLForVersion(agentdockVersion)
 	}
 	goos := strings.TrimSpace(options.GOOS)
 	if goos == "" {
@@ -257,11 +277,11 @@ func (store *Store) installCatalogVersion(ctx context.Context, options InstallOp
 		goarch = runtime.GOARCH
 	}
 	report(options.Progress, ProgressEvent{Type: "stage", Stage: "catalog"})
-	catalogData, err := download(ctx, client, catalogURL, maxCatalogBytes, nil)
+	catalogData, err := store.resolveCatalog(ctx, client, catalogURL, strings.TrimSpace(options.CatalogURL) != "")
 	if err != nil {
-		return Status{}, fmt.Errorf("download component catalog: %w", err)
+		return Status{}, err
 	}
-	entry, artifact, err := selectCloudflaredArtifact(catalogData, goos, goarch)
+	entry, artifact, err := selectCloudflaredArtifact(catalogData, agentdockVersion, goos, goarch)
 	if err != nil {
 		return Status{}, err
 	}
@@ -292,6 +312,77 @@ func (store *Store) installCatalogVersion(ctx context.Context, options InstallOp
 	}
 	report(options.Progress, ProgressEvent{Type: "completed", Stage: "ready"})
 	return status, nil
+}
+
+func (store *Store) resolveCatalog(ctx context.Context, client *http.Client, catalogURL string, authoritativeOverride bool) ([]byte, error) {
+	remoteData, remoteErr := download(ctx, client, catalogURL, maxCatalogBytes, nil)
+	if authoritativeOverride {
+		if remoteErr != nil {
+			return nil, fmt.Errorf("download component catalog: %w", remoteErr)
+		}
+		if _, err := ParseCatalog(remoteData); err != nil {
+			return nil, err
+		}
+		return remoteData, nil
+	}
+
+	cachedData, cachedCatalog, cachedOK := store.readCachedCatalog()
+	if remoteErr == nil {
+		remoteCatalog, parseErr := ParseCatalog(remoteData)
+		if parseErr == nil {
+			if cachedOK {
+				switch {
+				case remoteCatalog.Revision < cachedCatalog.Revision:
+					// revision 单调递增是组件仓库的回滚保护。服务端临时回退或缓存污染时，
+					// 保留本机已经验证过的更新 revision，不让旧 metadata 覆盖新撤销状态。
+					return cachedData, nil
+				case remoteCatalog.Revision == cachedCatalog.Revision && !catalogsEqual(remoteCatalog, cachedCatalog):
+					return cachedData, nil
+				}
+			}
+			if err := atomicfile.Write(store.catalogCachePath(), remoteData, 0o600); err == nil {
+				return remoteData, nil
+			}
+			// cache 写入失败不阻断本次已验证的远程安装；下一次仍可重新获取。
+			return remoteData, nil
+		}
+		remoteErr = parseErr
+	}
+	if cachedOK {
+		return cachedData, nil
+	}
+
+	if _, err := ParseCatalog(baselineCatalogData); err != nil {
+		return nil, fmt.Errorf("embedded component catalog is invalid: %w", err)
+	}
+	if remoteErr != nil {
+		// baseline 是随当前 AgentDock 构建审核过的最后兜底；它仍然执行完整 upstream
+		// URL、digest 和平台签名校验，不会把网络失败降级成不受信任安装。
+		return baselineCatalogData, nil
+	}
+	return baselineCatalogData, nil
+}
+
+func (store *Store) readCachedCatalog() ([]byte, Catalog, bool) {
+	data, err := os.ReadFile(store.catalogCachePath())
+	if err != nil {
+		return nil, Catalog{}, false
+	}
+	catalog, err := ParseCatalog(data)
+	if err != nil {
+		return nil, Catalog{}, false
+	}
+	return data, catalog, true
+}
+
+func (store *Store) catalogCachePath() string {
+	return filepath.Join(store.runtimeRoot, "components", "catalog-v1.json")
+}
+
+func catalogsEqual(left, right Catalog) bool {
+	leftData, leftErr := json.Marshal(left)
+	rightData, rightErr := json.Marshal(right)
+	return leftErr == nil && rightErr == nil && bytes.Equal(leftData, rightData)
 }
 
 func (store *Store) installArtifact(ctx context.Context, data []byte, version, format string) error {
@@ -645,39 +736,158 @@ func readCloudflaredVersion(ctx context.Context, path string) (string, error) {
 	return version, nil
 }
 
-func selectCloudflaredArtifact(data []byte, goos, goarch string) (CatalogComponent, CatalogArtifact, error) {
+func defaultCatalogURLForVersion(agentdockVersion string) string {
+	if normalized, ok := releaseversion.Normalize(agentdockVersion); ok && releaseversion.IsPrerelease(normalized) {
+		// RC/Beta 读取自己不可变 Release 中的 catalog，验证通过后正式版再把同一份
+		// metadata 提升到长期 components/v1 仓库；这样预发布验证不会提前改变稳定用户契约。
+		return componentReleaseCatalogBaseURL + "/" + normalized + "/agentdock-component-catalog.json"
+	}
+	return componentRepositoryCatalogURL
+}
+
+func ParseCatalog(data []byte) (Catalog, error) {
 	var catalog Catalog
 	if err := json.Unmarshal(data, &catalog); err != nil {
-		return CatalogComponent{}, CatalogArtifact{}, fmt.Errorf("parse component catalog: %w", err)
+		return Catalog{}, fmt.Errorf("parse component catalog: %w", err)
 	}
 	if catalog.SchemaVersion != catalogSchemaVersion {
-		return CatalogComponent{}, CatalogArtifact{}, fmt.Errorf("unsupported component catalog schema: %d", catalog.SchemaVersion)
+		return Catalog{}, fmt.Errorf("unsupported component catalog schema: %d", catalog.SchemaVersion)
 	}
+	if catalog.Revision <= 0 {
+		return Catalog{}, errors.New("component catalog revision must be positive")
+	}
+	if len(catalog.Components) == 0 {
+		return Catalog{}, errors.New("component catalog contains no components")
+	}
+	seen := make(map[string]bool, len(catalog.Components))
 	for _, entry := range catalog.Components {
 		if entry.Component != CloudflaredName {
 			continue
 		}
-		if err := validateVersion(entry.Version); err != nil {
-			return CatalogComponent{}, CatalogArtifact{}, err
+		key := entry.Component + "@" + entry.Version
+		if seen[key] {
+			return Catalog{}, fmt.Errorf("component catalog contains duplicate entry %s", key)
 		}
-		if strings.TrimSpace(entry.UpstreamVersion) == "" || strings.TrimSpace(entry.UpstreamSource) == "" {
-			return CatalogComponent{}, CatalogArtifact{}, errors.New("cloudflared catalog entry is missing upstream provenance")
+		seen[key] = true
+		if err := validateCloudflaredCatalogEntry(entry); err != nil {
+			return Catalog{}, err
 		}
-		for _, artifact := range entry.Artifacts {
-			if artifact.OS != goos || artifact.Arch != goarch {
-				continue
+	}
+	return catalog, nil
+}
+
+func SelectCloudflaredEntry(catalog Catalog, agentdockVersion string) (CatalogComponent, error) {
+	currentVersion, ok := releaseversion.Normalize(agentdockVersion)
+	if !ok {
+		return CatalogComponent{}, fmt.Errorf("invalid AgentDock version %q", agentdockVersion)
+	}
+
+	var bestSupported CatalogComponent
+	var bestDeprecated CatalogComponent
+	foundCloudflared := false
+	for _, entry := range catalog.Components {
+		if entry.Component != CloudflaredName {
+			continue
+		}
+		foundCloudflared = true
+		if err := validateCloudflaredCatalogEntry(entry); err != nil {
+			return CatalogComponent{}, err
+		}
+		compatible := cloudflaredCompatible(entry, currentVersion)
+		if !compatible || entry.Status == "revoked" {
+			continue
+		}
+		switch entry.Status {
+		case "supported":
+			if bestSupported.Component == "" || newerComponentVersion(entry.Version, bestSupported.Version) {
+				bestSupported = entry
 			}
-			if err := validateSHA256(artifact.SHA256); err != nil {
-				return CatalogComponent{}, CatalogArtifact{}, err
+		case "deprecated":
+			if bestDeprecated.Component == "" || newerComponentVersion(entry.Version, bestDeprecated.Version) {
+				bestDeprecated = entry
 			}
-			if err := validateCloudflaredUpstreamArtifact(entry, artifact); err != nil {
-				return CatalogComponent{}, CatalogArtifact{}, err
-			}
+		}
+	}
+	if bestSupported.Component != "" {
+		return bestSupported, nil
+	}
+	if bestDeprecated.Component != "" {
+		return bestDeprecated, nil
+	}
+	if foundCloudflared {
+		return CatalogComponent{}, fmt.Errorf("component catalog has no usable cloudflared version for AgentDock %s", currentVersion)
+	}
+	return CatalogComponent{}, errors.New("component catalog does not contain cloudflared")
+}
+
+func selectCloudflaredArtifact(data []byte, agentdockVersion, goos, goarch string) (CatalogComponent, CatalogArtifact, error) {
+	catalog, err := ParseCatalog(data)
+	if err != nil {
+		return CatalogComponent{}, CatalogArtifact{}, err
+	}
+	entry, err := SelectCloudflaredEntry(catalog, agentdockVersion)
+	if err != nil {
+		return CatalogComponent{}, CatalogArtifact{}, err
+	}
+	for _, artifact := range entry.Artifacts {
+		if artifact.OS == goos && artifact.Arch == goarch {
 			return entry, artifact, nil
 		}
-		return CatalogComponent{}, CatalogArtifact{}, fmt.Errorf("component catalog has no cloudflared artifact for %s/%s", goos, goarch)
 	}
-	return CatalogComponent{}, CatalogArtifact{}, errors.New("component catalog does not contain cloudflared")
+	return CatalogComponent{}, CatalogArtifact{}, fmt.Errorf("component catalog has no cloudflared artifact for %s/%s", goos, goarch)
+}
+
+func validateCloudflaredCatalogEntry(entry CatalogComponent) error {
+	if _, ok := releaseversion.Normalize(entry.Version); !ok {
+		return fmt.Errorf("invalid cloudflared component version %q", entry.Version)
+	}
+	switch entry.Status {
+	case "supported", "deprecated", "revoked":
+	default:
+		return fmt.Errorf("cloudflared catalog status %q is invalid", entry.Status)
+	}
+	minVersion, minOK := releaseversion.Normalize(entry.AgentDock.MinVersion)
+	maxVersion, maxOK := releaseversion.Normalize(entry.AgentDock.MaxVersionExclusive)
+	if !minOK || !maxOK {
+		return errors.New("cloudflared catalog AgentDock compatibility range is invalid")
+	}
+	if comparison, _ := releaseversion.Compare(minVersion, maxVersion); comparison >= 0 {
+		return errors.New("cloudflared catalog AgentDock compatibility range is empty")
+	}
+	if strings.TrimSpace(entry.UpstreamVersion) == "" || strings.TrimSpace(entry.UpstreamSource) == "" {
+		return errors.New("cloudflared catalog entry is missing upstream provenance")
+	}
+	if len(entry.Artifacts) == 0 {
+		return errors.New("cloudflared catalog entry contains no artifacts")
+	}
+	seen := make(map[string]bool, len(entry.Artifacts))
+	for _, artifact := range entry.Artifacts {
+		key := artifact.OS + "/" + artifact.Arch
+		if seen[key] {
+			return fmt.Errorf("cloudflared catalog contains duplicate artifact %s", key)
+		}
+		seen[key] = true
+		if err := validateSHA256(artifact.SHA256); err != nil {
+			return err
+		}
+		if err := validateCloudflaredUpstreamArtifact(entry, artifact); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func cloudflaredCompatible(entry CatalogComponent, currentAgentDockVersion string) bool {
+	minVersion, _ := releaseversion.Normalize(entry.AgentDock.MinVersion)
+	maxVersion, _ := releaseversion.Normalize(entry.AgentDock.MaxVersionExclusive)
+	lower, _ := releaseversion.Compare(currentAgentDockVersion, minVersion)
+	upper, _ := releaseversion.Compare(currentAgentDockVersion, maxVersion)
+	return lower >= 0 && upper < 0
+}
+
+func newerComponentVersion(candidate, current string) bool {
+	comparison, comparable := releaseversion.Compare(candidate, current)
+	return comparable && comparison > 0
 }
 
 func validateCloudflaredUpstreamArtifact(entry CatalogComponent, artifact CatalogArtifact) error {

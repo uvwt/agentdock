@@ -15,6 +15,7 @@ require (
 	github.com/uvwt/agentdock-protocol v0.8.2-0.20261004051622-257c54fb223b
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/trace v1.46.0
+	golang.org/x/mod v0.29.0
 	golang.org/x/oauth2 v0.35.0
 	golang.org/x/sys v0.47.0
 	gopkg.in/yaml.v3 v3.0.1

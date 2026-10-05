@@ -289,7 +289,7 @@ platform / arch
 建议建立一个小而明确的第一方 metadata 文件，例如：
 
 ```text
-packaging/components/cloudflared.json
+internal/component/catalog-v1.json
 ```
 
 逻辑字段：

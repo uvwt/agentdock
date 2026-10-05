@@ -8,6 +8,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,9 +18,13 @@ import (
 )
 
 func TestDefaultCatalogUsesNexusDockDistribution(t *testing.T) {
-	const want = "https://download.nexusdock.co/latest/agentdock-component-catalog.json"
-	if defaultCatalogURL != want {
-		t.Fatalf("default catalog URL = %q, want %q", defaultCatalogURL, want)
+	const stable = "https://download.nexusdock.co/components/v1/catalog.json"
+	if got := defaultCatalogURLForVersion("1.0.0"); got != stable {
+		t.Fatalf("stable catalog URL = %q, want %q", got, stable)
+	}
+	const prerelease = "https://download.nexusdock.co/releases/v1.0.0-rc.1/agentdock-component-catalog.json"
+	if got := defaultCatalogURLForVersion("1.0.0-rc.1"); got != prerelease {
+		t.Fatalf("prerelease catalog URL = %q, want %q", got, prerelease)
 	}
 }
 
@@ -116,10 +122,16 @@ func TestCommitStagedRepairsCorruptSameVersionWithoutInPlaceOverwrite(t *testing
 func TestSelectCloudflaredArtifactRequiresPinnedOfficialUpstream(t *testing.T) {
 	digest := strings.Repeat("a", 64)
 	catalog := Catalog{
-		SchemaVersion: 1,
+		SchemaVersion: 2,
+		Revision:      1,
 		Components: []CatalogComponent{{
-			Component:       CloudflaredName,
-			Version:         "2026.9.3",
+			Component: CloudflaredName,
+			Version:   "2026.9.3",
+			Status:    "supported",
+			AgentDock: CatalogCompatibility{
+				MinVersion:          "0.9.1",
+				MaxVersionExclusive: "2.0.0",
+			},
 			UpstreamVersion: "2026.9.3",
 			UpstreamSource:  "https://github.com/cloudflare/cloudflared/releases/tag/2026.9.3",
 			Artifacts: []CatalogArtifact{{
@@ -133,7 +145,7 @@ func TestSelectCloudflaredArtifactRequiresPinnedOfficialUpstream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry, artifact, err := selectCloudflaredArtifact(data, "windows", "amd64")
+	entry, artifact, err := selectCloudflaredArtifact(data, "1.0.0-rc.1", "windows", "amd64")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,10 +162,185 @@ func TestSelectCloudflaredArtifactRequiresPinnedOfficialUpstream(t *testing.T) {
 	} {
 		catalog.Components[0].Artifacts[0].URL = invalid
 		data, _ = json.Marshal(catalog)
-		if _, _, err := selectCloudflaredArtifact(data, "windows", "amd64"); err == nil {
+		if _, _, err := selectCloudflaredArtifact(data, "1.0.0-rc.1", "windows", "amd64"); err == nil {
 			t.Fatalf("unsafe artifact URL unexpectedly accepted: %s", invalid)
 		}
 	}
+}
+
+func TestSelectCloudflaredEntryUsesNewestSupportedCompatibleVersion(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	entry := func(version, status, min, max string) CatalogComponent {
+		return CatalogComponent{
+			Component:       CloudflaredName,
+			Version:         version,
+			Status:          status,
+			AgentDock:       CatalogCompatibility{MinVersion: min, MaxVersionExclusive: max},
+			UpstreamVersion: version,
+			UpstreamSource:  "https://github.com/cloudflare/cloudflared/releases/tag/" + version,
+			Artifacts: []CatalogArtifact{{
+				OS: "windows", Arch: "amd64", Format: "binary",
+				URL:    "https://github.com/cloudflare/cloudflared/releases/download/" + version + "/cloudflared-windows-amd64.exe",
+				SHA256: digest,
+			}},
+		}
+	}
+	catalog := Catalog{
+		SchemaVersion: 2,
+		Revision:      7,
+		Components: []CatalogComponent{
+			entry("2026.9.1", "deprecated", "0.9.1", "2.0.0"),
+			entry("2026.9.2", "supported", "1.0.0", "2.0.0"),
+			entry("2026.9.3", "revoked", "1.0.0", "2.0.0"),
+			entry("2026.10.0", "supported", "2.0.0", "3.0.0"),
+		},
+	}
+	got, err := SelectCloudflaredEntry(catalog, "1.1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != "2026.9.2" {
+		t.Fatalf("selected cloudflared %s, want 2026.9.2", got.Version)
+	}
+}
+
+func TestSelectCloudflaredEntryFallsBackToDeprecatedOnlyWhenNecessary(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	catalog := Catalog{
+		SchemaVersion: 2,
+		Revision:      1,
+		Components: []CatalogComponent{{
+			Component:       CloudflaredName,
+			Version:         "2026.9.1",
+			Status:          "deprecated",
+			AgentDock:       CatalogCompatibility{MinVersion: "0.9.1", MaxVersionExclusive: "2.0.0"},
+			UpstreamVersion: "2026.9.1",
+			UpstreamSource:  "https://github.com/cloudflare/cloudflared/releases/tag/2026.9.1",
+			Artifacts: []CatalogArtifact{{
+				OS: "windows", Arch: "amd64", Format: "binary",
+				URL:    "https://github.com/cloudflare/cloudflared/releases/download/2026.9.1/cloudflared-windows-amd64.exe",
+				SHA256: digest,
+			}},
+		}},
+	}
+	got, err := SelectCloudflaredEntry(catalog, "1.5.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != "2026.9.1" {
+		t.Fatalf("selected cloudflared %s, want deprecated compatible version", got.Version)
+	}
+}
+
+func TestResolveCatalogCachesLatestAndRejectsRevisionRollback(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := testCatalogData(t, 2, "2026.9.2")
+	stale := testCatalogData(t, 1, "2026.9.1")
+	response := current
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write(response)
+	}))
+	defer server.Close()
+
+	got, err := store.resolveCatalog(context.Background(), server.Client(), server.URL, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalog, _ := ParseCatalog(got); catalog.Revision != 2 {
+		t.Fatalf("first catalog revision = %d, want 2", catalog.Revision)
+	}
+
+	response = stale
+	got, err = store.resolveCatalog(context.Background(), server.Client(), server.URL, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalog, _ := ParseCatalog(got); catalog.Revision != 2 {
+		t.Fatalf("rollback catalog revision = %d, want cached 2", catalog.Revision)
+	}
+}
+
+func TestResolveCatalogUsesCacheThenEmbeddedBaselineWhenOffline(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		http.Error(writer, "offline", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cached := testCatalogData(t, 3, "2026.9.3")
+	if err := os.MkdirAll(filepath.Dir(store.catalogCachePath()), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store.catalogCachePath(), cached, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.resolveCatalog(context.Background(), server.Client(), server.URL, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalog, _ := ParseCatalog(got); catalog.Revision != 3 {
+		t.Fatalf("offline cached revision = %d, want 3", catalog.Revision)
+	}
+
+	freshStore, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = freshStore.resolveCatalog(context.Background(), server.Client(), server.URL, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := ParseCatalog(got)
+	if err != nil || catalog.Revision <= 0 {
+		t.Fatalf("embedded baseline invalid: revision=%d err=%v", catalog.Revision, err)
+	}
+}
+
+func TestResolveCatalogAuthoritativeOverrideFailsClosed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		http.Error(writer, "offline", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.resolveCatalog(context.Background(), server.Client(), server.URL, true); err == nil {
+		t.Fatal("authoritative catalog override unexpectedly fell back")
+	}
+}
+
+func testCatalogData(t *testing.T, revision int, version string) []byte {
+	t.Helper()
+	catalog := Catalog{
+		SchemaVersion: 2,
+		Revision:      revision,
+		Components: []CatalogComponent{{
+			Component:       CloudflaredName,
+			Version:         version,
+			Status:          "supported",
+			AgentDock:       CatalogCompatibility{MinVersion: "0.9.1", MaxVersionExclusive: "2.0.0"},
+			UpstreamVersion: version,
+			UpstreamSource:  "https://github.com/cloudflare/cloudflared/releases/tag/" + version,
+			Artifacts: []CatalogArtifact{{
+				OS: "windows", Arch: "amd64", Format: "binary",
+				URL:    "https://github.com/cloudflare/cloudflared/releases/download/" + version + "/cloudflared-windows-amd64.exe",
+				SHA256: strings.Repeat("a", 64),
+			}},
+		}},
+	}
+	data, err := json.Marshal(catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func TestExtractCloudflaredTGZAcceptsOnlySingleRegularBinary(t *testing.T) {

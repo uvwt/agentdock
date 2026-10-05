@@ -1,75 +1,101 @@
 # Release 下载分发
 
-AgentDock 的官方第一方二进制分发边界统一为 `https://download.nexusdock.co`。桌面端检查更新、安装脚本、AgentDock 归档、Setup/DMG、校验文件和第一方 component catalog 不依赖 AgentDock GitHub Release 下载地址；GitHub Release 继续承担 Release Notes、社区入口和历史下载归档职责。
+AgentDock 的官方第一方二进制分发边界统一为 `https://download.nexusdock.co`。桌面更新、安装脚本、AgentDock 归档、Setup/DMG、校验文件和第一方 component metadata 不依赖 AgentDock GitHub Release 下载地址；GitHub Release 继续承担 Release Notes、社区入口和完整历史归档职责。
 
-第三方依赖不进入 AgentDock 镜像链。cloudflared 由 AgentDock 的第一方 component catalog 固定 Cloudflare 官方 Release URL、artifact format 和 SHA-256，客户端直接从 Cloudflare 官方 GitHub Release 下载。Microsoft .NET Windows Desktop Runtime 与 Windows App Runtime 同样由安装器按固定的微软官方来源获取，不上传到 AgentDock R2。
+第三方依赖不进入 AgentDock 镜像链。cloudflared 的 URL、格式和 SHA-256 由 AgentDock 审计过的 component catalog 固定，客户端直接从 Cloudflare 官方 GitHub Release 下载。Microsoft .NET Windows Desktop Runtime 与 Windows App Runtime 同样使用固定的微软官方来源。
 
 ## 产品契约
 
-AgentDock 的公开安装与更新只支持**当前稳定版**：
+普通用户只有一个公开 Stable 更新通道：
 
-- `install.sh` 不提供 `--version`；
-- `install.ps1` 不提供 `-Version`；
+- `install.sh` 不提供历史版本选择；
+- `install.ps1` 不提供历史版本选择；
 - 桌面 self-update 只读取 `https://download.nexusdock.co/latest.json`；
-- component catalog 只通过 `https://download.nexusdock.co/latest/agentdock-component-catalog.json` 获取；
-- 客户端运行时不包含 AgentDock GitHub Release fallback；
-- GitHub 的历史 Release 可以用于开发、排障和人工归档下载，但不属于产品安装 API。
+- Stable 客户端的 component resolver 读取 `https://download.nexusdock.co/components/v1/catalog.json`；
+- 客户端运行时不使用 AgentDock GitHub Release fallback；
+- GitHub 历史 Release 可用于开发、排障和人工归档下载，但不属于产品安装 API。
 
-测试和离线安装仍可通过现有测试/离线入口注入本地 payload 或测试下载基址；这些能力不构成面向用户的历史版本安装功能。
+内部发布验证使用标准 SemVer prerelease，例如 `v1.0.0-rc.1`。Prerelease 不是第二个长期产品通道：它只发布不可变候选产物和 GitHub Prerelease，不移动 `latest.json`、component repository 或容器 `latest` aliases。RC 的 self-update 仍检查 Stable `latest.json`，因此 `1.0.0-rc.1 < 1.0.0` 时会自然升级正式版。
 
 ## R2 对象模型
 
-R2 底层仍使用版本化不可变目录，避免覆盖 `latest` 文件造成半发布：
+`releases/<tag>/` 是不可变发布快照；大型 Release 资产采用短 retention。component repository 是独立的长期兼容性 metadata：
 
 ```text
-latest.json
+latest.json                         # 当前 Stable，可变
+components/
+└── v1/
+    └── catalog.json               # component v1 兼容仓库，可变且 revision 单调递增
 releases/
-├── vX.Y.Z/       # 上一个稳定版，临时保留用于紧急回退
+├── v1.0.0-rc.1/                   # 内部 RC 验证期间保留
+│   ├── agentdock-component-catalog.json
 │   └── ...
-└── vX.Y.(Z+1)/   # 当前稳定版
+├── v0.9.1/                        # 上一 Stable
+│   └── ...
+└── v1.0.0/                        # 当前 Stable
     ├── AgentDockSetup-amd64.exe
-    ├── AgentDockSetup-amd64.exe.sha256
-    ├── AgentDockSetup-arm64.exe
-    ├── AgentDockSetup-arm64.exe.sha256
     ├── AgentDock-macos-universal.dmg
-    ├── AgentDock-macos-universal.dmg.sha256
-    ├── AgentDock-macos-universal.zip
-    ├── AgentDock-macos-universal.zip.sha256
     ├── agentdock-component-catalog.json
-    ├── agentdock-component-catalog.json.sha256
     ├── agentdock_{linux,darwin,windows}_{amd64,arm64}.*
     ├── install.sh
-    ├── install.sh.sha256
-    ├── install.ps1
-    └── install.ps1.sha256
+    └── install.ps1
 ```
 
-版本目录内对象不可覆盖：如果同一个 key 已存在但 SHA-256 不同，发布立即失败。这样当前版本在上传、校验完成之前不会影响现有用户。
+同一个 `releases/<tag>/` key 不允许以不同 SHA-256 覆盖。每个 Release 中的 `agentdock-component-catalog.json` 是该候选构建时的审计快照；Stable 客户端运行时不依赖历史 Release snapshot，因此历史大文件被清理后不会失去安装 optional component 的能力。
 
-`latest.json` 是桌面稳定版唯一可变指针，使用最小 GitHub Release 兼容结构：`tag_name` 和 `assets[].name/browser_download_url`。所有 `browser_download_url` 指向当前版本的 `https://download.nexusdock.co/releases/<tag>/...`。
+`latest.json` 使用最小 GitHub Release 兼容结构：`tag_name` 和 `assets[].name/browser_download_url`，所有资产 URL 指向不可变 `releases/<tag>/...`。Download Worker 只处理 `/latest/*` 的友好入口；`/releases/*` 和 `/components/*` 由 R2 自定义域直接提供。
 
-下载 Worker 为官网保留平台友好别名，同时允许安全的 `/latest/<asset-name>` 从 `latest.json` 解析到当前版本化对象，例如：
+Android 使用独立的 `android/latest.json` / `android/releases/` 契约。
 
-- `/latest/install.sh`
-- `/latest/agentdock_linux_amd64.tar.gz`
-- `/latest/agentdock-component-catalog.json`
+## Component repository
 
-Android 使用独立的 `android/latest.json` / `android/releases/` 分发契约，不与桌面 `latest.json` 混用。
+组件仓库源文件是 `internal/component/catalog-v1.json`。Schema v2 的稳定语义包括：
+
+- `revision`：任何 metadata 变化都必须单调递增，用于客户端回滚保护；
+- `component` / `version`：组件身份和 SemVer；
+- `status`：`supported`、`deprecated` 或 `revoked`；
+- `agentdock.min_version` / `max_version_exclusive`：AgentDock 兼容范围；
+- 固定的 upstream version/source；
+- 各平台 artifact format、官方 URL 和 SHA-256。
+
+客户端优先选择“兼容、未撤销、版本最高”的 `supported` 条目；没有 supported 时才允许使用兼容的 `deprecated` 条目，`revoked` 永远不可选。
+
+Stable 默认从 `/components/v1/catalog.json` 获取。Prerelease 默认从自己的 `/releases/<prerelease-tag>/agentdock-component-catalog.json` 获取，因此 RC 可以验证精确候选 metadata 而不提前改变 Stable 用户契约。正式版通过全部 gate 后，再把同一份已验证 snapshot 提升到 component repository。
+
+客户端容错顺序是：
+
+1. 远程 catalog；
+2. 本地 last-known-good catalog；
+3. 随当前 AgentDock 二进制嵌入的 baseline catalog。
+
+成功获取的远程 catalog 会原子缓存。若远程 `revision` 小于本地已验证 revision，或相同 revision 却内容不同，客户端保留本地 last-known-good，避免 metadata 回滚覆盖已经获知的撤销状态。显式 `--catalog-url` 属于测试/受管覆盖，按权威源 fail-closed，不使用生产 fallback。
+
+baseline 只解决控制面 metadata 暂时不可达，不降低 artifact 信任要求：cloudflared 仍必须通过固定官方 URL、SHA-256 和平台签名/代码签名验证。
+
+## 版本与平台 metadata
+
+产品版本遵循完整 SemVer，例如：
+
+`1.0.0-beta.1 < 1.0.0-rc.1 < 1.0.0 < 1.1.0-rc.1`
+
+self-update 不再截掉 prerelease 后缀比较版本，因此 prerelease 可以升级正式版，正式版不会被错误降级到 prerelease。
+
+Windows 的数值型 FileVersion / AssemblyVersion 使用 SemVer core（例如 `1.0.0.0`），InformationalVersion 与 AgentDock 产品版本保留完整 `1.0.0-rc.1`。Inno Setup 的展示版本也保留完整产品版本。
+
+macOS 的 `CFBundleShortVersionString` 使用 SemVer core，`CFBundleVersion` 使用 Release CI 的单调 build number，完整产品版本写入 `AgentDockReleaseVersion`，应用 UI 和 Core 一致性检查读取该字段。
 
 ## R2 保留策略
 
-R2 只保留两个完整稳定版本：
+Stable 正常收敛到两个完整版本：
 
-1. 当前 `latest.json` 指向的稳定版；
-2. 发布前 `latest.json` 指向的上一稳定版。
+1. 新发布的当前 Stable；
+2. 发布前 `latest.json` 指向的上一 Stable。
 
-新版本完成上传并通过公开 URL 校验后，Release workflow 在切换 `latest.json` **之前**删除更早的 `releases/<tag>/` 前缀，只保留候选新版本和发布前 `latest.json` 指向的当前稳定版。清理失败时 workflow 直接停止，用户入口仍停留在旧稳定版。
+RC 在候选验证期间保留其不可变 `releases/<tag>/`。正式 Stable promotion 时，在确认上一 Stable prefix 存在的前提下，清理除“当前 Stable + 上一 Stable”之外能够被 release tool 识别的 SemVer release prefix，包括已完成使命的 prerelease。未知 prefix 不猜测、不删除。
 
-如果同一 Release workflow 被重跑，或者发布前记录的上一稳定版前缀已经不存在，workflow 不猜测其他前缀的语义，也不执行删除；宁可暂时多保留对象，也不把失败上传的半成品误当成上一稳定版。下一次正常新版本发布会再次按当前/上一稳定版策略收敛。
+如果上一 Stable prefix 缺失或无法确认，workflow 宁可暂时多保留对象，也不做推断删除。GitHub Releases 始终保存完整历史，R2 不承担长期历史安装仓库职责。
 
-正常发布完成后，R2 目标状态是两个完整稳定版本。它们是发布原子性和紧急回退缓冲，不是公开的历史版本安装功能。
-
-现有较老 GitHub Release **不迁移回 R2**。GitHub 继续保存历史 Release；R2 从本策略生效后只维护当前与上一稳定版。
+`components/v1/catalog.json` 不跟随 Release retention 删除。它按 component API 生命周期维护；只要仍支持使用 v1 catalog 的客户端，就持续提供兼容 metadata。
 
 ## Bootstrap 约定
 
@@ -79,45 +105,44 @@ R2 只保留两个完整稳定版本：
 https://download.nexusdock.co/latest
 ```
 
-Release 打包阶段不再二次改写 bootstrap 为版本化下载地址，也不再维护 `prepare-distribution` 之类的脚本重写步骤。GitHub Release 与 R2 直接发布同一份 bootstrap 字节及其 checksum。
-
-bootstrap 下载到 payload 后，实际安装版本由 payload 自身的版本元数据确定；Windows 安装结果也记录实际 payload 版本，而不是信任外部传入的版本参数。
+Release 打包阶段不改写 bootstrap 为版本化下载地址。GitHub Release 与 R2 发布同一份 bootstrap 字节及 checksum。测试和离线验证可以注入本地 payload 或测试下载基址，但不构成面向用户的历史版本安装功能。
 
 ## 第三方 component 边界
 
-`agentdock-component-catalog.json` 是 AgentDock 第一方 metadata，因此 catalog 文件本身进入 GitHub Release 和 R2；catalog 中 cloudflared 的 artifact URL 始终保持 Cloudflare 官方固定版本地址，不能改写为 NexusDock R2。
+AgentDock Release/R2 不包含 cloudflared binary。审计过的 `internal/component/catalog-v1.json` 固定：
 
-cloudflared 的信任根位于仓库审计过的 `packaging/components/cloudflared.json`：
+- cloudflared 明确版本，不跟踪 upstream `latest`；
+- Cloudflare 官方 Release URL；
+- Windows `binary` / macOS `tgz` 格式；
+- upstream artifact SHA-256；
+- AgentDock 兼容范围和状态。
 
-- version 固定，不跟踪 `latest`；
-- URL 固定为 Cloudflare 官方 Release；
-- Windows format 为 `binary`；
-- macOS format 为 `tgz`；
-- upstream artifact SHA-256 固定；
-- Release CI 在对应平台验证 digest、签名/代码签名、归档结构和版本；
-- AgentDock Release/R2 不包含 cloudflared binary。
-
-Windows 的微软共享 Runtime 采用同一原则：AgentDock Setup 只携带固定 metadata/安装逻辑，缺失时从微软官方固定来源获取并验证 Authenticode，不在 R2 维护第三方副本。
+Release CI 在对应平台验证 digest、Authenticode/codesign、归档结构和真实版本。Windows 的微软共享 Runtime 使用同一原则：缺失时从微软官方固定来源获取并验证，不在 R2 维护第三方副本。
 
 ## 发布顺序
 
-1. 构建、签名并生成唯一 AgentDock release candidate，同时生成固定官方第三方来源的 component catalog。
-2. 完成 Linux、macOS、Windows、容器、第三方 upstream 和 GitHub draft 验证。
-3. 上传 `releases/<tag>/` 的第一方资产到 R2；同 key 不允许不同 digest 覆盖。
-4. 从 `download.nexusdock.co/releases/<tag>/...` 逐个验证公开版本化 URL。
-5. 读取发布前的 `latest.json` tag，并在用户入口仍指向旧稳定版时，保留候选新 tag 与当前稳定 tag、删除更早 R2 Release 前缀。
-6. 清理成功后更新并验证根目录 `latest.json`，此时候选新 tag 成为当前稳定版，旧稳定 tag 成为上一稳定版。
-7. 最后公开 GitHub Release，并提升容器 `latest` aliases。
+Stable 发布：
 
-这样 R2 上传、公开 URL 校验或保留策略执行失败时都不会提前切换用户入口；只有这些步骤全部成功后才移动 `latest.json`，同时保持一个上一稳定版用于紧急回退。
+1. 验证 tag 与 `buildinfo.Version` 的完整 SemVer 一致性。
+2. 构建、签名并验证 Linux、macOS、Windows、容器及第三方 upstream。
+3. 创建 GitHub draft，并上传不可变 `releases/<tag>/` 到 R2。
+4. 验证全部公网版本化 URL。
+5. 在 Stable 用户入口仍指向旧版时执行 fail-safe retention。
+6. 发布并验证 `components/v1/catalog.json`。
+7. 最后更新并验证 `latest.json`。
+8. 提升容器 `latest` aliases，并把 GitHub draft 发布为正式 Release。
+
+Prerelease 执行相同的构建、签名、候选验证和不可变 R2 上传，但跳过第 5-7 步和容器 mutable alias promotion；GitHub Release 标记为 prerelease 且不成为 GitHub Latest。
+
+这样任何上传、验证、component repository 或 retention 失败都不会提前移动 Stable 用户入口。
 
 ## GitHub Actions 配置
 
 Repository Variables：
 
-- `R2_ACCOUNT_ID`：Cloudflare Account ID。
-- `R2_BUCKET`：AgentDock 正式 Release bucket。
-- `R2_PUBLIC_BASE_URL`：公开分发域名，当前必须为 `https://download.nexusdock.co`。
+- `R2_ACCOUNT_ID`：Cloudflare Account ID；
+- `R2_BUCKET`：AgentDock 正式 Release bucket；
+- `R2_PUBLIC_BASE_URL`：必须为 `https://download.nexusdock.co`。
 
 Repository Secrets：
 

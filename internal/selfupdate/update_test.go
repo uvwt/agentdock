@@ -715,3 +715,21 @@ func TestDownloadWithProgressSupportsUnknownLength(t *testing.T) {
 		t.Fatalf("unexpected unknown-length progress: read=%d total=%d", lastRead, lastTotal)
 	}
 }
+
+func TestCompareVersionsUsesSemVerPrereleaseOrder(t *testing.T) {
+	tests := []struct {
+		left, right string
+		want        int
+	}{
+		{"v1.0.0-beta.1", "v1.0.0-beta.2", -1},
+		{"v1.0.0-rc.1", "v1.0.0", -1},
+		{"v1.0.0", "v1.0.0-rc.1", 1},
+		{"v1.0.0", "v1.0.1-beta.1", -1},
+	}
+	for _, tt := range tests {
+		got, ok := compareVersions(tt.left, tt.right)
+		if !ok || got != tt.want {
+			t.Fatalf("compareVersions(%q, %q) = %d, %t; want %d, true", tt.left, tt.right, got, ok, tt.want)
+		}
+	}
+}

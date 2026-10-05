@@ -50,14 +50,16 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = (go run ./tools/release version).Trim()
-          $parts = @($version.Split('.'))
+          $releaseVersion = (go run ./tools/release version).Trim()
+          $coreVersion = (go run ./tools/release core-version $releaseVersion).Trim()
+          $parts = @($coreVersion.Split('.'))
           if ($parts.Count -lt 1 -or $parts.Count -gt 4 -or @($parts | Where-Object { $_ -notmatch '^\d+$' }).Count -ne 0) {
-            throw "AgentDock release version cannot be represented as Windows VersionInfo: $version"
+            throw "AgentDock release version cannot be represented as Windows VersionInfo: $releaseVersion"
           }
           while ($parts.Count -lt 4) { $parts += '0' }
           $windowsVersion = $parts -join '.'
           "windows=$windowsVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding ascii -Append
+          "release=$releaseVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding ascii -Append
 
       - name: Build AgentDock Windows signing set
         shell: pwsh
@@ -82,7 +84,7 @@ jobs:
             -p:Version='${{ steps.version.outputs.windows }}' `
             -p:FileVersion='${{ steps.version.outputs.windows }}' `
             -p:AssemblyVersion='${{ steps.version.outputs.windows }}' `
-            -p:InformationalVersion='${{ steps.version.outputs.windows }}' `
+            -p:InformationalVersion='${{ steps.version.outputs.release }}' `
             -o dist\control-panel
           Copy-Item .\dist\control-panel\agentdock-tray.exe .\dist\agentdock-tray.exe -Force
 
@@ -183,6 +185,8 @@ jobs:
     outputs:
       commit: ${{ steps.source.outputs.commit }}
       tag: ${{ steps.source.outputs.tag }}
+      core_version: ${{ steps.source.outputs.core_version }}
+      prerelease: ${{ steps.source.outputs.prerelease }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -213,6 +217,9 @@ jobs:
           git merge-base --is-ancestor "$source_commit" origin/main
 
           go run ./tools/release verify-version "$RELEASE_TAG"
+          release_metadata="$(go run ./tools/release release-metadata "$RELEASE_TAG")"
+          core_version="$(jq -r '.core_version' <<<"$release_metadata")"
+          prerelease="$(jq -r '.prerelease' <<<"$release_metadata")"
 
           # 已公开 Release 视为不可变；只有明确的 HTTP 404 才表示尚未发布。
           release_api_error="$RUNNER_TEMP/release-api-error.log"
@@ -228,8 +235,12 @@ jobs:
             exit 1
           fi
 
-          echo "commit=$source_commit" >> "$GITHUB_OUTPUT"
-          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          {
+            echo "commit=$source_commit"
+            echo "tag=$RELEASE_TAG"
+            echo "core_version=$core_version"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
 
   build-linux:
     needs: source
@@ -339,17 +350,30 @@ jobs:
         with:
           ref: ${{ needs.source.outputs.commit }}
 
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - name: Verify pinned upstream artifact
         shell: bash
         run: |
           set -euo pipefail
           architecture='${{ matrix.goarch }}'
+          component_version="$(go run ./tools/release component-version)"
           eval "$(
-            python3 - "$architecture" <<'PY'
+            python3 - "$architecture" "$component_version" <<'PY'
           import json, shlex, sys
           from pathlib import Path
-          metadata = json.loads(Path("packaging/components/cloudflared.json").read_text())
+          catalog = json.loads(Path("internal/component/catalog-v1.json").read_text())
           arch = sys.argv[1]
+          version = sys.argv[2]
+          entries = [item for item in catalog["components"]
+                     if item["component"] == "cloudflared" and item["version"] == version]
+          if len(entries) != 1:
+              raise SystemExit(f"missing selected cloudflared {version}")
+          metadata = entries[0]
           items = [a for a in metadata["artifacts"] if a["os"] == "darwin" and a["arch"] == arch]
           if len(items) != 1 or items[0]["format"] != "tgz":
               raise SystemExit(f"missing pinned darwin/{arch} tgz artifact")
@@ -391,12 +415,25 @@ jobs:
         with:
           ref: ${{ needs.source.outputs.commit }}
 
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - name: Verify pinned upstream artifact
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $ProgressPreference = 'SilentlyContinue'
-          $metadata = Get-Content -LiteralPath '.\packaging\components\cloudflared.json' -Raw | ConvertFrom-Json
+          $selectedVersion = (go run ./tools/release component-version).Trim()
+          $catalog = Get-Content -LiteralPath '.\internal\component\catalog-v1.json' -Raw | ConvertFrom-Json
+          $metadata = @($catalog.components | Where-Object {
+            $_.component -eq 'cloudflared' -and [string] $_.version -eq $selectedVersion
+          })[0]
+          if (-not $metadata) {
+            throw "Selected cloudflared metadata was not found: $selectedVersion"
+          }
           $artifact = @($metadata.artifacts | Where-Object { $_.os -eq 'windows' -and $_.arch -eq 'amd64' })[0]
           if (-not $artifact -or [string] $artifact.format -ne 'binary') {
             throw 'Pinned metadata does not contain Windows amd64 cloudflared binary.'
@@ -448,6 +485,7 @@ jobs:
           AGENTDOCK_MACOS_ARCHES: arm64,x86_64
           AGENTDOCK_MACOS_APP_OUTPUT_DIR: dist/macos-app
           AGENTDOCK_MACOS_OFFLINE_PAYLOAD_DIR: ${{ github.workspace }}/payload
+          AGENTDOCK_MACOS_BUILD_VERSION: ${{ github.run_number }}
         run: packaging/macos/build-app.sh
 
       - name: Upload artifact
@@ -512,9 +550,7 @@ jobs:
           $ldflags = "-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Commit=$sourceCommit -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=$buildDate"
           $runtimeIdentifier = if ($env:GOARCH -eq 'arm64') { 'win-arm64' } else { 'win-x64' }
           $releaseVersion = '${{ needs.source.outputs.tag }}'.TrimStart('v')
-          $versionParts = @($releaseVersion.Split('.'))
-          while ($versionParts.Count -lt 4) { $versionParts += '0' }
-          $windowsVersion = $versionParts -join '.'
+          $windowsVersion = '${{ needs.source.outputs.core_version }}.0'
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           go build -trimpath -ldflags $ldflags -o dist/agentdock.exe ./cmd/agentdock
           go build -trimpath -ldflags '-s -w' -o dist/agentdock-arbiter.exe ./cmd/agentdock-arbiter
@@ -528,7 +564,7 @@ jobs:
             -p:Version=$windowsVersion `
             -p:FileVersion=$windowsVersion `
             -p:AssemblyVersion=$windowsVersion `
-            -p:InformationalVersion=$windowsVersion `
+            -p:InformationalVersion=$releaseVersion `
             -o dist\control-panel
           Copy-Item .\dist\control-panel\agentdock-tray.exe .\dist\agentdock-tray.exe -Force
 
@@ -859,27 +895,33 @@ jobs:
           from pathlib import Path
           from urllib.parse import urlparse
           catalog = json.loads(Path(os.environ["STAGED_RELEASE_DIR"]).joinpath("agentdock-component-catalog.json").read_text())
-          component = catalog["components"][0]
-          version = component["version"]
-          assert component["component"] == "cloudflared"
-          assert version == component["upstream_version"]
-          assert component["upstream_source"] == f"https://github.com/cloudflare/cloudflared/releases/tag/{version}"
+          assert catalog["schema_version"] == 2
+          assert catalog["revision"] > 0
+          components = [item for item in catalog["components"] if item["component"] == "cloudflared"]
+          assert components
           expected = {
               ("darwin", "amd64"): ("tgz", "cloudflared-darwin-amd64.tgz"),
               ("darwin", "arm64"): ("tgz", "cloudflared-darwin-arm64.tgz"),
               ("windows", "amd64"): ("binary", "cloudflared-windows-amd64.exe"),
           }
-          assert len(component["artifacts"]) == len(expected)
-          for artifact in component["artifacts"]:
-              key = (artifact["os"], artifact["arch"])
-              assert key in expected
-              fmt, name = expected[key]
-              assert artifact["format"] == fmt
-              assert len(artifact["sha256"]) == 64
-              parsed = urlparse(artifact["url"])
-              assert parsed.scheme == "https" and parsed.netloc == "github.com"
-              assert parsed.query == "" and parsed.fragment == ""
-              assert parsed.path == f"/cloudflare/cloudflared/releases/download/{version}/{name}"
+          for component in components:
+              version = component["version"]
+              assert component["status"] in {"supported", "deprecated", "revoked"}
+              assert component["agentdock"]["min_version"]
+              assert component["agentdock"]["max_version_exclusive"]
+              assert version == component["upstream_version"]
+              assert component["upstream_source"] == f"https://github.com/cloudflare/cloudflared/releases/tag/{version}"
+              assert len(component["artifacts"]) == len(expected)
+              for artifact in component["artifacts"]:
+                  key = (artifact["os"], artifact["arch"])
+                  assert key in expected
+                  fmt, name = expected[key]
+                  assert artifact["format"] == fmt
+                  assert len(artifact["sha256"]) == 64
+                  parsed = urlparse(artifact["url"])
+                  assert parsed.scheme == "https" and parsed.netloc == "github.com"
+                  assert parsed.query == "" and parsed.fragment == ""
+                  assert parsed.path == f"/cloudflare/cloudflared/releases/download/{version}/{name}"
           PY
 
           mkdir -p "$zip_dir"
@@ -1008,22 +1050,14 @@ jobs:
           }
 
           $catalog = Get-Content -LiteralPath $componentCatalog -Raw | ConvertFrom-Json
-          $pinned = Get-Content -LiteralPath '.\packaging\components\cloudflared.json' -Raw | ConvertFrom-Json
-          $entry = @($catalog.components | Where-Object { $_.component -eq 'cloudflared' })[0]
-          if (-not $entry -or [string] $entry.version -ne [string] $pinned.version -or
-              [string] $entry.upstream_source -ne [string] $pinned.upstream_source) {
-            throw 'Staged component catalog cloudflared provenance does not match pinned metadata.'
+          $sourceCatalog = Get-Content -LiteralPath '.\internal\component\catalog-v1.json' -Raw | ConvertFrom-Json
+          $stagedCanonical = $catalog | ConvertTo-Json -Depth 20 -Compress
+          $sourceCanonical = $sourceCatalog | ConvertTo-Json -Depth 20 -Compress
+          if ($stagedCanonical -ne $sourceCanonical) {
+            throw 'Staged component catalog does not match the audited catalog-v1 source.'
           }
-          $artifact = @($entry.artifacts | Where-Object { $_.os -eq 'windows' -and $_.arch -eq 'amd64' })[0]
-          $expectedArtifact = @($pinned.artifacts | Where-Object { $_.os -eq 'windows' -and $_.arch -eq 'amd64' })[0]
-          if (-not $artifact -or -not $expectedArtifact -or
-              [string] $artifact.format -ne 'binary' -or
-              [string] $artifact.url -ne [string] $expectedArtifact.url -or
-              ([string] $artifact.sha256).ToLowerInvariant() -ne ([string] $expectedArtifact.sha256).ToLowerInvariant()) {
-            throw 'Staged component catalog Windows artifact does not match pinned official upstream metadata.'
-          }
-          if ([string] $artifact.url -notlike "https://github.com/cloudflare/cloudflared/releases/download/$($pinned.version)/*") {
-            throw "Unexpected staged Windows component URL: $($artifact.url)"
+          if ([int] $catalog.schema_version -ne 2 -or [int] $catalog.revision -le 0) {
+            throw 'Staged component catalog schema/revision is invalid.'
           }
 
           $legacyRoot = Join-Path $env:RUNNER_TEMP 'agentdock-release-legacy-fixture'
@@ -1343,9 +1377,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Setup Docker Buildx
+        if: needs.source.outputs.prerelease != 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GitHub Container Registry
+        if: needs.source.outputs.prerelease != 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -1353,12 +1389,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to Docker Hub
+        if: needs.source.outputs.prerelease != 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Promote validated mutable aliases
+        if: needs.source.outputs.prerelease != 'true'
         shell: bash
         env:
           RELEASE_TAG: ${{ needs.source.outputs.tag }}
@@ -1397,19 +1435,25 @@ jobs:
           RELEASE_ID: ${{ needs.stage-release.outputs.release_id }}
           RELEASE_TAG: ${{ needs.source.outputs.tag }}
           SOURCE_COMMIT: ${{ needs.source.outputs.commit }}
+          PRERELEASE: ${{ needs.source.outputs.prerelease }}
         run: |
           set -euo pipefail
           test -n "$RELEASE_ID"
+          make_latest=true
+          if [[ "$PRERELEASE" == "true" ]]; then
+            make_latest=false
+          fi
           published="$(gh api --method PATCH "repos/${{ github.repository }}/releases/$RELEASE_ID" \
             -f tag_name="$RELEASE_TAG" \
             -f target_commitish="$SOURCE_COMMIT" \
             -f name="$RELEASE_TAG" \
             -F draft=false \
-            -F prerelease=false \
-            -f make_latest='true' \
-            --jq '[.draft, .tag_name, .target_commitish] | @tsv')"
-          IFS=$'\t' read -r draft tag target <<<"$published"
+            -F prerelease="$PRERELEASE" \
+            -f make_latest="$make_latest" \
+            --jq '[.draft, .prerelease, .tag_name, .target_commitish] | @tsv')"
+          IFS=$'\t' read -r draft prerelease tag target <<<"$published"
           test "$draft" = "false"
+          test "$prerelease" = "$PRERELEASE"
           test "$tag" = "$RELEASE_TAG"
           test "$target" = "$SOURCE_COMMIT"
 
@@ -1512,7 +1556,8 @@ jobs:
               --head "$url" >/dev/null
           done < <(jq -r '.assets[].browser_download_url' dist/latest.json)
 
-      - name: Retain previous R2 release and publish latest.json
+      - name: Retain previous stable, publish component repository and latest.json
+        if: needs.source.outputs.prerelease != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -1523,13 +1568,10 @@ jobs:
             --endpoint-url "$endpoint" \
             --only-show-errors 2>/dev/null; then
             previous_tag="$(jq -r '.tag_name // empty' "$RUNNER_TEMP/previous-latest.json")"
-            case "$previous_tag" in
-              v[0-9]*.[0-9]*.[0-9]*) ;;
-              *)
-                echo "Existing R2 latest.json has an invalid tag_name: $previous_tag" >&2
-                exit 1
-                ;;
-            esac
+            if [[ "$(go run ./tools/release release-kind "$previous_tag")" != "stable" ]]; then
+              echo "Existing R2 latest.json must point to a stable SemVer release: $previous_tag" >&2
+              exit 1
+            fi
           fi
 
           aws s3api list-objects-v2 \
@@ -1541,8 +1583,8 @@ jobs:
 
           jq -r '
             [.Contents[]?.Key
-              | select(test("^releases/v[0-9]+\\.[0-9]+\\.[0-9]+/"))
-              | capture("^releases/(?<tag>v[0-9]+\\.[0-9]+\\.[0-9]+)/").tag]
+              | select(test("^releases/v[^/]+/"))
+              | capture("^releases/(?<tag>v[^/]+)/").tag]
             | unique[]
           ' "$RUNNER_TEMP/r2-release-objects.json" > "$RUNNER_TEMP/r2-release-tags"
 
@@ -1559,12 +1601,40 @@ jobs:
             while IFS= read -r tag; do
               [[ "$tag" == "$RELEASE_TAG" ]] && continue
               [[ "$tag" == "$previous_tag" ]] && continue
+              # 只清理 release tool 能识别的 SemVer prefix；未知对象宁可保留，避免猜测删除。
+              if ! go run ./tools/release release-kind "$tag" >/dev/null 2>&1; then
+                echo "Keep unknown R2 release prefix unchanged: $tag"
+                continue
+              fi
               aws s3 rm "s3://$R2_BUCKET/releases/$tag/" \
                 --recursive \
                 --endpoint-url "$endpoint" \
                 --only-show-errors
             done < "$RUNNER_TEMP/r2-release-tags"
           fi
+
+          component_sha256="$(sha256sum dist/agentdock-component-catalog.json | awk '{print $1}')"
+          aws s3 cp dist/agentdock-component-catalog.json "s3://$R2_BUCKET/components/v1/catalog.json" \
+            --endpoint-url "$endpoint" \
+            --content-type "application/json; charset=utf-8" \
+            --cache-control "no-cache, max-age=0, must-revalidate" \
+            --metadata "sha256=$component_sha256" \
+            --only-show-errors
+          stored_component_sha256="$(aws s3api head-object \
+            --bucket "$R2_BUCKET" \
+            --key "components/v1/catalog.json" \
+            --endpoint-url "$endpoint" \
+            --query 'Metadata.sha256' \
+            --output text)"
+          test "$stored_component_sha256" = "$component_sha256"
+
+          component_url="${R2_PUBLIC_BASE_URL%/}/components/v1/catalog.json?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          curl --fail --silent --show-error --location \
+            --retry 5 --retry-all-errors \
+            -H "Cache-Control: no-cache" \
+            "$component_url" \
+            -o "$RUNNER_TEMP/published-component-catalog.json"
+          test "$(sha256sum "$RUNNER_TEMP/published-component-catalog.json" | awk '{print $1}')" = "$component_sha256"
 
           aws s3 cp dist/latest.json "s3://$R2_BUCKET/latest.json" \
             --endpoint-url "$endpoint" \

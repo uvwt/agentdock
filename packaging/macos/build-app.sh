@@ -28,6 +28,7 @@ usage() {
   AGENTDOCK_MACOS_OFFLINE_PAYLOAD_DIR
                                双架构离线载荷目录，构建 DMG 时必须提供
   AGENTDOCK_MACOS_MIN_VERSION   最低 macOS 版本，默认 13.0
+  AGENTDOCK_MACOS_BUILD_VERSION macOS CFBundleVersion；Release CI 使用单调递增的 run number
   AGENTDOCK_CODESIGN_IDENTITY   代码签名身份；默认 -（ad-hoc）
   AGENTDOCK_CODESIGN_KEYCHAIN   可选，指定签名身份所在钥匙串
   AGENTDOCK_CODESIGN_KEYCHAIN_PASSWORD
@@ -78,7 +79,10 @@ VERSION="${1:-}"
 if [[ -z "$VERSION" ]]; then
   VERSION="$(go run "$ROOT_DIR/tools/release" version)"
 fi
-[[ "$VERSION" == <->.<->.<->* ]] || die "无法解析 App 版本：$VERSION"
+MARKETING_VERSION="$(go run "$ROOT_DIR/tools/release" core-version "$VERSION")" || die "无法解析 App 版本：$VERSION"
+BUNDLE_VERSION="${AGENTDOCK_MACOS_BUILD_VERSION:-$MARKETING_VERSION}"
+[[ "$BUNDLE_VERSION" == <-> || "$BUNDLE_VERSION" == <->.<-> || "$BUNDLE_VERSION" == <->.<->.<-> ]] || \
+  die "macOS CFBundleVersion 必须是 1-3 段数字：$BUNDLE_VERSION"
 
 SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/agentdock-macos-app.XXXXXX")"
@@ -344,8 +348,10 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>$VERSION</string>
+  <string>$MARKETING_VERSION</string>
   <key>CFBundleVersion</key>
+  <string>$BUNDLE_VERSION</string>
+  <key>AgentDockReleaseVersion</key>
   <string>$VERSION</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_VERSION</string>

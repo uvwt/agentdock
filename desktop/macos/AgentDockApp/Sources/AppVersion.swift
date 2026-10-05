@@ -2,7 +2,10 @@ import Foundation
 
 enum AppVersion {
     static var current: String {
-        let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        // prerelease 的完整产品版本不能塞进 macOS 数值型 bundle version 字段。
+        // Release 构建单独写入 AgentDockReleaseVersion，旧包仍回退到系统短版本字段。
+        let raw = Bundle.main.object(forInfoDictionaryKey: "AgentDockReleaseVersion") as? String
+            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         return display(raw)
     }
 

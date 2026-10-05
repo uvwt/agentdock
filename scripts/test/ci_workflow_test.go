@@ -89,7 +89,7 @@ func TestWindowsInstallerWorkflowHasAlwaysPresentPullRequestGate(t *testing.T) {
 		"name: Test cloudflared component lifecycle",
 		"for ($attempt = 1; $attempt -le 5; $attempt++)",
 		"Get-AuthenticodeSignature -LiteralPath $cloudflaredPath",
-		".\\packaging\\components\\cloudflared.json",
+		".\\internal\\component\\catalog-v1.json",
 		"cloudflared pinned SHA-256 mismatch",
 		".\\scripts\\test\\test-windows-cloudflared-component.ps1",
 		"-SignedCloudflaredBinary $cloudflaredPath",
@@ -98,7 +98,6 @@ func TestWindowsInstallerWorkflowHasAlwaysPresentPullRequestGate(t *testing.T) {
 		"cmd/agentdock-wsl-helper",
 		"internal/wslfilehelper",
 		"scripts/test/testdata/fake-cloudflared",
-		"packaging/components",
 		"internal/component",
 		"tools/release",
 	} {
@@ -170,7 +169,9 @@ func TestReleaseWorkflowPublishesDraftByReleaseID(t *testing.T) {
 		`gh api --method PATCH "repos/${{ github.repository }}/releases/$RELEASE_ID"`,
 		`-f target_commitish="$SOURCE_COMMIT"`,
 		"-F draft=false",
-		"-f make_latest='true'",
+		"PRERELEASE: ${{ needs.source.outputs.prerelease }}",
+		`-F prerelease="$PRERELEASE"`,
+		`-f make_latest="$make_latest"`,
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("Release workflow must publish the validated draft by immutable release ID; missing %q", want)
@@ -298,9 +299,15 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 		"name: Run versioned GHCR images",
 		"name: Run versioned Docker Hub images",
 		"name: Publish immutable Release to R2",
-		"name: Retain previous R2 release and publish latest.json",
+		"name: Retain previous stable, publish component repository and latest.json",
 		"name: Promote aliases and publish GitHub Release",
 		"name: Promote validated mutable aliases",
+		"if: needs.source.outputs.prerelease != 'true'",
+		"prerelease: ${{ steps.source.outputs.prerelease }}",
+		"core_version: ${{ steps.source.outputs.core_version }}",
+		`aws s3 cp dist/agentdock-component-catalog.json "s3://$R2_BUCKET/components/v1/catalog.json"`,
+		`component_url="${R2_PUBLIC_BASE_URL%/}/components/v1/catalog.json?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"`,
+		`go run ./tools/release release-kind "$previous_tag"`,
 		"docker buildx imagetools create --tag",
 		"needs: [source, prepare-release, stage-release, verify-container]",
 		"needs: [source, stage-release, mirror-r2]",
@@ -350,9 +357,11 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 		}
 	}
 	cleanupIndex := strings.Index(workflow, `aws s3 rm "s3://$R2_BUCKET/releases/$tag/"`)
+	publishComponentIndex := strings.Index(workflow, `aws s3 cp dist/agentdock-component-catalog.json "s3://$R2_BUCKET/components/v1/catalog.json"`)
 	publishLatestIndex := strings.Index(workflow, `aws s3 cp dist/latest.json "s3://$R2_BUCKET/latest.json"`)
-	if cleanupIndex < 0 || publishLatestIndex < 0 || cleanupIndex > publishLatestIndex {
-		t.Fatal("R2 retention cleanup must finish before latest.json moves to the new stable release")
+	if cleanupIndex < 0 || publishComponentIndex < 0 || publishLatestIndex < 0 ||
+		cleanupIndex > publishComponentIndex || publishComponentIndex > publishLatestIndex {
+		t.Fatal("R2 stable promotion must finish retention and component repository publication before latest.json moves")
 	}
 
 	if strings.Contains(workflow, "type=raw,value=latest") ||

@@ -366,7 +366,7 @@ macOS 首次设置不再要求用户选择 Local / Quick / Named。Cloudflare Tu
 
 当前长期契约已经进一步收敛为：
 
-1. 仓库中的 `packaging/components/cloudflared.json` 是审计过的 pinned metadata，记录明确版本、Cloudflare 官方固定 Release URL、artifact format 和下载物 SHA-256；
+1. 仓库中的 `internal/component/catalog-v1.json` 是审计过的 pinned metadata，记录明确版本、Cloudflare 官方固定 Release URL、artifact format 和下载物 SHA-256；
 2. Release CI 从官方 Cloudflare 固定版本来源下载对应 artifact，并验证仓库 pinned SHA-256、版本与平台签名/信任；
 3. CI 只验证第三方 dependency，不把 cloudflared 上传到 AgentDock GitHub Release；
 4. R2 只承载 AgentDock 第一方发布物和第一方 catalog metadata，不镜像 cloudflared，也没有 fallback mirror；

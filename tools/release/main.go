@@ -23,33 +23,58 @@ func main() {
 
 func run(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("用法：release <catalog|version|component-version|component-catalog|verify-version|verify-dist|checksum|mirror-manifest> [参数]")
+		return errors.New("用法：release <catalog|version|component-version|component-catalog|release-metadata|release-kind|core-version|verify-version|verify-dist|checksum|mirror-manifest> [参数]")
 	}
 	switch args[0] {
 	case "version":
 		fmt.Fprintln(stdout, strings.TrimPrefix(buildinfo.Version, "v"))
 		return nil
 	case "component-version":
-		metadata, err := loadPinnedCloudflaredMetadata()
+		entry, err := currentCloudflaredCatalogEntry()
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(stdout, metadata.Version)
+		fmt.Fprintln(stdout, entry.Version)
 		return nil
 	case "component-catalog":
 		if len(args) != 1 {
 			return errors.New("用法：release component-catalog")
 		}
 		return writeCloudflaredComponentCatalog(stdout)
+	case "release-metadata":
+		if len(args) != 2 {
+			return errors.New("用法：release release-metadata <tag>")
+		}
+		return writeReleaseMetadata(args[1], stdout)
+	case "release-kind":
+		if len(args) != 2 {
+			return errors.New("用法：release release-kind <tag>")
+		}
+		metadata, err := releaseMetadataForTag(args[1])
+		if err != nil {
+			return err
+		}
+		if metadata.Prerelease {
+			fmt.Fprintln(stdout, "prerelease")
+		} else {
+			fmt.Fprintln(stdout, "stable")
+		}
+		return nil
+	case "core-version":
+		if len(args) != 2 {
+			return errors.New("用法：release core-version <version>")
+		}
+		metadata, err := releaseMetadataForTag("v" + strings.TrimPrefix(strings.TrimSpace(args[1]), "v"))
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(stdout, metadata.Core)
+		return nil
 	case "verify-version":
 		if len(args) != 2 {
 			return errors.New("用法：release verify-version <tag>")
 		}
-		tag := strings.TrimPrefix(strings.TrimSpace(args[1]), "v")
-		if tag != strings.TrimPrefix(buildinfo.Version, "v") {
-			return fmt.Errorf("release tag v%s does not match buildinfo.Version %s", tag, buildinfo.Version)
-		}
-		return nil
+		return verifyReleaseVersion(args[1])
 	case "catalog":
 		return json.NewEncoder(stdout).Encode(ReleaseCatalog())
 	case "verify-dist":
