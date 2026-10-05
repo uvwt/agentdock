@@ -982,8 +982,10 @@ jobs:
           HOME="$RUNNER_TEMP/home" \
           AGENTDOCK_INSTALLER_BASE_URL="$release_base" \
           AGENTDOCK_INSTALL_DIR="$RUNNER_TEMP/bin" \
-            sh "$installer" --version "$RELEASE_TAG"
+            sh "$installer"
           "$RUNNER_TEMP/bin/agentdock" --help >/dev/null 2>&1
+          installed_core_version="$("$RUNNER_TEMP/bin/agentdock" --version)"
+          [[ "$installed_core_version" == *"AgentDock $RELEASE_TAG"* ]]
           for skill in agentdock-user-guide skill-authoring skill-installation; do
             test -f "$RUNNER_TEMP/home/.agentdock/skills/$skill/SKILL.md"
           done

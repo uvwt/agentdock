@@ -356,6 +356,19 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 	if strings.Contains(workflow, "AGENTDOCK_RELEASE_VERSION") {
 		t.Fatal("release verification must not expose historical-version bootstrap selection")
 	}
+	if strings.Contains(workflow, `sh "$installer" --version "$RELEASE_TAG"`) {
+		t.Fatal("staged release verification must use the latest-only installer contract")
+	}
+	for _, want := range []string{
+		`AGENTDOCK_INSTALLER_BASE_URL="$release_base"`,
+		`sh "$installer"`,
+		`installed_core_version="$("$RUNNER_TEMP/bin/agentdock" --version)"`,
+		`[[ "$installed_core_version" == *"AgentDock $RELEASE_TAG"* ]]`,
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("staged macOS verification must install the candidate via latest-only bootstrap; missing %q", want)
+		}
+	}
 	for _, forbidden := range []string{
 		"Skip R2 retention cleanup because no distinct previous stable release is known.\"\n            exit 0",
 		"Previous stable R2 prefix is missing; keep existing release prefixes unchanged: $previous_tag\"\n            exit 0",
