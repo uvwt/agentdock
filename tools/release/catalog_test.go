@@ -83,3 +83,28 @@ func TestVerifyVersionMatchesBuildInfo(t *testing.T) {
 type discard struct{}
 
 func (discard) Write(p []byte) (int, error) { return len(p), nil }
+
+func TestCloudflaredComponentCatalogPinsArtifactsAndDigests(t *testing.T) {
+	dir := t.TempDir()
+	for _, artifact := range cloudflaredReleaseArtifacts {
+		if err := os.WriteFile(filepath.Join(dir, artifact.Name), []byte(artifact.OS+"-"+artifact.Arch), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var output strings.Builder
+	if err := writeCloudflaredComponentCatalog(&output, "v9.9.9", "uvwt/agentdock", dir); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	for _, want := range []string{
+		`"schema_version": 1`,
+		`"version": "` + cloudflaredComponentVersion + `"`,
+		`"upstream_source": "https://github.com/cloudflare/cloudflared/releases/tag/` + cloudflaredComponentVersion + `"`,
+		`https://github.com/uvwt/agentdock/releases/download/v9.9.9/cloudflared_darwin_arm64`,
+		`https://github.com/uvwt/agentdock/releases/download/v9.9.9/cloudflared_windows_amd64.exe`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("catalog missing %q: %s", want, text)
+		}
+	}
+}

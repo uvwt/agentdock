@@ -133,6 +133,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     throw ValidationError(L10n.text("AgentDock update is missing background service recovery state."))
                 }
 
+                // Transitional safety for the first release that removes bundled cloudflared:
+                // the source updater may predate the component store. During the target trial the
+                // old App is still preserved in the rollback slot, so import its signed helper
+                // before Tunnel registration is restored or the Arbiter is allowed to commit.
+                let configuredMode = (try? service.configuredTunnelMode()) ?? .local
+                try await service.migrateLegacyCloudflaredIfNeeded(
+                    source: DesktopUpdateTransactionRecovery.legacyCloudflaredRollbackSource(paths: service.paths),
+                    required: configuredMode != .local || serviceState.tunnelEnabled
+                )
+
                 // Restore Bundle-owned SMAppService definitions first. requiresApproval is an
                 // explicit policy state and is reported to the Arbiter instead of failing the App.
                 let registration = try service.restoreBackgroundServiceRegistrationsForUpdate(

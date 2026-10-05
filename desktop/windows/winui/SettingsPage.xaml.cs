@@ -18,6 +18,7 @@ public sealed partial class SettingsPage : Page
     private PublicEndpointCheckResult? _publicEndpointCheckResult;
     private string _publicEndpointCheckUrl = "";
     private bool _publicEndpointCheckInProgress;
+    private bool _componentOperationInProgress;
 
     public SettingsPage()
     {
@@ -503,6 +504,25 @@ public sealed partial class SettingsPage : Page
             SectionContent = credentialRows
         });
 
+        var componentState = (_snapshot?.CloudflaredComponentState ?? "not_installed")
+            .Trim()
+            .ToLowerInvariant();
+        content.Children.Add(BuildCloudflaredComponentSection(componentState));
+        if (!string.Equals(componentState, "ready", StringComparison.Ordinal))
+        {
+            if (!string.IsNullOrWhiteSpace(_advancedStatus))
+            {
+                content.Children.Add(new TextBlock
+                {
+                    Text = _advancedStatus,
+                    FontSize = 11.5,
+                    Opacity = 0.62,
+                    TextWrapping = TextWrapping.Wrap
+                });
+            }
+            return content;
+        }
+
         var publicRows = new StackPanel();
         var publicAddress = _snapshot?.PublicMcpUrl ?? "";
         var publicActions = new StackPanel
@@ -635,6 +655,150 @@ public sealed partial class SettingsPage : Page
         }
         return content;
     }
+
+    private SectionCard BuildCloudflaredComponentSection(string state)
+    {
+        var rows = new StackPanel();
+        var actions = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        string stateText;
+        string detail;
+        switch (state)
+        {
+            case "ready":
+                stateText = string.IsNullOrWhiteSpace(_snapshot?.CloudflaredComponentVersion)
+                    ? UiText.Get("ComponentReady")
+                    : UiText.Format("ComponentReadyVersion", _snapshot!.CloudflaredComponentVersion);
+                detail = UiText.Get("CloudflaredComponentPurpose");
+                actions.Children.Add(ComponentActionButton(UiText.Get("Update"), "update"));
+                actions.Children.Add(ComponentActionButton(UiText.Get("Uninstall"), "uninstall"));
+                break;
+            case "broken":
+                stateText = UiText.Get("ComponentNeedsRepair");
+                detail = UiText.Get("CloudflaredComponentPurpose");
+                actions.Children.Add(ComponentActionButton(UiText.Get("ComponentRepairAction"), "repair"));
+                break;
+            default:
+                stateText = UiText.Get("ComponentNotInstalled");
+                detail = UiText.Get("CloudflaredComponentPurpose");
+                actions.Children.Add(ComponentActionButton(UiText.Get("Install"), "install"));
+                break;
+        }
+
+        rows.Children.Add(DetailActionRow(
+            UiText.Get("CloudflareTunnelComponent"),
+            stateText,
+            actions
+        ));
+        rows.Children.Add(Divider());
+        rows.Children.Add(new TextBlock
+        {
+            Text = detail,
+            FontSize = 11.5,
+            Opacity = 0.62,
+            TextWrapping = TextWrapping.Wrap,
+            Padding = new Thickness(13, 10, 13, 12)
+        });
+
+        return new SectionCard
+        {
+            Title = UiText.Get("CloudflareTunnel"),
+            SectionContent = rows
+        };
+    }
+
+    private Button ComponentActionButton(string title, string action)
+    {
+        var button = new Button
+        {
+            Content = title,
+            Tag = action,
+            IsEnabled = !_componentOperationInProgress
+        };
+        button.Click += CloudflaredComponentAction_Click;
+        return button;
+    }
+
+    private async void CloudflaredComponentAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (_runtime is null ||
+            sender is not Button button ||
+            button.Tag is not string action ||
+            _componentOperationInProgress)
+        {
+            return;
+        }
+
+        _componentOperationInProgress = true;
+        _advancedStatus = UiText.Get(action switch
+        {
+            "update" => "UpdatingComponent",
+            "uninstall" => "UninstallingComponent",
+            "repair" => "RepairingComponent",
+            _ => "InstallingComponent"
+        });
+        Render("advancedConnection");
+
+        try
+        {
+            var progress = new Progress<ComponentProgress>(componentProgress =>
+            {
+                _advancedStatus = ComponentProgressText(componentProgress);
+                Render("advancedConnection");
+            });
+            switch (action)
+            {
+                case "update":
+                    await _runtime.UpdateCloudflaredComponentAsync(progress);
+                    break;
+                case "uninstall":
+                    await _runtime.UninstallCloudflaredComponentAsync();
+                    break;
+                case "repair":
+                case "install":
+                    await _runtime.InstallCloudflaredComponentAsync(progress);
+                    break;
+                default:
+                    return;
+            }
+            await RefreshAsync();
+            _advancedStatus = UiText.Get(action == "uninstall"
+                ? "ComponentUninstalled"
+                : action == "update"
+                    ? "ComponentUpdated"
+                    : action == "repair"
+                        ? "ComponentRepaired"
+                        : "ComponentInstalled");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"cloudflared component {action} failed: {ex}");
+            _advancedStatus = UiText.Get("ComponentOperationFailed");
+        }
+        finally
+        {
+            _componentOperationInProgress = false;
+            Render("advancedConnection");
+        }
+    }
+
+    private static string ComponentProgressText(ComponentProgress progress) =>
+        progress.Stage switch
+        {
+            "catalog" => UiText.Get("ComponentChecking"),
+            "download" => progress.Total > 0
+                ? UiText.Format("ComponentDownloadingProgress", progress.Bytes * 100 / Math.Max(1, progress.Total))
+                : UiText.Get("ComponentDownloading"),
+            "verify" => UiText.Get("ComponentVerifying"),
+            "install" => UiText.Get("InstallingComponent"),
+            "ready" => UiText.Get("ComponentReady"),
+            _ => UiText.Get("ComponentWorking")
+        };
 
     private Grid CredentialActionRow(string title, string kind)
     {

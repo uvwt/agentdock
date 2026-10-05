@@ -304,13 +304,14 @@ jobs:
             -ChecksumPath $env:AMD64_CHECKSUM `
             -InjectTrayReplaceFailure
 
-      - name: Download and verify cloudflared compatibility payload
+      - name: Test cloudflared component lifecycle
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $ProgressPreference = 'SilentlyContinue'
+          $version = (go run ./tools/release component-version).Trim()
           $cloudflaredPath = Join-Path $env:RUNNER_TEMP 'cloudflared-windows-amd64.exe'
-          $cloudflaredUrl = 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe'
+          $cloudflaredUrl = "https://github.com/cloudflare/cloudflared/releases/download/$version/cloudflared-windows-amd64.exe"
           for ($attempt = 1; $attempt -le 5; $attempt++) {
             try {
               Invoke-WebRequest -UseBasicParsing -Uri $cloudflaredUrl -OutFile $cloudflaredPath
@@ -324,7 +325,10 @@ jobs:
           if ($cloudflaredSignature.Status -ne [Management.Automation.SignatureStatus]::Valid) {
             throw "cloudflared Authenticode signature is invalid: $($cloudflaredSignature.StatusMessage)"
           }
-          "AMD64_CLOUDFLARED=$cloudflaredPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
+          & .\scripts\test\test-windows-cloudflared-component.ps1 `
+            -AgentDockBinary .\dist\agentdock.exe `
+            -SignedCloudflaredBinary $cloudflaredPath `
+            -ArtifactUrl $cloudflaredUrl
 
       - name: Test Quick Tunnel restart lifecycle
         shell: powershell
@@ -402,8 +406,7 @@ jobs:
           & .\scripts\test\test-windows-setup-activation-deferred.ps1 `
             -InstallerPath .\scripts\install\install.ps1 `
             -AgentDockArchive $env:AMD64_ARCHIVE `
-            -AgentDockChecksumFile $env:AMD64_CHECKSUM `
-            -CloudflaredBinary $env:AMD64_CLOUDFLARED
+            -AgentDockChecksumFile $env:AMD64_CHECKSUM
 
       - name: Compile offline AMD64 Setup
         shell: pwsh
@@ -429,7 +432,6 @@ jobs:
             Architecture = 'amd64'
             AgentDockArchive = $env:AMD64_ARCHIVE
             AgentDockChecksumFile = $env:AMD64_CHECKSUM
-            CloudflaredBinary = $env:AMD64_CLOUDFLARED
             OutputDirectory = $outputDir
           }
           if (-not [string]::IsNullOrWhiteSpace($testTag)) {
@@ -522,7 +524,6 @@ jobs:
             -Architecture arm64 `
             -AgentDockArchive $arm64Archive `
             -AgentDockChecksumFile "$arm64Archive.sha256" `
-            -CloudflaredBinary $env:AMD64_CLOUDFLARED `
             -OutputDirectory $releaseDir `
             -SignedBuild
 

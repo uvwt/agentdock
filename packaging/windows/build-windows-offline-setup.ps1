@@ -10,8 +10,6 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $AgentDockChecksumFile,
     [Parameter(Mandatory = $true)]
-    [string] $CloudflaredBinary,
-    [Parameter(Mandatory = $true)]
     [string] $OutputDirectory,
     [switch] $SignedBuild
 )
@@ -55,7 +53,6 @@ function Resolve-InnoSetupCompiler {
 
 $archivePath = Resolve-RequiredFile -Path $AgentDockArchive -Description 'AgentDock archive'
 $checksumPath = Resolve-RequiredFile -Path $AgentDockChecksumFile -Description 'AgentDock checksum file'
-$cloudflaredPath = Resolve-RequiredFile -Path $CloudflaredBinary -Description 'cloudflared binary'
 
 $expectedHash = ((Get-Content -LiteralPath $checksumPath -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
 $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -87,11 +84,6 @@ try {
     $archive.Dispose()
 }
 
-$cloudflaredSignature = Get-AuthenticodeSignature -LiteralPath $cloudflaredPath
-if ($cloudflaredSignature.Status -ne [Management.Automation.SignatureStatus]::Valid) {
-    throw "cloudflared Authenticode signature is not valid: $($cloudflaredSignature.StatusMessage)"
-}
-
 $iscc = Resolve-InnoSetupCompiler
 
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
@@ -103,8 +95,6 @@ try {
     $assetName = "agentdock_windows_$Architecture.zip"
     Copy-Item -LiteralPath $archivePath -Destination (Join-Path $payloadRoot $assetName) -Force
     Copy-Item -LiteralPath $checksumPath -Destination (Join-Path $payloadRoot "$assetName.sha256") -Force
-    # cloudflared is an independent compatibility payload. Keep its internal name architecture-neutral.
-    Copy-Item -LiteralPath $cloudflaredPath -Destination (Join-Path $payloadRoot 'cloudflared.exe') -Force
 
     $arguments = @(
         "/DAppVersion=$Version",
@@ -139,9 +129,11 @@ try {
         & (Join-Path $PSScriptRoot 'sign-windows.ps1') -Path $setupPath -VerifyOnly
     }
 
-    $minimumExpectedSize = (Get-Item -LiteralPath $archivePath).Length + 1MB
+    # Offline Setup 只封装 AgentDock 本体。cloudflared 是运行时按需安装的 optional
+    # component，不能再用安装包体积间接要求它存在。
+    $minimumExpectedSize = [Math]::Max(1MB, [int64] ((Get-Item -LiteralPath $archivePath).Length * 0.6))
     if ((Get-Item -LiteralPath $setupPath).Length -lt $minimumExpectedSize) {
-        throw 'Offline Setup is unexpectedly small and may not contain cloudflared.'
+        throw 'Offline Setup is unexpectedly small and may not contain the AgentDock payload.'
     }
 
     Write-Host "Offline Windows Setup created: $setupPath"

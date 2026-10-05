@@ -67,11 +67,9 @@ Name: "chinesesimplified"; MessagesFile: "compiler:Default.isl, languages\Chines
 
 [Files]
 Source: "..\..\scripts\install\install.ps1"; Flags: dontcopy
-Source: "..\..\scripts\install\probe-protected-text.ps1"; Flags: dontcopy
 Source: "..\..\scripts\install\launch-windows-process.ps1"; Flags: dontcopy
 Source: "{#OfflinePayloadDir}\agentdock_windows_{#PayloadArchitecture}.zip"; Flags: dontcopy
 Source: "{#OfflinePayloadDir}\agentdock_windows_{#PayloadArchitecture}.zip.sha256"; Flags: dontcopy
-Source: "{#OfflinePayloadDir}\cloudflared.exe"; Flags: dontcopy
 Source: "..\..\scripts\install\install.ps1"; DestDir: "{app}\installer"; Flags: ignoreversion
 Source: "..\..\scripts\install\uninstall-windows.ps1"; DestDir: "{app}\installer"; Flags: ignoreversion
 Source: "assets\agentdock.ico"; DestDir: "{app}\installer"; Flags: ignoreversion

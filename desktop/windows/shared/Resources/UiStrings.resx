@@ -862,6 +862,31 @@ Update now?</value>
   <data name="FixedDomain" xml:space="preserve"><value>Fixed domain</value></data>
   <data name="FixedDomainDetail" xml:space="preserve"><value>Use your own HTTPS domain with a Cloudflare Tunnel token.</value></data>
   <data name="ApplyFixedDomain" xml:space="preserve"><value>Apply fixed domain</value></data>
+  <data name="CloudflareTunnel" xml:space="preserve"><value>Cloudflare Tunnel</value></data>
+  <data name="CloudflareTunnelComponent" xml:space="preserve"><value>Optional component</value></data>
+  <data name="CloudflaredComponentPurpose" xml:space="preserve"><value>Used for self-hosted public access. NexusDock remote connections do not require this component.</value></data>
+  <data name="ComponentNotInstalled" xml:space="preserve"><value>Not installed</value></data>
+  <data name="ComponentNeedsRepair" xml:space="preserve"><value>Needs repair</value></data>
+  <data name="ComponentReady" xml:space="preserve"><value>Ready</value></data>
+  <data name="ComponentReadyVersion" xml:space="preserve"><value>Ready · {0}</value></data>
+  <data name="Install" xml:space="preserve"><value>Install</value></data>
+  <data name="ComponentRepairAction" xml:space="preserve"><value>Repair</value></data>
+  <data name="Uninstall" xml:space="preserve"><value>Uninstall</value></data>
+  <data name="InstallingComponent" xml:space="preserve"><value>Installing component…</value></data>
+  <data name="UpdatingComponent" xml:space="preserve"><value>Updating component…</value></data>
+  <data name="RepairingComponent" xml:space="preserve"><value>Repairing component…</value></data>
+  <data name="UninstallingComponent" xml:space="preserve"><value>Uninstalling component…</value></data>
+  <data name="ComponentChecking" xml:space="preserve"><value>Checking component metadata…</value></data>
+  <data name="ComponentDownloading" xml:space="preserve"><value>Downloading component…</value></data>
+  <data name="ComponentDownloadingProgress" xml:space="preserve"><value>Downloading component… {0}%</value></data>
+  <data name="ComponentVerifying" xml:space="preserve"><value>Verifying component…</value></data>
+  <data name="ComponentWorking" xml:space="preserve"><value>Working on component…</value></data>
+  <data name="ComponentInstalled" xml:space="preserve"><value>Component installed.</value></data>
+  <data name="ComponentUpdated" xml:space="preserve"><value>Component updated.</value></data>
+  <data name="ComponentRepaired" xml:space="preserve"><value>Component repaired.</value></data>
+  <data name="ComponentUninstalled" xml:space="preserve"><value>Component uninstalled.</value></data>
+  <data name="ComponentStatusUnavailable" xml:space="preserve"><value>Component status is unavailable.</value></data>
+  <data name="ComponentOperationFailed" xml:space="preserve"><value>The component operation failed. Check diagnostics and try again.</value></data>
 
   <data name="NeedsAttention" xml:space="preserve"><value>Needs attention</value></data>
   <data name="AgentDockNeedsAttention" xml:space="preserve"><value>AgentDock needs attention</value></data>

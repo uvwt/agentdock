@@ -293,23 +293,13 @@ foreach ($required in @(
     'Unable to prepare current-user startup registry key',
     'Unable to write current-user startup registry value',
     'Set-RunValue -RegistryPath $runKey -Name $runValueName',
-    'Set-RunValue -RegistryPath $runKey -Name $cloudflaredRunValueName',
     'Start-AgentDockLauncher -LauncherPath $launcherPath',
-    'Start-CloudflaredLauncher -LauncherPath $cloudflaredLauncherPath',
     'Start-AgentDockTask -AgentDockBinary $destinationBinary -ExpectedUserSid $taskUser.Sid',
     'service', 'task-start',
     'Initialize-OAuthCredentials',
-    'named-server-url.txt',
-    'cloudflared-windows-$Architecture.exe',
-    '$tunnelLaunchArguments = "tunnel launch --runtime-root',
     '-FilePath $destinationBinary',
-    '-Arguments $tunnelLaunchArguments',
-    'quick-tunnel-url.txt',
-    '& ''$escapedBinaryPath'' tunnel launch --runtime-root ''$escapedRuntimeDir''',
     'Write-ProtectedText -Path $PasswordPath',
     'Write-ProtectedText -Path $TokenSecretPath',
-    'Write-ProtectedText -Path $tunnelTokenPath',
-    'Authentication: Bearer Token and OAuth are both enabled.',
     '$engineArgs += @(''--skill-bundle'', $coreSkillBundle)',
     '-ErrorCode $resultErrorCode',
     "`$resultErrorCode = 'elevated-task-rollback-failed'",
@@ -343,18 +333,25 @@ foreach ($forbidden in @(
     'Wait-QuickTunnelUrl',
     'Wait-QuickTunnelReady',
     'Installer Engine finished trial without a Quick Tunnel public address.',
-    '& $destinationBinary tunnel start --runtime-root $runtimeDir'
+    '& $destinationBinary tunnel start --runtime-root $runtimeDir',
+    'Set-RunValue -RegistryPath $runKey -Name $cloudflaredRunValueName',
+    'Start-CloudflaredLauncher -LauncherPath $cloudflaredLauncherPath',
+    'cloudflared-windows-$Architecture.exe',
+    '$tunnelLaunchArguments = "tunnel launch --runtime-root',
+    'quick-tunnel-url.txt',
+    '& ''$escapedBinaryPath'' tunnel launch --runtime-root ''$escapedRuntimeDir''',
+    'Write-ProtectedText -Path $tunnelTokenPath'
 )) {
     if ($content.Contains($forbidden)) {
-        throw "$InstallerPath must not gate install/update/rollback completion on Tunnel/public readiness: $forbidden"
+        throw "$InstallerPath must not own the cloudflared/Tunnel runtime lifecycle: $forbidden"
     }
 }
 $setRunValueCallCount = [regex]::Matches(
     $content,
     [regex]::Escape('Set-RunValue -RegistryPath $runKey')
 ).Count
-if ($setRunValueCallCount -ne 6) {
-    throw "$InstallerPath must use Set-RunValue for all startup writes in install and rollback paths; got $setRunValueCallCount calls"
+if ($setRunValueCallCount -ne 4) {
+    throw "$InstallerPath must use Set-RunValue only for Core/Tray install and rollback startup writes; got $setRunValueCallCount calls"
 }
 
 $sha256Function = $installerAst.Find({

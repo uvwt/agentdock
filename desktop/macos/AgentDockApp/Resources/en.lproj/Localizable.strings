@@ -542,3 +542,22 @@
 "%@ · default" = "%@ · default";
 "%d min ago" = "%d min ago";
 "%d hr ago" = "%d hr ago";
+
+"Cloudflare Tunnel" = "Cloudflare Tunnel";
+"Optional component" = "Optional component";
+"Used for self-hosted public access. NexusDock remote connections do not require this component." = "Used for self-hosted public access. NexusDock remote connections do not require this component.";
+"Repair" = "Repair";
+"Uninstall" = "Uninstall";
+"Needs repair" = "Needs repair";
+"Ready · %@" = "Ready · %@";
+"Install the Cloudflare Tunnel component first." = "Install the Cloudflare Tunnel component first.";
+"Cloudflare Tunnel component operation failed. Check diagnostics and try again." = "Cloudflare Tunnel component operation failed. Check diagnostics and try again.";
+"Unable to read Cloudflare Tunnel component status." = "Unable to read Cloudflare Tunnel component status.";
+"Tunnel configuration" = "Tunnel configuration";
+
+"Cloudflare Tunnel is configured, but its optional component is missing. Repair the component before updating AgentDock." = "Cloudflare Tunnel is configured, but its optional component is missing. Repair the component before updating AgentDock.";
+"Cloudflare Tunnel is configured, but the legacy component cannot be migrated safely." = "Cloudflare Tunnel is configured, but the legacy component cannot be migrated safely.";
+"Cloudflare Tunnel component migration failed. The AgentDock update was not committed." = "Cloudflare Tunnel component migration failed. The AgentDock update was not committed.";
+"Cloudflare Tunnel component migration did not produce a ready component." = "Cloudflare Tunnel component migration did not produce a ready component.";
+
+"Install" = "Install";

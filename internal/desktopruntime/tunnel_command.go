@@ -13,11 +13,19 @@ import (
 
 // TunnelStatus 是桌面端和 CLI 共享的结构化 Tunnel 状态。
 type TunnelStatus struct {
-	Mode           string `json:"mode"`
-	Running        bool   `json:"running"`
-	Ready          bool   `json:"ready"`
-	StartupEnabled bool   `json:"startup_enabled"`
-	PublicURL      string `json:"public_url,omitempty"`
+	Mode             string `json:"mode"`
+	Running          bool   `json:"running"`
+	Ready            bool   `json:"ready"`
+	StartupEnabled   bool   `json:"startup_enabled"`
+	PublicURL        string `json:"public_url,omitempty"`
+	DependencyState  string `json:"dependency_state,omitempty"`
+	ComponentVersion string `json:"component_version,omitempty"`
+}
+
+// TunnelStatusForRuntime exposes the same local-only snapshot used by the CLI.
+// It never downloads components or mutates Tunnel configuration.
+func TunnelStatusForRuntime(ctx context.Context, runtimeRoot string) (TunnelStatus, error) {
+	return platformTunnelStatus(ctx, runtimeRoot)
 }
 
 type TunnelConfigureRequest struct {

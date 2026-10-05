@@ -11,9 +11,19 @@ import (
 )
 
 func platformConfigureTunnel(ctx context.Context, request TunnelConfigureRequest) error {
-	runtime, err := loadTunnelRuntime(request.RuntimeRoot)
+	runtime, err := loadTunnelRuntime(ctx, request.RuntimeRoot)
 	if err != nil {
 		return err
+	}
+	if request.Mode != "none" {
+		// 先证明 component 可运行再触碰 Token、mode 或 Core 配置，避免依赖缺失时
+		// 留下“配置已切换但 Tunnel 永远起不来”的半状态。none 是恢复路径，不需要依赖。
+		probe := runtime
+		probe.mode = request.Mode
+		if err := prepareCloudflaredRuntime(ctx, &probe); err != nil {
+			return err
+		}
+		runtime.manifest.CloudflaredBinary = probe.manifest.CloudflaredBinary
 	}
 	if err := ensureDesktopCredentials(runtime.root); err != nil {
 		return err

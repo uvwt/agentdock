@@ -133,12 +133,22 @@ public sealed class RuntimeService : IDisposable
         var nexus = ReadNexusDeviceStatus();
         var nexusConnected = includeNexusConnection && coreRunning && nexus.Paired && string.IsNullOrWhiteSpace(nexus.Error)
             && await ReadNexusConnectionAsync(binaryPath, cancellationToken);
-        var cloudflaredRunning = IsProcessRunningAtPath("cloudflared", manifest.CloudflaredBinary);
-        var tunnelMode = ReadText(Path.Combine(RuntimeRoot, "cloudflared-mode.txt"));
+        var nativeTunnel = await ReadNativeTunnelStatusAsync(binaryPath, cancellationToken);
+        var tunnelMode = string.IsNullOrWhiteSpace(nativeTunnel?.Mode)
+            ? ReadText(Path.Combine(RuntimeRoot, "cloudflared-mode.txt"))
+            : nativeTunnel!.Mode;
         if (string.IsNullOrWhiteSpace(tunnelMode))
         {
             tunnelMode = string.IsNullOrWhiteSpace(manifest.TunnelMode) ? "none" : manifest.TunnelMode;
         }
+        if (!string.IsNullOrWhiteSpace(nativeTunnel?.PublicUrl))
+        {
+            publicOrigin = nativeTunnel.PublicUrl.TrimEnd('/');
+            publicMcpUrl = publicOrigin + "/mcp";
+        }
+        var componentState = string.IsNullOrWhiteSpace(nativeTunnel?.DependencyState)
+            ? "not_installed"
+            : nativeTunnel!.DependencyState;
 
         return new RuntimeSnapshot(
             manifest,
@@ -146,12 +156,14 @@ public sealed class RuntimeService : IDisposable
             version,
             coreRunning,
             health.Healthy,
-            cloudflaredRunning,
+            nativeTunnel?.Running == true,
             localMcpUrl,
             publicOrigin,
             publicMcpUrl,
             savedNamedOrigin,
             tunnelMode,
+            componentState,
+            nativeTunnel?.ComponentVersion ?? "",
             IsCoreStartupEnabled(manifest),
             IsRunValuePresent(manifest.TrayStartupValueName, "AgentDockTray"),
             File.Exists(Path.Combine(RuntimeRoot, "cloudflared-token.dpapi")),
@@ -582,6 +594,104 @@ public sealed class RuntimeService : IDisposable
     public Task RegenerateQuickTunnelAsync(CancellationToken cancellationToken = default) =>
         RunTunnelActionAsync("regenerate", cancellationToken);
 
+    public async Task<ComponentStatus> GetCloudflaredComponentStatusAsync(CancellationToken cancellationToken = default)
+    {
+        var binaryPath = await ResolveCoreBinaryAsync(cancellationToken);
+        var startInfo = CreateRedirectedProcessStartInfo(binaryPath);
+        foreach (var argument in new[] { "component", "status", "cloudflared", "--runtime-root", RuntimeRoot, "--json" })
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+        var output = await RunProcessAsync(startInfo, cancellationToken);
+        return JsonSerializer.Deserialize<ComponentStatus>(output, JsonOptions)
+            ?? new ComponentStatus { State = "broken", Detail = UiText.Get("ComponentStatusUnavailable") };
+    }
+
+    public Task<ComponentStatus> InstallCloudflaredComponentAsync(
+        IProgress<ComponentProgress>? progress = null,
+        CancellationToken cancellationToken = default) =>
+        RunCloudflaredComponentActionAsync("install", progress, cancellationToken);
+
+    public Task<ComponentStatus> UpdateCloudflaredComponentAsync(
+        IProgress<ComponentProgress>? progress = null,
+        CancellationToken cancellationToken = default) =>
+        RunCloudflaredComponentActionAsync("update", progress, cancellationToken);
+
+    public async Task<ComponentStatus> UninstallCloudflaredComponentAsync(CancellationToken cancellationToken = default)
+    {
+        if (SnapshotTunnelModeForUninstallGuard(await GetSnapshotAsync(cancellationToken)) is "quick" or "named")
+        {
+            await SetTunnelModeAsync("none", "", "", cancellationToken);
+        }
+        return await RunCloudflaredComponentActionAsync("uninstall", null, cancellationToken);
+    }
+
+    private static string SnapshotTunnelModeForUninstallGuard(RuntimeSnapshot snapshot) =>
+        snapshot.TunnelMode.Trim().ToLowerInvariant();
+
+    private async Task<ComponentStatus> RunCloudflaredComponentActionAsync(
+        string action,
+        IProgress<ComponentProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var binaryPath = await ResolveCoreBinaryAsync(cancellationToken);
+        var startInfo = CreateRedirectedProcessStartInfo(binaryPath);
+        foreach (var argument in new[] { "component", action, "cloudflared", "--runtime-root", RuntimeRoot })
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+        if (action is "install" or "update")
+        {
+            startInfo.ArgumentList.Add("--progress-json");
+        }
+        else
+        {
+            startInfo.ArgumentList.Add("--json");
+        }
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException(UiText.Format("ProcessStartFailed", startInfo.FileName));
+        var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
+        ComponentStatus? status = null;
+        while (await process.StandardOutput.ReadLineAsync(cancellationToken) is { } line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+            try
+            {
+                using var document = JsonDocument.Parse(line);
+                var root = document.RootElement;
+                if (root.TryGetProperty("type", out _))
+                {
+                    var stage = root.TryGetProperty("stage", out var stageElement) ? stageElement.GetString() ?? "" : "";
+                    var bytes = root.TryGetProperty("bytes", out var bytesElement) && bytesElement.TryGetInt64(out var parsedBytes) ? parsedBytes : 0;
+                    var total = root.TryGetProperty("total", out var totalElement) && totalElement.TryGetInt64(out var parsedTotal) ? parsedTotal : 0;
+                    progress?.Report(new ComponentProgress(stage, bytes, total));
+                }
+                else
+                {
+                    status = JsonSerializer.Deserialize<ComponentStatus>(line, JsonOptions);
+                }
+            }
+            catch (JsonException)
+            {
+                // component CLI 的协议输出应是逐行 JSON；异常行不直接展示给普通用户，
+                // 最终失败仍由退出码和 stderr 归一化为一个错误。
+            }
+        }
+        await process.WaitForExitAsync(cancellationToken);
+        var error = (await errorTask).Trim();
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(error)
+                ? UiText.Get("ComponentOperationFailed")
+                : ControlPanelDiagnostics.LastNonEmptyLine(error));
+        }
+        return status ?? await GetCloudflaredComponentStatusAsync(cancellationToken);
+    }
+
     public async Task SaveSettingsAsync(
         ControlPanelSettings settings,
         CancellationToken cancellationToken = default)
@@ -839,14 +949,6 @@ public sealed class RuntimeService : IDisposable
             recordedRoot,
             manifest.LauncherPath,
             "start-agentdock.ps1");
-        manifest.CloudflaredBinary = ResolveRuntimeManagedPath(
-            recordedRoot,
-            manifest.CloudflaredBinary,
-            Path.Combine("bin", "cloudflared.exe"));
-        manifest.CloudflaredLauncher = ResolveRuntimeManagedPath(
-            recordedRoot,
-            manifest.CloudflaredLauncher,
-            "start-cloudflared.ps1");
         manifest.InstallRoot = RuntimeRoot;
         return manifest;
     }
@@ -1402,6 +1504,28 @@ public sealed class RuntimeService : IDisposable
             StandardOutputEncoding = utf8,
             StandardErrorEncoding = utf8
         };
+    }
+
+    private async Task<NativeTunnelStatus?> ReadNativeTunnelStatusAsync(
+        string binaryPath,
+        CancellationToken cancellationToken)
+    {
+        var startInfo = CreateRedirectedProcessStartInfo(binaryPath);
+        foreach (var argument in new[] { "tunnel", "status", "--runtime-root", RuntimeRoot })
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        try
+        {
+            var output = await RunProcessAsync(startInfo, cancellationToken);
+            return JsonSerializer.Deserialize<NativeTunnelStatus>(output, JsonOptions);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or JsonException)
+        {
+            // 旧 Core 或损坏状态下保持设置页可打开；component status 操作会给出更精确错误。
+            return null;
+        }
     }
 
     private async Task<bool> ReadNexusConnectionAsync(string binaryPath, CancellationToken cancellationToken)

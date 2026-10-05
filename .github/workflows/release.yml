@@ -325,6 +325,108 @@ jobs:
             agentdock_darwin_${{ matrix.goarch }}.tar.gz.sha256
           if-no-files-found: error
 
+  build-cloudflared-macos:
+    name: Build cloudflared component macOS ${{ matrix.goarch }}
+    needs: source
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.source.outputs.commit }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download pinned upstream component
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(go run ./tools/release component-version)"
+          architecture='${{ matrix.goarch }}'
+          archive="$RUNNER_TEMP/cloudflared-darwin-$architecture.tgz"
+          extract_dir="$RUNNER_TEMP/cloudflared-$architecture"
+          output="cloudflared_darwin_$architecture"
+          curl -fL --retry 5 --retry-delay 2 \
+            "https://github.com/cloudflare/cloudflared/releases/download/$version/cloudflared-darwin-$architecture.tgz" \
+            -o "$archive"
+          mkdir -p "$extract_dir"
+          tar -xzf "$archive" -C "$extract_dir"
+          test -f "$extract_dir/cloudflared"
+          test ! -L "$extract_dir/cloudflared"
+          install -m 0755 "$extract_dir/cloudflared" "$output"
+          case "$architecture" in
+            arm64) expected='arm64' ;;
+            amd64) expected='x86_64' ;;
+          esac
+          file_output="$(file "$output")"
+          [[ "$file_output" == *"$expected"* ]]
+          codesign --verify --deep --strict --verbose=2 "$output"
+          component_version="$("./$output" --version | awk 'NR==1 {print $3}')"
+          test "$component_version" = "$version"
+          shasum -a 256 "$output" > "$output.sha256"
+
+      - name: Upload cloudflared component
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentdock-cloudflared-macos-${{ matrix.goarch }}
+          path: |
+            cloudflared_darwin_${{ matrix.goarch }}
+            cloudflared_darwin_${{ matrix.goarch }}.sha256
+          if-no-files-found: error
+
+  build-cloudflared-windows:
+    name: Build cloudflared component Windows amd64
+    needs: source
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.source.outputs.commit }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download pinned upstream component
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $version = (go run ./tools/release component-version).Trim()
+          $output = Join-Path $PWD 'cloudflared_windows_amd64.exe'
+          $uri = "https://github.com/cloudflare/cloudflared/releases/download/$version/cloudflared-windows-amd64.exe"
+          Invoke-WebRequest -UseBasicParsing -Uri $uri -OutFile $output
+          $signature = Get-AuthenticodeSignature -LiteralPath $output
+          if ($signature.Status -ne [Management.Automation.SignatureStatus]::Valid) {
+            throw "cloudflared Authenticode signature is invalid: $($signature.StatusMessage)"
+          }
+          $versionOutput = & $output --version
+          if (($versionOutput -split '\s+')[2] -ne $version) {
+            throw "cloudflared version mismatch: $versionOutput"
+          }
+          $hash = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText("$output.sha256", "$hash  cloudflared_windows_amd64.exe`n", [Text.UTF8Encoding]::new($false))
+
+      - name: Upload cloudflared component
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentdock-cloudflared-windows-amd64
+          path: |
+            cloudflared_windows_amd64.exe
+            cloudflared_windows_amd64.exe.sha256
+          if-no-files-found: error
+
   build-macos-app:
     name: Build macOS offline DMG
     needs: [source, build-macos]
@@ -347,45 +449,6 @@ jobs:
           pattern: agentdock-macos-*
           path: payload
           merge-multiple: true
-
-      - name: Prepare cloudflared macOS payloads
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p payload
-          for architecture in amd64 arm64; do
-            archive="$RUNNER_TEMP/cloudflared-darwin-$architecture.tgz"
-            extract_dir="$RUNNER_TEMP/cloudflared-$architecture"
-            curl -fL --retry 5 --retry-delay 2 \
-              "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-$architecture.tgz" \
-              -o "$archive"
-            mkdir -p "$extract_dir"
-            tar -xzf "$archive" -C "$extract_dir"
-            test -f "$extract_dir/cloudflared"
-            test ! -L "$extract_dir/cloudflared"
-
-            output="payload/cloudflared_darwin_$architecture"
-            install -m 0755 "$extract_dir/cloudflared" "$output"
-            case "$architecture" in
-              arm64) expected_file_architecture='arm64' ;;
-              amd64) expected_file_architecture='x86_64' ;;
-            esac
-            file_output="$(file "$output")"
-            [[ "$file_output" == *"$expected_file_architecture"* ]]
-            codesign --verify --deep --strict --verbose=2 "$output"
-            (
-              cd payload
-              shasum -a 256 "cloudflared_darwin_$architecture" > "cloudflared_darwin_$architecture.sha256"
-            )
-          done
-
-          (
-            cd payload
-            shasum -a 256 -c agentdock_darwin_amd64.tar.gz.sha256
-            shasum -a 256 -c agentdock_darwin_arm64.tar.gz.sha256
-            shasum -a 256 -c cloudflared_darwin_amd64.sha256
-            shasum -a 256 -c cloudflared_darwin_arm64.sha256
-          )
 
       - name: Validate menu app
         run: ./scripts/test/test-macos-app.sh
@@ -564,20 +627,6 @@ jobs:
             throw 'WINDOWS_SIGNING_CERT_PASSWORD is required for a formal release.'
           }
 
-      - name: Download and verify cloudflared compatibility payload
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $path = Join-Path $PWD 'payload\cloudflared.exe'
-          Invoke-WebRequest `
-            -UseBasicParsing `
-            -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' `
-            -OutFile $path
-          $signature = Get-AuthenticodeSignature -LiteralPath $path
-          if ($signature.Status -ne [Management.Automation.SignatureStatus]::Valid) {
-            throw "cloudflared Authenticode signature is invalid: $($signature.StatusMessage)"
-          }
-
       - name: Build and sign offline Setup
         shell: pwsh
         env:
@@ -593,7 +642,6 @@ jobs:
             -Architecture '${{ matrix.goarch }}' `
             -AgentDockArchive '.\payload\agentdock_windows_${{ matrix.goarch }}.zip' `
             -AgentDockChecksumFile '.\payload\agentdock_windows_${{ matrix.goarch }}.zip.sha256' `
-            -CloudflaredBinary '.\payload\cloudflared.exe' `
             -OutputDirectory $outputDir `
             -SignedBuild
 
@@ -606,7 +654,7 @@ jobs:
 
   prepare-release:
     name: Prepare release candidate
-    needs: [source, build-linux, build-macos, build-macos-app, build-windows, build-windows-setup]
+    needs: [source, build-linux, build-macos, build-macos-app, build-windows, build-windows-setup, build-cloudflared-macos, build-cloudflared-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -636,6 +684,7 @@ jobs:
           cp scripts/install/install.sh dist/install.sh
           cp scripts/install/install.ps1 dist/install.ps1
           go run ./tools/release verify-version "$RELEASE_TAG"
+          go run ./tools/release component-catalog "$RELEASE_TAG" "$RELEASE_REPOSITORY" dist > dist/agentdock-component-catalog.json
           python3 - <<'PY'
           import os
           import re
@@ -668,7 +717,8 @@ jobs:
               install.sh \
               install.ps1 \
               AgentDockSetup-amd64.exe \
-              AgentDockSetup-arm64.exe; do
+              AgentDockSetup-arm64.exe \
+              agentdock-component-catalog.json; do
               shasum -a 256 "$file" > "$file.sha256"
             done
           )
@@ -840,7 +890,21 @@ jobs:
             shasum -a 256 -c AgentDock-macos-universal.dmg.sha256
             shasum -a 256 -c AgentDock-macos-universal.zip.sha256
             shasum -a 256 -c install.sh.sha256
+            shasum -a 256 -c cloudflared_darwin_amd64.sha256
+            shasum -a 256 -c cloudflared_darwin_arm64.sha256
+            shasum -a 256 -c agentdock-component-catalog.json.sha256
           )
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          catalog = json.loads(Path(os.environ["STAGED_RELEASE_DIR"]).joinpath("agentdock-component-catalog.json").read_text())
+          component = catalog["components"][0]
+          assert component["component"] == "cloudflared"
+          assert component["version"] == component["upstream_version"]
+          assert component["upstream_source"].endswith("/" + component["version"])
+          pairs = {(a["os"], a["arch"]) for a in component["artifacts"]}
+          assert {("darwin", "amd64"), ("darwin", "arm64"), ("windows", "amd64")} <= pairs
+          PY
 
           mkdir -p "$zip_dir"
           ditto -x -k "$zip" "$zip_dir"
@@ -856,18 +920,18 @@ jobs:
           test "$(readlink "$mount_dir/Applications")" = "/Applications"
           codesign --verify --deep --strict --verbose=2 "$mount_dir/AgentDock.app"
 
+          test ! -e "$mount_dir/AgentDock.app/Contents/Helpers/cloudflared"
+          test ! -e "$zip_dir/AgentDock.app/Contents/Helpers/cloudflared"
+
           app_arches="$(lipo -archs "$mount_dir/AgentDock.app/Contents/MacOS/AgentDock")"
           helper_arches="$(lipo -archs "$mount_dir/AgentDock.app/Contents/Helpers/AgentDockLoginHelper")"
           core_arches="$(lipo -archs "$mount_dir/AgentDock.app/Contents/Helpers/agentdock")"
-          cloudflared_arches="$(lipo -archs "$mount_dir/AgentDock.app/Contents/Helpers/cloudflared")"
           [[ "$app_arches" == *arm64* && "$app_arches" == *x86_64* ]]
           [[ "$helper_arches" == *arm64* && "$helper_arches" == *x86_64* ]]
           [[ "$core_arches" == *arm64* && "$core_arches" == *x86_64* ]]
-          [[ "$cloudflared_arches" == *arm64* && "$cloudflared_arches" == *x86_64* ]]
           cmp "$zip_dir/AgentDock.app/Contents/MacOS/AgentDock" "$mount_dir/AgentDock.app/Contents/MacOS/AgentDock"
           cmp "$zip_dir/AgentDock.app/Contents/Helpers/AgentDockLoginHelper" "$mount_dir/AgentDock.app/Contents/Helpers/AgentDockLoginHelper"
           cmp "$zip_dir/AgentDock.app/Contents/Helpers/agentdock" "$mount_dir/AgentDock.app/Contents/Helpers/agentdock"
-          cmp "$zip_dir/AgentDock.app/Contents/Helpers/cloudflared" "$mount_dir/AgentDock.app/Contents/Helpers/cloudflared"
           test -f "$mount_dir/AgentDock.app/Contents/Resources/core-skills/manifest.json"
 
           core_plist="$mount_dir/AgentDock.app/Contents/Library/LaunchAgents/com.uvwt.agentdock.core.plist"
@@ -877,10 +941,8 @@ jobs:
           test "$(plutil -extract BundleProgram raw -o - "$core_plist")" = "Contents/Helpers/agentdock"
           test "$(plutil -extract BundleProgram raw -o - "$tunnel_plist")" = "Contents/Helpers/agentdock"
           codesign --verify --strict --verbose=2 "$mount_dir/AgentDock.app/Contents/Helpers/agentdock"
-          codesign --verify --strict --verbose=2 "$mount_dir/AgentDock.app/Contents/Helpers/cloudflared"
           mounted_core_version="$("$mount_dir/AgentDock.app/Contents/Helpers/agentdock" --version)"
           [[ "$mounted_core_version" == *"AgentDock $RELEASE_TAG"* ]]
-          "$mount_dir/AgentDock.app/Contents/Helpers/cloudflared" --version >/dev/null
           hdiutil detach "$mount_dir" >/dev/null
           dmg_mounted=false
 
@@ -938,7 +1000,9 @@ jobs:
           $installer = Join-Path $releaseRoot 'install.ps1'
           $setup = Join-Path $releaseRoot 'AgentDockSetup-amd64.exe'
           $legacyArchive = Join-Path $releaseRoot 'agentdock_windows_amd64.zip'
-          foreach ($path in @($installer, $setup, $legacyArchive)) {
+          $component = Join-Path $releaseRoot 'cloudflared_windows_amd64.exe'
+          $componentCatalog = Join-Path $releaseRoot 'agentdock-component-catalog.json'
+          foreach ($path in @($installer, $setup, $legacyArchive, $component, $componentCatalog)) {
             if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
               throw "Staged release asset is missing: $path"
             }
@@ -953,7 +1017,13 @@ jobs:
             throw "Staged install.ps1 does not match source blob $expectedInstallerBlob."
           }
 
-          foreach ($asset in @('install.ps1', 'AgentDockSetup-amd64.exe', 'agentdock_windows_amd64.zip')) {
+          foreach ($asset in @(
+            'install.ps1',
+            'AgentDockSetup-amd64.exe',
+            'agentdock_windows_amd64.zip',
+            'cloudflared_windows_amd64.exe',
+            'agentdock-component-catalog.json'
+          )) {
             $assetPath = Join-Path $releaseRoot $asset
             $checksumPath = "$assetPath.sha256"
             $expected = ((Get-Content -LiteralPath $checksumPath -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
@@ -961,6 +1031,23 @@ jobs:
             if ($actual -ne $expected) {
               throw "Staged checksum mismatch: $asset"
             }
+          }
+
+          $catalog = Get-Content -LiteralPath $componentCatalog -Raw | ConvertFrom-Json
+          $entry = @($catalog.components | Where-Object { $_.component -eq 'cloudflared' })[0]
+          if (-not $entry) {
+            throw 'Staged component catalog does not contain cloudflared.'
+          }
+          $artifact = @($entry.artifacts | Where-Object { $_.os -eq 'windows' -and $_.arch -eq 'amd64' })[0]
+          if (-not $artifact) {
+            throw 'Staged component catalog does not contain Windows amd64 cloudflared.'
+          }
+          $componentDigest = (Get-FileHash -LiteralPath $component -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ([string] $artifact.sha256 -ne $componentDigest) {
+            throw 'Staged component catalog SHA-256 does not match cloudflared_windows_amd64.exe.'
+          }
+          if (-not ([string] $artifact.url).EndsWith('/cloudflared_windows_amd64.exe')) {
+            throw "Unexpected staged Windows component URL: $($artifact.url)"
           }
 
           $legacyRoot = Join-Path $env:RUNNER_TEMP 'agentdock-release-legacy-fixture'
@@ -976,6 +1063,7 @@ jobs:
           "STAGED_RELEASE_ROOT=$releaseRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
           "STAGED_INSTALLER=$installer" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
           "STAGED_SETUP=$setup" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
+          "STAGED_CLOUDFLARED=$component" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
           "LEGACY_CORE_PATH=$legacyCore" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
           "LEGACY_TRAY_PATH=$legacyTray" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
           "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
@@ -987,6 +1075,10 @@ jobs:
           WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
         run: |
           .\packaging\windows\sign-windows.ps1 -Path $env:STAGED_SETUP -VerifyOnly
+          $signature = Get-AuthenticodeSignature -LiteralPath $env:STAGED_CLOUDFLARED
+          if ($signature.Status -ne [Management.Automation.SignatureStatus]::Valid) {
+            throw "Staged cloudflared Authenticode signature is invalid: $($signature.StatusMessage)"
+          }
 
       - name: Install and uninstall staged Setup
         shell: powershell
@@ -1104,6 +1196,9 @@ jobs:
             dist/*.ps1.sha256
             dist/*.exe
             dist/*.exe.sha256
+            dist/cloudflared_darwin_*
+            dist/agentdock-component-catalog.json
+            dist/agentdock-component-catalog.json.sha256
           generate_release_notes: true
 
   publish-container:

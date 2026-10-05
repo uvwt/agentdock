@@ -86,9 +86,13 @@ func TestWindowsInstallerWorkflowHasAlwaysPresentPullRequestGate(t *testing.T) {
 		"VALIDATE_RESULT: ${{ needs.validate.result }}",
 		"github.event_name == 'workflow_dispatch' && inputs.test_tag != ''",
 		"-InstallerPath .\\scripts\\install\\install.ps1",
-		"name: Download and verify cloudflared compatibility payload",
+		"name: Test cloudflared component lifecycle",
 		"for ($attempt = 1; $attempt -le 5; $attempt++)",
 		"Get-AuthenticodeSignature -LiteralPath $cloudflaredPath",
+		"go run ./tools/release component-version",
+		".\\scripts\\test\\test-windows-cloudflared-component.ps1",
+		"-SignedCloudflaredBinary $cloudflaredPath",
+		"-ArtifactUrl $cloudflaredUrl",
 		"cmd/agentdock-wsl-helper",
 		"internal/wslfilehelper",
 		"scripts/test/testdata/fake-cloudflared",
@@ -99,6 +103,12 @@ func TestWindowsInstallerWorkflowHasAlwaysPresentPullRequestGate(t *testing.T) {
 	}
 	if strings.Contains(workflow, "raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/scripts/install/install.ps1") {
 		t.Fatal("routine Windows installer validation must use the checked-out installer instead of refetching it over the network")
+	}
+	if strings.Contains(workflow, "cloudflared/releases/latest") {
+		t.Fatal("Windows Installer validation must pin the cloudflared component version instead of downloading upstream latest")
+	}
+	if strings.Contains(workflow, "AMD64_CLOUDFLARED") || strings.Contains(workflow, "-CloudflaredBinary $env:") {
+		t.Fatal("Windows Setup build must not carry cloudflared as an installer payload")
 	}
 }
 

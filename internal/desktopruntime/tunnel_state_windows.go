@@ -20,6 +20,7 @@ import (
 
 	"golang.org/x/sys/windows"
 
+	"github.com/uvwt/agentdock/internal/component"
 	"github.com/uvwt/agentdock/internal/fs/atomicfile"
 	"github.com/uvwt/agentdock/internal/fs/filelock"
 )
@@ -52,7 +53,7 @@ type tunnelRuntime struct {
 	mode     string
 }
 
-func loadTunnelRuntime(runtimeRoot string) (tunnelRuntime, error) {
+func loadTunnelRuntime(_ context.Context, runtimeRoot string) (tunnelRuntime, error) {
 	manifest, root, err := loadDesktopManifest(runtimeRoot)
 	if err != nil {
 		return tunnelRuntime{}, err
@@ -60,9 +61,6 @@ func loadTunnelRuntime(runtimeRoot string) (tunnelRuntime, error) {
 	settings, err := loadControlPanelSettings(root, manifest.Port)
 	if err != nil {
 		return tunnelRuntime{}, err
-	}
-	if strings.TrimSpace(manifest.CloudflaredBinary) == "" {
-		manifest.CloudflaredBinary = filepath.Join(root, "bin", "cloudflared.exe")
 	}
 	files := tunnelFiles{
 		manifest:       filepath.Join(root, "runtime.json"),
@@ -78,7 +76,82 @@ func loadTunnelRuntime(runtimeRoot string) (tunnelRuntime, error) {
 	if err != nil {
 		return tunnelRuntime{}, err
 	}
+	// runtime.json 中的 cloudflared_binary 只作为旧版迁移事实读取，不能继续成为
+	// 运行时依赖来源。读取状态必须保持纯只读，因此这里绝不安装或导入 component。
+	manifest.CloudflaredBinary = ""
 	return tunnelRuntime{manifest: manifest, root: root, settings: settings, files: files, mode: mode}, nil
+}
+
+func resolveCloudflaredComponent(ctx context.Context, runtimeRoot string) (string, error) {
+	store, err := component.NewStore(runtimeRoot)
+	if err != nil {
+		return "", err
+	}
+	if binary, err := store.Resolve(); err == nil {
+		return binary, nil
+	} else if !errors.Is(err, component.ErrNotInstalled) {
+		return "", fmt.Errorf("Cloudflare Tunnel component 不可用: %w", err)
+	}
+	// 一次性兼容旧桌面安装。仅接受 AgentDock 自己的 legacy 路径，不从 PATH 或
+	// runtime.json 任意外部路径静默采用 binary。导入成功后旧文件暂不删除，直到
+	// 后续正常升级确认没有旧进程占用；退出条件是 legacy 安装基数消失。
+	for _, legacy := range component.LegacyPaths(runtimeRoot) {
+		if _, statErr := os.Lstat(legacy); statErr != nil {
+			if errors.Is(statErr, os.ErrNotExist) {
+				continue
+			}
+			return "", statErr
+		}
+		if _, importErr := store.ImportLegacy(ctx, legacy); importErr != nil {
+			return "", fmt.Errorf("导入旧 cloudflared component 失败: %w", importErr)
+		}
+		return store.Resolve()
+	}
+	return "", fmt.Errorf("Cloudflare Tunnel dependency-not-installed: %w；请先运行 agentdock component install cloudflared", component.ErrNotInstalled)
+}
+
+func prepareCloudflaredRuntime(ctx context.Context, runtime *tunnelRuntime) error {
+	if runtime == nil || runtime.mode == "none" {
+		return nil
+	}
+	binary, err := resolveCloudflaredComponent(ctx, runtime.root)
+	if err != nil {
+		return err
+	}
+	runtime.manifest.CloudflaredBinary = binary
+	return nil
+}
+
+func cloudflaredComponentStatus(runtimeRoot string) component.Status {
+	store, err := component.NewStore(runtimeRoot)
+	if err != nil {
+		return component.Status{Component: component.CloudflaredName, State: "broken", Detail: err.Error()}
+	}
+	return store.Status()
+}
+
+func cloudflaredStopCandidates(runtime tunnelRuntime) []string {
+	paths := []string{runtime.manifest.CloudflaredBinary}
+	status := cloudflaredComponentStatus(runtime.root)
+	paths = append(paths, status.Path)
+	// 停止/切回 none 是恢复路径，不能因为 active pointer 损坏就失去停止旧进程的能力。
+	// 这里只把历史 AgentDock 固定路径作为“停止候选”，不会执行、导入或采用它。
+	paths = append(paths, component.LegacyPaths(runtime.root)...)
+	seen := map[string]struct{}{}
+	result := make([]string, 0, len(paths))
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		key := strings.ToLower(filepath.Clean(path))
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, filepath.Clean(path))
+	}
+	return result
 }
 
 func readTunnelMode(path, fallback string) (string, error) {
@@ -105,6 +178,10 @@ func (runtime tunnelRuntime) updateManifest(mode, publicURL string) error {
 	runtime.manifest.LocalMCPURL = "http://127.0.0.1:" + strconv.Itoa(runtime.settings.Port) + "/mcp"
 	runtime.manifest.TunnelMode = mode
 	runtime.manifest.PublicURL = strings.TrimSpace(publicURL)
+	// 新 runtime.json 不再持久化 component 路径。字段只为读取旧安装完成迁移而保留。
+	runtime.manifest.CloudflaredBinary = ""
+	runtime.manifest.CloudflaredLauncher = ""
+	runtime.manifest.CloudflaredStartupValueName = ""
 	return Save(runtime.files.manifest, runtime.manifest)
 }
 

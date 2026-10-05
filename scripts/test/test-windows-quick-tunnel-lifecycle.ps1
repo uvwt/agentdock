@@ -26,6 +26,35 @@ function Get-FreeTcpPort {
     }
 }
 
+function Install-FakeCloudflaredComponent {
+    param([string] $RuntimeDir, [string] $SourceBinary)
+
+    $versionLine = (& $SourceBinary --version | Select-Object -First 1).Trim()
+    $fields = @($versionLine -split '\s+')
+    if ($fields.Count -lt 3 -or $fields[0] -ne 'cloudflared' -or $fields[1] -ne 'version') {
+        throw "Unexpected fake cloudflared version output: $versionLine"
+    }
+    $version = $fields[2]
+    $componentRoot = Join-Path $RuntimeDir 'components\cloudflared'
+    $versionDir = Join-Path $componentRoot "versions\$version"
+    $binary = Join-Path $versionDir 'cloudflared.exe'
+    New-Item -ItemType Directory -Path $versionDir -Force | Out-Null
+    Copy-Item -LiteralPath $SourceBinary -Destination $binary -Force
+    $digest = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
+    $active = @{
+        schema_version = 1
+        component = 'cloudflared'
+        version = $version
+        sha256 = $digest
+    } | ConvertTo-Json
+    [IO.File]::WriteAllText(
+        (Join-Path $componentRoot 'active.json'),
+        $active + "`n",
+        [Text.UTF8Encoding]::new($false)
+    )
+    return $binary
+}
+
 function Get-ProcessIdsByPath {
     param([string] $ProcessName, [string] $BinaryPath)
 
@@ -142,21 +171,20 @@ $installDir = Join-Path $root 'AgentDock\bin'
 $runtimeDir = Split-Path -Parent $installDir
 $agentDockBinary = Join-Path $installDir 'agentdock.exe'
 $trayBinary = Join-Path $installDir 'agentdock-tray.exe'
-$cloudflaredBinary = Join-Path $installDir 'cloudflared.exe'
-$cloudflaredLauncher = Join-Path $runtimeDir 'start-cloudflared.ps1'
-$urlSourcePath = Join-Path $installDir 'quick-url-source.txt'
+$cloudflaredBinary = ''
+$urlSourcePath = ''
 $quickUrlPath = Join-Path $runtimeDir 'quick-tunnel-url.txt'
 $serverUrlPath = Join-Path $runtimeDir 'server-url.txt'
 $manifestPath = Join-Path $runtimeDir 'runtime.json'
 $supervisorPidPath = Join-Path $runtimeDir 'tunnel-supervisor.pid'
-$startCountPath = Join-Path $installDir 'start-count.txt'
-$failCountPath = Join-Path $installDir 'fail-count.txt'
+$startCountPath = ''
+$failCountPath = ''
 $authPath = Join-Path $runtimeDir 'auth-token.dpapi'
 $oauthPasswordPath = Join-Path $runtimeDir 'oauth-password.dpapi'
 $oauthSecretPath = Join-Path $runtimeDir 'oauth-token-secret.dpapi'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $startupName = "AgentDockQuickLifecycle-$testId"
-$cloudflaredStartupName = "AgentDockCloudflaredQuickLifecycle-$testId"
+$cloudflaredStartupName = 'AgentDockCloudflared'
 $trayStartupName = "AgentDockTrayQuickLifecycle-$testId"
 $port = Get-FreeTcpPort
 $healthUrl = "http://127.0.0.1:$port/healthz"
@@ -168,10 +196,16 @@ $oldUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 $oldHome = $env:AGENTDOCK_HOME
 $oldDefaultDir = $env:AGENTDOCK_DEFAULT_DIR
 $activeCoreBinary = ''
+$runKeyItem = Get-Item -LiteralPath $runKey -ErrorAction SilentlyContinue
+$hadExistingTunnelRunValue = $null -ne $runKeyItem -and @($runKeyItem.GetValueNames()) -contains $cloudflaredStartupName
+$existingTunnelRunValue = if ($hadExistingTunnelRunValue) {
+    $runKeyItem.GetValue($cloudflaredStartupName, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+} else {
+    $null
+}
 
 try {
     New-Item -ItemType Directory -Path $installDir -Force | Out-Null
-    [IO.File]::WriteAllText($urlSourcePath, $firstUrl, [Text.UTF8Encoding]::new($false))
     $env:AGENTDOCK_HOME = Join-Path $root '.agentdock'
     $env:AGENTDOCK_DEFAULT_DIR = Join-Path $root 'workspace'
 
@@ -179,34 +213,40 @@ try {
         -Version 'v0.0.0-test' `
         -OfflineArchive $AgentDockArchive `
         -OfflineChecksumFile $AgentDockChecksumFile `
-        -OfflineCloudflaredBinary $FakeCloudflaredBinary `
         -InstallDir $installDir `
         -RegisterStartup `
-        -TunnelMode quick `
         -CorePrivilegeMode standard `
         -Port $port `
         -AuthToken 'stable-quick-bearer-token' `
         -OAuthPassword 'stable-quick-oauth-password' `
         -OAuthTokenSecret 'stable-quick-oauth-secret-0123456789abcdef' `
         -StartupValueName $startupName `
-        -CloudflaredStartupValueName $cloudflaredStartupName `
         -TrayStartupValueName $trayStartupName
 
-    # Provision 文件是同步完成的；Tunnel readiness 文件故意不在这里做即时断言：
-    # Installer 先提交 Core，再由 detached tray proxy 异步发布公网 ready 状态。
-    foreach ($path in @(
-        $agentDockBinary,
-        $trayBinary,
-        $cloudflaredBinary,
-        $cloudflaredLauncher,
-        $manifestPath,
-        $authPath,
-        $oauthPasswordPath,
-        $oauthSecretPath
-    )) {
+    # Base installation must not provision or configure cloudflared.
+    foreach ($path in @($agentDockBinary, $trayBinary, $manifestPath, $authPath, $oauthPasswordPath, $oauthSecretPath)) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-            throw "Quick Tunnel install did not create expected file: $path"
+            throw "Base install did not create expected file: $path"
         }
+    }
+    $componentBefore = (& $agentDockBinary component status cloudflared --runtime-root $runtimeDir --json | ConvertFrom-Json)
+    if ($componentBefore.state -ne 'not_installed' -or $componentBefore.ready) {
+        throw "Base install unexpectedly provisioned cloudflared: $($componentBefore | ConvertTo-Json -Compress)"
+    }
+    if (Test-Path -LiteralPath (Join-Path $installDir 'cloudflared.exe')) {
+        throw 'Base install must not place cloudflared in the runtime bin directory.'
+    }
+
+    $cloudflaredBinary = Install-FakeCloudflaredComponent -RuntimeDir $runtimeDir -SourceBinary $FakeCloudflaredBinary
+    $componentDir = Split-Path -Parent $cloudflaredBinary
+    $urlSourcePath = Join-Path $componentDir 'quick-url-source.txt'
+    $startCountPath = Join-Path $componentDir 'start-count.txt'
+    $failCountPath = Join-Path $componentDir 'fail-count.txt'
+    [IO.File]::WriteAllText($urlSourcePath, $firstUrl, [Text.UTF8Encoding]::new($false))
+
+    & $agentDockBinary tunnel configure --runtime-root $runtimeDir --mode quick
+    if ($LASTEXITCODE -ne 0) {
+        throw "Native Quick Tunnel initial configuration failed with exit code $LASTEXITCODE."
     }
     Wait-TextFileValue -Path $quickUrlPath -ExpectedValue $firstUrl
     Wait-TextFileValue -Path $serverUrlPath -ExpectedValue $firstUrl
@@ -389,7 +429,6 @@ try {
     }
 } catch {
     foreach ($name in @(
-        'start-cloudflared.ps1',
         'cloudflared.out.log',
         'cloudflared.err.log',
         'quick-tunnel-url.txt',
@@ -414,6 +453,9 @@ try {
     Stop-ProcessByPath -ProcessName 'agentdock' -BinaryPath $agentDockBinary
     foreach ($name in @($startupName, $cloudflaredStartupName, $trayStartupName)) {
         Remove-ItemProperty -LiteralPath $runKey -Name $name -ErrorAction SilentlyContinue
+    }
+    if ($hadExistingTunnelRunValue) {
+        Set-ItemProperty -LiteralPath $runKey -Name $cloudflaredStartupName -Value $existingTunnelRunValue
     }
     [Environment]::SetEnvironmentVariable('Path', $oldUserPath, 'User')
     $env:AGENTDOCK_HOME = $oldHome

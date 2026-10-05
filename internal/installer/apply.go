@@ -444,7 +444,6 @@ func activateWindows(ctx context.Context, request Request, staged stagedInstall)
 	taskName := request.TaskName
 	startupValueName := request.StartupValueName
 	trayStartupValueName := request.TrayStartupValueName
-	cloudflaredStartupValueName := request.CloudflaredStartupValueName
 	channel := request.Channel
 	// repair / 省略标志时必须保留已有 runtime.json，不能把 host/port/tunnel 重置成默认值。
 	if existing, err := desktopruntime.Load(filepath.Join(request.InstallRoot, "runtime.json")); err == nil {
@@ -478,9 +477,6 @@ func activateWindows(ctx context.Context, request Request, staged stagedInstall)
 		if trayStartupValueName == "" {
 			trayStartupValueName = existing.TrayStartupValueName
 		}
-		if cloudflaredStartupValueName == "" {
-			cloudflaredStartupValueName = existing.CloudflaredStartupValueName
-		}
 		if channel == "" {
 			channel = existing.InstallChannel
 		}
@@ -496,7 +492,6 @@ func activateWindows(ctx context.Context, request Request, staged stagedInstall)
 	}
 	startupValueName = defaultString(startupValueName, "AgentDock")
 	trayStartupValueName = defaultString(trayStartupValueName, "AgentDockTray")
-	cloudflaredStartupValueName = defaultString(cloudflaredStartupValueName, "AgentDockCloudflared")
 	if host == "" {
 		host = "127.0.0.1"
 	}
@@ -537,26 +532,23 @@ func activateWindows(ctx context.Context, request Request, staged stagedInstall)
 	}
 
 	manifest := desktopruntime.Manifest{
-		SchemaVersion:               1,
-		InstallRoot:                 request.InstallRoot,
-		AgentDockHome:               home,
-		AgentDockDefaultDir:         defaultDir,
-		AgentDockBinary:             layout.CoreShim(),
-		TrayBinary:                  layout.TrayShim(),
-		AgentDockLauncher:           filepath.Join(request.InstallRoot, "start-agentdock.ps1"),
-		AgentDockTaskName:           taskName,
-		PrivilegeMode:               privilege,
-		CloudflaredBinary:           filepath.Join(binDir, "cloudflared.exe"),
-		CloudflaredLauncher:         filepath.Join(request.InstallRoot, "start-cloudflared.ps1"),
-		StartupValueName:            startupValueName,
-		TrayStartupValueName:        trayStartupValueName,
-		CloudflaredStartupValueName: cloudflaredStartupValueName,
-		Host:                        host,
-		Port:                        port,
-		LocalMCPURL:                 localMCPURL(host, port),
-		TunnelMode:                  tunnelMode,
-		PublicURL:                   publicURL,
-		InstallChannel:              channel,
+		SchemaVersion:        1,
+		InstallRoot:          request.InstallRoot,
+		AgentDockHome:        home,
+		AgentDockDefaultDir:  defaultDir,
+		AgentDockBinary:      layout.CoreShim(),
+		TrayBinary:           layout.TrayShim(),
+		AgentDockLauncher:    filepath.Join(request.InstallRoot, "start-agentdock.ps1"),
+		AgentDockTaskName:    taskName,
+		PrivilegeMode:        privilege,
+		StartupValueName:     startupValueName,
+		TrayStartupValueName: trayStartupValueName,
+		Host:                 host,
+		Port:                 port,
+		LocalMCPURL:          localMCPURL(host, port),
+		TunnelMode:           tunnelMode,
+		PublicURL:            publicURL,
+		InstallChannel:       channel,
 	}
 	if err := desktopruntime.Save(filepath.Join(request.InstallRoot, "runtime.json"), manifest); err != nil {
 		return activatedInstall{}, err

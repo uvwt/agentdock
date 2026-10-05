@@ -116,6 +116,7 @@ private final class ControlPanelModel: ObservableObject {
     @Published var settingsPage: SettingsPage = .appearance
     @Published var status: ServiceStatus = .missing
     @Published var dashboard = RuntimeDashboardSnapshot.empty
+    @Published var cloudflaredComponent = CloudflaredComponentStatus.unavailable
     @Published var statusUpdatedAt = Date()
     @Published private(set) var languageRevision = 0
     @Published var isBusy = false
@@ -151,6 +152,11 @@ private final class ControlPanelModel: ObservableObject {
 
     func refresh() async {
         update(await service.status())
+        cloudflaredComponent = await service.cloudflaredComponentStatus()
+    }
+
+    func refreshCloudflaredComponent() async {
+        cloudflaredComponent = await service.cloudflaredComponentStatus()
     }
 
     func refreshDashboard() async {
@@ -163,8 +169,23 @@ private final class ControlPanelModel: ObservableObject {
 
     func applyTunnel(mode: TunnelMode, serverURL: String, tunnelToken: String) async {
         await perform {
-            _ = try await self.installer.run(request: InstallRequest(mode: mode, serverURL: serverURL, tunnelToken: tunnelToken))
+            try await self.service.configureTunnel(mode: mode, serverURL: serverURL, tunnelToken: tunnelToken)
         }
+        cloudflaredComponent = await service.cloudflaredComponentStatus()
+    }
+
+    func runCloudflaredComponentAction(_ action: String) async {
+        await perform {
+            switch action {
+            case "update":
+                self.cloudflaredComponent = try await self.service.updateCloudflaredComponent()
+            case "uninstall":
+                self.cloudflaredComponent = try await self.service.uninstallCloudflaredComponent()
+            default:
+                self.cloudflaredComponent = try await self.service.installCloudflaredComponent()
+            }
+        }
+        cloudflaredComponent = await service.cloudflaredComponentStatus()
     }
 
     func pairNexus(endpoint: String, code: String) async {
@@ -216,8 +237,15 @@ private final class ControlPanelModel: ObservableObject {
         message = nil
         Task {
             do {
-                if status.loaded { try await service.stop() } else { try await service.start() }
+                if !status.installed {
+                    _ = try await installer.run(request: InstallRequest(mode: .local, serverURL: "", tunnelToken: ""))
+                } else if status.loaded {
+                    try await service.stop()
+                } else {
+                    try await service.start()
+                }
                 status = await service.status()
+                cloudflaredComponent = await service.cloudflaredComponentStatus()
                 onChanged()
             } catch {
                 message = error.localizedDescription
@@ -1474,7 +1502,10 @@ private struct SettingsView: View {
                 logLevel = configuration.logLevel
             }
             tunnelMode = (try? model.service.configuredTunnelMode()) ?? .local
-            if tunnelMode == .named {
+            let savedNamedOrigin = model.service.configuredNamedTunnelOrigin()
+            if !savedNamedOrigin.isEmpty {
+                serverURL = savedNamedOrigin
+            } else if tunnelMode == .named {
                 serverURL = model.status.configuration?.publicURL ?? ""
             }
             languagePreference = L10n.languagePreference()
@@ -1483,6 +1514,10 @@ private struct SettingsView: View {
             menuAutostart = model.menuLoginAgent.isEnabled
         }
         .task(id: model.settingsPage) {
+            if model.settingsPage == .advancedConnection {
+                await model.refreshCloudflaredComponent()
+                return
+            }
             guard model.settingsPage == .logs else { return }
             analytics = model.status.loaded && model.status.healthy
                 ? await model.service.runtimeAnalytics(configuration: model.status.configuration)
@@ -1804,6 +1839,44 @@ private struct SettingsView: View {
                     }
                 }
 
+                SettingsSection(L10n.text("Cloudflare Tunnel")) {
+                    SettingsRow(
+                        L10n.text("Optional component"),
+                        detail: cloudflaredComponentDetail
+                    ) {
+                        HStack(spacing: 8) {
+                            if model.cloudflaredComponent.ready {
+                                Button(L10n.text("Update")) {
+                                    Task { await model.runCloudflaredComponentAction("update") }
+                                }
+                                .controlSize(.small)
+                                Button(L10n.text("Uninstall")) {
+                                    Task { await model.runCloudflaredComponentAction("uninstall") }
+                                }
+                                .controlSize(.small)
+                            } else {
+                                Button(
+                                    model.cloudflaredComponent.state == "broken"
+                                        ? L10n.text("Repair")
+                                        : L10n.text("Install")
+                                ) {
+                                    Task { await model.runCloudflaredComponentAction("install") }
+                                }
+                                .controlSize(.small)
+                            }
+                        }
+                        .disabled(model.isBusy)
+                    }
+                    RowDivider()
+                    Text(L10n.text("Used for self-hosted public access. NexusDock remote connections do not require this component."))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 11)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if model.cloudflaredComponent.ready {
                 SettingsSection(L10n.text("Public access")) {
                     SettingsRow(
                         L10n.text("Public address"),
@@ -1873,6 +1946,7 @@ private struct SettingsView: View {
                     }
                     .padding(13)
                 }
+                }
 
                 if let message = model.message {
                     Text(message)
@@ -1882,6 +1956,19 @@ private struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private var cloudflaredComponentDetail: String {
+        if model.cloudflaredComponent.ready {
+            if let version = model.cloudflaredComponent.version, !version.isEmpty {
+                return L10n.format("Ready · %@", version)
+            }
+            return L10n.text("Ready")
+        }
+        if model.cloudflaredComponent.state == "broken" {
+            return L10n.text("Needs repair")
+        }
+        return L10n.text("Not installed")
     }
 
     private func logLevelTitle(_ value: String) -> String {

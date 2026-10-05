@@ -80,6 +80,31 @@ func TestPrepareMirrorBootstrapUsesR2ReleaseBaseAndRefreshesChecksum(t *testing.
 	if err := os.WriteFile(filepath.Join(dir, "install.sh.sha256"), []byte("stale\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	componentAsset := filepath.Join(dir, "cloudflared_darwin_amd64")
+	if err := os.WriteFile(componentAsset, []byte("component"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	componentCatalog := `{
+  "schema_version": 1,
+  "components": [{
+    "component": "cloudflared",
+    "version": "2026.9.1",
+    "upstream_version": "2026.9.1",
+    "upstream_source": "https://github.com/cloudflare/cloudflared/releases/tag/2026.9.1",
+    "artifacts": [{
+      "os": "darwin",
+      "arch": "amd64",
+      "url": "https://github.com/uvwt/agentdock/releases/download/v1.2.3/cloudflared_darwin_amd64",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }]
+  }]
+}`
+	if err := os.WriteFile(filepath.Join(dir, "agentdock-component-catalog.json"), []byte(componentCatalog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "agentdock-component-catalog.json.sha256"), []byte("stale\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	const baseURL = "https://download.nexusdock.co/releases/v1.2.3"
 	if err := prepareMirrorBootstrap(baseURL, dir); err != nil {
@@ -104,6 +129,25 @@ func TestPrepareMirrorBootstrapUsesR2ReleaseBaseAndRefreshesChecksum(t *testing.
 	}
 	if string(checksum) != sum+"  install.sh\n" {
 		t.Fatalf("install.sh.sha256 = %q, want refreshed checksum", string(checksum))
+	}
+
+	catalogData, err := os.ReadFile(filepath.Join(dir, "agentdock-component-catalog.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(catalogData), baseURL+"/cloudflared_darwin_amd64") {
+		t.Fatalf("component catalog was not rewritten to the R2 versioned base: %s", catalogData)
+	}
+	catalogSum, err := fileSHA256(filepath.Join(dir, "agentdock-component-catalog.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogChecksum, err := os.ReadFile(filepath.Join(dir, "agentdock-component-catalog.json.sha256"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(catalogChecksum) != catalogSum+"  agentdock-component-catalog.json\n" {
+		t.Fatalf("component catalog checksum was not refreshed: %q", catalogChecksum)
 	}
 }
 

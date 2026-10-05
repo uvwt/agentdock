@@ -6,8 +6,6 @@ param(
     [string] $AgentDockArchive,
     [Parameter(Mandatory = $true)]
     [string] $AgentDockChecksumFile,
-    [Parameter(Mandatory = $true)]
-    [string] $CloudflaredBinary,
     [int] $Port = 18795
 )
 
@@ -18,7 +16,6 @@ $ProgressPreference = 'SilentlyContinue'
 $resolvedInstaller = (Resolve-Path -LiteralPath $InstallerPath).Path
 $resolvedArchive = (Resolve-Path -LiteralPath $AgentDockArchive).Path
 $resolvedChecksum = (Resolve-Path -LiteralPath $AgentDockChecksumFile).Path
-$resolvedCloudflared = (Resolve-Path -LiteralPath $CloudflaredBinary).Path
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-setup-deferred-' + [Guid]::NewGuid().ToString('N'))
 $installerRoot = Join-Path $testRoot 'installer'
 $installDir = Join-Path $testRoot 'runtime\bin'
@@ -72,16 +69,13 @@ try {
         -Version '0.0.0-test' `
         -OfflineArchive $resolvedArchive `
         -OfflineChecksumFile $resolvedChecksum `
-        -OfflineCloudflaredBinary $resolvedCloudflared `
         -InstallDir $installDir `
         -RegisterStartup `
-        -TunnelMode none `
         -InstallChannel setup `
         -CorePrivilegeMode standard `
         -Port $Port `
         -StartupValueName $coreRunName `
         -TrayStartupValueName $trayRunName `
-        -CloudflaredStartupValueName $tunnelRunName `
         -ResultFile $resultPath 2>&1)
     if ($LASTEXITCODE -ne 0) {
         $safeOutput = (($installOutput | Out-String) `
@@ -117,6 +111,10 @@ try {
     if ([bool] $engineResult.healthy) {
         throw 'Fresh deferred Setup must not mark Engine result healthy before a successful activation check.'
     }
+    $componentStatus = (& (Join-Path $installDir 'agentdock.exe') component status cloudflared --runtime-root $runtimeRoot --json | ConvertFrom-Json)
+    if ($componentStatus.state -ne 'not_installed' -or $componentStatus.ready) {
+        throw "Fresh deferred Setup unexpectedly provisioned cloudflared: $($componentStatus | ConvertTo-Json -Compress)"
+    }
 
     foreach ($path in @(
         (Join-Path $installDir 'agentdock.exe'),
@@ -127,8 +125,14 @@ try {
             throw "Provision was rolled back after broker failure: $path"
         }
     }
+    $runKeyItem = Get-Item -LiteralPath $runKey -ErrorAction SilentlyContinue
     foreach ($name in @($coreRunName, $trayRunName)) {
-        $value = Get-ItemPropertyValue -LiteralPath $runKey -Name $name -ErrorAction SilentlyContinue
+        $hasValue = $null -ne $runKeyItem -and @($runKeyItem.GetValueNames()) -contains $name
+        $value = if ($hasValue) {
+            $runKeyItem.GetValue($name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        } else {
+            $null
+        }
         if ([string]::IsNullOrWhiteSpace([string] $value)) {
             throw "Provision did not preserve startup registration after broker failure: $name"
         }

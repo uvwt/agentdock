@@ -70,6 +70,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) > 0 && args[0] == "tunnel" {
 		return desktopruntime.RunTunnelCommand(ctx, args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "component" {
+		return runComponentCommand(ctx, args[1:], stdout, stderr)
+	}
 	if len(args) > 0 && args[0] == "config" {
 		return desktopruntime.RunConfigCommand(ctx, args[1:], stdout, stderr)
 	}

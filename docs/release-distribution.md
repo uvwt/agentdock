@@ -18,6 +18,14 @@ releases/
     ├── AgentDock-macos-universal.dmg.sha256
     ├── AgentDock-macos-universal.zip
     ├── AgentDock-macos-universal.zip.sha256
+    ├── agentdock-component-catalog.json
+    ├── agentdock-component-catalog.json.sha256
+    ├── cloudflared_darwin_amd64
+    ├── cloudflared_darwin_amd64.sha256
+    ├── cloudflared_darwin_arm64
+    ├── cloudflared_darwin_arm64.sha256
+    ├── cloudflared_windows_amd64.exe
+    ├── cloudflared_windows_amd64.exe.sha256
     ├── agentdock_{linux,darwin,windows}_{amd64,arm64}.*
     ├── install.sh
     ├── install.sh.sha256
@@ -39,6 +47,12 @@ releases/
 R2 中的 `install.sh` 会在镜像阶段把默认 Release 基础地址改写为同版本的
 `https://download.nexusdock.co/releases/<tag>`，并重新生成 `install.sh.sha256`。
 GitHub Release 中的原始 `install.sh` 不变，因此历史版本仍保持 GitHub 自身的可复现下载链路。
+
+`agentdock-component-catalog.json` 也会在 R2 镜像阶段重写为同版本的
+`https://download.nexusdock.co/releases/<tag>/...` 组件 URL，并重新生成自己的 SHA-256。
+正式 GitHub Release 中的 catalog 则保持指向该 GitHub Release 的不可变资产。这样
+AgentDock 与 cloudflared 可以独立更新，但两种分发入口都使用同一份固定版本、固定 digest
+和 upstream provenance 契约；基础 Setup/DMG 本身不携带 cloudflared。
 
 任何步骤在更新 `latest.json` 前失败时，旧版下载入口保持不变；更新之后的清理失败只会留下旧对象，不会破坏当前最新版。
 

@@ -40,7 +40,15 @@ func TestWindowsNativeControlPanelReplacesWPFAndCarriesPlatformLifecycle(t *test
 			t.Fatalf("WinUI window lifecycle missing %q", want)
 		}
 	}
-	for _, want := range []string{"<AssemblyName>agentdock-tray</AssemblyName>", "Microsoft.WindowsAppSDK", "../shared/Services/RuntimeService.cs"} {
+	for _, want := range []string{
+		"<AssemblyName>agentdock-tray</AssemblyName>",
+		"Microsoft.WindowsAppSDK",
+		"../shared/Services/RuntimeService.cs",
+		`Name="CopyAgentDockWinUIResourcesToPublish"`,
+		`Include="$(TargetDir)*.xbf"`,
+		`Include="$(TargetDir)$(AssemblyName).pri"`,
+		`Exists('$(PublishDir)MainWindow.xbf')`,
+	} {
 		if !strings.Contains(project, want) {
 			t.Fatalf("WinUI project missing %q", want)
 		}

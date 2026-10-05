@@ -30,6 +30,35 @@ function Get-FreeTcpPort {
     }
 }
 
+function Install-FakeCloudflaredComponent {
+    param([string] $RuntimeDir, [string] $SourceBinary)
+
+    $versionLine = (& $SourceBinary --version | Select-Object -First 1).Trim()
+    $fields = @($versionLine -split '\s+')
+    if ($fields.Count -lt 3 -or $fields[0] -ne 'cloudflared' -or $fields[1] -ne 'version') {
+        throw "Unexpected fake cloudflared version output: $versionLine"
+    }
+    $version = $fields[2]
+    $componentRoot = Join-Path $RuntimeDir 'components\cloudflared'
+    $versionDir = Join-Path $componentRoot "versions\$version"
+    $binary = Join-Path $versionDir 'cloudflared.exe'
+    New-Item -ItemType Directory -Path $versionDir -Force | Out-Null
+    Copy-Item -LiteralPath $SourceBinary -Destination $binary -Force
+    $digest = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
+    $active = @{
+        schema_version = 1
+        component = 'cloudflared'
+        version = $version
+        sha256 = $digest
+    } | ConvertTo-Json
+    [IO.File]::WriteAllText(
+        (Join-Path $componentRoot 'active.json'),
+        $active + "`n",
+        [Text.UTF8Encoding]::new($false)
+    )
+    return $binary
+}
+
 function Get-AgentDockVersion {
     param([string] $BinaryPath)
 
@@ -281,30 +310,32 @@ function Assert-NamedRuntime {
 function Invoke-Installer {
     param(
         [string] $Archive,
-        [string] $Checksum,
-        [string] $TunnelTokenFile = ''
+        [string] $Checksum
     )
 
     $arguments = @{
         Version = 'latest'
         OfflineArchive = $Archive
         OfflineChecksumFile = $Checksum
-        OfflineCloudflaredBinary = $FakeCloudflaredBinary
         InstallDir = $installDir
         RegisterStartup = $true
         CorePrivilegeMode = 'standard'
         Port = $port
         StartupValueName = $startupName
-        CloudflaredStartupValueName = $cloudflaredStartupName
         TrayStartupValueName = $trayStartupName
     }
-    if (-not [string]::IsNullOrWhiteSpace($TunnelTokenFile)) {
-        $arguments['TunnelTokenFile'] = $TunnelTokenFile
-    }
-    # 上一次健康启动会留下 fixture marker。每次安装前清掉它，确保 Assert-NamedRuntime
-    # 验证的是本轮异步 Tunnel generation 真正达到 ready，而不是复用旧标记。
-    Remove-Item -LiteralPath $namedTokenEnvMarker -Force -ErrorAction SilentlyContinue
     & $InstallerPath @arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Base installer failed with exit code $LASTEXITCODE."
+    }
+
+    # Core install/update is independent from Cloudflare. Restart the already-configured
+    # Tunnel through the runtime command so this test cannot pass via installer hooks.
+    Remove-Item -LiteralPath $namedTokenEnvMarker -Force -ErrorAction SilentlyContinue
+    & $agentDockBinary tunnel restart --runtime-root $runtimeDir
+    if ($LASTEXITCODE -ne 0) {
+        throw "Named Tunnel restart after Core install failed with exit code $LASTEXITCODE."
+    }
 }
 
 $testId = [Guid]::NewGuid().ToString('N')
@@ -314,7 +345,7 @@ $installDir = Join-Path $root 'AgentDock\bin'
 $runtimeDir = Split-Path -Parent $installDir
 $agentDockBinary = Join-Path $installDir 'agentdock.exe'
 $trayBinary = Join-Path $installDir 'agentdock-tray.exe'
-$cloudflaredBinary = Join-Path $installDir 'cloudflared.exe'
+$cloudflaredBinary = ''
 $manifestPath = Join-Path $runtimeDir 'runtime.json'
 $activeVersionPath = Join-Path $runtimeDir 'active-version.json'
 $serverUrlPath = Join-Path $runtimeDir 'server-url.txt'
@@ -325,10 +356,10 @@ $tunnelTokenPath = Join-Path $runtimeDir 'cloudflared-token.dpapi'
 $authPath = Join-Path $runtimeDir 'auth-token.dpapi'
 $oauthPasswordPath = Join-Path $runtimeDir 'oauth-password.dpapi'
 $oauthSecretPath = Join-Path $runtimeDir 'oauth-token-secret.dpapi'
-$namedTokenEnvMarker = Join-Path $installDir 'named-token-env-ok.txt'
+$namedTokenEnvMarker = ''
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $startupName = "AgentDockNamedLifecycle-$testId"
-$cloudflaredStartupName = "AgentDockCloudflaredNamedLifecycle-$testId"
+$cloudflaredStartupName = 'AgentDockCloudflared'
 $trayStartupName = "AgentDockTrayNamedLifecycle-$testId"
 $port = Get-FreeTcpPort
 $healthUrl = "http://127.0.0.1:$port/healthz"
@@ -340,6 +371,13 @@ $invalidTokenFile = Join-Path $root 'invalid-tunnel-token.txt'
 $oldUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 $oldHome = $env:AGENTDOCK_HOME
 $oldDefaultDir = $env:AGENTDOCK_DEFAULT_DIR
+$runKeyItem = Get-Item -LiteralPath $runKey -ErrorAction SilentlyContinue
+$hadExistingTunnelRunValue = $null -ne $runKeyItem -and @($runKeyItem.GetValueNames()) -contains $cloudflaredStartupName
+$existingTunnelRunValue = if ($hadExistingTunnelRunValue) {
+    $runKeyItem.GetValue($cloudflaredStartupName, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+} else {
+    $null
+}
 
 try {
     New-Item -ItemType Directory -Path $variantRoot -Force | Out-Null
@@ -370,25 +408,43 @@ try {
         -OutputRoot $variantRoot `
         -Name 'trial'
 
-    # Fresh install uses a token file so even the installer process never receives the secret in argv.
+    # Fresh base install does not know about Cloudflare Tunnel.
     & $InstallerPath `
         -Version latest `
         -OfflineArchive $sourcePayload.Archive `
         -OfflineChecksumFile $sourcePayload.Checksum `
-        -OfflineCloudflaredBinary $FakeCloudflaredBinary `
         -InstallDir $installDir `
         -RegisterStartup `
-        -TunnelMode named `
-        -ServerUrl $fixedUrl `
-        -TunnelTokenFile $stableTokenFile `
         -CorePrivilegeMode standard `
         -Port $port `
         -AuthToken 'stable-named-bearer-token' `
         -OAuthPassword 'stable-named-oauth-password' `
         -OAuthTokenSecret 'stable-named-oauth-secret-0123456789abcdef' `
         -StartupValueName $startupName `
-        -CloudflaredStartupValueName $cloudflaredStartupName `
         -TrayStartupValueName $trayStartupName
+
+    $componentBefore = (& $agentDockBinary component status cloudflared --runtime-root $runtimeDir --json | ConvertFrom-Json)
+    if ($componentBefore.state -ne 'not_installed' -or $componentBefore.ready) {
+        throw "Base install unexpectedly provisioned cloudflared: $($componentBefore | ConvertTo-Json -Compress)"
+    }
+    if (Test-Path -LiteralPath (Join-Path $installDir 'cloudflared.exe')) {
+        throw 'Base install must not place cloudflared in the runtime bin directory.'
+    }
+
+    $cloudflaredBinary = Install-FakeCloudflaredComponent -RuntimeDir $runtimeDir -SourceBinary $FakeCloudflaredBinary
+    $componentDir = Split-Path -Parent $cloudflaredBinary
+    $namedTokenEnvMarker = Join-Path $componentDir 'named-token-env-ok.txt'
+
+    # Named configuration is an explicit runtime operation. The token stays in a file and
+    # never appears in process arguments.
+    & $agentDockBinary tunnel configure `
+        --runtime-root $runtimeDir `
+        --mode named `
+        --server-url $fixedUrl `
+        --token-file $stableTokenFile
+    if ($LASTEXITCODE -ne 0) {
+        throw "Initial Named Tunnel configuration failed with exit code $LASTEXITCODE."
+    }
 
     foreach ($path in @($tunnelTokenPath, $authPath, $oauthPasswordPath, $oauthSecretPath)) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
@@ -424,14 +480,19 @@ try {
         -ExpectedOAuthPasswordHash $oauthPasswordHash `
         -ExpectedOAuthSecretHash $oauthSecretHash
 
-    # 公网 Tunnel readiness 是 soft dependency。无效的新 Token 不能回滚已经健康的 Core generation。
-    # 这里先证明 trial generation 已提交且 Tunnel 确实尝试启动但未 ready，再恢复有效 Token，
-    # 并要求 Core generation 保持不变。
+    # Core upgrades are independent from Tunnel configuration. Commit the trial generation
+    # first, then apply an invalid Token through the runtime command and prove that Tunnel
+    # failure cannot roll back the already-healthy Core generation.
+    Invoke-Installer -Archive $trialPayload.Archive -Checksum $trialPayload.Checksum
     Remove-Item -LiteralPath $namedTokenEnvMarker -Force -ErrorAction SilentlyContinue
-    Invoke-Installer `
-        -Archive $trialPayload.Archive `
-        -Checksum $trialPayload.Checksum `
-        -TunnelTokenFile $invalidTokenFile
+    & $agentDockBinary tunnel configure `
+        --runtime-root $runtimeDir `
+        --mode named `
+        --server-url $fixedUrl `
+        --token-file $invalidTokenFile
+    if ($LASTEXITCODE -eq 0) {
+        throw 'Invalid Named Token unexpectedly reached ready state.'
+    }
 
     Wait-Healthy -Url $healthUrl
     $invalidActive = Get-Content -LiteralPath $activeVersionPath -Raw | ConvertFrom-Json
@@ -458,12 +519,16 @@ try {
     }
     Assert-NoTunnelTokenInProcessArguments -Tokens @($stableTunnelToken, $invalidTunnelToken)
 
-    # 把有效 Token 重新应用到已提交的 generation；同一个 Core 必须恢复公网 ready，
-    # 不能发生 rollback 或再次切换版本。
-    Invoke-Installer `
-        -Archive $trialPayload.Archive `
-        -Checksum $trialPayload.Checksum `
-        -TunnelTokenFile $stableTokenFile
+    # Reapply the valid Token through the runtime command. The same Core generation must
+    # recover public readiness without another install or version transition.
+    & $agentDockBinary tunnel configure `
+        --runtime-root $runtimeDir `
+        --mode named `
+        --server-url $fixedUrl `
+        --token-file $stableTokenFile
+    if ($LASTEXITCODE -ne 0) {
+        throw "Named Tunnel recovery failed with exit code $LASTEXITCODE."
+    }
     $restoredTokenHash = (Get-FileHash -LiteralPath $tunnelTokenPath -Algorithm SHA256).Hash
     Assert-NamedRuntime `
         -ExpectedVersion $trialVersion `
@@ -504,6 +569,9 @@ try {
     Stop-IsolatedRuntimeProcesses -RuntimeRoot $runtimeDir
     foreach ($name in @($startupName, $cloudflaredStartupName, $trayStartupName)) {
         Remove-ItemProperty -LiteralPath $runKey -Name $name -ErrorAction SilentlyContinue
+    }
+    if ($hadExistingTunnelRunValue) {
+        Set-ItemProperty -LiteralPath $runKey -Name $cloudflaredStartupName -Value $existingTunnelRunValue
     }
     [Environment]::SetEnvironmentVariable('Path', $oldUserPath, 'User')
     $env:AGENTDOCK_HOME = $oldHome

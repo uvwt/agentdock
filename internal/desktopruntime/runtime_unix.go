@@ -57,20 +57,22 @@ func loadUnixRuntime(runtimeRoot string) (unixRuntimeManifest, string, error) {
 	fromApp := runtime.GOOS == "darwin" && darwinExecutableFromAppBundle(executable)
 	if runtime.GOOS == "darwin" {
 		if fromApp {
-			// App Bundle 的 Core/cloudflared 由 SMAppService 注册，路径必须跟随 Helper。
+			// App Bundle 只携带 AgentDock Core helper。cloudflared 是外部 optional
+			// component，绝不能再从已签名 Bundle 内解析或在安装后写回 Bundle。
 			if executable != "" {
 				agentDockBinary = executable
-				cloudflaredBinary = filepath.Join(filepath.Dir(executable), "cloudflared")
 			}
+			cloudflaredBinary = ""
 			serviceManager = "smappservice"
 			serviceName = "com.uvwt.agentdock.core"
 			tunnelServiceName = "com.uvwt.agentdock.tunnel"
 		} else {
-			// CLI 安装把 LaunchAgent 写在用户目录，标签是 com.uvwt.agentdock / .cloudflared。
+			// CLI 安装仍可复用 launchd 标签，但 cloudflared 本体同样只从 component store
+			// 解析，不采用 agentdock 可执行文件同目录或 PATH 中的未知 binary。
 			if executable != "" {
 				agentDockBinary = executable
-				cloudflaredBinary = filepath.Join(filepath.Dir(executable), "cloudflared")
 			}
+			cloudflaredBinary = ""
 			serviceManager = "launchd"
 			serviceName = "com.uvwt.agentdock"
 			tunnelServiceName = "com.uvwt.agentdock.cloudflared"
@@ -96,6 +98,11 @@ func loadUnixRuntime(runtimeRoot string) (unixRuntimeManifest, string, error) {
 		} else if !errors.Is(readErr, os.ErrNotExist) {
 			return unixRuntimeManifest{}, "", fmt.Errorf("读取桌面运行清单失败: %w", readErr)
 		}
+	}
+	if runtime.GOOS == "darwin" {
+		// desktop-runtime.json 中的旧 cloudflared_binary 仅属于历史安装格式；新运行时
+		// 不再把它当依赖来源。真正路径由 Tunnel lifecycle 从 component store 注入。
+		manifest.CloudflaredBinary = ""
 	}
 	if manifest.AgentDockBinary == "" || manifest.EnvironmentFile == "" {
 		return unixRuntimeManifest{}, "", errors.New("桌面运行清单缺少核心路径")

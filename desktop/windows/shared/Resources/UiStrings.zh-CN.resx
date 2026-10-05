@@ -862,6 +862,31 @@
   <data name="FixedDomain" xml:space="preserve"><value>固定域名</value></data>
   <data name="FixedDomainDetail" xml:space="preserve"><value>使用自己的 HTTPS 域名和 Cloudflare Tunnel Token 建立固定公网入口。</value></data>
   <data name="ApplyFixedDomain" xml:space="preserve"><value>应用固定域名</value></data>
+  <data name="CloudflareTunnel" xml:space="preserve"><value>Cloudflare Tunnel</value></data>
+  <data name="CloudflareTunnelComponent" xml:space="preserve"><value>可选组件</value></data>
+  <data name="CloudflaredComponentPurpose" xml:space="preserve"><value>用于自托管公网访问。NexusDock 远程连接无需安装此组件。</value></data>
+  <data name="ComponentNotInstalled" xml:space="preserve"><value>未安装</value></data>
+  <data name="ComponentNeedsRepair" xml:space="preserve"><value>需要修复</value></data>
+  <data name="ComponentReady" xml:space="preserve"><value>已就绪</value></data>
+  <data name="ComponentReadyVersion" xml:space="preserve"><value>已就绪 · {0}</value></data>
+  <data name="Install" xml:space="preserve"><value>安装</value></data>
+  <data name="ComponentRepairAction" xml:space="preserve"><value>修复</value></data>
+  <data name="Uninstall" xml:space="preserve"><value>卸载</value></data>
+  <data name="InstallingComponent" xml:space="preserve"><value>正在安装组件…</value></data>
+  <data name="UpdatingComponent" xml:space="preserve"><value>正在更新组件…</value></data>
+  <data name="RepairingComponent" xml:space="preserve"><value>正在修复组件…</value></data>
+  <data name="UninstallingComponent" xml:space="preserve"><value>正在卸载组件…</value></data>
+  <data name="ComponentChecking" xml:space="preserve"><value>正在检查组件元数据…</value></data>
+  <data name="ComponentDownloading" xml:space="preserve"><value>正在下载组件…</value></data>
+  <data name="ComponentDownloadingProgress" xml:space="preserve"><value>正在下载组件… {0}%</value></data>
+  <data name="ComponentVerifying" xml:space="preserve"><value>正在验证组件…</value></data>
+  <data name="ComponentWorking" xml:space="preserve"><value>正在处理组件…</value></data>
+  <data name="ComponentInstalled" xml:space="preserve"><value>组件已安装。</value></data>
+  <data name="ComponentUpdated" xml:space="preserve"><value>组件已更新。</value></data>
+  <data name="ComponentRepaired" xml:space="preserve"><value>组件已修复。</value></data>
+  <data name="ComponentUninstalled" xml:space="preserve"><value>组件已卸载。</value></data>
+  <data name="ComponentStatusUnavailable" xml:space="preserve"><value>无法读取组件状态。</value></data>
+  <data name="ComponentOperationFailed" xml:space="preserve"><value>组件操作失败，请查看诊断信息后重试。</value></data>
 
   <data name="NeedsAttention" xml:space="preserve"><value>运行异常</value></data>
   <data name="AgentDockNeedsAttention" xml:space="preserve"><value>AgentDock 运行异常</value></data>

@@ -12,8 +12,10 @@ import (
 )
 
 func TestStopBinaryProcessesTerminatesProcessThatReappearsDuringStop(t *testing.T) {
-	target := filepath.Join(t.TempDir(), "agentdock-stop-target.exe")
-	copyStopBinaryTestExecutable(t, target)
+	target, err := filepath.Abs(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	first := startStopBinaryHelper(t, target)
 	waitForBinaryProcess(t, target, true)
@@ -64,17 +66,6 @@ func TestStopBinaryProcessesHelperProcess(t *testing.T) {
 		t.Skip("helper process only")
 	}
 	time.Sleep(30 * time.Second)
-}
-
-func copyStopBinaryTestExecutable(t *testing.T, target string) {
-	t.Helper()
-	data, err := os.ReadFile(os.Args[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(target, data, 0o755); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func startStopBinaryHelper(t *testing.T, target string) *exec.Cmd {

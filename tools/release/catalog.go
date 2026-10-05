@@ -64,6 +64,12 @@ func ReleaseCatalog() []Artifact {
 		{Name: "AgentDockSetup-amd64.exe", Kind: "setup", Platform: "windows", Arch: "amd64", Required: true, PublicContract: true},
 		{Name: "AgentDockSetup-arm64.exe", Kind: "setup", Platform: "windows", Arch: "arm64", Required: true, PublicContract: true},
 	}
+	components := []Artifact{
+		{Name: "cloudflared_darwin_amd64", Kind: "component", Platform: "darwin", Arch: "amd64", Required: true},
+		{Name: "cloudflared_darwin_arm64", Kind: "component", Platform: "darwin", Arch: "arm64", Required: true},
+		{Name: "cloudflared_windows_amd64.exe", Kind: "component", Platform: "windows", Arch: "amd64", Required: true},
+		{Name: "agentdock-component-catalog.json", Kind: "component-catalog", Required: true},
+	}
 	scripts := []Artifact{
 		{Name: "install.sh", Kind: "bootstrap", Platform: "unix", PublicContract: true, Required: true},
 		{Name: "install.ps1", Kind: "bootstrap", Platform: "windows", PublicContract: true, Required: true},
@@ -71,6 +77,16 @@ func ReleaseCatalog() []Artifact {
 	var catalog []Artifact
 	catalog = append(catalog, archives...)
 	for _, artifact := range archives {
+		catalog = append(catalog, Artifact{
+			Name:     artifact.Name + ".sha256",
+			Kind:     "checksum",
+			Platform: artifact.Platform,
+			Arch:     artifact.Arch,
+			Required: artifact.Required,
+		})
+	}
+	catalog = append(catalog, components...)
+	for _, artifact := range components {
 		catalog = append(catalog, Artifact{
 			Name:     artifact.Name + ".sha256",
 			Kind:     "checksum",

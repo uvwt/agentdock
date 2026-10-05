@@ -21,7 +21,6 @@ Release Catalog 由 `tools/release` 约束；测试禁止重新把 `runtime-adap
 | `scripts/install/install.ps1` | 2344 | 公开 | Windows bootstrap/外层 adapter：UAC、DPAPI、HKCU Run、Setup Result、Task 管理与 rollback |
 | `scripts/install/uninstall-windows.ps1` | 362 | 内部 | Windows 自删除、Task/Registry 清理、detached Engine commit；不作为 Release API |
 | `scripts/install/launch-windows-process.ps1` | 199 | 内部 | Inno RedirectionGuard 外启动当前用户 session 的临时 Scheduled Task broker |
-| `scripts/install/probe-protected-text.ps1` | 35 | 内部 | 只读 DPAPI 可用性探针，不返回凭据明文 |
 
 `manage-windows.ps1` 已删除。它原来唯一仍有产品调用的 `task-run-session` 已迁到原生：
 

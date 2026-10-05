@@ -229,7 +229,6 @@ final class InstallerRunner {
     private func validateBundledRuntime() throws {
         for (url, title) in [
             (paths.binary, "AgentDock Core"),
-            (paths.cloudflared, "cloudflared"),
         ] {
             let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
             guard values.isRegularFile == true,
@@ -248,10 +247,6 @@ final class InstallerRunner {
         guard version.status == 0,
               AppVersion.matchesCoreVersion(version.output) else {
             throw ValidationError(L10n.text("The Core bundled in AgentDock.app does not match the app version. Reinstall the application."))
-        }
-        let cloudflared = try runProcess(executable: paths.cloudflared.path, arguments: ["--version"])
-        guard cloudflared.status == 0 else {
-            throw ValidationError(L10n.text("The cloudflared bundled in AgentDock.app cannot run."))
         }
     }
 

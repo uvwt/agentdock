@@ -51,6 +51,23 @@ struct DesktopUpdateRegistrationState {
     let tunnel: String
 }
 
+struct CloudflaredComponentStatus: Decodable, Equatable {
+    let state: String
+    let installed: Bool
+    let ready: Bool
+    let version: String?
+    let detail: String?
+
+    static let unavailable = CloudflaredComponentStatus(
+        state: "broken",
+        installed: false,
+        ready: false,
+        version: nil,
+        detail: nil
+    )
+}
+
+
 enum NexusConnectionState: Equatable {
     case unconfigured
     case connected
@@ -287,7 +304,6 @@ final class ServiceController: @unchecked Sendable {
         let fileManager = FileManager.default
         let migrationRequired = LegacyDesktopRuntimeMigration.isPresent(paths: paths)
         let installed = fileManager.isExecutableFile(atPath: paths.binary.path)
-            && fileManager.isExecutableFile(atPath: paths.cloudflared.path)
             && fileManager.fileExists(atPath: paths.coreSkillBundle.appendingPathComponent("manifest.json").path)
             && fileManager.fileExists(atPath: paths.environment.path)
         guard installed else { return .missing }
@@ -468,6 +484,165 @@ final class ServiceController: @unchecked Sendable {
         return status == .enabled || status == .requiresApproval
     }
 
+    func cloudflaredComponentStatus() async -> CloudflaredComponentStatus {
+        do {
+            let result = try await runInBackground {
+                try runProcess(
+                    executable: self.paths.binary.path,
+                    arguments: [
+                        "component", "status", "cloudflared",
+                        "--runtime-root", self.paths.appSupport.path,
+                        "--json",
+                    ]
+                )
+            }
+            guard result.status == 0,
+                  let data = result.output.data(using: .utf8),
+                  let status = try? JSONDecoder().decode(CloudflaredComponentStatus.self, from: data) else {
+                return .unavailable
+            }
+            return status
+        } catch {
+            return .unavailable
+        }
+    }
+
+    func migrateLegacyCloudflaredIfNeeded(source: URL?, required: Bool) async throws {
+        let current = await cloudflaredComponentStatus()
+        guard !current.ready, required else { return }
+        guard let source else {
+            throw ValidationError(L10n.text("Cloudflare Tunnel is configured, but its optional component is missing. Repair the component before updating AgentDock."))
+        }
+        let values = try source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        guard values.isRegularFile == true, values.isSymbolicLink != true else {
+            throw ValidationError(L10n.text("Cloudflare Tunnel is configured, but the legacy component cannot be migrated safely."))
+        }
+        let result = try await runInBackground {
+            try runProcess(
+                executable: self.paths.binary.path,
+                arguments: [
+                    "component", "__import-legacy", "cloudflared",
+                    "--runtime-root", self.paths.appSupport.path,
+                    "--source", source.path,
+                    "--json",
+                ]
+            )
+        }
+        guard result.status == 0 else {
+            throw ValidationError(L10n.text("Cloudflare Tunnel component migration failed. The AgentDock update was not committed."))
+        }
+        let migrated = await cloudflaredComponentStatus()
+        guard migrated.ready else {
+            throw ValidationError(L10n.text("Cloudflare Tunnel component migration did not produce a ready component."))
+        }
+    }
+
+    func installCloudflaredComponent() async throws -> CloudflaredComponentStatus {
+        try await runCloudflaredComponentAction("install")
+    }
+
+    func updateCloudflaredComponent() async throws -> CloudflaredComponentStatus {
+        try await runCloudflaredComponentAction("update")
+    }
+
+    func uninstallCloudflaredComponent() async throws -> CloudflaredComponentStatus {
+        let mode = try configuredTunnelMode()
+        if mode != .local {
+            try setTunnelEnabled(false)
+            try await configureTunnel(mode: .local, serverURL: "", tunnelToken: "")
+        }
+        return try await runCloudflaredComponentAction("uninstall")
+    }
+
+    func configureTunnel(mode: TunnelMode, serverURL: String, tunnelToken: String) async throws {
+        if mode != .local {
+            let component = await cloudflaredComponentStatus()
+            guard component.ready else {
+                throw ValidationError(L10n.text("Install the Cloudflare Tunnel component first."))
+            }
+        }
+
+        let wasEnabled = tunnelEnabled()
+        if wasEnabled {
+            try setTunnelEnabled(false)
+        }
+
+        let tokenFile = try writeTemporaryTunnelToken(tunnelToken)
+        defer {
+            if let tokenFile { try? FileManager.default.removeItem(at: tokenFile) }
+        }
+
+        var arguments = [
+            "tunnel", "configure",
+            "--runtime-root", paths.appSupport.path,
+            "--mode", mode.rawValue,
+            "--server-url", serverURL,
+        ]
+        if let tokenFile {
+            arguments += ["--token-file", tokenFile.path]
+        }
+
+        do {
+            let result = try await runInBackground {
+                try runProcess(executable: self.paths.binary.path, arguments: arguments)
+            }
+            guard result.status == 0 else {
+                throw ValidationError(commandError(result.output, action: L10n.text("Tunnel configuration")))
+            }
+            if mode != .local {
+                try setTunnelEnabled(true)
+            }
+        } catch {
+            if wasEnabled {
+                try? setTunnelEnabled(true)
+            }
+            throw error
+        }
+    }
+
+    func configuredNamedTunnelOrigin() -> String {
+        let path = paths.appSupport.appendingPathComponent("named-server-url.txt")
+        guard let data = try? Data(contentsOf: path),
+              let value = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return ""
+        }
+        return value
+    }
+
+    private func runCloudflaredComponentAction(_ action: String) async throws -> CloudflaredComponentStatus {
+        let result = try await runInBackground {
+            try runProcess(
+                executable: self.paths.binary.path,
+                arguments: [
+                    "component", action, "cloudflared",
+                    "--runtime-root", self.paths.appSupport.path,
+                    "--json",
+                ]
+            )
+        }
+        guard result.status == 0 else {
+            throw ValidationError(L10n.text("Cloudflare Tunnel component operation failed. Check diagnostics and try again."))
+        }
+        guard let data = result.output.data(using: .utf8),
+              let status = try? JSONDecoder().decode(CloudflaredComponentStatus.self, from: data) else {
+            throw ValidationError(L10n.text("Unable to read Cloudflare Tunnel component status."))
+        }
+        return status
+    }
+
+    private func writeTemporaryTunnelToken(_ token: String) throws -> URL? {
+        let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { return nil }
+        guard !token.contains("\n"), !token.contains("\r") else {
+            throw ValidationError(L10n.text("Tunnel Token must be a single line of text."))
+        }
+        try FileManager.default.createDirectory(at: paths.appSupport, withIntermediateDirectories: true)
+        let url = paths.appSupport.appendingPathComponent(".tunnel-token.\(UUID().uuidString)")
+        try Data((token + "\n").utf8).write(to: url, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        return url
+    }
+
     func configuredTunnelMode() throws -> TunnelMode {
         guard FileManager.default.fileExists(atPath: paths.tunnelEnvironment.path) else {
             return .local
@@ -638,6 +813,11 @@ final class ServiceController: @unchecked Sendable {
         let serviceState = DesktopUpdateServiceState(
             coreEnabled: currentStatus.autostartEnabled,
             tunnelEnabled: tunnelEnabled()
+        )
+        let configuredMode = (try? configuredTunnelMode()) ?? .local
+        try await migrateLegacyCloudflaredIfNeeded(
+            source: paths.legacyBundledCloudflared,
+            required: configuredMode != .local || serviceState.tunnelEnabled
         )
         try serviceState.write(to: paths.updateServiceState)
 

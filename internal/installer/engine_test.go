@@ -526,9 +526,13 @@ func TestWindowsGenerationLayoutAndManifest(t *testing.T) {
 		t.Fatalf("standard install leaked scheduled task name: %q", manifest.AgentDockTaskName)
 	}
 	if manifest.StartupValueName != "AgentDockE2E" ||
-		manifest.TrayStartupValueName != "AgentDockTrayE2E" ||
-		manifest.CloudflaredStartupValueName != "AgentDockCloudflaredE2E" {
+		manifest.TrayStartupValueName != "AgentDockTrayE2E" {
 		t.Fatalf("custom Windows startup identity was not preserved: %+v", manifest)
+	}
+	if manifest.CloudflaredBinary != "" ||
+		manifest.CloudflaredLauncher != "" ||
+		manifest.CloudflaredStartupValueName != "" {
+		t.Fatalf("base installer must not persist cloudflared lifecycle fields: %+v", manifest)
 	}
 	store, err := updateengine.NewStore(request.InstallRoot)
 	if err != nil {
@@ -577,9 +581,13 @@ func TestWindowsGenerationLayoutAndManifest(t *testing.T) {
 		t.Fatalf("standard repair restored a scheduled task identity: task=%q privilege=%q", manifest.AgentDockTaskName, manifest.PrivilegeMode)
 	}
 	if manifest.StartupValueName != "AgentDockE2E" ||
-		manifest.TrayStartupValueName != "AgentDockTrayE2E" ||
-		manifest.CloudflaredStartupValueName != "AgentDockCloudflaredE2E" {
+		manifest.TrayStartupValueName != "AgentDockTrayE2E" {
 		t.Fatalf("repair lost custom Windows startup identity: %+v", manifest)
+	}
+	if manifest.CloudflaredBinary != "" ||
+		manifest.CloudflaredLauncher != "" ||
+		manifest.CloudflaredStartupValueName != "" {
+		t.Fatalf("repair must not restore legacy cloudflared lifecycle fields: %+v", manifest)
 	}
 }
 

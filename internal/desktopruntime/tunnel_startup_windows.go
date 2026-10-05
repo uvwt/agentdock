@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-func platformSetTunnelAutostart(_ context.Context, runtimeRoot string, enabled bool) error {
-	runtime, err := loadTunnelRuntime(runtimeRoot)
+func platformSetTunnelAutostart(ctx context.Context, runtimeRoot string, enabled bool) error {
+	runtime, err := loadTunnelRuntime(ctx, runtimeRoot)
 	if err != nil {
 		return err
 	}

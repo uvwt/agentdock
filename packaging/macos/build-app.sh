@@ -179,19 +179,15 @@ iconutil -c icns "$ICONSET_DIR" -o "$RESOURCES_DIR/AgentDock.icns"
 [[ -f "$RESOURCES_DIR/AgentDock.icns" && ! -L "$RESOURCES_DIR/AgentDock.icns" ]] || \
   die "macOS App 图标生成失败"
 
-# 桌面版把 Core、cloudflared 和官方核心 Skill 直接收进 App Bundle。
-# 版本更新因此只替换一个 AgentDock.app，不再维护 ~/.local/bin 的第二套生产文件。
+# 桌面版只把 Core、更新仲裁器和官方核心 Skill 收进 App Bundle。
+# cloudflared 由 AgentDock component store 独立安装与更新，不属于 App Bundle。
 helper_core_binaries=()
-helper_cloudflared_binaries=()
 helper_arbiter_binaries=()
 CORE_SKILL_BUNDLE="$RESOURCES_DIR/core-skills"
 for release_architecture in "${release_architectures[@]}"; do
   agentdock_archive="agentdock_darwin_${release_architecture}.tar.gz"
   agentdock_checksum="$agentdock_archive.sha256"
-  cloudflared_binary="cloudflared_darwin_${release_architecture}"
-  cloudflared_checksum="$cloudflared_binary.sha256"
-
-  for payload_name in "$agentdock_archive" "$agentdock_checksum" "$cloudflared_binary" "$cloudflared_checksum"; do
+  for payload_name in "$agentdock_archive" "$agentdock_checksum"; do
     payload_path="$OFFLINE_PAYLOAD_DIR/$payload_name"
     [[ -f "$payload_path" && ! -L "$payload_path" ]] || die "缺少离线载荷：$payload_path"
   done
@@ -199,7 +195,6 @@ for release_architecture in "${release_architectures[@]}"; do
   (
     cd "$OFFLINE_PAYLOAD_DIR"
     shasum -a 256 -c "$agentdock_checksum"
-    shasum -a 256 -c "$cloudflared_checksum"
   )
 
   payload_check_dir="$TMP_DIR/payload-check-$release_architecture"
@@ -217,12 +212,7 @@ for release_architecture in "${release_architectures[@]}"; do
   agentdock_file_output="$(file "$payload_check_dir/bin/agentdock")"
   [[ "$agentdock_file_output" == *"$expected_file_architecture"* ]] || \
     die "$agentdock_archive 架构不匹配，期望 $expected_file_architecture"
-  cloudflared_file_output="$(file "$OFFLINE_PAYLOAD_DIR/$cloudflared_binary")"
-  [[ "$cloudflared_file_output" == *"$expected_file_architecture"* ]] || \
-    die "$cloudflared_binary 架构不匹配，期望 $expected_file_architecture"
-
   helper_core_binaries+=("$payload_check_dir/bin/agentdock")
-  helper_cloudflared_binaries+=("$OFFLINE_PAYLOAD_DIR/$cloudflared_binary")
   arbiter_binary="$TMP_DIR/agentdock-arbiter-$release_architecture"
   (
     cd "$ROOT_DIR"
@@ -242,14 +232,12 @@ done
 
 if (( ${#helper_core_binaries[@]} == 1 )); then
   cp -p "$helper_core_binaries[1]" "$HELPERS_DIR/agentdock"
-  cp -p "$helper_cloudflared_binaries[1]" "$HELPERS_DIR/cloudflared"
   cp -p "$helper_arbiter_binaries[1]" "$HELPERS_DIR/agentdock-arbiter"
 else
   lipo -create "${helper_core_binaries[@]}" -output "$HELPERS_DIR/agentdock"
-  lipo -create "${helper_cloudflared_binaries[@]}" -output "$HELPERS_DIR/cloudflared"
   lipo -create "${helper_arbiter_binaries[@]}" -output "$HELPERS_DIR/agentdock-arbiter"
 fi
-chmod 0755 "$HELPERS_DIR/agentdock" "$HELPERS_DIR/cloudflared" "$HELPERS_DIR/agentdock-arbiter"
+chmod 0755 "$HELPERS_DIR/agentdock" "$HELPERS_DIR/agentdock-arbiter"
 find "$CORE_SKILL_BUNDLE" -type d -exec chmod 0755 {} +
 find "$CORE_SKILL_BUNDLE" -type f -exec chmod 0644 {} +
 [[ -f "$CORE_SKILL_BUNDLE/manifest.json" && ! -L "$CORE_SKILL_BUNDLE/manifest.json" ]] || \
@@ -398,10 +386,9 @@ else
 fi
 sign_macos_code "com.uvwt.agentdock.login-helper" "$MENU_LOGIN_HELPER"
 sign_macos_code "com.uvwt.agentdock.core" "$HELPERS_DIR/agentdock"
-sign_macos_code "com.uvwt.agentdock.cloudflared" "$HELPERS_DIR/cloudflared"
 sign_macos_code "com.uvwt.agentdock.arbiter" "$HELPERS_DIR/agentdock-arbiter"
 # 嵌套代码先分别签名，再签外层 App。不要用 --deep 做签名操作，否则会重新签
-# Core/cloudflared 并破坏它们的稳定代码身份；--deep 只用于最终递归验证。
+# Core/Arbiter 并破坏它们的稳定代码身份；--deep 只用于最终递归验证。
 sign_macos_code "$BUNDLE_ID" "$APP_DIR"
 codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 
@@ -438,4 +425,3 @@ print -- "zip: $ZIP_PATH"
 print -- "dmg: $DMG_PATH"
 file "$MACOS_DIR/AgentDock"
 file "$HELPERS_DIR/agentdock"
-file "$HELPERS_DIR/cloudflared"

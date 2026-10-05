@@ -13,7 +13,7 @@ struct AppPaths {
     }
 
     var binary: URL { appBundle.appendingPathComponent("Contents/Helpers/agentdock") }
-    var cloudflared: URL { appBundle.appendingPathComponent("Contents/Helpers/cloudflared") }
+    var legacyBundledCloudflared: URL { appBundle.appendingPathComponent("Contents/Helpers/cloudflared") }
     var coreSkillBundle: URL { appBundle.appendingPathComponent("Contents/Resources/core-skills") }
     var appSupport: URL { home.appendingPathComponent("Library/Application Support/AgentDock") }
     var environment: URL { appSupport.appendingPathComponent("agentdock.env") }

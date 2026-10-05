@@ -142,6 +142,50 @@ internal sealed class NativeServiceStatus
     public bool NexusConnected { get; set; }
 }
 
+internal sealed class NativeTunnelStatus
+{
+    [JsonPropertyName("mode")]
+    public string Mode { get; set; } = "none";
+
+    [JsonPropertyName("running")]
+    public bool Running { get; set; }
+
+    [JsonPropertyName("ready")]
+    public bool Ready { get; set; }
+
+    [JsonPropertyName("public_url")]
+    public string PublicUrl { get; set; } = "";
+
+    [JsonPropertyName("dependency_state")]
+    public string DependencyState { get; set; } = "";
+
+    [JsonPropertyName("component_version")]
+    public string ComponentVersion { get; set; } = "";
+}
+
+public sealed class ComponentStatus
+{
+    [JsonPropertyName("component")]
+    public string Component { get; set; } = "";
+
+    [JsonPropertyName("state")]
+    public string State { get; set; } = "not_installed";
+
+    [JsonPropertyName("installed")]
+    public bool Installed { get; set; }
+
+    [JsonPropertyName("ready")]
+    public bool Ready { get; set; }
+
+    [JsonPropertyName("version")]
+    public string Version { get; set; } = "";
+
+    [JsonPropertyName("detail")]
+    public string Detail { get; set; } = "";
+}
+
+public sealed record ComponentProgress(string Stage, long Bytes, long Total);
+
 public sealed record RuntimeSnapshot(
     RuntimeManifest Manifest,
     ControlPanelSettings Settings,
@@ -154,6 +198,8 @@ public sealed record RuntimeSnapshot(
     string PublicMcpUrl,
     string SavedNamedOrigin,
     string TunnelMode,
+    string CloudflaredComponentState,
+    string CloudflaredComponentVersion,
     bool CoreStartupEnabled,
     bool TrayStartupEnabled,
     bool TunnelTokenStored,

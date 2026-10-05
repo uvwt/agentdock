@@ -67,10 +67,10 @@ func TestDesktopControlSurfacesCanRefreshQuickTunnel(t *testing.T) {
 			`SetTunnelModeAsync("quick", "", "")`,
 			"await RefreshAsync()",
 		},
-		filepath.Join("..", "..", "desktop", "macos", "AgentDockApp", "Sources", "SetupWindowController.swift"): {
-			"refreshingQuickTunnel",
+		filepath.Join("..", "..", "desktop", "macos", "AgentDockApp", "Sources", "NativeControlPanelWindowController.swift"): {
+			`if model.cloudflaredComponent.ready {`,
 			`L10n.text("Regenerate temporary address")`,
-			`L10n.text("Generating a new temporary public address…")`,
+			`await model.applyTunnel(mode: .quick, serverURL: "", tunnelToken: "")`,
 		},
 	}
 	for path, required := range checks {

@@ -64,7 +64,7 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 			return fmt.Errorf("未检测到受支持的 Chrome、Chromium 或 Microsoft Edge，且未配置外部 CDP: %w", err)
 		}
 	}
-	runtime, err := loadTunnelRuntime(request.RuntimeRoot)
+	runtime, err := loadTunnelRuntime(ctx, request.RuntimeRoot)
 	if err != nil {
 		return err
 	}
@@ -113,7 +113,7 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 	}
 	rollback := func(cause error) error {
 		restoreErr := restoreSnapshots(snapshots)
-		oldRuntime, loadErr := loadTunnelRuntime(request.RuntimeRoot)
+		oldRuntime, loadErr := loadTunnelRuntime(ctx, request.RuntimeRoot)
 		if loadErr == nil {
 			_ = platformServiceAction(ctx, oldRuntime.root, "restart")
 			if oldRuntime.mode != "none" {

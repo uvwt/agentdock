@@ -49,4 +49,19 @@
     <EmbeddedResource Include="../shared/Resources/UiStrings.resx" Link="Resources/UiStrings.resx" />
     <EmbeddedResource Include="../shared/Resources/UiStrings.zh-CN.resx" Link="Resources/UiStrings.zh-CN.resx" />
   </ItemGroup>
+  <Target Name="CopyAgentDockWinUIResourcesToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_AgentDockWinUIPublishResource Include="$(TargetDir)*.xbf" />
+      <_AgentDockWinUIPublishResource Include="$(TargetDir)$(AssemblyName).pri" />
+    </ItemGroup>
+    <Error Condition="'@(_AgentDockWinUIPublishResource)' == ''"
+           Text="WinUI publish resources were not generated in $(TargetDir)." />
+    <Copy SourceFiles="@(_AgentDockWinUIPublishResource)"
+          DestinationFolder="$(PublishDir)"
+          SkipUnchangedFiles="true" />
+    <Error Condition="!Exists('$(PublishDir)$(AssemblyName).pri')"
+           Text="WinUI publish is missing $(AssemblyName).pri." />
+    <Error Condition="!Exists('$(PublishDir)MainWindow.xbf')"
+           Text="WinUI publish is missing MainWindow.xbf." />
+  </Target>
 </Project>

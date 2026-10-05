@@ -542,3 +542,22 @@
 "%@ · default" = "默认 · %@";
 "%d min ago" = "%d 分钟前";
 "%d hr ago" = "%d 小时前";
+
+"Cloudflare Tunnel" = "Cloudflare Tunnel";
+"Optional component" = "可选组件";
+"Used for self-hosted public access. NexusDock remote connections do not require this component." = "用于自托管公网访问。NexusDock 远程连接无需安装此组件。";
+"Repair" = "修复";
+"Uninstall" = "卸载";
+"Needs repair" = "需要修复";
+"Ready · %@" = "已就绪 · %@";
+"Install the Cloudflare Tunnel component first." = "请先安装 Cloudflare Tunnel 组件。";
+"Cloudflare Tunnel component operation failed. Check diagnostics and try again." = "Cloudflare Tunnel 组件操作失败，请查看诊断信息后重试。";
+"Unable to read Cloudflare Tunnel component status." = "无法读取 Cloudflare Tunnel 组件状态。";
+"Tunnel configuration" = "Tunnel 配置";
+
+"Cloudflare Tunnel is configured, but its optional component is missing. Repair the component before updating AgentDock." = "Cloudflare Tunnel 已配置，但可选组件缺失。请先修复组件再更新 AgentDock。";
+"Cloudflare Tunnel is configured, but the legacy component cannot be migrated safely." = "Cloudflare Tunnel 已配置，但旧组件无法安全迁移。";
+"Cloudflare Tunnel component migration failed. The AgentDock update was not committed." = "Cloudflare Tunnel 组件迁移失败，AgentDock 更新未提交。";
+"Cloudflare Tunnel component migration did not produce a ready component." = "Cloudflare Tunnel 组件迁移后未进入可用状态。";
+
+"Install" = "安装";

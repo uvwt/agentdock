@@ -16,13 +16,39 @@ private struct DesktopUpdateTransactionEnvelope: Decodable {
 
 private struct DesktopUpdateMacOSPlan: Decodable {
     let sourceArbiterPath: String
+    let targetAppPath: String?
+    let trialAppPath: String?
 
     private enum CodingKeys: String, CodingKey {
         case sourceArbiterPath = "source_arbiter_path"
+        case targetAppPath = "target_app_path"
+        case trialAppPath = "trial_app_path"
     }
 }
 
 enum DesktopUpdateTransactionRecovery {
+    static func legacyCloudflaredRollbackSource(paths: AppPaths) -> URL? {
+        guard let data = try? Data(contentsOf: paths.updateTransaction),
+              let transaction = try? JSONDecoder().decode(DesktopUpdateTransactionEnvelope.self, from: data),
+              transaction.schemaVersion == 1,
+              transaction.state == "trial",
+              let plan = transaction.macOS,
+              let targetPath = plan.targetAppPath,
+              let trialPath = plan.trialAppPath else {
+            return nil
+        }
+
+        let current = paths.appBundle.standardizedFileURL.resolvingSymlinksInPath()
+        let target = URL(fileURLWithPath: targetPath).standardizedFileURL.resolvingSymlinksInPath()
+        let trial = URL(fileURLWithPath: trialPath).standardizedFileURL
+        guard target.path == current.path,
+              trial.deletingLastPathComponent().path == target.deletingLastPathComponent().path,
+              trial.lastPathComponent.hasPrefix(".AgentDock.app.trial.") else {
+            return nil
+        }
+        return trial.appendingPathComponent("Contents/Helpers/cloudflared")
+    }
+
     static func recoverIfNeeded(paths: AppPaths) -> Bool {
         guard let data = try? Data(contentsOf: paths.updateTransaction),
               let transaction = try? JSONDecoder().decode(DesktopUpdateTransactionEnvelope.self, from: data),
