@@ -75,10 +75,7 @@ fi
 [[ -n "$OFFLINE_PAYLOAD_DIR" ]] || die "构建 macOS DMG 必须设置 AGENTDOCK_MACOS_OFFLINE_PAYLOAD_DIR"
 [[ -d "$OFFLINE_PAYLOAD_DIR" && ! -L "$OFFLINE_PAYLOAD_DIR" ]] || die "离线载荷目录无效：$OFFLINE_PAYLOAD_DIR"
 
-VERSION="${1:-}"
-if [[ -z "$VERSION" ]]; then
-  VERSION="$(go run "$ROOT_DIR/tools/release" version)"
-fi
+VERSION="${1:-0.0.0-dev}"
 MARKETING_VERSION="$(go run "$ROOT_DIR/tools/release" core-version "$VERSION")" || die "无法解析 App 版本：$VERSION"
 BUNDLE_VERSION="${AGENTDOCK_MACOS_BUILD_VERSION:-$MARKETING_VERSION}"
 [[ "$BUNDLE_VERSION" == <-> || "$BUNDLE_VERSION" == <->.<-> || "$BUNDLE_VERSION" == <->.<->.<-> ]] || \
@@ -222,7 +219,9 @@ for release_architecture in "${release_architectures[@]}"; do
   (
     cd "$ROOT_DIR"
     CGO_ENABLED=0 GOOS=darwin GOARCH="$release_architecture" \
-      go build -trimpath -ldflags '-s -w' -o "$arbiter_binary" ./cmd/agentdock-arbiter
+      go build -trimpath \
+        -ldflags "-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Version=$VERSION" \
+        -o "$arbiter_binary" ./cmd/agentdock-arbiter
   )
   arbiter_file_output="$(file "$arbiter_binary")"
   [[ "$arbiter_file_output" == *"$expected_file_architecture"* ]] || \

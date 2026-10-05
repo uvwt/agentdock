@@ -10,8 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/uvwt/agentdock/internal/buildinfo"
 )
 
 func main() {
@@ -23,14 +21,24 @@ func main() {
 
 func run(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("用法：release <catalog|version|component-version|component-catalog|release-metadata|release-kind|core-version|verify-version|verify-dist|checksum|mirror-manifest> [参数]")
+		return errors.New("用法：release <catalog|version|component-version|component-catalog|release-metadata|release-kind|core-version|verify-dist|checksum|mirror-manifest> [参数]")
 	}
 	switch args[0] {
 	case "version":
-		fmt.Fprintln(stdout, strings.TrimPrefix(buildinfo.Version, "v"))
+		if len(args) != 2 {
+			return errors.New("用法：release version <tag>")
+		}
+		metadata, err := releaseMetadataForTag(args[1])
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(stdout, metadata.Version)
 		return nil
 	case "component-version":
-		entry, err := currentCloudflaredCatalogEntry()
+		if len(args) != 2 {
+			return errors.New("用法：release component-version <agentdock-version>")
+		}
+		entry, err := currentCloudflaredCatalogEntry(args[1])
 		if err != nil {
 			return err
 		}
@@ -70,11 +78,6 @@ func run(args []string, stdout io.Writer) error {
 		}
 		fmt.Fprintln(stdout, metadata.Core)
 		return nil
-	case "verify-version":
-		if len(args) != 2 {
-			return errors.New("用法：release verify-version <tag>")
-		}
-		return verifyReleaseVersion(args[1])
 	case "catalog":
 		return json.NewEncoder(stdout).Encode(ReleaseCatalog())
 	case "verify-dist":

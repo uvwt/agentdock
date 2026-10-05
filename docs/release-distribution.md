@@ -84,6 +84,8 @@ Windows 的数值型 FileVersion / AssemblyVersion 使用 SemVer core（例如 `
 
 macOS 的 `CFBundleShortVersionString` 使用 SemVer core，`CFBundleVersion` 使用 Release CI 的单调 build number，完整产品版本写入 `AgentDockReleaseVersion`，应用 UI 和 Core 一致性检查读取该字段。
 
+正式发布版本以不可变 Git Tag 为唯一事实来源。仓库源码中的 `buildinfo.Version` 只保留 `0.0.0-dev` 开发身份；Release CI 校验 Tag 是合法完整 SemVer 后，把去掉 `v` 前缀的版本通过 Go linker 注入所有正式二进制，并把同一版本继续派生到 Windows/macOS metadata。普通源码构建不会冒充某个已发布版本。
+
 ## R2 保留策略
 
 Stable 正常收敛到两个完整版本：
@@ -123,7 +125,7 @@ Release CI 在对应平台验证 digest、Authenticode/codesign、归档结构�
 
 Stable 发布：
 
-1. 验证 tag 与 `buildinfo.Version` 的完整 SemVer 一致性。
+1. 验证 tag 是合法完整 SemVer，并确认它指向 `main` 中的不可变发布提交；该 tag 是本次发布版本的唯一来源。
 2. 构建、签名并验证 Linux、macOS、Windows、容器及第三方 upstream。
 3. 创建 GitHub draft，并上传不可变 `releases/<tag>/` 到 R2。
 4. 验证全部公网版本化 URL。

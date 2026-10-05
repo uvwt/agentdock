@@ -9,8 +9,9 @@ PORT ?= 8765
 LOG_LEVEL ?= info
 BUILD_COMMIT ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || printf unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-BUILD_LDFLAGS := -X github.com/uvwt/agentdock/internal/buildinfo.Commit=$(BUILD_COMMIT) -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=$(BUILD_DATE)
-DOCKER_BUILD_ARGS := --build-arg BUILD_COMMIT=$(BUILD_COMMIT) --build-arg BUILD_DATE=$(BUILD_DATE)
+BUILD_VERSION ?= 0.0.0-dev
+BUILD_LDFLAGS := -X github.com/uvwt/agentdock/internal/buildinfo.Version=$(BUILD_VERSION) -X github.com/uvwt/agentdock/internal/buildinfo.Commit=$(BUILD_COMMIT) -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=$(BUILD_DATE)
+DOCKER_BUILD_ARGS := --build-arg BUILD_VERSION=$(BUILD_VERSION) --build-arg BUILD_COMMIT=$(BUILD_COMMIT) --build-arg BUILD_DATE=$(BUILD_DATE)
 
 fmt:
 	gofmt -w ./cmd ./internal ./desktop

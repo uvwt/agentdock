@@ -6,9 +6,10 @@ import (
 	"strings"
 )
 
-const Version = "1.0.0-rc.3"
-
 var (
+	// Version 的正式发行值由 Release CI 从不可变 Git Tag 注入。
+	// 普通源码构建保持显式开发身份，避免把仓库里的字符串误当成发布版本。
+	Version   = "0.0.0-dev"
 	Commit    string
 	BuildDate string
 )

@@ -151,6 +151,9 @@ if [[ "$build_images" == "true" ]]; then
 fi
 
 if [[ -n "$expected_version" ]]; then
+  binary_version_output="$(docker run --rm --entrypoint agentdock "$runtime_image" --version)"
+  printf '%s\n' "$binary_version_output"
+  grep -Fq "AgentDock $expected_version" <<<"$binary_version_output"
   actual_version="$(docker image inspect "$runtime_image" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
   test "$actual_version" = "$expected_version"
   actual_dev_version="$(docker image inspect "$dev_image" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"

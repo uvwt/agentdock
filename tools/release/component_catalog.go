@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/component"
 )
 
@@ -35,14 +34,14 @@ func loadComponentCatalog() (component.Catalog, error) {
 	return catalog, nil
 }
 
-func currentCloudflaredCatalogEntry() (component.CatalogComponent, error) {
+func currentCloudflaredCatalogEntry(agentdockVersion string) (component.CatalogComponent, error) {
 	catalog, err := loadComponentCatalog()
 	if err != nil {
 		return component.CatalogComponent{}, err
 	}
-	entry, err := component.SelectCloudflaredEntry(catalog, buildinfo.Version)
+	entry, err := component.SelectCloudflaredEntry(catalog, agentdockVersion)
 	if err != nil {
-		return component.CatalogComponent{}, fmt.Errorf("select cloudflared for AgentDock %s: %w", buildinfo.Version, err)
+		return component.CatalogComponent{}, fmt.Errorf("select cloudflared for AgentDock %s: %w", agentdockVersion, err)
 	}
 	return entry, nil
 }

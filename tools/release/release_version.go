@@ -7,7 +7,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/releaseversion"
 )
 
@@ -34,21 +33,6 @@ func releaseMetadataForTag(tag string) (releaseMetadata, error) {
 		Core:       core,
 		Prerelease: releaseversion.IsPrerelease(normalized),
 	}, nil
-}
-
-func verifyReleaseVersion(tag string) error {
-	metadata, err := releaseMetadataForTag(tag)
-	if err != nil {
-		return err
-	}
-	buildVersion, ok := releaseversion.Normalize(buildinfo.Version)
-	if !ok {
-		return fmt.Errorf("buildinfo.Version %q is not valid SemVer", buildinfo.Version)
-	}
-	if metadata.Tag != buildVersion {
-		return fmt.Errorf("release tag %s does not match buildinfo.Version %s", metadata.Tag, buildinfo.Version)
-	}
-	return nil
 }
 
 func writeReleaseMetadata(tag string, stdout io.Writer) error {

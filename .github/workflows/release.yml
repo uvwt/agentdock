@@ -50,7 +50,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $releaseVersion = (go run ./tools/release version).Trim()
+          $releaseVersion = '0.0.0-signpath-review'
           $coreVersion = (go run ./tools/release core-version $releaseVersion).Trim()
           $parts = @($coreVersion.Split('.'))
           if ($parts.Count -lt 1 -or $parts.Count -gt 4 -or @($parts | Where-Object { $_ -notmatch '^\d+$' }).Count -ne 0) {
@@ -71,12 +71,13 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $buildDate = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
           $sourceCommit = (git rev-parse HEAD).Trim()
-          $ldflags = "-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Commit=$sourceCommit -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=$buildDate"
+          $releaseVersion = '${{ steps.version.outputs.release }}'
+          $ldflags = "-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Version=$releaseVersion -X github.com/uvwt/agentdock/internal/buildinfo.Commit=$sourceCommit -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=$buildDate"
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           go build -trimpath -ldflags $ldflags -o dist/agentdock.exe ./cmd/agentdock
-          go build -trimpath -ldflags '-s -w' -o dist/agentdock-arbiter.exe ./cmd/agentdock-arbiter
-          go build -trimpath -ldflags '-s -w' -o dist/agentdock-shim.exe ./cmd/agentdock-shim
-          go build -trimpath -ldflags '-s -w -H=windowsgui' -o dist/agentdock-tray-shim.exe ./cmd/agentdock-shim
+          go build -trimpath -ldflags $ldflags -o dist/agentdock-arbiter.exe ./cmd/agentdock-arbiter
+          go build -trimpath -ldflags $ldflags -o dist/agentdock-shim.exe ./cmd/agentdock-shim
+          go build -trimpath -ldflags "$ldflags -H=windowsgui" -o dist/agentdock-tray-shim.exe ./cmd/agentdock-shim
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
             -r win-x64 `
@@ -187,6 +188,7 @@ jobs:
     outputs:
       commit: ${{ steps.source.outputs.commit }}
       tag: ${{ steps.source.outputs.tag }}
+      version: ${{ steps.source.outputs.version }}
       core_version: ${{ steps.source.outputs.core_version }}
       prerelease: ${{ steps.source.outputs.prerelease }}
     steps:
@@ -218,8 +220,8 @@ jobs:
           git fetch --no-tags origin main
           git merge-base --is-ancestor "$source_commit" origin/main
 
-          go run ./tools/release verify-version "$RELEASE_TAG"
           release_metadata="$(go run ./tools/release release-metadata "$RELEASE_TAG")"
+          version="$(jq -r '.version' <<<"$release_metadata")"
           core_version="$(jq -r '.core_version' <<<"$release_metadata")"
           prerelease="$(jq -r '.prerelease' <<<"$release_metadata")"
 
@@ -240,6 +242,7 @@ jobs:
           {
             echo "commit=$source_commit"
             echo "tag=$RELEASE_TAG"
+            echo "version=$version"
             echo "core_version=$core_version"
             echo "prerelease=$prerelease"
           } >> "$GITHUB_OUTPUT"
@@ -269,6 +272,7 @@ jobs:
           CGO_ENABLED: '0'
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
+          AGENTDOCK_RELEASE_VERSION: ${{ needs.source.outputs.version }}
         run: |
           set -euo pipefail
           asset="agentdock_linux_${GOARCH}.tar.gz"
@@ -276,7 +280,7 @@ jobs:
           source_commit="$(git rev-parse HEAD)"
           mkdir -p dist/bin
           go build -trimpath \
-            -ldflags="-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Commit=${source_commit} -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=${build_date}" \
+            -ldflags="-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Version=${AGENTDOCK_RELEASE_VERSION} -X github.com/uvwt/agentdock/internal/buildinfo.Commit=${source_commit} -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=${build_date}" \
             -o dist/bin/agentdock ./cmd/agentdock
           python3 packaging/build-core-skill-bundle.py --output dist/share/agentdock/core-skills
           tar -C dist -czf "$asset" bin/agentdock share/agentdock/core-skills
@@ -316,6 +320,7 @@ jobs:
           CGO_ENABLED: '0'
           GOOS: darwin
           GOARCH: ${{ matrix.goarch }}
+          AGENTDOCK_RELEASE_VERSION: ${{ needs.source.outputs.version }}
         run: |
           set -euo pipefail
           asset="agentdock_darwin_${GOARCH}.tar.gz"
@@ -323,7 +328,7 @@ jobs:
           source_commit="$(git rev-parse HEAD)"
           mkdir -p dist/bin
           go build -trimpath \
-            -ldflags="-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Commit=${source_commit} -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=${build_date}" \
+            -ldflags="-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Version=${AGENTDOCK_RELEASE_VERSION} -X github.com/uvwt/agentdock/internal/buildinfo.Commit=${source_commit} -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=${build_date}" \
             -o dist/bin/agentdock ./cmd/agentdock
           python3 packaging/build-core-skill-bundle.py --output dist/share/agentdock/core-skills
           tar -C dist -czf "$asset" bin/agentdock share/agentdock/core-skills
@@ -363,7 +368,7 @@ jobs:
         run: |
           set -euo pipefail
           architecture='${{ matrix.goarch }}'
-          component_version="$(go run ./tools/release component-version)"
+          component_version="$(go run ./tools/release component-version '${{ needs.source.outputs.version }}')"
           eval "$(
             python3 - "$architecture" "$component_version" <<'PY'
           import json, shlex, sys
@@ -428,7 +433,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $ProgressPreference = 'SilentlyContinue'
-          $selectedVersion = (go run ./tools/release component-version).Trim()
+          $selectedVersion = (go run ./tools/release component-version '${{ needs.source.outputs.version }}').Trim()
           $catalog = Get-Content -LiteralPath '.\internal\component\catalog-v1.json' -Raw | ConvertFrom-Json
           $metadata = @($catalog.components | Where-Object {
             $_.component -eq 'cloudflared' -and [string] $_.version -eq $selectedVersion
@@ -488,7 +493,7 @@ jobs:
           AGENTDOCK_MACOS_APP_OUTPUT_DIR: dist/macos-app
           AGENTDOCK_MACOS_OFFLINE_PAYLOAD_DIR: ${{ github.workspace }}/payload
           AGENTDOCK_MACOS_BUILD_VERSION: ${{ github.run_number }}
-        run: packaging/macos/build-app.sh
+        run: packaging/macos/build-app.sh '${{ needs.source.outputs.version }}'
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -549,15 +554,15 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $buildDate = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
           $sourceCommit = (git rev-parse HEAD).Trim()
-          $ldflags = "-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Commit=$sourceCommit -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=$buildDate"
           $runtimeIdentifier = if ($env:GOARCH -eq 'arm64') { 'win-arm64' } else { 'win-x64' }
-          $releaseVersion = '${{ needs.source.outputs.tag }}'.TrimStart('v')
+          $releaseVersion = '${{ needs.source.outputs.version }}'
           $windowsVersion = '${{ needs.source.outputs.core_version }}.0'
+          $ldflags = "-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Version=$releaseVersion -X github.com/uvwt/agentdock/internal/buildinfo.Commit=$sourceCommit -X github.com/uvwt/agentdock/internal/buildinfo.BuildDate=$buildDate"
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           go build -trimpath -ldflags $ldflags -o dist/agentdock.exe ./cmd/agentdock
-          go build -trimpath -ldflags '-s -w' -o dist/agentdock-arbiter.exe ./cmd/agentdock-arbiter
-          go build -trimpath -ldflags '-s -w' -o dist/agentdock-shim.exe ./cmd/agentdock-shim
-          go build -trimpath -ldflags '-s -w -H=windowsgui' -o dist/agentdock-tray-shim.exe ./cmd/agentdock-shim
+          go build -trimpath -ldflags $ldflags -o dist/agentdock-arbiter.exe ./cmd/agentdock-arbiter
+          go build -trimpath -ldflags $ldflags -o dist/agentdock-shim.exe ./cmd/agentdock-shim
+          go build -trimpath -ldflags "$ldflags -H=windowsgui" -o dist/agentdock-tray-shim.exe ./cmd/agentdock-shim
           & .\packaging\windows\build-wsl-helper-payload.ps1 -OutputDirectory .\dist\wsl-helper
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
@@ -711,7 +716,6 @@ jobs:
           set -euo pipefail
           cp scripts/install/install.sh dist/install.sh
           cp scripts/install/install.ps1 dist/install.ps1
-          go run ./tools/release verify-version "$RELEASE_TAG"
           go run ./tools/release component-catalog > dist/agentdock-component-catalog.json
           (
             cd dist
@@ -1268,6 +1272,7 @@ jobs:
           tags: ${{ steps.meta-runtime.outputs.tags }}
           labels: ${{ steps.meta-runtime.outputs.labels }}
           build-args: |
+            BUILD_VERSION=${{ needs.source.outputs.version }}
             BUILD_COMMIT=${{ needs.source.outputs.commit }}
             BUILD_DATE=${{ steps.build.outputs.date }}
           cache-from: type=gha,scope=runtime
@@ -1297,6 +1302,7 @@ jobs:
           tags: ${{ steps.meta-dev.outputs.tags }}
           labels: ${{ steps.meta-dev.outputs.labels }}
           build-args: |
+            BUILD_VERSION=${{ needs.source.outputs.version }}
             BUILD_COMMIT=${{ needs.source.outputs.commit }}
             BUILD_DATE=${{ steps.build.outputs.date }}
           cache-from: |
@@ -1328,6 +1334,7 @@ jobs:
           tags: ${{ steps.meta-browser.outputs.tags }}
           labels: ${{ steps.meta-browser.outputs.labels }}
           build-args: |
+            BUILD_VERSION=${{ needs.source.outputs.version }}
             BUILD_COMMIT=${{ needs.source.outputs.commit }}
             BUILD_DATE=${{ steps.build.outputs.date }}
           cache-from: |

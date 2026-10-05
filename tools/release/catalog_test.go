@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/uvwt/agentdock/internal/buildinfo"
 )
 
 func TestReleaseCatalogKeepsPublicInstallerEntries(t *testing.T) {
@@ -71,15 +69,6 @@ func TestVerifyDistRequiresCatalogArtifacts(t *testing.T) {
 	}
 }
 
-func TestVerifyVersionMatchesBuildInfo(t *testing.T) {
-	if err := run([]string{"verify-version", "v" + strings.TrimPrefix(buildinfo.Version, "v")}, discard{}); err != nil {
-		t.Fatal(err)
-	}
-	if err := run([]string{"verify-version", "v0.0.0"}, discard{}); err == nil {
-		t.Fatal("expected version mismatch")
-	}
-}
-
 func TestReleaseMetadataClassifiesPrereleaseAndStable(t *testing.T) {
 	rc, err := releaseMetadataForTag("v1.0.0-rc.2")
 	if err != nil {
@@ -102,12 +91,25 @@ func TestReleaseMetadataClassifiesPrereleaseAndStable(t *testing.T) {
 	}
 }
 
+func TestReleaseVersionComesFromTag(t *testing.T) {
+	var output strings.Builder
+	if err := run([]string{"version", "v1.2.3-rc.4"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(output.String()); got != "1.2.3-rc.4" {
+		t.Fatalf("release version = %q, want 1.2.3-rc.4", got)
+	}
+	if err := run([]string{"version"}, discard{}); err == nil {
+		t.Fatal("version without a tag must fail")
+	}
+}
+
 type discard struct{}
 
 func (discard) Write(p []byte) (int, error) { return len(p), nil }
 
 func TestCloudflaredComponentCatalogUsesPinnedOfficialMetadata(t *testing.T) {
-	entry, err := currentCloudflaredCatalogEntry()
+	entry, err := currentCloudflaredCatalogEntry("1.0.0-rc.3")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -99,11 +99,17 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Resolve current release version
+      - name: Resolve CI package version
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $releaseVersion = (& go run .\tools\release version).Trim()
+          $testTag = '${{ inputs.test_tag }}'
+          if ([string]::IsNullOrWhiteSpace($testTag)) {
+            # PR gate 只需要一个明确的非发布版本；正式/临时发布版本仍来自 Git Tag。
+            $releaseVersion = '1.0.0-ci.0'
+          } else {
+            $releaseVersion = (& go run .\tools\release version $testTag).Trim()
+          }
           $coreVersion = (& go run .\tools\release core-version $releaseVersion).Trim()
           $windowsVersion = "$coreVersion.0"
           "AGENTDOCK_RELEASE_VERSION=$releaseVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
@@ -171,10 +177,11 @@ jobs:
           $env:CGO_ENABLED = '0'
           $env:GOOS = 'windows'
           $env:GOARCH = 'amd64'
-          go build -trimpath -o (Join-Path $distRoot 'agentdock.exe') .\cmd\agentdock
-          go build -trimpath -ldflags '-s -w' -o (Join-Path $distRoot 'agentdock-arbiter.exe') .\cmd\agentdock-arbiter
-          go build -trimpath -ldflags '-s -w' -o (Join-Path $distRoot 'agentdock-shim.exe') .\cmd\agentdock-shim
-          go build -trimpath -ldflags '-s -w -H=windowsgui' -o (Join-Path $distRoot 'agentdock-tray-shim.exe') .\cmd\agentdock-shim
+          $ldflags = "-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Version=$env:AGENTDOCK_RELEASE_VERSION"
+          go build -trimpath -ldflags $ldflags -o (Join-Path $distRoot 'agentdock.exe') .\cmd\agentdock
+          go build -trimpath -ldflags $ldflags -o (Join-Path $distRoot 'agentdock-arbiter.exe') .\cmd\agentdock-arbiter
+          go build -trimpath -ldflags $ldflags -o (Join-Path $distRoot 'agentdock-shim.exe') .\cmd\agentdock-shim
+          go build -trimpath -ldflags "$ldflags -H=windowsgui" -o (Join-Path $distRoot 'agentdock-tray-shim.exe') .\cmd\agentdock-shim
           & .\packaging\windows\set-version-info.ps1 -Version $env:AGENTDOCK_WINDOWS_VERSION -ProductVersion $env:AGENTDOCK_RELEASE_VERSION -Path (Join-Path $distRoot 'agentdock-tray-shim.exe')
           $controlPanelOutput = Join-Path $distRoot 'control-panel'
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
@@ -244,10 +251,11 @@ jobs:
           $env:CGO_ENABLED = '0'
           $env:GOOS = 'windows'
           $env:GOARCH = 'amd64'
-          go build -trimpath -o dist\agentdock.exe .\cmd\agentdock
-          go build -trimpath -ldflags '-s -w' -o dist\agentdock-arbiter.exe .\cmd\agentdock-arbiter
-          go build -trimpath -ldflags '-s -w' -o dist\agentdock-shim.exe .\cmd\agentdock-shim
-          go build -trimpath -ldflags '-s -w -H=windowsgui' -o dist\agentdock-tray-shim.exe .\cmd\agentdock-shim
+          $ldflags = "-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Version=$env:AGENTDOCK_RELEASE_VERSION"
+          go build -trimpath -ldflags $ldflags -o dist\agentdock.exe .\cmd\agentdock
+          go build -trimpath -ldflags $ldflags -o dist\agentdock-arbiter.exe .\cmd\agentdock-arbiter
+          go build -trimpath -ldflags $ldflags -o dist\agentdock-shim.exe .\cmd\agentdock-shim
+          go build -trimpath -ldflags "$ldflags -H=windowsgui" -o dist\agentdock-tray-shim.exe .\cmd\agentdock-shim
           & .\packaging\windows\set-version-info.ps1 -Version $env:AGENTDOCK_WINDOWS_VERSION -ProductVersion $env:AGENTDOCK_RELEASE_VERSION -Path .\dist\agentdock-tray-shim.exe
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
@@ -330,7 +338,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $ProgressPreference = 'SilentlyContinue'
-          $selectedVersion = (go run ./tools/release component-version).Trim()
+          $selectedVersion = (go run ./tools/release component-version $env:AGENTDOCK_RELEASE_VERSION).Trim()
           $catalog = Get-Content -LiteralPath '.\internal\component\catalog-v1.json' -Raw | ConvertFrom-Json
           $metadata = @($catalog.components | Where-Object {
             $_.component -eq 'cloudflared' -and [string] $_.version -eq $selectedVersion
@@ -398,29 +406,10 @@ jobs:
           function Build-VersionedAgentDock {
             param([string] $Version, [string] $OutputPath)
 
-            $sourcePath = (Resolve-Path '.\internal\buildinfo\buildinfo.go').Path
-            $source = Get-Content -LiteralPath $sourcePath -Raw
-            $replacement = [regex]::Replace(
-              $source,
-              'const Version = "[^"]+"',
-              "const Version = `"$Version`"",
-              1
-            )
-            if ($replacement -eq $source) {
-              throw 'Could not replace buildinfo.Version for Named Tunnel E2E.'
-            }
-
-            $replacementPath = Join-Path $env:RUNNER_TEMP "buildinfo-$Version.go"
-            $overlayPath = Join-Path $env:RUNNER_TEMP "buildinfo-$Version-overlay.json"
-            [IO.File]::WriteAllText($replacementPath, $replacement, [Text.UTF8Encoding]::new($false))
-            $replacements = @{}
-            $replacements[$sourcePath] = $replacementPath
-            [IO.File]::WriteAllText(
-              $overlayPath,
-              (@{ Replace = $replacements } | ConvertTo-Json -Depth 4),
-              [Text.UTF8Encoding]::new($false)
-            )
-            go build -trimpath -overlay $overlayPath -o $OutputPath .\cmd\agentdock
+            # E2E 需要多个并存版本；用与正式 Release 相同的 linker 注入方式构建，避免改写源码。
+            go build -trimpath `
+              -ldflags "-X github.com/uvwt/agentdock/internal/buildinfo.Version=$Version" `
+              -o $OutputPath .\cmd\agentdock
           }
 
           $sourceCore = Join-Path $env:RUNNER_TEMP 'agentdock-named-source.exe'
@@ -455,13 +444,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $testTag = '${{ inputs.test_tag }}'
           if ([string]::IsNullOrWhiteSpace($testTag)) {
-            $buildInfo = Get-Content -LiteralPath '.\internal\buildinfo\buildinfo.go' -Raw
-            $match = [regex]::Match($buildInfo, 'const\s+Version\s*=\s*"([^"]+)"')
-            if (-not $match.Success) { throw 'Could not read buildinfo.Version.' }
-            $version = $match.Groups[1].Value
+            $version = $env:AGENTDOCK_RELEASE_VERSION
           } else {
-            if (-not $testTag.StartsWith('v')) { throw 'The test tag must start with v.' }
-            $version = $testTag.Substring(1)
+            $version = (& go run .\tools\release version $testTag).Trim()
           }
 
           $outputDir = Join-Path $env:RUNNER_TEMP 'agentdock-setup'
@@ -532,10 +517,11 @@ jobs:
           $env:CGO_ENABLED = '0'
           $env:GOOS = 'windows'
           $env:GOARCH = 'arm64'
-          go build -trimpath -o (Join-Path $arm64Dir 'agentdock.exe') .\cmd\agentdock
-          go build -trimpath -ldflags '-s -w' -o (Join-Path $arm64Dir 'agentdock-arbiter.exe') .\cmd\agentdock-arbiter
-          go build -trimpath -ldflags '-s -w' -o (Join-Path $arm64Dir 'agentdock-shim.exe') .\cmd\agentdock-shim
-          go build -trimpath -ldflags '-s -w -H=windowsgui' -o (Join-Path $arm64Dir 'agentdock-tray-shim.exe') .\cmd\agentdock-shim
+          $ldflags = "-s -w -X github.com/uvwt/agentdock/internal/buildinfo.Version=$env:AGENTDOCK_RELEASE_VERSION"
+          go build -trimpath -ldflags $ldflags -o (Join-Path $arm64Dir 'agentdock.exe') .\cmd\agentdock
+          go build -trimpath -ldflags $ldflags -o (Join-Path $arm64Dir 'agentdock-arbiter.exe') .\cmd\agentdock-arbiter
+          go build -trimpath -ldflags $ldflags -o (Join-Path $arm64Dir 'agentdock-shim.exe') .\cmd\agentdock-shim
+          go build -trimpath -ldflags "$ldflags -H=windowsgui" -o (Join-Path $arm64Dir 'agentdock-tray-shim.exe') .\cmd\agentdock-shim
           & .\packaging\windows\set-version-info.ps1 -Version $env:AGENTDOCK_WINDOWS_VERSION -ProductVersion $env:AGENTDOCK_RELEASE_VERSION -Path (Join-Path $arm64Dir 'agentdock-tray-shim.exe')
           $arm64ControlPanelOutput = Join-Path $arm64Dir 'control-panel'
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `

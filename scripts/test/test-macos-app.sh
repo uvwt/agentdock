@@ -123,7 +123,7 @@ tar -C "$payload_build" -czf "$payload_dir/$agentdock_archive" \
 AGENTDOCK_MACOS_ARCHES="$(uname -m)" \
 AGENTDOCK_MACOS_APP_OUTPUT_DIR="$TMP_ROOT/output" \
 AGENTDOCK_MACOS_OFFLINE_PAYLOAD_DIR="$payload_dir" \
-  "$ROOT_DIR/packaging/macos/build-app.sh"
+  "$ROOT_DIR/packaging/macos/build-app.sh" 0.0.0-dev
 
 APP="$TMP_ROOT/output/AgentDock.app"
 DMG="$TMP_ROOT/output/AgentDock-macos-universal.dmg"

@@ -76,10 +76,13 @@ func TestWindowsInstallerWorkflowHasAlwaysPresentPullRequestGate(t *testing.T) {
 		"fetch-depth: 0",
 		"git diff --name-only \"$BASE_SHA\" \"$HEAD_SHA\"",
 		"name: Validate installer on Windows PowerShell 5.1",
-		"name: Resolve current release version",
+		"name: Resolve CI package version",
+		"$releaseVersion = '1.0.0-ci.0'",
+		"$releaseVersion = (& go run .\\tools\\release version $testTag).Trim()",
 		"$coreVersion = (& go run .\\tools\\release core-version $releaseVersion).Trim()",
 		"AGENTDOCK_RELEASE_VERSION=$releaseVersion",
 		"AGENTDOCK_WINDOWS_VERSION=$windowsVersion",
+		"internal/buildinfo.Version=$env:AGENTDOCK_RELEASE_VERSION",
 		"set-version-info.ps1 -Version $env:AGENTDOCK_WINDOWS_VERSION -ProductVersion $env:AGENTDOCK_RELEASE_VERSION",
 		"-p:InformationalVersion=$env:AGENTDOCK_RELEASE_VERSION",
 		"needs: changes",
@@ -120,6 +123,10 @@ func TestWindowsInstallerWorkflowHasAlwaysPresentPullRequestGate(t *testing.T) {
 	if strings.Contains(workflow, "AMD64_CLOUDFLARED") || strings.Contains(workflow, "-CloudflaredBinary $env:") {
 		t.Fatal("Windows Setup build must not carry cloudflared as an installer payload")
 	}
+	if strings.Contains(workflow, "Get-Content -LiteralPath '.\\internal\\buildinfo\\buildinfo.go'") ||
+		strings.Contains(workflow, "Could not replace buildinfo.Version") {
+		t.Fatal("Windows validation must inject test versions at link time instead of rewriting or parsing buildinfo.go")
+	}
 }
 
 func TestReleaseWorkflowHasSignPathFoundationReviewPath(t *testing.T) {
@@ -146,6 +153,32 @@ func TestReleaseWorkflowHasSignPathFoundationReviewPath(t *testing.T) {
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("Release workflow must keep the SignPath Foundation review path; missing %q", want)
+		}
+	}
+}
+
+func TestReleaseWorkflowUsesGitTagAsSingleReleaseVersionSource(t *testing.T) {
+	workflow := readWorkflow(t, "release.yml")
+	for _, want := range []string{
+		`release_metadata="$(go run ./tools/release release-metadata "$RELEASE_TAG")"`,
+		`version="$(jq -r '.version' <<<"$release_metadata")"`,
+		`version: ${{ steps.source.outputs.version }}`,
+		`AGENTDOCK_RELEASE_VERSION: ${{ needs.source.outputs.version }}`,
+		`internal/buildinfo.Version=${AGENTDOCK_RELEASE_VERSION}`,
+		`$releaseVersion = '${{ needs.source.outputs.version }}'`,
+		`packaging/macos/build-app.sh '${{ needs.source.outputs.version }}'`,
+		`BUILD_VERSION=${{ needs.source.outputs.version }}`,
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("Release workflow must derive build versions from the validated Git tag; missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"go run ./tools/release verify-version",
+		"go run ./tools/release version).Trim()",
+	} {
+		if strings.Contains(workflow, forbidden) {
+			t.Fatalf("Release workflow must not treat source buildinfo as release authority: found %q", forbidden)
 		}
 	}
 }
@@ -352,9 +385,6 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 	}
 	if strings.Contains(workflow, "prepare-distribution") {
 		t.Fatal("release packaging must not rewrite bootstrap scripts for version-specific downloads")
-	}
-	if strings.Contains(workflow, "AGENTDOCK_RELEASE_VERSION") {
-		t.Fatal("release verification must not expose historical-version bootstrap selection")
 	}
 	if strings.Contains(workflow, `sh "$installer" --version "$RELEASE_TAG"`) {
 		t.Fatal("staged release verification must use the latest-only installer contract")
