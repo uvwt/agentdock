@@ -128,13 +128,13 @@ jobs:
           $env:GOARCH = $targetArch
           go build -trimpath -o $binary .\cmd\agentdock
 
-          & .\packaging\windows\set-version-info.ps1 -Version '1.2.3' -Path $binary
+          & .\packaging\windows\set-version-info.ps1 -Version '1.2.3' -ProductVersion '1.2.3-rc.1' -Path $binary
           if ($env:GOOS -ne 'windows' -or $env:GOARCH -ne $targetArch) {
             throw 'set-version-info.ps1 did not restore the target Go environment.'
           }
 
           $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($binary)
-          if ($info.ProductVersion -ne '1.2.3.0' -or $info.FileVersion -ne '1.2.3.0') {
+          if ($info.ProductVersion -ne '1.2.3-rc.1' -or $info.FileVersion -ne '1.2.3.0') {
             throw "Cross-architecture VersionInfo mismatch: ProductVersion=$($info.ProductVersion), FileVersion=$($info.FileVersion)"
           }
 
@@ -175,7 +175,7 @@ jobs:
           go build -trimpath -ldflags '-s -w' -o (Join-Path $distRoot 'agentdock-arbiter.exe') .\cmd\agentdock-arbiter
           go build -trimpath -ldflags '-s -w' -o (Join-Path $distRoot 'agentdock-shim.exe') .\cmd\agentdock-shim
           go build -trimpath -ldflags '-s -w -H=windowsgui' -o (Join-Path $distRoot 'agentdock-tray-shim.exe') .\cmd\agentdock-shim
-          & .\packaging\windows\set-version-info.ps1 -Version $env:AGENTDOCK_WINDOWS_VERSION -Path (Join-Path $distRoot 'agentdock-tray-shim.exe')
+          & .\packaging\windows\set-version-info.ps1 -Version $env:AGENTDOCK_WINDOWS_VERSION -ProductVersion $env:AGENTDOCK_RELEASE_VERSION -Path (Join-Path $distRoot 'agentdock-tray-shim.exe')
           $controlPanelOutput = Join-Path $distRoot 'control-panel'
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
@@ -248,7 +248,7 @@ jobs:
           go build -trimpath -ldflags '-s -w' -o dist\agentdock-arbiter.exe .\cmd\agentdock-arbiter
           go build -trimpath -ldflags '-s -w' -o dist\agentdock-shim.exe .\cmd\agentdock-shim
           go build -trimpath -ldflags '-s -w -H=windowsgui' -o dist\agentdock-tray-shim.exe .\cmd\agentdock-shim
-          & .\packaging\windows\set-version-info.ps1 -Version $env:AGENTDOCK_WINDOWS_VERSION -Path .\dist\agentdock-tray-shim.exe
+          & .\packaging\windows\set-version-info.ps1 -Version $env:AGENTDOCK_WINDOWS_VERSION -ProductVersion $env:AGENTDOCK_RELEASE_VERSION -Path .\dist\agentdock-tray-shim.exe
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
             -r win-x64 `
@@ -536,7 +536,7 @@ jobs:
           go build -trimpath -ldflags '-s -w' -o (Join-Path $arm64Dir 'agentdock-arbiter.exe') .\cmd\agentdock-arbiter
           go build -trimpath -ldflags '-s -w' -o (Join-Path $arm64Dir 'agentdock-shim.exe') .\cmd\agentdock-shim
           go build -trimpath -ldflags '-s -w -H=windowsgui' -o (Join-Path $arm64Dir 'agentdock-tray-shim.exe') .\cmd\agentdock-shim
-          & .\packaging\windows\set-version-info.ps1 -Version $env:AGENTDOCK_WINDOWS_VERSION -Path (Join-Path $arm64Dir 'agentdock-tray-shim.exe')
+          & .\packaging\windows\set-version-info.ps1 -Version $env:AGENTDOCK_WINDOWS_VERSION -ProductVersion $env:AGENTDOCK_RELEASE_VERSION -Path (Join-Path $arm64Dir 'agentdock-tray-shim.exe')
           $arm64ControlPanelOutput = Join-Path $arm64Dir 'control-panel'
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `

@@ -90,6 +90,7 @@ jobs:
 
           .\packaging\windows\set-version-info.ps1 `
             -Version '${{ steps.version.outputs.windows }}' `
+            -ProductVersion '${{ steps.version.outputs.release }}' `
             -Path @(
               '.\dist\agentdock.exe',
               '.\dist\agentdock-tray.exe',
@@ -140,7 +141,8 @@ jobs:
           )
           $expectedThumbprint = '803C2EBAEE1907BF990CA761A57ADF31AD78AA12'
           $expectedSubject = "CN=Test certificate for 'AgentDock [OSS]'"
-          $expectedVersion = '${{ steps.version.outputs.windows }}'
+          $expectedFileVersion = '${{ steps.version.outputs.windows }}'
+          $expectedProductVersion = '${{ steps.version.outputs.release }}'
 
           $signedFiles = @(Get-ChildItem -LiteralPath $signedRoot -Recurse -File -Filter '*.exe')
           $actualNames = @($signedFiles | ForEach-Object Name | Sort-Object)
@@ -170,8 +172,8 @@ jobs:
             $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($file.FullName)
             if ($info.ProductName -ne 'AgentDock' -or
                 $info.CompanyName -ne 'AgentDock' -or
-                $info.ProductVersion -ne $expectedVersion -or
-                $info.FileVersion -ne $expectedVersion -or
+                $info.ProductVersion -ne $expectedProductVersion -or
+                $info.FileVersion -ne $expectedFileVersion -or
                 $info.OriginalFilename -ne $(if ($file.Name -eq 'agentdock-tray.exe') { 'agentdock-tray.dll' } else { $file.Name }) -or
                 $info.LegalCopyright -ne 'Copyright AgentDock contributors') {
               throw "Signed VersionInfo mismatch for $($file.Name)."
@@ -570,6 +572,7 @@ jobs:
 
           .\packaging\windows\set-version-info.ps1 `
             -Version $windowsVersion `
+            -ProductVersion $releaseVersion `
             -Path @(
               '.\dist\agentdock.exe',
               '.\dist\agentdock-tray.exe',

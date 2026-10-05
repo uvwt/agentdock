@@ -80,7 +80,7 @@ func TestWindowsInstallerWorkflowHasAlwaysPresentPullRequestGate(t *testing.T) {
 		"$coreVersion = (& go run .\\tools\\release core-version $releaseVersion).Trim()",
 		"AGENTDOCK_RELEASE_VERSION=$releaseVersion",
 		"AGENTDOCK_WINDOWS_VERSION=$windowsVersion",
-		"set-version-info.ps1 -Version $env:AGENTDOCK_WINDOWS_VERSION",
+		"set-version-info.ps1 -Version $env:AGENTDOCK_WINDOWS_VERSION -ProductVersion $env:AGENTDOCK_RELEASE_VERSION",
 		"-p:InformationalVersion=$env:AGENTDOCK_RELEASE_VERSION",
 		"needs: changes",
 		"if: needs.changes.outputs.relevant == 'true'",
@@ -140,6 +140,8 @@ func TestReleaseWorkflowHasSignPathFoundationReviewPath(t *testing.T) {
 		"-p:FileVersion=$windowsVersion",
 		"803C2EBAEE1907BF990CA761A57ADF31AD78AA12",
 		".\\packaging\\windows\\set-version-info.ps1",
+		"-ProductVersion '${{ steps.version.outputs.release }}'",
+		"-ProductVersion $releaseVersion",
 		"**Code signing policy:** https://github.com/${{ github.repository }}/blob/main/docs/code-signing-policy.md",
 	} {
 		if !strings.Contains(workflow, want) {
@@ -222,7 +224,7 @@ func TestWindowsVersionInfoScriptCoversSignPathMetadata(t *testing.T) {
 		"CompanyName = 'AgentDock'",
 		"ProductName = 'AgentDock'",
 		"'agentdock-tray.exe' = 'AgentDock'",
-		"ProductVersion = $windowsVersion",
+		"ProductVersion = $displayProductVersion",
 		"FileVersion = $windowsVersion",
 		"LegalCopyright = $copyright",
 		"$originalFilenames = @{",

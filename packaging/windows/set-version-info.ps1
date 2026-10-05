@@ -2,6 +2,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $Version,
 
+    [string] $ProductVersion = '',
+
     [Parameter(Mandatory = $true)]
     [string[]] $Path
 )
@@ -32,6 +34,10 @@ function Normalize-WindowsVersion {
 }
 
 $windowsVersion = Normalize-WindowsVersion -Value $Version
+$displayProductVersion = $ProductVersion.Trim()
+if ([string]::IsNullOrWhiteSpace($displayProductVersion)) {
+    $displayProductVersion = $windowsVersion
+}
 $goHostOS = (& go env GOHOSTOS).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($goHostOS)) {
     throw 'Failed to resolve Go host OS for go-winres.'
@@ -79,7 +85,7 @@ try {
             LegalCopyright = $copyright
             OriginalFilename = $expectedOriginalFilename
             ProductName = 'AgentDock'
-            ProductVersion = $windowsVersion
+            ProductVersion = $displayProductVersion
         }
 
         $existingInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($resolved)
@@ -121,7 +127,7 @@ try {
                                 LegalCopyright = $copyright
                                 OriginalFilename = $expectedOriginalFilename
                                 ProductName = 'AgentDock'
-                                ProductVersion = $windowsVersion
+                                ProductVersion = $displayProductVersion
                             }
                         }
                     }
@@ -153,7 +159,6 @@ try {
             $env:GOARCH = $goHostArch
             & go run github.com/tc-hib/go-winres@v0.3.3 patch `
                 --in $jsonPath `
-                --product-version $windowsVersion `
                 --file-version $windowsVersion `
                 --no-backup `
                 $resolved
@@ -185,4 +190,4 @@ try {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-Write-Host "Applied AgentDock Windows VersionInfo $windowsVersion to $($Path.Count) executable(s)."
+Write-Host "Applied AgentDock Windows FileVersion $windowsVersion / ProductVersion $displayProductVersion to $($Path.Count) executable(s)."
