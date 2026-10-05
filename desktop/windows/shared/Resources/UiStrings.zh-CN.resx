@@ -307,7 +307,7 @@
     <value>打开使用文档</value>
   </data>
   <data name="ExitTray" xml:space="preserve">
-    <value>退出菜单栏</value>
+    <value>退出 AgentDock</value>
   </data>
   <data name="RunningNormally" xml:space="preserve">
     <value>运行正常</value>
@@ -948,4 +948,16 @@
   <data name="JustNow" xml:space="preserve"><value>刚刚</value></data>
   <data name="MinutesAgo" xml:space="preserve"><value>{0} 分钟前</value></data>
   <data name="HoursAgo" xml:space="preserve"><value>{0} 小时前</value></data>
+  <data name="TrayShowMainWindow" xml:space="preserve">
+    <value>显示主窗口</value>
+  </data>
+  <data name="TrayCheckForUpdates" xml:space="preserve">
+    <value>检查更新</value>
+  </data>
+  <data name="TrayStartAgentDock" xml:space="preserve">
+    <value>启动 AgentDock</value>
+  </data>
+  <data name="TrayRestartAgentDock" xml:space="preserve">
+    <value>重启 AgentDock</value>
+  </data>
 </root>

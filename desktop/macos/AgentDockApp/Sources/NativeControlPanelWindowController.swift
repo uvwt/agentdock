@@ -61,6 +61,11 @@ final class NativeControlPanelWindowController: NSWindowController, NSWindowDele
         present(status: status)
     }
 
+    func presentSettings(status: ServiceStatus) {
+        model.page = .settings
+        present(status: status)
+    }
+
     func setUpdateActivity(_ activity: DesktopUpdateActivity) {
         model.updateActivity = activity
     }

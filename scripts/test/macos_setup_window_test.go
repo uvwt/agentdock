@@ -61,6 +61,8 @@ func TestMacOSUpdateCheckDoesNotLockUnrelatedControls(t *testing.T) {
 		"ApplicationMenu.setQuitEnabled(!activity.locksApplication)",
 		"setUpdateActivity(.checking)",
 		"updateMenuItem.isEnabled = updateActivity.canCheckForUpdates",
+		"NSMenu.popUpContextMenu(makeTrayContextMenu(), with: event, for: sender)",
+		"menu.appearance = NSApp.effectiveAppearance",
 		"guard !self.trayServiceActionInProgress,",
 		"!self.setupWindow.hasActiveServiceOperation else {",
 	} {

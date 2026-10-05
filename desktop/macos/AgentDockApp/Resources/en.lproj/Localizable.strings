@@ -565,3 +565,15 @@
 "Cloudflare Tunnel component migration did not produce a ready component." = "Cloudflare Tunnel component migration did not produce a ready component.";
 
 "Install" = "Install";
+"AgentDock is running" = "AgentDock is running";
+"AgentDock is stopped" = "AgentDock is stopped";
+"AgentDock needs attention" = "AgentDock needs attention";
+"Core service" = "Core service";
+"Not connected" = "Not connected";
+"Set up AgentDock to get started." = "Set up AgentDock to get started.";
+
+"Exit AgentDock" = "Exit AgentDock";
+"Show main window" = "Show main window";
+"Tray Start" = "Start AgentDock";
+"Tray Restart" = "Restart AgentDock";
+"Tray Check for updates" = "Check for updates";

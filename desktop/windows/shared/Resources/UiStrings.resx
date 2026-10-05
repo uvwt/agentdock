@@ -307,7 +307,7 @@
     <value>Open documentation</value>
   </data>
   <data name="ExitTray" xml:space="preserve">
-    <value>Exit tray</value>
+    <value>Exit AgentDock</value>
   </data>
   <data name="RunningNormally" xml:space="preserve">
     <value>Running normally</value>
@@ -948,4 +948,16 @@ Update now?</value>
   <data name="JustNow" xml:space="preserve"><value>Just now</value></data>
   <data name="MinutesAgo" xml:space="preserve"><value>{0} min ago</value></data>
   <data name="HoursAgo" xml:space="preserve"><value>{0} hr ago</value></data>
+  <data name="TrayShowMainWindow" xml:space="preserve">
+    <value>Show main window</value>
+  </data>
+  <data name="TrayCheckForUpdates" xml:space="preserve">
+    <value>Check for updates</value>
+  </data>
+  <data name="TrayStartAgentDock" xml:space="preserve">
+    <value>Start AgentDock</value>
+  </data>
+  <data name="TrayRestartAgentDock" xml:space="preserve">
+    <value>Restart AgentDock</value>
+  </data>
 </root>

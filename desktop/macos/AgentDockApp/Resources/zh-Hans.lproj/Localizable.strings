@@ -565,3 +565,15 @@
 "Cloudflare Tunnel component migration did not produce a ready component." = "Cloudflare Tunnel 组件迁移后未进入可用状态。";
 
 "Install" = "安装";
+"AgentDock is running" = "AgentDock 正在运行";
+"AgentDock is stopped" = "AgentDock 已停止";
+"AgentDock needs attention" = "AgentDock 需要处理";
+"Core service" = "核心服务";
+"Not connected" = "未连接";
+"Set up AgentDock to get started." = "完成 AgentDock 设置后即可开始使用。";
+
+"Exit AgentDock" = "退出 AgentDock";
+"Show main window" = "显示主窗口";
+"Tray Start" = "启动 AgentDock";
+"Tray Restart" = "重启 AgentDock";
+"Tray Check for updates" = "检查更新";

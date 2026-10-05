@@ -78,6 +78,18 @@ public sealed partial class MainWindow : Window
         _ = SetForegroundWindow(_windowHandle);
     }
 
+    internal void ShowSettings()
+    {
+        NavigateTo("settings");
+        ShowAndActivate();
+    }
+
+    internal void ShowSettings(string tag)
+    {
+        NavigateToSettings(tag);
+        ShowAndActivate();
+    }
+
     private void ResizeToLogicalSize(int width, int height) =>
         AppWindow.Resize(new SizeInt32(LogicalToPixels(width), LogicalToPixels(height)));
 

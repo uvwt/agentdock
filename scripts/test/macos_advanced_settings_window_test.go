@@ -209,7 +209,7 @@ func TestMacOSActivityOwnsRuntimeAnalytics(t *testing.T) {
 		"5_000_000_000",
 		`L10n.text("Show more")`,
 		"nextLatestID != currentLatestID",
-		`L10n.text("View activity")`,
+		`case .activity: ActivityView(model: model)`,
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("macOS Activity/logs integration missing %q", want)

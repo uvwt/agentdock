@@ -21,10 +21,11 @@ func TestWindowsNativeControlPanelReplacesWPFAndCarriesPlatformLifecycle(t *test
 	app := readWindowsNativeFile(t, "winui", "App.xaml.cs")
 	window := readWindowsNativeFile(t, "winui", "MainWindow.xaml.cs")
 	project := readWindowsNativeFile(t, "winui", "AgentDock.WinUI.csproj")
+	tray := readWindowsNativeFile(t, "winui", "TrayIconHost.cs")
 	for _, want := range []string{
 		"new Mutex(true, MutexName",
 		"EventWaitHandle",
-		"Forms.NotifyIcon",
+		"new TrayIconHost(",
 		"RunElevatedNativeCommandHostAsync",
 		"RunCoreStartupAsync",
 		"RunTunnelStartupAsync",
@@ -33,6 +34,11 @@ func TestWindowsNativeControlPanelReplacesWPFAndCarriesPlatformLifecycle(t *test
 	} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("WinUI app lifecycle missing %q", want)
+		}
+	}
+	for _, want := range []string{"Shell_NotifyIconW", "TrackPopupMenuEx", "TaskbarCreated"} {
+		if !strings.Contains(tray, want) {
+			t.Fatalf("Win32 tray host missing %q", want)
 		}
 	}
 	for _, want := range []string{"AppWindow.Closing", "args.Cancel = true", "AppWindow.Hide()", "ShowAndActivate", "SetForegroundWindow"} {

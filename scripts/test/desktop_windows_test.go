@@ -250,43 +250,54 @@ func TestWindowsControlPanelOmitsCopyButtons(t *testing.T) {
 	}
 }
 func TestDesktopTrayMenusUseNativeDismissalAndOmitCopyActions(t *testing.T) {
-	windowsData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "App.xaml.cs"))
+	windowsAppData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "App.xaml.cs"))
 	if err != nil {
 		t.Fatalf("read App.xaml.cs: %v", err)
+	}
+	windowsTrayData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "TrayIconHost.cs"))
+	if err != nil {
+		t.Fatalf("read TrayIconHost.cs: %v", err)
 	}
 	macData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "macos", "AgentDockApp", "Sources", "AppDelegate.swift"))
 	if err != nil {
 		t.Fatalf("read AppDelegate.swift: %v", err)
 	}
-	windowsApp := string(windowsData)
+	windowsApp := string(windowsAppData)
+	windowsTray := string(windowsTrayData)
 	macApp := string(macData)
 
 	for _, want := range []string{
-		`UiText.Get("OpenAgentDock")`, `UiText.Get("StartAgentDock")`, `UiText.Get("StopAgentDock")`,
-		`UiText.Get("RestartAgentDock")`, `UiText.Get("OpenLogsFolder")`, `UiText.Get("OpenConfigFolder")`,
-		`UiText.Get("ExitTray")`, "ContextMenuStrip = _trayMenu", "Forms.NotifyIcon", "ShowControlPanel",
+		`UiText.Get("TrayShowMainWindow")`, `UiText.Get("TrayStartAgentDock")`,
+		`UiText.Get("TrayRestartAgentDock")`, `UiText.Get("Settings")`,
+		`UiText.Get("TrayCheckForUpdates")`, `UiText.Get("ExitTray")`,
+		"Shell_NotifyIconW", "TrackPopupMenuEx", "TaskbarCreated",
 	} {
-		if !strings.Contains(windowsApp, want) {
+		if !strings.Contains(windowsTray, want) {
 			t.Fatalf("Windows tray menu missing native behavior %q", want)
 		}
 	}
+	if !strings.Contains(windowsApp, "new TrayIconHost(") {
+		t.Fatal("Windows app must construct the native TrayIconHost")
+	}
 
 	for _, want := range []string{
-		`L10n.text("Open AgentDock")`, `L10n.text("Stop AgentDock")`, `L10n.text("Restart AgentDock")`,
-		`L10n.text("Start AgentDock")`, `L10n.text("Check for updates…")`, `L10n.text("View activity")`,
-		`L10n.text("Open logs folder")`, `L10n.text("Open configuration folder")`, `L10n.text("Open documentation")`,
-		`L10n.text("Exit menu bar app")`,
+		`NSMenu.popUpContextMenu(makeTrayContextMenu(), with: event, for: sender)`,
+		`menu.appearance = NSApp.effectiveAppearance`,
+		`L10n.text("Show main window")`, `L10n.text("Tray Start")`,
+		`L10n.text("Tray Restart")`, `L10n.text("Settings")`,
+		`L10n.text("Tray Check for updates")`, `L10n.text("Exit AgentDock")`,
 	} {
 		if !strings.Contains(macApp, want) {
-			t.Fatalf("macOS tray menu missing localized item %q", want)
+			t.Fatalf("macOS tray menu missing native behavior %q", want)
 		}
 	}
 
 	for _, forbidden := range []string{
 		`"复制本地 MCP 地址"`, `"复制公网 MCP 地址"`, "copyLocalMCP", "copyPublicMCP",
-		"Forms.Clipboard.SetText", "NSPasteboard.general", "NotifyIcon_MouseUp", "_trayMenu.Show(",
+		"Forms.Clipboard.SetText", "NSPasteboard.general", "Forms.NotifyIcon",
+		"ContextMenuStrip = _trayMenu", "TrayContextMenuPopoverController",
 	} {
-		if strings.Contains(windowsApp, forbidden) || strings.Contains(macApp, forbidden) {
+		if strings.Contains(windowsApp, forbidden) || strings.Contains(windowsTray, forbidden) || strings.Contains(macApp, forbidden) {
 			t.Fatalf("desktop tray menus must not expose retired manual/copy behavior %q", forbidden)
 		}
 	}

@@ -1,8 +1,6 @@
-using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.UI.Xaml;
-using Forms = System.Windows.Forms;
 
 namespace AgentDock.ControlPanel;
 
@@ -15,11 +13,11 @@ public partial class NativeApp : Application
     private Mutex? _singleInstanceMutex;
     private EventWaitHandle? _showEvent;
     private CancellationTokenSource? _showCancellation;
-    private Forms.NotifyIcon? _notifyIcon;
-    private Forms.ContextMenuStrip? _trayMenu;
+    private TrayIconHost? _trayIcon;
     private RuntimeService? _runtime;
     private MainWindow? _window;
     private bool _ownsMutex;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _trayRefreshTimer;
     private readonly Microsoft.UI.Dispatching.DispatcherQueue _dispatcherQueue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
 
     public NativeApp()
@@ -131,11 +129,22 @@ public partial class NativeApp : Application
     private void ShowControlPanel()
     {
         if (_runtime is null) return;
-        if (_window is null)
-        {
-            _window = new MainWindow(_runtime);
-        }
+        _window ??= new MainWindow(_runtime);
         _window.ShowAndActivate();
+    }
+
+    private void ShowSettings()
+    {
+        if (_runtime is null) return;
+        _window ??= new MainWindow(_runtime);
+        _window.ShowSettings();
+    }
+
+    private void ShowAboutSettings()
+    {
+        if (_runtime is null) return;
+        _window ??= new MainWindow(_runtime);
+        _window.ShowSettings("about");
     }
 
     private void StartShowListener()
@@ -158,26 +167,21 @@ public partial class NativeApp : Application
 
     private void CreateTray()
     {
-        _trayMenu = new Forms.ContextMenuStrip();
-        _trayMenu.Items.Add(UiText.Get("OpenAgentDock"), null, (_, _) => _dispatcherQueue.TryEnqueue(ShowControlPanel));
-        _trayMenu.Items.Add(new Forms.ToolStripSeparator());
-        _trayMenu.Items.Add(UiText.Get("StartAgentDock"), null, async (_, _) => await RunTrayActionAsync("start"));
-        _trayMenu.Items.Add(UiText.Get("StopAgentDock"), null, async (_, _) => await RunTrayActionAsync("stop"));
-        _trayMenu.Items.Add(UiText.Get("RestartAgentDock"), null, async (_, _) => await RunTrayActionAsync("restart"));
-        _trayMenu.Items.Add(new Forms.ToolStripSeparator());
-        _trayMenu.Items.Add(UiText.Get("OpenLogsFolder"), null, (_, _) => _runtime?.OpenLogsDirectory());
-        _trayMenu.Items.Add(UiText.Get("OpenConfigFolder"), null, (_, _) => _runtime?.OpenConfigDirectory());
-        _trayMenu.Items.Add(new Forms.ToolStripSeparator());
-        _trayMenu.Items.Add(UiText.Get("ExitTray"), null, (_, _) => _dispatcherQueue.TryEnqueue(RequestExit));
+        if (_runtime is null) return;
 
-        _notifyIcon = new Forms.NotifyIcon
-        {
-            Text = "AgentDock",
-            Visible = true,
-            Icon = LoadIcon(),
-            ContextMenuStrip = _trayMenu
-        };
-        _notifyIcon.DoubleClick += (_, _) => _dispatcherQueue.TryEnqueue(ShowControlPanel);
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "agentdock.ico");
+        _trayIcon = new TrayIconHost(iconPath);
+
+        // Windows follows shell convention: primary click opens the app;
+        // secondary click opens the richer native quick-actions menu.
+        _trayIcon.PrimaryInvoked += () => _dispatcherQueue.TryEnqueue(ShowControlPanel);
+        _trayIcon.CommandInvoked += command => _dispatcherQueue.TryEnqueue(() => _ = HandleTrayCommandAsync(command));
+
+        _trayRefreshTimer = _dispatcherQueue.CreateTimer();
+        _trayRefreshTimer.Interval = TimeSpan.FromSeconds(15);
+        _trayRefreshTimer.Tick += (_, _) => _ = RefreshTrayMenuStateAsync();
+        _trayRefreshTimer.Start();
+        _ = RefreshTrayMenuStateAsync();
     }
 
     internal void ApplyLanguagePreference(string preference)
@@ -193,9 +197,6 @@ public partial class NativeApp : Application
             previousWindow.Close();
         }
 
-        _notifyIcon?.Dispose();
-        _trayMenu?.Dispose();
-        CreateTray();
         _window.ShowAndActivate();
     }
 
@@ -205,6 +206,79 @@ public partial class NativeApp : Application
         _window?.ApplyThemePreference(preference);
     }
 
+
+    private async Task RefreshTrayMenuStateAsync()
+    {
+        if (_runtime is null || _trayIcon is null) return;
+        try
+        {
+            var snapshot = await _runtime.GetSnapshotAsync(includeNexusConnection: false);
+            _trayIcon.UpdateMenuState(new TrayMenuState(
+                Available: true,
+                CoreRunning: snapshot.CoreRunning,
+                Healthy: snapshot.Healthy,
+                Version: snapshot.Version));
+        }
+        catch
+        {
+            _trayIcon.UpdateMenuState(TrayMenuState.Unavailable);
+        }
+    }
+
+    private async Task HandleTrayCommandAsync(TrayCommand command)
+    {
+        if (_runtime is null || _trayIcon is null) return;
+
+        switch (command)
+        {
+            case TrayCommand.Open:
+                ShowControlPanel();
+                break;
+            case TrayCommand.Start:
+                await RunTrayActionAsync("start");
+                await RefreshTrayMenuStateAsync();
+                break;
+            case TrayCommand.Restart:
+                await RunTrayActionAsync("restart");
+                await RefreshTrayMenuStateAsync();
+                break;
+            case TrayCommand.CheckUpdates:
+                await CheckForUpdatesFromTrayAsync();
+                break;
+            case TrayCommand.Settings:
+                ShowSettings();
+                break;
+            case TrayCommand.Exit:
+                await StopCoreAndExitAsync();
+                break;
+        }
+    }
+
+    private async Task CheckForUpdatesFromTrayAsync()
+    {
+        if (_runtime is null || _trayIcon is null) return;
+        try
+        {
+            var check = await _runtime.CheckForUpdatesAsync();
+            if (!check.UpdateAvailable)
+            {
+                _trayIcon.ShowNotification("AgentDock", check.Message, TrayNotificationKind.Info);
+                return;
+            }
+
+            _trayIcon.ShowNotification(
+                "AgentDock",
+                $"{UiText.Get("NewVersionAvailable")} {check.CurrentVersion} → {check.LatestVersion}",
+                TrayNotificationKind.Info);
+            ShowAboutSettings();
+        }
+        catch (Exception ex)
+        {
+            _runtime.RecordControlPanelFailure("tray", "check-updates", ex);
+            _trayIcon.ShowNotification("AgentDock", ex.Message, TrayNotificationKind.Error);
+        }
+    }
+
     private async Task RunTrayActionAsync(string action)
     {
         if (_runtime is null) return;
@@ -212,7 +286,7 @@ public partial class NativeApp : Application
         catch (Exception ex)
         {
             _runtime.RecordControlPanelFailure("tray", action, ex);
-            _notifyIcon?.ShowBalloonTip(5000, "AgentDock", ex.Message, Forms.ToolTipIcon.Error);
+            _trayIcon?.ShowNotification("AgentDock", ex.Message, TrayNotificationKind.Error);
         }
     }
 
@@ -233,14 +307,20 @@ public partial class NativeApp : Application
             }
             if (result is null)
             {
-                _notifyIcon?.ShowBalloonTip(5000, "AgentDock", UiText.Get("UpdateTransactionResultTimeout"), Forms.ToolTipIcon.Warning);
+                _trayIcon?.ShowNotification(
+                    "AgentDock",
+                    UiText.Get("UpdateTransactionResultTimeout"),
+                    TrayNotificationKind.Warning);
                 return;
             }
             var committed = result.State.Equals("committed", StringComparison.OrdinalIgnoreCase);
             var message = committed ? UiText.Get("UpdateCompleted")
                 : result.State.Equals("rolled_back", StringComparison.OrdinalIgnoreCase) ? UiText.Get("UpdateRolledBack")
                 : UiText.Get("UpdateFailed");
-            _notifyIcon?.ShowBalloonTip(5000, "AgentDock", message, committed ? Forms.ToolTipIcon.Info : Forms.ToolTipIcon.Error);
+            _trayIcon?.ShowNotification(
+                "AgentDock",
+                message,
+                committed ? TrayNotificationKind.Info : TrayNotificationKind.Error);
             await _runtime.AcknowledgeUpdateUiHandoffAsync(transaction.TransactionId);
         }
         catch (Exception ex)
@@ -249,11 +329,43 @@ public partial class NativeApp : Application
         }
     }
 
+    private async Task StopCoreAndExitAsync()
+    {
+        if (_runtime is null || _trayIcon is null) return;
+
+        _trayRefreshTimer?.Stop();
+
+        // Tunnel is optional. Try to stop it, but never let a Tunnel failure
+        // prevent the mandatory Core stop requested by Exit AgentDock.
+        try
+        {
+            await _runtime.RunTunnelActionAsync("stop");
+        }
+        catch (Exception ex)
+        {
+            _runtime.RecordControlPanelFailure("tray", "exit-stop-tunnel", ex);
+        }
+
+        try
+        {
+            await _runtime.RunCoreActionAsync("stop");
+        }
+        catch (Exception ex)
+        {
+            _runtime.RecordControlPanelFailure("tray", "exit-stop-core", ex);
+            _trayIcon.ShowNotification("AgentDock", ex.Message, TrayNotificationKind.Error);
+            _trayRefreshTimer?.Start();
+            return;
+        }
+
+        RequestExit();
+    }
+
     private void RequestExit()
     {
+        _trayRefreshTimer?.Stop();
         _showCancellation?.Cancel();
-        _notifyIcon?.Dispose();
-        _trayMenu?.Dispose();
+        _trayIcon?.Dispose();
         if (_window is not null)
         {
             _window.AllowClose = true;
@@ -263,12 +375,6 @@ public partial class NativeApp : Application
         if (_ownsMutex) _singleInstanceMutex?.ReleaseMutex();
         _singleInstanceMutex?.Dispose();
         Exit();
-    }
-
-    private static Icon LoadIcon()
-    {
-        var path = Path.Combine(AppContext.BaseDirectory, "agentdock.ico");
-        return File.Exists(path) ? new Icon(path) : SystemIcons.Application;
     }
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]

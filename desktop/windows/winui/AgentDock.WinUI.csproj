@@ -31,9 +31,6 @@
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
   <ItemGroup>
-    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
-  </ItemGroup>
-  <ItemGroup>
     <Content Include="../../../packaging/assets/agentdock.png"
              Link="Assets/agentdock.png"
              CopyToOutputDirectory="PreserveNewest" />

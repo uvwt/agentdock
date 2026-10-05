@@ -22,6 +22,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.startUpdate()
         }
     )
+    private lazy var trayPopover = TrayPopoverController(
+        onOpenAgentDock: { [weak self] in
+            self?.showSetup()
+        },
+        onOpenSettings: { [weak self] in
+            self?.showSettings()
+        },
+        onRunServiceAction: { [weak self] action in
+            self?.runTrayPopoverServiceAction(action)
+        },
+        onShowUpdateProgress: { [weak self] in
+            self?.showUpdateProgress()
+        }
+    )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let recoveryInspection = DesktopUpdateTransactionRecovery.inspect(paths: service.paths)
@@ -208,7 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setStatusItemVisible(activity.statusItemVisible)
         ApplicationMenu.setQuitEnabled(!activity.locksApplication)
         setupWindow.setUpdateActivity(activity)
-        rebuildMenu()
+        refreshTrayPresentation()
     }
 
     private func restoreBackgroundServicesAfterUpdate(_ pendingResult: DesktopUpdateResult) {
@@ -503,12 +517,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item.isVisible = true
             if let button = item.button {
                 button.image = AgentDockLogoArtwork.menuBarImage()
+                button.toolTip = "AgentDock"
+                button.target = self
+                button.action = #selector(handleStatusItemClick(_:))
+                button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             }
             statusItem = item
+            refreshTrayPresentation()
             return
         }
 
         guard let item = statusItem else { return }
+        trayPopover.close()
         NSStatusBar.system.removeStatusItem(item)
         statusItem = nil
     }
@@ -518,7 +538,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let status = await service.status()
             await MainActor.run {
                 self.currentStatus = status
-                self.rebuildMenu()
+                self.refreshTrayPresentation()
                 if showWindow {
                     self.setupWindow.present(status: status)
                 } else if self.setupWindow.window?.isVisible == true {
@@ -537,80 +557,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    private func rebuildMenu() {
-        let menu = NSMenu()
-        if updateActivity.locksApplication {
-            let statusMenuItem = NSMenuItem(
-                title: L10n.format("AgentDock: %@", L10n.text("Updating…")),
-                action: nil,
-                keyEquivalent: ""
-            )
-            statusMenuItem.isEnabled = false
-            menu.addItem(statusMenuItem)
-            menu.addItem(.separator())
-            menu.addItem(item(L10n.text("Show update progress"), #selector(showUpdateProgress)))
-            if currentStatus.installed {
-                menu.addItem(item(L10n.text("Open logs folder"), #selector(openLogs)))
-            }
-            statusItem?.menu = menu
+    private func refreshTrayPresentation() {
+        trayPopover.update(
+            status: currentStatus,
+            isUpdating: updateActivity.locksApplication,
+            isCheckingForUpdate: updateActivity == .checking
+        )
+    }
+
+    @objc private func handleStatusItemClick(_ sender: NSStatusBarButton) {
+        guard let event = NSApp.currentEvent else { return }
+        if event.type == .rightMouseUp {
+            trayPopover.close()
+            NSMenu.popUpContextMenu(makeTrayContextMenu(), with: event, for: sender)
             return
         }
+        trayPopover.toggle(relativeTo: sender)
+    }
 
-        let statusText: String
-        if !currentStatus.installed {
-            statusText = L10n.text("Not installed")
-        } else if currentStatus.healthy {
-            if AppVersion.matchesHealthVersion(currentStatus.version) {
-                statusText = L10n.text("Running normally")
-            } else {
-                statusText = L10n.format(
-                    "Version mismatch · AgentDock %@ · Core %@",
-                    AppVersion.current,
-                    AppVersion.display(currentStatus.version)
-                )
-            }
-        } else if currentStatus.requiresApproval {
-            statusText = L10n.text("Background permission required")
+    private func makeTrayContextMenu() -> NSMenu {
+        let menu = NSMenu()
+        // 从菜单栏按钮弹出时，NSMenu 会继承菜单栏自身的材质外观；
+        // 明确使用 App 的有效外观，保留系统原生菜单效果，同时避免 Light 模式被渲染成黑玻璃。
+        menu.appearance = NSApp.effectiveAppearance
+
+        let state: String
+        if currentStatus.healthy {
+            state = L10n.text("Running")
         } else if currentStatus.loaded {
-            statusText = L10n.text("Service error")
+            state = L10n.text("Needs attention")
         } else {
-            statusText = L10n.text("Stopped")
+            state = L10n.text("Stopped")
         }
-        let statusMenuItem = NSMenuItem(title: L10n.format("AgentDock: %@", statusText), action: nil, keyEquivalent: "")
-        statusMenuItem.isEnabled = false
-        menu.addItem(statusMenuItem)
-        menu.addItem(.separator())
+        let version = AppVersion.display(currentStatus.version ?? AppVersion.current)
+        let statusItem = NSMenuItem(title: "\(state) · \(version)", action: nil, keyEquivalent: "")
+        statusItem.isEnabled = false
+        menu.addItem(statusItem)
 
-        menu.addItem(item(currentStatus.installed ? L10n.text("Open AgentDock") : L10n.text("Set up AgentDock…"), #selector(showSetup)))
-        menu.addItem(item(L10n.text("Check permissions"), #selector(openPermissions)))
-        if currentStatus.installed {
-            menu.addItem(.separator())
-
-            if currentStatus.requiresApproval {
-                menu.addItem(item(L10n.text("Open background settings"), #selector(openBackgroundSettings)))
-            } else if currentStatus.loaded {
-                menu.addItem(item(L10n.text("Stop AgentDock"), #selector(stopService)))
-                menu.addItem(item(L10n.text("Restart AgentDock"), #selector(restartService)))
-            } else {
-                menu.addItem(item(L10n.text("Start AgentDock"), #selector(startService)))
-            }
-            let updateMenuItem = item(
-                updateActivity == .checking ? L10n.text("Checking for updates…") : L10n.text("Check for updates…"),
-                #selector(updateService)
-            )
-            updateMenuItem.isEnabled = updateActivity.canCheckForUpdates
-            menu.addItem(updateMenuItem)
-            menu.addItem(.separator())
-            if currentStatus.loaded {
-                menu.addItem(item(L10n.text("View activity"), #selector(showActivity)))
-            }
-            menu.addItem(item(L10n.text("Open logs folder"), #selector(openLogs)))
-            menu.addItem(item(L10n.text("Open configuration folder"), #selector(openConfiguration)))
-        }
-        menu.addItem(item(L10n.text("Open documentation"), #selector(openDocumentation)))
         menu.addItem(.separator())
-        menu.addItem(item(L10n.text("Exit menu bar app"), #selector(quit)))
-        statusItem?.menu = menu
+        menu.addItem(item(L10n.text("Show main window"), #selector(showSetup)))
+
+        menu.addItem(.separator())
+        let startItem = item(L10n.text("Tray Start"), #selector(startService))
+        startItem.isEnabled = !updateActivity.locksApplication
+            && currentStatus.installed
+            && !currentStatus.loaded
+            && !currentStatus.requiresApproval
+        menu.addItem(startItem)
+
+        let restartItem = item(L10n.text("Tray Restart"), #selector(restartService))
+        restartItem.isEnabled = !updateActivity.locksApplication
+            && currentStatus.installed
+            && !currentStatus.requiresApproval
+        menu.addItem(restartItem)
+
+        menu.addItem(.separator())
+        menu.addItem(item(L10n.text("Settings"), #selector(showSettings)))
+
+        let updateMenuItem = item(L10n.text("Tray Check for updates"), #selector(updateService))
+        updateMenuItem.isEnabled = updateActivity.canCheckForUpdates
+        menu.addItem(updateMenuItem)
+
+        let exitItem = item(L10n.text("Exit AgentDock"), #selector(quit))
+        exitItem.isEnabled = !updateActivity.locksApplication
+        menu.addItem(exitItem)
+        return menu
     }
 
     private func item(_ title: String, _ action: Selector) -> NSMenuItem {
@@ -620,6 +631,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showSetup() { setupWindow.present(status: currentStatus) }
+
+    @objc private func showSettings() {
+        setupWindow.presentSettings(status: currentStatus)
+    }
+
+    private func runTrayPopoverServiceAction(_ action: String) {
+        if action == "start" {
+            startService()
+        } else {
+            restartService()
+        }
+    }
+
     @objc private func showUpdateProgress() { updateProgressWindow.present() }
     @objc private func openPermissions() { setupWindow.presentPermissions() }
     @objc private func showActivity() { setupWindow.presentActivity(status: currentStatus) }
@@ -811,6 +835,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             updateProgressWindow.present()
             return
         }
-        NSApp.terminate(nil)
+        guard !trayServiceActionInProgress else { return }
+
+        trayServiceActionInProgress = true
+        Task {
+            do {
+                try await service.stop()
+                await MainActor.run {
+                    self.trayServiceActionInProgress = false
+                    NSApp.terminate(nil)
+                }
+            } catch {
+                await MainActor.run {
+                    self.trayServiceActionInProgress = false
+                    self.presentAlert(
+                        title: L10n.text("Exit AgentDock"),
+                        message: error.localizedDescription,
+                        style: .warning
+                    )
+                }
+            }
+        }
     }
 }
