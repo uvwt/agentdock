@@ -53,7 +53,7 @@ cloudflared（可选、独立版本、可安装/更新/卸载）
 Windows 离线 Setup 同样是强耦合：
 
 - `packaging/windows/AgentDock.iss` 把 `cloudflared.exe` 作为 `dontcopy` payload 放入 Setup；
-- `packaging/windows/build-windows-offline-setup.ps1` 要求 cloudflared 必须存在，并检查 Authenticode；
+- 当时的 Windows Setup 构建脚本要求 cloudflared 必须存在，并检查 Authenticode；
 - `packaging/windows/includes/code.iss` 会提取 `cloudflared.exe`，再通过 `-OfflineCloudflaredBinary` 交给 `install.ps1`；
 - Setup 仍存在 Local / Quick / Named 连接选择和 Tunnel Token 输入。
 
@@ -336,7 +336,7 @@ Cloudflare Tunnel
 
 - `install.ps1` 在普通 AgentDock 安装中不调用 `Install-CloudflaredBinary`；
 - Windows Setup 不再携带 `cloudflared.exe`；
-- `build-windows-offline-setup.ps1` 不再要求 cloudflared 输入；
+- `build-windows-setup.ps1` 不要求 cloudflared 输入；
 - Inno Setup 删除 Local / Quick / Named 页面和 Token 页面；
 - 新安装固定以 `tunnel_mode=none` 初始化；
 - AgentDock 安装成功不依赖 Cloudflare/GitHub 可达性；
@@ -362,26 +362,20 @@ macOS 首次设置不再要求用户选择 Local / Quick / Named。Cloudflare Tu
 
 ## 9. Component 供应链与发布
 
-运行时禁止继续直接下载 Cloudflare `latest` 并仅靠 `--version` 判断可信。
+运行时禁止直接跟踪 Cloudflare `latest`，也不再由 AgentDock 二次托管 cloudflared binary。
 
-AgentDock Release CI 应为支持的 cloudflared 版本生成不可变 component artifact 与 manifest。推荐原则：
+当前长期契约已经进一步收敛为：
 
-1. Release CI 从官方 Cloudflare 来源获取**明确版本**，不使用运行时 `latest` 漂移；
-2. CI 验证上游来源、SHA-256 和平台可用的代码签名；
-3. 生成 AgentDock component catalog，记录：
-   - component；
-   - version；
-   - os / arch；
-   - artifact URL；
-   - SHA-256；
-   - 上游版本/来源；
-4. 客户端只接受 catalog 中明确允许的 artifact；
-5. 下载到临时 staging，校验后再移动到版本目录；
-6. 最后原子更新 `active.json`；
-7. 失败时旧 active component 不受影响；
-8. GitHub Release 继续作为历史归档，NexusDock/R2 可以镜像当前稳定 component，但不能维护第二套互相矛盾的版本真相。
-
-Windows 至少保留 Authenticode 验证；macOS 需要结合最终分发方式验证上游/AgentDock 签名，但无论平台签名如何，catalog SHA-256 都是客户端安装前的必需校验。
+1. 仓库中的 `packaging/components/cloudflared.json` 是审计过的 pinned metadata，记录明确版本、Cloudflare 官方固定 Release URL、artifact format 和下载物 SHA-256；
+2. Release CI 从官方 Cloudflare 固定版本来源下载对应 artifact，并验证仓库 pinned SHA-256、版本与平台签名/信任；
+3. CI 只验证第三方 dependency，不把 cloudflared 上传到 AgentDock GitHub Release；
+4. R2 只承载 AgentDock 第一方发布物和第一方 catalog metadata，不镜像 cloudflared，也没有 fallback mirror；
+5. `agentdock-component-catalog.json` 内的第三方 URL 在 GitHub Release 与 R2 入口中都必须保持 Cloudflare 官方固定 URL，mirror prepare 不得改写；
+6. 客户端只接受 catalog 中明确允许的 artifact，且再次校验固定版本、URL、format 和 SHA-256；
+7. Windows 官方 artifact 是直接 binary；下载后继续执行 Authenticode 和版本验证；
+8. macOS 官方 artifact 是 `.tgz`；客户端先验证 archive 的 pinned SHA-256，再在受控 staging 中只解出预期普通文件，拒绝 symlink、hardlink、path traversal 和额外条目，然后执行 codesign 与版本验证；
+9. catalog 中的 SHA-256 表示**下载 artifact digest**；`active.json` 中的 SHA-256 表示**最终已安装 binary digest**，两者不能混用；
+10. staging、平台信任、版本验证全部通过后才原子更新 `active.json`，失败时旧 active component 不受影响。
 
 component catalog 不包含 Token、用户配置或机器状态。
 
@@ -572,7 +566,7 @@ Quick / Named Tunnel lifecycle 继续测试，但不再作为“AgentDock 基础
 - 删除 Setup 内 cloudflared payload；
 - 删除首次安装 Cloudflare 页面；
 - 保留必要 legacy migration adapter；
-- Installer CI 不再依赖 cloudflared。
+- 基础 Installer 构建与安装 E2E 不再依赖 cloudflared payload；独立 component / Tunnel lifecycle CI 仍验证官方 pinned artifact 与运行时行为。
 
 ### Step 5：macOS Bundle 去耦
 
@@ -585,7 +579,7 @@ Quick / Named Tunnel lifecycle 继续测试，但不再作为“AgentDock 基础
 ### Step 6：Release / CI / 文档收口
 
 - component catalog 纳入 Release；
-- R2 最新镜像策略同步 component；
+- R2 最新镜像只同步 component catalog 等第一方 metadata，不镜像第三方 cloudflared binary；
 - Installer / Component / Tunnel lifecycle CI 分层；
 - 更新用户文档；
 - 清理不再使用的 cloudflared installer contract。

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "component": "cloudflared",
+  "version": "2026.9.1",
+  "upstream_source": "https://github.com/cloudflare/cloudflared/releases/tag/2026.9.1",
+  "artifacts": [
+    {
+      "os": "windows",
+      "arch": "amd64",
+      "format": "binary",
+      "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.9.1/cloudflared-windows-amd64.exe",
+      "sha256": "2837888cc0f5d58f15b6dc478376de90b4d3ba5241c7947455d1e0a0df429712"
+    },
+    {
+      "os": "darwin",
+      "arch": "amd64",
+      "format": "tgz",
+      "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.9.1/cloudflared-darwin-amd64.tgz",
+      "sha256": "ff0d3b51d5ff70eceef89d6b32145fee985018a2174596a5dbe405e2766e2ac4"
+    },
+    {
+      "os": "darwin",
+      "arch": "arm64",
+      "format": "tgz",
+      "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.9.1/cloudflared-darwin-arm64.tgz",
+      "sha256": "c27ab8fd0aa489449e3d201eb02f957ef460a13b613662928b1b23394bf1bcfe"
+    }
+  ]
+}

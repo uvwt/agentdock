@@ -89,13 +89,18 @@ func TestWindowsInstallerWorkflowHasAlwaysPresentPullRequestGate(t *testing.T) {
 		"name: Test cloudflared component lifecycle",
 		"for ($attempt = 1; $attempt -le 5; $attempt++)",
 		"Get-AuthenticodeSignature -LiteralPath $cloudflaredPath",
-		"go run ./tools/release component-version",
+		".\\packaging\\components\\cloudflared.json",
+		"cloudflared pinned SHA-256 mismatch",
 		".\\scripts\\test\\test-windows-cloudflared-component.ps1",
 		"-SignedCloudflaredBinary $cloudflaredPath",
 		"-ArtifactUrl $cloudflaredUrl",
+		"-ExpectedDigest $expectedDigest",
 		"cmd/agentdock-wsl-helper",
 		"internal/wslfilehelper",
 		"scripts/test/testdata/fake-cloudflared",
+		"packaging/components",
+		"internal/component",
+		"tools/release",
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("Windows Installer workflow must keep a safe pull-request gate; missing %q", want)

@@ -65,9 +65,8 @@ func ReleaseCatalog() []Artifact {
 		{Name: "AgentDockSetup-arm64.exe", Kind: "setup", Platform: "windows", Arch: "arm64", Required: true, PublicContract: true},
 	}
 	components := []Artifact{
-		{Name: "cloudflared_darwin_amd64", Kind: "component", Platform: "darwin", Arch: "amd64", Required: true},
-		{Name: "cloudflared_darwin_arm64", Kind: "component", Platform: "darwin", Arch: "arm64", Required: true},
-		{Name: "cloudflared_windows_amd64.exe", Kind: "component", Platform: "windows", Arch: "amd64", Required: true},
+		// 第三方 cloudflared 由客户端直接从 Cloudflare 固定 Release 获取；
+		// AgentDock Release/R2 只发布第一方 catalog metadata。
 		{Name: "agentdock-component-catalog.json", Kind: "component-catalog", Required: true},
 	}
 	scripts := []Artifact{

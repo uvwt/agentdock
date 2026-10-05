@@ -1,6 +1,9 @@
 package component
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -33,6 +36,7 @@ func TestStoreStatusDoesNotAdoptLegacyOrPath(t *testing.T) {
 
 func TestCommitStagedActivatesOnlyAfterVerifiedVersionDirectory(t *testing.T) {
 	requireCloudflaredRuntimePlatform(t)
+	stubPlatformTrust(t)
 	root := t.TempDir()
 	store, err := NewStore(root)
 	if err != nil {
@@ -59,6 +63,7 @@ func TestCommitStagedActivatesOnlyAfterVerifiedVersionDirectory(t *testing.T) {
 
 func TestCommitStagedRepairsCorruptSameVersionWithoutInPlaceOverwrite(t *testing.T) {
 	requireCloudflaredRuntimePlatform(t)
+	stubPlatformTrust(t)
 	root := t.TempDir()
 	store, err := NewStore(root)
 	if err != nil {
@@ -101,7 +106,7 @@ func TestCommitStagedRepairsCorruptSameVersionWithoutInPlaceOverwrite(t *testing
 	}
 }
 
-func TestSelectCloudflaredArtifactRequiresPinnedHTTPSDigest(t *testing.T) {
+func TestSelectCloudflaredArtifactRequiresPinnedOfficialUpstream(t *testing.T) {
 	digest := strings.Repeat("a", 64)
 	catalog := Catalog{
 		SchemaVersion: 1,
@@ -111,8 +116,8 @@ func TestSelectCloudflaredArtifactRequiresPinnedHTTPSDigest(t *testing.T) {
 			UpstreamVersion: "2026.9.3",
 			UpstreamSource:  "https://github.com/cloudflare/cloudflared/releases/tag/2026.9.3",
 			Artifacts: []CatalogArtifact{{
-				OS: "windows", Arch: "amd64",
-				URL:    "https://github.com/uvwt/agentdock/releases/download/v1/cloudflared-windows-amd64.exe",
+				OS: "windows", Arch: "amd64", Format: "binary",
+				URL:    "https://github.com/cloudflare/cloudflared/releases/download/2026.9.3/cloudflared-windows-amd64.exe",
 				SHA256: digest,
 			}},
 		}},
@@ -125,15 +130,120 @@ func TestSelectCloudflaredArtifactRequiresPinnedHTTPSDigest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if entry.Version != "2026.9.3" || artifact.SHA256 != digest {
+	if entry.Version != "2026.9.3" || artifact.SHA256 != digest || artifact.Format != "binary" {
 		t.Fatalf("unexpected catalog selection: %+v %+v", entry, artifact)
 	}
 
-	catalog.Components[0].Artifacts[0].URL = "http://example.invalid/cloudflared.exe"
-	data, _ = json.Marshal(catalog)
-	if _, _, err := selectCloudflaredArtifact(data, "windows", "amd64"); err == nil {
-		t.Fatal("HTTP artifact URL unexpectedly accepted")
+	for _, invalid := range []string{
+		"http://github.com/cloudflare/cloudflared/releases/download/2026.9.3/cloudflared-windows-amd64.exe",
+		"https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe",
+		"https://github.com/uvwt/agentdock/releases/download/v1/cloudflared-windows-amd64.exe",
+		"https://download.nexusdock.co/releases/v1/cloudflared-windows-amd64.exe",
+		"https://github.com/cloudflare/cloudflared/releases/download/2026.9.3/cloudflared-windows-amd64.exe?x=1",
+	} {
+		catalog.Components[0].Artifacts[0].URL = invalid
+		data, _ = json.Marshal(catalog)
+		if _, _, err := selectCloudflaredArtifact(data, "windows", "amd64"); err == nil {
+			t.Fatalf("unsafe artifact URL unexpectedly accepted: %s", invalid)
+		}
 	}
+}
+
+func TestExtractCloudflaredTGZAcceptsOnlySingleRegularBinary(t *testing.T) {
+	valid := makeCloudflaredTGZ(t, []tar.Header{{Name: "cloudflared", Mode: 0o755, Size: 2, Typeflag: tar.TypeReg}}, [][]byte{[]byte("ok")})
+	target := filepath.Join(t.TempDir(), "cloudflared")
+	if err := extractCloudflaredTGZ(valid, target); err != nil {
+		t.Fatalf("extract valid tgz: %v", err)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "ok" {
+		t.Fatalf("extracted content = %q, want ok", data)
+	}
+}
+
+func TestExtractCloudflaredTGZRejectsUnsafeEntries(t *testing.T) {
+	tests := []struct {
+		name    string
+		headers []tar.Header
+		bodies  [][]byte
+	}{
+		{name: "symlink", headers: []tar.Header{{Name: "cloudflared", Typeflag: tar.TypeSymlink, Linkname: "/tmp/evil"}}},
+		{name: "hardlink", headers: []tar.Header{{Name: "cloudflared", Typeflag: tar.TypeLink, Linkname: "/tmp/evil"}}},
+		{name: "parent traversal", headers: []tar.Header{{Name: "../cloudflared", Typeflag: tar.TypeReg}}},
+		{name: "normalized traversal", headers: []tar.Header{{Name: "dir/../cloudflared", Typeflag: tar.TypeReg}}},
+		{name: "absolute path", headers: []tar.Header{{Name: "/cloudflared", Typeflag: tar.TypeReg}}},
+		{name: "backslash path", headers: []tar.Header{{Name: "..\\cloudflared", Typeflag: tar.TypeReg}}},
+		{
+			name: "extra entry",
+			headers: []tar.Header{
+				{Name: "cloudflared", Typeflag: tar.TypeReg},
+				{Name: "README", Typeflag: tar.TypeReg},
+			},
+		},
+		{
+			name: "duplicate",
+			headers: []tar.Header{
+				{Name: "cloudflared", Typeflag: tar.TypeReg},
+				{Name: "cloudflared", Typeflag: tar.TypeReg},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			archive := makeCloudflaredTGZ(t, tt.headers, tt.bodies)
+			if err := extractCloudflaredTGZ(archive, filepath.Join(t.TempDir(), "cloudflared")); err == nil {
+				t.Fatal("unsafe tgz unexpectedly accepted")
+			}
+		})
+	}
+}
+
+func makeCloudflaredTGZ(t *testing.T, headers []tar.Header, bodies [][]byte) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	gzipWriter := gzip.NewWriter(&buffer)
+	tarWriter := tar.NewWriter(gzipWriter)
+	for i := range headers {
+		header := headers[i]
+		if header.Mode == 0 {
+			header.Mode = 0o755
+		}
+		if header.Typeflag == 0 {
+			header.Typeflag = tar.TypeReg
+		}
+		var body []byte
+		if i < len(bodies) {
+			body = bodies[i]
+		}
+		if header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA {
+			header.Size = int64(len(body))
+		}
+		if err := tarWriter.WriteHeader(&header); err != nil {
+			t.Fatal(err)
+		}
+		if len(body) > 0 {
+			if _, err := tarWriter.Write(body); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := tarWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gzipWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func stubPlatformTrust(t *testing.T) {
+	t.Helper()
+	original := platformTrustVerifier
+	platformTrustVerifier = func(context.Context, string, bool) error { return nil }
+	t.Cleanup(func() { platformTrustVerifier = original })
 }
 
 func requireCloudflaredRuntimePlatform(t *testing.T) {

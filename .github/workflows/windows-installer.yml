@@ -48,6 +48,7 @@ jobs:
             scripts/install \
             ':(glob)scripts/test/*windows*.ps1' \
             packaging/windows \
+            packaging/components \
             packaging/build-core-skill-bundle.py \
             desktop/windows \
             cmd/agentdock \
@@ -61,11 +62,13 @@ jobs:
             internal/envstore \
             internal/fs/securepath \
             internal/installer \
+            internal/component \
             internal/selfupdate \
             internal/updateengine \
             internal/updateplatform \
             internal/wslfilehelper \
             scripts/test/testdata/fake-cloudflared \
+            tools/release \
             go.mod \
             go.sum \
             .github/workflows/windows-installer.yml \
@@ -169,7 +172,7 @@ jobs:
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
             -r win-x64 `
-            --self-contained true `
+            --self-contained false `
             -o $controlPanelOutput
           Copy-Item (Join-Path $controlPanelOutput 'agentdock-tray.exe') (Join-Path $distRoot 'agentdock-tray.exe') -Force
           Copy-Item .\packaging\windows\assets\agentdock.ico (Join-Path $distRoot 'agentdock.ico') -Force
@@ -239,7 +242,7 @@ jobs:
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
             -r win-x64 `
-            --self-contained true `
+            --self-contained false `
             -o dist\control-panel
           Copy-Item .\dist\control-panel\agentdock-tray.exe .\dist\agentdock-tray.exe -Force
           & .\packaging\windows\build-wsl-helper-payload.ps1 -OutputDirectory .\dist\wsl-helper
@@ -313,9 +316,14 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $ProgressPreference = 'SilentlyContinue'
-          $version = (go run ./tools/release component-version).Trim()
+          $metadata = Get-Content -LiteralPath '.\packaging\components\cloudflared.json' -Raw | ConvertFrom-Json
+          $artifact = @($metadata.artifacts | Where-Object { $_.os -eq 'windows' -and $_.arch -eq 'amd64' })[0]
+          if (-not $artifact -or [string] $artifact.format -ne 'binary') {
+            throw 'Pinned cloudflared metadata does not contain Windows amd64 binary.'
+          }
+          $cloudflaredUrl = [string] $artifact.url
+          $expectedDigest = ([string] $artifact.sha256).ToLowerInvariant()
           $cloudflaredPath = Join-Path $env:RUNNER_TEMP 'cloudflared-windows-amd64.exe'
-          $cloudflaredUrl = "https://github.com/cloudflare/cloudflared/releases/download/$version/cloudflared-windows-amd64.exe"
           for ($attempt = 1; $attempt -le 5; $attempt++) {
             try {
               Invoke-WebRequest -UseBasicParsing -Uri $cloudflaredUrl -OutFile $cloudflaredPath
@@ -325,6 +333,10 @@ jobs:
               Start-Sleep -Seconds 2
             }
           }
+          $actualDigest = (Get-FileHash -LiteralPath $cloudflaredPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualDigest -ne $expectedDigest) {
+            throw "cloudflared pinned SHA-256 mismatch: got $actualDigest, want $expectedDigest"
+          }
           $cloudflaredSignature = Get-AuthenticodeSignature -LiteralPath $cloudflaredPath
           if ($cloudflaredSignature.Status -ne [Management.Automation.SignatureStatus]::Valid) {
             throw "cloudflared Authenticode signature is invalid: $($cloudflaredSignature.StatusMessage)"
@@ -332,7 +344,8 @@ jobs:
           & .\scripts\test\test-windows-cloudflared-component.ps1 `
             -AgentDockBinary .\dist\agentdock.exe `
             -SignedCloudflaredBinary $cloudflaredPath `
-            -ArtifactUrl $cloudflaredUrl
+            -ArtifactUrl $cloudflaredUrl `
+            -ExpectedDigest $expectedDigest
 
       - name: Test Quick Tunnel restart lifecycle
         shell: powershell
@@ -441,7 +454,7 @@ jobs:
           if (-not [string]::IsNullOrWhiteSpace($testTag)) {
             $parameters.SignedBuild = $true
           }
-          & .\packaging\windows\build-windows-offline-setup.ps1 @parameters
+          & .\packaging\windows\build-windows-setup.ps1 @parameters
 
       - name: Run Setup install and uninstall E2E
         shell: powershell
@@ -508,7 +521,7 @@ jobs:
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
             -r win-arm64 `
-            --self-contained true `
+            --self-contained false `
             -o $arm64ControlPanelOutput
           Copy-Item (Join-Path $arm64ControlPanelOutput 'agentdock-tray.exe') (Join-Path $arm64Dir 'agentdock-tray.exe') -Force
           .\packaging\windows\sign-windows.ps1 -Path @(
@@ -525,7 +538,7 @@ jobs:
           New-WindowsAsset -Architecture 'arm64' -SourceDirectory $arm64Dir
 
           $arm64Archive = Join-Path $releaseDir 'agentdock_windows_arm64.zip'
-          & .\packaging\windows\build-windows-offline-setup.ps1 `
+          & .\packaging\windows\build-windows-setup.ps1 `
             -Version ($env:TEST_TAG.TrimStart('v')) `
             -Architecture arm64 `
             -AgentDockArchive $arm64Archive `

@@ -90,12 +90,27 @@ func prepareMirrorComponentCatalog(baseURL, distDir string) error {
 		return errors.New("mirror component catalog schema/components 无效")
 	}
 	for componentIndex := range catalog.Components {
-		for artifactIndex := range catalog.Components[componentIndex].Artifacts {
-			artifact := &catalog.Components[componentIndex].Artifacts[artifactIndex]
+		entry := &catalog.Components[componentIndex]
+		for artifactIndex := range entry.Artifacts {
+			artifact := &entry.Artifacts[artifactIndex]
 			parsed, err := url.Parse(strings.TrimSpace(artifact.URL))
 			if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
 				return fmt.Errorf("mirror component artifact URL 无效：%q", artifact.URL)
 			}
+
+			if entry.Component == component.CloudflaredName {
+				// cloudflared 是第三方 upstream dependency。R2 只镜像 AgentDock 自有发布物，
+				// 绝不能把 catalog 中固定的 Cloudflare URL 重写成我们的地址。
+				if parsed.Host != "github.com" ||
+					!strings.HasPrefix(parsed.Path, "/cloudflare/cloudflared/releases/download/"+entry.Version+"/") ||
+					parsed.RawQuery != "" || parsed.Fragment != "" {
+					return fmt.Errorf("mirror cloudflared artifact 必须保持 Cloudflare 固定版本官方 URL：%q", artifact.URL)
+				}
+				continue
+			}
+
+			// 未来真正需要独立分发的第一方 component 仍可沿用同一 mirror 机制；
+			// 当前不为单一 cloudflared 建新的通用组件框架。
 			name := filepath.Base(parsed.Path)
 			if name == "." || name == "/" || name == "" {
 				return fmt.Errorf("mirror component artifact 文件名无效：%q", artifact.URL)

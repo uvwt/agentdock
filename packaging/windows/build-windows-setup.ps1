@@ -88,7 +88,7 @@ $iscc = Resolve-InnoSetupCompiler
 
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
-$payloadRoot = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-offline-payload-' + [Guid]::NewGuid().ToString('N'))
+$payloadRoot = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-setup-payload-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $payloadRoot -Force | Out-Null
 
 try {
@@ -99,7 +99,7 @@ try {
     $arguments = @(
         "/DAppVersion=$Version",
         "/DOutputDir=$outputRoot",
-        "/DOfflinePayloadDir=$payloadRoot"
+        "/DPayloadDir=$payloadRoot"
     )
     if ($Architecture -eq 'arm64') {
         $arguments += '/DWindowsARM64=1'
@@ -107,7 +107,7 @@ try {
     if ($SignedBuild) {
         if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_BASE64) -or
             [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_PASSWORD)) {
-            throw 'Windows signing secrets are required for a signed offline Setup.'
+            throw 'Windows signing secrets are required for a signed Setup.'
         }
         $signScript = Join-Path $PSScriptRoot 'sign-windows.ps1'
         $signCommand = "pwsh.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `$q$signScript`$q -Path `$q`$f`$q"
@@ -123,20 +123,20 @@ try {
 
     $setupPath = Join-Path $outputRoot "AgentDockSetup-$Architecture.exe"
     if (-not (Test-Path -LiteralPath $setupPath -PathType Leaf)) {
-        throw "Offline Setup was not produced: $setupPath"
+        throw "Windows Setup was not produced: $setupPath"
     }
     if ($SignedBuild) {
         & (Join-Path $PSScriptRoot 'sign-windows.ps1') -Path $setupPath -VerifyOnly
     }
 
-    # Offline Setup 只封装 AgentDock 本体。cloudflared 是运行时按需安装的 optional
+    # Windows Setup 只封装 AgentDock 本体。cloudflared 是运行时按需安装的 optional
     # component，不能再用安装包体积间接要求它存在。
     $minimumExpectedSize = [Math]::Max(1MB, [int64] ((Get-Item -LiteralPath $archivePath).Length * 0.6))
     if ((Get-Item -LiteralPath $setupPath).Length -lt $minimumExpectedSize) {
-        throw 'Offline Setup is unexpectedly small and may not contain the AgentDock payload.'
+        throw 'Windows Setup is unexpectedly small and may not contain the AgentDock payload.'
     }
 
-    Write-Host "Offline Windows Setup created: $setupPath"
+    Write-Host "Windows Setup created: $setupPath"
     Write-Output $setupPath
 } finally {
     Remove-Item -LiteralPath $payloadRoot -Recurse -Force -ErrorAction SilentlyContinue

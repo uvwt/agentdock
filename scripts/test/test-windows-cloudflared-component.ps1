@@ -5,7 +5,10 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $SignedCloudflaredBinary,
     [Parameter(Mandatory = $true)]
-    [string] $ArtifactUrl
+    [string] $ArtifactUrl,
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^[0-9a-fA-F]{64}$')]
+    [string] $ExpectedDigest
 )
 
 Set-StrictMode -Version Latest
@@ -31,6 +34,10 @@ if ($parts.Count -lt 3 -or $parts[0] -ne 'cloudflared' -or $parts[1] -ne 'versio
 }
 $version = $parts[2]
 $digest = (Get-FileHash -LiteralPath $cloudflared -Algorithm SHA256).Hash.ToLowerInvariant()
+$expectedDigestNormalized = $ExpectedDigest.ToLowerInvariant()
+if ($digest -ne $expectedDigestNormalized) {
+    throw "cloudflared fixture digest mismatch: got $digest, want $expectedDigestNormalized"
+}
 
 function Invoke-AgentDockJson {
     param([Parameter(Mandatory = $true)][string[]] $Arguments)
@@ -69,8 +76,9 @@ $catalog = @{
                 @{
                     os = 'windows'
                     arch = 'amd64'
+                    format = 'binary'
                     url = $ArtifactUrl
-                    sha256 = $digest
+                    sha256 = $expectedDigestNormalized
                 }
             )
         }

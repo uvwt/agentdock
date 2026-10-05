@@ -1,6 +1,9 @@
 package component
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -32,6 +35,10 @@ const (
 var (
 	ErrNotInstalled = errors.New("cloudflared component is not installed")
 	ErrBroken       = errors.New("cloudflared component is broken")
+
+	// 测试只替换这一层，以便用最小 fake binary 覆盖原子提交/repair；
+	// 生产默认始终执行平台真实 trust verifier。
+	platformTrustVerifier = verifyPlatformTrust
 )
 
 type Status struct {
@@ -75,6 +82,7 @@ type CatalogComponent struct {
 type CatalogArtifact struct {
 	OS     string `json:"os"`
 	Arch   string `json:"arch"`
+	Format string `json:"format"`
 	URL    string `json:"url"`
 	SHA256 string `json:"sha256"`
 }
@@ -158,7 +166,7 @@ func (store *Store) ImportLegacy(ctx context.Context, source string) (Status, er
 	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 		return Status{}, errors.New("legacy cloudflared must be a regular non-symlink file")
 	}
-	if err := verifyPlatformTrust(ctx, source, true); err != nil {
+	if err := platformTrustVerifier(ctx, source, true); err != nil {
 		return Status{}, err
 	}
 	version, err := readCloudflaredVersion(ctx, source)
@@ -257,7 +265,9 @@ func (store *Store) installCatalogVersion(ctx context.Context, options InstallOp
 	if err != nil {
 		return Status{}, err
 	}
-	if current := store.Status(); current.Ready && current.Version == entry.Version && strings.EqualFold(current.SHA256, artifact.SHA256) {
+	// catalog SHA-256 描述 upstream 下载物；active.json SHA-256 描述最终安装 binary。
+	// macOS 上游是 tgz，所以相同版本健康时不能再把两个 digest 当成同一个值比较。
+	if current := store.Status(); current.Ready && current.Version == entry.Version {
 		return current, nil
 	}
 	report(options.Progress, ProgressEvent{Type: "stage", Stage: "downloading"})
@@ -273,7 +283,7 @@ func (store *Store) installCatalogVersion(ctx context.Context, options InstallOp
 	if !strings.EqualFold(actualHex, artifact.SHA256) {
 		return Status{}, fmt.Errorf("cloudflared SHA-256 mismatch: got %s, want %s", actualHex, artifact.SHA256)
 	}
-	if err := store.installBytes(ctx, data, entry.Version, actualHex); err != nil {
+	if err := store.installArtifact(ctx, data, entry.Version, artifact.Format); err != nil {
 		return Status{}, err
 	}
 	status := store.Status()
@@ -284,7 +294,7 @@ func (store *Store) installCatalogVersion(ctx context.Context, options InstallOp
 	return status, nil
 }
 
-func (store *Store) installBytes(ctx context.Context, data []byte, version, digest string) error {
+func (store *Store) installArtifact(ctx context.Context, data []byte, version, format string) error {
 	if err := validateVersion(version); err != nil {
 		return err
 	}
@@ -296,14 +306,97 @@ func (store *Store) installBytes(ctx context.Context, data []byte, version, dige
 		return err
 	}
 	defer os.RemoveAll(staging)
+
 	staged := filepath.Join(staging, binaryFilename(runtime.GOOS))
-	if err := os.WriteFile(staged, data, 0o700); err != nil {
+	switch format {
+	case "binary":
+		if err := os.WriteFile(staged, data, 0o700); err != nil {
+			return err
+		}
+		if err := os.Chmod(staged, 0o700); err != nil {
+			return err
+		}
+	case "tgz":
+		if runtime.GOOS != "darwin" {
+			return fmt.Errorf("cloudflared tgz artifact is unsupported on %s", runtime.GOOS)
+		}
+		if err := extractCloudflaredTGZ(data, staged); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported cloudflared artifact format %q", format)
+	}
+
+	// active.json 只记录最终落盘 binary 的 digest；下载 archive 的 digest 已在解包前校验。
+	binaryDigest, err := fileSHA256(staged)
+	if err != nil {
 		return err
 	}
-	if err := os.Chmod(staged, 0o700); err != nil {
-		return err
+	return store.commitStaged(ctx, staged, version, binaryDigest)
+}
+
+func extractCloudflaredTGZ(data []byte, target string) error {
+	gzipReader, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("open cloudflared tgz: %w", err)
 	}
-	return store.commitStaged(ctx, staged, version, digest)
+	defer gzipReader.Close()
+
+	tarReader := tar.NewReader(gzipReader)
+	found := false
+	for {
+		header, err := tarReader.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read cloudflared tgz: %w", err)
+		}
+
+		name := strings.TrimSpace(header.Name)
+		// 官方 tgz 契约只有根目录下单个 cloudflared 普通文件。即便最终写入目标路径由我们控制，
+		// 也拒绝任何需要 path clean 才能变成 cloudflared 的名称，避免接受 traversal 语义。
+		if name != "cloudflared" {
+			return fmt.Errorf("cloudflared tgz contains unexpected or unsafe entry %q", header.Name)
+		}
+		if found {
+			return errors.New("cloudflared tgz contains duplicate cloudflared entries")
+		}
+		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
+			return fmt.Errorf("cloudflared tgz entry must be a regular file, got type %d", header.Typeflag)
+		}
+		if header.Size < 0 || header.Size > maxBinaryBytes {
+			return errors.New("cloudflared tgz binary is unexpectedly large")
+		}
+
+		output, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o700)
+		if err != nil {
+			return err
+		}
+		written, copyErr := io.Copy(output, io.LimitReader(tarReader, maxBinaryBytes+1))
+		syncErr := output.Sync()
+		closeErr := output.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if written != header.Size || written > maxBinaryBytes {
+			return errors.New("cloudflared tgz binary size is invalid")
+		}
+		if syncErr != nil {
+			return syncErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		if err := os.Chmod(target, 0o700); err != nil {
+			return err
+		}
+		found = true
+	}
+	if !found {
+		return errors.New("cloudflared tgz does not contain cloudflared")
+	}
+	return nil
 }
 
 func (store *Store) installFromFile(ctx context.Context, source, version, digest string) error {
@@ -334,7 +427,7 @@ func (store *Store) commitStaged(ctx context.Context, staged, version, digest st
 	} else if !strings.EqualFold(got, digest) {
 		return errors.New("staged cloudflared digest changed before commit")
 	}
-	if err := verifyPlatformTrust(ctx, staged, false); err != nil {
+	if err := platformTrustVerifier(ctx, staged, false); err != nil {
 		return err
 	}
 	actualVersion, err := readCloudflaredVersion(ctx, staged)
@@ -577,15 +670,49 @@ func selectCloudflaredArtifact(data []byte, goos, goarch string) (CatalogCompone
 			if err := validateSHA256(artifact.SHA256); err != nil {
 				return CatalogComponent{}, CatalogArtifact{}, err
 			}
-			parsed, err := url.Parse(strings.TrimSpace(artifact.URL))
-			if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
-				return CatalogComponent{}, CatalogArtifact{}, errors.New("component catalog artifact URL must use HTTPS")
+			if err := validateCloudflaredUpstreamArtifact(entry, artifact); err != nil {
+				return CatalogComponent{}, CatalogArtifact{}, err
 			}
 			return entry, artifact, nil
 		}
 		return CatalogComponent{}, CatalogArtifact{}, fmt.Errorf("component catalog has no cloudflared artifact for %s/%s", goos, goarch)
 	}
 	return CatalogComponent{}, CatalogArtifact{}, errors.New("component catalog does not contain cloudflared")
+}
+
+func validateCloudflaredUpstreamArtifact(entry CatalogComponent, artifact CatalogArtifact) error {
+	if entry.UpstreamVersion != entry.Version {
+		return errors.New("cloudflared catalog upstream version must match component version")
+	}
+	expectedSource := "https://github.com/cloudflare/cloudflared/releases/tag/" + entry.Version
+	if strings.TrimSpace(entry.UpstreamSource) != expectedSource {
+		return errors.New("cloudflared catalog upstream source is not the pinned Cloudflare release")
+	}
+
+	expectedFormat := "binary"
+	expectedName := ""
+	switch {
+	case artifact.OS == "windows" && artifact.Arch == "amd64":
+		expectedName = "cloudflared-windows-amd64.exe"
+	case artifact.OS == "darwin" && (artifact.Arch == "amd64" || artifact.Arch == "arm64"):
+		expectedFormat = "tgz"
+		expectedName = "cloudflared-darwin-" + artifact.Arch + ".tgz"
+	default:
+		return fmt.Errorf("unsupported cloudflared artifact platform %s/%s", artifact.OS, artifact.Arch)
+	}
+	if artifact.Format != expectedFormat {
+		return fmt.Errorf("cloudflared artifact %s/%s format is %q, want %q", artifact.OS, artifact.Arch, artifact.Format, expectedFormat)
+	}
+
+	parsed, err := url.Parse(strings.TrimSpace(artifact.URL))
+	if err != nil || parsed.Scheme != "https" || parsed.Host != "github.com" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return errors.New("cloudflared artifact URL must use the pinned Cloudflare GitHub HTTPS release")
+	}
+	expectedPath := "/cloudflare/cloudflared/releases/download/" + entry.Version + "/" + expectedName
+	if parsed.Path != expectedPath {
+		return fmt.Errorf("cloudflared artifact URL is not the pinned official asset: %s", artifact.URL)
+	}
+	return nil
 }
 
 func download(ctx context.Context, client *http.Client, rawURL string, limit int64, progress func(int64, int64)) ([]byte, error) {

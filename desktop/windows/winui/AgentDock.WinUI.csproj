@@ -15,9 +15,9 @@
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
-    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>
     <PublishSingleFile>false</PublishSingleFile>
-    <SelfContained>true</SelfContained>
+    <SelfContained>false</SelfContained>
     <GenerateSatelliteAssembliesForCore>true</GenerateSatelliteAssembliesForCore>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

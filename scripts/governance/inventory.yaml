@@ -188,7 +188,7 @@ scripts:
     legacy_oversize: true
     oversize_justification: macOS App/DMG 构建。签名和 bundle 布局必须用平台工具；版本与 checksum 归 tools/release。
 
-  - path: packaging/windows/build-windows-offline-setup.ps1
+  - path: packaging/windows/build-windows-setup.ps1
     class: packaging
     owner: release
     public_contract: false

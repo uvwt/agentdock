@@ -571,7 +571,7 @@ cloudflared 也不应该作为 GitHub Release 的普通用户附件继续出现�
 - `desktop/windows/winui/AgentDock.WinUI.csproj`
 - `packaging/windows/AgentDock.iss`
 - `packaging/windows/includes/code.iss`
-- `packaging/windows/build-windows-offline-setup.ps1`
+- `packaging/windows/build-windows-setup.ps1`
 - `.github/workflows/windows-installer.yml`
 - `.github/workflows/release.yml`
 

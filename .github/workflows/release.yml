@@ -78,7 +78,7 @@ jobs:
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
             -r win-x64 `
-            --self-contained true `
+            --self-contained false `
             -p:Version='${{ steps.version.outputs.windows }}' `
             -p:FileVersion='${{ steps.version.outputs.windows }}' `
             -p:AssemblyVersion='${{ steps.version.outputs.windows }}' `
@@ -325,8 +325,8 @@ jobs:
             agentdock_darwin_${{ matrix.goarch }}.tar.gz.sha256
           if-no-files-found: error
 
-  build-cloudflared-macos:
-    name: Build cloudflared component macOS ${{ matrix.goarch }}
+  verify-cloudflared-macos:
+    name: Verify upstream cloudflared macOS ${{ matrix.goarch }}
     needs: source
     runs-on: macos-latest
     strategy:
@@ -339,51 +339,50 @@ jobs:
         with:
           ref: ${{ needs.source.outputs.commit }}
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Download pinned upstream component
+      - name: Verify pinned upstream artifact
         shell: bash
         run: |
           set -euo pipefail
-          version="$(go run ./tools/release component-version)"
           architecture='${{ matrix.goarch }}'
+          eval "$(
+            python3 - "$architecture" <<'PY'
+          import json, shlex, sys
+          from pathlib import Path
+          metadata = json.loads(Path("packaging/components/cloudflared.json").read_text())
+          arch = sys.argv[1]
+          items = [a for a in metadata["artifacts"] if a["os"] == "darwin" and a["arch"] == arch]
+          if len(items) != 1 or items[0]["format"] != "tgz":
+              raise SystemExit(f"missing pinned darwin/{arch} tgz artifact")
+          artifact = items[0]
+          print("CLOUDFLARED_VERSION=" + shlex.quote(metadata["version"]))
+          print("CLOUDFLARED_URL=" + shlex.quote(artifact["url"]))
+          print("CLOUDFLARED_SHA256=" + shlex.quote(artifact["sha256"]))
+          PY
+          )"
           archive="$RUNNER_TEMP/cloudflared-darwin-$architecture.tgz"
           extract_dir="$RUNNER_TEMP/cloudflared-$architecture"
-          output="cloudflared_darwin_$architecture"
-          curl -fL --retry 5 --retry-delay 2 \
-            "https://github.com/cloudflare/cloudflared/releases/download/$version/cloudflared-darwin-$architecture.tgz" \
-            -o "$archive"
+          curl -fL --retry 5 --retry-delay 2 "$CLOUDFLARED_URL" -o "$archive"
+          printf '%s  %s\n' "$CLOUDFLARED_SHA256" "$archive" | shasum -a 256 -c -
+
+          # pinned digest 通过后再检查归档结构；只允许根目录下唯一普通文件 cloudflared。
+          entries="$(tar -tzf "$archive")"
+          test "$entries" = "cloudflared"
           mkdir -p "$extract_dir"
           tar -xzf "$archive" -C "$extract_dir"
-          test -f "$extract_dir/cloudflared"
-          test ! -L "$extract_dir/cloudflared"
-          install -m 0755 "$extract_dir/cloudflared" "$output"
+          binary="$extract_dir/cloudflared"
+          test -f "$binary"
+          test ! -L "$binary"
           case "$architecture" in
             arm64) expected='arm64' ;;
             amd64) expected='x86_64' ;;
           esac
-          file_output="$(file "$output")"
-          [[ "$file_output" == *"$expected"* ]]
-          codesign --verify --deep --strict --verbose=2 "$output"
-          component_version="$("./$output" --version | awk 'NR==1 {print $3}')"
-          test "$component_version" = "$version"
-          shasum -a 256 "$output" > "$output.sha256"
+          [[ "$(file "$binary")" == *"$expected"* ]]
+          codesign --verify --strict --verbose=2 "$binary"
+          component_version="$("$binary" --version | awk 'NR==1 {print $3}')"
+          test "$component_version" = "$CLOUDFLARED_VERSION"
 
-      - name: Upload cloudflared component
-        uses: actions/upload-artifact@v4
-        with:
-          name: agentdock-cloudflared-macos-${{ matrix.goarch }}
-          path: |
-            cloudflared_darwin_${{ matrix.goarch }}
-            cloudflared_darwin_${{ matrix.goarch }}.sha256
-          if-no-files-found: error
-
-  build-cloudflared-windows:
-    name: Build cloudflared component Windows amd64
+  verify-cloudflared-windows:
+    name: Verify upstream cloudflared Windows amd64
     needs: source
     runs-on: windows-latest
     steps:
@@ -392,40 +391,31 @@ jobs:
         with:
           ref: ${{ needs.source.outputs.commit }}
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Download pinned upstream component
+      - name: Verify pinned upstream artifact
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $ProgressPreference = 'SilentlyContinue'
-          $version = (go run ./tools/release component-version).Trim()
-          $output = Join-Path $PWD 'cloudflared_windows_amd64.exe'
-          $uri = "https://github.com/cloudflare/cloudflared/releases/download/$version/cloudflared-windows-amd64.exe"
-          Invoke-WebRequest -UseBasicParsing -Uri $uri -OutFile $output
+          $metadata = Get-Content -LiteralPath '.\packaging\components\cloudflared.json' -Raw | ConvertFrom-Json
+          $artifact = @($metadata.artifacts | Where-Object { $_.os -eq 'windows' -and $_.arch -eq 'amd64' })[0]
+          if (-not $artifact -or [string] $artifact.format -ne 'binary') {
+            throw 'Pinned metadata does not contain Windows amd64 cloudflared binary.'
+          }
+          $output = Join-Path $env:RUNNER_TEMP 'cloudflared-windows-amd64.exe'
+          Invoke-WebRequest -UseBasicParsing -Uri ([string] $artifact.url) -OutFile $output
+          $actualDigest = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expectedDigest = ([string] $artifact.sha256).ToLowerInvariant()
+          if ($actualDigest -ne $expectedDigest) {
+            throw "cloudflared pinned SHA-256 mismatch: got $actualDigest, want $expectedDigest"
+          }
           $signature = Get-AuthenticodeSignature -LiteralPath $output
           if ($signature.Status -ne [Management.Automation.SignatureStatus]::Valid) {
             throw "cloudflared Authenticode signature is invalid: $($signature.StatusMessage)"
           }
           $versionOutput = & $output --version
-          if (($versionOutput -split '\s+')[2] -ne $version) {
+          if (($versionOutput -split '\s+')[2] -ne [string] $metadata.version) {
             throw "cloudflared version mismatch: $versionOutput"
           }
-          $hash = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToLowerInvariant()
-          [IO.File]::WriteAllText("$output.sha256", "$hash  cloudflared_windows_amd64.exe`n", [Text.UTF8Encoding]::new($false))
-
-      - name: Upload cloudflared component
-        uses: actions/upload-artifact@v4
-        with:
-          name: agentdock-cloudflared-windows-amd64
-          path: |
-            cloudflared_windows_amd64.exe
-            cloudflared_windows_amd64.exe.sha256
-          if-no-files-found: error
 
   build-macos-app:
     name: Build macOS offline DMG
@@ -534,7 +524,7 @@ jobs:
           dotnet publish .\desktop\windows\winui\AgentDock.WinUI.csproj `
             -c Release `
             -r $runtimeIdentifier `
-            --self-contained true `
+            --self-contained false `
             -p:Version=$windowsVersion `
             -p:FileVersion=$windowsVersion `
             -p:AssemblyVersion=$windowsVersion `
@@ -595,7 +585,7 @@ jobs:
           if-no-files-found: error
 
   build-windows-setup:
-    name: Build signed Windows offline Setup ${{ matrix.goarch }}
+    name: Build signed Windows Setup ${{ matrix.goarch }}
     needs: [source, build-windows]
     runs-on: windows-latest
     strategy:
@@ -627,7 +617,7 @@ jobs:
             throw 'WINDOWS_SIGNING_CERT_PASSWORD is required for a formal release.'
           }
 
-      - name: Build and sign offline Setup
+      - name: Build and sign Windows Setup
         shell: pwsh
         env:
           WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
@@ -637,7 +627,7 @@ jobs:
           $tag = '${{ github.event.inputs.tag || github.ref_name }}'
           $version = $tag.TrimStart('v')
           $outputDir = Join-Path $PWD 'dist'
-          & .\packaging\windows\build-windows-offline-setup.ps1 `
+          & .\packaging\windows\build-windows-setup.ps1 `
             -Version $version `
             -Architecture '${{ matrix.goarch }}' `
             -AgentDockArchive '.\payload\agentdock_windows_${{ matrix.goarch }}.zip' `
@@ -654,7 +644,7 @@ jobs:
 
   prepare-release:
     name: Prepare release candidate
-    needs: [source, build-linux, build-macos, build-macos-app, build-windows, build-windows-setup, build-cloudflared-macos, build-cloudflared-windows]
+    needs: [source, build-linux, build-macos, build-macos-app, build-windows, build-windows-setup, verify-cloudflared-macos, verify-cloudflared-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -684,7 +674,7 @@ jobs:
           cp scripts/install/install.sh dist/install.sh
           cp scripts/install/install.ps1 dist/install.ps1
           go run ./tools/release verify-version "$RELEASE_TAG"
-          go run ./tools/release component-catalog "$RELEASE_TAG" "$RELEASE_REPOSITORY" dist > dist/agentdock-component-catalog.json
+          go run ./tools/release component-catalog > dist/agentdock-component-catalog.json
           python3 - <<'PY'
           import os
           import re
@@ -890,20 +880,34 @@ jobs:
             shasum -a 256 -c AgentDock-macos-universal.dmg.sha256
             shasum -a 256 -c AgentDock-macos-universal.zip.sha256
             shasum -a 256 -c install.sh.sha256
-            shasum -a 256 -c cloudflared_darwin_amd64.sha256
-            shasum -a 256 -c cloudflared_darwin_arm64.sha256
             shasum -a 256 -c agentdock-component-catalog.json.sha256
           )
           python3 - <<'PY'
           import json, os
           from pathlib import Path
+          from urllib.parse import urlparse
           catalog = json.loads(Path(os.environ["STAGED_RELEASE_DIR"]).joinpath("agentdock-component-catalog.json").read_text())
           component = catalog["components"][0]
+          version = component["version"]
           assert component["component"] == "cloudflared"
-          assert component["version"] == component["upstream_version"]
-          assert component["upstream_source"].endswith("/" + component["version"])
-          pairs = {(a["os"], a["arch"]) for a in component["artifacts"]}
-          assert {("darwin", "amd64"), ("darwin", "arm64"), ("windows", "amd64")} <= pairs
+          assert version == component["upstream_version"]
+          assert component["upstream_source"] == f"https://github.com/cloudflare/cloudflared/releases/tag/{version}"
+          expected = {
+              ("darwin", "amd64"): ("tgz", "cloudflared-darwin-amd64.tgz"),
+              ("darwin", "arm64"): ("tgz", "cloudflared-darwin-arm64.tgz"),
+              ("windows", "amd64"): ("binary", "cloudflared-windows-amd64.exe"),
+          }
+          assert len(component["artifacts"]) == len(expected)
+          for artifact in component["artifacts"]:
+              key = (artifact["os"], artifact["arch"])
+              assert key in expected
+              fmt, name = expected[key]
+              assert artifact["format"] == fmt
+              assert len(artifact["sha256"]) == 64
+              parsed = urlparse(artifact["url"])
+              assert parsed.scheme == "https" and parsed.netloc == "github.com"
+              assert parsed.query == "" and parsed.fragment == ""
+              assert parsed.path == f"/cloudflare/cloudflared/releases/download/{version}/{name}"
           PY
 
           mkdir -p "$zip_dir"
@@ -1000,9 +1004,8 @@ jobs:
           $installer = Join-Path $releaseRoot 'install.ps1'
           $setup = Join-Path $releaseRoot 'AgentDockSetup-amd64.exe'
           $legacyArchive = Join-Path $releaseRoot 'agentdock_windows_amd64.zip'
-          $component = Join-Path $releaseRoot 'cloudflared_windows_amd64.exe'
           $componentCatalog = Join-Path $releaseRoot 'agentdock-component-catalog.json'
-          foreach ($path in @($installer, $setup, $legacyArchive, $component, $componentCatalog)) {
+          foreach ($path in @($installer, $setup, $legacyArchive, $componentCatalog)) {
             if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
               throw "Staged release asset is missing: $path"
             }
@@ -1021,7 +1024,6 @@ jobs:
             'install.ps1',
             'AgentDockSetup-amd64.exe',
             'agentdock_windows_amd64.zip',
-            'cloudflared_windows_amd64.exe',
             'agentdock-component-catalog.json'
           )) {
             $assetPath = Join-Path $releaseRoot $asset
@@ -1034,19 +1036,21 @@ jobs:
           }
 
           $catalog = Get-Content -LiteralPath $componentCatalog -Raw | ConvertFrom-Json
+          $pinned = Get-Content -LiteralPath '.\packaging\components\cloudflared.json' -Raw | ConvertFrom-Json
           $entry = @($catalog.components | Where-Object { $_.component -eq 'cloudflared' })[0]
-          if (-not $entry) {
-            throw 'Staged component catalog does not contain cloudflared.'
+          if (-not $entry -or [string] $entry.version -ne [string] $pinned.version -or
+              [string] $entry.upstream_source -ne [string] $pinned.upstream_source) {
+            throw 'Staged component catalog cloudflared provenance does not match pinned metadata.'
           }
           $artifact = @($entry.artifacts | Where-Object { $_.os -eq 'windows' -and $_.arch -eq 'amd64' })[0]
-          if (-not $artifact) {
-            throw 'Staged component catalog does not contain Windows amd64 cloudflared.'
+          $expectedArtifact = @($pinned.artifacts | Where-Object { $_.os -eq 'windows' -and $_.arch -eq 'amd64' })[0]
+          if (-not $artifact -or -not $expectedArtifact -or
+              [string] $artifact.format -ne 'binary' -or
+              [string] $artifact.url -ne [string] $expectedArtifact.url -or
+              ([string] $artifact.sha256).ToLowerInvariant() -ne ([string] $expectedArtifact.sha256).ToLowerInvariant()) {
+            throw 'Staged component catalog Windows artifact does not match pinned official upstream metadata.'
           }
-          $componentDigest = (Get-FileHash -LiteralPath $component -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ([string] $artifact.sha256 -ne $componentDigest) {
-            throw 'Staged component catalog SHA-256 does not match cloudflared_windows_amd64.exe.'
-          }
-          if (-not ([string] $artifact.url).EndsWith('/cloudflared_windows_amd64.exe')) {
+          if ([string] $artifact.url -notlike "https://github.com/cloudflare/cloudflared/releases/download/$($pinned.version)/*") {
             throw "Unexpected staged Windows component URL: $($artifact.url)"
           }
 
@@ -1063,7 +1067,6 @@ jobs:
           "STAGED_RELEASE_ROOT=$releaseRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
           "STAGED_INSTALLER=$installer" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
           "STAGED_SETUP=$setup" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
-          "STAGED_CLOUDFLARED=$component" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
           "LEGACY_CORE_PATH=$legacyCore" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
           "LEGACY_TRAY_PATH=$legacyTray" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
           "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii -Append
@@ -1075,10 +1078,6 @@ jobs:
           WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
         run: |
           .\packaging\windows\sign-windows.ps1 -Path $env:STAGED_SETUP -VerifyOnly
-          $signature = Get-AuthenticodeSignature -LiteralPath $env:STAGED_CLOUDFLARED
-          if ($signature.Status -ne [Management.Automation.SignatureStatus]::Valid) {
-            throw "Staged cloudflared Authenticode signature is invalid: $($signature.StatusMessage)"
-          }
 
       - name: Install and uninstall staged Setup
         shell: powershell
@@ -1196,7 +1195,6 @@ jobs:
             dist/*.ps1.sha256
             dist/*.exe
             dist/*.exe.sha256
-            dist/cloudflared_darwin_*
             dist/agentdock-component-catalog.json
             dist/agentdock-component-catalog.json.sha256
           generate_release_notes: true

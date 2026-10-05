@@ -316,12 +316,19 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   PowerShellPath: String;
   InstallScriptPath: String;
+  RuntimeScriptPath: String;
+  RuntimeMetadataPath: String;
+  RuntimeResultFilePath: String;
   OfflineArchivePath: String;
   OfflineChecksumPath: String;
+  RuntimeParameters: String;
+  RuntimeDependency: String;
+  RuntimeMessage: String;
   Parameters: String;
   TunnelMode: String;
   PrivilegeMode: String;
   ExitCode: Integer;
+  RuntimeExitCode: Integer;
   ErrorCode: String;
   ErrorMessage: String;
   ErrorType: String;
@@ -336,18 +343,50 @@ begin
   InstallProgressPage.Show;
   try
     InstallProgressPage.SetText(GetLocalizedMessage('OfflineProgressPreparing'), '');
-    InstallProgressPage.SetProgress(1, 4);
+    InstallProgressPage.SetProgress(1, 5);
     ExtractTemporaryFile('install.ps1');
     ExtractTemporaryFile('launch-windows-process.ps1');
+    ExtractTemporaryFile('ensure-windows-runtimes.ps1');
+    ExtractTemporaryFile('runtime-dependencies.json');
     ExtractTemporaryFile('agentdock_windows_{#PayloadArchitecture}.zip');
     ExtractTemporaryFile('agentdock_windows_{#PayloadArchitecture}.zip.sha256');
 
     PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
     InstallScriptPath := ExpandConstant('{tmp}\install.ps1');
+    RuntimeScriptPath := ExpandConstant('{tmp}\ensure-windows-runtimes.ps1');
+    RuntimeMetadataPath := ExpandConstant('{tmp}\runtime-dependencies.json');
+    RuntimeResultFilePath := ExpandConstant('{tmp}\agentdock-runtime-result.ini');
     OfflineArchivePath := ExpandConstant('{tmp}\agentdock_windows_{#PayloadArchitecture}.zip');
     OfflineChecksumPath := ExpandConstant('{tmp}\agentdock_windows_{#PayloadArchitecture}.zip.sha256');
     ResultFilePath := ExpandConstant('{tmp}\agentdock-install-result.ini');
+    DeleteFile(RuntimeResultFilePath);
     DeleteFile(ResultFilePath);
+
+    { Runtime 属于系统共享依赖，必须在 generation 激活前满足。失败时直接终止 Setup，
+      不让 install.ps1 创建或切换半完成的 AgentDock generation。 }
+    InstallProgressPage.SetText(GetLocalizedMessage('RuntimeProgressChecking'), '');
+    InstallProgressPage.SetProgress(2, 5);
+    RuntimeParameters :=
+      '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + QuoteArgument(RuntimeScriptPath) +
+      ' -Architecture {#PayloadArchitecture}' +
+      ' -MetadataPath ' + QuoteArgument(RuntimeMetadataPath) +
+      ' -ResultFile ' + QuoteArgument(RuntimeResultFilePath);
+    if not Exec(PowerShellPath, RuntimeParameters, '', SW_HIDE, ewWaitUntilTerminated, RuntimeExitCode) then
+    begin
+      Result := GetLocalizedMessage('RuntimeInstallFailed') + ' prerequisite process could not start.';
+      Exit;
+    end;
+    if RuntimeExitCode <> 0 then
+    begin
+      RuntimeDependency := GetIniString('AgentDockRuntime', 'Dependency', '', RuntimeResultFilePath);
+      RuntimeMessage := GetIniString('AgentDockRuntime', 'Message', '', RuntimeResultFilePath);
+      if RuntimeMessage = '' then
+        RuntimeMessage := 'exit code ' + IntToStr(RuntimeExitCode);
+      if RuntimeDependency <> '' then
+        RuntimeMessage := RuntimeDependency + ': ' + RuntimeMessage;
+      Result := GetLocalizedMessage('RuntimeInstallFailed') + ' ' + RuntimeMessage;
+      Exit;
+    end;
     { MODE/SERVERURL/TUNNELTOKENFILE 仅保留给历史 silent automation。交互式 Setup
       不再提供 Cloudflare 配置页，空 MODE 会让基础安装完全绕开 component lifecycle。 }
     TunnelMode := Lowercase(Trim(ExpandConstant('{param:MODE|}')));
@@ -360,7 +399,7 @@ begin
     else
       PrivilegeMode := 'standard';
 
-    InstallProgressPage.SetProgress(2, 4);
+    InstallProgressPage.SetProgress(3, 5);
     Parameters :=
       '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + QuoteArgument(InstallScriptPath) +
       ' -Version ' + QuoteArgument('{#AppVersion}') +
@@ -390,7 +429,7 @@ begin
     end;
 
     InstallProgressPage.SetText(GetLocalizedMessage('OfflineProgressApplying'), '');
-    InstallProgressPage.SetProgress(3, 4);
+    InstallProgressPage.SetProgress(4, 5);
     if not Exec(PowerShellPath, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ExitCode) then
     begin
       Result := GetLocalizedMessage('InstallerStartFailed');
@@ -431,7 +470,7 @@ begin
     if InstallWarningMessage <> '' then
       Log('AgentDock installation warning detail: ' + InstallWarningMessage);
     InstallProgressPage.SetText(GetLocalizedMessage('OfflineProgressFinishing'), '');
-    InstallProgressPage.SetProgress(4, 4);
+    InstallProgressPage.SetProgress(5, 5);
   finally
     InstallProgressPage.Hide;
   end;

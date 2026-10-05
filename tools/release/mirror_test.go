@@ -70,7 +70,7 @@ func TestMirrorManifestRejectsUnsafeInputs(t *testing.T) {
 	}
 }
 
-func TestPrepareMirrorBootstrapUsesR2ReleaseBaseAndRefreshesChecksum(t *testing.T) {
+func TestPrepareMirrorBootstrapKeepsThirdPartyURLAndRefreshesChecksums(t *testing.T) {
 	dir := t.TempDir()
 	installPath := filepath.Join(dir, "install.sh")
 	content := "#!/bin/sh\nDEFAULT_BASE_URL=\"https://github.com/uvwt/agentdock/releases/download/v1.2.3\"\necho ok\n"
@@ -78,10 +78,6 @@ func TestPrepareMirrorBootstrapUsesR2ReleaseBaseAndRefreshesChecksum(t *testing.
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "install.sh.sha256"), []byte("stale\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	componentAsset := filepath.Join(dir, "cloudflared_darwin_amd64")
-	if err := os.WriteFile(componentAsset, []byte("component"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	componentCatalog := `{
@@ -94,7 +90,8 @@ func TestPrepareMirrorBootstrapUsesR2ReleaseBaseAndRefreshesChecksum(t *testing.
     "artifacts": [{
       "os": "darwin",
       "arch": "amd64",
-      "url": "https://github.com/uvwt/agentdock/releases/download/v1.2.3/cloudflared_darwin_amd64",
+      "format": "tgz",
+      "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.9.1/cloudflared-darwin-amd64.tgz",
       "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     }]
   }]
@@ -135,8 +132,12 @@ func TestPrepareMirrorBootstrapUsesR2ReleaseBaseAndRefreshesChecksum(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(catalogData), baseURL+"/cloudflared_darwin_amd64") {
-		t.Fatalf("component catalog was not rewritten to the R2 versioned base: %s", catalogData)
+	const upstreamURL = "https://github.com/cloudflare/cloudflared/releases/download/2026.9.1/cloudflared-darwin-amd64.tgz"
+	if !strings.Contains(string(catalogData), upstreamURL) {
+		t.Fatalf("third-party component URL changed during R2 prepare: %s", catalogData)
+	}
+	if strings.Contains(string(catalogData), baseURL+"/cloudflared") {
+		t.Fatalf("third-party component URL was incorrectly rewritten to R2: %s", catalogData)
 	}
 	catalogSum, err := fileSHA256(filepath.Join(dir, "agentdock-component-catalog.json"))
 	if err != nil {

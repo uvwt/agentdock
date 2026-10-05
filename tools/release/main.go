@@ -30,13 +30,17 @@ func run(args []string, stdout io.Writer) error {
 		fmt.Fprintln(stdout, strings.TrimPrefix(buildinfo.Version, "v"))
 		return nil
 	case "component-version":
-		fmt.Fprintln(stdout, cloudflaredComponentVersion)
+		metadata, err := loadPinnedCloudflaredMetadata()
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(stdout, metadata.Version)
 		return nil
 	case "component-catalog":
-		if len(args) != 4 {
-			return errors.New("用法：release component-catalog <release-tag> <repository> <dist-dir>")
+		if len(args) != 1 {
+			return errors.New("用法：release component-catalog")
 		}
-		return writeCloudflaredComponentCatalog(stdout, args[1], args[2], args[3])
+		return writeCloudflaredComponentCatalog(stdout)
 	case "verify-version":
 		if len(args) != 2 {
 			return errors.New("用法：release verify-version <tag>")

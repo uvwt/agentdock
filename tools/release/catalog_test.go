@@ -84,27 +84,46 @@ type discard struct{}
 
 func (discard) Write(p []byte) (int, error) { return len(p), nil }
 
-func TestCloudflaredComponentCatalogPinsArtifactsAndDigests(t *testing.T) {
-	dir := t.TempDir()
-	for _, artifact := range cloudflaredReleaseArtifacts {
-		if err := os.WriteFile(filepath.Join(dir, artifact.Name), []byte(artifact.OS+"-"+artifact.Arch), 0o600); err != nil {
-			t.Fatal(err)
-		}
+func TestCloudflaredComponentCatalogUsesPinnedOfficialMetadata(t *testing.T) {
+	metadata, err := loadPinnedCloudflaredMetadata()
+	if err != nil {
+		t.Fatal(err)
 	}
 	var output strings.Builder
-	if err := writeCloudflaredComponentCatalog(&output, "v9.9.9", "uvwt/agentdock", dir); err != nil {
+	if err := writeCloudflaredComponentCatalog(&output); err != nil {
 		t.Fatal(err)
 	}
 	text := output.String()
 	for _, want := range []string{
 		`"schema_version": 1`,
-		`"version": "` + cloudflaredComponentVersion + `"`,
-		`"upstream_source": "https://github.com/cloudflare/cloudflared/releases/tag/` + cloudflaredComponentVersion + `"`,
-		`https://github.com/uvwt/agentdock/releases/download/v9.9.9/cloudflared_darwin_arm64`,
-		`https://github.com/uvwt/agentdock/releases/download/v9.9.9/cloudflared_windows_amd64.exe`,
+		`"version": "` + metadata.Version + `"`,
+		`"upstream_source": "https://github.com/cloudflare/cloudflared/releases/tag/` + metadata.Version + `"`,
+		`"format": "binary"`,
+		`"format": "tgz"`,
+		`https://github.com/cloudflare/cloudflared/releases/download/` + metadata.Version + `/cloudflared-windows-amd64.exe`,
+		`https://github.com/cloudflare/cloudflared/releases/download/` + metadata.Version + `/cloudflared-darwin-arm64.tgz`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("catalog missing %q: %s", want, text)
+		}
+	}
+	for _, forbidden := range []string{
+		"github.com/uvwt/agentdock/releases",
+		"download.nexusdock.co",
+		"/latest/",
+		"cloudflared_darwin_",
+		"cloudflared_windows_amd64.exe",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("catalog must not rehost cloudflared; found %q in %s", forbidden, text)
+		}
+	}
+}
+
+func TestReleaseCatalogDoesNotRequireCloudflaredBinary(t *testing.T) {
+	for _, artifact := range ReleaseCatalog() {
+		if strings.HasPrefix(artifact.Name, "cloudflared_") || strings.HasPrefix(artifact.Name, "cloudflared-") {
+			t.Fatalf("AgentDock Release must not contain cloudflared binary: %+v", artifact)
 		}
 	}
 }

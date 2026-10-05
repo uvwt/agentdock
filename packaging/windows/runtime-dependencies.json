@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "dotnet_windows_desktop": {
+    "minimum_version": "8.0.0",
+    "install_version": "8.0.31",
+    "artifacts": {
+      "amd64": {
+        "url": "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/8.0.31/windowsdesktop-runtime-8.0.31-win-x64.exe"
+      },
+      "arm64": {
+        "url": "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/8.0.31/windowsdesktop-runtime-8.0.31-win-arm64.exe"
+      }
+    }
+  },
+  "windows_app_runtime": {
+    "minimum_version": "2.3.1.0",
+    "package_name": "Microsoft.WindowsAppRuntime.2",
+    "release": "2.3.1",
+    "artifacts": {
+      "amd64": {
+        "url": "https://github.com/microsoft/WindowsAppSDK/releases/download/v2.3.1/WindowsAppRuntimeInstall-x64.exe"
+      },
+      "arm64": {
+        "url": "https://github.com/microsoft/WindowsAppSDK/releases/download/v2.3.1/WindowsAppRuntimeInstall-arm64.exe"
+      }
+    }
+  }
+}
