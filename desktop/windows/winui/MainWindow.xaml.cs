@@ -21,7 +21,6 @@ public sealed partial class MainWindow : Window
     private readonly IntPtr _windowHandle;
     private readonly string? _initialSettingsPage;
     private string _themePreference = UiThemePreference.SystemPreference;
-    private bool _initialSizeApplied;
     private string? _pendingSettingsTag;
 
     internal bool AllowClose { get; set; }
@@ -33,8 +32,9 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         _windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
         _themePreference = UiThemePreference.ReadPreference();
-        Root.Loaded += Root_Loaded;
         Root.ActualThemeChanged += Root_ActualThemeChanged;
+        ApplyThemePreference(_themePreference);
+        ResizeToLogicalSize(DefaultWidth, DefaultHeight);
 
         HomeNavigationItem.Content = UiText.Get("Home");
         ConnectionsNavigationItem.Content = UiText.Get("Connections");
@@ -47,7 +47,6 @@ public sealed partial class MainWindow : Window
         {
             AppWindow.SetIcon(iconPath);
         }
-        Navigation.Loaded += Navigation_Loaded;
         ContentFrame.Navigated += ContentFrame_Navigated;
         AppWindow.Changed += (_, args) =>
         {
@@ -74,14 +73,6 @@ public sealed partial class MainWindow : Window
         AppWindow.Show();
         Activate();
         _ = SetForegroundWindow(_windowHandle);
-    }
-
-    private void Navigation_Loaded(object sender, RoutedEventArgs e)
-    {
-        if (_initialSizeApplied) return;
-        _initialSizeApplied = true;
-        Navigation.Loaded -= Navigation_Loaded;
-        ResizeToLogicalSize(DefaultWidth, DefaultHeight);
     }
 
     private void ResizeToLogicalSize(int width, int height) =>
@@ -134,12 +125,6 @@ public sealed partial class MainWindow : Window
     {
         _pendingSettingsTag = tag;
         NavigateTo("settings");
-    }
-
-    private void Root_Loaded(object sender, RoutedEventArgs e)
-    {
-        Root.Loaded -= Root_Loaded;
-        ApplyThemePreference(_themePreference);
     }
 
     internal void ApplyThemePreference(string preference)

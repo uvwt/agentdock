@@ -237,7 +237,6 @@ func TestWindowsThemePreferencePersistsAndAppliesLive(t *testing.T) {
 		"UiThemePreference.SetPreference(preference)",
 		`x:Name="Root"`,
 		`Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"`,
-		"Root.Loaded += Root_Loaded",
 		"ApplyThemePreference(_themePreference)",
 		"Root.RequestedTheme = UiThemePreference.ToElementTheme(_themePreference)",
 		"Root.ActualThemeChanged += Root_ActualThemeChanged",
@@ -255,6 +254,47 @@ func TestWindowsThemePreferencePersistsAndAppliesLive(t *testing.T) {
 	}
 	if strings.Contains(window, "Navigation.RequestedTheme =") {
 		t.Fatal("WinUI theme must be applied at the root so transparent controls share the correct window background")
+	}
+}
+
+func TestWindowsInitialFrameIsPreparedBeforeWindowIsShown(t *testing.T) {
+	window := readWindowsNativeFile(t, "winui", "MainWindow.xaml.cs")
+	homeXaml := readWindowsNativeFile(t, "winui", "HomePage.xaml")
+	homeCode := readWindowsNativeFile(t, "winui", "HomePage.xaml.cs")
+
+	constructorStart := strings.Index(window, "public MainWindow(RuntimeService runtime")
+	showMethod := strings.Index(window, "internal void ShowAndActivate()")
+	if constructorStart < 0 || showMethod < 0 {
+		t.Fatal("WinUI main window lifecycle methods are missing")
+	}
+	constructor := window[constructorStart:showMethod]
+	if !strings.Contains(constructor, "ResizeToLogicalSize(DefaultWidth, DefaultHeight)") ||
+		!strings.Contains(constructor, "ApplyThemePreference(_themePreference)") {
+		t.Fatal("WinUI main window must prepare size and theme before ShowAndActivate")
+	}
+	if strings.Contains(window, "Navigation.Loaded += Navigation_Loaded") ||
+		strings.Contains(window, "Root.Loaded += Root_Loaded") {
+		t.Fatal("WinUI first-frame size/theme must not be deferred until after the window is loaded")
+	}
+
+	for _, want := range []string{
+		`x:Name="DashboardContent"`,
+		`Visibility="Collapsed"`,
+		`x:Name="InitialLoadingIndicator"`,
+		`IsActive="True"`,
+		"var snapshot = await _runtime.GetSnapshotAsync(includeNexusConnection: true)",
+		"var dashboard = await _runtime.GetDashboardAsync(snapshot)",
+		"DashboardContent.Visibility = Visibility.Visible",
+		"InitialLoadingIndicator.Visibility = Visibility.Collapsed",
+	} {
+		if !strings.Contains(homeXaml+homeCode, want) {
+			t.Fatalf("WinUI Home initial render is missing %q", want)
+		}
+	}
+	dashboardLoaded := strings.Index(homeCode, "var dashboard = await _runtime.GetDashboardAsync(snapshot)")
+	firstRender := strings.Index(homeCode, "var serviceLoaded = _snapshot.CoreRunning")
+	if dashboardLoaded < 0 || firstRender < 0 || dashboardLoaded > firstRender {
+		t.Fatal("WinUI Home must fetch its initial dashboard before committing runtime state to the visible UI")
 	}
 }
 
@@ -377,7 +417,7 @@ func TestWindowsHomeUsesProductStatusAndAdaptiveCapabilities(t *testing.T) {
 		"var serviceHealthy = serviceLoaded && _snapshot.Healthy",
 		`UiText.Get("DeviceReadyForAI")`,
 		"RenderCapabilities(_snapshot.Settings)",
-		"GetDashboardAsync(_snapshot)",
+		"GetDashboardAsync(snapshot)",
 		"dashboard.RecentCalls.Take(3)",
 		`Click="ActivityShortcut_Click"`,
 		`ShortcutRequested?.Invoke(this, "activity")`,

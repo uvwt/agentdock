@@ -3,8 +3,11 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:AgentDock.ControlPanel">
-    <ScrollViewer HorizontalScrollMode="Disabled"
-                  HorizontalScrollBarVisibility="Disabled">
+    <Grid>
+        <ScrollViewer x:Name="DashboardContent"
+                      Visibility="Collapsed"
+                      HorizontalScrollMode="Disabled"
+                      HorizontalScrollBarVisibility="Disabled">
         <StackPanel HorizontalAlignment="Stretch"
                     Spacing="22"
                     Padding="28,24,28,32">
@@ -275,5 +278,12 @@
                 </Button>
             </local:SectionCard>
         </StackPanel>
-    </ScrollViewer>
+        </ScrollViewer>
+        <ProgressRing x:Name="InitialLoadingIndicator"
+                      Width="32"
+                      Height="32"
+                      IsActive="True"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Center"/>
+    </Grid>
 </Page>

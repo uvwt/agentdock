@@ -54,7 +54,9 @@ public sealed partial class HomePage : Page
     {
         if (_runtime is null) return;
 
-        _snapshot = await _runtime.GetSnapshotAsync(includeNexusConnection: true);
+        var snapshot = await _runtime.GetSnapshotAsync(includeNexusConnection: true);
+        var dashboard = await _runtime.GetDashboardAsync(snapshot);
+        _snapshot = snapshot;
         var serviceLoaded = _snapshot.CoreRunning;
         var serviceHealthy = serviceLoaded && _snapshot.Healthy;
 
@@ -84,8 +86,13 @@ public sealed partial class HomePage : Page
         RuntimeAction.Content = serviceLoaded ? UiText.Get("Stop") : UiText.Get("Start");
 
         RenderCapabilities(_snapshot.Settings);
-        var dashboard = await _runtime.GetDashboardAsync(_snapshot);
         RenderDashboard(dashboard);
+        if (DashboardContent.Visibility != Visibility.Visible)
+        {
+            DashboardContent.Visibility = Visibility.Visible;
+            InitialLoadingIndicator.IsActive = false;
+            InitialLoadingIndicator.Visibility = Visibility.Collapsed;
+        }
     }
 
     private static string RemoteServiceDetail(RuntimeSnapshot snapshot)
