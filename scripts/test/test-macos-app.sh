@@ -16,6 +16,11 @@ trap cleanup EXIT
 
 python3 "$ROOT_DIR/scripts/test/check-macos-i18n.py"
 
+# Finder/Dock 会给透明 legacy App icon 自动补系统底板；macOS 专用图标必须保持不透明，避免回归成灰底。
+MACOS_ICON_SOURCE="$ROOT_DIR/packaging/macos/assets/agentdock.png"
+test -f "$MACOS_ICON_SOURCE"
+test "$(sips -g hasAlpha "$MACOS_ICON_SOURCE" | awk '/hasAlpha:/ { print $2 }')" = "no"
+
 APP_DELEGATE="$ROOT_DIR/desktop/macos/AgentDockApp/Sources/AppDelegate.swift"
 grep -Fq 'item.autosaveName = "AgentDockMenuBarItem"' "$APP_DELEGATE"
 grep -Fq 'item.isVisible = true' "$APP_DELEGATE"
