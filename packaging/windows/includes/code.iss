@@ -1,18 +1,16 @@
 [Code]
 var
-  UpgradeModePage: TInputOptionWizardPage;
-  StartupPage: TInputOptionWizardPage;
   DesktopShortcutCheckBox: TNewCheckBox;
   PurgeState: Boolean;
   UninstallCleanupExecuted: Boolean;
   ResultFilePath: String;
   ExistingInstallDetected: Boolean;
-  ExistingInstallVersion: String;
-  ExistingInstallSource: String;
   ResolvedInstallRoot: String;
   InstallProgressPage: TOutputProgressWizardPage;
   InstallWarningCode: String;
   InstallWarningMessage: String;
+  SetupStartupMode: String;
+  ElevatedCoreEnabled: Boolean;
 
 function GetLocalizedMessage(Key: String): String;
 begin
@@ -48,33 +46,22 @@ function DetectExistingInstallation(): Boolean;
 var
   UninstallKey: String;
   BinaryPath: String;
-  VersionValue: String;
 begin
-  ExistingInstallVersion := '';
-  ExistingInstallSource := '';
   UninstallKey := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#AppIdValue}_is1';
-
-  if RegQueryStringValue(HKCU, UninstallKey, 'DisplayVersion', VersionValue) then
+  if RegValueExists(HKCU, UninstallKey, 'DisplayVersion') then
   begin
-    ExistingInstallVersion := Trim(VersionValue);
-    ExistingInstallSource := 'setup';
+    Log('AgentDock existing installation detected: source=setup, root=' + ExistingInstallRoot());
     Result := True;
     Exit;
   end;
 
   BinaryPath := AddBackslash(ExistingInstallRoot()) + 'bin\agentdock.exe';
-  if FileExists(BinaryPath) or
+  Result :=
+    FileExists(BinaryPath) or
     FileExists(AddBackslash(ExistingInstallRoot()) + 'runtime.json') or
-    FileExists(AddBackslash(ExistingInstallRoot()) + 'start-agentdock.ps1') then
-  begin
-    if GetVersionNumbersString(BinaryPath, VersionValue) then
-      ExistingInstallVersion := Trim(VersionValue);
-    ExistingInstallSource := 'powershell';
-    Result := True;
-    Exit;
-  end;
-
-  Result := False;
+    FileExists(AddBackslash(ExistingInstallRoot()) + 'start-agentdock.ps1');
+  if Result then
+    Log('AgentDock existing installation detected: source=powershell, root=' + ExistingInstallRoot());
 end;
 
 function LegacyAgentDockScheduledTaskExists(): Boolean;
@@ -124,38 +111,17 @@ end;
 
 procedure LoadExistingSettings();
 var
-  RunKey: String;
+  LegacyTaskDetected: Boolean;
 begin
   if not ExistingInstallDetected then
     Exit;
 
-  RunKey := 'Software\Microsoft\Windows\CurrentVersion\Run';
-  StartupPage.Values[0] :=
-    RegValueExists(HKCU, RunKey, 'AgentDock') or
-    RegValueExists(HKCU, RunKey, 'AgentDockTray') or
-    LegacyAgentDockScheduledTaskExists();
-  StartupPage.Values[1] := RuntimeUsesElevatedCore() or LegacyAgentDockScheduledTaskExists();
-end;
-
-procedure ApplyExistingInstallPresentation();
-var
-  Details: String;
-begin
-  if not ExistingInstallDetected then
-    Exit;
-
-  WizardForm.WelcomeLabel1.Caption := GetLocalizedMessage('UpgradeWelcome');
-  Details := '';
-  if ExistingInstallVersion <> '' then
-    Details := GetLocalizedMessage('UpgradeExistingVersion') + ' ' + ExistingInstallVersion + #13#10;
-  Details := Details + GetLocalizedMessage('UpgradeTargetVersion') + ' {#AppVersion}' + #13#10#13#10;
-  if ExistingInstallSource = 'setup' then
-    Details := Details + GetLocalizedMessage('UpgradeSetupManaged')
-  else
-    Details := Details + GetLocalizedMessage('UpgradeLegacyManaged');
-  WizardForm.WelcomeLabel2.Caption := Details;
-  Log('AgentDock existing installation detected: source=' + ExistingInstallSource +
-    ', version=' + ExistingInstallVersion + ', root=' + ExistingInstallRoot());
+  { 升级/修复不再让安装器重复编辑启动设置。PowerShell 安装层会分别保留
+    Core 与 Tray 的当前开机启动状态；权限模式仍从现有运行清单迁移。
+    旧固定计划任务必须始终检测，不能被已有 elevated 状态短路。 }
+  SetupStartupMode := 'preserve';
+  LegacyTaskDetected := LegacyAgentDockScheduledTaskExists();
+  ElevatedCoreEnabled := RuntimeUsesElevatedCore() or LegacyTaskDetected;
 end;
 
 function QuoteArgument(const Value: String): String;
@@ -194,51 +160,30 @@ end;
 procedure InitializeWizard();
 var
   AutoStartParam: String;
+  AdminModeParam: String;
 begin
   Log('AgentDock active language: ' + ActiveLanguage());
   ResolvedInstallRoot := ResolveInstallRoot();
   ExistingInstallDetected := DetectExistingInstallation();
 
-  UpgradeModePage := CreateInputOptionPage(
-    wpWelcome,
-    GetLocalizedMessage('UpgradeModeCaption'),
-    GetLocalizedMessage('UpgradeModeDescription'),
-    GetLocalizedMessage('UpgradeModeSubCaption'),
-    True,
-    False
-  );
-  UpgradeModePage.Add(GetLocalizedMessage('UpgradeKeepSettings'));
-  UpgradeModePage.Add(GetLocalizedMessage('UpgradeChangeSettings'));
-  UpgradeModePage.SelectedValueIndex := 0;
-
-  StartupPage := CreateInputOptionPage(
-    UpgradeModePage.ID,
-    GetLocalizedMessage('StartupPageCaption'),
-    GetLocalizedMessage('StartupPageDescription'),
-    GetLocalizedMessage('StartupPageSubCaption'),
-    False,
-    False
-  );
-  StartupPage.Add(GetLocalizedMessage('StartupOption'));
-  StartupPage.Add(GetLocalizedMessage('ElevatedCoreOption'));
-  StartupPage.Values[0] := True;
-  StartupPage.Values[1] := False;
-
+  { 首次安装采用产品默认：Core 与 Tray 均开机启动，Core 使用普通用户权限。
+    升级时 LoadExistingSettings 改为 preserve，避免 Setup 覆盖控制面板中的选择。 }
+  SetupStartupMode := 'enabled';
+  ElevatedCoreEnabled := False;
   LoadExistingSettings();
 
+  { 静默安装参数保留给自动化/企业部署；交互式安装不再展示对应配置页。 }
   AutoStartParam := Lowercase(ExpandConstant('{param:AUTOSTART|}'));
   if (AutoStartParam = '0') or (AutoStartParam = 'false') then
-    StartupPage.Values[0] := False
+    SetupStartupMode := 'disabled'
   else if (AutoStartParam = '1') or (AutoStartParam = 'true') then
-    StartupPage.Values[0] := True;
+    SetupStartupMode := 'enabled';
 
-  AutoStartParam := Lowercase(ExpandConstant('{param:ADMINMODE|}'));
-  if (AutoStartParam = '0') or (AutoStartParam = 'false') or (AutoStartParam = 'standard') then
-    StartupPage.Values[1] := False
-  else if (AutoStartParam = '1') or (AutoStartParam = 'true') or (AutoStartParam = 'elevated') then
-    StartupPage.Values[1] := True;
-
-  ApplyExistingInstallPresentation();
+  AdminModeParam := Lowercase(ExpandConstant('{param:ADMINMODE|}'));
+  if (AdminModeParam = '0') or (AdminModeParam = 'false') or (AdminModeParam = 'standard') then
+    ElevatedCoreEnabled := False
+  else if (AdminModeParam = '1') or (AdminModeParam = 'true') or (AdminModeParam = 'elevated') then
+    ElevatedCoreEnabled := True;
 
   InstallProgressPage := CreateOutputProgressPage(
     GetLocalizedMessage('OfflineProgressCaption'),
@@ -255,17 +200,7 @@ begin
   DesktopShortcutCheckBox.Checked := True;
 end;
 
-function ShouldSkipPage(PageID: Integer): Boolean;
-var
-  PreserveExisting: Boolean;
-begin
-  PreserveExisting := ExistingInstallDetected and (UpgradeModePage.SelectedValueIndex = 0);
-  Result :=
-    ((PageID = UpgradeModePage.ID) and (not ExistingInstallDetected)) or
-    (PreserveExisting and (PageID = StartupPage.ID));
-end;
-
-function ApplyDesktopControlPanelShortcut(CreateRequested: Boolean): Boolean;
+function ApplyDesktopShortcut(CreateRequested: Boolean): Boolean;
 var
   ShortcutPath: String;
   CreatedShortcutPath: String;
@@ -297,7 +232,7 @@ begin
   Result := True;
   if CurPageID = wpFinished then
   begin
-    if not ApplyDesktopControlPanelShortcut(DesktopShortcutCheckBox.Checked) then
+    if not ApplyDesktopShortcut(DesktopShortcutCheckBox.Checked) then
       Log('AgentDock desktop shortcut state could not be applied.');
     if Pos('runtime-launch-deferred', InstallWarningCode) = 0 then
     begin
@@ -308,8 +243,6 @@ begin
       Log('AgentDock runtime activation was deferred; skipping Finish-page control panel launch.');
     Exit;
   end;
-  if (CurPageID = StartupPage.ID) and StartupPage.Values[1] then
-    StartupPage.Values[0] := True;
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -394,7 +327,7 @@ begin
       TunnelMode := 'none';
     if (TunnelMode <> 'none') and (TunnelMode <> 'quick') and (TunnelMode <> 'named') then
       TunnelMode := '';
-    if StartupPage.Values[1] then
+    if ElevatedCoreEnabled then
       PrivilegeMode := 'elevated'
     else
       PrivilegeMode := 'standard';
@@ -406,6 +339,7 @@ begin
       ' -OfflineChecksumFile ' + QuoteArgument(OfflineChecksumPath) +
       ' -InstallDir ' + QuoteArgument(ExpandConstant('{app}\bin')) +
       ' -InstallChannel setup' +
+      ' -StartupMode ' + SetupStartupMode +
       ' -CorePrivilegeMode ' + PrivilegeMode +
       ' -ResultFile ' + QuoteArgument(ResultFilePath);
     if TunnelMode <> '' then
@@ -415,9 +349,6 @@ begin
       default, while isolated E2E environments can avoid colliding with an already running AgentDock. }
     if Trim(ExpandConstant('{param:PORT|}')) <> '' then
       Parameters := Parameters + ' -Port ' + QuoteArgument(Trim(ExpandConstant('{param:PORT|}')));
-
-    if StartupPage.Values[0] or (TunnelMode = 'quick') or (TunnelMode = 'named') then
-      Parameters := Parameters + ' -RegisterStartup';
 
     if TunnelMode = 'named' then
     begin
@@ -477,8 +408,6 @@ end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
-  if (CurPageID = wpReady) and ExistingInstallDetected then
-    WizardForm.ReadyLabel.Caption := GetLocalizedMessage('ReadyUpgrade');
   if CurPageID = wpFinished then
   begin
     if Pos('runtime-launch-deferred', InstallWarningCode) > 0 then
@@ -499,7 +428,7 @@ begin
     PurgeState := MsgBox(
       GetLocalizedMessage('PurgeStateQuestion'),
       mbConfirmation,
-      MB_YESNO
+      MB_YESNO or MB_DEFBUTTON2
     ) = IDYES;
   Result := True;
 end;

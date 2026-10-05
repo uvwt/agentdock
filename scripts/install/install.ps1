@@ -5,6 +5,8 @@ param(
     [string] $OfflineCloudflaredBinary = '',
     [string] $InstallDir = (Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'AgentDock\bin'),
     [switch] $RegisterStartup,
+    [ValidateSet('legacy', 'preserve', 'enabled', 'disabled')]
+    [string] $StartupMode = 'legacy',
     [switch] $ConfigurePublicAccess,
     [int] $Port = 8765,
     [string] $AuthToken = '',
@@ -522,6 +524,7 @@ function Get-AgentDockTaskState {
         Eligible = $false
         Exists = $false
         Conflicting = $false
+        Legacy = $false
         WasEnabled = $false
         WasRunning = $false
         SchedulerAvailable = $true
@@ -566,8 +569,13 @@ function Get-AgentDockTaskState {
         } catch {
         }
         if (-not [string]::IsNullOrWhiteSpace($arguments) -and
-            ($arguments.IndexOf($normalizedRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
-             $arguments.IndexOf($normalizedLegacyLauncher, [StringComparison]::OrdinalIgnoreCase) -ge 0)) {
+            $arguments.IndexOf($normalizedLegacyLauncher, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            $owned = $true
+            $state.Legacy = $true
+            break
+        }
+        if (-not [string]::IsNullOrWhiteSpace($arguments) -and
+            $arguments.IndexOf($normalizedRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
             $owned = $true
             break
         }
@@ -862,6 +870,7 @@ $taskUser = $null
 $taskState = [pscustomobject]@{
     Eligible = $false
     Exists = $false
+    Legacy = $false
     WasEnabled = $false
     WasRunning = $false
     SchedulerAvailable = $false
@@ -1121,6 +1130,43 @@ try {
     $previousRunValue = Get-RunValue -RegistryPath $runKey -Name $runValueName
     $previousTrayRunValue = Get-RunValue -RegistryPath $runKey -Name $trayRunValueName
     $rollbackStateCaptured = $true
+
+    # Setup has opinionated defaults for fresh installs but must preserve the two independent
+    # startup toggles on upgrades. Script callers keep the historical RegisterStartup behavior.
+    $coreStartupEnabled = [bool] $RegisterStartup
+    $trayStartupEnabled = [bool] $RegisterStartup
+    switch ($StartupMode) {
+        'enabled' {
+            $coreStartupEnabled = $true
+            $trayStartupEnabled = $true
+        }
+        'disabled' {
+            $coreStartupEnabled = $false
+            $trayStartupEnabled = $false
+        }
+        'preserve' {
+            if ($existingInstallDetected) {
+                $useTaskStartupState =
+                    $existingPrivilegeMode -eq 'elevated' -or
+                    ([string]::IsNullOrWhiteSpace($existingPrivilegeMode) -and $taskState.Exists)
+                if ($useTaskStartupState) {
+                    $coreStartupEnabled = $taskState.Exists -and $taskState.WasEnabled
+                } else {
+                    $coreStartupEnabled = $null -ne $previousRunValue
+                }
+                # Legacy elevated installs had one combined startup choice and no separate Tray value.
+                # Migration keeps the old behavior by enabling Tray when the legacy task was enabled.
+                $trayStartupEnabled = ($null -ne $previousTrayRunValue) -or ($taskState.Legacy -and $taskState.WasEnabled)
+            } else {
+                $coreStartupEnabled = $true
+                $trayStartupEnabled = $true
+            }
+        }
+    }
+    if (@('quick', 'named') -contains $resolvedTunnelMode) {
+        $coreStartupEnabled = $true
+        $trayStartupEnabled = $true
+    }
 
     if (-not [string]::IsNullOrWhiteSpace($OfflineArchive)) {
         if (-not (Test-Path -LiteralPath $OfflineArchive -PathType Leaf)) {
@@ -1457,7 +1503,8 @@ try {
     $engineCommitted = $false
     $enginePrepared = $false
     $engineTransactionId = ''
-    if ($RegisterStartup) {
+    $anyStartupEnabled = $coreStartupEnabled -or $trayStartupEnabled
+    if ($anyStartupEnabled) {
         New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
 
         $existingAuthToken = Read-ProtectedText -Path $tokenPath -Entropy 'agentdock.startup.v1'
@@ -1492,7 +1539,9 @@ try {
 exit `$LASTEXITCODE
 "@
         [IO.File]::WriteAllText($launcherPath, $launcher, $Utf8NoBom)
+    }
 
+    if ($coreStartupEnabled) {
         if ($effectivePrivilegeMode -eq 'elevated') {
             Remove-ItemProperty -LiteralPath $runKey -Name $runValueName -ErrorAction SilentlyContinue
             Enable-AgentDockTask
@@ -1500,11 +1549,18 @@ exit `$LASTEXITCODE
             $startupCommand = "`"$destinationTrayBinary`" --start-core --runtime-root `"$runtimeDir`""
             Set-RunValue -RegistryPath $runKey -Name $runValueName -Value $startupCommand
         }
-        $startupRegistrationChanged = $true
+    } else {
+        Remove-ItemProperty -LiteralPath $runKey -Name $runValueName -ErrorAction SilentlyContinue
+    }
+    $startupRegistrationChanged = $true
+
+    if ($trayStartupEnabled) {
         $trayStartupCommand = "`"$destinationTrayBinary`" --background"
         Set-RunValue -RegistryPath $runKey -Name $trayRunValueName -Value $trayStartupCommand
-        $trayStartupRegistrationChanged = $true
+    } else {
+        Remove-ItemProperty -LiteralPath $runKey -Name $trayRunValueName -ErrorAction SilentlyContinue
     }
+    $trayStartupRegistrationChanged = $true
 
     # HKCU/Task (if any) are already written. Engine owns runtime.json/skills/start.
         # committed is written only after this script finishes adapter work and calls install commit.
@@ -1527,7 +1583,7 @@ exit `$LASTEXITCODE
         if ($effectivePrivilegeMode -eq 'elevated') {
             $engineArgs += @('--task-name', 'AgentDock')
         }
-        if ((-not $RegisterStartup) -or ($InstallChannel -eq 'setup')) {
+        if ((-not $coreStartupEnabled) -or ($InstallChannel -eq 'setup')) {
             # Setup always leaves Core activation to the Windows adapter below so fresh, repair,
             # and upgrade launches all happen outside the Inno RedirectionGuard process tree.
             $engineArgs += @('--no-start', '--skip-health')
@@ -1566,12 +1622,7 @@ exit `$LASTEXITCODE
             $installerTransactionLease = Enter-InstallerTransactionLease -RuntimeRoot $runtimeDir
         }
 
-    if (-not $RegisterStartup) {
-        Remove-ItemProperty -LiteralPath $runKey -Name $trayRunValueName -ErrorAction SilentlyContinue
-        $trayStartupRegistrationChanged = $true
-    }
-
-    $mustRestartExistingProcess = (-not $RegisterStartup) -and $processWasRunning
+    $mustRestartExistingProcess = (-not $coreStartupEnabled) -and $processWasRunning
 
     $localMCPUrl = "http://127.0.0.1:$Port/mcp"
     Write-Host 'Core Skills were installed by the Installer Engine.'
@@ -1582,13 +1633,13 @@ exit `$LASTEXITCODE
     $engineOwnsActivation = $InstallChannel -ne 'setup'
     try {
         if ($InstallChannel -eq 'setup' -and -not $taskState.SchedulerAvailable -and
-            ($RegisterStartup -or $mustRestartExistingProcess -or $trayProcessWasRunning)) {
+            ($coreStartupEnabled -or $trayStartupEnabled -or $mustRestartExistingProcess -or $trayProcessWasRunning)) {
             throw "Windows Task Scheduler is unavailable for immediate Setup activation: $($taskState.SchedulerError)"
         }
 
-        if ($engineOwnsActivation -and $RegisterStartup) {
+        if ($engineOwnsActivation -and $coreStartupEnabled) {
             $healthStatus = 'healthy'
-        } elseif ($RegisterStartup) {
+        } elseif ($coreStartupEnabled) {
             if ($effectivePrivilegeMode -eq 'elevated') {
                 Start-AgentDockTask -AgentDockBinary $destinationBinary -ExpectedUserSid $taskUser.Sid
             } elseif ($InstallChannel -eq 'setup') {
@@ -1621,7 +1672,7 @@ exit `$LASTEXITCODE
             $healthStatus = 'healthy'
         }
 
-        if ($RegisterStartup -or $trayProcessWasRunning) {
+        if ($trayStartupEnabled -or $trayProcessWasRunning) {
             Start-AgentDockTray -BinaryPath $destinationTrayBinary
         }
     } catch {
@@ -1739,7 +1790,7 @@ exit `$LASTEXITCODE
     Write-Host "AgentDock installed: $destinationBinary"
     Write-Host "Local MCP address: $localMCPUrl"
     Write-Host 'Open a new terminal if the updated user PATH is not visible yet.'
-    if ($RegisterStartup) {
+    if ($anyStartupEnabled) {
         Write-Host "Bearer Token: $AuthToken"
     }
     if ($legacyTunnelCompatibilityRequested -and @('quick', 'named') -contains $resolvedTunnelMode) {

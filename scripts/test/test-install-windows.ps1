@@ -265,7 +265,7 @@ foreach ($required in @(
     '[Console]::OutputEncoding = $Utf8NoBom',
     '[Console]::OutputEncoding = $previousConsoleOutputEncoding',
     '$existingManifest = Get-Content -LiteralPath $runtimeManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json',
-    'if ((-not $RegisterStartup) -or ($InstallChannel -eq ''setup''))',
+    'if ((-not $coreStartupEnabled) -or ($InstallChannel -eq ''setup''))',
     '$engineOwnsActivation = $InstallChannel -ne ''setup''',
     '$commitArgs += ''--healthy''',
     'Get-InteractiveDesktopUser',
@@ -740,7 +740,9 @@ foreach ($required in @(
     "Pos('runtime-launch-deferred', InstallWarningCode) = 0",
     "GetLocalizedMessage('ElevatedModeFallbackNotice')",
     "GetLocalizedMessage('FinishedDeferredControlPanel')",
-    'StartupPage.Values[1] := False',
+    "SetupStartupMode := 'enabled'",
+    "SetupStartupMode := 'preserve'",
+    'ElevatedCoreEnabled := False',
     "FileExists(SchTasksPath)"
 )) {
     if (-not $setupCode.Contains($required)) {

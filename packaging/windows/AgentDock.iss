@@ -32,6 +32,7 @@ DefaultDirName={localappdata}\AgentDock
 DefaultGroupName=AgentDock
 DisableProgramGroupPage=yes
 DisableDirPage=yes
+DisableReadyPage=yes
 PrivilegesRequired=lowest
 OutputDir={#OutputDir}
 OutputBaseFilename={#SetupBaseFilename}
@@ -72,11 +73,21 @@ Source: "ensure-windows-runtimes.ps1"; Flags: dontcopy
 Source: "runtime-dependencies.json"; Flags: dontcopy
 Source: "{#PayloadDir}\agentdock_windows_{#PayloadArchitecture}.zip"; Flags: dontcopy
 Source: "{#PayloadDir}\agentdock_windows_{#PayloadArchitecture}.zip.sha256"; Flags: dontcopy
-Source: "..\..\scripts\install\install.ps1"; DestDir: "{app}\installer"; Flags: ignoreversion
 Source: "..\..\scripts\install\uninstall-windows.ps1"; DestDir: "{app}\installer"; Flags: ignoreversion
-Source: "ensure-windows-runtimes.ps1"; DestDir: "{app}\installer"; Flags: ignoreversion
-Source: "runtime-dependencies.json"; DestDir: "{app}\installer"; Flags: ignoreversion
 Source: "assets\agentdock.ico"; DestDir: "{app}\installer"; Flags: ignoreversion
+
+[InstallDelete]
+; Remove bootstrap-only files persisted by older Setup builds. Current Setup extracts these to TEMP only.
+Type: files; Name: "{app}\installer\install.ps1"
+Type: files; Name: "{app}\installer\ensure-windows-runtimes.ps1"
+Type: files; Name: "{app}\installer\runtime-dependencies.json"
+; Remove shortcuts created by older Setup builds so upgrades converge on the current product surface.
+Type: files; Name: "{userdesktop}\AgentDock Control Panel.lnk"
+Type: files; Name: "{userdesktop}\AgentDock 控制面板.lnk"
+Type: files; Name: "{group}\AgentDock documentation.lnk"
+Type: files; Name: "{group}\AgentDock 使用文档.lnk"
+Type: files; Name: "{group}\Uninstall AgentDock.lnk"
+Type: files; Name: "{group}\卸载 AgentDock.lnk"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\bin"
@@ -84,11 +95,18 @@ Type: filesandordirs; Name: "{app}\versions"
 Type: filesandordirs; Name: "{app}\update"
 Type: files; Name: "{app}\active-version.json"
 Type: files; Name: "{app}\desktop-version.txt"
+Type: files; Name: "{app}\installer\install.ps1"
+Type: files; Name: "{app}\installer\ensure-windows-runtimes.ps1"
+Type: files; Name: "{app}\installer\runtime-dependencies.json"
 Type: files; Name: "{userdesktop}\{code:GetLocalizedMessage|DesktopShortcutName}.lnk"
+Type: files; Name: "{userdesktop}\AgentDock Control Panel.lnk"
+Type: files; Name: "{userdesktop}\AgentDock 控制面板.lnk"
+Type: files; Name: "{group}\AgentDock documentation.lnk"
+Type: files; Name: "{group}\AgentDock 使用文档.lnk"
+Type: files; Name: "{group}\Uninstall AgentDock.lnk"
+Type: files; Name: "{group}\卸载 AgentDock.lnk"
 
 [Icons]
 Name: "{group}\AgentDock"; Filename: "{app}\bin\agentdock-tray.exe"; WorkingDir: "{app}"; IconFilename: "{app}\bin\agentdock-tray.exe"; AppUserModelID: "com.uvwt.agentdock.controlpanel"
-Name: "{group}\{code:GetLocalizedMessage|DocsShortcut}"; Filename: "https://docs.nexusdock.co/agentdock/"
-Name: "{group}\{code:GetLocalizedMessage|UninstallShortcut}"; Filename: "{uninstallexe}"
 
 #include "includes\code.iss"

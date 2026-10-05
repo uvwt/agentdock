@@ -42,6 +42,8 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"agentdock.ico",
 		"manage-windows.ps1",
 		"Initialize-OAuthCredentials",
+		"[ValidateSet('legacy', 'preserve', 'enabled', 'disabled')]",
+		"[string] $StartupMode = 'legacy'",
 		"[switch] $ConfigurePublicAccess",
 		"[string] $TunnelTokenFile = ''",
 		"[switch] $DeleteTunnelTokenFile",
@@ -69,6 +71,9 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"Get-AgentDockTaskState",
 		"Conflicting = $false",
 		"$state.Conflicting = $true",
+		"$state.Legacy = $true",
+		"$coreStartupEnabled = $taskState.Exists -and $taskState.WasEnabled",
+		"$trayStartupEnabled = ($null -ne $previousTrayRunValue) -or ($taskState.Legacy -and $taskState.WasEnabled)",
 		"-RuntimeRoot $runtimeDir",
 		"-StableCorePath $destinationBinary",
 		"-StableTrayPath $destinationTrayBinary",
@@ -567,7 +572,7 @@ func TestWindowsElevatedCoreHostUsesKillOnCloseJob(t *testing.T) {
 		}
 	}
 }
-func TestWindowsSetupKeepsPublicAccessExplicitAndSecretsOffCommandLine(t *testing.T) {
+func TestWindowsSetupKeepsMinimalProductSurfaceAndSecretsOffCommandLine(t *testing.T) {
 	var setupBuilder strings.Builder
 	for _, path := range []string{
 		filepath.Join("..", "..", "packaging", "windows", "AgentDock.iss"),
@@ -588,22 +593,22 @@ func TestWindowsSetupKeepsPublicAccessExplicitAndSecretsOffCommandLine(t *testin
 		"#include \"includes\\messages.iss\"",
 		"#include \"includes\\code.iss\"",
 		"DisableDirPage=yes",
+		"DisableReadyPage=yes",
 		"LanguageDetectionMethod=uilanguage",
 		"AgentDock active language: ",
 		"Name: \"chinesesimplified\"",
 		"DetectExistingInstallation",
-		"ExistingInstallSource := 'setup'",
-		"ExistingInstallSource := 'powershell'",
 		"LoadExistingSettings",
 		"LegacyAgentDockScheduledTaskExists",
+		"LegacyTaskDetected := LegacyAgentDockScheduledTaskExists()",
 		"/Query /TN \"\\AgentDock\"",
 		"AgentDock legacy scheduled task detected.",
 		"-InstallChannel setup",
+		"-StartupMode ",
 		"-CorePrivilegeMode ",
-		"ElevatedCoreOption",
-		"StartupPage.Values[1] := False",
-		"UpgradeKeepSettings",
-		"UpgradeChangeSettings",
+		"SetupStartupMode := 'enabled'",
+		"SetupStartupMode := 'preserve'",
+		"ElevatedCoreEnabled := False",
 		"RuntimeUsesElevatedCore",
 		"ElevatedSetupUnsupported",
 		"GetIniString('AgentDock', 'Code'",
@@ -626,10 +631,13 @@ func TestWindowsSetupKeepsPublicAccessExplicitAndSecretsOffCommandLine(t *testin
 		"usAppMutexCheck",
 		"managed cleanup completed successfully",
 		"GetUninstallParameters('')",
+		"[InstallDelete]",
 		"[UninstallDelete]",
 		"-KeepInstallDir",
 		"PurgeStateQuestion",
-		"Bearer Token：",
+		"MB_YESNO or MB_DEFBUTTON2",
+		"english.PurgeStateQuestion=Also delete AgentDock user data and settings? Choose No to keep Skills, configuration, and the default working directory.",
+		"chinesesimplified.PurgeStateQuestion=同时删除 AgentDock 的用户数据和设置吗？选择“否”将保留 Skill、配置和默认工作目录。",
 		"AgentDockSetup-amd64",
 		"AgentDockSetup-arm64",
 		"agentdock_windows_{#PayloadArchitecture}.zip",
@@ -638,35 +646,84 @@ func TestWindowsSetupKeepsPublicAccessExplicitAndSecretsOffCommandLine(t *testin
 		"CreateOutputProgressPage",
 		"OfflineProgressDescription",
 		"FinishedControlPanel",
+		"english.FinishedControlPanel=Installation is complete. Open AgentDock from the Start menu or desktop shortcut.",
+		"chinesesimplified.FinishedControlPanel=已完成安装，可从开始菜单或桌面快捷方式打开 AgentDock。",
 		"DesktopShortcutCheckBox",
 		"DesktopShortcutCheckBox.Checked := True",
-		"ApplyDesktopControlPanelShortcut",
+		"ApplyDesktopShortcut",
 		"CreatedShortcutPath := CreateShellLink",
 		"Result := CreatedShortcutPath <> ''",
 		"DesktopShortcutCheckBox.Left := WizardForm.FinishedLabel.Left",
 		"{userdesktop}\\{code:GetLocalizedMessage|DesktopShortcutName}.lnk",
+		"english.DesktopShortcutName=AgentDock",
+		"chinesesimplified.DesktopShortcutName=AgentDock",
+		"{userdesktop}\\AgentDock Control Panel.lnk",
+		"{userdesktop}\\AgentDock 控制面板.lnk",
+		"{app}\\installer\\install.ps1",
+		"{app}\\installer\\ensure-windows-runtimes.ps1",
+		"{app}\\installer\\runtime-dependencies.json",
 		"if CurPageID = wpFinished then",
 		"{app}\\bin\\agentdock-tray.exe",
+		`Source: "..\..\scripts\install\uninstall-windows.ps1"; DestDir: "{app}\installer"; Flags: ignoreversion`,
+		`Source: "assets\agentdock.ico"; DestDir: "{app}\installer"; Flags: ignoreversion`,
 	} {
 		if !strings.Contains(setup, want) {
-			t.Fatalf("AgentDock.iss missing %q", want)
+			t.Fatalf("Windows Setup source missing %q", want)
 		}
 	}
+
 	for _, forbidden := range []string{
 		"ResultMemo",
 		"CopyLocalButton",
 		"GetIniString('AgentDock', 'BearerToken'",
 		"GetIniString('AgentDock', 'OAuthPassword'",
 		"完成后会自动打开控制面板",
+		"点击“完成”后将打开控制面板",
+		"immediate runtime activation or verification",
+		"Startup settings were saved",
+		"运行状态验证",
+		"启动配置已保存",
+		"checking its status",
+		"检查运行状态",
 		"Source: \"{#OfflinePayloadDir}\\cloudflared.exe\"",
 		"-OfflineCloudflaredBinary ",
 		"cloudflared-token.dpapi",
 		"ConnectionPage",
 		"FixedTunnelPage",
 		"probe-protected-text.ps1",
+		"StartupPage",
+		"UpgradeModePage",
+		"UpgradeKeepSettings",
+		"UpgradeChangeSettings",
+		"ApplyExistingInstallPresentation",
+		"ExistingInstallVersion",
+		"ExistingInstallSource",
+		"ReadyUpgrade",
+		"UpgradeWelcome",
+		"UpgradeExistingVersion",
+		"UpgradeTargetVersion",
+		"UpgradeSetupManaged",
+		"UpgradeLegacyManaged",
+		"english.CopyLocal=",
+		"english.CopyPublic=",
+		"english.CopyBearer=",
+		"english.CopyOAuth=",
+		"english.Health=",
+		"english.LocalMCP=",
+		"english.PublicMCP=",
+		"english.BearerToken=",
+		"english.OAuthPassword=",
+		"english.PrivilegeMode=",
+		"english.PrivilegeElevated=",
+		"english.PrivilegeStandard=",
+		"english.DocsShortcut=",
+		"english.UninstallShortcut=",
+		`Source: "..\..\scripts\install\install.ps1"; DestDir: "{app}\installer"; Flags: ignoreversion`,
+		`Source: "ensure-windows-runtimes.ps1"; DestDir: "{app}\installer"; Flags: ignoreversion`,
+		`Source: "runtime-dependencies.json"; DestDir: "{app}\installer"; Flags: ignoreversion`,
 	} {
 		if strings.Contains(setup, forbidden) {
-			t.Fatalf("Setup completion page must not expose connection details or credentials: %q", forbidden)
+			t.Fatalf("Windows Setup must not retain obsolete/internal surface %q", forbidden)
 		}
 	}
 	for _, forbidden := range []string{
@@ -682,10 +739,23 @@ func TestWindowsSetupKeepsPublicAccessExplicitAndSecretsOffCommandLine(t *testin
 
 	startMenuShortcut := `Name: "{group}\AgentDock"; Filename: "{app}\bin\agentdock-tray.exe"; WorkingDir: "{app}"; IconFilename: "{app}\bin\agentdock-tray.exe"; AppUserModelID: "com.uvwt.agentdock.controlpanel"`
 	if !strings.Contains(setup, startMenuShortcut) {
-		t.Fatal("Windows Start menu shortcut must use the control-panel executable's embedded icon")
+		t.Fatal("Windows Start menu shortcut must use the AgentDock executable's embedded icon")
+	}
+	iconsStart := strings.Index(setup, "[Icons]")
+	if iconsStart < 0 {
+		t.Fatal("Windows Setup [Icons] section is missing")
+	}
+	iconsTail := setup[iconsStart:]
+	iconsEnd := strings.Index(iconsTail, "#include \"includes\\code.iss\"")
+	if iconsEnd < 0 {
+		t.Fatal("Windows Setup [Icons] section boundary is missing")
+	}
+	iconsSection := iconsTail[:iconsEnd]
+	if got := strings.Count(iconsSection, "Name: "); got != 1 {
+		t.Fatalf("Windows Start menu must expose only AgentDock; got %d shortcut entries", got)
 	}
 
-	shortcutStart := strings.Index(setup, "function ApplyDesktopControlPanelShortcut")
+	shortcutStart := strings.Index(setup, "function ApplyDesktopShortcut")
 	if shortcutStart < 0 {
 		t.Fatal("Windows desktop shortcut function is missing")
 	}
@@ -806,7 +876,7 @@ func TestWindowsSetupOwnsCoreActivationAndReadsStructuredFailure(t *testing.T) {
 	}
 	install := strings.ReplaceAll(string(installData), "\r\n", "\n")
 	for _, want := range []string{
-		"if ((-not $RegisterStartup) -or ($InstallChannel -eq 'setup')) {",
+		"if ((-not $coreStartupEnabled) -or ($InstallChannel -eq 'setup')) {",
 		"$engineOwnsActivation = $InstallChannel -ne 'setup'",
 		"$commitArgs += '--healthy'",
 		"function Get-InstallerEngineFailureMessage",

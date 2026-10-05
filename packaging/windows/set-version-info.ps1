@@ -43,7 +43,7 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($goHostArch)) {
 
 $descriptions = @{
     'agentdock.exe' = 'AgentDock'
-    'agentdock-tray.exe' = 'AgentDock Control Panel'
+    'agentdock-tray.exe' = 'AgentDock'
     'agentdock-arbiter.exe' = 'AgentDock Arbiter'
     'agentdock-shim.exe' = 'AgentDock Shim'
     'agentdock-tray-shim.exe' = 'AgentDock Tray Shim'

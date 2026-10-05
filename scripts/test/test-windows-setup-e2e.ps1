@@ -414,7 +414,13 @@ try {
     Assert-ElevatedCoreLifecycle
     Assert-TaskStopKillsCore
 
-    Write-Host 'Starting AgentDockSetup.exe a second time without changing task state.'
+    Write-Host 'Disabling only Tray autostart before the in-place upgrade.'
+    Remove-ItemProperty -LiteralPath $runKey -Name 'AgentDockTray' -ErrorAction Stop
+    if ($null -ne (Get-RunValue -Name 'AgentDockTray')) {
+        throw 'Unable to prepare disabled Tray startup state before the in-place upgrade.'
+    }
+
+    Write-Host 'Starting AgentDockSetup.exe a second time without changing Core startup state.'
     $repeatProcess = Start-Process `
         -FilePath $resolvedSetup `
         -ArgumentList @(
@@ -446,6 +452,9 @@ try {
     }
     Assert-ElevatedAgentDockTask
     Assert-CoreRunsWithoutConsole
+    if ($null -ne (Get-RunValue -Name 'AgentDockTray')) {
+        throw 'Setup upgrade did not preserve the disabled Tray startup setting.'
+    }
 
     Write-Host 'Creating a running legacy AgentDock scheduled task for migration testing.'
     Stop-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -ErrorAction SilentlyContinue

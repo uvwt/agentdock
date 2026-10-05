@@ -214,6 +214,7 @@ func TestWindowsVersionInfoScriptCoversSignPathMetadata(t *testing.T) {
 		"$env:GOARCH = $goHostArch",
 		"CompanyName = 'AgentDock'",
 		"ProductName = 'AgentDock'",
+		"'agentdock-tray.exe' = 'AgentDock'",
 		"ProductVersion = $windowsVersion",
 		"FileVersion = $windowsVersion",
 		"LegalCopyright = $copyright",
@@ -232,6 +233,9 @@ func TestWindowsVersionInfoScriptCoversSignPathMetadata(t *testing.T) {
 		if !strings.Contains(script, want) {
 			t.Fatalf("Windows VersionInfo script must enforce SignPath metadata; missing %q", want)
 		}
+	}
+	if strings.Contains(script, "AgentDock Control Panel") {
+		t.Fatal("Windows VersionInfo must expose AgentDock instead of the legacy Control Panel name")
 	}
 }
 
