@@ -198,7 +198,6 @@ try {
 
     # 第二次执行必须覆盖正在运行的二进制，并保留已有 DPAPI Token。
     & $resolvedInstaller `
-        -Version $Version `
         -InstallDir $installDir `
         -RegisterStartup `
         -TunnelMode none `
