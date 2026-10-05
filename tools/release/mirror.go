@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,4 +55,19 @@ func writeMirrorManifest(tag, publicBaseURL, distDir string, stdout io.Writer) e
 	encoder := json.NewEncoder(stdout)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(manifest)
+}
+
+func normalizePublicBaseURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("解析公开下载基址失败: %w", err)
+	}
+	if parsed.Scheme != "https" || parsed.Host == "" {
+		return "", errors.New("公开下载基址必须是完整 HTTPS 地址")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("公开下载基址不能包含 query 或 fragment")
+	}
+	return strings.TrimRight(parsed.String(), "/"), nil
 }

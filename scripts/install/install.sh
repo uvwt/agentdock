@@ -8,12 +8,10 @@ set -eu
 umask 077
 
 DEFAULT_BASE_URL="https://download.nexusdock.co/latest"
-VERSIONED_RELEASE_BASE_URL="https://download.nexusdock.co/releases"
 CLOUDFLARED_BASE_URL="${AGENTDOCK_CLOUDFLARED_RELEASE_BASE_URL:-https://github.com/cloudflare/cloudflared/releases/latest/download}"
 OFFICIAL_NEXUS_ENDPOINT="${AGENTDOCK_NEXUS_OFFICIAL_ENDPOINT:-https://mcp.nexusdock.co}"
 OFFICIAL_NEXUS_DEVICES_URL="${AGENTDOCK_NEXUS_OFFICIAL_DEVICES_URL:-https://mcp.nexusdock.co/workspace/devices}"
 BASE_URL="${AGENTDOCK_INSTALLER_BASE_URL:-$DEFAULT_BASE_URL}"
-RELEASE_VERSION="${AGENTDOCK_RELEASE_VERSION:-latest}"
 TMP_ROOT=""
 TTY_IN="${AGENTDOCK_TTY_IN:-/dev/tty}"
 TTY_OUT="${AGENTDOCK_TTY_OUT:-/dev/tty}"
@@ -73,7 +71,6 @@ AgentDock Unix 安装与维护入口。
   sh install.sh --nexus official|self-hosted|none [--nexus-endpoint URL] [--nexus-pair-code-file FILE]
   sh install.sh --tunnel none|quick|named [--server-url URL] [--tunnel-token-file FILE]
   sh install.sh --register-service [--no-start]
-  sh install.sh --version latest|vX.Y.Z
   sh install.sh --uninstall [--purge-config|--purge-data]
   sh install.sh --agentdock-home DIR --agentdock-default-dir DIR
 
@@ -715,9 +712,6 @@ remove_linux_cli_link() {
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --version)
-      [ "$#" -ge 2 ] || die "--version 缺少值"
-      RELEASE_VERSION="$2"; shift 2 ;;
     --uninstall) UNINSTALL=true; shift ;;
     --purge-config) PURGE_CONFIG=true; shift ;;
     --purge-data) PURGE_CONFIG=true; PURGE_DATA=true; shift ;;
@@ -768,16 +762,6 @@ fi
 case "$NEXUS_MODE" in
   ''|official|self-hosted|none) ;;
   *) die "Nexus 模式必须是 official、self-hosted 或 none。" ;;
-esac
-
-case "$RELEASE_VERSION" in
-  latest|'') ;;
-  v[0-9]*.[0-9]*.[0-9]*)
-    if [ -z "${AGENTDOCK_INSTALLER_BASE_URL:-}" ]; then
-      BASE_URL="$VERSIONED_RELEASE_BASE_URL/$RELEASE_VERSION"
-    fi
-    ;;
-  *) die "版本必须是 latest 或 vX.Y.Z：$RELEASE_VERSION" ;;
 esac
 
 case "$(uname -s 2>/dev/null || true)" in

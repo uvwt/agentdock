@@ -210,7 +210,6 @@ try {
     $env:AGENTDOCK_DEFAULT_DIR = Join-Path $root 'workspace'
 
     & $InstallerPath `
-        -Version 'v0.0.0-test' `
         -OfflineArchive $AgentDockArchive `
         -OfflineChecksumFile $AgentDockChecksumFile `
         -InstallDir $installDir `

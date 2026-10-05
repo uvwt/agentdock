@@ -23,7 +23,7 @@ func main() {
 
 func run(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("用法：release <catalog|version|component-version|component-catalog|prepare-distribution|verify-version|verify-dist|checksum|mirror-manifest> [参数]")
+		return errors.New("用法：release <catalog|version|component-version|component-catalog|verify-version|verify-dist|checksum|mirror-manifest> [参数]")
 	}
 	switch args[0] {
 	case "version":
@@ -41,11 +41,6 @@ func run(args []string, stdout io.Writer) error {
 			return errors.New("用法：release component-catalog")
 		}
 		return writeCloudflaredComponentCatalog(stdout)
-	case "prepare-distribution":
-		if len(args) != 3 {
-			return errors.New("用法：release prepare-distribution <release-base-url> <dist-dir>")
-		}
-		return prepareReleaseDistribution(args[1], args[2])
 	case "verify-version":
 		if len(args) != 2 {
 			return errors.New("用法：release verify-version <tag>")

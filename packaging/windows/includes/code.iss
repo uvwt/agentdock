@@ -402,7 +402,6 @@ begin
     InstallProgressPage.SetProgress(3, 5);
     Parameters :=
       '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + QuoteArgument(InstallScriptPath) +
-      ' -Version ' + QuoteArgument('{#AppVersion}') +
       ' -OfflineArchive ' + QuoteArgument(OfflineArchivePath) +
       ' -OfflineChecksumFile ' + QuoteArgument(OfflineChecksumPath) +
       ' -InstallDir ' + QuoteArgument(ExpandConstant('{app}\bin')) +

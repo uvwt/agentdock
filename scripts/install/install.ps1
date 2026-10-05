@@ -1,6 +1,5 @@
 [CmdletBinding()]
 param(
-    [string] $Version = 'latest',
     [string] $OfflineArchive = '',
     [string] $OfflineChecksumFile = '',
     [string] $OfflineCloudflaredBinary = '',
@@ -32,7 +31,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [int] $coreHealthTimeoutSeconds = 60
 $defaultReleaseBaseUrl = 'https://download.nexusdock.co/latest'
-$versionedReleaseBaseUrl = 'https://download.nexusdock.co/releases'
+$installedVersion = ''
 
 function Invoke-SetupRuntimeProcess {
     param(
@@ -77,22 +76,11 @@ function Get-AgentDockArchitecture {
 }
 
 function Get-ReleaseBaseUrl {
-    param([string] $RequestedVersion)
-
     $customBaseUrl = [Environment]::GetEnvironmentVariable('AGENTDOCK_RELEASE_BASE_URL')
     if (-not [string]::IsNullOrWhiteSpace($customBaseUrl)) {
         return $customBaseUrl.TrimEnd('/')
     }
-
-    if ($RequestedVersion -eq 'latest') {
-        return $defaultReleaseBaseUrl
-    }
-
-    $normalizedVersion = $RequestedVersion
-    if (-not $normalizedVersion.StartsWith('v')) {
-        $normalizedVersion = "v$normalizedVersion"
-    }
-    return "$versionedReleaseBaseUrl/$normalizedVersion"
+    return $defaultReleaseBaseUrl
 }
 
 function Get-Sha256Hex {
@@ -886,7 +874,7 @@ Write-InstallResult `
     -Path $ResultFile `
     -Success $false `
     -Message 'AgentDock installation is initializing.' `
-    -InstalledVersion $Version `
+    -InstalledVersion $installedVersion `
     -LocalMCPUrl "http://127.0.0.1:$Port/mcp" `
     -PublicMCPUrl '' `
     -BearerToken '' `
@@ -915,7 +903,7 @@ try {
         -Path $ResultFile `
         -Success $false `
         -Message $_.Exception.Message `
-        -InstalledVersion $Version `
+        -InstalledVersion $installedVersion `
         -LocalMCPUrl "http://127.0.0.1:$Port/mcp" `
         -PublicMCPUrl '' `
         -BearerToken '' `
@@ -1146,7 +1134,7 @@ try {
         Copy-Item -LiteralPath $OfflineArchive -Destination $archivePath -Force
         Copy-Item -LiteralPath $OfflineChecksumFile -Destination $checksumPath -Force
     } else {
-        $releaseBaseUrl = Get-ReleaseBaseUrl -RequestedVersion $Version
+        $releaseBaseUrl = Get-ReleaseBaseUrl
         Invoke-WebRequest -UseBasicParsing -Uri "$releaseBaseUrl/$assetName" -OutFile $archivePath
         Invoke-WebRequest -UseBasicParsing -Uri "$releaseBaseUrl/$assetName.sha256" -OutFile $checksumPath
     }
@@ -1248,6 +1236,7 @@ try {
     }
 
     $payloadVersion = 'v' + ([string] $preflightVersionInfo.version).TrimStart('v')
+    $installedVersion = $payloadVersion
     $engineReadyOutput = & $sourceBinary install --engine-ready 2>$null
     if ($LASTEXITCODE -ne 0 -or ("$engineReadyOutput" -notlike '*agentdock-installer-engine*')) {
         throw 'Release archive does not contain an Installer Engine capable AgentDock binary.'
@@ -1737,7 +1726,7 @@ exit `$LASTEXITCODE
         -Path $ResultFile `
         -Success $true `
         -Message 'AgentDock installation completed.' `
-        -InstalledVersion $Version `
+        -InstalledVersion $installedVersion `
         -LocalMCPUrl $localMCPUrl `
         -PublicMCPUrl $publicMCPUrl `
         -BearerToken $AuthToken `
@@ -1944,7 +1933,7 @@ exit `$LASTEXITCODE
         -Path $ResultFile `
         -Success $false `
         -Message $resultMessage `
-        -InstalledVersion $Version `
+        -InstalledVersion $installedVersion `
         -LocalMCPUrl "http://127.0.0.1:$Port/mcp" `
         -PublicMCPUrl '' `
         -BearerToken '' `

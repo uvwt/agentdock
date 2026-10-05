@@ -674,7 +674,6 @@ jobs:
           cp scripts/install/install.ps1 dist/install.ps1
           go run ./tools/release verify-version "$RELEASE_TAG"
           go run ./tools/release component-catalog > dist/agentdock-component-catalog.json
-          go run ./tools/release prepare-distribution "https://download.nexusdock.co/releases/$RELEASE_TAG" dist
           (
             cd dist
             for file in \
@@ -772,7 +771,6 @@ jobs:
           AGENTDOCK_INSTALLER_BASE_URL="$release_base" \
           AGENTDOCK_NONINTERACTIVE=true \
           AGENTDOCK_INSTALL_MODE=binary \
-          AGENTDOCK_RELEASE_VERSION="$RELEASE_TAG" \
           AGENTDOCK_SOURCE_DIR="$install_dir" \
           AGENTDOCK_DATA_DIR="$data_dir" \
           AGENTDOCK_ENV_FILE="$env_file" \
@@ -1091,7 +1089,6 @@ jobs:
 
             & .\scripts\test\run-windows-installer-e2e-as-standard-user.ps1 `
               -InstallerPath $env:STAGED_INSTALLER `
-              -Version $env:RELEASE_TAG `
               -ReleaseBaseUrl $releaseBaseUrl
           } finally {
             Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
@@ -1515,11 +1512,60 @@ jobs:
               --head "$url" >/dev/null
           done < <(jq -r '.assets[].browser_download_url' dist/latest.json)
 
-      - name: Publish latest.json
+      - name: Retain previous R2 release and publish latest.json
         shell: bash
         run: |
           set -euo pipefail
           endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+
+          previous_tag=""
+          if aws s3 cp "s3://$R2_BUCKET/latest.json" "$RUNNER_TEMP/previous-latest.json" \
+            --endpoint-url "$endpoint" \
+            --only-show-errors 2>/dev/null; then
+            previous_tag="$(jq -r '.tag_name // empty' "$RUNNER_TEMP/previous-latest.json")"
+            case "$previous_tag" in
+              v[0-9]*.[0-9]*.[0-9]*) ;;
+              *)
+                echo "Existing R2 latest.json has an invalid tag_name: $previous_tag" >&2
+                exit 1
+                ;;
+            esac
+          fi
+
+          aws s3api list-objects-v2 \
+            --bucket "$R2_BUCKET" \
+            --prefix "releases/" \
+            --endpoint-url "$endpoint" \
+            --output json \
+            > "$RUNNER_TEMP/r2-release-objects.json"
+
+          jq -r '
+            [.Contents[]?.Key
+              | select(test("^releases/v[0-9]+\\.[0-9]+\\.[0-9]+/"))
+              | capture("^releases/(?<tag>v[0-9]+\\.[0-9]+\\.[0-9]+)/").tag]
+            | unique[]
+          ' "$RUNNER_TEMP/r2-release-objects.json" > "$RUNNER_TEMP/r2-release-tags"
+
+          grep -Fxq "$RELEASE_TAG" "$RUNNER_TEMP/r2-release-tags" || {
+            echo "Current R2 release prefix is missing: releases/$RELEASE_TAG/" >&2
+            exit 1
+          }
+
+          if [[ -z "$previous_tag" || "$previous_tag" == "$RELEASE_TAG" ]]; then
+            echo "Skip R2 retention cleanup because no distinct previous stable release is known."
+          elif ! grep -Fxq "$previous_tag" "$RUNNER_TEMP/r2-release-tags"; then
+            echo "Previous stable R2 prefix is missing; keep existing release prefixes unchanged: $previous_tag"
+          else
+            while IFS= read -r tag; do
+              [[ "$tag" == "$RELEASE_TAG" ]] && continue
+              [[ "$tag" == "$previous_tag" ]] && continue
+              aws s3 rm "s3://$R2_BUCKET/releases/$tag/" \
+                --recursive \
+                --endpoint-url "$endpoint" \
+                --only-show-errors
+            done < "$RUNNER_TEMP/r2-release-tags"
+          fi
+
           aws s3 cp dist/latest.json "s3://$R2_BUCKET/latest.json" \
             --endpoint-url "$endpoint" \
             --content-type "application/json; charset=utf-8" \

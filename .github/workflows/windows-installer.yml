@@ -219,7 +219,6 @@ jobs:
 
             & .\scripts\test\run-windows-installer-e2e-as-standard-user.ps1 `
               -InstallerPath .\scripts\install\install.ps1 `
-              -Version latest `
               -ReleaseBaseUrl $releaseBaseUrl
           } finally {
             Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue

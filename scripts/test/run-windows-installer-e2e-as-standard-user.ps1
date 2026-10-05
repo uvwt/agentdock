@@ -1,7 +1,6 @@
 [CmdletBinding()]
 param(
     [string] $InstallerPath = '',
-    [string] $Version = 'latest',
     [string] $ReleaseBaseUrl = ''
 )
 
@@ -73,7 +72,7 @@ try {
 
     $testScript = Join-Path $testScriptDir 'test-install-windows-e2e.ps1'
     $installerScript = Join-Path $testScriptDir 'install.ps1'
-    $arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$testScript`" -InstallerPath `"$installerScript`" -Version $Version"
+    $arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$testScript`" -InstallerPath `"$installerScript`""
     if ($ReleaseBaseUrl) {
         $arguments += " -ReleaseBaseUrl `"$ReleaseBaseUrl`""
     }

@@ -66,7 +66,6 @@ try {
         -NonInteractive `
         -ExecutionPolicy Bypass `
         -File $testInstaller `
-        -Version '0.0.0-test' `
         -OfflineArchive $resolvedArchive `
         -OfflineChecksumFile $resolvedChecksum `
         -InstallDir $installDir `

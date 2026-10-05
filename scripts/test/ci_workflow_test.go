@@ -294,6 +294,7 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 		"name: Run versioned GHCR images",
 		"name: Run versioned Docker Hub images",
 		"name: Publish immutable Release to R2",
+		"name: Retain previous R2 release and publish latest.json",
 		"name: Promote aliases and publish GitHub Release",
 		"name: Promote validated mutable aliases",
 		"docker buildx imagetools create --tag",
@@ -301,6 +302,8 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 		"needs: [source, stage-release, mirror-r2]",
 		"--metadata \"sha256=$sha256\"",
 		"Immutable R2 object already exists with a different SHA-256",
+		"aws s3 rm \"s3://$R2_BUCKET/releases/$tag/\"",
+		"[[ \"$tag\" == \"$previous_tag\" ]] && continue",
 		"group: release-publication",
 		"release_api_error=\"$RUNNER_TEMP/release-api-error.log\"",
 		"HTTP 404",
@@ -328,8 +331,24 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 		}
 		last = index
 	}
-	if strings.Contains(workflow, "Remove stale R2 release objects") {
-		t.Fatal("published R2 release directories are immutable history and must not be deleted by later releases")
+	if strings.Contains(workflow, "prepare-distribution") {
+		t.Fatal("release packaging must not rewrite bootstrap scripts for version-specific downloads")
+	}
+	if strings.Contains(workflow, "AGENTDOCK_RELEASE_VERSION") {
+		t.Fatal("release verification must not expose historical-version bootstrap selection")
+	}
+	for _, forbidden := range []string{
+		"Skip R2 retention cleanup because no distinct previous stable release is known.\"\n            exit 0",
+		"Previous stable R2 prefix is missing; keep existing release prefixes unchanged: $previous_tag\"\n            exit 0",
+	} {
+		if strings.Contains(workflow, forbidden) {
+			t.Fatal("R2 cleanup skip must not bypass latest.json publication")
+		}
+	}
+	cleanupIndex := strings.Index(workflow, `aws s3 rm "s3://$R2_BUCKET/releases/$tag/"`)
+	publishLatestIndex := strings.Index(workflow, `aws s3 cp dist/latest.json "s3://$R2_BUCKET/latest.json"`)
+	if cleanupIndex < 0 || publishLatestIndex < 0 || cleanupIndex > publishLatestIndex {
+		t.Fatal("R2 retention cleanup must finish before latest.json moves to the new stable release")
 	}
 
 	if strings.Contains(workflow, "type=raw,value=latest") ||
