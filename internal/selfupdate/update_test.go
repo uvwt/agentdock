@@ -18,6 +18,13 @@ import (
 	"testing"
 )
 
+func TestDefaultReleaseManifestUsesNexusDockR2(t *testing.T) {
+	const want = "https://download.nexusdock.co/latest.json"
+	if defaultReleaseManifestURL != want {
+		t.Fatalf("default release manifest URL = %q, want %q", defaultReleaseManifestURL, want)
+	}
+}
+
 func TestReleaseArchiveLimitSupportsCurrentWindowsBundle(t *testing.T) {
 	// Windows 离线包包含自包含 WPF 控制面板，压缩后已超过 64 MiB；
 	// 下载上限需要留有增长空间，但单个解压内容仍保持原来的 64 MiB 防护。
@@ -43,11 +50,11 @@ func TestInspectUpdateReportsAvailableVersionWithoutApplying(t *testing.T) {
 	defer server.Close()
 
 	inspection, err := inspectUpdate(context.Background(), options{
-		CurrentVersion: "0.6.1",
-		GOOS:           "windows",
-		GOARCH:         "amd64",
-		ReleaseAPI:     server.URL,
-		HTTPClient:     server.Client(),
+		CurrentVersion:     "0.6.1",
+		GOOS:               "windows",
+		GOARCH:             "amd64",
+		ReleaseManifestURL: server.URL,
+		HTTPClient:         server.Client(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -75,12 +82,12 @@ func TestInspectUpdateRequiresMacOSDesktopAssetsWhenAppIsInstalled(t *testing.T)
 	defer server.Close()
 
 	inspection, err := inspectUpdate(context.Background(), options{
-		CurrentVersion:    "0.7.0",
-		DesktopTargetPath: "/Applications/AgentDock.app",
-		GOOS:              "darwin",
-		GOARCH:            "arm64",
-		ReleaseAPI:        server.URL,
-		HTTPClient:        server.Client(),
+		CurrentVersion:     "0.7.0",
+		DesktopTargetPath:  "/Applications/AgentDock.app",
+		GOOS:               "darwin",
+		GOARCH:             "arm64",
+		ReleaseManifestURL: server.URL,
+		HTTPClient:         server.Client(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +118,7 @@ func TestInspectUpdateRepairsOlderDesktopWhenCoreIsCurrent(t *testing.T) {
 		DesktopCurrentVersion: "0.6.1",
 		GOOS:                  "darwin",
 		GOARCH:                "arm64",
-		ReleaseAPI:            server.URL,
+		ReleaseManifestURL:    server.URL,
 		HTTPClient:            server.Client(),
 	})
 	if err != nil {
@@ -143,7 +150,7 @@ func TestInspectUpdateUsesWindowsReleaseBundleForDesktopUpdate(t *testing.T) {
 		DesktopCurrentVersion: "0.7.4",
 		GOOS:                  "windows",
 		GOARCH:                "amd64",
-		ReleaseAPI:            server.URL,
+		ReleaseManifestURL:    server.URL,
 		HTTPClient:            server.Client(),
 	})
 	if err != nil {
@@ -170,12 +177,12 @@ func TestInspectUpdateRepairsMissingWindowsDesktopMarkerWhenCoreIsCurrent(t *tes
 	defer server.Close()
 
 	inspection, err := inspectUpdate(context.Background(), options{
-		CurrentVersion:    "0.7.5",
-		DesktopTargetPath: `C:\Users\test\AppData\Local\AgentDock`,
-		GOOS:              "windows",
-		GOARCH:            "amd64",
-		ReleaseAPI:        server.URL,
-		HTTPClient:        server.Client(),
+		CurrentVersion:     "0.7.5",
+		DesktopTargetPath:  `C:\Users\test\AppData\Local\AgentDock`,
+		GOOS:               "windows",
+		GOARCH:             "amd64",
+		ReleaseManifestURL: server.URL,
+		HTTPClient:         server.Client(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -201,12 +208,12 @@ func TestInspectUpdateRejectsMacOSReleaseWithoutDesktopAsset(t *testing.T) {
 	defer server.Close()
 
 	_, err := inspectUpdate(context.Background(), options{
-		CurrentVersion:    "0.7.0",
-		DesktopTargetPath: "/Applications/AgentDock.app",
-		GOOS:              "darwin",
-		GOARCH:            "arm64",
-		ReleaseAPI:        server.URL,
-		HTTPClient:        server.Client(),
+		CurrentVersion:     "0.7.0",
+		DesktopTargetPath:  "/Applications/AgentDock.app",
+		GOOS:               "darwin",
+		GOARCH:             "arm64",
+		ReleaseManifestURL: server.URL,
+		HTTPClient:         server.Client(),
 	})
 	if err == nil || !strings.Contains(err.Error(), macOSDesktopArchiveName) {
 		t.Fatalf("unexpected error: %v", err)
@@ -220,11 +227,11 @@ func TestInspectUpdateReportsCurrentVersion(t *testing.T) {
 	defer server.Close()
 
 	inspection, err := inspectUpdate(context.Background(), options{
-		CurrentVersion: "0.6.1",
-		GOOS:           "windows",
-		GOARCH:         "amd64",
-		ReleaseAPI:     server.URL,
-		HTTPClient:     server.Client(),
+		CurrentVersion:     "0.6.1",
+		GOOS:               "windows",
+		GOARCH:             "amd64",
+		ReleaseManifestURL: server.URL,
+		HTTPClient:         server.Client(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -261,13 +268,13 @@ func TestRunDownloadsVerifiesAndAppliesRelease(t *testing.T) {
 	var output strings.Builder
 	applied := false
 	err := run(context.Background(), options{
-		CurrentVersion: "0.4.4",
-		ExecutablePath: "/tmp/agentdock",
-		GOOS:           "darwin",
-		GOARCH:         "arm64",
-		ReleaseAPI:     server.URL + "/release",
-		HTTPClient:     server.Client(),
-		Output:         &output,
+		CurrentVersion:     "0.4.4",
+		ExecutablePath:     "/tmp/agentdock",
+		GOOS:               "darwin",
+		GOARCH:             "arm64",
+		ReleaseManifestURL: server.URL + "/release",
+		HTTPClient:         server.Client(),
+		Output:             &output,
 		VerifyBinary: func(_ context.Context, path, targetVersion string) error {
 			file := mustOpen(t, path)
 			data, err := io.ReadAll(file)
@@ -336,15 +343,15 @@ func TestRunStagesMacOSDesktopAppWithCoreUpdate(t *testing.T) {
 	extracted := false
 	applied := false
 	err := run(context.Background(), options{
-		CurrentVersion:    "0.7.0",
-		ExecutablePath:    "/tmp/agentdock",
-		DesktopTargetPath: "/Applications/AgentDock.app",
-		GOOS:              "darwin",
-		GOARCH:            "arm64",
-		ReleaseAPI:        server.URL + "/release",
-		HTTPClient:        server.Client(),
-		Output:            io.Discard,
-		VerifyBinary:      func(context.Context, string, string) error { return nil },
+		CurrentVersion:     "0.7.0",
+		ExecutablePath:     "/tmp/agentdock",
+		DesktopTargetPath:  "/Applications/AgentDock.app",
+		GOOS:               "darwin",
+		GOARCH:             "arm64",
+		ReleaseManifestURL: server.URL + "/release",
+		HTTPClient:         server.Client(),
+		Output:             io.Discard,
+		VerifyBinary:       func(context.Context, string, string) error { return nil },
 		ExtractDesktop: func(_ context.Context, data []byte, tempDir, targetVersion string) (string, error) {
 			extracted = true
 			if string(data) != string(desktopArchive) || targetVersion != "v0.7.1" {
@@ -406,7 +413,7 @@ func TestRunDesktopOnlyDoesNotRequireCoreAsset(t *testing.T) {
 		DesktopOnly:           true,
 		GOOS:                  "darwin",
 		GOARCH:                "arm64",
-		ReleaseAPI:            server.URL + "/release",
+		ReleaseManifestURL:    server.URL + "/release",
 		HTTPClient:            server.Client(),
 		Output:                io.Discard,
 		VerifyBinary:          func(context.Context, string, string) error { return nil },
@@ -469,7 +476,7 @@ func TestRunRepairsWindowsDesktopOnlyWhenCoreIsCurrent(t *testing.T) {
 		DesktopCurrentVersion: "0.7.4",
 		GOOS:                  "windows",
 		GOARCH:                "amd64",
-		ReleaseAPI:            server.URL + "/release",
+		ReleaseManifestURL:    server.URL + "/release",
 		HTTPClient:            server.Client(),
 		Output:                io.Discard,
 		VerifyBinary:          func(context.Context, string, string) error { return nil },
@@ -524,12 +531,12 @@ func TestRunRejectsChecksumBeforeApplying(t *testing.T) {
 	defer server.Close()
 
 	err := run(context.Background(), options{
-		CurrentVersion: "0.4.4",
-		ExecutablePath: "/tmp/agentdock",
-		GOOS:           "linux",
-		GOARCH:         "amd64",
-		ReleaseAPI:     server.URL + "/release",
-		HTTPClient:     server.Client(),
+		CurrentVersion:     "0.4.4",
+		ExecutablePath:     "/tmp/agentdock",
+		GOOS:               "linux",
+		GOARCH:             "amd64",
+		ReleaseManifestURL: server.URL + "/release",
+		HTTPClient:         server.Client(),
 		VerifyBinary: func(context.Context, string, string) error {
 			t.Fatal("binary verification must not run after checksum failure")
 			return nil
@@ -553,14 +560,14 @@ func TestRunSkipsCurrentAndNewerVersions(t *testing.T) {
 			defer server.Close()
 			var output strings.Builder
 			err := run(context.Background(), options{
-				CurrentVersion: current,
-				ExecutablePath: "/tmp/agentdock",
-				GOOS:           "darwin",
-				GOARCH:         "arm64",
-				ReleaseAPI:     server.URL,
-				HTTPClient:     server.Client(),
-				Output:         &output,
-				VerifyBinary:   func(context.Context, string, string) error { return nil },
+				CurrentVersion:     current,
+				ExecutablePath:     "/tmp/agentdock",
+				GOOS:               "darwin",
+				GOARCH:             "arm64",
+				ReleaseManifestURL: server.URL,
+				HTTPClient:         server.Client(),
+				Output:             &output,
+				VerifyBinary:       func(context.Context, string, string) error { return nil },
 				Apply: func(context.Context, applyRequest) (applyResult, error) {
 					t.Fatal("apply must not run")
 					return applyResult{}, nil

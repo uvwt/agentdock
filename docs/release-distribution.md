@@ -1,6 +1,6 @@
 # Release 下载分发
 
-AgentDock 的正式版本仍以 GitHub Release 为唯一历史档案。Release workflow 在正式 GitHub Release 发布成功后，把当前最新版的 **AgentDock 第一方发布物** 镜像到 Cloudflare R2，供 NexusDock 官网和客户端更新使用。
+AgentDock 的正式版本仍以 GitHub Release 为历史档案。Release workflow 把当前稳定版的 **AgentDock 第一方发布物** 镜像到 Cloudflare R2，供 NexusDock 官网和客户端更新使用。桌面端“检查更新”默认读取 `https://download.nexusdock.co/latest.json`，后续 AgentDock 安装包、桌面归档和校验文件都使用该清单中的 R2 URL，不再把 AgentDock GitHub API 或 GitHub Release 下载地址作为运行时依赖。
 
 第三方依赖不进入这条镜像链。当前 cloudflared 由 AgentDock 的第一方 component catalog 固定版本、固定官方 URL、artifact format 和 SHA-256；客户端直接从 Cloudflare 官方 GitHub Release 下载。
 

@@ -141,7 +141,7 @@ func runWindowsLegacyLayoutMigration(
 			return fmt.Errorf("读取 Windows legacy migration checksum: %w", err)
 		}
 	} else {
-		latest, fetchErr := fetchLatestRelease(ctx, opts.HTTPClient, opts.ReleaseAPI)
+		latest, fetchErr := fetchLatestReleaseManifest(ctx, opts.HTTPClient, opts.ReleaseManifestURL)
 		if fetchErr != nil {
 			return fetchErr
 		}

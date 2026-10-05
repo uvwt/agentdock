@@ -27,12 +27,12 @@ import (
 )
 
 const (
-	defaultReleaseAPI        = "https://api.github.com/repos/uvwt/agentdock/releases/latest"
-	maxReleaseArchiveBytes   = 256 << 20
-	maxDesktopArchiveBytes   = 512 << 20
-	maxExtractedPayloadBytes = 64 << 20
-	macOSDesktopArchiveName  = "AgentDock-macos-universal.zip"
-	coreSkillBundlePrefix    = "share/agentdock/core-skills/"
+	defaultReleaseManifestURL = "https://download.nexusdock.co/latest.json"
+	maxReleaseArchiveBytes    = 256 << 20
+	maxDesktopArchiveBytes    = 512 << 20
+	maxExtractedPayloadBytes  = 64 << 20
+	macOSDesktopArchiveName   = "AgentDock-macos-universal.zip"
+	coreSkillBundlePrefix     = "share/agentdock/core-skills/"
 )
 
 type release struct {
@@ -72,7 +72,7 @@ type options struct {
 	DesktopOnly           bool
 	GOOS                  string
 	GOARCH                string
-	ReleaseAPI            string
+	ReleaseManifestURL    string
 	HTTPClient            *http.Client
 	Output                io.Writer
 	Progress              updateProgressReporter
@@ -157,7 +157,7 @@ func runtimeOptions(output io.Writer) (options, error) {
 		DesktopOnly:           desktopUpdateOwnsExecutable(desktopTarget, executable),
 		GOOS:                  runtime.GOOS,
 		GOARCH:                runtime.GOARCH,
-		ReleaseAPI:            defaultReleaseAPI,
+		ReleaseManifestURL:    defaultReleaseManifestURL,
 		HTTPClient:            &http.Client{Timeout: 5 * time.Minute},
 		Output:                output,
 		Apply:                 applyPlatformUpdate,
@@ -374,7 +374,7 @@ func inspectUpdate(ctx context.Context, opts options) (updateInspection, error) 
 	if opts.HTTPClient == nil {
 		return updateInspection{}, errors.New("更新 HTTP 客户端不能为空")
 	}
-	latest, err := fetchLatestRelease(ctx, opts.HTTPClient, opts.ReleaseAPI)
+	latest, err := fetchLatestReleaseManifest(ctx, opts.HTTPClient, opts.ReleaseManifestURL)
 	if err != nil {
 		return updateInspection{}, err
 	}
@@ -477,12 +477,11 @@ func inspectUpdate(ctx context.Context, opts options) (updateInspection, error) 
 	}, nil
 }
 
-func fetchLatestRelease(ctx context.Context, client *http.Client, endpoint string) (release, error) {
+func fetchLatestReleaseManifest(ctx context.Context, client *http.Client, endpoint string) (release, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return release{}, fmt.Errorf("创建 Release 请求失败: %w", err)
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "agentdock/"+buildinfo.Version)
 	resp, err := client.Do(req)
 	if err != nil {
