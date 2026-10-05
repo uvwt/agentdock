@@ -161,6 +161,7 @@ func TestWindowsRuntimeBootstrapVerifiesPlatformTrust(t *testing.T) {
 		"Microsoft.WindowsDesktop.App",
 		"InstalledVersions\\$dotnetArchitecture",
 		"RegistryView]::Registry64",
+		"RegistryView]::Registry32",
 		"-TargetArchitecture $Architecture",
 		"Start-Process -FilePath $Path -ArgumentList $Arguments -Verb RunAs -Wait -PassThru",
 		"after installation",

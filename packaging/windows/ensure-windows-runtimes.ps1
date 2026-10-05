@@ -58,28 +58,30 @@ function Test-WindowsDesktopRuntime {
         $roots -notcontains $env:DOTNET_ROOT) {
         $roots += $env:DOTNET_ROOT
     }
-    $baseKey = $null
-    $architectureKey = $null
-    try {
-        # Setup 可能由 32-bit Inno 进程启动，因此显式读取 64-bit registry view，
-        # 与 .NET 官方全局安装位置契约保持一致。
+    # .NET 的架构名位于键路径本身；不同安装器/宿主位数可能把同一架构键写入
+    # Registry64 或 Registry32 view。两边都查，但始终只接受目标架构子键。
+    foreach ($registryView in @(
+        [Microsoft.Win32.RegistryView]::Registry64,
+        [Microsoft.Win32.RegistryView]::Registry32
+    )) {
         $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
             [Microsoft.Win32.RegistryHive]::LocalMachine,
-            [Microsoft.Win32.RegistryView]::Registry64)
-        $architectureKey = $baseKey.OpenSubKey(
-            "SOFTWARE\dotnet\Setup\InstalledVersions\$dotnetArchitecture")
-        if ($null -ne $architectureKey) {
-            $installLocation = [string] $architectureKey.GetValue('InstallLocation')
-            if (-not [string]::IsNullOrWhiteSpace($installLocation) -and
-                $roots -notcontains $installLocation) {
-                $roots += $installLocation
+            $registryView)
+        try {
+            $architectureKey = $baseKey.OpenSubKey(
+                "SOFTWARE\dotnet\Setup\InstalledVersions\$dotnetArchitecture")
+            if ($null -ne $architectureKey) {
+                try {
+                    $installLocation = [string] $architectureKey.GetValue('InstallLocation')
+                    if (-not [string]::IsNullOrWhiteSpace($installLocation) -and
+                        $roots -notcontains $installLocation) {
+                        $roots += $installLocation
+                    }
+                } finally {
+                    $architectureKey.Dispose()
+                }
             }
-        }
-    } finally {
-        if ($null -ne $architectureKey) {
-            $architectureKey.Dispose()
-        }
-        if ($null -ne $baseKey) {
+        } finally {
             $baseKey.Dispose()
         }
     }
