@@ -258,6 +258,10 @@ public sealed record NexusDeviceStatus(
     bool DeviceTokenStored,
     string Error = "");
 
+public sealed record NexusConnectionSnapshot(
+    NexusDeviceStatus Nexus,
+    bool NexusConnected);
+
 public sealed class RuntimeRecentCall
 {
     [JsonPropertyName("id")]

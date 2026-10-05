@@ -46,64 +46,7 @@ public sealed class RuntimeService : IDisposable
         bool includeNexusConnection = false)
     {
         var manifest = await ReadRuntimeManifestAsync(cancellationToken) ?? new RuntimeManifest();
-        var manifestPort = manifest.ListenPort is >= 1 and <= 65535 ? manifest.ListenPort : 8765;
-        var settings = await ReadJsonAsync<ControlPanelSettings>(SettingsPath, cancellationToken);
-        if (settings is null)
-        {
-            settings = new ControlPanelSettings { Port = manifestPort };
-        }
-        else if (settings.Port is < 1 or > 65535)
-        {
-            settings.Port = manifestPort;
-        }
-
-        if (string.IsNullOrWhiteSpace(settings.LogLevel))
-        {
-            settings.LogLevel = "info";
-        }
-        settings.McpAppsMode = string.IsNullOrWhiteSpace(settings.McpAppsMode)
-            ? settings.LegacyMcpAppsEnabled == false ? "off" : "full"
-            : settings.McpAppsMode.Trim().ToLowerInvariant();
-        settings.LegacyMcpAppsEnabled = null;
-        settings.AcpProfiles ??= [];
-        if (settings.AcpProfiles.Count == 0)
-        {
-            // 旧 control-panel-settings.json 只在读取边界迁移；保存后只保留 Profiles。
-            var legacy = await ReadJsonAsync<LegacyAcpControlPanelSettings>(SettingsPath, cancellationToken);
-            var legacyKind = string.IsNullOrWhiteSpace(legacy?.AcpAgent)
-                ? "codex"
-                : NormalizeAcpAgent(legacy.AcpAgent);
-            settings.AcpProfiles.Add(new AcpProfileSettings
-            {
-                Id = legacyKind,
-                Kind = legacyKind,
-                Command = legacy?.AcpCommand?.Trim() ?? "",
-                Args = legacy?.AcpArgs is null ? [] : [.. legacy.AcpArgs],
-                Enabled = true
-            });
-            settings.AcpDefaultProfile = legacyKind;
-        }
-        else
-        {
-            foreach (var profile in settings.AcpProfiles)
-            {
-                profile.Id = (profile.Id ?? "").Trim();
-                profile.DisplayName = (profile.DisplayName ?? "").Trim();
-                profile.Kind = NormalizeAcpAgent(profile.Kind);
-                if (profile.Kind == "custom" && profile.DisplayName.Length == 0)
-                {
-                    profile.DisplayName = profile.Id;
-                }
-                profile.Command = (profile.Command ?? "").Trim();
-                profile.Args ??= [];
-            }
-            settings.AcpDefaultProfile = (settings.AcpDefaultProfile ?? "").Trim();
-            if (settings.AcpDefaultProfile.Length == 0)
-            {
-                settings.AcpDefaultProfile = settings.AcpProfiles.FirstOrDefault(profile => profile.Enabled)?.Id
-                    ?? settings.AcpProfiles[0].Id;
-            }
-        }
+        var settings = await ReadControlPanelSettingsAsync(manifest, cancellationToken);
 
         var localOrigin = $"http://127.0.0.1:{settings.Port}";
         var localMcpUrl = localOrigin + "/mcp";
@@ -170,6 +113,95 @@ public sealed class RuntimeService : IDisposable
             nexus,
             nexusConnected,
             DateTimeOffset.Now);
+    }
+
+    public async Task<ControlPanelSettings> GetControlPanelSettingsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var manifest = await ReadRuntimeManifestAsync(cancellationToken) ?? new RuntimeManifest();
+        return await ReadControlPanelSettingsAsync(manifest, cancellationToken);
+    }
+
+    public async Task<NexusConnectionSnapshot> GetNexusConnectionSnapshotAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var nexus = ReadNexusDeviceStatus();
+        if (!nexus.Paired || !string.IsNullOrWhiteSpace(nexus.Error))
+        {
+            return new NexusConnectionSnapshot(nexus, false);
+        }
+
+        var manifest = await ReadRuntimeManifestAsync(cancellationToken) ?? new RuntimeManifest();
+        var binaryPath = ResolveCoreBinaryPath(manifest);
+        var connected = File.Exists(binaryPath) &&
+            await ReadNexusConnectionAsync(binaryPath, cancellationToken);
+        return new NexusConnectionSnapshot(nexus, connected);
+    }
+
+    private async Task<ControlPanelSettings> ReadControlPanelSettingsAsync(
+        RuntimeManifest manifest,
+        CancellationToken cancellationToken)
+    {
+        var manifestPort = manifest.ListenPort is >= 1 and <= 65535 ? manifest.ListenPort : 8765;
+        var settings = await ReadJsonAsync<ControlPanelSettings>(SettingsPath, cancellationToken);
+        if (settings is null)
+        {
+            settings = new ControlPanelSettings { Port = manifestPort };
+        }
+        else if (settings.Port is < 1 or > 65535)
+        {
+            settings.Port = manifestPort;
+        }
+
+        if (string.IsNullOrWhiteSpace(settings.LogLevel))
+        {
+            settings.LogLevel = "info";
+        }
+        settings.McpAppsMode = string.IsNullOrWhiteSpace(settings.McpAppsMode)
+            ? settings.LegacyMcpAppsEnabled == false ? "off" : "full"
+            : settings.McpAppsMode.Trim().ToLowerInvariant();
+        settings.LegacyMcpAppsEnabled = null;
+        settings.AcpProfiles ??= [];
+        if (settings.AcpProfiles.Count == 0)
+        {
+            // 旧 control-panel-settings.json 只在读取边界迁移；保存后只保留 Profiles。
+            var legacy = await ReadJsonAsync<LegacyAcpControlPanelSettings>(SettingsPath, cancellationToken);
+            var legacyKind = string.IsNullOrWhiteSpace(legacy?.AcpAgent)
+                ? "codex"
+                : NormalizeAcpAgent(legacy.AcpAgent);
+            settings.AcpProfiles.Add(new AcpProfileSettings
+            {
+                Id = legacyKind,
+                Kind = legacyKind,
+                Command = legacy?.AcpCommand?.Trim() ?? "",
+                Args = legacy?.AcpArgs is null ? [] : [.. legacy.AcpArgs],
+                Enabled = true
+            });
+            settings.AcpDefaultProfile = legacyKind;
+        }
+        else
+        {
+            foreach (var profile in settings.AcpProfiles)
+            {
+                profile.Id = (profile.Id ?? "").Trim();
+                profile.DisplayName = (profile.DisplayName ?? "").Trim();
+                profile.Kind = NormalizeAcpAgent(profile.Kind);
+                if (profile.Kind == "custom" && profile.DisplayName.Length == 0)
+                {
+                    profile.DisplayName = profile.Id;
+                }
+                profile.Command = (profile.Command ?? "").Trim();
+                profile.Args ??= [];
+            }
+            settings.AcpDefaultProfile = (settings.AcpDefaultProfile ?? "").Trim();
+            if (settings.AcpDefaultProfile.Length == 0)
+            {
+                settings.AcpDefaultProfile = settings.AcpProfiles.FirstOrDefault(profile => profile.Enabled)?.Id
+                    ?? settings.AcpProfiles[0].Id;
+            }
+        }
+
+        return settings;
     }
 
     public async Task<PublicEndpointCheckResult> CheckPublicEndpointAsync(

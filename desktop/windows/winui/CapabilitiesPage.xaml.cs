@@ -31,11 +31,21 @@ public sealed partial class CapabilitiesPage : Page
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
+        if (e.Parameter is CapabilitiesNavigationRequest request)
+        {
+            _runtime = request.Runtime;
+            ApplySettings(request.Settings);
+            return;
+        }
+
         _runtime = e.Parameter as RuntimeService;
         if (_runtime is null) return;
-        var snapshot = await _runtime.GetSnapshotAsync(includeNexusConnection: false);
-        _settings = snapshot.Settings;
-        var settings = _settings;
+        ApplySettings(await _runtime.GetControlPanelSettingsAsync());
+    }
+
+    private void ApplySettings(ControlPanelSettings settings)
+    {
+        _settings = settings;
         foreach (var kind in new[] { "codex", "claude", "grok" })
         {
             if (settings.AcpProfiles.Any(profile => string.Equals(profile.Id, kind, StringComparison.OrdinalIgnoreCase))) continue;

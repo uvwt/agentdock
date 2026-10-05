@@ -11,7 +11,7 @@ public sealed partial class ConnectionsPage : Page
     private const string OfficialDevicesUrl = "https://mcp.nexusdock.co/workspace/devices";
 
     private RuntimeService? _runtime;
-    private RuntimeSnapshot? _snapshot;
+    private NexusConnectionSnapshot? _connection;
     private bool _updatingRemoteService;
     private bool _rePairing;
 
@@ -43,6 +43,13 @@ public sealed partial class ConnectionsPage : Page
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
+        if (e.Parameter is ConnectionsNavigationRequest request)
+        {
+            _runtime = request.Runtime;
+            ApplyConnectionState(request.State);
+            return;
+        }
+
         _runtime = e.Parameter as RuntimeService;
         if (_runtime is not null) await RefreshAsync();
     }
@@ -50,17 +57,21 @@ public sealed partial class ConnectionsPage : Page
     private async Task RefreshAsync()
     {
         if (_runtime is null) return;
+        ApplyConnectionState(await _runtime.GetNexusConnectionSnapshotAsync());
+    }
 
-        _snapshot = await _runtime.GetSnapshotAsync(includeNexusConnection: true);
-        RemoteState.Text = _snapshot.NexusConnected
+    private void ApplyConnectionState(NexusConnectionSnapshot state)
+    {
+        _connection = state;
+        RemoteState.Text = state.NexusConnected
             ? UiText.Get("Connected")
-            : _snapshot.Nexus.Paired ? UiText.Get("NotConnected") : UiText.Get("NotConfigured");
+            : state.Nexus.Paired ? UiText.Get("NotConnected") : UiText.Get("NotConfigured");
         RemoteStateDot.Fill = new Microsoft.UI.Xaml.Media.SolidColorBrush(
-            _snapshot.NexusConnected
+            state.NexusConnected
                 ? Microsoft.UI.Colors.Green
-                : _snapshot.Nexus.Paired ? Microsoft.UI.Colors.DarkOrange : Microsoft.UI.Colors.Gray);
+                : state.Nexus.Paired ? Microsoft.UI.Colors.DarkOrange : Microsoft.UI.Colors.Gray);
 
-        var endpoint = _snapshot.Nexus.Paired ? _snapshot.Nexus.Endpoint : OfficialEndpoint;
+        var endpoint = state.Nexus.Paired ? state.Nexus.Endpoint : OfficialEndpoint;
         var official = IsOfficialEndpoint(endpoint);
         RemoteServiceValue.Text = official
             ? UiText.Get("OfficialService") + " · nexusdock.co"
@@ -103,7 +114,7 @@ public sealed partial class ConnectionsPage : Page
 
     private void UpdatePairingControls()
     {
-        var paired = _snapshot?.Nexus.Paired == true;
+        var paired = _connection?.Nexus.Paired == true;
         var showPairingInput = !paired || _rePairing;
 
         PairingIntro.Visibility = showPairingInput ? Visibility.Visible : Visibility.Collapsed;
@@ -113,7 +124,7 @@ public sealed partial class ConnectionsPage : Page
         NexusDevicesLink.Visibility = SelectedRemoteService() == "official"
             ? Visibility.Visible
             : Visibility.Collapsed;
-        NexusDevicesLink.Content = paired && !_rePairing && IsOfficialEndpoint(_snapshot!.Nexus.Endpoint)
+        NexusDevicesLink.Content = paired && !_rePairing && IsOfficialEndpoint(_connection!.Nexus.Endpoint)
             ? UiText.Get("ManageConnectedDevices")
             : UiText.Get("GetPairingCodeFromNexusDock");
     }
@@ -154,7 +165,7 @@ public sealed partial class ConnectionsPage : Page
     {
         if (_runtime is null || sender is not Button button) return;
 
-        if (_snapshot?.Nexus.Paired == true && !_rePairing)
+        if (_connection?.Nexus.Paired == true && !_rePairing)
         {
             _rePairing = true;
             PairingCodeBox.Password = "";

@@ -7,6 +7,8 @@ using Windows.Graphics;
 namespace AgentDock.ControlPanel;
 
 internal sealed record SettingsNavigationRequest(RuntimeService Runtime, string Tag);
+internal sealed record ConnectionsNavigationRequest(RuntimeService Runtime, NexusConnectionSnapshot State);
+internal sealed record CapabilitiesNavigationRequest(RuntimeService Runtime, ControlPanelSettings Settings);
 
 public sealed partial class MainWindow : Window
 {
@@ -22,6 +24,7 @@ public sealed partial class MainWindow : Window
     private readonly string? _initialSettingsPage;
     private string _themePreference = UiThemePreference.SystemPreference;
     private string? _pendingSettingsTag;
+    private CancellationTokenSource? _navigationLoadCancellation;
 
     internal bool AllowClose { get; set; }
 
@@ -101,7 +104,71 @@ public sealed partial class MainWindow : Window
     private void Navigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         if (args.SelectedItemContainer?.Tag is not string tag) return;
+        BeginNavigation(tag, args.SelectedItemContainer);
+    }
+
+    private void BeginNavigation(string tag, NavigationViewItemBase? expectedItem = null)
+    {
+        _navigationLoadCancellation?.Cancel();
+        _navigationLoadCancellation = null;
+
+        if (tag is "connections" or "capabilities")
+        {
+            var cancellation = new CancellationTokenSource();
+            _navigationLoadCancellation = cancellation;
+            _ = NavigatePreparedPageAsync(tag, expectedItem, cancellation);
+            return;
+        }
+
         ContentFrame.Navigate(PageForTag(tag), NavigationParameterForTag(tag));
+    }
+
+    private async Task NavigatePreparedPageAsync(
+        string tag,
+        NavigationViewItemBase? expectedItem,
+        CancellationTokenSource cancellation)
+    {
+        try
+        {
+            object parameter = tag switch
+            {
+                "connections" => new ConnectionsNavigationRequest(
+                    _runtime,
+                    await _runtime.GetNexusConnectionSnapshotAsync(cancellation.Token)),
+                "capabilities" => new CapabilitiesNavigationRequest(
+                    _runtime,
+                    await _runtime.GetControlPanelSettingsAsync(cancellation.Token)),
+                _ => NavigationParameterForTag(tag)
+            };
+
+            if (cancellation.IsCancellationRequested ||
+                expectedItem is not null && !ReferenceEquals(Navigation.SelectedItem, expectedItem))
+            {
+                return;
+            }
+
+            ContentFrame.Navigate(PageForTag(tag), parameter);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Navigation preload failed for {tag}: {ex}");
+            if (!cancellation.IsCancellationRequested &&
+                (expectedItem is null || ReferenceEquals(Navigation.SelectedItem, expectedItem)))
+            {
+                ContentFrame.Navigate(PageForTag(tag), _runtime);
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_navigationLoadCancellation, cancellation))
+            {
+                _navigationLoadCancellation = null;
+            }
+            cancellation.Dispose();
+        }
     }
 
     private void ContentFrame_Navigated(object sender, Microsoft.UI.Xaml.Navigation.NavigationEventArgs e)
@@ -168,7 +235,7 @@ public sealed partial class MainWindow : Window
             Navigation.SelectedItem = item;
             return;
         }
-        ContentFrame.Navigate(PageForTag(tag), NavigationParameterForTag(tag));
+        BeginNavigation(tag, item);
     }
 
     private object NavigationParameterForTag(string tag)

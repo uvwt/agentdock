@@ -74,12 +74,12 @@ func TestWindowsNativeControlPanelCarriesSettingsParity(t *testing.T) {
 	}
 	for _, want := range []string{
 		"PairNexusAsync",
-		"GetSnapshotAsync(includeNexusConnection: true)",
+		"GetNexusConnectionSnapshotAsync()",
 		"https://mcp.nexusdock.co/workspace/devices",
 		`UiText.Get("GetPairingCodeFromNexusDock")`,
 		`UiText.Get("ManageConnectedDevices")`,
 		`NexusDevicesLink.Visibility = SelectedRemoteService() == "official"`,
-		"IsOfficialEndpoint(_snapshot!.Nexus.Endpoint)",
+		"IsOfficialEndpoint(_connection!.Nexus.Endpoint)",
 		"UiText.Get(\"RePair\")",
 	} {
 		if !strings.Contains(connections, want) {
@@ -295,6 +295,66 @@ func TestWindowsInitialFrameIsPreparedBeforeWindowIsShown(t *testing.T) {
 	firstRender := strings.Index(homeCode, "var serviceLoaded = _snapshot.CoreRunning")
 	if dashboardLoaded < 0 || firstRender < 0 || dashboardLoaded > firstRender {
 		t.Fatal("WinUI Home must fetch its initial dashboard before committing runtime state to the visible UI")
+	}
+}
+
+func TestWindowsDataDrivenPagesArePreparedBeforeFrameNavigation(t *testing.T) {
+	window := readWindowsNativeFile(t, "winui", "MainWindow.xaml.cs")
+	connections := readWindowsNativeFile(t, "winui", "ConnectionsPage.xaml.cs")
+	capabilities := readWindowsNativeFile(t, "winui", "CapabilitiesPage.xaml.cs")
+	runtime := readWindowsNativeFile(t, "shared", "Services", "RuntimeService.cs")
+	models := readWindowsNativeFile(t, "shared", "Models", "RuntimeModels.cs")
+
+	for _, want := range []string{
+		"ConnectionsNavigationRequest",
+		"CapabilitiesNavigationRequest",
+		"NavigatePreparedPageAsync",
+		"GetNexusConnectionSnapshotAsync(cancellation.Token)",
+		"GetControlPanelSettingsAsync(cancellation.Token)",
+		"ContentFrame.Navigate(PageForTag(tag), parameter)",
+		"_navigationLoadCancellation?.Cancel()",
+	} {
+		if !strings.Contains(window, want) {
+			t.Fatalf("WinUI host must preload data-driven page state before navigation: missing %q", want)
+		}
+	}
+
+	for _, want := range []string{
+		"e.Parameter is ConnectionsNavigationRequest request",
+		"ApplyConnectionState(request.State)",
+		"GetNexusConnectionSnapshotAsync()",
+	} {
+		if !strings.Contains(connections, want) {
+			t.Fatalf("WinUI Connections first layout must consume prepared state: missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		"e.Parameter is CapabilitiesNavigationRequest request",
+		"ApplySettings(request.Settings)",
+		"GetControlPanelSettingsAsync()",
+	} {
+		if !strings.Contains(capabilities, want) {
+			t.Fatalf("WinUI Capabilities first layout must consume prepared settings: missing %q", want)
+		}
+	}
+
+	for _, want := range []string{
+		"public async Task<ControlPanelSettings> GetControlPanelSettingsAsync(",
+		"public async Task<NexusConnectionSnapshot> GetNexusConnectionSnapshotAsync(",
+		"ReadControlPanelSettingsAsync(manifest, cancellationToken)",
+		"public sealed record NexusConnectionSnapshot(",
+	} {
+		if !strings.Contains(runtime+models, want) {
+			t.Fatalf("Windows RuntimeService is missing lightweight navigation state contract %q", want)
+		}
+	}
+
+	connectionsAwait := strings.Index(window, "await _runtime.GetNexusConnectionSnapshotAsync(cancellation.Token)")
+	capabilitiesAwait := strings.Index(window, "await _runtime.GetControlPanelSettingsAsync(cancellation.Token)")
+	navigate := strings.Index(window, "ContentFrame.Navigate(PageForTag(tag), parameter)")
+	if connectionsAwait < 0 || capabilitiesAwait < 0 || navigate < 0 ||
+		connectionsAwait > navigate || capabilitiesAwait > navigate {
+		t.Fatal("data-driven WinUI pages must finish loading their layout state before Frame.Navigate")
 	}
 }
 
