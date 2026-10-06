@@ -15,6 +15,7 @@ import (
 	"github.com/uvwt/agentdock/internal/desktopruntime"
 	"github.com/uvwt/agentdock/internal/envstore"
 	processcontrol "github.com/uvwt/agentdock/internal/process"
+	"github.com/uvwt/agentdock/internal/updateengine"
 )
 
 func startPlatformServices(ctx context.Context, request Request, journal *rollbackJournal) error {
@@ -766,17 +767,22 @@ func waitHealthyWithProbe(ctx context.Context, request Request, endpoint string,
 	if runtimeGOOS() == "darwin" {
 		return waitHealthyCurl(ctx, endpoint, request.Version, timeout)
 	}
-	return waitHealthy(ctx, endpoint, timeout)
+	if updateengine.NormalizeVersion(request.Version) == "vunknown" {
+		return waitHealthy(ctx, endpoint, timeout)
+	}
+	return updateengine.WaitForVersion(ctx, []string{endpoint}, request.Version, timeout)
 }
 
 func waitHealthyCurl(ctx context.Context, endpoint, version string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	var last error
-	want := strings.TrimPrefix(version, "v")
+	want := updateengine.NormalizeVersion(version)
+	successes := 0
 	for time.Now().Before(deadline) {
 		cmd := exec.CommandContext(ctx, "curl", "-fsS", "--max-time", "2", endpoint)
 		out, err := cmd.Output()
 		if err != nil {
+			successes = 0
 			last = err
 		} else {
 			var body struct {
@@ -784,11 +790,17 @@ func waitHealthyCurl(ctx context.Context, endpoint, version string, timeout time
 				Version string `json:"version"`
 			}
 			if json.Unmarshal(out, &body) == nil && body.OK {
-				if want == "" || want == "unknown" || strings.TrimPrefix(body.Version, "v") == want {
-					return nil
+				if want == "" || want == "vunknown" || updateengine.NormalizeVersion(body.Version) == want {
+					successes++
+					if successes >= 2 {
+						return nil
+					}
+				} else {
+					successes = 0
+					last = fmt.Errorf("health version %s, want %s", body.Version, version)
 				}
-				last = fmt.Errorf("health version %s, want %s", body.Version, version)
 			} else {
+				successes = 0
 				last = fmt.Errorf("%s 返回非健康响应", endpoint)
 			}
 		}

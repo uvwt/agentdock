@@ -17,10 +17,10 @@ Release Catalog 由 `tools/release` 约束；测试禁止重新把 `runtime-adap
 
 | 文件 | 当前规模 | 契约 | 保留理由 |
 |---|---:|---|---|
-| `scripts/install/install.sh` | 1008 | 公开 | Unix bootstrap：平台/架构识别、下载校验、Core 安装、可选 Nexus 配对与 Cloudflare OS bridge，再调用 Engine |
-| `scripts/install/install.ps1` | 2344 | 公开 | Windows bootstrap/外层 adapter：UAC、DPAPI、HKCU Run、Setup Result、Task 管理与 rollback |
+| `scripts/install/install.sh` | 1128 | 公开 | Unix bootstrap：平台/架构识别、下载校验、Core 安装、可选 Nexus 配对与 Cloudflare OS bridge，再调用 Engine |
+| `scripts/install/install.ps1` | 2035 | 公开 | Windows bootstrap/外层 adapter：UAC、DPAPI、HKCU Run、Setup Result、Task 管理与 rollback |
 | `scripts/install/uninstall-windows.ps1` | 362 | 内部 | Windows 自删除、Task/Registry 清理、detached Engine commit；不作为 Release API |
-| `scripts/install/launch-windows-process.ps1` | 199 | 内部 | Inno RedirectionGuard 外启动当前用户 session 的临时 Scheduled Task broker |
+| `scripts/install/launch-windows-process.ps1` | 230 | 内部 | Inno RedirectionGuard 外启动当前用户 session 的临时 Scheduled Task broker |
 
 `manage-windows.ps1` 已删除。它原来唯一仍有产品调用的 `task-run-session` 已迁到原生：
 
@@ -47,6 +47,14 @@ Release Catalog 由 `tools/release` 约束；测试禁止重新把 `runtime-adap
 Windows Release payload 必须支持 `install --engine-ready`。不再存在 non-engine-ready PowerShell fallback：脚本不会自己 staging generation、写 manifest 或 bootstrap Skills。
 
 stable shim/icon 的职责也已去重：PowerShell 在调用 Engine 前只备份旧 stable 文件，Engine 是唯一写入者；如果后续 Task/Registry adapter 失败，PowerShell 用旧备份恢复外层状态。
+
+## Core 健康提交契约
+
+`/healthz` 是本地 Core 的轻量启动探针：只有配置和 Runtime 等同步本地初始化完成、HTTP Server 已开始服务后才能响应；响应中的 `ok` 表示当前 Core 可响应健康请求，`version` 只报告当前实际运行版本。它不把 NexusDock、Cloudflare Tunnel、外网或第三方插件可用性纳入安装/更新提交条件，避免外部波动误触发版本回滚。
+
+Installer / self-update 的事务层负责判断“是不是本次目标 generation”。正常目标版本验证必须同时满足 HTTP 200、`ok=true`、`version == target version`，并连续成功至少两次后才允许提交；任何一次失败都会重置连续成功计数。平台 adapter 可以额外验证自身不可替代的 OS 状态，例如 macOS 的 PID、目标二进制和监听端口，但不得弱化上述 Core 版本验证。
+
+Windows Setup 外层 adapter 在 Engine `--defer-commit` 场景中使用同一规则验证目标 generation；rollback 恢复旧 generation 时也校验恢复后的版本。Tunnel 公网 ready、Nexus 连接状态和其他外部依赖仍然不属于该 health gate。
 
 ## 为什么 Windows 仍保留 PowerShell
 

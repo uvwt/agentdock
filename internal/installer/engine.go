@@ -338,14 +338,7 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 			if runtimeGOOS() == "windows" {
 				healthTimeout = desktopruntime.WindowsCoreStartTimeout
 			}
-			var healthErr error
-			if runtimeGOOS() != "darwin" && request.Version != "unknown" {
-				healthErr = updateengine.WaitForVersion(ctx, []string{endpoint}, strings.TrimPrefix(request.Version, "v"), healthTimeout)
-			}
 			if waitErr := waitHealthyWithProbe(ctx, request, endpoint, healthTimeout); waitErr != nil {
-				if healthErr != nil {
-					waitErr = errors.Join(healthErr, waitErr)
-				}
 				return fail(PhaseHealth, waitErr, staged)
 			}
 			result.Healthy = true

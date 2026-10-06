@@ -128,9 +128,21 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"'--payload-dir', $extractDir",
 		"$stableFilesMayBeReplaced = $true",
 		"http://127.0.0.1:$HealthPort/healthz",
+		"[string] $ExpectedVersion = ''",
+		"AgentDock health check requires an expected version.",
+		"$health = $response.Content | ConvertFrom-Json",
+		"$health.ok -eq $true -and $versionMatches",
+		"$successes -ge 2",
+		"Wait-AgentDockHealth -HealthPort $Port -ExpectedVersion $payloadVersion",
+		"Wait-AgentDockHealth -HealthPort $Port -ExpectedVersion $existingActiveVersion",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("install.ps1 missing %q", want)
+		}
+	}
+	for _, line := range strings.Split(script, "\n") {
+		if strings.TrimSpace(line) == "Wait-AgentDockHealth -HealthPort $Port" {
+			t.Fatal("every Windows health gate must pass the expected generation version")
 		}
 	}
 	for _, forbidden := range []string{

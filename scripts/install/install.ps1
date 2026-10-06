@@ -765,21 +765,43 @@ function Start-AgentDockTray {
 }
 
 function Wait-AgentDockHealth {
-    param([int] $HealthPort)
+    param(
+        [int] $HealthPort,
+        [string] $ExpectedVersion = ''
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ExpectedVersion)) {
+        throw 'AgentDock health check requires an expected version.'
+    }
 
     $healthUrl = "http://127.0.0.1:$HealthPort/healthz"
     $deadline = [DateTime]::UtcNow.AddSeconds($coreHealthTimeoutSeconds)
+    $expectedNormalized = $ExpectedVersion.Trim().TrimStart('v')
+    $successes = 0
     do {
         Start-Sleep -Milliseconds 500
         try {
             $response = Invoke-WebRequest -UseBasicParsing -Uri $healthUrl -TimeoutSec 2
             if ($response.StatusCode -eq 200) {
-                return
+                $health = $response.Content | ConvertFrom-Json
+                $actualVersion = ([string] $health.version).Trim().TrimStart('v')
+                $versionMatches =
+                    [string]::IsNullOrWhiteSpace($expectedNormalized) -or
+                    $actualVersion -eq $expectedNormalized
+                if ($health.ok -eq $true -and $versionMatches) {
+                    $successes++
+                    if ($successes -ge 2) {
+                        return
+                    }
+                } else {
+                    $successes = 0
+                }
             }
         } catch {
+            $successes = 0
         }
     } while ([DateTime]::UtcNow -lt $deadline)
-    throw "AgentDock was installed, but health check failed at $healthUrl"
+    throw "AgentDock health check failed at $healthUrl for expected version $ExpectedVersion"
 }
 
 function Backup-FileState {
@@ -1653,7 +1675,7 @@ exit `$LASTEXITCODE
                     throw "AgentDock native service start failed with exit code $LASTEXITCODE."
                 }
             }
-            Wait-AgentDockHealth -HealthPort $Port
+            Wait-AgentDockHealth -HealthPort $Port -ExpectedVersion $payloadVersion
             $healthStatus = 'healthy'
 
         } elseif ($mustRestartExistingProcess) {
@@ -1668,7 +1690,7 @@ exit `$LASTEXITCODE
                     throw "AgentDock native service restart failed with exit code $LASTEXITCODE."
                 }
             }
-            Wait-AgentDockHealth -HealthPort $Port
+            Wait-AgentDockHealth -HealthPort $Port -ExpectedVersion $payloadVersion
             $healthStatus = 'healthy'
         }
 
@@ -1931,12 +1953,12 @@ exit `$LASTEXITCODE
                         throw "AgentDock rollback service start failed with exit code $LASTEXITCODE."
                     }
                 }
-                Wait-AgentDockHealth -HealthPort $Port
+                Wait-AgentDockHealth -HealthPort $Port -ExpectedVersion $existingActiveVersion
             } elseif (Test-Path -LiteralPath $launcherPath -PathType Leaf) {
                 Start-AgentDockLauncher -LauncherPath $launcherPath
             }
         } elseif ($taskWillRestartAgentDock) {
-            Wait-AgentDockHealth -HealthPort $Port
+            Wait-AgentDockHealth -HealthPort $Port -ExpectedVersion $existingActiveVersion
         }
         if ($trayProcessWasRunning -and (Test-Path -LiteralPath $destinationTrayBinary -PathType Leaf)) {
             Start-AgentDockTray -BinaryPath $destinationTrayBinary

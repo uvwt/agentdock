@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/uvwt/agentdock/internal/updateengine"
 )
 
 type healthResponse struct {
@@ -50,43 +52,7 @@ func findHealthyURL(ctx context.Context, candidates []string) string {
 }
 
 func waitForVersion(ctx context.Context, candidates []string, targetVersion string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	client := &http.Client{Timeout: 2 * time.Second}
-	var lastError error
-	consecutiveSuccesses := make(map[string]int, len(candidates))
-	for time.Now().Before(deadline) {
-		for _, candidate := range candidates {
-			response, err := readHealth(ctx, client, candidate)
-			if err != nil {
-				consecutiveSuccesses[candidate] = 0
-				lastError = err
-				continue
-			}
-			if !response.OK {
-				consecutiveSuccesses[candidate] = 0
-				lastError = fmt.Errorf("%s 返回 ok=false", candidate)
-				continue
-			}
-			if normalizeVersion(response.Version) != normalizeVersion(targetVersion) {
-				consecutiveSuccesses[candidate] = 0
-				lastError = fmt.Errorf("%s 运行版本为 %s，目标版本为 %s", candidate, response.Version, targetVersion)
-				continue
-			}
-			consecutiveSuccesses[candidate]++
-			if consecutiveSuccesses[candidate] >= 2 {
-				return nil
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(500 * time.Millisecond):
-		}
-	}
-	if lastError == nil {
-		lastError = fmt.Errorf("没有可用的 healthz 地址")
-	}
-	return lastError
+	return updateengine.WaitForVersion(ctx, candidates, targetVersion, timeout)
 }
 
 func readHealth(ctx context.Context, client *http.Client, endpoint string) (healthResponse, error) {
