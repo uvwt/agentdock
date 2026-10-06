@@ -6,6 +6,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $MetadataPath,
     [Parameter(Mandatory = $true)]
+    [string] $PayloadArchivePath,
+    [Parameter(Mandatory = $true)]
     [string] $ResultFile
 )
 Set-StrictMode -Version Latest
@@ -30,14 +32,19 @@ function Write-AgentDockRuntimeResult {
         "Message=$safeMessage"
     ) | Set-Content -LiteralPath $ResultFile -Encoding Unicode
 }
-function Convert-ToVersion {
-    param([string] $Value, [string] $Description)
-    try {
-        return [Version]::Parse($Value)
-    } catch {
-        throw "$Description has an invalid version: $Value"
+$prerequisiteLibraryPath = Join-Path $PSScriptRoot 'runtime-prerequisites.ps1'
+$bootstrapProbeLibraryPath = Join-Path $PSScriptRoot 'runtime-bootstrap-probe.ps1'
+foreach ($libraryPath in @($prerequisiteLibraryPath, $bootstrapProbeLibraryPath)) {
+    if (-not (Test-Path -LiteralPath $libraryPath -PathType Leaf)) {
+        $message = "Runtime prerequisite helper was not found: $libraryPath"
+        Write-AgentDockRuntimeResult -Status 'error' -Dependency 'metadata' -Message $message
+        Write-Error $message
+        exit 1
     }
 }
+. $prerequisiteLibraryPath
+. $bootstrapProbeLibraryPath
+
 function Test-WindowsDesktopRuntime {
     param(
         [Version] $MinimumVersion,
@@ -46,9 +53,9 @@ function Test-WindowsDesktopRuntime {
     $dotnetArchitecture = if ($TargetArchitecture -eq 'arm64') { 'arm64' } else { 'x64' }
     $roots = @()
 
-    # apphost 会优先读取架构专属 DOTNET_ROOT，再读取全局注册的架构专属安装位置。
-    # 不能用 PATH 中任意 dotnet.exe 判断，否则 ARM64 机器上的 x64 emulation runtime
-    # 会被误判成可供 arm64 agentdock-tray 使用的 Runtime。
+    # apphost prefers architecture-specific DOTNET_ROOT and then the registered architecture-specific
+    # install location. Do not infer readiness from an arbitrary dotnet.exe on PATH, because an x64
+    # emulation Runtime on ARM64 is not valid for the arm64 agentdock-tray apphost.
     $architectureRootName = 'DOTNET_ROOT_' + $dotnetArchitecture.ToUpperInvariant()
     $architectureRoot = [Environment]::GetEnvironmentVariable($architectureRootName)
     if (-not [string]::IsNullOrWhiteSpace($architectureRoot)) {
@@ -58,8 +65,9 @@ function Test-WindowsDesktopRuntime {
         $roots -notcontains $env:DOTNET_ROOT) {
         $roots += $env:DOTNET_ROOT
     }
-    # .NET 的架构名位于键路径本身；不同安装器/宿主位数可能把同一架构键写入
-    # Registry64 或 Registry32 view。两边都查，但始终只接受目标架构子键。
+    # The .NET architecture is encoded in the registry key path. Different installer/host bitness
+    # can expose the same architecture key through either registry view, so inspect both views but
+    # accept only the requested architecture subkey.
     foreach ($registryView in @(
         [Microsoft.Win32.RegistryView]::Registry64,
         [Microsoft.Win32.RegistryView]::Registry32
@@ -101,155 +109,6 @@ function Test-WindowsDesktopRuntime {
     }
     return $false
 }
-function Test-WindowsAppRuntime {
-    param(
-        [string] $PackageName,
-        [Version] $MinimumVersion,
-        [string] $TargetArchitecture
-    )
-    $expectedArchitecture = if ($TargetArchitecture -eq 'arm64') { 'Arm64' } else { 'X64' }
-    $packages = @(Get-AppxPackage -Name $PackageName -ErrorAction SilentlyContinue)
-    foreach ($package in $packages) {
-        $packageVersion = Convert-ToVersion -Value ([string] $package.Version) -Description 'Windows App Runtime'
-        $packageArchitecture = [string] $package.Architecture
-        if (($packageVersion -ge $MinimumVersion) -and
-            ($packageArchitecture -ieq $expectedArchitecture)) {
-            return $true
-        }
-    }
-    return $false
-}
-function Assert-MicrosoftDownloadUri {
-    param(
-        [Uri] $Uri,
-        [ValidateSet('dotnet', 'windows-app-runtime')]
-        [string] $Dependency,
-        [string] $PinnedVersion,
-        [string] $TargetArchitecture
-    )
-
-    if ($Uri.Scheme -ne 'https') {
-        throw "$Dependency download must use HTTPS: $Uri"
-    }
-    if ($Uri.AbsoluteUri -match '/latest(?:/|$)' -or
-        $Uri.AbsoluteUri -match '[?&](?:version=)?latest(?:&|$)') {
-        throw "$Dependency download must be pinned instead of using latest: $Uri"
-    }
-
-    if ($Dependency -eq 'dotnet') {
-        if (($Uri.Host -ne 'builds.dotnet.microsoft.com') -or
-            (-not $Uri.AbsolutePath.StartsWith("/dotnet/WindowsDesktop/$PinnedVersion/", [StringComparison]::Ordinal))) {
-            throw ".NET Runtime URL is not the pinned Microsoft Windows Desktop Runtime source: $Uri"
-        }
-        return
-    }
-
-    $releaseVersion = Convert-ToVersion -Value $PinnedVersion -Description 'Windows App Runtime release'
-    $assetArchitecture = if ($TargetArchitecture -eq 'arm64') { 'arm64' } else { 'x64' }
-    $expectedPath = "/windowsappsdk/$($releaseVersion.Major).$($releaseVersion.Minor)/$PinnedVersion/windowsappruntimeinstall-$assetArchitecture.exe"
-    if (($Uri.Host -ne 'aka.ms') -or ($Uri.AbsolutePath -cne $expectedPath) -or $Uri.Query -or $Uri.Fragment) {
-        throw "Windows App Runtime URL is not the pinned Microsoft download source: $Uri"
-    }
-}
-
-function Get-ArtifactUrl {
-    param(
-        [object] $Artifacts,
-        [string] $TargetArchitecture,
-        [string] $Dependency,
-        [string] $PinnedVersion
-    )
-
-    $property = $Artifacts.PSObject.Properties[$TargetArchitecture]
-    if ($null -eq $property -or $null -eq $property.Value) {
-        throw "$Dependency metadata is missing the $TargetArchitecture artifact."
-    }
-
-    $url = [string] $property.Value.url
-    if ([string]::IsNullOrWhiteSpace($url)) {
-        throw "$Dependency metadata has an empty $TargetArchitecture URL."
-    }
-
-    $uri = [Uri] $url
-    Assert-MicrosoftDownloadUri -Uri $uri -Dependency $Dependency -PinnedVersion $PinnedVersion -TargetArchitecture $TargetArchitecture
-    return $uri
-}
-
-function Get-MicrosoftInstaller {
-    param(
-        [Uri] $Uri,
-        [string] $Destination
-    )
-
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $lastError = $null
-    for ($attempt = 1; $attempt -le 3; $attempt++) {
-        Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue
-        try {
-            Invoke-WebRequest -UseBasicParsing -Uri $Uri.AbsoluteUri -OutFile $Destination
-            if (-not (Test-Path -LiteralPath $Destination -PathType Leaf) -or
-                (Get-Item -LiteralPath $Destination).Length -le 0) {
-                throw 'Downloaded installer is empty.'
-            }
-            return
-        } catch {
-            $lastError = $_
-            if ($attempt -lt 3) {
-                Start-Sleep -Seconds (2 * $attempt)
-            }
-        }
-    }
-
-    throw "Could not download Microsoft Runtime installer from $Uri after 3 attempts: $($lastError.Exception.Message)"
-}
-
-function Assert-MicrosoftAuthenticode {
-    param([string] $Path)
-
-    $signature = Get-AuthenticodeSignature -LiteralPath $Path
-    if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
-        $null -eq $signature.SignerCertificate) {
-        throw "Microsoft Runtime installer Authenticode signature is not valid: $($signature.Status) $($signature.StatusMessage)"
-    }
-
-    $subject = [string] $signature.SignerCertificate.Subject
-    if ($subject -notmatch '(^|,\s*)O=Microsoft Corporation(,|$)' -and
-        $subject -notmatch '(^|,\s*)CN=Microsoft Corporation(,|$)') {
-        throw "Microsoft Runtime installer signer is not Microsoft Corporation: $subject"
-    }
-}
-
-function Invoke-MicrosoftInstaller {
-    param(
-        [string] $Path,
-        [string[]] $Arguments,
-        [string] $Dependency
-    )
-
-    # Setup 本身保持按用户安装；只有系统共享 Runtime 缺失时，才为微软安装器单独请求 UAC。
-    $process = Start-Process -FilePath $Path -ArgumentList $Arguments -Verb RunAs -Wait -PassThru
-    if ($process.ExitCode -notin @(0, 1641, 3010)) {
-        throw "$Dependency installer exited with code $($process.ExitCode)."
-    }
-}
-
-function Install-Dependency {
-    param(
-        [Uri] $Uri,
-        [string[]] $Arguments,
-        [string] $Dependency
-    )
-
-    $installerPath = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-runtime-' + [Guid]::NewGuid().ToString('N') + '.exe')
-    try {
-        Get-MicrosoftInstaller -Uri $Uri -Destination $installerPath
-        Assert-MicrosoftAuthenticode -Path $installerPath
-        Invoke-MicrosoftInstaller -Path $installerPath -Arguments $Arguments -Dependency $Dependency
-    } finally {
-        Remove-Item -LiteralPath $installerPath -Force -ErrorAction SilentlyContinue
-    }
-}
-
 $activeDependency = 'metadata'
 try {
     if (-not (Test-Path -LiteralPath $MetadataPath -PathType Leaf)) {
@@ -266,7 +125,7 @@ try {
     $activeDependency = '.NET Windows Desktop Runtime'
     if (-not (Test-WindowsDesktopRuntime -MinimumVersion $dotnetMinimum -TargetArchitecture $Architecture)) {
         $dotnetUri = Get-ArtifactUrl -Artifacts $metadata.dotnet_windows_desktop.artifacts -TargetArchitecture $Architecture -Dependency 'dotnet' -PinnedVersion $dotnetInstallVersion
-        Install-Dependency -Uri $dotnetUri -Arguments @('/install', '/quiet', '/norestart') -Dependency $activeDependency
+        Install-Dependency -Uri $dotnetUri -Arguments @('/install', '/quiet', '/norestart') -Dependency $activeDependency -RequireElevation
 
         if (-not (Test-WindowsDesktopRuntime -MinimumVersion $dotnetMinimum -TargetArchitecture $Architecture)) {
             throw "$activeDependency $dotnetMinimum or newer was not detected after installation."
@@ -276,14 +135,64 @@ try {
     $windowsAppMinimum = Convert-ToVersion -Value ([string] $metadata.windows_app_runtime.minimum_version) -Description 'Windows App Runtime minimum'
     $windowsAppRelease = [string] $metadata.windows_app_runtime.release
     $windowsAppPackageName = [string] $metadata.windows_app_runtime.package_name
-    $activeDependency = 'Windows App Runtime'
-    if (-not (Test-WindowsAppRuntime -PackageName $windowsAppPackageName -MinimumVersion $windowsAppMinimum -TargetArchitecture $Architecture)) {
-        $windowsAppUri = Get-ArtifactUrl -Artifacts $metadata.windows_app_runtime.artifacts -TargetArchitecture $Architecture -Dependency 'windows-app-runtime' -PinnedVersion $windowsAppRelease
-        Install-Dependency -Uri $windowsAppUri -Arguments @('--quiet') -Dependency $activeDependency
-
-        if (-not (Test-WindowsAppRuntime -PackageName $windowsAppPackageName -MinimumVersion $windowsAppMinimum -TargetArchitecture $Architecture)) {
-            throw "$activeDependency $windowsAppMinimum or newer was not detected after installation."
+    $windowsAppMainPackageName = [string] $metadata.windows_app_runtime.main_package_name
+    $windowsAppSingletonPackageName = [string] $metadata.windows_app_runtime.singleton_package_name
+    $windowsAppDdlmPackageNamePrefix = [string] $metadata.windows_app_runtime.ddlm_package_name_prefix
+    foreach ($requiredName in @($windowsAppPackageName, $windowsAppMainPackageName, $windowsAppSingletonPackageName, $windowsAppDdlmPackageNamePrefix)) {
+        if ([string]::IsNullOrWhiteSpace($requiredName)) {
+            throw 'Windows App Runtime metadata is missing a required package identity.'
         }
+    }
+
+    $activeDependency = 'Windows App Runtime'
+    $probeDirectory = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-winappruntime-probe-' + [Guid]::NewGuid().ToString('N'))
+    try {
+        $probePayload = Get-WindowsAppRuntimeProbePayload `
+            -PayloadArchivePath $PayloadArchivePath `
+            -DestinationDirectory $probeDirectory
+        $probe = Test-WindowsAppRuntimeBootstrap `
+            -ProbeHostPath $probePayload.ProbeHostPath `
+            -BootstrapDllPath $probePayload.BootstrapDllPath `
+            -MinimumVersion $windowsAppMinimum
+        if (-not $probe.Success) {
+            # Package enumeration is diagnostic and version-selection input only. Runtime readiness
+            # is decided by Microsoft's bootstrap API above, not by our reconstruction of MSIX state.
+            $repairVersion = Get-WindowsAppRuntimeFrameworkVersion `
+                -PackageName $windowsAppPackageName `
+                -MinimumVersion $windowsAppMinimum `
+                -TargetArchitecture $Architecture `
+                -IncludeAllUsers
+            if ($null -eq $repairVersion) {
+                $repairVersion = Convert-ToVersion -Value ($windowsAppRelease + '.0') -Description 'Windows App Runtime release'
+            }
+            $windowsAppUri = Get-WindowsAppRuntimeInstallerUri -RuntimeVersion $repairVersion -TargetArchitecture $Architecture
+            Install-Dependency -Uri $windowsAppUri -Arguments @('--quiet') -Dependency $activeDependency
+
+            $probeAfterInstall = Test-WindowsAppRuntimeBootstrap `
+                -ProbeHostPath $probePayload.ProbeHostPath `
+                -BootstrapDllPath $probePayload.BootstrapDllPath `
+                -MinimumVersion $windowsAppMinimum
+            if (-not $probeAfterInstall.Success) {
+                $diagnosticVersion = Get-WindowsAppRuntimeFrameworkVersion `
+                    -PackageName $windowsAppPackageName `
+                    -MinimumVersion $windowsAppMinimum `
+                    -TargetArchitecture $Architecture
+                $coherentPackages = $false
+                if ($null -ne $diagnosticVersion) {
+                    $coherentPackages = Test-WindowsAppRuntime `
+                        -PackageName $windowsAppPackageName `
+                        -MainPackageName $windowsAppMainPackageName `
+                        -SingletonPackageName $windowsAppSingletonPackageName `
+                        -DdlmPackageNamePrefix $windowsAppDdlmPackageNamePrefix `
+                        -RequiredVersion $diagnosticVersion `
+                        -TargetArchitecture $Architecture
+                }
+                $probeCode = '0x{0:X8}' -f ([UInt32] $probeAfterInstall.HResult)
+                throw "$activeDependency bootstrap still failed after Microsoft installer completed (HRESULT $probeCode; coherent-package-diagnostic=$coherentPackages)."
+            }
+        }
+    } finally {
+        Remove-Item -LiteralPath $probeDirectory -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     Write-AgentDockRuntimeResult -Status 'ok' -Dependency '' -Message ''

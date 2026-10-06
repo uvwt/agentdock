@@ -67,6 +67,7 @@ try {
     foreach ($requiredEntry in @(
         'agentdock.exe',
         'agentdock-tray.exe',
+        'control-panel/Microsoft.WindowsAppRuntime.Bootstrap.dll',
         'agentdock-arbiter.exe',
         'agentdock-shim.exe',
         'agentdock-tray-shim.exe',

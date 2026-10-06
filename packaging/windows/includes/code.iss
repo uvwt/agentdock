@@ -248,6 +248,7 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   PowerShellPath: String;
+  RuntimePowerShellPath: String;
   InstallScriptPath: String;
   RuntimeScriptPath: String;
   RuntimeMetadataPath: String;
@@ -280,11 +281,16 @@ begin
     ExtractTemporaryFile('install.ps1');
     ExtractTemporaryFile('launch-windows-process.ps1');
     ExtractTemporaryFile('ensure-windows-runtimes.ps1');
+    ExtractTemporaryFile('runtime-prerequisites.ps1');
+    ExtractTemporaryFile('runtime-bootstrap-probe.ps1');
     ExtractTemporaryFile('runtime-dependencies.json');
     ExtractTemporaryFile('agentdock_windows_{#PayloadArchitecture}.zip');
     ExtractTemporaryFile('agentdock_windows_{#PayloadArchitecture}.zip.sha256');
 
     PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+    { Inno Setup runs as a 32-bit process. The Runtime canary loads the native-architecture
+      Windows App SDK bootstrap DLL, so it must run under native PowerShell rather than SysWOW64. }
+    RuntimePowerShellPath := ExpandConstant('{sysnative}\WindowsPowerShell\v1.0\powershell.exe');
     InstallScriptPath := ExpandConstant('{tmp}\install.ps1');
     RuntimeScriptPath := ExpandConstant('{tmp}\ensure-windows-runtimes.ps1');
     RuntimeMetadataPath := ExpandConstant('{tmp}\runtime-dependencies.json');
@@ -303,8 +309,9 @@ begin
       '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + QuoteArgument(RuntimeScriptPath) +
       ' -Architecture {#PayloadArchitecture}' +
       ' -MetadataPath ' + QuoteArgument(RuntimeMetadataPath) +
+      ' -PayloadArchivePath ' + QuoteArgument(OfflineArchivePath) +
       ' -ResultFile ' + QuoteArgument(RuntimeResultFilePath);
-    if not Exec(PowerShellPath, RuntimeParameters, '', SW_HIDE, ewWaitUntilTerminated, RuntimeExitCode) then
+    if not Exec(RuntimePowerShellPath, RuntimeParameters, '', SW_HIDE, ewWaitUntilTerminated, RuntimeExitCode) then
     begin
       Result := GetLocalizedMessage('RuntimeInstallFailed') + ' prerequisite process could not start.';
       Exit;

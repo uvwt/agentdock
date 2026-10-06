@@ -19,10 +19,13 @@ type windowsRuntimeMetadata struct {
 		} `json:"artifacts"`
 	} `json:"dotnet_windows_desktop"`
 	WindowsApp struct {
-		MinimumVersion string `json:"minimum_version"`
-		PackageName    string `json:"package_name"`
-		Release        string `json:"release"`
-		Artifacts      map[string]struct {
+		MinimumVersion        string `json:"minimum_version"`
+		PackageName           string `json:"package_name"`
+		MainPackageName       string `json:"main_package_name"`
+		SingletonPackageName  string `json:"singleton_package_name"`
+		DdlmPackageNamePrefix string `json:"ddlm_package_name_prefix"`
+		Release               string `json:"release"`
+		Artifacts             map[string]struct {
 			URL string `json:"url"`
 		} `json:"artifacts"`
 	} `json:"windows_app_runtime"`
@@ -77,7 +80,10 @@ func TestWindowsRuntimeMetadataUsesPinnedMicrosoftSources(t *testing.T) {
 	}
 	if metadata.WindowsApp.MinimumVersion != "2.1.3.0" ||
 		metadata.WindowsApp.Release != "2.1.3" ||
-		metadata.WindowsApp.PackageName != "Microsoft.WindowsAppRuntime.2" {
+		metadata.WindowsApp.PackageName != "Microsoft.WindowsAppRuntime.2" ||
+		metadata.WindowsApp.MainPackageName != "MicrosoftCorporationII.WinAppRuntime.Main.2" ||
+		metadata.WindowsApp.SingletonPackageName != "MicrosoftCorporationII.WinAppRuntime.Singleton" ||
+		metadata.WindowsApp.DdlmPackageNamePrefix != "Microsoft.WinAppRuntime.DDLM.2." {
 		t.Fatalf("unexpected Windows App Runtime contract: %+v", metadata.WindowsApp)
 	}
 
@@ -131,20 +137,46 @@ func TestWindowsSetupBootstrapsRuntimesBeforeGenerationActivation(t *testing.T) 
 
 	for _, want := range []string{
 		`Source: "ensure-windows-runtimes.ps1"; Flags: dontcopy`,
+		`Source: "runtime-prerequisites.ps1"; Flags: dontcopy`,
+		`Source: "runtime-bootstrap-probe.ps1"; Flags: dontcopy`,
 		`Source: "runtime-dependencies.json"; Flags: dontcopy`,
 	} {
 		if !strings.Contains(setup, want) {
 			t.Fatalf("Setup must embed runtime prerequisite metadata/script; missing %q", want)
 		}
 	}
-	runtimeExec := strings.Index(code, "Exec(PowerShellPath, RuntimeParameters")
+	runtimeExec := strings.Index(code, "Exec(RuntimePowerShellPath, RuntimeParameters")
 	generationExec := strings.Index(code, "Exec(PowerShellPath, Parameters")
 	if runtimeExec < 0 || generationExec < 0 || runtimeExec >= generationExec {
 		t.Fatal("Microsoft Runtime prerequisite must complete before install.ps1 can activate an AgentDock generation")
 	}
 	if !strings.Contains(code, "RuntimeInstallFailed") ||
-		!strings.Contains(code, "RuntimeResultFilePath") {
-		t.Fatal("Setup must surface a structured Runtime bootstrap failure")
+		!strings.Contains(code, "RuntimeResultFilePath") ||
+		!strings.Contains(code, "RuntimePowerShellPath := ExpandConstant('{sysnative}\\WindowsPowerShell\\v1.0\\powershell.exe')") ||
+		!strings.Contains(code, "Exec(RuntimePowerShellPath, RuntimeParameters") ||
+		!strings.Contains(code, "ExtractTemporaryFile('runtime-prerequisites.ps1')") ||
+		!strings.Contains(code, "ExtractTemporaryFile('runtime-bootstrap-probe.ps1')") ||
+		!strings.Contains(code, "' -PayloadArchivePath ' + QuoteArgument(OfflineArchivePath)") {
+		t.Fatal("Setup must surface a structured Runtime bootstrap failure and pass the candidate payload to its canary")
+	}
+}
+
+func TestWindowsRuntimeBootstrapScriptsRemainASCIIForPowerShell51(t *testing.T) {
+	for _, rel := range []string{
+		filepath.Join("packaging", "windows", "ensure-windows-runtimes.ps1"),
+		filepath.Join("packaging", "windows", "runtime-prerequisites.ps1"),
+		filepath.Join("packaging", "windows", "runtime-bootstrap-probe.ps1"),
+		filepath.Join("scripts", "test", "test-windows-runtime-registration.ps1"),
+	} {
+		data, err := os.ReadFile(filepath.Join("..", "..", rel))
+		if err != nil {
+			t.Fatalf("read %s: %v", rel, err)
+		}
+		for i, b := range data {
+			if b >= 0x80 {
+				t.Fatalf("%s must remain ASCII for Windows PowerShell 5.1; non-ASCII byte at offset %d", rel, i)
+			}
+		}
 	}
 }
 
@@ -153,7 +185,29 @@ func TestWindowsRuntimeBootstrapVerifiesPlatformTrust(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read Runtime bootstrap: %v", err)
 	}
-	script := string(data)
+	helperData, err := os.ReadFile(filepath.Join("..", "..", "packaging", "windows", "runtime-prerequisites.ps1"))
+	if err != nil {
+		t.Fatalf("read Runtime prerequisite helper: %v", err)
+	}
+	probeData, err := os.ReadFile(filepath.Join("..", "..", "packaging", "windows", "runtime-bootstrap-probe.ps1"))
+	if err != nil {
+		t.Fatalf("read Runtime bootstrap probe helper: %v", err)
+	}
+	shimData, err := os.ReadFile(filepath.Join("..", "..", "cmd", "agentdock-shim", "main_windows.go"))
+	if err != nil {
+		t.Fatalf("read Windows shim probe host: %v", err)
+	}
+	bootstrap := string(data)
+	helper := string(helperData)
+	probeHelper := string(probeData)
+	shim := string(shimData)
+	if !strings.Contains(bootstrap, ". $prerequisiteLibraryPath") ||
+		!strings.Contains(bootstrap, ". $bootstrapProbeLibraryPath") ||
+		!strings.Contains(bootstrap, "runtime-prerequisites.ps1") ||
+		!strings.Contains(bootstrap, "runtime-bootstrap-probe.ps1") {
+		t.Fatal("Runtime bootstrap must load both side-effect-free helpers from its own directory")
+	}
+	script := bootstrap + "\n" + helper + "\n" + probeHelper
 	for _, want := range []string{
 		"Get-AuthenticodeSignature",
 		"SignatureStatus]::Valid",
@@ -161,19 +215,59 @@ func TestWindowsRuntimeBootstrapVerifiesPlatformTrust(t *testing.T) {
 		"aka.ms",
 		"windowsappruntimeinstall-$assetArchitecture.exe",
 		"-TargetArchitecture $TargetArchitecture",
-		"Get-AppxPackage -Name $PackageName",
+		"Get-WindowsAppRuntimeProbePayload",
+		"agentdock-shim.exe",
+		"'--windows-app-runtime-probe'",
+		"Microsoft.WindowsAppRuntime.Bootstrap.dll",
+		"Get-AppxPackage -AllUsers -Name $PackageName",
+		"Get-WindowsAppRuntimeInstallerUri -RuntimeVersion $repairVersion",
+		"coherent-package-diagnostic=",
 		"Microsoft.WindowsDesktop.App",
 		"InstalledVersions\\$dotnetArchitecture",
 		"RegistryView]::Registry64",
 		"RegistryView]::Registry32",
 		"-TargetArchitecture $Architecture",
 		"Start-Process -FilePath $Path -ArgumentList $Arguments -Verb RunAs -Wait -PassThru",
-		"after installation",
+		"Start-Process -FilePath $Path -ArgumentList $Arguments -Wait -PassThru",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("Runtime bootstrap trust/detection contract missing %q", want)
 		}
 	}
+
+	for _, want := range []string{
+		`windowsAppRuntimeProbeFlag = "--windows-app-runtime-probe"`,
+		`windows.LoadDLL(bootstrapDLL)`,
+		`FindProc("MddBootstrapInitialize2")`,
+		`FindProc("MddBootstrapShutdown")`,
+		`packageVersion := values[0]<<48 | values[1]<<32 | values[2]<<16 | values[3]`,
+	} {
+		if !strings.Contains(shim, want) {
+			t.Fatalf("Windows shim Runtime probe contract missing %q", want)
+		}
+	}
+	if strings.Contains(probeHelper, "Add-Type -TypeDefinition") || strings.Contains(probeHelper, "csc.exe") {
+		t.Fatal("Runtime bootstrap probe must not compile C# at install time")
+	}
+
+	if !strings.Contains(script, "Install-Dependency -Uri $dotnetUri -Arguments @('/install', '/quiet', '/norestart') -Dependency $activeDependency -RequireElevation") {
+		t.Fatal(".NET machine runtime install must keep its elevation boundary")
+	}
+	if strings.Contains(script, "Install-Dependency -Uri $windowsAppUri -Arguments @('--quiet') -Dependency $activeDependency -RequireElevation") {
+		t.Fatal("Windows App Runtime must install in the interactive user context instead of an alternate elevated identity")
+	}
+	installerCall := strings.Index(bootstrap, "Install-Dependency -Uri $windowsAppUri -Arguments @('--quiet') -Dependency $activeDependency")
+	firstProbe := strings.Index(bootstrap, "$probe = Test-WindowsAppRuntimeBootstrap")
+	secondProbe := strings.Index(bootstrap, "$probeAfterInstall = Test-WindowsAppRuntimeBootstrap")
+	diagnosticPackages := strings.Index(bootstrap, "$coherentPackages = Test-WindowsAppRuntime")
+	if firstProbe < 0 || installerCall < 0 || secondProbe < 0 || diagnosticPackages < 0 ||
+		firstProbe >= installerCall || installerCall >= secondProbe || secondProbe >= diagnosticPackages {
+		t.Fatal("Windows App Runtime must probe real bootstrap capability first, install only on failure, then use package enumeration only as post-failure diagnostics")
+	}
+	if strings.Contains(script, "--repair") || strings.Contains(script, "--force") {
+		t.Fatal("Windows App Runtime bootstrap must not redeploy or force-close users of an otherwise healthy Framework package")
+	}
+
 	for _, forbidden := range []string{
 		"download.nexusdock.co",
 		"releases/latest",
@@ -208,6 +302,7 @@ func TestWindowsReleaseBuildsStayFrameworkDependentAndKeepWSLHelper(t *testing.T
 		t.Fatalf("read Windows Setup builder: %v", err)
 	}
 	for _, want := range []string{
+		"'control-panel/Microsoft.WindowsAppRuntime.Bootstrap.dll'",
 		"'wsl-helper/manifest.json'",
 		"'wsl-helper/agentdock-wsl-helper-linux-amd64'",
 		"'wsl-helper/agentdock-wsl-helper-linux-arm64'",

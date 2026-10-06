@@ -119,6 +119,10 @@ jobs:
         shell: powershell
         run: .\scripts\test\test-install-windows.ps1 -InstallerPath .\scripts\install\install.ps1
 
+      - name: Test Windows App Runtime registration detection
+        shell: powershell
+        run: .\scripts\test\test-windows-runtime-registration.ps1 -RuntimeHelperPath .\packaging\windows\runtime-prerequisites.ps1 -RuntimeProbePath .\packaging\windows\runtime-bootstrap-probe.ps1
+
       - name: Test cross-architecture VersionInfo tooling
         shell: powershell
         run: |

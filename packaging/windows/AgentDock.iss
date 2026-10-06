@@ -70,6 +70,8 @@ Name: "chinesesimplified"; MessagesFile: "compiler:Default.isl, languages\Chines
 Source: "..\..\scripts\install\install.ps1"; Flags: dontcopy
 Source: "..\..\scripts\install\launch-windows-process.ps1"; Flags: dontcopy
 Source: "ensure-windows-runtimes.ps1"; Flags: dontcopy
+Source: "runtime-prerequisites.ps1"; Flags: dontcopy
+Source: "runtime-bootstrap-probe.ps1"; Flags: dontcopy
 Source: "runtime-dependencies.json"; Flags: dontcopy
 Source: "{#PayloadDir}\agentdock_windows_{#PayloadArchitecture}.zip"; Flags: dontcopy
 Source: "{#PayloadDir}\agentdock_windows_{#PayloadArchitecture}.zip.sha256"; Flags: dontcopy

@@ -154,6 +154,13 @@ scripts:
     public_contract: false
     deletable: false
 
+  - path: scripts/test/test-windows-runtime-registration.ps1
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+    notes: Windows App Runtime 当前用户完整注册回归，覆盖 Framework 已装但 Main/Singleton/DDLM 仅 SYSTEM:Staged 的真实故障样本。
+
   - path: scripts/test/test-windows-current-binary-as-standard-user.ps1
     class: test
     owner: installer
@@ -195,6 +202,18 @@ scripts:
     deletable: false
 
   - path: packaging/windows/ensure-windows-runtimes.ps1
+    class: packaging
+    owner: installer
+    public_contract: false
+    deletable: false
+
+  - path: packaging/windows/runtime-prerequisites.ps1
+    class: packaging
+    owner: installer
+    public_contract: false
+    deletable: false
+
+  - path: packaging/windows/runtime-bootstrap-probe.ps1
     class: packaging
     owner: installer
     public_contract: false
