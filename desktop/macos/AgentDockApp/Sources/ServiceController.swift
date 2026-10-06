@@ -51,6 +51,18 @@ struct DesktopUpdateRegistrationState: Sendable {
     let tunnel: String
 }
 
+private struct TunnelStatusPayload: Decodable {
+    let mode: String
+    let running: Bool
+    let ready: Bool
+    let publicURL: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case mode, running, ready
+        case publicURL = "public_url"
+    }
+}
+
 struct CloudflaredComponentStatus: Decodable, Equatable, Sendable {
     let state: String
     let installed: Bool
@@ -293,6 +305,7 @@ final class ServiceController: @unchecked Sendable {
     static let tunnelLabel = "com.uvwt.agentdock.tunnel"
     static let corePlistName = "com.uvwt.agentdock.core.plist"
     static let tunnelPlistName = "com.uvwt.agentdock.tunnel.plist"
+    private static let quickTunnelReadyTimeout: TimeInterval = 85
 
     let paths: AppPaths
     let lifecycleCoordinator = BackgroundServiceLifecycleCoordinator()
@@ -654,12 +667,61 @@ final class ServiceController: @unchecked Sendable {
             if mode != .local {
                 try setTunnelEnabledWithinLifecycle(true)
             }
+            if mode == .quick {
+                try await waitForQuickTunnelReady()
+            }
         } catch {
             if wasEnabled {
                 try? setTunnelEnabledWithinLifecycle(true)
             }
             throw error
         }
+    }
+
+    private func waitForQuickTunnelReady() async throws {
+        let deadline = Date().addingTimeInterval(Self.quickTunnelReadyTimeout)
+        var sawReadyAddress = false
+
+        while Date() < deadline {
+            try Task.checkCancellation()
+
+            let statusResult = try await runInBackground {
+                try runProcess(
+                    executable: self.paths.binary.path,
+                    arguments: [
+                        "tunnel", "status",
+                        "--runtime-root", self.paths.appSupport.path,
+                    ]
+                )
+            }
+            if statusResult.status == 0,
+               let data = statusResult.output.data(using: .utf8),
+               let tunnelStatus = try? JSONDecoder().decode(TunnelStatusPayload.self, from: data),
+               tunnelStatus.mode == TunnelMode.quick.rawValue,
+               tunnelStatus.running,
+               tunnelStatus.ready,
+               let publicURL = tunnelStatus.publicURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !publicURL.isEmpty {
+                sawReadyAddress = true
+
+                if let configuration = ServiceConfiguration.load(from: paths.environment),
+                   configuration.publicURL == publicURL,
+                   await coreReadyForCurrentApp(configuration: configuration, timeout: 5) {
+                    return
+                }
+            }
+
+            try await Task.sleep(nanoseconds: 250_000_000)
+        }
+
+        if sawReadyAddress {
+            throw ValidationError(L10n.text(
+                "A temporary public address was generated, but AgentDock Core did not recover to a healthy state."
+            ))
+        }
+        throw ValidationError(L10n.text(
+            "cloudflared did not generate a temporary public address before the timeout."
+        ))
     }
 
     func configuredNamedTunnelOrigin() -> String {

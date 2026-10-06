@@ -59,9 +59,12 @@ func platformTunnelStatus(ctx context.Context, runtimeRoot string) (TunnelStatus
 	}
 	running := tunnelServiceActive(ctx, manifest)
 	publicURL := ""
+	quickCoreReady := false
 	if mode == "quick" {
 		data, _ := os.ReadFile(filepath.Join(root, "quick-tunnel-url.txt"))
 		publicURL = strings.TrimSpace(string(data))
+		_, _, core, coreErr := loadCoreEnvironment(runtimeRoot)
+		quickCoreReady = coreErr == nil && quickTunnelCoreReady(core, publicURL)
 	} else if mode == "named" {
 		_, _, core, coreErr := loadCoreEnvironment(runtimeRoot)
 		if coreErr == nil {
@@ -70,7 +73,7 @@ func platformTunnelStatus(ctx context.Context, runtimeRoot string) (TunnelStatus
 	}
 	ready := mode == "none"
 	if mode == "quick" {
-		ready = dependencyState != "not_installed" && dependencyState != "broken" && running && publicURL != ""
+		ready = dependencyState != "not_installed" && dependencyState != "broken" && running && quickCoreReady
 	} else if mode == "named" {
 		ready = dependencyState != "not_installed" && dependencyState != "broken" && running
 	}
@@ -98,7 +101,9 @@ func platformTunnelAction(ctx context.Context, runtimeRoot, action string) error
 		if mode != "quick" {
 			return errors.New("只有 Quick Tunnel 可以重新生成地址")
 		}
-		_ = os.Remove(filepath.Join(root, "quick-tunnel-url.txt"))
+		if err := invalidateQuickTunnelPublicState(ctx, manifest, root, runtimeRoot); err != nil {
+			return err
+		}
 		action = "restart"
 	}
 	switch action {
@@ -136,8 +141,7 @@ func platformConfigureTunnel(ctx context.Context, request TunnelConfigureRequest
 		core["AGENTDOCK_OAUTH_ENABLED"] = "false"
 	case "quick":
 		tunnelValues["AGENTDOCK_TUNNEL_TARGET"] = strings.TrimSuffix(healthURL(core), "/healthz")
-		delete(core, "AGENTDOCK_SERVER_URL")
-		core["AGENTDOCK_OAUTH_ENABLED"] = "true"
+		prepareQuickTunnelCoreEnvironment(core)
 	case "named":
 		candidate := strings.TrimSpace(request.ServerURL)
 		if candidate == "" {
@@ -184,6 +188,41 @@ func platformConfigureTunnel(ctx context.Context, request TunnelConfigureRequest
 		return tunnelServiceAction(ctx, manifest, "start")
 	}
 	return nil
+}
+
+func invalidateQuickTunnelPublicState(
+	ctx context.Context,
+	manifest unixRuntimeManifest,
+	root string,
+	runtimeRoot string,
+) error {
+	_, _, core, err := loadCoreEnvironment(runtimeRoot)
+	if err != nil {
+		return err
+	}
+	prepareQuickTunnelCoreEnvironment(core)
+	if err := writeEnvironment(manifest.EnvironmentFile, core); err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(root, "quick-tunnel-url.txt")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("删除 Quick Tunnel ready 文件失败: %w", err)
+	}
+	// 旧公网 Origin 先失效，Core 回到本地健康态，再等待下一代 Quick Tunnel 地址。
+	return platformServiceAction(ctx, runtimeRoot, "restart")
+}
+
+func prepareQuickTunnelCoreEnvironment(core map[string]string) {
+	// Quick Tunnel 的 Origin 由 cloudflared 动态产生。在新地址真正 ready 之前，
+	// Core 必须保持本地可用，不能留下 OAuth=true 但没有 SERVER_URL 的非法中间态。
+	delete(core, "AGENTDOCK_SERVER_URL")
+	core["AGENTDOCK_OAUTH_ENABLED"] = "false"
+}
+
+func quickTunnelCoreReady(core map[string]string, publicURL string) bool {
+	publicURL = strings.TrimSpace(publicURL)
+	return publicURL != "" &&
+		strings.TrimSpace(core["AGENTDOCK_SERVER_URL"]) == publicURL &&
+		strings.EqualFold(strings.TrimSpace(core["AGENTDOCK_OAUTH_ENABLED"]), "true")
 }
 
 func normalizeHTTPSOrigin(raw string) (string, error) {
@@ -334,7 +373,14 @@ func runQuickTunnel(ctx context.Context, manifest unixRuntimeManifest, root, run
 		_ = command.Process.Kill()
 		return err
 	}
-	return <-wait
+	runErr := <-wait
+	if addressApplied && ctx.Err() == nil {
+		// Windows supervisor 在 cloudflared 意外退出时会立即撤销旧地址；Unix 也保持同一语义，
+		// 避免 launchd/systemd 重试窗口里继续把已经失效的地址暴露为 ready。
+		cleanupErr := invalidateQuickTunnelPublicState(ctx, manifest, root, runtimeRoot)
+		return errors.Join(runErr, cleanupErr)
+	}
+	return runErr
 }
 
 func tunnelServiceActive(ctx context.Context, manifest unixRuntimeManifest) bool {

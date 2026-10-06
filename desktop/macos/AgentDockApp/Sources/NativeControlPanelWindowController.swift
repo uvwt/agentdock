@@ -128,6 +128,7 @@ private final class ControlPanelModel: ObservableObject {
     @Published var statusUpdatedAt = Date()
     @Published private(set) var languageRevision = 0
     @Published var isBusy = false
+    @Published private(set) var quickTunnelGenerating = false
     @Published var updateActivity: DesktopUpdateActivity = .idle
     @Published var message: String?
     @Published private(set) var publicEndpointCheckRevision = 0
@@ -181,8 +182,20 @@ private final class ControlPanelModel: ObservableObject {
     }
 
     func applyTunnel(mode: TunnelMode, serverURL: String, tunnelToken: String) async {
+        let generatingQuickTunnel = mode == .quick
+        if generatingQuickTunnel {
+            quickTunnelGenerating = true
+            invalidatePublicEndpointCheck()
+        }
+
         await perform(recheckPublicEndpointOnSuccess: true) {
             try await self.service.configureTunnel(mode: mode, serverURL: serverURL, tunnelToken: tunnelToken)
+        }
+
+        if generatingQuickTunnel {
+            // 失败路径也必须重新读取真实配置，不能让旧临时地址重新出现在界面上。
+            update(await service.status())
+            quickTunnelGenerating = false
         }
         cloudflaredComponent = await service.cloudflaredComponentStatus()
     }
@@ -1916,10 +1929,13 @@ private struct SettingsView: View {
                 SettingsSection(L10n.text("Public access")) {
                     SettingsRow(
                         L10n.text("Public address"),
-                        detail: model.status.configuration?.publicMCPURL?.absoluteString ?? L10n.text("Disabled")
+                        detail: model.quickTunnelGenerating
+                            ? L10n.text("Generating a new address…")
+                            : (model.status.configuration?.publicMCPURL?.absoluteString ?? L10n.text("Disabled"))
                     ) {
                         HStack(spacing: 8) {
-                            if testedPublicMCPURL == model.status.configuration?.publicMCPURL,
+                            if !model.quickTunnelGenerating,
+                               testedPublicMCPURL == model.status.configuration?.publicMCPURL,
                                let result = publicEndpointCheckResult {
                                 Text(publicEndpointStatusText(result))
                                     .font(.system(size: 11.5, weight: .medium))
@@ -1932,13 +1948,17 @@ private struct SettingsView: View {
                                 Task { await testPublicEndpoint(publicMCPURL) }
                             }
                             .controlSize(.small)
-                            .disabled(model.status.configuration?.publicMCPURL == nil || isTestingPublicEndpoint)
+                            .disabled(
+                                model.quickTunnelGenerating
+                                    || model.status.configuration?.publicMCPURL == nil
+                                    || isTestingPublicEndpoint
+                            )
 
                             Button(L10n.text("Copy")) {
                                 copy(model.status.configuration?.publicMCPURL?.absoluteString)
                             }
                             .controlSize(.small)
-                            .disabled(model.status.configuration?.publicMCPURL == nil)
+                            .disabled(model.quickTunnelGenerating || model.status.configuration?.publicMCPURL == nil)
                         }
                     }
                     RowDivider()
