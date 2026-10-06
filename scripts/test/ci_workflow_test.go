@@ -249,6 +249,10 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 		"group: release-publication",
 		"release_api_error=\"$RUNNER_TEMP/release-api-error.log\"",
 		"HTTP 404",
+		"if [[ \"$RELEASE_TAG\" == \"v0.9.2\" ]]; then",
+		"git fetch --no-tags origin release/v0.9.2-upgrade-bridge",
+		"bridge_commit=\"$(git rev-parse origin/release/v0.9.2-upgrade-bridge)\"",
+		"test \"$source_commit\" = \"$bridge_commit\"",
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("Release workflow must gate public resources behind staged validation; missing %q", want)

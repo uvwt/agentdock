@@ -208,9 +208,16 @@ jobs:
           tag_commit="$(git rev-parse "$RELEASE_TAG^{commit}")"
           test "$source_commit" = "$tag_commit"
 
-          # 正式发布只允许来自 main 的已合并提交，避免手工 tag 绕过主分支门禁。
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor "$source_commit" origin/main
+          # v0.9.2 是一次性兼容桥，必须精确发布 release/v0.9.2-upgrade-bridge 的远端头。
+          # 其他正式版本仍只允许来自 main，避免手工 tag 绕过主分支门禁。
+          if [[ "$RELEASE_TAG" == "v0.9.2" ]]; then
+            git fetch --no-tags origin release/v0.9.2-upgrade-bridge
+            bridge_commit="$(git rev-parse origin/release/v0.9.2-upgrade-bridge)"
+            test "$source_commit" = "$bridge_commit"
+          else
+            git fetch --no-tags origin main
+            git merge-base --is-ancestor "$source_commit" origin/main
+          fi
 
           go run ./tools/release verify-version "$RELEASE_TAG"
 

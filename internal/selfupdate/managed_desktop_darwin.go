@@ -31,12 +31,10 @@ func applyManagedDesktopOnlyUpdate(ctx context.Context, request applyRequest) (a
 	}
 
 	sourceArbiter := filepath.Join(request.DesktopTargetPath, "Contents", "Helpers", "agentdock-arbiter")
-	targetArbiter := filepath.Join(request.DesktopStagedPath, "Contents", "Helpers", "agentdock-arbiter")
-	if !executableRegularFile(sourceArbiter) || !executableRegularFile(targetArbiter) {
-		// Arbiter was introduced after the early 0.8.x App update protocol. If either side of
-		// the transition predates it, use the already-established legacy atomic App updater.
-		// New Release packages are required to embed Arbiter by the macOS packaging test, so
-		// this capability fallback cannot silently excuse a newly produced incomplete package.
+	if !executableRegularFile(sourceArbiter) {
+		// 仅 source App 需要提供已知可信的 Update Helper。目标 App Bundle 是 opaque
+		// artifact：它可以任意增删 Helper、Framework 或 component，而不改变 updater。
+		// 极老版本如果没有 Arbiter，才回退到 legacy 原子替换路径完成一次过渡。
 		return applyResult{}, false, nil
 	}
 
@@ -84,12 +82,6 @@ func applyManagedDesktopOnlyUpdate(ctx context.Context, request applyRequest) (a
 		return applyResult{}, true, err
 	}
 	if err := copyKnownGoodMacOSArbiter(ctx, sourceArbiter, arbiterPath); err != nil {
-		return applyResult{}, true, err
-	}
-	fmt.Fprintln(request.Output, "正在预检新版 AgentDock.app 与内置 Skill...")
-	trialCore := filepath.Join(trialPath, "Contents", "Helpers", "agentdock")
-	trialSkills := filepath.Join(trialPath, "Contents", "Resources", "core-skills")
-	if err := bootstrapBundledSkills(ctx, trialCore, trialSkills, request.Output); err != nil {
 		return applyResult{}, true, err
 	}
 
@@ -168,10 +160,6 @@ func applyManagedDesktopOnlyUpdate(ctx context.Context, request applyRequest) (a
 		return applyResult{}, true, errors.New(message)
 	}
 
-	targetCore := filepath.Join(request.DesktopTargetPath, "Contents", "Helpers", "agentdock")
-	if err := finalizeLegacySkillMigration(ctx, targetCore, request.Output); err != nil {
-		fmt.Fprintf(request.Output, "警告：legacy Skill migration 暂未收口，旧目录将继续保留用于回滚: %v\n", err)
-	}
 	fmt.Fprintf(request.Output, "macOS App 原子更新已提交：%s → %s\n", normalizeVersion(request.CurrentVersion), normalizeVersion(request.TargetVersion))
 	return applyResult{}, true, nil
 }
@@ -192,7 +180,7 @@ func stageMacOSApp(ctx context.Context, stagedPath, trialPath, targetVersion str
 	if err != nil {
 		return fmt.Errorf("stage macOS App trial: %w: %s", err, strings.TrimSpace(string(output)))
 	}
-	if err := validateMacOSDesktopRuntime(ctx, trialPath, targetVersion); err != nil {
+	if err := validateMacOSDesktopVersion(ctx, trialPath, targetVersion); err != nil {
 		return fmt.Errorf("validate staged macOS App trial: %w", err)
 	}
 	return nil

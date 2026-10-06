@@ -37,14 +37,30 @@ func TestExtractDesktopUpdateArchiveValidatesSignedApp(t *testing.T) {
 	if filepath.Base(extracted) != "AgentDock.app" {
 		t.Fatalf("unexpected extracted App path: %s", extracted)
 	}
-	if err := validateMacOSDesktopRuntime(context.Background(), extracted, "v0.7.1"); err != nil {
+	if err := validateMacOSDesktopVersion(context.Background(), extracted, "v0.7.1"); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestExtractDesktopUpdateArchiveAcceptsPreArbiterApp(t *testing.T) {
+func TestExtractDesktopUpdateArchiveTreatsSignedAppContentsAsOpaque(t *testing.T) {
 	dir := t.TempDir()
-	appPath := writeSignedMacOSAppWithArbiter(t, filepath.Join(dir, "source"), "0.7.1", false)
+	appPath := writeSignedMacOSApp(t, filepath.Join(dir, "source"), "0.7.1")
+
+	// updater 的稳定边界只有 Bundle 身份、版本和签名。包内 Helper、组件和资源
+	// 可以随产品演进增删，不能再成为旧 updater 拒绝新版本的理由。
+	for _, relative := range []string{
+		"Contents/Helpers/cloudflared",
+		"Contents/Helpers/agentdock-arbiter",
+		"Contents/Helpers/AgentDockLoginHelper",
+		"Contents/Library/LaunchAgents/com.uvwt.agentdock.menu-login.plist",
+		"Contents/Resources/core-skills/manifest.json",
+	} {
+		if err := os.Remove(filepath.Join(appPath, filepath.FromSlash(relative))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runTestCommand(t, "/usr/bin/codesign", "--force", "--deep", "--sign", "-", "--identifier", "com.uvwt.agentdock", appPath)
+
 	archivePath := filepath.Join(dir, macOSDesktopArchiveName)
 	runTestCommand(t, "/usr/bin/ditto", "-c", "-k", "--keepParent", appPath, archivePath)
 	archiveData, err := os.ReadFile(archivePath)
@@ -59,74 +75,10 @@ func TestExtractDesktopUpdateArchiveAcceptsPreArbiterApp(t *testing.T) {
 		"v0.7.1",
 	)
 	if err != nil {
-		t.Fatalf("pre-Arbiter App was rejected as an update target: %v", err)
+		t.Fatalf("signed App with changed internal layout was rejected: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(extracted, "Contents", "Helpers", "agentdock-arbiter")); !os.IsNotExist(err) {
-		t.Fatalf("pre-Arbiter fixture unexpectedly contains Arbiter: %v", err)
-	}
-}
-
-func TestValidateMacOSDesktopRuntimeRejectsInvalidPresentArbiter(t *testing.T) {
-	appPath := writeSignedMacOSApp(t, t.TempDir(), "0.7.1")
-	arbiter := filepath.Join(appPath, "Contents", "Helpers", "agentdock-arbiter")
-	if err := os.Chmod(arbiter, 0o644); err != nil {
+	if err := validateMacOSDesktopVersion(context.Background(), extracted, "v0.7.1"); err != nil {
 		t.Fatal(err)
-	}
-
-	err := validateMacOSDesktopRuntime(context.Background(), appPath, "v0.7.1")
-	if err == nil || !strings.Contains(err.Error(), "内置 Arbiter 无效") {
-		t.Fatalf("invalid present Arbiter was not rejected: %v", err)
-	}
-}
-
-func TestValidateMacOSDesktopRuntimeRejectsUnsafeMenuAgent(t *testing.T) {
-	tests := []struct {
-		name      string
-		mutate    func(t *testing.T, plistPath string)
-		wantError string
-	}{
-		{
-			name: "program arguments",
-			mutate: func(t *testing.T, plistPath string) {
-				runTestCommand(t, "/usr/bin/plutil", "-replace", "ProgramArguments.0", "-string", "wrong-helper", plistPath)
-			},
-			wantError: "ProgramArguments.0 无效",
-		},
-		{
-			name: "extra program argument",
-			mutate: func(t *testing.T, plistPath string) {
-				runTestCommand(t, "/usr/bin/plutil", "-insert", "ProgramArguments.1", "-string", "--unexpected", plistPath)
-			},
-			wantError: "ProgramArguments 只能包含 AgentDockLoginHelper",
-		},
-		{
-			name: "keep alive",
-			mutate: func(t *testing.T, plistPath string) {
-				runTestCommand(t, "/usr/bin/plutil", "-insert", "KeepAlive", "-bool", "YES", plistPath)
-			},
-			wantError: "不应包含 KeepAlive",
-		},
-		{
-			name: "process type",
-			mutate: func(t *testing.T, plistPath string) {
-				runTestCommand(t, "/usr/bin/plutil", "-insert", "ProcessType", "-string", "Background", plistPath)
-			},
-			wantError: "不应包含 ProcessType",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			appPath := writeSignedMacOSApp(t, t.TempDir(), "0.7.1")
-			plistPath := filepath.Join(appPath, "Contents", "Library", "LaunchAgents", "com.uvwt.agentdock.menu-login.plist")
-			test.mutate(t, plistPath)
-			runTestCommand(t, "/usr/bin/codesign", "--force", "--deep", "--sign", "-", "--identifier", "com.uvwt.agentdock", appPath)
-
-			err := validateMacOSDesktopRuntime(context.Background(), appPath, "v0.7.1")
-			if err == nil || !strings.Contains(err.Error(), test.wantError) {
-				t.Fatalf("expected error containing %q, got %v", test.wantError, err)
-			}
-		})
 	}
 }
 
@@ -395,7 +347,7 @@ func writeSignedMacOSAppWithArbiter(t *testing.T, root, version string, includeA
 		runTestCommand(t, "/usr/bin/codesign", "--force", "--sign", "-", "--identifier", "com.uvwt.agentdock.arbiter", filepath.Join(helpersDir, "agentdock-arbiter"))
 	}
 	runTestCommand(t, "/usr/bin/codesign", "--force", "--deep", "--sign", "-", "--identifier", "com.uvwt.agentdock", appPath)
-	if err := validateMacOSDesktopRuntime(context.Background(), appPath, version); err != nil {
+	if err := validateMacOSDesktopVersion(context.Background(), appPath, version); err != nil {
 		t.Fatal(err)
 	}
 	return appPath

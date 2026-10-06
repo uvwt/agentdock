@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const Version = "0.9.1"
+const Version = "0.9.2"
 
 var (
 	Commit    string

@@ -6,7 +6,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -144,7 +143,7 @@ func extractDesktopUpdateArchive(ctx context.Context, archiveData []byte, tempDi
 	}
 
 	appPath := filepath.Join(root, "AgentDock.app")
-	if err := validateMacOSDesktopRuntime(ctx, appPath, targetVersion); err != nil {
+	if err := validateMacOSDesktopVersion(ctx, appPath, targetVersion); err != nil {
 		return "", err
 	}
 	return appPath, nil
@@ -192,69 +191,6 @@ func validateMacOSDesktopVersion(ctx context.Context, appPath, targetVersion str
 	output, err := exec.CommandContext(ctx, "codesign", "--verify", "--deep", "--strict", "--verbose=2", appPath).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("macOS App 代码签名验证失败: %w: %s", err, strings.TrimSpace(string(output)))
-	}
-	return nil
-}
-
-func validateMacOSDesktopRuntime(ctx context.Context, appPath, targetVersion string) error {
-	if err := validateMacOSDesktopVersion(ctx, appPath, targetVersion); err != nil {
-		return err
-	}
-	core := filepath.Join(appPath, "Contents", "Helpers", "agentdock")
-	cloudflared := filepath.Join(appPath, "Contents", "Helpers", "cloudflared")
-	arbiter := filepath.Join(appPath, "Contents", "Helpers", "agentdock-arbiter")
-	menuHelper := filepath.Join(appPath, "Contents", "Helpers", "AgentDockLoginHelper")
-	menuAgent := filepath.Join(appPath, "Contents", "Library", "LaunchAgents", "com.uvwt.agentdock.menu-login.plist")
-	skillManifest := filepath.Join(appPath, "Contents", "Resources", "core-skills", "manifest.json")
-	for _, path := range []string{core, cloudflared, menuHelper, menuAgent, skillManifest} {
-		info, err := os.Lstat(path)
-		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("macOS App 缺少有效运行组件: %s", path)
-		}
-	}
-	if !executableRegularFile(core) || !executableRegularFile(cloudflared) || !executableRegularFile(menuHelper) {
-		return errors.New("macOS App 内置 Core、cloudflared 或菜单栏登录组件不可执行")
-	}
-	if info, err := os.Lstat(arbiter); err == nil {
-		// 早期已发布的 0.8.x App 没有 Arbiter，可以作为 legacy 更新目标；但新格式
-		// 一旦声明了这个能力，就必须提供可执行、非符号链接且签名有效的 helper。
-		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o111 == 0 {
-			return fmt.Errorf("macOS App 内置 Arbiter 无效: %s", arbiter)
-		}
-		if output, verifyErr := exec.CommandContext(ctx, "codesign", "--verify", "--strict", "--verbose=2", arbiter).CombinedOutput(); verifyErr != nil {
-			return fmt.Errorf("macOS App 内置 Arbiter 签名验证失败: %w: %s", verifyErr, strings.TrimSpace(string(output)))
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("检查 macOS App 内置 Arbiter 失败: %w", err)
-	}
-	for _, expected := range []struct {
-		key   string
-		value string
-	}{
-		{key: "Label", value: "com.uvwt.agentdock.menu-login"},
-		{key: "BundleProgram", value: "Contents/Helpers/AgentDockLoginHelper"},
-		{key: "ProgramArguments.0", value: "AgentDockLoginHelper"},
-		{key: "RunAtLoad", value: "true"},
-		{key: "LimitLoadToSessionType", value: "Aqua"},
-	} {
-		value, err := plistValue(ctx, menuAgent, expected.key)
-		if err != nil || value != expected.value {
-			return fmt.Errorf("macOS App 菜单栏登录服务 %s 无效", expected.key)
-		}
-	}
-	if _, err := plistValue(ctx, menuAgent, "ProgramArguments.1"); err == nil {
-		return errors.New("macOS App 菜单栏登录服务 ProgramArguments 只能包含 AgentDockLoginHelper")
-	}
-	for _, forbiddenKey := range []string{"KeepAlive", "ProcessType"} {
-		if _, err := plistValue(ctx, menuAgent, forbiddenKey); err == nil {
-			return fmt.Errorf("macOS App 菜单栏登录服务不应包含 %s", forbiddenKey)
-		}
-	}
-	if err := verifyBinaryVersion(ctx, core, targetVersion); err != nil {
-		return fmt.Errorf("macOS App 内置 Core 版本不匹配: %w", err)
-	}
-	if output, err := exec.CommandContext(ctx, cloudflared, "--version").CombinedOutput(); err != nil {
-		return fmt.Errorf("macOS App 内置 cloudflared 无法运行: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
