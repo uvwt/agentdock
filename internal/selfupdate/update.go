@@ -30,6 +30,7 @@ const (
 	defaultReleaseManifestURL = "https://download.nexusdock.co/latest.json"
 	maxReleaseArchiveBytes    = 256 << 20
 	maxDesktopArchiveBytes    = 512 << 20
+	maxInstallerBytes         = 512 << 20
 	maxExtractedPayloadBytes  = 64 << 20
 	macOSDesktopArchiveName   = "AgentDock-macos-universal.zip"
 	coreSkillBundlePrefix     = "share/agentdock/core-skills/"
@@ -62,6 +63,8 @@ type updateInspection struct {
 	ChecksumAsset        releaseAsset
 	DesktopArchiveAsset  releaseAsset
 	DesktopChecksumAsset releaseAsset
+	InstallerAsset       releaseAsset
+	InstallerChecksum    releaseAsset
 }
 
 type options struct {
@@ -77,6 +80,7 @@ type options struct {
 	Output                io.Writer
 	Progress              updateProgressReporter
 	Apply                 func(context.Context, applyRequest) (applyResult, error)
+	ApplyInstaller        func(context.Context, installerApplyRequest) (applyResult, error)
 	VerifyBinary          func(context.Context, string, string) error
 	ExtractDesktop        func(context.Context, []byte, string, string) (string, error)
 }
@@ -97,6 +101,17 @@ type applyRequest struct {
 type applyResult struct {
 	Restarted bool
 	HandedOff bool
+}
+
+type installerApplyRequest struct {
+	CurrentPath    string
+	InstallRoot    string
+	CurrentVersion string
+	TargetVersion  string
+	InstallerName  string
+	InstallerData  []byte
+	Output         io.Writer
+	Progress       updateProgressReporter
 }
 
 func Run(ctx context.Context, output io.Writer) error {
@@ -161,6 +176,7 @@ func runtimeOptions(output io.Writer) (options, error) {
 		HTTPClient:            &http.Client{Timeout: 5 * time.Minute},
 		Output:                output,
 		Apply:                 applyPlatformUpdate,
+		ApplyInstaller:        applyPlatformInstallerUpdate,
 		VerifyBinary:          verifyBinaryVersion,
 		ExtractDesktop:        extractDesktopUpdateArchive,
 	}, nil
@@ -172,12 +188,6 @@ func run(ctx context.Context, opts options) error {
 	}
 	if opts.Output == nil {
 		opts.Output = io.Discard
-	}
-	if opts.Apply == nil || opts.VerifyBinary == nil {
-		return errors.New("更新执行器未配置")
-	}
-	if opts.DesktopTargetPath != "" && opts.ExtractDesktop == nil {
-		return errors.New("桌面更新解压器未配置")
 	}
 
 	inspection, err := inspectUpdate(ctx, opts)
@@ -194,6 +204,18 @@ func run(ctx context.Context, opts options) error {
 			})
 		}
 		return nil
+	}
+	if inspection.InstallerAsset.Name != "" {
+		if opts.ApplyInstaller == nil {
+			return errors.New("平台安装器更新执行器未配置")
+		}
+		return runInstallerOwnedUpdate(ctx, opts, inspection)
+	}
+	if opts.Apply == nil || opts.VerifyBinary == nil {
+		return errors.New("更新执行器未配置")
+	}
+	if opts.DesktopTargetPath != "" && opts.ExtractDesktop == nil {
+		return errors.New("桌面更新解压器未配置")
 	}
 	if opts.DesktopOnly || (inspection.Result.DesktopUpdateAvailable && normalizeVersion(inspection.Result.CurrentVersion) == normalizeVersion(inspection.Result.LatestVersion)) {
 		return runDesktopOnlyUpdate(ctx, opts, inspection)
@@ -312,6 +334,56 @@ func run(ctx context.Context, opts options) error {
 	return nil
 }
 
+func runInstallerOwnedUpdate(ctx context.Context, opts options, inspection updateInspection) error {
+	asset := inspection.InstallerAsset
+	checksumAsset := inspection.InstallerChecksum
+	if asset.Name == "" || checksumAsset.Name == "" {
+		return errors.New("平台安装器更新缺少 Release 资源")
+	}
+
+	currentVersion := inspection.Result.CurrentVersion
+	targetVersion := inspection.Result.LatestVersion
+	fmt.Fprintf(opts.Output, "当前版本：%s\n最新版本：%s\n\n", currentVersion, targetVersion)
+	fmt.Fprintf(opts.Output, "正在下载 %s...\n", asset.Name)
+	reportUpdateStage(opts.Progress, UpdateStageDownloading, currentVersion, targetVersion, asset.Name)
+	installerData, err := downloadWithProgress(ctx, opts.HTTPClient, asset.URL, maxInstallerBytes, func(bytesRead, totalBytes int64) {
+		reportDownloadProgress(opts.Progress, currentVersion, targetVersion, asset.Name, bytesRead, totalBytes)
+	})
+	if err != nil {
+		return fmt.Errorf("下载安装器失败: %w", err)
+	}
+	reportUpdateStage(opts.Progress, UpdateStageVerifying, currentVersion, targetVersion, asset.Name)
+	checksumData, err := download(ctx, opts.HTTPClient, checksumAsset.URL, 1<<20)
+	if err != nil {
+		return fmt.Errorf("下载安装器校验文件失败: %w", err)
+	}
+	if err := verifyChecksum(installerData, checksumData); err != nil {
+		return fmt.Errorf("安装器校验失败，当前版本未被修改: %w", err)
+	}
+
+	// 托管桌面安装只把经过 Release 清单校验的完整安装器交给平台层。
+	// updater 不再理解 WinUI、DLL、generation 或其他安装包内部文件。
+	reportUpdateStage(opts.Progress, UpdateStageInstalling, currentVersion, targetVersion, asset.Name)
+	result, err := opts.ApplyInstaller(ctx, installerApplyRequest{
+		CurrentPath:    opts.ExecutablePath,
+		InstallRoot:    opts.DesktopTargetPath,
+		CurrentVersion: currentVersion,
+		TargetVersion:  targetVersion,
+		InstallerName:  asset.Name,
+		InstallerData:  installerData,
+		Output:         opts.Output,
+		Progress:       opts.Progress,
+	})
+	if err != nil {
+		return err
+	}
+	if !result.HandedOff {
+		return errors.New("平台安装器没有接管更新")
+	}
+	fmt.Fprintf(opts.Output, "更新已交给完整安装程序：%s → %s。AgentDock 将由安装程序完成替换并重新启动。\n", currentVersion, targetVersion)
+	return nil
+}
+
 func runDesktopOnlyUpdate(ctx context.Context, opts options, inspection updateInspection) error {
 	targetVersion := inspection.Result.LatestVersion
 	asset := inspection.DesktopArchiveAsset
@@ -405,6 +477,32 @@ func inspectUpdate(ctx context.Context, opts options) (updateInspection, error) 
 	if currentVersion == targetVersion && !desktopNeedsUpdate {
 		result.Message = fmt.Sprintf("当前已是最新版本：%s", targetVersion)
 		return updateInspection{Result: result}, nil
+	}
+
+	if opts.GOOS == "windows" && strings.TrimSpace(opts.DesktopTargetPath) != "" {
+		installerName, err := windowsSetupAssetName(opts.GOARCH)
+		if err != nil {
+			return updateInspection{}, err
+		}
+		installerAsset, ok := findAsset(latest.Assets, installerName)
+		if !ok {
+			return updateInspection{}, fmt.Errorf("Release %s 缺少 Windows 完整安装器 %s", targetVersion, installerName)
+		}
+		installerChecksum, ok := findAsset(latest.Assets, installerName+".sha256")
+		if !ok {
+			return updateInspection{}, fmt.Errorf("Release %s 缺少校验文件 %s.sha256", targetVersion, installerName)
+		}
+		result.UpdateAvailable = true
+		if currentVersion == targetVersion && desktopNeedsUpdate {
+			result.Message = fmt.Sprintf("发现 Windows 安装修复：%s → %s", desktopVersion, targetVersion)
+		} else {
+			result.Message = fmt.Sprintf("发现新版本：%s → %s", currentVersion, targetVersion)
+		}
+		return updateInspection{
+			Result:            result,
+			InstallerAsset:    installerAsset,
+			InstallerChecksum: installerChecksum,
+		}, nil
 	}
 
 	if opts.DesktopOnly {
@@ -696,6 +794,13 @@ func platformAssetNames(goos, goarch string) (archiveName, executableName string
 	default:
 		return "", "", fmt.Errorf("当前系统暂不支持内置更新：%s/%s", goos, goarch)
 	}
+}
+
+func windowsSetupAssetName(goarch string) (string, error) {
+	if goarch != "amd64" && goarch != "arm64" {
+		return "", fmt.Errorf("不支持的 Windows CPU 架构：%s", goarch)
+	}
+	return "AgentDockSetup-" + goarch + ".exe", nil
 }
 
 func findAsset(assets []releaseAsset, name string) (releaseAsset, bool) {

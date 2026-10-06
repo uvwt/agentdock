@@ -568,6 +568,22 @@ final class ServiceController: @unchecked Sendable {
         }
     }
 
+    func bootstrapBundledCoreSkillsForUpdate() async throws {
+        let result = try await runInBackground {
+            try runProcess(
+                executable: self.paths.binary.path,
+                arguments: ["skill", "bootstrap", "--bundle", self.paths.coreSkillBundle.path]
+            )
+        }
+        guard result.status == 0 else {
+            throw ValidationError(
+                result.output.isEmpty
+                    ? L10n.text("Official core Skill initialization failed.")
+                    : result.output
+            )
+        }
+    }
+
     func migrateLegacyCloudflaredIfNeeded(source: URL?, required: Bool) async throws {
         try await lifecycleCoordinator.run {
             try await self.migrateLegacyCloudflaredWithinLifecycle(source: source, required: required)

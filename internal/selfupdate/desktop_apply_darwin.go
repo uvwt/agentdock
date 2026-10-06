@@ -50,7 +50,7 @@ func prepareDesktopUpdate(
 	if err := validateMacOSDesktopTarget(targetPath); err != nil {
 		return nil, fmt.Errorf("当前 macOS App 无效: %w", err)
 	}
-	if err := validateMacOSDesktopRuntime(ctx, stagedPath, targetVersion); err != nil {
+	if err := validateMacOSDesktopVersion(ctx, stagedPath, targetVersion); err != nil {
 		return nil, fmt.Errorf("新版 macOS App 无效: %w", err)
 	}
 	parent := filepath.Dir(targetPath)
@@ -92,7 +92,7 @@ func (update *macOSDesktopUpdate) Install(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("复制新版 App 失败: %w: %s", err, strings.TrimSpace(string(output)))
 	}
-	if err := validateMacOSDesktopRuntime(ctx, update.newPath, update.targetVersion); err != nil {
+	if err := validateMacOSDesktopVersion(ctx, update.newPath, update.targetVersion); err != nil {
 		return fmt.Errorf("复制后的新版 App 验证失败: %w", err)
 	}
 
@@ -129,7 +129,7 @@ func (update *macOSDesktopUpdate) Install(ctx context.Context) error {
 		return fmt.Errorf("安装新版 App 失败，旧 App 已恢复: %w", err)
 	}
 	update.installed = true
-	if err := validateMacOSDesktopRuntime(ctx, update.targetPath, update.targetVersion); err != nil {
+	if err := validateMacOSDesktopVersion(ctx, update.targetPath, update.targetVersion); err != nil {
 		return fmt.Errorf("安装后的新版 App 验证失败: %w", err)
 	}
 	return nil
@@ -179,6 +179,9 @@ func (update *macOSDesktopUpdate) Finish(ctx context.Context, outcome desktopUpd
 	if err := removeMacOSDesktopUpdateHandoff(); err != nil {
 		return fmt.Errorf("清理旧的 macOS 更新接管确认失败: %w", err)
 	}
+	// 只把旧 Bundle 的整体位置交给目标 App。目标版本如果需要迁移旧包内资源，
+	// 由它自己解释内部布局；updater 不再知道 cloudflared/Helper 等具体文件。
+	outcome.PreviousAppPath = update.backupPath
 	if err := writeMacOSDesktopUpdateResult(outcome); err != nil {
 		return err
 	}

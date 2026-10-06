@@ -243,13 +243,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     throw ValidationError(L10n.text("AgentDock update is missing background service recovery state."))
                 }
 
+                // updater 只负责整体替换 App Bundle，不再读取 Bundle 内部 Core/Skill 布局。
+                // 新版 App 在确认 handoff 前完成自身包内资源初始化；失败会阻止 ACK，
+                // 让外层更新事务继续按原有回滚路径恢复旧 App。
+                try await service.bootstrapBundledCoreSkillsForUpdate()
+
                 // Transitional safety for the first release that removes bundled cloudflared:
                 // the source updater may predate the component store. During the target trial the
                 // old App is still preserved in the rollback slot, so import its signed helper
                 // before Tunnel registration is restored or the Arbiter is allowed to commit.
                 let configuredMode = (try? service.configuredTunnelMode()) ?? .local
+                let previousBundle = pendingResult.validatedPreviousAppBundle(
+                    currentApp: service.paths.appBundle
+                )
+                let legacyCloudflaredSource = previousBundle?
+                    .appendingPathComponent("Contents/Helpers/cloudflared")
+                    ?? DesktopUpdateTransactionRecovery.legacyCloudflaredRollbackSource(paths: service.paths)
                 try await service.migrateLegacyCloudflaredIfNeeded(
-                    source: DesktopUpdateTransactionRecovery.legacyCloudflaredRollbackSource(paths: service.paths),
+                    source: legacyCloudflaredSource,
                     required: configuredMode != .local || serviceState.tunnelEnabled
                 )
 

@@ -8,6 +8,18 @@ Official AgentDock Windows release executables are built from this repository by
 
 The signing build definition is [`.github/workflows/release.yml`](../.github/workflows/release.yml). Production signing is restricted to `v*` release refs from this repository, uses SignPath trusted-build-system and origin verification, and requires a manual approval before the release certificate can be used.
 
+## Update verification during the signing transition
+
+The release pipeline currently retains the existing AgentDock self-signed Authenticode certificate as a compatibility path until the SignPath Foundation production certificate is active for normal releases. A self-signed certificate is intentionally not added to the Windows trusted-root store.
+
+Desktop self-update therefore verifies a downloaded Windows Setup in this order:
+
+1. Prefer the normal Windows `WinVerifyTrust` policy. A publicly trusted Authenticode signature passes here.
+2. Only when Windows returns `CERT_E_UNTRUSTEDROOT`, require the currently installed official AgentDock executable to have the same trust result and require the Setup signer certificate thumbprint to exactly match the installed executable signer thumbprint.
+3. Any unsigned file, signature/hash failure, different signer, or other trust error is rejected.
+
+This compatibility rule does not trust arbitrary self-signed certificates and does not modify the Windows trust store. Once formal releases use a publicly trusted certificate, self-update naturally remains on step 1.
+
 ## Roles
 
 AgentDock is currently maintained by a single trusted maintainer:

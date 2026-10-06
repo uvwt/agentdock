@@ -12,7 +12,8 @@ import (
 )
 
 // RunLocalArchive lets Windows Setup hand an already verified/downloaded Release
-// artifact to the same generation Update Engine used by online self-update.
+// artifact to the generation Update Engine used by Installer-owned local activation.
+// Managed online self-update itself downloads and launches the complete Setup instead.
 // The legacy layout never calls this entrypoint; it is only valid once stable
 // shims + active-version.json have established generation ownership.
 func RunLocalArchive(ctx context.Context, archivePath, checksumPath, targetVersion string, output io.Writer) error {

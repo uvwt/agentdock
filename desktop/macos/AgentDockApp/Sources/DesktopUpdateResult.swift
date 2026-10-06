@@ -6,6 +6,7 @@ struct DesktopUpdateResult: Decodable {
     let ok: Bool
     let currentVersion: String
     let targetVersion: String
+    let previousAppPath: String?
     let message: String
 
     private enum CodingKeys: String, CodingKey {
@@ -14,7 +15,25 @@ struct DesktopUpdateResult: Decodable {
         case ok
         case currentVersion = "current_version"
         case targetVersion = "target_version"
+        case previousAppPath = "previous_app_path"
         case message
+    }
+
+    func validatedPreviousAppBundle(currentApp: URL) -> URL? {
+        guard let previousAppPath = previousAppPath?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !previousAppPath.isEmpty else {
+            return nil
+        }
+        let previous = URL(fileURLWithPath: previousAppPath)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+        let current = currentApp.standardizedFileURL.resolvingSymlinksInPath()
+        guard previous.deletingLastPathComponent().path == current.deletingLastPathComponent().path,
+              previous.lastPathComponent.hasPrefix(".AgentDock.app.backup.") else {
+            return nil
+        }
+        return previous
     }
 
     static func load(from path: URL) -> DesktopUpdateResult? {

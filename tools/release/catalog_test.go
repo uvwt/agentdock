@@ -10,10 +10,13 @@ import (
 func TestReleaseCatalogKeepsPublicInstallerEntries(t *testing.T) {
 	catalog := ReleaseCatalog()
 	required := map[string]bool{
-		"install.sh":                   false,
-		"install.ps1":                  false,
-		"agentdock_linux_amd64.tar.gz": false,
-		"AgentDockSetup-amd64.exe":     false,
+		"install.sh":                      false,
+		"install.ps1":                     false,
+		"agentdock_linux_amd64.tar.gz":    false,
+		"AgentDockSetup-amd64.exe":        false,
+		"AgentDockSetup-amd64.exe.sha256": false,
+		"AgentDockSetup-arm64.exe":        false,
+		"AgentDockSetup-arm64.exe.sha256": false,
 	}
 	for _, artifact := range catalog {
 		if _, ok := required[artifact.Name]; ok {

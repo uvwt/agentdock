@@ -188,11 +188,27 @@ struct InstallerConfigurationTests {
         try Data(json.utf8).write(to: path)
         let loaded = DesktopUpdateResult.load(from: path)
         precondition(loaded?.ok == true)
+        precondition(loaded?.validatedPreviousAppBundle(
+            currentApp: root.appendingPathComponent("AgentDock.app")
+        ) == nil)
         precondition(FileManager.default.fileExists(atPath: path.path))
         let result = DesktopUpdateResult.consume(from: path)
         precondition(result?.ok == true)
         precondition(result?.targetVersion == "v0.7.0")
         precondition(!FileManager.default.fileExists(atPath: path.path))
+
+        let currentApp = root.appendingPathComponent("AgentDock.app")
+        let previousApp = root.appendingPathComponent(".AgentDock.app.backup.test")
+        let resultWithPrevious = """
+        {"schema_version":1,"ok":true,"current_version":"v0.6.9","target_version":"v0.7.0","previous_app_path":"\(previousApp.path)","message":"更新完成"}
+        """
+        try Data(resultWithPrevious.utf8).write(to: path)
+        let loadedWithPrevious = DesktopUpdateResult.load(from: path)
+        precondition(
+            loadedWithPrevious?.validatedPreviousAppBundle(currentApp: currentApp)?.path
+                == previousApp.path
+        )
+        precondition(DesktopUpdateResult.discard(from: path))
 
         try Data("not-json".utf8).write(to: path)
         precondition(DesktopUpdateResult.load(from: path) == nil)

@@ -14,10 +14,11 @@ import (
 )
 
 type desktopUpdateOutcome struct {
-	OK             bool   `json:"ok"`
-	CurrentVersion string `json:"current_version"`
-	TargetVersion  string `json:"target_version"`
-	Message        string `json:"message"`
+	OK              bool   `json:"ok"`
+	CurrentVersion  string `json:"current_version"`
+	TargetVersion   string `json:"target_version"`
+	PreviousAppPath string `json:"previous_app_path,omitempty"`
+	Message         string `json:"message"`
 }
 
 type desktopUpdateTransaction interface {
@@ -191,14 +192,8 @@ func applyDesktopOnlyUpdate(ctx context.Context, request applyRequest) (applyRes
 		return applyResult{}, rollback(err)
 	}
 
-	installedCore := filepath.Join(request.DesktopTargetPath, "Contents", "Helpers", "agentdock")
-	installedSkills := filepath.Join(request.DesktopTargetPath, "Contents", "Resources", "core-skills")
-	fmt.Fprintln(request.Output, "正在更新官方核心 Skill...")
-	reportUpdateStage(request.Progress, UpdateStageUpdatingSkill, request.CurrentVersion, request.TargetVersion, "")
-	if err := bootstrapBundledSkills(ctx, installedCore, installedSkills, request.Output); err != nil {
-		return applyResult{}, rollback(err)
-	}
-
+	// App Bundle 的内部文件和首次启动收尾由新版 App 自己负责。updater 只完成
+	// 整体 Bundle 替换与回滚，不再读取 Core、Skill 或其他 Contents 子路径。
 	outcome := desktopUpdateOutcome{
 		OK:             true,
 		CurrentVersion: request.CurrentVersion,
@@ -211,9 +206,6 @@ func applyDesktopOnlyUpdate(ctx context.Context, request applyRequest) (applyRes
 	}
 	if err := desktopUpdate.Commit(); err != nil {
 		fmt.Fprintf(request.Output, "警告：清理 AgentDock.app 更新备份失败: %v\n", err)
-	}
-	if err := finalizeLegacySkillMigration(ctx, installedCore, request.Output); err != nil {
-		fmt.Fprintf(request.Output, "警告：legacy Skill migration 暂未收口，旧目录将继续保留用于回滚: %v\n", err)
 	}
 	return applyResult{}, nil
 }

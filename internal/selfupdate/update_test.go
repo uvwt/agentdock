@@ -132,13 +132,13 @@ func TestInspectUpdateRepairsOlderDesktopWhenCoreIsCurrent(t *testing.T) {
 	}
 }
 
-func TestInspectUpdateUsesWindowsReleaseBundleForDesktopUpdate(t *testing.T) {
+func TestInspectUpdateUsesWindowsSetupForManagedInstallation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(release{
 			TagName: "v0.7.5",
 			Assets: []releaseAsset{
-				{Name: "agentdock_windows_amd64.zip", URL: "https://example.invalid/windows"},
-				{Name: "agentdock_windows_amd64.zip.sha256", URL: "https://example.invalid/windows.sha256"},
+				{Name: "AgentDockSetup-amd64.exe", URL: "https://example.invalid/setup"},
+				{Name: "AgentDockSetup-amd64.exe.sha256", URL: "https://example.invalid/setup.sha256"},
 			},
 		})
 	}))
@@ -159,18 +159,22 @@ func TestInspectUpdateUsesWindowsReleaseBundleForDesktopUpdate(t *testing.T) {
 	if !inspection.Result.UpdateAvailable || !inspection.Result.DesktopUpdateAvailable {
 		t.Fatalf("Windows desktop update was not reported: %#v", inspection.Result)
 	}
-	if inspection.DesktopArchiveAsset != inspection.ArchiveAsset || inspection.DesktopChecksumAsset != inspection.ChecksumAsset {
-		t.Fatalf("Windows desktop update must reuse the platform archive: %#v", inspection)
+	if inspection.InstallerAsset.Name != "AgentDockSetup-amd64.exe" ||
+		inspection.InstallerChecksum.Name != "AgentDockSetup-amd64.exe.sha256" {
+		t.Fatalf("managed Windows update must select the complete Setup: %#v", inspection)
+	}
+	if inspection.ArchiveAsset.Name != "" || inspection.DesktopArchiveAsset.Name != "" {
+		t.Fatalf("managed Windows update must not select internal Release ZIP payloads: %#v", inspection)
 	}
 }
 
-func TestInspectUpdateRepairsMissingWindowsDesktopMarkerWhenCoreIsCurrent(t *testing.T) {
+func TestInspectUpdateRepairsMissingWindowsDesktopMarkerThroughSetup(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(release{
 			TagName: "v0.7.5",
 			Assets: []releaseAsset{
-				{Name: "agentdock_windows_amd64.zip", URL: "https://example.invalid/windows"},
-				{Name: "agentdock_windows_amd64.zip.sha256", URL: "https://example.invalid/windows.sha256"},
+				{Name: "AgentDockSetup-amd64.exe", URL: "https://example.invalid/setup"},
+				{Name: "AgentDockSetup-amd64.exe.sha256", URL: "https://example.invalid/setup.sha256"},
 			},
 		})
 	}))
@@ -190,8 +194,8 @@ func TestInspectUpdateRepairsMissingWindowsDesktopMarkerWhenCoreIsCurrent(t *tes
 	if !inspection.Result.UpdateAvailable || !inspection.Result.DesktopUpdateAvailable {
 		t.Fatalf("missing Windows desktop marker was not repairable: %#v", inspection.Result)
 	}
-	if inspection.DesktopArchiveAsset != inspection.ArchiveAsset {
-		t.Fatalf("Windows desktop repair did not reuse the release archive: %#v", inspection)
+	if inspection.InstallerAsset.Name != "AgentDockSetup-amd64.exe" {
+		t.Fatalf("Windows desktop repair must be owned by Setup: %#v", inspection)
 	}
 }
 
@@ -443,9 +447,9 @@ func TestRunDesktopOnlyDoesNotRequireCoreAsset(t *testing.T) {
 	}
 }
 
-func TestRunRepairsWindowsDesktopOnlyWhenCoreIsCurrent(t *testing.T) {
-	desktopArchive := []byte("windows-release-bundle")
-	desktopDigest := sha256.Sum256(desktopArchive)
+func TestRunHandsManagedWindowsUpdateToCompleteSetup(t *testing.T) {
+	installer := []byte("signed-setup-fixture")
+	digest := sha256.Sum256(installer)
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -453,21 +457,20 @@ func TestRunRepairsWindowsDesktopOnlyWhenCoreIsCurrent(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(release{
 				TagName: "v0.7.5",
 				Assets: []releaseAsset{
-					{Name: "agentdock_windows_amd64.zip", URL: server.URL + "/windows"},
-					{Name: "agentdock_windows_amd64.zip.sha256", URL: server.URL + "/windows.sha256"},
+					{Name: "AgentDockSetup-amd64.exe", URL: server.URL + "/setup"},
+					{Name: "AgentDockSetup-amd64.exe.sha256", URL: server.URL + "/setup.sha256"},
 				},
 			})
-		case "/windows":
-			_, _ = w.Write(desktopArchive)
-		case "/windows.sha256":
-			fmt.Fprintf(w, "%s  agentdock_windows_amd64.zip\n", hex.EncodeToString(desktopDigest[:]))
+		case "/setup":
+			_, _ = w.Write(installer)
+		case "/setup.sha256":
+			fmt.Fprintf(w, "%s  AgentDockSetup-amd64.exe\n", hex.EncodeToString(digest[:]))
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer server.Close()
 
-	extracted := false
 	applied := false
 	err := run(context.Background(), options{
 		CurrentVersion:        "0.7.5",
@@ -479,31 +482,22 @@ func TestRunRepairsWindowsDesktopOnlyWhenCoreIsCurrent(t *testing.T) {
 		ReleaseManifestURL:    server.URL + "/release",
 		HTTPClient:            server.Client(),
 		Output:                io.Discard,
-		VerifyBinary:          func(context.Context, string, string) error { return nil },
-		ExtractDesktop: func(_ context.Context, data []byte, tempDir, targetVersion string) (string, error) {
-			extracted = true
-			if string(data) != string(desktopArchive) || targetVersion != "v0.7.5" {
-				return "", fmt.Errorf("unexpected Windows desktop payload")
-			}
-			path := filepath.Join(tempDir, "windows-desktop")
-			if err := os.Mkdir(path, 0o700); err != nil {
-				return "", err
-			}
-			return path, nil
-		},
-		Apply: func(_ context.Context, request applyRequest) (applyResult, error) {
+		ApplyInstaller: func(_ context.Context, request installerApplyRequest) (applyResult, error) {
 			applied = true
-			if !request.DesktopOnly || request.StagedPath != "" || request.BundlePath != "" || request.TargetVersion != "v0.7.5" {
-				t.Fatalf("unexpected Windows desktop-only request: %#v", request)
+			if request.InstallRoot != `C:\Users\test\AppData\Local\AgentDock` ||
+				request.TargetVersion != "v0.7.5" ||
+				request.InstallerName != "AgentDockSetup-amd64.exe" ||
+				string(request.InstallerData) != string(installer) {
+				t.Fatalf("unexpected Setup handoff request: %#v", request)
 			}
-			return applyResult{}, nil
+			return applyResult{HandedOff: true}, nil
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !extracted || !applied {
-		t.Fatalf("Windows desktop repair flow incomplete: extracted=%v applied=%v", extracted, applied)
+	if !applied {
+		t.Fatal("Windows complete Setup did not receive the update")
 	}
 }
 

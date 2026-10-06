@@ -15,6 +15,25 @@ AgentDock 的官方第一方二进制分发边界统一为 `https://download.nex
 - 客户端运行时不使用 AgentDock GitHub Release fallback；
 - GitHub 历史 Release 可用于开发、排障和人工归档下载，但不属于产品安装 API。
 
+桌面 self-update 只负责发现、下载和验证完整平台安装制品，不再承担第二套安装器职责：
+
+- Windows 托管安装下载对应架构的 `AgentDockSetup-<arch>.exe` 与 checksum，校验 SHA-256 和 Authenticode 后把更新交给 Setup；运行时依赖、generation、Tray/WinUI 文件、启动项、配置保留和回滚只由 Setup / Installer Engine 管理。
+- macOS 下载 `AgentDock-macos-universal.zip`，只验证 AgentDock Bundle 身份、目标版本和整个 App 的代码签名，然后事务式整体替换 `AgentDock.app`；updater 不检查 `Contents` 内具体 Helper、Framework、component 或 Skill 文件。
+- 包内资源初始化由目标版本应用自己完成。只有持久化用户数据 schema、凭据格式或 OS 注册契约发生变化时才允许新增 migration；程序包内部文件增删不构成 updater migration。
+- Release gate 必须覆盖上一 Stable 到候选版本的真实平台升级路径，不能用“某个内部文件仍然存在”代替升级兼容性验证。
+
+### v0.9.x 一次性升级桥
+
+`v0.9.1` 已发布客户端把 GitHub `releases/latest` 固化成更新 API，而且旧 updater 会解析 Windows ZIP / macOS App 的内部文件。这个已经发布的协议不能由 `v1.x` 代码回头修改。因此 `v1.0.0` 迁移期使用一次性的 `v0.9.2` compatibility bridge：
+
+1. `v0.9.1` 继续按它已经发布的旧协议，从 GitHub Latest 更新到包结构兼容的 `v0.9.2`；
+2. `v0.9.2` 只 backport 新 updater 协议：Windows 交给完整 Setup，macOS 整体替换 App；
+3. `v1.x` 和后续版本只发布新协议，不继续携带旧 WPF / bundled cloudflared 等兼容文件；
+4. 兼容窗口内仓库变量 `LEGACY_GITHUB_LATEST_TAG` 固定 GitHub Latest 到 bridge。当前 Stable 仍由 R2 `latest.json` 唯一发布，二者职责分离；
+5. 当 `v0.9.1` 超出明确支持窗口后删除该仓库变量，即恢复 GitHub Latest 跟随当前 Stable。
+
+bridge 是旧协议到新协议的单向入口，不允许在 `v1.x` updater 中继续新增版本号特判。
+
 内部发布验证使用标准 SemVer prerelease，例如 `v1.0.0-rc.1`。Prerelease 不是第二个长期产品通道：它只发布不可变候选产物和 GitHub Prerelease，不移动 `latest.json`、component repository 或容器 `latest` aliases。RC 的 self-update 仍检查 Stable `latest.json`，因此 `1.0.0-rc.1 < 1.0.0` 时会自然升级正式版。
 
 ## R2 对象模型

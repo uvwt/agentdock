@@ -359,6 +359,12 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 		"group: release-publication",
 		"release_api_error=\"$RUNNER_TEMP/release-api-error.log\"",
 		"HTTP 404",
+		"LEGACY_GITHUB_LATEST_TAG: ${{ vars.LEGACY_GITHUB_LATEST_TAG }}",
+		`elif [[ "$RELEASE_TAG" == "v1.0.0" && -z "$LEGACY_GITHUB_LATEST_TAG" ]]; then`,
+		"v1.0.0 requires LEGACY_GITHUB_LATEST_TAG",
+		`legacy_release="$(gh api "repos/${{ github.repository }}/releases/tags/$LEGACY_GITHUB_LATEST_TAG")"`,
+		`latest_tag="$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name)"`,
+		`test "$latest_tag" = "$LEGACY_GITHUB_LATEST_TAG"`,
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("Release workflow must gate public resources behind staged validation; missing %q", want)
@@ -425,6 +431,12 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 	}
 	if strings.Contains(workflow, "releases/tags/$RELEASE_TAG\" --jq .draft 2>/dev/null || true") {
 		t.Fatal("published-release immutability check must fail closed on API, auth, and network errors")
+	}
+	if !strings.Contains(workflow, `if [[ "$PRERELEASE" != "true" && -n "$LEGACY_GITHUB_LATEST_TAG" ]]; then`) {
+		t.Fatal("stable publication must preserve the configured legacy GitHub Latest bridge")
+	}
+	if !strings.Contains(workflow, `elif [[ "$RELEASE_TAG" == "v1.0.0" && -z "$LEGACY_GITHUB_LATEST_TAG" ]]; then`) {
+		t.Fatal("v1.0.0 publication must fail closed when the legacy GitHub Latest bridge is not configured")
 	}
 	if count := strings.Count(workflow, "ref: ${{ github.event.inputs.tag || github.ref }}"); count != 1 {
 		t.Fatalf("only the source validator may resolve the release tag directly; got %d tag checkouts", count)

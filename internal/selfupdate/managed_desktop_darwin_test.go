@@ -11,7 +11,7 @@ import (
 	"github.com/uvwt/agentdock/internal/updateengine"
 )
 
-func TestManagedDesktopUpdateFallsBackForPreArbiterTarget(t *testing.T) {
+func TestManagedDesktopUpdateFallsBackForPreArbiterSource(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	coordinationDir := filepath.Join(home, "Library", "Application Support", "AgentDock")
@@ -29,10 +29,6 @@ func TestManagedDesktopUpdateFallsBackForPreArbiterTarget(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	sourceArbiter := filepath.Join(sourceApp, "Contents", "Helpers", "agentdock-arbiter")
-	if err := os.WriteFile(sourceArbiter, []byte("source arbiter"), 0o700); err != nil {
-		t.Fatal(err)
-	}
 
 	_, handled, err := applyManagedDesktopOnlyUpdate(context.Background(), applyRequest{
 		DesktopTargetPath: sourceApp,
@@ -42,7 +38,7 @@ func TestManagedDesktopUpdateFallsBackForPreArbiterTarget(t *testing.T) {
 		t.Fatalf("capability fallback returned an error: %v", err)
 	}
 	if handled {
-		t.Fatal("pre-Arbiter target unexpectedly entered the managed transaction engine")
+		t.Fatal("pre-Arbiter source unexpectedly entered the managed transaction engine")
 	}
 }
 

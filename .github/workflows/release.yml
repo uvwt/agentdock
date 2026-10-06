@@ -1530,11 +1530,29 @@ jobs:
           RELEASE_TAG: ${{ needs.source.outputs.tag }}
           SOURCE_COMMIT: ${{ needs.source.outputs.commit }}
           PRERELEASE: ${{ needs.source.outputs.prerelease }}
+          # v0.9.x legacy clients used GitHub releases/latest as their immutable update API.
+          # While the one-time bridge is supported, keep that bridge as GitHub Latest; current
+          # clients use R2 latest.json and therefore do not depend on this compatibility pointer.
+          LEGACY_GITHUB_LATEST_TAG: ${{ vars.LEGACY_GITHUB_LATEST_TAG }}
         run: |
           set -euo pipefail
           test -n "$RELEASE_ID"
           make_latest=true
           if [[ "$PRERELEASE" == "true" ]]; then
+            make_latest=false
+          elif [[ "$RELEASE_TAG" == "v1.0.0" && -z "$LEGACY_GITHUB_LATEST_TAG" ]]; then
+            echo "v1.0.0 requires LEGACY_GITHUB_LATEST_TAG so v0.9.1 clients cannot skip the compatibility bridge." >&2
+            exit 1
+          elif [[ -n "$LEGACY_GITHUB_LATEST_TAG" ]]; then
+            if [[ "$LEGACY_GITHUB_LATEST_TAG" == "$RELEASE_TAG" ]]; then
+              echo "LEGACY_GITHUB_LATEST_TAG must point to a distinct compatibility bridge." >&2
+              exit 1
+            fi
+            legacy_release="$(gh api "repos/${{ github.repository }}/releases/tags/$LEGACY_GITHUB_LATEST_TAG")"
+            jq -e \
+              --arg tag "$LEGACY_GITHUB_LATEST_TAG" \
+              '.tag_name == $tag and .draft == false and .prerelease == false' \
+              <<<"$legacy_release" >/dev/null
             make_latest=false
           fi
           published="$(gh api --method PATCH "repos/${{ github.repository }}/releases/$RELEASE_ID" \
@@ -1550,6 +1568,15 @@ jobs:
           test "$prerelease" = "$PRERELEASE"
           test "$tag" = "$RELEASE_TAG"
           test "$target" = "$SOURCE_COMMIT"
+
+          if [[ "$PRERELEASE" != "true" && -n "$LEGACY_GITHUB_LATEST_TAG" ]]; then
+            legacy_id="$(gh api "repos/${{ github.repository }}/releases/tags/$LEGACY_GITHUB_LATEST_TAG" --jq .id)"
+            test -n "$legacy_id"
+            gh api --method PATCH "repos/${{ github.repository }}/releases/$legacy_id" \
+              -f make_latest=true >/dev/null
+            latest_tag="$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name)"
+            test "$latest_tag" = "$LEGACY_GITHUB_LATEST_TAG"
+          fi
 
   mirror-r2:
     name: Publish immutable Release to R2
