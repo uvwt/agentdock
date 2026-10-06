@@ -830,9 +830,17 @@ func verifyRequest(request Request) error {
 }
 
 func existingVersion(request Request) string {
+	// Windows generation layout 建立后，committed active pointer 是当前 known-good
+	// 版本的唯一权威来源。install transaction/result 只是 Installer 自己的历史，
+	// 可能落后于后续 self-update；优先读它们会把旧 stable shim 的版本误当成
+	// 当前 generation，导致下一次 Setup 生成错误的 source_version/fallback。
+	if version := windowsCommittedGeneration(request); version != "" {
+		return version
+	}
+
 	store, err := NewStore(request.StateRoot())
 	if err != nil {
-		return windowsCommittedGeneration(request)
+		return ""
 	}
 	transaction, err := store.ReadTransaction()
 	if err == nil {
@@ -846,7 +854,7 @@ func existingVersion(request Request) string {
 			return version
 		}
 	}
-	return windowsCommittedGeneration(request)
+	return ""
 }
 
 func versionFromInstallTransaction(transaction Transaction) string {

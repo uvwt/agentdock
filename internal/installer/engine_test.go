@@ -1579,6 +1579,46 @@ func TestExistingVersionReadsCommittedGenerationPointer(t *testing.T) {
 	}
 }
 
+func TestExistingVersionPrefersCommittedGenerationOverStaleInstallerHistory(t *testing.T) {
+	root := t.TempDir()
+	installStore, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := installStore.WriteTransaction(Transaction{
+		SchemaVersion: SchemaVersion,
+		TransactionID: "old-installer-attempt",
+		Platform:      "windows",
+		Action:        ActionInstall,
+		SourceVersion: "v0.9.1",
+		TargetVersion: "v1.0.0",
+		ActiveVersion: "v0.9.1",
+		State:         updateengine.StateRolledBack,
+		Phase:         PhaseRollback,
+		InstallRoot:   root,
+		RuntimeRoot:   root,
+		StartedAt:     time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	generationStore, err := updateengine.NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := generationStore.WriteActive(updateengine.ActiveVersion{
+		SchemaVersion:   updateengine.SchemaVersion,
+		ActiveVersion:   "v0.9.2",
+		FallbackVersion: "v0.9.1",
+		State:           updateengine.StateCommitted,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := existingVersion(Request{InstallRoot: root, RuntimeRoot: root}); got != "v0.9.2" {
+		t.Fatalf("existingVersion=%s, want committed generation v0.9.2 instead of stale installer source v0.9.1", got)
+	}
+}
+
 func TestShouldStartTunnelInTransaction(t *testing.T) {
 	for _, test := range []struct {
 		name string
