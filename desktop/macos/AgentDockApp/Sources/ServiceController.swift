@@ -79,6 +79,18 @@ struct CloudflaredComponentStatus: Decodable, Equatable, Sendable {
     )
 }
 
+struct CloudflaredComponentProgress: Decodable, Equatable, Sendable {
+    let type: String
+    let stage: String?
+    let bytes: Int64?
+    let total: Int64?
+}
+
+private struct CloudflaredComponentProcessResult {
+    let exitStatus: Int32
+    let status: CloudflaredComponentStatus?
+}
+
 
 enum NexusConnectionState: Equatable {
     case unconfigured
@@ -592,15 +604,19 @@ final class ServiceController: @unchecked Sendable {
         }
     }
 
-    func installCloudflaredComponent() async throws -> CloudflaredComponentStatus {
+    func installCloudflaredComponent(
+        onProgress: ((CloudflaredComponentProgress) -> Void)? = nil
+    ) async throws -> CloudflaredComponentStatus {
         try await lifecycleCoordinator.run {
-            try await self.runCloudflaredComponentAction("install")
+            try await self.runCloudflaredComponentAction("install", onProgress: onProgress)
         }
     }
 
-    func updateCloudflaredComponent() async throws -> CloudflaredComponentStatus {
+    func updateCloudflaredComponent(
+        onProgress: ((CloudflaredComponentProgress) -> Void)? = nil
+    ) async throws -> CloudflaredComponentStatus {
         try await lifecycleCoordinator.run {
-            try await self.runCloudflaredComponentAction("update")
+            try await self.runCloudflaredComponentAction("update", onProgress: onProgress)
         }
     }
 
@@ -733,25 +749,71 @@ final class ServiceController: @unchecked Sendable {
         return value
     }
 
-    private func runCloudflaredComponentAction(_ action: String) async throws -> CloudflaredComponentStatus {
+    private func runCloudflaredComponentAction(
+        _ action: String,
+        onProgress: ((CloudflaredComponentProgress) -> Void)? = nil
+    ) async throws -> CloudflaredComponentStatus {
         let result = try await runInBackground {
-            try runProcess(
-                executable: self.paths.binary.path,
-                arguments: [
-                    "component", action, "cloudflared",
-                    "--runtime-root", self.paths.appSupport.path,
-                    "--json",
-                ]
-            )
+            try self.runCloudflaredComponentProcess(action: action, onProgress: onProgress)
         }
-        guard result.status == 0 else {
+        guard result.exitStatus == 0 else {
             throw ValidationError(L10n.text("Cloudflare Tunnel component operation failed. Check diagnostics and try again."))
         }
-        guard let data = result.output.data(using: .utf8),
-              let status = try? JSONDecoder().decode(CloudflaredComponentStatus.self, from: data) else {
+        guard let status = result.status else {
             throw ValidationError(L10n.text("Unable to read Cloudflare Tunnel component status."))
         }
         return status
+    }
+
+    private func runCloudflaredComponentProcess(
+        action: String,
+        onProgress: ((CloudflaredComponentProgress) -> Void)?
+    ) throws -> CloudflaredComponentProcessResult {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: paths.binary.path)
+        process.arguments = [
+            "component", action, "cloudflared",
+            "--runtime-root", paths.appSupport.path,
+            action == "install" || action == "update" ? "--progress-json" : "--json",
+        ]
+
+        // component 的 stdout 是逐行 JSON 协议。安装/更新实时消费进度事件，
+        // 最后一行仍是组件状态；stderr 合流后仅忽略非协议诊断行，失败统一由退出码处理。
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        try process.run()
+
+        let handle = pipe.fileHandleForReading
+        var buffered = Data()
+        var finalStatus: CloudflaredComponentStatus?
+
+        func consumeLine(_ data: Data) {
+            guard !data.isEmpty else { return }
+            if let progress = try? JSONDecoder().decode(CloudflaredComponentProgress.self, from: data) {
+                onProgress?(progress)
+                return
+            }
+            if let status = try? JSONDecoder().decode(CloudflaredComponentStatus.self, from: data) {
+                finalStatus = status
+            }
+        }
+
+        while true {
+            let chunk = handle.availableData
+            if chunk.isEmpty { break }
+            buffered.append(chunk)
+            while let newline = buffered.firstIndex(of: 0x0A) {
+                consumeLine(Data(buffered[..<newline]))
+                buffered.removeSubrange(buffered.startIndex...newline)
+            }
+        }
+        consumeLine(buffered)
+        process.waitUntilExit()
+        return CloudflaredComponentProcessResult(
+            exitStatus: process.terminationStatus,
+            status: finalStatus
+        )
     }
 
     private func writeTemporaryTunnelToken(_ token: String) throws -> URL? {

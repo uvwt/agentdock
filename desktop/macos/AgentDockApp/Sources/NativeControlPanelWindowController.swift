@@ -120,6 +120,11 @@ private final class ControlPanelModel: ObservableObject {
         }
     }
 
+    struct ComponentOperationState {
+        let text: String
+        let progress: Double?
+    }
+
     @Published var page: Page = .home
     @Published var settingsPage: SettingsPage = .appearance
     @Published var status: ServiceStatus = .missing
@@ -131,6 +136,7 @@ private final class ControlPanelModel: ObservableObject {
     @Published private(set) var quickTunnelGenerating = false
     @Published var updateActivity: DesktopUpdateActivity = .idle
     @Published var message: String?
+    @Published private(set) var cloudflaredComponentOperation: ComponentOperationState?
     @Published private(set) var publicEndpointCheckRevision = 0
 
     let service: ServiceController
@@ -139,6 +145,7 @@ private final class ControlPanelModel: ObservableObject {
     let onUpdateRequested: () -> Void
     private lazy var installer = InstallerRunner(service: service)
     private lazy var configurationController = ServiceConfigurationController(service: service)
+    private var cloudflaredComponentOperationRevision = 0
 
     init(service: ServiceController, menuLoginAgent: MenuLoginAgentController, onChanged: @escaping () -> Void, onUpdateRequested: @escaping () -> Void) {
         self.service = service
@@ -201,17 +208,72 @@ private final class ControlPanelModel: ObservableObject {
     }
 
     func runCloudflaredComponentAction(_ action: String) async {
+        cloudflaredComponentOperationRevision &+= 1
+        let operationRevision = cloudflaredComponentOperationRevision
         await perform(recheckPublicEndpointOnSuccess: true) {
+            self.cloudflaredComponentOperation = self.initialCloudflaredComponentOperation(action)
+            let onProgress: (CloudflaredComponentProgress) -> Void = { [weak self] progress in
+                Task { @MainActor in
+                    guard let self,
+                          self.cloudflaredComponentOperationRevision == operationRevision else { return }
+                    self.cloudflaredComponentOperation = self.cloudflaredComponentOperationState(progress)
+                }
+            }
             switch action {
             case "update":
-                self.cloudflaredComponent = try await self.service.updateCloudflaredComponent()
+                self.cloudflaredComponent = try await self.service.updateCloudflaredComponent(onProgress: onProgress)
             case "uninstall":
                 self.cloudflaredComponent = try await self.service.uninstallCloudflaredComponent()
             default:
-                self.cloudflaredComponent = try await self.service.installCloudflaredComponent()
+                self.cloudflaredComponent = try await self.service.installCloudflaredComponent(onProgress: onProgress)
             }
         }
+        cloudflaredComponentOperationRevision &+= 1
+        cloudflaredComponentOperation = nil
         cloudflaredComponent = await service.cloudflaredComponentStatus()
+    }
+
+    private func initialCloudflaredComponentOperation(_ action: String) -> ComponentOperationState {
+        switch action {
+        case "update":
+            return ComponentOperationState(text: L10n.text("Updating component…"), progress: nil)
+        case "uninstall":
+            return ComponentOperationState(text: L10n.text("Uninstalling component…"), progress: nil)
+        default:
+            return ComponentOperationState(
+                text: cloudflaredComponent.state == "broken"
+                    ? L10n.text("Repairing component…")
+                    : L10n.text("Installing component…"),
+                progress: nil
+            )
+        }
+    }
+
+    private func cloudflaredComponentOperationState(
+        _ event: CloudflaredComponentProgress
+    ) -> ComponentOperationState {
+        switch event.stage {
+        case "catalog":
+            return ComponentOperationState(text: L10n.text("Checking component metadata…"), progress: nil)
+        case "downloading":
+            guard let bytes = event.bytes, let total = event.total, total > 0 else {
+                return ComponentOperationState(text: L10n.text("Downloading component…"), progress: nil)
+            }
+            let completed = min(max(bytes, 0), total)
+            let percentage = Int(completed * 100 / total)
+            return ComponentOperationState(
+                text: L10n.format("Downloading component… %d%%", percentage),
+                progress: Double(completed) / Double(total)
+            )
+        case "verifying":
+            return ComponentOperationState(text: L10n.text("Verifying component…"), progress: nil)
+        case "importing":
+            return ComponentOperationState(text: L10n.text("Importing existing component…"), progress: nil)
+        case "ready":
+            return ComponentOperationState(text: L10n.text("Ready"), progress: 1)
+        default:
+            return ComponentOperationState(text: L10n.text("Processing component…"), progress: nil)
+        }
     }
 
     func pairNexus(endpoint: String, code: String) async {
@@ -1888,13 +1950,21 @@ private struct SettingsView: View {
                     }
                 }
 
-                SettingsSection(L10n.text("Cloudflare Tunnel")) {
+                SettingsSection(L10n.text("Optional component")) {
                     SettingsRow(
-                        L10n.text("Optional component"),
-                        detail: cloudflaredComponentDetail
+                        L10n.text("Cloudflare Tunnel"),
+                        detail: model.cloudflaredComponentOperation?.text ?? cloudflaredComponentDetail
                     ) {
                         HStack(spacing: 8) {
-                            if model.cloudflaredComponent.ready {
+                            if let operation = model.cloudflaredComponentOperation {
+                                if let progress = operation.progress {
+                                    ProgressView(value: progress)
+                                        .frame(width: 72)
+                                } else {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                }
+                            } else if model.cloudflaredComponent.ready {
                                 Button(L10n.text("Update")) {
                                     Task { await model.runCloudflaredComponentAction("update") }
                                 }

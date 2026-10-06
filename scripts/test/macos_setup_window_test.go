@@ -17,7 +17,13 @@ func TestMacOSAdvancedConnectionGatesCloudflareBehindOptionalComponent(t *testin
 	for _, want := range []string{
 		`model.settingsPage == .advancedConnection`,
 		`await model.refreshCloudflaredComponent()`,
-		`SettingsSection(L10n.text("Cloudflare Tunnel"))`,
+		`SettingsSection(L10n.text("Optional component"))`,
+		`L10n.text("Cloudflare Tunnel"),`,
+		`ProgressView(value: progress)`,
+		`ProgressView()`,
+		`cloudflaredComponentOperation?.text ?? cloudflaredComponentDetail`,
+		`case "downloading":`,
+		`L10n.format("Downloading component… %d%%", percentage)`,
 		`model.cloudflaredComponent.state == "broken"`,
 		`L10n.text("Repair")`,
 		`L10n.text("Install")`,
@@ -28,6 +34,21 @@ func TestMacOSAdvancedConnectionGatesCloudflareBehindOptionalComponent(t *testin
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("macOS advanced connection missing optional component contract %q", want)
+		}
+	}
+
+	serviceData, err := os.ReadFile(filepath.Join(root, "Sources", "ServiceController.swift"))
+	if err != nil {
+		t.Fatalf("read ServiceController.swift: %v", err)
+	}
+	serviceContent := string(serviceData)
+	for _, want := range []string{
+		`"--progress-json"`,
+		`CloudflaredComponentProgress`,
+		`runCloudflaredComponentProcess`,
+	} {
+		if !strings.Contains(serviceContent, want) {
+			t.Fatalf("macOS component service missing progress protocol contract %q", want)
 		}
 	}
 

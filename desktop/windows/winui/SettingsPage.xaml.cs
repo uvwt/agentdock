@@ -691,7 +691,7 @@ public sealed partial class SettingsPage : Page
         }
 
         rows.Children.Add(DetailActionRow(
-            UiText.Get("CloudflareTunnelComponent"),
+            UiText.Get("CloudflareTunnel"),
             stateText,
             actions
         ));
@@ -707,7 +707,7 @@ public sealed partial class SettingsPage : Page
 
         return new SectionCard
         {
-            Title = UiText.Get("CloudflareTunnel"),
+            Title = UiText.Get("CloudflareTunnelComponent"),
             SectionContent = rows
         };
     }
@@ -791,10 +791,10 @@ public sealed partial class SettingsPage : Page
         progress.Stage switch
         {
             "catalog" => UiText.Get("ComponentChecking"),
-            "download" => progress.Total > 0
+            "download" or "downloading" => progress.Total > 0
                 ? UiText.Format("ComponentDownloadingProgress", progress.Bytes * 100 / Math.Max(1, progress.Total))
                 : UiText.Get("ComponentDownloading"),
-            "verify" => UiText.Get("ComponentVerifying"),
+            "verify" or "verifying" => UiText.Get("ComponentVerifying"),
             "install" => UiText.Get("InstallingComponent"),
             "ready" => UiText.Get("ComponentReady"),
             _ => UiText.Get("ComponentWorking")

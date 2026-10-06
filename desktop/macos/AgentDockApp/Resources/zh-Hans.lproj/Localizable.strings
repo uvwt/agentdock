@@ -554,6 +554,16 @@
 "Uninstall" = "卸载";
 "Needs repair" = "需要修复";
 "Ready · %@" = "已就绪 · %@";
+"Installing component…" = "正在安装组件…";
+"Updating component…" = "正在更新组件…";
+"Repairing component…" = "正在修复组件…";
+"Uninstalling component…" = "正在卸载组件…";
+"Checking component metadata…" = "正在检查组件元数据…";
+"Downloading component…" = "正在下载组件…";
+"Downloading component… %d%%" = "正在下载组件… %d%%";
+"Verifying component…" = "正在验证组件…";
+"Importing existing component…" = "正在导入已有组件…";
+"Processing component…" = "正在处理组件…";
 "Install the Cloudflare Tunnel component first." = "请先安装 Cloudflare Tunnel 组件。";
 "Cloudflare Tunnel component operation failed. Check diagnostics and try again." = "Cloudflare Tunnel 组件操作失败，请查看诊断信息后重试。";
 "Unable to read Cloudflare Tunnel component status." = "无法读取 Cloudflare Tunnel 组件状态。";

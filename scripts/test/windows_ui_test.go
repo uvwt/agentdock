@@ -428,6 +428,10 @@ func TestWindowsRemoteConnectionSupportsSelfHostedAndRoutesAdvancedSettings(t *t
 		`SetTunnelModeAsync("named", serverUrl, token)`,
 		"ReadBearerToken",
 		"ReadOAuthPassword",
+		`Title = UiText.Get("CloudflareTunnelComponent")`,
+		`UiText.Get("CloudflareTunnel"),`,
+		`"download" or "downloading"`,
+		`"verify" or "verifying"`,
 	} {
 		if !strings.Contains(settingsCode, want) {
 			t.Fatalf("WinUI advanced connection settings behavior missing %q", want)

@@ -554,6 +554,16 @@
 "Uninstall" = "Uninstall";
 "Needs repair" = "Needs repair";
 "Ready · %@" = "Ready · %@";
+"Installing component…" = "Installing component…";
+"Updating component…" = "Updating component…";
+"Repairing component…" = "Repairing component…";
+"Uninstalling component…" = "Uninstalling component…";
+"Checking component metadata…" = "Checking component metadata…";
+"Downloading component…" = "Downloading component…";
+"Downloading component… %d%%" = "Downloading component… %d%%";
+"Verifying component…" = "Verifying component…";
+"Importing existing component…" = "Importing existing component…";
+"Processing component…" = "Processing component…";
 "Install the Cloudflare Tunnel component first." = "Install the Cloudflare Tunnel component first.";
 "Cloudflare Tunnel component operation failed. Check diagnostics and try again." = "Cloudflare Tunnel component operation failed. Check diagnostics and try again.";
 "Unable to read Cloudflare Tunnel component status." = "Unable to read Cloudflare Tunnel component status.";
