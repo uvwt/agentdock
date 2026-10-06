@@ -27,12 +27,14 @@ func platformServiceStatus(ctx context.Context, runtimeRoot string) (ServiceStat
 	if err != nil {
 		return ServiceStatus{}, err
 	}
-	healthy := testHealth(ctx, manifest.HealthURL())
+	// Core 已明确不存在时不要再发起健康检查。桌面端会频繁读取该状态，
+	// 停止态如果继续等待 HTTP 超时，会让主页看起来一直在加载。
+	healthy := running && testHealth(ctx, manifest.HealthURL())
 	startupEnabled, err := coreAutostartEnabled(ctx, manifest)
 	if err != nil {
 		return ServiceStatus{}, fmt.Errorf("读取 AgentDock 开机启动状态失败: %w", err)
 	}
-	return ServiceStatus{Running: running || healthy, Healthy: healthy, StartupEnabled: startupEnabled}, nil
+	return ServiceStatus{Running: running, Healthy: healthy, StartupEnabled: startupEnabled}, nil
 }
 
 func coreProcessRunning(runtimeRoot string, manifest Manifest) (bool, error) {

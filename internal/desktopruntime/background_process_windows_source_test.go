@@ -68,3 +68,28 @@ func assertDesktopRuntimeCommandConfiguredNearby(t *testing.T, fileName, anchor 
 		t.Fatalf("%s 的启动点 %q 未通过 processcontrol.Configure 收口", fileName, anchor)
 	}
 }
+
+func TestWindowsStoppedServiceStatusDoesNotProbeHealth(t *testing.T) {
+	t.Parallel()
+
+	source, err := os.ReadFile("service_windows.go")
+	if err != nil {
+		t.Fatalf("read service_windows.go: %v", err)
+	}
+	text := string(source)
+	start := strings.Index(text, "func platformServiceStatus(")
+	if start < 0 {
+		t.Fatal("platformServiceStatus start is missing")
+	}
+	endOffset := strings.Index(text[start:], "func coreProcessRunning(")
+	if endOffset < 0 {
+		t.Fatal("platformServiceStatus end is missing")
+	}
+	statusSource := text[start : start+endOffset]
+	if !strings.Contains(statusSource, "healthy := running && testHealth(ctx, manifest.HealthURL())") {
+		t.Fatal("stopped Core service status must skip the health HTTP probe")
+	}
+	if strings.Contains(statusSource, "Running: running || healthy") {
+		t.Fatal("Core running state must not be restored from the health result")
+	}
+}

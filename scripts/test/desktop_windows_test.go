@@ -107,14 +107,16 @@ func TestWindowsControlPanelReadsVersionFromCoreBuildInfo(t *testing.T) {
 	home := string(homeData)
 	runtimeService := string(runtimeData)
 	for _, want := range []string{
-		`ReadHealthAsync(localOrigin, cancellationToken)`,
-		`ReadCoreVersionAsync(binaryPath, cancellationToken)`,
+		`var version = await ReadCoreVersionAsync(binaryPath, cancellationToken)`,
 		`startInfo.ArgumentList.Add("version")`,
 		`startInfo.ArgumentList.Add("--json")`,
 	} {
 		if !strings.Contains(runtimeService, want) {
 			t.Fatalf("Windows control panel must read the version from the core binary BuildInfo: %q", want)
 		}
+	}
+	if strings.Contains(runtimeService, "ReadHealthAsync(") {
+		t.Fatal("Windows control panel must not wait on the runtime health endpoint to resolve its version")
 	}
 	if !strings.Contains(home, "_snapshot.Version") {
 		t.Fatal("Windows control panel must display RuntimeSnapshot.Version on the home page")

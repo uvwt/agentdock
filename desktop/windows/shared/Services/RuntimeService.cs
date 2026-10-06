@@ -66,16 +66,13 @@ public sealed class RuntimeService : IDisposable
         var publicMcpUrl = string.IsNullOrWhiteSpace(publicOrigin) ? "" : publicOrigin + "/mcp";
         var savedNamedOrigin = ReadText(Path.Combine(RuntimeRoot, "named-server-url.txt")).TrimEnd('/');
         var binaryPath = ResolveCoreBinaryPath(manifest);
-        var health = await ReadHealthAsync(localOrigin, cancellationToken);
-        var version = health.Version;
-        if (string.IsNullOrWhiteSpace(version))
-        {
-            version = await ReadCoreVersionAsync(binaryPath, cancellationToken);
-        }
-        var coreRunning = health.Healthy || await ReadCoreRunningAsync(binaryPath, cancellationToken);
+        var serviceStatus = await ReadCoreStatusAsync(binaryPath, cancellationToken);
+        var version = await ReadCoreVersionAsync(binaryPath, cancellationToken);
+        var coreRunning = serviceStatus?.Running == true;
+        var healthy = serviceStatus?.Healthy == true;
         var nexus = ReadNexusDeviceStatus();
         var nexusConnected = includeNexusConnection && coreRunning && nexus.Paired && string.IsNullOrWhiteSpace(nexus.Error)
-            && await ReadNexusConnectionAsync(binaryPath, cancellationToken);
+            && serviceStatus?.NexusConnected == true;
         var nativeTunnel = await ReadNativeTunnelStatusAsync(binaryPath, cancellationToken);
         var tunnelMode = string.IsNullOrWhiteSpace(nativeTunnel?.Mode)
             ? ReadText(Path.Combine(RuntimeRoot, "cloudflared-mode.txt"))
@@ -98,7 +95,7 @@ public sealed class RuntimeService : IDisposable
             settings,
             version,
             coreRunning,
-            health.Healthy,
+            healthy,
             nativeTunnel?.Running == true,
             localMcpUrl,
             publicOrigin,
@@ -133,8 +130,8 @@ public sealed class RuntimeService : IDisposable
 
         var manifest = await ReadRuntimeManifestAsync(cancellationToken) ?? new RuntimeManifest();
         var binaryPath = ResolveCoreBinaryPath(manifest);
-        var connected = File.Exists(binaryPath) &&
-            await ReadNexusConnectionAsync(binaryPath, cancellationToken);
+        var serviceStatus = await ReadCoreStatusAsync(binaryPath, cancellationToken);
+        var connected = serviceStatus?.NexusConnected == true;
         return new NexusConnectionSnapshot(nexus, connected);
     }
 
@@ -1560,8 +1557,15 @@ public sealed class RuntimeService : IDisposable
         }
     }
 
-    private async Task<bool> ReadNexusConnectionAsync(string binaryPath, CancellationToken cancellationToken)
+    private async Task<NativeServiceStatus?> ReadCoreStatusAsync(
+        string binaryPath,
+        CancellationToken cancellationToken)
     {
+        if (!File.Exists(binaryPath))
+        {
+            return null;
+        }
+
         var startInfo = CreateRedirectedProcessStartInfo(binaryPath);
         foreach (var argument in new[] { "service", "status", "--runtime-root", RuntimeRoot })
         {
@@ -1571,13 +1575,16 @@ public sealed class RuntimeService : IDisposable
         try
         {
             var output = await RunProcessAsync(startInfo, cancellationToken);
-            var status = JsonSerializer.Deserialize<NativeServiceStatus>(output, JsonOptions);
-            return status?.NexusConnected == true;
+            return JsonSerializer.Deserialize<NativeServiceStatus>(output, JsonOptions);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or JsonException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // 实时状态读取失败时按未连接处理；配对身份与配置异常仍由 NexusDeviceStatus 单独表达。
-            return false;
+            throw;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or Win32Exception or JsonException)
+        {
+            // 状态命令异常时保持控制面板可打开；具体管理动作仍会返回真实错误。
+            return null;
         }
     }
 
@@ -1800,38 +1807,6 @@ public sealed class RuntimeService : IDisposable
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AgentDock");
     }
 
-    private async Task<(bool Healthy, string Version)> ReadHealthAsync(string origin, CancellationToken cancellationToken)
-    {
-        try
-        {
-            using var response = await _httpClient.GetAsync(origin.TrimEnd('/') + "/healthz", cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                return (false, "");
-            }
-
-            try
-            {
-                var body = await response.Content.ReadAsStringAsync(cancellationToken);
-                var health = JsonSerializer.Deserialize<CoreVersionInfo>(body, JsonOptions);
-                return (true, health?.Version?.Trim() ?? "");
-            }
-            catch (Exception ex) when (ex is IOException or JsonException)
-            {
-                // 健康端点已返回成功时，版本解析失败不应把服务误判为离线；随后再回退读取本地二进制 BuildInfo。
-                return (true, "");
-            }
-        }
-        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return (false, "");
-        }
-        catch (HttpRequestException)
-        {
-            return (false, "");
-        }
-    }
-
     private async Task<string> ReadCoreVersionAsync(string binaryPath, CancellationToken cancellationToken)
     {
         if (!File.Exists(binaryPath))
@@ -1854,33 +1829,6 @@ public sealed class RuntimeService : IDisposable
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or Win32Exception or JsonException)
         {
             return "";
-        }
-    }
-
-    private async Task<bool> ReadCoreRunningAsync(string binaryPath, CancellationToken cancellationToken)
-    {
-        if (!File.Exists(binaryPath))
-        {
-            return false;
-        }
-
-        var startInfo = CreateRedirectedProcessStartInfo(binaryPath);
-        startInfo.ArgumentList.Add("service");
-        startInfo.ArgumentList.Add("status");
-        startInfo.ArgumentList.Add("--runtime-root");
-        startInfo.ArgumentList.Add(RuntimeRoot);
-        try
-        {
-            var output = await RunProcessAsync(startInfo, cancellationToken);
-            return JsonSerializer.Deserialize<NativeServiceStatus>(output, JsonOptions)?.Running == true;
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or Win32Exception or JsonException)
-        {
-            return false;
         }
     }
 

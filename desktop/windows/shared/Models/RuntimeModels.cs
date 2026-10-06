@@ -138,6 +138,9 @@ internal sealed class NativeServiceStatus
     [JsonPropertyName("running")]
     public bool Running { get; set; }
 
+    [JsonPropertyName("healthy")]
+    public bool Healthy { get; set; }
+
     [JsonPropertyName("nexus_connected")]
     public bool NexusConnected { get; set; }
 }

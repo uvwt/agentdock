@@ -535,6 +535,39 @@ func TestWindowsHomeUsesProductStatusAndAdaptiveCapabilities(t *testing.T) {
 	}
 }
 
+func TestWindowsRuntimeSnapshotUsesSingleNativeServiceStatus(t *testing.T) {
+	runtime := readWindowsNativeFile(t, "shared", "Services", "RuntimeService.cs")
+	models := readWindowsNativeFile(t, "shared", "Models", "RuntimeModels.cs")
+
+	for _, want := range []string{
+		"JsonPropertyName(\"healthy\")",
+		"var serviceStatus = await ReadCoreStatusAsync(binaryPath, cancellationToken)",
+		"var coreRunning = serviceStatus?.Running == true",
+		"var healthy = serviceStatus?.Healthy == true",
+		"serviceStatus?.NexusConnected == true",
+	} {
+		if !strings.Contains(runtime+models, want) {
+			t.Fatalf("Windows Runtime snapshot missing native service status contract %q", want)
+		}
+	}
+
+	snapshotStart := strings.Index(runtime, "public async Task<RuntimeSnapshot> GetSnapshotAsync(")
+	settingsStart := strings.Index(runtime, "public async Task<ControlPanelSettings> GetControlPanelSettingsAsync(")
+	if snapshotStart < 0 || settingsStart < 0 || snapshotStart >= settingsStart {
+		t.Fatal("Windows Runtime snapshot method boundaries are missing")
+	}
+	snapshotBody := runtime[snapshotStart:settingsStart]
+	for _, forbidden := range []string{
+		"ReadHealthAsync(",
+		"ReadCoreRunningAsync(",
+		"ReadNexusConnectionAsync(",
+	} {
+		if strings.Contains(snapshotBody, forbidden) {
+			t.Fatalf("Windows Runtime snapshot must not duplicate native service status via %q", forbidden)
+		}
+	}
+}
+
 func TestWindowsSharedRuntimeKeepsDiagnosticsAndDynamicLocalization(t *testing.T) {
 	runtime := readWindowsNativeFile(t, "shared", "Services", "RuntimeService.cs")
 	diagnostics := readWindowsNativeFile(t, "shared", "Services", "ControlPanelDiagnostics.cs")
