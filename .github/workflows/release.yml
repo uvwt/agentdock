@@ -1240,16 +1240,33 @@ jobs:
 
   stage-release:
     name: Stage draft GitHub Release
-    needs: [prepare-release, release-gate]
+    needs: [source, prepare-release, release-gate]
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.release.outputs.id }}
     steps:
+      - name: Checkout validated source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.source.outputs.commit }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - name: Download validated release candidate
         uses: actions/download-artifact@v4
         with:
           name: agentdock-release-dist
           path: dist
+
+      - name: Prepare user-facing GitHub assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          go run ./tools/release prepare-github-release dist github-release
 
       - name: Reset previous draft for this tag
         shell: bash
@@ -1279,20 +1296,7 @@ jobs:
           body: |
             **Code signing policy:** https://github.com/${{ github.repository }}/blob/main/docs/code-signing-policy.md
           files: |
-            dist/*.tar.gz
-            dist/*.tar.gz.sha256
-            dist/*.dmg
-            dist/*.dmg.sha256
-            dist/*.zip
-            dist/*.zip.sha256
-            dist/*.sh
-            dist/*.sh.sha256
-            dist/*.ps1
-            dist/*.ps1.sha256
-            dist/*.exe
-            dist/*.exe.sha256
-            dist/agentdock-component-catalog.json
-            dist/agentdock-component-catalog.json.sha256
+            github-release/*
           generate_release_notes: true
 
   publish-container:

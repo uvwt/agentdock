@@ -333,6 +333,9 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 		"name: Verify staged Windows release",
 		"name: Release pre-publication gate",
 		"name: Stage draft GitHub Release",
+		"name: Prepare user-facing GitHub assets",
+		"go run ./tools/release prepare-github-release dist github-release",
+		"github-release/*",
 		"draft: true",
 		"name: Publish containers",
 		"org.opencontainers.image.revision=${{ needs.source.outputs.commit }}",
@@ -422,6 +425,26 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 	if cleanupIndex < 0 || publishComponentIndex < 0 || publishLatestIndex < 0 ||
 		cleanupIndex > publishComponentIndex || publishComponentIndex > publishLatestIndex {
 		t.Fatal("R2 stable promotion must finish retention and component repository publication before latest.json moves")
+	}
+
+	stageStart := strings.Index(workflow, "  stage-release:")
+	stageEnd := strings.Index(workflow, "  publish-container:")
+	if stageStart < 0 || stageEnd <= stageStart {
+		t.Fatal("release workflow is missing the stage-release boundary")
+	}
+	stageRelease := workflow[stageStart:stageEnd]
+	for _, forbidden := range []string{
+		"dist/*.tar.gz",
+		"dist/*.zip",
+		"dist/*.dmg",
+		"dist/*.exe",
+		"dist/*.sh",
+		"dist/*.ps1",
+		"dist/agentdock-component-catalog.json",
+	} {
+		if strings.Contains(stageRelease, forbidden) {
+			t.Fatalf("GitHub Release must upload the curated user-facing subset instead of %q", forbidden)
+		}
 	}
 
 	if strings.Contains(workflow, "type=raw,value=latest") ||

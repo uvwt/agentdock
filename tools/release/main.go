@@ -21,7 +21,7 @@ func main() {
 
 func run(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("用法：release <catalog|version|component-version|component-catalog|release-metadata|release-kind|core-version|verify-dist|checksum|mirror-manifest> [参数]")
+		return errors.New("用法：release <catalog|version|component-version|component-catalog|release-metadata|release-kind|core-version|verify-dist|prepare-github-release|checksum|mirror-manifest> [参数]")
 	}
 	switch args[0] {
 	case "version":
@@ -85,6 +85,11 @@ func run(args []string, stdout io.Writer) error {
 			return errors.New("用法：release verify-dist <目录>")
 		}
 		return verifyDist(args[1], stdout)
+	case "prepare-github-release":
+		if len(args) != 3 {
+			return errors.New("用法：release prepare-github-release <dist-dir> <output-dir>")
+		}
+		return prepareGitHubRelease(args[1], args[2], stdout)
 	case "checksum":
 		if len(args) != 2 {
 			return errors.New("用法：release checksum <文件>")

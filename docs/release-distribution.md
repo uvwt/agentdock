@@ -1,6 +1,8 @@
 # Release 下载分发
 
-AgentDock 的官方第一方二进制分发边界统一为 `https://download.nexusdock.co`。桌面更新、安装脚本、AgentDock 归档、Setup/DMG、校验文件和第一方 component metadata 不依赖 AgentDock GitHub Release 下载地址；GitHub Release 继续承担 Release Notes、社区入口和完整历史归档职责。
+GitHub Release 的 Assets 是面向人工下载的精简视图，不等同于完整 Distribution Catalog。正式 Release 只展示 Windows Setup、macOS DMG、Linux amd64/arm64 归档和统一的 `SHA256SUMS.txt`；macOS updater ZIP、Windows payload ZIP、Darwin CLI 归档、bootstrap、component catalog 及机器 sidecar checksum 只保留在 R2 的版本化 Release 快照中。GitHub 与 R2 公共资产必须来自同一份已经通过 gate 的 candidate 字节，禁止为不同分发渠道重复构建。
+
+AgentDock 的官方第一方二进制分发边界统一为 `https://download.nexusdock.co`。桌面更新、安装脚本、AgentDock 归档、Setup/DMG、校验文件和第一方 component metadata 不依赖 AgentDock GitHub Release 下载地址；GitHub Release 继续承担 Release Notes、社区入口和面向人工下载的长期历史归档职责；完整机器分发契约由 R2 承担。
 
 第三方依赖默认不进入 AgentDock 镜像链。`cloudflared` 是一个有意的例外：其 URL、格式和 SHA-256 仍由 AgentDock 审计过的 component catalog 固定，独立的 `Publish cloudflared component` workflow 从 Cloudflare 官方固定 Release 下载并验证，再把**完全相同的字节**发布到 R2 的不可变 component mirror。客户端优先 R2，只有镜像网络失败时才回退 Cloudflare 官方 GitHub Release；无论来源都使用同一个 upstream SHA-256 和平台信任验证。Microsoft .NET Windows Desktop Runtime 与 Windows App Runtime 仍使用固定的微软官方来源，不做 R2 镜像。
 
