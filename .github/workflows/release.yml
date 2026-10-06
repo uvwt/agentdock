@@ -984,6 +984,9 @@ jobs:
 
           sh -n "$installer"
           HOME="$RUNNER_TEMP/home" \
+          AGENTDOCK_NONINTERACTIVE=true \
+          AGENTDOCK_NEXUS_MODE=none \
+          AGENTDOCK_TUNNEL_MODE=none \
           AGENTDOCK_INSTALLER_BASE_URL="$release_base" \
           AGENTDOCK_INSTALL_DIR="$RUNNER_TEMP/bin" \
             sh "$installer"
@@ -994,6 +997,9 @@ jobs:
             test -f "$RUNNER_TEMP/home/.agentdock/skills/$skill/SKILL.md"
           done
           HOME="$RUNNER_TEMP/home" \
+          AGENTDOCK_NONINTERACTIVE=true \
+          AGENTDOCK_NEXUS_MODE=none \
+          AGENTDOCK_TUNNEL_MODE=none \
           AGENTDOCK_INSTALLER_BASE_URL="$release_base" \
           AGENTDOCK_INSTALL_DIR="$RUNNER_TEMP/bin" \
             sh "$installer" --uninstall --purge-data \

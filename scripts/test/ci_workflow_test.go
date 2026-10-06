@@ -390,6 +390,9 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 		t.Fatal("staged release verification must use the latest-only installer contract")
 	}
 	for _, want := range []string{
+		`AGENTDOCK_NONINTERACTIVE=true`,
+		`AGENTDOCK_NEXUS_MODE=none`,
+		`AGENTDOCK_TUNNEL_MODE=none`,
 		`AGENTDOCK_INSTALLER_BASE_URL="$release_base"`,
 		`sh "$installer"`,
 		`installed_core_version="$("$RUNNER_TEMP/bin/agentdock" --version)"`,
