@@ -86,8 +86,22 @@ public sealed partial class MainWindow : Window
 
     internal void ShowSettings(string tag)
     {
-        NavigateToSettings(tag);
+        if (ContentFrame.Content is SettingsPage settings)
+        {
+            settings.SelectPage(tag);
+        }
+        else
+        {
+            NavigateToSettings(tag);
+        }
         ShowAndActivate();
+    }
+
+    internal Task CheckForUpdatesAsync()
+    {
+        return ContentFrame.Content is SettingsPage settings
+            ? settings.CheckForUpdatesAsync()
+            : Task.CompletedTask;
     }
 
     private void ResizeToLogicalSize(int width, int height) =>

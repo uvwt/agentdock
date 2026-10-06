@@ -303,6 +303,72 @@ func TestDesktopTrayMenusUseNativeDismissalAndOmitCopyActions(t *testing.T) {
 	}
 }
 
+func TestDesktopTrayUpdateChecksUseVisibleInAppFeedback(t *testing.T) {
+	windowsAppData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "App.xaml.cs"))
+	if err != nil {
+		t.Fatalf("read App.xaml.cs: %v", err)
+	}
+	windowsMainData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "MainWindow.xaml.cs"))
+	if err != nil {
+		t.Fatalf("read MainWindow.xaml.cs: %v", err)
+	}
+	windowsSettingsData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "winui", "SettingsPage.xaml.cs"))
+	if err != nil {
+		t.Fatalf("read SettingsPage.xaml.cs: %v", err)
+	}
+	macAppData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "macos", "AgentDockApp", "Sources", "AppDelegate.swift"))
+	if err != nil {
+		t.Fatalf("read AppDelegate.swift: %v", err)
+	}
+	macPopoverData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "macos", "AgentDockApp", "Sources", "TrayPopoverController.swift"))
+	if err != nil {
+		t.Fatalf("read TrayPopoverController.swift: %v", err)
+	}
+
+	windowsApp := string(windowsAppData)
+	windowsMain := string(windowsMainData)
+	windowsSettings := string(windowsSettingsData)
+	macApp := string(macAppData)
+	macPopover := string(macPopoverData)
+
+	for _, want := range []string{
+		"ShowAboutSettings();",
+		"await _window.CheckForUpdatesAsync();",
+	} {
+		if !strings.Contains(windowsApp, want) {
+			t.Fatalf("Windows tray update flow must reuse visible About UI %q", want)
+		}
+	}
+	for _, want := range []string{
+		"internal Task CheckForUpdatesAsync()",
+		"settings.CheckForUpdatesAsync()",
+	} {
+		if !strings.Contains(windowsMain, want) {
+			t.Fatalf("Windows main window missing update bridge %q", want)
+		}
+	}
+	for _, want := range []string{
+		"internal async Task CheckForUpdatesAsync()",
+		"UiText.Get(\"CheckingForUpdates\")",
+		"_updateCheckInProgress",
+	} {
+		if !strings.Contains(windowsSettings, want) {
+			t.Fatalf("Windows About update flow missing visible check state %q", want)
+		}
+	}
+	for _, want := range []string{
+		"startUpdate(showCheckingPopover: true)",
+		"trayPopover.show(relativeTo: button)",
+	} {
+		if !strings.Contains(macApp, want) {
+			t.Fatalf("macOS tray update flow missing visible checking state %q", want)
+		}
+	}
+	if !strings.Contains(macPopover, "func show(relativeTo button: NSStatusBarButton)") {
+		t.Fatal("macOS tray popover must support idempotent visible presentation during update checks")
+	}
+}
+
 func TestWindowsUpdateProgressUsesCoreByteFields(t *testing.T) {
 	modelData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "shared", "Models", "RuntimeModels.cs"))
 	if err != nil {
@@ -370,7 +436,7 @@ func TestWindowsUpdateFeedbackUsesUTF8AndNativeWinUIStatus(t *testing.T) {
 	for _, want := range []string{
 		`var check = await _runtime.CheckForUpdatesAsync()`, `if (!check.UpdateAvailable)`, `new ContentDialog`,
 		`PrimaryButtonText = UiText.Get("Update")`, `new Progress<UpdateProgress>`, `await _runtime.RunUpdateAsync(progress)`,
-		`button.Content = UiText.Get("CheckForUpdates")`,
+		`SetUpdateCheckButtonState()`, `_updateButton.IsEnabled = !_updateCheckInProgress`,
 	} {
 		if !strings.Contains(settings, want) {
 			t.Fatalf("WinUI update flow missing %q", want)

@@ -19,6 +19,8 @@ public sealed partial class SettingsPage : Page
     private string _publicEndpointCheckUrl = "";
     private bool _publicEndpointCheckInProgress;
     private bool _componentOperationInProgress;
+    private bool _updateCheckInProgress;
+    private Button? _updateButton;
 
     public SettingsPage()
     {
@@ -95,6 +97,7 @@ public sealed partial class SettingsPage : Page
 
     private void Render(string tag)
     {
+        _updateButton = null;
         SettingsContent.Children.Clear();
         var header = new StackPanel { Spacing = 5 };
         header.Children.Add(new TextBlock { Text = PageTitle(tag), FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
@@ -358,7 +361,12 @@ public sealed partial class SettingsPage : Page
             string.IsNullOrWhiteSpace(_snapshot?.Version) ? "—" : _snapshot.Version
         ));
         applicationRows.Children.Add(Divider());
-        var update = new Button { Content = UiText.Get("CheckForUpdates") };
+        var update = new Button
+        {
+            Content = _updateCheckInProgress ? UiText.Get("CheckingForUpdates") : UiText.Get("CheckForUpdates"),
+            IsEnabled = !_updateCheckInProgress
+        };
+        _updateButton = update;
         update.Click += CheckUpdate_Click;
         applicationRows.Children.Add(ActionRow(UiText.Get("AgentDockUpdate"), update));
         application.SectionContent = applicationRows;
@@ -1029,8 +1037,14 @@ public sealed partial class SettingsPage : Page
 
     private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
     {
-        if (_runtime is null || sender is not Button button) return;
-        button.IsEnabled = false;
+        await CheckForUpdatesAsync();
+    }
+
+    internal async Task CheckForUpdatesAsync()
+    {
+        if (_runtime is null || _updateCheckInProgress) return;
+        _updateCheckInProgress = true;
+        SetUpdateCheckButtonState();
         try
         {
             var check = await _runtime.CheckForUpdatesAsync();
@@ -1048,12 +1062,33 @@ public sealed partial class SettingsPage : Page
                 CloseButtonText = UiText.Get("Cancel")
             };
             if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-            var progress = new Progress<UpdateProgress>(value => button.Content = string.IsNullOrWhiteSpace(value.Message) ? UiText.Get("UpdatingAgentDock") : value.Message);
+            var progress = new Progress<UpdateProgress>(value =>
+            {
+                if (_updateButton is not null)
+                {
+                    _updateButton.Content = string.IsNullOrWhiteSpace(value.Message)
+                        ? UiText.Get("UpdatingAgentDock")
+                        : value.Message;
+                }
+            });
             var output = await _runtime.RunUpdateAsync(progress);
             await ShowMessageAsync(UiText.Get("AgentDockUpdate"), LastLine(output, UiText.Get("UpdateCompleted")));
         }
         catch (Exception ex) { await ShowMessageAsync(UiText.Get("UpdateFailed"), ex.Message); }
-        finally { button.Content = UiText.Get("CheckForUpdates"); button.IsEnabled = true; }
+        finally
+        {
+            _updateCheckInProgress = false;
+            SetUpdateCheckButtonState();
+        }
+    }
+
+    private void SetUpdateCheckButtonState()
+    {
+        if (_updateButton is null) return;
+        _updateButton.Content = _updateCheckInProgress
+            ? UiText.Get("CheckingForUpdates")
+            : UiText.Get("CheckForUpdates");
+        _updateButton.IsEnabled = !_updateCheckInProgress;
     }
 
     private async Task ShowMessageAsync(string title, string message)

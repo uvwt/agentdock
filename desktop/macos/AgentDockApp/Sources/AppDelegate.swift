@@ -19,7 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.refreshStatus()
         },
         onUpdateRequested: { [weak self] in
-            self?.startUpdate()
+            self?.startUpdate(showCheckingPopover: false)
         }
     )
     private lazy var trayPopover = TrayPopoverController(
@@ -670,10 +670,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func updateService() {
-        startUpdate()
+        startUpdate(showCheckingPopover: true)
     }
 
-    private func startUpdate() {
+    private func startUpdate(showCheckingPopover: Bool) {
         guard updateActivity.canCheckForUpdates else {
             if updateActivity == .checking {
                 setupWindow.present(status: currentStatus)
@@ -692,6 +692,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // “检查更新”只是只读查询，不应冻结服务、配置或退出；这里只禁止重复发起检查。
         setUpdateActivity(.checking)
+        if showCheckingPopover,
+           let button = statusItem?.button {
+            // 右键菜单选择“检查更新”后菜单会立即消失；主动展示托盘面板，让用户能看到
+            // “正在检查更新…”状态。延后一轮主线程，确保原生右键菜单已经完成 dismissal。
+            DispatchQueue.main.async { [weak self] in
+                self?.trayPopover.show(relativeTo: button)
+            }
+        }
         Task {
             do {
                 let check = try await service.checkForUpdates()

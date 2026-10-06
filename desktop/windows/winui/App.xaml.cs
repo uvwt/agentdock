@@ -256,26 +256,23 @@ public partial class NativeApp : Application
 
     private async Task CheckForUpdatesFromTrayAsync()
     {
-        if (_runtime is null || _trayIcon is null) return;
+        if (_runtime is null) return;
         try
         {
-            var check = await _runtime.CheckForUpdatesAsync();
-            if (!check.UpdateAvailable)
-            {
-                _trayIcon.ShowNotification("AgentDock", check.Message, TrayNotificationKind.Info);
-                return;
-            }
-
-            _trayIcon.ShowNotification(
-                "AgentDock",
-                $"{UiText.Get("NewVersionAvailable")} {check.CurrentVersion} → {check.LatestVersion}",
-                TrayNotificationKind.Info);
+            // 托盘检查更新复用“关于”页的完整更新流程，避免系统气泡被勿扰或通知设置吞掉后
+            // 用户看起来像“点击无效”。页面会立即显示检查状态，并用 ContentDialog 返回最终结果。
             ShowAboutSettings();
+            if (_window is not null)
+            {
+                await _window.CheckForUpdatesAsync();
+            }
         }
         catch (Exception ex)
         {
             _runtime.RecordControlPanelFailure("tray", "check-updates", ex);
-            _trayIcon.ShowNotification("AgentDock", ex.Message, TrayNotificationKind.Error);
+            // 正常检查错误由“关于”页自己的 ContentDialog 展示；只有 UI 桥接本身失败时
+            // 才退回托盘通知，避免异常静默丢失。
+            _trayIcon?.ShowNotification("AgentDock", ex.Message, TrayNotificationKind.Error);
         }
     }
 

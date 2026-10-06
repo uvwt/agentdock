@@ -37,6 +37,11 @@ final class TrayPopoverController {
             popover.performClose(nil)
             return
         }
+        show(relativeTo: button)
+    }
+
+    func show(relativeTo button: NSStatusBarButton) {
+        guard !popover.isShown else { return }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 
