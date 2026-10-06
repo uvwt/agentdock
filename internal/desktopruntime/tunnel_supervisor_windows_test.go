@@ -96,6 +96,33 @@ func TestTunnelSupervisorKernelLifecycle(t *testing.T) {
 		duplicate.Close()
 		t.Fatal("second process unexpectedly acquired Tunnel supervisor mutex")
 	}
+	running, err := coreProcessRunning(runtimeRoot, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if running {
+		t.Fatal("Tunnel supervisor must not make Core appear running")
+	}
+
+	core := exec.Command(generationCore, "-test.run=^TestCoreProcessRunningHelperProcess$")
+	core.Env = append(os.Environ(), "AGENTDOCK_TEST_CORE_PROCESS_HELPER=1")
+	if err := core.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if core.ProcessState == nil {
+			_ = core.Process.Kill()
+			_, _ = core.Process.Wait()
+		}
+	}()
+	waitForCoreProcessState(t, runtimeRoot, manifest, true)
+	if err := core.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	if err := core.Wait(); err == nil {
+		t.Fatal("killed Core helper unexpectedly exited successfully")
+	}
+	waitForCoreProcessState(t, runtimeRoot, manifest, false)
 
 	if err := signalTunnelSupervisorStop(runtimeRoot); err != nil {
 		t.Fatal(err)
@@ -109,6 +136,29 @@ func TestTunnelSupervisorKernelLifecycle(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(runtimeRoot, tunnelSupervisorPIDFile)); !os.IsNotExist(err) {
 		t.Fatalf("supervisor PID file should be removed, err=%v", err)
 	}
+}
+
+func TestCoreProcessRunningHelperProcess(t *testing.T) {
+	if os.Getenv("AGENTDOCK_TEST_CORE_PROCESS_HELPER") != "1" {
+		t.Skip("helper process only")
+	}
+	time.Sleep(30 * time.Second)
+}
+
+func waitForCoreProcessState(t *testing.T, runtimeRoot string, manifest Manifest, want bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		running, err := coreProcessRunning(runtimeRoot, manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if running == want {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("Core running state did not become %t", want)
 }
 
 func copyTunnelSupervisorTestBinary(t *testing.T, target string) {

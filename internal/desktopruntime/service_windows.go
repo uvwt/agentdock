@@ -23,8 +23,7 @@ func platformServiceStatus(ctx context.Context, runtimeRoot string) (ServiceStat
 	if err != nil {
 		return ServiceStatus{}, err
 	}
-	coreBinary := ActiveCoreBinary(runtimeRoot, manifest)
-	running, err := processRunningAtPath(coreBinary)
+	running, err := coreProcessRunning(runtimeRoot, manifest)
 	if err != nil {
 		return ServiceStatus{}, err
 	}
@@ -34,6 +33,25 @@ func platformServiceStatus(ctx context.Context, runtimeRoot string) (ServiceStat
 		return ServiceStatus{}, fmt.Errorf("读取 AgentDock 开机启动状态失败: %w", err)
 	}
 	return ServiceStatus{Running: running || healthy, Healthy: healthy, StartupEnabled: startupEnabled}, nil
+}
+
+func coreProcessRunning(runtimeRoot string, manifest Manifest) (bool, error) {
+	coreBinary := ActiveCoreBinary(runtimeRoot, manifest)
+	supervisorPID, err := activeTunnelSupervisorPIDForRuntime(runtimeRoot, manifest)
+	if err != nil {
+		return false, fmt.Errorf("识别 Tunnel supervisor 失败: %w", err)
+	}
+	excluded := map[uint32]struct{}{}
+	if supervisorPID != 0 {
+		// Windows Core 与 Tunnel supervisor 共用同一个 generation 二进制。
+		// Core 状态必须排除已确认的 supervisor，否则停止 Core 后仍会被误判为运行中。
+		excluded[supervisorPID] = struct{}{}
+	}
+	processIDs, err := processIDsAtPathExcept(coreBinary, excluded)
+	if err != nil {
+		return false, err
+	}
+	return len(processIDs) > 0, nil
 }
 
 func platformServiceAction(ctx context.Context, runtimeRoot, action string) error {
