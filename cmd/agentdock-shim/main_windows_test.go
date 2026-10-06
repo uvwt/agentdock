@@ -281,6 +281,71 @@ func TestResolveActiveAllowsLiveInstallerTrialWithoutUpdateTransaction(t *testin
 	}
 }
 
+func TestResolveActiveAllowsLiveInstallerTrialWithHistoricalCommittedUpdate(t *testing.T) {
+	root := t.TempDir()
+	store, err := updateengine.NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 模拟一次已经正常完成的旧 self-update。transaction.json 是历史 journal，
+	// 会长期留在 runtime root，不能阻断以后由完整 Setup 发起的新 Installer trial。
+	historical, err := updateengine.NewTransaction("windows", "v0.9.1", "v0.9.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	historical.Windows = &updateengine.WindowsPlan{InstallRoot: root}
+	historical.ActiveVersion = "v0.9.2"
+	historical.FallbackVersion = "v0.9.1"
+	if _, err := store.Complete(historical, updateengine.StateCommitted, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	active := updateengine.ActiveVersion{
+		SchemaVersion:   updateengine.SchemaVersion,
+		ActiveVersion:   "v1.0.1",
+		FallbackVersion: "v0.9.2",
+		State:           updateengine.StateTrial,
+		TransactionID:   "installer-trial",
+	}
+	if err := store.WriteActive(active); err != nil {
+		t.Fatal(err)
+	}
+	writeInstallerTrialTransaction(t, root, installerTrialTransaction{
+		TransactionID: "installer-trial",
+		Platform:      "windows",
+		Action:        "install",
+		SourceVersion: "v0.9.2",
+		TargetVersion: "v1.0.1",
+		State:         updateengine.StateTrial,
+		InstallRoot:   root,
+	})
+	lock, err := processlock.Acquire(context.Background(), filepath.Join(root, "install", "transaction.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, err := updateengine.NewWindowsLayout(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := resolveActiveWithRecovery(root, store, layout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ActiveVersion != active.ActiveVersion || got.TransactionID != active.TransactionID {
+		t.Fatalf("resolved active = %#v, want %#v", got, active)
+	}
+
+	// Installer 一旦失去活锁，同样的 trial 不能继续借历史 journal 绕过恢复规则。
+	if err := lock.Release(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveActiveWithRecovery(root, store, layout); err == nil || !strings.Contains(err.Error(), "is committed") {
+		t.Fatalf("stale Installer trial must be rejected against historical committed journal, got: %v", err)
+	}
+}
+
 func writeInstallerTrialTransaction(t *testing.T, root string, transaction installerTrialTransaction) {
 	t.Helper()
 	data, err := json.MarshalIndent(transaction, "", "  ")

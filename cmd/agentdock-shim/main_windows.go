@@ -210,18 +210,24 @@ func resolveActiveWithRecovery(root string, store *updateengine.Store, layout up
 		return updateengine.ActiveVersion{}, fmt.Errorf("read AgentDock active version: %w", err)
 	}
 
+	if active.State == updateengine.StateTrial {
+		// Installer trial 的当前所有权由匹配的 install transaction 与活跃独占锁共同证明。
+		// 已提交的 self-update journal 只是历史记录，不能覆盖一个仍由 Installer 持有的
+		// 合法 trial；否则上一次正常提交留下的 journal 会永久阻断后续完整安装包升级。
+		owned, err := installerOwnsActiveTrial(root, active)
+		if err != nil {
+			return updateengine.ActiveVersion{}, err
+		}
+		if owned {
+			return active, nil
+		}
+	}
+
 	transaction, transactionErr := store.ReadTransaction()
 	if transactionErr != nil {
 		if active.State == updateengine.StateTrial {
 			if !os.IsNotExist(transactionErr) {
 				return updateengine.ActiveVersion{}, fmt.Errorf("read pending update transaction: %w", transactionErr)
-			}
-			owned, err := installerOwnsActiveTrial(root, active)
-			if err != nil {
-				return updateengine.ActiveVersion{}, err
-			}
-			if owned {
-				return active, nil
 			}
 			return updateengine.ActiveVersion{}, errors.New("active generation is still a trial without a live update or installer transaction")
 		}
