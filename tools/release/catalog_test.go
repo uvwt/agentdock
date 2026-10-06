@@ -108,7 +108,7 @@ type discard struct{}
 
 func (discard) Write(p []byte) (int, error) { return len(p), nil }
 
-func TestCloudflaredComponentCatalogUsesPinnedOfficialMetadata(t *testing.T) {
+func TestCloudflaredComponentCatalogUsesPinnedUpstreamAndMirrorMetadata(t *testing.T) {
 	entry, err := currentCloudflaredCatalogEntry("1.0.0-rc.3")
 	if err != nil {
 		t.Fatal(err)
@@ -120,7 +120,7 @@ func TestCloudflaredComponentCatalogUsesPinnedOfficialMetadata(t *testing.T) {
 	text := output.String()
 	for _, want := range []string{
 		`"schema_version": 2`,
-		`"revision": 1`,
+		`"revision": 2`,
 		`"status": "supported"`,
 		`"min_version": "0.9.1"`,
 		`"max_version_exclusive": "2.0.0"`,
@@ -130,6 +130,8 @@ func TestCloudflaredComponentCatalogUsesPinnedOfficialMetadata(t *testing.T) {
 		`"format": "tgz"`,
 		`https://github.com/cloudflare/cloudflared/releases/download/` + entry.Version + `/cloudflared-windows-amd64.exe`,
 		`https://github.com/cloudflare/cloudflared/releases/download/` + entry.Version + `/cloudflared-darwin-arm64.tgz`,
+		`https://download.nexusdock.co/components/cloudflared/` + entry.Version + `/cloudflared-windows-amd64.exe`,
+		`https://download.nexusdock.co/components/cloudflared/` + entry.Version + `/cloudflared-darwin-arm64.tgz`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("catalog missing %q: %s", want, text)
@@ -137,13 +139,12 @@ func TestCloudflaredComponentCatalogUsesPinnedOfficialMetadata(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		"github.com/uvwt/agentdock/releases",
-		"download.nexusdock.co",
 		"/latest/",
 		"cloudflared_darwin_",
 		"cloudflared_windows_amd64.exe",
 	} {
 		if strings.Contains(text, forbidden) {
-			t.Fatalf("catalog must not rehost cloudflared; found %q in %s", forbidden, text)
+			t.Fatalf("catalog contains forbidden cloudflared distribution metadata %q in %s", forbidden, text)
 		}
 	}
 }

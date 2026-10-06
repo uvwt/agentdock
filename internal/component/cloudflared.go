@@ -95,11 +95,12 @@ type CatalogComponent struct {
 }
 
 type CatalogArtifact struct {
-	OS     string `json:"os"`
-	Arch   string `json:"arch"`
-	Format string `json:"format"`
-	URL    string `json:"url"`
-	SHA256 string `json:"sha256"`
+	OS        string `json:"os"`
+	Arch      string `json:"arch"`
+	Format    string `json:"format"`
+	URL       string `json:"url"`
+	MirrorURL string `json:"mirror_url,omitempty"`
+	SHA256    string `json:"sha256"`
 }
 
 type InstallOptions struct {
@@ -291,7 +292,7 @@ func (store *Store) installCatalogVersion(ctx context.Context, options InstallOp
 		return current, nil
 	}
 	report(options.Progress, ProgressEvent{Type: "stage", Stage: "downloading"})
-	data, err := download(ctx, client, artifact.URL, maxBinaryBytes, func(done, total int64) {
+	data, err := downloadCloudflaredArtifact(ctx, client, artifact, func(done, total int64) {
 		report(options.Progress, ProgressEvent{Type: "progress", Stage: "downloading", Bytes: done, Total: total})
 	})
 	if err != nil {
@@ -312,6 +313,27 @@ func (store *Store) installCatalogVersion(ctx context.Context, options InstallOp
 	}
 	report(options.Progress, ProgressEvent{Type: "completed", Stage: "ready"})
 	return status, nil
+}
+
+func downloadCloudflaredArtifact(
+	ctx context.Context,
+	client *http.Client,
+	artifact CatalogArtifact,
+	progress func(int64, int64),
+) ([]byte, error) {
+	mirrorURL := strings.TrimSpace(artifact.MirrorURL)
+	if mirrorURL != "" {
+		data, mirrorErr := download(ctx, client, mirrorURL, maxBinaryBytes, progress)
+		if mirrorErr == nil {
+			return data, nil
+		}
+		data, upstreamErr := download(ctx, client, artifact.URL, maxBinaryBytes, progress)
+		if upstreamErr == nil {
+			return data, nil
+		}
+		return nil, fmt.Errorf("mirror failed: %v; upstream failed: %w", mirrorErr, upstreamErr)
+	}
+	return download(ctx, client, artifact.URL, maxBinaryBytes, progress)
 }
 
 func (store *Store) resolveCatalog(ctx context.Context, client *http.Client, catalogURL string, authoritativeOverride bool) ([]byte, error) {
@@ -873,6 +895,9 @@ func validateCloudflaredCatalogEntry(entry CatalogComponent) error {
 		if err := validateCloudflaredUpstreamArtifact(entry, artifact); err != nil {
 			return err
 		}
+		if err := validateCloudflaredMirrorArtifact(entry, artifact); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -921,6 +946,33 @@ func validateCloudflaredUpstreamArtifact(entry CatalogComponent, artifact Catalo
 	expectedPath := "/cloudflare/cloudflared/releases/download/" + entry.Version + "/" + expectedName
 	if parsed.Path != expectedPath {
 		return fmt.Errorf("cloudflared artifact URL is not the pinned official asset: %s", artifact.URL)
+	}
+	return nil
+}
+
+func validateCloudflaredMirrorArtifact(entry CatalogComponent, artifact CatalogArtifact) error {
+	mirrorURL := strings.TrimSpace(artifact.MirrorURL)
+	if mirrorURL == "" {
+		// mirror_url was added to schema v2 without making it mandatory so older
+		// immutable release snapshots remain readable by newer clients.
+		return nil
+	}
+	parsed, err := url.Parse(mirrorURL)
+	if err != nil || parsed.Scheme != "https" || parsed.Host != "download.nexusdock.co" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return errors.New("cloudflared mirror URL must use the AgentDock HTTPS component mirror")
+	}
+	expectedName := ""
+	switch {
+	case artifact.OS == "windows" && artifact.Arch == "amd64":
+		expectedName = "cloudflared-windows-amd64.exe"
+	case artifact.OS == "darwin" && (artifact.Arch == "amd64" || artifact.Arch == "arm64"):
+		expectedName = "cloudflared-darwin-" + artifact.Arch + ".tgz"
+	default:
+		return fmt.Errorf("unsupported cloudflared artifact platform %s/%s", artifact.OS, artifact.Arch)
+	}
+	expectedPath := "/components/cloudflared/" + entry.Version + "/" + expectedName
+	if parsed.Path != expectedPath {
+		return fmt.Errorf("cloudflared mirror URL is not the immutable AgentDock mirror asset: %s", artifact.MirrorURL)
 	}
 	return nil
 }

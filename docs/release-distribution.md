@@ -2,7 +2,7 @@
 
 AgentDock 的官方第一方二进制分发边界统一为 `https://download.nexusdock.co`。桌面更新、安装脚本、AgentDock 归档、Setup/DMG、校验文件和第一方 component metadata 不依赖 AgentDock GitHub Release 下载地址；GitHub Release 继续承担 Release Notes、社区入口和完整历史归档职责。
 
-第三方依赖不进入 AgentDock 镜像链。cloudflared 的 URL、格式和 SHA-256 由 AgentDock 审计过的 component catalog 固定，客户端直接从 Cloudflare 官方 GitHub Release 下载。Microsoft .NET Windows Desktop Runtime 与 Windows App Runtime 同样使用固定的微软官方来源。
+第三方依赖默认不进入 AgentDock 镜像链。`cloudflared` 是一个有意的例外：其 URL、格式和 SHA-256 仍由 AgentDock 审计过的 component catalog 固定，独立的 `Publish cloudflared component` workflow 从 Cloudflare 官方固定 Release 下载并验证，再把**完全相同的字节**发布到 R2 的不可变 component mirror。客户端优先 R2，只有镜像网络失败时才回退 Cloudflare 官方 GitHub Release；无论来源都使用同一个 upstream SHA-256 和平台信任验证。Microsoft .NET Windows Desktop Runtime 与 Windows App Runtime 仍使用固定的微软官方来源，不做 R2 镜像。
 
 ## 产品契约
 
@@ -24,8 +24,14 @@ AgentDock 的官方第一方二进制分发边界统一为 `https://download.nex
 ```text
 latest.json                         # 当前 Stable，可变
 components/
-└── v1/
-    └── catalog.json               # component v1 兼容仓库，可变且 revision 单调递增
+├── v1/
+│   └── catalog.json               # component v1 兼容仓库，可变且 revision 单调递增
+└── cloudflared/
+    └── 2026.9.1/                  # 第三方原始字节不可变镜像，不按 AgentDock Release 复制
+        ├── cloudflared-windows-amd64.exe
+        ├── cloudflared-darwin-amd64.tgz
+        ├── cloudflared-darwin-arm64.tgz
+        └── LICENSE
 releases/
 ├── v1.0.0-rc.1/                   # 内部 RC 验证期间保留
 │   ├── agentdock-component-catalog.json
@@ -56,7 +62,7 @@ Android 使用独立的 `android/latest.json` / `android/releases/` 契约。
 - `status`：`supported`、`deprecated` 或 `revoked`；
 - `agentdock.min_version` / `max_version_exclusive`：AgentDock 兼容范围；
 - 固定的 upstream version/source；
-- 各平台 artifact format、官方 URL 和 SHA-256。
+- 各平台 artifact format、官方 `url`、不可变 R2 `mirror_url` 和 upstream SHA-256。
 
 客户端优先选择“兼容、未撤销、版本最高”的 `supported` 条目；没有 supported 时才允许使用兼容的 `deprecated` 条目，`revoked` 永远不可选。
 
@@ -70,7 +76,7 @@ Stable 默认从 `/components/v1/catalog.json` 获取。Prerelease 默认从自�
 
 成功获取的远程 catalog 会原子缓存。若远程 `revision` 小于本地已验证 revision，或相同 revision 却内容不同，客户端保留本地 last-known-good，避免 metadata 回滚覆盖已经获知的撤销状态。显式 `--catalog-url` 属于测试/受管覆盖，按权威源 fail-closed，不使用生产 fallback。
 
-baseline 只解决控制面 metadata 暂时不可达，不降低 artifact 信任要求：cloudflared 仍必须通过固定官方 URL、SHA-256 和平台签名/代码签名验证。
+baseline 只解决控制面 metadata 暂时不可达，不降低 artifact 信任要求：cloudflared 的官方 URL 与镜像 URL 都必须匹配固定版本路径，下载内容必须通过同一个 upstream SHA-256 和平台签名/代码签名验证。镜像返回成功但 digest 不一致时 fail-closed，不回退官方源掩盖镜像异常。
 
 ## 版本与平台 metadata
 
@@ -97,7 +103,7 @@ RC 在候选验证期间保留其不可变 `releases/<tag>/`。正式 Stable pro
 
 如果上一 Stable prefix 缺失或无法确认，workflow 宁可暂时多保留对象，也不做推断删除。GitHub Releases 始终保存完整历史，R2 不承担长期历史安装仓库职责。
 
-`components/v1/catalog.json` 不跟随 Release retention 删除。它按 component API 生命周期维护；只要仍支持使用 v1 catalog 的客户端，就持续提供兼容 metadata。
+`components/v1/catalog.json` 不跟随 Release retention 删除。它按 component API 生命周期维护；只要仍支持使用 v1 catalog 的客户端，就持续提供兼容 metadata。`components/cloudflared/<version>/` 同样不参与 AgentDock Release retention；它按 component compatibility 生命周期保留。通常多个 AgentDock 版本共享同一套 cloudflared 版本，因此不会为每个 AgentDock Release 复制第三方二进制。
 
 ## Bootstrap 约定
 
@@ -111,15 +117,18 @@ Release 打包阶段不改写 bootstrap 为版本化下载地址。GitHub Releas
 
 ## 第三方 component 边界
 
-AgentDock Release/R2 不包含 cloudflared binary。审计过的 `internal/component/catalog-v1.json` 固定：
+AgentDock **GitHub Release** 不包含 cloudflared binary；R2 只在独立的 `components/cloudflared/<version>/` 下维护受控第三方镜像。审计过的 `internal/component/catalog-v1.json` 固定：
 
 - cloudflared 明确版本，不跟踪 upstream `latest`；
 - Cloudflare 官方 Release URL；
+- `download.nexusdock.co` 上同版本同文件名的不可变 mirror URL；
 - Windows `binary` / macOS `tgz` 格式；
 - upstream artifact SHA-256；
 - AgentDock 兼容范围和状态。
 
-Release CI 在对应平台验证 digest、Authenticode/codesign、归档结构和真实版本。Windows 的微软共享 Runtime 使用同一原则：缺失时从微软官方固定来源获取并验证，不在 R2 维护第三方副本。
+独立 component publish workflow 在对应平台从 Cloudflare 官方来源下载，验证 digest、Authenticode/codesign、归档结构和真实版本后，才允许把原始 artifact 写入 R2。R2 对象以组件版本为不可变 key，已存在对象必须与 pinned SHA-256 一致；发布后再从公网 R2 GET 并重复校验 SHA-256。镜像同时提供 Apache-2.0 LICENSE，且 workflow 会将 vendored LICENSE 与当前 upstream tag 的 LICENSE 做字节级比较，许可证变化必须经过人工审查。AgentDock Release workflow 不写入第三方镜像，只验证 catalog 选中的 `mirror_url` 已存在且 digest 正确。
+
+客户端优先 `mirror_url`；只有镜像请求本身失败时才尝试官方 `url`。若任一成功响应的内容与 pinned SHA-256 不一致，安装直接失败。Windows 的微软共享 Runtime 仍从微软官方固定来源获取并验证，不在 R2 维护副本。
 
 ## 发布顺序
 
@@ -127,8 +136,8 @@ Stable 发布：
 
 1. 验证 tag 是合法完整 SemVer，并确认它指向 `main` 中的不可变发布提交；该 tag 是本次发布版本的唯一来源。
 2. 构建、签名并验证 Linux、macOS、Windows、容器及第三方 upstream。
-3. 创建 GitHub draft，并上传不可变 `releases/<tag>/` 到 R2。
-4. 验证全部公网版本化 URL。
+3. 要求 catalog 选中的 cloudflared 已经通过独立 component publish workflow 发布到不可变 `components/cloudflared/<version>/`；Release workflow 只验证公网 mirror digest，不负责写入。
+4. 创建 GitHub draft，上传不可变 `releases/<tag>/` 到 R2，并验证全部公网版本化 URL 与 component mirror digest。
 5. 在 Stable 用户入口仍指向旧版时执行 fail-safe retention。
 6. 发布并验证 `components/v1/catalog.json`。
 7. 最后更新并验证 `latest.json`。

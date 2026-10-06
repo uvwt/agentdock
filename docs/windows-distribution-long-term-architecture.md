@@ -47,9 +47,9 @@ gzip 后分别约 1.46 MB / 1.31 MB。WSL helper 是 AgentDock 自研、Go 编�
 1. Windows 只维护一套 AgentDock Setup 逻辑，不维护 Online / Offline 两套安装器代码。
 2. Setup 内置 AgentDock 自身必须存在、且和当前版本强绑定的内容。
 3. .NET / Windows App Runtime 不再作为 AgentDock 私有 self-contained payload 长期打包，改走 Microsoft 官方支持的 Runtime / Bootstrapper 分发路径。
-4. cloudflared 继续是 optional component，但不再由 AgentDock GitHub Release 或 R2 二次托管。
-5. cloudflared 客户端直接从 Cloudflare 官方 Release 下载；AgentDock 只维护受审计的 pinned version、官方 URL、格式和 digest。
-6. 不做 cloudflared mirror，也不保留 fallback mirror。
+4. cloudflared 继续是 optional component，不进入 AgentDock GitHub Release；R2 只在独立 `components/cloudflared/<version>/` namespace 中保存经过上游验证的原始字节镜像。
+5. catalog 同时保留 Cloudflare 官方固定 `url` 与 AgentDock R2 不可变 `mirror_url`；客户端优先 R2，镜像网络失败时回退官方源，二者共用同一个 upstream digest。
+6. cloudflared mirror 是受控 component mirror，不是通用第三方镜像仓库；对象按组件版本不可变保存，并由独立 component publish workflow 做上游签名、版本、SHA-256 与许可证一致性验证；AgentDock Release workflow 只做 mirror readiness gate。
 7. WSL helper 继续随 AgentDock Windows payload 发布，不上传 R2、不单独下载。
 8. R2 只承载 AgentDock 自己拥有发布责任的正式产物、元数据，以及未来确实需要远程分发的第一方大组件。
 9. 当前阶段不提供 Offline Installer。未来如果企业场景确实需要离线安装，使用同一套 Installer Engine 和 manifest 自动生成 Offline Bundle，不发展第二套业务逻辑。
@@ -71,7 +71,8 @@ AgentDockSetup
 
 运行时按需能力
     └── cloudflared
-          └── Cloudflare 官方 Release
+          ├── AgentDock R2 immutable component mirror（优先）
+          └── Cloudflare 官方 Release（网络失败 fallback）
 ```
 
 ## 3. 发行资产职责矩阵
@@ -85,10 +86,10 @@ AgentDockSetup
 | WSL helper | AgentDock | 是 | Setup | 否 | 随 AgentDock / 协议版本 |
 | .NET Runtime | Microsoft | 否 | Microsoft 官方 | 否 | Microsoft |
 | Windows App Runtime | Microsoft | 否 | Microsoft 官方 | 否 | Microsoft |
-| cloudflared | Cloudflare | 否 | Cloudflare 官方 Release | 否 | AgentDock pin 版本，Cloudflare 提供二进制 |
+| cloudflared | Cloudflare | 否 | AgentDock R2 mirror → Cloudflare 官方 Release fallback | 是（独立 component namespace） | AgentDock pin 版本，R2 只镜像经验证的原始上游字节 |
 | 未来大型第一方 optional component | AgentDock | 否 | AgentDock R2 | 是 | 独立组件 |
 
-这里的“进入 R2”是指 AgentDock 自己负责托管二进制。AgentDock 自己的 catalog / latest metadata 属于第一方元数据，可以继续放 GitHub Release / R2；第三方二进制本身不因此被镜像。
+这里的“进入 R2”区分两类责任：第一方产物由 AgentDock 正式发行；cloudflared 只作为受控第三方 component mirror，保留 upstream provenance、原始字节和 pinned digest，不改变所有权，也不进入 AgentDock Release prefix。
 
 ## 4. Windows Setup：只维护一个安装产品
 
@@ -218,51 +219,35 @@ AgentDock Windows payload
 
 在没有覆盖 WSL on ARM、兼容发行版和升级路径的真实验证前，不为了几 MB 提前改变当前双架构 payload。
 
-## 6. cloudflared：官方上游直连，不做 mirror
+## 6. cloudflared：官方上游为事实来源，R2 做受控不可变镜像
 
 ### 6.1 当前实现需要继续收敛的地方
 
-`#191` 已经把 cloudflared 从基础 Setup / DMG 中移除，但当前 Release pipeline 仍然会：
+`#191` 已经把 cloudflared 从基础 Setup / DMG 中移除。后续真实环境验证发现，若客户端只直连 GitHub Release，在部分网络（例如天翼云电脑）会稳定连接超时，导致组件安装失败；而相同 pinned artifact 通过本地代理可以正常下载并通过 SHA-256/平台信任验证。
 
-```text
-Cloudflare GitHub Release
-    ↓
-AgentDock CI 下载
-    ↓
-AgentDock GitHub Release 再发布一份
-    ↓
-R2 再镜像一份
-    ↓
-AgentDock catalog 指向自己的副本
-```
-
-这属于“托管生命周期已经解耦，但分发仍二次 vendoring”。
-
-长期目标明确取消这层二次托管。
+因此长期目标不是重新把 cloudflared 塞回 AgentDock Release，而是把“上游真实性”和“下载可用性”拆开：Cloudflare 官方 Release 继续是事实来源，独立 component publish workflow 负责审计并发布，R2 只保存经验证的原始字节镜像；AgentDock Release 仅验证镜像已就绪。
 
 ### 6.2 目标链路
 
 ```text
-AgentDock 仓库中的 pinned component metadata
+Cloudflare 官方固定 Release
     ↓
-Release CI 验证 Cloudflare 官方资产
+独立 component publish workflow 下载并验证 pinned SHA-256 / version / platform trust
     ↓
-AgentDock component catalog
+CI 临时 artifact（只在同一次 workflow 内传递）
     ↓
-artifact.url = Cloudflare 官方不可变版本 URL
+R2 components/cloudflared/<version>/ 原始字节不可变镜像
     ↓
-客户端直接从 Cloudflare 官方下载
+component catalog：url=官方源，mirror_url=R2
     ↓
-AgentDock 校验 digest / version / platform trust
+客户端优先 mirror；镜像网络失败时 fallback 官方 url
+    ↓
+AgentDock 再次校验同一个 upstream digest / version / platform trust
     ↓
 AgentDock component store
 ```
 
-不经过：
-
-- AgentDock GitHub Release cloudflared asset；
-- AgentDock R2 cloudflared asset；
-- fallback mirror。
+仍然不经过 AgentDock GitHub Release 的 cloudflared asset，也不把 component mirror 混入 `releases/<agentdock-tag>/`。同一个 cloudflared 版本由多个兼容 AgentDock 版本共享一份 R2 对象。
 
 ### 6.3 不允许直接消费 latest
 
@@ -305,6 +290,7 @@ internal/component/catalog-v1.json
       "arch": "amd64",
       "format": "binary",
       "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.x.y/cloudflared-windows-amd64.exe",
+      "mirror_url": "https://download.nexusdock.co/components/cloudflared/2026.x.y/cloudflared-windows-amd64.exe",
       "sha256": "..."
     },
     {
@@ -312,6 +298,7 @@ internal/component/catalog-v1.json
       "arch": "arm64",
       "format": "tgz",
       "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.x.y/cloudflared-darwin-arm64.tgz",
+      "mirror_url": "https://download.nexusdock.co/components/cloudflared/2026.x.y/cloudflared-darwin-arm64.tgz",
       "sha256": "..."
     }
   ]
@@ -324,7 +311,7 @@ internal/component/catalog-v1.json
 
 Windows 上游直接提供 `.exe`。
 
-当前 macOS Release CI 从 Cloudflare 官方下载 `.tgz`，解出 `cloudflared` 后才重新发布 raw binary。取消镜像以后，客户端不能继续假设所有 artifact 都是裸二进制。
+macOS 官方资产是 `.tgz`，R2 mirror 保持该官方归档的原始字节，不重新打包成 raw binary，因此客户端不能假设所有 artifact 都是裸二进制。
 
 因此 component catalog / installer 需要明确 artifact format：
 
@@ -350,9 +337,9 @@ macOS 下载流程必须：
 
 不要继续把二者强行当成同一个值。
 
-### 6.6 Release CI 对 cloudflared 的职责
+### 6.6 Component publish 与 Release CI 的职责
 
-Release CI 应从“构建/上传 cloudflared component asset”改成“验证 upstream dependency”。
+独立 `Publish cloudflared component` workflow 负责“验证 upstream dependency + 发布 immutable R2 mirror + 单调 revision catalog”；AgentDock Release CI 继续验证 upstream dependency，并额外验证 catalog 指向的公网 mirror digest，但不再写入第三方镜像。
 
 至少验证：
 
@@ -363,29 +350,21 @@ Release CI 应从“构建/上传 cloudflared component asset”改成“验证 
 - macOS 平台信任验证通过；
 - `cloudflared --version` 与 metadata 一致；
 - catalog 中三个现有平台/架构映射完整；
-- catalog 的 URL 仍然指向 Cloudflare 官方来源。
+- catalog 的 `url` 仍然指向 Cloudflare 官方来源；
+- catalog 的 `mirror_url` 必须固定指向 `download.nexusdock.co/components/cloudflared/<version>/<official-name>`；
+- vendored Apache-2.0 LICENSE 与当前 upstream tag 的 LICENSE 字节级一致；
+- R2 已存在同版本对象时 metadata SHA-256 必须与 pinned artifact 完全一致；
+- 公网 R2 GET 后再次校验 SHA-256。
 
-验证完成后只生成 AgentDock 自己的 component catalog，不上传 cloudflared 二进制。
+验证完成后，cloudflared 原始 artifact 只由独立 component workflow 上传到 component mirror，不上传到 AgentDock GitHub Release；AgentDock Release workflow 发现 mirror 缺失或 digest 不匹配时直接失败。
 
 ## 7. Component Catalog 的长期边界
 
 Component catalog 是 AgentDock 自己的元数据，因此可以继续作为 AgentDock Release asset，也可以跟随 AgentDock 的 R2 最新版元数据分发。
 
-但 catalog 内不同组件的下载来源由所有权决定：
+catalog 中第三方 component 必须保留 upstream provenance。对于 cloudflared，`artifact.url` 始终是 Cloudflare 官方固定 Release，`artifact.mirror_url` 是 AgentDock R2 的独立不可变镜像；两者不能互相改写。第一方 remote component 则可以直接以 AgentDock R2 为权威来源。
 
-```text
-third-party component
-    → 官方 upstream URL
-
-first-party remote component
-    → AgentDock R2 URL
-```
-
-R2 mirror 阶段不允许无差别改写所有 `artifact.url`。
-
-当前 `tools/release/mirror.go` 会把 component catalog 重写到 R2 versioned base；后续必须改成只重写 AgentDock 自有资产，第三方 official URL 保持原样。
-
-不要因为 catalog 位于 R2，就把第三方 binary 也迁入 R2。
+R2 mirror 阶段不允许无差别改写 `artifact.url`。cloudflared mirror 只允许上传 CI 已从官方源验证过、且 digest 与 catalog pinned SHA-256 完全一致的原始字节。
 
 ## 8. R2 长期职责
 
@@ -529,22 +508,22 @@ cloudflared 也不应该作为 GitHub Release 的普通用户附件继续出现�
 
 不要顺手改 cloudflared / WSL helper 业务。
 
-### Phase 2：cloudflared 去二次托管
+### Phase 2：cloudflared 独立组件分发
 
-目标：只保留官方 upstream + AgentDock pinned metadata。
+目标：保留官方 upstream 事实来源 + AgentDock pinned metadata，同时用独立 R2 component mirror 提升下载可用性。
 
 任务：
 
 1. 引入/整理 pinned cloudflared metadata；
-2. component catalog 改为官方 URL；
+2. component catalog 保留官方 `url` 并增加不可变 `mirror_url`；
 3. macOS component install 支持官方 tgz；
-4. catalog digest 语义调整为 download artifact digest；
+4. catalog digest 语义保持 download artifact digest；
 5. active pointer 继续记录 installed binary digest；
-6. Release CI 改为 upstream verify，不再 upload cloudflared；
-7. R2 mirror 不再上传 cloudflared；
-8. R2 catalog rewrite 不改第三方 URL；
-9. 删除 GitHub Release / R2 manifest 中 cloudflared required asset；
-10. 更新 `docs/release-distribution.md`。
+6. 独立 component publish workflow 从 upstream 验证后发布 R2 mirror 与单调 revision catalog；AgentDock Release CI 只验证 upstream 与已发布 mirror；
+7. R2 只在 `components/cloudflared/<version>/` 保存不可变镜像与 LICENSE，不进入 AgentDock Release prefix；
+8. R2 catalog 不改写第三方官方 `url`；
+9. GitHub AgentDock Release / `latest.json` 不把 cloudflared 当 AgentDock asset；
+10. 更新 `docs/release-distribution.md` 并验证客户端 mirror → upstream fallback。
 
 ### Phase 3：发布链与回归收口
 
@@ -620,9 +599,9 @@ WSL helper 本轮原则上不修改，只需要防止误拆：
 
 ### cloudflared
 
-- GitHub AgentDock Release 不再包含 cloudflared binary；
-- R2 不再包含 cloudflared binary；
-- component catalog 指向 Cloudflare 官方固定版本 URL；
+- GitHub AgentDock Release 不包含 cloudflared binary；
+- R2 只在独立 `components/cloudflared/<version>/` 保存经验证的原始 upstream artifact；
+- component catalog 同时保留 Cloudflare 官方固定 `url` 与 R2 `mirror_url`；
 - digest 是仓库审计过的 pinned digest；
 - Windows Authenticode 验证通过；
 - macOS archive 安全解包与平台信任验证通过；
@@ -640,10 +619,11 @@ WSL helper 本轮原则上不修改，只需要防止误拆：
 
 ### R2
 
-- 只上传第一方资产和第一方 metadata；
-- mirror manifest 不再要求 cloudflared；
-- component catalog 中 third-party official URL 不被 rewrite；
-- latest.json 仍只在所有第一方 versioned asset 验证后更新。
+- `releases/<tag>/` 仍只上传 AgentDock 第一方资产和第一方 metadata；
+- `components/cloudflared/<version>/` 允许保存受控第三方原始字节镜像与 LICENSE；
+- mirror manifest / `latest.json` 不把 cloudflared 当 AgentDock Release asset；
+- component catalog 中 third-party official `url` 不被 rewrite，`mirror_url` 独立固定；
+- latest.json 仍只在全部 versioned asset 与 component mirror 验证后更新。
 
 ## 15. 测量与成功标准
 
@@ -663,7 +643,7 @@ WSL helper 本轮原则上不修改，只需要防止误拆：
 
 1. Setup 明显减少重复 Runtime 负担；
 2. 依赖责任清楚；
-3. 第三方二进制不再由 AgentDock 二次托管；
+3. 第三方二进制不进入 AgentDock Release；cloudflared 仅在独立 component namespace 中做可审计的原始字节镜像；
 4. 第一方小 helper 不因过度组件化增加复杂度；
 5. 一套 installer logic 可以长期维护；
 6. 任何 optional component 失败不影响普通 NexusDock 用户安装 AgentDock。
@@ -674,7 +654,7 @@ WSL helper 本轮原则上不修改，只需要防止误拆：
 
 - 为了体积把 WSL helper 拆到 R2；
 - 建 Online / Offline 两套安装器；
-- 建 cloudflared mirror / fallback mirror；
+- 建不受审计的通用第三方 mirror，或把任意第三方 URL 自动改写到 R2；
 - 把 Microsoft Runtime 上传 R2；
 - 自动追踪 Cloudflare latest；
 - 为单一 cloudflared 提前建设通用第三方插件市场；
@@ -688,7 +668,7 @@ WSL helper 本轮原则上不修改，只需要防止误拆：
 
 1. 先确认最新 `main` 与当前微软官方部署要求；
 2. 先做 Runtime 正确的 deployment model，再优化体积；
-3. cloudflared 先保证供应链 pin 和官方直连，再删除旧 mirror；
+3. cloudflared 先保证供应链 pin；R2 mirror 只能由已验证的官方原始 artifact 提升，并始终保留官方 URL fallback；
 4. 每一个删除旧 Release asset 的改动都同时更新 catalog、R2 manifest、CI 和文档；
 5. 保持现有 component store / active pointer 的简单边界，不引入不必要的通用抽象；
 6. 修改前看真实现状，修改后跑真实跨平台门禁；
@@ -705,8 +685,9 @@ WSL helper 本轮原则上不修改，只需要防止误拆：
                                       ▼
 ┌───────────────────────┐     ┌───────────────────────┐
 │ AgentDock R2 / Release│────▶│ AgentDockSetup        │
-│ first-party only      │     │ one installer logic   │
-└───────────────────────┘     └───────────┬───────────┘
+│ release prefix first- │     │ one installer logic   │
+│ party only            │     └───────────┬───────────┘
+└───────────────────────┘                 │
                                           │
                     ┌─────────────────────┼──────────────────────┐
                     ▼                     ▼                      ▼
@@ -715,16 +696,15 @@ WSL helper 本轮原则上不修改，只需要防止误拆：
 
                          Runtime optional component
                                       │
-                                      ▼
-                         ┌─────────────────────────┐
-                         │ Cloudflare official     │
-                         │ pinned cloudflared URL  │
-                         └────────────┬────────────┘
-                                      │
+                   ┌──────────────────┴──────────────────┐
+                   ▼                                     ▼
+       AgentDock R2 component mirror          Cloudflare official Release
+       immutable verified upstream bytes      pinned upstream fallback
+                   └──────────────────┬──────────────────┘
                                       ▼
                          AgentDock component store
 ```
 
 最终边界是：
 
-> AgentDock 只托管和维护自己真正拥有的发行物；系统 Runtime 回到系统供应商，第三方组件回到第三方官方上游，小型强耦合第一方 helper 留在主发行包。这样安装器体积、供应链责任和后续维护复杂度同时收敛。
+> AgentDock 的主 Release 只托管自己真正拥有的发行物；系统 Runtime 回到系统供应商。cloudflared 仍以上游为真实性来源，但允许在独立 component namespace 做可审计、不可变的原始字节镜像，以换取更可靠的下载可用性。小型强耦合第一方 helper 留在主发行包。

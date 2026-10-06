@@ -362,16 +362,16 @@ macOS 首次设置不再要求用户选择 Local / Quick / Named。Cloudflare Tu
 
 ## 9. Component 供应链与发布
 
-运行时禁止直接跟踪 Cloudflare `latest`，也不再由 AgentDock 二次托管 cloudflared binary。
+运行时禁止直接跟踪 Cloudflare `latest`。AgentDock 不把 cloudflared 混入自身 GitHub Release，但会在 R2 的独立 component namespace 中维护经过上游校验的原始字节镜像，以消除客户端对 GitHub Release 可达性的硬依赖。
 
 当前长期契约已经进一步收敛为：
 
 1. 仓库中的 `internal/component/catalog-v1.json` 是审计过的 pinned metadata，记录明确版本、Cloudflare 官方固定 Release URL、artifact format 和下载物 SHA-256；
-2. Release CI 从官方 Cloudflare 固定版本来源下载对应 artifact，并验证仓库 pinned SHA-256、版本与平台签名/信任；
-3. CI 只验证第三方 dependency，不把 cloudflared 上传到 AgentDock GitHub Release；
-4. R2 只承载 AgentDock 第一方发布物和第一方 catalog metadata，不镜像 cloudflared，也没有 fallback mirror；
-5. `agentdock-component-catalog.json` 内的第三方 URL 在 GitHub Release 与 R2 入口中都必须保持 Cloudflare 官方固定 URL，mirror prepare 不得改写；
-6. 客户端只接受 catalog 中明确允许的 artifact，且再次校验固定版本、URL、format 和 SHA-256；
+2. 独立 component publish workflow 从官方 Cloudflare 固定版本来源下载对应 artifact，并验证仓库 pinned SHA-256、版本与平台签名/信任；AgentDock Release CI 继续做同类 upstream gate；
+3. cloudflared 不上传到 AgentDock GitHub Release；只有独立 component workflow 通过全部验证后的**原始上游字节**可进入 R2 component mirror；Release CI 只验证 mirror readiness；
+4. R2 在 `components/cloudflared/<version>/` 下维护不可变镜像，同一 cloudflared 版本可供多个 AgentDock 版本共享，不按 AgentDock Release 复制；
+5. `agentdock-component-catalog.json` 保留 Cloudflare 官方固定 `url`，并增加固定 `mirror_url`；两者都必须是版本化不可变路径，mirror prepare 不得改写 upstream URL；
+6. 客户端优先 mirror，镜像网络失败时回退官方 upstream；任何成功响应都必须再次校验固定版本、format 和同一个 upstream SHA-256；
 7. Windows 官方 artifact 是直接 binary；下载后继续执行 Authenticode 和版本验证；
 8. macOS 官方 artifact 是 `.tgz`；客户端先验证 archive 的 pinned SHA-256，再在受控 staging 中只解出预期普通文件，拒绝 symlink、hardlink、path traversal 和额外条目，然后执行 codesign 与版本验证；
 9. catalog 中的 SHA-256 表示**下载 artifact digest**；`active.json` 中的 SHA-256 表示**最终已安装 binary digest**，两者不能混用；
@@ -579,7 +579,7 @@ Quick / Named Tunnel lifecycle 继续测试，但不再作为“AgentDock 基础
 ### Step 6：Release / CI / 文档收口
 
 - component catalog 纳入 Release；
-- R2 最新镜像只同步 component catalog 等第一方 metadata，不镜像第三方 cloudflared binary；
+- R2 在独立 `components/cloudflared/<version>/` namespace 中同步经过 CI 验证的原始 cloudflared artifact 与 LICENSE；不把第三方二进制放进 AgentDock Release prefix；
 - Installer / Component / Tunnel lifecycle CI 分层；
 - 更新用户文档；
 - 清理不再使用的 cloudflared installer contract。

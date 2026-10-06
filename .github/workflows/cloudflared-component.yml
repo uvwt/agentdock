@@ -1,0 +1,354 @@
+name: Publish cloudflared component
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Pinned cloudflared version present in internal/component/catalog-v1.json'
+        required: true
+        type: string
+      publish_catalog:
+        description: 'Publish the validated catalog to components/v1/catalog.json after the mirror is ready'
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: cloudflared-component-${{ inputs.version }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify-macos:
+    name: Verify cloudflared macOS ${{ matrix.goarch }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Resolve pinned artifact
+        shell: bash
+        env:
+          COMPONENT_VERSION: ${{ inputs.version }}
+          COMPONENT_ARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          eval "$(
+            python3 - <<'PY'
+          import json, os, shlex
+          from pathlib import Path
+
+          version = os.environ["COMPONENT_VERSION"]
+          arch = os.environ["COMPONENT_ARCH"]
+          catalog = json.loads(Path("internal/component/catalog-v1.json").read_text())
+          entries = [
+              item for item in catalog["components"]
+              if item["component"] == "cloudflared" and item["version"] == version
+          ]
+          if len(entries) != 1:
+              raise SystemExit(f"expected one cloudflared {version} catalog entry")
+          artifacts = [
+              item for item in entries[0]["artifacts"]
+              if item["os"] == "darwin" and item["arch"] == arch
+          ]
+          if len(artifacts) != 1 or artifacts[0]["format"] != "tgz":
+              raise SystemExit(f"missing pinned darwin/{arch} tgz artifact")
+          artifact = artifacts[0]
+          print("CLOUDFLARED_URL=" + shlex.quote(artifact["url"]))
+          print("CLOUDFLARED_SHA256=" + shlex.quote(artifact["sha256"]))
+          PY
+          )"
+          {
+            echo "CLOUDFLARED_URL=$CLOUDFLARED_URL"
+            echo "CLOUDFLARED_SHA256=$CLOUDFLARED_SHA256"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify official artifact
+        shell: bash
+        env:
+          COMPONENT_VERSION: ${{ inputs.version }}
+          COMPONENT_ARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/cloudflared-darwin-$COMPONENT_ARCH.tgz"
+          extract_dir="$RUNNER_TEMP/cloudflared-$COMPONENT_ARCH"
+          curl --fail --location --retry 5 --retry-all-errors "$CLOUDFLARED_URL" -o "$archive"
+          printf '%s  %s\n' "$CLOUDFLARED_SHA256" "$archive" | shasum -a 256 -c -
+
+          entries="$(tar -tzf "$archive")"
+          test "$entries" = "cloudflared"
+          mkdir -p "$extract_dir"
+          tar -xzf "$archive" -C "$extract_dir"
+          binary="$extract_dir/cloudflared"
+          test -f "$binary"
+          test ! -L "$binary"
+          case "$COMPONENT_ARCH" in
+            arm64) expected='arm64' ;;
+            amd64) expected='x86_64' ;;
+          esac
+          [[ "$(file "$binary")" == *"$expected"* ]]
+          codesign --verify --strict --verbose=2 "$binary"
+          test "$("$binary" --version | awk 'NR==1 {print $3}')" = "$COMPONENT_VERSION"
+
+      - name: Upload verified mirror artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflared-mirror-darwin-${{ matrix.goarch }}
+          path: ${{ runner.temp }}/cloudflared-darwin-${{ matrix.goarch }}.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  verify-windows:
+    name: Verify cloudflared Windows amd64
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Verify official artifact
+        shell: pwsh
+        env:
+          COMPONENT_VERSION: ${{ inputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $catalog = Get-Content -LiteralPath '.\internal\component\catalog-v1.json' -Raw | ConvertFrom-Json
+          $metadata = @($catalog.components | Where-Object {
+            $_.component -eq 'cloudflared' -and [string] $_.version -eq $env:COMPONENT_VERSION
+          })
+          if ($metadata.Count -ne 1) {
+            throw "Expected one cloudflared $env:COMPONENT_VERSION catalog entry."
+          }
+          $artifact = @($metadata[0].artifacts | Where-Object {
+            $_.os -eq 'windows' -and $_.arch -eq 'amd64'
+          })
+          if ($artifact.Count -ne 1 -or [string] $artifact[0].format -ne 'binary') {
+            throw 'Pinned metadata does not contain Windows amd64 cloudflared binary.'
+          }
+
+          $output = Join-Path $env:RUNNER_TEMP 'cloudflared-windows-amd64.exe'
+          Invoke-WebRequest -UseBasicParsing -Uri ([string] $artifact[0].url) -OutFile $output
+          $actualDigest = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expectedDigest = ([string] $artifact[0].sha256).ToLowerInvariant()
+          if ($actualDigest -ne $expectedDigest) {
+            throw "cloudflared pinned SHA-256 mismatch: got $actualDigest, want $expectedDigest"
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $output
+          if ($signature.Status -ne [Management.Automation.SignatureStatus]::Valid) {
+            throw "cloudflared Authenticode signature is invalid: $($signature.StatusMessage)"
+          }
+          $versionOutput = & $output --version
+          if (($versionOutput -split '\s+')[2] -ne $env:COMPONENT_VERSION) {
+            throw "cloudflared version mismatch: $versionOutput"
+          }
+
+      - name: Upload verified mirror artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflared-mirror-windows-amd64
+          path: ${{ runner.temp }}\cloudflared-windows-amd64.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-r2:
+    name: Publish immutable cloudflared mirror
+    needs: [verify-macos, verify-windows]
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      AWS_EC2_METADATA_DISABLED: "true"
+      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
+      COMPONENT_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate catalog
+        run: go test ./internal/component ./tools/release
+
+      - name: Download verified mirror artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cloudflared-mirror-*
+          path: mirror
+          merge-multiple: true
+
+      - name: Validate publication inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in R2_ACCOUNT_ID R2_BUCKET R2_PUBLIC_BASE_URL AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "$name is required for the R2 component mirror." >&2
+              exit 1
+            fi
+          done
+          test "${R2_PUBLIC_BASE_URL%/}" = "https://download.nexusdock.co"
+          command -v aws >/dev/null
+          aws --version
+
+          upstream_license="$RUNNER_TEMP/cloudflared-LICENSE"
+          curl --fail --silent --show-error --location \
+            --retry 5 --retry-all-errors \
+            "https://raw.githubusercontent.com/cloudflare/cloudflared/$COMPONENT_VERSION/LICENSE" \
+            -o "$upstream_license"
+          cmp packaging/licenses/cloudflared-Apache-2.0.txt "$upstream_license"
+          cp packaging/licenses/cloudflared-Apache-2.0.txt mirror/LICENSE
+
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+
+          version = os.environ["COMPONENT_VERSION"]
+          catalog = json.loads(Path("internal/component/catalog-v1.json").read_text())
+          entries = [
+              item for item in catalog["components"]
+              if item["component"] == "cloudflared" and item["version"] == version
+          ]
+          if len(entries) != 1:
+              raise SystemExit(f"expected one cloudflared {version} catalog entry")
+          expected = {
+              ("windows", "amd64"): "cloudflared-windows-amd64.exe",
+              ("darwin", "amd64"): "cloudflared-darwin-amd64.tgz",
+              ("darwin", "arm64"): "cloudflared-darwin-arm64.tgz",
+          }
+          if len(entries[0]["artifacts"]) != len(expected):
+              raise SystemExit("cloudflared mirror artifact set is incomplete")
+
+          root = Path("mirror")
+          for artifact in entries[0]["artifacts"]:
+              key = (artifact["os"], artifact["arch"])
+              if key not in expected:
+                  raise SystemExit(f"unexpected cloudflared platform: {key}")
+              name = expected[key]
+              path = root / name
+              if not path.is_file():
+                  raise SystemExit(f"missing verified mirror payload: {path}")
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              if digest.lower() != artifact["sha256"].lower():
+                  raise SystemExit(f"mirror payload digest mismatch for {name}: {digest}")
+              expected_mirror = f"https://download.nexusdock.co/components/cloudflared/{version}/{name}"
+              if artifact.get("mirror_url") != expected_mirror:
+                  raise SystemExit(f"unexpected mirror_url for {name}: {artifact.get('mirror_url')}")
+          PY
+
+      - name: Publish and verify immutable mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          prefix="components/cloudflared/$COMPONENT_VERSION"
+
+          for asset in \
+            cloudflared-windows-amd64.exe \
+            cloudflared-darwin-amd64.tgz \
+            cloudflared-darwin-arm64.tgz \
+            LICENSE; do
+            source_path="mirror/$asset"
+            key="$prefix/$asset"
+            sha256="$(sha256sum "$source_path" | awk '{print $1}')"
+
+            if existing_sha256="$(aws s3api head-object \
+              --bucket "$R2_BUCKET" \
+              --key "$key" \
+              --endpoint-url "$endpoint" \
+              --query 'Metadata.sha256' \
+              --output text 2>/dev/null)"; then
+              if [[ "$existing_sha256" != "$sha256" ]]; then
+                echo "Immutable cloudflared mirror object differs: $key" >&2
+                exit 1
+              fi
+            else
+              aws s3 cp "$source_path" "s3://$R2_BUCKET/$key" \
+                --endpoint-url "$endpoint" \
+                --cache-control "public, max-age=31536000, immutable" \
+                --metadata "sha256=$sha256" \
+                --only-show-errors
+            fi
+
+            stored_sha256="$(aws s3api head-object \
+              --bucket "$R2_BUCKET" \
+              --key "$key" \
+              --endpoint-url "$endpoint" \
+              --query 'Metadata.sha256' \
+              --output text)"
+            test "$stored_sha256" = "$sha256"
+
+            public_copy="$RUNNER_TEMP/public-$(basename "$asset")"
+            public_url="${R2_PUBLIC_BASE_URL%/}/$key?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            curl --fail --silent --show-error --location \
+              --retry 5 --retry-all-errors \
+              -H "Cache-Control: no-cache" \
+              "$public_url" -o "$public_copy"
+            test "$(sha256sum "$public_copy" | awk '{print $1}')" = "$sha256"
+          done
+
+      - name: Publish monotonic component catalog
+        if: ${{ inputs.publish_catalog }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          catalog="internal/component/catalog-v1.json"
+          catalog_sha256="$(sha256sum "$catalog" | awk '{print $1}')"
+          new_revision="$(jq -r '.revision' "$catalog")"
+          current="$RUNNER_TEMP/current-component-catalog.json"
+
+          if curl --fail --silent --show-error --location \
+            -H "Cache-Control: no-cache" \
+            "${R2_PUBLIC_BASE_URL%/}/components/v1/catalog.json?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            -o "$current"; then
+            current_revision="$(jq -r '.revision' "$current")"
+            current_sha256="$(sha256sum "$current" | awk '{print $1}')"
+            if (( new_revision < current_revision )); then
+              echo "Refusing component catalog revision rollback: $new_revision < $current_revision" >&2
+              exit 1
+            fi
+            if (( new_revision == current_revision )) && [[ "$catalog_sha256" != "$current_sha256" ]]; then
+              echo "Refusing different component catalog bytes at revision $new_revision" >&2
+              exit 1
+            fi
+            if [[ "$catalog_sha256" == "$current_sha256" ]]; then
+              echo "Component catalog is already published."
+              exit 0
+            fi
+          fi
+
+          aws s3 cp "$catalog" "s3://$R2_BUCKET/components/v1/catalog.json" \
+            --endpoint-url "$endpoint" \
+            --content-type "application/json; charset=utf-8" \
+            --cache-control "no-cache, max-age=0, must-revalidate" \
+            --metadata "sha256=$catalog_sha256" \
+            --only-show-errors
+
+          stored_sha256="$(aws s3api head-object \
+            --bucket "$R2_BUCKET" \
+            --key "components/v1/catalog.json" \
+            --endpoint-url "$endpoint" \
+            --query 'Metadata.sha256' \
+            --output text)"
+          test "$stored_sha256" = "$catalog_sha256"
+
+          published="$RUNNER_TEMP/published-component-catalog.json"
+          curl --fail --silent --show-error --location \
+            --retry 5 --retry-all-errors \
+            -H "Cache-Control: no-cache" \
+            "${R2_PUBLIC_BASE_URL%/}/components/v1/catalog.json?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            -o "$published"
+          test "$(sha256sum "$published" | awk '{print $1}')" = "$catalog_sha256"

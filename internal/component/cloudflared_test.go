@@ -136,8 +136,9 @@ func TestSelectCloudflaredArtifactRequiresPinnedOfficialUpstream(t *testing.T) {
 			UpstreamSource:  "https://github.com/cloudflare/cloudflared/releases/tag/2026.9.3",
 			Artifacts: []CatalogArtifact{{
 				OS: "windows", Arch: "amd64", Format: "binary",
-				URL:    "https://github.com/cloudflare/cloudflared/releases/download/2026.9.3/cloudflared-windows-amd64.exe",
-				SHA256: digest,
+				URL:       "https://github.com/cloudflare/cloudflared/releases/download/2026.9.3/cloudflared-windows-amd64.exe",
+				MirrorURL: "https://download.nexusdock.co/components/cloudflared/2026.9.3/cloudflared-windows-amd64.exe",
+				SHA256:    digest,
 			}},
 		}},
 	}
@@ -149,7 +150,8 @@ func TestSelectCloudflaredArtifactRequiresPinnedOfficialUpstream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if entry.Version != "2026.9.3" || artifact.SHA256 != digest || artifact.Format != "binary" {
+	if entry.Version != "2026.9.3" || artifact.SHA256 != digest || artifact.Format != "binary" ||
+		artifact.MirrorURL != "https://download.nexusdock.co/components/cloudflared/2026.9.3/cloudflared-windows-amd64.exe" {
 		t.Fatalf("unexpected catalog selection: %+v %+v", entry, artifact)
 	}
 
@@ -165,6 +167,95 @@ func TestSelectCloudflaredArtifactRequiresPinnedOfficialUpstream(t *testing.T) {
 		if _, _, err := selectCloudflaredArtifact(data, "1.0.0-rc.1", "windows", "amd64"); err == nil {
 			t.Fatalf("unsafe artifact URL unexpectedly accepted: %s", invalid)
 		}
+	}
+}
+
+func TestSelectCloudflaredArtifactRejectsUnpinnedMirror(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	base := Catalog{
+		SchemaVersion: 2,
+		Revision:      1,
+		Components: []CatalogComponent{{
+			Component:       CloudflaredName,
+			Version:         "2026.9.3",
+			Status:          "supported",
+			AgentDock:       CatalogCompatibility{MinVersion: "0.9.1", MaxVersionExclusive: "2.0.0"},
+			UpstreamVersion: "2026.9.3",
+			UpstreamSource:  "https://github.com/cloudflare/cloudflared/releases/tag/2026.9.3",
+			Artifacts: []CatalogArtifact{{
+				OS: "windows", Arch: "amd64", Format: "binary",
+				URL:    "https://github.com/cloudflare/cloudflared/releases/download/2026.9.3/cloudflared-windows-amd64.exe",
+				SHA256: digest,
+			}},
+		}},
+	}
+	for _, invalid := range []string{
+		"http://download.nexusdock.co/components/cloudflared/2026.9.3/cloudflared-windows-amd64.exe",
+		"https://example.com/components/cloudflared/2026.9.3/cloudflared-windows-amd64.exe",
+		"https://download.nexusdock.co/components/cloudflared/latest/cloudflared-windows-amd64.exe",
+		"https://download.nexusdock.co/releases/v1/cloudflared-windows-amd64.exe",
+		"https://download.nexusdock.co/components/cloudflared/2026.9.3/cloudflared-windows-amd64.exe?x=1",
+	} {
+		catalog := base
+		catalog.Components = append([]CatalogComponent(nil), base.Components...)
+		catalog.Components[0].Artifacts = append([]CatalogArtifact(nil), base.Components[0].Artifacts...)
+		catalog.Components[0].Artifacts[0].MirrorURL = invalid
+		data, _ := json.Marshal(catalog)
+		if _, _, err := selectCloudflaredArtifact(data, "1.0.0", "windows", "amd64"); err == nil {
+			t.Fatalf("unsafe mirror URL unexpectedly accepted: %s", invalid)
+		}
+	}
+}
+
+func TestDownloadCloudflaredArtifactPrefersMirror(t *testing.T) {
+	mirrorHits := 0
+	upstreamHits := 0
+	mirror := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		mirrorHits++
+		_, _ = writer.Write([]byte("mirror"))
+	}))
+	defer mirror.Close()
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		upstreamHits++
+		_, _ = writer.Write([]byte("upstream"))
+	}))
+	defer upstream.Close()
+
+	data, err := downloadCloudflaredArtifact(context.Background(), mirror.Client(), CatalogArtifact{
+		URL:       upstream.URL,
+		MirrorURL: mirror.URL,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "mirror" || mirrorHits != 1 || upstreamHits != 0 {
+		t.Fatalf("unexpected mirror preference: data=%q mirror_hits=%d upstream_hits=%d", data, mirrorHits, upstreamHits)
+	}
+}
+
+func TestDownloadCloudflaredArtifactFallsBackToUpstreamOnMirrorTransportFailure(t *testing.T) {
+	mirrorHits := 0
+	upstreamHits := 0
+	mirror := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		mirrorHits++
+		http.Error(writer, "mirror unavailable", http.StatusServiceUnavailable)
+	}))
+	defer mirror.Close()
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		upstreamHits++
+		_, _ = writer.Write([]byte("upstream"))
+	}))
+	defer upstream.Close()
+
+	data, err := downloadCloudflaredArtifact(context.Background(), upstream.Client(), CatalogArtifact{
+		URL:       upstream.URL,
+		MirrorURL: mirror.URL,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "upstream" || mirrorHits != 1 || upstreamHits != 1 {
+		t.Fatalf("unexpected upstream fallback: data=%q mirror_hits=%d upstream_hits=%d", data, mirrorHits, upstreamHits)
 	}
 }
 

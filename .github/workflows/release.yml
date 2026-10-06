@@ -705,6 +705,7 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: agentdock-*
           path: dist
           merge-multiple: true
 
@@ -929,6 +930,10 @@ jobs:
                   assert parsed.scheme == "https" and parsed.netloc == "github.com"
                   assert parsed.query == "" and parsed.fragment == ""
                   assert parsed.path == f"/cloudflare/cloudflared/releases/download/{version}/{name}"
+                  mirror = urlparse(artifact["mirror_url"])
+                  assert mirror.scheme == "https" and mirror.netloc == "download.nexusdock.co"
+                  assert mirror.query == "" and mirror.fragment == ""
+                  assert mirror.path == f"/components/cloudflared/{version}/{name}"
           PY
 
           mkdir -p "$zip_dir"
@@ -1506,19 +1511,41 @@ jobs:
           name: agentdock-release-dist
           path: dist
 
-      - name: Validate R2 mirror configuration
+      - name: Verify published cloudflared mirror
         shell: bash
+        env:
+          AGENTDOCK_RELEASE_VERSION: ${{ needs.source.outputs.version }}
         run: |
           set -euo pipefail
-          for name in R2_ACCOUNT_ID R2_BUCKET R2_PUBLIC_BASE_URL AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
-            if [[ -z "${!name:-}" ]]; then
-              echo "$name is required for the R2 release mirror." >&2
-              exit 1
-            fi
-          done
-          test "${R2_PUBLIC_BASE_URL%/}" = "https://download.nexusdock.co"
-          command -v aws >/dev/null
-          aws --version
+          component_version="$(go run ./tools/release component-version "$AGENTDOCK_RELEASE_VERSION")"
+          export COMPONENT_VERSION="$component_version"
+
+          while IFS=$'\t' read -r url expected_sha256; do
+            test -n "$url"
+            test -n "$expected_sha256"
+            output="$RUNNER_TEMP/cloudflared-mirror-$(basename "$url")"
+            curl --fail --silent --show-error --location --retry 5 --retry-all-errors \
+              -H "Cache-Control: no-cache" \
+              "$url?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+              -o "$output"
+            test "$(sha256sum "$output" | awk '{print $1}')" = "$expected_sha256"
+          done < <(
+            python3 - <<'PY2'
+          import json, os
+          from pathlib import Path
+
+          version = os.environ["COMPONENT_VERSION"]
+          catalog = json.loads(Path("internal/component/catalog-v1.json").read_text())
+          entries = [
+              item for item in catalog["components"]
+              if item["component"] == "cloudflared" and item["version"] == version
+          ]
+          if len(entries) != 1:
+              raise SystemExit(f"expected one cloudflared {version} catalog entry")
+          for artifact in entries[0]["artifacts"]:
+              print(f"{artifact['mirror_url']}\t{artifact['sha256']}")
+          PY2
+          )
 
       - name: Generate latest mirror manifest
         shell: bash
