@@ -44,11 +44,10 @@ func TestUnifiedInstallerEntryOwnsUnixBootstrap(t *testing.T) {
 		t.Fatalf("install.sh missing exact NexusDock menu: %q", menu)
 	}
 	for _, want := range []string{
-		`download_file_with_progress`,
 		`max_attempts=60`,
 		`正在获取 Quick Tunnel 公网地址...`,
-		`curl -fL --progress-bar`,
 		`agentdock_${PLATFORM}_${ARCH}.tar.gz`,
+		`CLOUDFLARED_PATH="${AGENTDOCK_CLOUDFLARED_BINARY:-}"`,
 		"install --engine-ready",
 		"AGENTDOCK_INSTALLER_BASE_URL",
 		"verify_checksum",
@@ -63,6 +62,9 @@ func TestUnifiedInstallerEntryOwnsUnixBootstrap(t *testing.T) {
 		"uninstall-linux.sh",
 		"uninstall-macos.sh",
 		"AGENTDOCK_USE_LOCAL_PLATFORM_INSTALLER",
+		"AGENTDOCK_CLOUDFLARED_RELEASE_BASE_URL",
+		"cloudflared/releases/latest",
+		"install_cloudflared",
 	} {
 		if strings.Contains(entry, forbidden) {
 			t.Fatalf("install.sh still depends on platform installer asset %q", forbidden)
@@ -139,12 +141,12 @@ func TestUnifiedInstallerFreshFlowOrdersCoreNexusThenCloudflare(t *testing.T) {
 	core := strings.Index(entry, `run_install_engine install "$CORE_TUNNEL_MODE"`)
 	nexus := strings.Index(entry[core:], "\n  configure_nexus\n")
 	tunnel := strings.Index(entry[core:], "\n      choose_tunnel_mode\n")
-	cloudflared := strings.Index(entry[core:], `CLOUDFLARED_PATH="$(install_cloudflared "$CLOUDFLARED_TARGET")"`)
-	if core < 0 || nexus < 0 || tunnel < 0 || cloudflared < 0 {
+	tunnelRepair := strings.Index(entry[core:], `run_install_engine repair "$TUNNEL_MODE" "$CLOUDFLARED_PATH"`)
+	if core < 0 || nexus < 0 || tunnel < 0 || tunnelRepair < 0 {
 		t.Fatal("fresh installer flow markers are incomplete")
 	}
-	if !(nexus < tunnel && tunnel < cloudflared) {
-		t.Fatalf("fresh installer order must be Core -> Nexus -> Tunnel choice -> cloudflared; offsets nexus=%d tunnel=%d cloudflared=%d", nexus, tunnel, cloudflared)
+	if !(nexus < tunnel && tunnel < tunnelRepair) {
+		t.Fatalf("fresh installer order must be Core -> Nexus -> Tunnel choice -> component-backed repair; offsets nexus=%d tunnel=%d repair=%d", nexus, tunnel, tunnelRepair)
 	}
 }
 

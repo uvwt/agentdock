@@ -14,6 +14,10 @@ export AGENTDOCK_TTY_IN=/dev/stdin
 export AGENTDOCK_TTY_OUT=/dev/stderr
 
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+
+if grep -Fq 'cloudflared/releases/latest' "$ENTRY" || grep -Fq 'AGENTDOCK_CLOUDFLARED_RELEASE_BASE_URL' "$ENTRY"; then
+  fail "Unix bootstrap must delegate cloudflared resolution to the component resolver instead of tracking upstream latest"
+fi
 assert_arg() {
   expected="$1"
   file="$2"
@@ -160,7 +164,6 @@ PATH="$FAKE_BIN:$PATH" \
   AGENTDOCK_ENV_FILE="$LINUX_ROOT/runtime/agentdock.env" \
   AGENTDOCK_DATA_DIR="$LINUX_ROOT/data" \
   AGENTDOCK_CLI_LINK_PATH="$LINUX_ROOT/bin/agentdock" \
-  AGENTDOCK_CLOUDFLARED_INSTALL_PATH="$LINUX_ROOT/bin/cloudflared" \
   AGENTDOCK_INSTALLER_BASE_URL="file://$RELEASE_DIR" \
   AGENTDOCK_NONINTERACTIVE=true AGENTDOCK_TUNNEL_MODE=none \
   sh "$ENTRY"
@@ -189,7 +192,6 @@ PATH="$FAKE_BIN:$PATH" \
   AGENTDOCK_ENV_FILE="$LINUX_NEXUS/runtime/agentdock.env" \
   AGENTDOCK_DATA_DIR="$LINUX_NEXUS/data" \
   AGENTDOCK_CLI_LINK_PATH="$LINUX_NEXUS/bin/agentdock" \
-  AGENTDOCK_CLOUDFLARED_INSTALL_PATH="$LINUX_NEXUS/bin/cloudflared" \
   AGENTDOCK_INSTALLER_BASE_URL="file://$RELEASE_DIR" \
   AGENTDOCK_NONINTERACTIVE=true AGENTDOCK_TUNNEL_MODE=none \
   AGENTDOCK_NEXUS_MODE=official AGENTDOCK_NEXUS_PAIR_CODE=test-pair-code \
@@ -222,7 +224,6 @@ if PATH="$FAKE_BIN:$PATH" \
   AGENTDOCK_ENV_FILE="$LINUX_RESUME/runtime/agentdock.env" \
   AGENTDOCK_DATA_DIR="$LINUX_RESUME/data" \
   AGENTDOCK_CLI_LINK_PATH="$LINUX_RESUME/bin/agentdock" \
-  AGENTDOCK_CLOUDFLARED_INSTALL_PATH="$LINUX_RESUME/bin/cloudflared" \
   AGENTDOCK_INSTALLER_BASE_URL="file://$RELEASE_DIR" \
   AGENTDOCK_NONINTERACTIVE=true AGENTDOCK_TUNNEL_MODE=none \
   AGENTDOCK_NEXUS_MODE=official \
@@ -240,7 +241,6 @@ PATH="$FAKE_BIN:$PATH" \
   AGENTDOCK_ENV_FILE="$LINUX_RESUME/runtime/agentdock.env" \
   AGENTDOCK_DATA_DIR="$LINUX_RESUME/data" \
   AGENTDOCK_CLI_LINK_PATH="$LINUX_RESUME/bin/agentdock" \
-  AGENTDOCK_CLOUDFLARED_INSTALL_PATH="$LINUX_RESUME/bin/cloudflared" \
   AGENTDOCK_INSTALLER_BASE_URL="file://$RELEASE_DIR" \
   AGENTDOCK_NONINTERACTIVE=true AGENTDOCK_TUNNEL_MODE=none \
   AGENTDOCK_NEXUS_MODE=official AGENTDOCK_NEXUS_PAIR_CODE=resume-pair-code \
@@ -274,14 +274,14 @@ PATH="$FAKE_BIN:$PATH" \
   AGENTDOCK_ENV_FILE="$LINUX_CF/runtime/agentdock.env" \
   AGENTDOCK_DATA_DIR="$LINUX_CF/data" \
   AGENTDOCK_CLI_LINK_PATH="$LINUX_CF/bin/agentdock" \
-  AGENTDOCK_CLOUDFLARED_INSTALL_PATH="$LINUX_CF/bin/cloudflared" \
   AGENTDOCK_CLOUDFLARED_BINARY="$FAKE_BIN/cloudflared" \
   AGENTDOCK_CLOUDFLARE_TUNNEL_TOKEN=test-tunnel-token \
   AGENTDOCK_INSTALLER_BASE_URL="file://$RELEASE_DIR" \
   AGENTDOCK_NONINTERACTIVE=true AGENTDOCK_NEXUS_MODE=none \
   AGENTDOCK_TUNNEL_MODE=named AGENTDOCK_SERVER_URL=https://agent.example.test \
   sh "$ENTRY" >"$LINUX_CF/output.log" 2>&1
-[ -x "$LINUX_CF/bin/cloudflared" ] || fail "Named Tunnel did not install cloudflared"
+assert_arg --cloudflared "$LINUX_CF/engine.log"
+assert_arg "$FAKE_BIN/cloudflared" "$LINUX_CF/engine.log"
 assert_arg --repair "$LINUX_CF/engine.log"
 assert_arg --rotate-oauth "$LINUX_CF/engine.log"
 assert_arg named "$LINUX_CF/engine.log"

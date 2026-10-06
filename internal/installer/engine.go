@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/component"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/desktopruntime"
 	"github.com/uvwt/agentdock/internal/fs/processlock"
@@ -210,6 +211,26 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 		} else {
 			request.Version = "unknown"
 		}
+	}
+	if (request.TunnelMode == "quick" || request.TunnelMode == "named") &&
+		strings.TrimSpace(request.CloudflaredPath) == "" {
+		componentStore, err := component.NewStore(request.RuntimeRoot)
+		if err != nil {
+			return Result{}, fmt.Errorf("prepare cloudflared component: %w", err)
+		}
+		componentVersion := request.Version
+		if componentVersion == "unknown" {
+			componentVersion = ""
+		}
+		status, err := componentStore.Install(ctx, component.InstallOptions{
+			RuntimeRoot:      request.RuntimeRoot,
+			AgentDockVersion: componentVersion,
+			LegacyPaths:      component.LegacyPaths(request.RuntimeRoot),
+		})
+		if err != nil {
+			return Result{}, fmt.Errorf("prepare cloudflared component: %w", err)
+		}
+		request.CloudflaredPath = status.Path
 	}
 
 	transaction, err := newTransaction(request, platform, sourceVersion)

@@ -471,7 +471,7 @@ Schema 迁移要兼容旧 manifest。不要为了删除三个字段立刻 bump �
 
 必须验证：
 
-- Windows/macOS 不含 cloudflared 也能完成安装；
+- Windows/macOS 基础安装以及 Linux 本地模式不依赖 cloudflared；
 - Core/Tray/Skills/更新/卸载正常；
 - `tunnel_mode=none` 下没有 cloudflared 网络请求；
 - Cloudflare/GitHub 不可用时基础安装仍成功；
@@ -488,7 +488,7 @@ Schema 迁移要兼容旧 manifest。不要为了删除三个字段立刻 bump �
 - staging + active pointer 原子切换；
 - reinstall / update / uninstall；
 - 旧版本回退不受损；
-- Windows/macOS 权限和路径安全；
+- Windows/macOS/Linux 权限和路径安全；
 - legacy import。
 
 ### 13.3 Tunnel Lifecycle Gate
@@ -547,7 +547,7 @@ Quick / Named Tunnel lifecycle 继续测试，但不再作为“AgentDock 基础
 
 ### Step 2：Tunnel Runtime 切换 dependency resolver
 
-- Windows/macOS Tunnel host 从 component store 解析 cloudflared；
+- Windows/macOS Tunnel host 与 Linux CLI Installer Engine 都从 component store 解析 cloudflared；
 - mode=`none` 完全不需要 component；
 - 缺失/损坏返回结构化可识别错误；
 - 保留 legacy path 迁移入口，而不是长期 fallback。

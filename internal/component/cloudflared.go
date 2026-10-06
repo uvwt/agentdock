@@ -348,41 +348,66 @@ func (store *Store) resolveCatalog(ctx context.Context, client *http.Client, cat
 		return remoteData, nil
 	}
 
+	baselineCatalog, err := ParseCatalog(baselineCatalogData)
+	if err != nil {
+		return nil, fmt.Errorf("embedded component catalog is invalid: %w", err)
+	}
 	cachedData, cachedCatalog, cachedOK := store.readCachedCatalog()
+	if cachedOK && !catalogMeetsBaseline(cachedCatalog, baselineCatalog) {
+		cachedOK = false
+	}
 	if remoteErr == nil {
 		remoteCatalog, parseErr := ParseCatalog(remoteData)
 		if parseErr == nil {
-			if cachedOK {
-				switch {
-				case remoteCatalog.Revision < cachedCatalog.Revision:
-					// revision 单调递增是组件仓库的回滚保护。服务端临时回退或缓存污染时，
-					// 保留本机已经验证过的更新 revision，不让旧 metadata 覆盖新撤销状态。
-					return cachedData, nil
-				case remoteCatalog.Revision == cachedCatalog.Revision && !catalogsEqual(remoteCatalog, cachedCatalog):
-					return cachedData, nil
+			if !catalogMeetsBaseline(remoteCatalog, baselineCatalog) {
+				remoteErr = fmt.Errorf(
+					"remote component catalog revision %d is older than or conflicts with embedded baseline revision %d",
+					remoteCatalog.Revision,
+					baselineCatalog.Revision,
+				)
+			} else {
+				if cachedOK {
+					switch {
+					case remoteCatalog.Revision < cachedCatalog.Revision:
+						// revision 单调递增是组件仓库的回滚保护。服务端临时回退或缓存污染时，
+						// 保留本机已经验证过的更新 revision，不让旧 metadata 覆盖新撤销状态。
+						return cachedData, nil
+					case remoteCatalog.Revision == cachedCatalog.Revision && !catalogsEqual(remoteCatalog, cachedCatalog):
+						return cachedData, nil
+					}
 				}
-			}
-			if err := atomicfile.Write(store.catalogCachePath(), remoteData, 0o600); err == nil {
+				if err := atomicfile.Write(store.catalogCachePath(), remoteData, 0o600); err == nil {
+					return remoteData, nil
+				}
+				// cache 写入失败不阻断本次已验证的远程安装；下一次仍可重新获取。
 				return remoteData, nil
 			}
-			// cache 写入失败不阻断本次已验证的远程安装；下一次仍可重新获取。
-			return remoteData, nil
 		}
-		remoteErr = parseErr
+		if parseErr != nil {
+			remoteErr = parseErr
+		}
 	}
 	if cachedOK {
 		return cachedData, nil
 	}
 
-	if _, err := ParseCatalog(baselineCatalogData); err != nil {
-		return nil, fmt.Errorf("embedded component catalog is invalid: %w", err)
-	}
 	if remoteErr != nil {
 		// baseline 是随当前 AgentDock 构建审核过的最后兜底；它仍然执行完整 upstream
 		// URL、digest 和平台签名校验，不会把网络失败降级成不受信任安装。
 		return baselineCatalogData, nil
 	}
 	return baselineCatalogData, nil
+}
+
+func catalogMeetsBaseline(candidate, baseline Catalog) bool {
+	switch {
+	case candidate.Revision > baseline.Revision:
+		return true
+	case candidate.Revision < baseline.Revision:
+		return false
+	default:
+		return catalogsEqual(candidate, baseline)
+	}
 }
 
 func (store *Store) readCachedCatalog() ([]byte, Catalog, bool) {
@@ -932,6 +957,8 @@ func validateCloudflaredUpstreamArtifact(entry CatalogComponent, artifact Catalo
 	case artifact.OS == "darwin" && (artifact.Arch == "amd64" || artifact.Arch == "arm64"):
 		expectedFormat = "tgz"
 		expectedName = "cloudflared-darwin-" + artifact.Arch + ".tgz"
+	case artifact.OS == "linux" && (artifact.Arch == "amd64" || artifact.Arch == "arm64"):
+		expectedName = "cloudflared-linux-" + artifact.Arch
 	default:
 		return fmt.Errorf("unsupported cloudflared artifact platform %s/%s", artifact.OS, artifact.Arch)
 	}
@@ -967,6 +994,8 @@ func validateCloudflaredMirrorArtifact(entry CatalogComponent, artifact CatalogA
 		expectedName = "cloudflared-windows-amd64.exe"
 	case artifact.OS == "darwin" && (artifact.Arch == "amd64" || artifact.Arch == "arm64"):
 		expectedName = "cloudflared-darwin-" + artifact.Arch + ".tgz"
+	case artifact.OS == "linux" && (artifact.Arch == "amd64" || artifact.Arch == "arm64"):
+		expectedName = "cloudflared-linux-" + artifact.Arch
 	default:
 		return fmt.Errorf("unsupported cloudflared artifact platform %s/%s", artifact.OS, artifact.Arch)
 	}

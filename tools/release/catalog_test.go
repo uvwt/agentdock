@@ -120,7 +120,7 @@ func TestCloudflaredComponentCatalogUsesPinnedUpstreamAndMirrorMetadata(t *testi
 	text := output.String()
 	for _, want := range []string{
 		`"schema_version": 2`,
-		`"revision": 2`,
+		`"revision": 3`,
 		`"status": "supported"`,
 		`"min_version": "0.9.1"`,
 		`"max_version_exclusive": "2.0.0"`,
@@ -130,8 +130,10 @@ func TestCloudflaredComponentCatalogUsesPinnedUpstreamAndMirrorMetadata(t *testi
 		`"format": "tgz"`,
 		`https://github.com/cloudflare/cloudflared/releases/download/` + entry.Version + `/cloudflared-windows-amd64.exe`,
 		`https://github.com/cloudflare/cloudflared/releases/download/` + entry.Version + `/cloudflared-darwin-arm64.tgz`,
+		`https://github.com/cloudflare/cloudflared/releases/download/` + entry.Version + `/cloudflared-linux-amd64`,
 		`https://download.nexusdock.co/components/cloudflared/` + entry.Version + `/cloudflared-windows-amd64.exe`,
 		`https://download.nexusdock.co/components/cloudflared/` + entry.Version + `/cloudflared-darwin-arm64.tgz`,
+		`https://download.nexusdock.co/components/cloudflared/` + entry.Version + `/cloudflared-linux-arm64`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("catalog missing %q: %s", want, text)

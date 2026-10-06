@@ -104,6 +104,87 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  verify-linux:
+    name: Verify cloudflared Linux ${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Resolve pinned artifact
+        shell: bash
+        env:
+          COMPONENT_VERSION: ${{ inputs.version }}
+          COMPONENT_ARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          eval "$(
+            python3 - <<'PY'
+          import json, os, shlex
+          from pathlib import Path
+
+          version = os.environ["COMPONENT_VERSION"]
+          arch = os.environ["COMPONENT_ARCH"]
+          catalog = json.loads(Path("internal/component/catalog-v1.json").read_text())
+          entries = [
+              item for item in catalog["components"]
+              if item["component"] == "cloudflared" and item["version"] == version
+          ]
+          if len(entries) != 1:
+              raise SystemExit(f"expected one cloudflared {version} catalog entry")
+          artifacts = [
+              item for item in entries[0]["artifacts"]
+              if item["os"] == "linux" and item["arch"] == arch
+          ]
+          if len(artifacts) != 1 or artifacts[0]["format"] != "binary":
+              raise SystemExit(f"missing pinned linux/{arch} binary artifact")
+          artifact = artifacts[0]
+          print("CLOUDFLARED_URL=" + shlex.quote(artifact["url"]))
+          print("CLOUDFLARED_SHA256=" + shlex.quote(artifact["sha256"]))
+          PY
+          )"
+          {
+            echo "CLOUDFLARED_URL=$CLOUDFLARED_URL"
+            echo "CLOUDFLARED_SHA256=$CLOUDFLARED_SHA256"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify official artifact
+        shell: bash
+        env:
+          COMPONENT_VERSION: ${{ inputs.version }}
+          COMPONENT_ARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          binary="$RUNNER_TEMP/cloudflared-linux-$COMPONENT_ARCH"
+          curl --fail --location --retry 5 --retry-all-errors "$CLOUDFLARED_URL" -o "$binary"
+          printf '%s  %s\n' "$CLOUDFLARED_SHA256" "$binary" | sha256sum -c -
+          chmod 700 "$binary"
+          case "$COMPONENT_ARCH" in
+            amd64)
+              expected='x86-64'
+              [[ "$(file "$binary")" == *"$expected"* ]]
+              test "$("$binary" --version | awk 'NR==1 {print $3}')" = "$COMPONENT_VERSION"
+              ;;
+            arm64)
+              expected='ARM aarch64'
+              [[ "$(file "$binary")" == *"$expected"* ]]
+              # ubuntu-latest 是 amd64；arm64 artifact 已由固定 URL + SHA-256 + ELF 架构绑定，
+              # 真机安装时 component verifier 还会再次执行 --version。
+              ;;
+          esac
+
+      - name: Upload verified mirror artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflared-mirror-linux-${{ matrix.goarch }}
+          path: ${{ runner.temp }}/cloudflared-linux-${{ matrix.goarch }}
+          if-no-files-found: error
+          retention-days: 7
+
   verify-windows:
     name: Verify cloudflared Windows amd64
     runs-on: windows-latest
@@ -158,7 +239,7 @@ jobs:
 
   publish-r2:
     name: Publish immutable cloudflared mirror
-    needs: [verify-macos, verify-windows]
+    needs: [verify-macos, verify-linux, verify-windows]
     runs-on: ubuntu-latest
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -227,6 +308,8 @@ jobs:
               ("windows", "amd64"): "cloudflared-windows-amd64.exe",
               ("darwin", "amd64"): "cloudflared-darwin-amd64.tgz",
               ("darwin", "arm64"): "cloudflared-darwin-arm64.tgz",
+              ("linux", "amd64"): "cloudflared-linux-amd64",
+              ("linux", "arm64"): "cloudflared-linux-arm64",
           }
           if len(entries[0]["artifacts"]) != len(expected):
               raise SystemExit("cloudflared mirror artifact set is incomplete")
@@ -259,6 +342,8 @@ jobs:
             cloudflared-windows-amd64.exe \
             cloudflared-darwin-amd64.tgz \
             cloudflared-darwin-arm64.tgz \
+            cloudflared-linux-amd64 \
+            cloudflared-linux-arm64 \
             LICENSE; do
             source_path="mirror/$asset"
             key="$prefix/$asset"

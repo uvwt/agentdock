@@ -8,7 +8,6 @@ set -eu
 umask 077
 
 DEFAULT_BASE_URL="https://download.nexusdock.co/latest"
-CLOUDFLARED_BASE_URL="${AGENTDOCK_CLOUDFLARED_RELEASE_BASE_URL:-https://github.com/cloudflare/cloudflared/releases/latest/download}"
 OFFICIAL_NEXUS_ENDPOINT="${AGENTDOCK_NEXUS_OFFICIAL_ENDPOINT:-https://mcp.nexusdock.co}"
 OFFICIAL_NEXUS_DEVICES_URL="${AGENTDOCK_NEXUS_OFFICIAL_DEVICES_URL:-https://mcp.nexusdock.co/workspace/devices}"
 BASE_URL="${AGENTDOCK_INSTALLER_BASE_URL:-$DEFAULT_BASE_URL}"
@@ -92,20 +91,6 @@ download_file() {
     return
   fi
   die "缺少 curl 或 wget，无法下载 Release 载荷。"
-}
-
-download_file_with_progress() {
-  url="$1"
-  destination="$2"
-  if command -v curl >/dev/null 2>&1; then
-    curl -fL --progress-bar --retry 3 --retry-delay 1 "$url" -o "$destination"
-    return
-  fi
-  if command -v wget >/dev/null 2>&1; then
-    wget -O "$destination" "$url"
-    return
-  fi
-  die "缺少 curl 或 wget，无法下载 cloudflared。"
 }
 
 sha256_file() {
@@ -294,62 +279,6 @@ ensure_linux_service_user() {
   else
     die "未找到 useradd/adduser，无法创建运行用户：$user"
   fi
-}
-
-valid_cloudflared() {
-  candidate="$1"
-  [ -n "$candidate" ] && [ -f "$candidate" ] && [ -x "$candidate" ] && "$candidate" --version >/dev/null 2>&1
-}
-
-install_cloudflared() {
-  target="$1"
-  source="${AGENTDOCK_CLOUDFLARED_BINARY:-}"
-  if valid_cloudflared "$target"; then
-    log "复用已有 cloudflared：$target"
-    printf '%s' "$target"
-    return
-  fi
-  if [ -z "$source" ]; then
-    discovered="$(command -v cloudflared 2>/dev/null || true)"
-    if valid_cloudflared "$discovered"; then
-      log "复用已有 cloudflared：$discovered"
-      source="$discovered"
-    fi
-  elif valid_cloudflared "$source"; then
-    log "使用指定 cloudflared：$source"
-  fi
-  if [ -z "$source" ]; then
-    case "$PLATFORM" in
-      linux)
-        source="$TMP_ROOT/cloudflared"
-        log "下载 cloudflared-linux-$ARCH"
-        download_file_with_progress "$CLOUDFLARED_BASE_URL/cloudflared-linux-$ARCH" "$source"
-        chmod 700 "$source"
-        ;;
-      darwin)
-        archive="$TMP_ROOT/cloudflared.tgz"
-        cloud_dir="$TMP_ROOT/cloudflared-extract"
-        log "下载 cloudflared-darwin-$ARCH.tgz"
-        download_file_with_progress "$CLOUDFLARED_BASE_URL/cloudflared-darwin-$ARCH.tgz" "$archive"
-        mkdir -p "$cloud_dir"
-        tar -xzf "$archive" -C "$cloud_dir"
-        source="$cloud_dir/cloudflared"
-        ;;
-    esac
-  fi
-  valid_cloudflared "$source" || die "cloudflared 载荷无效：$source"
-  case "$PLATFORM" in
-    linux)
-      run_root mkdir -p "$(dirname "$target")"
-      run_root install -m 0755 "$source" "$target"
-      ;;
-    darwin)
-      mkdir -p "$(dirname "$target")"
-      install -m 0755 "$source" "$target"
-      ;;
-  esac
-  valid_cloudflared "$target" || die "cloudflared 安装失败：$target"
-  printf '%s' "$target"
 }
 
 prepare_payload() {
@@ -787,7 +716,6 @@ case "$PLATFORM" in
     OPENRC_DIR="${AGENTDOCK_OPENRC_DIR:-/etc/init.d}"
     STABLE_BINARY="$INSTALL_ROOT/bin/agentdock"
     CLI_LINK_PATH="${AGENTDOCK_CLI_LINK_PATH:-/usr/local/bin/agentdock}"
-    CLOUDFLARED_TARGET="${AGENTDOCK_CLOUDFLARED_INSTALL_PATH:-/usr/local/bin/cloudflared}"
     ONBOARDING_STATE_FILE="${AGENTDOCK_ONBOARDING_STATE_FILE:-$RUNTIME_ROOT/.installer-onboarding}"
     ;;
   darwin)
@@ -798,7 +726,6 @@ case "$PLATFORM" in
     AGENTDOCK_DEFAULT_DIR_VALUE="$DATA_DIR"
     LAUNCH_AGENTS_DIR="${AGENTDOCK_LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}"
     STABLE_BINARY="$INSTALL_ROOT/agentdock"
-    CLOUDFLARED_TARGET="${AGENTDOCK_CLOUDFLARED_INSTALL_PATH:-$INSTALL_ROOT/cloudflared}"
     ONBOARDING_STATE_FILE="${AGENTDOCK_ONBOARDING_STATE_FILE:-$RUNTIME_ROOT/.installer-onboarding}"
     DARWIN_CUSTOM_LAYOUT=false
     if [ -n "${AGENTDOCK_INSTALL_DIR:-}${AGENTDOCK_RUNTIME_ROOT:-}${AGENTDOCK_DEFAULT_DIR:-}${AGENTDOCK_HOME:-}${AGENTDOCK_LAUNCH_AGENTS_DIR:-}" ]; then
@@ -1072,17 +999,15 @@ if [ "$PLATFORM" = linux ]; then
   fi
 fi
 
-CLOUDFLARED_PATH=""
-if [ -z "$ONBOARDING_STAGE" ]; then
-  if [ "$CORE_TUNNEL_MODE" = named ]; then
-    prepare_named_tunnel
+CLOUDFLARED_PATH="${AGENTDOCK_CLOUDFLARED_BINARY:-}"
+if [ -n "$CLOUDFLARED_PATH" ]; then
+  if [ ! -f "$CLOUDFLARED_PATH" ] || [ -L "$CLOUDFLARED_PATH" ] || [ ! -x "$CLOUDFLARED_PATH" ] ||
+    ! "$CLOUDFLARED_PATH" --version >/dev/null 2>&1; then
+    die "AGENTDOCK_CLOUDFLARED_BINARY 不是有效的 cloudflared：$CLOUDFLARED_PATH"
   fi
-  if [ "$CORE_TUNNEL_MODE" = quick ] || [ "$CORE_TUNNEL_MODE" = named ]; then
-    CLOUDFLARED_PATH="$(install_cloudflared "$CLOUDFLARED_TARGET")"
-  elif [ -z "$CORE_TUNNEL_MODE" ] && valid_cloudflared "$CLOUDFLARED_TARGET"; then
-    # 普通升级保留现有 cloudflared 路径，但绝不因为“可能会用”而下载。
-    CLOUDFLARED_PATH="$CLOUDFLARED_TARGET"
-  fi
+fi
+if [ -z "$ONBOARDING_STAGE" ] && [ "$CORE_TUNNEL_MODE" = named ]; then
+  prepare_named_tunnel
 fi
 
 if [ "$ONBOARDING_STAGE" != nexus ] && [ "$ONBOARDING_STAGE" != tunnel ]; then
@@ -1132,7 +1057,6 @@ if [ "$ONBOARDING_STAGE" = tunnel ]; then
     quick|named)
       if [ "$existing_tunnel_mode" != "$TUNNEL_MODE" ]; then
         if [ "$TUNNEL_MODE" = named ]; then prepare_named_tunnel; fi
-        CLOUDFLARED_PATH="$(install_cloudflared "$CLOUDFLARED_TARGET")"
         TUNNEL_RESULT_FILE="$TMP_ROOT/tunnel-result.json"
         # 新装首次开启公网时预生成稳定 OAuth 凭据。Quick Tunnel 拿到随机域名后只切换
         # OAuth enabled/Origin，不需要在后台进程里再生成或轮换凭据。

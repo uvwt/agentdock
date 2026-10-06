@@ -170,6 +170,28 @@ func TestSelectCloudflaredArtifactRequiresPinnedOfficialUpstream(t *testing.T) {
 	}
 }
 
+func TestBaselineCatalogSelectsLinuxPinnedMirror(t *testing.T) {
+	entry, artifact, err := selectCloudflaredArtifact(baselineCatalogData, "1.0.0", "linux", "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Version != "2026.9.1" {
+		t.Fatalf("selected cloudflared version=%q, want 2026.9.1", entry.Version)
+	}
+	if artifact.Format != "binary" {
+		t.Fatalf("selected Linux artifact format=%q, want binary", artifact.Format)
+	}
+	if artifact.URL != "https://github.com/cloudflare/cloudflared/releases/download/2026.9.1/cloudflared-linux-amd64" {
+		t.Fatalf("selected Linux upstream URL=%q", artifact.URL)
+	}
+	if artifact.MirrorURL != "https://download.nexusdock.co/components/cloudflared/2026.9.1/cloudflared-linux-amd64" {
+		t.Fatalf("selected Linux mirror URL=%q", artifact.MirrorURL)
+	}
+	if artifact.SHA256 != "03f1f25d1cc93b9ad6c60569d44060bc4f17ed97075760ed8cfca4b12dcd68cc" {
+		t.Fatalf("selected Linux artifact digest=%q", artifact.SHA256)
+	}
+}
+
 func TestSelectCloudflaredArtifactRejectsUnpinnedMirror(t *testing.T) {
 	digest := strings.Repeat("a", 64)
 	base := Catalog{
@@ -328,8 +350,8 @@ func TestResolveCatalogCachesLatestAndRejectsRevisionRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	current := testCatalogData(t, 2, "2026.9.2")
-	stale := testCatalogData(t, 1, "2026.9.1")
+	current := testCatalogData(t, 4, "2026.9.2")
+	stale := testCatalogData(t, 3, "2026.9.1")
 	response := current
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
@@ -341,8 +363,8 @@ func TestResolveCatalogCachesLatestAndRejectsRevisionRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if catalog, _ := ParseCatalog(got); catalog.Revision != 2 {
-		t.Fatalf("first catalog revision = %d, want 2", catalog.Revision)
+	if catalog, _ := ParseCatalog(got); catalog.Revision != 4 {
+		t.Fatalf("first catalog revision = %d, want 4", catalog.Revision)
 	}
 
 	response = stale
@@ -350,8 +372,40 @@ func TestResolveCatalogCachesLatestAndRejectsRevisionRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if catalog, _ := ParseCatalog(got); catalog.Revision != 2 {
-		t.Fatalf("rollback catalog revision = %d, want cached 2", catalog.Revision)
+	if catalog, _ := ParseCatalog(got); catalog.Revision != 4 {
+		t.Fatalf("rollback catalog revision = %d, want cached 4", catalog.Revision)
+	}
+}
+
+func TestResolveCatalogRejectsRemoteOlderThanEmbeddedBaseline(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := testCatalogData(t, 2, "2026.8.0")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write(stale)
+	}))
+	defer server.Close()
+
+	got, err := store.resolveCatalog(context.Background(), server.Client(), server.URL, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := ParseCatalog(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalog.Revision != 3 {
+		t.Fatalf("resolved catalog revision=%d, want embedded baseline revision 3", catalog.Revision)
+	}
+	_, artifact, err := selectCloudflaredArtifact(got, "1.0.0", "linux", "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if artifact.MirrorURL != "https://download.nexusdock.co/components/cloudflared/2026.9.1/cloudflared-linux-amd64" {
+		t.Fatalf("resolved Linux mirror URL=%q", artifact.MirrorURL)
 	}
 }
 
@@ -365,7 +419,7 @@ func TestResolveCatalogUsesCacheThenEmbeddedBaselineWhenOffline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cached := testCatalogData(t, 3, "2026.9.3")
+	cached := testCatalogData(t, 4, "2026.9.3")
 	if err := os.MkdirAll(filepath.Dir(store.catalogCachePath()), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -376,8 +430,8 @@ func TestResolveCatalogUsesCacheThenEmbeddedBaselineWhenOffline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if catalog, _ := ParseCatalog(got); catalog.Revision != 3 {
-		t.Fatalf("offline cached revision = %d, want 3", catalog.Revision)
+	if catalog, _ := ParseCatalog(got); catalog.Revision != 4 {
+		t.Fatalf("offline cached revision = %d, want 4", catalog.Revision)
 	}
 
 	freshStore, err := NewStore(t.TempDir())
@@ -533,8 +587,8 @@ func stubPlatformTrust(t *testing.T) {
 
 func requireCloudflaredRuntimePlatform(t *testing.T) {
 	t.Helper()
-	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
-		t.Skip("cloudflared optional component runtime is supported only on macOS and Windows")
+	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" && runtime.GOOS != "linux" {
+		t.Skip("cloudflared optional component runtime is unsupported on this platform")
 	}
 }
 

@@ -343,6 +343,75 @@ jobs:
             agentdock_darwin_${{ matrix.goarch }}.tar.gz.sha256
           if-no-files-found: error
 
+  verify-cloudflared-linux:
+    name: Verify upstream cloudflared Linux ${{ matrix.goarch }}
+    needs: source
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.source.outputs.commit }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify pinned upstream artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          architecture='${{ matrix.goarch }}'
+          component_version="$(go run ./tools/release component-version '${{ needs.source.outputs.version }}')"
+          eval "$(
+            python3 - "$architecture" "$component_version" <<'PY'
+          import json, shlex, sys
+          from pathlib import Path
+
+          catalog = json.loads(Path("internal/component/catalog-v1.json").read_text())
+          arch = sys.argv[1]
+          version = sys.argv[2]
+          entries = [
+              item for item in catalog["components"]
+              if item["component"] == "cloudflared" and item["version"] == version
+          ]
+          if len(entries) != 1:
+              raise SystemExit(f"missing selected cloudflared {version}")
+          artifacts = [
+              item for item in entries[0]["artifacts"]
+              if item["os"] == "linux" and item["arch"] == arch
+          ]
+          if len(artifacts) != 1 or artifacts[0]["format"] != "binary":
+              raise SystemExit(f"missing pinned linux/{arch} binary artifact")
+          artifact = artifacts[0]
+          print("CLOUDFLARED_VERSION=" + shlex.quote(entries[0]["version"]))
+          print("CLOUDFLARED_URL=" + shlex.quote(artifact["url"]))
+          print("CLOUDFLARED_SHA256=" + shlex.quote(artifact["sha256"]))
+          PY
+          )"
+
+          binary="$RUNNER_TEMP/cloudflared-linux-$architecture"
+          curl -fL --retry 5 --retry-delay 2 "$CLOUDFLARED_URL" -o "$binary"
+          printf '%s  %s\n' "$CLOUDFLARED_SHA256" "$binary" | sha256sum -c -
+          chmod 700 "$binary"
+          case "$architecture" in
+            amd64)
+              [[ "$(file "$binary")" == *"x86-64"* ]]
+              test "$("$binary" --version | awk 'NR==1 {print $3}')" = "$CLOUDFLARED_VERSION"
+              ;;
+            arm64)
+              [[ "$(file "$binary")" == *"ARM aarch64"* ]]
+              # ubuntu-latest 是 amd64；arm64 由固定 URL、digest 与 ELF 架构绑定，
+              # 真机 component verifier 会在安装时再次执行 --version。
+              ;;
+          esac
+
   verify-cloudflared-macos:
     name: Verify upstream cloudflared macOS ${{ matrix.goarch }}
     needs: source
@@ -688,7 +757,7 @@ jobs:
 
   prepare-release:
     name: Prepare release candidate
-    needs: [source, build-linux, build-macos, build-macos-app, build-windows, build-windows-setup, verify-cloudflared-macos, verify-cloudflared-windows]
+    needs: [source, build-linux, build-macos, build-macos-app, build-windows, build-windows-setup, verify-cloudflared-linux, verify-cloudflared-macos, verify-cloudflared-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -910,6 +979,8 @@ jobs:
           expected = {
               ("darwin", "amd64"): ("tgz", "cloudflared-darwin-amd64.tgz"),
               ("darwin", "arm64"): ("tgz", "cloudflared-darwin-arm64.tgz"),
+              ("linux", "amd64"): ("binary", "cloudflared-linux-amd64"),
+              ("linux", "arm64"): ("binary", "cloudflared-linux-arm64"),
               ("windows", "amd64"): ("binary", "cloudflared-windows-amd64.exe"),
           }
           for component in components:

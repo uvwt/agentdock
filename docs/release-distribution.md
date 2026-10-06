@@ -31,6 +31,8 @@ components/
         ├── cloudflared-windows-amd64.exe
         ├── cloudflared-darwin-amd64.tgz
         ├── cloudflared-darwin-arm64.tgz
+        ├── cloudflared-linux-amd64
+        ├── cloudflared-linux-arm64
         └── LICENSE
 releases/
 ├── v1.0.0-rc.1/                   # 内部 RC 验证期间保留
@@ -74,7 +76,7 @@ Stable 默认从 `/components/v1/catalog.json` 获取。Prerelease 默认从自�
 2. 本地 last-known-good catalog；
 3. 随当前 AgentDock 二进制嵌入的 baseline catalog。
 
-成功获取的远程 catalog 会原子缓存。若远程 `revision` 小于本地已验证 revision，或相同 revision 却内容不同，客户端保留本地 last-known-good，避免 metadata 回滚覆盖已经获知的撤销状态。显式 `--catalog-url` 属于测试/受管覆盖，按权威源 fail-closed，不使用生产 fallback。
+随当前 AgentDock 二进制嵌入的 baseline revision 是生产 resolver 的最低可信版本：远程或缓存 catalog 不能低于它，相同 revision 也必须与 baseline 内容一致。成功获取的更高 revision 远程 catalog 会原子缓存；若之后远程 `revision` 小于本地已验证 revision，或相同 revision 却内容不同，客户端继续保留 last-known-good，避免服务端回滚、CDN 旧缓存或 metadata 污染覆盖已经获知的兼容性/撤销状态。显式 `--catalog-url` 属于测试/受管覆盖，按权威源 fail-closed，不使用生产 fallback。
 
 baseline 只解决控制面 metadata 暂时不可达，不降低 artifact 信任要求：cloudflared 的官方 URL 与镜像 URL 都必须匹配固定版本路径，下载内容必须通过同一个 upstream SHA-256 和平台签名/代码签名验证。镜像返回成功但 digest 不一致时 fail-closed，不回退官方源掩盖镜像异常。
 
@@ -107,13 +109,9 @@ RC 在候选验证期间保留其不可变 `releases/<tag>/`。正式 Stable pro
 
 ## Bootstrap 约定
 
-源码仓库和正式 Release 中的 `install.sh` / `install.ps1` 都只访问：
+源码仓库和正式 Release 中的 `install.sh` / `install.ps1` 只通过 `https://download.nexusdock.co/latest` 获取 AgentDock 第一方 payload；bootstrap 自身不再维护第三方 cloudflared 版本或下载 URL。需要 Quick/Named Tunnel 时，安装流程把依赖解析交给 AgentDock component resolver，由它读取 component catalog、优先使用 R2 immutable mirror，并只在镜像请求失败时回退审计过的 Cloudflare 官方固定 Release。
 
-```text
-https://download.nexusdock.co/latest
-```
-
-Release 打包阶段不改写 bootstrap 为版本化下载地址。GitHub Release 与 R2 发布同一份 bootstrap 字节及 checksum。测试和离线验证可以注入本地 payload 或测试下载基址，但不构成面向用户的历史版本安装功能。
+Release 打包阶段不改写 bootstrap 为版本化下载地址。GitHub Release 与 R2 发布同一份 bootstrap 字节及 checksum。测试和离线验证可以注入本地 AgentDock payload 或显式 cloudflared binary，但不构成面向用户的历史版本安装功能，也不会恢复 `latest` 第三方下载旁路。
 
 ## 第三方 component 边界
 
@@ -122,7 +120,7 @@ AgentDock **GitHub Release** 不包含 cloudflared binary；R2 只在独立的 `
 - cloudflared 明确版本，不跟踪 upstream `latest`；
 - Cloudflare 官方 Release URL；
 - `download.nexusdock.co` 上同版本同文件名的不可变 mirror URL；
-- Windows `binary` / macOS `tgz` 格式；
+- Windows/Linux `binary` / macOS `tgz` 格式；
 - upstream artifact SHA-256；
 - AgentDock 兼容范围和状态。
 
