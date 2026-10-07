@@ -58,8 +58,6 @@ Invoke-Expression ($functionDefinitions -join "`r`n")
 
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-runtime-registration-test-' + [Guid]::NewGuid().ToString('N'))
 $script:RegisteredPackages = @()
-$script:AllUserPackages = @()
-$script:AllUsersQueries = 0
 
 function New-MockPackage {
     param(
@@ -89,12 +87,9 @@ function Get-AppxPackage {
         [switch] $AllUsers
     )
     if ($AllUsers) {
-        $script:AllUsersQueries++
-        $packages = $script:AllUserPackages
-    } else {
-        $packages = $script:RegisteredPackages
+        throw 'Runtime version selection must not inspect other Windows users.'
     }
-    return @($packages | Where-Object { $_.Name -like $Name })
+    return @($script:RegisteredPackages | Where-Object { $_.Name -like $Name })
 }
 
 $minimumVersion = [Version] '2.1.3.0'
@@ -136,14 +131,6 @@ try {
         New-MockPackage -Name 'Microsoft.WindowsAppRuntime.2' -Version '2.5.1.0'
         New-MockPackage -Name 'Microsoft.WinAppRuntime.DDLM.4000.1049.117.0-x6' -Version '4000.1049.117.0'
     )
-    $script:AllUserPackages = @(
-        $script:RegisteredPackages + @(
-            New-MockPackage -Name 'MicrosoftCorporationII.WinAppRuntime.Main.2' -Version '2.5.1.0' -PackageUserInformation 'SYSTEM: Staged'
-            New-MockPackage -Name 'MicrosoftCorporationII.WinAppRuntime.Singleton' -Version '8002.5.1.0' -PackageUserInformation 'SYSTEM: Staged'
-            New-MockPackage -Name 'Microsoft.WinAppRuntime.DDLM.2.5.1.0-x6' -Version '2.5.1.0' -PackageUserInformation 'SYSTEM: Staged'
-        )
-    )
-
     $currentVersion = Get-WindowsAppRuntimeFrameworkVersion `
         -PackageName $runtimeIdentityArgs.PackageName `
         -MinimumVersion $minimumVersion `
@@ -151,24 +138,16 @@ try {
     if ($currentVersion -ne [Version] '2.5.1.0') {
         throw "Highest current-user Framework version was $currentVersion, want 2.5.1.0."
     }
-    $script:AllUsersQueries = 0
     if (Test-WindowsAppRuntime @runtimeIdentityArgs -RequiredVersion $currentVersion) {
         throw 'Framework-only current-user registration must not satisfy Windows App Runtime readiness.'
-    }
-    if ($script:AllUsersQueries -ne 0) {
-        throw 'Runtime readiness must never treat all-users staged packages as current-user registration.'
     }
 
     $repairVersion = Get-WindowsAppRuntimeFrameworkVersion `
         -PackageName $runtimeIdentityArgs.PackageName `
         -MinimumVersion $minimumVersion `
-        -TargetArchitecture 'amd64' `
-        -IncludeAllUsers
+        -TargetArchitecture 'amd64'
     if ($repairVersion -ne [Version] '2.5.1.0') {
-        throw "Repair version was $repairVersion, want the highest Microsoft Framework 2.5.1.0."
-    }
-    if ($script:AllUsersQueries -ne 1) {
-        throw 'Repair version selection should inspect all-users state exactly once in this fixture.'
+        throw "Repair version was $repairVersion, want the current user's highest Framework 2.5.1.0."
     }
 
     # Readiness requires all four package roles at one version to be registered for the interactive user.

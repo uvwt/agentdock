@@ -219,8 +219,9 @@ func TestWindowsRuntimeBootstrapVerifiesPlatformTrust(t *testing.T) {
 		"agentdock-shim.exe",
 		"'--windows-app-runtime-probe'",
 		"Microsoft.WindowsAppRuntime.Bootstrap.dll",
-		"Get-AppxPackage -AllUsers -Name $PackageName",
 		"Get-WindowsAppRuntimeInstallerUri -RuntimeVersion $repairVersion",
+		"-Artifacts $metadata.windows_app_runtime.artifacts",
+		"-PinnedVersion $windowsAppRelease",
 		"coherent-package-diagnostic=",
 		"Microsoft.WindowsDesktop.App",
 		"InstalledVersions\\$dotnetArchitecture",
@@ -248,6 +249,14 @@ func TestWindowsRuntimeBootstrapVerifiesPlatformTrust(t *testing.T) {
 	}
 	if strings.Contains(probeHelper, "Add-Type -TypeDefinition") || strings.Contains(probeHelper, "csc.exe") {
 		t.Fatal("Runtime bootstrap probe must not compile C# at install time")
+	}
+	if strings.Contains(script, "Get-AppxPackage -AllUsers") || strings.Contains(script, "-IncludeAllUsers") {
+		t.Fatal("Windows App Runtime repair must not let other Windows users influence the current-user version decision")
+	}
+	verifyPublisher := strings.Index(shim, "authenticode.VerifyMicrosoftFile")
+	loadBootstrap := strings.Index(shim, "windows.LoadDLL(bootstrapDLL)")
+	if verifyPublisher < 0 || loadBootstrap < 0 || verifyPublisher >= loadBootstrap {
+		t.Fatal("Windows shim must verify Microsoft's Authenticode publisher before loading the bootstrap DLL")
 	}
 
 	if !strings.Contains(script, "Install-Dependency -Uri $dotnetUri -Arguments @('/install', '/quiet', '/norestart') -Dependency $activeDependency -RequireElevation") {

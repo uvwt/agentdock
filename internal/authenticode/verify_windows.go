@@ -5,6 +5,7 @@ package authenticode
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -33,6 +34,34 @@ type cmsgSignerInfoHeader struct {
 // VerifyFile 通过 Windows WinVerifyTrust 验证文件的 Authenticode 签名与系统信任链。
 func VerifyFile(ctx context.Context, path string) error {
 	return verifyWinTrust(ctx, path)
+}
+
+// VerifyMicrosoftFile verifies both the Windows trust chain and the signer identity.
+// It is used before loading Microsoft-owned runtime code into an AgentDock process.
+func VerifyMicrosoftFile(ctx context.Context, path string) error {
+	if err := VerifyFile(ctx, path); err != nil {
+		return fmt.Errorf("verify Microsoft Authenticode trust: %w", err)
+	}
+	certificate, err := signerCertificate(ctx, path)
+	if err != nil {
+		return fmt.Errorf("read Microsoft Authenticode signer: %w", err)
+	}
+	if !isMicrosoftCertificate(certificate) {
+		return fmt.Errorf("Authenticode signer is not Microsoft Corporation: %s", certificate.Subject.String())
+	}
+	return nil
+}
+
+func isMicrosoftCertificate(certificate *x509.Certificate) bool {
+	if certificate == nil {
+		return false
+	}
+	for _, organization := range certificate.Subject.Organization {
+		if strings.EqualFold(strings.TrimSpace(organization), "Microsoft Corporation") {
+			return true
+		}
+	}
+	return strings.EqualFold(strings.TrimSpace(certificate.Subject.CommonName), "Microsoft Corporation")
 }
 
 // VerifyFileOrSameSigner first applies the normal Windows trust policy.
@@ -139,15 +168,24 @@ func verifyWinTrust(ctx context.Context, path string) error {
 }
 
 func signerThumbprint(ctx context.Context, path string) (string, error) {
-	if err := ctx.Err(); err != nil {
+	certificate, err := signerCertificate(ctx, path)
+	if err != nil {
 		return "", err
 	}
+	fingerprint := sha256.Sum256(certificate.Raw)
+	return strings.ToUpper(hex.EncodeToString(fingerprint[:])), nil
+}
+
+func signerCertificate(ctx context.Context, path string) (*x509.Certificate, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(path) == "" {
-		return "", errors.New("file path is empty")
+		return nil, errors.New("file path is empty")
 	}
 	pathUTF16, err := windows.UTF16PtrFromString(path)
 	if err != nil {
-		return "", fmt.Errorf("encode Authenticode file path: %w", err)
+		return nil, fmt.Errorf("encode Authenticode file path: %w", err)
 	}
 
 	var (
@@ -170,7 +208,7 @@ func signerThumbprint(ctx context.Context, path string) (string, error) {
 		&message,
 		nil,
 	); err != nil {
-		return "", fmt.Errorf("query Authenticode PKCS#7 signature: %w", err)
+		return nil, fmt.Errorf("query Authenticode PKCS#7 signature: %w", err)
 	}
 	if certStore != 0 {
 		defer windows.CertCloseStore(certStore, 0) //nolint:errcheck
@@ -181,10 +219,10 @@ func signerThumbprint(ctx context.Context, path string) (string, error) {
 
 	var signerInfoSize uint32
 	if err := cryptMsgGetParam(message, cmsgSignerInfoParam, 0, nil, &signerInfoSize); err != nil {
-		return "", fmt.Errorf("read Authenticode signer size: %w", err)
+		return nil, fmt.Errorf("read Authenticode signer size: %w", err)
 	}
 	if signerInfoSize < uint32(unsafe.Sizeof(cmsgSignerInfoHeader{})) {
-		return "", fmt.Errorf("Authenticode signer info is unexpectedly small: %d", signerInfoSize)
+		return nil, fmt.Errorf("Authenticode signer info is unexpectedly small: %d", signerInfoSize)
 	}
 	signerInfoBytes := make([]byte, signerInfoSize)
 	if err := cryptMsgGetParam(
@@ -194,7 +232,7 @@ func signerThumbprint(ctx context.Context, path string) (string, error) {
 		unsafe.Pointer(&signerInfoBytes[0]),
 		&signerInfoSize,
 	); err != nil {
-		return "", fmt.Errorf("read Authenticode signer info: %w", err)
+		return nil, fmt.Errorf("read Authenticode signer info: %w", err)
 	}
 	signerInfo := (*cmsgSignerInfoHeader)(unsafe.Pointer(&signerInfoBytes[0]))
 	certInfo := windows.CertInfo{
@@ -210,15 +248,18 @@ func signerThumbprint(ctx context.Context, path string) (string, error) {
 		nil,
 	)
 	if err != nil {
-		return "", fmt.Errorf("find Authenticode signer certificate: %w", err)
+		return nil, fmt.Errorf("find Authenticode signer certificate: %w", err)
 	}
 	defer windows.CertFreeCertificateContext(certContext) //nolint:errcheck
 	if certContext == nil || certContext.EncodedCert == nil || certContext.Length == 0 {
-		return "", errors.New("Authenticode signer certificate is empty")
+		return nil, errors.New("Authenticode signer certificate is empty")
 	}
-	certificateDER := unsafe.Slice(certContext.EncodedCert, int(certContext.Length))
-	fingerprint := sha256.Sum256(certificateDER)
-	return strings.ToUpper(hex.EncodeToString(fingerprint[:])), nil
+	certificateDER := append([]byte(nil), unsafe.Slice(certContext.EncodedCert, int(certContext.Length))...)
+	certificate, err := x509.ParseCertificate(certificateDER)
+	if err != nil {
+		return nil, fmt.Errorf("parse Authenticode signer certificate: %w", err)
+	}
+	return certificate, nil
 }
 
 func cryptMsgGetParam(

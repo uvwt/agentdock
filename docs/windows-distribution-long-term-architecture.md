@@ -179,7 +179,7 @@ AgentDock Setup
 
 不要为缩包优先采用高风险 aggressive trimming、手工删除 Windows App SDK 文件或其他脆弱裁剪方式。先把 deployment model 做正确，再测最终体积。
 
-实现阶段进一步确认 Windows App SDK 元包会无条件引入 AgentDock 未使用的 AI / ML / Widgets 等组件。最终发行最低基线固定到 Microsoft 官方下载页公开支持的稳定 `2.1.3`，并显式引用该元包对应的最低组件版本：`WinUI 2.1.0`、`Runtime 2.1.3`、`Foundation 2.0.21` 与 `InteractiveExperiences 2.0.13`。Runtime bootstrap 不能只以 `Microsoft.WindowsAppRuntime.2` Framework 包存在作为“已安装”依据；未打包 WinUI 需要当前用户拥有同一稳定 release 的 Framework / Main / Singleton / DDLM 完整注册。如果机器已经存在更高的同 Major Framework，Setup 应使用该精确 release 的 Microsoft 官方版本化 `aka.ms/windowsappsdk/...` Runtime Installer 在当前用户上下文按幂等安装语义补齐缺失组件，避免高版本 Framework 与低版本 DDLM 混装；只有没有可修复候选时才回退到固定的 `2.1.3` 最低基线。所有下载继续在执行前校验 Microsoft Authenticode。这是从 NuGet 依赖源头收窄功能面，不是安装后手工删除文件；两种架构都必须继续验证 bootstrap DLL、WinUI 资源和 framework-dependent 启动链完整。
+实现阶段进一步确认 Windows App SDK 元包会无条件引入 AgentDock 未使用的 AI / ML / Widgets 等组件。最终发行最低基线固定到 Microsoft 官方下载页公开支持的稳定 `2.1.3`，并显式引用该元包对应的最低组件版本：`WinUI 2.1.0`、`Runtime 2.1.3`、`Foundation 2.0.21` 与 `InteractiveExperiences 2.0.13`。Runtime bootstrap 不能只以 `Microsoft.WindowsAppRuntime.2` Framework 包存在作为“已安装”依据；未打包 WinUI 需要当前用户拥有同一稳定 release 的 Framework / Main / Singleton / DDLM 完整注册。如果当前交互用户已经注册更高的同 Major Framework，Setup 应使用该用户的精确 release 的 Microsoft 官方版本化 `aka.ms/windowsappsdk/...` Runtime Installer 在当前用户上下文按幂等安装语义补齐缺失组件，避免高版本 Framework 与低版本 DDLM 混装；其他 Windows 用户的 Framework 不参与版本选择。当前用户没有可修复候选时，回退到 `runtime-dependencies.json` 固定并经过发行验证的 `2.1.3` 最低基线。所有下载继续在执行前校验 Microsoft Authenticode。这是从 NuGet 依赖源头收窄功能面，不是安装后手工删除文件；两种架构都必须继续验证 bootstrap DLL、WinUI 资源和 framework-dependent 启动链完整。
 
 ## 5. WSL helper：继续随包
 

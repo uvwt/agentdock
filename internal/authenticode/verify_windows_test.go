@@ -4,6 +4,8 @@ package authenticode
 
 import (
 	"context"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +16,28 @@ import (
 	"syscall"
 	"testing"
 )
+
+func TestMicrosoftCertificatePublisherPolicy(t *testing.T) {
+	tests := []struct {
+		name string
+		cert *x509.Certificate
+		want bool
+	}{
+		{name: "organization", cert: &x509.Certificate{Subject: pkix.Name{Organization: []string{"Microsoft Corporation"}}}, want: true},
+		{name: "common name", cert: &x509.Certificate{Subject: pkix.Name{CommonName: "Microsoft Corporation"}}, want: true},
+		{name: "case insensitive", cert: &x509.Certificate{Subject: pkix.Name{Organization: []string{"microsoft corporation"}}}, want: true},
+		{name: "different publisher", cert: &x509.Certificate{Subject: pkix.Name{Organization: []string{"Contoso Ltd"}}}},
+		{name: "nil certificate", cert: nil},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isMicrosoftCertificate(test.cert); got != test.want {
+				t.Fatalf("isMicrosoftCertificate() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
 
 func TestVerifyFileOrSameSignerPolicy(t *testing.T) {
 	otherTrustFailure := syscall.Errno(0x800B010A)

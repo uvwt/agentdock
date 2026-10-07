@@ -33,16 +33,10 @@ function Get-WindowsAppRuntimeFrameworkVersion {
     param(
         [string] $PackageName,
         [Version] $MinimumVersion,
-        [string] $TargetArchitecture,
-        [switch] $IncludeAllUsers
+        [string] $TargetArchitecture
     )
     $expectedArchitecture = if ($TargetArchitecture -eq 'arm64') { 'Arm64' } else { 'X64' }
     $packages = @(Get-AppxPackage -Name $PackageName -ErrorAction SilentlyContinue)
-    if ($IncludeAllUsers) {
-        # AllUsers is used only to select which Microsoft Runtime version to repair. Readiness
-        # still requires packages registered for the current user; SYSTEM:Staged is not Installed.
-        $packages += @(Get-AppxPackage -AllUsers -Name $PackageName -ErrorAction SilentlyContinue)
-    }
 
     $versions = @()
     foreach ($package in $packages) {

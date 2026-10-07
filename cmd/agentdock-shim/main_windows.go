@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 
 	"golang.org/x/sys/windows"
 
+	"github.com/uvwt/agentdock/internal/authenticode"
 	"github.com/uvwt/agentdock/internal/fs/processlock"
 	processctl "github.com/uvwt/agentdock/internal/process"
 	"github.com/uvwt/agentdock/internal/updateengine"
@@ -71,6 +73,11 @@ func runWindowsAppRuntimeProbe(args []string) (int, error) {
 	majorMinor, packageVersion, err := parseWindowsPackageVersion(args[1])
 	if err != nil {
 		return 2, err
+	}
+	// The shim is a signed production binary. Never let this probe turn it into a generic
+	// DLL loader: validate Microsoft's publisher identity before LoadLibrary can run DllMain.
+	if err := authenticode.VerifyMicrosoftFile(context.Background(), bootstrapDLL); err != nil {
+		return 2, fmt.Errorf("verify Windows App Runtime bootstrap DLL publisher: %w", err)
 	}
 	dll, err := windows.LoadDLL(bootstrapDLL)
 	if err != nil {

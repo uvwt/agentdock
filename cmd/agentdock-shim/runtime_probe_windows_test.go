@@ -2,7 +2,12 @@
 
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestParseWindowsPackageVersion(t *testing.T) {
 	majorMinor, packageVersion, err := parseWindowsPackageVersion("2.1.3.0")
@@ -22,5 +27,20 @@ func TestParseWindowsPackageVersionRejectsInvalidInput(t *testing.T) {
 		if _, _, err := parseWindowsPackageVersion(raw); err == nil {
 			t.Fatalf("parseWindowsPackageVersion(%q) succeeded, want error", raw)
 		}
+	}
+}
+
+func TestWindowsAppRuntimeProbeRejectsUntrustedDLLBeforeLoad(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "Microsoft.WindowsAppRuntime.Bootstrap.dll")
+	if err := os.WriteFile(path, []byte("not a signed DLL"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	exitCode, err := runWindowsAppRuntimeProbe([]string{path, "2.1.3.0"})
+	if exitCode != 2 {
+		t.Fatalf("probe exit code = %d, want 2", exitCode)
+	}
+	if err == nil || !strings.Contains(err.Error(), "verify Windows App Runtime bootstrap DLL publisher") {
+		t.Fatalf("probe error = %v, want publisher verification failure before DLL load", err)
 	}
 }

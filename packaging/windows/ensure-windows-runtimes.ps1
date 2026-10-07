@@ -155,17 +155,23 @@ try {
             -BootstrapDllPath $probePayload.BootstrapDllPath `
             -MinimumVersion $windowsAppMinimum
         if (-not $probe.Success) {
-            # Package enumeration is diagnostic and version-selection input only. Runtime readiness
-            # is decided by Microsoft's bootstrap API above, not by our reconstruction of MSIX state.
+            # Runtime readiness is decided by Microsoft's bootstrap API above. If this user already
+            # has a compatible Framework, repair that exact release so its Main/Singleton/DDLM set
+            # stays coherent. Otherwise install AgentDock's pinned, release-tested baseline. Other
+            # Windows users must not influence the current user's prerequisite decision.
             $repairVersion = Get-WindowsAppRuntimeFrameworkVersion `
                 -PackageName $windowsAppPackageName `
                 -MinimumVersion $windowsAppMinimum `
-                -TargetArchitecture $Architecture `
-                -IncludeAllUsers
-            if ($null -eq $repairVersion) {
-                $repairVersion = Convert-ToVersion -Value ($windowsAppRelease + '.0') -Description 'Windows App Runtime release'
+                -TargetArchitecture $Architecture
+            if ($null -ne $repairVersion) {
+                $windowsAppUri = Get-WindowsAppRuntimeInstallerUri -RuntimeVersion $repairVersion -TargetArchitecture $Architecture
+            } else {
+                $windowsAppUri = Get-ArtifactUrl `
+                    -Artifacts $metadata.windows_app_runtime.artifacts `
+                    -TargetArchitecture $Architecture `
+                    -Dependency 'windows-app-runtime' `
+                    -PinnedVersion $windowsAppRelease
             }
-            $windowsAppUri = Get-WindowsAppRuntimeInstallerUri -RuntimeVersion $repairVersion -TargetArchitecture $Architecture
             Install-Dependency -Uri $windowsAppUri -Arguments @('--quiet') -Dependency $activeDependency
 
             $probeAfterInstall = Test-WindowsAppRuntimeBootstrap `
