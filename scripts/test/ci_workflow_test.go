@@ -353,6 +353,8 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 		`component_url="${R2_PUBLIC_BASE_URL%/}/components/v1/catalog.json?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"`,
 		`go run ./tools/release release-kind "$existing_latest_tag"`,
 		`go run ./tools/release retention-plan`,
+		`update_base="${R2_PUBLIC_BASE_URL%/}/update/$RELEASE_TAG"`,
+		`go run ./tools/release mirror-manifest "$RELEASE_TAG" "$update_base" dist > dist/latest.json`,
 		"docker buildx imagetools create --tag",
 		"needs: [source, prepare-release, stage-release, verify-container]",
 		"needs: [source, stage-release, mirror-r2]",

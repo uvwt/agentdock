@@ -1653,8 +1653,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          release_base="${R2_PUBLIC_BASE_URL%/}/releases/$RELEASE_TAG"
-          go run ./tools/release mirror-manifest "$RELEASE_TAG" "$release_base" dist > dist/latest.json
+          # self-update 通过显式 /update/ 入口进入 Download Worker，便于与人工下载分开统计；
+          # Worker 只做校验、异步计数和 302，最终 payload 仍来自不可变 releases/<tag>/ 对象。
+          update_base="${R2_PUBLIC_BASE_URL%/}/update/$RELEASE_TAG"
+          go run ./tools/release mirror-manifest "$RELEASE_TAG" "$update_base" dist > dist/latest.json
           jq -e --arg tag "$RELEASE_TAG" '.tag_name == $tag and (.assets | length > 0)' dist/latest.json >/dev/null
 
       - name: Upload and verify versioned R2 assets

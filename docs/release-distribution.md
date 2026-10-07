@@ -72,7 +72,7 @@ releases/
 
 同一个 `releases/<tag>/` key 不允许以不同 SHA-256 覆盖。每个 Release 中的 `agentdock-component-catalog.json` 是该候选构建时的审计快照；Stable 客户端运行时不依赖历史 Release snapshot，因此历史大文件被清理后不会失去安装 optional component 的能力。
 
-`latest.json` 使用最小 GitHub Release 兼容结构：`tag_name` 和 `assets[].name/browser_download_url`，所有资产 URL 指向不可变 `releases/<tag>/...`。Download Worker 只处理 `/latest/*` 的友好入口；`/releases/*` 和 `/components/*` 由 R2 自定义域直接提供。
+`latest.json` 使用最小 GitHub Release 兼容结构：`tag_name` 和 `assets[].name/browser_download_url`。Stable self-update 的资产 URL 使用 `/update/<tag>/<asset>`，由 Download Worker 明确记为 `update` 后 302 到不可变 `releases/<tag>/<asset>`；官网和安装脚本的 `/latest/*` 入口记为 `manual`。来源由 URL 契约确定，不依赖 User-Agent。`/releases/*` 和 `/components/*` 仍由 R2 自定义域直接提供，统计故障不进入 payload 主链路。
 
 Android 使用独立的 `android/latest.json` / `android/releases/` 契约。
 
