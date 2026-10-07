@@ -86,6 +86,7 @@ jobs:
             "$current_tag" \
             "$RUNNER_TEMP/r2-release-tags" \
             > "$RUNNER_TEMP/r2-retention-plan.json"
+          echo "R2 retention plan: $(jq -c . "$RUNNER_TEMP/r2-retention-plan.json")"
 
           {
             echo '### R2 retention plan'

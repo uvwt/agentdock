@@ -549,6 +549,7 @@ func TestR2RetentionMaintenanceWorkflowIsFailClosed(t *testing.T) {
 		"test \"$(go run ./tools/release release-kind \"$EXPECTED_CURRENT_TAG\")\" = \"stable\"",
 		`test "$current_tag" = "$EXPECTED_CURRENT_TAG"`,
 		"go run ./tools/release retention-plan",
+		`echo "R2 retention plan: $(jq -c . "$RUNNER_TEMP/r2-retention-plan.json")"`,
 		"if: ${{ inputs.apply }}",
 		`aws s3 rm "s3://$R2_BUCKET/releases/$tag/"`,
 		`jq -e '.delete_tags | length == 0'`,
