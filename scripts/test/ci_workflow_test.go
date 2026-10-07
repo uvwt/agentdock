@@ -536,3 +536,26 @@ func TestCodeQLKeepsDefaultBranchAndScheduledScanning(t *testing.T) {
 		}
 	}
 }
+
+func TestR2RetentionMaintenanceWorkflowIsFailClosed(t *testing.T) {
+	workflow := readWorkflow(t, "r2-retention.yml")
+	for _, want := range []string{
+		"workflow_dispatch:",
+		"expected_current_tag:",
+		"apply:",
+		"group: release-publication",
+		"cancel-in-progress: false",
+		"ref: main",
+		"test \"$(go run ./tools/release release-kind \"$EXPECTED_CURRENT_TAG\")\" = \"stable\"",
+		`test "$current_tag" = "$EXPECTED_CURRENT_TAG"`,
+		"go run ./tools/release retention-plan",
+		"if: ${{ inputs.apply }}",
+		`aws s3 rm "s3://$R2_BUCKET/releases/$tag/"`,
+		`jq -e '.delete_tags | length == 0'`,
+		`test "$(jq -r '.tag_name // empty' "$RUNNER_TEMP/public-latest.json")" = "$EXPECTED_CURRENT_TAG"`,
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("R2 retention maintenance workflow is missing fail-closed contract %q", want)
+		}
+	}
+}

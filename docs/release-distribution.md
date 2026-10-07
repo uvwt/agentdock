@@ -182,3 +182,7 @@ Repository Secrets：
 - `R2_SECRET_ACCESS_KEY`
 
 R2 凭据只需要目标 bucket 的对象读写权限，不需要 Cloudflare 账号级管理员权限。
+
+### R2 retention 手动收敛
+
+若历史异常或兼容桥造成 R2 `releases/` 暂时偏离“当前 Stable + 上一 Stable”，使用 `R2 Release Retention Maintenance` workflow 做恢复。该 workflow 默认只生成 retention plan；只有显式启用 `apply` 且 `expected_current_tag` 与 R2 当前 `latest.json` 完全一致时才执行删除，并与正式 Release 共用 `release-publication` 并发锁。生产 R2 凭据继续只保存在 GitHub Secrets，不导出到开发机。

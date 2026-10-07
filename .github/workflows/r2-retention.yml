@@ -1,0 +1,148 @@
+name: R2 Release Retention Maintenance
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_current_tag:
+        description: 'Expected R2 latest stable tag, for example v1.0.1'
+        required: true
+        type: string
+      apply:
+        description: 'Delete prefixes listed by the retention plan'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-publication
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    name: Reconcile R2 release retention
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      AWS_EC2_METADATA_DISABLED: "true"
+      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
+      EXPECTED_CURRENT_TAG: ${{ inputs.expected_current_tag }}
+      APPLY: ${{ inputs.apply }}
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate inputs and build retention plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in R2_ACCOUNT_ID R2_BUCKET R2_PUBLIC_BASE_URL AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY EXPECTED_CURRENT_TAG; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "$name is required for R2 retention maintenance." >&2
+              exit 1
+            fi
+          done
+          test "${R2_PUBLIC_BASE_URL%/}" = "https://download.nexusdock.co"
+          test "$(go run ./tools/release release-kind "$EXPECTED_CURRENT_TAG")" = "stable"
+          command -v aws >/dev/null
+
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          aws s3 cp "s3://$R2_BUCKET/latest.json" "$RUNNER_TEMP/latest.json" \
+            --endpoint-url "$endpoint" \
+            --only-show-errors
+
+          current_tag="$(jq -r '.tag_name // empty' "$RUNNER_TEMP/latest.json")"
+          test "$current_tag" = "$EXPECTED_CURRENT_TAG"
+
+          aws s3api list-objects-v2 \
+            --bucket "$R2_BUCKET" \
+            --prefix "releases/" \
+            --endpoint-url "$endpoint" \
+            --output json \
+            > "$RUNNER_TEMP/r2-release-objects.json"
+
+          jq -r '
+            [.Contents[]?.Key
+              | select(test("^releases/v[^/]+/"))
+              | capture("^releases/(?<tag>v[^/]+)/").tag]
+            | unique[]
+          ' "$RUNNER_TEMP/r2-release-objects.json" > "$RUNNER_TEMP/r2-release-tags"
+
+          go run ./tools/release retention-plan \
+            "$current_tag" \
+            "$RUNNER_TEMP/r2-release-tags" \
+            > "$RUNNER_TEMP/r2-retention-plan.json"
+
+          {
+            echo '### R2 retention plan'
+            echo '```json'
+            cat "$RUNNER_TEMP/r2-retention-plan.json"
+            echo '```'
+            echo
+            echo "Apply requested: $APPLY"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply retention plan
+        if: ${{ inputs.apply }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+
+          while IFS= read -r tag; do
+            [[ -z "$tag" ]] && continue
+            aws s3 rm "s3://$R2_BUCKET/releases/$tag/" \
+              --recursive \
+              --endpoint-url "$endpoint" \
+              --only-show-errors
+
+            remaining="$(aws s3api list-objects-v2 \
+              --bucket "$R2_BUCKET" \
+              --prefix "releases/$tag/" \
+              --max-keys 1 \
+              --endpoint-url "$endpoint" \
+              --query 'KeyCount' \
+              --output text)"
+            test "$remaining" = "0"
+          done < <(jq -r '.delete_tags[]' "$RUNNER_TEMP/r2-retention-plan.json")
+
+          aws s3api list-objects-v2 \
+            --bucket "$R2_BUCKET" \
+            --prefix "releases/" \
+            --endpoint-url "$endpoint" \
+            --output json \
+            > "$RUNNER_TEMP/r2-release-objects-after.json"
+
+          jq -r '
+            [.Contents[]?.Key
+              | select(test("^releases/v[^/]+/"))
+              | capture("^releases/(?<tag>v[^/]+)/").tag]
+            | unique[]
+          ' "$RUNNER_TEMP/r2-release-objects-after.json" > "$RUNNER_TEMP/r2-release-tags-after"
+
+          go run ./tools/release retention-plan \
+            "$EXPECTED_CURRENT_TAG" \
+            "$RUNNER_TEMP/r2-release-tags-after" \
+            > "$RUNNER_TEMP/r2-retention-plan-after.json"
+          jq -e '.delete_tags | length == 0' "$RUNNER_TEMP/r2-retention-plan-after.json" >/dev/null
+
+          curl --fail --silent --show-error --location \
+            --retry 5 --retry-all-errors \
+            -H "Cache-Control: no-cache" \
+            "${R2_PUBLIC_BASE_URL%/}/latest.json?maintenance=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            -o "$RUNNER_TEMP/public-latest.json"
+          test "$(jq -r '.tag_name // empty' "$RUNNER_TEMP/public-latest.json")" = "$EXPECTED_CURRENT_TAG"
