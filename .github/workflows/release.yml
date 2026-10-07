@@ -1710,13 +1710,13 @@ jobs:
           set -euo pipefail
           endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
 
-          previous_tag=""
+          existing_latest_tag=""
           if aws s3 cp "s3://$R2_BUCKET/latest.json" "$RUNNER_TEMP/previous-latest.json" \
             --endpoint-url "$endpoint" \
             --only-show-errors 2>/dev/null; then
-            previous_tag="$(jq -r '.tag_name // empty' "$RUNNER_TEMP/previous-latest.json")"
-            if [[ "$(go run ./tools/release release-kind "$previous_tag")" != "stable" ]]; then
-              echo "Existing R2 latest.json must point to a stable SemVer release: $previous_tag" >&2
+            existing_latest_tag="$(jq -r '.tag_name // empty' "$RUNNER_TEMP/previous-latest.json")"
+            if [[ "$(go run ./tools/release release-kind "$existing_latest_tag")" != "stable" ]]; then
+              echo "Existing R2 latest.json must point to a stable SemVer release: $existing_latest_tag" >&2
               exit 1
             fi
           fi
@@ -1735,30 +1735,39 @@ jobs:
             | unique[]
           ' "$RUNNER_TEMP/r2-release-objects.json" > "$RUNNER_TEMP/r2-release-tags"
 
-          grep -Fxq "$RELEASE_TAG" "$RUNNER_TEMP/r2-release-tags" || {
-            echo "Current R2 release prefix is missing: releases/$RELEASE_TAG/" >&2
-            exit 1
-          }
+          go run ./tools/release retention-plan \
+            "$RELEASE_TAG" \
+            "$RUNNER_TEMP/r2-release-tags" \
+            > "$RUNNER_TEMP/r2-retention-plan.json"
 
-          if [[ -z "$previous_tag" || "$previous_tag" == "$RELEASE_TAG" ]]; then
-            echo "Skip R2 retention cleanup because no distinct previous stable release is known."
-          elif ! grep -Fxq "$previous_tag" "$RUNNER_TEMP/r2-release-tags"; then
-            echo "Previous stable R2 prefix is missing; keep existing release prefixes unchanged: $previous_tag"
+          previous_tag="$(jq -r '.previous_stable // empty' "$RUNNER_TEMP/r2-retention-plan.json")"
+          if [[ -n "$previous_tag" ]]; then
+            echo "R2 retention previous stable: $previous_tag"
           else
-            while IFS= read -r tag; do
-              [[ "$tag" == "$RELEASE_TAG" ]] && continue
-              [[ "$tag" == "$previous_tag" ]] && continue
-              # 只清理 release tool 能识别的 SemVer prefix；未知对象宁可保留，避免猜测删除。
-              if ! go run ./tools/release release-kind "$tag" >/dev/null 2>&1; then
-                echo "Keep unknown R2 release prefix unchanged: $tag"
-                continue
-              fi
-              aws s3 rm "s3://$R2_BUCKET/releases/$tag/" \
-                --recursive \
-                --endpoint-url "$endpoint" \
-                --only-show-errors
-            done < "$RUNNER_TEMP/r2-release-tags"
+            echo "R2 retention has no previous stable; keep only the current stable among older known releases."
           fi
+
+          # latest.json 是客户端入口，不再作为 retention inventory。兼容桥可能仍由 GitHub
+          # Latest 提供，因此旧 R2 latest tag 缺少 versioned prefix 时只记录诊断，不阻断清理。
+          if [[ -n "$existing_latest_tag" ]] && ! grep -Fxq "$existing_latest_tag" "$RUNNER_TEMP/r2-release-tags"; then
+            echo "Existing R2 latest tag has no versioned prefix; derive retention from stored releases: $existing_latest_tag"
+          fi
+
+          while IFS= read -r tag; do
+            [[ -z "$tag" ]] && continue
+            aws s3 rm "s3://$R2_BUCKET/releases/$tag/" \
+              --recursive \
+              --endpoint-url "$endpoint" \
+              --only-show-errors
+            remaining="$(aws s3api list-objects-v2 \
+              --bucket "$R2_BUCKET" \
+              --prefix "releases/$tag/" \
+              --max-keys 1 \
+              --endpoint-url "$endpoint" \
+              --query 'KeyCount' \
+              --output text)"
+            test "$remaining" = "0"
+          done < <(jq -r '.delete_tags[]' "$RUNNER_TEMP/r2-retention-plan.json")
 
           component_sha256="$(sha256sum dist/agentdock-component-catalog.json | awk '{print $1}')"
           aws s3 cp dist/agentdock-component-catalog.json "s3://$R2_BUCKET/components/v1/catalog.json" \

@@ -120,11 +120,13 @@ macOS 的 `CFBundleShortVersionString` 使用 SemVer core，`CFBundleVersion` �
 Stable 正常收敛到两个完整版本：
 
 1. 新发布的当前 Stable；
-2. 发布前 `latest.json` 指向的上一 Stable。
+2. R2 `releases/` 中低于当前版本的最高合法 Stable，也就是实际仍存储的上一 Stable。
 
-RC 在候选验证期间保留其不可变 `releases/<tag>/`。正式 Stable promotion 时，在确认上一 Stable prefix 存在的前提下，清理除“当前 Stable + 上一 Stable”之外能够被 release tool 识别的 SemVer release prefix，包括已完成使命的 prerelease。未知 prefix 不猜测、不删除。
+`latest.json` 是客户端更新入口，不再作为 retention inventory。这样即使一次性 compatibility bridge 仍被旧客户端引用、但对应 versioned R2 prefix 已按短 retention 清理，也不会阻断后续版本回收。
 
-如果上一 Stable prefix 缺失或无法确认，workflow 宁可暂时多保留对象，也不做推断删除。GitHub Releases 始终保存完整历史，R2 不承担长期历史安装仓库职责。
+RC 在候选验证期间保留其不可变 `releases/<tag>/`。正式 Stable promotion 时，release tool 基于实际 R2 prefix 和统一 SemVer 规则生成 retention plan：保留当前 Stable 与上一 Stable，清理更旧且能够识别的 SemVer release prefix，包括已完成使命的 prerelease。未知 prefix 和高于当前发布版本的 prefix 一律保留，避免旧 tag 重跑或异常对象导致误删；如果没有更早 Stable，则只保留当前 Stable。
+
+GitHub Releases 始终保存完整历史，R2 不承担长期历史安装仓库职责。
 
 `components/v1/catalog.json` 不跟随 Release retention 删除。它按 component API 生命周期维护；只要仍支持使用 v1 catalog 的客户端，就持续提供兼容 metadata。`components/cloudflared/<version>/` 同样不参与 AgentDock Release retention；它按 component compatibility 生命周期保留。通常多个 AgentDock 版本共享同一套 cloudflared 版本，因此不会为每个 AgentDock Release 复制第三方二进制。
 

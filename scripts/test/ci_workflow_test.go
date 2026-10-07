@@ -351,14 +351,15 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 		"core_version: ${{ steps.source.outputs.core_version }}",
 		`aws s3 cp dist/agentdock-component-catalog.json "s3://$R2_BUCKET/components/v1/catalog.json"`,
 		`component_url="${R2_PUBLIC_BASE_URL%/}/components/v1/catalog.json?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"`,
-		`go run ./tools/release release-kind "$previous_tag"`,
+		`go run ./tools/release release-kind "$existing_latest_tag"`,
+		`go run ./tools/release retention-plan`,
 		"docker buildx imagetools create --tag",
 		"needs: [source, prepare-release, stage-release, verify-container]",
 		"needs: [source, stage-release, mirror-r2]",
 		"--metadata \"sha256=$sha256\"",
 		"Immutable R2 object already exists with a different SHA-256",
 		"aws s3 rm \"s3://$R2_BUCKET/releases/$tag/\"",
-		"[[ \"$tag\" == \"$previous_tag\" ]] && continue",
+		`jq -r '.delete_tags[]' "$RUNNER_TEMP/r2-retention-plan.json"`,
 		"group: release-publication",
 		"release_api_error=\"$RUNNER_TEMP/release-api-error.log\"",
 		"HTTP 404",
@@ -412,11 +413,11 @@ func TestReleaseWorkflowGatesBeforePublication(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
-		"Skip R2 retention cleanup because no distinct previous stable release is known.\"\n            exit 0",
-		"Previous stable R2 prefix is missing; keep existing release prefixes unchanged: $previous_tag\"\n            exit 0",
+		"Previous stable R2 prefix is missing; keep existing release prefixes unchanged",
+		`[[ "$tag" == "$previous_tag" ]] && continue`,
 	} {
 		if strings.Contains(workflow, forbidden) {
-			t.Fatal("R2 cleanup skip must not bypass latest.json publication")
+			t.Fatalf("R2 retention must derive previous stable from stored release prefixes; found obsolete contract %q", forbidden)
 		}
 	}
 	cleanupIndex := strings.Index(workflow, `aws s3 rm "s3://$R2_BUCKET/releases/$tag/"`)

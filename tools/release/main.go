@@ -21,7 +21,7 @@ func main() {
 
 func run(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("用法：release <catalog|version|component-version|component-catalog|release-metadata|release-kind|core-version|verify-dist|prepare-github-release|checksum|mirror-manifest> [参数]")
+		return errors.New("用法：release <catalog|version|component-version|component-catalog|release-metadata|release-kind|retention-plan|core-version|verify-dist|prepare-github-release|checksum|mirror-manifest> [参数]")
 	}
 	switch args[0] {
 	case "version":
@@ -68,6 +68,19 @@ func run(args []string, stdout io.Writer) error {
 			fmt.Fprintln(stdout, "stable")
 		}
 		return nil
+	case "retention-plan":
+		if len(args) != 3 {
+			return errors.New("用法：release retention-plan <current-tag> <tags-file>")
+		}
+		contents, err := os.ReadFile(args[2])
+		if err != nil {
+			return fmt.Errorf("读取 R2 release tag 列表失败: %w", err)
+		}
+		plan, err := buildR2RetentionPlan(args[1], strings.Fields(string(contents)))
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(stdout).Encode(plan)
 	case "core-version":
 		if len(args) != 2 {
 			return errors.New("用法：release core-version <version>")
