@@ -148,6 +148,19 @@ func (input *workflowTemplateInput) applyTemplateGuardrails() {
 	}
 }
 
+func (s *Service) Snapshot(_ context.Context, request SnapshotRequest) (Result, error) {
+	task, err := s.tasks.Get(request.TaskID)
+	if err != nil {
+		return nil, taskToolError(err)
+	}
+	return Result{
+		"action":       "get",
+		"task_id":      task.ID,
+		"task_summary": compactTaskSummary(task),
+		"state_dir":    s.tasks.Root(),
+	}, nil
+}
+
 func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, error) {
 	input, err := normalizeTaskManageRequest(request)
 	if err != nil {

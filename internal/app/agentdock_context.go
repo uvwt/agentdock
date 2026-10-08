@@ -38,6 +38,7 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool) (Re
 			"workspace_skills、skills 和 common_skills 中的同名项是不同来源候选，不静默覆盖；当前项目通常优先考虑 workspace Skill，但必须使用所选候选自己的 skill_ref/file。若 common_skills.truncated=true 且当前索引未命中，可 list_dir 查看 common_skills.root 后再通过 workspace/共享 Skill 索引取得精确引用。",
 			"AgentDock 自带工具直接调用；动态 MCP 工具先用 mcp_tool_search 查找、mcp_tool_inspect 读取 schema，再用 mcp_tool_call 执行。",
 			"操作具体项目、切换工作区或工作区规则可能变化时，先调用 workspace_context 获取当前工作区上下文。",
+			"处理多步骤任务时先调用 task_create 创建任务；创建后使用返回的 task_id 继续维护同一任务。",
 		},
 	}
 	if !nexusLocalOnly {

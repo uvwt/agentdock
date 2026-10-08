@@ -187,10 +187,17 @@ func (s *Server) callTool(ctx context.Context, name string, request *mcpsdk.Call
 
 func toolMetadata(def ToolDefinition, mode config.MCPAppsMode) map[string]any {
 	meta := map[string]any{}
+	ui := map[string]any{}
+	if len(def.UIVisibility) > 0 {
+		ui["visibility"] = append([]string(nil), def.UIVisibility...)
+	}
 	if def.UIBinding != nil {
 		if trigger, enabled := def.UIBinding.Trigger(mode); enabled && trigger.Action == "" {
-			meta["ui"] = map[string]any{"resourceUri": def.UIBinding.ResourceURI}
+			ui["resourceUri"] = def.UIBinding.ResourceURI
 		}
+	}
+	if len(ui) > 0 {
+		meta["ui"] = ui
 	}
 	if len(def.FileArgRewritePaths) > 0 {
 		paths := append([]string(nil), def.FileArgRewritePaths...)
