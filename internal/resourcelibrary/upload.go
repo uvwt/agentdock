@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/uvwt/agentdock/internal/nexusclient"
 )
@@ -25,9 +24,6 @@ func uploadAuthorizedPath(ctx context.Context, endpoint, token, requestURI, arch
 	if size <= 0 {
 		return failed("PACKAGE_INVALID", "validation", "upload size must be positive")
 	}
-	if strings.TrimSpace(token) == "" {
-		return failed("NEXUS_NOT_PAIRED", "validation", "Nexus device token is unavailable")
-	}
 	info, err := os.Lstat(archivePath)
 	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Size() != size {
 		return failed("ARCHIVE_CHANGED", "validation", "export archive changed before upload")
@@ -40,7 +36,14 @@ func uploadAuthorizedPath(ctx context.Context, endpoint, token, requestURI, arch
 	if err := ctx.Err(); err != nil {
 		return uploadContextError(err)
 	}
-	client := nexusclient.New(endpoint, token)
+	client, err := packageClient(endpoint, token)
+	if err != nil {
+		return err
+	}
+	return uploadWith(ctx, client, requestURI, file, size)
+}
+
+func uploadWith(ctx context.Context, client nexusclient.Client, requestURI string, file *os.File, size int64) error {
 	response, err := client.DoStream(ctx, http.MethodPut, requestURI, "application/zip", file, size)
 	if err != nil {
 		if ctx.Err() != nil {

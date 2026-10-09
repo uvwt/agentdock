@@ -21,10 +21,22 @@ type Client struct {
 }
 
 func New(endpoint, token string) Client {
+	return newClient(endpoint, token, nil)
+}
+
+// NewWithTransport 只替换这一次调用的传输层。
+// 传 nil 时与 New 相同，仍使用默认 Transport，包括系统环境代理。
+// 资源库的固定拨号通过这里接入，避免改掉其他 Nexus HTTP 调用的行为。
+func NewWithTransport(endpoint, token string, transport http.RoundTripper) Client {
+	return newClient(endpoint, token, transport)
+}
+
+func newClient(endpoint, token string, transport http.RoundTripper) Client {
 	return Client{
 		endpoint: strings.TrimRight(strings.TrimSpace(endpoint), "/"),
 		token:    strings.TrimSpace(token),
 		httpClient: http.Client{
+			Transport: transport,
 			// Nexus Device Token 不应跨重定向传播；重定向由领域调用方作为普通 HTTP 响应处理。
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 		},

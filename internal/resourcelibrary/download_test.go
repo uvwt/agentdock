@@ -66,15 +66,21 @@ func TestDownloadAuthorizedPath_不跟随重定向并限制大小(t *testing.T) 
 	}))
 	defer target.Close()
 
-	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	redirectServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host == "" || net.ParseIP(stripPort(r.Host)) != nil {
+			t.Errorf("host = %q", r.Host)
+		}
+		if r.TLS == nil || r.TLS.ServerName != "example.com" {
+			t.Errorf("sni = %#v", r.TLS)
+		}
 		if r.Header.Get("Authorization") != "Bearer device-token" {
 			t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
 		}
 		http.Redirect(w, r, target.URL+"/pkg.zip", http.StatusTemporaryRedirect)
 	}))
-	defer redirect.Close()
-
-	_, err := downloadAuthorizedPath(context.Background(), redirect.URL, "device-token", "/pkg.zip", filepathTemp(t), 32)
+	defer redirectServer.Close()
+	_, client := pinnedTestClient(t, redirectServer, "device-token")
+	_, err := downloadWith(context.Background(), client, "/pkg.zip", filepathTemp(t), 32)
 	if err == nil {
 		t.Fatal("redirect was accepted")
 	}
@@ -82,11 +88,12 @@ func TestDownloadAuthorizedPath_不跟随重定向并限制大小(t *testing.T) 
 		t.Fatalf("redirect target calls = %d", targetCalls.Load())
 	}
 
-	large := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	large := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("0123456789"))
 	}))
 	defer large.Close()
-	_, err = downloadAuthorizedPath(context.Background(), large.URL, "device-token", "/pkg.zip", filepathTemp(t), 4)
+	_, client = pinnedTestClient(t, large, "device-token")
+	_, err = downloadWith(context.Background(), client, "/pkg.zip", filepathTemp(t), 4)
 	if err == nil {
 		t.Fatal("oversized download was accepted")
 	}

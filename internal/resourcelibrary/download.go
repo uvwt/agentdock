@@ -49,9 +49,8 @@ func authorizePairedHTTPS(endpoint, rawURL, code, label string) (string, error) 
 	if rejectedHost(target.Hostname()) {
 		return "", failed(code, "validation", label+" URL uses a local or non-public host")
 	}
-	// DNS 重绑定残余：这里拒绝非公网解析结果后，nexusclient 仍按主机名再次拨号。
-	// 现有客户端没有固定连接地址的拨号器，不能把本次解析当成拨号锁定。
-	// 任一地址不是公网就失败关闭；主机名在拨号前被改指私网时，这次校验盖不住那个窗口。
+	// 这里的解析只提前拒绝明显的私网目标。真正拨号时 packageClient 会再查一次，
+	// 并只连接当时仍全部通过 publicIP 的 IP。授权结果不能单独当成拨号锁定。
 	addresses, err := net.LookupIP(target.Hostname())
 	if err != nil || len(addresses) == 0 {
 		return "", failed(code, "validation", label+" host cannot be resolved to a public address")
@@ -129,7 +128,7 @@ func publicIP(ip net.IP) bool {
 	}
 	v4 := ip.To4()
 	if v4 == nil {
-		return true
+		return publicIPv6(ip)
 	}
 	if v4[0] == 0 || v4[0] >= 224 {
 		return false
@@ -153,6 +152,40 @@ func publicIP(ip net.IP) bool {
 	return true
 }
 
+func publicIPv6(ip net.IP) bool {
+	ip = ip.To16()
+	if ip == nil {
+		return false
+	}
+	// 文档地址、已废弃站点本地、丢弃前缀和 NAT64 翻译前缀都不是可直接固定的公网目标。
+	if ipv6Documentation.Contains(ip) || ipv6Discard.Contains(ip) || nat64WellKnown.Contains(ip) || nat64Local.Contains(ip) {
+		return false
+	}
+	if ip[0] == 0xfe && ip[1]&0xc0 == 0xc0 {
+		return false
+	}
+	// 6to4 把 IPv4 嵌在地址里。嵌入的是私网地址时，不能把它当成公网 IPv6。
+	if ip[0] == 0x20 && ip[1] == 0x02 {
+		return publicIP(net.IPv4(ip[2], ip[3], ip[4], ip[5]))
+	}
+	return true
+}
+
+var (
+	ipv6Documentation = mustCIDR("2001:db8::/32")
+	ipv6Discard       = mustCIDR("100::/64")
+	nat64WellKnown    = mustCIDR("64:ff9b::/96")
+	nat64Local        = mustCIDR("64:ff9b:1::/48")
+)
+
+func mustCIDR(cidr string) *net.IPNet {
+	_, network, err := net.ParseCIDR(cidr)
+	if err != nil {
+		panic(err)
+	}
+	return network
+}
+
 func dotDotSegment(value string) bool {
 	for _, segment := range strings.Split(value, "/") {
 		if segment == ".." || segment == "." || strings.EqualFold(segment, "%2e%2e") || strings.EqualFold(segment, "%2e") {
@@ -162,8 +195,8 @@ func dotDotSegment(value string) bool {
 	return false
 }
 
-// FetchPackage 通过现有 Nexus HTTP 客户端下载候选 ZIP。
-// 重定向不跟随；Device Token 只发给配对 endpoint，不会被带到其他 Origin。
+// FetchPackage 用资源包专用客户端下载候选 ZIP。
+// 重定向不跟随。Device Token 只出现在发往配对域名的请求里，连接地址是拨号时重新校验过的公网 IP。
 func FetchPackage(ctx context.Context, endpoint, token, rawURL, destination string, maxBytes int64) (string, error) {
 	requestURI, err := AuthorizeCloudDownload(endpoint, rawURL)
 	if err != nil {
@@ -176,10 +209,14 @@ func downloadAuthorizedPath(ctx context.Context, endpoint, token, requestURI, de
 	if maxBytes <= 0 {
 		return "", failed("PACKAGE_INVALID", "validation", "download limit must be positive")
 	}
-	if strings.TrimSpace(token) == "" {
-		return "", failed("NEXUS_NOT_PAIRED", "validation", "Nexus device token is unavailable")
+	client, err := packageClient(endpoint, token)
+	if err != nil {
+		return "", err
 	}
-	client := nexusclient.New(endpoint, token)
+	return downloadWith(ctx, client, requestURI, destination, maxBytes)
+}
+
+func downloadWith(ctx context.Context, client nexusclient.Client, requestURI, destination string, maxBytes int64) (string, error) {
 	response, err := client.Do(ctx, http.MethodGet, requestURI, nil)
 	if err != nil {
 		return "", failed("DOWNLOAD_FAILED", "validation", "package download failed")

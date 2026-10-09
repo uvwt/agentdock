@@ -73,7 +73,7 @@ func TestUploadAuthorizedPath_流式PUT且不跟随重定向(t *testing.T) {
 	}))
 	defer target.Close()
 
-	upload := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upload := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
 			t.Errorf("method = %s", r.Method)
 		}
@@ -82,6 +82,9 @@ func TestUploadAuthorizedPath_流式PUT且不跟随重定向(t *testing.T) {
 		}
 		if r.Header.Get("Authorization") != "Bearer device-token" {
 			t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		if r.TLS == nil || r.TLS.ServerName != "example.com" || net.ParseIP(stripPort(r.Host)) != nil {
+			t.Errorf("host = %q tls = %#v", r.Host, r.TLS)
 		}
 		if r.Header.Get("Content-Type") != "application/zip" {
 			t.Errorf("Content-Type = %q", r.Header.Get("Content-Type"))
@@ -104,15 +107,27 @@ func TestUploadAuthorizedPath_流式PUT且不跟随重定向(t *testing.T) {
 	if err := os.WriteFile(archive, payload, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := uploadAuthorizedPath(context.Background(), upload.URL, "device-token", "/v1/nodes/library/transfer/ticket-ok", archive, int64(len(payload))); err != nil {
+	file, err := os.Open(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	_, client := pinnedTestClient(t, upload, "device-token")
+	if err := uploadWith(context.Background(), client, "/v1/nodes/library/transfer/ticket-ok", file, int64(len(payload))); err != nil {
 		t.Fatal(err)
 	}
 
-	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	redirect := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, target.URL+"/stolen.zip", http.StatusTemporaryRedirect)
 	}))
 	defer redirect.Close()
-	err := uploadAuthorizedPath(context.Background(), redirect.URL, "device-token", "/v1/nodes/library/transfer/ticket-ok", archive, int64(len(payload)))
+	redirectFile, err := os.Open(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer redirectFile.Close()
+	_, redirectClient := pinnedTestClient(t, redirect, "device-token")
+	err = uploadWith(context.Background(), redirectClient, "/v1/nodes/library/transfer/ticket-ok", redirectFile, int64(len(payload)))
 	if err == nil || !errorCode(err, "UPLOAD_REDIRECT_REJECTED") || targetCalls.Load() != 0 {
 		t.Fatalf("redirect error = %v target calls = %d", err, targetCalls.Load())
 	}
@@ -123,11 +138,17 @@ func TestUploadAuthorizedPath_流式PUT且不跟随重定向(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	var cancelledCalls atomic.Int32
-	blocked := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+	blocked := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		cancelledCalls.Add(1)
 	}))
 	defer blocked.Close()
-	err = uploadAuthorizedPath(ctx, blocked.URL, "device-token", "/v1/nodes/library/transfer/ticket-ok", archive, int64(len(payload)))
+	cancelledFile, err := os.Open(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancelledFile.Close()
+	_, blockedClient := pinnedTestClient(t, blocked, "device-token")
+	err = uploadWith(ctx, blockedClient, "/v1/nodes/library/transfer/ticket-ok", cancelledFile, int64(len(payload)))
 	if err == nil || !errorCode(err, "UPLOAD_TIMEOUT") || cancelledCalls.Load() != 0 {
 		t.Fatalf("cancelled upload error = %v calls = %d", err, cancelledCalls.Load())
 	}

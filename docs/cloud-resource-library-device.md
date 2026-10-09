@@ -24,9 +24,11 @@
 - `install_prepare` 只用已配对 Nexus 的 Device Token，通过现有出站 HTTPS 客户端下载候选 ZIP。其他 Origin、本机和私网地址拒绝。`package_digest` 是可选的预期内容摘要：Cloud 不能重算 Skill/Plugin 原生 digest。原生 validate 成功后，设备把实际 `package_digest` 绑定到一次性挑战；调用方提供了就必须匹配。审核报告和 Plugin `review_token` 仍由原生安装器产生。
 - `install_commit` 仍必须精确匹配确认时的 node、操作、归档摘要、实际 `package_digest`、Plugin `review_token` 和一次性挑战，然后再调用现有 Skill 安装或 Plugin `InstallReviewedSource` / `UpdateReviewedSource`。字段不匹配不消耗挑战。
 
-上传和下载共用同一条失败关闭规则：HTTPS、无 userinfo、主机和端口等于配对原点、路径不能穿越、解析结果必须全部是公网地址、`nexusclient` 不跟随重定向。上传路径还必须是 `/v1/nodes/library/transfer/{ticket}`，ticket 是单段可见字符。Edge 用 Device Token 校验设备身份发生在 Cloud 路由之前；ticket 的 node、tenant、kind、资源名和预期摘要绑定由 Cloud 执行，AgentDock 不解释 Tenant。
+上传和下载共用同一条失败关闭规则：HTTPS、无 userinfo、主机和端口等于配对原点、路径不能穿越、不跟随重定向。上传路径还必须是 `/v1/nodes/library/transfer/{ticket}`，ticket 是单段可见字符。Edge 用 Device Token 校验设备身份发生在 Cloud 路由之前；ticket 的 node、tenant、kind、资源名和预期摘要绑定由 Cloud 执行，AgentDock 不解释 Tenant。
 
-DNS 重绑定没有彻底消除。授权时 `LookupIP` 拒绝非公网地址，随后 `nexusclient` 仍按主机名拨号，现有客户端不能把连接固定到刚才解析出的地址。窗口内 DNS 若改指私网，这次校验盖不住。因此非公网解析、其他 Origin 和本机配对 endpoint 一律失败关闭，不能把公网校验当成拨号锁定。
+资源包传输使用专用 HTTPS 客户端，不改变普通 `nexusclient.New`。专用客户端每次 `DialContext` 重新解析配对域名，对本次得到的每个地址做公网判定；只要有一个不是公网，这次连接失败关闭，不会再按域名交给系统拨号。通过判定的连接目标是这些 IP。请求的 `Host` 和 TLS SNI 仍是原来的配对域名，响应和错误不返回拨号 IP。该客户端把 `Transport.Proxy` 设为 nil，因此 `HTTP_PROXY`、`HTTPS_PROXY` 和 `ALL_PROXY` 不能把这一路转到私网代理。重定向不跟随，拨号主机或端口与配对原点不一致时直接失败，Device Token 不会被送到另一个 Host。
+
+这不能保证配对域名的公网 DNS 本身可信。解析到攻击者控制的公网地址，并且该地址能完成配对域名的 TLS 校验时，请求仍会发到那个公网地址。授权阶段的 `LookupIP` 只是提前拒绝，拨号时的解析才决定这次连接。
 
 尚未完成，不能声明 Cloud 备份或远程安装已经对用户开放：
 

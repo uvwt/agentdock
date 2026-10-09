@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -107,6 +109,66 @@ func TestClientStreamPutsFixedLengthWithoutBuffering(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("status = %d", resp.StatusCode)
+	}
+}
+
+func TestNewKeepsDefaultTransportAndEnvironmentProxy(t *testing.T) {
+	// 子进程里第一次读取代理环境，避免同进程里 envProxyOnce 已经把空配置缓存下来。
+	if os.Getenv("NEXUS_PROXY_CHILD") == "1" {
+		client := New("http://192.0.2.1", "device-token")
+		if client.httpClient.Transport != nil {
+			t.Fatal("New installed a custom transport")
+		}
+		response, err := client.Do(context.Background(), http.MethodGet, "/v1/test", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusNoContent {
+			t.Fatalf("status = %d", response.StatusCode)
+		}
+		return
+	}
+
+	client := New("https://example.com", "device-token")
+	if client.httpClient.Transport != nil {
+		t.Fatal("New installed a custom transport")
+	}
+	var proxyCalls atomic.Int32
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyCalls.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer proxy.Close()
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestNewKeepsDefaultTransportAndEnvironmentProxy$")
+	cmd.Env = append(os.Environ(),
+		"NEXUS_PROXY_CHILD=1",
+		"HTTP_PROXY="+proxy.URL,
+		"http_proxy="+proxy.URL,
+		"NO_PROXY=",
+		"no_proxy=",
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil || proxyCalls.Load() != 1 {
+		t.Fatalf("default client proxy calls = %d err = %v\n%s", proxyCalls.Load(), err, output)
+	}
+
+	custom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/direct" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer custom.Close()
+	direct := NewWithTransport(custom.URL, "device-token", custom.Client().Transport)
+	response, err := direct.Do(context.Background(), http.MethodGet, "/direct", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNoContent || proxyCalls.Load() != 1 {
+		t.Fatalf("custom transport status = %d proxy calls = %d", response.StatusCode, proxyCalls.Load())
 	}
 }
 
