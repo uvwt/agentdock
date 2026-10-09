@@ -57,8 +57,12 @@ type PluginPreview struct {
 	Valid         bool
 	Name          string
 	Version       string
+	Description   string
 	PackageDigest string
 	ReviewToken   string
+	Skills        any // 原生 SkillComponent 只通过 JSON 公开审查摘要，不引入安装器依赖
+	MCP           any // MCPReview 已移除环境变量值，仅含名称和配置摘要
+	Executables   []string
 	Warnings      []string
 	Issues        []string
 	Format        string
@@ -385,7 +389,9 @@ func (s *Service) installPrepare(ctx context.Context, request controlRequest) (m
 		review = map[string]any{
 			"valid": preview.Valid, "name": preview.Name, "version": preview.Version,
 			"package_digest": normalizeDigest(preview.PackageDigest), "review_token": preview.ReviewToken,
-			"warnings": preview.Warnings, "issues": preview.Issues, "format": preview.Format,
+			"description": preview.Description, "skills": preview.Skills, "mcp": preview.MCP,
+			"executables": preview.Executables,
+			"warnings":    preview.Warnings, "issues": preview.Issues, "format": preview.Format,
 		}
 		if !preview.Valid {
 			_ = os.Remove(destination)

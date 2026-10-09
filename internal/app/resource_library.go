@@ -142,7 +142,9 @@ func pluginPreview(review pluginruntime.Review) resourcelibrary.PluginPreview {
 	return resourcelibrary.PluginPreview{
 		Valid: review.Valid, Name: review.Name, Version: review.Version,
 		PackageDigest: review.PackageDigest, ReviewToken: review.ReviewToken,
-		Warnings: review.Warnings, Issues: review.Issues, Format: review.Format,
+		Description: review.Description, Skills: review.Skills, MCP: review.MCP,
+		Executables: review.Executables,
+		Warnings:    review.Warnings, Issues: review.Issues, Format: review.Format,
 	}
 }
 
