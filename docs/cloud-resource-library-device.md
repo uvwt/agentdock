@@ -38,6 +38,8 @@ Quantumult X、Clash 等 TUN DNS 可能给已配对的公共域名返回 `198.18
 
 DEV 场景：Mac mini 的 Quantumult X 返回 `198.18.33.154`，现在应由 TUN 继续转发并通过真实 `dev.nexusdock.co` HTTPS 证书校验。安全性并非单凭 Fake-IP 地址本身保证，而取决于同源校验、TLS 和 Cloud Device Token/传输票据绑定。
 
+**实机验证（2026-10-10）**：Mac mini 系统 DNS 仍返回 `198.18.33.154`，Rescue LaunchAgent 已移除旧的独立 DNS 环境配置。使用同一实现的 `packageTransport(endpoint, systemLookup, packageTransferIP)` 对 `https://dev.nexusdock.co/ready` 发起真实 HTTPS 请求，Go TLS 验证通过且收到 HTTP 200。单元测试另外覆盖：显式 Fake-IP 端点仍拒绝、混合 Fake-IP/普通私网地址整次拒绝、代理环境不能劫持、TLS 不受信任证书不能绕过。此前 Skill/Plugin 云端安装和设备备份 E2E 已通过，但本次零配置改动后尚未重复完整安装/备份链路。
+
 
 尚未完成，不能声明 Cloud 备份或远程安装已经对用户开放：
 
