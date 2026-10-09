@@ -12,13 +12,25 @@ import (
 	"github.com/uvwt/agentdock/internal/nexusclient"
 )
 
+// packageTransferIP is only for an authenticated HTTPS transfer to the paired
+// Nexus origin. In addition to public addresses, permit RFC 2544 benchmarking
+// addresses commonly used as proxy-TUN fake IPs. Keep literal-host validation
+// strict (publicIP), and preserve TLS hostname verification and origin pinning.
+func packageTransferIP(ip net.IP) bool {
+	if publicIP(ip) {
+		return true
+	}
+	v4 := ip.To4()
+	return v4 != nil && v4[0] == 198 && (v4[1] == 18 || v4[1] == 19)
+}
+
 // packageClient 是资源包下载和上传专用客户端。
 // 它不使用普通 nexusclient.New 的默认拨号：默认拨号会在授权解析之后按域名再查一次 DNS。
 func packageClient(endpoint, token string) (nexusclient.Client, error) {
 	if strings.TrimSpace(token) == "" {
 		return nexusclient.Client{}, failed("NEXUS_NOT_PAIRED", "validation", "Nexus device token is unavailable")
 	}
-	transport, err := packageTransport(endpoint, packageLookup, publicIP)
+	transport, err := packageTransport(endpoint, systemLookup, packageTransferIP)
 	if err != nil {
 		return nexusclient.Client{}, err
 	}

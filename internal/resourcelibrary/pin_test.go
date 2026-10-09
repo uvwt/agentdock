@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -196,4 +197,111 @@ func stripPort(hostport string) string {
 		return hostport
 	}
 	return host
+}
+
+// Fake-IP is accepted only by the resource-library transport policy, never by
+// generic "public IP" validation or by an explicit configured origin host.
+func TestPackageTransferIP_FakeIPOnlyAndPrivateIPDenied(t *testing.T) {
+	accepted := []string{"1.1.1.1", "2606:4700:4700::1111", "198.18.0.0", "198.18.33.154", "198.19.255.255", "::ffff:198.18.33.154"}
+	rejected := []string{"127.0.0.1", "192.168.1.100", "10.1.2.3", "172.16.0.1", "169.254.169.254", "100.64.0.1", "192.0.2.1", "198.51.100.1", "203.0.113.7", "::1", "fd00::2", "fe80::1"}
+	for _, raw := range accepted {
+		if !packageTransferIP(net.ParseIP(raw)) {
+			t.Errorf("allowed transfer IP denied: %s", raw)
+		}
+	}
+	for _, raw := range rejected {
+		if packageTransferIP(net.ParseIP(raw)) {
+			t.Errorf("sensitive transfer IP accepted: %s", raw)
+		}
+	}
+	if publicIP(net.ParseIP("198.18.33.154")) {
+		t.Fatal("global publicIP must still reject fake IPs")
+	}
+	if !rejectedHost("198.18.33.154") {
+		t.Fatal("direct fake-IP endpoint must be rejected")
+	}
+}
+
+func TestPackageTransport_TUNFakeIPStillPinsOriginAndRequiresTLS(t *testing.T) {
+	const fakeIP = "198.18.33.154"
+	origin := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.Host, "example.com:") {
+			t.Errorf("unexpected Host: %q", r.Host)
+		}
+		if r.TLS == nil || r.TLS.ServerName != "example.com" {
+			t.Errorf("unexpected SNI: %#v", r.TLS)
+		}
+		if r.Header.Get("Authorization") != "Bearer fakeip-test-token" {
+			t.Error("authorized token did not arrive at paired HTTPS origin")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer origin.Close()
+	port := origin.Listener.Addr().(*net.TCPAddr).Port
+	host := "example.com"
+	endpoint := "https://" + net.JoinHostPort(host, strconv.Itoa(port))
+	resolver := func(_ context.Context, requestedHost string) ([]net.IP, error) {
+		if requestedHost != host {
+			t.Errorf("unexpected lookup host %q", requestedHost)
+		}
+		return []net.IP{net.ParseIP(fakeIP)}, nil
+	}
+	var dialTarget string
+	tr, err := packageTransport(endpoint, resolver, packageTransferIP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr.DialContext = pinnedDialer{
+		host: host, port: strconv.Itoa(port), allow: packageTransferIP, lookup: resolver,
+		dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			dialTarget = address
+			return (&net.Dialer{}).DialContext(ctx, network, origin.Listener.Addr().String())
+		},
+	}.DialContext
+	pool := x509.NewCertPool()
+	pool.AddCert(origin.Certificate())
+	tr.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+	client := nexusclient.NewWithTransport(endpoint, "fakeip-test-token", tr)
+	response, err := client.Do(context.Background(), "GET", "/transfer.zip", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("HTTP %d", response.StatusCode)
+	}
+	if dialTarget != net.JoinHostPort(fakeIP, strconv.Itoa(port)) {
+		t.Errorf("dialed %s, want fake-IP placeholder", dialTarget)
+	}
+
+	// No trusted root means the same fake-IP path cannot circumvent TLS verification.
+	tr2 := tr.Clone()
+	tr2.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	client2 := nexusclient.NewWithTransport(endpoint, "fakeip-test-token", tr2)
+	response, err = client2.Do(context.Background(), "GET", "/transfer.zip", nil)
+	if err == nil {
+		response.Body.Close()
+		t.Fatal("fake IP disabled certificate chain verification")
+	}
+}
+
+func TestPinnedDial_FakeIPMixedWithPrivateStillDenied(t *testing.T) {
+	calls := 0
+	d := pinnedDialer{
+		host: "example.com", port: "443", allow: packageTransferIP,
+		lookup: func(context.Context, string) ([]net.IP, error) {
+			return []net.IP{net.ParseIP("198.18.33.154"), net.ParseIP("10.0.1.9")}, nil
+		},
+		dial: func(context.Context, string, string) (net.Conn, error) {
+			calls++
+			return nil, errors.New("unexpected dial")
+		},
+	}
+	_, err := d.DialContext(context.Background(), "tcp", "example.com:443")
+	if !errors.Is(err, errPackageDial) {
+		t.Fatalf("mixed DNS answer unexpectedly accepted: %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("sensitive private address mixed with Fake-IP triggered %d dials", calls)
+	}
 }

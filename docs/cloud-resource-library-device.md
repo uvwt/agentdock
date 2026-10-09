@@ -26,17 +26,17 @@
 
 上传和下载共用同一条失败关闭规则：HTTPS、无 userinfo、主机和端口等于配对原点、路径不能穿越、不跟随重定向。上传路径还必须是 `/v1/nodes/library/transfer/{ticket}`，ticket 是单段可见字符。Edge 用 Device Token 校验设备身份发生在 Cloud 路由之前；ticket 的 node、tenant、kind、资源名和预期摘要绑定由 Cloud 执行，AgentDock 不解释 Tenant。
 
-资源包传输使用专用 HTTPS 客户端，不改变普通 `nexusclient.New`。专用客户端每次 `DialContext` 重新解析配对域名，对本次得到的每个地址做公网判定；只要有一个不是公网，这次连接失败关闭，不会再按域名交给系统拨号。通过判定的连接目标是这些 IP。请求的 `Host` 和 TLS SNI 仍是原来的配对域名，响应和错误不返回拨号 IP。该客户端把 `Transport.Proxy` 设为 nil，因此 `HTTP_PROXY`、`HTTPS_PROXY` 和 `ALL_PROXY` 不能把这一路转到私网代理。重定向不跟随，拨号主机或端口与配对原点不一致时直接失败，Device Token 不会被送到另一个 Host。
+资源包传输使用专用 HTTPS 客户端，不改变普通 `nexusclient.New`。专用客户端每次 `DialContext` 重新解析配对域名，对本次得到的每个地址执行资源库专用地址判定（公网 IP 或严格的 `198.18.0.0/15` Fake-IP）；只要存在其他非公网地址，这次连接失败关闭，不会再按域名交给系统拨号。通过判定的连接目标是这些 IP。请求的 `Host` 和 TLS SNI 仍是原来的配对域名，响应和错误不返回拨号 IP。该客户端把 `Transport.Proxy` 设为 nil，因此 `HTTP_PROXY`、`HTTPS_PROXY` 和 `ALL_PROXY` 不能把这一路转到私网代理。重定向不跟随，拨号主机或端口与配对原点不一致时直接失败，Device Token 不会被送到另一个 Host。
 
-这不能保证配对域名的公网 DNS 本身可信。解析到攻击者控制的公网地址，并且该地址能完成配对域名的 TLS 校验时，请求仍会发到那个公网地址。授权阶段的 `LookupIP` 只是提前拒绝，拨号时的解析才决定这次连接。
+配对域名的 DNS 本身不能被视为身份凭据，连接始终验证原配对域名的 TLS 证书。URL 授权阶段不额外进行 DNS 查询，拨号时系统 DNS 的一次解析结果决定目标地址，避免重复查询和手动 DNS 配置。
 
-### TUN 假 IP DNS 环境（DEV 实测）
+### TUN Fake-IP 网络（零配置）
 
-Quantumult X、Clash 等 TUN DNS 可能给公网域名返回 `198.18.0.0/15` 假 IP；这是测试/代理占位地址，**不属于公网地址**。资源库默认拒绝，不能因为 TLS 证书有效就放宽私网/保留 IP 限制。
+Quantumult X、Clash 等 TUN DNS 可能给已配对的公共域名返回 `198.18.0.0/15` 的 Fake-IP，这类地址并不是普通公网 IP。资源库的**专用出站 HTTPS 传输**在拨号阶段额外允许这个严格的基准测试地址段交给本地代理 TUN 接管；其他非公网地址（回环、私网、链路本地、元数据地址等）仍拒绝，混合地址结果也拒绝，TLS 主机名验证、证书链、原配对域名和端口限制均不放松。
 
-**用户明确启用时**，AgentDock 可在自身进程环境配置 `AGENTDOCK_RESOURCE_LIBRARY_DNS_SERVER=1.1.1.1`（或其他实际可访问的公网 DNS IP）。这只改变资源库 HTTP 文件传输使用的 DNS 解析器（系统默认不变），不会改 Nexus WebSocket 或其他 MCP 网络。只接受公网 IP 字面量（不接受域名、端口、私网/假 IP），每次拨号仍单独重查 DNS、拒绝任意非公网结果；TLS 的 SNI/证书主机名仍校验原配对的 Nexus 域名、不跟随重定向、不使用环境 HTTP Proxy。使用此选项会向配置的公共 DNS 服务查询配对域名，默认关闭，管理员应权衡 DNS 隐私和代理分流策略。
+这一例外只用于传输层系统 DNS 的结果，不能把 `198.18.*` IP 字面量设置成配对端点或下载 URL，`publicIP` 的通用行为不变。设备 Token 不跟随 HTTP 重定向，不使用系统 HTTP(S) 代理。**无需额外配置任何 DNS 服务器**，也不额外把域名查询发送给第三方公共 DNS。
 
-DEV 实测背景：Mac mini 运行 Quantumult X TUN，系统 DNS 代理把 `dev.nexusdock.co` 返回 `198.18.33.154`，设备安全校验拒绝并向 Cloud 返回 `DOWNLOAD_URL_REJECTED`；`dig @1.1.1.1 dev.nexusdock.co` 可解析 Cloudflare 公网 IP。通过 Rescue 单独配置公开 DNS 供资源库使用，不修改主 AgentDock 的配对和系统 DNS。
+DEV 场景：Mac mini 的 Quantumult X 返回 `198.18.33.154`，现在应由 TUN 继续转发并通过真实 `dev.nexusdock.co` HTTPS 证书校验。安全性并非单凭 Fake-IP 地址本身保证，而取决于同源校验、TLS 和 Cloud Device Token/传输票据绑定。
 
 
 尚未完成，不能声明 Cloud 备份或远程安装已经对用户开放：

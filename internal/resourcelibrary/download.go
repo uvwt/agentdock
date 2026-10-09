@@ -11,7 +11,6 @@ import (
 	"os"
 	"path"
 	"strings"
-	"time"
 
 	"github.com/uvwt/agentdock/internal/nexusclient"
 )
@@ -50,22 +49,9 @@ func authorizePairedHTTPS(endpoint, rawURL, code, label string) (string, error) 
 	if rejectedHost(target.Hostname()) {
 		return "", failed(code, "validation", label+" URL uses a local or non-public host")
 	}
-	// 这里的解析只提前拒绝明显的私网目标。真正拨号时 packageClient 会再查一次，
-	// 并只连接当时仍全部通过 publicIP 的 IP。授权结果不能单独当成拨号锁定。
-	// Resolve with the same selected resolver used by the pinned dialer. On fake-IP
-	// TUN networks the system resolver can return 198.18/15 placeholders; the
-	// optional isolated public DNS resolver still fails closed for private answers.
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-	defer cancel()
-	addresses, err := packageLookup(ctx, target.Hostname())
-	if err != nil || len(addresses) == 0 {
-		return "", failed(code, "validation", label+" host cannot be resolved to a public address")
-	}
-	for _, address := range addresses {
-		if !publicIP(address) {
-			return "", failed(code, "validation", label+" host resolves to a non-public address")
-		}
-	}
+	// URL validation checks the paired origin and path only. Network addresses
+	// are resolved and checked once, immediately before the actual TCP dial,
+	// by the resource-library-only pinned transport.
 	if dotDotSegment(target.Path) || dotDotSegment(target.RawPath) || strings.Contains(target.Path, `\`) {
 		return "", failed(code, "validation", label+" path is not allowed")
 	}

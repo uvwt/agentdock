@@ -103,3 +103,20 @@ func filepathTemp(t *testing.T) string {
 	t.Helper()
 	return t.TempDir() + "/package.zip"
 }
+
+// Authorization is pure URL validation and does not depend on DNS availability.
+// The transport performs one DNS lookup per actual connection, checks every
+// result, and dials the exact checked address.
+func TestAuthorizeCloudDownload_无需独立DNS预检(t *testing.T) {
+	endpoint := "https://never-resolve-resource-library.invalid"
+	uri, err := AuthorizeCloudDownload(endpoint, endpoint+"/v1/nodes/library/transfer/valid-ticket")
+	if err != nil {
+		t.Fatalf("DNS-independent paired URL rejected: %v", err)
+	}
+	if uri != "/v1/nodes/library/transfer/valid-ticket" {
+		t.Fatalf("uri %q", uri)
+	}
+	if _, err := AuthorizeCloudDownload("https://198.18.33.154", "https://198.18.33.154/transfer"); err == nil {
+		t.Fatal("literal Fake-IP origin must remain forbidden")
+	}
+}
