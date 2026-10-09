@@ -269,6 +269,14 @@ func (c *Client) invoke(parent context.Context, socket *websocket.Conn, incoming
 		err = fmt.Errorf("不支持的 NexusDock 节点操作: %s", incoming.Operation)
 	}
 	if err != nil {
+		if incoming.Operation == protocol.OperationRuntimeRequest {
+			var request runtimeapi.Request
+			if json.Unmarshal(incoming.Arguments, &request) == nil && request.Path == runtimeapi.ResourceLibraryPath {
+				remote := bridgeError(err)
+				// No remote message: upstream/transport errors can embed credentials or user paths.
+				slog.Warn("Resource library remote operation failed", "error_code", remote.Code, "error_category", remote.Category)
+			}
+		}
 		_ = c.write(socket, protocol.Message{Type: protocol.MessageToolError, RequestID: incoming.RequestID, Error: bridgeError(err)})
 		return
 	}
