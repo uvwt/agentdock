@@ -12,4 +12,19 @@
 - 不把大文件塞进 WebSocket `runtime.request`，只用其传控制与结果；压缩包走限额、鉴权的专用流式传输，支持离线失败、不后台补装；兼容未声明相应能力的旧 AgentDock，旧客户端 Runtime 仍只读。
 - AgentDock 的 OSS 通用 API 不依赖 Cloud Auth、Billing 或 R2。测试需要覆盖安装包摘要失配、审核令牌不匹配、导出泄密、离线、重放、超时、重复请求、安装版本冲突、多设备权限。
 
-实现依赖：NexusDock Cloud 仓库 `docs/resource-library.md`（配套设计，非 AgentDock 发布依赖）。功能未实现前，不得声明 Cloud 支持备份和远程安装。
+实现依赖：NexusDock Cloud 仓库 `docs/resource-library.md`（配套设计，非 AgentDock 发布依赖）。
+
+## 设备端实现状态
+
+已落地的是设备本地控制面，不是 Cloud 备份或远程安装发布：
+
+- `POST /internal/runtime/resource-library` 只接收不超过 64 KiB 的控制 JSON。未实现 `ResourceLibraryRuntime` 的旧 Runtime 返回 `RESOURCE_LIBRARY_UNSUPPORTED`。
+- `export_prepare` 只导出已安装的受管 Skill/Plugin，使用递归可移植白名单，拒绝符号链接、特殊文件和私人运行时文件名，并给出硬编码凭证风险提示。授权只是短时本地 grant。
+- `install_prepare` 只用已配对 Nexus 的 Device Token，通过现有出站 HTTPS 客户端下载候选 ZIP。其他 Origin、本机和私网地址拒绝。原生安装器产生审核报告和 `review_token`。
+- `install_commit` 校验 node、操作、摘要和一次性挑战后再调用现有 Skill 安装或 Plugin `InstallReviewedSource` / `UpdateReviewedSource`。
+
+尚未完成，不能声明 Cloud 已支持备份或远程安装：
+
+- 导出 ZIP 没有专用上传流。`runtime.request` 不承载压缩包，当前仓库也没有 OSS 设备上传契约。
+- 多设备权限、Cloud 侧离线队列和发布开关不在本仓库实现。
+- 配对 endpoint 本身是本机地址时，远程下载按公网 HTTPS 规则失败关闭。

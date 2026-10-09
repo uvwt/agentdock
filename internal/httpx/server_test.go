@@ -343,6 +343,8 @@ func TestRuntimeAPIMethodContract(t *testing.T) {
 		{method: http.MethodGet, path: "/internal/runtime/overview", status: http.StatusOK},
 		{method: http.MethodGet, path: "/internal/runtime/diagnostics", status: http.StatusOK},
 		{method: http.MethodPost, path: "/internal/runtime/capabilities", status: http.StatusOK},
+		{method: http.MethodGet, path: "/internal/runtime/resource-library", status: http.StatusOK},
+		{method: http.MethodDelete, path: "/internal/runtime/resource-library", status: http.StatusMethodNotAllowed, allow: "GET, POST"},
 		{method: http.MethodPost, path: "/internal/runtime/status", status: http.StatusMethodNotAllowed, allow: "GET"},
 		{method: http.MethodPost, path: "/internal/runtime/tasks/tsk_1234567890abcdef", status: http.StatusMethodNotAllowed, allow: "GET, DELETE"},
 		{method: http.MethodDelete, path: "/internal/runtime/tasks", status: http.StatusMethodNotAllowed, allow: "GET"},

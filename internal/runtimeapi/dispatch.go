@@ -25,7 +25,7 @@ func MethodAllowed(method, path string) bool {
 		_, ok := runtimeTaskID(cleanPath)
 		return ok
 	}
-	return method == http.MethodPost && (cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/mcp" || cleanPath == "/internal/runtime/mcp/oauth/callback" || cleanPath == "/internal/runtime/evolve")
+	return method == http.MethodPost && (cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/mcp" || cleanPath == "/internal/runtime/mcp/oauth/callback" || cleanPath == "/internal/runtime/evolve" || cleanPath == ResourceLibraryPath)
 }
 
 func AllowHeader(path string) string {
@@ -38,6 +38,9 @@ func AllowHeader(path string) string {
 	}
 	if cleanPath == "/internal/runtime/evolve" || cleanPath == "/internal/runtime/mcp/oauth/callback" {
 		return "POST"
+	}
+	if cleanPath == ResourceLibraryPath {
+		return "GET, POST"
 	}
 	return "GET"
 }
@@ -105,6 +108,19 @@ func Dispatch(ctx context.Context, runtime Runtime, request Request) (map[string
 			return nil, &app.ToolError{Code: "PLUGIN_NAME_REQUIRED", Message: "Plugin name is required", Category: "validation"}
 		}
 		result, err := runtime.RuntimePlugin(ctx, name)
+		return map[string]any(result), err
+	case path == ResourceLibraryPath:
+		// 控制面只接收小 JSON。压缩包走配对 Nexus 的出站 HTTPS，不能塞进 Runtime 请求体。
+		if len(request.Body) > 64*1024 {
+			return nil, &app.ToolError{Code: "RESOURCE_LIBRARY_BODY_TOO_LARGE", Message: "resource library control body is too large", Category: "validation"}
+		}
+		library, ok := runtime.(ResourceLibraryRuntime)
+		if !ok {
+			return nil, &app.ToolError{
+				Code: "RESOURCE_LIBRARY_UNSUPPORTED", Message: "runtime does not support the resource library", Category: "not_found",
+			}
+		}
+		result, err := library.RuntimeResourceLibrary(ctx, method, request.Body)
 		return map[string]any(result), err
 	case path == "/internal/runtime/evolve" && method == http.MethodPost:
 		args, err := decodeRuntimeEvolutionRequest(request.Body)

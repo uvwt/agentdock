@@ -93,6 +93,9 @@ func TestMethodContract(t *testing.T) {
 		{"DELETE", "/internal/runtime/tasks/task-1", "GET, DELETE", true},
 		{"POST", "/internal/runtime/tasks/task-1", "GET, DELETE", false},
 		{"GET", "/internal/runtime/evolve", "POST", true},
+		{"GET", "/internal/runtime/resource-library", "GET, POST", true},
+		{"POST", "/internal/runtime/resource-library", "GET, POST", true},
+		{"DELETE", "/internal/runtime/resource-library", "GET, POST", false},
 	}
 	for _, test := range tests {
 		t.Run(test.method+" "+test.path, func(t *testing.T) {
@@ -206,6 +209,52 @@ func TestDispatchSkillRefQueryUsesExactRuntimeReference(t *testing.T) {
 	if runtime.skillTarget != "demo-skill" {
 		t.Fatalf("legacy Skill target = %q", runtime.skillTarget)
 	}
+}
+
+type resourceLibraryRuntimeStub struct {
+	runtimeStub
+	method string
+}
+
+func (r *resourceLibraryRuntimeStub) RuntimeResourceLibrary(_ context.Context, method string, _ []byte) (app.Result, error) {
+	r.method = method
+	return app.Result{"ok": true, "supported": true}, nil
+}
+
+func TestDispatchResourceLibraryFailsClosedWithoutCapability(t *testing.T) {
+	_, err := Dispatch(context.Background(), &runtimeStub{}, Request{
+		Method: "POST",
+		Path:   "/internal/runtime/resource-library",
+		Body:   []byte(`{"action":"install_commit"}`),
+	})
+	var toolErr *app.ToolError
+	if !errors.As(err, &toolErr) || toolErr.Code != "RESOURCE_LIBRARY_UNSUPPORTED" {
+		t.Fatalf("error = %#v, want RESOURCE_LIBRARY_UNSUPPORTED", err)
+	}
+
+	_, err = Dispatch(context.Background(), &runtimeStub{}, Request{
+		Method: "POST",
+		Path:   "/internal/runtime/resource-library",
+		Body:   bytesRepeat(64*1024 + 1),
+	})
+	if !errors.As(err, &toolErr) || toolErr.Code != "RESOURCE_LIBRARY_BODY_TOO_LARGE" {
+		t.Fatalf("oversized control body error = %#v", err)
+	}
+}
+
+func TestDispatchResourceLibraryUsesCapabilityWhenPresent(t *testing.T) {
+	runtime := &resourceLibraryRuntimeStub{}
+	result, err := Dispatch(context.Background(), runtime, Request{Method: "GET", Path: "/internal/runtime/resource-library"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.method != "GET" || result["supported"] != true {
+		t.Fatalf("capability result = %#v method %q", result, runtime.method)
+	}
+}
+
+func bytesRepeat(size int) []byte {
+	return []byte(strings.Repeat("x", size))
 }
 
 func TestDispatchPluginRoutesAreReadOnly(t *testing.T) {
