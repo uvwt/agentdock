@@ -30,6 +30,15 @@
 
 这不能保证配对域名的公网 DNS 本身可信。解析到攻击者控制的公网地址，并且该地址能完成配对域名的 TLS 校验时，请求仍会发到那个公网地址。授权阶段的 `LookupIP` 只是提前拒绝，拨号时的解析才决定这次连接。
 
+### TUN 假 IP DNS 环境（DEV 实测）
+
+Quantumult X、Clash 等 TUN DNS 可能给公网域名返回 `198.18.0.0/15` 假 IP；这是测试/代理占位地址，**不属于公网地址**。资源库默认拒绝，不能因为 TLS 证书有效就放宽私网/保留 IP 限制。
+
+**用户明确启用时**，AgentDock 可在自身进程环境配置 `AGENTDOCK_RESOURCE_LIBRARY_DNS_SERVER=1.1.1.1`（或其他实际可访问的公网 DNS IP）。这只改变资源库 HTTP 文件传输使用的 DNS 解析器（系统默认不变），不会改 Nexus WebSocket 或其他 MCP 网络。只接受公网 IP 字面量（不接受域名、端口、私网/假 IP），每次拨号仍单独重查 DNS、拒绝任意非公网结果；TLS 的 SNI/证书主机名仍校验原配对的 Nexus 域名、不跟随重定向、不使用环境 HTTP Proxy。使用此选项会向配置的公共 DNS 服务查询配对域名，默认关闭，管理员应权衡 DNS 隐私和代理分流策略。
+
+DEV 实测背景：Mac mini 运行 Quantumult X TUN，系统 DNS 代理把 `dev.nexusdock.co` 返回 `198.18.33.154`，设备安全校验拒绝并向 Cloud 返回 `DOWNLOAD_URL_REJECTED`；`dig @1.1.1.1 dev.nexusdock.co` 可解析 Cloudflare 公网 IP。通过 Rescue 单独配置公开 DNS 供资源库使用，不修改主 AgentDock 的配对和系统 DNS。
+
+
 尚未完成，不能声明 Cloud 备份或远程安装已经对用户开放：
 
 - 本仓库没有 Cloud 的 `PUT /v1/nodes/library/transfer/{ticket}` 实现。设备只有在已配对 endpoint 真正提供该路由时才能完成上传。

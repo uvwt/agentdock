@@ -18,7 +18,7 @@ func packageClient(endpoint, token string) (nexusclient.Client, error) {
 	if strings.TrimSpace(token) == "" {
 		return nexusclient.Client{}, failed("NEXUS_NOT_PAIRED", "validation", "Nexus device token is unavailable")
 	}
-	transport, err := packageTransport(endpoint, systemLookup, publicIP)
+	transport, err := packageTransport(endpoint, packageLookup, publicIP)
 	if err != nil {
 		return nexusclient.Client{}, err
 	}
