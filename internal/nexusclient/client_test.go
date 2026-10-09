@@ -1,8 +1,10 @@
 package nexusclient
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -65,6 +67,46 @@ func TestClientDoesNotFollowRedirects(t *testing.T) {
 	}
 	if calls := targetCalls.Load(); calls != 0 {
 		t.Fatalf("redirect target calls = %d", calls)
+	}
+}
+
+func TestClientStreamPutsFixedLengthWithoutBuffering(t *testing.T) {
+	payload := bytes.Repeat([]byte("zip"), 4096)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("method = %s", r.Method)
+		}
+		if r.Header.Get("Authorization") != "Bearer device-token" {
+			t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		if r.Header.Get("Content-Type") != "application/zip" {
+			t.Errorf("Content-Type = %q", r.Header.Get("Content-Type"))
+		}
+		if r.ContentLength != int64(len(payload)) {
+			t.Errorf("Content-Length = %d", r.ContentLength)
+		}
+		if len(r.TransferEncoding) != 0 {
+			t.Errorf("Transfer-Encoding = %v", r.TransferEncoding)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+		}
+		if !bytes.Equal(body, payload) {
+			t.Errorf("body length = %d", len(body))
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client := New(server.URL, "device-token")
+	resp, err := client.DoStream(context.Background(), http.MethodPut, "/v1/nodes/library/transfer/ticket", "application/zip", bytes.NewReader(payload), int64(len(payload)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d", resp.StatusCode)
 	}
 }
 

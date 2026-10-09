@@ -18,44 +18,83 @@ import (
 // AuthorizeCloudDownload 确认候选包 URL 属于当前已配对的 Nexus 原点。
 // 其他云、本机、链路本地和私网地址都拒绝。调用方随后只能用配对 endpoint 上的 Device Token 去下载。
 func AuthorizeCloudDownload(endpoint, rawURL string) (string, error) {
+	return authorizePairedHTTPS(endpoint, rawURL, "DOWNLOAD_URL_REJECTED", "package download")
+}
+
+// AuthorizeCloudUpload 确认上传 URL 是同一配对原点上的资源库传输路由。
+// ticket 由 Cloud 绑定 node、kind 和预期摘要；设备只校验原点、公网地址和路径形状。
+func AuthorizeCloudUpload(endpoint, rawURL string) (string, error) {
+	requestURI, err := authorizePairedHTTPS(endpoint, rawURL, "UPLOAD_URL_REJECTED", "package upload")
+	if err != nil {
+		return "", err
+	}
+	if err := libraryTransferPath(requestURI); err != nil {
+		return "", err
+	}
+	return requestURI, nil
+}
+
+func authorizePairedHTTPS(endpoint, rawURL, code, label string) (string, error) {
 	paired, err := url.Parse(strings.TrimSpace(endpoint))
 	if err != nil || paired.Scheme != "https" || paired.Hostname() == "" || paired.User != nil {
-		return "", failed("DOWNLOAD_URL_REJECTED", "validation", "paired Nexus endpoint is not an HTTPS origin")
+		return "", failed(code, "validation", "paired Nexus endpoint is not an HTTPS origin")
 	}
 	target, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil || target.Scheme != "https" || target.Hostname() == "" || target.User != nil || target.Fragment != "" {
-		return "", failed("DOWNLOAD_URL_REJECTED", "validation", "package download URL must be an HTTPS URL without user info")
+		return "", failed(code, "validation", label+" URL must be an HTTPS URL without user info")
 	}
 	if !strings.EqualFold(paired.Hostname(), target.Hostname()) || canonicalPort(paired) != canonicalPort(target) {
-		return "", failed("DOWNLOAD_URL_REJECTED", "validation", "package download URL is not on the paired Nexus origin")
+		return "", failed(code, "validation", label+" URL is not on the paired Nexus origin")
 	}
 	if rejectedHost(target.Hostname()) {
-		return "", failed("DOWNLOAD_URL_REJECTED", "validation", "package download URL uses a local or non-public host")
+		return "", failed(code, "validation", label+" URL uses a local or non-public host")
 	}
+	// DNS 重绑定残余：这里拒绝非公网解析结果后，nexusclient 仍按主机名再次拨号。
+	// 现有客户端没有固定连接地址的拨号器，不能把本次解析当成拨号锁定。
+	// 任一地址不是公网就失败关闭；主机名在拨号前被改指私网时，这次校验盖不住那个窗口。
 	addresses, err := net.LookupIP(target.Hostname())
 	if err != nil || len(addresses) == 0 {
-		return "", failed("DOWNLOAD_URL_REJECTED", "validation", "package download host cannot be resolved to a public address")
+		return "", failed(code, "validation", label+" host cannot be resolved to a public address")
 	}
 	for _, address := range addresses {
 		if !publicIP(address) {
-			return "", failed("DOWNLOAD_URL_REJECTED", "validation", "package download host resolves to a non-public address")
+			return "", failed(code, "validation", label+" host resolves to a non-public address")
 		}
 	}
 	if dotDotSegment(target.Path) || dotDotSegment(target.RawPath) || strings.Contains(target.Path, `\`) {
-		return "", failed("DOWNLOAD_URL_REJECTED", "validation", "package download path is not allowed")
+		return "", failed(code, "validation", label+" path is not allowed")
 	}
 	clean := path.Clean(target.Path)
 	if clean == "/" || clean == "." || !strings.HasPrefix(clean, "/") {
-		return "", failed("DOWNLOAD_URL_REJECTED", "validation", "package download path is not allowed")
+		return "", failed(code, "validation", label+" path is not allowed")
 	}
 	requestURI := target.EscapedPath()
 	if target.RawQuery != "" {
 		requestURI += "?" + target.RawQuery
 	}
 	if requestURI == "" || strings.Contains(requestURI, "://") || strings.HasPrefix(requestURI, "//") {
-		return "", failed("DOWNLOAD_URL_REJECTED", "validation", "package download path is not allowed")
+		return "", failed(code, "validation", label+" path is not allowed")
 	}
 	return requestURI, nil
+}
+
+func libraryTransferPath(requestURI string) error {
+	const prefix = "/v1/nodes/library/transfer/"
+	if strings.Contains(requestURI, "?") || !strings.HasPrefix(requestURI, prefix) {
+		return failed("UPLOAD_URL_REJECTED", "validation", "package upload URL is not the library transfer route")
+	}
+	ticket := strings.TrimPrefix(requestURI, prefix)
+	if len(ticket) < 8 || len(ticket) > 256 || strings.Contains(ticket, "/") {
+		return failed("UPLOAD_URL_REJECTED", "validation", "package upload ticket is invalid")
+	}
+	for _, r := range ticket {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+		default:
+			return failed("UPLOAD_URL_REJECTED", "validation", "package upload ticket is invalid")
+		}
+	}
+	return nil
 }
 
 func canonicalPort(value *url.URL) string {

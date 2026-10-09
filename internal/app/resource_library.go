@@ -12,7 +12,7 @@ import (
 )
 
 // RuntimeResourceLibrary 是设备端资源库控制面。
-// 它不接收压缩包正文；安装包只从已配对 Nexus 的 HTTPS 地址下载，并交给现有 Skill/Plugin 安装器。
+// 它不接收压缩包正文。导出 ZIP 由 export_upload 流式 PUT 到已配对 Nexus；安装包从同一 HTTPS 原点下载，再交给现有 Skill/Plugin 安装器。
 func (r *Runtime) RuntimeResourceLibrary(ctx context.Context, method string, body []byte) (Result, error) {
 	service, err := r.resourceLibraryService()
 	if err != nil {

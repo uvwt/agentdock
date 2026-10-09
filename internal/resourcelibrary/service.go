@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 
 const (
 	ActionExportPrepare  = "export_prepare"
+	ActionExportUpload   = "export_upload"
 	ActionInstallPrepare = "install_prepare"
 	ActionInstallCommit  = "install_commit"
 	OperationInstall     = "install"
@@ -81,6 +83,7 @@ type Deps struct {
 	PluginUpdate    func(context.Context, string, string) (PluginCommit, error)
 	PluginInstalled func(string) (bool, error)
 	Fetch           func(context.Context, string, string, string, string, int64) (string, error)
+	Upload          func(context.Context, string, string, string, string, int64) error
 }
 
 type Service struct {
@@ -117,6 +120,8 @@ type controlRequest struct {
 	ReviewToken   string `json:"review_token"`
 	Challenge     string `json:"challenge"`
 	Operation     string `json:"operation"`
+	UploadURL     string `json:"upload_url"`
+	DownloadGrant string `json:"download_grant"`
 }
 
 func New(root string, deps Deps) (*Service, error) {
@@ -137,6 +142,9 @@ func New(root string, deps Deps) (*Service, error) {
 	if deps.Fetch == nil {
 		deps.Fetch = FetchPackage
 	}
+	if deps.Upload == nil {
+		deps.Upload = UploadPackage
+	}
 	return &Service{root: root, deps: deps, pending: make(map[string]stagedPackage)}, nil
 }
 
@@ -156,6 +164,8 @@ func (s *Service) Handle(ctx context.Context, method string, body []byte) (map[s
 	switch request.Action {
 	case ActionExportPrepare:
 		return s.exportPrepare(request)
+	case ActionExportUpload:
+		return s.exportUpload(ctx, request)
 	case ActionInstallPrepare:
 		return s.installPrepare(ctx, request)
 	case ActionInstallCommit:
@@ -169,12 +179,11 @@ func (s *Service) capabilities() map[string]any {
 	return map[string]any{
 		"ok":                              true,
 		"supported":                       true,
-		"actions":                         []string{ActionExportPrepare, ActionInstallPrepare, ActionInstallCommit},
+		"actions":                         []string{ActionExportPrepare, ActionExportUpload, ActionInstallPrepare, ActionInstallCommit},
 		"runtime_request_carries_archive": false,
 		"file_transfer":                   "nexus_device_https_client",
-		// 导出 ZIP 还不能离开设备。专用上传流不在当前 Runtime 契约里，不能假装已经备份到 Cloud。
-		"stream_upload_available": false,
-		"incomplete":              []string{"export_stream_upload"},
+		// 导出字节只通过 export_upload 离开设备。控制响应仍然只带 grant，不带 ZIP。
+		"stream_upload_available": true,
 		"limits": map[string]any{
 			"skill_archive_bytes":   SkillArchiveLimit,
 			"plugin_archive_bytes":  PluginArchiveLimit,
@@ -188,8 +197,8 @@ func (s *Service) capabilities() map[string]any {
 }
 
 func (s *Service) exportPrepare(request controlRequest) (map[string]any, error) {
-	if request.DownloadURL != "" || request.Challenge != "" || request.ArchiveDigest != "" || request.PackageDigest != "" ||
-		request.ReviewToken != "" || request.Operation != "" || request.NodeID != "" {
+	if request.DownloadURL != "" || request.UploadURL != "" || request.DownloadGrant != "" || request.Challenge != "" ||
+		request.ArchiveDigest != "" || request.PackageDigest != "" || request.ReviewToken != "" || request.Operation != "" || request.NodeID != "" {
 		return nil, failed("RESOURCE_LIBRARY_ACTION_INVALID", "validation", "export_prepare only accepts kind and name")
 	}
 	kind, name, err := normalizePackageRef(request.Kind, request.Name)
@@ -215,10 +224,7 @@ func (s *Service) exportPrepare(request controlRequest) (map[string]any, error) 
 		_ = os.Remove(destination)
 		return nil, err
 	}
-	// TODO: 导出 ZIP 只留在设备暂存目录，download_grant 不能被 Cloud 取走。
-	// 原因：runtime.request 最多 64 KiB，仓库也没有与 Tenant/R2 无关的设备上传协议。
-	// 影响：Cloud 只能看到摘要、文件清单和风险提示，不能宣称已备份。
-	// 退出条件：Nexus 提供鉴权专用上传流后，用现有 Device Token 客户端上传这份 ZIP，并删除 local_grant_only。
+	// download_grant 仍只是本机暂存句柄。ZIP 离开设备的唯一路径是随后的 export_upload。
 	grant, err := s.remember(stagedPackage{
 		Purpose: purposeExport, Kind: kind, Name: name, Operation: "export",
 		ArchivePath: destination, ArchiveDigest: exported.ArchiveDigest, PackageDigest: exported.ContentDigest,
@@ -233,7 +239,58 @@ func (s *Service) exportPrepare(request controlRequest) (map[string]any, error) 
 		"archive_digest": exported.ArchiveDigest, "content_digest": exported.ContentDigest,
 		"size": exported.Size, "files": exported.Files, "warnings": exported.Warnings,
 		"download_grant": grant, "download_authorized": true, "expires_at": s.pendingExpiry(grant),
-		"transfer": "local_grant_only", "stream_upload_available": false,
+		"transfer": "local_grant_only", "stream_upload_available": true,
+	}, nil
+}
+
+func (s *Service) exportUpload(ctx context.Context, request controlRequest) (map[string]any, error) {
+	if request.Kind != "" || request.Name != "" || request.NodeID != "" || request.DownloadURL != "" ||
+		request.ArchiveDigest != "" || request.PackageDigest != "" || request.ReviewToken != "" ||
+		request.Challenge != "" || request.Operation != "" {
+		return nil, failed("RESOURCE_LIBRARY_ACTION_INVALID", "validation", "export_upload only accepts upload_url and download_grant")
+	}
+	uploadURL := strings.TrimSpace(request.UploadURL)
+	grantID := strings.TrimSpace(request.DownloadGrant)
+	if uploadURL == "" || grantID == "" {
+		return nil, failed("RESOURCE_LIBRARY_ACTION_INVALID", "validation", "export_upload requires upload_url and download_grant")
+	}
+	identity, err := s.currentIdentity()
+	if err != nil {
+		return nil, err
+	}
+	// 先拒绝其他 Origin，避免未授权地址消耗 grant 或触发上传。
+	if _, err := AuthorizeCloudUpload(identity.Endpoint, uploadURL); err != nil {
+		return nil, err
+	}
+	staged, err := s.consumeExport(grantID)
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(staged.ArchivePath)
+	info, err := os.Lstat(staged.ArchivePath)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Size() != staged.Size || staged.Size <= 0 {
+		return nil, failed("ARCHIVE_CHANGED", "validation", "export archive changed before upload")
+	}
+	digest, err := skills.DigestFile(staged.ArchivePath)
+	if err != nil || normalizeDigest(digest) != staged.ArchiveDigest {
+		return nil, failed("ARCHIVE_CHANGED", "validation", "export archive digest changed before upload")
+	}
+	if s.deps.Upload == nil {
+		return nil, failed("RESOURCE_LIBRARY_UNAVAILABLE", "validation", "package upload is unavailable")
+	}
+	if err := s.deps.Upload(ctx, identity.Endpoint, identity.DeviceToken, uploadURL, staged.ArchivePath, staged.Size); err != nil {
+		var libraryErr *Error
+		if errors.As(err, &libraryErr) {
+			return nil, libraryErr
+		}
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return nil, failed("UPLOAD_TIMEOUT", "validation", "package upload timed out")
+		}
+		return nil, failed("UPLOAD_FAILED", "validation", "package upload failed")
+	}
+	return map[string]any{
+		"ok": true, "action": ActionExportUpload, "kind": staged.Kind, "name": staged.Name,
+		"size": staged.Size, "archive_digest": staged.ArchiveDigest, "content_digest": staged.PackageDigest,
 	}, nil
 }
 
@@ -247,12 +304,14 @@ func (s *Service) installPrepare(ctx context.Context, request controlRequest) (m
 		return nil, err
 	}
 	archiveDigest := normalizeDigest(request.ArchiveDigest)
-	packageDigest := normalizeDigest(request.PackageDigest)
-	if archiveDigest == "" || packageDigest == "" || strings.TrimSpace(request.DownloadURL) == "" {
-		return nil, failed("RESOURCE_LIBRARY_ACTION_INVALID", "validation", "install_prepare requires download_url, archive_digest, and package_digest")
+	// package_digest 是可选的预期内容摘要。Cloud 不能重算 Skill/Plugin 原生 digest，
+	// 所以挑战里绑定的是设备 validate 成功后的实际摘要；调用方提供时期望必须一致。
+	expectedPackageDigest := normalizeDigest(request.PackageDigest)
+	if archiveDigest == "" || strings.TrimSpace(request.DownloadURL) == "" {
+		return nil, failed("RESOURCE_LIBRARY_ACTION_INVALID", "validation", "install_prepare requires download_url and archive_digest")
 	}
-	if request.Challenge != "" || request.ReviewToken != "" || request.Operation != "" {
-		return nil, failed("RESOURCE_LIBRARY_ACTION_INVALID", "validation", "install_prepare cannot carry a challenge, review token, or operation")
+	if request.Challenge != "" || request.ReviewToken != "" || request.Operation != "" || request.UploadURL != "" || request.DownloadGrant != "" {
+		return nil, failed("RESOURCE_LIBRARY_ACTION_INVALID", "validation", "install_prepare cannot carry a challenge, review token, operation, or upload grant")
 	}
 	// 先做来源判断，避免未授权 URL 进入下载客户端。Fetch 会再判断一次。
 	if _, err := AuthorizeCloudDownload(identity.Endpoint, request.DownloadURL); err != nil {
@@ -282,6 +341,7 @@ func (s *Service) installPrepare(ctx context.Context, request controlRequest) (m
 
 	var reviewToken string
 	var operation string
+	var packageDigest string
 	var review map[string]any
 	switch kind {
 	case KindSkill:
@@ -302,9 +362,14 @@ func (s *Service) installPrepare(ctx context.Context, request controlRequest) (m
 			_ = os.Remove(destination)
 			return map[string]any{"ok": true, "action": ActionInstallPrepare, "valid": false, "kind": kind, "name": name, "review": review}, nil
 		}
-		if preview.Name != name || normalizeDigest(preview.ContentDigest) != packageDigest || normalizeDigest(preview.SourceDigest) != archiveDigest {
+		if preview.Name != name || normalizeDigest(preview.SourceDigest) != archiveDigest {
 			_ = os.Remove(destination)
 			return nil, failed("DIGEST_MISMATCH", "validation", "Skill candidate does not match the requested name or digest")
+		}
+		packageDigest = normalizeDigest(preview.ContentDigest)
+		if packageDigest == "" || (expectedPackageDigest != "" && expectedPackageDigest != packageDigest) {
+			_ = os.Remove(destination)
+			return nil, failed("DIGEST_MISMATCH", "validation", "Skill content digest does not match the expected digest")
 		}
 		operation = OperationInstall
 	default:
@@ -326,9 +391,14 @@ func (s *Service) installPrepare(ctx context.Context, request controlRequest) (m
 			_ = os.Remove(destination)
 			return map[string]any{"ok": true, "action": ActionInstallPrepare, "valid": false, "kind": kind, "name": name, "review": review}, nil
 		}
-		if preview.Name != name || normalizeDigest(preview.PackageDigest) != packageDigest || strings.TrimSpace(preview.ReviewToken) == "" {
+		if preview.Name != name || strings.TrimSpace(preview.ReviewToken) == "" {
 			_ = os.Remove(destination)
 			return nil, failed("DIGEST_MISMATCH", "validation", "Plugin candidate does not match the requested name or digest")
+		}
+		packageDigest = normalizeDigest(preview.PackageDigest)
+		if packageDigest == "" || (expectedPackageDigest != "" && expectedPackageDigest != packageDigest) {
+			_ = os.Remove(destination)
+			return nil, failed("DIGEST_MISMATCH", "validation", "Plugin content digest does not match the expected digest")
 		}
 		installed, err := s.deps.PluginInstalled(name)
 		if err != nil {
@@ -366,6 +436,9 @@ func (s *Service) installCommit(ctx context.Context, request controlRequest) (ma
 	identity, err := s.pairedIdentity(request.NodeID)
 	if err != nil {
 		return nil, err
+	}
+	if request.DownloadURL != "" || request.UploadURL != "" || request.DownloadGrant != "" {
+		return nil, failed("RESOURCE_LIBRARY_ACTION_INVALID", "validation", "install_commit only accepts the prepared confirmation")
 	}
 	// 先消耗挑战，再读文件。并发的第二次提交会直接失败，不能再安装一次。
 	staged, err := s.consumeInstall(request, identity.NodeID, kind, name)
@@ -471,13 +544,37 @@ func (s *Service) consumeInstall(request controlRequest, nodeID, kind, name stri
 	return staged, nil
 }
 
-func (s *Service) pairedIdentity(nodeID string) (DeviceIdentity, error) {
+func (s *Service) consumeExport(grantID string) (stagedPackage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	staged, ok := s.pending[grantID]
+	if !ok || staged.Purpose != purposeExport {
+		return stagedPackage{}, failed("GRANT_INVALID", "validation", "download grant is unknown")
+	}
+	if !s.deps.Now().Before(staged.Expires) {
+		_ = os.Remove(staged.ArchivePath)
+		delete(s.pending, grantID)
+		return stagedPackage{}, failed("GRANT_EXPIRED", "validation", "download grant has expired")
+	}
+	delete(s.pending, grantID)
+	return staged, nil
+}
+
+func (s *Service) currentIdentity() (DeviceIdentity, error) {
 	if s.deps.Identity == nil {
 		return DeviceIdentity{}, failed("NEXUS_NOT_PAIRED", "validation", "Nexus device identity is unavailable")
 	}
 	identity, err := s.deps.Identity()
 	if err != nil || strings.TrimSpace(identity.Endpoint) == "" || strings.TrimSpace(identity.NodeID) == "" || strings.TrimSpace(identity.DeviceToken) == "" {
 		return DeviceIdentity{}, failed("NEXUS_NOT_PAIRED", "validation", "AgentDock is not paired with Nexus")
+	}
+	return identity, nil
+}
+
+func (s *Service) pairedIdentity(nodeID string) (DeviceIdentity, error) {
+	identity, err := s.currentIdentity()
+	if err != nil {
+		return DeviceIdentity{}, err
 	}
 	if strings.TrimSpace(nodeID) == "" || strings.TrimSpace(nodeID) != identity.NodeID {
 		return DeviceIdentity{}, failed("NODE_MISMATCH", "validation", "node_id does not match the paired device")

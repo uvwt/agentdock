@@ -2,6 +2,8 @@ package resourcelibrary
 
 import (
 	"context"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,8 @@ import (
 	skills "github.com/uvwt/agentdock/internal/skill"
 	skillstate "github.com/uvwt/agentdock/internal/skill/state"
 )
+
+const libraryUploadURL = "https://1.1.1.1/v1/nodes/library/transfer/ticket-ok"
 
 func TestService_导出受管Skill且响应不含本地路径(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "demo-skill")
@@ -28,7 +32,7 @@ func TestService_导出受管Skill且响应不含本地路径(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result["stream_upload_available"] != false || result["transfer"] != "local_grant_only" {
+	if result["stream_upload_available"] != true || result["transfer"] != "local_grant_only" {
 		t.Fatalf("export transfer = %#v", result)
 	}
 	if strings.Contains(result["archive_digest"].(string), "/") {
@@ -40,8 +44,12 @@ func TestService_导出受管Skill且响应不含本地路径(t *testing.T) {
 		}
 	}
 	capabilities, err := service.Handle(context.Background(), "GET", nil)
-	if err != nil || capabilities["supported"] != true || capabilities["stream_upload_available"] != false {
+	if err != nil || capabilities["supported"] != true || capabilities["stream_upload_available"] != true {
 		t.Fatalf("capabilities = %#v %v", capabilities, err)
+	}
+	actions, _ := capabilities["actions"].([]string)
+	if !containsString(actions, ActionExportUpload) {
+		t.Fatalf("actions = %#v", capabilities["actions"])
 	}
 }
 
@@ -395,6 +403,236 @@ func commitPlugin(service *Service, challenge, archiveDigest, packageDigest, rev
 		"review_token":"` + reviewToken + `"
 	}`
 	return service.Handle(context.Background(), "POST", []byte(body))
+}
+
+func TestService_导出上传核对grant后流式发送并销毁(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "demo-skill")
+	writeFile(t, filepath.Join(root, "SKILL.md"), skillDocument("demo-skill", "Upload me."))
+	t.Setenv("AGENTDOCK_DEVICE_TOKEN", "super-secret-env")
+	var calls int
+	service := testService(t, Deps{
+		Identity: testIdentity,
+		Lookup: func(kind, name string) (string, error) {
+			return root, nil
+		},
+		Upload: func(_ context.Context, endpoint, token, rawURL, archivePath string, size int64) error {
+			calls++
+			if endpoint != "https://1.1.1.1" || token != "device-token" {
+				t.Fatalf("upload identity endpoint=%s", endpoint)
+			}
+			info, err := os.Lstat(archivePath)
+			if err != nil || info.Size() != size || info.Mode()&os.ModeSymlink != 0 {
+				t.Fatalf("upload file = %v %v", info, err)
+			}
+			file, err := os.Open(archivePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer file.Close()
+			read, err := io.Copy(io.Discard, file)
+			if err != nil || read != size {
+				t.Fatalf("streamed %d: %v", read, err)
+			}
+			if rawURL != libraryUploadURL {
+				t.Fatalf("upload URL = %s", rawURL)
+			}
+			return nil
+		},
+	})
+	prepared, err := service.Handle(context.Background(), "POST", []byte(`{"action":"export_prepare","kind":"skill","name":"demo-skill"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := prepared["download_grant"].(string)
+	archiveDigest := prepared["archive_digest"].(string)
+	contentDigest := prepared["content_digest"].(string)
+	size := prepared["size"].(int64)
+
+	_, err = service.Handle(context.Background(), "POST", []byte(`{
+		"action":"export_upload","upload_url":"https://evil.example/v1/nodes/library/transfer/ticket-ok","download_grant":"`+grant+`"
+	}`))
+	if err == nil || !errorCode(err, "UPLOAD_URL_REJECTED") || calls != 0 {
+		t.Fatalf("other origin = %v calls = %d", err, calls)
+	}
+	if _, ok := service.pending[grant]; !ok {
+		t.Fatal("rejected upload consumed the grant")
+	}
+	_, err = service.Handle(context.Background(), "POST", []byte(`{
+		"action":"export_upload","upload_url":"https://127.0.0.1/v1/nodes/library/transfer/ticket-ok","download_grant":"`+grant+`"
+	}`))
+	if err == nil || calls != 0 {
+		t.Fatalf("local upload = %v calls = %d", err, calls)
+	}
+	_, err = service.Handle(context.Background(), "POST", []byte(`{
+		"action":"export_upload","kind":"skill","upload_url":"`+libraryUploadURL+`","download_grant":"`+grant+`"
+	}`))
+	if err == nil || !errorCode(err, "RESOURCE_LIBRARY_ACTION_INVALID") || calls != 0 {
+		t.Fatalf("extra field = %v", err)
+	}
+
+	replaced := service.pending[grant]
+	if err := os.WriteFile(replaced.ArchivePath, []byte("replaced"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.Handle(context.Background(), "POST", []byte(`{
+		"action":"export_upload","upload_url":"`+libraryUploadURL+`","download_grant":"`+grant+`"
+	}`))
+	if err == nil || !errorCode(err, "ARCHIVE_CHANGED") || calls != 0 || !os.IsNotExist(statError(replaced.ArchivePath)) {
+		t.Fatalf("changed archive = %v calls = %d", err, calls)
+	}
+	_, err = service.Handle(context.Background(), "POST", []byte(`{
+		"action":"export_upload","upload_url":"`+libraryUploadURL+`","download_grant":"`+grant+`"
+	}`))
+	if err == nil || !errorCode(err, "GRANT_INVALID") {
+		t.Fatalf("replay after change = %v", err)
+	}
+
+	prepared, err = service.Handle(context.Background(), "POST", []byte(`{"action":"export_prepare","kind":"skill","name":"demo-skill"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant = prepared["download_grant"].(string)
+	archivePath := service.pending[grant].ArchivePath
+	result, err := service.Handle(context.Background(), "POST", []byte(`{
+		"action":"export_upload","upload_url":"`+libraryUploadURL+`","download_grant":"`+grant+`"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["size"] != size || result["archive_digest"] != archiveDigest || result["content_digest"] != contentDigest || calls != 1 {
+		t.Fatalf("upload result = %#v calls = %d", result, calls)
+	}
+	encoded := strings.ToLower(result["archive_digest"].(string) + result["content_digest"].(string))
+	if strings.Contains(encoded, "device-token") || strings.Contains(encoded, "super-secret-env") || !os.IsNotExist(statError(archivePath)) {
+		t.Fatalf("upload leaked or kept the archive: %#v", result)
+	}
+	_, err = service.Handle(context.Background(), "POST", []byte(`{
+		"action":"export_upload","upload_url":"`+libraryUploadURL+`","download_grant":"`+grant+`"
+	}`))
+	if err == nil || !errorCode(err, "GRANT_INVALID") || calls != 1 {
+		t.Fatalf("replay = %v calls = %d", err, calls)
+	}
+}
+
+func TestService_上传失败不回显Token(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "demo-skill")
+	writeFile(t, filepath.Join(root, "SKILL.md"), skillDocument("demo-skill", "Secret leak."))
+	t.Setenv("AGENTDOCK_DEVICE_TOKEN", "super-secret-env")
+	service := testService(t, Deps{
+		Identity: testIdentity,
+		Lookup:   func(string, string) (string, error) { return root, nil },
+		Upload: func(context.Context, string, string, string, string, int64) error {
+			return errors.New("bearer device-token super-secret-env")
+		},
+	})
+	prepared, err := service.Handle(context.Background(), "POST", []byte(`{"action":"export_prepare","kind":"skill","name":"demo-skill"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := prepared["download_grant"].(string)
+	archivePath := service.pending[grant].ArchivePath
+	_, err = service.Handle(context.Background(), "POST", []byte(`{
+		"action":"export_upload","upload_url":"`+libraryUploadURL+`","download_grant":"`+grant+`"
+	}`))
+	if err == nil || !errorCode(err, "UPLOAD_FAILED") || strings.Contains(err.Error(), "device-token") || strings.Contains(err.Error(), "super-secret-env") {
+		t.Fatalf("upload failure = %v", err)
+	}
+	if !os.IsNotExist(statError(archivePath)) {
+		t.Fatal("failed upload kept the archive")
+	}
+}
+
+func TestService_上传超时销毁grant且不重试(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "demo-skill")
+	writeFile(t, filepath.Join(root, "SKILL.md"), skillDocument("demo-skill", "Timeout."))
+	var calls int
+	service := testService(t, Deps{
+		Identity: testIdentity,
+		Lookup:   func(string, string) (string, error) { return root, nil },
+		Upload: func(ctx context.Context, _, _, _, _ string, _ int64) error {
+			calls++
+			return ctx.Err()
+		},
+	})
+	prepared, err := service.Handle(context.Background(), "POST", []byte(`{"action":"export_prepare","kind":"skill","name":"demo-skill"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := prepared["download_grant"].(string)
+	archivePath := service.pending[grant].ArchivePath
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = service.Handle(ctx, "POST", []byte(`{
+		"action":"export_upload","upload_url":"`+libraryUploadURL+`","download_grant":"`+grant+`"
+	}`))
+	if err == nil || !errorCode(err, "UPLOAD_TIMEOUT") || strings.Contains(err.Error(), "device-token") || calls != 1 {
+		t.Fatalf("timeout = %v calls = %d", err, calls)
+	}
+	if !os.IsNotExist(statError(archivePath)) {
+		t.Fatal("timed out upload kept the archive")
+	}
+	_, err = service.Handle(context.Background(), "POST", []byte(`{
+		"action":"export_upload","upload_url":"`+libraryUploadURL+`","download_grant":"`+grant+`"
+	}`))
+	if err == nil || !errorCode(err, "GRANT_INVALID") || calls != 1 {
+		t.Fatalf("retry = %v calls = %d", err, calls)
+	}
+}
+
+func TestService_可选内容摘要绑定实际digest且失配不发挑战(t *testing.T) {
+	archive, archiveDigest, contentDigest := exportSkillFixture(t, "demo-skill", "Optional digest.")
+	var installs int
+	service := testService(t, Deps{
+		Identity: testIdentity,
+		Fetch:    fetchFile(archive, archiveDigest),
+		SkillValidate: func(_ context.Context, source, digest string) (SkillPreview, error) {
+			return validateSkillArchive(t, source, digest, "demo-skill", contentDigest)
+		},
+		SkillInstall: func(context.Context, string, string) (SkillCommit, error) {
+			installs++
+			return SkillCommit{Name: "demo-skill", ContentDigest: contentDigest, Changed: true}, nil
+		},
+	})
+
+	omitted, err := service.Handle(context.Background(), "POST", []byte(`{
+		"action":"install_prepare","kind":"skill","name":"demo-skill","node_id":"node-1",
+		"download_url":"https://1.1.1.1/packages/demo-skill.zip",
+		"archive_digest":"`+archiveDigest+`"
+	}`))
+	if err != nil || omitted["package_digest"] != contentDigest || omitted["valid"] != true {
+		t.Fatalf("omitted digest = %#v %v", omitted, err)
+	}
+	challenge := omitted["challenge"].(string)
+	if _, err := commitSkill(service, challenge, archiveDigest, "", ""); err == nil || !errorCode(err, "CHALLENGE_MISMATCH") || installs != 0 {
+		t.Fatalf("commit without digest = %v installs = %d", err, installs)
+	}
+	if _, err := commitSkill(service, challenge, archiveDigest, contentDigest, ""); err != nil || installs != 1 {
+		t.Fatalf("commit actual digest = %v installs = %d", err, installs)
+	}
+
+	_, err = service.Handle(context.Background(), "POST", []byte(`{
+		"action":"install_prepare","kind":"skill","name":"demo-skill","node_id":"node-1",
+		"download_url":"https://1.1.1.1/packages/demo-skill.zip",
+		"archive_digest":"`+archiveDigest+`",
+		"package_digest":"sha256:1111111111111111111111111111111111111111111111111111111111111111"
+	}`))
+	if err == nil || !errorCode(err, "DIGEST_MISMATCH") || installs != 1 || len(service.pending) != 0 {
+		t.Fatalf("mismatched expected digest = %v pending = %d", err, len(service.pending))
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if strings.Contains(value, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func statError(path string) error {
+	_, err := os.Stat(path)
+	return err
 }
 
 func errorCode(err error, code string) bool {

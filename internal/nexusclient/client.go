@@ -37,19 +37,37 @@ func (c Client) Endpoint() string {
 
 func (c Client) Do(ctx context.Context, method, path string, body []byte) (*http.Response, error) {
 	var reader io.Reader
+	var length int64
+	contentType := ""
 	if body != nil {
 		reader = bytes.NewReader(body)
+		length = int64(len(body))
+		contentType = "application/json"
 	}
+	return c.do(ctx, method, path, reader, length, contentType)
+}
+
+// DoStream 按调用方给出的长度发送正文，不把正文读进内存。
+// Content-Length 固定为 contentLength，避免大 ZIP 被改成 chunked，也避免 Device Token 请求在重定向前被缓冲。
+func (c Client) DoStream(ctx context.Context, method, path, contentType string, body io.Reader, contentLength int64) (*http.Response, error) {
+	if body == nil || contentLength < 0 || strings.TrimSpace(contentType) == "" {
+		return nil, fmt.Errorf("Nexus stream request requires a body, content type, and content length")
+	}
+	return c.do(ctx, method, path, body, contentLength, contentType)
+}
+
+func (c Client) do(ctx context.Context, method, path string, body io.Reader, contentLength int64, contentType string) (*http.Response, error) {
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.endpoint+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, c.endpoint+path, body)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+		req.ContentLength = contentLength
+		req.Header.Set("Content-Type", contentType)
 	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
