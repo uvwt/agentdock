@@ -24,6 +24,7 @@ type ToolSpec struct {
 	Name                   string
 	Title                  string
 	Description            string
+	UIVisibility           []string
 	FileArgRewritePaths    []string
 	FileResultRewritePaths []string
 	Contract               ToolContractProvider
@@ -45,6 +46,7 @@ type ToolDefinition struct {
 	Title                  string
 	Description            string
 	UIBinding              *UIBinding
+	UIVisibility           []string
 	FileArgRewritePaths    []string
 	FileResultRewritePaths []string
 	InputSchema            map[string]any
@@ -89,6 +91,7 @@ func (s ToolSpec) definition(cfg config.Config) ToolDefinition {
 		Title:                  s.Title,
 		Description:            s.Description,
 		UIBinding:              toolUIBinding(s.Name),
+		UIVisibility:           append([]string(nil), s.UIVisibility...),
 		FileArgRewritePaths:    append([]string(nil), s.FileArgRewritePaths...),
 		FileResultRewritePaths: append([]string(nil), s.FileResultRewritePaths...),
 		InputSchema:            contract.InputSchema,
@@ -152,6 +155,7 @@ func compileAvailableToolContracts(cfg config.Config) ([]string, map[string]*too
 func requiresNexus(cfg config.Config) bool   { return cfg.NexusEndpoint != "" }
 func requiresBrowser(cfg config.Config) bool { return cfg.BrowserEnabled }
 func requiresACP(cfg config.Config) bool     { return cfg.ACPEnabled }
+func requiresMCPApps(cfg config.Config) bool { return cfg.MCPAppsMode != config.MCPAppsModeOff }
 
 func readOnlyToolAnnotations(openWorld bool) *ToolAnnotations {
 	return &ToolAnnotations{ReadOnlyHint: true, DestructiveHint: boolPointer(false), OpenWorldHint: boolPointer(openWorld)}

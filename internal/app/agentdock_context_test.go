@@ -75,7 +75,7 @@ func TestAgentDockContextToolReturnsStructuredRuntimeIndex(t *testing.T) {
 		t.Fatalf("runtime paths = %#v", got.Runtime)
 	}
 	rules := strings.Join(got.Rules, "\n")
-	for _, want := range []string{"AgentDock 自带工具直接调用", "同名项是不同来源候选", "skill_ref", "common_skills.truncated=true", "task_manage checkpoint"} {
+	for _, want := range []string{"AgentDock 自带工具直接调用", "同名项是不同来源候选", "skill_ref", "common_skills.truncated=true", "task_create", "task_manage checkpoint"} {
 		if !strings.Contains(rules, want) {
 			t.Fatalf("context rules missing %q: %s", want, rules)
 		}
@@ -182,8 +182,8 @@ func TestNexusUnavailableHidesWorkflowTemplateCapability(t *testing.T) {
 			t.Fatalf("%s should be hidden without Nexus: %s", hiddenTool, toolNames)
 		}
 	}
-	if !strings.Contains(toolNames, "task_manage") {
-		t.Fatalf("task_manage should remain available without Nexus: %s", toolNames)
+	if !strings.Contains(toolNames, "task_create") || !strings.Contains(toolNames, "task_manage") {
+		t.Fatalf("task_create/task_manage should remain available without Nexus: %s", toolNames)
 	}
 
 	result, err := rt.Call(context.Background(), "agentdock_context", map[string]any{})
@@ -203,8 +203,8 @@ func TestNexusUnavailableHidesWorkflowTemplateCapability(t *testing.T) {
 			t.Fatalf("context rules should hide %q without Nexus: %s", hidden, rules)
 		}
 	}
-	if !strings.Contains(rules, "task_manage") {
-		t.Fatalf("context should keep task_manage without Nexus: %s", rules)
+	if !strings.Contains(rules, "task_create") || !strings.Contains(rules, "task_manage") {
+		t.Fatalf("context should keep task_create/task_manage without Nexus: %s", rules)
 	}
 }
 
@@ -282,8 +282,8 @@ func TestAgentDockLocalContextSkipsSharedNexusLookups(t *testing.T) {
 			t.Fatalf("local-only context leaked shared rule %q: %s", sharedRule, rules)
 		}
 	}
-	if !strings.Contains(rules, "task_manage checkpoint") {
-		t.Fatalf("local-only context lost device rule: %s", rules)
+	if !strings.Contains(rules, "task_create") || !strings.Contains(rules, "task_manage checkpoint") {
+		t.Fatalf("local-only context lost task rules: %s", rules)
 	}
 }
 
