@@ -92,3 +92,53 @@ func writePluginZip(t *testing.T, archive, root string) {
 		t.Fatal(err)
 	}
 }
+
+// TestUpdateReviewedArchiveSamePackageNoop 验证同版本、同内容再次安装不创建激活事务。
+func TestUpdateReviewedArchiveSamePackageNoop(t *testing.T) {
+	ctx := context.Background()
+	home := filepath.Join(t.TempDir(), ".agentdock")
+	manager, err := pluginruntime.NewManager(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(t.TempDir(), "plugin")
+	skillRoot := filepath.Join(root, "skills", "e2e-skill")
+	if err := os.MkdirAll(skillRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writePluginServiceJSON(t, filepath.Join(root, "plugin.json"), map[string]any{
+		"name": "e2e-plugin", "version": "1.0.0", "description": "Safe no-op fixture",
+	})
+	if err := os.WriteFile(filepath.Join(skillRoot, "SKILL.md"), []byte("---\nname: e2e-skill\ndescription: No-op plugin fixture\n---\n# E2E\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(t.TempDir(), "e2e-plugin.zip")
+	writePluginZip(t, archive, root)
+	review := manager.ValidateSource(ctx, archive)
+	if !review.Valid {
+		t.Fatalf("invalid reviewed package: %#v", review.Issues)
+	}
+	installed, err := manager.InstallReviewedSource(ctx, archive, true, review.ReviewToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.FinalizeActivation(installed.Name); err != nil {
+		t.Fatal(err)
+	}
+
+	service := &Service{manager: manager}
+	result, err := service.UpdateReviewedArchive(ctx, archive, review.ReviewToken)
+	if err != nil {
+		t.Fatalf("reinstall same package: %v", err)
+	}
+	if result["changed"] != false {
+		t.Fatalf("expected changed=false, got %#v", result)
+	}
+	state, err := manager.Inspect("e2e-plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !state.Enabled || state.PackageDigest != installed.PackageDigest {
+		t.Fatalf("no-op changed installed state: %#v", state.State)
+	}
+}

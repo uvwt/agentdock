@@ -125,6 +125,10 @@ func (s *Service) updateResolved(ctx context.Context, source string, reviewToken
 		}
 		return nil, pluginToolError(err)
 	}
+	// 相同版本和包摘要由 Manager 直接判为 no-op，没有待激活事务可收尾。
+	if !result.Changed {
+		return changeResult(result), nil
+	}
 	if err := s.reconcileMCPActivation(result.Name); err != nil {
 		restoreErr := s.manager.AbortActivation(ctx, result.Name)
 		reconcileErr := s.ReconcileMCP()
