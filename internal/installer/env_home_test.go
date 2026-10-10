@@ -1,10 +1,10 @@
 package installer
 
 import (
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/uvwt/agentdock/internal/envstore"
 )
 
 // 安装的服务环境必须使用请求中的状态目录，不依赖 service user 的默认 HOME。
@@ -21,16 +21,16 @@ func TestWriteCoreEnvironmentKeepsServiceDataDirectories(t *testing.T) {
 	}
 	check := func() {
 		t.Helper()
-		data, err := os.ReadFile(envFile)
+		values, err := envstore.ParseFile(envFile)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, want := range []string{
-			"AGENTDOCK_HOME=" + home,
-			"AGENTDOCK_DEFAULT_DIR=" + work,
+		for key, want := range map[string]string{
+			"AGENTDOCK_HOME":        home,
+			"AGENTDOCK_DEFAULT_DIR": work,
 		} {
-			if !strings.Contains(string(data), want+"\n") {
-				t.Fatalf("Core service env missing %q: %s", want, data)
+			if got := values[key]; got != want {
+				t.Errorf("Core service env %s = %q, want %q", key, got, want)
 			}
 		}
 	}
