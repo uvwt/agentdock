@@ -30,6 +30,7 @@ func registerRuntimeAPI(mux *http.ServeMux, runtime runtimeapi.Runtime, cfg conf
 	mux.HandleFunc("/internal/runtime/tasks", h)
 	mux.HandleFunc("/internal/runtime/tasks/", h)
 	mux.HandleFunc("/internal/runtime/evolve", h)
+	mux.HandleFunc(runtimeapi.ResourceLibraryPath, h)
 	mux.HandleFunc("/internal/runtime/mcp", h)
 	mux.HandleFunc("/internal/runtime/mcp/", h)
 }
@@ -61,7 +62,13 @@ func runtimeAPIHandler(runtime runtimeapi.Runtime, cfg config.Config, oauthStore
 			writeRuntimeAPIError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "failed to read runtime request body")
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+		timeout := 8 * time.Second
+		// install_prepare 要在同一次控制请求里下载有上限的 ZIP。沿用 Skill 下载的两分钟预算；
+		// 超时、断网和摘要失败都直接返回，不转入后台补装。
+		if strings.TrimSuffix(r.URL.Path, "/") == runtimeapi.ResourceLibraryPath {
+			timeout = 2 * time.Minute
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()
 		result, err := runtimeapi.Dispatch(ctx, runtime, runtimeapi.Request{
 			Method: r.Method,
@@ -79,7 +86,7 @@ func runtimeAPIHandler(runtime runtimeapi.Runtime, cfg config.Config, oauthStore
 
 func runtimeRequestBody(r *http.Request) ([]byte, error) {
 	cleanPath := strings.TrimSuffix(r.URL.Path, "/")
-	if r.Method != http.MethodPost || (cleanPath != "/internal/runtime/mcp" && cleanPath != "/internal/runtime/mcp/oauth/callback" && cleanPath != "/internal/runtime/evolve") {
+	if r.Method != http.MethodPost || (cleanPath != "/internal/runtime/mcp" && cleanPath != "/internal/runtime/mcp/oauth/callback" && cleanPath != "/internal/runtime/evolve" && cleanPath != runtimeapi.ResourceLibraryPath) {
 		return nil, nil
 	}
 	return io.ReadAll(io.LimitReader(r.Body, 64*1024+1))

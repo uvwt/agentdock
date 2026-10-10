@@ -16,6 +16,7 @@ import (
 	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
 	"github.com/uvwt/agentdock/internal/observability"
 	pluginruntime "github.com/uvwt/agentdock/internal/plugin"
+	"github.com/uvwt/agentdock/internal/resourcelibrary"
 	"github.com/uvwt/agentdock/internal/taskstate"
 	toolacp "github.com/uvwt/agentdock/internal/tool/acp"
 	toolbrowser "github.com/uvwt/agentdock/internal/tool/browser"
@@ -52,6 +53,9 @@ type Runtime struct {
 	acp            *toolacp.Service
 	observer       *observability.Recorder
 	tracing        *observability.Tracing
+	resourceOnce   sync.Once
+	resourceSvc    *resourcelibrary.Service
+	resourceErr    error
 	lifecycleMu    sync.RWMutex
 	commandCtx     context.Context
 	commandCancel  context.CancelFunc

@@ -48,6 +48,15 @@ type NexusOAuthCallbackRuntime interface {
 	SetNexusOAuthCallback(publicURL, nodeID string) error
 }
 
+// ResourceLibraryRuntime 是可选能力。旧 Runtime 不实现它时，资源库路由失败关闭，
+// 不能把“未声明”解释成允许远程安装。
+// 参数保持为方法和正文，避免 app 为了实现接口反过来导入 runtimeapi。
+type ResourceLibraryRuntime interface {
+	RuntimeResourceLibrary(context.Context, string, []byte) (app.Result, error)
+}
+
+const ResourceLibraryPath = "/internal/runtime/resource-library"
+
 // Request 是 HTTP 与 Nexus Bridge 共用的 Runtime API 请求表示。
 type Request struct {
 	Method string          `json:"method"`

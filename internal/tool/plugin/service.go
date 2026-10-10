@@ -181,115 +181,15 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 		if request.Enabled != nil {
 			enabled = *request.Enabled
 		}
-		result, err := s.manager.InstallReviewedSource(ctx, source, enabled, request.ReviewToken)
-		if err != nil {
-			return nil, pluginToolError(err)
-		}
-		if !result.Changed {
-			if err := s.ReconcileMCP(); err != nil {
-				return nil, toolcore.NewErrorCause(
-					"PLUGIN_RUNTIME_ACTIVATION_FAILED",
-					"Plugin runtime reconciliation failed",
-					"runtime",
-					map[string]any{"plugin_name": result.Name},
-					err,
-				)
-			}
-			return changeResult(result), nil
-		}
-		if err := s.reconcileMCPActivation(result.Name); err != nil {
-			abortErr := s.manager.AbortActivation(ctx, result.Name)
-			reconcileErr := s.ReconcileMCP()
-			return nil, toolcore.NewErrorCause(
-				"PLUGIN_RUNTIME_ACTIVATION_FAILED",
-				"Plugin install candidate could not activate its runtime; installation was aborted",
-				"runtime",
-				map[string]any{"plugin_name": result.Name},
-				errors.Join(err, abortErr, reconcileErr),
-			)
-		}
-		if err := s.manager.FinalizeActivation(result.Name); err != nil {
-			deactivateErr := s.reconcileMCPExcluding(result.Name)
-			abortErr := s.manager.AbortActivation(ctx, result.Name)
-			reconcileErr := s.ReconcileMCP()
-			return nil, toolcore.NewErrorCause(
-				"PLUGIN_INSTALL_FINALIZE_FAILED",
-				"Plugin runtime activated but durable install finalization failed; installation was aborted",
-				"runtime",
-				map[string]any{"plugin_name": result.Name, "version": result.Version},
-				errors.Join(err, deactivateErr, abortErr, reconcileErr),
-			)
-		}
-		return changeResult(result), nil
+		// 普通安装仍先把来源限制在工作区内，再进入同一条审核安装流程。
+		return s.installResolved(ctx, source, enabled, request.ReviewToken)
 
 	case "update":
 		source, err := s.sourcePath(request.Source)
 		if err != nil {
 			return nil, err
 		}
-		var previous pluginruntime.State
-		deactivated := false
-		var deactivationErr error
-		result, err := s.manager.UpdateReviewedSource(ctx, source, request.ReviewToken, func(state pluginruntime.State) error {
-			previous = state
-			if !state.Enabled {
-				return nil
-			}
-			if reconcileErr := s.reconcileMCPExcluding(state.Name); reconcileErr != nil {
-				deactivationErr = toolcore.NewErrorCause(
-					"PLUGIN_RUNTIME_DEACTIVATION_FAILED",
-					"could not stop the current Plugin MCP runtime before update",
-					"runtime",
-					map[string]any{"plugin_name": state.Name, "previous_version": state.Version},
-					reconcileErr,
-				)
-				return deactivationErr
-			}
-			deactivated = true
-			return nil
-		})
-		if err != nil {
-			if deactivationErr != nil {
-				return nil, deactivationErr
-			}
-			if deactivated {
-				reconcileErr := s.ReconcileMCP()
-				if reconcileErr != nil {
-					return nil, toolcore.NewErrorCause(
-						"PLUGIN_UPDATE_FAILED",
-						"Plugin update failed and the previous MCP runtime could not be fully restored",
-						"runtime",
-						map[string]any{"plugin_name": previous.Name, "previous_version": previous.Version},
-						errors.Join(err, reconcileErr),
-					)
-				}
-			}
-			return nil, pluginToolError(err)
-		}
-		if err := s.reconcileMCPActivation(result.Name); err != nil {
-			restoreErr := s.manager.AbortActivation(ctx, result.Name)
-			reconcileErr := s.ReconcileMCP()
-			return nil, toolcore.NewErrorCause(
-				"PLUGIN_RUNTIME_ACTIVATION_FAILED",
-				"Plugin update could not activate its runtime; the previous Plugin state was restored",
-				"runtime",
-				map[string]any{"plugin_name": previous.Name, "previous_version": previous.Version},
-				errors.Join(err, restoreErr, reconcileErr),
-			)
-		}
-		if err := s.manager.FinalizeActivation(result.Name); err != nil {
-			deactivateErr := s.reconcileMCPExcluding(result.Name)
-			restoreErr := s.manager.AbortActivation(ctx, result.Name)
-			reconcileErr := s.ReconcileMCP()
-			return nil, toolcore.NewErrorCause(
-				"PLUGIN_UPDATE_FINALIZE_FAILED",
-				"Plugin runtime activated but durable update finalization failed; the candidate was rolled back",
-				"runtime",
-				map[string]any{"plugin_name": result.Name, "version": result.Version},
-				errors.Join(err, deactivateErr, restoreErr, reconcileErr),
-			)
-		}
-		return changeResult(result), nil
+		return s.updateResolved(ctx, source, request.ReviewToken)
 
 	case "enable", "disable":
 		name := strings.TrimSpace(request.Name)
