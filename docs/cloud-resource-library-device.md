@@ -38,7 +38,7 @@ Quantumult X、Clash 等 TUN DNS 可能给已配对的公共域名返回 `198.18
 
 DEV 场景：Mac mini 的 Quantumult X 返回 `198.18.33.154`，现在应由 TUN 继续转发并通过真实 `dev.nexusdock.co` HTTPS 证书校验。安全性并非单凭 Fake-IP 地址本身保证，而取决于同源校验、TLS 和 Cloud Device Token/传输票据绑定。
 
-**实机验证（2026-10-10）**：Mac mini 系统 DNS 仍返回 `198.18.33.154`，Rescue LaunchAgent 已移除旧的独立 DNS 环境配置。使用同一实现的 `packageTransport(endpoint, systemLookup, packageTransferIP)` 对 `https://dev.nexusdock.co/ready` 发起真实 HTTPS 请求，Go TLS 验证通过且收到 HTTP 200。单元测试另外覆盖：显式 Fake-IP 端点仍拒绝、混合 Fake-IP/普通私网地址整次拒绝、代理环境不能劫持、TLS 不受信任证书不能绕过。此前 Skill/Plugin 云端安装和设备备份 E2E 已通过，但本次零配置改动后尚未重复完整安装/备份链路。
+**实机验证（2026-10-10）**：Mac mini 系统 DNS 仍返回 `198.18.33.154`，Rescue LaunchAgent 已移除旧的独立 DNS 环境配置。使用同一实现的 `packageTransport(endpoint, systemLookup, packageTransferIP)` 对 `https://dev.nexusdock.co/ready` 发起真实 HTTPS 请求，Go TLS 验证通过且收到 HTTP 200。单元测试另外覆盖：显式 Fake-IP 端点仍拒绝、混合 Fake-IP/普通私网地址整次拒绝、代理环境不能劫持、TLS 不受信任证书不能绕过。2026-10-10 已以 Mac mini 独立 DEV 配对设备重新完成此零配置方案下 Skill/Plugin 安装与备份全链路，详见下述实机记录。
 
 
 尚未完成，不能声明 Cloud 备份或远程安装已经对用户开放：
@@ -46,3 +46,14 @@ DEV 场景：Mac mini 的 Quantumult X 返回 `198.18.33.154`，现在应由 TUN
 - 本仓库没有 Cloud 的 `PUT /v1/nodes/library/transfer/{ticket}` 实现。设备只有在已配对 endpoint 真正提供该路由时才能完成上传。
 - 多设备权限、Cloud 侧离线队列和发布开关不在本仓库实现。上传失败或超时后不后台重试，调用方必须重新 `export_prepare`。
 - 配对 endpoint 本身是本机或私网地址时，远程下载和上传都按公网 HTTPS 规则失败关闭。控制面超时沿用该路由的 2 分钟预算，取消后立即返回。
+
+
+## 2026-10-10 单版本资源库实机联调与重复 Plugin 修复
+
+在独立 `feat/resource-library-device-20261009` worktree 上，以临时 Home 和临时设备配对接入真正的 DEV Cloud 单版本资源库；**没有**重配对既有 Mac mini Rescue/生产设备。
+
+- macOS AgentDock 真实 Skill 与 Plugin：Cloud 上传/原始字节下载 → Device Token 限定的设备 HTTPS 下载 → 原生 `install_prepare` 审核 → 一次性 `install_commit` → 受管路径实际写入 → 设备 `export_prepare/export_upload` 反向备份至 Cloud，均通过。
+- 重复 Skill 安装原生 `changed=false`；相同版本、相同摘要的 Plugin 进入 `update` 分支时，原生 Manager 返回 `Changed=false`（不创建待激活事务），上层 `updateResolved` 此前仍尝试激活和 finalization 导致 HTTP 409。提交 `6df61db5` 在 no-op 时直接返回结果，并新增 `TestUpdateReviewedArchiveSamePackageNoop` 防回归。重新编译临时 AgentDock Core 后，对同一已安装 Plugin 重跑真实 Cloud `install_prepare/update` + `install_commit` 返回 HTTP 200、`changed=false`；相同确认重放返回 409。
+- 原生 Plugin `review_token` 验证、摘要复检、Activation/回滚职责不变；首次安装只在用户明确确认后进入原生激活策略，不通过绕开安全审核解决重复安装。
+- 真实 DEV 负例：无 Device Token 401、跨 Tenant 安装预检 404、未知/离线设备 409、ZIP 路径穿越 400、120 秒过期确认 409、重复确认 409。临时设备、云端记录已经清理，未更改正式设备/生产。
+- 验证：`go test -p 2 ./... -timeout 12m` 全仓库通过，`go vet ./internal/tool/plugin ./internal/resourcelibrary` 通过。Cloud 全仓库 Go 回归、前端 TypeScript / 66 项 Vitest / Vite 构建通过。仅做了 macOS 真机验证；Windows/Linux、下载故障注入与完整灾备/GC 回归仍属正式发布前门禁。**尚未将本分支合入 main 或发布 AgentDock 正式版。**
