@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/uvwt/agentdock/internal/config"
 	skillstate "github.com/uvwt/agentdock/internal/skill/state"
@@ -232,6 +234,121 @@ func TestNexusAvailableExposesWorkflowAndRecallContext(t *testing.T) {
 		if !strings.Contains(rules, want) {
 			t.Fatalf("context rules missing %q with Nexus: %s", want, rules)
 		}
+	}
+}
+
+func TestAgentDockContextLoadsWorkflowAndRecallConcurrently(t *testing.T) {
+	root := t.TempDir()
+	var arrived atomic.Int32
+	release := make(chan struct{})
+	var once sync.Once
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/workflow-templates" && r.URL.Path != "/v1/recall/context-index" {
+			http.NotFound(w, r)
+			return
+		}
+		if arrived.Add(1) == 2 {
+			once.Do(func() { close(release) })
+		}
+		select {
+		case <-release:
+		case <-time.After(500 * time.Millisecond):
+			http.Error(w, "shared lookup did not overlap", http.StatusGatewayTimeout)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v1/workflow-templates" {
+			_, _ = w.Write([]byte("{\"items\":[{\"id\":\"wf-parallel\",\"title\":\"Parallel workflow\"}]}"))
+			return
+		}
+		_, _ = w.Write([]byte("{\"context_index\":{\"items\":[{\"path\":\"recall/docs/parallel.md\",\"title\":\"Parallel recall\",\"summary\":\"Loaded concurrently.\"}],\"truncated\":false}}"))
+	}))
+	t.Cleanup(server.Close)
+
+	cfg := config.Config{
+		AgentDockDefaultDir: root,
+		AgentDockHome:       filepath.Join(root, ".agentdock"),
+		NexusEndpoint:       server.URL,
+		NexusDeviceToken:    "test-device-token",
+	}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	rt, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = rt.Close() })
+
+	result, err := rt.AgentDockContext(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got capabilityContext
+	if err := remarshal(result, &got); err != nil {
+		t.Fatal(err)
+	}
+	if arrived.Load() != 2 {
+		t.Fatalf("shared lookup requests = %d, want 2", arrived.Load())
+	}
+	if len(got.WorkflowTemplates) != 1 || got.WorkflowTemplates[0].Name != "wf-parallel" {
+		t.Fatalf("workflow templates = %#v", got.WorkflowTemplates)
+	}
+	if got.Recall == nil || len(got.Recall.Items) != 1 || got.Recall.Items[0].Name != "recall/docs/parallel.md" {
+		t.Fatalf("recall context = %#v", got.Recall)
+	}
+	if len(got.Warnings) != 0 {
+		t.Fatalf("unexpected shared lookup warnings: %#v", got.Warnings)
+	}
+}
+
+func TestAgentDockContextSharedLookupFailureIsIsolated(t *testing.T) {
+	root := t.TempDir()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/workflow-templates" {
+			http.Error(w, "workflow unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if r.URL.Path == "/v1/recall/context-index" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{\"context_index\":{\"items\":[{\"path\":\"recall/docs/still-available.md\",\"title\":\"Recall survives\"}],\"truncated\":false}}"))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	cfg := config.Config{
+		AgentDockDefaultDir: root,
+		AgentDockHome:       filepath.Join(root, ".agentdock"),
+		NexusEndpoint:       server.URL,
+		NexusDeviceToken:    "test-device-token",
+	}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	rt, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = rt.Close() })
+
+	result, err := rt.AgentDockContext(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got capabilityContext
+	if err := remarshal(result, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.WorkflowTemplates) != 0 {
+		t.Fatalf("workflow failure should only empty workflow index: %#v", got.WorkflowTemplates)
+	}
+	if got.Recall == nil || len(got.Recall.Items) != 1 || got.Recall.Items[0].Name != "recall/docs/still-available.md" {
+		t.Fatalf("recall should survive workflow failure: %#v", got.Recall)
+	}
+	if len(got.Warnings) != 1 || got.Warnings[0].Source != "workflow_templates" {
+		t.Fatalf("warnings = %#v, want workflow-only warning", got.Warnings)
 	}
 }
 

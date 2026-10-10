@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/uvwt/agentdock/internal/buildinfo"
@@ -74,11 +75,29 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool) (Re
 	}
 
 	if requiresNexus(r.cfg) && !nexusLocalOnly {
-		templates, templateErr := r.templateCapabilityIndex(ctx)
+		// Workflow 与 Recall 都来自同一个 Nexus，但彼此独立；并行读取避免把两段网络 RTT 串行累加。
+		// 两侧分别保留错误，任一索引失败都只降级自身，不影响另一侧继续返回。
+		var (
+			templates   []capabilityTemplateItem
+			templateErr error
+			memoryItems []capabilityMemoryItem
+			memoryErr   error
+			wg          sync.WaitGroup
+		)
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			templates, templateErr = r.templateCapabilityIndex(ctx)
+		}()
+		go func() {
+			defer wg.Done()
+			memoryItems, memoryErr = r.memoryCapabilityIndex(ctx)
+		}()
+		wg.Wait()
+
 		if templateErr != nil {
 			contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "workflow_templates", Message: "工作流模板索引暂不可用；多步骤任务仍应先 workflow_template_manage match。"})
 		}
-		memoryItems, memoryErr := r.memoryCapabilityIndex(ctx)
 		if memoryErr != nil {
 			contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "recall", Message: "记忆精简摘要暂不可用；需要项目事实时调用 recall_search/recall_read 精确确认。"})
 		}
