@@ -69,6 +69,15 @@ func writeCoreEnvironment(path string, request Request) error {
 		delete(existing, key)
 	}
 
+	// Core 的数据目录必须由安装契约明确传给服务，不能依赖 systemd
+	// 服务用户的 HOME；该用户可能是安装前已经存在的账号。
+	if request.AgentDockHome != "" {
+		existing["AGENTDOCK_HOME"] = request.AgentDockHome
+	}
+	if request.AgentDockDefaultDir != "" {
+		existing["AGENTDOCK_DEFAULT_DIR"] = request.AgentDockDefaultDir
+	}
+
 	if strings.TrimSpace(request.Host) != "" {
 		existing["AGENTDOCK_HOST"] = request.Host
 	} else if strings.TrimSpace(existing["AGENTDOCK_HOST"]) == "" {
