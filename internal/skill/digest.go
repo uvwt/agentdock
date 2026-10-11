@@ -137,6 +137,9 @@ func extractZip(src, dest string, maxBytes int64, maxFiles int) error {
 	var total int64
 	files := 0
 	for _, file := range reader.File {
+		if file.Flags&0x1 != 0 {
+			return fmt.Errorf("encrypted ZIP entry is not allowed: %s", file.Name)
+		}
 		if file.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("zip symlink is not allowed: %s", file.Name)
 		}
@@ -150,19 +153,30 @@ func extractZip(src, dest string, maxBytes int64, maxFiles int) error {
 		if !strings.HasPrefix(target, rootPrefix) {
 			return fmt.Errorf("zip path escapes package root after cleaning: %s", file.Name)
 		}
+		if !file.FileInfo().IsDir() {
+			if !file.Mode().IsRegular() {
+				return fmt.Errorf("ZIP special file is not allowed: %s", file.Name)
+			}
+			files++
+			if files > maxFiles {
+				return fmt.Errorf("package exceeds %d files", maxFiles)
+			}
+			if maxBytes < 0 || file.UncompressedSize64 > uint64(maxBytes) ||
+				total > maxBytes-int64(file.UncompressedSize64) {
+				return fmt.Errorf("uncompressed package exceeds %d bytes", maxBytes)
+			}
+			total += int64(file.UncompressedSize64)
+		}
+		// 校验路径、类型及大小之后再忽略 macOS 传输元数据。
+		// 不写入暂存目录，确保 ZIP 中的 __MACOSX 不阻断单层 Skill 根目录的识别。
+		if IsIgnoredPackageMetadataPath(name) {
+			continue
+		}
 		if file.FileInfo().IsDir() {
 			if err := os.MkdirAll(target, 0o700); err != nil {
 				return err
 			}
 			continue
-		}
-		files++
-		if files > maxFiles {
-			return fmt.Errorf("package exceeds %d files", maxFiles)
-		}
-		total += int64(file.UncompressedSize64)
-		if total > maxBytes {
-			return fmt.Errorf("uncompressed package exceeds %d bytes", maxBytes)
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 			return err
