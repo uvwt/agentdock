@@ -75,3 +75,44 @@ func TestMacOSApplicationMenuWindowShortcuts(t *testing.T) {
 		}
 	}
 }
+
+func TestMacOSMainWindowTitleDoesNotOverlapScrollingContent(t *testing.T) {
+	path := filepath.Join("..", "..", "desktop", "macos", "AgentDockApp", "Sources", "NativeControlPanelWindowController.swift")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read NativeControlPanelWindowController.swift: %v", err)
+	}
+	content := string(data)
+	for _, want := range []string{
+		`window.title = "AgentDock"`,
+		`window.titleVisibility = .hidden`,
+		`window.titlebarAppearsTransparent = true`,
+		`.fullSizeContentView`,
+		`.padding(.top, 44)`,
+		`.ignoresSafeArea(.container, edges: .top)`,
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("macOS main window must keep its native controls while hiding the overlapping title: missing %q", want)
+		}
+	}
+}
+
+func TestMacOSPagesUseConsistentCompactTopSpacing(t *testing.T) {
+	path := filepath.Join("..", "..", "desktop", "macos", "AgentDockApp", "Sources", "NativeControlPanelWindowController.swift")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read NativeControlPanelWindowController.swift: %v", err)
+	}
+	content := string(data)
+
+	// 五个右侧页面共用 44pt 标题栏空间；正文各留 16pt，避免顶部大块留白。
+	if got := strings.Count(content, ".padding(.top, 16)"); got != 5 {
+		t.Fatalf("expected compact 16pt top padding on all five pages, got %d", got)
+	}
+	if strings.Contains(content, ".padding(.top, 24)") {
+		t.Fatal("macOS pages must not keep the oversized 24pt top padding")
+	}
+	if !strings.Contains(content, ".padding(.top, 44)") {
+		t.Fatal("macOS must keep the native titlebar drag area")
+	}
+}

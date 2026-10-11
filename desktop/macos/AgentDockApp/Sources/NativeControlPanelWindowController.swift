@@ -27,6 +27,9 @@ final class NativeControlPanelWindowController: NSWindowController, NSWindowDele
             defer: false
         )
         window.title = "AgentDock"
+        // 内容延伸至透明标题栏时，原生窗口标题会盖住滚动到顶部的页面标题。
+        // 仅隐藏标题文字，保留窗口按钮和系统窗口名称。
+        window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
         window.setFrame(NSRect(x: 0, y: 0, width: 1060, height: 720), display: false)
@@ -383,6 +386,10 @@ private struct ControlPanelRootView: View {
             .navigationSplitViewColumnWidth(min: 160, ideal: 168, max: 180)
         } detail: {
             pageContent
+                // 原生透明标题栏没有可见标题，右侧内容不应再为系统安全区重复留白。
+                // 统一保留 44pt 的可拖动顶边，页面自身保留 16pt 的顶部间距，总体约 60pt。
+                .padding(.top, 44)
+                .ignoresSafeArea(.container, edges: .top)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .background(Color(nsColor: .windowBackgroundColor))
         }
@@ -752,7 +759,7 @@ private struct HomeView: View {
                 }
             }
             .padding(.horizontal, 28)
-            .padding(.top, 24)
+            .padding(.top, 16)
             .padding(.bottom, 32)
             .frame(maxWidth: 840, alignment: .leading)
         }
@@ -1033,7 +1040,7 @@ private struct ConnectionsView: View {
                 }
             }
             .padding(.horizontal, 28)
-            .padding(.top, 24)
+            .padding(.top, 16)
             .padding(.bottom, 32)
             .frame(maxWidth: 760, alignment: .leading)
         }
@@ -1222,7 +1229,7 @@ private struct CapabilitiesView: View {
                 if let message = model.message { Text(message).font(.system(size: 12)).foregroundStyle(.secondary) }
 
             }
-            .padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 32)
+            .padding(.horizontal, 28).padding(.top, 16).padding(.bottom, 32)
             .frame(maxWidth: 760, alignment: .leading)
         }
         .task(id: model.statusUpdatedAt) {
@@ -1500,7 +1507,7 @@ private struct ActivityView: View {
                 }
             }
             .padding(.horizontal, 28)
-            .padding(.top, 24)
+            .padding(.top, 16)
             .padding(.bottom, 32)
             .frame(maxWidth: 760, alignment: .leading)
         }
@@ -1553,7 +1560,7 @@ private struct SettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             PageHeader(title: L10n.text("Settings"))
-                .padding(.horizontal, 28).padding(.top, 24)
+                .padding(.horizontal, 28).padding(.top, 16)
 
             HStack(alignment: .top, spacing: 0) {
                 VStack(alignment: .leading, spacing: 4) {
