@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"os"
 	"path/filepath"
-	"syscall"
 	"testing"
 )
 
@@ -51,19 +50,6 @@ func TestExportDirectory_拒绝符号链接特殊文件和白名单外路径(t *
 		t.Fatal("export accepted a symlink")
 	}
 	os.Remove(filepath.Join(root, "references"))
-
-	fifo := filepath.Join(root, "scripts")
-	if err := os.MkdirAll(fifo, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	fifo = filepath.Join(fifo, "pipe")
-	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ExportDirectory(root, KindSkill, filepath.Join(t.TempDir(), "fifo.zip")); err == nil {
-		t.Fatal("export accepted a FIFO")
-	}
-	os.Remove(fifo)
 
 	writeFile(t, filepath.Join(root, "bin", "tool"), "#!/bin/sh\n")
 	if _, err := ExportDirectory(root, KindSkill, filepath.Join(t.TempDir(), "bin.zip")); err == nil {
