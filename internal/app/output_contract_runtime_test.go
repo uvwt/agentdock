@@ -75,6 +75,7 @@ func TestRuntimeOutputContractDefaultToolSuccessPaths(t *testing.T) {
 		{name: "exec_command", args: map[string]any{"cmd": "printf contract-marker", "execution_mode": "sync"}},
 		{name: "session_observe", args: map[string]any{"action": "list"}},
 		{name: "session_act", args: map[string]any{"action": "kill_all"}},
+		{name: "task_create", args: map[string]any{"title": "Contract task", "goal": "verify task_create output", "completion_conditions": []string{"created"}}},
 		{name: "task_manage", args: map[string]any{"action": "list"}},
 		{name: "mcp_manage", args: map[string]any{"action": "list"}},
 		{name: "mcp_tool_search", args: map[string]any{"query": "*"}},
@@ -89,6 +90,27 @@ func TestRuntimeOutputContractDefaultToolSuccessPaths(t *testing.T) {
 			assertToolResultMatchestestOutputSchema(t, call.name, result)
 		})
 	}
+}
+
+func TestRuntimeOutputContractTaskSnapshot(t *testing.T) {
+	runtime := newRuntimeValidationTestRuntime(t)
+	created, err := runtime.Call(context.Background(), "task_create", map[string]any{
+		"title":                 "Snapshot contract",
+		"goal":                  "verify app-only task reads",
+		"completion_conditions": []string{"snapshot validates"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskID, _ := created["task_id"].(string)
+	if taskID == "" {
+		t.Fatalf("task_create returned no task_id: %#v", created)
+	}
+	result, err := runtime.Call(context.Background(), "task_snapshot", map[string]any{"task_id": taskID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertToolResultMatchestestOutputSchema(t, "task_snapshot", result)
 }
 
 func TestRuntimeOutputContractRecallReadMaintain(t *testing.T) {

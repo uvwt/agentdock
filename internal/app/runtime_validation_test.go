@@ -27,6 +27,7 @@ func TestRuntimeCallRejectsUnknownArgumentsForFormerlyPermissiveTools(t *testing
 		{tool: "search_text", args: map[string]any{"query": "never", "future_field": true}},
 		{tool: "read_file", args: map[string]any{"path": "missing.txt", "future_field": true}},
 		{tool: "file_edit", args: map[string]any{"action": "replace", "future_field": true}},
+		{tool: "task_create", args: map[string]any{"title": "x", "goal": "x", "completion_conditions": []string{"x"}, "future_field": true}},
 		{tool: "task_manage", args: map[string]any{"action": "list", "future_field": true}},
 		{tool: "skill_manage", args: map[string]any{"action": "env_list", "future_field": true}},
 		{tool: "view_image", args: map[string]any{"path": "missing.png", "future_field": true}},
@@ -63,7 +64,6 @@ func TestRuntimeCallEnforcesRequiredEnumBoundsAndOneOf(t *testing.T) {
 func TestRuntimeCallEnforcesTaskCreateRequiredFields(t *testing.T) {
 	runtime := newRuntimeValidationTestRuntime(t)
 	valid := map[string]any{
-		"action":                "create",
 		"title":                 "schema contract",
 		"goal":                  "match runtime requirements",
 		"completion_conditions": []any{"task is created"},
@@ -75,22 +75,32 @@ func TestRuntimeCallEnforcesTaskCreateRequiredFields(t *testing.T) {
 				args[key] = value
 			}
 		}
-		t.Run("missing_"+field, func(t *testing.T) {
-			assertInvalidToolArguments(t, runtime, "task_manage", args)
+		t.Run("task_create_missing_"+field, func(t *testing.T) {
+			assertInvalidToolArguments(t, runtime, "task_create", args)
 		})
 	}
 
-	if _, err := runtime.Call(context.Background(), "task_manage", valid); err != nil {
-		t.Fatalf("schema-complete task create failed: %v", err)
+	if _, err := runtime.Call(context.Background(), "task_create", valid); err != nil {
+		t.Fatalf("schema-complete task_create failed: %v", err)
+	}
+
+	legacy := map[string]any{
+		"action":                "create",
+		"title":                 "legacy schema contract",
+		"goal":                  "keep backward compatibility",
+		"completion_conditions": []any{"legacy task is created"},
+	}
+	if _, err := runtime.Call(context.Background(), "task_manage", legacy); err != nil {
+		t.Fatalf("legacy task_manage create failed: %v", err)
 	}
 }
 
 func TestRuntimeCallRejectsNestedUnknownFields(t *testing.T) {
 	runtime := newRuntimeValidationTestRuntime(t)
-	assertInvalidToolArguments(t, runtime, "task_manage", map[string]any{
-		"action": "create",
-		"title":  "schema test",
-		"goal":   "schema test",
+	assertInvalidToolArguments(t, runtime, "task_create", map[string]any{
+		"title":                 "schema test",
+		"goal":                  "schema test",
+		"completion_conditions": []string{"created"},
 		"steps": []any{
 			map[string]any{"id": "step-1", "title": "test", "future_field": true},
 		},

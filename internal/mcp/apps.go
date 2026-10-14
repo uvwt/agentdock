@@ -20,6 +20,97 @@ type appResourceDefinition struct {
 	HTML        string
 }
 
+const taskProgressRefreshInjection = `
+  let taskRefreshTimer=0;
+  let taskRefreshID="";
+  let taskRefreshBusy=false;
+
+  function taskRefreshStop(){
+    if(taskRefreshTimer){clearTimeout(taskRefreshTimer);taskRefreshTimer=0}
+    taskRefreshID="";
+  }
+
+  function taskRefreshTaskID(data){
+    const task=taskRecord(data);
+    return String(data.task_id||task.id||"");
+  }
+
+  function taskRefreshTerminal(data){
+    const task=taskRecord(data);
+    return String(task.status||"")==="completed";
+  }
+
+  function taskRefreshDelay(data){
+    const task=taskRecord(data);
+    return String(task.status||"")==="blocked"?10000:2000;
+  }
+
+  function taskRefreshSchedule(delay){
+    if(!taskRefreshID||document.hidden)return;
+    if(taskRefreshTimer)clearTimeout(taskRefreshTimer);
+    taskRefreshTimer=window.setTimeout(async()=>{
+      taskRefreshTimer=0;
+      if(!taskRefreshID)return;
+      const nextDelay=await taskRefreshOnce();
+      if(taskRefreshID)taskRefreshSchedule(nextDelay);
+    },delay);
+  }
+
+  async function taskRefreshOnce(){
+    if(!taskRefreshID||taskRefreshBusy||document.hidden)return 2000;
+    taskRefreshBusy=true;
+    try{
+      const result=await rpcRequest("tools/call",{name:"task_snapshot",arguments:{task_id:taskRefreshID}});
+      const data=result&&result.structuredContent;
+      if(isObject(data)){
+        render(data);
+        if(taskRefreshTerminal(data)){taskRefreshStop();return 0}
+        return taskRefreshDelay(data);
+      }
+    }catch(_){
+      return 5000;
+    }finally{
+      taskRefreshBusy=false;
+    }
+    return 2000;
+  }
+
+  function taskRefreshObserve(data){
+    if(expectedView!=="task_progress"||!isObject(data)||data.action!=="create")return;
+    const id=taskRefreshTaskID(data);
+    if(!id)return;
+    taskRefreshID=id;
+    if(taskRefreshTerminal(data)){taskRefreshStop();return}
+    taskRefreshSchedule(700);
+  }
+
+  window.addEventListener("message",event=>{
+    if(event.source!==window.parent)return;
+    const message=event.data;
+    if(!isObject(message)||message.jsonrpc!=="2.0")return;
+    if(message.method==="ui/notifications/tool-result"){
+      const data=message.params&&message.params.structuredContent;
+      if(isObject(data))taskRefreshObserve(data);
+    }else if(message.method==="ui/resource-teardown"){
+      taskRefreshStop();
+    }
+  },{passive:true});
+
+  document.addEventListener("visibilitychange",()=>{
+    if(document.hidden||!taskRefreshID)return;
+    void taskRefreshOnce().then(delay=>{if(taskRefreshID)taskRefreshSchedule(delay)});
+  },{passive:true});
+`
+
+func taskProgressAppHTML() string {
+	html := mcpapps.HTML("task_progress", "Task")
+	const marker = "\n  initializeBridge();\n})();"
+	if !strings.Contains(html, marker) {
+		return html
+	}
+	return strings.Replace(html, marker, "\n"+taskProgressRefreshInjection+marker, 1)
+}
+
 func (s *Server) appResourceDefinitions() []appResourceDefinition {
 	if s == nil || s.cfg.MCPAppsMode == config.MCPAppsModeOff {
 		return nil
@@ -50,8 +141,8 @@ func (s *Server) appResourceDefinitions() []appResourceDefinition {
 			URI:         protocol.TaskProgressUIResourceURI,
 			Name:        "agentdock-task-progress",
 			Title:       "AgentDock task",
-			Description: "Compact read-only task lifecycle view for task_manage results and task snapshots.",
-			HTML:        mcpapps.HTML("task_progress", "Task"),
+			Description: "Read-only task lifecycle view that keeps one task card synchronized with authoritative task state.",
+			HTML:        taskProgressAppHTML(),
 		},
 		{
 			URI:         protocol.FileChangeUIResourceURI,
