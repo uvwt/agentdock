@@ -24,11 +24,12 @@ import (
 const identityVersion = 1
 
 type Identity struct {
-	Version     int    `json:"version"`
-	Endpoint    string `json:"endpoint"`
-	NodeID      string `json:"node_id"`
-	DeviceID    string `json:"device_id"`
-	DeviceToken string `json:"device_token"`
+	Version           int    `json:"version"`
+	Endpoint          string `json:"endpoint"`
+	WebSocketEndpoint string `json:"websocket_endpoint,omitempty"`
+	NodeID            string `json:"node_id"`
+	DeviceID          string `json:"device_id"`
+	DeviceToken       string `json:"device_token"`
 }
 
 // Status 是控制面板可安全展示的配对状态，不暴露 Device Token 本身。
@@ -95,7 +96,17 @@ func Pair(ctx context.Context, agentDockHome string, options PairOptions) (Ident
 	if paired.Node.ID == "" || paired.DeviceToken == "" {
 		return Identity{}, errors.New("NexusDock 配对响应缺少节点身份")
 	}
-	identity := Identity{Version: identityVersion, Endpoint: endpoint, NodeID: paired.Node.ID, DeviceID: deviceID, DeviceToken: paired.DeviceToken}
+	webSocketEndpoint := ""
+	if strings.TrimSpace(paired.WebSocketEndpoint) != "" {
+		webSocketEndpoint, err = normalizeEndpoint(paired.WebSocketEndpoint)
+		if err != nil {
+			return Identity{}, fmt.Errorf("NexusDock 返回的 WebSocket endpoint 无效: %w", err)
+		}
+	}
+	identity := Identity{
+		Version: identityVersion, Endpoint: endpoint, WebSocketEndpoint: webSocketEndpoint,
+		NodeID: paired.Node.ID, DeviceID: deviceID, DeviceToken: paired.DeviceToken,
+	}
 	if err := Save(agentDockHome, identity); err != nil {
 		return Identity{}, err
 	}
@@ -116,6 +127,13 @@ func Load(agentDockHome string) (Identity, error) {
 	}
 	if identity.Version != identityVersion || identity.Endpoint == "" || identity.NodeID == "" || identity.DeviceID == "" || identity.DeviceToken == "" {
 		return Identity{}, errors.New("NexusDock 设备身份文件无效")
+	}
+	if identity.WebSocketEndpoint != "" {
+		normalized, err := normalizeEndpoint(identity.WebSocketEndpoint)
+		if err != nil {
+			return Identity{}, fmt.Errorf("NexusDock 设备身份中的 WebSocket endpoint 无效: %w", err)
+		}
+		identity.WebSocketEndpoint = normalized
 	}
 	return identity, nil
 }

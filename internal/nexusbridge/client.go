@@ -25,9 +25,18 @@ import (
 )
 
 const (
-	maxMessageBytes    = 8 << 20
-	invokeDrainTimeout = 5 * time.Second
+	maxMessageBytes           = 8 << 20
+	invokeDrainTimeout        = 5 * time.Second
+	stableConnectionDuration  = 30 * time.Second
+	officialNexusEndpoint     = "https://mcp.nexusdock.co"
+	officialWebSocketEndpoint = "https://ws.nexusdock.co"
 )
+
+type connectionOutcome struct {
+	err             error
+	connectedFor    time.Duration
+	fallbackAllowed bool
+}
 
 // NodeAPI 由 Nexus Bridge 消费方定义，只包含握手和远程 operation 真正需要的节点能力。
 type NodeAPI interface {
@@ -60,11 +69,23 @@ func (c *Client) Run(ctx context.Context) {
 	defer c.drainInvocations()
 	backoff := time.Second
 	for ctx.Err() == nil {
-		err := c.connect(ctx)
+		endpoints := c.connectionEndpoints()
+		endpoint := endpoints[0]
+		outcome := c.connect(ctx, endpoint)
 		if ctx.Err() != nil {
 			return
 		}
-		slog.Warn("NexusDock connection lost", "error", err, "retry_in", backoff)
+		backoff = resetBackoffAfterStableConnection(backoff, outcome.connectedFor)
+		if len(endpoints) > 1 && outcome.fallbackAllowed {
+			slog.Warn("NexusDock preferred WebSocket endpoint unavailable; trying paired endpoint", "endpoint", endpoint, "error", outcome.err)
+			endpoint = endpoints[1]
+			outcome = c.connect(ctx, endpoint)
+			if ctx.Err() != nil {
+				return
+			}
+			backoff = resetBackoffAfterStableConnection(backoff, outcome.connectedFor)
+		}
+		slog.Warn("NexusDock connection lost", "endpoint", endpoint, "error", outcome.err, "retry_in", backoff)
 		timer := time.NewTimer(backoff + time.Duration(rand.IntN(500))*time.Millisecond)
 		select {
 		case <-ctx.Done():
@@ -75,6 +96,55 @@ func (c *Client) Run(ctx context.Context) {
 		if backoff < 30*time.Second {
 			backoff *= 2
 		}
+	}
+}
+
+func (c *Client) connectionEndpoints() []string {
+	preferred := strings.TrimSpace(c.identity.WebSocketEndpoint)
+	fallback := strings.TrimSpace(c.identity.Endpoint)
+	// 老版本 identity 没有 websocket_endpoint。只为官方 SaaS 补默认值，
+	// 自建 NexusDock 仍严格使用配对时保存的 endpoint；服务端显式下发值始终优先。
+	if preferred == "" && strings.EqualFold(fallback, officialNexusEndpoint) {
+		preferred = officialWebSocketEndpoint
+	}
+	if preferred == "" || preferred == fallback {
+		return []string{fallback}
+	}
+	return []string{preferred, fallback}
+}
+
+func resetBackoffAfterStableConnection(current, connectedFor time.Duration) time.Duration {
+	if connectedFor >= stableConnectionDuration {
+		return time.Second
+	}
+	return current
+}
+
+func fallbackAllowedForHTTPStatus(status int) bool {
+	return status == http.StatusRequestTimeout ||
+		status == http.StatusTooEarly ||
+		status == http.StatusTooManyRequests ||
+		status >= http.StatusInternalServerError
+}
+
+func fallbackAllowedForSocketError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var closeErr *websocket.CloseError
+	if !errors.As(err, &closeErr) {
+		return true
+	}
+	switch closeErr.Code {
+	case websocket.CloseProtocolError,
+		websocket.CloseUnsupportedData,
+		websocket.CloseInvalidFramePayloadData,
+		websocket.ClosePolicyViolation,
+		websocket.CloseMessageTooBig,
+		websocket.CloseMandatoryExtension:
+		return false
+	default:
+		return true
 	}
 }
 
@@ -91,11 +161,11 @@ func (c *Client) drainInvocations() {
 	}
 }
 
-func (c *Client) connect(ctx context.Context) error {
+func (c *Client) connect(ctx context.Context, rawEndpoint string) connectionOutcome {
 	c.state.SetConnected(false)
-	endpoint, err := url.Parse(c.identity.Endpoint)
+	endpoint, err := url.Parse(rawEndpoint)
 	if err != nil {
-		return err
+		return connectionOutcome{err: err}
 	}
 	if endpoint.Scheme == "https" {
 		endpoint.Scheme = "wss"
@@ -107,9 +177,12 @@ func (c *Client) connect(ctx context.Context) error {
 	socket, response, err := websocket.DefaultDialer.DialContext(ctx, endpoint.String(), header)
 	if err != nil {
 		if response != nil {
-			return fmt.Errorf("连接 NexusDock（HTTP %d）: %w", response.StatusCode, err)
+			return connectionOutcome{
+				err:             fmt.Errorf("连接 NexusDock（HTTP %d）: %w", response.StatusCode, err),
+				fallbackAllowed: fallbackAllowedForHTTPStatus(response.StatusCode),
+			}
 		}
-		return fmt.Errorf("连接 NexusDock: %w", err)
+		return connectionOutcome{err: fmt.Errorf("连接 NexusDock: %w", err), fallbackAllowed: true}
 	}
 	defer socket.Close()
 	// gorilla/websocket 的阻塞读取不会自动观察 context；父 Context 取消时主动关闭连接，
@@ -121,20 +194,20 @@ func (c *Client) connect(ctx context.Context) error {
 	tools := c.node.ToolNames()
 	descriptors, err := bridgeToolDescriptors(c.node.ToolDescriptors())
 	if err != nil {
-		return err
+		return connectionOutcome{err: err}
 	}
 	if err := c.write(socket, protocol.Message{
 		Type: protocol.MessageNodeHello, ProtocolVersion: protocol.ConnectionProtocolVersion,
 		Hello: bridgeHello(c.identity, tools, descriptors, c.node.UIResources(), c.node.ToolContractHash()),
 	}); err != nil {
-		return err
+		return connectionOutcome{err: err, fallbackAllowed: true}
 	}
 	var ready protocol.Message
 	if err := socket.ReadJSON(&ready); err != nil {
-		return fmt.Errorf("读取 NexusDock 握手响应: %w", err)
+		return connectionOutcome{err: fmt.Errorf("读取 NexusDock 握手响应: %w", err), fallbackAllowed: fallbackAllowedForSocketError(err)}
 	}
 	if ready.Type != protocol.MessageNodeReady || ready.ProtocolVersion != protocol.ConnectionProtocolVersion {
-		return errors.New("NexusDock 返回了不兼容的节点协议")
+		return connectionOutcome{err: errors.New("NexusDock 返回了不兼容的节点协议")}
 	}
 	if oauthRuntime, ok := c.runtime.(runtimeapi.NexusOAuthCallbackRuntime); ok {
 		if err := oauthRuntime.SetNexusOAuthCallback(ready.PublicURL, c.identity.NodeID); err != nil {
@@ -150,7 +223,8 @@ func (c *Client) connect(ctx context.Context) error {
 	}
 	c.state.SetConnected(true)
 	defer c.state.SetConnected(false)
-	slog.Info("NexusDock node connected", "node_id", c.identity.NodeID, "endpoint", c.identity.Endpoint)
+	connectedAt := time.Now()
+	slog.Info("NexusDock node connected", "node_id", c.identity.NodeID, "endpoint", rawEndpoint)
 	heartbeat := time.Duration(ready.HeartbeatMS) * time.Millisecond
 	if heartbeat <= 0 {
 		heartbeat = 30 * time.Second
@@ -161,7 +235,11 @@ func (c *Client) connect(ctx context.Context) error {
 	for {
 		var incoming protocol.Message
 		if err := socket.ReadJSON(&incoming); err != nil {
-			return err
+			return connectionOutcome{
+				err:             err,
+				connectedFor:    time.Since(connectedAt),
+				fallbackAllowed: fallbackAllowedForSocketError(err),
+			}
 		}
 		switch incoming.Type {
 		case protocol.MessageToolInvoke:

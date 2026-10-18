@@ -76,3 +76,62 @@ func TestPublicEndpointRequiresHTTPS(t *testing.T) {
 		t.Fatalf("loopback endpoint=%q err=%v", endpoint, err)
 	}
 }
+
+func TestPairPersistsOptionalWebSocketEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"node":{"id":"node_ws"},"device_token":"device-secret","websocket_endpoint":"http://127.0.0.1:8765/"}`))
+	}))
+	defer server.Close()
+
+	home := t.TempDir()
+	identity, err := Pair(t.Context(), home, PairOptions{Endpoint: server.URL, Code: "pair_test", Name: "DockMini"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.WebSocketEndpoint != "http://127.0.0.1:8765" {
+		t.Fatalf("websocket endpoint = %q", identity.WebSocketEndpoint)
+	}
+	loaded, err := Load(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.WebSocketEndpoint != identity.WebSocketEndpoint {
+		t.Fatalf("loaded websocket endpoint = %q, want %q", loaded.WebSocketEndpoint, identity.WebSocketEndpoint)
+	}
+}
+
+func TestPairRejectsInvalidWebSocketEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"node":{"id":"node_ws"},"device_token":"device-secret","websocket_endpoint":"http://public.example.com"}`))
+	}))
+	defer server.Close()
+
+	_, err := Pair(t.Context(), t.TempDir(), PairOptions{Endpoint: server.URL, Code: "pair_test", Name: "DockMini"})
+	if err == nil || !strings.Contains(err.Error(), "WebSocket endpoint") {
+		t.Fatalf("invalid websocket endpoint should be rejected, err=%v", err)
+	}
+}
+
+func TestLoadLegacyIdentityWithoutWebSocketEndpoint(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, "nexus", "device.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data := []byte(`{"version":1,"endpoint":"https://nexus.example.com","node_id":"node_legacy","device_id":"device_legacy_01","device_token":"secret"}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	identity, err := Load(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.WebSocketEndpoint != "" || identity.Endpoint != "https://nexus.example.com" {
+		t.Fatalf("legacy identity = %#v", identity)
+	}
+}

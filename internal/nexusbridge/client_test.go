@@ -313,3 +313,145 @@ func TestBridgeToolInvokeContinuesTraceContextIntoRuntime(t *testing.T) {
 		t.Fatal("bridge did not stop after cancellation")
 	}
 }
+
+func TestConnectionEndpointsPreferDedicatedWebSocketEndpoint(t *testing.T) {
+	client := &Client{identity: Identity{
+		Endpoint:          "https://mcp.nexusdock.co",
+		WebSocketEndpoint: "https://ws.nexusdock.co",
+	}}
+	if got, want := client.connectionEndpoints(), []string{"https://ws.nexusdock.co", "https://mcp.nexusdock.co"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("connection endpoints = %v, want %v", got, want)
+	}
+
+	client.identity.WebSocketEndpoint = ""
+	if got, want := client.connectionEndpoints(), []string{"https://ws.nexusdock.co", "https://mcp.nexusdock.co"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("legacy official connection endpoints = %v, want %v", got, want)
+	}
+
+	client.identity.Endpoint = "https://selfhost.example.com"
+	if got, want := client.connectionEndpoints(), []string{"https://selfhost.example.com"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("self-hosted connection endpoints = %v, want %v", got, want)
+	}
+}
+
+func TestFallbackClassificationDoesNotHideAuthenticationOrProtocolFailures(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusBadRequest} {
+		if fallbackAllowedForHTTPStatus(status) {
+			t.Errorf("HTTP %d must not allow fallback", status)
+		}
+	}
+	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooEarly, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable} {
+		if !fallbackAllowedForHTTPStatus(status) {
+			t.Errorf("HTTP %d should allow transport fallback", status)
+		}
+	}
+	if fallbackAllowedForSocketError(&websocket.CloseError{Code: websocket.ClosePolicyViolation}) {
+		t.Fatal("policy close must not allow fallback")
+	}
+	if !fallbackAllowedForSocketError(&websocket.CloseError{Code: websocket.CloseAbnormalClosure}) {
+		t.Fatal("abnormal close should allow fallback")
+	}
+}
+
+func TestBackoffResetsAfterStableConnection(t *testing.T) {
+	if got := resetBackoffAfterStableConnection(32*time.Second, stableConnectionDuration-time.Millisecond); got != 32*time.Second {
+		t.Fatalf("short connection reset backoff to %v", got)
+	}
+	if got := resetBackoffAfterStableConnection(32*time.Second, stableConnectionDuration); got != time.Second {
+		t.Fatalf("stable connection backoff = %v, want 1s", got)
+	}
+}
+
+func TestBridgeFallsBackToPairedEndpointAfterPreferredGatewayFailure(t *testing.T) {
+	preferredHit := make(chan struct{}, 1)
+	preferred := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		preferredHit <- struct{}{}
+		http.Error(w, "edge unavailable", http.StatusServiceUnavailable)
+	}))
+	defer preferred.Close()
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	fallbackConnected := make(chan struct{}, 1)
+	fallback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != protocol.ConnectPath {
+			http.NotFound(w, r)
+			return
+		}
+		socket, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer socket.Close()
+		var hello protocol.Message
+		if err := socket.ReadJSON(&hello); err != nil {
+			return
+		}
+		if err := socket.WriteJSON(protocol.Message{
+			Type: protocol.MessageNodeReady, ProtocolVersion: protocol.ConnectionProtocolVersion, HeartbeatMS: 60_000,
+		}); err != nil {
+			return
+		}
+		fallbackConnected <- struct{}{}
+		for {
+			if _, _, err := socket.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}))
+	defer fallback.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	client := NewClient(
+		Identity{
+			Endpoint: fallback.URL, WebSocketEndpoint: preferred.URL,
+			NodeID: "node-fallback", DeviceID: "device-fallback", DeviceToken: "device-token",
+		},
+		mcp.NewServer(nil, config.Config{}), nil, publicartifacts.Store{}, &ConnectionState{},
+	)
+	done := make(chan struct{})
+	go func() {
+		client.Run(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-preferredHit:
+	case <-time.After(2 * time.Second):
+		t.Fatal("preferred websocket endpoint was not attempted")
+	}
+	select {
+	case <-fallbackConnected:
+	case <-time.After(2 * time.Second):
+		t.Fatal("paired endpoint was not used as fallback")
+	}
+	deadline := time.Now().Add(time.Second)
+	for !client.state.Connected() && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !client.state.Connected() {
+		t.Fatal("bridge should be connected through fallback endpoint")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("bridge did not stop after cancellation")
+	}
+}
+
+func TestConnectAuthenticationFailureDoesNotAllowFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	client := NewClient(
+		Identity{Endpoint: server.URL, DeviceToken: "bad-token"},
+		mcp.NewServer(nil, config.Config{}), nil, publicartifacts.Store{}, &ConnectionState{},
+	)
+	outcome := client.connect(t.Context(), server.URL)
+	if outcome.err == nil || outcome.fallbackAllowed {
+		t.Fatalf("authentication failure outcome = %#v", outcome)
+	}
+}
