@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/uvwt/agentdock/internal/envstore"
 	"github.com/uvwt/agentdock/internal/fs/atomicfile"
@@ -107,7 +108,9 @@ func platformTunnelAction(ctx context.Context, runtimeRoot, action string) error
 		action = "restart"
 	}
 	switch action {
-	case "start", "restart", "stop":
+	case "start", "restart":
+		return verifiedTunnelServiceAction(ctx, manifest, action)
+	case "stop":
 		return tunnelServiceAction(ctx, manifest, action)
 	default:
 		return errors.New("不支持的 Tunnel 操作")
@@ -397,4 +400,21 @@ func tunnelServiceAction(ctx context.Context, manifest unixRuntimeManifest, acti
 
 func tunnelServiceSetEnabled(ctx context.Context, manifest unixRuntimeManifest, enabled bool) error {
 	return platformTunnelServiceSetEnabled(ctx, manifest, enabled)
+}
+
+func verifiedTunnelServiceAction(ctx context.Context, manifest unixRuntimeManifest, action string) error {
+	if err := tunnelServiceAction(ctx, manifest, action); err != nil {
+		return err
+	}
+	timer := time.NewTimer(250 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+	}
+	if !tunnelServiceActive(ctx, manifest) {
+		return errors.New("Tunnel 服务启动后未保持运行")
+	}
+	return nil
 }

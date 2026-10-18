@@ -202,6 +202,9 @@ func (store *Store) ImportLegacy(ctx context.Context, source string) (Status, er
 
 func (store *Store) Install(ctx context.Context, options InstallOptions) (Status, error) {
 	if current := store.Status(); current.Ready {
+		if err := store.ensureLinuxExecutablePermissions(current.Version); err != nil {
+			return Status{}, err
+		}
 		return current, nil
 	}
 	for _, legacy := range options.LegacyPaths {
@@ -289,6 +292,9 @@ func (store *Store) installCatalogVersion(ctx context.Context, options InstallOp
 	// catalog SHA-256 描述 upstream 下载物；active.json SHA-256 描述最终安装 binary。
 	// macOS 上游是 tgz，所以相同版本健康时不能再把两个 digest 当成同一个值比较。
 	if current := store.Status(); current.Ready && current.Version == entry.Version {
+		if err := store.ensureLinuxExecutablePermissions(current.Version); err != nil {
+			return Status{}, err
+		}
 		return current, nil
 	}
 	report(options.Progress, ProgressEvent{Type: "stage", Stage: "downloading"})
@@ -578,6 +584,9 @@ func (store *Store) commitStaged(ctx context.Context, staged, version, digest st
 	targetDir := filepath.Join(store.root, "versions", version)
 	target := filepath.Join(targetDir, binaryFilename(runtime.GOOS))
 	if currentDigest, err := fileSHA256(target); err == nil && strings.EqualFold(currentDigest, digest) {
+		if err := store.ensureLinuxExecutablePermissions(version); err != nil {
+			return err
+		}
 		return store.writeActive(version, digest)
 	}
 	if err := os.MkdirAll(filepath.Dir(targetDir), 0o700); err != nil {
@@ -587,6 +596,9 @@ func (store *Store) commitStaged(ctx context.Context, staged, version, digest st
 	if _, err := os.Lstat(targetDir); errors.Is(err, os.ErrNotExist) {
 		if err := os.Rename(stagingDir, targetDir); err != nil {
 			return fmt.Errorf("commit cloudflared version directory: %w", err)
+		}
+		if err := store.ensureLinuxExecutablePermissions(version); err != nil {
+			return err
 		}
 		// 版本目录完整落盘后，active.json 才是最后提交点；失败时旧 active 不会改变。
 		return store.writeActive(version, digest)
@@ -617,12 +629,36 @@ func (store *Store) commitStaged(ctx context.Context, staged, version, digest st
 	if err := os.Rename(stagingDir, targetDir); err != nil {
 		return restore(fmt.Errorf("commit repaired cloudflared version directory: %w", err))
 	}
+	if err := store.ensureLinuxExecutablePermissions(version); err != nil {
+		return restore(err)
+	}
 	if err := store.writeActive(version, digest); err != nil {
 		return restore(fmt.Errorf("activate repaired cloudflared version: %w", err))
 	}
 	if err := os.RemoveAll(backupDir); err != nil {
 		// active 已经原子指向完整的新版本，旧 backup 清理失败不能反向破坏成功提交。
 		return nil
+	}
+	return nil
+}
+
+func (store *Store) ensureLinuxExecutablePermissions(version string) error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	for _, dir := range []string{
+		filepath.Join(store.runtimeRoot, "components"),
+		store.root,
+		filepath.Join(store.root, "versions"),
+		filepath.Join(store.root, "versions", version),
+	} {
+		if err := os.Chmod(dir, 0o755); err != nil {
+			return fmt.Errorf("chmod cloudflared component directory %s: %w", dir, err)
+		}
+	}
+	binary := store.binaryPath(version)
+	if err := os.Chmod(binary, 0o755); err != nil {
+		return fmt.Errorf("chmod cloudflared component binary %s: %w", binary, err)
 	}
 	return nil
 }
