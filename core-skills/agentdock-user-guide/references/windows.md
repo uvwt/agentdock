@@ -43,14 +43,14 @@ Core 启动时会读取这些状态并生成实际进程环境。
 
 ## 生效与验证
 
-优先通过控制面板执行保存/重启。需要 CLI 时，使用当前实际 runtime root，例如默认安装可表示为：
+优先通过控制面板执行保存/重启。默认安装下 CLI 会自动使用 `%LOCALAPPDATA%\AgentDock`：
 
 ```powershell
-agentdock service restart --runtime-root "$env:LOCALAPPDATA\AgentDock"
-agentdock service status --runtime-root "$env:LOCALAPPDATA\AgentDock"
+agentdock service restart
+agentdock service status
 ```
 
-如果安装目录不是默认值，把路径替换成 `runtime.json` 所在目录。
+如果安装目录不是默认值，使用 `AGENTDOCK_RUNTIME_ROOT` 或 `--runtime-root <实际目录>` 指向 `runtime.json` 所在目录；显式 `--runtime-root` 优先级最高。
 
 验证至少包括：
 

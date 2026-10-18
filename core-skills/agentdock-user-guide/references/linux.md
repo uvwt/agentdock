@@ -33,6 +33,19 @@ systemctl cat agentdock
 
 官方安装器还会在环境文件所在目录写 `desktop-runtime.json`，其中记录 service manager、service name、Core binary 和 environment file 等运行信息。它是运行清单，不是所有配置键的替代文件。
 
+## CLI 管理运行服务与 Tunnel
+
+官方默认安装下，`service` 和 `tunnel` 会自动使用 `/etc/agentdock`，无需每次重复传 `--runtime-root`：
+
+```bash
+agentdock service status
+agentdock service restart
+agentdock tunnel status
+agentdock tunnel restart
+```
+
+运行配置目录的解析优先级为：显式 `--runtime-root`、`AGENTDOCK_RUNTIME_ROOT`、平台默认目录。自定义环境文件目录或多实例部署仍应显式指定对应目录，避免操作错误实例。
+
 ## NexusDock 手动配对
 
 官方一键安装会以服务用户身份配对，并把相同的 `AGENTDOCK_HOME` 写入服务环境文件。

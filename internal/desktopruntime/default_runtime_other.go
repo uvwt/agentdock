@@ -1,6 +1,8 @@
-//go:build !darwin
+//go:build !darwin && !linux && !windows
 
 package desktopruntime
 
-// DefaultRuntimeRoot 只由 macOS App 内置后台服务使用；其他平台继续要求调用方显式传入。
-func DefaultRuntimeRoot() string { return "" }
+// DefaultRuntimeRoot 在未定义标准目录的平台上只接受显式环境覆盖。
+func DefaultRuntimeRoot() string {
+	return configuredRuntimeRoot()
+}

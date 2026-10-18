@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"strings"
 
@@ -38,6 +39,10 @@ type TunnelConfigureRequest struct {
 func RunTunnelCommand(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return tunnelCommandUsageError()
+	}
+	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		printTunnelCommandUsage(stdout)
+		return nil
 	}
 
 	switch args[0] {
@@ -76,7 +81,7 @@ func RunTunnelCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 	case "configure":
 		flags := flag.NewFlagSet("agentdock tunnel configure", flag.ContinueOnError)
 		flags.SetOutput(stderr)
-		runtimeRoot := flags.String("runtime-root", "", "AgentDock 桌面运行目录")
+		runtimeRoot := flags.String("runtime-root", DefaultRuntimeRoot(), "AgentDock 运行配置目录")
 		mode := flags.String("mode", "", "Tunnel 模式：none、quick 或 named")
 		serverURL := flags.String("server-url", "", "Named Tunnel HTTPS Origin")
 		tokenFile := flags.String("token-file", "", "临时 Tunnel Token 文件")
@@ -84,7 +89,7 @@ func RunTunnelCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 			return err
 		}
 		if flags.NArg() != 0 || strings.TrimSpace(*runtimeRoot) == "" {
-			return errors.New("用法：agentdock tunnel configure --runtime-root <目录> --mode <none|quick|named> [--server-url <HTTPS Origin>] [--token-file <文件>]")
+			return errors.New("用法：agentdock tunnel configure [--runtime-root <目录>] --mode <none|quick|named> [--server-url <HTTPS Origin>] [--token-file <文件>]")
 		}
 		normalizedMode := strings.ToLower(strings.TrimSpace(*mode))
 		if normalizedMode != "none" && normalizedMode != "quick" && normalizedMode != "named" {
@@ -103,13 +108,13 @@ func RunTunnelCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 	case "autostart":
 		flags := flag.NewFlagSet("agentdock tunnel autostart", flag.ContinueOnError)
 		flags.SetOutput(stderr)
-		runtimeRoot := flags.String("runtime-root", "", "AgentDock 桌面运行目录")
+		runtimeRoot := flags.String("runtime-root", DefaultRuntimeRoot(), "AgentDock 运行配置目录")
 		enabled := flags.String("enabled", "", "是否启用：true 或 false")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
 		if flags.NArg() != 0 || strings.TrimSpace(*runtimeRoot) == "" {
-			return errors.New("用法：agentdock tunnel autostart --runtime-root <目录> --enabled <true|false>")
+			return errors.New("用法：agentdock tunnel autostart [--runtime-root <目录>] --enabled <true|false>")
 		}
 		shouldEnable, err := parseCommandBoolean("tunnel autostart", *enabled)
 		if err != nil {
@@ -127,12 +132,12 @@ func RunTunnelCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 func parseLaunchRuntimeRoot(name string, args []string, stderr io.Writer) (string, error) {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	runtimeRoot := flags.String("runtime-root", DefaultRuntimeRoot(), "AgentDock 桌面运行目录")
+	runtimeRoot := flags.String("runtime-root", DefaultRuntimeRoot(), "AgentDock 运行配置目录")
 	if err := flags.Parse(args); err != nil {
 		return "", err
 	}
 	if flags.NArg() != 0 || strings.TrimSpace(*runtimeRoot) == "" {
-		return "", errors.New("用法：" + name + " --runtime-root <目录>")
+		return "", errors.New("无法确定 AgentDock 运行配置目录；请设置 AGENTDOCK_RUNTIME_ROOT 或使用 " + name + " --runtime-root <目录>")
 	}
 	return strings.TrimSpace(*runtimeRoot), nil
 }
@@ -148,6 +153,16 @@ func parseCommandBoolean(command, value string) (bool, error) {
 	}
 }
 
+func printTunnelCommandUsage(w io.Writer) {
+	fmt.Fprintln(w, "用法：")
+	fmt.Fprintln(w, "  agentdock tunnel status [--runtime-root <目录>]")
+	fmt.Fprintln(w, "  agentdock tunnel <start|stop|restart|regenerate> [--runtime-root <目录>]")
+	fmt.Fprintln(w, "  agentdock tunnel configure [--runtime-root <目录>] --mode <none|quick|named> [--server-url <HTTPS Origin>] [--token-file <文件>]")
+	fmt.Fprintln(w, "  agentdock tunnel autostart [--runtime-root <目录>] --enabled <true|false>")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "运行配置目录优先级：--runtime-root > AGENTDOCK_RUNTIME_ROOT > 平台默认目录。")
+}
+
 func tunnelCommandUsageError() error {
-	return errors.New("用法：agentdock tunnel <launch|status|start|stop|restart|regenerate|configure|autostart> --runtime-root <目录>")
+	return errors.New("用法：agentdock tunnel <launch|status|start|stop|restart|regenerate|configure|autostart> [--runtime-root <目录>]")
 }

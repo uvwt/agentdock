@@ -7,9 +7,12 @@ import (
 	"path/filepath"
 )
 
-// DefaultRuntimeRoot 返回 macOS 桌面版固定的当前用户运行目录。
-// LaunchAgent plist 位于 App Bundle 内，不能在构建时写入具体用户名，因此由 Core 自己解析。
+// DefaultRuntimeRoot 返回 macOS 桌面版的标准运行目录。
+// 显式 AGENTDOCK_RUNTIME_ROOT 用于自定义实例；否则由当前用户主目录解析。
 func DefaultRuntimeRoot() string {
+	if root := configuredRuntimeRoot(); root != "" {
+		return root
+	}
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return ""

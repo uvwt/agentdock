@@ -30,6 +30,10 @@ func RunServiceCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 	if len(args) == 0 {
 		return serviceCommandUsageError()
 	}
+	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		printServiceCommandUsage(stdout)
+		return nil
+	}
 
 	switch args[0] {
 	case "status":
@@ -59,14 +63,14 @@ func RunServiceCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 	case "autostart":
 		flags := flag.NewFlagSet("agentdock service autostart", flag.ContinueOnError)
 		flags.SetOutput(stderr)
-		runtimeRoot := flags.String("runtime-root", "", "AgentDock 桌面运行目录")
+		runtimeRoot := flags.String("runtime-root", DefaultRuntimeRoot(), "AgentDock 运行配置目录")
 		component := flags.String("component", "", "启动组件：core 或 tray")
 		enabled := flags.String("enabled", "", "是否启用：true 或 false")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
 		if flags.NArg() != 0 || strings.TrimSpace(*runtimeRoot) == "" {
-			return errors.New("用法：agentdock service autostart --runtime-root <目录> --component <core|tray> --enabled <true|false>")
+			return errors.New("用法：agentdock service autostart [--runtime-root <目录>] --component <core|tray> --enabled <true|false>")
 		}
 		if *component != "core" && *component != "tray" {
 			return errors.New("service autostart 的 component 必须是 core 或 tray")
@@ -114,14 +118,23 @@ func PrepareCoreEnvironment(runtimeRoot string) error {
 func parseRuntimeRoot(name string, args []string, stderr io.Writer) (string, error) {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	runtimeRoot := flags.String("runtime-root", "", "AgentDock 桌面运行目录")
+	runtimeRoot := flags.String("runtime-root", DefaultRuntimeRoot(), "AgentDock 运行配置目录")
 	if err := flags.Parse(args); err != nil {
 		return "", err
 	}
 	if flags.NArg() != 0 || strings.TrimSpace(*runtimeRoot) == "" {
-		return "", fmt.Errorf("用法：%s --runtime-root <目录>", name)
+		return "", fmt.Errorf("无法确定 AgentDock 运行配置目录；请设置 AGENTDOCK_RUNTIME_ROOT 或使用 %s --runtime-root <目录>", name)
 	}
-	return *runtimeRoot, nil
+	return strings.TrimSpace(*runtimeRoot), nil
+}
+
+func printServiceCommandUsage(w io.Writer) {
+	fmt.Fprintln(w, "用法：")
+	fmt.Fprintln(w, "  agentdock service status [--runtime-root <目录>]")
+	fmt.Fprintln(w, "  agentdock service <start|stop|restart> [--runtime-root <目录>]")
+	fmt.Fprintln(w, "  agentdock service autostart [--runtime-root <目录>] --component <core|tray> --enabled <true|false>")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "运行配置目录优先级：--runtime-root > AGENTDOCK_RUNTIME_ROOT > 平台默认目录。")
 }
 
 func serviceCommandUsageError() error {

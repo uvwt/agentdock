@@ -34,11 +34,13 @@ AgentDock.app 的高级设置控制器会读取这份文件，校验配置后原
 4. 修改后重启已经由 AgentDock.app 注册的 Core；
 5. 验证 `/healthz` 和目标功能。
 
-如果当前环境存在可用 `agentdock` CLI，Core 重启需要显式 runtime root：
+如果当前环境存在可用 `agentdock` CLI，默认桌面安装可直接重启，无需重复传 runtime root：
 
 ```bash
-agentdock service restart --runtime-root "$HOME/Library/Application Support/AgentDock"
+agentdock service restart
 ```
+
+自定义实例可使用 `AGENTDOCK_RUNTIME_ROOT` 或显式 `--runtime-root <目录>` 覆盖默认目录。
 
 如果 CLI 不在 PATH，优先由 AgentDock.app 自己保存设置或控制 Core，不要为了重启额外安装第二套 Core。
 

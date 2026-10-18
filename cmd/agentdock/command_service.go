@@ -19,12 +19,12 @@ func runServiceCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 		launchStartedAt := time.Now()
 		flags := flag.NewFlagSet("agentdock service launch-core", flag.ContinueOnError)
 		flags.SetOutput(stderr)
-		runtimeRoot := flags.String("runtime-root", desktopruntime.DefaultRuntimeRoot(), "AgentDock 桌面运行目录")
+		runtimeRoot := flags.String("runtime-root", desktopruntime.DefaultRuntimeRoot(), "AgentDock 运行配置目录")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
 		if flags.NArg() != 0 || strings.TrimSpace(*runtimeRoot) == "" {
-			return errors.New("用法：agentdock service launch-core --runtime-root <目录>")
+			return errors.New("无法确定 AgentDock 运行配置目录；请设置 AGENTDOCK_RUNTIME_ROOT 或使用 agentdock service launch-core --runtime-root <目录>")
 		}
 		// launch-core 是桌面安装内部入口：先接管受限轮转日志，再恢复配置与 DPAPI 凭据，
 		// 最后在当前进程直接运行服务，避免平台启动器长期参与日志写入和运行链路。

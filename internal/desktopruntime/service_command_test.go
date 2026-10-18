@@ -15,14 +15,41 @@ func TestRunServiceCommandRejectsUnknownAction(t *testing.T) {
 	}
 }
 
-func TestRunServiceCommandRequiresRuntimeRoot(t *testing.T) {
-	err := RunServiceCommand(context.Background(), []string{"start"}, &bytes.Buffer{}, &bytes.Buffer{})
-	if err == nil || !strings.Contains(err.Error(), "--runtime-root") {
-		t.Fatalf("unexpected error: %v", err)
+func TestParseRuntimeRootUsesEnvironmentDefaultAndExplicitOverride(t *testing.T) {
+	environmentRoot := t.TempDir()
+	t.Setenv("AGENTDOCK_RUNTIME_ROOT", environmentRoot)
+
+	got, err := parseRuntimeRoot("agentdock service status", nil, &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != environmentRoot {
+		t.Fatalf("runtime root = %q, want environment root %q", got, environmentRoot)
+	}
+
+	explicitRoot := t.TempDir()
+	got, err = parseRuntimeRoot("agentdock service status", []string{"--runtime-root", explicitRoot}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != explicitRoot {
+		t.Fatalf("runtime root = %q, want explicit root %q", got, explicitRoot)
+	}
+}
+
+func TestRunServiceCommandHelpShowsOptionalRuntimeRoot(t *testing.T) {
+	var stdout bytes.Buffer
+	if err := RunServiceCommand(context.Background(), []string{"-h"}, &stdout, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if output := stdout.String(); !strings.Contains(output, "agentdock service <start|stop|restart> [--runtime-root <目录>]") ||
+		!strings.Contains(output, "AGENTDOCK_RUNTIME_ROOT") {
+		t.Fatalf("unexpected help output: %s", output)
 	}
 }
 
 func TestRunServiceCommandValidatesAutostartArgumentsBeforePlatformAccess(t *testing.T) {
+	t.Setenv("AGENTDOCK_RUNTIME_ROOT", t.TempDir())
 	for _, test := range []struct {
 		name string
 		args []string
@@ -30,12 +57,12 @@ func TestRunServiceCommandValidatesAutostartArgumentsBeforePlatformAccess(t *tes
 	}{
 		{
 			name: "component",
-			args: []string{"autostart", "--runtime-root", t.TempDir(), "--component", "tunnel", "--enabled", "true"},
+			args: []string{"autostart", "--component", "tunnel", "--enabled", "true"},
 			want: "component",
 		},
 		{
 			name: "enabled",
-			args: []string{"autostart", "--runtime-root", t.TempDir(), "--component", "core", "--enabled", "yes"},
+			args: []string{"autostart", "--component", "core", "--enabled", "yes"},
 			want: "enabled",
 		},
 	} {

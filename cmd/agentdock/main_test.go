@@ -123,22 +123,20 @@ func TestNexusStatusReportsUnpairedWithoutExposingToken(t *testing.T) {
 	}
 }
 
-func TestRunServiceLaunchCoreRequiresRuntimeRoot(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		if desktopruntime.DefaultRuntimeRoot() == "" {
-			t.Fatal("macOS App 内部 launch-core 必须能解析默认 runtime root")
-		}
-		return
-	}
-	err := run(context.Background(), []string{"service", "launch-core"}, &bytes.Buffer{}, &bytes.Buffer{})
-	if err == nil || !strings.Contains(err.Error(), "--runtime-root") {
-		t.Fatalf("unexpected error: %v", err)
+func TestDefaultRuntimeRootUsesEnvironmentOverride(t *testing.T) {
+	runtimeRoot := t.TempDir()
+	t.Setenv("AGENTDOCK_RUNTIME_ROOT", runtimeRoot)
+	if got := desktopruntime.DefaultRuntimeRoot(); got != runtimeRoot {
+		t.Fatalf("default runtime root = %q, want %q", got, runtimeRoot)
 	}
 }
 
-func TestRunTunnelRequiresRuntimeRoot(t *testing.T) {
-	err := run(context.Background(), []string{"tunnel", "start"}, &bytes.Buffer{}, &bytes.Buffer{})
-	if err == nil || !strings.Contains(err.Error(), "--runtime-root") {
-		t.Fatalf("unexpected error: %v", err)
+func TestRunTunnelHelp(t *testing.T) {
+	var stdout bytes.Buffer
+	if err := run(context.Background(), []string{"tunnel", "-h"}, &stdout, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if output := stdout.String(); !strings.Contains(output, "agentdock tunnel status") || !strings.Contains(output, "[--runtime-root <目录>]") {
+		t.Fatalf("unexpected tunnel help: %s", output)
 	}
 }

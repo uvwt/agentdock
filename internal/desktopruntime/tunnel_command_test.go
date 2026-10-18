@@ -14,17 +14,22 @@ func TestRunTunnelCommandRejectsUnknownAction(t *testing.T) {
 	}
 }
 
-func TestRunTunnelCommandRequiresRuntimeRoot(t *testing.T) {
-	err := RunTunnelCommand(context.Background(), []string{"start"}, &bytes.Buffer{}, &bytes.Buffer{})
-	if err == nil || !strings.Contains(err.Error(), "--runtime-root") {
-		t.Fatalf("unexpected error: %v", err)
+func TestRunTunnelCommandHelpShowsOptionalRuntimeRoot(t *testing.T) {
+	var stdout bytes.Buffer
+	if err := RunTunnelCommand(context.Background(), []string{"-h"}, &stdout, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if output := stdout.String(); !strings.Contains(output, "agentdock tunnel <start|stop|restart|regenerate> [--runtime-root <目录>]") ||
+		!strings.Contains(output, "AGENTDOCK_RUNTIME_ROOT") {
+		t.Fatalf("unexpected help output: %s", output)
 	}
 }
 
 func TestRunTunnelCommandValidatesConfigureModeBeforePlatformAccess(t *testing.T) {
+	t.Setenv("AGENTDOCK_RUNTIME_ROOT", t.TempDir())
 	err := RunTunnelCommand(
 		context.Background(),
-		[]string{"configure", "--runtime-root", t.TempDir(), "--mode", "invalid"},
+		[]string{"configure", "--mode", "invalid"},
 		&bytes.Buffer{},
 		&bytes.Buffer{},
 	)
@@ -34,9 +39,10 @@ func TestRunTunnelCommandValidatesConfigureModeBeforePlatformAccess(t *testing.T
 }
 
 func TestRunTunnelCommandValidatesAutostartBooleanBeforePlatformAccess(t *testing.T) {
+	t.Setenv("AGENTDOCK_RUNTIME_ROOT", t.TempDir())
 	err := RunTunnelCommand(
 		context.Background(),
-		[]string{"autostart", "--runtime-root", t.TempDir(), "--enabled", "yes"},
+		[]string{"autostart", "--enabled", "yes"},
 		&bytes.Buffer{},
 		&bytes.Buffer{},
 	)
