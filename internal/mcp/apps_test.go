@@ -41,6 +41,32 @@ func assertToolUIResource(t *testing.T, tool *mcpsdk.Tool, uri string, allowedMe
 	}
 }
 
+func assertAppOnlyTool(t *testing.T, tool *mcpsdk.Tool) {
+	t.Helper()
+	if tool == nil {
+		t.Fatal("app-only tool is nil")
+	}
+	ui, ok := tool.Meta["ui"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s ui metadata = %#v", tool.Name, tool.Meta["ui"])
+	}
+	visibility, ok := ui["visibility"].([]any)
+	if !ok {
+		if typed, typedOK := ui["visibility"].([]string); typedOK {
+			if len(typed) == 1 && typed[0] == "app" {
+				return
+			}
+		}
+		t.Fatalf("%s visibility = %#v", tool.Name, ui["visibility"])
+	}
+	if len(visibility) != 1 || visibility[0] != "app" {
+		t.Fatalf("%s visibility = %#v, want [app]", tool.Name, visibility)
+	}
+	if ui["resourceUri"] != nil {
+		t.Fatalf("%s app-only helper must not bind a resource: %#v", tool.Name, ui)
+	}
+}
+
 func assertResourceUIMeta(t *testing.T, meta mcpsdk.Meta, domain string) {
 	t.Helper()
 	ui, ok := meta["ui"].(map[string]any)
@@ -151,10 +177,10 @@ func TestMCPAppsCanBeDisabledWithoutRemovingTools(t *testing.T) {
 		}
 		tools[tool.Name] = tool
 	}
-	if tools["agentdock_context"] == nil || tools["workspace_context"] == nil || tools["file_edit"] == nil || tools["task_manage"] == nil {
+	if tools["agentdock_context"] == nil || tools["workspace_context"] == nil || tools["file_edit"] == nil || tools["task_create"] == nil || tools["task_manage"] == nil {
 		t.Fatalf("core tools disappeared when MCP Apps UI was disabled: %#v", tools)
 	}
-	for _, name := range []string{"agentdock_context", "workspace_context", "file_edit", "task_manage", "mcp_tool_call", "file_publish"} {
+	for _, name := range []string{"agentdock_context", "workspace_context", "file_edit", "task_create", "task_manage", "mcp_tool_call", "file_publish"} {
 		if ui := tools[name].Meta["ui"]; ui != nil {
 			t.Fatalf("%s still exposes Apps UI metadata while disabled: %#v", name, ui)
 		}
@@ -181,6 +207,63 @@ func TestMCPAppsCanBeDisabledWithoutRemovingTools(t *testing.T) {
 	}
 }
 
+func TestTaskProgressAppHTMLPollsAppOnlySnapshot(t *testing.T) {
+	html := taskProgressAppHTML()
+	for _, marker := range []string{
+		`rpcRequest("tools/call",{name:"task_snapshot"`,
+		`data.action!=="create"`,
+		`document.hidden`,
+		`String(task.status||"")==="completed"`,
+		`message.method==="ui/resource-teardown"`,
+	} {
+		if !strings.Contains(html, marker) {
+			t.Fatalf("task progress MCP App missing live refresh marker %q", marker)
+		}
+	}
+}
+
+func TestMCPAppsEnabledModesUseSingleLiveTaskCard(t *testing.T) {
+	for _, mode := range []config.MCPAppsMode{config.MCPAppsModeFull, config.MCPAppsModeCompact} {
+		t.Run(string(mode), func(t *testing.T) {
+			root := t.TempDir()
+			harness := newMCPAppTestHarnessWithMode(t, config.Config{
+				AgentDockDefaultDir: root,
+				AgentDockHome:       filepath.Join(root, ".agentdock"),
+			}, mode)
+
+			tools := map[string]*mcpsdk.Tool{}
+			for tool, err := range harness.session.Tools(t.Context(), nil) {
+				if err != nil {
+					t.Fatalf("Tools() error = %v", err)
+				}
+				tools[tool.Name] = tool
+			}
+			assertToolUIResource(t, tools["task_create"], protocol.TaskProgressUIResourceURI)
+			if tool := tools["task_manage"]; tool == nil {
+				t.Fatal("task_manage missing")
+			} else if ui := tool.Meta["ui"]; ui != nil {
+				t.Fatalf("task_manage should not attach descriptor UI in %s mode: %#v", mode, ui)
+			}
+			assertAppOnlyTool(t, tools["task_snapshot"])
+
+			taskDef, ok := harness.runtime.ToolDefinition("task_manage")
+			if !ok {
+				t.Fatal("task_manage definition missing")
+			}
+			createMeta := toolResultMetadata(taskDef, map[string]any{"action": "create"}, mode)
+			ui, ok := createMeta["ui"].(map[string]any)
+			if !ok || ui["resourceUri"] != protocol.TaskProgressUIResourceURI {
+				t.Fatalf("legacy task_manage create UI metadata in %s mode = %#v", mode, createMeta)
+			}
+			for _, action := range []string{"list", "get", "checkpoint", "block", "resume", "final_review", "complete"} {
+				if meta := toolResultMetadata(taskDef, map[string]any{"action": action}, mode); len(meta) != 0 {
+					t.Fatalf("task %s should not attach another Task UI in %s mode: %#v", action, mode, meta)
+				}
+			}
+		})
+	}
+}
+
 func TestMCPAppsCompactFiltersBindingsButKeepsResources(t *testing.T) {
 	root := t.TempDir()
 	harness := newMCPAppTestHarnessWithMode(t, config.Config{
@@ -198,21 +281,22 @@ func TestMCPAppsCompactFiltersBindingsButKeepsResources(t *testing.T) {
 	assertToolUIResource(t, tools["view_image"], protocol.ImageUIResourceURI)
 	assertToolUIResource(t, tools["agentdock_context"], protocol.ContextUIResourceURI)
 	assertToolUIResource(t, tools["workspace_context"], protocol.WorkspaceUIResourceURI)
-	assertToolUIResource(t, tools["task_manage"], protocol.TaskProgressUIResourceURI)
-	for _, name := range []string{"file_edit", "mcp_tool_call", "workflow_template_manage"} {
+	assertToolUIResource(t, tools["task_create"], protocol.TaskProgressUIResourceURI)
+	for _, name := range []string{"task_manage", "file_edit", "mcp_tool_call", "workflow_template_manage"} {
 		if tool := tools[name]; tool != nil {
 			if ui := tool.Meta["ui"]; ui != nil {
 				t.Fatalf("%s should not attach descriptor UI in compact mode: %#v", name, ui)
 			}
 		}
 	}
+	assertAppOnlyTool(t, tools["task_snapshot"])
 	assertToolUIResource(t, tools["file_publish"], protocol.ArtifactUIResourceURI, "file_arg_rewrite_paths", "openai/fileParams")
 
 	taskDef, ok := harness.runtime.ToolDefinition("task_manage")
 	if !ok {
 		t.Fatal("task_manage definition missing")
 	}
-	for _, action := range []string{"create", "list", "get", "checkpoint", "block", "resume", "final_review", "complete"} {
+	for _, action := range []string{"list", "get", "checkpoint", "block", "resume", "final_review", "complete"} {
 		if meta := toolResultMetadata(taskDef, map[string]any{"action": action}, config.MCPAppsModeCompact); len(meta) != 0 {
 			t.Fatalf("task %s should not attach UI in compact mode: %#v", action, meta)
 		}
@@ -289,11 +373,18 @@ func TestMCPAppsBindResourcesDirectlyToBusinessTools(t *testing.T) {
 		t.Fatal("tools/list did not expose file_edit")
 	}
 	assertToolUIResource(t, fileEditTool, protocol.FileChangeUIResourceURI)
+	taskCreateTool := tools["task_create"]
+	if taskCreateTool == nil {
+		t.Fatal("tools/list did not expose task_create")
+	}
+	assertToolUIResource(t, taskCreateTool, protocol.TaskProgressUIResourceURI)
 	taskManageTool := tools["task_manage"]
 	if taskManageTool == nil {
 		t.Fatal("tools/list did not expose task_manage")
 	}
-	assertToolUIResource(t, taskManageTool, protocol.TaskProgressUIResourceURI)
+	if ui := taskManageTool.Meta["ui"]; ui != nil {
+		t.Fatalf("task_manage should not attach descriptor UI in full mode: %#v", ui)
+	}
 	if taskManageTool.Annotations == nil || taskManageTool.Annotations.ReadOnlyHint {
 		t.Fatalf("task_manage annotations = %#v", taskManageTool.Annotations)
 	}
@@ -557,19 +648,19 @@ func TestMCPAppsBindResourcesDirectlyToBusinessTools(t *testing.T) {
 	}
 
 	createdTask, err := harness.session.CallTool(t.Context(), &mcpsdk.CallToolParams{
-		Name: "task_manage",
+		Name: "task_create",
 		Arguments: map[string]any{
-			"action": "create", "title": "Widget task", "goal": "verify direct task UI",
+			"title": "Widget task", "goal": "verify direct task UI",
 			"completion_conditions": []string{"done"},
 			"steps":                 []map[string]any{{"id": "verify", "title": "Verify"}},
 		},
 	})
 	if err != nil || createdTask.IsError {
-		t.Fatalf("task_manage create result=%#v err=%v", createdTask, err)
+		t.Fatalf("task_create result=%#v err=%v", createdTask, err)
 	}
 	createdTaskStructured, ok := createdTask.StructuredContent.(map[string]any)
 	if !ok || createdTaskStructured["action"] != "create" || createdTaskStructured["view"] != nil || createdTaskStructured["task_summary"] == nil {
-		t.Fatalf("task_manage create structuredContent = %#v", createdTask.StructuredContent)
+		t.Fatalf("task_create structuredContent = %#v", createdTask.StructuredContent)
 	}
 	listedTasks, err := harness.session.CallTool(t.Context(), &mcpsdk.CallToolParams{Name: "task_manage", Arguments: map[string]any{"action": "list"}})
 	if err != nil || listedTasks.IsError {

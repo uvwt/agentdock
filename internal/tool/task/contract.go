@@ -5,7 +5,48 @@ import (
 	toolcontract "github.com/uvwt/agentdock/internal/tool/contract"
 )
 
-const ToolTaskManage = "task_manage"
+const (
+	ToolTaskCreate   = "task_create"
+	ToolTaskManage   = "task_manage"
+	ToolTaskSnapshot = "task_snapshot"
+)
+
+func CreateInputSchema(cfg config.Config) map[string]any {
+	stringProp := toolcontract.String
+	props := map[string]any{
+		"title":                 stringProp("Short task title."),
+		"goal":                  stringProp("Fixed task goal."),
+		"completion_conditions": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}, "description": "Conditions that must be true before final_review can pass."},
+		"project":               stringProp("Optional project identifier stored with the task."),
+		"device":                stringProp("Optional device identifier stored with the task."),
+		"steps": map[string]any{
+			"type": "array", "maxItems": 12, "description": "Concrete task steps.",
+			"items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"id", "title"}, "properties": map[string]any{"id": stringProp("Stable step id."), "title": stringProp("Human-readable step title.")}},
+		},
+	}
+	if cfg.NexusEndpoint != "" {
+		props["project"] = stringProp("Optional project identifier used to hard-scope Evolution guidance and evidence candidates. Omit only for global tasks.")
+		props["device"] = stringProp("Optional device identifier used to hard-scope device-specific Evolution guidance and evidence candidates.")
+		props["steps"] = map[string]any{
+			"type": "array", "maxItems": 12, "description": "Concrete task steps. Required when composing multiple source templates.",
+			"items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"id", "title"}, "properties": map[string]any{"id": stringProp("Stable step id."), "title": stringProp("Human-readable step title.")}},
+		}
+		props["template_id"] = stringProp("Single active workflow template to apply. Its current active version is resolved automatically.")
+		props["source_template_ids"] = map[string]any{"type": "array", "minItems": 2, "maxItems": 3, "items": map[string]any{"type": "string"}, "description": "Two or three templates already composed by the model into steps and completion_conditions."}
+		props["learning_checks"] = map[string]any{
+			"type": "array", "maxItems": 3, "description": "Advanced create-only blinded validation checks. Bind these Evolution ids before Guidance is generated; support-bearing targets are withheld from this Task's Guidance and may be assessed only from its frozen final_review.",
+			"items": map[string]any{
+				"type": "object", "additionalProperties": false, "required": []string{"evolution_id", "on_success", "on_failure"},
+				"properties": map[string]any{
+					"evolution_id": stringProp("Evolution id intentionally selected for this pre-execution validation."),
+					"on_success":   map[string]any{"type": "string", "enum": []string{"support", "contradict", "none"}},
+					"on_failure":   map[string]any{"type": "string", "enum": []string{"support", "contradict", "none"}},
+				},
+			},
+		}
+	}
+	return toolcontract.InputObject(props, "title", "goal", "completion_conditions")
+}
 
 func ManageInputSchema(cfg config.Config) map[string]any {
 	stringProp := toolcontract.String
@@ -97,16 +138,43 @@ func ManageOutputSchema(cfg config.Config) map[string]any {
 	return toolcontract.OutputObject(props)
 }
 
+func SnapshotInputSchema() map[string]any {
+	return toolcontract.InputObject(map[string]any{
+		"task_id": toolcontract.String("Persistent task id to read."),
+	}, "task_id")
+}
+
+func SnapshotOutputSchema() map[string]any {
+	return toolcontract.OutputObject(map[string]any{
+		"action":       toolcontract.String("Completed read action."),
+		"task_id":      toolcontract.String("Persistent task id."),
+		"task_summary": toolcontract.OpenObject("Compact authoritative task state for UI refresh."),
+		"state_dir":    toolcontract.String("Local AgentDock task state directory."),
+	})
+}
+
 func InputSchema(name string, cfg config.Config) (map[string]any, bool) {
-	if name != ToolTaskManage {
+	switch name {
+	case ToolTaskCreate:
+		return CreateInputSchema(cfg), true
+	case ToolTaskManage:
+		return ManageInputSchema(cfg), true
+	case ToolTaskSnapshot:
+		return SnapshotInputSchema(), true
+	default:
 		return nil, false
 	}
-	return ManageInputSchema(cfg), true
 }
 
 func OutputSchema(name string, cfg config.Config) (map[string]any, bool) {
-	if name != ToolTaskManage {
+	switch name {
+	case ToolTaskCreate:
+		return ManageOutputSchema(cfg), true
+	case ToolTaskManage:
+		return ManageOutputSchema(cfg), true
+	case ToolTaskSnapshot:
+		return SnapshotOutputSchema(), true
+	default:
 		return nil, false
 	}
-	return ManageOutputSchema(cfg), true
 }

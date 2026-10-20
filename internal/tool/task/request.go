@@ -13,6 +13,37 @@ type LearningCheckRequest struct {
 	OnFailure   string `json:"on_failure"`
 }
 
+type SnapshotRequest struct {
+	TaskID string `json:"task_id"`
+}
+
+type CreateRequest struct {
+	Title                string                 `json:"title"`
+	Goal                 string                 `json:"goal"`
+	Project              string                 `json:"project,omitempty"`
+	Device               string                 `json:"device,omitempty"`
+	CompletionConditions []string               `json:"completion_conditions"`
+	Steps                []StepRequest          `json:"steps,omitempty"`
+	TemplateID           string                 `json:"template_id,omitempty"`
+	SourceTemplateIDs    []string               `json:"source_template_ids,omitempty"`
+	LearningChecks       []LearningCheckRequest `json:"learning_checks,omitempty"`
+}
+
+func (r CreateRequest) ManageRequest() ManageRequest {
+	return ManageRequest{
+		Action:               "create",
+		Title:                r.Title,
+		Goal:                 r.Goal,
+		Project:              r.Project,
+		Device:               r.Device,
+		CompletionConditions: r.CompletionConditions,
+		Steps:                r.Steps,
+		TemplateID:           r.TemplateID,
+		SourceTemplateIDs:    r.SourceTemplateIDs,
+		LearningChecks:       r.LearningChecks,
+	}
+}
+
 // ManageRequest 只表达 task_manage 对模型公开的输入字段。
 // 持久化状态中的 phase、bound_at 等内部字段在规范化阶段由 Task 域模型补齐，不能从边界注入。
 type ManageRequest struct {
