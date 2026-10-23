@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,9 +89,9 @@ func parsePublicPath(pathValue, prefix string) (string, string, bool) {
 	if len(parts) != 2 {
 		return "", "", false
 	}
-	id, err1 := url.PathUnescape(parts[0])
-	name, err2 := url.PathUnescape(parts[1])
-	if err1 != nil || err2 != nil || id == "" || name == "" || id != filepath.Base(id) || name != filepath.Base(name) || strings.Contains(name, "\\") {
+	// 调用方传入 URL.Path，net/http 已完成一次解码。再次解码会破坏合法的 % 文件名。
+	id, name := parts[0], parts[1]
+	if id == "" || name == "" || id != filepath.Base(id) || name != filepath.Base(name) || strings.Contains(name, "\\") {
 		return "", "", false
 	}
 	return id, name, true

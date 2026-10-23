@@ -16,6 +16,7 @@ import (
 	"golang.org/x/sys/windows"
 
 	processcontrol "github.com/uvwt/agentdock/internal/process"
+	"github.com/uvwt/agentdock/internal/updateengine"
 )
 
 func platformServiceStatus(ctx context.Context, runtimeRoot string) (ServiceStatus, error) {
@@ -38,7 +39,10 @@ func platformServiceStatus(ctx context.Context, runtimeRoot string) (ServiceStat
 }
 
 func coreProcessRunning(runtimeRoot string, manifest Manifest) (bool, error) {
-	coreBinary := ActiveCoreBinary(runtimeRoot, manifest)
+	coreBinaries, err := coreBinaryPaths(runtimeRoot, manifest)
+	if err != nil {
+		return false, err
+	}
 	supervisorPID, err := activeTunnelSupervisorPIDForRuntime(runtimeRoot, manifest)
 	if err != nil {
 		return false, fmt.Errorf("识别 Tunnel supervisor 失败: %w", err)
@@ -49,11 +53,48 @@ func coreProcessRunning(runtimeRoot string, manifest Manifest) (bool, error) {
 		// Core 状态必须排除已确认的 supervisor，否则停止 Core 后仍会被误判为运行中。
 		excluded[supervisorPID] = struct{}{}
 	}
-	processIDs, err := processIDsAtPathExcept(coreBinary, excluded)
+	processIDs, err := processIDsAtPathsExcept(coreBinaries, excluded)
 	if err != nil {
 		return false, err
 	}
 	return len(processIDs) > 0, nil
+}
+
+// coreBinaryPaths 限定同一安装根内的 Core 路径，包含未随 active pointer 退出的旧 generation。
+// 只枚举固定层级与文件名，不按进程名扫描其他安装目录。
+func coreBinaryPaths(runtimeRoot string, manifest Manifest) ([]string, error) {
+	paths := []string{ActiveCoreBinary(runtimeRoot, manifest)}
+	add := func(path string) {
+		for _, existing := range paths {
+			if samePath(existing, path) {
+				return
+			}
+		}
+		paths = append(paths, path)
+	}
+	// ActiveCoreBinary 已在旧布局中回退清单入口；generation 布局不能把稳定 shim
+	// 也当作 Core，否则一次普通 CLI 调用就会被误报为服务运行，或被停止操作误杀。
+	layout, err := updateengine.NewWindowsLayout(runtimeRoot)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(layout.VersionsDir())
+	if os.IsNotExist(err) {
+		return paths, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("读取 Core generation 目录失败: %w", err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(layout.VersionsDir(), entry.Name(), updateengine.GenerationCoreName)
+		if regularFileExists(path) {
+			add(path)
+		}
+	}
+	return paths, nil
 }
 
 func platformServiceAction(ctx context.Context, runtimeRoot, action string) error {
@@ -93,6 +134,10 @@ func startCore(ctx context.Context, manifest Manifest, runtimeRoot string) error
 	if testHealth(ctx, manifest.HealthURL()) {
 		return nil
 	}
+	// 不健康进程仍可能持有端口；先完成同一安装的旧 Core 清理，再创建新进程。
+	if err := stopCore(ctx, manifest, runtimeRoot); err != nil {
+		return err
+	}
 	if manifest.UsesScheduledTask() {
 		if err := StartInteractiveScheduledTask(ctx, runtimeRoot, manifest.AgentDockTaskName); err != nil {
 			return err
@@ -104,9 +149,13 @@ func startCore(ctx context.Context, manifest Manifest, runtimeRoot string) error
 }
 
 func stopCore(ctx context.Context, manifest Manifest, runtimeRoot string) error {
-	coreBinary := ActiveCoreBinary(runtimeRoot, manifest)
+	coreBinaries, err := coreBinaryPaths(runtimeRoot, manifest)
+	if err != nil {
+		return err
+	}
+	coreBinary := coreBinaries[0]
 	excluded := map[uint32]struct{}{}
-	ancestorPIDs, err := ancestorProcessIDsAtPath(coreBinary)
+	ancestorPIDs, err := ancestorProcessIDsAtPath(coreBinary, coreBinaries[1:]...)
 	if err != nil {
 		return fmt.Errorf("识别 AgentDock Core 调用链失败: %w", err)
 	}
@@ -118,7 +167,7 @@ func stopCore(ctx context.Context, manifest Manifest, runtimeRoot string) error 
 		return fmt.Errorf("识别 Tunnel supervisor 失败: %w", err)
 	}
 	if supervisorPID != 0 {
-		// Core 与 Tunnel supervisor 共用当前 generation Core 二进制。停止 Core 时必须保留 supervisor，
+		// Core 与 Tunnel supervisor 可共用同一 generation Core 二进制。停止 Core 时必须保留 supervisor，
 		// 否则一次普通 Core 重启就会悄悄丢失 Tunnel 的后续自恢复能力。
 		excluded[supervisorPID] = struct{}{}
 	}
@@ -126,7 +175,7 @@ func stopCore(ctx context.Context, manifest Manifest, runtimeRoot string) error 
 	if manifest.UsesScheduledTask() {
 		// 先让任务计划程序正常结束最高权限进程，避免普通托盘立即申请 PROCESS_TERMINATE。
 		_ = runScheduledTaskCommand(ctx, "/End", "/TN", scheduledTaskPath(manifest.AgentDockTaskName))
-		stopped, waitErr := waitBinaryStoppedExcept(ctx, coreBinary, excluded, 5*time.Second)
+		stopped, waitErr := waitBinaryStoppedExcept(ctx, coreBinary, excluded, 5*time.Second, coreBinaries[1:]...)
 		if waitErr != nil {
 			return waitErr
 		}
@@ -134,7 +183,7 @@ func stopCore(ctx context.Context, manifest Manifest, runtimeRoot string) error 
 			return nil
 		}
 	}
-	if err := stopBinaryProcessesExcept(ctx, coreBinary, excluded, 15*time.Second); err != nil {
+	if err := stopBinaryProcessesExcept(ctx, coreBinary, excluded, 15*time.Second, coreBinaries[1:]...); err != nil {
 		return fmt.Errorf("停止 AgentDock 核心失败: %w", err)
 	}
 	return nil

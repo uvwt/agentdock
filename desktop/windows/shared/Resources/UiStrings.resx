@@ -960,4 +960,12 @@ Update now?</value>
   <data name="TrayRestartAgentDock" xml:space="preserve">
     <value>Restart AgentDock</value>
   </data>
+  <data name="TunnelConnection" xml:space="preserve"><value>Tunnel</value></data>
+  <data name="TunnelConnecting" xml:space="preserve"><value>Connecting</value></data>
+  <data name="TunnelConnected" xml:space="preserve"><value>Connected</value></data>
+  <data name="TunnelReconnecting" xml:space="preserve"><value>Reconnecting</value></data>
+  <data name="TunnelWaitingNetwork" xml:space="preserve"><value>Waiting for network recovery</value></data>
+  <data name="TunnelOriginUnhealthy" xml:space="preserve"><value>Local service unavailable</value></data>
+  <data name="TunnelPublicUnreachable" xml:space="preserve"><value>Tunnel connected; public address unavailable</value></data>
+  <data name="TunnelConnectionDetail" xml:space="preserve"><value>{0} · Active connections: {1} · Automatic recoveries: {2}</value></data>
 </root>

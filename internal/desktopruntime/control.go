@@ -5,9 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/uvwt/agentdock/internal/desktopcontrol"
 )
+
+const desktopStatusTimeout = 10 * time.Second
+
+func readControlStatus(ctx context.Context, runtimeRoot, method string, result any) error {
+	// IPC 只负责快速读取后台快照；后台忙或失效时及时回退到独立系统查询。
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	return desktopcontrol.Call(ctx, runtimeRoot, method, controlActionParams{RuntimeRoot: runtimeRoot}, result)
+}
 
 type controlActionParams struct {
 	RuntimeRoot string `json:"runtime_root"`

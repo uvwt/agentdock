@@ -83,14 +83,14 @@ func commitStagedPatchWithFileOps(staged map[string]stagedPatchFile, rename, ins
 		if item.file.OriginalExists {
 			backupPath, err := reservePatchPath(filepath.Dir(item.file.Abs), ".agentdock-patch-backup-*")
 			if err != nil {
-				return rollbackPatch(prepared, createdDirs, rename, fmt.Errorf("reserve patch backup for %s: %w", item.file.Display, err))
+				return rollbackPatch(prepared, createdDirs, installNoReplace, fmt.Errorf("reserve patch backup for %s: %w", item.file.Display, err))
 			}
 			if err := rename(item.file.Abs, backupPath); err != nil {
-				return rollbackPatch(prepared, createdDirs, rename, fmt.Errorf("backup patch target %s: %w", item.file.Display, err))
+				return rollbackPatch(prepared, createdDirs, installNoReplace, fmt.Errorf("backup patch target %s: %w", item.file.Display, err))
 			}
 			item.backupPath = backupPath
 			if err := verifyPatchBackup(*item); err != nil {
-				return rollbackPatch(prepared, createdDirs, rename, err)
+				return rollbackPatch(prepared, createdDirs, installNoReplace, err)
 			}
 		}
 	}
@@ -102,11 +102,11 @@ func commitStagedPatchWithFileOps(staged map[string]stagedPatchFile, rename, ins
 		// 备份后原路径必须仍为空；平台 no-replace rename 提供“目标存在则失败”
 		// 语义，避免外部程序在提交窗口重建文件后被静默覆盖。
 		if err := installNoReplace(item.tempPath, item.file.Abs); err != nil {
-			return rollbackPatch(prepared, createdDirs, rename, toolErrorDetails("PATCH_CONFLICT", "patch target was created concurrently or cannot be installed without replacing an existing file", "runtime", map[string]any{"path": item.file.Display, "reason": err.Error()}))
+			return rollbackPatch(prepared, createdDirs, installNoReplace, toolErrorDetails("PATCH_CONFLICT", "patch target was created concurrently or cannot be installed without replacing an existing file", "runtime", map[string]any{"path": item.file.Display, "reason": err.Error()}))
 		}
 		item.installed = true
 		if err := os.Remove(item.tempPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return rollbackPatch(prepared, createdDirs, rename, fmt.Errorf("remove installed patch temp for %s: %w", item.file.Display, err))
+			return rollbackPatch(prepared, createdDirs, installNoReplace, fmt.Errorf("remove installed patch temp for %s: %w", item.file.Display, err))
 		}
 		item.tempPath = ""
 	}
@@ -226,7 +226,7 @@ func reservePatchPath(dir, pattern string) (string, error) {
 	return path, nil
 }
 
-func rollbackPatch(prepared []preparedPatchFile, createdDirs []string, rename func(string, string) error, cause error) error {
+func rollbackPatch(prepared []preparedPatchFile, createdDirs []string, restoreNoReplace func(string, string) error, cause error) error {
 	errs := []error{cause}
 	for i := len(prepared) - 1; i >= 0; i-- {
 		item := &prepared[i]
@@ -254,9 +254,13 @@ func rollbackPatch(prepared []preparedPatchFile, createdDirs []string, rename fu
 				errs = append(errs, fmt.Errorf("cannot restore patch backup for %s without overwriting a concurrent file; original retained at %s", item.file.Display, item.backupPath))
 			} else if !errors.Is(err, os.ErrNotExist) {
 				errs = append(errs, fmt.Errorf("check patch restore target %s: %w", item.file.Display, err))
-			} else if err := rename(item.backupPath, item.file.Abs); err != nil {
+			} else if err := restoreNoReplace(item.backupPath, item.file.Abs); err != nil {
 				errs = append(errs, fmt.Errorf("restore patch backup %s from %s: %w", item.file.Display, item.backupPath, err))
 			} else {
+				// 测试与兼容调用可使用 link 实现 no-replace；rename 已消费源路径。
+				if err := os.Remove(item.backupPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+					errs = append(errs, fmt.Errorf("remove restored patch backup %s: %w", item.backupPath, err))
+				}
 				item.backupPath = ""
 			}
 		}

@@ -103,6 +103,18 @@ internal static class UiText
         return string.Format(CultureInfo.CurrentCulture, Get(key), args);
     }
 
+    internal static string TunnelState(string state) => Get(state switch
+    {
+        "connecting" => "TunnelConnecting",
+        "connected" => "TunnelConnected",
+        "reconnecting" => "TunnelReconnecting",
+        "waiting_network" => "TunnelWaitingNetwork",
+        "origin_unhealthy" => "TunnelOriginUnhealthy",
+        "public_unreachable" => "TunnelPublicUnreachable",
+        "stopped" => "Stopped",
+        _ => "StatusUnavailable"
+    });
+
     private static void ApplyPreference(string preference)
     {
         var locale = ResolveLocale(preference, SystemLocale);

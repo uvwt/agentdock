@@ -50,19 +50,25 @@ type NodeAPI interface {
 }
 
 type Client struct {
-	identity  Identity
-	node      NodeAPI
-	runtime   runtimeapi.Runtime
-	artifacts publicartifacts.Store
-	state     *ConnectionState
-	invokeWG  sync.WaitGroup
-	writeMu   sync.Mutex
-	cancelMu  sync.Mutex
-	cancels   map[string]context.CancelFunc
+	identity         Identity
+	node             NodeAPI
+	runtime          runtimeapi.Runtime
+	artifacts        publicartifacts.Store
+	state            *ConnectionState
+	invokeWG         sync.WaitGroup
+	writeMu          sync.Mutex
+	cancelMu         sync.Mutex
+	cancels          map[string]context.CancelFunc
+	handshakeTimeout time.Duration
+	readTimeout      time.Duration
 }
 
 func NewClient(identity Identity, node NodeAPI, runtime runtimeapi.Runtime, artifacts publicartifacts.Store, state *ConnectionState) *Client {
-	return &Client{identity: identity, node: node, runtime: runtime, artifacts: artifacts, state: state, cancels: make(map[string]context.CancelFunc)}
+	return &Client{
+		identity: identity, node: node, runtime: runtime, artifacts: artifacts, state: state,
+		cancels:          make(map[string]context.CancelFunc),
+		handshakeTimeout: 15 * time.Second, readTimeout: 90 * time.Second,
+	}
 }
 
 func (c *Client) Run(ctx context.Context) {
@@ -203,6 +209,7 @@ func (c *Client) connect(ctx context.Context, rawEndpoint string) connectionOutc
 		return connectionOutcome{err: err, fallbackAllowed: true}
 	}
 	var ready protocol.Message
+	_ = socket.SetReadDeadline(time.Now().Add(c.handshakeTimeout))
 	if err := socket.ReadJSON(&ready); err != nil {
 		return connectionOutcome{err: fmt.Errorf("读取 NexusDock 握手响应: %w", err), fallbackAllowed: fallbackAllowedForSocketError(err)}
 	}
@@ -221,6 +228,12 @@ func (c *Client) connect(ctx context.Context, rawEndpoint string) connectionOutc
 			}
 		}()
 	}
+	// 业务心跳写入成功不代表对端仍在响应。用标准 WebSocket Ping/Pong
+	// 检测半开连接；超时后 ReadJSON 返回，由 Run 负责重新连接。
+	_ = socket.SetReadDeadline(time.Now().Add(c.readTimeout))
+	socket.SetPongHandler(func(string) error {
+		return socket.SetReadDeadline(time.Now().Add(c.readTimeout))
+	})
 	c.state.SetConnected(true)
 	defer c.state.SetConnected(false)
 	connectedAt := time.Now()
@@ -241,12 +254,19 @@ func (c *Client) connect(ctx context.Context, rawEndpoint string) connectionOutc
 				fallbackAllowed: fallbackAllowedForSocketError(err),
 			}
 		}
+		_ = socket.SetReadDeadline(time.Now().Add(c.readTimeout))
 		switch incoming.Type {
 		case protocol.MessageToolInvoke:
+			// 接收循环先注册取消，再交给 goroutine 执行，确保下一帧 cancel 不会丢失。
+			invokeCtx, invokeCancel := context.WithCancel(connectionCtx)
+			c.cancelMu.Lock()
+			c.cancels[incoming.RequestID] = invokeCancel
+			c.cancelMu.Unlock()
 			c.invokeWG.Add(1)
 			go func() {
 				defer c.invokeWG.Done()
-				c.invoke(connectionCtx, socket, incoming)
+				defer invokeCancel()
+				c.invoke(invokeCtx, socket, incoming)
 			}()
 		case protocol.MessageToolCancel:
 			c.cancel(incoming.RequestID)
@@ -277,14 +297,9 @@ func bridgeHello(identity Identity, tools []string, descriptors []protocol.ToolD
 }
 
 func (c *Client) invoke(parent context.Context, socket *websocket.Conn, incoming protocol.Message) {
-	ctx, cancel := context.WithCancel(parent)
-	ctx = extractBridgeTraceContext(ctx, &incoming)
-	c.cancelMu.Lock()
-	c.cancels[incoming.RequestID] = cancel
-	c.cancelMu.Unlock()
+	ctx := extractBridgeTraceContext(parent, &incoming)
 	defer func() {
 		recovered := recover()
-		cancel()
 		c.cancelMu.Lock()
 		delete(c.cancels, incoming.RequestID)
 		c.cancelMu.Unlock()
@@ -389,12 +404,20 @@ func bridgeToolDescriptors(descriptors []map[string]any) ([]protocol.ToolDescrip
 func (c *Client) heartbeat(ctx context.Context, socket *websocket.Conn, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	pingTicker := time.NewTicker(c.readTimeout / 3)
+	defer pingTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			if err := c.write(socket, protocol.Message{Type: protocol.MessageNodeHeartbeat}); err != nil {
+				_ = socket.Close()
+				return
+			}
+		case <-pingTicker.C:
+			// WriteControl 可与数据帧写入并发，避免等待工具响应占用的写锁。
+			if err := socket.WriteControl(websocket.PingMessage, nil, time.Now().Add(15*time.Second)); err != nil {
 				_ = socket.Close()
 				return
 			}

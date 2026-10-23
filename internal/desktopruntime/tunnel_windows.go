@@ -60,6 +60,9 @@ func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
 		return err
 	}
 	defer logs.Close()
+	if runtime.mode == "named" {
+		return superviseNamedTunnel(ctx, runtime, logs, guard.stopRequested, defaultNamedTunnelOptions())
+	}
 
 	var retryDelay time.Duration
 	for {
@@ -184,10 +187,7 @@ func platformTunnelStatus(ctx context.Context, runtimeRoot string) (TunnelStatus
 	if runtime.mode == "quick" {
 		ready = running && publicURL != ""
 	}
-	if runtime.mode == "named" {
-		ready = running && publicURL != ""
-	}
-	return TunnelStatus{
+	status := TunnelStatus{
 		Mode:             runtime.mode,
 		Running:          running,
 		Ready:            ready,
@@ -195,7 +195,20 @@ func platformTunnelStatus(ctx context.Context, runtimeRoot string) (TunnelStatus
 		PublicURL:        publicURL,
 		DependencyState:  componentStatus.State,
 		ComponentVersion: componentStatus.Version,
-	}, nil
+	}
+	if runtime.mode == "named" {
+		owner, ownerErr := activeTunnelSupervisorPIDForRuntime(runtime.root, runtime.manifest)
+		if ownerErr != nil {
+			return TunnelStatus{}, ownerErr
+		}
+		snapshot, _ := readTunnelHealth(runtime.root)
+		childPath := ""
+		if snapshot.ProcessPID > 0 {
+			childPath, _ = queryProcessPath(uint32(snapshot.ProcessPID))
+		}
+		applyNamedTunnelHealth(&status, snapshot, time.Now(), int(owner), samePath(childPath, runtime.manifest.CloudflaredBinary))
+	}
+	return status, nil
 }
 
 func platformTunnelAction(ctx context.Context, runtimeRoot, action string) error {
@@ -265,7 +278,11 @@ func startTunnel(ctx context.Context, runtime tunnelRuntime) error {
 		if runtime.mode == "quick" {
 			return waitQuickTunnelReady(ctx, runtime, quickTunnelStartTimeout)
 		}
-		return nil
+		cursors, err := captureTunnelLogCursors(runtime.files)
+		if err != nil {
+			return err
+		}
+		return waitNamedTunnelReady(ctx, runtime, cursors, namedTunnelStartTimeout)
 	}
 
 	if running {
@@ -425,10 +442,7 @@ func invalidateQuickTunnelAfterExit(ctx context.Context, runtime tunnelRuntime) 
 	return platformServiceAction(ctx, runtime.root, "restart")
 }
 
-const (
-	namedTunnelConnectedMarker    = "Registered tunnel connection"
-	namedTunnelInvalidTokenMarker = "Provided Tunnel token is not valid."
-)
+const namedTunnelInvalidTokenMarker = "Provided Tunnel token is not valid."
 
 func waitNamedTunnelReady(ctx context.Context, runtime tunnelRuntime, cursors tunnelLogCursors, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
@@ -440,7 +454,6 @@ func waitNamedTunnelReady(ctx context.Context, runtime tunnelRuntime, cursors tu
 		{path: runtime.files.stderrLog, cursor: cursors.stderr},
 	}
 	for time.Now().Before(deadline) {
-		connected := false
 		for _, log := range logs {
 			data, err := readTunnelLogSince(log.path, log.cursor)
 			if err != nil {
@@ -452,15 +465,12 @@ func waitNamedTunnelReady(ctx context.Context, runtime tunnelRuntime, cursors tu
 			if bytes.Contains(data, []byte(namedTunnelInvalidTokenMarker)) {
 				return fmt.Errorf("Named Tunnel Token 无效: %s", tunnelLogSummary(runtime.files))
 			}
-			if bytes.Contains(data, []byte(namedTunnelConnectedMarker)) {
-				connected = true
-			}
 		}
-		running, err := processRunningAtPath(runtime.manifest.CloudflaredBinary)
+		status, err := platformTunnelStatus(ctx, runtime.root)
 		if err != nil {
 			return err
 		}
-		if connected && running {
+		if status.Ready {
 			return nil
 		}
 		select {

@@ -68,10 +68,10 @@ func stageUnixPayload(request Request, journal *rollbackJournal) (stagedInstall,
 	}
 
 	generation := filepath.Join(request.InstallRoot, "versions", request.Version)
-	if err := os.MkdirAll(generation, 0o755); err != nil {
+	if err := journal.Snapshot(generation); err != nil {
 		return staged, err
 	}
-	if err := journal.NoteCreated(generation); err != nil {
+	if err := os.MkdirAll(generation, 0o755); err != nil {
 		return staged, err
 	}
 	stagedBinary := filepath.Join(generation, "agentdock")

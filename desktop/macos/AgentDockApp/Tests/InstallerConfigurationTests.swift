@@ -3,6 +3,16 @@ import Foundation
 @main
 struct InstallerConfigurationTests {
     static func main() async throws {
+        let chineseID = ACPDesktopConfiguration.customProfileID(name: "我的助手", existingIDs: [])
+        precondition(chineseID == "custom")
+        precondition(ACPDesktopConfiguration.customProfileID(name: "我的助手", existingIDs: ["custom"]) == "custom-2")
+        let longName = String(repeating: "x", count: 80)
+        let longID = ACPDesktopConfiguration.customProfileID(name: longName, existingIDs: [])
+        precondition(longID.utf8.count == 64)
+        let duplicateID = ACPDesktopConfiguration.customProfileID(name: longName, existingIDs: [longID])
+        precondition(duplicateID.utf8.count == 64 && duplicateID.hasSuffix("-2"))
+        precondition(ACPDesktopConfiguration.customProfileID(name: "My Agent", existingIDs: []) == "my-agent")
+
         let local = InstallRequest(mode: .local, serverURL: "", tunnelToken: "")
         let localURL = try local.validatedServerURL()
         let localToken = try local.validatedTunnelToken()

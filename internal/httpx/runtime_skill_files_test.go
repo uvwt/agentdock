@@ -83,27 +83,27 @@ func TestRuntimeAPISkillFilesStayInsideCurrentManagedPackage(t *testing.T) {
 	insideSymlinkCreated := os.Symlink(filepath.Join(installedDir, "references", "guide.md"), filepath.Join(installedDir, "inside-link.txt")) == nil
 
 	privateMetadata := httptest.NewRecorder()
-	handler.ServeHTTP(privateMetadata, httptest.NewRequest(http.MethodGet, "/internal/runtime/skills/demo-skill/files/.agentdock-install.json", nil))
+	handler.ServeHTTP(privateMetadata, newLocalRuntimeRequest(http.MethodGet, "/internal/runtime/skills/demo-skill/files/.agentdock-install.json", nil))
 	if privateMetadata.Code != http.StatusNotFound || !strings.Contains(privateMetadata.Body.String(), `"code":"SKILL_FILE_NOT_FOUND"`) {
 		t.Fatalf("private metadata status=%d body=%s", privateMetadata.Code, privateMetadata.Body.String())
 	}
 
 	traversal := httptest.NewRecorder()
-	handler.ServeHTTP(traversal, httptest.NewRequest(http.MethodGet, "/internal/runtime/skills/demo-skill/files/../secret", nil))
+	handler.ServeHTTP(traversal, newLocalRuntimeRequest(http.MethodGet, "/internal/runtime/skills/demo-skill/files/../secret", nil))
 	if traversal.Code != http.StatusBadRequest || !strings.Contains(traversal.Body.String(), `"code":"INVALID_SKILL_FILE"`) {
 		t.Fatalf("path traversal status=%d body=%s", traversal.Code, traversal.Body.String())
 	}
 
 	if symlinkCreated {
 		link := httptest.NewRecorder()
-		handler.ServeHTTP(link, httptest.NewRequest(http.MethodGet, "/internal/runtime/skills/demo-skill/files/outside-link.txt", nil))
+		handler.ServeHTTP(link, newLocalRuntimeRequest(http.MethodGet, "/internal/runtime/skills/demo-skill/files/outside-link.txt", nil))
 		if link.Code != http.StatusBadRequest || !strings.Contains(link.Body.String(), `"code":"INVALID_SKILL_FILE"`) {
 			t.Fatalf("outside symlink status=%d body=%s", link.Code, link.Body.String())
 		}
 	}
 	if insideSymlinkCreated {
 		link := httptest.NewRecorder()
-		handler.ServeHTTP(link, httptest.NewRequest(http.MethodGet, "/internal/runtime/skills/demo-skill/files/inside-link.txt", nil))
+		handler.ServeHTTP(link, newLocalRuntimeRequest(http.MethodGet, "/internal/runtime/skills/demo-skill/files/inside-link.txt", nil))
 		if link.Code != http.StatusBadRequest || !strings.Contains(link.Body.String(), `"code":"INVALID_SKILL_FILE"`) {
 			t.Fatalf("inside symlink status=%d body=%s", link.Code, link.Body.String())
 		}
@@ -113,7 +113,7 @@ func TestRuntimeAPISkillFilesStayInsideCurrentManagedPackage(t *testing.T) {
 func requestRuntimeAPI(t *testing.T, handler http.Handler, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+	handler.ServeHTTP(recorder, newLocalRuntimeRequest(http.MethodGet, path, nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("GET %s status=%d body=%s", path, recorder.Code, recorder.Body.String())
 	}

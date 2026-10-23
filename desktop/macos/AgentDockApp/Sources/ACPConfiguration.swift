@@ -371,6 +371,26 @@ struct ACPProfileConfiguration: Codable, Equatable {
 }
 
 struct ACPDesktopConfiguration {
+    static func customProfileID(name: String, existingIDs: [String]) -> String {
+        let asciiName = name.lowercased().unicodeScalars.map { scalar -> String in
+            let value = scalar.value
+            let allowed = (97...122).contains(value) || (48...57).contains(value)
+                || value == 46 || value == 95 || value == 45
+            return allowed ? String(scalar) : "-"
+        }.joined()
+        let trimmed = String(asciiName.prefix(64)).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        let base = trimmed.isEmpty ? "custom" : trimmed
+        let used = Set(existingIDs)
+        var id = base
+        var suffix = 2
+        while used.contains(id) {
+            let ending = "-\(suffix)"
+            id = String(base.prefix(64 - ending.count)) + ending
+            suffix += 1
+        }
+        return id
+    }
+
     static func encodeProfiles(_ profiles: [ACPProfileConfiguration]) throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]

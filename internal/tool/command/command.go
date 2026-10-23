@@ -112,20 +112,7 @@ func (svc *Service) Exec(ctx context.Context, request ExecRequest) (Result, erro
 			release()
 		}()
 	}
-	if request.Stdin != "" {
-		if err := s.Write(request.Stdin); err != nil {
-			s.Kill()
-			s.Cancel()
-			return nil, fmt.Errorf("write command stdin: %w", err)
-		}
-	}
-	if !tty {
-		if err := s.CloseStdin(); err != nil && !errors.Is(err, os.ErrClosed) {
-			s.Kill()
-			s.Cancel()
-			return nil, fmt.Errorf("close command stdin: %w", err)
-		}
-	}
+	inputResult := s.StartInput(request.Stdin, !tty)
 
 	storeSession := func(reason string) Result {
 		svc.storeReservedSession(s)
@@ -165,6 +152,9 @@ func (svc *Service) Exec(ctx context.Context, request ExecRequest) (Result, erro
 		}
 	}
 
+	if inputErr := <-inputResult; inputErr != nil {
+		return nil, inputErr
+	}
 	err = s.WaitError()
 	s.Cancel()
 	result := snapshotResult(s.Snapshot("exited", maxBytes))

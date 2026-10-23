@@ -66,7 +66,7 @@ func TestRuntimePluginAPIIsReadOnlyAuthenticatedAndPathSafe(t *testing.T) {
 	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
 	for _, target := range []string{"/internal/runtime/plugins", "/internal/runtime/plugins/runtime-demo"} {
 		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, target, nil))
+		handler.ServeHTTP(response, newLocalRuntimeRequest(http.MethodGet, target, nil))
 		if response.Code != http.StatusOK {
 			t.Fatalf("GET %s status=%d body=%s", target, response.Code, response.Body.String())
 		}
@@ -80,7 +80,7 @@ func TestRuntimePluginAPIIsReadOnlyAuthenticatedAndPathSafe(t *testing.T) {
 	}
 
 	methodResponse := httptest.NewRecorder()
-	handler.ServeHTTP(methodResponse, httptest.NewRequest(http.MethodPost, "/internal/runtime/plugins", nil))
+	handler.ServeHTTP(methodResponse, newLocalRuntimeRequest(http.MethodPost, "/internal/runtime/plugins", nil))
 	if methodResponse.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST Plugin API status=%d body=%s", methodResponse.Code, methodResponse.Body.String())
 	}
@@ -92,7 +92,7 @@ func TestRuntimePluginAPIIsReadOnlyAuthenticatedAndPathSafe(t *testing.T) {
 	authConfig.AuthToken = "runtime-secret"
 	authHandler := runtimeAPIHandler(runtime, authConfig, auth.NewOAuthStore())
 	unauthorized := httptest.NewRecorder()
-	authHandler.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/internal/runtime/plugins", nil))
+	authHandler.ServeHTTP(unauthorized, newLocalRuntimeRequest(http.MethodGet, "/internal/runtime/plugins", nil))
 	if unauthorized.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthorized Plugin API status=%d body=%s", unauthorized.Code, unauthorized.Body.String())
 	}

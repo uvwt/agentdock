@@ -37,14 +37,14 @@ func TestStartPromptWaitsForPromptDispatchBeforeSteering(t *testing.T) {
 	manager.mu.RLock()
 	connection := manager.process.connection
 	manager.mu.RUnlock()
-	connection.writeMu.Lock()
+	<-connection.writeSlot
 	gate := &gatedACPWriter{
 		WriteCloser: connection.writer,
 		started:     make(chan struct{}),
 		release:     make(chan struct{}),
 	}
 	connection.writer = gate
-	connection.writeMu.Unlock()
+	connection.writeSlot <- struct{}{}
 
 	type startResult struct {
 		result PromptStartResult

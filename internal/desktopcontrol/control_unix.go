@@ -18,7 +18,7 @@ func endpointPath(runtimeRoot string) string {
 	return filepath.Join(runtimeRoot, "control.sock")
 }
 
-func servePlatform(ctx context.Context, runtimeRoot string, handle func([]byte) []byte) error {
+func servePlatform(ctx context.Context, runtimeRoot string, handle func(context.Context, []byte) []byte) error {
 	if err := os.MkdirAll(runtimeRoot, 0o700); err != nil {
 		return fmt.Errorf("create desktop control directory: %w", err)
 	}
@@ -58,14 +58,19 @@ func servePlatform(ctx context.Context, runtimeRoot string, handle func([]byte) 
 	}
 }
 
-func serveConnection(ctx context.Context, connection net.Conn, handle func([]byte) []byte) {
+func serveConnection(ctx context.Context, connection net.Conn, handle func(context.Context, []byte) []byte) {
 	defer connection.Close()
-	_ = connection.SetDeadline(time.Now().Add(30 * time.Second))
+	ctx, cancel := context.WithTimeout(ctx, controlRequestTimeout)
+	defer cancel()
+	stop := context.AfterFunc(ctx, func() { _ = connection.Close() })
+	defer stop()
+	deadline, _ := ctx.Deadline()
+	_ = connection.SetDeadline(deadline)
 	data, err := io.ReadAll(io.LimitReader(connection, maxMessageBytes+1))
 	if err != nil || len(data) > maxMessageBytes {
 		return
 	}
-	_, _ = connection.Write(handle(data))
+	_, _ = connection.Write(handle(ctx, data))
 }
 
 func callPlatform(ctx context.Context, runtimeRoot string, data []byte) ([]byte, error) {
@@ -77,8 +82,10 @@ func callPlatform(ctx context.Context, runtimeRoot string, data []byte) ([]byte,
 	defer connection.Close()
 	deadline, ok := ctx.Deadline()
 	if !ok {
-		deadline = time.Now().Add(30 * time.Second)
+		deadline = time.Now().Add(controlRequestTimeout)
 	}
+	stop := context.AfterFunc(ctx, func() { _ = connection.Close() })
+	defer stop()
 	_ = connection.SetDeadline(deadline)
 	if _, err := connection.Write(data); err != nil {
 		return nil, fmt.Errorf("write desktop control request: %w", err)

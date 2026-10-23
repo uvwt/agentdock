@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 
@@ -19,6 +20,11 @@ public sealed partial class CapabilitiesPage : Page
         BrowserTitle.Text = UiText.Get("Browser");
         CodingAgentTitle.Text = UiText.Get("CodingAgent");
         McpAppsTitle.Text = UiText.Get("McpApps");
+        AutomationProperties.SetName(BrowserEnabledToggle, UiText.Get("Browser"));
+        AutomationProperties.SetName(CodingAgentEnabledToggle, UiText.Get("CodingAgent"));
+        AutomationProperties.SetName(BrowserModeComboBox, UiText.Get("Browser"));
+        AutomationProperties.SetName(BrowserCdpUrlTextBox, UiText.Get("SpecifiedCdp"));
+        AutomationProperties.SetName(McpAppsModeComboBox, UiText.Get("McpApps"));
         ManagedBrowserModeItem.Content = UiText.Get("IsolatedBrowser");
         ReuseBrowserModeItem.Content = UiText.Get("ReuseLocalBrowser");
         SpecifiedBrowserModeItem.Content = UiText.Get("SpecifiedCdp");
@@ -147,6 +153,7 @@ public sealed partial class CapabilitiesPage : Page
                 HorizontalAlignment = HorizontalAlignment.Left,
                 VerticalAlignment = VerticalAlignment.Center
             };
+            AutomationProperties.SetName(checkBox, ProfileTitle(profile));
             checkBox.Checked += ProfileCheckBox_Changed;
             checkBox.Unchecked += ProfileCheckBox_Changed;
             row.Children.Add(checkBox);
@@ -225,11 +232,7 @@ public sealed partial class CapabilitiesPage : Page
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
         var displayName = name.Text.Trim();
         if (displayName.Length == 0) return;
-        var idBase = new string(displayName.ToLowerInvariant().Select(character =>
-            char.IsLetterOrDigit(character) || character is '.' or '_' or '-' ? character : '-').ToArray()).Trim('-');
-        if (idBase.Length == 0) idBase = "custom";
-        var id = idBase;
-        for (var suffix = 2; _settings.AcpProfiles.Any(profile => profile.Id == id); suffix++) id = $"{idBase}-{suffix}";
+        var id = AcpProfileId.Create(displayName, _settings.AcpProfiles.Select(profile => profile.Id));
         _settings.AcpProfiles.Add(new AcpProfileSettings
         {
             Id = id,

@@ -19,7 +19,7 @@
             </ListView>
             <Rectangle Grid.Column="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}"/>
             <ScrollViewer Grid.Column="2">
-                <StackPanel x:Name="SettingsContent" Width="650" HorizontalAlignment="Left" Spacing="20" Padding="28,4,28,32"/>
+                <StackPanel x:Name="SettingsContent" MaxWidth="650" HorizontalAlignment="Stretch" Spacing="20" Padding="28,4,28,32"/>
             </ScrollViewer>
         </Grid>
     </Grid>

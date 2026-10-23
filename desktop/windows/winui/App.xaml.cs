@@ -217,7 +217,8 @@ public partial class NativeApp : Application
                 Available: true,
                 CoreRunning: snapshot.CoreRunning,
                 Healthy: snapshot.Healthy,
-                Version: snapshot.Version));
+                Version: snapshot.Version,
+                TunnelState: snapshot.TunnelMode == "named" ? snapshot.TunnelConnectionState : ""));
         }
         catch
         {

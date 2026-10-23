@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Navigation;
@@ -21,10 +22,16 @@ public sealed partial class SettingsPage : Page
     private bool _componentOperationInProgress;
     private bool _updateCheckInProgress;
     private Button? _updateButton;
+    private TextBlock? _tunnelStatusText;
+    private readonly DispatcherTimer _tunnelStatusTimer = new() { Interval = TimeSpan.FromSeconds(5) };
+    private bool _tunnelStatusRefreshInProgress;
 
     public SettingsPage()
     {
         InitializeComponent();
+        _tunnelStatusTimer.Tick += async (_, _) => await RefreshTunnelStatusAsync();
+        Loaded += (_, _) => _tunnelStatusTimer.Start();
+        Unloaded += (_, _) => _tunnelStatusTimer.Stop();
         SettingsPageTitle.Text = UiText.Get("Settings");
         PermissionsNavigationItem.Content = UiText.Get("Permissions");
         StartupNavigationItem.Content = UiText.Get("Startup");
@@ -75,6 +82,26 @@ public sealed partial class SettingsPage : Page
         _analytics = _snapshot is null ? null : await _runtime.GetRuntimeAnalyticsAsync(_snapshot);
     }
 
+    private static string FormatTunnelStatus(string state, int connections, int recoveries) =>
+        UiText.Format("TunnelConnectionDetail", UiText.TunnelState(state), connections, recoveries);
+
+    private async Task RefreshTunnelStatusAsync()
+    {
+        if (_runtime is null || _tunnelStatusText is null || _tunnelStatusRefreshInProgress) return;
+        _tunnelStatusRefreshInProgress = true;
+        try
+        {
+            var status = await _runtime.ReadTunnelStatusAsync();
+            if (_tunnelStatusText is not null)
+                _tunnelStatusText.Text = FormatTunnelStatus(status?.ConnectionState ?? "", status?.ReadyConnections ?? 0, status?.RecoveryCount ?? 0);
+        }
+        catch
+        {
+            if (_tunnelStatusText is not null) _tunnelStatusText.Text = UiText.Get("StatusUnavailable");
+        }
+        finally { _tunnelStatusRefreshInProgress = false; }
+    }
+
     private void SelectSettingsTag(string tag)
     {
         var item = SettingsNavigation.Items
@@ -98,6 +125,7 @@ public sealed partial class SettingsPage : Page
     private void Render(string tag)
     {
         _updateButton = null;
+        _tunnelStatusText = null;
         SettingsContent.Children.Clear();
         var header = new StackPanel { Spacing = 5 };
         header.Children.Add(new TextBlock { Text = PageTitle(tag), FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
@@ -269,6 +297,7 @@ public sealed partial class SettingsPage : Page
             OffContent = ""
         };
         toggle.Toggled += PrivilegeToggle_Toggled;
+        AutomationProperties.SetName(toggle, UiText.Get("RunCoreElevated"));
         rows.Children.Add(ActionRow(UiText.Get("RunCoreElevated"), toggle));
         return rows;
     }
@@ -285,6 +314,7 @@ public sealed partial class SettingsPage : Page
             OffContent = ""
         };
         core.Toggled += StartupToggle_Toggled;
+        AutomationProperties.SetName(core, UiText.Get("CoreBackgroundService"));
         rows.Children.Add(ActionRow(UiText.Get("CoreBackgroundService"), core));
         rows.Children.Add(Divider());
         var tray = new ToggleSwitch
@@ -296,6 +326,7 @@ public sealed partial class SettingsPage : Page
             OffContent = ""
         };
         tray.Toggled += StartupToggle_Toggled;
+        AutomationProperties.SetName(tray, UiText.Get("TrayApp"));
         rows.Children.Add(ActionRow(UiText.Get("TrayApp"), tray));
         return rows;
     }
@@ -311,6 +342,7 @@ public sealed partial class SettingsPage : Page
         theme.Items.Add(new ComboBoxItem { Content = UiText.Get("DarkTheme"), Tag = UiThemePreference.DarkPreference });
         SelectComboTag(theme, UiThemePreference.ReadPreference());
         theme.SelectionChanged += ThemePreference_SelectionChanged;
+        AutomationProperties.SetName(theme, UiText.Get("Theme"));
         rows.Children.Add(ActionRow(UiText.Get("Theme"), theme));
         rows.Children.Add(Divider());
 
@@ -320,6 +352,7 @@ public sealed partial class SettingsPage : Page
         language.Items.Add(new ComboBoxItem { Content = UiText.Get("EnglishLanguage"), Tag = UiText.EnglishPreference });
         SelectComboTag(language, UiText.ReadPreference());
         language.SelectionChanged += LanguagePreference_SelectionChanged;
+        AutomationProperties.SetName(language, UiText.Get("InterfaceLanguage"));
         rows.Children.Add(ActionRow(UiText.Get("InterfaceLanguage"), language));
         return rows;
     }
@@ -532,6 +565,18 @@ public sealed partial class SettingsPage : Page
         }
 
         var publicRows = new StackPanel();
+        if (_snapshot is { } tunnelSnapshot && string.Equals(tunnelSnapshot.TunnelMode, "named", StringComparison.OrdinalIgnoreCase))
+        {
+            _tunnelStatusText = new TextBlock
+            {
+                Text = FormatTunnelStatus(tunnelSnapshot.TunnelConnectionState, tunnelSnapshot.TunnelReadyConnections, tunnelSnapshot.TunnelRecoveryCount),
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(13, 10, 13, 10)
+            };
+            publicRows.Children.Add(_tunnelStatusText);
+            publicRows.Children.Add(Divider());
+        }
         var publicAddress = _snapshot?.PublicMcpUrl ?? "";
         var publicActions = new StackPanel
         {

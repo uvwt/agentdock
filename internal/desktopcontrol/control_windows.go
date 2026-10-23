@@ -9,23 +9,27 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"runtime"
 	"strings"
-	"syscall"
+	"sync"
 	"time"
 	"unsafe"
 
+	"github.com/uvwt/agentdock/internal/fs/pipeio"
 	"golang.org/x/sys/windows"
 )
-
-var cancelSynchronousIOProc = windows.NewLazySystemDLL("kernel32.dll").NewProc("CancelSynchronousIo")
 
 func endpointPath(runtimeRoot string) string {
 	digest := sha256.Sum256([]byte(strings.ToLower(runtimeRoot)))
 	return fmt.Sprintf(`\\.\pipe\agentdock-control-%x`, digest[:10])
 }
 
-func servePlatform(ctx context.Context, runtimeRoot string, handle func([]byte) []byte) error {
+func servePlatform(ctx context.Context, runtimeRoot string, handle func(context.Context, []byte) []byte) error {
+	ctx, cancel := context.WithCancel(ctx)
+	var connections sync.WaitGroup
+	defer func() {
+		cancel()
+		connections.Wait()
+	}()
 	security, err := currentUserPipeSecurity()
 	if err != nil {
 		return err
@@ -57,92 +61,67 @@ func servePlatform(ctx context.Context, runtimeRoot string, handle func([]byte) 
 			_ = windows.CloseHandle(pipe)
 			return fmt.Errorf("connect desktop control named pipe: %w", connectErr)
 		}
-		servePipe(pipe, handle)
+		// 单个客户端的半条请求或未读取的响应不能阻塞其他连接。
+		connections.Add(1)
+		go func() {
+			defer connections.Done()
+			servePipe(ctx, pipe, handle)
+		}()
 	}
 }
 
 func connectNamedPipe(ctx context.Context, pipe windows.Handle) error {
-	type connectorState struct {
-		thread windows.Handle
-		err    error
-	}
-
-	ready := make(chan connectorState, 1)
-	connected := make(chan error, 1)
-	go func() {
-		// CancelSynchronousIo 只会取消指定线程发起的同步 I/O，因此连接调用必须固定在同一个 OS 线程。
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
-
-		thread, err := windows.OpenThread(windows.THREAD_TERMINATE, false, windows.GetCurrentThreadId())
-		ready <- connectorState{thread: thread, err: err}
-		if err != nil {
-			connected <- err
-			return
+	return pipeio.Run(ctx, func() error {
+		err := windows.ConnectNamedPipe(pipe, nil)
+		if errors.Is(err, windows.ERROR_PIPE_CONNECTED) {
+			return nil
 		}
-
-		connectErr := windows.ConnectNamedPipe(pipe, nil)
-		if errors.Is(connectErr, windows.ERROR_PIPE_CONNECTED) {
-			connectErr = nil
-		}
-		connected <- connectErr
-	}()
-
-	connector := <-ready
-	if connector.err != nil {
-		return fmt.Errorf("open desktop control connector thread: %w", connector.err)
-	}
-	defer windows.CloseHandle(connector.thread)
-
-	select {
-	case connectErr := <-connected:
-		return connectErr
-	case <-ctx.Done():
-		cancelErr := cancelSynchronousIO(connector.thread)
-		connectErr := <-connected
-		if cancelErr != nil && !errors.Is(cancelErr, windows.ERROR_NOT_FOUND) {
-			return fmt.Errorf("cancel desktop control named pipe connection: %w", cancelErr)
-		}
-		if connectErr != nil && !errors.Is(connectErr, windows.ERROR_OPERATION_ABORTED) {
-			return connectErr
-		}
-		return ctx.Err()
-	}
+		return err
+	})
 }
 
-func cancelSynchronousIO(thread windows.Handle) error {
-	result, _, callErr := cancelSynchronousIOProc.Call(uintptr(thread))
-	if result != 0 {
-		return nil
-	}
-	if callErr == syscall.Errno(0) {
-		return errors.New("CancelSynchronousIo failed without an error code")
-	}
-	return callErr
-}
-
-func servePipe(pipe windows.Handle, handle func([]byte) []byte) {
+func servePipe(ctx context.Context, pipe windows.Handle, handle func(context.Context, []byte) []byte) {
 	defer windows.CloseHandle(pipe)
 	defer windows.DisconnectNamedPipe(pipe)
-	request, err := readPipeMessage(pipe)
+	ctx, cancel := context.WithTimeout(ctx, controlRequestTimeout)
+	defer cancel()
+	var request []byte
+	err := pipeio.Run(ctx, func() error {
+		var err error
+		request, err = readPipeMessage(pipe)
+		return err
+	})
 	if err != nil {
 		return
 	}
-	_ = writePipeMessage(pipe, handle(request))
-	_ = windows.FlushFileBuffers(pipe)
+	response := handle(ctx, request)
+	_ = pipeio.Run(ctx, func() error {
+		if err := writePipeMessage(pipe, response); err != nil {
+			return err
+		}
+		return windows.FlushFileBuffers(pipe)
+	})
 }
 
 func callPlatform(ctx context.Context, runtimeRoot string, data []byte) ([]byte, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, controlRequestTimeout)
+		defer cancel()
+	}
 	name, err := windows.UTF16PtrFromString(endpointPath(runtimeRoot))
 	if err != nil {
 		return nil, err
 	}
-	deadline, hasDeadline := ctx.Deadline()
-	if !hasDeadline {
-		deadline = time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(2 * time.Second)
+	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
+		deadline = contextDeadline
 	}
 	var pipe windows.Handle
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		pipe, err = windows.CreateFile(
 			name,
 			windows.GENERIC_READ|windows.GENERIC_WRITE,
@@ -165,10 +144,15 @@ func callPlatform(ctx context.Context, runtimeRoot string, data []byte) ([]byte,
 		}
 	}
 	defer windows.CloseHandle(pipe)
-	if err := writePipeMessage(pipe, data); err != nil {
-		return nil, fmt.Errorf("write desktop control named pipe: %w", err)
-	}
-	response, err := readPipeMessage(pipe)
+	var response []byte
+	err = pipeio.Run(ctx, func() error {
+		if err := writePipeMessage(pipe, data); err != nil {
+			return fmt.Errorf("write desktop control named pipe: %w", err)
+		}
+		var err error
+		response, err = readPipeMessage(pipe)
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("read desktop control named pipe: %w", err)
 	}

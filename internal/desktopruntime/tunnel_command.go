@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-
-	"github.com/uvwt/agentdock/internal/desktopcontrol"
 )
 
 // TunnelStatus 是桌面端和 CLI 共享的结构化 Tunnel 状态。
@@ -21,6 +19,13 @@ type TunnelStatus struct {
 	PublicURL        string `json:"public_url,omitempty"`
 	DependencyState  string `json:"dependency_state,omitempty"`
 	ComponentVersion string `json:"component_version,omitempty"`
+	ConnectionState  string `json:"connection_state,omitempty"`
+	ReadyConnections uint   `json:"ready_connections,omitempty"`
+	OriginHealthy    bool   `json:"origin_healthy,omitempty"`
+	PublicChecked    bool   `json:"public_checked,omitempty"`
+	PublicReachable  bool   `json:"public_reachable,omitempty"`
+	RecoveryCount    int    `json:"recovery_count,omitempty"`
+	RecoveryReason   string `json:"recovery_reason,omitempty"`
 }
 
 // TunnelStatusForRuntime exposes the same local-only snapshot used by the CLI.
@@ -53,13 +58,18 @@ func RunTunnelCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		}
 		return platformLaunchTunnel(ctx, runtimeRoot)
 	case "status":
+		ctx, cancel := context.WithTimeout(ctx, desktopStatusTimeout)
+		defer cancel()
 		runtimeRoot, err := parseRuntimeRoot("agentdock tunnel status", args[1:], stderr)
 		if err != nil {
 			return err
 		}
 		var status TunnelStatus
-		err = desktopcontrol.Call(ctx, runtimeRoot, "tunnel.status", controlActionParams{RuntimeRoot: runtimeRoot}, &status)
+		err = readControlStatus(ctx, runtimeRoot, "tunnel.status", &status)
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			status, err = platformTunnelStatus(ctx, runtimeRoot)
 		}
 		if err != nil {

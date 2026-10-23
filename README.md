@@ -81,6 +81,8 @@ On macOS and Windows, open **Connections** in the control panel to pair your dev
 
 For local MCP or direct public access, open **Settings → Advanced connection**, or use **Advanced connection settings** on the Connections page. This is where you find the local MCP address, access credentials, and Cloudflare settings for a temporary public address or fixed domain. For Linux and Docker, follow the installation documentation to configure the connection.
 
+On Windows, pairing uses the data directory recorded by the installer, including custom locations. On macOS, status refreshes preserve unsaved connection and capability settings. Custom ACP profile names can contain Chinese characters; the control panel generates a compatible internal ID automatically.
+
 ## Direct MCP connection
 
 When connecting directly, add the MCP address and Bearer Token or OAuth sign-in details to your client's MCP, Tools, or Connectors settings. Public access must keep authentication enabled. Do not include credentials in screenshots, issues, or public conversations.
@@ -110,6 +112,18 @@ AgentDock uses MCP Streamable HTTP. The exact client syntax varies; a typical lo
 - **Task recovery:** Save progress and checkpoints so long-running work can continue after an interruption.
 
 See the [documentation](https://docs.nexusdock.co/agentdock/) for configuration and usage details.
+
+## Connection recovery
+
+The core service and its remote connection have separate status. NexusDock connections automatically reconnect after a handshake timeout or an unresponsive peer. On Windows, a stalled local control connection does not block other control requests or shutdown; status commands fall back to a system query after two seconds.
+
+Windows stop and restart also clean up Core processes from older generations in the same installation. When the core is unhealthy, start waits for old processes to exit before launching the active generation so they cannot keep its port occupied.
+
+Windows named Cloudflare Tunnels monitor live connections and automatically rebuild a disconnected tunnel after VPN, DNS, or network changes. The control panel and tray show recovery state. Recovery uses backoff and rate limits; manually stopping the tunnel cancels background recovery.
+
+Dynamic MCP connections discard failed sessions so the next independent call can reconnect. ACP pipe writes and queued requests honor cancellation. MCP credentials stay within the configured origin, and clearing OAuth authorization prevents an in-flight exchange or refresh from restoring it.
+
+See [runtime access and recovery](./docs/runtime-access-and-recovery.md) for timeout rules, local API access restrictions, and regression checks.
 
 ## Runtime directories
 

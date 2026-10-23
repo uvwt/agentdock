@@ -33,10 +33,17 @@ func CompileInputSchema(raw map[string]any) (*InputValidator, error) {
 	// Schema 也先归一化到真实 JSON 数据模型。各 capability 为了可读性会使用
 	// []string / []map[string]any 构造 enum、oneOf 等字段，但 metaschema 校验只接受
 	// JSON 解码后的 []any。通过一次编解码既统一具体 Go 类型，也保证不修改调用方 map。
-	normalized := normalizeNullableSchema(raw)
-	encoded, err := json.Marshal(normalized)
+	encoded, err := json.Marshal(raw)
 	if err != nil {
 		return nil, fmt.Errorf("encode inputSchema: %w", err)
+	}
+	var normalized map[string]any
+	if err := json.Unmarshal(encoded, &normalized); err != nil {
+		return nil, fmt.Errorf("normalize inputSchema: %w", err)
+	}
+	encoded, err = json.Marshal(normalizeNullableSchema(normalized))
+	if err != nil {
+		return nil, fmt.Errorf("encode normalized inputSchema: %w", err)
 	}
 	var schema jsonschema.Schema
 	if err := json.Unmarshal(encoded, &schema); err != nil {
@@ -209,7 +216,23 @@ func normalizeNullableSchema(value any) any {
 	case map[string]any:
 		normalized := make(map[string]any, len(typed))
 		for key, child := range typed {
-			normalized[key] = normalizeNullableSchema(child)
+			// 只遍历 JSON Schema 规定的子 Schema 位置；const、enum、default、
+			// examples 中的对象是用户数据，即使包含 nullable/type 也不能改写。
+			switch key {
+			case "properties", "patternProperties", "$defs", "definitions", "dependentSchemas", "dependencies":
+				if entries, ok := child.(map[string]any); ok {
+					children := make(map[string]any, len(entries))
+					for name, schema := range entries {
+						children[name] = normalizeNullableSchema(schema)
+					}
+					child = children
+				}
+			case "items", "additionalItems", "additionalProperties", "contains", "propertyNames",
+				"not", "if", "then", "else", "unevaluatedItems", "unevaluatedProperties", "contentSchema",
+				"allOf", "anyOf", "oneOf", "prefixItems":
+				child = normalizeNullableSchema(child)
+			}
+			normalized[key] = child
 		}
 		if nullable, _ := typed["nullable"].(bool); nullable {
 			if rawType, exists := normalized["type"]; exists {

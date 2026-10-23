@@ -18,6 +18,7 @@ public sealed partial class ActivityPage : Page
     private ulong? _renderedLatestCallId;
     private int _renderedVisibleCallCount = -1;
     private IReadOnlyList<RuntimeAnalyticsCall> _latestCalls = Array.Empty<RuntimeAnalyticsCall>();
+    private readonly HashSet<ulong> _expandedCallIds = new();
 
     public ActivityPage()
     {
@@ -35,6 +36,7 @@ public sealed partial class ActivityPage : Page
         _visibleCallCount = PageSize;
         _hasAnalyticsSnapshot = false;
         _latestCalls = Array.Empty<RuntimeAnalyticsCall>();
+        _expandedCallIds.Clear();
         _renderedLatestCallId = null;
         _renderedVisibleCallCount = -1;
 
@@ -84,6 +86,7 @@ public sealed partial class ActivityPage : Page
 
             _hasAnalyticsSnapshot = true;
             _latestCalls = analytics.RecentCalls;
+            _expandedCallIds.IntersectWith(_latestCalls.Select(call => call.Id));
             RenderRecentCalls(force: true);
         }
         finally
@@ -98,6 +101,7 @@ public sealed partial class ActivityPage : Page
         RecentCallsPanel.Children.Add(CreateEmptyText(UiText.Get("AnalyticsUnavailable")));
         _hasAnalyticsSnapshot = false;
         _latestCalls = Array.Empty<RuntimeAnalyticsCall>();
+        _expandedCallIds.Clear();
         _renderedLatestCallId = null;
         _renderedVisibleCallCount = -1;
     }
@@ -150,9 +154,10 @@ public sealed partial class ActivityPage : Page
         }
     }
 
-    private static UIElement CreateCallExpander(RuntimeAnalyticsCall call)
+    private UIElement CreateCallExpander(RuntimeAnalyticsCall call)
     {
         var hasDetails = call.Stages.Count > 0 || !string.IsNullOrWhiteSpace(call.ErrorCode);
+        var expanded = _expandedCallIds.Contains(call.Id);
         var root = new StackPanel
         {
             HorizontalAlignment = HorizontalAlignment.Stretch
@@ -186,6 +191,7 @@ public sealed partial class ActivityPage : Page
             Visibility = hasDetails ? Visibility.Visible : Visibility.Collapsed
         };
         toolLine.Children.Add(chevron);
+        chevron.Text = expanded ? "⌄" : "›";
         labels.Children.Add(toolLine);
         labels.Children.Add(new TextBlock
         {
@@ -218,7 +224,7 @@ public sealed partial class ActivityPage : Page
         {
             Spacing = 7,
             Margin = new Thickness(13, 4, 13, 8),
-            Visibility = Visibility.Collapsed,
+            Visibility = expanded ? Visibility.Visible : Visibility.Collapsed,
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
         if (!string.IsNullOrWhiteSpace(call.ErrorCode))
@@ -281,6 +287,8 @@ public sealed partial class ActivityPage : Page
                 var expanding = details.Visibility != Visibility.Visible;
                 details.Visibility = expanding ? Visibility.Visible : Visibility.Collapsed;
                 chevron.Text = expanding ? "⌄" : "›";
+                if (expanding) _expandedCallIds.Add(call.Id);
+                else _expandedCallIds.Remove(call.Id);
             };
             root.Children.Add(headerButton);
             root.Children.Add(details);

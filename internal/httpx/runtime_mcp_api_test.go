@@ -22,13 +22,13 @@ func TestRuntimeMCPAPIManagesServersWithoutReturningSecrets(t *testing.T) {
 	postRuntimeMCP(t, handler, `{"action":"add","name":"demo","description":"Demo MCP","transport":"streamable_http","url":"http://127.0.0.1:1/mcp","enabled":false}`, http.StatusOK)
 
 	list := httptest.NewRecorder()
-	handler.ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/internal/runtime/mcp", nil))
+	handler.ServeHTTP(list, newLocalRuntimeRequest(http.MethodGet, "/internal/runtime/mcp", nil))
 	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), `"name":"demo"`) {
 		t.Fatalf("list status=%d body=%s", list.Code, list.Body.String())
 	}
 
 	detail := httptest.NewRecorder()
-	handler.ServeHTTP(detail, httptest.NewRequest(http.MethodGet, "/internal/runtime/mcp/demo", nil))
+	handler.ServeHTTP(detail, newLocalRuntimeRequest(http.MethodGet, "/internal/runtime/mcp/demo", nil))
 	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), `"url":"http://127.0.0.1:1/mcp"`) {
 		t.Fatalf("detail status=%d body=%s", detail.Code, detail.Body.String())
 	}
@@ -54,7 +54,7 @@ func TestRuntimeMCPAPIManagesServersWithoutReturningSecrets(t *testing.T) {
 
 	postRuntimeMCP(t, handler, `{"action":"remove","name":"demo"}`, http.StatusOK)
 	missing := httptest.NewRecorder()
-	handler.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/internal/runtime/mcp/demo", nil))
+	handler.ServeHTTP(missing, newLocalRuntimeRequest(http.MethodGet, "/internal/runtime/mcp/demo", nil))
 	if missing.Code != http.StatusBadRequest || !strings.Contains(missing.Body.String(), `"code":"MCP_SERVER_NOT_FOUND"`) {
 		t.Fatalf("missing status=%d body=%s", missing.Code, missing.Body.String())
 	}
@@ -71,7 +71,7 @@ func TestRuntimeMCPAPIAcceptsTrailingSlash(t *testing.T) {
 
 	response := httptest.NewRecorder()
 	body := `{"action":"add","name":"slash-demo","description":"Slash MCP","transport":"streamable_http","url":"http://127.0.0.1:1/mcp","enabled":false}`
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/internal/runtime/mcp/", strings.NewReader(body)))
+	handler.ServeHTTP(response, newLocalRuntimeRequest(http.MethodPost, "/internal/runtime/mcp/", strings.NewReader(body)))
 	if response.Code != http.StatusOK {
 		t.Fatalf("POST /internal/runtime/mcp/ status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -80,7 +80,7 @@ func TestRuntimeMCPAPIAcceptsTrailingSlash(t *testing.T) {
 func postRuntimeMCP(t *testing.T, handler http.Handler, body string, wantStatus int) string {
 	t.Helper()
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/internal/runtime/mcp", strings.NewReader(body)))
+	handler.ServeHTTP(response, newLocalRuntimeRequest(http.MethodPost, "/internal/runtime/mcp", strings.NewReader(body)))
 	if response.Code != wantStatus {
 		t.Fatalf("POST /internal/runtime/mcp status=%d want=%d body=%s", response.Code, wantStatus, response.Body.String())
 	}

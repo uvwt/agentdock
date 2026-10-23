@@ -39,7 +39,8 @@ func StopBinaryProcesses(ctx context.Context, binaryPath string, timeout time.Du
 	return stopBinaryProcessesExcept(ctx, binaryPath, nil, timeout)
 }
 
-func stopBinaryProcessesExcept(ctx context.Context, binaryPath string, excluded map[uint32]struct{}, timeout time.Duration) error {
+func stopBinaryProcessesExcept(ctx context.Context, binaryPath string, excluded map[uint32]struct{}, timeout time.Duration, otherBinaryPaths ...string) error {
+	binaryPaths := append([]string{binaryPath}, otherBinaryPaths...)
 	deadline := time.Now().Add(timeout)
 	var quietSince time.Time
 	sawProcess := false
@@ -47,7 +48,8 @@ func stopBinaryProcessesExcept(ctx context.Context, binaryPath string, excluded 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		processes, err := processIDsAtPathExcept(binaryPath, excluded)
+		scanStartedAt := time.Now()
+		processes, err := processIDsAtPathsExcept(binaryPaths, excluded)
 		if err != nil {
 			return err
 		}
@@ -63,7 +65,9 @@ func stopBinaryProcessesExcept(ctx context.Context, binaryPath string, excluded 
 			return nil
 		} else if quietSince.IsZero() {
 			quietSince = time.Now()
-		} else if time.Since(quietSince) >= binaryStopQuietPeriod {
+		} else if scanStartedAt.Sub(quietSince) >= binaryStopQuietPeriod {
+			// 快照采集早于逐进程路径查询；慢扫描不能把旧的空快照误算为
+			// 最新状态，否则扫描期间刚拉起的替代进程会被漏掉。
 			return nil
 		}
 		remaining := time.Until(deadline)
@@ -89,10 +93,11 @@ func WaitBinaryStopped(ctx context.Context, binaryPath string, timeout time.Dura
 	return waitBinaryStoppedExcept(ctx, binaryPath, nil, timeout)
 }
 
-func waitBinaryStoppedExcept(ctx context.Context, binaryPath string, excluded map[uint32]struct{}, timeout time.Duration) (bool, error) {
+func waitBinaryStoppedExcept(ctx context.Context, binaryPath string, excluded map[uint32]struct{}, timeout time.Duration, otherBinaryPaths ...string) (bool, error) {
+	binaryPaths := append([]string{binaryPath}, otherBinaryPaths...)
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		processes, err := processIDsAtPathExcept(binaryPath, excluded)
+		processes, err := processIDsAtPathsExcept(binaryPaths, excluded)
 		if err != nil {
 			return false, err
 		}
@@ -129,14 +134,33 @@ func terminateProcessIDs(processIDs []uint32) error {
 	for _, processID := range processIDs {
 		process, openErr := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, processID)
 		if openErr != nil {
+			// 进程可能已经在快照与 OpenProcess 之间退出。
+			if errors.Is(openErr, windows.ERROR_INVALID_PARAMETER) {
+				continue
+			}
 			failures = append(failures, fmt.Sprintf("PID %d: %v", processID, openErr))
 			continue
 		}
-		if terminateErr := windows.TerminateProcess(process, 0); terminateErr != nil {
-			failures = append(failures, fmt.Sprintf("PID %d: %v", processID, terminateErr))
+		state, waitErr := windows.WaitForSingleObject(process, 0)
+		if waitErr == nil && state == windows.WAIT_OBJECT_0 {
+			_ = windows.CloseHandle(process)
+			continue
 		}
-		_, _ = windows.WaitForSingleObject(process, 5000)
+		terminateErr := windows.TerminateProcess(process, 0)
+		state, waitErr = windows.WaitForSingleObject(process, 5000)
 		_ = windows.CloseHandle(process)
+		// Task Scheduler/进程自身可能同时退出，TerminateProcess 因此返回 Access Denied。
+		// 只认同一个句柄的退出结果；仍存活的权限错误不能吞掉。
+		if waitErr == nil && state == windows.WAIT_OBJECT_0 {
+			continue
+		}
+		if terminateErr != nil {
+			failures = append(failures, fmt.Sprintf("PID %d: %v", processID, terminateErr))
+		} else if waitErr != nil {
+			failures = append(failures, fmt.Sprintf("等待 PID %d 退出: %v", processID, waitErr))
+		} else {
+			failures = append(failures, fmt.Sprintf("PID %d 未退出", processID))
+		}
 	}
 	if len(failures) > 0 {
 		return errors.New(strings.Join(failures, "; "))
@@ -160,6 +184,18 @@ func processIDsAtPathExcept(binaryPath string, excluded map[uint32]struct{}) ([]
 		filtered = append(filtered, processID)
 	}
 	return filtered, nil
+}
+
+func processIDsAtPathsExcept(binaryPaths []string, excluded map[uint32]struct{}) ([]uint32, error) {
+	var processes []uint32
+	for _, path := range binaryPaths {
+		ids, err := processIDsAtPathExcept(path, excluded)
+		if err != nil {
+			return nil, err
+		}
+		processes = append(processes, ids...)
+	}
+	return processes, nil
 }
 
 func processIDsAtPath(binaryPath string) ([]uint32, error) {
@@ -201,10 +237,14 @@ func processIDsAtPath(binaryPath string) ([]uint32, error) {
 // The stop helper must terminate the long-running source Core, but it must not kill the
 // source updater that is synchronously waiting for the Arbiter's terminal result. Recovery
 // Arbiters do not have that updater ancestor, so crash recovery still stops every source Core.
-func ancestorProcessIDsAtPath(binaryPath string) (map[uint32]struct{}, error) {
-	target, err := filepath.Abs(binaryPath)
-	if err != nil {
-		return nil, err
+func ancestorProcessIDsAtPath(binaryPath string, otherBinaryPaths ...string) (map[uint32]struct{}, error) {
+	targets := append([]string{binaryPath}, otherBinaryPaths...)
+	for i, path := range targets {
+		target, err := filepath.Abs(path)
+		if err != nil {
+			return nil, err
+		}
+		targets[i] = target
 	}
 	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
@@ -239,8 +279,13 @@ func ancestorProcessIDsAtPath(binaryPath string) (map[uint32]struct{}, error) {
 			break
 		}
 		seen[parentID] = struct{}{}
-		if processPath, pathErr := queryProcessPath(parentID); pathErr == nil && samePath(processPath, target) {
-			excluded[parentID] = struct{}{}
+		if processPath, pathErr := queryProcessPath(parentID); pathErr == nil {
+			for _, target := range targets {
+				if samePath(processPath, target) {
+					excluded[parentID] = struct{}{}
+					break
+				}
+			}
 		}
 		processID = parentID
 	}

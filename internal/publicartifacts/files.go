@@ -64,7 +64,14 @@ func writeTarGz(src, dst string) error {
 		if name == "." {
 			return nil
 		}
-		h, err := tar.FileInfoHeader(info, "")
+		link := ""
+		if info.Mode()&os.ModeSymlink != 0 {
+			link, err = os.Readlink(path)
+			if err != nil {
+				return err
+			}
+		}
+		h, err := tar.FileInfoHeader(info, link)
 		if err != nil {
 			return err
 		}

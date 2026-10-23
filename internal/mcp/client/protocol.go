@@ -89,7 +89,7 @@ func (c *sdkProtocolClient) transport() (mcpsdk.Transport, error) {
 		}
 		return &mcpsdk.StreamableClientTransport{
 			Endpoint:             c.cfg.URL,
-			HTTPClient:           &http.Client{Transport: headerRoundTripper{headers: headers}},
+			HTTPClient:           &http.Client{Transport: headerRoundTripper{headers: headers}, CheckRedirect: checkMCPRedirect},
 			OAuthHandler:         oauth,
 			MaxRetries:           -1,
 			DisableStandaloneSSE: true,
@@ -133,18 +133,26 @@ func (c *sdkProtocolClient) startStdioTransport() (mcpsdk.Transport, error) {
 	return &mcpsdk.IOTransport{Reader: stdout, Writer: stdin}, nil
 }
 
-func (c *sdkProtocolClient) listTools(ctx context.Context) ([]Tool, error) {
+func (c *sdkProtocolClient) listTools(ctx context.Context) (tools []Tool, err error) {
+	// SDK v1.7.0 会在返回工具前处理参数注解；畸形列表（如 null 元素）可能在
+	// 其内部 panic。外部协议解码失败在此收敛为错误，不能击穿授权后的后台刷新。
+	defer func() {
+		if recover() != nil {
+			tools = nil
+			err = newError("MCP_INVALID_RESPONSE", "MCP tools/list returned an invalid tool definition", false, map[string]any{"server": c.cfg.Name}, nil)
+		}
+	}()
 	if c.session == nil {
 		return nil, newError("MCP_CONNECTION_FAILED", "MCP session is not initialized", true, map[string]any{"server": c.cfg.Name}, nil)
 	}
-	tools := make([]Tool, 0)
+	tools = make([]Tool, 0)
 	for remote, err := range c.session.Tools(ctx, nil) {
 		if err != nil {
 			return nil, c.wrapSDKError("list MCP tools", err)
 		}
 		tool, err := convertSDKTool(remote)
 		if err != nil {
-			return nil, newError("MCP_INVALID_RESPONSE", "decode MCP tool definition", false, map[string]any{"server": c.cfg.Name, "tool": remote.Name}, err)
+			return nil, newError("MCP_INVALID_RESPONSE", "decode MCP tool definition", false, map[string]any{"server": c.cfg.Name}, err)
 		}
 		tools = append(tools, tool)
 	}
@@ -337,6 +345,18 @@ func resolveHTTPHeaders(cfg ServerConfig) (http.Header, error) {
 
 type headerRoundTripper struct {
 	headers http.Header
+}
+
+func checkMCPRedirect(request *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("MCP HTTP redirect limit exceeded")
+	}
+	if len(via) > 0 && (!strings.EqualFold(request.URL.Scheme, via[0].URL.Scheme) || !strings.EqualFold(request.URL.Host, via[0].URL.Host)) {
+		// 传输层会补入静态请求头；OAuth 也可能持有令牌。跨来源或协议降级
+		// 必须在下一个 RoundTrip 之前拒绝，不能依赖标准库删除敏感头。
+		return errors.New("MCP HTTP redirect to a different origin is not allowed")
+	}
+	return nil
 }
 
 func (t headerRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {

@@ -28,6 +28,13 @@ func testConfig(t *testing.T) config.Config {
 	return cfg
 }
 
+func newLocalRuntimeRequest(method, target string, body io.Reader) *http.Request {
+	request := httptest.NewRequest(method, target, body)
+	request.Host = "127.0.0.1:8765"
+	request.RemoteAddr = "127.0.0.1:54321"
+	return request
+}
+
 func newMCPRequest(method, target string, body io.Reader) *http.Request {
 	request := httptest.NewRequest(method, target, body)
 	request.Header.Set("Content-Type", "application/json")
@@ -114,7 +121,7 @@ func TestRuntimeAPIRequiresBearerWhenConfigured(t *testing.T) {
 	}
 	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
 
-	req := httptest.NewRequest(http.MethodGet, "/internal/runtime/status", nil)
+	req := newLocalRuntimeRequest(http.MethodGet, "/internal/runtime/status", nil)
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusUnauthorized {
@@ -131,7 +138,7 @@ func TestRuntimeAPIStatusWithBearer(t *testing.T) {
 	}
 	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
 
-	req := httptest.NewRequest(http.MethodGet, "/internal/runtime/status", nil)
+	req := newLocalRuntimeRequest(http.MethodGet, "/internal/runtime/status", nil)
 	req.Header.Set("Authorization", "Bearer secret-token")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -156,7 +163,7 @@ func TestRuntimeAPIAnalyticsNoAuthRequiresDirectLoopback(t *testing.T) {
 	t.Cleanup(func() { _ = runtime.Close() })
 	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
 
-	proxied := httptest.NewRequest(http.MethodGet, "/internal/runtime/analytics", nil)
+	proxied := newLocalRuntimeRequest(http.MethodGet, "/internal/runtime/analytics", nil)
 	proxied.RemoteAddr = "127.0.0.1:54321"
 	proxied.Host = "public.example"
 	proxied.Header.Set("CF-Ray", "abc")
@@ -166,7 +173,7 @@ func TestRuntimeAPIAnalyticsNoAuthRequiresDirectLoopback(t *testing.T) {
 		t.Fatalf("proxied status = %d, want %d", proxyRecorder.Code, http.StatusForbidden)
 	}
 
-	local := httptest.NewRequest(http.MethodGet, "/internal/runtime/analytics", nil)
+	local := newLocalRuntimeRequest(http.MethodGet, "/internal/runtime/analytics", nil)
 	local.RemoteAddr = "127.0.0.1:54321"
 	local.Host = "127.0.0.1:27123"
 	localRecorder := httptest.NewRecorder()
@@ -189,7 +196,7 @@ func TestRuntimeAPIAnalyticsAllowsAuthenticatedRemote(t *testing.T) {
 	t.Cleanup(func() { _ = runtime.Close() })
 	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
 
-	req := httptest.NewRequest(http.MethodGet, "/internal/runtime/analytics", nil)
+	req := newLocalRuntimeRequest(http.MethodGet, "/internal/runtime/analytics", nil)
 	req.RemoteAddr = "198.51.100.10:443"
 	req.Host = "agentdock.example"
 	req.Header.Set("Authorization", "Bearer secret-token")
@@ -208,7 +215,7 @@ func TestRuntimeAPISkillsNoAuthWhenUnconfigured(t *testing.T) {
 	}
 	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
 
-	req := httptest.NewRequest(http.MethodGet, "/internal/runtime/skills", nil)
+	req := newLocalRuntimeRequest(http.MethodGet, "/internal/runtime/skills", nil)
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusOK {
@@ -239,7 +246,7 @@ func TestRuntimeAPIRejectsInvalidTaskQuery(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
-			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, test.url, nil))
+			handler.ServeHTTP(recorder, newLocalRuntimeRequest(http.MethodGet, test.url, nil))
 			if recorder.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
 			}
@@ -279,7 +286,7 @@ func TestRuntimeAPIDeletesOnlySelectedTask(t *testing.T) {
 
 	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodDelete, "/internal/runtime/tasks/"+deletedTaskID, nil))
+	handler.ServeHTTP(recorder, newLocalRuntimeRequest(http.MethodDelete, "/internal/runtime/tasks/"+deletedTaskID, nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("delete status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
@@ -298,12 +305,12 @@ func TestRuntimeAPIDeletesOnlySelectedTask(t *testing.T) {
 	}
 
 	deletedRecorder := httptest.NewRecorder()
-	handler.ServeHTTP(deletedRecorder, httptest.NewRequest(http.MethodGet, "/internal/runtime/tasks/"+deletedTaskID, nil))
+	handler.ServeHTTP(deletedRecorder, newLocalRuntimeRequest(http.MethodGet, "/internal/runtime/tasks/"+deletedTaskID, nil))
 	if deletedRecorder.Code != http.StatusNotFound || !strings.Contains(deletedRecorder.Body.String(), `"code":"TASK_NOT_FOUND"`) {
 		t.Fatalf("deleted task lookup status=%d body=%s", deletedRecorder.Code, deletedRecorder.Body.String())
 	}
 	keptRecorder := httptest.NewRecorder()
-	handler.ServeHTTP(keptRecorder, httptest.NewRequest(http.MethodGet, "/internal/runtime/tasks/"+keptTaskID, nil))
+	handler.ServeHTTP(keptRecorder, newLocalRuntimeRequest(http.MethodGet, "/internal/runtime/tasks/"+keptTaskID, nil))
 	if keptRecorder.Code != http.StatusOK {
 		t.Fatalf("kept task lookup status=%d body=%s", keptRecorder.Code, keptRecorder.Body.String())
 	}
@@ -317,7 +324,7 @@ func TestRuntimeAPIUnknownRouteReturnsNotFound(t *testing.T) {
 	}
 	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/internal/runtime/unknown", nil))
+	handler.ServeHTTP(recorder, newLocalRuntimeRequest(http.MethodGet, "/internal/runtime/unknown", nil))
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusNotFound, recorder.Body.String())
 	}
@@ -353,7 +360,7 @@ func TestRuntimeAPIMethodContract(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.method+" "+test.path, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
-			handler.ServeHTTP(recorder, httptest.NewRequest(test.method, test.path, nil))
+			handler.ServeHTTP(recorder, newLocalRuntimeRequest(test.method, test.path, nil))
 			if recorder.Code != test.status {
 				t.Fatalf("status = %d, want %d; body=%s", recorder.Code, test.status, recorder.Body.String())
 			}

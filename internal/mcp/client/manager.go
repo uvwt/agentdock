@@ -697,8 +697,15 @@ func (m *Manager) Call(ctx context.Context, qualifiedName string, arguments map[
 	result, err := state.client.callTool(ctx, name, arguments)
 	observability.RecordStage(ctx, observability.StageMCPRemoteCall, callStartedAt, err == nil)
 	if err != nil {
-		// 工具调用失败是请求级结果，不代表 MCP server 的连接或发现状态失效。
-		// server 的 lastError 只记录 refresh / initialize / tools/list 生命周期故障。
+		var connectionErr *Error
+		if errors.As(err, &connectionErr) && connectionErr.Code == "MCP_CONNECTION_FAILED" {
+			// 失效会话必须退休；下一次独立调用重新发现，当前调用不重放。
+			// 业务错误、超时和保留连接的 transport rejection 不清理缓存。
+			_ = state.client.close()
+			state.client = nil
+			state.tools = nil
+			recordStateError(state, err)
+		}
 		return nil, err
 	}
 	return result, nil

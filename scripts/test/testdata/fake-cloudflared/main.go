@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -76,6 +77,21 @@ func runNamedTunnel(root string) {
 	}
 
 	_ = os.WriteFile(filepath.Join(root, "named-token-env-ok.txt"), []byte("true"), 0o600)
+	for i, argument := range os.Args[1:] {
+		if argument == "--metrics" && i+2 < len(os.Args) {
+			address := os.Args[i+2]
+			go func() {
+				_ = http.ListenAndServe(address, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Path != "/ready" {
+						http.NotFound(w, r)
+						return
+					}
+					_, _ = w.Write([]byte(`{"readyConnections":1,"connectorId":"fake-cloudflared"}`))
+				}))
+			}()
+			break
+		}
+	}
 	fmt.Fprintln(os.Stderr, "INF Registered tunnel connection connIndex=0")
 	waitForStop()
 }

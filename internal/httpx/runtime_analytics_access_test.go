@@ -1,10 +1,40 @@
 package httpx
 
 import (
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
+
+func TestDirectLoopbackRequestChecksBrowserOrigin(t *testing.T) {
+	for _, test := range []struct {
+		origin string
+		tls    bool
+		want   bool
+	}{
+		{origin: "", want: true},
+		{origin: "http://localhost:27123", want: true},
+		{origin: "https://localhost:27123", tls: true, want: true},
+		{origin: "https://localhost:27123"},
+		{origin: "http://localhost:27124"},
+		{origin: "http://attacker.example:27123"},
+		{origin: "null"},
+		{origin: "http://localhost:27123/path"},
+	} {
+		t.Run(test.origin, func(t *testing.T) {
+			req := newLocalRuntimeRequest(http.MethodGet, "/internal/runtime/status", nil)
+			req.Host = "localhost:27123"
+			req.Header.Set("Origin", test.origin)
+			if test.tls {
+				req.TLS = &tls.ConnectionState{}
+			}
+			if got := isDirectLoopbackRequest(req); got != test.want {
+				t.Fatalf("accepted=%v, want %v", got, test.want)
+			}
+		})
+	}
+}
 
 func TestDirectLoopbackRequestAllowsLocalBrowser(t *testing.T) {
 	for _, host := range []string{"127.0.0.1:27123", "localhost:27123", "[::1]:27123"} {

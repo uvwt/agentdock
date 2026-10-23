@@ -960,4 +960,12 @@
   <data name="TrayRestartAgentDock" xml:space="preserve">
     <value>重启 AgentDock</value>
   </data>
+  <data name="TunnelConnection" xml:space="preserve"><value>隧道</value></data>
+  <data name="TunnelConnecting" xml:space="preserve"><value>连接中</value></data>
+  <data name="TunnelConnected" xml:space="preserve"><value>已连接</value></data>
+  <data name="TunnelReconnecting" xml:space="preserve"><value>正在重连</value></data>
+  <data name="TunnelWaitingNetwork" xml:space="preserve"><value>等待网络恢复</value></data>
+  <data name="TunnelOriginUnhealthy" xml:space="preserve"><value>本地服务不可用</value></data>
+  <data name="TunnelPublicUnreachable" xml:space="preserve"><value>隧道已连接，公网地址暂不可用</value></data>
+  <data name="TunnelConnectionDetail" xml:space="preserve"><value>{0} · 活动连接 {1} · 自动恢复 {2} 次</value></data>
 </root>

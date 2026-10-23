@@ -46,9 +46,8 @@ func runtimeAPIHandler(runtime runtimeapi.Runtime, cfg config.Config, oauthStore
 		}
 		staticOK := cfg.AuthToken != "" && authorizer.Authorized(r)
 		oauthOK := authorizedOAuth(r, cfg, oauthStore)
-		if strings.TrimSuffix(r.URL.Path, "/") == "/internal/runtime/analytics" &&
-			!authRequired && !isDirectLoopbackRequest(r) {
-			writeRuntimeAPIError(w, http.StatusForbidden, "LOCAL_ACCESS_REQUIRED", "runtime analytics requires local access or authentication")
+		if !authRequired && !isDirectLoopbackRequest(r) {
+			writeRuntimeAPIError(w, http.StatusForbidden, "LOCAL_ACCESS_REQUIRED", "runtime API requires local access or authentication")
 			return
 		}
 		if authRequired && !staticOK && !oauthOK {

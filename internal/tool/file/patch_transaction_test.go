@@ -139,7 +139,7 @@ func TestCommitStagedPatchRestoresBackupWhenInstalledFileIsDeletedDuringRollback
 	}
 	installFailure := errors.New("simulated second install failure")
 	link := func(source, target string) error {
-		if target == second {
+		if target == second && strings.HasPrefix(filepath.Base(source), ".agentdock-patch-write-") {
 			if err := os.Remove(first); err != nil {
 				return err
 			}

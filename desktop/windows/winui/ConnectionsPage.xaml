@@ -4,7 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:AgentDock.ControlPanel">
     <ScrollViewer>
-        <StackPanel Width="760" HorizontalAlignment="Left" Spacing="22" Padding="28,24,28,32">
+        <StackPanel MaxWidth="760" HorizontalAlignment="Stretch" Spacing="22" Padding="28,24,28,32">
             <StackPanel Spacing="5">
                 <TextBlock x:Name="PageTitle" FontSize="20" FontWeight="SemiBold"/>
                 <TextBlock x:Name="PageDetail" FontSize="12.5" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>

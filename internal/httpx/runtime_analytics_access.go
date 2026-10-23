@@ -3,11 +3,12 @@ package httpx
 import (
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
 // analyticsProxyHeaders 是 Tunnel/反向代理常见的转发特征。
-// 未启用认证时，Runtime Analytics 只允许本机直连；这些 Header 只用于拒绝代理流量，从不作为放行依据。
+// 未启用认证时，所有 Runtime API 只允许本机直连；这些 Header 只用于拒绝代理流量，从不作为放行依据。
 var analyticsProxyHeaders = []string{
 	"Forwarded",
 	"X-Forwarded-For",
@@ -37,6 +38,20 @@ func isDirectLoopbackRequest(r *http.Request) bool {
 	}
 	if strings.EqualFold(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site")), "cross-site") {
 		return false
+	}
+	if origin := r.Header.Get("Origin"); origin != "" {
+		parsed, err := url.Parse(origin)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil ||
+			!strings.EqualFold(parsed.Host, r.Host) || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return false
+		}
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		if parsed.Scheme != scheme {
+			return false
+		}
 	}
 	return true
 }

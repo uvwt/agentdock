@@ -116,12 +116,19 @@ func (svc *Service) searchTextRG(ctx context.Context, p workspace.Path, opts Sea
 	if opts.ContextLines > 0 {
 		args = append(args, "--context", strconv.Itoa(opts.ContextLines))
 	}
-	args = append(args, opts.Query, p.Abs)
+	args = append(args, "-e", opts.Query, "--", p.Abs)
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, rg, args...)
 	cmd.Dir = p.Abs
+	info, err := os.Stat(p.Abs)
+	if err != nil {
+		return nil, true, searchExecutionError(ctx, "rg", err)
+	}
+	if !info.IsDir() {
+		cmd.Dir = filepath.Dir(p.Abs)
+	}
 	processcontrol.Configure(cmd)
 	output, err := cmd.Output()
 	if err != nil {

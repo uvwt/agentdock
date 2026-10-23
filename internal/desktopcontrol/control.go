@@ -8,7 +8,10 @@ import (
 	"time"
 )
 
-const maxMessageBytes = 1 << 20
+const (
+	maxMessageBytes       = 1 << 20
+	controlRequestTimeout = 30 * time.Second
+)
 
 // Request 是桌面端与后台核心之间的本地控制请求。
 type Request struct {
@@ -37,8 +40,8 @@ func Serve(ctx context.Context, runtimeRoot string, handler Handler) error {
 	if handler == nil {
 		return errors.New("desktop control handler is required")
 	}
-	return servePlatform(ctx, runtimeRoot, func(requestData []byte) []byte {
-		return handleMessage(ctx, requestData, handler)
+	return servePlatform(ctx, runtimeRoot, func(requestCtx context.Context, requestData []byte) []byte {
+		return handleMessage(requestCtx, requestData, handler)
 	})
 }
 

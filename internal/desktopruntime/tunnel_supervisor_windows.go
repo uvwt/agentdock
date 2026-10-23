@@ -192,12 +192,15 @@ func waitTunnelSupervisorStopped(ctx context.Context, runtimeRoot string, timeou
 }
 
 func activeTunnelSupervisorPIDForRuntime(runtimeRoot string, manifest Manifest) (uint32, error) {
-	// Tunnel supervisor 与当前 Core generation 使用同一个二进制；runtime.json 中的
-	// agentdock_binary 是稳定 shim，不能拿它校验 generation supervisor 的 PID。
-	return activeTunnelSupervisorPID(runtimeRoot, ActiveCoreBinary(runtimeRoot, manifest))
+	// supervisor 在 active pointer 切换后仍可能属于上一代；仅接受同一安装的已知 Core 路径。
+	paths, err := coreBinaryPaths(runtimeRoot, manifest)
+	if err != nil {
+		return 0, err
+	}
+	return activeTunnelSupervisorPID(runtimeRoot, paths[0], paths[1:]...)
 }
 
-func activeTunnelSupervisorPID(runtimeRoot, binaryPath string) (uint32, error) {
+func activeTunnelSupervisorPID(runtimeRoot, binaryPath string, otherBinaryPaths ...string) (uint32, error) {
 	name, err := windows.UTF16PtrFromString(tunnelSupervisorObjectName("mutex", runtimeRoot))
 	if err != nil {
 		return 0, err
@@ -236,10 +239,12 @@ func activeTunnelSupervisorPID(runtimeRoot, binaryPath string) (uint32, error) {
 	if err != nil {
 		return 0, fmt.Errorf("读取 Tunnel supervisor 进程路径失败: %w", err)
 	}
-	if !samePath(processPath, binaryPath) {
-		return 0, fmt.Errorf("Tunnel supervisor PID %d 指向意外程序: %s", pid, processPath)
+	for _, path := range append([]string{binaryPath}, otherBinaryPaths...) {
+		if samePath(processPath, path) {
+			return pid, nil
+		}
 	}
-	return pid, nil
+	return 0, fmt.Errorf("Tunnel supervisor PID %d 指向意外程序: %s", pid, processPath)
 }
 
 func tunnelSupervisorObjectName(kind, runtimeRoot string) string {

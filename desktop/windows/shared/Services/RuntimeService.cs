@@ -70,7 +70,7 @@ public sealed class RuntimeService : IDisposable
         var version = await ReadCoreVersionAsync(binaryPath, cancellationToken);
         var coreRunning = serviceStatus?.Running == true;
         var healthy = serviceStatus?.Healthy == true;
-        var nexus = ReadNexusDeviceStatus();
+        var nexus = ReadNexusDeviceStatus(manifest);
         var nexusConnected = includeNexusConnection && coreRunning && nexus.Paired && string.IsNullOrWhiteSpace(nexus.Error)
             && serviceStatus?.NexusConnected == true;
         var nativeTunnel = await ReadNativeTunnelStatusAsync(binaryPath, cancellationToken);
@@ -109,7 +109,16 @@ public sealed class RuntimeService : IDisposable
             File.Exists(Path.Combine(RuntimeRoot, "cloudflared-token.dpapi")),
             nexus,
             nexusConnected,
-            DateTimeOffset.Now);
+            DateTimeOffset.Now,
+            nativeTunnel?.ConnectionState ?? "",
+            nativeTunnel?.ReadyConnections ?? 0,
+            nativeTunnel?.RecoveryCount ?? 0);
+    }
+
+    internal async Task<NativeTunnelStatus?> ReadTunnelStatusAsync(CancellationToken cancellationToken = default)
+    {
+        var manifest = await ReadRuntimeManifestAsync(cancellationToken) ?? new RuntimeManifest();
+        return await ReadNativeTunnelStatusAsync(ResolveCoreBinaryPath(manifest), cancellationToken);
     }
 
     public async Task<ControlPanelSettings> GetControlPanelSettingsAsync(
@@ -122,13 +131,13 @@ public sealed class RuntimeService : IDisposable
     public async Task<NexusConnectionSnapshot> GetNexusConnectionSnapshotAsync(
         CancellationToken cancellationToken = default)
     {
-        var nexus = ReadNexusDeviceStatus();
+        var manifest = await ReadRuntimeManifestAsync(cancellationToken) ?? new RuntimeManifest();
+        var nexus = ReadNexusDeviceStatus(manifest);
         if (!nexus.Paired || !string.IsNullOrWhiteSpace(nexus.Error))
         {
             return new NexusConnectionSnapshot(nexus, false);
         }
 
-        var manifest = await ReadRuntimeManifestAsync(cancellationToken) ?? new RuntimeManifest();
         var binaryPath = ResolveCoreBinaryPath(manifest);
         var serviceStatus = await ReadCoreStatusAsync(binaryPath, cancellationToken);
         var connected = serviceStatus?.NexusConnected == true;
@@ -751,9 +760,11 @@ public sealed class RuntimeService : IDisposable
             throw new InvalidOperationException(UiText.Get("NexusPairingRequired"));
         }
 
+        var manifest = await ReadRuntimeManifestAsync(cancellationToken) ?? new RuntimeManifest();
         var binaryPath = await ResolveCoreBinaryAsync(cancellationToken);
         var startInfo = CreateRedirectedProcessStartInfo(binaryPath);
-        foreach (var argument in new[] { "nexus", "pair", "--endpoint", endpoint, "--code", pairingCode })
+        foreach (var argument in new[] { "nexus", "pair", "--endpoint", endpoint, "--code", pairingCode,
+            "--agentdock-home", ResolveAgentDockHome(manifest) })
         {
             startInfo.ArgumentList.Add(argument);
         }
@@ -1588,10 +1599,15 @@ public sealed class RuntimeService : IDisposable
         }
     }
 
-    private static NexusDeviceStatus ReadNexusDeviceStatus()
+    private static string ResolveAgentDockHome(RuntimeManifest manifest) =>
+        AgentDockStatePaths.ResolveHome(manifest, Environment.GetEnvironmentVariable("AGENTDOCK_HOME"),
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+
+    private static NexusDeviceStatus ReadNexusDeviceStatus(RuntimeManifest manifest)
     {
-        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var path = Path.Combine(userProfile, ".agentdock", "nexus", "device.json");
+        var path = AgentDockStatePaths.NexusIdentityPath(manifest,
+            Environment.GetEnvironmentVariable("AGENTDOCK_HOME"),
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
         if (!File.Exists(path))
         {
             return new NexusDeviceStatus(false, "", "", "", false);

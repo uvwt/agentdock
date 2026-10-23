@@ -5,8 +5,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -45,9 +47,12 @@ type Session struct {
 	Terminal   string
 	execution  ExecutionContext
 
-	runner   commandRunner
-	killOnce sync.Once
-	killErr  error
+	runner    commandRunner
+	killOnce  sync.Once
+	killErr   error
+	stdinMu   sync.Mutex
+	inputDone <-chan struct{}
+	inputErr  error
 
 	mu                 sync.Mutex
 	completed          bool
@@ -471,16 +476,63 @@ func (s *Session) SetExecutionContext(execution ExecutionContext) {
 }
 
 func (s *Session) Write(text string) error {
+	s.stdinMu.Lock()
+	defer s.stdinMu.Unlock()
 	_, err := io.WriteString(s.Stdin, text)
 	return err
 }
 
-func (s *Session) CloseStdin() error { return s.Stdin.Close() }
+// StartInput 在返回会话前占用输入顺序，再异步投递初始输入。
+// 子进程不读取管道时，前台仍可返回 session_id，后续写入不会越过初始输入。
+func (s *Session) StartInput(text string, closeStdin bool) <-chan error {
+	result := make(chan error, 1)
+	done := make(chan struct{})
+	s.stdinMu.Lock()
+	s.mu.Lock()
+	s.inputDone = done
+	s.mu.Unlock()
+	go func() {
+		var inputErr error
+		if text != "" {
+			if _, err := io.WriteString(s.Stdin, text); err != nil {
+				inputErr = fmt.Errorf("write command stdin: %w", err)
+			}
+		}
+		if closeStdin {
+			if err := s.Stdin.Close(); err != nil && !errors.Is(err, os.ErrClosed) && inputErr == nil {
+				inputErr = fmt.Errorf("close command stdin: %w", err)
+			}
+		}
+		s.mu.Lock()
+		s.inputErr = inputErr
+		s.mu.Unlock()
+		s.stdinMu.Unlock()
+		close(done)
+		result <- inputErr
+		if inputErr != nil {
+			_, _ = s.Kill()
+			s.Cancel()
+		}
+	}()
+	return result
+}
+
+func (s *Session) CloseStdin() error {
+	s.stdinMu.Lock()
+	defer s.stdinMu.Unlock()
+	return s.Stdin.Close()
+}
 
 func (s *Session) WaitError() error {
 	s.mu.Lock()
+	inputDone := s.inputDone
+	s.mu.Unlock()
+	if inputDone != nil {
+		<-inputDone
+	}
+	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.waitErr
+	return errors.Join(s.inputErr, s.waitErr)
 }
 
 func (s *Session) Kill() (bool, error) {
@@ -540,7 +592,7 @@ func (s *Session) snapshot(status string, maxBytes int, advance bool) Snapshot {
 		StdoutOutputLines: countLines(stdout), StderrOutputLines: countLines(stderr),
 		StdoutTruncated: maxBytes > 0 && len([]byte(stdoutSegment)) > maxBytes,
 		StderrTruncated: maxBytes > 0 && len([]byte(stderrSegment)) > maxBytes,
-		Completed:       s.completed, ExitCode: s.exitCode, CommandOK: s.exitCode == 0 && !s.TimedOut,
+		Completed:       s.completed, ExitCode: s.exitCode, CommandOK: s.exitCode == 0 && !s.TimedOut && s.inputErr == nil,
 		Runtime: s.execution.Runtime, WSLDistribution: s.execution.Distribution, Workdir: s.execution.Workdir,
 	}
 }

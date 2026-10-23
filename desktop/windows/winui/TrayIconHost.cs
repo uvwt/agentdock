@@ -32,7 +32,8 @@ internal sealed record TrayMenuState(
     bool Available,
     bool CoreRunning,
     bool Healthy,
-    string Version)
+    string Version,
+    string TunnelState = "")
 {
     internal static TrayMenuState Unavailable { get; } = new(false, false, false, "");
 }
@@ -189,6 +190,8 @@ internal sealed class TrayIconHost : IDisposable
         }
 
         var data = CreateNotifyIconData(NifTip);
+        if (!string.IsNullOrWhiteSpace(state.TunnelState))
+            tooltip += " · " + UiText.Get("TunnelConnection") + ": " + UiText.TunnelState(state.TunnelState);
         data.szTip = tooltip.Length > 127 ? tooltip[..127] : tooltip;
         _ = Shell_NotifyIconW(NimModify, ref data);
     }
@@ -215,6 +218,8 @@ internal sealed class TrayIconHost : IDisposable
 
             // 1. Status + version
             _ = AppendMenuW(menu, MfString | MfDisabled | MfGrayed, 0, status);
+            if (!string.IsNullOrWhiteSpace(state.TunnelState))
+                _ = AppendMenuW(menu, MfString | MfDisabled | MfGrayed, 0, UiText.Get("TunnelConnection") + ": " + UiText.TunnelState(state.TunnelState));
             _ = AppendMenuW(menu, MfSeparator, 0, null);
 
             // 2. Open AgentDock
