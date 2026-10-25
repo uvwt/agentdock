@@ -16,7 +16,6 @@ public sealed partial class MainWindow : Window
     private const int DwmwaUseImmersiveDarkModeBefore20H1 = 19;
     private const int DefaultWidth = 1060;
     private const int DefaultHeight = 720;
-    private const int MinimumWidth = 900;
     private const int MinimumHeight = 620;
 
     private readonly RuntimeService _runtime;
@@ -55,11 +54,10 @@ public sealed partial class MainWindow : Window
         {
             if (!args.DidSizeChange) return;
             var size = AppWindow.Size;
-            var minimumWidth = LogicalToPixels(MinimumWidth);
             var minimumHeight = LogicalToPixels(MinimumHeight);
-            if (size.Width < minimumWidth || size.Height < minimumHeight)
+            if (size.Height < minimumHeight)
             {
-                AppWindow.Resize(new SizeInt32(Math.Max(size.Width, minimumWidth), Math.Max(size.Height, minimumHeight)));
+                AppWindow.Resize(new SizeInt32(size.Width, minimumHeight));
             }
         };
         AppWindow.Closing += (_, args) =>

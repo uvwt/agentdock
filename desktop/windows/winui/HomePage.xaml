@@ -6,9 +6,12 @@
     <Grid>
         <ScrollViewer x:Name="DashboardContent"
                       Visibility="Collapsed"
-                      HorizontalScrollMode="Disabled"
-                      HorizontalScrollBarVisibility="Disabled">
-        <StackPanel HorizontalAlignment="Stretch"
+                      HorizontalScrollMode="Enabled"
+                      HorizontalScrollBarVisibility="Auto">
+        <!-- 宽窗口随可视区展开，窄窗口保留内容宽度并允许横向滚动。 -->
+        <StackPanel Width="{Binding ViewportWidth, ElementName=DashboardContent}"
+                    MinWidth="760"
+                    HorizontalAlignment="Left"
                     Spacing="22"
                     Padding="28,24,28,32">
             <TextBlock x:Name="PageTitle" FontSize="20" FontWeight="SemiBold"/>
