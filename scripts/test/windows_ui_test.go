@@ -465,8 +465,8 @@ func TestWindowsHomeUsesProductStatusAndAdaptiveCapabilities(t *testing.T) {
 	runtime := readWindowsNativeFile(t, "shared", "Services", "RuntimeService.cs")
 
 	for _, want := range []string{
-		`HorizontalScrollMode="Disabled"`,
-		`HorizontalScrollBarVisibility="Disabled"`,
+		`HorizontalScrollMode="Enabled"`,
+		`HorizontalScrollBarVisibility="Auto"`,
 		`x:Name="ProductLogo"`,
 		"ProductLogo.Source = LoadProductLogo()",
 		`System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "agentdock.png")`,
