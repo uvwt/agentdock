@@ -27,7 +27,7 @@
           "format": "tgz",
           "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-darwin-amd64.tgz",
           "mirror_url": "https://download.nexusdock.co/components/cloudflared/2026.10.4/cloudflared-darwin-amd64.tgz",
-          "sha256": "fdec0f9a1c726f4c10283fc0cd70e602d510c72887b737270433c81a08c883a9"
+          "sha256": "f11fbef4207d715892331917dafd437f032cf4b7137ed64dea3008338c1c613d"
         },
         {
           "os": "darwin",
@@ -35,7 +35,7 @@
           "format": "tgz",
           "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-darwin-arm64.tgz",
           "mirror_url": "https://download.nexusdock.co/components/cloudflared/2026.10.4/cloudflared-darwin-arm64.tgz",
-          "sha256": "49e7963072b2ca83fb44c09f4d4a7cda52d390c0c9c6f55bac83454a5bc43910"
+          "sha256": "68b6bc4080ac1330234db2a9002d07f98b000537a1bd531a687b660d4160fa7f"
         },
         {
           "os": "linux",
