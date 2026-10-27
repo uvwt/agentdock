@@ -175,19 +175,19 @@ func TestBaselineCatalogSelectsLinuxPinnedMirror(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if entry.Version != "2026.9.1" {
-		t.Fatalf("selected cloudflared version=%q, want 2026.9.1", entry.Version)
+	if entry.Version != "2026.10.4" {
+		t.Fatalf("selected cloudflared version=%q, want 2026.10.4", entry.Version)
 	}
 	if artifact.Format != "binary" {
 		t.Fatalf("selected Linux artifact format=%q, want binary", artifact.Format)
 	}
-	if artifact.URL != "https://github.com/cloudflare/cloudflared/releases/download/2026.9.1/cloudflared-linux-amd64" {
+	if artifact.URL != "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-linux-amd64" {
 		t.Fatalf("selected Linux upstream URL=%q", artifact.URL)
 	}
-	if artifact.MirrorURL != "https://download.nexusdock.co/components/cloudflared/2026.9.1/cloudflared-linux-amd64" {
+	if artifact.MirrorURL != "https://download.nexusdock.co/components/cloudflared/2026.10.4/cloudflared-linux-amd64" {
 		t.Fatalf("selected Linux mirror URL=%q", artifact.MirrorURL)
 	}
-	if artifact.SHA256 != "03f1f25d1cc93b9ad6c60569d44060bc4f17ed97075760ed8cfca4b12dcd68cc" {
+	if artifact.SHA256 != "ae5e8add7884b0531d66bbca4570d1de491ff6da51e4ebe7eb160cdf241d9e42" {
 		t.Fatalf("selected Linux artifact digest=%q", artifact.SHA256)
 	}
 }
@@ -397,14 +397,14 @@ func TestResolveCatalogRejectsRemoteOlderThanEmbeddedBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if catalog.Revision != 3 {
-		t.Fatalf("resolved catalog revision=%d, want embedded baseline revision 3", catalog.Revision)
+	if catalog.Revision != 4 {
+		t.Fatalf("resolved catalog revision=%d, want embedded baseline revision 4", catalog.Revision)
 	}
 	_, artifact, err := selectCloudflaredArtifact(got, "1.0.0", "linux", "amd64")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if artifact.MirrorURL != "https://download.nexusdock.co/components/cloudflared/2026.9.1/cloudflared-linux-amd64" {
+	if artifact.MirrorURL != "https://download.nexusdock.co/components/cloudflared/2026.10.4/cloudflared-linux-amd64" {
 		t.Fatalf("resolved Linux mirror URL=%q", artifact.MirrorURL)
 	}
 }

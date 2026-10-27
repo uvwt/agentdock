@@ -1,7 +1,60 @@
 {
   "schema_version": 2,
-  "revision": 3,
+  "revision": 4,
   "components": [
+    {
+      "component": "cloudflared",
+      "version": "2026.10.4",
+      "status": "supported",
+      "agentdock": {
+        "min_version": "0.9.1",
+        "max_version_exclusive": "2.0.0"
+      },
+      "upstream_version": "2026.10.4",
+      "upstream_source": "https://github.com/cloudflare/cloudflared/releases/tag/2026.10.4",
+      "artifacts": [
+        {
+          "os": "windows",
+          "arch": "amd64",
+          "format": "binary",
+          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-windows-amd64.exe",
+          "mirror_url": "https://download.nexusdock.co/components/cloudflared/2026.10.4/cloudflared-windows-amd64.exe",
+          "sha256": "411b16d40c8d872243efeb52c550053d00af0a8a97fbb32e730fb8aba429eaa8"
+        },
+        {
+          "os": "darwin",
+          "arch": "amd64",
+          "format": "tgz",
+          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-darwin-amd64.tgz",
+          "mirror_url": "https://download.nexusdock.co/components/cloudflared/2026.10.4/cloudflared-darwin-amd64.tgz",
+          "sha256": "fdec0f9a1c726f4c10283fc0cd70e602d510c72887b737270433c81a08c883a9"
+        },
+        {
+          "os": "darwin",
+          "arch": "arm64",
+          "format": "tgz",
+          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-darwin-arm64.tgz",
+          "mirror_url": "https://download.nexusdock.co/components/cloudflared/2026.10.4/cloudflared-darwin-arm64.tgz",
+          "sha256": "49e7963072b2ca83fb44c09f4d4a7cda52d390c0c9c6f55bac83454a5bc43910"
+        },
+        {
+          "os": "linux",
+          "arch": "amd64",
+          "format": "binary",
+          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-linux-amd64",
+          "mirror_url": "https://download.nexusdock.co/components/cloudflared/2026.10.4/cloudflared-linux-amd64",
+          "sha256": "ae5e8add7884b0531d66bbca4570d1de491ff6da51e4ebe7eb160cdf241d9e42"
+        },
+        {
+          "os": "linux",
+          "arch": "arm64",
+          "format": "binary",
+          "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-linux-arm64",
+          "mirror_url": "https://download.nexusdock.co/components/cloudflared/2026.10.4/cloudflared-linux-arm64",
+          "sha256": "2b7203b4fb0ba28a0c1e12f8855ce2c25f76d266a8d5edafac5540b6812acff6"
+        }
+      ]
+    },
     {
       "component": "cloudflared",
       "version": "2026.9.1",

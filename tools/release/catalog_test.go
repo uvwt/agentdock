@@ -123,7 +123,7 @@ func TestCloudflaredComponentCatalogUsesPinnedUpstreamAndMirrorMetadata(t *testi
 	text := output.String()
 	for _, want := range []string{
 		`"schema_version": 2`,
-		`"revision": 3`,
+		`"revision": 4`,
 		`"status": "supported"`,
 		`"min_version": "0.9.1"`,
 		`"max_version_exclusive": "2.0.0"`,
