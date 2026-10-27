@@ -126,7 +126,8 @@ AgentDock 使用 MCP Streamable HTTP。下面是本地连接的通用配置示�
 
 | <div align="center"><strong>🏆&nbsp;赞助商&nbsp;🏆</strong></div> | <div align="center"><strong>介绍</strong></div> |
 | :------------- | :------ |
-| <a href="https://www.swiftproxy.net/?ref=agentdock"><img src="./docs/assets/sponsors/swiftproxy-logo.png" width="180" alt="Swiftproxy"></a> | <br>[**Swiftproxy**](https://www.swiftproxy.net/?ref=agentdock)<br>提供高质量动态和静态住宅代理，拥有 9000 万+住宅 IP，覆盖全球 220+ 个地区，支持 HTTP(S)、SOCKS5、IP 轮换与粘性会话，为 AI Agent、浏览器自动化和网页数据采集提供灵活的代理支持。动态住宅代理低至 $0.7/GB，使用优惠码 <code>PROXY90</code> 享受九折优惠。 |
+| <a href="https://www.swiftproxy.net/?ref=agentdock"><img src="./docs/assets/sponsors/swiftproxy-logo.png" width="180" alt="Swiftproxy"></a> | <br>[**Swiftproxy**](https://www.swiftproxy.net/?ref=agentdock)<br>提供高质量动态和静态住宅代理，拥有 9000 万+住宅 IP，覆盖全球 220+ 个地区，支持 HTTP(S)、SOCKS5、IP 轮换与粘性会话，为 AI Agent、浏览器自动化和网页数据采集提供灵活的代理支持。动态住宅代理低至 $0.7/GB，使用优惠码 <code>PROXY90</code> 享受九折优惠。 [了解详情 →](https://www.swiftproxy.net/?ref=agentdock) |
+| <a href="https://www.ipwo.net/?ref=githubagentdock"><img src="./docs/assets/sponsors/ipwo-logo.png" width="180" alt="IPWO"></a> | <br>[**IPWO**](https://www.ipwo.net/?ref=githubagentdock)<br>为 AI Agent 与自动化工作流提供灵活的网络连接支持。IPWO 住宅代理覆盖 195+ 个国家和地区，提供动态代理、静态代理和不限量代理，支持 HTTP(S)/SOCKS5，适用于跨地区访问测试、网页自动化与合规数据采集，助力开发者探索更多应用场景。使用优惠码 <code>0200</code> 享受九折优惠。 [了解详情 →](https://www.ipwo.net/?ref=githubagentdock) |
 
 想支持项目或展示品牌？[联系维护者](mailto:t80980@gmail.com)。
 
