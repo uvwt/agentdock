@@ -149,6 +149,8 @@ func (svc *Service) parseRGJSON(output []byte, searchRoot string, opts SearchOpt
 	before := map[string][]string{}
 	var lastMatch map[string]any
 	var lastPath string
+	lastLine := 0
+	truncated := false
 	scanner := bufio.NewScanner(bytes.NewReader(output))
 	scanner.Buffer(make([]byte, 0, 1024*1024), 16*1024*1024)
 	for scanner.Scan() {
@@ -198,6 +200,17 @@ func (svc *Service) parseRGJSON(output []byte, searchRoot string, opts SearchOpt
 			path = filepath.ToSlash(eventPath)
 		}
 		line := strings.TrimSuffix(event.Data.Lines.Text, "\n")
+		if opts.MaxResults > 0 && len(matches) >= opts.MaxResults {
+			if path == lastPath && event.Data.LineNumber > lastLine && event.Data.LineNumber <= lastLine+opts.ContextLines {
+				after, _ := lastMatch["after"].([]string)
+				lastMatch["after"] = append(after, line)
+				lastMatch["context_end_line"] = event.Data.LineNumber
+			}
+			if event.Type == "match" {
+				truncated = true
+			}
+			continue
+		}
 		switch event.Type {
 		case "context":
 			if lastMatch != nil && lastPath == path {
@@ -223,15 +236,13 @@ func (svc *Service) parseRGJSON(output []byte, searchRoot string, opts SearchOpt
 			matches = append(matches, entry)
 			lastMatch = entry
 			lastPath = path
-			if opts.MaxResults > 0 && len(matches) >= opts.MaxResults {
-				return matches, true, true
-			}
+			lastLine = event.Data.LineNumber
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, false, false
 	}
-	return matches, false, true
+	return matches, truncated, true
 }
 
 func (svc *Service) searchTextGo(ctx context.Context, p workspace.Path, opts SearchOptions) (Result, error) {
@@ -266,6 +277,7 @@ func (svc *Service) searchTextGoWithLimits(ctx context.Context, p workspace.Path
 	bytesScanned := int64(0)
 	skippedLargeFiles := 0
 	limitResource := ""
+	truncated := false
 	walkErr := filepath.WalkDir(p.Abs, func(abs string, d os.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -376,11 +388,12 @@ func (svc *Service) searchTextGoWithLimits(ctx context.Context, p workspace.Path
 			if !ok {
 				continue
 			}
-			before, after := contextAround(lines, i, opts.ContextLines)
-			matches = append(matches, map[string]any{"path": displayPath, "line": i + 1, "column": column, "preview": truncateString(line, 500), "match_text": truncateString(matchText, 500), "before": before, "after": after, "context_start_line": i + 1 - len(before), "context_end_line": i + 1 + len(after)})
 			if opts.MaxResults > 0 && len(matches) >= opts.MaxResults {
+				truncated = true
 				return filepath.SkipAll
 			}
+			before, after := contextAround(lines, i, opts.ContextLines)
+			matches = append(matches, map[string]any{"path": displayPath, "line": i + 1, "column": column, "preview": truncateString(line, 500), "match_text": truncateString(matchText, 500), "before": before, "after": after, "context_start_line": i + 1 - len(before), "context_end_line": i + 1 + len(after)})
 		}
 		return nil
 	})
@@ -394,7 +407,7 @@ func (svc *Service) searchTextGoWithLimits(ctx context.Context, p workspace.Path
 	}
 	return Result{
 		"query": opts.Query, "engine": "go_fallback", "matches": matches, "total_matches": len(matches),
-		"truncated": opts.MaxResults > 0 && len(matches) >= opts.MaxResults,
+		"truncated": truncated,
 		"partial":   skippedLargeFiles > 0, "files_scanned": filesScanned, "bytes_scanned": bytesScanned, "skipped_large_files": skippedLargeFiles,
 	}, nil
 }
