@@ -81,6 +81,10 @@ On macOS and Windows, open **Connections** in the control panel to pair your dev
 
 For local MCP or direct public access, open **Settings → Advanced connection**, or use **Advanced connection settings** on the Connections page. This is where you find the local MCP address, access credentials, and Cloudflare settings for a temporary public address or fixed domain. For Linux and Docker, follow the installation documentation to configure the connection.
 
+## One-Click Deploy
+
+[![Deploy on RepoCloud](https://d16t0pc4846x52.cloudfront.net/deploylobe.svg)](https://repocloud.io/details/AgentDock/)
+
 ## Direct MCP connection
 
 When connecting directly, add the MCP address and Bearer Token or OAuth sign-in details to your client's MCP, Tools, or Connectors settings. Public access must keep authentication enabled. Do not include credentials in screenshots, issues, or public conversations.
