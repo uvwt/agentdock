@@ -2,12 +2,14 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -355,4 +357,191 @@ func toolDescriptorsForConfig(t *testing.T, names []string, cfg config.Config) [
 		definitions = append(definitions, definition)
 	}
 	return toolDescriptors(definitions, config.MCPAppsModeFull)
+}
+
+func TestStreamableHTTPDownstreamFallbackIsolatesInboundProtocolVersion(t *testing.T) {
+	var mu sync.Mutex
+	var observed []string
+	recordMethodHeader := func(method, header string) {
+		mu.Lock()
+		defer mu.Unlock()
+		observed = append(observed, method+":"+header)
+	}
+
+	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		var rpc struct {
+			ID     any            `json:"id"`
+			Method string         `json:"method"`
+			Params map[string]any `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&rpc); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		headerVersion := r.Header.Get("Mcp-Protocol-Version")
+		recordMethodHeader(rpc.Method, headerVersion)
+
+		switch rpc.Method {
+		case "server/discover":
+			// 模拟仅支持 2025-11-25 的严格服务端（如 NocoBase）：拒绝 2026-07-28 探测。
+			http.Error(w, "unsupported protocol version", http.StatusBadRequest)
+			return
+		case "initialize":
+			// 回退 initialize 握手阶段不应携带入站 2026-07-28 协议头。
+			if headerVersion != "" {
+				http.Error(w, "unexpected Mcp-Protocol-Version on initialize: "+headerVersion, http.StatusBadRequest)
+				return
+			}
+			if got, _ := rpc.Params["protocolVersion"].(string); got != "2025-11-25" {
+				http.Error(w, "unexpected protocolVersion param: "+got, http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Mcp-Session-Id", "downstream-session-1")
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      rpc.ID,
+				"result": map[string]any{
+					"protocolVersion": "2025-11-25",
+					"capabilities":    map[string]any{"tools": map[string]any{}},
+					"serverInfo":      map[string]any{"name": "nocobase-mock", "version": "1.0.0"},
+				},
+			})
+		case "notifications/initialized":
+			if headerVersion != "2025-11-25" {
+				http.Error(w, "unsupported Mcp-Protocol-Version: "+headerVersion, http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			if headerVersion != "2025-11-25" {
+				http.Error(w, "unsupported Mcp-Protocol-Version: "+headerVersion, http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      rpc.ID,
+				"result": map[string]any{
+					"tools": []map[string]any{{
+						"name":        "nocobase_ping",
+						"description": "Ping NocoBase mock",
+						"inputSchema": map[string]any{
+							"type":       "object",
+							"properties": map[string]any{"text": map[string]any{"type": "string"}},
+						},
+					}},
+				},
+			})
+		case "tools/call":
+			if headerVersion != "2025-11-25" {
+				http.Error(w, "unsupported Mcp-Protocol-Version: "+headerVersion, http.StatusBadRequest)
+				return
+			}
+			args, _ := rpc.Params["arguments"].(map[string]any)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      rpc.ID,
+				"result": map[string]any{
+					"content": []map[string]any{{"type": "text", "text": "pong:" + strings.TrimSpace(args["text"].(string))}},
+				},
+			})
+		default:
+			http.Error(w, "unexpected method: "+rpc.Method, http.StatusNotFound)
+		}
+	}))
+	defer downstream.Close()
+
+	root := t.TempDir()
+	cfg := config.Config{
+		AgentDockDefaultDir: root,
+		AgentDockHome:       filepath.Join(root, ".agentdock"),
+	}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatalf("Normalize() error = %v", err)
+	}
+	runtime, err := app.NewRuntime(cfg)
+	if err != nil {
+		t.Fatalf("NewRuntime() error = %v", err)
+	}
+	defer func() { _ = runtime.Close() }()
+
+	if _, err := runtime.Call(t.Context(), "mcp_manage", map[string]any{
+		"action":      "add",
+		"name":        "nocobase",
+		"description": "Legacy Streamable HTTP mock",
+		"transport":   "streamable_http",
+		"url":         downstream.URL,
+	}); err != nil {
+		t.Fatalf("mcp_manage add error = %v", err)
+	}
+
+	agentdockHTTP := httptest.NewServer(NewServer(runtime, cfg).HTTPHandler())
+	defer agentdockHTTP.Close()
+
+	inboundClient := mcpsdk.NewClient(
+		&mcpsdk.Implementation{Name: "inbound-2026-client", Version: "1.0.0"},
+		&mcpsdk.ClientOptions{Capabilities: &mcpsdk.ClientCapabilities{}},
+	)
+	inboundSession, err := inboundClient.Connect(
+		t.Context(),
+		&mcpsdk.StreamableClientTransport{Endpoint: agentdockHTTP.URL, DisableStandaloneSSE: true},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("inbound Connect() error = %v", err)
+	}
+	defer func() { _ = inboundSession.Close() }()
+
+	if ir := inboundSession.InitializeResult(); ir == nil || ir.ProtocolVersion != "2026-07-28" {
+		t.Fatalf("inbound ProtocolVersion = %+v, want 2026-07-28", ir)
+	}
+
+	searchRes, err := inboundSession.CallTool(t.Context(), &mcpsdk.CallToolParams{
+		Name:      "mcp_tool_search",
+		Arguments: map[string]any{"server": "nocobase", "query": "ping"},
+	})
+	if err != nil {
+		t.Fatalf("inbound mcp_tool_search error = %v", err)
+	}
+	if searchRes.IsError {
+		t.Fatalf("inbound mcp_tool_search returned error result: %#v", searchRes)
+	}
+	searchJSON, _ := json.Marshal(searchRes.StructuredContent)
+	if !strings.Contains(string(searchJSON), "nocobase:nocobase_ping") {
+		t.Fatalf("mcp_tool_search missing nocobase:nocobase_ping: %s", searchJSON)
+	}
+
+	callRes, err := inboundSession.CallTool(t.Context(), &mcpsdk.CallToolParams{
+		Name: "mcp_tool_call",
+		Arguments: map[string]any{
+			"name":      "nocobase:nocobase_ping",
+			"arguments": map[string]any{"text": "ok"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("inbound mcp_tool_call error = %v", err)
+	}
+	if callRes.IsError {
+		t.Fatalf("inbound mcp_tool_call returned error result: %#v", callRes)
+	}
+
+	mu.Lock()
+	gotObserved := append([]string(nil), observed...)
+	mu.Unlock()
+	want := []string{
+		"server/discover:2026-07-28",
+		"initialize:",
+		"notifications/initialized:2025-11-25",
+		"tools/list:2025-11-25",
+		"tools/call:2025-11-25",
+	}
+	if !slices.Equal(gotObserved, want) {
+		t.Fatalf("downstream method/header sequence = %v, want %v", gotObserved, want)
+	}
 }

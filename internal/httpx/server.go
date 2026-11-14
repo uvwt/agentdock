@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/uvwt/agentdock/internal/auth"
@@ -38,6 +39,7 @@ func Serve(ctx context.Context, server *mcp.Server, runtime runtimeapi.Runtime, 
 		return fmt.Errorf("clean public artifacts: %w", err)
 	}
 	slog.Info("http server configured", "host", cfg.Host, "port", cfg.Port, "auth_required", authRequired, "endpoint", "/mcp")
+	warnIfUnauthenticatedPublicExposure(cfg)
 	mux.HandleFunc("/", statusPageHandler(server, runtime, cfg))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "application/json")
@@ -64,6 +66,25 @@ func Serve(ctx context.Context, server *mcp.Server, runtime runtimeapi.Runtime, 
 	slog.Info("http server listening", "addr", addr)
 	return serveHTTP(ctx, httpServer)
 }
+func warnIfUnauthenticatedPublicExposure(cfg config.Config) {
+	// 当通过 AGENTDOCK_SERVER_URL（含 Quick Tunnel / 反向代理）暴露公网地址却未配置
+	// AGENTDOCK_AUTH_TOKEN 或 OAuth 时，必须打显式告警：Runtime API 会拒绝所有请求，
+	// 但 /mcp 仍可能被未授权公网流量访问。
+	if cfg.AuthRequired() {
+		return
+	}
+	serverURL := strings.TrimSpace(cfg.OAuthServerURL)
+	if serverURL == "" {
+		return
+	}
+	slog.Warn(
+		"SECURITY WARNING: AgentDock has a public server URL configured without AGENTDOCK_AUTH_TOKEN or OAuth; unauthenticated Runtime API requests are blocked, set AGENTDOCK_AUTH_TOKEN or enable OAuth immediately",
+		"server_url", serverURL,
+		"host", cfg.Host,
+		"port", cfg.Port,
+	)
+}
+
 func serveHTTP(ctx context.Context, server *http.Server) error {
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.ListenAndServe() }()
