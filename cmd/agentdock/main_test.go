@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -138,5 +142,105 @@ func TestRunTunnelHelp(t *testing.T) {
 	}
 	if output := stdout.String(); !strings.Contains(output, "agentdock tunnel status") || !strings.Contains(output, "[--runtime-root <目录>]") {
 		t.Fatalf("unexpected tunnel help: %s", output)
+	}
+}
+
+func TestRunNexusHelpIncludesRuntimeRootAndNoRestart(t *testing.T) {
+	var stdout bytes.Buffer
+	if err := run(context.Background(), []string{"nexus", "--help"}, &stdout, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	output := stdout.String()
+	for _, want := range []string{"--runtime-root", "--no-restart", "--json"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("nexus help missing %q: %s", want, output)
+		}
+	}
+}
+
+func TestMaybeRestartLinuxServiceAfterPairRespectsNoRestartAndHomeMatch(t *testing.T) {
+	serviceHome := t.TempDir()
+	binding := desktopruntime.LinuxServiceBinding{
+		Configured:     true,
+		RuntimeRoot:    t.TempDir(),
+		ServiceManager: "systemd",
+		ServiceName:    "agentdock",
+		AgentDockHome:  serviceHome,
+	}
+
+	restarted, msg, hint := maybeRestartLinuxServiceAfterPair(context.Background(), serviceHome, binding, true)
+	if restarted || msg != "" || hint != "" {
+		t.Fatalf("--no-restart should skip restart cleanly, got restarted=%v msg=%q hint=%q", restarted, msg, hint)
+	}
+
+	otherHome := t.TempDir()
+	restarted, msg, hint = maybeRestartLinuxServiceAfterPair(context.Background(), otherHome, binding, false)
+	if restarted || msg != "" || hint != "" {
+		t.Fatalf("mismatched agentdock-home should not restart unrelated service, got restarted=%v msg=%q hint=%q", restarted, msg, hint)
+	}
+
+	// 当没有合法的重启目标（如非 Linux 宿主机或测试临时目录缺少 agentdock.env）时，
+	// 重启失败必须安全降级并给出手动命令，而不是阻断已成功落盘的配对结果。
+	restarted, msg, hint = maybeRestartLinuxServiceAfterPair(context.Background(), serviceHome, binding, false)
+	if restarted || hint != "sudo systemctl restart agentdock" || !strings.Contains(msg, "sudo systemctl restart agentdock") {
+		t.Fatalf("expected graceful downgrade with manual hint, got restarted=%v msg=%q hint=%q", restarted, msg, hint)
+	}
+}
+
+func TestNexusPairWritesJSONWithManualRestartHintOnRestartFailure(t *testing.T) {
+	serviceHome := t.TempDir()
+	runtimeRoot := t.TempDir()
+	if runtime.GOOS == "linux" {
+		if err := os.WriteFile(filepath.Join(runtimeRoot, "desktop-runtime.json"), []byte(`{
+  "schema_version": 1,
+  "service_manager": "systemd",
+  "service_name": "agentdock-e2e-missing",
+  "agentdock_binary": "/usr/local/bin/agentdock",
+  "environment_file": "`+filepath.Join(runtimeRoot, "agentdock.env")+`"
+}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(runtimeRoot, "agentdock.env"), []byte("AGENTDOCK_HOME='"+serviceHome+"'\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/nodes/pair" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"node":{"id":"node_cli_test"},"device_token":"secret-token"}`))
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	args := []string{
+		"nexus", "pair",
+		"--endpoint", server.URL,
+		"--code", "pair_1234",
+		"--runtime-root", runtimeRoot,
+		"--json",
+	}
+	if runtime.GOOS != "linux" {
+		args = append(args, "--agentdock-home", serviceHome)
+	}
+	if err := run(context.Background(), args, &stdout, &stderr); err != nil {
+		t.Fatalf("nexus pair should succeed even when restart cannot execute: %v (stderr=%s)", err, stderr.String())
+	}
+
+	var parsed nexusPairJSONOutput
+	if err := json.Unmarshal(stdout.Bytes(), &parsed); err != nil {
+		t.Fatalf("invalid json output: %v (%s)", err, stdout.String())
+	}
+	if !parsed.Paired || parsed.NodeID != "node_cli_test" || parsed.AgentDockHome != serviceHome {
+		t.Fatalf("unexpected pair output: %#v", parsed)
+	}
+	if runtime.GOOS == "linux" {
+		if parsed.ServiceRestarted || parsed.ManualRestartHint != "sudo systemctl restart agentdock-e2e-missing" {
+			t.Fatalf("expected manual restart hint on linux failure, got %#v", parsed)
+		}
 	}
 }
