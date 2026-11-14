@@ -44,7 +44,11 @@
 
 ## HTTP Runtime API
 
-未启用认证时，所有 `/internal/runtime/` 管理接口仅允许本机直连：对端和 Host 必须是回环地址，不允许代理转发特征或跨站请求；浏览器携带 Origin 时必须与请求同源。
+所有 `/internal/runtime/` 管理接口统一受以下边界保护：
+
+- 未启用 Bearer/OAuth 认证时：禁止在配置公网地址（`AGENTDOCK_SERVER_URL`）时放行无凭证请求，且仅允许本机直连——对端和 `Host` 必须是回环地址，不允许代理转发特征、跨站请求（`Sec-Fetch-Site: cross-site`）或非同源 `Origin`。如果服务在配置了 `AGENTDOCK_SERVER_URL` 且未配置 `AGENTDOCK_AUTH_TOKEN` 与 OAuth 的状态下启动，服务端会输出显式安全告警并阻断所有无凭证 Runtime API 请求。
+- 启用 Bearer/OAuth 认证后：未配置公网地址时对本机回环连接仍强制回环 `Host`（防御 DNS rebinding）；浏览器请求携带 `Origin` 或 `Sec-Fetch-Site` 时必须满足同源校验。
+- 携带 JSON 请求体的 `POST` 管理接口（`/internal/runtime/mcp`、`/internal/runtime/mcp/oauth/callback`、`/internal/runtime/evolve`、`/internal/runtime/resource-library`）强制要求 `Content-Type: application/json`，不匹配返回 `415 Unsupported Media Type`，阻断 `text/plain` 等浏览器 CORS 简单请求。
 
 远程或反向代理访问需要启用并通过 Bearer/OAuth 认证。原生本机客户端可以不发送 Origin。
 

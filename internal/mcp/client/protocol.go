@@ -65,6 +65,24 @@ func (c *sdkProtocolClient) initialize(ctx context.Context) error {
 		&mcpsdk.Implementation{Name: config.ServerName, Version: buildinfo.Version},
 		&mcpsdk.ClientOptions{Capabilities: &mcpsdk.ClientCapabilities{}},
 	)
+	// 新版 go-sdk 会在 ListTools 返回前静默过滤掉 nil 工具项，导致畸形
+	// tools/list 响应被吞掉；在发送中间件中抢先检查原始响应并收敛为协议错误。
+	client.AddSendingMiddleware(func(next mcpsdk.MethodHandler) mcpsdk.MethodHandler {
+		return func(ctx context.Context, method string, req mcpsdk.Request) (mcpsdk.Result, error) {
+			res, err := next(ctx, method, req)
+			if err != nil {
+				return res, err
+			}
+			if listRes, ok := res.(*mcpsdk.ListToolsResult); ok && listRes != nil {
+				for _, tool := range listRes.Tools {
+					if tool == nil {
+						return nil, newError("MCP_INVALID_RESPONSE", "MCP tools/list returned a null tool", false, map[string]any{"server": c.cfg.Name}, nil)
+					}
+				}
+			}
+			return res, nil
+		}
+	})
 	session, err := client.Connect(ctx, transport, nil)
 	if err != nil {
 		_ = c.cleanupProcess()
@@ -140,7 +158,7 @@ func (c *sdkProtocolClient) startStdioTransport() (mcpsdk.Transport, error) {
 }
 
 func (c *sdkProtocolClient) listTools(ctx context.Context) (tools []Tool, err error) {
-	// SDK v1.7.0 会在返回工具前处理参数注解；畸形列表（如 null 元素）可能在
+	// SDK 会在返回工具前处理参数注解；畸形列表（如 null 元素）可能在
 	// 其内部 panic。外部协议解码失败在此收敛为错误，不能击穿授权后的后台刷新。
 	defer func() {
 		if recover() != nil {
@@ -211,6 +229,10 @@ func (c *sdkProtocolClient) cleanupProcess() error {
 func (c *sdkProtocolClient) wrapSDKError(operation string, err error) error {
 	if err == nil {
 		return nil
+	}
+	var mcpErr *Error
+	if errors.As(err, &mcpErr) {
+		return mcpErr
 	}
 	details := map[string]any{"server": c.cfg.Name}
 	var authRequired *oauthclient.AuthRequiredError
