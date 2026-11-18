@@ -309,6 +309,11 @@ func searchText(req *Request) (*Response, error) {
 			if location == nil {
 				continue
 			}
+			// 只有确认存在第 maxResults+1 条命中时才标记截断，避免刚好命中上限条时误报 truncated。
+			if len(matches) >= maxResults {
+				truncated = true
+				break
+			}
 			beforeStart := max(0, index-contextLines)
 			afterEnd := min(len(lines), index+contextLines+1)
 			matches = append(matches, SearchMatch{
@@ -317,10 +322,6 @@ func searchText(req *Request) (*Response, error) {
 				Before: append([]string(nil), lines[beforeStart:index]...), After: append([]string(nil), lines[index+1:afterEnd]...),
 				ContextStartLine: beforeStart + 1, ContextEndLine: afterEnd,
 			})
-			if len(matches) >= maxResults {
-				truncated = true
-				break
-			}
 		}
 		if truncated {
 			break

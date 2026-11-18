@@ -209,6 +209,10 @@ func (svc *Service) parseRGJSON(output []byte, searchRoot string, opts SearchOpt
 			if event.Type == "match" {
 				truncated = true
 			}
+			// 确认存在溢出命中且已离开最后一条命中的尾部上下文窗口后，无需继续解析剩余输出。
+			if truncated && (path != lastPath || event.Data.LineNumber > lastLine+opts.ContextLines) {
+				return matches, true, true
+			}
 			continue
 		}
 		switch event.Type {
@@ -250,7 +254,7 @@ func (svc *Service) searchTextGo(ctx context.Context, p workspace.Path, opts Sea
 }
 
 func (svc *Service) searchTextGoWithLimits(ctx context.Context, p workspace.Path, opts SearchOptions, limits searchFallbackLimits) (Result, error) {
-	ctx, cancel := context.WithTimeout(ctx, limits.Timeout)
+	walkCtx, cancel := context.WithTimeout(ctx, limits.Timeout)
 	defer cancel()
 
 	var re *regexp.Regexp
@@ -279,7 +283,7 @@ func (svc *Service) searchTextGoWithLimits(ctx context.Context, p workspace.Path
 	limitResource := ""
 	truncated := false
 	walkErr := filepath.WalkDir(p.Abs, func(abs string, d os.DirEntry, walkErr error) error {
-		if err := ctx.Err(); err != nil {
+		if err := walkCtx.Err(); err != nil {
 			return err
 		}
 		if walkErr != nil {
@@ -398,12 +402,19 @@ func (svc *Service) searchTextGoWithLimits(ctx context.Context, p workspace.Path
 		return nil
 	})
 	if walkErr != nil {
-		if errors.Is(walkErr, errSearchResourceLimit) {
+		// 若已收齐 max_results 条命中，后续继续遍历只是为了探测是否还有第 max_results+1 条；
+		// 此时若触及内置预算或超时（非调用方主动取消），保留已收集结果并按截断返回，避免丢掉已有命中。
+		capReached := opts.MaxResults > 0 && len(matches) >= opts.MaxResults
+		fallbackBudgetStop := errors.Is(walkErr, errSearchResourceLimit) || errors.Is(walkErr, context.DeadlineExceeded)
+		if capReached && fallbackBudgetStop && ctx.Err() == nil {
+			truncated = true
+		} else if errors.Is(walkErr, errSearchResourceLimit) {
 			return nil, toolErrorCause("RESOURCE_LIMIT", "text search exceeded the Go fallback resource budget", "runtime", map[string]any{
 				"resource": limitResource, "entries_visited": entriesVisited, "files_scanned": filesScanned, "bytes_scanned": bytesScanned,
 			}, walkErr)
+		} else {
+			return nil, searchExecutionError(walkCtx, "go_fallback", walkErr)
 		}
-		return nil, searchExecutionError(ctx, "go_fallback", walkErr)
 	}
 	return Result{
 		"query": opts.Query, "engine": "go_fallback", "matches": matches, "total_matches": len(matches),

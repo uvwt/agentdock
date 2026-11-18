@@ -109,22 +109,71 @@ func TestSearchTextResultCapAndTrailingContext(t *testing.T) {
 	}
 }
 
-func TestSearchTextGoCapStillHonorsResourceBudget(t *testing.T) {
+func TestParseRGJSONStopsAfterConfirmedOverflowAndTrailingContext(t *testing.T) {
 	svc, root := newCodeToolsRuntime(t)
-	for _, name := range []string{"a.txt", "b.txt"} {
-		if err := os.WriteFile(filepath.Join(root, name), []byte("needle"), 0600); err != nil {
+	escapedPath := strings.ReplaceAll(filepath.Join(root, "sample.txt"), `\`, `\\`)
+	output := strings.Join([]string{
+		`{"type":"match","data":{"path":{"text":"` + escapedPath + `"},"lines":{"text":"needle 1\n"},"line_number":1,"submatches":[{"match":{"text":"needle"},"start":0}]}}`,
+		`{"type":"context","data":{"path":{"text":"` + escapedPath + `"},"lines":{"text":"tail context\n"},"line_number":2}}`,
+		`{"type":"match","data":{"path":{"text":"` + escapedPath + `"},"lines":{"text":"needle 2\n"},"line_number":10,"submatches":[{"match":{"text":"needle"},"start":0}]}}`,
+		`{not-valid-json-must-not-be-parsed`,
+	}, "\n")
+
+	matches, truncated, ok := svc.parseRGJSON([]byte(output), root, SearchOptions{
+		Query:        "needle",
+		MaxResults:   1,
+		ContextLines: 1,
+	})
+	if !ok || !truncated || len(matches) != 1 {
+		t.Fatalf("parseRGJSON() = matches=%#v truncated=%v ok=%v; want 1 match, truncated=true, ok=true", matches, truncated, ok)
+	}
+	after, _ := matches[0]["after"].([]string)
+	if len(after) != 1 || after[0] != "tail context" || matches[0]["context_end_line"] != 2 {
+		t.Fatalf("after context = %#v, context_end_line = %v; want [tail context], 2", after, matches[0]["context_end_line"])
+	}
+}
+
+func TestSearchTextGoCapStillHonorsResourceBudget(t *testing.T) {
+	t.Run("before cap still returns resource limit", func(t *testing.T) {
+		svc, root := newCodeToolsRuntime(t)
+		for _, name := range []string{"a.txt", "b.txt"} {
+			if err := os.WriteFile(filepath.Join(root, name), []byte("needle"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		path, err := svc.ws.ResolveExisting(".")
+		if err != nil {
 			t.Fatal(err)
 		}
-	}
-	path, err := svc.ws.ResolveExisting(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = svc.searchTextGoWithLimits(context.Background(), path, SearchOptions{Query: "needle", MaxResults: 1}, searchFallbackLimits{
-		MaxEntries: 10, MaxFiles: 1, MaxFileBytes: 100, MaxTotalBytes: 100, Timeout: time.Second,
+		_, err = svc.searchTextGoWithLimits(context.Background(), path, SearchOptions{Query: "needle", MaxResults: 2}, searchFallbackLimits{
+			MaxEntries: 10, MaxFiles: 1, MaxFileBytes: 100, MaxTotalBytes: 100, Timeout: time.Second,
+		})
+		var toolErr *ToolError
+		if !errors.As(err, &toolErr) || toolErr.Code != "RESOURCE_LIMIT" || toolErr.Details["resource"] != "files" {
+			t.Fatalf("error = %#v, want file RESOURCE_LIMIT", err)
+		}
 	})
-	var toolErr *ToolError
-	if !errors.As(err, &toolErr) || toolErr.Code != "RESOURCE_LIMIT" || toolErr.Details["resource"] != "files" {
-		t.Fatalf("error = %#v, want file RESOURCE_LIMIT", err)
-	}
+
+	t.Run("after cap returns collected matches as truncated", func(t *testing.T) {
+		svc, root := newCodeToolsRuntime(t)
+		for _, name := range []string{"a.txt", "b.txt"} {
+			if err := os.WriteFile(filepath.Join(root, name), []byte("needle\ntail"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		path, err := svc.ws.ResolveExisting(".")
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := svc.searchTextGoWithLimits(context.Background(), path, SearchOptions{Query: "needle", MaxResults: 1, ContextLines: 1}, searchFallbackLimits{
+			MaxEntries: 10, MaxFiles: 1, MaxFileBytes: 100, MaxTotalBytes: 100, Timeout: time.Second,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error after cap reached: %v", err)
+		}
+		matches := result["matches"].([]map[string]any)
+		if result["truncated"] != true || len(matches) != 1 || matches[0]["path"] != "a.txt" {
+			t.Fatalf("result = %#v, want 1 match from a.txt with truncated=true", result)
+		}
+	})
 }
