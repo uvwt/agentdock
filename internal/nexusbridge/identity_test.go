@@ -135,3 +135,40 @@ func TestLoadLegacyIdentityWithoutWebSocketEndpoint(t *testing.T) {
 		t.Fatalf("legacy identity = %#v", identity)
 	}
 }
+
+func TestSaveOverwritesExistingIdentityWithExpectedPermissions(t *testing.T) {
+	home := t.TempDir()
+	first := Identity{
+		Version:     identityVersion,
+		Endpoint:    "https://nexus.example.com",
+		NodeID:      "node_first",
+		DeviceID:    "device_first_0001",
+		DeviceToken: "secret-first",
+	}
+	if err := Save(home, first); err != nil {
+		t.Fatal(err)
+	}
+	second := Identity{
+		Version:     identityVersion,
+		Endpoint:    "https://nexus.example.com",
+		NodeID:      "node_second",
+		DeviceID:    "device_second_0001",
+		DeviceToken: "secret-second",
+	}
+	if err := Save(home, second); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(home)
+	if err != nil || loaded != second {
+		t.Fatalf("loaded = %#v err=%v", loaded, err)
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(identityPath(home))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("identity permissions = %o, want 0600", info.Mode().Perm())
+		}
+	}
+}

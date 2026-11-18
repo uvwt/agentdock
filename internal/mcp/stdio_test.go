@@ -37,8 +37,9 @@ func TestServeStdioUsesOfficialSDKTransport(t *testing.T) {
 	if result := session.InitializeResult(); result == nil || result.ProtocolVersion == "" {
 		t.Fatalf("InitializeResult() = %#v", result)
 	}
-	if err := session.Ping(ctx, nil); err != nil {
-		t.Fatalf("Ping() error = %v", err)
+	// 2026-07-28 协议移除了 ping 方法，改用 ListTools 验证 stdio 请求往返。
+	if _, err := session.ListTools(ctx, nil); err != nil {
+		t.Fatalf("ListTools() error = %v", err)
 	}
 	if err := session.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"strings"
 	"time"
@@ -38,21 +39,40 @@ func registerRuntimeAPI(mux *http.ServeMux, runtime runtimeapi.Runtime, cfg conf
 func runtimeAPIHandler(runtime runtimeapi.Runtime, cfg config.Config, oauthStore *auth.OAuthStore) http.HandlerFunc {
 	authorizer := auth.Bearer{Token: cfg.AuthToken}
 	authRequired := cfg.AuthRequired()
+	publicURLConfigured := strings.TrimSpace(cfg.OAuthServerURL) != ""
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !runtimeapi.MethodAllowed(r.Method, r.URL.Path) {
 			w.Header().Set("Allow", runtimeapi.AllowHeader(r.URL.Path))
 			writeRuntimeAPIError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
 			return
 		}
-		staticOK := cfg.AuthToken != "" && authorizer.Authorized(r)
-		oauthOK := authorizedOAuth(r, cfg, oauthStore)
-		if !authRequired && !isDirectLoopbackRequest(r) {
-			writeRuntimeAPIError(w, http.StatusForbidden, "LOCAL_ACCESS_REQUIRED", "runtime API requires local access or authentication")
-			return
+		if !authRequired {
+			// 已配置公网 Origin（如 Quick Tunnel / 反向代理）但未启用认证时，
+			// 绝不允许任何无凭证请求触达管理面，防止公网或本地回环中继越权调用。
+			if publicURLConfigured {
+				writeRuntimeAPIError(w, http.StatusForbidden, "AUTH_REQUIRED_FOR_PUBLIC_EXPOSURE", "runtime API requires authentication when AGENTDOCK_SERVER_URL is configured")
+				return
+			}
+			if !isDirectLoopbackRequest(r) {
+				writeRuntimeAPIError(w, http.StatusForbidden, "LOCAL_ACCESS_REQUIRED", "runtime API requires local access or authentication")
+				return
+			}
+		} else {
+			if !validateRuntimeRequestOriginAndHost(r, cfg) {
+				writeRuntimeAPIError(w, http.StatusForbidden, "UNTRUSTED_ORIGIN_OR_HOST", "runtime API rejected untrusted Host or Origin")
+				return
+			}
+			staticOK := cfg.AuthToken != "" && authorizer.Authorized(r)
+			oauthOK := authorizedOAuth(r, cfg, oauthStore)
+			if !staticOK && !oauthOK {
+				setBearerChallenge(w, cfg, r, strings.TrimSpace(r.Header.Get("Authorization")) != "")
+				writeRuntimeAPIError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
+				return
+			}
 		}
-		if authRequired && !staticOK && !oauthOK {
-			setBearerChallenge(w, cfg, r, strings.TrimSpace(r.Header.Get("Authorization")) != "")
-			writeRuntimeAPIError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
+
+		if runtimeRequiresJSONContentType(r) && !hasJSONContentType(r) {
+			writeRuntimeAPIError(w, http.StatusUnsupportedMediaType, "UNSUPPORTED_MEDIA_TYPE", "content-type must be application/json")
 			return
 		}
 
@@ -83,9 +103,24 @@ func runtimeAPIHandler(runtime runtimeapi.Runtime, cfg config.Config, oauthStore
 	}
 }
 
-func runtimeRequestBody(r *http.Request) ([]byte, error) {
+func runtimeRequiresJSONContentType(r *http.Request) bool {
+	if r == nil || r.Method != http.MethodPost {
+		return false
+	}
 	cleanPath := strings.TrimSuffix(r.URL.Path, "/")
-	if r.Method != http.MethodPost || (cleanPath != "/internal/runtime/mcp" && cleanPath != "/internal/runtime/mcp/oauth/callback" && cleanPath != "/internal/runtime/evolve" && cleanPath != runtimeapi.ResourceLibraryPath) {
+	return cleanPath == "/internal/runtime/mcp" ||
+		cleanPath == "/internal/runtime/mcp/oauth/callback" ||
+		cleanPath == "/internal/runtime/evolve" ||
+		cleanPath == runtimeapi.ResourceLibraryPath
+}
+
+func hasJSONContentType(r *http.Request) bool {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	return err == nil && strings.EqualFold(mediaType, "application/json")
+}
+
+func runtimeRequestBody(r *http.Request) ([]byte, error) {
+	if !runtimeRequiresJSONContentType(r) {
 		return nil, nil
 	}
 	return io.ReadAll(io.LimitReader(r.Body, 64*1024+1))

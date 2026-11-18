@@ -48,13 +48,18 @@ agentdock tunnel restart
 
 ## NexusDock 手动配对
 
-官方一键安装会以服务用户身份配对，并把相同的 `AGENTDOCK_HOME` 写入服务环境文件。
-**后续手动执行** `agentdock nexus pair` 时则默认使用当前执行用户的
-`~/.agentdock`；这可能与 systemd/OpenRC Core 实际读取的位置不同。
+官方一键安装会把服务真实的 `AGENTDOCK_HOME` 写入运行配置目录（默认 `/etc/agentdock/agentdock.env`）。
+**后续手动执行** `sudo agentdock nexus pair` 时，CLI 会自动从服务运行配置目录解析 `AGENTDOCK_HOME`，保持服务用户对 `nexus/device.json` 的读取权限，并在保存凭据后**自动重启对应的 systemd/OpenRC 服务**使其立即生效：
 
-先通过 `systemctl cat agentdock` 确认真实的 `User=` 和 `EnvironmentFile=`，
-再确认服务环境文件中的 `AGENTDOCK_HOME`。以下示例使用官方默认安装布局；
-自定义服务用户、服务名或目录时必须相应替换：
+```bash
+sudo agentdock nexus pair \
+  --endpoint https://mcp.nexusdock.co --code "你的配对码"
+sudo agentdock nexus status
+```
+
+如果使用自定义运行配置目录或多实例部署，请显式传入 `--runtime-root <目录>`；如果希望仅写入凭据而不立即重启服务，可附加 `--no-restart`。
+
+当仅以低权限服务用户身份执行配对（无权直接调用 `systemctl`/`rc-service` 重启系统服务）时，CLI 仍会成功保存凭据（不会因重启权限不足而报错浪费一次性配对码），并提示需要补充执行的重启命令：
 
 ```bash
 sudo -u agentdock agentdock nexus pair \
@@ -66,9 +71,8 @@ sudo -u agentdock agentdock nexus status \
 ```
 
 配对成功时 CLI 会显示实际保存的 `nexus/device.json` 路径，必须与
-Core 使用的 `AGENTDOCK_HOME/nexus/device.json` 一致。不能在另一个用户的
-家目录中配对后就认为服务已连接；也不要以 root 身份把凭据文件写成只有
-root 能读取的权限。仅查询状态时可使用 `--json`，不会输出 Device Token。
+Core 使用的 `AGENTDOCK_HOME/nexus/device.json` 一致。不能在普通登录用户的
+家目录（如 `~/.agentdock`）中无 `sudo`、无 `--agentdock-home` 配对后就认为系统服务已连接。仅查询状态时可使用 `--json`，不会输出 Device Token。
 
 ## 修改方式
 

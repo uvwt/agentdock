@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 )
 
@@ -109,6 +110,47 @@ func RunServiceCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 	default:
 		return serviceCommandUsageError()
 	}
+}
+
+// LinuxServiceBinding 描述 Linux 系统服务与 Core 数据目录的绑定关系。
+// 手动执行 agentdock nexus pair / status 时据此定位服务真实的 AGENTDOCK_HOME，
+// 并在配对完成后重启对应的托管服务使新凭据生效。
+type LinuxServiceBinding struct {
+	Configured     bool
+	RuntimeRoot    string
+	ServiceManager string
+	ServiceName    string
+	AgentDockHome  string
+	ownerUID       int
+	ownerGID       int
+}
+
+func (b LinuxServiceBinding) ManagedService() bool {
+	return b.Configured &&
+		(b.ServiceManager == "systemd" || b.ServiceManager == "openrc") &&
+		strings.TrimSpace(b.ServiceName) != ""
+}
+
+func (b LinuxServiceBinding) MatchesAgentDockHome(agentDockHome string) bool {
+	if !b.Configured || strings.TrimSpace(agentDockHome) == "" || strings.TrimSpace(b.AgentDockHome) == "" {
+		return false
+	}
+	target, err := filepath.Abs(strings.TrimSpace(agentDockHome))
+	if err != nil {
+		target = filepath.Clean(strings.TrimSpace(agentDockHome))
+	}
+	bound, err := filepath.Abs(strings.TrimSpace(b.AgentDockHome))
+	if err != nil {
+		bound = filepath.Clean(strings.TrimSpace(b.AgentDockHome))
+	}
+	return target == bound
+}
+
+func RestartService(ctx context.Context, runtimeRoot string) error {
+	if strings.TrimSpace(runtimeRoot) == "" {
+		runtimeRoot = DefaultRuntimeRoot()
+	}
+	return platformServiceAction(ctx, strings.TrimSpace(runtimeRoot), "restart")
 }
 
 func PrepareCoreEnvironment(runtimeRoot string) error {

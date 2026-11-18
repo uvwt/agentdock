@@ -156,13 +156,20 @@ func ReadStatus(agentDockHome string) (Status, error) {
 }
 
 func Save(agentDockHome string, identity Identity) error {
+	owner, hasOwner := detectInheritedOwner(agentDockHome)
 	data, err := json.MarshalIndent(identity, "", "  ")
 	if err != nil {
 		return fmt.Errorf("编码 NexusDock 设备身份: %w", err)
 	}
 	data = append(data, '\n')
-	if err := atomicfile.Write(identityPath(agentDockHome), data, 0o600); err != nil {
+	path := identityPath(agentDockHome)
+	if err := atomicfile.Write(path, data, 0o600); err != nil {
 		return fmt.Errorf("保存 NexusDock 设备身份: %w", err)
+	}
+	if hasOwner {
+		if err := applyInheritedOwner(agentDockHome, path, owner); err != nil {
+			return fmt.Errorf("同步 NexusDock 设备身份目录属主: %w", err)
+		}
 	}
 	return nil
 }

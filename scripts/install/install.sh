@@ -386,25 +386,25 @@ pair_nexus_once() {
       fi
       case "$pair_command" in
         current)
-          env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >"$pair_output" 2>&1 || pair_status=$?
+          env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" --no-restart >"$pair_output" 2>&1 || pair_status=$?
           ;;
         runuser)
-          run_root runuser -u "$SERVICE_USER" -- env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >"$pair_output" 2>&1 || pair_status=$?
+          run_root runuser -u "$SERVICE_USER" -- env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" --no-restart >"$pair_output" 2>&1 || pair_status=$?
           ;;
         setpriv)
           service_uid="$(id -u "$SERVICE_USER")"
           service_gid="$(id -g "$SERVICE_USER")"
-          run_root setpriv --reuid "$service_uid" --regid "$service_gid" --init-groups env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >"$pair_output" 2>&1 || pair_status=$?
+          run_root setpriv --reuid "$service_uid" --regid "$service_gid" --init-groups env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" --no-restart >"$pair_output" 2>&1 || pair_status=$?
           ;;
         sudo)
           {
-            sudo -u "$SERVICE_USER" env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE"
+            sudo -u "$SERVICE_USER" env HOME="$AGENTDOCK_HOME_DIR" AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" --no-restart
           } >"$pair_output" 2>&1 || pair_status=$?
           ;;
       esac
       ;;
     darwin)
-      env AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" >"$pair_output" 2>&1 || pair_status=$?
+      env AGENTDOCK_HOME="$AGENTDOCK_HOME_DIR" "$STABLE_BINARY" nexus pair --endpoint "$NEXUS_ENDPOINT" --code "$NEXUS_PAIR_CODE" --no-restart >"$pair_output" 2>&1 || pair_status=$?
       ;;
   esac
 
