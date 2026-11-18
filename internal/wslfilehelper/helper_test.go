@@ -70,6 +70,34 @@ func TestWSLFileHelperReadsListsAndSearchesNativeTree(t *testing.T) {
 	}
 }
 
+func TestWSLFileHelperSearchTextCapAndTruncatedFlag(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "sample.txt"), "needle 1\nafter 1\nneedle 2\nafter 2\n", 0o644)
+
+	exact, err := Dispatch(&Request{
+		Action: "search_text", Path: root, Query: "needle", ContextLines: 1, MaxResults: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exact.Truncated == nil || *exact.Truncated || exact.TotalMatches == nil || *exact.TotalMatches != 2 {
+		t.Fatalf("exact cap result = %#v, want 2 matches with truncated=false", exact)
+	}
+
+	overflow, err := Dispatch(&Request{
+		Action: "search_text", Path: root, Query: "needle", ContextLines: 1, MaxResults: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overflow.Truncated == nil || !*overflow.Truncated || overflow.TotalMatches == nil || *overflow.TotalMatches != 1 {
+		t.Fatalf("overflow cap result = %#v, want 1 match with truncated=true", overflow)
+	}
+	if got := (*overflow.Matches)[0].After; len(got) != 1 || got[0] != "after 1" {
+		t.Fatalf("overflow after context = %#v, want [after 1]", got)
+	}
+}
+
 func TestWSLFileHelperAtomicWritePreservesModeAndRejectsSymlink(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, "target.txt")
