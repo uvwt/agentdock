@@ -26,7 +26,7 @@ func sliceText(content string, startLine, endLine, maxBytes int) (string, textMe
 	if endLine <= 0 || endLine > total {
 		endLine = total
 	}
-	if startLine > total {
+	if startLine > total || startLine > endLine {
 		return "", textMeta{Start: startLine, End: endLine, Total: total}
 	}
 	requested := strings.Join(lines[startLine-1:endLine], "\n")
