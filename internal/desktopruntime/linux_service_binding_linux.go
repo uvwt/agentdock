@@ -3,6 +3,7 @@
 package desktopruntime
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,7 +38,7 @@ func DetectLinuxServiceBinding(runtimeRoot string) (LinuxServiceBinding, error) 
 	var configFound bool
 	if _, statErr := os.Stat(filepath.Join(resolvedRoot, "desktop-runtime.json")); statErr == nil {
 		configFound = true
-	} else if !os.IsNotExist(statErr) {
+	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return LinuxServiceBinding{}, fmt.Errorf("检查桌面运行清单失败: %w", statErr)
 	}
 
@@ -51,7 +52,7 @@ func DetectLinuxServiceBinding(runtimeRoot string) (LinuxServiceBinding, error) 
 				binding.ownerGID = int(stat.Gid)
 			}
 		}
-	} else if !os.IsNotExist(envErr) {
+	} else if !errors.Is(envErr, os.ErrNotExist) {
 		return LinuxServiceBinding{}, fmt.Errorf("读取服务环境变量文件: %w", envErr)
 	}
 
@@ -85,7 +86,7 @@ func (b LinuxServiceBinding) SyncAgentDockHomeOwnership(paths ...string) error {
 		}
 		info, err := os.Lstat(cleaned)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			return err
