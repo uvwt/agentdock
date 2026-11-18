@@ -3,6 +3,38 @@ package file
 import "testing"
 import "unicode/utf8"
 
+func TestSliceTextRangeBoundaries(t *testing.T) {
+	tests := []struct {
+		name       string
+		content    string
+		start, end int
+		maxBytes   int
+		want       string
+		wantMeta   textMeta
+	}{
+		{"reversed with gap", "one\ntwo\nthree", 3, 1, 1, "", textMeta{Start: 3, End: 1, Total: 3}},
+		{"adjacent reversed", "one\ntwo\nthree", 2, 1, 1, "", textMeta{Start: 2, End: 1, Total: 3}},
+		{"equal line", "one\ntwo\nthree", 2, 2, 0, "two", textMeta{Start: 2, End: 2, Total: 3}},
+		{"end zero defaults to EOF", "one\ntwo\nthree", 3, 0, 0, "three", textMeta{Start: 3, End: 3, Total: 3}},
+		{"negative end defaults to EOF", "one\ntwo\nthree", 3, -1, 0, "three", textMeta{Start: 3, End: 3, Total: 3}},
+		{"start normalized to one", "one\ntwo\nthree", 0, 1, 0, "one", textMeta{Start: 1, End: 1, Total: 3}},
+		{"end clamped to total", "one\ntwo\nthree", 2, 100, 0, "two\nthree", textMeta{Start: 2, End: 3, Total: 3}},
+		{"start beyond EOF", "one\ntwo\nthree", 4, 2, 0, "", textMeta{Start: 4, End: 2, Total: 3}},
+		{"trailing empty line", "one\ntwo\n", 3, 3, 0, "", textMeta{Start: 3, End: 3, Total: 3}},
+		{"empty file", "", 1, 1, 0, "", textMeta{Start: 1, End: 1, Total: 1}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, meta := sliceText(tt.content, tt.start, tt.end, tt.maxBytes)
+			if got != tt.want || meta != tt.wantMeta {
+				t.Fatalf("sliceText(%q, %d, %d, %d) = %q, %+v; want %q, %+v",
+					tt.content, tt.start, tt.end, tt.maxBytes,
+					got, meta, tt.want, tt.wantMeta)
+			}
+		})
+	}
+}
+
 func TestMatchesAnyWithDoubleStar(t *testing.T) {
 	tests := []struct {
 		name     string
