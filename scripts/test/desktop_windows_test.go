@@ -55,6 +55,34 @@ func TestWindowsControlPanelUsesNativeTunnelCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestWindowsHelperModesExitThroughWinUIShutdown(t *testing.T) {
+	app := readWindowsNativeFile(t, "winui", "App.xaml.cs")
+	// WinUI 尚未关闭时直接 Environment.Exit，CoreMessaging 会在 DLL 卸载阶段 fail-fast，
+	// helper 的真实退出码被替换为 0xC0000602，控制面板因此把成功的提权准备也判为失败。
+	if strings.Contains(app, "Environment.Exit(") {
+		t.Fatal("WinUI helper modes must not call Environment.Exit from OnLaunched")
+	}
+	helperStart := strings.Index(app, "private void ExitHelper(int exitCode)")
+	if helperStart < 0 {
+		t.Fatal("WinUI helper modes need a shared ExitHelper")
+	}
+	helper := app[helperStart:]
+	exitCode := strings.Index(helper, "Environment.ExitCode = exitCode;")
+	shutdown := strings.Index(helper, "Exit();")
+	if exitCode < 0 || shutdown <= exitCode {
+		t.Fatal("ExitHelper must record the exit code before asking WinUI to shut down")
+	}
+	for _, want := range []string{
+		"ExitHelper(TaskAdminService.Run(arguments));",
+		"ExitHelper(exitCode);",
+	} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("WinUI helper mode is missing shared exit path %q", want)
+		}
+	}
+}
+
 func TestWindowsControlPanelPreservesOAuthAccessTokenTTLWithoutExposingIt(t *testing.T) {
 	files := []string{
 		filepath.Join("..", "..", "desktop", "windows", "shared", "Models", "RuntimeModels.cs"),

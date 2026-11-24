@@ -57,7 +57,7 @@ public partial class NativeApp : Application
     {
         if (arguments.Any(value => string.Equals(value, "--task-admin", StringComparison.OrdinalIgnoreCase)))
         {
-            Environment.Exit(TaskAdminService.Run(arguments));
+            ExitHelper(TaskAdminService.Run(arguments));
             return true;
         }
 
@@ -97,7 +97,7 @@ public partial class NativeApp : Application
         return false;
     }
 
-    private static void RunHelperAndExit(Func<RuntimeService, Task<int>> operation, string runtimeRoot)
+    private void RunHelperAndExit(Func<RuntimeService, Task<int>> operation, string runtimeRoot)
     {
         // Helper 模式没有窗口、托盘或其他 WinUI 生命周期根。OnLaunched 返回后进程可能立即退出，
         // 所以不能 fire-and-forget；改在线程池执行异步工作并同步等待，避免 UI SynchronizationContext
@@ -123,7 +123,16 @@ public partial class NativeApp : Application
             }
         }).GetAwaiter().GetResult();
 
-        Environment.Exit(exitCode);
+        ExitHelper(exitCode);
+    }
+
+    private void ExitHelper(int exitCode)
+    {
+        // OnLaunched 中 WinUI 尚未关闭，直接 Environment.Exit 会让 CoreMessaging 在 DLL 卸载阶段
+        // fail-fast，真实退出码被替换为 0xC0000602。先记录退出码再正常关闭 WinUI，
+        // Application.Start 返回后 Main 以该退出码结束。
+        Environment.ExitCode = exitCode;
+        Exit();
     }
 
     private void ShowControlPanel()
