@@ -25,7 +25,7 @@ func MethodAllowed(method, path string) bool {
 		_, ok := runtimeTaskID(cleanPath)
 		return ok
 	}
-	return method == http.MethodPost && (cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/mcp" || cleanPath == "/internal/runtime/mcp/oauth/callback" || cleanPath == "/internal/runtime/evolve" || cleanPath == ResourceLibraryPath)
+	return method == http.MethodPost && (cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/mcp" || cleanPath == "/internal/runtime/mcp/oauth/callback" || cleanPath == ResourceLibraryPath)
 }
 
 func AllowHeader(path string) string {
@@ -36,7 +36,7 @@ func AllowHeader(path string) string {
 	if cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/mcp" {
 		return "GET, POST"
 	}
-	if cleanPath == "/internal/runtime/evolve" || cleanPath == "/internal/runtime/mcp/oauth/callback" {
+	if cleanPath == "/internal/runtime/mcp/oauth/callback" {
 		return "POST"
 	}
 	if cleanPath == ResourceLibraryPath {
@@ -121,13 +121,6 @@ func Dispatch(ctx context.Context, runtime Runtime, request Request) (map[string
 			}
 		}
 		result, err := library.RuntimeResourceLibrary(ctx, method, request.Body)
-		return map[string]any(result), err
-	case path == "/internal/runtime/evolve" && method == http.MethodPost:
-		args, err := decodeRuntimeEvolutionRequest(request.Body)
-		if err != nil {
-			return nil, err
-		}
-		result, err := runtime.RuntimeEvolve(ctx, args)
 		return map[string]any(result), err
 	case path == "/internal/runtime/mcp/oauth/callback" && method == http.MethodPost:
 		oauthRuntime, ok := runtime.(MCPOAuthRuntime)

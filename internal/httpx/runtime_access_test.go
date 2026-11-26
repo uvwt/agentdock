@@ -70,10 +70,6 @@ func TestRuntimeAPIRequiresJSONContentTypeForBodyPostEndpoints(t *testing.T) {
 			body: `{"state":"missing","code":"abc"}`,
 		},
 		{
-			path: "/internal/runtime/evolve",
-			body: `{"intent":"propose"}`,
-		},
-		{
 			path: "/internal/runtime/resource-library",
 			body: `{"action":"export_prepare","kind":"skill","name":"demo"}`,
 		},

@@ -24,25 +24,12 @@ func taskCreateInputProperties(cfg config.Config) map[string]any {
 		},
 	}
 	if cfg.NexusEndpoint != "" {
-		props["project"] = stringProp("Optional project identifier used to hard-scope Evolution guidance and evidence candidates. Omit only for global tasks.")
-		props["device"] = stringProp("Optional device identifier used to hard-scope device-specific Evolution guidance and evidence candidates.")
 		props["steps"] = map[string]any{
 			"type": "array", "maxItems": 12, "description": "Concrete task steps. Required when composing multiple source templates.",
 			"items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"id", "title"}, "properties": map[string]any{"id": stringProp("Stable step id."), "title": stringProp("Human-readable step title.")}},
 		}
 		props["template_id"] = stringProp("Single active workflow template to apply. Its current active version is resolved automatically.")
 		props["source_template_ids"] = map[string]any{"type": "array", "minItems": 2, "maxItems": 3, "items": map[string]any{"type": "string"}, "description": "Two or three templates already composed by the model into steps and completion_conditions."}
-		props["learning_checks"] = map[string]any{
-			"type": "array", "maxItems": 3, "description": "Advanced create-only blinded validation checks. Bind these Evolution ids before Guidance is generated; support-bearing targets are withheld from this Task's Guidance and may be assessed only from its frozen final_review.",
-			"items": map[string]any{
-				"type": "object", "additionalProperties": false, "required": []string{"evolution_id", "on_success", "on_failure"},
-				"properties": map[string]any{
-					"evolution_id": stringProp("Evolution id intentionally selected for this pre-execution validation."),
-					"on_success":   map[string]any{"type": "string", "enum": []string{"support", "contradict", "none"}},
-					"on_failure":   map[string]any{"type": "string", "enum": []string{"support", "contradict", "none"}},
-				},
-			},
-		}
 	}
 	return props
 }
@@ -103,10 +90,6 @@ func ManageOutputSchema(cfg config.Config) map[string]any {
 	}
 	if cfg.NexusEndpoint != "" {
 		props["next_required_action"] = stringProp("Concise guidance for checkpoint progress, template composition, or final review.")
-		props["guidance_context"] = arrayProp("Mature evolution records automatically recalled before task execution.")
-		props["review_revision"] = stringProp("Immutable final_review revision used to bind evolution evidence.")
-		props["evolution_candidates"] = arrayProp("Read-only candidate experiences that the saved final_review may verify.")
-		props["evolution_warning"] = stringProp("Non-blocking evolution-side warning; Task lifecycle still succeeded.")
 	}
 	return toolcontract.OutputObject(props)
 }

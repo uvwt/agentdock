@@ -57,13 +57,12 @@ type FinalReviewInput struct {
 }
 
 type FinalReview struct {
-	Status         string    `json:"status"`
-	Summary        string    `json:"summary"`
-	VerifiedFacts  []string  `json:"verified_facts,omitempty"`
-	OpenRisks      []string  `json:"open_risks,omitempty"`
-	MissingChecks  []string  `json:"missing_checks,omitempty"`
-	ReviewRevision string    `json:"review_revision"`
-	ReviewedAt     time.Time `json:"reviewed_at"`
+	Status        string    `json:"status"`
+	Summary       string    `json:"summary"`
+	VerifiedFacts []string  `json:"verified_facts,omitempty"`
+	OpenRisks     []string  `json:"open_risks,omitempty"`
+	MissingChecks []string  `json:"missing_checks,omitempty"`
+	ReviewedAt    time.Time `json:"reviewed_at"`
 }
 
 type Event struct {
@@ -73,27 +72,23 @@ type Event struct {
 }
 
 type Task struct {
-	SchemaVersion         int                    `json:"schema_version"`
-	ID                    string                 `json:"id"`
-	Title                 string                 `json:"title"`
-	Goal                  string                 `json:"goal"`
-	Project               string                 `json:"project,omitempty"`
-	Device                string                 `json:"device,omitempty"`
-	Status                Status                 `json:"status"`
-	Phase                 Phase                  `json:"phase"`
-	Conditions            []Condition            `json:"conditions"`
-	Template              *TemplateSelection     `json:"template,omitempty"` // 仅用于读取旧任务状态。
-	SourceTemplates       []TemplateReference    `json:"source_templates,omitempty"`
-	Steps                 []TaskStep             `json:"steps,omitempty"`
-	Events                []Event                `json:"events"`
-	Blocker               string                 `json:"blocker,omitempty"`
-	Summary               string                 `json:"summary,omitempty"`
-	GuidanceContext       []EvolutionContextItem `json:"guidance_context,omitempty"`
-	EvolutionGuidanceSeen []string               `json:"evolution_guidance_seen,omitempty"`
-	EvolutionCandidates   []EvolutionContextItem `json:"evolution_candidates,omitempty"`
-	EvolutionBindings     []EvolutionBinding     `json:"evolution_bindings,omitempty"`
-	FinalReview           *FinalReview           `json:"final_review,omitempty"`
-	CreatedAt             time.Time              `json:"created_at"`
-	UpdatedAt             time.Time              `json:"updated_at"`
-	CompletedAt           *time.Time             `json:"completed_at,omitempty"`
+	SchemaVersion   int                 `json:"schema_version"`
+	ID              string              `json:"id"`
+	Title           string              `json:"title"`
+	Goal            string              `json:"goal"`
+	Project         string              `json:"project,omitempty"`
+	Device          string              `json:"device,omitempty"`
+	Status          Status              `json:"status"`
+	Phase           Phase               `json:"phase"`
+	Conditions      []Condition         `json:"conditions"`
+	Template        *TemplateSelection  `json:"template,omitempty"` // 仅用于读取旧任务状态。
+	SourceTemplates []TemplateReference `json:"source_templates,omitempty"`
+	Steps           []TaskStep          `json:"steps,omitempty"`
+	Events          []Event             `json:"events"`
+	Blocker         string              `json:"blocker,omitempty"`
+	Summary         string              `json:"summary,omitempty"`
+	FinalReview     *FinalReview        `json:"final_review,omitempty"`
+	CreatedAt       time.Time           `json:"created_at"`
+	UpdatedAt       time.Time           `json:"updated_at"`
+	CompletedAt     *time.Time          `json:"completed_at,omitempty"`
 }

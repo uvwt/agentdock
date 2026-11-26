@@ -39,16 +39,29 @@ func TestTaskManageSchemaHidesNexusExtensionsWithoutNexus(t *testing.T) {
 func TestTaskManageSchemaKeepsNexusExtensionsWithNexus(t *testing.T) {
 	cfg := config.Config{NexusEndpoint: "http://127.0.0.1:18777"}
 	inputProps := testInputSchemaForConfig("task_manage", cfg)["properties"].(map[string]any)
-	for _, field := range []string{"template_id", "source_template_ids", "learning_checks"} {
+	for _, field := range []string{"template_id", "source_template_ids"} {
 		if _, ok := inputProps[field]; !ok {
 			t.Fatalf("task_manage input schema should expose %s with Nexus", field)
 		}
 	}
-	outputProps := testOutputSchemaForConfig("task_manage", cfg)["properties"].(map[string]any)
-	for _, field := range []string{"guidance_context", "review_revision", "evolution_candidates", "evolution_warning"} {
-		if _, ok := outputProps[field]; !ok {
-			t.Fatalf("task_manage output schema should expose %s with Nexus", field)
+	if _, ok := inputProps["learning_checks"]; ok {
+		t.Fatal("task_manage input schema must not expose removed learning_checks field")
+	}
+	for _, field := range []string{"project", "device"} {
+		description, _ := inputProps[field].(map[string]any)["description"].(string)
+		if strings.Contains(strings.ToLower(description), "evolution") {
+			t.Fatalf("task_manage %s description must not mention evolution: %q", field, description)
 		}
+	}
+	outputProps := testOutputSchemaForConfig("task_manage", cfg)["properties"].(map[string]any)
+	for _, removed := range []string{"guidance_context", "review_revision", "evolution_candidates", "evolution_warning"} {
+		if _, ok := outputProps[removed]; ok {
+			t.Fatalf("task_manage output schema must not expose removed evolution field %s", removed)
+		}
+	}
+	nextDescription, _ := outputProps["next_required_action"].(map[string]any)["description"].(string)
+	if !strings.Contains(nextDescription, "template composition") {
+		t.Fatalf("task_manage next_required_action should mention template composition with Nexus: %q", nextDescription)
 	}
 }
 

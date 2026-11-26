@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/uvwt/agentdock/internal/config"
-	"github.com/uvwt/agentdock/internal/evolution"
 	toolacp "github.com/uvwt/agentdock/internal/tool/acp"
 	toolcommand "github.com/uvwt/agentdock/internal/tool/command"
 	toolcontract "github.com/uvwt/agentdock/internal/tool/contract"
@@ -80,7 +79,6 @@ func TestTypedToolRequestFieldsMatchPublishedSchemas(t *testing.T) {
 		{name: toolcommand.ToolSessionAct, request: toolcommand.SessionActRequest{}, exact: true},
 		{name: tooltask.ToolTaskManage, request: tooltask.ManageRequest{}, exact: true},
 		{name: "workflow_template_manage", request: tooltask.WorkflowRequest{}},
-		{name: evolution.ToolName, request: evolution.Request{}},
 		{name: toolacp.ToolSession, request: toolacp.SessionRequest{}, exact: true},
 		{name: toolacp.ToolPrompt, request: toolacp.PromptRequest{}, exact: true},
 		{name: toolacp.ToolInteraction, request: toolacp.InteractionRequest{}, exact: true},

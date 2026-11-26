@@ -28,7 +28,6 @@ type Runtime interface {
 	RuntimeMCPServers(context.Context) (app.Result, error)
 	RuntimeMCPServer(context.Context, string) (app.Result, error)
 	RuntimeMCPManage(context.Context, map[string]any) (app.Result, error)
-	RuntimeEvolve(context.Context, map[string]any) (app.Result, error)
 }
 
 // MCPOAuthRuntime 是可选能力：只有支持 Remote MCP OAuth 的 Runtime 才实现。

@@ -200,7 +200,7 @@ func taskStepInputsFromTemplate(template taskstate.Template) []taskstate.TaskSte
 func templateReferences(templates []taskstate.Template) []taskstate.TemplateReference {
 	refs := make([]taskstate.TemplateReference, 0, len(templates))
 	for _, template := range templates {
-		refs = append(refs, taskstate.TemplateReference{ID: template.ID, Version: template.Version, Hash: template.Hash, SourceEvolutionID: template.SourceEvolutionID})
+		refs = append(refs, taskstate.TemplateReference{ID: template.ID, Version: template.Version, Hash: template.Hash})
 	}
 	return refs
 }
