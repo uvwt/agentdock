@@ -253,12 +253,7 @@ func applyFinalReview(task *Task, input FinalReviewInput, now time.Time) error {
 		return errors.New("failed final review requires at least one risk")
 	}
 
-	reviewRevision, err := newOpaqueID("rev_")
-	if err != nil {
-		return err
-	}
-	task.FinalReview = &FinalReview{Status: status, Summary: summary, VerifiedFacts: verifiedFacts, OpenRisks: openRisks, MissingChecks: missingChecks, ReviewRevision: reviewRevision, ReviewedAt: now}
-	task.EvolutionCandidates = nil
+	task.FinalReview = &FinalReview{Status: status, Summary: summary, VerifiedFacts: verifiedFacts, OpenRisks: openRisks, MissingChecks: missingChecks, ReviewedAt: now}
 	if status == FinalReviewPass {
 		task.Phase = PhaseCloseout
 	}

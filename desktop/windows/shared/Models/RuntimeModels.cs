@@ -488,6 +488,14 @@ public sealed class UpdateCheckResult
 
 public sealed record UpdateProgress(int? Percentage, bool IsIndeterminate, string Message);
 
+public enum UpdateRunOutcome
+{
+    Completed,
+    HandedOff
+}
+
+public sealed record UpdateRunResult(UpdateRunOutcome Outcome, string Message, string TargetVersion = "");
+
 internal sealed class UpdateProgressEvent
 {
     [JsonPropertyName("schema_version")]
@@ -498,6 +506,12 @@ internal sealed class UpdateProgressEvent
 
     [JsonPropertyName("stage")]
     public string Stage { get; set; } = "";
+
+    [JsonPropertyName("current_version")]
+    public string CurrentVersion { get; set; } = "";
+
+    [JsonPropertyName("target_version")]
+    public string TargetVersion { get; set; } = "";
 
     [JsonPropertyName("asset")]
     public string Asset { get; set; } = "";
@@ -510,6 +524,96 @@ internal sealed class UpdateProgressEvent
 
     [JsonPropertyName("error")]
     public string Error { get; set; } = "";
+}
+
+internal sealed class InstallerUpdateHandoffMarker
+{
+    [JsonPropertyName("schema_version")]
+    public int SchemaVersion { get; set; }
+
+    [JsonPropertyName("source_version")]
+    public string SourceVersion { get; set; } = "";
+
+    [JsonPropertyName("target_version")]
+    public string TargetVersion { get; set; } = "";
+
+    [JsonPropertyName("created_at")]
+    public string CreatedAt { get; set; } = "";
+}
+
+public sealed class UpdateProgressStreamTracker
+{
+    public bool SawAnyEvent { get; private set; }
+    public bool SawCompleted { get; private set; }
+    public bool SawHandedOff { get; private set; }
+    public string TargetVersion { get; private set; } = "";
+
+    internal void Observe(UpdateProgressEvent updateEvent)
+    {
+        SawAnyEvent = true;
+        if (!string.IsNullOrWhiteSpace(updateEvent.TargetVersion))
+        {
+            TargetVersion = updateEvent.TargetVersion.Trim();
+        }
+        if (string.Equals(updateEvent.Type, "handed_off", StringComparison.Ordinal))
+        {
+            SawHandedOff = true;
+        }
+        else if (string.Equals(updateEvent.Type, "completed", StringComparison.Ordinal))
+        {
+            SawCompleted = true;
+        }
+    }
+
+    // 区分“已移交给安装器/后台辅助进程”与“真正更新完成”：
+    // 1. 明确收到 handed_off 时返回 HandedOff；
+    // 2. 明确收到 completed 时返回 Completed；
+    // 3. 兼容旧版 updater：若收到了进度事件但退出码为 0 前从未收到 completed（例如在 installing 阶段交接给 Setup.exe 后直接退出），
+    //    一律按 HandedOff 处理，避免提前误弹“更新完成”。
+    public UpdateRunOutcome ResolveExitZeroOutcome()
+    {
+        if (SawHandedOff) return UpdateRunOutcome.HandedOff;
+        if (SawCompleted) return UpdateRunOutcome.Completed;
+        return SawAnyEvent ? UpdateRunOutcome.HandedOff : UpdateRunOutcome.Completed;
+    }
+
+    public static bool ShouldNotifyInstallerUpdateCompletion(
+        string? markerTargetVersion,
+        string? markerCreatedAt,
+        string? runningVersion,
+        DateTimeOffset now)
+    {
+        var expected = NormalizeVersionToken(markerTargetVersion);
+        var actual = NormalizeVersionToken(runningVersion);
+        if (string.IsNullOrEmpty(expected) || string.IsNullOrEmpty(actual))
+        {
+            return false;
+        }
+        if (!string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(markerCreatedAt) ||
+            !DateTimeOffset.TryParse(
+                markerCreatedAt,
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind,
+                out var createdAt))
+        {
+            return false;
+        }
+        var age = now - createdAt;
+        return age >= TimeSpan.FromMinutes(-5) && age <= TimeSpan.FromMinutes(30);
+    }
+
+    private static string NormalizeVersionToken(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version)) return "";
+        var trimmed = version.Trim();
+        return trimmed.StartsWith('v') || trimmed.StartsWith('V')
+            ? trimmed[1..]
+            : trimmed;
+    }
 }
 
 internal sealed class UpdateTransactionState

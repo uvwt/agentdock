@@ -334,6 +334,7 @@
 "%@ background registration returned an unknown state after the update." = "更新后 %@ 的后台注册返回了未知状态。";
 "AgentDock Core needs background-item approval in System Settings." = "AgentDock Core 需要在系统设置中批准后台运行。";
 "AgentDock Tunnel needs background-item approval in System Settings." = "AgentDock Tunnel 需要在系统设置中批准后台运行。";
+"If Accessibility, Screen Recording, or Automation permissions stop working after this update, re-enable AgentDock in System Settings → Privacy & Security." = "如果更新后辅助功能、录屏或自动化权限失效，请在“系统设置 → 隐私与安全性”中重新开启 AgentDock。";
 "The active AgentDock App version %@ does not match the update target %@." = "当前 AgentDock App 版本 %@ 与更新目标 %@ 不一致。";
 "AgentDock update transaction did not report a final result. Recovery state was preserved." = "AgentDock 更新事务未返回最终结果，已保留恢复状态。";
 "AgentDock update transaction final result did not match the pending update. Recovery state was preserved." = "AgentDock 更新事务的最终结果与待处理更新不一致，已保留恢复状态。";

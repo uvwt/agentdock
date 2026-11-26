@@ -217,6 +217,9 @@ func TestNexusAvailableExposesWorkflowAndRecallContext(t *testing.T) {
 	if !strings.Contains(toolNames, "workflow_template_manage") {
 		t.Fatalf("workflow_template_manage should be available with Nexus: %s", toolNames)
 	}
+	if strings.Contains(toolNames, "evolve") {
+		t.Fatalf("evolve tool must not be exposed even with Nexus: %s", toolNames)
+	}
 
 	result, err := rt.Call(context.Background(), "agentdock_context", map[string]any{})
 	if err != nil {

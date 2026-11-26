@@ -69,9 +69,6 @@ func (r *runtimeStub) RuntimeMCPManage(_ context.Context, args map[string]any) (
 	r.mcpArgs = args
 	return app.Result{"changed": true}, nil
 }
-func (r *runtimeStub) RuntimeEvolve(context.Context, map[string]any) (app.Result, error) {
-	return app.Result{}, nil
-}
 
 type diagnosticsRuntimeStub struct{ runtimeStub }
 
@@ -92,7 +89,6 @@ func TestMethodContract(t *testing.T) {
 		{"POST", "/internal/runtime/capabilities", "GET, POST", true},
 		{"DELETE", "/internal/runtime/tasks/task-1", "GET, DELETE", true},
 		{"POST", "/internal/runtime/tasks/task-1", "GET, DELETE", false},
-		{"GET", "/internal/runtime/evolve", "POST", true},
 		{"GET", "/internal/runtime/resource-library", "GET, POST", true},
 		{"POST", "/internal/runtime/resource-library", "GET, POST", true},
 		{"DELETE", "/internal/runtime/resource-library", "GET, POST", false},
@@ -302,11 +298,6 @@ func TestDispatchKeepsRouteSpecificValidationErrors(t *testing.T) {
 			name: "MCP body limit",
 			req:  Request{Method: "POST", Path: "/internal/runtime/mcp", Body: []byte(strings.Repeat("x", 64*1024+1))},
 			code: "INVALID_MCP_REQUEST",
-		},
-		{
-			name: "evolve unknown field",
-			req:  Request{Method: "POST", Path: "/internal/runtime/evolve", Body: []byte(`{"intent":"propose","unknown":true}`)},
-			code: "INVALID_EVOLVE_REQUEST",
 		},
 	}
 	for _, test := range tests {

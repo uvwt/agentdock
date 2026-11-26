@@ -21,17 +21,34 @@ public sealed partial class SettingsPage : Page
     private bool _publicEndpointCheckInProgress;
     private bool _componentOperationInProgress;
     private bool _updateCheckInProgress;
+    private bool _updateHandedOffToInstaller;
+    private string _updateHandoffMessage = "";
     private Button? _updateButton;
     private TextBlock? _tunnelStatusText;
     private readonly DispatcherTimer _tunnelStatusTimer = new() { Interval = TimeSpan.FromSeconds(5) };
+    private readonly DispatcherTimer _updateHandoffResetTimer = new() { Interval = TimeSpan.FromSeconds(90) };
     private bool _tunnelStatusRefreshInProgress;
 
     public SettingsPage()
     {
         InitializeComponent();
         _tunnelStatusTimer.Tick += async (_, _) => await RefreshTunnelStatusAsync();
+        _updateHandoffResetTimer.Tick += (_, _) =>
+        {
+            _updateHandoffResetTimer.Stop();
+            if (!_updateHandedOffToInstaller) return;
+            // 兜底恢复：若用户取消安装程序或安装器未能接管关闭当前进程，避免按钮永久锁死。
+            _updateHandedOffToInstaller = false;
+            _updateHandoffMessage = "";
+            _updateCheckInProgress = false;
+            SetUpdateCheckButtonState();
+        };
         Loaded += (_, _) => _tunnelStatusTimer.Start();
-        Unloaded += (_, _) => _tunnelStatusTimer.Stop();
+        Unloaded += (_, _) =>
+        {
+            _tunnelStatusTimer.Stop();
+            _updateHandoffResetTimer.Stop();
+        };
         SettingsPageTitle.Text = UiText.Get("Settings");
         PermissionsNavigationItem.Content = UiText.Get("Permissions");
         StartupNavigationItem.Content = UiText.Get("Startup");
@@ -396,7 +413,7 @@ public sealed partial class SettingsPage : Page
         applicationRows.Children.Add(Divider());
         var update = new Button
         {
-            Content = _updateCheckInProgress ? UiText.Get("CheckingForUpdates") : UiText.Get("CheckForUpdates"),
+            Content = ResolveUpdateButtonText(),
             IsEnabled = !_updateCheckInProgress
         };
         _updateButton = update;
@@ -1089,6 +1106,9 @@ public sealed partial class SettingsPage : Page
     {
         if (_runtime is null || _updateCheckInProgress) return;
         _updateCheckInProgress = true;
+        _updateHandedOffToInstaller = false;
+        _updateHandoffMessage = "";
+        _updateHandoffResetTimer.Stop();
         SetUpdateCheckButtonState();
         try
         {
@@ -1116,26 +1136,51 @@ public sealed partial class SettingsPage : Page
                         : value.Message;
                 }
             });
-            var output = await _runtime.RunUpdateAsync(progress);
-            await ShowMessageAsync(UiText.Get("AgentDockUpdate"), LastLine(output, UiText.Get("UpdateCompleted")));
+            var updateResult = await _runtime.RunUpdateAsync(progress);
+            if (updateResult.Outcome == UpdateRunOutcome.HandedOff)
+            {
+                // 已将安装与重启移交给外部 Inno Setup 安装程序，严禁提前弹出“更新完成。”对话框；
+                // 保持按钮为过渡提示态，静候安装程序关闭当前进程并拉起新版本。
+                _updateHandedOffToInstaller = true;
+                _updateHandoffMessage = string.IsNullOrWhiteSpace(updateResult.Message)
+                    ? UiText.Get("UpdateInstallerHandedOff")
+                    : updateResult.Message;
+                SetUpdateCheckButtonState();
+                _updateHandoffResetTimer.Start();
+                return;
+            }
+            await ShowMessageAsync(UiText.Get("AgentDockUpdate"), LastLine(updateResult.Message, UiText.Get("UpdateCompleted")));
         }
         catch (Exception ex) { await ShowMessageAsync(UiText.Get("UpdateFailed"), ex.Message); }
         finally
         {
-            _updateCheckInProgress = false;
-            SetUpdateCheckButtonState();
+            if (!_updateHandedOffToInstaller)
+            {
+                _updateCheckInProgress = false;
+                SetUpdateCheckButtonState();
+            }
         }
     }
 
     private void SetUpdateCheckButtonState()
     {
         if (_updateButton is null) return;
-        _updateButton.Content = _updateCheckInProgress
-            ? UiText.Get("CheckingForUpdates")
-            : UiText.Get("CheckForUpdates");
+        _updateButton.Content = ResolveUpdateButtonText();
         _updateButton.IsEnabled = !_updateCheckInProgress;
     }
 
+    private string ResolveUpdateButtonText()
+    {
+        if (_updateHandedOffToInstaller)
+        {
+            return string.IsNullOrWhiteSpace(_updateHandoffMessage)
+                ? UiText.Get("UpdateInstallerHandedOff")
+                : _updateHandoffMessage;
+        }
+        return _updateCheckInProgress
+            ? UiText.Get("CheckingForUpdates")
+            : UiText.Get("CheckForUpdates");
+    }
     private async Task ShowMessageAsync(string title, string message)
     {
         var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = title, Content = message, CloseButtonText = UiText.Get("Confirm") };

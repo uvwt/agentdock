@@ -23,7 +23,6 @@ type taskManageInput struct {
 	Steps                []taskstate.TaskStepInput
 	TemplateID           string
 	SourceTemplateIDs    []string
-	LearningChecks       []taskstate.EvolutionBinding
 	Status               string
 	Limit                int
 	TaskID               string
@@ -61,18 +60,10 @@ type workflowTemplateMatchRequest struct {
 	Type   string `json:"type"`
 }
 
-func normalizeTaskManageRequest(request ManageRequest) (taskManageInput, error) {
+func normalizeTaskManageRequest(request ManageRequest) taskManageInput {
 	steps := make([]taskstate.TaskStepInput, len(request.Steps))
 	for i, step := range request.Steps {
 		steps[i] = taskstate.TaskStepInput{ID: step.ID, Title: step.Title}
-	}
-	learningChecks := make([]taskstate.EvolutionBinding, len(request.LearningChecks))
-	for i, check := range request.LearningChecks {
-		learningChecks[i] = taskstate.EvolutionBinding{
-			EvolutionID: check.EvolutionID,
-			OnSuccess:   check.OnSuccess,
-			OnFailure:   check.OnFailure,
-		}
 	}
 
 	input := taskManageInput{
@@ -85,7 +76,6 @@ func normalizeTaskManageRequest(request ManageRequest) (taskManageInput, error) 
 		Steps:                steps,
 		TemplateID:           strings.TrimSpace(request.TemplateID),
 		SourceTemplateIDs:    append([]string(nil), request.SourceTemplateIDs...),
-		LearningChecks:       learningChecks,
 		Status:               strings.ToLower(strings.TrimSpace(request.Status)),
 		Limit:                intValue(request.Limit, 50),
 		TaskID:               request.TaskID,
@@ -99,10 +89,7 @@ func normalizeTaskManageRequest(request ManageRequest) (taskManageInput, error) 
 		input.CompletedStepIDsSet = true
 		input.CompletedStepIDs = append([]string(nil), (*request.CompletedStepIDs)...)
 	}
-	if len(input.LearningChecks) > 3 {
-		return input, toolErrorDetails("VALIDATION_ERROR", "learning_checks cannot exceed 3", "validation", map[string]any{"field": "learning_checks"})
-	}
-	return input, nil
+	return input
 }
 
 func normalizeWorkflowRequest(request WorkflowRequest) workflowTemplateInput {
@@ -149,12 +136,9 @@ func (input *workflowTemplateInput) applyTemplateGuardrails() {
 }
 
 func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, error) {
-	input, err := normalizeTaskManageRequest(request)
-	if err != nil {
-		return nil, err
-	}
+	input := normalizeTaskManageRequest(request)
 	var task taskstate.Task
-	var evolutionWarning string
+	var err error
 	switch input.Action {
 	case "create":
 		steps := append([]taskstate.TaskStepInput(nil), input.Steps...)
@@ -172,7 +156,7 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 				steps = taskStepInputsFromTemplate(template)
 			}
 			conditions = append(append([]string{}, template.CompletionConditions...), conditions...)
-			sourceTemplates = []taskstate.TemplateReference{{ID: template.ID, Version: template.Version, Hash: template.Hash, SourceEvolutionID: template.SourceEvolutionID}}
+			sourceTemplates = []taskstate.TemplateReference{{ID: template.ID, Version: template.Version, Hash: template.Hash}}
 		}
 		if len(input.SourceTemplateIDs) > 0 {
 			if len(input.SourceTemplateIDs) < 2 || len(input.SourceTemplateIDs) > 3 {
@@ -187,31 +171,13 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 			}
 			sourceTemplates = templateReferences(templates)
 		}
-		bindings := append([]taskstate.EvolutionBinding(nil), input.LearningChecks...)
-		if len(bindings) > 0 {
-			if s.evolution == nil || s.config().NexusEndpoint == "" {
-				return nil, taskToolError(fmt.Errorf("learning_checks require Evolution with Nexus configured"))
-			}
-			preflightTask := taskstate.Task{Project: input.Project, Device: input.Device, SourceTemplates: sourceTemplates}
-			bindings, err = s.evolution.ValidateBindings(ctx, preflightTask, bindings)
-			if err != nil {
-				return nil, taskToolError(err)
-			}
-		}
-		task, err = s.tasks.CreateWithContext(input.Title, input.Goal, input.Project, input.Device, conditions, steps, sourceTemplates, bindings...)
+		task, err = s.tasks.CreateWithContext(input.Title, input.Goal, input.Project, input.Device, conditions, steps, sourceTemplates)
 		if err != nil {
 			return nil, taskToolError(err)
 		}
-		task, evolutionWarning = s.refreshGuidanceBestEffort(ctx, task)
 		result := Result{
 			"action": input.Action, "task_id": task.ID, "task_summary": compactTaskSummary(task), "state_dir": s.tasks.Root(),
 			"next_required_action": "Use checkpoint at meaningful recovery points; completed_step_ids/current_step_id can update several steps atomically. Use block only for a real blocker. After all steps and real verification are complete, call final_review, then complete.",
-		}
-		if len(task.GuidanceContext) > 0 {
-			result["guidance_context"] = task.GuidanceContext
-		}
-		if evolutionWarning != "" {
-			result["evolution_warning"] = evolutionWarning
 		}
 		return result, nil
 	case "list":
@@ -252,24 +218,9 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 		task, err = s.tasks.Block(input.TaskID, input.Summary)
 	case "resume":
 		task, err = s.tasks.Resume(input.TaskID, input.Summary)
-		if err == nil {
-			task, evolutionWarning = s.refreshGuidanceBestEffort(ctx, task)
-		}
 	case "final_review":
 		review := taskstate.FinalReviewInput{Status: input.Status, Summary: input.Summary, VerifiedFacts: input.Verified, OpenRisks: input.Risks}
 		task, err = s.tasks.FinalReview(input.TaskID, review)
-		if err == nil {
-			warnings := make([]string, 0, 2)
-			if warning := s.resolveBindingsBestEffort(ctx, task); warning != "" {
-				warnings = append(warnings, warning)
-			}
-			var warning string
-			task, warning = s.refreshCandidatesBestEffort(ctx, task)
-			if warning != "" {
-				warnings = append(warnings, warning)
-			}
-			evolutionWarning = strings.Join(warnings, "; ")
-		}
 	case "complete":
 		task, err = s.tasks.Complete(input.TaskID)
 	default:
@@ -278,18 +229,5 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 	if err != nil {
 		return nil, taskToolError(err)
 	}
-	result := Result{"action": input.Action, "task_id": task.ID, "task_summary": compactTaskSummary(task), "state_dir": s.tasks.Root()}
-	if input.Action == "resume" && len(task.GuidanceContext) > 0 {
-		result["guidance_context"] = task.GuidanceContext
-	}
-	if input.Action == "final_review" && task.FinalReview != nil {
-		result["review_revision"] = task.FinalReview.ReviewRevision
-		if len(task.EvolutionCandidates) > 0 {
-			result["evolution_candidates"] = task.EvolutionCandidates
-		}
-	}
-	if evolutionWarning != "" {
-		result["evolution_warning"] = evolutionWarning
-	}
-	return result, nil
+	return Result{"action": input.Action, "task_id": task.ID, "task_summary": compactTaskSummary(task), "state_dir": s.tasks.Root()}, nil
 }

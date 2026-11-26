@@ -273,13 +273,9 @@ func validateID(id string) error {
 }
 
 func newID() (string, error) {
-	return newOpaqueID("tsk_")
-}
-
-func newOpaqueID(prefix string) (string, error) {
 	raw := make([]byte, 8)
 	if _, err := rand.Read(raw); err != nil {
-		return "", fmt.Errorf("generate %sid: %w", prefix, err)
+		return "", fmt.Errorf("generate task id: %w", err)
 	}
-	return prefix + hex.EncodeToString(raw), nil
+	return "tsk_" + hex.EncodeToString(raw), nil
 }

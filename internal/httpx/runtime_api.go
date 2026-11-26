@@ -30,7 +30,6 @@ func registerRuntimeAPI(mux *http.ServeMux, runtime runtimeapi.Runtime, cfg conf
 	mux.HandleFunc("/internal/runtime/plugins/", h)
 	mux.HandleFunc("/internal/runtime/tasks", h)
 	mux.HandleFunc("/internal/runtime/tasks/", h)
-	mux.HandleFunc("/internal/runtime/evolve", h)
 	mux.HandleFunc(runtimeapi.ResourceLibraryPath, h)
 	mux.HandleFunc("/internal/runtime/mcp", h)
 	mux.HandleFunc("/internal/runtime/mcp/", h)
@@ -110,7 +109,6 @@ func runtimeRequiresJSONContentType(r *http.Request) bool {
 	cleanPath := strings.TrimSuffix(r.URL.Path, "/")
 	return cleanPath == "/internal/runtime/mcp" ||
 		cleanPath == "/internal/runtime/mcp/oauth/callback" ||
-		cleanPath == "/internal/runtime/evolve" ||
 		cleanPath == runtimeapi.ResourceLibraryPath
 }
 

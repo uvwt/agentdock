@@ -317,6 +317,7 @@ func run(ctx context.Context, opts options) error {
 	}
 	if result.HandedOff {
 		fmt.Fprintf(opts.Output, "Windows 更新已交给辅助进程，将自动替换并重启到 %s。\n", targetVersion)
+		reportUpdateHandedOff(opts.Progress, currentVersion, targetVersion, archiveAsset.Name)
 		return nil
 	}
 	if result.Restarted {
@@ -380,6 +381,7 @@ func runInstallerOwnedUpdate(ctx context.Context, opts options, inspection updat
 	if !result.HandedOff {
 		return errors.New("平台安装器没有接管更新")
 	}
+	reportUpdateHandedOff(opts.Progress, currentVersion, targetVersion, asset.Name)
 	fmt.Fprintf(opts.Output, "更新已交给完整安装程序：%s → %s。AgentDock 将由安装程序完成替换并重新启动。\n", currentVersion, targetVersion)
 	return nil
 }

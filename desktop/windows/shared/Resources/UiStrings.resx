@@ -335,6 +335,12 @@ Update now?</value>
   <data name="UpdateCompleted" xml:space="preserve">
     <value>Update completed.</value>
   </data>
+  <data name="UpdateCompletedVersion" xml:space="preserve">
+    <value>Updated to {0}.</value>
+  </data>
+  <data name="UpdateInstallerHandedOff" xml:space="preserve">
+    <value>Starting installer to apply update…</value>
+  </data>
   <data name="UpdateFailed" xml:space="preserve">
     <value>Update failed.</value>
   </data>

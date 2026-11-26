@@ -62,6 +62,8 @@ final class UpdateProgressWindowController: NSWindowController {
             } else {
                 showCompletion(targetVersion: targetVersion, warning: nil)
             }
+        case .handedOff:
+            setIndeterminateStatus(L10n.text("Finishing update…"))
         case .stage, .progress:
             guard let stage = event.stage else { return }
             render(stage: stage, event: event)
@@ -75,9 +77,10 @@ final class UpdateProgressWindowController: NSWindowController {
         } else {
             statusLabel.stringValue = L10n.text("Update completed.")
         }
-        detailLabel.stringValue = warning ?? ""
+        setDetailText(warning)
         setFinishedProgress(success: true)
         doneButton.isHidden = false
+        resizeWindowToFitContent()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -85,9 +88,10 @@ final class UpdateProgressWindowController: NSWindowController {
     func showFailure(_ message: String) {
         titleLabel.stringValue = L10n.text("AgentDock update failed")
         statusLabel.stringValue = L10n.text("Update failed")
-        detailLabel.stringValue = message
+        setDetailText(message)
         setFinishedProgress(success: false)
         doneButton.isHidden = false
+        resizeWindowToFitContent()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -95,9 +99,10 @@ final class UpdateProgressWindowController: NSWindowController {
     private func showUpToDate(version: String) {
         titleLabel.stringValue = L10n.text("AgentDock is up to date")
         statusLabel.stringValue = AppVersion.display(version)
-        detailLabel.stringValue = ""
+        setDetailText(nil)
         setFinishedProgress(success: true)
         doneButton.isHidden = false
+        resizeWindowToFitContent()
         present()
     }
 
@@ -107,6 +112,9 @@ final class UpdateProgressWindowController: NSWindowController {
         statusLabel.font = .systemFont(ofSize: 13, weight: .medium)
         detailLabel.textColor = .secondaryLabelColor
         detailLabel.lineBreakMode = .byWordWrapping
+        detailLabel.maximumNumberOfLines = 0
+        detailLabel.preferredMaxLayoutWidth = 412
+        detailLabel.isHidden = true
 
         progressIndicator.style = .bar
         progressIndicator.controlSize = .regular
@@ -153,11 +161,12 @@ final class UpdateProgressWindowController: NSWindowController {
         titleLabel.stringValue = L10n.text("Updating AgentDock")
         versionLabel.stringValue = ""
         statusLabel.stringValue = L10n.text("Checking for updates…")
-        detailLabel.stringValue = ""
+        setDetailText(nil)
         doneButton.isHidden = true
         progressIndicator.isIndeterminate = true
         progressIndicator.doubleValue = 0
         progressIndicator.startAnimation(nil)
+        resizeWindowToFitContent()
     }
 
     private func render(stage: UpdateProgressStage, event: UpdateProgressEvent) {
@@ -188,25 +197,45 @@ final class UpdateProgressWindowController: NSWindowController {
             progressIndicator.minValue = 0
             progressIndicator.maxValue = Double(total)
             progressIndicator.doubleValue = min(Double(bytes), Double(total))
-            detailLabel.stringValue = L10n.format(
+            setDetailText(L10n.format(
                 "%@ / %@",
                 formattedBytes(bytes),
                 formattedBytes(total)
-            )
+            ))
         } else {
             progressIndicator.isIndeterminate = true
             progressIndicator.startAnimation(nil)
-            detailLabel.stringValue = bytes > 0
+            setDetailText(bytes > 0
                 ? L10n.format("Downloaded %@", formattedBytes(bytes))
-                : ""
+                : nil)
         }
     }
 
     private func setIndeterminateStatus(_ text: String) {
         statusLabel.stringValue = text
-        detailLabel.stringValue = ""
+        setDetailText(nil)
         progressIndicator.isIndeterminate = true
         progressIndicator.startAnimation(nil)
+    }
+
+    private func setDetailText(_ text: String?) {
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        detailLabel.stringValue = trimmed
+        detailLabel.isHidden = trimmed.isEmpty
+    }
+
+    private func resizeWindowToFitContent() {
+        guard let window, let contentView = window.contentView else { return }
+        contentView.layoutSubtreeIfNeeded()
+        let targetHeight = max(220, ceil(contentView.fittingSize.height))
+        var frame = window.frame
+        let targetFrameHeight = window.frameRect(
+            forContentRect: NSRect(x: 0, y: 0, width: 460, height: targetHeight)
+        ).height
+        guard abs(frame.size.height - targetFrameHeight) > 1 else { return }
+        frame.origin.y += frame.size.height - targetFrameHeight
+        frame.size.height = targetFrameHeight
+        window.setFrame(frame, display: true)
     }
 
     private func setFinishedProgress(success: Bool) {

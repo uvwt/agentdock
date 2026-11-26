@@ -3,7 +3,6 @@ package app
 import (
 	mcpcontract "github.com/uvwt/agentdock-protocol/mcpcontract"
 	"github.com/uvwt/agentdock/internal/config"
-	"github.com/uvwt/agentdock/internal/evolution"
 	toolacp "github.com/uvwt/agentdock/internal/tool/acp"
 	toolbrowser "github.com/uvwt/agentdock/internal/tool/browser"
 	toolcommand "github.com/uvwt/agentdock/internal/tool/command"
@@ -64,10 +63,6 @@ func taskToolContract(name string, cfg config.Config) (ToolContract, bool) {
 		return ToolContract{}, false
 	}
 	return ToolContract{InputSchema: inputSchema, OutputSchema: outputSchema}, true
-}
-
-func evolutionToolContract(name string, _ config.Config) (ToolContract, bool) {
-	return staticToolContract(name, evolution.InputSchema, evolution.OutputSchema)
 }
 
 func acpToolContract(name string, _ config.Config) (ToolContract, bool) {

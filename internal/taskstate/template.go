@@ -26,7 +26,6 @@ type Template struct {
 	Version              string         `json:"version"`
 	Title                string         `json:"title"`
 	Description          string         `json:"description,omitempty"`
-	SourceEvolutionID    string         `json:"source_evolution_id,omitempty"`
 	Status               TemplateStatus `json:"status"`
 	Match                MatchRule      `json:"match,omitempty"`
 	CompletionConditions []string       `json:"completion_conditions"`
@@ -54,10 +53,9 @@ type TemplateSelection struct {
 }
 
 type TemplateReference struct {
-	ID                string `json:"id"`
-	Version           string `json:"version"`
-	Hash              string `json:"hash,omitempty"`
-	SourceEvolutionID string `json:"source_evolution_id,omitempty"`
+	ID      string `json:"id"`
+	Version string `json:"version"`
+	Hash    string `json:"hash,omitempty"`
 }
 
 type TaskStepInput struct {

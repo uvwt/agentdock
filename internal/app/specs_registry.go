@@ -8,7 +8,6 @@ func buildToolSpecs() []ToolSpec {
 	specs = append(specs, fileToolSpecs()...)
 	specs = append(specs, commandToolSpecs()...)
 	specs = append(specs, taskManageToolSpecs()...)
-	specs = append(specs, evolutionToolSpecs()...)
 	specs = append(specs, acpToolSpecs()...)
 	specs = append(specs, workflowToolSpecs()...)
 	specs = append(specs, skillToolSpecs()...)
