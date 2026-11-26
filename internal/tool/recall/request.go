@@ -64,24 +64,6 @@ type MaintainRequest struct {
 	MaxResults  *int     `json:"max_results,omitempty"`
 }
 
-// PrivateNoteRequest 是 private_note_manage 的强类型输入。
-type PrivateNoteRequest struct {
-	Action            string   `json:"action"`
-	Query             string   `json:"query,omitempty"`
-	MaxResults        *int     `json:"max_results,omitempty"`
-	Path              string   `json:"path,omitempty"`
-	Category          string   `json:"category,omitempty"`
-	Title             string   `json:"title,omitempty"`
-	Summary           string   `json:"summary,omitempty"`
-	Tags              []string `json:"tags,omitempty"`
-	Content           string   `json:"content,omitempty"`
-	Confirmed         *bool    `json:"confirmed,omitempty"`
-	Overwrite         *bool    `json:"overwrite,omitempty"`
-	MaxBytes          *int     `json:"max_bytes,omitempty"`
-	StatusAction      string   `json:"status_action,omitempty"`
-	MaintenanceAction string   `json:"maintenance_action,omitempty"`
-}
-
 // memorySearchRequest / memoryListRequest 是 Recall HTTP adapter 前的内部强类型参数。
 type memorySearchRequest struct {
 	Query         string

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -230,5 +231,65 @@ func TestRecallRequestTimeoutUsesLongWindowForEmbeddingReindex(t *testing.T) {
 	defaultTimeout := time.Duration(config.RecallTimeoutMS) * time.Millisecond
 	if got := recallRequestTimeout("/v1/recall/search"); got != defaultTimeout {
 		t.Fatalf("unexpected default recall timeout %s", got)
+	}
+}
+
+func TestRecallDefensivelyRejectsPrivateNotesPaths(t *testing.T) {
+	store := map[string]string{}
+	rt, closeServer := newMemoryTestService(t, store)
+	defer closeServer()
+
+	cases := []struct {
+		name string
+		call func() (Result, error)
+	}{
+		{
+			name: "read",
+			call: func() (Result, error) {
+				return rt.Read(context.Background(), ReadRequest{Path: "private-notes/secret.md"})
+			},
+		},
+		{
+			name: "write",
+			call: func() (Result, error) {
+				return rt.Write(context.Background(), WriteRequest{
+					Target:    "markdown",
+					Action:    "create",
+					Path:      "private-notes/secret.md",
+					Content:   "# Secret\n",
+					Confirmed: boolPtrValue(true),
+				})
+			},
+		},
+		{
+			name: "maintain_list",
+			call: func() (Result, error) {
+				return rt.Maintain(context.Background(), MaintainRequest{Action: "list", Prefix: "private-notes/"})
+			},
+		},
+		{
+			name: "maintain_lint",
+			call: func() (Result, error) {
+				return rt.Maintain(context.Background(), MaintainRequest{Action: "lint", Prefix: "private-notes/"})
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := tc.call()
+			if err == nil {
+				t.Fatalf("%s must reject private-notes/ path", tc.name)
+			}
+			if !strings.Contains(err.Error(), "outside") {
+				t.Fatalf("%s unexpected error message: %v", tc.name, err)
+			}
+			if strings.Contains(err.Error(), "private_note_manage") {
+				t.Fatalf("%s error must not recommend removed tool: %v", tc.name, err)
+			}
+		})
+	}
+	if len(store) != 0 {
+		t.Fatalf("rejected private-notes/ requests must not mutate store: %#v", store)
 	}
 }

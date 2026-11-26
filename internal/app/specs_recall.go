@@ -20,8 +20,5 @@ func recallToolSpecs() []ToolSpec {
 		{Name: "recall_maintain", Contract: canonicalToolContract, Title: "Maintain NexusDock Recall", Description: "Run NexusDock Recall maintenance actions such as list, lint, embedding_status, reindex, or reindex_cards.", Availability: requiresNexus, Handler: typedToolHandler("recall_maintain", func(ctx context.Context, r *Runtime, request toolrecall.MaintainRequest) (Result, error) {
 			return r.recall.Maintain(ctx, request)
 		})},
-		{Name: "private_note_manage", Contract: canonicalToolContract, Title: "Manage private notes", Description: "Explicit low-frequency NexusDock private note vault entrypoint. Do not use by default: use only when the user explicitly requests private note access or the content clearly contains sensitive secrets, credentials, or personal information. Search is metadata-only; plaintext is returned only by explicit read, and Git backups contain age ciphertext only. Actions: search, read, write, delete, status, or maintain.", Handler: typedToolHandler("private_note_manage", func(ctx context.Context, r *Runtime, request toolrecall.PrivateNoteRequest) (Result, error) {
-			return r.recall.PrivateNoteManage(ctx, request)
-		}), Availability: requiresNexus},
 	}
 }

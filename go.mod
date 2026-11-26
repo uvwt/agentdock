@@ -12,7 +12,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/modelcontextprotocol/go-sdk v1.8.1-0.20261113120057-0fa5e8407aa3
 	github.com/rogpeppe/go-internal v1.15.0
-	github.com/uvwt/agentdock-protocol v0.9.0
+	github.com/uvwt/agentdock-protocol v0.10.0
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/trace v1.46.0
 	golang.org/x/mod v0.29.0

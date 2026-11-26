@@ -54,7 +54,7 @@ func (svc *Service) Search(ctx context.Context, request SearchRequest) (Result, 
 
 func (svc *Service) Read(ctx context.Context, request ReadRequest) (Result, error) {
 	if strings.HasPrefix(strings.TrimSpace(request.Path), "private-notes/") {
-		return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes is not readable through recall_read; use private_note_manage action=read", "validation")
+		return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes/ paths are outside recall_read scope", "validation")
 	}
 	result, err := svc.memoryRead(ctx, request)
 	if err != nil {
@@ -66,7 +66,7 @@ func (svc *Service) Read(ctx context.Context, request ReadRequest) (Result, erro
 
 func (svc *Service) Write(ctx context.Context, request WriteRequest) (Result, error) {
 	if strings.HasPrefix(strings.TrimSpace(request.Path), "private-notes/") {
-		return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes is not writable through recall_write; use private_note_manage action=write", "validation")
+		return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes/ paths are outside recall_write scope", "validation")
 	}
 	target := strings.ToLower(strings.TrimSpace(request.Target))
 	action := strings.ToLower(strings.TrimSpace(request.Action))
@@ -159,11 +159,7 @@ func (svc *Service) Maintain(ctx context.Context, request MaintainRequest) (Resu
 	}
 	prefix := strings.TrimSpace(request.Prefix)
 	if strings.HasPrefix(prefix, "private-notes") && (action == "list" || action == "lint") {
-		message := "private-notes is not listable through recall_maintain; use private_note_manage action=status status_action=list"
-		if action == "lint" {
-			message = "private-notes is not lintable through recall_maintain; use private_note_manage action=status or action=maintain"
-		}
-		return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", message, "validation")
+		return nil, toolError("PRIVATE_NOTES_OUT_OF_RECALL_SCOPE", "private-notes/ paths are outside recall_maintain scope", "validation")
 	}
 
 	switch action {

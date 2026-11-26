@@ -226,9 +226,9 @@ func TestMemoryPatchConfirmedWrites(t *testing.T) {
 
 func TestMemoryUpdateFactAndLint(t *testing.T) {
 	store := map[string]string{
-		"devices/test.md":                        "---\ntype: test\n---\n\n# Device\nplugin_dir：old\n",
-		"ops/test.md":                            "# Ops\nNo forbidden terms.\n",
-		"private-notes/encrypted/example.md.age": "not utf-8 recall content",
+		"devices/test.md":         "---\ntype: test\n---\n\n# Device\nplugin_dir：old\n",
+		"ops/test.md":             "# Ops\nNo forbidden terms.\n",
+		"attachments/example.bin": "not utf-8 recall content",
 	}
 	rt, closeServer := newMemoryTestService(t, store)
 	defer closeServer()

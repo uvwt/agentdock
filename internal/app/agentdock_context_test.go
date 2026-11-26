@@ -397,7 +397,7 @@ func TestAgentDockLocalContextSkipsSharedNexusLookups(t *testing.T) {
 		t.Fatalf("local-only context duplicated Bridge Hello runtime facts: %#v", contextResult.Runtime)
 	}
 	rules := strings.Join(contextResult.Rules, "\n")
-	for _, sharedRule := range []string{"workflow_template_manage", "source_template_ids", "recall_search", "recall_read", "private_note_manage"} {
+	for _, sharedRule := range []string{"workflow_template_manage", "source_template_ids", "recall_search", "recall_read"} {
 		if strings.Contains(rules, sharedRule) {
 			t.Fatalf("local-only context leaked shared rule %q: %s", sharedRule, rules)
 		}
