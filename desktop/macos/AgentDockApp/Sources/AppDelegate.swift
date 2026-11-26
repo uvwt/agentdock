@@ -325,12 +325,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         refreshStatus()
                         return
                     }
-                    for warning in terminalResult.warnings ?? [] {
-                        let value = warning.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !value.isEmpty, !warnings.contains(value) {
-                            warnings.append(value)
-                        }
-                    }
+                    warnings = DesktopUpdateTerminalResult.mergeWarnings(
+                        local: warnings,
+                        terminal: terminalResult.warnings
+                    )
 
                     switch terminalResult.state {
                     case "committed":

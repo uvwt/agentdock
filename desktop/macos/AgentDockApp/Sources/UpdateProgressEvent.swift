@@ -13,6 +13,7 @@ enum UpdateProgressStage: String, Decodable, Sendable {
 enum UpdateProgressEventType: String, Decodable, Sendable {
     case stage
     case progress
+    case handedOff = "handed_off"
     case completed
     case failed
 }

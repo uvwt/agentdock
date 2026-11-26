@@ -112,6 +112,38 @@ struct DesktopUpdateTerminalResult: Decodable {
         state == "committed" || state == "rolled_back" || state == "failed"
     }
 
+    // Arbiter 写入 result.json 的系统级英文提示在这里统一做本地化映射与去重，
+    // 兼顾旧版 Arbiter 升新版 App 的跨版本场景；未知提示原样保留，避免丢失诊断信息。
+    static func localizedWarning(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+
+        if trimmed == "AgentDock was updated from an ad-hoc signed macOS build. Accessibility, Screen Recording, or Automation permissions may require reauthorization because the App or Core code identity changed."
+            || trimmed.hasPrefix("AgentDock was updated from an ad-hoc signed macOS build.") {
+            return L10n.text("If Accessibility, Screen Recording, or Automation permissions stop working after this update, re-enable AgentDock in System Settings → Privacy & Security.")
+        }
+        if trimmed == "AgentDock Core requires background-item approval in System Settings."
+            || trimmed == "AgentDock Core needs background-item approval in System Settings." {
+            return L10n.text("AgentDock Core needs background-item approval in System Settings.")
+        }
+        if trimmed == "AgentDock Tunnel requires background-item approval in System Settings."
+            || trimmed == "AgentDock Tunnel needs background-item approval in System Settings." {
+            return L10n.text("AgentDock Tunnel needs background-item approval in System Settings.")
+        }
+        return trimmed
+    }
+
+    static func mergeWarnings(local: [String], terminal: [String]?) -> [String] {
+        var merged: [String] = []
+        for warning in local + (terminal ?? []) {
+            let value = localizedWarning(warning)
+            if !value.isEmpty, !merged.contains(value) {
+                merged.append(value)
+            }
+        }
+        return merged
+    }
+
     static func load(from path: URL, transactionID: String) -> DesktopUpdateTerminalResult? {
         guard let data = try? Data(contentsOf: path),
               let result = try? JSONDecoder().decode(DesktopUpdateTerminalResult.self, from: data),

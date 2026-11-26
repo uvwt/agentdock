@@ -727,3 +727,68 @@ func TestCompareVersionsUsesSemVerPrereleaseOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestRunInstallerOwnedUpdateEmitsHandedOffProgressEvent(t *testing.T) {
+	payload := []byte("fake-windows-setup-binary")
+	checksum := fmt.Sprintf("%x  AgentDockSetup-amd64.exe\n", sha256.Sum256(payload))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/setup.exe":
+			_, _ = w.Write(payload)
+		case "/setup.exe.sha256":
+			_, _ = w.Write([]byte(checksum))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	var events []UpdateProgressEvent
+	var output bytes.Buffer
+	opts := options{
+		HTTPClient:        server.Client(),
+		ExecutablePath:    filepath.Join(t.TempDir(), "bin", "agentdock.exe"),
+		DesktopTargetPath: t.TempDir(),
+		Output:            &output,
+		Progress: func(event UpdateProgressEvent) {
+			events = append(events, event)
+		},
+		ApplyInstaller: func(_ context.Context, req installerApplyRequest) (applyResult, error) {
+			if req.InstallerName != "AgentDockSetup-amd64.exe" {
+				t.Fatalf("unexpected installer name: %q", req.InstallerName)
+			}
+			if !bytes.Equal(req.InstallerData, payload) {
+				t.Fatal("installer payload mismatch")
+			}
+			return applyResult{HandedOff: true}, nil
+		},
+	}
+	inspection := updateInspection{
+		Result: CheckResult{
+			CurrentVersion:  "v1.1.0",
+			LatestVersion:   "v1.1.1",
+			UpdateAvailable: true,
+		},
+		InstallerAsset:    releaseAsset{Name: "AgentDockSetup-amd64.exe", URL: server.URL + "/setup.exe"},
+		InstallerChecksum: releaseAsset{Name: "AgentDockSetup-amd64.exe.sha256", URL: server.URL + "/setup.exe.sha256"},
+	}
+
+	if err := runInstallerOwnedUpdate(context.Background(), opts, inspection); err != nil {
+		t.Fatalf("runInstallerOwnedUpdate failed: %v", err)
+	}
+	if len(events) == 0 {
+		t.Fatal("expected progress events")
+	}
+	last := events[len(events)-1]
+	if last.Type != "handed_off" || last.Stage != UpdateStageRestarting {
+		t.Fatalf("expected final handed_off/restarting event, got %#v", last)
+	}
+	if last.CurrentVersion != "v1.1.0" || last.TargetVersion != "v1.1.1" || last.Asset != "AgentDockSetup-amd64.exe" {
+		t.Fatalf("unexpected handed_off metadata: %#v", last)
+	}
+	for _, event := range events {
+		if event.Type == "completed" {
+			t.Fatalf("handed_off installer update must not emit completed event: %#v", events)
+		}
+	}
+}

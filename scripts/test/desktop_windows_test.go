@@ -467,6 +467,7 @@ func TestWindowsUpdateFeedbackUsesUTF8AndNativeWinUIStatus(t *testing.T) {
 		`var check = await _runtime.CheckForUpdatesAsync()`, `if (!check.UpdateAvailable)`, `new ContentDialog`,
 		`PrimaryButtonText = UiText.Get("Update")`, `new Progress<UpdateProgress>`, `await _runtime.RunUpdateAsync(progress)`,
 		`SetUpdateCheckButtonState()`, `_updateButton.IsEnabled = !_updateCheckInProgress`,
+		`UpdateRunOutcome.HandedOff`, `UpdateInstallerHandedOff`,
 	} {
 		if !strings.Contains(settings, want) {
 			t.Fatalf("WinUI update flow missing %q", want)
@@ -478,6 +479,7 @@ func TestWindowsUpdateFeedbackUsesUTF8AndNativeWinUIStatus(t *testing.T) {
 		`startInfo.ArgumentList.Add("--progress-json")`, `startInfo.Environment[UpdateUiHandoffEnvironment] = "1"`,
 		`ReadProcessLinesAsync`, `ParseUpdateProgress`, `JsonSerializer.Deserialize<UpdateProgressEvent>`,
 		`StandardOutputEncoding = utf8`, `StandardErrorEncoding = utf8`,
+		`"handed_off"`, `UpdateRunOutcome.HandedOff`, `ConsumeInstallerUpdateCompletionAsync`,
 	} {
 		if !strings.Contains(runtimeService, want) {
 			t.Fatalf("Windows update process handling missing %q", want)

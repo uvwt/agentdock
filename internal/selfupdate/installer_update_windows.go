@@ -4,6 +4,7 @@ package selfupdate
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,11 +12,58 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/windows"
 
 	"github.com/uvwt/agentdock/internal/authenticode"
+	"github.com/uvwt/agentdock/internal/fs/atomicfile"
 )
+
+const (
+	windowsUpdateUIHandoffEnv      = "AGENTDOCK_UPDATE_UI_HANDOFF"
+	windowsInstallerHandoffFile    = "installer-handoff.json"
+	windowsInstallerHandoffVersion = 1
+)
+
+type windowsInstallerHandoffMarker struct {
+	SchemaVersion int    `json:"schema_version"`
+	SourceVersion string `json:"source_version"`
+	TargetVersion string `json:"target_version"`
+	CreatedAt     string `json:"created_at"`
+}
+
+func windowsInstallerArgs(installRoot string, interactiveUI bool) []string {
+	// 保留 /SILENT 以在旧版桌面端退出后展示原生安装进度条，避免用户误以为闪退；
+	// 仅在非 UI 无人值守场景追加 /SUPPRESSMSGBOXES，防止交互式更新失败时静默吞掉错误弹窗。
+	args := []string{
+		"/SILENT",
+		"/NORESTART",
+		"/CLOSEAPPLICATIONS",
+		"/DIR=" + installRoot,
+	}
+	if !interactiveUI {
+		args = append(args, "/SUPPRESSMSGBOXES")
+	}
+	return args
+}
+
+func writeWindowsInstallerHandoffMarker(installRoot, currentVersion, targetVersion string, now time.Time) (string, error) {
+	markerPath := filepath.Join(installRoot, "update", windowsInstallerHandoffFile)
+	payload, err := json.Marshal(windowsInstallerHandoffMarker{
+		SchemaVersion: windowsInstallerHandoffVersion,
+		SourceVersion: normalizeVersion(currentVersion),
+		TargetVersion: normalizeVersion(targetVersion),
+		CreatedAt:     now.UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		return "", err
+	}
+	if err := atomicfile.Write(markerPath, append(payload, '\n'), 0o600); err != nil {
+		return "", err
+	}
+	return markerPath, nil
+}
 
 func applyPlatformInstallerUpdate(ctx context.Context, request installerApplyRequest) (applyResult, error) {
 	if err := ctx.Err(); err != nil {
@@ -47,20 +95,26 @@ func applyPlatformInstallerUpdate(ctx context.Context, request installerApplyReq
 		return applyResult{}, fmt.Errorf("Windows 完整安装器签名验证失败: %w", err)
 	}
 
+	interactiveUI := strings.TrimSpace(os.Getenv(windowsUpdateUIHandoffEnv)) == "1"
+	markerPath := ""
+	if interactiveUI {
+		// 标记由桌面端发起的完整安装器交接，供升级重启后的新版托盘给出最终完成提示。
+		// 写入失败不影响安装器启动本身。
+		if path, err := writeWindowsInstallerHandoffMarker(installRoot, request.CurrentVersion, request.TargetVersion, time.Now()); err == nil {
+			markerPath = path
+		}
+	}
+
 	// 完整 Setup 是 Windows 安装状态的唯一写入入口。这里不再拆 Release ZIP，
 	// 也不再让 updater 理解 generation、WinUI 伴随文件或运行时依赖。
-	command := exec.Command(
-		installerPath,
-		"/SILENT",
-		"/SUPPRESSMSGBOXES",
-		"/NORESTART",
-		"/CLOSEAPPLICATIONS",
-		"/DIR="+installRoot,
-	)
+	command := exec.Command(installerPath, windowsInstallerArgs(installRoot, interactiveUI)...)
 	command.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: windows.CREATE_NEW_PROCESS_GROUP,
 	}
 	if err := command.Start(); err != nil {
+		if markerPath != "" {
+			_ = os.Remove(markerPath)
+		}
 		_ = os.RemoveAll(stagingRoot)
 		return applyResult{}, fmt.Errorf("启动 Windows 完整安装器失败: %w", err)
 	}

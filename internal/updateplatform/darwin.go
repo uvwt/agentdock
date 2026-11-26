@@ -19,6 +19,13 @@ import (
 	"github.com/uvwt/agentdock/internal/updateengine"
 )
 
+const (
+	// macOS Arbiter 写入 result.json 的稳定英文提示文案，供新版 App 本地化映射与去重，
+	// 同时保持旧版 App 及 CLI/日志直接可读。
+	macOSWarningAdHocReauthorization   = "AgentDock was updated from an ad-hoc signed macOS build. Accessibility, Screen Recording, or Automation permissions may require reauthorization because the App or Core code identity changed."
+	macOSWarningCoreBackgroundApproval = "AgentDock Core requires background-item approval in System Settings."
+)
+
 type DarwinDriver struct {
 	root  string
 	store *updateengine.Store
@@ -112,12 +119,12 @@ func (driver *DarwinDriver) VerifyTrial(ctx context.Context, transaction updatee
 	// 未配置稳定证书的构建使用 ad-hoc 身份，App 或 Core 任一主体变化都可能让已有 TCC 授权失效。
 	// 连续性硬校验已经在 PrepareTrial 完成；这里仅补充更新成功后的迁移提示。
 	if macOSSigningIdentityNeedsReauthorizationWarning(ctx, plan.TrialAppPath, plan.TargetAppPath) {
-		warnings = append(warnings, "AgentDock was updated from an ad-hoc signed macOS build. Accessibility, Screen Recording, or Automation permissions may require reauthorization because the App or Core code identity changed.")
+		warnings = append(warnings, macOSWarningAdHocReauthorization)
 	}
 	if plan.CoreWasEnabled {
 		switch handoff.CoreRegistration {
 		case "requires_approval":
-			warnings = append(warnings, "AgentDock Core requires background-item approval in System Settings.")
+			warnings = append(warnings, macOSWarningCoreBackgroundApproval)
 		case "enabled":
 			if strings.TrimSpace(plan.HealthURL) == "" {
 				return nil, errors.New("macOS trial requires a Core health URL when Core is enabled")

@@ -411,6 +411,24 @@ struct InstallerConfigurationTests {
         let foreignPlatform = json.replacingOccurrences(of: "\"darwin\"", with: "\"windows\"")
         try Data(foreignPlatform.utf8).write(to: path)
         precondition(DesktopUpdateTerminalResult.load(from: path, transactionID: "tx-1") == nil)
+
+        let adHocWarning = "AgentDock was updated from an ad-hoc signed macOS build. Accessibility, Screen Recording, or Automation permissions may require reauthorization because the App or Core code identity changed."
+        let expectedAdHoc = L10n.text("If Accessibility, Screen Recording, or Automation permissions stop working after this update, re-enable AgentDock in System Settings → Privacy & Security.")
+        precondition(DesktopUpdateTerminalResult.localizedWarning(adHocWarning) == expectedAdHoc)
+
+        let coreApproval = L10n.text("AgentDock Core needs background-item approval in System Settings.")
+        precondition(DesktopUpdateTerminalResult.localizedWarning("AgentDock Core requires background-item approval in System Settings.") == coreApproval)
+        precondition(DesktopUpdateTerminalResult.localizedWarning("Custom diagnostic warning") == "Custom diagnostic warning")
+
+        let merged = DesktopUpdateTerminalResult.mergeWarnings(
+            local: [coreApproval, "  "],
+            terminal: [
+                "AgentDock Core requires background-item approval in System Settings.",
+                adHocWarning,
+                "Custom diagnostic warning",
+            ]
+        )
+        precondition(merged == [coreApproval, expectedAdHoc, "Custom diagnostic warning"])
     }
 
     private static func testDesktopUpdateServiceState() throws {
@@ -674,6 +692,45 @@ struct InstallerConfigurationTests {
         let timeout = await checker.check(publicMCPURL: publicMCPURL)
         precondition(!timeout.isReachable)
         precondition(timeout.message == L10n.text("Public access timed out"))
+
+        precondition(
+            !TrayPopoverDismissPolicy.shouldDismissForMouseEvent(
+                isInsidePopoverWindow: true,
+                isInsideAnchorWindow: false
+            )
+        )
+        precondition(
+            !TrayPopoverDismissPolicy.shouldDismissForMouseEvent(
+                isInsidePopoverWindow: false,
+                isInsideAnchorWindow: true
+            )
+        )
+        precondition(
+            TrayPopoverDismissPolicy.shouldDismissForMouseEvent(
+                isInsidePopoverWindow: false,
+                isInsideAnchorWindow: false
+            )
+        )
+        precondition(TrayPopoverDismissPolicy.shouldDismissForKeyDown(keyCode: 53))
+        precondition(!TrayPopoverDismissPolicy.shouldDismissForKeyDown(keyCode: 36))
+        precondition(
+            !TrayPopoverDismissPolicy.shouldSuppressToggleAfterExternalDismiss(
+                lastDismissedAt: nil,
+                now: 100.0
+            )
+        )
+        precondition(
+            TrayPopoverDismissPolicy.shouldSuppressToggleAfterExternalDismiss(
+                lastDismissedAt: 100.0,
+                now: 100.12
+            )
+        )
+        precondition(
+            !TrayPopoverDismissPolicy.shouldSuppressToggleAfterExternalDismiss(
+                lastDismissedAt: 100.0,
+                now: 100.30
+            )
+        )
     }
 
     private static func expectFailure(_ message: String, _ operation: () throws -> Void) {

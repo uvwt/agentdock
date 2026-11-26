@@ -1,10 +1,44 @@
 import AppKit
 import SwiftUI
 
+private final class DismissMonitorBox {
+    var globalMouseMonitor: Any?
+    var localEventMonitor: Any?
+    var resignationObserver: NSObjectProtocol?
+    var keyResignObserver: NSObjectProtocol?
+
+    func removeAll() {
+        if let monitor = globalMouseMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalMouseMonitor = nil
+        }
+        if let monitor = localEventMonitor {
+            NSEvent.removeMonitor(monitor)
+            localEventMonitor = nil
+        }
+        if let observer = resignationObserver {
+            NotificationCenter.default.removeObserver(observer)
+            resignationObserver = nil
+        }
+        if let observer = keyResignObserver {
+            NotificationCenter.default.removeObserver(observer)
+            keyResignObserver = nil
+        }
+    }
+
+    deinit {
+        removeAll()
+    }
+}
+
 @MainActor
-final class TrayPopoverController {
+final class TrayPopoverController: NSObject, NSPopoverDelegate {
     private let model = TrayPopoverModel()
     private let popover = NSPopover()
+    private weak var anchorButton: NSStatusBarButton?
+    private let dismissMonitors = DismissMonitorBox()
+    private var lastExternalDismissAt: TimeInterval?
+    private var isClosingProgrammatically = false
 
     init(
         onOpenAgentDock: @escaping () -> Void,
@@ -12,16 +46,30 @@ final class TrayPopoverController {
         onRunServiceAction: @escaping (String) -> Void,
         onShowUpdateProgress: @escaping () -> Void
     ) {
+        super.init()
         popover.behavior = .transient
         popover.animates = true
+        popover.delegate = self
         popover.contentSize = NSSize(width: 350, height: 292)
         popover.contentViewController = NSHostingController(
             rootView: TrayPopoverView(
                 model: model,
-                onOpenAgentDock: onOpenAgentDock,
-                onOpenSettings: onOpenSettings,
-                onRunServiceAction: onRunServiceAction,
-                onShowUpdateProgress: onShowUpdateProgress
+                onOpenAgentDock: { [weak self] in
+                    self?.close()
+                    onOpenAgentDock()
+                },
+                onOpenSettings: { [weak self] in
+                    self?.close()
+                    onOpenSettings()
+                },
+                onRunServiceAction: { [weak self] action in
+                    self?.close()
+                    onRunServiceAction(action)
+                },
+                onShowUpdateProgress: { [weak self] in
+                    self?.close()
+                    onShowUpdateProgress()
+                }
             )
         )
     }
@@ -34,7 +82,16 @@ final class TrayPopoverController {
 
     func toggle(relativeTo button: NSStatusBarButton) {
         if popover.isShown {
-            popover.performClose(nil)
+            close()
+            return
+        }
+        // 按钮使用 .leftMouseUp 触发 toggle；若按下阶段刚被全局/本地监听或 transient 关闭，
+        // 放开鼠标时不再重复弹出，消除“先关又立刻弹开”的双重抖动。
+        if TrayPopoverDismissPolicy.shouldSuppressToggleAfterExternalDismiss(
+            lastDismissedAt: lastExternalDismissAt,
+            now: ProcessInfo.processInfo.systemUptime
+        ) {
+            lastExternalDismissAt = nil
             return
         }
         show(relativeTo: button)
@@ -42,11 +99,166 @@ final class TrayPopoverController {
 
     func show(relativeTo button: NSStatusBarButton) {
         guard !popover.isShown else { return }
+        anchorButton = button
+        lastExternalDismissAt = nil
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        activatePopoverForFocus()
     }
 
     func close() {
+        guard popover.isShown else {
+            teardownDismissMonitors()
+            return
+        }
+        isClosingProgrammatically = true
         popover.performClose(nil)
+        isClosingProgrammatically = false
+        teardownDismissMonitors()
+    }
+
+    func popoverWillShow(_ notification: Notification) {
+        installDismissMonitors()
+    }
+
+    func popoverDidShow(_ notification: Notification) {
+        installPopoverWindowKeyResignObserver()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        if !isClosingProgrammatically {
+            lastExternalDismissAt = ProcessInfo.processInfo.systemUptime
+        }
+        teardownDismissMonitors()
+    }
+
+    private var popoverWindow: NSWindow? {
+        popover.contentViewController?.view.window
+    }
+
+    private func installDismissMonitors() {
+        teardownDismissMonitors()
+
+        // .accessory 应用在未处于激活状态时，点击其他 App、桌面空白或其他菜单栏图标不会稳定触发
+        // NSPopover.Behavior.transient，必须通过全局鼠标监听兜底立即收起。
+        dismissMonitors.globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
+            let screenLocation = NSEvent.mouseLocation
+            Task { @MainActor [weak self] in
+                guard let self, self.popover.isShown else { return }
+                let isInsidePopover = self.popoverWindow?.frame.contains(screenLocation) ?? false
+                let isInsideAnchor = self.isScreenPointInsideAnchorButton(screenLocation)
+                if TrayPopoverDismissPolicy.shouldDismissForMouseEvent(
+                    isInsidePopoverWindow: isInsidePopover,
+                    isInsideAnchorWindow: isInsideAnchor
+                ) {
+                    self.dismissFromExternalInteraction()
+                }
+            }
+        }
+
+        // 点击本应用其他窗口、按 ESC 键或右键点击非 Popover 区域时，同样即时关闭；
+        // 点击托盘图标自身时忽略，避免与 NSStatusBarButton 的 toggle 竞争。
+        dismissMonitors.localEventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .keyDown]
+        ) { [weak self] event in
+            guard let self else { return event }
+            let shouldConsume = MainActor.assumeIsolated { () -> Bool in
+                guard self.popover.isShown else { return false }
+                if event.type == .keyDown {
+                    if TrayPopoverDismissPolicy.shouldDismissForKeyDown(keyCode: event.keyCode) {
+                        self.dismissFromExternalInteraction()
+                        return true
+                    }
+                    return false
+                }
+
+                let popoverWindow = self.popoverWindow
+                let anchorWindow = self.anchorButton?.window
+                let isInsidePopover = event.window != nil && event.window === popoverWindow
+                let isInsideAnchor = event.window != nil && event.window === anchorWindow && {
+                    guard let button = self.anchorButton else { return false }
+                    let pointInButton = button.convert(event.locationInWindow, from: nil)
+                    return button.bounds.contains(pointInButton)
+                }()
+                if TrayPopoverDismissPolicy.shouldDismissForMouseEvent(
+                    isInsidePopoverWindow: isInsidePopover,
+                    isInsideAnchorWindow: isInsideAnchor
+                ) {
+                    self.dismissFromExternalInteraction()
+                }
+                return false
+            }
+            return shouldConsume ? nil : event
+        }
+
+        // 切换应用焦点（如 Cmd+Tab 或点击 Dock 切换前台应用）时也一并收起 Popover。
+        dismissMonitors.resignationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.dismissFromExternalInteraction()
+            }
+        }
+    }
+
+    private func installPopoverWindowKeyResignObserver() {
+        if let observer = dismissMonitors.keyResignObserver {
+            NotificationCenter.default.removeObserver(observer)
+            dismissMonitors.keyResignObserver = nil
+        }
+        guard let window = popoverWindow else { return }
+        dismissMonitors.keyResignObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.dismissFromExternalInteraction()
+            }
+        }
+    }
+
+    private func dismissFromExternalInteraction() {
+        guard popover.isShown else {
+            teardownDismissMonitors()
+            return
+        }
+        lastExternalDismissAt = ProcessInfo.processInfo.systemUptime
+        isClosingProgrammatically = true
+        popover.performClose(nil)
+        isClosingProgrammatically = false
+        teardownDismissMonitors()
+    }
+
+    private func teardownDismissMonitors() {
+        dismissMonitors.removeAll()
+    }
+
+    private func isScreenPointInsideAnchorButton(_ screenPoint: NSPoint) -> Bool {
+        guard let button = anchorButton, let window = button.window else { return false }
+        let rectInWindow = button.convert(button.bounds, to: nil)
+        let rectOnScreen = window.convertToScreen(rectInWindow)
+        return rectOnScreen.contains(screenPoint)
+    }
+
+    /// .accessory 应用弹出托盘 Popover 时，仅将 Popover 窗口设为 key window；
+    /// 若当前没有可见的常规应用窗口（例如主窗口处于关闭/隐藏态），再轻量激活应用使焦点与
+    /// ESC / didResignActive / transient 链路完全生效，同时避免把后台常规窗口抬到前台。
+    private func activatePopoverForFocus() {
+        guard let popoverWindow else { return }
+        let hasVisibleRegularWindow = NSApp.windows.contains { window in
+            window !== popoverWindow &&
+            window !== anchorButton?.window &&
+            window.isVisible &&
+            window.level == .normal
+        }
+        if !hasVisibleRegularWindow {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        popoverWindow.makeKey()
     }
 }
 

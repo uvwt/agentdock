@@ -334,6 +334,7 @@
 "%@ background registration returned an unknown state after the update." = "%@ background registration returned an unknown state after the update.";
 "AgentDock Core needs background-item approval in System Settings." = "AgentDock Core needs background-item approval in System Settings.";
 "AgentDock Tunnel needs background-item approval in System Settings." = "AgentDock Tunnel needs background-item approval in System Settings.";
+"If Accessibility, Screen Recording, or Automation permissions stop working after this update, re-enable AgentDock in System Settings → Privacy & Security." = "If Accessibility, Screen Recording, or Automation permissions stop working after this update, re-enable AgentDock in System Settings → Privacy & Security.";
 "The active AgentDock App version %@ does not match the update target %@." = "The active AgentDock App version %@ does not match the update target %@.";
 "AgentDock update transaction did not report a final result. Recovery state was preserved." = "AgentDock update transaction did not report a final result. Recovery state was preserved.";
 "AgentDock update transaction final result did not match the pending update. Recovery state was preserved." = "AgentDock update transaction final result did not match the pending update. Recovery state was preserved.";
