@@ -72,7 +72,7 @@ func (svc *Service) ReadFile(ctx context.Context, request ReadRequest) (Result, 
 	}
 	maxBytes := boundedInt(intValue(request.MaxBytes, 262144), 262144, 1, maxTextOutputBytes)
 	content, meta := sliceText(string(data), intValue(request.StartLine, 1), intValue(request.EndLine, 0), maxBytes)
-	result := Result{"path": displayPath, "content": content, "encoding": "utf-8", "size_bytes": len(data), "truncated": meta.Truncated, "start_line": meta.Start, "end_line": meta.End, "total_lines": meta.Total}
+	result := Result{"path": displayPath, "content": content, "size_bytes": len(data), "truncated": meta.Truncated, "start_line": meta.Start, "end_line": meta.End, "total_lines": meta.Total}
 	if meta.NextStartLine > 0 {
 		result["next_start_line"] = meta.NextStartLine
 	}

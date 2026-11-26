@@ -35,8 +35,8 @@ func TestSearchTextResultCapAndTrailingContext(t *testing.T) {
 				{"exact cap", "needle\nneedle\nafter", 2, 1, 2, false, []string{"after"}, 3},
 				{"above cap", "needle\nneedle\nnear\nfar\nneedle\nlast", 2, 1, 2, true, []string{"near"}, 3},
 				{"single exact cap", "before\nneedle\nafter", 1, 1, 1, false, []string{"after"}, 3},
-				{"no context", "before\nneedle\nafter", 1, 0, 1, false, nil, 2},
-				{"EOF", "needle", 1, 3, 1, false, nil, 1},
+				{"no context", "before\nneedle\nafter", 1, 0, 1, false, nil, 0},
+				{"EOF", "needle", 1, 3, 1, false, nil, 0},
 				{"short tail", "needle\nlast", 1, 3, 1, false, []string{"last"}, 2},
 				{"adjacent overflow", "needle\nneedle\nlast", 1, 2, 1, true, []string{"needle", "last"}, 3},
 				{"far context", "needle\nnear\nfar\nfar\nneedle\nlast", 1, 1, 1, true, []string{"near"}, 2},
@@ -62,8 +62,16 @@ func TestSearchTextResultCapAndTrailingContext(t *testing.T) {
 					}
 					last := matches[len(matches)-1]
 					after, _ := last["after"].([]string)
-					if len(after) != len(tt.after) || strings.Join(after, "\n") != strings.Join(tt.after, "\n") || last["context_end_line"] != tt.end {
-						t.Errorf("last match=%#v; want after=%#v end=%d", last, tt.after, tt.end)
+					if tt.end == 0 {
+						for _, key := range []string{"before", "after", "context_start_line", "context_end_line"} {
+							if _, exists := last[key]; exists {
+								t.Errorf("match without context should omit %q: %#v", key, last)
+							}
+						}
+					} else {
+						if len(after) != len(tt.after) || strings.Join(after, "\n") != strings.Join(tt.after, "\n") || last["context_end_line"] != tt.end {
+							t.Errorf("last match=%#v; want after=%#v end=%d", last, tt.after, tt.end)
+						}
 					}
 				})
 			}
@@ -128,8 +136,11 @@ func TestParseRGJSONStopsAfterConfirmedOverflowAndTrailingContext(t *testing.T) 
 		t.Fatalf("parseRGJSON() = matches=%#v truncated=%v ok=%v; want 1 match, truncated=true, ok=true", matches, truncated, ok)
 	}
 	after, _ := matches[0]["after"].([]string)
-	if len(after) != 1 || after[0] != "tail context" || matches[0]["context_end_line"] != 2 {
-		t.Fatalf("after context = %#v, context_end_line = %v; want [tail context], 2", after, matches[0]["context_end_line"])
+	if len(after) != 1 || after[0] != "tail context" || matches[0]["context_start_line"] != 1 || matches[0]["context_end_line"] != 2 {
+		t.Fatalf("after context = %#v, start=%v end=%v; want [tail context], 1..2", after, matches[0]["context_start_line"], matches[0]["context_end_line"])
+	}
+	if _, exists := matches[0]["before"]; exists {
+		t.Fatalf("match without leading context should omit before: %#v", matches[0])
 	}
 }
 

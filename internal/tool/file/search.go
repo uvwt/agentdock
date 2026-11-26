@@ -151,6 +151,15 @@ func (svc *Service) parseRGJSON(output []byte, searchRoot string, opts SearchOpt
 	var lastPath string
 	lastLine := 0
 	truncated := false
+	// 仅在存在实际上下文行时才附加 after 与上下文行号范围，避免 context_lines=0 时每条命中平铺空上下文。
+	appendAfterContext := func(match map[string]any, matchLine int, contextLine string, lineNumber int) {
+		after, _ := match["after"].([]string)
+		match["after"] = append(after, contextLine)
+		if _, exists := match["context_start_line"]; !exists {
+			match["context_start_line"] = matchLine
+		}
+		match["context_end_line"] = lineNumber
+	}
 	scanner := bufio.NewScanner(bytes.NewReader(output))
 	scanner.Buffer(make([]byte, 0, 1024*1024), 16*1024*1024)
 	for scanner.Scan() {
@@ -202,9 +211,7 @@ func (svc *Service) parseRGJSON(output []byte, searchRoot string, opts SearchOpt
 		line := strings.TrimSuffix(event.Data.Lines.Text, "\n")
 		if opts.MaxResults > 0 && len(matches) >= opts.MaxResults {
 			if path == lastPath && event.Data.LineNumber > lastLine && event.Data.LineNumber <= lastLine+opts.ContextLines {
-				after, _ := lastMatch["after"].([]string)
-				lastMatch["after"] = append(after, line)
-				lastMatch["context_end_line"] = event.Data.LineNumber
+				appendAfterContext(lastMatch, lastLine, line, event.Data.LineNumber)
 			}
 			if event.Type == "match" {
 				truncated = true
@@ -218,9 +225,7 @@ func (svc *Service) parseRGJSON(output []byte, searchRoot string, opts SearchOpt
 		switch event.Type {
 		case "context":
 			if lastMatch != nil && lastPath == path {
-				after, _ := lastMatch["after"].([]string)
-				lastMatch["after"] = append(after, line)
-				lastMatch["context_end_line"] = event.Data.LineNumber
+				appendAfterContext(lastMatch, lastLine, line, event.Data.LineNumber)
 			} else {
 				before[path] = append(before[path], line)
 				if opts.ContextLines > 0 && len(before[path]) > opts.ContextLines {
@@ -236,7 +241,18 @@ func (svc *Service) parseRGJSON(output []byte, searchRoot string, opts SearchOpt
 			}
 			beforeLines := append([]string(nil), before[path]...)
 			before[path] = nil
-			entry := map[string]any{"path": path, "line": event.Data.LineNumber, "column": column, "preview": truncateString(line, 500), "match_text": truncateString(matchText, 500), "before": beforeLines, "after": []string{}, "context_start_line": event.Data.LineNumber - len(beforeLines), "context_end_line": event.Data.LineNumber}
+			entry := map[string]any{
+				"path":       path,
+				"line":       event.Data.LineNumber,
+				"column":     column,
+				"preview":    truncateString(line, 500),
+				"match_text": truncateString(matchText, 500),
+			}
+			if len(beforeLines) > 0 {
+				entry["before"] = beforeLines
+				entry["context_start_line"] = event.Data.LineNumber - len(beforeLines)
+				entry["context_end_line"] = event.Data.LineNumber
+			}
 			matches = append(matches, entry)
 			lastMatch = entry
 			lastPath = path
@@ -372,7 +388,8 @@ func (svc *Service) searchTextGoWithLimits(ctx context.Context, p workspace.Path
 		if looksBinary(data) || !utf8.Valid(data) {
 			return nil
 		}
-		lines := strings.Split(string(data), "\n")
+		// 去掉文件末尾单个换行符，避免 strings.Split 产生幽灵空行导致 go_fallback 与 rg/go_wsl 的尾部上下文不一致。
+		lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
 		for i, line := range lines {
 			ok := false
 			column := 0
@@ -396,8 +413,25 @@ func (svc *Service) searchTextGoWithLimits(ctx context.Context, p workspace.Path
 				truncated = true
 				return filepath.SkipAll
 			}
+			entry := map[string]any{
+				"path":       displayPath,
+				"line":       i + 1,
+				"column":     column,
+				"preview":    truncateString(line, 500),
+				"match_text": truncateString(matchText, 500),
+			}
 			before, after := contextAround(lines, i, opts.ContextLines)
-			matches = append(matches, map[string]any{"path": displayPath, "line": i + 1, "column": column, "preview": truncateString(line, 500), "match_text": truncateString(matchText, 500), "before": before, "after": after, "context_start_line": i + 1 - len(before), "context_end_line": i + 1 + len(after)})
+			if len(before) > 0 {
+				entry["before"] = before
+			}
+			if len(after) > 0 {
+				entry["after"] = after
+			}
+			if len(before) > 0 || len(after) > 0 {
+				entry["context_start_line"] = i + 1 - len(before)
+				entry["context_end_line"] = i + 1 + len(after)
+			}
+			matches = append(matches, entry)
 		}
 		return nil
 	})

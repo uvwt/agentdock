@@ -100,7 +100,6 @@ func OutputSchema(name string) (map[string]any, bool) {
 	case ToolReadFile:
 		props["path"] = stringProp("Host path or skill:// resource URI. Relative Host paths resolve from ~/AgentDock.")
 		props["content"] = stringProp("Text content slice.")
-		props["encoding"] = stringProp("Detected text encoding.")
 		props["size_bytes"] = intProp("File size in bytes.")
 		props["truncated"] = boolProp("Whether output was truncated.")
 		props["truncated_reason"] = stringProp("Reason output was truncated.")

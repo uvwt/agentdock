@@ -59,6 +59,7 @@ func TestExecInitialStdinReachesEOFAndPreservesFullInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result["status"] != "exited" || result["stdout"] != input || result["command_ok"] != true {
-		t.Fatalf("result status=%v command_ok=%v stdout bytes=%v, want complete input", result["status"], result["command_ok"], result["stdout_total_bytes"])
+		stdout, _ := result["stdout"].(string)
+		t.Fatalf("result status=%v command_ok=%v stdout bytes=%d, want complete input", result["status"], result["command_ok"], len(stdout))
 	}
 }
