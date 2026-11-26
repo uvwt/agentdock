@@ -11,8 +11,3 @@ type Service struct {
 func New(configProvider ConfigProvider) *Service {
 	return &Service{config: configProvider}
 }
-
-const (
-	MaxPrivateNoteSearchResults = maxPrivateNoteSearchResults
-	MaxPrivateNoteReadBytes     = maxPrivateNoteReadBytes
-)

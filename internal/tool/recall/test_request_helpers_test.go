@@ -43,14 +43,6 @@ func (s *Service) maintainTest(ctx context.Context, input any) (Result, error) {
 	return s.Maintain(ctx, request)
 }
 
-func (s *Service) privateNoteManageTest(ctx context.Context, input any) (Result, error) {
-	request, err := decodeRecallTestRequest[PrivateNoteRequest](input)
-	if err != nil {
-		return nil, err
-	}
-	return s.PrivateNoteManage(ctx, request)
-}
-
 func (s *Service) memoryCardCaptureTest(ctx context.Context, input any) (Result, error) {
 	request, err := decodeRecallTestRequest[WriteRequest](input)
 	if err != nil {

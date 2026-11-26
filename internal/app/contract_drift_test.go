@@ -93,7 +93,6 @@ func TestTypedToolRequestFieldsMatchPublishedSchemas(t *testing.T) {
 		{name: "recall_read", request: toolrecall.ReadRequest{}},
 		{name: "recall_write", request: toolrecall.WriteRequest{}},
 		{name: "recall_maintain", request: toolrecall.MaintainRequest{}},
-		{name: "private_note_manage", request: toolrecall.PrivateNoteRequest{}},
 	}
 
 	for _, test := range tests {
