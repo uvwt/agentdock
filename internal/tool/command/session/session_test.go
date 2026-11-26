@@ -29,13 +29,12 @@ func TestKillSkipsCompletedSession(t *testing.T) {
 
 func TestStartCapturesCompleteOutputAndExitState(t *testing.T) {
 	requirePOSIXShell(t)
-	s, _, err := Start(
+	s, err := Start(
 		context.Background(),
 		"printf 'stdout-value'; printf 'stderr-value' >&2; exit 7",
 		t.TempDir(),
 		os.Environ(),
 		2*time.Second,
-		nil,
 	)
 	if err != nil {
 		t.Fatalf("Start() error = %v", err)
@@ -65,13 +64,12 @@ func TestStartCapturesFastCommandOutputRepeatedly(t *testing.T) {
 	requirePOSIXShell(t)
 	const iterations = 200
 	for iteration := range iterations {
-		s, _, err := Start(
+		s, err := Start(
 			context.Background(),
 			"printf 'fast-output'",
 			t.TempDir(),
 			os.Environ(),
 			time.Second,
-			nil,
 		)
 		if err != nil {
 			t.Fatalf("iteration %d Start() error = %v", iteration, err)
@@ -96,7 +94,7 @@ func TestStartCapturesFastCommandOutputRepeatedly(t *testing.T) {
 
 func TestStartCompletionSignalSupportsMultipleObservers(t *testing.T) {
 	requirePOSIXShell(t)
-	s, _, err := Start(context.Background(), "exit 0", t.TempDir(), os.Environ(), time.Second, nil)
+	s, err := Start(context.Background(), "exit 0", t.TempDir(), os.Environ(), time.Second)
 	if err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
@@ -119,7 +117,7 @@ func TestStartWaitsForOutputReadersBeforeCompletion(t *testing.T) {
 	requirePOSIXShell(t)
 	const lineCount = 4000
 	command := "i=0; while [ $i -lt 4000 ]; do printf 'line-%04d\\n' \"$i\"; i=$((i+1)); done"
-	s, _, err := Start(context.Background(), command, t.TempDir(), os.Environ(), 5*time.Second, nil)
+	s, err := Start(context.Background(), command, t.TempDir(), os.Environ(), 5*time.Second)
 	if err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
@@ -141,7 +139,7 @@ func TestStartWaitsForOutputReadersBeforeCompletion(t *testing.T) {
 
 func TestStartMarksTimeout(t *testing.T) {
 	requirePOSIXShell(t)
-	s, _, err := Start(context.Background(), "sleep 1", t.TempDir(), os.Environ(), 30*time.Millisecond, nil)
+	s, err := Start(context.Background(), "sleep 1", t.TempDir(), os.Environ(), 30*time.Millisecond)
 	if err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
@@ -167,7 +165,7 @@ func TestStartMarksTimeout(t *testing.T) {
 }
 
 func TestStartRejectsNonPositiveTimeout(t *testing.T) {
-	_, _, err := Start(context.Background(), "true", t.TempDir(), os.Environ(), 0, nil)
+	_, err := Start(context.Background(), "true", t.TempDir(), os.Environ(), 0)
 	if err == nil || !strings.Contains(err.Error(), "timeout must be positive") {
 		t.Fatalf("Start() error = %v, want timeout validation", err)
 	}

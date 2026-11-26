@@ -23,11 +23,11 @@ type commandInvocation struct {
 	skillRelease func()
 }
 
-func (invocation commandInvocation) start(ctx context.Context, timeout time.Duration, tty bool, prepare session.PrepareFunc) (*session.Session, session.PreparationStatus, error) {
+func (invocation commandInvocation) start(ctx context.Context, timeout time.Duration, tty bool) (*session.Session, error) {
 	if invocation.build != nil {
-		return session.StartCommandWithTTY(ctx, invocation.build, timeout, tty, prepare)
+		return session.StartCommandWithTTY(ctx, invocation.build, timeout, tty)
 	}
-	return session.StartWithTTY(ctx, invocation.command, invocation.workdir, invocation.env, timeout, tty, prepare)
+	return session.StartWithTTY(ctx, invocation.command, invocation.workdir, invocation.env, timeout, tty)
 }
 
 func (svc *Service) acquireSkill(ctx context.Context, skillRef string) (SkillLease, error) {

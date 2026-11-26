@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -88,14 +87,7 @@ func (svc *Service) Exec(ctx context.Context, request ExecRequest) (Result, erro
 	// 如果子进程绑定到单次 MCP 请求 ctx，请求结束时 git push / npm install 等长任务会被杀掉。
 	// 因此长任务只受 timeout_ms 和 session_act action=kill/kill_all 控制。
 	startStartedAt := time.Now()
-	s, sandboxStatus, err := invocation.start(commandCtx, timeout, tty, func(command *exec.Cmd) (func(), session.PreparationStatus) {
-		// AgentDock 不额外过滤命令，实际权限边界由所选运行环境决定。
-		privilegeWarning := "exec_command runs with the AgentDock process OS user privileges"
-		if invocation.execution.Runtime == "wsl" {
-			privilegeWarning = "runtime=wsl executes with the selected distribution's default Linux user privileges"
-		}
-		return func() {}, session.PreparationStatus{Enabled: false, Mode: "none", Policy: "no_command_content_filtering", Warnings: []string{privilegeWarning, "use Docker volumes, service users, file permissions, and network policy as the security boundary"}}
-	})
+	s, err := invocation.start(commandCtx, timeout, tty)
 	// 只有 invocation.start 完整返回后，runner、平台进程控制器以及 cmdCtx 取消监听才都已经建立。
 	// Runtime.Close 会等待这个启动窗口排空，再取消 commandCtx，避免在半启动状态抢占进程。
 	svc.sessions.FinishStart()
@@ -118,7 +110,6 @@ func (svc *Service) Exec(ctx context.Context, request ExecRequest) (Result, erro
 		svc.storeReservedSession(s)
 		reservationActive = false
 		result := snapshotResult(s.Snapshot("running", maxBytes))
-		result["sandbox"] = preparationStatusResult(sandboxStatus)
 		result["session_reason"] = reason
 		result["observe_after_ms"] = 1000
 		return result
@@ -158,7 +149,6 @@ func (svc *Service) Exec(ctx context.Context, request ExecRequest) (Result, erro
 	err = s.WaitError()
 	s.Cancel()
 	result := snapshotResult(s.Snapshot("exited", maxBytes))
-	result["sandbox"] = preparationStatusResult(sandboxStatus)
 	if s.TimedOut {
 		result["status"] = "timeout"
 	}
@@ -232,20 +222,6 @@ func snapshotResult(snapshot session.Snapshot) Result {
 	}
 	if snapshot.Workdir != "" {
 		result["workdir"] = snapshot.Workdir
-	}
-	return result
-}
-
-func preparationStatusResult(status session.PreparationStatus) map[string]any {
-	result := map[string]any{"enabled": status.Enabled}
-	if status.Mode != "" {
-		result["mode"] = status.Mode
-	}
-	if status.Policy != "" {
-		result["policy"] = status.Policy
-	}
-	if len(status.Warnings) > 0 {
-		result["warnings"] = append([]string(nil), status.Warnings...)
 	}
 	return result
 }

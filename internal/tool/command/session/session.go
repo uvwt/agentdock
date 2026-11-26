@@ -18,15 +18,6 @@ import (
 	"github.com/uvwt/agentdock/internal/textutil"
 )
 
-type PreparationStatus struct {
-	Enabled  bool
-	Mode     string
-	Policy   string
-	Warnings []string
-}
-
-type PrepareFunc func(*exec.Cmd) (func(), PreparationStatus)
-
 type CommandFactory func(context.Context) *exec.Cmd
 
 type ExecutionContext struct {
@@ -376,43 +367,35 @@ func (s *Session) CompletedBefore(cutoff time.Time) bool {
 	return s.completed && !s.FinishedAt.IsZero() && s.FinishedAt.Before(cutoff)
 }
 
-func Start(ctx context.Context, command, workdir string, env []string, timeout time.Duration, prepare PrepareFunc) (*Session, PreparationStatus, error) {
-	return StartWithTTY(ctx, command, workdir, env, timeout, false, prepare)
+func Start(ctx context.Context, command, workdir string, env []string, timeout time.Duration) (*Session, error) {
+	return StartWithTTY(ctx, command, workdir, env, timeout, false)
 }
 
-func StartWithTTY(ctx context.Context, command, workdir string, env []string, timeout time.Duration, tty bool, prepare PrepareFunc) (*Session, PreparationStatus, error) {
+func StartWithTTY(ctx context.Context, command, workdir string, env []string, timeout time.Duration, tty bool) (*Session, error) {
 	return StartCommandWithTTY(ctx, func(cmdCtx context.Context) *exec.Cmd {
 		cmd := shellCommand(cmdCtx, command)
 		cmd.Dir = workdir
 		cmd.Env = env
 		return cmd
-	}, timeout, tty, prepare)
+	}, timeout, tty)
 }
 
-func StartCommandWithTTY(ctx context.Context, build CommandFactory, timeout time.Duration, tty bool, prepare PrepareFunc) (*Session, PreparationStatus, error) {
+func StartCommandWithTTY(ctx context.Context, build CommandFactory, timeout time.Duration, tty bool) (*Session, error) {
 	if timeout <= 0 {
-		return nil, PreparationStatus{}, fmt.Errorf("timeout must be positive")
+		return nil, fmt.Errorf("timeout must be positive")
 	}
 	if build == nil {
-		return nil, PreparationStatus{}, fmt.Errorf("command factory is required")
+		return nil, fmt.Errorf("command factory is required")
 	}
 	id, err := newID()
 	if err != nil {
-		return nil, PreparationStatus{}, fmt.Errorf("generate session id: %w", err)
+		return nil, fmt.Errorf("generate session id: %w", err)
 	}
 	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
 	cmd := build(cmdCtx)
 	if cmd == nil {
 		cancel()
-		return nil, PreparationStatus{}, fmt.Errorf("command factory returned nil command")
-	}
-	cleanup := func() {}
-	status := PreparationStatus{}
-	if prepare != nil {
-		cleanup, status = prepare(cmd)
-		if cleanup == nil {
-			cleanup = func() {}
-		}
+		return nil, fmt.Errorf("command factory returned nil command")
 	}
 
 	s := &Session{
@@ -433,15 +416,13 @@ func StartCommandWithTTY(ctx context.Context, build CommandFactory, timeout time
 	}
 	if err != nil {
 		cancel()
-		cleanup()
-		return nil, status, err
+		return nil, err
 	}
 	if usedInteractive {
 		s.Terminal = "conpty"
 	}
 	s.runner = runner
 	s.Stdin = runner.Stdin()
-	cleanup()
 
 	// 运行期取消统一交给 runner：标准 runner 关闭了 os/exec 的直接子进程 Cancel，
 	// 避免它与进程组 / Job Object 的整棵进程树终止并发竞争。
@@ -466,7 +447,7 @@ func StartCommandWithTTY(ctx context.Context, build CommandFactory, timeout time
 		s.mu.Unlock()
 		close(s.Done)
 	}()
-	return s, status, nil
+	return s, nil
 }
 
 func (s *Session) SetExecutionContext(execution ExecutionContext) {

@@ -125,3 +125,109 @@ func TestExecCommandReportsClosedStdin(t *testing.T) {
 		t.Fatalf("execCommand() error = %v, want stdin write failure", err)
 	}
 }
+
+func TestExecCommandOmitsSandboxFieldAcrossExecutionModes(t *testing.T) {
+	svc, _ := newCommandTestService(t)
+	defer svc.Close()
+
+	fastCmd := "printf 'fast-ok'"
+	slowCmd := "sleep 2"
+	if runtime.GOOS == "windows" {
+		fastCmd = "[Console]::Out.Write('fast-ok')"
+		slowCmd = "Start-Sleep -Seconds 2"
+	}
+
+	assertNoSandbox := func(t *testing.T, result Result) {
+		t.Helper()
+		if _, exists := result["sandbox"]; exists {
+			t.Fatalf("exec_command result should not contain sandbox field: %#v", result)
+		}
+	}
+	assertCommonFields := func(t *testing.T, result Result) {
+		t.Helper()
+		for _, key := range []string{
+			"session_id", "status", "stdout", "stderr", "elapsed_ms", "timed_out", "terminal",
+			"stdout_output_bytes", "stderr_output_bytes", "stdout_total_bytes", "stderr_total_bytes",
+			"stdout_dropped_bytes", "stderr_dropped_bytes", "stdout_omitted_bytes", "stderr_omitted_bytes",
+			"stdout_output_lines", "stderr_output_lines", "stdout_truncated", "stderr_truncated",
+		} {
+			if _, exists := result[key]; !exists {
+				t.Fatalf("exec_command result missing expected field %q: %#v", key, result)
+			}
+		}
+	}
+
+	t.Run("sync_exited", func(t *testing.T) {
+		result, err := svc.execArgs(context.Background(), map[string]any{
+			"cmd":            fastCmd,
+			"execution_mode": "sync",
+			"timeout_ms":     15000,
+		})
+		if err != nil {
+			t.Fatalf("exec_command sync error = %v", err)
+		}
+		assertNoSandbox(t, result)
+		assertCommonFields(t, result)
+		if result["status"] != "exited" || result["stdout"] != "fast-ok" || result["exit_code"] != 0 || result["command_ok"] != true {
+			t.Fatalf("unexpected sync result: %#v", result)
+		}
+	})
+
+	t.Run("auto_exited", func(t *testing.T) {
+		result, err := svc.execArgs(context.Background(), map[string]any{
+			"cmd":            fastCmd,
+			"execution_mode": "auto",
+			"yield_time_ms":  15000,
+			"timeout_ms":     15000,
+		})
+		if err != nil {
+			t.Fatalf("exec_command auto(exited) error = %v", err)
+		}
+		assertNoSandbox(t, result)
+		assertCommonFields(t, result)
+		if result["status"] != "exited" || result["stdout"] != "fast-ok" || result["exit_code"] != 0 || result["command_ok"] != true {
+			t.Fatalf("unexpected auto(exited) result: %#v", result)
+		}
+	})
+
+	t.Run("async_running", func(t *testing.T) {
+		result, err := svc.execArgs(context.Background(), map[string]any{
+			"cmd":            slowCmd,
+			"execution_mode": "async",
+			"timeout_ms":     15000,
+		})
+		if err != nil {
+			t.Fatalf("exec_command async error = %v", err)
+		}
+		sessionID, _ := result["session_id"].(string)
+		defer func() {
+			_, _ = svc.actArgs(map[string]any{"action": "kill", "session_id": sessionID})
+		}()
+		assertNoSandbox(t, result)
+		assertCommonFields(t, result)
+		if result["status"] != "running" || result["session_reason"] != "explicit_async" || result["observe_after_ms"] != 1000 {
+			t.Fatalf("unexpected async result: %#v", result)
+		}
+	})
+
+	t.Run("auto_running", func(t *testing.T) {
+		result, err := svc.execArgs(context.Background(), map[string]any{
+			"cmd":            slowCmd,
+			"execution_mode": "auto",
+			"yield_time_ms":  10,
+			"timeout_ms":     15000,
+		})
+		if err != nil {
+			t.Fatalf("exec_command auto(running) error = %v", err)
+		}
+		sessionID, _ := result["session_id"].(string)
+		defer func() {
+			_, _ = svc.actArgs(map[string]any{"action": "kill", "session_id": sessionID})
+		}()
+		assertNoSandbox(t, result)
+		assertCommonFields(t, result)
+		if result["status"] != "running" || result["session_reason"] != "foreground_threshold_exceeded" || result["observe_after_ms"] != 1000 {
+			t.Fatalf("unexpected auto(running) result: %#v", result)
+		}
+	})
+}

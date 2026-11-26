@@ -10,14 +10,13 @@ import (
 )
 
 func TestStartCommandWithTTYRunsDirectCommandFactory(t *testing.T) {
-	s, _, err := StartCommandWithTTY(
+	s, err := StartCommandWithTTY(
 		context.Background(),
 		func(ctx context.Context) *exec.Cmd {
 			return exec.CommandContext(ctx, "/bin/sh", "-c", "printf direct-factory")
 		},
 		5*time.Second,
 		false,
-		nil,
 	)
 	if err != nil {
 		t.Fatalf("StartCommandWithTTY() error = %v", err)
