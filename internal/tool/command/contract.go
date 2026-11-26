@@ -50,26 +50,39 @@ func OutputSchema(name string) (map[string]any, bool) {
 	boolProp := toolcontract.Boolean
 	arrayProp := toolcontract.ObjectArray
 	props := map[string]any{
-		"sessions":         arrayProp("Command session summaries returned by list or bulk session actions."),
-		"count":            intProp("Command session count when a list or bulk action returns multiple sessions."),
-		"session_id":       stringProp("Command session id."),
-		"status":           stringProp("Session status."),
-		"runtime":          stringProp("Command runtime when reported by the host, such as windows or wsl."),
-		"wsl_distribution": stringProp("WSL distribution selected for the command when explicitly configured."),
-		"workdir":          stringProp("Logical command working directory in the selected runtime."),
-		"stdout":           stringProp("Captured stdout segment."),
-		"stderr":           stringProp("Captured stderr segment."),
-		"command_ok":       boolProp("Whether a completed command exited successfully. Omitted while the command is still running."),
-		"command_error":    stringProp("Command process error when execution did not succeed."),
-		"exit_code":        intProp("Process exit code, when available."),
-		"elapsed_ms":       intProp("Session elapsed milliseconds."),
-		"timed_out":        boolProp("Whether the command timed out."),
+		"sessions":             arrayProp("Command session summaries returned by list or bulk session actions."),
+		"count":                intProp("Command session count when a list or bulk action returns multiple sessions."),
+		"session_id":           stringProp("Command session id."),
+		"status":               stringProp("Session status."),
+		"runtime":              stringProp("Command runtime when reported by the host, such as windows or wsl."),
+		"wsl_distribution":     stringProp("WSL distribution selected for the command when explicitly configured."),
+		"workdir":              stringProp("Logical command working directory in the selected runtime."),
+		"stdout":               stringProp("Captured stdout segment."),
+		"stderr":               stringProp("Captured stderr segment when non-empty or truncated."),
+		"command_ok":           boolProp("Whether a completed command exited successfully. Omitted while the command is still running."),
+		"command_error":        stringProp("Command process error when execution did not succeed."),
+		"exit_code":            intProp("Process exit code, when available."),
+		"elapsed_ms":           intProp("Session elapsed milliseconds."),
+		"timed_out":            boolProp("True when the command timed out; omitted otherwise."),
+		"terminal":             stringProp("Non-default terminal backend such as conpty; omitted when using standard pipes."),
+		"stdout_truncated":     boolProp("True when stdout was truncated, dropped, or omitted; omitted otherwise."),
+		"stdout_output_bytes":  intProp("Returned stdout bytes when stdout was truncated."),
+		"stdout_total_bytes":   intProp("Total stdout bytes captured when stdout was truncated."),
+		"stdout_dropped_bytes": intProp("Oldest stdout bytes dropped from the session buffer when stdout overflowed."),
+		"stdout_omitted_bytes": intProp("Unread stdout bytes omitted by max_output_bytes when stdout was truncated."),
+		"stderr_truncated":     boolProp("True when stderr was truncated, dropped, or omitted; omitted otherwise."),
+		"stderr_output_bytes":  intProp("Returned stderr bytes when stderr was truncated."),
+		"stderr_total_bytes":   intProp("Total stderr bytes captured when stderr was truncated."),
+		"stderr_dropped_bytes": intProp("Oldest stderr bytes dropped from the session buffer when stderr overflowed."),
+		"stderr_omitted_bytes": intProp("Unread stderr bytes omitted by max_output_bytes when stderr was truncated."),
 	}
 	switch name {
 	case ToolExecCommand:
 		props["session_reason"] = stringProp("Why exec_command returned a session instead of a completed result.")
 		props["observe_after_ms"] = intProp("Suggested delay before inspecting the returned session.")
-	case ToolSessionObserve, ToolSessionAct:
+	case ToolSessionObserve:
+	case ToolSessionAct:
+		props["kill_operation_ms"] = intProp("Milliseconds spent terminating the session for action=kill.")
 	default:
 		return nil, false
 	}

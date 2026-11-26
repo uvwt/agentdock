@@ -106,10 +106,10 @@ type SearchMatch struct {
 	Column           int      `json:"column"`
 	Preview          string   `json:"preview"`
 	MatchText        string   `json:"match_text"`
-	Before           []string `json:"before"`
-	After            []string `json:"after"`
-	ContextStartLine int      `json:"context_start_line"`
-	ContextEndLine   int      `json:"context_end_line"`
+	Before           []string `json:"before,omitempty"`
+	After            []string `json:"after,omitempty"`
+	ContextStartLine int      `json:"context_start_line,omitempty"`
+	ContextEndLine   int      `json:"context_end_line,omitempty"`
 }
 
 func boolPtr(value bool) *bool    { return &value }

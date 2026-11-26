@@ -314,14 +314,30 @@ func searchText(req *Request) (*Response, error) {
 				truncated = true
 				break
 			}
-			beforeStart := max(0, index-contextLines)
-			afterEnd := min(len(lines), index+contextLines+1)
-			matches = append(matches, SearchMatch{
-				Path: filepath.ToSlash(candidate.full), RelativePath: filepath.ToSlash(candidate.rel), Line: index + 1,
-				Column: len([]byte(line[:location[0]])) + 1, Preview: truncateRunes(line, 500), MatchText: truncateRunes(line[location[0]:location[1]], 500),
-				Before: append([]string(nil), lines[beforeStart:index]...), After: append([]string(nil), lines[index+1:afterEnd]...),
-				ContextStartLine: beforeStart + 1, ContextEndLine: afterEnd,
-			})
+			match := SearchMatch{
+				Path:         filepath.ToSlash(candidate.full),
+				RelativePath: filepath.ToSlash(candidate.rel),
+				Line:         index + 1,
+				Column:       len([]byte(line[:location[0]])) + 1,
+				Preview:      truncateRunes(line, 500),
+				MatchText:    truncateRunes(line[location[0]:location[1]], 500),
+			}
+			// 与 Host 侧 search_text 保持一致：仅在实际存在上下文行时才输出上下文及行号范围。
+			if contextLines > 0 {
+				beforeStart := max(0, index-contextLines)
+				afterEnd := min(len(lines), index+contextLines+1)
+				if index > beforeStart {
+					match.Before = append([]string(nil), lines[beforeStart:index]...)
+				}
+				if afterEnd > index+1 {
+					match.After = append([]string(nil), lines[index+1:afterEnd]...)
+				}
+				if len(match.Before) > 0 || len(match.After) > 0 {
+					match.ContextStartLine = beforeStart + 1
+					match.ContextEndLine = afterEnd
+				}
+			}
+			matches = append(matches, match)
 		}
 		if truncated {
 			break

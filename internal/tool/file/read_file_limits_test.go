@@ -56,3 +56,38 @@ func TestReadFileBoundsRequestedOutput(t *testing.T) {
 		}
 	}
 }
+
+func TestReadFileOmitsEncodingAndRejectsNonUTF8(t *testing.T) {
+	rt, root := newCodeToolsRuntime(t)
+	if err := os.WriteFile(filepath.Join(root, "utf8.txt"), []byte("hello\nworld\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := rt.readFileTest(context.Background(), ReadRequest{Path: "utf8.txt"})
+	if err != nil {
+		t.Fatalf("read_file utf8 error = %v", err)
+	}
+	if _, exists := result["encoding"]; exists {
+		t.Fatalf("read_file result should omit constant encoding field: %#v", result)
+	}
+	if result["content"] != "hello\nworld\n" || result["size_bytes"] != 12 {
+		t.Fatalf("unexpected read_file result: %#v", result)
+	}
+
+	schema, ok := OutputSchema(ToolReadFile)
+	if !ok {
+		t.Fatal("missing OutputSchema for read_file")
+	}
+	props, _ := schema["properties"].(map[string]any)
+	if _, exists := props["encoding"]; exists {
+		t.Fatalf("read_file OutputSchema should not declare removed encoding property: %#v", props)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "invalid.txt"), []byte{0xff, 0xfe, 'a'}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = rt.readFileTest(context.Background(), ReadRequest{Path: "invalid.txt"})
+	var toolErr *ToolError
+	if !errors.As(err, &toolErr) || toolErr.Code != "ENCODING_UNSUPPORTED" {
+		t.Fatalf("non-utf8 read_file error = %#v, want ENCODING_UNSUPPORTED", err)
+	}
+}

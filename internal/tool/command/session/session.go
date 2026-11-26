@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -75,8 +74,6 @@ type Snapshot struct {
 	StderrDroppedBytes int
 	StdoutOmittedBytes int
 	StderrOmittedBytes int
-	StdoutOutputLines  int
-	StderrOutputLines  int
 	StdoutTruncated    bool
 	StderrTruncated    bool
 	Completed          bool
@@ -101,7 +98,7 @@ type Summary struct {
 	ID           string `json:"id"`
 	Status       string `json:"status"`
 	ElapsedMS    int64  `json:"elapsed_ms"`
-	TimedOut     bool   `json:"timed_out"`
+	TimedOut     bool   `json:"timed_out,omitempty"`
 	Runtime      string `json:"runtime,omitempty"`
 	Distribution string `json:"wsl_distribution,omitempty"`
 	Workdir      string `json:"workdir,omitempty"`
@@ -570,7 +567,6 @@ func (s *Session) snapshot(status string, maxBytes int, advance bool) Snapshot {
 		StdoutTotalBytes: s.stdoutTotalBytes, StderrTotalBytes: s.stderrTotalBytes,
 		StdoutDroppedBytes: s.stdoutDroppedBytes, StderrDroppedBytes: s.stderrDroppedBytes,
 		StdoutOmittedBytes: omittedBytes(stdoutSegment, maxBytes), StderrOmittedBytes: omittedBytes(stderrSegment, maxBytes),
-		StdoutOutputLines: countLines(stdout), StderrOutputLines: countLines(stderr),
 		StdoutTruncated: maxBytes > 0 && len([]byte(stdoutSegment)) > maxBytes,
 		StderrTruncated: maxBytes > 0 && len([]byte(stderrSegment)) > maxBytes,
 		Completed:       s.completed, ExitCode: s.exitCode, CommandOK: s.exitCode == 0 && !s.TimedOut && s.inputErr == nil,
@@ -616,17 +612,6 @@ func omittedBytes(value string, maxBytes int) int {
 		return 0
 	}
 	return len([]byte(value)) - len([]byte(trim(value, maxBytes)))
-}
-
-func countLines(value string) int {
-	if value == "" {
-		return 0
-	}
-	count := strings.Count(value, "\n")
-	if !strings.HasSuffix(value, "\n") {
-		count++
-	}
-	return count
 }
 
 func trimBuffer(buf *bytes.Buffer, limit int) int {

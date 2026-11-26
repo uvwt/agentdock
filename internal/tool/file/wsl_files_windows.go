@@ -176,7 +176,6 @@ func (svc *Service) readFileWSL(ctx context.Context, request ReadRequest, select
 	result := Result{
 		"path":        path,
 		"content":     sliced,
-		"encoding":    "utf-8",
 		"size_bytes":  resultInt(loaded, "size_bytes"),
 		"truncated":   meta.Truncated,
 		"start_line":  meta.Start,

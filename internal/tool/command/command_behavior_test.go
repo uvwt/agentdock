@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/uvwt/agentdock/internal/tool/command/session"
 )
 
 func TestExecCommandDoesNotFilterCommandContent(t *testing.T) {
@@ -145,14 +147,20 @@ func TestExecCommandOmitsSandboxFieldAcrossExecutionModes(t *testing.T) {
 	}
 	assertCommonFields := func(t *testing.T, result Result) {
 		t.Helper()
+		for _, key := range []string{"session_id", "status", "stdout", "elapsed_ms"} {
+			if _, exists := result[key]; !exists {
+				t.Fatalf("exec_command result missing expected field %q: %#v", key, result)
+			}
+		}
+		// 正常无截断、无 stderr、非超时且默认 pipes 的命令不应输出冗余默认字段和零值统计。
 		for _, key := range []string{
-			"session_id", "status", "stdout", "stderr", "elapsed_ms", "timed_out", "terminal",
+			"stderr", "timed_out", "terminal",
 			"stdout_output_bytes", "stderr_output_bytes", "stdout_total_bytes", "stderr_total_bytes",
 			"stdout_dropped_bytes", "stderr_dropped_bytes", "stdout_omitted_bytes", "stderr_omitted_bytes",
 			"stdout_output_lines", "stderr_output_lines", "stdout_truncated", "stderr_truncated",
 		} {
-			if _, exists := result[key]; !exists {
-				t.Fatalf("exec_command result missing expected field %q: %#v", key, result)
+			if _, exists := result[key]; exists {
+				t.Fatalf("exec_command normal result should omit redundant field %q: %#v", key, result)
 			}
 		}
 	}
@@ -228,6 +236,152 @@ func TestExecCommandOmitsSandboxFieldAcrossExecutionModes(t *testing.T) {
 		assertCommonFields(t, result)
 		if result["status"] != "running" || result["session_reason"] != "foreground_threshold_exceeded" || result["observe_after_ms"] != 1000 {
 			t.Fatalf("unexpected auto(running) result: %#v", result)
+		}
+	})
+}
+
+func TestSnapshotResultIncludesConditionalFieldsOnlyWhenNeeded(t *testing.T) {
+	t.Run("normal_short_output_omits_noise", func(t *testing.T) {
+		result := snapshotResult(session.Snapshot{
+			SessionID:         "session-1",
+			Status:            "exited",
+			Stdout:            "ok\n",
+			Stderr:            "",
+			ElapsedMS:         12,
+			TimedOut:          false,
+			Terminal:          "pipes",
+			StdoutOutputBytes: 3,
+			StdoutTotalBytes:  3,
+			Completed:         true,
+			ExitCode:          0,
+			CommandOK:         true,
+		})
+		for _, key := range []string{
+			"stderr", "timed_out", "terminal",
+			"stdout_truncated", "stdout_output_bytes", "stdout_total_bytes", "stdout_dropped_bytes", "stdout_omitted_bytes", "stdout_output_lines",
+			"stderr_truncated", "stderr_output_bytes", "stderr_total_bytes", "stderr_dropped_bytes", "stderr_omitted_bytes", "stderr_output_lines",
+		} {
+			if _, exists := result[key]; exists {
+				t.Fatalf("normal snapshot should omit %q: %#v", key, result)
+			}
+		}
+		if result["stdout"] != "ok\n" || result["exit_code"] != 0 || result["command_ok"] != true {
+			t.Fatalf("unexpected normal snapshot result: %#v", result)
+		}
+	})
+
+	t.Run("truncation_timeout_and_non_default_terminal", func(t *testing.T) {
+		result := snapshotResult(session.Snapshot{
+			SessionID:          "session-2",
+			Status:             "timeout",
+			Stdout:             "head",
+			Stderr:             "",
+			ElapsedMS:          500,
+			TimedOut:           true,
+			Terminal:           "conpty",
+			StdoutOutputBytes:  4,
+			StdoutTotalBytes:   120,
+			StdoutDroppedBytes: 20,
+			StdoutOmittedBytes: 96,
+			StdoutTruncated:    true,
+			StderrOutputBytes:  0,
+			StderrTotalBytes:   64,
+			StderrDroppedBytes: 64,
+			Completed:          true,
+			ExitCode:           -1,
+			CommandOK:          false,
+		})
+		if result["timed_out"] != true || result["terminal"] != "conpty" {
+			t.Fatalf("missing timed_out or terminal: %#v", result)
+		}
+		if result["stdout_truncated"] != true || result["stdout_output_bytes"] != 4 || result["stdout_total_bytes"] != 120 ||
+			result["stdout_dropped_bytes"] != 20 || result["stdout_omitted_bytes"] != 96 {
+			t.Fatalf("unexpected stdout truncation metrics: %#v", result)
+		}
+		// stderr 即使本次片段为空，只要发生丢弃/截断也必须保留 stderr 及对应统计，避免调用方误判无错误输出。
+		if _, exists := result["stderr"]; !exists {
+			t.Fatalf("truncated stderr should preserve stderr key: %#v", result)
+		}
+		if result["stderr_truncated"] != true || result["stderr_output_bytes"] != 0 || result["stderr_total_bytes"] != 64 || result["stderr_dropped_bytes"] != 64 {
+			t.Fatalf("unexpected stderr truncation metrics: %#v", result)
+		}
+		if _, exists := result["stderr_omitted_bytes"]; exists {
+			t.Fatalf("zero stderr_omitted_bytes should be omitted: %#v", result)
+		}
+		for _, removed := range []string{"stdout_output_lines", "stderr_output_lines"} {
+			if _, exists := result[removed]; exists {
+				t.Fatalf("removed line-count field %q should not be present: %#v", removed, result)
+			}
+		}
+	})
+}
+
+func TestExecCommandIncludesConditionalFieldsOnTruncationStderrAndTimeout(t *testing.T) {
+	svc, _ := newCommandTestService(t)
+	defer svc.Close()
+
+	t.Run("stdout_truncated", func(t *testing.T) {
+		cmd := "printf '0123456789abcdef0123456789abcdef'"
+		if runtime.GOOS == "windows" {
+			cmd = "[Console]::Out.Write('0123456789abcdef0123456789abcdef')"
+		}
+		result, err := svc.execArgs(context.Background(), map[string]any{
+			"cmd":              cmd,
+			"execution_mode":   "sync",
+			"timeout_ms":       15000,
+			"max_output_bytes": 10,
+		})
+		if err != nil {
+			t.Fatalf("exec_command truncated error = %v", err)
+		}
+		if result["stdout_truncated"] != true || result["stdout_output_bytes"] != 10 || result["stdout_total_bytes"] != 32 || result["stdout_omitted_bytes"] != 22 {
+			t.Fatalf("unexpected stdout truncation fields: %#v", result)
+		}
+		for _, absent := range []string{"stdout_dropped_bytes", "stderr", "stderr_truncated", "timed_out", "terminal", "stdout_output_lines", "stderr_output_lines"} {
+			if _, exists := result[absent]; exists {
+				t.Fatalf("truncated stdout result should omit %q: %#v", absent, result)
+			}
+		}
+	})
+
+	t.Run("non_empty_stderr_without_truncation", func(t *testing.T) {
+		cmd := "printf 'warn-msg' >&2"
+		if runtime.GOOS == "windows" {
+			cmd = "[Console]::Error.Write('warn-msg')"
+		}
+		result, err := svc.execArgs(context.Background(), map[string]any{
+			"cmd":            cmd,
+			"execution_mode": "sync",
+			"timeout_ms":     15000,
+		})
+		if err != nil {
+			t.Fatalf("exec_command stderr error = %v", err)
+		}
+		if result["stderr"] != "warn-msg" {
+			t.Fatalf("stderr = %#v, want warn-msg", result["stderr"])
+		}
+		for _, absent := range []string{"stderr_truncated", "stderr_output_bytes", "stderr_total_bytes", "stdout_truncated", "timed_out", "terminal"} {
+			if _, exists := result[absent]; exists {
+				t.Fatalf("untruncated stderr result should omit %q: %#v", absent, result)
+			}
+		}
+	})
+
+	t.Run("timeout_sets_timed_out_true", func(t *testing.T) {
+		cmd := "sleep 2"
+		if runtime.GOOS == "windows" {
+			cmd = "Start-Sleep -Seconds 2"
+		}
+		result, err := svc.execArgs(context.Background(), map[string]any{
+			"cmd":            cmd,
+			"execution_mode": "sync",
+			"timeout_ms":     200,
+		})
+		if err != nil {
+			t.Fatalf("exec_command timeout error = %v", err)
+		}
+		if result["status"] != "timeout" || result["timed_out"] != true || result["command_ok"] != false {
+			t.Fatalf("unexpected timeout result: %#v", result)
 		}
 	})
 }

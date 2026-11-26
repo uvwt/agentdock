@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -282,5 +284,93 @@ func TestSearchTextGoGlobPatternsAreRelativeToRequestedPath(t *testing.T) {
 		if len(matches) != test.want {
 			t.Fatalf("Go fallback pattern %q matches = %#v, want %d", test.pattern, matches, test.want)
 		}
+	}
+}
+
+func TestSearchTextOmitsEmptyContextFieldsAcrossEngines(t *testing.T) {
+	for _, engine := range []string{"rg", "go_fallback"} {
+		t.Run(engine, func(t *testing.T) {
+			if engine == "rg" {
+				if _, err := exec.LookPath("rg"); err != nil {
+					t.Skip("rg is not installed")
+				}
+			} else {
+				t.Setenv("PATH", t.TempDir())
+			}
+
+			tests := []struct {
+				name         string
+				content      string
+				contextLines int
+				wantBefore   []string
+				wantAfter    []string
+				wantStart    int
+				wantEnd      int
+			}{
+				{name: "context_lines_zero", content: "before\nneedle\nafter\n", contextLines: 0},
+				{name: "single_line_with_context", content: "needle\n", contextLines: 2},
+				{name: "both_before_and_after", content: "prev\nneedle\nnext\n", contextLines: 1, wantBefore: []string{"prev"}, wantAfter: []string{"next"}, wantStart: 1, wantEnd: 3},
+				{name: "only_after_at_first_line", content: "needle\nnext\n", contextLines: 1, wantAfter: []string{"next"}, wantStart: 1, wantEnd: 2},
+				{name: "only_before_at_last_line", content: "prev\nneedle", contextLines: 1, wantBefore: []string{"prev"}, wantStart: 1, wantEnd: 2},
+			}
+
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					svc, root := newCodeToolsRuntime(t)
+					if err := os.WriteFile(filepath.Join(root, "sample.txt"), []byte(tt.content), 0o600); err != nil {
+						t.Fatal(err)
+					}
+					result, err := svc.SearchText(context.Background(), SearchRequest{
+						Path:         "sample.txt",
+						Query:        "needle",
+						ContextLines: &tt.contextLines,
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if result["engine"] != engine {
+						t.Fatalf("engine = %#v, want %s", result["engine"], engine)
+					}
+					matches := result["matches"].([]map[string]any)
+					if len(matches) != 1 {
+						t.Fatalf("matches = %#v, want 1 match", matches)
+					}
+					match := matches[0]
+
+					if len(tt.wantBefore) == 0 {
+						if _, exists := match["before"]; exists {
+							t.Fatalf("expected before to be omitted: %#v", match)
+						}
+					} else {
+						got, _ := match["before"].([]string)
+						if strings.Join(got, "\n") != strings.Join(tt.wantBefore, "\n") {
+							t.Fatalf("before = %#v, want %#v", got, tt.wantBefore)
+						}
+					}
+
+					if len(tt.wantAfter) == 0 {
+						if _, exists := match["after"]; exists {
+							t.Fatalf("expected after to be omitted: %#v", match)
+						}
+					} else {
+						got, _ := match["after"].([]string)
+						if strings.Join(got, "\n") != strings.Join(tt.wantAfter, "\n") {
+							t.Fatalf("after = %#v, want %#v", got, tt.wantAfter)
+						}
+					}
+
+					if tt.wantStart == 0 {
+						if _, exists := match["context_start_line"]; exists {
+							t.Fatalf("expected context_start_line to be omitted: %#v", match)
+						}
+						if _, exists := match["context_end_line"]; exists {
+							t.Fatalf("expected context_end_line to be omitted: %#v", match)
+						}
+					} else if match["context_start_line"] != tt.wantStart || match["context_end_line"] != tt.wantEnd {
+						t.Fatalf("context range = %v..%v, want %d..%d (match=%#v)", match["context_start_line"], match["context_end_line"], tt.wantStart, tt.wantEnd, match)
+					}
+				})
+			}
+		})
 	}
 }

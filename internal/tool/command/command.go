@@ -198,17 +198,48 @@ func commandOutputLimit(requested *int) int {
 }
 
 // snapshotResult 是 Command capability 向外部 Tool Result 的输出边界；Session 核心只暴露强类型快照。
+// 为避免每次短命令调用平铺大量默认值和零值统计消耗模型上下文，stderr、timed_out、
+// 非默认 terminal 及截断统计字段均只在发生对应情况时按需输出。
 func snapshotResult(snapshot session.Snapshot) Result {
+	stdoutTruncated := snapshot.StdoutTruncated || snapshot.StdoutDroppedBytes > 0 || snapshot.StdoutOmittedBytes > 0
+	stderrTruncated := snapshot.StderrTruncated || snapshot.StderrDroppedBytes > 0 || snapshot.StderrOmittedBytes > 0
+
 	result := Result{
-		"session_id": snapshot.SessionID, "status": snapshot.Status,
-		"stdout": snapshot.Stdout, "stderr": snapshot.Stderr,
-		"elapsed_ms": snapshot.ElapsedMS, "timed_out": snapshot.TimedOut, "terminal": snapshot.Terminal,
-		"stdout_output_bytes": snapshot.StdoutOutputBytes, "stderr_output_bytes": snapshot.StderrOutputBytes,
-		"stdout_total_bytes": snapshot.StdoutTotalBytes, "stderr_total_bytes": snapshot.StderrTotalBytes,
-		"stdout_dropped_bytes": snapshot.StdoutDroppedBytes, "stderr_dropped_bytes": snapshot.StderrDroppedBytes,
-		"stdout_omitted_bytes": snapshot.StdoutOmittedBytes, "stderr_omitted_bytes": snapshot.StderrOmittedBytes,
-		"stdout_output_lines": snapshot.StdoutOutputLines, "stderr_output_lines": snapshot.StderrOutputLines,
-		"stdout_truncated": snapshot.StdoutTruncated, "stderr_truncated": snapshot.StderrTruncated,
+		"session_id": snapshot.SessionID,
+		"status":     snapshot.Status,
+		"stdout":     snapshot.Stdout,
+		"elapsed_ms": snapshot.ElapsedMS,
+	}
+	if snapshot.Stderr != "" || stderrTruncated {
+		result["stderr"] = snapshot.Stderr
+	}
+	if snapshot.TimedOut {
+		result["timed_out"] = true
+	}
+	if snapshot.Terminal != "" && snapshot.Terminal != "pipes" {
+		result["terminal"] = snapshot.Terminal
+	}
+	if stdoutTruncated {
+		result["stdout_truncated"] = true
+		result["stdout_output_bytes"] = snapshot.StdoutOutputBytes
+		result["stdout_total_bytes"] = snapshot.StdoutTotalBytes
+		if snapshot.StdoutDroppedBytes > 0 {
+			result["stdout_dropped_bytes"] = snapshot.StdoutDroppedBytes
+		}
+		if snapshot.StdoutOmittedBytes > 0 {
+			result["stdout_omitted_bytes"] = snapshot.StdoutOmittedBytes
+		}
+	}
+	if stderrTruncated {
+		result["stderr_truncated"] = true
+		result["stderr_output_bytes"] = snapshot.StderrOutputBytes
+		result["stderr_total_bytes"] = snapshot.StderrTotalBytes
+		if snapshot.StderrDroppedBytes > 0 {
+			result["stderr_dropped_bytes"] = snapshot.StderrDroppedBytes
+		}
+		if snapshot.StderrOmittedBytes > 0 {
+			result["stderr_omitted_bytes"] = snapshot.StderrOmittedBytes
+		}
 	}
 	if snapshot.Completed {
 		result["exit_code"] = snapshot.ExitCode
@@ -417,7 +448,10 @@ func (svc *Service) listSessions() (Result, error) {
 	items := make([]map[string]any, 0)
 	for _, s := range svc.sessions.List() {
 		summary := s.Summary()
-		item := map[string]any{"session_id": summary.ID, "status": summary.Status, "elapsed_ms": summary.ElapsedMS, "timed_out": summary.TimedOut}
+		item := map[string]any{"session_id": summary.ID, "status": summary.Status, "elapsed_ms": summary.ElapsedMS}
+		if summary.TimedOut {
+			item["timed_out"] = true
+		}
 		if summary.Runtime != "" {
 			item["runtime"] = summary.Runtime
 		}

@@ -3,6 +3,7 @@
 package wslfilehelper
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -95,6 +96,82 @@ func TestWSLFileHelperSearchTextCapAndTruncatedFlag(t *testing.T) {
 	}
 	if got := (*overflow.Matches)[0].After; len(got) != 1 || got[0] != "after 1" {
 		t.Fatalf("overflow after context = %#v, want [after 1]", got)
+	}
+}
+
+func TestWSLFileHelperSearchTextOmitsEmptyContextFieldsInJSON(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "sample.txt"), "prev\nneedle\nnext\n", 0o644)
+	mustWriteFile(t, filepath.Join(root, "single.txt"), "needle\n", 0o644)
+
+	encodeMatches := func(t *testing.T, resp *Response) []map[string]any {
+		t.Helper()
+		raw, err := json.Marshal(resp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		items, _ := decoded["matches"].([]any)
+		out := make([]map[string]any, 0, len(items))
+		for _, item := range items {
+			out = append(out, item.(map[string]any))
+		}
+		return out
+	}
+
+	noCtx, err := Dispatch(&Request{
+		Action: "search_text", Path: filepath.Join(root, "sample.txt"), Query: "needle", ContextLines: 0, MaxResults: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	noCtxMatches := encodeMatches(t, noCtx)
+	if len(noCtxMatches) != 1 {
+		t.Fatalf("noCtxMatches = %#v, want 1", noCtxMatches)
+	}
+	for _, key := range []string{"before", "after", "context_start_line", "context_end_line"} {
+		if _, exists := noCtxMatches[0][key]; exists {
+			t.Fatalf("context_lines=0 JSON should omit %q: %#v", key, noCtxMatches[0])
+		}
+	}
+
+	singleCtx, err := Dispatch(&Request{
+		Action: "search_text", Path: filepath.Join(root, "single.txt"), Query: "needle", ContextLines: 2, MaxResults: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	singleMatches := encodeMatches(t, singleCtx)
+	if len(singleMatches) != 1 {
+		t.Fatalf("singleMatches = %#v, want 1", singleMatches)
+	}
+	for _, key := range []string{"before", "after", "context_start_line", "context_end_line"} {
+		if _, exists := singleMatches[0][key]; exists {
+			t.Fatalf("single-line JSON without context should omit %q: %#v", key, singleMatches[0])
+		}
+	}
+
+	withCtx, err := Dispatch(&Request{
+		Action: "search_text", Path: filepath.Join(root, "sample.txt"), Query: "needle", ContextLines: 1, MaxResults: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	withCtxMatches := encodeMatches(t, withCtx)
+	if len(withCtxMatches) != 1 {
+		t.Fatalf("withCtxMatches = %#v, want 1", withCtxMatches)
+	}
+	if withCtxMatches[0]["context_start_line"] != float64(1) || withCtxMatches[0]["context_end_line"] != float64(3) {
+		t.Fatalf("context range = %#v, want 1..3", withCtxMatches[0])
+	}
+	if got := withCtxMatches[0]["before"].([]any); len(got) != 1 || got[0] != "prev" {
+		t.Fatalf("before = %#v, want [prev]", got)
+	}
+	if got := withCtxMatches[0]["after"].([]any); len(got) != 1 || got[0] != "next" {
+		t.Fatalf("after = %#v, want [next]", got)
 	}
 }
 
